@@ -1,0 +1,56 @@
+{
+  "displayMs": 6.951,
+  "dpr": 1,
+  "frames": 623,
+  "glRenderer": {
+    "renderer": "Apple GPU",
+    "version": "WebGL 2.0"
+  },
+  "host": {
+    "backend": "wayland",
+    "env": {
+      "GDK_BACKEND": "wayland",
+      "WEBKIT_DISABLE_COMPOSITING_MODE": null,
+      "WEBKIT_DISABLE_DMABUF_RENDERER": "1",
+      "__NV_DISABLE_EXPLICIT_SYNC": null
+    },
+    "no60": false,
+    "requested": [
+      1280.0,
+      800.0
+    ]
+  },
+  "inner": [
+    1280,
+    800
+  ],
+  "intervals": {
+    "max": 17,
+    "mean": 16.064,
+    "n": 623,
+    "p50": 16,
+    "p95": 17,
+    "p99": 17
+  },
+  "isolated": false,
+  "meters": false,
+  "mixerH": 0,
+  "over2": 623,
+  "rafMedianMs": 16,
+  "renderer": "gl",
+  "rollSize": {
+    "h": 583,
+    "w": 1176
+  },
+  "timerResMs": 0.999999999998181,
+  "ua": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+  "within1": 0,
+  "work": {
+    "max": 1,
+    "mean": 0.329,
+    "n": 623,
+    "p50": 0,
+    "p95": 1,
+    "p99": 1
+  }
+}

@@ -1,9 +1,0 @@
-{
-  "childBlocksBeforeFault": 200,
-  "childExit": "signal: 9 (SIGKILL)",
-  "detectMsAfterFault": 3.186749,
-  "detectedBy": "eof",
-  "engineBlocksAfterFault": 51,
-  "mode": "kill",
-  "parentAlive": true
-}

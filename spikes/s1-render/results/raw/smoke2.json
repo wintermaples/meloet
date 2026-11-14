@@ -1,0 +1,16 @@
+{
+  "error": "Error: Precisions of uniform 'uMode' differ between VERTEX and FRAGMENT shaders.\n",
+  "host": {
+    "backend": "wayland",
+    "env": {
+      "GDK_BACKEND": "wayland",
+      "WEBKIT_DISABLE_COMPOSITING_MODE": null,
+      "WEBKIT_DISABLE_DMABUF_RENDERER": null,
+      "__NV_DISABLE_EXPLICIT_SYNC": null
+    },
+    "requested": [
+      1280.0,
+      800.0
+    ]
+  }
+}

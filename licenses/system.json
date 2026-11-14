@@ -1,0 +1,4 @@
+{
+  "note": "Parts no package manager tracks. role: system-dynamic = OS library we load dynamically (LGPL allowed); test-target = plugin used only as a test partner, never shipped or linked; tool = build or measuring tool, not shipped.",
+  "components": []
+}

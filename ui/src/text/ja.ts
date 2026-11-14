@@ -113,6 +113,16 @@ export const texts = {
   "button.exportAnyway": e("このまま書き出す", "spec:6"),
   "button.openFolder": e("フォルダをひらく", "spec:6"),
 
+  // キーの札（帯札やボタンの右はしに小さく書くキーの名前。仕様書 4 章の表）
+  "key.enter": e("Enter", "spec:4"),
+  "key.esc": e("Esc", "spec:4"),
+  "key.arrange": e("A", "spec:4"),
+  "key.pianoRoll": e("E", "spec:4"),
+  "key.mixer": e("M", "spec:4"),
+  "key.history": e("H", "spec:4"),
+  "key.shelf": e("P", "spec:4"),
+  "key.params": e("U", "spec:4"),
+
   // 再生まわり
   "transport.songNew": e("新しい曲", "mock:F-Connect1"),
   "transport.songSaved": e("保存済み ・ 取り消し {count}", "mock:Main", { count: "14" }),
@@ -170,6 +180,7 @@ export const texts = {
   "arrange.emptyTitle": e("ここに、録った音がならびます。", "mock:F-Empty"),
   "arrange.emptyBody": e("鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。", "mock:F-Empty"),
   "arrange.emptyAddTrack": e("トラックを増やすには左下の「＋ トラックを追加」", "mock:F-Empty"),
+  "arrange.overview": e("アレンジ 全体", "mock:A-PianoRoll"),
   "arrange.soundCameOutKeys": e("録音 {recordKey} ・ 再生と停止 {playKey}", "mock:F-Connect3", { recordKey: "R", playKey: "Space" }),
 
   // 出口えらび（流れ 2）と、出口・入口の行
@@ -204,6 +215,7 @@ export const texts = {
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
   "status.outputNone": e("出口: まだ", "mock:F-Connect1"),
   "status.inputs": e("入口: {inputs}", "mock:Main", { inputs: "鍵盤 49 ・ マイク" }),
+  "status.inputsNone": e("入口: まだ", "user:2026-11-14"),
   "status.buffer": e("バッファ {actual}", "mock:Main", { actual: "256" }),
   "status.bufferMismatch": e("バッファ {actual} ・ 頼んだ数 {requested}", "spec:3", { actual: "1024", requested: "256" }),
   "status.windows": e("窓 {count}", "spec:6", { count: "2" }),

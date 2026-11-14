@@ -30,17 +30,17 @@ export const colors = {
 } as const;
 export type ColorName = keyof typeof colors;
 
-/** 太さ: perScale は率ごとに変わる（100/125/150 %）。そうでなければ、使ってよい太さの一覧。 */
+/** weights: その大きさで使ってよい太さの組（率によらない）。 */
 export interface TextToken {
   size: Triple;
   lineHeight: Triple;
-  weight: { perScale: true; values: Triple } | { perScale: false; values: readonly number[] };
+  weights: readonly number[];
 }
 
 export const text = {
-  "text.s": { size: [12, 15, 18], lineHeight: [16, 20, 24], weight: { perScale: true, values: [400, 500, 600] } },
-  "text.m": { size: [16, 20, 24], lineHeight: [20, 25, 30], weight: { perScale: false, values: [400, 500] } },
-  "text.l": { size: [20, 25, 30], lineHeight: [24, 30, 36], weight: { perScale: false, values: [600] } },
+  "text.s": { size: [12, 15, 18], lineHeight: [16, 20, 24], weights: [400, 500, 600] },
+  "text.m": { size: [16, 20, 24], lineHeight: [20, 25, 30], weights: [400, 500] },
+  "text.l": { size: [20, 25, 30], lineHeight: [24, 30, 36], weights: [600] },
 } as const satisfies Record<string, TextToken>;
 export type TextName = keyof typeof text;
 
@@ -169,11 +169,44 @@ export const part = {
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 
+/** モックにしかない寸法（100 % の px）。board は値を読んだモック（docs/design/mock/<board>.dc.html）。 */
+export interface MockToken {
+  value: number;
+  board: string;
+}
+const m = (value: number, board: string): MockToken => ({ value, board });
+
+export const mock = {
+  // 入力計 ・ 出口えらび ・ 音の設定 ・ 「音が出ました」
+  "mock.input-meter.keys-full-w": m(348, "F-Connect3"),
+  "mock.input-meter.keys-full-h": m(32, "F-Connect3"),
+  "mock.input-meter.keys-slim-w": m(232, "F-MeterLongName"),
+  "mock.input-meter.keys-slim-h": m(12, "F-MeterLongName"),
+  "mock.input-meter.velocity": m(96, "F-Connect3"),
+  "mock.input-meter.velocity-bar": m(4, "F-Connect3"),
+  "mock.arrange-note.left": m(24, "F-Connect2"),
+  "mock.arrange-note.top": m(176, "F-Connect2"),
+  "mock.chooser.width": m(640, "F-Connect2"),
+  "mock.sound-hint.width": m(420, "F-Connect3"),
+  "mock.settings.top": m(80, "F-Settings"),
+  "mock.settings.top-advanced": m(40, "F-SettingsAdvFixed"),
+  "mock.settings.label": m(132, "F-Settings"),
+  "mock.settings.meter": m(160, "F-Settings"),
+  "mock.transport.name": m(132, "F-Empty"),
+  "mock.transport.readout": m(40, "F-Empty"),
+  "mock.transport.master": m(132, "F-Empty"),
+  "mock.arrange.bar": m(64, "F-Empty"),
+  "mock.arrange.add-track": m(32, "F-Empty"),
+  "mock.track.number": m(16, "F-Empty"),
+  "mock.overview.label": m(104, "A-PianoRoll"),
+} as const satisfies Record<string, MockToken>;
+export type MockName = keyof typeof mock;
+
 const scaleIndex = (scale: Scale): 0 | 1 | 2 => (scale === 100 ? 0 : scale === 125 ? 1 : 2);
 
-/** 部品の寸法に率をかけた値。整数にならないことがある（tests/design で一覧にしている）。 */
+/** 部品の寸法に率をかけ、四捨五入した整数（.5 は切り上げ。切り上げた物は tests/design で一覧にしている）。 */
 export function partAt(name: PartName, scale: Scale): number {
-  return (part[name].value * scale) / 100;
+  return Math.round((part[name].value * scale) / 100);
 }
 
 /** 名前 → その率での値。数は CSS px、色は 16 進数、太さは数。 */
@@ -184,9 +217,7 @@ export function tokensAt(scale: Scale, devicePixelRatio: number): Record<string,
   for (const [k, v] of Object.entries(text) as [TextName, TextToken][]) {
     out[`${k}.size`] = v.size[i];
     out[`${k}.line-height`] = v.lineHeight[i];
-    if (v.weight.perScale) out[`${k}.weight`] = v.weight.values[i];
-    else if (v.weight.values.length === 1) out[`${k}.weight`] = v.weight.values[0];
-    else v.weight.values.forEach((w, n) => (out[`${k}.weight-${n + 1}`] = w));
+    for (const w of v.weights) out[`${k}.weight-${w}`] = w;
   }
   for (const [k, v] of Object.entries(space)) out[k] = v[i];
   for (const [k, v] of Object.entries(size)) out[k] = v[i];
@@ -195,6 +226,7 @@ export function tokensAt(scale: Scale, devicePixelRatio: number): Record<string,
   out["line.track"] = line["line.track"][i];
   for (const [k, v] of Object.entries(radius)) out[k] = v;
   for (const k of Object.keys(part) as PartName[]) out[k] = partAt(k, scale);
+  for (const [k, v] of Object.entries(mock)) out[k] = (v.value * scale) / 100;
   return out;
 }
 

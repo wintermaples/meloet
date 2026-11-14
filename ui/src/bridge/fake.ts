@@ -1,17 +1,151 @@
 // A Transport with no Rust behind it: for tests, and for looking at the screen in a plain
-// browser (`npm run dev`). It keeps a fixed state and answers the few commands below.
-// It is not the rule book; the band rules live in meloet-core.
+// browser (`npm run dev`, `vite preview`). `?scene=<name>&scale=<100|125|150>` picks a fixed
+// scene (see SCENES). It answers the few commands below; the band heights follow the same
+// numbers as crates/meloet-core/src/layout.rs, but meloet-core stays the rule book.
 
 import type { Transport } from "./session";
+import { TELEMETRY_KIND, TELEMETRY_VERSION } from "./telemetry";
 import {
   PROTOCOL_VERSION,
   type AppState,
+  type Band,
+  type Change,
   type Command,
+  type EndpointView,
+  type LayoutView,
   type ServerMessage,
-  type WorkspaceView,
 } from "./types";
 
+// ---- the band rules (a copy of the numbers in meloet-core/src/layout.rs) ----
+
+const TRANSPORT = 48;
+const BAND_ROW = 24;
+const STATUS = 24;
+const METER_FULL = 52;
+const METER_SLIM = 24;
+const OVERVIEW = 40;
+const PIANO_ROLL_MIN = 268;
+const FIXED: Partial<Record<Band, number>> = { mixer: 432, history: 248 };
+const TALL_WINDOW = 960;
+const MAX_BOTTOM_OPEN = 2;
+const BOTTOM_ORDER: Band[] = ["pianoRoll", "mixer", "history"];
+const isBottom = (b: Band) => BOTTOM_ORDER.includes(b);
+
+export class FakeBands {
+  /** Oldest first. */
+  bottom: Band[] = [];
+  /** Oldest first; the last one is in front. */
+  side: Band[] = [];
+
+  /** Window height in px at 100 %. */
+  constructor(public height: number) {}
+
+  private meterHeight(): number {
+    return this.height >= TALL_WINDOW || this.bottom.length === 0 ? METER_FULL : METER_SLIM;
+  }
+
+  private rest(): number {
+    return this.height - TRANSPORT - this.meterHeight() - BAND_ROW - STATUS;
+  }
+
+  private fixedSum(): number {
+    return this.bottom.reduce((sum, b) => sum + (FIXED[b] ?? 0), 0);
+  }
+
+  private fits(): boolean {
+    const free = this.rest() - this.fixedSum();
+    return this.bottom.includes("pianoRoll") ? free - OVERVIEW >= PIANO_ROLL_MIN : free >= OVERVIEW;
+  }
+
+  fit(): void {
+    while (this.bottom.length > 1 && !this.fits()) this.bottom.shift();
+  }
+
+  setHeight(height: number): void {
+    this.height = height;
+    this.fit();
+  }
+
+  toggle(band: Band): void {
+    if (isBottom(band)) {
+      const at = this.bottom.indexOf(band);
+      if (at >= 0) this.bottom.splice(at, 1);
+      else {
+        this.bottom.push(band);
+        if (this.bottom.length > MAX_BOTTOM_OPEN) this.bottom.shift();
+        this.fit();
+      }
+    } else if (this.side.at(-1) === band) {
+      this.side.pop();
+    } else {
+      this.side = [...this.side.filter((b) => b !== band), band];
+    }
+  }
+
+  goArrange(): void {
+    this.bottom = [];
+  }
+
+  back(): void {
+    if (this.side.pop() === undefined) this.bottom.pop();
+  }
+
+  layout(): LayoutView {
+    const rest = this.rest();
+    const fixed = this.fixedSum();
+    const pianoRoll = this.bottom.includes("pianoRoll");
+    const arrangeHeight = pianoRoll ? OVERVIEW : Math.max(0, rest - fixed);
+    const pianoHeight = Math.max(0, rest - OVERVIEW - fixed);
+    return {
+      meter: this.meterHeight() === METER_FULL ? "full" : "slim",
+      arrangeHeight,
+      arrangeOverview: pianoRoll || arrangeHeight <= OVERVIEW,
+      lower: BOTTOM_ORDER.filter((b) => this.bottom.includes(b)).map((band) => ({
+        band,
+        height: FIXED[band] ?? pianoHeight,
+      })),
+      rightOpen: [...this.side],
+      rightFront: this.side.at(-1) ?? null,
+      showBackHint: this.bottom.length > 0,
+    };
+  }
+}
+
+// ---- the scenes ----
+
+const HEADPHONES: EndpointView = {
+  id: "out-headphones",
+  name: "アナログヘッドフォン",
+  friendly: "headphones",
+  availability: "yes",
+  link: "jack",
+  nodeName: "alsa_output.pci-0000_00_1f.3.analog-stereo",
+  choosable: true,
+};
+const LINE_OUT: EndpointView = {
+  id: "out-line",
+  name: "ライン出力",
+  friendly: "lineOut",
+  availability: "no",
+  link: "jack",
+  nodeName: "alsa_output.pci-0000_00_1f.3.analog-stereo",
+  choosable: false,
+};
+const HDMI: EndpointView = {
+  id: "out-hdmi2",
+  name: "HDMI / DisplayPort 2",
+  friendly: "hdmi",
+  availability: "no",
+  link: "plug",
+  nodeName: null,
+  choosable: false,
+};
+const OUTPUTS = [HEADPHONES, LINE_OUT, HDMI];
+
+const keyboard = (name: string) => ({ id: "kb-1", name, portName: name, address: "24:0" });
+
 export function fakeState(): AppState {
+  const bands = new FakeBands(800);
   return {
     song: {
       name: "はじめての曲",
@@ -28,21 +162,13 @@ export function fakeState(): AppState {
       scale: 100,
       viewportWidth: 1280,
       viewportHeight: 800,
-      layout: {
-        meter: "full",
-        arrangeHeight: 800,
-        arrangeOverview: false,
-        lower: [],
-        rightOpen: [],
-        rightFront: null,
-        showBackHint: false,
-      },
+      layout: bands.layout(),
       settings: null,
       chooser: null,
-      hint: "emptyArrange",
+      hint: null,
     },
     keyboards: { list: [], active: null, lost: null },
-    outputs: { list: [], chosen: null, chosenState: null },
+    outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null },
     audio: {
       running: false,
@@ -60,39 +186,227 @@ export function fakeState(): AppState {
   };
 }
 
-function reduce(state: AppState, command: Command): WorkspaceView | null {
+/** What the meters show in a scene. Sent again and again, so the WebGL side has something to draw. */
+export interface FakeMeters {
+  keys?: number[];
+  velocity?: number;
+  sustain?: number;
+  modulation?: number;
+  pitchBend?: number;
+  loadPermille?: number;
+  /** 1.0 = 0 dBFS */
+  master?: [number, number];
+  tracks?: [number, number][];
+}
+
+interface Scene {
+  state: AppState;
+  bands: FakeBands;
+  meters: FakeMeters;
+}
+
+const dbfs = (db: number) => 10 ** (db / 20);
+
+function withKeyboard(s: AppState, name = "Keystation 49 MK3"): void {
+  const kb = keyboard(name);
+  s.keyboards = { list: [kb], active: kb.id, lost: null };
+  s.audio.midiInput = kb.portName;
+}
+
+function withOutput(s: AppState): void {
+  s.outputs.chosen = HEADPHONES.id;
+  s.outputs.chosenState = "ready";
+  Object.assign(s.audio, {
+    running: true,
+    sampleRate: 48000,
+    actualFrames: 256,
+    latencyMs: 13.5,
+    latencyMsAtRequested: 13.5,
+    outputDevice: HEADPHONES.nodeName,
+  });
+}
+
+function ready(s: AppState): void {
+  withKeyboard(s);
+  withOutput(s);
+  s.status.message = { id: "newSong" };
+}
+
+function bufferFixed(s: AppState): void {
+  ready(s);
+  Object.assign(s.audio, { forcedQuantum: 1024, actualFrames: 1024, latencyMs: 53, latencyMsAtRequested: 13.5 });
+  s.status.message = { id: "bufferFixed", actual: 1024, requested: 256, latencyMs: 53, latencyMsAtRequested: 13.5 };
+}
+
+const QUIET: FakeMeters = { velocity: 83, loadPermille: 90 };
+
+export const SCENES: Record<string, { setup(s: AppState): void; bands?: Band[]; meters: FakeMeters }> = {
+  connect1: { setup: (s) => (s.status.message = { id: "searchingKeyboard" }), meters: { loadPermille: 90 } },
+  connect2: {
+    setup(s) {
+      withKeyboard(s);
+      s.workspace.chooser = { highlighted: HEADPHONES.id };
+      s.status.message = { id: "keyboardFound", keyboard: "Keystation 49 MK3" };
+    },
+    meters: { keys: [60, 64, 67], velocity: 87, sustain: 127, loadPermille: 90 },
+  },
+  connect3: {
+    setup(s) {
+      withKeyboard(s);
+      withOutput(s);
+      s.workspace.hint = "soundCameOut";
+      s.status.message = { id: "outputChosen", output: HEADPHONES.name };
+    },
+    meters: {
+      keys: [60, 64, 67],
+      velocity: 87,
+      sustain: 127,
+      modulation: 12,
+      loadPermille: 60,
+      master: [dbfs(-8.4), dbfs(-9.1)],
+      tracks: [[dbfs(-8.4), dbfs(-9.1)]],
+    },
+  },
+  empty: { setup: ready, meters: QUIET },
+  bufferFixed: { setup: bufferFixed, meters: QUIET },
+  settings: {
+    setup(s) {
+      ready(s);
+      s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: false };
+      s.status.message = { id: "settingsOpen" };
+    },
+    meters: QUIET,
+  },
+  settingsAdvFixed: {
+    setup(s) {
+      bufferFixed(s);
+      s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: true };
+    },
+    meters: QUIET,
+  },
+  longName: { setup: (s) => (ready(s), withKeyboard(s, "Arturia KeyLab Essential 61 mk3 MIDI 1")), meters: QUIET },
+  pianoRoll: { setup: ready, bands: ["pianoRoll"], meters: QUIET },
+  mixer: { setup: ready, bands: ["mixer"], meters: QUIET },
+  history: { setup: ready, bands: ["history"], meters: QUIET },
+  shelf: { setup: ready, bands: ["shelf"], meters: QUIET },
+  params: { setup: ready, bands: ["params"], meters: QUIET },
+};
+
+export function fakeScene(name: string, scale = 100, viewport = { width: 1280, height: 800 }): Scene | null {
+  const def = SCENES[name];
+  if (!def) return null;
+  const state = fakeState();
+  const s = [100, 125, 150].includes(scale) ? scale : 100;
+  const bands = new FakeBands((viewport.height * 100) / s);
+  for (const b of def.bands ?? []) bands.toggle(b);
+  def.setup(state);
+  state.workspace.scale = s;
+  state.workspace.viewportWidth = viewport.width;
+  state.workspace.viewportHeight = viewport.height;
+  state.workspace.layout = bands.layout();
+  return { state, bands, meters: def.meters };
+}
+
+function sceneFromUrl(): Scene | null {
+  if (typeof location === "undefined") return null;
+  const q = new URLSearchParams(location.search);
+  const name = q.get("scene");
+  if (!name) return null;
+  const vp = typeof window === "undefined" ? undefined : { width: window.innerWidth, height: window.innerHeight };
+  return fakeScene(name, Number(q.get("scale") ?? 100), vp);
+}
+
+// ---- telemetry ----
+
+/** Writes the telemetry binary (docs/architecture.md 3-3). */
+export function encodeTelemetry(m: FakeMeters, seq: number, sentUs: number, trackCount: number): ArrayBuffer {
+  const buf = new ArrayBuffer(48 + 8 * trackCount);
+  const v = new DataView(buf);
+  v.setUint8(0, TELEMETRY_KIND);
+  v.setUint8(1, TELEMETRY_VERSION);
+  v.setUint16(2, trackCount, true);
+  v.setUint32(4, seq, true);
+  v.setBigUint64(8, BigInt(Math.round(sentUs)) * 1000n, true);
+  const words = [0, 0, 0, 0];
+  for (const n of m.keys ?? []) words[n >>> 5]! |= 1 << (n & 31);
+  words.forEach((w, i) => v.setUint32(16 + 4 * i, w >>> 0, true));
+  v.setUint8(32, m.velocity ?? 0);
+  v.setUint8(33, m.sustain ?? 0);
+  v.setUint8(34, m.modulation ?? 0);
+  v.setUint8(35, m.master && (m.master[0] > 0 || m.master[1] > 0) ? 1 : 0);
+  v.setInt16(36, m.pitchBend ?? 0, true);
+  v.setUint16(38, m.loadPermille ?? 0, true);
+  v.setFloat32(40, m.master?.[0] ?? 0, true);
+  v.setFloat32(44, m.master?.[1] ?? 0, true);
+  for (let i = 0; i < trackCount; i++) {
+    const [l, r] = m.tracks?.[i] ?? [0, 0];
+    v.setFloat32(48 + 8 * i, l, true);
+    v.setFloat32(52 + 8 * i, r, true);
+  }
+  return buf;
+}
+
+// ---- commands ----
+
+function reduce(state: AppState, bands: FakeBands, command: Command): Change[] {
   const ws = structuredClone(state.workspace);
+  const outputs = structuredClone(state.outputs);
+  const choosable = outputs.list.filter((o) => o.choosable).map((o) => o.id);
   switch (command.type) {
     case "setViewport":
       ws.viewportWidth = command.width;
       ws.viewportHeight = command.height;
+      bands.setHeight((command.height * 100) / ws.scale);
       break;
     case "setScale":
       if ([100, 125, 150].includes(command.percent)) ws.scale = command.percent;
+      bands.setHeight((ws.viewportHeight * 100) / ws.scale);
       break;
-    case "toggleBand": {
-      const { band } = command;
-      if (band === "pianoRoll" || band === "mixer") {
-        const at = ws.layout.lower.findIndex((b) => b.band === band);
-        if (at >= 0) ws.layout.lower.splice(at, 1);
-        else ws.layout.lower.push({ band, height: 240 });
-      } else {
-        const at = ws.layout.rightOpen.indexOf(band);
-        if (at >= 0) ws.layout.rightOpen.splice(at, 1);
-        else ws.layout.rightOpen.push(band);
-        ws.layout.rightFront = ws.layout.rightOpen.at(-1) ?? null;
-      }
+    case "toggleBand":
+      bands.toggle(command.band);
       break;
-    }
     case "goArrange":
-      ws.layout.lower = [];
+      bands.goArrange();
+      break;
+    case "back":
+      if (ws.settings) ws.settings = null;
+      else bands.back();
       break;
     case "openSettings":
-      ws.settings ??= { draftOutput: null, advancedOpen: command.advanced };
+      if (ws.settings) ws.settings.advancedOpen ||= command.advanced;
+      else ws.settings = { draftOutput: outputs.chosen, advancedOpen: command.advanced };
+      break;
+    case "settingsSelectOutput":
+      if (ws.settings && choosable.includes(command.output)) ws.settings.draftOutput = command.output;
+      break;
+    case "settingsToggleAdvanced":
+      if (ws.settings) ws.settings.advancedOpen = !ws.settings.advancedOpen;
       break;
     case "settingsApply":
+      if (ws.settings?.draftOutput) {
+        outputs.chosen = ws.settings.draftOutput;
+        outputs.chosenState = "ready";
+      }
+      ws.settings = null;
+      break;
     case "settingsCancel":
       ws.settings = null;
+      break;
+    case "chooserMove":
+      if (ws.chooser) {
+        const at = choosable.indexOf(ws.chooser.highlighted ?? "");
+        if (at >= 0) ws.chooser.highlighted = choosable[Math.max(0, Math.min(choosable.length - 1, at + command.delta))]!;
+      }
+      break;
+    case "chooserSelect":
+      if (ws.chooser && choosable.includes(command.output)) ws.chooser.highlighted = command.output;
+      break;
+    case "chooserConfirm":
+      if (ws.chooser?.highlighted) {
+        outputs.chosen = ws.chooser.highlighted;
+        outputs.chosenState = "ready";
+        ws.chooser = null;
+      }
       break;
     case "dismissHint":
       ws.hint = null;
@@ -100,40 +414,59 @@ function reduce(state: AppState, command: Command): WorkspaceView | null {
     default:
       break;
   }
-  return JSON.stringify(ws) === JSON.stringify(state.workspace) ? null : ws;
+  ws.layout = bands.layout();
+  const changes: Change[] = [];
+  if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
+  if (JSON.stringify(outputs) !== JSON.stringify(state.outputs)) changes.push({ section: "outputs", value: outputs });
+  return changes;
 }
 
-export function createFakeTransport(initial: AppState = fakeState()): Transport {
-  let state = initial;
+/** With no `initial`, the scene comes from the URL (`?scene=`), or else the plain fakeState(). */
+export function createFakeTransport(initial?: AppState): Transport {
+  const scene = initial ? null : sceneFromUrl();
+  let state = initial ?? scene?.state ?? fakeState();
+  const bands = scene?.bands ?? new FakeBands((state.workspace.viewportHeight * 100) / state.workspace.scale);
+  if (!scene) for (const l of state.workspace.layout.lower) bands.bottom.push(l.band);
+  if (!scene) bands.side = [...state.workspace.layout.rightOpen];
   let rev = 1;
   let listener: ((message: ServerMessage) => void) | null = null;
   const start = performance.now();
+  const nowUs = () => Math.round((performance.now() - start) * 1000);
 
   return {
     async hello(protocolVersion) {
-      return {
-        protocolVersion: PROTOCOL_VERSION,
-        ok: protocolVersion === PROTOCOL_VERSION,
-        monoUs: Math.round((performance.now() - start) * 1000),
-      };
+      return { protocolVersion: PROTOCOL_VERSION, ok: protocolVersion === PROTOCOL_VERSION, monoUs: nowUs() };
     },
-    async subscribe(onMessage) {
+    async subscribe(onMessage, onTelemetry) {
       listener = onMessage;
+      // Only scenes send meters, so tests that use the plain fake leave no timer behind.
+      if (scene) {
+        let seq = 0;
+        setInterval(() => onTelemetry(encodeTelemetry(scene.meters, ++seq, nowUs(), state.song.tracks.length)), 1000 / 60);
+      }
     },
     async snapshot() {
       return { rev, state };
     },
     async send(command) {
-      const workspace = reduce(state, command);
-      if (workspace) {
+      const changes = reduce(state, bands, command);
+      if (changes.length > 0) {
         rev += 1;
-        state = { ...state, workspace };
-        listener?.({ kind: "patch", rev, changes: [{ section: "workspace", value: workspace }] });
+        state = { ...state };
+        for (const c of changes) (state as Record<string, unknown>)[c.section] = c.value;
+        listener?.({ kind: "patch", rev, changes });
       }
       return { rev };
     },
     async clock() {
-      return Math.round((performance.now() - start) * 1000);
+      return nowUs();
     },
   };
 }
+
+/** The fake has nothing to measure. */
+export async function fakeMeasureEnabled(): Promise<boolean> {
+  return false;
+}
+
+export async function fakeMeasureReport(_name: string, _json: string): Promise<void> {}

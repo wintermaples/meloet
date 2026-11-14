@@ -1,0 +1,265 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { FakeBands, SCENES, encodeTelemetry, fakeScene, fakeState } from "../src/bridge/fake";
+import { decodeTelemetry, keyIsDown } from "../src/bridge/telemetry";
+import type { AppState, Command } from "../src/bridge";
+import { TRANSPORT_WIDTHS, bandCountsShown, bandTabWidth, transportParts } from "../src/components/fit";
+import { PeakHold, dbNumber, msText, peakText, textParts } from "../src/components/format";
+import { mock, tokensAt } from "../src/design/tokens";
+import { handleKeydown, handlePointerdown } from "../src/keys/attach";
+import { hideTip, term, tipVisible } from "../src/lib/tip.svelte";
+
+// docs/ は ui/ の外なので、design-sources.ts と同じく Node の fs で読む。
+const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"): { readFileSync(p: URL, e: "utf8"): string } } }).process.getBuiltinModule("node:fs");
+const here = import.meta.url;
+const readMock = (board: string) => fs.readFileSync(new URL(`../../docs/design/mock/${board}.dc.html`, here), "utf8");
+
+describe("再生まわりの引っこめかた（仕様書 1 章 (1)）", () => {
+  const all = Object.values(TRANSPORT_WIDTHS).reduce((a, b) => a + b, 0);
+
+  it("広ければ全部出す", () => {
+    expect(transportParts(1280, 100)).toEqual({ songName: true, load: true, countIn: true, positionLabels: true });
+  });
+
+  it("曲の名前、処理の負荷、カウントイン、位置のラベルの順に引っこめる", () => {
+    const w = TRANSPORT_WIDTHS;
+    const at = (room: number) => transportParts(room, 100);
+    expect(at(all - 1)).toEqual({ songName: false, load: true, countIn: true, positionLabels: true });
+    expect(at(all - w.songName - 1)).toEqual({ songName: false, load: false, countIn: true, positionLabels: true });
+    expect(at(all - w.songName - w.load - 1)).toEqual({ songName: false, load: false, countIn: false, positionLabels: true });
+    expect(at(w.base)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
+    expect(at(10)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
+  });
+
+  it("拡大率をかけてくらべる（窓 1280 で 125 % と 150 %）", () => {
+    expect(transportParts(1280, 125)).toMatchObject({ songName: false, load: false, countIn: true });
+    expect(transportParts(1280, 150)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
+    expect(transportParts(1920, 150)).toEqual({ songName: true, load: true, countIn: true, positionLabels: true });
+  });
+});
+
+describe("帯札の件数（仕様書 3 章: 右の帯の件数から消す）", () => {
+  const tabs = [
+    bandTabWidth("アレンジ", "トラック 1", "A"),
+    bandTabWidth("ピアノロール", "ノート 0", "E"),
+    bandTabWidth("ミキサー", "マスター 0.0 dB", "M"),
+    bandTabWidth("取り消しの履歴", "0 手", "H"),
+  ];
+  const full = tabs.reduce((s, t) => s + t.fixed + t.count, 0);
+
+  it("入りきれば全部", () => {
+    expect(bandCountsShown(full, 100, tabs)).toEqual([true, true, true, true]);
+  });
+  it("右から消す。名前とキーの分は消さない", () => {
+    expect(bandCountsShown(full - 1, 100, tabs)).toEqual([true, true, true, false]);
+    expect(bandCountsShown(full - tabs[3]!.count - 1, 100, tabs)).toEqual([true, true, false, false]);
+    expect(bandCountsShown(1, 100, tabs)).toEqual([false, false, false, false]);
+  });
+  it("右はしの案内の分と拡大率も数える", () => {
+    expect(bandCountsShown(full + 100, 100, tabs, 100)).toEqual([true, true, true, true]);
+    expect(bandCountsShown(full, 150, tabs)).toContain(false);
+  });
+});
+
+describe("数の見せかた", () => {
+  it("dB は 0.1 で、マイナスは −", () => {
+    expect(dbNumber(0)).toBe("0.0");
+    expect(dbNumber(-0.01)).toBe("0.0");
+    expect(dbNumber(-4.84)).toBe("−4.8");
+    expect(peakText(1)).toBe("0.0 dB");
+    expect(peakText(10 ** (-8.4 / 20))).toBe("−8.4 dB");
+    expect(peakText(10 ** (-89.9 / 20))).toBe("−89.9 dB");
+    expect(peakText(10 ** (-90.1 / 20))).toBe("−∞ dB");
+    expect(peakText(0)).toBe("−∞ dB");
+  });
+  it("直近 1 秒のいちばん大きい値", () => {
+    const h = new PeakHold(1000);
+    h.push(0.5, 0);
+    h.push(0.2, 500);
+    expect(h.max(900)).toBe(0.5);
+    expect(h.max(1200)).toBe(0.2);
+    expect(h.max(1600)).toBe(0);
+  });
+  it("遅れの ms: 20 ms 未満は小数 1 けた、20 ms 以上は整数（仕様書 6 章の「約 53 ms」「約 13.5 ms」）", () => {
+    expect(msText(13.3333)).toBe("13.3");
+    expect(msText(13.54)).toBe("13.5");
+    expect(msText(13)).toBe("13.0");
+    expect(msText(5)).toBe("5.0");
+    expect(msText(19.96)).toBe("20");
+    expect(msText(20)).toBe("20");
+    expect(msText(53.3333)).toBe("53");
+  });
+  it("文の穴", () => {
+    expect(textParts("status.bufferMismatch", { actual: 1024, requested: 256 })).toEqual([
+      { text: "バッファ ", hole: null },
+      { text: "1024", hole: "actual" },
+      { text: " ・ 頼んだ数 ", hole: null },
+      { text: "256", hole: "requested" },
+    ]);
+  });
+});
+
+describe("mock.*（モックにしかない寸法）", () => {
+  // この画面の骨組みが足した物だけを見る（ほかの部品の mock.* は、その部品のテストで）。
+  const mine = Object.entries(mock).filter(([k]) => /^mock\.(transport|arrange|track|overview)\./.test(k));
+  it("見る物がある", () => expect(mine.length).toBe(7));
+  it.each(mine)("%s の値はモックに書いてあり、率をかけても整数", (_, tok) => {
+    const html = readMock(tok.board);
+    expect(html).toContain(`${tok.value}px`);
+    for (const s of [100, 125, 150] as const) expect(Number.isInteger(tokensAt(s, 1)[_] as number)).toBe(true);
+  });
+});
+
+describe("偽物の場面", () => {
+  // crates/meloet-core/src/layout.rs と同じ数字になるか。
+  it("窓 800、ピアノロール: 入力計は細く、アレンジ 40、ロールは残りぜんぶ", () => {
+    const l = fakeScene("pianoRoll")!.state.workspace.layout;
+    expect(l).toMatchObject({ meter: "slim", arrangeHeight: 40, arrangeOverview: true, showBackHint: true });
+    expect(l.lower).toEqual([{ band: "pianoRoll", height: 800 - 48 - 24 - 24 - 24 - 40 }]);
+  });
+  it("ミキサーと履歴は決まった高さで、アレンジが押しちぢめられる", () => {
+    expect(fakeScene("mixer")!.state.workspace.layout).toMatchObject({ arrangeHeight: 680 - 432, lower: [{ band: "mixer", height: 432 }] });
+    expect(fakeScene("history")!.state.workspace.layout).toMatchObject({ arrangeHeight: 680 - 248, lower: [{ band: "history", height: 248 }] });
+  });
+  it("アレンジだけなら入力計は太く、アレンジが残りぜんぶ", () => {
+    expect(fakeScene("empty")!.state.workspace.layout).toMatchObject({ meter: "full", arrangeHeight: 800 - 48 - 52 - 24 - 24, lower: [] });
+  });
+  it("拡大率は 100 % の px にしてから決める", () => {
+    const l = fakeScene("empty", 125, { width: 1280, height: 800 })!.state.workspace.layout;
+    expect(l.arrangeHeight).toBe(640 - 48 - 52 - 24 - 24);
+  });
+  it("下の帯は 2 つまで。入りきらなければ古いほうをたたむ", () => {
+    const b = new FakeBands(800);
+    b.toggle("pianoRoll");
+    b.toggle("history");
+    expect(b.layout().lower.map((x) => x.band)).toEqual(["pianoRoll", "history"]);
+    b.toggle("history");
+    b.toggle("mixer");
+    expect(b.layout().lower.map((x) => x.band)).toEqual(["mixer"]);
+    const tall = new FakeBands(1400);
+    tall.toggle("mixer");
+    tall.toggle("history");
+    tall.toggle("pianoRoll");
+    expect(tall.layout().lower.map((x) => x.band)).toEqual(["pianoRoll", "history"]);
+  });
+  it("右の欄はあとからひらいたほうが前", () => {
+    const b = new FakeBands(800);
+    b.toggle("shelf");
+    b.toggle("params");
+    expect(b.layout()).toMatchObject({ rightOpen: ["shelf", "params"], rightFront: "params" });
+    b.back();
+    expect(b.layout().rightFront).toBe("shelf");
+  });
+  it("場面はみな作れる", () => {
+    for (const name of Object.keys(SCENES)) expect(fakeScene(name), name).not.toBeNull();
+    expect(fakeScene("nope")).toBeNull();
+    const c2 = fakeScene("connect2")!.state;
+    expect(c2.outputs.list.map((o) => [o.name, o.choosable, o.availability])).toEqual([
+      ["アナログヘッドフォン", true, "yes"],
+      ["ライン出力", false, "no"],
+      ["HDMI / DisplayPort 2", false, "no"],
+    ]);
+    expect(c2.workspace.chooser).toEqual({ highlighted: "out-headphones" });
+  });
+  it("計器のバイナリは telemetry.ts で読める", () => {
+    const m = SCENES.connect3!.meters;
+    const t = decodeTelemetry(encodeTelemetry(m, 7, 1234, 1));
+    expect([60, 64, 67].every((n) => keyIsDown(t, n))).toBe(true);
+    expect(keyIsDown(t, 61)).toBe(false);
+    expect(t).toMatchObject({ seq: 7, sentUs: 1234, lastVelocity: 87, sustain: 127, modulation: 12, loadPermille: 60 });
+    expect(t.masterPeak[0]).toBeCloseTo(10 ** (-8.4 / 20), 5);
+    expect(t.trackPeaks).toHaveLength(2);
+  });
+});
+
+describe("キーを画面につなぐ", () => {
+  let sent: Command[] = [];
+  let state: AppState = fakeState();
+  const deps = { state: () => state, send: (c: Command) => void sent.push(c), nav: { platform: "Linux x86_64" } };
+  const key = (k: string, more: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent("keydown", { key: k, cancelable: true, ...more });
+    handleKeydown(ev, deps);
+    return ev;
+  };
+  afterEach(() => {
+    sent = [];
+    state = fakeState();
+    hideTip();
+    document.body.innerHTML = "";
+    vi.useRealTimers();
+  });
+
+  it("A・E・M・H・P・U と Mod+, と Mod+Alt+数字", () => {
+    for (const k of ["a", "e", "m", "h", "p", "u"]) key(k);
+    key(",", { ctrlKey: true });
+    key("2", { ctrlKey: true, altKey: true, code: "Digit2" });
+    expect(sent).toEqual([
+      { type: "goArrange" },
+      { type: "toggleBand", band: "pianoRoll" },
+      { type: "toggleBand", band: "mixer" },
+      { type: "toggleBand", band: "history" },
+      { type: "toggleBand", band: "shelf" },
+      { type: "toggleBand", band: "params" },
+      { type: "openSettings", advanced: false },
+      { type: "setScale", percent: 125 },
+    ]);
+  });
+
+  it("まだ使えないキーは何もしない", () => {
+    for (const k of [" ", "r", "Home", "l", "c"]) expect(key(k).defaultPrevented).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  it("文字を打っているあいだ、一文字のキーは効かない", () => {
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    key("m");
+    expect(sent).toEqual([]);
+  });
+
+  it("Esc: 用語の説明 → 文字の枠 → Rust の back", () => {
+    vi.useFakeTimers();
+    const span = document.createElement("span");
+    const input = document.createElement("input");
+    document.body.append(span, input);
+    term(span, "ループ");
+    span.dispatchEvent(new PointerEvent("pointerenter"));
+    vi.advanceTimersByTime(600);
+    input.focus();
+    expect(tipVisible()).toBe(true);
+
+    key("Escape");
+    expect(tipVisible()).toBe(false);
+    expect(document.activeElement).toBe(input);
+    key("Escape");
+    expect(document.activeElement).not.toBe(input);
+    expect(sent).toEqual([]);
+    key("Escape");
+    expect(sent).toEqual([{ type: "back" }]);
+  });
+
+  it("出口えらびでは ↑ ↓ Enter、音の設定では Enter", () => {
+    state = { ...state, workspace: { ...state.workspace, chooser: { highlighted: null } } };
+    key("ArrowDown");
+    key("ArrowUp");
+    key("Enter");
+    state = fakeState();
+    state = { ...state, workspace: { ...state.workspace, settings: { draftOutput: null, advancedOpen: false } } };
+    key("Enter");
+    expect(sent).toEqual([
+      { type: "chooserMove", delta: 1 },
+      { type: "chooserMove", delta: -1 },
+      { type: "chooserConfirm" },
+      { type: "settingsApply" },
+    ]);
+  });
+
+  it("「音が出ました」は、キーの操作やマウスのボタンで消える", () => {
+    state = { ...state, workspace: { ...state.workspace, hint: "soundCameOut" } };
+    key("Shift");
+    expect(sent).toEqual([]);
+    key("x");
+    handlePointerdown(deps);
+    expect(sent).toEqual([{ type: "dismissHint" }, { type: "dismissHint" }]);
+  });
+});

@@ -46,7 +46,7 @@
     font-family: var(--font-sans);
     font-size: var(--text-s-size);
     line-height: var(--text-s-line-height);
-    font-weight: var(--text-s-weight);
+    font-weight: var(--text-s-weight-400);
     white-space: normal;
     pointer-events: none;
   }
@@ -55,6 +55,6 @@
     margin-bottom: var(--space-2);
   }
   strong {
-    font-weight: 600;
+    font-weight: var(--text-s-weight-600);
   }
 </style>

@@ -1,48 +1,121 @@
+<!-- 画面の並び（仕様書 3 章）: 上から、再生まわり、入力計、アレンジ、ひらいた下の帯、帯札の行、状態行。
+     右はしに、ひらいた欄と縦の見出し。重なりの順は、画面の部品 < WebGL の面 < 案内・出口えらび・ダイアログ・用語の説明。 -->
 <script lang="ts">
-  // A stand-in screen that only shows the bridge is connected. The real screen replaces it.
   import { onMount } from "svelte";
-  import { clockOffsetUs, connect, send, type AppState } from "./bridge";
+  import Arrange from "./components/Arrange.svelte";
+  import BandRow from "./components/BandRow.svelte";
+  import InputMeter from "./components/InputMeter.svelte";
+  import LowerBand from "./components/LowerBand.svelte";
+  import { metrics, watchDevicePixelRatio } from "./components/metrics.svelte";
+  import OutputChooser from "./components/OutputChooser.svelte";
+  import RightRail from "./components/RightRail.svelte";
+  import SettingsDialog from "./components/SettingsDialog.svelte";
+  import SoundHint from "./components/SoundHint.svelte";
+  import StatusLine from "./components/StatusLine.svelte";
+  import Transport from "./components/Transport.svelte";
+  import { writeCssVariables } from "./design/tokens";
+  import Surface from "./gl/Surface.svelte";
+  import { attachKeys } from "./keys/attach";
+  import Tip from "./lib/Tip.svelte";
+  import { current, send, start } from "./state/app.svelte";
 
-  let app = $state<AppState | null>(null);
-  let rev = $state(0);
-  let telemetryCount = $state(0);
-  let lastSeq = $state<number | null>(null);
-  let offsetUs = $state<number | null>(null);
-  let failure = $state<string | null>(null);
+  const state = $derived(current.state);
+  const connected = $derived(state !== null);
+
+  $effect(() => writeCssVariables(metrics.scale, metrics.dpr));
+
+  const sendViewport = () => send({ type: "setViewport", width: window.innerWidth, height: window.innerHeight });
+  $effect(() => {
+    if (connected) sendViewport();
+  });
 
   onMount(() => {
-    connect({
-      onState(next, nextRev) {
-        app = next;
-        rev = nextRev;
-      },
-      onTelemetry(t) {
-        telemetryCount += 1;
-        lastSeq = t.seq;
-      },
-      onError: (e) => (failure = String(e)),
-    })
-      .then(async () => {
-        offsetUs = await clockOffsetUs();
-        await send({ type: "setViewport", width: window.innerWidth, height: window.innerHeight });
-      })
-      .catch((e) => (failure = String(e)));
+    start();
+    const stopDpr = watchDevicePixelRatio();
+    const stopKeys = attachKeys({ state: () => current.state, send });
+    window.addEventListener("resize", sendViewport);
+    return () => {
+      stopDpr();
+      stopKeys();
+      window.removeEventListener("resize", sendViewport);
+    };
   });
 </script>
 
-<main>
-  {#if failure}
-    <p data-test="failure">{failure}</p>
-  {:else if app}
-    <p data-test="song">{app.song.name} — {app.song.tempoBpm} BPM — {app.song.meterNum}/{app.song.meterDen}</p>
-    <p data-test="rev">rev {rev} / viewport {app.workspace.viewportWidth}×{app.workspace.viewportHeight} / scale {app.workspace.scale}%</p>
-    <p data-test="tracks">{app.song.tracks.map((t) => `${t.number} ${t.name} (${t.instrument}, ${t.gainDb} dB)`).join(", ")}</p>
-    <p data-test="lower">lower: {app.workspace.layout.lower.map((b) => `${b.band} ${b.height}`).join(", ") || "-"}</p>
-    <p data-test="status">status: {app.status.message?.id ?? "-"}</p>
-    <p data-test="telemetry">telemetry: {telemetryCount} (seq {lastSeq ?? "-"}) / clock offset {offsetUs === null ? "-" : Math.round(offsetUs)} µs</p>
-    <button onclick={() => send({ type: "toggleBand", band: "pianoRoll" })}>toggleBand pianoRoll</button>
-    <button onclick={() => send({ type: "testTone", output: "" })}>testTone</button>
-  {:else}
-    <p data-test="connecting">connecting…</p>
+{#if state}
+  {@const layout = state.workspace.layout}
+  <div class="app">
+    <Transport />
+    <div class="meter" style:height={layout.meter === "full" ? "var(--size-meter-full)" : "var(--size-meter-slim)"}>
+      <InputMeter />
+    </div>
+    <div class="middle">
+      <div class="work">
+        <Arrange>
+          {#if state.workspace.chooser}<OutputChooser />{/if}
+          {#if state.workspace.hint === "soundCameOut"}<SoundHint />{/if}
+        </Arrange>
+        {#each layout.lower as lower (lower.band)}
+          <LowerBand band={lower.band} height={lower.height} />
+        {/each}
+      </div>
+      <RightRail />
+    </div>
+    <BandRow />
+    <StatusLine />
+  </div>
+  <div class="surface"><Surface /></div>
+  {#if state.workspace.settings}
+    <div class="dialog"><SettingsDialog /></div>
   {/if}
-</main>
+{:else if current.failure}
+  <pre class="failure">{current.failure}</pre>
+{/if}
+<Tip />
+
+<style>
+  .app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .meter {
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .middle {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .work {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--color-gray-1);
+  }
+  .surface {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+  }
+  .dialog > :global(*) {
+    pointer-events: auto;
+  }
+  .failure {
+    margin: var(--space-4);
+    color: var(--color-gray-10);
+    white-space: pre-wrap;
+  }
+</style>

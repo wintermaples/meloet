@@ -46,14 +46,14 @@ describe("仕様書 1 章の表と tokens.ts", () => {
     expect(sorted(seen)).toEqual(sorted(Object.keys(colors)));
   });
 
-  it("文字: 大きさ・行の高さ・太さが率ごとに一致する", () => {
+  it("文字: 大きさ・行の高さは率ごとに、太さは使ってよい組として一致する", () => {
     const seen: string[] = [];
     for (const [name, sz, lh, weight] of rows(tableAfterH3(doc, "文字"))) {
       const tok = text[name as keyof typeof text];
       expect(tok, name).toBeDefined();
       expect([...tok.size]).toEqual(triple(sz!));
       expect([...tok.lineHeight]).toEqual(triple(lh!));
-      expect(tok.weight.values.join(" / ")).toBe(weight);
+      expect(tok.weights.join(" / ")).toBe(weight);
       seen.push(name!);
     }
     expect(sorted(seen)).toEqual(sorted(Object.keys(text)));
@@ -101,20 +101,20 @@ describe("仕様書 1 章の表と tokens.ts", () => {
   });
 });
 
-// 仕様書の決め待ち（報告ずみ）。部品の寸法は表の外なので、4 の倍数とはかぎらない。
-const KNOWN_ODD = [
-  "part.button.icon@125=12.5",
-  "part.choice.dot@125=7.5",
-  "part.endpoint.friendly@125=187.5",
-  "part.endpoint.link@125=7.5",
-  "part.meter.clip@125=2.5",
-  "part.meter.vertical@125=7.5",
-  "part.note.edge@125=2.5",
-  "part.note.height@125=13.75",
-  "part.note.height@150=16.5",
-  "part.param.knob-w@125=7.5",
-  "part.param.step@125=7.5",
-  "part.windowmark.size@125=12.5",
+// 率をかけて整数にならないので、四捨五入した値（.5 は切り上げ）。部品の寸法は表の外なので、4 の倍数とはかぎらない。
+const ROUNDED = [
+  "part.button.icon@125=12.5→13",
+  "part.choice.dot@125=7.5→8",
+  "part.endpoint.friendly@125=187.5→188",
+  "part.endpoint.link@125=7.5→8",
+  "part.meter.clip@125=2.5→3",
+  "part.meter.vertical@125=7.5→8",
+  "part.note.edge@125=2.5→3",
+  "part.note.height@125=13.75→14",
+  "part.note.height@150=16.5→17",
+  "part.param.knob-w@125=7.5→8",
+  "part.param.step@125=7.5→8",
+  "part.windowmark.size@125=12.5→13",
 ];
 
 describe("part.*（仕様書の文の中にしかない寸法）", () => {
@@ -129,11 +129,17 @@ describe("part.*（仕様書の文の中にしかない寸法）", () => {
     expect(tok.spec.quote).toMatch(new RegExp(`(^|\\D)${tok.value}(\\D|$)`));
   });
 
-  it("率をかけて整数にならない値の一覧（ふえたら、ここが落ちる）", () => {
+  it("率をかけて整数にならない値の一覧と、四捨五入した値（ふえたら、ここが落ちる）", () => {
     const odd = (Object.keys(part) as PartName[]).flatMap((k) =>
-      SCALES.filter((s) => !Number.isInteger(partAt(k, s))).map((s) => `${k}@${s}=${partAt(k, s)}`),
+      SCALES.filter((s) => !Number.isInteger((part[k].value * s) / 100)).map(
+        (s) => `${k}@${s}=${(part[k].value * s) / 100}→${partAt(k, s)}`,
+      ),
     );
-    expect(odd.sort()).toEqual(KNOWN_ODD);
+    expect(odd.sort()).toEqual(ROUNDED);
+  });
+
+  it("partAt はどの率でも整数", () => {
+    for (const k of Object.keys(part) as PartName[]) for (const s of SCALES) expect(Number.isInteger(partAt(k, s)), k).toBe(true);
   });
 });
 
@@ -169,14 +175,28 @@ describe("率ごとの値と CSS の変数", () => {
     expect(v["--size-meter-name-slim"]).toBe("220px");
     expect(v["--text-s-size"]).toBe("15px");
     expect(v["--text-s-line-height"]).toBe("20px");
-    expect(v["--text-s-weight"]).toBe("500");
-    expect(v["--text-l-weight"]).toBe("600");
-    expect(v["--text-m-weight-1"]).toBe("400");
-    expect(v["--text-m-weight-2"]).toBe("500");
+    expect(v["--part-button-icon"]).toBe("13px");
     expect(v["--line-hair"]).toBe("0.5px");
     expect(v["--radius-round"]).toBe("50%");
     expect(v["--part-tip-width"]).toBe("310px");
     expect(v["--font-sans"]).toBe(fontFamily.sans);
+  });
+
+  it("太さの変数は、その大きさで使ってよい組だけ（率によらない）", () => {
+    for (const sc of SCALES) {
+      const names = Object.keys(cssVariables(sc, 1)).filter((k) => k.includes("-weight"));
+      expect(names.sort()).toEqual(
+        [
+          "--text-l-weight-600",
+          "--text-m-weight-400",
+          "--text-m-weight-500",
+          "--text-s-weight-400",
+          "--text-s-weight-500",
+          "--text-s-weight-600",
+        ],
+      );
+      for (const n of names) expect(cssVariables(sc, 1)[n]).toBe(n.slice(-3));
+    }
   });
 
   it(":root に書ける", () => {

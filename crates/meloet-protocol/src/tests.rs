@@ -61,6 +61,7 @@ fn sample_state() -> AppState {
                 availability: Availability::Yes,
                 link: LinkKind::Jack,
                 node_name: Some("alsa_output.pci.analog-stereo".into()),
+                choosable: true,
             }],
             chosen: None,
             chosen_state: None,

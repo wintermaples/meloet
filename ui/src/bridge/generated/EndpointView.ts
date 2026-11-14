@@ -3,4 +3,9 @@ import type { Availability } from "./Availability";
 import type { Friendly } from "./Friendly";
 import type { LinkKind } from "./LinkKind";
 
-export type EndpointView = { id: string, name: string, friendly: Friendly | null, availability: Availability, link: LinkKind, nodeName: string | null, };
+export type EndpointView = { id: string, name: string, friendly: Friendly | null, availability: Availability, link: LinkKind, nodeName: string | null, 
+/**
+ * meloet can play through it without changing any PC-wide setting: it has a node and the
+ * PC uses this route on it now. Others are listed but cannot be chosen.
+ */
+choosable: boolean, };

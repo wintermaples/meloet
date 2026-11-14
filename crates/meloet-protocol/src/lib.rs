@@ -277,6 +277,9 @@ pub struct EndpointView {
     pub availability: Availability,
     pub link: LinkKind,
     pub node_name: Option<String>,
+    /// meloet can play through it without changing any PC-wide setting: it has a node and the
+    /// PC uses this route on it now. Others are listed but cannot be chosen.
+    pub choosable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

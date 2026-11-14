@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The screen calls only meloet's own commands (hello, subscribe, snapshot, send, clock) and reads Channels. Neither needs a permission while the app has no ACL manifest, so the list is empty. Add a line here only when ui/src/bridge starts using a Tauri plugin or the Events API.",
+  "windows": ["main"],
+  "permissions": []
+}

@@ -5,11 +5,27 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-[lints]
-workspace = true
-
 [[bin]]
 name = "meloet"
 path = "src/main.rs"
 
+[features]
+default = ["custom-protocol"]
+# Serves the ui/dist that was embedded at build time. Without it
+# (`--no-default-features`) the window loads devUrl, for `npm run dev`.
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
+libc = { workspace = true }
+meloet-protocol = { workspace = true }
+serde_json = { workspace = true }
+tauri = { workspace = true }
+
+# The versions tauri 2.12.5 itself links; used only for the MELOET_SNAPSHOT development hook.
+[target.'cfg(target_os = "linux")'.dependencies]
+cairo-rs = { version = "0.18", features = ["png"] }
+gio = "0.18"
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+
+[build-dependencies]
+tauri-build = { workspace = true }

@@ -2,10 +2,11 @@
   "version": "2.0.0",
   "tasks": [
     {
+      // nvm などで入れた npm は、~/.bashrc を読むシェルでないと見つからない。npm を使うタスクは bash -ic で動かす。
       "label": "画面: vite（開発サーバ）",
       "type": "shell",
       "command": "npm run dev",
-      "options": { "cwd": "${workspaceFolder}/ui" },
+      "options": { "cwd": "${workspaceFolder}/ui", "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
       "isBackground": true,
       // vite は問題を出さない。下の background は「立ちあがった」を知るためだけ。
       "problemMatcher": {
@@ -22,7 +23,7 @@
       "label": "画面: ビルド（ui/dist）",
       "type": "shell",
       "command": "npm run build",
-      "options": { "cwd": "${workspaceFolder}/ui" },
+      "options": { "cwd": "${workspaceFolder}/ui", "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
       "problemMatcher": []
     },
     {
@@ -57,6 +58,7 @@
       "label": "検査: 全部",
       "type": "shell",
       "command": "scripts/check-all.sh",
+      "options": { "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
       "group": { "kind": "test", "isDefault": true },
       "problemMatcher": ["$rustc"]
     },
@@ -64,6 +66,7 @@
       "label": "検査: 全部（鍵盤と PipeWire のテストも）",
       "type": "shell",
       "command": "scripts/check-all.sh --devices",
+      "options": { "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
       "group": "test",
       "problemMatcher": ["$rustc"]
     },
@@ -71,7 +74,7 @@
       "label": "テスト: 画面（vitest）",
       "type": "shell",
       "command": "npm test",
-      "options": { "cwd": "${workspaceFolder}/ui" },
+      "options": { "cwd": "${workspaceFolder}/ui", "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
       "group": "test",
       "problemMatcher": []
     },

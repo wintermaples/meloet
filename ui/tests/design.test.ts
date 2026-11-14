@@ -1,0 +1,189 @@
+import { describe, expect, it } from "vitest";
+import {
+  SCALES,
+  colors,
+  cssVariables,
+  fontFamily,
+  line,
+  part,
+  partAt,
+  radius,
+  size,
+  space,
+  text,
+  tokensAt,
+  writeCssVariables,
+  type PartName,
+} from "../src/design/tokens";
+import { cellText, rows, sectionTables, specDocument, tableAfterH3 } from "./design-sources";
+
+const doc = specDocument();
+const triple = (s: string) => s.split("/").map((x) => Number(x.trim()));
+const sorted = (xs: Iterable<string>) => [...xs].sort();
+
+describe("仕様書 1 章の表と tokens.ts", () => {
+  it("色: 名前と値が全部一致する（R=G=B の列も）", () => {
+    const seen: string[] = [];
+    for (const [, nameCell, value, rgb, use] of rows(tableAfterH3(doc, "色"))) {
+      if (nameCell === "color.tip.bg / color.tip.fg") {
+        // 値の列は地の色だけ。文字の色は「使う所」に gray.N で書いてある。
+        expect(colors["color.tip.bg"]).toBe(value);
+        const bg = use!.match(/地は (gray\.\d+)/)![1];
+        const fg = use!.match(/文字は (gray\.\d+)/)![1];
+        expect(colors["color.tip.bg"]).toBe(colors[`color.${bg}` as keyof typeof colors]);
+        expect(colors["color.tip.fg"]).toBe(colors[`color.${fg}` as keyof typeof colors]);
+        seen.push("color.tip.bg", "color.tip.fg");
+        continue;
+      }
+      expect(colors[nameCell as keyof typeof colors], nameCell).toBe(value);
+      if (rgb) {
+        const n = parseInt(value!.slice(1, 3), 16);
+        expect(value).toBe(`#${n.toString(16).padStart(2, "0").repeat(3)}`.toUpperCase());
+        expect(n, nameCell).toBe(Number(rgb));
+      }
+      seen.push(nameCell!);
+    }
+    expect(sorted(seen)).toEqual(sorted(Object.keys(colors)));
+  });
+
+  it("文字: 大きさ・行の高さ・太さが率ごとに一致する", () => {
+    const seen: string[] = [];
+    for (const [name, sz, lh, weight] of rows(tableAfterH3(doc, "文字"))) {
+      const tok = text[name as keyof typeof text];
+      expect(tok, name).toBeDefined();
+      expect([...tok.size]).toEqual(triple(sz!));
+      expect([...tok.lineHeight]).toEqual(triple(lh!));
+      expect(tok.weight.values.join(" / ")).toBe(weight);
+      seen.push(name!);
+    }
+    expect(sorted(seen)).toEqual(sorted(Object.keys(text)));
+  });
+
+  for (const [title, table] of [
+    ["すきま", space],
+    ["大きさ", size],
+  ] as const) {
+    it(`${title}: 100 / 125 / 150 % の値が全部一致する`, () => {
+      const seen: string[] = [];
+      for (const [name, values] of rows(tableAfterH3(doc, title))) {
+        expect([...(table as Record<string, readonly number[]>)[name!]!], name).toEqual(triple(values!));
+        seen.push(name!);
+      }
+      expect(sorted(seen)).toEqual(sorted(Object.keys(table)));
+    });
+  }
+
+  it("線と角: 100 % の値と、決まりの文にある 125 % と 150 % の値が一致する", () => {
+    const seen: string[] = [];
+    for (const [name, value, rule] of rows(tableAfterH3(doc, "線と角"))) {
+      seen.push(name!);
+      if (name === "line.hair") {
+        expect(line["line.hair"]).toBe(Number(value));
+        expect(rule).toContain("物理 1px");
+      } else if (name === "line.mark" || name === "line.track") {
+        const [a, b, c] = line[name];
+        expect(a).toBe(Number(value));
+        expect(rule).toContain(`125 % で ${b}、150 % で ${c}`);
+      } else if (name === "radius.round") {
+        expect(radius["radius.round"]).toBe(value!.replace(" ", ""));
+      } else {
+        expect(radius[name as "radius.0" | "radius.1"], name).toBe(Number(value));
+      }
+    }
+    expect(rows(tableAfterH3(doc, "線と角")).find((r) => r[0] === "radius.1")![2]).toContain("拡大しても 1");
+    expect(sorted(seen)).toEqual(sorted([...Object.keys(line), ...Object.keys(radius)]));
+  });
+
+  it("書体の名前の並びが仕様書と同じ", () => {
+    const css = doc.querySelector("style")!.textContent!;
+    expect(css).toContain(`--sans:${fontFamily.sans};`);
+    expect(css).toContain(`--mono:${fontFamily.mono};`);
+  });
+});
+
+// 仕様書の決め待ち（報告ずみ）。部品の寸法は表の外なので、4 の倍数とはかぎらない。
+const KNOWN_ODD = [
+  "part.button.icon@125=12.5",
+  "part.choice.dot@125=7.5",
+  "part.endpoint.friendly@125=187.5",
+  "part.endpoint.link@125=7.5",
+  "part.meter.clip@125=2.5",
+  "part.meter.vertical@125=7.5",
+  "part.note.edge@125=2.5",
+  "part.note.height@125=13.75",
+  "part.note.height@150=16.5",
+  "part.param.knob-w@125=7.5",
+  "part.param.step@125=7.5",
+  "part.windowmark.size@125=12.5",
+];
+
+describe("part.*（仕様書の文の中にしかない寸法）", () => {
+  const tables = { s1: sectionTables(doc, "s1"), s2: sectionTables(doc, "s2") };
+
+  it.each(Object.entries(part))("%s は仕様書の行にその言葉で書いてある", (_, tok) => {
+    const row = tables[tok.spec.section]
+      .flatMap((t) => Array.from(t.tBodies[0]?.rows ?? []))
+      .find((tr) => cellText(tr.cells[0]!) === tok.spec.row);
+    expect(row, tok.spec.row).toBeDefined();
+    expect(cellText(row!)).toContain(tok.spec.quote);
+    expect(tok.spec.quote).toMatch(new RegExp(`(^|\\D)${tok.value}(\\D|$)`));
+  });
+
+  it("率をかけて整数にならない値の一覧（ふえたら、ここが落ちる）", () => {
+    const odd = (Object.keys(part) as PartName[]).flatMap((k) =>
+      SCALES.filter((s) => !Number.isInteger(partAt(k, s))).map((s) => `${k}@${s}=${partAt(k, s)}`),
+    );
+    expect(odd.sort()).toEqual(KNOWN_ODD);
+  });
+});
+
+describe("率ごとの値と CSS の変数", () => {
+  it("line.hair はどの率でも物理 1px（1 / devicePixelRatio の CSS px）", () => {
+    for (const s of SCALES) {
+      expect(tokensAt(s, 1)["line.hair"]).toBe(1);
+      expect(tokensAt(s, 2)["line.hair"]).toBe(0.5);
+      expect(tokensAt(s, 1.5)["line.hair"]).toBeCloseTo(2 / 3);
+    }
+  });
+
+  it("line.mark は 2・2・3、line.track は 4・5・6、radius.1 は 1 のまま", () => {
+    expect(SCALES.map((s) => tokensAt(s, 1)["line.mark"])).toEqual([2, 2, 3]);
+    expect(SCALES.map((s) => tokensAt(s, 1)["line.track"])).toEqual([4, 5, 6]);
+    expect(SCALES.map((s) => tokensAt(s, 1)["radius.1"])).toEqual([1, 1, 1]);
+  });
+
+  it("表の値は 100 % の値に率をかけたものと同じ", () => {
+    for (const tbl of [space, size] as Record<string, readonly number[]>[]) {
+      for (const [k, v] of Object.entries(tbl)) {
+        expect([v[0]! * 1.25, v[0]! * 1.5], k).toEqual([v[1], v[2]]);
+      }
+    }
+  });
+
+  it("CSS の変数の名前と値", () => {
+    const v = cssVariables(125, 2);
+    expect(v["--color-gray-4"]).toBe("#222222");
+    expect(v["--color-meter-ok"]).toBe("#4CD964");
+    expect(v["--space-3"]).toBe("15px");
+    expect(v["--size-meter-slim"]).toBe("30px");
+    expect(v["--size-meter-name-slim"]).toBe("220px");
+    expect(v["--text-s-size"]).toBe("15px");
+    expect(v["--text-s-line-height"]).toBe("20px");
+    expect(v["--text-s-weight"]).toBe("500");
+    expect(v["--text-l-weight"]).toBe("600");
+    expect(v["--text-m-weight-1"]).toBe("400");
+    expect(v["--text-m-weight-2"]).toBe("500");
+    expect(v["--line-hair"]).toBe("0.5px");
+    expect(v["--radius-round"]).toBe("50%");
+    expect(v["--part-tip-width"]).toBe("310px");
+    expect(v["--font-sans"]).toBe(fontFamily.sans);
+  });
+
+  it(":root に書ける", () => {
+    writeCssVariables(150, 1);
+    const st = document.documentElement.style;
+    expect(st.getPropertyValue("--space-1")).toBe("6px");
+    expect(st.getPropertyValue("--color-tip-bg")).toBe("#F2F2F2");
+    expect(st.getPropertyValue("--line-hair")).toBe("1px");
+  });
+});

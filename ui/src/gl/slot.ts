@@ -5,8 +5,11 @@
 export type MeterSource = "master" | { track: number };
 
 export type GlSlot =
-  /** Input meter keyboard. Notes are MIDI numbers, both ends included. `disabled`: no keyboard, drawn dim. */
-  | { kind: "keyboard"; size: "full" | "slim"; firstNote: number; lastNote: number; disabled?: boolean }
+  /**
+   * Input meter keyboard. Notes are MIDI numbers, both ends included. `disabled`: no keyboard, drawn dim.
+   * `narrow` (only with size "full"): the black keys of the narrow form, for a box whose white keys are 8 wide.
+   */
+  | { kind: "keyboard"; size: "full" | "slim"; narrow?: boolean; firstNote: number; lastNote: number; disabled?: boolean }
   /** The bar beside the last velocity in the input meter. */
   | { kind: "velocity" }
   /** Two horizontal level bars (left above right) with `gap` CSS px between them. */

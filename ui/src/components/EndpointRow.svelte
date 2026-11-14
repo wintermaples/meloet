@@ -1,5 +1,6 @@
 <!-- 出口 ・ 入口の行（仕様書 2 章「出口 ・ 入口の行」）。流れ 2 では高さ 32 とテスト音、音の設定では高さ 24。 -->
 <script lang="ts">
+  import { tipWhenCut } from "../lib/tip.svelte";
   import { t } from "../text/ja";
   import type { EndpointLook } from "./endpoint";
 
@@ -24,6 +25,12 @@
   } = $props();
 
   const connect = $derived(size === "connect");
+  let row = $state<HTMLElement>();
+
+  // ↑ ↓ でえらんだ行を、スクロールする一覧の中で見える所へ。
+  $effect(() => {
+    if (connect && selected) row?.scrollIntoView?.({ block: "nearest" });
+  });
 </script>
 
 <div
@@ -34,11 +41,16 @@
   data-test="endpoint-row"
   data-selected={selected}
   data-disabled={disabled}
+  bind:this={row}
 >
   <button type="button" class="pick" disabled={disabled || still} onclick={() => onpick?.()} aria-pressed={selected}>
     <span class="choice" class:selected><span class="dot"></span></span>
     <span class="ep-name" class:bold={connect} class:dim={look.link === "nothing"}>{look.name}</span>
-    <span class="friendly">{look.friendly ?? ""}</span>
+    {#if look.sideIsDevice}
+      <span class="friendly" use:tipWhenCut>{look.side}</span>
+    {:else}
+      <span class="friendly">{look.side ?? ""}</span>
+    {/if}
     {#if look.link !== null}
       <span class="link" class:yes={look.link !== "nothing"}>
         <span class="link-mark"></span>

@@ -7,6 +7,7 @@ import OutputChooser from "../src/components/OutputChooser.svelte";
 import SettingsDialog from "../src/components/SettingsDialog.svelte";
 import SoundHint from "../src/components/SoundHint.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
+import { hideTip, TIP_DELAY_MS, tipView } from "../src/lib/tip.svelte";
 import { t } from "../src/text/ja";
 import * as app from "./fake-app.svelte";
 
@@ -43,15 +44,18 @@ const endpoint = (e: Partial<EndpointView> & { id: string; name: string }): Endp
   availability: "yes",
   link: "jack",
   nodeName: "node",
-  choosable: true,
+  device: "Ryzen HD Audio Controller",
+  unusable: null,
   ...e,
 });
 
 const OUTPUTS: EndpointView[] = [
   endpoint({ id: "hp", name: "アナログヘッドフォン", friendly: "headphones" }),
-  endpoint({ id: "hdmi", name: "HDMI / DisplayPort 2", friendly: "hdmi", link: "plug", choosable: false }),
-  endpoint({ id: "line", name: "ライン出力", friendly: "lineOut", availability: "no", choosable: false }),
+  endpoint({ id: "usb", name: "USB オーディオ", link: "plug" }),
+  endpoint({ id: "none", name: "うしろの穴", friendly: "lineOut", availability: "no" }),
   endpoint({ id: "x", name: "なにか", availability: "unknown" }),
+  endpoint({ id: "line", name: "ライン出力", friendly: "lineOut", availability: "no", unusable: "switchedByPc" }),
+  endpoint({ id: "hdmi", name: "HDMI / DisplayPort 2", friendly: "hdmi", link: "plug", unusable: "stoppedByPc", device: "GB206 High Definition Audio Controller" }),
 ];
 
 describe("入力計", () => {
@@ -80,7 +84,7 @@ describe("入力計", () => {
     expect(text('[data-test="keyboard-name"]')).toBe("鍵盤 49");
     const right = q('[data-test="meter-right"]')!;
     expect(right.textContent).toBe("音の出口がまだです。下でえらんでください");
-    expect(right.classList.contains("accent")).toBe(true);
+    expect(right.querySelector(".accent")?.textContent).toBe("音の出口がまだです。下でえらんでください");
   });
 
   it("出口がある: 弾くと鳴る先「1 ピアノ ・ 仮の音」", () => {
@@ -147,6 +151,27 @@ describe("入力計", () => {
     expect(q('[data-gl-slot="velocity"]')).toBeNull();
   });
 
+  it("鍵盤が 2 台: 名前は最後に弾いた鍵盤、うしろに「+1」", () => {
+    const second = { ...KEYBOARD, id: "kb2", name: "microKEY2-37", address: "25:0" };
+    show(
+      InputMeter,
+      app.stateWith((s) => {
+        s.keyboards = { list: [KEYBOARD, second], active: "kb2", lost: null };
+      }),
+    );
+    expect(text('[data-test="keyboard-name"]')).toBe("microKEY2-37");
+    expect(q('[data-test="other-keyboards"]')!.textContent).toBe(" +1");
+    vi.useFakeTimers();
+    q('[data-test="other-keyboards"]')!.dispatchEvent(new Event("pointerenter"));
+    vi.advanceTimersByTime(TIP_DELAY_MS);
+    vi.useRealTimers();
+    expect(tipView.value?.body).toBe("鍵盤 49 ・ microKEY2-37");
+    hideTip();
+    app.setState(app.stateWith((s) => (s.keyboards = { list: [KEYBOARD], active: "kb", lost: null })));
+    flushSync();
+    expect(q('[data-test="other-keyboards"]')).toBeNull();
+  });
+
   it("太いとき: 名前が 8 文字までは名前の欄 108、こえたら 148", () => {
     const long = { ...KEYBOARD, name: "Keystation 49 MK3" };
     show(
@@ -192,19 +217,52 @@ describe("出口えらび", () => {
     expect(rows[1]!.textContent).toContain("つながっています");
     expect(rows[2]!.textContent).toContain("何もささっていません");
     expect(rows[3]!.querySelector(".link")).toBeNull();
+    expect(rows.every((r) => r.dataset.disabled === "false")).toBe(true);
+    expect(text(".help")).toBe("↑ ↓ でえらぶ ・ ▶ でテスト音。何かささっている出口を、上にならべています");
   });
 
-  it("choosable でない行は押せず、テスト音もない", () => {
+  it("えらべない出口は「いまは使えない出口」の下に、たたんで始める。ひらくと理由の文。押せない", () => {
     show(OutputChooser, withChooser());
-    const rows = qa('[data-test="endpoint-row"]');
-    for (const i of [1, 2]) {
-      expect(rows[i]!.dataset.disabled).toBe("true");
-      const pick = rows[i]!.querySelector<HTMLButtonElement>(".pick")!;
-      expect(pick.disabled).toBe(true);
-      pick.click();
-      expect(rows[i]!.querySelector('[data-test="test-tone"]')).toBeNull();
-    }
+    const head = q<HTMLButtonElement>('[data-test="unusable-head"]')!;
+    expect(head.textContent!.replace(/\s+/g, " ").trim()).toBe(
+      "▸ いまは使えない出口 2 PC が切りかえる物 1 ・ PC の設定で止まっている物 1",
+    );
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+    expect(qa('[data-test="unusable-row"]')).toHaveLength(0);
+    head.click();
+    flushSync();
+    const rows = qa('[data-test="unusable-row"]');
+    expect(rows.map((r) => r.textContent!.replace(/\s+/g, " ").trim())).toEqual([
+      "ライン出力 Ryzen HD Audio Controller さすと、PC がこちらに切りかえます",
+      "HDMI / DisplayPort 2 GB206 High Definition Audio Controller PC の設定で、いまは使えません",
+    ]);
+    expect(rows.every((r) => r.querySelector("button") === null)).toBe(true);
     expect(app.sent).toEqual([]);
+    expect(q('[data-test="chooser-list"]')!.contains(head)).toBe(true);
+  });
+
+  it("問いかけの行と「ここから鳴らす」の行はスクロールの外", () => {
+    show(OutputChooser, withChooser());
+    const list = q('[data-test="chooser-list"]')!;
+    expect(list.contains(q('[data-test="play-here"]'))).toBe(false);
+    expect(list.contains(q('[data-test="change-later"]'))).toBe(false);
+    expect(qa('[data-test="endpoint-row"]').every((r) => list.contains(r))).toBe(true);
+  });
+
+  it("同じ名前の出口がならぶときは、言いかえのかわりに装置の名前をそえる", () => {
+    show(
+      OutputChooser,
+      app.stateWith((s) => {
+        s.outputs.list = [
+          endpoint({ id: "a", name: "HDMI / DisplayPort", friendly: "hdmi", device: "GB206 High Definition Audio Controller" }),
+          endpoint({ id: "b", name: "HDMI / DisplayPort", friendly: "hdmi", device: "Radeon High Definition Audio Controller" }),
+          endpoint({ id: "c", name: "アナログヘッドフォン", friendly: "headphones" }),
+        ];
+        s.workspace.chooser = { highlighted: "a" };
+      }),
+    );
+    const side = qa('[data-test="endpoint-row"] .friendly').map((e) => e.textContent);
+    expect(side).toEqual(["GB206 High Definition Audio Controller", "Radeon High Definition Audio Controller", "ヘッドホンの穴"]);
   });
 
   it("行 → chooserSelect、▶ → testTone、ここから鳴らす → chooserConfirm", () => {
@@ -266,12 +324,13 @@ describe("音の設定", () => {
     ]);
   });
 
-  it("おもて: 出口は choosable でない行が使えない。歌の入口は全部使えない。遅れは約 53 ms", () => {
+  it("おもて: えらべない出口は見出しの下（右は「meloet は…」）。歌の入口は全部使えない。遅れは約 53 ms", () => {
     show(SettingsDialog, withSettings(false));
     const rows = qa('[data-test="endpoint-row"]');
     // 出口 4、歌の入口は「使わない」だけ、鍵盤 1
     expect(rows).toHaveLength(6);
-    expect(rows.map((r) => r.dataset.disabled)).toEqual(["false", "true", "true", "false", "true", "false"]);
+    expect(rows.map((r) => r.dataset.disabled)).toEqual(["false", "false", "false", "false", "true", "false"]);
+    expect(text('[data-test="unusable-head"]')).toBe("▸ いまは使えない出口 2 meloet は、PC 全体の設定を変えません");
     expect(rows[4]!.textContent).toContain("使わない");
     expect(rows[5]!.textContent).toContain("この鍵盤");
     expect(rows[5]!.dataset.selected).toBe("true");
@@ -285,6 +344,7 @@ describe("音の設定", () => {
     show(SettingsDialog, withSettings(true));
     const rows = qa('[data-test="endpoint-row"]');
     expect(rows.map((r) => r.textContent?.includes("アナログヘッドフォン") || r.textContent?.includes("使わない") || r.textContent?.includes("Keystation"))).toEqual([true, true, true]);
+    expect(q('[data-test="unusable-head"]')).toBeNull();
     expect(text('[data-test="buffer-actual"]')).toBe("1024");
     expect(target.textContent).toContain("サンプル ・ 頼んだ数とちがいます");
     const fixed = text('[data-test="buffer-fixed"]')!;
@@ -310,8 +370,8 @@ describe("音の設定: 中身が長いとき（出口 9 行）", () => {
     app.stateWith((s) => {
       s.keyboards = { list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null };
       s.outputs.list = [
-        ...OUTPUTS.slice(0, 3),
-        ...[1, 2, 3, 4, 5, 6].map((n) => endpoint({ id: `hdmi-${n}`, name: `HDMI / DisplayPort ${n}`, link: "plug", choosable: false })),
+        ...OUTPUTS,
+        ...[1, 2, 3, 4, 5, 6].map((n) => endpoint({ id: `hdmi-${n}`, name: `HDMI / DisplayPort ${n}`, link: "plug", unusable: "stoppedByPc" })),
       ];
       s.workspace.settings = { draftOutput: "hp", advancedOpen };
     });
@@ -321,7 +381,7 @@ describe("音の設定: 中身が長いとき（出口 9 行）", () => {
     const dialog = q('[data-test="settings-dialog"]')!;
     const body = q('[data-test="settings-body"]')!;
     expect(body.hasAttribute("data-gl-scroll")).toBe(true);
-    expect([...dialog.children].map((c) => c.className.split(" ")[0])).toEqual(["head", "body", "foot"]);
+    expect([...dialog.children].map((c) => c.className.split(" ")[0])).toEqual(["head", "area", "foot"]);
     for (const b of ["settings-cancel", "settings-apply", "settings-close"]) {
       const button = q(`[data-test="${b}"]`)!;
       expect(body.contains(button)).toBe(false);
@@ -329,19 +389,25 @@ describe("音の設定: 中身が長いとき（出口 9 行）", () => {
     }
     const rows = qa('[data-test="endpoint-row"]');
     expect(rows.every((r) => body.contains(r))).toBe(true);
-    expect(rows).toHaveLength(advanced ? 3 : 9 + 1 + 1);
+    expect(rows).toHaveLength(advanced ? 3 : 4 + 1 + 1);
+    if (!advanced) {
+      q<HTMLButtonElement>('[data-test="unusable-head"]')!.click();
+      flushSync();
+      expect(qa('[data-test="unusable-row"]').every((r) => body.contains(r))).toBe(true);
+      expect(qa('[data-test="unusable-row"]')).toHaveLength(8);
+    }
     for (const slot of qa("[data-gl-slot]")) expect(body.contains(slot)).toBe(true);
     expect(qa("[data-gl-slot]")).toHaveLength(advanced ? 0 : 2);
   });
 });
 
 describe("音が出ました", () => {
-  it("hint が soundCameOut のときだけ、仕様書の文だけを出す", () => {
+  it("hint が soundCameOut のときだけ出す。録音ボタンが使えない今は 1 文目だけ", () => {
     show(SoundHint, app.stateWith((s) => (s.workspace.hint = "emptyArrange")));
     expect(q('[data-test="sound-hint"]')).toBeNull();
     app.setState(app.stateWith((s) => (s.workspace.hint = "soundCameOut")));
     flushSync();
-    expect(text('[data-test="sound-hint"]')).toBe(t("msg.soundCameOut"));
+    expect(text('[data-test="sound-hint"]')).toBe("音が出ました。");
   });
 });
 

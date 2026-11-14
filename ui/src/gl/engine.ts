@@ -1,10 +1,19 @@
 import type { Event, Telemetry } from "../bridge";
-import { SCALES, tokensAt, type Scale } from "../design/tokens";
+import { SCALES, type Scale } from "../design/tokens";
 import { Batch } from "./batch";
 import { OVERVIEW } from "./dims";
 import { HeldKeys } from "./keyboard";
 import { Levels } from "./levels";
-import { paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity, type Box } from "./paint";
+import {
+  blackKeyPx,
+  clipMarkPx,
+  paintArrangeGrid,
+  paintKeyboard,
+  paintMeter,
+  paintOverview,
+  paintVelocity,
+  type Box,
+} from "./paint";
 import { Renderer } from "./renderer";
 import { watchSlots, type GlSlot } from "./slot";
 
@@ -273,9 +282,12 @@ export class Engine {
     box.x1 = s.width;
     box.y1 = s.height;
     switch (slot.kind) {
-      case "keyboard":
-        paintKeyboard(out, box, slot.size, slot.firstNote, slot.lastNote, this.isDown, slot.disabled === true);
+      case "keyboard": {
+        const form = slot.size === "slim" ? "slim" : slot.narrow ? "narrow" : "full";
+        const black = blackKeyPx(form, this.scale, dpr);
+        paintKeyboard(out, box, black, slot.firstNote, slot.lastNote, this.isDown, slot.disabled === true);
         break;
+      }
       case "velocity":
         paintVelocity(out, box, this.velocity);
         break;
@@ -288,7 +300,7 @@ export class Engine {
           out,
           box,
           Math.round(slot.gap * dpr),
-          Math.max(1, Math.round(markAt(this.scale) * dpr)),
+          clipMarkPx(this.scale, dpr),
           track < 0 ? SILENT : levels.bar(first, nowMs),
           track < 0 ? SILENT : levels.bar(first + 1, nowMs),
         );
@@ -305,10 +317,3 @@ export class Engine {
 }
 
 const SILENT = { length: 0, clipped: false } as const;
-
-const marks = new Map<Scale, number>();
-function markAt(scale: Scale): number {
-  let mark = marks.get(scale);
-  if (mark === undefined) marks.set(scale, (mark = tokensAt(scale, 1)["line.mark"] as number));
-  return mark;
-}

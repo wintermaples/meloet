@@ -1,0 +1,29 @@
+import { describe, expect, it } from "vitest";
+import { dragTo, pageTo, thumbOf } from "../src/lib/scrollbar";
+
+describe("スクロールの棒（仕様書 2 章）", () => {
+  it("中身が入りきるときは出さない", () => {
+    expect(thumbOf({ view: 300, content: 300, top: 0 }, 8)).toBeNull();
+    expect(thumbOf({ view: 300, content: 300.5, top: 0 }, 8)).toBeNull();
+    expect(thumbOf({ view: 0, content: 100, top: 0 }, 8)).toBeNull();
+  });
+
+  it("つまみの長さは見えている割合、位置はスクロールの位置", () => {
+    expect(thumbOf({ view: 300, content: 600, top: 0 }, 8)).toEqual({ length: 150, offset: 0 });
+    expect(thumbOf({ view: 300, content: 600, top: 300 }, 8)).toEqual({ length: 150, offset: 150 });
+    expect(thumbOf({ view: 100, content: 100000, top: 0 }, 8)!.length).toBe(8);
+  });
+
+  it("つまみを動かすと、同じ割合で中身が動く。はしで止まる", () => {
+    const box = { view: 300, content: 600, top: 0 };
+    expect(dragTo(box, 0, 75, 8)).toBe(150);
+    expect(dragTo(box, 0, 1000, 8)).toBe(300);
+    expect(dragTo(box, 100, -1000, 8)).toBe(0);
+  });
+
+  it("つまみの外を押すと、その向きに 1 画面ぶん", () => {
+    expect(pageTo({ view: 300, content: 1000, top: 0 }, 250, 8)).toBe(300);
+    expect(pageTo({ view: 300, content: 1000, top: 600 }, 0, 8)).toBe(300);
+    expect(pageTo({ view: 300, content: 1000, top: 600 }, 299, 8)).toBe(700);
+  });
+});

@@ -26,6 +26,11 @@ describe("keyAction", () => {
     }
   });
 
+  it("文字を打っている最中は Space も効かず、空白として入る（Home は効く）", () => {
+    expect(keyAction(k(" ", { code: "Space" }), true, "other")).toBeNull();
+    expect(keyAction(k("Home"), true, "other")).toEqual({ kind: "notYet", what: "toStart" });
+  });
+
   it("文字を打っている最中でも Esc と Mod つきは効く", () => {
     expect(keyAction(k("Escape"), true, "other")).toEqual({ kind: "back" });
     expect(keyAction(k(",", { ctrl: true }), true, "other")).toEqual({ kind: "audioSettings" });

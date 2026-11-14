@@ -2,7 +2,7 @@
 
 import type { Batch } from "./batch";
 import { rgb } from "./color";
-import { ARRANGE_GRID, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY } from "./dims";
+import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
 
 /** A slot's box in device pixels (whole numbers). `hair` is line.hair: always one device pixel. */
@@ -14,10 +14,27 @@ export interface Box {
 }
 export const HAIR = 1;
 
+/** A small size at the app's scale (spec 1: multiply, round, .5 goes up), in device pixels. */
+function smallPx(px: number, scale: number, dpr: number): number {
+  return Math.max(1, Math.round(Math.round((px * scale) / 100) * dpr));
+}
+
+/** The black key of a form, in device pixels. `scale` is the app's scale in %. */
+export function blackKeyPx(form: KeyForm, scale: number, dpr: number): { w: number; h: number } {
+  const { w, h } = KEY_FORMS[form].black;
+  return { w: smallPx(w, scale, dpr), h: smallPx(h, scale, dpr) };
+}
+
+/** The clip mark's width in device pixels. */
+export function clipMarkPx(scale: number, dpr: number): number {
+  return smallPx(CLIP_MARK, scale, dpr);
+}
+
+/** White keys share the box evenly; `black` is the size of a black key in device pixels. */
 export function paintKeyboard(
   out: Batch,
   box: Box,
-  size: "full" | "slim",
+  black: { w: number; h: number },
   firstNote: number,
   lastNote: number,
   isDown: (note: number) => boolean,
@@ -37,15 +54,14 @@ export function paintKeyboard(
     const fill = isDown(key.note) ? KEYBOARD.down : KEYBOARD.whiteFill;
     out.rect(lineX(key.index) + HAIR, y0 + HAIR, lineX(key.index + 1), y1 - HAIR, rgb(fill));
   }
-  if (size === "slim") return;
 
-  // Whole and odd, so the key sits evenly on its one-pixel line.
-  const half = Math.max(1, Math.round(((cell * KEYBOARD.black.w) / KEYBOARD.white.w - HAIR) / 2));
-  const bottom = y0 + Math.round(((y1 - y0) * KEYBOARD.black.h) / KEYBOARD.white.h);
+  // Centered on its one-pixel line; an even width has its extra pixel on the right.
+  const before = Math.floor((black.w - HAIR) / 2);
+  const bottom = y0 + black.h;
   for (const key of keys) {
     if (!key.black) continue;
-    const left = lineX(key.index) - half;
-    const right = lineX(key.index) + HAIR + half;
+    const left = lineX(key.index) - before;
+    const right = left + black.w;
     out.rect(left, y0, right, bottom, rgb(lines.blackFrame));
     const fill = isDown(key.note) ? KEYBOARD.down : KEYBOARD.blackFill;
     out.rect(left + HAIR, y0 + HAIR, right - HAIR, bottom - HAIR, rgb(fill));
@@ -65,7 +81,7 @@ export interface BarLevel {
   clipped: boolean;
 }
 
-/** Two bars, left above right. `gap` and `mark` (line.mark) are device pixels. */
+/** Two bars, left above right. `gap` and `mark` (clipMarkPx) are device pixels. */
 export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left: BarLevel, right: BarLevel): void {
   const { x0, y0, x1, y1 } = box;
   const h = Math.max(1, Math.round((y1 - y0 - gap) / 2));

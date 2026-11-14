@@ -50,7 +50,8 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
   it.each(messages)("%s: 穴に仕様書の例の値を入れると、仕様書の文と一字も変わらない", (_, e) => {
     const row = byScene.get(e.scene!);
     expect(row, e.scene).toBeDefined();
-    if (e.quoted) expect(row![1]).toContain(`「${filled(e)}」`);
+    if (e.fit === "quoted") expect(row![1]).toContain(`「${filled(e)}」`);
+    else if (e.fit === "part") expect(row![1]).toContain(filled(e));
     else expect(filled(e)).toBe(row![1]);
   });
 
@@ -78,14 +79,21 @@ describe("出どころが spec の文は、その章にそのまま書いてあ�
   });
 });
 
+// 2026-11-15 の改訂でモックから消えたが、画面にはまだ要る文。デザイン係の答え待ち（棟梁に報告ずみ）。
+const GONE_FROM_MOCK = ["endpoint.nothingPlugged", "friendly.hdmi", "friendly.lineOut"];
+
 describe("出どころが mock の文は、そのボードにそのまま書いてある", () => {
   const cache = new Map<string, string>();
   const screen = (board: string) => {
     if (!cache.has(board)) cache.set(board, mockScreenText(board));
     return cache.get(board)!;
   };
-  it.each(entries.filter(([, e]) => e.source.startsWith("mock:")))("%s", (_, e) => {
+  const fromMock = entries.filter(([, e]) => e.source.startsWith("mock:"));
+  it.each(fromMock.filter(([k]) => !GONE_FROM_MOCK.includes(k)))("%s", (_, e) => {
     expect(screen(e.source.slice("mock:".length))).toContain(filled(e));
+  });
+  it.each(fromMock.filter(([k]) => GONE_FROM_MOCK.includes(k)))("%s: 改訂でモックから消えた（答え待ちの一覧）", (_, e) => {
+    expect(screen(e.source.slice("mock:".length))).not.toContain(filled(e));
   });
 });
 

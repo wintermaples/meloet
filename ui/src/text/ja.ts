@@ -8,26 +8,26 @@ export interface Entry {
   readonly text: string;
   readonly source: Source;
   readonly example?: Readonly<Record<string, string>>;
-  /** spec:6 の表の「場面」。quoted なら、文面のセルの「」の中にある。 */
+  /** spec:6 の表の「場面」。 */
   readonly scene?: string;
-  readonly quoted?: boolean;
+  /** 文面のセルとの合わせかた。whole: セルの文そのまま。quoted: セルの「」の中。part: セルの文の一部。 */
+  readonly fit?: "whole" | "quoted" | "part";
 }
 
 const e = (text: string, source: Source, example?: Record<string, string>): Entry => ({ text, source, example });
-const s6 = (scene: string, text: string, example?: Record<string, string>, quoted = false): Entry => ({
-  text,
-  source: "spec:6",
-  scene,
-  example,
-  quoted,
-});
+const s6 = (
+  scene: string,
+  text: string,
+  example?: Record<string, string>,
+  fit: "whole" | "quoted" | "part" = "whole",
+): Entry => ({ text, source: "spec:6", scene, example, fit });
 
 export const texts = {
   // 仕様書 6 章 「エラーと案内の文面」
   "msg.keyboardMissing": s6("鍵盤がない", "鍵盤を USB でつなぐと、ここに出ます。つながなくても、マウスで音を書けます。"),
   "msg.keyboardFound": s6("鍵盤が見つかった", "{keyboard} が見つかりました。鍵は届いています。音の出口をえらぶと鳴ります。", { keyboard: "鍵盤 49" }),
-  "msg.noOutputMeter": s6("音の出口がまだ", "音の出口がまだです。下でえらんでください", undefined, true),
-  "msg.noOutputArrange": s6("音の出口がまだ", "音をどこから鳴らしますか", undefined, true),
+  "msg.noOutputMeter": s6("音の出口がまだ", "音の出口がまだです。下でえらんでください", undefined, "quoted"),
+  "msg.noOutputArrange": s6("音の出口がまだ", "音をどこから鳴らしますか", undefined, "quoted"),
   "msg.outputNotPlugged": s6("えらんだ出口に何もささっていない", "{output}には、いま何もささっていません。ささると、ここから鳴ります。", { output: "（出口の名前）" }),
   "msg.bufferFixedStatus": s6(
     "バッファが固定されている（状態行）",
@@ -39,7 +39,19 @@ export const texts = {
     "バッファが PC 全体の設定で {actual} に固定されています。meloet は {requested} を頼んでいますが、{actual} で動いています。鍵を押してから音が出るまで 約 {latencyMs} ms。{requested} で動けば 約 {latencyMsAtRequested} ms です。速いフレーズでは、音が指より遅れて聞こえます。録った音の位置は、遅れの補正で正しく置かれます。meloet は PC 全体の設定を変えません。変える場所は PipeWire の設定（quantum の固定）です。",
     { actual: "1024", latencyMs: "53", requested: "256", latencyMsAtRequested: "13.5" },
   ),
-  "msg.soundCameOut": s6("音が出た", "音が出ました。赤い丸の録音ボタンを押すと、カウントインのあとに録りはじめます。"),
+  "msg.soundCameOut": s6("音が出た", "音が出ました。", undefined, "quoted"),
+  // 2 文目は、録音ボタンが使えるときだけ出す。
+  "msg.soundCameOutRecord": s6("音が出た", "赤い丸の録音ボタンを押すと、カウントインのあとに録りはじめます。", undefined, "quoted"),
+  "msg.unusableSwitchedByPc": s6("えらべない出口 ・ PC が切りかえる", "さすと、PC がこちらに切りかえます"),
+  "msg.unusableStoppedByPc": s6("えらべない出口 ・ PC の設定で止まっている", "PC の設定で、いまは使えません"),
+  "msg.unusableHeading": s6("えらべない出口の見出し", "いまは使えない出口", undefined, "part"),
+  "msg.unusableHeadingChooser": s6(
+    "えらべない出口の見出し",
+    "PC が切りかえる物 {switched} ・ PC の設定で止まっている物 {stopped}",
+    { switched: "1", stopped: "7" },
+    "part",
+  ),
+  "msg.unusableHeadingSettings": s6("えらべない出口の見出し", "meloet は、PC 全体の設定を変えません", undefined, "quoted"),
   "msg.countingIn": s6("カウントイン中", "カウントイン中 ・ あと {beats} 拍で録音が始まります。止めるには Space", { beats: "2" }),
   "msg.recording": s6("録音中", "{track} へ録音 ・ 止めると テイク {take} として残ります", { track: "1 ピアノ", take: "2" }),
   "msg.noArmedTrack": s6("録音待機のトラックがない", "録るトラックが決まっていません。トラックの ● を押すと、そこに録ります。"),
@@ -156,6 +168,7 @@ export const texts = {
   "meter.pitchBend": e("ピッチベンド", "mock:Main"),
   "meter.modulation": e("モジュレーション", "mock:Main"),
   "meter.playTarget": e("弾くと鳴る先", "mock:Main"),
+  "meter.otherKeyboards": e("+{count}", "spec:3", { count: "1" }),
   "meter.playTargetWithInstrument": e("{track} ・ {instrument}", "mock:F-Connect3", { track: "1 ピアノ", instrument: "グランドピアノ" }),
 
   // トラックと音源
@@ -167,7 +180,7 @@ export const texts = {
   "arrange.grid": e("グリッド", "mock:F-Empty"),
   "arrange.marker": e("マーカー", "mock:F-Empty"),
   "arrange.tempoChanges": e("テンポ ・ 拍子の変更", "mock:F-Empty"),
-  "arrange.changeCount": e("{count} 件", "mock:F-Empty", { count: "2" }),
+  "arrange.changeCount": e("{count} 件", "mock:F-Empty", { count: "0" }),
   "arrange.mute": e("ミュート", "mock:F-Empty"),
   "arrange.solo": e("ソロ", "mock:F-Empty"),
   "arrange.arm": e("録音待機", "mock:F-Empty"),
@@ -185,10 +198,10 @@ export const texts = {
 
   // 出口えらび（流れ 2）と、出口・入口の行
   "connect.changeLater": e("あとから「音の設定」で変えられます", "mock:F-Connect2"),
-  "connect.help": e("↑ ↓ でえらぶ ・ ▶ でテスト音。いま何かささっている出口を、上にならべています", "mock:F-Connect2"),
+  "connect.help": e("↑ ↓ でえらぶ ・ ▶ でテスト音。何かささっている出口を、上にならべています", "mock:F-Connect2"),
   "endpoint.testTone": e("テスト音を鳴らす", "mock:F-Connect2"),
   "endpoint.plugged": e("ささっています", "mock:F-Connect2"),
-  "endpoint.connected": e("つながっています", "mock:F-Connect2"),
+  "endpoint.connected": e("つながっています", "mock:F-Settings"),
   "endpoint.nothingPlugged": e("何もささっていません", "mock:F-Connect2"),
   "friendly.headphones": e("ヘッドホンの穴", "mock:F-Connect2"),
   "friendly.hdmi": e("画面のスピーカー", "mock:F-Connect2"),
@@ -202,7 +215,7 @@ export const texts = {
   "band.pianoRoll": e("ピアノロール", "mock:Main"),
   "band.noteCount": e("ノート {count}", "mock:Main", { count: "23" }),
   "band.mixer": e("ミキサー", "mock:Main"),
-  "band.masterDb": e("マスター {db}", "mock:Main", { db: "−6.2 dB" }),
+  "band.masterDb": e("マスター {db}", "mock:Main", { db: "0.0 dB" }),
   "band.history": e("取り消しの履歴", "mock:Main"),
   "band.stepCount": e("{count} 手", "mock:Main", { count: "14" }),
   "band.shelf": e("棚", "mock:F-ParamFew"),
@@ -213,14 +226,14 @@ export const texts = {
   "status.stopped": e("■ 停止中", "mock:Main"),
   "status.loopNoSelection": e("ループ {range} ・ 選択なし", "mock:Main", { range: "5–9" }),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
-  "status.outputNone": e("出口: まだ", "mock:F-Connect1"),
+  "status.outputNone": e("出口: まだ", "spec:3"),
   "status.inputs": e("入口: {inputs}", "mock:Main", { inputs: "鍵盤 49 ・ マイク" }),
-  "status.inputsNone": e("入口: まだ", "user:2026-11-14"),
+  "status.inputsNone": e("入口: まだ", "spec:3"),
   "status.buffer": e("バッファ {actual}", "mock:Main", { actual: "256" }),
   "status.bufferMismatch": e("バッファ {actual} ・ 頼んだ数 {requested}", "spec:3", { actual: "1024", requested: "256" }),
   "status.windows": e("窓 {count}", "spec:6", { count: "2" }),
   "status.searchingKeyboard": e("鍵盤をさがしています…", "mock:F-Connect1"),
-  "status.outputChosen": e("出口を{output}にしました。{track} が録音待機になっています。", "mock:F-Connect3", { output: "ヘッドホン", track: "1 ピアノ" }),
+  "status.outputChosen": e("出口を{output}にしました。{track} が録音待機になっています。", "mock:F-Connect3", { output: "アナログヘッドフォン", track: "1 ピアノ" }),
   "status.newSong": e("新しい曲 ・ テンポ {tempo} ・ {signature} ・ {track} が録音待機", "mock:F-Empty", { tempo: "96.00", signature: "4/4", track: "1 ピアノ" }),
   "status.settingsOpen": e("音の設定をひらいています", "mock:F-Settings"),
 

@@ -30,5 +30,6 @@ export type { SongView } from "./generated/SongView";
 export type { StatusMessage } from "./generated/StatusMessage";
 export type { StatusView } from "./generated/StatusView";
 export type { TrackView } from "./generated/TrackView";
+export type { Unusable } from "./generated/Unusable";
 export type { WorkspaceView } from "./generated/WorkspaceView";
 export { PROTOCOL_VERSION } from "./generated/protocolVersion";

@@ -24,8 +24,8 @@ const STATUS = 24;
 const METER_FULL = 52;
 const METER_SLIM = 24;
 const OVERVIEW = 40;
-const PIANO_ROLL_MIN = 268;
-const FIXED: Partial<Record<Band, number>> = { mixer: 432, history: 248 };
+const SMALLEST: Partial<Record<Band, number>> = { pianoRoll: 268, mixer: 516, history: 248 };
+const BAND_TOOLS = 32;
 const TALL_WINDOW = 960;
 const MAX_BOTTOM_OPEN = 2;
 const BOTTOM_ORDER: Band[] = ["pianoRoll", "mixer", "history"];
@@ -48,13 +48,20 @@ export class FakeBands {
     return this.height - TRANSPORT - this.meterHeight() - BAND_ROW - STATUS;
   }
 
-  private fixedSum(): number {
-    return this.bottom.reduce((sum, b) => sum + (FIXED[b] ?? 0), 0);
+  /** What is left with the arrange view at 40 and every open band at its smallest. */
+  private spare(): number {
+    return this.rest() - OVERVIEW - this.bottom.reduce((sum, b) => sum + (SMALLEST[b] ?? 0), 0);
+  }
+
+  /** The band that grows with the window; null is the arrange view. */
+  private spareTaker(): Band | null {
+    if (this.bottom.includes("pianoRoll")) return "pianoRoll";
+    if (this.bottom.includes("mixer") && this.height < TALL_WINDOW) return "mixer";
+    return null;
   }
 
   private fits(): boolean {
-    const free = this.rest() - this.fixedSum();
-    return this.bottom.includes("pianoRoll") ? free - OVERVIEW >= PIANO_ROLL_MIN : free >= OVERVIEW;
+    return this.spare() >= 0;
   }
 
   fit(): void {
@@ -91,18 +98,17 @@ export class FakeBands {
   }
 
   layout(): LayoutView {
-    const rest = this.rest();
-    const fixed = this.fixedSum();
-    const pianoRoll = this.bottom.includes("pianoRoll");
-    const arrangeHeight = pianoRoll ? OVERVIEW : Math.max(0, rest - fixed);
-    const pianoHeight = Math.max(0, rest - OVERVIEW - fixed);
+    const spare = this.spare();
+    const taker = this.spareTaker();
+    const alone = this.bottom.length === 1;
+    const arrangeHeight = OVERVIEW + (taker === null ? Math.max(0, spare) : 0);
     return {
       meter: this.meterHeight() === METER_FULL ? "full" : "slim",
       arrangeHeight,
-      arrangeOverview: pianoRoll || arrangeHeight <= OVERVIEW,
+      arrangeOverview: this.bottom.includes("pianoRoll") || arrangeHeight <= OVERVIEW,
       lower: BOTTOM_ORDER.filter((b) => this.bottom.includes(b)).map((band) => ({
         band,
-        height: FIXED[band] ?? pianoHeight,
+        height: Math.max(BAND_TOOLS, (SMALLEST[band] ?? 0) + (taker === band || (alone && spare < 0) ? spare : 0)),
       })),
       rightOpen: [...this.side],
       rightFront: this.side.at(-1) ?? null,
@@ -113,14 +119,29 @@ export class FakeBands {
 
 // ---- the scenes ----
 
+const RYZEN = "Ryzen HD Audio Controller";
+const GB206 = "GB206 High Definition Audio Controller";
+const RADEON = "Radeon High Definition Audio Controller";
+
 const HEADPHONES: EndpointView = {
   id: "out-headphones",
   name: "アナログヘッドフォン",
   friendly: "headphones",
   availability: "yes",
   link: "jack",
-  nodeName: "alsa_output.pci-0000_00_1f.3.analog-stereo",
-  choosable: true,
+  nodeName: "alsa_output.pci-0000_0c_00.6.analog-stereo",
+  device: RYZEN,
+  unusable: null,
+};
+const USB_AUDIO: EndpointView = {
+  id: "out-usb",
+  name: "USB オーディオ",
+  friendly: null,
+  availability: "unknown",
+  link: "plug",
+  nodeName: "alsa_output.usb-0d8c_USB_Audio-00.analog-stereo",
+  device: "USB Audio Device",
+  unusable: null,
 };
 const LINE_OUT: EndpointView = {
   id: "out-line",
@@ -128,8 +149,9 @@ const LINE_OUT: EndpointView = {
   friendly: "lineOut",
   availability: "no",
   link: "jack",
-  nodeName: "alsa_output.pci-0000_00_1f.3.analog-stereo",
-  choosable: false,
+  nodeName: HEADPHONES.nodeName,
+  device: RYZEN,
+  unusable: "switchedByPc",
 };
 const HDMI: EndpointView = {
   id: "out-hdmi2",
@@ -138,24 +160,29 @@ const HDMI: EndpointView = {
   availability: "no",
   link: "plug",
   nodeName: null,
-  choosable: false,
+  device: RADEON,
+  unusable: "stoppedByPc",
 };
 const OUTPUTS = [HEADPHONES, LINE_OUT, HDMI];
-const hdmi = (id: string, name: string): EndpointView => ({ ...HDMI, id, name });
-/** The 9 outputs of a PC with two cards of HDMI / DisplayPort: the settings dialog overflows a 1280×800 window. */
-const MANY_OUTPUTS = [
+const hdmi = (id: string, name: string, device: string): EndpointView => ({ ...HDMI, id, name, device });
+/**
+ * The outputs of a PC with two cards of HDMI / DisplayPort, in the order meloet-core gives:
+ * the usable ones, then the 8 that cannot be chosen.
+ */
+const PC_OUTPUTS = [
   HEADPHONES,
+  USB_AUDIO,
   LINE_OUT,
-  hdmi("out-hdmi-a1", "HDMI / DisplayPort"),
-  hdmi("out-hdmi-a2", "HDMI / DisplayPort 2"),
-  hdmi("out-hdmi-a3", "HDMI / DisplayPort 3"),
-  hdmi("out-hdmi-a4", "HDMI / DisplayPort 4"),
-  hdmi("out-hdmi-b1", "HDMI / DisplayPort"),
-  hdmi("out-hdmi-b2", "HDMI / DisplayPort 2"),
-  hdmi("out-hdmi-b3", "HDMI / DisplayPort 3"),
+  hdmi("out-hdmi-a1", "HDMI / DisplayPort", GB206),
+  hdmi("out-hdmi-a2", "HDMI / DisplayPort 2", GB206),
+  hdmi("out-hdmi-a3", "HDMI / DisplayPort 3", GB206),
+  hdmi("out-hdmi-a4", "HDMI / DisplayPort 4", GB206),
+  hdmi("out-hdmi-b1", "HDMI / DisplayPort", RADEON),
+  hdmi("out-hdmi-b2", "HDMI / DisplayPort 2", RADEON),
+  hdmi("out-hdmi-b3", "HDMI / DisplayPort 3", RADEON),
 ];
 
-const keyboard = (name: string) => ({ id: "kb-1", name, portName: name, address: "24:0" });
+const keyboard = (name: string, n = 1) => ({ id: `kb-${n}`, name, portName: name, address: `${23 + n}:0` });
 
 export function fakeState(): AppState {
   const bands = new FakeBands(800);
@@ -241,6 +268,13 @@ function withOutput(s: AppState): void {
   });
 }
 
+/** The second one was plugged in last; the first one was played last. */
+function twoKeyboards(s: AppState): void {
+  ready(s);
+  const second = keyboard("microKEY2-37", 2);
+  s.keyboards.list.push(second);
+}
+
 function ready(s: AppState): void {
   withKeyboard(s);
   withOutput(s);
@@ -255,14 +289,14 @@ function bufferFixed(s: AppState): void {
 
 function settings(s: AppState): void {
   ready(s);
-  s.outputs.list = MANY_OUTPUTS.map((o) => ({ ...o }));
+  s.outputs.list = PC_OUTPUTS.map((o) => ({ ...o }));
   s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: false };
   s.status.message = { id: "settingsOpen" };
 }
 
 function settingsAdvFixed(s: AppState): void {
   bufferFixed(s);
-  s.outputs.list = MANY_OUTPUTS.map((o) => ({ ...o }));
+  s.outputs.list = PC_OUTPUTS.map((o) => ({ ...o }));
   s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: true };
 }
 
@@ -276,6 +310,7 @@ export const SCENES: Record<
   connect2: {
     setup(s) {
       withKeyboard(s);
+      s.outputs.list = PC_OUTPUTS.map((o) => ({ ...o }));
       s.workspace.chooser = { highlighted: HEADPHONES.id };
       s.status.message = { id: "keyboardFound", keyboard: "Keystation 49 MK3" };
     },
@@ -304,6 +339,7 @@ export const SCENES: Record<
   settingsAdvFixed: { setup: settingsAdvFixed, meters: QUIET },
   settingsEnd: { setup: settings, meters: QUIET, scrollToEnd: true },
   settingsAdvFixedEnd: { setup: settingsAdvFixed, meters: QUIET, scrollToEnd: true },
+  twoKeyboards: { setup: twoKeyboards, meters: QUIET },
   longName: { setup: (s) => (ready(s), withKeyboard(s, "Arturia KeyLab Essential 61 mk3 MIDI 1")), meters: QUIET },
   pianoRoll: { setup: ready, bands: ["pianoRoll"], meters: QUIET },
   mixer: { setup: ready, bands: ["mixer"], meters: QUIET },
@@ -371,7 +407,7 @@ export function encodeTelemetry(m: FakeMeters, seq: number, sentUs: number, trac
 function reduce(state: AppState, bands: FakeBands, command: Command): Change[] {
   const ws = structuredClone(state.workspace);
   const outputs = structuredClone(state.outputs);
-  const choosable = outputs.list.filter((o) => o.choosable).map((o) => o.id);
+  const choosable = outputs.list.filter((o) => o.unusable === null).map((o) => o.id);
   switch (command.type) {
     case "setViewport":
       ws.viewportWidth = command.width;

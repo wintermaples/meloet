@@ -107,9 +107,10 @@ export const fontFamily = {
  */
 export interface PartToken {
   value: number;
-  spec: { section: "s1" | "s2"; row: string; quote: string };
+  /** row が null なら、表ではなく、その章の文の中にある。 */
+  spec: { section: "s1" | "s2" | "s3"; row: string | null; quote: string };
 }
-const p = (value: number, section: "s1" | "s2", row: string, quote: string): PartToken => ({
+const p = (value: number, section: "s1" | "s2" | "s3", row: string | null, quote: string): PartToken => ({
   value,
   spec: { section, row, quote },
 });
@@ -162,10 +163,15 @@ export const part = {
   "part.dialog.width": p(560, "s2", "ダイアログ", "幅 560"),
   "part.dialog.head": p(32, "s2", "ダイアログ", "見出し 32"),
   "part.dialog.foot": p(48, "s2", "ダイアログ", "下の列 48"),
+  "part.dialog.margin": p(24, "s2", "ダイアログ", "上下 24 ずつ"),
+  "part.scrollbar.width": p(8, "s2", "スクロールの棒", "幅 8"),
+  "part.unusable.height": p(24, "s2", "えらべない出口の行", "高さ 24"),
   "part.meter.name.long": p(148, "s1", "size.meter.name", "長い名前は 148"),
   "part.meter.name.slim-narrow": p(128, "s1", "size.meter.name.slim", "せまい窓は 128"),
   "part.track.vocal": p(160, "s1", "size.track", "歌を直すときは 160"),
   "part.strip.master": p(124, "s1", "size.strip", "マスターは 124"),
+  "part.meter.black-key-slim-w": p(5, "s3", null, "黒鍵を描く（幅 5、高さ 7）"),
+  "part.meter.black-key-slim-h": p(7, "s3", null, "黒鍵を描く（幅 5、高さ 7）"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 
@@ -185,6 +191,7 @@ export const mock = {
   "mock.input-meter.keys-slim-h": m(12, "F-MeterLongName"),
   "mock.input-meter.black-key-w": m(7, "F-Connect3"),
   "mock.input-meter.black-key-h": m(19, "F-Connect3"),
+  "mock.input-meter.black-key-narrow-w": m(5, "F-MeterLongName"),
   "mock.input-meter.velocity": m(96, "F-Connect3"),
   "mock.input-meter.velocity-bar": m(4, "F-Connect3"),
   "mock.arrange-note.left": m(24, "F-Connect2"),
@@ -209,25 +216,31 @@ export type MockName = keyof typeof mock;
 
 /**
  * px でない数（割合、時間、目盛）。率をかけず、CSS の変数にもしない。
- * spec は part.* と同じ読みかた、board は値を読んだモック。
+ * spec は part.* と同じ読みかた。
  */
 export const plain = {
   /** メーターの色が ok から hot に変わる所（%）。 */
-  "meter.hot-from": { value: 72, spec: { section: "s2", row: "メーター", quote: "0〜72 % が meter.ok" } },
+  "meter.hot-from": { value: 70, spec: { section: "s2", row: "メーター", quote: "−3 dB（長さの 70 %）までが meter.ok" } },
   /** 音割れの印を出しておく時間（秒）。 */
   "meter.clip-hold": { value: 2, spec: { section: "s2", row: "メーター", quote: "2 秒" } },
-  /** ミキサーの目盛: [dB, 上はしからの位置（`top: N%` の N）]。 */
-  "mock.mixer.scale": {
-    value: [
-      [6, 0],
-      [0, 18],
-      [-6, 38],
-      [-12, 56],
-      [-24, 74],
-    ],
-    board: "A-Mixer",
-  },
 } as const;
+
+/**
+ * 仕様書 2 章「メーターとフェーダーの目盛」の表: [dB, 長さ（%。いちばん下が 0）]。大きい音から。
+ * 点のあいだは直線でつなぎ、いちばん下の点より小さい音は 0 %（−∞）。
+ */
+export const meterScale: readonly (readonly [number, number])[] = [
+  [6, 100],
+  [0, 80],
+  [-3, 70],
+  [-6, 60],
+  [-12, 40],
+  [-24, 20],
+  [-60, 0],
+];
+
+/** 同じ見出しの文の、落ちる速さ: fallDb を fallSeconds かけて。上がるときはすぐ。 */
+export const meterFall = { fallDb: 20, fallSeconds: 1.7 } as const;
 
 const scaleIndex = (scale: Scale): 0 | 1 | 2 => (scale === 100 ? 0 : scale === 125 ? 1 : 2);
 

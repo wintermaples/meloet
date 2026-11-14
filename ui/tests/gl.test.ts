@@ -3,14 +3,15 @@ import { describe, expect, it } from "vitest";
 import { colors } from "../src/design/tokens";
 import { Batch } from "../src/gl/batch";
 import { hexToRgb, rgb } from "../src/gl/color";
-import { CLIP_HOLD_MS, DB_FLOOR, DB_SCALE, EVENT_WINS_US, FALL_DB_PER_S, KEYBOARD, METER_HOT_FROM, OVERVIEW } from "../src/gl/dims";
+import { CLIP_HOLD_MS, DB_FLOOR, DB_SCALE, EVENT_WINS_US, FALL_DB_PER_S, KEY_FORMS, METER_HOT_FROM, OVERVIEW } from "../src/gl/dims";
 import { HeldKeys, isBlack, keyboardLayout } from "../src/gl/keyboard";
 import { dbToLength, fall, peakToDb } from "../src/gl/level";
 import { Levels } from "../src/gl/levels";
 import { KeyToScreen, REPORT_NAME } from "../src/gl/measure";
-import { paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
+import { blackKeyPx, clipMarkPx, paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
 import { glSlot, watchSlots, type GlSlot } from "../src/gl/slot";
 import type { Telemetry } from "../src/bridge";
+import { cellText, headers, rows, sectionText, specDocument, tableAfterH3 } from "./design-sources";
 
 interface NodeFs {
   readFileSync(path: URL, encoding: "utf8"): string;
@@ -48,25 +49,35 @@ describe("色の読みかえ", () => {
 });
 
 describe("dB → 長さ", () => {
-  it("目盛は A-Mixer のモックの位置と同じ", () => {
-    const html = mockHtml("A-Mixer");
-    const marks = [...html.matchAll(/<span class="abs" style="right:0;top:(\d+)%?">([^<]+)<\/span>/g)];
-    const fromMock = new Map(marks.map((m) => [Number(m[2]!.replace("−", "-")), 1 - Number(m[1]) / 100]));
-    expect(fromMock.size).toBe(DB_SCALE.length);
-    for (const [db, length] of DB_SCALE) expect(fromMock.get(db)).toBeCloseTo(length, 10);
-    expect(html).toContain('<span class="abs" style="right:0;bottom:0">−∞</span>');
+  it("目盛は仕様書の「メーターとフェーダーの目盛」の表と同じ", () => {
+    const doc = specDocument();
+    const table = tableAfterH3(doc, "メーターとフェーダーの目盛");
+    const dbs = headers(table).slice(1).map((t) => Number(t.replace("−", "-")));
+    const lengths = rows(table)[0]!.slice(1).map((t) => Number(t.replace(" %", "")) / 100);
+    expect(dbs.map((db, i) => [db, lengths[i]])).toEqual(DB_SCALE.map(([db, length]) => [db, length]));
+    expect(DB_FLOOR).toBe(-60);
+
+    const text = sectionText(doc, "s2");
+    expect(text).toContain("−60 dB より小さい音は 0 %（−∞）");
+    expect(text).toContain("落ちるときは 20 dB を 1.7 秒かけて");
+    expect(FALL_DB_PER_S).toBeCloseTo(20 / 1.7, 10);
+    expect(text).toContain(`−3 dB（長さの ${METER_HOT_FROM * 100} %）までが meter.ok、その上が meter.hot`);
+    expect(dbToLength(-3)).toBeCloseTo(METER_HOT_FROM, 10);
+    expect(text).toContain(`0 dB をこえたら、上はしに rec の 2px を ${CLIP_HOLD_MS / 1000} 秒`);
   });
   it("目盛の上では目盛の値、間は直線", () => {
     for (const [db, length] of DB_SCALE) expect(dbToLength(db)).toBeCloseTo(length, 10);
-    expect(dbToLength(3)).toBeCloseTo(0.91, 10);
-    expect(dbToLength(-3)).toBeCloseTo(0.72, 10);
-    expect(dbToLength(-18)).toBeCloseTo(0.35, 10);
-    expect(dbToLength((-24 + DB_FLOOR) / 2)).toBeCloseTo(0.13, 10);
+    expect(dbToLength(3)).toBeCloseTo(0.9, 10);
+    expect(dbToLength(-1.5)).toBeCloseTo(0.75, 10);
+    expect(dbToLength(-18)).toBeCloseTo(0.3, 10);
+    expect(dbToLength(-42)).toBeCloseTo(0.1, 10);
+    expect(dbToLength(-59)).toBeCloseTo(0.2 / 36, 10);
   });
   it("はしでは止まる", () => {
     expect(dbToLength(6.1)).toBe(1);
     expect(dbToLength(100)).toBe(1);
     expect(dbToLength(DB_FLOOR)).toBe(0);
+    expect(dbToLength(-60.1)).toBe(0);
     expect(dbToLength(-200)).toBe(0);
     expect(dbToLength(-Infinity)).toBe(0);
   });
@@ -121,14 +132,14 @@ describe("画面のレベル", () => {
   it("上がってから、時間で落ちて、行き先で止まる", () => {
     const levels = new Levels();
     levels.onTelemetry(telemetry({ masterPeak: [1, 0.5], trackPeaks: new Float32Array([0.25, 0]) }), 1000);
-    expect(levels.bar(0, 1000).length).toBeCloseTo(0.82, 6);
+    expect(levels.bar(0, 1000).length).toBeCloseTo(0.8, 6);
     expect(levels.bar(1, 1000).length).toBeCloseTo(dbToLength(peakToDb(0.5)), 6);
     expect(levels.bar(2, 1000).length).toBeCloseTo(dbToLength(peakToDb(0.25)), 6);
     expect(levels.bar(3, 1000).length).toBe(0);
     expect(levels.bar(9, 1000).length).toBe(0);
 
     levels.onTelemetry(telemetry({ masterPeak: [0.5, 0.5] }), 1000);
-    expect(levels.bar(0, 1000).length).toBeCloseTo(0.82, 6);
+    expect(levels.bar(0, 1000).length).toBeCloseTo(0.8, 6);
     expect(levels.advance(1100)).toBe(true);
     expect(levels.bar(0, 1100).length).toBeCloseTo(dbToLength(-FALL_DB_PER_S / 10), 6);
     expect(levels.advance(3000)).toBe(false);
@@ -227,10 +238,13 @@ describe("押している鍵", () => {
 });
 
 describe("四角の並び", () => {
+  const FULL = KEY_FORMS.full;
+  const full = blackKeyPx("full", 100, 1);
+  const slim = blackKeyPx("slim", 100, 1);
   it("太い鍵盤: モック（F-Connect2）と同じ画素。幅 1 + 29 × 12、高さ 32", () => {
     const b = batch();
     const down = new Set([60, 61]);
-    paintKeyboard(b, { x0: 100, y0: 10, x1: 100 + 1 + 29 * KEYBOARD.white.w, y1: 10 + KEYBOARD.white.h }, "full", 36, 84, (n) => down.has(n));
+    paintKeyboard(b, { x0: 100, y0: 10, x1: 100 + 1 + 29 * FULL.white.w, y1: 10 + FULL.white.h }, full, 36, 84, (n) => down.has(n));
 
     expect(ofColor(b, "color.gray.6")).toEqual([[100, 10, 449, 42]]);
     const whites = ofColor(b, "color.gray.3");
@@ -252,7 +266,7 @@ describe("四角の並び", () => {
   });
   it("鍵盤がないとき（F-Connect1）: 線だけ暗い。モックの HTML の色と同じ", () => {
     const b = batch();
-    paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * KEYBOARD.white.w, y1: KEYBOARD.white.h }, "full", 36, 84, () => false, true);
+    paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * FULL.white.w, y1: FULL.white.h }, full, 36, 84, () => false, true);
     expect(ofColor(b, "color.gray.5")).toEqual([[0, 0, 349, 32]]);
     expect(ofColor(b, "color.gray.6").length).toBe(20);
     expect(ofColor(b, "color.gray.7")).toEqual([]);
@@ -260,30 +274,77 @@ describe("四角の並び", () => {
     expect(ofColor(b, "color.gray.0").length).toBe(20);
 
     const html = mockHtml("F-Connect1");
-    const white = `width:${KEYBOARD.white.w}px;height:${KEYBOARD.white.h}px;border:1px solid ${colors["color.gray.5"]};border-left:0;background:${colors["color.gray.3"]}`;
-    const black = `width:${KEYBOARD.black.w}px;height:${KEYBOARD.black.h}px;background:${colors["color.gray.0"]};border:1px solid ${colors["color.gray.6"]}`;
+    const white = `width:${FULL.white.w}px;height:${FULL.white.h}px;border:1px solid ${colors["color.gray.5"]};border-left:0;background:${colors["color.gray.3"]}`;
+    const black = `width:${FULL.black.w}px;height:${FULL.black.h}px;background:${colors["color.gray.0"]};border:1px solid ${colors["color.gray.6"]}`;
     expect(html.split(white).length - 1).toBe(29);
     expect(html.split(black).length - 1).toBe(20);
     expect(html).toContain(`<div class="f" style="border-left:1px solid ${colors["color.gray.5"]};flex-shrink:0">`);
   });
-  it("細い鍵盤: 白鍵の四角だけ（1 + 29 × 8、高さ 12）", () => {
+  it("細い鍵盤: 黒鍵も描く（1 + 29 × 8、高さ 12。黒鍵は幅 5、高さ 7）。押した黒鍵は accent", () => {
     const b = batch();
-    paintKeyboard(b, { x0: 0, y0: 0, x1: 233, y1: 12 }, "slim", 36, 84, (n) => n === 64);
-    expect(b.rectCount).toBe(30);
+    const down = new Set([64, 61]);
+    paintKeyboard(b, { x0: 0, y0: 0, x1: 233, y1: 12 }, slim, 36, 84, (n) => down.has(n));
+    expect(b.rectCount).toBe(1 + 29 + 2 * 20);
     expect(ofColor(b, "color.gray.3")[28 - 1]).toEqual([225, 1, 232, 11]);
-    expect(ofColor(b, "color.accent")).toEqual([[16 * 8 + 1, 1, 17 * 8, 11]]);
-    expect(ofColor(b, "color.gray.7")).toEqual([]);
+    // E4 = 白鍵 16、C#4 = 線 15。
+    expect(ofColor(b, "color.accent")).toEqual([
+      [16 * 8 + 1, 1, 17 * 8, 11],
+      [15 * 8 - 1, 1, 15 * 8 + 2, 6],
+    ]);
+    const frames = ofColor(b, "color.gray.7");
+    expect(frames.length).toBe(20);
+    expect(frames[0]).toEqual([8 - 2, 0, 8 + 3, 7]);
+    expect(ofColor(b, "color.gray.0")[0]).toEqual([8 - 1, 1, 8 + 2, 6]);
+    expect(ofColor(b, "color.gray.0").length).toBe(19);
+  });
+  it("細い鍵盤と細い鍵の寸法は、F-MeterLongName のモックと仕様書と同じ", () => {
+    const { slim: s, narrow: n } = KEY_FORMS;
+    const html = mockHtml("F-MeterLongName");
+    const key = (white: { w: number; h: number }, black: { w: number; h: number }) =>
+      `<div class="rel" style="width:${white.w}px;height:${white.h}px;border:1px solid ${colors["color.gray.6"]};border-left:0;background:${colors["color.gray.3"]}">` +
+      `<div class="abs" style="z-index:1;top:-1px;right:-${(black.w + 1) / 2}px;width:${black.w}px;height:${black.h}px;background:${colors["color.gray.0"]};border:1px solid ${colors["color.gray.7"]}">`;
+    expect(html.split(key(s.white, s.black)).length - 1).toBeGreaterThan(0);
+    expect(html.split(key(n.white, n.black)).length - 1).toBeGreaterThan(0);
+    expect(html.split(key(FULL.white, FULL.black)).length - 1).toBeGreaterThan(0);
+
+    const doc = specDocument();
+    const s3 = sectionText(doc, "s3");
+    expect(s3).toContain(`細い入力計の鍵盤にも黒鍵を描く（幅 ${s.black.w}、高さ ${s.black.h}）。押した黒鍵は accent で光る。`);
+    expect(cellText(doc.body)).toContain(`鍵盤の絵を細い鍵（幅 ${n.white.w}）に`);
+  });
+  it("細い鍵（太い入力計がせまいとき）: 白鍵 8、黒鍵は幅 5、高さ 19", () => {
+    const b = batch();
+    paintKeyboard(b, { x0: 0, y0: 0, x1: 233, y1: 32 }, blackKeyPx("narrow", 100, 1), 36, 84, (n) => n === 61);
+    expect(ofColor(b, "color.gray.6")).toEqual([[0, 0, 233, 32]]);
+    expect(ofColor(b, "color.gray.3")[0]).toEqual([1, 1, 8, 31]);
+    expect(ofColor(b, "color.gray.7")[0]).toEqual([8 - 2, 0, 8 + 3, 19]);
+    expect(ofColor(b, "color.gray.0")[0]).toEqual([8 - 1, 1, 8 + 2, 18]);
+    expect(ofColor(b, "color.accent")).toEqual([[15 * 8 - 1, 1, 15 * 8 + 2, 18]]);
+  });
+  it("黒鍵の大きさ: 率をかけて四捨五入（.5 は切り上げ）。それから画面の画素へ", () => {
+    const at = (form: "full" | "narrow" | "slim") => [100, 125, 150].map((scale) => blackKeyPx(form, scale, 1));
+    expect(at("full")).toEqual([{ w: 7, h: 19 }, { w: 9, h: 24 }, { w: 11, h: 29 }]);
+    expect(at("narrow")).toEqual([{ w: 5, h: 19 }, { w: 6, h: 24 }, { w: 8, h: 29 }]);
+    expect(at("slim")).toEqual([{ w: 5, h: 7 }, { w: 6, h: 9 }, { w: 8, h: 11 }]);
+    expect(blackKeyPx("slim", 150, 2)).toEqual({ w: 16, h: 22 });
+    expect(blackKeyPx("slim", 100, 1.5)).toEqual({ w: 8, h: 11 });
+  });
+  it("幅が偶数の黒鍵（細い鍵盤の 125 %）: 線の左に 2、右に 3", () => {
+    const b = batch();
+    paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * 10, y1: 15 }, blackKeyPx("slim", 125, 1), 36, 84, () => false);
+    expect(ofColor(b, "color.gray.7")[0]).toEqual([10 - 2, 0, 10 + 4, 9]);
+    expect(ofColor(b, "color.gray.0")[0]).toEqual([10 - 1, 1, 10 + 3, 8]);
   });
   it("拡大しても線は 1 画素（150 % × 2 倍の画面 = 白鍵 36 画素）", () => {
     const b = batch();
-    paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * 36, y1: 96 }, "full", 36, 84, () => false);
+    paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * 36, y1: 96 }, blackKeyPx("full", 150, 2), 36, 84, () => false);
     const whites = ofColor(b, "color.gray.3");
     expect(whites[0]).toEqual([1, 1, 36, 95]);
     expect(whites[1]).toEqual([37, 1, 72, 95]);
     const frame = ofColor(b, "color.gray.7")[0]!;
     const inner = ofColor(b, "color.gray.0")[0]!;
-    expect(frame).toEqual([36 - 10, 0, 36 + 11, 57]);
-    expect(inner).toEqual([frame[0]! + 1, 1, frame[2]! - 1, 56]);
+    expect(frame).toEqual([36 - 10, 0, 36 + 12, 58]);
+    expect(inner).toEqual([frame[0]! + 1, 1, frame[2]! - 1, 57]);
   });
   it("ベロシティの棒: 87 は 68 %（モックと同じ）", () => {
     const b = batch();
@@ -294,7 +355,7 @@ describe("四角の並び", () => {
     paintVelocity(none, { x0: 0, y0: 0, x1: 100, y1: 4 }, 0);
     expect(none.rectCount).toBe(1);
   });
-  it("メーター: 2 本、72 % までは ok、その上は hot、音割れは右はしに印", () => {
+  it("メーター: 2 本、70 %（−3 dB）までは ok、その上は hot、音割れは右はしに印", () => {
     const b = batch();
     paintMeter(b, { x0: 10, y0: 20, x1: 110, y1: 32 }, 4, 2, { length: 0.5, clipped: false }, { length: 0.9, clipped: true });
     expect(ofColor(b, "color.gray.0")).toEqual([
@@ -303,10 +364,22 @@ describe("四角の並び", () => {
     ]);
     expect(ofColor(b, "color.meter.ok")).toEqual([
       [10, 20, 60, 24],
-      [10, 28, 10 + 100 * METER_HOT_FROM, 32],
+      [10, 28, 80, 32],
     ]);
-    expect(ofColor(b, "color.meter.hot")).toEqual([[82, 28, 100, 32]]);
+    expect(METER_HOT_FROM).toBe(0.7);
+    expect(ofColor(b, "color.meter.hot")).toEqual([[80, 28, 100, 32]]);
     expect(ofColor(b, "color.rec")).toEqual([[108, 28, 110, 32]]);
+  });
+  it("音割れの印の太さ: 2px に率をかけて四捨五入（2 / 3 / 3）。それから画面の画素へ", () => {
+    expect([100, 125, 150].map((scale) => clipMarkPx(scale, 1))).toEqual([2, 3, 3]);
+    expect(clipMarkPx(125, 2)).toBe(6);
+    const b = batch();
+    const clipped = { length: 1, clipped: true };
+    paintMeter(b, { x0: 0, y0: 0, x1: 100, y1: 10 }, 2, clipMarkPx(125, 1), clipped, clipped);
+    expect(ofColor(b, "color.rec")).toEqual([
+      [97, 0, 100, 4],
+      [97, 6, 100, 10],
+    ]);
   });
   it("メーター: 空のときは地だけ", () => {
     const b = batch();

@@ -3,12 +3,14 @@
   import { space, type Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glSlot } from "../gl/slot";
+  import ScrollArea from "../lib/ScrollArea.svelte";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import Button from "./Button.svelte";
   import EndpointRow from "./EndpointRow.svelte";
-  import { endpointLook, type EndpointLook } from "./endpoint";
+  import UnusableOutputs from "./UnusableOutputs.svelte";
+  import { endpointLook, outputGroups, type EndpointLook } from "./endpoint";
   import { msText } from "./format";
 
   const SYSTEMS = [
@@ -29,12 +31,9 @@
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
   const meterGap = $derived(space["space.1"][scale === 100 ? 0 : scale === 125 ? 1 : 2]);
 
-  const outputs = $derived.by(() => {
-    if (!app || !settings) return [];
-    const list = app.outputs.list;
-    return advanced ? list.filter((o) => o.id === settings.draftOutput) : list;
-  });
-  const notUsed: EndpointLook = { name: t("settings.notUsed"), friendly: null, link: null };
+  const groups = $derived(outputGroups(app?.outputs.list ?? []));
+  const outputs = $derived(advanced ? groups.usable.filter((o) => o.id === settings?.draftOutput) : groups.usable);
+  const notUsed: EndpointLook = { name: t("settings.notUsed"), side: null, link: null };
   const inputs = $derived.by(() => {
     if (!app) return [];
     const rows = app.inputs.list.map((i) => ({ id: i.id, look: endpointLook(i) }));
@@ -79,7 +78,7 @@
 {#snippet keyboardRows()}
   {#each keyboards as k (k.id)}
     <EndpointRow
-      look={{ name: k.name, friendly: t("friendly.keyboard"), link: "connected" }}
+      look={{ name: k.name, side: t("friendly.keyboard"), link: "connected" }}
       selected={k.id === app?.keyboards.active}
       disabled={false}
       still
@@ -89,217 +88,233 @@
 {/snippet}
 
 {#if app && settings}
-  <div class="dialog" class:advanced role="dialog" aria-label={t("settings.title")} data-test="settings-dialog">
-    <div class="head">
-      <span class="title">{t("settings.title")}</span>
-      <span class="spacer"></span>
-      <button type="button" class="close" data-test="settings-close" onclick={() => send({ type: "settingsCancel" })}>
-        {t("settings.close")}<span class="mono">{t("key.esc")}</span>
-      </button>
-    </div>
-
-    <div class="body" data-gl-scroll data-test="settings-body">
-      <section>
-        <span class="label">{t("settings.outputs")}</span>
-        {#each outputs as output (output.id)}
-          <EndpointRow
-            look={endpointLook(output)}
-            selected={settings.draftOutput === output.id}
-            disabled={!output.choosable}
-            size="settings"
-            onpick={() => send({ type: "settingsSelectOutput", output: output.id })}
-          />
-        {/each}
-        {#if !advanced}
-          <div class="line">
-            <Button test="settings-test-tone" disabled={!settings.draftOutput} onclick={testTone}>
-              {t("endpoint.testTone")}
-            </Button>
-            <div class="level" use:glSlot={{ kind: "meter", source: "master", gap: meterGap }}></div>
-          </div>
-        {/if}
-      </section>
-
-      <section>
-        <span class="label">{t("settings.voiceInput")}</span>
-        {#each inputs as input (input.id)}
-          <EndpointRow look={input.look} selected={input.id === (app.inputs.chosen ?? "")} disabled size="settings" />
-        {/each}
-        {#if !advanced}
-          <div class="line disabled">
-            <span>{t("settings.level")}</span>
-            <div class="level off"></div>
-          </div>
-        {/if}
-      </section>
-
-      <section>
-        <span class="label">{t("settings.keyboard")}</span>
-        {#if keyboards.length > 0}
-          {@render keyboardRows()}
-        {:else}
-          <div class="line"><span class="label">{t("meter.noKeyboard")}</span></div>
-        {/if}
-        {#if !advanced}
-          <div class="line">
-            <span class="label">{t("settings.keysLight")}</span>
-            <div
-              class="keys"
-              style:--white-keys={WHITE_KEYS}
-              use:glSlot={{ kind: "keyboard", size: "slim", firstNote: FIRST_NOTE, lastNote: LAST_NOTE }}
-            ></div>
-          </div>
-        {/if}
-      </section>
-
-      {#if !advanced}
-        <section>
-          <span class="label" use:term={"遅れ（レイテンシ）"}>{t("settings.latency")}</span>
-          <div class="line">
-            <span class="label field">{t("settings.keyToSound")}</span>
-            {#if app.audio.latencyMs !== null}
-              <span class="mono strong" data-test="latency">{t("settings.aboutMs", { ms: msText(app.audio.latencyMs) })}</span>
-            {/if}
-            <span class="label">{t("settings.latencyHint")}</span>
-          </div>
-          <div class="line disabled">
-            <span class="field">{t("settings.recordedPosition")}</span>
-            <span>{t("settings.autoFixOn")}</span>
-            <span>{t("settings.autoFixHint")}</span>
-          </div>
-        </section>
-        <button
-          type="button"
-          class="adv"
-          data-test="settings-advanced"
-          onclick={() => send({ type: "settingsToggleAdvanced" })}
-        >
-          <span class="label">▸</span>
-          <span class="strong">{t("settings.advanced")}</span>
-          <span class="label">
-            {t("settings.advancedSummary", {
-              system: app.audio.system,
-              rate: app.audio.sampleRate ?? dash,
-              buffer: app.audio.actualFrames ?? dash,
-            })}
-          </span>
-          <span class="spacer"></span>
-          <span class="label">{t("settings.advancedHint")}</span>
+  <div class="place" class:advanced>
+    <div class="lead"></div>
+    <div class="dialog" role="dialog" aria-label={t("settings.title")} data-test="settings-dialog">
+      <div class="head">
+        <span class="title">{t("settings.title")}</span>
+        <span class="spacer"></span>
+        <button type="button" class="close" data-test="settings-close" onclick={() => send({ type: "settingsCancel" })}>
+          {t("settings.close")}<span class="mono">{t("key.esc")}</span>
         </button>
-      {:else}
-        <div class="adv-open">
+      </div>
+
+      <ScrollArea data-gl-scroll data-test="settings-body">
+        <section>
+          <span class="label">{t("settings.outputs")}</span>
+          {#each outputs as output (output.id)}
+            <EndpointRow
+              look={output.look}
+              selected={settings.draftOutput === output.id}
+              disabled={false}
+              size="settings"
+              onpick={() => send({ type: "settingsSelectOutput", output: output.id })}
+            />
+          {/each}
+          {#if !advanced}
+            <div class="line">
+              <Button test="settings-test-tone" disabled={!settings.draftOutput} onclick={testTone}>
+                {t("endpoint.testTone")}
+              </Button>
+              <div class="level" use:glSlot={{ kind: "meter", source: "master", gap: meterGap }}></div>
+            </div>
+            <UnusableOutputs rows={groups.unusable} size="settings" note={t("msg.unusableHeadingSettings")} />
+          {/if}
+        </section>
+
+        <section>
+          <span class="label">{t("settings.voiceInput")}</span>
+          {#each inputs as input (input.id)}
+            <EndpointRow look={input.look} selected={input.id === (app.inputs.chosen ?? "")} disabled size="settings" />
+          {/each}
+          {#if !advanced}
+            <div class="line disabled">
+              <span>{t("settings.level")}</span>
+              <div class="level off"></div>
+            </div>
+          {/if}
+        </section>
+
+        <section>
+          <span class="label">{t("settings.keyboard")}</span>
+          {#if keyboards.length > 0}
+            {@render keyboardRows()}
+          {:else}
+            <div class="line"><span class="label">{t("meter.noKeyboard")}</span></div>
+          {/if}
+          {#if !advanced}
+            <div class="line">
+              <span class="label">{t("settings.keysLight")}</span>
+              <div
+                class="keys"
+                style:--white-keys={WHITE_KEYS}
+                use:glSlot={{ kind: "keyboard", size: "slim", firstNote: FIRST_NOTE, lastNote: LAST_NOTE }}
+              ></div>
+            </div>
+          {/if}
+        </section>
+
+        {#if !advanced}
+          <section>
+            <span class="label" use:term={"遅れ（レイテンシ）"}>{t("settings.latency")}</span>
+            <div class="line">
+              <span class="label field">{t("settings.keyToSound")}</span>
+              {#if app.audio.latencyMs !== null}
+                <span class="mono strong" data-test="latency">{t("settings.aboutMs", { ms: msText(app.audio.latencyMs) })}</span>
+              {/if}
+              <span class="label">{t("settings.latencyHint")}</span>
+            </div>
+            <div class="line disabled">
+              <span class="field">{t("settings.recordedPosition")}</span>
+              <span>{t("settings.autoFixOn")}</span>
+              <span>{t("settings.autoFixHint")}</span>
+            </div>
+          </section>
           <button
             type="button"
             class="adv"
             data-test="settings-advanced"
             onclick={() => send({ type: "settingsToggleAdvanced" })}
           >
-            <span class="strong">▾</span>
+            <span class="label">▸</span>
             <span class="strong">{t("settings.advanced")}</span>
+            <span class="label">
+              {t("settings.advancedSummary", {
+                system: app.audio.system,
+                rate: app.audio.sampleRate ?? dash,
+                buffer: app.audio.actualFrames ?? dash,
+              })}
+            </span>
             <span class="spacer"></span>
-            <span class="label">{t("settings.advancedOpenHint")}</span>
+            <span class="label">{t("settings.advancedHint")}</span>
           </button>
-          <div class="adv-body">
-            <div class="line">
-              <span class="label field">{t("settings.system")}</span>
-              <div class="seg">
-                {#each SYSTEMS as s (s.name)}
-                  {#if s.name === app.audio.system}
-                    <Button on>{t(s.key)}</Button>
-                  {:else}
-                    <Button disabled>{t(s.key)}</Button>
-                  {/if}
-                {/each}
+        {:else}
+          <div class="adv-open">
+            <button
+              type="button"
+              class="adv"
+              data-test="settings-advanced"
+              onclick={() => send({ type: "settingsToggleAdvanced" })}
+            >
+              <span class="strong">▾</span>
+              <span class="strong">{t("settings.advanced")}</span>
+              <span class="spacer"></span>
+              <span class="label">{t("settings.advancedOpenHint")}</span>
+            </button>
+            <div class="adv-body">
+              <div class="line">
+                <span class="label field">{t("settings.system")}</span>
+                <div class="seg">
+                  {#each SYSTEMS as s (s.name)}
+                    {#if s.name === app.audio.system}
+                      <Button on>{t(s.key)}</Button>
+                    {:else}
+                      <Button disabled>{t(s.key)}</Button>
+                    {/if}
+                  {/each}
+                </div>
               </div>
-            </div>
-            <div class="line">
-              <span class="label field">{t("settings.outputDevice")}</span>
-              <span class="mono strong value">{app.audio.outputDevice ?? ""}</span>
-            </div>
-            <div class="line">
-              <span class="label field">{t("settings.midiInput")}</span>
-              <span class="mono strong value">{app.audio.midiInput ?? ""}</span>
-            </div>
-            <div class="line">
-              <span class="label field" use:term={"サンプルレート"}>{t("settings.sampleRate")}</span>
-              <div class="seg">
-                {#each rates as r (r)}
-                  {#if r === app.audio.sampleRate}
-                    <Button on>{r}</Button>
-                  {:else}
-                    <Button disabled>{r}</Button>
-                  {/if}
-                {/each}
+              <div class="line">
+                <span class="label field">{t("settings.outputDevice")}</span>
+                <span class="mono strong value">{app.audio.outputDevice ?? ""}</span>
               </div>
-              <span class="label">{t("settings.hz")}</span>
-            </div>
-            <div class="line">
-              <span class="label field" use:term={"バッファ"}>{t("settings.bufferRequested")}</span>
-              <div class="seg">
-                {#each buffers as b (b)}
-                  {#if b === app.audio.requestedFrames}
-                    <Button on>{b}</Button>
-                  {:else}
-                    <Button disabled>{b}</Button>
-                  {/if}
-                {/each}
+              <div class="line">
+                <span class="label field">{t("settings.midiInput")}</span>
+                <span class="mono strong value">{app.audio.midiInput ?? ""}</span>
               </div>
-              <span class="label">{t("settings.samples")}</span>
-            </div>
-            <div class="line">
-              <span class="label field">{t("settings.bufferActual")}</span>
-              <span class="mono strong big" data-test="buffer-actual">{app.audio.actualFrames ?? dash}</span>
-              <span class="label">
-                {app.audio.actualFrames !== null && app.audio.actualFrames !== app.audio.requestedFrames
-                  ? t("settings.bufferDiffers")
-                  : t("settings.samples")}
-              </span>
-            </div>
-            {#if fixed}
-              <div class="fixed" data-test="buffer-fixed">
-                <span class="strong bold">{fixed.title}</span>
-                {#each fixed.paragraphs as p, i (i)}
-                  <span class:label={i === 2}>
-                    {#each p.split(AROUND) as piece, j (j)}
-                      {#if AROUND.test(piece)}<span class="mono strong">{piece}</span>{:else}{piece}{/if}
-                    {/each}
-                  </span>
-                {/each}
+              <div class="line">
+                <span class="label field" use:term={"サンプルレート"}>{t("settings.sampleRate")}</span>
+                <div class="seg">
+                  {#each rates as r (r)}
+                    {#if r === app.audio.sampleRate}
+                      <Button on>{r}</Button>
+                    {:else}
+                      <Button disabled>{r}</Button>
+                    {/if}
+                  {/each}
+                </div>
+                <span class="label">{t("settings.hz")}</span>
               </div>
-            {/if}
-            <div class="line">
-              <span class="label field" use:term={"遅れの補正"}>{t("settings.latencyComp")}</span>
-              <div class="seg">
-                <Button disabled>{t("settings.auto")}</Button>
-                <Button disabled>{t("settings.manual")}</Button>
+              <div class="line">
+                <span class="label field" use:term={"バッファ"}>{t("settings.bufferRequested")}</span>
+                <div class="seg">
+                  {#each buffers as b (b)}
+                    {#if b === app.audio.requestedFrames}
+                      <Button on>{b}</Button>
+                    {:else}
+                      <Button disabled>{b}</Button>
+                    {/if}
+                  {/each}
+                </div>
+                <span class="label">{t("settings.samples")}</span>
               </div>
-              <Button disabled>{t("settings.remeasure")}</Button>
+              <div class="line">
+                <span class="label field">{t("settings.bufferActual")}</span>
+                <span class="mono strong big" data-test="buffer-actual">{app.audio.actualFrames ?? dash}</span>
+                <span class="label">
+                  {app.audio.actualFrames !== null && app.audio.actualFrames !== app.audio.requestedFrames
+                    ? t("settings.bufferDiffers")
+                    : t("settings.samples")}
+                </span>
+              </div>
+              {#if fixed}
+                <div class="fixed" data-test="buffer-fixed">
+                  <span class="strong bold">{fixed.title}</span>
+                  {#each fixed.paragraphs as p, i (i)}
+                    <span class:label={i === 2}>
+                      {#each p.split(AROUND) as piece, j (j)}
+                        {#if AROUND.test(piece)}<span class="mono strong">{piece}</span>{:else}{piece}{/if}
+                      {/each}
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+              <div class="line">
+                <span class="label field" use:term={"遅れの補正"}>{t("settings.latencyComp")}</span>
+                <div class="seg">
+                  <Button disabled>{t("settings.auto")}</Button>
+                  <Button disabled>{t("settings.manual")}</Button>
+                </div>
+                <Button disabled>{t("settings.remeasure")}</Button>
+              </div>
             </div>
           </div>
-        </div>
-      {/if}
-    </div>
+        {/if}
+      </ScrollArea>
 
-    <div class="foot">
-      <Button test="settings-cancel" onclick={() => send({ type: "settingsCancel" })}>{t("button.cancel")}</Button>
-      <Button primary test="settings-apply" onclick={() => send({ type: "settingsApply" })}>{t("settings.ok")}</Button>
+      <div class="foot">
+        <Button test="settings-cancel" onclick={() => send({ type: "settingsCancel" })}>{t("button.cancel")}</Button>
+        <Button primary test="settings-apply" onclick={() => send({ type: "settingsApply" })}>{t("settings.ok")}</Button>
+      </div>
     </div>
   </div>
 {/if}
 
 <style>
+  /* 上はモックの位置。窓が低ければ、上下 24 ずつのあきまで上へ寄せ、それでも入らなければ中身をスクロールする。 */
+  .place {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--part-dialog-margin) 0;
+  }
+  .lead {
+    flex: 0 1 calc(var(--mock-settings-top) - var(--part-dialog-margin));
+  }
+  .place.advanced .lead {
+    flex-basis: calc(var(--mock-settings-top-advanced) - var(--part-dialog-margin));
+  }
   .dialog {
-    position: fixed;
-    left: 50%;
-    top: var(--mock-settings-top);
-    z-index: 100;
+    flex-shrink: 0;
     pointer-events: auto;
-    transform: translateX(-50%);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     width: var(--part-dialog-width);
-    max-height: calc(100% - 2 * var(--mock-settings-top));
+    max-height: 100%;
     background: var(--color-gray-3);
     border: var(--line-hair) solid var(--color-gray-8);
     border-radius: var(--radius-1);
@@ -310,10 +325,6 @@
     font-weight: var(--text-s-weight-400);
     white-space: nowrap;
     color-scheme: dark;
-  }
-  .dialog.advanced {
-    top: var(--mock-settings-top-advanced);
-    max-height: calc(100% - 2 * var(--mock-settings-top-advanced));
   }
   .head {
     flex-shrink: 0;
@@ -326,9 +337,7 @@
   }
   .title {
     color: var(--color-gray-10);
-    font-size: var(--text-l-size);
-    line-height: var(--text-l-line-height);
-    font-weight: var(--text-l-weight-600);
+    font-weight: var(--text-s-weight-600);
   }
   .close {
     display: flex;
@@ -343,16 +352,6 @@
   }
   .close:hover {
     color: var(--color-gray-10);
-  }
-  .body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-  .body > * {
-    flex-shrink: 0;
   }
   section {
     display: flex;

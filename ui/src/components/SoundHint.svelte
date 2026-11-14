@@ -3,16 +3,16 @@
   import { current } from "../state/app.svelte";
   import { t } from "../text/ja";
 
+  /** 2 文目は、録音ボタンが使えるときだけ出す（仕様書 6 章、3 章「案内の文は、いま使えない部品を押すようには言わない」）。 */
+  let { recordUsable = false }: { recordUsable?: boolean } = $props();
+
   const show = $derived(current.state?.workspace.hint === "soundCameOut");
-  const parts = $derived.by(() => {
-    const text = t("msg.soundCameOut");
-    const i = text.indexOf("。") + 1;
-    return [text.slice(0, i), text.slice(i)] as const;
-  });
 </script>
 
 {#if show}
-  <div class="hint" data-test="sound-hint"><span class="strong">{parts[0]}</span>{parts[1]}</div>
+  <div class="hint" data-test="sound-hint">
+    <span class="strong">{t("msg.soundCameOut")}</span>{#if recordUsable}{t("msg.soundCameOutRecord")}{/if}
+  </div>
 {/if}
 
 <style>

@@ -1,34 +1,60 @@
 // What the surface needs from ui/src/design/tokens.ts, under the names the GL code uses, and
-// which spec color plays which role. Sizes are px at 100 %; only their ratios are used, because
-// every picture is drawn into the rect of its slot.
+// which spec color plays which role. Sizes are px at 100 %.
 
-import { mock, plain, type ColorName } from "../design/tokens";
+import { meterFall, meterScale, mock, part, plain, type ColorName } from "../design/tokens";
 
 export const METER_HOT_FROM = plain["meter.hot-from"].value / 100;
 export const CLIP_HOLD_MS = plain["meter.clip-hold"].value * 1000;
+/** Width of the clip mark at the loud end, px at 100 %. */
+export const CLIP_MARK = part["part.meter.clip"].value;
 
-/** Level scale of the mixer strip: [dB, length from the quiet end]. */
-export const DB_SCALE: readonly (readonly [number, number])[] = plain["mock.mixer.scale"].value.map(
-  ([db, top]) => [db, 1 - top / 100] as const,
+/**
+ * Spec 2, 「メーターとフェーダーの目盛」: [dB, length 0..1 from the quiet end], loudest first, straight
+ * lines between. Below the last point the length is 0 (−∞).
+ */
+export const DB_SCALE: readonly (readonly [number, number])[] = meterScale.map(
+  ([db, percent]) => [db, percent / 100] as const,
 );
-/** The mock's last label is −∞ at length 0. A straight line needs a finite end: not in the spec or the mocks. */
-export const DB_FLOOR = -60;
-/** How fast a level falls on the screen, dB per second. Not in the spec or the mocks. */
-export const FALL_DB_PER_S = 20 / 1.7;
+export const DB_FLOOR = DB_SCALE[DB_SCALE.length - 1]![0];
+/** How fast a level falls on the screen, dB per second. */
+export const FALL_DB_PER_S = meterFall.fallDb / meterFall.fallSeconds;
 
 /** Telemetry may switch a key that an Event set only when it was sent this long after the Event. */
 export const EVENT_WINS_US = 100_000;
 
+const FULL_H = mock["mock.input-meter.keys-full-h"].value;
+const FULL_BLACK_H = mock["mock.input-meter.black-key-h"].value;
+const SLIM_W = mock["mock.input-meter.key-slim-w"].value;
+
+/**
+ * Key sizes of the three forms of the input meter keyboard. `narrow` is the full meter with too
+ * little width (spec 1: 細い鍵（幅 8）; black keys from F-MeterLongName, the 150 % full example).
+ * Slim black keys: spec 3 (幅 5、高さ 7).
+ */
+export const KEY_FORMS = {
+  full: {
+    white: { w: mock["mock.input-meter.key-full-w"].value, h: FULL_H },
+    black: { w: mock["mock.input-meter.black-key-w"].value, h: FULL_BLACK_H },
+  },
+  narrow: {
+    white: { w: SLIM_W, h: FULL_H },
+    black: { w: mock["mock.input-meter.black-key-narrow-w"].value, h: FULL_BLACK_H },
+  },
+  slim: {
+    white: { w: SLIM_W, h: mock["mock.input-meter.keys-slim-h"].value },
+    black: { w: part["part.meter.black-key-slim-w"].value, h: part["part.meter.black-key-slim-h"].value },
+  },
+} as const;
+export type KeyForm = keyof typeof KEY_FORMS;
+
 /** F-Connect2 (a keyboard is there) and F-Connect1 (none: `dim`). */
 export const KEYBOARD = {
-  white: { w: mock["mock.input-meter.key-full-w"].value, h: mock["mock.input-meter.keys-full-h"].value },
-  black: { w: mock["mock.input-meter.black-key-w"].value, h: mock["mock.input-meter.black-key-h"].value },
   whiteFill: "color.gray.3",
   blackFill: "color.gray.0",
   down: "color.accent",
   lit: { frame: "color.gray.6", blackFrame: "color.gray.7" },
   dim: { frame: "color.gray.5", blackFrame: "color.gray.6" },
-} as const satisfies Record<string, ColorName | { w: number; h: number } | { frame: ColorName; blackFrame: ColorName }>;
+} as const satisfies Record<string, ColorName | { frame: ColorName; blackFrame: ColorName }>;
 
 /** F-Connect2, the bar beside "ベロシティ 87". `max` is the top MIDI velocity. */
 export const VELOCITY = { ground: "color.gray.4", fill: "color.accent", max: 127 } as const;

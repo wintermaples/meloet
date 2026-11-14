@@ -2,10 +2,15 @@
 import type { Availability } from "./Availability";
 import type { Friendly } from "./Friendly";
 import type { LinkKind } from "./LinkKind";
+import type { Unusable } from "./Unusable";
 
 export type EndpointView = { id: string, name: string, friendly: Friendly | null, availability: Availability, link: LinkKind, nodeName: string | null, 
 /**
- * meloet can play through it without changing any PC-wide setting: it has a node and the
- * PC uses this route on it now. Others are listed but cannot be chosen.
+ * The PC's name of the device this endpoint is on, as it is.
  */
-choosable: boolean, };
+device: string | null, 
+/**
+ * `None`: meloet can play through it without changing any PC-wide setting. Others are
+ * listed but cannot be chosen.
+ */
+unusable: Unusable | null, };

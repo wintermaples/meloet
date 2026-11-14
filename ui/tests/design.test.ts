@@ -6,6 +6,8 @@ import {
   fontFamily,
   line,
   part,
+  meterFall,
+  meterScale,
   plain,
   partAt,
   radius,
@@ -16,7 +18,7 @@ import {
   writeCssVariables,
   type PartName,
 } from "../src/design/tokens";
-import { cellText, rows, sectionTables, specDocument, tableAfterH3 } from "./design-sources";
+import { cellText, headers, rows, sectionTables, sectionText, specDocument, tableAfterH3 } from "./design-sources";
 
 const doc = specDocument();
 const triple = (s: string) => s.split("/").map((x) => Number(x.trim()));
@@ -108,6 +110,10 @@ const ROUNDED = [
   "part.choice.dot@125=7.5→8",
   "part.endpoint.friendly@125=187.5→188",
   "part.endpoint.link@125=7.5→8",
+  "part.meter.black-key-slim-h@125=8.75→9",
+  "part.meter.black-key-slim-h@150=10.5→11",
+  "part.meter.black-key-slim-w@125=6.25→6",
+  "part.meter.black-key-slim-w@150=7.5→8",
   "part.meter.clip@125=2.5→3",
   "part.meter.vertical@125=7.5→8",
   "part.note.edge@125=2.5→3",
@@ -119,10 +125,15 @@ const ROUNDED = [
 ];
 
 describe("part.*（仕様書の文の中にしかない寸法）", () => {
-  const tables = { s1: sectionTables(doc, "s1"), s2: sectionTables(doc, "s2") };
+  const tables = { s1: sectionTables(doc, "s1"), s2: sectionTables(doc, "s2"), s3: sectionTables(doc, "s3") };
 
   const fromSpec = Object.entries(plain).flatMap(([k, v]) => ("spec" in v ? [[k, v] as const] : []));
   it.each([...Object.entries(part), ...fromSpec])("%s は仕様書の行にその言葉で書いてある", (_, tok) => {
+    expect(tok.spec.quote).toMatch(new RegExp(`(^|\\D)${tok.value}(\\D|$)`));
+    if (tok.spec.row === null) {
+      expect(sectionText(doc, tok.spec.section)).toContain(tok.spec.quote);
+      return;
+    }
     const row = tables[tok.spec.section]
       .flatMap((t) => Array.from(t.tBodies[0]?.rows ?? []))
       .find((tr) => cellText(tr.cells[0]!) === tok.spec.row);
@@ -142,6 +153,27 @@ describe("part.*（仕様書の文の中にしかない寸法）", () => {
 
   it("partAt はどの率でも整数", () => {
     for (const k of Object.keys(part) as PartName[]) for (const s of SCALES) expect(Number.isInteger(partAt(k, s)), k).toBe(true);
+  });
+});
+
+describe("仕様書 2 章「メーターとフェーダーの目盛」", () => {
+  const table = tableAfterH3(doc, "メーターとフェーダーの目盛");
+  const num = (s: string) => Number(s.replace("−", "-").replace("+", "").replace(" %", ""));
+
+  it("表の dB と長さが meterScale と同じ", () => {
+    const dbs = headers(table).slice(1).map(num);
+    const lengths = rows(table)[0]!.slice(1).map(num);
+    expect(rows(table)[0]![0]).toBe("長さ");
+    expect(meterScale).toEqual(dbs.map((db, i) => [db, lengths[i]]));
+  });
+
+  it("落ちる速さは見出しの文のとおり", () => {
+    const h3 = Array.from(doc.querySelectorAll("h3")).find((h) => cellText(h) === "メーターとフェーダーの目盛")!;
+    expect(cellText(h3.nextElementSibling!)).toContain(`落ちるときは ${meterFall.fallDb} dB を ${meterFall.fallSeconds} 秒かけて`);
+  });
+
+  it("meter.hot-from は目盛の −3 dB の長さ", () => {
+    expect(meterScale.find(([db]) => db === -3)![1]).toBe(plain["meter.hot-from"].value);
   });
 });
 

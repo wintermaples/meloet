@@ -59,7 +59,7 @@ function digit(k: KeyInput): string | null {
 
 /**
  * キーのできごとから、することを決める。何もしないなら null。
- * typing: いま文字を打っている（isTyping）。一文字のキーはそのあいだ効かない。Esc・Enter・Mod つきは効く。
+ * typing: いま文字を打っている（isTyping）。一文字のキーと Space はそのあいだ効かない。Esc・Enter・Mod つき・Home は効く。
  */
 export function keyAction(k: KeyInput, typing: boolean, platform: Platform, context: KeyContext = "main"): KeyAction | null {
   if (k.composing) return null;
@@ -88,11 +88,12 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (k.key === "Enter") return { kind: "chooserConfirm" };
   }
 
-  // 仕様書 4 章の表で Space と Home は「文字を打っている最中: 効く」。
-  if (k.key === " " || k.code === "Space") return k.shift ? null : { kind: "notYet", what: "playStop" };
+  // 仕様書 4 章: Home は文字を打っている最中も効く。Space は効かず、空白として入る。
   if (k.key === "Home") return k.shift ? null : { kind: "notYet", what: "toStart" };
+  if (typing) return null;
+  if (k.key === " " || k.code === "Space") return k.shift ? null : { kind: "notYet", what: "playStop" };
 
-  if (typing || k.shift) return null;
+  if (k.shift) return null;
   const l = letter(k);
   return (l && BAND_KEYS[l]) || null;
 }

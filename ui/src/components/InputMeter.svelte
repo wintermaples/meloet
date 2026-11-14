@@ -9,7 +9,8 @@
   import { current, onEvent } from "../state/app.svelte";
   import { t } from "../text/ja";
   import { heldText, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
-  import { charCount, meterFit, nameWidthPx, type MeterFit, type NameWidth } from "./meterFit";
+  import { metrics } from "./metrics.svelte";
+  import { charCount, meterFit, nameWidthPx, sentences, sentencesShown, type MeterFit, type NameWidth } from "./meterFit";
 
   const FIRST_NOTE = 36;
   const LAST_NOTE = 84;
@@ -20,8 +21,12 @@
   const app = $derived(current.state);
   const slim = $derived(app?.workspace.layout.meter === "slim");
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
+  // 鍵盤が 2 台以上なら、名前は最後に弾いた鍵盤。うしろに残りの台数（仕様書 3 章）。
   const keyboard = $derived(app?.keyboards.list.find((k) => k.id === app.keyboards.active) ?? null);
   const name = $derived(keyboard?.name ?? t("meter.noKeyboard"));
+  const others = $derived(keyboard ? app!.keyboards.list.length - 1 : 0);
+  const more = $derived(others > 0 ? t("meter.otherKeyboards", { count: others }) : "");
+  const allNames = $derived(app?.keyboards.list.map((k) => k.name).join(" ・ ") ?? "");
   const right = $derived.by(() => {
     if (!app) return null;
     if (!keyboard) {
@@ -68,17 +73,28 @@
     return filled.split(new RegExp(`(${TRACK}|${INSTRUMENT})`)).filter((p) => p !== "");
   }
 
-  /** 「鍵盤がない」の文の 1 文目と残り（モック F-Connect1 で色を分けている）。 */
-  function firstSentence(text: string): [string, string] {
-    const i = text.indexOf("。") + 1;
-    return [text.slice(0, i), text.slice(i)];
-  }
+  /** 右はしの案内の文。tone: 1 文目と残りの色（「鍵盤がない」はモック F-Connect1 で色を分けている）。 */
+  const message = $derived.by(() => {
+    if (right?.kind === "missing") return { parts: sentences(t("msg.keyboardMissing")), first: "strong", rest: "dim" };
+    if (right?.kind === "lost")
+      return { parts: sentences(t("msg.keyboardLost", { keyboard: app!.keyboards.lost! })), first: "strong", rest: "strong" };
+    if (right?.kind === "noOutput") return { parts: [t("msg.noOutputMeter")], first: "accent", rest: "accent" };
+    return null;
+  });
 
   // 横の入れかた: 見えない写し（ruler）で、ちぢめない幅を測る。
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
-  let fit = $state<MeterFit>({ nameWidth: "size.meter.name", pitchBend: true, modulation: true });
+  let fit = $state<MeterFit>({
+    nameWidth: "size.meter.name",
+    pitchBend: true,
+    modulation: true,
+    narrowKeys: false,
+    targetLabel: true,
+    sustain: true,
+  });
   let nameNatural = $state(0);
+  let shown = $state(Infinity);
 
   function measure(): void {
     if (!row || !ruler) return;
@@ -89,17 +105,25 @@
     const nameW = width("name");
     const bendW = keyboard ? width("bend") + gap : 0;
     const modW = keyboard ? width("mod") + gap : 0;
+    const keyW = (n: string) => metrics.px(`mock.input-meter.key-${n}-w`);
     nameNatural = nameW;
     fit = meterFit({
       meter: slim ? "slim" : "full",
       scale,
-      nameChars: charCount(name),
+      nameChars: charCount(name + (more ? ` ${more}` : "")),
       available,
       rest: ruler.scrollWidth - nameW - bendW - modW,
       name: nameW,
       pitchBend: bendW,
       modulation: modW,
+      narrowKeys: (keyW("full") - keyW("slim")) * WHITE_KEYS,
+      targetLabel: Math.max(0, width("target") - width("target-value")),
+      sustain: keyboard ? width("sustain") + gap : 0,
     });
+    if (message) {
+      const widths = message.parts.map((_, i) => width(`msg-${i}`));
+      shown = sentencesShown(widths, available - (ruler.scrollWidth - width("msg")));
+    }
   }
 
   onMount(() => {
@@ -110,12 +134,13 @@
   });
   $effect(() => {
     // 状態が変わったら測りなおす（ResizeObserver のない所でも、決まりの通りに出す）。
-    void [slim, scale, name, keyboard, right];
+    void [slim, scale, name, more, keyboard, right, message];
     measure();
   });
 
   const cssVar = (w: NameWidth) => `var(--${w.replaceAll(".", "-")})`;
   const truncated = $derived(nameNatural > 0 && nameNatural > nameWidthPx(fit.nameWidth, scale));
+  const nameTip = $derived(others > 0 ? allNames : truncated ? name : null);
 </script>
 
 {#snippet body(measuring: boolean)}
@@ -127,7 +152,8 @@
       style:max-width={!measuring && slim ? cssVar(fit.nameWidth) : null}
     >
       <span class="mark" class:on={keyboard !== null}></span>
-      <span class="name-text" data-test="keyboard-name" use:tip={!measuring && truncated ? name : null}>{name}</span>
+      <span class="name-text" data-test="keyboard-name" use:tip={measuring ? null : nameTip}>{name}</span>
+      {#if more}<span class="more" data-test="other-keyboards" use:tip={measuring ? null : nameTip}>{` ${more}`}</span>{/if}
     </span>
   </div>
 
@@ -136,9 +162,11 @@
   {:else}
     <div
       class="keys"
+      class:narrow={!slim && fit.narrowKeys}
       use:glSlot={{
         kind: "keyboard",
         size: slim ? "slim" : "full",
+        narrow: !slim && fit.narrowKeys,
         firstNote: FIRST_NOTE,
         lastNote: LAST_NOTE,
         disabled: keyboard === null,
@@ -170,12 +198,14 @@
       {/if}
     </div>
 
-    <div class="item">
-      <span class="label" use:term={"サステイン"}>{t("meter.sustain")}</span>
-      <span class="value" class:live data-test="sustain">
-        {sustain >= SUSTAIN_ON ? t("meter.on") : t("meter.off")}{slim ? "" : ` ${pad3(sustain)}`}
-      </span>
-    </div>
+    {#if measuring || fit.sustain}
+      <div class="item" data-part="sustain">
+        <span class="label" use:term={"サステイン"}>{t("meter.sustain")}</span>
+        <span class="value" class:live data-test="sustain">
+          {sustain >= SUSTAIN_ON ? t("meter.on") : t("meter.off")}{slim ? "" : ` ${pad3(sustain)}`}
+        </span>
+      </div>
+    {/if}
 
     {#if measuring || fit.pitchBend}
       <div class="item" data-part="bend" data-test="pitch-bend">
@@ -193,17 +223,16 @@
 
   <div class="spacer"></div>
 
-  {#if right?.kind === "missing"}
-    {@const [first, rest] = firstSentence(t("msg.keyboardMissing"))}
-    <span class="message" data-test="meter-right"><span class="strong">{first}</span><span class="dim">{rest}</span></span>
-  {:else if right?.kind === "lost"}
-    <span class="message strong" data-test="meter-right">{t("msg.keyboardLost", { keyboard: app!.keyboards.lost! })}</span>
-  {:else if right?.kind === "noOutput"}
-    <span class="message accent" data-test="meter-right">{t("msg.noOutputMeter")}</span>
+  {#if message}
+    <span class="message" data-test="meter-right" data-part="msg">
+      {#each message.parts as part, i (i)}
+        {#if measuring || i < shown}<span class={i === 0 ? message.first : message.rest} data-part="msg-{i}">{part}</span>{/if}
+      {/each}
+    </span>
   {:else if right?.kind === "target"}
-    <div class="item target" data-test="meter-right">
-      <span class="label">{t("meter.playTarget")}</span>
-      <span class="target-value">
+    <div class="item target" data-test="meter-right" data-part="target">
+      {#if measuring || fit.targetLabel}<span class="label">{t("meter.playTarget")}</span>{/if}
+      <span class="target-value" data-part="target-value">
         {#each targetPieces(right.track.name, !slim) as piece, i (i)}
           {#if piece === INSTRUMENT}
             <span use:term={"仮の音"}>{t("instrument.placeholder")}</span>
@@ -296,6 +325,11 @@
     height: var(--part-endpoint-link);
     border: var(--line-hair) solid var(--color-gray-8);
   }
+  .more {
+    flex-shrink: 0;
+    margin-left: calc(-1 * var(--space-2));
+    white-space: pre;
+  }
   .mark.on {
     background: var(--color-accent);
     border: 0;
@@ -304,6 +338,9 @@
     flex-shrink: 0;
     width: calc(var(--mock-input-meter-key-full-w) * var(--white-keys) + var(--line-hair));
     height: var(--mock-input-meter-keys-full-h);
+  }
+  .keys.narrow {
+    width: calc(var(--mock-input-meter-key-slim-w) * var(--white-keys) + var(--line-hair));
   }
   .slim .keys {
     width: calc(var(--mock-input-meter-key-slim-w) * var(--white-keys) + var(--line-hair));

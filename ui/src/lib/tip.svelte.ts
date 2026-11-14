@@ -98,3 +98,7 @@ export const tip: Action<HTMLElement, string | null | undefined> = (node, text) 
     destroy: h.destroy,
   };
 };
+
+/** `use:tipWhenCut`。「…」でちぢんでいるときだけ、要素の文を全部出す。 */
+export const tipWhenCut: Action<HTMLElement> = (node) =>
+  hover(node, () => (node.scrollWidth > node.clientWidth && node.textContent ? { term: null, body: node.textContent } : null));

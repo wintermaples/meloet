@@ -116,8 +116,8 @@ describe("偽物の場面", () => {
     expect(l).toMatchObject({ meter: "slim", arrangeHeight: 40, arrangeOverview: true, showBackHint: true });
     expect(l.lower).toEqual([{ band: "pianoRoll", height: 800 - 48 - 24 - 24 - 24 - 40 }]);
   });
-  it("ミキサーと履歴は決まった高さで、アレンジが押しちぢめられる", () => {
-    expect(fakeScene("mixer")!.state.workspace.layout).toMatchObject({ arrangeHeight: 680 - 432, lower: [{ band: "mixer", height: 432 }] });
+  it("窓 960 未満のミキサーはアレンジを 40 にして残りぜんぶ。履歴は 248 で、アレンジが押しちぢめられる", () => {
+    expect(fakeScene("mixer")!.state.workspace.layout).toMatchObject({ arrangeHeight: 40, lower: [{ band: "mixer", height: 680 - 40 }] });
     expect(fakeScene("history")!.state.workspace.layout).toMatchObject({ arrangeHeight: 680 - 248, lower: [{ band: "history", height: 248 }] });
   });
   it("アレンジだけなら入力計は太く、アレンジが残りぜんぶ", () => {
@@ -153,10 +153,11 @@ describe("偽物の場面", () => {
     for (const name of Object.keys(SCENES)) expect(fakeScene(name), name).not.toBeNull();
     expect(fakeScene("nope")).toBeNull();
     const c2 = fakeScene("connect2")!.state;
-    expect(c2.outputs.list.map((o) => [o.name, o.choosable, o.availability])).toEqual([
-      ["アナログヘッドフォン", true, "yes"],
-      ["ライン出力", false, "no"],
-      ["HDMI / DisplayPort 2", false, "no"],
+    expect(c2.outputs.list.map((o) => o.unusable)).toEqual([
+      null,
+      null,
+      "switchedByPc",
+      ...Array(7).fill("stoppedByPc"),
     ]);
     expect(c2.workspace.chooser).toEqual({ highlighted: "out-headphones" });
   });

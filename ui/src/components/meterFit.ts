@@ -26,13 +26,25 @@ export interface MeterFitInput {
   /** ピッチベンド、モジュレーションの幅（前のすきまを入れて）。 */
   pitchBend: number;
   modulation: number;
+  /** 太いときだけ: 鍵盤の絵を細い鍵にして浮く幅、「弾くと鳴る先」のラベルをはぶいて浮く幅、サステインの幅（前のすきまを入れて）。 */
+  narrowKeys?: number;
+  targetLabel?: number;
+  sustain?: number;
 }
 
 export interface MeterFit {
   nameWidth: NameWidth;
   pitchBend: boolean;
   modulation: boolean;
+  /** 鍵盤の絵を細い鍵（白鍵の幅 8）にする。 */
+  narrowKeys: boolean;
+  /** 「弾くと鳴る先」のラベルを出す（値はいつも出す）。 */
+  targetLabel: boolean;
+  sustain: boolean;
 }
+
+/** 太いときに引っこめる順（仕様書 1 章「拡大率の決まり」）。 */
+const FULL_ORDER = ["modulation", "pitchBend", "narrowKeys", "targetLabel", "sustain"] as const;
 
 export function nameWidthPx(name: NameWidth, scale: Scale): number {
   const i = scale === 100 ? 0 : scale === 125 ? 1 : 2;
@@ -41,27 +53,69 @@ export function nameWidthPx(name: NameWidth, scale: Scale): number {
 
 /**
  * どの読み値を出すかと、名前の欄の幅。
- * 横が足りなければ、モジュレーション、ピッチベンドの順に引っこめ、それでも足りなければ
- * 細いときの名前の上限を 176 から 128 にする。それでも入らない名前は「…」でちぢむ。
+ * 細いとき: モジュレーション、ピッチベンドの順に引っこめ、それでも足りなければ名前の上限を 176 から 128 にする。
+ * 太いとき: モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵に → 「弾くと鳴る先」のラベル → サステイン。
+ * それでも入らない名前は「…」でちぢむ。
  */
 export function meterFit(input: MeterFitInput): MeterFit {
   const { meter, scale, available, rest, pitchBend, modulation } = input;
-  const nameUsed = (w: NameWidth) =>
-    meter === "full" ? nameWidthPx(w, scale) : Math.min(input.name, nameWidthPx(w, scale));
+  if (meter === "full") {
+    const first: NameWidth = input.nameChars > LONG_NAME_CHARS ? "part.meter.name.long" : "size.meter.name";
+    const saved = {
+      modulation,
+      pitchBend,
+      narrowKeys: input.narrowKeys ?? 0,
+      targetLabel: input.targetLabel ?? 0,
+      sustain: input.sustain ?? 0,
+    };
+    const fit: MeterFit = {
+      nameWidth: first,
+      pitchBend: true,
+      modulation: true,
+      narrowKeys: false,
+      targetLabel: true,
+      sustain: true,
+    };
+    let need = rest + nameWidthPx(first, scale) + pitchBend + modulation;
+    for (const step of FULL_ORDER) {
+      if (need <= available) break;
+      if (step === "narrowKeys") fit.narrowKeys = true;
+      else fit[step] = false;
+      need -= saved[step];
+    }
+    return fit;
+  }
   const fits = (w: NameWidth, bend: boolean, mod: boolean) =>
-    rest + nameUsed(w) + (bend ? pitchBend : 0) + (mod ? modulation : 0) <= available;
+    rest + Math.min(input.name, nameWidthPx(w, scale)) + (bend ? pitchBend : 0) + (mod ? modulation : 0) <= available;
+  const slim = (nameWidth: NameWidth, pitchBend: boolean, modulation: boolean): MeterFit => ({
+    nameWidth,
+    pitchBend,
+    modulation,
+    narrowKeys: false,
+    targetLabel: true,
+    sustain: true,
+  });
+  const first: NameWidth = "size.meter.name.slim";
+  if (fits(first, true, true)) return slim(first, true, true);
+  if (fits(first, true, false)) return slim(first, true, false);
+  if (fits(first, false, false)) return slim(first, false, false);
+  return slim("part.meter.name.slim-narrow", false, false);
+}
 
-  const first: NameWidth =
-    meter === "slim"
-      ? "size.meter.name.slim"
-      : input.nameChars > LONG_NAME_CHARS
-        ? "part.meter.name.long"
-        : "size.meter.name";
+/**
+ * 入力計の右はしの案内の文を、いくつ出すか（仕様書 1 章「拡大率の決まり」）。うしろの文から引っこめ、1 文目は残す。
+ * それでも入らなければ、画面がうしろを「…」でちぢめる。widths は文ごとの幅、room は文に使える幅。
+ */
+export function sentencesShown(widths: readonly number[], room: number): number {
+  let n = widths.length;
+  let need = widths.reduce((a, b) => a + b, 0);
+  while (n > 1 && need > room) need -= widths[--n]!;
+  return n;
+}
 
-  if (fits(first, true, true)) return { nameWidth: first, pitchBend: true, modulation: true };
-  if (fits(first, true, false)) return { nameWidth: first, pitchBend: true, modulation: false };
-  if (meter === "full" || fits(first, false, false)) return { nameWidth: first, pitchBend: false, modulation: false };
-  return { nameWidth: "part.meter.name.slim-narrow", pitchBend: false, modulation: false };
+/** 文を「。」のあとで分ける。 */
+export function sentences(text: string): string[] {
+  return text.match(/[^。]+。?/g) ?? [text];
 }
 
 /** 文字数（サロゲートペアも 1 文字）。 */

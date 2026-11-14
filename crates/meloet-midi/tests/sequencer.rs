@@ -14,6 +14,7 @@ use meloet_midi::{
 const WAIT: Duration = Duration::from_secs(3);
 const VIRTUAL: MidiOptions = MidiOptions {
     accept_virtual: true,
+    only_virtual: false,
 };
 
 fn sequencer_missing() -> bool {

@@ -70,6 +70,7 @@ fn measure_report(name: String, json: String) -> Result<(), String> {
 }
 
 fn main() {
+    devhooks::read_env();
     let core = Arc::new(meloet_core::Core::start(
         meloet_core::CoreOptions::from_env(),
     ));

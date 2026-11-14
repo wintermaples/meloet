@@ -88,13 +88,19 @@ pub enum MidiMessage {
 pub struct MidiOptions {
     /// Also treat `meloet-vkeys*` clients as keyboards (for tests and measurements).
     pub accept_virtual: bool,
+    /// Treat only `meloet-vkeys*` clients as keyboards and leave real ones out (to show the
+    /// screens without a keyboard while one is plugged in).
+    pub only_virtual: bool,
 }
 
 impl MidiOptions {
-    /// `accept_virtual` is on when the environment has `MELOET_ACCEPT_VIRTUAL=1`.
+    /// `accept_virtual` is on when the environment has `MELOET_ACCEPT_VIRTUAL=1`,
+    /// `only_virtual` when it has `MELOET_ONLY_VIRTUAL=1`.
     pub fn from_env() -> Self {
+        let on = |name: &str| std::env::var_os(name).is_some_and(|v| v == "1");
         Self {
-            accept_virtual: std::env::var_os("MELOET_ACCEPT_VIRTUAL").is_some_and(|v| v == "1"),
+            accept_virtual: on("MELOET_ACCEPT_VIRTUAL"),
+            only_virtual: on("MELOET_ONLY_VIRTUAL"),
         }
     }
 }

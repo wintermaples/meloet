@@ -20,11 +20,12 @@ pub(crate) fn keyboard_port(
     ports: &[PortFacts],
     options: MidiOptions,
 ) -> Option<i32> {
-    let is_virtual = options.accept_virtual && client_name.starts_with(VKEYS_CLIENT_NAME);
+    let is_virtual = (options.accept_virtual || options.only_virtual)
+        && client_name.starts_with(VKEYS_CLIENT_NAME);
     ports
         .iter()
         .filter(|p| p.cap.contains(PortCap::READ | PortCap::SUBS_READ))
-        .filter(|p| is_virtual || p.kind.contains(PortType::HARDWARE))
+        .filter(|p| is_virtual || (!options.only_virtual && p.kind.contains(PortType::HARDWARE)))
         .map(|p| p.port)
         .min()
 }
@@ -94,13 +95,35 @@ mod tests {
     const APP: PortType = PortType::MIDI_GENERIC.union(PortType::APPLICATION);
     const NO: MidiOptions = MidiOptions {
         accept_virtual: false,
+        only_virtual: false,
     };
     const YES: MidiOptions = MidiOptions {
         accept_virtual: true,
+        only_virtual: false,
+    };
+    const ONLY: MidiOptions = MidiOptions {
+        accept_virtual: false,
+        only_virtual: true,
     };
 
     fn port(port: i32, cap: PortCap, kind: PortType) -> PortFacts {
         PortFacts { port, cap, kind }
+    }
+
+    #[test]
+    fn only_virtual_leaves_real_keyboards_out() {
+        assert_eq!(
+            keyboard_port("Keystation 49 MK3", &[port(0, READ, HW)], ONLY),
+            None
+        );
+        assert_eq!(
+            keyboard_port("meloet-vkeys", &[port(0, READ, APP)], ONLY),
+            Some(0)
+        );
+        assert_eq!(
+            keyboard_port("Other app", &[port(0, READ, APP)], ONLY),
+            None
+        );
     }
 
     #[test]

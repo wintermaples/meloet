@@ -28,6 +28,8 @@
         "LOCPATH": "${env:LOCPATH_VSCODE_SNAP_ORIG}"
       },
       "sourceLanguages": ["rust"],
+      // WebKit の JavaScriptCore は、GC のときに SIGUSR1 でスレッドを止める。デバッガがそこで止まらないように、黙って渡す。
+      "preRunCommands": ["process handle SIGUSR1 --stop false --notify false --pass true"],
       "preLaunchTask": "画面: vite（開発サーバ）"
     },
     {

@@ -1,0 +1,11 @@
+[package]
+name = "pk-core"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+# libxcb also tries the abstract socket, which works across users; the pure-Rust connection only tries the file socket.
+x11rb = { version = "0.14.0", features = ["allow-unsafe-code"] }

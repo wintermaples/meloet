@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["spikes/s1-render/src-tauri"]
+members = ["spikes/s1-render/src-tauri", "spikes/plugins/core", "spikes/plugins/vst3", "spikes/plugins/lv2", "spikes/plugins/probe", "spikes/s4-latency/src-tauri"]
 
 [workspace.package]
 edition = "2024"

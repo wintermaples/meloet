@@ -1,0 +1,114 @@
+{
+  "editor": [
+    {
+      "closeMs": 10.592556,
+      "distinctColours": 2810,
+      "openMs": 109.171188,
+      "readbackError": null,
+      "round": 0,
+      "size": [
+        1597,
+        995
+      ]
+    },
+    {
+      "closeMs": 12.778804,
+      "distinctColours": 2805,
+      "openMs": 81.513053,
+      "readbackError": null,
+      "round": 1,
+      "size": [
+        1597,
+        995
+      ]
+    },
+    {
+      "closeMs": 11.404694,
+      "distinctColours": 2815,
+      "openMs": 80.26884600000001,
+      "readbackError": null,
+      "round": 2,
+      "size": [
+        1597,
+        995
+      ]
+    }
+  ],
+  "info": {
+    "audio_ins": 2,
+    "audio_outs": 2,
+    "format": "Vst3",
+    "id": "ABCDEF019182FAEB566D624153675854",
+    "kind": "Instrument",
+    "name": "Surge XT",
+    "path": "/usr/lib/vst3/Surge XT.vst3",
+    "uis": [
+      "X11Embed"
+    ],
+    "vendor": "Surge Synth Team"
+  },
+  "load": {
+    "ms": 140.94026000000002,
+    "ok": true
+  },
+  "params": {
+    "count": 2855,
+    "readWrite": [
+      {
+        "before": 0.0,
+        "id": 825615485,
+        "name": "M1: -",
+        "readBack": 0.25,
+        "wrote": 0.25
+      },
+      {
+        "before": 0.0,
+        "id": 825615486,
+        "name": "M2: -",
+        "readBack": 0.5,
+        "wrote": 0.5
+      },
+      {
+        "before": 0.0,
+        "id": 825615487,
+        "name": "M3: -",
+        "readBack": 0.75,
+        "wrote": 0.75
+      }
+    ]
+  },
+  "sound": {
+    "ok": true,
+    "rmsFirstHalf": 0.14411168199449445,
+    "rmsL": 0.10230650763140163
+  },
+  "state": {
+    "again": {
+      "maxAbsDiff": 0.0675575528293848,
+      "rmsA": 0.010548614191390231,
+      "rmsB": 0.01030153476405785,
+      "shapeCorrelation": 0.5942712571795741,
+      "waveCorrelation": 0.18962005516047
+    },
+    "bytes": 51358,
+    "control": {
+      "maxAbsDiff": 0.4687862675637007,
+      "rmsA": 0.010548614191390231,
+      "rmsB": 0.09634004963034908,
+      "shapeCorrelation": -0.012448623642431874,
+      "waveCorrelation": -0.12259287848145259
+    },
+    "paramsCompared": 40,
+    "paramsDiffer": [],
+    "paramsEqual": true,
+    "restore": null,
+    "restored": {
+      "maxAbsDiff": 0.06199420616030693,
+      "rmsA": 0.010548614191390231,
+      "rmsB": 0.01038627993927588,
+      "shapeCorrelation": 0.993114360009329,
+      "waveCorrelation": 0.3082703231236262
+    }
+  },
+  "unloaded": true
+}

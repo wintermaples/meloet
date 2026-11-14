@@ -1,0 +1,71 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "画面: vite（開発サーバ）",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/ui" },
+      "isBackground": true,
+      // vite は問題を出さない。下の background は「立ちあがった」を知るためだけ。
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^__never__$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "ready in"
+        }
+      }
+    },
+    {
+      "label": "画面: ビルド（ui/dist）",
+      "type": "shell",
+      "command": "npm run build",
+      "options": { "cwd": "${workspaceFolder}/ui" },
+      "problemMatcher": []
+    },
+    {
+      "label": "meloet: release で動かす",
+      "type": "shell",
+      "command": "cargo run --release -p meloet-app",
+      "dependsOn": "画面: ビルド（ui/dist）",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "約束の型を書き出す（Rust → TS）",
+      "type": "shell",
+      "command": "cargo test -p meloet-protocol",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "検査: 全部",
+      "type": "shell",
+      "command": "scripts/check-all.sh",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "検査: 全部（鍵盤と PipeWire のテストも）",
+      "type": "shell",
+      "command": "scripts/check-all.sh --devices",
+      "group": "test",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "テスト: 画面（vitest）",
+      "type": "shell",
+      "command": "npm test",
+      "options": { "cwd": "${workspaceFolder}/ui" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "テスト: Rust",
+      "type": "shell",
+      "command": "cargo test",
+      "group": "test",
+      "problemMatcher": ["$rustc"]
+    }
+  ]
+}

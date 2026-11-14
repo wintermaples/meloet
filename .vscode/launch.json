@@ -1,0 +1,60 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // 画面は ui/dist を埋めこまず、vite（localhost:1420）から読む。ui/ を書きかえると、すぐ窓に出る。
+      "name": "meloet（デバッグ）",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "-p", "meloet-app", "--bin", "meloet", "--no-default-features"],
+        "filter": { "name": "meloet", "kind": "bin" }
+      },
+      "cwd": "${workspaceFolder}",
+      "env": { "RUST_BACKTRACE": "1" },
+      "sourceLanguages": ["rust"],
+      "preLaunchTask": "画面: vite（開発サーバ）"
+    },
+    {
+      // Tauri なし。偽物の状態（ui/src/bridge/fake.ts の場面）をブラウザで見る。
+      "name": "画面だけ（ブラウザ、偽物の場面）",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:1420/?scene=${input:scene}&scale=${input:scale}",
+      "webRoot": "${workspaceFolder}/ui",
+      "preLaunchTask": "画面: vite（開発サーバ）"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "scene",
+      "type": "pickString",
+      "description": "場面",
+      "options": [
+        "connect1",
+        "connect2",
+        "connect3",
+        "empty",
+        "bufferFixed",
+        "settings",
+        "settingsAdvFixed",
+        "settingsEnd",
+        "settingsAdvFixedEnd",
+        "longName",
+        "pianoRoll",
+        "mixer",
+        "history",
+        "shelf",
+        "params"
+      ],
+      "default": "connect2"
+    },
+    {
+      "id": "scale",
+      "type": "pickString",
+      "description": "拡大率",
+      "options": ["100", "125", "150"],
+      "default": "100"
+    }
+  ]
+}

@@ -35,6 +35,12 @@ cargo run --release -p meloet-app # meloet が立ちあがる
 
 場面の名前は `ui/src/bridge/fake.ts` にあります。
 
+VS Code では（`.vscode/`、拡張機能 CodeLLDB が要る）:
+
+- 実行とデバッグの「meloet（デバッグ）」: vite を立ちあげてから、Rust をデバッグ用にビルドして動かす。画面は ui/dist ではなく vite から読むので、`ui/` を書きかえるとすぐ窓に出る。
+- 「画面だけ（ブラウザ、偽物の場面）」: 場面と拡大率をえらんで、Chrome で開く。
+- タスク: 「meloet: release で動かす」「検査: 全部」「約束の型を書き出す（Rust → TS）」など。
+
 ## 確かめる
 
 ```bash

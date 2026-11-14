@@ -1,0 +1,9 @@
+# The engine never takes a lock and never sleeps (docs/architecture.md 4-1).
+disallowed-types = [
+    { path = "std::sync::Mutex", reason = "the engine is lock-free; use rtrb or atomics" },
+    { path = "std::sync::RwLock", reason = "the engine is lock-free; use rtrb or atomics" },
+    { path = "std::sync::Condvar", reason = "the engine never waits" },
+]
+disallowed-methods = [
+    { path = "std::thread::sleep", reason = "the engine never blocks" },
+]

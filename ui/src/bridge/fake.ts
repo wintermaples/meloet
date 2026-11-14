@@ -88,7 +88,7 @@ function reduce(state: AppState, command: Command): WorkspaceView | null {
       ws.layout.lower = [];
       break;
     case "openSettings":
-      ws.settings ??= { draftOutput: null, advancedOpen: false };
+      ws.settings ??= { draftOutput: null, advancedOpen: command.advanced };
       break;
     case "settingsApply":
     case "settingsCancel":

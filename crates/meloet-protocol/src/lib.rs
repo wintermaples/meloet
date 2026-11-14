@@ -38,7 +38,10 @@ pub enum Command {
     },
     GoArrange,
     Back,
-    OpenSettings,
+    /// Mod+, opens the front; "くわしく" in the status line opens it with the advanced part.
+    OpenSettings {
+        advanced: bool,
+    },
     SettingsSelectOutput {
         output: String,
     },

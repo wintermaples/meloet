@@ -183,10 +183,10 @@ fn apply(state: &mut AppState, command: Command) {
             }
             ws.layout.right_front = ws.layout.right_open.last().copied();
         }
-        Command::OpenSettings => {
+        Command::OpenSettings { advanced } => {
             ws.settings.get_or_insert(SettingsDialogView {
                 draft_output: None,
-                advanced_open: false,
+                advanced_open: advanced,
             });
         }
         Command::SettingsToggleAdvanced => {

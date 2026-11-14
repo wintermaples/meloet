@@ -2,6 +2,7 @@
 # Bet 4 runs. Usage:
 #   run.sh devices                 list output devices per host (cpal)
 #   run.sh latency [buffer]        virtual keys -> Rust -> screen and -> sound, every transport
+#   run.sh latency-load            same, while meters and position stream at 60 Hz
 #   run.sh load                    per-frame meters + position at 60 and 144 Hz, every transport
 #   run.sh plug <secs>             waits while a person plugs and unplugs the keyboard
 #   run.sh real <secs> [transport] waits while a person presses real keys
@@ -25,6 +26,12 @@ case "${1:-}" in
     for t in event chan-json chan-bin pull; do
       ( sleep 4; $VK 120 120 300 > /dev/null ) &
       app "latency__${t}__buf${buf:-default}" "mode=latency&transport=$t&dur=50000" ${buf:+--buffer $buf}
+      wait
+    done ;;
+  latency-load)  # the realistic case: meters and position keep streaming at 60 Hz while keys arrive
+    for t in event chan-json chan-bin pull; do
+      ( sleep 4; $VK 120 120 300 > /dev/null ) &
+      app "latency-load__${t}" "mode=latency&transport=$t&dur=50000&hz=60"
       wait
     done ;;
   load)

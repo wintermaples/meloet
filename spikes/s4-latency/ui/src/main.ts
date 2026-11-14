@@ -65,7 +65,7 @@ function parseBin(buf: ArrayBuffer) {
       const tNs = Number(v.getBigUint64(o + 16, true));
       const pos = v.getFloat64(o + 40, true);
       const m = new Float32Array(buf.slice(o + 48, o + 48 + 72));
-      if (mode === "load") applyFrame(m, pos, tNs);
+      applyFrame(m, pos, tNs);
       o += 120;
     } else break;
   }
@@ -86,7 +86,7 @@ async function main() {
   onRust("udev", (d) => { plug.push({ udev: d, uiMs: toRustMs(jsNow()) }); });
   const rtt = await syncClock();
   log(`clock sync rtt ${rtt} ms`);
-  const pull = await connect(transport, mode === "load" ? hz : 0, onMsg);
+  const pull = await connect(transport, mode === "load" || q.has("hz") ? hz : 0, onMsg);
   const rafIv: number[] = [];
   let last = 0, running = true;
   const loop = async (ts: number) => {

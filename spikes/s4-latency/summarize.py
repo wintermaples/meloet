@@ -25,7 +25,7 @@ out = ["# s4-latency summary", "", "values: mean / p50 / p95 / max (ms)", ""]
 out += ["## Key -> screen and key -> sound", "",
         "| run | n | Rust→JS handler | Rust→rAF | Rust→presented (est.) | ≤2 frames (est.) | Rust→audio callback | Rust→DAC (est.) | kernel→Rust | audio | late callbacks |",
         "|---|---|---|---|---|---|---|---|---|---|---|"]
-for f in sorted(R.glob("latency__*.json")) + sorted(R.glob("real__*.json")):
+for f in sorted(R.glob("latency*__*.json")) + sorted(R.glob("real__*.json")):
     d = json.loads(f.read_text())
     ks = [k for k in d.get("keys", []) if k.get("on") and k.get("rafMs") is not None]
     a = [(k["recvMs"] - k["tNs"] / 1e6) for k in ks]
@@ -52,7 +52,8 @@ for f in sorted(R.glob("load__*.json")):
     me = (c1["self"] - c0["self"]) / hz / secs * 100
     k0 = {k["pid"]: k["ticks"] for k in c0["children"]}
     wk = sum(k["ticks"] - k0.get(k["pid"], 0) for k in c1["children"] if "WebKit" in k["name"]) / hz / secs * 100
-    out.append(f"| {f.stem} | {d['frames']} | {row(d['frameLagMs'])} | {d['handlerTotalMs']:.1f} | {me:.1f} | {wk:.1f} | {q(d['rafIntervals'], .95):.1f} |")
+    lag = [x for x in d['frameLagMs'] if x < 1000]  # pull may read the initial all-zero snapshot first
+    out.append(f"| {f.stem} | {d['frames']} | {row(lag)} | {d['handlerTotalMs']:.1f} | {me:.1f} | {wk:.1f} | {q(d['rafIntervals'], .95):.1f} |")
 
 p = R / "plug.json"
 if p.exists():

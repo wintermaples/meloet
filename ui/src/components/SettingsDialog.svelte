@@ -1,6 +1,7 @@
 <!-- 音の設定（モック F-Settings のおもて、F-SettingsAdvFixed の奥。仕様書 2 章「ダイアログ」）。 -->
 <script lang="ts">
   import { space, type Scale } from "../design/tokens";
+  import { keyboardLayout } from "../gl/keyboard";
   import { glSlot } from "../gl/slot";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
@@ -15,6 +16,9 @@
     { name: "JACK", key: "settings.systemJack" },
     { name: "ALSA", key: "settings.systemAlsa" },
   ] as const;
+  const FIRST_NOTE = 36;
+  const LAST_NOTE = 84;
+  const WHITE_KEYS = keyboardLayout(FIRST_NOTE, LAST_NOTE).whiteCount;
   const RATES = [44100, 48000, 96000];
   const BUFFERS = [64, 128, 256, 512, 1024];
   const AROUND = /(約 [\d.]+ ms)/;
@@ -139,7 +143,11 @@
         {#if !advanced}
           <div class="line">
             <span class="label">{t("settings.keysLight")}</span>
-            <div class="keys" use:glSlot={{ kind: "keyboard", size: "slim", firstNote: 36, lastNote: 84 }}></div>
+            <div
+              class="keys"
+              style:--white-keys={WHITE_KEYS}
+              use:glSlot={{ kind: "keyboard", size: "slim", firstNote: FIRST_NOTE, lastNote: LAST_NOTE }}
+            ></div>
           </div>
         {/if}
       </section>
@@ -285,6 +293,7 @@
     left: 50%;
     top: var(--mock-settings-top);
     z-index: 100;
+    pointer-events: auto;
     transform: translateX(-50%);
     box-sizing: border-box;
     display: flex;
@@ -390,7 +399,7 @@
   }
   .keys {
     flex-shrink: 0;
-    width: var(--mock-input-meter-keys-slim-w);
+    width: calc(var(--mock-input-meter-key-slim-w) * var(--white-keys) + var(--line-hair));
     height: var(--mock-input-meter-keys-slim-h);
   }
   .adv {

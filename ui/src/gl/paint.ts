@@ -21,15 +21,17 @@ export function paintKeyboard(
   firstNote: number,
   lastNote: number,
   isDown: (note: number) => boolean,
+  dim = false,
 ): void {
   const { whiteCount, keys } = keyboardLayout(firstNote, lastNote);
   if (whiteCount === 0) return;
   const { x0, y0, x1, y1 } = box;
+  const lines = dim ? KEYBOARD.dim : KEYBOARD.lit;
   // Lines 0..whiteCount: the left edge, then the right edge of each white key.
   const cell = (x1 - x0 - HAIR) / whiteCount;
   const lineX = (i: number) => x0 + Math.round(i * cell);
 
-  out.rect(x0, y0, x1, y1, rgb(KEYBOARD.frame));
+  out.rect(x0, y0, x1, y1, rgb(lines.frame));
   for (const key of keys) {
     if (key.black) continue;
     const fill = isDown(key.note) ? KEYBOARD.down : KEYBOARD.whiteFill;
@@ -44,7 +46,7 @@ export function paintKeyboard(
     if (!key.black) continue;
     const left = lineX(key.index) - half;
     const right = lineX(key.index) + HAIR + half;
-    out.rect(left, y0, right, bottom, rgb(KEYBOARD.blackFrame));
+    out.rect(left, y0, right, bottom, rgb(lines.blackFrame));
     const fill = isDown(key.note) ? KEYBOARD.down : KEYBOARD.blackFill;
     out.rect(left + HAIR, y0 + HAIR, right - HAIR, bottom - HAIR, rgb(fill));
   }

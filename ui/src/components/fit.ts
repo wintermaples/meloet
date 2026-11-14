@@ -1,6 +1,8 @@
 // 横が足りないときに何を引っこめるか（仕様書 1 章「拡大率の決まり」、3 章の帯札）。
 // 幅は 100 % のときの px で見積もり、拡大率をかけてくらべる。DOM を知らない純粋な関数。
 
+import { line, space, text } from "../design/tokens";
+
 /**
  * 再生まわりの見積もり（100 % の px。後ろのすきまを含む）。
  * base は、いつも出す物（ボタン、位置と時間、テンポ、拍子、メトロノーム、マスター、左右の内がわ）。
@@ -33,10 +35,14 @@ export function transportParts(width: number, scale: number): TransportParts {
   return shown;
 }
 
-/** 文字の幅の見積もり（text.s、100 %）。日本語は 1 字 12、ほかは 1 字 7.2（IBM Plex Mono 12px）。 */
+/** IBM Plex Mono の 1 字の送り（文字の大きさを 1 として）。 */
+const MONO_ADVANCE = 0.6;
+
+/** 文字の幅の見積もり（text.s、100 %）。日本語は 1 字が文字の大きさ、ほかは IBM Plex Mono の 1 字。 */
 export function textWidth(s: string): number {
+  const em = text["text.s"].size[0];
   let w = 0;
-  for (const ch of s) w += ch.charCodeAt(0) < 0x2000 ? 7.2 : 12;
+  for (const ch of s) w += ch.charCodeAt(0) < 0x2000 ? em * MONO_ADVANCE : em;
   return w;
 }
 
@@ -49,8 +55,8 @@ export interface BandTabWidth {
 
 /** 帯札の見積もり（100 % の px）。 */
 export function bandTabWidth(name: string, count: string, key: string): BandTabWidth {
-  const pad = 12 * 2 + 1;
-  const gap = 8;
+  const pad = space["space.3"][0] * 2 + line["line.hair"];
+  const gap = space["space.2"][0];
   return {
     fixed: pad + textWidth("▸") + gap + textWidth(name) + gap + textWidth(key),
     count: gap + textWidth(count),

@@ -6,6 +6,7 @@ import {
   fontFamily,
   line,
   part,
+  plain,
   partAt,
   radius,
   size,
@@ -120,7 +121,8 @@ const ROUNDED = [
 describe("part.*（仕様書の文の中にしかない寸法）", () => {
   const tables = { s1: sectionTables(doc, "s1"), s2: sectionTables(doc, "s2") };
 
-  it.each(Object.entries(part))("%s は仕様書の行にその言葉で書いてある", (_, tok) => {
+  const fromSpec = Object.entries(plain).flatMap(([k, v]) => ("spec" in v ? [[k, v] as const] : []));
+  it.each([...Object.entries(part), ...fromSpec])("%s は仕様書の行にその言葉で書いてある", (_, tok) => {
     const row = tables[tok.spec.section]
       .flatMap((t) => Array.from(t.tBodies[0]?.rows ?? []))
       .find((tr) => cellText(tr.cells[0]!) === tok.spec.row);

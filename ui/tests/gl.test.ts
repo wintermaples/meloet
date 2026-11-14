@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import { colors } from "../src/design/tokens";
 import { Batch } from "../src/gl/batch";
 import { hexToRgb, rgb } from "../src/gl/color";
-import { CLIP_HOLD_MS, DB_FLOOR, DB_SCALE, EVENT_WINS_US, FALL_DB_PER_S, KEYBOARD, METER_HOT_FROM } from "../src/gl/dims";
+import { CLIP_HOLD_MS, DB_FLOOR, DB_SCALE, EVENT_WINS_US, FALL_DB_PER_S, KEYBOARD, METER_HOT_FROM, OVERVIEW } from "../src/gl/dims";
 import { HeldKeys, isBlack, keyboardLayout } from "../src/gl/keyboard";
 import { dbToLength, fall, peakToDb } from "../src/gl/level";
 import { Levels } from "../src/gl/levels";
 import { KeyToScreen, REPORT_NAME } from "../src/gl/measure";
 import { paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
+import { glSlot, layerOf, LAYER_ATTRIBUTE } from "../src/gl/slot";
 import type { Telemetry } from "../src/bridge";
 
 interface NodeFs {
@@ -249,6 +250,22 @@ describe("四角の並び", () => {
     expect(ofColor(b, "color.gray.0")[0]).toEqual([100 + 12 - 2, 11, 100 + 12 + 3, 28]);
     expect(ofColor(b, "color.gray.0").length).toBe(19);
   });
+  it("鍵盤がないとき（F-Connect1）: 線だけ暗い。モックの HTML の色と同じ", () => {
+    const b = batch();
+    paintKeyboard(b, { x0: 0, y0: 0, x1: 1 + 29 * KEYBOARD.white.w, y1: KEYBOARD.white.h }, "full", 36, 84, () => false, true);
+    expect(ofColor(b, "color.gray.5")).toEqual([[0, 0, 349, 32]]);
+    expect(ofColor(b, "color.gray.6").length).toBe(20);
+    expect(ofColor(b, "color.gray.7")).toEqual([]);
+    expect(ofColor(b, "color.gray.3").length).toBe(29);
+    expect(ofColor(b, "color.gray.0").length).toBe(20);
+
+    const html = mockHtml("F-Connect1");
+    const white = `width:${KEYBOARD.white.w}px;height:${KEYBOARD.white.h}px;border:1px solid ${colors["color.gray.5"]};border-left:0;background:${colors["color.gray.3"]}`;
+    const black = `width:${KEYBOARD.black.w}px;height:${KEYBOARD.black.h}px;background:${colors["color.gray.0"]};border:1px solid ${colors["color.gray.6"]}`;
+    expect(html.split(white).length - 1).toBe(29);
+    expect(html.split(black).length - 1).toBe(20);
+    expect(html).toContain(`<div class="f" style="border-left:1px solid ${colors["color.gray.5"]};flex-shrink:0">`);
+  });
   it("細い鍵盤: 白鍵の四角だけ（1 + 29 × 8、高さ 12）", () => {
     const b = batch();
     paintKeyboard(b, { x0: 0, y0: 0, x1: 233, y1: 12 }, "slim", 36, 84, (n) => n === 64);
@@ -313,6 +330,9 @@ describe("四角の並び", () => {
     const none = batch();
     paintArrangeGrid(none, { x0: 0, y0: 0, x1: 100, y1: 10 }, 0, 0);
     expect(none.rectCount).toBe(0);
+  });
+  it("ちぢんだアレンジの枠のあきは、A-PianoRoll のモックの値", () => {
+    expect(mockHtml("A-PianoRoll")).toContain(`top:${OVERVIEW.inset}px;width:256px;height:37px;border:1px solid ${colors[OVERVIEW.frame]}`);
   });
   it("ちぢんだアレンジ: 1 画素の枠だけ", () => {
     const b = batch();
@@ -407,5 +427,20 @@ describe("鍵 → 画面の計測", () => {
     now = 12000;
     await m.tick();
     expect(clockCalls).toBe(3);
+  });
+});
+
+describe("重なりの層", () => {
+  it("slot は、いちばん近い層（data-gl-layer）の物。どの層にも入っていなければ、下の面の物", () => {
+    document.body.innerHTML = `<div id="app"><i id="a"></i></div><div id="dialog" ${LAYER_ATTRIBUTE}><p><i id="b"></i></p><canvas></canvas></div>`;
+    const a = document.getElementById("a")!;
+    const b = document.getElementById("b")!;
+    const dialog = document.getElementById("dialog")!;
+    const stop = [glSlot(a, { kind: "velocity" }), glSlot(b, { kind: "velocity" })];
+    expect(layerOf(a)).toBe(null);
+    expect(layerOf(b)).toBe(dialog);
+    expect(layerOf(dialog.querySelector("canvas")!)).toBe(dialog);
+    for (const s of stop) s.destroy();
+    document.body.innerHTML = "";
   });
 });

@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { keyIsDown } from "../bridge";
   import type { Scale } from "../design/tokens";
+  import { keyboardLayout } from "../gl/keyboard";
   import { glSlot } from "../gl/slot";
   import { term, tip } from "../lib/tip.svelte";
   import { current, onEvent } from "../state/app.svelte";
@@ -12,6 +13,7 @@
 
   const FIRST_NOTE = 36;
   const LAST_NOTE = 84;
+  const WHITE_KEYS = keyboardLayout(FIRST_NOTE, LAST_NOTE).whiteCount;
   const TRACK = "\u0001";
   const INSTRUMENT = "\u0002";
 
@@ -134,7 +136,13 @@
   {:else}
     <div
       class="keys"
-      use:glSlot={{ kind: "keyboard", size: slim ? "slim" : "full", firstNote: FIRST_NOTE, lastNote: LAST_NOTE }}
+      use:glSlot={{
+        kind: "keyboard",
+        size: slim ? "slim" : "full",
+        firstNote: FIRST_NOTE,
+        lastNote: LAST_NOTE,
+        disabled: keyboard === null,
+      }}
     ></div>
   {/if}
 
@@ -213,6 +221,7 @@
     class="meter"
     class:slim
     class:empty={keyboard === null}
+    style:--white-keys={WHITE_KEYS}
     bind:this={row}
   >
     {@render body(false)}
@@ -293,11 +302,11 @@
   }
   .keys {
     flex-shrink: 0;
-    width: var(--mock-input-meter-keys-full-w);
+    width: calc(var(--mock-input-meter-key-full-w) * var(--white-keys) + var(--line-hair));
     height: var(--mock-input-meter-keys-full-h);
   }
   .slim .keys {
-    width: var(--mock-input-meter-keys-slim-w);
+    width: calc(var(--mock-input-meter-key-slim-w) * var(--white-keys) + var(--line-hair));
     height: var(--mock-input-meter-keys-slim-h);
   }
   .item {
@@ -384,6 +393,9 @@
     color: var(--color-gray-10);
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .slim .target-value {
+    color: var(--color-gray-8);
   }
   .mono {
     font-family: var(--font-mono);

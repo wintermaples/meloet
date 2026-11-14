@@ -1,10 +1,12 @@
 <script lang="ts">
-  // The one WebGL canvas over the whole window. It draws into the boxes marked with glSlot.
+  // A WebGL canvas over the whole window. It draws into the boxes marked with glSlot that are in
+  // the same layer as itself (see slot.ts): App places one under the dialogs and one in each dialog layer.
   import { onMount } from "svelte";
   import { clockOffsetUs, measureEnabled, measureReport } from "../bridge";
   import { current, onEvent, onTelemetry } from "../state/app.svelte";
   import { Engine } from "./engine";
   import { KeyToScreen } from "./measure";
+  import { layerOf } from "./slot";
 
   let canvas: HTMLCanvasElement;
   let engine = $state.raw<Engine | null>(null);
@@ -28,7 +30,8 @@
       if (measure && e.type === "note" && e.on) measure.noteOn(e.note, e.tUs);
       made.onEvent(e);
     });
-    measureEnabled()
+    // Key → screen is timed on the main surface only: that is where the input meter is.
+    (layerOf(canvas) === null ? measureEnabled() : Promise.resolve(false))
       .then((on) => {
         if (!on || gone) return;
         measure = new KeyToScreen({ clockOffsetUs, report: measureReport, now: () => performance.now() });

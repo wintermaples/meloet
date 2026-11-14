@@ -1,5 +1,8 @@
 <!-- 画面の並び（仕様書 3 章）: 上から、再生まわり、入力計、アレンジ、ひらいた下の帯、帯札の行、状態行。
-     右はしに、ひらいた欄と縦の見出し。重なりの順は、画面の部品 < WebGL の面 < 案内・出口えらび・ダイアログ・用語の説明。 -->
+     右はしに、ひらいた欄と縦の見出し。重なりの順は、画面の部品 < WebGL の面（10）< 案内・出口えらび（20）< ダイアログ（30）
+     < ダイアログの中の WebGL の面 < 用語の説明。
+     .app は position: fixed なので、それだけで重なりの組（stacking context）になる。中の部品の z-index は .app の外とは
+     くらべられないので、下の面は .app の中に置く。ダイアログの中の slot は、ダイアログの層（data-gl-layer）に置いた面が描く。 -->
 <script lang="ts">
   import { onMount } from "svelte";
   import Arrange from "./components/Arrange.svelte";
@@ -63,10 +66,13 @@
     </div>
     <BandRow />
     <StatusLine />
+    <div class="surface"><Surface /></div>
   </div>
-  <div class="surface"><Surface /></div>
   {#if state.workspace.settings}
-    <div class="dialog"><SettingsDialog /></div>
+    <div class="dialog" data-gl-layer>
+      <SettingsDialog />
+      <div class="surface"><Surface /></div>
+    </div>
   {/if}
 {:else if current.failure}
   <pre class="failure">{current.failure}</pre>
@@ -110,8 +116,8 @@
     z-index: 30;
     pointer-events: none;
   }
-  .dialog > :global(*) {
-    pointer-events: auto;
+  .dialog > .surface {
+    z-index: 200;
   }
   .failure {
     margin: var(--space-4);

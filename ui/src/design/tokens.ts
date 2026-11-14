@@ -178,10 +178,13 @@ const m = (value: number, board: string): MockToken => ({ value, board });
 
 export const mock = {
   // 入力計 ・ 出口えらび ・ 音の設定 ・ 「音が出ました」
-  "mock.input-meter.keys-full-w": m(348, "F-Connect3"),
+  // 鍵盤の箱の幅は「白鍵の幅 × 白鍵の数 ＋ line.hair（左はしの線）」。
+  "mock.input-meter.key-full-w": m(12, "F-Connect3"),
   "mock.input-meter.keys-full-h": m(32, "F-Connect3"),
-  "mock.input-meter.keys-slim-w": m(232, "F-MeterLongName"),
+  "mock.input-meter.key-slim-w": m(8, "F-MeterLongName"),
   "mock.input-meter.keys-slim-h": m(12, "F-MeterLongName"),
+  "mock.input-meter.black-key-w": m(7, "F-Connect3"),
+  "mock.input-meter.black-key-h": m(19, "F-Connect3"),
   "mock.input-meter.velocity": m(96, "F-Connect3"),
   "mock.input-meter.velocity-bar": m(4, "F-Connect3"),
   "mock.arrange-note.left": m(24, "F-Connect2"),
@@ -199,8 +202,32 @@ export const mock = {
   "mock.arrange.add-track": m(32, "F-Empty"),
   "mock.track.number": m(16, "F-Empty"),
   "mock.overview.label": m(104, "A-PianoRoll"),
+  // 見えている範囲の枠（`top:1px; height:37px`。帯の高さは 39）の、上下のあき。
+  "mock.range-frame.inset": m(1, "A-PianoRoll"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
+
+/**
+ * px でない数（割合、時間、目盛）。率をかけず、CSS の変数にもしない。
+ * spec は part.* と同じ読みかた、board は値を読んだモック。
+ */
+export const plain = {
+  /** メーターの色が ok から hot に変わる所（%）。 */
+  "meter.hot-from": { value: 72, spec: { section: "s2", row: "メーター", quote: "0〜72 % が meter.ok" } },
+  /** 音割れの印を出しておく時間（秒）。 */
+  "meter.clip-hold": { value: 2, spec: { section: "s2", row: "メーター", quote: "2 秒" } },
+  /** ミキサーの目盛: [dB, 上はしからの位置（`top: N%` の N）]。 */
+  "mock.mixer.scale": {
+    value: [
+      [6, 0],
+      [0, 18],
+      [-6, 38],
+      [-12, 56],
+      [-24, 74],
+    ],
+    board: "A-Mixer",
+  },
+} as const;
 
 const scaleIndex = (scale: Scale): 0 | 1 | 2 => (scale === 100 ? 0 : scale === 125 ? 1 : 2);
 

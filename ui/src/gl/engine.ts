@@ -6,7 +6,7 @@ import { HeldKeys } from "./keyboard";
 import { Levels } from "./levels";
 import { paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity, type Box } from "./paint";
 import { Renderer } from "./renderer";
-import { liveSlots, type GlSlot } from "./slot";
+import { layerOf, liveSlots, type GlSlot } from "./slot";
 
 export interface EngineStats {
   /** Animation frames that ran. */
@@ -21,7 +21,8 @@ export interface EngineStats {
 }
 
 /**
- * Owns the canvas. Anything that may change the picture calls `invalidate()`; the next animation
+ * Owns the canvas and draws the slots of one layer: the layer the canvas is in, or, for the main
+ * surface, the slots that are in no layer. Anything that may change the picture calls `invalidate()`; the next animation
  * frame builds the rectangles again and draws only when they differ from the last drawn ones.
  */
 export class Engine {
@@ -47,7 +48,10 @@ export class Engine {
   private readonly isDown = (note: number) => this.held.isDown(note);
   private readonly box: Box = { x0: 0, y0: 0, x1: 0, y1: 0 };
 
+  private readonly layer: Element | null;
+
   constructor(private readonly canvas: HTMLCanvasElement) {
+    this.layer = layerOf(canvas);
     this.renderer = new Renderer(canvas);
     const invalidate = () => this.invalidate();
 
@@ -170,6 +174,7 @@ export class Engine {
     const box = this.box;
 
     for (const [node, slot] of liveSlots()) {
+      if (layerOf(node) !== this.layer) continue;
       if (!this.watched.has(node)) {
         this.watched.add(node);
         this.sizes.observe(node);
@@ -197,7 +202,7 @@ export class Engine {
   ): void {
     switch (slot.kind) {
       case "keyboard":
-        paintKeyboard(out, box, slot.size, slot.firstNote, slot.lastNote, this.isDown);
+        paintKeyboard(out, box, slot.size, slot.firstNote, slot.lastNote, this.isDown, slot.disabled === true);
         break;
       case "velocity":
         paintVelocity(out, box, this.velocity);

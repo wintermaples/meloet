@@ -1,6 +1,7 @@
 <!-- 帯札の行（仕様書 2 章「帯札」、3 章。モック F-Empty・A-PianoRoll の下から 2 行目）。 -->
 <script lang="ts">
   import type { Band } from "../bridge";
+  import { space } from "../design/tokens";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import { bandCountsShown, bandTabWidth, textWidth } from "./fit";
@@ -28,7 +29,7 @@
       width,
       metrics.scale,
       tabs.map((tab) => bandTabWidth(tab.name, tab.count, tab.key)),
-      backHint ? textWidth(backHint) + 12 * 2 : 0,
+      backHint ? textWidth(backHint) + space["space.3"][0] * 2 : 0,
     ),
   );
 

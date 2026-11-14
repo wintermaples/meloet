@@ -9,3 +9,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+alsa.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+alsa.workspace = true

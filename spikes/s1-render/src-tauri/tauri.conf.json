@@ -1,0 +1,12 @@
+{
+  "productName": "s1-render",
+  "identifier": "dev.meloet.spike.s1render",
+  "build": { "frontendDist": "../ui/dist" },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null,
+      "headers": { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" }
+    }
+  }
+}

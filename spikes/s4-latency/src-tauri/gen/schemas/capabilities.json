@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"listen/emit for the Events transport. Our own commands need no entry (no app ACL manifest).","local":true,"windows":["main"],"permissions":["core:event:default"]}}

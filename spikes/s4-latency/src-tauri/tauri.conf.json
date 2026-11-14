@@ -1,0 +1,6 @@
+{
+  "productName": "s4-latency",
+  "identifier": "dev.meloet.spike.s4latency",
+  "build": { "frontendDist": "../ui/dist" },
+  "app": { "windows": [], "security": { "csp": null } }
+}

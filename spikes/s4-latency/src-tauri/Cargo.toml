@@ -1,0 +1,19 @@
+[package]
+name = "s4-latency"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+alsa = "0.11"
+cpal = { version = "=0.18.2", features = ["pipewire", "jack"] }
+libc = "0.2.191"
+rtrb = "0.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tauri = { version = "=2.12.5", features = [] }
+udev = "0.9.3"

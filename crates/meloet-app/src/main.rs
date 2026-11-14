@@ -3,13 +3,12 @@
 mod clock;
 mod core_handle;
 mod devhooks;
-mod stub;
 
 use std::sync::Arc;
 
 use meloet_protocol::{Command, HelloReply, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{Manager, State};
+use tauri::{Manager, RunEvent, State};
 
 use crate::core_handle::CoreHandle;
 
@@ -57,12 +56,34 @@ fn clock() -> u64 {
     clock::mono_us()
 }
 
+/// Development only: whether `MELOET_MEASURE_DIR` is set.
+#[tauri::command]
+fn measure_enabled() -> bool {
+    meloet_core::measure::dir_from_env().is_some()
+}
+
+/// Development only: writes `json` to `<MELOET_MEASURE_DIR>/<name>`.
+#[tauri::command]
+fn measure_report(name: String, json: String) -> Result<(), String> {
+    let dir = meloet_core::measure::dir_from_env().ok_or("MELOET_MEASURE_DIR is not set")?;
+    meloet_core::measure::write_report(&dir, &name, &json)
+}
+
 fn main() {
-    let core: Core = stub::StubCore::start();
+    let core = Arc::new(meloet_core::Core::start(
+        meloet_core::CoreOptions::from_env(),
+    ));
+    let shell_side: Core = core.clone();
     tauri::Builder::default()
-        .manage(core)
+        .manage(shell_side)
         .invoke_handler(tauri::generate_handler![
-            hello, subscribe, snapshot, send, clock
+            hello,
+            subscribe,
+            snapshot,
+            send,
+            clock,
+            measure_enabled,
+            measure_report
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -71,6 +92,11 @@ fn main() {
             Ok(())
         })
         .on_page_load(devhooks::on_page_load)
-        .run(tauri::generate_context!())
-        .expect("failed to run meloet");
+        .build(tauri::generate_context!())
+        .expect("failed to run meloet")
+        .run(move |_app, event| {
+            if let RunEvent::Exit = event {
+                core.stop();
+            }
+        });
 }

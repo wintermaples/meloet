@@ -1,11 +1,7 @@
 //! The line between the shell and whoever owns the state. The shell sees only this.
 
-use meloet_protocol::{Command, ServerMessage, Snapshot};
-
-/// Returns false when the receiver is gone; the owner then drops the sink.
-pub type MessageSink = Box<dyn Fn(ServerMessage) -> bool + Send>;
-/// Gets one telemetry message (version 1 binary). Returns false when the receiver is gone.
-pub type TelemetrySink = Box<dyn Fn(&[u8]) -> bool + Send>;
+use meloet_core::{MessageSink, TelemetrySink};
+use meloet_protocol::{Command, Snapshot};
 
 pub trait CoreHandle: Send + Sync + 'static {
     /// The whole state and its rev.
@@ -17,4 +13,18 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after
     /// `subscribe` returns misses nothing.
     fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink);
+}
+
+impl CoreHandle for meloet_core::Core {
+    fn snapshot(&self) -> Snapshot {
+        meloet_core::Core::snapshot(self)
+    }
+
+    fn send(&self, command: Command) -> u64 {
+        meloet_core::Core::send(self, command)
+    }
+
+    fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {
+        meloet_core::Core::subscribe(self, messages, telemetry);
+    }
 }

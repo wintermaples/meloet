@@ -1,15 +1,16 @@
 //! Band rules (design spec section 3). All sizes are px at 100 % zoom.
+//! `SIZE_*` are the spec's `size.*` values (section 1).
 
-pub const TRANSPORT: f64 = 48.0;
-pub const BAND_ROW: f64 = 24.0;
-pub const STATUS: f64 = 24.0;
-pub const METER_FULL: f64 = 52.0;
-pub const METER_SLIM: f64 = 24.0;
-pub const OVERVIEW: f64 = 40.0;
+pub const SIZE_TRANSPORT: f64 = 48.0;
+pub const SIZE_BANDROW: f64 = 24.0;
+pub const SIZE_STATUS: f64 = 24.0;
+pub const SIZE_METER_FULL: f64 = 52.0;
+pub const SIZE_METER_SLIM: f64 = 24.0;
+pub const SIZE_OVERVIEW: f64 = 40.0;
 pub const PIANO_ROLL_MIN: f64 = 268.0;
 pub const MIXER: f64 = 432.0;
 pub const HISTORY: f64 = 248.0;
-pub const SHELF_WIDTH: f64 = 320.0;
+pub const SIZE_SHELF: f64 = 320.0;
 pub const PARAMS_WIDTH: f64 = 320.0;
 /// From this window height on, the input meter stays full.
 pub const TALL_WINDOW: f64 = 960.0;
@@ -33,7 +34,7 @@ pub enum SidePanel {
 impl SidePanel {
     pub fn width(self) -> f64 {
         match self {
-            Self::Shelf => SHELF_WIDTH,
+            Self::Shelf => SIZE_SHELF,
             Self::Params => PARAMS_WIDTH,
         }
     }
@@ -73,8 +74,8 @@ pub enum MeterSize {
 impl MeterSize {
     pub fn height(self) -> f64 {
         match self {
-            Self::Full => METER_FULL,
-            Self::Slim => METER_SLIM,
+            Self::Full => SIZE_METER_FULL,
+            Self::Slim => SIZE_METER_SLIM,
         }
     }
 }
@@ -89,7 +90,8 @@ pub struct OpenBand {
 pub struct Layout {
     pub meter: MeterSize,
     pub arrange_height: f64,
-    /// The arrange view is the 40 px overview (the piano roll is open).
+    /// The arrange view is drawn as the overview: the piano roll is open, or the view is no
+    /// taller than `size.overview`.
     pub arrange_overview: bool,
     /// Open bottom bands, top to bottom.
     pub bottom: Vec<OpenBand>,
@@ -174,11 +176,11 @@ impl Bands {
         let fixed = self.fixed_sum();
         let piano_roll = self.bottom_open.contains(&BottomBand::PianoRoll);
         let arrange_height = if piano_roll {
-            OVERVIEW
+            SIZE_OVERVIEW
         } else {
             (rest - fixed).max(0.0)
         };
-        let piano_height = (rest - OVERVIEW - fixed).max(0.0);
+        let piano_height = (rest - SIZE_OVERVIEW - fixed).max(0.0);
 
         let mut open = self.bottom_open.clone();
         open.sort();
@@ -193,7 +195,7 @@ impl Bands {
         Layout {
             meter,
             arrange_height,
-            arrange_overview: piano_roll,
+            arrange_overview: piano_roll || arrange_height <= SIZE_OVERVIEW,
             bottom,
             side_front: self.side_open.last().copied(),
             side_open: self.side_open.clone(),
@@ -211,7 +213,7 @@ impl Bands {
 
     /// Height left for the arrange view and the bottom bands.
     fn rest(&self) -> f64 {
-        self.window.height - TRANSPORT - self.meter().height() - BAND_ROW - STATUS
+        self.window.height - SIZE_TRANSPORT - self.meter().height() - SIZE_BANDROW - SIZE_STATUS
     }
 
     /// Sum of the open bands with a fixed height (all but the piano roll).
@@ -226,9 +228,9 @@ impl Bands {
         let rest = self.rest();
         let fixed = self.fixed_sum();
         if self.bottom_open.contains(&BottomBand::PianoRoll) {
-            rest - OVERVIEW - fixed >= PIANO_ROLL_MIN
+            rest - SIZE_OVERVIEW - fixed >= PIANO_ROLL_MIN
         } else {
-            rest - fixed >= OVERVIEW
+            rest - fixed >= SIZE_OVERVIEW
         }
     }
 

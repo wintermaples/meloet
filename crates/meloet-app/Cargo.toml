@@ -17,6 +17,7 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [dependencies]
 libc = { workspace = true }
+meloet-core = { workspace = true }
 meloet-protocol = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }

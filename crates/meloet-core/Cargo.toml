@@ -6,3 +6,10 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+meloet-devices = { workspace = true }
+meloet-engine = { workspace = true }
+meloet-midi = { workspace = true }
+meloet-model = { workspace = true }
+meloet-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

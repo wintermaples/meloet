@@ -2178,6 +2178,7 @@ dependencies = [
  "cairo-rs",
  "gio",
  "libc",
+ "meloet-core",
  "meloet-protocol",
  "serde_json",
  "tauri",
@@ -2188,6 +2189,15 @@ dependencies = [
 [[package]]
 name = "meloet-core"
 version = "0.1.0"
+dependencies = [
+ "meloet-devices",
+ "meloet-engine",
+ "meloet-midi",
+ "meloet-model",
+ "meloet-protocol",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "meloet-devices"

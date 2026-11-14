@@ -15,3 +15,8 @@ export const tauriTransport: Transport = {
   send: (command) => invoke<SendReply>("send", { command }),
   clock: () => invoke<number>("clock"),
 };
+
+/** Development only: whether the key → screen measurement is on. */
+export const tauriMeasureEnabled = () => invoke<boolean>("measure_enabled");
+/** Development only: hands a measurement file to Rust, which writes it. */
+export const tauriMeasureReport = (name: string, json: string) => invoke<void>("measure_report", { name, json });

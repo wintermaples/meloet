@@ -1,8 +1,8 @@
 // The only door between the screen and Rust. Everything outside ui/src/bridge imports from here.
 
-import { createFakeTransport } from "./fake";
+import { createFakeTransport, fakeMeasureEnabled, fakeMeasureReport } from "./fake";
 import { connectWith, type Connection, type Handlers, type Transport } from "./session";
-import { tauriTransport } from "./tauri";
+import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport } from "./tauri";
 import type { Command } from "./types";
 
 export type * from "./types";
@@ -35,4 +35,16 @@ export async function send(command: Command): Promise<number> {
 /** `rustMonoUs ≈ performance.now() * 1000 + offset`. */
 export async function clockOffsetUs(): Promise<number> {
   return connected().clockOffsetUs();
+}
+
+const inTauri = () => "__TAURI_INTERNALS__" in window;
+
+/** Development only: whether to measure key → screen. Does not need connect(). */
+export function measureEnabled(): Promise<boolean> {
+  return inTauri() ? tauriMeasureEnabled() : fakeMeasureEnabled();
+}
+
+/** Development only: asks Rust to write a measurement file. */
+export function measureReport(name: string, json: string): Promise<void> {
+  return inTauri() ? tauriMeasureReport(name, json) : fakeMeasureReport(name, json);
 }

@@ -1,8 +1,8 @@
 # 本物のアプリの画面
 
 - 撮った日: 2026-11-15
-- 版: `3534991`（release ビルド。`ui/` と `crates/` は `d61c008` と同じ）
-- 撮りかた: `python3 -I tools/design/shoot_app.py`（`source ~/.config/meloet-agent/env.sh`、`PIPEWIRE_RUNTIME_DIR=/run/user/1000`、`CARGO_TARGET_DIR=target/s1`）
+- 版: `64da326`（release ビルド）
+- 撮りかた: `python3 -I tools/design/shoot_app.py`（`source ~/.config/meloet-agent/env.sh`、`PIPEWIRE_RUNTIME_DIR=/run/user/1000`）
   - 1 回の起動ごとに新しい設定ディレクトリ（`MELOET_CONFIG_DIR`）。
   - 「出口を覚えた状態」は、最初に 1 回 `chooserConfirm` で決めさせた settings.json を写して使う。
   - 拡大率は `setScale` のコマンド。窓は `MELOET_WINDOW`。PNG は `MELOET_SNAPSHOT`。
@@ -44,6 +44,6 @@
 - mixer: モックではミキサーの帯がアレンジの場所に入り、上は「アレンジ全体」の細い行だけ。アプリはアレンジのトラック欄が残り、ミキサーの帯はその下（1280×800 で y≈335 から）。
 - history: 帯の見出しの高さ（1280×800 で y≈515）はモックと同じ。中身は空。
 - shelf・params: 欄の幅はモックとほぼ同じ。中身（音源 9・エフェクト 12 のタブ、一覧）は空。
-- 1920×1080: アレンジの欄が 1280×800 のときと同じ高さ（y≈752、150 % では y≈728）で止まり、その下から帯の行まで何もない。帯をひらいたときは帯が下まで届く。
-- 150 %（1280×800）: 上の段で曲の名前が左にはみ出して見えない。右の縦の欄で「エフェクト 0」と「パラメータ」の ▶ が重なる。
+- 150 %（1280×800）: 上の段に曲の名前が出ない（仕様書 1 章の引っこめる順で、いちばん先に引っこむ）。
+- flow2・150 %（1280×800）: 出口えらびが窓に入りきらず、下の行と、見出しの右の「あとから「音の設定」で変えられます」の終わりが切れる（`design-notes.md` B-24）。
 - 150 %: 文字とすきまは 1.5 倍になり、グリッドの線（line.hair）は 1px のまま。

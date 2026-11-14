@@ -8,6 +8,22 @@ use tauri::{LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
 struct Out(Mutex<Option<String>>, serde_json::Value);
 
+/// A frame clock from Rust. WebKitGTK's own rAF clock is a fixed 60 Hz timer on this machine
+/// (no DRM vblank from the NVIDIA driver); every IPC message, though, starts a rendering update.
+#[tauri::command]
+fn ticks(hz: f64, secs: f64, channel: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>) {
+    std::thread::spawn(move || {
+        let period = Duration::from_secs_f64(1.0 / hz);
+        let start = std::time::Instant::now();
+        let mut next = start;
+        while start.elapsed().as_secs_f64() < secs {
+            next += period;
+            if let Some(d) = next.checked_duration_since(std::time::Instant::now()) { std::thread::sleep(d); }
+            if channel.send(tauri::ipc::InvokeResponseBody::Raw(vec![0u8; 8])).is_err() { break; }
+        }
+    });
+}
+
 #[tauri::command]
 fn bench_done(result: String, app: tauri::AppHandle, out: tauri::State<'_, Out>) {
     let mut v: serde_json::Value = serde_json::from_str(&result).unwrap_or(serde_json::Value::Null);
@@ -31,8 +47,9 @@ fn main() {
     let stress: u64 = get("resize-stress", "0").parse().unwrap();
     let no60 = get("no60", "0") == "1";
     let query = format!(
-        "renderer={}&meters={}&dur={}&warm={}&display={}",
-        get("renderer", "2d"), get("meters", "0"), get("dur", "10000"), get("warm", "1500"), get("display", "16.667")
+        "renderer={}&meters={}&dur={}&warm={}&display={}&driver={}&tickhz={}",
+        get("renderer", "2d"), get("meters", "0"), get("dur", "10000"), get("warm", "1500"), get("display", "16.667"),
+        get("driver", "raf"), get("tickhz", "143.87")
     );
     let env: serde_json::Map<String, serde_json::Value> = [
         "WEBKIT_DISABLE_DMABUF_RENDERER", "__NV_DISABLE_EXPLICIT_SYNC", "WEBKIT_DISABLE_COMPOSITING_MODE", "GDK_BACKEND",
@@ -43,7 +60,7 @@ fn main() {
     let out_path = a.get("out").cloned();
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![bench_done])
+        .invoke_handler(tauri::generate_handler![bench_done, ticks])
         .setup(move |app| {
             let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("s1-render")

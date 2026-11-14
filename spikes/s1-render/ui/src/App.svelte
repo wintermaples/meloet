@@ -3,8 +3,8 @@
   import { makeNotes, KEYS, LOW, KEYS_W, ROW, RULER_H, VEL_H, isBlack, type Roll } from "./bench/model";
   import { makeRoll2d } from "./bench/roll2d";
   import { makeRollGl } from "./bench/rollgl";
-  import { run } from "./bench/harness";
-  import { report } from "./bridge";
+  import { run, runTicked } from "./bench/harness";
+  import { report, startTicks } from "./bridge";
 
   const q = new URLSearchParams((window as any).__BENCH ?? location.search);
   const renderer = q.get("renderer") ?? "2d";
@@ -87,10 +87,15 @@
     };
     fit();
     new ResizeObserver(fit).observe(area);
-    const r = await run({ roll, size: () => size, durMs, warmMs, displayMs, perFrame });
+    const driver = q.get("driver") ?? "raf";
+    const tickHz = Number(q.get("tickhz") ?? 143.87);
+    const r = driver === "tick"
+      ? await runTicked({ roll, size: () => size, durMs, warmMs, displayMs, perFrame,
+          start: (onTick) => startTicks(tickHz, (durMs + warmMs) / 1000 + 2, onTick) })
+      : await run({ roll, size: () => size, durMs, warmMs, displayMs, perFrame });
     status = "done";
     await report({
-      ...r, renderer, meters, inner: [innerWidth, innerHeight], dpr: devicePixelRatio, rollSize: size, mixerH,
+      ...r, renderer, meters, driver, inner: [innerWidth, innerHeight], dpr: devicePixelRatio, rollSize: size, mixerH,
       ua: navigator.userAgent, isolated: crossOriginIsolated, timerResMs: timerRes(), glRenderer: glInfo(),
     });
   });

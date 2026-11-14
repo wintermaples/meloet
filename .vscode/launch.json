@@ -11,7 +11,22 @@
         "filter": { "name": "meloet", "kind": "bin" }
       },
       "cwd": "${workspaceFolder}",
-      "env": { "RUST_BACKTRACE": "1" },
+      // VS Code の snap 版は、GTK と GLib の環境変数を snap の中の古い物に向けて、子のプロセスに渡す。
+      // そのままだと GTK が古い設定の型（GSettings のスキーマ）を読んで落ちるので、元の値（*_VSCODE_SNAP_ORIG）に戻す。
+      // snap 版でなければ、どれも空になる。
+      "env": {
+        "RUST_BACKTRACE": "1",
+        "XDG_DATA_DIRS": "${env:XDG_DATA_DIRS_VSCODE_SNAP_ORIG}",
+        "XDG_CONFIG_DIRS": "${env:XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG}",
+        "GSETTINGS_SCHEMA_DIR": "${env:GSETTINGS_SCHEMA_DIR_VSCODE_SNAP_ORIG}",
+        "GIO_MODULE_DIR": "${env:GIO_MODULE_DIR_VSCODE_SNAP_ORIG}",
+        "GTK_PATH": "${env:GTK_PATH_VSCODE_SNAP_ORIG}",
+        "GTK_EXE_PREFIX": "${env:GTK_EXE_PREFIX_VSCODE_SNAP_ORIG}",
+        "GTK_IM_MODULE_FILE": "${env:GTK_IM_MODULE_FILE_VSCODE_SNAP_ORIG}",
+        "GDK_PIXBUF_MODULE_FILE": "${env:GDK_PIXBUF_MODULE_FILE_VSCODE_SNAP_ORIG}",
+        "GDK_PIXBUF_MODULEDIR": "${env:GDK_PIXBUF_MODULEDIR_VSCODE_SNAP_ORIG}",
+        "LOCPATH": "${env:LOCPATH_VSCODE_SNAP_ORIG}"
+      },
       "sourceLanguages": ["rust"],
       "preLaunchTask": "画面: vite（開発サーバ）"
     },

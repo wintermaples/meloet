@@ -29,6 +29,21 @@
       "label": "meloet: release で動かす",
       "type": "shell",
       "command": "cargo run --release -p meloet-app",
+      // launch.json の「meloet（デバッグ）」と同じ理由で、VS Code の snap 版が変えた環境変数を元に戻す。
+      "options": {
+        "env": {
+          "XDG_DATA_DIRS": "${env:XDG_DATA_DIRS_VSCODE_SNAP_ORIG}",
+          "XDG_CONFIG_DIRS": "${env:XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG}",
+          "GSETTINGS_SCHEMA_DIR": "${env:GSETTINGS_SCHEMA_DIR_VSCODE_SNAP_ORIG}",
+          "GIO_MODULE_DIR": "${env:GIO_MODULE_DIR_VSCODE_SNAP_ORIG}",
+          "GTK_PATH": "${env:GTK_PATH_VSCODE_SNAP_ORIG}",
+          "GTK_EXE_PREFIX": "${env:GTK_EXE_PREFIX_VSCODE_SNAP_ORIG}",
+          "GTK_IM_MODULE_FILE": "${env:GTK_IM_MODULE_FILE_VSCODE_SNAP_ORIG}",
+          "GDK_PIXBUF_MODULE_FILE": "${env:GDK_PIXBUF_MODULE_FILE_VSCODE_SNAP_ORIG}",
+          "GDK_PIXBUF_MODULEDIR": "${env:GDK_PIXBUF_MODULEDIR_VSCODE_SNAP_ORIG}",
+          "LOCPATH": "${env:LOCPATH_VSCODE_SNAP_ORIG}"
+        }
+      },
       "dependsOn": "画面: ビルド（ui/dist）",
       "problemMatcher": ["$rustc"]
     },

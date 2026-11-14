@@ -21,13 +21,14 @@
   import { current, send, start } from "./state/app.svelte";
 
   const state = $derived(current.state);
-  const connected = $derived(state !== null);
 
   $effect(() => writeCssVariables(metrics.scale, metrics.dpr));
 
-  const sendViewport = () => send({ type: "setViewport", width: window.innerWidth, height: window.innerHeight });
+  const sendViewport = () => {
+    if (current.connected) send({ type: "setViewport", width: window.innerWidth, height: window.innerHeight });
+  };
   $effect(() => {
-    if (connected) sendViewport();
+    if (current.connected) sendViewport();
   });
 
   onMount(() => {

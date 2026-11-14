@@ -13,6 +13,7 @@ import {
 let state = $state.raw<AppState | null>(null);
 let rev = $state(0);
 let failure = $state<string | null>(null);
+let connected = $state(false);
 let telemetry = $state.raw<Telemetry | null>(null);
 
 export const current = {
@@ -24,6 +25,10 @@ export const current = {
   },
   get failure(): string | null {
     return failure;
+  },
+  /** True once `send` works. The first state can arrive a moment before this. */
+  get connected(): boolean {
+    return connected;
   },
   /** The latest telemetry. Sent about 60 times a second while something moves. */
   get telemetry(): Telemetry | null {
@@ -64,6 +69,7 @@ export async function start(): Promise<void> {
         failure = String(e);
       },
     });
+    connected = true;
   } catch (e) {
     failure = String(e);
   }

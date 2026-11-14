@@ -2,6 +2,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import App from "../src/App.svelte";
+import { current } from "../src/state/app.svelte";
 
 // jsdom に WebGL2 はない。面は WebGL の係のテストで見る。
 vi.mock("../src/gl/Surface.svelte", () => ({ default: () => {} }));
@@ -24,6 +25,12 @@ describe("画面の骨組み（?scene=bufferFixed）", () => {
   });
 
   const text = (sel: string) => document.querySelector(sel)?.textContent?.replace(/\s+/g, " ").trim();
+
+  it("つながったら、いまの窓の大きさを送る（つながる前の大きさの変化を落とさない）", () => {
+    expect(current.failure).toBeNull();
+    expect(current.state!.workspace.viewportWidth).toBe(window.innerWidth);
+    expect(current.state!.workspace.viewportHeight).toBe(window.innerHeight);
+  });
 
   it("上から、再生まわり・アレンジ・帯札・状態行がある", () => {
     // jsdom では幅が 0 なので、曲の名前などは引っこんでいる。

@@ -118,6 +118,7 @@ fn picture_from_fixture() -> DevicesPicture {
             "PipeWire:Interface:Device" => devices.push(DeviceFacts {
                 id,
                 name: text("device.name").unwrap(),
+                description: text("device.description"),
                 bus: text("device.bus"),
                 api: text("device.api"),
                 enum_routes: routes(&object["info"]["params"], "EnumRoute"),
@@ -147,6 +148,7 @@ fn picture_from_fixture() -> DevicesPicture {
 }
 
 const ANALOG: &str = "alsa_card.pci-0000_0c_00.6";
+const RYZEN: &str = "Ryzen HD Audio Controller";
 
 fn by_id<'a>(list: &'a [Endpoint], id: &str) -> &'a Endpoint {
     list.iter()
@@ -173,6 +175,7 @@ fn analog_card_gives_two_outputs_on_one_sink() {
             active: true,
             node_name: sink.clone(),
             device_name: Some(ANALOG.into()),
+            device_description: Some(RYZEN.into()),
         }
     );
     assert_eq!(
@@ -186,6 +189,7 @@ fn analog_card_gives_two_outputs_on_one_sink() {
             active: false,
             node_name: sink,
             device_name: Some(ANALOG.into()),
+            device_description: Some(RYZEN.into()),
         }
     );
 }
@@ -205,6 +209,7 @@ fn hdmi_routes_without_a_sink_are_listed_as_unplugged() {
             active: false,
             node_name: None,
             device_name: Some(radeon.into()),
+            device_description: Some("Radeon High Definition Audio Controller".into()),
         }
     );
 
@@ -293,7 +298,34 @@ fn chooser_order_puts_headphones_on_top() {
     let names: Vec<&str> = outputs.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(
         &names[..3],
-        ["アナログヘッドフォン", "ライン出力", "HDMI / DisplayPort"]
+        [
+            "アナログヘッドフォン",
+            "HDMI / DisplayPort",
+            "HDMI / DisplayPort 2"
+        ]
+    );
+    assert_eq!(names[8], "ライン出力");
+
+    use meloet_devices::Unusable::*;
+    let seen: Vec<_> = outputs
+        .iter()
+        .map(|e| (e.unusable(), e.device_description.as_deref().unwrap()))
+        .collect();
+    let gb206 = "GB206 High Definition Audio Controller";
+    let radeon = "Radeon High Definition Audio Controller";
+    assert_eq!(
+        seen,
+        [
+            (None, RYZEN),
+            (Some(StoppedByPc), gb206),
+            (Some(StoppedByPc), gb206),
+            (Some(StoppedByPc), gb206),
+            (Some(StoppedByPc), gb206),
+            (Some(StoppedByPc), radeon),
+            (Some(StoppedByPc), radeon),
+            (Some(StoppedByPc), radeon),
+            (Some(SwitchedByPc), RYZEN),
+        ]
     );
 }
 

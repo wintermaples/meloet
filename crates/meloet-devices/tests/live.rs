@@ -55,8 +55,16 @@ fn first_picture_arrives_within_two_seconds_and_stop_ends_the_thread() {
     for (label, list) in [("output", &picture.outputs), ("input", &picture.inputs)] {
         for e in list {
             println!(
-                "{label}: id={} name={} friendly={:?} availability={:?} link={:?} active={} node_name={:?}",
-                e.id, e.name, e.friendly, e.availability, e.link, e.active, e.node_name
+                "{label}: id={} name={} friendly={:?} availability={:?} link={:?} active={} node_name={:?} device={:?} unusable={:?}",
+                e.id,
+                e.name,
+                e.friendly,
+                e.availability,
+                e.link,
+                e.active,
+                e.node_name,
+                e.device_description,
+                e.unusable()
             );
         }
     }

@@ -220,8 +220,13 @@ impl Core {
         let midi = options.midi.and_then(|midi_options| {
             let (hub, shared, tx) = (hub.clone(), shared.clone(), tx.clone());
             let mut midi_in = parts.midi_in;
+            let mut last_played = String::new();
             let sink = move |message: MidiMessage| match message {
-                MidiMessage::Event { event, t_us, .. } => {
+                MidiMessage::Event {
+                    keyboard,
+                    event,
+                    t_us,
+                } => {
                     // Keys played while no stream runs must not sound when one opens.
                     if shared.stream.open.load(Relaxed) {
                         let _ = midi_in.push(MidiIn {
@@ -231,11 +236,20 @@ impl Core {
                     }
                     shared.held.note(event);
                     hub.event(protocol_event(event, t_us));
+                    // Only a change of keyboard goes to the core thread.
+                    if matches!(event, MidiEvent::NoteOn { .. }) && keyboard != last_played {
+                        last_played = keyboard;
+                        let id = last_played.clone();
+                        let _ = tx.send(Msg::Input(Input::KeyboardPlayed { id }, None));
+                    }
                 }
                 MidiMessage::Added(keyboard) => {
                     let _ = tx.send(Msg::Input(Input::KeyboardAdded(keyboard), None));
                 }
                 MidiMessage::Removed { id } => {
+                    if id == last_played {
+                        last_played.clear();
+                    }
                     let _ = tx.send(Msg::Input(Input::KeyboardRemoved { id }, None));
                 }
                 MidiMessage::Ready => {}

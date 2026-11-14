@@ -25,6 +25,28 @@ pub struct Endpoint {
     pub active: bool,
     pub node_name: Option<String>,
     pub device_name: Option<String>,
+    /// `device.description`, the name the PC shows for the device.
+    pub device_description: Option<String>,
+}
+
+/// Why meloet cannot play through an endpoint without changing a PC-wide setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unusable {
+    /// It has a node, but the PC has that device on another Route now.
+    SwitchedByPc,
+    /// It has no node (its profile is off).
+    StoppedByPc,
+}
+
+impl Endpoint {
+    /// An endpoint without a Route counts as on.
+    pub fn unusable(&self) -> Option<Unusable> {
+        match (&self.node_name, self.active) {
+            (None, _) => Some(Unusable::StoppedByPc),
+            (Some(_), false) => Some(Unusable::SwitchedByPc),
+            (Some(_), true) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,13 +102,15 @@ impl ClockSettings {
     }
 }
 
-/// Order for the output chooser: plugged in first (headphones before the rest),
-/// then unknown, then unplugged. Keeps the given order inside each group.
+/// Order for the output chooser: the usable ones first, and among them plugged in first
+/// (headphones before the rest), then unknown, then unplugged. Keeps the given order inside
+/// each group, and among the unusable ones.
 pub fn sort_for_choice(endpoints: &mut [Endpoint]) {
-    endpoints.sort_by_key(|e| match e.availability {
-        Availability::Yes => (0, e.friendly != Some(Friendly::Headphones)),
-        Availability::Unknown => (1, false),
-        Availability::No => (2, false),
+    endpoints.sort_by_key(|e| match (e.unusable(), e.availability) {
+        (Some(_), _) => (3, false),
+        (None, Availability::Yes) => (0, e.friendly != Some(Friendly::Headphones)),
+        (None, Availability::Unknown) => (1, false),
+        (None, Availability::No) => (2, false),
     });
 }
 
@@ -101,10 +125,64 @@ mod tests {
             friendly,
             availability,
             link: LinkKind::Plug,
-            active: false,
-            node_name: None,
+            active: true,
+            node_name: Some("node".into()),
             device_name: None,
+            device_description: None,
         }
+    }
+
+    #[test]
+    fn unusable_tells_switched_from_stopped() {
+        let usable = ep("a", None, Availability::Yes);
+        assert_eq!(usable.unusable(), None);
+        let switched = Endpoint {
+            active: false,
+            ..usable.clone()
+        };
+        assert_eq!(switched.unusable(), Some(Unusable::SwitchedByPc));
+        for active in [false, true] {
+            let stopped = Endpoint {
+                active,
+                node_name: None,
+                ..usable.clone()
+            };
+            assert_eq!(stopped.unusable(), Some(Unusable::StoppedByPc));
+        }
+    }
+
+    #[test]
+    fn sort_puts_unusable_after_every_usable_one() {
+        use Availability::*;
+        let switched = |id: &str, av| Endpoint {
+            active: false,
+            ..ep(id, Some(Friendly::Headphones), av)
+        };
+        let stopped = |id: &str, av| Endpoint {
+            node_name: None,
+            ..ep(id, None, av)
+        };
+        let mut v = vec![
+            stopped("hdmi-yes", Yes),
+            ep("usb-no", None, No),
+            switched("hp-switched", Yes),
+            ep("usb-unknown", None, Unknown),
+            stopped("hdmi-no", No),
+            ep("line-yes", None, Yes),
+        ];
+        sort_for_choice(&mut v);
+        let ids: Vec<&str> = v.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "line-yes",
+                "usb-unknown",
+                "usb-no",
+                "hdmi-yes",
+                "hp-switched",
+                "hdmi-no"
+            ]
+        );
     }
 
     #[test]

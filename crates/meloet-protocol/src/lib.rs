@@ -13,7 +13,7 @@ pub use telemetry::{
     TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, Telemetry, TelemetryError,
 };
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -239,6 +239,7 @@ pub enum Hint {
 #[serde(rename_all = "camelCase")]
 pub struct KeyboardsView {
     pub list: Vec<KeyboardView>,
+    /// The keyboard that was played last; before any key, the one plugged in last.
     pub active: Option<String>,
     pub lost: Option<String>,
 }
@@ -280,9 +281,21 @@ pub struct EndpointView {
     pub availability: Availability,
     pub link: LinkKind,
     pub node_name: Option<String>,
-    /// meloet can play through it without changing any PC-wide setting: it has a node and the
-    /// PC uses this route on it now. Others are listed but cannot be chosen.
-    pub choosable: bool,
+    /// The PC's name of the device this endpoint is on, as it is.
+    pub device: Option<String>,
+    /// `None`: meloet can play through it without changing any PC-wide setting. Others are
+    /// listed but cannot be chosen.
+    pub unusable: Option<Unusable>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum Unusable {
+    /// A hole on a device that plays, but the PC has the device on another hole now.
+    SwitchedByPc,
+    /// Nothing plays through it: a PC setting has it off.
+    StoppedByPc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -163,6 +163,7 @@ fn the_chosen_output_is_saved_and_read_at_the_next_start() {
             active: true,
             node_name: Some("alsa_output.card.analog-stereo".into()),
             device_name: Some("card".into()),
+            device_description: Some("Card".into()),
         }],
         ..DevicesPicture::default()
     };
@@ -396,4 +397,92 @@ fn the_remembered_headphones_open_and_silence_sends_no_telemetry() {
 
     core.stop();
     assert!(!core.shared.stream.open.load(Relaxed));
+}
+
+/// Runs against the real ALSA sequencer; where it cannot be opened, nothing is checked.
+#[test]
+fn the_keyboard_played_last_becomes_the_active_one() {
+    use meloet_midi::vkeys::VirtualKeyboard;
+
+    fn wait_for_active(core: &Core, name: &str) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let keyboards = core.snapshot().state.keyboards;
+            let active = keyboards
+                .list
+                .iter()
+                .find(|k| Some(&k.id) == keyboards.active.as_ref());
+            if active.is_some_and(|k| k.name == name) {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{name} is not active: {keyboards:?}"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    let name = |tag: &str| format!("meloet-vkeys-core-{tag}-{}", std::process::id());
+    let (first, second) = (name("a"), name("b"));
+    let Ok(keys_a) = VirtualKeyboard::open(&first) else {
+        eprintln!("skipped: the ALSA sequencer cannot be opened here");
+        return;
+    };
+    let core = Core::start(CoreOptions {
+        midi: Some(MidiOptions {
+            accept_virtual: true,
+            only_virtual: true,
+        }),
+        ..CoreOptions::offline()
+    });
+    wait_for_active(&core, &first);
+    let keys_b = VirtualKeyboard::open(&second).unwrap();
+    wait_for_active(&core, &second);
+
+    let key = |on| {
+        if on {
+            MidiEvent::NoteOn {
+                note: 60,
+                velocity: 90,
+            }
+        } else {
+            MidiEvent::NoteOff {
+                note: 60,
+                velocity: 0,
+            }
+        }
+    };
+    keys_a.send(key(true)).unwrap();
+    wait_for_active(&core, &first);
+    assert_eq!(core.snapshot().state.keyboards.list.len(), 2);
+
+    // Letting go, or a pedal, does not count as playing.
+    keys_b.send(key(false)).unwrap();
+    keys_b
+        .send(MidiEvent::Control {
+            controller: 64,
+            value: 127,
+        })
+        .unwrap();
+    keys_a.send(key(false)).unwrap();
+    keys_b.send(key(true)).unwrap();
+    wait_for_active(&core, &second);
+
+    // Pulled and plugged in again, then the other one plugged in again: a key on the first
+    // must still be noticed, though it is the same keyboard as the one played before.
+    drop(keys_b);
+    wait_for_active(&core, &first);
+    let keys_b = VirtualKeyboard::open(&second).unwrap();
+    wait_for_active(&core, &second);
+    keys_a.send(key(true)).unwrap();
+    wait_for_active(&core, &first);
+    drop(keys_a);
+    wait_for_active(&core, &second);
+    let keys_a = VirtualKeyboard::open(&first).unwrap();
+    wait_for_active(&core, &first);
+    keys_b.send(key(true)).unwrap();
+    wait_for_active(&core, &second);
+    drop(keys_a);
+    core.stop();
 }

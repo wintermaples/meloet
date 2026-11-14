@@ -10,7 +10,7 @@ use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
     LowerBandView, MeterSize, OutputsView, SettingsDialogView, SongView, StatusMessage, StatusView,
-    TrackView, WorkspaceView,
+    TrackView, Unusable, WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, SidePanel, WindowSize};
@@ -30,6 +30,10 @@ pub enum Input {
     Command(Command),
     KeyboardAdded(Keyboard),
     KeyboardRemoved {
+        id: String,
+    },
+    /// A key went down on a keyboard other than the one played before.
+    KeyboardPlayed {
         id: String,
     },
     Devices(DevicesPicture),
@@ -78,8 +82,10 @@ pub struct Model {
     /// The chooser decided an output; the next played sound shows the hint.
     hint_armed: bool,
     hint_dismissed: bool,
-    /// Oldest first; the last one is the active keyboard.
+    /// Oldest first.
     keyboards: Vec<Keyboard>,
+    /// The id of the keyboard played last, while it is plugged in.
+    played: Option<String>,
     lost: Option<String>,
     /// `None` until the first picture. Outputs are kept in chooser order.
     devices: Option<DevicesPicture>,
@@ -122,6 +128,7 @@ impl Model {
             hint_armed: false,
             hint_dismissed: false,
             keyboards: Vec::new(),
+            played: None,
             lost: None,
             devices: None,
             chosen_name: settings.output_name.filter(|_| settings.output.is_some()),
@@ -154,10 +161,18 @@ impl Model {
             Input::KeyboardRemoved { id } => {
                 if let Some(i) = self.keyboards.iter().position(|k| k.id == id) {
                     let gone = self.keyboards.remove(i);
+                    if self.played.as_ref() == Some(&gone.id) {
+                        self.played = None;
+                    }
                     if self.keyboards.is_empty() {
                         self.lost = Some(gone.name);
                     }
                     effects.push(Effect::AllNotesOff);
+                }
+            }
+            Input::KeyboardPlayed { id } => {
+                if self.keyboards.iter().any(|k| k.id == id) {
+                    self.played = Some(id);
                 }
             }
             Input::Devices(mut picture) => {
@@ -422,6 +437,14 @@ impl Model {
         })
     }
 
+    /// The keyboard played last; before any key, the one plugged in last.
+    fn active_keyboard(&self) -> Option<&Keyboard> {
+        self.played
+            .as_ref()
+            .and_then(|id| self.keyboards.iter().find(|k| &k.id == id))
+            .or_else(|| self.keyboards.last())
+    }
+
     fn chooser_shown(&self) -> bool {
         self.chosen.is_none() && !self.keyboards.is_empty()
     }
@@ -454,15 +477,11 @@ impl Model {
                         address: k.address(),
                     })
                     .collect(),
-                active: self.keyboards.last().map(|k| k.id.clone()),
+                active: self.active_keyboard().map(|k| k.id.clone()),
                 lost: self.lost.clone(),
             },
             outputs: OutputsView {
-                list: self
-                    .outputs()
-                    .iter()
-                    .map(|e| endpoint_view(e, is_choosable(e)))
-                    .collect(),
+                list: self.outputs().iter().map(endpoint_view).collect(),
                 chosen: self.chosen.clone(),
                 chosen_state,
             },
@@ -471,7 +490,7 @@ impl Model {
                     .devices
                     .iter()
                     .flat_map(|d| &d.inputs)
-                    .map(|e| endpoint_view(e, false))
+                    .map(endpoint_view)
                     .collect(),
                 chosen: None,
             },
@@ -496,7 +515,7 @@ impl Model {
             latency_ms: measured.or_else(|| Some(estimate_ms(self.actual_frames?, rate?))),
             latency_ms_at_requested: rate.map(|r| estimate_ms(REQUESTED_FRAMES, r)),
             output_device: self.open.as_ref().map(|o| o.node_name.clone()),
-            midi_input: self.keyboards.last().map(Keyboard::label),
+            midi_input: self.active_keyboard().map(Keyboard::label),
         }
     }
 
@@ -524,7 +543,7 @@ impl Model {
             }
             Some(ChosenState::Ready) | None => {}
         }
-        let Some(active) = self.keyboards.last() else {
+        let Some(active) = self.active_keyboard() else {
             return Some(match &self.lost {
                 Some(keyboard) => StatusMessage::KeyboardLost {
                     keyboard: keyboard.clone(),
@@ -556,7 +575,7 @@ fn estimate_ms(frames: u32, sample_rate: u32) -> f32 {
 /// meloet can play through it without changing a PC-wide setting: it has a node, and the PC has
 /// its Route on now (an endpoint without a Route counts as on).
 fn is_choosable(endpoint: &Endpoint) -> bool {
-    endpoint.node_name.is_some() && endpoint.active
+    endpoint.unusable().is_none()
 }
 
 /// The viewport is CSS px; the band rules work in px at 100 %.
@@ -634,7 +653,7 @@ fn song_view(song: &Song) -> SongView {
     }
 }
 
-fn endpoint_view(endpoint: &Endpoint, choosable: bool) -> EndpointView {
+fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
     use meloet_devices as d;
     EndpointView {
         id: endpoint.id.clone(),
@@ -655,7 +674,11 @@ fn endpoint_view(endpoint: &Endpoint, choosable: bool) -> EndpointView {
             d::LinkKind::Plug => LinkKind::Plug,
         },
         node_name: endpoint.node_name.clone(),
-        choosable,
+        device: endpoint.device_description.clone(),
+        unusable: endpoint.unusable().map(|u| match u {
+            d::Unusable::SwitchedByPc => Unusable::SwitchedByPc,
+            d::Unusable::StoppedByPc => Unusable::StoppedByPc,
+        }),
     }
 }
 

@@ -29,6 +29,8 @@ pub struct RouteParam {
 pub struct DeviceFacts {
     pub id: u32,
     pub name: String,
+    /// `device.description`
+    pub description: Option<String>,
     pub bus: Option<String>,
     pub api: Option<String>,
     pub enum_routes: Vec<RouteParam>,
@@ -156,6 +158,7 @@ fn endpoints(devices: &[DeviceFacts], nodes: &[NodeFacts], direction: Direction)
                 }),
                 node_name: node.map(|n| n.name.clone()),
                 device_name: Some(dev.name.clone()),
+                device_description: dev.description.clone(),
             };
 
             let mut matched = false;
@@ -191,6 +194,7 @@ fn endpoints(devices: &[DeviceFacts], nodes: &[NodeFacts], direction: Direction)
             active: true,
             node_name: Some(node.name.clone()),
             device_name: dev.map(|d| d.name.clone()),
+            device_description: dev.and_then(|d| d.description.clone()),
         });
     }
     out
@@ -278,6 +282,7 @@ mod tests {
         let devices = [DeviceFacts {
             id: 70,
             name: "bluez_card.00_11".into(),
+            description: Some("Some Headset".into()),
             api: Some("bluez5".into()),
             ..Default::default()
         }];
@@ -300,9 +305,11 @@ mod tests {
                 active: true,
                 node_name: Some("bluez_output.00_11.1".into()),
                 device_name: Some("bluez_card.00_11".into()),
+                device_description: Some("Some Headset".into()),
             }
         );
         assert_eq!(p.outputs[1].id, "null-sink");
         assert_eq!(p.outputs[1].device_name, None);
+        assert_eq!(p.outputs[1].device_description, None);
     }
 }

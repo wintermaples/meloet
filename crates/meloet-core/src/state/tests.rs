@@ -19,6 +19,7 @@ fn ep(id: &str, name: &str, av: Av, active: bool, node: Option<&str>) -> Endpoin
         active,
         node_name: node.map(str::to_owned),
         device_name: None,
+        device_description: Some(format!("{} device", id.split(':').next().unwrap())),
     }
 }
 
@@ -56,7 +57,7 @@ fn picture(outputs: Vec<Endpoint>, force_quantum: Option<u32>) -> Input {
     })
 }
 
-/// In `sort_for_choice` order: HP, HDMI, line out, USB.
+/// In `sort_for_choice` order: HP, USB, HDMI, line out.
 fn usual() -> Input {
     let [hdmi, line] = others();
     picture(vec![hdmi, usb(), headphones(Av::Yes, true), line], None)
@@ -143,7 +144,43 @@ fn a_new_song() {
 }
 
 #[test]
-fn keyboards_active_is_the_last_plugged_and_lost_is_the_last_pulled() {
+fn keyboards_active_is_the_last_played() {
+    let mut m = fresh();
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    m.handle(Input::KeyboardAdded(keyboard(2)));
+    assert_eq!(m.view().keyboards.active.as_deref(), Some("kb2"));
+
+    assert!(
+        m.handle(Input::KeyboardPlayed { id: "kb1".into() })
+            .is_empty()
+    );
+    let view = m.view();
+    assert_eq!(view.keyboards.active.as_deref(), Some("kb1"));
+    assert_eq!(view.keyboards.list.len(), 2);
+    assert_eq!(
+        view.audio.midi_input.as_deref(),
+        Some("Keystation 1:MIDI 1 21:0")
+    );
+
+    // A keyboard plugged in later does not take the name from the one being played.
+    m.handle(Input::KeyboardAdded(keyboard(3)));
+    assert_eq!(m.view().keyboards.active.as_deref(), Some("kb1"));
+    m.handle(Input::KeyboardPlayed { id: "kb2".into() });
+    assert_eq!(m.view().keyboards.active.as_deref(), Some("kb2"));
+
+    // The played one is pulled: back to the one plugged in last.
+    m.handle(Input::KeyboardRemoved { id: "kb2".into() });
+    assert_eq!(m.view().keyboards.active.as_deref(), Some("kb3"));
+    m.handle(Input::KeyboardAdded(keyboard(2)));
+    assert_eq!(m.view().keyboards.active.as_deref(), Some("kb2"));
+
+    // A keyboard that is not there changes nothing.
+    m.handle(Input::KeyboardPlayed { id: "no".into() });
+    assert_eq!(m.view().keyboards.active.as_deref(), Some("kb2"));
+}
+
+#[test]
+fn keyboards_active_is_the_last_plugged_before_any_key_and_lost_is_the_last_pulled() {
     let mut m = fresh();
     m.handle(Input::KeyboardAdded(keyboard(1)));
     m.handle(Input::KeyboardAdded(keyboard(2)));
@@ -181,21 +218,26 @@ fn outputs_are_all_listed_in_chooser_order_and_only_some_can_be_chosen() {
     let mut m = fresh();
     m.handle(usual());
     let view = m.view();
-    let rows: Vec<(&str, bool)> = view
+    let rows: Vec<_> = view
         .outputs
         .list
         .iter()
-        .map(|e| (e.id.as_str(), e.choosable))
+        .map(|e| (e.id.as_str(), e.unusable, e.device.as_deref()))
         .collect();
     assert_eq!(
         rows,
-        [(HP, true), (HDMI, false), (LINE, false), (USB, true)]
+        [
+            (HP, None, Some("card device")),
+            (USB, None, Some("usb device")),
+            (HDMI, Some(Unusable::StoppedByPc), Some("gpu device")),
+            (LINE, Some(Unusable::SwitchedByPc), Some("card device")),
+        ]
     );
     assert_eq!(view.outputs.list[0].friendly, Some(Friendly::Headphones));
     assert_eq!(view.outputs.list[0].node_name.as_deref(), Some(HP_NODE));
 
     assert_eq!(view.inputs.list.len(), 1);
-    assert!(!view.inputs.list[0].choosable);
+    assert_eq!(view.inputs.list[0].unusable, None);
     assert_eq!(view.inputs.chosen, None);
 }
 
@@ -837,7 +879,7 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     assert_eq!(ws.layout.meter, MeterSize::Full);
     assert_eq!(
         ws.layout.arrange_height,
-        960.0 - 48.0 - 52.0 - 432.0 - 24.0 - 24.0
+        960.0 - 48.0 - 52.0 - 516.0 - 24.0 - 24.0
     );
 
     cmd(
@@ -849,7 +891,8 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     );
     let l = m.view().workspace.layout;
     assert_eq!(l.meter, MeterSize::Slim);
-    assert_eq!(l.arrange_height, 720.0 - 48.0 - 24.0 - 432.0 - 24.0 - 24.0);
+    assert_eq!(l.arrange_height, 40.0);
+    assert_eq!(l.lower[0].height, 720.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0);
 
     // Other scales and broken sizes are ignored.
     for percent in [0, 99, 110, 200] {
@@ -876,15 +919,20 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
 #[test]
 fn arrange_no_taller_than_the_overview_is_drawn_as_the_overview() {
     let mut m = fresh();
-    // 148 + mixer 432 + 40 = 620 with the slim meter (24 + 48 + 24 + 24 = 120).
+    // History 248 + 40 with the slim meter (24 + 48 + 24 + 24 = 120).
     cmd(
         &mut m,
         Command::SetViewport {
             width: 1280.0,
-            height: 592.0,
+            height: 408.0,
         },
     );
-    cmd(&mut m, Command::ToggleBand { band: Band::Mixer });
+    cmd(
+        &mut m,
+        Command::ToggleBand {
+            band: Band::History,
+        },
+    );
     let l = m.view().workspace.layout;
     assert_eq!(l.arrange_height, 40.0);
     assert!(l.arrange_overview);
@@ -893,7 +941,7 @@ fn arrange_no_taller_than_the_overview_is_drawn_as_the_overview() {
         &mut m,
         Command::SetViewport {
             width: 1280.0,
-            height: 593.0,
+            height: 409.0,
         },
     );
     let l = m.view().workspace.layout;

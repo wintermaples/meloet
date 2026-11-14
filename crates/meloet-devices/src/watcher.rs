@@ -383,6 +383,7 @@ impl Shared {
                 if let Some(name) = props.get("device.name") {
                     entry.facts.name = name.to_owned();
                 }
+                entry.facts.description = props.get("device.description").map(str::to_owned);
                 entry.facts.bus = props.get("device.bus").map(str::to_owned);
                 entry.facts.api = props.get("device.api").map(str::to_owned);
             }

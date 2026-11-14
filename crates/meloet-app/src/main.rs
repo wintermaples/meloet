@@ -5,10 +5,13 @@ mod core_handle;
 mod devhooks;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering::Relaxed};
 
-use meloet_protocol::{Command, HelloReply, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot};
+use meloet_protocol::{
+    Change, Command, HelloReply, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot,
+};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{Manager, RunEvent, State};
+use tauri::{LogicalSize, Manager, RunEvent, State, WebviewWindow};
 
 use crate::core_handle::CoreHandle;
 
@@ -69,12 +72,45 @@ fn measure_report(name: String, json: String) -> Result<(), String> {
     meloet_core::measure::write_report(&dir, &name, &json)
 }
 
+fn set_min_size(window: &WebviewWindow, scale: u16) {
+    let min = meloet_core::layout::min_window(scale);
+    if let Err(e) = window.set_min_size(Some(LogicalSize::new(min.width, min.height))) {
+        eprintln!("meloet: cannot set the smallest window size: {e}");
+    }
+}
+
+/// The shell learns the zoom the way the screen does: it listens to the patches first, then
+/// reads the snapshot. The core stays the only owner of the zoom.
+fn follow_scale(core: &Core, window: WebviewWindow) {
+    let listener = window.clone();
+    // The workspace section also changes at every resize; only a new zoom is passed on.
+    let last = AtomicU16::new(0);
+    core.subscribe(
+        Box::new(move |message| {
+            if let ServerMessage::Patch(patch) = message {
+                for change in &patch.changes {
+                    if let Change::Workspace(workspace) = change
+                        && last.swap(workspace.scale, Relaxed) != workspace.scale
+                    {
+                        set_min_size(&listener, workspace.scale);
+                    }
+                }
+            }
+            true
+        }),
+        // No telemetry wanted: this sink is dropped at the first reading.
+        Box::new(|_| false),
+    );
+    set_min_size(&window, core.snapshot().state.workspace.scale);
+}
+
 fn main() {
     devhooks::read_env();
     let core = Arc::new(meloet_core::Core::start(
         meloet_core::CoreOptions::from_env(),
     ));
     let shell_side: Core = core.clone();
+    let window_side = shell_side.clone();
     tauri::Builder::default()
         .manage(shell_side)
         .invoke_handler(tauri::generate_handler![
@@ -86,8 +122,9 @@ fn main() {
             measure_enabled,
             measure_report
         ])
-        .setup(|app| {
+        .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
+                follow_scale(&window_side, window.clone());
                 devhooks::apply_window_size(&window);
             }
             Ok(())

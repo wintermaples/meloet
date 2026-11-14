@@ -27,6 +27,8 @@ BOARDS = {
     "bufferFixed": "F-BufferFixed",
     "settings": "F-Settings",
     "settingsAdvFixed": "F-SettingsAdvFixed",
+    "settingsEnd": None,
+    "settingsAdvFixedEnd": None,
     "longName": "F-MeterLongName",
     "pianoRoll": "A-PianoRoll",
     "mixer": "A-Mixer",

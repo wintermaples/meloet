@@ -41,6 +41,14 @@ export function layerOf(node: Element): Element | null {
   return node.closest(`[${LAYER_ATTRIBUTE}]`);
 }
 
+/** Marks a box that scrolls its content: the slots inside it are drawn only within its rect. */
+export const SCROLL_ATTRIBUTE = "data-gl-scroll";
+
+/** The nearest scrolling box around a slot, or null. */
+export function scrollerOf(node: Element): Element | null {
+  return node.parentElement?.closest(`[${SCROLL_ATTRIBUTE}]`) ?? null;
+}
+
 /** For the surfaces: every marked box that is in the page right now, in any layer. */
 export function liveSlots(): IterableIterator<[HTMLElement, GlSlot]> {
   return slots.entries();

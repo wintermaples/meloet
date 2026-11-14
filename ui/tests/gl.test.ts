@@ -9,7 +9,8 @@ import { dbToLength, fall, peakToDb } from "../src/gl/level";
 import { Levels } from "../src/gl/levels";
 import { KeyToScreen, REPORT_NAME } from "../src/gl/measure";
 import { paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
-import { glSlot, layerOf, LAYER_ATTRIBUTE } from "../src/gl/slot";
+import { clipOf } from "../src/gl/engine";
+import { glSlot, layerOf, LAYER_ATTRIBUTE, SCROLL_ATTRIBUTE, scrollerOf } from "../src/gl/slot";
 import type { Telemetry } from "../src/bridge";
 
 interface NodeFs {
@@ -441,6 +442,34 @@ describe("重なりの層", () => {
     expect(layerOf(b)).toBe(dialog);
     expect(layerOf(dialog.querySelector("canvas")!)).toBe(dialog);
     for (const s of stop) s.destroy();
+    document.body.innerHTML = "";
+  });
+});
+
+describe("スクロールする入れ物の中の slot", () => {
+  const rect = (left: number, top: number, width: number, height: number) => new DOMRect(left, top, width, height);
+
+  it("いちばん近い data-gl-scroll が入れ物。自分自身は数えない", () => {
+    document.body.innerHTML = `<div id="s" ${SCROLL_ATTRIBUTE}><p><i id="a"></i></p></div><i id="b" ${SCROLL_ATTRIBUTE}></i>`;
+    expect(scrollerOf(document.getElementById("a")!)).toBe(document.getElementById("s"));
+    expect(scrollerOf(document.getElementById("b")!)).toBe(null);
+    document.body.innerHTML = "";
+  });
+
+  it("入れ物の内がわ（スクロールの棒をのぞく）で切る。率と面の位置も入れる", () => {
+    document.body.innerHTML = `<div id="s" ${SCROLL_ATTRIBUTE}><i id="a"></i></div><i id="b"></i>`;
+    const s = document.getElementById("s")!;
+    s.getBoundingClientRect = () => rect(100, 50, 400, 300);
+    Object.defineProperty(s, "clientTop", { value: 1 });
+    Object.defineProperty(s, "clientLeft", { value: 1 });
+    Object.defineProperty(s, "clientWidth", { value: 383 });
+    Object.defineProperty(s, "clientHeight", { value: 298 });
+    const origin = rect(0, 10, 1280, 800);
+    // 入れ物の上と下にはみ出した slot（2 倍の画面）
+    const box = { x0: 220, y0: 40, x1: 1000, y1: 900 };
+    expect(clipOf(document.getElementById("a")!, box, origin, 2, 2, 2560, 1600)).toEqual({ x0: 220, y0: 82, x1: 968, y1: 678 });
+    // 入れ物の外の slot は、面で切るだけ
+    expect(clipOf(document.getElementById("b")!, { x0: -5, y0: 0, x1: 3000, y1: 10 }, origin, 1, 1, 1280, 790)).toEqual({ x0: 0, y0: 0, x1: 1280, y1: 10 });
     document.body.innerHTML = "";
   });
 });

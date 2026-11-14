@@ -305,6 +305,36 @@ describe("音の設定", () => {
   });
 });
 
+describe("音の設定: 中身が長いとき（出口 9 行）", () => {
+  const many = (advancedOpen: boolean) =>
+    app.stateWith((s) => {
+      s.keyboards = { list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null };
+      s.outputs.list = [
+        ...OUTPUTS.slice(0, 3),
+        ...[1, 2, 3, 4, 5, 6].map((n) => endpoint({ id: `hdmi-${n}`, name: `HDMI / DisplayPort ${n}`, link: "plug", choosable: false })),
+      ];
+      s.workspace.settings = { draftOutput: "hp", advancedOpen };
+    });
+
+  it.each([false, true])("見出しと下の列はスクロールの外。中身と WebGL の slot はスクロールの中（奥: %s）", (advanced) => {
+    show(SettingsDialog, many(advanced));
+    const dialog = q('[data-test="settings-dialog"]')!;
+    const body = q('[data-test="settings-body"]')!;
+    expect(body.hasAttribute("data-gl-scroll")).toBe(true);
+    expect([...dialog.children].map((c) => c.className.split(" ")[0])).toEqual(["head", "body", "foot"]);
+    for (const b of ["settings-cancel", "settings-apply", "settings-close"]) {
+      const button = q(`[data-test="${b}"]`)!;
+      expect(body.contains(button)).toBe(false);
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    }
+    const rows = qa('[data-test="endpoint-row"]');
+    expect(rows.every((r) => body.contains(r))).toBe(true);
+    expect(rows).toHaveLength(advanced ? 3 : 9 + 1 + 1);
+    for (const slot of qa("[data-gl-slot]")) expect(body.contains(slot)).toBe(true);
+    expect(qa("[data-gl-slot]")).toHaveLength(advanced ? 0 : 2);
+  });
+});
+
 describe("音が出ました", () => {
   it("hint が soundCameOut のときだけ、仕様書の文だけを出す", () => {
     show(SoundHint, app.stateWith((s) => (s.workspace.hint = "emptyArrange")));

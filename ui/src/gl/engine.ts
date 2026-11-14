@@ -6,7 +6,7 @@ import { HeldKeys } from "./keyboard";
 import { Levels } from "./levels";
 import { paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity, type Box } from "./paint";
 import { Renderer } from "./renderer";
-import { layerOf, liveSlots, type GlSlot } from "./slot";
+import { layerOf, liveSlots, scrollerOf, type GlSlot } from "./slot";
 
 export interface EngineStats {
   /** Animation frames that ran. */
@@ -185,7 +185,8 @@ export class Engine {
       box.y0 = Math.round((r.top - origin.top) * sy);
       box.x1 = Math.round((r.right - origin.left) * sx);
       box.y1 = Math.round((r.bottom - origin.top) * sy);
-      out.clip(Math.max(box.x0, 0), Math.max(box.y0, 0), Math.min(box.x1, width), Math.min(box.y1, height));
+      const c = clipOf(node, box, origin, sx, sy, width, height);
+      out.clip(c.x0, c.y0, c.x1, c.y1);
       this.paint(out, box, slot, nowMs, sx, sy, mark, inset);
     }
   }
@@ -230,6 +231,25 @@ export class Engine {
         break;
     }
   }
+}
+
+/**
+ * Where a slot may draw, in canvas pixels: its own box, cut to the canvas and to the inside
+ * (without scrollbars) of the scrolling box it is in, so scrolled content does not spill over.
+ */
+export function clipOf(node: Element, box: Box, origin: DOMRect, sx: number, sy: number, width: number, height: number): Box {
+  const c = { x0: Math.max(box.x0, 0), y0: Math.max(box.y0, 0), x1: Math.min(box.x1, width), y1: Math.min(box.y1, height) };
+  const scroller = scrollerOf(node);
+  if (scroller) {
+    const r = scroller.getBoundingClientRect();
+    const left = r.left + scroller.clientLeft - origin.left;
+    const top = r.top + scroller.clientTop - origin.top;
+    c.x0 = Math.max(c.x0, Math.round(left * sx));
+    c.y0 = Math.max(c.y0, Math.round(top * sy));
+    c.x1 = Math.min(c.x1, Math.round((left + scroller.clientWidth) * sx));
+    c.y1 = Math.min(c.y1, Math.round((top + scroller.clientHeight) * sy));
+  }
+  return c;
 }
 
 const SILENT = { length: 0, clipped: false } as const;

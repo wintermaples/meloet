@@ -141,6 +141,19 @@ const HDMI: EndpointView = {
   choosable: false,
 };
 const OUTPUTS = [HEADPHONES, LINE_OUT, HDMI];
+const hdmi = (id: string, name: string): EndpointView => ({ ...HDMI, id, name });
+/** The 9 outputs of a PC with two cards of HDMI / DisplayPort: the settings dialog overflows a 1280×800 window. */
+const MANY_OUTPUTS = [
+  HEADPHONES,
+  LINE_OUT,
+  hdmi("out-hdmi-a1", "HDMI / DisplayPort"),
+  hdmi("out-hdmi-a2", "HDMI / DisplayPort 2"),
+  hdmi("out-hdmi-a3", "HDMI / DisplayPort 3"),
+  hdmi("out-hdmi-a4", "HDMI / DisplayPort 4"),
+  hdmi("out-hdmi-b1", "HDMI / DisplayPort"),
+  hdmi("out-hdmi-b2", "HDMI / DisplayPort 2"),
+  hdmi("out-hdmi-b3", "HDMI / DisplayPort 3"),
+];
 
 const keyboard = (name: string) => ({ id: "kb-1", name, portName: name, address: "24:0" });
 
@@ -203,6 +216,8 @@ interface Scene {
   state: AppState;
   bands: FakeBands;
   meters: FakeMeters;
+  /** Keep every scrolling box (`data-gl-scroll`) scrolled to its end. */
+  scrollToEnd?: boolean;
 }
 
 const dbfs = (db: number) => 10 ** (db / 20);
@@ -238,9 +253,25 @@ function bufferFixed(s: AppState): void {
   s.status.message = { id: "bufferFixed", actual: 1024, requested: 256, latencyMs: 53, latencyMsAtRequested: 13.5 };
 }
 
+function settings(s: AppState): void {
+  ready(s);
+  s.outputs.list = MANY_OUTPUTS.map((o) => ({ ...o }));
+  s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: false };
+  s.status.message = { id: "settingsOpen" };
+}
+
+function settingsAdvFixed(s: AppState): void {
+  bufferFixed(s);
+  s.outputs.list = MANY_OUTPUTS.map((o) => ({ ...o }));
+  s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: true };
+}
+
 const QUIET: FakeMeters = { velocity: 83, loadPermille: 90 };
 
-export const SCENES: Record<string, { setup(s: AppState): void; bands?: Band[]; meters: FakeMeters }> = {
+export const SCENES: Record<
+  string,
+  { setup(s: AppState): void; bands?: Band[]; meters: FakeMeters; scrollToEnd?: boolean }
+> = {
   connect1: { setup: (s) => (s.status.message = { id: "searchingKeyboard" }), meters: { loadPermille: 90 } },
   connect2: {
     setup(s) {
@@ -269,21 +300,10 @@ export const SCENES: Record<string, { setup(s: AppState): void; bands?: Band[]; 
   },
   empty: { setup: ready, meters: QUIET },
   bufferFixed: { setup: bufferFixed, meters: QUIET },
-  settings: {
-    setup(s) {
-      ready(s);
-      s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: false };
-      s.status.message = { id: "settingsOpen" };
-    },
-    meters: QUIET,
-  },
-  settingsAdvFixed: {
-    setup(s) {
-      bufferFixed(s);
-      s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: true };
-    },
-    meters: QUIET,
-  },
+  settings: { setup: settings, meters: QUIET },
+  settingsAdvFixed: { setup: settingsAdvFixed, meters: QUIET },
+  settingsEnd: { setup: settings, meters: QUIET, scrollToEnd: true },
+  settingsAdvFixedEnd: { setup: settingsAdvFixed, meters: QUIET, scrollToEnd: true },
   longName: { setup: (s) => (ready(s), withKeyboard(s, "Arturia KeyLab Essential 61 mk3 MIDI 1")), meters: QUIET },
   pianoRoll: { setup: ready, bands: ["pianoRoll"], meters: QUIET },
   mixer: { setup: ready, bands: ["mixer"], meters: QUIET },
@@ -304,7 +324,7 @@ export function fakeScene(name: string, scale = 100, viewport = { width: 1280, h
   state.workspace.viewportWidth = viewport.width;
   state.workspace.viewportHeight = viewport.height;
   state.workspace.layout = bands.layout();
-  return { state, bands, meters: def.meters };
+  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd };
 }
 
 function sceneFromUrl(): Scene | null {
@@ -442,7 +462,10 @@ export function createFakeTransport(initial?: AppState): Transport {
       // Only scenes send meters, so tests that use the plain fake leave no timer behind.
       if (scene) {
         let seq = 0;
-        setInterval(() => onTelemetry(encodeTelemetry(scene.meters, ++seq, nowUs(), state.song.tracks.length)), 1000 / 60);
+        setInterval(() => {
+          onTelemetry(encodeTelemetry(scene.meters, ++seq, nowUs(), state.song.tracks.length));
+          if (scene.scrollToEnd) for (const el of document.querySelectorAll("[data-gl-scroll]")) el.scrollTop = el.scrollHeight;
+        }, 1000 / 60);
       }
     },
     async snapshot() {

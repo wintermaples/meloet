@@ -98,7 +98,7 @@
       </button>
     </div>
 
-    <div class="body">
+    <div class="body" data-gl-scroll data-test="settings-body">
       <section>
         <span class="label">{t("settings.outputs")}</span>
         {#each outputs as output (output.id)}
@@ -299,6 +299,7 @@
     display: flex;
     flex-direction: column;
     width: var(--part-dialog-width);
+    max-height: calc(100% - 2 * var(--mock-settings-top));
     background: var(--color-gray-3);
     border: var(--line-hair) solid var(--color-gray-8);
     border-radius: var(--radius-1);
@@ -308,11 +309,14 @@
     line-height: var(--text-s-line-height);
     font-weight: var(--text-s-weight-400);
     white-space: nowrap;
+    color-scheme: dark;
   }
   .dialog.advanced {
     top: var(--mock-settings-top-advanced);
+    max-height: calc(100% - 2 * var(--mock-settings-top-advanced));
   }
   .head {
+    flex-shrink: 0;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -341,8 +345,14 @@
     color: var(--color-gray-10);
   }
   .body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
+  }
+  .body > * {
+    flex-shrink: 0;
   }
   section {
     display: flex;
@@ -447,6 +457,7 @@
     white-space: normal;
   }
   .foot {
+    flex-shrink: 0;
     box-sizing: border-box;
     display: flex;
     align-items: center;

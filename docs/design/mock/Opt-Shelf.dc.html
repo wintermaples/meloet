@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>えらぶ 3 — プラグインの棚の居場所</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+h1,h2,p{margin:0}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{font-size:12px;color:#9A9A9A}
+.t{position:relative;height:200px;display:flex;flex-direction:column;background:#121212;border:1px solid #3A3A3A}
+.t1{height:12px;background:#1A1A1A;border-bottom:1px solid #2C2C2C}
+.t2{height:8px;background:#0A0A0A;border-bottom:1px solid #3A3A3A}
+.t3{height:8px;background:#222222;border-top:1px solid #3A3A3A}
+.a{flex:1;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;color:#9A9A9A;border:0 solid #2C2C2C}
+.sh{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:#1A1A1A;border:1px solid #FFB000;color:#F2F2F2;text-align:center}
+.p{position:absolute;padding:0 6px;height:20px;display:flex;align-items:center;background:#222222;border:1px solid #9A9A9A;color:#F2F2F2;white-space:nowrap}
+</style>
+</helmet>
+<div style="width: 1280px; height: 720px; padding: 24px 32px; display: flex; flex-direction: column; gap: 16px; background: #121212; color: #D6D6D6; font-family: 'IBM Plex Sans JP', 'Noto Sans JP', sans-serif; font-size: 12px; line-height: 1.5; overflow: hidden">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<h1 style="font-size: 20px; font-weight: 600; color: #F2F2F2">えらぶ 3 ・ プラグインの棚の居場所</h1>
+<span class="l">アレンジからもミキサーからも、同じ棚へ。枠が黄色い所が棚。中身（音源とエフェクトの切りかえ、さがす、形式の印）は 3 案とも同じ。</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; flex: 1; min-height: 0">
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="font-size: 16px; font-weight: 600; color: #F2F2F2">3-A 右の引き出し</h2>
+<p class="l">窓の右はしに住む。ひらくと横 320px を使い、縦は食わない。</p>
+<div class="t"><div class="t1"></div><div class="t2"></div><div style="flex: 1; display: flex; min-height: 0"><div class="a">アレンジ</div><div class="sh" style="width: 100px">棚<span class="l">音源</span></div></div><div class="t3"></div><span class="p" style="left: 8px; bottom: 16px">＋ トラックを追加</span></div>
+<span class="l">アレンジで「＋ トラックを追加」→ 棚が「音源」でひらく</span>
+<div class="t"><div class="t1"></div><div class="t2"></div><div style="flex: 1; display: flex; min-height: 0"><div class="a">ミキサー</div><div class="sh" style="width: 100px">棚<span class="l">エフェクト</span></div></div><div class="t3"></div><span class="p" style="left: 96px; top: 64px">空き ＋</span></div>
+<span class="l">ミキサーで空きのインサート → 棚が「エフェクト」でひらく</span>
+<p><span style="color: #F2F2F2">たたむと:</span> 右はしに幅 24px の縦の見出し「棚」が残る。<span style="color: #F2F2F2">スキャン中 ・ 見つからない:</span> 棚の下のはしに出る。</p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="font-size: 16px; font-weight: 600; color: #F2F2F2">3-B 下の帯の一つ</h2>
+<p class="l">ピアノロールやミキサーと同じ「帯」として下に住む。しくみは一つだけ。</p>
+<div class="t"><div class="t1"></div><div class="t2"></div><div class="a">アレンジ</div><div class="sh" style="height: 64px">棚<span class="l">音源</span></div><div class="t3"></div><span class="p" style="left: 8px; top: 84px">＋ トラックを追加</span></div>
+<span class="l">アレンジで「＋ トラックを追加」→ 下から棚の帯がひらく</span>
+<div class="t"><div class="t1"></div><div class="t2"></div><div class="a" style="border-bottom-width: 1px">ミキサー</div><div class="sh" style="height: 64px">棚<span class="l">エフェクト</span></div><div class="t3"></div><span class="p" style="left: 96px; top: 48px">空き ＋</span></div>
+<span class="l">ミキサーの下に棚がひらき、ミキサーを押しちぢめる</span>
+<p><span style="color: #F2F2F2">たたむと:</span> ほかの帯と同じ見出し「▸ 棚 音源 9 ・ エフェクト 12」。<span style="color: #F2F2F2">スキャン中 ・ 見つからない:</span> 見出しの要約に出る。</p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="font-size: 16px; font-weight: 600; color: #F2F2F2">3-C その場に出る小窓</h2>
+<p class="l">押したボタンのすぐそばに小さな棚が出て、えらぶと消える。</p>
+<div class="t"><div class="t1"></div><div class="t2"></div><div class="a">アレンジ</div><div class="t3"></div><span class="p" style="left: 8px; bottom: 16px">＋ トラックを追加</span><div class="sh" style="position: absolute; left: 8px; bottom: 40px; width: 132px; height: 104px">棚<span class="l">音源</span></div></div>
+<span class="l">「＋ トラックを追加」の真上に小窓</span>
+<div class="t"><div class="t1"></div><div class="t2"></div><div class="a">ミキサー</div><div class="t3"></div><span class="p" style="left: 96px; top: 40px">空き ＋</span><div class="sh" style="position: absolute; left: 96px; top: 64px; width: 132px; height: 104px">棚<span class="l">エフェクト</span></div></div>
+<span class="l">空きのインサートの真下に小窓</span>
+<p><span style="color: #F2F2F2">たたむと:</span> 何も残らない。棚は押したときだけ現れる。<span style="color: #F2F2F2">スキャン中 ・ 見つからない:</span> 居場所がなく、状態行と音の設定にたよる。</p>
+</div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

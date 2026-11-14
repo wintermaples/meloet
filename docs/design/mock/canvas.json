@@ -1,0 +1,378 @@
+{
+"v": 3,
+"createdOnFiles": {
+"v": 1,
+"at": "2026-11-14T00:00:00Z"
+},
+"title": "初心者向けDAW デザイン3案",
+"launch": {
+"view": "canvas"
+},
+"pages": [],
+"boards": {
+"F-Connect1.dc.html": {
+"x": 0,
+"y": 0,
+"w": 1280,
+"h": 800,
+"title": "流れ 1 ・ まだつないでいない"
+},
+"F-Connect2.dc.html": {
+"x": 1360,
+"y": 0,
+"w": 1280,
+"h": 800,
+"title": "流れ 2 ・ つないだ。音の出口を本物の名前でえらぶ（描きなおし）"
+},
+"F-Connect3.dc.html": {
+"x": 2720,
+"y": 0,
+"w": 1280,
+"h": 800,
+"title": "流れ 3 ・ 音が出た"
+},
+"F-Connect4.dc.html": {
+"x": 4080,
+"y": 0,
+"w": 1280,
+"h": 800,
+"title": "流れ 4 ・ カウントイン中"
+},
+"F-Empty.dc.html": {
+"x": 5440,
+"y": 0,
+"w": 1280,
+"h": 800,
+"title": "新しい曲をひらいた直後 ・ からっぽのアレンジ"
+},
+"Main.dc.html": {
+"x": 0,
+"y": 1200,
+"w": 1280,
+"h": 800,
+"title": "アレンジ ・ 止まっているとき"
+},
+"F-ArrangeRec.dc.html": {
+"x": 1360,
+"y": 1200,
+"w": 1280,
+"h": 800,
+"title": "アレンジ ・ 録っているとき（オートメーションと、テンポ ・ 拍子の帯をひらいた状態）"
+},
+"F-AudioEdit.dc.html": {
+"x": 2720,
+"y": 1200,
+"w": 1280,
+"h": 800,
+"title": "歌のトラックを直している所（切る ・ 動かす ・ フェード）"
+},
+"F-History.dc.html": {
+"x": 4080,
+"y": 1200,
+"w": 1280,
+"h": 800,
+"title": "ひらいた取り消しの履歴"
+},
+"F-ShelfArrange.dc.html": {
+"x": 5440,
+"y": 1200,
+"w": 1280,
+"h": 800,
+"title": "音源をえらぶ ・「＋ トラックを追加」で棚がひらき、サンプルを聞いているところ（スキャン中）"
+},
+"A-PianoRoll.dc.html": {
+"x": 0,
+"y": 2400,
+"w": 1280,
+"h": 800,
+"title": "ピアノロール ・ 窓の高さ 800px（ノート 41 行）"
+},
+"F-PR720.dc.html": {
+"x": 1360,
+"y": 2400,
+"w": 1280,
+"h": 720,
+"title": "ピアノロール ・ 窓の高さ 720px（ノート 34 行）"
+},
+"F-PR150.dc.html": {
+"x": 2720,
+"y": 2400,
+"w": 1280,
+"h": 800,
+"title": "ピアノロール ・ 拡大率 150 %（窓 1280×800 ・ ノート 18 行 ・ 左右の欄はたたむ）"
+},
+"A-Mixer.dc.html": {
+"x": 4080,
+"y": 2400,
+"w": 1280,
+"h": 800,
+"title": "ミキサー ・ 棚をひらき、止まったプラグインと見つからないプラグインがある状態"
+},
+"F-Settings.dc.html": {
+"x": 0,
+"y": 3600,
+"w": 1280,
+"h": 800,
+"title": "音の設定 ・ おもて（本物の名前で描きなおし）"
+},
+"F-SettingsAdv.dc.html": {
+"x": 1360,
+"y": 3600,
+"w": 1280,
+"h": 800,
+"title": "音の設定 ・ 奥（くわしい設定をひらいた状態。上の 3 つは、えらんだ物だけにちぢむ）"
+},
+"F-Export.dc.html": {
+"x": 2720,
+"y": 3600,
+"w": 1280,
+"h": 800,
+"title": "書き出しのダイアログ"
+},
+"F-WideArrange.dc.html": {
+"x": 0,
+"y": 4800,
+"w": 1920,
+"h": 1080,
+"title": "窓が広いとき 1920×1080 ・ アレンジ（下にミキサー、右に棚をひらいたまま）"
+},
+"F-WidePR.dc.html": {
+"x": 2000,
+"y": 4800,
+"w": 1920,
+"h": 1080,
+"title": "窓が広いとき 1920×1080 ・ ピアノロール（49 鍵ぜんぶ ・ 上にアレンジが行のまま残る）"
+},
+"Opt-Meter.dc.html": {
+"x": 0,
+"y": 6280,
+"w": 1280,
+"h": 640,
+"title": "えらぶ 1 ・ 入力計の細くなりかた"
+},
+"Opt-Bands.dc.html": {
+"x": 1360,
+"y": 6280,
+"w": 1280,
+"h": 720,
+"title": "えらぶ 2 ・ たたんだ見出しのまとめかた"
+},
+"Opt-Shelf.dc.html": {
+"x": 2720,
+"y": 6280,
+"w": 1280,
+"h": 720,
+"title": "えらぶ 3 ・ プラグインの棚の居場所"
+},
+"Opt-Colors.dc.html": {
+"x": 4080,
+"y": 6280,
+"w": 800,
+"h": 480,
+"title": "決めたこと ・ トラックの 5 色"
+},
+"A-Notes.dc.html": {
+"x": 4960,
+"y": 6280,
+"w": 800,
+"h": 800,
+"title": "A 計測 ・ 案の説明"
+},
+"F-ShelfAudition.dc.html": {
+"x": 6800,
+"y": 1200,
+"w": 1280,
+"h": 800,
+"title": "音源をえらぶ ・ 鍵盤でためし弾きしているところ"
+},
+"Opt2-Param.dc.html": {
+"x": 0,
+"y": 7480,
+"w": 1280,
+"h": 720,
+"title": "えらぶ 4 ・ パラメータの画面の居場所"
+},
+"Opt2-Recall.dc.html": {
+"x": 1360,
+"y": 7480,
+"w": 1280,
+"h": 720,
+"title": "えらぶ 5 ・ 隠れた窓の呼びもどしかた"
+},
+"Opt2-Dual.dc.html": {
+"x": 2720,
+"y": 7480,
+"w": 1280,
+"h": 560,
+"title": "えらぶ 6 ・ 同じ子が二つの形式で入っているとき"
+},
+"F-BufferFixed.dc.html": {
+"x": 0,
+"y": 8680,
+"w": 1280,
+"h": 800,
+"title": "バッファが固定されているとき ・ 状態行"
+},
+"F-SettingsAdvFixed.dc.html": {
+"x": 1360,
+"y": 8680,
+"w": 1280,
+"h": 800,
+"title": "バッファが固定されているとき ・ 音の設定の奥"
+},
+"F-MeterLongName.dc.html": {
+"x": 2720,
+"y": 8680,
+"w": 1280,
+"h": 400,
+"title": "長い名前の鍵盤 ・ 入力計の太いときと細いとき"
+},
+"F-ParamFew.dc.html": {
+"x": 0,
+"y": 9880,
+"w": 1280,
+"h": 800,
+"title": "パラメータの画面 ・ 少ない子（Dragonfly Reverb ・ 18 個）"
+},
+"F-ParamMany.dc.html": {
+"x": 1360,
+"y": 9880,
+"w": 1280,
+"h": 800,
+"title": "パラメータの画面 ・ 多い子（Surge XT ・ 2855 個。グループをたたんで始める。アレンジの音源の名前に「窓がひらいている」印）"
+},
+"F-ParamSearch.dc.html": {
+"x": 2720,
+"y": 9880,
+"w": 1280,
+"h": 800,
+"title": "パラメータの画面 ・ さがしている最中（Surge XT ・「cutoff」で 24 個）"
+},
+"F-ParamNoWindow.dc.html": {
+"x": 4080,
+"y": 9880,
+"w": 1280,
+"h": 800,
+"title": "まだ窓をひらけない子をえらんだ所（Mossy Verb ・ 段階で切りかわるパラメータと、オン ・ オフのパラメータつき）"
+},
+"F-WindowOpen.dc.html": {
+"x": 5440,
+"y": 9880,
+"w": 1280,
+"h": 800,
+"title": "プラグインの窓がひらいているときのミキサーと、呼びもどす所（1 ピアノの音源と、A リバーブのインサートに印。状態行の「窓 2」をひらいた状態）"
+},
+"F-ShelfDual.dc.html": {
+"x": 6800,
+"y": 9880,
+"w": 1280,
+"h": 800,
+"title": "二つの形式で入っている子がいる棚（Surge XT ・ 1 行に印を 2 つ。明るいほうを使う）"
+}
+},
+"order": [
+"F-Connect1.dc.html",
+"F-Connect2.dc.html",
+"F-Connect3.dc.html",
+"F-Connect4.dc.html",
+"F-Empty.dc.html",
+"Main.dc.html",
+"F-ArrangeRec.dc.html",
+"F-AudioEdit.dc.html",
+"F-History.dc.html",
+"F-ShelfArrange.dc.html",
+"F-ShelfAudition.dc.html",
+"A-PianoRoll.dc.html",
+"F-PR720.dc.html",
+"F-PR150.dc.html",
+"A-Mixer.dc.html",
+"F-Settings.dc.html",
+"F-SettingsAdv.dc.html",
+"F-Export.dc.html",
+"F-WideArrange.dc.html",
+"F-WidePR.dc.html",
+"Opt-Meter.dc.html",
+"Opt-Bands.dc.html",
+"Opt-Shelf.dc.html",
+"Opt-Colors.dc.html",
+"A-Notes.dc.html",
+"Opt2-Param.dc.html",
+"Opt2-Recall.dc.html",
+"Opt2-Dual.dc.html",
+"F-BufferFixed.dc.html",
+"F-SettingsAdvFixed.dc.html",
+"F-MeterLongName.dc.html",
+"F-ParamFew.dc.html",
+"F-ParamMany.dc.html",
+"F-ParamSearch.dc.html",
+"F-ParamNoWindow.dc.html",
+"F-WindowOpen.dc.html",
+"F-ShelfDual.dc.html"
+],
+"notes": {
+"row1": {
+"x": 0,
+"y": -260,
+"text": "1 はじめて鍵盤をつなぐ ・ 新しい曲",
+"kind": "title1",
+"maxW": 8080
+},
+"row2": {
+"x": 0,
+"y": 940,
+"text": "2 アレンジ ・ 取り消しの履歴 ・ 音源をえらぶ棚",
+"kind": "title1",
+"maxW": 8080
+},
+"row3": {
+"x": 0,
+"y": 2140,
+"text": "3 ピアノロール ・ ミキサー",
+"kind": "title1",
+"maxW": 8080
+},
+"row4": {
+"x": 0,
+"y": 3340,
+"text": "4 音の設定 ・ 書き出し",
+"kind": "title1",
+"maxW": 8080
+},
+"row5": {
+"x": 0,
+"y": 4540,
+"text": "5 窓が広いとき 1920×1080",
+"kind": "title1",
+"maxW": 8080
+},
+"row6": {
+"x": 0,
+"y": 6020,
+"text": "6 決めた記録（えらんだのは 1-B ・ 2-A ・ 3-A）",
+"kind": "title1",
+"maxW": 8080
+},
+"row7": {
+"x": 0,
+"y": 7220,
+"text": "7 本物からの知らせ ・ えらんだ記録（4-B ・ 5-B ・ 6-A）",
+"kind": "title1",
+"maxW": 8080
+},
+"row8": {
+"x": 0,
+"y": 8420,
+"text": "8 本物からの知らせ ・ 先に描いたもの（バッファ ・ 長い名前の鍵盤）",
+"kind": "title1",
+"maxW": 8080
+},
+"row9": {
+"x": 0,
+"y": 9620,
+"text": "9 パラメータの画面 ・ プラグインの窓 ・ 二つの形式",
+"kind": "title1",
+"maxW": 8080
+}
+},
+"designSystems": []
+}

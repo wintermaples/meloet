@@ -14,6 +14,7 @@ const ALLOW = new Set([
   "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
   "ISC", "Zlib", "0BSD", "Unicode-3.0", "Unicode-DFS-2016", "CC0-1.0", "MPL-2.0",
   "BSL-1.0", "Unlicense", "CDLA-Permissive-2.0", "BlueOak-1.0.0", "Python-2.0", "CC-BY-4.0",
+  "OFL-1.1", // fonts (IBM Plex via @fontsource); the font files keep their own license
 ]);
 const FORBIDDEN = /\b(A?GPL)\b/i; // LGPL is matched separately
 let bad = 0;
@@ -51,6 +52,7 @@ function walk(nm) {
     walk(join(p, "node_modules"));
   }
 }
+walk(join(root, "ui", "node_modules"));
 for (const s of readdirSync(join(root, "spikes"))) walk(join(root, "spikes", s, "ui", "node_modules"));
 const seen = new Map();
 for (const r of npmRows) seen.set(`${r.name}@${r.version}`, r);

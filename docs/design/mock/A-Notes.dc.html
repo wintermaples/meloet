@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>案A 計測 — 案の説明</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+h1,h2,p,ul,ol{margin:0;padding:0}
+li{list-style:none}
+</style>
+</helmet>
+<div style="width: 800px; height: 800px; padding: 24px 28px; display: flex; flex-direction: column; gap: 14px; background: #121212; color: #D6D6D6; font-family: 'IBM Plex Sans JP', 'Noto Sans JP', sans-serif; font-size: 12px; line-height: 1.5; overflow: hidden">
+<div style="display: flex; align-items: baseline; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #3A3A3A">
+<h1 style="font-size: 20px; font-weight: 600; color: #F2F2F2">案A 計測</h1>
+<span class="m" style="font-size: 12px; color: #FFB000">SCOPE</span>
+<span style="flex: 1"></span>
+<span style="color: #9A9A9A">弾いた手が、画面で測られる</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; flex: 1; min-height: 0">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="font-size: 11px; font-weight: 600; color: #9A9A9A">ひとことコンセプト</h2>
+<p style="color: #F2F2F2">曲をならべる場所である前に、自分の演奏を測る計測器。鍵を押した瞬間に、音名 ・ ベロシティ ・ ペダルが計器として動く。本物らしさは「測られている」感覚で出す。</p>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="font-size: 11px; font-weight: 600; color: #9A9A9A">奥ゆきの開けかた — たたんだ見出しが残る</h2>
+<p><span style="color: #F2F2F2">最初から見える:</span> トランスポート、入力計（鍵盤 ・ ベロシティ ・ ペダル ・ ベンド ・ モジュレーション）、アレンジ、状態行。</p>
+<p><span style="color: #F2F2F2">たたまれている:</span> ピアノロール、ミキサー、取り消しの履歴、オートメーション、テンポ ・ 拍子の変更、CC の帯。どれも見出し 1 行として同じ場所に残り、件数や現在値を見出しに出す。</p>
+<p><span style="color: #F2F2F2">ひらきかた:</span> 見出しを押す、またはキー 1 つ。ひらいた帯が上の帯を押しちぢめる。とじても見出しは動かない。</p>
+<p><span style="color: #F2F2F2">あとで増える機能の席:</span> グループとバスはミキサーの戻りストリップの左。サイドチェインはインサート枠の入口えらび。テイクのいいとこ取りはトラック下の帯。MIDI エフェクトはストリップの「音源」の上の枠。つまみの MIDI 割り当ては入力計の右端。</p>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="font-size: 11px; font-weight: 600; color: #9A9A9A">あきらめたもの ・ 苦手なこと</h2>
+<ul style="display: flex; flex-direction: column; gap: 3px">
+<li>・ 上の 2 段でつねに 100px を使う。13 インチではアレンジの縦がせまい。</li>
+<li>・ 帯を積む方式なので、アレンジとミキサーを同時に大きくは見られない。</li>
+<li>・ 歌が中心の人には、入力計の大半が関係ない。</li>
+<li>・ 機能が増えるほど見出しの行が増え、たたんだままでも縦を食う。</li>
+</ul>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="font-size: 11px; font-weight: 600; color: #9A9A9A">はじめて鍵盤をつないだ人の最初の 5 分</h2>
+<ol style="display: flex; flex-direction: column; gap: 3px">
+<li style="display: flex; gap: 10px"><span class="m" style="color: #FFB000">0:00</span><span>鍵盤をさす。入力計の左に「鍵盤 49」が点灯し、状態行が「どれか鍵を押してみてください」と言う。</span></li>
+<li style="display: flex; gap: 10px"><span class="m" style="color: #FFB000">0:30</span><span>鍵を押す。画面の鍵が光り、ベロシティの数字が動く。音はまだでも、つながったことは見てわかる。</span></li>
+<li style="display: flex; gap: 10px"><span class="m" style="color: #FFB000">1:30</span><span>状態行の「音の出口: スピーカー ／ ヘッドホン」からえらぶ。最初から入っているグランドピアノが鳴る。</span></li>
+<li style="display: flex; gap: 10px"><span class="m" style="color: #FFB000">3:00</span><span>録音を押す。カウントイン 1 小節のあと、弾いた音がクリップになってのびていく。</span></li>
+<li style="display: flex; gap: 10px"><span class="m" style="color: #FFB000">5:00</span><span>止める。「テイク 1」が残り、たたんだピアノロールの見出しにノート数が出る。押せばひらく。気に入らなければ録りなおし。</span></li>
+</ol>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h2 style="font-size: 11px; font-weight: 600; color: #9A9A9A">アクセント色と、灰色の段階</h2>
+<div style="display: flex; align-items: center; gap: 10px"><div style="width: 44px; height: 18px; background: #FFB000"></div><span class="m" style="color: #F2F2F2">#FFB000</span><span>アクセント ・ いま生きている物（押した鍵、選択、ループ、オンの切りかえ）</span></div>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{greys}}" as="g" hint-placeholder-count="11"><div style="display: flex; align-items: center; gap: 10px; height: 19px"><div style="width: 44px; height: 19px; background: {{g.hex}}; border-right: 1px solid #3A3A3A"></div><span class="m" style="color: #F2F2F2; width: 58px">{{g.hex}}</span><span class="m" style="color: #9A9A9A; width: 28px">{{g.v}}</span><span>{{g.use}}</span></div></sc-for>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 14px">
+<span style="display: flex; align-items: center; gap: 5px"><span style="width: 10px; height: 10px; border-radius: 50%; background: #FF3B30"></span><span class="m">#FF3B30</span> 録音 ・ 故障</span>
+<span style="display: flex; align-items: center; gap: 5px"><span style="width: 10px; height: 10px; background: #4CD964"></span><span class="m">#4CD964</span><span style="width: 10px; height: 10px; background: #FFD60A"></span><span class="m">#FFD60A</span> メーター</span>
+<span style="display: flex; align-items: center; gap: 5px"><span style="width: 4px; height: 12px; background: #69E4E4"></span><span style="width: 4px; height: 12px; background: #5ABDF2"></span><span style="width: 4px; height: 12px; background: #6F8BED"></span><span style="width: 4px; height: 12px; background: #8C54C3"></span><span style="width: 4px; height: 12px; background: #FFD9F1"></span> トラックの色（幅 4px の帯と上辺だけ）</span>
+</div>
+<p style="color: #9A9A9A">文字: IBM Plex Sans JP ／ 数字: IBM Plex Mono（けた幅そろえ）。角の丸み 0〜1px、丸いのは録音ボタンとパンのつまみだけ。</p>
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":800,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+const greys = [
+['#0A0A0A', '10', 'メーターと読み値の地 ・ 入力計'],
+['#121212', '18', '作業面（アレンジ、ロールの地）'],
+['#161616', '22', 'ひらいた帯 ・ 白鍵の行'],
+['#1A1A1A', '26', 'パネル ・ トラックの見出し'],
+['#222222', '34', 'たたんだ見出し ・ ボタンの面'],
+['#2C2C2C', '44', '細い区切り線'],
+['#3A3A3A', '58', '強い区切り線 ・ ボタンの枠'],
+['#5E5E5E', '94', '使えない物 ・ そろえる前の位置'],
+['#9A9A9A', '154', 'ラベル'],
+['#D6D6D6', '214', '本文 ・ 線の図形'],
+['#F2F2F2', '242', '強調 ・ 数字']
+].map((g) => ({ hex: g[0], v: g[1], use: g[2] }));
+return { greys };
+}
+}
+</script>
+</body>
+</html>

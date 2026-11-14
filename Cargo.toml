@@ -1,8 +1,47 @@
 [workspace]
 resolver = "3"
-members = ["spikes/s1-render/src-tauri", "spikes/plugins/core", "spikes/plugins/vst3", "spikes/plugins/lv2", "spikes/plugins/probe", "spikes/s4-latency/src-tauri"]
+members = [
+    "crates/*",
+    "spikes/s1-render/src-tauri",
+    "spikes/plugins/core",
+    "spikes/plugins/vst3",
+    "spikes/plugins/lv2",
+    "spikes/plugins/probe",
+    "spikes/s4-latency/src-tauri",
+]
+# `cargo build` / `cargo test` at the root touch only the product crates. The spikes stay buildable with -p.
+default-members = [
+    "crates/meloet-model",
+    "crates/meloet-protocol",
+    "crates/meloet-engine",
+    "crates/meloet-midi",
+    "crates/meloet-devices",
+    "crates/meloet-core",
+    "crates/meloet-app",
+]
 
 [workspace.package]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 publish = false
+
+[workspace.dependencies]
+meloet-model = { path = "crates/meloet-model" }
+meloet-protocol = { path = "crates/meloet-protocol" }
+meloet-engine = { path = "crates/meloet-engine" }
+meloet-midi = { path = "crates/meloet-midi" }
+meloet-devices = { path = "crates/meloet-devices" }
+meloet-core = { path = "crates/meloet-core" }
+# Same versions the spikes were measured with (docs/report.md 9).
+alsa = "=0.11.0"
+cpal = { version = "=0.18.2", default-features = false, features = ["pipewire"] }
+libc = "0.2.191"
+pipewire = "=0.10.1"
+rtrb = "=0.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tauri = "=2.12.5"
+tauri-build = "=2.7.4"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

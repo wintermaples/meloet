@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>えらぶ 1 — 入力計の細くなりかた</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+h1,h2,p{margin:0}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{font-size:12px;color:#9A9A9A;white-space:nowrap}
+.o{display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid #3A3A3A}
+.s{display:flex;align-items:center;gap:16px;height:24px;padding:0 12px;background:#0A0A0A;border:1px solid #3A3A3A;white-space:nowrap}
+</style>
+</helmet>
+<div style="width: 1280px; height: 640px; padding: 24px 32px; display: flex; flex-direction: column; gap: 16px; background: #121212; color: #D6D6D6; font-family: 'IBM Plex Sans JP', 'Noto Sans JP', sans-serif; font-size: 12px; line-height: 1.5; overflow: hidden">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<h1 style="font-size: 20px; font-weight: 600; color: #F2F2F2">えらぶ 1 ・ 入力計の細くなりかた</h1>
+<span class="l">消さない。細くても「つながっている」は見える。太いとき 52px、細いとき 24px。</span>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="font-size: 12px; font-weight: 600; color: #9A9A9A">太いとき（3 案とも同じ）</h2>
+<div style="display: flex; align-items: center; gap: 20px; height: 52px; padding: 0 12px; background: #0A0A0A; border: 1px solid #3A3A3A">
+<div style="display: flex; flex-direction: column; width: 108px"><span class="l">入力</span><span style="display: flex; align-items: center; gap: 6px; color: #F2F2F2; font-weight: 500"><span style="width: 6px; height: 6px; background: #FFB000"></span>鍵盤 49</span></div>
+<div style="display: flex; height: 32px; border-left: 1px solid #3A3A3A">
+<sc-for list="{{keys}}" as="k" hint-placeholder-count="29"><div style="position: relative; width: 12px; height: 32px; border: 1px solid #3A3A3A; border-left: 0; background: {{k.bg}}"><sc-if value="{{k.black}}" hint-placeholder-val="{{ false }}"><div style="position: absolute; z-index: 1; top: -1px; right: -4px; width: 7px; height: 19px; background: #0A0A0A; border: 1px solid #5E5E5E"></div></sc-if></div></sc-for>
+</div>
+<div style="display: flex; flex-direction: column"><span class="l">いま押している音</span><span class="m" style="font-size: 16px; color: #FFB000">C4 E4 G4</span></div>
+<div style="display: flex; flex-direction: column; width: 96px"><span class="l">ベロシティ</span><div style="display: flex; align-items: center; gap: 6px"><span class="m" style="font-size: 16px; color: #F2F2F2">87</span><div style="flex: 1; height: 4px; background: #222222"><div style="width: 68%; height: 100%; background: #FFB000"></div></div></div></div>
+<div style="display: flex; flex-direction: column"><span class="l">サステイン</span><span class="m" style="font-size: 16px; color: #F2F2F2">ON 127</span></div>
+<div style="display: flex; flex-direction: column"><span class="l">ピッチベンド</span><span class="m" style="font-size: 16px; color: #F2F2F2">+0000</span></div>
+<div style="display: flex; flex-direction: column"><span class="l">モジュレーション</span><span class="m" style="font-size: 16px; color: #F2F2F2">012</span></div>
+</div>
+</div>
+
+<div class="o">
+<div style="display: flex; align-items: baseline; gap: 12px"><h2 style="font-size: 16px; font-weight: 600; color: #F2F2F2">1-A 時間で細る</h2><span class="l">自分から細くなり、さわると戻る</span></div>
+<p><span style="color: #F2F2F2">細くなる:</span> 止まっていて、鍵にもペダルにも 4 秒さわっていないとき。　<span style="color: #F2F2F2">戻る:</span> 鍵かペダルにさわった瞬間、または再生 ・ 録音を始めたとき。　<span style="color: #F2F2F2">細いとき残る物:</span> つながりの印、鍵盤の名前、最後の音とベロシティ（灰色）。</p>
+<div class="s"><span style="display: flex; align-items: center; gap: 6px; color: #F2F2F2"><span style="width: 6px; height: 6px; background: #FFB000"></span>鍵盤 49</span><span class="l">最後の音 <span class="m" style="color: #9A9A9A">G4</span></span><span class="l">ベロシティ <span class="m" style="color: #9A9A9A">83</span></span><span style="flex: 1"></span><span class="l">鍵にさわると、もとの太さに戻ります</span></div>
+</div>
+
+<div class="o">
+<div style="display: flex; align-items: baseline; gap: 12px"><h2 style="font-size: 16px; font-weight: 600; color: #F2F2F2">1-B 場所で細る</h2><span class="l">下の帯をひらくと細くなり、アレンジに帰ると戻る。細くても全部生きている</span></div>
+<p><span style="color: #F2F2F2">細くなる:</span> ピアノロール、ミキサー、取り消しの履歴のどれかをひらいたとき。　<span style="color: #F2F2F2">戻る:</span> 帯をぜんぶたたんでアレンジに帰ったとき。録音中はいつも太い。　<span style="color: #F2F2F2">細いとき残る物:</span> 印、名前、高さ 12px の鍵盤、押している音、ベロシティ、サステイン、ベンド、モジュレーション。</p>
+<div class="s"><span style="display: flex; align-items: center; gap: 6px; color: #F2F2F2"><span style="width: 6px; height: 6px; background: #FFB000"></span>鍵盤 49</span>
+<div style="display: flex; height: 12px; border-left: 1px solid #3A3A3A"><sc-for list="{{keys}}" as="k" hint-placeholder-count="29"><div style="width: 8px; height: 12px; border: 1px solid #3A3A3A; border-left: 0; background: {{k.bg}}"></div></sc-for></div>
+<span class="m" style="color: #FFB000">C4 E4 G4</span><span class="l">ベロシティ <span class="m" style="color: #F2F2F2">87</span></span><span class="l">サステイン <span class="m" style="color: #F2F2F2">ON</span></span><span class="l">ベンド <span class="m" style="color: #F2F2F2">+0000</span></span><span class="l">モジュレーション <span class="m" style="color: #F2F2F2">012</span></span></div>
+</div>
+
+<div class="o">
+<div style="display: flex; align-items: baseline; gap: 12px"><h2 style="font-size: 16px; font-weight: 600; color: #F2F2F2">1-C 手でたたむ</h2><span class="l">入力計も帯の一つ。自分では動かない</span></div>
+<p><span style="color: #F2F2F2">細くなる:</span> 見出しの ▾ を押したとき。　<span style="color: #F2F2F2">戻る:</span> もう一度押したとき。前の太さを覚えている。　<span style="color: #F2F2F2">細いとき残る物:</span> 見出し 1 行（印、名前、押している音、ベロシティ）。</p>
+<div class="s" style="background: #222222"><span style="color: #9A9A9A">▸</span><span style="font-weight: 600; color: #F2F2F2">入力</span><span style="display: flex; align-items: center; gap: 6px; color: #F2F2F2"><span style="width: 6px; height: 6px; background: #FFB000"></span>鍵盤 49</span><span class="m" style="color: #FFB000">C4 E4 G4</span><span class="l">ベロシティ <span class="m" style="color: #F2F2F2">87</span></span><span style="flex: 1"></span><span class="l">ひらく <span class="m">I</span></span></div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":640}}'>
+class Component extends DCLogic {
+renderVals() {
+const pressed = { 14: 1, 16: 1, 18: 1 };
+const blk = [1, 1, 0, 1, 1, 1, 0];
+const keys = [];
+for (let i = 0; i < 29; i++) keys.push({ bg: pressed[i] ? '#FFB000' : '#1A1A1A', black: i < 28 && blk[i % 7] === 1 });
+return { keys };
+}
+}
+</script>
+</body>
+</html>

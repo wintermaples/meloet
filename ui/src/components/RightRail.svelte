@@ -4,6 +4,7 @@
   import type { Band } from "../bridge";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
+  import { metrics } from "./metrics.svelte";
 
   const layout = $derived(current.state!.workspace.layout);
   const front = $derived(layout.rightFront);
@@ -11,6 +12,35 @@
   const RIGHT: Band[] = ["shelf", "params"];
   const tabs = $derived(RIGHT.filter((b) => b !== front));
   const toggle = (band: Band) => send({ type: "toggleBand", band });
+
+  // When the window is too low for every vertical heading, the shelf counts go first.
+  let nav = $state<HTMLElement>();
+  let countsFit = $state(true);
+  let heightWithCounts = 0;
+
+  function fitCounts() {
+    if (!nav) return;
+    if (countsFit) {
+      heightWithCounts = nav.scrollHeight;
+      if (heightWithCounts > nav.clientHeight) countsFit = false;
+    } else if (heightWithCounts <= nav.clientHeight) {
+      countsFit = true;
+    }
+  }
+
+  $effect(() => {
+    void metrics.scale;
+    countsFit = true;
+  });
+
+  $effect(() => {
+    void tabs;
+    if (!nav) return;
+    const observer = new ResizeObserver(fitCounts);
+    observer.observe(nav);
+    for (const tab of nav.children) observer.observe(tab);
+    return () => observer.disconnect();
+  });
 </script>
 
 {#snippet title(band: Band)}
@@ -28,13 +58,13 @@
   </aside>
 {/if}
 
-<nav class="tabs">
+<nav class="tabs" bind:this={nav}>
   {#each tabs as band, i (band)}
     {#if i > 0}<div class="rule"></div>{/if}
     <button class="m-plain tab" onclick={() => toggle(band)} data-band={band}>
       <span class="m-lbl">▸</span>
       <span class="vt">{@render title(band)}</span>
-      {#if band === "shelf"}
+      {#if band === "shelf" && countsFit}
         <span class="vt m-lbl">{t("band.shelfCount", { instruments: 0, effects: 0 })}</span>
       {/if}
       <span class="m-num m-lbl">{band === "shelf" ? t("key.shelf") : t("key.params")}</span>
@@ -68,8 +98,10 @@
     flex-direction: column;
     background: var(--color-gray-4);
     border-left: var(--line-hair) solid var(--color-gray-6);
+    overflow: hidden;
   }
   .tab {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;

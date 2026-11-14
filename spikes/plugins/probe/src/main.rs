@@ -112,45 +112,48 @@ fn test(format: &str, id: &str, show: f64, play: bool) -> Value {
     }
     r.insert("params".into(), json!({ "count": params.len(), "readWrite": rw }));
 
-    // State. Change 40 params so the sound really differs, save, then compare three renders against the original:
-    //   again  = same instance, same state applied again (how repeatable the plugin itself is)
-    //   restored = fresh instance + state  (the thing under test)
-    //   control  = fresh instance, no state  (what "not restored" looks like)
+    // State. Change up to 40 params so the sound really differs, save, then compare fresh instances only
+    // (an instance that has been playing keeps reverb tails and envelope history, so it is not a fair reference):
+    //   restoredTwice = two fresh instances given the state  (how repeatable the plugin itself is)
+    //   vsDirect      = fresh + state  vs  fresh + the same param values set directly
+    //   vsControl     = fresh + state  vs  fresh with nothing done (what "not restored" looks like)
     let mut seed = 7u32;
-    for q in params.iter().filter(|x| x.automatable).take(40) {
+    let chosen: Vec<(u32, f64)> = params.iter().filter(|x| x.automatable).take(40).map(|q| {
         seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
-        p.set_param(q.id, (seed % 1000) as f64 / 1000.0);
-    }
+        (q.id, (seed % 1000) as f64 / 1000.0)
+    }).collect();
+    for (id, v) in &chosen { p.set_param(*id, *v); }
     let _ = render(p.as_mut(), 0.1);
     let state_res = match p.save_state() {
         Err(e) => json!({ "ok": false, "error": e }),
         Ok(bytes) => {
-            let take = |pl: &mut dyn Plugin, apply: bool| {
-                if apply { let _ = pl.load_state(&bytes); }
-                let _ = render(pl, 2.0); // patch loads during the first process calls after setState; effect tails die out
-                render(pl, 1.0)
+            // What the controller reports right after our writes is only what we wrote (Surge rounds steps and
+            // resets FX params when the FX type changes), so read the original back after applying its own state.
+            let _ = p.load_state(&bytes);
+            let vals: Vec<f64> = chosen.iter().map(|(id, _)| p.get_param(*id)).collect();
+            let fresh = |how: &str| -> Result<([Vec<f32>; 2], Vec<f64>, Option<String>), String> {
+                let mut x = load(format, id)?;
+                x.activate(SR, BLOCK)?;
+                let mut err = None;
+                match how {
+                    "state" => err = x.load_state(&bytes).err(),
+                    "direct" => for (id, v) in &chosen { x.set_param(*id, *v); },
+                    _ => {}
+                }
+                let _ = render(x.as_mut(), 2.0); // patch loads during the first process calls; let it settle
+                let pv = chosen.iter().map(|(id, _)| x.get_param(*id)).collect();
+                Ok((render(x.as_mut(), 1.0), pv, err))
             };
-            let orig = take(p.as_mut(), true);
-            // Read back after the state is applied: what the controller holds before that is only what we wrote.
-            let vals: Vec<f64> = params.iter().filter(|x| x.automatable).take(40).map(|q| p.get_param(q.id)).collect();
-            let again = take(p.as_mut(), true);
-            let fresh = |apply: bool| -> Result<[Vec<f32>; 2], String> {
-                let mut x = load(format, id)?; x.activate(SR, BLOCK)?; Ok(take(x.as_mut(), apply))
-            };
-            let mut q2 = load(format, id).expect("reload");
-            let _ = q2.activate(SR, BLOCK);
-            let restored_err = q2.load_state(&bytes).err();
-            let vals2: Vec<f64> = params.iter().filter(|x| x.automatable).take(40).map(|q| q2.get_param(q.id)).collect();
-            let restored = take(q2.as_mut(), false);
-            let control = fresh(false);
-            json!({ "bytes": bytes.len(), "restore": restored_err,
-                    "paramsEqual": vals.iter().zip(&vals2).all(|(x, y)| (x - y).abs() < 1e-6),
+            match (fresh("state"), fresh("state"), fresh("direct"), fresh("none")) {
+                (Ok(a), Ok(b), Ok(c), Ok(d)) => json!({
+                    "bytes": bytes.len(), "restore": a.2,
                     "paramsCompared": vals.len(),
-                    "paramsDiffer": params.iter().filter(|x| x.automatable).take(40).zip(vals.iter().zip(&vals2))
-                        .filter(|(_, (a, b))| (*a - *b).abs() >= 1e-6)
-                        .map(|(q, (a, b))| json!({ "id": q.id, "name": q.name, "saved": a, "restored": b })).collect::<Vec<_>>(),
-                    "again": compare(&orig, &again), "restored": compare(&orig, &restored),
-                    "control": control.map(|c| compare(&orig, &c)).unwrap_or_else(|e| json!({ "error": e })) })
+                    "paramsEqual": vals.iter().zip(&a.1).all(|(x, y)| (x - y).abs() < 1e-5), // f32 storage
+                    "paramsDiffer": chosen.iter().zip(vals.iter().zip(&a.1)).filter(|(_, (x, y))| (*x - *y).abs() >= 1e-5)
+                        .map(|((id, _), (x, y))| json!({ "id": id, "saved": x, "restored": y })).collect::<Vec<_>>(),
+                    "restoredTwice": compare(&a.0, &b.0), "vsDirect": compare(&a.0, &c.0), "vsControl": compare(&a.0, &d.0) }),
+                (a, b, c, d) => json!({ "error": format!("{:?}", [a.err(), b.err(), c.err(), d.err()]) }),
+            }
         }
     };
     r.insert("state".into(), state_res);
@@ -168,8 +171,10 @@ fn test(format: &str, id: &str, show: f64, play: bool) -> Value {
                     let opened_ms = t.elapsed().as_secs_f64() * 1000.0;
                     let hold = if round == 0 && show > 0.0 { show } else { 1.5 };
                     let until = Instant::now() + Duration::from_secs_f64(hold);
+                    let mut fitted = None;
                     while Instant::now() < until && win.pump() {
                         p.editor_idle();
+                        fitted = win.fit_to_child().or(fitted);
                         let _ = render(p.as_mut(), BLOCK as f64 / SR);
                         std::thread::sleep(Duration::from_millis(16));
                     }
@@ -177,7 +182,7 @@ fn test(format: &str, id: &str, show: f64, play: bool) -> Value {
                     let t2 = Instant::now();
                     p.close_editor();
                     win.close();
-                    eds.push(json!({ "round": round, "size": [w, h], "openMs": opened_ms, "closeMs": t2.elapsed().as_secs_f64() * 1000.0,
+                    eds.push(json!({ "round": round, "size": [w, h], "childSize": fitted, "openMs": opened_ms, "closeMs": t2.elapsed().as_secs_f64() * 1000.0,
                                      "distinctColours": colours.as_ref().ok(), "readbackError": colours.err() }));
                 }
             }
@@ -222,15 +227,26 @@ fn scan() -> Value {
         }
     }
     if let Some(extra) = std::env::var_os("PK_EXTRA_VST3") { items.push(("vst3".into(), extra.to_string_lossy().into_owned())) }
-    // LV2 metadata is read in a child too: lilv parses third-party TTL files.
+    // LV2 metadata is read in one child (lilv parses third-party TTL files); then each plugin's code runs in its own child.
+    let t_meta = Instant::now();
     let out = Command::new(&exe).arg("list-lv2").output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    items.extend(out.lines().map(|u| ("lv2".to_string(), u.to_string())));
+    let lv2_meta_ms = t_meta.elapsed().as_secs_f64() * 1000.0;
+    let mut lv2_info = std::collections::HashMap::new();
+    for l in out.lines() {
+        if let Some((info, bundle)) = l.split_once('\t').and_then(|(j, b)| serde_json::from_str::<Value>(j).ok().map(|v| (v, b.to_string()))) {
+            let uri = info["id"].as_str().unwrap_or("").to_string();
+            items.push(("lv2".into(), format!("{uri}\t{bundle}")));
+            lv2_info.insert(uri, info);
+        }
+    }
     let t = Instant::now();
     let mut found = Vec::new();
     let mut failed = Vec::new();
     for (fmt, id) in &items {
         let t1 = Instant::now();
-        let mut child = Command::new(&exe).args(["scan-child", fmt, id]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+        let mut args = vec!["scan-child", fmt];
+        args.extend(id.split('\t'));
+        let mut child = Command::new(&exe).args(&args).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         let status = loop {
             if let Some(s) = child.try_wait().unwrap() { break Some(s) }
@@ -242,37 +258,35 @@ fn scan() -> Value {
         let ms = t1.elapsed().as_secs_f64() * 1000.0;
         match status {
             Some(st) if st.success() => {
-                for l in s.lines() { if let Ok(v) = serde_json::from_str::<Value>(l) { found.push(json!({ "ms": ms, "plugin": v })) } }
+                if fmt == "lv2" {
+                    let uri = id.split('\t').next().unwrap_or("");
+                    if let Some(v) = lv2_info.get(uri) { found.push(json!({ "ms": ms, "plugin": v })) }
+                } else {
+                    for l in s.lines() { if let Ok(v) = serde_json::from_str::<Value>(l) { found.push(json!({ "ms": ms, "plugin": v })) } }
+                }
             }
             Some(st) => failed.push(json!({ "format": fmt, "id": id, "why": format!("{st}"), "ms": ms })),
             None => failed.push(json!({ "format": fmt, "id": id, "why": "timeout 10 s", "ms": ms })),
         }
     }
-    json!({ "items": items.len(), "ok": found.len(), "failed": failed, "totalMs": t.elapsed().as_secs_f64() * 1000.0,
+    json!({ "items": items.len(), "ok": found.len(), "failed": failed, "totalMs": t.elapsed().as_secs_f64() * 1000.0, "lv2MetadataMs": lv2_meta_ms,
             "hostAlive": true, "plugins": found })
 }
 
-fn scan_child(fmt: &str, id: &str) -> Result<(), String> {
+fn scan_child(out: &mut std::fs::File, fmt: &str, id: &str, bundle: &str) -> Result<(), String> {
     let infos: Vec<PluginInfo> = match fmt {
         "vst3" => pk_vst3::scan(Path::new(id))?,
-        _ => {
-            let mut p = pk_lv2::Lv2Plugin::load(id)?;
-            p.activate(SR, BLOCK)?;
-            let _ = render(&mut *p_dyn(&mut p), BLOCK as f64 / SR);
-            vec![p.info().clone()]
-        }
+        _ => { pk_lv2::probe(id, bundle)?; vec![] }
     };
-    for i in infos { println!("{}", serde_json::to_string(&i).unwrap()) }
+    for i in infos { let _ = writeln!(out, "{}", serde_json::to_string(&i).unwrap()); }
     Ok(())
 }
-fn p_dyn(p: &mut pk_lv2::Lv2Plugin) -> &mut dyn Plugin { p }
 
 /// Child side of the crash test: renders blocks forever and reports each one on stdout.
-fn worker(fmt: &str, id: &str, mode: &str) {
+fn worker(mut out: std::fs::File, fmt: &str, id: &str, mode: &str) {
     let mut p = load(fmt, id).expect("load");
     p.activate(SR, BLOCK).expect("activate");
     let mut n = 0u64;
-    let mut out = std::io::stdout().lock();
     loop {
         let a = render(p.as_mut(), BLOCK as f64 / SR);
         n += 1;
@@ -328,21 +342,33 @@ fn crash(fmt: &str, id: &str, mode: &str) -> Value {
             "engineBlocksAfterFault": engine_blocks_after, "parentAlive": true })
 }
 
+/// Plugins print to stdout (Dragonfly warns there). Keep a private copy of the real stdout for our
+/// JSON and point fd 1 at stderr, so nothing a plugin writes can corrupt the results.
+fn private_stdout() -> std::fs::File {
+    use std::os::fd::FromRawFd;
+    unsafe {
+        let fd = libc::dup(1);
+        libc::dup2(2, 1);
+        std::fs::File::from_raw_fd(fd)
+    }
+}
+
 fn main() {
+    let mut out = private_stdout();
     let a: Vec<String> = std::env::args().collect();
     let arg = |i: usize| a.get(i).map(String::as_str).unwrap_or("");
     let flag = |f: &str| a.iter().position(|x| x == f);
     let v = match arg(1) {
         "scan" => scan(),
-        "list-lv2" => { for p in pk_lv2::scan_all() { println!("{}", p.id) } return }
-        "scan-child" => { if let Err(e) = scan_child(arg(2), arg(3)) { eprintln!("{e}"); std::process::exit(2) } return }
+        "list-lv2" => { for (p, b) in pk_lv2::scan_all() { let _ = writeln!(out, "{}\t{b}", serde_json::to_string(&p).unwrap()); } return }
+        "scan-child" => { if let Err(e) = scan_child(&mut out, arg(2), arg(3), arg(4)) { eprintln!("{e}"); std::process::exit(2) } return }
         "test" => {
             let show = flag("--show").and_then(|i| a.get(i + 1)).and_then(|s| s.parse().ok()).unwrap_or(0.0);
             test(arg(2), arg(3), show, flag("--play").is_some())
         }
-        "worker" => { worker(arg(2), arg(3), arg(4)); return }
+        "worker" => { worker(out, arg(2), arg(3), arg(4)); return }
         "crash" => crash(arg(2), arg(3), arg(4)),
         _ => { eprintln!("see the comment at the top of main.rs"); std::process::exit(1) }
     };
-    println!("{}", serde_json::to_string_pretty(&v).unwrap());
+    let _ = writeln!(out, "{}", serde_json::to_string_pretty(&v).unwrap());
 }

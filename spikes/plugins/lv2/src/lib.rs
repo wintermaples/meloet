@@ -62,11 +62,38 @@ fn info_of(p: &livi::Plugin) -> PluginInfo {
     }
 }
 
-pub fn scan_all() -> Vec<PluginInfo> {
-    livi::World::new().iter_plugins().map(|p| info_of(&p)).collect()
+/// Metadata for every installed plugin, with each plugin's bundle URI. Reads TTL only; loads no plugin code.
+pub fn scan_all() -> Vec<(PluginInfo, String)> {
+    livi::World::new().iter_plugins().map(|p| {
+        let b = p.raw().bundle_uri().as_uri().unwrap_or("").to_string();
+        (info_of(&p), b)
+    }).collect()
+}
+
+/// Loads only this plugin's bundle, instantiates it and runs one block. For the isolated scan child.
+pub fn probe(uri: &str, bundle_uri: &str) -> Result<()> {
+    let world = livi::World::with_load_bundle(bundle_uri);
+    let plugin = world.plugin_by_uri(uri).ok_or("plugin not in bundle")?;
+    let features = world.try_build_features(livi::FeaturesBuilder { min_block_length: 1, max_block_length: 4096 })
+        .map_err(|e| format!("features: {e:?}"))?;
+    let mut inst = unsafe { plugin.instantiate(features.clone(), 48000.0) }.map_err(|e| format!("instantiate: {e:?}"))?;
+    let c = inst.port_counts();
+    let ins = vec![vec![0.0f32; 256]; c.audio_inputs];
+    let mut outs = vec![vec![0.0f32; 256]; c.audio_outputs];
+    let seq_in: Vec<LV2AtomSequence> = (0..c.atom_sequence_inputs).map(|_| LV2AtomSequence::new(&features, 4096)).collect();
+    let mut seq_out: Vec<LV2AtomSequence> = (0..c.atom_sequence_outputs).map(|_| LV2AtomSequence::new(&features, 4096)).collect();
+    for o in &mut seq_out { o.clear_as_chunk(); }
+    let ports = livi::EmptyPortConnections::new()
+        .with_audio_inputs(ins.iter().map(|v| v.as_slice()).collect::<Vec<_>>().into_iter())
+        .with_audio_outputs(outs.iter_mut().map(|v| v.as_mut_slice()).collect::<Vec<_>>().into_iter())
+        .with_atom_sequence_inputs(seq_in.iter())
+        .with_atom_sequence_outputs(seq_out.iter_mut());
+    unsafe { inst.run(256, ports) }.map_err(|e| format!("run: {e:?}"))?;
+    Ok(())
 }
 
 struct Control {
+    host_only: bool,
     index: livi::PortIndex,
     name: String,
     min: f32,
@@ -84,6 +111,7 @@ pub struct Lv2Plugin {
     atom_outs: Vec<LV2AtomSequence>,
     ui: Option<UiHost>,
     ui_writes: Rc<RefCell<Vec<(u32, f32)>>>,
+    sample_rate: f64,
 }
 
 impl Lv2Plugin {
@@ -93,14 +121,18 @@ impl Lv2Plugin {
         let info = info_of(&plugin);
         let features = world.try_build_features(livi::FeaturesBuilder { min_block_length: 1, max_block_length: 4096 })
             .map_err(|e| format!("features: {e:?}"))?;
+        // lv2:enabled and lv2:freeWheeling belong to the host, not to the person turning knobs.
+        let host_only: Vec<usize> = ["http://lv2plug.in/ns/lv2core#enabled", "http://lv2plug.in/ns/lv2core#freeWheeling"].iter()
+            .filter_map(|d| plugin.raw().port_by_designation(None, &world.raw().new_uri(d)).map(|p| p.index())).collect();
         let controls = plugin.ports_with_type(PortType::ControlInput).map(|p| Control {
+            host_only: host_only.contains(&p.index.0),
             index: p.index,
             name: p.name.clone(),
             min: p.min_value.unwrap_or(0.0),
             max: p.max_value.unwrap_or(1.0),
             default: p.default_value,
         }).collect();
-        Ok(Lv2Plugin { info, world, features, instance: None, controls, midi_in: None, atom_outs: Vec::new(), ui: None, ui_writes: Rc::default() })
+        Ok(Lv2Plugin { info, world, features, instance: None, controls, midi_in: None, atom_outs: Vec::new(), ui: None, ui_writes: Rc::default(), sample_rate: 48000.0 })
     }
 
     fn norm(c: &Control, v: f32) -> f64 { if c.max > c.min { ((v - c.min) / (c.max - c.min)) as f64 } else { 0.0 } }
@@ -116,6 +148,7 @@ impl Plugin for Lv2Plugin {
         self.midi_in = (counts.atom_sequence_inputs > 0).then(|| LV2AtomSequence::new(&self.features, 64 * 1024));
         self.atom_outs = (0..counts.atom_sequence_outputs).map(|_| LV2AtomSequence::new(&self.features, 64 * 1024)).collect();
         let _ = max_block;
+        self.sample_rate = sample_rate;
         self.instance = Some(inst);
         Ok(())
     }
@@ -148,7 +181,7 @@ impl Plugin for Lv2Plugin {
     }
 
     fn params(&mut self) -> Vec<ParamInfo> {
-        self.controls.iter().map(|c| ParamInfo { id: c.index.0 as u32, name: c.name.clone(), default: Self::norm(c, c.default), automatable: true }).collect()
+        self.controls.iter().map(|c| ParamInfo { id: c.index.0 as u32, name: c.name.clone(), default: Self::norm(c, c.default), automatable: !c.host_only }).collect()
     }
 
     fn get_param(&mut self, id: u32) -> f64 {
@@ -192,6 +225,7 @@ impl Plugin for Lv2Plugin {
                 handle as *mut c_void,
                 &self.features,
                 self.ui_writes.clone(),
+                self.sample_rate as f32,
             )?
         };
         for c in &self.controls { host.port_event(c.index.0 as u32, inst.control_input(c.index).unwrap_or(c.default)); }
@@ -230,6 +264,10 @@ struct UiDescriptor {
     extension_data: Option<unsafe extern "C" fn(*const c_char) -> *const c_void>,
 }
 
+/// lv2/options/options.h. Terminated by an all-zero entry.
+#[repr(C)]
+struct OptionsOption { context: u32, subject: u32, key: u32, size: u32, type_: u32, value: *const c_void }
+
 #[repr(C)]
 struct IdleInterface { idle: unsafe extern "C" fn(*mut c_void) -> i32 }
 
@@ -260,13 +298,14 @@ struct UiHost {
     ctx: Box<UiCtx>,
     size: std::cell::Cell<(u32, u32)>,
     _resize: Box<Resize>,
+    _options: Box<(f32, [OptionsOption; 2])>,
     _lib: libloading::Library,
 }
 
 impl UiHost {
     #[allow(clippy::too_many_arguments)]
     unsafe fn open(plugin_uri: &str, ui_uri: &str, bundle: &std::path::Path, binary: &std::path::Path, parent: u32,
-        dsp: *mut c_void, features: &livi::Features, writes: Rc<RefCell<Vec<(u32, f32)>>>) -> Result<UiHost> {
+        dsp: *mut c_void, features: &livi::Features, writes: Rc<RefCell<Vec<(u32, f32)>>>, sample_rate: f32) -> Result<UiHost> {
         unsafe {
             let lib = libloading::Library::new(binary).map_err(|e| format!("dlopen {}: {e}", binary.display()))?;
             let get = lib.get::<unsafe extern "C" fn(u32) -> *const UiDescriptor>(b"lv2ui_descriptor\0").map_err(|e| e.to_string())?;
@@ -289,7 +328,15 @@ impl UiHost {
                 Feature { uri: u(c"http://lv2plug.in/ns/extensions/ui#resize"), data: &mut *resize as *mut Resize as *mut c_void },
                 Feature { uri: u(c"http://lv2plug.in/ns/extensions/ui#idleInterface"), data: std::ptr::null_mut() },
             ];
-            for f in host_feats.iter().take(3) { feats.push(Feature { uri: f.uri, data: f.data }); } // map, unmap, options
+            // UIs read the sample rate from options (param:sampleRate); the DSP-side options do not carry it.
+            let mut options = Box::new((sample_rate, [
+                OptionsOption { context: 0, subject: 0, key: features.urid(c"http://lv2plug.in/ns/ext/parameters#sampleRate"),
+                    size: 4, type_: features.urid(c"http://lv2plug.in/ns/ext/atom#Float"), value: std::ptr::null() },
+                OptionsOption { context: 0, subject: 0, key: 0, size: 0, type_: 0, value: std::ptr::null() },
+            ]));
+            options.1[0].value = &options.0 as *const f32 as *const c_void;
+            for f in host_feats.iter().take(2) { feats.push(Feature { uri: f.uri, data: f.data }); } // urid map, unmap
+            feats.push(Feature { uri: u(c"http://lv2plug.in/ns/ext/options#options"), data: options.1.as_mut_ptr() as *mut c_void });
             let ptrs: Vec<*const Feature> = feats.iter().map(|f| f as *const Feature).chain(std::iter::once(std::ptr::null())).collect();
             let plugin_c = CString::new(plugin_uri).unwrap();
             let mut bundle_s = bundle.to_string_lossy().into_owned();
@@ -302,7 +349,7 @@ impl UiHost {
                 .map(|f| f(c"http://lv2plug.in/ns/extensions/ui#idleInterface".as_ptr()) as *const IdleInterface)
                 .unwrap_or(std::ptr::null());
             let size = std::cell::Cell::new(ctx.size.get());
-            Ok(UiHost { desc, handle, idle_if, ctx, size, _resize: resize, _lib: lib })
+            Ok(UiHost { desc, handle, idle_if, ctx, size, _resize: resize, _options: options, _lib: lib })
         }
     }
 

@@ -36,6 +36,18 @@ impl HostWindow {
         let _ = self.conn.flush();
     }
 
+    /// Grows or shrinks this window to the plugin's own child window. Some GUIs never ask for a size
+    /// (LV2 ui:noUserResize, e.g. Dragonfly), so their child's geometry is the only truth.
+    pub fn fit_to_child(&self) -> Option<(u32, u32)> {
+        let tree = self.conn.query_tree(self.id).ok()?.reply().ok()?;
+        let child = *tree.children.first()?;
+        let g = self.conn.get_geometry(child).ok()?.reply().ok()?;
+        let me = self.conn.get_geometry(self.id).ok()?.reply().ok()?;
+        let (w, h) = (g.width as u32 + g.x.max(0) as u32, g.height as u32 + g.y.max(0) as u32);
+        if (w, h) != (me.width as u32, me.height as u32) && w > 1 && h > 1 { self.resize(w, h); }
+        Some((w, h))
+    }
+
     /// Drains pending events. Returns false once the user closed the window.
     pub fn pump(&mut self) -> bool {
         while let Ok(Some(ev)) = self.conn.poll_for_event() {

@@ -1,0 +1,127 @@
+{
+  "editor": [
+    {
+      "childSize": [
+        1142,
+        511
+      ],
+      "closeMs": 3.7075620000000002,
+      "distinctColours": 2679,
+      "openMs": 35.402615999999995,
+      "readbackError": null,
+      "round": 0,
+      "size": [
+        1142,
+        511
+      ]
+    },
+    {
+      "childSize": [
+        1142,
+        511
+      ],
+      "closeMs": 2.8446890000000002,
+      "distinctColours": 2679,
+      "openMs": 22.490323,
+      "readbackError": null,
+      "round": 1,
+      "size": [
+        1142,
+        511
+      ]
+    },
+    {
+      "childSize": [
+        1142,
+        511
+      ],
+      "closeMs": 2.2850420000000002,
+      "distinctColours": 2679,
+      "openMs": 25.817422999999998,
+      "readbackError": null,
+      "round": 2,
+      "size": [
+        1142,
+        511
+      ]
+    }
+  ],
+  "info": {
+    "audio_ins": 2,
+    "audio_outs": 2,
+    "format": "Lv2",
+    "id": "http://synthv1.sourceforge.net/lv2",
+    "kind": "Instrument",
+    "name": "synthv1",
+    "path": "/usr/lib/lv2/synthv1.lv2/",
+    "uis": [
+      "External",
+      "X11Embed"
+    ],
+    "vendor": "rncbc aka. Rui Nuno Capela"
+  },
+  "load": {
+    "ms": 1274.806597,
+    "ok": true
+  },
+  "params": {
+    "count": 145,
+    "readWrite": [
+      {
+        "before": 0.25,
+        "id": 6,
+        "name": "DCO1 Wave Shape 1",
+        "readBack": 0.25,
+        "wrote": 0.25
+      },
+      {
+        "before": 1.0,
+        "id": 7,
+        "name": "DCO1 Wave Width 1",
+        "readBack": 0.5,
+        "wrote": 0.5
+      },
+      {
+        "before": 0.0,
+        "id": 8,
+        "name": "DCO1 Wave Bandlimit 1",
+        "readBack": 0.75,
+        "wrote": 0.75
+      }
+    ]
+  },
+  "sound": {
+    "ok": true,
+    "rmsFirstHalf": 0.3825690018567228,
+    "rmsL": 0.3102528025289128
+  },
+  "state": {
+    "bytes": 7991,
+    "paramsCompared": 40,
+    "paramsDiffer": [],
+    "paramsEqual": true,
+    "restore": null,
+    "restoredTwice": {
+      "maxAbsDiff": 0.17197871208190918,
+      "rmsA": 0.2838970723251054,
+      "rmsB": 0.2838916024887006,
+      "shapeCorrelation": 0.9998543477910482,
+      "waveCorrelation": 0.9984700558537428
+    },
+    "vsControl": {
+      "maxAbsDiff": 0.756384551525116,
+      "rmsA": 0.2838970723251054,
+      "rmsB": 0.3102602574000568,
+      "shapeCorrelation": 0.9870659365941692,
+      "waveCorrelation": 0.8645912195766119
+    },
+    "vsDirect": {
+      "maxAbsDiff": 0.1835629940032959,
+      "rmsA": 0.2838970723251054,
+      "rmsB": 0.28389099539828067,
+      "shapeCorrelation": 0.9998487803405166,
+      "waveCorrelation": 0.9987471424157761
+    }
+  },
+  "unloaded": true
+}

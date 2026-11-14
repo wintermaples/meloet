@@ -81,6 +81,10 @@ fn bus_channels(c: &ComPtr<IComponent>, dir: i32) -> Vec<i32> {
 
 /// Lists the audio classes in one bundle. Instantiates each component once to count buses.
 pub fn scan(bundle: &Path) -> Result<Vec<PluginInfo>> {
+    scan_only(bundle, None)
+}
+
+fn scan_only(bundle: &Path, only: Option<&str>) -> Result<Vec<PluginInfo>> {
     let module = Module::open(bundle)?;
     let factory = module.factory()?;
     let lp: SharedLoop = Rc::default();
@@ -93,6 +97,8 @@ pub fn scan(bundle: &Path) -> Result<Vec<PluginInfo>> {
         let mut ci: PClassInfo = unsafe { std::mem::zeroed() };
         call!(factory, getClassInfo, i, &mut ci);
         if cstr(&ci.category) != "Audio Module Class" { continue; }
+        let hex: String = ci.cid.iter().map(|b| format!("{:02X}", *b as u8)).collect();
+        if only.is_some_and(|o| o != hex) { continue; }
         let (mut sub, mut vendor) = (String::new(), String::new());
         if let Some(f2) = &f2 {
             let mut c2: PClassInfo2 = unsafe { std::mem::zeroed() };
@@ -105,7 +111,7 @@ pub fn scan(bundle: &Path) -> Result<Vec<PluginInfo>> {
         base!(comp, IPluginBase, terminate);
         out.push(PluginInfo {
             format: Format::Vst3,
-            id: ci.cid.iter().map(|b| format!("{:02X}", *b as u8)).collect(),
+            id: hex,
             name: cstr(&ci.name),
             vendor,
             kind: if sub.contains("Instrument") { Kind::Instrument } else { Kind::Effect },
@@ -146,7 +152,7 @@ pub struct Vst3Plugin {
 
 impl Vst3Plugin {
     pub fn load(bundle: &Path, class_id_hex: &str) -> Result<Vst3Plugin> {
-        let info = scan(bundle)?.into_iter().find(|p| p.id == class_id_hex).ok_or("class not found")?;
+        let info = scan_only(bundle, Some(class_id_hex))?.into_iter().next().ok_or("class not found")?;
         let module = Module::open(bundle)?;
         let factory = module.factory()?;
         let lp: SharedLoop = Rc::default();

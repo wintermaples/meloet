@@ -1,4 +1,4 @@
-import { connect, cpuSample, devices, finish, onRust, rustClock, type Msg, type Transport } from "./bridge";
+import { connect, cpuSample, devices, devicesNow, finish, onRust, rustClock, type Msg, type Transport } from "./bridge";
 
 const q = new URLSearchParams((window as any).__S4 ?? location.search);
 const mode = q.get("mode") ?? "latency";
@@ -82,8 +82,13 @@ async function main() {
   const devs = await devices();
   if (mode === "devices") { await finish({ mode, devs }); return; }
   const plug: any[] = [];
-  onRust("device", (d) => { plug.push({ ...d, uiMs: toRustMs(jsNow()) }); $("dev").textContent = d.connected ? d.name : "鍵盤なし"; log(JSON.stringify(d)); });
-  onRust("udev", (d) => { plug.push({ udev: d, uiMs: toRustMs(jsNow()) }); });
+  await onRust("device", (d) => { plug.push({ ...d, uiMs: toRustMs(jsNow()) }); $("dev").textContent = d.connected ? d.name : "鍵盤なし"; log(JSON.stringify(d)); });
+  await onRust("udev", (d) => { plug.push({ udev: d, uiMs: toRustMs(jsNow()) }); });
+  // Listen first, then read the current state: nothing can fall in between.
+  await new Promise((r) => setTimeout(r, 0));
+  const now = await devicesNow();
+  if (now.length) $("dev").textContent = now.map((d) => d.name).join(" ・ ");
+  log(`devices at start: ${JSON.stringify(now)}`);
   const rtt = await syncClock();
   log(`clock sync rtt ${rtt} ms`);
   const pull = await connect(transport, mode === "load" || q.has("hz") ? hz : 0, onMsg);
@@ -97,6 +102,8 @@ async function main() {
   };
   requestAnimationFrame(loop);
   const c0 = await cpuSample();
+  // If the window is closed early, still hand over what we have.
+  addEventListener("beforeunload", () => { void finish({ mode, transport, partial: true, keys: keyRecs, plug, offsetMs }); });
   await new Promise((r) => setTimeout(r, durMs));
   const c1 = await cpuSample();
   running = false;

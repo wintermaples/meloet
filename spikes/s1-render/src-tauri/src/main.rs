@@ -46,6 +46,7 @@ fn main() {
     let (w, h): (f64, f64) = (get("w", "1280").parse().unwrap(), get("h", "800").parse().unwrap());
     let stress: u64 = get("resize-stress", "0").parse().unwrap();
     let no60 = get("no60", "0") == "1";
+    let title = get("title", "s1-render");
     let query = format!(
         "renderer={}&meters={}&dur={}&warm={}&display={}&driver={}&tickhz={}",
         get("renderer", "2d"), get("meters", "0"), get("dur", "10000"), get("warm", "1500"), get("display", "16.667"),
@@ -63,7 +64,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![bench_done, ticks])
         .setup(move |app| {
             let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("s1-render")
+                .title(&title)
                 .inner_size(w, h)
                 .resizable(true)
                 .initialization_script(format!("window.__BENCH = {query:?};"))

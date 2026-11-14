@@ -18,6 +18,7 @@ values: mean / p50 / p95 / max (ms)
 | latency__event__bufdefault | 120 | 0.38 / 0.38 / 0.82 / 0.93 | 0.98 / 0.74 / 1.21 / 16.26 | 17.65 / 17.41 / 17.88 / 32.93 | 100 % | 10.05 / 10.02 / 19.56 / 21.09 | 52.72 / 52.69 / 62.23 / 63.76 | — | [1024, 1024] frames | 0 / 2364 |
 | latency__pull__buf256 | 120 | 8.18 / 8.00 / 14.72 / 16.45 | 13.51 / 12.01 / 29.80 / 31.28 | 30.17 / 28.67 / 46.46 / 47.94 | 70 % | 2.72 / 2.85 / 4.91 / 5.24 | 13.38 / 13.51 / 15.58 / 15.90 | — | [256, 256] frames | 0 / 9454 |
 | latency__pull__bufdefault | 120 | 8.29 / 8.17 / 14.97 / 16.41 | 14.21 / 14.63 / 28.96 / 31.36 | 30.88 / 31.30 / 45.63 / 48.03 | 65 % | 10.56 / 11.07 / 19.44 / 21.20 | 53.23 / 53.74 / 62.11 / 63.86 | — | [1024, 1024] frames | 0 / 2363 |
+| real__chan-bin | 117 | -0.02 / 0.02 / 0.41 / 0.59 | 0.32 / 0.28 / 0.84 / 5.18 | 16.98 / 16.95 / 17.50 / 21.85 | 100 % | 2.81 / 3.08 / 5.18 / 5.31 | 13.48 / 13.74 / 15.84 / 15.97 | — | [256, 256] frames | 0 / 11328 |
 
 ## Per-frame load (input meter + 18 meters + position)
 
@@ -31,3 +32,53 @@ values: mean / p50 / p95 / max (ms)
 | load__event__60hz | 598 | 0.24 / 0.22 / 0.68 / 8.26 | 36.0 | 4.5 | 8.8 | 15.0 |
 | load__pull__144hz | 1420 | 4.09 / 3.91 / 6.95 / 8.00 | 50.0 | 7.1 | 16.8 | 16.0 |
 | load__pull__60hz | 1394 | 8.63 / 8.52 / 16.00 / 17.69 | 41.0 | 6.8 | 16.2 | 16.0 |
+
+## Plug / unplug
+
+| event | detail | Rust t (ms) | UI t (ms) | Rust→UI (ms) |
+|---|---|---|---|---|
+| udev remove | controlC3 | 15626118.7 | 15626119.5 | 0.79 |
+| seq disconnect | 28 | 15626126.0 | 15626126.5 | 0.46 |
+| seq disconnect | 28 | 15626140.0 | 15626140.5 | 0.47 |
+| udev remove | dmmidi3 | 15626143.3 | 15626143.5 | 0.24 |
+| udev remove | midi3 | 15626143.3 | 15626143.5 | 0.17 |
+| udev remove | midiC3D0 | 15626143.4 | 15626143.5 | 0.09 |
+| udev remove | card3 | 15626147.2 | 15626147.5 | 0.26 |
+| seq connect | Keystation 49 MK3:Keystation 49 MK3(USB MIDI) | 15629360.9 | 15629361.5 | 0.59 |
+| seq connect | Keystation 49 MK3:Keystation 49 MK3(Transport) | 15629360.9 | 15629361.5 | 0.55 |
+| udev add | card3 | 15629374.8 | 15629375.5 | 0.70 |
+| udev add | dmmidi3 | 15629378.4 | 15629378.5 | 0.06 |
+| udev add | midiC3D0 | 15629378.6 | 15629378.5 | -0.06 |
+| udev add | midi3 | 15629378.7 | 15629378.5 | -0.16 |
+| udev add | controlC3 | 15629386.6 | 15629387.5 | 0.87 |
+| udev change | card3 | 15629400.1 | 15629400.5 | 0.36 |
+| udev remove | controlC3 | 15630470.2 | 15630470.5 | 0.25 |
+| seq disconnect | 28 | 15630479.0 | 15630479.5 | 0.47 |
+| seq disconnect | 28 | 15630495.0 | 15630495.5 | 0.46 |
+| udev remove | midiC3D0 | 15630498.2 | 15630498.5 | 0.28 |
+| udev remove | midi3 | 15630498.3 | 15630498.5 | 0.22 |
+| udev remove | dmmidi3 | 15630498.4 | 15630498.5 | 0.05 |
+| udev remove | card3 | 15630501.8 | 15630501.5 | -0.30 |
+| seq connect | Keystation 49 MK3:Keystation 49 MK3(USB MIDI) | 15634222.2 | 15634222.5 | 0.25 |
+| seq connect | Keystation 49 MK3:Keystation 49 MK3(Transport) | 15634222.3 | 15634222.5 | 0.21 |
+| udev add | card3 | 15634234.9 | 15634235.5 | 0.61 |
+| udev add | midiC3D0 | 15634238.9 | 15634239.5 | 0.61 |
+| udev add | dmmidi3 | 15634242.0 | 15634242.5 | 0.52 |
+| udev add | midi3 | 15634242.4 | 15634242.5 | 0.08 |
+| udev add | controlC3 | 15634246.6 | 15634246.5 | -0.08 |
+| udev change | card3 | 15634258.6 | 15634258.5 | -0.05 |
+| udev remove | controlC3 | 15635589.9 | 15635590.5 | 0.57 |
+| seq disconnect | 28 | 15635600.0 | 15635600.5 | 0.47 |
+| seq disconnect | 28 | 15635615.0 | 15635615.5 | 0.47 |
+| udev remove | midi3 | 15635618.2 | 15635618.5 | 0.26 |
+| udev remove | midiC3D0 | 15635618.3 | 15635619.5 | 1.18 |
+| udev remove | dmmidi3 | 15635618.4 | 15635619.5 | 1.11 |
+| udev remove | card3 | 15635621.7 | 15635621.5 | -0.17 |
+| seq connect | Keystation 49 MK3:Keystation 49 MK3(USB MIDI) | 15639574.9 | 15639575.5 | 0.62 |
+| seq connect | Keystation 49 MK3:Keystation 49 MK3(Transport) | 15639574.9 | 15639575.5 | 0.58 |
+| udev add | card3 | 15639588.0 | 15639588.5 | 0.51 |
+| udev add | midi3 | 15639591.6 | 15639592.5 | 0.87 |
+| udev add | dmmidi3 | 15639591.9 | 15639592.5 | 0.56 |
+| udev add | midiC3D0 | 15639592.4 | 15639592.5 | 0.07 |
+| udev add | controlC3 | 15639597.6 | 15639597.5 | -0.15 |
+| udev change | card3 | 15639609.4 | 15639609.5 | 0.14 |

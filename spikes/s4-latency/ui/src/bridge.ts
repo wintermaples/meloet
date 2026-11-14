@@ -7,6 +7,7 @@ export type Transport = "event" | "chan-json" | "chan-bin" | "pull";
 
 export const rustClock = () => invoke<number>("clock");
 export const devices = () => invoke<any>("devices");
+export const devicesNow = () => invoke<any[]>("devices_now");
 export const cpuSample = () => invoke<any>("cpu_sample");
 export const finish = (r: unknown) => invoke("finish", { result: JSON.stringify(r) });
 export const onRust = (name: string, f: (p: any) => void) => listen<any>(name, (e) => f(e.payload));

@@ -60,7 +60,7 @@ pub fn spawn(mut to_audio: rtrb::Producer<NoteEv>, to_ui: Sender<MidiMsg>) {
             let s = PortSubscribe::empty().unwrap();
             s.set_sender(src);
             s.set_dest(dest);
-            if stamped { s.set_queue(q); s.set_time_real(true); }
+            if stamped { s.set_queue(q); s.set_time_update(true); s.set_time_real(true); }
             seq.subscribe_port(&s)
         };
         subscribe(Addr::system_announce(), false).expect("announce subscription");

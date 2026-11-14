@@ -61,6 +61,9 @@ struct App {
     pull_queue: Mutex<Vec<u8>>,
     transport: Mutex<Option<(Transport, Option<Channel<InvokeResponseBody>>)>>,
     midi_log: Mutex<Vec<Value>>,
+    /// Devices connected right now. The UI reads this once after it starts listening, so a device that
+    /// was already plugged in before the page loaded is not lost.
+    devices_now: Mutex<Vec<Value>>,
     lat_log: Mutex<Vec<audio::LatRec>>,
     audio: Mutex<Option<audio::Running>>,
     audio_info: Value,
@@ -80,6 +83,9 @@ fn send(app: &tauri::AppHandle, st: &App, json_v: Value, bin: Vec<u8>, is_key: b
 
 #[tauri::command]
 fn clock() -> u64 { mono_ns() }
+
+#[tauri::command]
+fn devices_now(st: tauri::State<'_, Arc<App>>) -> Vec<Value> { st.devices_now.lock().unwrap().clone() }
 
 #[tauri::command]
 fn devices(st: tauri::State<'_, Arc<App>>) -> Value {
@@ -162,11 +168,11 @@ fn main() {
     };
     let state = Arc::new(App {
         snapshot: Mutex::default(), pull_queue: Mutex::default(), transport: Mutex::new(None), midi_log: Mutex::default(),
-        lat_log: Mutex::default(), audio: Mutex::new(running.ok()), audio_info, frame_hz: Mutex::new(0.0), out: get("--out"),
+        devices_now: Mutex::default(), lat_log: Mutex::default(), audio: Mutex::new(running.ok()), audio_info, frame_hz: Mutex::new(0.0), out: get("--out"),
     });
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![clock, devices, connect, cpu_sample, finish])
+        .invoke_handler(tauri::generate_handler![clock, devices, devices_now, connect, cpu_sample, finish])
         .register_uri_scheme_protocol("meloet", {
             let st = state.clone();
             move |_ctx, _req| {
@@ -201,7 +207,15 @@ fn main() {
                         MidiMsg::Ctrl { param: 64, value, .. } => snap.sustain = *value as u8,
                         MidiMsg::Ctrl { param: 1, value, .. } => snap.modw = *value as u8,
                         MidiMsg::Bend { value, .. } => snap.bend = *value as i16,
-                        MidiMsg::Device { .. } => { drop(snap); let _ = h.emit("device", serde_json::to_value(&m).unwrap()); }
+                        MidiMsg::Device { connected, client, port, .. } => {
+                            drop(snap);
+                            let v = serde_json::to_value(&m).unwrap();
+                            let mut now = st.devices_now.lock().unwrap();
+                            now.retain(|d| !(d["client"] == *client && d["port"] == *port));
+                            if *connected { now.push(v.clone()); }
+                            drop(now);
+                            let _ = h.emit("device", v);
+                        }
                         _ => {}
                     }
                     st.midi_log.lock().unwrap().push(serde_json::to_value(&m).unwrap());
@@ -240,6 +254,14 @@ fn main() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("tauri run");
+        .build(tauri::generate_context!())
+        .expect("tauri build")
+        .run(|_app, ev| {
+            if let tauri::RunEvent::WindowEvent { event: tauri::WindowEvent::CloseRequested { .. }, .. } = ev {
+                eprintln!("[s4] window close requested at {} ms", mono_ns() / 1_000_000);
+            }
+            if let tauri::RunEvent::ExitRequested { code, .. } = ev {
+                eprintln!("[s4] exit requested (code {code:?}) at {} ms", mono_ns() / 1_000_000);
+            }
+        });
 }

@@ -1,0 +1,554 @@
+[
+ {
+  "id": 32,
+  "type": "PipeWire:Interface:Metadata",
+  "props": {
+   "metadata.name": "settings"
+  },
+  "metadata": [
+   {
+    "subject": 0,
+    "key": "clock.rate",
+    "type": "",
+    "value": 48000
+   },
+   {
+    "subject": 0,
+    "key": "clock.allowed-rates",
+    "type": "",
+    "value": "[ 48000 ]"
+   },
+   {
+    "subject": 0,
+    "key": "clock.quantum",
+    "type": "",
+    "value": 256
+   },
+   {
+    "subject": 0,
+    "key": "clock.min-quantum",
+    "type": "",
+    "value": 32
+   },
+   {
+    "subject": 0,
+    "key": "clock.max-quantum",
+    "type": "",
+    "value": 2048
+   },
+   {
+    "subject": 0,
+    "key": "clock.force-quantum",
+    "type": "",
+    "value": 256
+   },
+   {
+    "subject": 0,
+    "key": "clock.force-rate",
+    "type": "",
+    "value": 48000
+   }
+  ]
+ },
+ {
+  "id": 48,
+  "type": "PipeWire:Interface:Device",
+  "info": {
+   "props": {
+    "media.class": "Audio/Device",
+    "device.name": "alsa_card.pci-0000_01_00.1",
+    "device.description": "GB206 High Definition Audio Controller",
+    "device.api": "alsa",
+    "device.bus": "pci"
+   },
+   "params": {
+    "EnumRoute": [
+     {
+      "index": 0,
+      "direction": "Output",
+      "name": "hdmi-output-0",
+      "description": "HDMI / DisplayPort",
+      "priority": 5900,
+      "available": "no",
+      "info": [
+       4,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 1",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "0"
+      ],
+      "profiles": [
+       1
+      ],
+      "devices": [
+       4
+      ]
+     },
+     {
+      "index": 1,
+      "direction": "Output",
+      "name": "hdmi-output-1",
+      "description": "HDMI / DisplayPort 2",
+      "priority": 5800,
+      "available": "no",
+      "info": [
+       4,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 2",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "1"
+      ],
+      "profiles": [
+       2
+      ],
+      "devices": [
+       5
+      ]
+     },
+     {
+      "index": 2,
+      "direction": "Output",
+      "name": "hdmi-output-2",
+      "description": "HDMI / DisplayPort 3",
+      "priority": 5700,
+      "available": "no",
+      "info": [
+       4,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 3",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "2"
+      ],
+      "profiles": [
+       3,
+       5,
+       6
+      ],
+      "devices": [
+       6,
+       7,
+       8
+      ]
+     },
+     {
+      "index": 3,
+      "direction": "Output",
+      "name": "hdmi-output-3",
+      "description": "HDMI / DisplayPort 4",
+      "priority": 5600,
+      "available": "no",
+      "info": [
+       4,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 4",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "3"
+      ],
+      "profiles": [
+       4,
+       7,
+       8
+      ],
+      "devices": [
+       9,
+       10,
+       11
+      ]
+     }
+    ],
+    "Route": [
+     {
+      "index": 0,
+      "direction": "Output",
+      "name": "hdmi-output-0",
+      "description": "HDMI / DisplayPort",
+      "priority": 5900,
+      "available": "no",
+      "info": [
+       6,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 1",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "0",
+       "route.hw-mute",
+       "false",
+       "route.hw-volume",
+       "false"
+      ],
+      "profiles": [
+       1
+      ],
+      "device": 4,
+      "devices": [
+       4
+      ],
+      "profile": 1,
+      "save": false
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": 49,
+  "type": "PipeWire:Interface:Device",
+  "info": {
+   "props": {
+    "media.class": "Audio/Device",
+    "device.name": "alsa_card.pci-0000_0c_00.1",
+    "device.description": "Radeon High Definition Audio Controller",
+    "device.api": "alsa",
+    "device.bus": "pci"
+   },
+   "params": {
+    "EnumRoute": [
+     {
+      "index": 0,
+      "direction": "Output",
+      "name": "hdmi-output-0",
+      "description": "HDMI / DisplayPort",
+      "priority": 5900,
+      "available": "no",
+      "info": [
+       4,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 1",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "0"
+      ],
+      "profiles": [
+       1,
+       4,
+       5
+      ],
+      "devices": [
+       3,
+       4,
+       5
+      ]
+     },
+     {
+      "index": 1,
+      "direction": "Output",
+      "name": "hdmi-output-1",
+      "description": "HDMI / DisplayPort 2",
+      "priority": 5800,
+      "available": "no",
+      "info": [
+       4,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 2",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "1"
+      ],
+      "profiles": [
+       2,
+       6,
+       7
+      ],
+      "devices": [
+       6,
+       7,
+       8
+      ]
+     },
+     {
+      "index": 2,
+      "direction": "Output",
+      "name": "hdmi-output-2",
+      "description": "HDMI / DisplayPort 3",
+      "priority": 5700,
+      "available": "no",
+      "info": [
+       4,
+       "port.type",
+       "hdmi",
+       "port.availability-group",
+       "Legacy 3",
+       "device.icon_name",
+       "video-display",
+       "card.profile.port",
+       "2"
+      ],
+      "profiles": [
+       3,
+       8,
+       9
+      ],
+      "devices": [
+       9,
+       10,
+       11
+      ]
+     }
+    ],
+    "Route": []
+   }
+  }
+ },
+ {
+  "id": 50,
+  "type": "PipeWire:Interface:Device",
+  "info": {
+   "props": {
+    "media.class": "Audio/Device",
+    "device.name": "alsa_card.pci-0000_0c_00.6",
+    "device.description": "Ryzen HD Audio Controller",
+    "device.api": "alsa",
+    "device.bus": "pci"
+   },
+   "params": {
+    "EnumRoute": [
+     {
+      "index": 0,
+      "direction": "Input",
+      "name": "analog-input-front-mic",
+      "description": "フロントマイクロフォン",
+      "priority": 8500,
+      "available": "yes",
+      "info": [
+       4,
+       "port.type",
+       "mic",
+       "port.availability-group",
+       "Legacy 1",
+       "device.icon_name",
+       "audio-input-microphone",
+       "card.profile.port",
+       "0"
+      ],
+      "profiles": [
+       3,
+       1
+      ],
+      "devices": [
+       0
+      ]
+     },
+     {
+      "index": 1,
+      "direction": "Input",
+      "name": "analog-input-rear-mic",
+      "description": "リアマイクロフォン",
+      "priority": 8200,
+      "available": "yes",
+      "info": [
+       4,
+       "port.type",
+       "mic",
+       "port.availability-group",
+       "Legacy 2",
+       "device.icon_name",
+       "audio-input-microphone",
+       "card.profile.port",
+       "1"
+      ],
+      "profiles": [
+       3,
+       1
+      ],
+      "devices": [
+       0
+      ]
+     },
+     {
+      "index": 2,
+      "direction": "Input",
+      "name": "analog-input-linein",
+      "description": "ラインイン",
+      "priority": 8100,
+      "available": "no",
+      "info": [
+       3,
+       "port.type",
+       "line",
+       "port.availability-group",
+       "Legacy 3",
+       "card.profile.port",
+       "2"
+      ],
+      "profiles": [
+       3,
+       1
+      ],
+      "devices": [
+       0
+      ]
+     },
+     {
+      "index": 3,
+      "direction": "Output",
+      "name": "analog-output-lineout",
+      "description": "ライン出力",
+      "priority": 9000,
+      "available": "yes",
+      "info": [
+       3,
+       "port.type",
+       "line",
+       "port.availability-group",
+       "Legacy 4",
+       "card.profile.port",
+       "3"
+      ],
+      "profiles": [
+       2,
+       1
+      ],
+      "devices": [
+       4
+      ]
+     },
+     {
+      "index": 4,
+      "direction": "Output",
+      "name": "analog-output-headphones",
+      "description": "アナログヘッドフォン",
+      "priority": 9900,
+      "available": "yes",
+      "info": [
+       4,
+       "port.type",
+       "headphones",
+       "port.availability-group",
+       "Legacy 5",
+       "device.icon_name",
+       "audio-headphones",
+       "card.profile.port",
+       "4"
+      ],
+      "profiles": [
+       2,
+       1
+      ],
+      "devices": [
+       4
+      ]
+     }
+    ],
+    "Route": [
+     {
+      "index": 1,
+      "direction": "Input",
+      "name": "analog-input-rear-mic",
+      "description": "リアマイクロフォン",
+      "priority": 8200,
+      "available": "yes",
+      "info": [
+       6,
+       "port.type",
+       "mic",
+       "port.availability-group",
+       "Legacy 2",
+       "device.icon_name",
+       "audio-input-microphone",
+       "card.profile.port",
+       "1",
+       "route.hw-mute",
+       "true",
+       "route.hw-volume",
+       "true"
+      ],
+      "profiles": [
+       3,
+       1
+      ],
+      "device": 0,
+      "devices": [
+       0
+      ],
+      "profile": 1,
+      "save": false
+     },
+     {
+      "index": 4,
+      "direction": "Output",
+      "name": "analog-output-headphones",
+      "description": "アナログヘッドフォン",
+      "priority": 9900,
+      "available": "yes",
+      "info": [
+       6,
+       "port.type",
+       "headphones",
+       "port.availability-group",
+       "Legacy 5",
+       "device.icon_name",
+       "audio-headphones",
+       "card.profile.port",
+       "4",
+       "route.hw-mute",
+       "true",
+       "route.hw-volume",
+       "true"
+      ],
+      "profiles": [
+       2,
+       1
+      ],
+      "device": 4,
+      "devices": [
+       4
+      ],
+      "profile": 1,
+      "save": false
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": 38,
+  "type": "PipeWire:Interface:Node",
+  "info": {
+   "props": {
+    "media.class": "Audio/Sink",
+    "node.name": "alsa_output.pci-0000_0c_00.6.analog-stereo",
+    "node.description": "Ryzen HD Audio Controller アナログステレオ",
+    "device.id": 50,
+    "card.profile.device": 4
+   }
+  }
+ },
+ {
+  "id": 47,
+  "type": "PipeWire:Interface:Node",
+  "info": {
+   "props": {
+    "media.class": "Audio/Source",
+    "node.name": "alsa_input.pci-0000_0c_00.6.analog-stereo",
+    "node.description": "Ryzen HD Audio Controller アナログステレオ",
+    "device.id": 50,
+    "card.profile.device": 0
+   }
+  }
+ }
+]

@@ -29,15 +29,16 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   return shader;
 }
 
-/** Draws a Batch: one buffer upload and one draw call per frame. */
+/** Draws a Batch: one buffer upload and one draw call per picture. */
 export class Renderer {
   private readonly gl: WebGL2RenderingContext;
   private size: WebGLUniformLocation | null = null;
   private capacity = 0;
 
-  constructor(canvas: HTMLCanvasElement) {
+  /** `opaque`: the picture covers the whole canvas, so the page behind it need not show through. */
+  constructor(canvas: HTMLCanvasElement, opaque: boolean) {
     const gl = canvas.getContext("webgl2", {
-      alpha: true,
+      alpha: !opaque,
       antialias: false,
       depth: false,
       stencil: false,

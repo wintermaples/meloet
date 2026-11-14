@@ -1,7 +1,6 @@
-// Places where the WebGL surface draws. A component puts an empty box in the HTML layout and
-// marks it with `use:glSlot={...}`; the surface draws into that box's rect on every frame.
-// The surface itself lives in ui/src/gl/: one canvas for the whole window, plus one more inside
-// every element marked as a layer (a dialog), which draws the slots of that layer above it.
+// Places where WebGL draws. A component puts a box in the HTML layout and marks it with
+// `use:glSlot={...}`; the engine (engine.ts) puts a canvas of that box's size into the box, above
+// what the box holds, and draws it when its picture changes.
 
 export type MeterSource = "master" | { track: number };
 
@@ -17,39 +16,38 @@ export type GlSlot =
   /** The 40 px arrange overview (clip lines, visible range, play position). */
   | { kind: "overview" };
 
+/** Told about every marked box: the ones already in the page, then each change. */
+export interface SlotWatcher {
+  attach(node: HTMLElement, slot: GlSlot): void;
+  update(node: HTMLElement, slot: GlSlot): void;
+  detach(node: HTMLElement): void;
+}
+
 const slots = new Map<HTMLElement, GlSlot>();
+let watcher: SlotWatcher | null = null;
 
 export function glSlot(node: HTMLElement, slot: GlSlot) {
   slots.set(node, slot);
   node.dataset.glSlot = slot.kind;
+  watcher?.attach(node, slot);
   return {
     update(next: GlSlot) {
       slots.set(node, next);
       node.dataset.glSlot = next.kind;
+      watcher?.update(node, next);
     },
     destroy() {
       slots.delete(node);
+      watcher?.detach(node);
     },
   };
 }
 
-/** Marks an element that lies above the main surface and holds a surface of its own. */
-export const LAYER_ATTRIBUTE = "data-gl-layer";
-
-/** The layer a slot or a canvas is in; null for the main surface. */
-export function layerOf(node: Element): Element | null {
-  return node.closest(`[${LAYER_ATTRIBUTE}]`);
-}
-
-/** Marks a box that scrolls its content: the slots inside it are drawn only within its rect. */
-export const SCROLL_ATTRIBUTE = "data-gl-scroll";
-
-/** The nearest scrolling box around a slot, or null. */
-export function scrollerOf(node: Element): Element | null {
-  return node.parentElement?.closest(`[${SCROLL_ATTRIBUTE}]`) ?? null;
-}
-
-/** For the surfaces: every marked box that is in the page right now, in any layer. */
-export function liveSlots(): IterableIterator<[HTMLElement, GlSlot]> {
-  return slots.entries();
+/** One watcher at a time (the engine). Returns how to stop watching. */
+export function watchSlots(next: SlotWatcher): () => void {
+  watcher = next;
+  for (const [node, slot] of slots) next.attach(node, slot);
+  return () => {
+    if (watcher === next) watcher = null;
+  };
 }

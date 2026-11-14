@@ -25,7 +25,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 out=${out:-$root/target/measure/latency}
 target=${CARGO_TARGET_DIR:-$root/target}
 
-interval_ms=250
+interval_ms=257
 hold_ms=120
 velocity=25
 confirm_ms=1500   # after the page loaded: the chooser is up, confirm its first choosable output

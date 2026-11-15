@@ -35,6 +35,10 @@ BOARDS = {
     "history": "F-History",
     "shelf": "F-ShelfArrange",
     "params": "F-ParamFew",
+    "recording": "F-ArrangeRec",
+    "countIn": "F-Connect4",
+    "takesArrange": "F-Takes",
+    "loop": "Main",
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]

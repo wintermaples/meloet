@@ -175,6 +175,9 @@ export const part = {
   "part.meter.name.slim-narrow": p(128, "s1", "size.meter.name.slim", "せまい窓は 128"),
   "part.track.vocal": p(160, "s1", "size.track", "歌を直すときは 160"),
   "part.strip.master": p(124, "s1", "size.strip", "マスターは 124"),
+  "part.take.mark": p(6, "s2", "テイクの印と切りかえ", "6×6 の gray.10 の四角"),
+  "part.take.tag-min-width": p(28, "s2", "テイクの印と切りかえ", "クリップの幅が 28 より狭い"),
+  "part.take.switch-height": p(24, "s2", "テイクの印と切りかえ", "切りかえの札（高さ 24"),
   "part.meter.black-key-slim-w": p(5, "s3", null, "黒鍵を描く（幅 5、高さ 7）"),
   "part.meter.black-key-slim-h": p(7, "s3", null, "黒鍵を描く（幅 5、高さ 7）"),
 } as const satisfies Record<string, PartToken>;
@@ -216,6 +219,10 @@ export const mock = {
   "mock.arrange.bar": m(64, "F-Empty"),
   "mock.arrange.add-track": m(32, "F-Empty"),
   "mock.track.number": m(16, "F-Empty"),
+  // クリップは行の中で `top:3px; bottom:3px`。小さなノートは高さ 2。ループの範囲は目盛の上辺に高さ 3 の accent。
+  "mock.arrange.clip-inset": m(3, "Main"),
+  "mock.arrange.note": m(2, "Main"),
+  "mock.arrange.loop": m(3, "Main"),
   "mock.overview.label": m(104, "A-PianoRoll"),
   // 見えている範囲の枠（`top:1px; height:37px`。帯の高さは 39）の、上下のあき。
   "mock.range-frame.inset": m(1, "A-PianoRoll"),
@@ -276,7 +283,8 @@ export function tokensAt(scale: Scale, devicePixelRatio: number): Record<string,
   out["line.track"] = line["line.track"][i];
   for (const [k, v] of Object.entries(radius)) out[k] = v;
   for (const k of Object.keys(part) as PartName[]) out[k] = partAt(k, scale);
-  for (const [k, v] of Object.entries(mock)) out[k] = (v.value * scale) / 100;
+  // part.* と同じく、率をかけて整数にならなければ四捨五入する。
+  for (const [k, v] of Object.entries(mock)) out[k] = Math.round((v.value * scale) / 100);
   return out;
 }
 

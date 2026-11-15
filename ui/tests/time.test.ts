@@ -1,11 +1,13 @@
 // 時間の関数。例は crates/meloet-model/src/time/tests.rs と同じ（Rust と同じ答えになるか）。
 import { describe, expect, it } from "vitest";
+import type { Telemetry, TransportView } from "../src/bridge";
 import {
   barBeatTick,
   clockText,
   parseMeter,
   parseTempo,
   positionText,
+  shownTick,
   stepMeter,
   stepTempo,
   ticksPerBar,
@@ -128,5 +130,32 @@ describe("テンポと拍子の打ちこみ（ヤチヨさんの決め: 30.00〜
     expect(stepMeter({ num: 4, den: 4 }, 1)).toEqual({ num: 5, den: 4 });
     expect(stepMeter({ num: 4, den: 8 }, 10)).toEqual({ num: 12, den: 8 });
     expect(stepMeter({ num: 4, den: 4 }, -10)).toEqual({ num: 1, den: 4 });
+  });
+});
+
+describe("shownTick（再生まわりの数字と再生の位置の線）", () => {
+  const transport = (state: TransportView["state"]): TransportView => ({
+    state,
+    position: 3840,
+    metronome: false,
+    countInBars: 1,
+    countInBeats: 4,
+    canPlay: true,
+    canRecord: true,
+    recording: state === "countIn" || state === "recording" ? { id: 1, track: 1, from: 1920, take: 1, clip: null, lap: 0 } : null,
+  });
+  const tel = (tick: number): Telemetry =>
+    ({ sentUs: 1000, position: { tick, ticksPerUs: 0.5, state: "playing", countInBeatsLeft: 0, lap: 0 } }) as Telemetry;
+
+  it("止まっているときは計器があっても transport.position", () => {
+    expect(shownTick(transport("stopped"), tel(9999), 2000)).toBe(3840);
+  });
+  it("カウントイン中は録りはじめる所", () => {
+    expect(shownTick(transport("countIn"), tel(-720), 2000)).toBe(1920);
+  });
+  it("動いているときは計器の位置を今まで進めた所。時計がまだなら計器の位置のまま。計器がなければ transport.position", () => {
+    expect(shownTick(transport("playing"), tel(5000), 2000)).toBe(5500);
+    expect(shownTick(transport("recording"), tel(5000), null)).toBe(5000);
+    expect(shownTick(transport("playing"), null, 2000)).toBe(3840);
   });
 });

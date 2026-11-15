@@ -75,6 +75,10 @@ export async function start(): Promise<void> {
   }
 }
 
-export function send(command: Command): void {
-  bridgeSend(command).catch((e) => (failure = String(e)));
+/** Resolves to the rev after the command (null if it failed). The same rev as before means nothing changed. */
+export function send(command: Command): Promise<number | null> {
+  return bridgeSend(command).catch((e) => {
+    failure = String(e);
+    return null;
+  });
 }

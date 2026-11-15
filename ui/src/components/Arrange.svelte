@@ -7,7 +7,6 @@
     clockOffsetUs,
     liveNotes,
     peekTakeNotes,
-    positionAt,
     takeNotes,
     type ClipView,
     type LiveNotesBook,
@@ -19,9 +18,9 @@
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import * as G from "./arrangeGeom";
-  import { dbNumber, tempoText } from "./format";
+  import { dbNumber, tempoText, textParts } from "./format";
   import { metrics } from "./metrics.svelte";
-  import { ticksPerBar } from "./time";
+  import { shownTick, ticksPerBar } from "./time";
 
   let { children }: { children?: Snippet } = $props();
 
@@ -46,16 +45,15 @@
   const view: G.View = $derived({ pxPerTick, scrollX: scrollTick * pxPerTick, width: viewWidth });
   const dims: G.LaneDims = $derived({
     trackH: metrics.px("size.track"),
-    inset: G.arrangePart("clipInset", metrics.scale),
+    inset: metrics.px("mock.arrange.clip-inset"),
     hair: metrics.px("line.hair"),
     mark: metrics.px("line.mark"),
     nameH: metrics.px("text.s.line-height"),
     pad: metrics.px("space.1"),
-    noteH: metrics.px("line.mark"),
+    noteH: metrics.px("mock.arrange.note"),
   });
-  const tagMin = $derived(G.arrangePart("tagMinWidth", metrics.scale));
-  const switchH = $derived(G.arrangePart("switchHeight", metrics.scale));
-  const markSize = $derived(G.arrangePart("takeMark", metrics.scale));
+  const tagMin = $derived(metrics.px("part.take.tag-min-width"));
+  const switchH = $derived(metrics.px("part.take.switch-height"));
 
   const firstBar = $derived(Math.max(1, Math.floor(view.scrollX / barPx) + 1));
   const lastBar = $derived(Math.max(firstBar, Math.ceil((view.scrollX + viewWidth) / barPx)));
@@ -293,12 +291,6 @@
     };
   }
 
-  function heard(): number | null {
-    const tel = current.telemetry;
-    if (!tel?.position) return null;
-    return offsetUs === null ? tel.position.tick : positionAt(tel, performance.now() * 1000 + offsetUs);
-  }
-
   function placeLines(tick: number, scrollX: number): void {
     const dpr = metrics.dpr;
     const x = Math.round((tick * pxPerTick - scrollX) * dpr) / dpr;
@@ -347,7 +339,7 @@
   }
 
   function frame(): void {
-    const tick = G.lineTick(transport, heard());
+    const tick = shownTick(transport, current.telemetry, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
     let scrollX = scrollTick * pxPerTick;
     if (follow) {
       const next = G.followScroll(tick * pxPerTick, scrollX, viewWidth);
@@ -417,7 +409,11 @@
     const command = G.rulerCommand(drag.d, view, drag.downX, e.clientX - drag.left, perBar, still());
     drag = null;
     if (command.type === "locate") preview = null;
-    send(command);
+    const before = current.rev;
+    // 範囲が変わらなければ差分は来ないので、返事の rev で見た目を消す。
+    void send(command).then((rev) => {
+      if (rev === before && !drag) preview = null;
+    });
   }
   function rulerCancel(): void {
     drag = null;
@@ -453,7 +449,13 @@
       </div>
       <div class="row">
         <span class="m-lbl" use:term={"マーカー"}>
-          {shownLoop ? t("arrange.markerLoop", { range: `${shownLoop.from}–${shownLoop.to}` }) : t("arrange.marker")}
+          {#if shownLoop}
+            {#each textParts("arrange.markerLoop", { range: `${shownLoop.from}–${shownLoop.to}` }) as part, i (i)}
+              {#if part.hole}<span class="m-num loop-range">{part.text}</span>{:else}{part.text}{/if}
+            {/each}
+          {:else}
+            {t("arrange.marker")}
+          {/if}
         </span>
       </div>
       <button class="m-plain row tempo-head" aria-disabled="true" tabindex="-1">
@@ -533,7 +535,7 @@
           {#each labels as c (c.id)}
             <div class="clip-label" style:left="{c.x}px" style:top="{c.y}px" style:width="{c.w}px">
               {#if c.mark === "square"}
-                <span class="take-square" style:width="{markSize}px" style:height="{markSize}px"></span>
+                <span class="take-square"></span>
               {:else}
                 {#if c.mark === "tag"}
                   <span class="m-num take-tag" class:selected={c.selected}>{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
@@ -550,18 +552,22 @@
               style:left="{Math.max(G.tickToX(view, recShown.lapFrom), 0) + dims.hair}px"
               style:top="{row * dims.trackH + dims.inset + dims.mark}px"
             >
-              {t("arrange.recordingClip", { take: rec.take + recShown.lap })}
-            </div>
-          {/if}
-          {#if switcher}
-            <div class="switcher" style:left="{switcher.x}px" style:top="{switcher.y}px" style:height="{switchH}px">
-              <button class="tog step" aria-label={t("arrange.takePrev")} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
-              <span class="m-hi">{t("arrange.takeSwitch", { take: switcher.take, takes: switcher.takes })}</span>
-              <button class="tog step" aria-label={t("arrange.takeNext")} onclick={() => send({ type: "stepTake", delta: 1 })}>▸</button>
-              <span class="m-num m-lbl">{t("arrange.takeKey")}</span>
+              {t("arrange.recordingClip", { take: rec.take })}
             </div>
           {/if}
         </div>
+        {#if switcher}
+          <div class="switcher" role="presentation" onpointerdown={(e) => e.stopPropagation()} style:left="{switcher.x}px" style:top="{switcher.y}px" style:height="{switchH}px">
+            <button class="tog step" aria-label={t("arrange.takePrev")} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
+            <span class="m-hi">
+              {#each textParts("arrange.takeSwitch", { take: switcher.take, takes: switcher.takes }) as part, i (i)}
+                {#if part.hole}<span class="m-num">{part.text}</span>{:else}{part.text}{/if}
+              {/each}
+            </span>
+            <button class="tog step" aria-label={t("arrange.takeNext")} onclick={() => send({ type: "stepTake", delta: 1 })}>▸</button>
+            <span class="m-num m-lbl">{t("arrange.takeKey")}</span>
+          </div>
+        {/if}
       </div>
       <div class="play-line" class:rec={lineRec} bind:this={timeLine}></div>
       <div class="layer">{@render children?.()}</div>
@@ -751,7 +757,7 @@
   .loop-mark {
     position: absolute;
     top: 0;
-    height: var(--line-mark);
+    height: var(--mock-arrange-loop);
     background: var(--color-accent);
   }
   .lanes {
@@ -803,7 +809,12 @@
   .take-tag.selected {
     border-color: var(--color-accent);
   }
+  .loop-range {
+    color: var(--color-gray-9);
+  }
   .take-square {
+    width: var(--part-take-mark);
+    height: var(--part-take-mark);
     position: absolute;
     left: 0;
     top: 0;

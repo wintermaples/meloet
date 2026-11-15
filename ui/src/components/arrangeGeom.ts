@@ -1,28 +1,9 @@
 // アレンジの形の計算（クリップの絵、テイクの札、目盛のドラッグ、ページ送り、全体図）。DOM を知らない純粋な関数。
 // 位置は CSS px。x は「曲の頭からの px − 横のスクロール」。y はトラックの行の並びの上からの px。
 
-import type { ClipView, Command, LiveNote, TickSpan, TrackView, TransportView } from "../bridge";
-import type { ColorName, Scale } from "../design/tokens";
+import type { ClipView, Command, LiveNote, TickSpan, TrackView } from "../bridge";
+import type { ColorName } from "../design/tokens";
 import type { GlRect } from "../gl/slot";
-
-/**
- * tokens.ts にまだない寸法（100 % の px）。仕様書 2 章「テイクの印と切りかえ」と、モック Main のクリップ。
- * 率をかけて四捨五入する（part.* と同じ）。
- */
-export const ARRANGE_PARTS = {
-  /** 「左上に 6×6 の gray.10 の四角だけ」 */
-  takeMark: 6,
-  /** 「クリップの幅が 28 より狭いときは」 */
-  tagMinWidth: 28,
-  /** 「切りかえの札（高さ 24 …）」 */
-  switchHeight: 24,
-  /** モック Main: クリップは行の中で `top:3px; bottom:3px` */
-  clipInset: 3,
-} as const;
-
-export function arrangePart(name: keyof typeof ARRANGE_PARTS, scale: Scale): number {
-  return Math.round((ARRANGE_PARTS[name] * scale) / 100);
-}
 
 /** その率での寸法（CSS px）。 */
 export interface LaneDims {
@@ -38,7 +19,7 @@ export interface LaneDims {
   nameH: number;
   /** space.1: 名前の行とノートの間、ノートと下の枠の間 */
   pad: number;
-  /** ノートの絵の高さ（line.mark） */
+  /** ノートの絵の高さ（mock.arrange.note） */
   noteH: number;
 }
 
@@ -284,13 +265,6 @@ export function clipAt(v: View, d: LaneDims, tracks: readonly TrackView[], x: nu
     if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return c.id;
   }
   return null;
-}
-
-/** 再生の位置の線が立つ所（ティック）。止まっているときは transport.position、カウントイン中は録りはじめる所。 */
-export function lineTick(transport: TransportView, heard: number | null): number {
-  if (transport.state === "stopped") return transport.position;
-  if (transport.state === "countIn") return transport.recording?.from ?? transport.position;
-  return heard ?? transport.position;
 }
 
 /** 録っているクリップの、いまの周の頭。 */

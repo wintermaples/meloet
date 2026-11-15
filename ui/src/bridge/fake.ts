@@ -554,6 +554,7 @@ export const SCENES: Record<string, SceneDef> = {
       s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
       s.song.noteCount = FAKE_TAKES.get(6)!.notes.length;
       s.arrange = { selectedClip: 3, pianoRollClip: 3 };
+      s.transport.position = 4 * BAR;
       s.status.message = null;
     },
     bands: ["pianoRoll"],

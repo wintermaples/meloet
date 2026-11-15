@@ -1,7 +1,7 @@
 <!-- 再生まわりの帯（モック Main・F-Empty・F-Connect3・F-Connect4・F-ArrangeRec の上の帯）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { clockOffsetUs, positionAt } from "../bridge";
+  import { clockOffsetUs } from "../bridge";
   import { glRegion, glSlot } from "../gl/slot";
   import { menuOpened } from "../lib/menu";
   import { term } from "../lib/tip.svelte";
@@ -12,7 +12,7 @@
   import { PeakHold, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import NumberField from "./NumberField.svelte";
-  import { clockText, meterText, parseMeter, parseTempo, positionText, stepMeter, stepTempo, ticksToSeconds, type Meter } from "./time";
+  import { clockText, meterText, parseMeter, parseTempo, positionText, shownTick, stepMeter, stepTempo, ticksToSeconds, type Meter } from "./time";
 
   const song = $derived(current.state!.song);
   const transport = $derived(current.state!.transport);
@@ -76,10 +76,7 @@
   });
   const tick = $derived.by(() => {
     void frame;
-    if (counting) return transport.recording?.from ?? transport.position;
-    const tel = current.telemetry;
-    const heard = tel ? positionAt(tel, performance.now() * 1000 + offsetUs) : null;
-    return heard ?? transport.position;
+    return shownTick(transport, current.telemetry, performance.now() * 1000 + offsetUs);
   });
   const position = $derived(positionText(tick, meter));
   const clock = $derived(clockText(ticksToSeconds(Math.max(0, tick), song.tempoBpm, meter)));

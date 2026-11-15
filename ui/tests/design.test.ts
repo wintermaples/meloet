@@ -121,6 +121,7 @@ const ROUNDED = [
   "part.note.height@150=16.5→17",
   "part.param.knob-w@125=7.5→8",
   "part.param.step@125=7.5→8",
+  "part.take.mark@125=7.5→8",
   "part.windowmark.size@125=12.5→13",
 ];
 

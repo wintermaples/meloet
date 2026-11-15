@@ -87,7 +87,7 @@ describe("クリップの名前と札（仕様書 2 章「テイクの印と切�
       }),
     );
     expect(text(q(".clip-label"))).toBe("");
-    expect(q(".take-square")!.style.width).toBe("6px");
+    expect(q(".take-square")).not.toBeNull();
   });
 
   it("えらんだクリップのすぐ上に切りかえの札。◂ ▸ で stepTake", () => {
@@ -95,6 +95,9 @@ describe("クリップの名前と札（仕様書 2 章「テイクの印と切�
     const sw = q(".switcher")!;
     expect(text(sw)).toBe("◂ テイク 2 / 3 ▸ T");
     expect([sw.style.left, sw.style.top, sw.style.height]).toEqual(["256px", "-21px", "24px"]);
+    expect(qa(".switcher .m-num").map(text)).toEqual(["2", "3", "T"]);
+    pointer(sw, "pointerdown", 260, -10);
+    expect(app.sent).toEqual([]);
     (sw.querySelector("[aria-label=前のテイク]") as HTMLButtonElement).click();
     (sw.querySelector("[aria-label=次のテイク]") as HTMLButtonElement).click();
     expect(app.sent).toEqual([
@@ -162,6 +165,7 @@ describe("目盛（ヤチヨさんの決め: ループは目盛のドラッグ�
     show(on);
     expect(text(q(".head .row:nth-child(2)"))).toBe("マーカー ・ ループ 5–9");
     expect(q(".loop-mark")).not.toBeNull();
+    expect(text(q(".loop-range"))).toBe("5–9");
     app.setState({ ...on, song: { ...on.song, loopOn: false } });
     flushSync();
     expect(text(q(".head .row:nth-child(2)"))).toBe("マーカー");

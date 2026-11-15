@@ -1,6 +1,6 @@
 // アレンジの形の計算（arrangeGeom.ts）。クリップの絵、札の出しかた、目盛のドラッグ → 命令、ページ送り、全体図。
 import { describe, expect, it } from "vitest";
-import type { TrackView, TransportView } from "../src/bridge";
+import type { TrackView } from "../src/bridge";
 import * as G from "../src/components/arrangeGeom";
 import type { GlRect } from "../src/gl/slot";
 
@@ -157,12 +157,6 @@ describe("テイクの札（仕様書 2 章「テイクの印と切りかえ」�
     expect(G.takeMark({ takes: 3 }, 28, 28)).toBe("tag");
     expect(G.takeMark({ takes: 3 }, 27.5, 28)).toBe("square");
   });
-
-  it("寸法は率をかけて四捨五入（part.* と同じ）", () => {
-    expect([100, 125, 150].map((s) => G.arrangePart("tagMinWidth", s as 100))).toEqual([28, 35, 42]);
-    expect([100, 125, 150].map((s) => G.arrangePart("takeMark", s as 100))).toEqual([6, 8, 9]);
-    expect([100, 125, 150].map((s) => G.arrangePart("switchHeight", s as 100))).toEqual([24, 30, 36]);
-  });
 });
 
 describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループは目盛のドラッグ）", () => {
@@ -260,24 +254,6 @@ describe("押した所のクリップ", () => {
 });
 
 describe("再生の位置の線と、録っているクリップ", () => {
-  const transport = (state: TransportView["state"], recordingFrom: number | null = null): TransportView => ({
-    state,
-    position: 3840,
-    metronome: false,
-    countInBars: 1,
-    countInBeats: 4,
-    canPlay: true,
-    canRecord: true,
-    recording: recordingFrom === null ? null : { id: 1, track: 1, from: recordingFrom, take: 1, clip: null, lap: 0 },
-  });
-
-  it("止まっているときは transport.position。カウントイン中は録りはじめる所。動いているときは聞こえている所", () => {
-    expect(G.lineTick(transport("stopped"), 9999)).toBe(3840);
-    expect(G.lineTick(transport("countIn", 0), -720)).toBe(0);
-    expect(G.lineTick(transport("playing"), 5000.5)).toBe(5000.5);
-    expect(G.lineTick(transport("recording", 0), null)).toBe(3840);
-  });
-
   it("周の頭: 最初の周は録りはじめた所、2 周目からはループの頭", () => {
     expect(G.lapStart(1000, 0, { start: 3840, end: 7680 })).toBe(1000);
     expect(G.lapStart(1000, 2, { start: 3840, end: 7680 })).toBe(3840);

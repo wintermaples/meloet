@@ -24,8 +24,9 @@ export const current = {
 export const sent: Command[] = [];
 const listeners = new Set<(e: Event) => void>();
 
-export function send(command: Command): void {
+export function send(command: Command): Promise<number | null> {
   sent.push(command);
+  return Promise.resolve(0);
 }
 
 export function onEvent(listener: (e: Event) => void): () => void {

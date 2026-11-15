@@ -1,5 +1,7 @@
 // 曲の中の時間（docs/architecture.md 11 章）。crates/meloet-model/src/time.rs と同じ答えを出す。DOM を知らない純粋な関数。
 
+import { positionAt, type Telemetry, type TransportView } from "../bridge";
+
 /** 4 分音符 1 つのティック。 */
 export const TICKS_PER_QUARTER = 480;
 /** 表示の「ティック」は、1 拍をこの数に分けた目盛り。 */
@@ -99,4 +101,17 @@ export function stepTempo(bpm: number, delta: number): number {
 /** ↑ ↓ で動かした後の拍子。上の数だけを動かす。 */
 export function stepMeter(meter: Meter, delta: number): Meter {
   return { num: Math.min(METER_NUM_MAX, Math.max(1, meter.num + delta)), den: meter.den };
+}
+
+/**
+ * 再生まわりの数字と再生の位置の線が出す位置（ティック）。止まっているときは transport.position（差分ですぐ届く）、
+ * カウントイン中は録りはじめる所（モック F-Connect4）、動いているときは計器の位置を rustNowUs まで進めた所
+ * （rustNowUs が null なら計器の位置のまま）。計器に位置がなければ transport.position。
+ */
+export function shownTick(transport: TransportView, telemetry: Telemetry | null, rustNowUs: number | null): number {
+  if (transport.state === "stopped") return transport.position;
+  if (transport.state === "countIn") return transport.recording?.from ?? transport.position;
+  const p = telemetry?.position;
+  if (!p) return transport.position;
+  return rustNowUs === null ? p.tick : (positionAt(telemetry, rustNowUs) ?? transport.position);
 }

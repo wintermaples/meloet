@@ -1,15 +1,21 @@
 <!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom のいちばん下の行）。 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Band, Command, StatusMessage, TrackRef } from "../bridge";
+  import { clockOffsetUs, type Band, type Command, type NoteSelection, type StatusMessage, type TrackRef } from "../bridge";
   import type { Scale } from "../design/tokens";
+  import { everyGlFrame } from "../gl/slot";
   import { platformOf } from "../keys/keys";
   import { menuOpened } from "../lib/menu";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
-  import { t, type TextKey } from "../text/ja";
-  import { msText, tempoText, textParts, type TextPart } from "./format";
+  import { STATUS_JOIN, t, type TextKey } from "../text/ja";
+  import { msText, pitchClassName, scaleName, tempoText, textParts, type TextPart } from "./format";
+  import { heldText, noteName } from "./meterFormat";
+  import { shown as shownNotes } from "./pianoroll/shown.svelte";
+  import { sameKeys, soundingKeys } from "./pianoroll/sounding";
+  import { dragReading } from "./pianoroll/view.svelte";
   import { statusFit, type StatusRightShown } from "./statusFit";
+  import { shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
 
   const app = $derived(current.state!);
@@ -35,6 +41,19 @@
   function beatsLeft(fallback: number): number {
     const p = current.telemetry?.position;
     return p?.state === "countIn" ? p.countInBeatsLeft : fallback;
+  }
+
+  /** 文の部分どうしを「 ・ 」でつなぐ（仕様書 6 章「止まっているときの状態行の左」）。 */
+  function joined(...pieces: TextPart[][]): TextPart[] {
+    return pieces.filter((p) => p.length > 0).flatMap((p, i) => (i === 0 ? p : [{ text: STATUS_JOIN, hole: null }, ...p]));
+  }
+
+  /** 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）。音名は Rust が送る最初の 4 つ。 */
+  function notesParts(n: NoteSelection): TextPart[] {
+    return joined(
+      textParts("status.notesSelected", { count: n.count, keys: n.keys.map(noteName).join(" ") }),
+      n.quantized ? textParts("status.notesQuantized", {}) : [],
+    );
   }
 
   function shown(m: StatusMessage | null): Shown | null {
@@ -108,8 +127,14 @@
         return plain("msg.noArmedTrack");
       case "undoPending":
         return plain("msg.undoPending", { count: m.count });
+      case "outOfScale":
+        return plain("msg.outOfScale", { key: pitchClassName(m.key), scale: scaleName(m.root, m.mode) });
       case "summary": {
         const loop = m.loopBars;
+        if (m.notes) {
+          const loopParts = loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [];
+          return { parts: joined(loopParts, notesParts(m.notes)), strong: [], button: null };
+        }
         if (loop && m.nothingSelected) return plain("status.loopNoSelection", { from: loop.from, to: loop.to });
         if (loop) return plain("status.loop", { from: loop.from, to: loop.to });
         if (m.nothingSelected) return plain("status.noSelection");
@@ -120,7 +145,56 @@
     }
   }
 
-  const message = $derived(shown(app.status.message));
+  // ---- ピアノロールをひらいて再生しているとき（モック F-PRPlay）: 「1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4」 ----
+
+  const pianoRollOpen = $derived(app.workspace.layout.lower.some((b) => b.band === "pianoRoll"));
+  const playingInPianoRoll = $derived(app.transport.state === "playing" && pianoRollOpen && shownNotes.clip !== null && shownNotes.track !== null);
+
+  /** 鳴っている鍵。動いている間はコマごとに計算し、変わったときだけ入れかえる（文を書きかえるのは、変わったときだけ）。 */
+  let sounding = $state.raw<number[]>([]);
+  let offsetUs: number | null = null;
+  $effect(() => {
+    if (!playingInPianoRoll) {
+      sounding = [];
+      return;
+    }
+    if (offsetUs === null) {
+      clockOffsetUs().then(
+        (v) => (offsetUs = v),
+        () => {},
+      );
+    }
+    return everyGlFrame(() => {
+      const take = shownNotes.take;
+      const clip = shownNotes.clip;
+      const now = offsetUs === null ? null : performance.now() * 1000 + offsetUs;
+      const tick = shownTick(app.transport, current.telemetry, now);
+      const keys = take && clip && take.id === clip.takeId ? soundingKeys(take, clip, tick) : [];
+      if (!sameKeys(keys, sounding)) sounding = keys;
+    });
+  });
+
+  function playingParts(): TextPart[] | null {
+    const clip = shownNotes.clip;
+    const tr = shownNotes.track;
+    if (!clip || !tr) return null;
+    return joined(
+      textParts("status.pianoRollClip", { track: track({ number: tr.number, name: tr.name }), clip: clip.name }),
+      clip.takes > 1 ? textParts("arrange.takeSwitch", { take: clip.take, takes: clip.takes }) : [],
+      sounding.length > 0 ? textParts("status.sounding", { keys: heldText(sounding) }) : [],
+    );
+  }
+
+  const message = $derived.by((): Shown | null => {
+    // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
+    if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
+    const m = app.status.message;
+    if (playingInPianoRoll && (m === null || m.id === "summary")) {
+      const parts = playingParts();
+      if (parts) return { parts, strong: [], button: null };
+    }
+    return shown(m);
+  });
 
   /** いちばん左の札（ヤチヨさんの決め 2026-11-15）。録音とカウントインは rec。 */
   const badge = $derived.by((): { text: string; rec: boolean } => {

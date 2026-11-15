@@ -1,5 +1,7 @@
 // 数の見せかた。DOM を知らない純粋な関数。
+import type { ScaleMode } from "../bridge";
 import { t, texts, type TextKey } from "../text/ja";
+import { barBeatTick, DISPLAY_TICKS_PER_BEAT, ticksPerBeat, type Meter } from "./time";
 
 /** マイナスは仕様書と同じ「−」（U+2212）。 */
 const MINUS = "−";
@@ -74,4 +76,38 @@ export function textParts(key: TextKey, values: Readonly<Record<string, string |
   }
   if (last < text.length) out.push({ text: text.slice(last), hole: null });
   return out;
+}
+
+// ---- ピアノロールのまわり（ノートの一覧、選んだノート、状態行） ----
+
+const PITCH_CLASSES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const;
+
+/** オクターブのない音名（「D#」）。0 は C。 */
+export function pitchClassName(keyOrRoot: number): string {
+  return PITCH_CLASSES[((keyOrRoot % 12) + 12) % 12]!;
+}
+
+/** 音階の名前（「C メジャー」「A マイナー」。ヤチヨさんの決め 2026-11-15）。 */
+export function scaleName(root: number, mode: ScaleMode): string {
+  return t("scale.name", { root: pitchClassName(root), mode: t(mode === "major" ? "scale.major" : "scale.minor") });
+}
+
+/** グリッドの名前（「1 小節」「1/16」。三連符なら「1/8 三連符」）。division 0 は 1 小節。 */
+export function gridText(division: number, triplet: boolean): string {
+  const base = division === 0 ? t("grid.bar") : t("grid.division", { division });
+  return triplet ? `${base} ${t("grid.triplet")}` : base;
+}
+
+/** ノートの一覧の位置（「3.1.000」。モック A-PianoRoll）。曲の中のティック。 */
+export function notePositionText(tick: number, meter: Meter): string {
+  const b = barBeatTick(tick, meter);
+  return `${b.bar}.${b.beat}.${String(b.tick).padStart(3, "0")}`;
+}
+
+/** ノートの長さ（「拍 . ティック」。「4.000」「0.360」。モック A-PianoRoll）。 */
+export function noteLengthText(ticks: number, meter: Meter): string {
+  const perBeat = ticksPerBeat(meter);
+  const whole = Math.max(0, Math.floor(ticks));
+  const rest = Math.floor(((whole % perBeat) * DISPLAY_TICKS_PER_BEAT) / perBeat);
+  return `${Math.floor(whole / perBeat)}.${String(rest).padStart(3, "0")}`;
 }

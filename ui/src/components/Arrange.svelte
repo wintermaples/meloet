@@ -14,12 +14,15 @@
     type TakeNotes,
   } from "../bridge";
   import { everyGlFrame, glRegion, glSlot, type GlRect, type GlSlot } from "../gl/slot";
+  import { platformOf } from "../keys/keys";
+  import HScrollbar from "../lib/HScrollbar.svelte";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import * as G from "./arrangeGeom";
-  import { dbNumber, tempoText, textParts } from "./format";
+  import { dbNumber, gridText, tempoText, textParts } from "./format";
   import { metrics } from "./metrics.svelte";
+  import { arrangeView, DEFAULT_ARRANGE_BAR, prView, scrollToTick, visibleTicks, zoomArrangeBy } from "./pianoroll/view.svelte";
   import { shownTick, ticksPerBar } from "./time";
 
   let { children }: { children?: Snippet } = $props();
@@ -38,7 +41,10 @@
   /** 再生の位置を追ってページを送るか。手で横に動かすとやめ、次に再生を始めるとまた追う。 */
   let follow = true;
 
-  const barPx = $derived(metrics.px("mock.arrange.bar"));
+  /** 1 小節の px。横の拡大の段（arrangeView.barPx は 100 % の px）に、mock.arrange.bar と同じ率をかける。 */
+  const barPx = $derived((metrics.px("mock.arrange.bar") * arrangeView.barPx) / DEFAULT_ARRANGE_BAR);
+  /** 小節の番号を何小節おきに出すか。縮小して重なるときは間引く。 */
+  const barLabelEvery = $derived(G.labelEvery(barPx, metrics.px("mock.arrange.bar") / 2));
   const perBar = $derived(ticksPerBar({ num: song.meterNum, den: song.meterDen }));
   const pxPerTick = $derived(barPx / perBar);
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
@@ -57,7 +63,9 @@
 
   const firstBar = $derived(Math.max(1, Math.floor(view.scrollX / barPx) + 1));
   const lastBar = $derived(Math.max(firstBar, Math.ceil((view.scrollX + viewWidth) / barPx)));
-  const barNumbers = $derived(Array.from({ length: lastBar - firstBar + 1 }, (_, i) => firstBar + i));
+  const barNumbers = $derived(
+    Array.from({ length: lastBar - firstBar + 1 }, (_, i) => firstBar + i).filter((n) => (n - 1) % barLabelEvery === 0),
+  );
   const rowOf = (track: number) => song.tracks.findIndex((tr) => tr.number === track);
 
   // ---- テイクのノート（一度取れば id で持っておける） ----
@@ -69,8 +77,12 @@
     if (had || asked.has(id)) return had;
     asked.add(id);
     try {
+      // 届いたら asked から外す（あとで片づけられても、また要れば取りなおせるように）。
       takeNotes(id).then(
-        () => (takeVersion += 1),
+        () => {
+          asked.delete(id);
+          takeVersion += 1;
+        },
         () => asked.delete(id),
       );
     } catch {
@@ -251,8 +263,19 @@
 
   // ---- 全体図 ----
 
-  const overviewRects = $derived(
-    G.overviewRects(
+  /**
+   * ピアノロールがひらいているとき、全体図の「見えている範囲の枠」はピアノロールで見えている範囲（仕様書 3 章）。
+   * ひらいていない（ミキサーなどで全体図になった）ときは、今までどおり全体図の箱いっぱい（overview の slot）。
+   */
+  const pianoRollOpen = $derived(layout.lower.some((b) => b.band === "pianoRoll"));
+  const prRange = $derived.by(() => {
+    if (!pianoRollOpen) return null;
+    const r = visibleTicks(metrics.scale);
+    return r.end > r.start ? r : null;
+  });
+
+  const overviewRects = $derived.by(() => {
+    const out = G.overviewRects(
       view,
       song.tracks,
       overviewHeight,
@@ -263,8 +286,49 @@
         hair: metrics.px("line.hair"),
       },
       rec && recShown ? { track: rec.track, from: recShown.lapFrom, now: recShown.commit } : null,
-    ),
-  );
+    );
+    if (prRange) {
+      out.push(
+        ...G.rangeFrameRects(view, prRange, overviewHeight, {
+          inset: metrics.px("mock.range-frame.inset"),
+          hair: metrics.px("line.hair"),
+          dpr: metrics.dpr,
+        }),
+      );
+    }
+    return out;
+  });
+
+  // ピアノロールが横に送られて枠が全体図の外へ出たら、全体図を送って枠を見せる（枠をドラッグしている間はしない）。
+  let frameDrag: { x: number; tick: number } | null = null;
+  $effect(() => {
+    const r = prRange;
+    const width = viewWidth;
+    const ppt = pxPerTick;
+    if (!r || !layout.arrangeOverview || width <= 0) return;
+    untrack(() => {
+      if (frameDrag) return;
+      const next = G.revealRange(r.start * ppt, r.end * ppt, scrollTick * ppt, width);
+      if (next !== scrollTick * ppt) scrollTick = next / ppt;
+    });
+  });
+
+  let overviewSlot = $state<HTMLElement>();
+  function frameDown(e: PointerEvent): void {
+    if (e.button !== 0 || !prRange || !overviewSlot) return;
+    const x = e.clientX - overviewSlot.getBoundingClientRect().left;
+    if (x < G.tickToX(view, prRange.start) || x > G.tickToX(view, prRange.end)) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    frameDrag = { x: e.clientX, tick: prView.scrollTick };
+  }
+  function frameMove(e: PointerEvent): void {
+    if (!frameDrag) return;
+    scrollToTick(frameDrag.tick + (e.clientX - frameDrag.x) / pxPerTick);
+  }
+  function frameUp(): void {
+    frameDrag = null;
+  }
 
   // ---- 動く物: 再生の位置の線、ページ送り、録っているクリップの先 ----
 
@@ -432,6 +496,31 @@
 
   // ---- 手で: 横のスクロール、目盛のドラッグ、クリップをえらぶ ----
 
+  const mac = platformOf(navigator) === "mac";
+  let zoomWheel = 0;
+
+  /** 横の拡大 ・ 縮小を by 段。x（見えている所の左はしからの px）の位置が、画面の同じ所に残るように送る。 */
+  function zoomAt(by: number, x: number): void {
+    const anchor = G.xToTick(view, x);
+    if (!zoomArrangeBy(by)) return;
+    scrollTick = Math.max(0, anchor - x / pxPerTick);
+  }
+
+  /** ホイール。Mod を押しながらなら、カーソルの所を中心に横の拡大 ・ 縮小（仕様書 3 章）。 */
+  function wheelOn(area: () => HTMLElement | undefined) {
+    return (e: WheelEvent): void => {
+      if (mac ? e.metaKey : e.ctrlKey) {
+        e.preventDefault();
+        const z = G.wheelZoomSteps(zoomWheel, e.deltaY, e.deltaMode);
+        zoomWheel = z.acc;
+        const el = area();
+        if (z.steps !== 0 && el) zoomAt(z.steps, e.clientX - el.getBoundingClientRect().left);
+        return;
+      }
+      wheel(e);
+    };
+  }
+
   function wheel(e: WheelEvent): void {
     let dx = e.deltaX;
     if (dx === 0 && e.shiftKey) dx = e.deltaY;
@@ -482,24 +571,53 @@
   }
 
   const lineRec = $derived(transport.state === "countIn" || transport.state === "recording");
+
+  // ---- 横の棒 ----
+
+  let timeBox = $state<HTMLElement>();
+  const scrollRight = $derived(G.scrollMax(song.tracks, song.loopRange, transport.position, { pxPerTick, width: viewWidth }));
+  function barScroll(offset: number): void {
+    scrollTick = offset / pxPerTick;
+    follow = false;
+  }
+
+  /** Mod ＋ ・ Mod − の行き先（docs: pianoroll/view.svelte.ts の focus）。アレンジを押したら、アレンジへ。 */
+  function focusArrange(): void {
+    prView.focus = "arrange";
+  }
 </script>
 
 {#if layout.arrangeOverview}
-  <section class="overview" style:height="{height}px" onwheel={wheel}>
+  <section class="overview" style:height="{height}px" onwheel={wheelOn(() => overviewSlot)} onpointerdowncapture={focusArrange}>
     <div class="overview-label"><span class="m-lbl">{t("arrange.overview")}</span></div>
-    <div class="overview-slot" use:glRegion={"overview"} bind:clientWidth={overviewWidth} bind:clientHeight={overviewHeight}>
+    <div
+      class="overview-slot"
+      role="presentation"
+      use:glRegion={"overview"}
+      bind:this={overviewSlot}
+      bind:clientWidth={overviewWidth}
+      bind:clientHeight={overviewHeight}
+      onpointerdown={frameDown}
+      onpointermove={frameMove}
+      onpointerup={frameUp}
+      onpointercancel={frameUp}
+    >
       <div class="fill" use:glSlot={{ kind: "rects", rects: overviewRects }}></div>
-      <div class="fill" use:glSlot={{ kind: "overview" }}></div>
+      {#if !prRange}<div class="fill" use:glSlot={{ kind: "overview" }}></div>{/if}
       <div class="play-line" class:rec={lineRec} bind:this={overviewLine}></div>
     </div>
     <div class="layer">{@render children?.()}</div>
   </section>
 {:else}
-  <section class="arrange" style:height="{height}px">
+  <section class="arrange" style:height="{height}px" onpointerdowncapture={focusArrange}>
     <div class="head" use:glRegion={"trackMeters"}>
-      <div class="row between">
+      <div class="row">
         <span class="m-name">{t("arrange.title")}</span>
-        <span class="off" use:term={"グリッド"}>{t("arrange.grid")} <span class="m-num">1/16</span></span>
+        <span class="zoom">
+          <button class="m-btn zoom-btn" aria-label={t("arrange.zoomOut")} onclick={() => zoomArrangeBy(-1)}>{t("arrange.zoomOutMark")}</button>
+          <button class="m-btn zoom-btn" aria-label={t("arrange.zoomIn")} onclick={() => zoomArrangeBy(1)}>{t("arrange.zoomInMark")}</button>
+        </span>
+        <span class="m-lbl" use:term={"グリッド"}>{t("arrange.grid")} <span class="m-num m-hi">{gridText(0, false)}</span></span>
       </div>
       <div class="row">
         <span class="m-lbl" use:term={"マーカー"}>
@@ -549,7 +667,7 @@
       </button>
     </div>
 
-    <div class="time" bind:clientWidth={timeWidth} onwheel={wheel}>
+    <div class="time" bind:this={timeBox} bind:clientWidth={timeWidth} onwheel={wheelOn(() => timeBox)}>
       <div
         class="ruler bars"
         role="presentation"
@@ -622,6 +740,7 @@
             <span class="m-num m-lbl">{t("arrange.takeKey")}</span>
           </div>
         {/if}
+        <HScrollbar total={Math.max(scrollRight, view.scrollX) + viewWidth} visible={viewWidth} offset={view.scrollX} onscroll={barScroll} />
       </div>
       <div class="play-line" class:rec={lineRec} bind:this={timeLine}></div>
       <div class="layer">{@render children?.()}</div>
@@ -687,12 +806,15 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     white-space: nowrap;
   }
-  .row.between {
-    justify-content: space-between;
+  /* − ＋（モック R3-Arrange: 24×24、ボタンどうしは space.1）。グリッドの札とともに右へ寄せる。 */
+  .zoom {
+    margin-left: auto;
+    display: flex;
+    gap: var(--space-1);
   }
-  .off {
-    color: var(--color-gray-7);
-    white-space: nowrap;
+  .zoom-btn {
+    width: var(--part-button-height);
+    padding: 0;
   }
   .tempo-head {
     width: 100%;

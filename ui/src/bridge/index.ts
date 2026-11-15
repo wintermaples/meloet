@@ -3,9 +3,9 @@
 import { createFakeTransport, fakeMeasureEnabled, fakeMeasureReport } from "./fake";
 import { LiveNotesBook } from "./live";
 import { connectWith, type Connection, type Handlers, type Transport } from "./session";
-import { TakeStore, type TakeNotes } from "./take";
+import { songTakeIds, TakeStore, type TakeNotes } from "./take";
 import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport } from "./tauri";
-import type { Command } from "./types";
+import type { AppState, Command } from "./types";
 
 export type * from "./types";
 export { PROTOCOL_VERSION } from "./types";
@@ -29,8 +29,17 @@ export async function connect(handlers: Handlers): Promise<Connection> {
     () => connected().liveNotes(),
     (error) => handlers.onError?.(error),
   );
+  let song: AppState["song"] | null = null;
   connection = await connectWith(pickTransport(), {
     ...handlers,
+    onState(state, rev) {
+      // The song section is replaced whole when it changes; that is when takes may stop being used.
+      if (state.song !== song) {
+        song = state.song;
+        takes.keepOnly(songTakeIds(song));
+      }
+      handlers.onState(state, rev);
+    },
     onLiveNotes(notes) {
       live.receive(notes);
       handlers.onLiveNotes?.(notes);

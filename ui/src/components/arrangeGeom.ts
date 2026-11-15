@@ -332,3 +332,66 @@ export function scrollMax(
   for (const t of tracks) for (const c of t.clips) end = Math.max(end, c.end);
   return Math.max(0, end * v.pxPerTick - v.width / 2);
 }
+
+// ---- 横の拡大 ・ 縮小と、全体図の「見えている範囲の枠」（仕様書 3 章「第 3 回のための決まり」） ----
+
+/** 目盛の番号を何小節おきに出すか（1・2・4・8 …）。番号どうしが minGap px より近くならないように。 */
+export function labelEvery(barPx: number, minGap: number): number {
+  let every = 1;
+  while (every * barPx < minGap && every < 1024) every *= 2;
+  return every;
+}
+
+/** Mod ＋ ホイールの、1 段ぶんの回した量（WheelEvent の px）。ふつうのマウスの 1 目盛りで 1 段になるように。 */
+export const WHEEL_ZOOM_STEP = 50;
+
+/**
+ * Mod ＋ ホイールを段に。上へ回す（deltaY < 0）と拡大（+1）。1 回のできごとで動くのは 1 段まで。
+ * 行や画面の単位（deltaMode 1・2）は 1 回で 1 段。px の単位（タッチパッドの細かい動き）は WHEEL_ZOOM_STEP たまるごとに 1 段。
+ */
+export function wheelZoomSteps(acc: number, deltaY: number, deltaMode: number): { steps: number; acc: number } {
+  if (deltaY === 0) return { steps: 0, acc };
+  if (deltaMode !== 0) return { steps: deltaY < 0 ? 1 : -1, acc: 0 };
+  const next = Math.sign(acc) === Math.sign(deltaY) ? acc + deltaY : deltaY;
+  if (Math.abs(next) < WHEEL_ZOOM_STEP) return { steps: 0, acc: next };
+  return { steps: next < 0 ? 1 : -1, acc: 0 };
+}
+
+/**
+ * 全体図の「見えている範囲の枠」（accent の 1px。上下は inset あける）。範囲は曲の中のティック。
+ * 線は画面の画素にそろえる。見えている幅の外の辺は描かない。
+ */
+export function rangeFrameRects(
+  v: View,
+  range: { start: number; end: number },
+  height: number,
+  o: { inset: number; hair: number; dpr: number },
+): GlRect[] {
+  const snap = (x: number) => Math.round(x * o.dpr) / o.dpr;
+  const x0 = snap(tickToX(v, range.start));
+  const x1 = snap(tickToX(v, range.end));
+  const y0 = o.inset;
+  const y1 = height - o.inset;
+  const l = Math.max(x0, 0);
+  const r = Math.min(x1, v.width);
+  if (r <= l || y1 - y0 < 2 * o.hair) return [];
+  const color: ColorName = "color.accent";
+  const out: GlRect[] = [
+    { x: l, y: y0, w: r - l, h: o.hair, color },
+    { x: l, y: y1 - o.hair, w: r - l, h: o.hair, color },
+  ];
+  if (x0 >= 0) out.push({ x: x0, y: y0, w: o.hair, h: y1 - y0, color });
+  if (x1 <= v.width) out.push({ x: x1 - o.hair, y: y0, w: o.hair, h: y1 - y0, color });
+  return out;
+}
+
+/**
+ * 枠 [startPx, endPx)（曲の頭からの px）が全体図に入りきっていなければ、送った後の scrollX。入っていればそのまま。
+ * 枠が全体図より広いときは、枠の左はしを全体図の左はしに。そうでなければ、枠をまん中に。
+ */
+export function revealRange(startPx: number, endPx: number, scrollX: number, width: number): number {
+  if (!(width > 0)) return scrollX;
+  if (startPx >= scrollX && endPx <= scrollX + width) return scrollX;
+  const span = endPx - startPx;
+  return Math.max(0, span >= width ? startPx : startPx - (width - span) / 2);
+}

@@ -82,15 +82,23 @@ export function decodeTake(data: ArrayBuffer | ArrayBufferView): TakeNotes {
   return take;
 }
 
-/** Fetches each take once. A fetch that fails is forgotten, so the next `get` tries again. */
+/** How many takes no clip points at any more are still kept (newest first): undo often brings them back. */
+export const KEEP_DROPPED_TAKES = 16;
+
+/**
+ * Fetches each take once. A fetch that fails is forgotten, so the next `get` tries again.
+ * Every edit of notes makes a new take, so `keepOnly` lets go of the ones the song no longer points at.
+ */
 export class TakeStore {
   private readonly pending = new Map<number, Promise<TakeNotes>>();
   private readonly ready = new Map<number, TakeNotes>();
+  /** Let go of, oldest first. Rust still has them, so dropping one too many only costs a fetch. */
+  private readonly dropped = new Map<number, TakeNotes>();
 
   constructor(private readonly fetch: (id: number) => Promise<ArrayBuffer>) {}
 
   get(id: number): Promise<TakeNotes> {
-    const had = this.ready.get(id);
+    const had = this.ready.get(id) ?? this.revive(id);
     if (had) return Promise.resolve(had);
     let p = this.pending.get(id);
     if (!p) {
@@ -109,6 +117,47 @@ export class TakeStore {
 
   /** The take if it is here already; for drawing a frame without waiting. */
   peek(id: number): TakeNotes | undefined {
-    return this.ready.get(id);
+    return this.ready.get(id) ?? this.dropped.get(id);
   }
+
+  /**
+   * Keeps the takes `inUse` and their origin takes (the quantized take's recorded one); puts every other
+   * take aside, keeping only the newest KEEP_DROPPED_TAKES of those.
+   */
+  keepOnly(inUse: Iterable<number>): void {
+    const keep = new Set<number>();
+    for (const id of inUse) {
+      keep.add(id);
+      const take = this.ready.get(id) ?? this.dropped.get(id);
+      if (take && take.origin !== 0) keep.add(take.origin);
+    }
+    for (const id of keep) this.revive(id);
+    for (const [id, take] of this.ready) {
+      if (keep.has(id)) continue;
+      this.ready.delete(id);
+      this.dropped.set(id, take);
+    }
+    for (const id of this.dropped.keys()) {
+      if (this.dropped.size <= KEEP_DROPPED_TAKES) break;
+      this.dropped.delete(id);
+    }
+  }
+
+  /** How many takes are kept: in use, and put aside. */
+  held(): { ready: number; dropped: number } {
+    return { ready: this.ready.size, dropped: this.dropped.size };
+  }
+
+  private revive(id: number): TakeNotes | undefined {
+    const take = this.dropped.get(id);
+    if (!take) return undefined;
+    this.dropped.delete(id);
+    this.ready.set(id, take);
+    return take;
+  }
+}
+
+/** Every take id the song's clips point at (the shown take of each clip). */
+export function songTakeIds(song: { tracks: readonly { clips: readonly { takeId: number }[] }[] }): number[] {
+  return song.tracks.flatMap((t) => t.clips.map((c) => c.takeId));
 }

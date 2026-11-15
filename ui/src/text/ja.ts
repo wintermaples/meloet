@@ -360,6 +360,57 @@ export const texts = {
   "settings.auto": e("自動", "mock:F-SettingsAdvFixed"),
   "settings.manual": e("手で決める", "mock:F-SettingsAdvFixed"),
   "settings.remeasure": e("測りなおす", "mock:F-SettingsAdvFixed"),
+
+  // ピアノロールのまわり（第 3 回）: アレンジの横の拡大、ノートの一覧、選んだノート、状態行
+  "arrange.zoomOut": e("横に縮小", "mock:R3-Arrange"),
+  "arrange.zoomIn": e("横に拡大", "mock:R3-Arrange"),
+  "arrange.zoomOutMark": e("−", "mock:R3-Arrange"),
+  "arrange.zoomInMark": e("＋", "mock:R3-Arrange"),
+  "grid.bar": e("1 小節", "mock:R3-Arrange"),
+  "grid.division": e("1/{division}", "mock:A-PianoRoll", { division: "16" }),
+  "grid.triplet": e("三連符", "mock:A-PianoRoll"),
+  "noteList.position": e("位置", "mock:A-PianoRoll"),
+  "noteList.key": e("音", "mock:A-PianoRoll"),
+  "noteList.length": e("長さ", "mock:A-PianoRoll"),
+  "noteList.velocity": e("Vel", "mock:A-PianoRoll"),
+  "inspector.selected": e("選んだノート", "mock:A-PianoRoll"),
+  "inspector.position": e("位置", "mock:A-PianoRoll"),
+  "inspector.key": e("音", "mock:A-PianoRoll"),
+  "inspector.length": e("長さ", "mock:A-PianoRoll"),
+  "inspector.velocity": e("ベロシティ", "mock:A-PianoRoll"),
+  "inspector.from": e("{position} 〜", "mock:A-PianoRoll", { position: "3.1.000" }),
+  "inspector.mixed": e("ばらばら", "mock:A-PianoRoll"),
+  "inspector.range": e("{low} – {high}", "mock:A-PianoRoll", { low: "77", high: "83" }),
+  "inspector.quantize": e("クオンタイズ", "mock:A-PianoRoll"),
+  "inspector.quantized": e("かけてある", "mock:A-PianoRoll"),
+  "inspector.grid": e("グリッド", "mock:A-PianoRoll"),
+  "inspector.strength": e("強さ", "mock:A-PianoRoll"),
+  "inspector.swing": e("スウィング", "mock:A-PianoRoll"),
+  "inspector.percent": e("{value} %", "mock:A-PianoRoll", { value: "75" }),
+  "inspector.align": e("そろえる所", "mock:A-PianoRoll"),
+  "inspector.alignStart": e("はじまり", "mock:A-PianoRoll"),
+  "inspector.alignStartAndEnd": e("はじまりと終わり", "user:2026-11-15"),
+  "inspector.requantize": e("かけなおす", "mock:A-PianoRoll"),
+  "inspector.unquantize": e("もとの位置へ戻す", "mock:A-PianoRoll"),
+  "inspector.scale": e("スケール", "mock:A-PianoRoll"),
+  "inspector.musicalScale": e("音階", "mock:A-PianoRoll"),
+  "inspector.lock": e("固定", "mock:A-PianoRoll"),
+  "inspector.on": e("オン", "mock:A-PianoRoll"),
+  "inspector.off": e("オフ", "mock:Opt3-Metro"),
+  "inspector.sameLength": e("長さをそろえる", "mock:A-PianoRoll"),
+  "inspector.velocityAll": e("ベロシティをまとめて変える", "mock:A-PianoRoll"),
+  "scale.name": e("{root} {mode}", "mock:A-PianoRoll", { root: "C", mode: "メジャー" }),
+  "scale.major": e("メジャー", "mock:A-PianoRoll"),
+  "scale.minor": e("マイナー", "user:2026-11-15"),
+  "scale.kind": e("種類", "user:2026-11-15"),
+  "scale.root": e("主音", "user:2026-11-15"),
+  // 状態行。選んだノートは、数と最初の 4 つの音名。クオンタイズしたテイクなら、うしろに「 ・ クオンタイズ済み…」。
+  "status.notesSelected": e("選択 {count} ノート ・ {keys}", "mock:A-PianoRoll", { count: "3", keys: "D4 E4 F4" }),
+  "status.notesQuantized": e("クオンタイズ済み（もとの位置へ戻せます）", "mock:A-PianoRoll"),
+  // ピアノロールをひらいて再生しているとき。テイクは arrange.takeSwitch。鳴っている音がなければ、その部分を出さない。
+  "status.pianoRollClip": e("{track} ・ {clip}", "mock:F-PRPlay", { track: "1 ピアノ", clip: "Aメロ" }),
+  "status.sounding": e("鳴っている音 {keys}", "mock:F-PRPlay", { keys: "C3 E3 G3 C4" }),
+  "msg.outOfScale": s6("音階の外に書こうとした", "{key} は {scale}の外の音です（スケール固定 ・ オン）", { key: "D#", scale: "C メジャー" }),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;
@@ -446,3 +497,6 @@ export function fill(text: string, values: Readonly<Record<string, string | numb
 export function t(key: TextKey, values?: Readonly<Record<string, string | number>>): string {
   return fill(texts[key].text, values);
 }
+
+/** 状態行の左の文の、部分どうしのつなぎ（仕様書 6 章「止まっているときの状態行の左」の「 ・ 」でつなぐ）。 */
+export const STATUS_JOIN = " ・ ";

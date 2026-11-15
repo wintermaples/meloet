@@ -82,3 +82,32 @@ export function cancelDrag(): boolean {
   for (const c of cancelers) if (c()) return true;
   return false;
 }
+
+// ---- アレンジの横の拡大（仕様書 3 章「横の拡大 ・ 縮小」）。キーの係（Mod ＋ ・ Mod −）とアレンジの部品の両方が使うので、ここに置く ----
+
+/**
+ * アレンジの横の拡大の段（拡大率 100 % で、1 小節の px）。64 はモック F-Empty（mock.arrange.bar）。
+ * ピアノロールの段（QUARTER_PX_STEPS）と同じ √2 きざみ。下は 8（120 小節が 960 px に入る）、上は 256（1 拍 64 px。ここより細かくはピアノロールで）。
+ */
+export const ARRANGE_BAR_STEPS = [8, 11, 16, 23, 32, 45, 64, 91, 128, 181, 256] as const;
+export const DEFAULT_ARRANGE_BAR = 64;
+
+export const arrangeView = $state({
+  /** 拡大率 100 % で、1 小節の px（ARRANGE_BAR_STEPS のどれか）。 */
+  barPx: DEFAULT_ARRANGE_BAR as number,
+});
+
+/** 段の並び steps の中で、now から by 段動かした値（はしで止まる。now が並びになければ fallback から）。 */
+export function stepFrom(steps: readonly number[], now: number, by: number, fallback: number): number {
+  const at = steps.indexOf(now);
+  const from = at < 0 ? steps.indexOf(fallback) : at;
+  return steps[Math.min(steps.length - 1, Math.max(0, from + by))]!;
+}
+
+/** アレンジの横を by 段。変わったら true。スクロールの位置はティックで持っているので、左はしの位置はそのまま残る。 */
+export function zoomArrangeBy(by: number): boolean {
+  const next = stepFrom(ARRANGE_BAR_STEPS, arrangeView.barPx, by, DEFAULT_ARRANGE_BAR);
+  if (next === arrangeView.barPx) return false;
+  arrangeView.barPx = next;
+  return true;
+}

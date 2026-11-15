@@ -7,6 +7,8 @@
 //!   the page finished loading, send each intent to the core, the way the screen does.
 //! - `MELOET_EXIT_AFTER_MS=20000`: that long after the page finished loading, exit the usual
 //!   way (the core stops and writes its measurements).
+//! - `MELOET_CLOSE_AFTER_MS=2500`: that long after the page finished loading, close the window
+//!   the way its close button does.
 //! - `MELOET_DEBUG_SCREEN=1`: print the work area, the window and its inside to stderr each time
 //!   the shell works out the screen space (read in `main.rs`).
 
@@ -150,6 +152,18 @@ fn run_script(webview: &Webview) {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(after_ms));
             app.exit(0);
+        });
+    }
+    if let Some(after_ms) = std::env::var("MELOET_CLOSE_AFTER_MS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+    {
+        let window = webview.window();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(after_ms));
+            if let Err(e) = window.close() {
+                eprintln!("MELOET_CLOSE_AFTER_MS: {e}");
+            }
         });
     }
 }

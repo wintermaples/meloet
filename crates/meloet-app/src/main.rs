@@ -3,14 +3,16 @@
 mod clock;
 mod core_handle;
 mod devhooks;
+mod webprocess;
 
-use std::sync::atomic::{AtomicU16, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 
 use meloet_protocol::{
     Change, Command, HelloReply, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri::webview::PageLoadEvent;
 use tauri::{LogicalSize, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 
 use crate::core_handle::CoreHandle;
@@ -26,18 +28,24 @@ fn hello(protocol_version: u32) -> HelloReply {
     }
 }
 
+/// Counts the pages the WebView started to load. The Channels of an earlier page still "send"
+/// without an error, into a page that is gone, so they are dropped by this number.
+static PAGE: AtomicU64 = AtomicU64::new(0);
+
 #[tauri::command]
 fn subscribe(
     messages: Channel<ServerMessage>,
     telemetry: Channel<InvokeResponseBody>,
     core: State<'_, Core>,
 ) {
+    let page = PAGE.load(Relaxed);
     core.subscribe(
-        Box::new(move |message| messages.send(message).is_ok()),
+        Box::new(move |message| PAGE.load(Relaxed) == page && messages.send(message).is_ok()),
         Box::new(move |bytes| {
-            telemetry
-                .send(InvokeResponseBody::Raw(bytes.to_vec()))
-                .is_ok()
+            PAGE.load(Relaxed) == page
+                && telemetry
+                    .send(InvokeResponseBody::Raw(bytes.to_vec()))
+                    .is_ok()
         }),
     );
 }
@@ -255,14 +263,28 @@ fn main() {
                 follow_scale(&window_side, window.clone());
                 follow_screen(&window_side, &window);
                 devhooks::apply_window_size(&window);
+                webprocess::watch(&window);
+                // Before GTK takes the WebView down with the window.
+                window.on_window_event(|event| {
+                    if let WindowEvent::CloseRequested { .. } = event {
+                        webprocess::end();
+                    }
+                });
             }
+            webprocess::exit_on_signals(app.handle());
             Ok(())
         })
-        .on_page_load(devhooks::on_page_load)
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Started {
+                PAGE.fetch_add(1, Relaxed);
+            }
+            devhooks::on_page_load(webview, payload);
+        })
         .build(tauri::generate_context!())
         .expect("failed to run meloet")
         .run(move |_app, event| {
             if let RunEvent::Exit = event {
+                webprocess::end();
                 core.stop();
             }
         });

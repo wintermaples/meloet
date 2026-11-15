@@ -19,6 +19,16 @@ const VIRTUAL: MidiOptions = MidiOptions {
     fail_after_events: None,
 };
 
+/// Listens only to the virtual keyboard named `name` (and to real ones). A listener that also
+/// subscribes to the keyboards of tests running at the same time makes their sends fail: a send
+/// to the subscribers returns ENOENT while one of them is closing.
+fn only(name: &str) -> MidiOptions {
+    MidiOptions {
+        virtual_names: vec![name.into()],
+        ..VIRTUAL
+    }
+}
+
 fn sequencer_missing() -> bool {
     let missing = Seq::open(None, None, false).is_err();
     if missing {
@@ -82,7 +92,7 @@ fn keyboard_that_was_there_before_start_is_added_before_ready() {
     }
     let name = unique("before");
     let keys = VirtualKeyboard::open(&name).unwrap();
-    let (input, rx) = start(VIRTUAL);
+    let (input, rx) = start(only(&name));
     let seen = until_ready(&rx);
     let mine: Vec<_> = seen.iter().filter(|k| k.name == name).collect();
     assert_eq!(mine.len(), 1, "added exactly once: {seen:?}");
@@ -124,7 +134,7 @@ fn plugging_and_unplugging_after_start_is_reported_with_the_same_id() {
         return;
     }
     let name = unique("plug");
-    let (input, rx) = start(VIRTUAL);
+    let (input, rx) = start(only(&name));
     until_ready(&rx);
     let mut ids = Vec::new();
     for _ in 0..2 {
@@ -151,7 +161,7 @@ fn notes_controllers_and_bend_arrive_in_order() {
     }
     let name = unique("events");
     let keys = VirtualKeyboard::open(&name).unwrap();
-    let (input, rx) = start(VIRTUAL);
+    let (input, rx) = start(only(&name));
     let id = wait_for(&rx, added(&name)).id;
     wait_for(&rx, |m| (*m == MidiMessage::Ready).then_some(()));
 
@@ -220,7 +230,7 @@ fn stop_ends_the_thread_and_the_sink_is_not_called_again() {
     let name = unique("stop");
     let keys = VirtualKeyboard::open(&name).unwrap();
     for _ in 0..20 {
-        let (input, rx) = start(VIRTUAL);
+        let (input, rx) = start(only(&name));
         wait_for(&rx, |m| (*m == MidiMessage::Ready).then_some(()));
         let begun = Instant::now();
         input.stop();
@@ -247,7 +257,7 @@ fn stop_ends_the_thread_and_the_sink_is_not_called_again() {
         );
     }
     // Stopping while the thread has never been woken by an event, and by plain drop.
-    let (input, _rx) = start(VIRTUAL);
+    let (input, _rx) = start(only(&name));
     drop(input);
 }
 
@@ -258,7 +268,7 @@ fn vkeys_tool_plays_and_logs_what_it_sent() {
     }
     // The tool always uses the plain client name, so this is the only test that may run it.
     let log = std::env::temp_dir().join(format!("meloet-vkeys-{}.json", std::process::id()));
-    let (input, rx) = start(VIRTUAL);
+    let (input, rx) = start(only("meloet-vkeys"));
     until_ready(&rx);
     let mut tool = Command::new(env!("CARGO_BIN_EXE_meloet-vkeys"))
         .args([
@@ -384,7 +394,7 @@ fn a_failed_thread_says_stopped_last_and_its_sink_starts_again() {
     let keys = VirtualKeyboard::open(&name).unwrap();
     let failing = MidiOptions {
         fail_after_events: Some(2),
-        ..VIRTUAL
+        ..only(&name)
     };
     let (input, rx) = start(failing);
     let id = wait_for(&rx, added(&name)).id;
@@ -393,7 +403,7 @@ fn a_failed_thread_says_stopped_last_and_its_sink_starts_again() {
         note: 60,
         velocity: 90,
     };
-    for _ in 0..3 {
+    for _ in 0..2 {
         keys.send(note).unwrap();
     }
     let mut events = 0;
@@ -405,9 +415,11 @@ fn a_failed_thread_says_stopped_last_and_its_sink_starts_again() {
         MidiMessage::Stopped { .. } => Some(()),
         _ => None,
     });
-    assert_eq!(events, 2, "the third key came after the thread ended");
+    assert_eq!(events, 2);
 
     let sink = input.into_sink().expect("the sink comes back");
+    // The thread has ended and its client is closed, so this key reaches nobody.
+    keys.send(note).unwrap();
     assert!(
         matches!(
             rx.recv_timeout(Duration::from_millis(200)),
@@ -415,7 +427,7 @@ fn a_failed_thread_says_stopped_last_and_its_sink_starts_again() {
         ),
         "nothing after Stopped, and the sink is still alive"
     );
-    let again = MidiInput::start_boxed(VIRTUAL, sink)
+    let again = MidiInput::start_boxed(only(&name), sink)
         .map_err(|(e, _)| e)
         .expect("starts again");
     assert_eq!(wait_for(&rx, added(&name)).id, id);

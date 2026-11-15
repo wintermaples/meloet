@@ -11,7 +11,7 @@ use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
     LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, SettingsDialogView,
-    SongView, StatusMessage, StatusView, TrackView, Unusable, WorkspaceView,
+    SongFile, SongView, StatusMessage, StatusView, TrackView, Unusable, WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, SidePanel, WindowSize};
@@ -598,6 +598,10 @@ impl Model {
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::Undo => self.play.undo(effects),
             Command::Redo => self.play.redo(effects),
+            Command::NewSong
+            | Command::OpenSong
+            | Command::SaveSong
+            | Command::AnswerSongDialog { .. } => {}
         }
         None
     }
@@ -823,6 +827,7 @@ impl Model {
                 hint: self
                     .hint
                     .or_else(|| self.empty_hint().then_some(Hint::EmptyArrange)),
+                song_dialog: None,
             },
             keyboards: KeyboardsView {
                 list: self
@@ -1033,6 +1038,11 @@ fn song_view(play: &Play) -> SongView {
         play_target: Some(song.session.play_target.0),
         loop_range: play.loop_span(),
         loop_on: song.session.loop_on,
+        file: if play.has_unsaved_changes() {
+            SongFile::Changed
+        } else {
+            SongFile::NeverSaved
+        },
     }
 }
 

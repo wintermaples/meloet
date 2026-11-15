@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -114,6 +114,37 @@ pub enum Command {
     },
     Undo,
     Redo,
+    /// Mod N and the song menu. Asks first when there are unsaved changes.
+    NewSong,
+    /// Mod O and the song menu. Asks first when there are unsaved changes, then Rust shows the
+    /// PC's open window.
+    OpenSong,
+    /// Mod S and the song menu. The first save goes to the song folder without asking.
+    SaveSong,
+    /// A button of the song dialog. `dialog` is `SongDialogView::id`; an answer to a dialog that
+    /// is no longer up, or that the dialog has no button for, is dropped. Esc stays `Back`,
+    /// which is "やめる" while a song dialog is up.
+    AnswerSongDialog {
+        dialog: u32,
+        answer: SongAnswer,
+    },
+}
+
+/// The buttons of the song dialogs, one for one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SongAnswer {
+    /// "保存する" (`Unsaved`).
+    Save,
+    /// "保存しない" (`Unsaved`).
+    DontSave,
+    /// "場所をえらぶ" (`CannotSave`): Rust shows the PC's folder window.
+    ChooseLocation,
+    /// "1 つ前を開く" (`Broken` with `previous`).
+    OpenPrevious,
+    /// "やめる" (every dialog).
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -218,6 +249,21 @@ pub struct SongView {
     /// Kept while the loop is off.
     pub loop_range: Option<TickSpan>,
     pub loop_on: bool,
+    pub file: SongFile,
+}
+
+/// The song against its file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SongFile {
+    /// Never saved, and nothing to save: a new song as it was made.
+    NeverSaved,
+    /// The file holds the song as it is.
+    Saved,
+    /// There are unsaved changes (also a new song with steps, and a song opened from the copy
+    /// kept before the last save).
+    Changed,
 }
 
 /// `[start, end)` in ticks.
@@ -342,6 +388,34 @@ pub struct WorkspaceView {
     pub settings: Option<SettingsDialogView>,
     pub chooser: Option<ChooserView>,
     pub hint: Option<Hint>,
+    pub song_dialog: Option<SongDialogView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SongDialogView {
+    /// New for every dialog put up; `Command::AnswerSongDialog` names it.
+    pub id: u32,
+    pub kind: SongDialogKind,
+    /// The heading: the song's name, or for `Broken` the name of the file that could not be
+    /// read. `Unsaved` puts the same name in its sentence ("{song}").
+    pub title: String,
+    /// `Broken` only: the copy kept before the last save can be read. Without it the dialog
+    /// has only the first sentence and "やめる".
+    pub previous: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SongDialogKind {
+    /// "保存する / 保存しない / やめる". Before closing, a new song, or opening another.
+    Unsaved,
+    /// "場所をえらぶ / やめる".
+    CannotSave,
+    /// "1 つ前を開く / やめる", or "やめる" alone.
+    Broken,
 }
 
 /// Heights are px at 100 %; the screen multiplies by the scale. `lower` is top to bottom.

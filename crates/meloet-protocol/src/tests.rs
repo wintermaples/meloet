@@ -45,6 +45,7 @@ fn sample_state() -> AppState {
                 end: 15360,
             }),
             loop_on: true,
+            file: SongFile::Changed,
         },
         transport: TransportView {
             state: TransportState::Recording,
@@ -87,6 +88,12 @@ fn sample_state() -> AppState {
             settings: None,
             chooser: None,
             hint: Some(Hint::EmptyArrange),
+            song_dialog: Some(SongDialogView {
+                id: 2,
+                kind: SongDialogKind::Broken,
+                title: "はじめての曲.meloet".into(),
+                previous: true,
+            }),
         },
         keyboards: KeyboardsView {
             list: vec![],
@@ -285,6 +292,30 @@ fn command_json_shape() {
         ),
         (Command::Undo, json!({"type": "undo"})),
         (Command::Redo, json!({"type": "redo"})),
+        (Command::NewSong, json!({"type": "newSong"})),
+        (Command::OpenSong, json!({"type": "openSong"})),
+        (Command::SaveSong, json!({"type": "saveSong"})),
+        (
+            Command::AnswerSongDialog {
+                dialog: 3,
+                answer: SongAnswer::DontSave,
+            },
+            json!({"type": "answerSongDialog", "dialog": 3, "answer": "dontSave"}),
+        ),
+        (
+            Command::AnswerSongDialog {
+                dialog: 4,
+                answer: SongAnswer::ChooseLocation,
+            },
+            json!({"type": "answerSongDialog", "dialog": 4, "answer": "chooseLocation"}),
+        ),
+        (
+            Command::AnswerSongDialog {
+                dialog: 5,
+                answer: SongAnswer::OpenPrevious,
+            },
+            json!({"type": "answerSongDialog", "dialog": 5, "answer": "openPrevious"}),
+        ),
     ] {
         assert_eq!(serde_json::to_value(&command).unwrap(), json);
         assert_eq!(serde_json::from_value::<Command>(json).unwrap(), command);
@@ -325,6 +356,11 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(v["state"]["workspace"]["unfitScales"], json!([150]));
     assert_eq!(v["state"]["workspace"]["layout"]["rightFront"], "shelf");
     assert_eq!(v["state"]["workspace"]["settings"], json!(null));
+    assert_eq!(v["state"]["song"]["file"], "changed");
+    assert_eq!(
+        v["state"]["workspace"]["songDialog"],
+        json!({"id": 2, "kind": "broken", "title": "はじめての曲.meloet", "previous": true})
+    );
     assert_eq!(v["state"]["outputs"]["list"][0]["friendly"], "headphones");
     assert_eq!(
         v["state"]["outputs"]["list"][0]["nodeName"],

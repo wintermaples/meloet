@@ -907,6 +907,10 @@ impl Play {
         self.history.redo_count() as u32
     }
 
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.history.has_unsaved_changes()
+    }
+
     pub fn piano_roll_notes(&self) -> u32 {
         self.piano_roll
             .and_then(|id| self.doc().clip(id))

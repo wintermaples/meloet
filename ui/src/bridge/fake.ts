@@ -18,6 +18,7 @@ import {
   type LiveNote,
   type LiveNotesSnapshot,
   type ServerMessage,
+  type SongDialogKind,
   type StatusMessage,
   type TrackRef,
 } from "./types";
@@ -240,6 +241,7 @@ export function fakeState(): AppState {
       playTarget: 1,
       loopRange: null,
       loopOn: false,
+      file: "neverSaved",
     },
     transport: {
       state: "stopped",
@@ -261,6 +263,7 @@ export function fakeState(): AppState {
       settings: null,
       chooser: null,
       hint: null,
+      songDialog: null,
     },
     keyboards: { list: [], active: null, lost: null, inputStopped: false },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
@@ -377,6 +380,23 @@ function settingsAdvFixed(s: AppState): void {
 }
 
 const QUIET: FakeMeters = { velocity: 83, loadPermille: 90 };
+
+/** The arrange of the mock F-Takes, 3 steps in, never saved. */
+function changedSong(s: AppState): void {
+  ready(s);
+  s.song.undoCount = 3;
+  s.song.file = "changed";
+  s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
+  s.transport.position = 4 * BAR;
+  s.status.message = { id: "summary", loopBars: null, nothingSelected: true };
+}
+
+function songDialog(kind: SongDialogKind, title = "はじめての曲", previous = false) {
+  return (s: AppState): void => {
+    changedSong(s);
+    s.workspace.songDialog = { id: 1, kind, title, previous };
+  };
+}
 
 // ---- takes (scenes recording, takes) ----
 
@@ -580,6 +600,30 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
+  // Not from a mock: the song dialogs (spec 2 "ダイアログ", spec 6).
+  unsaved: { setup: songDialog("unsaved"), meters: QUIET },
+  cannotSave: { setup: songDialog("cannotSave"), meters: QUIET },
+  broken: { setup: songDialog("broken", "はじめての曲.meloet", true), meters: QUIET },
+  brokenNoPrevious: { setup: songDialog("broken", "はじめての曲.meloet"), meters: QUIET },
+  // The song name of the mock Main: saved, 14 steps ("保存済み ・ 取り消し 14").
+  saved: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 14;
+      s.song.file = "saved";
+    },
+    meters: QUIET,
+  },
+  // 2 of 14 steps taken back: the history band label "12 / 14" and the status line "2 手ぶん取り消してあります…".
+  undone: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 12;
+      s.song.redoCount = 2;
+      s.status.message = { id: "undoPending", count: 2 };
+    },
+    meters: QUIET,
+  },
   // The loop of the mock Main: bars 5–9, on, stopped at bar 5.
   loop: {
     setup(s) {
@@ -733,8 +777,13 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
       bands.goArrange();
       break;
     case "back":
-      if (ws.settings) ws.settings = null;
+      if (ws.songDialog) ws.songDialog = null;
+      else if (ws.settings) ws.settings = null;
       else bands.back();
+      break;
+    // The fake keeps no file: every answer just puts the dialog away.
+    case "answerSongDialog":
+      if (ws.songDialog?.id === command.dialog) ws.songDialog = null;
       break;
     case "openSettings":
       if (ws.settings) ws.settings.advancedOpen ||= command.advanced;

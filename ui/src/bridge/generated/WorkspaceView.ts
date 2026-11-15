@@ -3,10 +3,11 @@ import type { ChooserView } from "./ChooserView";
 import type { Hint } from "./Hint";
 import type { LayoutView } from "./LayoutView";
 import type { SettingsDialogView } from "./SettingsDialogView";
+import type { SongDialogView } from "./SongDialogView";
 
 export type WorkspaceView = { scale: number, viewportWidth: number, viewportHeight: number, 
 /**
  * Zooms whose smallest window does not fit the screen the window is on. Empty until the
  * screen is known; never holds 100.
  */
-unfitScales: Array<number>, layout: LayoutView, settings: SettingsDialogView | null, chooser: ChooserView | null, hint: Hint | null, };
+unfitScales: Array<number>, layout: LayoutView, settings: SettingsDialogView | null, chooser: ChooserView | null, hint: Hint | null, songDialog: SongDialogView | null, };

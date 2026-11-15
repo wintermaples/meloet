@@ -1,0 +1,72 @@
+// ピアノロールの、画面だけが持つ状態（どこを見ているか、どの道具か）。Rust に送らない見た目の物（アレンジの横のスクロールと同じ）。
+// 帯をたたんでも覚えておく（仕様書 3 章「帯をたたんでも中身の状態（選んだノート、スクロールの位置、ひらいていた CC の帯）は覚えている」）ので、
+// 部品の外のこのモジュールに置く。アレンジの全体図の「見えている範囲の枠」も、ここを読む。
+//
+// 位置はティック（4 分音符 = 480）。幅は拡大率 100 % の CSS px で持ち、描く所で拡大率をかける。
+
+import { TICKS_PER_QUARTER } from "../time";
+
+export type Tool = "select" | "draw" | "erase";
+
+/** 横の拡大の段（拡大率 100 % で、4 分音符 1 つの px）。80 はモック A-PianoRoll（1 拍 80 px）。 */
+export const QUARTER_PX_STEPS = [10, 14, 20, 28, 40, 57, 80, 113, 160, 226, 320] as const;
+export const DEFAULT_QUARTER_PX = 80;
+
+export const prView = $state({
+  tool: "select" as Tool,
+  /** 拡大率 100 % で、4 分音符 1 つの px（QUARTER_PX_STEPS のどれか）。 */
+  quarterPx: DEFAULT_QUARTER_PX as number,
+  /** ノートの場所の左はしの、曲の中のティック。 */
+  scrollTick: 0,
+  /** ノートの場所のいちばん上の行の鍵（MIDI 0〜127）。 */
+  topKey: 84,
+  /** ノートの場所の幅と高さ（CSS px、拡大率をかけたあと）。ノートの場所の部品が入れる。 */
+  areaWidth: 0,
+  areaHeight: 0,
+  /** 再生の線を追って横に送るか。手で横に動かしたら、次に再生を始めるまで追わない（仕様書 3 章、アレンジと同じ）。 */
+  follow: true,
+  /** いま見せているクリップ（ひらいたときに、そのクリップのはじまりまで送るため）。 */
+  shownClip: null as number | null,
+  /** Delete・Mod A・Mod D・切り取りなどを、ピアノロールとアレンジのどちらに向けるか。最後に押した場所。 */
+  focus: "arrange" as "arrange" | "pianoRoll",
+});
+
+/** 拡大率 scale（100・125・150）での、1 ティックの CSS px。 */
+export function pxPerTick(scale: number): number {
+  return (prView.quarterPx * scale) / 100 / TICKS_PER_QUARTER;
+}
+
+/** ノートの場所で見えている範囲 [start, end)（ティック）。全体図の枠はこれを描く。 */
+export function visibleTicks(scale: number): { start: number; end: number } {
+  const ppt = pxPerTick(scale);
+  return { start: prView.scrollTick, end: ppt > 0 ? prView.scrollTick + prView.areaWidth / ppt : prView.scrollTick };
+}
+
+/** 手で横に動かした（全体図の枠のドラッグ、横の棒、Shift ＋ ホイール）。 */
+export function scrollToTick(tick: number): void {
+  prView.scrollTick = Math.max(0, tick);
+  prView.follow = false;
+}
+
+// ---- ドラッグ中の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す） ----
+
+/** ドラッグしているあいだだけ、動かしている値の文（「+0.240 ・ +2 半音」など）。状態行は、これがあれば core の文の代わりに出す。 */
+export const dragReading = $state({ text: null as string | null });
+
+// ---- Esc の順のいちばん前の「ドラッグをやめる」（仕様書 4 章「ドラッグをやめて、動かす前に戻す Esc」） ----
+
+let cancelers: Array<() => boolean> = [];
+
+/** ドラッグを持つ部品が登録する。返り値の関数で外す。canceler は、ドラッグ中ならやめて true、そうでなければ false を返す。 */
+export function onDragCancel(canceler: () => boolean): () => void {
+  cancelers.push(canceler);
+  return () => {
+    cancelers = cancelers.filter((c) => c !== canceler);
+  };
+}
+
+/** Esc のとき、キーの係がいちばん先に呼ぶ。どれかのドラッグをやめたら true（そのときは、ほかのことをしない）。 */
+export function cancelDrag(): boolean {
+  for (const c of cancelers) if (c()) return true;
+  return false;
+}

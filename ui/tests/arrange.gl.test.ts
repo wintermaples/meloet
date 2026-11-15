@@ -49,6 +49,7 @@ describe("場面ごとの WebGL の文脈の数", () => {
     ["recording", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
     ["takes", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
     ["takesArrange", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
+    ["arrangeTrimmed", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
     ["tracks16", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
     ["pianoRollRec", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
   ])("%s: 区画ごとに 1 枚で、予算をこえない", async (scene, expected) => {

@@ -331,6 +331,10 @@ export const texts = {
   "arrange.takePrev": e("前のテイク", "mock:F-Takes"),
   "arrange.takeNext": e("次のテイク", "mock:F-Takes"),
   "arrange.takeKey": e("T", "mock:F-Takes"),
+  // クリップのドラッグの「その場の読み値」（仕様書 2 章）。
+  "arrange.readMove": e("{position}（{delta} 小節）", "mock:R3-Arrange", { position: "6.1.000", delta: "+1" }),
+  "arrange.readCopy": e("複製 ・ {position}", "mock:R3-Arrange", { position: "9.1.000" }),
+  "arrange.readTrim": e("長さ {length}", "mock:R3-Arrange", { length: "2.2.000" }),
   "arrange.soundCameOutKeys": e("録音 {recordKey} ・ 再生と停止 {playKey}", "mock:F-Connect3", { recordKey: "R", playKey: "Space" }),
 
   // 出口えらび（流れ 2）と、出口・入口の行

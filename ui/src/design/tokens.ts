@@ -194,6 +194,7 @@ export const part = {
   "part.cursor.size": p(16, "s2", "カーソル（鉛筆 ・ 消しゴム）", "16×16"),
   "part.note.resize": p(6, "s3", null, "ノートの右はし 6px"),
   "part.cc.point": p(6, "s3", null, "点は 6×6 の gray.10"),
+  "part.clip.edge": p(6, "s3", null, "左右のはし 6px"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 

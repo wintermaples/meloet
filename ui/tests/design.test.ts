@@ -109,6 +109,7 @@ const ROUNDED = [
   "part.button.icon@125=12.5→13",
   "part.cc.point@125=7.5→8",
   "part.choice.dot@125=7.5→8",
+  "part.clip.edge@125=7.5→8",
   "part.endpoint.friendly@125=187.5→188",
   "part.endpoint.link@125=7.5→8",
   "part.meter.black-key-slim-h@125=8.75→9",

@@ -153,7 +153,22 @@ export function paintClip(
   }
 }
 
-/** テイクのノート（テイクの 0 ティック目からの位置）を、曲の中の位置に。クリップの外は落とす。 */
+/** 枠だけ（仕様書 2 章「クリップ」の「動かしている（もとの場所に gray.7 の枠）」）。見えている幅の外の辺は描かない。 */
+export function paintFrame(out: GlRect[], v: View, d: LaneDims, box: Box, color: ColorName): void {
+  const { y0, y1 } = box;
+  const x0 = Math.max(box.x0, -d.hair);
+  const x1 = Math.min(box.x1, v.width + d.hair);
+  if (x1 <= x0 || y1 <= y0) return;
+  const h = d.hair;
+  out.push({ x: x0, y: y0, w: x1 - x0, h, color }, { x: x0, y: y1 - h, w: x1 - x0, h, color });
+  if (box.x0 >= x0) out.push({ x: box.x0, y: y0, w: h, h: y1 - y0, color });
+  if (box.x1 <= x1) out.push({ x: box.x1 - h, y: y0, w: h, h: y1 - y0, color });
+}
+
+/**
+ * テイクのノート（テイクの 0 ティック目からの位置）を、曲の中の位置に。鳴るノート（始まりがクリップの範囲 [start, end) の中）だけ。
+ * はしをつめて外に出たノートは描かない（終わりがはみ出す所は paintClip が切る）。
+ */
 export function takeShapes(
   clip: Pick<ClipView, "start" | "end" | "takeOffset">,
   take: {
@@ -167,7 +182,7 @@ export function takeShapes(
   for (let i = 0; i < take.starts.length; i++) {
     const start = at + take.starts[i]!;
     const length = take.lengths[i]!;
-    if (start >= clip.end || start + length <= clip.start) continue;
+    if (start >= clip.end || start < clip.start) continue;
     out.push({ start, length, key: take.keys[i]! });
   }
   return out;

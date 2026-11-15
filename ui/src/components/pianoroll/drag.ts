@@ -16,6 +16,7 @@ import {
   moveDelta,
   noteEnd,
   noteName,
+  noteShown,
   noteStart,
   notesInBox,
   positionText,
@@ -197,7 +198,7 @@ export class RollDrag {
     const t1 = xToTick(g, x + near);
     for (let k = 0; k < n.take.starts.length; k++) {
       const s = noteStart(n, k);
-      if (s < t0 || s > t1) continue;
+      if (s < t0 || s > t1 || !noteShown(n, k)) continue;
       const top = bottom - (n.take.velocities[k]! * full) / 127;
       const d = Math.abs(y - top) + Math.abs(x - tickToX(g, s));
       if (Math.abs(y - top) <= near && d < best) {

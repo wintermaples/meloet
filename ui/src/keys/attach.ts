@@ -52,7 +52,8 @@ function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps): Comman
     default:
       return undefined;
   }
-  if (!pianoRollOpen(state) || prView.focus !== "pianoRoll") return action.kind === "deleteSelected" ? undefined : null;
+  // Delete と Mod D は、アレンジに向けたときはえらんだクリップへ。
+  if (!pianoRollOpen(state) || prView.focus !== "pianoRoll") return action.kind === "deleteSelected" || action.kind === "duplicate" ? undefined : null;
   const notes = deps.pianoRoll ? deps.pianoRoll() : shownFor(shown.take, shown.clip);
   const playTick = deps.playTick ? deps.playTick() : shownTick(state.transport, current.telemetry, null);
   return pianoRollCommand(key, { state, shown: notes, playTick });
@@ -97,6 +98,11 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "stepTake", delta: action.delta };
     case "deleteSelected":
       return { type: "deleteSelected" };
+    // Mod D: えらんだクリップのすぐうしろに複製（録音中とカウントイン中は Rust も受けない）。
+    case "duplicate": {
+      const clip = state.arrange.selectedClip;
+      return clip === null || songBusy(state) ? null : { type: "duplicateClip", clip };
+    }
     // 録音中とカウントイン中は、曲の名前の一覧と同じく使えない。
     case "newSong":
       return songBusy(state) ? null : { type: "newSong" };

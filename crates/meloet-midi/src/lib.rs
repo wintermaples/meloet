@@ -93,13 +93,16 @@ pub enum MidiMessage {
     },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MidiOptions {
     /// Also treat `meloet-vkeys*` clients as keyboards (for tests and measurements).
     pub accept_virtual: bool,
     /// Treat only `meloet-vkeys*` clients as keyboards and leave real ones out (to show the
     /// screens without a keyboard while one is plugged in).
     pub only_virtual: bool,
+    /// When not empty, a virtual client counts only when its name is one of these, so that the
+    /// virtual keyboards of other tests running on the same PC stay out.
+    pub virtual_names: Vec<String>,
     /// For tests of what follows a failure: after this many key events the thread ends as if
     /// the sequencer had given an error, and sends [`MidiMessage::Stopped`].
     pub fail_after_events: Option<u32>,
@@ -107,13 +110,21 @@ pub struct MidiOptions {
 
 impl MidiOptions {
     /// `accept_virtual` is on when the environment has `MELOET_ACCEPT_VIRTUAL=1`,
-    /// `only_virtual` when it has `MELOET_ONLY_VIRTUAL=1`, and `fail_after_events` is
+    /// `only_virtual` when it has `MELOET_ONLY_VIRTUAL=1`, `virtual_names` is
+    /// `MELOET_VKEYS_NAME=<name>[,<name>…]`, and `fail_after_events` is
     /// `MELOET_MIDI_FAIL_AFTER=<events>` (a development aid).
     pub fn from_env() -> Self {
         let on = |name: &str| std::env::var_os(name).is_some_and(|v| v == "1");
         Self {
             accept_virtual: on("MELOET_ACCEPT_VIRTUAL"),
             only_virtual: on("MELOET_ONLY_VIRTUAL"),
+            virtual_names: std::env::var("MELOET_VKEYS_NAME")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(String::from)
+                .collect(),
             fail_after_events: std::env::var("MELOET_MIDI_FAIL_AFTER")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

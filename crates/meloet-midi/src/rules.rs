@@ -18,10 +18,12 @@ pub(crate) struct PortFacts {
 pub(crate) fn keyboard_port(
     client_name: &str,
     ports: &[PortFacts],
-    options: MidiOptions,
+    options: &MidiOptions,
 ) -> Option<i32> {
     let is_virtual = (options.accept_virtual || options.only_virtual)
-        && client_name.starts_with(VKEYS_CLIENT_NAME);
+        && client_name.starts_with(VKEYS_CLIENT_NAME)
+        && (options.virtual_names.is_empty()
+            || options.virtual_names.iter().any(|n| n == client_name));
     ports
         .iter()
         .filter(|p| p.cap.contains(PortCap::READ | PortCap::SUBS_READ))
@@ -96,16 +98,19 @@ mod tests {
     const NO: MidiOptions = MidiOptions {
         accept_virtual: false,
         only_virtual: false,
+        virtual_names: Vec::new(),
         fail_after_events: None,
     };
     const YES: MidiOptions = MidiOptions {
         accept_virtual: true,
         only_virtual: false,
+        virtual_names: Vec::new(),
         fail_after_events: None,
     };
     const ONLY: MidiOptions = MidiOptions {
         accept_virtual: false,
         only_virtual: true,
+        virtual_names: Vec::new(),
         fail_after_events: None,
     };
 
@@ -116,15 +121,15 @@ mod tests {
     #[test]
     fn only_virtual_leaves_real_keyboards_out() {
         assert_eq!(
-            keyboard_port("Keystation 49 MK3", &[port(0, READ, HW)], ONLY),
+            keyboard_port("Keystation 49 MK3", &[port(0, READ, HW)], &ONLY),
             None
         );
         assert_eq!(
-            keyboard_port("meloet-vkeys", &[port(0, READ, APP)], ONLY),
+            keyboard_port("meloet-vkeys", &[port(0, READ, APP)], &ONLY),
             Some(0)
         );
         assert_eq!(
-            keyboard_port("Other app", &[port(0, READ, APP)], ONLY),
+            keyboard_port("Other app", &[port(0, READ, APP)], &ONLY),
             None
         );
     }
@@ -132,20 +137,20 @@ mod tests {
     #[test]
     fn hardware_keyboard_gives_only_its_lowest_readable_port() {
         let ports = [port(1, READ, HW), port(0, READ | WRITE, HW)];
-        assert_eq!(keyboard_port("Keystation 49 MK3", &ports, NO), Some(0));
+        assert_eq!(keyboard_port("Keystation 49 MK3", &ports, &NO), Some(0));
     }
 
     #[test]
     fn write_only_ports_are_skipped() {
         let ports = [port(0, WRITE, HW), port(1, READ, HW), port(2, READ, HW)];
-        assert_eq!(keyboard_port("Synth", &ports, NO), Some(1));
-        assert_eq!(keyboard_port("Synth", &[port(0, WRITE, HW)], NO), None);
+        assert_eq!(keyboard_port("Synth", &ports, &NO), Some(1));
+        assert_eq!(keyboard_port("Synth", &[port(0, WRITE, HW)], &NO), None);
     }
 
     #[test]
     fn readable_without_subscription_right_is_not_a_keyboard() {
         assert_eq!(
-            keyboard_port("Odd", &[port(0, PortCap::READ, HW)], NO),
+            keyboard_port("Odd", &[port(0, PortCap::READ, HW)], &NO),
             None
         );
     }
@@ -153,7 +158,7 @@ mod tests {
     #[test]
     fn software_clients_are_not_keyboards() {
         assert_eq!(
-            keyboard_port("PipeWire-System", &[port(0, READ, APP)], NO),
+            keyboard_port("PipeWire-System", &[port(0, READ, APP)], &NO),
             None
         );
         assert_eq!(
@@ -164,20 +169,41 @@ mod tests {
                     READ | WRITE,
                     PortType::MIDI_GENERIC | PortType::SOFTWARE | PortType::PORT
                 )],
-                YES
+                &YES
             ),
             None
         );
-        assert_eq!(keyboard_port("No ports", &[], YES), None);
+        assert_eq!(keyboard_port("No ports", &[], &YES), None);
     }
 
     #[test]
     fn virtual_keyboard_counts_only_when_asked() {
         let ports = [port(0, READ, APP)];
-        assert_eq!(keyboard_port("meloet-vkeys", &ports, NO), None);
-        assert_eq!(keyboard_port("meloet-vkeys", &ports, YES), Some(0));
-        assert_eq!(keyboard_port("meloet-vkeys-test-1", &ports, YES), Some(0));
-        assert_eq!(keyboard_port("other-vkeys", &ports, YES), None);
+        assert_eq!(keyboard_port("meloet-vkeys", &ports, &NO), None);
+        assert_eq!(keyboard_port("meloet-vkeys", &ports, &YES), Some(0));
+        assert_eq!(keyboard_port("meloet-vkeys-test-1", &ports, &YES), Some(0));
+        assert_eq!(keyboard_port("other-vkeys", &ports, &YES), None);
+    }
+
+    #[test]
+    fn named_virtual_keyboards_leave_other_virtual_ones_out() {
+        let ports = [port(0, READ, APP)];
+        let mine = MidiOptions {
+            virtual_names: vec!["meloet-vkeys-mine".into()],
+            ..YES
+        };
+        assert_eq!(keyboard_port("meloet-vkeys-mine", &ports, &mine), Some(0));
+        assert_eq!(keyboard_port("meloet-vkeys", &ports, &mine), None);
+        assert_eq!(keyboard_port("meloet-vkeys-mine-2", &ports, &mine), None);
+        assert_eq!(
+            keyboard_port("Keystation 49 MK3", &[port(0, READ, HW)], &mine),
+            Some(0)
+        );
+        let not_asked = MidiOptions {
+            accept_virtual: false,
+            ..mine
+        };
+        assert_eq!(keyboard_port("meloet-vkeys-mine", &ports, &not_asked), None);
     }
 
     #[test]

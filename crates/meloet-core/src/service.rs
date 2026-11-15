@@ -236,7 +236,7 @@ impl Core {
             tx: tx.clone(),
         };
         let midi = options.midi.and_then(|midi_options| {
-            MidiInput::start_boxed(midi_options, links.midi_sink(parts.midi_in))
+            MidiInput::start_boxed(midi_options.clone(), links.midi_sink(parts.midi_in))
                 .inspect_err(|(e, _)| eprintln!("meloet: no keyboard input: {e}"))
                 .ok()
                 .map(|input| Midi {
@@ -481,7 +481,7 @@ impl Midi {
         else {
             return;
         };
-        self.state = match MidiInput::start_boxed(self.options, sink) {
+        self.state = match MidiInput::start_boxed(self.options.clone(), sink) {
             Ok(input) => MidiState::Running(input),
             Err((e, sink)) => {
                 if attempt == 1 {
@@ -505,7 +505,7 @@ impl Midi {
         self.state = match state {
             MidiState::Running(input) => {
                 drop(input.into_sink());
-                match MidiInput::start_boxed(self.options, sink) {
+                match MidiInput::start_boxed(self.options.clone(), sink) {
                     Ok(input) => MidiState::Running(input),
                     Err((_, Some(sink))) => MidiState::Waiting {
                         sink,

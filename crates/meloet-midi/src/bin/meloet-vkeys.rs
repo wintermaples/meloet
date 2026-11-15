@@ -1,5 +1,5 @@
 //! A virtual keyboard for tests and measurements. meloet sees it when started with
-//! `MELOET_ACCEPT_VIRTUAL=1`.
+//! `MELOET_ACCEPT_VIRTUAL=1`; with `MELOET_VKEYS_NAME` set too, only when `--name` is that name.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -18,7 +18,8 @@ meloet-vkeys bend   --value N            (-8192..8191)
 meloet-vkeys appear [--seconds 5]
 
 Every command also takes --lead-ms N (default 500): the time between the port appearing and
-the first event, so that a listener can subscribe.";
+the first event, so that a listener can subscribe, and --name NAME (default meloet-vkeys): the
+client name, starting with meloet-vkeys.";
 
 struct Args(HashMap<String, String>);
 
@@ -68,8 +69,12 @@ fn run(argv: &[String]) -> Result<(), String> {
     let (command, rest) = argv.split_first().ok_or("no command")?;
     let mut args = Args::parse(rest)?;
     let lead = Duration::from_millis(args.get("lead-ms", Some(500))?);
+    let name: String = args.get("name", Some(VKEYS_CLIENT_NAME.to_string()))?;
+    if !name.starts_with(VKEYS_CLIENT_NAME) {
+        return Err(format!("--name must start with {VKEYS_CLIENT_NAME}"));
+    }
     let open = || {
-        let keys = VirtualKeyboard::open(VKEYS_CLIENT_NAME).map_err(|e| e.to_string())?;
+        let keys = VirtualKeyboard::open(&name).map_err(|e| e.to_string())?;
         sleep(lead);
         Ok::<_, String>(keys)
     };
@@ -99,7 +104,7 @@ fn run(argv: &[String]) -> Result<(), String> {
             let keys = open()?;
             let start = Instant::now();
             let mut json = format!(
-                "{{\"client\":\"{VKEYS_CLIENT_NAME}\",\"address\":\"{}\",\"notes\":[",
+                "{{\"client\":\"{name}\",\"address\":\"{}\",\"notes\":[",
                 keys.address()
             );
             for (index, note) in notes.iter().copied().cycle().take(count).enumerate() {
@@ -140,7 +145,7 @@ fn run(argv: &[String]) -> Result<(), String> {
         "appear" => {
             let seconds: f64 = args.get("seconds", Some(5.0))?;
             args.done()?;
-            let _keys = VirtualKeyboard::open(VKEYS_CLIENT_NAME).map_err(|e| e.to_string())?;
+            let _keys = VirtualKeyboard::open(&name).map_err(|e| e.to_string())?;
             sleep(Duration::try_from_secs_f64(seconds).map_err(|e| format!("--seconds: {e}"))?);
         }
         other => return Err(format!("unknown command `{other}`")),

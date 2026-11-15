@@ -463,6 +463,7 @@ fn the_keyboard_played_last_becomes_the_active_one() {
         midi: Some(MidiOptions {
             accept_virtual: true,
             only_virtual: true,
+            virtual_names: vec![first.clone(), second.clone()],
             fail_after_events: None,
         }),
         ..CoreOptions::offline()
@@ -545,6 +546,7 @@ fn a_stopped_keyboard_input_releases_the_keys_and_starts_again() {
         midi: Some(MidiOptions {
             accept_virtual: true,
             only_virtual: true,
+            virtual_names: vec![name.clone()],
             fail_after_events: Some(2),
         }),
         ..CoreOptions::offline()

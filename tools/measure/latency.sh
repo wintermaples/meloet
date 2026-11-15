@@ -35,6 +35,8 @@ velocity=25
 confirm_ms=1500   # after the page loaded: the chooser is up, confirm its first choosable output
 settle_s=8        # from start to the first key: page load, chooser, stream open
 lead_ms=500
+# Only this client counts as a keyboard, so that virtual keyboards of other runs stay out.
+vkeys_name=meloet-vkeys-latency-$$
 tail_ms=6000      # after the last key: the screen reports every 2 s
 exit_ms=$((settle_s * 1000 + lead_ms + count * interval_ms + tail_ms))
 
@@ -59,6 +61,7 @@ if command -v dbus-run-session >/dev/null; then launcher=(dbus-run-session --); 
 MELOET_CONFIG_DIR="$work/config" \
 MELOET_MEASURE_DIR="$work/measure" \
 MELOET_ACCEPT_VIRTUAL=1 \
+MELOET_VKEYS_NAME="$vkeys_name" \
 MELOET_WINDOW="$window" \
 MELOET_COMMANDS="[{\"afterMs\":$confirm_ms,\"command\":{\"type\":\"chooserConfirm\"}}]" \
 MELOET_EXIT_AFTER_MS="$exit_ms" \
@@ -71,7 +74,7 @@ if ! kill -0 "$app" 2>/dev/null; then
   cat "$out/raw/meloet.stderr" >&2
   exit 1
 fi
-"$target/release/meloet-vkeys" play --count "$count" --interval-ms "$interval_ms" \
+"$target/release/meloet-vkeys" play --name "$vkeys_name" --count "$count" --interval-ms "$interval_ms" \
   --hold-ms "$hold_ms" --velocity "$velocity" --lead-ms "$lead_ms" --log "$work/vkeys.json"
 
 # The page may have loaded late; give the exit hook that long, then stop waiting.

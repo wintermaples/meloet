@@ -140,7 +140,7 @@ pub fn list_ports(options: MidiOptions) -> Result<Vec<Keyboard>, MidiError> {
     let mut found: Vec<Keyboard> = Vec::new();
     let clients: Vec<i32> = ClientIter::new(&seq).map(|c| c.get_client()).collect();
     for client in clients {
-        if let Some(keyboard) = find_keyboard(&seq, client, me, options, &found) {
+        if let Some(keyboard) = find_keyboard(&seq, client, me, &options, &found) {
             found.push(keyboard);
         }
     }
@@ -159,7 +159,7 @@ fn find_keyboard(
     seq: &Seq,
     client: i32,
     me: i32,
-    options: MidiOptions,
+    options: &MidiOptions,
     others: &[Keyboard],
 ) -> Option<Keyboard> {
     if client == me || client == Addr::system_announce().client {
@@ -313,7 +313,7 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
             .filter(|k| k.client != client)
             .cloned()
             .collect();
-        let want = find_keyboard(&self.seq, client, self.me, self.options, &others);
+        let want = find_keyboard(&self.seq, client, self.me, &self.options, &others);
         if let (Some(i), Some(w)) = (have, &want) {
             let k = &self.active[i];
             if k.port == w.port && k.name == w.name && k.port_name == w.port_name {

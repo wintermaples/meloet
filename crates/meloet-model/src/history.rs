@@ -31,6 +31,35 @@ pub enum StepKind {
         from: Meter,
         to: Meter,
     },
+    /// The write tool. `clip_made`: the clip was made for the note.
+    WriteNote {
+        clip: ClipId,
+        clip_made: bool,
+    },
+    /// A drag, the arrow keys; `copy`: Alt + drag and Mod D.
+    MoveNotes {
+        clip: ClipId,
+        count: usize,
+        copy: bool,
+    },
+    ResizeNotes {
+        clip: ClipId,
+        count: usize,
+    },
+    /// The erase tool and Delete; `cut`: Mod X.
+    DeleteNotes {
+        clip: ClipId,
+        count: usize,
+        cut: bool,
+    },
+    ChangeVelocity {
+        clip: ClipId,
+        count: usize,
+    },
+    PasteNotes {
+        clip: ClipId,
+        count: usize,
+    },
 }
 
 #[derive(Debug, Clone)]

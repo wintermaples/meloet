@@ -730,6 +730,16 @@ impl Audio {
             },
             EngineOp::Loop { start, end, on } => EngineCommand::SetLoop { start, end, on },
             EngineOp::Metronome { on } => EngineCommand::SetMetronome { on },
+            EngineOp::Audition {
+                track,
+                key,
+                velocity,
+            } => EngineCommand::Audition {
+                track,
+                key,
+                velocity,
+            },
+            EngineOp::AuditionOff => EngineCommand::AuditionOff,
             EngineOp::Sequence { track, events } => {
                 if self.stream.is_some() {
                     let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());

@@ -275,6 +275,49 @@ fn keyboard_plays_the_play_target() {
 }
 
 #[test]
+fn audition_sounds_on_its_track_until_let_go() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    assert!(
+        rig.parts
+            .handle
+            .swap_instrument(2, Box::new(PlaceholderSynth::new()))
+            .is_ok()
+    );
+    rig.send(EngineCommand::Audition {
+        track: 2,
+        key: 60,
+        velocity: 100,
+    });
+    rig.run(2048);
+    assert_eq!(meters.take_track_peak(0), [0.0, 0.0], "not the play target");
+    assert!(meters.take_track_peak(2)[0] > 0.01);
+    assert!(
+        rig.parts.handle.pop_latency().is_none(),
+        "not a key: no key-to-sound record"
+    );
+    // The next audition lets go of the first; the off lets go of the second.
+    rig.send(EngineCommand::Audition {
+        track: 2,
+        key: 64,
+        velocity: 100,
+    });
+    rig.run(256);
+    rig.send(EngineCommand::AuditionOff);
+    rig.run(RATE);
+    meters.take_track_peak(2);
+    assert_eq!(peak(&rig.run(256)), 0.0, "both released");
+    // A track with no instrument is no trouble.
+    rig.send(EngineCommand::Audition {
+        track: 40,
+        key: 64,
+        velocity: 100,
+    });
+    rig.send(EngineCommand::AuditionOff);
+    rig.run(256);
+}
+
+#[test]
 fn note_on_leaves_a_latency_record() {
     let mut rig = Rig::new();
     rig.parts
@@ -515,6 +558,12 @@ fn a_thousand_blocks_with_midi_never_touch_the_allocator() {
             }),
             23 => rig.send(EngineCommand::SetPlayTarget { track: block % 2 }),
             41 => rig.send(EngineCommand::AllNotesOff),
+            47 | 71 => rig.send(EngineCommand::Audition {
+                track: block % 3,
+                key: 40 + (block % 40) as u8,
+                velocity: 90,
+            }),
+            53 | 83 => rig.send(EngineCommand::AuditionOff),
             60 => {
                 assert!(
                     rig.parts

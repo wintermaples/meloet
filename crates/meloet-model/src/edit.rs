@@ -24,6 +24,12 @@ pub enum EditError {
     Unchanged,
     /// Every id has been given out.
     OutOfIds,
+    /// A note number past the end of the take.
+    NoSuchNote(usize),
+    /// A note that cannot be: length 0, key over 127, velocity 0 or over 127.
+    BadNote,
+    /// A note written outside the clip.
+    OutOfClip,
 }
 
 /// A new `Doc` and the step to remember it by.
@@ -80,10 +86,10 @@ pub struct RecordingAdded {
     pub active: usize,
 }
 
-struct Ids(u32);
+pub(crate) struct Ids(pub(crate) u32);
 
 impl Ids {
-    fn next(&mut self) -> Result<u32, EditError> {
+    pub(crate) fn next(&mut self) -> Result<u32, EditError> {
         let id = self.0;
         self.0 = id.checked_add(1).ok_or(EditError::OutOfIds)?;
         Ok(id)
@@ -293,14 +299,14 @@ pub fn set_meter(doc: &Doc, meter: Meter) -> Result<Edit, EditError> {
     })
 }
 
-fn track_index(doc: &Doc, id: TrackId) -> Result<usize, EditError> {
+pub(crate) fn track_index(doc: &Doc, id: TrackId) -> Result<usize, EditError> {
     doc.tracks
         .iter()
         .position(|t| t.id == id)
         .ok_or(EditError::NoSuchTrack(id))
 }
 
-fn clip_index(doc: &Doc, id: ClipId) -> Result<(usize, usize), EditError> {
+pub(crate) fn clip_index(doc: &Doc, id: ClipId) -> Result<(usize, usize), EditError> {
     doc.tracks
         .iter()
         .enumerate()
@@ -308,7 +314,7 @@ fn clip_index(doc: &Doc, id: ClipId) -> Result<(usize, usize), EditError> {
         .ok_or(EditError::NoSuchClip(id))
 }
 
-fn with_track(doc: &Doc, index: usize, track: Track) -> Doc {
+pub(crate) fn with_track(doc: &Doc, index: usize, track: Track) -> Doc {
     let mut new = doc.clone();
     new.tracks[index] = Arc::new(track);
     new

@@ -49,6 +49,15 @@ pub enum EngineCommand {
     },
     TestTone,
     AllNotesOff,
+    /// Sounds a key on a track, as the keyboard would, and lets go of the key the last
+    /// `Audition` sounded. Not recorded.
+    Audition {
+        track: usize,
+        key: u8,
+        velocity: u8,
+    },
+    /// Lets go of the key the last `Audition` sounded.
+    AuditionOff,
     /// Use [`EngineHandle::swap_sequence`]. The old sequence comes back on the retired ring.
     /// Notes the old one left sounding are released, and the pedal, wheel and bend it moved go
     /// back to 0.
@@ -504,6 +513,8 @@ pub struct Engine {
     sample_rate: f32,
     max_frames: usize,
     tone: TestTone,
+    /// The track and key the last `Audition` sounded, until it is let go.
+    audition: Option<(usize, u8)>,
     last_callback: Option<(Instant, f64)>,
 }
 
@@ -556,6 +567,7 @@ impl Engine {
             sample_rate: config.sample_rate as f32,
             max_frames: config.max_frames,
             tone: TestTone::idle(),
+            audition: None,
             last_callback: None,
         };
         let handle = EngineHandle {
@@ -605,6 +617,7 @@ impl Engine {
         t.scale = scale;
         t.state = TransportState::Stopped;
         self.tone = TestTone::idle();
+        self.audition = None;
         self.click = Click::idle();
         self.last_callback = None;
     }
@@ -699,10 +712,30 @@ impl Engine {
                 }
                 EngineCommand::TestTone => self.tone.start(self.sample_rate),
                 EngineCommand::AllNotesOff => {
+                    self.audition = None;
                     for instrument in self.tracks.iter_mut().filter_map(|t| t.instrument.as_mut()) {
                         instrument.event(InstrumentEvent::AllNotesOff);
                     }
                 }
+                EngineCommand::Audition {
+                    track,
+                    key,
+                    velocity,
+                } => {
+                    self.audition_off();
+                    if let Some(instrument) = self
+                        .tracks
+                        .get_mut(track)
+                        .and_then(|t| t.instrument.as_mut())
+                    {
+                        instrument.event(InstrumentEvent::NoteOn {
+                            note: key,
+                            velocity,
+                        });
+                        self.audition = Some((track, key));
+                    }
+                }
+                EngineCommand::AuditionOff => self.audition_off(),
                 EngineCommand::SetTempo {
                     ticks_per_beat,
                     beats_per_bar,
@@ -776,6 +809,14 @@ impl Engine {
                     }
                 }
             }
+        }
+    }
+
+    fn audition_off(&mut self) {
+        if let Some((track, key)) = self.audition.take()
+            && let Some(instrument) = self.tracks[track].instrument.as_mut()
+        {
+            instrument.event(InstrumentEvent::NoteOff { note: key });
         }
     }
 

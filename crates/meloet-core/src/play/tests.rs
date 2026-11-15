@@ -758,7 +758,7 @@ fn the_piano_roll_section_follows_the_shown_take() {
     assert_ne!(shown, c.take_id);
     assert_eq!(m.view().piano_roll.take, Some(shown));
 
-    // Not made yet: taken, and nothing changes.
+    // Selecting and the grid change the piano roll only.
     let before = m.view();
     cmd(
         m,
@@ -775,7 +775,15 @@ fn the_piano_roll_section_follows_the_shown_take() {
             triplet: true,
         },
     );
-    assert_eq!(m.view().piano_roll, before.piano_roll);
+    let after = m.view().piano_roll;
+    assert_eq!(after.selected_notes, [IndexRange { start: 0, end: 1 }]);
+    assert_eq!(
+        after.grid,
+        Grid {
+            division: 8,
+            triplet: true
+        }
+    );
     assert_eq!(m.view().song, before.song);
 }
 

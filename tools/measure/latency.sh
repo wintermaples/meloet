@@ -2,13 +2,14 @@
 # Measures key -> screen and key -> sound of the release build with the virtual keyboard.
 #
 # usage: tools/measure/latency.sh [--window 1920x1080] [--count 120] [--out DIR] [--keep-ui]
-#                                 [--no-build] [--state stopped|playing|recording]
+#                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
 #   that the PC is not busy while measuring).
 # --state: what the transport does while the keys are played. playing and recording turn the
 #   metronome on and start before the first key (recording: after its count-in).
+# --jitter-ms: each key comes up to N ms later than its even step (random, below 137).
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
 # the output chooser, plays --count keys (quiet), lets meloet exit, and writes
@@ -22,6 +23,7 @@ out=
 keep_ui=0
 build=1
 state=stopped
+jitter_ms=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
@@ -30,7 +32,8 @@ while [ $# -gt 0 ]; do
     --keep-ui) keep_ui=1; shift ;;
     --no-build) build=0; shift ;;
     --state) state=$2; shift 2 ;;
-    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording]" >&2; exit 2 ;;
+    --jitter-ms) jitter_ms=$2; shift 2 ;;
+    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N]" >&2; exit 2 ;;
   esac
 done
 
@@ -47,7 +50,7 @@ lead_ms=500
 # Only this client counts as a keyboard, so that virtual keyboards of other runs stay out.
 vkeys_name=meloet-vkeys-latency-$$
 tail_ms=6000      # after the last key: the screen reports every 2 s
-exit_ms=$((settle_s * 1000 + lead_ms + count * interval_ms + tail_ms))
+exit_ms=$((settle_s * 1000 + lead_ms + count * interval_ms + jitter_ms + tail_ms))
 
 start_ms=$((confirm_ms + 1000))   # the stream is open by then
 case "$state" in
@@ -93,7 +96,7 @@ if ! kill -0 "$app" 2>/dev/null; then
   cat "$out/raw/meloet.stderr" >&2
   exit 1
 fi
-"$target/release/meloet-vkeys" play --name "$vkeys_name" --count "$count" --interval-ms "$interval_ms" \
+"$target/release/meloet-vkeys" play --name "$vkeys_name" --count "$count" --interval-ms "$interval_ms" --jitter-ms "$jitter_ms" \
   --hold-ms "$hold_ms" --velocity "$velocity" --lead-ms "$lead_ms" --log "$work/vkeys.json"
 
 # The page may have loaded late; give the exit hook that long, then stop waiting.
@@ -111,4 +114,4 @@ wait "$app" || true
 cp "$work/vkeys.json" "$out/raw/" 2>/dev/null || true
 cp "$work/measure/"*.json "$out/raw/" 2>/dev/null || true
 python3 -I "$root/tools/measure/summarize.py" "$out/raw" --vkeys "$out/raw/vkeys.json" \
-  --out "$out" --label "release, window $window, $state, $count keys"
+  --out "$out" --label "release, window $window, $state, $count keys, jitter $jitter_ms ms"

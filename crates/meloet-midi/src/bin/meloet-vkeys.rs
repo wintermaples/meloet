@@ -12,7 +12,7 @@ use meloet_midi::vkeys::VirtualKeyboard;
 use meloet_midi::{MidiEvent, VKEYS_CLIENT_NAME};
 
 const USAGE: &str = "\
-meloet-vkeys play   [--notes 60,64,67] [--count 8] [--interval-ms 250] [--hold-ms 120] [--velocity 90] [--log FILE]
+meloet-vkeys play   [--notes 60,64,67] [--count 8] [--interval-ms 250] [--jitter-ms 0] [--hold-ms 120] [--velocity 90] [--log FILE]
 meloet-vkeys cc     --controller N --value N
 meloet-vkeys bend   --value N            (-8192..8191)
 meloet-vkeys appear [--seconds 5]
@@ -94,6 +94,7 @@ fn run(argv: &[String]) -> Result<(), String> {
                 .collect::<Result<_, _>>()?;
             let count: usize = args.get("count", Some(8))?;
             let interval = Duration::from_millis(args.get("interval-ms", Some(250))?);
+            let jitter_ms: u64 = args.get("jitter-ms", Some(0))?;
             let hold = Duration::from_millis(args.get("hold-ms", Some(120))?);
             let velocity: u8 = args.get("velocity", Some(90))?;
             let log: Option<String> = args.0.remove("log");
@@ -103,13 +104,22 @@ fn run(argv: &[String]) -> Result<(), String> {
             }
             let keys = open()?;
             let start = Instant::now();
+            // xorshift64: keys at random phases against the screen's frames, not locked to them.
+            let mut seed = (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(1, |d| d.as_nanos() as u64))
+                | 1;
             let mut json = format!(
                 "{{\"client\":\"{name}\",\"address\":\"{}\",\"notes\":[",
                 keys.address()
             );
             for (index, note) in notes.iter().copied().cycle().take(count).enumerate() {
                 // Sleep to fixed points in time, so that a slow send does not shift later notes.
-                let at = start + interval * index as u32;
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                let jitter = Duration::from_micros(seed % (jitter_ms * 1000 + 1));
+                let at = start + interval * index as u32 + jitter;
                 sleep(at.saturating_duration_since(Instant::now()));
                 let on_t_us = send(&keys, MidiEvent::NoteOn { note, velocity })?;
                 sleep((at + hold).saturating_duration_since(Instant::now()));

@@ -1310,3 +1310,107 @@ fn control_points_through_the_commands() {
     );
     assert!(m.view().piano_roll.selected_controls.is_empty());
 }
+
+/// One clip over bar 2 with notes 10 ticks after each beat, its head and end trimmed by a beat:
+/// only the notes of beats 2 and 3 start inside it.
+fn trimmed_clip() -> (Play, u32) {
+    let mut s = Song::new_default();
+    let take = NewTake {
+        origin: BAR,
+        length: BAR,
+        notes: (0..4)
+            .map(|i| Note {
+                from: None,
+                start: 10 + 480 * i,
+                length: 100,
+                key: 60 + i as u8,
+                velocity: 90,
+            })
+            .collect(),
+        controls: Vec::new(),
+    };
+    s.doc = add_recording(&s.doc, TrackId(1), vec![take], 0)
+        .unwrap()
+        .0
+        .doc;
+    let mut p = fresh(s);
+    let clip = p.song().doc.tracks[0].clips[0].id.0;
+    p.select_clip(Some(clip));
+    (p, clip)
+}
+
+fn trim_both(p: &mut Play, clip: u32) {
+    let e = &mut Vec::new();
+    p.trim_clip(clip, ClipEdge::Start, 480, e);
+    p.trim_clip(clip, ClipEdge::End, -480, e);
+    let c = &p.clips_of(TrackId(1))[0];
+    assert_eq!((c.start, c.end), (BAR + 480, 2 * BAR - 480));
+}
+
+#[test]
+fn a_trimmed_clip_counts_and_selects_only_the_notes_inside() {
+    let (mut p, clip) = trimmed_clip();
+    assert_eq!(p.clips_of(TrackId(1))[0].note_count, 4);
+    p.select_all_notes();
+    assert_eq!(p.note_sel.notes, [0, 1, 2, 3]);
+
+    trim_both(&mut p, clip);
+    assert_eq!(p.clips_of(TrackId(1))[0].note_count, 2);
+    assert_eq!(p.piano_roll_notes(), 2);
+    assert_eq!(p.note_sel.notes, [1, 2], "the trimmed-off notes drop out");
+    let t = shown_id(&p);
+    p.clear_note_selection();
+    p.select_all_notes();
+    assert_eq!(
+        p.piano_roll_view().selected_notes,
+        [IndexRange { start: 1, end: 3 }]
+    );
+    let Some(StatusMessage::Summary {
+        notes: Some(sel), ..
+    }) = p.summary()
+    else {
+        panic!("{:?}", p.summary());
+    };
+    assert_eq!((sel.count, &sel.keys[..]), (2, &[61, 62][..]));
+    p.select_notes(t, vec![0, 1, 3], SelectMode::Replace);
+    assert_eq!(p.note_sel.notes, [1]);
+
+    // The head back: its note counts again, and the selection stays as it was.
+    p.trim_clip(clip, ClipEdge::Start, -480, &mut Vec::new());
+    assert_eq!(p.clips_of(TrackId(1))[0].note_count, 3);
+    assert_eq!(p.note_sel.notes, [1]);
+}
+
+#[test]
+fn quantizing_all_of_a_trimmed_clip_moves_only_the_notes_inside() {
+    let (mut p, clip) = trimmed_clip();
+    trim_both(&mut p, clip);
+    let e = &mut Vec::new();
+    let starts = |p: &Play| -> Vec<u64> {
+        let c = p.shown().unwrap();
+        let z = c.zero(c.active_take());
+        let take = &c.active_take().take;
+        take.notes
+            .iter()
+            .map(|n| (z + n.start as i64) as u64 - BAR)
+            .collect()
+    };
+    let t = shown_id(&p);
+    let notice = p.quantize(t, &[], e);
+    assert!(
+        matches!(notice, Some(StatusMessage::Quantized { count: 2, .. })),
+        "{notice:?}"
+    );
+    assert_eq!(starts(&p), [10, 480, 960, 1450]);
+
+    let t = shown_id(&p);
+    p.unquantize(t, &[], e);
+    assert_eq!(starts(&p), [10, 490, 970, 1450]);
+    assert_eq!(
+        p.steps().last(),
+        Some(&StepKind::Unquantize {
+            clip: ClipId(clip),
+            count: 2
+        })
+    );
+}

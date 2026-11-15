@@ -125,6 +125,19 @@ impl Clip {
     pub fn zero(&self, take: &ClipTake) -> i64 {
         self.start as i64 + take.offset
     }
+
+    /// Whether tick `tick` of the shown take is inside the clip, [start, end). A note shows,
+    /// sounds and counts only when its start is; the others stay in the take, trimmed off.
+    pub fn holds(&self, tick: u64) -> bool {
+        let at = i128::from(self.zero(self.active_take())) + i128::from(tick);
+        (i128::from(self.start)..i128::from(self.end)).contains(&at)
+    }
+
+    /// The notes of the shown take that start inside the clip.
+    pub fn note_count(&self) -> usize {
+        let take = &self.active_take().take;
+        take.notes.iter().filter(|n| self.holds(n.start)).count()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Measures key -> screen and key -> sound of the release build with the virtual keyboard.
 #
-# usage: tools/measure/latency.sh [--window 1920x1080] [--count 120] [--out DIR]
+# usage: tools/measure/latency.sh [--window 1920x1080] [--count 120] [--out DIR] [--keep-ui]
+#
+# --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
 # the output chooser, plays --count keys (quiet), lets meloet exit, and writes
@@ -12,12 +14,14 @@ set -euo pipefail
 window=1920x1080
 count=120
 out=
+keep_ui=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
     --count) count=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
-    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR]" >&2; exit 2 ;;
+    --keep-ui) keep_ui=1; shift ;;
+    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui]" >&2; exit 2 ;;
   esac
 done
 
@@ -34,7 +38,7 @@ lead_ms=500
 tail_ms=6000      # after the last key: the screen reports every 2 s
 exit_ms=$((settle_s * 1000 + lead_ms + count * interval_ms + tail_ms))
 
-(cd "$root/ui" && npm run build)
+if [ "$keep_ui" = 0 ]; then (cd "$root/ui" && npm run build); fi
 (cd "$root" && cargo build --release -p meloet-app -p meloet-midi)
 
 work=$(mktemp -d)

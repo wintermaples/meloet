@@ -1,7 +1,7 @@
 <!-- 再生まわりの帯（モック F-Connect1・F-Empty・Main の上の帯）。再生と録音はまだ使えない。 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { glSlot } from "../gl/slot";
+  import { glRegion, glSlot } from "../gl/slot";
   import { term } from "../lib/tip.svelte";
   import { current, onTelemetry } from "../state/app.svelte";
   import { t } from "../text/ja";
@@ -96,7 +96,7 @@
       <span class="m-lbl" use:term={"マスター"}>{t("transport.master")}</span>
       <span class="m-num master-db">{peakText(masterPeak)}</span>
     </div>
-    <div class="meter" use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
+    <div class="meter" use:glRegion={"masterMeter"} use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
   </div>
 </header>
 

@@ -4,7 +4,7 @@
   import { keyIsDown } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
-  import { glSlot } from "../gl/slot";
+  import { glRegion, glSlot } from "../gl/slot";
   import { term, tip } from "../lib/tip.svelte";
   import { current, onEvent } from "../state/app.svelte";
   import { t } from "../text/ja";
@@ -185,6 +185,7 @@
     <div
       class="keys"
       class:narrow={!slim && fit.narrowKeys}
+      use:glRegion={"inputKeys"}
       use:glSlot={{
         kind: "keyboard",
         size: slim ? "slim" : "full",
@@ -214,7 +215,7 @@
           {#if measuring}
             <span class="velocity-bar"></span>
           {:else}
-            <span class="velocity-bar" use:glSlot={{ kind: "velocity" }}></span>
+            <span class="velocity-bar" use:glRegion={"inputVelocity"} use:glSlot={{ kind: "velocity" }}></span>
           {/if}
         </span>
       {/if}

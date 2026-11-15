@@ -1,6 +1,19 @@
 // Places where WebGL draws. A component puts a box in the HTML layout and marks it with
-// `use:glSlot={...}`; the engine (engine.ts) puts a canvas of that box's size into the box, above
-// what the box holds, and draws it when its picture changes.
+// `use:glSlot={...}`, inside a box (or on the same box) marked with `use:glRegion={name}`. The engine
+// (engine.ts) puts one canvas into each region's box, as big as the part of the box its slots cover,
+// above what the box holds, and draws every slot of the region into it when the picture changes.
+
+import type { ColorName } from "../design/tokens";
+import type { RegionName } from "./budget";
+
+/** A rectangle of a "rects" slot, in CSS px from the top left of the slot's box. */
+export interface GlRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: ColorName;
+}
 
 export type MeterSource = "master" | { track: number };
 
@@ -17,7 +30,9 @@ export type GlSlot =
   /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. */
   | { kind: "arrangeGrid"; barPx: number; firstBarX: number }
   /** The 40 px arrange overview (clip lines, visible range, play position). */
-  | { kind: "overview" };
+  | { kind: "overview" }
+  /** Any rectangles (clips, the notes in them). Later ones on top; slots later in the page on top of earlier ones. */
+  | { kind: "rects"; rects: readonly GlRect[] };
 
 /** Told about every marked box: the ones already in the page, then each change. */
 export interface SlotWatcher {
@@ -27,6 +42,7 @@ export interface SlotWatcher {
 }
 
 const slots = new Map<HTMLElement, GlSlot>();
+const regions = new Map<HTMLElement, RegionName>();
 let watcher: SlotWatcher | null = null;
 
 export function glSlot(node: HTMLElement, slot: GlSlot) {
@@ -53,4 +69,24 @@ export function watchSlots(next: SlotWatcher): () => void {
   return () => {
     if (watcher === next) watcher = null;
   };
+}
+
+/** Marks the box whose one canvas draws every slot inside it. The name is a row of REGIONS (budget.ts). */
+export function glRegion(node: HTMLElement, name: RegionName) {
+  regions.set(node, name);
+  node.dataset.glRegion = name;
+  return {
+    destroy() {
+      regions.delete(node);
+    },
+  };
+}
+
+/** The nearest region box around a slot's box (or the box itself). */
+export function regionOf(node: HTMLElement): { host: HTMLElement; name: RegionName } | null {
+  for (let n: HTMLElement | null = node; n; n = n.parentElement) {
+    const name = regions.get(n);
+    if (name) return { host: n, name };
+  }
+  return null;
 }

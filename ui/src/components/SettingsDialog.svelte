@@ -2,7 +2,7 @@
 <script lang="ts">
   import { space, type Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
-  import { glSlot } from "../gl/slot";
+  import { glRegion, glSlot } from "../gl/slot";
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
@@ -116,7 +116,7 @@
               <Button test="settings-test-tone" disabled={!settings.draftOutput} onclick={testTone}>
                 {t("endpoint.testTone")}
               </Button>
-              <div class="level" use:glSlot={{ kind: "meter", source: "master", gap: meterGap }}></div>
+              <div class="level" use:glRegion={"settingsMeter"} use:glSlot={{ kind: "meter", source: "master", gap: meterGap }}></div>
             </div>
             <UnusableEndpoints
               rows={groups.unusable}
@@ -154,6 +154,7 @@
               <div
                 class="keys"
                 style:--white-keys={WHITE_KEYS}
+                use:glRegion={"settingsKeys"}
                 use:glSlot={{ kind: "keyboard", size: "slim", firstNote: FIRST_NOTE, lastNote: LAST_NOTE }}
               ></div>
             </div>

@@ -4,8 +4,9 @@ import type { Batch } from "./batch";
 import { rgb } from "./color";
 import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
+import type { GlRect } from "./slot";
 
-/** A slot's box in device pixels (whole numbers). `hair` is line.hair: always one device pixel. */
+/** A slot's box in device pixels of its canvas (whole numbers; it may reach past the canvas). `hair` is line.hair: always one device pixel. */
 export interface Box {
   x0: number;
   y0: number;
@@ -106,6 +107,13 @@ export function paintArrangeGrid(out: Batch, box: Box, firstBarX: number, barPx:
     const x = x0 + Math.round(firstBarX + k * barPx);
     if (x >= x1) break;
     out.rect(x, y0, x + HAIR, y1, rgb(ARRANGE_GRID.line));
+  }
+}
+
+/** `rects` are CSS px from the box's top left; `dpr` turns them into device pixels. */
+export function paintRects(out: Batch, box: Box, rects: readonly GlRect[], dpr: number): void {
+  for (const r of rects) {
+    out.rect(box.x0 + r.x * dpr, box.y0 + r.y * dpr, box.x0 + (r.x + r.w) * dpr, box.y0 + (r.y + r.h) * dpr, rgb(r.color));
   }
 }
 

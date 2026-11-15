@@ -390,6 +390,20 @@ export const SCENES: Record<string, SceneDef> = {
   history: { setup: ready, bands: ["history"], meters: QUIET },
   shelf: { setup: ready, bands: ["shelf"], meters: QUIET },
   params: { setup: ready, bands: ["params"], meters: QUIET },
+  // Not from a mock: 16 tracks, every meter showing a level, to check that the WebGL contexts do not grow with the tracks.
+  tracks16: {
+    setup(s) {
+      ready(s);
+      s.song.tracks = Array.from({ length: 16 }, (_, i) => ({ ...s.song.tracks[0]!, number: i + 1, color: (i % 5) + 1 }));
+    },
+    meters: {
+      keys: [60, 64, 67],
+      velocity: 87,
+      loadPermille: 120,
+      master: [dbfs(-6.2), dbfs(-7.0)],
+      tracks: Array.from({ length: 16 }, (_, i): [number, number] => [dbfs(-3 - 2 * i), dbfs(-4 - 2 * i)]),
+    },
+  },
   // The mock "拡大率をえらぶ所": a 1200x700 screen, 150 % does not fit, 125 % is on.
   zoom: { setup: ready, scale: 125, screen: { width: 1200, height: 700 }, meters: QUIET },
   // The mixer was open, then the piano roll was opened in a window too low for both.

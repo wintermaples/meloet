@@ -2,7 +2,7 @@
      小節の線と全体図は WebGL が描く。children は、アレンジの上に重ねる物（出口えらび、案内）。 -->
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { glSlot } from "../gl/slot";
+  import { glRegion, glSlot } from "../gl/slot";
   import { term } from "../lib/tip.svelte";
   import { current } from "../state/app.svelte";
   import { t } from "../text/ja";
@@ -23,12 +23,12 @@
 {#if layout.arrangeOverview}
   <section class="overview" style:height="{height}px">
     <div class="overview-label"><span class="m-lbl">{t("arrange.overview")}</span></div>
-    <div class="overview-slot" use:glSlot={{ kind: "overview" }}></div>
+    <div class="overview-slot" use:glRegion={"overview"} use:glSlot={{ kind: "overview" }}></div>
     <div class="layer">{@render children?.()}</div>
   </section>
 {:else}
   <section class="arrange" style:height="{height}px">
-    <div class="head">
+    <div class="head" use:glRegion={"trackMeters"}>
       <div class="row between">
         <span class="m-name">{t("arrange.title")}</span>
         <span class="off" use:term={"グリッド"}>{t("arrange.grid")} <span class="m-num">1/16</span></span>
@@ -76,7 +76,7 @@
           {t("arrange.tempoAndSignature", { tempo: tempoText(song.tempoBpm), signature: `${song.meterNum}/${song.meterDen}` })}
         </span>
       </div>
-      <div class="lanes" use:glSlot={{ kind: "arrangeGrid", barPx, firstBarX: 0 }}>
+      <div class="lanes" use:glRegion={"arrangeLanes"} use:glSlot={{ kind: "arrangeGrid", barPx, firstBarX: 0 }}>
         {#each song.tracks as track (track.number)}
           <div class="lane"></div>
         {/each}

@@ -147,9 +147,13 @@ describe("曲のダイアログ", () => {
 });
 
 describe("取り消し", () => {
-  it("帯札: 「14 手」、取り消してあるときは「12 / 14」", () => {
-    show(BandRow, app.stateWith((s) => (s.song.undoCount = 14)));
-    expect(text("nav.row")).toContain("14 手");
+  it("帯札: いつも「取り消せる手 / 全部の手」（「0 / 0」「14 / 14」「12 / 14」）", () => {
+    show(BandRow, app.stateWith((s) => (s.song.undoCount = 0)));
+    expect(text("nav.row")).toContain("0 / 0");
+    app.setState(app.stateWith((s) => (s.song.undoCount = 14)));
+    flushSync();
+    expect(text("nav.row")).toContain("14 / 14");
+    expect(text("nav.row")).not.toContain("手");
     app.setState(
       app.stateWith((s) => {
         s.song.undoCount = 12;

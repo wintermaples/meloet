@@ -18,10 +18,7 @@
     { band: "pianoRoll", name: t("band.pianoRoll"), count: t("band.noteCount", { count: app.song.noteCount }), key: t("key.pianoRoll"), open: lower.includes("pianoRoll") },
     // マスターのフェーダーの値。今回は 0.0 dB のまま（docs/progress.md）。
     { band: "mixer", name: t("band.mixer"), count: t("band.masterDb", { db: t("common.db", { value: dbNumber(0) }) }), key: t("key.mixer"), open: lower.includes("mixer") },
-    { band: "history", name: t("band.history"), count:
-        app.song.redoCount > 0
-          ? t("band.stepCountUndone", { undo: app.song.undoCount, total: app.song.undoCount + app.song.redoCount })
-          : t("band.stepCount", { count: app.song.undoCount }), key: t("key.history"), open: lower.includes("history") },
+    { band: "history", name: t("band.history"), count: t("band.stepCount", { undo: app.song.undoCount, total: app.song.undoCount + app.song.redoCount }), key: t("key.history"), open: lower.includes("history") },
   ]);
 
   const backHint = $derived(app.workspace.layout.showBackHint ? t("msg.backToArrange") : null);

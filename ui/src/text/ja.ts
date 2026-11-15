@@ -290,9 +290,8 @@ export const texts = {
   "band.mixer": e("ミキサー", "mock:Main"),
   "band.masterDb": e("マスター {db}", "mock:Main", { db: "0.0 dB" }),
   "band.history": e("取り消しの履歴", "mock:Main"),
-  "band.stepCount": e("{count} 手", "mock:Main", { count: "14" }),
-  // 取り消してあるとき（仕様書 3 章の帯の表）。
-  "band.stepCountUndone": e("{undo} / {total}", "spec:3", { undo: "12", total: "14" }),
+  // 仕様書 3 章の帯の表の「12 / 14」の形を、取り消してあってもなくても使う（モック Main の「14 手」は使わない。ヤチヨさんの決め 2026-11-15）。
+  "band.stepCount": e("{undo} / {total}", "spec:3", { undo: "12", total: "14" }),
   "band.shelf": e("棚", "mock:F-ParamFew"),
   "band.shelfCount": e("音源 {instruments} ・ エフェクト {effects}", "mock:F-ParamFew", { instruments: "9", effects: "12" }),
   "band.params": e("パラメータ", "mock:F-ShelfArrange"),

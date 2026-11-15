@@ -10,6 +10,13 @@ key-to-screen.json (written by the screen). Writes summary.md and summary.json t
 All times are CLOCK_MONOTONIC. The screen's times are performance.now() in ms; the file gives
 offsetUs so that rustUs ~= ms * 1000 + offsetUs. The JS clock has 1 ms steps, so key -> screen
 is good to about +-0.5 ms.
+
+Key -> screen is also split by the time since the key before (NoteOn to NoteOn, as Rust
+received them, so a real keyboard's run reads the same way): "spaced" keys came more than one
+60 Hz frame after the key before, "soon after" keys within one frame (the 2nd and later keys
+of a chord, very fast playing). Spec 3 (4th edition): a key is lit within 2 frames; the 2nd
+and later keys of a chord may be one frame later. So the line is 2 frames for spaced keys and
+3 frames for keys soon after.
 """
 import argparse, json, math, os, sys
 
@@ -21,6 +28,13 @@ STUDY = {
     "keyToDacMs": {"mean": 13.5, "p95": 15.8, "max": 16.0},
 }
 FRAME_MS = 1000 / 60
+WAITED_MS = 2.0
+GAP_BINS = [
+    (0.0, FRAME_MS, "0–16.7"),
+    (FRAME_MS, 2 * FRAME_MS, "16.7–33.3"),
+    (2 * FRAME_MS, 150.0, "33.3–150"),
+    (150.0, math.inf, "150–"),
+]
 
 
 def quantile(sorted_xs, p):
@@ -55,6 +69,52 @@ def screen_times(screen):
     return to_js, to_draw, len(keys) - len(drawn)
 
 
+def draw_by_gap(screen):
+    """(ms since the key before or None for the first, Rust -> rAF that drew it) per drawn key."""
+    offset = screen.get("offsetUs")
+    if offset is None:
+        return []
+    out, before = [], None
+    for k in sorted(screen.get("keys", []), key=lambda k: k["tUs"]):
+        gap = None if before is None else (k["tUs"] - before) / 1000
+        before = k["tUs"]
+        if k.get("drawMs") is not None:
+            out.append((gap, k["drawMs"] - (k["tUs"] - offset) / 1000))
+    return out
+
+
+def shown_within(to_draw, frames):
+    """Percent lit within `frames`: drawn, plus one 60 Hz frame until the pixels show (an estimate)."""
+    if not to_draw:
+        return None
+    return 100 * sum(x + FRAME_MS <= frames * FRAME_MS for x in to_draw) / len(to_draw)
+
+
+def by_gap(pairs):
+    """Spaced keys and keys soon after (the first key counts as spaced), and the gap bins."""
+    groups = {}
+    for name, soon, frames in (("spaced", False, 2), ("soonAfter", True, 3)):
+        xs = [d for g, d in pairs if (g is not None and g <= FRAME_MS) == soon]
+        within = {n: shown_within(xs, n) for n in (2, 3)}
+        groups[name] = {
+            "keyToDrawMs": stats(xs),
+            "shownWithinTwoFramesPercent": within[2],
+            "shownWithinThreeFramesPercent": within[3],
+            "lineFrames": frames,
+            "lineMet": None if within[frames] is None else within[frames] >= 100,
+        }
+    gap = lambda g: math.inf if g is None else g
+    bins = []
+    for low, high, name in GAP_BINS:
+        xs = [d for g, d in pairs if (gap(g) > low or low == 0) and gap(g) <= high]
+        bins.append({
+            "gapMs": name,
+            "keyToDrawMs": stats(xs),
+            "waitedOver2Ms": sum(x > WAITED_MS for x in xs),
+        })
+    return groups, bins
+
+
 def sound_times(sound):
     records = sound.get("records", [])
     to_callback = [(r["callbackUs"] - r["keyUs"]) / 1000 for r in records]
@@ -75,6 +135,7 @@ def summarize(sound, screen, vkeys, label=""):
     to_js, to_draw, undrawn = screen_times(screen or {})
     to_callback, to_dac = sound_times(sound or {})
     shown = [x + FRAME_MS for x in to_draw]
+    groups, bins = by_gap(draw_by_gap(screen or {}))
     return {
         "label": label,
         "sampleRate": (sound or {}).get("sampleRate"),
@@ -88,6 +149,8 @@ def summarize(sound, screen, vkeys, label=""):
         "shownWithinTwoFramesPercent": (
             100 * sum(x <= 2 * FRAME_MS for x in shown) / len(shown) if shown else None
         ),
+        "keyToDrawByGap": groups,
+        "keyToDrawByGapBins": bins,
         "keyToCallbackMs": stats(to_callback),
         "keyToDacMs": stats(to_dac),
         "sentToRustMs": stats(sent_to_received(vkeys or {}, screen or {})),
@@ -101,6 +164,21 @@ def num(x, digits=2):
 
 def cells(s, names):
     return " / ".join(num(s.get(n) if s else None) for n in names)
+
+
+def percent(x):
+    return "—" if x is None else f"{x:.0f} %"
+
+
+def gap_row(title, g):
+    met = {None: "—", True: "met", False: "NOT met"}[g["lineMet"]]
+    n = g["keyToDrawMs"]["count"] if g["keyToDrawMs"] else 0
+    return (
+        f"| {title} | {n} | {cells(g['keyToDrawMs'], ['p50', 'p95', 'max'])} "
+        f"| {percent(g['shownWithinTwoFramesPercent'])} "
+        f"| {percent(g['shownWithinThreeFramesPercent'])} "
+        f"| {g['lineFrames']} frames: {met} |"
+    )
 
 
 def markdown(r):
@@ -121,6 +199,24 @@ def markdown(r):
         f"| {cells(r['keyToDrawMs'], ['p50', 'p95', 'max'])} | {count(r['keyToDrawMs'])} |",
         f"| study (real keys) | {cells(STUDY['keyToJsMs'], ['p50', 'p95', 'max'])} "
         f"| {cells(STUDY['keyToDrawMs'], ['p50', 'p95', 'max'])} | {STUDY['keyToDrawMs']['count']} |",
+        "",
+        "### By the time since the key before",
+        "",
+        "Lit = drawn (rAF) + one 60 Hz frame (an estimate). Spaced: more than one frame after the",
+        "key before; line 2 frames (33 ms). Soon after: within one frame; line 3 frames (50 ms).",
+        "",
+        "| | n | Rust -> drawn p50 / p95 / max | lit within 2 frames | within 3 frames | line |",
+        "|---|---|---|---|---|---|",
+        gap_row("spaced keys", r["keyToDrawByGap"]["spaced"]),
+        gap_row("keys soon after", r["keyToDrawByGap"]["soonAfter"]),
+        "",
+        "| since the key before (ms) | n | waited > 2 ms | Rust -> drawn p50 / p95 / max |",
+        "|---|---|---|---|",
+        *[
+            f"| {b['gapMs']} | {count(b['keyToDrawMs'])} | {b['waitedOver2Ms']} "
+            f"| {cells(b['keyToDrawMs'], ['p50', 'p95', 'max'])} |"
+            for b in r["keyToDrawByGapBins"]
+        ],
         "",
         "## Key -> sound (ms)",
         "",

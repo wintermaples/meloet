@@ -262,6 +262,7 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
 - 装置が要るテスト（実際の鍵盤、PipeWire）は `#[ignore]` にして、`scripts/check-all.sh --devices` で走らせる。
 - 見た目: `tools/design/shoot_ui.py`（偽物の状態をブラウザで撮り、モックと左右にならべる）と `tools/design/shoot_app.py`（本物のアプリを開発用の環境変数で動かして撮る）。撮った物は `docs/screenshots/`。
 - 速さ: `tools/measure/latency.sh`（release でアプリと仮想の鍵盤を動かし、鍵 → 画面、鍵 → 音を測って `summary.md` にする。`--state stopped|playing|recording` で再生中・録音中も）。本物の鍵盤は `tools/measure/real-keys.sh`（ヤチヨさんが弾いて窓を閉じる）。結果は `docs/measurements/`。
+- 和音と速い打鍵（第 3 回）: `latency.sh --pattern mixed` は、1 つずつの鍵、2〜4 音の和音（鍵どうし 0〜6 ms）、20〜150 ms あけた 2〜4 鍵の速い打鍵をまぜて弾く（`meloet-vkeys play --pattern spaced|fast|mixed --chord N --spread-ms N --fast-ms A-B`）。`summarize.py` は鍵 → 画面を、Rust が受けた押す鍵どうしの間で「間をあけた鍵」（前の鍵から 1 コマより後。線は 2 コマ）と「すぐあとの鍵」（1 コマ以内。線は 3 コマ）に分け、前の鍵からの間ごと（0〜16.7、16.7〜33.3、33.3〜150、150 ms〜）の表も出す。本物の鍵盤の記録も同じ形で読める。確かめは `python3 -I tools/measure/test_summarize.py`。
 - 録った位置（第 2 回）: `tools/measure/record-timing.sh private`（自分用の PipeWire で quantum 64〜1024）と `live <出口の id>`（本物の出口）。計器から拍が DAC に届く時刻を出し、その時刻に名前つきの仮想の鍵盤で押して、テイクの位置と拍をくらべる。ループ中の録音は `crates/meloet-core/tests/record_loop_private.rs`。
 - 長い録音（第 2 回）: `tools/measure/long-record.sh`（600 秒弾きつづけ、xrun、RSS、GC の目安を見る）。
 - 保存の途中で落とす試験（第 2 回）: `crates/meloet-core/src/songfile/tests.rs`。子のプロセスに保存させ、いろいろな瞬間に SIGKILL して、ファイルが前のか新しいかのどちらかで読めることを 120 回確かめる。

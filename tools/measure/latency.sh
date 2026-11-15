@@ -3,6 +3,7 @@
 #
 # usage: tools/measure/latency.sh [--window 1920x1080] [--count 120] [--out DIR] [--keep-ui]
 #                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
+#                                 [--pattern spaced|mixed]
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
@@ -10,6 +11,9 @@
 # --state: what the transport does while the keys are played. playing and recording turn the
 #   metronome on and start before the first key (recording: after its count-in).
 # --jitter-ms: each key comes up to N ms later than its even step (random, below 137).
+# --pattern: spaced (the default) plays one key at a time; mixed plays single keys, chords of
+#   2..4 (keys 0..6 ms apart) and runs of 2..4 keys 20..150 ms apart, like real playing. The
+#   summary splits key -> screen into spaced keys and keys soon after (within one frame).
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
 # the output chooser, plays --count keys (quiet), lets meloet exit, and writes
@@ -24,6 +28,7 @@ keep_ui=0
 build=1
 state=stopped
 jitter_ms=0
+pattern=spaced
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
@@ -33,7 +38,8 @@ while [ $# -gt 0 ]; do
     --no-build) build=0; shift ;;
     --state) state=$2; shift 2 ;;
     --jitter-ms) jitter_ms=$2; shift 2 ;;
-    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N]" >&2; exit 2 ;;
+    --pattern) pattern=$2; shift 2 ;;
+    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed]" >&2; exit 2 ;;
   esac
 done
 
@@ -50,7 +56,18 @@ lead_ms=500
 # Only this client counts as a keyboard, so that virtual keyboards of other runs stay out.
 vkeys_name=meloet-vkeys-latency-$$
 tail_ms=6000      # after the last key: the screen reports every 2 s
-exit_ms=$((settle_s * 1000 + lead_ms + count * interval_ms + jitter_ms + tail_ms))
+case "$pattern" in
+  spaced)
+    play_args=(--pattern spaced)
+    play_ms=$((count * interval_ms + jitter_ms)) ;;
+  mixed)
+    # Enough notes that a chord or a run never needs one that is still held.
+    play_args=(--pattern mixed --notes 60,62,64,65,67,69,71,72 --spread-ms 6 --fast-ms 20-150)
+    # Every key is at most interval + jitter after the one before (a run's 150 ms is less).
+    play_ms=$((count * (interval_ms + jitter_ms))) ;;
+  *) echo "latency.sh: --pattern must be spaced or mixed" >&2; exit 2 ;;
+esac
+exit_ms=$((settle_s * 1000 + lead_ms + play_ms + tail_ms))
 
 start_ms=$((confirm_ms + 1000))   # the stream is open by then
 case "$state" in
@@ -97,7 +114,7 @@ if ! kill -0 "$app" 2>/dev/null; then
   exit 1
 fi
 "$target/release/meloet-vkeys" play --name "$vkeys_name" --count "$count" --interval-ms "$interval_ms" --jitter-ms "$jitter_ms" \
-  --hold-ms "$hold_ms" --velocity "$velocity" --lead-ms "$lead_ms" --log "$work/vkeys.json"
+  --hold-ms "$hold_ms" --velocity "$velocity" --lead-ms "$lead_ms" --log "$work/vkeys.json" "${play_args[@]}"
 
 # The page may have loaded late; give the exit hook that long, then stop waiting.
 limit=$((exit_ms / 1000 + 30))
@@ -114,4 +131,4 @@ wait "$app" || true
 cp "$work/vkeys.json" "$out/raw/" 2>/dev/null || true
 cp "$work/measure/"*.json "$out/raw/" 2>/dev/null || true
 python3 -I "$root/tools/measure/summarize.py" "$out/raw" --vkeys "$out/raw/vkeys.json" \
-  --out "$out" --label "release, window $window, $state, $count keys, jitter $jitter_ms ms"
+  --out "$out" --label "release, window $window, $state, $count keys, $pattern, jitter $jitter_ms ms"

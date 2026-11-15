@@ -614,8 +614,8 @@
       <div class="row">
         <span class="m-name">{t("arrange.title")}</span>
         <span class="zoom">
-          <button class="m-btn zoom-btn" aria-label={t("arrange.zoomOut")} onclick={() => zoomArrangeBy(-1)}>{t("arrange.zoomOutMark")}</button>
-          <button class="m-btn zoom-btn" aria-label={t("arrange.zoomIn")} onclick={() => zoomArrangeBy(1)}>{t("arrange.zoomInMark")}</button>
+          <button class="m-btn zoom-btn" aria-label={t("zoom.out")} onclick={() => zoomArrangeBy(-1)}>{t("zoom.outMark")}</button>
+          <button class="m-btn zoom-btn" aria-label={t("zoom.in")} onclick={() => zoomArrangeBy(1)}>{t("zoom.inMark")}</button>
         </span>
         <span class="m-lbl" use:term={"グリッド"}>{t("arrange.grid")} <span class="m-num m-hi">{gridText(0, false)}</span></span>
       </div>

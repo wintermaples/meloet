@@ -85,15 +85,6 @@ describe("当たりと囲み", () => {
     expect(G.notesInBox(n, GEOM, 250, y(60), 150, y(62))).toEqual([0, 1]);
     expect(G.notesInBox(n, GEOM, 0, 0, 100, 100)).toEqual([]);
   });
-
-  it("鳴っている音のビット（変わったら true）", () => {
-    const bits = new Uint32Array(4);
-    expect(G.soundingKeys(n, 1920 + 100, bits)).toBe(true);
-    expect((bits[1]! >>> (60 - 32)) & 1).toBe(1);
-    expect(G.soundingKeys(n, 1920 + 101, bits)).toBe(false);
-    expect(G.soundingKeys(n, 0, bits)).toBe(true);
-    expect([...bits]).toEqual([0, 0, 0, 0]);
-  });
 });
 
 describe("ドラッグの量", () => {

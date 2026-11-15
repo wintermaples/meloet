@@ -124,14 +124,13 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
 });
 
 describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
-  it("位置「3.1.000 〜」、音「D4 E4 F4」、長さ「ばらばら」、ベロシティ「77 – 83」、数 3", async () => {
+  it("位置「3.1.000 〜」、音「D4 E4 F4」、長さ「ばらばら」、ベロシティ「77 – 83」", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     expect(text(q('[data-test="inspector-position"]'))).toBe("3.1.000 〜");
     expect(text(q('[data-test="inspector-keys"]'))).toBe("D4 E4 F4");
     expect(text(q('[data-test="inspector-length"]'))).toBe("ばらばら");
     expect(text(q('[data-test="inspector-velocity"]'))).toBe("77 – 83");
-    expect(text(q(".count"))).toBe("3");
   });
 
   it("1 つだけなら位置に「〜」をつけず、長さとベロシティは値", async () => {

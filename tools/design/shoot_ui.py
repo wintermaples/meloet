@@ -48,8 +48,6 @@ BOARDS = {
     "recover1": "F-Recover1",
     "recover2": "F-Recover2",
     "recover3": "F-Recover3",
-    "pianoRollWide": "F-WidePR",
-    "pianoRollPlay": "F-PRPlay",
     "arrangeZoomIn": "R3-Arrange",
     "scaleMenu": "A-PianoRoll",
 }

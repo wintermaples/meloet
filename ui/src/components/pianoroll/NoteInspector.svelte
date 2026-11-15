@@ -1,5 +1,5 @@
 <!-- ピアノロールの右の「選んだノート」の中身（モック A-PianoRoll・F-WidePR の右の欄: 選んだノート、クオンタイズ、スケール、長さをそろえる、
-     ベロシティをまとめて変える）。たたんだ縦の見出しは、帯の部品（PianoRoll.svelte）が描く。これは、ひらいたときの中身だけを、親の箱いっぱいに描く。
+     ベロシティをまとめて変える）。見出し（▾ 選んだノート 3）とたたんだ縦の見出しは、帯の部品（PianoRoll.svelte）が描く。これは、ひらいたときの中身だけを、親の箱いっぱいに描く。
      区切り1 で動くのは「スケール」の音階と固定だけ（setMusicalScale を送る）。選んだノートは見るだけ。クオンタイズは値を見せる「使えない」の見た目。
      「長さをそろえる」「ベロシティをまとめて変える」は、中身が仕様書にもモックにもないので、たたんだ見出しだけの「使えない」。 -->
 <script lang="ts">
@@ -115,27 +115,22 @@
 
 <div class="inspector" data-testid="pr-inspector">
   <ScrollArea>
-    <div class="hd">
-      <span class="m-hi">▾</span>
-      <span class="m-hi grow">{t("inspector.selected")}</span>
-      <span class="m-num" class:count={count > 0} class:m-lbl={count === 0}>{count}</span>
-    </div>
     <div class="rw">
-      <span class="m-lbl grow">{t("inspector.position")}</span>
+      <span class="m-lbl grow">{t("note.position")}</span>
       <span class="m-num m-hi" data-test="inspector-position">
         {#if summary}{count > 1 ? t("inspector.from", { position: summary.position }) : summary.position}{/if}
       </span>
     </div>
     <div class="rw">
-      <span class="m-lbl grow">{t("inspector.key")}</span>
+      <span class="m-lbl grow">{t("note.key")}</span>
       <span class="m-num m-hi value" data-test="inspector-keys">{summary?.keys ?? ""}</span>
     </div>
     <div class="rw">
-      <span class="m-lbl grow">{t("inspector.length")}</span>
+      <span class="m-lbl grow">{t("note.length")}</span>
       <span class="m-num m-hi" data-test="inspector-length">{summary ? (summary.length ?? t("inspector.mixed")) : ""}</span>
     </div>
     <div class="rw">
-      <span class="m-lbl grow" use:term={"ベロシティ"}>{t("inspector.velocity")}</span>
+      <span class="m-lbl grow" use:term={"ベロシティ"}>{t("pr.velocity")}</span>
       <span class="m-num m-hi" data-test="inspector-velocity">{velocity}</span>
     </div>
 
@@ -145,7 +140,7 @@
       {#if quantized}<span class="m-lbl" data-test="inspector-quantized">{t("inspector.quantized")}</span>{/if}
     </div>
     <div class="rw off">
-      <span class="grow" use:term={"グリッド"}>{t("inspector.grid")}</span>
+      <span class="grow" use:term={"グリッド"}>{t("pr.grid")}</span>
       <span class="m-num">{gridText(q.division, q.triplet)}</span>
     </div>
     {@render slider(t("inspector.strength"), null, q.strength)}
@@ -235,9 +230,6 @@
     background: var(--color-gray-4);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     white-space: nowrap;
-  }
-  .count {
-    color: var(--color-accent);
   }
   /* たたんだ「使えない」見出し: 文字 gray.7、押せない。 */
   .hd.folded {

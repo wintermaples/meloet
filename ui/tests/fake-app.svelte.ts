@@ -16,6 +16,9 @@ export const current = {
   get failure(): string | null {
     return null;
   },
+  get connected(): boolean {
+    return true;
+  },
   get telemetry(): Telemetry | null {
     return telemetry;
   },

@@ -114,8 +114,13 @@ describe("道具の列", () => {
 });
 
 describe("左右の欄と CC の札", () => {
-  it("見出しを押すとたたんで縦の見出し（ノートの一覧 23 ・ 選んだノート 3）、押すとひらく", () => {
+  it("見出しは欄ごとに 1 つ（▾ ノートの一覧 23 ・ ▾ 選んだノート 3）。押すとたたんで縦の見出し、押すとひらく", () => {
     show(scene());
+    expect(text(q("[data-test=pr-list-fold]"))).toBe("▾ ノートの一覧 23");
+    expect(text(q("[data-test=pr-inspector-fold]"))).toBe("▾ 選んだノート 3");
+    const band = q("[data-band=pianoRoll]")!;
+    expect(band.textContent!.split("選んだノート").length - 1).toBe(1);
+    expect(band.textContent!.split("ノートの一覧").length - 1).toBe(1);
     q("[data-test=pr-list-fold]")!.click();
     q("[data-test=pr-inspector-fold]")!.click();
     flushSync();

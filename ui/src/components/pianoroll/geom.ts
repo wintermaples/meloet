@@ -281,19 +281,6 @@ export function duplicateTicks(n: Shown, notes: readonly number[], step: number)
   return Math.max(step, Math.ceil((last - first) / step) * step);
 }
 
-/** 鳴っている音: tick にかかっているノートの鍵を、4 語のビットに入れる。変わったら true。 */
-export function soundingKeys(n: Shown | null, tick: number, out: Uint32Array): boolean {
-  const before = [out[0], out[1], out[2], out[3]];
-  out.fill(0);
-  if (n) {
-    eachNoteIn(n, tick, tick + 1e-9, (i) => {
-      const k = n.take.keys[i]!;
-      out[k >>> 5]! |= 1 << (k & 31);
-    });
-  }
-  return out[0] !== before[0] || out[1] !== before[1] || out[2] !== before[2] || out[3] !== before[3];
-}
-
 /** クオンタイズしたテイクで、もとのノートと位置か長さか鍵がちがうノートの、もとの番号（ちがわなければ -1）。 */
 export function movedFrom(take: TakeNotes, origin: TakeNotes, i: number): number {
   const j = take.froms[i]!;
@@ -331,9 +318,6 @@ export function barsText(start: number, end: number, meter: Meter): string {
   const last = Math.max(first, Math.ceil(end / perBar));
   return `${first}–${last}`;
 }
-
-/** 「1/16」。0 は null（「1 小節」の文を使う）。 */
-export const gridFraction = (division: number) => (division === 0 ? null : `1/${division}`);
 
 // ---- CC の札の数 ----
 

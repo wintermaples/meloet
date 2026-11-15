@@ -143,8 +143,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (k.key === "Enter") return { kind: "chooserConfirm" };
   }
 
-  // 仕様書 4 章: Home は文字を打っている最中も効く。Space は効かず、空白として入る。
-  // Delete は表では「効く」だが、打っている最中は文字を消すほうにのこす（打っている数字の枠でクリップが消えないように）。
+  // 仕様書 4 章: Home は文字を打っている最中も効く。Space は効かず、空白として入る。Delete も効かず、枠の中の文字を消す。
   if (k.key === "Home") return k.shift ? null : { kind: "toStart" };
   if (typing) return null;
   if (k.key === " " || k.code === "Space") return k.shift ? null : { kind: "playStop" };

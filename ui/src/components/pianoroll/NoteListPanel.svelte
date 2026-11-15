@@ -84,9 +84,9 @@
 
 <div class="list" data-testid="pr-note-list">
   <div class="cols head m-lbl">
-    <span class="r">{t("noteList.position")}</span>
-    <span>{t("noteList.key")}</span>
-    <span class="r">{t("noteList.length")}</span>
+    <span class="r">{t("note.position")}</span>
+    <span>{t("note.key")}</span>
+    <span class="r">{t("note.length")}</span>
     <span class="r">{t("noteList.velocity")}</span>
   </div>
   <ScrollArea bind:viewport data-test="note-list-rows">

@@ -1,9 +1,6 @@
 // 偽物の場面で画面ぜんたいを組み立て、WebGL の文脈の数が予算の中にあるかを見る（gl.surface.test.ts の形）。
-import { flushSync, mount, unmount } from "svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import App from "../src/App.svelte";
-import { CONTEXT_BUDGET } from "../src/gl/budget";
-import { contextsMade, resetPool } from "../src/gl/pool";
+// 場面ごとに、モジュールを読みなおす（橋と状態はモジュールの中にあるので、前の場面の物が残る。残ると、ピアノロールが前の場面の録っている物の帳面をつかむ）。
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** にせの WebGL2 と、手で回す rAF。 */
 function fakePage() {
@@ -25,7 +22,7 @@ function fakePage() {
   };
 }
 
-const settle = async (frame: () => void) => {
+const settle = async (frame: () => void, flushSync: () => void) => {
   for (let i = 0; i < 10; i++) {
     await new Promise((r) => setTimeout(r, 0));
     flushSync();
@@ -38,6 +35,9 @@ const regions = () =>
   [...document.querySelectorAll("canvas")].map((c) => (c.parentElement as HTMLElement).dataset.glRegion).sort();
 
 describe("場面ごとの WebGL の文脈の数", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -46,17 +46,21 @@ describe("場面ごとの WebGL の文脈の数", () => {
   });
 
   it.each([
-    ["pianoRollRec", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
     ["recording", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
     ["takes", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys"]],
     ["takesArrange", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "trackMeters"]],
     ["tracks16", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "trackMeters"]],
+    ["pianoRollRec", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
   ])("%s: 区画ごとに 1 枚で、予算をこえない", async (scene, expected) => {
+    const { flushSync, mount, unmount } = await import("svelte");
+    const { default: App } = await import("../src/App.svelte");
+    const { CONTEXT_BUDGET } = await import("../src/gl/budget");
+    const { contextsMade, resetPool } = await import("../src/gl/pool");
     resetPool();
     const frame = fakePage();
     history.replaceState(null, "", `/?scene=${scene}&scale=100`);
     const app = mount(App, { target: document.body });
-    await settle(frame);
+    await settle(frame, flushSync);
     expect(regions()).toEqual(expected);
     expect(contextsMade()).toBe(expected.length);
     expect(contextsMade()).toBeLessThanOrEqual(CONTEXT_BUDGET);

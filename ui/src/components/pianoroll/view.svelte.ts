@@ -8,7 +8,10 @@ import { TICKS_PER_QUARTER } from "../time";
 
 export type Tool = "select" | "draw" | "erase";
 
-/** 横の拡大の段（拡大率 100 % で、4 分音符 1 つの px）。80 はモック A-PianoRoll（1 拍 80 px）。 */
+/**
+ * 横の拡大の段（拡大率 100 % で、4 分音符 1 つの px）。クリップをひらいたときは、そのクリップが入るいちばん大きい段にする
+ * （geom.ts の fitQuarterPx。モック A-PianoRoll は 1 拍 40 px、F-WidePR は 80 px）。DEFAULT_QUARTER_PX は、まだクリップをひらいていないときの段。
+ */
 export const QUARTER_PX_STEPS = [10, 14, 20, 28, 40, 57, 80, 113, 160, 226, 320] as const;
 export const DEFAULT_QUARTER_PX = 80;
 

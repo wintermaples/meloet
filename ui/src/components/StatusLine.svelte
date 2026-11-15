@@ -199,11 +199,9 @@
       );
     }
     return everyGlFrame(() => {
-      const take = shownNotes.take;
-      const clip = shownNotes.clip;
       const now = offsetUs === null ? null : performance.now() * 1000 + offsetUs;
       const tick = shownTick(app.transport, current.telemetry, now);
-      const keys = take && clip && take.id === clip.takeId ? soundingKeys(take, clip, tick) : [];
+      const keys = soundingKeys(shownNotes.take, shownNotes.clip, tick);
       if (!sameKeys(keys, sounding)) sounding = keys;
     });
   });

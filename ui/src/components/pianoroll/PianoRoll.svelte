@@ -12,15 +12,13 @@
   import NoteInspector from "./NoteInspector.svelte";
   import NoteListPanel from "./NoteListPanel.svelte";
   import Roll from "./Roll.svelte";
-  import FollowShown from "./FollowShown.svelte";
-  import { shown } from "./shown.svelte";
+  import { followShownTake, shown } from "./shown.svelte";
   import Toolbar from "./Toolbar.svelte";
   import { dragReading, prPanels, prView } from "./view.svelte";
 
   let { height }: { height: number } = $props();
 
-  // テイクの中身は、つながってから取りにいく（つながる前に取りにいくと、橋が投げる）。
-  const connected = $derived((current as { connected?: boolean }).connected !== false);
+  followShownTake();
 
   const pr = $derived(current.state!.pianoRoll);
   const noteTotal = $derived(shown.clip?.noteCount ?? 0);
@@ -86,7 +84,6 @@
 </script>
 
 <section class="band" style:height="{metrics.scaled(height)}px" data-band="pianoRoll" bind:this={band} bind:clientWidth={bandW}>
-  {#if connected}<FollowShown />{/if}
   <Toolbar />
   <div class="body">
     {#if prPanels.list !== false}
@@ -135,7 +132,7 @@
         <button class="m-plain hd" onclick={() => (prPanels.inspector = false)} data-test="pr-inspector-fold">
           <span class="m-hi">▾</span>
           <span class="m-hi grow">{t("pr.selectedNotes")}</span>
-          <span class="m-num accent">{selectedCount}</span>
+          <span class="m-num" class:accent={selectedCount > 0} class:m-lbl={selectedCount === 0}>{selectedCount}</span>
         </button>
         <div class="panel-body"><NoteInspector /></div>
       </div>

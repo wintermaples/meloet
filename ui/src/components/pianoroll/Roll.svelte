@@ -21,6 +21,7 @@
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
   import { shown } from "./shown.svelte";
   import { originFor, shownFor } from "./shownNotes";
+  import { sameKeys, soundingKeys } from "./sounding";
   import { dragReading, onDragCancel, prPanels, prView, pxPerTick, scrollToTick, zoomBy } from "./view.svelte";
 
   let { onreading }: { onreading?: (at: { x: number; y: number } | null) => void } = $props();
@@ -280,8 +281,13 @@
   let rollPicture: RollPicture | null = null;
   let rollMarks: Uint8Array | null = null;
   let livePicture: LivePicture | null = null;
-  const sounding = new Uint32Array(4);
-  const isSounding = (k: number) => ((sounding[k >>> 5]! >>> (k & 31)) & 1) === 1;
+  let sounding: number[] = [];
+  const isSounding = (k: number) => sounding.includes(k);
+  function setSounding(keys: number[]): void {
+    if (sameKeys(keys, sounding)) return;
+    sounding = keys;
+    redraw("keys");
+  }
   let keysGeom: G.RollGeom = { scrollTick: 0, ppt: 1, topKey: 60, rowH: 12, width: 0, height: 0 };
 
   const SLOTS: Record<"roll" | "vel" | "keys" | "live", GlSlot> = {
@@ -481,7 +487,7 @@
       if (x !== prView.scrollTick * ppt) prView.scrollTick = x / ppt;
     }
     placeLine(tick);
-    if (G.soundingKeys(liveMode ? null : n, tick, sounding)) redraw("keys");
+    setSounding(soundingKeys(liveMode ? null : shown.take, shown.clip, tick));
     if (rec) {
       const l = tel?.position?.lap ?? rec.lap;
       if (l !== lap) lap = l;
@@ -499,7 +505,7 @@
 
   $effect(() => {
     if (transport.state === "stopped") {
-      if (G.soundingKeys(null, 0, sounding)) untrack(() => redraw("keys"));
+      untrack(() => setSounding([]));
       return;
     }
     if (offsetUs === null) {

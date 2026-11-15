@@ -264,8 +264,6 @@ export const mock = {
   "mock.pianoroll.vel-mid": m(36, "A-PianoRoll"),
   // 長さをのばしている間の、もとの終わりの gray.7 の線の高さ。
   "mock.pianoroll.end-mark": m(16, "R3-PRMouse"),
-  // 横の拡大 ・ 縮小の − ＋ のボタンの幅（`min-width:24px;padding:0`）。
-  "mock.pianoroll.zoom-button": m(24, "R3-Arrange"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

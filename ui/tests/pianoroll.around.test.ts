@@ -88,16 +88,26 @@ describe("鳴っている音（モック F-PRPlay「鳴っている音 C3 E3 G3 
   });
 
   it("ノートの終わりちょうどでは鳴っていない。クリップの外では鳴らない", () => {
-    const take = { starts: [0, 0], lengths: [480, 960], keys: [64, 60] };
-    const clip = { start: 0, end: 1920, takeOffset: 0 };
+    const take = { id: 7, starts: [0, 0], lengths: [480, 960], keys: [64, 60] };
+    const clip = { start: 0, end: 1920, takeOffset: 0, takeId: 7 };
     expect(soundingKeys(take, clip, 0)).toEqual([60, 64]);
     expect(soundingKeys(take, clip, 480)).toEqual([60]);
     expect(soundingKeys(take, { ...clip, end: 400 }, 400)).toEqual([]);
     expect(soundingKeys(take, { ...clip, start: 1920, end: 3840 }, 1920)).toEqual([60, 64]);
+    // クリップがテイクの頭を切っていると、切られたノートはクリップの外。
+    expect(soundingKeys(take, { ...clip, takeOffset: -480 }, 0)).toEqual([60]);
+  });
+
+  it("クリップのテイクを取りにいっている間（前のテイクのまま）や、テイクもクリップもないときは何も鳴らない", () => {
+    const take = { id: 7, starts: [0], lengths: [480], keys: [60] };
+    const clip = { start: 0, end: 1920, takeOffset: 0, takeId: 8 };
+    expect(soundingKeys(take, clip, 0)).toEqual([]);
+    expect(soundingKeys(null, clip, 0)).toEqual([]);
+    expect(soundingKeys(take, null, 0)).toEqual([]);
   });
 
   it("同じ鍵が 2 つ重なっても 1 つ", () => {
-    expect(soundingKeys({ starts: [0, 10], lengths: [100, 100], keys: [60, 60] }, { start: 0, end: 500, takeOffset: 0 }, 50)).toEqual([60]);
+    expect(soundingKeys({ id: 1, starts: [0, 10], lengths: [100, 100], keys: [60, 60] }, { start: 0, end: 500, takeOffset: 0, takeId: 1 }, 50)).toEqual([60]);
     expect(sameKeys([60, 64], [60, 64])).toBe(true);
     expect(sameKeys([60], [60, 64])).toBe(false);
   });

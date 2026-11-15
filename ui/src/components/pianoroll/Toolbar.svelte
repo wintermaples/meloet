@@ -9,7 +9,7 @@
   import { current, send } from "../../state/app.svelte";
   import { t, type TextKey } from "../../text/ja";
   import ChoiceMenu from "../ChoiceMenu.svelte";
-  import { textParts } from "../format";
+  import { gridText, scaleName, textParts } from "../format";
   import { metrics } from "../metrics.svelte";
   import * as G from "./geom";
   import { shown } from "./shown.svelte";
@@ -82,8 +82,8 @@
     { tool: "erase", key: "pr.toolErase" },
   ];
 
-  const gridText = $derived(G.gridFraction(pr.grid.division) ?? t("pr.gridBar"));
-  const scaleText = $derived(t(pr.scale.mode === "major" ? "pr.scaleMajor" : "pr.scaleMinor", { root: G.NOTE_NAMES[pr.scale.root] ?? "C" }));
+  const gridName = $derived(gridText(pr.grid.division, false));
+  const scaleText = $derived(scaleName(pr.scale.root, pr.scale.mode));
 
   function setGrid(division: number): void {
     send({ type: "setGrid", division, triplet: pr.grid.triplet });
@@ -98,7 +98,7 @@
   let gridButton = $state<HTMLButtonElement>();
   let popup = $state<HTMLElement>();
   let anchor = $state({ left: 0, top: 0 });
-  const gridRows = $derived(G.GRID_DIVISIONS.map((d) => ({ value: d as number, label: G.gridFraction(d) ?? t("pr.gridBar") })));
+  const gridRows = $derived(G.GRID_DIVISIONS.map((d) => ({ value: d as number, label: gridText(d, false) })));
 
   function place(): void {
     if (!gridButton) return;
@@ -170,8 +170,8 @@
     {/each}
   </div>
   <div class="zoom">
-    <button class="m-btn square" aria-label={t("pr.zoomOut")} onclick={() => zoom(-1)} data-test="pr-zoom-out">{t("pr.zoomOutMark")}</button>
-    <button class="m-btn square" aria-label={t("pr.zoomIn")} onclick={() => zoom(1)} data-test="pr-zoom-in">{t("pr.zoomInMark")}</button>
+    <button class="m-btn square" aria-label={t("zoom.out")} onclick={() => zoom(-1)} data-test="pr-zoom-out">{t("zoom.outMark")}</button>
+    <button class="m-btn square" aria-label={t("zoom.in")} onclick={() => zoom(1)} data-test="pr-zoom-in">{t("zoom.inMark")}</button>
   </div>
   <button
     class="m-btn"
@@ -183,10 +183,10 @@
     onclick={() => (menuOpen = !menuOpen)}
     data-test="pr-grid"
   >
-    {t("pr.grid")} <span class="m-num value">{gridText}</span>
+    {t("pr.grid")} <span class="m-num value">{gridName}</span>
   </button>
   <button class="m-btn" class:on={pr.grid.triplet} aria-pressed={pr.grid.triplet} use:term={"三連符"} onclick={toggleTriplet} data-test="pr-triplet"
-    >{t("pr.triplet")}</button
+    >{t("grid.triplet")}</button
   >
   <button class="m-btn" class:on={pr.scale.lock} aria-pressed={pr.scale.lock} use:term={"スケール固定"} onclick={toggleLock} data-test="pr-scale-lock">
     {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
@@ -259,7 +259,7 @@
     gap: var(--space-2);
   }
   .square {
-    width: var(--mock-pianoroll-zoom-button);
+    width: var(--part-button-height);
     padding: 0;
   }
   .m-btn.on,

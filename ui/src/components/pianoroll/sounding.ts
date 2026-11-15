@@ -4,6 +4,7 @@
 import type { ClipView } from "../../bridge";
 
 export interface SoundingTake {
+  id: number;
   starts: ArrayLike<number>;
   lengths: ArrayLike<number>;
   keys: ArrayLike<number>;
@@ -11,10 +12,14 @@ export interface SoundingTake {
 
 /**
  * `tick`（曲の中の位置）で鳴っている鍵を、低い順に重なりなく。ノートは [はじまり, はじまり + 長さ) で鳴り、
- * クリップの外（[clip.start, clip.end) の外）では鳴らない。
+ * クリップの外（[clip.start, clip.end) の外）では鳴らない。テイクがクリップのテイクでなければ（取りにいっている間）、何も鳴らない。
  */
-export function soundingKeys(take: SoundingTake, clip: Pick<ClipView, "start" | "end" | "takeOffset">, tick: number): number[] {
-  if (tick < clip.start || tick >= clip.end) return [];
+export function soundingKeys(
+  take: SoundingTake | null,
+  clip: Pick<ClipView, "start" | "end" | "takeOffset" | "takeId"> | null,
+  tick: number,
+): number[] {
+  if (!take || !clip || take.id !== clip.takeId || tick < clip.start || tick >= clip.end) return [];
   const local = tick - (clip.start + clip.takeOffset);
   const on = new Set<number>();
   // ノートははじまりの順なので、いまより後に始まる物から先は見ない。

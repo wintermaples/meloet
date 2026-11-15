@@ -55,7 +55,8 @@ export function followShownTake(): void {
       origin = null;
       return;
     }
-    if (take?.id === id) return;
+    // つながる前は取りにいけない（橋が投げる）。つながったら、この $effect がもう一度走る。
+    if (take?.id === id || !current.connected) return;
     void takeNotes(id).then(async (got) => {
       if (ticket !== asked) return;
       const from = got.origin !== 0 ? await takeNotes(got.origin) : null;

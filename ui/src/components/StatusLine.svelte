@@ -9,8 +9,9 @@
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { STATUS_JOIN, t, type TextKey } from "../text/ja";
-  import { msText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
+  import { gridText, msText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { heldText, noteName } from "./meterFormat";
+  import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";
   import { dragReading } from "./pianoroll/view.svelte";
@@ -165,6 +166,17 @@
           }),
           term: RECOVERY_TERM,
         };
+      case "quantized": {
+        // 「もとの位置へ戻す」は、いま選んでいるノート（クオンタイズしたノートが選ばれている。なければ全部）。
+        const take = app.pianoRoll.take;
+        return {
+          ...plain("msg.quantized", { grid: gridText(m.division, m.triplet), strength: m.strength, count: m.count }),
+          button:
+            take === null
+              ? null
+              : { label: t("button.restorePosition"), command: { type: "unquantize", take, notes: indexesOf(app.pianoRoll.selectedNotes) } },
+        };
+      }
       case "outOfScale":
         return plain("msg.outOfScale", { key: pitchClassName(m.key), scale: scaleName(m.root, m.mode) });
       case "summary": {

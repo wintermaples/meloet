@@ -7,7 +7,8 @@ import { decodeTake } from "../src/bridge/take";
 import { runFrameCallbacks } from "../src/gl/slot";
 import NoteInspector from "../src/components/pianoroll/NoteInspector.svelte";
 import NoteListPanel from "../src/components/pianoroll/NoteListPanel.svelte";
-import { dragReading } from "../src/components/pianoroll/view.svelte";
+import { dragReading, prView } from "../src/components/pianoroll/view.svelte";
+import { attachKeys } from "../src/keys/attach";
 import StatusLine from "../src/components/StatusLine.svelte";
 import * as app from "./fake-app.svelte";
 import * as shown from "./fake-shown.svelte";
@@ -141,18 +142,19 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(text(q('[data-test="inspector-velocity"]'))).toBe("80");
   });
 
-  it("クオンタイズ: テイクがクオンタイズしてあれば「かけてある」。値は pianoRoll.quantize、ボタンは使えない", async () => {
+  it("クオンタイズ: テイクがクオンタイズしてあれば「かけてある」。値は pianoRoll.quantize、ボタンはどちらも使える", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     expect(text(q('[data-test="inspector-quantized"]'))).toBe("かけてある");
     const body = text(q('[data-testid="pr-inspector"]'))!;
-    expect(body).toContain("グリッド 1/16");
+    expect(body).toContain("グリッド 1/16 三連符");
     expect(body).toContain("強さ 75 %");
     expect(body).toContain("スウィング 0 %");
     expect(body).toContain("そろえる所 はじまり");
     const buttons = qa(".buttons .m-btn");
     expect(buttons.map(text)).toEqual(["かけなおす", "もとの位置へ戻す"]);
-    expect(buttons.every((b) => b.getAttribute("aria-disabled") === "true")).toBe(true);
+    expect(buttons.map((b) => b.getAttribute("aria-disabled"))).toEqual(["false", "false"]);
+    expect(buttons[0]!.classList.contains("hi")).toBe(true);
   });
 
   it("長さをそろえる ・ ベロシティをまとめて変える は、たたんだ「使えない」見出し", async () => {
@@ -241,5 +243,284 @@ describe("状態行（ピアノロールのまわり）", () => {
     await scene("pianoRollRec");
     show(StatusLine);
     expect(left()).toBe("1 ピアノ へ録音 ・ 止めると テイク 3 として残ります");
+  });
+});
+
+// ---- 打ちこみ（仕様書 3 章「ノートの一覧」、モック R3-Lanes） ----
+
+const key = (el: Element, k: string, init: KeyboardEventInit = {}) =>
+  el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init }));
+const field = () => target.querySelector<HTMLInputElement>("input");
+function typeIn(value: string): void {
+  const input = field()!;
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  flushSync();
+}
+const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  flushSync();
+};
+const double = (row: number, name: string) =>
+  qa(".row")[row]!.querySelector(`[data-field="${name}"]`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+
+describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () => {
+  it("欄を 2 回押すと、その欄が入力の枠。Enter で、その行のノート 1 つへ setNotesField", async () => {
+    const { take } = await scene("pianoRoll");
+    show(NoteListPanel);
+    double(2, "velocity");
+    flushSync();
+    expect(field()!.value).toBe("87");
+    expect(document.activeElement).toBe(field());
+    typeIn("96");
+    expect(field()!.classList.contains("broken")).toBe(false);
+    key(field()!, "Enter");
+    await settle();
+    expect(app.sent).toEqual([{ type: "setNotesField", take: take.id, notes: [2], field: "velocity", value: 96 }]);
+    expect(field()).toBeNull();
+    expect(document.activeElement).toBe(qa(".row")[2]);
+  });
+
+  it("使えない値（200）は「こわれた」の枠のまま。Enter で rejectValue を送り、決めない", async () => {
+    await scene("pianoRoll");
+    show(NoteListPanel);
+    double(4, "velocity");
+    flushSync();
+    typeIn("200");
+    expect(field()!.classList.contains("broken")).toBe(true);
+    expect(field()!.getAttribute("aria-invalid")).toBe("true");
+    key(field()!, "Enter");
+    flushSync();
+    expect(app.sent).toEqual([{ type: "rejectValue", field: "velocity", kept: "101", range: null }]);
+    expect(field()!.value).toBe("200");
+  });
+
+  it("位置の使えない値は、そのクリップでの範囲の文をつけて rejectValue", async () => {
+    await scene("pianoRoll");
+    show(NoteListPanel);
+    double(0, "position");
+    flushSync();
+    typeIn("4.2.000");
+    key(field()!, "Enter");
+    expect(app.sent).toEqual([{ type: "rejectValue", field: "position", kept: "1.1.000", range: "1.1.000〜4.1.000" }]);
+  });
+
+  it("行で Enter を押すと最初の欄（位置）。Tab で右の欄へ、右はしなら次の行の最初の欄（そこで前の欄を決める）", async () => {
+    const { take } = await scene("pianoRoll");
+    show(NoteListPanel);
+    const row = qa(".row")[0]!;
+    row.focus();
+    key(row, "Enter");
+    flushSync();
+    expect(field()!.value).toBe("1.1.000");
+    key(field()!, "Tab");
+    flushSync();
+    expect(field()!.value).toBe("C3");
+    key(field()!, "Tab");
+    flushSync();
+    expect(field()!.value).toBe("4.000");
+    key(field()!, "Tab");
+    flushSync();
+    typeIn("71");
+    key(field()!, "Tab");
+    flushSync();
+    expect(field()!.value).toBe("1.1.000");
+    expect(field()!.closest(".row")!.getAttribute("data-note")).toBe("1");
+    expect(app.sent).toEqual([{ type: "setNotesField", take: take.id, notes: [0], field: "velocity", value: 71 }]);
+    key(field()!, "Tab", { shiftKey: true });
+    flushSync();
+    expect(field()!.closest(".row")!.getAttribute("data-note")).toBe("0");
+  });
+
+  it("↑ ↓ で 1 ずつ（Shift で 10）。音は半音、位置は表示のいちばん下のけた", async () => {
+    await scene("pianoRoll");
+    show(NoteListPanel);
+    double(2, "key");
+    flushSync();
+    key(field()!, "ArrowUp");
+    flushSync();
+    expect(field()!.value).toBe("F4");
+    key(field()!, "ArrowDown", { shiftKey: true });
+    flushSync();
+    expect(field()!.value).toBe("G3");
+    key(field()!, "Tab", { shiftKey: true });
+    flushSync();
+    key(field()!, "ArrowUp", { shiftKey: true });
+    flushSync();
+    expect(field()!.value).toBe("1.1.010");
+  });
+
+  it("Esc でやめる（何も送らない）。枠の外を押しても、やめる", async () => {
+    await scene("pianoRoll");
+    show(NoteListPanel);
+    double(0, "length");
+    flushSync();
+    typeIn("2.000");
+    key(field()!, "Escape");
+    await settle();
+    expect(field()).toBeNull();
+    double(0, "length");
+    flushSync();
+    field()!.blur();
+    flushSync();
+    expect(field()).toBeNull();
+    expect(app.sent).toEqual([]);
+  });
+
+  it("打っている最中のキー（仕様書 4 章）: 一文字のキー、Space、Delete、Backspace、↑ ↓ ← → は枠のもの。ピアノロールには効かない", async () => {
+    const { s } = await scene("pianoRoll");
+    show(NoteListPanel);
+    prView.focus = "pianoRoll";
+    const global: unknown[] = [];
+    const detach = attachKeys({ state: () => s, send: (c) => global.push(c), nav: { platform: "Linux x86_64" } });
+    try {
+      double(0, "position");
+      flushSync();
+      for (const k of ["e", "m", "q", "r", " ", "Delete", "Backspace", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "1"]) key(field()!, k);
+      flushSync();
+      expect(global).toEqual([]);
+      expect(field()).not.toBeNull();
+    } finally {
+      detach();
+    }
+  });
+});
+
+describe("選んだノートの欄を打ちこむ", () => {
+  it("押すと入力の枠。2 つ以上なら、選んだぜんぶへ（ベロシティはぜんぶ同じ値）", async () => {
+    const { take } = await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="inspector-velocity"]')!.click();
+    flushSync();
+    expect(field()!.value).toBe("77");
+    typeIn("90");
+    key(field()!, "Enter");
+    await settle();
+    expect(app.sent).toEqual([{ type: "setNotesField", take: take.id, notes: [14, 15, 16], field: "velocity", value: 90 }]);
+    expect(text(q('[data-test="inspector-velocity"]'))).toBe("77 – 83");
+  });
+
+  it("位置はいちばん早い位置、音はいちばん低い音、長さ「ばらばら」は、いちばん早いノートの長さを入れておく", async () => {
+    await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="inspector-position"]')!.click();
+    flushSync();
+    expect(field()!.value).toBe("3.1.000");
+    key(field()!, "Tab");
+    flushSync();
+    expect(field()!.value).toBe("D4");
+    key(field()!, "Tab");
+    flushSync();
+    expect(field()!.value).toBe("0.360");
+    expect(app.sent).toEqual([]);
+  });
+
+  it("使えない値: 「ばらばら」の欄は、もとの値として「ばらばら」", async () => {
+    await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="inspector-length"]')!.click();
+    flushSync();
+    typeIn("9.000");
+    key(field()!, "Enter");
+    expect(app.sent).toEqual([{ type: "rejectValue", field: "length", kept: "ばらばら", range: "0.001〜6.240" }]);
+  });
+});
+
+describe("クオンタイズの欄", () => {
+  it("グリッドを押すと一覧（1 小節 ・ 1/2 ・ 1/4 ・ 1/8 ・ 1/16 ・ 1/32）。えらぶと setQuantize（いまの設定ぜんぶ）", async () => {
+    await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="quantize-grid"]')!.click();
+    flushSync();
+    const menu = document.querySelector<HTMLElement>('[data-test="quantize-grid-menu"]')!;
+    expect(text(menu)).toBe("グリッド 1 小節 1/2 1/4 1/8 1/16 1/32");
+    [...menu.querySelectorAll<HTMLButtonElement>("button")].find((b) => text(b) === "1/8")!.click();
+    flushSync();
+    expect(app.sent).toEqual([{ type: "setQuantize", division: 8, triplet: false, strength: 75, swing: 0, align: "start" }]);
+    expect(document.querySelector('[data-test="quantize-grid-menu"]')).toBeNull();
+  });
+
+  it("三連符は、道具の列と同じく別の切りかえ", async () => {
+    await scene("pianoRoll");
+    show(NoteInspector);
+    const triplet = q('[data-test="quantize-triplet"]')!;
+    expect(triplet.getAttribute("aria-pressed")).toBe("false");
+    triplet.click();
+    expect(app.sent).toEqual([{ type: "setQuantize", division: 16, triplet: true, strength: 75, swing: 0, align: "start" }]);
+  });
+
+  it("そろえる所: はじまり ・ はじまりと終わり", async () => {
+    await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="quantize-align"]')!.click();
+    flushSync();
+    const menu = document.querySelector<HTMLElement>('[data-test="quantize-align-menu"]')!;
+    expect(text(menu)).toBe("そろえる所 はじまり はじまりと終わり");
+    [...menu.querySelectorAll<HTMLButtonElement>("button")][1]!.click();
+    expect(app.sent).toEqual([{ type: "setQuantize", division: 16, triplet: false, strength: 75, swing: 0, align: "startAndEnd" }]);
+  });
+
+  it("強さ: ドラッグしているあいだは画面だけ。離して setQuantize を 1 つ", async () => {
+    await scene("pianoRoll");
+    show(NoteInspector);
+    const bar = q('[data-test="quantize-strength"]')!;
+    bar.getBoundingClientRect = () => ({ left: 100, width: 200, top: 0, height: 12, right: 300, bottom: 12, x: 100, y: 0, toJSON: () => ({}) });
+    const pointer = (type: string, x: number) =>
+      bar.dispatchEvent(Object.assign(new MouseEvent(type, { bubbles: true, clientX: x, button: 0 }), { pointerId: 1 }));
+    pointer("pointerdown", 200);
+    pointer("pointermove", 220);
+    flushSync();
+    expect(text(q('[data-test="quantize-strength-value"]'))).toBe("60 %");
+    expect(app.sent).toEqual([]);
+    pointer("pointermove", 240);
+    pointer("pointerup", 240);
+    flushSync();
+    expect(app.sent).toEqual([{ type: "setQuantize", division: 16, triplet: false, strength: 70, swing: 0, align: "start" }]);
+    expect(text(q('[data-test="quantize-strength-value"]'))).toBe("70 %");
+  });
+
+  it("かけなおす: 選んだノート（なければ全部）へ quantize。もとの位置へ戻す: unquantize", async () => {
+    const { take } = await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="quantize-apply"]')!.click();
+    q('[data-test="quantize-restore"]')!.click();
+    expect(app.sent).toEqual([
+      { type: "quantize", take: take.id, notes: [14, 15, 16] },
+      { type: "unquantize", take: take.id, notes: [14, 15, 16] },
+    ]);
+  });
+
+  it("クオンタイズしていないテイクでは「もとの位置へ戻す」は使えない。「かけてある」も出ない", async () => {
+    const { s, take } = await scene("pianoRoll");
+    const plain = { ...take, origin: 0 };
+    shown.setShown({ clip: shown.shown.clip, track: shown.shown.track, take: plain });
+    app.setState({ ...s, pianoRoll: { ...s.pianoRoll, selectedNotes: [] } });
+    show(NoteInspector);
+    expect(q('[data-test="inspector-quantized"]')).toBeNull();
+    expect(q('[data-test="quantize-restore"]')!.getAttribute("aria-disabled")).toBe("true");
+    q('[data-test="quantize-restore"]')!.click();
+    q('[data-test="quantize-apply"]')!.click();
+    expect(app.sent).toEqual([{ type: "quantize", take: plain.id, notes: [] }]);
+  });
+});
+
+describe("状態行: クオンタイズをかけた ・ 使えない値を打った", () => {
+  const left = () => text(q(".message"));
+
+  it("「クオンタイズ 1/16（75 %）を 3 ノートに。うすい枠が、そろえる前の位置。」と「もとの位置へ戻す」（仕様書 6 章）", async () => {
+    const { take } = await scene("pianoRoll", (s) => (s.status.message = { id: "quantized", division: 16, triplet: false, strength: 75, count: 3 }));
+    show(StatusLine);
+    expect(left()).toBe("クオンタイズ 1/16（75 %）を 3 ノートに。うすい枠が、そろえる前の位置。");
+    const button = q(".link")!;
+    expect(text(button)).toBe("もとの位置へ戻す");
+    button.click();
+    expect(app.sent).toEqual([{ type: "unquantize", take: take.id, notes: [14, 15, 16] }]);
+  });
+
+  it("位置の範囲はクリップで変わる（範囲の文は知らせについてくる）", async () => {
+    await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "position", kept: "1.1.000", range: "1.1.000〜4.1.000" }));
+    show(StatusLine);
+    expect(left()).toBe("位置は 1.1.000〜4.1.000 です。もとの 1.1.000 のままです。");
   });
 });

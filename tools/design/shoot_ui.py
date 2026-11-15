@@ -50,13 +50,28 @@ BOARDS = {
     "recover3": "F-Recover3",
     "arrangeZoomIn": "R3-Arrange",
     "scaleMenu": "A-PianoRoll",
+    "noteListTyping": "R3-Lanes",
+    "noteListBroken": "R3-Lanes",
 }
+# Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
+TYPE_IN_LIST = """
+const cell = document.querySelectorAll('[data-testid="pr-note-list"] .row')[%d].querySelector('[data-field="velocity"]');
+cell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 100));
+const input = document.querySelector('[data-test="note-list-field"]');
+input.value = "%s";
+input.dispatchEvent(new Event("input", { bubbles: true }));
+"""
+
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
+# A selector that starts with "js:" is run as a script instead (it may await).
 CLICKS = {
     "songMenu": ("saved", '[data-test="transport-song"]'),
     "countInMenu": ("empty", '[data-test="transport-count-in"]'),
     "arrangeZoomIn": ("loop", '[aria-label="横に拡大"]'),
     "scaleMenu": ("pianoRoll", '[data-test="inspector-scale"]'),
+    "noteListTyping": ("pianoRoll", "js:" + TYPE_IN_LIST % (2, "96")),
+    "noteListBroken": ("pianoRoll", "js:" + TYPE_IN_LIST % (4, "200")),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -68,6 +83,8 @@ ONLY = {
     "pianoRollWide": [(1920, 1080, 100)],
     "pianoRollPlay": [(1280, 800, 100)],
     "pianoRollRec": [(1280, 800, 100)],
+    "noteListTyping": [(1280, 800, 100)],
+    "noteListBroken": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 
@@ -96,7 +113,10 @@ try {
   const call = (method, params = {}) => new Promise((r) => { waiting.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
   await call("Emulation.setDeviceMetricsOverride", { width: Number(w), height: Number(h), deviceScaleFactor: 1, mobile: false });
   await sleep(2500);
-  await call("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)}).click()` });
+  const expression = selector.startsWith("js:")
+    ? `(async () => {${selector.slice(3)}})()`
+    : `document.querySelector(${JSON.stringify(selector)}).click()`;
+  await call("Runtime.evaluate", { expression, awaitPromise: true });
   await sleep(800);
   const shot = await call("Page.captureScreenshot", { format: "png" });
   writeFileSync(out, Buffer.from(shot.data, "base64"));

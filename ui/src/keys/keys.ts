@@ -47,6 +47,8 @@ export type KeyAction =
   /** ← →: グリッド steps 個、↑ ↓: keys 半音（Shift で 1 オクターブ）。 */
   | { kind: "nudge"; steps: number; keys: number }
   | { kind: "selectAll" }
+  /** Q: 選んだノート（なければ全部）にクオンタイズをかける。 */
+  | { kind: "quantize" }
   | { kind: "duplicate" }
   | { kind: "cut" }
   | { kind: "copy" }
@@ -156,6 +158,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
 
   const l = letter(k);
   if (k.shift) return l === "t" ? { kind: "stepTake", delta: -1 } : null;
+  if (l === "q") return { kind: "quantize" };
   return (l && BAND_KEYS[l]) || null;
 }
 

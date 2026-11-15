@@ -4,7 +4,7 @@
 // numbers as crates/meloet-core/src/layout.rs, but meloet-core stays the rule book.
 
 import type { Transport } from "./session";
-import { NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
+import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
 import {
   PROTOCOL_VERSION,
@@ -424,7 +424,12 @@ interface FakeTake {
   origin?: number;
   /** `from`: the index of the note of the origin take it came from. */
   notes: { start: number; length: number; key: number; velocity: number; from?: number }[];
+  /** In order of tick. `number` 0 for pitch bend. */
+  controls?: { tick: number; kind: typeof CONTROL_CC | typeof CONTROL_PITCH_BEND; number: number; value: number }[];
 }
+
+/** Bytes of one control in the take binary (docs/architecture.md 3-4). */
+const FAKE_CONTROL_LEN = 8;
 
 /** A made-up phrase of `count` notes over `bars` bars; the same seed gives the same notes. */
 function phrase(id: number, bars: number, count: number, seed: number): FakeTake {
@@ -457,16 +462,17 @@ function fakeClip(id: number, name: string, fromBar: number, toBar: number, take
   };
 }
 
-/** Writes the take binary (docs/architecture.md 3-4). Notes only: the fake takes have no controls. */
+/** Writes the take binary (docs/architecture.md 3-4). */
 export function encodeTake(t: FakeTake): ArrayBuffer {
-  const buf = new ArrayBuffer(TAKE_HEADER_LEN + TAKE_NOTE_LEN * t.notes.length);
+  const controls = t.controls ?? [];
+  const buf = new ArrayBuffer(TAKE_HEADER_LEN + TAKE_NOTE_LEN * t.notes.length + FAKE_CONTROL_LEN * controls.length);
   const v = new DataView(buf);
   v.setUint8(0, TAKE_KIND);
   v.setUint8(1, TAKE_VERSION);
   v.setUint32(4, t.id, true);
   v.setUint32(8, t.length, true);
   v.setUint32(12, t.notes.length, true);
-  v.setUint32(16, 0, true);
+  v.setUint32(16, controls.length, true);
   v.setUint32(20, t.origin ?? 0, true);
   t.notes.forEach((n, i) => {
     const p = TAKE_HEADER_LEN + TAKE_NOTE_LEN * i;
@@ -475,6 +481,13 @@ export function encodeTake(t: FakeTake): ArrayBuffer {
     v.setUint8(p + 8, n.key);
     v.setUint8(p + 9, n.velocity);
     v.setUint32(p + 12, n.from ?? NO_FROM, true);
+  });
+  controls.forEach((c, i) => {
+    const p = TAKE_HEADER_LEN + TAKE_NOTE_LEN * t.notes.length + FAKE_CONTROL_LEN * i;
+    v.setUint32(p, c.tick, true);
+    v.setUint8(p + 4, c.kind);
+    v.setUint8(p + 5, c.number);
+    v.setInt16(p + 6, c.value, true);
   });
   return buf;
 }
@@ -556,10 +569,45 @@ FAKE_TAKES.set(PLAYED_TAKE, {
     velocity,
   })),
 });
+/**
+ * The CC tags of A-PianoRoll: sustain pressed 5 times, 6 pitch bend points (shaped like R3-Lanes), no modulation;
+ * and CC 7 for "そのほかの CC".
+ */
+const MOCK_CONTROLS: NonNullable<FakeTake["controls"]> = [
+  ...[
+    ["1.1.000", "1.4.240"],
+    ["2.1.000", "2.4.240"],
+    ["3.1.000", "3.2.240"],
+    ["3.3.000", "3.4.240"],
+    ["4.1.000", "4.4.240"],
+  ].flatMap(([down, up]) => [
+    { tick: at(down!), kind: CONTROL_CC, number: 64, value: 127 } as const,
+    { tick: at(up!), kind: CONTROL_CC, number: 64, value: 0 } as const,
+  ]),
+  ...(
+    [
+      ["2.1.000", 0],
+      ["2.1.240", 1536],
+      ["2.2.000", 4096],
+      ["2.3.000", 3072],
+      ["2.4.000", 1024],
+      ["2.4.240", 0],
+    ] as const
+  ).map(([tick, value]) => ({ tick: at(tick), kind: CONTROL_PITCH_BEND, number: 0, value }) as const),
+  ...(
+    [
+      ["1.1.000", 100],
+      ["3.1.000", 90],
+      ["4.3.000", 110],
+    ] as const
+  ).map(([tick, value]) => ({ tick: at(tick), kind: CONTROL_CC, number: 7, value }) as const),
+].sort((a, b) => a.tick - b.tick);
+
 FAKE_TAKES.set(QUANTIZED_TAKE, {
   id: QUANTIZED_TAKE,
   length: 4 * BAR,
   origin: PLAYED_TAKE,
+  controls: MOCK_CONTROLS,
   notes: MOCK_NOTES.map(([start, k, length, velocity], i) => ({
     start: at(start),
     length: span(length),
@@ -708,6 +756,16 @@ export const SCENES: Record<string, SceneDef> = {
   pianoRoll150: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET, scale: 150 },
   // Open it in a window of 1920x1080.
   pianoRollWide: { setup: pianoRollWide, bands: ["pianoRoll"], meters: QUIET },
+  // A-PianoRoll with the pitch bend point at 2.2.000 selected, for the CC lanes (R3-Lanes). The lanes are opened by clicking their tags.
+  pianoRollCc: {
+    setup(s) {
+      pianoRollSong(s);
+      const point = MOCK_CONTROLS.findIndex((c) => c.kind === CONTROL_PITCH_BEND && c.tick === at("2.2.000"));
+      s.pianoRoll.selectedControls = toRanges([point]);
+    },
+    bands: ["pianoRoll"],
+    meters: QUIET,
+  },
   pianoRollPlay: {
     setup(s) {
       aMelody(s, [14, QUANTIZED_TAKE, 15]);
@@ -1034,9 +1092,10 @@ export function toRanges(indexes: Iterable<number>): IndexRange[] {
 
 const fromRanges = (ranges: IndexRange[]) => ranges.flatMap((r) => Array.from({ length: r.end - r.start }, (_, k) => r.start + k));
 
-/** The selection commands, the grid, the scale and the quantize settings. The fake does not change notes. */
+/** The selection commands (of notes and of control points), the grid, the scale and the quantize settings. The fake does not change notes or points. */
 function reducePianoRoll(pr: PianoRollView, command: Command): void {
   const count = pr.take === null ? 0 : (FAKE_TAKES.get(pr.take)?.notes.length ?? 0);
+  const points = pr.take === null ? 0 : (FAKE_TAKES.get(pr.take)?.controls?.length ?? 0);
   switch (command.type) {
     case "selectNotes": {
       if (command.take !== pr.take) break;
@@ -1048,6 +1107,16 @@ function reducePianoRoll(pr: PianoRollView, command: Command): void {
         else had.add(i);
       }
       pr.selectedNotes = toRanges(had);
+      break;
+    }
+    case "selectControls": {
+      if (command.take !== pr.take) break;
+      const had = new Set(command.mode === "replace" ? [] : fromRanges(pr.selectedControls));
+      for (const i of command.points.filter((p) => p < points)) {
+        if (command.mode === "toggle" && had.has(i)) had.delete(i);
+        else had.add(i);
+      }
+      pr.selectedControls = toRanges(had);
       break;
     }
     case "selectAllNotes":

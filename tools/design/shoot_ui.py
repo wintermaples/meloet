@@ -9,7 +9,7 @@ the mock board for that scene (rendered by render_mocks.py), cropped or padded t
 Out: OUT_DIR/<scene>-<w>x<h>-<scale>.png (side by side) and OUT_DIR/shots/ (the shots alone).
 Names in CLICKS shoot a scene after clicking something (a menu open), through the DevTools protocol.
 """
-import os, socket, subprocess, sys, time, urllib.request
+import json, os, socket, subprocess, sys, time, urllib.request
 
 from PIL import Image, ImageDraw
 
@@ -50,13 +50,19 @@ BOARDS = {
     "recover3": "F-Recover3",
     "arrangeZoomIn": "R3-Arrange",
     "scaleMenu": "A-PianoRoll",
+    "ccLanes": "R3-Lanes",
+    "ccOtherMenu": "A-PianoRoll",
 }
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
+# Several selectors (a tuple) are clicked one after another.
 CLICKS = {
     "songMenu": ("saved", '[data-test="transport-song"]'),
     "countInMenu": ("empty", '[data-test="transport-count-in"]'),
     "arrangeZoomIn": ("loop", '[aria-label="横に拡大"]'),
     "scaleMenu": ("pianoRoll", '[data-test="inspector-scale"]'),
+    "ccLanes": ("pianoRollCc", ('[data-test="pr-cc-sustain"]', '[data-test="pr-cc-pitchBend"]', '[data-test="pr-cc-other"]',
+                                '[data-test="pr-cc-other-menu"] [data-row="0"]')),
+    "ccOtherMenu": ("pianoRollCc", '[data-test="pr-cc-other"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -68,12 +74,14 @@ ONLY = {
     "pianoRollWide": [(1920, 1080, 100)],
     "pianoRollPlay": [(1280, 800, 100)],
     "pianoRollRec": [(1280, 800, 100)],
+    "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 150)],
+    "ccOtherMenu": [(1920, 1080, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 
 # Drives headless Chrome over the DevTools protocol (Node's own WebSocket): open, click, shoot.
 CLICK_SHOT = r"""
-const [port, url, selector, out, w, h] = process.argv.slice(1);
+const [port, url, selectors, out, w, h] = process.argv.slice(1);
 const { spawn } = await import("node:child_process");
 const { writeFileSync, mkdtempSync } = await import("node:fs");
 const { tmpdir } = await import("node:os");
@@ -96,8 +104,10 @@ try {
   const call = (method, params = {}) => new Promise((r) => { waiting.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
   await call("Emulation.setDeviceMetricsOverride", { width: Number(w), height: Number(h), deviceScaleFactor: 1, mobile: false });
   await sleep(2500);
-  await call("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)}).click()` });
-  await sleep(800);
+  for (const selector of JSON.parse(selectors)) {
+    await call("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)}).click()` });
+    await sleep(800);
+  }
   const shot = await call("Page.captureScreenshot", { format: "png" });
   writeFileSync(out, Buffer.from(shot.data, "base64"));
   ws.close();
@@ -147,8 +157,9 @@ try:
             shot = os.path.join(shots, stem + ".png")
             if scene in CLICKS:
                 base, selector = CLICKS[scene]
+                selectors = json.dumps([selector] if isinstance(selector, str) else list(selector))
                 run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
-                     f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selector, shot, str(w), str(h)],
+                     f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selectors, shot, str(w), str(h)],
                     env=env, capture_output=True, timeout=60)
             else:
                 run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",

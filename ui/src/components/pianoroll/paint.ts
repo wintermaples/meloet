@@ -2,13 +2,14 @@
 // ノートは仕様書 2 章「ノート」: 高さ 11、左はしに gray.10 の 2px、面はベロシティで gray.8 / 9 / 10、選んだら accent、
 // そろえる前の位置は gray.7 の枠だけ、書けない行は gray.0。行の地と線の色はモック A-PianoRoll。
 
-import type { LiveNote, MusicalScale } from "../../bridge";
+import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
 import type { Batch } from "../../gl/batch";
 import { rgb } from "../../gl/color";
 import { isBlack } from "../../gl/keyboard";
 import { HAIR, type Box } from "../../gl/paint";
 import { ticksPerBar, ticksPerBeat, type Meter } from "../time";
+import { draggedPoint, firstPointFrom, isOnOff, lanePoints, pointTick, valueToY, type LaneBox, type LaneDrag } from "./cc";
 import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
 import { eachNoteIn, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, type RollGeom, type Shown } from "./geom";
@@ -252,6 +253,9 @@ export interface LivePicture {
   /** 面の箱の、動かす前の左上（ノートの場所の CSS px） */
   left: number;
   top: number;
+  /** 面の箱を動かしている縦の量（CSS px）と、ノートの場所の高さ。ノートは、その下の帯にはみ出さない。 */
+  ty: number;
+  areaH: number;
   notes: readonly { start: number; end: number; key: number; face: ColorName }[];
 }
 
@@ -261,10 +265,182 @@ export function paintLive(out: Batch, box: Box, p: LivePicture, dpr: number): vo
   const edge = Math.round(sizes.edge * dpr);
   const ox = box.x0 - p.left * dpr;
   const oy = box.y0 - p.top * dpr;
+  const areaTop = oy - p.ty * dpr;
+  out.clip(box.x0, Math.max(box.y0, Math.round(areaTop)), box.x1, Math.min(box.y1, Math.round(areaTop + p.areaH * dpr)));
   for (const n of p.notes) {
     const x0 = ox + (n.start - g.scrollTick) * g.ppt * dpr;
     const x1 = ox + (n.end - g.scrollTick) * g.ppt * dpr;
     const y = Math.round(oy + (g.topKey - n.key) * g.rowH * dpr);
     paintNote(out, x0, x1, y, noteH, edge, n.face);
   }
+}
+
+// ---- CC の帯（モック R3-Lanes） ----
+
+/** CC の帯 1 本の絵が使う物。 */
+export interface LanePicture {
+  g: RollGeom;
+  meter: Meter;
+  step: number;
+  /** null は「そのほかの CC」の番号をまだえらんでいない帯。 */
+  control: ControlKind | null;
+  shown: Shown | null;
+  lane: LaneBox;
+  /** part.cc.point（CSS px） */
+  point: number;
+  /** 選んだ点の印（テイクのコントロールの番号）。 */
+  selected: Uint8Array | null;
+  /** この帯のドラッグ。 */
+  drag: LaneDrag | null;
+  eraseHover: number;
+}
+
+const LINE: ColorName = "color.gray.9";
+
+/** 1 本の点の列の、点と点をつなぐ線（画素）。step: オン ・ オフの CC は段（次の点まで値をたもつ）、ほかは点から点へ。 */
+function laneLine(out: Batch, xs: readonly number[], ys: readonly number[], x0: number, x1: number, restY: number, step: boolean): void {
+  const c = rgb(LINE);
+  const flat = (a: number, b: number, y: number) => out.rect(Math.min(a, b), y, Math.max(a, b) + HAIR, y + HAIR, c);
+  const upright = (x: number, a: number, b: number) => out.rect(x, Math.min(a, b), x + HAIR, Math.max(a, b) + HAIR, c);
+  let px = x0;
+  let py = restY;
+  for (let k = 0; k < xs.length; k++) {
+    const x = xs[k]!;
+    const y = ys[k]!;
+    if (k === 0 || step) {
+      flat(px, x, py);
+      upright(x, py, y);
+    } else {
+      sloped(out, px, py, x, y, c);
+    }
+    px = x;
+    py = y;
+  }
+  flat(px, x1, py);
+}
+
+/** 斜めの線を、同じ高さの所をまとめた 1 画素の四角の列で。 */
+function sloped(out: Batch, xa: number, ya: number, xb: number, yb: number, c: ReturnType<typeof rgb>): void {
+  if (xb <= xa) {
+    out.rect(xa, Math.min(ya, yb), xa + HAIR, Math.max(ya, yb) + HAIR, c);
+    return;
+  }
+  const at = (x: number) => Math.round(ya + ((yb - ya) * (x - xa)) / (xb - xa));
+  let runX = xa;
+  let runY = at(xa);
+  for (let x = xa + 1; x <= xb; x++) {
+    const y = at(x);
+    if (y === runY) continue;
+    // 次の高さへは、縦につないで切れ目を作らない。
+    out.rect(runX, runY, x, runY + HAIR, c);
+    out.rect(x, Math.min(runY, y), x + HAIR, Math.max(runY, y) + HAIR, c);
+    runX = x;
+    runY = y;
+  }
+  out.rect(runX, runY, xb + HAIR, runY + HAIR, c);
+}
+
+function laneSquare(out: Batch, cx: number, cy: number, size: number, color: ColorName, hollow: boolean): void {
+  const x0 = Math.round(cx - size / 2);
+  const y0 = Math.round(cy - size / 2);
+  if (hollow) frame(out, x0, y0, x0 + size, y0 + size, color);
+  else out.rect(x0, y0, x0 + size, y0 + size, rgb(color));
+}
+
+/** 帯の地と線: gray.1 の地、小節の線 gray.4、ほかの線 gray.2、ピッチベンドは 0 の所に gray.5 の線。 */
+function laneGround(out: Batch, box: Box, p: LanePicture, dpr: number): void {
+  const { g } = p;
+  out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
+  const s = lineStep(p.step, p.meter, g.ppt);
+  const perBar = ticksPerBar(p.meter);
+  const to = g.scrollTick + g.width / g.ppt;
+  for (let tick = Math.ceil(g.scrollTick / s) * s; tick < to; tick += s) {
+    const x = Math.round(box.x0 + (tick - g.scrollTick) * g.ppt * dpr);
+    out.rect(x, box.y0, x + HAIR, box.y1, rgb(tick % perBar === 0 ? "color.gray.4" : "color.gray.2"));
+  }
+  if (p.control?.kind === "pitchBend") {
+    const y = Math.round(box.y0 + valueToY(p.control, p.lane, 0) * dpr);
+    out.rect(box.x0, y, box.x1, y + HAIR, rgb("color.gray.5"));
+  }
+}
+
+/** 線と点。moving の点は、ドラッグの量だけ動かして描く。 */
+function laneDots(out: Batch, box: Box, p: LanePicture, dpr: number, moving: Set<number> | null, face: (i: number) => ColorName): void {
+  const n = p.shown;
+  const c = p.control;
+  if (!n || !c) return;
+  const { g } = p;
+  const all = lanePoints(n.take, c);
+  const X = (tick: number) => Math.round(box.x0 + (tick - g.scrollTick) * g.ppt * dpr);
+  const Y = (v: number) => Math.round(box.y0 + valueToY(c, p.lane, v) * dpr);
+  // 見えている所の点と、その前後の 1 つずつ（線が、はしの外からつながるように）。
+  const from = g.scrollTick;
+  const to = g.scrollTick + g.width / g.ppt;
+  let list: { tick: number; value: number; i: number }[];
+  if (moving && p.drag?.kind === "move") {
+    const sorted = Array.from(all, (i) => ({ ...draggedPoint(n, c, p.drag, moving, i), i })).sort((a, b) => a.tick - b.tick);
+    let a = 0;
+    while (a < sorted.length && sorted[a]!.tick < from) a++;
+    let b = a;
+    while (b < sorted.length && sorted[b]!.tick <= to) b++;
+    list = sorted.slice(Math.max(0, a - 1), Math.min(sorted.length, b + 1));
+  } else {
+    const k0 = Math.max(0, firstPointFrom(n, all, from) - 1);
+    list = [];
+    for (let k = k0; k < all.length; k++) {
+      const i = all[k]!;
+      const tick = pointTick(n, i);
+      list.push({ tick, value: n.take.controlValues[i]!, i });
+      if (tick > to) break;
+    }
+  }
+  const before = list.length > 0 && list[0]!.tick < from;
+  const xs = list.map((q) => X(q.tick));
+  const ys = list.map((q) => Y(q.value));
+  const restY = before ? ys[0]! : Y(0);
+  laneLine(out, xs, ys, box.x0, box.x1, restY, isOnOff(c));
+  const size = Math.round(p.point * dpr);
+  for (let k = 0; k < list.length; k++) laneSquare(out, xs[k]!, ys[k]!, size, face(list[k]!.i), false);
+}
+
+/** CC の帯の大きな絵。点を動かしている間は、点と線を動く面にまかせ、もとの位置に gray.7 の枠だけを描く。 */
+export function paintLane(out: Batch, box: Box, p: LanePicture, dpr: number): void {
+  laneGround(out, box, p, dpr);
+  const n = p.shown;
+  const c = p.control;
+  if (!n || !c) return;
+  const d = p.drag;
+  if (d?.kind === "move" && d.press.moved) {
+    const size = Math.round(p.point * dpr);
+    for (const i of d.points) {
+      const x = box.x0 + (pointTick(n, i) - p.g.scrollTick) * p.g.ppt * dpr;
+      laneSquare(out, x, box.y0 + valueToY(c, p.lane, n.take.controlValues[i]!) * dpr, size, FRAME, true);
+    }
+    return;
+  }
+  const hits = d?.kind === "box" ? new Set(d.hits) : d?.kind === "erase" ? d.hits : null;
+  const erasing = d?.kind === "erase";
+  const sel = p.selected;
+  laneDots(out, box, p, dpr, null, (i) => {
+    if (i === p.eraseHover || (erasing && hits!.has(i))) return FRAME;
+    if ((hits && !erasing && hits.has(i)) || (sel && sel[i])) return "color.accent";
+    return "color.gray.10";
+  });
+}
+
+/** CC の帯の動く面: 動かしている間の線と点、書く道具で置く前の点（accent の枠）。box は帯 1 本ぶん。 */
+export function paintLaneLive(out: Batch, box: Box, p: LanePicture, dpr: number): void {
+  const n = p.shown;
+  const c = p.control;
+  const d = p.drag;
+  if (!c || !d) return;
+  if (d.kind === "add") {
+    const x = box.x0 + (d.tick - p.g.scrollTick) * p.g.ppt * dpr;
+    laneSquare(out, x, box.y0 + valueToY(c, p.lane, d.value) * dpr, Math.round(p.point * dpr), "color.accent", true);
+    return;
+  }
+  if (d.kind !== "move" || !d.press.moved || !n) return;
+  const moving = new Set(d.points);
+  const sel = p.selected;
+  laneDots(out, box, p, dpr, moving, (i) => (moving.has(i) || (sel && sel[i]) ? "color.accent" : "color.gray.10"));
 }

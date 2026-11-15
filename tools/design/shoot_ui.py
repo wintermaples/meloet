@@ -40,6 +40,9 @@ BOARDS = {
     "countIn": "F-Connect4",
     "takesArrange": "F-Takes",
     "loop": "Main",
+    "recover1": "F-Recover1",
+    "recover2": "F-Recover2",
+    "recover3": "F-Recover3",
 }
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 CLICKS = {

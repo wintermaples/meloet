@@ -6,7 +6,9 @@ use std::sync::Arc;
 use meloet_model::edit::{self, Edit};
 use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
-use meloet_model::{ClipId, Doc, History, Meter, Song, TakeId, Tempo, TickRange, TrackId};
+use meloet_model::{
+    ClipId, Doc, History, Meter, Song, StepKind, TakeId, Tempo, TickRange, TrackId,
+};
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipView, LiveNote, LiveNotes, LiveNotesSnapshot, RecordingView,
     StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef,
@@ -211,6 +213,11 @@ pub struct Play {
     /// The song came from the copy kept before the last save: the file needs writing again
     /// whatever undo does.
     unsaved_anyway: bool,
+    /// Goes up whenever the `Doc` changes or another song takes its place.
+    changes: u64,
+    /// A second version that matches the file: after "戻さない", the song as saved is both the
+    /// version before the recovered step and the one after "戻さない".
+    saved_too: Option<u64>,
 }
 
 impl Play {
@@ -236,6 +243,8 @@ impl Play {
             last_heard: None,
             had_clip: false,
             unsaved_anyway: false,
+            changes: 0,
+            saved_too: None,
         }
     }
 
@@ -611,6 +620,7 @@ impl Play {
 
     /// Sends what the engine must hear again, and lets go of clips that are gone.
     fn after_change(&mut self, before: &Doc, effects: &mut Vec<Effect>) {
+        self.changes += 1;
         let doc = &self.song.doc;
         for (i, t) in doc.tracks.iter().enumerate() {
             let same = before.track(t.id).is_some_and(|b| Arc::ptr_eq(b, t));
@@ -915,7 +925,9 @@ impl Play {
     }
 
     pub fn has_unsaved_changes(&self) -> bool {
-        self.unsaved_anyway || self.history.has_unsaved_changes()
+        self.unsaved_anyway
+            || (self.history.has_unsaved_changes()
+                && self.saved_too != Some(self.history.version()))
     }
 
     /// The song as it is now is in its file, under `name` (the first save can add " 2").
@@ -924,6 +936,7 @@ impl Play {
         self.song.doc.name = name;
         self.history.mark_saved();
         self.unsaved_anyway = false;
+        self.saved_too = None;
     }
 
     /// Stops a count-in or a recording; what was played comes in with the engine's report.
@@ -941,8 +954,10 @@ impl Play {
     pub fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
         let old_tracks = self.song.doc.tracks.len();
         self.song = song;
+        self.changes += 1;
         self.history = History::new();
         self.unsaved_anyway = unsaved;
+        self.saved_too = None;
         self.state = TransportState::Stopped;
         self.position = 0;
         self.selected = None;
@@ -958,6 +973,57 @@ impl Play {
                 events: Vec::new(),
             }));
         }
+    }
+
+    /// The song brought back from the recovery file, as the first step over the song as
+    /// saved, which is how the history starts (and what counts as saved). `saved` must have
+    /// the recovered song's ids given out already: the screen keeps takes by id.
+    pub fn recovered(&mut self, doc: Doc, effects: &mut Vec<Effect>) {
+        self.apply(
+            Edit {
+                doc,
+                step: StepKind::Recovered,
+            },
+            effects,
+        );
+    }
+
+    /// Puts `saved`, the song as its file has it, in place of a song brought back from the
+    /// recovery file: one step, after which the song counts as saved. Undo brings the song
+    /// back, unsaved. Only while not busy.
+    pub fn discard_recovered(&mut self, mut saved: Doc, effects: &mut Vec<Effect>) {
+        if self.busy() {
+            return;
+        }
+        // Ids given out in the song brought back stay given out: the screen keeps takes by id.
+        saved.next_id = saved.next_id.max(self.doc().next_id);
+        self.unsaved_anyway = false;
+        self.apply(
+            Edit {
+                doc: saved,
+                step: StepKind::DiscardRecovered,
+            },
+            effects,
+        );
+        self.saved_too = Some(self.history.version());
+        let doc = &self.song.doc;
+        let session = &mut self.song.session;
+        if doc.track(session.play_target).is_none() {
+            session.play_target = doc.tracks[0].id;
+        }
+        if session.armed.is_some_and(|t| doc.track(t).is_none()) {
+            session.armed = None;
+        }
+    }
+
+    /// Goes up whenever the `Doc` changes or another song takes its place.
+    pub fn changes(&self) -> u64 {
+        self.changes
+    }
+
+    #[cfg(test)]
+    pub fn steps(&self) -> Vec<StepKind> {
+        self.history.steps().copied().collect()
     }
 
     pub fn piano_roll_notes(&self) -> u32 {

@@ -1,6 +1,7 @@
 //! The pure rules: an input comes in, the state changes, and a list of things to do comes back.
 //! Nothing here touches a device, a file or a thread.
 
+mod recovery;
 mod songs;
 
 use std::collections::VecDeque;
@@ -13,13 +14,16 @@ use meloet_model::{InstrumentRef, Song};
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
-    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, SettingsDialogView,
-    SongFile, SongView, StatusMessage, StatusView, TrackView, Unusable, WorkspaceView,
+    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, RecoveryCause,
+    SettingsDialogView, SongFile, SongView, StatusMessage, StatusView, TrackView, Unusable,
+    WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, SidePanel, WindowSize};
 use crate::play::{Cut, EngineOp, Heard, Play, RecordReport};
 use crate::settings::{SCALES, Settings};
+
+pub use recovery::{QUIET_US, RecoveryStart};
 
 /// The buffer size meloet asks for. What really runs is `AudioView::actual_frames`.
 pub const REQUESTED_FRAMES: u32 = 256;
@@ -120,6 +124,11 @@ pub enum Input {
         path: PathBuf,
         previous: bool,
     },
+    /// At the start: the recovery folder had a file.
+    RecoveryFound(Box<RecoveryStart>),
+    /// The PC is ending (a signal, logind). Answered with [`Effect::WriteRecovery`] with
+    /// `ending`, or [`Effect::EndingReady`] when there is nothing to write.
+    PcEnding,
 }
 
 /// Where [`Effect::SaveSong`] writes.
@@ -168,6 +177,18 @@ pub enum Effect {
     },
     /// meloet may end now.
     Exit,
+    /// Write the recovery file. `ending`: the PC is ending and waits for it.
+    WriteRecovery {
+        song: Box<Song>,
+        path: Option<PathBuf>,
+        cause: RecoveryCause,
+        ending: bool,
+    },
+    RemoveRecovery,
+    /// The PC is ending and there is nothing to write.
+    EndingReady,
+    /// Show the file in the PC's file manager.
+    ShowFile(PathBuf),
 }
 
 pub struct Model {
@@ -224,6 +245,9 @@ pub struct Model {
     /// is reopened, so the same size on the next stream is not said again.
     buffer_fixed_seen: Option<u32>,
     files: songs::Files,
+    recovery: recovery::Recovery,
+    /// The time given with `set_now`, µs.
+    now_us: u64,
 }
 
 struct OpenStream {
@@ -272,6 +296,8 @@ impl Model {
             audio_system_down: false,
             midi_restarting: None,
             files: songs::Files::default(),
+            recovery: recovery::Recovery::default(),
+            now_us: 0,
         }
     }
 
@@ -410,6 +436,8 @@ impl Model {
             | Input::SongNotSaved
             | Input::SongRead { .. }
             | Input::SongUnreadable { .. } => self.song_input(input, &mut effects),
+            Input::RecoveryFound(start) => self.recovery_start(*start, &mut effects),
+            Input::PcEnding => self.pc_ending(&mut effects),
         }
         self.settle(&mut effects);
         if self.open.is_none() {
@@ -432,6 +460,7 @@ impl Model {
         }
         self.watch_buffer();
         self.close_when_recorded(&mut effects);
+        self.recovery_tick(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
             effects.push(Effect::TestTone);
         }
@@ -446,6 +475,7 @@ impl Model {
     /// The time and what the listener hears, before each input. `heard` only while a stream
     /// is open.
     pub fn set_now(&mut self, t_us: u64, heard: Option<Heard>) {
+        self.now_us = t_us;
         self.play.set_now(t_us, heard);
     }
 
@@ -633,10 +663,12 @@ impl Model {
                 return Some(node);
             }
             Command::DismissHint => {
-                if self.hint.take().is_some() {
-                    self.hint_dismissed = true;
-                } else if self.empty_hint() {
-                    self.empty_dismissed = true;
+                if !self.dismiss_recovery() {
+                    if self.hint.take().is_some() {
+                        self.hint_dismissed = true;
+                    } else if self.empty_hint() {
+                        self.empty_dismissed = true;
+                    }
                 }
             }
             Command::PlayStop => self.play.play_stop(can_play, effects),
@@ -668,6 +700,8 @@ impl Model {
             Command::AnswerSongDialog { dialog, answer } => {
                 self.answer_song_dialog(dialog, answer, effects);
             }
+            Command::DiscardRecovered => self.discard_recovered(effects),
+            Command::ShowRecoveryFile => self.show_recovery_file(effects),
         }
         None
     }
@@ -872,6 +906,8 @@ impl Model {
         let audio = self.audio_view();
         let chosen_state = self.chosen_state();
         let status = self.status(chosen_state);
+        // Choosing the output comes first; the recovery hint waits behind it, in the same place.
+        let recovery = self.recovery_view().filter(|_| !self.chooser_shown());
         AppState {
             song: song_view(&self.play, self.song_file()),
             transport: self.play.transport_view(self.open.is_some()),
@@ -892,8 +928,10 @@ impl Model {
                 }),
                 hint: self
                     .hint
-                    .or_else(|| self.empty_hint().then_some(Hint::EmptyArrange)),
+                    .or_else(|| self.empty_hint().then_some(Hint::EmptyArrange))
+                    .filter(|_| recovery.is_none()),
                 song_dialog: self.song_dialog_view(),
+                recovery,
             },
             keyboards: KeyboardsView {
                 list: self

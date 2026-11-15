@@ -206,6 +206,7 @@ export const mock = {
   "mock.arrange-note.top": m(176, "F-Connect2"),
   "mock.chooser.width": m(640, "F-Connect2"),
   "mock.sound-hint.width": m(420, "F-Connect3"),
+  "mock.recovery-hint.width": m(480, "F-Recover1"),
   "mock.settings.top": m(80, "F-Settings"),
   "mock.settings.top-advanced": m(40, "F-SettingsAdvFixed"),
   "mock.settings.label": m(132, "F-Settings"),

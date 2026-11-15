@@ -28,6 +28,7 @@ fn recorded_keys_land_where_they_were_heard_on_the_real_output() {
             devices: true,
             audio: false,
             songs_dir: None,
+            state_dir: None,
         });
         std::thread::sleep(Duration::from_secs(2));
         for o in core.snapshot().state.outputs.list {
@@ -53,6 +54,7 @@ fn recorded_keys_land_where_they_were_heard_on_the_real_output() {
         devices: true,
         audio: true,
         songs_dir: None,
+        state_dir: None,
     });
     let latest = record_timing::listen(&core);
     record_timing::wait_for(&core, "the output runs", Duration::from_secs(10), |s| {

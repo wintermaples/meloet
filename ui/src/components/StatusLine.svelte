@@ -8,7 +8,7 @@
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { t, type TextKey } from "../text/ja";
-  import { msText, tempoText, textParts, type TextPart } from "./format";
+  import { msText, tempoText, termParts, textParts, type TextPart } from "./format";
   import { statusFit, type StatusRightShown } from "./statusFit";
   import ZoomMenu from "./ZoomMenu.svelte";
 
@@ -19,7 +19,13 @@
     /** 値を gray.10 で出す穴。 */
     strong: string[];
     button: { label: string; command: Command } | null;
+    /** 文の中で用語の説明をそえる言葉。 */
+    term?: string;
   }
+
+  const RECOVERY_TERM = "なおすためのファイル";
+  const platform = platformOf(navigator);
+  const modKey = (letter: string) => `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${letter}`;
 
   const BAND_NAMES: Record<Band, TextKey> = {
     pianoRoll: "band.pianoRoll",
@@ -108,6 +114,17 @@
         return plain("msg.noArmedTrack");
       case "undoPending":
         return plain("msg.undoPending", { count: m.count });
+      case "recovered":
+        return { ...plain("status.recovered"), term: RECOVERY_TERM };
+      case "recoveryDiscarded":
+        return plain("msg.recoveryDiscarded", { undoKey: modKey(t("key.undo")) });
+      case "recoveryUnreadable":
+        return {
+          ...plain("status.recoveryUnreadable", {
+            opened: t(m.savedSong ? "status.recoveryOpenedSaved" : "status.recoveryOpenedNew"),
+          }),
+          term: RECOVERY_TERM,
+        };
       case "summary": {
         const loop = m.loopBars;
         if (loop && m.nothingSelected) return plain("status.loopNoSelection", { from: loop.from, to: loop.to });
@@ -149,7 +166,6 @@
   let open = $state(false);
   let zoomButton = $state<HTMLButtonElement>();
   let popup = $state<HTMLElement>();
-  const platform = platformOf(navigator);
 
   // 一覧はダイアログより手前に出すので、.app の重なりの外（body）に置き、状態行の右上にそろえる。
   let anchor = $state({ right: 0, bottom: 0 });
@@ -233,6 +249,10 @@
       {#each message.parts as part, i (i)}
         {#if part.hole !== null}
           <span class="m-num" class:m-hi={message.strong.includes(part.hole)}>{part.text}</span>
+        {:else if message.term}
+          {#each termParts(part.text, message.term) as piece, j (j)}{#if piece.term}<span use:term={message.term}
+                >{piece.text}</span
+              >{:else}{piece.text}{/if}{/each}
         {:else}{part.text}{/if}
       {/each}
     </span>

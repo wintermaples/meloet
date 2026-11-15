@@ -128,6 +128,38 @@ export const texts = {
   "msg.songBroken": s6("曲のファイルがこわれている", "このファイルは読めませんでした。自動で残してある 1 つ前の状態からなら開けます。"),
   // 1 つ前の状態がないときは、上の文の 1 文目だけ。
   "msg.songBrokenFirst": s6("曲のファイルがこわれている", "このファイルは読めませんでした。", undefined, "part"),
+  // なおすためのファイル（仕様書 3 章）。PC が終わるときに書いた物は仕様書の文、ふだん書いた物はヤチヨさんの文。
+  "msg.recoveredPcEnding": s6("なおすためのファイルから戻した", "PC が終わる前の演奏を戻しました。まだ保存していません。", undefined, "quoted"),
+  // 2 文目は「…です。」と「テイク N つ。」に分けて持つ。テイクが 0 のときはうしろを出さない（棟梁の決め 2026-11-15、デザインに戻す）。
+  "msg.recoveredPcEndingDetail": s6(
+    "なおすためのファイルから戻した",
+    "{month} 月 {day} 日 {time} に PC が終わったときの「{song}」です。",
+    { month: "11", day: "15", time: "22:41", song: "新しい曲" },
+    "part",
+  ),
+  "msg.recoveredTakes": s6("なおすためのファイルから戻した", "テイク {takes} つ。", { takes: "2" }, "part"),
+  "msg.recoveredSudden": e("meloet が急に終わる前の演奏を戻しました。まだ保存していません。", "user:2026-11-15"),
+  "msg.recoveredSuddenDetail": e("{month} 月 {day} 日 {time} の「{song}」です。", "user:2026-11-15", {
+    month: "11",
+    day: "15",
+    time: "22:41",
+    song: "新しい曲",
+  }),
+  // 仕様書 6 章の表の「出る場所」の列にある文。
+  "status.recovered": e("なおすためのファイルから戻しました ・ まだ保存していません", "spec:6"),
+  "msg.recoveryDiscarded": s6("戻さないを押した", "戻した変更をすてて、最後に保存した形にしました。取り消せます（{undoKey}）", { undoKey: "Mod Z" }),
+  "msg.recoveryUnreadable": s6("なおすためのファイルが読めない", "前に保存していない変更がありましたが、なおすためのファイルが読めませんでした。", undefined, "quoted"),
+  "msg.recoveryUnreadableSaved": s6(
+    "なおすためのファイルが読めない",
+    "最後に保存した「{song}」をひらいています。ファイルは消さずに残してあります。",
+    { song: "はじめての曲" },
+    "quoted",
+  ),
+  "msg.recoveryUnreadableNew": s6("なおすためのファイルが読めない", "新しい曲をひらいています。ファイルは消さずに残してあります。", undefined, "quoted"),
+  // 状態行。保存したことのない曲のときは、うしろを「新しい曲をひらいています」にする（モック F-Recover3 の形に、仕様書の言葉を入れた）。
+  "status.recoveryUnreadable": e("なおすためのファイルが読めませんでした ・ {opened}", "mock:F-Recover3", { opened: "最後に保存した曲をひらいています" }),
+  "status.recoveryOpenedSaved": e("最後に保存した曲をひらいています", "mock:F-Recover3"),
+  "status.recoveryOpenedNew": s6("なおすためのファイルが読めない", "新しい曲をひらいています", undefined, "part"),
   "msg.cpuOverload": s6("処理が追いつかない", "PC の処理が追いつかず、音がとぎれました。音の設定でバッファを大きくすると、とぎれにくくなります。"),
   "msg.exportPeak": s6("書き出しの前", "いちばん大きい所 {peak} dB ・ 音割れはありません", { peak: "−6.2" }),
   "msg.exportClipping": s6("書き出しで音が割れる", "いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。"),
@@ -168,6 +200,9 @@ export const texts = {
   "button.openPrevious": e("1 つ前を開く", "spec:6"),
   "button.exportAnyway": e("このまま書き出す", "spec:6"),
   "button.openFolder": e("フォルダをひらく", "spec:6"),
+  "button.dontRestore": e("戻さない", "spec:6"),
+  "button.openFileLocation": e("ファイルの場所をひらく", "spec:6"),
+  "button.close": e("閉じる", "spec:6"),
 
   // キーの札（帯札やボタンの右はしに小さく書くキーの名前。仕様書 4 章の表）
   "key.enter": e("Enter", "spec:4"),
@@ -184,6 +219,7 @@ export const texts = {
   "key.newSong": e("N", "user:2026-11-15"),
   "key.openSong": e("O", "user:2026-11-15"),
   "key.saveSong": e("S", "spec:4"),
+  "key.undo": e("Z", "spec:4"),
   // 拡大率のキーの書きかた（docs/design-notes.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
   "key.ctrl": e("Ctrl", "spec:4"),
   "key.cmd": e("Cmd", "spec:4"),
@@ -374,6 +410,7 @@ const st = (term: string, description: string): Term => ({ term, description, so
 
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
+  st("なおすためのファイル", "PC が急に終わったときのために、保存していない変更を急いで書いておくファイル。次に起動したとき、ここから戻せる。"),
   st("トラック", "楽器ひとつぶんの列。音源をひとつ持つ。"),
   st("クリップ", "トラックの上に置く、ひとかたまりの演奏や録音。"),
   st("アレンジ", "トラックとクリップを時間にそってならべる、曲の全体図。"),

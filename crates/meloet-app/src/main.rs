@@ -3,12 +3,14 @@
 mod clock;
 mod core_handle;
 mod devhooks;
+mod logind;
 mod pcwindow;
 mod takes;
 mod webprocess;
 
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 
 use meloet_core::ShellRequest;
 use meloet_protocol::{
@@ -21,6 +23,10 @@ use tauri::{AppHandle, LogicalSize, Manager, RunEvent, State, WebviewWindow, Win
 use crate::core_handle::CoreHandle;
 
 type Core = Arc<dyn CoreHandle>;
+
+/// How long the PC's ending waits for the recovery file. The session ends the programs 5 s
+/// after SIGTERM (systemd's `TimeoutStopSec` for app scopes); this leaves time to end.
+const ENDING_WAIT: Duration = Duration::from_secs(3);
 
 #[tauri::command]
 fn hello(protocol_version: u32) -> HelloReply {
@@ -255,6 +261,10 @@ fn shell_request(
             app.exit(0);
             return;
         }
+        ShellRequest::ShowFile { path } => {
+            pcwindow::show_file(path);
+            return;
+        }
         ShellRequest::PickSongFile { folder } => (pcwindow::Pick::SongFile, folder),
         ShellRequest::PickFolder { folder } => (pcwindow::Pick::Folder, folder),
     };
@@ -326,7 +336,8 @@ fn main() {
                     }
                 });
             }
-            webprocess::exit_on_signals(app.handle());
+            webprocess::exit_on_signals(app.handle(), window_side.clone());
+            logind::watch(Arc::downgrade(&window_side));
             Ok(())
         })
         .on_page_load(|webview, payload| {

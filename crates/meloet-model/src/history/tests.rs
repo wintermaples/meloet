@@ -229,5 +229,6 @@ fn kind_index(kind: &StepKind) -> usize {
         StepKind::DeleteClips { .. } => 2,
         StepKind::Tempo { .. } => 3,
         StepKind::Meter { .. } => 4,
+        StepKind::Recovered | StepKind::DiscardRecovered => unreachable!("no edit makes it"),
     }
 }

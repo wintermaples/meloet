@@ -68,3 +68,70 @@
 2. 画面の中の隠した iframe の場所を、ひまな時（録音・再生を止めたあと、など）に変えて、(2) の旗を立てる。仕組みの副作用を使う手で、2.52 で本当に Full が来るかは未確認。試すなら次の係で。
 3. Rust 側: WebKit のプロセスに GC を頼む道（web extension で `jsc` の GC を呼ぶ、など）。meloet-app に手を入れることになる。未調査。
 4. 60 Hz の仕事を、さらに大きく減らす（計器を JS で受ける所、Svelte の更新、メーター）。Full が来ない限り止まらないので、2 か 3 と組みあわせる物。
+
+## f. memory pressure settings（WebKitGTK の `MemoryPressureSettings`、2026-11-15 夜）
+
+**入れなかった。** ピアノロールなしでは RSS が平らになったが、ピアノロールをひらいたままでは効かなかった（下の表）。効くかどうかが起動の直後の時の運びで決まり、しくみも説明しきれていない。
+
+### API の意味（WebKitGTK 2.52 の枝 `webkitglib/2.52` のソースを読んだ。入れた版は 2.52.6）
+
+- `webkit_website_data_manager_set_memory_pressure_settings` は**ネットワークのプロセスだけ**に効く（その関数の文書とコード: `WebProcessPool::setNetworkProcessMemoryPressureHandlerConfiguration`）。ウェブのプロセスに効くのは `WebKitWebContext` の construct-only の property `memory-pressure-settings` だけで、wry 0.57.2（`src/webkitgtk/web_context.rs` の `WebContextImpl::new`）は `WebContext::builder()` にそれを渡さず、tauri-runtime-wry 2.12.3 にも口がない。確かさ A。
+  - 試すために、wry が文脈を作る前に `WebKitWebContext` の class の `set_property` を包み、NULL で来たこの property に meloet の設定を渡す形を `meloet-app` に作った（設定が届いたことは、下の値の差で確かめた）。入れないので消した。
+- 上限（memory limit, MB）: `MemoryPressureHandler` の `baseThreshold`。比べる物は `memoryFootprint()` = `/proc/self/statm` の resident、つまり RSS（`wtf/linux/MemoryFootprintLinux.cpp`）。既定は RAM と 3 GB の小さいほう。確かさ A。
+- 見る間隔（poll interval）: 既定 30 秒（`s_pollInterval`）。この見はりは、既定のままでもウェブのプロセスで動いている（`WebProcess.cpp` の `setShouldUsePeriodicMemoryMonitor(isFastMallocEnabled() …)`、GTK は `ENABLE_PERIODIC_MEMORY_MONITOR` が ON）。確かさ A。
+- conservative（既定 0.33）をこえると、見るたびに `releaseMemory(Critical::No)`: フォント・セレクタ・スタイルなどのキャッシュを捨て、`malloc_trim(0)`。**Linux では GC を呼ばない**（`MemoryRelease.cpp` の `releaseNoncriticalMemory`。GC を呼ぶのは iOS だけ）。確かさ A。
+- strict（既定 0.5）をこえると、見るたびに `releaseMemory(Critical::Yes)`: 上に加えて、JIT のコードを全部捨て（`deleteAllCode`）、`garbageCollectSoon()`。これは `Heap::reportAbandonedObjectGraph()` で Full のタイマーを早めるだけで、Full をその場で回さない。前の Full が何も返せなかったとき（a の「13 → 16 MB」）は、タイマーの遅れが無限大のままなので効かない（`FullGCActivityCallback::deathRate` が 0）。確かさ A（ソース）と C（当てはめ）。
+- kill（既定 0）: こえると、まず `releaseMemory(Critical::Yes, Synchronous::Yes)`（ここだけが Full の GC をその場で回す）、それでも下がらなければ UI のプロセスがウェブのプロセスを止める（`ProcessTerminationReason::ExceededMemoryLimit`。meloet では `webprocess.rs` が読みなおす）。文書は「0 は止めない」だが、ソースでは 0 のとき `thresholdForMemoryKill()` がプロセスの状態の既定に落ちる。WebKitGTK はプロセスを Active にしない（`setProcessState` を呼ぶ所が glib の側に見つからなかった。確かさ B）ので Inactive の値 = min(3 GB + ページ数 × 1 GB, RAM × 0.9)。**いまの meloet も、RSS が 3 GB をこえると止められて読みなおす**と読める（確かさ C、ためしていない）。本当に止めないには、kill に大きな値（例: 上限 × 1000）を明示する。
+- 読んだファイル: `Source/WebKit/UIProcess/API/glib/WebKitMemoryPressureSettings.cpp`、`WebKitWebsiteDataManager.cpp`、`WebKitWebContext.cpp`、`Source/WebKit/UIProcess/glib/WebProcessPoolGLib.cpp`、`Source/WebKit/WebProcess/WebProcess.cpp`、`glib/WebProcessGLib.cpp`、`Source/WTF/wtf/MemoryPressureHandler.{h,cpp}`、`wtf/unix/MemoryPressureHandlerUnix.cpp`、`wtf/linux/MemoryFootprintLinux.cpp`、`Source/WebCore/page/MemoryRelease.cpp`、`bindings/js/GarbageCollectionController.cpp`、`page/OpportunisticTaskScheduler.cpp`、`Source/JavaScriptCore/heap/{Heap,GCActivityCallback,FullGCActivityCallback}.cpp`（いずれも GitHub の `WebKit/WebKit` の `webkitglib/2.52`）。ヘッダは `/usr/include/webkitgtk-4.1/webkit/WebKitMemoryPressureSettings.h`。
+
+### 測った数
+
+- 版: `240f48f` の上の作業ツリー（上のしかけを足した物）。release、窓 1920×1080、バッファ 256、48000 Hz。`JSC_logGC=1`。
+- PC: 別の係がほかの作業ツリーで作業中。各回の始めの load average 0.49〜1.03。ヤチヨさんの meloet は動いていない。
+- 生の数: `target/r3-mem/m/<回>/`、`target/r3-mem/lat/<回>/`。
+- 設定は「上限 MB, conservative, strict, 間隔 秒」。kill は 0。
+
+| 回 | 設定 | 秒 | ピアノロール | Eden / Full | 2 回目の Full（前 → 後 MB） | WebKitWebProcess MB（はじめ → 終わり） |
+|---|---|---|---|---|---|---|
+| base1 | なし | 120 | なし | 1689 / 1 | — | 337 → 458 |
+| exp-never | 3000, 0.33, 0.5, 5（こえない） | 120 | なし | 1598 / 1 | — | 344 → 449 |
+| exp1 | 400, 0.8, 0.9, 5 | 120 | なし | 3 / 182 | はじめから | 329 → 358 |
+| exp-cons | 1000, 0.33, 0.9, 5 | 120 | なし | 577 / 121 | 20 → 17（すぐ） | 325 → 347 |
+| cons2（同じ設定でもう 1 回） | 1000, 0.33, 0.9, 5 | 120 | なし | 457 / 128 | 20 → 17（すぐ） | 326 → 348 |
+| exp-cons30 | 1000, 0.33, 0.9, **30** | 120 | なし | 1694 / 1 | — | 337 → 436 |
+| exp-late（conservative を 400 MB に） | 1000, 0.4, 0.9, 5 | 180 | なし | 2441 / 1 | — | 340 → 470（90 秒で 400 をこえたが、Full は来ない） |
+| exp-strictlate（strict を 380 MB に） | 1000, 0.37, 0.38, 5 | 150 | なし | 1943 / 2 | 136 → 12（終わりぎわ） | 337 → 572（strict に入ってから約 2 MB/秒に速まった） |
+| **long-x** | 3000, 0.0667, 0.5, 5 | 600 | なし | 546 / 763 | 20 → 17（すぐ） | **325 → 357（いちばん大きい 362）** |
+| **long-x-pr** | 3000, 0.0667, 0.5, 5 | 600 | ひらいたまま | 7244 / 13 | 362 → 21（終わりぎわ） | **334 → 798（いちばん大きい 815）** |
+| exp-p1-pr | 3000, 0.0667, 0.5, **1** | 150 | ひらいたまま | 1986 / 1 | — | 333 → 485 |
+
+long-x と long-x-pr の 60 秒ごと（MB）:
+
+| 秒 | 60 | 120 | 180 | 240 | 300 | 360 | 420 | 480 | 540 | 600 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| long-x | 345 | 348 | 354 | 357 | 353 | 355 | 355 | 355 | 355 | 355 |
+| long-x-pr | 391 | 435 | 489 | 535 | 578 | 619 | 665 | 706 | 751 | 798 |
+
+- どの回も、はじめの Full は「13 → 16 MB」（何も返せない）。効いた回は、そのすぐあとに 2 回目の Full（20 → 17 MB）が来て、そこから Full が 1 秒に約 1 回つづき、Eden はほとんど回らない。効かなかった回は 2 回目が来ない（a と同じ形）。
+- 効いたのは、conservative をはじめから（RSS がいつも上に）こえていて、間隔が 5 秒の回だけ。30 秒の間隔、あとからこえる conservative、あとからこえる strict は、どれも Full をよびもどさなかった。ピアノロールをひらいたままでは、5 秒でも 1 秒でも効かなかった。
+- 見立て（確かさ C）: Full がまわりつづけるかどうかは、起動の直後の数秒に決まる。conservative の片づけ（キャッシュを捨てる、`malloc_trim`）が、なぜ 2 回目の Full を起こすのかは、ソースからは説明できなかった（Linux の conservative は GC を呼ばない）。ピアノロールをひらくと、その数秒の割り当てや GC の順が変わると読む。
+- strict は害がある: 見るたびに JIT のコードを全部捨てるので、作りなおしで RSS が速くふえた（exp-strictlate）。
+
+### 主スレッドの止まりと鍵 → 画面（録音中、mixed、ピアノロール、600 鍵）
+
+`tools/measure/latency.sh --no-build --state recording --pattern mixed --piano-roll --count 600`。設定ありの回は `JSC_logGC=1` もつけた（なしの回はつけていない）。設定ありの回は、ピアノロールありなのに Full が回った（Full 233 / Eden 31）。
+
+| | 間をあけた鍵 n | Rust → 描いた p50 / p95 / 最大 | 2 コマの線 | すぐあとの鍵 n | p50 / p95 / 最大 | 3 コマの線 | 25 ms をこえたコマの間（はじめの 4000 コマ、約 55 秒） |
+|---|---|---|---|---|---|---|---|
+| 設定なし（base-rec） | 427 | 0.91 / 11.79 / 15.82 | 100 % | 173 | 5.44 / 11.57 / 14.20 | 100 % | 4（起動とピアノロールをひらく所だけ） |
+| 設定あり（x-rec） | 434 | 0.69 / 10.92 / **34.00** | **1 鍵こえた** | 166 | 6.38 / 13.40 / 17.66 | 100 % | 8（上の 4 と、4.9・8.2・27.8・40.6 秒に 38〜42 ms） |
+
+- Full の GC 1 回の止まり（logGC の `p=`）は、ふだん 1〜3 ms（long-x で 762 回の p50 1.2、p95 2.3）。ただし 30 ms をこえる回がときどきある（long-x で 16.7 ms 以上が 2 回、最大 32.8 ms。x-rec では 5 回）。38〜42 ms のコマの間と 34 ms の鍵は、これと重なると読む（確かさ C、時刻は合わせていない）。
+- Eden にも 30 ms ほどの止まりがときどきある（設定なしの 120 秒で 16.7 ms 以上が 3〜13 回、最大 35〜38 ms）ので、長い止まりは Full だけの物ではない。設定なしの latency の回は、たまたま最初の 55 秒に当たらなかった。2 コマの線をこえるかどうかは、1 回ずつでは決められない。
+- 録音中に起きにくくする手（しきい値・間隔）は、上のとおり「はじめに conservative をこえている」ことがいるので、録音中だけ止める形が作れない。
+
+### 棟梁に（次の手の案）
+
+1. このまま入れない（起動の運しだいで、ピアノロールをひらいていると効かない）。
+2. どの回でも、Full が 1 秒に 1 回まわりはじめると RSS は平らで、止まりもふだん 1〜3 ms だった。Full を確かに起こす別の口（e の 2 の iframe、または 3 の web extension）を試すねうちはある。
+3. 3 GB で WebKit がウェブのプロセスを止める（kill の既定）と読めるので、どの手をとるにしても、kill を明示するかどうかは決めたほうがよい。

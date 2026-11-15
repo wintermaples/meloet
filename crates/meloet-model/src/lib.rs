@@ -2,13 +2,17 @@
 
 pub mod edit;
 pub mod history;
+pub mod notes;
 pub mod playback;
 pub mod record;
+pub mod roll;
 pub mod song;
 pub mod time;
 
 pub use edit::{Edit, EditError, NewTake, RecordingAdded};
 pub use history::{History, StepKind};
+pub use notes::{NotesEdited, WriteAt};
+pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{
     Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, Session, Song, Take, TakeId,
     Track,

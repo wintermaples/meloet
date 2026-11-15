@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::roll::RollSettings;
 use crate::time::{Meter, Tempo, TickRange};
 use crate::{InstrumentRef, TempoChange, TrackColor, TrackId};
 
@@ -148,6 +149,7 @@ pub struct Session {
     pub armed: Option<TrackId>,
     pub loop_range: Option<TickRange>,
     pub loop_on: bool,
+    pub roll: RollSettings,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -165,6 +167,7 @@ impl Song {
                 armed: Some(TrackId(1)),
                 loop_range: None,
                 loop_on: false,
+                roll: RollSettings::default(),
             },
         }
     }

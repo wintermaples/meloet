@@ -81,6 +81,17 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
             armed: None,
             loop_range: TickRange::new(1920 * 4, 1920 * 8),
             loop_on: true,
+            roll: RollSettings {
+                grid: Grid::new(8, true).unwrap(),
+                scale: MusicalScale::new(2, ScaleMode::Minor, true).unwrap(),
+                quantize: QuantizeSettings::new(
+                    Grid::new(32, true).unwrap(),
+                    75,
+                    10,
+                    QuantizeAlign::StartAndEnd,
+                )
+                .unwrap(),
+            },
         },
     }
 }
@@ -126,7 +137,40 @@ fn the_shape_on_disk() {
     assert_eq!(
         v["session"],
         serde_json::json!({"playTarget": 1, "armed": null,
-                           "loop": {"start": 7680, "end": 15360}, "loopOn": true})
+                           "loop": {"start": 7680, "end": 15360}, "loopOn": true,
+                           "grid": {"division": 8, "triplet": true},
+                           "scale": {"root": 2, "mode": "minor", "lock": true},
+                           "quantize": {"division": 32, "triplet": true, "strength": 75,
+                                        "swing": 10, "align": "startAndEnd"}})
+    );
+}
+
+#[test]
+fn piano_roll_settings_missing_or_not_understood_are_the_defaults() {
+    let song = rich_song("x", 3);
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    // As round 2 wrote it.
+    let session = v["session"].as_object_mut().unwrap();
+    session.remove("grid");
+    session.remove("scale");
+    session.remove("quantize");
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(back.session.roll, RollSettings::default());
+    assert_eq!(back.doc, song.doc);
+    assert_eq!(back.session.loop_range, song.session.loop_range);
+
+    v["session"]["grid"] = serde_json::json!({"division": 7, "triplet": false});
+    v["session"]["scale"] = serde_json::json!({"root": 4, "mode": "dorian", "lock": true});
+    v["session"]["quantize"] = serde_json::json!("later");
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(back.session.roll, RollSettings::default());
+
+    v["session"]["scale"] = serde_json::json!({"root": 4, "mode": "major", "lock": true,
+                                              "someday": 1});
+    let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(
+        back.session.roll.scale,
+        MusicalScale::new(4, ScaleMode::Major, true).unwrap()
     );
 }
 

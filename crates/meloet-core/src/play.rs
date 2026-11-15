@@ -1,17 +1,21 @@
 //! The song and how it plays: the transport, recording, clips, takes and undo. Pure rules like
 //! [`crate::state`]: commands and the engine's reports come in, effects go out.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use meloet_model::edit::{self, Edit};
+use meloet_model::edit::{self, Edit, EditError};
+use meloet_model::notes::{self, NotesEdited, WriteAt};
 use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
-use meloet_model::{ClipId, Doc, History, Meter, Song, TakeId, Tempo, TickRange, TrackId};
+use meloet_model::{
+    Clip, ClipId, Doc, History, Meter, Note, Song, TakeId, Tempo, TickRange, TrackId, roll,
+};
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipView, Grid, LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale,
-    PianoRollView, QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode, StatusMessage,
-    TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef, TransportState,
-    TransportView,
+    ArrangeView, BarSpan, ClipView, Grid, IndexRange, LiveNote, LiveNotes, LiveNotesSnapshot,
+    MusicalScale, NOTE_SELECTION_KEYS, NoteSelection, PianoRollView, QuantizeAlign,
+    QuantizeSettings, RecordingView, ScaleMode, SelectMode, StatusMessage, TakeControl,
+    TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef, TransportState, TransportView,
 };
 
 use crate::state::Effect;
@@ -102,6 +106,22 @@ pub enum EngineOp {
         track: usize,
         events: Vec<PlayEvent>,
     },
+    /// Sounds a key on the track at this index, and stops the key it sounded before.
+    Audition {
+        track: usize,
+        key: u8,
+        velocity: u8,
+    },
+    AuditionOff,
+}
+
+/// Selected notes: indexes, in order, into the notes of `take`, shown in the piano roll for
+/// `clip`. Empty when they are not of the take shown now.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct NoteSel {
+    clip: Option<ClipId>,
+    take: Option<TakeId>,
+    notes: Vec<u32>,
 }
 
 /// Why a recording was cut short.
@@ -200,6 +220,13 @@ pub struct Play {
     count_in_bars: u8,
     selected: Option<ClipId>,
     piano_roll: Option<ClipId>,
+    note_sel: NoteSel,
+    /// One for each step of the history, in the same order: the selected notes before the step
+    /// and after it.
+    sel_undo: Vec<(NoteSel, NoteSel)>,
+    sel_redo: Vec<(NoteSel, NoteSel)>,
+    /// Mod C: starts count from the earliest note.
+    clipboard: Vec<Note>,
     rec: Option<Rec>,
     next_recording: u32,
     live_seq: u64,
@@ -229,6 +256,10 @@ impl Play {
             },
             selected: None,
             piano_roll: None,
+            note_sel: NoteSel::default(),
+            sel_undo: Vec::new(),
+            sel_redo: Vec::new(),
+            clipboard: Vec::new(),
             rec: None,
             next_recording: 1,
             live_seq: 0,
@@ -540,6 +571,7 @@ impl Play {
             Some(id) if self.doc().clip(id).is_some() => {
                 self.selected = Some(id);
                 self.piano_roll = Some(id);
+                self.fix_selection();
             }
             Some(_) => {}
         }
@@ -590,6 +622,11 @@ impl Play {
         if self.history.undo(&mut self.song.doc).is_some() {
             self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
+            if let Some((sel_before, sel_after)) = self.sel_undo.pop() {
+                self.note_sel = sel_before.clone();
+                self.sel_redo.push((sel_before, sel_after));
+            }
+            self.fix_selection();
         }
     }
 
@@ -601,13 +638,40 @@ impl Play {
         if self.history.redo(&mut self.song.doc).is_some() {
             self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
+            if let Some((sel_before, sel_after)) = self.sel_redo.pop() {
+                self.note_sel = sel_after.clone();
+                self.sel_undo.push((sel_before, sel_after));
+            }
+            self.fix_selection();
         }
     }
 
     fn apply(&mut self, e: Edit, effects: &mut Vec<Effect>) {
+        self.apply_selecting(e, None, effects);
+    }
+
+    /// `selected`: the notes of the shown take to select afterwards.
+    fn apply_selecting(
+        &mut self,
+        e: Edit,
+        selected: Option<Vec<usize>>,
+        effects: &mut Vec<Effect>,
+    ) {
+        let sel_before = self.note_sel.clone();
         let before = self.doc().clone();
         self.history.apply(&mut self.song.doc, e);
         self.after_change(&before, effects);
+        if let Some(notes) = selected {
+            self.set_selection(notes.into_iter().map(|i| i as u32));
+        }
+        self.sel_undo.push((sel_before, self.note_sel.clone()));
+        self.sel_redo.clear();
+    }
+
+    fn apply_notes(&mut self, edited: Result<NotesEdited, EditError>, effects: &mut Vec<Effect>) {
+        if let Ok(n) = edited {
+            self.apply_selecting(n.edit, Some(n.selected), effects);
+        }
     }
 
     /// Sends what the engine must hear again, and lets go of clips that are gone.
@@ -631,6 +695,7 @@ impl Play {
         let gone = |id: Option<ClipId>| id.filter(|&c| doc.clip(c).is_some());
         self.selected = gone(self.selected);
         self.piano_roll = gone(self.piano_roll);
+        self.fix_selection();
     }
 
     fn tempo_op(&self) -> EngineOp {
@@ -814,9 +879,9 @@ impl Play {
         let recorded = rec.recorder?.finish(tick.round() as i64, lap)?;
         let (e, added) =
             edit::add_recording(self.doc(), rec.track, recorded.takes, recorded.active).ok()?;
-        self.apply(e, effects);
         self.selected = Some(added.clip);
         self.piano_roll = Some(added.clip);
+        self.apply(e, effects);
         Some(added.active as u32 + 1)
     }
 
@@ -950,6 +1015,9 @@ impl Play {
         self.position = 0;
         self.selected = None;
         self.piano_roll = None;
+        self.note_sel = NoteSel::default();
+        self.sel_undo.clear();
+        self.sel_redo.clear();
         self.rec = None;
         self.heard = None;
         self.last_heard = None;
@@ -1000,30 +1068,32 @@ impl Play {
     }
 
     pub fn piano_roll_view(&self) -> PianoRollView {
+        let r = &self.song.session.roll;
+        let q = r.quantize;
         PianoRollView {
-            take: self
-                .piano_roll
-                .and_then(|id| self.doc().clip(id))
-                .map(|(_, c)| c.active_take().take.id.0),
-            selected_notes: Vec::new(),
+            take: self.shown().map(|c| c.active_take().take.id.0),
+            selected_notes: index_ranges(&self.note_sel.notes),
             selected_controls: Vec::new(),
             grid: Grid {
-                division: 16,
-                triplet: false,
+                division: r.grid.division(),
+                triplet: r.grid.triplet,
             },
             scale: MusicalScale {
-                root: 0,
-                mode: ScaleMode::Major,
-                lock: false,
+                root: r.scale.root(),
+                mode: scale_mode(r.scale.mode),
+                lock: r.scale.lock,
             },
             quantize: QuantizeSettings {
-                division: 16,
-                triplet: false,
-                strength: 100,
-                swing: 0,
-                align: QuantizeAlign::Start,
+                division: q.grid.division(),
+                triplet: q.grid.triplet,
+                strength: q.strength(),
+                swing: q.swing(),
+                align: match q.align {
+                    roll::QuantizeAlign::Start => QuantizeAlign::Start,
+                    roll::QuantizeAlign::StartAndEnd => QuantizeAlign::StartAndEnd,
+                },
             },
-            clipboard_notes: 0,
+            clipboard_notes: self.clipboard.len() as u32,
         }
     }
 
@@ -1066,14 +1136,317 @@ impl Play {
             return None;
         }
         let loop_bars = self.loop_on().map(|r| self.bars(r));
-        let nothing_selected = self.selected.is_none();
-        (loop_bars.is_some() || nothing_selected).then_some(StatusMessage::Summary {
-            loop_bars,
-            nothing_selected,
-            notes: None,
+        let notes = self.note_selection();
+        let nothing_selected = self.selected.is_none() && notes.is_none();
+        (loop_bars.is_some() || nothing_selected || notes.is_some()).then_some(
+            StatusMessage::Summary {
+                loop_bars,
+                nothing_selected,
+                notes,
+            },
+        )
+    }
+
+    fn note_selection(&self) -> Option<NoteSelection> {
+        let sel = &self.note_sel.notes;
+        if sel.is_empty() {
+            return None;
+        }
+        let take = &self.shown()?.active_take().take;
+        Some(NoteSelection {
+            count: sel.len() as u32,
+            keys: sel
+                .iter()
+                .take(NOTE_SELECTION_KEYS)
+                .filter_map(|&i| take.notes.get(i as usize).map(|n| n.key))
+                .collect(),
+            quantized: false,
         })
+    }
+
+    // ---- the piano roll ----
+
+    /// The clip the piano roll shows.
+    fn shown(&self) -> Option<&Arc<Clip>> {
+        self.doc().clip(self.piano_roll?).map(|(_, c)| c)
+    }
+
+    /// The shown clip, when `take` is its shown take.
+    fn shown_with(&self, take: u32) -> Option<&Arc<Clip>> {
+        self.shown()
+            .filter(|c| c.active_take().take.id == TakeId(take))
+    }
+
+    /// The shown clip, when `take` is its shown take and the song may change.
+    fn aimed(&self, take: u32) -> Option<ClipId> {
+        if self.busy() {
+            return None;
+        }
+        self.shown_with(take).map(|c| c.id)
+    }
+
+    /// Keeps the selection only while it is of the take shown now.
+    fn fix_selection(&mut self) {
+        let shown = self.shown().map(|c| {
+            let take = &c.active_take().take;
+            (Some(c.id), Some(take.id), take.notes.len())
+        });
+        match shown {
+            Some((clip, take, len)) if self.note_sel.clip == clip && self.note_sel.take == take => {
+                self.note_sel.notes.retain(|&i| (i as usize) < len);
+            }
+            _ => self.note_sel = NoteSel::default(),
+        }
+    }
+
+    /// Selects these notes of the shown take; indexes past its end are left out.
+    fn set_selection(&mut self, notes: impl IntoIterator<Item = u32>) {
+        let Some(c) = self.shown() else {
+            self.note_sel = NoteSel::default();
+            return;
+        };
+        let take = &c.active_take().take;
+        let len = take.notes.len() as u32;
+        let notes: BTreeSet<u32> = notes.into_iter().filter(|&i| i < len).collect();
+        self.note_sel = NoteSel {
+            clip: Some(c.id),
+            take: Some(take.id),
+            notes: notes.into_iter().collect(),
+        };
+    }
+
+    pub fn select_notes(&mut self, take: u32, notes: Vec<u32>, mode: SelectMode) {
+        if self.shown_with(take).is_none() {
+            return;
+        }
+        let now = self.note_sel.notes.iter().copied();
+        let picked: BTreeSet<u32> = match mode {
+            SelectMode::Replace => notes.into_iter().collect(),
+            SelectMode::Add => now.chain(notes).collect(),
+            SelectMode::Toggle => {
+                let mut set: BTreeSet<u32> = now.collect();
+                let flips: BTreeSet<u32> = notes.into_iter().collect();
+                for i in flips {
+                    if !set.remove(&i) {
+                        set.insert(i);
+                    }
+                }
+                set
+            }
+        };
+        self.set_selection(picked);
+    }
+
+    pub fn select_all_notes(&mut self) {
+        let len = self.shown().map_or(0, |c| c.active_take().take.notes.len());
+        self.set_selection(0..len as u32);
+    }
+
+    pub fn clear_note_selection(&mut self) {
+        self.note_sel.notes.clear();
+    }
+
+    /// The write tool. `take: None` only when the piano roll shows no clip: the note goes on the
+    /// track the keys play, in the clip there or in a new one. Returns the notice to show.
+    pub fn add_note(
+        &mut self,
+        take: Option<u32>,
+        note: Note,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() || note.key > 127 {
+            return None;
+        }
+        let at = match take {
+            Some(take) => WriteAt::Clip(self.aimed(take)?),
+            None if self.shown().is_some() => return None,
+            None => WriteAt::Track(self.song.session.play_target),
+        };
+        let scale = self.song.session.roll.scale;
+        if scale.lock && !scale.contains(note.key) {
+            return Some(StatusMessage::OutOfScale {
+                key: note.key,
+                root: scale.root(),
+                mode: scale_mode(scale.mode),
+            });
+        }
+        let note = Note {
+            length: note.length.max(1),
+            velocity: note.velocity.clamp(1, 127),
+            ..note
+        };
+        let written = notes::write_note(self.doc(), at, note).ok()?;
+        if take.is_none() {
+            self.selected = Some(written.clip);
+            self.piano_roll = Some(written.clip);
+        }
+        self.apply_selecting(written.edit, Some(written.selected), effects);
+        None
+    }
+
+    pub fn move_notes(
+        &mut self,
+        take: u32,
+        picked: &[u32],
+        ticks: i64,
+        keys: i32,
+        copy: bool,
+        effects: &mut Vec<Effect>,
+    ) {
+        if let Some(clip) = self.aimed(take) {
+            let r = notes::move_notes(self.doc(), clip, &indexes(picked), ticks, keys, copy);
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn resize_notes(
+        &mut self,
+        take: u32,
+        picked: &[u32],
+        ticks: i64,
+        effects: &mut Vec<Effect>,
+    ) {
+        if let Some(clip) = self.aimed(take) {
+            let r = notes::resize_notes(self.doc(), clip, &indexes(picked), ticks);
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn delete_notes(&mut self, take: u32, picked: &[u32], effects: &mut Vec<Effect>) {
+        if let Some(clip) = self.aimed(take) {
+            let r = notes::delete_notes(self.doc(), clip, &indexes(picked), false);
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn change_velocity(
+        &mut self,
+        take: u32,
+        picked: &[u32],
+        delta: i32,
+        effects: &mut Vec<Effect>,
+    ) {
+        if let Some(clip) = self.aimed(take) {
+            let r = notes::change_velocity(self.doc(), clip, &indexes(picked), delta);
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn copy_notes(&mut self, take: u32, picked: &[u32]) {
+        if let Some(c) = self.shown_with(take)
+            && let Ok(notes) = notes::clipboard(c, &indexes(picked))
+        {
+            self.clipboard = notes;
+        }
+    }
+
+    /// Copies and deletes, as one step.
+    pub fn cut_notes(&mut self, take: u32, picked: &[u32], effects: &mut Vec<Effect>) {
+        let Some(clip) = self.aimed(take) else {
+            return;
+        };
+        let picked = indexes(picked);
+        let Some(c) = self.shown() else {
+            return;
+        };
+        let (Ok(kept), Ok(edited)) = (
+            notes::clipboard(c, &picked),
+            notes::delete_notes(self.doc(), clip, &picked, true),
+        ) else {
+            return;
+        };
+        self.clipboard = kept;
+        self.apply_notes(Ok(edited), effects);
+    }
+
+    pub fn paste_notes(&mut self, at: u64, effects: &mut Vec<Effect>) {
+        if self.busy() || self.clipboard.is_empty() {
+            return;
+        }
+        if let Some(clip) = self.shown().map(|c| c.id) {
+            let r = notes::paste_notes(self.doc(), clip, &self.clipboard, at);
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn set_grid(&mut self, division: u16, triplet: bool) {
+        if let Some(grid) = roll::Grid::new(division, triplet) {
+            self.song.session.roll.grid = grid;
+        }
+    }
+
+    pub fn set_musical_scale(&mut self, root: u8, mode: ScaleMode, lock: bool) {
+        let mode = match mode {
+            ScaleMode::Major => roll::ScaleMode::Major,
+            ScaleMode::Minor => roll::ScaleMode::Minor,
+        };
+        if let Some(scale) = roll::MusicalScale::new(root, mode, lock) {
+            self.song.session.roll.scale = scale;
+        }
+    }
+
+    pub fn set_quantize(&mut self, s: QuantizeSettings) {
+        let align = match s.align {
+            QuantizeAlign::Start => roll::QuantizeAlign::Start,
+            QuantizeAlign::StartAndEnd => roll::QuantizeAlign::StartAndEnd,
+        };
+        if let Some(grid) = roll::Grid::new(s.division, s.triplet)
+            && let Some(q) = roll::QuantizeSettings::new(grid, s.strength, s.swing, align)
+        {
+            self.song.session.roll.quantize = q;
+        }
+    }
+
+    /// The write tool sounds the key on the track the keys play: not a key it may not write
+    /// (outside the locked scale), and nothing without an output.
+    pub fn audition(&self, key: u8, velocity: u8, open: bool, effects: &mut Vec<Effect>) {
+        let scale = self.song.session.roll.scale;
+        if !open || key > 127 || (scale.lock && !scale.contains(key)) {
+            return;
+        }
+        if let Some(track) = self.track_index(self.song.session.play_target) {
+            effects.push(Effect::Engine(EngineOp::Audition {
+                track,
+                key,
+                velocity: velocity.clamp(1, 127),
+            }));
+        }
+    }
+
+    pub fn audition_off(&self, open: bool, effects: &mut Vec<Effect>) {
+        if open {
+            effects.push(Effect::Engine(EngineOp::AuditionOff));
+        }
     }
 }
 
+fn indexes(picked: &[u32]) -> Vec<usize> {
+    picked.iter().map(|&i| i as usize).collect()
+}
+
+fn scale_mode(mode: roll::ScaleMode) -> ScaleMode {
+    match mode {
+        roll::ScaleMode::Major => ScaleMode::Major,
+        roll::ScaleMode::Minor => ScaleMode::Minor,
+    }
+}
+
+/// Sorted indexes as ranges, the ones that touch joined.
+fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
+    let mut out: Vec<IndexRange> = Vec::new();
+    for &i in sorted {
+        match out.last_mut() {
+            Some(r) if r.end == i => r.end = i + 1,
+            _ => out.push(IndexRange {
+                start: i,
+                end: i + 1,
+            }),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod roll_tests;
 #[cfg(test)]
 pub(crate) mod tests;

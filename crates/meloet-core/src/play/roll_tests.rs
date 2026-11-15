@@ -1,0 +1,863 @@
+//! The piano roll: editing notes, the selection, the clipboard, the settings, the audition.
+
+use std::collections::HashMap;
+
+use meloet_model::edit::{NewTake, add_recording};
+use meloet_model::song::Track;
+use meloet_model::{InstrumentRef, Take, TrackColor};
+use meloet_protocol::{Command, IndexRange, SelectMode, StatusMessage, TakeNotes};
+
+use super::tests::{cmd, ready, record_once, report, started, status};
+use super::*;
+use crate::songfile;
+use crate::state::Effect;
+
+const BAR: u64 = 1920;
+
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n.max(1)
+    }
+
+    fn signed(&mut self, n: i64) -> i64 {
+        self.below(2 * n as u64 + 1) as i64 - n
+    }
+}
+
+fn notes_from(rng: &mut Rng, count: u64, length: u64) -> Vec<Note> {
+    let mut notes: Vec<Note> = (0..count)
+        .map(|_| Note {
+            start: rng.below(length - 10),
+            length: 1 + rng.below(400),
+            key: 30 + rng.below(60) as u8,
+            velocity: 1 + rng.below(127) as u8,
+        })
+        .map(|n| Note {
+            length: n.length.min(length - n.start),
+            ..n
+        })
+        .collect();
+    notes.sort_by_key(|n| n.start);
+    notes
+}
+
+/// Two tracks. Track 1: a clip of 3 takes over bars 2–6 (the takes at different places in it),
+/// and a clip of 1 take over bars 8–9. Track 2: one clip.
+fn song(rng: &mut Rng) -> Song {
+    let mut s = Song::new_default();
+    s.doc.tracks.push(Arc::new(Track {
+        id: TrackId(2),
+        name: "ベース".into(),
+        color: TrackColor::for_index(1),
+        instrument: InstrumentRef::Placeholder,
+        gain_db: 0.0,
+        clips: Vec::new(),
+    }));
+    let take = |rng: &mut Rng, origin: u64, length: u64| NewTake {
+        origin,
+        length,
+        notes: notes_from(rng, 6, length),
+        controls: Vec::new(),
+    };
+    let add = |doc: &Doc, track: u32, takes: Vec<NewTake>| {
+        add_recording(doc, TrackId(track), takes, 0).unwrap().0.doc
+    };
+    let doc = add(&s.doc, 1, vec![take(rng, BAR, 4 * BAR)]);
+    let doc = add(&doc, 1, vec![take(rng, 2 * BAR, BAR)]);
+    let doc = add(&doc, 1, vec![take(rng, BAR + 480, 2 * BAR)]);
+    let doc = add(&doc, 1, vec![take(rng, 7 * BAR, BAR)]);
+    let doc = add(&doc, 2, vec![take(rng, 0, 2 * BAR)]);
+    s.doc = doc;
+    s
+}
+
+fn fresh(song: Song) -> Play {
+    let mut p = Play::new(false, 0);
+    p.replace_song(song, false, &mut Vec::new());
+    p
+}
+
+fn shown_take(p: &Play) -> Option<Arc<Take>> {
+    p.shown().map(|c| c.active_take().take.clone())
+}
+
+fn shown_id(p: &Play) -> u32 {
+    shown_take(p).unwrap().id.0
+}
+
+/// The rules every song keeps after any edit.
+fn check(p: &Play, takes_of: &HashMap<ClipId, usize>, ctx: &str) {
+    for t in &p.song().doc.tracks {
+        for w in t.clips.windows(2) {
+            assert!(w[0].end <= w[1].start, "{ctx}: clips overlap");
+        }
+        for c in &t.clips {
+            assert_eq!(
+                Some(&c.takes.len()),
+                takes_of.get(&c.id),
+                "{ctx}: takes of {:?}",
+                c.id
+            );
+            for ct in &c.takes {
+                let take = &ct.take;
+                assert!(
+                    take.notes
+                        .windows(2)
+                        .all(|w| (w[0].start, w[0].key) <= (w[1].start, w[1].key)),
+                    "{ctx}: order in {:?}",
+                    take.id
+                );
+                for n in &take.notes {
+                    assert!(n.length >= 1 && n.key <= 127, "{ctx}");
+                    assert!((1..=127).contains(&n.velocity), "{ctx}");
+                    assert!(n.end() <= take.length, "{ctx}: inside the take");
+                    let at = c.start + ct.offset + n.start;
+                    assert!(
+                        at >= c.start && at + n.length <= c.end,
+                        "{ctx}: inside the clip"
+                    );
+                }
+            }
+        }
+    }
+    let view = p.piano_roll_view();
+    let len = shown_take(p).map_or(0, |t| t.notes.len() as u32);
+    assert!(
+        view.selected_notes
+            .iter()
+            .all(|r| r.start < r.end && r.end <= len),
+        "{ctx}: selection {:?} of {len}",
+        view.selected_notes
+    );
+    if !p.note_sel.notes.is_empty() {
+        assert_eq!(p.note_sel.take.map(|t| t.0), view.take, "{ctx}");
+    }
+}
+
+fn some_notes(rng: &mut Rng, p: &Play) -> Vec<u32> {
+    let len = shown_take(p).map_or(0, |t| t.notes.len()) as u64;
+    if len == 0 || rng.below(4) == 0 {
+        // Sometimes the selection, sometimes indexes past the end.
+        return match rng.below(2) {
+            0 => p.note_sel.notes.clone(),
+            _ => vec![len as u32 + rng.below(3) as u32],
+        };
+    }
+    (0..1 + rng.below(4))
+        .map(|_| rng.below(len) as u32)
+        .collect()
+}
+
+#[test]
+fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
+    let mut counts = [0usize; 12];
+    let mut applied = 0usize;
+    for seed in 1..=12u64 {
+        let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let first = song(&mut rng);
+        let mut p = fresh(first.clone());
+        let takes_of: HashMap<ClipId, usize> = first
+            .doc
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .map(|c| (c.id, c.takes.len()))
+            .collect();
+        let clips: Vec<ClipId> = takes_of.keys().copied().collect();
+        p.select_clip(Some(clips[0].0));
+        let mut line = vec![p.song().doc.clone()];
+        let mut at = 0usize;
+        let e = &mut Vec::new();
+        for round in 0..400 {
+            let ctx = format!("seed {seed}, round {round}");
+            let steps = p.undo_count();
+            let take = if rng.below(20) == 0 {
+                // An old id: dropped.
+                shown_id(&p) + 1000
+            } else {
+                shown_id(&p)
+            };
+            let action = rng.below(14);
+            counts[action.min(11) as usize] += 1;
+            match action {
+                0 => {
+                    let c = p.shown().unwrap().clone();
+                    let start = c.start + rng.below(c.end - c.start + 200);
+                    let note = Note {
+                        start,
+                        length: rng.below(2000),
+                        key: rng.below(128) as u8,
+                        velocity: rng.below(128) as u8,
+                    };
+                    p.add_note(Some(take), note, e);
+                }
+                1 => {
+                    let picked = some_notes(&mut rng, &p);
+                    let (ticks, keys) = (rng.signed(3 * BAR as i64), rng.signed(20) as i32);
+                    p.move_notes(take, &picked, ticks, keys, false, e);
+                }
+                2 => {
+                    let picked = some_notes(&mut rng, &p);
+                    let (ticks, keys) = (rng.signed(BAR as i64), rng.signed(13) as i32);
+                    p.move_notes(take, &picked, ticks, keys, true, e);
+                }
+                3 => {
+                    let picked = some_notes(&mut rng, &p);
+                    p.resize_notes(take, &picked, rng.signed(1000), e);
+                }
+                4 => {
+                    let picked = some_notes(&mut rng, &p);
+                    p.delete_notes(take, &picked, e);
+                }
+                5 => {
+                    let picked = some_notes(&mut rng, &p);
+                    p.change_velocity(take, &picked, rng.signed(150) as i32, e);
+                }
+                6 => {
+                    if rng.below(2) == 0 {
+                        let picked = some_notes(&mut rng, &p);
+                        p.copy_notes(take, &picked);
+                    }
+                    let c = p.shown().unwrap().clone();
+                    p.paste_notes(c.start + rng.below(c.end - c.start), e);
+                }
+                7 => {
+                    let picked = some_notes(&mut rng, &p);
+                    p.cut_notes(take, &picked, e);
+                }
+                8 => {
+                    p.step_take(rng.signed(2) as i32, e);
+                }
+                9 => p.undo(e),
+                10 => p.redo(e),
+                _ => match rng.below(5) {
+                    0 => p.select_clip(Some(clips[rng.below(clips.len() as u64) as usize].0)),
+                    1 => p.select_all_notes(),
+                    2 => p.clear_note_selection(),
+                    _ => {
+                        let mode = [SelectMode::Replace, SelectMode::Add, SelectMode::Toggle]
+                            [rng.below(3) as usize];
+                        let picked = some_notes(&mut rng, &p);
+                        p.select_notes(take, picked, mode);
+                    }
+                },
+            }
+            let now = p.undo_count();
+            match action {
+                9 => assert!(now + 1 == steps || (now == steps && at == 0), "{ctx}"),
+                10 => assert!(now == steps + 1 || now == steps, "{ctx}"),
+                _ if now == steps + 1 => {
+                    applied += 1;
+                    line.truncate(at + 1);
+                    line.push(p.song().doc.clone());
+                }
+                _ => assert_eq!(now, steps, "{ctx}: one command, one step at most"),
+            }
+            at = now as usize;
+            assert_eq!(&p.song().doc, &line[at], "{ctx}");
+            check(&p, &takes_of, &ctx);
+        }
+        while p.history.undo_count() > 0 {
+            p.undo(e);
+        }
+        assert_eq!(p.song().doc, first.doc, "seed {seed}: all undone");
+        while p.history.redo_count() > 0 {
+            p.redo(e);
+        }
+        assert_eq!(
+            &p.song().doc,
+            line.last().unwrap(),
+            "seed {seed}: all redone"
+        );
+    }
+    assert!(counts.iter().all(|&n| n > 100), "{counts:?}");
+    assert!(applied > 1000, "{applied} steps");
+}
+
+fn two_notes() -> Play {
+    let mut s = Song::new_default();
+    let take = NewTake {
+        origin: BAR,
+        length: BAR,
+        notes: vec![
+            Note {
+                start: 0,
+                length: 100,
+                key: 60,
+                velocity: 90,
+            },
+            Note {
+                start: 480,
+                length: 100,
+                key: 64,
+                velocity: 90,
+            },
+        ],
+        controls: Vec::new(),
+    };
+    s.doc = add_recording(&s.doc, TrackId(1), vec![take], 0)
+        .unwrap()
+        .0
+        .doc;
+    let mut p = fresh(s);
+    let clip = p.song().doc.tracks[0].clips[0].id;
+    p.select_clip(Some(clip.0));
+    p
+}
+
+#[test]
+fn the_edited_notes_are_selected_and_undo_brings_the_selection_back() {
+    let mut p = two_notes();
+    let e = &mut Vec::new();
+    let t0 = shown_id(&p);
+    p.select_notes(t0, vec![0], SelectMode::Replace);
+    p.move_notes(t0, &[1], 960, 0, false, e);
+    let t1 = shown_id(&p);
+    assert_ne!(t1, t0);
+    assert_eq!(p.note_sel.notes, [1]);
+    // Copies are selected, not the originals.
+    p.move_notes(t1, &[0, 1], 0, 12, true, e);
+    let t2 = shown_id(&p);
+    assert_eq!(p.note_sel.notes, [1, 3]);
+    p.delete_notes(t2, &[0], e);
+    assert!(p.note_sel.notes.is_empty());
+
+    p.undo(e);
+    assert_eq!((shown_id(&p), &p.note_sel.notes[..]), (t2, &[1, 3][..]));
+    p.undo(e);
+    assert_eq!((shown_id(&p), &p.note_sel.notes[..]), (t1, &[1][..]));
+    p.undo(e);
+    assert_eq!((shown_id(&p), &p.note_sel.notes[..]), (t0, &[0][..]));
+    p.redo(e);
+    assert_eq!((shown_id(&p), &p.note_sel.notes[..]), (t1, &[1][..]));
+
+    // A note command at the old take does nothing.
+    p.move_notes(t0, &[0], 480, 0, false, e);
+    p.delete_notes(t2, &[0], e);
+    assert_eq!(p.undo_count(), 1);
+    assert_eq!(shown_id(&p), t1);
+}
+
+#[test]
+fn select_modes_and_select_all() {
+    let mut p = two_notes();
+    let t = shown_id(&p);
+    p.select_notes(t, vec![1, 7], SelectMode::Replace);
+    assert_eq!(p.note_sel.notes, [1]);
+    p.select_notes(t, vec![0], SelectMode::Add);
+    assert_eq!(p.note_sel.notes, [0, 1]);
+    p.select_notes(t, vec![0, 0], SelectMode::Toggle);
+    assert_eq!(p.note_sel.notes, [1]);
+    p.select_notes(t + 1, vec![0], SelectMode::Replace);
+    assert_eq!(p.note_sel.notes, [1], "an old take is dropped");
+    p.clear_note_selection();
+    assert!(p.piano_roll_view().selected_notes.is_empty());
+    p.select_all_notes();
+    assert_eq!(
+        p.piano_roll_view().selected_notes,
+        [IndexRange { start: 0, end: 2 }]
+    );
+    // Another clip shown: the selection goes.
+    p.select_clip(None);
+    assert_eq!(
+        p.note_sel.notes,
+        [0, 1],
+        "unselecting the clip keeps the piano roll"
+    );
+    p.replace_song(Song::new_default(), false, &mut Vec::new());
+    assert!(p.piano_roll_view().selected_notes.is_empty());
+}
+
+#[test]
+fn cut_copy_and_paste() {
+    let mut p = two_notes();
+    let e = &mut Vec::new();
+    let t = shown_id(&p);
+    p.copy_notes(t, &[1, 0]);
+    assert_eq!(p.piano_roll_view().clipboard_notes, 2);
+    assert_eq!(p.undo_count(), 0, "copying is not a step");
+    p.paste_notes(2 * BAR - 200, e);
+    // Only the first fits before the clip end.
+    assert_eq!(p.undo_count(), 1);
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 3);
+    assert_eq!(p.note_sel.notes, [2]);
+    let t = shown_id(&p);
+    p.cut_notes(t, &[0, 2], e);
+    assert_eq!(p.undo_count(), 2, "cut is one step");
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 1);
+    assert_eq!(p.piano_roll_view().clipboard_notes, 2);
+    let kept = p.clipboard.clone();
+    assert_eq!(kept[0].start, 0);
+    assert_eq!(kept[1].start, BAR - 200);
+    p.paste_notes(BAR, e);
+    assert_eq!(p.note_sel.notes, [0, 2]);
+    assert_eq!(shown_take(&p).unwrap().notes.len(), 3);
+    // Nothing fits: no step.
+    p.paste_notes(2 * BAR, e);
+    assert_eq!(p.undo_count(), 3);
+}
+
+#[test]
+fn edits_send_the_track_to_the_engine_again() {
+    let mut p = two_notes();
+    let mut e = Vec::new();
+    let t = shown_id(&p);
+    p.change_velocity(t, &[0], 10, &mut e);
+    assert!(matches!(
+        &e[..],
+        [Effect::Engine(EngineOp::Sequence { track: 0, .. })]
+    ));
+    e.clear();
+    p.change_velocity(shown_id(&p), &[0], 1000, &mut e);
+    p.change_velocity(shown_id(&p), &[0], 1, &mut e);
+    assert_eq!(e.len(), 1, "a change that changes nothing is no step");
+}
+
+fn clip_view(m: &crate::state::Model) -> meloet_protocol::ClipView {
+    m.view().song.tracks[0].clips[0].clone()
+}
+
+#[test]
+fn the_screen_sees_new_takes_selections_and_the_summary() {
+    let m = &mut ready();
+    record_once(
+        m,
+        &[(60, 0.0, 100.0), (64, 480.0, 600.0), (67, 960.0, 1000.0)],
+        1200.0,
+    );
+    let c = clip_view(m);
+    assert_eq!(m.view().song.note_count, 3);
+    cmd(
+        m,
+        Command::SelectNotes {
+            take: c.take_id,
+            notes: vec![2, 0],
+            mode: SelectMode::Replace,
+        },
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::Summary {
+            loop_bars: None,
+            nothing_selected: false,
+            notes: Some(NoteSelection {
+                count: 2,
+                keys: vec![60, 67],
+                quantized: false
+            }),
+        })
+    );
+    cmd(m, Command::SelectClip { clip: None });
+    assert!(matches!(
+        status(m),
+        Some(StatusMessage::Summary {
+            nothing_selected: false,
+            notes: Some(_),
+            ..
+        })
+    ));
+    cmd(
+        m,
+        Command::DeleteNotes {
+            take: c.take_id,
+            notes: vec![1],
+        },
+    );
+    let after = clip_view(m);
+    assert_ne!(after.take_id, c.take_id);
+    assert_eq!((after.take, after.takes), (c.take, c.takes));
+    assert_eq!(after.note_count, 2);
+    assert_eq!(m.view().song.note_count, 2);
+    assert_eq!(m.view().piano_roll.take, Some(after.take_id));
+    assert!(m.view().piano_roll.selected_notes.is_empty());
+    let take = TakeNotes::decode(&m.take_notes(after.take_id).unwrap()).unwrap();
+    assert_eq!(take.notes.len(), 2);
+    assert_eq!(take.origin, None);
+    assert!(
+        m.take_notes(c.take_id).is_none(),
+        "the old take is in no clip now"
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::Summary {
+            loop_bars: None,
+            nothing_selected: true,
+            notes: None,
+        })
+    );
+    cmd(m, Command::Undo);
+    assert_eq!(clip_view(m).take_id, c.take_id);
+    assert_eq!(
+        m.view().piano_roll.selected_notes,
+        [
+            IndexRange { start: 0, end: 1 },
+            IndexRange { start: 2, end: 3 }
+        ]
+    );
+}
+
+#[test]
+fn nothing_changes_notes_while_recording() {
+    let m = &mut ready();
+    record_once(m, &[(60, 0.0, 100.0)], 400.0);
+    let c = clip_view(m);
+    cmd(m, Command::Locate { tick: 4 * BAR });
+    cmd(m, Command::Record);
+    started(m);
+    let before = m.view().song;
+    let take = c.take_id;
+    for command in [
+        Command::AddNote {
+            take: Some(take),
+            start: 10,
+            length: 10,
+            key: 60,
+            velocity: 100,
+        },
+        Command::MoveNotes {
+            take,
+            notes: vec![0],
+            ticks: 10,
+            keys: 0,
+            copy: false,
+        },
+        Command::ResizeNotes {
+            take,
+            notes: vec![0],
+            ticks: 10,
+        },
+        Command::ChangeVelocity {
+            take,
+            notes: vec![0],
+            delta: 3,
+        },
+        Command::DeleteNotes {
+            take,
+            notes: vec![0],
+        },
+        Command::CutNotes {
+            take,
+            notes: vec![0],
+        },
+        Command::PasteNotes { at: 0 },
+    ] {
+        cmd(m, command);
+    }
+    assert_eq!(m.view().song, before);
+    // Selecting and copying still work.
+    cmd(
+        m,
+        Command::CopyNotes {
+            take,
+            notes: vec![0],
+        },
+    );
+    assert_eq!(m.view().piano_roll.clipboard_notes, 1);
+    cmd(m, Command::Record);
+    report(
+        m,
+        RecordReport::Stopped {
+            t_us: 100,
+            tick: 4.0 * BAR as f64,
+            lap: 0,
+        },
+    );
+    // Playing: taken, and the engine hears the track again.
+    cmd(m, Command::PlayStop);
+    let effects = cmd(
+        m,
+        Command::MoveNotes {
+            take,
+            notes: vec![0],
+            ticks: 10,
+            keys: 0,
+            copy: false,
+        },
+    );
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::Engine(EngineOp::Sequence { track: 0, .. })))
+    );
+}
+
+#[test]
+fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
+    let m = &mut ready();
+    record_once(m, &[(60, 0.0, 100.0)], 1000.0);
+    let c = clip_view(m);
+    cmd(
+        m,
+        Command::SetMusicalScale {
+            root: 0,
+            mode: ScaleMode::Major,
+            lock: true,
+        },
+    );
+    assert!(
+        cmd(
+            m,
+            Command::Audition {
+                key: 63,
+                velocity: 100
+            }
+        )
+        .iter()
+        .all(|e| !matches!(e, Effect::Engine(_)))
+    );
+    cmd(
+        m,
+        Command::AddNote {
+            take: Some(c.take_id),
+            start: 200,
+            length: 100,
+            key: 63,
+            velocity: 100,
+        },
+    );
+    let said = Some(StatusMessage::OutOfScale {
+        key: 63,
+        root: 0,
+        mode: ScaleMode::Major,
+    });
+    assert_eq!(status(m), said);
+    cmd(m, Command::AuditionOff);
+    assert_eq!(status(m), said, "the audition does not put the notice away");
+    assert_eq!(m.view().song.undo_count, 1);
+    // In the scale, and moving off it with ↑ is fine.
+    cmd(
+        m,
+        Command::AddNote {
+            take: Some(c.take_id),
+            start: 200,
+            length: 100,
+            key: 62,
+            velocity: 100,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, 2);
+    let take = clip_view(m).take_id;
+    cmd(
+        m,
+        Command::MoveNotes {
+            take,
+            notes: vec![1],
+            ticks: 0,
+            keys: 1,
+            copy: false,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, 3);
+    // Minor: A minor has no G#.
+    cmd(
+        m,
+        Command::SetMusicalScale {
+            root: 9,
+            mode: ScaleMode::Minor,
+            lock: true,
+        },
+    );
+    let take = clip_view(m).take_id;
+    cmd(
+        m,
+        Command::AddNote {
+            take: Some(take),
+            start: 300,
+            length: 100,
+            key: 68,
+            velocity: 100,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, 3);
+    // Not locked: anything.
+    cmd(
+        m,
+        Command::SetMusicalScale {
+            root: 9,
+            mode: ScaleMode::Minor,
+            lock: false,
+        },
+    );
+    cmd(
+        m,
+        Command::AddNote {
+            take: Some(take),
+            start: 300,
+            length: 100,
+            key: 68,
+            velocity: 100,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, 4);
+}
+
+#[test]
+fn writing_with_no_clip_makes_one_in_one_step() {
+    let m = &mut ready();
+    // Two tracks would be nicer; the keys play track 1 in a new song.
+    cmd(
+        m,
+        Command::AddNote {
+            take: Some(5),
+            start: BAR + 100,
+            length: 240,
+            key: 60,
+            velocity: 100,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, 0, "no such take");
+    cmd(
+        m,
+        Command::AddNote {
+            take: None,
+            start: BAR + 100,
+            length: 240,
+            key: 60,
+            velocity: 0,
+        },
+    );
+    let v = m.view();
+    assert_eq!(v.song.undo_count, 1);
+    let c = &v.song.tracks[0].clips[0];
+    assert_eq!((c.start, c.end, c.name.as_str()), (BAR, 5 * BAR, "ピアノ"));
+    assert_eq!(v.arrange.selected_clip, Some(c.id));
+    assert_eq!(v.arrange.piano_roll_clip, Some(c.id));
+    assert_eq!(v.piano_roll.take, Some(c.take_id));
+    assert_eq!(
+        v.piano_roll.selected_notes,
+        [IndexRange { start: 0, end: 1 }]
+    );
+    let take = TakeNotes::decode(&m.take_notes(c.take_id).unwrap()).unwrap();
+    assert_eq!(take.notes[0].velocity, 1);
+    assert_eq!(take.notes[0].start, 100);
+    // The piano roll shows a clip now: `None` is from before, and dropped.
+    cmd(
+        m,
+        Command::AddNote {
+            take: None,
+            start: 9 * BAR,
+            length: 240,
+            key: 60,
+            velocity: 100,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, 1);
+    cmd(m, Command::Undo);
+    let v = m.view();
+    assert!(v.song.tracks[0].clips.is_empty());
+    assert_eq!(v.arrange.piano_roll_clip, None);
+    assert_eq!(v.piano_roll.take, None);
+    cmd(m, Command::Redo);
+    assert_eq!(m.view().song.tracks[0].clips.len(), 1);
+}
+
+#[test]
+fn the_audition_sounds_on_the_play_target() {
+    let m = &mut ready();
+    let effects = cmd(
+        m,
+        Command::Audition {
+            key: 60,
+            velocity: 0,
+        },
+    );
+    assert!(effects.contains(&Effect::Engine(EngineOp::Audition {
+        track: 0,
+        key: 60,
+        velocity: 1
+    })));
+    let effects = cmd(m, Command::AuditionOff);
+    assert!(effects.contains(&Effect::Engine(EngineOp::AuditionOff)));
+    assert_eq!(m.view().song.undo_count, 0);
+
+    let mut silent = crate::state::Model::new(crate::settings::Settings::default());
+    let effects = silent.handle(crate::state::Input::Command(Command::Audition {
+        key: 60,
+        velocity: 100,
+    }));
+    assert!(effects.iter().all(|e| !matches!(e, Effect::Engine(_))));
+}
+
+#[test]
+fn settings_are_kept_and_out_of_range_ones_dropped() {
+    let mut p = two_notes();
+    p.set_grid(32, true);
+    p.set_grid(12, false);
+    p.set_musical_scale(4, ScaleMode::Minor, true);
+    p.set_musical_scale(12, ScaleMode::Major, false);
+    let q = |division, strength, swing| QuantizeSettings {
+        division,
+        triplet: false,
+        strength,
+        swing,
+        align: QuantizeAlign::StartAndEnd,
+    };
+    p.set_quantize(q(8, 60, 20));
+    p.set_quantize(q(8, 101, 20));
+    p.set_quantize(q(5, 60, 20));
+    let v = p.piano_roll_view();
+    assert_eq!(
+        v.grid,
+        Grid {
+            division: 32,
+            triplet: true
+        }
+    );
+    assert_eq!(
+        v.scale,
+        MusicalScale {
+            root: 4,
+            mode: ScaleMode::Minor,
+            lock: true
+        }
+    );
+    assert_eq!(v.quantize, q(8, 60, 20));
+    assert_eq!(p.undo_count(), 0, "settings are not steps");
+}
+
+#[test]
+fn edited_takes_and_settings_come_back_from_the_file() {
+    let mut p = two_notes();
+    let e = &mut Vec::new();
+    p.move_notes(shown_id(&p), &[0], -480, 3, false, e);
+    p.add_note(
+        Some(shown_id(&p)),
+        Note {
+            start: BAR + 100,
+            length: 50,
+            key: 72,
+            velocity: 30,
+        },
+        e,
+    );
+    p.set_grid(0, false);
+    p.set_musical_scale(7, ScaleMode::Major, true);
+    let back = songfile::decode(&songfile::encode(p.song())).unwrap();
+    assert_eq!(&back, p.song());
+    let mut again = fresh(back);
+    again.select_clip(Some(p.song().doc.tracks[0].clips[0].id.0));
+    assert_eq!(again.piano_roll_view().take, p.piano_roll_view().take);
+    assert_eq!(again.piano_roll_view().grid, p.piano_roll_view().grid);
+    assert_eq!(again.piano_roll_view().scale, p.piano_roll_view().scale);
+    // Writing after opening gives new ids, never one the file already has.
+    again.add_note(
+        Some(shown_id(&again)),
+        Note {
+            start: BAR,
+            length: 50,
+            key: 72,
+            velocity: 30,
+        },
+        e,
+    );
+    assert_eq!(shown_id(&again), p.song().doc.next_id);
+}

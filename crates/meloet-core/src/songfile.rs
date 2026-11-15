@@ -11,10 +11,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use meloet_model::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, InstrumentRef, Meter, Note, Session,
-    Song, Take, TakeId, Tempo, TempoChange, TickRange, Track, TrackColor, TrackId,
+    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid, InstrumentRef, Meter,
+    MusicalScale, Note, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode, Session, Song,
+    Take, TakeId, Tempo, TempoChange, TickRange, Track, TrackColor, TrackId,
 };
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
 
 pub const FORMAT: &str = "meloet-song";
 /// The newest shape this meloet reads and the one it writes.
@@ -154,6 +156,62 @@ struct SessionFile {
     #[serde(rename = "loop")]
     loop_range: Option<SpanFile>,
     loop_on: bool,
+    /// The piano roll's settings. Missing or not understood: the default.
+    #[serde(default, deserialize_with = "or_default")]
+    grid: Option<GridFile>,
+    #[serde(default, deserialize_with = "or_default")]
+    scale: Option<ScaleFile>,
+    #[serde(default, deserialize_with = "or_default")]
+    quantize: Option<QuantizeFile>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GridFile {
+    /// Steps to a whole note; 0 is one bar.
+    division: u16,
+    triplet: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScaleFile {
+    /// 0..=11 is C..B.
+    root: u8,
+    mode: ScaleModeFile,
+    lock: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum ScaleModeFile {
+    Major,
+    Minor,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuantizeFile {
+    division: u16,
+    triplet: bool,
+    /// Percent.
+    strength: u8,
+    /// Percent.
+    swing: u8,
+    align: AlignFile,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum AlignFile {
+    Start,
+    StartAndEnd,
+}
+
+/// A value of a shape this meloet does not know is read as `None`, not as a broken song.
+fn or_default<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Option<T>, D::Error> {
+    let value = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -238,11 +296,75 @@ pub fn encode(song: &Song) -> Vec<u8> {
                 end: r.end(),
             }),
             loop_on: s.loop_on,
+            grid: Some(grid_file(s.roll.grid)),
+            scale: Some(ScaleFile {
+                root: s.roll.scale.root(),
+                mode: match s.roll.scale.mode {
+                    ScaleMode::Major => ScaleModeFile::Major,
+                    ScaleMode::Minor => ScaleModeFile::Minor,
+                },
+                lock: s.roll.scale.lock,
+            }),
+            quantize: Some({
+                let q = s.roll.quantize;
+                let grid = grid_file(q.grid);
+                QuantizeFile {
+                    division: grid.division,
+                    triplet: grid.triplet,
+                    strength: q.strength(),
+                    swing: q.swing(),
+                    align: match q.align {
+                        QuantizeAlign::Start => AlignFile::Start,
+                        QuantizeAlign::StartAndEnd => AlignFile::StartAndEnd,
+                    },
+                }
+            }),
         },
     };
     let mut bytes = serde_json::to_vec(&file).expect("a song always serializes");
     bytes.push(b'\n');
     bytes
+}
+
+fn grid_file(grid: Grid) -> GridFile {
+    GridFile {
+        division: grid.division(),
+        triplet: grid.triplet,
+    }
+}
+
+/// Values out of range fall back to the default, one setting at a time.
+fn roll_settings(s: &SessionFile) -> RollSettings {
+    let grid = |division, triplet| Grid::new(division, triplet);
+    RollSettings {
+        grid: s
+            .grid
+            .as_ref()
+            .and_then(|g| grid(g.division, g.triplet))
+            .unwrap_or_default(),
+        scale: s
+            .scale
+            .as_ref()
+            .and_then(|sc| {
+                let mode = match sc.mode {
+                    ScaleModeFile::Major => ScaleMode::Major,
+                    ScaleModeFile::Minor => ScaleMode::Minor,
+                };
+                MusicalScale::new(sc.root, mode, sc.lock)
+            })
+            .unwrap_or_default(),
+        quantize: s
+            .quantize
+            .as_ref()
+            .and_then(|q| {
+                let align = match q.align {
+                    AlignFile::Start => QuantizeAlign::Start,
+                    AlignFile::StartAndEnd => QuantizeAlign::StartAndEnd,
+                };
+                QuantizeSettings::new(grid(q.division, q.triplet)?, q.strength, q.swing, align)
+            })
+            .unwrap_or_default(),
+    }
 }
 
 fn take_file(take: &Take) -> TakeFile {
@@ -371,6 +493,7 @@ fn to_song(file: SongFile) -> Option<Song> {
     };
     let s = file.session;
     let known = |id: u32| track_ids.contains(&id).then_some(TrackId(id));
+    let roll = roll_settings(&s);
     let session = Session {
         // A target that is gone falls back to the first track rather than failing the song.
         play_target: known(s.play_target).unwrap_or(doc.tracks[0].id),
@@ -380,6 +503,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             None => None,
         },
         loop_on: s.loop_on,
+        roll,
     };
     Some(Song { doc, session })
 }

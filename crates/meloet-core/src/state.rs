@@ -9,12 +9,13 @@ use std::time::Duration;
 
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
-use meloet_model::{InstrumentRef, Song};
+use meloet_model::{InstrumentRef, Note, Song};
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
-    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, SettingsDialogView,
-    SongFile, SongView, StatusMessage, StatusView, TrackView, Unusable, WorkspaceView,
+    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, QuantizeSettings,
+    SettingsDialogView, SongFile, SongView, StatusMessage, StatusView, TrackView, Unusable,
+    WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, SidePanel, WindowSize};
@@ -499,8 +500,12 @@ impl Model {
 
     /// Returns the node a test tone was asked on.
     fn command(&mut self, command: Command, effects: &mut Vec<Effect>) -> Option<String> {
-        // A resize is not something the user does to answer a notice.
-        if !matches!(command, Command::SetViewport { .. }) {
+        // A resize is not something the user does to answer a notice, and neither is the sound
+        // of the write tool, which comes and goes around the write that may give a notice.
+        if !matches!(
+            command,
+            Command::SetViewport { .. } | Command::Audition { .. } | Command::AuditionOff
+        ) {
             self.notice = None;
             self.new_song_unsaid = false;
         }
@@ -668,23 +673,67 @@ impl Model {
             Command::AnswerSongDialog { dialog, answer } => {
                 self.answer_song_dialog(dialog, answer, effects);
             }
-            Command::SelectNotes { .. }
-            | Command::SelectAllNotes
-            | Command::ClearNoteSelection
-            | Command::AddNote { .. }
-            | Command::MoveNotes { .. }
-            | Command::ResizeNotes { .. }
-            | Command::DeleteNotes { .. }
-            | Command::ChangeVelocity { .. }
-            | Command::CopyNotes { .. }
-            | Command::CutNotes { .. }
-            | Command::PasteNotes { .. }
-            | Command::SetGrid { .. }
-            | Command::SetMusicalScale { .. }
-            | Command::Audition { .. }
-            | Command::AuditionOff
-            | Command::SetQuantize { .. }
-            | Command::Quantize { .. }
+            Command::SelectNotes { take, notes, mode } => {
+                self.play.select_notes(take, notes, mode);
+            }
+            Command::SelectAllNotes => self.play.select_all_notes(),
+            Command::ClearNoteSelection => self.play.clear_note_selection(),
+            Command::AddNote {
+                take,
+                start,
+                length,
+                key,
+                velocity,
+            } => {
+                let note = Note {
+                    start,
+                    length,
+                    key,
+                    velocity,
+                };
+                self.notice = self.play.add_note(take, note, effects);
+            }
+            Command::MoveNotes {
+                take,
+                notes,
+                ticks,
+                keys,
+                copy,
+            } => self
+                .play
+                .move_notes(take, &notes, ticks, keys, copy, effects),
+            Command::ResizeNotes { take, notes, ticks } => {
+                self.play.resize_notes(take, &notes, ticks, effects);
+            }
+            Command::DeleteNotes { take, notes } => self.play.delete_notes(take, &notes, effects),
+            Command::ChangeVelocity { take, notes, delta } => {
+                self.play.change_velocity(take, &notes, delta, effects);
+            }
+            Command::CopyNotes { take, notes } => self.play.copy_notes(take, &notes),
+            Command::CutNotes { take, notes } => self.play.cut_notes(take, &notes, effects),
+            Command::PasteNotes { at } => self.play.paste_notes(at, effects),
+            Command::SetGrid { division, triplet } => self.play.set_grid(division, triplet),
+            Command::SetMusicalScale { root, mode, lock } => {
+                self.play.set_musical_scale(root, mode, lock);
+            }
+            Command::SetQuantize {
+                division,
+                triplet,
+                strength,
+                swing,
+                align,
+            } => self.play.set_quantize(QuantizeSettings {
+                division,
+                triplet,
+                strength,
+                swing,
+                align,
+            }),
+            Command::Audition { key, velocity } => {
+                self.play.audition(key, velocity, can_play, effects);
+            }
+            Command::AuditionOff => self.play.audition_off(can_play, effects),
+            Command::Quantize { .. }
             | Command::Unquantize { .. }
             | Command::SetNotesField { .. }
             | Command::SelectControls { .. }
@@ -1168,5 +1217,7 @@ fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
     }
 }
 
+#[cfg(test)]
+mod speed;
 #[cfg(test)]
 mod tests;

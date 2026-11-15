@@ -9,12 +9,15 @@ use std::time::Instant;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::clock::{Segment, TransportClock, TransportState, heard};
 use crate::instrument::{Instrument, InstrumentEvent};
 use crate::rt;
+use crate::transport::{Click, Lane, Sequence, TrackSet};
 
 const COMMAND_RING: usize = 256;
 const MIDI_RING: usize = 1024;
 const LATENCY_RING: usize = 1024;
+const RECORDED_RING: usize = 4096;
 
 /// Microseconds on `CLOCK_MONOTONIC`: the clock of [`MidiIn::t_us`] and of [`BlockTiming`].
 pub fn monotonic_us() -> u64 {
@@ -46,6 +49,66 @@ pub enum EngineCommand {
     },
     TestTone,
     AllNotesOff,
+    /// Use [`EngineHandle::swap_sequence`]. The old sequence comes back on the retired ring.
+    /// Notes the old one left sounding are released, and the pedal, wheel and bend it moved go
+    /// back to 0.
+    SwapSequence {
+        track: usize,
+        sequence: Box<Sequence>,
+    },
+    /// One beat is `ticks_per_beat` ticks (480 for a quarter note), `bpm_centi` is beats per
+    /// minute × 100. Ignored if any of them is 0.
+    SetTempo {
+        ticks_per_beat: u32,
+        beats_per_bar: u32,
+        bpm_centi: u32,
+    },
+    /// `[start, end)` in ticks. A loop with `end <= start` does nothing.
+    SetLoop {
+        start: u64,
+        end: u64,
+        on: bool,
+    },
+    SetMetronome {
+        on: bool,
+    },
+    Play {
+        from: u64,
+    },
+    /// Count `count_in_beats` beats, then record from `from`. The tracks in `muted` do not play
+    /// their sequence while recording.
+    Record {
+        from: u64,
+        count_in_beats: u32,
+        muted: TrackSet,
+    },
+    /// `t_us` is when the person asked to stop ([`monotonic_us`]). Keys after it are not recorded.
+    Stop {
+        t_us: u64,
+    },
+    Locate {
+        tick: u64,
+    },
+}
+
+/// What the audio thread hands back while recording, in the order it happened on that thread.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Recorded {
+    /// Sent when the record command is taken, before anything else of this recording.
+    Started { from: u64, count_in_beats: u32 },
+    /// A keyboard event and where the person was in the song when they played it.
+    Event {
+        event: InstrumentEvent,
+        t_us: u64,
+        /// Heard position, with the fraction. May be up to half a beat before `from`.
+        tick: f64,
+        lap: u32,
+    },
+    /// The loop went round while recording. `t_us` is when the first frame of the new lap
+    /// reaches the DAC.
+    LapChanged { lap: u32, t_us: u64 },
+    /// The recording ended. `tick` and `lap` are the heard position at `t_us`.
+    Stopped { t_us: u64, tick: f64, lap: u32 },
 }
 
 /// One keyboard event, pushed by the MIDI thread straight into the engine's ring.
@@ -105,6 +168,7 @@ pub struct EngineMeters {
     xruns: AtomicU64,
     streams_lost: AtomicU64,
     other_errors: AtomicU64,
+    record_overflows: AtomicU64,
     sample_rate: AtomicU32,
 }
 
@@ -135,6 +199,7 @@ impl EngineMeters {
             xruns: AtomicU64::new(0),
             streams_lost: AtomicU64::new(0),
             other_errors: AtomicU64::new(0),
+            record_overflows: AtomicU64::new(0),
             sample_rate: AtomicU32::new(config.sample_rate),
         }
     }
@@ -199,6 +264,11 @@ impl EngineMeters {
         self.sample_rate.load(Relaxed)
     }
 
+    /// [`Recorded`] items lost because nobody emptied the ring.
+    pub fn record_overflows(&self) -> u64 {
+        self.record_overflows.load(Relaxed)
+    }
+
     pub(crate) fn count_xrun(&self) {
         self.xruns.fetch_add(1, Relaxed);
     }
@@ -217,6 +287,124 @@ struct Track {
     gain: f32,
     /// Gain at the end of the last block; the next block ramps from here to `gain`.
     gain_now: f32,
+    lane: Lane,
+}
+
+/// The song clock on the audio thread.
+///
+/// Positions are kept as ticks × `scale`, where `scale` = 6000 × sample rate. One frame then
+/// moves the position by exactly `bpm_centi × ticks_per_beat`, so a position in frames never
+/// drifts, at any tempo.
+struct Transport {
+    state: TransportState,
+    /// Position of the next frame to render.
+    pos: i128,
+    scale: i128,
+    ticks_per_beat: u32,
+    beats_per_bar: u32,
+    bpm_centi: u32,
+    looping: bool,
+    loop_start: u64,
+    loop_end: u64,
+    /// The position has not passed `loop_end` since it last moved by a jump. A play that starts
+    /// after the loop does not go round.
+    before_loop_end: bool,
+    metronome: bool,
+    /// Next beat to click, in ticks.
+    next_click: i128,
+    record_from: u64,
+    /// Where the current play or recording started; a stop that cannot be placed returns here.
+    run_from: u64,
+    muted: TrackSet,
+    session: u32,
+    lap: u32,
+}
+
+impl Transport {
+    fn new(sample_rate: u32) -> Self {
+        Transport {
+            state: TransportState::Stopped,
+            pos: 0,
+            scale: 6000 * i128::from(sample_rate),
+            ticks_per_beat: 480,
+            beats_per_bar: 4,
+            bpm_centi: 12_000,
+            looping: false,
+            loop_start: 0,
+            loop_end: 0,
+            before_loop_end: false,
+            metronome: false,
+            next_click: 0,
+            record_from: 0,
+            run_from: 0,
+            muted: TrackSet::default(),
+            session: 0,
+            lap: 0,
+        }
+    }
+
+    fn step(&self) -> i128 {
+        i128::from(self.bpm_centi) * i128::from(self.ticks_per_beat)
+    }
+
+    /// Frames from the next frame until the first one at or past `tick`.
+    fn frames_until(&self, tick: i128) -> i128 {
+        let gap = tick * self.scale - self.pos;
+        if gap <= 0 {
+            0
+        } else {
+            (gap + self.step() - 1) / self.step()
+        }
+    }
+
+    fn set_pos(&mut self, tick: i128) {
+        self.pos = tick * self.scale;
+        self.before_loop_end = self.pos < i128::from(self.loop_end) * self.scale;
+        self.aim_click();
+    }
+
+    fn aim_click(&mut self) {
+        let beat = i128::from(self.ticks_per_beat) * self.scale;
+        self.next_click = -(-self.pos).div_euclid(beat) * i128::from(self.ticks_per_beat);
+    }
+
+    fn loop_active(&self) -> bool {
+        self.looping
+            && self.loop_end > self.loop_start
+            && self.before_loop_end
+            && matches!(
+                self.state,
+                TransportState::Playing | TransportState::Recording
+            )
+    }
+
+    fn lane_plays(&self, track: usize) -> bool {
+        match self.state {
+            TransportState::Playing => true,
+            TransportState::Recording => !self.muted.contains(track),
+            _ => false,
+        }
+    }
+
+    fn click_audible(&self) -> bool {
+        match self.state {
+            TransportState::CountIn => true,
+            TransportState::Playing | TransportState::Recording => self.metronome,
+            TransportState::Stopped => false,
+        }
+    }
+
+    fn tick(&self) -> f64 {
+        self.pos as f64 / self.scale as f64
+    }
+
+    fn ticks_per_frame(&self) -> f64 {
+        if self.state.is_moving() {
+            self.step() as f64 / self.scale as f64
+        } else {
+            0.0
+        }
+    }
 }
 
 /// Two soft notes, about -12 dBFS, 0.6 s.
@@ -289,8 +477,16 @@ pub struct Engine {
     play_target: usize,
     commands: Consumer<EngineCommand>,
     retired: Producer<Box<dyn Instrument>>,
+    retired_sequences: Producer<Box<Sequence>>,
     midi: Consumer<MidiIn>,
     latency: Producer<LatencyRecord>,
+    recorded: Producer<Recorded>,
+    clock: Arc<TransportClock>,
+    transport: Transport,
+    click: Click,
+    /// The stretch being rendered, and the frame of the device block where it began.
+    segment: Segment,
+    segment_from: usize,
     meters: Arc<EngineMeters>,
     scratch: [Box<[f32]>; 2],
     master: [Box<[f32]>; 2],
@@ -316,6 +512,9 @@ impl Engine {
         let (command_tx, command_rx) = RingBuffer::new(COMMAND_RING);
         // Every command retires at most one instrument, and commands wait while this is full.
         let (retired_tx, retired_rx) = RingBuffer::new(config.max_tracks.max(16));
+        let (sequences_tx, sequences_rx) = RingBuffer::new(config.max_tracks.max(16));
+        let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
+        let clock = Arc::new(TransportClock::default());
         let (midi_tx, midi_rx) = RingBuffer::new(MIDI_RING);
         let (latency_tx, latency_rx) = RingBuffer::new(LATENCY_RING);
         let buffer = || vec![0.0f32; config.max_frames].into_boxed_slice();
@@ -325,13 +524,21 @@ impl Engine {
                     instrument: None,
                     gain: 1.0,
                     gain_now: 1.0,
+                    lane: Lane::default(),
                 })
                 .collect(),
             play_target: 0,
             commands: command_rx,
             retired: retired_tx,
+            retired_sequences: sequences_tx,
             midi: midi_rx,
             latency: latency_tx,
+            recorded: recorded_tx,
+            clock: clock.clone(),
+            transport: Transport::new(config.sample_rate),
+            click: Click::idle(),
+            segment: Segment::default(),
+            segment_from: 0,
             meters: meters.clone(),
             scratch: [buffer(), buffer()],
             master: [buffer(), buffer()],
@@ -343,7 +550,10 @@ impl Engine {
         let handle = EngineHandle {
             commands: command_tx,
             retired: retired_rx,
+            retired_sequences: sequences_rx,
             latency: latency_rx,
+            recorded: recorded_rx,
+            clock,
             meters,
             max_frames: config.max_frames,
         };
@@ -367,7 +577,8 @@ impl Engine {
     }
 
     /// Get ready for a (new) stream. Call outside the audio thread, while no stream is running
-    /// this engine. Every instrument is prepared again, so all notes stop.
+    /// this engine. Every instrument is prepared again, so all notes stop, and the transport
+    /// stops where it was (without a [`Recorded::Stopped`]: the caller knows the stream ended).
     pub fn prepare(&mut self, sample_rate: u32) {
         self.sample_rate = sample_rate.max(1) as f32;
         self.meters.sample_rate.store(sample_rate.max(1), Relaxed);
@@ -375,8 +586,15 @@ impl Engine {
             if let Some(instrument) = track.instrument.as_mut() {
                 instrument.prepare(self.sample_rate, self.max_frames);
             }
+            track.lane.forget();
         }
+        let t = &mut self.transport;
+        let scale = 6000 * i128::from(sample_rate.max(1));
+        t.pos = t.pos.div_euclid(t.scale) * scale;
+        t.scale = scale;
+        t.state = TransportState::Stopped;
         self.tone = TestTone::idle();
+        self.click = Click::idle();
         self.last_callback = None;
     }
 
@@ -396,11 +614,15 @@ impl Engine {
         self.meters.callbacks.fetch_add(1, Relaxed);
         self.meters.last_frames.store(frames as u32, Relaxed);
 
-        self.read_commands();
-        self.read_midi(timing);
+        self.read_commands(timing);
+        self.read_midi(timing, u64::MAX);
+        self.open_segment(0, timing);
+        let mut offset = 0;
         for piece in out.chunks_mut(self.max_frames * 2) {
-            self.render(piece);
+            self.render(piece, offset, timing);
+            offset += piece.len() / 2;
         }
+        self.close_segment(frames);
 
         if block_s > 0.0 {
             let load = began.elapsed().as_secs_f64() / block_s * 1000.0;
@@ -410,21 +632,42 @@ impl Engine {
         }
     }
 
-    fn read_commands(&mut self) {
-        // Stop while the retired ring is full: an instrument must never be dropped here.
-        while !self.retired.is_full() {
+    fn read_commands(&mut self, timing: BlockTiming) {
+        // Stop while a retired ring is full: an instrument or a sequence must never be dropped here.
+        while !self.retired.is_full() && !self.retired_sequences.is_full() {
             let Ok(command) = self.commands.pop() else {
                 break;
             };
             match command {
                 EngineCommand::SwapInstrument { track, instrument } => {
                     let old = match self.tracks.get_mut(track) {
-                        Some(slot) => slot.instrument.replace(instrument),
+                        Some(slot) => {
+                            slot.lane.forget();
+                            slot.instrument.replace(instrument)
+                        }
                         None => Some(instrument),
                     };
                     if let Some(old) = old {
                         // Cannot fail: checked above, and this is the only producer.
                         let _ = self.retired.push(old);
+                    }
+                    if self.transport.lane_plays(track) {
+                        self.seek_lane(track);
+                    }
+                }
+                EngineCommand::SwapSequence { track, sequence } => {
+                    let old = match self.tracks.get_mut(track) {
+                        Some(slot) => {
+                            slot.lane.silence(slot.instrument.as_deref_mut());
+                            slot.lane.sequence.replace(sequence)
+                        }
+                        None => Some(sequence),
+                    };
+                    if let Some(old) = old {
+                        let _ = self.retired_sequences.push(old);
+                    }
+                    if self.transport.lane_plays(track) {
+                        self.seek_lane(track);
                     }
                 }
                 EngineCommand::SetTrackGain { track, gain } => {
@@ -449,11 +692,148 @@ impl Engine {
                         instrument.event(InstrumentEvent::AllNotesOff);
                     }
                 }
+                EngineCommand::SetTempo {
+                    ticks_per_beat,
+                    beats_per_bar,
+                    bpm_centi,
+                } => {
+                    if ticks_per_beat > 0 && beats_per_bar > 0 && bpm_centi > 0 {
+                        let t = &mut self.transport;
+                        t.ticks_per_beat = ticks_per_beat;
+                        t.beats_per_bar = beats_per_bar;
+                        t.bpm_centi = bpm_centi;
+                        t.aim_click();
+                    }
+                }
+                EngineCommand::SetLoop { start, end, on } => {
+                    let t = &mut self.transport;
+                    t.looping = on;
+                    t.loop_start = start;
+                    t.loop_end = end;
+                    t.before_loop_end = t.pos < i128::from(end) * t.scale;
+                }
+                EngineCommand::SetMetronome { on } => self.transport.metronome = on,
+                EngineCommand::Play { from } => {
+                    self.end_recording(timing);
+                    self.silence_lanes();
+                    self.transport.state = TransportState::Playing;
+                    self.transport.run_from = from;
+                    self.transport.set_pos(i128::from(from));
+                    self.seek_lanes();
+                }
+                EngineCommand::Record {
+                    from,
+                    count_in_beats,
+                    muted,
+                } => {
+                    self.end_recording(timing);
+                    self.silence_lanes();
+                    let t = &mut self.transport;
+                    t.session = t.session.wrapping_add(1);
+                    t.lap = 0;
+                    t.record_from = from;
+                    t.run_from = from;
+                    t.muted = muted;
+                    self.push_recorded(Recorded::Started {
+                        from,
+                        count_in_beats,
+                    });
+                    let t = &mut self.transport;
+                    if count_in_beats == 0 {
+                        t.state = TransportState::Recording;
+                        t.set_pos(i128::from(from));
+                        self.seek_lanes();
+                    } else {
+                        t.state = TransportState::CountIn;
+                        t.set_pos(
+                            i128::from(from)
+                                - i128::from(count_in_beats) * i128::from(t.ticks_per_beat),
+                        );
+                    }
+                }
+                EngineCommand::Stop { t_us } => self.stop(t_us, timing),
+                EngineCommand::Locate { tick } => {
+                    self.end_recording(timing);
+                    let t = &mut self.transport;
+                    t.run_from = tick;
+                    t.set_pos(i128::from(tick));
+                    if t.state.is_moving() {
+                        self.silence_lanes();
+                        self.seek_lanes();
+                    }
+                }
             }
         }
     }
 
-    fn read_midi(&mut self, timing: BlockTiming) {
+    /// Takes in the keyboard first: keys played before `t_us` still belong to the recording.
+    fn stop(&mut self, t_us: u64, timing: BlockTiming) {
+        self.read_midi(timing, t_us);
+        let t = &self.transport;
+        let heard_then = self
+            .clock
+            .segment_at(t_us as f64)
+            .filter(|s| s.session == t.session)
+            .map(|s| (s.state, heard(&s, t_us as f64)));
+        if matches!(t.state, TransportState::CountIn | TransportState::Recording) {
+            let (tick, lap) = match heard_then {
+                Some((TransportState::CountIn | TransportState::Recording, h)) => (h.tick, h.lap),
+                _ => (t.record_from as f64, 0),
+            };
+            self.push_recorded(Recorded::Stopped { t_us, tick, lap });
+        }
+        let to = match heard_then {
+            Some((TransportState::Playing | TransportState::Recording, h)) => {
+                (h.tick.floor() as i128).max(0)
+            }
+            _ => i128::from(self.transport.run_from),
+        };
+        self.silence_lanes();
+        self.transport.state = TransportState::Stopped;
+        self.transport.set_pos(to);
+    }
+
+    /// A command that starts something else while recording first ends the recording, as if
+    /// stopped at the start of this block.
+    fn end_recording(&mut self, timing: BlockTiming) {
+        if matches!(
+            self.transport.state,
+            TransportState::CountIn | TransportState::Recording
+        ) {
+            self.stop(timing.callback_us, timing);
+        }
+    }
+
+    fn push_recorded(&mut self, item: Recorded) {
+        if self.recorded.push(item).is_err() {
+            self.meters.record_overflows.fetch_add(1, Relaxed);
+        }
+    }
+
+    fn silence_lanes(&mut self) {
+        for track in self.tracks.iter_mut() {
+            track.lane.silence(track.instrument.as_deref_mut());
+        }
+    }
+
+    /// Puts each playing lane at the transport position and chases its controls.
+    fn seek_lanes(&mut self) {
+        for i in 0..self.tracks.len() {
+            if self.transport.lane_plays(i) {
+                self.seek_lane(i);
+            }
+        }
+    }
+
+    fn seek_lane(&mut self, track: usize) {
+        let (pos, scale) = (self.transport.pos, self.transport.scale);
+        if let Some(slot) = self.tracks.get_mut(track) {
+            slot.lane.seek(pos, scale, slot.instrument.as_deref_mut());
+        }
+    }
+
+    /// Keys played after `record_until` sound but are not recorded.
+    fn read_midi(&mut self, timing: BlockTiming, record_until: u64) {
         while let Ok(midi) = self.midi.pop() {
             if matches!(midi.event, InstrumentEvent::NoteOn { velocity, .. } if velocity > 0) {
                 // Every event starts at frame 0 of this block, so `playback_us` is its first sample.
@@ -466,42 +846,177 @@ impl Engine {
             if let Some(instrument) = self.tracks[self.play_target].instrument.as_mut() {
                 instrument.event(midi.event);
             }
+            if midi.t_us <= record_until {
+                self.stamp(midi);
+            }
         }
     }
 
-    /// Renders at most `max_frames` frames.
-    fn render(&mut self, out: &mut [f32]) {
+    /// Sends a keyboard event to the recording with the position the person heard when they
+    /// played it. Keys from the count-in are kept only within half a beat of the start.
+    fn stamp(&mut self, midi: MidiIn) {
+        let t = &self.transport;
+        if !matches!(t.state, TransportState::CountIn | TransportState::Recording) {
+            return;
+        }
+        let Some(segment) = self.clock.segment_at(midi.t_us as f64) else {
+            return;
+        };
+        if segment.session != t.session {
+            return;
+        }
+        let h = heard(&segment, midi.t_us as f64);
+        let wanted = match h.state {
+            TransportState::Recording => true,
+            TransportState::CountIn => {
+                h.tick >= t.record_from as f64 - f64::from(t.ticks_per_beat) / 2.0
+            }
+            _ => false,
+        };
+        if wanted {
+            self.push_recorded(Recorded::Event {
+                event: midi.event,
+                t_us: midi.t_us,
+                tick: h.tick,
+                lap: h.lap,
+            });
+        }
+    }
+
+    fn dac_us(&self, frame: usize, timing: BlockTiming) -> f64 {
+        timing.playback_us as f64 + frame as f64 * 1e6 / f64::from(self.sample_rate)
+    }
+
+    fn open_segment(&mut self, frame: usize, timing: BlockTiming) {
+        let t = &self.transport;
+        self.segment = Segment {
+            start_us: self.dac_us(frame, timing),
+            frames: 0,
+            sample_rate: self.sample_rate as u32,
+            tick: t.tick(),
+            ticks_per_frame: t.ticks_per_frame(),
+            state: t.state,
+            session: t.session,
+            lap: t.lap,
+            record_from: t.record_from as i64,
+            ticks_per_beat: t.ticks_per_beat,
+        };
+        self.segment_from = frame;
+    }
+
+    fn close_segment(&mut self, frame: usize) {
+        if frame > self.segment_from {
+            self.segment.frames = (frame - self.segment_from) as u32;
+            self.clock.push(&self.segment);
+        }
+    }
+
+    /// Jumps (end of count-in, loop end) and everything due at the next frame. `frame` counts
+    /// from the start of the device block.
+    fn step_at(&mut self, frame: usize, timing: BlockTiming) {
+        if !self.transport.state.is_moving() {
+            return;
+        }
+        let t = &mut self.transport;
+        if t.state == TransportState::CountIn && t.pos >= i128::from(t.record_from) * t.scale {
+            self.close_segment(frame);
+            let t = &mut self.transport;
+            t.state = TransportState::Recording;
+            t.set_pos(i128::from(t.record_from));
+            self.seek_lanes();
+            self.open_segment(frame, timing);
+        }
+        let t = &mut self.transport;
+        if t.loop_active() && t.pos >= i128::from(t.loop_end) * t.scale {
+            self.close_segment(frame);
+            self.silence_lanes();
+            let t = &mut self.transport;
+            t.set_pos(i128::from(t.loop_start));
+            if t.state == TransportState::Recording {
+                t.lap += 1;
+                let lap = t.lap;
+                let t_us = self.dac_us(frame, timing).round() as u64;
+                self.push_recorded(Recorded::LapChanged { lap, t_us });
+            }
+            self.seek_lanes();
+            self.open_segment(frame, timing);
+        }
+
+        let (pos, scale) = (self.transport.pos, self.transport.scale);
+        for (i, track) in self.tracks.iter_mut().enumerate() {
+            if self.transport.lane_plays(i) {
+                track
+                    .lane
+                    .fire_due(pos, scale, track.instrument.as_deref_mut());
+            }
+        }
+        let t = &mut self.transport;
+        if t.next_click * t.scale <= t.pos {
+            if t.click_audible() {
+                let bar = i128::from(t.ticks_per_beat) * i128::from(t.beats_per_bar);
+                self.click
+                    .start(t.next_click.rem_euclid(bar) == 0, self.sample_rate);
+            }
+            t.next_click += i128::from(t.ticks_per_beat);
+        }
+    }
+
+    /// Frames from the next frame to the next one where [`Engine::step_at`] has work, at most
+    /// `limit` and at least 1.
+    fn frames_to_next_point(&self, limit: usize) -> usize {
+        let t = &self.transport;
+        if !t.state.is_moving() {
+            return limit;
+        }
+        let mut n = (limit as i128).min(t.frames_until(t.next_click));
+        if t.state == TransportState::CountIn {
+            n = n.min(t.frames_until(i128::from(t.record_from)));
+        }
+        if t.loop_active() {
+            n = n.min(t.frames_until(i128::from(t.loop_end)));
+        }
+        for (i, track) in self.tracks.iter().enumerate() {
+            if t.lane_plays(i)
+                && let Some(tick) = track.lane.next_tick()
+            {
+                n = n.min(t.frames_until(i128::from(tick)));
+            }
+        }
+        n.max(1) as usize
+    }
+
+    /// Renders at most `max_frames` frames. `offset` is the frame of the device block where
+    /// this piece begins.
+    fn render(&mut self, out: &mut [f32], offset: usize, timing: BlockTiming) {
         let frames = out.len() / 2;
         if frames == 0 {
             return;
         }
-        let [scratch_l, scratch_r] = &mut self.scratch;
-        let [master_l, master_r] = &mut self.master;
-        let (scratch_l, scratch_r) = (&mut scratch_l[..frames], &mut scratch_r[..frames]);
-        let (master_l, master_r) = (&mut master_l[..frames], &mut master_r[..frames]);
-        master_l.fill(0.0);
-        master_r.fill(0.0);
+        self.master[0][..frames].fill(0.0);
+        self.master[1][..frames].fill(0.0);
 
-        for (track, meter) in self.tracks.iter_mut().zip(self.meters.tracks.iter()) {
-            let Some(instrument) = track.instrument.as_mut() else {
-                continue;
-            };
-            instrument.render(scratch_l, scratch_r);
-            let step = (track.gain - track.gain_now) / frames as f32;
-            let mut gain = track.gain_now;
-            let mut peak = [0.0f32; 2];
-            for i in 0..frames {
-                gain += step;
-                let (l, r) = (scratch_l[i] * gain, scratch_r[i] * gain);
-                peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
-                master_l[i] += l;
-                master_r[i] += r;
+        let mut from = 0;
+        while from < frames {
+            self.step_at(offset + from, timing);
+            let to = from + self.frames_to_next_point(frames - from);
+            let [master_l, master_r] = &mut self.master;
+            let (master_l, master_r) = (&mut master_l[from..to], &mut master_r[from..to]);
+            mix_tracks(
+                &mut self.tracks,
+                &self.meters.tracks,
+                &mut self.scratch,
+                master_l,
+                master_r,
+            );
+            self.click.add(master_l, master_r);
+            if self.transport.state.is_moving() {
+                self.transport.pos += self.transport.step() * (to - from) as i128;
             }
-            track.gain_now = track.gain;
-            raise(&meter[0], peak[0]);
-            raise(&meter[1], peak[1]);
+            from = to;
         }
 
+        let [master_l, master_r] = &mut self.master;
+        let (master_l, master_r) = (&mut master_l[..frames], &mut master_r[..frames]);
         self.tone.add(master_l, master_r, self.sample_rate);
 
         let mut peak = [0.0f32; 2];
@@ -523,11 +1038,46 @@ impl Engine {
     }
 }
 
+/// Renders every track over `master_l.len()` frames and adds it to the master.
+fn mix_tracks(
+    tracks: &mut [Track],
+    meters: &[[AtomicU32; 2]],
+    scratch: &mut [Box<[f32]>; 2],
+    master_l: &mut [f32],
+    master_r: &mut [f32],
+) {
+    let frames = master_l.len();
+    let [scratch_l, scratch_r] = scratch;
+    let (scratch_l, scratch_r) = (&mut scratch_l[..frames], &mut scratch_r[..frames]);
+    for (track, meter) in tracks.iter_mut().zip(meters.iter()) {
+        let Some(instrument) = track.instrument.as_mut() else {
+            continue;
+        };
+        instrument.render(scratch_l, scratch_r);
+        let step = (track.gain - track.gain_now) / frames as f32;
+        let mut gain = track.gain_now;
+        let mut peak = [0.0f32; 2];
+        for i in 0..frames {
+            gain += step;
+            let (l, r) = (scratch_l[i] * gain, scratch_r[i] * gain);
+            peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
+            master_l[i] += l;
+            master_r[i] += r;
+        }
+        track.gain_now = track.gain;
+        raise(&meter[0], peak[0]);
+        raise(&meter[1], peak[1]);
+    }
+}
+
 /// The part the control side (core) owns.
 pub struct EngineHandle {
     commands: Producer<EngineCommand>,
     retired: Consumer<Box<dyn Instrument>>,
+    retired_sequences: Consumer<Box<Sequence>>,
     latency: Consumer<LatencyRecord>,
+    recorded: Consumer<Recorded>,
+    clock: Arc<TransportClock>,
     meters: Arc<EngineMeters>,
     max_frames: usize,
 }
@@ -550,19 +1100,45 @@ impl EngineHandle {
         self.send(EngineCommand::SwapInstrument { track, instrument })
     }
 
+    /// Sends `sequence` to `track`. The old one comes back through [`EngineHandle::drop_retired`]
+    /// or [`EngineHandle::take_retired_sequence`].
+    pub fn swap_sequence(&mut self, track: usize, sequence: Sequence) -> Result<(), EngineCommand> {
+        self.send(EngineCommand::SwapSequence {
+            track,
+            sequence: Box::new(sequence),
+        })
+    }
+
+    pub fn take_retired_sequence(&mut self) -> Option<Box<Sequence>> {
+        self.retired_sequences.pop().ok()
+    }
+
     /// The next instrument the audio thread is done with. Dropping it is the caller's job.
     pub fn take_retired(&mut self) -> Option<Box<dyn Instrument>> {
         self.retired.pop().ok()
     }
 
-    /// Drops every retired instrument on this thread. Call it now and then (it is what lets
-    /// further commands through once the retired ring has filled). Returns how many.
+    /// Drops every retired instrument and sequence on this thread. Call it now and then (it is
+    /// what lets further commands through once a retired ring has filled). Returns how many.
     pub fn drop_retired(&mut self) -> usize {
         let mut count = 0;
         while self.take_retired().is_some() {
             count += 1;
         }
+        while self.take_retired_sequence().is_some() {
+            count += 1;
+        }
         count
+    }
+
+    pub fn pop_recorded(&mut self) -> Option<Recorded> {
+        self.recorded.pop().ok()
+    }
+
+    /// The heard song position, readable from any thread without waiting. After
+    /// [`EngineHandle::rebuild`] this is a new clock.
+    pub fn clock(&self) -> &Arc<TransportClock> {
+        &self.clock
     }
 
     /// A new, empty engine in place of one that was lost (a stream that never gave it back).

@@ -35,6 +35,11 @@ def band(name):
     return [(400, {"type": "toggleBand", "band": name})]
 
 
+def played(lead_ms, count, interval_ms=250):
+    return ["play", "--notes", "60,64,67,72", "--count", str(count), "--interval-ms", str(interval_ms),
+            "--hold-ms", "150", "--velocity", QUIET, "--lead-ms", str(lead_ms)]
+
+
 def held_chord(lead_ms, hold_ms):
     # One vkeys per note: `play` lets go of a note before it presses the next one.
     return [["play", "--notes", n, "--count", "1", "--hold-ms", str(hold_ms),
@@ -60,6 +65,20 @@ STATES = {
     "history": dict(board="F-History", remembered=True, commands=band("history")),
     "shelf": dict(board="F-ShelfArrange", remembered=True, commands=band("shelf")),
     "params": dict(board="F-ParamFew", remembered=True, commands=band("params")),
+    # Round 2. Times of commands and of the snapshot count from the page load (about 1.3 s after
+    # the start); --lead-ms counts from the start.
+    "flow4": dict(board="F-Connect4", remembered=True,
+                  commands=[(200, {"type": "toggleMetronome"}), (400, {"type": "record"})], snap=1800),
+    "recording": dict(board="F-ArrangeRec", remembered=True, only_virtual=True,
+                      commands=[(400, {"type": "record"})], keys=[played(4500, 18)], snap=7000),
+    "main": dict(board="Main", remembered=True, only_virtual=True,
+                 commands=[(400, {"type": "record"}), (7500, {"type": "record"})],
+                 keys=[played(4500, 10)], snap=9000),
+    "takes": dict(board="F-Takes", remembered=True, only_virtual=True,
+                  commands=[(400, {"type": "record"}), (6500, {"type": "record"}),
+                            (7000, {"type": "goToStart"}), (7500, {"type": "record"}),
+                            (14500, {"type": "record"})],
+                  keys=[played(4500, 8), played(12000, 8, 230)], snap=16000),
     "plugIn": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "3"]], snap=1500),
     "plugOut": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "2"]], snap=4000),
 }
@@ -80,6 +99,7 @@ def start_app(config, size, extra, log):
     env = dict(os.environ)
     env.pop("MELOET_ACCEPT_VIRTUAL", None)
     env.pop("MELOET_ONLY_VIRTUAL", None)
+    env.pop("MELOET_VKEYS_NAME", None)
     env.update(MELOET_CONFIG_DIR=config, MELOET_WINDOW=f"{size[0]}x{size[1]}", **extra)
     return subprocess.Popen(["dbus-run-session", "--", app_bin], env=env,
                             stdout=log, stderr=subprocess.STDOUT)
@@ -113,12 +133,16 @@ def shoot(state, size, scale, settings, work, png):
         extra["MELOET_ONLY_VIRTUAL"] = "1"
     if s.get("accept_virtual"):
         extra["MELOET_ACCEPT_VIRTUAL"] = "1"
+    # Only these virtual keyboards count, so that other runs' virtual keyboards stay out.
+    names = [f"meloet-vkeys-shoot-{os.getpid()}-{i}" for i in range(len(s.get("keys", [])))]
+    if names:
+        extra["MELOET_VKEYS_NAME"] = ",".join(names)
     if os.path.exists(png):
         os.remove(png)
     with open(png + ".log", "wb") as log:
         app = start_app(config, size, extra, log)
-        keys = [subprocess.Popen([vkeys_bin, *k], stdout=log, stderr=subprocess.STDOUT)
-                for k in s.get("keys", [])]
+        keys = [subprocess.Popen([vkeys_bin, *k, "--name", n], stdout=log, stderr=subprocess.STDOUT)
+                for k, n in zip(s.get("keys", []), names)]
         app.wait(timeout=60)
         for k in keys:
             k.wait(timeout=30)

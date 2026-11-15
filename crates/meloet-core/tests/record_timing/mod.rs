@@ -274,12 +274,12 @@ fn dither(index: u32) -> f64 {
     (f64::from(index) * 0.618_033_988_749_895).fract() - 0.5
 }
 
-fn reading(latest: &Mutex<Option<Reading>>) -> Option<Reading> {
+pub fn reading(latest: &Mutex<Option<Reading>>) -> Option<Reading> {
     *latest.lock().unwrap()
 }
 
 /// Waits to `target_us` on CLOCK_MONOTONIC: sleeps to 2 ms before, then spins.
-fn wait_until(target_us: f64) {
+pub fn wait_until(target_us: f64) {
     let now = monotonic_us() as f64;
     if target_us - now > 2_000.0 {
         std::thread::sleep(Duration::from_micros((target_us - now - 2_000.0) as u64));

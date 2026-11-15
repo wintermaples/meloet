@@ -65,8 +65,10 @@ console.log(`OK  npm packages checked: ${npmList.length}`);
 const sys = JSON.parse(readFileSync(join(here, "system.json"), "utf8"));
 for (const c of sys.components) {
   if (c.role === "test-target") continue; // loaded by the user's choice, never shipped or linked by us
-  const lgplOk = c.role === "system-dynamic" ? new Set(["LGPL-2.0-or-later", "LGPL-2.1-or-later", "LGPL-2.1-only", "LGPL-3.0-or-later", "LGPL-3.0-only"]) : new Set();
-  if (!spdxOk(c.license, lgplOk) || (FORBIDDEN.test(c.license) && !/LGPL/.test(c.license))) fail(`system ${c.name}: ${c.license} (${c.role})`);
+  // An OS library loaded dynamically may also be LGPL, or AFL-2.1 (libdbus is "AFL-2.1 OR GPL-2.0-or-later"; we take AFL-2.1).
+  const dynamicOk = c.role === "system-dynamic" ? new Set(["LGPL-2.0-or-later", "LGPL-2.1-or-later", "LGPL-2.1-only", "LGPL-3.0-or-later", "LGPL-3.0-only", "AFL-2.1"]) : new Set();
+  // spdxOk only passes a branch whose every id is allowed, so a GPL id can only sit in a branch we do not take.
+  if (!spdxOk(c.license, dynamicOk) || (FORBIDDEN.test(c.license) && !/LGPL|\bOR\b/.test(c.license))) fail(`system ${c.name}: ${c.license} (${c.role})`);
 }
 console.log(`OK  system components checked: ${sys.components.length}`);
 process.exit(bad ? 1 : 0);

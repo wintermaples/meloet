@@ -180,6 +180,7 @@ impl Recorder {
             .map(|n| {
                 let (s, e) = clamp_note(n, floor, ceil);
                 Note {
+                    from: None,
                     start: s as u64,
                     length: (e - s) as u64,
                     key: n.key,
@@ -252,6 +253,7 @@ impl Recorder {
             notes: notes
                 .into_iter()
                 .map(|(s, e, key, velocity)| Note {
+                    from: None,
                     start: (s - origin) as u64,
                     length: (e - s) as u64,
                     key,

@@ -39,6 +39,7 @@ fn a_thousand_moves_on_a_take_of_ten_thousand_notes() {
         length: NOTES as u64 * 120,
         notes: (0..NOTES)
             .map(|i| Note {
+                from: None,
                 start: i as u64 * 120,
                 length: 100,
                 key: 36 + (i % 48) as u8,
@@ -65,6 +66,6 @@ fn a_thousand_moves_on_a_take_of_ten_thousand_notes() {
         kept / 1000,
         with - start - kept
     );
-    // Each step keeps the whole old take: about 24 B a note.
+    // Each step keeps the whole old take: about 32 B a note.
     assert!(kept / 1000 < 400_000, "{kept}");
 }

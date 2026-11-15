@@ -28,6 +28,8 @@ pub enum EditError {
     NoSuchNote(usize),
     /// A note that cannot be: length 0, key over 127, velocity 0 or over 127.
     BadNote,
+    /// A control point that cannot be: a CC number over 127.
+    BadControl,
     /// A note written outside the clip.
     OutOfClip,
 }
@@ -151,6 +153,7 @@ pub fn add_recording(
         merged.push(ClipTake {
             offset: t.origin - range.start(),
             take: Arc::new(Take {
+                origin: None,
                 id: TakeId(ids.next()?),
                 length: t.length,
                 notes: t.notes,

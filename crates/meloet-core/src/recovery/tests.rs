@@ -13,10 +13,12 @@ pub(crate) fn song_with_notes(name: &str, notes: u64) -> Song {
     let mut song = Song::new_default();
     let length = (notes * 120).max(1920);
     let take = Arc::new(Take {
+        origin: None,
         id: TakeId(1),
         length,
         notes: (0..notes)
             .map(|i| Note {
+                from: None,
                 start: i * 120,
                 length: 100,
                 key: 36 + (i % 60) as u8,

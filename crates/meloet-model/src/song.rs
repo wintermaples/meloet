@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::roll::RollSettings;
+use crate::roll::{QuantizeSettings, RollSettings};
 use crate::time::{Meter, Tempo, TickRange};
 use crate::{InstrumentRef, TempoChange, TrackColor, TrackId};
 
@@ -20,6 +20,9 @@ pub struct Note {
     pub length: u64,
     pub key: u8,
     pub velocity: u8,
+    /// The index of the note of the take's origin this one came from. `None` for a note
+    /// written, copied or pasted, and in a take with no origin.
+    pub from: Option<u32>,
 }
 
 impl Note {
@@ -56,6 +59,17 @@ pub struct Take {
     pub notes: Vec<Note>,
     /// In order of tick.
     pub controls: Vec<ControlPoint>,
+    /// Set on a quantized take, and kept by later edits until every note is back where it was.
+    pub origin: Option<TakeOrigin>,
+}
+
+/// The recorded take a quantized take was made from. Its tick 0 is at the tick 0 of the take
+/// that holds it, and it never has an origin itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TakeOrigin {
+    pub take: Arc<Take>,
+    /// What the last quantize used.
+    pub settings: QuantizeSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

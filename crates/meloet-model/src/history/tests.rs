@@ -20,6 +20,7 @@ fn take(origin: u64, length: u64, key: u8) -> NewTake {
         origin,
         length,
         notes: vec![Note {
+            from: None,
             start: 0,
             length: 1,
             key,

@@ -1,6 +1,8 @@
 //! The piano roll's settings: grid, scale and quantize. Kept in the `Session`, so undo leaves
 //! them alone, and saved with the song.
 
+use crate::time::Meter;
+
 /// Steps to a whole note the grid and the quantize settings take; 0 is one bar.
 pub const DIVISIONS: [u16; 6] = [0, 2, 4, 8, 16, 32];
 
@@ -19,6 +21,16 @@ impl Grid {
 
     pub fn division(self) -> u16 {
         self.division
+    }
+
+    /// The length of one step: a whole note (4 quarters) over `division`, or one bar for
+    /// division 0; 2/3 of that for a triplet.
+    pub fn ticks(self, meter: Meter) -> u64 {
+        let step = match self.division {
+            0 => meter.ticks_per_bar(),
+            d => 4 * crate::time::TICKS_PER_QUARTER / u64::from(d),
+        };
+        if self.triplet { step * 2 / 3 } else { step }
     }
 }
 

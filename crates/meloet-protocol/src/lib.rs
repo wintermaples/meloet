@@ -13,7 +13,7 @@ pub use telemetry::{
     TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, Telemetry, TelemetryError,
 };
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -245,6 +245,9 @@ pub struct KeyboardsView {
     /// The keyboard that was played last; before any key, the one plugged in last.
     pub active: Option<String>,
     pub lost: Option<String>,
+    /// The keyboard input itself stopped (the PC's MIDI system, not one keyboard), and meloet
+    /// is starting it again. The list is empty meanwhile.
+    pub input_stopped: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -407,6 +410,19 @@ pub enum StatusMessage {
         from: u16,
         to: u16,
     },
+    /// PipeWire cannot be reached. meloet connects again by itself when it is back.
+    AudioSystemStopped,
+    /// A recording was stopped because PipeWire stopped; what was played is in `take`.
+    RecordingStoppedAudioSystem {
+        take: u32,
+    },
+    /// A recording was stopped because the chosen output went away.
+    RecordingStoppedOutputMissing {
+        output: String,
+        take: u32,
+    },
+    /// The keyboard input stopped; meloet is starting it again.
+    KeyboardInputStopped,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

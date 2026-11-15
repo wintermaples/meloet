@@ -540,3 +540,31 @@ fn a_thousand_blocks_with_midi_never_touch_the_allocator() {
         "(allocations, frees) inside audio blocks"
     );
 }
+
+#[test]
+fn a_rebuilt_engine_shares_the_meters_and_plays_from_the_new_ring() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    let callbacks = meters.callbacks();
+
+    // The old engine and its producer are as good as lost.
+    let (engine, midi_in) = rig.parts.handle.rebuild();
+    rig.parts.engine = engine;
+    rig.parts.midi_in = midi_in;
+    assert!(Arc::ptr_eq(rig.parts.handle.meters(), &meters));
+
+    assert_eq!(peak(&rig.run(256)), 0.0, "no instrument yet");
+    assert!(
+        rig.parts
+            .handle
+            .swap_instrument(0, Box::new(PlaceholderSynth::new()))
+            .is_ok()
+    );
+    rig.run(256);
+    rig.midi(note_on(69, 100));
+    assert!(
+        peak(&rig.run(4800)) > 0.05,
+        "the new ring reaches the new engine"
+    );
+    assert_eq!(meters.callbacks(), callbacks + 2 + 19);
+}

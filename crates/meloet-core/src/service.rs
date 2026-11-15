@@ -1,7 +1,8 @@
 //! The moving part: the threads around the pure rules.
 //!
 //! Only the core thread changes the state. The MIDI thread, the device watcher and the
-//! telemetry thread send it what they learn over one channel.
+//! telemetry thread send it what they learn over one channel. The core thread owns the MIDI
+//! input and the device watcher, and starts them again when they stop by themselves.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -13,19 +14,19 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use meloet_devices::DeviceWatcher;
+use meloet_devices::{DeviceWatcher, DevicesError, DevicesEvent};
 use meloet_engine::{
     AudioOutput, BlockTiming, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
-    InstrumentEvent, LatencyRecord, MidiIn, OutputTarget, PlaceholderSynth, RunningOutput,
-    monotonic_us,
+    InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, PlaceholderSynth,
+    RunningOutput, monotonic_us,
 };
-use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions};
+use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
 use meloet_protocol::{Command, Event, Snapshot, Telemetry};
 
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::measure::{self, KeyToSound};
 use crate::settings::{self, Settings};
-use crate::state::{Effect, Input, Model, REQUESTED_FRAMES};
+use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, retry_delay};
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
 /// How often the core thread looks at the engine's rings when no message wakes it.
@@ -82,6 +83,21 @@ enum Msg {
         epoch: u64,
         actual: Option<u32>,
     },
+    /// From the telemetry thread: the stream of `epoch` ended by itself.
+    StreamLost {
+        epoch: u64,
+    },
+    /// From the telemetry thread: xruns of the stream of `epoch` since it opened.
+    Xruns {
+        epoch: u64,
+        count: u64,
+    },
+    /// The MIDI thread ended by itself.
+    MidiStopped {
+        reason: String,
+    },
+    /// The device watcher lost PipeWire and ended.
+    DevicesLost,
     Stop,
 }
 
@@ -144,6 +160,10 @@ struct StreamFacts {
     epoch: AtomicU64,
     /// `EngineMeters::callbacks` when the stream was opened.
     callbacks_at_open: AtomicU64,
+    /// `EngineMeters::streams_lost` when the stream was opened.
+    lost_at_open: AtomicU64,
+    /// `EngineMeters::xruns` when the stream was opened.
+    xruns_at_open: AtomicU64,
     track_count: AtomicUsize,
     /// The core thread wants one `SoundHeard`.
     wants_sound: AtomicBool,
@@ -156,8 +176,6 @@ struct Shared {
 }
 
 struct Running {
-    midi: Option<MidiInput>,
-    devices: Option<DeviceWatcher>,
     core: JoinHandle<()>,
     telemetry: JoinHandle<()>,
 }
@@ -194,6 +212,30 @@ impl Core {
         let track_count = model.view().song.tracks.len();
         shared.stream.track_count.store(track_count, Relaxed);
 
+        let links = Links {
+            hub: hub.clone(),
+            shared: shared.clone(),
+            tx: tx.clone(),
+        };
+        let midi = options.midi.and_then(|midi_options| {
+            MidiInput::start_boxed(midi_options, links.midi_sink(parts.midi_in))
+                .inspect_err(|(e, _)| eprintln!("meloet: no keyboard input: {e}"))
+                .ok()
+                .map(|input| Midi {
+                    options: midi_options,
+                    state: MidiState::Running(input),
+                })
+        });
+        // Without PipeWire at start, it is tried again quietly on the core thread: nothing has
+        // stopped, so nothing is said.
+        let devices = options.devices.then(|| match links.device_watcher() {
+            Ok(watcher) => DevicesState::Running { _watcher: watcher },
+            Err(_) => DevicesState::Waiting {
+                attempt: 1,
+                at: Instant::now(),
+            },
+        });
+
         let core = {
             let worker = Worker {
                 model,
@@ -202,6 +244,10 @@ impl Core {
                 audio: Audio::new(parts.engine, parts.handle, options.audio),
                 config_dir: options.config_dir.clone(),
                 key_to_sound: options.measure_dir.clone().map(KeyToSound::new),
+                links,
+                midi,
+                devices,
+                audio_retry_at: None,
             };
             std::thread::Builder::new()
                 .name("meloet-core".into())
@@ -217,70 +263,11 @@ impl Core {
                 .expect("failed to start the telemetry thread")
         };
 
-        let midi = options.midi.and_then(|midi_options| {
-            let (hub, shared, tx) = (hub.clone(), shared.clone(), tx.clone());
-            let mut midi_in = parts.midi_in;
-            let mut last_played = String::new();
-            let sink = move |message: MidiMessage| match message {
-                MidiMessage::Event {
-                    keyboard,
-                    event,
-                    t_us,
-                } => {
-                    // Keys played while no stream runs must not sound when one opens.
-                    if shared.stream.open.load(Relaxed) {
-                        let _ = midi_in.push(MidiIn {
-                            event: instrument_event(event),
-                            t_us,
-                        });
-                    }
-                    shared.held.note(event);
-                    hub.event(protocol_event(event, t_us));
-                    // Only a change of keyboard goes to the core thread.
-                    if matches!(event, MidiEvent::NoteOn { .. }) && keyboard != last_played {
-                        last_played = keyboard;
-                        let id = last_played.clone();
-                        let _ = tx.send(Msg::Input(Input::KeyboardPlayed { id }, None));
-                    }
-                }
-                MidiMessage::Added(keyboard) => {
-                    let _ = tx.send(Msg::Input(Input::KeyboardAdded(keyboard), None));
-                }
-                MidiMessage::Removed { id } => {
-                    if id == last_played {
-                        last_played.clear();
-                    }
-                    let _ = tx.send(Msg::Input(Input::KeyboardRemoved { id }, None));
-                }
-                MidiMessage::Ready => {}
-            };
-            MidiInput::start(midi_options, sink)
-                .inspect_err(|e| eprintln!("meloet: no keyboard input: {e}"))
-                .ok()
-        });
-
-        let devices = options
-            .devices
-            .then(|| {
-                let tx = tx.clone();
-                DeviceWatcher::start(move |picture| {
-                    let _ = tx.send(Msg::Input(Input::Devices(picture), None));
-                })
-                .inspect_err(|e| eprintln!("meloet: no output list: {e}"))
-                .ok()
-            })
-            .flatten();
-
         Core {
             hub,
             tx,
             shared,
-            running: Mutex::new(Some(Running {
-                midi,
-                devices,
-                core,
-                telemetry,
-            })),
+            running: Mutex::new(Some(Running { core, telemetry })),
         }
     }
 
@@ -319,8 +306,6 @@ impl Core {
         let Some(running) = running else {
             return;
         };
-        drop(running.midi);
-        drop(running.devices);
         let _ = self.tx.send(Msg::Stop);
         let _ = running.core.join();
         self.shared.stop.store(true, Relaxed);
@@ -340,6 +325,174 @@ impl Drop for Core {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// What the sinks of the MIDI thread and the device watcher need, to make new ones.
+struct Links {
+    hub: Arc<Hub>,
+    shared: Arc<Shared>,
+    tx: Sender<Msg>,
+}
+
+impl Links {
+    /// Keys go straight to the engine and the screen; plug changes go to the core thread.
+    fn midi_sink(&self, mut midi_in: MidiFeed) -> MidiSink {
+        let (hub, shared, tx) = (self.hub.clone(), self.shared.clone(), self.tx.clone());
+        let mut last_played = String::new();
+        Box::new(move |message: MidiMessage| match message {
+            MidiMessage::Event {
+                keyboard,
+                event,
+                t_us,
+            } => {
+                // Keys played while no stream runs must not sound when one opens.
+                if shared.stream.open.load(Relaxed) {
+                    let _ = midi_in.push(MidiIn {
+                        event: instrument_event(event),
+                        t_us,
+                    });
+                }
+                shared.held.note(event);
+                hub.event(protocol_event(event, t_us));
+                // Only a change of keyboard goes to the core thread.
+                if matches!(event, MidiEvent::NoteOn { .. }) && keyboard != last_played {
+                    last_played = keyboard;
+                    let id = last_played.clone();
+                    let _ = tx.send(Msg::Input(Input::KeyboardPlayed { id }, None));
+                }
+            }
+            MidiMessage::Added(keyboard) => {
+                let _ = tx.send(Msg::Input(Input::KeyboardAdded(keyboard), None));
+            }
+            MidiMessage::Removed { id } => {
+                if id == last_played {
+                    last_played.clear();
+                }
+                let _ = tx.send(Msg::Input(Input::KeyboardRemoved { id }, None));
+            }
+            MidiMessage::Ready => {
+                let _ = tx.send(Msg::Input(Input::MidiBack, None));
+            }
+            MidiMessage::Stopped { reason } => {
+                // The next thread reports every keyboard again, the played one too.
+                last_played.clear();
+                let _ = tx.send(Msg::MidiStopped { reason });
+            }
+        })
+    }
+
+    fn device_watcher(&self) -> Result<DeviceWatcher, DevicesError> {
+        let tx = self.tx.clone();
+        DeviceWatcher::start(move |event| {
+            let _ = tx.send(match event {
+                DevicesEvent::Picture(picture) => Msg::Input(Input::Devices(picture), None),
+                DevicesEvent::Lost => Msg::DevicesLost,
+            });
+        })
+    }
+}
+
+/// The keyboard input, started again after it stops by itself.
+struct Midi {
+    options: MidiOptions,
+    state: MidiState,
+}
+
+enum MidiState {
+    Running(MidiInput),
+    /// `attempt` counts the tries of this series, starting at 1.
+    Waiting {
+        sink: MidiSink,
+        attempt: u32,
+        at: Instant,
+    },
+    /// The sink went with a thread that could not give it back.
+    Gone,
+}
+
+impl Midi {
+    fn stopped(&mut self, reason: &str) {
+        eprintln!("meloet: the keyboard input stopped: {reason}");
+        let state = std::mem::replace(&mut self.state, MidiState::Gone);
+        self.state = match state {
+            MidiState::Running(input) => match input.into_sink() {
+                Some(sink) => MidiState::Waiting {
+                    sink,
+                    attempt: 1,
+                    at: Instant::now() + retry_delay(1),
+                },
+                None => {
+                    eprintln!("meloet: the keyboard input cannot start again");
+                    MidiState::Gone
+                }
+            },
+            other => other,
+        };
+    }
+
+    fn tick(&mut self, now: Instant) {
+        if !matches!(&self.state, MidiState::Waiting { at, .. } if *at <= now) {
+            return;
+        }
+        let MidiState::Waiting { sink, attempt, .. } =
+            std::mem::replace(&mut self.state, MidiState::Gone)
+        else {
+            return;
+        };
+        self.state = match MidiInput::start_boxed(self.options, sink) {
+            Ok(input) => MidiState::Running(input),
+            Err((e, sink)) => {
+                if attempt == 1 {
+                    eprintln!("meloet: the keyboard input does not start again yet: {e}");
+                }
+                match sink {
+                    Some(sink) => MidiState::Waiting {
+                        sink,
+                        attempt: attempt + 1,
+                        at: now + retry_delay(attempt + 1),
+                    },
+                    None => MidiState::Gone,
+                }
+            }
+        };
+    }
+
+    /// The engine was made anew: the keys must go into its ring from now on.
+    fn feed(&mut self, sink: MidiSink) {
+        let state = std::mem::replace(&mut self.state, MidiState::Gone);
+        self.state = match state {
+            MidiState::Running(input) => {
+                drop(input.into_sink());
+                match MidiInput::start_boxed(self.options, sink) {
+                    Ok(input) => MidiState::Running(input),
+                    Err((_, Some(sink))) => MidiState::Waiting {
+                        sink,
+                        attempt: 1,
+                        at: Instant::now() + retry_delay(1),
+                    },
+                    Err((_, None)) => MidiState::Gone,
+                }
+            }
+            MidiState::Waiting { attempt, at, .. } => MidiState::Waiting { sink, attempt, at },
+            MidiState::Gone => MidiState::Waiting {
+                sink,
+                attempt: 1,
+                at: Instant::now(),
+            },
+        };
+    }
+}
+
+/// The device watcher, connected again after PipeWire comes back.
+enum DevicesState {
+    /// Held for its drop, which stops the thread.
+    Running {
+        _watcher: DeviceWatcher,
+    },
+    Waiting {
+        attempt: u32,
+        at: Instant,
+    },
 }
 
 fn instrument_event(event: MidiEvent) -> InstrumentEvent {
@@ -375,30 +528,39 @@ fn protocol_event(event: MidiEvent, t_us: u64) -> Event {
 }
 
 /// The engine and its stream. One engine for the whole run: a new output gets the same one.
+/// Only if a stream never gives it back is a new one made.
 struct Audio {
     handle: EngineHandle,
     /// Here while no stream runs.
     engine: Option<Engine>,
     stream: Option<RunningOutput>,
     allowed: bool,
+    /// The ring into an engine made anew, for the MIDI thread.
+    rebuilt: Option<MidiFeed>,
+}
+
+/// Puts the song's instruments on `engine`.
+fn install_instruments(engine: &mut Engine, handle: &mut EngineHandle) {
+    if handle
+        .swap_instrument(0, Box::new(PlaceholderSynth::new()))
+        .is_err()
+    {
+        eprintln!("meloet: the engine did not take the instrument");
+    }
+    // One silent block on this thread puts the instrument on its track, so that every
+    // `Engine::prepare` from now on reaches it.
+    engine.process(&mut [0.0; 128], BlockTiming::default());
 }
 
 impl Audio {
     fn new(mut engine: Engine, mut handle: EngineHandle, allowed: bool) -> Audio {
-        if handle
-            .swap_instrument(0, Box::new(PlaceholderSynth::new()))
-            .is_err()
-        {
-            eprintln!("meloet: the engine did not take the instrument");
-        }
-        // One silent block on this thread puts the instrument on its track, so that every
-        // `Engine::prepare` from now on reaches it.
-        engine.process(&mut [0.0; 128], BlockTiming::default());
+        install_instruments(&mut engine, &mut handle);
         Audio {
             handle,
             engine: Some(engine),
             stream: None,
             allowed,
+            rebuilt: None,
         }
     }
 
@@ -407,21 +569,24 @@ impl Audio {
         if !self.allowed {
             return None;
         }
-        let Some(engine) = self.engine.take() else {
-            eprintln!(
-                "meloet: cannot open {node_name}: the engine was lost with an earlier stream"
-            );
-            return None;
-        };
+        let engine = self.engine.take().unwrap_or_else(|| {
+            eprintln!("meloet: the engine was lost with an earlier stream; making a new one");
+            self.handle.drop_retired();
+            let (mut engine, feed) = self.handle.rebuild();
+            install_instruments(&mut engine, &mut self.handle);
+            self.rebuilt = Some(feed);
+            engine
+        });
         let target = OutputTarget {
             node_name: node_name.to_owned(),
         };
         match AudioOutput::open(&target, REQUESTED_FRAMES, engine) {
             Ok(stream) => {
                 let sample_rate = stream.sample_rate();
-                facts
-                    .callbacks_at_open
-                    .store(self.handle.meters().callbacks(), Relaxed);
+                let meters = self.handle.meters();
+                facts.callbacks_at_open.store(meters.callbacks(), Relaxed);
+                facts.lost_at_open.store(meters.streams_lost(), Relaxed);
+                facts.xruns_at_open.store(meters.xruns(), Relaxed);
                 facts.epoch.fetch_add(1, Relaxed);
                 facts.open.store(true, Relaxed);
                 self.stream = Some(stream);
@@ -458,6 +623,10 @@ struct Worker {
     audio: Audio,
     config_dir: Option<PathBuf>,
     key_to_sound: Option<KeyToSound>,
+    links: Links,
+    midi: Option<Midi>,
+    devices: Option<DevicesState>,
+    audio_retry_at: Option<Instant>,
 }
 
 impl Worker {
@@ -472,9 +641,34 @@ impl Worker {
                     }
                 }
                 Ok(Msg::Frames { epoch, actual }) => {
-                    if epoch == self.shared.stream.epoch.load(Relaxed) {
+                    if self.current(epoch) {
                         self.handle(Input::AudioFrames(actual));
                     }
+                }
+                Ok(Msg::StreamLost { epoch }) => {
+                    if self.current(epoch) {
+                        eprintln!("meloet: the output stream ended by itself");
+                        self.handle(Input::AudioLost);
+                    }
+                }
+                Ok(Msg::Xruns { epoch, count }) => {
+                    if self.current(epoch) {
+                        self.handle(Input::AudioXruns { count });
+                    }
+                }
+                Ok(Msg::MidiStopped { reason }) => {
+                    if let Some(midi) = &mut self.midi {
+                        midi.stopped(&reason);
+                    }
+                    self.handle(Input::MidiStopped);
+                }
+                Ok(Msg::DevicesLost) => {
+                    eprintln!("meloet: lost the connection to PipeWire");
+                    self.devices = Some(DevicesState::Waiting {
+                        attempt: 1,
+                        at: Instant::now() + retry_delay(1),
+                    });
+                    self.handle(Input::AudioSystemLost);
                 }
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
@@ -482,10 +676,44 @@ impl Worker {
             if kept.elapsed() >= HOUSEKEEPING {
                 kept = Instant::now();
                 self.housekeeping(false);
+                self.retries(kept);
             }
         }
         self.housekeeping(true);
+        drop(self.midi.take());
+        drop(self.devices.take());
         self.audio.close(&self.shared.stream);
+    }
+
+    fn current(&self, epoch: u64) -> bool {
+        epoch == self.shared.stream.epoch.load(Relaxed)
+    }
+
+    /// Starts again what is due to be started again.
+    fn retries(&mut self, now: Instant) {
+        if let Some(midi) = &mut self.midi {
+            midi.tick(now);
+        }
+        if let Some(DevicesState::Waiting { attempt, at }) = self.devices
+            && at <= now
+        {
+            self.devices = Some(match self.links.device_watcher() {
+                Ok(watcher) => DevicesState::Running { _watcher: watcher },
+                Err(e) => {
+                    if attempt == 1 {
+                        eprintln!("meloet: no connection to PipeWire yet: {e}");
+                    }
+                    DevicesState::Waiting {
+                        attempt: attempt + 1,
+                        at: now + retry_delay(attempt + 1),
+                    }
+                }
+            });
+        }
+        if self.audio_retry_at.is_some_and(|at| at <= now) {
+            self.audio_retry_at = None;
+            self.handle(Input::AudioRetry);
+        }
     }
 
     /// One input, the effects it asks for, and the inputs those answer with. Returns the rev.
@@ -502,12 +730,20 @@ impl Worker {
                             },
                             None => Input::AudioOpenFailed { node_name },
                         });
+                        if let Some(feed) = self.audio.rebuilt.take()
+                            && let Some(midi) = &mut self.midi
+                        {
+                            midi.feed(self.links.midi_sink(feed));
+                        }
                     }
                     Effect::CloseOutput => self.audio.close(&self.shared.stream),
                     Effect::TestTone => self.audio.command(EngineCommand::TestTone),
                     Effect::AllNotesOff => {
                         self.shared.held.release_all();
                         self.audio.command(EngineCommand::AllNotesOff);
+                    }
+                    Effect::RetryAudio { after } => {
+                        self.audio_retry_at = Some(Instant::now() + after);
                     }
                     Effect::SaveSettings(settings) => {
                         if let Some(dir) = &self.config_dir
@@ -564,6 +800,8 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
     let mut last: Option<Telemetry> = None;
     let mut bytes = Vec::new();
     let mut told_frames = (0u64, None);
+    let mut told_lost = None;
+    let mut told_xruns = (0u64, 0u64);
     let mut next = Instant::now();
 
     while !shared.stop.load(Relaxed) {
@@ -580,6 +818,23 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
                 epoch,
                 actual: frames,
             });
+        }
+        if open {
+            if meters.streams_lost() > stream.lost_at_open.load(Relaxed) && told_lost != Some(epoch)
+            {
+                told_lost = Some(epoch);
+                let _ = tx.send(Msg::StreamLost { epoch });
+            }
+            let xruns = meters
+                .xruns()
+                .saturating_sub(stream.xruns_at_open.load(Relaxed));
+            if xruns > 0 && told_xruns != (epoch, xruns) {
+                told_xruns = (epoch, xruns);
+                let _ = tx.send(Msg::Xruns {
+                    epoch,
+                    count: xruns,
+                });
+            }
         }
 
         let track_peaks: Vec<[f32; 2]> = (0..stream.track_count.load(Relaxed))

@@ -8,7 +8,11 @@
 //! The sink runs on the MIDI thread, once per message. While it runs, no other key is read, so
 //! it must return fast: push to a wait-free ring, send on a channel, store to an atomic. No file
 //! or network work, no lock that another thread may hold for long. A panic in the sink ends the
-//! MIDI thread.
+//! MIDI thread without a [`MidiMessage::Stopped`].
+//!
+//! When the thread ends on its own (the sequencer gave an error), the last message is
+//! [`MidiMessage::Stopped`]. [`MidiInput::into_sink`] then gives the sink back for a new
+//! [`MidiInput::start_boxed`].
 
 mod input;
 mod rules;
@@ -16,7 +20,7 @@ pub mod vkeys;
 
 use std::fmt;
 
-pub use input::{MidiInput, list_ports};
+pub use input::{MidiInput, MidiSink, list_ports};
 
 /// Client name prefix of the virtual test keyboard. Clients whose name starts with this count as
 /// keyboards only when [`MidiOptions::accept_virtual`] is set.
@@ -82,6 +86,11 @@ pub enum MidiMessage {
     },
     /// Sent once: every keyboard that was already there at start has been reported as `Added`.
     Ready,
+    /// The thread ended on its own; nothing follows. Keys and pedals held at this point get no
+    /// release. Not sent when the input is stopped on purpose.
+    Stopped {
+        reason: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -91,16 +100,23 @@ pub struct MidiOptions {
     /// Treat only `meloet-vkeys*` clients as keyboards and leave real ones out (to show the
     /// screens without a keyboard while one is plugged in).
     pub only_virtual: bool,
+    /// For tests of what follows a failure: after this many key events the thread ends as if
+    /// the sequencer had given an error, and sends [`MidiMessage::Stopped`].
+    pub fail_after_events: Option<u32>,
 }
 
 impl MidiOptions {
     /// `accept_virtual` is on when the environment has `MELOET_ACCEPT_VIRTUAL=1`,
-    /// `only_virtual` when it has `MELOET_ONLY_VIRTUAL=1`.
+    /// `only_virtual` when it has `MELOET_ONLY_VIRTUAL=1`, and `fail_after_events` is
+    /// `MELOET_MIDI_FAIL_AFTER=<events>` (a development aid).
     pub fn from_env() -> Self {
         let on = |name: &str| std::env::var_os(name).is_some_and(|v| v == "1");
         Self {
             accept_virtual: on("MELOET_ACCEPT_VIRTUAL"),
             only_virtual: on("MELOET_ONLY_VIRTUAL"),
+            fail_after_events: std::env::var("MELOET_MIDI_FAIL_AFTER")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
         }
     }
 }

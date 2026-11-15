@@ -240,7 +240,7 @@ export function fakeState(): AppState {
       chooser: null,
       hint: null,
     },
-    keyboards: { list: [], active: null, lost: null },
+    keyboards: { list: [], active: null, lost: null, inputStopped: false },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null },
     audio: {
@@ -297,7 +297,7 @@ const dbfs = (db: number) => 10 ** (db / 20);
 
 function withKeyboard(s: AppState, name = "Keystation 49 MK3"): void {
   const kb = keyboard(name);
-  s.keyboards = { list: [kb], active: kb.id, lost: null };
+  s.keyboards = { list: [kb], active: kb.id, lost: null, inputStopped: false };
   s.audio.midiInput = kb.portName;
 }
 

@@ -5,7 +5,7 @@ pub mod facts;
 pub mod route_pod;
 mod watcher;
 
-pub use watcher::{DeviceWatcher, DevicesError};
+pub use watcher::{DeviceWatcher, DevicesError, DevicesEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DevicesPicture {

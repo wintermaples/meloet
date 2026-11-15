@@ -53,6 +53,7 @@ fn sample_state() -> AppState {
             list: vec![],
             active: None,
             lost: None,
+            input_stopped: false,
         },
         outputs: OutputsView {
             list: vec![EndpointView {
@@ -226,6 +227,25 @@ fn status_message_json_shape() {
         (
             StatusMessage::ScaleLoweredForScreen { from: 150, to: 125 },
             json!({"id": "scaleLoweredForScreen", "from": 150, "to": 125}),
+        ),
+        (
+            StatusMessage::AudioSystemStopped,
+            json!({"id": "audioSystemStopped"}),
+        ),
+        (
+            StatusMessage::RecordingStoppedAudioSystem { take: 2 },
+            json!({"id": "recordingStoppedAudioSystem", "take": 2}),
+        ),
+        (
+            StatusMessage::RecordingStoppedOutputMissing {
+                output: "ヘッドホン".into(),
+                take: 2,
+            },
+            json!({"id": "recordingStoppedOutputMissing", "output": "ヘッドホン", "take": 2}),
+        ),
+        (
+            StatusMessage::KeyboardInputStopped,
+            json!({"id": "keyboardInputStopped"}),
         ),
     ] {
         assert_eq!(serde_json::to_value(&message).unwrap(), json);

@@ -56,6 +56,9 @@ pub struct MidiIn {
     pub t_us: u64,
 }
 
+/// The MIDI thread's end of the ring into the engine.
+pub type MidiFeed = Producer<MidiIn>;
+
 /// When this block was called and when its first frame reaches the DAC, [`monotonic_us`] clock.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BlockTiming {
@@ -99,7 +102,9 @@ pub struct EngineMeters {
     last_frames: AtomicU32,
     callbacks: AtomicU64,
     late_callbacks: AtomicU64,
-    stream_errors: AtomicU64,
+    xruns: AtomicU64,
+    streams_lost: AtomicU64,
+    other_errors: AtomicU64,
     sample_rate: AtomicU32,
 }
 
@@ -127,7 +132,9 @@ impl EngineMeters {
             last_frames: AtomicU32::new(0),
             callbacks: AtomicU64::new(0),
             late_callbacks: AtomicU64::new(0),
-            stream_errors: AtomicU64::new(0),
+            xruns: AtomicU64::new(0),
+            streams_lost: AtomicU64::new(0),
+            other_errors: AtomicU64::new(0),
             sample_rate: AtomicU32::new(config.sample_rate),
         }
     }
@@ -172,16 +179,36 @@ impl EngineMeters {
         self.late_callbacks.load(Relaxed)
     }
 
-    pub fn stream_errors(&self) -> u64 {
-        self.stream_errors.load(Relaxed)
+    /// Underruns and overruns PipeWire reported, over every stream of this engine.
+    pub fn xruns(&self) -> u64 {
+        self.xruns.load(Relaxed)
+    }
+
+    /// Streams that ended on their own: the output went away, the connection to the sound
+    /// system broke, or the stream was invalidated. Counted once per stream.
+    pub fn streams_lost(&self) -> u64 {
+        self.streams_lost.load(Relaxed)
+    }
+
+    /// Errors that neither stop the stream nor are an xrun.
+    pub fn other_errors(&self) -> u64 {
+        self.other_errors.load(Relaxed)
     }
 
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate.load(Relaxed)
     }
 
-    pub(crate) fn count_stream_error(&self) {
-        self.stream_errors.fetch_add(1, Relaxed);
+    pub(crate) fn count_xrun(&self) {
+        self.xruns.fetch_add(1, Relaxed);
+    }
+
+    pub(crate) fn count_stream_lost(&self) {
+        self.streams_lost.fetch_add(1, Relaxed);
+    }
+
+    pub(crate) fn count_other_error(&self) {
+        self.other_errors.fetch_add(1, Relaxed);
     }
 }
 
@@ -253,7 +280,7 @@ pub struct EngineParts {
     /// Stays with the control side.
     pub handle: EngineHandle,
     /// Goes to the MIDI thread.
-    pub midi_in: Producer<MidiIn>,
+    pub midi_in: MidiFeed,
 }
 
 /// The part the audio thread owns.
@@ -281,12 +308,16 @@ impl Engine {
             max_frames: config.max_frames.max(1),
             max_tracks: config.max_tracks.max(1),
         };
+        let meters = Arc::new(EngineMeters::new(&config));
+        Engine::assemble(config, meters)
+    }
+
+    fn assemble(config: EngineConfig, meters: Arc<EngineMeters>) -> EngineParts {
         let (command_tx, command_rx) = RingBuffer::new(COMMAND_RING);
         // Every command retires at most one instrument, and commands wait while this is full.
         let (retired_tx, retired_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (midi_tx, midi_rx) = RingBuffer::new(MIDI_RING);
         let (latency_tx, latency_rx) = RingBuffer::new(LATENCY_RING);
-        let meters = Arc::new(EngineMeters::new(&config));
         let buffer = || vec![0.0f32; config.max_frames].into_boxed_slice();
         let engine = Engine {
             tracks: (0..config.max_tracks)
@@ -532,6 +563,21 @@ impl EngineHandle {
             count += 1;
         }
         count
+    }
+
+    /// A new, empty engine in place of one that was lost (a stream that never gave it back).
+    /// This handle is rewired to it; the meters stay the same `Arc`. Every track starts without
+    /// an instrument, at unity gain, with track 0 as the play target. The returned producer
+    /// replaces the old one, whose ring nobody reads any more.
+    pub fn rebuild(&mut self) -> (Engine, MidiFeed) {
+        let config = EngineConfig {
+            sample_rate: self.meters.sample_rate(),
+            max_frames: self.max_frames,
+            max_tracks: self.meters.track_count(),
+        };
+        let parts = Engine::assemble(config, self.meters.clone());
+        *self = parts.handle;
+        (parts.engine, parts.midi_in)
     }
 
     pub fn pop_latency(&mut self) -> Option<LatencyRecord> {

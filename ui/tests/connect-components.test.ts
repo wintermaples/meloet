@@ -74,11 +74,21 @@ describe("入力計", () => {
     );
   });
 
+  it("鍵盤からの入力が止まった: 鍵盤が抜けたときと同じ出しかたで、止まった文", () => {
+    show(
+      InputMeter,
+      app.stateWith((s) => (s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: true })),
+    );
+    expect(text('[data-test="keyboard-name"]')).toBe("鍵盤なし");
+    expect(text('[data-test="meter-right"]')).toBe("鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。");
+    expect(q('[data-test="held"]')).toBeNull();
+  });
+
   it("鍵盤があり、出口がまだ: accent の「音の出口がまだです…」", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
       }),
     );
     expect(text('[data-test="keyboard-name"]')).toBe("鍵盤 49");
@@ -92,7 +102,7 @@ describe("入力計", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
         s.outputs.chosen = "hp";
       }),
     );
@@ -105,7 +115,7 @@ describe("入力計", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
         s.outputs.chosen = "hp";
         s.workspace.layout.meter = "slim";
       }),
@@ -117,7 +127,7 @@ describe("入力計", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
       }),
     );
     expect(text('[data-test="held"]')).toBe("— — —");
@@ -140,7 +150,7 @@ describe("入力計", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
         s.workspace.layout.meter = "slim";
       }),
     );
@@ -159,7 +169,7 @@ describe("入力計", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD, second], active: "kb2", lost: null };
+        s.keyboards = { list: [KEYBOARD, second], active: "kb2", lost: null, inputStopped: false };
       }),
     );
     expect(text('[data-test="keyboard-name"]')).toBe("microKEY2-37");
@@ -170,7 +180,7 @@ describe("入力計", () => {
     vi.useRealTimers();
     expect(tipView.value?.body).toBe("鍵盤 49 ・ microKEY2-37");
     hideTip();
-    app.setState(app.stateWith((s) => (s.keyboards = { list: [KEYBOARD], active: "kb", lost: null })));
+    app.setState(app.stateWith((s) => (s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false })));
     flushSync();
     expect(q('[data-test="other-keyboards"]')).toBeNull();
   });
@@ -180,13 +190,13 @@ describe("入力計", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
-        s.keyboards = { list: [long], active: "kb", lost: null };
+        s.keyboards = { list: [long], active: "kb", lost: null, inputStopped: false };
       }),
     );
     expect(q(".meter > .who")!.style.width).toBe("var(--part-meter-name-long)");
     app.setState(
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
       }),
     );
     flushSync();
@@ -197,7 +207,7 @@ describe("入力計", () => {
 describe("出口えらび", () => {
   const withChooser = () =>
     app.stateWith((s) => {
-      s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+      s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
       s.outputs.list = OUTPUTS;
       s.workspace.chooser = { highlighted: "hp" };
     });
@@ -285,7 +295,7 @@ describe("出口えらび", () => {
 describe("音の設定", () => {
   const withSettings = (advancedOpen: boolean) =>
     app.stateWith((s) => {
-      s.keyboards = { list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null };
+      s.keyboards = { list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null, inputStopped: false };
       s.outputs.list = OUTPUTS;
       s.outputs.chosen = "hp";
       s.workspace.settings = { draftOutput: "hp", advancedOpen };
@@ -397,7 +407,7 @@ describe("音の設定", () => {
 describe("音の設定: 中身が長いとき（出口 9 行）", () => {
   const many = (advancedOpen: boolean) =>
     app.stateWith((s) => {
-      s.keyboards = { list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null };
+      s.keyboards = { list: [{ ...KEYBOARD, name: "Keystation 49 MK3" }], active: "kb", lost: null, inputStopped: false };
       s.outputs.list = [
         ...OUTPUTS,
         ...[1, 2, 3, 4, 5, 6].map((n) => endpoint({ id: `hdmi-${n}`, name: `HDMI / DisplayPort ${n}`, link: "plug", unusable: "stoppedByPc" })),
@@ -449,11 +459,44 @@ describe("状態行", () => {
     expect(s).not.toContain("バッファ");
   });
 
+  it.each([
+    [{ id: "audioSystemStopped" }, "PC の音のしくみ（PipeWire）が止まりました。曲はそのままです。動きだしたら、自動でつなぎなおします。", false],
+    [
+      { id: "recordingStoppedAudioSystem", take: 2 },
+      "PC の音のしくみ（PipeWire）が止まったので、録音を止めました。そこまでの演奏は テイク 2 に残っています。",
+      false,
+    ],
+    [
+      { id: "recordingStoppedOutputMissing", output: "ヘッドホン", take: 2 },
+      "ヘッドホンが見つからなくなったので、録音を止めました。そこまでの演奏は テイク 2 に残っています。",
+      true,
+    ],
+    [{ id: "keyboardInputStopped" }, "鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。", false],
+  ] as const)("知らせ %o", (message, sentence, button) => {
+    show(
+      StatusLine,
+      app.stateWith((s) => {
+        s.status.message = message;
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: message.id === "keyboardInputStopped" };
+      }),
+    );
+    expect(text("footer.status .message")).toBe(sentence);
+    const link = q<HTMLButtonElement>("footer.status button.link");
+    if (button) {
+      expect(link?.textContent).toBe("音の設定をひらく");
+      link!.click();
+      expect(app.sent).toEqual([{ type: "openSettings", advanced: false }]);
+    } else {
+      expect(link).toBeNull();
+    }
+    if (message.id === "keyboardInputStopped") expect(text("footer.status")).toContain("入口: まだ");
+  });
+
   it("鍵盤があり、音が動いている: 入口は鍵盤の名前、バッファは動いている数", () => {
     show(
       StatusLine,
       app.stateWith((s) => {
-        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null };
+        s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
         s.audio.actualFrames = 256;
       }),
     );

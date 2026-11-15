@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use meloet_devices::{ClockSettings, DeviceWatcher};
+use meloet_devices::{ClockSettings, DeviceWatcher, DevicesEvent};
 
 fn clock_from_pw_metadata() -> ClockSettings {
     let out = Command::new("pw-metadata")
@@ -43,8 +43,10 @@ fn first_picture_arrives_within_two_seconds_and_stop_ends_the_thread() {
 
     let (tx, rx) = mpsc::channel();
     let started = Instant::now();
-    let watcher = DeviceWatcher::start(move |picture| {
-        let _ = tx.send(picture);
+    let watcher = DeviceWatcher::start(move |event| {
+        if let DevicesEvent::Picture(picture) = event {
+            let _ = tx.send(picture);
+        }
     })
     .expect("watcher starts");
 
@@ -93,8 +95,8 @@ fn first_picture_arrives_within_two_seconds_and_stop_ends_the_thread() {
 fn starting_and_stopping_again_and_again_does_not_hang() {
     for _ in 0..5 {
         let (tx, rx) = mpsc::channel();
-        let watcher = DeviceWatcher::start(move |picture| {
-            let _ = tx.send(picture);
+        let watcher = DeviceWatcher::start(move |event| {
+            let _ = tx.send(event);
         })
         .expect("watcher starts");
         rx.recv_timeout(Duration::from_secs(2))

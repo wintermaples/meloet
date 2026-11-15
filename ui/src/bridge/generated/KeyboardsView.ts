@@ -5,4 +5,9 @@ export type KeyboardsView = { list: Array<KeyboardView>,
 /**
  * The keyboard that was played last; before any key, the one plugged in last.
  */
-active: string | null, lost: string | null, };
+active: string | null, lost: string | null, 
+/**
+ * The keyboard input itself stopped (the PC's MIDI system, not one keyboard), and meloet
+ * is starting it again. The list is empty meanwhile.
+ */
+inputStopped: boolean, };

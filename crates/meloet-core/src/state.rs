@@ -2,6 +2,7 @@
 //! Nothing here touches a device, a file or a thread.
 
 use std::collections::VecDeque;
+use std::time::Duration;
 
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
@@ -24,6 +25,16 @@ const LATENCY_BUFFERS: f32 = 2.5;
 /// Measured key-to-sound times that make up the shown average.
 const LATENCY_SAMPLES: usize = 16;
 const START_VIEWPORT: (f32, f32) = (1280.0, 800.0);
+/// How many times a stream that ended on its own is opened again before meloet waits for the
+/// outputs to change or for the user.
+const AUDIO_RETRIES: u32 = 4;
+
+/// The wait before try number `attempt` (1, 2, …) to connect again: 0.5 s, 1 s, 2 s, 4 s, then
+/// every 5 s. Used for the stream, PipeWire and the keyboard input alike.
+pub fn retry_delay(attempt: u32) -> Duration {
+    let ms = 500u64.saturating_mul(1 << attempt.saturating_sub(1).min(4));
+    Duration::from_millis(ms.min(5_000))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Input {
@@ -62,6 +73,20 @@ pub enum Input {
     },
     /// A song was opened. The new song at start counts too; [`Model::new`] does it itself.
     SongOpened,
+    /// The open stream ended on its own (the output went away, PipeWire broke the connection).
+    AudioLost,
+    /// Xruns the open stream had since it was opened.
+    AudioXruns {
+        count: u64,
+    },
+    /// The time from [`Effect::RetryAudio`] has passed.
+    AudioRetry,
+    /// The connection to PipeWire broke. The next [`Input::Devices`] means it is back.
+    AudioSystemLost,
+    /// The keyboard input stopped by itself. Every held key and pedal counts as released.
+    MidiStopped,
+    /// The keyboard input runs (again); every keyboard there has been reported since.
+    MidiBack,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +102,10 @@ pub enum Effect {
     /// Release every sounding note and forget the held keys.
     AllNotesOff,
     SaveSettings(Settings),
+    /// Answer with [`Input::AudioRetry`] after this long.
+    RetryAudio {
+        after: Duration,
+    },
 }
 
 pub struct Model {
@@ -115,6 +144,14 @@ pub struct Model {
     open: Option<OpenStream>,
     actual_frames: Option<u32>,
     latencies: VecDeque<f32>,
+    xruns: u64,
+    /// Opens in a row of the stream that ended on its own; 0 once a stream runs.
+    audio_retries: u32,
+    /// PipeWire cannot be reached.
+    audio_system_down: bool,
+    /// While the keyboard input starts again: the ids it has reported so far. `None` while the
+    /// input runs.
+    midi_restarting: Option<Vec<String>>,
     /// A song was opened and the running buffer has not been looked at since.
     buffer_unsaid: bool,
     /// The fixed buffer size as last known; `None` when it was not fixed. Kept while the stream
@@ -161,6 +198,10 @@ impl Model {
             latencies: VecDeque::with_capacity(LATENCY_SAMPLES),
             buffer_unsaid: true,
             buffer_fixed_seen: None,
+            xruns: 0,
+            audio_retries: 0,
+            audio_system_down: false,
+            midi_restarting: None,
         }
     }
 
@@ -175,19 +216,15 @@ impl Model {
         match input {
             Input::Command(command) => tone_on = self.command(command, &mut effects),
             Input::KeyboardAdded(keyboard) => {
+                if let Some(seen) = &mut self.midi_restarting {
+                    seen.push(keyboard.id.clone());
+                }
                 self.keyboards.retain(|k| k.id != keyboard.id);
                 self.keyboards.push(keyboard);
                 self.lost = None;
             }
             Input::KeyboardRemoved { id } => {
-                if let Some(i) = self.keyboards.iter().position(|k| k.id == id) {
-                    let gone = self.keyboards.remove(i);
-                    if self.played.as_ref() == Some(&gone.id) {
-                        self.played = None;
-                    }
-                    if self.keyboards.is_empty() {
-                        self.lost = Some(gone.name);
-                    }
+                if self.remove_keyboard(&id) {
                     effects.push(Effect::AllNotesOff);
                 }
             }
@@ -200,6 +237,8 @@ impl Model {
                 sort_for_choice(&mut picture.outputs);
                 self.devices = Some(picture);
                 self.failed = None;
+                self.audio_retries = 0;
+                self.audio_system_down = false;
             }
             Input::AudioOpened {
                 node_name,
@@ -217,11 +256,53 @@ impl Model {
                     self.wanted = None;
                     self.open = None;
                     self.failed = Some(node_name);
+                    if self.audio_retries > 0 {
+                        self.retry_audio(&mut effects);
+                    }
                 }
             }
             Input::AudioFrames(frames) => {
                 if self.open.is_some() {
                     self.actual_frames = frames.filter(|f| *f > 0);
+                    if self.actual_frames.is_some() {
+                        self.audio_retries = 0;
+                    }
+                }
+            }
+            Input::AudioLost => {
+                if self.open.is_some() {
+                    self.failed = self.wanted.clone();
+                    self.retry_audio(&mut effects);
+                }
+            }
+            Input::AudioXruns { count } => {
+                if self.open.is_some() {
+                    self.xruns = count;
+                }
+            }
+            Input::AudioRetry => {
+                if self.audio_retries > 0 {
+                    self.failed = None;
+                }
+            }
+            Input::AudioSystemLost => self.audio_system_down = true,
+            Input::MidiStopped => {
+                if self.midi_restarting.is_none() {
+                    self.midi_restarting = Some(Vec::new());
+                    effects.push(Effect::AllNotesOff);
+                }
+            }
+            Input::MidiBack => {
+                if let Some(seen) = self.midi_restarting.take() {
+                    let gone: Vec<String> = self
+                        .keyboards
+                        .iter()
+                        .filter(|k| !seen.contains(&k.id))
+                        .map(|k| k.id.clone())
+                        .collect();
+                    for id in gone {
+                        self.remove_keyboard(&id);
+                    }
                 }
             }
             Input::LatencySample { ms } => {
@@ -252,6 +333,38 @@ impl Model {
             effects.push(Effect::TestTone);
         }
         effects
+    }
+
+    /// Xruns of the open stream since it was opened.
+    pub fn xruns(&self) -> u64 {
+        self.xruns
+    }
+
+    /// Forgets a keyboard that went away. Returns whether it was there.
+    fn remove_keyboard(&mut self, id: &str) -> bool {
+        let Some(i) = self.keyboards.iter().position(|k| k.id == id) else {
+            return false;
+        };
+        let gone = self.keyboards.remove(i);
+        if self.played.as_ref() == Some(&gone.id) {
+            self.played = None;
+        }
+        if self.keyboards.is_empty() {
+            self.lost = Some(gone.name);
+        }
+        true
+    }
+
+    /// Asks to open the stream again later, unless it has been tried enough.
+    fn retry_audio(&mut self, effects: &mut Vec<Effect>) {
+        if self.audio_retries < AUDIO_RETRIES {
+            self.audio_retries += 1;
+            effects.push(Effect::RetryAudio {
+                after: retry_delay(self.audio_retries),
+            });
+        } else {
+            self.audio_retries = 0;
+        }
     }
 
     /// Returns the node a test tone was asked on.
@@ -477,7 +590,8 @@ impl Model {
             .and_then(|id| self.choosable(id))
             .or_else(|| self.chosen_endpoint().filter(|_| self.chosen_ready()))
             .and_then(|e| e.node_name.clone())
-            .filter(|node| self.failed.as_ref() != Some(node));
+            .filter(|node| self.failed.as_ref() != Some(node))
+            .filter(|_| !self.audio_system_down);
         if target != self.wanted {
             match &target {
                 Some(node_name) => effects.push(Effect::OpenOutput {
@@ -489,6 +603,7 @@ impl Model {
             self.open = None;
             self.actual_frames = None;
             self.latencies.clear();
+            self.xruns = 0;
         }
     }
 
@@ -606,6 +721,7 @@ impl Model {
                     .collect(),
                 active: self.active_keyboard().map(|k| k.id.clone()),
                 lost: self.lost.clone(),
+                input_stopped: self.midi_restarting.is_some(),
             },
             outputs: OutputsView {
                 list: self.outputs().iter().map(endpoint_view).collect(),
@@ -658,6 +774,9 @@ impl Model {
         if self.dialog.is_some() {
             return Some(StatusMessage::SettingsOpen);
         }
+        if self.audio_system_down {
+            return Some(StatusMessage::AudioSystemStopped);
+        }
         match chosen_state {
             Some(ChosenState::Missing) => {
                 return Some(StatusMessage::OutputMissing { output: output() });
@@ -666,6 +785,9 @@ impl Model {
                 return Some(StatusMessage::OutputNotPlugged { output: output() });
             }
             Some(ChosenState::Ready) | None => {}
+        }
+        if self.midi_restarting.is_some() {
+            return Some(StatusMessage::KeyboardInputStopped);
         }
         let active = self.active_keyboard();
         if let (None, Some(keyboard)) = (active, &self.lost) {
@@ -749,15 +871,16 @@ fn layout_view(layout: &layout::Layout) -> LayoutView {
 }
 
 fn song_view(song: &Song) -> SongView {
+    let doc = &song.doc;
     SongView {
-        name: song.name.clone(),
-        tempo_bpm: song.tempo_bpm,
-        meter_num: song.meter.num,
-        meter_den: song.meter.den,
-        tempo_changes: song.tempo_changes.len() as u32,
+        name: doc.name.clone(),
+        tempo_bpm: doc.tempo.bpm(),
+        meter_num: doc.meter.num(),
+        meter_den: doc.meter.den(),
+        tempo_changes: doc.tempo_changes.len() as u32,
         undo_count: 0,
         note_count: 0,
-        tracks: song
+        tracks: doc
             .tracks
             .iter()
             .map(|t| TrackView {
@@ -770,7 +893,7 @@ fn song_view(song: &Song) -> SongView {
                 gain_db: t.gain_db as f32,
             })
             .collect(),
-        play_target: Some(song.play_target.0),
+        play_target: Some(song.session.play_target.0),
     }
 }
 

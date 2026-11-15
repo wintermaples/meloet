@@ -1348,3 +1348,187 @@ fn a_smaller_screen_lowers_the_scale_and_saves_it() {
     assert!(screen(&mut m, 1920.0, 1040.0).is_empty());
     assert_eq!(m.view().workspace.scale, 100);
 }
+
+#[test]
+fn retry_delay_doubles_from_half_a_second_and_stays_at_five() {
+    let ms: Vec<u128> = (1..=8).map(|a| retry_delay(a).as_millis()).collect();
+    assert_eq!(ms, [500, 1000, 2000, 4000, 5000, 5000, 5000, 5000]);
+    assert_eq!(retry_delay(0).as_millis(), 500);
+    assert_eq!(retry_delay(u32::MAX).as_millis(), 5000);
+}
+
+#[test]
+fn pipewire_lost_closes_says_so_and_opens_again_with_the_next_picture() {
+    let mut m = playing();
+    m.handle(Input::AudioFrames(Some(256)));
+    let song_before = m.view().song;
+
+    assert_eq!(m.handle(Input::AudioSystemLost), [Effect::CloseOutput]);
+    let view = m.view();
+    assert_eq!(view.status.message, Some(StatusMessage::AudioSystemStopped));
+    assert!(!view.audio.running);
+    assert_eq!(view.song, song_before, "the song stays as it was");
+    // The list stays as last seen, so the chosen output is not said to be missing.
+    assert_eq!(view.outputs.chosen_state, Some(ChosenState::Ready));
+
+    // The stream's own report comes after it was closed: nothing more to do.
+    assert!(m.handle(Input::AudioLost).is_empty());
+    // A user action does not hide it: it is not a notice.
+    cmd(&mut m, Command::GoArrange);
+    assert_eq!(status(&m), Some(StatusMessage::AudioSystemStopped));
+
+    assert_eq!(m.handle(usual()), [open(HP_NODE)]);
+    opened(&mut m, HP_NODE, 48_000);
+    assert_eq!(status(&m), None);
+    assert!(m.view().audio.running);
+}
+
+#[test]
+fn a_stream_that_ends_by_itself_is_opened_again_a_few_times() {
+    let mut m = playing();
+    m.handle(Input::AudioFrames(Some(256)));
+
+    let mut waits = Vec::new();
+    for _ in 0..4 {
+        let effects = m.handle(Input::AudioLost);
+        let [Effect::RetryAudio { after }, Effect::CloseOutput] = effects[..] else {
+            panic!("{effects:?}");
+        };
+        waits.push(after.as_millis());
+        assert!(!m.view().audio.running);
+        assert_eq!(m.handle(Input::AudioRetry), [open(HP_NODE)]);
+        opened(&mut m, HP_NODE, 48_000);
+    }
+    assert_eq!(waits, [500, 1000, 2000, 4000]);
+    // Enough: it waits for the outputs to change.
+    assert_eq!(m.handle(Input::AudioLost), [Effect::CloseOutput]);
+    assert!(m.handle(Input::AudioRetry).is_empty());
+    assert_eq!(m.handle(usual()), [open(HP_NODE)]);
+    opened(&mut m, HP_NODE, 48_000);
+
+    // Once a stream runs, the count starts over.
+    m.handle(Input::AudioFrames(Some(256)));
+    let effects = m.handle(Input::AudioLost);
+    assert!(
+        matches!(effects[..], [Effect::RetryAudio { after }, Effect::CloseOutput] if after.as_millis() == 500)
+    );
+
+    // A retry that fails to open waits again.
+    let effects = m.handle(Input::AudioRetry);
+    assert_eq!(effects, [open(HP_NODE)]);
+    let effects = m.handle(Input::AudioOpenFailed {
+        node_name: HP_NODE.into(),
+    });
+    assert!(matches!(effects[..], [Effect::RetryAudio { after }] if after.as_millis() == 1000));
+}
+
+#[test]
+fn audio_lost_without_an_open_stream_does_nothing() {
+    let mut m = fresh();
+    m.handle(usual());
+    assert!(m.handle(Input::AudioLost).is_empty());
+    assert!(m.handle(Input::AudioRetry).is_empty());
+}
+
+#[test]
+fn xruns_are_kept_for_the_open_stream_only() {
+    let mut m = playing();
+    m.handle(Input::AudioXruns { count: 3 });
+    assert_eq!(m.xruns(), 3);
+    m.handle(Input::AudioSystemLost);
+    assert_eq!(m.xruns(), 0);
+    m.handle(Input::AudioXruns { count: 5 });
+    assert_eq!(m.xruns(), 0, "no stream is open");
+}
+
+#[test]
+fn midi_stopped_releases_the_keys_says_so_and_ends_with_midi_back() {
+    let mut m = playing();
+    m.handle(Input::KeyboardAdded(keyboard(2)));
+    m.handle(Input::KeyboardPlayed { id: "kb1".into() });
+
+    assert_eq!(m.handle(Input::MidiStopped), [Effect::AllNotesOff]);
+    let view = m.view();
+    assert_eq!(
+        view.status.message,
+        Some(StatusMessage::KeyboardInputStopped)
+    );
+    assert!(view.keyboards.input_stopped);
+    assert_eq!(
+        view.keyboards.list.len(),
+        2,
+        "the list stays while it starts again"
+    );
+    // A second report while it is already stopped releases nothing new.
+    assert!(m.handle(Input::MidiStopped).is_empty());
+
+    // The new thread reports what is there; kb2 went away meanwhile.
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    assert!(m.handle(Input::MidiBack).is_empty());
+    let view = m.view();
+    assert!(!view.keyboards.input_stopped);
+    assert_eq!(status(&m), None);
+    let ids: Vec<&str> = view.keyboards.list.iter().map(|k| k.id.as_str()).collect();
+    assert_eq!(ids, ["kb1"]);
+    assert_eq!(view.keyboards.active.as_deref(), Some("kb1"));
+    assert_eq!(view.keyboards.lost, None);
+}
+
+#[test]
+fn midi_back_with_no_keyboard_left_says_the_last_one_is_lost() {
+    let mut m = playing();
+    m.handle(Input::MidiStopped);
+    m.handle(Input::MidiBack);
+    let view = m.view();
+    assert!(view.keyboards.list.is_empty());
+    assert_eq!(view.keyboards.lost.as_deref(), Some("Keystation 1"));
+    assert!(matches!(
+        status(&m),
+        Some(StatusMessage::KeyboardLost { .. })
+    ));
+    // The first Ready after start is not a restart.
+    let mut m = fresh();
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    assert!(m.handle(Input::MidiBack).is_empty());
+    assert_eq!(m.view().keyboards.list.len(), 1);
+}
+
+#[test]
+fn status_order_of_the_stopped_systems() {
+    use StatusMessage::*;
+    let mut m = playing();
+    m.handle(Input::MidiStopped);
+    assert_eq!(status(&m), Some(KeyboardInputStopped));
+    m.handle(picture(vec![headphones(Av::No, true)], None));
+    assert!(matches!(status(&m), Some(OutputMissing { .. })));
+    m.handle(Input::AudioSystemLost);
+    assert_eq!(status(&m), Some(AudioSystemStopped));
+    cmd(&mut m, Command::OpenSettings { advanced: false });
+    assert_eq!(status(&m), Some(SettingsOpen));
+}
+
+#[test]
+fn no_pipewire_at_start_says_nothing_about_it_and_the_first_picture_goes_on_as_usual() {
+    let mut m = remembering(HP);
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    let view = m.view();
+    assert_ne!(view.status.message, Some(StatusMessage::AudioSystemStopped));
+    assert!(view.outputs.list.is_empty());
+    assert_eq!(view.outputs.chosen_state, None);
+    assert!(!view.audio.running);
+
+    // PipeWire comes up later: the remembered output opens.
+    assert_eq!(m.handle(usual()), [open(HP_NODE)]);
+    opened(&mut m, HP_NODE, 48_000);
+    assert_eq!(status(&m), None);
+
+    // Without a remembered output, the chooser comes up.
+    let mut m = fresh();
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    assert!(m.view().workspace.chooser.is_some());
+    assert!(m.handle(usual()).is_empty());
+    assert_eq!(
+        m.view().workspace.chooser.unwrap().highlighted.as_deref(),
+        Some(HP)
+    );
+}

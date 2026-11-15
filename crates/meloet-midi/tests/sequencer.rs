@@ -15,6 +15,7 @@ const WAIT: Duration = Duration::from_secs(3);
 const VIRTUAL: MidiOptions = MidiOptions {
     accept_virtual: true,
     only_virtual: false,
+    fail_after_events: None,
 };
 
 fn sequencer_missing() -> bool {
@@ -371,4 +372,65 @@ fn real_keystation_is_added_and_only_its_first_port_is_heard() {
     assert_eq!(listeners(0), meloet.len(), "port 0 is heard");
     assert_eq!(listeners(1), 0, "port 1 (Transport) is not heard");
     input.stop();
+}
+
+#[test]
+fn a_failed_thread_says_stopped_last_and_its_sink_starts_again() {
+    if sequencer_missing() {
+        return;
+    }
+    let name = unique("fail");
+    let keys = VirtualKeyboard::open(&name).unwrap();
+    let failing = MidiOptions {
+        fail_after_events: Some(2),
+        ..VIRTUAL
+    };
+    let (input, rx) = start(failing);
+    let id = wait_for(&rx, added(&name)).id;
+    wait_for(&rx, |m| (*m == MidiMessage::Ready).then_some(()));
+    let note = MidiEvent::NoteOn {
+        note: 60,
+        velocity: 90,
+    };
+    for _ in 0..3 {
+        keys.send(note).unwrap();
+    }
+    let mut events = 0;
+    wait_for(&rx, |m| match m {
+        MidiMessage::Event { keyboard, .. } if *keyboard == id => {
+            events += 1;
+            None
+        }
+        MidiMessage::Stopped { .. } => Some(()),
+        _ => None,
+    });
+    assert_eq!(events, 2, "the third key came after the thread ended");
+
+    let sink = input.into_sink().expect("the sink comes back");
+    assert!(
+        matches!(
+            rx.recv_timeout(Duration::from_millis(200)),
+            Err(RecvTimeoutError::Timeout)
+        ),
+        "nothing after Stopped, and the sink is still alive"
+    );
+    let again = MidiInput::start_boxed(VIRTUAL, sink)
+        .map_err(|(e, _)| e)
+        .expect("starts again");
+    assert_eq!(wait_for(&rx, added(&name)).id, id);
+    wait_for(&rx, |m| (*m == MidiMessage::Ready).then_some(()));
+    keys.send(note).unwrap();
+    wait_for(&rx, |m| {
+        matches!(m, MidiMessage::Event { keyboard, .. } if *keyboard == id).then_some(())
+    });
+    again.stop();
+    // Stopping on purpose sends no Stopped; the sink is dropped with the thread.
+    loop {
+        match rx.recv_timeout(WAIT) {
+            Ok(MidiMessage::Stopped { .. }) => panic!("Stopped after stop()"),
+            Ok(_) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => panic!("the sink was not dropped"),
+        }
+    }
 }

@@ -9,10 +9,13 @@ use alsa::seq::{Addr, ClientIter, EventType, PortCap, PortIter, PortSubscribe, P
 use crate::rules::{PortFacts, convert, keyboard_id, keyboard_port};
 use crate::{Keyboard, MidiError, MidiEvent, MidiMessage, MidiOptions, monotonic_us};
 
+/// The sink in the form [`MidiInput::into_sink`] gives back.
+pub type MidiSink = Box<dyn FnMut(MidiMessage) + Send>;
+
 /// The keyboard input. Dropping it stops the thread, the same as [`MidiInput::stop`].
 pub struct MidiInput {
     wake: Option<PipeWriter>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<MidiSink>>,
 }
 
 impl MidiInput {
@@ -24,6 +27,42 @@ impl MidiInput {
         options: MidiOptions,
         sink: impl FnMut(MidiMessage) + Send + 'static,
     ) -> Result<MidiInput, MidiError> {
+        Self::start_boxed(options, Box::new(sink)).map_err(|(e, _)| e)
+    }
+
+    /// [`MidiInput::start`] with a boxed sink. When the sequencer cannot be opened the sink
+    /// comes back with the error; when the thread cannot be started it is gone.
+    pub fn start_boxed(
+        options: MidiOptions,
+        sink: MidiSink,
+    ) -> Result<MidiInput, (MidiError, Option<MidiSink>)> {
+        let (parts, fds, wake_rx, wake_tx) = match Self::open(options) {
+            Ok(opened) => opened,
+            Err(e) => return Err((e, Some(sink))),
+        };
+        let listener = Listener {
+            seq: parts.seq,
+            me: parts.me,
+            dest: parts.dest,
+            options: parts.options,
+            active: parts.active,
+            events: parts.events,
+            sink,
+        };
+        std::thread::Builder::new()
+            .name("meloet-midi".into())
+            .spawn(move || listener.run(fds, wake_rx))
+            .map(|thread| MidiInput {
+                wake: Some(wake_tx),
+                thread: Some(thread),
+            })
+            .map_err(|e| (MidiError::io("start the MIDI thread")(e), None))
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn open(
+        options: MidiOptions,
+    ) -> Result<(Listener<()>, Vec<pollfd>, PipeReader, PipeWriter), MidiError> {
         // Non-blocking, so that the thread sleeps in poll() together with the wake pipe.
         let seq =
             Seq::open(None, None, true).map_err(MidiError::alsa("open the ALSA sequencer"))?;
@@ -59,28 +98,33 @@ impl MidiInput {
             dest,
             options,
             active: Vec::new(),
-            sink,
+            events: 0,
+            sink: (),
         };
-        let thread = std::thread::Builder::new()
-            .name("meloet-midi".into())
-            .spawn(move || listener.run(fds, wake_rx))
-            .map_err(MidiError::io("start the MIDI thread"))?;
-        Ok(MidiInput {
-            wake: Some(wake_tx),
-            thread: Some(thread),
-        })
+        Ok((listener, fds, wake_rx, wake_tx))
     }
 
     /// Wakes the thread, lets it end, and waits for it. The sink is not called after this returns.
     pub fn stop(self) {}
-}
 
-impl Drop for MidiInput {
-    fn drop(&mut self) {
+    /// Stops the thread if it still runs, waits for it, and gives the sink back. `None` if the
+    /// sink panicked.
+    pub fn into_sink(mut self) -> Option<MidiSink> {
+        self.wake_thread();
+        self.thread.take()?.join().ok()
+    }
+
+    fn wake_thread(&mut self) {
         if let Some(mut wake) = self.wake.take() {
             // If the write fails, closing the pipe wakes the thread just the same (POLLHUP).
             let _ = wake.write_all(&[1]);
         }
+    }
+}
+
+impl Drop for MidiInput {
+    fn drop(&mut self) {
+        self.wake_thread();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -166,11 +210,23 @@ struct Listener<S> {
     dest: Addr,
     options: MidiOptions,
     active: Vec<Keyboard>,
+    /// Key events read so far, for [`MidiOptions::fail_after_events`].
+    events: u32,
     sink: S,
 }
 
+impl Listener<MidiSink> {
+    fn run(mut self, fds: Vec<pollfd>, wake: PipeReader) -> MidiSink {
+        if let Err(reason) = self.listen(fds, wake) {
+            (self.sink)(MidiMessage::Stopped { reason });
+        }
+        self.sink
+    }
+}
+
 impl<S: FnMut(MidiMessage)> Listener<S> {
-    fn run(mut self, mut fds: Vec<pollfd>, _wake: PipeReader) {
+    /// `Ok` when woken to stop, `Err` with the reason when the sequencer failed.
+    fn listen(&mut self, mut fds: Vec<pollfd>, _wake: PipeReader) -> Result<(), String> {
         self.sync_all();
         (self.sink)(MidiMessage::Ready);
         let wake = fds.len() - 1;
@@ -178,10 +234,10 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
             match alsa::poll::poll(&mut fds, -1) {
                 Ok(_) => {}
                 Err(e) if e.errno() == libc::EINTR => continue,
-                Err(_) => return,
+                Err(e) => return Err(format!("poll the sequencer: {e}")),
             }
             if fds[wake].revents != 0 {
-                return;
+                return Ok(());
             }
             loop {
                 match self.read() {
@@ -200,6 +256,10 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
                                 event,
                                 t_us,
                             });
+                            self.events = self.events.saturating_add(1);
+                            if self.options.fail_after_events == Some(self.events) {
+                                return Err("failure injected for a test".into());
+                            }
                         }
                     }
                     Ok(Incoming::Client(client)) => self.sync_client(client),
@@ -208,7 +268,7 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
                     // The kernel dropped events because our queue was full. A plug or unplug may
                     // be among them, so count everything again.
                     Err(e) if e.errno() == libc::ENOSPC => self.sync_all(),
-                    Err(_) => return,
+                    Err(e) => return Err(format!("read the sequencer: {e}")),
                 }
             }
         }

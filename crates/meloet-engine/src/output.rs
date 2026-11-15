@@ -2,6 +2,7 @@
 
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -42,6 +43,32 @@ fn recover(back: &mut Consumer<Engine>) -> Option<Engine> {
             return back.pop().ok();
         }
         std::thread::yield_now();
+    }
+}
+
+/// Sorts what cpal reports into xruns, the end of the stream, and the rest. On the PipeWire host
+/// this runs on the stream's own thread: xruns from inside its process callback, the rest from
+/// its main loop (the core's error event when the connection to the daemon breaks, the stream's
+/// state going to `Unconnected` or `Error`). A stream that meloet closes also reports
+/// `DeviceNotAvailable` on the way out; `closing` keeps that from counting.
+fn stream_error_counter(
+    meters: Arc<EngineMeters>,
+    closing: Arc<AtomicBool>,
+) -> impl FnMut(cpal::Error) + Send + 'static {
+    let mut lost = false;
+    move |error| match error.kind() {
+        _ if closing.load(Relaxed) => {}
+        cpal::ErrorKind::Xrun => meters.count_xrun(),
+        cpal::ErrorKind::DeviceNotAvailable
+        | cpal::ErrorKind::StreamInvalidated
+        | cpal::ErrorKind::HostUnavailable
+        | cpal::ErrorKind::UnsupportedConfig => {
+            if !lost {
+                lost = true;
+                meters.count_stream_lost();
+            }
+        }
+        _ => meters.count_other_error(),
     }
 }
 
@@ -125,6 +152,7 @@ impl AudioOutput {
             buffer_size: cpal::BufferSize::Fixed(request_frames),
         };
         let error_meters = meters.clone();
+        let closing = Arc::new(AtomicBool::new(false));
         let built = device.build_output_stream(
             config,
             move |out: &mut [f32], info: &cpal::OutputCallbackInfo| {
@@ -137,7 +165,7 @@ impl AudioOutput {
                     engine.process(out, timing);
                 }
             },
-            move |_error| error_meters.count_stream_error(),
+            stream_error_counter(error_meters, closing.clone()),
             None,
         );
         let stream = match built {
@@ -150,6 +178,7 @@ impl AudioOutput {
         }
         Ok(RunningOutput {
             stream,
+            closing,
             back,
             meters,
             sample_rate,
@@ -161,6 +190,7 @@ impl AudioOutput {
 /// [`RunningOutput::close`] to keep the engine.
 pub struct RunningOutput {
     stream: cpal::Stream,
+    closing: Arc<AtomicBool>,
     back: Consumer<Engine>,
     meters: Arc<EngineMeters>,
     sample_rate: u32,
@@ -179,8 +209,12 @@ impl RunningOutput {
     /// Do not call this from inside a stream callback.
     pub fn close(self) -> Option<Engine> {
         let RunningOutput {
-            stream, mut back, ..
+            stream,
+            closing,
+            mut back,
+            ..
         } = self;
+        closing.store(true, Relaxed);
         drop(stream);
         recover(&mut back)
     }

@@ -1,7 +1,7 @@
 //! The thread that listens to PipeWire and hands out a fresh picture whenever something changes.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::BTreeMap,
     fmt,
     rc::Rc,
@@ -51,6 +51,15 @@ impl std::error::Error for DevicesError {}
 
 struct Stop;
 
+/// What the watcher thread hands to its sink.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DevicesEvent {
+    Picture(DevicesPicture),
+    /// The connection to PipeWire broke (the daemon stopped or restarted). This is the last
+    /// event; the thread has ended. Start a new watcher to connect again.
+    Lost,
+}
+
 pub struct DeviceWatcher {
     stop: pw::channel::Sender<Stop>,
     thread: Option<JoinHandle<()>>,
@@ -58,9 +67,10 @@ pub struct DeviceWatcher {
 
 impl DeviceWatcher {
     /// `sink` is called on the watcher thread: once when the first picture is complete,
-    /// then after every change (changes that come close together arrive as one picture).
+    /// then after every change (changes that come close together arrive as one picture), and
+    /// with [`DevicesEvent::Lost`] if the connection breaks. Not called after [`Self::stop`].
     pub fn start(
-        sink: impl FnMut(DevicesPicture) + Send + 'static,
+        sink: impl FnMut(DevicesEvent) + Send + 'static,
     ) -> Result<DeviceWatcher, DevicesError> {
         let (stop, stop_rx) = pw::channel::channel::<Stop>();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -100,7 +110,7 @@ impl Drop for DeviceWatcher {
     }
 }
 
-type Sink = Box<dyn FnMut(DevicesPicture)>;
+type Sink = Box<dyn FnMut(DevicesEvent)>;
 
 // In the entries below the listener is declared before its proxy so that it is dropped first.
 struct DeviceEntry {
@@ -191,9 +201,14 @@ fn run(
         core,
     });
 
+    let stopped = Rc::new(Cell::new(false));
     let _stop = stop_rx.attach(main_loop.loop_(), {
         let main_loop = main_loop.clone();
-        move |_| main_loop.quit()
+        let stopped = stopped.clone();
+        move |_| {
+            stopped.set(true);
+            main_loop.quit();
+        }
     });
 
     let _core_listener = shared
@@ -246,6 +261,9 @@ fn run(
 
     let _ = ready.send(Ok(()));
     main_loop.run();
+    if !stopped.get() {
+        (shared.sink.borrow_mut())(DevicesEvent::Lost);
+    }
 }
 
 impl Shared {
@@ -501,6 +519,6 @@ impl Shared {
             state.last_sent = Some(picture.clone());
             picture
         };
-        (self.sink.borrow_mut())(picture);
+        (self.sink.borrow_mut())(DevicesEvent::Picture(picture));
     }
 }

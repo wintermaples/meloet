@@ -246,7 +246,7 @@ describe("状態行の右がわの引っこめかた（仕様書 3 章）", () =
       show(
         StatusLine,
         app.stateWith((s) => {
-          s.keyboards = { list: [{ id: "kb", name: "鍵盤 49", portName: "p", address: "24:0" }], active: "kb", lost: null };
+          s.keyboards = { list: [{ id: "kb", name: "鍵盤 49", portName: "p", address: "24:0" }], active: "kb", lost: null, inputStopped: false };
           s.audio.actualFrames = 256;
         }),
       );

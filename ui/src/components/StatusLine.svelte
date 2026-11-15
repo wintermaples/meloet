@@ -44,6 +44,17 @@
         return plain("msg.keyboardFound", { keyboard: m.keyboard });
       case "keyboardLost":
         return plain("msg.keyboardLost", { keyboard: m.keyboard });
+      case "keyboardInputStopped":
+        return plain("msg.keyboardInputStopped");
+      case "audioSystemStopped":
+        return plain("msg.audioSystemStopped");
+      case "recordingStoppedAudioSystem":
+        return plain("msg.recordingStoppedAudioSystem", { take: m.take });
+      case "recordingStoppedOutputMissing":
+        return {
+          ...plain("msg.recordingStoppedOutputMissing", { output: m.output, take: m.take }),
+          button: settings(false, t("button.openAudioSettings")),
+        };
       case "outputNotPlugged":
       case "outputMissing":
         return { ...plain("msg.outputNotPlugged", { output: m.output }), button: settings(false, t("button.openAudioSettings")) };
@@ -78,7 +89,9 @@
   const message = $derived(shown(app.status.message));
 
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
-  const keyboardName = $derived(app.keyboards.list.find((k) => k.id === app.keyboards.active)?.name ?? null);
+  const keyboardName = $derived(
+    app.keyboards.inputStopped ? null : (app.keyboards.list.find((k) => k.id === app.keyboards.active)?.name ?? null),
+  );
   const actual = $derived(app.audio.actualFrames);
   const requested = $derived(app.audio.requestedFrames);
   const scale = $derived(app.workspace.scale);

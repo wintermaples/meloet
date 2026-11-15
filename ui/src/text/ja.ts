@@ -68,6 +68,25 @@ export const texts = {
   "msg.noArmedTrack": s6("録音待機のトラックがない", "録るトラックが決まっていません。トラックの ● を押すと、そこに録ります。"),
   "msg.keyboardLost": s6("鍵盤が抜けた", "{keyboard} とのつながりが切れました。曲はそのままです。さしなおすと、自動で戻ります。", { keyboard: "鍵盤 49" }),
   "msg.outputLost": s6("音の出口が消えた", "{output}が見つからなくなりました。再生を止めています。", { output: "ヘッドホン" }),
+  // 仕様書にない場面（PC の音のしくみや MIDI のしくみが止まった）。ヤチヨさんの決め。
+  "msg.audioSystemStopped": e(
+    "PC の音のしくみ（PipeWire）が止まりました。曲はそのままです。動きだしたら、自動でつなぎなおします。",
+    "user:2026-11-15",
+  ),
+  "msg.recordingStoppedAudioSystem": e(
+    "PC の音のしくみ（PipeWire）が止まったので、録音を止めました。そこまでの演奏は テイク {take} に残っています。",
+    "user:2026-11-15",
+    { take: "2" },
+  ),
+  "msg.recordingStoppedOutputMissing": e(
+    "{output}が見つからなくなったので、録音を止めました。そこまでの演奏は テイク {take} に残っています。",
+    "user:2026-11-15",
+    { output: "ヘッドホン", take: "2" },
+  ),
+  "msg.keyboardInputStopped": e(
+    "鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。",
+    "user:2026-11-15",
+  ),
   "msg.micTooLoud": s6("マイクの音が大きすぎる", "入ってくる音が大きすぎて割れています。マイクから少し離れるか、マイクがわの音量を下げてください。"),
   "msg.scanning": s6("スキャン中", "スキャン中 {done} / {total} ・ 調べ終えた分から、もう使えます", { done: "37", total: "112" }),
   "msg.scanDone": s6(

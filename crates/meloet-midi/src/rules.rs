@@ -96,14 +96,17 @@ mod tests {
     const NO: MidiOptions = MidiOptions {
         accept_virtual: false,
         only_virtual: false,
+        fail_after_events: None,
     };
     const YES: MidiOptions = MidiOptions {
         accept_virtual: true,
         only_virtual: false,
+        fail_after_events: None,
     };
     const ONLY: MidiOptions = MidiOptions {
         accept_virtual: false,
         only_virtual: true,
+        fail_after_events: None,
     };
 
     fn port(port: i32, cap: PortCap, kind: PortType) -> PortFacts {

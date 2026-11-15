@@ -98,11 +98,13 @@ fn real_output_runs_two_seconds_without_touching_the_allocator() {
     }
     eprintln!(
         "target {} | rate {} Hz | asked 256, running {frames} frames | callbacks {callbacks} | late {} | \
-         stream errors {} | load {} permille | key-to-DAC ms {delays:.1?}",
+         xruns {} | lost {} | other errors {} | load {} permille | key-to-DAC ms {delays:.1?}",
         target.node_name,
         running.sample_rate(),
         meters.late_callbacks(),
-        meters.stream_errors(),
+        meters.xruns(),
+        meters.streams_lost(),
+        meters.other_errors(),
         meters.load_permille(),
     );
     assert!(frames > 0);

@@ -461,6 +461,7 @@ fn the_keyboard_played_last_becomes_the_active_one() {
         midi: Some(MidiOptions {
             accept_virtual: true,
             only_virtual: true,
+            fail_after_events: None,
         }),
         ..CoreOptions::offline()
     });
@@ -512,5 +513,83 @@ fn the_keyboard_played_last_becomes_the_active_one() {
     keys_b.send(key(true)).unwrap();
     wait_for_active(&core, &second);
     drop(keys_a);
+    core.stop();
+}
+
+/// Runs against the real ALSA sequencer; where it cannot be opened, nothing is checked. The
+/// MIDI thread is made to fail after two key events, again after every start.
+#[test]
+fn a_stopped_keyboard_input_releases_the_keys_and_starts_again() {
+    use meloet_midi::vkeys::VirtualKeyboard;
+
+    fn wait(core: &Core, what: &str, mut done: impl FnMut(&meloet_protocol::AppState) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let state = core.snapshot().state;
+            if done(&state) {
+                return;
+            }
+            assert!(Instant::now() < deadline, "{what}: {state:?}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    let name = format!("meloet-vkeys-core-fail-{}", std::process::id());
+    let Ok(keys) = VirtualKeyboard::open(&name) else {
+        eprintln!("skipped: the ALSA sequencer cannot be opened here");
+        return;
+    };
+    let core = Core::start(CoreOptions {
+        midi: Some(MidiOptions {
+            accept_virtual: true,
+            only_virtual: true,
+            fail_after_events: Some(2),
+        }),
+        ..CoreOptions::offline()
+    });
+    let present = |s: &meloet_protocol::AppState| s.keyboards.list.iter().any(|k| k.name == name);
+    wait(&core, "the keyboard is there", present);
+
+    for round in 0..2 {
+        keys.send(MidiEvent::NoteOn {
+            note: 60,
+            velocity: 90,
+        })
+        .unwrap();
+        keys.send(MidiEvent::Control {
+            controller: 64,
+            value: 127,
+        })
+        .unwrap();
+        let stopped_at = Instant::now();
+        wait(&core, "the input is said to have stopped", |s| {
+            s.keyboards.input_stopped
+                && s.status.message == Some(StatusMessage::KeyboardInputStopped)
+        });
+        let held = &core.shared.held;
+        assert_eq!(
+            held.keys_low.load(Relaxed),
+            0,
+            "round {round}: the key is released"
+        );
+        assert_eq!(
+            held.sustain.load(Relaxed),
+            0,
+            "round {round}: the pedal is released"
+        );
+
+        wait(&core, "the input runs again", |s| {
+            !s.keyboards.input_stopped && present(s)
+        });
+        let took = stopped_at.elapsed();
+        assert!(
+            took >= Duration::from_millis(400) && took < Duration::from_millis(1500),
+            "round {round}: started again after {took:?}"
+        );
+        assert!(matches!(
+            core.snapshot().state.status.message,
+            Some(StatusMessage::KeyboardFound { .. })
+        ));
+    }
     core.stop();
 }

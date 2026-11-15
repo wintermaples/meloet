@@ -23,13 +23,17 @@
   const slim = $derived(app?.workspace.layout.meter === "slim");
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
   // 鍵盤が 2 台以上なら、名前は最後に弾いた鍵盤。うしろに残りの台数（仕様書 3 章）。
-  const keyboard = $derived(app?.keyboards.list.find((k) => k.id === app.keyboards.active) ?? null);
+  // 入力そのものが止まっている間は、鍵盤が抜けたときと同じ出しかた。
+  const keyboard = $derived(
+    app?.keyboards.inputStopped ? null : (app?.keyboards.list.find((k) => k.id === app.keyboards.active) ?? null),
+  );
   const name = $derived(keyboard?.name ?? t("meter.noKeyboard"));
   const others = $derived(keyboard ? app!.keyboards.list.length - 1 : 0);
   const more = $derived(others > 0 ? t("meter.otherKeyboards", { count: others }) : "");
   const allNames = $derived(app?.keyboards.list.map((k) => k.name).join(" ・ ") ?? "");
   const right = $derived.by(() => {
     if (!app) return null;
+    if (app.keyboards.inputStopped) return { kind: "inputStopped" as const };
     if (!keyboard) {
       if (app.keyboards.lost !== null) return { kind: "lost" as const };
       return { kind: "missing" as const };
@@ -89,6 +93,8 @@
     if (right?.kind === "missing") return { parts: sentences(t("msg.keyboardMissing")), first: "strong", rest: "dim" };
     if (right?.kind === "lost")
       return { parts: sentences(t("msg.keyboardLost", { keyboard: app!.keyboards.lost! })), first: "strong", rest: "strong" };
+    if (right?.kind === "inputStopped")
+      return { parts: sentences(t("msg.keyboardInputStopped")), first: "strong", rest: "strong" };
     if (right?.kind === "noOutput") return { parts: sentences(t("msg.noOutputMeter")), first: "accent", rest: "accent" };
     return null;
   });

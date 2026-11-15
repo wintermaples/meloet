@@ -11,7 +11,7 @@ mod synth;
 
 pub use engine::{
     BlockTiming, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters, EngineParts,
-    LatencyRecord, MidiIn, monotonic_us,
+    LatencyRecord, MidiFeed, MidiIn, monotonic_us,
 };
 pub use instrument::{Instrument, InstrumentEvent};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};

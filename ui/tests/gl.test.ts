@@ -9,7 +9,7 @@ import { dbToLength, fall, peakToDb } from "../src/gl/level";
 import { Levels } from "../src/gl/levels";
 import { KeyToScreen, REPORT_NAME } from "../src/gl/measure";
 import { blackKeyPx, clipMarkPx, paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
-import { glSlot, watchSlots, type GlSlot } from "../src/gl/slot";
+import { glRegion, glSlot, watchSlots } from "../src/gl/slot";
 import type { Telemetry } from "../src/bridge";
 import { cellText, headers, rows, sectionText, specDocument, tableAfterH3 } from "./design-sources";
 
@@ -508,24 +508,31 @@ describe("slot の見はり", () => {
   it("前からある箱を先に、あとは足す・変える・消すたびに知らせる。見はりをやめたら知らせない", () => {
     const a = document.createElement("i");
     const b = document.createElement("i");
-    const seen: [string, HTMLElement, GlSlot["kind"] | null][] = [];
+    const host = document.createElement("div");
+    const seen: [string, HTMLElement, string | null][] = [];
+    const firstRegion = glRegion(host, "overview");
     const first = glSlot(a, { kind: "velocity" });
     const stop = watchSlots({
       attach: (node, slot) => seen.push(["attach", node, slot.kind]),
       update: (node, slot) => seen.push(["update", node, slot.kind]),
       detach: (node) => seen.push(["detach", node, null]),
+      region: (node, name) => seen.push(["region", node, name]),
+      regionGone: (node) => seen.push(["regionGone", node, null]),
     });
     const second = glSlot(b, { kind: "overview" });
     second.update({ kind: "arrangeGrid", barPx: 64, firstBarX: 0 });
     expect(b.dataset.glSlot).toBe("arrangeGrid");
     first.destroy();
+    firstRegion.destroy();
     stop();
     second.destroy();
     expect(seen).toEqual([
+      ["region", host, "overview"],
       ["attach", a, "velocity"],
       ["attach", b, "overview"],
       ["update", b, "arrangeGrid"],
       ["detach", a, null],
+      ["regionGone", host, null],
     ]);
   });
 });

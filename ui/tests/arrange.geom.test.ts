@@ -148,6 +148,8 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
       { start: 100, length: 50, key: 60 },
       { start: 300, length: 200, key: 64 },
     ]);
+    // のびている先だけを描くとき: その前に終わったノートは形にしない。
+    expect(G.liveShapes(live, 500, 200)).toEqual([{ start: 300, length: 200, key: 64 }]);
   });
 });
 

@@ -17,7 +17,7 @@ import {
   type Box,
 } from "./paint";
 import { giveBack, takeCanvas, type GlCanvas } from "./pool";
-import type { FrameProfile, FrameRecord } from "./profile";
+import type { FrameProfile, FrameRecord, MadeRecord } from "./profile";
 import { regionOf, runFrameCallbacks, watchFrames, watchSlots, type GlSlot } from "./slot";
 
 export interface EngineStats {
@@ -55,6 +55,8 @@ interface Region {
   /** The canvas lost its picture: draw even when the rectangles are the same. */
   mustDraw: boolean;
   drawn: Batch;
+  /** The profile's record of the context made for this region, until its first draw. */
+  made: MadeRecord | null;
 }
 
 /**
@@ -74,6 +76,8 @@ export class Engine {
   private readonly regions = new Map<HTMLElement, Region>();
   /** Slots that have not found their region yet (the region's mark may come after the slot's). */
   private readonly pending = new Set<Slot>();
+  /** Region boxes that have not got their canvas yet. */
+  private readonly pendingRegions = new Map<HTMLElement, RegionName>();
   private readonly held = new HeldKeys();
   private readonly levels = new Levels();
   private velocity = 0;
@@ -110,6 +114,15 @@ export class Engine {
           this.invalidate();
         },
         detach: (node) => this.detach(node),
+        region: (node, name) => {
+          this.pendingRegions.set(node, name);
+          this.invalidate();
+        },
+        regionGone: (node) => {
+          this.pendingRegions.delete(node);
+          const r = this.regions.get(node);
+          if (r) this.close(r);
+        },
       }),
     );
   }
@@ -117,6 +130,8 @@ export class Engine {
   destroy(): void {
     for (const stop of this.stop) stop();
     for (const node of [...this.slots.keys()]) this.detach(node);
+    for (const r of [...this.regions.values()]) this.close(r);
+    this.pendingRegions.clear();
     this.sizes.disconnect();
     cancelAnimationFrame(this.frameId);
     clearTimeout(this.clipTimer);
@@ -140,14 +155,26 @@ export class Engine {
     if (!r) return;
     r.slots.splice(r.slots.indexOf(s), 1);
     r.dirty = true;
-    if (r.slots.length > 0) return;
+    this.invalidate();
+  }
+
+  /** The region box went away: its canvas goes back to the pool. */
+  private close(r: Region): void {
     this.regions.delete(r.host);
     if (!this.slots.has(r.host)) this.sizes.unobserve(r.host);
     giveBack(r.gl);
+    for (const s of r.slots) {
+      s.region = null;
+      this.pending.add(s);
+    }
   }
 
-  /** Puts each new slot into its region, opening the region (and taking a canvas) if it is new. */
+  /** Opens each new region box (taking a canvas), then puts each new slot into its region. */
   private resolve(): void {
+    for (const [host, name] of this.pendingRegions) {
+      this.pendingRegions.delete(host);
+      if (!this.regions.has(host)) this.open(host, name);
+    }
     for (const s of this.pending) {
       this.pending.delete(s);
       const found = regionOf(s.node);
@@ -167,7 +194,13 @@ export class Engine {
   private open(host: HTMLElement, name: RegionName): Region | null {
     const gl = takeCanvas(REGIONS[name].opaque, name);
     if (!gl) return null;
-    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch() };
+    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch(), made: null };
+    if (gl.fresh && this.profile) {
+      const m = gl.renderer.madeMs;
+      r.made = { region: name, contextMs: m.context, programMs: m.program, firstDrawMs: null };
+      this.profile.made(r.made);
+    }
+    gl.fresh = false;
     gl.onRestored = () => {
       r.mustDraw = true;
       r.dirty = true;
@@ -328,7 +361,12 @@ export class Engine {
     r.mustDraw = false;
     this.stats.draws += 1;
     if (p) {
-      p.glMs += performance.now() - t1;
+      const t2 = performance.now();
+      p.glMs += t2 - t1;
+      if (r.made) {
+        r.made.firstDrawMs = t2 - t1;
+        r.made = null;
+      }
       this.profile!.drew(r.name, r.drawn.rectCount);
     }
   }

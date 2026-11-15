@@ -55,6 +55,9 @@ export interface SlotWatcher {
   attach(node: HTMLElement, slot: GlSlot): void;
   update(node: HTMLElement, slot: GlSlot): void;
   detach(node: HTMLElement): void;
+  /** A region box appeared. */
+  region?(node: HTMLElement, name: RegionName): void;
+  regionGone?(node: HTMLElement): void;
 }
 
 const slots = new Map<HTMLElement, GlSlot>();
@@ -81,6 +84,7 @@ export function glSlot(node: HTMLElement, slot: GlSlot) {
 /** One watcher at a time (the engine). Returns how to stop watching. */
 export function watchSlots(next: SlotWatcher): () => void {
   watcher = next;
+  for (const [node, name] of regions) next.region?.(node, name);
   for (const [node, slot] of slots) next.attach(node, slot);
   return () => {
     if (watcher === next) watcher = null;
@@ -116,13 +120,20 @@ export function runFrameCallbacks(): boolean {
   return frameCallbacks.size > 0;
 }
 
-/** Marks the box whose one canvas draws every slot inside it. The name is a row of REGIONS (budget.ts). */
+/**
+ * Marks the box whose one canvas draws every slot inside it. The name is a row of REGIONS (budget.ts).
+ * The canvas is there for as long as the box is, with or without slots: making a WebGL context stops
+ * the page for 50–200 ms, so it is made when the box comes (a band opens), not when a key or a drag
+ * first puts a slot into it.
+ */
 export function glRegion(node: HTMLElement, name: RegionName) {
   regions.set(node, name);
   node.dataset.glRegion = name;
+  watcher?.region?.(node, name);
   return {
     destroy() {
       regions.delete(node);
+      watcher?.regionGone?.(node);
     },
   };
 }

@@ -47,9 +47,9 @@ describe("場面ごとの WebGL の文脈の数", () => {
 
   it.each([
     ["recording", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
-    ["takes", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys"]],
-    ["takesArrange", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "trackMeters"]],
-    ["tracks16", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "trackMeters"]],
+    ["takes", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
+    ["takesArrange", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
+    ["tracks16", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
     ["pianoRollRec", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
   ])("%s: 区画ごとに 1 枚で、予算をこえない", async (scene, expected) => {
     const { flushSync, mount, unmount } = await import("svelte");

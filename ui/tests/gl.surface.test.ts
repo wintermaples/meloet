@@ -170,17 +170,61 @@ describe("WebGL の面", () => {
     frame();
     for (let i = 0; i < 30; i++) {
       const dialog = box(new DOMRect(100, 100, 400, 300));
-      const a = slot(region(box(new DOMRect(110, 110, 120, 6), dialog), "settingsMeter"), { kind: "meter", source: "master", gap: 1 });
-      const b = slot(region(box(new DOMRect(110, 130, 200, 12), dialog), "settingsKeys"), { kind: "keyboard", size: "slim", firstNote: 36, lastNote: 84 });
+      const meterBox = box(new DOMRect(110, 110, 120, 6), dialog);
+      const keysBox = box(new DOMRect(110, 130, 200, 12), dialog);
+      const ra = glRegion(meterBox, "settingsMeter");
+      const rb = glRegion(keysBox, "settingsKeys");
+      const a = slot(meterBox, { kind: "meter", source: "master", gap: 1 });
+      const b = slot(keysBox, { kind: "keyboard", size: "slim", firstNote: 36, lastNote: 84 });
       frame();
       expect(dialog.querySelectorAll("canvas")).toHaveLength(2);
       a.destroy();
       b.destroy();
+      ra.destroy();
+      rb.destroy();
       dialog.remove();
       frame();
     }
     expect(made).toHaveLength(3);
     expect(contextsMade()).toBe(3);
+    engine.destroy();
+  });
+
+  it("区画の箱が来たときに文脈を作り、箱があるうちは slot がなくても持っている（鍵やドラッグの瞬間に作らない）", () => {
+    const { made, drawn, frame } = fakePage();
+    const engine = new Engine();
+    const host = box(new DOMRect(0, 0, 400, 200));
+    const r = glRegion(host, "pianoRollLive");
+    frame();
+    expect(made).toHaveLength(1);
+    const canvas = made[0]!.canvas;
+    expect(canvas.parentElement).toBe(host);
+    expect([canvas.width, canvas.height]).toEqual([0, 0]);
+    expect(drawn).toHaveLength(0);
+
+    for (let i = 0; i < 3; i++) {
+      const s = glSlot(box(new DOMRect(10, 20, 30, 8), host), { kind: "rects", rects: [{ x: 0, y: 0, w: 30, h: 8, color: "color.rec" }] });
+      frame();
+      expect([canvas.width, canvas.height]).toEqual([30, 8]);
+      expect(drawn.at(-1)!.width).toBe(30);
+      s.destroy();
+      frame();
+      expect(canvas.parentElement).toBe(host);
+      expect([canvas.width, canvas.height]).toEqual([0, 0]);
+    }
+    expect(made).toHaveLength(1);
+    expect(contextsMade()).toBe(1);
+
+    // 箱が去ると池に戻り、次の区画が使う。
+    r.destroy();
+    host.remove();
+    frame();
+    expect(canvas.parentElement).toBe(null);
+    const next = box(new DOMRect(0, 0, 100, 10));
+    actions.push(glRegion(next, "recordingClip"));
+    frame();
+    expect(canvas.parentElement).toBe(next);
+    expect(contextsMade()).toBe(1);
     engine.destroy();
   });
 

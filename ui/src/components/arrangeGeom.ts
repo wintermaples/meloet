@@ -173,13 +173,15 @@ export function takeShapes(
   return out;
 }
 
-/** 録っているノートを形に。押している鍵（長さ null）は `now` まで。 */
-export function liveShapes(notes: readonly LiveNote[], now: number): NoteShape[] {
-  return notes.map((n) => ({
-    start: n.start,
-    length: n.length ?? Math.max(0, now - n.start),
-    key: n.key,
-  }));
+/** 録っているノートを形に。押している鍵（長さ null）は `now` まで。`from` より前に終わったノートは落とす。 */
+export function liveShapes(notes: readonly LiveNote[], now: number, from = -Infinity): NoteShape[] {
+  const out: NoteShape[] = [];
+  for (const n of notes) {
+    const length = n.length ?? Math.max(0, now - n.start);
+    if (n.start + length < from) continue;
+    out.push({ start: n.start, length, key: n.key });
+  }
+  return out;
 }
 
 /** 名前の前の札: なし、「2/3」、幅が足りないときは四角だけ。 */

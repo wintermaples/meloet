@@ -85,7 +85,7 @@
   });
   onDestroy(() => stopBook?.());
   let lap = $state(0);
-  const live: LiveNote[] | null = $derived.by(() => {
+  const live: readonly LiveNote[] | null = $derived.by(() => {
     void liveVersion;
     if (!liveMode || !rec || !book) return null;
     return book.notesOf(rec.id, lap);

@@ -224,7 +224,8 @@ describe("録っているあいだ（モック F-ArrangeRec）", () => {
     expect(qa(".clip-label").map(text)).toEqual(["イントロ", "● 録音中 テイク 2"]);
     expect(q(".clip-label.recording")).not.toBeNull();
     expect(q(".play-line")!.classList.contains("rec")).toBe(true);
-    expect(q(".rec-tail")!.dataset.glRegion).toBe("recordingClip");
+    expect(q(".rec-tail")!.dataset.glSlot).toBe("rects");
+    expect(q(".rec-tail")!.parentElement!.dataset.glRegion).toBe("recordingClip");
   });
 
   it("止まっていれば線は accent で、transport.position の所", () => {

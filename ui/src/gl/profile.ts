@@ -22,6 +22,17 @@ export interface FrameRecord {
   busyMs: number | null;
   /** Region name → rectangles drawn into it this frame. */
   drawn: Partial<Record<RegionName, number>>;
+  /** Contexts made this frame (inside measureMs), and the first draw of each (inside glMs). */
+  made?: MadeRecord[];
+}
+
+export interface MadeRecord {
+  region: RegionName;
+  /** getContext. */
+  contextMs: number;
+  /** Compiling and linking the shaders, and the buffers. */
+  programMs: number;
+  firstDrawMs: number | null;
 }
 
 export class FrameProfile {
@@ -75,6 +86,10 @@ export class FrameProfile {
     if (!this.current) return;
     this.current.drawn[region] = (this.current.drawn[region] ?? 0) + rects;
     this.draws[region] = (this.draws[region] ?? 0) + 1;
+  }
+
+  made(m: MadeRecord): void {
+    if (this.current) (this.current.made ??= []).push(m);
   }
 
   json(): string {

@@ -9,6 +9,7 @@
     peekTakeNotes,
     takeNotes,
     type ClipView,
+    type LiveNote,
     type LiveNotesBook,
     type RecordingView,
     type TakeNotes,
@@ -339,9 +340,8 @@
   let tailSlot: { update(next: GlSlot): void } | null = null;
   let offsetUs: number | null = null;
 
-  /** 録っているクリップの、のびている先だけの区画（recordingClip）。 */
+  /** 録っているクリップの、のびている先（区画 recordingClip の中。区画の箱は録っていない間もある）。 */
   function recordingTail(node: HTMLElement) {
-    const region = glRegion(node, "recordingClip");
     const slot = glSlot(node, { kind: "rects", rects: [] });
     tailNode = node;
     tailSlot = slot;
@@ -349,7 +349,6 @@
     return {
       destroy() {
         slot.destroy();
-        region.destroy();
         tailNode = null;
         tailSlot = null;
       },
@@ -446,14 +445,24 @@
       setStyle(tailNode, "width", 2 * perBar * pxPerTick + dims.hair);
       setStyle(tailNode, "height", box.y1 - box.y0);
     }
-    const all = G.liveShapes(book?.notesOf(r.id, lap) ?? [], at);
+    const { notes, range } = liveOfLap(r.id, lap);
     const rects: GlRect[] = [];
-    G.paintClip(rects, v, dims, box, G.CLIP_RECORDING, all, { openLeft: tailFrom > lapFrom, range: G.keyRange(all), until: at });
+    G.paintClip(rects, v, dims, box, G.CLIP_RECORDING, G.liveShapes(notes, at, tailFrom), { openLeft: tailFrom > lapFrom, range, until: at });
     for (const q of rects) {
       q.x -= box.x0;
       q.y -= box.y0;
     }
     tailSlot.update({ kind: "rects", rects });
+  }
+
+  // 先は毎コマ描くので、周のノートと鍵の範囲は、録っているノートが変わったときだけ作る（docs/architecture.md 7 章）。
+  let lapCache: { recording: number; lap: number; version: number; notes: readonly LiveNote[]; range: { low: number; high: number } | null } | null = null;
+  function liveOfLap(recording: number, lap: number): { notes: readonly LiveNote[]; range: { low: number; high: number } | null } {
+    const c = lapCache;
+    if (c && c.recording === recording && c.lap === lap && c.version === liveVersion) return c;
+    const notes = book?.notesOf(recording, lap) ?? [];
+    lapCache = { recording, lap, version: liveVersion, notes, range: G.keyRange(G.liveShapes(notes, 0)) };
+    return lapCache;
   }
 
   function frame(): void {
@@ -700,9 +709,11 @@
           <div class="lane"></div>
         {/each}
         <div class="fill" use:glSlot={{ kind: "rects", rects: laneRects }}></div>
-        {#if rec}
-          <div class="rec-tail" use:recordingTail></div>
-        {/if}
+        <div class="rec-host" use:glRegion={"recordingClip"}>
+          {#if rec}
+            <div class="rec-tail" use:recordingTail></div>
+          {/if}
+        </div>
         <div class="labels">
           {#each labels as c (c.id)}
             <div class="clip-label" style:left="{c.x}px" style:top="{c.y}px" style:width="{c.w}px">
@@ -945,10 +956,14 @@
     height: var(--size-track);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
-  .rec-tail {
+  .rec-host {
     position: absolute;
+    inset: 0;
     z-index: 1;
     pointer-events: none;
+  }
+  .rec-tail {
+    position: absolute;
   }
   .labels {
     position: absolute;

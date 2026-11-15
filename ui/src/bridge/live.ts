@@ -6,12 +6,15 @@
 import type { LiveNote, LiveNotes, LiveNotesSnapshot } from "./types";
 
 const keyOf = (n: LiveNote) => `${n.lap}:${n.index}`;
+const NONE: readonly LiveNote[] = [];
 
 export class LiveNotesBook {
   private recordingId: number | null = null;
   /** null until the first fetch has come back. */
   private seq: number | null = null;
   private notes = new Map<string, LiveNote>();
+  /** notesOf, kept until the notes change. */
+  private readonly byLap = new Map<number, readonly LiveNote[]>();
   private waiting: LiveNotes[] = [];
   private fetching = false;
   private started = false;
@@ -49,10 +52,18 @@ export class LiveNotesBook {
     return this.recordingId;
   }
 
-  /** The notes of `recording` (when it is the one held), in pass `lap`, in order of key press. */
-  notesOf(recording: number, lap: number): LiveNote[] {
-    if (recording !== this.recordingId) return [];
-    return [...this.notes.values()].filter((n) => n.lap === lap).sort((a, b) => a.index - b.index);
+  /**
+   * The notes of `recording` (when it is the one held), in pass `lap`, in order of key press.
+   * The same array until the notes change: callers read it every frame and must not change it.
+   */
+  notesOf(recording: number, lap: number): readonly LiveNote[] {
+    if (recording !== this.recordingId) return NONE;
+    let list = this.byLap.get(lap);
+    if (!list) {
+      list = [...this.notes.values()].filter((n) => n.lap === lap).sort((a, b) => a.index - b.index);
+      this.byLap.set(lap, list);
+    }
+    return list;
   }
 
   /** Called after every change. Returns the function that stops it. */
@@ -62,6 +73,7 @@ export class LiveNotesBook {
   }
 
   private apply(message: LiveNotes): void {
+    this.byLap.clear();
     if (message.recording !== this.recordingId) {
       this.recordingId = message.recording;
       this.notes = new Map();
@@ -71,6 +83,7 @@ export class LiveNotesBook {
   }
 
   private changed(): void {
+    this.byLap.clear();
     for (const l of this.listeners) l();
   }
 
@@ -84,6 +97,7 @@ export class LiveNotesBook {
           this.seq = snap.seq;
           this.recordingId = snap.recording;
           this.notes = new Map(snap.notes.map((n) => [keyOf(n), n]));
+          this.byLap.clear();
         }
         const queued = this.waiting;
         this.waiting = [];

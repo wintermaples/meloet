@@ -7,6 +7,8 @@ export interface GlCanvas {
   readonly renderer: Renderer;
   readonly opaque: boolean;
   lost: boolean;
+  /** Not drawn yet since it was made (for the frame profile). */
+  fresh: boolean;
   /** Set by the canvas's user: the context came back and the picture must be drawn again. */
   onRestored: (() => void) | null;
 }
@@ -44,7 +46,7 @@ export function takeCanvas(opaque: boolean, purpose: string): GlCanvas | null {
     return null;
   }
   made += 1;
-  const c: GlCanvas = { canvas, renderer, opaque, lost: false, onRestored: null };
+  const c: GlCanvas = { canvas, renderer, opaque, lost: false, fresh: true, onRestored: null };
   canvas.addEventListener("webglcontextlost", (e) => {
     e.preventDefault();
     c.lost = true;

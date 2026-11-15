@@ -1,6 +1,6 @@
 <!-- 入力計（仕様書 3 章の表の入力計の行。モック F-Connect1・2・3、F-Empty、F-MeterLongName、Opt-Meter 1-B）。 -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { keyIsDown } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
@@ -56,7 +56,9 @@
     if (!tel) return;
     const notes: number[] = [];
     for (let n = 0; n < 128; n++) if (keyIsDown(tel, n)) notes.push(n);
-    held = notes;
+    // 計器は 60 Hz で来る。同じ鍵なら書かない（書けば、そのたびに新しい $state の配列ができる）。
+    const was = untrack(() => held);
+    if (notes.length !== was.length || notes.some((n, i) => n !== was[i])) held = notes;
     velocity = tel.lastVelocity;
   });
   onMount(() =>

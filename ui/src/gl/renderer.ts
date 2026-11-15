@@ -34,9 +34,12 @@ export class Renderer {
   private readonly gl: WebGL2RenderingContext;
   private size: WebGLUniformLocation | null = null;
   private capacity = 0;
+  /** How long making it took (ms): getContext, then setUp. */
+  readonly madeMs: { context: number; program: number };
 
   /** `opaque`: the picture covers the whole canvas, so the page behind it need not show through. */
   constructor(canvas: HTMLCanvasElement, opaque: boolean) {
+    const t0 = performance.now();
     const gl = canvas.getContext("webgl2", {
       alpha: !opaque,
       antialias: false,
@@ -48,7 +51,9 @@ export class Renderer {
     });
     if (!gl) throw new Error("gl: WebGL2 is not available");
     this.gl = gl;
+    const t1 = performance.now();
     this.setUp();
+    this.madeMs = { context: t1 - t0, program: performance.now() - t1 };
   }
 
   /** Also called after the context comes back from a loss. */

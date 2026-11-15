@@ -63,6 +63,20 @@ describe("LiveNotesBook", () => {
     expect(b.notesOf(1, 0)).toHaveLength(2);
   });
 
+  it("hands out the same list until the notes change (it is read every frame)", async () => {
+    const { b } = book([{ seq: 0, recording: null, notes: [] }]);
+    b.start();
+    await flush();
+    b.receive(msg(1, 1, [note(0, 100), note(1, null)]));
+    const first = b.notesOf(1, 0);
+    expect(b.notesOf(1, 0)).toBe(first);
+    b.receive(msg(2, 1, [note(1, 50)]));
+    const second = b.notesOf(1, 0);
+    expect(second).not.toBe(first);
+    expect(second.map((n) => n.length)).toEqual([100, 50]);
+    expect(first.map((n) => n.length)).toEqual([100, null]);
+  });
+
   it("starts over with the next recording, and keeps laps apart", async () => {
     const { b } = book([{ seq: 0, recording: null, notes: [] }]);
     b.start();

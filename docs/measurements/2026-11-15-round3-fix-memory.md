@@ -135,3 +135,87 @@ long-x と long-x-pr の 60 秒ごと（MB）:
 1. このまま入れない（起動の運しだいで、ピアノロールをひらいていると効かない）。
 2. どの回でも、Full が 1 秒に 1 回まわりはじめると RSS は平らで、止まりもふだん 1〜3 ms だった。Full を確かに起こす別の口（e の 2 の iframe、または 3 の web extension）を試すねうちはある。
 3. 3 GB で WebKit がウェブのプロセスを止める（kill の既定）と読めるので、どの手をとるにしても、kill を明示するかどうかは決めたほうがよい。
+
+## g. JavaScriptCore の Options（環境変数 `JSC_<名前>`、2026-11-15 夜）
+
+**入れた: `JSC_useGenerationalGC=0`。** ピアノロールをひらいたままの 10 分の録音で、WebKitWebProcess が 347 → 410 MB（いちばん大きい 414）。鍵 → 画面の 2 コマの線は、ログなしの 2 回とも守った。
+
+### ソースで読んだ事（`WebKit/WebKit` の `webkitglib/2.52`。入れた版は 2.52.6。確かさ A）
+
+- 環境変数: JSC は初めの一度、`environ` の `JSC_` で始まる物を全部 `Options::setOption` にかける（`runtime/Options.cpp` の `Options::initialize`）。Normal の物は release でも効く。Restricted は `restrictedOptionsEnabled` のときだけ。下の物はどれも Normal。名前のまちがいは `ERROR: invalid option` と書くだけ（`validateOptions` が立っていなければ落ちない）。ウェブのプロセスは meloet の環境を受けつぐ（前の係の `JSC_logGC=1` で確かめ済み）。
+- `runtime/OptionsList.h`:
+
+  | 名前 | 型 | 既定 | 種類 | 使う所と読み |
+  |---|---|---|---|---|
+  | `useGenerationalGC` | Bool | true | Normal | `Heap::shouldDoFullCollection` が最初に見る。false なら、どの GC も、Eden を頼まれても Full |
+  | `gcMaxHeapSize` | Unsigned（バイト） | 0 | Normal | 0 でないと、割り当てで GC を頼むしきいが「この周の割り当て > これ」だけになる（`Heap::collectIfNecessaryOrDefer`）。ヒープの上限ではない |
+  | `percentCPUPerMBForFullTimer` | Double | 0.0003125 | Normal | Full のタイマーの遅れ = 前の Full の長さ ÷ min(返せる見こみ MB × これ, `collectionTimerMaxPercentCPU` 0.05)。返せる見こみ = ふえた量 × 前の Full で返せた割合（`GCActivityCallback::didAllocate`）。割合が 0 だと遅れは無限大のままで、この値では直らない |
+  | `minHeapUtilization` | Double | 0.8 | Normal | `heap/` の Heap.cpp・GCActivityCallback には出てこない（Full を決める所ではない） |
+  | `largeHeapGrowthFactor` ほか、`heapGrowthMaxIncrease` 3.0、`heapGrowthSteepnessFactor` 2.0 | Double | — | Normal | Full のあとの上限（`proportionalHeapSize`）。RAM 16 GB 以上は Aggressive で `heapGrowthMaxIncrease` 側 |
+  | `criticalGCMemoryThreshold` | Double | 0.80 | Normal | PC のメモリの使用率がこえると、頼み先の決まっていない GC が Full になる |
+  | `collectContinuously` | Bool | false | Normal | 試していない（試験用で、止まりが増える） |
+
+- なぜ Full が来ないか（`runtime/VM.cpp` の `performOpportunisticallyScheduledTasks`、`heap/Heap.cpp` の `updateAllocationLimits`）: ひまな時の GC は、`m_shouldDoOpportunisticFullCollection` が立っていなければ `collectSync(CollectionScope::Eden)` と**種類を決めて**頼む。Eden のあと「残りが 1/3 より少ない」と `m_shouldDoFullCollection` が立つが、これを見るのは種類を決めていない頼み（割り当てがしきいをこえたとき）だけ。ひまな時の Eden が 1 秒に十数回まわると、割り当ては周ごとに小さく、しきい（Full のあとのヒープ 16 MB からの見こみで約 48 MB。計算: 16 × (3 × e^(−2 × 16 MB ÷ RAM) + 1) − 16。確かさ C）にとどかないので、その旗は使われない。`useGenerationalGC=0` は `shouldDoFullCollection` の最初で true を返すので、種類を決めた Eden の頼みも Full になる。確かさ A（ソース）と C（meloet での当てはめ）。
+
+### 測った数（150 秒の録音、ピアノロールをひらいたまま、`JSC_logGC=1`）
+
+- 版: `f72d8e1` の上の作業ツリー。release、窓 1920×1080、バッファ 256、48000 Hz。`tools/measure/long-record.sh --no-build --seconds 150 --piano-roll`。
+- PC: ほかの係なし。始めの load average 0.69〜1.18。ヤチヨさんの meloet は動いていない（vite だけ）。
+- 生の数: `target/r3-mem/m3/<回>/`。止まりは logGC の `p=`（その GC で主スレッドが止まった合計）。
+
+| 回 | 設定 | Eden / Full | 止まり p50 / p95 / 最大 ms（Full） | 16.7 ms をこえた GC | ヒープ MB（終わり） | WebKitWebProcess MB（10 秒 → 180 秒） |
+|---|---|---|---|---|---|---|
+| base | なし | 287 / 269 | 1.27 / 2.38 / 5.53 | 1 | 20 | 350 → 393（Full が回りはじめた運のよい回） |
+| base2 | なし | 262 / 262 | 1.29 / 2.40 / 3.27 | 3 | 20 | 348 → 394（同） |
+| base3 | なし | 1979 / 1 | Eden 0.80 / 1.11 / 35.15 | 13 | 96 | 350 → **506** |
+| nogen | `useGenerationalGC=0` | 0 / 538 | 1.26 / 2.33 / 32.84 | 2 | 20 | 347 → 390 |
+| nogen2 | 同 | 0 / 545 | 1.27 / 2.30 / 32.80 | 2 | 20 | 347 → 389 |
+| nogen3 | 同 | 0 / 538 | 1.25 / 2.23 / 32.99 | 1 | 20 | 348 → 390 |
+| max4m | `gcMaxHeapSize=4194304` | 3715 / 1 | Eden 0.71 / 0.96 / 33.05 | 12 | 93 | 349 → **502** |
+| max16m | `gcMaxHeapSize=16777216` | 2098 / 1 | Eden 0.81 / 1.10 / 31.62 | 13 | 97 | 356 → **500** |
+
+- 設定なしは、3 回のうち 2 回が「Full が回りはじめる」形（f と同じく運しだい）。`useGenerationalGC=0` は 3 回とも同じ形で、Full が 1 秒に約 3 回、1 回の止まりはふだん 1〜3 ms。
+- `gcMaxHeapSize` は悪くなった: 割り当てで頼む GC がふえても Eden のまま（Full の旗が立つ前に周がおわる）で、Full は来ない。
+- xrun: どの回も録音の前（1〜3 秒目）の 1 回だけ。
+
+### 10 分（録音、ピアノロールをひらいたまま、`useGenerationalGC=0`、`JSC_logGC=1`）
+
+- `target/r3-mem/m3/long-nogen-pr/`。始めの load average 0.73。テイクの鍵 2106（ノートの一覧 2106 を絵で確かめた）。xrun は 3 秒目に 1 回だけ（録音の前）。
+- Eden 0 / Full 1626、止まり p50 1.30 / p95 2.38 / 最大 33.01 ms（16.7 ms をこえたのは 1 回）。ヒープは 20 MB 前後のまま（いちばん大きい 23）。
+
+| 秒 | 10 | 60 | 120 | 180 | 240 | 300 | 360 | 420 | 480 | 540 | 600 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| WebKitWebProcess MB | 347 | 376 | 384 | 393 | 401 | 402 | 404 | 406 | 404 | 410 | 410 |
+| （くらべ）c のひらいたまま | — | 406 | 451 | 507 | 556 | 597 | 641 | 682 | 728 | 781 | 826 |
+
+- 240 秒からあとは 6 分で 9 MB（約 0.025 MB/秒。計算: (410 − 401) ÷ 360）。はじめの 4 分の 54 MB は、ピアノロールと録っているテイクがのびる分と読む（確かさ C）。
+
+### 鍵 → 画面（録音中、mixed、ピアノロール、600 鍵）
+
+`tools/measure/latency.sh --no-build --state recording --pattern mixed --piano-roll --count 600`。設定は、入れたあとの meloet（既定で `useGenerationalGC=0`）と、外から `JSC_useGenerationalGC=1` を決めた回（外の値が勝つことの確かめも兼ねる）。生の数: `target/r3-mem/lat3/<回>/`。始めの load average 0.55〜1.11。
+
+| 回 | GC | logGC | 間をあけた鍵 p50 / p95 / 最大 | 2 コマの線 | すぐあとの鍵 p50 / p95 / 最大 | 3 コマの線 | 25 ms をこえたコマの間（3 秒より後、はじめの 4000 コマ） |
+|---|---|---|---|---|---|---|---|
+| q-nogen1 | Full だけ | なし | 1.36 / 12.24 / 16.49 | 守った | 6.78 / 13.82 / 17.17 | 守った | 0 |
+| q-nogen2 | Full だけ | なし | 0.72 / 10.09 / 15.75 | 守った | 6.07 / 12.87 / 19.18 | 守った | 0 |
+| q-gen1 | 世代あり | なし | 0.84 / 11.20 / 14.36 | 守った | 5.40 / 13.21 / 17.19 | 守った | 0 |
+| q-gen2 | 世代あり | なし | 0.70 / 12.07 / 15.10 | 守った | 6.12 / 13.67 / 16.22 | 守った | 0 |
+| nogen1 | Full だけ（0 / 451） | あり | 0.85 / 11.46 / 29.52 | 1 鍵こえた | 5.84 / 12.64 / 16.81 | 守った | 3（39〜46 ms） |
+| nogen2 | Full だけ（0 / 446） | あり | 0.86 / 10.44 / 16.08 | 守った | 6.22 / 13.05 / 18.06 | 守った | 1（43 ms） |
+| gen1 | 世代あり（204 / 213） | あり | 0.83 / 10.51 / 22.06 | 1 鍵こえた | 6.30 / 13.33 / 15.85 | 守った | 5（38〜47 ms） |
+| gen2 | 世代あり（84 / 226） | あり | 1.14 / 11.61 / 29.49 | 1 鍵こえた | 6.47 / 12.79 / 18.21 | 守った | 3（42〜52 ms） |
+
+- `JSC_logGC=1` をつけた回だけ、40 ms ほどのコマの間と 2 コマをこえる鍵が出た（設定によらない）。logGC の約 33 ms の止まり（どの形でも 150 秒に 1〜13 回）は、ログを書くことそのものの重さをふくむと読む（確かさ C）。ログなしの 4 回は、どちらの設定でも 3 秒より後に 25 ms をこえたコマの間がなかった。
+- 鍵 → 音は 4 回とも同じ（Rust → コールバック p95 5.0〜5.1 ms）。
+- 世代ありの latency の回は、55 秒の間に Full が回りはじめた（運のよい形）ので、「世代ありでふえつづける形」とのくらべにはなっていない。ログなしの回は、どちらの形だったかわからない。
+
+### 入れた形
+
+- `crates/meloet-app/src/main.rs` の `JSC_OPTIONS`（1 か所の定数）。`main` のいちばん初め（スレッドができる前）に、環境にまだないときだけ決める。**外から同じ変数が決められていたら、そちらを使う**（くらべるため。上の gen の回で、外の `=1` が効いて Eden が回ったことを確かめた）。
+- 止める道: `JSC_useGenerationalGC=1` をつけて起動する。
+
+### 確かめていない事
+
+- 1 時間の録音。ログなしの長い録音の RSS（10 分は logGC つき）。
+- Full だけの GC が、曲が大きくなったとき（ノートが数万）に 1 回何 ms になるか。止まりは生きている物の数に比例するので、曲が大きいと重くなる（確かさ C）。いまのヒープは 20 MB 前後。
+- e の 2（iframe）と 3（web extension）は作らなかった。3 は、公開の `JSGarbageCollect` が `reportAbandonedObjectGraph()` だけ（Full のタイマーを早めるだけで、f の strict と同じく効かない見こみ。`API/JSBase.cpp`）。その場で Full を回すのは `JSSynchronousGarbageCollectForDebugging`（入れた libjavascriptcoregtk-4.1 2.52.6 の `nm -D` で外に出ている。ヘッダにはない、試験用の名前）。web extension（別の `.so`、wry に口がなく `webkit_web_context_set_web_extensions_directory` をウェブのプロセスより先に呼ぶしかけがいる）と合わせて、手間は大きい。

@@ -28,6 +28,24 @@ type Core = Arc<dyn CoreHandle>;
 /// after SIGTERM (systemd's `TimeoutStopSec` for app scopes); this leaves time to end.
 const ENDING_WAIT: Duration = Duration::from_secs(3);
 
+/// JavaScriptCore options for the page, as the environment WebKitWebProcess inherits.
+/// WebKitGTK collects the page in idle time with young-only (Eden) collections only, and in
+/// one long-lived page at 60 Hz the full collection almost never comes: what each frame held
+/// for a moment piles up in the old space (+0.7..0.8 MB/s of RSS while playing or recording).
+/// Without generations every one of those idle collections is full: about 3 a second, mostly
+/// 1..3 ms each (`docs/measurements/2026-11-15-round3-fix-memory.md`, section g). A value set
+/// from outside wins, to compare.
+const JSC_OPTIONS: &[(&str, &str)] = &[("JSC_useGenerationalGC", "0")];
+
+fn set_jsc_options() {
+    for (name, value) in JSC_OPTIONS {
+        if std::env::var_os(name).is_none() {
+            // SAFETY: called first in main, before any thread exists.
+            unsafe { std::env::set_var(name, value) };
+        }
+    }
+}
+
 #[tauri::command]
 fn hello(protocol_version: u32) -> HelloReply {
     HelloReply {
@@ -310,6 +328,7 @@ fn shell_request(
 }
 
 fn main() {
+    set_jsc_options();
     devhooks::read_env();
     let core = Arc::new(meloet_core::Core::start(
         meloet_core::CoreOptions::from_env(),

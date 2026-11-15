@@ -119,4 +119,4 @@ python3 -I tools/measure/make_song.py ...                   # 試験用の曲（
 - オプションなしの `cargo fmt` は `spikes/` まで書きかえる。`-p` でクレートをならべる（`scripts/check-all.sh` と同じ）。`cargo clippy --workspace` も spikes で落ちる。
 - 係の作業ツリーは `.claude/worktrees/` にできる（`.git/info/exclude` で外してある）。`meloet-app` の clippy は `ui/dist` が要るので、作業ツリーでは空の `ui/dist` を一時的に作る。
 - PC が終わるとき、アプリの scope は SIGTERM から 5 秒で SIGKILL（Ubuntu 26.04、GNOME 50 は Wayland だけ）。電源オフの前には logind の PrepareForShutdown が来る（delay ロックを持てば）。
-- WebKitGTK 2.52 の JavaScriptCore は、ふだん Eden の GC しか回さず、Full の GC がめったに来ない。60 Hz で配列を作ると、WebKitWebProcess のメモリがふえつづける（`docs/measurements/2026-11-15-round3-fix-memory.md`）。
+- WebKitGTK 2.52 の JavaScriptCore は、ひまな時に Eden の GC しか回さず、Full の GC がめったに来ない。60 Hz で動くページでは、WebKitWebProcess のメモリがふえつづける。meloet は起動のいちばん初めに `JSC_useGenerationalGC=0` を決め、毎回 Full にしている（`crates/meloet-app/src/main.rs`、`docs/measurements/2026-11-15-round3-fix-memory.md` の g）。外から同じ変数を決めればそちらが勝つ。GC のようすは `JSC_logGC=1` で見られる（ログを書く重さで、止まりが少し長く出る）。

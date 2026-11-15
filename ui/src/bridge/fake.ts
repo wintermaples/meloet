@@ -277,6 +277,7 @@ export function fakeState(): AppState {
       chooser: null,
       hint: null,
       songDialog: null,
+      recovery: null,
     },
     keyboards: { list: [], active: null, lost: null, inputStopped: false },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
@@ -479,6 +480,9 @@ export function encodeTake(t: FakeTake): ArrayBuffer {
 }
 
 const NO_LIVE: LiveNotesSnapshot = { seq: 0, recording: null, notes: [] };
+
+/** 11 月 15 日 22:41 in the PC's own time, as the mocks F-Recover1 and Opt3-Recover show it. */
+const RECOVERY_WRITTEN = new Date(2026, 10, 15, 22, 41).getTime();
 
 /** Recording from bar 5; the listener is at 7.3.240, with C4 E4 G4 held since 7.3.000. */
 const RECORDING_LIVE: LiveNotesSnapshot = {
@@ -823,6 +827,41 @@ export const SCENES: Record<string, SceneDef> = {
   cannotSave: { setup: songDialog("cannotSave"), meters: QUIET },
   broken: { setup: songDialog("broken", "はじめての曲.meloet", true), meters: QUIET },
   brokenNoPrevious: { setup: songDialog("broken", "はじめての曲.meloet"), meters: QUIET },
+  // The mock F-Recover1: a new song never saved, brought back from the recovery file written as the PC ended.
+  // Bringing it back is the first step ("1 / 1").
+  recover1: {
+    setup(s) {
+      ready(s);
+      s.song.undoCount = 1;
+      s.song.file = "changed";
+      s.song.tracks[0]!.clips = [fakeClip(1, "ピアノ", 1, 5, 1, [2]), fakeClip(3, "ピアノ", 5, 7, 1, [4])];
+      s.workspace.recovery = { kind: "recovered", writtenMs: RECOVERY_WRITTEN, cause: "pcEnding", song: null, takes: 2 };
+      s.status.message = { id: "recovered" };
+    },
+    meters: QUIET,
+  },
+  // The mock F-Recover2: "戻さない" was pressed; the song is as last saved, and the history band is open.
+  recover2: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 2;
+      s.song.file = "saved";
+      s.status.message = { id: "recoveryDiscarded" };
+    },
+    bands: ["history"],
+    meters: QUIET,
+  },
+  // The mock F-Recover3: the recovery file did not read; the song last saved is open.
+  recover3: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 0;
+      s.song.file = "saved";
+      s.workspace.recovery = { kind: "unreadable", song: "はじめての曲" };
+      s.status.message = { id: "recoveryUnreadable", savedSong: true };
+    },
+    meters: QUIET,
+  },
   // The song name of the mock Main: saved, 14 steps ("保存済み ・ 取り消し 14").
   saved: {
     setup(s) {
@@ -1108,7 +1147,11 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
       }
       break;
     case "dismissHint":
-      ws.hint = null;
+      if (ws.recovery?.kind === "unreadable") ws.recovery = null;
+      else if (!ws.recovery) ws.hint = null;
+      break;
+    case "discardRecovered":
+      if (ws.recovery?.kind === "recovered") ws.recovery = null;
       break;
     default:
       break;

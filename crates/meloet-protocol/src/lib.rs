@@ -293,6 +293,10 @@ pub enum Command {
         field: ValueField,
         kept: String,
     },
+    /// "戻さない" on the recovery hint: back to the song as last saved, as one step.
+    DiscardRecovered,
+    /// "ファイルの場所をひらく" on the hint about a recovery file that did not read.
+    ShowRecoveryFile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -688,6 +692,45 @@ pub struct WorkspaceView {
     pub chooser: Option<ChooserView>,
     pub hint: Option<Hint>,
     pub song_dialog: Option<SongDialogView>,
+    /// The hint about the recovery file. While it is up, `hint` is `None`. It stays until the
+    /// song is saved, "戻さない" or "閉じる" (`DismissHint`), or the song is let go.
+    pub recovery: Option<RecoveryView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum RecoveryView {
+    /// The song was brought back: "保存する / 戻さない".
+    Recovered {
+        /// When the recovery file was written, Unix ms. The screen shows it in local time.
+        written_ms: u64,
+        cause: RecoveryCause,
+        /// The song's name; `None` for a song never saved.
+        song: Option<String>,
+        /// The takes of every clip, all together.
+        takes: u32,
+    },
+    /// The recovery file did not read and was kept: "ファイルの場所をひらく / 閉じる".
+    Unreadable {
+        /// The last saved song, opened instead; `None`: a new song.
+        song: Option<String>,
+    },
+}
+
+/// When the recovery file was written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum RecoveryCause {
+    /// The PC was ending (a signal, or logind's PrepareForShutdown).
+    PcEnding,
+    /// Every now and then, a little after the song changed: meloet ended without warning.
+    Sudden,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1022,6 +1065,15 @@ pub enum StatusMessage {
         key: u8,
         root: u8,
         mode: ScaleMode,
+    },
+    /// "なおすためのファイルから戻しました ・ まだ保存していません".
+    Recovered,
+    /// "戻した変更をすてて、最後に保存した形にしました。取り消せます（Mod Z）".
+    RecoveryDiscarded,
+    /// "なおすためのファイルが読めませんでした ・ 最後に保存した曲をひらいています", or with
+    /// `saved_song` false "… ・ 新しい曲をひらいています".
+    RecoveryUnreadable {
+        saved_song: bool,
     },
 }
 

@@ -54,6 +54,21 @@ export class PeakHold {
   }
 }
 
+/** Unix ms を、この PC の地元の時刻で「11 月 15 日 22:41」の穴に入れる値に（分は 2 けた）。 */
+export function dayAndTime(ms: number): { month: number; day: number; time: string } {
+  const d = new Date(ms);
+  return { month: d.getMonth() + 1, day: d.getDate(), time: `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}` };
+}
+
+/** 文を、ふつうの所と用語（`word` のある所）に分ける。用語の説明をそえるため。 */
+export function termParts(text: string, word: string): { text: string; term: boolean }[] {
+  return text
+    .split(word)
+    .flatMap((piece, i) => (i === 0 ? [piece] : [word, piece]))
+    .map((piece) => ({ text: piece, term: piece === word }))
+    .filter((p) => p.text !== "");
+}
+
 export interface TextPart {
   text: string;
   /** うめこんだ値の穴の名前。文のほかの所は null。 */

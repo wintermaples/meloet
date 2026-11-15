@@ -31,9 +31,10 @@ use meloet_protocol::{
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::measure::{self, KeyToSound};
 use crate::play::{EngineOp, Heard, RecordReport};
+use crate::recovery;
 use crate::settings::{self, Settings};
 use crate::songfile;
-use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, SaveTo, retry_delay};
+use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, RecoveryStart, SaveTo, retry_delay};
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
 /// How often the core thread reads the engine's reports while the transport moves.
@@ -60,6 +61,8 @@ pub struct CoreOptions {
     pub audio: bool,
     /// Where a song's first save makes its folder. `None`: the first save fails.
     pub songs_dir: Option<PathBuf>,
+    /// Where the recovery file lives. `None`: none is read or written.
+    pub state_dir: Option<PathBuf>,
 }
 
 /// What the core asks of the shell. Answer the windows with [`Core::song_file_picked`] and
@@ -72,6 +75,8 @@ pub enum ShellRequest {
     PickFolder { folder: Option<PathBuf> },
     /// End meloet: everything that had to be asked or saved is done.
     Exit,
+    /// Show this file in the PC's file manager.
+    ShowFile { path: PathBuf },
 }
 
 /// Called on the core thread; must not wait for the main thread.
@@ -87,6 +92,7 @@ impl CoreOptions {
             devices: true,
             audio: true,
             songs_dir: songfile::songs_dir(),
+            state_dir: recovery::dir(),
         }
     }
 
@@ -99,6 +105,7 @@ impl CoreOptions {
             devices: false,
             audio: false,
             songs_dir: None,
+            state_dir: None,
         }
     }
 }
@@ -128,6 +135,8 @@ enum Msg {
     DevicesLost,
     LiveNotes(Sender<LiveNotesSnapshot>),
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
+    /// Told once the recovery file holds the song, or there was nothing to write.
+    PcEnding(Sender<()>),
     Stop,
 }
 
@@ -284,6 +293,9 @@ impl Core {
                 audio: Audio::new(parts.engine, parts.handle, options.audio),
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
+                state_dir: options.state_dir.clone(),
+                recovery: options.state_dir.clone().map(recovery::Writer::start),
+                ending: Vec::new(),
                 key_to_sound: options.measure_dir.clone().map(KeyToSound::new),
                 links,
                 midi,
@@ -390,6 +402,16 @@ impl Core {
             recording: None,
             notes: Vec::new(),
         })
+    }
+
+    /// The PC is ending: writes the recovery file when there are unsaved changes (a recording
+    /// is stopped and put in the song first). Returns whether that was done within `timeout`.
+    pub fn pc_ending(&self, timeout: Duration) -> bool {
+        let (reply, done) = mpsc::channel();
+        if self.tx.send(Msg::PcEnding(reply)).is_err() {
+            return false;
+        }
+        done.recv_timeout(timeout).is_ok()
     }
 
     /// The take binary (docs/architecture.md 3-4) of a take in the song as it is now.
@@ -828,6 +850,10 @@ struct Worker {
     audio: Audio,
     config_dir: Option<PathBuf>,
     songs_dir: Option<PathBuf>,
+    state_dir: Option<PathBuf>,
+    recovery: Option<recovery::Writer>,
+    /// Waiting for the recovery file, for the PC ending.
+    ending: Vec<Sender<()>>,
     key_to_sound: Option<KeyToSound>,
     links: Links,
     midi: Option<Midi>,
@@ -837,6 +863,9 @@ struct Worker {
 
 impl Worker {
     fn run(mut self, rx: Receiver<Msg>) {
+        if let Some(start) = self.state_dir.as_deref().and_then(recovery_start) {
+            self.handle(Input::RecoveryFound(Box::new(start)));
+        }
         let mut kept = Instant::now();
         let mut polled = Instant::now();
         loop {
@@ -888,6 +917,10 @@ impl Worker {
                 Ok(Msg::TakeNotes(id, reply)) => {
                     let _ = reply.send(self.model.take_notes(id));
                 }
+                Ok(Msg::PcEnding(reply)) => {
+                    self.ending.push(reply);
+                    self.handle(Input::PcEnding);
+                }
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -899,9 +932,14 @@ impl Worker {
                 kept = Instant::now();
                 self.housekeeping(false);
                 self.retries(kept);
+                if self.model.recovery_waiting() {
+                    self.handle(Input::Tick);
+                }
             }
         }
         self.housekeeping(true);
+        // Waits for the recovery file asked for so far.
+        drop(self.recovery.take());
         drop(self.midi.take());
         drop(self.devices.take());
         self.audio.close(&self.shared.stream);
@@ -1022,6 +1060,39 @@ impl Worker {
                     Effect::Exit => {
                         self.ask_shell(ShellRequest::Exit);
                     }
+                    Effect::WriteRecovery {
+                        song,
+                        path,
+                        cause,
+                        ending,
+                    } => {
+                        let done = if ending {
+                            std::mem::take(&mut self.ending)
+                        } else {
+                            Vec::new()
+                        };
+                        match &self.recovery {
+                            Some(writer) => writer.write(song, path, cause, done),
+                            None => {
+                                for d in done {
+                                    let _ = d.send(());
+                                }
+                            }
+                        }
+                    }
+                    Effect::RemoveRecovery => {
+                        if let Some(writer) = &self.recovery {
+                            writer.remove();
+                        }
+                    }
+                    Effect::EndingReady => {
+                        for d in self.ending.drain(..) {
+                            let _ = d.send(());
+                        }
+                    }
+                    Effect::ShowFile(path) => {
+                        self.ask_shell(ShellRequest::ShowFile { path });
+                    }
                 }
             }
         }
@@ -1096,6 +1167,37 @@ pub(crate) fn read_song(path: PathBuf, previous: bool) -> Input {
             Input::SongUnreadable { path, previous }
         }
     }
+}
+
+/// Reads the recovery file in `dir`, and the song's file it names.
+pub(crate) fn recovery_start(dir: &Path) -> Option<RecoveryStart> {
+    let read_saved = |path: &Path| {
+        songfile::read(path)
+            .inspect_err(|e| eprintln!("meloet: cannot read {}: {e:?}", path.display()))
+            .ok()
+            .map(Box::new)
+    };
+    Some(match recovery::find(dir)? {
+        recovery::Found::Read(r) => RecoveryStart::Read {
+            saved: r.path.as_deref().and_then(read_saved),
+            song: Box::new(r.song),
+            path: r.path,
+            cause: r.cause,
+            written_ms: r.written_ms,
+        },
+        recovery::Found::Unreadable { kept, unread } => {
+            eprintln!(
+                "meloet: the recovery file did not read; kept as {}",
+                kept.display()
+            );
+            RecoveryStart::Unreadable {
+                kept,
+                saved: unread
+                    .path
+                    .and_then(|p| read_saved(&p).map(|song| (p, song))),
+            }
+        }
+    })
 }
 
 impl Worker {

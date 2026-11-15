@@ -8,6 +8,7 @@ mod hub;
 pub mod layout;
 pub mod measure;
 pub mod play;
+pub mod recovery;
 mod service;
 pub mod settings;
 pub mod songfile;

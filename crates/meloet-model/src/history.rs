@@ -60,6 +60,12 @@ pub enum StepKind {
         clip: ClipId,
         count: usize,
     },
+    /// From the song as last saved to the song brought back from the recovery file, at the
+    /// start. The history band calls it "なおすためのファイルから戻す" (mock F-Recover2).
+    Recovered,
+    /// From a song brought back from the recovery file to the song as last saved. The history
+    /// band calls it "戻した変更をすてる（最後に保存した形にする）" (spec 6).
+    DiscardRecovered,
 }
 
 #[derive(Debug, Clone)]

@@ -41,13 +41,20 @@ enum Waiting {
 #[derive(Debug, Default)]
 pub(super) struct Files {
     /// The song's file; `None` until the first save.
-    path: Option<PathBuf>,
+    pub(super) path: Option<PathBuf>,
     dialog: Option<Dialog>,
     last_dialog: u32,
     waiting: Option<Waiting>,
     /// Asked to close while recording: once the take is in the song.
     close_when_recorded: bool,
     exiting: bool,
+}
+
+impl Files {
+    /// meloet ends: nothing is asked or written any more.
+    pub(super) fn exiting(&self) -> bool {
+        self.exiting
+    }
 }
 
 impl Model {
@@ -76,7 +83,7 @@ impl Model {
     }
 
     /// The song can be saved, replaced or let go now.
-    fn song_free(&self) -> bool {
+    pub(super) fn song_free(&self) -> bool {
         !self.play.busy()
             && self.files.waiting.is_none()
             && self.files.dialog.is_none()
@@ -164,6 +171,7 @@ impl Model {
                 self.files.waiting = None;
                 self.files.path = Some(path);
                 self.play.saved_as(name);
+                self.recovery_done(effects);
                 self.then(then, effects);
             }
             (Input::SongNotSaved, Some(Waiting::Save(then))) => {
@@ -242,6 +250,8 @@ impl Model {
             Then::Stay => {}
             Then::Close => {
                 self.files.exiting = true;
+                // Ending the usual way: whatever was not saved was let go on purpose.
+                self.recovery_done(effects);
                 effects.push(Effect::Exit);
             }
             Then::NewSong => {
@@ -256,8 +266,15 @@ impl Model {
         }
     }
 
+    /// Another song takes the place of this one, which is let go.
     fn take_song(&mut self, song: Song, from_previous: bool, effects: &mut Vec<Effect>) {
-        self.play.replace_song(song, from_previous, effects);
+        self.replace_song(song, from_previous, effects);
+        self.recovery_done(effects);
+    }
+
+    /// `unsaved`: the song does not match its file.
+    pub(super) fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
+        self.play.replace_song(song, unsaved, effects);
         self.buffer_unsaid = true;
         self.new_song_unsaid = false;
     }

@@ -1,7 +1,7 @@
-//! The PC's own windows to pick a song file or a folder.
+//! The PC's own windows to pick a song file or a folder, and its file manager.
 //!
-//! On Linux they are GTK's `FileChooserNative`: GTK already comes with Tauri, so nothing is
-//! added, and GTK picks between its own window and the desktop portal.
+//! On Linux the pickers are GTK's `FileChooserNative`: GTK already comes with Tauri, so nothing
+//! is added, and GTK picks between its own window and the desktop portal.
 
 use std::path::PathBuf;
 
@@ -91,6 +91,49 @@ mod imp {
         answer(None);
     }
 }
+
+/// Shows `path` in the PC's file manager, picked out in its folder: the freedesktop
+/// `org.freedesktop.FileManager1.ShowItems`, or else `xdg-open` on the folder. Does not wait.
+#[cfg(target_os = "linux")]
+pub fn show_file(path: PathBuf) {
+    let shown = std::thread::Builder::new()
+        .name("meloet-show-file".into())
+        .spawn(move || {
+            if let Err(e) = show_items(&path) {
+                eprintln!("meloet: the file manager did not show the file ({e}); trying xdg-open");
+                let folder = path.parent().unwrap_or(&path);
+                match std::process::Command::new("xdg-open").arg(folder).status() {
+                    Ok(s) if s.success() => {}
+                    Ok(s) => eprintln!("meloet: xdg-open ended with {s}"),
+                    Err(e) => eprintln!("meloet: cannot run xdg-open: {e}"),
+                }
+            }
+        });
+    if let Err(e) = shown {
+        eprintln!("meloet: cannot start showing the file: {e}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn show_items(path: &std::path::Path) -> Result<(), dbus::Error> {
+    use gio::prelude::FileExt;
+
+    let uri = gio::File::for_path(path).uri().to_string();
+    let conn = dbus::blocking::Connection::new_session()?;
+    let proxy = conn.with_proxy(
+        "org.freedesktop.FileManager1",
+        "/org/freedesktop/FileManager1",
+        std::time::Duration::from_secs(10),
+    );
+    proxy.method_call(
+        "org.freedesktop.FileManager1",
+        "ShowItems",
+        (vec![uri], String::new()),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn show_file(_: PathBuf) {}
 
 /// Main thread only. `answer` gets the path, or `None` when the window was put away.
 pub fn pick(

@@ -2176,6 +2176,7 @@ name = "meloet-app"
 version = "0.1.0"
 dependencies = [
  "cairo-rs",
+ "dbus",
  "gio",
  "gtk",
  "libc",

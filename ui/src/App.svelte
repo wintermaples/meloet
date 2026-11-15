@@ -9,6 +9,7 @@
   import LowerBand from "./components/LowerBand.svelte";
   import { metrics, watchDevicePixelRatio } from "./components/metrics.svelte";
   import OutputChooser from "./components/OutputChooser.svelte";
+  import RecoveryHint from "./components/RecoveryHint.svelte";
   import RightRail from "./components/RightRail.svelte";
   import SettingsDialog from "./components/SettingsDialog.svelte";
   import SongDialog from "./components/SongDialog.svelte";
@@ -57,6 +58,7 @@
         <Arrange>
           {#if state.workspace.chooser}<OutputChooser />{/if}
           {#if state.workspace.hint}<SoundHint />{/if}
+          {#if state.workspace.recovery}<RecoveryHint />{/if}
         </Arrange>
         {#each layout.lower as lower (lower.band)}
           <LowerBand band={lower.band} height={lower.height} />

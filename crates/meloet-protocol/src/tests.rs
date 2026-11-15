@@ -116,6 +116,12 @@ fn sample_state() -> AppState {
                 title: "はじめての曲.meloet".into(),
                 previous: true,
             }),
+            recovery: Some(RecoveryView::Recovered {
+                written_ms: 1_794_750_060_000,
+                cause: RecoveryCause::PcEnding,
+                song: None,
+                takes: 2,
+            }),
         },
         keyboards: KeyboardsView {
             list: vec![],
@@ -222,7 +228,8 @@ fn sample_take() -> TakeNotes {
 }
 
 /// Writes `ui/src/bridge/generated/*.ts`. u64 becomes `number`: every u64 here is a rev, a
-/// time in microseconds, a song position in ticks or a message number, far below 2^53.
+/// time in microseconds or Unix milliseconds, a song position in ticks or a message number,
+/// far below 2^53.
 #[test]
 fn export_typescript() {
     let dir = ui_dir().join("src/bridge/generated");
@@ -882,6 +889,51 @@ fn server_message_json_shape() {
         serde_json::to_value(&snap).unwrap(),
         json!({"seq": 0, "recording": null, "notes": []})
     );
+}
+
+#[test]
+fn recovery_json_shape() {
+    assert_eq!(
+        serde_json::to_value(RecoveryView::Recovered {
+            written_ms: 1_794_750_060_000,
+            cause: RecoveryCause::Sudden,
+            song: Some("はじめての曲".into()),
+            takes: 2,
+        })
+        .unwrap(),
+        json!({"kind": "recovered", "writtenMs": 1_794_750_060_000u64, "cause": "sudden",
+               "song": "はじめての曲", "takes": 2})
+    );
+    assert_eq!(
+        serde_json::to_value(RecoveryView::Unreadable { song: None }).unwrap(),
+        json!({"kind": "unreadable", "song": null})
+    );
+    for (message, json) in [
+        (StatusMessage::Recovered, json!({"id": "recovered"})),
+        (
+            StatusMessage::RecoveryDiscarded,
+            json!({"id": "recoveryDiscarded"}),
+        ),
+        (
+            StatusMessage::RecoveryUnreadable { saved_song: true },
+            json!({"id": "recoveryUnreadable", "savedSong": true}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&message).unwrap(), json);
+    }
+    for (command, json) in [
+        (
+            Command::DiscardRecovered,
+            json!({"type": "discardRecovered"}),
+        ),
+        (
+            Command::ShowRecoveryFile,
+            json!({"type": "showRecoveryFile"}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&command).unwrap(), json);
+        assert_eq!(serde_json::from_value::<Command>(json).unwrap(), command);
+    }
 }
 
 /// The `section` of a change is the key of that section in the state JSON.

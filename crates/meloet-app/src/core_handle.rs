@@ -1,6 +1,7 @@
 //! The line between the shell and whoever owns the state. The shell sees only this.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use meloet_core::{MessageSink, ShellSink, TelemetrySink};
 use meloet_protocol::{Command, LiveNotesSnapshot, Snapshot};
@@ -36,6 +37,10 @@ pub trait CoreHandle: Send + Sync + 'static {
 
     /// The answer of the PC's folder window. Does not wait.
     fn folder_picked(&self, path: Option<PathBuf>);
+
+    /// The PC is ending: waits up to `timeout` for the recovery file. Returns whether it was
+    /// written in time (or there was nothing to write).
+    fn pc_ending(&self, timeout: Duration) -> bool;
 }
 
 impl CoreHandle for meloet_core::Core {
@@ -77,5 +82,9 @@ impl CoreHandle for meloet_core::Core {
 
     fn folder_picked(&self, path: Option<PathBuf>) {
         meloet_core::Core::folder_picked(self, path);
+    }
+
+    fn pc_ending(&self, timeout: Duration) -> bool {
+        meloet_core::Core::pc_ending(self, timeout)
     }
 }

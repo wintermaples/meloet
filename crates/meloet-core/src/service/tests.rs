@@ -203,6 +203,34 @@ fn the_chosen_output_is_saved_and_read_at_the_next_start() {
 }
 
 #[test]
+fn a_remembered_scale_that_does_not_fit_the_screen_is_lowered_and_saved() {
+    let dir = crate::settings::temp_dir("core-screen");
+    let options = CoreOptions {
+        config_dir: Some(dir.clone()),
+        ..CoreOptions::offline()
+    };
+    let core = Core::start(options.clone());
+    core.send(Command::SetScale { percent: 150 });
+    core.stop();
+
+    let core = Core::start(options);
+    assert_eq!(core.snapshot().state.workspace.scale, 150);
+    core.set_screen_space(1200.0, 700.0);
+    // `set_screen_space` does not wait; a command that changes nothing does.
+    core.send(Command::DismissHint);
+    let state = core.snapshot().state;
+    assert_eq!(state.workspace.scale, 125);
+    assert_eq!(state.workspace.unfit_scales, [150]);
+    // Sending a command took the notice away again.
+    assert_eq!(
+        state.status.message,
+        Some(meloet_protocol::StatusMessage::SearchingKeyboard)
+    );
+    core.stop();
+    assert_eq!(settings::load(&dir).scale, 125);
+}
+
+#[test]
 fn telemetry_goes_once_to_a_new_sink_then_stops_until_something_changes() {
     let core = Core::start(CoreOptions::offline());
     let (_messages, telemetry) = subscribe(&core);

@@ -22,10 +22,12 @@ meloet-protocol = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }
 
-# The versions tauri 2.12.5 itself links; used only for the MELOET_SNAPSHOT development hook.
+# The versions tauri 2.12.5 itself links. gtk measures the decorations GTK draws itself; the
+# others are used only for the MELOET_SNAPSHOT development hook.
 [target.'cfg(target_os = "linux")'.dependencies]
 cairo-rs = { version = "0.18", features = ["png"] }
 gio = "0.18"
+gtk = "0.18"
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 
 [build-dependencies]

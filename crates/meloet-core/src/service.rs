@@ -295,6 +295,13 @@ impl Core {
         self.input(Input::Command(command))
     }
 
+    /// What the screen the window is on can give to the inside of the window, in logical px.
+    /// Only the shell knows it. Does not wait.
+    pub fn set_screen_space(&self, width: f32, height: f32) {
+        let input = Input::ScreenSpace { width, height };
+        let _ = self.tx.send(Msg::Input(input, None));
+    }
+
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after
     /// `subscribe` returns misses nothing.
     pub fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {

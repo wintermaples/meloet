@@ -853,7 +853,7 @@ fn bands_and_the_scale() {
 #[test]
 fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     let mut m = fresh();
-    // 1440 CSS px at 150 % is 960 at 100 %: the tall-window rule keeps the meter full.
+    // 1440 CSS px at 150 % is 960 at 100 %.
     let effects = cmd(&mut m, Command::SetScale { percent: 150 });
     assert_eq!(
         effects,
@@ -876,10 +876,11 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
         (ws.scale, ws.viewport_width, ws.viewport_height),
         (150, 1920.0, 1440.0)
     );
-    assert_eq!(ws.layout.meter, MeterSize::Full);
+    assert_eq!(ws.layout.meter, MeterSize::Slim);
+    assert_eq!(ws.layout.lower[0].height, 660.0);
     assert_eq!(
         ws.layout.arrange_height,
-        960.0 - 48.0 - 52.0 - 516.0 - 24.0 - 24.0
+        960.0 - 48.0 - 24.0 - 660.0 - 24.0 - 24.0
     );
 
     cmd(
@@ -917,7 +918,7 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
 }
 
 #[test]
-fn arrange_no_taller_than_the_overview_is_drawn_as_the_overview() {
+fn arrange_lower_than_one_track_row_is_drawn_as_the_overview() {
     let mut m = fresh();
     // History 248 + 40 with the slim meter (24 + 48 + 24 + 24 = 120).
     cmd(
@@ -937,16 +938,18 @@ fn arrange_no_taller_than_the_overview_is_drawn_as_the_overview() {
     assert_eq!(l.arrange_height, 40.0);
     assert!(l.arrange_overview);
 
-    cmd(
-        &mut m,
-        Command::SetViewport {
-            width: 1280.0,
-            height: 409.0,
-        },
-    );
-    let l = m.view().workspace.layout;
-    assert_eq!(l.arrange_height, 41.0);
-    assert!(!l.arrange_overview);
+    for (height, arrange, overview) in [(503.0, 135.0, true), (504.0, 136.0, false)] {
+        cmd(
+            &mut m,
+            Command::SetViewport {
+                width: 1280.0,
+                height,
+            },
+        );
+        let l = m.view().workspace.layout;
+        assert_eq!(l.arrange_height, arrange);
+        assert_eq!(l.arrange_overview, overview);
+    }
 }
 
 #[test]
@@ -962,4 +965,305 @@ fn the_scale_comes_from_the_settings() {
         ws.layout.arrange_height,
         800.0 / 1.25 - 48.0 - 52.0 - 24.0 - 24.0
     );
+}
+
+fn viewport(m: &mut Model, width: f32, height: f32) -> Vec<Effect> {
+    cmd(m, Command::SetViewport { width, height })
+}
+
+fn toggle(m: &mut Model, band: Band) {
+    cmd(m, Command::ToggleBand { band });
+}
+
+fn screen(m: &mut Model, width: f32, height: f32) -> Vec<Effect> {
+    m.handle(Input::ScreenSpace { width, height })
+}
+
+fn open_bands(m: &Model) -> Vec<Band> {
+    let lower = m.view().workspace.layout.lower;
+    lower.iter().map(|b| b.band).collect()
+}
+
+fn saved(scale: u16) -> Effect {
+    Effect::SaveSettings(Settings {
+        output: None,
+        output_name: None,
+        scale,
+    })
+}
+
+#[test]
+fn a_lower_window_folds_the_older_band_and_says_so() {
+    let mut m = playing();
+    viewport(&mut m, 1280.0, 1080.0);
+    toggle(&mut m, Band::Mixer);
+    toggle(&mut m, Band::PianoRoll);
+    assert_eq!(status(&m), None);
+
+    viewport(&mut m, 1280.0, 800.0);
+    assert_eq!(open_bands(&m), [Band::PianoRoll]);
+    let folded = Some(StatusMessage::BandFoldedWindowLow { band: Band::Mixer });
+    assert_eq!(status(&m), folded);
+
+    // More resizing leaves the notice; a taller window does not open the band again.
+    viewport(&mut m, 1280.0, 1400.0);
+    assert_eq!(open_bands(&m), [Band::PianoRoll]);
+    assert_eq!(status(&m), folded);
+
+    // The next thing the user does takes it away.
+    toggle(&mut m, Band::Shelf);
+    assert_eq!(status(&m), None);
+}
+
+#[test]
+fn opening_a_band_that_does_not_fit_beside_the_other_says_so() {
+    let mut m = playing();
+    toggle(&mut m, Band::Mixer);
+    toggle(&mut m, Band::PianoRoll);
+    assert_eq!(open_bands(&m), [Band::PianoRoll]);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::BandFoldedToOpen {
+            opened: Band::PianoRoll,
+            folded: Band::Mixer,
+        })
+    );
+    cmd(&mut m, Command::GoArrange);
+    assert_eq!(status(&m), None);
+}
+
+#[test]
+fn a_third_band_folds_the_oldest_without_a_notice() {
+    let mut m = playing();
+    viewport(&mut m, 1280.0, 1080.0);
+    toggle(&mut m, Band::History);
+    toggle(&mut m, Band::Mixer);
+    toggle(&mut m, Band::PianoRoll);
+    assert_eq!(open_bands(&m), [Band::PianoRoll, Band::Mixer]);
+    assert_eq!(status(&m), None);
+
+    // The third band pushes out the oldest, and the second one still does not fit beside it.
+    let mut m = playing();
+    viewport(&mut m, 1280.0, 940.0);
+    toggle(&mut m, Band::History);
+    toggle(&mut m, Band::Mixer);
+    toggle(&mut m, Band::PianoRoll);
+    assert_eq!(open_bands(&m), [Band::PianoRoll]);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::BandFoldedToOpen {
+            opened: Band::PianoRoll,
+            folded: Band::Mixer,
+        })
+    );
+}
+
+#[test]
+fn a_notice_waits_behind_the_device_lines_and_goes_before_the_rest() {
+    use StatusMessage::*;
+    // No keyboard yet: the notice goes before "searching".
+    let mut m = fresh();
+    toggle(&mut m, Band::Mixer);
+    toggle(&mut m, Band::PianoRoll);
+    let notice = Some(BandFoldedToOpen {
+        opened: Band::PianoRoll,
+        folded: Band::Mixer,
+    });
+    assert_eq!(status(&m), notice);
+    // Things the user did not do leave it.
+    m.handle(usual());
+    assert_eq!(status(&m), notice);
+
+    // A keyboard that was pulled out goes first, and the notice is still there after it.
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    m.handle(Input::KeyboardRemoved { id: keyboard(1).id });
+    assert!(matches!(status(&m), Some(KeyboardLost { .. })));
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    assert_eq!(status(&m), notice);
+
+    // The settings dialog goes first; opening it is something the user did.
+    let mut m = playing();
+    viewport(&mut m, 1280.0, 1080.0);
+    toggle(&mut m, Band::Mixer);
+    toggle(&mut m, Band::PianoRoll);
+    cmd(&mut m, Command::OpenSettings { advanced: false });
+    viewport(&mut m, 1280.0, 800.0);
+    assert_eq!(status(&m), Some(SettingsOpen));
+    cmd(&mut m, Command::SettingsCancel);
+    assert_eq!(status(&m), None);
+}
+
+#[test]
+fn unfit_scales_follow_the_screen() {
+    let mut m = fresh();
+    assert!(m.view().workspace.unfit_scales.is_empty());
+    for ((width, height), unfit) in [
+        ((1920.0, 1080.0), vec![]),
+        ((1280.0, 672.0), vec![]),
+        ((1279.0, 672.0), vec![150]),
+        ((1280.0, 671.0), vec![150]),
+        ((1200.0, 700.0), vec![150]),
+        ((1067.0, 560.0), vec![150]),
+        ((1066.0, 560.0), vec![125, 150]),
+        // 100 is never listed.
+        ((800.0, 400.0), vec![125, 150]),
+    ] {
+        assert!(screen(&mut m, width, height).is_empty());
+        assert_eq!(m.view().workspace.unfit_scales, unfit, "{width}x{height}");
+    }
+    // Broken sizes are ignored.
+    screen(&mut m, 1920.0, 1080.0);
+    for (width, height) in [(0.0, 800.0), (1280.0, -1.0), (f32::NAN, 800.0)] {
+        screen(&mut m, width, height);
+    }
+    assert!(m.view().workspace.unfit_scales.is_empty());
+}
+
+#[test]
+fn a_scale_that_does_not_fit_is_not_taken() {
+    let mut m = playing();
+    screen(&mut m, 1200.0, 700.0);
+    viewport(&mut m, 1100.0, 600.0);
+    assert_eq!(
+        cmd(&mut m, Command::SetScale { percent: 125 }),
+        [Effect::SaveSettings(Settings {
+            scale: 125,
+            ..m.settings()
+        })]
+    );
+    assert_eq!(status(&m), None);
+
+    assert!(cmd(&mut m, Command::SetScale { percent: 150 }).is_empty());
+    assert_eq!(m.view().workspace.scale, 125);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::ScaleDoesNotFit {
+            requested: 150,
+            kept: 125,
+        })
+    );
+    // Choosing the zoom that is on is nothing new, but it is something the user did.
+    assert!(cmd(&mut m, Command::SetScale { percent: 125 }).is_empty());
+    assert_eq!(status(&m), None);
+}
+
+#[test]
+fn a_new_scale_grows_a_window_that_is_too_small_for_it() {
+    let mut m = playing();
+    viewport(&mut m, 900.0, 700.0);
+    assert_eq!(cmd(&mut m, Command::SetScale { percent: 125 }).len(), 1);
+    let ws = m.view().workspace;
+    // Only the width was too small: 1067x560 is the smallest window at 125 %.
+    assert_eq!((ws.viewport_width, ws.viewport_height), (1067.0, 700.0));
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::ScaleWindowGrown { scale: 125 })
+    );
+    // The screen then tells the size the window really got.
+    viewport(&mut m, 1067.0, 700.0);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::ScaleWindowGrown { scale: 125 })
+    );
+
+    // Big enough already: no notice.
+    let mut m = playing();
+    assert_eq!(cmd(&mut m, Command::SetScale { percent: 150 }).len(), 1);
+    assert_eq!(status(&m), None);
+    let ws = m.view().workspace;
+    assert_eq!((ws.viewport_width, ws.viewport_height), (1280.0, 800.0));
+}
+
+#[test]
+fn a_grown_window_is_laid_out_at_its_new_size() {
+    // The smallest window at 100 % becomes the smallest window at 150 %: the same 448 px at
+    // 100 %, so the heights stay as they were.
+    let mut m = playing();
+    viewport(&mut m, 853.0, 448.0);
+    toggle(&mut m, Band::History);
+    let before = m.view().workspace.layout;
+    assert_eq!(
+        before.arrange_height,
+        448.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
+    );
+    cmd(&mut m, Command::SetScale { percent: 150 });
+    let ws = m.view().workspace;
+    assert_eq!((ws.viewport_width, ws.viewport_height), (1280.0, 672.0));
+    assert_eq!(ws.layout, before);
+}
+
+#[test]
+fn a_higher_scale_that_folds_a_band_says_the_window_got_low() {
+    // 800 CSS px is 640 at 125 %: the piano roll and the history need 676.
+    let mut m = playing();
+    toggle(&mut m, Band::PianoRoll);
+    toggle(&mut m, Band::History);
+    assert_eq!(open_bands(&m), [Band::PianoRoll, Band::History]);
+    cmd(&mut m, Command::SetScale { percent: 125 });
+    assert_eq!(open_bands(&m), [Band::History]);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::BandFoldedWindowLow {
+            band: Band::PianoRoll
+        })
+    );
+
+    // The fold is told even when the window also grew.
+    let mut m = playing();
+    viewport(&mut m, 900.0, 700.0);
+    toggle(&mut m, Band::PianoRoll);
+    toggle(&mut m, Band::History);
+    cmd(&mut m, Command::SetScale { percent: 125 });
+    assert_eq!(m.view().workspace.viewport_width, 1067.0);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::BandFoldedWindowLow {
+            band: Band::PianoRoll
+        })
+    );
+
+    // Back to 100 %: nothing opens again.
+    cmd(&mut m, Command::SetScale { percent: 100 });
+    assert_eq!(open_bands(&m), [Band::History]);
+    assert_eq!(status(&m), None);
+}
+
+#[test]
+fn a_smaller_screen_lowers_the_scale_and_saves_it() {
+    let mut m = Model::new(Settings {
+        output: None,
+        output_name: None,
+        scale: 150,
+    });
+    // The remembered zoom fits this screen.
+    assert!(screen(&mut m, 1920.0, 1040.0).is_empty());
+    assert_eq!(m.view().workspace.scale, 150);
+    assert_eq!(status(&m), Some(StatusMessage::SearchingKeyboard));
+
+    assert_eq!(screen(&mut m, 1200.0, 700.0), [saved(125)]);
+    let ws = m.view().workspace;
+    assert_eq!(ws.scale, 125);
+    assert_eq!(ws.unfit_scales, [150]);
+    let lowered = Some(StatusMessage::ScaleLoweredForScreen { from: 150, to: 125 });
+    assert_eq!(status(&m), lowered);
+    // The same screen again changes nothing.
+    assert!(screen(&mut m, 1200.0, 700.0).is_empty());
+    assert_eq!(status(&m), lowered);
+
+    // Two steps at once; a screen too small for 100 % still gets 100 %.
+    let mut m = Model::new(Settings {
+        output: None,
+        output_name: None,
+        scale: 150,
+    });
+    assert_eq!(screen(&mut m, 800.0, 400.0), [saved(100)]);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::ScaleLoweredForScreen { from: 150, to: 100 })
+    );
+    assert!(screen(&mut m, 700.0, 400.0).is_empty());
+
+    // A bigger screen does not raise the zoom again.
+    assert!(screen(&mut m, 1920.0, 1040.0).is_empty());
+    assert_eq!(m.view().workspace.scale, 100);
 }

@@ -32,6 +32,7 @@ fn sample_state() -> AppState {
             scale: 100,
             viewport_width: 1280.0,
             viewport_height: 800.0,
+            unfit_scales: vec![150],
             layout: LayoutView {
                 meter: MeterSize::Full,
                 arrange_height: 600.0,
@@ -167,6 +168,7 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(v["state"]["song"]["tracks"][0]["instrument"], "placeholder");
     assert_eq!(v["state"]["song"]["tracks"][0]["gainDb"], 0.0);
     assert_eq!(v["state"]["workspace"]["viewportWidth"], 1280.0);
+    assert_eq!(v["state"]["workspace"]["unfitScales"], json!([150]));
     assert_eq!(v["state"]["workspace"]["layout"]["rightFront"], "shelf");
     assert_eq!(v["state"]["workspace"]["settings"], json!(null));
     assert_eq!(v["state"]["outputs"]["list"][0]["friendly"], "headphones");
@@ -197,6 +199,41 @@ fn status_message_json_shape() {
         json!({"id": "bufferFixed", "actual": 1024, "requested": 256,
                "latencyMs": 53.5, "latencyMsAtRequested": 13.25})
     );
+
+    for (message, json) in [
+        (
+            StatusMessage::BandFoldedWindowLow { band: Band::Mixer },
+            json!({"id": "bandFoldedWindowLow", "band": "mixer"}),
+        ),
+        (
+            StatusMessage::BandFoldedToOpen {
+                opened: Band::PianoRoll,
+                folded: Band::Mixer,
+            },
+            json!({"id": "bandFoldedToOpen", "opened": "pianoRoll", "folded": "mixer"}),
+        ),
+        (
+            StatusMessage::ScaleDoesNotFit {
+                requested: 150,
+                kept: 125,
+            },
+            json!({"id": "scaleDoesNotFit", "requested": 150, "kept": 125}),
+        ),
+        (
+            StatusMessage::ScaleWindowGrown { scale: 125 },
+            json!({"id": "scaleWindowGrown", "scale": 125}),
+        ),
+        (
+            StatusMessage::ScaleLoweredForScreen { from: 150, to: 125 },
+            json!({"id": "scaleLoweredForScreen", "from": 150, "to": 125}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&message).unwrap(), json);
+        assert_eq!(
+            serde_json::from_value::<StatusMessage>(json).unwrap(),
+            message
+        );
+    }
 }
 
 #[test]

@@ -7,6 +7,8 @@
 //!   the page finished loading, send each intent to the core, the way the screen does.
 //! - `MELOET_EXIT_AFTER_MS=20000`: that long after the page finished loading, exit the usual
 //!   way (the core stops and writes its measurements).
+//! - `MELOET_DEBUG_SCREEN=1`: print the work area, the window and its inside to stderr each time
+//!   the shell works out the screen space (read in `main.rs`).
 
 use std::path::PathBuf;
 use std::sync::OnceLock;

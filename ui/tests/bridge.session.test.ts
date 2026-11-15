@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFakeTransport, fakeState } from "../src/bridge/fake";
+import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
 import { ProtocolVersionError, connectWith, type Transport } from "../src/bridge/session";
 import {
   PROTOCOL_VERSION,
@@ -295,5 +295,31 @@ describe("bridge session", () => {
 
     expect(await connection.send({ type: "setScale", percent: 100 })).toBe(2);
     expect(r.states).toHaveLength(2);
+  });
+
+  it("the fake transport tells what just happened, until the next thing the user does", async () => {
+    const r = recorder();
+    const state = fakeScene("zoom")!.state;
+    const connection = await connectWith(createFakeTransport(state), r.handlers);
+    const now = () => r.states.at(-1)!.state;
+
+    await connection.send({ type: "setScale", percent: 150 });
+    expect(now().workspace.scale).toBe(125);
+    expect(now().status.message).toEqual({ id: "scaleDoesNotFit", requested: 150, kept: 125 });
+
+    await connection.send({ type: "toggleBand", band: "mixer" });
+    expect(now().status.message).toEqual({ id: "newSong" });
+    await connection.send({ type: "toggleBand", band: "pianoRoll" });
+    expect(now().status.message).toEqual({ id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" });
+    // A resize is not something the user does about the notice.
+    await connection.send({ type: "setViewport", width: 1280, height: 900 });
+    expect(now().status.message).toEqual({ id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" });
+
+    // 853x448 is too small for 125 %: the window grows to 1067x560.
+    await connection.send({ type: "setScale", percent: 100 });
+    await connection.send({ type: "setViewport", width: 853, height: 448 });
+    await connection.send({ type: "setScale", percent: 125 });
+    expect(now().workspace).toMatchObject({ scale: 125, viewportWidth: 1067, viewportHeight: 560 });
+    expect(now().status.message).toEqual({ id: "scaleWindowGrown", scale: 125 });
   });
 });

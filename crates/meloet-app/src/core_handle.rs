@@ -10,6 +10,9 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// Applies an intent. Returns the rev after it (unchanged when nothing changed).
     fn send(&self, command: Command) -> u64;
 
+    /// What the screen the window is on can give to the inside of the window, in logical px.
+    fn set_screen_space(&self, width: f32, height: f32);
+
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after
     /// `subscribe` returns misses nothing.
     fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink);
@@ -22,6 +25,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn send(&self, command: Command) -> u64 {
         meloet_core::Core::send(self, command)
+    }
+
+    fn set_screen_space(&self, width: f32, height: f32) {
+        meloet_core::Core::set_screen_space(self, width, height);
     }
 
     fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {

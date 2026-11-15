@@ -54,6 +54,12 @@ pub enum Input {
     },
     /// Played sound went over -60 dBFS.
     SoundHeard,
+    /// From the shell: what the screen the window is on can give to the inside of the window,
+    /// in logical px (the work area minus the window frame).
+    ScreenSpace {
+        width: f32,
+        height: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,7 +81,11 @@ pub struct Model {
     song: Song,
     scale: u16,
     viewport: (f32, f32),
+    /// `None` until the shell tells.
+    screen: Option<(f32, f32)>,
     bands: Bands,
+    /// Something that just happened, for the status line. Gone at the next thing the user does.
+    notice: Option<StatusMessage>,
     dialog: Option<SettingsDialogView>,
     highlighted: Option<String>,
     hint: Option<Hint>,
@@ -121,7 +131,9 @@ impl Model {
             song: Song::new_default(),
             scale,
             viewport: START_VIEWPORT,
+            screen: None,
             bands: Bands::new(window(START_VIEWPORT, scale)),
+            notice: None,
             dialog: None,
             highlighted: None,
             hint: None,
@@ -217,6 +229,12 @@ impl Model {
                     self.hint_armed = false;
                 }
             }
+            Input::ScreenSpace { width, height } => {
+                if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
+                    self.screen = Some((width, height));
+                    self.lower_scale_for_screen(&mut effects);
+                }
+            }
         }
         self.settle(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
@@ -227,21 +245,50 @@ impl Model {
 
     /// Returns the node a test tone was asked on.
     fn command(&mut self, command: Command, effects: &mut Vec<Effect>) -> Option<String> {
+        // A resize is not something the user does to answer a notice.
+        if !matches!(command, Command::SetViewport { .. }) {
+            self.notice = None;
+        }
         match command {
             Command::SetViewport { width, height } => {
                 if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
                     self.viewport = (width, height);
-                    self.bands.set_window(window(self.viewport, self.scale));
+                    self.fit_window();
                 }
             }
+            Command::SetScale { percent } if !SCALES.contains(&percent) => {}
+            Command::SetScale { percent } if percent == self.scale => {}
             Command::SetScale { percent } => {
-                if SCALES.contains(&percent) && percent != self.scale {
+                if !self.scale_fits(percent) {
+                    self.notice = Some(StatusMessage::ScaleDoesNotFit {
+                        requested: percent,
+                        kept: self.scale,
+                    });
+                } else {
                     self.scale = percent;
-                    self.bands.set_window(window(self.viewport, self.scale));
+                    // The shell grows a window that is smaller than the smallest one at this
+                    // zoom; the bands are laid out for that size right away.
+                    let min = layout::min_window(percent);
+                    let grown = (
+                        self.viewport.0.max(min.width as f32),
+                        self.viewport.1.max(min.height as f32),
+                    );
+                    if grown != self.viewport {
+                        self.viewport = grown;
+                        self.notice = Some(StatusMessage::ScaleWindowGrown { scale: percent });
+                    }
+                    self.fit_window();
                     effects.push(Effect::SaveSettings(self.settings()));
                 }
             }
-            Command::ToggleBand { band } => self.bands.toggle(band_of(band)),
+            Command::ToggleBand { band } => {
+                if let Some(folded) = self.bands.toggle(band_of(band)) {
+                    self.notice = Some(StatusMessage::BandFoldedToOpen {
+                        opened: band,
+                        folded: bottom_band(folded),
+                    });
+                }
+            }
             Command::GoArrange => self.bands.go_arrange(),
             Command::Back => {
                 if self.dialog.take().is_none() {
@@ -331,6 +378,44 @@ impl Model {
             }
         }
         None
+    }
+
+    /// Lays the bands out for the window as it is now. A band folded here was folded because
+    /// the window, in px at 100 %, got lower.
+    fn fit_window(&mut self) {
+        if let Some(folded) = self.bands.set_window(window(self.viewport, self.scale)) {
+            self.notice = Some(StatusMessage::BandFoldedWindowLow {
+                band: bottom_band(folded),
+            });
+        }
+    }
+
+    /// The smallest window at this zoom fits the screen. 100 is the smallest zoom there is, so
+    /// it always counts as fitting; so does everything while the screen is not known.
+    fn scale_fits(&self, percent: u16) -> bool {
+        let min = layout::min_window(percent);
+        percent == SCALES[0]
+            || self.screen.is_none_or(|(width, height)| {
+                min.width <= f64::from(width) && min.height <= f64::from(height)
+            })
+    }
+
+    fn lower_scale_for_screen(&mut self, effects: &mut Vec<Effect>) {
+        if self.scale_fits(self.scale) {
+            return;
+        }
+        let from = self.scale;
+        let fitting = SCALES
+            .iter()
+            .rev()
+            .find(|&&s| s < from && self.scale_fits(s));
+        self.scale = fitting.copied().unwrap_or(SCALES[0]);
+        self.notice = Some(StatusMessage::ScaleLoweredForScreen {
+            from,
+            to: self.scale,
+        });
+        self.fit_window();
+        effects.push(Effect::SaveSettings(self.settings()));
     }
 
     fn choose(&mut self, output: String, effects: &mut Vec<Effect>) {
@@ -459,6 +544,11 @@ impl Model {
                 scale: self.scale,
                 viewport_width: self.viewport.0,
                 viewport_height: self.viewport.1,
+                unfit_scales: SCALES
+                    .iter()
+                    .copied()
+                    .filter(|&s| !self.scale_fits(s))
+                    .collect(),
                 layout: layout_view(&self.bands.layout()),
                 settings: self.dialog.clone(),
                 chooser: self.chooser_shown().then(|| ChooserView {
@@ -519,7 +609,8 @@ impl Model {
         }
     }
 
-    /// The first line of the table that applies.
+    /// The first line of the table that applies. A notice comes after the lines that ask the
+    /// user to do something about a device, and before the rest.
     fn status(
         &self,
         chosen_state: Option<ChosenState>,
@@ -543,13 +634,17 @@ impl Model {
             }
             Some(ChosenState::Ready) | None => {}
         }
-        let Some(active) = self.active_keyboard() else {
-            return Some(match &self.lost {
-                Some(keyboard) => StatusMessage::KeyboardLost {
-                    keyboard: keyboard.clone(),
-                },
-                None => StatusMessage::SearchingKeyboard,
+        let active = self.active_keyboard();
+        if let (None, Some(keyboard)) = (active, &self.lost) {
+            return Some(StatusMessage::KeyboardLost {
+                keyboard: keyboard.clone(),
             });
+        }
+        if self.notice.is_some() {
+            return self.notice.clone();
+        }
+        let Some(active) = active else {
+            return Some(StatusMessage::SearchingKeyboard);
         };
         if self.chosen.is_none() {
             return Some(StatusMessage::KeyboardFound {
@@ -597,6 +692,14 @@ fn band_of(band: Band) -> layout::Band {
     }
 }
 
+fn bottom_band(band: BottomBand) -> Band {
+    match band {
+        BottomBand::PianoRoll => Band::PianoRoll,
+        BottomBand::Mixer => Band::Mixer,
+        BottomBand::History => Band::History,
+    }
+}
+
 fn layout_view(layout: &layout::Layout) -> LayoutView {
     let side = |panel: &SidePanel| match panel {
         SidePanel::Shelf => Band::Shelf,
@@ -613,11 +716,7 @@ fn layout_view(layout: &layout::Layout) -> LayoutView {
             .bottom
             .iter()
             .map(|open| LowerBandView {
-                band: match open.band {
-                    BottomBand::PianoRoll => Band::PianoRoll,
-                    BottomBand::Mixer => Band::Mixer,
-                    BottomBand::History => Band::History,
-                },
+                band: bottom_band(open.band),
                 height: open.height as f32,
             })
             .collect(),

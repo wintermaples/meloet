@@ -4,14 +4,14 @@ mod clock;
 mod core_handle;
 mod devhooks;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering::Relaxed};
+use std::sync::{Arc, Mutex};
 
 use meloet_protocol::{
     Change, Command, HelloReply, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{LogicalSize, Manager, RunEvent, State, WebviewWindow};
+use tauri::{LogicalSize, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 
 use crate::core_handle::CoreHandle;
 
@@ -72,27 +72,95 @@ fn measure_report(name: String, json: String) -> Result<(), String> {
     meloet_core::measure::write_report(&dir, &name, &json)
 }
 
-fn set_min_size(window: &WebviewWindow, scale: u16) {
-    let min = meloet_core::layout::min_window(scale);
-    if let Err(e) = window.set_min_size(Some(LogicalSize::new(min.width, min.height))) {
-        eprintln!("meloet: cannot set the smallest window size: {e}");
+/// The inside of the window in logical px. Only on the main thread: a getter waits for it.
+fn content_size(window: &WebviewWindow) -> Option<LogicalSize<f64>> {
+    let factor = window.scale_factor().ok()?;
+    // With decorations drawn by GTK itself (Wayland) the window's own "inner size" counts the
+    // title bar and the shadows; the webview's size does not.
+    let webview: &tauri::Webview = window.as_ref();
+    let size = webview.size().ok()?.to_logical::<f64>(factor);
+    (size.width > 1.0 && size.height > 1.0).then_some(size)
+}
+
+/// What the window's own size counts besides its inside, in logical px: the title bar and the
+/// shadows where GTK draws them itself (Wayland), nothing where the window manager does.
+/// `None` before the window is on the screen. Only on the main thread.
+#[cfg(target_os = "linux")]
+fn decorations(window: &WebviewWindow) -> Option<(f64, f64)> {
+    use gtk::prelude::WidgetExt;
+
+    // Both are allocations of the same layout pass, so they agree even in the middle of a drag;
+    // the size of the newest configure event may be one pass ahead of the webview.
+    let whole = window.gtk_window().ok()?;
+    let inside = content_size(window)?;
+    let (width, height) = (
+        f64::from(whole.allocated_width()),
+        f64::from(whole.allocated_height()),
+    );
+    (width >= inside.width && height >= inside.height)
+        .then_some((width - inside.width, height - inside.height))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn decorations(_: &WebviewWindow) -> Option<(f64, f64)> {
+    Some((0.0, 0.0))
+}
+
+/// Keeps the inside of the window from getting smaller than the smallest window at the zoom.
+#[derive(Default)]
+struct SmallestSize {
+    scale: AtomicU16,
+    /// The zoom and the decorations the size limit was last set for.
+    applied: Mutex<Option<(u16, (f64, f64))>>,
+}
+
+impl SmallestSize {
+    /// Sets the limit again when the zoom or the decorations changed, and grows a window that
+    /// is below it. Only on the main thread.
+    fn apply(&self, window: &WebviewWindow) {
+        let scale = self.scale.load(Relaxed);
+        // Not known yet: start without, and come back when the window is on the screen.
+        let around = decorations(window).unwrap_or((0.0, 0.0));
+        let mut applied = self.applied.lock().unwrap_or_else(|e| e.into_inner());
+        if *applied == Some((scale, around)) {
+            return;
+        }
+        *applied = Some((scale, around));
+        let min = meloet_core::layout::min_window(scale);
+        // The limit is on the window's own size, which counts the decorations.
+        let limit = LogicalSize::new(min.width + around.0, min.height + around.1);
+        if let Err(e) = window.set_min_size(Some(limit)) {
+            eprintln!("meloet: cannot set the smallest window size: {e}");
+        }
+        if let Some(now) = content_size(window)
+            && (now.width < min.width || now.height < min.height)
+        {
+            // This size is the inside.
+            let size = LogicalSize::new(now.width.max(min.width), now.height.max(min.height));
+            if let Err(e) = window.set_size(size) {
+                eprintln!("meloet: cannot grow the window: {e}");
+            }
+        }
     }
 }
 
 /// The shell learns the zoom the way the screen does: it listens to the patches first, then
 /// reads the snapshot. The core stays the only owner of the zoom.
 fn follow_scale(core: &Core, window: WebviewWindow) {
-    let listener = window.clone();
-    // The workspace section also changes at every resize; only a new zoom is passed on.
-    let last = AtomicU16::new(0);
+    let smallest = Arc::new(SmallestSize::default());
+    let (listener, on_patch) = (window.clone(), smallest.clone());
     core.subscribe(
         Box::new(move |message| {
             if let ServerMessage::Patch(patch) = message {
                 for change in &patch.changes {
+                    // The workspace section also changes at every resize; only a new zoom is
+                    // passed on.
                     if let Change::Workspace(workspace) = change
-                        && last.swap(workspace.scale, Relaxed) != workspace.scale
+                        && on_patch.scale.swap(workspace.scale, Relaxed) != workspace.scale
                     {
-                        set_min_size(&listener, workspace.scale);
+                        // This is the core thread, and the main thread may be waiting for it.
+                        let (window, smallest) = (listener.clone(), on_patch.clone());
+                        let _ = listener.run_on_main_thread(move || smallest.apply(&window));
                     }
                 }
             }
@@ -101,7 +169,67 @@ fn follow_scale(core: &Core, window: WebviewWindow) {
         // No telemetry wanted: this sink is dropped at the first reading.
         Box::new(|_| false),
     );
-    set_min_size(&window, core.snapshot().state.workspace.scale);
+    let scale = core.snapshot().state.workspace.scale;
+    smallest.scale.store(scale, Relaxed);
+    smallest.apply(&window);
+    // The decorations are known only once the window is on the screen, and can change.
+    let resized = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::Resized(_) = event {
+            smallest.apply(&resized);
+        }
+    });
+}
+
+/// What the screen the window is on can give to the inside of the window, in logical px: its
+/// work area minus what the window takes around its inside.
+fn screen_space(window: &WebviewWindow) -> Option<(f32, f32)> {
+    let monitor = window.current_monitor().ok()??;
+    let area = monitor
+        .work_area()
+        .size
+        .to_logical::<f64>(monitor.scale_factor());
+    let factor = window.scale_factor().ok()?;
+    let outer = window.outer_size().ok()?.to_logical::<f64>(factor);
+    let inside = content_size(window);
+    if std::env::var_os("MELOET_DEBUG_SCREEN").is_some() {
+        eprintln!("meloet: work area {area:?}, window {outer:?}, inside {inside:?}");
+    }
+    // Neither size is known before the window is on the screen.
+    let around = |outer: f64, inside: Option<f64>| inside.map_or(0.0, |i| (outer - i).max(0.0));
+    let width = area.width - around(outer.width, inside.map(|s| s.width));
+    let height = area.height - around(outer.height, inside.map(|s| s.height));
+    (width > 0.0 && height > 0.0).then_some((width as f32, height as f32))
+}
+
+/// Tells the core the screen space now and whenever it may have changed. The core is told only
+/// when the numbers differ, and never waits here: this runs on the main thread.
+fn follow_screen(core: &Core, window: &WebviewWindow) {
+    let tell = {
+        let (core, window) = (core.clone(), window.clone());
+        let last = Mutex::new(None);
+        move || {
+            let space = screen_space(&window);
+            let mut last = last.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((width, height)) = space
+                && *last != space
+            {
+                *last = space;
+                core.set_screen_space(width, height);
+            }
+        }
+    };
+    tell();
+    window.on_window_event(move |event| {
+        if matches!(
+            event,
+            WindowEvent::Moved(_)
+                | WindowEvent::Resized(_)
+                | WindowEvent::ScaleFactorChanged { .. }
+        ) {
+            tell();
+        }
+    });
 }
 
 fn main() {
@@ -125,6 +253,7 @@ fn main() {
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 follow_scale(&window_side, window.clone());
+                follow_screen(&window_side, &window);
                 devhooks::apply_window_size(&window);
             }
             Ok(())

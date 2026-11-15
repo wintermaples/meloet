@@ -2177,6 +2177,7 @@ version = "0.1.0"
 dependencies = [
  "cairo-rs",
  "gio",
+ "gtk",
  "libc",
  "meloet-core",
  "meloet-protocol",

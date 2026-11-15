@@ -13,7 +13,7 @@ pub use telemetry::{
     TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, Telemetry, TelemetryError,
 };
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -175,6 +175,9 @@ pub struct WorkspaceView {
     pub scale: u16,
     pub viewport_width: f32,
     pub viewport_height: f32,
+    /// Zooms whose smallest window does not fit the screen the window is on. Empty until the
+    /// screen is known; never holds 100.
+    pub unfit_scales: Vec<u16>,
     pub layout: LayoutView,
     pub settings: Option<SettingsDialogView>,
     pub chooser: Option<ChooserView>,
@@ -386,6 +389,24 @@ pub enum StatusMessage {
     },
     SettingsOpen,
     NewSong,
+    BandFoldedWindowLow {
+        band: Band,
+    },
+    BandFoldedToOpen {
+        opened: Band,
+        folded: Band,
+    },
+    ScaleDoesNotFit {
+        requested: u16,
+        kept: u16,
+    },
+    ScaleWindowGrown {
+        scale: u16,
+    },
+    ScaleLoweredForScreen {
+        from: u16,
+        to: u16,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -14,6 +14,7 @@ import {
   type EndpointView,
   type LayoutView,
   type ServerMessage,
+  type StatusMessage,
 } from "./types";
 
 // ---- the band rules (a copy of the numbers in meloet-core/src/layout.rs) ----
@@ -24,12 +25,25 @@ const STATUS = 24;
 const METER_FULL = 52;
 const METER_SLIM = 24;
 const OVERVIEW = 40;
+const ARRANGE_ROWS = 136;
 const SMALLEST: Partial<Record<Band, number>> = { pianoRoll: 268, mixer: 516, history: 248 };
+const LARGEST: Partial<Record<Band, number>> = { pianoRoll: 736, mixer: 660, history: 248 };
 const BAND_TOOLS = 32;
-const TALL_WINDOW = 960;
 const MAX_BOTTOM_OPEN = 2;
+const MIN_WINDOW = { width: 853, height: 448 };
+const SCALES = [100, 125, 150];
 const BOTTOM_ORDER: Band[] = ["pianoRoll", "mixer", "history"];
 const isBottom = (b: Band) => BOTTOM_ORDER.includes(b);
+
+/** The smallest window in CSS px at this zoom. */
+export function minWindow(scale: number): { width: number; height: number } {
+  return { width: Math.ceil((MIN_WINDOW.width * scale) / 100), height: Math.ceil((MIN_WINDOW.height * scale) / 100) };
+}
+
+/** The zooms whose smallest window does not fit this screen space. 100 is never one of them. */
+export function unfitScales(screen: { width: number; height: number }): number[] {
+  return SCALES.slice(1).filter((s) => minWindow(s).width > screen.width || minWindow(s).height > screen.height);
+}
 
 export class FakeBands {
   /** Oldest first. */
@@ -41,52 +55,45 @@ export class FakeBands {
   constructor(public height: number) {}
 
   private meterHeight(): number {
-    return this.height >= TALL_WINDOW || this.bottom.length === 0 ? METER_FULL : METER_SLIM;
-  }
-
-  private rest(): number {
-    return this.height - TRANSPORT - this.meterHeight() - BAND_ROW - STATUS;
+    return this.bottom.length === 0 ? METER_FULL : METER_SLIM;
   }
 
   /** What is left with the arrange view at 40 and every open band at its smallest. */
   private spare(): number {
-    return this.rest() - OVERVIEW - this.bottom.reduce((sum, b) => sum + (SMALLEST[b] ?? 0), 0);
+    const fixed = TRANSPORT + this.meterHeight() + BAND_ROW + STATUS;
+    return this.height - fixed - OVERVIEW - this.bottom.reduce((sum, b) => sum + (SMALLEST[b] ?? 0), 0);
   }
 
-  /** The band that grows with the window; null is the arrange view. */
-  private spareTaker(): Band | null {
-    if (this.bottom.includes("pianoRoll")) return "pianoRoll";
-    if (this.bottom.includes("mixer") && this.height < TALL_WINDOW) return "mixer";
-    return null;
+  /** Folds the older band when two do not fit, and returns it. The newest band is never folded. */
+  private fit(): Band | null {
+    return this.bottom.length > 1 && this.spare() < 0 ? this.bottom.shift()! : null;
   }
 
-  private fits(): boolean {
-    return this.spare() >= 0;
-  }
-
-  fit(): void {
-    while (this.bottom.length > 1 && !this.fits()) this.bottom.shift();
-  }
-
-  setHeight(height: number): void {
+  /** Returns the band that was folded because the window got too low for both. */
+  setHeight(height: number): Band | null {
     this.height = height;
-    this.fit();
+    return this.fit();
   }
 
-  toggle(band: Band): void {
+  /**
+   * Returns the band that was folded because the opened one did not fit beside it. A band folded
+   * only because it would be the third is not reported.
+   */
+  toggle(band: Band): Band | null {
     if (isBottom(band)) {
       const at = this.bottom.indexOf(band);
       if (at >= 0) this.bottom.splice(at, 1);
       else {
         this.bottom.push(band);
         if (this.bottom.length > MAX_BOTTOM_OPEN) this.bottom.shift();
-        this.fit();
+        return this.fit();
       }
     } else if (this.side.at(-1) === band) {
       this.side.pop();
     } else {
       this.side = [...this.side.filter((b) => b !== band), band];
     }
+    return null;
   }
 
   goArrange(): void {
@@ -98,18 +105,26 @@ export class FakeBands {
   }
 
   layout(): LayoutView {
-    const spare = this.spare();
-    const taker = this.spareTaker();
-    const alone = this.bottom.length === 1;
-    const arrangeHeight = OVERVIEW + (taker === null ? Math.max(0, spare) : 0);
+    let spare = this.spare();
+    const heights = new Map<Band, number>();
+    // Newest first: it grows first.
+    for (const band of [...this.bottom].reverse()) {
+      const smallest = SMALLEST[band] ?? 0;
+      const grow = Math.max(0, Math.min(spare, (LARGEST[band] ?? smallest) - smallest));
+      spare -= grow;
+      heights.set(band, smallest + grow);
+    }
+    // A band that is open alone and still does not fit gets what is left.
+    if (this.bottom.length === 1 && spare < 0) {
+      const only = this.bottom[0]!;
+      heights.set(only, Math.max(BAND_TOOLS, heights.get(only)! + spare));
+    }
+    const arrangeHeight = OVERVIEW + Math.max(0, spare);
     return {
       meter: this.meterHeight() === METER_FULL ? "full" : "slim",
       arrangeHeight,
-      arrangeOverview: this.bottom.includes("pianoRoll") || arrangeHeight <= OVERVIEW,
-      lower: BOTTOM_ORDER.filter((b) => this.bottom.includes(b)).map((band) => ({
-        band,
-        height: Math.max(BAND_TOOLS, (SMALLEST[band] ?? 0) + (taker === band || (alone && spare < 0) ? spare : 0)),
-      })),
+      arrangeOverview: arrangeHeight < ARRANGE_ROWS,
+      lower: BOTTOM_ORDER.filter((b) => heights.has(b)).map((band) => ({ band, height: heights.get(band)! })),
       rightOpen: [...this.side],
       rightFront: this.side.at(-1) ?? null,
       showBackHint: this.bottom.length > 0,
@@ -219,6 +234,7 @@ export function fakeState(): AppState {
       scale: 100,
       viewportWidth: 1280,
       viewportHeight: 800,
+      unfitScales: [],
       layout: bands.layout(),
       settings: null,
       chooser: null,
@@ -262,6 +278,19 @@ interface Scene {
   meters: FakeMeters;
   /** Keep every scrolling box (`data-gl-scroll`) scrolled to its end. */
   scrollToEnd?: boolean;
+}
+
+interface SceneDef {
+  setup(s: AppState): void;
+  bands?: Band[];
+  meters: FakeMeters;
+  scrollToEnd?: boolean;
+  /** The zoom the scene starts at, when the URL gives none. */
+  scale?: number;
+  /** What the screen can give to the inside of the window, in CSS px. */
+  screen?: { width: number; height: number };
+  /** The status line after the bands are open (a notice about what just happened). */
+  after?(s: AppState): void;
 }
 
 const dbfs = (db: number) => 10 ** (db / 20);
@@ -320,10 +349,7 @@ function settingsAdvFixed(s: AppState): void {
 
 const QUIET: FakeMeters = { velocity: 83, loadPermille: 90 };
 
-export const SCENES: Record<
-  string,
-  { setup(s: AppState): void; bands?: Band[]; meters: FakeMeters; scrollToEnd?: boolean }
-> = {
+export const SCENES: Record<string, SceneDef> = {
   connect1: { setup: (s) => (s.status.message = { id: "searchingKeyboard" }), meters: { loadPermille: 90 } },
   connect2: {
     setup(s) {
@@ -364,20 +390,33 @@ export const SCENES: Record<
   history: { setup: ready, bands: ["history"], meters: QUIET },
   shelf: { setup: ready, bands: ["shelf"], meters: QUIET },
   params: { setup: ready, bands: ["params"], meters: QUIET },
+  // The mock "拡大率をえらぶ所": a 1200x700 screen, 150 % does not fit, 125 % is on.
+  zoom: { setup: ready, scale: 125, screen: { width: 1200, height: 700 }, meters: QUIET },
+  // The mixer was open, then the piano roll was opened in a window too low for both.
+  bandFolded: {
+    setup: ready,
+    bands: ["mixer", "pianoRoll"],
+    after: (s) => (s.status.message = { id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" }),
+    meters: QUIET,
+  },
 };
 
-export function fakeScene(name: string, scale = 100, viewport = { width: 1280, height: 800 }): Scene | null {
+export function fakeScene(name: string, scale?: number, viewport = { width: 1280, height: 800 }): Scene | null {
   const def = SCENES[name];
   if (!def) return null;
   const state = fakeState();
-  const s = [100, 125, 150].includes(scale) ? scale : 100;
+  const unfit = def.screen ? unfitScales(def.screen) : [];
+  const asked = scale ?? def.scale ?? 100;
+  const s = SCALES.includes(asked) && !unfit.includes(asked) ? asked : 100;
   const bands = new FakeBands((viewport.height * 100) / s);
   for (const b of def.bands ?? []) bands.toggle(b);
   def.setup(state);
   state.workspace.scale = s;
   state.workspace.viewportWidth = viewport.width;
   state.workspace.viewportHeight = viewport.height;
+  state.workspace.unfitScales = unfit;
   state.workspace.layout = bands.layout();
+  def.after?.(state);
   return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd };
 }
 
@@ -387,7 +426,8 @@ function sceneFromUrl(): Scene | null {
   const name = q.get("scene");
   if (!name) return null;
   const vp = typeof window === "undefined" ? undefined : { width: window.innerWidth, height: window.innerHeight };
-  return fakeScene(name, Number(q.get("scale") ?? 100), vp);
+  const scale = q.get("scale");
+  return fakeScene(name, scale === null ? undefined : Number(scale), vp);
 }
 
 // ---- telemetry ----
@@ -422,23 +462,54 @@ export function encodeTelemetry(m: FakeMeters, seq: number, sentUs: number, trac
 
 // ---- commands ----
 
-function reduce(state: AppState, bands: FakeBands, command: Command): Change[] {
+/** The status messages that tell what just happened. The next thing the user does takes them away. */
+const NOTICES: StatusMessage["id"][] = [
+  "bandFoldedWindowLow",
+  "bandFoldedToOpen",
+  "scaleDoesNotFit",
+  "scaleWindowGrown",
+  "scaleLoweredForScreen",
+];
+const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
+
+/** `rest` is the status line when no notice is up. */
+function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command): Change[] {
   const ws = structuredClone(state.workspace);
   const outputs = structuredClone(state.outputs);
   const choosable = outputs.list.filter((o) => o.unusable === null).map((o) => o.id);
+  let notice = isNotice(state.status.message) && command.type === "setViewport" ? state.status.message : null;
+  const fitWindow = () => {
+    const folded = bands.setHeight((ws.viewportHeight * 100) / ws.scale);
+    if (folded) notice = { id: "bandFoldedWindowLow", band: folded };
+  };
   switch (command.type) {
     case "setViewport":
       ws.viewportWidth = command.width;
       ws.viewportHeight = command.height;
-      bands.setHeight((command.height * 100) / ws.scale);
+      fitWindow();
       break;
-    case "setScale":
-      if ([100, 125, 150].includes(command.percent)) ws.scale = command.percent;
-      bands.setHeight((ws.viewportHeight * 100) / ws.scale);
+    case "setScale": {
+      const percent = command.percent;
+      if (!SCALES.includes(percent) || percent === ws.scale) break;
+      if (ws.unfitScales.includes(percent)) {
+        notice = { id: "scaleDoesNotFit", requested: percent, kept: ws.scale };
+        break;
+      }
+      ws.scale = percent;
+      const min = minWindow(percent);
+      if (ws.viewportWidth < min.width || ws.viewportHeight < min.height) {
+        ws.viewportWidth = Math.max(ws.viewportWidth, min.width);
+        ws.viewportHeight = Math.max(ws.viewportHeight, min.height);
+        notice = { id: "scaleWindowGrown", scale: percent };
+      }
+      fitWindow();
       break;
-    case "toggleBand":
-      bands.toggle(command.band);
+    }
+    case "toggleBand": {
+      const folded = bands.toggle(command.band);
+      if (folded) notice = { id: "bandFoldedToOpen", opened: command.band, folded };
       break;
+    }
     case "goArrange":
       bands.goArrange();
       break;
@@ -492,6 +563,9 @@ function reduce(state: AppState, bands: FakeBands, command: Command): Change[] {
   const changes: Change[] = [];
   if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
   if (JSON.stringify(outputs) !== JSON.stringify(state.outputs)) changes.push({ section: "outputs", value: outputs });
+  // Scenes set the rest of the status line by hand; only the notices move here.
+  const message = notice ?? (isNotice(state.status.message) ? rest : state.status.message);
+  if (JSON.stringify(message) !== JSON.stringify(state.status.message)) changes.push({ section: "status", value: { message } });
   return changes;
 }
 
@@ -502,6 +576,7 @@ export function createFakeTransport(initial?: AppState): Transport {
   const bands = scene?.bands ?? new FakeBands((state.workspace.viewportHeight * 100) / state.workspace.scale);
   if (!scene) for (const l of state.workspace.layout.lower) bands.bottom.push(l.band);
   if (!scene) bands.side = [...state.workspace.layout.rightOpen];
+  const rest = isNotice(state.status.message) ? null : state.status.message;
   let rev = 1;
   let listener: ((message: ServerMessage) => void) | null = null;
   const start = performance.now();
@@ -526,7 +601,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduce(state, bands, command);
+      const changes = reduce(state, bands, rest, command);
       if (changes.length > 0) {
         rev += 1;
         state = { ...state };

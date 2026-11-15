@@ -469,6 +469,7 @@ const NOTICES: StatusMessage["id"][] = [
   "scaleDoesNotFit",
   "scaleWindowGrown",
   "scaleLoweredForScreen",
+  "bufferFixed",
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 

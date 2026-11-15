@@ -662,6 +662,87 @@ fn buffer_fixed_by_the_pc() {
 }
 
 #[test]
+fn buffer_fixed_is_said_when_a_song_opens_and_when_the_size_changes() {
+    let [hdmi, line] = others();
+    let outputs = || vec![headphones(Av::Yes, true), hdmi.clone(), line.clone(), usb()];
+    let fixed_at = |m: &Model| match status(m) {
+        Some(StatusMessage::BufferFixed { actual, .. }) => Some(actual),
+        _ => None,
+    };
+    let right_end = |m: &Model| {
+        let audio = m.view().audio;
+        (audio.actual_frames, audio.requested_frames)
+    };
+
+    // At start the size is not known until the first block.
+    let mut m = playing();
+    m.handle(picture(outputs(), Some(1024)));
+    assert_eq!(status(&m), None);
+    m.handle(Input::AudioFrames(Some(1024)));
+    assert_eq!(fixed_at(&m), Some(1024));
+    assert_eq!(right_end(&m), (Some(1024), 256));
+
+    // A resize leaves it; the next thing the user does takes it away. The right end stays.
+    viewport(&mut m, 1300.0, 820.0);
+    assert_eq!(fixed_at(&m), Some(1024));
+    cmd(&mut m, Command::DismissHint);
+    assert_eq!(status(&m), None);
+    assert_eq!(right_end(&m), (Some(1024), 256));
+
+    // The same size again is not said.
+    m.handle(Input::AudioFrames(Some(1024)));
+    m.handle(picture(outputs(), Some(1024)));
+    assert_eq!(status(&m), None);
+
+    // Nor on another output that runs at the same size.
+    cmd(&mut m, Command::OpenSettings { advanced: false });
+    cmd(&mut m, Command::SettingsSelectOutput { output: USB.into() });
+    cmd(&mut m, Command::SettingsApply);
+    opened(&mut m, USB_NODE, 48_000);
+    m.handle(Input::AudioFrames(Some(1024)));
+    assert_eq!(status(&m), None);
+
+    // A new size is.
+    m.handle(picture(outputs(), Some(2048)));
+    assert_eq!(status(&m), None, "not running at it yet");
+    m.handle(Input::AudioFrames(Some(2048)));
+    assert_eq!(fixed_at(&m), Some(2048));
+
+    // Opening a song says it again, right away while the size is known.
+    cmd(&mut m, Command::DismissHint);
+    m.handle(Input::SongOpened);
+    assert_eq!(fixed_at(&m), Some(2048));
+
+    // Not fixed: nothing is said, not even when a song opens.
+    let mut m = playing();
+    m.handle(Input::AudioFrames(Some(128)));
+    m.handle(Input::SongOpened);
+    assert_eq!(status(&m), None);
+    assert_eq!(right_end(&m), (Some(128), 256));
+    // Fixed after not being fixed is a change.
+    m.handle(picture(outputs(), Some(1024)));
+    m.handle(Input::AudioFrames(Some(1024)));
+    assert_eq!(fixed_at(&m), Some(1024));
+
+    // A test tone on another output in the chooser does not use up the song's turn.
+    let mut m = fresh();
+    m.handle(Input::KeyboardAdded(keyboard(1)));
+    m.handle(picture(outputs(), Some(1024)));
+    cmd(&mut m, Command::TestTone { output: USB.into() });
+    opened(&mut m, USB_NODE, 48_000);
+    m.handle(Input::AudioFrames(Some(1024)));
+    assert!(matches!(
+        status(&m),
+        Some(StatusMessage::KeyboardFound { .. })
+    ));
+    cmd(&mut m, Command::ChooserSelect { output: HP.into() });
+    cmd(&mut m, Command::ChooserConfirm);
+    opened(&mut m, HP_NODE, 48_000);
+    m.handle(Input::AudioFrames(Some(1024)));
+    assert_eq!(fixed_at(&m), Some(1024));
+}
+
+#[test]
 fn measured_latency_is_the_mean_of_the_last_16() {
     let mut m = playing();
     m.handle(Input::AudioFrames(Some(256)));

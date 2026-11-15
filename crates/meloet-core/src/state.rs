@@ -60,6 +60,8 @@ pub enum Input {
         width: f32,
         height: f32,
     },
+    /// A song was opened. The new song at start counts too; [`Model::new`] does it itself.
+    SongOpened,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,6 +115,11 @@ pub struct Model {
     open: Option<OpenStream>,
     actual_frames: Option<u32>,
     latencies: VecDeque<f32>,
+    /// A song was opened and the running buffer has not been looked at since.
+    buffer_unsaid: bool,
+    /// The fixed buffer size as last known; `None` when it was not fixed. Kept while the stream
+    /// is reopened, so the same size on the next stream is not said again.
+    buffer_fixed_seen: Option<u32>,
 }
 
 struct OpenStream {
@@ -152,6 +159,8 @@ impl Model {
             open: None,
             actual_frames: None,
             latencies: VecDeque::with_capacity(LATENCY_SAMPLES),
+            buffer_unsaid: true,
+            buffer_fixed_seen: None,
         }
     }
 
@@ -235,8 +244,10 @@ impl Model {
                     self.lower_scale_for_screen(&mut effects);
                 }
             }
+            Input::SongOpened => self.buffer_unsaid = true,
         }
         self.settle(&mut effects);
+        self.watch_buffer();
         if tone_on.is_some() && tone_on == self.wanted {
             effects.push(Effect::TestTone);
         }
@@ -481,6 +492,32 @@ impl Model {
         }
     }
 
+    /// Says that the PC fixes the buffer when a song was opened and when the fixed size changed
+    /// (spec 6). Only for the chosen output's stream, not for a test tone on another one.
+    fn watch_buffer(&mut self) {
+        if self.chosen.is_none() || self.preview.is_some() {
+            return;
+        }
+        let (Some(actual), Some(rate)) = (
+            self.actual_frames,
+            self.open.as_ref().map(|o| o.sample_rate),
+        ) else {
+            return;
+        };
+        let forced = self.devices.as_ref().and_then(|d| d.clock.force_quantum);
+        let fixed = (actual != REQUESTED_FRAMES && forced == Some(actual)).then_some(actual);
+        if fixed.is_some() && (self.buffer_unsaid || fixed != self.buffer_fixed_seen) {
+            self.notice = Some(StatusMessage::BufferFixed {
+                actual,
+                requested: REQUESTED_FRAMES,
+                latency_ms: estimate_ms(actual, rate),
+                latency_ms_at_requested: estimate_ms(REQUESTED_FRAMES, rate),
+            });
+        }
+        self.buffer_unsaid = false;
+        self.buffer_fixed_seen = fixed;
+    }
+
     fn settings(&self) -> Settings {
         Settings {
             output: self.chosen.clone(),
@@ -537,7 +574,7 @@ impl Model {
     pub fn view(&self) -> AppState {
         let audio = self.audio_view();
         let chosen_state = self.chosen_state();
-        let status = self.status(chosen_state, &audio);
+        let status = self.status(chosen_state);
         AppState {
             song: song_view(&self.song),
             workspace: WorkspaceView {
@@ -611,11 +648,7 @@ impl Model {
 
     /// The first line of the table that applies. A notice comes after the lines that ask the
     /// user to do something about a device, and before the rest.
-    fn status(
-        &self,
-        chosen_state: Option<ChosenState>,
-        audio: &AudioView,
-    ) -> Option<StatusMessage> {
+    fn status(&self, chosen_state: Option<ChosenState>) -> Option<StatusMessage> {
         let output = || {
             self.chosen_name
                 .clone()
@@ -646,19 +679,8 @@ impl Model {
         let Some(active) = active else {
             return Some(StatusMessage::SearchingKeyboard);
         };
-        if self.chosen.is_none() {
-            return Some(StatusMessage::KeyboardFound {
-                keyboard: active.name.clone(),
-            });
-        }
-        let (actual, rate) = (audio.actual_frames?, audio.sample_rate?);
-        (actual != REQUESTED_FRAMES && audio.forced_quantum == Some(actual)).then(|| {
-            StatusMessage::BufferFixed {
-                actual,
-                requested: REQUESTED_FRAMES,
-                latency_ms: estimate_ms(actual, rate),
-                latency_ms_at_requested: estimate_ms(REQUESTED_FRAMES, rate),
-            }
+        self.chosen.is_none().then(|| StatusMessage::KeyboardFound {
+            keyboard: active.name.clone(),
         })
     }
 }

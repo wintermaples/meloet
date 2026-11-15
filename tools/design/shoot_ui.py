@@ -43,11 +43,17 @@ BOARDS = {
     "recover1": "F-Recover1",
     "recover2": "F-Recover2",
     "recover3": "F-Recover3",
+    "pianoRollWide": "F-WidePR",
+    "pianoRollPlay": "F-PRPlay",
+    "arrangeZoomIn": "R3-Arrange",
+    "scaleMenu": "A-PianoRoll",
 }
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 CLICKS = {
     "songMenu": ("saved", '[data-test="transport-song"]'),
     "countInMenu": ("empty", '[data-test="transport-count-in"]'),
+    "arrangeZoomIn": ("loop", '[aria-label="横に拡大"]'),
+    "scaleMenu": ("pianoRoll", '[data-test="inspector-scale"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]

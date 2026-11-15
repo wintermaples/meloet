@@ -39,7 +39,19 @@ export type KeyAction =
   | { kind: "openSong" }
   | { kind: "saveSong" }
   | { kind: "undo" }
-  | { kind: "redo" };
+  | { kind: "redo" }
+  /** 横に拡大（1）・縮小（-1）。ピアノロールとアレンジの、最後に押したほう。 */
+  | { kind: "zoom"; delta: 1 | -1 };
+
+/**
+ * Mod ＋ ・ Mod −（仕様書 4 章）。＋ は配列によって Shift がいる（US は Shift ＝、JIS は Shift ；）ので Shift は見ない。
+ * Shift なしの ＝ と、テンキーの ＋ − も同じにする。
+ */
+function zoomKey(k: KeyInput): 1 | -1 | null {
+  if (k.key === "+" || k.key === "=" || k.code === "NumpadAdd") return 1;
+  if (k.key === "-" || k.key === "_" || k.code === "NumpadSubtract") return -1;
+  return null;
+}
 
 const BAND_KEYS: Record<string, KeyAction> = {
   a: { kind: "arrange" },
@@ -78,6 +90,8 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
   if (otherMod) return null;
 
   if (mod) {
+    const zoom = k.alt ? null : zoomKey(k);
+    if (zoom) return { kind: "zoom", delta: zoom };
     const l = k.alt ? null : letter(k);
     if (k.shift) return l === "z" ? { kind: "redo" } : null;
     if (l === "n") return { kind: "newSong" };

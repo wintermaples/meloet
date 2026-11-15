@@ -236,6 +236,18 @@ export const mock = {
   "mock.range-frame.inset": m(1, "A-PianoRoll"),
   // 拡大率の一覧の、率の欄の幅。
   "mock.zoom.rate": m(56, "F-Zoom"),
+  // ノートの一覧の欄（`grid-template-columns:76px 40px 52px 1fr`、欄の左右 `padding:0 6px`）。
+  "mock.notelist.position": m(76, "A-PianoRoll"),
+  "mock.notelist.key": m(40, "A-PianoRoll"),
+  "mock.notelist.length": m(52, "A-PianoRoll"),
+  "mock.notelist.cell-pad": m(6, "A-PianoRoll"),
+  // 選んだノートの行の左の字下げ（`.rw{padding:0 12px 0 28px}`）、つまみの棒のラベルと値の幅、ぬりの太さ（つまみは part.param.knob-*）。
+  "mock.inspector.indent": m(28, "A-PianoRoll"),
+  "mock.inspector.slider-label": m(60, "A-PianoRoll"),
+  "mock.inspector.slider-value": m(40, "A-PianoRoll"),
+  "mock.inspector.slider-fill": m(3, "A-PianoRoll"),
+  // ボタンの列の上下のあき（`padding:6px 12px 6px 28px`）。
+  "mock.inspector.buttons-pad-y": m(6, "A-PianoRoll"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

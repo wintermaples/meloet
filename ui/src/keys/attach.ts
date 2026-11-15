@@ -1,5 +1,6 @@
 // キーの決まり（keys.ts）を画面につなぐ。Esc の順番と、「音が出ました」の案内を消す所もここ。
 import type { AppState, Command } from "../bridge";
+import { prView, zoomArrangeBy, zoomBy } from "../components/pianoroll/view.svelte";
 import { songDialogEnter } from "../components/songDialog";
 import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
@@ -103,6 +104,13 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     return;
   }
 
+  if (action.kind === "zoom") {
+    // ブラウザの拡大（Ctrl ＋）に渡さない。横の拡大は画面だけが持つ見た目なので、Rust には送らない。
+    ev.preventDefault();
+    zoomHorizontal(action.delta, state);
+    return;
+  }
+
   const c = command(action, state);
   // Mod つきは、使えないときもブラウザの動き（Ctrl S の保存など）に渡さない。
   const withMod = ["newSong", "openSong", "saveSong", "undo", "redo"].includes(action.kind);
@@ -112,6 +120,13 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     if (!typing) ev.preventDefault();
     deps.send(c);
   }
+}
+
+/** Mod ＋ ・ Mod −: 最後に押したのがピアノロールで、ひらいていればピアノロール、そうでなければアレンジ。 */
+export function zoomHorizontal(delta: 1 | -1, state: AppState): void {
+  const pianoRollOpen = state.workspace.layout.lower.some((b) => b.band === "pianoRoll");
+  if (prView.focus === "pianoRoll" && pianoRollOpen) zoomBy(delta, state.workspace.scale);
+  else zoomArrangeBy(delta);
 }
 
 /** マウスのボタンを押したら、案内を消す。 */

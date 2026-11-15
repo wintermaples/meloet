@@ -1014,6 +1014,7 @@ const NOTICES: StatusMessage["id"][] = [
   "bandFoldedThird",
   "bandFoldedScale",
   "valueRejected",
+  "quantized",
   "scaleDoesNotFit",
   "scaleWindowGrown",
   "scaleLoweredForScreen",
@@ -1124,6 +1125,13 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
     case "rejectValue":
       notice = { id: "valueRejected", field: command.field, kept: command.kept, range: command.range };
       break;
+    // The fake does not move notes; it only says what Rust says.
+    case "quantize": {
+      const { division, triplet, strength } = pianoRoll.quantize;
+      const all = command.take === pianoRoll.take ? (FAKE_TAKES.get(command.take)?.notes.length ?? 0) : 0;
+      notice = { id: "quantized", division, triplet, strength, count: command.notes.length || all };
+      break;
+    }
     case "goArrange":
       bands.goArrange();
       break;

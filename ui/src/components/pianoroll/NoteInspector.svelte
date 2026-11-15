@@ -1,16 +1,22 @@
 <!-- ピアノロールの右の「選んだノート」の中身（モック A-PianoRoll・F-WidePR の右の欄: 選んだノート、クオンタイズ、スケール、長さをそろえる、
      ベロシティをまとめて変える）。見出し（▾ 選んだノート 3）とたたんだ縦の見出しは、帯の部品（PianoRoll.svelte）が描く。これは、ひらいたときの中身だけを、親の箱いっぱいに描く。
-     区切り1 で動くのは「スケール」の音階と固定だけ（setMusicalScale を送る）。選んだノートは見るだけ。クオンタイズは値を見せる「使えない」の見た目。
-     「長さをそろえる」「ベロシティをまとめて変える」は、中身が仕様書にもモックにもないので、たたんだ見出しだけの「使えない」。 -->
+     選んだノートの 位置 ・ 音 ・ 長さ ・ ベロシティ は、押すと「入力の枠」（ノートの一覧と同じ。決めると選んだぜんぶへ setNotesField）。
+     クオンタイズの設定は、変えるたびに setQuantize（いまの設定ぜんぶ）。「かけなおす」は quantize、「もとの位置へ戻す」は unquantize（選んだノート、なければ全部）。
+     スケールは setMusicalScale。「長さをそろえる」「ベロシティをまとめて変える」は、中身が仕様書にもモックにもないので、たたんだ見出しだけの「使えない」。 -->
 <script lang="ts">
-  import type { ScaleMode } from "../../bridge";
+  import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
+  import ChoiceMenu from "../ChoiceMenu.svelte";
   import { gridText, scaleName } from "../format";
+  import { GRID_DIVISIONS, indexesOf } from "./geom";
+  import NoteFieldInput from "./NoteFieldInput.svelte";
+  import { commitCommand, nextField, noteFieldSpec, rejectCommand, type FieldName } from "./noteFields";
   import { selectedSummary } from "./notes";
+  import PercentSlider from "./PercentSlider.svelte";
   import ScaleMenu from "./ScaleMenu.svelte";
   import { shown } from "./shown.svelte";
 
@@ -18,10 +24,11 @@
   const pr = $derived(app.pianoRoll);
   const meter = $derived({ num: app.song.meterNum, den: app.song.meterDen });
   const take = $derived(shown.take);
-  const summary = $derived(
-    take && shown.clip && pr.take === take.id ? selectedSummary(take, shown.clip, pr.selectedNotes, meter) : null,
-  );
+  /** 見せているテイクが Rust の pianoRoll のテイクと同じ（意図を送ってよい）。 */
+  const live = $derived(take !== null && shown.clip !== null && pr.take === take.id);
+  const summary = $derived(live ? selectedSummary(take!, shown.clip!, pr.selectedNotes, meter) : null);
   const count = $derived(summary?.count ?? 0);
+  const selected = $derived(live ? indexesOf(pr.selectedNotes).filter((i) => i < take!.starts.length) : []);
   const quantized = $derived((take?.origin ?? 0) !== 0);
   const q = $derived(pr.quantize);
 
@@ -33,14 +40,87 @@
         : t("inspector.range", { low: summary.velocityLow, high: summary.velocityHigh }),
   );
 
+  /** 欄に見えている文字（使えない値を打ったときの「もとの … のまま」に使う）。 */
+  const fieldText = $derived<Record<FieldName, string>>({
+    position: summary ? (count > 1 ? t("inspector.from", { position: summary.position }) : summary.position) : "",
+    key: summary?.keys ?? "",
+    length: summary ? (summary.length ?? t("inspector.mixed")) : "",
+    velocity,
+  });
+
   function setScale(root: number, mode: ScaleMode, lock: boolean): void {
     send({ type: "setMusicalScale", root, mode, lock });
   }
 
-  // ---- 音階の一覧 ----
+  // ---- 選んだノートの欄の打ちこみ ----
 
-  let open = $state(false);
-  let scaleButton = $state<HTMLButtonElement>();
+  const LABELS: Record<FieldName, string> = {
+    position: t("note.position"),
+    key: t("note.key"),
+    length: t("note.length"),
+    velocity: t("pr.velocity"),
+  };
+  const TESTS: Record<FieldName, string> = {
+    position: "inspector-position",
+    key: "inspector-keys",
+    length: "inspector-length",
+    velocity: "inspector-velocity",
+  };
+
+  let editing = $state<{ name: FieldName; draft: string; token: number } | null>(null);
+  let tokens = 0;
+  const fieldButtons: Partial<Record<FieldName, HTMLButtonElement>> = $state({});
+  const specOf = (name: FieldName) => (live && selected.length > 0 ? noteFieldSpec(name, take!, shown.clip!, selected, meter) : null);
+  const editSpec = $derived(editing ? specOf(editing.name) : null);
+
+  function openField(name: FieldName): void {
+    const spec = specOf(name);
+    if (spec) editing = { name, draft: spec.initial, token: ++tokens };
+  }
+
+  function closeField(refocus: boolean): void {
+    const name = editing?.name;
+    editing = null;
+    if (refocus && name) queueMicrotask(() => fieldButtons[name]?.focus());
+  }
+
+  function finishField(value: number, tab: -1 | 0 | 1): void {
+    const e = editing;
+    const spec = editSpec;
+    if (!e || !spec) return;
+    const command = commitCommand(spec, value, take!.id, selected);
+    if (command) send(command);
+    const next = tab === 0 ? null : nextField(e.name, tab < 0);
+    if (next && next.row === 0) openField(next.name);
+    else closeField(true);
+  }
+
+  function rejectField(): void {
+    if (editing && editSpec) send(rejectCommand(editSpec, fieldText[editing.name]));
+  }
+
+  // ---- クオンタイズ ----
+
+  function setQuantize(change: Partial<QuantizeSettings>): void {
+    const next = { ...q, ...change };
+    send({ type: "setQuantize", ...next } satisfies Command);
+  }
+  const canQuantize = $derived(live && take!.starts.length > 0);
+  const canUnquantize = $derived(live && quantized);
+  const quantize = () => canQuantize && send({ type: "quantize", take: take!.id, notes: selected });
+  const unquantize = () => canUnquantize && send({ type: "unquantize", take: take!.id, notes: selected });
+
+  const gridRows = GRID_DIVISIONS.map((d) => ({ value: d as number, label: gridText(d, false) }));
+  const alignRows: { value: QuantizeAlign; label: string }[] = [
+    { value: "start", label: t("inspector.alignStart") },
+    { value: "startAndEnd", label: t("inspector.alignStartAndEnd") },
+  ];
+
+  // ---- 一覧（音階 ・ クオンタイズのグリッド ・ そろえる所） ----
+
+  type Menu = "scale" | "grid" | "align";
+  let open = $state<Menu | null>(null);
+  const menuButtons: Partial<Record<Menu, HTMLButtonElement>> = $state({});
   let popup = $state<HTMLElement>();
   let place = $state<{ right: number; top: number | null; bottom: number | null; maxHeight: number }>({
     right: 0,
@@ -51,7 +131,7 @@
 
   /** 押した行のすぐ下か上（広いほう）にひらく。右はしは行にそろえる。 */
   function placeMenu(): void {
-    const row = scaleButton?.closest(".rw");
+    const row = open ? menuButtons[open]?.closest(".rw") : null;
     if (!row) return;
     const r = row.getBoundingClientRect();
     const below = window.innerHeight - r.bottom;
@@ -62,15 +142,18 @@
         : { right: window.innerWidth - r.right, top: null, bottom: window.innerHeight - r.top, maxHeight: above };
   }
 
-  function closeScale(): void {
+  function closeMenu(): void {
+    const button = open ? menuButtons[open] : undefined;
     const hadFocus = popup?.contains(document.activeElement) ?? false;
-    open = false;
-    if (hadFocus) scaleButton?.focus();
+    open = null;
+    if (hadFocus) button?.focus();
   }
+
+  const toggleMenu = (menu: Menu) => (open = open === menu ? null : menu);
 
   function pickScale(root: number, mode: ScaleMode): void {
     setScale(root, mode, pr.scale.lock);
-    closeScale();
+    closeMenu();
   }
 
   function toBody(node: HTMLElement): { destroy(): void } {
@@ -80,13 +163,14 @@
 
   $effect(() => {
     if (!open) return;
+    const button = menuButtons[open];
     placeMenu();
     window.addEventListener("resize", placeMenu);
-    const forget = menuOpened(() => closeScale());
+    const forget = menuOpened(() => closeMenu());
     const onDown = (ev: PointerEvent) => {
       const target = ev.target as Node | null;
-      if (target && (popup?.contains(target) || scaleButton?.contains(target))) return;
-      closeScale();
+      if (target && (popup?.contains(target) || button?.contains(target))) return;
+      closeMenu();
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => {
@@ -97,61 +181,101 @@
   });
 </script>
 
-{#snippet slider(label: string, termName: string | null, value: number)}
-  <div class="rw off">
+{#snippet field(name: FieldName, termName: string | null)}
+  <div class="rw">
     {#if termName}
-      <span class="slider-label" use:term={termName}>{label}</span>
+      <span class="m-lbl grow" use:term={termName}>{LABELS[name]}</span>
     {:else}
-      <span class="slider-label">{label}</span>
+      <span class="m-lbl grow">{LABELS[name]}</span>
     {/if}
-    <div class="slider">
-      <div class="track"></div>
-      <div class="fill" style:width="{value}%"></div>
-      <div class="knob" style:left="{value}%"></div>
-    </div>
-    <span class="m-num slider-value">{t("inspector.percent", { value })}</span>
+    {#if editing && editSpec && editing.name === name}
+      {@const e = editing}
+      <span class="input">
+        <NoteFieldInput
+          spec={editSpec}
+          bind:draft={e.draft}
+          label={LABELS[name]}
+          test={TESTS[name]}
+          right={name !== "key"}
+          onfinish={finishField}
+          oncancel={() => editing?.token === e.token && closeField(true)}
+          onreject={rejectField}
+        />
+      </span>
+    {:else}
+      <button
+        class="m-plain m-num m-hi value"
+        class:pick={summary !== null}
+        disabled={summary === null}
+        aria-label={LABELS[name]}
+        data-test={TESTS[name]}
+        bind:this={fieldButtons[name]}
+        onclick={() => openField(name)}>{fieldText[name]}</button
+      >
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet slider(label: string, termName: string | null, value: number, test: string, key: "strength" | "swing")}
+  <div class="rw">
+    {#if termName}
+      <span class="m-lbl slider-label" use:term={termName}>{label}</span>
+    {:else}
+      <span class="m-lbl slider-label">{label}</span>
+    {/if}
+    <PercentSlider {value} {label} {test} onchange={(v) => setQuantize({ [key]: v })} />
   </div>
 {/snippet}
 
 <div class="inspector" data-testid="pr-inspector">
   <ScrollArea>
-    <div class="rw">
-      <span class="m-lbl grow">{t("note.position")}</span>
-      <span class="m-num m-hi" data-test="inspector-position">
-        {#if summary}{count > 1 ? t("inspector.from", { position: summary.position }) : summary.position}{/if}
-      </span>
-    </div>
-    <div class="rw">
-      <span class="m-lbl grow">{t("note.key")}</span>
-      <span class="m-num m-hi value" data-test="inspector-keys">{summary?.keys ?? ""}</span>
-    </div>
-    <div class="rw">
-      <span class="m-lbl grow">{t("note.length")}</span>
-      <span class="m-num m-hi" data-test="inspector-length">{summary ? (summary.length ?? t("inspector.mixed")) : ""}</span>
-    </div>
-    <div class="rw">
-      <span class="m-lbl grow" use:term={"ベロシティ"}>{t("pr.velocity")}</span>
-      <span class="m-num m-hi" data-test="inspector-velocity">{velocity}</span>
-    </div>
+    {@render field("position", null)}
+    {@render field("key", null)}
+    {@render field("length", null)}
+    {@render field("velocity", "ベロシティ")}
 
     <div class="hd">
       <span class="m-hi">▾</span>
       <span class="m-hi grow" use:term={"クオンタイズ"}>{t("inspector.quantize")}</span>
       {#if quantized}<span class="m-lbl" data-test="inspector-quantized">{t("inspector.quantized")}</span>{/if}
     </div>
-    <div class="rw off">
-      <span class="grow" use:term={"グリッド"}>{t("pr.grid")}</span>
-      <span class="m-num">{gridText(q.division, q.triplet)}</span>
+    <div class="rw">
+      <span class="m-lbl grow" use:term={"グリッド"}>{t("pr.grid")}</span>
+      <button
+        class="m-plain m-num m-hi pick"
+        aria-haspopup="menu"
+        aria-expanded={open === "grid"}
+        data-test="quantize-grid"
+        bind:this={menuButtons.grid}
+        onclick={() => toggleMenu("grid")}>{gridText(q.division, false)}</button
+      >
+      <button
+        class="m-plain pick toggle"
+        class:on={q.triplet}
+        aria-pressed={q.triplet}
+        use:term={"三連符"}
+        data-test="quantize-triplet"
+        onclick={() => setQuantize({ triplet: !q.triplet })}>{t("grid.triplet")}</button
+      >
     </div>
-    {@render slider(t("inspector.strength"), null, q.strength)}
-    {@render slider(t("inspector.swing"), "スウィング", q.swing)}
-    <div class="rw off">
-      <span class="grow">{t("inspector.align")}</span>
-      <span>{t(q.align === "start" ? "inspector.alignStart" : "inspector.alignStartAndEnd")}</span>
+    {@render slider(t("inspector.strength"), null, q.strength, "quantize-strength", "strength")}
+    {@render slider(t("inspector.swing"), "スウィング", q.swing, "quantize-swing", "swing")}
+    <div class="rw">
+      <span class="m-lbl grow">{t("inspector.align")}</span>
+      <button
+        class="m-plain m-hi pick"
+        aria-haspopup="menu"
+        aria-expanded={open === "align"}
+        data-test="quantize-align"
+        bind:this={menuButtons.align}
+        onclick={() => toggleMenu("align")}>{t(q.align === "start" ? "inspector.alignStart" : "inspector.alignStartAndEnd")}</button
+      >
     </div>
     <div class="buttons">
-      <button class="m-btn" aria-disabled="true" tabindex="-1">{t("inspector.requantize")}</button>
-      <button class="m-btn" aria-disabled="true" tabindex="-1">{t("inspector.unquantize")}</button>
+      <button class="m-btn" class:hi={canQuantize} aria-disabled={!canQuantize} data-test="quantize-apply" onclick={quantize}
+        >{t("inspector.requantize")}</button
+      >
+      <button class="m-btn" aria-disabled={!canUnquantize} data-test="quantize-restore" onclick={unquantize}>{t("inspector.unquantize")}</button>
     </div>
 
     <div class="hd">
@@ -163,10 +287,10 @@
       <button
         class="m-plain m-num m-hi pick"
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={open === "scale"}
         data-test="inspector-scale"
-        bind:this={scaleButton}
-        onclick={() => (open = !open)}>{scaleName(pr.scale.root, pr.scale.mode)}</button
+        bind:this={menuButtons.scale}
+        onclick={() => toggleMenu("scale")}>{scaleName(pr.scale.root, pr.scale.mode)}</button
       >
     </div>
     <div class="rw">
@@ -201,7 +325,31 @@
     style:bottom={place.bottom === null ? null : `${place.bottom}px`}
     style:max-height="{place.maxHeight}px"
   >
-    <ScaleMenu scale={pr.scale} onpick={pickScale} />
+    {#if open === "scale"}
+      <ScaleMenu scale={pr.scale} onpick={pickScale} />
+    {:else if open === "grid"}
+      <ChoiceMenu
+        heading={t("pr.grid")}
+        rows={gridRows}
+        selected={q.division}
+        onpick={(division) => {
+          setQuantize({ division });
+          closeMenu();
+        }}
+        test="quantize-grid-menu"
+      />
+    {:else}
+      <ChoiceMenu
+        heading={t("inspector.align")}
+        rows={alignRows}
+        selected={q.align}
+        onpick={(align) => {
+          setQuantize({ align });
+          closeMenu();
+        }}
+        test="quantize-align-menu"
+      />
+    {/if}
   </div>
 {/if}
 
@@ -252,55 +400,33 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* 使えない（仕様書 2 章）: 文字 gray.7。区切り2 で動かす。 */
-  .rw.off {
-    color: var(--color-gray-7);
-  }
   .pick:hover {
     text-decoration: underline;
   }
   .pick.on {
     color: var(--color-accent);
   }
+  .pick:disabled {
+    cursor: default;
+  }
+  /* 三連符の切りかえ（道具の列の「三連符」と同じく、グリッドの右に別の切りかえ）: オフは gray.8、オンは accent。 */
+  .toggle {
+    color: var(--color-gray-8);
+  }
+  /* 打っている欄: 入力の枠が行の高さいっぱい、幅は欄の右半分。 */
+  .input {
+    width: 50%;
+    height: 100%;
+  }
+  .m-btn.hi:not([aria-disabled="true"]) {
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
+  }
 
-  /* つまみの棒（モック A-PianoRoll: 線 line.hair、ぬり 3、つまみ 6×12）。使えないあいだは線 gray.5、ぬりとつまみ gray.7。 */
+  /* つまみの棒の行のラベル（モック A-PianoRoll: 60）。 */
   .slider-label {
     width: var(--mock-inspector-slider-label);
     flex-shrink: 0;
-  }
-  .slider {
-    flex: 1;
-    min-width: 0;
-    position: relative;
-    height: var(--part-param-knob-h);
-  }
-  .track {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: calc(var(--part-param-knob-h) / 2);
-    height: var(--line-hair);
-    background: var(--color-gray-5);
-  }
-  .fill {
-    position: absolute;
-    left: 0;
-    top: calc((var(--part-param-knob-h) - var(--mock-inspector-slider-fill)) / 2);
-    height: var(--mock-inspector-slider-fill);
-    background: var(--color-gray-7);
-  }
-  .knob {
-    position: absolute;
-    top: 0;
-    width: var(--part-param-knob-w);
-    height: var(--part-param-knob-h);
-    margin-left: calc(var(--part-param-knob-w) / -2);
-    background: var(--color-gray-7);
-  }
-  .slider-value {
-    width: var(--mock-inspector-slider-value);
-    flex-shrink: 0;
-    text-align: right;
   }
 
   .buttons {

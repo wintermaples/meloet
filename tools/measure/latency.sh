@@ -53,6 +53,7 @@ done
 root=$(cd "$(dirname "$0")/../.." && pwd)
 out=${out:-$root/target/measure/latency}
 target=${CARGO_TARGET_DIR:-$root/target}
+case "$target" in /*) ;; *) target=$root/$target ;; esac
 
 interval_ms=257
 hold_ms=120
@@ -88,6 +89,12 @@ if [ "$build" = 1 ]; then
   if [ "$keep_ui" = 0 ]; then (cd "$root/ui" && npm run build); fi
   (cd "$root" && cargo build --release -p meloet-app -p meloet-midi)
 fi
+for bin in meloet meloet-vkeys; do
+  if [ ! -x "$target/release/$bin" ]; then
+    echo "latency.sh: $target/release/$bin is not there (build it, or run without --no-build)" >&2
+    exit 1
+  fi
+done
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

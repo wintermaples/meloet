@@ -82,23 +82,33 @@ def main():
     raw = {}
 
     def read_top():
-        top = subprocess.Popen(["stdbuf", "-oL", "pw-top", "-b"], stdout=subprocess.PIPE, text=True, bufsize=1)
-        for line in top.stdout:
-            parts = line.split()
-            if len(parts) < 10 or parts[0] not in ("R", "S", "I", "C") or not parts[1].isdigit():
-                continue
-            name = parts[-1]
-            try:
-                err = int(parts[8])
-            except ValueError:
-                continue
-            with err_lock:
-                errs[name] = err
-                if name == "meloet" and "meloetLine" not in raw:
-                    raw["meloetLine"] = line.rstrip()
-            if stop.is_set():
-                break
-        top.kill()
+        # pw-top can end (or fail to connect); start it again so that the stream is not missed.
+        while not stop.is_set():
+            top = subprocess.Popen(["stdbuf", "-oL", "pw-top", "-b"], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, bufsize=1)
+            for line in top.stdout:
+                parts = line.split()
+                if len(parts) < 10 or parts[0] not in ("R", "S", "I", "C") or not parts[1].isdigit():
+                    continue
+                name = parts[-1]
+                try:
+                    err = int(parts[8])
+                except ValueError:
+                    continue
+                with err_lock:
+                    errs[name] = err
+                    raw.setdefault("names", set()).add(name)
+                    if name == "meloet" and "meloetLine" not in raw:
+                        raw["meloetLine"] = line.rstrip()
+                if stop.is_set():
+                    break
+            top.kill()
+            top.wait()
+            if not stop.is_set():
+                with err_lock:
+                    raw["restarts"] = raw.get("restarts", 0) + 1
+                    raw["lastStderr"] = (top.stderr.read() or "").strip()[-500:]
+                time.sleep(1)
 
     stop = threading.Event()
     threading.Thread(target=read_top, daemon=True).start()
@@ -129,7 +139,9 @@ def main():
         time.sleep(max(0.0, start + len(rows) - time.monotonic()))
     stop.set()
     with open(os.path.join(out, "watch.json"), "w") as f:
-        json.dump({"pwTopMeloetLine": raw.get("meloetLine"), "rows": rows}, f)
+        json.dump({"pwTopMeloetLine": raw.get("meloetLine"), "pwTopRestarts": raw.get("restarts", 0),
+                   "pwTopStderr": raw.get("lastStderr"), "pwTopNames": sorted(raw.get("names", ())),
+                   "rows": rows}, f)
         f.write("\n")
 
 

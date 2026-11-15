@@ -62,7 +62,10 @@ def main():
         lines.append(f"- PipeWire ERR of the meloet stream: {first[1]} at {first[0]} s -> {last[1]} at "
                      f"{last[0]} s")
     else:
-        lines.append("- PipeWire ERR: the meloet stream was never seen in pw-top")
+        names = watch.get("pwTopNames") or []
+        lines.append("- PipeWire ERR: the meloet stream was never seen in pw-top "
+                     f"(pw-top started again {watch.get('pwTopRestarts', '?')} times, last stderr "
+                     f"`{watch.get('pwTopStderr')}`; nodes seen: {', '.join(names) or 'none'})")
     lines.append(f"- pw-top line of the meloet stream: `{watch.get('pwTopMeloetLine')}`")
     outs = [r.get("errOutputs") or {} for r in rows]
     outs = [o for o in outs if o]

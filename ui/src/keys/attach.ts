@@ -1,9 +1,15 @@
 // キーの決まり（keys.ts）を画面につなぐ。Esc の順番と、「音が出ました」の案内を消す所もここ。
 import type { AppState, Command } from "../bridge";
-import { prView, zoomArrangeBy, zoomBy } from "../components/pianoroll/view.svelte";
+import { pianoRollCommand, type PianoRollKey } from "../components/pianoroll/commands";
+import type { Shown } from "../components/pianoroll/geom";
+import { shown } from "../components/pianoroll/shown.svelte";
+import { shownFor } from "../components/pianoroll/shownNotes";
+import { cancelDrag, prView, zoomArrangeBy, zoomBy } from "../components/pianoroll/view.svelte";
 import { songDialogEnter } from "../components/songDialog";
+import { shownTick } from "../components/time";
 import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
+import { current } from "../state/app.svelte";
 import { isTyping, keyAction, keyInputOf, platformOf, type KeyAction } from "./keys";
 
 export interface KeyDeps {
@@ -11,6 +17,38 @@ export interface KeyDeps {
   send(command: Command): void;
   doc?: Document;
   nav?: { platform?: string; userAgent?: string };
+  /** ピアノロールが見せているテイク（テスト用。ふだんは shown.svelte.ts から）。 */
+  pianoRoll?: () => Shown | null;
+  /** いまの再生の位置（テスト用。ふだんは計器から）。 */
+  playTick?: () => number;
+}
+
+const pianoRollOpen = (state: AppState) => state.workspace.layout.lower.some((l) => l.band === "pianoRoll");
+
+/** ピアノロールに向けるキーの意図。ピアノロールがひらいていて、最後に押したのがピアノロールのとき。 */
+function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps): Command | null | undefined {
+  let key: PianoRollKey;
+  switch (action.kind) {
+    case "nudge":
+      key = { kind: "nudge", steps: action.steps, keys: action.keys };
+      break;
+    case "deleteSelected":
+      key = { kind: "deleteNotes" };
+      break;
+    case "selectAll":
+    case "duplicate":
+    case "cut":
+    case "copy":
+    case "paste":
+      key = { kind: action.kind };
+      break;
+    default:
+      return undefined;
+  }
+  if (!pianoRollOpen(state) || prView.focus !== "pianoRoll") return action.kind === "deleteSelected" ? undefined : null;
+  const notes = deps.pianoRoll ? deps.pianoRoll() : shownFor(shown.take, shown.clip);
+  const playTick = deps.playTick ? deps.playTick() : shownTick(state.transport, current.telemetry, null);
+  return pianoRollCommand(key, { state, shown: notes, playTick });
 }
 
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "OS"]);
@@ -96,7 +134,8 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
 
   if (action.kind === "back") {
     ev.preventDefault();
-    // 仕様書 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
+    // 仕様書 4 章: ドラッグ中の Esc は、動かす前に戻すだけ。そのあと 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
+    if (cancelDrag()) return;
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
     else if (tipVisible()) hideTip();
     else if (menuVisible()) closeMenu();
@@ -111,9 +150,18 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     return;
   }
 
-  const c = command(action, state);
+  if (action.kind === "tool") {
+    if (pianoRollOpen(state)) {
+      ev.preventDefault();
+      prView.tool = action.tool;
+    }
+    return;
+  }
+
+  const forPianoRoll = pianoRollKey(action, state, deps);
+  const c = forPianoRoll !== undefined ? forPianoRoll : command(action, state);
   // Mod つきは、使えないときもブラウザの動き（Ctrl S の保存など）に渡さない。
-  const withMod = ["newSong", "openSong", "saveSong", "undo", "redo"].includes(action.kind);
+  const withMod = ["newSong", "openSong", "saveSong", "undo", "redo", "selectAll", "duplicate", "cut", "copy", "paste"].includes(action.kind);
   if (withMod) ev.preventDefault();
   if (c) {
     // 打っている最中の Home は、枠の中のカーソルも動かす。

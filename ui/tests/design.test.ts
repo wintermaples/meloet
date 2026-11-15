@@ -119,8 +119,11 @@ const ROUNDED = [
   "part.note.edge@125=2.5→3",
   "part.note.height@125=13.75→14",
   "part.note.height@150=16.5→17",
+  "part.note.resize@125=7.5→8",
   "part.param.knob-w@125=7.5→8",
   "part.param.step@125=7.5→8",
+  "part.reading.offset@125=7.5→8",
+  "part.reading.pad-x@125=7.5→8",
   "part.take.mark@125=7.5→8",
   "part.windowmark.size@125=12.5→13",
 ];

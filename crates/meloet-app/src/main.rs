@@ -3,18 +3,20 @@
 mod clock;
 mod core_handle;
 mod devhooks;
+mod pcwindow;
 mod takes;
 mod webprocess;
 
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering::Relaxed};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
+use meloet_core::ShellRequest;
 use meloet_protocol::{
     Change, Command, HelloReply, PROTOCOL_VERSION, SendReply, ServerMessage, Snapshot,
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::webview::PageLoadEvent;
-use tauri::{LogicalSize, Manager, RunEvent, State, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, LogicalSize, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 
 use crate::core_handle::CoreHandle;
 
@@ -241,6 +243,48 @@ fn follow_screen(core: &Core, window: &WebviewWindow) {
     });
 }
 
+/// What the core asks of the shell. On the core thread: nothing here waits for the main thread.
+fn shell_request(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    core: &Weak<dyn CoreHandle>,
+    request: ShellRequest,
+) {
+    let (pick, folder) = match request {
+        ShellRequest::Exit => {
+            app.exit(0);
+            return;
+        }
+        ShellRequest::PickSongFile { folder } => (pcwindow::Pick::SongFile, folder),
+        ShellRequest::PickFolder { folder } => (pcwindow::Pick::Folder, folder),
+    };
+    let answer = {
+        let core = core.clone();
+        move |path| {
+            if let Some(core) = core.upgrade() {
+                match pick {
+                    pcwindow::Pick::SongFile => core.song_file_picked(path),
+                    pcwindow::Pick::Folder => core.folder_picked(path),
+                }
+            }
+        }
+    };
+    let on_main = window.clone();
+    let shared = Arc::new(Mutex::new(Some(answer)));
+    let fallback = shared.clone();
+    let asked = window.run_on_main_thread(move || {
+        if let Some(answer) = shared.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            pcwindow::pick(&on_main, pick, folder, answer);
+        }
+    });
+    if let Err(e) = asked {
+        eprintln!("meloet: cannot show the PC's window: {e}");
+        if let Some(answer) = fallback.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            answer(None);
+        }
+    }
+}
+
 fn main() {
     devhooks::read_env();
     let core = Arc::new(meloet_core::Core::start(
@@ -267,10 +311,18 @@ fn main() {
                 follow_screen(&window_side, &window);
                 devhooks::apply_window_size(&window);
                 webprocess::watch(&window);
-                // Before GTK takes the WebView down with the window.
-                window.on_window_event(|event| {
-                    if let WindowEvent::CloseRequested { .. } = event {
-                        webprocess::end();
+                let (app_handle, shell_window) = (app.handle().clone(), window.clone());
+                let weak = Arc::downgrade(&window_side);
+                window_side.set_shell(Box::new(move |request| {
+                    shell_request(&app_handle, &shell_window, &weak, request);
+                }));
+                // The core decides when meloet ends (after asking about unsaved changes), and
+                // ends it through `ShellRequest::Exit`; the web process is stopped only then.
+                let closing = window_side.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        closing.close_requested();
                     }
                 });
             }

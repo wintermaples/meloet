@@ -2191,6 +2191,7 @@ dependencies = [
 name = "meloet-core"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "meloet-devices",
  "meloet-engine",
  "meloet-midi",

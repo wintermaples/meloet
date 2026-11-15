@@ -41,7 +41,7 @@ fn piano() -> TrackRef {
 }
 
 /// The headphones chosen before, a keyboard, and the stream open: ready to play and record.
-fn ready() -> Model {
+pub(crate) fn ready() -> Model {
     let mut m = Model::new(Settings {
         output: Some(HP.into()),
         output_name: Some("アナログヘッドフォン".into()),
@@ -62,7 +62,7 @@ fn ready() -> Model {
     m
 }
 
-fn cmd(m: &mut Model, command: Command) -> Vec<Effect> {
+pub(crate) fn cmd(m: &mut Model, command: Command) -> Vec<Effect> {
     m.handle(Input::Command(command))
 }
 
@@ -86,24 +86,30 @@ fn live(effects: &[Effect]) -> Vec<LiveNotes> {
         .collect()
 }
 
-fn hear(m: &mut Model, t_us: u64, tick: f64, state: TransportState, lap: u32) {
+pub(crate) fn hear(m: &mut Model, t_us: u64, tick: f64, state: TransportState, lap: u32) {
     m.set_now(t_us, Some(Heard { tick, state, lap }));
     m.handle(Input::Tick);
 }
 
-fn report(m: &mut Model, r: RecordReport) -> Vec<Effect> {
+pub(crate) fn report(m: &mut Model, r: RecordReport) -> Vec<Effect> {
     m.handle(Input::Record(r))
 }
 
-fn on(key: u8) -> RecEventKind {
+pub(crate) fn on(key: u8) -> RecEventKind {
     RecEventKind::NoteOn { key, velocity: 100 }
 }
 
-fn off(key: u8) -> RecEventKind {
+pub(crate) fn off(key: u8) -> RecEventKind {
     RecEventKind::NoteOff { key }
 }
 
-fn event(m: &mut Model, kind: RecEventKind, t_us: u64, tick: f64, lap: u32) -> Vec<Effect> {
+pub(crate) fn event(
+    m: &mut Model,
+    kind: RecEventKind,
+    t_us: u64,
+    tick: f64,
+    lap: u32,
+) -> Vec<Effect> {
     report(
         m,
         RecordReport::Event {
@@ -116,7 +122,7 @@ fn event(m: &mut Model, kind: RecEventKind, t_us: u64, tick: f64, lap: u32) -> V
 }
 
 /// The engine took the record command, at the place core asked for.
-fn started(m: &mut Model) -> Vec<Effect> {
+pub(crate) fn started(m: &mut Model) -> Vec<Effect> {
     let from = m.view().transport.recording.unwrap().from;
     report(
         m,
@@ -127,13 +133,13 @@ fn started(m: &mut Model) -> Vec<Effect> {
     )
 }
 
-fn status(m: &Model) -> Option<StatusMessage> {
+pub(crate) fn status(m: &Model) -> Option<StatusMessage> {
     m.view().status.message
 }
 
 /// Records `notes` (key, start, end) from where the transport is, with no count-in, and stops
 /// at `stop`.
-fn record_once(m: &mut Model, notes: &[(u8, f64, f64)], stop: f64) -> Vec<Effect> {
+pub(crate) fn record_once(m: &mut Model, notes: &[(u8, f64, f64)], stop: f64) -> Vec<Effect> {
     cmd(m, Command::SetCountIn { bars: 0 });
     cmd(m, Command::Record);
     started(m);

@@ -10,7 +10,8 @@ pub mod measure;
 pub mod play;
 mod service;
 pub mod settings;
+pub mod songfile;
 pub mod state;
 
 pub use hub::{MessageSink, TelemetrySink};
-pub use service::{Core, CoreOptions};
+pub use service::{Core, CoreOptions, ShellRequest, ShellSink};

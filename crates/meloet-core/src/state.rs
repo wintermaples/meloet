@@ -1,12 +1,15 @@
 //! The pure rules: an input comes in, the state changes, and a list of things to do comes back.
 //! Nothing here touches a device, a file or a thread.
 
+mod songs;
+
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
-use meloet_model::InstrumentRef;
+use meloet_model::{InstrumentRef, Song};
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
@@ -92,9 +95,43 @@ pub enum Input {
     Record(RecordReport),
     /// Nothing but the time and the heard position given with [`Model::set_now`].
     Tick,
+    /// From the shell: the window's close button, or anything else that asks to end.
+    CloseRequested,
+    /// The answer to [`Effect::PickSongFile`]; `None` when it was put away.
+    SongFilePicked(Option<PathBuf>),
+    /// The answer to [`Effect::PickFolder`]; `None` when it was put away.
+    FolderPicked(Option<PathBuf>),
+    /// An answer to [`Effect::SaveSong`]: the song as it is now is in `path`, named `name`.
+    SongSaved {
+        path: PathBuf,
+        name: String,
+    },
+    /// The other answer to [`Effect::SaveSong`].
+    SongNotSaved,
+    /// An answer to [`Effect::ReadSong`]. `path` is the song's file, also when the song came
+    /// from the copy kept beside it.
+    SongRead {
+        path: PathBuf,
+        song: Box<Song>,
+        from_previous: bool,
+    },
+    /// The other answer to [`Effect::ReadSong`]. `previous`: the copy kept beside it reads.
+    SongUnreadable {
+        path: PathBuf,
+        previous: bool,
+    },
 }
 
+/// Where [`Effect::SaveSong`] writes.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveTo {
+    /// Over the song's file.
+    File(PathBuf),
+    /// A new song folder in this folder; `None`: in the songs folder.
+    NewFolder(Option<PathBuf>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
     /// Open the stream on this node (closing the one that is open). Answer with
     /// [`Input::AudioOpened`] or [`Input::AudioOpenFailed`].
@@ -114,6 +151,23 @@ pub enum Effect {
     /// Only while a stream is open; [`Input::AudioOpened`] sends everything again.
     Engine(EngineOp),
     LiveNotes(LiveNotes),
+    /// Answer with [`Input::SongSaved`] or [`Input::SongNotSaved`].
+    SaveSong {
+        song: Box<Song>,
+        to: SaveTo,
+    },
+    /// The PC's open window. Answer with [`Input::SongFilePicked`].
+    PickSongFile,
+    /// The PC's folder window. Answer with [`Input::FolderPicked`].
+    PickFolder,
+    /// Read the song at `path`, or with `previous` the copy kept beside it. Answer with
+    /// [`Input::SongRead`] or [`Input::SongUnreadable`].
+    ReadSong {
+        path: PathBuf,
+        previous: bool,
+    },
+    /// meloet may end now.
+    Exit,
 }
 
 pub struct Model {
@@ -169,6 +223,7 @@ pub struct Model {
     /// The fixed buffer size as last known; `None` when it was not fixed. Kept while the stream
     /// is reopened, so the same size on the next stream is not said again.
     buffer_fixed_seen: Option<u32>,
+    files: songs::Files,
 }
 
 struct OpenStream {
@@ -216,6 +271,7 @@ impl Model {
             audio_retries: 0,
             audio_system_down: false,
             midi_restarting: None,
+            files: songs::Files::default(),
         }
     }
 
@@ -347,6 +403,13 @@ impl Model {
             }
             Input::Record(report) => self.play.report(report, &mut effects),
             Input::Tick => {}
+            Input::CloseRequested
+            | Input::SongFilePicked(_)
+            | Input::FolderPicked(_)
+            | Input::SongSaved { .. }
+            | Input::SongNotSaved
+            | Input::SongRead { .. }
+            | Input::SongUnreadable { .. } => self.song_input(input, &mut effects),
         }
         self.settle(&mut effects);
         if self.open.is_none() {
@@ -368,6 +431,7 @@ impl Model {
             }
         }
         self.watch_buffer();
+        self.close_when_recorded(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
             effects.push(Effect::TestTone);
         }
@@ -483,7 +547,7 @@ impl Model {
             }
             Command::GoArrange => self.bands.go_arrange(),
             Command::Back => {
-                if self.dialog.take().is_none() {
+                if !self.cancel_song_dialog() && self.dialog.take().is_none() {
                     self.bands.back();
                 }
             }
@@ -598,10 +662,12 @@ impl Model {
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::Undo => self.play.undo(effects),
             Command::Redo => self.play.redo(effects),
-            Command::NewSong
-            | Command::OpenSong
-            | Command::SaveSong
-            | Command::AnswerSongDialog { .. } => {}
+            Command::NewSong => self.new_song(effects),
+            Command::OpenSong => self.open_song(effects),
+            Command::SaveSong => self.save_song(effects),
+            Command::AnswerSongDialog { dialog, answer } => {
+                self.answer_song_dialog(dialog, answer, effects);
+            }
         }
         None
     }
@@ -807,7 +873,7 @@ impl Model {
         let chosen_state = self.chosen_state();
         let status = self.status(chosen_state);
         AppState {
-            song: song_view(&self.play),
+            song: song_view(&self.play, self.song_file()),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
             workspace: WorkspaceView {
@@ -827,7 +893,7 @@ impl Model {
                 hint: self
                     .hint
                     .or_else(|| self.empty_hint().then_some(Hint::EmptyArrange)),
-                song_dialog: None,
+                song_dialog: self.song_dialog_view(),
             },
             keyboards: KeyboardsView {
                 list: self
@@ -941,6 +1007,10 @@ impl Model {
                 track: self.play.armed(),
             });
         }
+        let redo = self.play.redo_count();
+        if redo > 0 && !self.play.busy() {
+            return Some(StatusMessage::UndoPending { count: redo });
+        }
         self.play.summary()
     }
 }
@@ -1008,7 +1078,7 @@ fn layout_view(layout: &layout::Layout) -> LayoutView {
     }
 }
 
-fn song_view(play: &Play) -> SongView {
+fn song_view(play: &Play, file: SongFile) -> SongView {
     let song = play.song();
     let doc = &song.doc;
     SongView {
@@ -1038,11 +1108,7 @@ fn song_view(play: &Play) -> SongView {
         play_target: Some(song.session.play_target.0),
         loop_range: play.loop_span(),
         loop_on: song.session.loop_on,
-        file: if play.has_unsaved_changes() {
-            SongFile::Changed
-        } else {
-            SongFile::NeverSaved
-        },
+        file,
     }
 }
 

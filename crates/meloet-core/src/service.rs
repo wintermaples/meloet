@@ -5,7 +5,7 @@
 //! input and the device watcher, and starts them again when they stop by themselves.
 
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{
     AtomicBool, AtomicI16, AtomicU8, AtomicU64, AtomicUsize, Ordering::Relaxed,
 };
@@ -32,7 +32,8 @@ use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::measure::{self, KeyToSound};
 use crate::play::{EngineOp, Heard, RecordReport};
 use crate::settings::{self, Settings};
-use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, retry_delay};
+use crate::songfile;
+use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, SaveTo, retry_delay};
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
 /// How often the core thread reads the engine's reports while the transport moves.
@@ -57,7 +58,24 @@ pub struct CoreOptions {
     pub devices: bool,
     /// Allow opening an output stream.
     pub audio: bool,
+    /// Where a song's first save makes its folder. `None`: the first save fails.
+    pub songs_dir: Option<PathBuf>,
 }
+
+/// What the core asks of the shell. Answer the windows with [`Core::song_file_picked`] and
+/// [`Core::folder_picked`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellRequest {
+    /// The PC's open window for a song file, starting in `folder`.
+    PickSongFile { folder: Option<PathBuf> },
+    /// The PC's folder window, starting in `folder`.
+    PickFolder { folder: Option<PathBuf> },
+    /// End meloet: everything that had to be asked or saved is done.
+    Exit,
+}
+
+/// Called on the core thread; must not wait for the main thread.
+pub type ShellSink = Box<dyn Fn(ShellRequest) + Send>;
 
 impl CoreOptions {
     /// Everything on, with the directories and the MIDI options the environment gives.
@@ -68,6 +86,7 @@ impl CoreOptions {
             midi: Some(MidiOptions::from_env()),
             devices: true,
             audio: true,
+            songs_dir: songfile::songs_dir(),
         }
     }
 
@@ -79,6 +98,7 @@ impl CoreOptions {
             midi: None,
             devices: false,
             audio: false,
+            songs_dir: None,
         }
     }
 }
@@ -185,6 +205,7 @@ struct Shared {
     stop: AtomicBool,
     /// The engine's clock; a new one when the engine is made anew.
     clock: Mutex<Arc<TransportClock>>,
+    shell: Mutex<Option<ShellSink>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -218,6 +239,7 @@ impl Core {
             stream: StreamFacts::default(),
             stop: AtomicBool::new(false),
             clock: Mutex::new(Arc::new(TransportClock::default())),
+            shell: Mutex::new(None),
         });
         let (tx, rx) = mpsc::channel();
 
@@ -261,6 +283,7 @@ impl Core {
                 shared: shared.clone(),
                 audio: Audio::new(parts.engine, parts.handle, options.audio),
                 config_dir: options.config_dir.clone(),
+                songs_dir: options.songs_dir.clone(),
                 key_to_sound: options.measure_dir.clone().map(KeyToSound::new),
                 links,
                 midi,
@@ -305,6 +328,28 @@ impl Core {
     pub fn set_screen_space(&self, width: f32, height: f32) {
         let input = Input::ScreenSpace { width, height };
         let _ = self.tx.send(Msg::Input(input, None));
+    }
+
+    /// Where requests for the shell go. Without one, the windows count as put away and
+    /// nothing ends.
+    pub fn set_shell(&self, shell: ShellSink) {
+        *lock(&self.shared.shell) = Some(shell);
+    }
+
+    /// The window's close button. Does not wait: meloet ends through [`ShellRequest::Exit`],
+    /// after asking about unsaved changes.
+    pub fn close_requested(&self) {
+        let _ = self.tx.send(Msg::Input(Input::CloseRequested, None));
+    }
+
+    /// The answer to [`ShellRequest::PickSongFile`]. Does not wait.
+    pub fn song_file_picked(&self, path: Option<PathBuf>) {
+        let _ = self.tx.send(Msg::Input(Input::SongFilePicked(path), None));
+    }
+
+    /// The answer to [`ShellRequest::PickFolder`]. Does not wait.
+    pub fn folder_picked(&self, path: Option<PathBuf>) {
+        let _ = self.tx.send(Msg::Input(Input::FolderPicked(path), None));
     }
 
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after
@@ -772,6 +817,7 @@ struct Worker {
     shared: Arc<Shared>,
     audio: Audio,
     config_dir: Option<PathBuf>,
+    songs_dir: Option<PathBuf>,
     key_to_sound: Option<KeyToSound>,
     links: Links,
     midi: Option<Midi>,
@@ -945,6 +991,27 @@ impl Worker {
                             eprintln!("meloet: settings not saved in {}: {e}", dir.display());
                         }
                     }
+                    Effect::SaveSong { song, to } => {
+                        inputs.push_back(save_song(self.songs_dir.as_deref(), &song, to));
+                    }
+                    Effect::ReadSong { path, previous } => {
+                        inputs.push_back(read_song(path, previous));
+                    }
+                    Effect::PickSongFile => {
+                        let folder = self.start_folder();
+                        if !self.ask_shell(ShellRequest::PickSongFile { folder }) {
+                            inputs.push_back(Input::SongFilePicked(None));
+                        }
+                    }
+                    Effect::PickFolder => {
+                        let folder = self.start_folder();
+                        if !self.ask_shell(ShellRequest::PickFolder { folder }) {
+                            inputs.push_back(Input::FolderPicked(None));
+                        }
+                    }
+                    Effect::Exit => {
+                        self.ask_shell(ShellRequest::Exit);
+                    }
                 }
             }
         }
@@ -952,9 +1019,76 @@ impl Worker {
             .stream
             .wants_sound
             .store(self.model.wants_sound(), Relaxed);
-        self.hub.publish(self.model.view())
+        let view = self.model.view();
+        self.shared
+            .stream
+            .track_count
+            .store(view.song.tracks.len(), Relaxed);
+        self.hub.publish(view)
     }
 
+    /// Returns whether there was a shell to ask.
+    fn ask_shell(&self, request: ShellRequest) -> bool {
+        match &*lock(&self.shared.shell) {
+            Some(shell) => {
+                shell(request);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The folder of the song file in use, or else the songs folder.
+    fn start_folder(&self) -> Option<PathBuf> {
+        self.model
+            .song_path()
+            .and_then(|p| p.parent())
+            .map(PathBuf::from)
+            .or_else(|| self.songs_dir.clone())
+            .filter(|d| d.is_dir())
+    }
+}
+
+/// Does [`Effect::SaveSong`] and gives its answer.
+pub(crate) fn save_song(songs_dir: Option<&Path>, song: &meloet_model::Song, to: SaveTo) -> Input {
+    let saved = match to {
+        SaveTo::File(path) => songfile::save(&path, song).map(|()| (path, song.doc.name.clone())),
+        SaveTo::NewFolder(folder) => match folder.as_deref().or(songs_dir) {
+            Some(folder) => songfile::save_new(folder, song),
+            None => Err(std::io::Error::other("no songs folder")),
+        },
+    };
+    match saved {
+        Ok((path, name)) => Input::SongSaved { path, name },
+        Err(e) => {
+            eprintln!("meloet: the song was not saved: {e}");
+            Input::SongNotSaved
+        }
+    }
+}
+
+/// Does [`Effect::ReadSong`] and gives its answer.
+pub(crate) fn read_song(path: PathBuf, previous: bool) -> Input {
+    let from = if previous {
+        songfile::previous_path(&path)
+    } else {
+        path.clone()
+    };
+    match songfile::read(&from) {
+        Ok(song) => Input::SongRead {
+            path,
+            song: Box::new(song),
+            from_previous: previous,
+        },
+        Err(e) => {
+            eprintln!("meloet: cannot read {}: {e:?}", from.display());
+            let previous = !previous && songfile::read(&songfile::previous_path(&path)).is_ok();
+            Input::SongUnreadable { path, previous }
+        }
+    }
+}
+
+impl Worker {
     fn housekeeping(&mut self, last: bool) {
         self.poll_engine();
         self.audio.handle.drop_retired();

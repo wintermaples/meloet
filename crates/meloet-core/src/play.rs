@@ -208,6 +208,9 @@ pub struct Play {
     last_heard: Option<Heard>,
     /// A clip has been in this song: the empty arrange hint is not shown again.
     had_clip: bool,
+    /// The song came from the copy kept before the last save: the file needs writing again
+    /// whatever undo does.
+    unsaved_anyway: bool,
 }
 
 impl Play {
@@ -232,6 +235,7 @@ impl Play {
             heard: None,
             last_heard: None,
             had_clip: false,
+            unsaved_anyway: false,
         }
     }
 
@@ -267,7 +271,8 @@ impl Play {
         self.doc().meter
     }
 
-    fn busy(&self) -> bool {
+    /// Counting in or recording: the song is not to be changed or replaced.
+    pub fn busy(&self) -> bool {
         matches!(
             self.state,
             TransportState::CountIn | TransportState::Recording
@@ -582,6 +587,7 @@ impl Play {
         }
         let before = self.doc().clone();
         if self.history.undo(&mut self.song.doc).is_some() {
+            self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
         }
     }
@@ -592,6 +598,7 @@ impl Play {
         }
         let before = self.doc().clone();
         if self.history.redo(&mut self.song.doc).is_some() {
+            self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
         }
     }
@@ -908,7 +915,49 @@ impl Play {
     }
 
     pub fn has_unsaved_changes(&self) -> bool {
-        self.history.has_unsaved_changes()
+        self.unsaved_anyway || self.history.has_unsaved_changes()
+    }
+
+    /// The song as it is now is in its file, under `name` (the first save can add " 2").
+    /// The name is not a step: undo and redo keep it.
+    pub fn saved_as(&mut self, name: String) {
+        self.song.doc.name = name;
+        self.history.mark_saved();
+        self.unsaved_anyway = false;
+    }
+
+    /// Stops a count-in or a recording; what was played comes in with the engine's report.
+    pub fn stop_recording(&mut self, effects: &mut Vec<Effect>) {
+        if matches!(
+            self.state,
+            TransportState::CountIn | TransportState::Recording
+        ) {
+            self.stop(effects);
+        }
+    }
+
+    /// Puts another song in place of this one, with no steps. `unsaved`: it does not match its
+    /// file. Only while not busy.
+    pub fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
+        let old_tracks = self.song.doc.tracks.len();
+        self.song = song;
+        self.history = History::new();
+        self.unsaved_anyway = unsaved;
+        self.state = TransportState::Stopped;
+        self.position = 0;
+        self.selected = None;
+        self.piano_roll = None;
+        self.rec = None;
+        self.heard = None;
+        self.last_heard = None;
+        self.had_clip = self.doc().tracks.iter().any(|t| !t.clips.is_empty());
+        self.stream_opened(effects);
+        for track in self.song.doc.tracks.len()..old_tracks {
+            effects.push(Effect::Engine(EngineOp::Sequence {
+                track,
+                events: Vec::new(),
+            }));
+        }
     }
 
     pub fn piano_roll_notes(&self) -> u32 {
@@ -995,4 +1044,4 @@ impl Play {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

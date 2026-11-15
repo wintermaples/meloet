@@ -62,6 +62,7 @@ fn the_core_waits_for_pipewire_and_comes_back_after_it_stopped() {
         midi: None,
         devices: true,
         audio: true,
+        songs_dir: None,
     });
     std::thread::sleep(Duration::from_millis(1500));
     let state = core.snapshot().state;

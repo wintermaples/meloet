@@ -9,6 +9,9 @@
 //!   way (the core stops and writes its measurements).
 //! - `MELOET_CLOSE_AFTER_MS=2500`: that long after the page finished loading, close the window
 //!   the way its close button does.
+//! - `MELOET_PCWINDOW_SHOT=/path/out.png`: 1.5 s after the PC's open or folder window is shown,
+//!   print what GTK has up under its title and draw it into the PNG. A window the desktop portal
+//!   shows is another program's and is not found.
 //! - `MELOET_DEBUG_SCREEN=1`: print the work area, the window and its inside to stderr each time
 //!   the shell works out the screen space (read in `main.rs`).
 
@@ -200,6 +203,51 @@ fn snapshot(_: tauri::webview::PlatformWebview, _: PathBuf, app: tauri::AppHandl
     eprintln!("MELOET_SNAPSHOT: only on Linux (webkit2gtk)");
     app.exit(1);
 }
+
+/// Main thread only, right after the PC's window titled `title` was shown.
+#[cfg(target_os = "linux")]
+pub fn after_pc_window(title: &'static str) {
+    use gtk::prelude::{Cast, GtkWindowExt, WidgetExt};
+
+    let Some(path) = std::env::var_os("MELOET_PCWINDOW_SHOT").map(PathBuf::from) else {
+        return;
+    };
+    gtk::glib::timeout_add_local_once(Duration::from_millis(1500), move || {
+        let shown: Vec<gtk::Window> = gtk::Window::list_toplevels()
+            .into_iter()
+            .filter_map(|w| w.downcast::<gtk::Window>().ok())
+            .filter(|w| w.title().as_deref() == Some(title) && w.is_visible())
+            .collect();
+        eprintln!(
+            "MELOET_PCWINDOW_SHOT: {} window(s) titled {title:?}",
+            shown.len()
+        );
+        let Some(window) = shown.first() else {
+            return;
+        };
+        let (width, height) = (window.allocated_width(), window.allocated_height());
+        eprintln!(
+            "MELOET_PCWINDOW_SHOT: {width}x{height}, mapped {}",
+            window.is_mapped()
+        );
+        let drawn = cairo::ImageSurface::create(cairo::Format::ARgb32, width, height)
+            .map_err(|e| e.to_string())
+            .and_then(|surface| {
+                let cr = cairo::Context::new(&surface).map_err(|e| e.to_string())?;
+                window.draw(&cr);
+                drop(cr);
+                let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+                surface.write_to_png(&mut file).map_err(|e| e.to_string())
+            });
+        match drawn {
+            Ok(()) => eprintln!("MELOET_PCWINDOW_SHOT: wrote {}", path.display()),
+            Err(e) => eprintln!("MELOET_PCWINDOW_SHOT: {e}"),
+        }
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn after_pc_window(_: &'static str) {}
 
 #[cfg(test)]
 mod tests {

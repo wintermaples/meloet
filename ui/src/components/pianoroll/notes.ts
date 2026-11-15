@@ -9,14 +9,14 @@ import type { Meter } from "../time";
 type Notes = Pick<TakeNotes, "starts" | "lengths" | "keys" | "velocities">;
 type Placed = Pick<ClipView, "start" | "end" | "takeOffset">;
 
-/** クリップの中に見えているノートの番号（クリップの範囲に少しでもかかる物。アレンジのクリップの絵と同じ）。 */
+/** クリップの中に見えているノートの番号（始まりがクリップの範囲の中。鳴る物と同じ。アレンジのクリップの絵とも同じ）。 */
 export function clipNoteIndexes(clip: Placed, take: { starts: ArrayLike<number>; lengths: ArrayLike<number> }): Uint32Array {
   const at = clip.start + clip.takeOffset;
   const out = new Uint32Array(take.starts.length);
   let n = 0;
   for (let i = 0; i < take.starts.length; i++) {
     const start = at + take.starts[i]!;
-    if (start >= clip.end || start + take.lengths[i]! <= clip.start) continue;
+    if (start >= clip.end || start < clip.start) continue;
     out[n++] = i;
   }
   return out.subarray(0, n);

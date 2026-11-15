@@ -26,6 +26,8 @@ export function soundingKeys(
   for (let i = 0; i < take.starts.length; i++) {
     const start = take.starts[i]!;
     if (start > local) break;
+    // はしをつめて、クリップの始まりより前に出たノートは鳴らない。
+    if (start < -clip.takeOffset) continue;
     if (local < start + take.lengths[i]!) on.add(take.keys[i]!);
   }
   return [...on].sort((a, b) => a - b);

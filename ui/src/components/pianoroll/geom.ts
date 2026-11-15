@@ -44,13 +44,22 @@ export interface Shown {
   base: number;
   /** いちばん長いノート（見えている所をさがすため）。 */
   maxLength: number;
+  /** クリップの範囲 [from, to)（曲の中）。始まりがこの外のノート（はしをつめて外に出た物）は見せない。 */
+  from: number;
+  to: number;
 }
 
-export function shownOf(take: TakeNotes, base: number): Shown {
+export function shownOf(take: TakeNotes, base: number, range: { from: number; to: number } = { from: -Infinity, to: Infinity }): Shown {
   let maxLength = 0;
   for (let i = 0; i < take.lengths.length; i++) maxLength = Math.max(maxLength, take.lengths[i]!);
-  return { take, base, maxLength };
+  return { take, base, maxLength, from: range.from, to: range.to };
 }
+
+/** ノート i を見せるか（始まりがクリップの範囲の中か）。 */
+export const noteShown = (n: Shown, i: number) => {
+  const s = n.base + n.take.starts[i]!;
+  return s >= n.from && s < n.to;
+};
 
 export const noteStart = (n: Shown, i: number) => n.base + n.take.starts[i]!;
 export const noteEnd = (n: Shown, i: number) => n.base + n.take.starts[i]! + n.take.lengths[i]!;
@@ -70,14 +79,14 @@ export function firstNoteFrom(n: Shown, from: number): number {
   return lo;
 }
 
-/** ティック [from, to) にかかるノートの番号を、順に each に渡す。 */
+/** ティック [from, to) にかかるノートの番号を、順に each に渡す。クリップの範囲の外に始まるノートは渡さない。 */
 export function eachNoteIn(n: Shown, from: number, to: number, each: (i: number) => void): void {
   const s = n.take.starts;
   const l = n.take.lengths;
   for (let i = firstNoteFrom(n, from); i < s.length; i++) {
     const start = n.base + s[i]!;
-    if (start >= to) break;
-    if (start + l[i]! > from) each(i);
+    if (start >= to || start >= n.to) break;
+    if (start + l[i]! > from && start >= n.from) each(i);
   }
 }
 
@@ -190,14 +199,15 @@ export function clampTopKey(top: number, rows: number): number {
 }
 
 export function keyRangeOf(n: Shown | null): { low: number; high: number } | null {
-  if (!n || n.take.keys.length === 0) return null;
-  let low = KEY_MAX;
-  let high = KEY_MIN;
-  for (const k of n.take.keys) {
-    low = Math.min(low, k);
-    high = Math.max(high, k);
+  if (!n) return null;
+  let low = KEY_MAX + 1;
+  let high = KEY_MIN - 1;
+  for (let i = 0; i < n.take.keys.length; i++) {
+    if (!noteShown(n, i)) continue;
+    low = Math.min(low, n.take.keys[i]!);
+    high = Math.max(high, n.take.keys[i]!);
   }
-  return { low, high };
+  return low <= high ? { low, high } : null;
 }
 
 /**

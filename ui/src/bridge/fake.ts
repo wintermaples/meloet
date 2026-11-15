@@ -21,6 +21,8 @@ import {
   type PianoRollView,
   type ServerMessage,
   type SongDialogKind,
+  type SongView,
+  type ArrangeView,
   type StatusMessage,
   type TrackRef,
 } from "./types";
@@ -714,6 +716,32 @@ const PIANO_ROLL_PLAYING: FakeMeters = {
   position: { tick: at("4.1.240"), ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 },
 };
 
+/**
+ * R3-Arrange: two tracks. The piano has "イントロ" (bars 1–4) and "Aメロ" with its first bar trimmed off (bars 6–8);
+ * the bass has "ベース A" (bars 5–8) and a copy of it trimmed to 2.5 bars (bars 14–16.2), selected. The trimmed notes are not drawn.
+ */
+function arrangeTrimmed(s: AppState): void {
+  ready(s);
+  const bass = phrase(40, 4, 11, 6);
+  FAKE_TAKES.set(bass.id, bass);
+  s.song.undoCount = 4;
+  s.song.tracks[0]!.clips = [
+    fakeClip(1, "イントロ", 1, 5, 1, [2]),
+    { ...fakeClip(3, "Aメロ", 5, 9, 1, [5]), start: 5 * BAR, takeOffset: -BAR },
+  ];
+  s.song.tracks.push({
+    ...s.song.tracks[0]!,
+    number: 2,
+    name: "ベース",
+    color: 2,
+    gainDb: -7.5,
+    armed: false,
+    clips: [fakeClip(41, "ベース A", 5, 9, 1, [40]), { ...fakeClip(42, "ベース A", 14, 18, 1, [40]), end: 13 * BAR + BAR * 2.5 }],
+  });
+  s.arrange = { selectedClip: 42, pianoRollClip: 42 };
+  s.status.message = null;
+}
+
 export const SCENES: Record<string, SceneDef> = {
   connect1: { setup: (s) => (s.status.message = { id: "searchingKeyboard" }), meters: { loadPermille: 90 } },
   connect2: {
@@ -860,6 +888,9 @@ export const SCENES: Record<string, SceneDef> = {
     bands: ["pianoRoll"],
     meters: { ...QUIET, position: { tick: 4 * BAR, ticksPerUs: 0, state: "stopped", countInBeatsLeft: 0, lap: 0 } },
   },
+  arrangeTrimmed: { setup: arrangeTrimmed, meters: QUIET },
+  // The same with the piano roll open on the trimmed clip: the notes trimmed off are not shown there either.
+  arrangeTrimmedRoll: { setup: arrangeTrimmed, bands: ["pianoRoll"], meters: QUIET },
   // The mock "拡大率をえらぶ所": a 1200x700 screen, 150 % does not fit, 125 % is on.
   zoom: { setup: ready, scale: 125, screen: { width: 1200, height: 700 }, meters: QUIET },
   // The mixer was open, then the piano roll was opened in a window too low for both.
@@ -1150,6 +1181,49 @@ function noteSelection(pr: PianoRollView): Extract<StatusMessage, { id: "summary
   return { count: picked.length, keys: picked.slice(0, 4).map((i) => take.notes[i]!.key), quantized: (take.origin ?? 0) !== 0 };
 }
 
+/**
+ * The clip edits of docs/architecture.md 17, enough for pictures and tests: no history, no undo count.
+ * Returns the new song and arrange, or null when nothing changes (as Rust does on an overlap).
+ */
+export function reduceClips(state: AppState, command: Command): { song: SongView; arrange: ArrangeView } | null {
+  if (command.type !== "moveClip" && command.type !== "duplicateClip" && command.type !== "trimClip") return null;
+  if (state.transport.state === "recording" || state.transport.state === "countIn") return null;
+  const song = structuredClone(state.song);
+  const from = song.tracks.findIndex((t) => t.clips.some((c) => c.id === command.clip));
+  if (from < 0) return null;
+  const clips = song.tracks[from]!.clips;
+  const at = clips.findIndex((c) => c.id === command.clip);
+  const clip = clips[at]!;
+  const free = (clips: ClipView[], start: number, end: number, without: number | null) =>
+    start >= 0 && !clips.some((c) => c.id !== without && c.start < end && start < c.end);
+  const nextId = () => Math.max(0, ...FAKE_TAKES.keys(), ...song.tracks.flatMap((t) => t.clips.map((c) => c.id))) + 1;
+  const byStart = (a: ClipView, b: ClipView) => a.start - b.start;
+  let selected = clip.id;
+  if (command.type === "trimClip") {
+    const before = clips.filter((c) => c.end <= clip.start).reduce((m, c) => Math.max(m, c.end), 0);
+    const after = clips.filter((c) => c.start >= clip.end).reduce((m, c) => Math.min(m, c.start), Infinity);
+    const start = command.edge === "start" ? Math.min(Math.max(clip.start + command.ticks, before), clip.end - 1) : clip.start;
+    const end = command.edge === "end" ? Math.max(Math.min(clip.end + command.ticks, after), clip.start + 1) : clip.end;
+    if (start === clip.start && end === clip.end) return null;
+    clips[at] = { ...clip, start, end, takeOffset: clip.takeOffset - (start - clip.start) };
+    return { song, arrange: state.arrange };
+  }
+  const len = clip.end - clip.start;
+  const start = command.type === "duplicateClip" ? clip.end : Math.max(0, clip.start + command.ticks);
+  const copy = command.type === "duplicateClip" || command.copy;
+  const to = command.type === "duplicateClip" ? from : song.tracks.findIndex((t) => t.number === command.track);
+  if (to < 0) return null;
+  const dest = song.tracks[to]!.clips;
+  if (!copy && to === from && start === clip.start) return null;
+  if (!free(dest, start, start + len, copy ? null : clip.id)) return null;
+  if (!copy) clips.splice(at, 1);
+  const placed = { ...clip, id: copy ? nextId() : clip.id, start, end: start + len };
+  selected = placed.id;
+  dest.push(placed);
+  dest.sort(byStart);
+  return { song, arrange: { selectedClip: selected, pianoRollClip: selected } };
+}
+
 /** `rest` is the status line when no notice is up. */
 function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command): Change[] {
   const ws = structuredClone(state.workspace);
@@ -1261,6 +1335,11 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
   }
   ws.layout = bands.layout();
   const changes: Change[] = [];
+  const clips = reduceClips(state, command);
+  if (clips) {
+    changes.push({ section: "song", value: clips.song });
+    if (JSON.stringify(clips.arrange) !== JSON.stringify(state.arrange)) changes.push({ section: "arrange", value: clips.arrange });
+  }
   if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
   if (JSON.stringify(outputs) !== JSON.stringify(state.outputs)) changes.push({ section: "outputs", value: outputs });
   if (JSON.stringify(pianoRoll) !== JSON.stringify(state.pianoRoll)) changes.push({ section: "pianoRoll", value: pianoRoll });

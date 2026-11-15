@@ -1,8 +1,10 @@
 <!-- アレンジ（モック Main・F-ArrangeRec・F-Takes・F-Empty）。ちぢんだときは全体図（A-PianoRoll の上の帯）。
      小節の線、クリップ、全体図の線は WebGL。名前、札、再生の位置の線は HTML。children は、アレンジの上に重ねる物（出口えらび、案内）。
-     動いている間は、WebGL の係のコマごとに（everyGlFrame）線と録っているクリップの先を動かす。 -->
+     動いている間は、WebGL の係のコマごとに（everyGlFrame）線と録っているクリップの先を動かす。
+     クリップのドラッグ（モック R3-Arrange）は、もとの場所を大きな面に gray.7 の枠で残し、動いているクリップを小さな区画（recordingClip。
+     録音中はドラッグしないので、録っているクリップの先と同じ時に使わない）で描く。動かすだけなら箱を transform で動かす。 -->
 <script lang="ts">
-  import { onDestroy, untrack, type Snippet } from "svelte";
+  import { onDestroy, onMount, untrack, type Snippet } from "svelte";
   import {
     clockOffsetUs,
     liveNotes,
@@ -20,10 +22,20 @@
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
+  import * as CD from "./arrangeDrag";
   import * as G from "./arrangeGeom";
   import { dbNumber, gridText, tempoText, textParts } from "./format";
   import { metrics } from "./metrics.svelte";
-  import { arrangeView, DEFAULT_ARRANGE_BAR, prView, scrollToTick, visibleTicks, zoomArrangeBy } from "./pianoroll/view.svelte";
+  import {
+    arrangeView,
+    DEFAULT_ARRANGE_BAR,
+    dragReading,
+    onDragCancel,
+    prView,
+    scrollToTick,
+    visibleTicks,
+    zoomArrangeBy,
+  } from "./pianoroll/view.svelte";
   import { shownTick, ticksPerBar } from "./time";
 
   let { children }: { children?: Snippet } = $props();
@@ -167,6 +179,96 @@
   });
   const loopX = (bar: number) => G.tickToX(view, (bar - 1) * perBar);
 
+  // ---- クリップのドラッグ（動かす、Alt で複製、はしをつめる。arrangeDrag.ts） ----
+
+  let clipDrag = $state.raw<CD.ClipDrag | null>(null);
+  /** 離して意図を送ったあと、答えの状態が届くまで残しておく見た目（ちらつかないように）。 */
+  let clipPending = $state.raw<CD.ClipDrag | null>(null);
+  let pendingRev = $state<number | null>(null);
+  const shownDrag = $derived.by(() => {
+    const d = clipDrag ?? clipPending;
+    return d && d.press.moved ? d : null;
+  });
+  /** 大きな面が見るのは、どのクリップか、もとの場所を枠にするか（複製でなければ）だけ。動かす量では描きなおさない。 */
+  const dragId = $derived(shownDrag?.clip.id ?? null);
+  const dragFrame = $derived(shownDrag !== null && (shownDrag.kind === "trim" || !shownDrag.copy));
+  /** 動いている絵の形が変わる時だけ変わる（動かすだけなら変わらない）。 */
+  const dragShape = $derived.by(() => {
+    const d = shownDrag;
+    if (!d) return null;
+    return d.kind === "trim" ? `t${d.clip.id}:${d.start}:${d.end}` : `m${d.clip.id}`;
+  });
+  const dragShift = $derived.by(() => {
+    const d = shownDrag;
+    if (!d || d.kind !== "move" || (d.ticks === 0 && d.toRow === d.row)) return null;
+    return `translate(${d.ticks * pxPerTick}px, ${(d.toRow - d.row) * dims.trackH}px)`;
+  });
+
+  $effect(() => {
+    if (clipPending && pendingRev !== null && current.rev >= pendingRev) clipPending = null;
+  });
+
+  /** 動いている絵: 小さな区画の箱（レーンの CSS px）、その中の四角、名前。 */
+  const dragPicture = $derived.by(() => {
+    void dragShape;
+    void takeVersion;
+    const d = untrack(() => shownDrag);
+    if (!d) return null;
+    const track = song.tracks[d.row];
+    if (!track) return null;
+    const take = takeOf(d.clip.takeId);
+    const rects: GlRect[] = [];
+    let box: G.Box;
+    let place: { left: number; top: number; width: number; height: number };
+    if (d.kind === "move") {
+      // クリップの左上を 0 にして、クリップぜんぶを描く（動かすと見えてくる所も）。
+      const local: G.View = { pxPerTick, scrollX: d.clip.start * pxPerTick, width: Infinity };
+      box = G.clipBox(view, dims, d.row, d.clip.start, d.clip.end);
+      const inner = G.clipBox(local, dims, 0, d.clip.start, d.clip.end);
+      const notes = take ? G.takeShapes(d.clip, take) : shapesOf(track.number, d.clip);
+      G.paintClip(rects, local, dims, { x0: inner.x0, x1: inner.x1, y0: 0, y1: box.y1 - box.y0 }, G.CLIP_SELECTED, notes);
+      place = { left: box.x0, top: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 };
+    } else {
+      // つめているクリップは行の幅いっぱいの箱に。テイクの 0 は動かさない（ノートは曲の中の同じ所に残る）。
+      const clip = { start: d.start, end: d.end, takeOffset: d.clip.start + d.clip.takeOffset - d.start };
+      box = G.clipBox(view, dims, d.row, d.start, d.end);
+      const notes = take ? G.takeShapes(clip, take) : shapesOf(track.number, d.clip).filter((n) => n.start >= d.start && n.start < d.end);
+      G.paintClip(rects, view, dims, box, G.CLIP_SELECTED, notes);
+      for (const q of rects) q.y -= box.y0;
+      place = { left: 0, top: box.y0, width: view.width, height: box.y1 - box.y0 };
+    }
+    const label: Label = {
+      id: d.clip.id,
+      x: Math.max(box.x0, 0) + dims.hair,
+      y: box.y0 + dims.mark,
+      w: box.x1 - Math.max(box.x0, 0) - 2 * dims.hair,
+      name: d.clip.name,
+      mark: G.takeMark(d.clip, box.x1 - box.x0, tagMin),
+      take: d.clip.take,
+      takes: d.clip.takes,
+      selected: true,
+    };
+    return { place, rects, label };
+  });
+
+  let dragSlot: { update(next: GlSlot): void } | null = null;
+  function draggedClip(node: HTMLElement) {
+    const slot = glSlot(node, { kind: "rects", rects: dragPicture?.rects ?? [] });
+    dragSlot = slot;
+    return {
+      destroy() {
+        slot.destroy();
+        if (dragSlot === slot) dragSlot = null;
+      },
+    };
+  }
+  // 箱を transform で動かしたときも、区画の canvas を動いた箱に合わせなおす（描く中身は同じなので、描きなおしはしない）。
+  $effect(() => {
+    const p = dragPicture;
+    void dragShift;
+    if (p) untrack(() => dragSlot?.update({ kind: "rects", rects: p.rects }));
+  });
+
   // ---- 大きな面: クリップ、録っているクリップのできた部分、ループのはし ----
 
   const laneRects = $derived.by(() => {
@@ -177,7 +279,11 @@
       for (const clip of track.clips) {
         const box = G.clipBox(view, dims, row, clip.start, clip.end);
         if (box.x1 < 0 || box.x0 > view.width) continue;
-        const colors = clip.id === selected ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track));
+        if (clip.id === dragId && dragFrame) {
+          G.paintFrame(out, view, dims, box, "color.gray.7");
+          continue;
+        }
+        const colors = clip.id === selected && clip.id !== dragId ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track));
         G.paintClip(out, view, dims, box, colors, shapesOf(track.number, clip));
       }
     });
@@ -230,6 +336,8 @@
         if (box.x1 < 0 || box.x0 > view.width) continue;
         // 録っているクリップの下になったクリップの名前は出さない。
         if (rec && shown && rec.track === track.number && clip.start < shown.commit + perBar && clip.end > shown.lapFrom) continue;
+        // 動かしている・つめているクリップの名前は、動いている絵の側に出す。
+        if (clip.id === dragId && dragFrame) continue;
         const x = Math.max(box.x0, 0) + dims.hair;
         const w = box.x1 - Math.max(box.x0, 0) - 2 * dims.hair;
         out.push({
@@ -241,7 +349,7 @@
           mark: G.takeMark(clip, box.x1 - box.x0, tagMin),
           take: clip.take,
           takes: clip.takes,
-          selected: clip.id === selected,
+          selected: clip.id === selected && clip.id !== dragId,
         });
       }
     });
@@ -572,12 +680,84 @@
     preview = null;
   }
 
+  // クリップを押す: えらぶ。押したまま動かす: 動かす（Alt で複製）、左右のはし（part.clip.edge）なら長さ。録音中とカウントイン中はえらぶだけ。
+  const busy = $derived(transport.state === "recording" || transport.state === "countIn");
+  const meter = $derived({ num: song.meterNum, den: song.meterDen });
+  let lanesBox = $state<HTMLElement>();
+  let laneCursor = $state<CD.ArrangeCursor>("default");
+  let readingAt = $state<{ x: number; y: number } | null>(null);
+  let readingW = $state(0);
+  let readingH = $state(0);
+
+  function lanePoint(e: MouseEvent): { x: number; y: number } {
+    const r = lanesBox!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  const hitAt = (p: { x: number; y: number }) => CD.clipHit(view, dims, song.tracks, p.x, p.y, metrics.px("part.clip.edge"));
+  const dragInput = (shift: boolean): CD.DragInput => ({
+    view,
+    dims,
+    tracks: song.tracks,
+    step: shift ? null : perBar,
+    stillPx: still(),
+  });
+
   function lanesDown(e: PointerEvent): void {
     if (e.button !== 0) return;
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const id = G.clipAt(view, dims, song.tracks, e.clientX - r.left, e.clientY - r.top);
+    const p = lanePoint(e);
+    const hit = hitAt(p);
+    const id = hit?.clip.id ?? null;
     if (id !== selected) send({ type: "selectClip", clip: id });
+    if (!hit || busy) return;
+    clipPending = null;
+    clipDrag = CD.startClipDrag(hit, p.x, p.y, { shift: e.shiftKey, alt: e.altKey });
+    laneCursor = CD.clipDragCursor(clipDrag);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   }
+  function lanesMove(e: PointerEvent): void {
+    const p = lanePoint(e);
+    const d = clipDrag;
+    if (!d) {
+      laneCursor = busy ? "default" : CD.hoverCursor(hitAt(p), e.altKey);
+      return;
+    }
+    const next = CD.dragClipTo(d, dragInput(e.shiftKey), p.x, p.y, { shift: e.shiftKey, alt: e.altKey });
+    if (next !== d) {
+      clipDrag = next;
+      dragReading.text = CD.clipDragReading(next, meter);
+      laneCursor = CD.clipDragCursor(next);
+    }
+    const r = timeBox!.getBoundingClientRect();
+    readingAt = dragReading.text ? { x: e.clientX - r.left, y: e.clientY - r.top } : null;
+  }
+  function lanesUp(): void {
+    const d = clipDrag;
+    if (!d) return;
+    clipDrag = null;
+    dragReading.text = null;
+    readingAt = null;
+    const command = CD.clipDragCommand(d, song.tracks);
+    if (!command) return;
+    clipPending = d;
+    pendingRev = null;
+    void send(command).then((rev) => (pendingRev = rev ?? -Infinity));
+  }
+  function cancelClipDrag(): boolean {
+    if (!clipDrag) return false;
+    clipDrag = null;
+    dragReading.text = null;
+    readingAt = null;
+    laneCursor = "default";
+    return true;
+  }
+  onMount(() => onDragCancel(cancelClipDrag));
+  onDestroy(cancelClipDrag);
+
+  const readingBox = $derived.by(() => {
+    if (!readingAt || !dragReading.text) return null;
+    const off = metrics.px("part.reading.offset");
+    return { left: Math.max(0, readingAt.x - off - readingW), top: Math.max(0, readingAt.y - off - readingH) };
+  });
 
   const lineRec = $derived(transport.state === "countIn" || transport.state === "recording");
 
@@ -703,7 +883,12 @@
         role="presentation"
         use:glRegion={"arrangeLanes"}
         use:glSlot={{ kind: "arrangeGrid", barPx, firstBarX: -view.scrollX }}
+        bind:this={lanesBox}
+        style:cursor={laneCursor}
         onpointerdown={lanesDown}
+        onpointermove={lanesMove}
+        onpointerup={lanesUp}
+        onpointercancel={cancelClipDrag}
       >
         {#each song.tracks as track (track.number)}
           <div class="lane"></div>
@@ -712,6 +897,18 @@
         <div class="rec-host" use:glRegion={"recordingClip"}>
           {#if rec}
             <div class="rec-tail" use:recordingTail></div>
+          {/if}
+          {#if dragPicture}
+            {@const at = dragPicture.place}
+            <div
+              class="drag-clip"
+              style:left="{at.left}px"
+              style:top="{at.top}px"
+              style:width="{at.width}px"
+              style:height="{at.height}px"
+              style:transform={dragShift}
+              use:draggedClip
+            ></div>
           {/if}
         </div>
         <div class="labels">
@@ -738,6 +935,19 @@
               {t("arrange.recordingClip", { take: rec.take })}
             </div>
           {/if}
+          {#if dragPicture}
+            {@const c = dragPicture.label}
+            <div class="clip-label" style:left="{c.x}px" style:top="{c.y}px" style:width="{c.w}px" style:transform={dragShift}>
+              {#if c.mark === "square"}
+                <span class="take-square"></span>
+              {:else}
+                {#if c.mark === "tag"}
+                  <span class="m-num take-tag selected">{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
+                {/if}
+                <span class="clip-name">{c.name}</span>
+              {/if}
+            </div>
+          {/if}
         </div>
         {#if switcher}
           <div class="switcher" role="presentation" onpointerdown={(e) => e.stopPropagation()} style:left="{switcher.x}px" style:top="{switcher.y}px" style:height="{switchH}px">
@@ -753,6 +963,18 @@
         {/if}
         <HScrollbar total={Math.max(scrollRight, view.scrollX) + viewWidth} visible={viewWidth} offset={view.scrollX} onscroll={barScroll} />
       </div>
+      {#if readingBox}
+        <div
+          class="m-num reading"
+          style:left="{readingBox.left}px"
+          style:top="{readingBox.top}px"
+          bind:clientWidth={readingW}
+          bind:clientHeight={readingH}
+          data-test="arrange-reading"
+        >
+          {dragReading.text}
+        </div>
+      {/if}
       <div class="play-line" class:rec={lineRec} bind:this={timeLine}></div>
       <div class="layer">{@render children?.()}</div>
     </div>
@@ -932,9 +1154,12 @@
     background: var(--color-gray-3);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
+  .ruler.bars,
+  .lanes {
+    touch-action: none;
+  }
   .ruler.bars {
     cursor: default;
-    touch-action: none;
   }
   .bar-number {
     position: absolute;
@@ -962,8 +1187,22 @@
     z-index: 1;
     pointer-events: none;
   }
-  .rec-tail {
+  .rec-tail,
+  .drag-clip {
     position: absolute;
+  }
+  .reading {
+    position: absolute;
+    z-index: 10;
+    height: var(--part-reading-height);
+    padding: 0 var(--part-reading-pad-x);
+    display: flex;
+    align-items: center;
+    background: var(--color-gray-0);
+    border: var(--line-hair) solid var(--color-gray-8);
+    color: var(--color-gray-10);
+    white-space: nowrap;
+    pointer-events: none;
   }
   .labels {
     position: absolute;

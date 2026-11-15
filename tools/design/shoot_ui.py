@@ -54,6 +54,11 @@ BOARDS = {
     "noteListBroken": "R3-Lanes",
     "ccLanes": "R3-Lanes",
     "ccOtherMenu": "A-PianoRoll",
+    "arrangeTrimmed": "R3-Arrange",
+    "arrangeTrimmedRoll": None,
+    "arrangeMoveDrag": "R3-Arrange",
+    "arrangeCopyDrag": "R3-Arrange",
+    "arrangeTrimDrag": "R3-Arrange",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -64,6 +69,22 @@ const input = document.querySelector('[data-test="note-list-field"]');
 input.value = "%s";
 input.dispatchEvent(new Event("input", { bubbles: true }));
 """
+
+# Presses "ベース A" (track 2, bars 5–8) of the scene arrangeTrimmed and drags it without letting go (R3-Arrange).
+# Arguments: x pressed, x moved to (CSS px from the left of the lanes, 1 bar = 64 at 100 %), and the PointerEvent options.
+DRAG_CLIP = """
+const lanes = document.querySelector(".lanes");
+const r = lanes.getBoundingClientRect();
+const ev = (type, x, o) => lanes.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + x, clientY: r.top + 94, ...o }));
+ev("pointerdown", %d, %s);
+ev("pointermove", (%d + %d) / 2, %s);
+ev("pointermove", %d, %s);
+"""
+
+
+def drag_clip(x0, x1, opts="{}"):
+    return "js:" + DRAG_CLIP % (x0, opts, x0, x1, opts, x1, opts)
+
 
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 # A selector that starts with "js:" is run as a script instead (it may await).
@@ -78,6 +99,9 @@ CLICKS = {
     "ccLanes": ("pianoRollCc", ('[data-test="pr-cc-sustain"]', '[data-test="pr-cc-pitchBend"]', '[data-test="pr-cc-other"]',
                                 '[data-test="pr-cc-other-menu"] [data-row="0"]')),
     "ccOtherMenu": ("pianoRollCc", '[data-test="pr-cc-other"]'),
+    "arrangeMoveDrag": ("arrangeTrimmed", drag_clip(300, 364)),
+    "arrangeCopyDrag": ("arrangeTrimmed", drag_clip(300, 556, "{ altKey: true }")),
+    "arrangeTrimDrag": ("arrangeTrimmed", drag_clip(509, 413, "{ shiftKey: true }")),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -89,13 +113,15 @@ ONLY = {
     "pianoRollWide": [(1920, 1080, 100)],
     "pianoRollPlay": [(1280, 800, 100)],
     "pianoRollRec": [(1280, 800, 100)],
-  for (const selector of JSON.parse(selectors)) {
-    const expression = selector.startsWith("js:")
-      ? `(async () => {${selector.slice(3)}})()`
-      : `document.querySelector(${JSON.stringify(selector)}).click()`;
-    await call("Runtime.evaluate", { expression, awaitPromise: true });
-    await sleep(800);
-  }
+    "noteListTyping": [(1280, 800, 100)],
+    "noteListBroken": [(1280, 800, 100)],
+    "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 150)],
+    "ccOtherMenu": [(1920, 1080, 100)],
+    "arrangeTrimmed": [(1280, 800, 100), (1280, 800, 150)],
+    "arrangeTrimmedRoll": [(1280, 800, 100)],
+    "arrangeMoveDrag": [(1280, 800, 100)],
+    "arrangeCopyDrag": [(1280, 800, 100)],
+    "arrangeTrimDrag": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 
@@ -124,13 +150,11 @@ try {
   const call = (method, params = {}) => new Promise((r) => { waiting.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
   await call("Emulation.setDeviceMetricsOverride", { width: Number(w), height: Number(h), deviceScaleFactor: 1, mobile: false });
   await sleep(2500);
-  const expression = selector.startsWith("js:")
-    ? `(async () => {${selector.slice(3)}})()`
-    : `document.querySelector(${JSON.stringify(selector)}).click()`;
-  await call("Runtime.evaluate", { expression, awaitPromise: true });
-  await sleep(800);
   for (const selector of JSON.parse(selectors)) {
-    await call("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)}).click()` });
+    const expression = selector.startsWith("js:")
+      ? `(async () => {${selector.slice(3)}})()`
+      : `document.querySelector(${JSON.stringify(selector)}).click()`;
+    await call("Runtime.evaluate", { expression, awaitPromise: true });
     await sleep(800);
   }
   const shot = await call("Page.captureScreenshot", { format: "png" });

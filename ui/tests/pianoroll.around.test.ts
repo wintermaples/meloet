@@ -94,8 +94,9 @@ describe("鳴っている音（モック F-PRPlay「鳴っている音 C3 E3 G3 
     expect(soundingKeys(take, clip, 480)).toEqual([60]);
     expect(soundingKeys(take, { ...clip, end: 400 }, 400)).toEqual([]);
     expect(soundingKeys(take, { ...clip, start: 1920, end: 3840 }, 1920)).toEqual([60, 64]);
-    // クリップがテイクの頭を切っていると、切られたノートはクリップの外。
-    expect(soundingKeys(take, { ...clip, takeOffset: -480 }, 0)).toEqual([60]);
+    // クリップがテイクの頭を切っていると、始まりが切られた所にあるノートは鳴らない（Rust の track_events と同じ）。
+    expect(soundingKeys(take, { ...clip, takeOffset: -480 }, 0)).toEqual([]);
+    expect(soundingKeys({ ...take, starts: [0, 480] }, { ...clip, takeOffset: -480 }, 0)).toEqual([60]);
   });
 
   it("クリップのテイクを取りにいっている間（前のテイクのまま）や、テイクもクリップもないときは何も鳴らない", () => {

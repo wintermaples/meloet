@@ -275,6 +275,13 @@
 "w": 1280,
 "h": 280,
 "title": "前のテイクをえらびなおす（クリップの札と、えらんだときの切りかえ）"
+},
+"F-Zoom.dc.html": {
+"x": 1360,
+"y": 11080,
+"w": 1280,
+"h": 280,
+"title": "拡大率をえらぶ所（状態行の右はし。ひらいた状態。例は、画面が 1200×700 のとき）"
 }
 },
 "order": [
@@ -315,7 +322,8 @@
 "F-ParamNoWindow.dc.html",
 "F-WindowOpen.dc.html",
 "F-ShelfDual.dc.html",
-"F-Takes.dc.html"
+"F-Takes.dc.html",
+"F-Zoom.dc.html"
 ],
 "notes": {
 "row1": {
@@ -384,7 +392,7 @@
 "row10": {
 "x": 0,
 "y": 10820,
-"text": "10 作る係の問い 25〜33 で足したもの",
+"text": "10 作る係の問い 25〜36 で足したもの",
 "kind": "title1",
 "maxW": 8080
 }

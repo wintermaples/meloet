@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>前のテイクをえらびなおす（クリップの札と、えらんだときの切りかえ）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{color:#9A9A9A;white-space:nowrap}
+.w{color:#F2F2F2}.a{color:#FFB000}.r{color:#FF3B30}
+.s6{font-weight:600}.t16{font-size:16px;line-height:20px}.t20{font-size:20px;line-height:24px}
+.f{display:flex}.fc{display:flex;flex-direction:column}.ac{align-items:center}.x1{flex:1;min-width:0;min-height:0}.nw{white-space:nowrap}
+.g4{gap:4px}.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}
+.rel{position:relative}.abs{position:absolute}.oh{overflow:hidden}
+.b{height:24px;min-width:28px;padding:0 8px;border:1px solid #3A3A3A;background:#222222;color:#D6D6D6;border-radius:1px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.b.on{color:#FFB000;border-color:#FFB000}
+.b.hi{color:#F2F2F2;border-color:#9A9A9A}
+.q{width:20px;height:20px;border:1px solid #3A3A3A;background:#121212;color:#9A9A9A;border-radius:1px;text-align:center;line-height:18px}
+.hd{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px;background:#222222;white-space:nowrap;flex-shrink:0}
+.rw{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px 0 28px;border-bottom:1px solid #222222;white-space:nowrap;flex-shrink:0}
+.tip{position:absolute;z-index:9;width:248px;padding:8px;background:#F2F2F2;color:#0A0A0A;border-radius:1px;white-space:normal}
+.fm{padding:0 4px;border:1px solid #5E5E5E;color:#9A9A9A;border-radius:1px}
+.vt{writing-mode:vertical-rl;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1280px;height:280px;display:flex;flex-direction:column;background:#121212;color:#D6D6D6;font-family:'IBM Plex Sans JP','Noto Sans JP',sans-serif;font-size:12px;line-height:16px;overflow:hidden"><div class="fc" style="padding:24px 0 0"><div class="f g16" style="align-items:baseline;padding:0 24px"><span class="t20 s6 w">前のテイクをえらびなおす</span><span class="l">テイクが 2 つ以上あるクリップに札が出る。えらぶと、すぐ上に切りかえが出る。見本は実物の大きさ</span></div><div class="f" style="margin-top:48px;height:64px;border-top:1px solid #2C2C2C;border-bottom:1px solid #2C2C2C"><div class="f" style="width:220px;flex-shrink:0;border-right:1px solid #3A3A3A;background:#1A1A1A"><div style="width:4px;background:#69E4E4"></div><div class="f ac g4" style="padding:0 8px"><span class="m l">1</span><span class="s6 w">ピアノ</span></div></div><div class="rel x1"><div class="abs oh f g4" style="align-items:flex-start;top:3px;bottom:3px;left:16px;width:176px;padding:1px 3px;background:#222222;border:1px solid #3A3A3A;border-top:2px solid #69E4E4"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">イントロ</span></div><div class="abs oh f g4" style="align-items:flex-start;top:3px;bottom:3px;left:208px;width:200px;padding:1px 3px;background:#222222;border:1px solid #3A3A3A;border-top:2px solid #69E4E4"><span class="m w" style="flex-shrink:0;padding:0 3px;border:1px solid #9A9A9A;line-height:14px">2/3</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Aメロ</span></div><div class="abs oh f g4" style="align-items:flex-start;top:3px;bottom:3px;left:424px;width:200px;padding:1px 3px;background:#222222;border:1px solid #FFB000;border-top:2px solid #FFB000"><span class="m w" style="flex-shrink:0;padding:0 3px;border:1px solid #FFB000;line-height:14px">2/3</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Aメロ</span></div><div class="abs f ac g4" style="left:424px;top:-24px;height:24px;padding:0 4px;background:#222222;border:1px solid #FFB000;white-space:nowrap;z-index:3"><button class="q" aria-label="前のテイク">◂</button><span class="w">テイク <span class="m">2 / 3</span></span><button class="q" aria-label="次のテイク">▸</button><span class="m l">T</span></div><div class="abs oh f g4" style="align-items:flex-start;top:3px;bottom:3px;left:700px;width:44px;padding:1px 3px;background:#222222;border:1px solid #3A3A3A;border-top:2px solid #69E4E4"><span class="m w" style="flex-shrink:0;padding:0 3px;border:1px solid #9A9A9A;line-height:14px">2/3</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">サビ</span></div><div class="abs oh f g4" style="align-items:flex-start;top:3px;bottom:3px;left:780px;width:20px;padding:1px 3px;background:#222222;border:1px solid #3A3A3A;border-top:2px solid #69E4E4"><div class="abs" style="left:0;top:0;width:6px;height:6px;background:#F2F2F2"></div></div><div class="abs oh f g4" style="align-items:flex-start;top:3px;bottom:3px;left:880px;width:20px;padding:1px 3px;background:#222222;border:1px solid #FFB000;border-top:2px solid #FFB000"><div class="abs" style="left:0;top:0;width:6px;height:6px;background:#F2F2F2"></div></div><div class="abs f ac g4" style="left:880px;top:-24px;height:24px;padding:0 4px;background:#222222;border:1px solid #FFB000;white-space:nowrap;z-index:3"><button class="q" aria-label="前のテイク">◂</button><span class="w">テイク <span class="m">2 / 3</span></span><button class="q" aria-label="次のテイク">▸</button><span class="m l">T</span></div></div></div><div class="rel" style="margin-left:220px;height:80px"><span class="abs l" style="left:16px;top:8px;width:176px;white-space:normal">テイクが 1 つ。札なし</span><span class="abs l" style="left:208px;top:8px;width:200px;white-space:normal">テイクが 3 つあり、いまは 2 つ目</span><span class="abs l" style="left:424px;top:8px;width:240px;white-space:normal">えらんだ。◂ ▸ か T で切りかえる。取り消せる</span><span class="abs l" style="left:700px;top:8px;width:64px;white-space:normal">短い。名前はちぢむ</span><span class="abs l" style="left:780px;top:8px;width:88px;white-space:normal">幅 28 未満。四角の印だけ</span><span class="abs l" style="left:880px;top:8px;width:200px;white-space:normal">短くても、えらべば切りかえは出る</span></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":280}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

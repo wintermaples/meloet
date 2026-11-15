@@ -859,6 +859,7 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             pitch_bend: shared.held.bend.load(Relaxed),
             load_permille: steady_load(open, meters.load_permille(), last.as_ref()),
             master_peak: meters.take_master_peak(),
+            transport: None,
             track_peaks,
         };
         let fresh = hub.take_telemetry_fresh();

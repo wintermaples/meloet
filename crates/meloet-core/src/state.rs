@@ -8,10 +8,10 @@ use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
 use meloet_model::{InstrumentRef, Song};
 use meloet_protocol::{
-    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
-    Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
-    LowerBandView, MeterSize, OutputsView, SettingsDialogView, SongView, StatusMessage, StatusView,
-    TrackView, Unusable, WorkspaceView,
+    AppState, ArrangeView, AudioView, Availability, Band, ChooserView, ChosenState, Command,
+    EndpointView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView,
+    LayoutView, LinkKind, LowerBandView, MeterSize, OutputsView, SettingsDialogView, SongView,
+    StatusMessage, StatusView, TrackView, TransportState, TransportView, Unusable, WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, SidePanel, WindowSize};
@@ -500,6 +500,22 @@ impl Model {
                     self.hint_dismissed = true;
                 }
             }
+            Command::PlayStop
+            | Command::Record
+            | Command::GoToStart
+            | Command::Locate { .. }
+            | Command::SetTempo { .. }
+            | Command::SetMeter { .. }
+            | Command::SetCountIn { .. }
+            | Command::ToggleMetronome
+            | Command::ToggleLoop
+            | Command::SetLoop { .. }
+            | Command::ToggleArm { .. }
+            | Command::SelectClip { .. }
+            | Command::DeleteSelected
+            | Command::StepTake { .. }
+            | Command::Undo
+            | Command::Redo => {}
         }
         None
     }
@@ -692,6 +708,17 @@ impl Model {
         let status = self.status(chosen_state);
         AppState {
             song: song_view(&self.song),
+            transport: TransportView {
+                state: TransportState::Stopped,
+                position: 0,
+                metronome: false,
+                count_in_bars: 1,
+                count_in_beats: 4,
+                can_play: false,
+                can_record: false,
+                recording: None,
+            },
+            arrange: ArrangeView::default(),
             workspace: WorkspaceView {
                 scale: self.scale,
                 viewport_width: self.viewport.0,
@@ -879,6 +906,7 @@ fn song_view(song: &Song) -> SongView {
         meter_den: doc.meter.den(),
         tempo_changes: doc.tempo_changes.len() as u32,
         undo_count: 0,
+        redo_count: 0,
         note_count: 0,
         tracks: doc
             .tracks
@@ -891,9 +919,13 @@ fn song_view(song: &Song) -> SongView {
                     InstrumentRef::Placeholder => InstrumentKind::Placeholder,
                 },
                 gain_db: t.gain_db as f32,
+                armed: song.session.armed == Some(t.id),
+                clips: Vec::new(),
             })
             .collect(),
         play_target: Some(song.session.play_target.0),
+        loop_range: None,
+        loop_on: false,
     }
 }
 

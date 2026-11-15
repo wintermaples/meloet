@@ -31,7 +31,7 @@ fn patches(messages: &Receiver<ServerMessage>) -> Vec<meloet_protocol::Patch> {
         .try_iter()
         .map(|m| match m {
             ServerMessage::Patch(patch) => patch,
-            ServerMessage::Event(e) => panic!("unexpected {e:?}"),
+            other => panic!("unexpected {other:?}"),
         })
         .collect()
 }

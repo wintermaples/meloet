@@ -4,17 +4,22 @@
 // numbers as crates/meloet-core/src/layout.rs, but meloet-core stays the rule book.
 
 import type { Transport } from "./session";
-import { TELEMETRY_KIND, TELEMETRY_VERSION } from "./telemetry";
+import { TAKE_KIND, TAKE_VERSION } from "./take";
+import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
 import {
   PROTOCOL_VERSION,
   type AppState,
   type Band,
   type Change,
+  type ClipView,
   type Command,
   type EndpointView,
   type LayoutView,
+  type LiveNote,
+  type LiveNotesSnapshot,
   type ServerMessage,
   type StatusMessage,
+  type TrackRef,
 } from "./types";
 
 // ---- the band rules (a copy of the numbers in meloet-core/src/layout.rs) ----
@@ -216,6 +221,9 @@ const PC_INPUTS = [
 
 const keyboard = (name: string, n = 1) => ({ id: `kb-${n}`, name, portName: name, address: `${23 + n}:0` });
 
+const PIANO: TrackRef = { number: 1, name: "ピアノ" };
+const NEW_SONG: StatusMessage = { id: "newSong", tempoBpm: 96, meterNum: 4, meterDen: 4, track: PIANO };
+
 export function fakeState(): AppState {
   const bands = new FakeBands(800);
   return {
@@ -226,10 +234,24 @@ export function fakeState(): AppState {
       meterDen: 4,
       tempoChanges: 0,
       undoCount: 0,
+      redoCount: 0,
       noteCount: 0,
-      tracks: [{ number: 1, name: "ピアノ", color: 1, instrument: "placeholder", gainDb: 0 }],
+      tracks: [{ number: 1, name: "ピアノ", color: 1, instrument: "placeholder", gainDb: 0, armed: true, clips: [] }],
       playTarget: 1,
+      loopRange: null,
+      loopOn: false,
     },
+    transport: {
+      state: "stopped",
+      position: 0,
+      metronome: false,
+      countInBars: 1,
+      countInBeats: 4,
+      canPlay: false,
+      canRecord: false,
+      recording: null,
+    },
+    arrange: { selectedClip: null, pianoRollClip: null },
     workspace: {
       scale: 100,
       viewportWidth: 1280,
@@ -255,7 +277,7 @@ export function fakeState(): AppState {
       outputDevice: null,
       midiInput: null,
     },
-    status: { message: { id: "newSong" } },
+    status: { message: NEW_SONG },
   };
 }
 
@@ -270,6 +292,8 @@ export interface FakeMeters {
   /** 1.0 = 0 dBFS */
   master?: [number, number];
   tracks?: [number, number][];
+  /** Where the listener is when the scene starts. It moves by `ticksPerUs`; scenes that stand for a mock use 0. */
+  position?: TransportReading;
 }
 
 interface Scene {
@@ -278,6 +302,7 @@ interface Scene {
   meters: FakeMeters;
   /** Keep every scrolling box (`data-gl-scroll`) scrolled to its end. */
   scrollToEnd?: boolean;
+  live: LiveNotesSnapshot;
 }
 
 interface SceneDef {
@@ -291,6 +316,8 @@ interface SceneDef {
   screen?: { width: number; height: number };
   /** The status line after the bands are open (a notice about what just happened). */
   after?(s: AppState): void;
+  /** The notes of the recording going on. */
+  live?: LiveNotesSnapshot;
 }
 
 const dbfs = (db: number) => 10 ** (db / 20);
@@ -304,6 +331,8 @@ function withKeyboard(s: AppState, name = "Keystation 49 MK3"): void {
 function withOutput(s: AppState): void {
   s.outputs.chosen = HEADPHONES.id;
   s.outputs.chosenState = "ready";
+  s.transport.canPlay = true;
+  s.transport.canRecord = s.song.tracks.some((t) => t.armed);
   Object.assign(s.audio, {
     running: true,
     sampleRate: 48000,
@@ -324,7 +353,7 @@ function twoKeyboards(s: AppState): void {
 function ready(s: AppState): void {
   withKeyboard(s);
   withOutput(s);
-  s.status.message = { id: "newSong" };
+  s.status.message = NEW_SONG;
 }
 
 function bufferFixed(s: AppState): void {
@@ -349,6 +378,83 @@ function settingsAdvFixed(s: AppState): void {
 
 const QUIET: FakeMeters = { velocity: 83, loadPermille: 90 };
 
+// ---- takes (scenes recording, takes) ----
+
+/** Ticks in a bar of 4/4. */
+const BAR = 1920;
+
+interface FakeTake {
+  id: number;
+  length: number;
+  notes: { start: number; length: number; key: number; velocity: number }[];
+}
+
+/** A made-up phrase of `count` notes over `bars` bars; the same seed gives the same notes. */
+function phrase(id: number, bars: number, count: number, seed: number): FakeTake {
+  const length = bars * BAR;
+  const step = Math.floor(length / count);
+  const notes = Array.from({ length: count }, (_, i) => {
+    const r = (seed * 7919 + i * 104729) % 97;
+    return { start: i * step, length: Math.max(60, step - 40 - (r % 3) * 60), key: 55 + ((r * 5 + i * 3) % 24), velocity: 60 + (r % 50) };
+  });
+  return { id, length, notes };
+}
+
+/** Clip and take ids come from one counter, as in the song model. */
+const FAKE_TAKES = new Map(
+  [phrase(2, 4, 23, 1), phrase(4, 2, 12, 2), phrase(5, 4, 19, 3), phrase(6, 4, 23, 4), phrase(7, 4, 17, 5)].map((t) => [t.id, t]),
+);
+
+function fakeClip(id: number, name: string, fromBar: number, toBar: number, take: number, takeIds: number[]): ClipView {
+  const takeId = takeIds[take - 1]!;
+  return {
+    id,
+    name,
+    start: (fromBar - 1) * BAR,
+    end: (toBar - 1) * BAR,
+    take,
+    takes: takeIds.length,
+    takeId,
+    takeOffset: 0,
+    noteCount: FAKE_TAKES.get(takeId)!.notes.length,
+  };
+}
+
+/** Writes the take binary (docs/architecture.md 3-4). Notes only: the fake takes have no controls. */
+export function encodeTake(t: FakeTake): ArrayBuffer {
+  const buf = new ArrayBuffer(20 + 12 * t.notes.length);
+  const v = new DataView(buf);
+  v.setUint8(0, TAKE_KIND);
+  v.setUint8(1, TAKE_VERSION);
+  v.setUint32(4, t.id, true);
+  v.setUint32(8, t.length, true);
+  v.setUint32(12, t.notes.length, true);
+  v.setUint32(16, 0, true);
+  t.notes.forEach((n, i) => {
+    const p = 20 + 12 * i;
+    v.setUint32(p, n.start, true);
+    v.setUint32(p + 4, n.length, true);
+    v.setUint8(p + 8, n.key);
+    v.setUint8(p + 9, n.velocity);
+  });
+  return buf;
+}
+
+const NO_LIVE: LiveNotesSnapshot = { seq: 0, recording: null, notes: [] };
+
+/** Recording from bar 5; the listener is at 7.3.240, with C4 E4 G4 held since 7.3.000. */
+const RECORDING_LIVE: LiveNotesSnapshot = {
+  seq: 14,
+  recording: 1,
+  notes: [
+    ...Array.from({ length: 11 }, (_, i): LiveNote => {
+      const r = (i * 37) % 11;
+      return { lap: 0, index: i, key: 57 + ((r * 7) % 19), velocity: 70 + r * 3, start: 4 * BAR + i * 440, length: 200 + r * 20 };
+    }),
+    ...[60, 64, 67].map((key, i): LiveNote => ({ lap: 0, index: 11 + i, key, velocity: 87, start: 6 * BAR + 960, length: null })),
+  ],
+};
+
 export const SCENES: Record<string, SceneDef> = {
   connect1: { setup: (s) => (s.status.message = { id: "searchingKeyboard" }), meters: { loadPermille: 90 } },
   connect2: {
@@ -365,7 +471,7 @@ export const SCENES: Record<string, SceneDef> = {
       withKeyboard(s);
       withOutput(s);
       s.workspace.hint = "soundCameOut";
-      s.status.message = { id: "outputChosen", output: HEADPHONES.name };
+      s.status.message = { id: "outputChosen", output: HEADPHONES.name, track: PIANO };
     },
     meters: {
       keys: [60, 64, 67],
@@ -404,6 +510,55 @@ export const SCENES: Record<string, SceneDef> = {
       tracks: Array.from({ length: 16 }, (_, i): [number, number] => [dbfs(-3 - 2 * i), dbfs(-4 - 2 * i)]),
     },
   },
+  // The mock F-ArrangeRec without the loop: recording to the piano from bar 5, over a clip with one take.
+  recording: {
+    setup(s) {
+      ready(s);
+      s.song.undoCount = 12;
+      s.song.loopRange = { start: 4 * BAR, end: 8 * BAR };
+      s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "ピアノ", 5, 7, 1, [4])];
+      s.transport.state = "recording";
+      s.transport.position = 4 * BAR;
+      s.transport.metronome = true;
+      s.transport.recording = { id: 1, track: 1, from: 4 * BAR, take: 2, clip: 3, lap: 0 };
+      s.status.message = { id: "recording", track: PIANO, take: 2 };
+    },
+    meters: {
+      keys: [60, 64, 67],
+      velocity: 87,
+      sustain: 127,
+      modulation: 12,
+      loadPermille: 140,
+      master: [dbfs(-6.2), dbfs(-7.0)],
+      tracks: [[dbfs(-6.2), dbfs(-7.0)]],
+      position: { tick: 6 * BAR + 960 + 240, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 },
+    },
+    live: RECORDING_LIVE,
+  },
+  // The mock F-Connect4: a new song, the third beat of a one-bar count-in.
+  countIn: {
+    setup(s) {
+      ready(s);
+      s.transport.state = "countIn";
+      s.transport.metronome = true;
+      s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+      s.status.message = { id: "countingIn", beats: 4 };
+    },
+    meters: { ...QUIET, position: { tick: -720, ticksPerUs: 0, state: "countIn", countInBeatsLeft: 2, lap: 0 } },
+  },
+  // The mock F-Takes: the clip "Aメロ" has 3 takes, shows the second, and is selected; the piano roll shows it.
+  takes: {
+    setup(s) {
+      ready(s);
+      s.song.undoCount = 3;
+      s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
+      s.song.noteCount = FAKE_TAKES.get(6)!.notes.length;
+      s.arrange = { selectedClip: 3, pianoRollClip: 3 };
+      s.status.message = null;
+    },
+    bands: ["pianoRoll"],
+    meters: { ...QUIET, position: { tick: 4 * BAR, ticksPerUs: 0, state: "stopped", countInBeatsLeft: 0, lap: 0 } },
+  },
   // The mock "拡大率をえらぶ所": a 1200x700 screen, 150 % does not fit, 125 % is on.
   zoom: { setup: ready, scale: 125, screen: { width: 1200, height: 700 }, meters: QUIET },
   // The mixer was open, then the piano roll was opened in a window too low for both.
@@ -431,7 +586,7 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   state.workspace.unfitScales = unfit;
   state.workspace.layout = bands.layout();
   def.after?.(state);
-  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd };
+  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE };
 }
 
 function sceneFromUrl(): Scene | null {
@@ -446,9 +601,18 @@ function sceneFromUrl(): Scene | null {
 
 // ---- telemetry ----
 
-/** Writes the telemetry binary (docs/architecture.md 3-3). */
-export function encodeTelemetry(m: FakeMeters, seq: number, sentUs: number, trackCount: number): ArrayBuffer {
-  const buf = new ArrayBuffer(48 + 8 * trackCount);
+const STATE_BYTES = { stopped: 0, countIn: 1, playing: 2, recording: 3 } as const;
+
+/** Writes the telemetry binary (docs/architecture.md 3-3). `position` is what is heard at `sentUs`. */
+export function encodeTelemetry(
+  m: FakeMeters,
+  seq: number,
+  sentUs: number,
+  trackCount: number,
+  position: TransportReading | null = m.position ?? null,
+): ArrayBuffer {
+  const H = TELEMETRY_HEADER_LEN;
+  const buf = new ArrayBuffer(H + 8 * trackCount);
   const v = new DataView(buf);
   v.setUint8(0, TELEMETRY_KIND);
   v.setUint8(1, TELEMETRY_VERSION);
@@ -461,15 +625,22 @@ export function encodeTelemetry(m: FakeMeters, seq: number, sentUs: number, trac
   v.setUint8(32, m.velocity ?? 0);
   v.setUint8(33, m.sustain ?? 0);
   v.setUint8(34, m.modulation ?? 0);
-  v.setUint8(35, m.master && (m.master[0] > 0 || m.master[1] > 0) ? 1 : 0);
+  v.setUint8(35, (m.master && (m.master[0] > 0 || m.master[1] > 0) ? 1 : 0) | (position ? 4 : 0));
   v.setInt16(36, m.pitchBend ?? 0, true);
   v.setUint16(38, m.loadPermille ?? 0, true);
   v.setFloat32(40, m.master?.[0] ?? 0, true);
   v.setFloat32(44, m.master?.[1] ?? 0, true);
+  if (position) {
+    v.setFloat64(48, position.tick, true);
+    v.setFloat64(56, position.ticksPerUs, true);
+    v.setUint8(64, STATE_BYTES[position.state]);
+    v.setUint16(66, position.countInBeatsLeft, true);
+    v.setUint32(68, position.lap, true);
+  }
   for (let i = 0; i < trackCount; i++) {
     const [l, r] = m.tracks?.[i] ?? [0, 0];
-    v.setFloat32(48 + 8 * i, l, true);
-    v.setFloat32(52 + 8 * i, r, true);
+    v.setFloat32(H + 8 * i, l, true);
+    v.setFloat32(H + 4 + 8 * i, r, true);
   }
   return buf;
 }
@@ -607,7 +778,10 @@ export function createFakeTransport(initial?: AppState): Transport {
       if (scene) {
         let seq = 0;
         setInterval(() => {
-          onTelemetry(encodeTelemetry(scene.meters, ++seq, nowUs(), state.song.tracks.length));
+          const sent = nowUs();
+          const p = scene.meters.position;
+          const position = p ? { ...p, tick: p.tick + sent * p.ticksPerUs } : null;
+          onTelemetry(encodeTelemetry(scene.meters, ++seq, sent, state.song.tracks.length, position));
           if (scene.scrollToEnd) for (const el of document.querySelectorAll("[data-gl-scroll]")) el.scrollTop = el.scrollHeight;
         }, 1000 / 60);
       }
@@ -627,6 +801,14 @@ export function createFakeTransport(initial?: AppState): Transport {
     },
     async clock() {
       return nowUs();
+    },
+    async takeNotes(id) {
+      const take = FAKE_TAKES.get(id);
+      if (!take) throw new Error(`fake: no take ${id}`);
+      return encodeTake(take);
+    },
+    async liveNotes() {
+      return scene?.live ?? NO_LIVE;
     },
   };
 }

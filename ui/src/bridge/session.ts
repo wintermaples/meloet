@@ -8,6 +8,8 @@ import {
   type Command,
   type Event,
   type HelloReply,
+  type LiveNotes,
+  type LiveNotesSnapshot,
   type Patch,
   type SendReply,
   type ServerMessage,
@@ -25,6 +27,9 @@ export interface Transport {
   send(command: Command): Promise<SendReply>;
   /** Rust's CLOCK_MONOTONIC in microseconds. */
   clock(): Promise<number>;
+  /** The take binary (docs/architecture.md 3-4). */
+  takeNotes(id: number): Promise<ArrayBuffer>;
+  liveNotes(): Promise<LiveNotesSnapshot>;
 }
 
 export interface Handlers {
@@ -32,6 +37,8 @@ export interface Handlers {
   onState(state: AppState, rev: number): void;
   /** Key on/off, pedal, bend: called the moment the message arrives. */
   onEvent?(event: Event): void;
+  /** Notes of the recording going on, in Channel order. */
+  onLiveNotes?(notes: LiveNotes): void;
   onTelemetry?(telemetry: Telemetry): void;
   /** A snapshot that failed after connect, or telemetry that could not be read. */
   onError?(error: unknown): void;
@@ -43,6 +50,8 @@ export interface Connection {
   /** `rustMonoUs ≈ performance.now() * 1000 + offset`. */
   clockOffsetUs(rounds?: number): Promise<number>;
   rev(): number;
+  takeNotes(id: number): Promise<ArrayBuffer>;
+  liveNotes(): Promise<LiveNotesSnapshot>;
 }
 
 export class ProtocolVersionError extends Error {
@@ -130,6 +139,7 @@ export async function connectWith(
 
   function onMessage(message: ServerMessage): void {
     if (message.kind === "event") handlers.onEvent?.(message);
+    else if (message.kind === "liveNotes") handlers.onLiveNotes?.(message);
     else onPatch(message);
   }
 
@@ -170,5 +180,7 @@ export async function connectWith(
       return offset;
     },
     rev: () => current?.rev ?? 0,
+    takeNotes: (id) => transport.takeNotes(id),
+    liveNotes: () => transport.liveNotes(),
   };
 }

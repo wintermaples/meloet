@@ -82,6 +82,7 @@ export function telemetryWith(t: Partial<Omit<Telemetry, "keys">> & { keys?: num
     pitchBend: 0,
     loadPermille: 0,
     masterPeak: [0, 0],
+    position: null,
     trackPeaks: new Float32Array(2),
     ...t,
     keys,

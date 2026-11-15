@@ -7,7 +7,8 @@ use meloet_protocol::{AppState, Event, Patch, ServerMessage, Snapshot};
 
 /// Returns false when the receiver is gone; the sink is then dropped.
 pub type MessageSink = Box<dyn Fn(ServerMessage) -> bool + Send>;
-/// Gets one telemetry message (version 1 binary). Returns false when the receiver is gone.
+/// Gets one telemetry message (the binary of docs/architecture.md 3-3). Returns false when the
+/// receiver is gone.
 pub type TelemetrySink = Box<dyn Fn(&[u8]) -> bool + Send>;
 
 pub(crate) struct Hub {

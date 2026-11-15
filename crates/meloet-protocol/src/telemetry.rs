@@ -1,14 +1,54 @@
-//! Telemetry binary, version 1, little-endian. The layout table is docs/architecture.md 3-3;
+//! Telemetry binary, version 2, little-endian. The layout table is docs/architecture.md 3-3;
 //! this file is the one place that fixes it. `ui/src/bridge/telemetry.ts` reads it.
 
 use std::fmt;
 
+use crate::TransportState;
+
 pub const TELEMETRY_KIND: u8 = 1;
-pub const TELEMETRY_VERSION: u8 = 1;
-pub const TELEMETRY_HEADER_LEN: usize = 48;
+pub const TELEMETRY_VERSION: u8 = 2;
+pub const TELEMETRY_HEADER_LEN: usize = 72;
 
 const FLAG_RUNNING: u8 = 1 << 0;
 const FLAG_MASTER_CLIPPED: u8 = 1 << 1;
+const FLAG_POSITION: u8 = 1 << 2;
+
+/// What the listener hears at the send time. The screen goes on from it with `ticks_per_us`
+/// until the next message: `tick + (now_us - sent_us) * ticks_per_us`.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct TransportReading {
+    /// Song position in ticks, with the fraction. Negative during a count-in from near 0.
+    pub tick: f64,
+    /// 0 while stopped.
+    pub ticks_per_us: f64,
+    pub state: TransportState,
+    /// Beats still to come before recording starts, the one sounding included; 0 outside a
+    /// count-in.
+    pub count_in_beats_left: u16,
+    /// Pass of the loop while recording, 0 for the first.
+    pub lap: u32,
+}
+
+impl TransportState {
+    fn to_u8(self) -> u8 {
+        match self {
+            TransportState::Stopped => 0,
+            TransportState::CountIn => 1,
+            TransportState::Playing => 2,
+            TransportState::Recording => 3,
+        }
+    }
+
+    fn from_u8(v: u8) -> Option<TransportState> {
+        Some(match v {
+            0 => TransportState::Stopped,
+            1 => TransportState::CountIn,
+            2 => TransportState::Playing,
+            3 => TransportState::Recording,
+            _ => return None,
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Telemetry {
@@ -29,6 +69,8 @@ pub struct Telemetry {
     pub load_permille: u16,
     /// Left, right. Largest value since the last send; 1.0 = 0 dBFS.
     pub master_peak: [f32; 2],
+    /// `None` before the audio has played anything.
+    pub transport: Option<TransportReading>,
     pub track_peaks: Vec<[f32; 2]>,
 }
 
@@ -39,6 +81,7 @@ pub enum TelemetryError {
     },
     WrongKind(u8),
     WrongVersion(u8),
+    WrongTransportState(u8),
     /// The length does not match the track count in the header.
     WrongLength {
         len: usize,
@@ -56,6 +99,7 @@ impl fmt::Display for TelemetryError {
             Self::WrongVersion(v) => {
                 write!(f, "telemetry version {v}, expected {TELEMETRY_VERSION}")
             }
+            Self::WrongTransportState(v) => write!(f, "telemetry transport state {v}"),
             Self::WrongLength { len, expected } => {
                 write!(f, "telemetry is {len} bytes, expected {expected}")
             }
@@ -95,12 +139,22 @@ impl Telemetry {
         if self.master_clipped {
             flags |= FLAG_MASTER_CLIPPED;
         }
+        if self.transport.is_some() {
+            flags |= FLAG_POSITION;
+        }
         out.push(flags);
         out.extend_from_slice(&self.pitch_bend.to_le_bytes());
         out.extend_from_slice(&self.load_permille.to_le_bytes());
         for v in self.master_peak {
             out.extend_from_slice(&v.to_le_bytes());
         }
+        let t = self.transport.unwrap_or_default();
+        out.extend_from_slice(&t.tick.to_le_bytes());
+        out.extend_from_slice(&t.ticks_per_us.to_le_bytes());
+        out.push(t.state.to_u8());
+        out.push(0);
+        out.extend_from_slice(&t.count_in_beats_left.to_le_bytes());
+        out.extend_from_slice(&t.lap.to_le_bytes());
         for pair in &self.track_peaks {
             for v in pair {
                 out.extend_from_slice(&v.to_le_bytes());
@@ -127,6 +181,8 @@ impl Telemetry {
             });
         }
         let flags = bytes[35];
+        let state = TransportState::from_u8(bytes[64])
+            .ok_or(TelemetryError::WrongTransportState(bytes[64]))?;
         let pair = |pos: usize| {
             [
                 f32::from_le_bytes(at(bytes, pos)),
@@ -146,6 +202,13 @@ impl Telemetry {
             pitch_bend: i16::from_le_bytes(at(bytes, 36)),
             load_permille: u16::from_le_bytes(at(bytes, 38)),
             master_peak: pair(40),
+            transport: (flags & FLAG_POSITION != 0).then(|| TransportReading {
+                tick: f64::from_le_bytes(at(bytes, 48)),
+                ticks_per_us: f64::from_le_bytes(at(bytes, 56)),
+                state,
+                count_in_beats_left: u16::from_le_bytes(at(bytes, 66)),
+                lap: u32::from_le_bytes(at(bytes, 68)),
+            }),
             track_peaks: (0..n).map(|i| pair(TELEMETRY_HEADER_LEN + 8 * i)).collect(),
         })
     }
@@ -163,6 +226,7 @@ impl Telemetry {
             && self.pitch_bend == other.pitch_bend
             && self.load_permille == other.load_permille
             && self.master_peak == other.master_peak
+            && self.transport == other.transport
             && self.track_peaks == other.track_peaks
     }
 }

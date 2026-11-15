@@ -2,7 +2,7 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Transport } from "./session";
-import type { HelloReply, SendReply, ServerMessage, Snapshot } from "./types";
+import type { HelloReply, LiveNotesSnapshot, SendReply, ServerMessage, Snapshot } from "./types";
 
 export const tauriTransport: Transport = {
   hello: (protocolVersion) => invoke<HelloReply>("hello", { protocolVersion }),
@@ -14,6 +14,9 @@ export const tauriTransport: Transport = {
   snapshot: () => invoke<Snapshot>("snapshot"),
   send: (command) => invoke<SendReply>("send", { command }),
   clock: () => invoke<number>("clock"),
+  // A raw reply (tauri::ipc::Response) arrives as an ArrayBuffer.
+  takeNotes: (id) => invoke<ArrayBuffer>("take_notes", { id }),
+  liveNotes: () => invoke<LiveNotesSnapshot>("live_notes"),
 };
 
 /** Development only: whether the key → screen measurement is on. */

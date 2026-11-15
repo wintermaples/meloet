@@ -1,0 +1,32 @@
+{
+  "controls": [
+    {
+      "kind": "cc",
+      "number": 64,
+      "tick": 0,
+      "value": 127
+    },
+    {
+      "kind": "pitchBend",
+      "number": 0,
+      "tick": 480,
+      "value": -8192
+    }
+  ],
+  "id": 16909060,
+  "length": 15360,
+  "notes": [
+    {
+      "key": 60,
+      "length": 240,
+      "start": 0,
+      "velocity": 100
+    },
+    {
+      "key": 127,
+      "length": 1,
+      "start": 84281096,
+      "velocity": 1
+    }
+  ]
+}

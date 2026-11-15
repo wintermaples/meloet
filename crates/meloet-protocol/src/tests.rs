@@ -17,16 +17,55 @@ fn sample_state() -> AppState {
             meter_num: 4,
             meter_den: 4,
             tempo_changes: 0,
-            undo_count: 0,
-            note_count: 0,
+            undo_count: 2,
+            redo_count: 1,
+            note_count: 23,
             tracks: vec![TrackView {
                 number: 1,
                 name: "ピアノ".into(),
                 color: 1,
                 instrument: InstrumentKind::Placeholder,
                 gain_db: 0.0,
+                armed: true,
+                clips: vec![ClipView {
+                    id: 4,
+                    name: "ピアノ".into(),
+                    start: 7680,
+                    end: 15360,
+                    take: 2,
+                    takes: 3,
+                    take_id: 6,
+                    take_offset: 0,
+                    note_count: 23,
+                }],
             }],
             play_target: Some(1),
+            loop_range: Some(TickSpan {
+                start: 7680,
+                end: 15360,
+            }),
+            loop_on: true,
+        },
+        transport: TransportView {
+            state: TransportState::Recording,
+            position: 7680,
+            metronome: true,
+            count_in_bars: 1,
+            count_in_beats: 4,
+            can_play: true,
+            can_record: true,
+            recording: Some(RecordingView {
+                id: 3,
+                track: 1,
+                from: 7680,
+                take: 4,
+                clip: Some(4),
+                lap: 1,
+            }),
+        },
+        arrange: ArrangeView {
+            selected_clip: None,
+            piano_roll_clip: Some(4),
         },
         workspace: WorkspaceView {
             scale: 100,
@@ -105,12 +144,53 @@ fn sample_telemetry() -> Telemetry {
         pitch_bend: -8192,
         load_permille: 137,
         master_peak: [0.5, 0.1],
+        transport: Some(TransportReading {
+            tick: -479.75,
+            ticks_per_us: 0.000_768,
+            state: TransportState::CountIn,
+            count_in_beats_left: 2,
+            lap: 0x0a0b_0c0d,
+        }),
         track_peaks: vec![[0.25, 0.75], [1.5, 0.0]],
     }
 }
 
-/// Writes `ui/src/bridge/generated/*.ts`. u64 becomes `number`: every u64 here is a rev or a
-/// time in microseconds, far below 2^53.
+fn sample_take() -> TakeNotes {
+    TakeNotes {
+        id: 0x0102_0304,
+        length: 15_360,
+        notes: vec![
+            TakeNote {
+                start: 0,
+                length: 240,
+                key: 60,
+                velocity: 100,
+            },
+            TakeNote {
+                start: 0x0506_0708,
+                length: 1,
+                key: 127,
+                velocity: 1,
+            },
+        ],
+        controls: vec![
+            TakeControl {
+                tick: 0,
+                value: TakeControlValue::Cc {
+                    number: 64,
+                    value: 127,
+                },
+            },
+            TakeControl {
+                tick: 480,
+                value: TakeControlValue::PitchBend(-8192),
+            },
+        ],
+    }
+}
+
+/// Writes `ui/src/bridge/generated/*.ts`. u64 becomes `number`: every u64 here is a rev, a
+/// time in microseconds, a song position in ticks or a message number, far below 2^53.
 #[test]
 fn export_typescript() {
     let dir = ui_dir().join("src/bridge/generated");
@@ -122,6 +202,7 @@ fn export_typescript() {
     ServerMessage::export_all(&cfg).unwrap();
     HelloReply::export_all(&cfg).unwrap();
     SendReply::export_all(&cfg).unwrap();
+    LiveNotesSnapshot::export_all(&cfg).unwrap();
     std::fs::write(
         dir.join("protocolVersion.ts"),
         format!(
@@ -155,6 +236,59 @@ fn command_json_shape() {
     let c: Command =
         serde_json::from_value(json!({"type": "settingsSelectOutput", "output": "x"})).unwrap();
     assert_eq!(c, Command::SettingsSelectOutput { output: "x".into() });
+
+    for (command, json) in [
+        (Command::PlayStop, json!({"type": "playStop"})),
+        (Command::Record, json!({"type": "record"})),
+        (Command::GoToStart, json!({"type": "goToStart"})),
+        (
+            Command::Locate { tick: 7680 },
+            json!({"type": "locate", "tick": 7680}),
+        ),
+        (
+            Command::SetTempo { bpm: 96.5 },
+            json!({"type": "setTempo", "bpm": 96.5}),
+        ),
+        (
+            Command::SetMeter { num: 6, den: 8 },
+            json!({"type": "setMeter", "num": 6, "den": 8}),
+        ),
+        (
+            Command::SetCountIn { bars: 2 },
+            json!({"type": "setCountIn", "bars": 2}),
+        ),
+        (Command::ToggleMetronome, json!({"type": "toggleMetronome"})),
+        (Command::ToggleLoop, json!({"type": "toggleLoop"})),
+        (
+            Command::SetLoop {
+                from_bar: 5,
+                to_bar: 9,
+            },
+            json!({"type": "setLoop", "fromBar": 5, "toBar": 9}),
+        ),
+        (
+            Command::ToggleArm { track: 1 },
+            json!({"type": "toggleArm", "track": 1}),
+        ),
+        (
+            Command::SelectClip { clip: Some(4) },
+            json!({"type": "selectClip", "clip": 4}),
+        ),
+        (
+            Command::SelectClip { clip: None },
+            json!({"type": "selectClip", "clip": null}),
+        ),
+        (Command::DeleteSelected, json!({"type": "deleteSelected"})),
+        (
+            Command::StepTake { delta: -1 },
+            json!({"type": "stepTake", "delta": -1}),
+        ),
+        (Command::Undo, json!({"type": "undo"})),
+        (Command::Redo, json!({"type": "redo"})),
+    ] {
+        assert_eq!(serde_json::to_value(&command).unwrap(), json);
+        assert_eq!(serde_json::from_value::<Command>(json).unwrap(), command);
+    }
 }
 
 #[test]
@@ -168,6 +302,25 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(v["state"]["song"]["tempoBpm"], 96.0);
     assert_eq!(v["state"]["song"]["tracks"][0]["instrument"], "placeholder");
     assert_eq!(v["state"]["song"]["tracks"][0]["gainDb"], 0.0);
+    assert_eq!(
+        v["state"]["song"]["tracks"][0]["clips"][0],
+        json!({"id": 4, "name": "ピアノ", "start": 7680, "end": 15360, "take": 2, "takes": 3,
+               "takeId": 6, "takeOffset": 0, "noteCount": 23})
+    );
+    assert_eq!(
+        v["state"]["song"]["loopRange"],
+        json!({"start": 7680, "end": 15360})
+    );
+    assert_eq!(v["state"]["transport"]["state"], "recording");
+    assert_eq!(v["state"]["transport"]["countInBars"], 1);
+    assert_eq!(
+        v["state"]["transport"]["recording"],
+        json!({"id": 3, "track": 1, "from": 7680, "take": 4, "clip": 4, "lap": 1})
+    );
+    assert_eq!(
+        v["state"]["arrange"],
+        json!({"selectedClip": null, "pianoRollClip": 4})
+    );
     assert_eq!(v["state"]["workspace"]["viewportWidth"], 1280.0);
     assert_eq!(v["state"]["workspace"]["unfitScales"], json!([150]));
     assert_eq!(v["state"]["workspace"]["layout"]["rightFront"], "shelf");
@@ -247,12 +400,80 @@ fn status_message_json_shape() {
             StatusMessage::KeyboardInputStopped,
             json!({"id": "keyboardInputStopped"}),
         ),
+        (
+            StatusMessage::OutputChosen {
+                output: "アナログヘッドフォン".into(),
+                track: Some(piano()),
+            },
+            json!({"id": "outputChosen", "output": "アナログヘッドフォン",
+                   "track": {"number": 1, "name": "ピアノ"}}),
+        ),
+        (
+            StatusMessage::NewSong {
+                tempo_bpm: 96.0,
+                meter_num: 4,
+                meter_den: 4,
+                track: None,
+            },
+            json!({"id": "newSong", "tempoBpm": 96.0, "meterNum": 4, "meterDen": 4,
+                   "track": null}),
+        ),
+        (
+            StatusMessage::CountingIn { beats: 4 },
+            json!({"id": "countingIn", "beats": 4}),
+        ),
+        (
+            StatusMessage::Recording {
+                track: piano(),
+                take: 2,
+            },
+            json!({"id": "recording", "track": {"number": 1, "name": "ピアノ"}, "take": 2}),
+        ),
+        (
+            StatusMessage::LoopRecording {
+                track: piano(),
+                from_bar: 5,
+                to_bar: 9,
+                lap: 2,
+            },
+            json!({"id": "loopRecording", "track": {"number": 1, "name": "ピアノ"},
+                   "fromBar": 5, "toBar": 9, "lap": 2}),
+        ),
+        (
+            StatusMessage::TakeSwitched {
+                track: piano(),
+                clip: "Aメロ".into(),
+                take: 2,
+                takes: 3,
+            },
+            json!({"id": "takeSwitched", "track": {"number": 1, "name": "ピアノ"},
+                   "clip": "Aメロ", "take": 2, "takes": 3}),
+        ),
+        (StatusMessage::NoArmedTrack, json!({"id": "noArmedTrack"})),
+        (
+            StatusMessage::UndoPending { count: 2 },
+            json!({"id": "undoPending", "count": 2}),
+        ),
+        (
+            StatusMessage::Summary {
+                loop_bars: Some(BarSpan { from: 5, to: 9 }),
+                nothing_selected: true,
+            },
+            json!({"id": "summary", "loopBars": {"from": 5, "to": 9}, "nothingSelected": true}),
+        ),
     ] {
         assert_eq!(serde_json::to_value(&message).unwrap(), json);
         assert_eq!(
             serde_json::from_value::<StatusMessage>(json).unwrap(),
             message
         );
+    }
+}
+
+fn piano() -> TrackRef {
+    TrackRef {
+        number: 1,
+        name: "ピアノ".into(),
     }
 }
 
@@ -289,6 +510,48 @@ fn server_message_json_shape() {
                "tUs": 1_234_567})
     );
     assert_eq!(serde_json::from_value::<ServerMessage>(v).unwrap(), event);
+
+    let live = ServerMessage::LiveNotes(LiveNotes {
+        seq: 12,
+        recording: 3,
+        notes: vec![
+            LiveNote {
+                lap: 0,
+                index: 0,
+                key: 60,
+                velocity: 90,
+                start: 7680,
+                length: Some(240),
+            },
+            LiveNote {
+                lap: 0,
+                index: 1,
+                key: 64,
+                velocity: 80,
+                start: 7920,
+                length: None,
+            },
+        ],
+    });
+    let v = serde_json::to_value(&live).unwrap();
+    assert_eq!(
+        v,
+        json!({"kind": "liveNotes", "seq": 12, "recording": 3, "notes": [
+            {"lap": 0, "index": 0, "key": 60, "velocity": 90, "start": 7680, "length": 240},
+            {"lap": 0, "index": 1, "key": 64, "velocity": 80, "start": 7920, "length": null}
+        ]})
+    );
+    assert_eq!(serde_json::from_value::<ServerMessage>(v).unwrap(), live);
+
+    let snap = LiveNotesSnapshot {
+        seq: 0,
+        recording: None,
+        notes: vec![],
+    };
+    assert_eq!(
+        serde_json::to_value(&snap).unwrap(),
+        json!({"seq": 0, "recording": null, "notes": []})
+    );
 }
 
 /// The `section` of a change is the key of that section in the state JSON.
@@ -298,6 +561,8 @@ fn change_section_names_match_state_keys() {
     let v = serde_json::to_value(&state).unwrap();
     let all = [
         Change::Song(state.song.clone()),
+        Change::Transport(state.transport.clone()),
+        Change::Arrange(state.arrange.clone()),
         Change::Workspace(state.workspace.clone()),
         Change::Keyboards(state.keyboards.clone()),
         Change::Outputs(state.outputs.clone()),
@@ -319,12 +584,14 @@ fn changes_from_gives_only_changed_sections() {
     assert!(AppState::changes_from(&old, &old).is_empty());
 
     let mut new = old.clone();
+    new.transport.state = TransportState::Stopped;
     new.workspace.scale = 125;
-    new.status.message = Some(StatusMessage::NewSong);
+    new.status.message = Some(StatusMessage::NoArmedTrack);
     let changes = AppState::changes_from(&old, &new);
     assert_eq!(
         changes,
         vec![
+            Change::Transport(new.transport.clone()),
             Change::Workspace(new.workspace.clone()),
             Change::Status(new.status.clone())
         ]
@@ -344,10 +611,10 @@ fn telemetry_layout_matches_the_table() {
     let mut b = vec![0xAA; 3];
     t.encode_into(&mut b);
 
-    assert_eq!(b.len(), 48 + 8 * 2);
+    assert_eq!(b.len(), 72 + 8 * 2);
     assert_eq!(b.len(), t.encoded_len());
     assert_eq!(b[0], 1, "kind");
-    assert_eq!(b[1], 1, "version");
+    assert_eq!(b[1], 2, "version");
     assert_eq!(b[2..4], 2u16.to_le_bytes(), "track count");
     assert_eq!(b[4..8], [0x04, 0x03, 0x02, 0x01], "seq, little-endian");
     assert_eq!(b[8..16], 123_456_789_012_345u64.to_le_bytes(), "sent time");
@@ -358,29 +625,56 @@ fn telemetry_layout_matches_the_table() {
     assert_eq!(b[32], 101, "last velocity");
     assert_eq!(b[33], 127, "sustain");
     assert_eq!(b[34], 64, "modulation");
-    assert_eq!(b[35], 0b11, "flags");
+    assert_eq!(b[35], 0b111, "flags");
     assert_eq!(b[36..38], (-8192i16).to_le_bytes(), "pitch bend");
     assert_eq!(b[38..40], 137u16.to_le_bytes(), "load");
     assert_eq!(b[40..44], 0.5f32.to_le_bytes(), "master left");
     assert_eq!(b[44..48], 0.1f32.to_le_bytes(), "master right");
-    assert_eq!(b[48..52], 0.25f32.to_le_bytes(), "track 1 left");
-    assert_eq!(b[52..56], 0.75f32.to_le_bytes(), "track 1 right");
-    assert_eq!(b[56..60], 1.5f32.to_le_bytes(), "track 2 left");
-    assert_eq!(b[60..64], 0.0f32.to_le_bytes(), "track 2 right");
+    assert_eq!(b[48..56], (-479.75f64).to_le_bytes(), "heard tick");
+    assert_eq!(b[56..64], 0.000_768f64.to_le_bytes(), "ticks per µs");
+    assert_eq!(b[64], 1, "transport state: count-in");
+    assert_eq!(b[65], 0, "reserved");
+    assert_eq!(b[66..68], 2u16.to_le_bytes(), "count-in beats left");
+    assert_eq!(b[68..72], [0x0d, 0x0c, 0x0b, 0x0a], "lap");
+    assert_eq!(b[72..76], 0.25f32.to_le_bytes(), "track 1 left");
+    assert_eq!(b[76..80], 0.75f32.to_le_bytes(), "track 1 right");
+    assert_eq!(b[80..84], 1.5f32.to_le_bytes(), "track 2 left");
+    assert_eq!(b[84..88], 0.0f32.to_le_bytes(), "track 2 right");
+
+    for (state, byte) in [
+        (TransportState::Stopped, 0),
+        (TransportState::CountIn, 1),
+        (TransportState::Playing, 2),
+        (TransportState::Recording, 3),
+    ] {
+        let t = Telemetry {
+            transport: Some(TransportReading {
+                state,
+                ..TransportReading::default()
+            }),
+            ..Telemetry::default()
+        };
+        t.encode_into(&mut b);
+        assert_eq!(b[64], byte);
+        assert_eq!(b[35], 0b100);
+        assert_eq!(Telemetry::decode(&b).unwrap(), t);
+    }
 
     let only_running = Telemetry {
         running: true,
         ..Telemetry::default()
     };
     only_running.encode_into(&mut b);
-    assert_eq!(b.len(), 48);
-    assert_eq!(b[35], 0b01);
+    assert_eq!(b.len(), 72);
+    assert_eq!(b[35], 0b001);
+    assert!(b[48..72].iter().all(|&x| x == 0), "no position: zeros");
+    assert_eq!(Telemetry::decode(&b).unwrap().transport, None);
     let only_clipped = Telemetry {
         master_clipped: true,
         ..Telemetry::default()
     };
     only_clipped.encode_into(&mut b);
-    assert_eq!(b[35], 0b10);
+    assert_eq!(b[35], 0b010);
 }
 
 #[test]
@@ -402,24 +696,30 @@ fn telemetry_decode_rejects_bad_input() {
     sample_telemetry().encode_into(&mut b);
 
     assert_eq!(
-        Telemetry::decode(&b[..47]),
-        Err(TelemetryError::TooShort { len: 47 })
+        Telemetry::decode(&b[..71]),
+        Err(TelemetryError::TooShort { len: 71 })
     );
     assert_eq!(
-        Telemetry::decode(&b[..63]),
+        Telemetry::decode(&b[..87]),
         Err(TelemetryError::WrongLength {
-            len: 63,
-            expected: 64
+            len: 87,
+            expected: 88
         })
     );
     let mut wrong = b.clone();
     wrong[0] = 2;
     assert_eq!(Telemetry::decode(&wrong), Err(TelemetryError::WrongKind(2)));
     let mut wrong = b.clone();
-    wrong[1] = 2;
+    wrong[1] = 1;
     assert_eq!(
         Telemetry::decode(&wrong),
-        Err(TelemetryError::WrongVersion(2))
+        Err(TelemetryError::WrongVersion(1))
+    );
+    let mut wrong = b.clone();
+    wrong[64] = 4;
+    assert_eq!(
+        Telemetry::decode(&wrong),
+        Err(TelemetryError::WrongTransportState(4))
     );
 }
 
@@ -432,38 +732,138 @@ fn same_readings_ignores_seq_and_time() {
     assert!(a.same_readings(&b));
     b.master_peak[0] = 0.6;
     assert!(!a.same_readings(&b));
+    let mut c = a.clone();
+    c.transport.as_mut().unwrap().tick += 12.8;
+    assert!(!a.same_readings(&c));
 }
 
-/// Writes the bytes and what `ui/src/bridge/telemetry.ts` must read from them.
-/// `ui/tests/bridge.telemetry.test.ts` compares.
+/// Every position of the table in docs/architecture.md 3-4.
 #[test]
-fn write_telemetry_fixture_for_the_ui() {
+fn take_layout_matches_the_table() {
+    let t = sample_take();
+    let b = t.encode();
+    assert_eq!(b.len(), 20 + 12 * 2 + 8 * 2);
+    assert_eq!(b.len(), t.encoded_len());
+    assert_eq!(b[0], 2, "kind");
+    assert_eq!(b[1], 1, "version");
+    assert_eq!(b[2..4], [0, 0], "reserved");
+    assert_eq!(b[4..8], [0x04, 0x03, 0x02, 0x01], "take id");
+    assert_eq!(b[8..12], 15_360u32.to_le_bytes(), "length");
+    assert_eq!(b[12..16], 2u32.to_le_bytes(), "note count");
+    assert_eq!(b[16..20], 2u32.to_le_bytes(), "control count");
+    assert_eq!(b[20..24], 0u32.to_le_bytes(), "note 1 start");
+    assert_eq!(b[24..28], 240u32.to_le_bytes(), "note 1 length");
+    assert_eq!(b[28..32], [60, 100, 0, 0], "note 1 key, velocity, reserved");
+    assert_eq!(b[32..36], [0x08, 0x07, 0x06, 0x05], "note 2 start");
+    assert_eq!(b[40..44], [127, 1, 0, 0], "note 2 key, velocity");
+    assert_eq!(b[44..48], 0u32.to_le_bytes(), "control 1 tick");
+    assert_eq!(b[48..52], [0, 64, 127, 0], "control 1: CC 64 = 127");
+    assert_eq!(b[52..56], 480u32.to_le_bytes(), "control 2 tick");
+    assert_eq!(b[56], 1, "control 2: pitch bend");
+    assert_eq!(b[58..60], (-8192i16).to_le_bytes(), "control 2 value");
+}
+
+#[test]
+fn take_round_trips_and_rejects_bad_input() {
+    let t = sample_take();
+    let b = t.encode();
+    assert_eq!(TakeNotes::decode(&b).unwrap(), t);
+    assert_eq!(
+        TakeNotes::decode(&TakeNotes::default().encode()).unwrap(),
+        TakeNotes::default()
+    );
+
+    assert_eq!(
+        TakeNotes::decode(&b[..19]),
+        Err(TakeError::TooShort { len: 19 })
+    );
+    assert_eq!(
+        TakeNotes::decode(&b[..59]),
+        Err(TakeError::WrongLength {
+            len: 59,
+            expected: 60
+        })
+    );
+    let mut wrong = b.clone();
+    wrong[0] = 1;
+    assert_eq!(TakeNotes::decode(&wrong), Err(TakeError::WrongKind(1)));
+    let mut wrong = b.clone();
+    wrong[1] = 2;
+    assert_eq!(TakeNotes::decode(&wrong), Err(TakeError::WrongVersion(2)));
+    let mut wrong = b.clone();
+    wrong[48] = 7;
+    assert_eq!(
+        TakeNotes::decode(&wrong),
+        Err(TakeError::WrongControlKind(7))
+    );
+    let mut huge = b.clone();
+    huge[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(matches!(
+        TakeNotes::decode(&huge),
+        Err(TakeError::WrongLength { .. })
+    ));
+}
+
+/// Writes the bytes and what `ui/src/bridge/telemetry.ts` and `ui/src/bridge/take.ts` must read
+/// from them. `ui/tests/bridge.telemetry.test.ts` and `ui/tests/bridge.take.test.ts` compare.
+#[test]
+fn write_fixtures_for_the_ui() {
+    let dir = ui_dir().join("tests/fixtures");
+    std::fs::create_dir_all(&dir).unwrap();
+    let write = |name: &str, bytes: &[u8], expected: serde_json::Value| {
+        std::fs::write(dir.join(format!("{name}.bin")), bytes).unwrap();
+        let mut text = serde_json::to_string_pretty(&expected).unwrap();
+        text.push('\n');
+        std::fs::write(dir.join(format!("{name}.json")), text).unwrap();
+    };
+
     let t = sample_telemetry();
     let mut bytes = Vec::new();
     t.encode_into(&mut bytes);
-
     let word = |v: u64, hi: bool| if hi { (v >> 32) as u32 } else { v as u32 };
-    let expected = json!({
-        "seq": t.seq,
-        "sentUs": t.sent_ns / 1000,
-        "keys": [word(t.keys_low, false), word(t.keys_low, true),
-                 word(t.keys_high, false), word(t.keys_high, true)],
-        "keysDown": [0, 36, 60, 67, 127],
-        "lastVelocity": t.last_velocity,
-        "sustain": t.sustain,
-        "modulation": t.modulation,
-        "running": t.running,
-        "masterClipped": t.master_clipped,
-        "pitchBend": t.pitch_bend,
-        "loadPermille": t.load_permille,
-        "masterPeak": t.master_peak.map(f64::from),
-        "trackPeaks": t.track_peaks.iter().flatten().copied().map(f64::from).collect::<Vec<_>>(),
-    });
+    let tr = t.transport.unwrap();
+    write(
+        "telemetry-v2",
+        &bytes,
+        json!({
+            "seq": t.seq,
+            "sentUs": t.sent_ns / 1000,
+            "keys": [word(t.keys_low, false), word(t.keys_low, true),
+                     word(t.keys_high, false), word(t.keys_high, true)],
+            "keysDown": [0, 36, 60, 67, 127],
+            "lastVelocity": t.last_velocity,
+            "sustain": t.sustain,
+            "modulation": t.modulation,
+            "running": t.running,
+            "masterClipped": t.master_clipped,
+            "pitchBend": t.pitch_bend,
+            "loadPermille": t.load_permille,
+            "masterPeak": t.master_peak.map(f64::from),
+            "position": {
+                "tick": tr.tick,
+                "ticksPerUs": tr.ticks_per_us,
+                "state": "countIn",
+                "countInBeatsLeft": tr.count_in_beats_left,
+                "lap": tr.lap,
+            },
+            "trackPeaks": t.track_peaks.iter().flatten().copied().map(f64::from).collect::<Vec<_>>(),
+        }),
+    );
 
-    let dir = ui_dir().join("tests/fixtures");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("telemetry-v1.bin"), &bytes).unwrap();
-    let mut text = serde_json::to_string_pretty(&expected).unwrap();
-    text.push('\n');
-    std::fs::write(dir.join("telemetry-v1.json"), text).unwrap();
+    let take = sample_take();
+    write(
+        "take-v1",
+        &take.encode(),
+        json!({
+            "id": take.id,
+            "length": take.length,
+            "notes": take.notes.iter().map(|n| json!({
+                "start": n.start, "length": n.length, "key": n.key, "velocity": n.velocity,
+            })).collect::<Vec<_>>(),
+            "controls": [
+                {"tick": 0, "kind": "cc", "number": 64, "value": 127},
+                {"tick": 480, "kind": "pitchBend", "number": 0, "value": -8192},
+            ],
+        }),
+    );
 }

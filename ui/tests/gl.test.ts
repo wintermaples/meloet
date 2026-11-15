@@ -124,6 +124,7 @@ const telemetry = (over: Partial<Telemetry> = {}): Telemetry => ({
   pitchBend: 0,
   loadPermille: 0,
   masterPeak: [0, 0],
+  position: null,
   trackPeaks: new Float32Array(0),
   ...over,
 });

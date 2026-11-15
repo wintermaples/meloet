@@ -21,6 +21,13 @@
   ],
   "modulation": 64,
   "pitchBend": -8192,
+  "position": {
+    "countInBeatsLeft": 2,
+    "lap": 168496141,
+    "state": "countIn",
+    "tick": -479.75,
+    "ticksPerUs": 0.000768
+  },
   "running": true,
   "sentUs": 123456789012,
   "seq": 16909060,

@@ -1,9 +1,29 @@
-// Telemetry binary, version 1, little-endian. The layout is fixed in
+// Telemetry binary, version 2, little-endian. The layout is fixed in
 // crates/meloet-protocol/src/telemetry.rs (table: docs/architecture.md 3-3).
 
+import type { TransportState } from "./types";
+
 export const TELEMETRY_KIND = 1;
-export const TELEMETRY_VERSION = 1;
-const HEADER_LEN = 48;
+export const TELEMETRY_VERSION = 2;
+export const TELEMETRY_HEADER_LEN = 72;
+const HEADER_LEN = TELEMETRY_HEADER_LEN;
+const STATES: readonly TransportState[] = ["stopped", "countIn", "playing", "recording"];
+
+/**
+ * What the listener hears at `sentUs`. Between messages:
+ * `tick + (rustNowUs - sentUs) * ticksPerUs` (see `positionAt`).
+ */
+export interface TransportReading {
+  /** Song position in ticks, with the fraction. Negative during a count-in from near 0. */
+  tick: number;
+  /** 0 while stopped. */
+  ticksPerUs: number;
+  state: TransportState;
+  /** Beats still to come before recording starts, the one sounding included; 0 outside a count-in. */
+  countInBeatsLeft: number;
+  /** Pass of the loop while recording, 0 for the first. */
+  lap: number;
+}
 
 export interface Telemetry {
   seq: number;
@@ -22,6 +42,8 @@ export interface Telemetry {
   loadPermille: number;
   /** Left, right. Largest value since the last message; 1.0 = 0 dBFS. */
   masterPeak: [number, number];
+  /** null before the audio has played anything. */
+  position: TransportReading | null;
   /** Left, right per track: [l1, r1, l2, r2, ...]. */
   trackPeaks: Float32Array;
 }
@@ -52,6 +74,8 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
     trackPeaks[i] = view.getFloat32(HEADER_LEN + 4 * i, true);
   }
   const flags = view.getUint8(35);
+  const state = STATES[view.getUint8(64)];
+  if (state === undefined) throw new Error(`telemetry transport state ${view.getUint8(64)}`);
 
   return {
     seq: view.getUint32(4, true),
@@ -66,10 +90,26 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
     pitchBend: view.getInt16(36, true),
     loadPermille: view.getUint16(38, true),
     masterPeak: [view.getFloat32(40, true), view.getFloat32(44, true)],
+    position:
+      (flags & 4) === 0
+        ? null
+        : {
+            tick: view.getFloat64(48, true),
+            ticksPerUs: view.getFloat64(56, true),
+            state,
+            countInBeatsLeft: view.getUint16(66, true),
+            lap: view.getUint32(68, true),
+          },
     trackPeaks,
   };
 }
 
 export function keyIsDown(telemetry: Telemetry, note: number): boolean {
   return ((telemetry.keys[note >>> 5]! >>> (note & 31)) & 1) === 1;
+}
+
+/** The song position heard at `rustNowUs` (Rust's clock, see `clockOffsetUs`). */
+export function positionAt(telemetry: Telemetry, rustNowUs: number): number | null {
+  const p = telemetry.position;
+  return p === null ? null : p.tick + (rustNowUs - telemetry.sentUs) * p.ticksPerUs;
 }

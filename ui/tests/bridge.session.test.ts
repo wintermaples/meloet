@@ -72,6 +72,12 @@ function scripted(version = PROTOCOL_VERSION) {
     async clock() {
       return clockReplies.shift() ?? 0;
     },
+    async takeNotes() {
+      return new ArrayBuffer(0);
+    },
+    async liveNotes() {
+      return { seq: 0, recording: null, notes: [] };
+    },
   };
   return {
     transport,
@@ -167,7 +173,7 @@ describe("bridge session", () => {
     });
     expect(after.state).not.toBe(base);
     expect(after.state.song).toBe(base.song);
-    expect(base.status).toEqual({ message: { id: "newSong" } });
+    expect(base.status.message?.id).toBe("newSong");
 
     s.push(statusPatch(2, "again"));
     s.push(statusPatch(1, "older"));
@@ -308,7 +314,7 @@ describe("bridge session", () => {
     expect(now().status.message).toEqual({ id: "scaleDoesNotFit", requested: 150, kept: 125 });
 
     await connection.send({ type: "toggleBand", band: "mixer" });
-    expect(now().status.message).toEqual({ id: "newSong" });
+    expect(now().status.message?.id).toBe("newSong");
     await connection.send({ type: "toggleBand", band: "pianoRoll" });
     expect(now().status.message).toEqual({ id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" });
     // A resize is not something the user does about the notice.

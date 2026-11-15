@@ -134,6 +134,8 @@ fn a_new_song() {
             color: 1,
             instrument: InstrumentKind::Placeholder,
             gain_db: 0.0,
+            armed: true,
+            clips: vec![],
         }]
     );
     assert_eq!(state.workspace.scale, 100);

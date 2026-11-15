@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
 import { fakeScene } from "../src/bridge/fake";
 import LowerBand from "../src/components/LowerBand.svelte";
-import { prPanels, prView } from "../src/components/pianoroll/view.svelte";
+import { ccLanes, prPanels, prView } from "../src/components/pianoroll/view.svelte";
 import * as app from "./fake-app.svelte";
 import { take } from "./pianoroll-fixture";
 
@@ -30,6 +30,8 @@ beforeEach(() => {
   prPanels.inspector = true;
   prView.tool = "select";
   prView.quarterPx = 40;
+  ccLanes.open = [];
+  ccLanes.other = null;
   target = document.createElement("div");
   document.body.append(target);
 });
@@ -132,12 +134,32 @@ describe("左右の欄と CC の札", () => {
     expect(prPanels).toEqual({ list: true, inspector: false });
   });
 
-  it("CC の札は本物の数で、押せない（使えない）", async () => {
+  it("CC の札は本物の数で、押せる（jsdom は幅 0 なので「そのほかの CC」は出ない）", async () => {
     show(scene());
     await settle();
     const tags = [...target.querySelectorAll<HTMLElement>(".cc-row button")];
-    expect(tags.every((b) => b.getAttribute("aria-disabled") === "true")).toBe(true);
+    expect(tags.map((b) => b.getAttribute("aria-disabled"))).toEqual([null, null, null]);
     expect(tags.map((b) => text(b))[0]).toMatch(/^▸ ?サステイン ?(CC 64 ・ 踏む )?1$/);
     expect(tags.map((b) => text(b))[1]).toMatch(/^▸ ?ピッチベンド ?(点 )?1$/);
+  });
+
+  it("札を押すと帯がひらいて ▾、もう一度押すとたたむ。ひらいた帯は覚えている（ひらいた順）", async () => {
+    show(scene());
+    await settle();
+    q("[data-test=pr-cc-pitchBend]")!.click();
+    q("[data-test=pr-cc-sustain]")!.click();
+    flushSync();
+    expect(ccLanes.open).toEqual(["pitchBend", "sustain"]);
+    expect(text(q("[data-test=pr-cc-sustain]"))).toMatch(/^▾ ?サステイン/);
+    // 帯の順は札と同じ（サステイン、ピッチベンド）。
+    expect([...target.querySelectorAll("[data-test^=pr-lane-]:not([data-test^=pr-lane-fold])")].map((l) => l.getAttribute("data-test"))).toEqual([
+      "pr-lane-sustain",
+      "pr-lane-pitchBend",
+    ]);
+    expect(text(q("[data-test=pr-lane-fold-pitchBend]"))).toBe("▾ ピッチベンド");
+    q("[data-test=pr-cc-sustain]")!.click();
+    flushSync();
+    expect(ccLanes.open).toEqual(["pitchBend"]);
+    expect(q("[data-test=pr-lane-sustain]")).toBeNull();
   });
 });

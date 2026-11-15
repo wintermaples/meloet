@@ -193,6 +193,7 @@ export const part = {
   "part.reading.offset": p(6, "s2", "その場の読み値", "カーソルの左上 6"),
   "part.cursor.size": p(16, "s2", "カーソル（鉛筆 ・ 消しゴム）", "16×16"),
   "part.note.resize": p(6, "s3", null, "ノートの右はし 6px"),
+  "part.cc.point": p(6, "s3", null, "点は 6×6 の gray.10"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 
@@ -264,6 +265,8 @@ export const mock = {
   "mock.pianoroll.vel-mid": m(36, "A-PianoRoll"),
   // 長さをのばしている間の、もとの終わりの gray.7 の線の高さ。
   "mock.pianoroll.end-mark": m(16, "R3-PRMouse"),
+  // CC の帯の、127 と 0（ピッチベンドは両はし）の点の中心の、帯の上下からのあき（`top:6px` の 6×6 の点、高さ 40 の帯で 9 と 31）。
+  "mock.pianoroll.cc-pad": m(9, "R3-Lanes"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

@@ -32,8 +32,15 @@ function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps): Comman
     case "nudge":
       key = { kind: "nudge", steps: action.steps, keys: action.keys };
       break;
-    case "deleteSelected":
-      key = { kind: "deleteNotes" };
+    case "deleteSelected": {
+      // 点とノートの両方を選んでいるときは、最後に押したほう。
+      const pr = state.pianoRoll;
+      const points = pr.selectedControls.length > 0;
+      key = points && (pr.selectedNotes.length === 0 || prView.picked === "controls") ? { kind: "deleteControls" } : { kind: "deleteNotes" };
+      break;
+    }
+    case "quantize":
+      key = { kind: "quantize" };
       break;
     case "selectAll":
     case "duplicate":

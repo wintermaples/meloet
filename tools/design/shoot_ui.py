@@ -9,7 +9,7 @@ the mock board for that scene (rendered by render_mocks.py), cropped or padded t
 Out: OUT_DIR/<scene>-<w>x<h>-<scale>.png (side by side) and OUT_DIR/shots/ (the shots alone).
 Names in CLICKS shoot a scene after clicking something (a menu open), through the DevTools protocol.
 """
-import os, socket, subprocess, sys, time, urllib.request
+import json, os, socket, subprocess, sys, time, urllib.request
 
 from PIL import Image, ImageDraw
 
@@ -52,6 +52,8 @@ BOARDS = {
     "scaleMenu": "A-PianoRoll",
     "noteListTyping": "R3-Lanes",
     "noteListBroken": "R3-Lanes",
+    "ccLanes": "R3-Lanes",
+    "ccOtherMenu": "A-PianoRoll",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -65,6 +67,7 @@ input.dispatchEvent(new Event("input", { bubbles: true }));
 
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 # A selector that starts with "js:" is run as a script instead (it may await).
+# Several selectors (a tuple) are clicked one after another.
 CLICKS = {
     "songMenu": ("saved", '[data-test="transport-song"]'),
     "countInMenu": ("empty", '[data-test="transport-count-in"]'),
@@ -72,6 +75,9 @@ CLICKS = {
     "scaleMenu": ("pianoRoll", '[data-test="inspector-scale"]'),
     "noteListTyping": ("pianoRoll", "js:" + TYPE_IN_LIST % (2, "96")),
     "noteListBroken": ("pianoRoll", "js:" + TYPE_IN_LIST % (4, "200")),
+    "ccLanes": ("pianoRollCc", ('[data-test="pr-cc-sustain"]', '[data-test="pr-cc-pitchBend"]', '[data-test="pr-cc-other"]',
+                                '[data-test="pr-cc-other-menu"] [data-row="0"]')),
+    "ccOtherMenu": ("pianoRollCc", '[data-test="pr-cc-other"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -83,14 +89,19 @@ ONLY = {
     "pianoRollWide": [(1920, 1080, 100)],
     "pianoRollPlay": [(1280, 800, 100)],
     "pianoRollRec": [(1280, 800, 100)],
-    "noteListTyping": [(1280, 800, 100)],
-    "noteListBroken": [(1280, 800, 100)],
+  for (const selector of JSON.parse(selectors)) {
+    const expression = selector.startsWith("js:")
+      ? `(async () => {${selector.slice(3)}})()`
+      : `document.querySelector(${JSON.stringify(selector)}).click()`;
+    await call("Runtime.evaluate", { expression, awaitPromise: true });
+    await sleep(800);
+  }
 }
 scenes = sys.argv[2:] or list(BOARDS)
 
 # Drives headless Chrome over the DevTools protocol (Node's own WebSocket): open, click, shoot.
 CLICK_SHOT = r"""
-const [port, url, selector, out, w, h] = process.argv.slice(1);
+const [port, url, selectors, out, w, h] = process.argv.slice(1);
 const { spawn } = await import("node:child_process");
 const { writeFileSync, mkdtempSync } = await import("node:fs");
 const { tmpdir } = await import("node:os");
@@ -118,6 +129,10 @@ try {
     : `document.querySelector(${JSON.stringify(selector)}).click()`;
   await call("Runtime.evaluate", { expression, awaitPromise: true });
   await sleep(800);
+  for (const selector of JSON.parse(selectors)) {
+    await call("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)}).click()` });
+    await sleep(800);
+  }
   const shot = await call("Page.captureScreenshot", { format: "png" });
   writeFileSync(out, Buffer.from(shot.data, "base64"));
   ws.close();
@@ -167,8 +182,9 @@ try:
             shot = os.path.join(shots, stem + ".png")
             if scene in CLICKS:
                 base, selector = CLICKS[scene]
+                selectors = json.dumps([selector] if isinstance(selector, str) else list(selector))
                 run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
-                     f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selector, shot, str(w), str(h)],
+                     f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selectors, shot, str(w), str(h)],
                     env=env, capture_output=True, timeout=60)
             else:
                 run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",

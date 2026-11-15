@@ -7,6 +7,9 @@ import { duplicateTicks, gridTicks, indexesOf, snapTick, type Shown } from "./ge
 export type PianoRollKey =
   | { kind: "nudge"; steps: number; keys: number }
   | { kind: "deleteNotes" }
+  /** Delete で、点とノートのうち点のほうを消す（点だけを選んでいるか、最後に押したのが点のとき）。 */
+  | { kind: "deleteControls" }
+  | { kind: "quantize" }
   | { kind: "selectAll" }
   | { kind: "duplicate" }
   | { kind: "cut" }
@@ -33,6 +36,15 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
   if (key.kind === "selectAll") return { type: "selectAllNotes" };
   const n = c.shown;
   if (!n || pr.take !== n.take.id) return null;
+  if (key.kind === "deleteControls") {
+    const points = indexesOf(pr.selectedControls).filter((i) => i < n.take.controlTicks.length);
+    return points.length > 0 ? { type: "deleteControls", take: n.take.id, points } : null;
+  }
+  if (key.kind === "quantize") {
+    if (n.take.starts.length === 0) return null;
+    // 何も選んでいなければ、空の notes（テイクの全部のノート）。
+    return { type: "quantize", take: n.take.id, notes: indexesOf(pr.selectedNotes).filter((i) => i < n.take.starts.length) };
+  }
   const notes = indexesOf(pr.selectedNotes).filter((i) => i < n.take.starts.length);
   if (notes.length === 0) return null;
   const take = n.take.id;

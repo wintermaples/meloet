@@ -6,7 +6,9 @@
   import { line, space } from "../../design/tokens";
   import { current } from "../../state/app.svelte";
   import { t } from "../../text/ja";
+  import ChoiceMenu from "../ChoiceMenu.svelte";
   import { textWidth } from "../fit";
+  import { menuOpened } from "../../lib/menu";
   import { metrics } from "../metrics.svelte";
   import * as G from "./geom";
   import NoteInspector from "./NoteInspector.svelte";
@@ -14,7 +16,7 @@
   import Roll from "./Roll.svelte";
   import { followShownTake, shown } from "./shown.svelte";
   import Toolbar from "./Toolbar.svelte";
-  import { dragReading, prPanels, prView } from "./view.svelte";
+  import { ccLanes, dragReading, prPanels, prView, type LaneTag } from "./view.svelte";
 
   let { height }: { height: number } = $props();
 
@@ -49,6 +51,61 @@
       tag(t("pr.modulation"), t("pr.modulationDetail", { count: cc.modulation })) +
       tag(t("pr.otherCc"), "");
     return (need * metrics.scale) / 100 <= ccW;
+  });
+
+  // CC の札を押すと、その帯をひらく・たたむ（ひらいた順を覚える。古いほうからたたむため）。
+  const isOpen = (tag: LaneTag) => ccLanes.open.includes(tag);
+  function toggleLane(tag: LaneTag): void {
+    ccLanes.open = isOpen(tag) ? ccLanes.open.filter((x) => x !== tag) : [...ccLanes.open, tag];
+  }
+  const mark = (tag: LaneTag) => (isOpen(tag) ? "▾" : "▸");
+
+  // 「そのほかの CC」: テイクにある 1・64 のほかの CC の番号の一覧（ヤチヨさんの決め 2026-11-15。仕様書 2 章「一覧」、押した札のすぐ上にひらく）。
+  const otherUsable = $derived(cc.others.length > 0);
+  let otherMenu = $state(false);
+  let otherButton = $state<HTMLButtonElement>();
+  let otherPopup = $state<HTMLElement>();
+  let otherAnchor = $state({ left: 0, bottom: 0 });
+  const otherRows = $derived(cc.others.map((number) => ({ value: number, label: t("pr.ccNumber", { number: String(number) }) })));
+  function pressOther(): void {
+    if (isOpen("other")) toggleLane("other");
+    else if (otherUsable) otherMenu = !otherMenu;
+  }
+  function pickOther(number: number): void {
+    ccLanes.other = number;
+    if (!isOpen("other")) toggleLane("other");
+    closeOther();
+  }
+  function closeOther(): void {
+    const hadFocus = otherPopup?.contains(document.activeElement) ?? false;
+    otherMenu = false;
+    if (hadFocus) otherButton?.focus();
+  }
+  function placeOther(): void {
+    if (!otherButton) return;
+    const r = otherButton.getBoundingClientRect();
+    otherAnchor = { left: r.left, bottom: window.innerHeight - r.top };
+  }
+  function toBody(node: HTMLElement): { destroy(): void } {
+    document.body.append(node);
+    return { destroy: () => node.remove() };
+  }
+  $effect(() => {
+    if (!otherMenu) return;
+    placeOther();
+    window.addEventListener("resize", placeOther);
+    const forget = menuOpened(closeOther);
+    const onDown = (ev: PointerEvent) => {
+      const target = ev.target as Node | null;
+      if (target && (otherPopup?.contains(target) || otherButton?.contains(target))) return;
+      closeOther();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      forget();
+      window.removeEventListener("resize", placeOther);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
   });
 
   // その場の読み値（仕様書 2 章）: カーソルの左上 6 にはなして出す。帯のはしでは内がわへずらす。
@@ -110,20 +167,32 @@
     <div class="center">
       <Roll {onreading} />
       <div class="cc-row" bind:clientWidth={ccW}>
-        <button class="m-plain cc" aria-disabled="true" tabindex="-1">
-          <span>▸</span><span>{t("pr.sustain")}</span>
-          <span>{#if ccFull}{t("pr.sustainDetail", { count: cc.sustain })}{:else}<span class="m-num">{cc.sustain}</span>{/if}</span>
+        <button class="m-plain cc" aria-expanded={isOpen("sustain")} onclick={() => toggleLane("sustain")} data-test="pr-cc-sustain">
+          <span class="m-lbl">{mark("sustain")}</span><span class="m-hi">{t("pr.sustain")}</span>
+          <span class="m-lbl">{#if ccFull}{t("pr.sustainDetail", { count: cc.sustain })}{:else}<span class="m-num">{cc.sustain}</span>{/if}</span>
         </button>
-        <button class="m-plain cc" aria-disabled="true" tabindex="-1">
-          <span>▸</span><span>{t("pr.pitchBend")}</span>
-          <span>{#if ccFull}{t("pr.points", { count: cc.pitchBend })}{:else}<span class="m-num">{cc.pitchBend}</span>{/if}</span>
+        <button class="m-plain cc" aria-expanded={isOpen("pitchBend")} onclick={() => toggleLane("pitchBend")} data-test="pr-cc-pitchBend">
+          <span class="m-lbl">{mark("pitchBend")}</span><span class="m-hi">{t("pr.pitchBend")}</span>
+          <span class="m-lbl">{#if ccFull}{t("pr.points", { count: cc.pitchBend })}{:else}<span class="m-num">{cc.pitchBend}</span>{/if}</span>
         </button>
-        <button class="m-plain cc" aria-disabled="true" tabindex="-1">
-          <span>▸</span><span>{t("pr.modulation")}</span>
-          <span>{#if ccFull}{t("pr.modulationDetail", { count: cc.modulation })}{:else}<span class="m-num">{cc.modulation}</span>{/if}</span>
+        <button class="m-plain cc" aria-expanded={isOpen("modulation")} onclick={() => toggleLane("modulation")} data-test="pr-cc-modulation">
+          <span class="m-lbl">{mark("modulation")}</span><span class="m-hi">{t("pr.modulation")}</span>
+          <span class="m-lbl">{#if ccFull}{t("pr.modulationDetail", { count: cc.modulation })}{:else}<span class="m-num">{cc.modulation}</span>{/if}</span>
         </button>
         {#if ccFull}
-          <button class="m-plain cc" aria-disabled="true" tabindex="-1"><span>▸</span><span>{t("pr.otherCc")}</span></button>
+          <button
+            class="m-plain cc"
+            class:unusable={!otherUsable && !isOpen("other")}
+            aria-disabled={!otherUsable && !isOpen("other")}
+            aria-haspopup="menu"
+            aria-expanded={isOpen("other") || otherMenu}
+            bind:this={otherButton}
+            onclick={pressOther}
+            data-test="pr-cc-other"
+          >
+            <span class="m-lbl">{mark("other")}</span><span class="m-hi">{t("pr.otherCc")}</span>
+            {#if isOpen("other") && ccLanes.other !== null}<span class="m-lbl">{t("pr.ccNumber", { number: String(ccLanes.other) })}</span>{/if}
+          </button>
         {/if}
       </div>
     </div>
@@ -144,6 +213,11 @@
       </button>
     {/if}
   </div>
+  {#if otherMenu}
+    <div class="popup" style:left="{otherAnchor.left}px" style:bottom="{otherAnchor.bottom}px" use:toBody bind:this={otherPopup}>
+      <ChoiceMenu heading={null} label={t("pr.otherCc")} rows={otherRows} selected={ccLanes.other ?? undefined} onpick={pickOther} test="pr-cc-other-menu" />
+    </div>
+  {/if}
   {#if readingBox}
     <div
       class="m-num reading"
@@ -264,8 +338,15 @@
     gap: var(--space-2);
     padding: 0 var(--space-3);
     border-right: var(--line-hair) solid var(--color-gray-6);
+  }
+  .cc.unusable,
+  .cc.unusable span {
     color: var(--color-gray-7);
     cursor: default;
+  }
+  .popup {
+    position: fixed;
+    z-index: 40;
   }
   .reading {
     position: absolute;

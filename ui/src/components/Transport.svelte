@@ -252,11 +252,11 @@
 
   // 使えない値のまま Enter: 状態行で言うように core へ頼む（仕様書 6 章「使えない値を打った」）。
   function rejectTempo(): void {
-    send({ type: "rejectValue", field: "tempo", kept: tempoText(song.tempoBpm) });
+    send({ type: "rejectValue", field: "tempo", kept: tempoText(song.tempoBpm), range: null });
   }
   function rejectMeter(draft: string): void {
     const field = meterFieldOf(draft);
-    send({ type: "rejectValue", field, kept: String(field === "meterNum" ? meter.num : meter.den) });
+    send({ type: "rejectValue", field, kept: String(field === "meterNum" ? meter.num : meter.den), range: null });
   }
 </script>
 

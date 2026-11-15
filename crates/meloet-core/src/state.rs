@@ -794,8 +794,8 @@ impl Model {
             | Command::MoveClip { .. }
             | Command::DuplicateClip { .. }
             | Command::TrimClip { .. } => {}
-            Command::RejectValue { field, kept } => {
-                self.notice = Some(StatusMessage::ValueRejected { field, kept });
+            Command::RejectValue { field, kept, range } => {
+                self.notice = Some(StatusMessage::ValueRejected { field, kept, range });
             }
             Command::DiscardRecovered => self.discard_recovered(effects),
             Command::ShowRecoveryFile => self.show_recovery_file(effects),

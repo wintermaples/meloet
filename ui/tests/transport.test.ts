@@ -482,7 +482,7 @@ describe("テンポと拍子の打ちこみ", () => {
       expect(input.getAttribute("aria-invalid")).toBe("true");
       press(input, "Enter");
     }
-    expect(app.sent).toEqual(Array(4).fill({ type: "rejectValue", field: "tempo", kept: "96.00" }));
+    expect(app.sent).toEqual(Array(4).fill({ type: "rejectValue", field: "tempo", kept: "96.00", range: null }));
     expect(field("tempo")).not.toBeNull();
     type(input, "30");
     expect(input.classList.contains("broken")).toBe(false);
@@ -513,8 +513,8 @@ describe("テンポと拍子の打ちこみ", () => {
     type(input, "13/4");
     press(input, "Enter");
     expect(app.sent).toEqual([
-      { type: "rejectValue", field: "meterDen", kept: "4" },
-      { type: "rejectValue", field: "meterNum", kept: "4" },
+      { type: "rejectValue", field: "meterDen", kept: "4", range: null },
+      { type: "rejectValue", field: "meterNum", kept: "4", range: null },
     ]);
     type(input, "6/8");
     press(input, "Enter");

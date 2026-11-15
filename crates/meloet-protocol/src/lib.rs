@@ -288,10 +288,14 @@ pub enum Command {
         ticks: i64,
     },
     /// Enter on a number field that holds a value out of range. `kept` is the value it still
-    /// has, as shown. Rust only says so in the status line; the field stays "broken".
+    /// has, as shown. Rust only says so in the status line; the field stays "broken". `range`, as
+    /// shown, for the fields whose range depends on the clip (`Position`, `Length`); `None` for
+    /// the fixed ones, whose range is a sentence of the screen.
     RejectValue {
         field: ValueField,
         kept: String,
+        #[serde(default)]
+        range: Option<String>,
     },
     /// "戻さない" on the recovery hint: back to the song as last saved, as one step.
     DiscardRecovered,
@@ -364,6 +368,10 @@ pub enum ValueField {
     MeterNum,
     MeterDen,
     Velocity,
+    /// The note list and the "選んだノート" panel (round 3): where a note starts, its key, its length.
+    Position,
+    Key,
+    Length,
 }
 
 /// The buttons of the song dialogs, one for one.
@@ -1048,6 +1056,7 @@ pub enum StatusMessage {
     ValueRejected {
         field: ValueField,
         kept: String,
+        range: Option<String>,
     },
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
@@ -1065,6 +1074,14 @@ pub enum StatusMessage {
         key: u8,
         root: u8,
         mode: ScaleMode,
+    },
+    /// Spec 6 「クオンタイズをかけた」: "クオンタイズ 1/16（75 %）を 3 ノートに。うすい枠が、そろえる前の位置。"
+    /// `division` and `triplet` as in `Grid`.
+    Quantized {
+        division: u16,
+        triplet: bool,
+        strength: u8,
+        count: u32,
     },
     /// "なおすためのファイルから戻しました ・ まだ保存していません".
     Recovered,

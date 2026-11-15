@@ -1523,12 +1523,14 @@ fn a_refused_value_is_said_until_the_next_thing_the_user_does() {
     let refused = Some(StatusMessage::ValueRejected {
         field: ValueField::Tempo,
         kept: "96.00".into(),
+        range: None,
     });
     let effects = cmd(
         &mut m,
         Command::RejectValue {
             field: ValueField::Tempo,
             kept: "96.00".into(),
+            range: None,
         },
     );
     assert!(effects.is_empty(), "{effects:?}");

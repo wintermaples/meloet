@@ -352,8 +352,18 @@ fn command_json_shape() {
             Command::RejectValue {
                 field: ValueField::MeterDen,
                 kept: "4".into(),
+                range: None,
             },
-            json!({"type": "rejectValue", "field": "meterDen", "kept": "4"}),
+            json!({"type": "rejectValue", "field": "meterDen", "kept": "4", "range": null}),
+        ),
+        (
+            Command::RejectValue {
+                field: ValueField::Position,
+                kept: "3.1.000".into(),
+                range: Some("1.1.000〜4.4.479".into()),
+            },
+            json!({"type": "rejectValue", "field": "position", "kept": "3.1.000",
+                   "range": "1.1.000〜4.4.479"}),
         ),
     ] {
         assert_eq!(serde_json::to_value(&command).unwrap(), json);
@@ -677,8 +687,9 @@ fn status_message_json_shape() {
             StatusMessage::ValueRejected {
                 field: ValueField::Velocity,
                 kept: "77".into(),
+                range: None,
             },
-            json!({"id": "valueRejected", "field": "velocity", "kept": "77"}),
+            json!({"id": "valueRejected", "field": "velocity", "kept": "77", "range": null}),
         ),
         (
             StatusMessage::ScaleDoesNotFit {

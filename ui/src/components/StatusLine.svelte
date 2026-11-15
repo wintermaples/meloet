@@ -42,11 +42,15 @@
   };
 
   /** 使えない値を打ったときの欄の名前と範囲。 */
-  const VALUE_FIELDS: Record<ValueField, [TextKey, TextKey]> = {
+  // 範囲がクリップで変わる欄（位置・長さ）は、範囲の文が知らせについてくる（`range`）。
+  const VALUE_FIELDS: Record<ValueField, [TextKey, TextKey | null]> = {
     tempo: ["value.tempo", "value.tempoRange"],
     meterNum: ["value.meterNum", "value.meterNumRange"],
     meterDen: ["value.meterDen", "value.meterDenRange"],
     velocity: ["value.velocity", "value.velocityRange"],
+    position: ["note.position", null],
+    key: ["note.key", null],
+    length: ["note.length", null],
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
@@ -128,7 +132,7 @@
         return plain("msg.bandFoldedScale", { scale: m.scale, band: t(BAND_NAMES[m.band]) });
       case "valueRejected": {
         const [field, range] = VALUE_FIELDS[m.field];
-        return plain("msg.valueRejected", { field: t(field), range: t(range), kept: m.kept });
+        return plain("msg.valueRejected", { field: t(field), range: m.range ?? (range ? t(range) : ""), kept: m.kept });
       }
       case "outputChosen":
         return m.track

@@ -1122,7 +1122,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
       break;
     }
     case "rejectValue":
-      notice = { id: "valueRejected", field: command.field, kept: command.kept };
+      notice = { id: "valueRejected", field: command.field, kept: command.kept, range: command.range };
       break;
     case "goArrange":
       bands.goArrange();

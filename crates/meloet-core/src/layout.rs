@@ -18,10 +18,10 @@ pub const SIZE_SHELF: f64 = 320.0;
 pub const PARAMS_WIDTH: f64 = 320.0;
 /// From this window height on, the input meter stays full and the mixer stays at its smallest.
 pub const TALL_WINDOW: f64 = 960.0;
-/// The smallest window, in px at 100 % zoom (a 1280×800 window at 150 %).
+/// The smallest window, in px at 100 % zoom (spec 1: at 150 % it still fits a 768 px high screen).
 pub const MIN_WINDOW: WindowSize = WindowSize {
     width: 853.0,
-    height: 533.0,
+    height: 448.0,
 };
 /// Bottom bands that may be open at once, besides the arrange view.
 pub const MAX_BOTTOM_OPEN: usize = 2;
@@ -304,9 +304,9 @@ mod tests {
             let w = min_window(scale);
             (w.width, w.height)
         };
-        assert_eq!(size(100), (853.0, 533.0));
-        assert_eq!(size(125), (1067.0, 667.0));
-        assert_eq!(size(150), (1280.0, 800.0));
+        assert_eq!(size(100), (853.0, 448.0));
+        assert_eq!(size(125), (1067.0, 560.0));
+        assert_eq!(size(150), (1280.0, 672.0));
     }
 
     #[test]
@@ -539,7 +539,7 @@ mod tests {
     /// Spec 3: one open band that does not fit is not folded; it gets what is left.
     #[test]
     fn one_band_in_a_low_window_gets_the_rest() {
-        // The smallest window (853x533) at 100 %, and about what it is at 150 %.
+        // Two low windows.
         for h in [533.0, 356.0] {
             let left = h - 48.0 - 24.0 - 40.0 - 24.0 - 24.0;
             for band in [PianoRoll, Mixer] {

@@ -4,7 +4,9 @@
 // above what the box holds, and draws every slot of the region into it when the picture changes.
 
 import type { ColorName } from "../design/tokens";
+import type { Batch } from "./batch";
 import type { RegionName } from "./budget";
+import type { Box } from "./paint";
 
 /** A rectangle of a "rects" slot, in CSS px from the top left of the slot's box. */
 export interface GlRect {
@@ -16,6 +18,15 @@ export interface GlRect {
 }
 
 export type MeterSource = "master" | { track: number };
+
+/** What a "paint" slot gets besides its box. */
+export interface PaintContext {
+  dpr: number;
+  /** The app's scale (100, 125 or 150). */
+  scale: number;
+  /** Held keys, as the input meter shows them. */
+  isDown: (note: number) => boolean;
+}
 
 export type GlSlot =
   /**
@@ -32,7 +43,12 @@ export type GlSlot =
   /** The 40 px arrange overview (clip lines, visible range, play position). */
   | { kind: "overview" }
   /** Any rectangles (clips, the notes in them). Later ones on top; slots later in the page on top of earlier ones. */
-  | { kind: "rects"; rects: readonly GlRect[] };
+  | { kind: "rects"; rects: readonly GlRect[] }
+  /**
+   * Painted by its component (the piano roll) from what it holds; the component calls the slot's `update`
+   * when that changes. `keys`: paint again when the held keys change.
+   */
+  | { kind: "paint"; paint: (out: Batch, box: Box, ctx: PaintContext) => void; keys?: boolean };
 
 /** Told about every marked box: the ones already in the page, then each change. */
 export interface SlotWatcher {

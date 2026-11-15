@@ -863,6 +863,32 @@ SCENES.recordingMoving = {
   },
 };
 
+// Not from a mock: one clip of 10 000 notes over 64 bars, the first 200 selected, for measuring the piano roll.
+const TEN_THOUSAND = 90;
+FAKE_TAKES.set(TEN_THOUSAND, phrase(TEN_THOUSAND, 64, 10_000, 9));
+SCENES.pianoRoll10k = {
+  setup(s) {
+    pianoRollSong(s);
+    s.song.tracks[0]!.clips = [fakeClip(91, "イントロ", 1, 65, 1, [TEN_THOUSAND])];
+    s.song.noteCount = 10_000;
+    s.arrange = { selectedClip: 91, pianoRollClip: 91 };
+    s.pianoRoll = { ...pianoRollView(TEN_THOUSAND, false), selectedNotes: [{ start: 0, end: 200 }] };
+    s.status.message = null;
+  },
+  bands: ["pianoRoll"],
+  meters: QUIET,
+};
+// The same while playing from bar 1 (the play line moves, the keys light, the roll pages).
+SCENES.pianoRoll10kPlay = {
+  ...SCENES.pianoRoll10k,
+  setup(s) {
+    SCENES.pianoRoll10k!.setup(s);
+    s.transport.state = "playing";
+    s.transport.position = 0;
+  },
+  meters: { ...QUIET, position: { tick: 0, ticksPerUs: 768e-6, state: "playing", countInBeatsLeft: 0, lap: 0 } },
+};
+
 export function fakeScene(name: string, scale?: number, viewport = { width: 1280, height: 800 }): Scene | null {
   const def = SCENES[name];
   if (!def) return null;
@@ -1177,9 +1203,13 @@ export function createFakeTransport(initial?: AppState): Transport {
   };
 }
 
-/** The fake has nothing to measure. */
+/** The fake has nothing to measure, except with `?measure=1` in a browser: then the frame profile is kept on `window.__meloetMeasure`. */
 export async function fakeMeasureEnabled(): Promise<boolean> {
-  return false;
+  return typeof location !== "undefined" && new URLSearchParams(location.search).get("measure") === "1";
 }
 
-export async function fakeMeasureReport(_name: string, _json: string): Promise<void> {}
+export async function fakeMeasureReport(name: string, json: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  const w = window as unknown as { __meloetMeasure?: Record<string, string> };
+  (w.__meloetMeasure ??= {})[name] = json;
+}

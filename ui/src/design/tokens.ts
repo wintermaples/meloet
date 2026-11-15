@@ -180,6 +180,12 @@ export const part = {
   "part.take.switch-height": p(24, "s2", "テイクの印と切りかえ", "切りかえの札（高さ 24"),
   "part.meter.black-key-slim-w": p(5, "s3", null, "黒鍵を描く（幅 5、高さ 7）"),
   "part.meter.black-key-slim-h": p(7, "s3", null, "黒鍵を描く（幅 5、高さ 7）"),
+  // ピアノロールの帯（第 3 回）
+  "part.reading.height": p(20, "s2", "その場の読み値", "高さ 20"),
+  "part.reading.pad-x": p(6, "s2", "その場の読み値", "左右 6"),
+  "part.reading.offset": p(6, "s2", "その場の読み値", "カーソルの左上 6"),
+  "part.cursor.size": p(16, "s2", "カーソル（鉛筆 ・ 消しゴム）", "16×16"),
+  "part.note.resize": p(6, "s3", null, "ノートの右はし 6px"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 
@@ -228,6 +234,18 @@ export const mock = {
   "mock.range-frame.inset": m(1, "A-PianoRoll"),
   // 拡大率の一覧の、率の欄の幅。
   "mock.zoom.rate": m(56, "F-Zoom"),
+  // ピアノロールの帯（第 3 回）。目盛の高さ、鍵盤の列の音の名前の欄。
+  "mock.pianoroll.ruler": m(20, "A-PianoRoll"),
+  "mock.pianoroll.key-label": m(48, "A-PianoRoll"),
+  // ベロシティの帯の棒（幅 3、上はしの横線 7、127 の高さ 64）と、まん中の線（帯の上から 36）。
+  "mock.pianoroll.vel-bar": m(3, "A-PianoRoll"),
+  "mock.pianoroll.vel-cap": m(7, "A-PianoRoll"),
+  "mock.pianoroll.vel-full": m(64, "A-PianoRoll"),
+  "mock.pianoroll.vel-mid": m(36, "A-PianoRoll"),
+  // 長さをのばしている間の、もとの終わりの gray.7 の線の高さ。
+  "mock.pianoroll.end-mark": m(16, "R3-PRMouse"),
+  // 横の拡大 ・ 縮小の − ＋ のボタンの幅（`min-width:24px;padding:0`）。
+  "mock.pianoroll.zoom-button": m(24, "R3-Arrange"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

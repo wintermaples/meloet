@@ -26,7 +26,7 @@ function fakePage() {
 }
 
 const settle = async (frame: () => void) => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 10; i++) {
     await new Promise((r) => setTimeout(r, 0));
     flushSync();
     frame();
@@ -46,8 +46,9 @@ describe("場面ごとの WebGL の文脈の数", () => {
   });
 
   it.each([
+    ["pianoRollRec", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
     ["recording", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
-    ["takes", ["inputKeys", "masterMeter", "overview"]],
+    ["takes", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys"]],
     ["takesArrange", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "trackMeters"]],
     ["tracks16", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "trackMeters"]],
   ])("%s: 区画ごとに 1 枚で、予算をこえない", async (scene, expected) => {

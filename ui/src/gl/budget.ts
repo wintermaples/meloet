@@ -29,6 +29,12 @@ export const REGIONS = {
   overview: { opaque: false },
   /** Arrange: the growing end of the clip being recorded (at most two bars). 60 Hz while recording. */
   recordingClip: { opaque: false },
+  /** Piano roll: rows, grid lines, notes, the frames of where notes were, and the velocity bars. Changes with the take, the selection, the scroll and the zoom. */
+  pianoRoll: { opaque: false },
+  /** Piano roll: the keys column. Lights with each key held or sounding. */
+  pianoRollKeys: { opaque: true },
+  /** Piano roll: what moves with the mouse or every frame (the notes being dragged, the held notes of a recording). As small as what it shows. */
+  pianoRollLive: { opaque: false },
   /** Sound settings: the level beside the test tone. */
   settingsMeter: { opaque: false },
   /** Sound settings: the keyboard that lights. */

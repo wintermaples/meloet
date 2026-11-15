@@ -39,7 +39,31 @@ export type KeyAction =
   | { kind: "openSong" }
   | { kind: "saveSong" }
   | { kind: "undo" }
-  | { kind: "redo" };
+  | { kind: "redo" }
+  // ピアノロール（仕様書 4 章）。どこに向けるかは attach.ts が決める。
+  | { kind: "tool"; tool: "select" | "draw" | "erase" }
+  /** ← →: グリッド steps 個、↑ ↓: keys 半音（Shift で 1 オクターブ）。 */
+  | { kind: "nudge"; steps: number; keys: number }
+  | { kind: "selectAll" }
+  | { kind: "duplicate" }
+  | { kind: "cut" }
+  | { kind: "copy" }
+  | { kind: "paste" };
+
+const TOOL_DIGITS: Record<string, "select" | "draw" | "erase"> = { "1": "select", "2": "draw", "3": "erase" };
+const NUDGES: Record<string, { steps: number; keys: number }> = {
+  ArrowLeft: { steps: -1, keys: 0 },
+  ArrowRight: { steps: 1, keys: 0 },
+  ArrowUp: { steps: 0, keys: 1 },
+  ArrowDown: { steps: 0, keys: -1 },
+};
+const MOD_EDITS: Record<string, KeyAction> = {
+  a: { kind: "selectAll" },
+  d: { kind: "duplicate" },
+  x: { kind: "cut" },
+  c: { kind: "copy" },
+  v: { kind: "paste" },
+};
 
 const BAND_KEYS: Record<string, KeyAction> = {
   a: { kind: "arrange" },
@@ -84,6 +108,8 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (l === "o") return { kind: "openSong" };
     if (l === "s") return { kind: "saveSong" };
     if (l === "z") return { kind: "undo" };
+    // 文字を打っている最中の Mod A ・ X ・ C ・ V は、枠の中の文字のもの。
+    if (l && MOD_EDITS[l] && !(typing && l !== "d")) return MOD_EDITS[l]!;
     if (!k.alt && (k.key === "," || k.code === "Comma")) return { kind: "audioSettings" };
     if (k.alt) {
       const d = digit(k);
@@ -109,6 +135,11 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
   if (typing) return null;
   if (k.key === " " || k.code === "Space") return k.shift ? null : { kind: "playStop" };
   if (k.key === "Delete") return k.shift ? null : { kind: "deleteSelected" };
+
+  const nudge = NUDGES[k.key];
+  if (nudge) return k.shift && nudge.keys === 0 ? null : { kind: "nudge", steps: nudge.steps, keys: nudge.keys * (k.shift ? 12 : 1) };
+  const d = digit(k);
+  if (d && TOOL_DIGITS[d]) return k.shift ? null : { kind: "tool", tool: TOOL_DIGITS[d]! };
 
   const l = letter(k);
   if (k.shift) return l === "t" ? { kind: "stepTake", delta: -1 } : null;

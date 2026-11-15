@@ -58,7 +58,7 @@ describe("keyAction", () => {
   });
 
   it("修飾キーつきの一文字は、一文字のキーとしては効かない", () => {
-    expect(keyAction(k("a", { ctrl: true }), false, "other")).toBeNull();
+    expect(keyAction(k("e", { ctrl: true }), false, "other")).toBeNull();
     expect(keyAction(k("M", { shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("a", { alt: true }), false, "other")).toBeNull();
   });
@@ -75,7 +75,7 @@ describe("keyAction", () => {
     expect(keyAction(k("ArrowUp"), false, "other", "outputChooser")).toEqual({ kind: "chooserUp" });
     expect(keyAction(k("ArrowDown"), false, "other", "outputChooser")).toEqual({ kind: "chooserDown" });
     expect(keyAction(k("Enter"), false, "other", "outputChooser")).toEqual({ kind: "chooserConfirm" });
-    expect(keyAction(k("ArrowUp"), false, "other", "main")).toBeNull();
+    expect(keyAction(k("ArrowUp"), false, "other", "main")).toEqual({ kind: "nudge", steps: 0, keys: 1 });
     expect(keyAction(k("Enter"), false, "other", "main")).toBeNull();
   });
 

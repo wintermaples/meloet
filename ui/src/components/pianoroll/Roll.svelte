@@ -1,0 +1,791 @@
+<!-- ピアノロールのまん中（モック A-PianoRoll）: 目盛、鍵盤の列、ノートの場所、ベロシティの帯。
+     ノートの場所とベロシティの帯は WebGL の 1 枚（pianoRoll）。ノートか見ている範囲が変わったときだけ描く。
+     鍵盤の列は小さな 1 枚（pianoRollKeys）で、押している鍵と鳴っている音で光る。
+     ドラッグ中のノートと、録音中にのびるノートは、それだけを囲む小さな 1 枚（pianoRollLive）。動かすだけなら transform で動かす。
+     再生の線、囲む枠、文字は HTML。 -->
+<script lang="ts">
+  import { onDestroy, onMount, untrack } from "svelte";
+  import { clockOffsetUs, liveNotes, type Command, type LiveNote, type LiveNotesBook } from "../../bridge";
+  import type { ColorName } from "../../design/tokens";
+  import { everyGlFrame, glRegion, glSlot, type GlSlot } from "../../gl/slot";
+  import { platformOf } from "../../keys/keys";
+  import HScrollbar from "../../lib/HScrollbar.svelte";
+  import { current, send } from "../../state/app.svelte";
+  import { t } from "../../text/ja";
+  import { followScroll } from "../arrangeGeom";
+  import { metrics } from "../metrics.svelte";
+  import { shownTick, ticksPerBar, ticksPerBeat, type Meter } from "../time";
+  import { cursorCss } from "./cursor";
+  import { RollDrag, type CursorKind, type Drag, type Mods } from "./drag";
+  import * as G from "./geom";
+  import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
+  import { shown } from "./shown.svelte";
+  import { originFor, shownFor } from "./shownNotes";
+  import { dragReading, onDragCancel, prPanels, prView, pxPerTick, scrollToTick, zoomBy } from "./view.svelte";
+
+  let { onreading }: { onreading?: (at: { x: number; y: number } | null) => void } = $props();
+
+  const app = $derived(current.state!);
+  const song = $derived(app.song);
+  const pr = $derived(app.pianoRoll);
+  const transport = $derived(app.transport);
+  const meter: Meter = $derived({ num: song.meterNum, den: song.meterDen });
+  const scale = $derived(metrics.scale);
+
+  const rowH = $derived(metrics.px("size.note"));
+  const sizes: RollSizes = $derived({
+    noteH: metrics.px("part.note.height"),
+    edge: metrics.px("part.note.edge"),
+    velBar: metrics.px("mock.pianoroll.vel-bar"),
+    velCap: metrics.px("mock.pianoroll.vel-cap"),
+    velFull: metrics.px("mock.pianoroll.vel-full"),
+    velMid: metrics.px("mock.pianoroll.vel-mid"),
+    endMark: metrics.px("mock.pianoroll.end-mark"),
+  });
+
+  let area = $state<HTMLElement>();
+  let areaW = $state(0);
+  let areaH = $state(0);
+  let velH = $state(0);
+  $effect(() => {
+    prView.areaWidth = areaW;
+    prView.areaHeight = areaH;
+  });
+
+  const ppt = $derived(pxPerTick(scale));
+  const g: G.RollGeom = $derived({ scrollTick: prView.scrollTick, ppt, topKey: prView.topKey, rowH, width: areaW, height: areaH });
+  const step = $derived(G.gridTicks(pr.grid, meter));
+
+  const rec = $derived(transport.state === "recording" ? transport.recording : null);
+  /** 録っているクリップ（か、まだクリップのない録音）を見せているときは、テイクの代わりに録っている物を描く。 */
+  const liveMode = $derived(rec !== null && (shown.clip === null || rec.clip === shown.clip.id));
+
+  const n = $derived(shownFor(shown.take, shown.clip));
+  const origin = $derived(originFor(shown.origin, n));
+  const selectedRanges = $derived(n && !liveMode && pr.take === n.take.id ? pr.selectedNotes : []);
+  const selFlags = $derived(n ? G.selectionFlags(G.noteCount(n), selectedRanges) : null);
+
+  // ---- 録っている最中のノート ----
+
+  let book = $state.raw<LiveNotesBook | null>(null);
+  let stopBook: (() => void) | null = null;
+  let liveVersion = $state(0);
+  $effect(() => {
+    void current.state;
+    void (current as { connected?: boolean }).connected;
+    if (book) return;
+    try {
+      const found = liveNotes();
+      stopBook = found.listen(() => (liveVersion += 1));
+      book = found;
+    } catch {
+      // つながる前。次の状態でもう一度。
+    }
+  });
+  onDestroy(() => stopBook?.());
+  let lap = $state(0);
+  const live: LiveNote[] | null = $derived.by(() => {
+    void liveVersion;
+    if (!liveMode || !rec || !book) return null;
+    return book.notesOf(rec.id, lap);
+  });
+  const held = $derived(live ? live.filter((l) => l.length === null) : []);
+
+  // ---- マウス ----
+
+  let dragVersion = $state(0);
+  let eraseHover = $state(-1);
+  /** 離して意図を送ったあと、答え（新しいテイク）が来るまで残しておく見た目。 */
+  let pending = $state.raw<Drag | null>(null);
+  let pendingReplied = $state(false);
+  let lastSent: Promise<unknown> | null = null;
+
+  const drag = new RollDrag({
+    shown: () => (liveMode ? null : n),
+    geom: () => g,
+    step: () => step,
+    scale: () => pr.scale,
+    meter: () => meter,
+    tool: () => prView.tool,
+    selected: () => selectedRanges,
+    edgePx: () => metrics.px("part.note.resize"),
+    stillPx: () => metrics.px("space.1"),
+    velocityFullPx: () => sizes.velFull,
+    velocityHeight: () => velH,
+    send: (c: Command) => {
+      lastSent = send(c);
+    },
+  });
+  const shownDrag = $derived.by(() => {
+    void dragVersion;
+    return drag.drag ?? pending;
+  });
+
+  $effect(() => {
+    if (!pending || !pendingReplied) return;
+    if (pr.take === (n?.take.id ?? null) || pending.kind === "box") pending = null;
+  });
+
+  const platform = platformOf(navigator);
+  const modsOf = (e: MouseEvent): Mods => ({ shift: e.shiftKey, alt: e.altKey, mod: platform === "mac" ? e.metaKey : e.ctrlKey });
+
+  let cursor = $state<CursorKind>("default");
+  const cursorStyle = $derived(cursorCss(cursor, scale));
+
+  function at(e: MouseEvent): { x: number; y: number } {
+    const r = area!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function changed(e: MouseEvent | null): void {
+    dragVersion += 1;
+    dragReading.text = drag.reading();
+    onreading?.(dragReading.text && e ? { x: e.clientX, y: e.clientY } : null);
+    if (drag.drag) cursor = drag.cursor();
+  }
+
+  function down(e: PointerEvent, where: "notes" | "velocity"): void {
+    if (e.button !== 0) return;
+    prView.focus = "pianoRoll";
+    pending = null;
+    const p = at(e);
+    if (where === "notes") drag.down(p.x, p.y, modsOf(e));
+    else {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      drag.downVelocity(p.x, e.clientY - r.top);
+    }
+    eraseHover = -1;
+    if (drag.drag) (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    changed(e);
+  }
+
+  function move(e: PointerEvent, where: "notes" | "velocity"): void {
+    const p = at(e);
+    if (drag.drag) {
+      const y = where === "velocity" ? e.clientY - (e.currentTarget as HTMLElement).getBoundingClientRect().top : p.y;
+      if (drag.move(p.x, y, modsOf(e))) changed(e);
+      else if (dragReading.text) onreading?.({ x: e.clientX, y: e.clientY });
+      return;
+    }
+    if (where === "velocity") {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      cursor = drag.overVelocityBar(p.x, e.clientY - r.top) ? "ns-resize" : "default";
+      return;
+    }
+    const h = drag.hover(p.x, p.y, modsOf(e));
+    cursor = h.cursor;
+    if (h.changed) eraseHover = drag.eraseHover;
+  }
+
+  function up(): void {
+    if (!drag.drag) return;
+    const was = drag.drag;
+    lastSent = null;
+    const command = drag.up();
+    if (command && lastSent) {
+      pending = was;
+      pendingReplied = false;
+      void (lastSent as Promise<unknown>).then(() => (pendingReplied = true));
+    }
+    changed(null);
+  }
+
+  function leave(): void {
+    if (drag.drag) return;
+    if (eraseHover >= 0) eraseHover = drag.eraseHover = -1;
+  }
+
+  onMount(() =>
+    onDragCancel(() => {
+      if (!drag.cancel()) return false;
+      changed(null);
+      return true;
+    }),
+  );
+  onDestroy(() => {
+    if (drag.cancel()) {
+      dragReading.text = null;
+      onreading?.(null);
+    }
+  });
+
+  // ---- ホイール: 縦に送る、Shift で横、Mod で拡大（カーソルの所を中心に） ----
+
+  let wheelRows = 0;
+  let wheelZoom = 0;
+  const ZOOM_NOTCH = 100;
+  const scrollMaxTick = $derived.by(() => {
+    let end = Math.max(transport.position, n ? G.noteEnd(n, Math.max(0, G.noteCount(n) - 1)) : 0, shown.clip?.end ?? 0);
+    for (const tr of song.tracks) for (const c of tr.clips) end = Math.max(end, c.end);
+    return Math.max(0, end - areaW / 2 / ppt);
+  });
+
+  function wheel(e: WheelEvent): void {
+    const unit = e.deltaMode === 1 ? rowH : e.deltaMode === 2 ? areaH : 1;
+    if (modsOf(e).mod) {
+      e.preventDefault();
+      e.stopPropagation();
+      wheelZoom += e.deltaY * unit;
+      const steps = Math.trunc(wheelZoom / ZOOM_NOTCH) || (Math.abs(e.deltaY * unit) >= ZOOM_NOTCH / 2 ? Math.sign(e.deltaY) : 0);
+      if (steps === 0) return;
+      wheelZoom = 0;
+      const anchor = area ? G.xToTick(g, at(e).x) : undefined;
+      zoomBy(-steps, scale, anchor);
+      return;
+    }
+    let dx = e.deltaX * unit;
+    let dy = e.deltaY * unit;
+    if (e.shiftKey && dx === 0) [dx, dy] = [dy, 0];
+    if (dx === 0 && dy === 0) return;
+    e.preventDefault();
+    if (dx !== 0) scrollToTick(Math.min(Math.max(prView.scrollTick + dx / ppt, 0), Math.max(scrollMaxTick, prView.scrollTick)));
+    if (dy !== 0) {
+      wheelRows += dy;
+      const rows = Math.trunc(wheelRows / rowH);
+      if (rows !== 0) {
+        wheelRows -= rows * rowH;
+        prView.topKey = G.clampTopKey(prView.topKey - rows, G.wholeRows(areaH, rowH));
+      }
+    }
+  }
+
+  // ---- ひらいたとき: クリップのはじまりまで送り、入る拡大にし、ノートが見える高さに合わせる ----
+
+  let fitKeysFor: number | null = null;
+  $effect(() => {
+    const clip = shown.clip;
+    const w = areaW;
+    const h = areaH;
+    const notes = n;
+    // 左右の欄をたたむかどうかが決まってから（ノートの場所の幅が変わるので）。
+    if (!clip || w <= 0 || h <= 0 || prPanels.list === null || prPanels.inspector === null) return;
+    untrack(() => {
+      if (prView.shownClip !== clip.id) {
+        prView.shownClip = clip.id;
+        // 欄をたたんだすぐあとは、bind の幅がまだ前の物なので、いまの幅を読む。
+        prView.quarterPx = G.fitQuarterPx(clip.end - clip.start, area?.clientWidth || w, scale);
+        prView.scrollTick = clip.start;
+        fitKeysFor = clip.takeId;
+      }
+      if (fitKeysFor !== null && notes && notes.take.id === fitKeysFor) {
+        prView.topKey = G.fitTopKey(G.keyRangeOf(notes), G.wholeRows(area?.clientHeight || h, rowH));
+        fitKeysFor = null;
+      }
+    });
+  });
+
+  // ---- WebGL: 3 つの面 ----
+
+  const handles: Record<"roll" | "vel" | "keys" | "live", { update(s: GlSlot): void } | null> = { roll: null, vel: null, keys: null, live: null };
+  let rollPicture: RollPicture | null = null;
+  let rollMarks: Uint8Array | null = null;
+  let livePicture: LivePicture | null = null;
+  const sounding = new Uint32Array(4);
+  const isSounding = (k: number) => ((sounding[k >>> 5]! >>> (k & 31)) & 1) === 1;
+  let keysGeom: G.RollGeom = { scrollTick: 0, ppt: 1, topKey: 60, rowH: 12, width: 0, height: 0 };
+
+  const SLOTS: Record<"roll" | "vel" | "keys" | "live", GlSlot> = {
+    roll: { kind: "paint", paint: (out, box, ctx) => rollPicture && paintRoll(out, box, rollPicture, rollMarks, ctx.dpr) },
+    vel: { kind: "paint", paint: (out, box, ctx) => rollPicture && paintVelocityLane(out, box, rollPicture, ctx.dpr) },
+    keys: {
+      kind: "paint",
+      keys: true,
+      paint: (out, box, ctx) => paintRollKeys(out, box, keysGeom, (k) => ctx.isDown(k) || isSounding(k), ctx.dpr),
+    },
+    live: { kind: "paint", paint: (out, box, ctx) => livePicture && paintLive(out, box, livePicture, ctx.dpr) },
+  };
+
+  function painted(node: HTMLElement, name: "roll" | "vel" | "keys" | "live") {
+    const h = glSlot(node, SLOTS[name]);
+    handles[name] = h;
+    return {
+      destroy() {
+        h.destroy();
+        if (handles[name] === h) handles[name] = null;
+      },
+    };
+  }
+  const redraw = (name: "roll" | "vel" | "keys" | "live") => handles[name]?.update(SLOTS[name]);
+
+  /** 大きな面の絵に関係するドラッグの形。動かす・長さを変えるあいだは始めたときから変わらないので、大きな面は描きなおさない。 */
+  const serials = new WeakMap<Drag, number>();
+  let serial = 0;
+  const rollDragKey = $derived.by(() => {
+    void dragVersion;
+    const d = shownDrag;
+    if (!d) return "";
+    if (!serials.has(d)) serials.set(d, ++serial);
+    return `${serials.get(d)}:${rollDragPart(d)}`;
+  });
+  function rollDragPart(d: Drag): string {
+    switch (d.kind) {
+      case "move":
+        return `m${d.press.moved && !d.copy ? 1 : 0}`;
+      case "resize":
+        return `r${d.press.moved ? 1 : 0}`;
+      case "box":
+        return `b${d.hits.length}:${d.hits.reduce((a, b) => a + b, 0)}`;
+      case "erase":
+        return `e${d.hits.size}`;
+      case "velocity":
+        return `v${d.delta}`;
+      case "draw":
+        return "d";
+    }
+  }
+
+  $effect(() => {
+    void rollDragKey;
+    const d = untrack(() => shownDrag);
+    const notes = liveMode ? null : n;
+    rollPicture = {
+      g,
+      sizes,
+      scale: pr.scale,
+      meter,
+      step,
+      shown: notes,
+      origin: liveMode ? null : origin,
+      selected: selFlags,
+      live,
+      drag: d,
+      eraseHover,
+    };
+    rollMarks = noteMarks(G.noteCount(notes), d, eraseHover);
+    untrack(() => {
+      redraw("roll");
+      redraw("vel");
+    });
+  });
+
+  $effect(() => {
+    keysGeom = g;
+    untrack(() => redraw("keys"));
+  });
+
+  // 動いている物の面: 置き場所（CSS px）と、動かす量（transform）。
+  interface LiveBox {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    tx: number;
+    ty: number;
+  }
+  let nowTick = $state(0);
+  const liveBox: LiveBox | null = $derived.by(() => {
+    void dragVersion;
+    const d = shownDrag;
+    if (d && n && !liveMode) {
+      if (d.kind === "move" && d.press.moved) {
+        const b = movedBoxOf(d);
+        if (!b) return null;
+        return { left: b.x0, top: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, tx: d.ticks * ppt, ty: -d.keys * rowH };
+      }
+      if (d.kind === "resize" && d.press.moved) {
+        const b = movedBoxOf(d);
+        if (!b) return null;
+        return { left: b.x0, top: b.y0, width: Math.max(1, areaW - b.x0), height: b.y1 - b.y0, tx: 0, ty: 0 };
+      }
+    }
+    if (d && d.kind === "draw") {
+      const left = G.tickToX(g, d.start);
+      return { left, top: G.keyToY(g, d.key), width: Math.max(1, areaW - left), height: rowH, tx: 0, ty: 0 };
+    }
+    if (held.length > 0) {
+      let first = Infinity;
+      let low = G.KEY_MAX;
+      let high = G.KEY_MIN;
+      for (const l of held) {
+        first = Math.min(first, l.start);
+        low = Math.min(low, l.key);
+        high = Math.max(high, l.key);
+      }
+      const left = G.tickToX(g, first);
+      return { left, top: G.keyToY(g, high), width: Math.max(1, areaW - left), height: (high - low + 1) * rowH, tx: 0, ty: 0 };
+    }
+    return null;
+  });
+
+  /** ドラッグを始めたときの箱（ノートの場所の CSS px）。 */
+  function movedBoxOf(d: Drag): { x0: number; x1: number; y0: number; y1: number } | null {
+    if (!n || (d.kind !== "move" && d.kind !== "resize")) return null;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const k of d.notes) {
+      x0 = Math.min(x0, G.tickToX(g, G.noteStart(n, k)));
+      x1 = Math.max(x1, G.tickToX(g, G.noteEnd(n, k)));
+      y0 = Math.min(y0, G.keyToY(g, n.take.keys[k]!));
+      y1 = Math.max(y1, G.keyToY(g, n.take.keys[k]!) + rowH);
+    }
+    return { x0, x1, y0, y1 };
+  }
+
+  function liveNotesOf(d: Drag | null): LivePicture["notes"] {
+    const out: { start: number; end: number; key: number; face: ColorName }[] = [];
+    const face = (i: number): ColorName => (selFlags && selFlags[i] ? "color.accent" : G.velocityColor(n!.take.velocities[i]!));
+    if (d && n && !liveMode) {
+      if (d.kind === "move" && d.press.moved) {
+        for (const i of d.notes) out.push({ start: G.noteStart(n, i), end: G.noteEnd(n, i), key: n.take.keys[i]!, face: face(i) });
+        return out;
+      }
+      if (d.kind === "resize" && d.press.moved) {
+        for (const i of d.notes) out.push({ start: G.noteStart(n, i), end: G.noteEnd(n, i) + d.ticks, key: n.take.keys[i]!, face: face(i) });
+        return out;
+      }
+    }
+    if (d && d.kind === "draw") {
+      out.push({ start: d.start, end: d.start + d.length, key: d.key, face: "color.accent" });
+      return out;
+    }
+    for (const l of held) out.push({ start: l.start, end: Math.max(l.start, nowTick), key: l.key, face: "color.rec" });
+    return out;
+  }
+
+  $effect(() => {
+    const box = liveBox;
+    void dragVersion;
+    const d = shownDrag;
+    void nowTick;
+    livePicture = box ? { g, sizes, left: box.left, top: box.top, notes: liveNotesOf(d) } : null;
+    untrack(() => redraw("live"));
+  });
+
+  // ---- 動く物: 再生の線、ページ送り、鳴っている音、録っているノートの先 ----
+
+  let playLine = $state<HTMLElement | null>(null);
+  let offsetUs: number | null = null;
+  let drawnLinePx = NaN;
+  let drawnLineRec = false;
+
+  function placeLine(tick: number): void {
+    const line = playLine;
+    if (!line) return;
+    const dpr = metrics.dpr;
+    const px = Math.round((tick - prView.scrollTick) * ppt * dpr);
+    const recLine = transport.state === "recording" || transport.state === "countIn";
+    if (px === drawnLinePx && recLine === drawnLineRec) return;
+    drawnLinePx = px;
+    drawnLineRec = recLine;
+    line.style.transform = `translateX(${px / dpr}px)`;
+    line.style.visibility = px < 0 || px / dpr >= areaW ? "hidden" : "";
+  }
+
+  function frame(): void {
+    const tel = current.telemetry;
+    const tick = shownTick(transport, tel, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
+    if (prView.follow && areaW > 0) {
+      const x = followScroll(tick * ppt, prView.scrollTick * ppt, areaW);
+      if (x !== prView.scrollTick * ppt) prView.scrollTick = x / ppt;
+    }
+    placeLine(tick);
+    if (G.soundingKeys(liveMode ? null : n, tick, sounding)) redraw("keys");
+    if (rec) {
+      const l = tel?.position?.lap ?? rec.lap;
+      if (l !== lap) lap = l;
+      const px = Math.round(tick * ppt * metrics.dpr);
+      if (held.length > 0 && px !== Math.round(nowTick * ppt * metrics.dpr)) nowTick = tick;
+    }
+  }
+
+  let lastState = "stopped";
+  $effect(() => {
+    const s = transport.state;
+    if (lastState === "stopped" && s !== "stopped") prView.follow = true;
+    lastState = s;
+  });
+
+  $effect(() => {
+    if (transport.state === "stopped") {
+      if (G.soundingKeys(null, 0, sounding)) untrack(() => redraw("keys"));
+      return;
+    }
+    if (offsetUs === null) {
+      clockOffsetUs().then(
+        (v) => (offsetUs = v),
+        () => {},
+      );
+    }
+    return everyGlFrame(frame);
+  });
+
+  $effect(() => {
+    void playLine;
+    void prView.scrollTick;
+    void ppt;
+    void areaW;
+    const stopped = transport.state === "stopped";
+    const position = transport.position;
+    drawnLinePx = NaN;
+    if (stopped) untrack(() => placeLine(position));
+  });
+  const lineRec = $derived(transport.state === "countIn" || transport.state === "recording");
+
+  // ---- 文字: 目盛と鍵盤の列の音の名前 ----
+
+  const LABEL_MIN_PX = 40;
+  const rulerLabels = $derived.by(() => {
+    const perBeat = ticksPerBeat(meter);
+    const perBar = ticksPerBar(meter);
+    const every = perBeat * ppt >= LABEL_MIN_PX ? perBeat : perBar * Math.max(1, Math.ceil(LABEL_MIN_PX / (perBar * ppt)));
+    const out: { tick: number; x: number; text: string; bar: boolean }[] = [];
+    if (!(areaW > 0)) return out;
+    const end = prView.scrollTick + areaW / ppt;
+    for (let tick = Math.ceil(prView.scrollTick / every) * every; tick < end; tick += every) {
+      const bar = Math.floor(tick / perBar) + 1;
+      const beat = Math.floor((tick % perBar) / perBeat) + 1;
+      out.push({ tick, x: (tick - prView.scrollTick) * ppt, text: `${bar}.${beat}`, bar: tick % perBar === 0 });
+    }
+    return out;
+  });
+  const keyLabels = $derived.by(() => {
+    const out: { key: number; y: number; text: string }[] = [];
+    const rows = G.rowsShown(g);
+    for (let r = 0; r < rows; r++) {
+      const key = prView.topKey - r;
+      if (key < 0) break;
+      if (key % 12 === 0) out.push({ key, y: r * rowH, text: G.noteName(key) });
+    }
+    return out;
+  });
+
+  // ---- 囲む枠 ----
+
+  const boxFrame = $derived.by(() => {
+    void dragVersion;
+    const d = shownDrag;
+    if (!d || d.kind !== "box" || !d.press.moved || d !== drag.drag) return null;
+    return { x: Math.min(d.press.x, d.x), y: Math.min(d.press.y, d.y), w: Math.abs(d.x - d.press.x), h: Math.abs(d.y - d.press.y) };
+  });
+
+  // ---- 横の棒 ----
+
+  const scrollTotal = $derived(Math.max((scrollMaxTick + areaW / 2 / ppt) * ppt + areaW / 2, prView.scrollTick * ppt + areaW));
+</script>
+
+<div class="roll" use:glRegion={"pianoRoll"}>
+  <div class="ruler">
+    <div class="ruler-gap"></div>
+    <div class="ruler-marks">
+      {#each rulerLabels as l (l.tick)}
+        <span class="m-num mark" class:bar={l.bar} style:left="{l.x}px">{l.text}</span>
+      {/each}
+    </div>
+  </div>
+  <div class="middle" onwheel={wheel}>
+    <div class="keys">
+      <div class="key-names">
+        {#each keyLabels as k (k.key)}
+          <span class="m-num key-name" style:top="{k.y}px">{k.text}</span>
+        {/each}
+      </div>
+      <div class="key-shapes" use:glRegion={"pianoRollKeys"} use:painted={"keys"}></div>
+    </div>
+    <div class="notes">
+    <div
+      class="area"
+      role="presentation"
+      bind:this={area}
+      bind:clientWidth={areaW}
+      bind:clientHeight={areaH}
+      style:cursor={cursorStyle}
+      onpointerdown={(e) => down(e, "notes")}
+      onpointermove={(e) => move(e, "notes")}
+      onpointerup={up}
+      onpointercancel={() => drag.cancel() && changed(null)}
+      onpointerleave={leave}
+    >
+      <div class="fill" use:painted={"roll"}></div>
+      <div class="live-host" use:glRegion={"pianoRollLive"}>
+        {#if liveBox}
+          <div
+            class="live-box"
+            style:left="{liveBox.left}px"
+            style:top="{liveBox.top}px"
+            style:width="{liveBox.width}px"
+            style:height="{liveBox.height}px"
+            style:transform={liveBox.tx || liveBox.ty ? `translate(${liveBox.tx}px, ${liveBox.ty}px)` : null}
+            use:painted={"live"}
+          ></div>
+        {/if}
+      </div>
+      {#if boxFrame}
+        <div class="box-frame" style:left="{boxFrame.x}px" style:top="{boxFrame.y}px" style:width="{boxFrame.w}px" style:height="{boxFrame.h}px"></div>
+      {/if}
+      <div class="play-line" class:rec={lineRec} bind:this={playLine}></div>
+    </div>
+    <HScrollbar total={scrollTotal} visible={areaW} offset={prView.scrollTick * ppt} onscroll={(x) => scrollToTick(x / ppt)} />
+    </div>
+  </div>
+  <div class="velocity">
+    <div class="velocity-head">
+      <span class="m-hi">▾ {t("pr.velocity")}</span>
+      {#if selectedRanges.length > 0 && n}
+        {@const values = G.indexesOf(selectedRanges).slice(0, 3).map((i) => n.take.velocities[i])}
+        <span class="m-num m-lbl">{t("pr.velocitySelected", { values: values.join(" ") })}</span>
+      {:else}
+        <span></span>
+      {/if}
+      <span class="m-num m-lbl">{t("pr.velocityScale")}</span>
+    </div>
+    <div
+      class="bars"
+      role="presentation"
+      bind:clientHeight={velH}
+      style:cursor={cursorStyle}
+      onpointerdown={(e) => down(e, "velocity")}
+      onpointermove={(e) => move(e, "velocity")}
+      onpointerup={up}
+      onpointercancel={() => drag.cancel() && changed(null)}
+    >
+      <div class="fill" use:painted={"vel"}></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .roll {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .ruler {
+    height: var(--mock-pianoroll-ruler);
+    flex-shrink: 0;
+    display: flex;
+    background: var(--color-gray-3);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .ruler-gap {
+    width: var(--size-col-keys);
+    flex-shrink: 0;
+    border-right: var(--line-hair) solid var(--color-gray-6);
+  }
+  .ruler-marks {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    padding-left: var(--space-1);
+    color: var(--color-gray-8);
+    white-space: nowrap;
+  }
+  .mark.bar {
+    color: var(--color-gray-10);
+  }
+  .middle {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .keys {
+    width: var(--size-col-keys);
+    flex-shrink: 0;
+    display: flex;
+    background: var(--color-gray-3);
+    border-right: var(--line-hair) solid var(--color-gray-6);
+    overflow: hidden;
+  }
+  .key-names {
+    width: var(--mock-pianoroll-key-label);
+    flex-shrink: 0;
+    position: relative;
+  }
+  .key-name {
+    position: absolute;
+    right: 0;
+    height: var(--size-note);
+    padding-right: var(--space-1);
+    display: flex;
+    align-items: center;
+    color: var(--color-gray-8);
+  }
+  .key-shapes {
+    flex: 1;
+    min-width: 0;
+  }
+  .notes {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+  }
+  .area {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+  .fill {
+    position: absolute;
+    inset: 0;
+  }
+  .live-host {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .live-box {
+    position: absolute;
+  }
+  .box-frame {
+    position: absolute;
+    border: var(--line-hair) solid var(--color-accent);
+    pointer-events: none;
+    z-index: 2;
+  }
+  .play-line {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--line-hair);
+    background: var(--color-accent);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .play-line.rec {
+    background: var(--color-rec);
+  }
+  .notes :global([data-testid="hscrollbar"]) {
+    z-index: 4;
+  }
+  .velocity {
+    height: var(--size-lane-vel);
+    flex-shrink: 0;
+    display: flex;
+    border-top: var(--line-hair) solid var(--color-gray-6);
+  }
+  .velocity-head {
+    width: var(--size-col-keys);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: var(--space-1) var(--space-2);
+    background: var(--color-gray-3);
+    border-right: var(--line-hair) solid var(--color-gray-6);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .bars {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+    touch-action: none;
+  }
+</style>

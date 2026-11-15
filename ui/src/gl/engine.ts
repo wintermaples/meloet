@@ -186,7 +186,11 @@ export class Engine {
   }
 
   private touch(kind: GlSlot["kind"] | null): void {
-    for (const s of this.slots.values()) if (s.region && (kind === null || s.slot.kind === kind)) s.region.dirty = true;
+    for (const s of this.slots.values()) {
+      if (!s.region) continue;
+      const slot = s.slot;
+      if (kind === null || slot.kind === kind || (kind === "keyboard" && slot.kind === "paint" && slot.keys)) s.region.dirty = true;
+    }
     this.invalidate();
   }
 
@@ -363,6 +367,9 @@ export class Engine {
         break;
       case "rects":
         paintRects(out, box, slot.rects, dpr);
+        break;
+      case "paint":
+        slot.paint(out, box, { dpr, scale: this.scale, isDown: this.isDown });
         break;
     }
   }

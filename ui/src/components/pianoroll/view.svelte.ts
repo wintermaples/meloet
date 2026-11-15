@@ -82,3 +82,8 @@ export function cancelDrag(): boolean {
   for (const c of cancelers) if (c()) return true;
   return false;
 }
+
+// ---- 左右の欄（ノートの一覧、選んだノート）がひらいているか。帯をたたんでも覚えておく ----
+
+/** null は、まだ決めていない（帯をはじめて出したときに決める: ノートの場所が 4 小節ぶん（640）を下まわるなら、たたんで始める。仕様書 3 章の帯の表）。 */
+export const prPanels = $state({ list: null as boolean | null, inspector: null as boolean | null });

@@ -32,6 +32,11 @@ BOARDS = {
     "settingsAdvFixedEnd": None,
     "longName": "F-MeterLongName",
     "pianoRoll": "A-PianoRoll",
+    "pianoRoll720": "F-PR720",
+    "pianoRoll150": "F-PR150",
+    "pianoRollWide": "F-WidePR",
+    "pianoRollPlay": "F-PRPlay",
+    "pianoRollRec": "F-PRRec",
     "mixer": "A-Mixer",
     "history": "F-History",
     "shelf": "F-ShelfArrange",
@@ -48,6 +53,15 @@ CLICKS = {
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
+# Scenes that stand for one board at one window size and zoom: name -> [(w, h, scale)].
+ONLY = {
+    "pianoRoll": [(1280, 800, 100)],
+    "pianoRoll720": [(1280, 720, 100)],
+    "pianoRoll150": [(1280, 800, 150)],
+    "pianoRollWide": [(1920, 1080, 100)],
+    "pianoRollPlay": [(1280, 800, 100)],
+    "pianoRollRec": [(1280, 800, 100)],
+}
 scenes = sys.argv[2:] or list(BOARDS)
 
 # Drives headless Chrome over the DevTools protocol (Node's own WebSocket): open, click, shoot.
@@ -121,35 +135,34 @@ try:
         sys.exit("vite preview did not start")
 
     for scene in scenes:
-        for w, h in SIZES:
-            for scale in SCALES:
-                stem = f"{scene}-{w}x{h}-{scale}"
-                shot = os.path.join(shots, stem + ".png")
-                if scene in CLICKS:
-                    base, selector = CLICKS[scene]
-                    run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
-                         f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selector, shot, str(w), str(h)],
-                        env=env, capture_output=True, timeout=60)
-                else:
-                    run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
-                         "--force-device-scale-factor=1", "--virtual-time-budget=3000",
-                         f"--window-size={w},{h}", f"--screenshot={shot}",
-                         f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}"],
-                        capture_output=True, timeout=60)
-                left = Image.open(shot).convert("RGB")
-                board = BOARDS.get(scene)
-                right = Image.new("RGB", (w, h), (40, 0, 40))
-                if board and os.path.exists(os.path.join(mocks, board + ".png")):
-                    m = Image.open(os.path.join(mocks, board + ".png")).convert("RGB")
-                    right.paste(m.crop((0, 0, min(w, m.width), min(h, m.height))), (0, 0))
-                sheet = Image.new("RGB", (w * 2 + 8, h + 24), (255, 0, 255))
-                sheet.paste(left, (0, 24))
-                sheet.paste(right, (w + 8, 24))
-                d = ImageDraw.Draw(sheet)
-                d.text((4, 6), f"screen  {stem}", fill=(0, 0, 0))
-                d.text((w + 12, 6), f"mock  {board or '-'} (100 %)", fill=(0, 0, 0))
-                sheet.save(os.path.join(out, stem + ".png"))
-                print(os.path.join(out, stem + ".png"))
+        for w, h, scale in ONLY.get(scene) or [(w, h, s) for w, h in SIZES for s in SCALES]:
+            stem = f"{scene}-{w}x{h}-{scale}"
+            shot = os.path.join(shots, stem + ".png")
+            if scene in CLICKS:
+                base, selector = CLICKS[scene]
+                run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
+                     f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selector, shot, str(w), str(h)],
+                    env=env, capture_output=True, timeout=60)
+            else:
+                run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
+                     "--force-device-scale-factor=1", "--virtual-time-budget=3000",
+                     f"--window-size={w},{h}", f"--screenshot={shot}",
+                     f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}"],
+                    capture_output=True, timeout=60)
+            left = Image.open(shot).convert("RGB")
+            board = BOARDS.get(scene)
+            right = Image.new("RGB", (w, h), (40, 0, 40))
+            if board and os.path.exists(os.path.join(mocks, board + ".png")):
+                m = Image.open(os.path.join(mocks, board + ".png")).convert("RGB")
+                right.paste(m.crop((0, 0, min(w, m.width), min(h, m.height))), (0, 0))
+            sheet = Image.new("RGB", (w * 2 + 8, h + 24), (255, 0, 255))
+            sheet.paste(left, (0, 24))
+            sheet.paste(right, (w + 8, 24))
+            d = ImageDraw.Draw(sheet)
+            d.text((4, 6), f"screen  {stem}", fill=(0, 0, 0))
+            d.text((w + 12, 6), f"mock  {board or '-'} (100 %)", fill=(0, 0, 0))
+            sheet.save(os.path.join(out, stem + ".png"))
+            print(os.path.join(out, stem + ".png"))
 finally:
     preview.terminate()
     preview.wait()

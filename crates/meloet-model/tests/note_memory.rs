@@ -66,6 +66,7 @@ fn a_thousand_moves_on_a_take_of_ten_thousand_notes() {
         kept / 1000,
         with - start - kept
     );
-    // Each step keeps the whole old take: about 32 B a note.
-    assert!(kept / 1000 < 400_000, "{kept}");
+    // Each step keeps the whole old take: 24 B a note.
+    assert_eq!(std::mem::size_of::<Note>(), 24);
+    assert!(kept / 1000 < 260_000, "{kept}");
 }

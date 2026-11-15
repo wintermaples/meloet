@@ -819,7 +819,15 @@ impl Model {
             Command::DeleteControls { take, points } => {
                 self.play.delete_controls(take, &points, effects);
             }
-            Command::MoveClip { .. } | Command::DuplicateClip { .. } | Command::TrimClip { .. } => {
+            Command::MoveClip {
+                clip,
+                ticks,
+                track,
+                copy,
+            } => self.play.move_clip(clip, ticks, track, copy, effects),
+            Command::DuplicateClip { clip } => self.play.duplicate_clip(clip, effects),
+            Command::TrimClip { clip, edge, ticks } => {
+                self.play.trim_clip(clip, edge, ticks, effects);
             }
             Command::RejectValue { field, kept, range } => {
                 self.notice = Some(StatusMessage::ValueRejected { field, kept, range });

@@ -45,7 +45,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
         })
     };
     let (t2, t5, t6, t7) = (take(2, 40), take(5, 48), take(6, 50), take(7, 52));
-    let clip = |id: u32, start: u64, end: u64, takes: Vec<(Arc<Take>, u64)>, active: usize| {
+    let clip = |id: u32, start: u64, end: u64, takes: Vec<(Arc<Take>, i64)>, active: usize| {
         Arc::new(Clip {
             id: ClipId(id),
             name: format!("クリップ {id}"),
@@ -71,7 +71,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
             3,
             1920 * 4,
             1920 * 8,
-            vec![(t5, 0), (t6, 480), (t7, 0), (t2, 960)],
+            vec![(t5, 0), (t6, 480), (t7, -480), (t2, 960)],
             1,
         ),
     ];
@@ -129,6 +129,10 @@ fn the_shape_on_disk() {
     assert_eq!(
         track["clips"][1]["takes"][1],
         serde_json::json!({"take": 6, "offset": 480})
+    );
+    assert_eq!(
+        track["clips"][1]["takes"][2],
+        serde_json::json!({"take": 7, "offset": -480})
     );
     let take = &v["takes"][0];
     assert_eq!(take["notes"][0], serde_json::json!([0, 30, 40, 1]));
@@ -410,7 +414,7 @@ fn quantized_song() -> Song {
                 length: 50,
                 key: 60,
                 velocity: 90,
-                from: Some(1),
+                from: OriginIndex::new(1),
             },
             Note {
                 start: 480,
@@ -542,4 +546,26 @@ fn a_file_of_version_1_reads() {
     assert_eq!(decode(&again).unwrap(), song);
     let v: serde_json::Value = serde_json::from_slice(&again).unwrap();
     assert_eq!(v["version"], 2);
+}
+
+#[test]
+fn offsets_below_0_read_and_offsets_out_of_range_do_not() {
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
+    fn offset(v: &mut serde_json::Value) -> &mut serde_json::Value {
+        &mut v["song"]["tracks"][0]["clips"][1]["takes"][2]["offset"]
+    }
+    *offset(&mut v) = serde_json::json!(-20_000);
+    let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(song.doc.tracks[0].clips[1].takes[2].offset, -20_000);
+    for bad in [
+        serde_json::json!(i64::MIN),
+        serde_json::json!(u64::MAX),
+        serde_json::json!(i64::MAX),
+    ] {
+        *offset(&mut v) = bad;
+        assert!(matches!(
+            decode(&serde_json::to_vec(&v).unwrap()),
+            Err(ReadError::Broken)
+        ));
+    }
 }

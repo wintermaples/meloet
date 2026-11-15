@@ -5,7 +5,9 @@
 
 use crate::edit::{EditError, clip_index};
 use crate::history::StepKind;
-use crate::notes::{Content, NotesEdited, indexes_count, pick, put_take, song_controls, unmarked};
+use crate::notes::{
+    Content, NotesEdited, indexes_count, lifted, pick, put_take, song_controls, unmarked,
+};
 use crate::song::{ClipId, ControlPoint, ControlValue, Doc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +60,12 @@ pub fn add_control(
     if tick < c.start || tick >= c.end {
         return Err(EditError::OutOfClip);
     }
+    let (c, l) = lifted(c);
     let mut controls: Vec<(ControlPoint, bool)> =
-        song_controls(c).into_iter().map(|p| (p, false)).collect();
+        song_controls(&c).into_iter().map(|p| (p, false)).collect();
     controls.push((
         ControlPoint {
-            tick,
+            tick: tick + l,
             value: control_value(kind, value),
         },
         true,
@@ -80,8 +83,8 @@ pub fn move_controls(
     value: i64,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
-    let points = song_controls(c);
+    let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
+    let points = song_controls(&c);
     let picked = pick(indexes, points.len())?;
     let chosen = || {
         points
@@ -128,8 +131,7 @@ pub fn delete_controls(
     indexes: &[usize],
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
-    let points = song_controls(c);
+    let points = song_controls(&lifted(&doc.tracks[ti].clips[ci]).0);
     let picked = pick(indexes, points.len())?;
     let count = indexes_count(&picked);
     let controls = points
@@ -151,9 +153,9 @@ fn put(
     controls: Vec<(ControlPoint, bool)>,
     step: StepKind,
 ) -> Result<NotesEdited, EditError> {
-    let c = &doc.tracks[ti].clips[ci];
+    let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
     let content = Content {
-        notes: unmarked(c),
+        notes: unmarked(&c),
         controls,
         origin: c.active_take().take.origin.clone(),
     };

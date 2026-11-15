@@ -11,9 +11,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use meloet_model::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid, InstrumentRef, Meter,
-    MusicalScale, Note, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode, Session, Song,
-    Take, TakeId, TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor, TrackId,
+    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid, InstrumentRef, MAX_TICK, Meter,
+    MusicalScale, Note, OriginIndex, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode,
+    Session, Song, Take, TakeId, TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor,
+    TrackId,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -120,7 +121,8 @@ struct ClipFile {
 #[serde(rename_all = "camelCase")]
 struct ClipTakeFile {
     take: u32,
-    offset: u64,
+    /// Below 0 when the head of the take is trimmed off.
+    offset: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -413,7 +415,7 @@ fn take_file(take: &Take) -> TakeFile {
             .iter()
             .map(|n| match n.from {
                 None => NoteFile::Plain(n.start, n.length, n.key, n.velocity),
-                Some(f) => NoteFile::From(n.start, n.length, n.key, n.velocity, f),
+                Some(f) => NoteFile::From(n.start, n.length, n.key, n.velocity, f.get()),
             })
             .collect(),
         controls: take
@@ -494,7 +496,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             if !clip_ids.insert(c.id) {
                 return None;
             }
-            let range = TickRange::new(c.start, c.end)?;
+            let range = TickRange::new(c.start, c.end).filter(|_| c.end <= MAX_TICK)?;
             if clips
                 .last()
                 .is_some_and(|before| before.end > range.start())
@@ -506,8 +508,11 @@ fn to_song(file: SongFile) -> Option<Song> {
                 .takes
                 .iter()
                 .map(|ct| {
+                    let take = takes.get(&ct.take)?;
+                    let zero = (c.start as i64).checked_add(ct.offset)?;
+                    (zero.unsigned_abs() <= MAX_TICK && take.length <= MAX_TICK).then_some(())?;
                     Some(ClipTake {
-                        take: takes.get(&ct.take)?.clone(),
+                        take: take.clone(),
                         offset: ct.offset,
                     })
                 })
@@ -585,7 +590,7 @@ fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {
                 NoteFile::Plain(s, l, k, v) => (s, l, k, v, None),
                 // An index into the origin take, so only in a take that has one.
                 NoteFile::From(s, l, k, v, f) => {
-                    ((f as usize) < from_len).then_some((s, l, k, v, Some(f)))?
+                    ((f as usize) < from_len).then_some((s, l, k, v, OriginIndex::new(f)))?
                 }
             };
             (length >= 1 && key <= 127 && (1..=127).contains(&velocity)).then_some(Note {

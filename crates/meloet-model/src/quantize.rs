@@ -8,10 +8,10 @@ use std::sync::Arc;
 use crate::edit::{EditError, clip_index};
 use crate::history::StepKind;
 use crate::notes::{
-    Content, NotesEdited, indexes_count, pick, put_take, song_controls, song_notes,
+    Content, NotesEdited, indexes_count, lifted, pick, put_take, song_controls, song_notes,
 };
 use crate::roll::{QuantizeAlign, QuantizeSettings};
-use crate::song::{ClipId, Doc, Note, TakeOrigin};
+use crate::song::{ClipId, Doc, Note, OriginIndex, TakeOrigin};
 use crate::time::Meter;
 
 /// Where `tick` goes with `settings`: toward the nearest step of the grid from the song's
@@ -40,10 +40,10 @@ pub fn quantize(
     settings: QuantizeSettings,
 ) -> Result<(NotesEdited, usize), EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
+    let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let shown = c.active_take();
-    let zero = c.start + shown.offset;
-    let mut notes = song_notes(c);
+    let zero = c.zero(shown) as u64;
+    let mut notes = song_notes(&c);
     let picked = if indexes.is_empty() {
         notes
             .iter()
@@ -60,13 +60,13 @@ pub fn quantize(
         Some(o) => o.take.clone(),
         None => {
             for (i, n) in notes.iter_mut().enumerate() {
-                n.from = Some(i as u32);
+                n.from = OriginIndex::new(i as u32);
             }
             shown.take.clone()
         }
     };
     let g = settings.grid.ticks(doc.meter);
-    let q = |tick| quantized_tick(tick, settings, doc.meter);
+    let q = |tick: u64| quantized_tick(tick.saturating_sub(l), settings, doc.meter) + l;
     let mut moved = false;
     let out = notes
         .into_iter()
@@ -75,7 +75,7 @@ pub fn quantize(
             if !p {
                 return (n, false);
             }
-            let (start, length) = match n.from.and_then(|j| origin.notes.get(j as usize)) {
+            let (start, length) = match n.from.and_then(|j| origin.notes.get(j.get() as usize)) {
                 Some(o) => (zero + o.start, o.length),
                 None => (n.start, n.length),
             };
@@ -100,7 +100,7 @@ pub fn quantize(
     }
     let content = Content {
         notes: out,
-        controls: song_controls(c).into_iter().map(|p| (p, false)).collect(),
+        controls: song_controls(&c).into_iter().map(|p| (p, false)).collect(),
         origin: Some(TakeOrigin {
             take: origin,
             settings,
@@ -121,19 +121,19 @@ pub fn quantize(
 /// back, the take is no longer quantized: it loses its origin.
 pub fn unquantize(doc: &Doc, clip: ClipId, indexes: &[usize]) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
+    let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
     let shown = c.active_take();
     let Some(origin) = shown.take.origin.clone() else {
         return Err(EditError::Unchanged);
     };
-    let zero = c.start + shown.offset;
-    let notes = song_notes(c);
+    let zero = c.zero(shown) as u64;
+    let notes = song_notes(&c);
     let picked = if indexes.is_empty() {
         vec![true; notes.len()]
     } else {
         pick(indexes, notes.len())?
     };
-    let recorded = |n: &Note| n.from.and_then(|j| origin.take.notes.get(j as usize));
+    let recorded = |n: &Note| n.from.and_then(|j| origin.take.notes.get(j.get() as usize));
     let mut count = 0;
     let mut out: Vec<(Note, bool)> = notes
         .into_iter()
@@ -164,7 +164,7 @@ pub fn unquantize(doc: &Doc, clip: ClipId, indexes: &[usize]) -> Result<NotesEdi
     };
     let content = Content {
         notes: out,
-        controls: song_controls(c).into_iter().map(|p| (p, false)).collect(),
+        controls: song_controls(&c).into_iter().map(|p| (p, false)).collect(),
         origin,
     };
     put_take(

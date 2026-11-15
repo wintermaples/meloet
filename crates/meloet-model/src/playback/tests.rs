@@ -73,7 +73,7 @@ fn doc_with(clip: Clip) -> Doc {
     doc
 }
 
-fn clip(start: u64, end: u64, offset: u64, take: Take) -> Clip {
+fn clip(start: u64, end: u64, offset: i64, take: Take) -> Clip {
     Clip {
         id: ClipId(1),
         name: "ピアノ".to_owned(),

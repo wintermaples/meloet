@@ -43,14 +43,14 @@ fn one_take(notes: Vec<Note>) -> (Doc, ClipId) {
 fn shown(doc: &Doc, clip: ClipId) -> (u64, Arc<Take>) {
     let (_, c) = doc.clip(clip).unwrap();
     let ct = c.active_take();
-    (c.start + ct.offset, ct.take.clone())
+    (c.zero(ct) as u64, ct.take.clone())
 }
 
 /// `(start, length, from)` in song positions.
 fn notes_of(doc: &Doc, clip: ClipId) -> Vec<(u64, u64, Option<u32>)> {
     song_notes(doc.clip(clip).unwrap().1)
         .iter()
-        .map(|n| (n.start, n.length, n.from))
+        .map(|n| (n.start, n.length, n.from.map(OriginIndex::get)))
         .collect()
 }
 

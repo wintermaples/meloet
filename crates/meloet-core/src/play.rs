@@ -11,11 +11,11 @@ use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::quantize;
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{
-    Clip, ClipId, Doc, History, Meter, Note, Song, StepKind, TakeId, Tempo, TickRange, TrackId,
-    roll,
+    Clip, ClipEdited, ClipId, Doc, History, Meter, Note, OriginIndex, Song, StepKind, TakeId,
+    Tempo, TickRange, TrackId, arrange, roll,
 };
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipView, ControlKind, Grid, IndexRange, LiveNote, LiveNotes,
+    ArrangeView, BarSpan, ClipEdge, ClipView, ControlKind, Grid, IndexRange, LiveNote, LiveNotes,
     LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField, NoteSelection, PianoRollView,
     QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode, SelectMode, StatusMessage,
     TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef, TransportState,
@@ -601,6 +601,54 @@ impl Play {
         }
     }
 
+    /// A drag in the arrange view onto the track `track` (`TrackView::number`); `copy`: Alt +
+    /// drag. The clip moved, or the copy, is selected and shown in the piano roll.
+    pub fn move_clip(
+        &mut self,
+        clip: u32,
+        ticks: i64,
+        track: u32,
+        copy: bool,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.busy() {
+            return;
+        }
+        let moved = arrange::move_clip(self.doc(), ClipId(clip), ticks, TrackId(track), copy);
+        if let Ok(e) = moved {
+            self.apply_clip(e, effects);
+        }
+    }
+
+    /// Mod D in the arrange view. The copy is selected and shown in the piano roll.
+    pub fn duplicate_clip(&mut self, clip: u32, effects: &mut Vec<Effect>) {
+        if self.busy() {
+            return;
+        }
+        if let Ok(e) = arrange::duplicate_clip(self.doc(), ClipId(clip)) {
+            self.apply_clip(e, effects);
+        }
+    }
+
+    pub fn trim_clip(&mut self, clip: u32, edge: ClipEdge, ticks: i64, effects: &mut Vec<Effect>) {
+        if self.busy() {
+            return;
+        }
+        let edge = match edge {
+            ClipEdge::Start => arrange::ClipEdge::Start,
+            ClipEdge::End => arrange::ClipEdge::End,
+        };
+        if let Ok(e) = arrange::trim_clip(self.doc(), ClipId(clip), edge, ticks) {
+            self.apply(e, effects);
+        }
+    }
+
+    fn apply_clip(&mut self, e: ClipEdited, effects: &mut Vec<Effect>) {
+        self.selected = Some(e.clip);
+        self.piano_roll = Some(e.clip);
+        self.apply(e.edit, effects);
+    }
+
     /// Returns the notice to show.
     pub fn step_take(&mut self, delta: i32, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
         if self.busy() || delta == 0 {
@@ -944,7 +992,7 @@ impl Play {
                     length: u(n.length)?,
                     key: n.key,
                     velocity: n.velocity,
-                    from: n.from,
+                    from: n.from.map(OriginIndex::get),
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -989,7 +1037,7 @@ impl Play {
                         take: c.active as u32 + 1,
                         takes: c.takes.len() as u32,
                         take_id: ct.take.id.0,
-                        take_offset: i64::try_from(ct.offset).unwrap_or(i64::MAX),
+                        take_offset: ct.offset,
                         note_count: ct.take.notes.len() as u32,
                     }
                 })
@@ -1646,6 +1694,8 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
     out
 }
 
+#[cfg(test)]
+mod arrange_tests;
 #[cfg(test)]
 mod roll_tests;
 #[cfg(test)]

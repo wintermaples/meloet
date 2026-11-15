@@ -3,6 +3,9 @@
 //! was, for undo.
 //!
 //! Notes given and returned here are in song positions; the take holds them from its tick 0.
+//! When the shown take's tick 0 is before the song's (its head trimmed off and the clip moved
+//! to the song's start), the work is done on the clip [`lifted`] by that much, so that every
+//! note of the take has a position.
 //! A changed take keeps its notes in order of start, then key, then the order they had. Notes
 //! stay inside the clip; the take grows (never shrinks) to hold them, and its offset follows.
 
@@ -44,10 +47,36 @@ pub enum WriteAt {
     Track(TrackId),
 }
 
-/// The notes of the clip's shown take, in song positions, in the take's order.
+/// How far the shown take's tick 0 is before the song's tick 0: 0 when it is not.
+pub(crate) fn lift(clip: &Clip) -> u64 {
+    (-clip.zero(clip.active_take())).max(0) as u64
+}
+
+/// The clip later by [`lift`], and the lift. Its shown take's tick 0 is at 0 or later.
+pub(crate) fn lifted(clip: &Clip) -> (Clip, u64) {
+    let l = lift(clip);
+    (
+        Clip {
+            start: clip.start + l,
+            end: clip.end + l,
+            ..clip.clone()
+        },
+        l,
+    )
+}
+
+/// Where the shown take's tick 0 is in the song. Only for a clip whose [`lift`] is 0.
+fn zero(clip: &Clip) -> u64 {
+    let z = clip.zero(clip.active_take());
+    debug_assert!(z >= 0, "lift the clip first");
+    z as u64
+}
+
+/// The notes of the clip's shown take, in song positions, in the take's order. Only for a clip
+/// whose [`lift`] is 0.
 pub fn song_notes(clip: &Clip) -> Vec<Note> {
     let shown = clip.active_take();
-    let origin = clip.start + shown.offset;
+    let origin = zero(clip);
     shown
         .take
         .notes
@@ -59,10 +88,11 @@ pub fn song_notes(clip: &Clip) -> Vec<Note> {
         .collect()
 }
 
-/// The control points of the clip's shown take, in song positions, in the take's order.
+/// The control points of the clip's shown take, in song positions, in the take's order. Only
+/// for a clip whose [`lift`] is 0.
 pub fn song_controls(clip: &Clip) -> Vec<ControlPoint> {
     let shown = clip.active_take();
-    let origin = clip.start + shown.offset;
+    let origin = zero(clip);
     shown
         .take
         .controls
@@ -76,7 +106,7 @@ pub fn song_controls(clip: &Clip) -> Vec<ControlPoint> {
 
 /// What Mod C keeps: the notes at `indexes`, each start counted from the earliest of them.
 pub fn clipboard(clip: &Clip, indexes: &[usize]) -> Result<Vec<Note>, EditError> {
-    let notes = song_notes(clip);
+    let notes = song_notes(&lifted(clip).0);
     let picked = pick(indexes, notes.len())?;
     let chosen: Vec<Note> = notes
         .into_iter()
@@ -119,11 +149,13 @@ pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, Edi
     if note.start < c.start || note.start >= c.end {
         return Err(EditError::OutOfClip);
     }
+    let (c, l) = lifted(c);
     let note = Note {
-        length: note.length.min(c.end - note.start),
+        start: note.start + l,
+        length: note.length.min(c.end - note.start - l),
         ..note
     };
-    let mut notes = unmarked(c);
+    let mut notes = unmarked(&c);
     notes.push((note, true));
     put_notes(
         doc,
@@ -230,8 +262,8 @@ fn move_or_copy(
     step: impl FnOnce(usize) -> StepKind,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
-    let notes = song_notes(c);
+    let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
+    let notes = song_notes(&c);
     let picked = pick(indexes, notes.len())?;
     let chosen = || {
         notes
@@ -296,8 +328,7 @@ pub fn resize_notes(
     ticks: i64,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
-    let end = c.end;
+    let end = lifted(&doc.tracks[ti].clips[ci]).0.end;
     change_each(
         doc,
         (ti, ci),
@@ -346,8 +377,7 @@ pub fn delete_notes(
     cut: bool,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
-    let notes = song_notes(c);
+    let notes = song_notes(&lifted(&doc.tracks[ti].clips[ci]).0);
     let picked = pick(indexes, notes.len())?;
     let count = indexes_count(&picked);
     let out = notes
@@ -372,11 +402,11 @@ pub fn paste_notes(
     at: u64,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
+    let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let pasted: Vec<(Note, bool)> = notes
         .iter()
         .filter_map(|n| {
-            let start = at.checked_add(n.start)?;
+            let start = at.checked_add(l)?.checked_add(n.start)?;
             let fits = start >= c.start
                 && start.checked_add(n.length)? <= c.end
                 && n.length > 0
@@ -396,7 +426,7 @@ pub fn paste_notes(
         return Err(EditError::Unchanged);
     }
     let count = pasted.len();
-    let mut out = unmarked(c);
+    let mut out = unmarked(&c);
     out.extend(pasted);
     put_notes(doc, (ti, ci), out, StepKind::PasteNotes { clip, count })
 }
@@ -412,9 +442,9 @@ pub fn set_notes_field(
     value: i64,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
+    let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let step = |count| StepKind::SetNotesField { clip, count };
-    let notes = song_notes(c);
+    let notes = song_notes(&c);
     let picked = pick(indexes, notes.len())?;
     let chosen = || {
         notes
@@ -425,7 +455,7 @@ pub fn set_notes_field(
     match field {
         NoteField::Start => {
             let first = chosen().map(|n| n.start).min().expect("picked one");
-            let ticks = value.saturating_sub(first as i64);
+            let ticks = value.saturating_add(l as i64).saturating_sub(first as i64);
             move_or_copy(doc, clip, indexes, ticks, 0, false, step)
         }
         NoteField::Key => {
@@ -458,7 +488,7 @@ fn change_each(
     step: impl FnOnce(usize) -> StepKind,
     change: impl Fn(Note) -> Note,
 ) -> Result<NotesEdited, EditError> {
-    let notes = song_notes(&doc.tracks[ti].clips[ci]);
+    let notes = song_notes(&lifted(&doc.tracks[ti].clips[ci]).0);
     let picked = pick(indexes, notes.len())?;
     let count = indexes_count(&picked);
     let out = notes
@@ -489,8 +519,8 @@ pub(crate) fn indexes_count(picked: &[bool]) -> usize {
     picked.iter().filter(|&&p| p).count()
 }
 
-/// The new take of the clip at `(ti, ci)` holds `notes` (song positions; marked ones are
-/// selected afterwards), with the shown take's control points and origin.
+/// The new take of the clip at `(ti, ci)` holds `notes` (positions of the [`lifted`] clip;
+/// marked ones are selected afterwards), with the shown take's control points and origin.
 fn put_notes(
     doc: &Doc,
     (ti, ci): (usize, usize),
@@ -500,7 +530,7 @@ fn put_notes(
     let clip = &doc.tracks[ti].clips[ci];
     let content = Content {
         notes,
-        controls: song_controls(clip)
+        controls: song_controls(&lifted(clip).0)
             .into_iter()
             .map(|c| (c, false))
             .collect(),
@@ -509,7 +539,7 @@ fn put_notes(
     put_take(doc, (ti, ci), content, false, step)
 }
 
-/// What a changed take holds, in song positions. Marked notes or points are selected afterwards.
+/// What a changed take holds, in positions of the [`lifted`] clip. Marked notes or points are selected afterwards.
 pub(crate) struct Content {
     pub(crate) notes: Vec<(Note, bool)>,
     pub(crate) controls: Vec<(ControlPoint, bool)>,
@@ -544,20 +574,21 @@ pub(crate) fn put_take(
 ) -> Result<NotesEdited, EditError> {
     let track = &doc.tracks[ti];
     let clip = &track.clips[ci];
+    let (up, _) = lifted(clip);
     content.notes.sort_by_key(|(n, _)| (n.start, n.key));
     content.controls.sort_by_key(|(c, _)| c.tick);
     let shown = clip.active_take();
-    if content.notes.iter().map(|(n, _)| n).eq(&song_notes(clip))
+    if content.notes.iter().map(|(n, _)| n).eq(&song_notes(&up))
         && content
             .controls
             .iter()
             .map(|(c, _)| c)
-            .eq(&song_controls(clip))
+            .eq(&song_controls(&up))
         && same_origin(&content.origin, &shown.take.origin)
     {
         return Err(EditError::Unchanged);
     }
-    let origin = clip.start + shown.offset;
+    let origin = zero(&up);
     let origin_new = content
         .notes
         .iter()
@@ -633,7 +664,7 @@ pub(crate) fn put_take(
     let mut takes = clip.takes.clone();
     takes[clip.active] = ClipTake {
         take: Arc::new(take),
-        offset: origin_new - clip.start,
+        offset: origin_new as i64 - up.start as i64,
     };
     let mut clips = track.clips.clone();
     clips[ci] = Arc::new(Clip {

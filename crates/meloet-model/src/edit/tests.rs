@@ -147,7 +147,7 @@ fn recording_before_a_clip_moves_its_start_and_keeps_takes_in_place() {
     let clip = &doc.track(T1).unwrap().clips[0];
     assert_eq!((clip.start, clip.end), (500, 2000));
     // Song positions of each take's tick 0 do not move.
-    let zeros: Vec<u64> = clip.takes.iter().map(|t| clip.start + t.offset).collect();
+    let zeros: Vec<i64> = clip.takes.iter().map(|t| clip.zero(t)).collect();
     assert_eq!(zeros, [1000, 500]);
 }
 
@@ -174,7 +174,7 @@ fn spanning_two_clips_merges_them_with_the_first_ones_name() {
     assert_eq!(clip.id, a.clip);
     assert_eq!(clip.name, "前");
     // The first clip's take, the second clip's two takes, then the new one.
-    let offsets: Vec<u64> = clip.takes.iter().map(|t| t.offset).collect();
+    let offsets: Vec<i64> = clip.takes.iter().map(|t| t.offset).collect();
     assert_eq!(offsets, [0, 2000, 2500, 500]);
     assert_eq!(
         added,

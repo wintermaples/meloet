@@ -55,7 +55,7 @@ fn record(doc: &Doc, takes: Vec<NewTake>) -> (Doc, ClipId) {
 fn shown(doc: &Doc, clip: ClipId) -> (u64, Arc<Take>) {
     let (_, c) = doc.clip(clip).unwrap();
     let ct = c.active_take();
-    (c.start + ct.offset, ct.take.clone())
+    (c.zero(ct) as u64, ct.take.clone())
 }
 
 fn notes_of(doc: &Doc, clip: ClipId) -> Vec<(u64, u64, u8)> {

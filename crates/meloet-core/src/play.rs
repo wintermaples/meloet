@@ -41,6 +41,8 @@ impl Heard {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RecordReport {
     Started {
+        /// Where the recording starts; while playing, the engine says where the listener was.
+        from: u64,
         held: HeldControls,
     },
     Event {
@@ -69,6 +71,10 @@ pub enum EngineOp {
         from: u64,
         count_in_beats: u32,
         /// Track index that does not play its sequence while recording.
+        muted: usize,
+    },
+    /// While playing: record from where the engine is, without a jump.
+    RecordHere {
         muted: usize,
     },
     Stop {
@@ -108,6 +114,7 @@ struct Rec {
     id: u32,
     track: TrackId,
     from: u64,
+    /// The number the take of the current lap gets: laps with no notes make no take.
     take: u32,
     clip: Option<ClipId>,
     count_in_beats: u32,
@@ -140,6 +147,9 @@ impl Rec {
     fn enter_lap(&mut self, lap: u32, changed: &mut Vec<usize>) {
         if lap <= self.live_lap {
             return;
+        }
+        if self.next_index > 0 {
+            self.take += 1;
         }
         self.live_lap = lap;
         self.next_index = 0;
@@ -350,7 +360,8 @@ impl Play {
             return Some(StatusMessage::NoArmedTrack);
         };
         let index = self.track_index(track)?;
-        let (from, count_in_beats) = if self.state == TransportState::Playing {
+        let playing = self.state == TransportState::Playing;
+        let (from, count_in_beats) = if playing {
             let now = self
                 .heard
                 .and_then(|h| h.moving_tick())
@@ -394,10 +405,14 @@ impl Play {
             TransportState::Recording
         };
         self.last_heard = None;
-        effects.push(Effect::Engine(EngineOp::Record {
-            from,
-            count_in_beats,
-            muted: index,
+        effects.push(Effect::Engine(if playing {
+            EngineOp::RecordHere { muted: index }
+        } else {
+            EngineOp::Record {
+                from,
+                count_in_beats,
+                muted: index,
+            }
         }));
         None
     }
@@ -692,11 +707,16 @@ impl Play {
 
     pub fn report(&mut self, report: RecordReport, effects: &mut Vec<Effect>) {
         match report {
-            RecordReport::Started { held } => {
+            RecordReport::Started { from, held } => {
                 if let Some(rec) = &mut self.rec
                     && rec.recorder.is_none()
                 {
-                    rec.recorder = Some(Recorder::new(rec.from, rec.loop_range, held));
+                    rec.from = from;
+                    rec.loop_range = rec.loop_range.filter(|r| r.end() > from);
+                    rec.recorder = Some(Recorder::new(from, rec.loop_range, held));
+                    if self.state != TransportState::Stopped {
+                        self.position = from;
+                    }
                 }
             }
             RecordReport::Event {

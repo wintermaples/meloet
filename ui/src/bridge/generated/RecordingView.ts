@@ -10,7 +10,8 @@ id: number, track: number,
  */
 from: number, 
 /**
- * The number the first new take gets in its clip, counting from 1.
+ * The number the take of the current lap gets in its clip, counting from 1. A loop lap
+ * with no notes makes no take, so it goes up only after a lap with notes.
  */
 take: number, 
 /**

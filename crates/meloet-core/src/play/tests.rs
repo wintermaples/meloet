@@ -115,6 +115,18 @@ fn event(m: &mut Model, kind: RecEventKind, t_us: u64, tick: f64, lap: u32) -> V
     )
 }
 
+/// The engine took the record command, at the place core asked for.
+fn started(m: &mut Model) -> Vec<Effect> {
+    let from = m.view().transport.recording.unwrap().from;
+    report(
+        m,
+        RecordReport::Started {
+            from,
+            held: HeldControls::default(),
+        },
+    )
+}
+
 fn status(m: &Model) -> Option<StatusMessage> {
     m.view().status.message
 }
@@ -124,12 +136,7 @@ fn status(m: &Model) -> Option<StatusMessage> {
 fn record_once(m: &mut Model, notes: &[(u8, f64, f64)], stop: f64) -> Vec<Effect> {
     cmd(m, Command::SetCountIn { bars: 0 });
     cmd(m, Command::Record);
-    report(
-        m,
-        RecordReport::Started {
-            held: HeldControls::default(),
-        },
-    );
+    started(m);
     for &(key, a, b) in notes {
         event(m, on(key), 10, a, 0);
         event(m, off(key), 20, b, 0);
@@ -397,13 +404,39 @@ fn record_while_playing_starts_where_the_listener_is() {
     hear(m, 1, 3000.9, TransportState::Playing, 0);
     assert_eq!(
         ops(&cmd(m, Command::Record)),
-        [EngineOp::Record {
-            from: 3000,
-            count_in_beats: 0,
-            muted: 0
-        }]
+        [EngineOp::RecordHere { muted: 0 }]
     );
-    assert_eq!(m.view().transport.state, TransportState::Recording);
+    let t = m.view().transport;
+    assert_eq!(t.state, TransportState::Recording);
+    assert_eq!(
+        t.recording.unwrap().from,
+        3000,
+        "a guess until the engine says"
+    );
+    // The engine says where the listener was when it took the command.
+    report(
+        m,
+        RecordReport::Started {
+            from: 3012,
+            held: HeldControls::default(),
+        },
+    );
+    let t = m.view().transport;
+    assert_eq!((t.position, t.recording.unwrap().from), (3012, 3012));
+    event(m, on(60), 10, 3100.0, 0);
+    event(m, off(60), 11, 3200.0, 0);
+    m.set_now(12, None);
+    cmd(m, Command::Record);
+    report(
+        m,
+        RecordReport::Stopped {
+            t_us: 12,
+            tick: 3300.0,
+            lap: 0,
+        },
+    );
+    let c = &m.view().song.tracks[0].clips[0];
+    assert_eq!((c.start, c.end), (3012, 3300));
 }
 
 #[test]
@@ -457,12 +490,7 @@ fn live_notes_go_out_as_keys_come_and_drop_what_came_after_stop() {
     cmd(m, Command::SetCountIn { bars: 0 });
     cmd(m, Command::Record);
     let id = m.view().transport.recording.unwrap().id;
-    report(
-        m,
-        RecordReport::Started {
-            held: HeldControls::default(),
-        },
-    );
+    started(m);
     let a = live(&event(m, on(60), 10, 100.4, 0));
     assert_eq!(a.len(), 1);
     assert_eq!(a[0].recording, id);
@@ -531,12 +559,7 @@ fn a_loop_recording_makes_a_take_per_lap() {
         },
     );
     cmd(m, Command::Record);
-    report(
-        m,
-        RecordReport::Started {
-            held: HeldControls::default(),
-        },
-    );
+    started(m);
     hear(m, 1, 10.0, TransportState::Recording, 0);
     assert_eq!(
         status(m),
@@ -563,10 +586,24 @@ fn a_loop_recording_makes_a_take_per_lap() {
             lap: 2
         })
     );
+    assert_eq!(
+        m.view().transport.recording.unwrap().take,
+        2,
+        "lap 1 had notes"
+    );
     let next = live(&event(m, on(64), 13, 300.0, 1));
     assert_eq!((next[0].notes[0].lap, next[0].notes[0].index), (1, 0));
     event(m, off(62), 14, 320.0, 1);
     event(m, off(64), 15, 500.0, 1);
+    // Lap 2 gets take 3; it has no notes, so lap 3 gets take 3 too.
+    report(m, RecordReport::LapChanged { lap: 2 });
+    assert_eq!(m.view().transport.recording.unwrap().take, 3);
+    report(m, RecordReport::LapChanged { lap: 3 });
+    assert_eq!(
+        m.view().transport.recording.unwrap().take,
+        3,
+        "lap 2 made no take"
+    );
     m.set_now(16, None);
     cmd(m, Command::PlayStop);
     report(
@@ -574,7 +611,7 @@ fn a_loop_recording_makes_a_take_per_lap() {
         RecordReport::Stopped {
             t_us: 16,
             tick: 900.0,
-            lap: 1,
+            lap: 3,
         },
     );
     let c = &m.view().song.tracks[0].clips[0];
@@ -587,12 +624,7 @@ fn the_output_going_away_keeps_what_was_recorded_and_says_so() {
     let m = &mut ready();
     cmd(m, Command::SetCountIn { bars: 0 });
     cmd(m, Command::Record);
-    report(
-        m,
-        RecordReport::Started {
-            held: HeldControls::default(),
-        },
-    );
+    started(m);
     event(m, on(60), 10, 100.0, 0);
     hear(m, 11, 700.0, TransportState::Recording, 0);
     m.set_now(12, None);
@@ -628,12 +660,7 @@ fn pipewire_going_away_keeps_what_was_recorded() {
     let m = &mut ready();
     cmd(m, Command::SetCountIn { bars: 0 });
     cmd(m, Command::Record);
-    report(
-        m,
-        RecordReport::Started {
-            held: HeldControls::default(),
-        },
-    );
+    started(m);
     event(m, on(60), 10, 100.0, 0);
     hear(m, 11, 500.0, TransportState::Recording, 0);
     m.set_now(12, None);
@@ -652,12 +679,7 @@ fn keyboard_input_stopping_lets_the_keys_go_and_records_on() {
     let m = &mut ready();
     cmd(m, Command::SetCountIn { bars: 0 });
     cmd(m, Command::Record);
-    report(
-        m,
-        RecordReport::Started {
-            held: HeldControls::default(),
-        },
-    );
+    started(m);
     event(m, on(60), 10, 100.0, 0);
     m.set_now(
         11,
@@ -862,6 +884,27 @@ fn the_status_line_at_rest() {
             nothing_selected: true
         })
     );
+    // Not while counting in or recording; back after a recording with no notes.
+    cmd(m, Command::Record);
+    assert_eq!(m.view().workspace.hint, None, "counting in");
+    started(m);
+    hear(m, 1, 10.0, TransportState::Recording, 0);
+    assert_eq!(m.view().workspace.hint, None, "recording");
+    m.set_now(2, None);
+    cmd(m, Command::Record);
+    report(
+        m,
+        RecordReport::Stopped {
+            t_us: 2,
+            tick: 20.0,
+            lap: 0,
+        },
+    );
+    assert_eq!(
+        m.view().workspace.hint,
+        Some(meloet_protocol::Hint::EmptyArrange)
+    );
+    cmd(m, Command::GoToStart);
     record_once(m, &[(60, 0.0, 100.0)], 400.0);
     assert_eq!(status(m), None, "a clip is selected and the loop is off");
     assert_eq!(m.view().workspace.hint, None, "a clip came");

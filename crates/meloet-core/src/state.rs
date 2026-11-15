@@ -741,13 +741,15 @@ impl Model {
         }
     }
 
-    /// No clip has been in the song yet, the chosen output plays, and no other hint is up.
+    /// No clip has been in the song yet, the chosen output plays, nothing is being recorded, and
+    /// no other hint is up.
     fn empty_hint(&self) -> bool {
         self.hint.is_none()
             && !self.empty_dismissed
             && self.open.is_some()
             && self.preview.is_none()
             && !self.chooser_shown()
+            && !self.play.is_recording()
             && !self.play.had_clip()
     }
 

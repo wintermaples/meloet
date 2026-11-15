@@ -710,6 +710,134 @@ fn stop_cuts_the_recording_at_its_time() {
 }
 
 #[test]
+fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
+    let bpm = 9_600u32;
+    let tpu = ticks_per_us(bpm);
+    for block in [64usize, 256, 1024] {
+        for delay_ms in [13u64, 53] {
+            let label = format!("block {block}, delay {delay_ms} ms");
+            let mut rig = Rig::new(block, delay_ms * 1000);
+            let mut armed = rig.tape(0);
+            let mut other = rig.tape(1);
+            rig.tempo(bpm);
+            let every = |step: u64, note: u8| -> Vec<(u64, InstrumentEvent)> {
+                (0..80).map(|i| (i * step, on(note))).collect()
+            };
+            rig.sequence(0, &every(240, 50));
+            rig.sequence(1, &every(120, 60));
+            rig.run(block as u64);
+            let start = rig.frames;
+            rig.send(EngineCommand::Play { from: 0 });
+            rig.run(frame_of(2000, 0, bpm));
+
+            // The command is taken at the next callback; the listener is then behind the
+            // frames already rendered by the delay.
+            let callback_us = rig.base_us as f64 + rig.frames as f64 * 1e6 / RATE as f64;
+            let heard = (callback_us - rig.dac_us(start)) * tpu;
+            let switch = rig.frames;
+            rig.send(EngineCommand::RecordHere {
+                muted: [0].into_iter().collect(),
+            });
+            // One key still in the stretch that was rendered while playing, one later.
+            let at = |rig: &Rig, tick: f64| (rig.dac_us(start) + tick / tpu).round() as u64;
+            let soon = heard.floor() + 5.0;
+            let later = heard.floor() + 3000.0;
+            let (t_soon, t_later) = (at(&rig, soon), at(&rig, later));
+            rig.key(t_soon, on(70));
+            rig.key(t_later, on(71));
+            rig.run(frame_of(later as u64 + 480, 0, bpm) - (switch - start));
+
+            let got = rig.recorded();
+            let Recorded::Started {
+                from,
+                count_in_beats: 0,
+            } = got[0]
+            else {
+                panic!("{label}: {got:?}");
+            };
+            assert_eq!(from, heard.floor() as u64, "{label}");
+            let keys: Vec<_> = got[1..]
+                .iter()
+                .map(|r| match *r {
+                    Recorded::Event {
+                        event: InstrumentEvent::NoteOn { note, .. },
+                        tick,
+                        lap,
+                        ..
+                    } => (note, tick, lap),
+                    other => panic!("{label}: {other:?}"),
+                })
+                .collect();
+            assert_eq!(keys.len(), 2, "{label}: {keys:?}");
+            for ((note, tick, lap), (want_note, want)) in
+                keys.into_iter().zip([(70, soon), (71, later)])
+            {
+                assert_eq!((note, lap), (want_note, 0), "{label}");
+                assert!(
+                    (tick - want).abs() <= 0.5,
+                    "{label}: {note} at {tick}, want {want}"
+                );
+            }
+
+            // The other track goes on frame for frame: nothing jumped.
+            let played = drain(&mut other);
+            let want: Vec<_> = every(120, 60)
+                .into_iter()
+                .map(|(t, e)| (start + frame_of(t, 0, bpm), e))
+                .filter(|(f, _)| *f < rig.frames)
+                .collect();
+            assert_eq!(played, want, "{label}");
+            // The armed track presses nothing from the switch on.
+            let muted = drain(&mut armed);
+            assert!(
+                muted
+                    .iter()
+                    .filter(|(_, e)| matches!(e, InstrumentEvent::NoteOn { note: 50, .. }))
+                    .all(|(f, _)| *f < switch),
+                "{label}: {muted:?}"
+            );
+            assert!(!muted.is_empty());
+            let clock = rig.parts.handle.clock();
+            let h = clock
+                .heard_at(rig.dac_us(rig.frames - 1).round() as u64)
+                .unwrap();
+            assert_eq!(h.state, TransportState::Recording, "{label}");
+            let want = (rig.dac_us(rig.frames - 1).round() - rig.dac_us(start)) * tpu;
+            assert!(
+                (h.tick - want).abs() < 0.05,
+                "{label}: {} vs {want}",
+                h.tick
+            );
+        }
+    }
+}
+
+#[test]
+fn recording_here_when_not_playing_ends_at_once() {
+    let mut rig = Rig::new(256, 0);
+    rig.send(EngineCommand::Locate { tick: 960 });
+    rig.send(EngineCommand::RecordHere {
+        muted: TrackSet::default(),
+    });
+    rig.run(256);
+    let got = rig.recorded();
+    assert_eq!(
+        got,
+        [
+            Recorded::Started {
+                from: 960,
+                count_in_beats: 0
+            },
+            Recorded::Stopped {
+                t_us: rig.base_us,
+                tick: 960.0,
+                lap: 0
+            }
+        ]
+    );
+}
+
+#[test]
 fn recording_mutes_the_armed_tracks() {
     let mut rig = Rig::new(256, 0);
     let mut armed = rig.tape(0);
@@ -926,6 +1054,9 @@ fn every_transport_path_stays_off_the_allocator() {
                 start: 0,
                 end: 960 + round * 7,
                 on: round % 3 != 0,
+            }),
+            _ if round % 16 == 15 => rig.send(EngineCommand::RecordHere {
+                muted: [2].into_iter().collect(),
             }),
             _ => rig.send(EngineCommand::SetMetronome { on: round % 2 == 0 }),
         }

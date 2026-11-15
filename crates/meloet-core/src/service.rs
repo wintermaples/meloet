@@ -669,6 +669,9 @@ impl Audio {
                 count_in_beats,
                 muted: [muted].into_iter().collect(),
             },
+            EngineOp::RecordHere { muted } => EngineCommand::RecordHere {
+                muted: [muted].into_iter().collect(),
+            },
             EngineOp::Stop { t_us } => EngineCommand::Stop { t_us },
             EngineOp::Locate { tick } => EngineCommand::Locate { tick },
             EngineOp::Tempo {
@@ -718,7 +721,8 @@ fn sequence_event(e: PlayEvent) -> SequenceEvent {
 
 fn record_report(r: Recorded, held: &Held) -> Option<RecordReport> {
     Some(match r {
-        Recorded::Started { .. } => RecordReport::Started {
+        Recorded::Started { from, .. } => RecordReport::Started {
+            from,
             held: HeldControls {
                 sustain: held.sustain.load(Relaxed),
                 bend: held.bend.load(Relaxed),

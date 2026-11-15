@@ -82,6 +82,13 @@ pub enum EngineCommand {
         count_in_beats: u32,
         muted: TrackSet,
     },
+    /// While playing: record from the next frame on, without moving and without a count-in, so
+    /// nothing heard jumps. The recording starts where the listener is when the command is
+    /// taken (`Started::from`); keys heard before it are kept within half a beat, as at the end
+    /// of a count-in. When not playing, a `Started` and a `Stopped` come back at once.
+    RecordHere {
+        muted: TrackSet,
+    },
     /// `t_us` is when the person asked to stop ([`monotonic_us`]). Keys after it are not recorded.
     Stop {
         t_us: u64,
@@ -318,6 +325,9 @@ struct Transport {
     muted: TrackSet,
     session: u32,
     lap: u32,
+    /// After `RecordHere`: the session whose playing stretches, already sent to the DAC, still
+    /// carry keys into this recording.
+    punched: Option<u32>,
 }
 
 impl Transport {
@@ -340,6 +350,7 @@ impl Transport {
             muted: TrackSet::default(),
             session: 0,
             lap: 0,
+            punched: None,
         }
     }
 
@@ -730,6 +741,7 @@ impl Engine {
                     self.silence_lanes();
                     let t = &mut self.transport;
                     t.session = t.session.wrapping_add(1);
+                    t.punched = None;
                     t.lap = 0;
                     t.record_from = from;
                     t.run_from = from;
@@ -751,6 +763,7 @@ impl Engine {
                         );
                     }
                 }
+                EngineCommand::RecordHere { muted } => self.record_here(muted, timing),
                 EngineCommand::Stop { t_us } => self.stop(t_us, timing),
                 EngineCommand::Locate { tick } => {
                     self.end_recording(timing);
@@ -791,6 +804,47 @@ impl Engine {
         self.silence_lanes();
         self.transport.state = TransportState::Stopped;
         self.transport.set_pos(to);
+    }
+
+    fn record_here(&mut self, muted: TrackSet, timing: BlockTiming) {
+        let now = timing.callback_us as f64;
+        let t = &self.transport;
+        if t.state != TransportState::Playing {
+            let from = t.tick().max(0.0).floor() as u64;
+            self.push_recorded(Recorded::Started {
+                from,
+                count_in_beats: 0,
+            });
+            self.push_recorded(Recorded::Stopped {
+                t_us: timing.callback_us,
+                tick: from as f64,
+                lap: 0,
+            });
+            return;
+        }
+        let heard_tick = self
+            .clock
+            .segment_at(now)
+            .filter(|s| s.session == t.session && s.state == TransportState::Playing)
+            .map_or_else(|| t.tick(), |s| heard(&s, now).tick);
+        let from = heard_tick.max(0.0).floor() as u64;
+        let t = &mut self.transport;
+        t.punched = Some(t.session);
+        t.session = t.session.wrapping_add(1);
+        t.lap = 0;
+        t.record_from = from;
+        t.run_from = from;
+        t.muted = muted;
+        t.state = TransportState::Recording;
+        self.push_recorded(Recorded::Started {
+            from,
+            count_in_beats: 0,
+        });
+        for (i, slot) in self.tracks.iter_mut().enumerate() {
+            if muted.contains(i) {
+                slot.lane.silence(slot.instrument.as_deref_mut());
+            }
+        }
     }
 
     /// A command that starts something else while recording first ends the recording, as if
@@ -862,23 +916,25 @@ impl Engine {
         let Some(segment) = self.clock.segment_at(midi.t_us as f64) else {
             return;
         };
-        if segment.session != t.session {
+        let punched =
+            t.punched == Some(segment.session) && segment.state == TransportState::Playing;
+        if segment.session != t.session && !punched {
             return;
         }
         let h = heard(&segment, midi.t_us as f64);
+        let near_start = h.tick >= t.record_from as f64 - f64::from(t.ticks_per_beat) / 2.0;
         let wanted = match h.state {
             TransportState::Recording => true,
-            TransportState::CountIn => {
-                h.tick >= t.record_from as f64 - f64::from(t.ticks_per_beat) / 2.0
-            }
-            _ => false,
+            TransportState::CountIn => near_start,
+            TransportState::Playing => punched && near_start,
+            TransportState::Stopped => false,
         };
         if wanted {
             self.push_recorded(Recorded::Event {
                 event: midi.event,
                 t_us: midi.t_us,
                 tick: h.tick,
-                lap: h.lap,
+                lap: if punched { 0 } else { h.lap },
             });
         }
     }

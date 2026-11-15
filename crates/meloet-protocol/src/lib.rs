@@ -310,7 +310,8 @@ pub struct RecordingView {
     pub track: u32,
     /// Where recording starts in the song.
     pub from: u64,
-    /// The number the first new take gets in its clip, counting from 1.
+    /// The number the take of the current lap gets in its clip, counting from 1. A loop lap
+    /// with no notes makes no take, so it goes up only after a lap with notes.
     pub take: u32,
     /// The clip the takes go into, when the recording overlaps one already.
     pub clip: Option<u32>,

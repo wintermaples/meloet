@@ -110,6 +110,15 @@ export const texts = {
   "msg.exportClipping": s6("書き出しで音が割れる", "いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。"),
   "msg.exported": s6("書き出しが終わった", "書き出しました: {path}", { path: "~/ミュージック/はじめての曲/はじめての曲.wav" }),
   "msg.scaleDoesNotFit": s6("画面に入らない拡大率", "この画面には入りません"),
+  "msg.scaleKept": s6("入らない拡大率をキーでえらんだ", "{requested} % は、この画面には入りません。{kept} % のままです。", { requested: "150", kept: "125" }),
+  "msg.scaleWindowGrown": s6("拡大率を変えて、窓が大きくなった", "拡大率を {scale} % にしました。窓を、いちばん小さい大きさまで広げました。", { scale: "125" }),
+  "msg.scaleLowered": s6("画面が小さくなった", "画面が小さくなったので、拡大率を {from} % から {to} % にしました。", { from: "150", to: "125" }),
+  "msg.bandFoldedWindowLow": s6("帯が自動でたたまれた", "窓が低くなったので、{band}をたたみました。帯札を押すと、またひらきます。", { band: "ミキサー" }),
+  "msg.bandFoldedToOpen": s6(
+    "入りきらない帯をひらいた",
+    "{opened}をひらくために、{folded}をたたみました。窓を高くすると、両方ひらけます。",
+    { opened: "ピアノロール", folded: "ミキサー" },
+  ),
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
 
   // 仕様書 6 章のボタン（「（…）」の中は説明なので入れない）
@@ -146,6 +155,11 @@ export const texts = {
   "key.history": e("H", "spec:4"),
   "key.shelf": e("P", "spec:4"),
   "key.params": e("U", "spec:4"),
+  // 拡大率のキーの書きかた（docs/design-notes.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
+  "key.ctrl": e("Ctrl", "spec:4"),
+  "key.cmd": e("Cmd", "spec:4"),
+  "key.alt": e("Alt", "spec:4"),
+  "key.option": e("Option", "spec:4"),
 
   // 再生まわり
   "transport.songNew": e("新しい曲", "mock:F-Connect1"),
@@ -244,6 +258,8 @@ export const texts = {
   "status.buffer": e("バッファ {actual}", "mock:Main", { actual: "256" }),
   "status.bufferMismatch": e("バッファ {actual} ・ 頼んだ数 {requested}", "spec:3", { actual: "1024", requested: "256" }),
   "status.windows": e("窓 {count}", "spec:6", { count: "2" }),
+  "status.scale": e("{scale} %", "mock:F-Zoom", { scale: "125" }),
+  "zoom.heading": e("拡大率", "mock:F-Zoom"),
   "status.searchingKeyboard": e("鍵盤をさがしています…", "mock:F-Connect1"),
   "status.outputChosen": e("出口を{output}にしました。{track} が録音待機になっています。", "mock:F-Connect3", { output: "アナログヘッドフォン", track: "1 ピアノ" }),
   "status.newSong": e("新しい曲 ・ テンポ {tempo} ・ {signature} ・ {track} が録音待機", "mock:F-Empty", { tempo: "96.00", signature: "4/4", track: "1 ピアノ" }),

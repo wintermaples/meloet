@@ -1,5 +1,6 @@
 // キーの決まり（keys.ts）を画面につなぐ。Esc の順番と、「音が出ました」の案内を消す所もここ。
 import type { AppState, Command } from "../bridge";
+import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
 import { isTyping, keyAction, keyInputOf, platformOf, type KeyAction } from "./keys";
 
@@ -57,8 +58,10 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
 
   if (action.kind === "back") {
     ev.preventDefault();
-    if (tipVisible()) hideTip();
-    else if (typing) (doc.activeElement as HTMLElement | null)?.blur();
+    // 仕様書 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
+    if (typing) (doc.activeElement as HTMLElement | null)?.blur();
+    else if (tipVisible()) hideTip();
+    else if (menuVisible()) closeMenu();
     else deps.send({ type: "back" });
     return;
   }

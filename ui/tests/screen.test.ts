@@ -283,7 +283,7 @@ describe("キーを画面につなぐ", () => {
     expect(sent).toEqual([]);
   });
 
-  it("Esc: 用語の説明 → 文字の枠 → Rust の back", () => {
+  it("Esc: 文字の枠 → 用語の説明 → Rust の back", () => {
     vi.useFakeTimers();
     const span = document.createElement("span");
     const input = document.createElement("input");
@@ -295,10 +295,10 @@ describe("キーを画面につなぐ", () => {
     expect(tipVisible()).toBe(true);
 
     key("Escape");
-    expect(tipVisible()).toBe(false);
-    expect(document.activeElement).toBe(input);
-    key("Escape");
     expect(document.activeElement).not.toBe(input);
+    expect(tipVisible()).toBe(true);
+    key("Escape");
+    expect(tipVisible()).toBe(false);
     expect(sent).toEqual([]);
     key("Escape");
     expect(sent).toEqual([{ type: "back" }]);

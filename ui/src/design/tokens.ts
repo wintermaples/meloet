@@ -160,6 +160,8 @@ export const part = {
   "part.windowmark.size": p(10, "s2", "窓がひらいている印", "10×10"),
   "part.windowlist.width": p(380, "s2", "状態行の「窓」", "幅 380"),
   "part.windowlist.row": p(24, "s2", "状態行の「窓」", "行は高さ 24"),
+  "part.zoomlist.width": p(320, "s2", "状態行の「拡大率」", "幅 320"),
+  "part.zoomlist.row": p(24, "s2", "状態行の「拡大率」", "行は高さ 24"),
   "part.dialog.width": p(560, "s2", "ダイアログ", "幅 560"),
   "part.dialog.head": p(32, "s2", "ダイアログ", "見出し 32"),
   "part.dialog.foot": p(48, "s2", "ダイアログ", "下の列 48"),
@@ -211,6 +213,8 @@ export const mock = {
   "mock.overview.label": m(104, "A-PianoRoll"),
   // 見えている範囲の枠（`top:1px; height:37px`。帯の高さは 39）の、上下のあき。
   "mock.range-frame.inset": m(1, "A-PianoRoll"),
+  // 拡大率の一覧の、率の欄の幅。
+  "mock.zoom.rate": m(56, "F-Zoom"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

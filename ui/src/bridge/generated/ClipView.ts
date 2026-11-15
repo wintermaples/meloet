@@ -10,6 +10,7 @@ take: number, takes: number,
  */
 takeId: number, 
 /**
- * The take's tick 0 is at `start + take_offset` in the song.
+ * The take's tick 0 is at `start + take_offset` in the song; below 0 when the start of
+ * the clip has been trimmed.
  */
 takeOffset: number, noteCount: number, };

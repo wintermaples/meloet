@@ -10,7 +10,7 @@ import type { Command } from "./types";
 export type * from "./types";
 export { PROTOCOL_VERSION } from "./types";
 export { keyIsDown, positionAt, type Telemetry, type TransportReading } from "./telemetry";
-export { CONTROL_CC, CONTROL_PITCH_BEND, type TakeNotes } from "./take";
+export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
 export type { LiveNotesBook } from "./live";
 export { ProtocolVersionError, type Connection, type Handlers } from "./session";
 

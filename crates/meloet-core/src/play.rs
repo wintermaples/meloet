@@ -8,9 +8,10 @@ use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{ClipId, Doc, History, Meter, Song, TakeId, Tempo, TickRange, TrackId};
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipView, LiveNote, LiveNotes, LiveNotesSnapshot, RecordingView,
-    StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef,
-    TransportState, TransportView,
+    ArrangeView, BarSpan, ClipView, Grid, LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale,
+    PianoRollView, QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode, StatusMessage,
+    TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef, TransportState,
+    TransportView,
 };
 
 use crate::state::Effect;
@@ -855,6 +856,7 @@ impl Play {
                     length: u(n.length)?,
                     key: n.key,
                     velocity: n.velocity,
+                    from: None,
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -877,6 +879,7 @@ impl Play {
             TakeNotes {
                 id,
                 length: u(take.length)?,
+                origin: None,
                 notes,
                 controls,
             }
@@ -898,7 +901,7 @@ impl Play {
                         take: c.active as u32 + 1,
                         takes: c.takes.len() as u32,
                         take_id: ct.take.id.0,
-                        take_offset: ct.offset,
+                        take_offset: i64::try_from(ct.offset).unwrap_or(i64::MAX),
                         note_count: ct.take.notes.len() as u32,
                     }
                 })
@@ -996,6 +999,34 @@ impl Play {
         }
     }
 
+    pub fn piano_roll_view(&self) -> PianoRollView {
+        PianoRollView {
+            take: self
+                .piano_roll
+                .and_then(|id| self.doc().clip(id))
+                .map(|(_, c)| c.active_take().take.id.0),
+            selected_notes: Vec::new(),
+            selected_controls: Vec::new(),
+            grid: Grid {
+                division: 16,
+                triplet: false,
+            },
+            scale: MusicalScale {
+                root: 0,
+                mode: ScaleMode::Major,
+                lock: false,
+            },
+            quantize: QuantizeSettings {
+                division: 16,
+                triplet: false,
+                strength: 100,
+                swing: 0,
+                align: QuantizeAlign::Start,
+            },
+            clipboard_notes: 0,
+        }
+    }
+
     pub fn arrange_view(&self) -> ArrangeView {
         ArrangeView {
             selected_clip: self.selected.map(|c| c.0),
@@ -1039,6 +1070,7 @@ impl Play {
         (loop_bars.is_some() || nothing_selected).then_some(StatusMessage::Summary {
             loop_bars,
             nothing_selected,
+            notes: None,
         })
     }
 }

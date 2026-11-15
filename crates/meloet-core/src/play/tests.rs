@@ -1,7 +1,7 @@
 use meloet_devices::{Availability, ClockSettings, DevicesPicture, Endpoint, LinkKind};
 use meloet_midi::Keyboard;
 use meloet_model::record::RecEventKind;
-use meloet_protocol::{Command, StatusMessage, TakeNotes, TransportState};
+use meloet_protocol::{Command, SelectMode, StatusMessage, TakeNotes, TransportState};
 
 use super::*;
 use crate::settings::Settings;
@@ -299,7 +299,8 @@ fn the_loop_turned_on_with_no_range_takes_four_bars_from_the_current_one() {
         status(m),
         Some(StatusMessage::Summary {
             loop_bars: Some(BarSpan { from: 3, to: 7 }),
-            nothing_selected: true
+            nothing_selected: true,
+            notes: None,
         })
     );
     // Off keeps the range.
@@ -715,6 +716,70 @@ fn keyboard_input_stopping_lets_the_keys_go_and_records_on() {
 }
 
 #[test]
+fn the_piano_roll_section_follows_the_shown_take() {
+    let m = &mut ready();
+    let empty = m.view().piano_roll;
+    assert_eq!(empty.take, None);
+    assert_eq!(
+        (empty.grid, empty.scale, empty.quantize),
+        (
+            Grid {
+                division: 16,
+                triplet: false
+            },
+            MusicalScale {
+                root: 0,
+                mode: ScaleMode::Major,
+                lock: false
+            },
+            QuantizeSettings {
+                division: 16,
+                triplet: false,
+                strength: 100,
+                swing: 0,
+                align: QuantizeAlign::Start
+            }
+        )
+    );
+    assert!(empty.selected_notes.is_empty() && empty.selected_controls.is_empty());
+    assert_eq!(empty.clipboard_notes, 0);
+
+    record_once(m, &[(60, 0.0, 100.0)], 400.0);
+    cmd(m, Command::Locate { tick: 0 });
+    record_once(m, &[(62, 0.0, 100.0)], 400.0);
+    let c = m.view().song.tracks[0].clips[0].clone();
+    assert_eq!(m.view().piano_roll.take, Some(c.take_id));
+    let take = TakeNotes::decode(&m.take_notes(c.take_id).unwrap()).unwrap();
+    assert_eq!(take.origin, None);
+    assert!(take.notes.iter().all(|n| n.from.is_none()));
+
+    cmd(m, Command::StepTake { delta: 1 });
+    let shown = m.view().song.tracks[0].clips[0].take_id;
+    assert_ne!(shown, c.take_id);
+    assert_eq!(m.view().piano_roll.take, Some(shown));
+
+    // Not made yet: taken, and nothing changes.
+    let before = m.view();
+    cmd(
+        m,
+        Command::SelectNotes {
+            take: shown,
+            notes: vec![0],
+            mode: SelectMode::Replace,
+        },
+    );
+    cmd(
+        m,
+        Command::SetGrid {
+            division: 8,
+            triplet: true,
+        },
+    );
+    assert_eq!(m.view().piano_roll, before.piano_roll);
+    assert_eq!(m.view().song, before.song);
+}
+
+#[test]
 fn takes_step_round_and_undo_and_redo_come_back_to_the_same_song() {
     let m = &mut ready();
     record_once(m, &[(60, 0.0, 100.0)], 400.0);
@@ -887,7 +952,8 @@ fn the_status_line_at_rest() {
         status(m),
         Some(StatusMessage::Summary {
             loop_bars: None,
-            nothing_selected: true
+            nothing_selected: true,
+            notes: None,
         })
     );
     // Not while counting in or recording; back after a recording with no notes.

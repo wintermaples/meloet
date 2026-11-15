@@ -396,7 +396,10 @@ pub fn record(
     assert_eq!(clip.take, clip.takes, "the new take is shown");
     let bytes = core.take_notes(clip.take_id).expect("the take's notes");
     let take = TakeNotes::decode(&bytes).expect("a take binary");
-    let base = clip.start + clip.take_offset;
+    let base = clip
+        .start
+        .checked_add_signed(clip.take_offset)
+        .expect("the take starts in the song");
     let notes_in_take = take.notes.len();
     if notes_in_take == presses.len() {
         for (press, note) in presses.iter_mut().zip(&take.notes) {

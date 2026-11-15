@@ -194,7 +194,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
         }
         let c = clip_of(&core.snapshot().state);
         let take = TakeNotes::decode(&core.take_notes(c.take_id).expect("notes")).unwrap();
-        let base = (c.start + c.take_offset) as i64;
+        let base = c.start as i64 + c.take_offset;
         let notes: Vec<(u8, i64, i64)> = take
             .notes
             .iter()

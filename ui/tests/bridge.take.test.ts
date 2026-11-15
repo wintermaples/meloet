@@ -1,27 +1,29 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { encodeTake } from "../src/bridge/fake";
-import { CONTROL_CC, TakeStore, decodeTake } from "../src/bridge/take";
+import { CONTROL_CC, NO_FROM, TakeStore, decodeTake } from "../src/bridge/take";
 // Both files are written by `cargo test -p meloet-protocol` from the Rust encoder.
-import expected from "./fixtures/take-v1.json";
+import expected from "./fixtures/take-v2.json";
 
 function fixtureBytes(): Uint8Array {
   const here = decodeURIComponent(new URL(import.meta.url).pathname);
   const dir = here.slice(0, here.lastIndexOf("/"));
-  return new Uint8Array(readFileSync(`${dir}/fixtures/take-v1.bin`));
+  return new Uint8Array(readFileSync(`${dir}/fixtures/take-v2.bin`));
 }
 
-describe("take binary, version 1", () => {
+describe("take binary, version 2", () => {
   it("reads what Rust wrote", () => {
     const t = decodeTake(fixtureBytes());
     expect({
       id: t.id,
       length: t.length,
+      origin: t.origin,
       notes: Array.from(t.starts, (start, i) => ({
         start,
         length: t.lengths[i],
         key: t.keys[i],
         velocity: t.velocities[i],
+        from: t.froms[i],
       })),
       controls: Array.from(t.controlTicks, (tick, i) => ({
         tick,
@@ -38,21 +40,26 @@ describe("take binary, version 1", () => {
     kind[0] = 1;
     expect(() => decodeTake(kind)).toThrow(/kind 1/);
     const version = good.slice();
-    version[1] = 2;
-    expect(() => decodeTake(version)).toThrow(/version/);
-    expect(() => decodeTake(good.subarray(0, 19))).toThrow(/shorter/);
-    expect(() => decodeTake(good.subarray(0, good.length - 1))).toThrow(/expected 60/);
+    version[1] = 1;
+    expect(() => decodeTake(version)).toThrow(/version 1/);
+    expect(() => decodeTake(good.subarray(0, 23))).toThrow(/shorter/);
+    expect(() => decodeTake(good.subarray(0, good.length - 1))).toThrow(/expected 72/);
     const control = good.slice();
-    control[48] = 7;
+    control[60] = 7;
     expect(() => decodeTake(control)).toThrow(/control kind 7/);
   });
 
   it("the fake writes what the reader reads", () => {
-    const notes = [{ start: 10, length: 20, key: 60, velocity: 90 }];
-    const t = decodeTake(encodeTake({ id: 9, length: 1920, notes }));
-    expect([t.id, t.length, t.starts[0], t.lengths[0], t.keys[0], t.velocities[0], t.controlTicks.length]).toEqual([
-      9, 1920, 10, 20, 60, 90, 0,
+    const notes = [
+      { start: 10, length: 20, key: 60, velocity: 90, from: 3 },
+      { start: 30, length: 20, key: 62, velocity: 91 },
+    ];
+    const t = decodeTake(encodeTake({ id: 9, length: 1920, origin: 4, notes }));
+    expect([t.id, t.length, t.origin, t.starts[0], t.lengths[0], t.keys[0], t.velocities[0], t.controlTicks.length]).toEqual([
+      9, 1920, 4, 10, 20, 60, 90, 0,
     ]);
+    expect(Array.from(t.froms)).toEqual([3, NO_FROM]);
+    expect(decodeTake(encodeTake({ id: 9, length: 1920, notes })).origin).toBe(0);
   });
 });
 

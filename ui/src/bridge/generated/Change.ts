@@ -4,6 +4,7 @@ import type { AudioView } from "./AudioView";
 import type { InputsView } from "./InputsView";
 import type { KeyboardsView } from "./KeyboardsView";
 import type { OutputsView } from "./OutputsView";
+import type { PianoRollView } from "./PianoRollView";
 import type { SongView } from "./SongView";
 import type { StatusView } from "./StatusView";
 import type { TransportView } from "./TransportView";
@@ -12,4 +13,4 @@ import type { WorkspaceView } from "./WorkspaceView";
 /**
  * One whole section. `section` is the key of that section in `AppState`.
  */
-export type Change = { "section": "song", "value": SongView } | { "section": "transport", "value": TransportView } | { "section": "arrange", "value": ArrangeView } | { "section": "workspace", "value": WorkspaceView } | { "section": "keyboards", "value": KeyboardsView } | { "section": "outputs", "value": OutputsView } | { "section": "inputs", "value": InputsView } | { "section": "audio", "value": AudioView } | { "section": "status", "value": StatusView };
+export type Change = { "section": "song", "value": SongView } | { "section": "transport", "value": TransportView } | { "section": "arrange", "value": ArrangeView } | { "section": "pianoRoll", "value": PianoRollView } | { "section": "workspace", "value": WorkspaceView } | { "section": "keyboards", "value": KeyboardsView } | { "section": "outputs", "value": OutputsView } | { "section": "inputs", "value": InputsView } | { "section": "audio", "value": AudioView } | { "section": "status", "value": StatusView };

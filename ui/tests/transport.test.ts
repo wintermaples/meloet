@@ -395,9 +395,9 @@ describe("状態行の札と知らせ", () => {
       "1 ピアノ ・ Aメロ をテイク 2 / 3 に切りかえました",
     ],
     [{ id: "noArmedTrack" }, "録るトラックが決まっていません。トラックの ● を押すと、そこに録ります。"],
-    [{ id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true }, "ループ 5–9 ・ 選択なし"],
-    [{ id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: false }, "ループ 5–9"],
-    [{ id: "summary", loopBars: null, nothingSelected: true }, "選択なし"],
+    [{ id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true, notes: null }, "ループ 5–9 ・ 選択なし"],
+    [{ id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: false, notes: null }, "ループ 5–9"],
+    [{ id: "summary", loopBars: null, nothingSelected: true, notes: null }, "選択なし"],
     [
       { id: "outputChosen", output: "アナログヘッドフォン", track: PIANO },
       "出口をアナログヘッドフォンにしました。1 ピアノ が録音待機になっています。",
@@ -414,7 +414,7 @@ describe("状態行の札と知らせ", () => {
   });
 
   it("summary で何もないときは、札だけ", () => {
-    show(StatusLine, msg({ id: "summary", loopBars: null, nothingSelected: false }));
+    show(StatusLine, msg({ id: "summary", loopBars: null, nothingSelected: false, notes: null }));
     expect(text(".status .message")).toBeNull();
   });
 

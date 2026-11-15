@@ -4,7 +4,7 @@
 // numbers as crates/meloet-core/src/layout.rs, but meloet-core stays the rule book.
 
 import type { Transport } from "./session";
-import { TAKE_KIND, TAKE_VERSION } from "./take";
+import { NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
 import {
   PROTOCOL_VERSION,
@@ -14,9 +14,11 @@ import {
   type ClipView,
   type Command,
   type EndpointView,
+  type IndexRange,
   type LayoutView,
   type LiveNote,
   type LiveNotesSnapshot,
+  type PianoRollView,
   type ServerMessage,
   type SongDialogKind,
   type StatusMessage,
@@ -254,6 +256,15 @@ export function fakeState(): AppState {
       recording: null,
     },
     arrange: { selectedClip: null, pianoRollClip: null },
+    pianoRoll: {
+      take: null,
+      selectedNotes: [],
+      selectedControls: [],
+      grid: { division: 16, triplet: false },
+      scale: { root: 0, mode: "major", lock: false },
+      quantize: { division: 16, triplet: false, strength: 100, swing: 0, align: "start" },
+      clipboardNotes: 0,
+    },
     workspace: {
       scale: 100,
       viewportWidth: 1280,
@@ -388,7 +399,7 @@ function changedSong(s: AppState): void {
   s.song.file = "changed";
   s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
   s.transport.position = 4 * BAR;
-  s.status.message = { id: "summary", loopBars: null, nothingSelected: true };
+  s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null };
 }
 
 function songDialog(kind: SongDialogKind, title = "はじめての曲", previous = false) {
@@ -406,7 +417,10 @@ const BAR = 1920;
 interface FakeTake {
   id: number;
   length: number;
-  notes: { start: number; length: number; key: number; velocity: number }[];
+  /** The take a quantized take was made from. */
+  origin?: number;
+  /** `from`: the index of the note of the origin take it came from. */
+  notes: { start: number; length: number; key: number; velocity: number; from?: number }[];
 }
 
 /** A made-up phrase of `count` notes over `bars` bars; the same seed gives the same notes. */
@@ -442,7 +456,7 @@ function fakeClip(id: number, name: string, fromBar: number, toBar: number, take
 
 /** Writes the take binary (docs/architecture.md 3-4). Notes only: the fake takes have no controls. */
 export function encodeTake(t: FakeTake): ArrayBuffer {
-  const buf = new ArrayBuffer(20 + 12 * t.notes.length);
+  const buf = new ArrayBuffer(TAKE_HEADER_LEN + TAKE_NOTE_LEN * t.notes.length);
   const v = new DataView(buf);
   v.setUint8(0, TAKE_KIND);
   v.setUint8(1, TAKE_VERSION);
@@ -450,12 +464,14 @@ export function encodeTake(t: FakeTake): ArrayBuffer {
   v.setUint32(8, t.length, true);
   v.setUint32(12, t.notes.length, true);
   v.setUint32(16, 0, true);
+  v.setUint32(20, t.origin ?? 0, true);
   t.notes.forEach((n, i) => {
-    const p = 20 + 12 * i;
+    const p = TAKE_HEADER_LEN + TAKE_NOTE_LEN * i;
     v.setUint32(p, n.start, true);
     v.setUint32(p + 4, n.length, true);
     v.setUint8(p + 8, n.key);
     v.setUint8(p + 9, n.velocity);
+    v.setUint32(p + 12, n.from ?? NO_FROM, true);
   });
   return buf;
 }
@@ -473,6 +489,175 @@ const RECORDING_LIVE: LiveNotesSnapshot = {
     }),
     ...[60, 64, 67].map((key, i): LiveNote => ({ lap: 0, index: 11 + i, key, velocity: 87, start: 6 * BAR + 960, length: null })),
   ],
+};
+
+// ---- the piano roll (mocks A-PianoRoll, F-PR720, F-PR150, F-WidePR, F-PRPlay, F-PRRec) ----
+
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+/** "3.1.360" (bar . beat . tick, 4/4) to ticks from the song's start. */
+const at = (text: string) => {
+  const [bar, beat, tick] = text.split(".").map(Number) as [number, number, number];
+  return (bar - 1) * BAR + (beat - 1) * 480 + tick;
+};
+/** "1.240" (beats . ticks) to ticks. */
+const span = (text: string) => {
+  const [beats, ticks] = text.split(".").map(Number) as [number, number];
+  return beats * 480 + ticks;
+};
+/** "D#4" to the MIDI number (C4 = 60). */
+const key = (text: string) => NOTE_NAMES.indexOf(text.slice(0, -1)) + 12 * (Number(text.slice(-1)) + 1);
+
+/** The note list of the mocks (F-WidePR, left), as it is written there: position, key, length, Vel. */
+const MOCK_NOTES: [string, string, string, number][] = [
+  ["1.1.000", "C3", "4.000", 70],
+  ["1.1.000", "G3", "4.000", 64],
+  ["1.1.000", "E4", "1.000", 87],
+  ["1.2.000", "G4", "1.000", 92],
+  ["1.3.000", "C5", "1.240", 101],
+  ["1.4.240", "G4", "0.240", 74],
+  ["2.1.000", "F3", "4.000", 66],
+  ["2.1.000", "A3", "4.000", 62],
+  ["2.1.000", "A4", "1.000", 84],
+  ["2.2.000", "G4", "0.240", 70],
+  ["2.2.240", "F4", "0.240", 72],
+  ["2.3.000", "E4", "2.000", 90],
+  ["3.1.000", "G3", "4.000", 71],
+  ["3.1.000", "B3", "4.000", 60],
+  ["3.1.000", "D4", "0.360", 80],
+  ["3.1.360", "E4", "0.360", 83],
+  ["3.2.240", "F4", "0.240", 77],
+  ["3.3.000", "G4", "2.000", 96],
+  ["4.1.000", "C3", "4.000", 73],
+  ["4.1.000", "E3", "4.000", 61],
+  ["4.1.000", "G3", "4.000", 63],
+  ["4.1.000", "C4", "3.000", 88],
+  ["4.4.000", "E4", "0.360", 58],
+];
+/** D4 E4 F4 of bar 3: quantized, and selected. */
+const QUANTIZED: IndexRange = { start: 14, end: 17 };
+/** Where D4 E4 F4 were played, before they were quantized (read off the gray.7 frames of A-PianoRoll). */
+const PLAYED_AT: Record<number, number> = { 14: at("3.1.036"), 15: at("3.1.312"), 16: at("3.2.276") };
+
+const PLAYED_TAKE = 11;
+const QUANTIZED_TAKE = 12;
+FAKE_TAKES.set(PLAYED_TAKE, {
+  id: PLAYED_TAKE,
+  length: 4 * BAR,
+  notes: MOCK_NOTES.map(([start, k, length, velocity], i) => ({
+    start: PLAYED_AT[i] ?? at(start),
+    length: span(length),
+    key: key(k),
+    velocity,
+  })),
+});
+FAKE_TAKES.set(QUANTIZED_TAKE, {
+  id: QUANTIZED_TAKE,
+  length: 4 * BAR,
+  origin: PLAYED_TAKE,
+  notes: MOCK_NOTES.map(([start, k, length, velocity], i) => ({
+    start: at(start),
+    length: span(length),
+    key: key(k),
+    velocity,
+    from: i,
+  })),
+});
+for (const t of [phrase(14, 4, 21, 6), phrase(15, 4, 19, 7)]) FAKE_TAKES.set(t.id, t);
+
+/** The other tracks of F-WidePR (MIDI clips only: the fake cannot show the sung clips). */
+const WIDE_TRACKS: { name: string; gainDb: number; clips: [string, number, number][] }[] = [
+  { name: "ベース", gainDb: -7.5, clips: [["ベース A", 5, 9], ["ベース A", 9, 13], ["ベース サビ", 13, 17]] },
+  { name: "ドラム", gainDb: -6.0, clips: [["フィル", 3, 5], ["8ビート", 5, 13], ["サビ ビート", 13, 17]] },
+  { name: "パッド", gainDb: -12.0, clips: [["コード", 1, 5], ["コード サビ", 13, 17]] },
+  { name: "ボーカル", gainDb: -3.2, clips: [] },
+];
+
+function pianoRollView(take: number, scaleLock: boolean): PianoRollView {
+  return {
+    take,
+    selectedNotes: [{ ...QUANTIZED }],
+    selectedControls: [],
+    grid: { division: 16, triplet: false },
+    scale: { root: 0, mode: "major", lock: scaleLock },
+    quantize: { division: 16, triplet: false, strength: 75, swing: 0, align: "start" },
+    clipboardNotes: 0,
+  };
+}
+
+/** A-PianoRoll: the clip "イントロ" (bars 1–4, one take) in the piano roll, D4 E4 F4 selected, stopped at 3.1.000. */
+function pianoRollSong(s: AppState): void {
+  ready(s);
+  s.song.undoCount = 14;
+  s.song.file = "changed";
+  s.song.tracks[0]!.clips = [fakeClip(10, "イントロ", 1, 5, 1, [QUANTIZED_TAKE])];
+  s.song.noteCount = MOCK_NOTES.length;
+  s.arrange = { selectedClip: 10, pianoRollClip: 10 };
+  s.pianoRoll = pianoRollView(QUANTIZED_TAKE, true);
+  s.transport.position = at("3.1.000");
+  s.status.message = {
+    id: "summary",
+    loopBars: null,
+    nothingSelected: false,
+    notes: { count: 3, keys: [key("D4"), key("E4"), key("F4")], quantized: true },
+  };
+}
+
+function pianoRollWide(s: AppState): void {
+  pianoRollSong(s);
+  s.song.tracks[0]!.gainDb = -4.8;
+  let id = 20;
+  WIDE_TRACKS.forEach((t, i) => {
+    const clips = t.clips.map(([name, from, to]) => {
+      const take = phrase(++id, to - from, 4 * (to - from), id);
+      FAKE_TAKES.set(take.id, take);
+      return fakeClip(++id, name, from, to, 1, [take.id]);
+    });
+    s.song.tracks.push({ ...s.song.tracks[0]!, number: i + 2, name: t.name, color: i + 2, gainDb: t.gainDb, armed: false, clips });
+  });
+}
+
+/** F-PRPlay and F-PRRec: the clip "Aメロ" (bars 1–4) with 3 takes, the second shown. */
+function aMelody(s: AppState, takes: number[]): void {
+  ready(s);
+  s.song.undoCount = 14;
+  s.song.file = "saved";
+  s.song.tracks[0]!.clips = [fakeClip(13, "Aメロ", 1, 5, 2, takes)];
+  s.song.noteCount = MOCK_NOTES.length;
+  s.arrange = { selectedClip: 13, pianoRollClip: 13 };
+  s.pianoRoll = pianoRollView(QUANTIZED_TAKE, false);
+  s.status.message = null;
+}
+
+/** F-PRRec: recording take 3 from bar 1; at 4.2.000, C3 E3 G3 held since 4.1.000 and C4 since 4.1.120. */
+const PIANO_ROLL_LIVE: LiveNotesSnapshot = {
+  seq: 22,
+  recording: 1,
+  notes: [
+    ...MOCK_NOTES.slice(0, 18).map(([start, k, length, velocity], index): LiveNote => ({
+      lap: 0,
+      index,
+      key: key(k),
+      velocity,
+      start: at(start),
+      length: span(length),
+    })),
+    ...(
+      [
+        ["4.1.000", "C3"],
+        ["4.1.000", "E3"],
+        ["4.1.000", "G3"],
+        ["4.1.120", "C4"],
+      ] as const
+    ).map(([start, k], i): LiveNote => ({ lap: 0, index: 18 + i, key: key(k), velocity: 88, start: at(start), length: null })),
+  ],
+};
+
+const PIANO_ROLL_PLAYING: FakeMeters = {
+  velocity: 83,
+  loadPermille: 160,
+  master: [dbfs(-7.1), dbfs(-7.6)],
+  tracks: [[dbfs(-7.1), dbfs(-7.6)]],
+  position: { tick: at("4.1.240"), ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 },
 };
 
 export const SCENES: Record<string, SceneDef> = {
@@ -511,7 +696,38 @@ export const SCENES: Record<string, SceneDef> = {
   settingsAdvFixedEnd: { setup: settingsAdvFixed, meters: QUIET, scrollToEnd: true },
   twoKeyboards: { setup: twoKeyboards, meters: QUIET },
   longName: { setup: (s) => (ready(s), withKeyboard(s, "Arturia KeyLab Essential 61 mk3 MIDI 1")), meters: QUIET },
-  pianoRoll: { setup: ready, bands: ["pianoRoll"], meters: QUIET },
+  pianoRoll: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET },
+  // The same at a window of 1280x720: open it in a window of that size.
+  pianoRoll720: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET },
+  pianoRoll150: { setup: pianoRollSong, bands: ["pianoRoll"], meters: QUIET, scale: 150 },
+  // Open it in a window of 1920x1080.
+  pianoRollWide: { setup: pianoRollWide, bands: ["pianoRoll"], meters: QUIET },
+  pianoRollPlay: {
+    setup(s) {
+      aMelody(s, [14, QUANTIZED_TAKE, 15]);
+      s.transport.state = "playing";
+    },
+    bands: ["pianoRoll"],
+    meters: PIANO_ROLL_PLAYING,
+  },
+  // Takes 1 and 2 are in the clip; take 3 is being recorded.
+  pianoRollRec: {
+    setup(s) {
+      aMelody(s, [14, QUANTIZED_TAKE]);
+      s.transport.state = "recording";
+      s.transport.recording = { id: 1, track: 1, from: 0, take: 3, clip: 13, lap: 0 };
+      s.status.message = { id: "recording", track: PIANO, take: 3 };
+    },
+    bands: ["pianoRoll"],
+    meters: {
+      ...PIANO_ROLL_PLAYING,
+      keys: [key("C3"), key("E3"), key("G3"), key("C4")],
+      velocity: 88,
+      sustain: 127,
+      position: { tick: at("4.2.000"), ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 },
+    },
+    live: PIANO_ROLL_LIVE,
+  },
   mixer: { setup: ready, bands: ["mixer"], meters: QUIET },
   history: { setup: ready, bands: ["history"], meters: QUIET },
   shelf: { setup: ready, bands: ["shelf"], meters: QUIET },
@@ -735,10 +951,71 @@ const NOTICES: StatusMessage["id"][] = [
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 
+/** Sorted indexes to ranges `[start, end)`, the touching ones joined. */
+export function toRanges(indexes: Iterable<number>): IndexRange[] {
+  const out: IndexRange[] = [];
+  for (const i of [...new Set(indexes)].sort((a, b) => a - b)) {
+    const last = out.at(-1);
+    if (last && last.end === i) last.end = i + 1;
+    else out.push({ start: i, end: i + 1 });
+  }
+  return out;
+}
+
+const fromRanges = (ranges: IndexRange[]) => ranges.flatMap((r) => Array.from({ length: r.end - r.start }, (_, k) => r.start + k));
+
+/** The selection commands, the grid, the scale and the quantize settings. The fake does not change notes. */
+function reducePianoRoll(pr: PianoRollView, command: Command): void {
+  const count = pr.take === null ? 0 : (FAKE_TAKES.get(pr.take)?.notes.length ?? 0);
+  switch (command.type) {
+    case "selectNotes": {
+      if (command.take !== pr.take) break;
+      const picked = command.notes.filter((i) => i < count);
+      const had = new Set(fromRanges(pr.selectedNotes));
+      if (command.mode === "replace") had.clear();
+      for (const i of picked) {
+        if (command.mode === "toggle" && had.has(i)) had.delete(i);
+        else had.add(i);
+      }
+      pr.selectedNotes = toRanges(had);
+      break;
+    }
+    case "selectAllNotes":
+      pr.selectedNotes = count > 0 ? [{ start: 0, end: count }] : [];
+      break;
+    case "clearNoteSelection":
+      pr.selectedNotes = [];
+      break;
+    case "setGrid":
+      pr.grid = { division: command.division, triplet: command.triplet };
+      break;
+    case "setMusicalScale":
+      pr.scale = { root: command.root, mode: command.mode, lock: command.lock };
+      break;
+    case "setQuantize": {
+      const { division, triplet, strength, swing, align } = command;
+      pr.quantize = { division, triplet, strength, swing, align };
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/** The status line's summary for the selection of the piano roll (NOTE_SELECTION_KEYS in meloet-protocol is 4). */
+function noteSelection(pr: PianoRollView): Extract<StatusMessage, { id: "summary" }>["notes"] {
+  const take = pr.take === null ? undefined : FAKE_TAKES.get(pr.take);
+  const picked = fromRanges(pr.selectedNotes);
+  if (!take || picked.length === 0) return null;
+  return { count: picked.length, keys: picked.slice(0, 4).map((i) => take.notes[i]!.key), quantized: (take.origin ?? 0) !== 0 };
+}
+
 /** `rest` is the status line when no notice is up. */
 function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command): Change[] {
   const ws = structuredClone(state.workspace);
   const outputs = structuredClone(state.outputs);
+  const pianoRoll = structuredClone(state.pianoRoll);
+  reducePianoRoll(pianoRoll, command);
   const choosable = outputs.list.filter((o) => o.unusable === null).map((o) => o.id);
   let notice = isNotice(state.status.message) && command.type === "setViewport" ? state.status.message : null;
   const fitWindow = () => {
@@ -831,8 +1108,13 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
   const changes: Change[] = [];
   if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
   if (JSON.stringify(outputs) !== JSON.stringify(state.outputs)) changes.push({ section: "outputs", value: outputs });
-  // Scenes set the rest of the status line by hand; only the notices move here.
-  const message = notice ?? (isNotice(state.status.message) ? rest : state.status.message);
+  if (JSON.stringify(pianoRoll) !== JSON.stringify(state.pianoRoll)) changes.push({ section: "pianoRoll", value: pianoRoll });
+  // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
+  let message = notice ?? (isNotice(state.status.message) ? rest : state.status.message);
+  if (message?.id === "summary") {
+    const notes = noteSelection(pianoRoll);
+    message = { ...message, notes, nothingSelected: notes === null && state.arrange.selectedClip === null };
+  }
   if (JSON.stringify(message) !== JSON.stringify(state.status.message)) changes.push({ section: "status", value: { message } });
   return changes;
 }

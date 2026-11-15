@@ -11,15 +11,15 @@ mod telemetry;
 use serde::{Deserialize, Serialize};
 
 pub use take::{
-    TAKE_CONTROL_LEN, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION, TakeControl,
-    TakeControlValue, TakeError, TakeNote, TakeNotes,
+    TAKE_CONTROL_LEN, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NO_FROM, TAKE_NOTE_LEN, TAKE_VERSION,
+    TakeControl, TakeControlValue, TakeError, TakeNote, TakeNotes,
 };
 pub use telemetry::{
     TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, Telemetry, TelemetryError,
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -128,6 +128,218 @@ pub enum Command {
         dialog: u32,
         answer: SongAnswer,
     },
+    // The piano roll and the clips (round 3). A note is named by `take`, the id of the take the
+    // piano roll shows (`PianoRollView::take`), and its index in that take's notes (in order of
+    // start, from 0). A command whose `take` is not the take shown now is dropped: it was aimed
+    // at notes that have moved since. Fields named `start`, `at` or `tick` are song positions;
+    // fields named `ticks` are how far to move.
+    //
+    // Every command that changes notes makes a new take (a new id) and puts it in place of the
+    // shown one in its clip, so the number of takes stays the same; undo brings the old id back.
+    /// A click, a box drawn with the select tool, Shift + box (`Add`), and Mod + click (`Toggle`).
+    SelectNotes {
+        take: u32,
+        notes: Vec<u32>,
+        mode: SelectMode,
+    },
+    /// Mod A in the piano roll.
+    SelectAllNotes,
+    ClearNoteSelection,
+    /// The write tool: one command when the mouse button is let go.
+    AddNote {
+        take: u32,
+        start: u64,
+        length: u64,
+        key: u8,
+        velocity: u8,
+    },
+    /// A drag, ← → (a grid step), ↑ ↓ (1 or 12 keys). `copy`: Alt + drag and Mod D (the copies
+    /// are selected afterwards).
+    MoveNotes {
+        take: u32,
+        notes: Vec<u32>,
+        ticks: i64,
+        keys: i32,
+        copy: bool,
+    },
+    /// A drag on the right edge: every note grows or shrinks by the same amount.
+    ResizeNotes {
+        take: u32,
+        notes: Vec<u32>,
+        ticks: i64,
+    },
+    /// The erase tool, and Delete while the piano roll has the keys. Deleting clips is
+    /// `DeleteSelected`.
+    DeleteNotes {
+        take: u32,
+        notes: Vec<u32>,
+    },
+    /// The velocity lane. The result stays in 1..=127.
+    ChangeVelocity {
+        take: u32,
+        notes: Vec<u32>,
+        delta: i32,
+    },
+    /// Mod C.
+    CopyNotes {
+        take: u32,
+        notes: Vec<u32>,
+    },
+    /// Mod X.
+    CutNotes {
+        take: u32,
+        notes: Vec<u32>,
+    },
+    /// Mod V: into the clip of the piano roll, the earliest note at `at`.
+    PasteNotes {
+        at: u64,
+    },
+    /// `division`: how many to a whole note (4 is a quarter, 16 a sixteenth). `triplet` makes
+    /// each step 2/3 as long.
+    SetGrid {
+        division: u16,
+        triplet: bool,
+    },
+    /// "スケール固定" and "音階". `root` 0..=11 is C..B.
+    SetMusicalScale {
+        root: u8,
+        mode: ScaleMode,
+        lock: bool,
+    },
+    /// The write tool sounds the key the moment it is pressed (mock R3-PRMouse).
+    Audition {
+        key: u8,
+        velocity: u8,
+    },
+    AuditionOff,
+    /// The quantize panel: the settings the next `Quantize` uses. `strength` and `swing` are
+    /// percent, 0..=100.
+    SetQuantize {
+        division: u16,
+        triplet: bool,
+        strength: u8,
+        swing: u8,
+        align: QuantizeAlign,
+    },
+    /// Q and "かけなおす". Empty `notes`: every note of the take. The new take points to the
+    /// recorded take it came from (`TakeNotes::origin`).
+    Quantize {
+        take: u32,
+        notes: Vec<u32>,
+    },
+    /// "もとの位置へ戻す": the notes go back to where they are in the origin take.
+    Unquantize {
+        take: u32,
+        notes: Vec<u32>,
+    },
+    /// The note list and the "選んだノート" panel. `Length` and `Velocity` set every note to
+    /// `value`. `Start` puts the earliest note at `value` (a song position) and keeps the
+    /// distances of the others; `Key` puts the lowest note on `value` and keeps the intervals.
+    SetNotesField {
+        take: u32,
+        notes: Vec<u32>,
+        field: NoteField,
+        value: i64,
+    },
+    /// Control points are named by their index in the take's controls (in order of tick).
+    SelectControls {
+        take: u32,
+        points: Vec<u32>,
+        mode: SelectMode,
+    },
+    /// CC 0..=127 (an on/off CC such as sustain only 0 or 127), pitch bend -8192..=8191.
+    AddControl {
+        take: u32,
+        tick: u64,
+        control: ControlKind,
+        value: i32,
+    },
+    /// `value` is how much the values change.
+    MoveControls {
+        take: u32,
+        points: Vec<u32>,
+        ticks: i64,
+        value: i32,
+    },
+    DeleteControls {
+        take: u32,
+        points: Vec<u32>,
+    },
+    /// A drag in the arrange view; `track` is `TrackView::number` of the track it is dropped
+    /// on. `copy`: Alt + drag.
+    MoveClip {
+        clip: u32,
+        ticks: i64,
+        track: u32,
+        copy: bool,
+    },
+    /// Mod D in the arrange view: a copy right after the clip.
+    DuplicateClip {
+        clip: u32,
+    },
+    /// A drag on an edge. What is trimmed off stays in the take and comes back when the edge
+    /// is pulled out again.
+    TrimClip {
+        clip: u32,
+        edge: ClipEdge,
+        ticks: i64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SelectMode {
+    /// The selection becomes these.
+    Replace,
+    /// These are added to the selection.
+    Add,
+    /// Each of these flips between selected and not.
+    Toggle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ScaleMode {
+    Major,
+    Minor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum QuantizeAlign {
+    /// "はじまり".
+    Start,
+    /// Both the start and the end of each note.
+    StartAndEnd,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum NoteField {
+    Start,
+    Key,
+    Length,
+    Velocity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ControlKind {
+    Cc { number: u8 },
+    PitchBend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ClipEdge {
+    Start,
+    End,
 }
 
 /// The buttons of the song dialogs, one for one.
@@ -173,6 +385,7 @@ pub struct AppState {
     pub song: SongView,
     pub transport: TransportView,
     pub arrange: ArrangeView,
+    pub piano_roll: PianoRollView,
     pub workspace: WorkspaceView,
     pub keyboards: KeyboardsView,
     pub outputs: OutputsView,
@@ -193,6 +406,9 @@ impl AppState {
         }
         if old.arrange != new.arrange {
             out.push(Change::Arrange(new.arrange.clone()));
+        }
+        if old.piano_roll != new.piano_roll {
+            out.push(Change::PianoRoll(new.piano_roll.clone()));
         }
         if old.workspace != new.workspace {
             out.push(Change::Workspace(new.workspace.clone()));
@@ -221,6 +437,7 @@ impl AppState {
             Change::Song(v) => self.song = v,
             Change::Transport(v) => self.transport = v,
             Change::Arrange(v) => self.arrange = v,
+            Change::PianoRoll(v) => self.piano_roll = v,
             Change::Workspace(v) => self.workspace = v,
             Change::Keyboards(v) => self.keyboards = v,
             Change::Outputs(v) => self.outputs = v,
@@ -303,8 +520,9 @@ pub struct ClipView {
     pub takes: u32,
     /// Fetch its notes with `take_notes`; they never change, so keep them by this id.
     pub take_id: u32,
-    /// The take's tick 0 is at `start + take_offset` in the song.
-    pub take_offset: u64,
+    /// The take's tick 0 is at `start + take_offset` in the song; below 0 when the start of
+    /// the clip has been trimmed.
+    pub take_offset: i64,
     pub note_count: u32,
 }
 
@@ -372,6 +590,66 @@ pub struct ArrangeView {
     pub selected_clip: Option<u32>,
     /// The clip the piano roll shows: the one selected last, kept after it is unselected.
     pub piano_roll_clip: Option<u32>,
+}
+
+/// The piano roll's own state, kept apart from `song` so that a new selection does not send
+/// the song again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PianoRollView {
+    /// The shown take of `ArrangeView::piano_roll_clip`. The selections are indexes into it.
+    pub take: Option<u32>,
+    /// Indexes of the take's notes, in order, ranges that touch joined into one.
+    pub selected_notes: Vec<IndexRange>,
+    /// Indexes of the take's controls, the same way.
+    pub selected_controls: Vec<IndexRange>,
+    pub grid: Grid,
+    pub scale: MusicalScale,
+    /// What the quantize panel shows: the settings the next `Quantize` uses.
+    pub quantize: QuantizeSettings,
+    /// How many notes `PasteNotes` would put in; 0 when there is nothing to paste.
+    pub clipboard_notes: u32,
+}
+
+/// `[start, end)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct IndexRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+/// `division`: how many to a whole note (16 is "1/16"). `triplet` makes each step 2/3 as long.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Grid {
+    pub division: u16,
+    pub triplet: bool,
+}
+
+/// `root` 0..=11 is C..B. `lock`: "スケール固定 ・ オン", only keys of the scale can be written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct MusicalScale {
+    pub root: u8,
+    pub mode: ScaleMode,
+    pub lock: bool,
+}
+
+/// `strength` and `swing` are percent, 0..=100.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct QuantizeSettings {
+    pub division: u16,
+    pub triplet: bool,
+    pub strength: u8,
+    pub swing: u8,
+    pub align: QuantizeAlign,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -693,12 +971,40 @@ pub enum StatusMessage {
         count: u32,
     },
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
-    /// is on, "選択なし" when nothing is selected, joined by " ・ ".
+    /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
+    /// piano roll are selected ("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み…", mock
+    /// A-PianoRoll); `nothing_selected` is false then.
     Summary {
         loop_bars: Option<BarSpan>,
         nothing_selected: bool,
+        notes: Option<NoteSelection>,
+    },
+    /// The write tool on a key outside the scale while the scale is locked: "D# は C メジャー
+    /// の外の音です（スケール固定 ・ オン）" (spec 6). The screen names the key without its
+    /// octave.
+    OutOfScale {
+        key: u8,
+        root: u8,
+        mode: ScaleMode,
     },
 }
+
+/// The selected notes of the piano roll, for the status line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct NoteSelection {
+    pub count: u32,
+    /// The keys of the first `NOTE_SELECTION_KEYS` selected notes, in the order of the take.
+    /// The mocks show at most 4 note names in the status line ("D4 E4 F4" in A-PianoRoll,
+    /// "C3 E3 G3 C4" in F-PRPlay and F-PRRec); none shows more selected notes than names.
+    pub keys: Vec<u8>,
+    /// The take is quantized (it has an origin take), so it can go back ("もとの位置へ戻せます").
+    pub quantized: bool,
+}
+
+/// How many keys `NoteSelection::keys` holds at most.
+pub const NOTE_SELECTION_KEYS: usize = 4;
 
 /// "{number} {name}" (`track.label`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -734,6 +1040,7 @@ pub enum Change {
     Song(SongView),
     Transport(TransportView),
     Arrange(ArrangeView),
+    PianoRoll(PianoRollView),
     Workspace(WorkspaceView),
     Keyboards(KeyboardsView),
     Outputs(OutputsView),

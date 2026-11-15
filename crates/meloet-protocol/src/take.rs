@@ -1,17 +1,21 @@
-//! The notes of one take, binary, version 1, little-endian: the reply of the `take_notes` invoke.
+//! The notes of one take, binary, version 2, little-endian: the reply of the `take_notes` invoke.
 //! A take never changes once made, so the screen keeps it by its id. The layout table is
 //! docs/architecture.md 3-4; `ui/src/bridge/take.ts` reads it.
 
 use std::fmt;
 
 pub const TAKE_KIND: u8 = 2;
-pub const TAKE_VERSION: u8 = 1;
-pub const TAKE_HEADER_LEN: usize = 20;
-pub const TAKE_NOTE_LEN: usize = 12;
+pub const TAKE_VERSION: u8 = 2;
+pub const TAKE_HEADER_LEN: usize = 24;
+pub const TAKE_NOTE_LEN: usize = 16;
 pub const TAKE_CONTROL_LEN: usize = 8;
 
 const CONTROL_CC: u8 = 0;
 const CONTROL_BEND: u8 = 1;
+/// `origin` in the binary when there is none. Take ids start at 1.
+const NO_ORIGIN: u32 = 0;
+/// `from` in the binary when there is none.
+pub const TAKE_NO_FROM: u32 = u32::MAX;
 
 /// Positions count from the take's tick 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +24,9 @@ pub struct TakeNote {
     pub length: u32,
     pub key: u8,
     pub velocity: u8,
+    /// The index of the note of the origin take this one was made from; `None` for a note
+    /// added by hand, or in a take with no origin.
+    pub from: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +49,9 @@ pub struct TakeControl {
 pub struct TakeNotes {
     pub id: u32,
     pub length: u32,
+    /// The recorded take a quantized take was made from: the piano roll draws its notes as
+    /// "そろえる前の位置". Never `Some(0)`.
+    pub origin: Option<u32>,
     /// In order of start.
     pub notes: Vec<TakeNote>,
     /// In order of tick.
@@ -88,6 +98,7 @@ impl TakeNotes {
     /// When there are more than `u32::MAX` notes or controls.
     pub fn encode(&self) -> Vec<u8> {
         let count = |n: usize| u32::try_from(n).expect("count fits in u32");
+        debug_assert_ne!(self.origin, Some(NO_ORIGIN), "take ids start at 1");
         let mut out = Vec::with_capacity(self.encoded_len());
         out.push(TAKE_KIND);
         out.push(TAKE_VERSION);
@@ -96,10 +107,12 @@ impl TakeNotes {
         out.extend_from_slice(&self.length.to_le_bytes());
         out.extend_from_slice(&count(self.notes.len()).to_le_bytes());
         out.extend_from_slice(&count(self.controls.len()).to_le_bytes());
+        out.extend_from_slice(&self.origin.unwrap_or(NO_ORIGIN).to_le_bytes());
         for n in &self.notes {
             out.extend_from_slice(&n.start.to_le_bytes());
             out.extend_from_slice(&n.length.to_le_bytes());
             out.extend_from_slice(&[n.key, n.velocity, 0, 0]);
+            out.extend_from_slice(&n.from.unwrap_or(TAKE_NO_FROM).to_le_bytes());
         }
         for c in &self.controls {
             out.extend_from_slice(&c.tick.to_le_bytes());
@@ -142,6 +155,7 @@ impl TakeNotes {
         Ok(TakeNotes {
             id: u32_at(4),
             length: u32_at(8),
+            origin: Some(u32_at(20)).filter(|&o| o != NO_ORIGIN),
             notes: (0..notes)
                 .map(|i| {
                     let p = notes_at + TAKE_NOTE_LEN * i;
@@ -150,6 +164,7 @@ impl TakeNotes {
                         length: u32_at(p + 4),
                         key: bytes[p + 8],
                         velocity: bytes[p + 9],
+                        from: Some(u32_at(p + 12)).filter(|&f| f != TAKE_NO_FROM),
                     }
                 })
                 .collect(),

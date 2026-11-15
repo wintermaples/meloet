@@ -128,6 +128,7 @@ fn idle() -> Option<StatusMessage> {
     Some(StatusMessage::Summary {
         loop_bars: None,
         nothing_selected: true,
+        notes: None,
     })
 }
 

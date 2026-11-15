@@ -668,6 +668,32 @@ impl Model {
             Command::AnswerSongDialog { dialog, answer } => {
                 self.answer_song_dialog(dialog, answer, effects);
             }
+            Command::SelectNotes { .. }
+            | Command::SelectAllNotes
+            | Command::ClearNoteSelection
+            | Command::AddNote { .. }
+            | Command::MoveNotes { .. }
+            | Command::ResizeNotes { .. }
+            | Command::DeleteNotes { .. }
+            | Command::ChangeVelocity { .. }
+            | Command::CopyNotes { .. }
+            | Command::CutNotes { .. }
+            | Command::PasteNotes { .. }
+            | Command::SetGrid { .. }
+            | Command::SetMusicalScale { .. }
+            | Command::Audition { .. }
+            | Command::AuditionOff
+            | Command::SetQuantize { .. }
+            | Command::Quantize { .. }
+            | Command::Unquantize { .. }
+            | Command::SetNotesField { .. }
+            | Command::SelectControls { .. }
+            | Command::AddControl { .. }
+            | Command::MoveControls { .. }
+            | Command::DeleteControls { .. }
+            | Command::MoveClip { .. }
+            | Command::DuplicateClip { .. }
+            | Command::TrimClip { .. } => {}
         }
         None
     }
@@ -876,6 +902,7 @@ impl Model {
             song: song_view(&self.play, self.song_file()),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
+            piano_roll: self.play.piano_roll_view(),
             workspace: WorkspaceView {
                 scale: self.scale,
                 viewport_width: self.viewport.0,

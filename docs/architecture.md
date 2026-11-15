@@ -272,6 +272,8 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
 - 長い録音（第 2 回）: `tools/measure/long-record.sh`（600 秒弾きつづけ、xrun、RSS、GC の目安を見る）。
 - 保存の途中で落とす試験（第 2 回）: `crates/meloet-core/src/songfile/tests.rs`。子のプロセスに保存させ、いろいろな瞬間に SIGKILL して、ファイルが前のか新しいかのどちらかで読めることを 120 回確かめる。
 - 画面のコマの時間（第 2 回）: `MELOET_MEASURE_DIR` があると、画面が `frame-profile.json`（WebGL のコマごとの仕事と、そのコマで主スレッドがふさがった時間）を書く。
+- 曲をひらいて測る（第 3 回）: `MELOET_OPEN_SONG=<曲>` は、ページが読めたときに Mod O と同じ道で、PC の窓の代わりにその曲をひらく（殻の `devhooks.rs`）。試験用の曲は `tools/measure/make_song.py`（ノートの数、小節、テンポ、CC の点）。`latency.sh --piano-roll [--song]` と `long-record.sh --piano-roll` は、ピアノロールをひらいたまま測る。
+- ピアノロールを自動で動かす（第 3 回）: `MELOET_MEASURE_DIR` と `MELOET_UI_SCRIPT=pr-scroll:100,pr-zoom:100,pr-drag:1000` があるときだけ、画面が `ui/src/dev/`（`import()` で読む）を動かし、Shift ＋ ホイール、Mod ＋ ホイール、ノートのドラッグ（押す・動かす 4 回・離す）を本物の DOM のできごととしてノートの場所に送る。段ごとの時刻と RSS の印を `ui-script.json` に書く。まとめて動かすのは `tools/measure/ui-script.sh`（RSS は `rss_watch.py`、表は `ui_script_summary.py`）。測らないときに読みこまれないことは `ui/tests/dev.surface.test.ts` が見はる。
 
 ---
 

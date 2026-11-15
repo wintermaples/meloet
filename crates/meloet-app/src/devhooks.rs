@@ -12,12 +12,16 @@
 //! - `MELOET_PCWINDOW_SHOT=/path/out.png`: 1.5 s after the PC's open or folder window is shown,
 //!   print what GTK has up under its title and draw it into the PNG. A window the desktop portal
 //!   shows is another program's and is not found.
+//! - `MELOET_OPEN_SONG=/path/song.meloet`: when the page finished loading, open that song the
+//!   way Mod O does, with the file given instead of the PC's open window (asked once).
+//! - `MELOET_UI_SCRIPT=pr-scroll:100` (only with `MELOET_MEASURE_DIR`): the screen plays that
+//!   script of mouse input once the piano roll shows notes (`ui/src/dev/script.ts`).
 //! - `MELOET_DEBUG_SCREEN=1`: print the work area, the window and its inside to stderr each time
 //!   the shell works out the screen space (read in `main.rs`).
 
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use meloet_protocol::Command;
@@ -33,6 +37,7 @@ struct Script {
 }
 
 static SCRIPT: OnceLock<Script> = OnceLock::new();
+static OPEN_SONG: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Reads `MELOET_COMMANDS` and `MELOET_EXIT_AFTER_MS`. A value that cannot be read is reported
 /// on stderr and does nothing.
@@ -46,6 +51,22 @@ pub fn read_env() {
         eprintln!("{complaint}");
     }
     let _ = SCRIPT.set(script);
+    *open_song_slot() = std::env::var_os("MELOET_OPEN_SONG").map(PathBuf::from);
+}
+
+fn open_song_slot() -> std::sync::MutexGuard<'static, Option<PathBuf>> {
+    OPEN_SONG.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The song `MELOET_OPEN_SONG` names, the first time the core asks for a song file.
+pub fn take_open_song() -> Option<PathBuf> {
+    open_song_slot().take()
+}
+
+/// `MELOET_UI_SCRIPT`, only while measuring.
+pub fn ui_script() -> Option<String> {
+    meloet_core::measure::dir_from_env()?;
+    std::env::var("MELOET_UI_SCRIPT").ok()
 }
 
 fn parse_script(commands: Option<&str>, exit_after_ms: Option<&str>) -> (Script, Vec<String>) {
@@ -143,6 +164,12 @@ fn run_script(webview: &Webview) {
         return;
     };
     let app = webview.app_handle();
+    if open_song_slot().is_some() {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            app.state::<crate::Core>().send(Command::OpenSong);
+        });
+    }
     for (after_ms, command) in script.commands.iter().cloned() {
         let app = app.clone();
         std::thread::spawn(move || {

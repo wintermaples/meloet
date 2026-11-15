@@ -89,6 +89,12 @@ fn measure_report(name: String, json: String) -> Result<(), String> {
     meloet_core::measure::write_report(&dir, &name, &json)
 }
 
+/// Development only: the screen's input script (`MELOET_UI_SCRIPT`), only while measuring.
+#[tauri::command]
+fn ui_script() -> Option<String> {
+    devhooks::ui_script()
+}
+
 /// The inside of the window in logical px. Only on the main thread: a getter waits for it.
 fn content_size(window: &WebviewWindow) -> Option<LogicalSize<f64>> {
     let factor = window.scale_factor().ok()?;
@@ -265,7 +271,15 @@ fn shell_request(
             pcwindow::show_file(path);
             return;
         }
-        ShellRequest::PickSongFile { folder } => (pcwindow::Pick::SongFile, folder),
+        ShellRequest::PickSongFile { folder } => {
+            if let Some(path) = devhooks::take_open_song() {
+                if let Some(core) = core.upgrade() {
+                    core.song_file_picked(Some(path));
+                }
+                return;
+            }
+            (pcwindow::Pick::SongFile, folder)
+        }
         ShellRequest::PickFolder { folder } => (pcwindow::Pick::Folder, folder),
     };
     let answer = {
@@ -312,6 +326,7 @@ fn main() {
             clock,
             measure_enabled,
             measure_report,
+            ui_script,
             takes::take_notes,
             takes::live_notes
         ])

@@ -3,9 +3,11 @@
 # then plays the take back and shoots the screen.
 #
 # usage: tools/measure/long-record.sh [--seconds 600] [--window 1920x1080] [--out DIR] [--no-build]
-#                                     [--monitor SINK_NODE_NAME]
+#                                     [--monitor SINK_NODE_NAME] [--piano-roll]
 #
 # --monitor: the sink whose monitor is recorded during the playback (default: the default sink).
+# --piano-roll: open the piano roll band before recording and keep it open (it shows the take
+#   being recorded, then the take).
 #
 # Watches (tools/measure/long_record_watch.py): PipeWire's error count (xruns) of the meloet
 # stream and its driver, the RSS of meloet and its WebKitWebProcess every 10 s, and the GC helper
@@ -18,6 +20,7 @@ window=1920x1080
 out=
 build=1
 monitor=()
+piano_roll=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --seconds) seconds=$2; shift 2 ;;
@@ -25,7 +28,8 @@ while [ $# -gt 0 ]; do
     --out) out=$2; shift 2 ;;
     --no-build) build=0; shift ;;
     --monitor) monitor=(--target "$2"); shift 2 ;;
-    *) echo "usage: $0 [--seconds N] [--window WxH] [--out DIR] [--no-build] [--monitor NODE]" >&2; exit 2 ;;
+    --piano-roll) piano_roll=1; shift ;;
+    *) echo "usage: $0 [--seconds N] [--window WxH] [--out DIR] [--no-build] [--monitor NODE] [--piano-roll]" >&2; exit 2 ;;
   esac
 done
 
@@ -46,7 +50,7 @@ case "$player" in /*) ;; *) player=$root/$player ;; esac
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/config" "$out"
+mkdir -p "$work/config" "$work/state" "$out"
 rm -f "$out"/*.json "$out"/*.png "$out"/*.wav "$out"/*.md "$out"/*.stderr
 
 # This PC only: the agent user reaches the screen and the sound through this file.
@@ -65,11 +69,14 @@ play_ms=$((stop_ms + 2000))
 play_for_ms=20000
 snap_ms=$((play_ms + play_for_ms + 3000))
 cmd() { printf '{"afterMs":%d,"command":%s}' "$1" "$2"; }
+# Without --piano-roll the band is opened only for the last shot; with it, before recording.
+band_at=$((play_ms + play_for_ms + 1000))
+[ "$piano_roll" = 1 ] && band_at=2000
 commands="[$(cmd 1500 '{"type":"chooserConfirm"}'),$(cmd 2500 '{"type":"toggleMetronome"}'),\
 $(cmd $rec_ms '{"type":"record"}'),$(cmd $stop_ms '{"type":"record"}'),\
 $(cmd $((stop_ms + 500)) '{"type":"toggleMetronome"}'),$(cmd $((stop_ms + 1000)) '{"type":"goToStart"}'),\
 $(cmd $play_ms '{"type":"playStop"}'),$(cmd $((play_ms + play_for_ms)) '{"type":"playStop"}'),\
-$(cmd $((play_ms + play_for_ms + 1000)) '{"type":"toggleBand","band":"pianoRoll"}')]"
+$(cmd $band_at '{"type":"toggleBand","band":"pianoRoll"}')]"
 
 # The keyboard is there before the app starts: the output chooser comes up only with one.
 MELOET_LONGPLAY_NAME="$vkeys_name" MELOET_LONGPLAY_SECONDS="$seconds" MELOET_LONGPLAY_LEAD_MS=10000 \
@@ -79,6 +86,7 @@ keys=$!
 sleep 1
 
 MELOET_CONFIG_DIR="$work/config" \
+MELOET_STATE_DIR="$work/state" \
 MELOET_ONLY_VIRTUAL=1 \
 MELOET_VKEYS_NAME="$vkeys_name" \
 MELOET_WINDOW="$window" \

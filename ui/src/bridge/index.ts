@@ -1,10 +1,10 @@
 // The only door between the screen and Rust. Everything outside ui/src/bridge imports from here.
 
-import { createFakeTransport, fakeMeasureEnabled, fakeMeasureReport } from "./fake";
+import { createFakeTransport, fakeMeasureEnabled, fakeMeasureReport, fakeUiScript } from "./fake";
 import { LiveNotesBook } from "./live";
 import { connectWith, type Connection, type Handlers, type Transport } from "./session";
 import { songTakeIds, TakeStore, type TakeNotes } from "./take";
-import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport } from "./tauri";
+import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport, tauriUiScript } from "./tauri";
 import type { AppState, Command } from "./types";
 
 export type * from "./types";
@@ -91,4 +91,9 @@ export function measureEnabled(): Promise<boolean> {
 /** Development only: asks Rust to write a measurement file. */
 export function measureReport(name: string, json: string): Promise<void> {
   return inTauri() ? tauriMeasureReport(name, json) : fakeMeasureReport(name, json);
+}
+
+/** Development only: the input script to play while measuring (ui/src/dev/script.ts), or null. */
+export function uiScript(): Promise<string | null> {
+  return inTauri() ? tauriUiScript() : fakeUiScript();
 }

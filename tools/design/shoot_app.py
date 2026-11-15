@@ -79,6 +79,11 @@ STATES = {
                             (7000, {"type": "goToStart"}), (7500, {"type": "record"}),
                             (14500, {"type": "record"})],
                   keys=[played(4500, 8), played(12000, 8, 230)], snap=16000),
+    # Round 3. song: notes of the one clip of a song made by tools/measure/make_song.py, opened
+    # with MELOET_OPEN_SONG; its clip (id 2) is selected and shown in the piano roll.
+    "pianoRollSong": dict(board="A-PianoRoll", remembered=True, song=200,
+                          commands=[(600, {"type": "selectClip", "clip": 2}),
+                                    (800, {"type": "toggleBand", "band": "pianoRoll"})], snap=2500),
     "plugIn": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "3"]], snap=1500),
     "plugOut": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "2"]], snap=4000),
 }
@@ -129,6 +134,12 @@ def shoot(state, size, scale, settings, work, png):
                  MELOET_EXIT_AFTER_MS="20000")
     if commands:
         extra["MELOET_COMMANDS"] = json.dumps([{"afterMs": ms, "command": c} for ms, c in commands])
+    if s.get("song"):
+        song = os.path.join(work, f"song-{s['song']}.meloet")
+        if not os.path.exists(song):
+            run([sys.executable, "-I", os.path.join(root, "tools", "measure", "make_song.py"), song,
+                 "--notes", str(s["song"])], stdout=subprocess.DEVNULL)
+        extra.update(MELOET_OPEN_SONG=song, MELOET_STATE_DIR=tempfile.mkdtemp(prefix="state-", dir=work))
     if s.get("only_virtual"):
         extra["MELOET_ONLY_VIRTUAL"] = "1"
     if s.get("accept_virtual"):

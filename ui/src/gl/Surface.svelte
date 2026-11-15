@@ -2,7 +2,7 @@
   // Starts the WebGL engine and feeds it; shows nothing itself. The engine puts a canvas into
   // every box marked with glSlot (see slot.ts), wherever in the page that box is.
   import { onMount } from "svelte";
-  import { clockOffsetUs, measureEnabled, measureReport } from "../bridge";
+  import { clockOffsetUs, measureEnabled, measureReport, uiScript } from "../bridge";
   import { current, onEvent, onTelemetry } from "../state/app.svelte";
   import { Engine } from "./engine";
   import { KeyToScreen } from "./measure";
@@ -16,6 +16,7 @@
     if (current.telemetry) made.onTelemetry(current.telemetry);
     let measure: KeyToScreen | null = null;
     let profile: FrameProfile | null = null;
+    let stopScript: (() => void) | null = null;
     let gone = false;
 
     const stopTelemetry = onTelemetry((t) => made.onTelemetry(t));
@@ -32,6 +33,12 @@
         profile = new FrameProfile(measureReport);
         made.profile = profile;
         profile.start();
+        return uiScript();
+      })
+      .then(async (script) => {
+        if (!script || gone) return;
+        const dev = await import("../dev/start");
+        if (!gone) stopScript = dev.startUiScript(script, measureReport);
       })
       .catch(() => {});
 
@@ -41,6 +48,7 @@
       stopEvents();
       measure?.stop();
       profile?.stop();
+      stopScript?.();
       made.destroy();
       engine = null;
     };

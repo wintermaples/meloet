@@ -23,3 +23,5 @@ export const tauriTransport: Transport = {
 export const tauriMeasureEnabled = () => invoke<boolean>("measure_enabled");
 /** Development only: hands a measurement file to Rust, which writes it. */
 export const tauriMeasureReport = (name: string, json: string) => invoke<void>("measure_report", { name, json });
+/** Development only: the screen's input script (MELOET_UI_SCRIPT), or null. */
+export const tauriUiScript = () => invoke<string | null>("ui_script");

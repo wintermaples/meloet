@@ -1265,3 +1265,9 @@ export async function fakeMeasureReport(name: string, json: string): Promise<voi
   const w = window as unknown as { __meloetMeasure?: Record<string, string> };
   (w.__meloetMeasure ??= {})[name] = json;
 }
+
+/** With `?measure=1&uiScript=pr-scroll:10` in a browser, that script. */
+export async function fakeUiScript(): Promise<string | null> {
+  if (typeof location === "undefined" || !(await fakeMeasureEnabled())) return null;
+  return new URLSearchParams(location.search).get("uiScript");
+}

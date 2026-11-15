@@ -1,0 +1,109 @@
+<!-- 見出しと、選ぶ印つきの行の一覧（状態行の「拡大率」の一覧と同じ部品。仕様書 2 章、モック F-Zoom）。
+     ひらいたら、えらんでいる行にフォーカスを置く。↑ ↓ でえらび、Enter で決める。Esc と外を押したときは、ひらいた側がとじる。 -->
+<script lang="ts" generics="V">
+  import { onMount } from "svelte";
+
+  interface Row {
+    value: V;
+    label: string;
+  }
+  interface Props {
+    heading: string;
+    rows: readonly Row[];
+    selected: V;
+    onpick: (value: V) => void;
+    test: string;
+  }
+  let { heading, rows, selected, onpick, test }: Props = $props();
+
+  let list = $state<HTMLElement>();
+  const buttons = () => [...(list?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+
+  // ひらいた側が一覧を body へ移したあとで置く（移すとフォーカスが外れるので）。
+  onMount(() =>
+    queueMicrotask(() => {
+      const i = rows.findIndex((r) => r.value === selected);
+      buttons()[Math.max(0, i)]?.focus();
+    }),
+  );
+
+  function onkeydown(ev: KeyboardEvent): void {
+    if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.isComposing) return;
+    const all = buttons();
+    const i = all.indexOf(document.activeElement as HTMLButtonElement);
+    if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+      const next = ev.key === "ArrowUp" ? Math.max(0, i - 1) : Math.min(all.length - 1, i + 1);
+      all[next]?.focus();
+    } else if (ev.key === "Enter") {
+      if (i >= 0) onpick(rows[i]!.value);
+    } else {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+</script>
+
+<div class="menu" role="menu" tabindex="-1" aria-label={heading} bind:this={list} {onkeydown} data-test={test}>
+  <div class="head"><span class="m-lbl">{heading}</span></div>
+  {#each rows as row, i (i)}
+    <button class="m-plain row" role="menuitemradio" aria-checked={row.value === selected} onclick={() => onpick(row.value)}>
+      <span class="choice" class:selected={row.value === selected}><span class="dot"></span></span>
+      <span class="label m-num">{row.label}</span>
+    </button>
+  {/each}
+</div>
+
+<style>
+  .menu {
+    width: var(--part-zoomlist-width);
+    display: flex;
+    flex-direction: column;
+    background: var(--color-gray-3);
+    border: var(--line-hair) solid var(--color-gray-8);
+    outline: none;
+  }
+  .head {
+    height: var(--size-row);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    background: var(--color-gray-4);
+    flex-shrink: 0;
+  }
+  .row {
+    height: var(--part-zoomlist-row);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .row:last-child {
+    border-bottom: 0;
+  }
+  .choice {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--part-choice-size);
+    height: var(--part-choice-size);
+    border: var(--line-hair) solid var(--color-gray-8);
+  }
+  .choice.selected {
+    border-color: var(--color-accent);
+  }
+  .dot {
+    width: var(--part-choice-dot);
+    height: var(--part-choice-dot);
+  }
+  .choice.selected .dot {
+    background: var(--color-accent);
+  }
+  .label {
+    color: var(--color-gray-10);
+  }
+</style>

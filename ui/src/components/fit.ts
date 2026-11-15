@@ -1,36 +1,28 @@
 // 横が足りないときに何を引っこめるか（仕様書 1 章「拡大率の決まり」、3 章の帯札）。
-// 幅は 100 % のときの px で見積もり、拡大率をかけてくらべる。DOM を知らない純粋な関数。
+// 再生まわりは測った幅で、帯札は 100 % のときの px で見積もって拡大率をかけてくらべる。DOM を知らない純粋な関数。
 
 import { line, space, text } from "../design/tokens";
-
-/**
- * 再生まわりの見積もり（100 % の px。後ろのすきまを含む）。
- * base は、いつも出す物（ボタン、位置と時間、テンポ、拍子、メトロノーム、マスター、左右の内がわ）。
- * 値は、この画面を 100 % で描いて測った幅に、少しのゆとりを足した物。
- */
-export const TRANSPORT_WIDTHS = {
-  base: 840,
-  songName: 144,
-  load: 72,
-  countIn: 145,
-  positionLabels: 17,
-} as const;
 
 /** 引っこめる順（仕様書 1 章 (1)）。 */
 const TRANSPORT_ORDER = ["songName", "load", "countIn", "positionLabels"] as const;
 export type TransportPart = (typeof TRANSPORT_ORDER)[number];
 export type TransportParts = Record<TransportPart, boolean>;
 
-/** 出す物の組。width は再生まわりの CSS px、scale は拡大率（%）。 */
-export function transportParts(width: number, scale: number): TransportParts {
-  const room = (width * 100) / scale;
+/**
+ * 再生まわりの、測った幅（CSS px）。base は、いつも出す物（左右の内がわとすきまを含む）。
+ * ほかは、その部品を出したときにふえる幅（前のすきまを含む）。
+ */
+export type TransportWidths = { base: number } & Record<TransportPart, number>;
+
+/** 出す物の組。available は再生まわりの使える幅（CSS px）。入るまで、仕様書の順に引っこめる。 */
+export function transportParts(available: number, widths: TransportWidths): TransportParts {
   const shown: TransportParts = { songName: true, load: true, countIn: true, positionLabels: true };
-  let need: number = TRANSPORT_WIDTHS.base;
-  for (const k of TRANSPORT_ORDER) need += TRANSPORT_WIDTHS[k];
+  let need = widths.base;
+  for (const k of TRANSPORT_ORDER) need += widths[k];
   for (const k of TRANSPORT_ORDER) {
-    if (need <= room) break;
+    if (need <= available) break;
     shown[k] = false;
-    need -= TRANSPORT_WIDTHS[k];
+    need -= widths[k];
   }
   return shown;
 }

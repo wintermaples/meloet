@@ -55,7 +55,7 @@
       <div class="work">
         <Arrange>
           {#if state.workspace.chooser}<OutputChooser />{/if}
-          {#if state.workspace.hint === "soundCameOut"}<SoundHint />{/if}
+          {#if state.workspace.hint}<SoundHint />{/if}
         </Arrange>
         {#each layout.lower as lower (lower.band)}
           <LowerBand band={lower.band} height={lower.height} />

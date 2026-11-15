@@ -71,6 +71,35 @@ export function watchSlots(next: SlotWatcher): () => void {
   };
 }
 
+const frameCallbacks = new Set<() => void>();
+let wake: (() => void) | null = null;
+
+/**
+ * Runs `callback` at the start of every frame of the engine, before it measures and draws, for as
+ * long as it is registered. Things that move every frame (the play line, the clip being recorded)
+ * write their boxes and call their slot's `update` here, so the picture and the boxes change in the
+ * same frame. Returns how to stop.
+ */
+export function everyGlFrame(callback: () => void): () => void {
+  frameCallbacks.add(callback);
+  wake?.();
+  return () => frameCallbacks.delete(callback);
+}
+
+/** For the engine: `next` is called when a callback is added. */
+export function watchFrames(next: () => void): () => void {
+  wake = next;
+  return () => {
+    if (wake === next) wake = null;
+  };
+}
+
+/** For the engine: runs the callbacks; true if there are any (so the next frame is needed too). */
+export function runFrameCallbacks(): boolean {
+  for (const callback of frameCallbacks) callback();
+  return frameCallbacks.size > 0;
+}
+
 /** Marks the box whose one canvas draws every slot inside it. The name is a row of REGIONS (budget.ts). */
 export function glRegion(node: HTMLElement, name: RegionName) {
   regions.set(node, name);

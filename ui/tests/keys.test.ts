@@ -21,14 +21,19 @@ describe("keyAction", () => {
   });
 
   it("文字を打っている最中は、一文字のキーが効かない", () => {
-    for (const key of ["a", "e", "m", "h", "p", "u", "r", "l", "c"]) {
+    for (const key of ["a", "e", "m", "h", "p", "u", "r", "l", "c", "t"]) {
       expect(keyAction(k(key), true, "other"), key).toBeNull();
     }
   });
 
   it("文字を打っている最中は Space も効かず、空白として入る（Home は効く）", () => {
     expect(keyAction(k(" ", { code: "Space" }), true, "other")).toBeNull();
-    expect(keyAction(k("Home"), true, "other")).toEqual({ kind: "notYet", what: "toStart" });
+    expect(keyAction(k("Home"), true, "other")).toEqual({ kind: "toStart" });
+  });
+
+  it("文字を打っている最中は Delete と Shift T も効かない（Delete は枠の中の文字を消す）", () => {
+    expect(keyAction(k("Delete"), true, "other")).toBeNull();
+    expect(keyAction(k("T", { shift: true }), true, "other")).toBeNull();
   });
 
   it("文字を打っている最中でも Esc と Mod つきは効く", () => {
@@ -74,12 +79,23 @@ describe("keyAction", () => {
     expect(keyAction(k("Enter"), false, "other", "main")).toBeNull();
   });
 
-  it("Space、R、Home、L、C は「まだ使えない」", () => {
-    expect(keyAction(k(" ", { code: "Space" }), false, "other")).toEqual({ kind: "notYet", what: "playStop" });
-    expect(keyAction(k("r"), false, "other")).toEqual({ kind: "notYet", what: "record" });
-    expect(keyAction(k("Home"), false, "other")).toEqual({ kind: "notYet", what: "toStart" });
-    expect(keyAction(k("l"), false, "other")).toEqual({ kind: "notYet", what: "loop" });
-    expect(keyAction(k("c"), false, "other")).toEqual({ kind: "notYet", what: "metronome" });
+  it("Space、R、Home、L、C、T、Shift T、Delete（仕様書 4 章）", () => {
+    expect(keyAction(k(" ", { code: "Space" }), false, "other")).toEqual({ kind: "playStop" });
+    expect(keyAction(k("r"), false, "other")).toEqual({ kind: "record" });
+    expect(keyAction(k("Home"), false, "other")).toEqual({ kind: "toStart" });
+    expect(keyAction(k("l"), false, "other")).toEqual({ kind: "loop" });
+    expect(keyAction(k("c"), false, "other")).toEqual({ kind: "metronome" });
+    expect(keyAction(k("t"), false, "other")).toEqual({ kind: "stepTake", delta: 1 });
+    expect(keyAction(k("T", { shift: true }), false, "other")).toEqual({ kind: "stepTake", delta: -1 });
+    expect(keyAction(k("Delete"), false, "other")).toEqual({ kind: "deleteSelected" });
+    expect(keyAction(k("ち", { code: "KeyT", shift: true }), false, "other")).toEqual({ kind: "stepTake", delta: -1 });
+  });
+
+  it("Shift つきの Space・R・Delete と、Mod つきの T は何もしない", () => {
+    expect(keyAction(k(" ", { code: "Space", shift: true }), false, "other")).toBeNull();
+    expect(keyAction(k("R", { shift: true }), false, "other")).toBeNull();
+    expect(keyAction(k("Delete", { shift: true }), false, "other")).toBeNull();
+    expect(keyAction(k("t", { ctrl: true }), false, "other")).toBeNull();
   });
 
   it("ほかのキーは何もしない", () => {

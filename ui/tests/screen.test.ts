@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeBands, SCENES, encodeTelemetry, fakeScene, fakeState, unfitScales } from "../src/bridge/fake";
 import { decodeTelemetry, keyIsDown } from "../src/bridge/telemetry";
 import type { AppState, Command } from "../src/bridge";
-import { TRANSPORT_WIDTHS, bandCountsShown, bandTabWidth, transportParts } from "../src/components/fit";
+import { bandCountsShown, bandTabWidth, transportParts } from "../src/components/fit";
 import { PeakHold, dbNumber, msText, peakText, textParts } from "../src/components/format";
 import { mock, tokensAt } from "../src/design/tokens";
 import { handleKeydown, handlePointerdown } from "../src/keys/attach";
@@ -13,27 +13,21 @@ const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"
 const here = import.meta.url;
 const readMock = (board: string) => fs.readFileSync(new URL(`../../docs/design/mock/${board}.dc.html`, here), "utf8");
 
-describe("再生まわりの引っこめかた（仕様書 1 章 (1)）", () => {
-  const all = Object.values(TRANSPORT_WIDTHS).reduce((a, b) => a + b, 0);
+describe("再生まわりの引っこめかた（仕様書 1 章 (1)。幅は測った物）", () => {
+  const w = { base: 800, songName: 144, load: 60, countIn: 227, positionLabels: 20 };
+  const all = w.base + w.songName + w.load + w.countIn + w.positionLabels;
+  const at = (room: number) => transportParts(room, w);
 
-  it("広ければ全部出す", () => {
-    expect(transportParts(1280, 100)).toEqual({ songName: true, load: true, countIn: true, positionLabels: true });
+  it("入れば全部出す", () => {
+    expect(at(all)).toEqual({ songName: true, load: true, countIn: true, positionLabels: true });
   });
 
   it("曲の名前、処理の負荷、カウントイン、位置のラベルの順に引っこめる", () => {
-    const w = TRANSPORT_WIDTHS;
-    const at = (room: number) => transportParts(room, 100);
     expect(at(all - 1)).toEqual({ songName: false, load: true, countIn: true, positionLabels: true });
     expect(at(all - w.songName - 1)).toEqual({ songName: false, load: false, countIn: true, positionLabels: true });
     expect(at(all - w.songName - w.load - 1)).toEqual({ songName: false, load: false, countIn: false, positionLabels: true });
     expect(at(w.base)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
     expect(at(10)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
-  });
-
-  it("拡大率をかけてくらべる（窓 1280 で 125 % と 150 %）", () => {
-    expect(transportParts(1280, 125)).toMatchObject({ songName: false, load: false, countIn: true });
-    expect(transportParts(1280, 150)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
-    expect(transportParts(1920, 150)).toEqual({ songName: true, load: true, countIn: true, positionLabels: true });
   });
 });
 
@@ -101,7 +95,7 @@ describe("数の見せかた", () => {
 describe("mock.*（モックにしかない寸法）", () => {
   // この画面の骨組みが足した物だけを見る（ほかの部品の mock.* は、その部品のテストで）。
   const mine = Object.entries(mock).filter(([k]) => /^mock\.(transport|arrange|track|overview)\./.test(k));
-  it("見る物がある", () => expect(mine.length).toBe(7));
+  it("見る物がある", () => expect(mine.length).toBe(9));
   it.each(mine)("%s の値はモックに書いてあり、率をかけても整数", (_, tok) => {
     const html = readMock(tok.board);
     expect(html).toContain(`${tok.value}px`);
@@ -270,9 +264,55 @@ describe("キーを画面につなぐ", () => {
     ]);
   });
 
-  it("まだ使えないキーは何もしない", () => {
-    for (const k of [" ", "r", "Home", "l", "c"]) expect(key(k).defaultPrevented).toBe(false);
+  const withOutput = (canRecord: boolean) => {
+    state = { ...state, transport: { ...state.transport, canPlay: true, canRecord } };
+  };
+
+  it("再生まわりのキー: Space、R、Home、L、C、T、Shift T、Delete", () => {
+    withOutput(true);
+    const evs = [key(" ", { code: "Space" }), key("r"), key("Home"), key("l"), key("c"), key("t"), key("T", { shiftKey: true }), key("Delete")];
+    expect(evs.every((e) => e.defaultPrevented)).toBe(true);
+    expect(sent).toEqual([
+      { type: "playStop" },
+      { type: "record" },
+      { type: "goToStart" },
+      { type: "toggleLoop" },
+      { type: "toggleMetronome" },
+      { type: "stepTake", delta: 1 },
+      { type: "stepTake", delta: -1 },
+      { type: "deleteSelected" },
+    ]);
+  });
+
+  it("音の出口がまだのあいだ、Space と R は何もしない。ほかは効く", () => {
+    for (const k of [" ", "r"]) expect(key(k, { code: k === " " ? "Space" : "KeyR" }).defaultPrevented).toBe(false);
     expect(sent).toEqual([]);
+    key("Home");
+    key("l");
+    key("c");
+    expect(sent).toEqual([{ type: "goToStart" }, { type: "toggleLoop" }, { type: "toggleMetronome" }]);
+  });
+
+  it("録音待機のトラックがなくても、R は record を送る（Rust が理由を出す）", () => {
+    withOutput(false);
+    key("r");
+    expect(sent).toEqual([{ type: "record" }]);
+  });
+
+  it("動いているあいだは、出口がなくなっても Space で止められる", () => {
+    state = { ...state, transport: { ...state.transport, state: "playing", canPlay: false } };
+    key(" ", { code: "Space" });
+    expect(sent).toEqual([{ type: "playStop" }]);
+  });
+
+  it("文字を打っているあいだの Home は、先頭へ戻り、枠の中のカーソルも動かす", () => {
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    expect(key("Home").defaultPrevented).toBe(false);
+    key(" ", { code: "Space" });
+    key("Delete");
+    expect(sent).toEqual([{ type: "goToStart" }]);
   });
 
   it("文字を打っているあいだ、一文字のキーは効かない", () => {

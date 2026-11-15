@@ -13,7 +13,9 @@ export interface KeyDeps {
 
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "OS"]);
 
-function command(action: KeyAction): Command | null {
+/** 音の出口がまだのあいだ、Space と R は何もしない（ヤチヨさんの決め 2026-11-15）。止めるほうの Space は効く。 */
+function command(action: KeyAction, state: AppState): Command | null {
+  const transport = state.transport;
   switch (action.kind) {
     case "arrange":
       return { type: "goArrange" };
@@ -29,6 +31,20 @@ function command(action: KeyAction): Command | null {
       return { type: "chooserMove", delta: 1 };
     case "chooserConfirm":
       return { type: "chooserConfirm" };
+    case "playStop":
+      return transport.canPlay || transport.state !== "stopped" ? { type: "playStop" } : null;
+    case "record":
+      return transport.canPlay ? { type: "record" } : null;
+    case "toStart":
+      return { type: "goToStart" };
+    case "loop":
+      return { type: "toggleLoop" };
+    case "metronome":
+      return { type: "toggleMetronome" };
+    case "stepTake":
+      return { type: "stepTake", delta: action.delta };
+    case "deleteSelected":
+      return { type: "deleteSelected" };
     default:
       return null;
   }
@@ -66,9 +82,10 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     return;
   }
 
-  const c = command(action);
+  const c = command(action, state);
   if (c) {
-    ev.preventDefault();
+    // 打っている最中の Home は、枠の中のカーソルも動かす。
+    if (!typing) ev.preventDefault();
     deps.send(c);
   }
 }

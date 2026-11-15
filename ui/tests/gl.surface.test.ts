@@ -8,7 +8,7 @@ import { rgb } from "../src/gl/color";
 import { Engine } from "../src/gl/engine";
 import { contextsMade, resetPool } from "../src/gl/pool";
 import { Renderer } from "../src/gl/renderer";
-import { glRegion, glSlot, type GlSlot } from "../src/gl/slot";
+import { everyGlFrame, glRegion, glSlot, type GlSlot } from "../src/gl/slot";
 import type { RegionName } from "../src/gl/budget";
 
 class FakeResizeObserver {
@@ -228,6 +228,31 @@ describe("WebGL の面", () => {
       [45, 20, 53, 23],
     ]);
     expect(rects[1]!.slice(4)).toEqual(f32(rgb("color.track.1")));
+    engine.destroy();
+  });
+
+  it("everyGlFrame: コマの頭で呼ばれ、そこで変えた slot は同じコマで描く。やめるまでコマが続く", () => {
+    const { drawn, frame } = fakePage();
+    const engine = new Engine();
+    const host = region(box(new DOMRect(0, 0, 100, 20)), "recordingClip");
+    const a = glSlot(host, { kind: "rects", rects: [] });
+    actions.push(a);
+    frame();
+    let calls = 0;
+    const stop = everyGlFrame(() => {
+      calls += 1;
+      a.update({ kind: "rects", rects: [{ x: 0, y: 0, w: calls, h: 1, color: "color.rec" }] });
+    });
+    frame();
+    expect(calls).toBe(1);
+    expect(drawn.at(-1)!.rects[0]!.slice(0, 4)).toEqual([0, 0, 1, 1]);
+    frame();
+    expect(calls).toBe(2);
+    expect(drawn.at(-1)!.rects[0]!.slice(0, 4)).toEqual([0, 0, 2, 1]);
+    stop();
+    frame();
+    frame();
+    expect(calls).toBe(2);
     engine.destroy();
   });
 

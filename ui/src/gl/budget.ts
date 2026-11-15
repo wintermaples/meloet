@@ -23,10 +23,12 @@ export const REGIONS = {
   masterMeter: { opaque: false },
   /** Arrange: the meters of the track heads, all tracks in one canvas. Up to 60 Hz. */
   trackMeters: { opaque: false },
-  /** Arrange: bar lines (and, later, the clips). Changes only with the song, the size or the scroll. */
+  /** Arrange: bar lines, clips and the finished bars of the clip being recorded. Changes only with the song, the size or the scroll. */
   arrangeLanes: { opaque: false },
   /** The arrange folded to its overview. Takes the place of trackMeters and arrangeLanes. */
   overview: { opaque: false },
+  /** Arrange: the growing end of the clip being recorded (at most two bars). 60 Hz while recording. */
+  recordingClip: { opaque: false },
   /** Sound settings: the level beside the test tone. */
   settingsMeter: { opaque: false },
   /** Sound settings: the keyboard that lights. */

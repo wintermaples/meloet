@@ -130,6 +130,11 @@ describe("part.*（仕様書の文の中にしかない寸法）", () => {
   const fromSpec = Object.entries(plain).flatMap(([k, v]) => ("spec" in v ? [[k, v] as const] : []));
   it.each([...Object.entries(part), ...fromSpec])("%s は仕様書の行にその言葉で書いてある", (_, tok) => {
     expect(tok.spec.quote).toMatch(new RegExp(`(^|\\D)${tok.value}(\\D|$)`));
+    if (tok.spec.section === "sample") {
+      const css = [...doc.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+      expect(css).toContain(tok.spec.quote);
+      return;
+    }
     if (tok.spec.row === null) {
       expect(sectionText(doc, tok.spec.section)).toContain(tok.spec.quote);
       return;

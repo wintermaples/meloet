@@ -104,13 +104,15 @@ export const fontFamily = {
 /**
  * 仕様書の表にない、文の中にしかない寸法（100 % の px）。
  * spec: どの章（s1 / s2）の、どの行（表の左はしのセル）の、どの言葉か。テストが仕様書と照らし合わせる。
+ * section が "sample" のものは、仕様書 2 章の見本（実物の大きさの部品）の CSS にある値。
  */
+type PartSection = "s1" | "s2" | "s3" | "sample";
 export interface PartToken {
   value: number;
-  /** row が null なら、表ではなく、その章の文の中にある。 */
-  spec: { section: "s1" | "s2" | "s3"; row: string | null; quote: string };
+  /** row が null なら、表ではなく、その章の文（sample なら見本の CSS）の中にある。 */
+  spec: { section: PartSection; row: string | null; quote: string };
 }
-const p = (value: number, section: "s1" | "s2" | "s3", row: string | null, quote: string): PartToken => ({
+const p = (value: number, section: PartSection, row: string | null, quote: string): PartToken => ({
   value,
   spec: { section, row, quote },
 });
@@ -125,6 +127,7 @@ export const part = {
   "part.listrow.height": p(24, "s2", "一覧の行", "高さ 20 か 24"),
   "part.listrow.height-s": p(20, "s2", "一覧の行", "高さ 20 か 24"),
   "part.input.height": p(24, "s2", "入力の枠", "高さ 24"),
+  "part.input.pad-x": p(8, "sample", null, ".in{height:24px;padding:0 8px;"),
   "part.fader.knob-w": p(24, "s2", "フェーダー", "つまみ 24×12"),
   "part.fader.knob-h": p(12, "s2", "フェーダー", "つまみ 24×12"),
   "part.pan.size": p(24, "s2", "パンのつまみ", "直径 24"),
@@ -207,6 +210,9 @@ export const mock = {
   "mock.transport.name": m(132, "F-Empty"),
   "mock.transport.readout": m(40, "F-Empty"),
   "mock.transport.master": m(132, "F-Empty"),
+  // カウントイン中の枠の高さと、拍の四角の 1 辺。
+  "mock.transport.count-in": m(32, "F-Connect4"),
+  "mock.transport.count-in-beat": m(12, "F-Connect4"),
   "mock.arrange.bar": m(64, "F-Empty"),
   "mock.arrange.add-track": m(32, "F-Empty"),
   "mock.track.number": m(16, "F-Empty"),

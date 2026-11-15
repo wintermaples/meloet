@@ -1,14 +1,14 @@
 <!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom のいちばん下の行）。 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Band, Command, StatusMessage } from "../bridge";
+  import type { Band, Command, StatusMessage, TrackRef } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { platformOf } from "../keys/keys";
   import { menuOpened } from "../lib/menu";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { t, type TextKey } from "../text/ja";
-  import { msText, textParts, type TextPart } from "./format";
+  import { msText, tempoText, textParts, type TextPart } from "./format";
   import { statusFit, type StatusRightShown } from "./statusFit";
   import ZoomMenu from "./ZoomMenu.svelte";
 
@@ -29,7 +29,14 @@
     params: "band.params",
   };
 
-  // 録音待機と言う文（status.outputChosen・status.newSong）は、今回は本当でないので出さない（docs/progress.md）。
+  const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
+
+  /** カウントイン中の「あと {beats} 拍」。計器がカウントインを言っていれば、その残りの拍。 */
+  function beatsLeft(fallback: number): number {
+    const p = current.telemetry?.position;
+    return p?.state === "countIn" ? p.countInBeatsLeft : fallback;
+  }
+
   function shown(m: StatusMessage | null): Shown | null {
     const plain = (key: TextKey, values: Record<string, string | number> = {}): Shown => ({
       parts: textParts(key, values),
@@ -81,12 +88,51 @@
         return plain("msg.bandFoldedWindowLow", { band: t(BAND_NAMES[m.band]) });
       case "bandFoldedToOpen":
         return plain("msg.bandFoldedToOpen", { opened: t(BAND_NAMES[m.opened]), folded: t(BAND_NAMES[m.folded]) });
+      case "outputChosen":
+        return m.track
+          ? plain("status.outputChosen", { output: m.output, track: track(m.track) })
+          : plain("status.outputChosenOnly", { output: m.output });
+      case "newSong": {
+        const values = { tempo: tempoText(m.tempoBpm), signature: `${m.meterNum}/${m.meterDen}` };
+        return m.track ? plain("status.newSong", { ...values, track: track(m.track) }) : plain("status.newSongOnly", values);
+      }
+      case "countingIn":
+        return plain("msg.countingInRest", { beats: beatsLeft(m.beats) });
+      case "recording":
+        return plain("msg.recording", { track: track(m.track), take: m.take });
+      case "loopRecording":
+        return plain("msg.loopRecording", { track: track(m.track), from: m.fromBar, to: m.toBar, lap: m.lap });
+      case "takeSwitched":
+        return plain("msg.takeSwitched", { track: track(m.track), clip: m.clip, take: m.take, takes: m.takes });
+      case "noArmedTrack":
+        return plain("msg.noArmedTrack");
+      case "summary": {
+        const loop = m.loopBars;
+        if (loop && m.nothingSelected) return plain("status.loopNoSelection", { from: loop.from, to: loop.to });
+        if (loop) return plain("status.loop", { from: loop.from, to: loop.to });
+        if (m.nothingSelected) return plain("status.noSelection");
+        return null;
+      }
       default:
         return null;
     }
   }
 
   const message = $derived(shown(app.status.message));
+
+  /** いちばん左の札（ヤチヨさんの決め 2026-11-15）。録音とカウントインは rec。 */
+  const badge = $derived.by((): { text: string; rec: boolean } => {
+    switch (app.transport.state) {
+      case "playing":
+        return { text: t("status.playing"), rec: false };
+      case "recording":
+        return { text: t("status.recording"), rec: true };
+      case "countIn":
+        return { text: t("status.countingIn"), rec: true };
+      default:
+        return { text: t("status.stopped"), rec: false };
+    }
+  });
 
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
   const keyboardName = $derived(
@@ -173,13 +219,13 @@
     return () => observer.disconnect();
   });
   $effect(() => {
-    void [message, outputName, keyboardName, actual, requested, scale];
+    void [badge, message, outputName, keyboardName, actual, requested, scale];
     measure();
   });
 </script>
 
 {#snippet left()}
-  <span>{t("status.stopped")}</span>
+  <span class:rec={badge.rec} data-test="status-badge">{badge.text}</span>
   {#if message}
     <span class="m-lbl message">
       {#each message.parts as part, i (i)}
@@ -271,6 +317,9 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .rec {
+    color: var(--color-rec);
   }
   .link {
     flex-shrink: 0;

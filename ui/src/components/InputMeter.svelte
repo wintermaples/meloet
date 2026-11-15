@@ -8,6 +8,7 @@
   import { term, tip } from "../lib/tip.svelte";
   import { current, onEvent } from "../state/app.svelte";
   import { t } from "../text/ja";
+  import { textParts } from "./format";
   import { heldText, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
   import { metrics } from "./metrics.svelte";
   import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
@@ -39,8 +40,12 @@
       return { kind: "missing" as const };
     }
     if (app.outputs.chosen === null) return { kind: "noOutput" as const };
+    // カウントイン中と録音中は、録っているトラックと、いま録っているテイク（モック F-Connect4・F-ArrangeRec）。
+    const rec = app.transport.recording;
+    const recTrack = rec && app.song.tracks.find((x) => x.number === rec.track);
+    if (rec && recTrack) return { kind: "target" as const, track: recTrack, take: rec.take };
     const track = app.song.tracks.find((x) => x.number === app.song.playTarget);
-    return track ? { kind: "target" as const, track } : null;
+    return track ? { kind: "target" as const, track, take: null } : null;
   });
 
   // 押している鍵は計器で受け、鍵の on/off は計器を待たずに当てる。
@@ -86,6 +91,18 @@
           : [{ text: p, instrument: true }],
       )
       .filter((p) => p.text !== "");
+  }
+
+  /** 録っているときの鳴る先（文は「{track} ● テイク {take}」）: トラックの番号、名前、rec の「● テイク {take}」。 */
+  function recordingPieces(trackName: string, take: number): { text: string; kind: "number" | "plain" | "rec" }[] {
+    const [, ...rest] = textParts("meter.playTargetRecording", { track: TRACK_LABEL, take });
+    const tail = rest.map((p) => p.text).join("");
+    const lead = tail.length - tail.trimStart().length;
+    const track = t("track.label", { number: TRACK, name: trackName })
+      .split(new RegExp(`(${TRACK})`))
+      .filter((x) => x !== "")
+      .map((x) => ({ text: x, kind: x === TRACK ? ("number" as const) : ("plain" as const) }));
+    return [...track, { text: tail.slice(0, lead), kind: "plain" }, { text: tail.slice(lead), kind: "rec" }];
   }
 
   /** 右はしの案内の文。tone: 1 文目と残りの色（「鍵盤がない」はモック F-Connect1 で色を分けている）。 */
@@ -255,7 +272,13 @@
   {:else if right?.kind === "target"}
     <div class="item target" data-test="meter-right" data-part="target">
       {#if measuring || fit.targetLabel}<span class="label" data-part="target-label">{t("meter.playTarget")}</span>{/if}
-      <span class="target-value" data-part="target-value">
+      <span class="target-value" data-part="target-value" data-test="meter-target">
+        {#if right.take !== null}
+          {#each recordingPieces(right.track.name, right.take) as piece, i (i)}
+            {#if piece.kind === "number"}<span class="mono">{right.track.number}</span
+              >{:else if piece.kind === "rec"}<span class="rec">{piece.text}</span>{:else}{piece.text}{/if}
+          {/each}
+        {:else}
         {#each targetPieces(right.track.name) as piece, i (i)}
           {#if piece.instrument}
             {#if !slim && (measuring || fit.instrument)}
@@ -269,6 +292,7 @@
             <span class="mono">{right.track.number}</span>
           {:else}{piece.text}{/if}
         {/each}
+        {/if}
       </span>
     </div>
   {/if}
@@ -465,5 +489,8 @@
   }
   .mono {
     font-family: var(--font-mono);
+  }
+  .rec {
+    color: var(--color-rec);
   }
 </style>

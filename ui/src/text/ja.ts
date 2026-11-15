@@ -54,6 +54,8 @@ export const texts = {
   "msg.unusableHeadingSettings": s6("えらべない出口の見出し", "meloet は、PC 全体の設定を変えません", undefined, "quoted"),
   "msg.unusableInputHeading": s6("えらべない入口の見出し", "いまは使えない入口", undefined, "part"),
   "msg.countingIn": s6("カウントイン中", "カウントイン中 ・ あと {beats} 拍で録音が始まります。止めるには Space", { beats: "2" }),
+  // 状態行の左の札「● カウントイン中」（status.countingIn）のうしろに出す部分。札と合わせて上の文になる。
+  "msg.countingInRest": s6("カウントイン中", "あと {beats} 拍で録音が始まります。止めるには Space", { beats: "2" }, "part"),
   "msg.recording": s6("録音中", "{track} へ録音 ・ 止めると テイク {take} として残ります", { track: "1 ピアノ", take: "2" }),
   "msg.loopRecording": s6(
     "ループ中の録音",
@@ -174,6 +176,8 @@ export const texts = {
   "key.history": e("H", "spec:4"),
   "key.shelf": e("P", "spec:4"),
   "key.params": e("U", "spec:4"),
+  "key.record": e("R", "spec:4"),
+  "key.playStop": e("Space", "spec:4"),
   // 拡大率のキーの書きかた（docs/design-notes.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
   "key.ctrl": e("Ctrl", "spec:4"),
   "key.cmd": e("Cmd", "spec:4"),
@@ -195,6 +199,10 @@ export const texts = {
   "transport.metronome": e("メトロノーム", "mock:Main"),
   "transport.countIn": e("カウントイン", "mock:Main"),
   "transport.countInBars": e("{bars} 小節", "mock:Main", { bars: "1" }),
+  // カウントインが「なし」のときのボタンの値と、一覧の行。
+  "transport.countInNone": e("なし", "user:2026-11-15"),
+  // カウントイン中の「3 / 4」の「/ 4」。
+  "transport.countInOf": e("/ {beats}", "mock:F-Connect4", { beats: "4" }),
   "transport.cpu": e("処理の負荷", "mock:Main"),
   "transport.cpuValue": e("{percent} %", "mock:Main", { percent: "9" }),
   "transport.master": e("マスター", "mock:Main"),
@@ -215,6 +223,8 @@ export const texts = {
   "meter.playTarget": e("弾くと鳴る先", "mock:Main"),
   "meter.otherKeyboards": e("+{count}", "spec:3", { count: "1" }),
   "meter.playTargetWithInstrument": e("{track} ・ {instrument}", "mock:F-Connect3", { track: "1 ピアノ", instrument: "グランドピアノ" }),
+  // カウントイン中と録音中。「● テイク {take}」は rec。
+  "meter.playTargetRecording": e("{track} ● テイク {take}", "mock:F-Connect4", { track: "1 ピアノ", take: "1" }),
 
   // トラックと音源
   "track.label": e("{number} {name}", "mock:F-Connect3", { number: "1", name: "ピアノ" }),
@@ -239,6 +249,13 @@ export const texts = {
   "arrange.emptyBody": e("鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。", "mock:F-Empty"),
   "arrange.emptyAddTrack": e("トラックを増やすには左下の「＋ トラックを追加」", "mock:F-Empty"),
   "arrange.overview": e("アレンジ 全体", "mock:A-PianoRoll"),
+  "arrange.markerLoop": e("マーカー ・ ループ {range}", "mock:Main", { range: "5–9" }),
+  "arrange.recordingClip": e("● 録音中 テイク {take}", "mock:F-ArrangeRec", { take: "2" }),
+  "arrange.takeTag": e("{take}/{takes}", "mock:F-Takes", { take: "2", takes: "3" }),
+  "arrange.takeSwitch": e("テイク {take} / {takes}", "mock:F-Takes", { take: "2", takes: "3" }),
+  "arrange.takePrev": e("前のテイク", "mock:F-Takes"),
+  "arrange.takeNext": e("次のテイク", "mock:F-Takes"),
+  "arrange.takeKey": e("T", "mock:F-Takes"),
   "arrange.soundCameOutKeys": e("録音 {recordKey} ・ 再生と停止 {playKey}", "mock:F-Connect3", { recordKey: "R", playKey: "Space" }),
 
   // 出口えらび（流れ 2）と、出口・入口の行
@@ -269,7 +286,13 @@ export const texts = {
 
   // 状態行
   "status.stopped": e("■ 停止中", "mock:Main"),
-  "status.loopNoSelection": e("ループ {range} ・ 選択なし", "mock:Main", { range: "5–9" }),
+  "status.playing": e("▶ 再生中", "user:2026-11-15"),
+  "status.recording": e("● 録音中", "mock:F-ArrangeRec"),
+  "status.countingIn": e("● カウントイン中", "mock:F-Connect4"),
+  // 止まっているときの左の文。ある物だけ出す（ヤチヨさんの決め）。両方あるときは status.loopNoSelection。
+  "status.loopNoSelection": e("ループ {from}–{to} ・ 選択なし", "mock:Main", { from: "5", to: "9" }),
+  "status.loop": e("ループ {from}–{to}", "mock:Main", { from: "5", to: "9" }),
+  "status.noSelection": e("選択なし", "mock:Main"),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
   "status.outputNone": e("出口: まだ", "spec:3"),
   "status.inputs": e("入口: {inputs}", "mock:Main", { inputs: "鍵盤 49 ・ マイク" }),
@@ -282,6 +305,9 @@ export const texts = {
   "status.searchingKeyboard": e("鍵盤をさがしています…", "mock:F-Connect1"),
   "status.outputChosen": e("出口を{output}にしました。{track} が録音待機になっています。", "mock:F-Connect3", { output: "アナログヘッドフォン", track: "1 ピアノ" }),
   "status.newSong": e("新しい曲 ・ テンポ {tempo} ・ {signature} ・ {track} が録音待機", "mock:F-Empty", { tempo: "96.00", signature: "4/4", track: "1 ピアノ" }),
+  // 録音待機のトラックがないとき（track が null）は、上の 2 つの文の前の部分だけ。
+  "status.outputChosenOnly": e("出口を{output}にしました。", "mock:F-Connect3", { output: "アナログヘッドフォン" }),
+  "status.newSongOnly": e("新しい曲 ・ テンポ {tempo} ・ {signature}", "mock:F-Empty", { tempo: "96.00", signature: "4/4" }),
   "status.settingsOpen": e("音の設定をひらいています", "mock:F-Settings"),
 
   // 音の設定

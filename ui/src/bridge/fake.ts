@@ -483,7 +483,7 @@ export const SCENES: Record<string, SceneDef> = {
       tracks: [[dbfs(-8.4), dbfs(-9.1)]],
     },
   },
-  empty: { setup: ready, meters: QUIET },
+  empty: { setup: (s) => (ready(s), (s.workspace.hint = "emptyArrange")), meters: QUIET },
   bufferFixed: { setup: bufferFixed, meters: QUIET },
   settings: { setup: settings, meters: QUIET },
   settingsAdvFixed: { setup: settingsAdvFixed, meters: QUIET },
@@ -567,6 +567,38 @@ export const SCENES: Record<string, SceneDef> = {
     bands: ["mixer", "pianoRoll"],
     after: (s) => (s.status.message = { id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" }),
     meters: QUIET,
+  },
+  // The arrange of the mock F-Takes with no band open: the clip "Aメロ" (take 2 of 3) is selected.
+  takesArrange: {
+    setup(s) {
+      ready(s);
+      s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
+      s.arrange = { selectedClip: 3, pianoRollClip: 3 };
+      s.transport.position = 4 * BAR;
+      s.status.message = null;
+    },
+    meters: QUIET,
+  },
+  // The loop of the mock Main: bars 5–9, on, stopped at bar 5.
+  loop: {
+    setup(s) {
+      ready(s);
+      s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
+      s.song.loopRange = { start: 4 * BAR, end: 8 * BAR };
+      s.song.loopOn = true;
+      s.transport.position = 4 * BAR;
+      s.status.message = null;
+    },
+    meters: QUIET,
+  },
+};
+
+// Not from a mock: the scene recording, with the listener moving at 96.00 (the clip being recorded grows).
+SCENES.recordingMoving = {
+  ...SCENES.recording!,
+  meters: {
+    ...SCENES.recording!.meters,
+    position: { tick: 6 * BAR, ticksPerUs: 768e-6, state: "recording", countInBeatsLeft: 0, lap: 0 },
   },
 };
 

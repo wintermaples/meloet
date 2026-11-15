@@ -17,7 +17,7 @@ import {
   type Box,
 } from "./paint";
 import { giveBack, takeCanvas, type GlCanvas } from "./pool";
-import { regionOf, watchSlots, type GlSlot } from "./slot";
+import { regionOf, runFrameCallbacks, watchFrames, watchSlots, type GlSlot } from "./slot";
 
 export interface EngineStats {
   /** Animation frames that ran. */
@@ -95,6 +95,7 @@ export class Engine {
     this.stop.push(
       () => removeEventListener("resize", this.again),
       () => document.removeEventListener("scroll", this.again, scrolled),
+      watchFrames(() => this.invalidate()),
       watchSlots({
         attach: (node, slot) => this.attach(node, slot),
         update: (node, slot) => {
@@ -223,6 +224,7 @@ export class Engine {
     const now = performance.now();
     const falling = this.levels.advance(now);
     const dpr = window.devicePixelRatio || 1;
+    const moving = runFrameCallbacks();
     this.resolve();
 
     // All the measuring first, then all the writing, so the page is laid out once.
@@ -238,6 +240,7 @@ export class Engine {
 
     this.onFrame?.(ts);
     if (falling) this.touch("meter");
+    if (moving) this.invalidate();
     clearTimeout(this.clipTimer);
     const clipEnd = this.levels.nextClipEnd(now);
     if (clipEnd !== null) this.clipTimer = window.setTimeout(() => this.touch("meter"), clipEnd - now + 1);

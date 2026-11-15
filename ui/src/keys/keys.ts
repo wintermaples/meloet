@@ -18,8 +18,6 @@ export interface KeyInput {
   composing?: boolean;
 }
 
-export type NotYet = "playStop" | "record" | "toStart" | "loop" | "metronome";
-
 export type KeyAction =
   | { kind: "arrange" }
   | { kind: "toggleBand"; band: "pianoRoll" | "mixer" | "history" | "shelf" | "params" }
@@ -29,8 +27,14 @@ export type KeyAction =
   | { kind: "chooserUp" }
   | { kind: "chooserDown" }
   | { kind: "chooserConfirm" }
-  /** まだ中身がない。何もしない（既定の動きも止めない）。 */
-  | { kind: "notYet"; what: NotYet };
+  | { kind: "playStop" }
+  | { kind: "record" }
+  | { kind: "toStart" }
+  | { kind: "loop" }
+  | { kind: "metronome" }
+  /** えらんだクリップの次のテイク（1）、前のテイク（-1）。 */
+  | { kind: "stepTake"; delta: 1 | -1 }
+  | { kind: "deleteSelected" };
 
 const BAND_KEYS: Record<string, KeyAction> = {
   a: { kind: "arrange" },
@@ -39,9 +43,10 @@ const BAND_KEYS: Record<string, KeyAction> = {
   h: { kind: "toggleBand", band: "history" },
   p: { kind: "toggleBand", band: "shelf" },
   u: { kind: "toggleBand", band: "params" },
-  r: { kind: "notYet", what: "record" },
-  l: { kind: "notYet", what: "loop" },
-  c: { kind: "notYet", what: "metronome" },
+  r: { kind: "record" },
+  l: { kind: "loop" },
+  c: { kind: "metronome" },
+  t: { kind: "stepTake", delta: 1 },
 };
 
 /** 英字 1 つ（小文字）。key が英字でなければ（かな入力の配列など）code の KeyA… から読む。 */
@@ -89,12 +94,14 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
   }
 
   // 仕様書 4 章: Home は文字を打っている最中も効く。Space は効かず、空白として入る。
-  if (k.key === "Home") return k.shift ? null : { kind: "notYet", what: "toStart" };
+  // Delete は表では「効く」だが、打っている最中は文字を消すほうにのこす（打っている数字の枠でクリップが消えないように）。
+  if (k.key === "Home") return k.shift ? null : { kind: "toStart" };
   if (typing) return null;
-  if (k.key === " " || k.code === "Space") return k.shift ? null : { kind: "notYet", what: "playStop" };
+  if (k.key === " " || k.code === "Space") return k.shift ? null : { kind: "playStop" };
+  if (k.key === "Delete") return k.shift ? null : { kind: "deleteSelected" };
 
-  if (k.shift) return null;
   const l = letter(k);
+  if (k.shift) return l === "t" ? { kind: "stepTake", delta: -1 } : null;
   return (l && BAND_KEYS[l]) || null;
 }
 

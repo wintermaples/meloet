@@ -365,7 +365,7 @@ fn piano_roll_command_json_shape() {
         ),
         (
             Command::AddNote {
-                take: 6,
+                take: Some(6),
                 start: 960,
                 length: 120,
                 key: 50,

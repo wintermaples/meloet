@@ -145,9 +145,12 @@ pub enum Command {
     /// Mod A in the piano roll.
     SelectAllNotes,
     ClearNoteSelection,
-    /// The write tool: one command when the mouse button is let go.
+    /// The write tool: one command when the mouse button is let go. `take: None` when the piano
+    /// roll shows no clip: Rust makes a clip on the track the keys play, from the bar of `start`,
+    /// 4 bars long or up to the next clip, named after the track; making it and writing the note
+    /// are one step (the user's decision, 2026-11-15).
     AddNote {
-        take: u32,
+        take: Option<u32>,
         start: u64,
         length: u64,
         key: u8,
@@ -621,7 +624,8 @@ pub struct IndexRange {
     pub end: u32,
 }
 
-/// `division`: how many to a whole note (16 is "1/16"). `triplet` makes each step 2/3 as long.
+/// `division`: how many to a whole note (16 is "1/16"); 0 is one bar ("1 小節", as long as the
+/// meter makes it). `triplet` makes each step 2/3 as long.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]

@@ -316,6 +316,13 @@ fn command_json_shape() {
             },
             json!({"type": "answerSongDialog", "dialog": 5, "answer": "openPrevious"}),
         ),
+        (
+            Command::RejectValue {
+                field: ValueField::MeterDen,
+                kept: "4".into(),
+            },
+            json!({"type": "rejectValue", "field": "meterDen", "kept": "4"}),
+        ),
     ] {
         assert_eq!(serde_json::to_value(&command).unwrap(), json);
         assert_eq!(serde_json::from_value::<Command>(json).unwrap(), command);
@@ -401,6 +408,27 @@ fn status_message_json_shape() {
                 folded: Band::Mixer,
             },
             json!({"id": "bandFoldedToOpen", "opened": "pianoRoll", "folded": "mixer"}),
+        ),
+        (
+            StatusMessage::BandFoldedThird {
+                opened: Band::History,
+                folded: Band::Mixer,
+            },
+            json!({"id": "bandFoldedThird", "opened": "history", "folded": "mixer"}),
+        ),
+        (
+            StatusMessage::BandFoldedScale {
+                scale: 150,
+                band: Band::Mixer,
+            },
+            json!({"id": "bandFoldedScale", "scale": 150, "band": "mixer"}),
+        ),
+        (
+            StatusMessage::ValueRejected {
+                field: ValueField::Velocity,
+                kept: "77".into(),
+            },
+            json!({"id": "valueRejected", "field": "velocity", "kept": "77"}),
         ),
         (
             StatusMessage::ScaleDoesNotFit {

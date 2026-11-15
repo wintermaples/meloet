@@ -7,6 +7,7 @@ import SoundHint from "../src/components/SoundHint.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import Transport from "../src/components/Transport.svelte";
 import { closeMenu, menuVisible } from "../src/lib/menu";
+import { tipView } from "../src/lib/tip.svelte";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
@@ -232,7 +233,7 @@ describe("カウントイン", () => {
     expect(q('[data-test="count-in-menu"]')).toBeNull();
   });
 
-  it("カウントイン中は「カウントイン 3 / 4」と箱 ■■■□（モック F-Connect4）", () => {
+  it("カウントイン中は、オンのボタンに「カウントイン」と四角 ■■■□。「3 / 4」の字は出さない（仕様書 3 章、モック F-Connect4）", () => {
     show(
       Transport,
       ready((s) => {
@@ -242,10 +243,31 @@ describe("カウントイン", () => {
     );
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: -720, state: "countIn", countInBeatsLeft: 2 }) }));
     flushSync();
-    expect(text('[data-test="transport-counting"]')).toBe("カウントイン 3 / 4");
-    const boxes = [...q('[data-test="transport-counting"]')!.querySelectorAll(".box")];
+    const counting = q('[data-test="transport-counting"]')!;
+    expect(text('[data-test="transport-counting"]')).toBe("カウントイン");
+    expect(counting.classList.contains("m-btn")).toBe(true);
+    expect(counting.classList.contains("on")).toBe(true);
+    const boxes = [...counting.querySelectorAll(".box")];
     expect(boxes.map((b) => b.classList.contains("done"))).toEqual([true, true, true, false]);
     expect(q('[data-test="transport-count-in"]')).toBeNull();
+  });
+
+  it("拍子の上が 12 なら四角は 12", () => {
+    show(
+      Transport,
+      ready((s) => {
+        s.song.meterNum = 12;
+        s.song.meterDen = 8;
+        s.transport.state = "countIn";
+        s.transport.countInBeats = 12;
+        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+      }),
+    );
+    app.setTelemetry(app.telemetryWith({ position: reading({ tick: -100, state: "countIn", countInBeatsLeft: 1 }) }));
+    flushSync();
+    const boxes = [...q('[data-test="transport-counting"]')!.querySelectorAll(".box")];
+    expect(boxes.map((b) => b.classList.contains("done"))).toEqual(Array(12).fill(true));
+    expect(boxes).toHaveLength(12);
   });
 
   it("2 小節のカウントインでも箱は 1 小節ぶん。小節ごとに数えなおす", () => {
@@ -260,9 +282,151 @@ describe("カウントイン", () => {
     );
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: -1440, state: "countIn", countInBeatsLeft: 3 }) }));
     flushSync();
-    expect(text('[data-test="transport-counting"]')).toBe("カウントイン 2 / 4");
     const boxes = [...q('[data-test="transport-counting"]')!.querySelectorAll(".box")];
     expect(boxes.map((b) => b.classList.contains("done"))).toEqual([true, true, false, false]);
+  });
+});
+
+describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」「メトロノームの ▾」、モック F-Menus）", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  /** jsdom には幅がないので、部品ごとの幅と帯の幅をきめる。 */
+  function widths(row: number, part: (name: string | undefined) => number): void {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(row);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return part(this.dataset.part);
+    });
+  }
+  const folded = () => widths(0, () => 10);
+
+  it("曲の名前が引っこむと 28 の ▾。押すと曲の名前の一覧（印はから）", async () => {
+    folded();
+    show(Transport, ready());
+    expect(q('[data-test="transport-song"]')).toBeNull();
+    const stub = btn("song-stub");
+    expect(stub.textContent).toBe("▾");
+    expect(stub.getAttribute("aria-label")).toBe("曲（はじめての曲）");
+    stub.click();
+    flushSync();
+    await tick();
+    const menu = q('[data-test="song-menu"]')!;
+    const rows = [...menu.querySelectorAll<HTMLButtonElement>("button")];
+    expect(rows.map((r) => r.querySelector(".label")!.textContent)).toEqual(["新しい曲", "ひらく…", "保存"]);
+    expect(rows.every((r) => r.querySelector(".choice:not(.selected)") !== null)).toBe(true);
+    expect(rows.map((r) => r.getAttribute("aria-checked"))).toEqual([null, null, null]);
+    rows[2]!.click();
+    flushSync();
+    expect(app.sent).toEqual([{ type: "saveSong" }]);
+  });
+
+  it("曲の ▾ に乗せると「曲 ・ （曲の名前）」", () => {
+    vi.useFakeTimers();
+    folded();
+    show(Transport, ready());
+    btn("song-stub").dispatchEvent(new PointerEvent("pointerenter"));
+    vi.advanceTimersByTime(600);
+    flushSync();
+    expect(tipView.value?.body).toBe("曲 ・ はじめての曲");
+    expect(tipView.value?.term).toBeNull();
+  });
+
+  it("カウントインが引っこむとメトロノームの ▾。メトロノームがオンなら ▾ もオン", () => {
+    folded();
+    show(Transport, ready((s) => (s.transport.metronome = true)));
+    expect(q('[data-test="transport-count-in"]')).toBeNull();
+    const stub = btn("metronome-stub");
+    expect(stub.getAttribute("aria-label")).toBe("メトロノームとカウントイン");
+    expect(stub.classList.contains("on")).toBe(true);
+    expect(stub.previousElementSibling).toBe(btn("metronome"));
+    app.setState(ready());
+    flushSync();
+    expect(btn("metronome-stub").classList.contains("on")).toBe(false);
+  });
+
+  it("メトロノームの ▾ の一覧: メトロノーム（C）、見出し「カウントイン」、なし ・ 1 小節 ・ 2 小節", async () => {
+    folded();
+    show(Transport, ready((s) => (s.transport.metronome = true)));
+    btn("metronome-stub").click();
+    flushSync();
+    await tick();
+    const menu = q('[data-test="metronome-menu"]')!;
+    expect(menu.getAttribute("aria-label")).toBe("メトロノームとカウントイン");
+    expect([...menu.children].map((c) => c.textContent!.replace(/\s+/g, " ").trim())).toEqual([
+      "メトロノーム C",
+      "カウントイン",
+      "なし",
+      "1 小節",
+      "2 小節",
+    ]);
+    expect(menu.children[1]!.classList.contains("head")).toBe(true);
+    const rows = [...menu.querySelectorAll<HTMLButtonElement>("button")];
+    expect(rows.map((r) => r.getAttribute("aria-checked"))).toEqual(["true", "false", "true", "false"]);
+    rows[3]!.click();
+    flushSync();
+    expect(app.sent).toEqual([{ type: "setCountIn", bars: 2 }]);
+    expect(q('[data-test="metronome-menu"]')).toBeNull();
+    btn("metronome-stub").click();
+    flushSync();
+    await tick();
+    q('[data-test="metronome-menu"]')!.querySelector<HTMLButtonElement>("button")!.click();
+    flushSync();
+    expect(app.sent.at(-1)).toEqual({ type: "toggleMetronome" });
+  });
+
+  it("一覧が窓からはみ出すときは、窓の中に入るまで左と上へずらす", async () => {
+    folded();
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      // 一覧はボタンの下、右はしは窓の外（1200 + 220）、下も窓の外（700 + 150）。
+      const rect = this.classList.contains("menu") ? { left: 1200, top: 700, width: 220, height: 150 } : { left: 0, top: 0, width: 0, height: 0 };
+      return { ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top, toJSON: () => ({}) } as DOMRect;
+    });
+    show(Transport, ready());
+    btn("metronome-stub").click();
+    flushSync();
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(q<HTMLElement>('[data-test="metronome-menu"]')!.style.transform).toBe("translate(-140px, -50px)");
+  });
+
+  it("窓に入る一覧はずらさない", async () => {
+    folded();
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1280);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    show(Transport, ready());
+    btn("song-stub").click();
+    flushSync();
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(q<HTMLElement>('[data-test="song-menu"]')!.style.transform).toBe("");
+  });
+
+  it("カウントインが始まっても、引っこむ物は変わらない（カウントインの幅は、ふだんとカウントイン中の大きいほう）", () => {
+    const shown = () =>
+      ["transport-song", "transport-song-stub", "transport-metronome-stub"].map((t) => q(`[data-test="${t}"]`) !== null).join();
+    const seen = new Set<string>();
+    for (let room = 300; room <= 900; room += 10) {
+      vi.restoreAllMocks();
+      widths(room, (part) => (part === "countInCounting" ? 140 : part === "countIn" ? 100 : 40));
+      show(Transport, ready());
+      const before = shown();
+      seen.add(before);
+      app.setState(
+        ready((s) => {
+          s.transport.state = "countIn";
+          s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+        }),
+      );
+      flushSync();
+      expect(shown(), String(room)).toBe(before);
+      unmount(mounted!);
+      mounted = null;
+    }
+    expect([...seen].sort()).toEqual(["false,true,false", "false,true,true", "true,false,false"]);
   });
 });
 
@@ -309,7 +473,7 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("使えない値は「こわれた」の枠で、Enter でも決めない", async () => {
+  it("使えない値は「こわれた」の枠で、Enter でも決めない。状態行で言うように頼む（もとの値）", async () => {
     show(Transport, ready());
     const input = await open("tempo");
     for (const bad of ["29.99", "300.01", "abc", ""]) {
@@ -318,7 +482,7 @@ describe("テンポと拍子の打ちこみ", () => {
       expect(input.getAttribute("aria-invalid")).toBe("true");
       press(input, "Enter");
     }
-    expect(app.sent).toEqual([]);
+    expect(app.sent).toEqual(Array(4).fill({ type: "rejectValue", field: "tempo", kept: "96.00" }));
     expect(field("tempo")).not.toBeNull();
     type(input, "30");
     expect(input.classList.contains("broken")).toBe(false);
@@ -346,10 +510,15 @@ describe("テンポと拍子の打ちこみ", () => {
     type(input, "6/7");
     expect(input.classList.contains("broken")).toBe(true);
     press(input, "Enter");
-    expect(app.sent).toEqual([]);
+    type(input, "13/4");
+    press(input, "Enter");
+    expect(app.sent).toEqual([
+      { type: "rejectValue", field: "meterDen", kept: "4" },
+      { type: "rejectValue", field: "meterNum", kept: "4" },
+    ]);
     type(input, "6/8");
     press(input, "Enter");
-    expect(app.sent).toEqual([{ type: "setMeter", num: 6, den: 8 }]);
+    expect(app.sent.at(-1)).toEqual({ type: "setMeter", num: 6, den: 8 });
   });
 
   it("枠の外へ出たら、やめる", async () => {
@@ -411,6 +580,17 @@ describe("状態行の札と知らせ", () => {
   ] as [StatusMessage, string][])("%o", (m, expected) => {
     show(StatusLine, msg(m));
     expect(left()).toContain(`■ 停止中 ${expected}`);
+  });
+
+  it.each([
+    [{ id: "bandFoldedThird", opened: "history", folded: "mixer" }, "取り消しの履歴をひらいたので、いちばん前にひらいたミキサーをたたみました。下の帯は、2 つまでひらけます。"],
+    [{ id: "bandFoldedScale", scale: 150, band: "mixer" }, "拡大率を 150 % にしたので、ミキサーをたたみました。帯札を押すと、またひらきます。"],
+    [{ id: "valueRejected", field: "velocity", kept: "77" }, "ベロシティは 1〜127 です。もとの 77 のままです。"],
+    [{ id: "valueRejected", field: "meterDen", kept: "4" }, "拍子の下は 2 ・ 4 ・ 8 ・ 16 です。もとの 4 のままです。"],
+    [{ id: "outputMissing", output: "ヘッドホン" }, "ヘッドホンが見つからなくなりました。再生を止めています。 音の設定をひらく"],
+  ] as [StatusMessage, string][])("新しい知らせ %o", (m, expected) => {
+    show(StatusLine, msg(m));
+    expect(left()).toContain(expected);
   });
 
   it("summary で何もないときは、札だけ", () => {

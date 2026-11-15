@@ -82,17 +82,19 @@ export class FakeBands {
   }
 
   /**
-   * Returns the band that was folded because the opened one did not fit beside it. A band folded
-   * only because it would be the third is not reported.
+   * Returns the band folded to open this one, and why ("third": two at most; "tooLow": they do not
+   * fit together). When two are folded, the later fold is returned.
    */
-  toggle(band: Band): Band | null {
+  toggle(band: Band): { band: Band; why: "third" | "tooLow" } | null {
     if (isBottom(band)) {
       const at = this.bottom.indexOf(band);
       if (at >= 0) this.bottom.splice(at, 1);
       else {
         this.bottom.push(band);
-        if (this.bottom.length > MAX_BOTTOM_OPEN) this.bottom.shift();
-        return this.fit();
+        const third = this.bottom.length > MAX_BOTTOM_OPEN ? this.bottom.shift()! : null;
+        const low = this.fit();
+        if (low) return { band: low, why: "tooLow" };
+        return third ? { band: third, why: "third" } : null;
       }
     } else if (this.side.at(-1) === band) {
       this.side.pop();
@@ -728,6 +730,9 @@ export function encodeTelemetry(
 const NOTICES: StatusMessage["id"][] = [
   "bandFoldedWindowLow",
   "bandFoldedToOpen",
+  "bandFoldedThird",
+  "bandFoldedScale",
+  "valueRejected",
   "scaleDoesNotFit",
   "scaleWindowGrown",
   "scaleLoweredForScreen",
@@ -741,9 +746,9 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
   const outputs = structuredClone(state.outputs);
   const choosable = outputs.list.filter((o) => o.unusable === null).map((o) => o.id);
   let notice = isNotice(state.status.message) && command.type === "setViewport" ? state.status.message : null;
-  const fitWindow = () => {
+  const fitWindow = (scale?: number) => {
     const folded = bands.setHeight((ws.viewportHeight * 100) / ws.scale);
-    if (folded) notice = { id: "bandFoldedWindowLow", band: folded };
+    if (folded) notice = scale ? { id: "bandFoldedScale", scale, band: folded } : { id: "bandFoldedWindowLow", band: folded };
   };
   switch (command.type) {
     case "setViewport":
@@ -765,14 +770,18 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
         ws.viewportHeight = Math.max(ws.viewportHeight, min.height);
         notice = { id: "scaleWindowGrown", scale: percent };
       }
-      fitWindow();
+      fitWindow(percent);
       break;
     }
     case "toggleBand": {
-      const folded = bands.toggle(command.band);
-      if (folded) notice = { id: "bandFoldedToOpen", opened: command.band, folded };
+      const fold = bands.toggle(command.band);
+      if (fold?.why === "third") notice = { id: "bandFoldedThird", opened: command.band, folded: fold.band };
+      if (fold?.why === "tooLow") notice = { id: "bandFoldedToOpen", opened: command.band, folded: fold.band };
       break;
     }
+    case "rejectValue":
+      notice = { id: "valueRejected", field: command.field, kept: command.kept };
+      break;
     case "goArrange":
       bands.goArrange();
       break;

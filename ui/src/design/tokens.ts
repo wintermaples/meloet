@@ -165,6 +165,13 @@ export const part = {
   "part.windowlist.row": p(24, "s2", "状態行の「窓」", "行は高さ 24"),
   "part.zoomlist.width": p(320, "s2", "状態行の「拡大率」", "幅 320"),
   "part.zoomlist.row": p(24, "s2", "状態行の「拡大率」", "行は高さ 24"),
+  "part.list.width": p(220, "s2", "一覧", "幅 220"),
+  "part.list.row": p(24, "s2", "一覧", "行は高さ 24"),
+  "part.songmenu.width": p(28, "s2", "曲の ▾", "28×24"),
+  "part.metronomemenu.width": p(20, "s2", "メトロノームの ▾", "幅 20"),
+  // カウントイン中のボタンの拍の四角と、そのすきま。
+  "part.countin.beat": p(8, "s3", null, "8×8 の四角（すきま 4）"),
+  "part.countin.gap": p(4, "s3", null, "8×8 の四角（すきま 4）"),
   "part.dialog.width": p(560, "s2", "ダイアログ", "幅 560"),
   "part.dialog.head": p(32, "s2", "ダイアログ", "見出し 32"),
   "part.dialog.foot": p(48, "s2", "ダイアログ", "下の列 48"),
@@ -213,9 +220,9 @@ export const mock = {
   "mock.transport.name": m(132, "F-Empty"),
   "mock.transport.readout": m(40, "F-Empty"),
   "mock.transport.master": m(132, "F-Empty"),
-  // カウントイン中の枠の高さと、拍の四角の 1 辺。
-  "mock.transport.count-in": m(32, "F-Connect4"),
-  "mock.transport.count-in-beat": m(12, "F-Connect4"),
+  // 位置のラベルを引っこめたときの、位置の枠の高さとマスターの幅。
+  "mock.transport.readout-narrow": m(32, "F-PR150"),
+  "mock.transport.master-narrow": m(96, "F-PR150"),
   "mock.arrange.bar": m(64, "F-Empty"),
   "mock.arrange.add-track": m(32, "F-Empty"),
   "mock.track.number": m(16, "F-Empty"),

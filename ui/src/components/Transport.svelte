@@ -1,11 +1,11 @@
-<!-- 再生まわりの帯（モック Main・F-Empty・F-Connect3・F-Connect4・F-ArrangeRec の上の帯）。 -->
+<!-- 再生まわりの帯（モック Main・F-Empty・F-Connect3・F-Connect4・F-ArrangeRec の上の帯。▾ は F-Menus・F-PR150）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { clockOffsetUs, type Command } from "../bridge";
   import { platformOf } from "../keys/keys";
   import { glRegion, glSlot } from "../gl/slot";
   import { menuOpened } from "../lib/menu";
-  import { term } from "../lib/tip.svelte";
+  import { term, tip } from "../lib/tip.svelte";
   import { current, onTelemetry, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import ChoiceMenu from "./ChoiceMenu.svelte";
@@ -13,7 +13,19 @@
   import { PeakHold, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import NumberField from "./NumberField.svelte";
-  import { clockText, meterText, parseMeter, parseTempo, positionText, shownTick, stepMeter, stepTempo, ticksToSeconds, type Meter } from "./time";
+  import {
+    clockText,
+    meterFieldOf,
+    meterText,
+    parseMeter,
+    parseTempo,
+    positionText,
+    shownTick,
+    stepMeter,
+    stepTempo,
+    ticksToSeconds,
+    type Meter,
+  } from "./time";
 
   const song = $derived(current.state!.song);
   const transport = $derived(current.state!.transport);
@@ -43,18 +55,29 @@
     const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
     const fixed = [...row.children].filter((el) => el !== ruler && !(el as HTMLElement).dataset.part) as HTMLElement[];
     const w = (part: string) => ruler!.querySelector<HTMLElement>(`[data-part="${part}"]`)?.offsetWidth ?? 0;
-    const labels = [0, 1].reduce((sum, i) => sum + Math.max(0, w(`label-${i}`) - w(`readout-${i}`)), 0);
+    // 位置のラベルを引っこめると、位置の枠とマスターもモック F-PR150 の細い形になる。
+    const narrowing =
+      metrics.px("mock.transport.master") -
+      metrics.px("mock.transport.master-narrow") +
+      2 * (metrics.px("space.3") - metrics.px("space.2")) +
+      (metrics.px("space.4") - metrics.px("space.3"));
+    const labels = [0, 1].reduce((sum, i) => sum + Math.max(0, w(`label-${i}`) - w(`readout-${i}`)), 0) + narrowing;
     const shownLabels = parts.positionLabels ? labels : 0;
     // すきま（m-spacer）は残りの幅を取るので、幅は数えず、両どなりのすきまだけ数える。
     const widths = fixed.reduce((sum, el) => sum + (el.classList.contains("m-spacer") ? 0 : el.offsetWidth), 0);
     const base = pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels;
-    parts = transportParts(row.clientWidth, {
-      base,
-      songName: w("songName") + gap,
-      load: w("load") + gap,
-      countIn: w("countIn") + gap,
-      positionLabels: labels,
-    });
+    parts = transportParts(
+      row.clientWidth,
+      {
+        base,
+        songName: w("songName") + gap,
+        load: w("load") + gap,
+        countIn: Math.max(w("countIn"), w("countInCounting")) + gap,
+        positionLabels: labels,
+      },
+      // メトロノームの ▾ は、すきまなくくっつく（左のすきまを打ち消す）。
+      { songName: w("songStub") + gap, countIn: w("countInStub") },
+    );
   }
 
   onMount(() => {
@@ -125,11 +148,16 @@
     if (transport.canPlay) send({ type: "record" });
   }
 
-  // カウントインの一覧と、曲の名前の一覧。画面だけが持つ「ひらいている」。決めるのは core（意図を送るだけ）。
-  let menu = $state<"countIn" | "song" | null>(null);
+  // カウントインの一覧、曲の名前の一覧、メトロノームの一覧。画面だけが持つ「ひらいている」。決めるのは core（意図を送るだけ）。
+  type Menu = "countIn" | "song" | "metronome";
+  let menu = $state<Menu | null>(null);
   let countInButton = $state<HTMLButtonElement>();
   let songButton = $state<HTMLButtonElement>();
-  const menuButton = $derived(menu === "song" ? songButton : countInButton);
+  let songStub = $state<HTMLButtonElement>();
+  let metronomeStub = $state<HTMLButtonElement>();
+  const menuButton = $derived(
+    menu === "song" ? (parts.songName ? songButton : songStub) : menu === "metronome" ? metronomeStub : countInButton,
+  );
   let popup = $state<HTMLElement>();
   let anchor = $state({ left: 0, top: 0 });
   const countInRows = $derived([
@@ -137,6 +165,17 @@
     { value: 1, label: t("transport.countInBars", { bars: 1 }) },
     { value: 2, label: t("transport.countInBars", { bars: 2 }) },
   ]);
+  // メトロノームの ▾ の一覧（仕様書 2 章「メトロノームの ▾」、モック F-Menus）。カウントインの行は、カウントインの一覧と同じ。
+  type MetronomeRow = "metronome" | number;
+  const metronomeRows = $derived([
+    { value: "metronome" as MetronomeRow, label: t("transport.metronome"), key: t("key.metronome"), checked: transport.metronome },
+    { heading: t("transport.countIn") },
+    ...countInRows.map((r) => ({ ...r, checked: r.value === transport.countInBars })),
+  ]);
+  function pickMetronome(v: MetronomeRow): void {
+    send(v === "metronome" ? { type: "toggleMetronome" } : { type: "setCountIn", bars: v });
+    closeMenu();
+  }
   const countInValue = $derived(
     transport.countInBars === 0 ? t("transport.countInNone") : t("transport.countInBars", { bars: transport.countInBars }),
   );
@@ -180,7 +219,7 @@
     menu = null;
     if (hadFocus) button?.focus();
   }
-  function toggle(which: "countIn" | "song"): void {
+  function toggle(which: Menu): void {
     menu = menu === which ? null : which;
   }
   function pickCountIn(bars: number): void {
@@ -205,11 +244,20 @@
       document.removeEventListener("pointerdown", onDown, true);
     };
   });
-  // カウントインが始まったり、帯から引っこんだりしたら、一覧はとじる。
+  // カウントインが始まったり、ボタンが引っこんだり戻ったりしたら、一覧はとじる。曲の名前の一覧は、名前と ▾ のどちらかに付く。
   $effect(() => {
     if (menu === "countIn" && (counting || !parts.countIn)) closeMenu();
-    if (menu === "song" && !parts.songName) closeMenu();
+    if (menu === "metronome" && parts.countIn) closeMenu();
   });
+
+  // 使えない値のまま Enter: 状態行で言うように core へ頼む（仕様書 6 章「使えない値を打った」）。
+  function rejectTempo(): void {
+    send({ type: "rejectValue", field: "tempo", kept: tempoText(song.tempoBpm) });
+  }
+  function rejectMeter(draft: string): void {
+    const field = meterFieldOf(draft);
+    send({ type: "rejectValue", field, kept: String(field === "meterNum" ? meter.num : meter.den) });
+  }
 </script>
 
 {#snippet songName()}
@@ -222,8 +270,6 @@
 {/snippet}
 {#snippet countingIn()}
   <span>{t("transport.countIn")}</span>
-  <span class="beat">{beatInBar}</span>
-  <span class="m-num m-lbl">{t("transport.countInOf", { beats: beatsPerBar })}</span>
   <span class="boxes">
     {#each { length: beatsPerBar }, i (i)}<span class="box" class:done={i < beatInBar}></span>{/each}
   </span>
@@ -241,6 +287,19 @@
       data-test="transport-song"
       bind:this={songButton}
       onclick={() => toggle("song")}>{@render songName()}</button
+    >
+  {:else}
+    <button
+      class="m-btn song-stub"
+      class:open={menu === "song"}
+      aria-haspopup="menu"
+      aria-expanded={menu === "song"}
+      aria-label={t("transport.songMenu", { name: song.name })}
+      data-part="songStub"
+      data-test="transport-song-stub"
+      bind:this={songStub}
+      use:tip={t("transport.songMenuTip", { name: song.name })}
+      onclick={() => toggle("song")}>▾</button
     >
   {/if}
 
@@ -287,7 +346,7 @@
     >
   </div>
 
-  <div class="position">
+  <div class="position" class:narrow={!parts.positionLabels}>
     <div class="col">
       {#if parts.positionLabels}<span class="m-lbl" use:term={"小節 . 拍 . ティック"}>{t("transport.position")}</span>{/if}
       <span class="m-readout" data-test="transport-position">{position}</span>
@@ -305,6 +364,7 @@
       parse={parseTempo}
       step={(v, d) => tempoText(stepTempo(v, d))}
       commit={(bpm) => send({ type: "setTempo", bpm })}
+      reject={rejectTempo}
       label={t("transport.tempo")}
       chars={6}
       test="transport-tempo"
@@ -317,6 +377,7 @@
       parse={parseMeter}
       step={(v, d) => meterText(stepMeter(v, d))}
       commit={(m) => send({ type: "setMeter", num: m.num, den: m.den })}
+      reject={rejectMeter}
       label={t("transport.timeSignature")}
       chars={5}
       test="transport-meter"
@@ -331,9 +392,23 @@
     use:term={"メトロノーム"}
     onclick={() => send({ type: "toggleMetronome" })}>{t("transport.metronome")}</button
   >
+  {#if !parts.countIn}
+    <button
+      class="m-btn metronome-stub"
+      class:on={transport.metronome}
+      class:open={menu === "metronome"}
+      aria-haspopup="menu"
+      aria-expanded={menu === "metronome"}
+      aria-label={t("transport.metronomeMenu")}
+      data-part="countInStub"
+      data-test="transport-metronome-stub"
+      bind:this={metronomeStub}
+      onclick={() => toggle("metronome")}>▾</button
+    >
+  {/if}
   {#if parts.countIn}
     {#if counting}
-      <div class="counting" data-part="countIn" data-test="transport-counting" use:term={"カウントイン"}>{@render countingIn()}</div>
+      <div class="m-btn on counting" data-part="countIn" data-test="transport-counting" use:term={"カウントイン"}>{@render countingIn()}</div>
     {:else}
       <button
         class="m-btn"
@@ -355,7 +430,7 @@
     <div class="col end" data-part="load">{@render loadValue()}</div>
   {/if}
 
-  <div class="master">
+  <div class="master" class:narrow={!parts.positionLabels}>
     <div class="master-head">
       <span class="m-lbl" use:term={"マスター"}>{t("transport.master")}</span>
       <span class="m-num master-db">{peakText(masterPeak)}</span>
@@ -365,12 +440,11 @@
 
   <div class="ruler" aria-hidden="true" bind:this={ruler}>
     <div class="song" data-part="songName">{@render songName()}</div>
+    <span class="m-btn song-stub" data-part="songStub">▾</span>
     <div class="col end" data-part="load">{@render loadValue()}</div>
-    {#if counting}
-      <div class="counting" data-part="countIn">{@render countingIn()}</div>
-    {:else}
-      <span class="m-btn" data-part="countIn">{@render countInLabel()}</span>
-    {/if}
+    <span class="m-btn" data-part="countIn">{@render countInLabel()}</span>
+    <span class="m-btn counting" data-part="countInCounting">{@render countingIn()}</span>
+    <span class="m-btn metronome-stub" data-part="countInStub">▾</span>
     <span class="m-lbl" data-part="label-0">{t("transport.position")}</span>
     <span class="m-readout" data-part="readout-0">{position}</span>
     <span class="m-lbl" data-part="label-1">{t("transport.time")}</span>
@@ -382,6 +456,8 @@
   <div class="popup" style:left="{anchor.left}px" style:top="{anchor.top}px" use:toBody bind:this={popup}>
     {#if menu === "countIn"}
       <ChoiceMenu heading={t("transport.countIn")} rows={countInRows} selected={transport.countInBars} onpick={pickCountIn} test="count-in-menu" />
+    {:else if menu === "metronome"}
+      <ChoiceMenu heading={null} label={t("transport.metronomeMenu")} rows={metronomeRows} onpick={pickMetronome} test="metronome-menu" />
     {:else}
       <ChoiceMenu heading={null} label={song.name} rows={songRows} onpick={pickSong} test="song-menu" />
     {/if}
@@ -443,6 +519,21 @@
     color: var(--color-gray-10);
   }
 
+  /* 曲の ▾（仕様書 2 章、モック F-Menus）: 28×24。 */
+  .song-stub {
+    width: var(--part-songmenu-width);
+    padding: 0;
+  }
+  /* メトロノームの ▾: 幅 20 で、メトロノームのボタンの右にすきまなく。間の線は 1 本（モックはメトロノームの右の枠を消す）。 */
+  .metronome-stub {
+    width: calc(var(--part-metronomemenu-width) - var(--line-hair));
+    padding: 0;
+    border-left: 0;
+  }
+  .transport > .metronome-stub {
+    margin-left: calc(-1 * var(--space-3));
+  }
+
   /* 録音ボタン（仕様書 2 章）: 止まっているときは rec の輪、録音中とカウントイン中は rec のぬり（モック F-Connect4・F-ArrangeRec）。 */
   .rec {
     width: var(--part-rec-dot);
@@ -473,6 +564,12 @@
     background: var(--color-gray-0);
     border: var(--line-hair) solid var(--color-gray-5);
   }
+  /* 位置のラベルを引っこめたとき（モック F-PR150・F-Menus）。 */
+  .position.narrow {
+    height: var(--mock-transport-readout-narrow);
+    gap: var(--space-3);
+    padding: 0 var(--space-2);
+  }
   .col {
     display: flex;
     flex-direction: column;
@@ -483,31 +580,17 @@
     align-items: flex-end;
   }
 
-  /* カウントイン中（モック F-Connect4）: accent の枠、拍の数字は text.l、拍の箱は済んだ所までぬる。 */
+  /* カウントイン中（仕様書 3 章、モック F-Connect4）: オンのボタンに、1 小節の拍の数だけの四角。打った拍は accent のぬり。 */
   .counting {
-    height: var(--mock-transport-count-in);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: 0 var(--space-3);
-    border: var(--line-hair) solid var(--color-accent);
-    color: var(--color-accent);
-  }
-  /* text.l は 600 だけ（仕様書 1 章）。等幅の書体は 600 を読みこんでいないので、数字は和文の書体の 600。 */
-  .beat {
-    font-variant-numeric: tabular-nums;
-    font-size: var(--text-l-size);
-    line-height: var(--text-l-line-height);
-    font-weight: var(--text-l-weight-600);
+    cursor: default;
   }
   .boxes {
     display: flex;
-    gap: var(--space-1);
+    gap: var(--part-countin-gap);
   }
   .box {
-    width: var(--mock-transport-count-in-beat);
-    height: var(--mock-transport-count-in-beat);
+    width: var(--part-countin-beat);
+    height: var(--part-countin-beat);
     border: var(--line-hair) solid var(--color-gray-7);
   }
   .box.done {
@@ -521,6 +604,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  .master.narrow {
+    width: var(--mock-transport-master-narrow);
   }
   .master-head {
     display: flex;

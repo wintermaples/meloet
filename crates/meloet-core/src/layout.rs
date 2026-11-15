@@ -122,6 +122,21 @@ pub struct Layout {
     pub show_back_hint: bool,
 }
 
+/// A bottom band folded by the rules, not by the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fold {
+    pub band: BottomBand,
+    pub why: FoldWhy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FoldWhy {
+    /// A third band was opened: two at most.
+    Third,
+    /// The opened band and this one do not fit together.
+    TooLow,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bands {
     window: WindowSize,
@@ -150,19 +165,24 @@ impl Bands {
         self.fit()
     }
 
-    /// Returns the band that was folded because the opened one did not fit beside it. A band
-    /// folded only because it would be the third is not reported.
-    pub fn toggle(&mut self, band: Band) -> Option<BottomBand> {
+    /// Returns the band folded to open this one, and why. When one toggle folds two bands (the
+    /// oldest as the third, then one more that does not fit), the later fold is the one returned.
+    pub fn toggle(&mut self, band: Band) -> Option<Fold> {
         match band {
             Band::Bottom(b) => {
                 if let Some(i) = self.bottom_open.iter().position(|&x| x == b) {
                     self.bottom_open.remove(i);
                 } else {
                     self.bottom_open.push(b);
-                    if self.bottom_open.len() > MAX_BOTTOM_OPEN {
-                        self.bottom_open.remove(0);
-                    }
-                    return self.fit();
+                    let third = (self.bottom_open.len() > MAX_BOTTOM_OPEN).then(|| Fold {
+                        band: self.bottom_open.remove(0),
+                        why: FoldWhy::Third,
+                    });
+                    let low = self.fit().map(|band| Fold {
+                        band,
+                        why: FoldWhy::TooLow,
+                    });
+                    return low.or(third);
                 }
             }
             Band::Side(p) => {
@@ -788,18 +808,31 @@ mod tests {
     }
 
     #[test]
-    fn folds_are_reported_except_the_third_band() {
+    fn folds_are_reported_with_the_reason() {
+        let too_low = |band| Fold {
+            band,
+            why: FoldWhy::TooLow,
+        };
         // Too low for both: the older one folds and is named.
         let mut b = opened(800.0, &[Mixer]);
-        assert_eq!(b.toggle(PianoRoll.into()), Some(Mixer));
-        // A third band: the oldest folds without a word.
-        let mut b = opened(1080.0, &[History, Mixer]);
-        assert_eq!(b.toggle(PianoRoll.into()), None);
-        assert_eq!(open_bottom(&b.layout()), [PianoRoll, Mixer]);
-        // A third band that then does not fit beside the second: that fold is named.
+        assert_eq!(b.toggle(PianoRoll.into()), Some(too_low(Mixer)));
+        // A third band: the oldest folds, even where all three would fit.
+        let mut b = opened(1300.0, &[Mixer, History]);
+        assert_eq!(
+            b.toggle(PianoRoll.into()),
+            Some(Fold {
+                band: Mixer,
+                why: FoldWhy::Third,
+            })
+        );
+        assert_eq!(open_bottom(&b.layout()), [PianoRoll, History]);
+        // A third band that then does not fit beside the second: the later fold is named.
         let mut b = opened(940.0, &[History, Mixer]);
-        assert_eq!(b.toggle(PianoRoll.into()), Some(Mixer));
+        assert_eq!(b.toggle(PianoRoll.into()), Some(too_low(Mixer)));
         assert_eq!(open_bottom(&b.layout()), [PianoRoll]);
+        // Closing a band folds nothing.
+        let mut b = opened(1080.0, &[Mixer, History]);
+        assert_eq!(b.toggle(History.into()), None);
         // A lower window.
         let mut b = opened(1080.0, &[Mixer, PianoRoll]);
         let low = WindowSize {

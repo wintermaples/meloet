@@ -1160,13 +1160,21 @@ fn opening_a_band_that_does_not_fit_beside_the_other_says_so() {
 }
 
 #[test]
-fn a_third_band_folds_the_oldest_without_a_notice() {
+fn a_third_band_folds_the_oldest_and_says_so() {
     let mut m = playing();
     viewport(&mut m, 1280.0, 1080.0);
-    toggle(&mut m, Band::History);
     toggle(&mut m, Band::Mixer);
     toggle(&mut m, Band::PianoRoll);
-    assert_eq!(open_bands(&m), [Band::PianoRoll, Band::Mixer]);
+    toggle(&mut m, Band::History);
+    assert_eq!(open_bands(&m), [Band::PianoRoll, Band::History]);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::BandFoldedThird {
+            opened: Band::History,
+            folded: Band::Mixer,
+        })
+    );
+    cmd(&mut m, Command::SelectClip { clip: None });
     assert_eq!(status(&m), idle());
 
     // The third band pushes out the oldest, and the second one still does not fit beside it.
@@ -1320,7 +1328,7 @@ fn a_grown_window_is_laid_out_at_its_new_size() {
 }
 
 #[test]
-fn a_higher_scale_that_folds_a_band_says_the_window_got_low() {
+fn a_higher_scale_that_folds_a_band_says_the_scale_did_it() {
     // 800 CSS px is 640 at 125 %: the piano roll and the history need 676.
     let mut m = playing();
     toggle(&mut m, Band::PianoRoll);
@@ -1328,12 +1336,14 @@ fn a_higher_scale_that_folds_a_band_says_the_window_got_low() {
     assert_eq!(open_bands(&m), [Band::PianoRoll, Band::History]);
     cmd(&mut m, Command::SetScale { percent: 125 });
     assert_eq!(open_bands(&m), [Band::History]);
-    assert_eq!(
-        status(&m),
-        Some(StatusMessage::BandFoldedWindowLow {
-            band: Band::PianoRoll
-        })
-    );
+    let folded = Some(StatusMessage::BandFoldedScale {
+        scale: 125,
+        band: Band::PianoRoll,
+    });
+    assert_eq!(status(&m), folded);
+    // Resizing afterwards leaves it, like the other notices.
+    viewport(&mut m, 1280.0, 900.0);
+    assert_eq!(status(&m), folded);
 
     // The fold is told even when the window also grew.
     let mut m = playing();
@@ -1344,7 +1354,8 @@ fn a_higher_scale_that_folds_a_band_says_the_window_got_low() {
     assert_eq!(m.view().workspace.viewport_width, 1067.0);
     assert_eq!(
         status(&m),
-        Some(StatusMessage::BandFoldedWindowLow {
+        Some(StatusMessage::BandFoldedScale {
+            scale: 125,
             band: Band::PianoRoll
         })
     );
@@ -1448,10 +1459,20 @@ fn a_stream_that_ends_by_itself_is_opened_again_a_few_times() {
         opened(&mut m, HP_NODE, 48_000);
     }
     assert_eq!(waits, [500, 1000, 2000, 4000]);
-    // Enough: it waits for the outputs to change.
+    // Nothing is said while it tries again.
+    assert_eq!(status(&m), idle());
+    // Enough: it waits for the outputs to change, and says the output went away.
     assert_eq!(m.handle(Input::AudioLost), [Effect::CloseOutput]);
     assert!(m.handle(Input::AudioRetry).is_empty());
+    let missing = Some(StatusMessage::OutputMissing {
+        output: "アナログヘッドフォン".into(),
+    });
+    assert_eq!(status(&m), missing);
+    // It is not a notice: the next thing the user does leaves it.
+    cmd(&mut m, Command::SelectClip { clip: None });
+    assert_eq!(status(&m), missing);
     assert_eq!(m.handle(usual()), [open(HP_NODE)]);
+    assert_eq!(status(&m), idle());
     opened(&mut m, HP_NODE, 48_000);
 
     // Once a stream runs, the count starts over.
@@ -1468,6 +1489,53 @@ fn a_stream_that_ends_by_itself_is_opened_again_a_few_times() {
         node_name: HP_NODE.into(),
     });
     assert!(matches!(effects[..], [Effect::RetryAudio { after }] if after.as_millis() == 1000));
+}
+
+#[test]
+fn a_stream_that_fails_to_open_again_four_times_says_the_output_went_away() {
+    let mut m = playing();
+    m.handle(Input::AudioFrames(Some(256)));
+    m.handle(Input::AudioLost);
+    for _ in 0..4 {
+        assert_eq!(status(&m), idle());
+        assert_eq!(m.handle(Input::AudioRetry), [open(HP_NODE)]);
+        m.handle(Input::AudioOpenFailed {
+            node_name: HP_NODE.into(),
+        });
+    }
+    let missing = Some(StatusMessage::OutputMissing {
+        output: "アナログヘッドフォン".into(),
+    });
+    assert_eq!(status(&m), missing);
+    assert!(!m.view().audio.running);
+    // A test tone on it in the settings tries again and takes the sentence away.
+    cmd(&mut m, Command::OpenSettings { advanced: false });
+    cmd(&mut m, Command::TestTone { output: HP.into() });
+    cmd(&mut m, Command::SettingsCancel);
+    assert_ne!(status(&m), missing);
+}
+
+#[test]
+fn a_refused_value_is_said_until_the_next_thing_the_user_does() {
+    use meloet_protocol::ValueField;
+    let mut m = playing();
+    let refused = Some(StatusMessage::ValueRejected {
+        field: ValueField::Tempo,
+        kept: "96.00".into(),
+    });
+    let effects = cmd(
+        &mut m,
+        Command::RejectValue {
+            field: ValueField::Tempo,
+            kept: "96.00".into(),
+        },
+    );
+    assert!(effects.is_empty(), "{effects:?}");
+    assert_eq!(status(&m), refused);
+    viewport(&mut m, 1280.0, 900.0);
+    assert_eq!(status(&m), refused);
+    cmd(&mut m, Command::SelectClip { clip: None });
+    assert_eq!(status(&m), idle());
 }
 
 #[test]

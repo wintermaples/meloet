@@ -128,6 +128,23 @@ pub enum Command {
         dialog: u32,
         answer: SongAnswer,
     },
+    /// Enter on a number field that holds a value out of range. `kept` is the value it still
+    /// has, as shown. Rust only says so in the status line; the field stays "broken".
+    RejectValue {
+        field: ValueField,
+        kept: String,
+    },
+}
+
+/// The number fields whose range the status line names (spec 6 「使えない値を打った」).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ValueField {
+    Tempo,
+    MeterNum,
+    MeterDen,
+    Velocity,
 }
 
 /// The buttons of the song dialogs, one for one.
@@ -641,6 +658,16 @@ pub enum StatusMessage {
         opened: Band,
         folded: Band,
     },
+    /// A third bottom band was opened; the one opened first was folded (two at most).
+    BandFoldedThird {
+        opened: Band,
+        folded: Band,
+    },
+    /// The zoom went up to `scale` and the window, in px at 100 %, got too low for `band`.
+    BandFoldedScale {
+        scale: u16,
+        band: Band,
+    },
     ScaleDoesNotFit {
         requested: u16,
         kept: u16,
@@ -691,6 +718,11 @@ pub enum StatusMessage {
     NoArmedTrack,
     UndoPending {
         count: u32,
+    },
+    /// A number field refused what was typed: "{field}は {range} です。もとの {kept} のままです。"
+    ValueRejected {
+        field: ValueField,
+        kept: String,
     },
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ".

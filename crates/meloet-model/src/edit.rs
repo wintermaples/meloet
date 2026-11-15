@@ -28,9 +28,16 @@ pub enum EditError {
     NoSuchNote(usize),
     /// A note that cannot be: length 0, key over 127, velocity 0 or over 127.
     BadNote,
+    /// A control point that cannot be: a CC number over 127.
+    BadControl,
     /// A note written outside the clip.
     OutOfClip,
+    /// A clip would overlap another clip of its track.
+    Overlap,
 }
+
+/// No clip ends after this, so that every song position of a take fits in an `i64`.
+pub const MAX_TICK: u64 = i64::MAX as u64 / 2;
 
 /// A new `Doc` and the step to remember it by.
 #[derive(Debug, Clone, PartialEq)]
@@ -58,7 +65,10 @@ impl NewTake {
 
     fn is_valid(&self) -> bool {
         self.length > 0
-            && self.origin.checked_add(self.length).is_some()
+            && self
+                .origin
+                .checked_add(self.length)
+                .is_some_and(|e| e <= MAX_TICK)
             && self.notes.is_sorted_by_key(|n| n.start)
             && self.notes.iter().all(|n| {
                 n.length > 0
@@ -141,7 +151,7 @@ pub fn add_recording(
         .flat_map(|c| {
             c.takes.iter().map(|ct| ClipTake {
                 take: ct.take.clone(),
-                offset: c.start + ct.offset - range.start(),
+                offset: c.zero(ct) - range.start() as i64,
             })
         })
         .collect();
@@ -149,8 +159,9 @@ pub fn add_recording(
     let added = takes.len();
     for t in takes {
         merged.push(ClipTake {
-            offset: t.origin - range.start(),
+            offset: (t.origin - range.start()) as i64,
             take: Arc::new(Take {
+                origin: None,
                 id: TakeId(ids.next()?),
                 length: t.length,
                 notes: t.notes,

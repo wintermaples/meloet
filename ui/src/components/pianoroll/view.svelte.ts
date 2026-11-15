@@ -32,6 +32,8 @@ export const prView = $state({
   shownClip: null as number | null,
   /** Delete・Mod A・Mod D・切り取りなどを、ピアノロールとアレンジのどちらに向けるか。最後に押した場所。 */
   focus: "arrange" as "arrange" | "pianoRoll",
+  /** ピアノロールで最後に押したのはノート（ベロシティの帯もふくむ）か CC の点か。両方を選んでいるときの Delete は、こちらに向ける。 */
+  picked: "notes" as "notes" | "controls",
 });
 
 /** 拡大率 scale（100・125・150）での、1 ティックの CSS px。 */
@@ -119,3 +121,10 @@ export function zoomArrangeBy(by: number): boolean {
 
 /** null は、まだ決めていない（帯をはじめて出したときに決める: ノートの場所が 4 小節ぶん（640）を下まわるなら、たたんで始める。仕様書 3 章の帯の表）。 */
 export const prPanels = $state({ list: null as boolean | null, inspector: null as boolean | null });
+
+// ---- ひらいている CC の帯（仕様書 3 章: 帯をたたんでも覚えている） ----
+
+export type LaneTag = "sustain" | "pitchBend" | "modulation" | "other";
+
+/** open はひらいた順（古い物から）。other は「そのほかの CC」でえらんだ番号。 */
+export const ccLanes = $state({ open: [] as LaneTag[], other: null as number | null });

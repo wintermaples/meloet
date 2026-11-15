@@ -1,8 +1,9 @@
 //! The song: what undo covers (`Doc`) and what it does not (`Session`).
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use crate::roll::RollSettings;
+use crate::roll::{QuantizeSettings, RollSettings};
 use crate::time::{Meter, Tempo, TickRange};
 use crate::{InstrumentRef, TempoChange, TrackColor, TrackId};
 
@@ -20,6 +21,28 @@ pub struct Note {
     pub length: u64,
     pub key: u8,
     pub velocity: u8,
+    /// The note of the take's origin this one came from. `None` for a note written, copied or
+    /// pasted, and in a take with no origin.
+    pub from: Option<OriginIndex>,
+}
+
+/// The index of a note in the origin take. Kept as index + 1, so that `Option<OriginIndex>`
+/// takes 4 bytes and a note 24.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OriginIndex(NonZeroU32);
+
+impl OriginIndex {
+    /// `None` for `u32::MAX`, the one index that does not fit.
+    pub fn new(index: u32) -> Option<OriginIndex> {
+        index
+            .checked_add(1)
+            .and_then(NonZeroU32::new)
+            .map(OriginIndex)
+    }
+
+    pub fn get(self) -> u32 {
+        self.0.get() - 1
+    }
 }
 
 impl Note {
@@ -56,13 +79,25 @@ pub struct Take {
     pub notes: Vec<Note>,
     /// In order of tick.
     pub controls: Vec<ControlPoint>,
+    /// Set on a quantized take, and kept by later edits until every note is back where it was.
+    pub origin: Option<TakeOrigin>,
+}
+
+/// The recorded take a quantized take was made from. Its tick 0 is at the tick 0 of the take
+/// that holds it, and it never has an origin itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TakeOrigin {
+    pub take: Arc<Take>,
+    /// What the last quantize used.
+    pub settings: QuantizeSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipTake {
     pub take: Arc<Take>,
-    /// The take's tick 0 is at `clip.start + offset` in the song.
-    pub offset: u64,
+    /// The take's tick 0 is at `clip.start + offset` in the song. Below 0 when the head of the
+    /// take is trimmed off; the take's tick 0 can then be before the song's.
+    pub offset: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +119,11 @@ impl Clip {
 
     pub fn active_take(&self) -> &ClipTake {
         &self.takes[self.active]
+    }
+
+    /// Where the take's tick 0 is in the song.
+    pub fn zero(&self, take: &ClipTake) -> i64 {
+        self.start as i64 + take.offset
     }
 }
 

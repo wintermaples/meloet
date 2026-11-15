@@ -10,10 +10,12 @@ use crate::settings::temp_dir;
 fn rich_song(name: &str, notes_per_take: u64) -> Song {
     let take = |id: u32, base: u8| {
         Arc::new(Take {
+            origin: None,
             id: TakeId(id),
             length: 1920 * 4,
             notes: (0..notes_per_take)
                 .map(|i| Note {
+                    from: None,
                     start: i * 7,
                     length: 30 + i % 5,
                     key: base + (i % 24) as u8,
@@ -43,7 +45,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
         })
     };
     let (t2, t5, t6, t7) = (take(2, 40), take(5, 48), take(6, 50), take(7, 52));
-    let clip = |id: u32, start: u64, end: u64, takes: Vec<(Arc<Take>, u64)>, active: usize| {
+    let clip = |id: u32, start: u64, end: u64, takes: Vec<(Arc<Take>, i64)>, active: usize| {
         Arc::new(Clip {
             id: ClipId(id),
             name: format!("クリップ {id}"),
@@ -69,7 +71,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
             3,
             1920 * 4,
             1920 * 8,
-            vec![(t5, 0), (t6, 480), (t7, 0), (t2, 960)],
+            vec![(t5, 0), (t6, 480), (t7, -480), (t2, 960)],
             1,
         ),
     ];
@@ -112,7 +114,7 @@ fn a_song_comes_back_as_it_was_and_shares_its_takes() {
 fn the_shape_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
     assert_eq!(v["format"], "meloet-song");
-    assert_eq!(v["version"], 1);
+    assert_eq!(v["version"], 2);
     assert_eq!(v["song"]["tempo"], 12_345);
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
     assert_eq!(v["song"]["nextId"], 8);
@@ -127,6 +129,10 @@ fn the_shape_on_disk() {
     assert_eq!(
         track["clips"][1]["takes"][1],
         serde_json::json!({"take": 6, "offset": 480})
+    );
+    assert_eq!(
+        track["clips"][1]["takes"][2],
+        serde_json::json!({"take": 7, "offset": -480})
     );
     let take = &v["takes"][0];
     assert_eq!(take["notes"][0], serde_json::json!([0, 30, 40, 1]));
@@ -196,8 +202,8 @@ fn newer_and_broken_files_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(matches!(
-        with(&|v| v["version"] = 2.into()),
-        Err(ReadError::TooNew { version: 2 })
+        with(&|v| v["version"] = 3.into()),
+        Err(ReadError::TooNew { version: 3 })
     ));
     assert!(matches!(
         decode(b"{\"format\": \"meloet-song\", \"vers"),
@@ -378,4 +384,188 @@ fn a_save_killed_at_any_moment_leaves_a_whole_song() {
         "only {mid_save} kills inside a save"
     );
     let _ = fs::remove_dir_all(dir);
+}
+
+/// `rich_song` with the shown take of clip 3 quantized: its origin (id 8) is in no clip, its
+/// first note came from origin note 1, its second was written by hand.
+fn quantized_song() -> Song {
+    let mut song = rich_song("q", 3);
+    let origin = Arc::new(Take {
+        id: TakeId(8),
+        length: 1920,
+        notes: (0..3)
+            .map(|i| Note {
+                start: 10 + i * 100,
+                length: 50,
+                key: 60,
+                velocity: 90,
+                from: None,
+            })
+            .collect(),
+        controls: Vec::new(),
+        origin: None,
+    });
+    let quantized = Arc::new(Take {
+        id: TakeId(9),
+        length: 1920,
+        notes: vec![
+            Note {
+                start: 0,
+                length: 50,
+                key: 60,
+                velocity: 90,
+                from: OriginIndex::new(1),
+            },
+            Note {
+                start: 480,
+                length: 50,
+                key: 62,
+                velocity: 90,
+                from: None,
+            },
+        ],
+        controls: Vec::new(),
+        origin: Some(TakeOrigin {
+            take: origin,
+            settings: QuantizeSettings::new(
+                Grid::new(0, true).unwrap(),
+                60,
+                40,
+                QuantizeAlign::StartAndEnd,
+            )
+            .unwrap(),
+        }),
+    });
+    let mut track = (*song.doc.tracks[0]).clone();
+    let mut clip = (*track.clips[1]).clone();
+    let active = clip.active;
+    clip.takes[active].take = quantized;
+    track.clips[1] = Arc::new(clip);
+    song.doc.tracks[0] = Arc::new(track);
+    song.doc.next_id = 10;
+    song
+}
+
+#[test]
+fn a_quantized_take_comes_back_with_its_origin() {
+    let song = quantized_song();
+    let bytes = encode(&song);
+    let back = decode(&bytes).unwrap();
+    assert_eq!(back, song);
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let take = |id: u32| {
+        v["takes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        take(9)["origin"],
+        serde_json::json!({"take": 8, "division": 0, "triplet": true, "strength": 60,
+                           "swing": 40, "align": "startAndEnd"})
+    );
+    assert_eq!(
+        take(9)["notes"],
+        serde_json::json!([[0, 50, 60, 90, 1], [480, 50, 62, 90]])
+    );
+    assert!(take(8).get("origin").is_none());
+    assert_eq!(take(8)["notes"][0], serde_json::json!([10, 50, 60, 90]));
+}
+
+#[test]
+fn origins_that_cannot_be_do_not_read() {
+    let good: serde_json::Value = serde_json::from_slice(&encode(&quantized_song())).unwrap();
+    let at = |v: &serde_json::Value, id: u32| {
+        v["takes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|t| t["id"] == id)
+            .unwrap()
+    };
+    let (o, q) = (at(&good, 8), at(&good, 9));
+    let with = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v = good.clone();
+        f(&mut v);
+        decode(&serde_json::to_vec(&v).unwrap())
+    };
+    assert!(with(&|_| {}).is_ok());
+    let broken: [&dyn Fn(&mut serde_json::Value); 6] = [
+        // An origin note past the end of the origin.
+        &|v| v["takes"][q]["notes"][0][4] = 3.into(),
+        // An origin note in a take with no origin.
+        &|v| v["takes"][o]["notes"][0] = serde_json::json!([10, 50, 60, 90, 0]),
+        // No such origin take.
+        &|v| v["takes"][q]["origin"]["take"] = 77.into(),
+        // An origin of an origin.
+        &|v| {
+            v["takes"][o]["origin"] = v["takes"][q]["origin"].clone();
+            v["takes"][o]["origin"]["take"] = 2.into();
+        },
+        &|v| v["takes"][q]["origin"]["division"] = 3.into(),
+        &|v| v["takes"][q]["origin"]["strength"] = 101.into(),
+    ];
+    for (i, f) in broken.iter().enumerate() {
+        assert!(matches!(with(*f), Err(ReadError::Broken)), "case {i}");
+    }
+}
+
+#[test]
+fn a_file_of_version_1_reads() {
+    let v1 = r#"{"format": "meloet-song", "version": 1, "app": "meloet 0.1.0",
+ "song": {"name": "はじめての曲", "tempo": 9600, "meter": [4, 4], "tempoChanges": [], "nextId": 8,
+   "tracks": [{"id": 1, "name": "ピアノ", "color": 1, "instrument": {"kind": "placeholder"}, "gainDb": 0.0,
+     "clips": [{"id": 3, "name": "ピアノ", "start": 7680, "end": 15360, "active": 1,
+                "takes": [{"take": 5, "offset": 0}, {"take": 6, "offset": 480}]}],
+     "plugins": [], "automation": []}],
+   "audio": []},
+ "takes": [{"id": 5, "length": 7680, "notes": [[0, 30, 60, 100]],
+            "controls": [[0, 64, 127], [240, "bend", -8192], [240, 1, 12]]},
+           {"id": 6, "length": 960, "notes": [[0, 30, 62, 100], [480, 30, 64, 90]]}],
+ "session": {"playTarget": 1, "armed": 1, "loop": {"start": 0, "end": 3840}, "loopOn": false}}
+"#;
+    let song = decode(v1.as_bytes()).unwrap();
+    let clip = &song.doc.tracks[0].clips[0];
+    let shown = &clip.active_take().take;
+    assert_eq!(shown.id, TakeId(6));
+    assert!(shown.origin.is_none());
+    assert_eq!(
+        shown
+            .notes
+            .iter()
+            .map(|n| (n.start, n.key, n.from))
+            .collect::<Vec<_>>(),
+        [(0, 62, None), (480, 64, None)]
+    );
+    assert_eq!(clip.takes[0].take.controls.len(), 3);
+    // Written again, it is version 2 and reads the same.
+    let again = encode(&song);
+    assert_eq!(decode(&again).unwrap(), song);
+    let v: serde_json::Value = serde_json::from_slice(&again).unwrap();
+    assert_eq!(v["version"], 2);
+}
+
+#[test]
+fn offsets_below_0_read_and_offsets_out_of_range_do_not() {
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
+    fn offset(v: &mut serde_json::Value) -> &mut serde_json::Value {
+        &mut v["song"]["tracks"][0]["clips"][1]["takes"][2]["offset"]
+    }
+    *offset(&mut v) = serde_json::json!(-20_000);
+    let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(song.doc.tracks[0].clips[1].takes[2].offset, -20_000);
+    for bad in [
+        serde_json::json!(i64::MIN),
+        serde_json::json!(u64::MAX),
+        serde_json::json!(i64::MAX),
+    ] {
+        *offset(&mut v) = bad;
+        assert!(matches!(
+            decode(&serde_json::to_vec(&v).unwrap()),
+            Err(ReadError::Broken)
+        ));
+    }
 }

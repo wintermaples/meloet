@@ -2,6 +2,7 @@
      ノートの場所とベロシティの帯は WebGL の 1 枚（pianoRoll）。ノートか見ている範囲が変わったときだけ描く。
      鍵盤の列は小さな 1 枚（pianoRollKeys）で、押している鍵と鳴っている音で光る。
      ドラッグ中のノートと、録音中にのびるノートは、それだけを囲む小さな 1 枚（pianoRollLive）。動かすだけなら transform で動かす。
+     pianoRollLive の箱は、ノートの場所の左上から CC の帯の下はしまで（CC の帯のドラッグも同じ 1 枚に入れる）。
      再生の線、囲む枠、文字は HTML。 -->
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
@@ -15,6 +16,7 @@
   import { followScroll } from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
   import { shownTick, ticksPerBar, ticksPerBeat, type Meter } from "../time";
+  import CcLanes from "./CcLanes.svelte";
   import { cursorCss } from "./cursor";
   import { RollDrag, type CursorKind, type Drag, type Mods } from "./drag";
   import * as G from "./geom";
@@ -45,6 +47,7 @@
   });
 
   let area = $state<HTMLElement>();
+  let liveHost = $state<HTMLElement>();
   let areaW = $state(0);
   let areaH = $state(0);
   let velH = $state(0);
@@ -148,6 +151,7 @@
   function down(e: PointerEvent, where: "notes" | "velocity"): void {
     if (e.button !== 0) return;
     prView.focus = "pianoRoll";
+    prView.picked = "notes";
     pending = null;
     const p = at(e);
     if (where === "notes") drag.down(p.x, p.y, modsOf(e));
@@ -455,7 +459,7 @@
     void dragVersion;
     const d = shownDrag;
     void nowTick;
-    livePicture = box ? { g, sizes, left: box.left, top: box.top, notes: liveNotesOf(d) } : null;
+    livePicture = box ? { g, sizes, left: box.left, top: box.top, ty: box.ty, areaH, notes: liveNotesOf(d) } : null;
     untrack(() => redraw("live"));
   });
 
@@ -604,19 +608,6 @@
       onpointerleave={leave}
     >
       <div class="fill" use:painted={"roll"}></div>
-      <div class="live-host" use:glRegion={"pianoRollLive"}>
-        {#if liveBox}
-          <div
-            class="live-box"
-            style:left="{liveBox.left}px"
-            style:top="{liveBox.top}px"
-            style:width="{liveBox.width}px"
-            style:height="{liveBox.height}px"
-            style:transform={liveBox.tx || liveBox.ty ? `translate(${liveBox.tx}px, ${liveBox.ty}px)` : null}
-            use:painted={"live"}
-          ></div>
-        {/if}
-      </div>
       {#if boxFrame}
         <div class="box-frame" style:left="{boxFrame.x}px" style:top="{boxFrame.y}px" style:width="{boxFrame.w}px" style:height="{boxFrame.h}px"></div>
       {/if}
@@ -648,6 +639,20 @@
     >
       <div class="fill" use:painted={"vel"}></div>
     </div>
+  </div>
+  <CcLanes {g} {meter} {step} take={liveMode ? null : n} {areaH} {liveHost} {onreading} />
+  <div class="live-host" use:glRegion={"pianoRollLive"} bind:this={liveHost}>
+    {#if liveBox}
+      <div
+        class="live-box"
+        style:left="{liveBox.left}px"
+        style:top="{liveBox.top}px"
+        style:width="{liveBox.width}px"
+        style:height="{liveBox.height}px"
+        style:transform={liveBox.tx || liveBox.ty ? `translate(${liveBox.tx}px, ${liveBox.ty}px)` : null}
+        use:painted={"live"}
+      ></div>
+    {/if}
   </div>
 </div>
 
@@ -739,7 +744,10 @@
   }
   .live-host {
     position: absolute;
-    inset: 0;
+    left: var(--size-col-keys);
+    right: 0;
+    top: var(--mock-pianoroll-ruler);
+    bottom: 0;
     overflow: hidden;
     pointer-events: none;
     z-index: 1;

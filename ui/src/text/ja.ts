@@ -504,6 +504,11 @@ export const texts = {
   "pr.readMove": e("{ticks} ・ {keys} 半音", "mock:R3-PRMouse", { ticks: "+0.240", keys: "+2" }),
   "pr.readBox": e("{count} ノート", "mock:R3-PRMouse", { count: "3" }),
   "pr.readVelocity": e("{delta}（{count} ノート）", "mock:R3-Lanes", { delta: "+12", count: "3" }),
+  "pr.readControl": e("{delta} ・ {position}", "mock:R3-Lanes", { delta: "+0512", position: "1.3.000" }),
+  "pr.readSwitch": e("{state}（{value}）", "mock:R3-Lanes", { state: "踏む", value: "127" }),
+  "pr.switchOn": e("踏む", "mock:R3-Lanes"),
+  // 「そのほかの CC」の一覧の行と、えらんだ番号の帯の名前。
+  "pr.ccNumber": e("CC {number}", "user:2026-11-15", { number: "7" }),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;

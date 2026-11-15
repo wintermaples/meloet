@@ -7,6 +7,7 @@ const BAR: u64 = 1920;
 
 fn note(start: u64, length: u64, key: u8) -> Note {
     Note {
+        from: None,
         start,
         length,
         key,
@@ -54,7 +55,7 @@ fn record(doc: &Doc, takes: Vec<NewTake>) -> (Doc, ClipId) {
 fn shown(doc: &Doc, clip: ClipId) -> (u64, Arc<Take>) {
     let (_, c) = doc.clip(clip).unwrap();
     let ct = c.active_take();
-    (c.start + ct.offset, ct.take.clone())
+    (c.zero(ct) as u64, ct.take.clone())
 }
 
 fn notes_of(doc: &Doc, clip: ClipId) -> Vec<(u64, u64, u8)> {
@@ -297,4 +298,54 @@ fn writing_where_there_is_no_clip_makes_one() {
     assert_eq!((c.start, c.end), (3 * BAR, 7 * BAR));
     let order: Vec<ClipId> = e.edit.doc.tracks[0].clips.iter().map(|c| c.id).collect();
     assert_eq!(order, [clip, e.clip]);
+}
+
+#[test]
+fn the_fields_of_the_note_list() {
+    // The clip [1920, 5760); the take at 2400.
+    let (doc, clip) = one_clip(vec![
+        note(0, 100, 60),
+        note(480, 100, 64),
+        note(900, 50, 67),
+    ]);
+    let set = |field, value| set_notes_field(&doc, clip, &[0, 2], field, value).unwrap();
+    let e = set(NoteField::Length, 240);
+    assert_eq!(e.edit.step, StepKind::SetNotesField { clip, count: 2 });
+    assert_eq!(e.selected, [0, 2]);
+    assert_eq!(
+        notes_of(&e.edit.doc, clip),
+        [(2400, 240, 60), (2880, 100, 64), (3300, 240, 67)]
+    );
+    // Not past the end of the clip, never under 1.
+    let e = set(NoteField::Length, 100_000);
+    assert_eq!(notes_of(&e.edit.doc, clip)[2], (3300, 5760 - 3300, 67));
+    let e = set(NoteField::Length, -5);
+    assert_eq!(notes_of(&e.edit.doc, clip)[0], (2400, 1, 60));
+    let e = set(NoteField::Velocity, 300);
+    let (_, take) = shown(&e.edit.doc, clip);
+    assert_eq!(
+        take.notes.iter().map(|n| n.velocity).collect::<Vec<_>>(),
+        [127, 100, 127]
+    );
+    // The earliest goes to the value, the other keeps its distance.
+    let e = set(NoteField::Start, 2000);
+    assert_eq!(
+        notes_of(&e.edit.doc, clip),
+        [(2000, 100, 60), (2880, 100, 64), (2900, 50, 67)]
+    );
+    // Only as far as the clip lets the notes go together.
+    let e = set(NoteField::Start, 0);
+    assert_eq!(notes_of(&e.edit.doc, clip)[0], (1920, 100, 60));
+    // The lowest goes on the value, the other keeps the interval.
+    let e = set(NoteField::Key, 72);
+    assert_eq!(
+        notes_of(&e.edit.doc, clip),
+        [(2400, 100, 72), (2880, 100, 64), (3300, 50, 79)]
+    );
+    let e = set(NoteField::Key, 200);
+    assert_eq!(notes_of(&e.edit.doc, clip)[2], (3300, 50, 127));
+    assert_eq!(
+        set_notes_field(&doc, clip, &[0], NoteField::Key, 60).unwrap_err(),
+        EditError::Unchanged
+    );
 }

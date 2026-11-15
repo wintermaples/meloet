@@ -107,6 +107,7 @@ describe("仕様書 1 章の表と tokens.ts", () => {
 // 率をかけて整数にならないので、四捨五入した値（.5 は切り上げ）。部品の寸法は表の外なので、4 の倍数とはかぎらない。
 const ROUNDED = [
   "part.button.icon@125=12.5→13",
+  "part.cc.point@125=7.5→8",
   "part.choice.dot@125=7.5→8",
   "part.endpoint.friendly@125=187.5→188",
   "part.endpoint.link@125=7.5→8",

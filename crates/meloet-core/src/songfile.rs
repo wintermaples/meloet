@@ -11,16 +11,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use meloet_model::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid, InstrumentRef, Meter,
-    MusicalScale, Note, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode, Session, Song,
-    Take, TakeId, Tempo, TempoChange, TickRange, Track, TrackColor, TrackId,
+    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid, InstrumentRef, MAX_TICK, Meter,
+    MusicalScale, Note, OriginIndex, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode,
+    Session, Song, Take, TakeId, TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor,
+    TrackId,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub const FORMAT: &str = "meloet-song";
-/// The newest shape this meloet reads and the one it writes.
-pub const VERSION: u32 = 1;
+/// The newest shape this meloet reads and the one it writes. 2: quantized takes, with their
+/// origin take and the origin index of each note.
+pub const VERSION: u32 = 2;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
 const MAX_TRACKS: usize = 64;
@@ -119,7 +121,8 @@ struct ClipFile {
 #[serde(rename_all = "camelCase")]
 struct ClipTakeFile {
     take: u32,
-    offset: u64,
+    /// Below 0 when the head of the take is trimmed off.
+    offset: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -127,11 +130,35 @@ struct ClipTakeFile {
 struct TakeFile {
     id: u32,
     length: u64,
-    /// `[start, length, key, velocity]`.
-    notes: Vec<(u64, u64, u8, u8)>,
+    notes: Vec<NoteFile>,
     /// In tick order, both kinds in one list so that the order at the same tick stays.
     #[serde(default)]
     controls: Vec<ControlFile>,
+    /// A quantized take: the recorded take it was made from, and how it was quantized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    origin: Option<OriginFile>,
+}
+
+/// `[start, length, key, velocity]`, and the index of the note in the origin take when it came
+/// from there.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum NoteFile {
+    Plain(u64, u64, u8, u8),
+    From(u64, u64, u8, u8, u32),
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OriginFile {
+    take: u32,
+    division: u16,
+    triplet: bool,
+    /// Percent.
+    strength: u8,
+    /// Percent.
+    swing: u8,
+    align: AlignFile,
 }
 
 /// `[tick, number, value]` for a CC, `[tick, "bend", value]` for the pitch bend.
@@ -250,6 +277,11 @@ pub fn encode(song: &Song) -> Vec<u8> {
                         .takes
                         .iter()
                         .map(|ct| {
+                            if let Some(o) = &ct.take.origin
+                                && seen.insert(o.take.id)
+                            {
+                                takes.push(take_file(&o.take));
+                            }
                             if seen.insert(ct.take.id) {
                                 takes.push(take_file(&ct.take));
                             }
@@ -307,16 +339,12 @@ pub fn encode(song: &Song) -> Vec<u8> {
             }),
             quantize: Some({
                 let q = s.roll.quantize;
-                let grid = grid_file(q.grid);
                 QuantizeFile {
-                    division: grid.division,
-                    triplet: grid.triplet,
+                    division: q.grid.division(),
+                    triplet: q.grid.triplet,
                     strength: q.strength(),
                     swing: q.swing(),
-                    align: match q.align {
-                        QuantizeAlign::Start => AlignFile::Start,
-                        QuantizeAlign::StartAndEnd => AlignFile::StartAndEnd,
-                    },
+                    align: align_file(q.align),
                 }
             }),
         },
@@ -324,6 +352,20 @@ pub fn encode(song: &Song) -> Vec<u8> {
     let mut bytes = serde_json::to_vec(&file).expect("a song always serializes");
     bytes.push(b'\n');
     bytes
+}
+
+fn align_file(align: QuantizeAlign) -> AlignFile {
+    match align {
+        QuantizeAlign::Start => AlignFile::Start,
+        QuantizeAlign::StartAndEnd => AlignFile::StartAndEnd,
+    }
+}
+
+fn align_of(align: &AlignFile) -> QuantizeAlign {
+    match align {
+        AlignFile::Start => QuantizeAlign::Start,
+        AlignFile::StartAndEnd => QuantizeAlign::StartAndEnd,
+    }
 }
 
 fn grid_file(grid: Grid) -> GridFile {
@@ -357,10 +399,7 @@ fn roll_settings(s: &SessionFile) -> RollSettings {
             .quantize
             .as_ref()
             .and_then(|q| {
-                let align = match q.align {
-                    AlignFile::Start => QuantizeAlign::Start,
-                    AlignFile::StartAndEnd => QuantizeAlign::StartAndEnd,
-                };
+                let align = align_of(&q.align);
                 QuantizeSettings::new(grid(q.division, q.triplet)?, q.strength, q.swing, align)
             })
             .unwrap_or_default(),
@@ -374,7 +413,10 @@ fn take_file(take: &Take) -> TakeFile {
         notes: take
             .notes
             .iter()
-            .map(|n| (n.start, n.length, n.key, n.velocity))
+            .map(|n| match n.from {
+                None => NoteFile::Plain(n.start, n.length, n.key, n.velocity),
+                Some(f) => NoteFile::From(n.start, n.length, n.key, n.velocity, f.get()),
+            })
             .collect(),
         controls: take
             .controls
@@ -384,6 +426,14 @@ fn take_file(take: &Take) -> TakeFile {
                 ControlValue::PitchBend(v) => ControlFile::Bend(c.tick, BendTag::Bend, v),
             })
             .collect(),
+        origin: take.origin.as_ref().map(|o| OriginFile {
+            take: o.take.id.0,
+            division: o.settings.grid.division(),
+            triplet: o.settings.grid.triplet,
+            strength: o.settings.strength(),
+            swing: o.settings.swing(),
+            align: align_file(o.settings.align),
+        }),
     }
 }
 
@@ -404,11 +454,30 @@ pub fn decode(bytes: &[u8]) -> Result<Song, ReadError> {
 /// `None` when anything breaks a rule the model keeps.
 fn to_song(file: SongFile) -> Option<Song> {
     let mut takes = HashMap::new();
-    for t in file.takes {
+    // Origin takes first: they have no origin themselves.
+    let (derived, recorded): (Vec<TakeFile>, Vec<TakeFile>) =
+        file.takes.into_iter().partition(|t| t.origin.is_some());
+    for t in recorded.into_iter().chain(derived) {
         if takes.contains_key(&t.id) {
             return None;
         }
-        takes.insert(t.id, Arc::new(to_take(t)?));
+        let origin = match &t.origin {
+            None => None,
+            Some(o) => {
+                let take: &Arc<Take> = takes.get(&o.take)?;
+                if take.origin.is_some() {
+                    return None;
+                }
+                let grid = Grid::new(o.division, o.triplet)?;
+                let settings =
+                    QuantizeSettings::new(grid, o.strength, o.swing, align_of(&o.align))?;
+                Some(TakeOrigin {
+                    take: take.clone(),
+                    settings,
+                })
+            }
+        };
+        takes.insert(t.id, Arc::new(to_take(t, origin)?));
     }
     let d = file.song;
     let tracks_n = d.tracks.len();
@@ -427,7 +496,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             if !clip_ids.insert(c.id) {
                 return None;
             }
-            let range = TickRange::new(c.start, c.end)?;
+            let range = TickRange::new(c.start, c.end).filter(|_| c.end <= MAX_TICK)?;
             if clips
                 .last()
                 .is_some_and(|before| before.end > range.start())
@@ -439,8 +508,11 @@ fn to_song(file: SongFile) -> Option<Song> {
                 .takes
                 .iter()
                 .map(|ct| {
+                    let take = takes.get(&ct.take)?;
+                    let zero = (c.start as i64).checked_add(ct.offset)?;
+                    (zero.unsigned_abs() <= MAX_TICK && take.length <= MAX_TICK).then_some(())?;
                     Some(ClipTake {
-                        take: takes.get(&ct.take)?.clone(),
+                        take: take.clone(),
                         offset: ct.offset,
                     })
                 })
@@ -508,16 +580,25 @@ fn to_song(file: SongFile) -> Option<Song> {
     Some(Song { doc, session })
 }
 
-fn to_take(t: TakeFile) -> Option<Take> {
+fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {
+    let from_len = origin.as_ref().map_or(0, |o| o.take.notes.len());
     let notes = t
         .notes
         .into_iter()
-        .map(|(start, length, key, velocity)| {
+        .map(|n| {
+            let (start, length, key, velocity, from) = match n {
+                NoteFile::Plain(s, l, k, v) => (s, l, k, v, None),
+                // An index into the origin take, so only in a take that has one.
+                NoteFile::From(s, l, k, v, f) => {
+                    ((f as usize) < from_len).then_some((s, l, k, v, OriginIndex::new(f)))?
+                }
+            };
             (length >= 1 && key <= 127 && (1..=127).contains(&velocity)).then_some(Note {
                 start,
                 length,
                 key,
                 velocity,
+                from,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -545,6 +626,7 @@ fn to_take(t: TakeFile) -> Option<Take> {
         length: t.length,
         notes,
         controls,
+        origin,
     })
 }
 

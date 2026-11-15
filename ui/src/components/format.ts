@@ -113,6 +113,11 @@ export function gridText(division: number, triplet: boolean): string {
   return triplet ? `${base} ${t("grid.triplet")}` : base;
 }
 
+/** 使える範囲「1〜127」「C-1〜G9」（仕様書 6 章「使えない値を打った」の範囲の書きかた）。 */
+export function rangeText(low: string, high: string): string {
+  return `${low}〜${high}`;
+}
+
 /** ノートの一覧の位置（「3.1.000」。モック A-PianoRoll）。曲の中のティック。 */
 export function notePositionText(tick: number, meter: Meter): string {
   const b = barBeatTick(tick, meter);

@@ -27,8 +27,11 @@ pub struct PlayEvent {
     pub kind: PlayKind,
 }
 
-/// The events of `track` in order. Nothing sounds after a clip's end: notes are cut there, and a pedal, bend or modulation left on is put back to 0 there. Empty for a track that
-/// is not in `doc`.
+/// The events of `track` in order. Only what is inside a clip sounds: a note that starts
+/// before the clip's start does not (as when play starts in the middle of a note), and one that
+/// goes past its end is cut there. The last pedal, bend and modulation before the start, when
+/// not at rest, are put at the start (as when play starts in the middle), and whatever is left
+/// on at the end is put back to 0 there. Empty for a track that is not in `doc`.
 pub fn track_events(doc: &Doc, track: TrackId) -> Vec<PlayEvent> {
     let Some(track) = doc.track(track) else {
         return Vec::new();
@@ -36,29 +39,39 @@ pub fn track_events(doc: &Doc, track: TrackId) -> Vec<PlayEvent> {
     let mut out = Vec::new();
     for clip in &track.clips {
         let ct = clip.active_take();
-        let zero = clip.start + ct.offset;
+        let zero = clip.zero(ct);
+        let (start, end) = (clip.start as i64, clip.end as i64);
+        let at = |tick: u64| zero + tick as i64;
         for n in &ct.take.notes {
-            let on = zero + n.start;
-            if on >= clip.end {
+            let on = at(n.start);
+            if on < start || on >= end {
                 continue;
             }
             out.push(PlayEvent {
-                tick: on,
+                tick: on as u64,
                 kind: PlayKind::NoteOn {
                     key: n.key,
                     velocity: n.velocity,
                 },
             });
             out.push(PlayEvent {
-                tick: (zero + n.end()).min(clip.end),
+                tick: at(n.end()).min(end) as u64,
                 kind: PlayKind::NoteOff { key: n.key },
             });
         }
         let (mut sustain, mut modulation, mut bend) = (0, 0, 0);
+        let mut head = true;
         for c in &ct.take.controls {
-            let at = zero + c.tick;
-            if at >= clip.end {
-                continue;
+            let tick = at(c.tick);
+            if tick >= end {
+                break;
+            }
+            if head && tick >= start {
+                head = false;
+                out.extend(non_rest(sustain, modulation, bend).map(|value| PlayEvent {
+                    tick: clip.start,
+                    kind: PlayKind::Control(value),
+                }));
             }
             match c.value {
                 ControlValue::Cc {
@@ -72,10 +85,18 @@ pub fn track_events(doc: &Doc, track: TrackId) -> Vec<PlayEvent> {
                 ControlValue::PitchBend(v) => bend = v,
                 ControlValue::Cc { .. } => {}
             }
-            out.push(PlayEvent {
-                tick: at,
-                kind: PlayKind::Control(c.value),
-            });
+            if !head {
+                out.push(PlayEvent {
+                    tick: tick as u64,
+                    kind: PlayKind::Control(c.value),
+                });
+            }
+        }
+        if head {
+            out.extend(non_rest(sustain, modulation, bend).map(|value| PlayEvent {
+                tick: clip.start,
+                kind: PlayKind::Control(value),
+            }));
         }
         let resets = [
             (sustain != 0).then_some(ControlValue::Cc {
@@ -95,6 +116,23 @@ pub fn track_events(doc: &Doc, track: TrackId) -> Vec<PlayEvent> {
     }
     out.sort_by_key(|e| (e.tick, e.kind.rank()));
     out
+}
+
+/// Pedal, modulation and bend, the ones not at rest.
+fn non_rest(sustain: u8, modulation: u8, bend: i16) -> impl Iterator<Item = ControlValue> {
+    [
+        (sustain != 0).then_some(ControlValue::Cc {
+            number: CC_SUSTAIN,
+            value: sustain,
+        }),
+        (modulation != 0).then_some(ControlValue::Cc {
+            number: CC_MODULATION,
+            value: modulation,
+        }),
+        (bend != 0).then_some(ControlValue::PitchBend(bend)),
+    ]
+    .into_iter()
+    .flatten()
 }
 
 #[cfg(test)]

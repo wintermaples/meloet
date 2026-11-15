@@ -1,21 +1,25 @@
 //! Song, tracks and instrument references. Pure data: no I/O, no threads.
 
+pub mod arrange;
+pub mod controls;
 pub mod edit;
 pub mod history;
 pub mod notes;
 pub mod playback;
+pub mod quantize;
 pub mod record;
 pub mod roll;
 pub mod song;
 pub mod time;
 
-pub use edit::{Edit, EditError, NewTake, RecordingAdded};
+pub use arrange::{ClipEdge, ClipEdited};
+pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
 pub use history::{History, StepKind};
-pub use notes::{NotesEdited, WriteAt};
+pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, Session, Song, Take, TakeId,
-    Track,
+    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, OriginIndex, Session, Song,
+    Take, TakeId, TakeOrigin, Track,
 };
 pub use time::{Meter, TICKS_PER_QUARTER, Tempo, TickRange};
 

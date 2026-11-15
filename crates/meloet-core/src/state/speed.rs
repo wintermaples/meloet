@@ -33,6 +33,7 @@ fn big_song() -> Song {
         length: notes as u64 * step,
         notes: (0..notes)
             .map(|i| Note {
+                from: None,
                 start: i as u64 * step,
                 length: step / 2,
                 key: 36 + (i % 48) as u8,

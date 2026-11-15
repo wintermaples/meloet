@@ -2,6 +2,7 @@
 //! clips and takes are shared, so a step costs little more than what it changed.
 
 use crate::TrackId;
+use crate::arrange::ClipEdge;
 use crate::edit::Edit;
 use crate::song::{ClipId, Doc};
 use crate::time::{Meter, Tempo};
@@ -59,6 +60,50 @@ pub enum StepKind {
     PasteNotes {
         clip: ClipId,
         count: usize,
+    },
+    /// Q and "かけなおす".
+    Quantize {
+        clip: ClipId,
+        count: usize,
+    },
+    /// "もとの位置へ戻す".
+    Unquantize {
+        clip: ClipId,
+        count: usize,
+    },
+    /// The note list and the "選んだノート" panel.
+    SetNotesField {
+        clip: ClipId,
+        count: usize,
+    },
+    AddControl {
+        clip: ClipId,
+    },
+    MoveControls {
+        clip: ClipId,
+        count: usize,
+    },
+    DeleteControls {
+        clip: ClipId,
+        count: usize,
+    },
+    /// A drag in the arrange view.
+    MoveClip {
+        clip: ClipId,
+        track: TrackId,
+    },
+    /// Alt + drag in the arrange view. `clip`: the one copied.
+    CopyClip {
+        clip: ClipId,
+        track: TrackId,
+    },
+    /// Mod D in the arrange view. `clip`: the one copied.
+    DuplicateClip {
+        clip: ClipId,
+    },
+    TrimClip {
+        clip: ClipId,
+        edge: ClipEdge,
     },
     /// From the song as last saved to the song brought back from the recovery file, at the
     /// start. The history band calls it "なおすためのファイルから戻す" (mock F-Recover2).

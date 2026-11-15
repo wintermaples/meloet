@@ -53,6 +53,7 @@ fn take(origin: u64, notes: usize) -> NewTake {
         length: 1920,
         notes: (0..notes)
             .map(|i| Note {
+                from: None,
                 start: i as u64 * 10,
                 length: 5,
                 key: 60,

@@ -343,7 +343,7 @@ fn a_file_from_a_newer_meloet_counts_as_broken() {
     let w = &mut World::new("flow-newer");
     let path = write_two_versions(&w.songs);
     let mut v: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    v["version"] = 2.into();
+    v["version"] = 3.into();
     fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
     let m = &mut ready();
     w.pick_file = Some(path);

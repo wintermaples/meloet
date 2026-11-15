@@ -32,7 +32,7 @@ pub fn quantized_tick(tick: u64, settings: QuantizeSettings, meter: Meter) -> u6
 }
 
 /// Quantizes the notes at `indexes` of the clip's shown take with `settings`; with no indexes,
-/// every note that overlaps the clip. Returns the edit and how many notes it quantized.
+/// every note that starts inside the clip. Returns the edit and how many notes it quantized.
 pub fn quantize(
     doc: &Doc,
     clip: ClipId,
@@ -47,7 +47,7 @@ pub fn quantize(
     let picked = if indexes.is_empty() {
         notes
             .iter()
-            .map(|n| n.start < c.end && n.end() > c.start)
+            .map(|n| (c.start..c.end).contains(&n.start))
             .collect()
     } else {
         pick(indexes, notes.len())?
@@ -116,9 +116,9 @@ pub fn quantize(
     Ok((edited, count))
 }
 
-/// "もとの位置へ戻す": the notes at `indexes` (all with none) that came from the origin take go
-/// back to the start and length they have there; key and velocity stay. When every such note is
-/// back, the take is no longer quantized: it loses its origin.
+/// "もとの位置へ戻す": the notes at `indexes` (with none, all that start inside the clip) that
+/// came from the origin take go back to the start and length they have there; key and velocity
+/// stay. When every such note is back, the take is no longer quantized: it loses its origin.
 pub fn unquantize(doc: &Doc, clip: ClipId, indexes: &[usize]) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
     let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
@@ -129,7 +129,10 @@ pub fn unquantize(doc: &Doc, clip: ClipId, indexes: &[usize]) -> Result<NotesEdi
     let zero = c.zero(shown) as u64;
     let notes = song_notes(&c);
     let picked = if indexes.is_empty() {
-        vec![true; notes.len()]
+        notes
+            .iter()
+            .map(|n| (c.start..c.end).contains(&n.start))
+            .collect()
     } else {
         pick(indexes, notes.len())?
     };

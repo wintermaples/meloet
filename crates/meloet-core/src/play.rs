@@ -1038,7 +1038,7 @@ impl Play {
                         takes: c.takes.len() as u32,
                         take_id: ct.take.id.0,
                         take_offset: ct.offset,
-                        note_count: ct.take.notes.len() as u32,
+                        note_count: c.note_count() as u32,
                     }
                 })
                 .collect()
@@ -1161,7 +1161,7 @@ impl Play {
     pub fn piano_roll_notes(&self) -> u32 {
         self.piano_roll
             .and_then(|id| self.doc().clip(id))
-            .map_or(0, |(_, c)| c.active_take().take.notes.len() as u32)
+            .map_or(0, |(_, c)| c.note_count() as u32)
     }
 
     pub fn loop_span(&self) -> Option<TickSpan> {
@@ -1314,28 +1314,29 @@ impl Play {
 
     /// Keeps the selection only while it is of the take shown now.
     fn fix_selection(&mut self) {
-        let shown = self.shown().map(|c| {
-            let take = &c.active_take().take;
-            (
-                Some(c.id),
-                Some(take.id),
-                take.notes.len(),
-                take.controls.len(),
-            )
-        });
-        match shown {
-            Some((clip, take, notes, controls))
-                if self.note_sel.clip == clip && self.note_sel.take == take =>
-            {
-                self.note_sel.notes.retain(|&i| (i as usize) < notes);
-                self.note_sel.controls.retain(|&i| (i as usize) < controls);
-            }
-            _ => self.note_sel = NoteSel::default(),
+        let Some(c) = self.shown() else {
+            self.note_sel = NoteSel::default();
+            return;
+        };
+        let take = &c.active_take().take;
+        if self.note_sel.clip != Some(c.id) || self.note_sel.take != Some(take.id) {
+            self.note_sel = NoteSel::default();
+            return;
         }
+        let notes: Vec<u32> = self
+            .note_sel
+            .notes
+            .iter()
+            .copied()
+            .filter(|&i| holds_note(c, i))
+            .collect();
+        let controls = take.controls.len();
+        self.note_sel.notes = notes;
+        self.note_sel.controls.retain(|&i| (i as usize) < controls);
     }
 
-    /// Selects these notes and control points of the shown take; indexes past the end are
-    /// left out.
+    /// Selects these notes and control points of the shown take; indexes past the end, and
+    /// notes that start outside the clip, are left out.
     fn set_selection(
         &mut self,
         notes: impl IntoIterator<Item = u32>,
@@ -1353,7 +1354,10 @@ impl Play {
         self.note_sel = NoteSel {
             clip: Some(c.id),
             take: Some(take.id),
-            notes: below(take.notes.len(), &mut notes.into_iter()),
+            notes: below(
+                take.notes.len(),
+                &mut notes.into_iter().filter(|&i| holds_note(c, i)),
+            ),
             controls: below(take.controls.len(), &mut controls.into_iter()),
         };
     }
@@ -1375,8 +1379,12 @@ impl Play {
     }
 
     pub fn select_all_notes(&mut self) {
-        let len = self.shown().map_or(0, |c| c.active_take().take.notes.len());
-        self.set_selection(0..len as u32, self.note_sel.controls.clone());
+        let all: Vec<u32> = self.shown().map_or_else(Vec::new, |c| {
+            (0..c.active_take().take.notes.len() as u32)
+                .filter(|&i| holds_note(c, i))
+                .collect()
+        });
+        self.set_selection(all, self.note_sel.controls.clone());
     }
 
     pub fn clear_note_selection(&mut self) {
@@ -1666,6 +1674,15 @@ fn selected_with(now: &[u32], picked: Vec<u32>, mode: SelectMode) -> BTreeSet<u3
             set
         }
     }
+}
+
+/// Whether note `i` of the clip's shown take starts inside the clip (shown, so selectable).
+fn holds_note(c: &Clip, i: u32) -> bool {
+    c.active_take()
+        .take
+        .notes
+        .get(i as usize)
+        .is_some_and(|n| c.holds(n.start))
 }
 
 fn indexes(picked: &[u32]) -> Vec<usize> {

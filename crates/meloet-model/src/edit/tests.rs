@@ -8,6 +8,7 @@ const T2: TrackId = TrackId(2);
 
 fn note(start: u64, length: u64, key: u8) -> Note {
     Note {
+        from: None,
         start,
         length,
         key,

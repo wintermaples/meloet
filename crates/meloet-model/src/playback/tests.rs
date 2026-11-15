@@ -8,6 +8,7 @@ const T1: TrackId = TrackId(1);
 
 fn note(start: u64, length: u64, key: u8) -> Note {
     Note {
+        from: None,
         start,
         length,
         key,
@@ -166,6 +167,7 @@ fn takes_are_offset_inside_their_clip() {
 fn nothing_sounds_after_the_clip_end() {
     // A take longer than its clip (as it will be once clips can be cut shorter).
     let take = Take {
+        origin: None,
         id: TakeId(2),
         length: 3000,
         notes: vec![note(0, 50, 59), note(900, 200, 62), note(1100, 10, 64)],

@@ -737,6 +737,7 @@ impl Model {
                 velocity,
             } => {
                 let note = Note {
+                    from: None,
                     start,
                     length,
                     key,
@@ -784,16 +785,42 @@ impl Model {
                 self.play.audition(key, velocity, can_play, effects);
             }
             Command::AuditionOff => self.play.audition_off(can_play, effects),
-            Command::Quantize { .. }
-            | Command::Unquantize { .. }
-            | Command::SetNotesField { .. }
-            | Command::SelectControls { .. }
-            | Command::AddControl { .. }
-            | Command::MoveControls { .. }
-            | Command::DeleteControls { .. }
-            | Command::MoveClip { .. }
-            | Command::DuplicateClip { .. }
-            | Command::TrimClip { .. } => {}
+            Command::Quantize { take, notes } => {
+                if let Some(n) = self.play.quantize(take, &notes, effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::Unquantize { take, notes } => self.play.unquantize(take, &notes, effects),
+            Command::SetNotesField {
+                take,
+                notes,
+                field,
+                value,
+            } => self
+                .play
+                .set_notes_field(take, &notes, field, value, effects),
+            Command::SelectControls { take, points, mode } => {
+                self.play.select_controls(take, points, mode);
+            }
+            Command::AddControl {
+                take,
+                tick,
+                control,
+                value,
+            } => self.play.add_control(take, tick, control, value, effects),
+            Command::MoveControls {
+                take,
+                points,
+                ticks,
+                value,
+            } => self
+                .play
+                .move_controls(take, &points, ticks, value, effects),
+            Command::DeleteControls { take, points } => {
+                self.play.delete_controls(take, &points, effects);
+            }
+            Command::MoveClip { .. } | Command::DuplicateClip { .. } | Command::TrimClip { .. } => {
+            }
             Command::RejectValue { field, kept, range } => {
                 self.notice = Some(StatusMessage::ValueRejected { field, kept, range });
             }

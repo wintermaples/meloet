@@ -4,19 +4,22 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use meloet_model::controls::{self, ControlKind as ModelControlKind};
 use meloet_model::edit::{self, Edit, EditError};
-use meloet_model::notes::{self, NotesEdited, WriteAt};
+use meloet_model::notes::{self, NoteField as ModelNoteField, NotesEdited, WriteAt};
 use meloet_model::playback::{PlayEvent, track_events};
+use meloet_model::quantize;
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{
     Clip, ClipId, Doc, History, Meter, Note, Song, StepKind, TakeId, Tempo, TickRange, TrackId,
     roll,
 };
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipView, Grid, IndexRange, LiveNote, LiveNotes, LiveNotesSnapshot,
-    MusicalScale, NOTE_SELECTION_KEYS, NoteSelection, PianoRollView, QuantizeAlign,
-    QuantizeSettings, RecordingView, ScaleMode, SelectMode, StatusMessage, TakeControl,
-    TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef, TransportState, TransportView,
+    ArrangeView, BarSpan, ClipView, ControlKind, Grid, IndexRange, LiveNote, LiveNotes,
+    LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField, NoteSelection, PianoRollView,
+    QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode, SelectMode, StatusMessage,
+    TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef, TransportState,
+    TransportView,
 };
 
 use crate::state::Effect;
@@ -116,13 +119,14 @@ pub enum EngineOp {
     AuditionOff,
 }
 
-/// Selected notes: indexes, in order, into the notes of `take`, shown in the piano roll for
-/// `clip`. Empty when they are not of the take shown now.
+/// Selected notes and control points: indexes, in order, into the notes and the controls of
+/// `take`, shown in the piano roll for `clip`. Empty when they are not of the take shown now.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct NoteSel {
     clip: Option<ClipId>,
     take: Option<TakeId>,
     notes: Vec<u32>,
+    controls: Vec<u32>,
 }
 
 /// Why a recording was cut short.
@@ -658,19 +662,27 @@ impl Play {
         self.apply_selecting(e, None, effects);
     }
 
-    /// `selected`: the notes of the shown take to select afterwards.
+    /// `selected`: the notes of the shown take to select afterwards, or its control points
+    /// with `true`. The other kind stays selected: an edit of one leaves the other in order.
     fn apply_selecting(
         &mut self,
         e: Edit,
-        selected: Option<Vec<usize>>,
+        selected: Option<(Vec<usize>, bool)>,
         effects: &mut Vec<Effect>,
     ) {
         let sel_before = self.note_sel.clone();
         let before = self.doc().clone();
         self.history.apply(&mut self.song.doc, e);
         self.after_change(&before, effects);
-        if let Some(notes) = selected {
-            self.set_selection(notes.into_iter().map(|i| i as u32));
+        if let Some((picked, of_controls)) = selected {
+            let same_clip = sel_before.clip.is_some() && sel_before.clip == self.piano_roll;
+            let kept = |v: &Vec<u32>| if same_clip { v.clone() } else { Vec::new() };
+            let picked = picked.into_iter().map(|i| i as u32);
+            if of_controls {
+                self.set_selection(kept(&sel_before.notes), picked);
+            } else {
+                self.set_selection(picked, kept(&sel_before.controls));
+            }
         }
         self.sel_undo.push((sel_before, self.note_sel.clone()));
         self.sel_redo.clear();
@@ -678,7 +690,7 @@ impl Play {
 
     fn apply_notes(&mut self, edited: Result<NotesEdited, EditError>, effects: &mut Vec<Effect>) {
         if let Ok(n) = edited {
-            self.apply_selecting(n.edit, Some(n.selected), effects);
+            self.apply_selecting(n.edit, Some((n.selected, n.of_controls)), effects);
         }
     }
 
@@ -908,8 +920,8 @@ impl Play {
         }
     }
 
-    /// The take binary of a take in the song as it is now. `None` for a take not there, or
-    /// one too long for the binary.
+    /// The take binary of a take in the song as it is now, in a clip or the origin of one
+    /// there. `None` for a take not there, or one too long for the binary.
     pub fn take_notes(&self, id: u32) -> Option<Vec<u8>> {
         let take = self
             .doc()
@@ -917,8 +929,10 @@ impl Play {
             .iter()
             .flat_map(|t| &t.clips)
             .flat_map(|c| &c.takes)
-            .find(|ct| ct.take.id == TakeId(id))?
-            .take
+            .flat_map(|ct| {
+                std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take))
+            })
+            .find(|t| t.id == TakeId(id))?
             .clone();
         let u = |v: u64| u32::try_from(v).ok();
         let notes = take
@@ -930,7 +944,7 @@ impl Play {
                     length: u(n.length)?,
                     key: n.key,
                     velocity: n.velocity,
-                    from: None,
+                    from: n.from,
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -953,7 +967,7 @@ impl Play {
             TakeNotes {
                 id,
                 length: u(take.length)?,
-                origin: None,
+                origin: take.origin.as_ref().map(|o| o.take.id.0),
                 notes,
                 controls,
             }
@@ -1138,7 +1152,7 @@ impl Play {
         PianoRollView {
             take: self.shown().map(|c| c.active_take().take.id.0),
             selected_notes: index_ranges(&self.note_sel.notes),
-            selected_controls: Vec::new(),
+            selected_controls: index_ranges(&self.note_sel.controls),
             grid: Grid {
                 division: r.grid.division(),
                 triplet: r.grid.triplet,
@@ -1225,7 +1239,7 @@ impl Play {
                 .take(NOTE_SELECTION_KEYS)
                 .filter_map(|&i| take.notes.get(i as usize).map(|n| n.key))
                 .collect(),
-            quantized: false,
+            quantized: take.origin.is_some(),
         })
     }
 
@@ -1254,29 +1268,45 @@ impl Play {
     fn fix_selection(&mut self) {
         let shown = self.shown().map(|c| {
             let take = &c.active_take().take;
-            (Some(c.id), Some(take.id), take.notes.len())
+            (
+                Some(c.id),
+                Some(take.id),
+                take.notes.len(),
+                take.controls.len(),
+            )
         });
         match shown {
-            Some((clip, take, len)) if self.note_sel.clip == clip && self.note_sel.take == take => {
-                self.note_sel.notes.retain(|&i| (i as usize) < len);
+            Some((clip, take, notes, controls))
+                if self.note_sel.clip == clip && self.note_sel.take == take =>
+            {
+                self.note_sel.notes.retain(|&i| (i as usize) < notes);
+                self.note_sel.controls.retain(|&i| (i as usize) < controls);
             }
             _ => self.note_sel = NoteSel::default(),
         }
     }
 
-    /// Selects these notes of the shown take; indexes past its end are left out.
-    fn set_selection(&mut self, notes: impl IntoIterator<Item = u32>) {
+    /// Selects these notes and control points of the shown take; indexes past the end are
+    /// left out.
+    fn set_selection(
+        &mut self,
+        notes: impl IntoIterator<Item = u32>,
+        controls: impl IntoIterator<Item = u32>,
+    ) {
         let Some(c) = self.shown() else {
             self.note_sel = NoteSel::default();
             return;
         };
         let take = &c.active_take().take;
-        let len = take.notes.len() as u32;
-        let notes: BTreeSet<u32> = notes.into_iter().filter(|&i| i < len).collect();
+        let below = |len: usize, items: &mut dyn Iterator<Item = u32>| -> Vec<u32> {
+            let set: BTreeSet<u32> = items.filter(|&i| (i as usize) < len).collect();
+            set.into_iter().collect()
+        };
         self.note_sel = NoteSel {
             clip: Some(c.id),
             take: Some(take.id),
-            notes: notes.into_iter().collect(),
+            notes: below(take.notes.len(), &mut notes.into_iter()),
+            controls: below(take.controls.len(), &mut controls.into_iter()),
         };
     }
 
@@ -1284,27 +1314,21 @@ impl Play {
         if self.shown_with(take).is_none() {
             return;
         }
-        let now = self.note_sel.notes.iter().copied();
-        let picked: BTreeSet<u32> = match mode {
-            SelectMode::Replace => notes.into_iter().collect(),
-            SelectMode::Add => now.chain(notes).collect(),
-            SelectMode::Toggle => {
-                let mut set: BTreeSet<u32> = now.collect();
-                let flips: BTreeSet<u32> = notes.into_iter().collect();
-                for i in flips {
-                    if !set.remove(&i) {
-                        set.insert(i);
-                    }
-                }
-                set
-            }
-        };
-        self.set_selection(picked);
+        let picked = selected_with(&self.note_sel.notes, notes, mode);
+        self.set_selection(picked, self.note_sel.controls.clone());
+    }
+
+    pub fn select_controls(&mut self, take: u32, points: Vec<u32>, mode: SelectMode) {
+        if self.shown_with(take).is_none() {
+            return;
+        }
+        let picked = selected_with(&self.note_sel.controls, points, mode);
+        self.set_selection(self.note_sel.notes.clone(), picked);
     }
 
     pub fn select_all_notes(&mut self) {
         let len = self.shown().map_or(0, |c| c.active_take().take.notes.len());
-        self.set_selection(0..len as u32);
+        self.set_selection(0..len as u32, self.note_sel.controls.clone());
     }
 
     pub fn clear_note_selection(&mut self) {
@@ -1345,7 +1369,7 @@ impl Play {
             self.selected = Some(written.clip);
             self.piano_roll = Some(written.clip);
         }
-        self.apply_selecting(written.edit, Some(written.selected), effects);
+        self.apply_selecting(written.edit, Some((written.selected, false)), effects);
         None
     }
 
@@ -1434,6 +1458,98 @@ impl Play {
         }
     }
 
+    /// Q and "かけなおす", with the settings of the quantize panel. Returns the notice to show.
+    pub fn quantize(
+        &mut self,
+        take: u32,
+        picked: &[u32],
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let clip = self.aimed(take)?;
+        let settings = self.song.session.roll.quantize;
+        let (edited, count) =
+            quantize::quantize(self.doc(), clip, &indexes(picked), settings).ok()?;
+        self.apply_notes(Ok(edited), effects);
+        Some(StatusMessage::Quantized {
+            division: settings.grid.division(),
+            triplet: settings.grid.triplet,
+            strength: settings.strength(),
+            count: count as u32,
+        })
+    }
+
+    pub fn unquantize(&mut self, take: u32, picked: &[u32], effects: &mut Vec<Effect>) {
+        if let Some(clip) = self.aimed(take) {
+            let r = quantize::unquantize(self.doc(), clip, &indexes(picked));
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn set_notes_field(
+        &mut self,
+        take: u32,
+        picked: &[u32],
+        field: NoteField,
+        value: i64,
+        effects: &mut Vec<Effect>,
+    ) {
+        let field = match field {
+            NoteField::Start => ModelNoteField::Start,
+            NoteField::Key => ModelNoteField::Key,
+            NoteField::Length => ModelNoteField::Length,
+            NoteField::Velocity => ModelNoteField::Velocity,
+        };
+        if let Some(clip) = self.aimed(take) {
+            let r = notes::set_notes_field(self.doc(), clip, &indexes(picked), field, value);
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn add_control(
+        &mut self,
+        take: u32,
+        tick: u64,
+        control: ControlKind,
+        value: i32,
+        effects: &mut Vec<Effect>,
+    ) {
+        let kind = match control {
+            ControlKind::Cc { number } => ModelControlKind::Cc(number),
+            ControlKind::PitchBend => ModelControlKind::PitchBend,
+        };
+        if let Some(clip) = self.aimed(take) {
+            let r = controls::add_control(self.doc(), clip, tick, kind, i64::from(value));
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn move_controls(
+        &mut self,
+        take: u32,
+        points: &[u32],
+        ticks: i64,
+        value: i32,
+        effects: &mut Vec<Effect>,
+    ) {
+        if let Some(clip) = self.aimed(take) {
+            let r = controls::move_controls(
+                self.doc(),
+                clip,
+                &indexes(points),
+                ticks,
+                i64::from(value),
+            );
+            self.apply_notes(r, effects);
+        }
+    }
+
+    pub fn delete_controls(&mut self, take: u32, points: &[u32], effects: &mut Vec<Effect>) {
+        if let Some(clip) = self.aimed(take) {
+            let r = controls::delete_controls(self.doc(), clip, &indexes(points));
+            self.apply_notes(r, effects);
+        }
+    }
+
     pub fn set_grid(&mut self, division: u16, triplet: bool) {
         if let Some(grid) = roll::Grid::new(division, triplet) {
             self.song.session.roll.grid = grid;
@@ -1481,6 +1597,25 @@ impl Play {
     pub fn audition_off(&self, open: bool, effects: &mut Vec<Effect>) {
         if open {
             effects.push(Effect::Engine(EngineOp::AuditionOff));
+        }
+    }
+}
+
+/// The selection `now` after `mode` with `picked`.
+fn selected_with(now: &[u32], picked: Vec<u32>, mode: SelectMode) -> BTreeSet<u32> {
+    let now = now.iter().copied();
+    match mode {
+        SelectMode::Replace => picked.into_iter().collect(),
+        SelectMode::Add => now.chain(picked).collect(),
+        SelectMode::Toggle => {
+            let mut set: BTreeSet<u32> = now.collect();
+            let flips: BTreeSet<u32> = picked.into_iter().collect();
+            for i in flips {
+                if !set.remove(&i) {
+                    set.insert(i);
+                }
+            }
+            set
         }
     }
 }

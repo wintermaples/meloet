@@ -60,6 +60,32 @@ pub enum StepKind {
         clip: ClipId,
         count: usize,
     },
+    /// Q and "かけなおす".
+    Quantize {
+        clip: ClipId,
+        count: usize,
+    },
+    /// "もとの位置へ戻す".
+    Unquantize {
+        clip: ClipId,
+        count: usize,
+    },
+    /// The note list and the "選んだノート" panel.
+    SetNotesField {
+        clip: ClipId,
+        count: usize,
+    },
+    AddControl {
+        clip: ClipId,
+    },
+    MoveControls {
+        clip: ClipId,
+        count: usize,
+    },
+    DeleteControls {
+        clip: ClipId,
+        count: usize,
+    },
     /// From the song as last saved to the song brought back from the recovery file, at the
     /// start. The history band calls it "なおすためのファイルから戻す" (mock F-Recover2).
     Recovered,

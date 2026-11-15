@@ -392,9 +392,9 @@ fn starting_inside_the_loop() {
     )
     .unwrap();
     let (a, b) = (&r.takes[0], &r.takes[1]);
-    assert_eq!((a.origin, a.length), (2880, 960));
-    // A press just before the start is kept at the start of the pass.
-    assert_eq!(notes(a), [(0, 1, 59), (20, 100, 60)]);
+    // A press just before the start stays where it was played; the first take reaches back to it.
+    assert_eq!((a.origin, a.length), (2870, 970));
+    assert_eq!(notes(a), [(0, 5, 59), (30, 100, 60)]);
     assert_eq!((b.origin, b.length), (1920, 180));
     assert_eq!(notes(b), [(0, 80, 62)]);
 }
@@ -480,4 +480,44 @@ fn takes_from_the_recorder_go_into_the_song() {
         (clip.start, clip.end, clip.takes.len(), clip.active),
         (1920, 3840, 2, 1)
     );
+}
+
+#[test]
+fn a_key_pressed_just_before_the_loop_start_widens_only_the_first_take() {
+    let r = run(
+        1920,
+        bars_2_3(),
+        &[
+            on(1880, 0, 60),
+            off(1990, 0, 60),
+            on(3830, 0, 62),
+            on(1950, 1, 64),
+            off(2000, 1, 64),
+        ],
+        (2100, 1),
+    )
+    .unwrap();
+    let (a, b) = (&r.takes[0], &r.takes[1]);
+    assert_eq!((a.origin, a.length), (1880, 1960));
+    assert_eq!(notes(a), [(0, 110, 60), (1950, 10, 62)]);
+    assert_eq!((b.origin, b.length), (1920, 180));
+    assert_eq!(notes(b), [(30, 50, 64)]);
+
+    let mut live = Recorder::new(1920, bars_2_3(), HeldControls::default());
+    live.push(on(1880, 0, 60));
+    let n = live.live_notes(1900, 0);
+    assert_eq!((n[0].start, n[0].length), (1880, 20));
+}
+
+#[test]
+fn the_first_loop_take_does_not_go_before_zero() {
+    let r = run(
+        0,
+        TickRange::new(0, 1920),
+        &[on(-40, 0, 60), off(100, 0, 60)],
+        (200, 0),
+    )
+    .unwrap();
+    assert_eq!(r.takes[0].origin, 0);
+    assert_eq!(notes(&r.takes[0]), [(0, 100, 60)]);
 }

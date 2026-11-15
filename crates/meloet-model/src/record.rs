@@ -160,10 +160,8 @@ impl Recorder {
         let Some(li) = self.laps.iter().position(|l| l.number == lap) else {
             return Vec::new();
         };
-        let (floor, ceil) = match self.loop_range {
-            Some(r) => (self.laps[li].start, r.end() as i64),
-            None => (0, i64::MAX),
-        };
+        let ceil = self.loop_range.map_or(i64::MAX, |r| r.end() as i64);
+        let floor = if lap == 0 { 0 } else { self.laps[li].start };
         // A key still down from an earlier pass was cut at the loop end.
         let end = if li == self.laps.len() - 1 { now } else { ceil };
         let held = self.held.iter().enumerate().filter_map(|(key, h)| {
@@ -214,12 +212,14 @@ impl Recorder {
     }
 
     fn take(&self, lap: &Lap, last: bool, stop: i64) -> NewTake {
-        let (origin, ceil) = match self.loop_range {
-            Some(r) => (lap.start, r.end() as i64),
-            None => {
-                let first = lap.notes.iter().map(|n| n.start).min().unwrap_or(lap.start);
-                (lap.start.min(first).max(0), i64::MAX)
-            }
+        let ceil = self.loop_range.map_or(i64::MAX, |r| r.end() as i64);
+        // The first take reaches back to a key pressed before recording started; later passes
+        // start at the loop start.
+        let origin = if lap.number == 0 {
+            let first = lap.notes.iter().map(|n| n.start).min().unwrap_or(lap.start);
+            lap.start.min(first).max(0)
+        } else {
+            lap.start
         };
         let mut notes: Vec<(i64, i64, u8, u8)> = lap
             .notes

@@ -1,7 +1,7 @@
 //! The line between the shell and whoever owns the state. The shell sees only this.
 
 use meloet_core::{MessageSink, TelemetrySink};
-use meloet_protocol::{Command, Snapshot};
+use meloet_protocol::{Command, LiveNotesSnapshot, Snapshot};
 
 pub trait CoreHandle: Send + Sync + 'static {
     /// The whole state and its rev.
@@ -16,6 +16,12 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after
     /// `subscribe` returns misses nothing.
     fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink);
+
+    /// The take binary of a take in the song now.
+    fn take_notes(&self, id: u32) -> Option<Vec<u8>>;
+
+    /// Every note of the recording going on.
+    fn live_notes(&self) -> LiveNotesSnapshot;
 }
 
 impl CoreHandle for meloet_core::Core {
@@ -33,5 +39,13 @@ impl CoreHandle for meloet_core::Core {
 
     fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {
         meloet_core::Core::subscribe(self, messages, telemetry);
+    }
+
+    fn take_notes(&self, id: u32) -> Option<Vec<u8>> {
+        meloet_core::Core::take_notes(self, id)
+    }
+
+    fn live_notes(&self) -> LiveNotesSnapshot {
+        meloet_core::Core::live_notes(self)
     }
 }

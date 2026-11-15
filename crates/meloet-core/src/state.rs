@@ -6,15 +6,16 @@ use std::time::Duration;
 
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
-use meloet_model::{InstrumentRef, Song};
+use meloet_model::InstrumentRef;
 use meloet_protocol::{
-    AppState, ArrangeView, AudioView, Availability, Band, ChooserView, ChosenState, Command,
-    EndpointView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView,
-    LayoutView, LinkKind, LowerBandView, MeterSize, OutputsView, SettingsDialogView, SongView,
-    StatusMessage, StatusView, TrackView, TransportState, TransportView, Unusable, WorkspaceView,
+    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
+    Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
+    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, SettingsDialogView,
+    SongView, StatusMessage, StatusView, TrackView, Unusable, WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, SidePanel, WindowSize};
+use crate::play::{Cut, EngineOp, Heard, Play, RecordReport};
 use crate::settings::{SCALES, Settings};
 
 /// The buffer size meloet asks for. What really runs is `AudioView::actual_frames`.
@@ -87,6 +88,10 @@ pub enum Input {
     MidiStopped,
     /// The keyboard input runs (again); every keyboard there has been reported since.
     MidiBack,
+    /// What the engine says about a recording.
+    Record(RecordReport),
+    /// Nothing but the time and the heard position given with [`Model::set_now`].
+    Tick,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,10 +111,17 @@ pub enum Effect {
     RetryAudio {
         after: Duration,
     },
+    /// Only while a stream is open; [`Input::AudioOpened`] sends everything again.
+    Engine(EngineOp),
+    LiveNotes(LiveNotes),
 }
 
 pub struct Model {
-    song: Song,
+    play: Play,
+    /// A song was opened and nothing has been done since: the status line says what it is.
+    new_song_unsaid: bool,
+    /// The empty arrange hint was put away.
+    empty_dismissed: bool,
     scale: u16,
     viewport: (f32, f32),
     /// `None` until the shell tells.
@@ -172,7 +184,9 @@ impl Model {
             crate::settings::DEFAULT_SCALE
         };
         Model {
-            song: Song::new_default(),
+            play: Play::new(settings.metronome, settings.count_in_bars),
+            new_song_unsaid: true,
+            empty_dismissed: false,
             scale,
             viewport: START_VIEWPORT,
             screen: None,
@@ -249,6 +263,7 @@ impl Model {
                         node_name,
                         sample_rate,
                     });
+                    self.play.stream_opened(&mut effects);
                 }
             }
             Input::AudioOpenFailed { node_name } => {
@@ -289,6 +304,7 @@ impl Model {
             Input::MidiStopped => {
                 if self.midi_restarting.is_none() {
                     self.midi_restarting = Some(Vec::new());
+                    self.play.keys_lost(&mut effects);
                     effects.push(Effect::AllNotesOff);
                 }
             }
@@ -325,9 +341,32 @@ impl Model {
                     self.lower_scale_for_screen(&mut effects);
                 }
             }
-            Input::SongOpened => self.buffer_unsaid = true,
+            Input::SongOpened => {
+                self.buffer_unsaid = true;
+                self.new_song_unsaid = true;
+            }
+            Input::Record(report) => self.play.report(report, &mut effects),
+            Input::Tick => {}
         }
         self.settle(&mut effects);
+        if self.open.is_none() {
+            let cut = if self.audio_system_down {
+                Cut::AudioSystem
+            } else {
+                Cut::Output
+            };
+            let was_recording = self.play.is_recording();
+            let take = self.play.stream_gone(&mut effects);
+            if let (true, Some(take)) = (was_recording, take) {
+                self.notice = Some(match cut {
+                    Cut::AudioSystem => StatusMessage::RecordingStoppedAudioSystem { take },
+                    Cut::Output => StatusMessage::RecordingStoppedOutputMissing {
+                        output: self.output_name(),
+                        take,
+                    },
+                });
+            }
+        }
         self.watch_buffer();
         if tone_on.is_some() && tone_on == self.wanted {
             effects.push(Effect::TestTone);
@@ -338,6 +377,33 @@ impl Model {
     /// Xruns of the open stream since it was opened.
     pub fn xruns(&self) -> u64 {
         self.xruns
+    }
+
+    /// The time and what the listener hears, before each input. `heard` only while a stream
+    /// is open.
+    pub fn set_now(&mut self, t_us: u64, heard: Option<Heard>) {
+        self.play.set_now(t_us, heard);
+    }
+
+    /// Whether the transport moves or a recording is under way: the engine's reports are then
+    /// read often.
+    pub fn is_moving(&self) -> bool {
+        self.play.is_moving()
+    }
+
+    pub fn live_notes(&self) -> LiveNotesSnapshot {
+        self.play.live_snapshot()
+    }
+
+    pub fn take_notes(&self, id: u32) -> Option<Vec<u8>> {
+        self.play.take_notes(id)
+    }
+
+    fn output_name(&self) -> String {
+        self.chosen_name
+            .clone()
+            .or_else(|| self.chosen.clone())
+            .unwrap_or_default()
     }
 
     /// Forgets a keyboard that went away. Returns whether it was there.
@@ -372,7 +438,9 @@ impl Model {
         // A resize is not something the user does to answer a notice.
         if !matches!(command, Command::SetViewport { .. }) {
             self.notice = None;
+            self.new_song_unsaid = false;
         }
+        let can_play = self.open.is_some();
         match command {
             Command::SetViewport { width, height } => {
                 if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
@@ -478,8 +546,13 @@ impl Model {
                     && let Some(output) = self.highlighted.clone()
                     && self.choosable(&output).is_some()
                 {
-                    self.choose(output, effects);
+                    self.choose(output.clone(), effects);
                     self.hint_armed = true;
+                    let output = self.endpoint(&output).map_or(output, |e| e.name.clone());
+                    self.notice = Some(StatusMessage::OutputChosen {
+                        output,
+                        track: self.play.armed(),
+                    });
                 }
             }
             Command::TestTone { output } => {
@@ -498,24 +571,33 @@ impl Model {
             Command::DismissHint => {
                 if self.hint.take().is_some() {
                     self.hint_dismissed = true;
+                } else if self.empty_hint() {
+                    self.empty_dismissed = true;
                 }
             }
-            Command::PlayStop
-            | Command::Record
-            | Command::GoToStart
-            | Command::Locate { .. }
-            | Command::SetTempo { .. }
-            | Command::SetMeter { .. }
-            | Command::SetCountIn { .. }
-            | Command::ToggleMetronome
-            | Command::ToggleLoop
-            | Command::SetLoop { .. }
-            | Command::ToggleArm { .. }
-            | Command::SelectClip { .. }
-            | Command::DeleteSelected
-            | Command::StepTake { .. }
-            | Command::Undo
-            | Command::Redo => {}
+            Command::PlayStop => self.play.play_stop(can_play, effects),
+            Command::Record => self.notice = self.play.record(can_play, effects),
+            Command::GoToStart => self.play.locate(0, effects),
+            Command::Locate { tick } => self.play.locate(tick, effects),
+            Command::SetTempo { bpm } => self.play.set_tempo(bpm, effects),
+            Command::SetMeter { num, den } => self.play.set_meter(num, den, effects),
+            Command::SetCountIn { bars } => {
+                if self.play.set_count_in(bars) {
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
+            Command::ToggleMetronome => {
+                self.play.toggle_metronome(effects);
+                effects.push(Effect::SaveSettings(self.settings()));
+            }
+            Command::ToggleLoop => self.play.toggle_loop(effects),
+            Command::SetLoop { from_bar, to_bar } => self.play.set_loop(from_bar, to_bar, effects),
+            Command::ToggleArm { track } => self.play.toggle_arm(track),
+            Command::SelectClip { clip } => self.play.select_clip(clip),
+            Command::DeleteSelected => self.play.delete_selected(effects),
+            Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
+            Command::Undo => self.play.undo(effects),
+            Command::Redo => self.play.redo(effects),
         }
         None
     }
@@ -654,7 +736,19 @@ impl Model {
             output: self.chosen.clone(),
             output_name: self.chosen_name.clone(),
             scale: self.scale,
+            metronome: self.play.metronome(),
+            count_in_bars: self.play.count_in_bars(),
         }
+    }
+
+    /// No clip has been in the song yet, the chosen output plays, and no other hint is up.
+    fn empty_hint(&self) -> bool {
+        self.hint.is_none()
+            && !self.empty_dismissed
+            && self.open.is_some()
+            && self.preview.is_none()
+            && !self.chooser_shown()
+            && !self.play.had_clip()
     }
 
     fn outputs(&self) -> &[Endpoint] {
@@ -707,18 +801,9 @@ impl Model {
         let chosen_state = self.chosen_state();
         let status = self.status(chosen_state);
         AppState {
-            song: song_view(&self.song),
-            transport: TransportView {
-                state: TransportState::Stopped,
-                position: 0,
-                metronome: false,
-                count_in_bars: 1,
-                count_in_beats: 4,
-                can_play: false,
-                can_record: false,
-                recording: None,
-            },
-            arrange: ArrangeView::default(),
+            song: song_view(&self.play),
+            transport: self.play.transport_view(self.open.is_some()),
+            arrange: self.play.arrange_view(),
             workspace: WorkspaceView {
                 scale: self.scale,
                 viewport_width: self.viewport.0,
@@ -733,7 +818,9 @@ impl Model {
                 chooser: self.chooser_shown().then(|| ChooserView {
                     highlighted: self.highlighted.clone(),
                 }),
-                hint: self.hint,
+                hint: self
+                    .hint
+                    .or_else(|| self.empty_hint().then_some(Hint::EmptyArrange)),
             },
             keyboards: KeyboardsView {
                 list: self
@@ -792,14 +879,16 @@ impl Model {
     /// The first line of the table that applies. A notice comes after the lines that ask the
     /// user to do something about a device, and before the rest.
     fn status(&self, chosen_state: Option<ChosenState>) -> Option<StatusMessage> {
-        let output = || {
-            self.chosen_name
-                .clone()
-                .or_else(|| self.chosen.clone())
-                .unwrap_or_default()
-        };
+        let output = || self.output_name();
         if self.dialog.is_some() {
             return Some(StatusMessage::SettingsOpen);
+        }
+        if let Some(
+            m @ (StatusMessage::RecordingStoppedAudioSystem { .. }
+            | StatusMessage::RecordingStoppedOutputMissing { .. }),
+        ) = &self.notice
+        {
+            return Some(m.clone());
         }
         if self.audio_system_down {
             return Some(StatusMessage::AudioSystemStopped);
@@ -822,15 +911,30 @@ impl Model {
                 keyboard: keyboard.clone(),
             });
         }
+        if let Some(m) = self.play.moving_status() {
+            return Some(m);
+        }
         if self.notice.is_some() {
             return self.notice.clone();
         }
         let Some(active) = active else {
             return Some(StatusMessage::SearchingKeyboard);
         };
-        self.chosen.is_none().then(|| StatusMessage::KeyboardFound {
-            keyboard: active.name.clone(),
-        })
+        if self.chosen.is_none() {
+            return Some(StatusMessage::KeyboardFound {
+                keyboard: active.name.clone(),
+            });
+        }
+        if self.new_song_unsaid {
+            let song = &self.play.song().doc;
+            return Some(StatusMessage::NewSong {
+                tempo_bpm: song.tempo.bpm(),
+                meter_num: song.meter.num(),
+                meter_den: song.meter.den(),
+                track: self.play.armed(),
+            });
+        }
+        self.play.summary()
     }
 }
 
@@ -897,7 +1001,8 @@ fn layout_view(layout: &layout::Layout) -> LayoutView {
     }
 }
 
-fn song_view(song: &Song) -> SongView {
+fn song_view(play: &Play) -> SongView {
+    let song = play.song();
     let doc = &song.doc;
     SongView {
         name: doc.name.clone(),
@@ -905,9 +1010,9 @@ fn song_view(song: &Song) -> SongView {
         meter_num: doc.meter.num(),
         meter_den: doc.meter.den(),
         tempo_changes: doc.tempo_changes.len() as u32,
-        undo_count: 0,
-        redo_count: 0,
-        note_count: 0,
+        undo_count: play.undo_count(),
+        redo_count: play.redo_count(),
+        note_count: play.piano_roll_notes(),
         tracks: doc
             .tracks
             .iter()
@@ -920,12 +1025,12 @@ fn song_view(song: &Song) -> SongView {
                 },
                 gain_db: t.gain_db as f32,
                 armed: song.session.armed == Some(t.id),
-                clips: Vec::new(),
+                clips: play.clips_of(t.id),
             })
             .collect(),
         play_target: Some(song.session.play_target.0),
-        loop_range: None,
-        loop_on: false,
+        loop_range: play.loop_span(),
+        loop_on: song.session.loop_on,
     }
 }
 

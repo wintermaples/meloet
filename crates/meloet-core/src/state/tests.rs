@@ -82,6 +82,7 @@ fn remembering(output: &str) -> Model {
         output: Some(output.into()),
         output_name: Some("アナログヘッドフォン".into()),
         scale: 100,
+        ..Settings::default()
     })
 }
 
@@ -100,7 +101,10 @@ fn opened(model: &mut Model, node: &str, sample_rate: u32) {
         node_name: node.into(),
         sample_rate,
     });
-    assert!(effects.is_empty());
+    assert!(
+        effects.iter().all(|e| matches!(e, Effect::Engine(_))),
+        "{effects:?}"
+    );
 }
 
 fn status(model: &Model) -> Option<StatusMessage> {
@@ -114,7 +118,33 @@ fn playing() -> Model {
     m.handle(usual());
     cmd(&mut m, Command::ChooserConfirm);
     opened(&mut m, HP_NODE, 48_000);
+    // Takes away the notice that the output was chosen.
+    cmd(&mut m, Command::SelectClip { clip: None });
     m
+}
+
+/// The status line of a stopped song with nothing selected.
+fn idle() -> Option<StatusMessage> {
+    Some(StatusMessage::Summary {
+        loop_bars: None,
+        nothing_selected: true,
+    })
+}
+
+fn piano() -> meloet_protocol::TrackRef {
+    meloet_protocol::TrackRef {
+        number: 1,
+        name: "ピアノ".into(),
+    }
+}
+
+fn new_song() -> StatusMessage {
+    StatusMessage::NewSong {
+        tempo_bpm: 96.0,
+        meter_num: 4,
+        meter_den: 4,
+        track: Some(piano()),
+    }
 }
 
 #[test]
@@ -328,6 +358,7 @@ fn chooser_confirm_chooses_saves_and_opens() {
                 output: Some(USB.into()),
                 output_name: Some("USB スピーカー".into()),
                 scale: 100,
+                ..Settings::default()
             }),
             open(USB_NODE),
         ]
@@ -482,7 +513,7 @@ fn output_lost_while_running_is_missing_and_closed_then_comes_back() {
 
         assert_eq!(m.handle(usual()), [open(HP_NODE)]);
         assert_eq!(m.view().outputs.chosen_state, Some(ChosenState::Ready));
-        assert_eq!(status(&m), None);
+        assert_eq!(status(&m), Some(new_song()));
     }
 }
 
@@ -523,7 +554,7 @@ fn settings_dialog() {
     assert!(cmd(&mut m, Command::SettingsCancel).is_empty());
     assert_eq!(dialog(&m), None);
     assert_eq!(m.view().outputs.chosen.as_deref(), Some(HP));
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 
     // Opens with the advanced part.
     cmd(&mut m, Command::OpenSettings { advanced: true });
@@ -545,6 +576,7 @@ fn settings_dialog() {
                 output: Some(USB.into()),
                 output_name: Some("USB スピーカー".into()),
                 scale: 100,
+                ..Settings::default()
             }),
             open(USB_NODE),
         ]
@@ -648,19 +680,19 @@ fn buffer_fixed_by_the_pc() {
     let mut m = playing();
     m.handle(Input::AudioFrames(Some(128)));
     let view = m.view();
-    assert_eq!(view.status.message, None);
+    assert_eq!(view.status.message, idle());
     assert_eq!(view.audio.actual_frames, Some(128));
     assert_eq!(view.audio.forced_quantum, None);
     assert!((view.audio.latency_ms.unwrap() - 6.67).abs() < 0.01);
 
     // Forced to a size other than the one running.
     m.handle(picture(outputs(), Some(1024)));
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 
     // Forced to the size that was asked for.
     m.handle(picture(outputs(), Some(256)));
     m.handle(Input::AudioFrames(Some(256)));
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 }
 
 #[test]
@@ -679,7 +711,7 @@ fn buffer_fixed_is_said_when_a_song_opens_and_when_the_size_changes() {
     // At start the size is not known until the first block.
     let mut m = playing();
     m.handle(picture(outputs(), Some(1024)));
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
     m.handle(Input::AudioFrames(Some(1024)));
     assert_eq!(fixed_at(&m), Some(1024));
     assert_eq!(right_end(&m), (Some(1024), 256));
@@ -688,13 +720,13 @@ fn buffer_fixed_is_said_when_a_song_opens_and_when_the_size_changes() {
     viewport(&mut m, 1300.0, 820.0);
     assert_eq!(fixed_at(&m), Some(1024));
     cmd(&mut m, Command::DismissHint);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
     assert_eq!(right_end(&m), (Some(1024), 256));
 
     // The same size again is not said.
     m.handle(Input::AudioFrames(Some(1024)));
     m.handle(picture(outputs(), Some(1024)));
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 
     // Nor on another output that runs at the same size.
     cmd(&mut m, Command::OpenSettings { advanced: false });
@@ -702,11 +734,11 @@ fn buffer_fixed_is_said_when_a_song_opens_and_when_the_size_changes() {
     cmd(&mut m, Command::SettingsApply);
     opened(&mut m, USB_NODE, 48_000);
     m.handle(Input::AudioFrames(Some(1024)));
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 
     // A new size is.
     m.handle(picture(outputs(), Some(2048)));
-    assert_eq!(status(&m), None, "not running at it yet");
+    assert_eq!(status(&m), idle(), "not running at it yet");
     m.handle(Input::AudioFrames(Some(2048)));
     assert_eq!(fixed_at(&m), Some(2048));
 
@@ -719,7 +751,7 @@ fn buffer_fixed_is_said_when_a_song_opens_and_when_the_size_changes() {
     let mut m = playing();
     m.handle(Input::AudioFrames(Some(128)));
     m.handle(Input::SongOpened);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), Some(new_song()), "the song, not the buffer");
     assert_eq!(right_end(&m), (Some(128), 256));
     // Fixed after not being fixed is a change.
     m.handle(picture(outputs(), Some(1024)));
@@ -799,7 +831,13 @@ fn status_table_in_order() {
     m.handle(Input::KeyboardAdded(keyboard(1)));
     cmd(&mut m, Command::ChooserConfirm);
     opened(&mut m, HP_NODE, 48_000);
-    assert_eq!(status(&m), None, "OutputChosen and NewSong are not said");
+    assert_eq!(
+        status(&m),
+        Some(OutputChosen {
+            output: "アナログヘッドフォン".into(),
+            track: Some(piano())
+        })
+    );
 
     // 7, then 4 and 5 over 7, 2 over 4, 1 over 2.
     let [hdmi, line] = others();
@@ -853,16 +891,19 @@ fn sound_came_out_once_after_the_chooser_decided() {
 
     cmd(&mut m, Command::ChooserConfirm);
     assert!(m.wants_sound());
-    assert_eq!(hint(&m), None);
+    assert_eq!(hint(&m), Some(Hint::EmptyArrange));
     m.handle(Input::SoundHeard);
     assert_eq!(hint(&m), Some(Hint::SoundCameOut));
     assert!(!m.wants_sound());
 
+    // The empty arrange hint comes back behind it, until it is put away too.
+    cmd(&mut m, Command::DismissHint);
+    assert_eq!(hint(&m), Some(Hint::EmptyArrange));
+    m.handle(Input::SoundHeard);
+    assert_eq!(hint(&m), Some(Hint::EmptyArrange));
+    assert!(!m.wants_sound());
     cmd(&mut m, Command::DismissHint);
     assert_eq!(hint(&m), None);
-    m.handle(Input::SoundHeard);
-    assert_eq!(hint(&m), None);
-    assert!(!m.wants_sound());
 }
 
 #[test]
@@ -872,7 +913,7 @@ fn an_output_remembered_from_before_gives_no_hint() {
     m.handle(usual());
     opened(&mut m, HP_NODE, 48_000);
     m.handle(Input::SoundHeard);
-    assert_eq!(m.view().workspace.hint, None);
+    assert_eq!(m.view().workspace.hint, Some(Hint::EmptyArrange));
 
     // Nor does a change in the settings dialog: only the chooser arms it.
     cmd(&mut m, Command::OpenSettings { advanced: false });
@@ -943,7 +984,8 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
         [Effect::SaveSettings(Settings {
             output: None,
             output_name: None,
-            scale: 150
+            scale: 150,
+            ..Settings::default()
         })]
     );
     cmd(
@@ -1041,6 +1083,7 @@ fn the_scale_comes_from_the_settings() {
         output: None,
         output_name: None,
         scale: 125,
+        ..Settings::default()
     });
     let ws = m.view().workspace;
     assert_eq!(ws.scale, 125);
@@ -1072,6 +1115,7 @@ fn saved(scale: u16) -> Effect {
         output: None,
         output_name: None,
         scale,
+        ..Settings::default()
     })
 }
 
@@ -1081,7 +1125,7 @@ fn a_lower_window_folds_the_older_band_and_says_so() {
     viewport(&mut m, 1280.0, 1080.0);
     toggle(&mut m, Band::Mixer);
     toggle(&mut m, Band::PianoRoll);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 
     viewport(&mut m, 1280.0, 800.0);
     assert_eq!(open_bands(&m), [Band::PianoRoll]);
@@ -1095,7 +1139,7 @@ fn a_lower_window_folds_the_older_band_and_says_so() {
 
     // The next thing the user does takes it away.
     toggle(&mut m, Band::Shelf);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 }
 
 #[test]
@@ -1112,7 +1156,7 @@ fn opening_a_band_that_does_not_fit_beside_the_other_says_so() {
         })
     );
     cmd(&mut m, Command::GoArrange);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 }
 
 #[test]
@@ -1123,7 +1167,7 @@ fn a_third_band_folds_the_oldest_without_a_notice() {
     toggle(&mut m, Band::Mixer);
     toggle(&mut m, Band::PianoRoll);
     assert_eq!(open_bands(&m), [Band::PianoRoll, Band::Mixer]);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 
     // The third band pushes out the oldest, and the second one still does not fit beside it.
     let mut m = playing();
@@ -1173,7 +1217,7 @@ fn a_notice_waits_behind_the_device_lines_and_goes_before_the_rest() {
     viewport(&mut m, 1280.0, 800.0);
     assert_eq!(status(&m), Some(SettingsOpen));
     cmd(&mut m, Command::SettingsCancel);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 }
 
 #[test]
@@ -1214,7 +1258,7 @@ fn a_scale_that_does_not_fit_is_not_taken() {
             ..m.settings()
         })]
     );
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 
     assert!(cmd(&mut m, Command::SetScale { percent: 150 }).is_empty());
     assert_eq!(m.view().workspace.scale, 125);
@@ -1227,7 +1271,7 @@ fn a_scale_that_does_not_fit_is_not_taken() {
     );
     // Choosing the zoom that is on is nothing new, but it is something the user did.
     assert!(cmd(&mut m, Command::SetScale { percent: 125 }).is_empty());
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 }
 
 #[test]
@@ -1252,7 +1296,7 @@ fn a_new_scale_grows_a_window_that_is_too_small_for_it() {
     // Big enough already: no notice.
     let mut m = playing();
     assert_eq!(cmd(&mut m, Command::SetScale { percent: 150 }).len(), 1);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
     let ws = m.view().workspace;
     assert_eq!((ws.viewport_width, ws.viewport_height), (1280.0, 800.0));
 }
@@ -1308,7 +1352,7 @@ fn a_higher_scale_that_folds_a_band_says_the_window_got_low() {
     // Back to 100 %: nothing opens again.
     cmd(&mut m, Command::SetScale { percent: 100 });
     assert_eq!(open_bands(&m), [Band::History]);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
 }
 
 #[test]
@@ -1317,6 +1361,7 @@ fn a_smaller_screen_lowers_the_scale_and_saves_it() {
         output: None,
         output_name: None,
         scale: 150,
+        ..Settings::default()
     });
     // The remembered zoom fits this screen.
     assert!(screen(&mut m, 1920.0, 1040.0).is_empty());
@@ -1338,6 +1383,7 @@ fn a_smaller_screen_lowers_the_scale_and_saves_it() {
         output: None,
         output_name: None,
         scale: 150,
+        ..Settings::default()
     });
     assert_eq!(screen(&mut m, 800.0, 400.0), [saved(100)]);
     assert_eq!(
@@ -1381,7 +1427,7 @@ fn pipewire_lost_closes_says_so_and_opens_again_with_the_next_picture() {
 
     assert_eq!(m.handle(usual()), [open(HP_NODE)]);
     opened(&mut m, HP_NODE, 48_000);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
     assert!(m.view().audio.running);
 }
 
@@ -1469,7 +1515,7 @@ fn midi_stopped_releases_the_keys_says_so_and_ends_with_midi_back() {
     assert!(m.handle(Input::MidiBack).is_empty());
     let view = m.view();
     assert!(!view.keyboards.input_stopped);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), idle());
     let ids: Vec<&str> = view.keyboards.list.iter().map(|k| k.id.as_str()).collect();
     assert_eq!(ids, ["kb1"]);
     assert_eq!(view.keyboards.active.as_deref(), Some("kb1"));
@@ -1522,7 +1568,7 @@ fn no_pipewire_at_start_says_nothing_about_it_and_the_first_picture_goes_on_as_u
     // PipeWire comes up later: the remembered output opens.
     assert_eq!(m.handle(usual()), [open(HP_NODE)]);
     opened(&mut m, HP_NODE, 48_000);
-    assert_eq!(status(&m), None);
+    assert_eq!(status(&m), Some(new_song()));
 
     // Without a remembered output, the chooser comes up.
     let mut m = fresh();

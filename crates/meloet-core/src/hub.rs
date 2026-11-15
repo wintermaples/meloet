@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::{Mutex, MutexGuard};
 
-use meloet_protocol::{AppState, Event, Patch, ServerMessage, Snapshot};
+use meloet_protocol::{AppState, Event, LiveNotes, Patch, ServerMessage, Snapshot};
 
 /// Returns false when the receiver is gone; the sink is then dropped.
 pub type MessageSink = Box<dyn Fn(ServerMessage) -> bool + Send>;
@@ -86,6 +86,12 @@ impl Hub {
         lock(&self.messages)
             .sinks
             .retain(|sink| sink(ServerMessage::Event(event)));
+    }
+
+    pub fn live_notes(&self, notes: LiveNotes) {
+        lock(&self.messages)
+            .sinks
+            .retain(|sink| sink(ServerMessage::LiveNotes(notes.clone())));
     }
 
     /// True once after each `subscribe`.

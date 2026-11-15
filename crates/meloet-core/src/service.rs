@@ -17,18 +17,26 @@ use std::time::{Duration, Instant};
 use meloet_devices::{DeviceWatcher, DevicesError, DevicesEvent};
 use meloet_engine::{
     AudioOutput, BlockTiming, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
-    InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, PlaceholderSynth,
-    RunningOutput, monotonic_us,
+    InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, PlaceholderSynth, Recorded,
+    RunningOutput, Sequence, SequenceEvent, TransportClock, monotonic_us,
 };
 use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
-use meloet_protocol::{Command, Event, Snapshot, Telemetry};
+use meloet_model::ControlValue;
+use meloet_model::playback::{PlayEvent, PlayKind};
+use meloet_model::record::{HeldControls, RecEventKind};
+use meloet_protocol::{
+    Command, Event, LiveNotesSnapshot, Snapshot, Telemetry, TransportReading, TransportState,
+};
 
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::measure::{self, KeyToSound};
+use crate::play::{EngineOp, Heard, RecordReport};
 use crate::settings::{self, Settings};
 use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, retry_delay};
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
+/// How often the core thread reads the engine's reports while the transport moves.
+const MOVING_TICK: Duration = Duration::from_millis(15);
 /// How often the core thread looks at the engine's rings when no message wakes it.
 const HOUSEKEEPING: Duration = Duration::from_millis(100);
 /// -60 dBFS.
@@ -98,6 +106,8 @@ enum Msg {
     },
     /// The device watcher lost PipeWire and ended.
     DevicesLost,
+    LiveNotes(Sender<LiveNotesSnapshot>),
+    TakeNotes(u32, Sender<Option<Vec<u8>>>),
     Stop,
 }
 
@@ -173,6 +183,12 @@ struct Shared {
     held: Held,
     stream: StreamFacts,
     stop: AtomicBool,
+    /// The engine's clock; a new one when the engine is made anew.
+    clock: Mutex<Arc<TransportClock>>,
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 struct Running {
@@ -201,6 +217,7 @@ impl Core {
             held: Held::default(),
             stream: StreamFacts::default(),
             stop: AtomicBool::new(false),
+            clock: Mutex::new(Arc::new(TransportClock::default())),
         });
         let (tx, rx) = mpsc::channel();
 
@@ -208,6 +225,7 @@ impl Core {
             sample_rate: 48_000,
             ..EngineConfig::default()
         });
+        *lock(&shared.clock) = parts.handle.clock().clone();
         let meters = parts.handle.meters().clone();
         let track_count = model.view().song.tracks.len();
         shared.stream.track_count.store(track_count, Relaxed);
@@ -310,6 +328,30 @@ impl Core {
         let _ = running.core.join();
         self.shared.stop.store(true, Relaxed);
         let _ = running.telemetry.join();
+    }
+
+    /// Every note of the recording going on, as of the last `liveNotes` message.
+    pub fn live_notes(&self) -> LiveNotesSnapshot {
+        let (reply, answer) = mpsc::channel();
+        if self.tx.send(Msg::LiveNotes(reply)).is_err() {
+            return LiveNotesSnapshot {
+                seq: 0,
+                recording: None,
+                notes: Vec::new(),
+            };
+        }
+        answer.recv().unwrap_or(LiveNotesSnapshot {
+            seq: 0,
+            recording: None,
+            notes: Vec::new(),
+        })
+    }
+
+    /// The take binary (docs/architecture.md 3-4) of a take in the song as it is now.
+    pub fn take_notes(&self, id: u32) -> Option<Vec<u8>> {
+        let (reply, answer) = mpsc::channel();
+        self.tx.send(Msg::TakeNotes(id, reply)).ok()?;
+        answer.recv().ok().flatten()
     }
 
     fn input(&self, input: Input) -> u64 {
@@ -610,9 +652,113 @@ impl Audio {
 
     fn command(&mut self, command: EngineCommand) {
         // Without a stream the command would wait in the ring and act when one opens.
-        if self.stream.is_some() {
-            let _ = self.handle.send(command);
+        if self.stream.is_some() && self.handle.send(command).is_err() {
+            eprintln!("meloet: the engine's command ring is full");
         }
+    }
+
+    fn op(&mut self, op: EngineOp) {
+        let command = match op {
+            EngineOp::Play { from } => EngineCommand::Play { from },
+            EngineOp::Record {
+                from,
+                count_in_beats,
+                muted,
+            } => EngineCommand::Record {
+                from,
+                count_in_beats,
+                muted: [muted].into_iter().collect(),
+            },
+            EngineOp::Stop { t_us } => EngineCommand::Stop { t_us },
+            EngineOp::Locate { tick } => EngineCommand::Locate { tick },
+            EngineOp::Tempo {
+                ticks_per_beat,
+                beats_per_bar,
+                bpm_centi,
+            } => EngineCommand::SetTempo {
+                ticks_per_beat,
+                beats_per_bar,
+                bpm_centi,
+            },
+            EngineOp::Loop { start, end, on } => EngineCommand::SetLoop { start, end, on },
+            EngineOp::Metronome { on } => EngineCommand::SetMetronome { on },
+            EngineOp::Sequence { track, events } => {
+                if self.stream.is_some() {
+                    let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());
+                    if self.handle.swap_sequence(track, sequence).is_err() {
+                        eprintln!("meloet: the engine did not take the sequence of track {track}");
+                    }
+                }
+                return;
+            }
+        };
+        self.command(command);
+    }
+}
+
+fn sequence_event(e: PlayEvent) -> SequenceEvent {
+    SequenceEvent {
+        tick: e.tick,
+        event: match e.kind {
+            PlayKind::NoteOn { key, velocity } => InstrumentEvent::NoteOn {
+                note: key,
+                velocity,
+            },
+            PlayKind::NoteOff { key } => InstrumentEvent::NoteOff { note: key },
+            PlayKind::Control(ControlValue::Cc { number, value }) => InstrumentEvent::Control {
+                controller: number,
+                value,
+            },
+            PlayKind::Control(ControlValue::PitchBend(value)) => {
+                InstrumentEvent::PitchBend { value }
+            }
+        },
+    }
+}
+
+fn record_report(r: Recorded, held: &Held) -> Option<RecordReport> {
+    Some(match r {
+        Recorded::Started { .. } => RecordReport::Started {
+            held: HeldControls {
+                sustain: held.sustain.load(Relaxed),
+                bend: held.bend.load(Relaxed),
+                modulation: held.modulation.load(Relaxed),
+            },
+        },
+        Recorded::Event {
+            event,
+            t_us,
+            tick,
+            lap,
+        } => RecordReport::Event {
+            kind: match event {
+                InstrumentEvent::NoteOn { note, velocity } => RecEventKind::NoteOn {
+                    key: note,
+                    velocity,
+                },
+                InstrumentEvent::NoteOff { note } => RecEventKind::NoteOff { key: note },
+                InstrumentEvent::Control { controller, value } => RecEventKind::Cc {
+                    number: controller,
+                    value,
+                },
+                InstrumentEvent::PitchBend { value } => RecEventKind::PitchBend(value),
+                InstrumentEvent::AllNotesOff => return None,
+            },
+            t_us,
+            tick,
+            lap,
+        },
+        Recorded::LapChanged { lap, .. } => RecordReport::LapChanged { lap },
+        Recorded::Stopped { t_us, tick, lap } => RecordReport::Stopped { t_us, tick, lap },
+    })
+}
+
+fn transport_state(s: meloet_engine::TransportState) -> TransportState {
+    match s {
+        meloet_engine::TransportState::Stopped => TransportState::Stopped,
+        meloet_engine::TransportState::CountIn => TransportState::CountIn,
+        meloet_engine::TransportState::Playing => TransportState::Playing,
+        meloet_engine::TransportState::Recording => TransportState::Recording,
     }
 }
 
@@ -632,8 +778,14 @@ struct Worker {
 impl Worker {
     fn run(mut self, rx: Receiver<Msg>) {
         let mut kept = Instant::now();
+        let mut polled = Instant::now();
         loop {
-            match rx.recv_timeout(HOUSEKEEPING) {
+            let wait = if self.model.is_moving() {
+                MOVING_TICK
+            } else {
+                HOUSEKEEPING
+            };
+            match rx.recv_timeout(wait) {
                 Ok(Msg::Input(input, reply)) => {
                     let rev = self.handle(input);
                     if let Some(reply) = reply {
@@ -670,8 +822,18 @@ impl Worker {
                     });
                     self.handle(Input::AudioSystemLost);
                 }
+                Ok(Msg::LiveNotes(reply)) => {
+                    let _ = reply.send(self.model.live_notes());
+                }
+                Ok(Msg::TakeNotes(id, reply)) => {
+                    let _ = reply.send(self.model.take_notes(id));
+                }
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+            }
+            if self.model.is_moving() && polled.elapsed() >= MOVING_TICK {
+                polled = Instant::now();
+                self.poll_engine();
             }
             if kept.elapsed() >= HOUSEKEEPING {
                 kept = Instant::now();
@@ -683,6 +845,29 @@ impl Worker {
         drop(self.midi.take());
         drop(self.devices.take());
         self.audio.close(&self.shared.stream);
+    }
+
+    /// Takes in what the engine said about the recording, and what the listener hears now.
+    fn poll_engine(&mut self) {
+        while let Some(r) = self.audio.handle.pop_recorded() {
+            if let Some(report) = record_report(r, &self.shared.held) {
+                self.handle(Input::Record(report));
+            }
+        }
+        if self.model.is_moving() {
+            self.handle(Input::Tick);
+        }
+    }
+
+    fn heard(&self) -> Option<Heard> {
+        if !self.shared.stream.open.load(Relaxed) {
+            return None;
+        }
+        self.audio.handle.clock().heard_now().map(|h| Heard {
+            tick: h.tick,
+            state: transport_state(h.state),
+            lap: h.lap,
+        })
     }
 
     fn current(&self, epoch: u64) -> bool {
@@ -720,6 +905,7 @@ impl Worker {
     fn handle(&mut self, input: Input) -> u64 {
         let mut inputs = VecDeque::from([input]);
         while let Some(input) = inputs.pop_front() {
+            self.model.set_now(monotonic_us(), self.heard());
             for effect in self.model.handle(input) {
                 match effect {
                     Effect::OpenOutput { node_name } => {
@@ -730,10 +916,11 @@ impl Worker {
                             },
                             None => Input::AudioOpenFailed { node_name },
                         });
-                        if let Some(feed) = self.audio.rebuilt.take()
-                            && let Some(midi) = &mut self.midi
-                        {
-                            midi.feed(self.links.midi_sink(feed));
+                        if let Some(feed) = self.audio.rebuilt.take() {
+                            *lock(&self.shared.clock) = self.audio.handle.clock().clone();
+                            if let Some(midi) = &mut self.midi {
+                                midi.feed(self.links.midi_sink(feed));
+                            }
                         }
                     }
                     Effect::CloseOutput => self.audio.close(&self.shared.stream),
@@ -745,6 +932,8 @@ impl Worker {
                     Effect::RetryAudio { after } => {
                         self.audio_retry_at = Some(Instant::now() + after);
                     }
+                    Effect::Engine(op) => self.audio.op(op),
+                    Effect::LiveNotes(notes) => self.hub.live_notes(notes),
                     Effect::SaveSettings(settings) => {
                         if let Some(dir) = &self.config_dir
                             && let Err(e) = settings::save(dir, &settings)
@@ -763,6 +952,7 @@ impl Worker {
     }
 
     fn housekeeping(&mut self, last: bool) {
+        self.poll_engine();
         self.audio.handle.drop_retired();
         let mut samples = Vec::new();
         while let Some(record) = self.audio.handle.pop_latency() {
@@ -846,6 +1036,20 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             let _ = tx.send(Msg::Input(Input::SoundHeard, None));
         }
 
+        let transport = if open {
+            lock(&shared.clock)
+                .clone()
+                .heard_now()
+                .map(|h| TransportReading {
+                    tick: h.tick,
+                    ticks_per_us: h.ticks_per_us,
+                    state: transport_state(h.state),
+                    count_in_beats_left: h.count_in_beats_left.min(u32::from(u16::MAX)) as u16,
+                    lap: h.lap,
+                })
+        } else {
+            None
+        };
         let now = Telemetry {
             seq,
             sent_ns: monotonic_us() * 1000,
@@ -859,7 +1063,7 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             pitch_bend: shared.held.bend.load(Relaxed),
             load_permille: steady_load(open, meters.load_permille(), last.as_ref()),
             master_peak: meters.take_master_peak(),
-            transport: None,
+            transport,
             track_peaks,
         };
         let fresh = hub.take_telemetry_fresh();

@@ -18,7 +18,12 @@ pub struct Settings {
     /// Its name as last seen, for the status line when the output is not in the list at all.
     pub output_name: Option<String>,
     pub scale: u16,
+    pub metronome: bool,
+    /// 0, 1 or 2.
+    pub count_in_bars: u8,
 }
+
+pub const DEFAULT_COUNT_IN_BARS: u8 = 1;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -26,6 +31,8 @@ impl Default for Settings {
             output: None,
             output_name: None,
             scale: DEFAULT_SCALE,
+            metronome: false,
+            count_in_bars: DEFAULT_COUNT_IN_BARS,
         }
     }
 }
@@ -37,6 +44,14 @@ struct OnDisk {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     output_name: Option<String>,
     scale: u16,
+    #[serde(default)]
+    metronome: bool,
+    #[serde(default = "default_count_in_bars")]
+    count_in_bars: u8,
+}
+
+fn default_count_in_bars() -> u8 {
+    DEFAULT_COUNT_IN_BARS
 }
 
 /// `$MELOET_CONFIG_DIR`, else `$XDG_CONFIG_HOME/meloet`, else `$HOME/.config/meloet`.
@@ -65,6 +80,12 @@ pub fn load(dir: &Path) -> Settings {
             } else {
                 DEFAULT_SCALE
             },
+            metronome: disk.metronome,
+            count_in_bars: if crate::play::COUNT_IN_BARS.contains(&disk.count_in_bars) {
+                disk.count_in_bars
+            } else {
+                DEFAULT_COUNT_IN_BARS
+            },
         },
         _ => Settings::default(),
     }
@@ -77,6 +98,8 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         output: settings.output.clone(),
         output_name: settings.output_name.clone(),
         scale: settings.scale,
+        metronome: settings.metronome,
+        count_in_bars: settings.count_in_bars,
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -114,6 +137,8 @@ mod tests {
             output: Some("alsa_card.pci-0000_0c_00.6:analog-output-headphones".into()),
             output_name: Some("アナログヘッドフォン".into()),
             scale: 125,
+            metronome: true,
+            count_in_bars: 2,
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
@@ -124,6 +149,8 @@ mod tests {
                 .unwrap();
         assert_eq!(json["version"], 1);
         assert_eq!(json["scale"], 125);
+        assert_eq!(json["metronome"], true);
+        assert_eq!(json["count_in_bars"], 2);
         assert_eq!(
             json["output"],
             "alsa_card.pci-0000_0c_00.6:analog-output-headphones"
@@ -148,7 +175,9 @@ mod tests {
             Settings {
                 output: Some("x:y".into()),
                 output_name: None,
-                scale: 150
+                scale: 150,
+                metronome: false,
+                count_in_bars: 1,
             }
         );
     }
@@ -175,6 +204,14 @@ mod tests {
         .unwrap();
         assert_eq!(load(&dir).scale, 100);
         assert_eq!(load(&dir).output.as_deref(), Some("x"));
+
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"version":1,"output":null,"scale":100,"metronome":true,"count_in_bars":3}"#,
+        )
+        .unwrap();
+        assert!(load(&dir).metronome);
+        assert_eq!(load(&dir).count_in_bars, 1, "out of range: the default");
     }
 
     #[test]

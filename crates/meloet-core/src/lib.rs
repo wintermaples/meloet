@@ -7,6 +7,7 @@
 mod hub;
 pub mod layout;
 pub mod measure;
+pub mod play;
 mod service;
 pub mod settings;
 pub mod state;

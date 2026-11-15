@@ -3,6 +3,7 @@
 mod clock;
 mod core_handle;
 mod devhooks;
+mod takes;
 mod webprocess;
 
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering::Relaxed};
@@ -256,7 +257,9 @@ fn main() {
             send,
             clock,
             measure_enabled,
-            measure_report
+            measure_report,
+            takes::take_notes,
+            takes::live_notes
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {

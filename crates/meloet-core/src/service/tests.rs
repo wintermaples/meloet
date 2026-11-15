@@ -189,6 +189,7 @@ fn the_chosen_output_is_saved_and_read_at_the_next_start() {
             output: Some("card:analog-output-headphones".into()),
             output_name: Some("アナログヘッドフォン".into()),
             scale: 125,
+            ..Settings::default()
         }
     );
     let core = Core::start(options);
@@ -386,6 +387,7 @@ fn the_remembered_headphones_open_and_silence_sends_no_telemetry() {
         output: Some(HEADPHONES.into()),
         output_name: None,
         scale: 100,
+        ..Settings::default()
     };
     settings::save(&dir, &remembered).unwrap();
     let core = Core::start(CoreOptions {
@@ -592,4 +594,19 @@ fn a_stopped_keyboard_input_releases_the_keys_and_starts_again() {
         ));
     }
     core.stop();
+}
+
+#[test]
+fn notes_of_takes_and_of_the_recording_are_asked_on_the_core_thread() {
+    let core = Core::start(CoreOptions::offline());
+    let live = core.live_notes();
+    assert_eq!((live.seq, live.recording), (0, None));
+    assert!(live.notes.is_empty());
+    assert_eq!(core.take_notes(1), None);
+    // Without a stream nothing plays or records.
+    core.send(Command::PlayStop);
+    core.send(Command::Record);
+    let t = core.snapshot().state.transport;
+    assert_eq!(t.state, meloet_protocol::TransportState::Stopped);
+    assert!(t.recording.is_none());
 }

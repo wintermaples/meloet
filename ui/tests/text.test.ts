@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { TERM_SEPARATOR, fill, findTerm, t, terms, texts, type Entry } from "../src/text/ja";
 import { headers, mockScreenText, rows, sectionTables, sectionText, specDocument } from "./design-sources";
 
+// crates/ は ui/ の外なので、design-sources.ts と同じく Node の fs で読む。
+const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"): { readFileSync(p: URL, e: "utf8"): string } } }).process.getBuiltinModule("node:fs");
+const here = import.meta.url;
+const readRepoFile = (path: string) => fs.readFileSync(new URL(`../../${path}`, here), "utf8");
+
 const doc = specDocument();
 const entries = Object.entries(texts) as [string, Entry][];
 const filled = (e: Entry) => fill(e.text, e.example ?? {});
@@ -55,8 +60,39 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
     else expect(filled(e)).toBe(row![1]);
   });
 
-  it("6 章の場面は全部 ja.ts に入っている", () => {
-    expect([...new Set(messages.map(([, e]) => e.scene))].sort()).toEqual([...byScene.keys()].sort());
+  // ja.ts にない場面: ほかの場面の文を出す決まりだけの場面と、殻（crates/meloet-app）が出す PC のファイルの窓の題。
+  const NOT_IN_JA = ["meloet の音の流れだけが止まった", "PC のファイルの窓の題"];
+  it("6 章の場面は全部 ja.ts に入っている（ja.ts にない 2 つのほか）", () => {
+    for (const scene of NOT_IN_JA) expect(byScene.has(scene), scene).toBe(true);
+    expect([...new Set(messages.map(([, e]) => e.scene))].sort()).toEqual(
+      [...byScene.keys()].filter((k) => !NOT_IN_JA.includes(k)).sort(),
+    );
+  });
+
+  it("PC のファイルの窓の題は、殻の定数が仕様書の文のまま", () => {
+    const rust = readRepoFile("crates/meloet-app/src/pcwindow.rs");
+    const cell = byScene.get("PC のファイルの窓の題")![1]!;
+    const titles = [...rust.matchAll(/pub const (OPEN|FOLDER)_TITLE: &str = "([^"]+)";/g)].map((m) => [m[1], m[2]!]);
+    expect(Object.fromEntries(titles)).toEqual({ OPEN: "ひらく", FOLDER: "場所をえらぶ" });
+    expect(cell).toBe("ひらくときは「ひらく」、フォルダをえらぶときは「場所をえらぶ」");
+  });
+
+  it("決まりだけの場面は、使う文の場面とボタンを名前で言っている", () => {
+    const row = byScene.get("meloet の音の流れだけが止まった")!;
+    expect(row[1]).toContain("「音の出口が消えた」と同じ文");
+    expect(row[1]).toContain("「録音中に出口が消えた」と同じ文");
+    expect(row[3]).toBe(t("button.openAudioSettings"));
+  });
+
+  it("使えない値を打った: 4 つの欄と範囲で文になる。ベロシティは仕様書の例そのまま", () => {
+    const cell = byScene.get("使えない値を打った")![1]!;
+    const say = (field: Parameters<typeof t>[0], range: Parameters<typeof t>[0], kept: string) =>
+      t("msg.valueRejected", { field: t(field), range: t(range), kept });
+    expect(cell.startsWith(say("value.velocity", "value.velocityRange", "77"))).toBe(true);
+    expect(say("value.tempo", "value.tempoRange", "96.00")).toBe("テンポは 30.00〜300.00 です。もとの 96.00 のままです。");
+    expect(say("value.meterNum", "value.meterNumRange", "4")).toBe("拍子の上は 1〜12 です。もとの 4 のままです。");
+    expect(say("value.meterDen", "value.meterDenRange", "4")).toBe("拍子の下は 2 ・ 4 ・ 8 ・ 16 です。もとの 4 のままです。");
+    expect(cell).toContain(`（${t("value.tempo")}は ${t("value.tempoRange")}、${t("value.meterNum")}は ${t("value.meterNumRange")}、下は ${t("value.meterDenRange")}）`);
   });
 
   it("穴は全部、例の値で埋まる", () => {

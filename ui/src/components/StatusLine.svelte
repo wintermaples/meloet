@@ -1,7 +1,7 @@
 <!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom のいちばん下の行）。 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Band, Command, StatusMessage, TrackRef } from "../bridge";
+  import type { Band, Command, StatusMessage, TrackRef, ValueField } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { platformOf } from "../keys/keys";
   import { menuOpened } from "../lib/menu";
@@ -27,6 +27,14 @@
     history: "band.history",
     shelf: "band.shelf",
     params: "band.params",
+  };
+
+  /** 使えない値を打ったときの欄の名前と範囲。 */
+  const VALUE_FIELDS: Record<ValueField, [TextKey, TextKey]> = {
+    tempo: ["value.tempo", "value.tempoRange"],
+    meterNum: ["value.meterNum", "value.meterNumRange"],
+    meterDen: ["value.meterDen", "value.meterDenRange"],
+    velocity: ["value.velocity", "value.velocityRange"],
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
@@ -63,8 +71,9 @@
           button: settings(false, t("button.openAudioSettings")),
         };
       case "outputNotPlugged":
-      case "outputMissing":
         return { ...plain("msg.outputNotPlugged", { output: m.output }), button: settings(false, t("button.openAudioSettings")) };
+      case "outputMissing":
+        return { ...plain("msg.outputLost", { output: m.output }), button: settings(false, t("button.openAudioSettings")) };
       case "bufferFixed":
         return {
           parts: textParts("msg.bufferFixedStatus", {
@@ -88,6 +97,14 @@
         return plain("msg.bandFoldedWindowLow", { band: t(BAND_NAMES[m.band]) });
       case "bandFoldedToOpen":
         return plain("msg.bandFoldedToOpen", { opened: t(BAND_NAMES[m.opened]), folded: t(BAND_NAMES[m.folded]) });
+      case "bandFoldedThird":
+        return plain("msg.bandFoldedThird", { opened: t(BAND_NAMES[m.opened]), folded: t(BAND_NAMES[m.folded]) });
+      case "bandFoldedScale":
+        return plain("msg.bandFoldedScale", { scale: m.scale, band: t(BAND_NAMES[m.band]) });
+      case "valueRejected": {
+        const [field, range] = VALUE_FIELDS[m.field];
+        return plain("msg.valueRejected", { field: t(field), range: t(range), kept: m.kept });
+      }
       case "outputChosen":
         return m.track
           ? plain("status.outputChosen", { output: m.output, track: track(m.track) })

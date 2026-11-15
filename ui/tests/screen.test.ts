@@ -13,6 +13,24 @@ const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"
 const here = import.meta.url;
 const readMock = (board: string) => fs.readFileSync(new URL(`../../docs/design/mock/${board}.dc.html`, here), "utf8");
 
+describe("再生まわりの引っこめかた（仕様書 1 章 (1)。幅は測った物）: ▾ を残す", () => {
+  const w = { base: 800, songName: 144, load: 60, countIn: 227, positionLabels: 20 };
+  const stubs = { songName: 40, countIn: 20 };
+  const all = w.base + w.songName + w.load + w.countIn + w.positionLabels;
+  const at = (room: number) => transportParts(room, w, stubs);
+
+  it("曲の名前は ▾ のぶんだけ、カウントインはメトロノームの ▾ のぶんだけ、へる幅が少ない", () => {
+    expect(at(all - 1)).toEqual({ songName: false, load: true, countIn: true, positionLabels: true });
+    const afterName = all - w.songName + stubs.songName;
+    expect(at(afterName)).toEqual({ songName: false, load: true, countIn: true, positionLabels: true });
+    expect(at(afterName - 1)).toEqual({ songName: false, load: false, countIn: true, positionLabels: true });
+    const afterLoad = afterName - w.load;
+    expect(at(afterLoad - 1)).toEqual({ songName: false, load: false, countIn: false, positionLabels: true });
+    expect(at(afterLoad - w.countIn + stubs.countIn)).toEqual({ songName: false, load: false, countIn: false, positionLabels: true });
+    expect(at(afterLoad - w.countIn + stubs.countIn - 1)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
+  });
+});
+
 describe("再生まわりの引っこめかた（仕様書 1 章 (1)。幅は測った物）", () => {
   const w = { base: 800, songName: 144, load: 60, countIn: 227, positionLabels: 20 };
   const all = w.base + w.songName + w.load + w.countIn + w.positionLabels;
@@ -155,14 +173,18 @@ describe("偽物の場面", () => {
       }
     }
   });
-  it("たたんだ帯を言うのは、入りきらないときだけ。3 つ目で押し出された帯は言わない", () => {
+  it("たたんだ帯と理由を言う。3 つ目の帯で押し出したあと、入りきらずにもう 1 つたたんだら、あとのほう", () => {
     const low = new FakeBands(800);
     expect(low.toggle("mixer")).toBeNull();
-    expect(low.toggle("pianoRoll")).toBe("mixer");
+    expect(low.toggle("pianoRoll")).toEqual({ band: "mixer", why: "tooLow" });
     const tall = new FakeBands(1080);
     tall.toggle("history");
     tall.toggle("mixer");
-    expect(tall.toggle("pianoRoll")).toBeNull();
+    expect(tall.toggle("pianoRoll")).toEqual({ band: "history", why: "third" });
+    const mid = new FakeBands(940);
+    mid.toggle("history");
+    mid.toggle("mixer");
+    expect(mid.toggle("pianoRoll")).toEqual({ band: "mixer", why: "tooLow" });
     expect(tall.setHeight(943)).toBe("mixer");
     expect(tall.setHeight(2000)).toBeNull();
     expect(tall.layout().lower.map((x) => x.band)).toEqual(["pianoRoll"]);

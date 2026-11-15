@@ -11,18 +11,25 @@ export type TransportParts = Record<TransportPart, boolean>;
 /**
  * 再生まわりの、測った幅（CSS px）。base は、いつも出す物（左右の内がわとすきまを含む）。
  * ほかは、その部品を出したときにふえる幅（前のすきまを含む）。
+ * カウントインは、ふだんの幅とカウントイン中の幅の大きいほうを渡す（始まった瞬間に何も動かないように）。
  */
 export type TransportWidths = { base: number } & Record<TransportPart, number>;
 
+/**
+ * 引っこめたあとに残す物の幅（仕様書 1 章: 曲の名前は幅 28 の ▾、カウントインはメトロノームの ▾）。
+ * 前のすきまも含めた、ふえる幅。
+ */
+export type TransportStubs = Partial<Record<TransportPart, number>>;
+
 /** 出す物の組。available は再生まわりの使える幅（CSS px）。入るまで、仕様書の順に引っこめる。 */
-export function transportParts(available: number, widths: TransportWidths): TransportParts {
+export function transportParts(available: number, widths: TransportWidths, stubs: TransportStubs = {}): TransportParts {
   const shown: TransportParts = { songName: true, load: true, countIn: true, positionLabels: true };
   let need = widths.base;
   for (const k of TRANSPORT_ORDER) need += widths[k];
   for (const k of TRANSPORT_ORDER) {
     if (need <= available) break;
     shown[k] = false;
-    need -= widths[k];
+    need -= widths[k] - (stubs[k] ?? 0);
   }
   return shown;
 }

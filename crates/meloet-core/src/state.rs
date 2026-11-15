@@ -17,7 +17,7 @@ use meloet_protocol::{
     SongFile, SongView, StatusMessage, StatusView, TrackView, Unusable, WorkspaceView,
 };
 
-use crate::layout::{self, Bands, BottomBand, SidePanel, WindowSize};
+use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::{Cut, EngineOp, Heard, Play, RecordReport};
 use crate::settings::{SCALES, Settings};
 
@@ -213,6 +213,9 @@ pub struct Model {
     xruns: u64,
     /// Opens in a row of the stream that ended on its own; 0 once a stream runs.
     audio_retries: u32,
+    /// The stream ended on its own and every try to open it again failed. Until the outputs
+    /// change or a stream runs, the status line says the output went away.
+    audio_gave_up: bool,
     /// PipeWire cannot be reached.
     audio_system_down: bool,
     /// While the keyboard input starts again: the ids it has reported so far. `None` while the
@@ -269,6 +272,7 @@ impl Model {
             buffer_fixed_seen: None,
             xruns: 0,
             audio_retries: 0,
+            audio_gave_up: false,
             audio_system_down: false,
             midi_restarting: None,
             files: songs::Files::default(),
@@ -308,6 +312,7 @@ impl Model {
                 self.devices = Some(picture);
                 self.failed = None;
                 self.audio_retries = 0;
+                self.audio_gave_up = false;
                 self.audio_system_down = false;
             }
             Input::AudioOpened {
@@ -315,6 +320,7 @@ impl Model {
                 sample_rate,
             } => {
                 if self.wanted.as_deref() == Some(&node_name) {
+                    self.audio_gave_up = false;
                     self.open = Some(OpenStream {
                         node_name,
                         sample_rate,
@@ -494,6 +500,7 @@ impl Model {
             });
         } else {
             self.audio_retries = 0;
+            self.audio_gave_up = true;
         }
     }
 
@@ -533,15 +540,27 @@ impl Model {
                         self.viewport = grown;
                         self.notice = Some(StatusMessage::ScaleWindowGrown { scale: percent });
                     }
-                    self.fit_window();
+                    if let Some(band) = self.fit_bands() {
+                        self.notice = Some(StatusMessage::BandFoldedScale {
+                            scale: percent,
+                            band,
+                        });
+                    }
                     effects.push(Effect::SaveSettings(self.settings()));
                 }
             }
             Command::ToggleBand { band } => {
-                if let Some(folded) = self.bands.toggle(band_of(band)) {
-                    self.notice = Some(StatusMessage::BandFoldedToOpen {
-                        opened: band,
-                        folded: bottom_band(folded),
+                if let Some(fold) = self.bands.toggle(band_of(band)) {
+                    let folded = bottom_band(fold.band);
+                    self.notice = Some(match fold.why {
+                        FoldWhy::Third => StatusMessage::BandFoldedThird {
+                            opened: band,
+                            folded,
+                        },
+                        FoldWhy::TooLow => StatusMessage::BandFoldedToOpen {
+                            opened: band,
+                            folded,
+                        },
                     });
                 }
             }
@@ -628,6 +647,7 @@ impl Model {
                     self.preview = Some(output);
                     if self.failed.as_ref() == Some(&node) {
                         self.failed = None;
+                        self.audio_gave_up = false;
                     }
                 }
                 return Some(node);
@@ -694,6 +714,9 @@ impl Model {
             | Command::MoveClip { .. }
             | Command::DuplicateClip { .. }
             | Command::TrimClip { .. } => {}
+            Command::RejectValue { field, kept } => {
+                self.notice = Some(StatusMessage::ValueRejected { field, kept });
+            }
         }
         None
     }
@@ -701,11 +724,16 @@ impl Model {
     /// Lays the bands out for the window as it is now. A band folded here was folded because
     /// the window, in px at 100 %, got lower.
     fn fit_window(&mut self) {
-        if let Some(folded) = self.bands.set_window(window(self.viewport, self.scale)) {
-            self.notice = Some(StatusMessage::BandFoldedWindowLow {
-                band: bottom_band(folded),
-            });
+        if let Some(band) = self.fit_bands() {
+            self.notice = Some(StatusMessage::BandFoldedWindowLow { band });
         }
+    }
+
+    /// Lays the bands out for the window and the zoom as they are now. Returns the band folded.
+    fn fit_bands(&mut self) -> Option<Band> {
+        self.bands
+            .set_window(window(self.viewport, self.scale))
+            .map(bottom_band)
     }
 
     /// The smallest window at this zoom fits the screen. 100 is the smallest zoom there is, so
@@ -741,6 +769,7 @@ impl Model {
         self.chosen = Some(output);
         self.chosen_was_ready = false;
         self.failed = None;
+        self.audio_gave_up = false;
         self.preview = None;
         effects.push(Effect::SaveSettings(self.settings()));
     }
@@ -993,8 +1022,12 @@ impl Model {
         if self.audio_system_down {
             return Some(StatusMessage::AudioSystemStopped);
         }
+        let gave_up = self.audio_gave_up && self.failed.is_some() && self.preview.is_none();
         match chosen_state {
             Some(ChosenState::Missing) => {
+                return Some(StatusMessage::OutputMissing { output: output() });
+            }
+            Some(ChosenState::Ready) if gave_up => {
                 return Some(StatusMessage::OutputMissing { output: output() });
             }
             Some(ChosenState::NotPlugged) => {

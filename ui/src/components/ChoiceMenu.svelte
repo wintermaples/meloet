@@ -1,5 +1,5 @@
-<!-- 見出しと行の一覧（状態行の「拡大率」の一覧と同じ部品。仕様書 2 章、モック F-Zoom）。
-     selected を渡すと選ぶ印つきの一覧、渡さなければすることの一覧（印なし、右はしにキー）。
+<!-- 一覧（仕様書 2 章「一覧」、モック F-Menus）。幅 220、行は高さ 24 で、選ぶ印、名前、キー。見出しの行もまぜられる。
+     えらんでいる行は、selected と同じ値の行か、checked の行。することの一覧（曲の名前の一覧）は、印をからのまま出す。
      ひらいたら、えらんでいる行（なければ使える最初の行）にフォーカスを置く。↑ ↓ でえらび、Enter で決める。Esc と外を押したときは、ひらいた側がとじる。 -->
 <script lang="ts" generics="V">
   import { onMount } from "svelte";
@@ -11,31 +11,55 @@
     key?: string;
     /** false なら「使えない」（仕様書 2 章）。 */
     usable?: boolean;
+    /** えらんでいるか（selected を使わない行）。 */
+    checked?: boolean;
+  }
+  /** 一覧の中の見出しの行。 */
+  interface Heading {
+    heading: string;
   }
   interface Props {
     /** null なら見出しの行を出さない。 */
     heading: string | null;
     /** 見出しがないときの名前（読み上げ用）。 */
     label?: string;
-    rows: readonly Row[];
+    rows: readonly (Row | Heading)[];
     selected?: V;
     onpick: (value: V) => void;
     test: string;
   }
   let { heading, label, rows, selected, onpick, test }: Props = $props();
-  const marks = $derived(selected !== undefined);
+  const isHeading = (r: Row | Heading): r is Heading => "heading" in r;
+  /** undefined なら、えらぶ行ではない（することの行）。 */
+  const checkedOf = (r: Row): boolean | undefined => r.checked ?? (selected !== undefined ? r.value === selected : undefined);
 
   let list = $state<HTMLElement>();
   const buttons = () => [...(list?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
 
-  // ひらいた側が一覧を body へ移したあとで置く（移すとフォーカスが外れるので）。
-  onMount(() =>
+  // 窓からはみ出すときは、窓の中に入るまで左（上）へずらす。ひらいた側が置いた所からのずれ。
+  let shift = $state({ x: 0, y: 0 });
+  function keepInside(): void {
+    if (!list) return;
+    const r = list.getBoundingClientRect();
+    const left = r.left - shift.x;
+    const top = r.top - shift.y;
+    const x = Math.max(-left, Math.min(0, window.innerWidth - (left + r.width)));
+    const y = Math.max(-top, Math.min(0, window.innerHeight - (top + r.height)));
+    if (x !== shift.x || y !== shift.y) shift = { x, y };
+  }
+
+  // ひらいた側が一覧を body へ移して置いたあとで、ずらしてからフォーカスを置く（移すとフォーカスが外れるので）。
+  onMount(() => {
     queueMicrotask(() => {
+      keepInside();
       const all = buttons();
       const at = all.find((b) => b.getAttribute("aria-checked") === "true") ?? all[0];
       (at ?? list)?.focus();
-    }),
-  );
+    });
+    const onResize = () => requestAnimationFrame(keepInside);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  });
 
   function onkeydown(ev: KeyboardEvent): void {
     if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.isComposing) return;
@@ -45,7 +69,7 @@
       const next = ev.key === "ArrowUp" ? Math.max(0, i - 1) : Math.min(all.length - 1, i + 1);
       all[next]?.focus();
     } else if (ev.key === "Enter") {
-      if (i >= 0) onpick(rows[Number(all[i]!.dataset.row)]!.value);
+      if (i >= 0) onpick((rows[Number(all[i]!.dataset.row)] as Row).value);
     } else {
       return;
     }
@@ -54,29 +78,43 @@
   }
 </script>
 
-<div class="menu" role="menu" tabindex="-1" aria-label={heading ?? label} bind:this={list} {onkeydown} data-test={test}>
+<div
+  class="menu"
+  role="menu"
+  tabindex="-1"
+  aria-label={heading ?? label}
+  style:transform={shift.x || shift.y ? `translate(${shift.x}px, ${shift.y}px)` : null}
+  bind:this={list}
+  {onkeydown}
+  data-test={test}
+>
   {#if heading !== null}<div class="head"><span class="m-lbl">{heading}</span></div>{/if}
   {#each rows as row, i (i)}
-    {@const usable = row.usable ?? true}
-    <button
-      class="m-plain row"
-      class:unusable={!usable}
-      role={marks ? "menuitemradio" : "menuitem"}
-      aria-checked={marks ? row.value === selected : undefined}
-      disabled={!usable}
-      data-row={i}
-      onclick={() => onpick(row.value)}
-    >
-      {#if marks}<span class="choice" class:selected={row.value === selected}><span class="dot"></span></span>{/if}
-      <span class="label m-num">{row.label}</span>
-      {#if row.key}<span class="m-spacer"></span><span class="m-num m-lbl">{row.key}</span>{/if}
-    </button>
+    {#if isHeading(row)}
+      <div class="head" role="presentation"><span class="m-lbl">{row.heading}</span></div>
+    {:else}
+      {@const usable = row.usable ?? true}
+      {@const checked = checkedOf(row)}
+      <button
+        class="m-plain row"
+        class:unusable={!usable}
+        role={checked === undefined ? "menuitem" : row.checked !== undefined ? "menuitemcheckbox" : "menuitemradio"}
+        aria-checked={checked}
+        disabled={!usable}
+        data-row={i}
+        onclick={() => onpick(row.value)}
+      >
+        <span class="choice" class:selected={checked === true}><span class="dot"></span></span>
+        <span class="label m-num">{row.label}</span>
+        {#if row.key}<span class="m-spacer"></span><span class="m-num m-lbl">{row.key}</span>{/if}
+      </button>
+    {/if}
   {/each}
 </div>
 
 <style>
   .menu {
-    width: var(--part-zoomlist-width);
+    width: var(--part-list-width);
     display: flex;
     flex-direction: column;
     background: var(--color-gray-3);
@@ -92,7 +130,7 @@
     flex-shrink: 0;
   }
   .row {
-    height: var(--part-zoomlist-row);
+    height: var(--part-list-row);
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -132,5 +170,8 @@
   /* 使えない（仕様書 2 章）: 文字 gray.7 ・ 押せない。キーは gray.8 のまま（モック F-Zoom）。 */
   .unusable .label {
     color: var(--color-gray-7);
+  }
+  .unusable .choice {
+    border-color: var(--color-gray-5);
   }
 </style>

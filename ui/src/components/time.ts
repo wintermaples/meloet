@@ -88,6 +88,16 @@ export function parseMeter(s: string): Meter | null {
   return num >= 1 && num <= METER_NUM_MAX && METER_DENS.includes(den) ? { num, den } : null;
 }
 
+/**
+ * 使えない拍子の打ちこみで、だめなのは上と下のどちらか。上が 1〜12 の数なら下、そうでなければ上
+ * （「/」がない、読めないときも上）。
+ */
+export function meterFieldOf(s: string): "meterNum" | "meterDen" {
+  const m = tidy(s).match(/^(\d{1,2})\s*\/(.*)$/);
+  const num = m ? Number(m[1]) : NaN;
+  return num >= 1 && num <= METER_NUM_MAX ? "meterDen" : "meterNum";
+}
+
 export function meterText(meter: Meter): string {
   return `${meter.num}/${meter.den}`;
 }

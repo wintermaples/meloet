@@ -58,5 +58,6 @@ export type { TrackView } from "./generated/TrackView";
 export type { TransportState } from "./generated/TransportState";
 export type { TransportView } from "./generated/TransportView";
 export type { Unusable } from "./generated/Unusable";
+export type { ValueField } from "./generated/ValueField";
 export type { WorkspaceView } from "./generated/WorkspaceView";
 export { PROTOCOL_VERSION } from "./generated/protocolVersion";

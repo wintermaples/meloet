@@ -1,5 +1,6 @@
 <!-- 数字を押すと「入力の枠」（仕様書 2 章）になる読み値。Enter で決める、Esc でやめる、↑ ↓ で 1 ずつ（Shift で 10）。
-     使えない値は「こわれた」の枠で、決めさせない（ヤチヨさんの決め 2026-11-15）。枠の外を押したときも、やめる。 -->
+     使えない値は「こわれた」の枠で、決めさせない（仕様書 3 章）。そのまま Enter を押したら reject に知らせる（状態行で言う。6 章）。
+     枠の外を押したときは、やめる。 -->
 <script lang="ts" generics="T">
   import { tick } from "svelte";
 
@@ -9,12 +10,14 @@
     parse: (s: string) => T | null;
     step: (v: T, delta: number) => string;
     commit: (v: T) => void;
+    /** 使えない値のまま Enter を押した。draft は打った文字。 */
+    reject: (draft: string) => void;
     label: string;
     /** 枠の中の文字数（等幅）。 */
     chars: number;
     test: string;
   }
-  let { value, parse, step, commit, label, chars, test }: Props = $props();
+  let { value, parse, step, commit, reject, label, chars, test }: Props = $props();
 
   let editing = $state(false);
   let draft = $state("");
@@ -45,6 +48,8 @@
       if (v !== null) {
         commit(v);
         void close(true);
+      } else {
+        reject(draft);
       }
     } else if (ev.key === "Escape" && !ev.shiftKey) {
       void close(true);

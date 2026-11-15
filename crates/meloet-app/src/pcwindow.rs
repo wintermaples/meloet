@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tauri::WebviewWindow;
 
 // The shell shows these windows, not the screen, so their titles cannot come from
-// ui/src/text/ja.ts; they are the same words as there (the song menu row, `button.chooseLocation`).
+// ui/src/text/ja.ts. The words are spec 6 「PC のファイルの窓の題」 (ui/tests/text.test.ts reads them here).
 pub const OPEN_TITLE: &str = "ひらく";
 pub const FOLDER_TITLE: &str = "場所をえらぶ";
 

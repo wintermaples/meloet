@@ -70,25 +70,21 @@ export const texts = {
   "msg.noArmedTrack": s6("録音待機のトラックがない", "録るトラックが決まっていません。トラックの ● を押すと、そこに録ります。"),
   "msg.keyboardLost": s6("鍵盤が抜けた", "{keyboard} とのつながりが切れました。曲はそのままです。さしなおすと、自動で戻ります。", { keyboard: "鍵盤 49" }),
   "msg.outputLost": s6("音の出口が消えた", "{output}が見つからなくなりました。再生を止めています。", { output: "ヘッドホン" }),
-  // 仕様書にない場面（PC の音のしくみや MIDI のしくみが止まった）。ヤチヨさんの決め。
-  "msg.audioSystemStopped": e(
+  "msg.audioSystemStopped": s6(
+    "PC の音のしくみが止まった",
     "PC の音のしくみ（PipeWire）が止まりました。曲はそのままです。動きだしたら、自動でつなぎなおします。",
-    "user:2026-11-15",
   ),
-  "msg.recordingStoppedAudioSystem": e(
+  "msg.recordingStoppedAudioSystem": s6(
+    "録音中に PC の音のしくみが止まった",
     "PC の音のしくみ（PipeWire）が止まったので、録音を止めました。そこまでの演奏は テイク {take} に残っています。",
-    "user:2026-11-15",
     { take: "2" },
   ),
-  "msg.recordingStoppedOutputMissing": e(
+  "msg.recordingStoppedOutputMissing": s6(
+    "録音中に出口が消えた",
     "{output}が見つからなくなったので、録音を止めました。そこまでの演奏は テイク {take} に残っています。",
-    "user:2026-11-15",
     { output: "ヘッドホン", take: "2" },
   ),
-  "msg.keyboardInputStopped": e(
-    "鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。",
-    "user:2026-11-15",
-  ),
+  "msg.keyboardInputStopped": s6("鍵盤からの入力が止まった", "鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。"),
   "msg.micTooLoud": s6("マイクの音が大きすぎる", "入ってくる音が大きすぎて割れています。マイクから少し離れるか、マイクがわの音量を下げてください。"),
   "msg.scanning": s6("スキャン中", "スキャン中 {done} / {total} ・ 調べ終えた分から、もう使えます", { done: "37", total: "112" }),
   "msg.scanDone": s6(
@@ -142,7 +138,57 @@ export const texts = {
     "{opened}をひらくために、{folded}をたたみました。窓を高くすると、両方ひらけます。",
     { opened: "ピアノロール", folded: "ミキサー" },
   ),
+  "msg.bandFoldedThird": s6(
+    "3 つめの帯をひらいた",
+    "{opened}をひらいたので、いちばん前にひらいた{folded}をたたみました。下の帯は、2 つまでひらけます。",
+    { opened: "取り消しの履歴", folded: "ミキサー" },
+  ),
+  "msg.bandFoldedScale": s6(
+    "拡大率を上げて帯がたたまれた",
+    "拡大率を {scale} % にしたので、{band}をたたみました。帯札を押すと、またひらきます。",
+    { scale: "150", band: "ミキサー" },
+  ),
+  // 形は棟梁の決め（2026-11-15）:「{欄}は {範囲} です。もとの {値} のままです。」。欄と範囲は value.*。
+  "msg.valueRejected": s6(
+    "使えない値を打った",
+    "{field}は {range} です。もとの {kept} のままです。",
+    { field: "ベロシティ", range: "1〜127", kept: "77" },
+    "part",
+  ),
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
+  "msg.outOfScale": s6("音階の外に書こうとした", "{note} は {scale}の外の音です（スケール固定 ・ オン）", { note: "D#", scale: "C メジャー" }),
+  "msg.recovered": s6("なおすためのファイルから戻した", "PC が終わる前の演奏を戻しました。まだ保存していません。", undefined, "quoted"),
+  "msg.recoveredDetail": s6(
+    "なおすためのファイルから戻した",
+    "{date} に PC が終わったときの「{song}」です。テイク {takes} つ。",
+    { date: "11 月 15 日 22:41", song: "新しい曲", takes: "2" },
+    "part",
+  ),
+  "msg.recoveryDiscarded": s6("戻さないを押した", "戻した変更をすてて、最後に保存した形にしました。取り消せます（Mod Z）"),
+  "msg.recoveryUnreadable": s6(
+    "なおすためのファイルが読めない",
+    "前に保存していない変更がありましたが、なおすためのファイルが読めませんでした。",
+    undefined,
+    "quoted",
+  ),
+  "msg.recoveryUnreadableSaved": s6(
+    "なおすためのファイルが読めない",
+    "最後に保存した「{song}」をひらいています。ファイルは消さずに残してあります。",
+    { song: "はじめての曲" },
+    "part",
+  ),
+  "msg.recoveryUnreadableNew": s6("なおすためのファイルが読めない", "新しい曲をひらいています。ファイルは消さずに残してあります。", undefined, "quoted"),
+
+  // 使えない値を打ったときの欄の名前と範囲（仕様書 6 章「使えない値を打った」、3 章のテンポと拍子の枠）。
+  "value.tempo": e("テンポ", "spec:6"),
+  "value.tempoRange": s6("使えない値を打った", "30.00〜300.00", undefined, "part"),
+  "value.meterNum": e("拍子の上", "spec:6"),
+  "value.meterNumRange": s6("使えない値を打った", "1〜12", undefined, "part"),
+  // 6 章の文は「下は」。欄の名前だけで読めるように「拍子の下」にした（棟梁の決め 2026-11-15）。
+  "value.meterDen": e("拍子の下", "user:2026-11-15"),
+  "value.meterDenRange": s6("使えない値を打った", "2 ・ 4 ・ 8 ・ 16", undefined, "part"),
+  "value.velocity": e("ベロシティ", "spec:6"),
+  "value.velocityRange": s6("使えない値を打った", "1〜127", undefined, "part"),
 
   // 仕様書 6 章のボタン（「（…）」の中は説明なので入れない）
   "button.playHere": e("ここから鳴らす", "spec:6"),
@@ -180,9 +226,10 @@ export const texts = {
   "key.params": e("U", "spec:4"),
   "key.record": e("R", "spec:4"),
   "key.playStop": e("Space", "spec:4"),
+  "key.metronome": e("C", "spec:4"),
   // 曲の名前の一覧のキー（Mod の読みかえは拡大率の一覧と同じ）。
-  "key.newSong": e("N", "user:2026-11-15"),
-  "key.openSong": e("O", "user:2026-11-15"),
+  "key.newSong": e("N", "spec:4"),
+  "key.openSong": e("O", "spec:4"),
   "key.saveSong": e("S", "spec:4"),
   // 拡大率のキーの書きかた（docs/design-notes.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
   "key.ctrl": e("Ctrl", "spec:4"),
@@ -195,9 +242,12 @@ export const texts = {
   "transport.songSaved": e("保存済み ・ 取り消し {count}", "mock:Main", { count: "14" }),
   "transport.songChanged": e("取り消し {count}", "mock:F-ArrangeRec", { count: "12" }),
   // 左上の曲の名前を押すとひらく一覧の行。
-  "song.new": e("新しい曲", "user:2026-11-15"),
-  "song.open": e("ひらく…", "user:2026-11-15"),
-  "song.save": e("保存", "user:2026-11-15"),
+  "song.new": s6("曲の名前の一覧", "新しい曲", undefined, "quoted"),
+  "song.open": s6("曲の名前の一覧", "ひらく…", undefined, "quoted"),
+  "song.save": s6("曲の名前の一覧", "保存", undefined, "quoted"),
+  // 曲の名前が引っこんだ所の ▾（仕様書 2 章「曲の ▾」）。aria-label はモックの形。
+  "transport.songMenu": e("曲（{name}）", "mock:F-Menus", { name: "はじめての曲" }),
+  "transport.songMenuTip": e("曲 ・ {name}", "spec:2", { name: "（曲の名前）" }),
   "transport.toStart": e("先頭へ戻る", "mock:Main"),
   "transport.play": e("再生", "mock:Main"),
   "transport.stop": e("停止", "mock:Main"),
@@ -209,11 +259,11 @@ export const texts = {
   "transport.timeSignature": e("拍子", "mock:Main"),
   "transport.metronome": e("メトロノーム", "mock:Main"),
   "transport.countIn": e("カウントイン", "mock:Main"),
-  "transport.countInBars": e("{bars} 小節", "mock:Main", { bars: "1" }),
+  "transport.countInBars": s6("カウントインの小節の数", "{bars} 小節", { bars: "1" }, "quoted"),
   // カウントインが「なし」のときのボタンの値と、一覧の行。
-  "transport.countInNone": e("なし", "user:2026-11-15"),
-  // カウントイン中の「3 / 4」の「/ 4」。
-  "transport.countInOf": e("/ {beats}", "mock:F-Connect4", { beats: "4" }),
+  "transport.countInNone": s6("カウントインの小節の数", "なし", undefined, "quoted"),
+  // カウントインが引っこんだときの、メトロノームの ▾（仕様書 2 章「メトロノームの ▾」）。
+  "transport.metronomeMenu": e("メトロノームとカウントイン", "mock:F-Menus"),
   "transport.cpu": e("処理の負荷", "mock:Main"),
   "transport.cpuValue": e("{percent} %", "mock:Main", { percent: "9" }),
   "transport.master": e("マスター", "mock:Main"),
@@ -297,12 +347,12 @@ export const texts = {
   "band.params": e("パラメータ", "mock:F-ShelfArrange"),
 
   // 状態行
-  "status.stopped": e("■ 停止中", "mock:Main"),
-  "status.playing": e("▶ 再生中", "user:2026-11-15"),
-  "status.recording": e("● 録音中", "mock:F-ArrangeRec"),
-  "status.countingIn": e("● カウントイン中", "mock:F-Connect4"),
-  // 止まっているときの左の文。ある物だけ出す（ヤチヨさんの決め）。両方あるときは status.loopNoSelection。
-  "status.loopNoSelection": e("ループ {from}–{to} ・ 選択なし", "mock:Main", { from: "5", to: "9" }),
+  "status.stopped": s6("状態行の札", "■ 停止中", undefined, "quoted"),
+  "status.playing": s6("状態行の札", "▶ 再生中", undefined, "quoted"),
+  "status.recording": s6("状態行の札", "● 録音中", undefined, "quoted"),
+  "status.countingIn": s6("状態行の札", "● カウントイン中", undefined, "quoted"),
+  // 止まっているときの左の文。ある物だけを「 ・ 」でつなぐ。両方あるときは status.loopNoSelection。
+  "status.loopNoSelection": s6("止まっているときの状態行の左", "ループ {from}–{to} ・ 選択なし", { from: "5", to: "9" }, "quoted"),
   "status.loop": e("ループ {from}–{to}", "mock:Main", { from: "5", to: "9" }),
   "status.noSelection": e("選択なし", "mock:Main"),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
@@ -374,6 +424,7 @@ const st = (term: string, description: string): Term => ({ term, description, so
 
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
+  st("なおすためのファイル", "PC が急に終わったときのために、保存していない変更を急いで書いておくファイル。次に起動したとき、ここから戻せる。"),
   st("トラック", "楽器ひとつぶんの列。音源をひとつ持つ。"),
   st("クリップ", "トラックの上に置く、ひとかたまりの演奏や録音。"),
   st("アレンジ", "トラックとクリップを時間にそってならべる、曲の全体図。"),

@@ -48,6 +48,18 @@ export function scrollToTick(tick: number): void {
   prView.follow = false;
 }
 
+/** 横の拡大・縮小（Mod ＋ ・ Mod −、− ＋ のボタン、Mod ＋ ホイール）を 1 段。anchorTick の位置が画面の同じ所に残るように送る（なければ左はし）。 */
+export function zoomBy(steps: number, scale: number, anchorTick?: number): void {
+  const now = QUARTER_PX_STEPS.indexOf(prView.quarterPx as (typeof QUARTER_PX_STEPS)[number]);
+  const at = Math.min(QUARTER_PX_STEPS.length - 1, Math.max(0, (now < 0 ? QUARTER_PX_STEPS.indexOf(DEFAULT_QUARTER_PX) : now) + steps));
+  const next = QUARTER_PX_STEPS[at]!;
+  if (next === prView.quarterPx) return;
+  const anchor = anchorTick ?? prView.scrollTick;
+  const x = (anchor - prView.scrollTick) * pxPerTick(scale);
+  prView.quarterPx = next;
+  prView.scrollTick = Math.max(0, anchor - x / pxPerTick(scale));
+}
+
 // ---- ドラッグ中の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す） ----
 
 /** ドラッグしているあいだだけ、動かしている値の文（「+0.240 ・ +2 半音」など）。状態行は、これがあれば core の文の代わりに出す。 */

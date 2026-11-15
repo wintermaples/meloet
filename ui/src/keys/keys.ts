@@ -34,7 +34,12 @@ export type KeyAction =
   | { kind: "metronome" }
   /** えらんだクリップの次のテイク（1）、前のテイク（-1）。 */
   | { kind: "stepTake"; delta: 1 | -1 }
-  | { kind: "deleteSelected" };
+  | { kind: "deleteSelected" }
+  | { kind: "newSong" }
+  | { kind: "openSong" }
+  | { kind: "saveSong" }
+  | { kind: "undo" }
+  | { kind: "redo" };
 
 const BAND_KEYS: Record<string, KeyAction> = {
   a: { kind: "arrange" },
@@ -73,7 +78,12 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
   if (otherMod) return null;
 
   if (mod) {
-    if (k.shift) return null;
+    const l = k.alt ? null : letter(k);
+    if (k.shift) return l === "z" ? { kind: "redo" } : null;
+    if (l === "n") return { kind: "newSong" };
+    if (l === "o") return { kind: "openSong" };
+    if (l === "s") return { kind: "saveSong" };
+    if (l === "z") return { kind: "undo" };
     if (!k.alt && (k.key === "," || k.code === "Comma")) return { kind: "audioSettings" };
     if (k.alt) {
       const d = digit(k);

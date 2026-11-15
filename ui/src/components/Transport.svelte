@@ -1,7 +1,8 @@
 <!-- 再生まわりの帯（モック Main・F-Empty・F-Connect3・F-Connect4・F-ArrangeRec の上の帯）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { clockOffsetUs } from "../bridge";
+  import { clockOffsetUs, type Command } from "../bridge";
+  import { platformOf } from "../keys/keys";
   import { glRegion, glSlot } from "../gl/slot";
   import { menuOpened } from "../lib/menu";
   import { term } from "../lib/tip.svelte";
@@ -78,6 +79,15 @@
     void frame;
     return shownTick(transport, current.telemetry, performance.now() * 1000 + offsetUs);
   });
+  // 止まっているときの位置は差分で来るので、コマを回すのは動いている間だけ。
+  $effect(() => {
+    if (transport.state === "stopped") return;
+    let raf = requestAnimationFrame(function loop() {
+      frame++;
+      raf = requestAnimationFrame(loop);
+    });
+    return () => cancelAnimationFrame(raf);
+  });
   const position = $derived(positionText(tick, meter));
   const clock = $derived(clockText(ticksToSeconds(Math.max(0, tick), song.tempoBpm, meter)));
 
@@ -96,16 +106,9 @@
       masterPeak = hold.max(performance.now());
     });
     const timer = setInterval(() => (masterPeak = hold.max(performance.now())), 250);
-    let raf = 0;
-    const loop = () => {
-      frame++;
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
     return () => {
       off();
       clearInterval(timer);
-      cancelAnimationFrame(raf);
     };
   });
 
@@ -122,9 +125,11 @@
     if (transport.canPlay) send({ type: "record" });
   }
 
-  // カウントインの一覧。画面だけが持つ「ひらいている」。小節数を決めるのは core（setCountIn を送るだけ）。
-  let open = $state(false);
+  // カウントインの一覧と、曲の名前の一覧。画面だけが持つ「ひらいている」。決めるのは core（意図を送るだけ）。
+  let menu = $state<"countIn" | "song" | null>(null);
   let countInButton = $state<HTMLButtonElement>();
+  let songButton = $state<HTMLButtonElement>();
+  const menuButton = $derived(menu === "song" ? songButton : countInButton);
   let popup = $state<HTMLElement>();
   let anchor = $state({ left: 0, top: 0 });
   const countInRows = $derived([
@@ -136,9 +141,32 @@
     transport.countInBars === 0 ? t("transport.countInNone") : t("transport.countInBars", { bars: transport.countInBars }),
   );
 
+  // 曲の名前の一覧（ヤチヨさんの決め 2026-11-15）。録音中とカウントイン中は 3 行とも使えない。
+  const platform = platformOf(navigator);
+  const modKey = (letter: string) => `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${letter}`;
+  const songRows = $derived.by(() => {
+    const usable = !recordingNow;
+    return [
+      { value: { type: "newSong" } as Command, label: t("song.new"), key: modKey(t("key.newSong")), usable },
+      { value: { type: "openSong" } as Command, label: t("song.open"), key: modKey(t("key.openSong")), usable },
+      { value: { type: "saveSong" } as Command, label: t("song.save"), key: modKey(t("key.saveSong")), usable },
+    ];
+  });
+  const fileText = $derived(
+    song.file === "neverSaved"
+      ? t("transport.songNew")
+      : song.file === "saved"
+        ? t("transport.songSaved", { count: song.undoCount })
+        : t("transport.songChanged", { count: song.undoCount }),
+  );
+  function pickSong(command: Command): void {
+    send(command);
+    closeMenu();
+  }
+
   function place(): void {
-    if (!countInButton) return;
-    const r = countInButton.getBoundingClientRect();
+    if (!menuButton) return;
+    const r = menuButton.getBoundingClientRect();
     anchor = { left: r.left, top: r.bottom };
   }
   // 一覧はダイアログより手前に出すので、.app の重なりの外（body）に置く。
@@ -146,24 +174,28 @@
     document.body.append(node);
     return { destroy: () => node.remove() };
   }
-  function closeCountIn(): void {
+  function closeMenu(): void {
     const hadFocus = popup?.contains(document.activeElement) ?? false;
-    open = false;
-    if (hadFocus) countInButton?.focus();
+    const button = menuButton;
+    menu = null;
+    if (hadFocus) button?.focus();
+  }
+  function toggle(which: "countIn" | "song"): void {
+    menu = menu === which ? null : which;
   }
   function pickCountIn(bars: number): void {
     send({ type: "setCountIn", bars });
-    closeCountIn();
+    closeMenu();
   }
   $effect(() => {
-    if (!open) return;
+    if (!menu) return;
     place();
     window.addEventListener("resize", place);
-    const close = () => closeCountIn();
+    const close = () => closeMenu();
     const forget = menuOpened(close);
     const onDown = (ev: PointerEvent) => {
       const target = ev.target as Node | null;
-      if (target && (popup?.contains(target) || countInButton?.contains(target))) return;
+      if (target && (popup?.contains(target) || menuButton?.contains(target))) return;
       close();
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -175,13 +207,14 @@
   });
   // カウントインが始まったり、帯から引っこんだりしたら、一覧はとじる。
   $effect(() => {
-    if (open && (counting || !parts.countIn)) closeCountIn();
+    if (menu === "countIn" && (counting || !parts.countIn)) closeMenu();
+    if (menu === "song" && !parts.songName) closeMenu();
   });
 </script>
 
 {#snippet songName()}
-  <span class="m-name ellipsis">{song.name}</span>
-  <span class="m-lbl ellipsis">{t("transport.songNew")}</span>
+  <span class="m-name ellipsis name">{song.name}</span>
+  <span class="m-lbl">{fileText}</span>
 {/snippet}
 {#snippet loadValue()}
   <span class="m-lbl">{t("transport.cpu")}</span>
@@ -199,7 +232,16 @@
 
 <header class="transport" bind:this={row}>
   {#if parts.songName}
-    <div class="song" data-part="songName">{@render songName()}</div>
+    <button
+      class="m-plain song"
+      class:open={menu === "song"}
+      aria-haspopup="menu"
+      aria-expanded={menu === "song"}
+      data-part="songName"
+      data-test="transport-song"
+      bind:this={songButton}
+      onclick={() => toggle("song")}>{@render songName()}</button
+    >
   {/if}
 
   <div class="buttons">
@@ -295,14 +337,14 @@
     {:else}
       <button
         class="m-btn"
-        class:open
+        class:open={menu === "countIn"}
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={menu === "countIn"}
         data-part="countIn"
         data-test="transport-count-in"
         bind:this={countInButton}
         use:term={"カウントイン"}
-        onclick={() => (open = !open)}>{@render countInLabel()}</button
+        onclick={() => toggle("countIn")}>{@render countInLabel()}</button
       >
     {/if}
   {/if}
@@ -336,9 +378,13 @@
   </div>
 </header>
 
-{#if open}
+{#if menu}
   <div class="popup" style:left="{anchor.left}px" style:top="{anchor.top}px" use:toBody bind:this={popup}>
-    <ChoiceMenu heading={t("transport.countIn")} rows={countInRows} selected={transport.countInBars} onpick={pickCountIn} test="count-in-menu" />
+    {#if menu === "countIn"}
+      <ChoiceMenu heading={t("transport.countIn")} rows={countInRows} selected={transport.countInBars} onpick={pickCountIn} test="count-in-menu" />
+    {:else}
+      <ChoiceMenu heading={null} label={song.name} rows={songRows} onpick={pickSong} test="song-menu" />
+    {/if}
   </div>
 {/if}
 
@@ -356,12 +402,18 @@
     white-space: nowrap;
     overflow: hidden;
   }
+  /* 幅は max(mock.transport.name, 名前の下の文)。下の文は切らない。名前は幅に入れず、長ければ「…」。 */
   .song {
-    width: var(--mock-transport-name);
+    width: max-content;
+    min-width: var(--mock-transport-name);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+  .name {
+    width: 0;
+    min-width: 100%;
   }
   .ellipsis {
     overflow: hidden;

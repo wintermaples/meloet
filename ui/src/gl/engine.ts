@@ -17,6 +17,7 @@ import {
   type Box,
 } from "./paint";
 import { giveBack, takeCanvas, type GlCanvas } from "./pool";
+import type { FrameProfile, FrameRecord } from "./profile";
 import { regionOf, runFrameCallbacks, watchFrames, watchSlots, type GlSlot } from "./slot";
 
 export interface EngineStats {
@@ -40,6 +41,7 @@ interface Slot {
 /** The one canvas of a region box, covering the part of the box (and the window) that its slots cover. */
 interface Region {
   host: HTMLElement;
+  name: RegionName;
   gl: GlCanvas;
   /** In page order: later slots draw over earlier ones. */
   slots: Slot[];
@@ -65,6 +67,8 @@ export class Engine {
   readonly stats: EngineStats = { frames: 0, draws: 0 };
   /** Called at the end of every frame that ran, with the frame's timestamp. */
   onFrame: ((ts: number) => void) | null = null;
+  /** Development only: where each frame's time goes (profile.ts). */
+  profile: FrameProfile | null = null;
 
   private readonly slots = new Map<HTMLElement, Slot>();
   private readonly regions = new Map<HTMLElement, Region>();
@@ -163,7 +167,7 @@ export class Engine {
   private open(host: HTMLElement, name: RegionName): Region | null {
     const gl = takeCanvas(REGIONS[name].opaque, name);
     if (!gl) return null;
-    const r: Region = { host, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch() };
+    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch() };
     gl.onRestored = () => {
       r.mustDraw = true;
       r.dirty = true;
@@ -224,7 +228,10 @@ export class Engine {
     const now = performance.now();
     const falling = this.levels.advance(now);
     const dpr = window.devicePixelRatio || 1;
+    const p = this.profile?.begin() ?? null;
     const moving = runFrameCallbacks();
+    const t = p ? performance.now() : 0;
+    if (p) p.callbacksMs = t - p.atMs;
     this.resolve();
 
     // All the measuring first, then all the writing, so the page is laid out once.
@@ -236,7 +243,8 @@ export class Engine {
       for (const s of r.slots) measure(s, dpr);
     }
     for (const [r, host] of due) this.place(r, host, dpr);
-    for (const [r] of due) this.draw(r, now, dpr);
+    if (p) p.measureMs = performance.now() - t;
+    for (const [r] of due) this.draw(r, now, dpr, p);
 
     this.onFrame?.(ts);
     if (falling) this.touch("meter");
@@ -288,8 +296,9 @@ export class Engine {
     r.height = height;
   }
 
-  private draw(r: Region, nowMs: number, dpr: number): void {
+  private draw(r: Region, nowMs: number, dpr: number, p: FrameRecord | null): void {
     if (r.gl.lost || r.width <= 0 || r.height <= 0) return;
+    const t0 = p ? performance.now() : 0;
     const out = this.next;
     out.reset();
     const box = this.box;
@@ -306,11 +315,18 @@ export class Engine {
       out.clip(cx0, cy0, cx1, cy1);
       this.paint(out, s.slot, box, nowMs, dpr);
     }
-    if (!r.mustDraw && out.sameAs(r.drawn)) return;
+    const same = !r.mustDraw && out.sameAs(r.drawn);
+    const t1 = p ? performance.now() : 0;
+    if (p) p.paintMs += t1 - t0;
+    if (same) return;
     r.gl.renderer.draw(out, r.width, r.height);
     [this.next, r.drawn] = [r.drawn, out];
     r.mustDraw = false;
     this.stats.draws += 1;
+    if (p) {
+      p.glMs += performance.now() - t1;
+      this.profile!.drew(r.name, r.drawn.rectCount);
+    }
   }
 
   private paint(out: Batch, slot: GlSlot, box: Box, nowMs: number, dpr: number): void {

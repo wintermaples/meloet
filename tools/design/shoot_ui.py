@@ -7,6 +7,7 @@ Runs `npm run build` in ui/, serves ui/dist with `vite preview`, and shoots each
 headless google-chrome at 1280x800 and 1920x1080, scale 100 and 150. Next to each shot it puts
 the mock board for that scene (rendered by render_mocks.py), cropped or padded to the same size.
 Out: OUT_DIR/<scene>-<w>x<h>-<scale>.png (side by side) and OUT_DIR/shots/ (the shots alone).
+Names in CLICKS shoot a scene after clicking something (a menu open), through the DevTools protocol.
 """
 import os, socket, subprocess, sys, time, urllib.request
 
@@ -40,9 +41,49 @@ BOARDS = {
     "takesArrange": "F-Takes",
     "loop": "Main",
 }
+# Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
+CLICKS = {
+    "songMenu": ("saved", '[data-test="transport-song"]'),
+    "countInMenu": ("empty", '[data-test="transport-count-in"]'),
+}
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
 scenes = sys.argv[2:] or list(BOARDS)
+
+# Drives headless Chrome over the DevTools protocol (Node's own WebSocket): open, click, shoot.
+CLICK_SHOT = r"""
+const [port, url, selector, out, w, h] = process.argv.slice(1);
+const { spawn } = await import("node:child_process");
+const { writeFileSync, mkdtempSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+const { join } = await import("node:path");
+const chrome = spawn("google-chrome", ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+  `--window-size=${w},${h}`, `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "shoot-"))}`, url],
+  { stdio: "ignore" });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+try {
+  let page;
+  for (let i = 0; i < 100 && !page; i++) {
+    await sleep(100);
+    try { page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((t) => t.type === "page"); } catch {}
+  }
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  let id = 0;
+  const waiting = new Map();
+  ws.onmessage = (m) => { const d = JSON.parse(m.data); waiting.get(d.id)?.(d.result); };
+  const call = (method, params = {}) => new Promise((r) => { waiting.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
+  await call("Emulation.setDeviceMetricsOverride", { width: Number(w), height: Number(h), deviceScaleFactor: 1, mobile: false });
+  await sleep(2500);
+  await call("Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(selector)}).click()` });
+  await sleep(800);
+  const shot = await call("Page.captureScreenshot", { format: "png" });
+  writeFileSync(out, Buffer.from(shot.data, "base64"));
+  ws.close();
+} finally {
+  chrome.kill();
+}
+"""
 
 
 def free_port():
@@ -84,11 +125,17 @@ try:
             for scale in SCALES:
                 stem = f"{scene}-{w}x{h}-{scale}"
                 shot = os.path.join(shots, stem + ".png")
-                run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
-                     "--force-device-scale-factor=1", "--virtual-time-budget=3000",
-                     f"--window-size={w},{h}", f"--screenshot={shot}",
-                     f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}"],
-                    capture_output=True, timeout=60)
+                if scene in CLICKS:
+                    base, selector = CLICKS[scene]
+                    run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
+                         f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selector, shot, str(w), str(h)],
+                        env=env, capture_output=True, timeout=60)
+                else:
+                    run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
+                         "--force-device-scale-factor=1", "--virtual-time-budget=3000",
+                         f"--window-size={w},{h}", f"--screenshot={shot}",
+                         f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}"],
+                        capture_output=True, timeout=60)
                 left = Image.open(shot).convert("RGB")
                 board = BOARDS.get(scene)
                 right = Image.new("RGB", (w, h), (40, 0, 40))

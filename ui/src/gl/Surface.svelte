@@ -6,6 +6,7 @@
   import { current, onEvent, onTelemetry } from "../state/app.svelte";
   import { Engine } from "./engine";
   import { KeyToScreen } from "./measure";
+  import { FrameProfile } from "./profile";
 
   let engine = $state.raw<Engine | null>(null);
 
@@ -14,6 +15,7 @@
     engine = made;
     if (current.telemetry) made.onTelemetry(current.telemetry);
     let measure: KeyToScreen | null = null;
+    let profile: FrameProfile | null = null;
     let gone = false;
 
     const stopTelemetry = onTelemetry((t) => made.onTelemetry(t));
@@ -27,6 +29,9 @@
         measure = new KeyToScreen({ clockOffsetUs, report: measureReport, now: () => performance.now() });
         made.onFrame = (ts) => measure?.drawn(ts);
         measure.start();
+        profile = new FrameProfile(measureReport);
+        made.profile = profile;
+        profile.start();
       })
       .catch(() => {});
 
@@ -35,6 +40,7 @@
       stopTelemetry();
       stopEvents();
       measure?.stop();
+      profile?.stop();
       made.destroy();
       engine = null;
     };

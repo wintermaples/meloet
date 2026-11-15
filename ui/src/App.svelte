@@ -11,6 +11,7 @@
   import OutputChooser from "./components/OutputChooser.svelte";
   import RightRail from "./components/RightRail.svelte";
   import SettingsDialog from "./components/SettingsDialog.svelte";
+  import SongDialog from "./components/SongDialog.svelte";
   import SoundHint from "./components/SoundHint.svelte";
   import StatusLine from "./components/StatusLine.svelte";
   import Transport from "./components/Transport.svelte";
@@ -66,6 +67,11 @@
     <BandRow />
     <StatusLine />
   </div>
+  {#if state.workspace.songDialog}
+    <div class="dialog">
+      <SongDialog />
+    </div>
+  {/if}
   {#if state.workspace.settings}
     <div class="dialog">
       <SettingsDialog />

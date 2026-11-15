@@ -281,6 +281,7 @@
     const slot = glSlot(node, { kind: "rects", rects: [] });
     tailNode = node;
     tailSlot = slot;
+    tailDrawn.row = -1;
     return {
       destroy() {
         slot.destroy();
@@ -291,21 +292,32 @@
     };
   }
 
+  // 動いている間は毎コマ呼ばれる。画面の画素で変わったときだけ書く（同じ値でも書けば、ページはそのコマを作りなおす）。
+  let drawnLine: HTMLElement | null = null;
+  let drawnLinePx = NaN;
   function placeLines(tick: number, scrollX: number): void {
+    const line = layout.arrangeOverview ? overviewLine : timeLine;
+    if (!line) return;
     const dpr = metrics.dpr;
-    const x = Math.round((tick * pxPerTick - scrollX) * dpr) / dpr;
-    const hidden = x < 0 || x >= viewWidth;
-    for (const line of [timeLine, overviewLine]) {
-      if (!line) continue;
-      line.style.transform = `translateX(${x}px)`;
-      line.style.visibility = hidden ? "hidden" : "";
-    }
+    const px = Math.round((tick * pxPerTick - scrollX) * dpr);
+    if (line === drawnLine && px === drawnLinePx) return;
+    drawnLine = line;
+    drawnLinePx = px;
+    const x = px / dpr;
+    line.style.transform = `translateX(${x}px)`;
+    line.style.visibility = x < 0 || x >= viewWidth ? "hidden" : "";
   }
 
   function setStyle(node: HTMLElement, name: "left" | "top" | "width" | "height", px: number): void {
     const v = `${px}px`;
     if (node.style[name] !== v) node.style[name] = v;
   }
+
+  /** いま描いてある、のびている先の形。どれも同じなら、四角を作りなおさない。 */
+  const tailDrawn = { nowPx: NaN, scrollX: NaN, live: -1, lapFrom: NaN, commit: NaN, row: -1, pxPerTick: NaN, trackH: NaN, labelPx: NaN };
+  let labelNode: HTMLElement | null = null;
+  let labelTake = 0;
+  let labelFullPx = 0;
 
   function moveTail(now: number, scrollX: number): void {
     const r = rec;
@@ -319,15 +331,57 @@
     const shown = recShown;
     if (!shown || shown.lap !== lap || shown.lapFrom !== lapFrom || shown.commit !== commit) recShown = { lap, lapFrom, commit };
 
-    const v: G.View = { pxPerTick, scrollX, width: viewWidth };
+    const dpr = metrics.dpr;
+    const nowPx = Math.round((at * pxPerTick - scrollX) * dpr);
+    if (recLabel) {
+      // 名前は、クリップの右はしで切る。名前の全部が入る幅になったら、もう書かない（書けば、そのたびにページを描きなおす）。
+      if (recLabel !== labelNode || r.take !== labelTake) {
+        labelNode = recLabel;
+        labelTake = r.take;
+        recLabel.style.clipPath = "";
+        labelFullPx = Math.ceil(recLabel.offsetWidth * dpr);
+        tailDrawn.labelPx = NaN;
+      }
+      const startPx = Math.round(Math.max(lapFrom * pxPerTick - scrollX, 0) * dpr);
+      const labelPx = Math.min(Math.max(0, nowPx - startPx - 2), labelFullPx);
+      if (labelPx !== tailDrawn.labelPx) {
+        tailDrawn.labelPx = labelPx;
+        recLabel.style.clipPath = labelPx >= labelFullPx ? "" : `inset(0 calc(100% - ${labelPx / dpr}px) 0 0)`;
+      }
+    }
     const row = rowOf(r.track);
-    if (recLabel) setStyle(recLabel, "width", Math.max(0, G.tickToX(v, at) - Math.max(G.tickToX(v, lapFrom), 0) - 2 * dims.hair));
     if (!tailNode || !tailSlot || row < 0) return;
+    const d = tailDrawn;
+    if (
+      d.nowPx === nowPx &&
+      d.scrollX === scrollX &&
+      d.live === liveVersion &&
+      d.lapFrom === lapFrom &&
+      d.commit === commit &&
+      d.row === row &&
+      d.pxPerTick === pxPerTick &&
+      d.trackH === dims.trackH
+    ) {
+      return;
+    }
+    const placeChanged = d.scrollX !== scrollX || d.commit !== commit || d.lapFrom !== lapFrom || d.row !== row || d.pxPerTick !== pxPerTick || d.trackH !== dims.trackH;
+    d.nowPx = nowPx;
+    d.scrollX = scrollX;
+    d.live = liveVersion;
+    d.lapFrom = lapFrom;
+    d.commit = commit;
+    d.row = row;
+    d.pxPerTick = pxPerTick;
+    d.trackH = dims.trackH;
+
+    const v: G.View = { pxPerTick, scrollX, width: viewWidth };
     const box = G.clipBox(v, dims, row, tailFrom, at);
-    setStyle(tailNode, "left", box.x0);
-    setStyle(tailNode, "top", box.y0);
-    setStyle(tailNode, "width", 2 * perBar * pxPerTick + dims.hair);
-    setStyle(tailNode, "height", box.y1 - box.y0);
+    if (placeChanged) {
+      setStyle(tailNode, "left", box.x0);
+      setStyle(tailNode, "top", box.y0);
+      setStyle(tailNode, "width", 2 * perBar * pxPerTick + dims.hair);
+      setStyle(tailNode, "height", box.y1 - box.y0);
+    }
     const all = G.liveShapes(book?.notesOf(r.id, lap) ?? [], at);
     const rects: GlRect[] = [];
     G.paintClip(rects, v, dims, box, G.CLIP_RECORDING, all, { openLeft: tailFrom > lapFrom, range: G.keyRange(all), until: at });

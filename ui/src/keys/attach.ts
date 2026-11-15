@@ -1,5 +1,6 @@
 // キーの決まり（keys.ts）を画面につなぐ。Esc の順番と、「音が出ました」の案内を消す所もここ。
 import type { AppState, Command } from "../bridge";
+import { songDialogEnter } from "../components/songDialog";
 import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
 import { isTyping, keyAction, keyInputOf, platformOf, type KeyAction } from "./keys";
@@ -12,6 +13,11 @@ export interface KeyDeps {
 }
 
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "OS"]);
+
+/** 録音中とカウントイン中は、曲を新しくしたり、ひらいたり、保存したりできない。 */
+export function songBusy(state: AppState): boolean {
+  return state.transport.state === "recording" || state.transport.state === "countIn";
+}
 
 /** 音の出口がまだのあいだ、Space と R は何もしない（ヤチヨさんの決め 2026-11-15）。止めるほうの Space は効く。 */
 function command(action: KeyAction, state: AppState): Command | null {
@@ -45,6 +51,17 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "stepTake", delta: action.delta };
     case "deleteSelected":
       return { type: "deleteSelected" };
+    // 録音中とカウントイン中は、曲の名前の一覧と同じく使えない。
+    case "newSong":
+      return songBusy(state) ? null : { type: "newSong" };
+    case "openSong":
+      return songBusy(state) ? null : { type: "openSong" };
+    case "saveSong":
+      return songBusy(state) ? null : { type: "saveSong" };
+    case "undo":
+      return { type: "undo" };
+    case "redo":
+      return { type: "redo" };
     default:
       return null;
   }
@@ -65,7 +82,11 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
 
   if (!action) {
     const plainEnter = ev.key === "Enter" && !ev.shiftKey && !ev.altKey && !ev.ctrlKey && !ev.metaKey;
-    if (plainEnter && state.workspace.settings) {
+    if (plainEnter && state.workspace.songDialog) {
+      ev.preventDefault();
+      const d = state.workspace.songDialog;
+      deps.send({ type: "answerSongDialog", dialog: d.id, answer: songDialogEnter(d) });
+    } else if (plainEnter && state.workspace.settings) {
       ev.preventDefault();
       deps.send({ type: "settingsApply" });
     }
@@ -83,6 +104,9 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
   }
 
   const c = command(action, state);
+  // Mod つきは、使えないときもブラウザの動き（Ctrl S の保存など）に渡さない。
+  const withMod = ["newSong", "openSong", "saveSong", "undo", "redo"].includes(action.kind);
+  if (withMod) ev.preventDefault();
   if (c) {
     // 打っている最中の Home は、枠の中のカーソルも動かす。
     if (!typing) ev.preventDefault();

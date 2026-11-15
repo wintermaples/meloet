@@ -106,6 +106,8 @@
         return plain("msg.takeSwitched", { track: track(m.track), clip: m.clip, take: m.take, takes: m.takes });
       case "noArmedTrack":
         return plain("msg.noArmedTrack");
+      case "undoPending":
+        return plain("msg.undoPending", { count: m.count });
       case "summary": {
         const loop = m.loopBars;
         if (loop && m.nothingSelected) return plain("status.loopNoSelection", { from: loop.from, to: loop.to });

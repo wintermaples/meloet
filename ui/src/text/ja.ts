@@ -126,6 +126,8 @@ export const texts = {
   "msg.unsaved": s6("保存していない", "「{song}」に、まだ保存していない変更があります。", { song: "はじめての曲" }),
   "msg.cannotSave": s6("保存できない", "ここには保存できませんでした（書きこむ権利がないか、空きが足りません）。べつの場所をえらんでください。曲は開いたままです。"),
   "msg.songBroken": s6("曲のファイルがこわれている", "このファイルは読めませんでした。自動で残してある 1 つ前の状態からなら開けます。"),
+  // 1 つ前の状態がないときは、上の文の 1 文目だけ。
+  "msg.songBrokenFirst": s6("曲のファイルがこわれている", "このファイルは読めませんでした。", undefined, "part"),
   "msg.cpuOverload": s6("処理が追いつかない", "PC の処理が追いつかず、音がとぎれました。音の設定でバッファを大きくすると、とぎれにくくなります。"),
   "msg.exportPeak": s6("書き出しの前", "いちばん大きい所 {peak} dB ・ 音割れはありません", { peak: "−6.2" }),
   "msg.exportClipping": s6("書き出しで音が割れる", "いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。"),
@@ -178,6 +180,10 @@ export const texts = {
   "key.params": e("U", "spec:4"),
   "key.record": e("R", "spec:4"),
   "key.playStop": e("Space", "spec:4"),
+  // 曲の名前の一覧のキー（Mod の読みかえは拡大率の一覧と同じ）。
+  "key.newSong": e("N", "user:2026-11-15"),
+  "key.openSong": e("O", "user:2026-11-15"),
+  "key.saveSong": e("S", "spec:4"),
   // 拡大率のキーの書きかた（docs/design-notes.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
   "key.ctrl": e("Ctrl", "spec:4"),
   "key.cmd": e("Cmd", "spec:4"),
@@ -187,6 +193,11 @@ export const texts = {
   // 再生まわり
   "transport.songNew": e("新しい曲", "mock:F-Connect1"),
   "transport.songSaved": e("保存済み ・ 取り消し {count}", "mock:Main", { count: "14" }),
+  "transport.songChanged": e("取り消し {count}", "mock:F-ArrangeRec", { count: "12" }),
+  // 左上の曲の名前を押すとひらく一覧の行。
+  "song.new": e("新しい曲", "user:2026-11-15"),
+  "song.open": e("ひらく…", "user:2026-11-15"),
+  "song.save": e("保存", "user:2026-11-15"),
   "transport.toStart": e("先頭へ戻る", "mock:Main"),
   "transport.play": e("再生", "mock:Main"),
   "transport.stop": e("停止", "mock:Main"),
@@ -280,6 +291,8 @@ export const texts = {
   "band.masterDb": e("マスター {db}", "mock:Main", { db: "0.0 dB" }),
   "band.history": e("取り消しの履歴", "mock:Main"),
   "band.stepCount": e("{count} 手", "mock:Main", { count: "14" }),
+  // 取り消してあるとき（仕様書 3 章の帯の表）。
+  "band.stepCountUndone": e("{undo} / {total}", "spec:3", { undo: "12", total: "14" }),
   "band.shelf": e("棚", "mock:F-ParamFew"),
   "band.shelfCount": e("音源 {instruments} ・ エフェクト {effects}", "mock:F-ParamFew", { instruments: "9", effects: "12" }),
   "band.params": e("パラメータ", "mock:F-ShelfArrange"),

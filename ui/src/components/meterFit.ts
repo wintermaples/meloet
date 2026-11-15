@@ -26,10 +26,16 @@ export interface MeterFitInput {
   /** ピッチベンド、モジュレーションの幅（前のすきまを入れて）。 */
   pitchBend: number;
   modulation: number;
-  /** 太いときだけ: 鍵盤の絵を細い鍵にして浮く幅、「弾くと鳴る先」のラベルをはぶいて浮く幅、サステインの幅（前のすきまを入れて）。 */
+  /**
+   * 太いときだけ: 鍵盤の絵を細い鍵にして浮く幅、鳴る先の音源の名前をはぶいて浮く幅、
+   * 「弾くと鳴る先」のラベルをはぶいて浮く幅、サステインの幅（前のすきまを入れて）。
+   */
   narrowKeys?: number;
+  instrument?: number;
   targetLabel?: number;
   sustain?: number;
+  /** 右はしに案内の文が出ているときの、文ごとの幅。rest には全部の文が入っている。 */
+  sentences?: readonly number[];
 }
 
 export interface MeterFit {
@@ -38,13 +44,20 @@ export interface MeterFit {
   modulation: boolean;
   /** 鍵盤の絵を細い鍵（白鍵の幅 8）にする。 */
   narrowKeys: boolean;
-  /** 「弾くと鳴る先」のラベルを出す（値はいつも出す）。 */
+  /** 鳴る先の値に音源の名前を出す（トラックはいつも出す）。 */
+  instrument: boolean;
+  /** 「弾くと鳴る先」のラベルを出す。 */
   targetLabel: boolean;
   sustain: boolean;
+  /** 案内の文を前からいくつ出すか。1 文目は残し、入らなければ画面がうしろを「…」でちぢめる。 */
+  sentences: number;
 }
 
-/** 太いときに引っこめる順（仕様書 1 章「拡大率の決まり」）。 */
-const FULL_ORDER = ["modulation", "pitchBend", "narrowKeys", "targetLabel", "sustain"] as const;
+type Step = "modulation" | "pitchBend" | "narrowKeys" | "instrument" | "targetLabel" | "sentence" | "sustain";
+
+/** 太いときに引っこめる順（仕様書 1 章「拡大率の決まり」）。sentence は 2 文目から先を、うしろから 1 文ずつ。 */
+const TARGET_ORDER: readonly Step[] = ["modulation", "pitchBend", "narrowKeys", "instrument", "targetLabel", "sustain"];
+const MESSAGE_ORDER: readonly Step[] = ["modulation", "pitchBend", "narrowKeys", "sentence", "sustain"];
 
 export function nameWidthPx(name: NameWidth, scale: Scale): number {
   const i = scale === 100 ? 0 : scale === 125 ? 1 : 2;
@@ -54,17 +67,24 @@ export function nameWidthPx(name: NameWidth, scale: Scale): number {
 /**
  * どの読み値を出すかと、名前の欄の幅。
  * 細いとき: モジュレーション、ピッチベンドの順に引っこめ、それでも足りなければ名前の上限を 176 から 128 にする。
- * 太いとき: モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵に → 「弾くと鳴る先」のラベル → サステイン。
- * それでも入らない名前は「…」でちぢむ。
+ * 案内の文は、そのあとで 2 文目から先を引っこめる。
+ * 太いとき、右はしが「弾くと鳴る先」: モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵に → 音源の名前 →
+ * 「弾くと鳴る先」のラベル → サステイン。
+ * 太いとき、右はしが案内の文: モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵に → 案内の 2 文目から先 → サステイン。
+ * それでも入らない名前や案内の文は「…」でちぢむ。
  */
 export function meterFit(input: MeterFitInput): MeterFit {
   const { meter, scale, available, rest, pitchBend, modulation } = input;
+  const sentenceWidths = input.sentences ?? [];
+  let sentences = sentenceWidths.length;
+  const dropSentence = (need: number) => need - sentenceWidths[--sentences]!;
   if (meter === "full") {
     const first: NameWidth = input.nameChars > LONG_NAME_CHARS ? "part.meter.name.long" : "size.meter.name";
-    const saved = {
+    const saved: Record<Exclude<Step, "sentence">, number> = {
       modulation,
       pitchBend,
       narrowKeys: input.narrowKeys ?? 0,
+      instrument: input.instrument ?? 0,
       targetLabel: input.targetLabel ?? 0,
       sustain: input.sustain ?? 0,
     };
@@ -73,44 +93,47 @@ export function meterFit(input: MeterFitInput): MeterFit {
       pitchBend: true,
       modulation: true,
       narrowKeys: false,
+      instrument: true,
       targetLabel: true,
       sustain: true,
+      sentences,
     };
     let need = rest + nameWidthPx(first, scale) + pitchBend + modulation;
-    for (const step of FULL_ORDER) {
+    for (const step of input.sentences ? MESSAGE_ORDER : TARGET_ORDER) {
+      if (step === "sentence") {
+        while (need > available && sentences > 1) need = dropSentence(need);
+        continue;
+      }
       if (need <= available) break;
       if (step === "narrowKeys") fit.narrowKeys = true;
       else fit[step] = false;
       need -= saved[step];
     }
+    fit.sentences = sentences;
     return fit;
   }
-  const fits = (w: NameWidth, bend: boolean, mod: boolean) =>
-    rest + Math.min(input.name, nameWidthPx(w, scale)) + (bend ? pitchBend : 0) + (mod ? modulation : 0) <= available;
-  const slim = (nameWidth: NameWidth, pitchBend: boolean, modulation: boolean): MeterFit => ({
-    nameWidth,
-    pitchBend,
-    modulation,
-    narrowKeys: false,
-    targetLabel: true,
-    sustain: true,
-  });
+  const width = (w: NameWidth, bend: boolean, mod: boolean) =>
+    rest + Math.min(input.name, nameWidthPx(w, scale)) + (bend ? pitchBend : 0) + (mod ? modulation : 0);
+  const slim = (nameWidth: NameWidth, pitchBend: boolean, modulation: boolean): MeterFit => {
+    let need = width(nameWidth, pitchBend, modulation);
+    while (need > available && sentences > 1) need = dropSentence(need);
+    return {
+      nameWidth,
+      pitchBend,
+      modulation,
+      narrowKeys: false,
+      instrument: true,
+      targetLabel: true,
+      sustain: true,
+      sentences,
+    };
+  };
+  const fits = (w: NameWidth, bend: boolean, mod: boolean) => width(w, bend, mod) <= available;
   const first: NameWidth = "size.meter.name.slim";
   if (fits(first, true, true)) return slim(first, true, true);
   if (fits(first, true, false)) return slim(first, true, false);
   if (fits(first, false, false)) return slim(first, false, false);
   return slim("part.meter.name.slim-narrow", false, false);
-}
-
-/**
- * 入力計の右はしの案内の文を、いくつ出すか（仕様書 1 章「拡大率の決まり」）。うしろの文から引っこめ、1 文目は残す。
- * それでも入らなければ、画面がうしろを「…」でちぢめる。widths は文ごとの幅、room は文に使える幅。
- */
-export function sentencesShown(widths: readonly number[], room: number): number {
-  let n = widths.length;
-  let need = widths.reduce((a, b) => a + b, 0);
-  while (n > 1 && need > room) need -= widths[--n]!;
-  return n;
 }
 
 /** 文を「。」のあとで分ける。 */

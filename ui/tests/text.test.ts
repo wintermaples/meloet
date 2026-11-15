@@ -79,9 +79,6 @@ describe("出どころが spec の文は、その章にそのまま書いてあ�
   });
 });
 
-// 2026-11-15 の改訂でモックから消えたが、画面にはまだ要る文。デザイン係の答え待ち（棟梁に報告ずみ）。
-const GONE_FROM_MOCK = ["endpoint.nothingPlugged", "friendly.hdmi", "friendly.lineOut"];
-
 describe("出どころが mock の文は、そのボードにそのまま書いてある", () => {
   const cache = new Map<string, string>();
   const screen = (board: string) => {
@@ -89,11 +86,8 @@ describe("出どころが mock の文は、そのボードにそのまま書い�
     return cache.get(board)!;
   };
   const fromMock = entries.filter(([, e]) => e.source.startsWith("mock:"));
-  it.each(fromMock.filter(([k]) => !GONE_FROM_MOCK.includes(k)))("%s", (_, e) => {
+  it.each(fromMock)("%s", (_, e) => {
     expect(screen(e.source.slice("mock:".length))).toContain(filled(e));
-  });
-  it.each(fromMock.filter(([k]) => GONE_FROM_MOCK.includes(k)))("%s: 改訂でモックから消えた（答え待ちの一覧）", (_, e) => {
-    expect(screen(e.source.slice("mock:".length))).not.toContain(filled(e));
   });
 });
 

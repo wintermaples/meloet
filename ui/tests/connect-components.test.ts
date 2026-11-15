@@ -84,7 +84,8 @@ describe("入力計", () => {
     expect(text('[data-test="keyboard-name"]')).toBe("鍵盤 49");
     const right = q('[data-test="meter-right"]')!;
     expect(right.textContent).toBe("音の出口がまだです。下でえらんでください");
-    expect(right.querySelector(".accent")?.textContent).toBe("音の出口がまだです。下でえらんでください");
+    // 2 文目は、横が足りないときに引っこめる（仕様書 1 章「拡大率の決まり」）。
+    expect([...right.querySelectorAll(".accent")].map((x) => x.textContent)).toEqual(["音の出口がまだです。", "下でえらんでください"]);
   });
 
   it("出口がある: 弾くと鳴る先「1 ピアノ ・ 仮の音」", () => {
@@ -96,6 +97,8 @@ describe("入力計", () => {
       }),
     );
     expect(text('[data-test="meter-right"]')).toBe("弾くと鳴る先 1 ピアノ ・ 仮の音");
+    // 横が足りないときは、音源の部分だけ引っこめる（仕様書 1 章「拡大率の決まり」）。
+    expect(text('[data-test="meter-right"] [data-part="target-instrument"]')).toBe("・ 仮の音");
   });
 
   it("細いとき: 弾くと鳴る先は「1 ピアノ」だけで、音源の名前は出さない（モック A-PianoRoll・F-History）", () => {
@@ -338,6 +341,32 @@ describe("音の設定", () => {
     expect(target.textContent).toContain("PipeWire ・ 48000 Hz ・ バッファ 1024");
     expect(q('[data-gl-slot="meter"]')).not.toBeNull();
     expect(q('[data-gl-slot="keyboard"]')).not.toBeNull();
+  });
+
+  it("えらべない入口は「いまは使えない入口」の下に、たたんで始める。右の文はない。ひらくと理由の文と装置の名前", () => {
+    const state = withSettings(false);
+    state.inputs.list = [
+      endpoint({ id: "mic", name: "リアマイクロフォン", friendly: "rearMic" }),
+      endpoint({ id: "front", name: "フロントマイクロフォン", availability: "no", unusable: "switchedByPc" }),
+      endpoint({ id: "line-in", name: "ライン入力", availability: "no", unusable: "stoppedByPc", device: "USB Audio Device" }),
+    ];
+    show(SettingsDialog, state);
+    const rows = qa('[data-test="endpoint-row"]');
+    // 出口 4、歌の入口はリアマイクロフォンと「使わない」、鍵盤 1
+    expect(rows).toHaveLength(7);
+    expect(rows[4]!.textContent).toContain("うしろのマイクの穴");
+    expect(rows[4]!.dataset.disabled).toBe("true");
+    const heads = qa('[data-test="unusable-head"]');
+    expect(heads).toHaveLength(2);
+    expect(heads[1]!.textContent!.replace(/\s+/g, " ").trim()).toBe("▸ いまは使えない入口 2");
+    expect(qa('[data-test="unusable-row"]')).toHaveLength(0);
+    heads[1]!.click();
+    flushSync();
+    const unusable = qa('[data-test="unusable-row"]').map((r) => r.textContent!.replace(/\s+/g, " ").trim());
+    expect(unusable).toEqual([
+      "フロントマイクロフォン Ryzen HD Audio Controller さすと、PC がこちらに切りかえます",
+      "ライン入力 USB Audio Device PC の設定で、いまは使えません",
+    ]);
   });
 
   it("奥: 上の 3 つはえらんだ物だけ。固定の囲みと、頼んだ数とちがう知らせ", () => {

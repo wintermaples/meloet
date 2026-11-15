@@ -1,18 +1,20 @@
-<!-- 「いまは使えない出口」の見出しと、その下のえらべない出口の行（仕様書 2 章「えらべない出口の行」、3 章、6 章）。
-     たたんで始める。行は押せない。見出しはモック F-Connect2（流れ 2）と F-Settings（音の設定）。 -->
+<!-- 「いまは使えない出口」「いまは使えない入口」の見出しと、その下のえらべない行（仕様書 2 章「えらべない出口の行」、
+     3 章「入口も、出口と同じに扱う…」、6 章）。たたんで始める。行は押せない。
+     見出しはモック F-Connect2（流れ 2）と F-Settings（音の設定）。 -->
 <script lang="ts">
   import { tipWhenCut } from "../lib/tip.svelte";
-  import { t } from "../text/ja";
   import type { UnusableLook } from "./endpoint";
 
   let {
     rows,
-    note,
+    heading,
+    note = null,
     size,
   }: {
     rows: readonly UnusableLook[];
+    heading: string;
     /** 見出しの右の文。 */
-    note: string;
+    note?: string | null;
     size: "connect" | "settings";
   } = $props();
 
@@ -29,10 +31,12 @@
     onclick={() => (open = !open)}
   >
     <span class:label={!open} class:strong={open}>{open ? "▾" : "▸"}</span>
-    <span>{t("msg.unusableHeading")}</span>
+    <span>{heading}</span>
     <span class="label mono">{rows.length}</span>
-    <span class="spacer"></span>
-    <span class="label note">{note}</span>
+    {#if note}
+      <span class="spacer"></span>
+      <span class="label note">{note}</span>
+    {/if}
   </button>
   {#if open}
     {#each rows as row (row.id)}

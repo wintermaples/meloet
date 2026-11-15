@@ -10,13 +10,14 @@
   import { t } from "../text/ja";
   import { heldText, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
   import { metrics } from "./metrics.svelte";
-  import { charCount, meterFit, nameWidthPx, sentences, sentencesShown, type MeterFit, type NameWidth } from "./meterFit";
+  import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
 
   const FIRST_NOTE = 36;
   const LAST_NOTE = 84;
   const WHITE_KEYS = keyboardLayout(FIRST_NOTE, LAST_NOTE).whiteCount;
   const TRACK = "\u0001";
   const INSTRUMENT = "\u0002";
+  const TRACK_LABEL = "\u0003";
 
   const app = $derived(current.state);
   const slim = $derived(app?.workspace.layout.meter === "slim");
@@ -66,11 +67,21 @@
   const modulation = $derived(current.telemetry?.modulation ?? 0);
   const live = $derived(held.length > 0);
 
-  /** 細いときは音源の名前を出さない（モック A-PianoRoll・F-History の「弾くと鳴る先 1 ピアノ」）。 */
-  function targetPieces(trackName: string, withInstrument: boolean): string[] {
+  /**
+   * 鳴る先の値を、トラックの部分と音源の部分（音源の名前と、そのまわりの「 ・ 」）に分ける。
+   * 細いときは音源の名前を出さない（モック A-PianoRoll・F-History の「弾くと鳴る先 1 ピアノ」）。
+   */
+  function targetPieces(trackName: string): { text: string; instrument: boolean }[] {
     const track = t("track.label", { number: TRACK, name: trackName });
-    const filled = withInstrument ? t("meter.playTargetWithInstrument", { track, instrument: INSTRUMENT }) : track;
-    return filled.split(new RegExp(`(${TRACK}|${INSTRUMENT})`)).filter((p) => p !== "");
+    const filled = t("meter.playTargetWithInstrument", { track: TRACK_LABEL, instrument: INSTRUMENT });
+    return filled
+      .split(new RegExp(`(${TRACK_LABEL})`))
+      .flatMap((p) =>
+        p === TRACK_LABEL
+          ? track.split(new RegExp(`(${TRACK})`)).map((text) => ({ text, instrument: false }))
+          : [{ text: p, instrument: true }],
+      )
+      .filter((p) => p.text !== "");
   }
 
   /** 右はしの案内の文。tone: 1 文目と残りの色（「鍵盤がない」はモック F-Connect1 で色を分けている）。 */
@@ -78,7 +89,7 @@
     if (right?.kind === "missing") return { parts: sentences(t("msg.keyboardMissing")), first: "strong", rest: "dim" };
     if (right?.kind === "lost")
       return { parts: sentences(t("msg.keyboardLost", { keyboard: app!.keyboards.lost! })), first: "strong", rest: "strong" };
-    if (right?.kind === "noOutput") return { parts: [t("msg.noOutputMeter")], first: "accent", rest: "accent" };
+    if (right?.kind === "noOutput") return { parts: sentences(t("msg.noOutputMeter")), first: "accent", rest: "accent" };
     return null;
   });
 
@@ -90,11 +101,12 @@
     pitchBend: true,
     modulation: true,
     narrowKeys: false,
+    instrument: true,
     targetLabel: true,
     sustain: true,
+    sentences: Infinity,
   });
   let nameNatural = $state(0);
-  let shown = $state(Infinity);
 
   function measure(): void {
     if (!row || !ruler) return;
@@ -106,6 +118,12 @@
     const bendW = keyboard ? width("bend") + gap : 0;
     const modW = keyboard ? width("mod") + gap : 0;
     const keyW = (n: string) => metrics.px(`mock.input-meter.key-${n}-w`);
+    // ラベルと値は縦にならぶので、鳴る先の幅は広いほう。
+    const labelW = width("target-label");
+    const valueW = width("target-value");
+    let instrumentW = 0;
+    for (const el of ruler.querySelectorAll<HTMLElement>('[data-part="target-instrument"]')) instrumentW += el.offsetWidth;
+    const trackW = valueW - instrumentW;
     nameNatural = nameW;
     fit = meterFit({
       meter: slim ? "slim" : "full",
@@ -117,13 +135,11 @@
       pitchBend: bendW,
       modulation: modW,
       narrowKeys: (keyW("full") - keyW("slim")) * WHITE_KEYS,
-      targetLabel: Math.max(0, width("target") - width("target-value")),
+      instrument: Math.max(labelW, valueW) - Math.max(labelW, trackW),
+      targetLabel: Math.max(0, labelW - trackW),
       sustain: keyboard ? width("sustain") + gap : 0,
+      sentences: message ? message.parts.map((_, i) => width(`msg-${i}`)) : undefined,
     });
-    if (message) {
-      const widths = message.parts.map((_, i) => width(`msg-${i}`));
-      shown = sentencesShown(widths, available - (ruler.scrollWidth - width("msg")));
-    }
   }
 
   onMount(() => {
@@ -226,19 +242,25 @@
   {#if message}
     <span class="message" data-test="meter-right" data-part="msg">
       {#each message.parts as part, i (i)}
-        {#if measuring || i < shown}<span class={i === 0 ? message.first : message.rest} data-part="msg-{i}">{part}</span>{/if}
+        {#if measuring || i < fit.sentences}<span class={i === 0 ? message.first : message.rest} data-part="msg-{i}">{part}</span>{/if}
       {/each}
     </span>
   {:else if right?.kind === "target"}
     <div class="item target" data-test="meter-right" data-part="target">
-      {#if measuring || fit.targetLabel}<span class="label">{t("meter.playTarget")}</span>{/if}
+      {#if measuring || fit.targetLabel}<span class="label" data-part="target-label">{t("meter.playTarget")}</span>{/if}
       <span class="target-value" data-part="target-value">
-        {#each targetPieces(right.track.name, !slim) as piece, i (i)}
-          {#if piece === INSTRUMENT}
-            <span use:term={"仮の音"}>{t("instrument.placeholder")}</span>
-          {:else if piece === TRACK}
+        {#each targetPieces(right.track.name) as piece, i (i)}
+          {#if piece.instrument}
+            {#if !slim && (measuring || fit.instrument)}
+              <span data-part="target-instrument"
+                >{#each piece.text.split(new RegExp(`(${INSTRUMENT})`)) as bit, j (j)}{#if bit === INSTRUMENT}<span
+                      use:term={"仮の音"}>{t("instrument.placeholder")}</span
+                    >{:else}{bit}{/if}{/each}</span
+              >
+            {/if}
+          {:else if piece.text === TRACK}
             <span class="mono">{right.track.number}</span>
-          {:else}{piece}{/if}
+          {:else}{piece.text}{/if}
         {/each}
       </span>
     </div>

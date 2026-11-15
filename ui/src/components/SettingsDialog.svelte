@@ -9,8 +9,8 @@
   import { t } from "../text/ja";
   import Button from "./Button.svelte";
   import EndpointRow from "./EndpointRow.svelte";
-  import UnusableOutputs from "./UnusableOutputs.svelte";
-  import { endpointLook, outputGroups, type EndpointLook } from "./endpoint";
+  import UnusableEndpoints from "./UnusableEndpoints.svelte";
+  import { endpointGroups, type EndpointLook } from "./endpoint";
   import { msText } from "./format";
 
   const SYSTEMS = [
@@ -31,13 +31,13 @@
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
   const meterGap = $derived(space["space.1"][scale === 100 ? 0 : scale === 125 ? 1 : 2]);
 
-  const groups = $derived(outputGroups(app?.outputs.list ?? []));
+  const groups = $derived(endpointGroups(app?.outputs.list ?? []));
   const outputs = $derived(advanced ? groups.usable.filter((o) => o.id === settings?.draftOutput) : groups.usable);
   const notUsed: EndpointLook = { name: t("settings.notUsed"), side: null, link: null };
+  const inputGroups = $derived(endpointGroups(app?.inputs.list ?? []));
   const inputs = $derived.by(() => {
     if (!app) return [];
-    const rows = app.inputs.list.map((i) => ({ id: i.id, look: endpointLook(i) }));
-    rows.push({ id: "", look: notUsed });
+    const rows = [...inputGroups.usable, { id: "", look: notUsed }];
     if (!advanced) return rows;
     return rows.filter((r) => r.id === (app.inputs.chosen ?? ""));
   });
@@ -118,7 +118,12 @@
               </Button>
               <div class="level" use:glSlot={{ kind: "meter", source: "master", gap: meterGap }}></div>
             </div>
-            <UnusableOutputs rows={groups.unusable} size="settings" note={t("msg.unusableHeadingSettings")} />
+            <UnusableEndpoints
+              rows={groups.unusable}
+              heading={t("msg.unusableHeading")}
+              size="settings"
+              note={t("msg.unusableHeadingSettings")}
+            />
           {/if}
         </section>
 
@@ -132,6 +137,7 @@
               <span>{t("settings.level")}</span>
               <div class="level off"></div>
             </div>
+            <UnusableEndpoints rows={inputGroups.unusable} heading={t("msg.unusableInputHeading")} size="settings" />
           {/if}
         </section>
 

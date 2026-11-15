@@ -182,6 +182,23 @@ const PC_OUTPUTS = [
   hdmi("out-hdmi-b3", "HDMI / DisplayPort 3", RADEON),
 ];
 
+/** The voice inputs of the same PC: the rear mic, then the 2 that cannot be chosen. */
+const MIC: EndpointView = {
+  id: "in-rear-mic",
+  name: "リアマイクロフォン",
+  friendly: "rearMic",
+  availability: "yes",
+  link: "jack",
+  nodeName: "alsa_input.pci-0000_0c_00.6.analog-stereo",
+  device: RYZEN,
+  unusable: null,
+};
+const PC_INPUTS = [
+  MIC,
+  { ...MIC, id: "in-front-mic", name: "フロントマイクロフォン", friendly: null, availability: "no", unusable: "switchedByPc" },
+  { ...MIC, id: "in-line", name: "ライン入力", friendly: null, availability: "no", unusable: "stoppedByPc" },
+] satisfies EndpointView[];
+
 const keyboard = (name: string, n = 1) => ({ id: `kb-${n}`, name, portName: name, address: `${23 + n}:0` });
 
 export function fakeState(): AppState {
@@ -290,6 +307,7 @@ function bufferFixed(s: AppState): void {
 function settings(s: AppState): void {
   ready(s);
   s.outputs.list = PC_OUTPUTS.map((o) => ({ ...o }));
+  s.inputs.list = PC_INPUTS.map((i) => ({ ...i }));
   s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: false };
   s.status.message = { id: "settingsOpen" };
 }

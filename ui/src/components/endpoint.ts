@@ -44,15 +44,15 @@ export interface UnusableLook {
   reason: string;
 }
 
-export interface OutputGroups {
+export interface EndpointGroups {
   usable: { id: string; look: EndpointLook }[];
   unusable: UnusableLook[];
   switchedByPc: number;
   stoppedByPc: number;
 }
 
-/** 出口を、えらべる物と「いまは使えない出口」に分ける。ならびは Rust が決めた順のまま。 */
-export function outputGroups(list: readonly EndpointView[]): OutputGroups {
+/** 出口か入口を、えらべる物と「いまは使えない出口（入口）」に分ける。ならびは Rust が決めた順のまま。 */
+export function endpointGroups(list: readonly EndpointView[]): EndpointGroups {
   const usable = list.filter((o) => o.unusable === null);
   const count = new Map<string, number>();
   for (const o of usable) count.set(o.name, (count.get(o.name) ?? 0) + 1);

@@ -5,12 +5,12 @@
   import { t } from "../text/ja";
   import Button from "./Button.svelte";
   import EndpointRow from "./EndpointRow.svelte";
-  import UnusableOutputs from "./UnusableOutputs.svelte";
-  import { outputGroups } from "./endpoint";
+  import UnusableEndpoints from "./UnusableEndpoints.svelte";
+  import { endpointGroups } from "./endpoint";
 
   const app = $derived(current.state);
   const chooser = $derived(app?.workspace.chooser ?? null);
-  const groups = $derived(outputGroups(app?.outputs.list ?? []));
+  const groups = $derived(endpointGroups(app?.outputs.list ?? []));
 </script>
 
 {#if app && chooser}
@@ -34,8 +34,9 @@
             ontest={() => send({ type: "testTone", output: output.id })}
           />
         {/each}
-        <UnusableOutputs
+        <UnusableEndpoints
           rows={groups.unusable}
+          heading={t("msg.unusableHeading")}
           size="connect"
           note={t("msg.unusableHeadingChooser", { switched: groups.switchedByPc, stopped: groups.stoppedByPc })}
         />

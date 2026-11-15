@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { charCount, meterFit, nameWidthPx, sentences, sentencesShown, type MeterFitInput } from "../src/components/meterFit";
+import { charCount, meterFit, nameWidthPx, sentences, type MeterFitInput } from "../src/components/meterFit";
 
-const ALL = { narrowKeys: false, targetLabel: true, sustain: true };
+const ALL = { narrowKeys: false, instrument: true, targetLabel: true, sustain: true, sentences: 0 };
 import { heldText, noteName, pad3, signed4 } from "../src/components/meterFormat";
 
 const base: MeterFitInput = {
@@ -89,21 +89,38 @@ describe("入力計の名前の欄（仕様書 1 章 size.meter.name、3 章）"
 });
 
 describe("太い入力計で横が足りないとき（仕様書 1 章「拡大率の決まり」）", () => {
-  // 全部: 800 + 108 + 90 + 110 = 1108。浮く幅: 鍵 100、ラベル 40、サステイン 70。
-  const full = { ...base, narrowKeys: 100, targetLabel: 40, sustain: 70 };
+  // 全部: 800 + 108 + 90 + 110 = 1108。浮く幅: 鍵 100、音源の名前 60、ラベル 40、サステイン 70。
+  const full = { ...base, narrowKeys: 100, instrument: 60, targetLabel: 40, sustain: 70 };
   const at = (available: number) => meterFit({ ...full, available });
 
-  it("モジュレーション → ピッチベンド → 鍵盤を細い鍵に → 「弾くと鳴る先」のラベル → サステインの順", () => {
-    expect(at(1108)).toMatchObject({ modulation: true, pitchBend: true, narrowKeys: false, targetLabel: true, sustain: true });
+  it("弾くと鳴る先: モジュレーション → ピッチベンド → 鍵盤を細い鍵に → 音源の名前 → ラベル → サステインの順", () => {
+    expect(at(1108)).toMatchObject({ modulation: true, pitchBend: true, narrowKeys: false, instrument: true, targetLabel: true, sustain: true });
     expect(at(1107)).toMatchObject({ modulation: false, pitchBend: true, narrowKeys: false });
     expect(at(997)).toMatchObject({ modulation: false, pitchBend: false, narrowKeys: false });
-    expect(at(907)).toMatchObject({ pitchBend: false, narrowKeys: true, targetLabel: true });
-    expect(at(807)).toMatchObject({ narrowKeys: true, targetLabel: false, sustain: true });
-    expect(at(767)).toMatchObject({ narrowKeys: true, targetLabel: false, sustain: false });
-    expect(at(10)).toMatchObject({ narrowKeys: true, targetLabel: false, sustain: false, nameWidth: "size.meter.name" });
+    expect(at(907)).toMatchObject({ pitchBend: false, narrowKeys: true, instrument: true });
+    expect(at(807)).toMatchObject({ narrowKeys: true, instrument: false, targetLabel: true });
+    expect(at(747)).toMatchObject({ instrument: false, targetLabel: false, sustain: true });
+    expect(at(707)).toMatchObject({ instrument: false, targetLabel: false, sustain: false });
+    expect(at(10)).toMatchObject({ narrowKeys: true, instrument: false, targetLabel: false, sustain: false, nameWidth: "size.meter.name" });
   });
 
-  it("細いときは鍵盤、ラベル、サステインを引っこめない", () => {
+  // 案内の文 3 つ（100、80、60）は rest の 800 に入っている。
+  const message = { ...base, narrowKeys: 100, sustain: 70, sentences: [100, 80, 60] };
+  const msgAt = (available: number) => meterFit({ ...message, available });
+
+  it("案内の文: モジュレーション → ピッチベンド → 鍵盤を細い鍵に → 2 文目から先（うしろから）→ サステインの順", () => {
+    expect(msgAt(1108)).toMatchObject({ modulation: true, sentences: 3, sustain: true });
+    expect(msgAt(907)).toMatchObject({ pitchBend: false, narrowKeys: true, sentences: 3 });
+    expect(msgAt(808)).toMatchObject({ narrowKeys: true, sentences: 3 });
+    expect(msgAt(807)).toMatchObject({ narrowKeys: true, sentences: 2, sustain: true });
+    expect(msgAt(748)).toMatchObject({ sentences: 2, sustain: true });
+    expect(msgAt(747)).toMatchObject({ sentences: 1, sustain: true });
+    expect(msgAt(668)).toMatchObject({ sentences: 1, sustain: true });
+    expect(msgAt(667)).toMatchObject({ sentences: 1, sustain: false });
+    expect(msgAt(10)).toMatchObject({ sentences: 1, sustain: false, instrument: true, targetLabel: true });
+  });
+
+  it("細いときは鍵盤、音源の名前、ラベル、サステインを引っこめない", () => {
     expect(meterFit({ ...full, meter: "slim", available: 10 })).toMatchObject(ALL);
   });
 });
@@ -117,11 +134,15 @@ describe("入力計の右はしの案内の文", () => {
     expect(sentences("音の出口がまだです。下でえらんでください")).toEqual(["音の出口がまだです。", "下でえらんでください"]);
   });
 
-  it("うしろの文から引っこめ、1 文目は残す", () => {
-    expect(sentencesShown([100, 80, 60], 240)).toBe(3);
-    expect(sentencesShown([100, 80, 60], 239)).toBe(2);
-    expect(sentencesShown([100, 80, 60], 179)).toBe(1);
-    expect(sentencesShown([100, 80, 60], 5)).toBe(1);
+  it("細いとき: 読み値と名前の欄のあとで、うしろの文から引っこめ、1 文目は残す", () => {
+    // 500 + 176 + 90 + 110 = 876（文 100、80、60 は rest の 500 に入っている）
+    const slim = { ...base, meter: "slim" as const, name: 200, rest: 500, sentences: [100, 80, 60] };
+    expect(meterFit({ ...slim, available: 876 })).toMatchObject({ modulation: true, sentences: 3 });
+    expect(meterFit({ ...slim, available: 676 })).toMatchObject({ pitchBend: false, nameWidth: "size.meter.name.slim", sentences: 3 });
+    expect(meterFit({ ...slim, available: 675 })).toMatchObject({ nameWidth: "part.meter.name.slim-narrow", sentences: 3 });
+    expect(meterFit({ ...slim, available: 627 })).toMatchObject({ sentences: 2 });
+    expect(meterFit({ ...slim, available: 567 })).toMatchObject({ sentences: 1 });
+    expect(meterFit({ ...slim, available: 5 })).toMatchObject({ sentences: 1 });
   });
 });
 

@@ -52,8 +52,19 @@ export const texts = {
     "part",
   ),
   "msg.unusableHeadingSettings": s6("えらべない出口の見出し", "meloet は、PC 全体の設定を変えません", undefined, "quoted"),
+  "msg.unusableInputHeading": s6("えらべない入口の見出し", "いまは使えない入口", undefined, "part"),
   "msg.countingIn": s6("カウントイン中", "カウントイン中 ・ あと {beats} 拍で録音が始まります。止めるには Space", { beats: "2" }),
   "msg.recording": s6("録音中", "{track} へ録音 ・ 止めると テイク {take} として残ります", { track: "1 ピアノ", take: "2" }),
+  "msg.loopRecording": s6(
+    "ループ中の録音",
+    "{track} へ録音 ・ ループ {from}–{to} の {lap} 周目 ・ 周ごとにテイクを分けています",
+    { track: "1 ピアノ", from: "5", to: "9", lap: "2" },
+  ),
+  "msg.takeSwitched": s6(
+    "テイクを切りかえた",
+    "{track} ・ {clip} をテイク {take} / {takes} に切りかえました",
+    { track: "1 ピアノ", clip: "Aメロ", take: "2", takes: "3" },
+  ),
   "msg.noArmedTrack": s6("録音待機のトラックがない", "録るトラックが決まっていません。トラックの ● を押すと、そこに録ります。"),
   "msg.keyboardLost": s6("鍵盤が抜けた", "{keyboard} とのつながりが切れました。曲はそのままです。さしなおすと、自動で戻ります。", { keyboard: "鍵盤 49" }),
   "msg.outputLost": s6("音の出口が消えた", "{output}が見つからなくなりました。再生を止めています。", { output: "ヘッドホン" }),
@@ -98,6 +109,7 @@ export const texts = {
   "msg.exportPeak": s6("書き出しの前", "いちばん大きい所 {peak} dB ・ 音割れはありません", { peak: "−6.2" }),
   "msg.exportClipping": s6("書き出しで音が割れる", "いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。"),
   "msg.exported": s6("書き出しが終わった", "書き出しました: {path}", { path: "~/ミュージック/はじめての曲/はじめての曲.wav" }),
+  "msg.scaleDoesNotFit": s6("画面に入らない拡大率", "この画面には入りません"),
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
 
   // 仕様書 6 章のボタン（「（…）」の中は説明なので入れない）
@@ -200,13 +212,13 @@ export const texts = {
   "connect.changeLater": e("あとから「音の設定」で変えられます", "mock:F-Connect2"),
   "connect.help": e("↑ ↓ でえらぶ ・ ▶ でテスト音。何かささっている出口を、上にならべています", "mock:F-Connect2"),
   "endpoint.testTone": e("テスト音を鳴らす", "mock:F-Connect2"),
-  "endpoint.plugged": e("ささっています", "mock:F-Connect2"),
-  "endpoint.connected": e("つながっています", "mock:F-Settings"),
-  "endpoint.nothingPlugged": e("何もささっていません", "mock:F-Connect2"),
-  "friendly.headphones": e("ヘッドホンの穴", "mock:F-Connect2"),
-  "friendly.hdmi": e("画面のスピーカー", "mock:F-Connect2"),
-  "friendly.lineOut": e("うしろのスピーカーの穴", "mock:F-Connect2"),
-  "friendly.rearMic": e("うしろのマイクの穴", "mock:F-Settings"),
+  "endpoint.plugged": s6("出口 ・ 入口の行の文", "ささっています", undefined, "quoted"),
+  "endpoint.connected": s6("出口 ・ 入口の行の文", "つながっています", undefined, "quoted"),
+  "endpoint.nothingPlugged": s6("出口 ・ 入口の行の文", "何もささっていません", undefined, "quoted"),
+  "friendly.headphones": s6("出口 ・ 入口の行の文", "ヘッドホンの穴", undefined, "quoted"),
+  "friendly.hdmi": s6("出口 ・ 入口の行の文", "画面のスピーカー", undefined, "quoted"),
+  "friendly.lineOut": s6("出口 ・ 入口の行の文", "うしろのスピーカーの穴", undefined, "quoted"),
+  "friendly.rearMic": s6("出口 ・ 入口の行の文", "うしろのマイクの穴", undefined, "quoted"),
   "friendly.keyboard": e("この鍵盤", "mock:F-Settings"),
 
   // 帯札の行と、縦の見出し

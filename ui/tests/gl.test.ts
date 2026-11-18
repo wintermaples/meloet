@@ -6,7 +6,7 @@ import { hexToRgb, rgb } from "../src/gl/color";
 import { CLIP_HOLD_MS, DB_FLOOR, DB_SCALE, EVENT_WINS_US, FALL_DB_PER_S, KEY_FORMS, METER_HOT_FROM, OVERVIEW } from "../src/gl/dims";
 import { HeldKeys, isBlack, keyboardLayout } from "../src/gl/keyboard";
 import { dbToLength, fall, peakToDb } from "../src/gl/level";
-import { Levels } from "../src/gl/levels";
+import { Levels, MASTER_CHANNEL, RETURN_A_CHANNEL, RETURN_B_CHANNEL, trackChannel } from "../src/gl/levels";
 import { KeyToScreen, REPORT_NAME } from "../src/gl/measure";
 import { blackKeyPx, clipMarkPx, paintArrangeGrid, paintKeyboard, paintMeter, paintOverview, paintVelocity } from "../src/gl/paint";
 import { glRegion, glSlot, watchSlots } from "../src/gl/slot";
@@ -136,9 +136,9 @@ describe("画面のレベル", () => {
     levels.onTelemetry(telemetry({ masterPeak: [1, 0.5], trackPeaks: new Float32Array([0.25, 0]) }), 1000);
     expect(levels.bar(0, 1000).length).toBeCloseTo(0.8, 6);
     expect(levels.bar(1, 1000).length).toBeCloseTo(dbToLength(peakToDb(0.5)), 6);
-    expect(levels.bar(2, 1000).length).toBeCloseTo(dbToLength(peakToDb(0.25)), 6);
-    expect(levels.bar(3, 1000).length).toBe(0);
-    expect(levels.bar(9, 1000).length).toBe(0);
+    expect(levels.bar(trackChannel(0), 1000).length).toBeCloseTo(dbToLength(peakToDb(0.25)), 6);
+    expect(levels.bar(trackChannel(0) + 1, 1000).length).toBe(0);
+    expect(levels.bar(trackChannel(4), 1000).length).toBe(0);
 
     levels.onTelemetry(telemetry({ masterPeak: [0.5, 0.5] }), 1000);
     expect(levels.bar(0, 1000).length).toBeCloseTo(0.8, 6);
@@ -152,8 +152,8 @@ describe("画面のレベル", () => {
     levels.onTelemetry(telemetry({ masterPeak: [1.2, 0.5], trackPeaks: new Float32Array([0, 1.01]) }), 500);
     expect(levels.bar(0, 500).clipped).toBe(true);
     expect(levels.bar(1, 500).clipped).toBe(false);
-    expect(levels.bar(2, 500).clipped).toBe(false);
-    expect(levels.bar(3, 500).clipped).toBe(true);
+    expect(levels.bar(trackChannel(0), 500).clipped).toBe(false);
+    expect(levels.bar(trackChannel(0) + 1, 500).clipped).toBe(true);
     expect(levels.nextClipEnd(500)).toBe(500 + CLIP_HOLD_MS);
     expect(levels.bar(0, 500 + CLIP_HOLD_MS - 1).clipped).toBe(true);
     expect(levels.bar(0, 500 + CLIP_HOLD_MS).clipped).toBe(false);
@@ -162,7 +162,25 @@ describe("画面のレベル", () => {
   it("マスターが割れた旗は、左右の両方に印", () => {
     const levels = new Levels();
     levels.onTelemetry(telemetry({ masterClipped: true, trackPeaks: new Float32Array([0.1, 0.1]) }), 0);
-    expect([0, 1, 2, 3].map((c) => levels.bar(c, 1).clipped)).toEqual([true, true, false, false]);
+    expect([0, 1, trackChannel(0), trackChannel(0) + 1].map((c) => levels.bar(c, 1).clipped)).toEqual([true, true, false, false]);
+    expect([RETURN_A_CHANNEL, RETURN_B_CHANNEL].map((c) => levels.bar(c, 1).clipped)).toEqual([false, false]);
+  });
+  it("戻り A ・ B は、マスターとトラックの間の 4 本（A 左 ・ 右、B 左 ・ 右）。同じ目盛、同じ落ちかた、同じ音割れの印", () => {
+    const levels = new Levels();
+    const t = telemetry({ returnPeaks: new Float32Array([0.5, 0.25, 1.2, 0]), trackPeaks: new Float32Array([1, 1]) });
+    levels.onTelemetry(t, 1000);
+    expect([MASTER_CHANNEL, RETURN_A_CHANNEL, RETURN_B_CHANNEL, trackChannel(0), trackChannel(1)]).toEqual([0, 2, 4, 6, 8]);
+    expect(levels.bar(RETURN_A_CHANNEL, 1000).length).toBeCloseTo(dbToLength(peakToDb(0.5)), 6);
+    expect(levels.bar(RETURN_A_CHANNEL + 1, 1000).length).toBeCloseTo(dbToLength(peakToDb(0.25)), 6);
+    expect(levels.bar(RETURN_B_CHANNEL, 1000)).toEqual({ length: dbToLength(peakToDb(Math.fround(1.2))), clipped: true });
+    expect(levels.bar(RETURN_B_CHANNEL + 1, 1000)).toEqual({ length: 0, clipped: false });
+    expect(levels.bar(MASTER_CHANNEL, 1000).length).toBe(0);
+    expect(levels.bar(trackChannel(0), 1000).length).toBeCloseTo(0.8, 6);
+
+    levels.onTelemetry(telemetry({ returnPeaks: new Float32Array([0.25, 0.25, 0, 0]) }), 1000);
+    expect(levels.advance(1100)).toBe(true);
+    expect(levels.bar(RETURN_A_CHANNEL, 1100).length).toBeCloseTo(dbToLength(peakToDb(0.5) - FALL_DB_PER_S / 10), 6);
+    expect(levels.bar(RETURN_B_CHANNEL, 1000 + CLIP_HOLD_MS).clipped).toBe(false);
   });
 });
 
@@ -371,6 +389,26 @@ describe("四角の並び", () => {
     expect(METER_HOT_FROM).toBe(0.7);
     expect(ofColor(b, "color.meter.hot")).toEqual([[80, 28, 100, 32]]);
     expect(ofColor(b, "color.rec")).toEqual([[108, 28, 110, 32]]);
+  });
+  it("縦のメーター: 左が L、右が R。下が 0 %、上が 100 %。区切りと音割れの印は横と同じ長さで、印は上はし", () => {
+    const b = batch();
+    paintMeter(b, { x0: 20, y0: 10, x1: 32, y1: 110 }, 4, 2, { length: 0.5, clipped: false }, { length: 0.9, clipped: true }, true);
+    expect(ofColor(b, "color.gray.0")).toEqual([
+      [20, 10, 24, 110],
+      [28, 10, 32, 110],
+    ]);
+    expect(ofColor(b, "color.meter.ok")).toEqual([
+      [20, 60, 24, 110],
+      [28, 40, 32, 110],
+    ]);
+    expect(ofColor(b, "color.meter.hot")).toEqual([[28, 20, 32, 40]]);
+    expect(ofColor(b, "color.rec")).toEqual([[28, 10, 32, 12]]);
+
+    // 横のメーターを 90 度まわした形と、四角の数も長さも同じ。
+    const flat = batch();
+    paintMeter(flat, { x0: 10, y0: 20, x1: 110, y1: 32 }, 4, 2, { length: 0.5, clipped: false }, { length: 0.9, clipped: true });
+    const sizes = (bb: Batch, along: 0 | 1) => bb.rects().map((r) => [r[2 + along]! - r[along]!, r[3 - along]! - r[1 - along]!]);
+    expect(sizes(b, 1)).toEqual(sizes(flat, 0));
   });
   it("音割れの印の太さ: 2px に率をかけて四捨五入（2 / 3 / 3）。それから画面の画素へ", () => {
     expect([100, 125, 150].map((scale) => clipMarkPx(scale, 1))).toEqual([2, 3, 3]);

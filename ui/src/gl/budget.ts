@@ -7,7 +7,11 @@
 /** WebKitGTK's own limit per page. */
 export const WEBKIT_CONTEXT_LIMIT = 16;
 
-/** How many contexts meloet may make in a page's life. The rest of the limit is left for mistakes. */
+/**
+ * How many contexts meloet may make in a page's life. The rest of the limit is left for mistakes.
+ * The regions below need at most 10 at once: a window tall enough to keep the arrange in track rows
+ * with the piano roll and the mixer open, and the sound settings on top (tests/gl.surface.test.ts).
+ */
 export const CONTEXT_BUDGET = 12;
 
 /**
@@ -15,10 +19,8 @@ export const CONTEXT_BUDGET = 12;
  * canvas. `opaque`: its slots paint every pixel of the canvas, so nothing behind needs to show.
  */
 export const REGIONS = {
-  /** Input meter: the keyboard. Changes with each key. */
-  inputKeys: { opaque: true },
-  /** Input meter: the bar beside the velocity. Changes with each key. */
-  inputVelocity: { opaque: true },
+  /** Input meter: the keyboard and the bar beside the velocity (text lies between them). Changes with each key. */
+  inputMeter: { opaque: false },
   /** Transport: the master meter. Up to 60 Hz while there is sound. */
   masterMeter: { opaque: false },
   /** Arrange: the meters of the track heads, all tracks in one canvas. Up to 60 Hz. */
@@ -37,10 +39,8 @@ export const REGIONS = {
   pianoRollLive: { opaque: false },
   /** Mixer: the meters of every strip (tracks, returns, master) in one canvas, also when the strips scroll. Up to 60 Hz. */
   mixerMeters: { opaque: false },
-  /** Sound settings: the level beside the test tone. */
-  settingsMeter: { opaque: false },
-  /** Sound settings: the keyboard that lights. */
-  settingsKeys: { opaque: true },
+  /** Sound settings: the level beside the test tone and the keyboard that lights (rows of text lie between them). */
+  settings: { opaque: false },
 } as const satisfies Record<string, { opaque: boolean }>;
 
 export type RegionName = keyof typeof REGIONS;

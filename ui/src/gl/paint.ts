@@ -1,7 +1,7 @@
 // What each kind of slot looks like, as rectangles. No WebGL and no DOM here.
 
 import type { Batch } from "./batch";
-import { rgb } from "./color";
+import { rgb, type Rgb } from "./color";
 import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
 import type { GlRect } from "./slot";
@@ -82,20 +82,29 @@ export interface BarLevel {
   clipped: boolean;
 }
 
-/** Two bars, left above right. `gap` and `mark` (clipMarkPx) are device pixels. */
-export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left: BarLevel, right: BarLevel): void {
+/**
+ * Two bars: left above right, each growing to the right; `vertical`: left beside right, each growing
+ * upward. `gap` and `mark` (clipMarkPx) are device pixels.
+ */
+export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left: BarLevel, right: BarLevel, vertical = false): void {
   const { x0, y0, x1, y1 } = box;
-  const h = Math.max(1, Math.round((y1 - y0 - gap) / 2));
-  const hotFrom = x0 + Math.round((x1 - x0) * METER_HOT_FROM);
-  const bar = (top: number, level: BarLevel) => {
-    out.rect(x0, top, x1, top + h, rgb(METER.ground));
-    const end = x0 + Math.round((x1 - x0) * Math.min(Math.max(level.length, 0), 1));
-    out.rect(x0, top, Math.min(end, hotFrom), top + h, rgb(METER.ok));
-    out.rect(hotFrom, top, end, top + h, rgb(METER.hot));
-    if (level.clipped) out.rect(x1 - mark, top, x1, top + h, rgb(METER.clip));
+  const length = vertical ? y1 - y0 : x1 - x0;
+  const thick = Math.max(1, Math.round(((vertical ? x1 - x0 : y1 - y0) - gap) / 2));
+  const hotFrom = Math.round(length * METER_HOT_FROM);
+  // `from`..`to` are measured along the bar from its 0 % end; `at` is the bar's first pixel across.
+  const piece = (at: number, from: number, to: number, color: Rgb) => {
+    if (vertical) out.rect(at, y1 - to, at + thick, y1 - from, color);
+    else out.rect(x0 + from, at, x0 + to, at + thick, color);
   };
-  bar(y0, left);
-  bar(y1 - h, right);
+  const bar = (at: number, level: BarLevel) => {
+    piece(at, 0, length, rgb(METER.ground));
+    const end = Math.round(length * Math.min(Math.max(level.length, 0), 1));
+    piece(at, 0, Math.min(end, hotFrom), rgb(METER.ok));
+    piece(at, hotFrom, end, rgb(METER.hot));
+    if (level.clipped) piece(at, length - mark, length, rgb(METER.clip));
+  };
+  bar(vertical ? x0 : y0, left);
+  bar((vertical ? x1 : y1) - thick, right);
 }
 
 /** Bar lines, and `beats` lines to a bar when it is more than 1. `firstBarX` and `barPx` are device pixels and may have a fraction. */

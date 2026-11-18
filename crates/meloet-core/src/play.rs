@@ -983,19 +983,16 @@ impl Play {
             .find(|t| t.id == TakeId(id))?
             .clone();
         let u = |v: u64| u32::try_from(v).ok();
-        let notes = take
-            .notes
-            .iter()
-            .map(|n| {
-                Some(TakeNote {
-                    start: u(n.start)?,
-                    length: u(n.length)?,
-                    key: n.key,
-                    velocity: n.velocity,
-                    from: n.from.map(OriginIndex::get),
-                })
-            })
-            .collect::<Option<Vec<_>>>()?;
+        let mut notes = Vec::with_capacity(take.notes.len());
+        for n in &take.notes {
+            notes.push(TakeNote {
+                start: u(n.start)?,
+                length: u(n.length)?,
+                key: n.key,
+                velocity: n.velocity,
+                from: n.from.map(OriginIndex::get),
+            });
+        }
         let controls = take
             .controls
             .iter()

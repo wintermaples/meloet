@@ -624,8 +624,8 @@ fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {
     Some(Take {
         id: TakeId(t.id),
         length: t.length,
-        notes,
-        controls,
+        notes: notes.into(),
+        controls: controls.into(),
         origin,
     })
 }

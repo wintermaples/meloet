@@ -164,8 +164,8 @@ pub fn add_recording(
                 origin: None,
                 id: TakeId(ids.next()?),
                 length: t.length,
-                notes: t.notes,
-                controls: t.controls,
+                notes: t.notes.into(),
+                controls: t.controls.into(),
             }),
         });
     }

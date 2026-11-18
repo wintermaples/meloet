@@ -1,5 +1,6 @@
 //! Undo and redo. Each step keeps the whole `Doc` of the other side; untouched tracks,
-//! clips and takes are shared, so a step costs little more than what it changed.
+//! clips and takes are shared, and so are the unchanged chunks of notes in a changed take, so a
+//! step costs little more than what it changed.
 
 use crate::TrackId;
 use crate::arrange::ClipEdge;

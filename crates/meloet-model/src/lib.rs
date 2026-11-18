@@ -1,6 +1,7 @@
 //! Song, tracks and instrument references. Pure data: no I/O, no threads.
 
 pub mod arrange;
+pub mod chunked;
 pub mod controls;
 pub mod edit;
 pub mod history;
@@ -13,6 +14,7 @@ pub mod song;
 pub mod time;
 
 pub use arrange::{ClipEdge, ClipEdited};
+pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
 pub use history::{History, StepKind};
 pub use notes::{NoteField, NotesEdited, WriteAt};

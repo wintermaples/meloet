@@ -12,6 +12,7 @@
 use std::sync::Arc;
 
 use crate::TrackId;
+use crate::chunked::ChunkedVec;
 use crate::edit::{Edit, EditError, Ids, clip_index, track_index, with_track};
 use crate::history::StepKind;
 use crate::song::{
@@ -196,8 +197,9 @@ fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdite
             start: note.start - start,
             length: note.length.min(end - note.start),
             ..note
-        }],
-        controls: Vec::new(),
+        }]
+        .into(),
+        controls: ChunkedVec::default(),
         origin: None,
     };
     let clip = Arc::new(Clip {
@@ -642,23 +644,28 @@ pub(crate) fn put_take(
     let take = Take {
         id,
         length: end - origin_new,
-        // Collected anew, not in place, so the take holds no room it does not use.
-        notes: content
-            .notes
-            .iter()
-            .map(|(n, _)| Note {
-                start: n.start - origin_new,
-                ..*n
-            })
-            .collect(),
-        controls: content
-            .controls
-            .iter()
-            .map(|(c, _)| ControlPoint {
-                tick: c.tick - origin_new,
-                ..*c
-            })
-            .collect(),
+        notes: ChunkedVec::sharing(
+            &content
+                .notes
+                .iter()
+                .map(|(n, _)| Note {
+                    start: n.start - origin_new,
+                    ..*n
+                })
+                .collect::<Vec<_>>(),
+            &shown.take.notes,
+        ),
+        controls: ChunkedVec::sharing(
+            &content
+                .controls
+                .iter()
+                .map(|(c, _)| ControlPoint {
+                    tick: c.tick - origin_new,
+                    ..*c
+                })
+                .collect::<Vec<_>>(),
+            &shown.take.controls,
+        ),
         origin: take_origin,
     };
     let mut takes = clip.takes.clone();

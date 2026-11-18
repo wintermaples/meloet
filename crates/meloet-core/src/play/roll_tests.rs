@@ -142,12 +142,16 @@ fn check(p: &Play, takes_of: &HashMap<ClipId, usize>, ctx: &str) {
                 "{ctx}: takes of {:?}",
                 c.id
             );
+            let shown = &c.active_take().take;
+            assert_eq!(
+                c.note_count(),
+                shown.notes.iter().filter(|n| c.holds(n.start)).count(),
+                "{ctx}: note count"
+            );
             for ct in &c.takes {
                 let take = &ct.take;
                 assert!(
-                    take.notes
-                        .windows(2)
-                        .all(|w| (w[0].start, w[0].key) <= (w[1].start, w[1].key)),
+                    take.notes.iter().is_sorted_by_key(|n| (n.start, n.key)),
                     "{ctx}: order in {:?}",
                     take.id
                 );
@@ -168,7 +172,7 @@ fn check(p: &Play, takes_of: &HashMap<ClipId, usize>, ctx: &str) {
                         "{ctx}: from with no origin"
                     ),
                 }
-                assert!(take.controls.is_sorted_by_key(|c| c.tick), "{ctx}");
+                assert!(take.controls.iter().is_sorted_by_key(|c| c.tick), "{ctx}");
                 for c2 in &take.controls {
                     assert!(c2.tick < take.length, "{ctx}: point inside the take");
                     if let ControlValue::Cc { number: 64, value } = c2.value {

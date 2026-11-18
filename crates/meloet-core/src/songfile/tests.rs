@@ -41,7 +41,8 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
                         value: 12,
                     },
                 },
-            ],
+            ]
+            .into(),
         })
     };
     let (t2, t5, t6, t7) = (take(2, 40), take(5, 48), take(6, 50), take(7, 52));
@@ -402,7 +403,7 @@ fn quantized_song() -> Song {
                 from: None,
             })
             .collect(),
-        controls: Vec::new(),
+        controls: Vec::new().into(),
         origin: None,
     });
     let quantized = Arc::new(Take {
@@ -423,8 +424,9 @@ fn quantized_song() -> Song {
                 velocity: 90,
                 from: None,
             },
-        ],
-        controls: Vec::new(),
+        ]
+        .into(),
+        controls: Vec::new().into(),
         origin: Some(TakeOrigin {
             take: origin,
             settings: QuantizeSettings::new(

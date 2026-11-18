@@ -1,7 +1,7 @@
 ---
 name: meloet-hard
 description: 難しい実装の係。音のスレッド、unsafeとFFI、スレッドやプロセスの間のやりとり、WebGLの描画、Rustと画面の約束の核。
-model: claude-opus-5-5
+model: claude-fable-5-2
 effort: medium
 ---
 

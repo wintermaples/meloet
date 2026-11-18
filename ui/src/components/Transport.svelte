@@ -13,12 +13,11 @@
   import { PeakHold, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import NumberField from "./NumberField.svelte";
+  import { readMeter, readPosition, readTempo, type ClampNote } from "./valueClamp";
   import {
     clockText,
     meterFieldOf,
     meterText,
-    parseMeter,
-    parseTempo,
     positionText,
     shownTick,
     stepMeter,
@@ -257,13 +256,22 @@
     if (menu === "metronome" && parts.countIn) closeMenu();
   });
 
-  // 使えない値のまま Enter: 状態行で言うように core へ頼む（仕様書 6 章「使えない値を打った」）。
+  /** 決める命令。範囲の外を丸めたときは、そのあとに状態行で言うように頼む（docs/design-notes.md B-68）。 */
+  function commitClamped(command: Command, clamp: ClampNote | null): void {
+    send(command);
+    if (clamp) send({ type: "clampValue", ...clamp });
+  }
+
+  // 数字として読めない値のまま Enter: 状態行で言うように core へ頼む（仕様書 6 章「使えない値を打った」）。
   function rejectTempo(): void {
     send({ type: "rejectValue", field: "tempo", kept: tempoText(song.tempoBpm), range: null });
   }
   function rejectMeter(draft: string): void {
     const field = meterFieldOf(draft);
     send({ type: "rejectValue", field, kept: String(field === "meterNum" ? meter.num : meter.den), range: null });
+  }
+  function rejectPosition(): void {
+    send({ type: "rejectValue", field: "playPosition", kept: position, range: null });
   }
 </script>
 
@@ -361,7 +369,15 @@
   <div class="position" class:narrow={!parts.positionLabels}>
     <div class="col">
       {#if parts.positionLabels}<span class="m-lbl" use:term={"小節 . 拍 . ティック"}>{t("transport.position")}</span>{/if}
-      <span class="m-readout" data-test="transport-position">{position}</span>
+      <NumberField
+        value={position}
+        parse={(s) => readPosition(s, meter)}
+        commit={(r) => commitClamped({ type: "locate", tick: r.value }, r.clamp)}
+        reject={rejectPosition}
+        label={t("transport.position")}
+        chars={9}
+        test="transport-position"
+      />
     </div>
     <div class="col">
       {#if parts.positionLabels}<span class="m-lbl">{t("transport.time")}</span>{/if}
@@ -373,9 +389,9 @@
     <span class="m-lbl" use:term={"テンポ"}>{t("transport.tempo")}</span>
     <NumberField
       value={tempoText(song.tempoBpm)}
-      parse={parseTempo}
-      step={(v, d) => tempoText(stepTempo(v, d))}
-      commit={(bpm) => send({ type: "setTempo", bpm })}
+      parse={readTempo}
+      step={(r, d) => tempoText(stepTempo(r.value, d))}
+      commit={(r) => commitClamped({ type: "setTempo", bpm: r.value }, r.clamp)}
       reject={rejectTempo}
       label={t("transport.tempo")}
       chars={6}
@@ -386,9 +402,9 @@
     <span class="m-lbl" use:term={"拍子"}>{t("transport.timeSignature")}</span>
     <NumberField
       value={meterText(meter)}
-      parse={parseMeter}
-      step={(v, d) => meterText(stepMeter(v, d))}
-      commit={(m) => send({ type: "setMeter", num: m.num, den: m.den })}
+      parse={readMeter}
+      step={(r, d) => meterText(stepMeter(r.value, d))}
+      commit={(r) => commitClamped({ type: "setMeter", num: r.value.num, den: r.value.den }, r.clamp)}
       reject={rejectMeter}
       label={t("transport.timeSignature")}
       chars={5}

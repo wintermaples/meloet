@@ -1,4 +1,5 @@
-<!-- 入力計（仕様書 3 章の表の入力計の行。モック F-Connect1・2・3、F-Empty、F-MeterLongName、Opt-Meter 1-B）。 -->
+<!-- 入力計（仕様書 3 章の表の入力計の行。モック F-Connect1・2・3、F-Empty、F-MeterLongName、Opt-Meter 1-B）。
+     ベロシティの読み値の右に「固定」の切りかえ（docs/design-notes.md B-66）。どの幅でも消さず、鍵盤がないときも出す。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { keyIsDown } from "../bridge";
@@ -6,12 +7,14 @@
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
   import { term, tip } from "../lib/tip.svelte";
-  import { current, onEvent } from "../state/app.svelte";
+  import { current, onEvent, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import { textParts } from "./format";
   import { heldText, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
   import { metrics } from "./metrics.svelte";
   import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
+  import NumberField from "./NumberField.svelte";
+  import { readVelocity, type Read } from "./valueClamp";
 
   const FIRST_NOTE = 36;
   const LAST_NOTE = 84;
@@ -72,6 +75,20 @@
       }
     }),
   );
+
+  // ベロシティ固定（B-66）。オンの間、読み値は固定の値で、押すと打ちこめる（1〜127。範囲の外は近いはしにして状態行で言う）。
+  const fixed = $derived(app?.keyboards.velocityFixed ?? { on: false, value: 100 });
+  function toggleFixed(): void {
+    send({ type: "setVelocityFixed", on: !fixed.on, value: fixed.value });
+  }
+  function commitFixed(r: Read<number>): void {
+    send({ type: "setVelocityFixed", on: true, value: r.value });
+    if (r.clamp) send({ type: "clampValue", ...r.clamp });
+  }
+  function rejectFixed(): void {
+    send({ type: "rejectValue", field: "velocity", kept: String(fixed.value), range: null });
+  }
+  const stepFixed = (r: Read<number>, delta: number) => String(Math.min(127, Math.max(1, r.value + delta)));
 
   const sustain = $derived(current.telemetry?.sustain ?? 0);
   const bend = $derived(current.telemetry?.pitchBend ?? 0);
@@ -223,23 +240,61 @@
         {live ? heldText(held) : t("meter.heldNone")}
       </span>
     </div>
+  {/if}
 
-    <div class="item velocity">
-      <span class="label" use:term={"ベロシティ"}>{t("meter.velocity")}</span>
-      {#if slim}
-        <span class="value" class:live>{velocity}</span>
+  {#snippet reading()}
+    {#if fixed.on}
+      {#if measuring}
+        <span class="value">{fixed.value}</span>
       {:else}
-        <span class="velocity-row">
-          <span class="value" class:live>{velocity}</span>
-          {#if measuring}
-            <span class="velocity-bar"></span>
-          {:else}
-            <span class="velocity-bar" use:glRegion={"inputVelocity"} use:glSlot={{ kind: "velocity" }}></span>
+        <NumberField
+          value={String(fixed.value)}
+          parse={readVelocity}
+          step={stepFixed}
+          commit={commitFixed}
+          reject={rejectFixed}
+          label={t("meter.velocity")}
+          chars={3}
+          test="velocity-fixed-value"
+          small={slim}
+        />
+      {/if}
+    {:else if keyboard}
+      <span class="value" class:live>{velocity}</span>
+    {/if}
+  {/snippet}
+  {#snippet fixedToggle()}
+    {#if measuring}
+      <span class="fixed">{t("input.velocityFixed")}</span>
+    {:else}
+      <button class="fixed" class:on={fixed.on} aria-pressed={fixed.on} data-test="velocity-fixed" use:term={"ベロシティ固定"} onclick={toggleFixed}
+        >{t("input.velocityFixed")}</button
+      >
+    {/if}
+  {/snippet}
+  <div class="item velocity" data-test="velocity">
+    <span class="label" use:term={"ベロシティ"}>{t("meter.velocity")}</span>
+    {#if slim}
+      {@render reading()}
+      {@render fixedToggle()}
+    {:else}
+      <span class="velocity-row">
+        <span class="velocity-main" class:wide={keyboard !== null}>
+          {@render reading()}
+          {#if keyboard}
+            {#if measuring}
+              <span class="velocity-bar"></span>
+            {:else}
+              <span class="velocity-bar" use:glRegion={"inputVelocity"} use:glSlot={{ kind: "velocity" }}></span>
+            {/if}
           {/if}
         </span>
-      {/if}
-    </div>
+        {@render fixedToggle()}
+      </span>
+    {/if}
+  </div>
 
+  {#if keyboard}
     {#if measuring || fit.sustain}
       <div class="item" data-part="sustain">
         <span class="label" use:term={"サステイン"}>{t("meter.sustain")}</span>
@@ -433,16 +488,51 @@
   .value.none {
     color: var(--color-gray-7);
   }
-  .velocity {
-    width: var(--mock-input-meter-velocity);
-  }
-  .slim .velocity {
-    width: auto;
-  }
   .velocity-row {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+  }
+  /* 読み値と棒（モック F-Connect3 の幅 96）。「固定」はその右。 */
+  .velocity-main {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .velocity-main.wide {
+    width: var(--mock-input-meter-velocity);
+  }
+  /* 「固定」の切りかえ（M ・ S ・ ● と同じ形と高さ。オンは accent。仕様書 2 章）。 */
+  .fixed {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--part-toggle-size);
+    min-width: var(--part-toggle-size);
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-gray-8);
+    font: inherit;
+    cursor: pointer;
+  }
+  .fixed:hover {
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
+  }
+  .fixed:active {
+    background: var(--color-gray-2);
+    border-color: var(--color-gray-8);
+  }
+  .fixed.on {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  .slim .velocity {
+    align-items: center;
   }
   .velocity-bar {
     flex: 1;

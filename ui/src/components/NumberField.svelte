@@ -1,5 +1,6 @@
-<!-- 数字を押すと「入力の枠」（仕様書 2 章）になる読み値。Enter で決める、Esc でやめる、↑ ↓ で 1 ずつ（Shift で 10）。
-     使えない値は「こわれた」の枠で、決めさせない（仕様書 3 章）。そのまま Enter を押したら reject に知らせる（状態行で言う。6 章）。
+<!-- 数字を押すと「入力の枠」（仕様書 2 章）になる読み値。Enter で決める、Esc でやめる、↑ ↓ で 1 ずつ（Shift で 10。step がある欄だけ）。
+     数字として読めない値は「こわれた」の枠で、決めさせない（仕様書 3 章）。そのまま Enter を押したら reject に知らせる（状態行で言う。6 章）。
+     範囲の外の数は parse が読み、commit が近いはしにして決める（docs/design-notes.md B-68）。
      枠の外を押したときは、やめる。 -->
 <script lang="ts" generics="T">
   import { tick } from "svelte";
@@ -8,7 +9,7 @@
     /** いまの値（Rust の状態）の文字。 */
     value: string;
     parse: (s: string) => T | null;
-    step: (v: T, delta: number) => string;
+    step?: (v: T, delta: number) => string;
     commit: (v: T) => void;
     /** 使えない値のまま Enter を押した。draft は打った文字。 */
     reject: (draft: string) => void;
@@ -16,8 +17,10 @@
     /** 枠の中の文字数（等幅）。 */
     chars: number;
     test: string;
+    /** 読み値を text.s で出す（入力計の細いとき）。 */
+    small?: boolean;
   }
-  let { value, parse, step, commit, reject, label, chars, test }: Props = $props();
+  let { value, parse, step, commit, reject, label, chars, test, small = false }: Props = $props();
 
   let editing = $state(false);
   let draft = $state("");
@@ -53,7 +56,7 @@
       }
     } else if (ev.key === "Escape" && !ev.shiftKey) {
       void close(true);
-    } else if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+    } else if (step && (ev.key === "ArrowUp" || ev.key === "ArrowDown")) {
       const v = parse(draft);
       if (v !== null) draft = step(v, (ev.key === "ArrowUp" ? 1 : -1) * (ev.shiftKey ? 10 : 1));
     } else {
@@ -81,7 +84,7 @@
     {onkeydown}
   />
 {:else}
-  <button class="m-plain m-readout shown" aria-label={label} data-test={test} bind:this={shown} onclick={open}
+  <button class="m-plain m-readout shown" class:small aria-label={label} data-test={test} bind:this={shown} onclick={open}
     >{value}</button
   >
 {/if}
@@ -89,6 +92,11 @@
 <style>
   .shown {
     color: var(--color-gray-10);
+  }
+  .shown.small {
+    font-size: var(--text-s-size);
+    line-height: var(--text-s-line-height);
+    font-weight: var(--text-s-weight-400);
   }
   /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）。読み値の大きさを変えないよう、枠は外がわに重ねて描く。 */
   .shown:hover {

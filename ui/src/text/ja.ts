@@ -582,6 +582,21 @@ export const texts = {
   // [ピアノロール]
 
   // [アレンジ ・ 再生まわり ・ 入力計]
+  // 位置の小節 ・ 拍 ・ ティックを丸めたとき（デザインに戻した事 68 の「拍は 1〜4 なので、3. 4. 000 にしました。」など）。
+  "value.bar": e("小節", "user:2026-11-18"),
+  "value.beat": e("拍", "user:2026-11-18"),
+  "value.tick": e("ティック", "user:2026-11-18"),
+  "msg.valueClampedBar": e("小節は 1 からなので、{value} にしました。", "user:2026-11-18", { value: "1. 1. 000" }),
+  // 右クリックの一覧の行の右のキー（仕様書 4 章の表。Mod は key.ctrl ・ key.cmd で読みかえる）。
+  "ctxKey.cut": e("X", "spec:4"),
+  "ctxKey.copy": e("C", "spec:4"),
+  "ctxKey.paste": e("V", "spec:4"),
+  "ctxKey.duplicate": e("D", "spec:4"),
+  "ctxKey.delete": e("Delete", "spec:4"),
+  "ctxKey.nextTake": e("T", "spec:4"),
+  "ctxKey.prevTake": e("Shift T", "spec:4"),
+  "ctxKey.mute": e("Shift M", "spec:4"),
+  "ctxKey.solo": e("Shift S", "spec:4"),
 
   // [メニュー ・ キー]
 } as const satisfies Record<string, Entry>;

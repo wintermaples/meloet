@@ -1,9 +1,11 @@
 <!-- 縦にスクロールする場所と、スクロールの棒（仕様書 2 章「スクロールの棒」）。ブラウザや OS の棒は出さない。
+     つまみのドラッグ中の Esc は、動かす前の所へ戻す（仕様書 4 章）。
      ほかの属性（data-test、data-gl-scroll など）は、スクロールする箱に渡す。 -->
 <script lang="ts">
   import { onMount, type Snippet } from "svelte";
   import type { HTMLAttributes } from "svelte/elements";
   import { metrics } from "../components/metrics.svelte";
+  import { onDragCancel } from "../components/pianoroll/view.svelte";
   import { dragTo, pageTo, thumbOf, type ScrollBox, type Thumb } from "./scrollbar";
 
   let {
@@ -58,6 +60,16 @@
     drag = null;
     dragging = false;
   }
+
+  onMount(() =>
+    onDragCancel(() => {
+      if (!drag) return false;
+      const back = drag.top;
+      onThumbUp();
+      if (viewport) viewport.scrollTop = back;
+      return true;
+    }),
+  );
 
   function onBarDown(e: PointerEvent): void {
     const b = box();

@@ -1,5 +1,6 @@
 // アレンジのクリップのマウス（仕様書 3 章「第 3 回のための決まり」の「アレンジのクリップ」、4 章、モック R3-Arrange）。DOM を知らない。
-// 押す → 動かす → 離す。動かしている間は見た目だけを変え、離したときに MoveClip か TrimClip を 1 つだけ送る（docs/architecture.md 17 章）。
+// 押す → 動かす → 離す。動かしている間は見た目だけを変え、離したときに MoveClips か TrimClip を 1 つだけ送る（docs/architecture.md 17 章）。
+// 動かすときは、選んであるクリップぜんぶをいっしょに（docs/design-notes.md B-71）。はしをつめる ・ のばすのは、つかんだ 1 つだけ。
 // 座標は arrangeGeom.ts と同じ（x は見えている所の左はしから、y はトラックの行の並びの上から、CSS px）。
 
 import type { ClipEdge, ClipView, Command, TrackView } from "../bridge";
@@ -37,9 +38,18 @@ interface Press {
   moved: boolean;
 }
 
+/** いっしょに動かすクリップの 1 つ。 */
+export interface GroupClip {
+  clip: ClipView;
+  row: number;
+}
+
 export type ClipDrag =
-  /** ticks: もとの始まりから動かす量。toRow: 置くトラックの行。ok: そこに置けるか（ほかのクリップと重ならないか）。 */
-  | { kind: "move"; press: Press; clip: ClipView; row: number; copy: boolean; ticks: number; toRow: number; ok: boolean }
+  /**
+   * clip ・ row: つかんだクリップ。group: いっしょに動かすクリップ（つかんだクリップもふくむ。トラックの順、始まりの順）。
+   * ticks: もとの始まりから動かす量。toRow: つかんだクリップを置くトラックの行。ok: ぜんぶトラックの中で、ほかと重ならないか。
+   */
+  | { kind: "move"; press: Press; clip: ClipView; row: number; group: GroupClip[]; copy: boolean; ticks: number; toRow: number; ok: boolean }
   /** start ・ end: いまのはしの位置（曲の中のティック）。 */
   | { kind: "trim"; press: Press; clip: ClipView; row: number; edge: ClipEdge; start: number; end: number };
 
@@ -58,11 +68,23 @@ export interface DragMods {
   alt: boolean;
 }
 
-export function startClipDrag(hit: ClipHit, x: number, y: number, mods: DragMods): ClipDrag {
+/** ids のクリップを、トラックの順、始まりの順に。ないクリップは落とす。 */
+export function groupOf(tracks: readonly TrackView[], ids: Iterable<number>): GroupClip[] {
+  const want = new Set(ids);
+  const out: GroupClip[] = [];
+  tracks.forEach((track, row) => {
+    for (const clip of track.clips) if (want.has(clip.id)) out.push({ clip, row });
+  });
+  return out;
+}
+
+/** group: いっしょに動かすクリップ（つかんだクリップが入っていなければ、つかんだクリップだけ）。はしをつかんだときは使わない。 */
+export function startClipDrag(hit: ClipHit, x: number, y: number, mods: DragMods, group: readonly GroupClip[] = []): ClipDrag {
   const press = { x, y, moved: false };
   const { clip, row } = hit;
   if (hit.edge) return { kind: "trim", press, clip, row, edge: hit.edge, start: clip.start, end: clip.end };
-  return { kind: "move", press, clip, row, copy: mods.alt, ticks: 0, toRow: row, ok: true };
+  const members = group.some((g) => g.clip.id === clip.id) ? [...group] : [{ clip, row }];
+  return { kind: "move", press, clip, row, group: members, copy: mods.alt, ticks: 0, toRow: row, ok: true };
 }
 
 /** [start, end) を行 row に置けるか。without: 数に入れないクリップ（動かしている物）。端が触れるだけは重ならない。 */
@@ -70,6 +92,37 @@ export function placeable(tracks: readonly TrackView[], row: number, start: numb
   const track = tracks[row];
   if (!track || start < 0) return false;
   return !track.clips.some((c) => c.id !== without && c.start < end && start < c.end);
+}
+
+/**
+ * group を ticks ・ rows だけ動かして置けるか。どれか 1 つでもトラックの外に出る、曲の頭より前に出る、ほかのクリップと重なるなら false。
+ * 複製（copy）なら、もとのクリップもじゃまになる。
+ */
+export function groupPlaceable(tracks: readonly TrackView[], group: readonly GroupClip[], ticks: number, rows: number, copy: boolean): boolean {
+  const moving = copy ? null : new Set(group.map((g) => g.clip.id));
+  return group.every(({ clip, row }) => {
+    const track = tracks[row + rows];
+    const start = clip.start + ticks;
+    const end = clip.end + ticks;
+    if (!track || start < 0) return false;
+    return !track.clips.some((c) => !moving?.has(c.id) && c.start < end && start < c.end);
+  });
+}
+
+/** 囲んだ四角（どちらの角からでも）にかかるクリップ。トラックの順、始まりの順。 */
+export function clipsInBox(v: View, d: LaneDims, tracks: readonly TrackView[], ax: number, ay: number, bx: number, by: number): number[] {
+  const x0 = Math.min(ax, bx);
+  const x1 = Math.max(ax, bx);
+  const y0 = Math.min(ay, by);
+  const y1 = Math.max(ay, by);
+  const out: number[] = [];
+  tracks.forEach((track, row) => {
+    for (const c of track.clips) {
+      const b = clipBox(v, d, row, c.start, c.end);
+      if (b.x0 <= x1 && x0 < b.x1 && b.y0 <= y1 && y0 < b.y1) out.push(c.id);
+    }
+  });
+  return out;
 }
 
 /** 同じトラックの、clip のすぐ前のクリップの終わり（なければ 0）と、すぐ後のクリップの始まり（なければ Infinity）。 */
@@ -84,7 +137,7 @@ export function neighbours(track: TrackView, clip: ClipView): { floor: number; c
   return { floor, ceiling };
 }
 
-const sameMove = (a: Extract<ClipDrag, { kind: "move" }>, b: Omit<typeof a, "kind" | "press" | "clip" | "row">) =>
+const sameMove = (a: Extract<ClipDrag, { kind: "move" }>, b: Omit<typeof a, "kind" | "press" | "clip" | "row" | "group">) =>
   a.ticks === b.ticks && a.toRow === b.toRow && a.copy === b.copy && a.ok === b.ok;
 
 /** 押したまま動かした。見た目が変わったら新しい物を、変わらなければ同じ物を返す。 */
@@ -98,15 +151,17 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
   const snap = (tick: number) => (i.step ? snapTick(tick, i.step) : Math.round(tick));
   const c = d.clip;
   if (d.kind === "move") {
-    const start = Math.max(0, snap(c.start + dx));
+    // つかんだクリップをグリッドに吸いつけ、ほかは同じ間をあけてついてくる。いちばん前のクリップが曲の頭で止まる。
+    const earliest = Math.min(...d.group.map((g) => g.clip.start));
+    const ticks = Math.max(snap(c.start + dx) - c.start, -earliest) || 0;
     const rows = Math.floor(y / i.dims.trackH) - Math.floor(press.y / i.dims.trackH);
     const toRow = Math.min(i.tracks.length - 1, Math.max(0, d.row + rows));
     const copy = mods.alt;
     const next = {
-      ticks: start - c.start,
+      ticks,
       toRow,
       copy,
-      ok: placeable(i.tracks, toRow, start, start + (c.end - c.start), copy ? null : c.id),
+      ok: groupPlaceable(i.tracks, d.group, ticks, toRow - d.row, copy),
     };
     if (press === d.press && sameMove(d, next)) return d;
     return { ...d, press, ...next };
@@ -130,7 +185,7 @@ export function clipDragCommand(d: ClipDrag, tracks: readonly TrackView[]): Comm
   if (d.kind === "move") {
     const track = tracks[d.toRow];
     if (!d.ok || !track || (d.ticks === 0 && d.toRow === d.row && !d.copy)) return null;
-    return { type: "moveClips", clips: [d.clip.id], ticks: d.ticks, tracks: d.toRow - d.row, copy: d.copy };
+    return { type: "moveClips", clips: d.group.map((g) => g.clip.id), ticks: d.ticks, tracks: d.toRow - d.row, copy: d.copy };
   }
   const ticks = d.edge === "start" ? d.start - d.clip.start : d.end - d.clip.end;
   return ticks === 0 ? null : { type: "trimClip", clip: d.clip.id, edge: d.edge, ticks };

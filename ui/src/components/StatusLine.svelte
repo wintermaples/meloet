@@ -53,6 +53,9 @@
     key: ["note.key", null],
     length: ["note.length", null],
     playPosition: ["note.position", null],
+    bar: ["value.bar", null],
+    beat: ["value.beat", null],
+    tick: ["value.tick", null],
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
@@ -137,6 +140,7 @@
         return plain("msg.valueRejected", { field: t(field), range: m.range ?? (range ? t(range) : ""), kept: m.kept });
       }
       case "valueClamped": {
+        if (m.field === "bar") return plain("msg.valueClampedBar", { value: m.value });
         const [field, range] = VALUE_FIELDS[m.field];
         return plain("msg.valueClamped", { field: t(field), range: m.range ?? (range ? t(range) : ""), value: m.value });
       }

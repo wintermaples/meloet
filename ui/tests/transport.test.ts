@@ -474,10 +474,10 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("使えない値は「こわれた」の枠で、Enter でも決めない。状態行で言うように頼む（もとの値）", async () => {
+  it("数字として読めない値は「こわれた」の枠で、Enter でも決めない。状態行で言うように頼む（もとの値）", async () => {
     show(Transport, ready());
     const input = await open("tempo");
-    for (const bad of ["29.99", "300.01", "abc", ""]) {
+    for (const bad of ["abc", "", "1e2", "12a"]) {
       type(input, bad);
       expect(input.classList.contains("broken"), bad).toBe(true);
       expect(input.getAttribute("aria-invalid")).toBe("true");
@@ -485,8 +485,28 @@ describe("テンポと拍子の打ちこみ", () => {
     }
     expect(app.sent).toEqual(Array(4).fill({ type: "rejectValue", field: "tempo", kept: "96.00", range: null }));
     expect(field("tempo")).not.toBeNull();
-    type(input, "30");
+    type(input, "29.99");
     expect(input.classList.contains("broken")).toBe(false);
+  });
+
+  it("範囲の外の数は近いはしにして決め、そのあと clampValue（B-68）。小数は第 2 位までに四捨五入", async () => {
+    show(Transport, ready());
+    for (const [typed, bpm, said] of [
+      ["29.99", 30, "30.00"],
+      ["999", 300, "300.00"],
+      ["-5", 30, "30.00"],
+      ["120.555", 120.56, null],
+    ] as const) {
+      app.sent.length = 0;
+      const input = await open("tempo");
+      type(input, typed);
+      press(input, "Enter");
+      expect(app.sent, typed).toEqual([
+        { type: "setTempo", bpm },
+        ...(said ? [{ type: "clampValue", field: "tempo", value: said, range: null }] : []),
+      ]);
+      await tick();
+    }
   });
 
   it("↑ ↓ で 1 ずつ、Shift で 10。範囲の外へは出ない", async () => {
@@ -502,16 +522,16 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("拍子: Enter で setMeter、↑ ↓ は上の数、こわれた値は決めない", async () => {
+  it("拍子: Enter で setMeter、↑ ↓ は上の数、読めない値は決めない", async () => {
     show(Transport, ready());
     const input = await open("meter");
     expect(input.value).toBe("4/4");
     press(input, "ArrowUp");
     expect(input.value).toBe("5/4");
-    type(input, "6/7");
+    type(input, "6/あ");
     expect(input.classList.contains("broken")).toBe(true);
     press(input, "Enter");
-    type(input, "13/4");
+    type(input, "4");
     press(input, "Enter");
     expect(app.sent).toEqual([
       { type: "rejectValue", field: "meterDen", kept: "4", range: null },
@@ -520,6 +540,83 @@ describe("テンポと拍子の打ちこみ", () => {
     type(input, "6/8");
     press(input, "Enter");
     expect(app.sent.at(-1)).toEqual({ type: "setMeter", num: 6, den: 8 });
+  });
+
+  it("拍子の範囲の外: 上は 1〜12、下はいちばん近い 2 ・ 4 ・ 8 ・ 16（B-68）", async () => {
+    show(Transport, ready());
+    for (const [typed, num, den, said] of [
+      ["13/4", 12, 4, { field: "meterNum", value: "12" }],
+      ["0/4", 1, 4, { field: "meterNum", value: "1" }],
+      ["6/7", 6, 8, { field: "meterDen", value: "8" }],
+      ["3/3", 3, 4, { field: "meterDen", value: "4" }],
+      ["3/99", 3, 16, { field: "meterDen", value: "16" }],
+      ["99/1", 12, 2, { field: "meterNum", value: "12" }],
+    ] as const) {
+      app.sent.length = 0;
+      const input = await open("meter");
+      type(input, typed);
+      expect(input.classList.contains("broken")).toBe(false);
+      press(input, "Enter");
+      expect(app.sent, typed).toEqual([
+        { type: "setMeter", num, den },
+        { type: "clampValue", ...said, range: null },
+      ]);
+      await tick();
+    }
+  });
+
+  it("位置「1. 1. 000」も入力の枠（B-61）。「5」「5.2」「5.2.240」で locate、↑ ↓ は使わない、Esc でやめる", async () => {
+    show(Transport, ready());
+    const openPos = async () => {
+      q<HTMLButtonElement>(`button[data-test="transport-position"]`)!.click();
+      flushSync();
+      await tick();
+      return q<HTMLInputElement>(`input[data-test="transport-position"]`)!;
+    };
+    let input = await openPos();
+    expect(input.value).toBe("1. 1. 000");
+    expect(press(input, "ArrowUp").defaultPrevented).toBe(false);
+    expect(input.value).toBe("1. 1. 000");
+    press(input, "Escape");
+    await tick();
+    expect(app.sent).toEqual([]);
+    for (const [typed, tick_] of [
+      ["5", 4 * BAR],
+      ["5.2", 4 * BAR + 480],
+      ["5. 2. 240", 4 * BAR + 720],
+      ["５．２．２４０", 4 * BAR + 720],
+    ] as const) {
+      input = await openPos();
+      type(input, typed);
+      press(input, "Enter");
+      expect(app.sent.at(-1), typed).toEqual({ type: "locate", tick: tick_ });
+      await tick();
+    }
+    input = await openPos();
+    type(input, "5.x");
+    expect(input.classList.contains("broken")).toBe(true);
+    press(input, "Enter");
+    expect(app.sent.at(-1)).toEqual({ type: "rejectValue", field: "playPosition", kept: "1. 1. 000", range: null });
+  });
+
+  it("位置の範囲の外: 小節 ・ 拍 ・ ティックをそれぞれ丸め、いちばん大きい単位のことだけ言う（B-68）", async () => {
+    show(Transport, ready());
+    for (const [typed, tick_, said] of [
+      ["3.7", 2 * BAR + 3 * 480, { field: "beat", value: "3. 4. 000", range: "1〜4" }],
+      ["3.2.999", 2 * BAR + 480 + 479, { field: "tick", value: "3. 2. 479", range: "0〜479" }],
+      ["0.9.999", 3 * 480 + 479, { field: "bar", value: "1. 4. 479", range: null }],
+      ["2.0", BAR, { field: "beat", value: "2. 1. 000", range: "1〜4" }],
+    ] as const) {
+      app.sent.length = 0;
+      q<HTMLButtonElement>(`button[data-test="transport-position"]`)!.click();
+      flushSync();
+      await tick();
+      const input = q<HTMLInputElement>(`input[data-test="transport-position"]`)!;
+      type(input, typed);
+      press(input, "Enter");
+      expect(app.sent, typed).toEqual([{ type: "locate", tick: tick_ }, { type: "clampValue", ...said }]);
+      await tick();
+    }
   });
 
   it("枠の外へ出たら、やめる", async () => {

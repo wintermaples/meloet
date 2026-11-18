@@ -5,6 +5,7 @@
 //! boundary goes through `rtrb` rings or atomics.
 
 mod clock;
+mod effect;
 mod engine;
 mod instrument;
 mod output;
@@ -13,6 +14,7 @@ mod synth;
 mod transport;
 
 pub use clock::{HeardPosition, TransportClock, TransportState};
+pub use effect::{Effect, EffectContext};
 pub use engine::{
     BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
     EngineParts, LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,

@@ -5,6 +5,7 @@ pub mod chunked;
 pub mod controls;
 pub mod drums;
 pub mod edit;
+pub mod effects;
 pub mod history;
 #[cfg(test)]
 mod id_book;

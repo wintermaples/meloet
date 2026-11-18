@@ -36,6 +36,8 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   number,
   name: "ピアノ",
   color,
+  muted: false,
+  soloed: false,
   instrument: "placeholder",
   gainDb: 0,
   armed: false,

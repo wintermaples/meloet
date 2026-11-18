@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,7 +72,9 @@ pub enum Command {
     Record,
     /// Home.
     GoToStart,
-    /// A click on the ruler. `tick` is where it was clicked; Rust moves to a bar head.
+    /// A click on the ruler, and the position typed into "1. 1. 000" of the transport. Rust
+    /// goes to `tick` as it is. The screen snaps first: in the arrange view to the lines the
+    /// ruler shows, in the piano roll to its grid, not at all with Shift (B-61).
     Locate {
         tick: u64,
     },
@@ -102,11 +104,42 @@ pub enum Command {
     ToggleArm {
         track: u32,
     },
-    /// `None`: a click where there is no clip.
+    /// A click on a track's header (B-70). The track becomes the selected one, which is the
+    /// one the keys play (`SongView::play_target`). A track that is not there is ignored.
+    SelectTrack {
+        track: u32,
+    },
+    /// M, and Shift M on the selected track. Mute is part of the song: saved, and one step
+    /// that undo takes back. A muted track is silent when the song plays (and while recording),
+    /// but keys played on it still sound: mute is only about what the song plays. A muted
+    /// track stays silent when it is soloed too.
+    ToggleMute {
+        track: u32,
+    },
+    /// S, and Shift S on the selected track. Solo is only for listening: not saved, not a
+    /// step. Any number of tracks may be soloed; while one is, the song plays only the soloed
+    /// tracks. Keys played sound on the selected track all the same.
+    ToggleSolo {
+        track: u32,
+    },
+    /// A plain click on a clip: it alone is selected and shown in the piano roll, and its track
+    /// becomes the selected track (as `SelectTrack`). `None`: a click where there is no clip,
+    /// which unselects every clip (the selected track stays).
     SelectClip {
         clip: Option<u32>,
     },
-    /// Delete.
+    /// More than one clip (B-71). Shift + click on a clip is `Add` with that clip (it is then
+    /// `selected_clip`, shown in the piano roll, and its track selected, as with `SelectClip`).
+    /// A box drawn from an empty place is `Replace` with the clips it touches, Shift + box
+    /// `Add`; a box changes neither the piano roll nor the selected track. Clips that are not
+    /// there are ignored.
+    SelectClips {
+        clips: Vec<u32>,
+        mode: SelectMode,
+    },
+    /// Mod A while the arrange view has the keys.
+    SelectAllClips,
+    /// Delete: every selected clip (`ArrangeView::selected_clips`), as one step.
     DeleteSelected,
     /// ◂ ▸, T, Shift T on the selected clip. -1 is the take before, 1 the take after.
     StepTake {
@@ -165,10 +198,13 @@ pub enum Command {
         keys: i32,
         copy: bool,
     },
-    /// A drag on the right edge: every note grows or shrinks by the same amount.
+    /// A drag on an edge of the notes, every note by the same amount. `End`: the end moves and
+    /// the start stays. `Start` (B-69): the start moves and the end stays, so `ticks` > 0 makes
+    /// the notes shorter. A note never gets shorter than 1 tick.
     ResizeNotes {
         take: u32,
         notes: Vec<u32>,
+        edge: ClipEdge,
         ticks: i64,
     },
     /// The erase tool, and Delete while the piano roll has the keys. Deleting clips is
@@ -209,9 +245,19 @@ pub enum Command {
         mode: ScaleMode,
         lock: bool,
     },
-    /// The write tool sounds the key the moment it is pressed (mock R3-PRMouse).
+    /// The piano roll sounds keys on the selected track (B-62): the write tool and the keyboard
+    /// column while pressed (mock R3-PRMouse), a note while it is pressed, a drag at each change
+    /// of key, ↑ ↓ on selected notes as a chord. Whatever was sounding stops first: this
+    /// replaces it. Empty `keys` only stops. The screen times how long it sounds (↑ ↓: about
+    /// 0.3 s) and sends `AuditionOff`, and sends the fixed velocity while
+    /// `KeyboardsView::velocity_fixed` is on. Keys outside the locked scale are left out.
+    ///
+    /// Not recorded, and no `Event::Note` comes back for it. The keys lit in the piano roll's
+    /// keyboard column are the keys played (`Event::Note`) and the keys the screen sounds
+    /// (`sounding` in `ui/src/components/pianoroll/Roll.svelte`), so the screen lights what it
+    /// sends, on its own.
     Audition {
-        key: u8,
+        keys: Vec<u8>,
         velocity: u8,
     },
     AuditionOff,
@@ -268,17 +314,40 @@ pub enum Command {
         take: u32,
         points: Vec<u32>,
     },
-    /// A drag in the arrange view; `track` is `TrackView::number` of the track it is dropped
-    /// on. `copy`: Alt + drag.
-    MoveClip {
-        clip: u32,
+    /// A drag in the arrange view, of the selected clips together (B-71). Each clip moves by
+    /// `ticks`, and by `tracks` rows of `SongView::tracks` (+ down, - up, 0 stays on its track).
+    /// `copy`: Alt + drag. The group stops at the song's start, as one clip does. One step, or
+    /// nothing at all: nothing happens when a clip would leave the tracks or overlap a clip not
+    /// in `clips` (docs/architecture.md 17). Afterwards the moved clips (or the copies) are selected;
+    /// `selected_clip` (or its copy) stays that, and the piano roll shows it.
+    MoveClips {
+        clips: Vec<u32>,
         ticks: i64,
-        track: u32,
+        tracks: i32,
         copy: bool,
     },
-    /// Mod D in the arrange view: a copy right after the clip.
-    DuplicateClip {
-        clip: u32,
+    /// Mod D in the arrange view: copies of `clips` right after the group (the latest end among
+    /// them), on their own tracks, keeping their distances. Otherwise as `MoveClips` with `copy`.
+    DuplicateClips {
+        clips: Vec<u32>,
+    },
+    /// Mod C in the arrange view. Rust keeps the clips (their takes, rows and distances) until
+    /// the next copy or cut; `ArrangeView::clipboard_clips` says how many.
+    CopyClips {
+        clips: Vec<u32>,
+    },
+    /// Mod X in the arrange view: a copy, and the clips deleted, as one step.
+    CutClips {
+        clips: Vec<u32>,
+    },
+    /// Mod V and "貼りつけ" in the arrange view, as one step. The earliest clip kept goes to
+    /// `to`; the others keep their distances and their rows from it. `to: None` (Mod V): on the
+    /// selected track, at the head of the bar the play position is in. Rust snaps, as it knows
+    /// the bars and where the play line is while playing. `Some` (the right-click menu): where
+    /// it was clicked, as it is. Nothing happens when a clip would leave the tracks or overlap
+    /// (as `MoveClips`). The pasted clips are selected.
+    PasteClips {
+        to: Option<ClipSpot>,
     },
     /// A drag on an edge. What is trimmed off stays in the take and comes back when the edge
     /// is pulled out again.
@@ -287,16 +356,54 @@ pub enum Command {
         edge: ClipEdge,
         ticks: i64,
     },
-    /// Enter on a number field that holds a value out of range. `kept` is the value it still
-    /// has, as shown. Rust only says so in the status line; the field stays "broken". `range`, as
-    /// shown, for the fields whose range depends on the clip (`Position`, `Length`); `None` for
-    /// the fixed ones, whose range is a sentence of the screen.
+    /// Enter on a number field that holds what does not read as a number ("あ", nothing).
+    /// `kept` is the value it still has, as shown. Rust only says so in the status line; the
+    /// field stays "broken". `range`, as shown, for the fields whose range depends on the clip
+    /// or the meter (`Position`, `Length`, `PlayPosition`); `None` for the fixed ones, whose
+    /// range is a sentence of the screen.
     RejectValue {
         field: ValueField,
         kept: String,
         #[serde(default)]
         range: Option<String>,
     },
+    /// A number out of range was typed (B-68). The screen puts it at the nearest end (decimals
+    /// rounded; the meter's lower number to the nearest of 2 4 8 16, the larger one on a tie; a
+    /// position's bar, beat and tick each by itself), sends the command that sets that value,
+    /// and then this one, so that the status line says "ベロシティは 1〜127 なので、127 にしま
+    /// した。". `value` is the value set, as shown; `range` as in `RejectValue`. Rust only says
+    /// so; it is not a step.
+    ClampValue {
+        field: ValueField,
+        value: String,
+        #[serde(default)]
+        range: Option<String>,
+    },
+    /// "そろえる" of the velocity panel, and Enter in its field (B-67): every note to `value`
+    /// (1..=127), as one step. The status line says "3 ノートのベロシティを 100 にそろえました。"
+    /// (`StatusMessage::VelocityMatched`). A clamped value: `ClampValue` after this one, whose
+    /// sentence then replaces that one.
+    MatchVelocity {
+        take: u32,
+        notes: Vec<u32>,
+        value: u8,
+    },
+    /// "固定" next to the velocity reading of the input meter, and a value typed on that reading
+    /// (B-66). `value` 1..=127. A meloet setting (settings.json), not part of the song. While on,
+    /// every key played sounds and is recorded at `value`, and `Event::Note` and the telemetry's
+    /// velocity carry `value`, so the input meter reads it.
+    SetVelocityFixed {
+        on: bool,
+        value: u8,
+    },
+    /// Mod Shift S and the file menu (B-59). Rust shows the PC's save window, titled
+    /// "名前をつけて保存", with the song's name filled in. The folder `<name>/<name>.meloet` is made
+    /// where the user chose, and the song takes that name. Cancelling the window changes
+    /// nothing.
+    SaveSongAs,
+    /// Mod Q and "meloet を終わる": the same as closing the window (asks first when there are
+    /// unsaved changes).
+    Quit,
     /// "戻さない" on the recovery hint: back to the song as last saved, as one step.
     DiscardRecovered,
     /// "ファイルの場所をひらく" on the hint about a recovery file that did not read.
@@ -351,6 +458,16 @@ pub enum ControlKind {
     PitchBend,
 }
 
+/// Where pasted clips go: `track` is `TrackView::number`, `tick` a song position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ClipSpot {
+    pub track: u32,
+    pub tick: u64,
+}
+
+/// An edge of a clip (`TrimClip`) or of notes (`ResizeNotes`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -372,6 +489,8 @@ pub enum ValueField {
     Position,
     Key,
     Length,
+    /// "1. 1. 000" of the transport (B-61).
+    PlayPosition,
 }
 
 /// The buttons of the song dialogs, one for one.
@@ -494,6 +613,8 @@ pub struct SongView {
     /// For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
     pub note_count: u32,
     pub tracks: Vec<TrackView>,
+    /// The selected track (B-70: its header is gray.4), which is the one the keys play.
+    /// `SelectTrack`, and a click on a clip, change it.
     pub play_target: Option<u32>,
     /// Kept while the loop is off.
     pub loop_range: Option<TickSpan>,
@@ -535,6 +656,10 @@ pub struct TrackView {
     pub gain_db: f32,
     /// Recording goes to this track.
     pub armed: bool,
+    /// Saved with the song (`ToggleMute`).
+    pub muted: bool,
+    /// Not saved (`ToggleSolo`).
+    pub soloed: bool,
     /// In order of start, never overlapping.
     pub clips: Vec<ClipView>,
 }
@@ -619,9 +744,16 @@ pub struct RecordingView {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ArrangeView {
+    /// Every selected clip, in the order of the tracks, then of start.
+    pub selected_clips: Vec<u32>,
+    /// The clip clicked last (`SelectClip`, Shift + click), while it is still selected: the one
+    /// the take buttons (`StepTake`) and the take label act on. `None` after a box or Mod A
+    /// unless that leaves exactly one clip selected, which is then this one.
     pub selected_clip: Option<u32>,
-    /// The clip the piano roll shows: the one selected last, kept after it is unselected.
+    /// The clip the piano roll shows: the one clicked last, kept after it is unselected.
     pub piano_roll_clip: Option<u32>,
+    /// How many clips `PasteClips` would put in; 0 when there is nothing to paste.
+    pub clipboard_clips: u32,
 }
 
 /// The piano roll's own state, kept apart from `song` so that a new selection does not send
@@ -832,7 +964,21 @@ pub struct KeyboardsView {
     /// The keyboard input itself stopped (the PC's MIDI system, not one keyboard), and meloet
     /// is starting it again. The list is empty meanwhile.
     pub input_stopped: bool,
+    /// "ベロシティ固定" (B-66), next to the velocity reading of the input meter.
+    pub velocity_fixed: VelocityFixed,
 }
+
+/// `value` 1..=127, kept while off; 100 until the user changes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct VelocityFixed {
+    pub on: bool,
+    pub value: u8,
+}
+
+/// The fixed velocity before the user sets one.
+pub const DEFAULT_FIXED_VELOCITY: u8 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -1057,6 +1203,18 @@ pub enum StatusMessage {
         field: ValueField,
         kept: String,
         range: Option<String>,
+    },
+    /// A number out of range was put at the nearest end (B-68, `Command::ClampValue`):
+    /// "ベロシティは 1〜127 なので、127 にしました。" `value` as shown.
+    ValueClamped {
+        field: ValueField,
+        value: String,
+        range: Option<String>,
+    },
+    /// `Command::MatchVelocity` (B-67): "3 ノートのベロシティを 100 にそろえました。"
+    VelocityMatched {
+        count: u32,
+        value: u8,
     },
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the

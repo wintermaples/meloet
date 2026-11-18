@@ -12,11 +12,11 @@ use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
 use meloet_model::{InstrumentRef, Note, Song};
 use meloet_protocol::{
-    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
-    Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
-    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, QuantizeSettings,
-    RecoveryCause, SettingsDialogView, SongFile, SongView, StatusMessage, StatusView, TrackView,
-    Unusable, WorkspaceView,
+    AppState, AudioView, Availability, Band, ChooserView, ChosenState, ClipEdge, Command,
+    EndpointView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView,
+    LayoutView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, NoteField,
+    OutputsView, QuantizeSettings, RecoveryCause, SettingsDialogView, SongFile, SongView,
+    StatusMessage, StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
@@ -714,6 +714,18 @@ impl Model {
             Command::SetLoop { from_bar, to_bar } => self.play.set_loop(from_bar, to_bar, effects),
             Command::ToggleArm { track } => self.play.toggle_arm(track),
             Command::SelectClip { clip } => self.play.select_clip(clip),
+            // Protocol 8: taken in, not yet acted on (the next part of round 3b).
+            Command::SelectTrack { .. }
+            | Command::ToggleMute { .. }
+            | Command::ToggleSolo { .. }
+            | Command::SelectClips { .. }
+            | Command::SelectAllClips
+            | Command::CopyClips { .. }
+            | Command::CutClips { .. }
+            | Command::PasteClips { .. }
+            | Command::SetVelocityFixed { .. }
+            | Command::SaveSongAs => {}
+            Command::Quit => self.close_requested(effects),
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::Undo => self.play.undo(effects),
@@ -754,8 +766,16 @@ impl Model {
             } => self
                 .play
                 .move_notes(take, &notes, ticks, keys, copy, effects),
-            Command::ResizeNotes { take, notes, ticks } => {
-                self.play.resize_notes(take, &notes, ticks, effects);
+            Command::ResizeNotes {
+                take,
+                notes,
+                edge,
+                ticks,
+            } => {
+                // The start edge (B-69) is not acted on yet.
+                if edge == ClipEdge::End {
+                    self.play.resize_notes(take, &notes, ticks, effects);
+                }
             }
             Command::DeleteNotes { take, notes } => self.play.delete_notes(take, &notes, effects),
             Command::ChangeVelocity { take, notes, delta } => {
@@ -781,9 +801,11 @@ impl Model {
                 swing,
                 align,
             }),
-            Command::Audition { key, velocity } => {
-                self.play.audition(key, velocity, can_play, effects);
-            }
+            // Only the first key sounds for now; the engine sounds one key at a time.
+            Command::Audition { keys, velocity } => match keys.first() {
+                Some(&key) => self.play.audition(key, velocity, can_play, effects),
+                None => self.play.audition_off(can_play, effects),
+            },
             Command::AuditionOff => self.play.audition_off(can_play, effects),
             Command::Quantize { take, notes } => {
                 if let Some(n) = self.play.quantize(take, &notes, effects) {
@@ -799,6 +821,14 @@ impl Model {
             } => self
                 .play
                 .set_notes_field(take, &notes, field, value, effects),
+            // Not yet said in the status line (`VelocityMatched`).
+            Command::MatchVelocity { take, notes, value } => self.play.set_notes_field(
+                take,
+                &notes,
+                NoteField::Velocity,
+                i64::from(value),
+                effects,
+            ),
             Command::SelectControls { take, points, mode } => {
                 self.play.select_controls(take, points, mode);
             }
@@ -819,18 +849,40 @@ impl Model {
             Command::DeleteControls { take, points } => {
                 self.play.delete_controls(take, &points, effects);
             }
-            Command::MoveClip {
-                clip,
+            // One clip at a time for now: more than one is not acted on yet.
+            Command::MoveClips {
+                clips,
                 ticks,
-                track,
+                tracks,
                 copy,
-            } => self.play.move_clip(clip, ticks, track, copy, effects),
-            Command::DuplicateClip { clip } => self.play.duplicate_clip(clip, effects),
+            } => {
+                if let [clip] = clips[..]
+                    && let Some(track) = self.play.track_rows_away(clip, tracks)
+                {
+                    self.play.move_clip(clip, ticks, track, copy, effects);
+                }
+            }
+            Command::DuplicateClips { clips } => {
+                if let [clip] = clips[..] {
+                    self.play.duplicate_clip(clip, effects);
+                }
+            }
             Command::TrimClip { clip, edge, ticks } => {
                 self.play.trim_clip(clip, edge, ticks, effects);
             }
             Command::RejectValue { field, kept, range } => {
                 self.notice = Some(StatusMessage::ValueRejected { field, kept, range });
+            }
+            Command::ClampValue {
+                field,
+                value,
+                range,
+            } => {
+                self.notice = Some(StatusMessage::ValueClamped {
+                    field,
+                    value,
+                    range,
+                });
             }
             Command::DiscardRecovered => self.discard_recovered(effects),
             Command::ShowRecoveryFile => self.show_recovery_file(effects),
@@ -1086,6 +1138,10 @@ impl Model {
                 active: self.active_keyboard().map(|k| k.id.clone()),
                 lost: self.lost.clone(),
                 input_stopped: self.midi_restarting.is_some(),
+                velocity_fixed: VelocityFixed {
+                    on: false,
+                    value: meloet_protocol::DEFAULT_FIXED_VELOCITY,
+                },
             },
             outputs: OutputsView {
                 list: self.outputs().iter().map(endpoint_view).collect(),
@@ -1283,6 +1339,8 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
                 },
                 gain_db: t.gain_db as f32,
                 armed: song.session.armed == Some(t.id),
+                muted: false,
+                soloed: false,
                 clips: play.clips_of(t.id),
             })
             .collect(),

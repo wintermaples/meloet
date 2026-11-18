@@ -760,6 +760,7 @@ fn nothing_changes_notes_while_recording() {
         Command::ResizeNotes {
             take,
             notes: vec![0],
+            edge: ClipEdge::End,
             ticks: 10,
         },
         Command::ChangeVelocity {
@@ -864,7 +865,7 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
         cmd(
             m,
             Command::Audition {
-                key: 63,
+                keys: vec![63],
                 velocity: 100
             }
         )
@@ -1023,7 +1024,7 @@ fn the_audition_sounds_on_the_play_target() {
     let effects = cmd(
         m,
         Command::Audition {
-            key: 60,
+            keys: vec![60],
             velocity: 0,
         },
     );
@@ -1038,7 +1039,7 @@ fn the_audition_sounds_on_the_play_target() {
 
     let mut silent = crate::state::Model::new(crate::settings::Settings::default());
     let effects = silent.handle(crate::state::Input::Command(Command::Audition {
-        key: 60,
+        keys: vec![60],
         velocity: 100,
     }));
     assert!(effects.iter().all(|e| !matches!(e, Effect::Engine(_))));

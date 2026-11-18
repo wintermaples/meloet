@@ -27,6 +27,8 @@ fn sample_state() -> AppState {
                 instrument: InstrumentKind::Placeholder,
                 gain_db: 0.0,
                 armed: true,
+                muted: true,
+                soloed: false,
                 clips: vec![ClipView {
                     id: 4,
                     name: "ピアノ".into(),
@@ -65,8 +67,10 @@ fn sample_state() -> AppState {
             }),
         },
         arrange: ArrangeView {
+            selected_clips: vec![4, 9],
             selected_clip: None,
             piano_roll_clip: Some(4),
+            clipboard_clips: 2,
         },
         piano_roll: PianoRollView {
             take: Some(6),
@@ -128,6 +132,10 @@ fn sample_state() -> AppState {
             active: None,
             lost: None,
             input_stopped: false,
+            velocity_fixed: VelocityFixed {
+                on: true,
+                value: DEFAULT_FIXED_VELOCITY,
+            },
         },
         outputs: OutputsView {
             list: vec![EndpointView {
@@ -413,9 +421,11 @@ fn piano_roll_command_json_shape() {
             Command::ResizeNotes {
                 take: 6,
                 notes: vec![14],
+                edge: ClipEdge::Start,
                 ticks: 240,
             },
-            json!({"type": "resizeNotes", "take": 6, "notes": [14], "ticks": 240}),
+            json!({"type": "resizeNotes", "take": 6, "notes": [14], "edge": "start",
+                   "ticks": 240}),
         ),
         (
             Command::DeleteNotes {
@@ -467,10 +477,10 @@ fn piano_roll_command_json_shape() {
         ),
         (
             Command::Audition {
-                key: 50,
+                keys: vec![48, 52, 55],
                 velocity: 100,
             },
-            json!({"type": "audition", "key": 50, "velocity": 100}),
+            json!({"type": "audition", "keys": [48, 52, 55], "velocity": 100}),
         ),
         (Command::AuditionOff, json!({"type": "auditionOff"})),
         (
@@ -554,18 +564,94 @@ fn piano_roll_command_json_shape() {
             json!({"type": "deleteControls", "take": 6, "points": [1]}),
         ),
         (
-            Command::MoveClip {
-                clip: 3,
+            Command::MoveClips {
+                clips: vec![3, 8],
                 ticks: 1920,
-                track: 2,
+                tracks: -1,
                 copy: false,
             },
-            json!({"type": "moveClip", "clip": 3, "ticks": 1920, "track": 2, "copy": false}),
+            json!({"type": "moveClips", "clips": [3, 8], "ticks": 1920, "tracks": -1,
+                   "copy": false}),
         ),
         (
-            Command::DuplicateClip { clip: 3 },
-            json!({"type": "duplicateClip", "clip": 3}),
+            Command::DuplicateClips { clips: vec![3] },
+            json!({"type": "duplicateClips", "clips": [3]}),
         ),
+        (
+            Command::CopyClips { clips: vec![3, 8] },
+            json!({"type": "copyClips", "clips": [3, 8]}),
+        ),
+        (
+            Command::CutClips { clips: vec![3] },
+            json!({"type": "cutClips", "clips": [3]}),
+        ),
+        (
+            Command::PasteClips { to: None },
+            json!({"type": "pasteClips", "to": null}),
+        ),
+        (
+            Command::PasteClips {
+                to: Some(ClipSpot {
+                    track: 2,
+                    tick: 1000,
+                }),
+            },
+            json!({"type": "pasteClips", "to": {"track": 2, "tick": 1000}}),
+        ),
+        (
+            Command::SelectClips {
+                clips: vec![3, 8],
+                mode: SelectMode::Add,
+            },
+            json!({"type": "selectClips", "clips": [3, 8], "mode": "add"}),
+        ),
+        (Command::SelectAllClips, json!({"type": "selectAllClips"})),
+        (
+            Command::SelectTrack { track: 2 },
+            json!({"type": "selectTrack", "track": 2}),
+        ),
+        (
+            Command::ToggleMute { track: 2 },
+            json!({"type": "toggleMute", "track": 2}),
+        ),
+        (
+            Command::ToggleSolo { track: 2 },
+            json!({"type": "toggleSolo", "track": 2}),
+        ),
+        (
+            Command::MatchVelocity {
+                take: 6,
+                notes: vec![1, 2, 3],
+                value: 100,
+            },
+            json!({"type": "matchVelocity", "take": 6, "notes": [1, 2, 3], "value": 100}),
+        ),
+        (
+            Command::SetVelocityFixed {
+                on: true,
+                value: 90,
+            },
+            json!({"type": "setVelocityFixed", "on": true, "value": 90}),
+        ),
+        (
+            Command::ClampValue {
+                field: ValueField::MeterDen,
+                value: "4".into(),
+                range: None,
+            },
+            json!({"type": "clampValue", "field": "meterDen", "value": "4", "range": null}),
+        ),
+        (
+            Command::ClampValue {
+                field: ValueField::PlayPosition,
+                value: "9. 4. 479".into(),
+                range: Some("1. 1. 000〜999. 4. 479".into()),
+            },
+            json!({"type": "clampValue", "field": "playPosition", "value": "9. 4. 479",
+                   "range": "1. 1. 000〜999. 4. 479"}),
+        ),
+        (Command::SaveSongAs, json!({"type": "saveSongAs"})),
+        (Command::Quit, json!({"type": "quit"})),
         (
             Command::TrimClip {
                 clip: 3,
@@ -608,7 +694,14 @@ fn state_json_is_camel_case_and_round_trips() {
     );
     assert_eq!(
         v["state"]["arrange"],
-        json!({"selectedClip": null, "pianoRollClip": 4})
+        json!({"selectedClips": [4, 9], "selectedClip": null, "pianoRollClip": 4,
+               "clipboardClips": 2})
+    );
+    assert_eq!(v["state"]["song"]["tracks"][0]["muted"], true);
+    assert_eq!(v["state"]["song"]["tracks"][0]["soloed"], false);
+    assert_eq!(
+        v["state"]["keyboards"]["velocityFixed"],
+        json!({"on": true, "value": 100})
     );
     assert_eq!(v["state"]["workspace"]["viewportWidth"], 1280.0);
     assert_eq!(v["state"]["workspace"]["unfitScales"], json!([150]));
@@ -690,6 +783,21 @@ fn status_message_json_shape() {
                 range: None,
             },
             json!({"id": "valueRejected", "field": "velocity", "kept": "77", "range": null}),
+        ),
+        (
+            StatusMessage::ValueClamped {
+                field: ValueField::Velocity,
+                value: "127".into(),
+                range: None,
+            },
+            json!({"id": "valueClamped", "field": "velocity", "value": "127", "range": null}),
+        ),
+        (
+            StatusMessage::VelocityMatched {
+                count: 3,
+                value: 100,
+            },
+            json!({"id": "velocityMatched", "count": 3, "value": 100}),
         ),
         (
             StatusMessage::ScaleDoesNotFit {

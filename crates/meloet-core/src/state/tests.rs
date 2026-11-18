@@ -166,6 +166,8 @@ fn a_new_song() {
             instrument: InstrumentKind::Placeholder,
             gain_db: 0.0,
             armed: true,
+            muted: false,
+            soloed: false,
             clips: vec![],
         }]
     );

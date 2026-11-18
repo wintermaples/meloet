@@ -209,7 +209,7 @@ impl Model {
         }
     }
 
-    fn close_requested(&mut self, effects: &mut Vec<Effect>) {
+    pub(super) fn close_requested(&mut self, effects: &mut Vec<Effect>) {
         if self.files.exiting || self.files.waiting.is_some() {
             return;
         }

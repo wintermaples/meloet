@@ -118,6 +118,7 @@ describe("知らせ", () => {
   it("のばせなかったときの文（書いた ・ 動かした）", () => {
     expect(fakeScene("notesNotWritten")!.state.status.message).toEqual({ id: "notesNotWritten" });
     expect(t("msg.notesNotWritten")).toBe("ほかのクリップと重なるので、書けませんでした。");
+    expect(t("msg.notesNotResized")).toBe("ほかのクリップと重なるので、長さを変えられませんでした。");
     expect(t("msg.clipsNotMoved")).toBe("ほかのクリップと重なるので、動かしませんでした。");
   });
 

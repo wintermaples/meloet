@@ -1744,7 +1744,7 @@ impl Play {
         };
         let clip = self.aimed(take)?;
         let r = notes::resize_notes(self.doc(), clip, &indexes(picked), edge, ticks);
-        self.apply_growing(r, StatusMessage::ClipsNotMoved, effects)
+        self.apply_growing(r, StatusMessage::NotesNotResized, effects)
     }
 
     /// Like `apply_notes`; `overlap` is said when the clip could not grow.

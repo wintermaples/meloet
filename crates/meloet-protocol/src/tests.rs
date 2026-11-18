@@ -866,6 +866,10 @@ fn status_message_json_shape() {
             json!({"id": "notesNotWritten"}),
         ),
         (
+            StatusMessage::NotesNotResized,
+            json!({"id": "notesNotResized"}),
+        ),
+        (
             StatusMessage::ScaleDoesNotFit {
                 requested: 150,
                 kept: 125,

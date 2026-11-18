@@ -160,6 +160,8 @@
         return plain("msg.clipsNotDuplicated");
       case "notesNotWritten":
         return plain("msg.notesNotWritten");
+      case "notesNotResized":
+        return plain("msg.notesNotResized");
       case "outputChosen":
         return m.track
           ? plain("status.outputChosen", { output: m.output, track: track(m.track) })

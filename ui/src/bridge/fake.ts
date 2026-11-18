@@ -1278,6 +1278,7 @@ const NOTICES: StatusMessage["id"][] = [
   "clipsNotPasted",
   "clipsNotDuplicated",
   "notesNotWritten",
+  "notesNotResized",
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 

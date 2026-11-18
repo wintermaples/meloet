@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1266,6 +1266,9 @@ pub enum StatusMessage {
     /// The write tool outside the clip, where the clip cannot grow as it would overlap the clip
     /// next to it (B-82): "ほかのクリップと重なるので、書けませんでした。"
     NotesNotWritten,
+    /// A note's edge dragged outside the clip, where the clip cannot grow for the same reason:
+    /// "ほかのクリップと重なるので、長さを変えられませんでした。"
+    NotesNotResized,
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
     /// piano roll are selected ("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み…", mock

@@ -1839,7 +1839,7 @@ fn the_status_line_says_when_the_clip_cannot_grow() {
             ticks: (end + BAR) as i64,
         },
     );
-    assert_eq!(status(m), Some(StatusMessage::ClipsNotMoved));
+    assert_eq!(status(m), Some(StatusMessage::NotesNotResized));
     assert_eq!(m.view().song.undo_count, steps);
     assert_eq!(clip_view(m).end, end);
     // Inside the clip: a step, and nothing said.

@@ -3,7 +3,8 @@
 // The input goes in as DOM events on the note area, so the page's own handlers do the work. Nothing here runs
 // unless Rust hands over a script.
 
-export type PartKind = "scroll" | "zoom" | "drag";
+/** rows: count is the row height (ROW_PX_STEPS) to step to before the parts after it. */
+export type PartKind = "scroll" | "zoom" | "drag" | "rows";
 
 export interface ScriptPart {
   kind: PartKind;
@@ -12,7 +13,7 @@ export interface ScriptPart {
 
 export const SCRIPT_REPORT = "ui-script.json";
 const DEFAULT_COUNT = 100;
-const KINDS: Record<string, PartKind> = { "pr-scroll": "scroll", "pr-zoom": "zoom", "pr-drag": "drag" };
+const KINDS: Record<string, PartKind> = { "pr-scroll": "scroll", "pr-zoom": "zoom", "pr-drag": "drag", "pr-rows": "rows" };
 
 /** `pr-scroll:100,pr-zoom,pr-drag:1000`. Null when any part is not understood. */
 export function parseUiScript(text: string): ScriptPart[] | null {
@@ -43,6 +44,8 @@ export interface Target {
   /** Something that changes when a wheel step did anything: the left edge, the zoom. */
   scrollTick(): number;
   zoom(): number;
+  /** The vertical zoom (row px at 100 %); needed only by a rows part. */
+  rowPx?(): number;
   /** Id of the take shown; a drag is answered when it changes. */
   shownTake(): number | null;
   /** The reading the page shows while dragging (null when no drag is going on). */
@@ -189,6 +192,10 @@ export class UiScript {
     for (let i = 0; i < part.count && !this.stopped; i++) {
       const area = this.target.area();
       if (!area) throw new Error("the note area is gone");
+      if (part.kind === "rows") {
+        await this.rows(area, part.count, rec);
+        return;
+      }
       let step: Step;
       if (part.kind === "drag") {
         step = await this.drag(area, i % 2 === 0 ? 1 : -1);
@@ -222,6 +229,20 @@ export class UiScript {
     const inputMs = this.clock.now() - atMs;
     const after = kind === "scroll" ? this.target.scrollTick() : this.target.zoom();
     return { atMs, inputMs, changed: after !== before };
+  }
+
+  private async rows(area: HTMLElement, rowPx: number, rec: PartRecord): Promise<void> {
+    const r = area.getBoundingClientRect();
+    for (let i = 0; this.target.rowPx && this.target.rowPx() !== rowPx; i++) {
+      const before = this.target.rowPx();
+      if (i > 8) throw new Error(`the rows did not reach ${rowPx}`);
+      const atMs = this.clock.now();
+      // Wheel up (negative) makes the rows taller.
+      area.dispatchEvent(wheel(r.left + r.width / 2, r.top + r.height / 2, before < rowPx ? -100 : 100, { ctrl: true, shift: true }));
+      await this.clock.settle();
+      rec.steps.push({ atMs, inputMs: this.clock.now() - atMs, changed: this.target.rowPx() !== before });
+      await this.clock.wait(STEP_GAP_MS);
+    }
   }
 
   private async drag(area: HTMLElement, direction: number): Promise<Step> {

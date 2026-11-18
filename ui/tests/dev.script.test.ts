@@ -95,6 +95,25 @@ describe("自動で動かす係", () => {
     expect(s.reports.at(-1)!.parts[0]!.steps.every((st) => st.changed)).toBe(true);
   });
 
+  it("縦の段: Mod Shift ＋ ホイールで、決めた行の高さまで動かしてから次へ", async () => {
+    const steps = [8, 12, 16, 20, 24];
+    let at = 1;
+    const s = setup({ rowPx: () => steps[at]! });
+    s.area.addEventListener("wheel", (e) => {
+      if (e.ctrlKey && e.shiftKey) at = Math.min(4, Math.max(0, at - Math.sign(e.deltaY)));
+    });
+    expect(parseUiScript("pr-rows:24,pr-scroll:1")).toEqual([
+      { kind: "rows", count: 24 },
+      { kind: "scroll", count: 1 },
+    ]);
+    await new UiScript("pr-rows:24", [{ kind: "rows", count: 24 }], s.target, fakeClock(), s.report).run();
+    expect(steps[at]).toBe(24);
+    const wheels = s.events.filter((e) => e.type === "wheel");
+    expect(wheels).toHaveLength(3);
+    expect(wheels.every((e) => e.ctrl && e.shift && e.deltaY < 0)).toBe(true);
+    expect(s.reports.at(-1)!.done).toBe(true);
+  });
+
   it("ドラッグ: 押す → 動かす 4 回 → 離す。行きと帰りをくりかえし、新しいテイクが見えるまで待つ", async () => {
     const s = setup();
     await new UiScript("pr-drag:2", [{ kind: "drag", count: 2 }], s.target, fakeClock(), s.report).run();

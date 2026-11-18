@@ -69,6 +69,7 @@ function pianoRoll(): Target {
     },
     scrollTick: () => prView.scrollTick,
     zoom: () => prView.quarterPx,
+    rowPx: () => prView.rowPx,
     shownTake: () => shown.take?.id ?? null,
     reading: () => dragReading.text,
   };

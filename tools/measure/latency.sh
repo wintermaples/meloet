@@ -4,6 +4,7 @@
 # usage: tools/measure/latency.sh [--window 1920x1080] [--count 120] [--out DIR] [--keep-ui]
 #                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
 #                                 [--pattern spaced|mixed] [--piano-roll [--song FILE]]
+#                                 [--velocity-fixed V]
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
@@ -17,6 +18,7 @@
 # --piano-roll: open a song (MELOET_OPEN_SONG), select its clip (id 2) and open the piano roll
 #   band before the keys, and keep it open. --song: that song; without it, make_song.py writes
 #   one with 200 notes over 16 bars.
+# --velocity-fixed: turn "ベロシティ固定" on at V (1..127) right after the chooser.
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
 # the output chooser, plays --count keys (quiet), lets meloet exit, and writes
@@ -34,6 +36,7 @@ jitter_ms=0
 pattern=spaced
 piano_roll=0
 song=
+velocity_fixed=
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
@@ -46,7 +49,8 @@ while [ $# -gt 0 ]; do
     --pattern) pattern=$2; shift 2 ;;
     --piano-roll) piano_roll=1; shift ;;
     --song) song=$2; shift 2 ;;
-    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll [--song FILE]]" >&2; exit 2 ;;
+    --velocity-fixed) velocity_fixed=$2; shift 2 ;;
+    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll [--song FILE]] [--velocity-fixed V]" >&2; exit 2 ;;
   esac
 done
 
@@ -113,6 +117,10 @@ if [ "$piano_roll" = 1 ]; then
   open_song=(MELOET_OPEN_SONG="$song")
   view=",{\"afterMs\":$((confirm_ms - 500)),\"command\":{\"type\":\"selectClip\",\"clip\":2}},{\"afterMs\":$((confirm_ms - 300)),\"command\":{\"type\":\"toggleBand\",\"band\":\"pianoRoll\"}}"
   label_view=", piano roll open ($(basename "$song"))"
+fi
+if [ -n "$velocity_fixed" ]; then
+  view="$view,{\"afterMs\":$((confirm_ms + 200)),\"command\":{\"type\":\"setVelocityFixed\",\"on\":true,\"value\":$velocity_fixed}}"
+  label_view="$label_view, velocity fixed at $velocity_fixed"
 fi
 
 # This PC only: the agent user reaches the screen and the sound through this file.

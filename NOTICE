@@ -56,7 +56,7 @@ Fluid (R3) SoundFont
   by Frank Wen
   source: https://sources.debian.org/src/fluid-soundfont/3.1-6/
   license: MIT, https://opensource.org/license/mit
-  changes made for meloet: Took the five organ presets (General MIDI 17 to 21) out of the SoundFont: joined each left and right sample pair into one stereo file, cut the samples at the loop end and the silence before each sound, converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback), and left out the filter, the chorus and reverb sends, the envelope delay and the velocity-to-filter modulator; a short decay to a lower sustain level became a lower level.
+  changes made for meloet: Took 18 instrument presets (General MIDI 12, 13, 17 to 21, 25, 26, 28, 31, 33, 35, 46, 57, 62, 66 and 74) and 12 keys of the Brush drum kit out of the SoundFont: joined each left and right sample pair and the layers that sound together into one file, kept one velocity layer where the layers play the same samples, cut the samples at the loop end and the silence before each sound, baked the hold and decay of the volume envelope into the samples (repeating the loop where the decay needs it) and, in four presets, the filter, moved the stereo halves of three drums tuned 5 cents apart to one pitch, converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback), and left out the other filters, the filter sweeps, the LFOs, the chorus and reverb sends, the envelope delay and the velocity-to-filter modulators; a short decay to a lower sustain level became a lower level.
 
 The license texts that came with each sample set are in licenses/sounds/.
 

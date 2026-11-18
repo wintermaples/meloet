@@ -3,6 +3,7 @@
   import { space, type Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
+  import { movableDialog } from "../lib/dialogMove";
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
@@ -90,8 +91,8 @@
 {#if app && settings}
   <div class="place" class:advanced>
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={t("settings.title")} data-test="settings-dialog">
-      <div class="head">
+    <div class="dialog" role="dialog" aria-label={t("settings.title")} data-test="settings-dialog" use:movableDialog>
+      <div class="head" data-dialog-head>
         <span class="title">{t("settings.title")}</span>
         <span class="spacer"></span>
         <button type="button" class="close" data-test="settings-close" onclick={() => send({ type: "settingsCancel" })}>
@@ -341,6 +342,7 @@
     height: var(--part-dialog-head);
     padding: 0 var(--space-4);
     border-bottom: var(--line-hair) solid var(--color-gray-6);
+    cursor: move;
   }
   .title {
     color: var(--color-gray-10);

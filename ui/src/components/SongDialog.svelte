@@ -1,6 +1,7 @@
 <!-- 曲のダイアログ（仕様書 2 章「ダイアログ」、6 章の文）。見出しは曲の名前か、読めなかったファイルの名前（ヤチヨさんの決め）。
      Esc は Rust の back（やめる）。Enter は右はしの明るいボタン（keys/attach.ts）。 -->
 <script lang="ts">
+  import { movableDialog } from "../lib/dialogMove";
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { current, send } from "../state/app.svelte";
   import Button from "./Button.svelte";
@@ -13,8 +14,8 @@
 {#if dialog && look}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={dialog.title} data-test="song-dialog">
-      <div class="head"><span class="title">{dialog.title}</span></div>
+    <div class="dialog" role="dialog" aria-label={dialog.title} data-test="song-dialog" use:movableDialog>
+      <div class="head" data-dialog-head><span class="title">{dialog.title}</span></div>
       <ScrollArea data-test="song-dialog-body">
         <p class="body">{look.body}</p>
       </ScrollArea>
@@ -71,6 +72,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     white-space: nowrap;
     overflow: hidden;
+    cursor: move;
   }
   .title {
     overflow: hidden;

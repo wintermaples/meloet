@@ -626,6 +626,8 @@ FAKE_TAKES.set(QUANTIZED_TAKE, {
   })),
 });
 for (const t of [phrase(14, 4, 21, 6), phrase(15, 4, 19, 7)]) FAKE_TAKES.set(t.id, t);
+const NO_NOTES_TAKE = 16;
+FAKE_TAKES.set(NO_NOTES_TAKE, { id: NO_NOTES_TAKE, length: 4 * BAR, notes: [] });
 
 /** The other tracks of F-WidePR (MIDI clips only: the fake cannot show the sung clips). */
 const WIDE_TRACKS: { name: string; gainDb: number; clips: [string, number, number][] }[] = [
@@ -832,6 +834,18 @@ export const SCENES: Record<string, SceneDef> = {
     setup: ready,
     bands: ["pianoRoll"],
     after: (s) => (s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null }),
+    meters: QUIET,
+  },
+  // Not from a mock: A-PianoRoll after every note was deleted (the clip stays, its take has no note).
+  pianoRollNoNotes: {
+    setup(s) {
+      pianoRollSong(s);
+      s.song.tracks[0]!.clips = [fakeClip(10, "イントロ", 1, 5, 1, [NO_NOTES_TAKE])];
+      s.song.noteCount = 0;
+      s.pianoRoll = { ...s.pianoRoll, take: NO_NOTES_TAKE, selectedNotes: [], selectedControls: [] };
+      s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null };
+    },
+    bands: ["pianoRoll"],
     meters: QUIET,
   },
   mixer: { setup: ready, bands: ["mixer"], meters: QUIET },

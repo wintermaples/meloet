@@ -34,6 +34,8 @@ pub enum EditError {
     OutOfClip,
     /// A clip would overlap another clip of its track.
     Overlap,
+    /// A clip would go above the first track, below the last, or past [`MAX_TICK`].
+    OffTheSong,
 }
 
 /// No clip ends after this, so that every song position of a take fits in an `i64`.
@@ -239,8 +241,8 @@ pub fn switch_take(doc: &Doc, clip: ClipId, index: usize) -> Result<Edit, EditEr
     })
 }
 
-/// Removes the clips, all or none.
-pub fn delete_clips(doc: &Doc, ids: &[ClipId]) -> Result<Edit, EditError> {
+/// Removes the clips, all or none. `cut`: for Mod X.
+pub fn delete_clips(doc: &Doc, ids: &[ClipId], cut: bool) -> Result<Edit, EditError> {
     if ids.is_empty() {
         return Err(EditError::Unchanged);
     }
@@ -274,7 +276,7 @@ pub fn delete_clips(doc: &Doc, ids: &[ClipId]) -> Result<Edit, EditError> {
             tracks,
             ..doc.clone()
         },
-        step: StepKind::DeleteClips { count },
+        step: StepKind::DeleteClips { count, cut },
     })
 }
 

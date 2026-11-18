@@ -403,6 +403,7 @@ impl Rng {
 fn shared_takes_hold_what_a_fresh_copy_holds() {
     use crate::History;
     use crate::controls::{ControlKind, add_control, delete_controls, move_controls};
+    use crate::id_book::{IdBook, held};
     use crate::quantize::{quantize, unquantize};
     use crate::roll::QuantizeSettings;
 
@@ -430,6 +431,7 @@ fn shared_takes_hold_what_a_fresh_copy_holds() {
     };
     let (mut doc, clip) = record(&Doc::new_default(), vec![take]);
     let mut h = History::new();
+    let mut book = IdBook::new(&doc);
     let mut line = vec![doc.clone()];
     let mut at = 0;
     let mut made = 0;
@@ -509,14 +511,19 @@ fn shared_takes_hold_what_a_fresh_copy_holds() {
             }
         };
         if let Ok(e) = edited {
+            let before = doc.clone();
             h.apply(&mut doc, e.edit);
+            book.saw(&doc, Some(&before))
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
             made += 1;
             line.truncate(at + 1);
             line.push(doc.clone());
             at += 1;
         }
         let ctx = format!("round {round}");
-        assert_eq!(doc, line[at], "{ctx}");
+        book.saw(&doc, None)
+            .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+        assert_eq!(held(&doc), held(&line[at]), "{ctx}");
         let (_, c) = doc.clip(clip).unwrap();
         assert_eq!(c.takes.len(), 1, "{ctx}");
         let t = &c.active_take().take;
@@ -533,9 +540,9 @@ fn shared_takes_hold_what_a_fresh_copy_holds() {
     }
     assert!(made > 200, "{made}");
     while h.undo(&mut doc).is_some() {}
-    assert_eq!(doc, line[0]);
+    assert_eq!(held(&doc), held(&line[0]));
     while h.redo(&mut doc).is_some() {}
-    assert_eq!(&doc, line.last().unwrap());
+    assert_eq!(held(&doc), held(line.last().unwrap()));
 }
 
 /// Moving one note of 10 000 makes one or two chunks; the rest are the old take's.

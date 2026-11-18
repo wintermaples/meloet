@@ -1,6 +1,6 @@
 //! The piano roll: editing notes, the selection, the clipboard, the settings, the audition.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use meloet_model::ControlPoint;
 use meloet_model::ControlValue;
@@ -105,6 +105,64 @@ fn song(rng: &mut Rng) -> Song {
     let doc = add(&doc, 2, vec![take(rng, 0, 2 * BAR)]);
     s.doc = doc;
     s
+}
+
+/// The doc with `next_id` left out: undo and redo bring the rest back, never a lower `next_id`.
+fn held(doc: &Doc) -> Doc {
+    Doc {
+        next_id: 0,
+        ..doc.clone()
+    }
+}
+
+/// Every id given out so far: a take id always names the same take, a clip new in a step has an
+/// id never given out, and `next_id` never goes back.
+#[derive(Default)]
+struct Given {
+    takes: HashMap<TakeId, Arc<Take>>,
+    clips: HashSet<ClipId>,
+    next_id: u32,
+}
+
+impl Given {
+    /// `before`: the doc a new step was made on. Without it (undo, redo) clips may come back.
+    fn saw(&mut self, doc: &Doc, before: Option<&Doc>, ctx: &str) {
+        assert!(doc.next_id >= self.next_id, "{ctx}: next_id went back");
+        self.next_id = doc.next_id;
+        let takes = doc
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .flat_map(|c| &c.takes)
+            .flat_map(|ct| {
+                std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take))
+            });
+        for t in takes {
+            assert!(t.id.0 < doc.next_id, "{ctx}: take {}", t.id.0);
+            assert!(
+                !self.clips.contains(&ClipId(t.id.0)),
+                "{ctx}: take {}",
+                t.id.0
+            );
+            let had = self.takes.entry(t.id).or_insert_with(|| t.clone());
+            assert_eq!(had, t, "{ctx}: take id {} given twice", t.id.0);
+        }
+        for c in doc.tracks.iter().flat_map(|t| &t.clips) {
+            let new = before.is_some_and(|b| b.clip(c.id).is_none());
+            assert!(c.id.0 < doc.next_id, "{ctx}: clip {}", c.id.0);
+            assert!(
+                !self.takes.contains_key(&TakeId(c.id.0)),
+                "{ctx}: clip {}",
+                c.id.0
+            );
+            assert!(
+                !(new && self.clips.contains(&c.id)),
+                "{ctx}: clip id {} given twice",
+                c.id.0
+            );
+            self.clips.insert(c.id);
+        }
+    }
 }
 
 fn fresh(song: Song) -> Play {
@@ -285,6 +343,8 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                 .collect()
         };
         p.select_clip(Some(clips(&p)[0].0));
+        let mut given = Given::default();
+        given.saw(&p.song().doc, None, "first");
         let mut line = vec![p.song().doc.clone()];
         let mut at = 0usize;
         let e = &mut Vec::new();
@@ -294,7 +354,8 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                 // Cut or deleted every clip: back one step.
                 p.undo(e);
                 at = p.undo_count() as usize;
-                assert_eq!(&p.song().doc, &line[at], "{ctx}");
+                assert_eq!(held(&p.song().doc), held(&line[at]), "{ctx}");
+                given.saw(&p.song().doc, None, &ctx);
             }
             if p.shown().is_none() {
                 // Undo took away the copy the piano roll showed.
@@ -314,6 +375,7 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                     .collect(),
             };
             let steps = p.undo_count();
+            let before = p.song().doc.clone();
             let take = if rng.below(20) == 0 {
                 // An old id: dropped.
                 shown_id(&p) + 1000
@@ -527,11 +589,13 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                     }
                     line.truncate(at + 1);
                     line.push(p.song().doc.clone());
+                    given.saw(&p.song().doc, Some(&before), &ctx);
                 }
                 _ => assert_eq!(now, steps, "{ctx}: one command, one step at most"),
             }
             at = now as usize;
-            assert_eq!(&p.song().doc, &line[at], "{ctx}");
+            assert_eq!(held(&p.song().doc), held(&line[at]), "{ctx}");
+            given.saw(&p.song().doc, None, &ctx);
             check(&p, &takes_of, &ctx);
             if round % 50 == 49 {
                 let back = songfile::decode(&songfile::encode(p.song())).unwrap();
@@ -550,13 +614,17 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
         while p.history.undo_count() > 0 {
             p.undo(e);
         }
-        assert_eq!(p.song().doc, first.doc, "seed {seed}: all undone");
+        assert_eq!(
+            held(&p.song().doc),
+            held(&first.doc),
+            "seed {seed}: all undone"
+        );
         while p.history.redo_count() > 0 {
             p.redo(e);
         }
         assert_eq!(
-            &p.song().doc,
-            line.last().unwrap(),
+            held(&p.song().doc),
+            held(line.last().unwrap()),
             "seed {seed}: all redone"
         );
     }

@@ -4,16 +4,15 @@
 //! pulled out.
 //!
 //! Clips moved or copied together keep their distances and their rows. A group that would put a
-//! clip off the tracks (or past [`MAX_TICK`]) does nothing and says [`EditError::Unchanged`]; one
+//! clip off the tracks (or past [`MAX_TICK`]) does nothing and says [`EditError::OffTheSong`]; one
 //! that would overlap a clip outside it says [`EditError::Overlap`].
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::TrackId;
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index};
 use crate::history::StepKind;
-use crate::song::{Clip, ClipId, ClipTake, Doc, Take, TakeId, TakeOrigin, Track};
+use crate::song::{Clip, ClipId, ClipTake, Doc, Track};
 use crate::time::TickRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,15 +86,14 @@ pub fn move_clips(
         let to = row_from(doc, ti, i64::from(rows))?;
         placing.push((c.clone(), to, c.start.saturating_add_signed(ticks)));
     }
-    let (clip, ti, _) = group[0];
-    let track = doc.tracks[row_from(doc, ti, i64::from(rows))?].id;
-    let (out, step) = if copy {
-        (Vec::new(), StepKind::CopyClip { clip, track })
+    let out: Vec<ClipId> = if copy {
+        Vec::new()
     } else {
-        (
-            group.iter().map(|&(c, _, _)| c).collect(),
-            StepKind::MoveClip { clip, track },
-        )
+        group.iter().map(|&(c, _, _)| c).collect()
+    };
+    let step = StepKind::MoveClips {
+        count: group.len(),
+        copy,
     };
     place(doc, &out, placing, step, Ids(doc.next_id))
 }
@@ -118,7 +116,7 @@ pub fn duplicate_clips(doc: &Doc, clips: &[ClipId]) -> Result<ClipEdited, EditEr
         doc,
         &[],
         placing,
-        StepKind::DuplicateClip { clip: group[0].0 },
+        StepKind::DuplicateClips { count: group.len() },
         Ids(doc.next_id),
     )
 }
@@ -144,6 +142,7 @@ pub fn copy_clips(doc: &Doc, clips: &[ClipId]) -> Result<Vec<KeptClip>, EditErro
 }
 
 /// Puts copies (new ids, the same takes) of the kept clips in, the first on `track` at `at`.
+/// The takes kept must be of this song: [`History`](crate::History) never gives their ids again.
 pub fn paste_clips(
     doc: &Doc,
     kept: &[KeptClip],
@@ -151,97 +150,25 @@ pub fn paste_clips(
     at: u64,
 ) -> Result<ClipEdited, EditError> {
     let base = track_index(doc, track)?;
-    let first = kept.first().ok_or(EditError::Unchanged)?;
-    let there = takes_by_id(doc);
-    let past_kept = kept
-        .iter()
-        .flat_map(|k| &k.clip.takes)
-        .flat_map(|ct| std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take)))
-        .map(|t| t.id.0.saturating_add(1))
-        .fold(doc.next_id, u32::max);
-    let mut ids = Ids(past_kept);
-    let mut renewed = HashMap::new();
+    if kept.is_empty() {
+        return Err(EditError::Unchanged);
+    }
     let mut placing = Vec::with_capacity(kept.len());
     for k in kept {
-        let start = at.checked_add(k.after).ok_or(EditError::Unchanged)?;
-        let mut takes = Vec::with_capacity(k.clip.takes.len());
-        for ct in &k.clip.takes {
-            takes.push(ClipTake {
-                take: own_take(&ct.take, &there, &mut renewed, &mut ids)?,
-                offset: ct.offset,
-            });
-        }
-        let clip = Arc::new(Clip {
-            takes,
-            ..Clip::clone(&k.clip)
-        });
-        placing.push((clip, row_from(doc, base, k.row)?, start));
+        let start = at.checked_add(k.after).ok_or(EditError::OffTheSong)?;
+        placing.push((k.clip.clone(), row_from(doc, base, k.row)?, start));
     }
-    let step = StepKind::CopyClip {
-        clip: first.clip.id,
-        track,
-    };
-    place(doc, &[], placing, step, ids)
+    let step = StepKind::PasteClips { count: kept.len() };
+    place(doc, &[], placing, step, Ids(doc.next_id))
 }
 
-/// Every take of the song and every origin, by id.
-fn takes_by_id(doc: &Doc) -> HashMap<TakeId, &Arc<Take>> {
-    doc.tracks
-        .iter()
-        .flat_map(|t| &t.clips)
-        .flat_map(|c| &c.takes)
-        .flat_map(|ct| std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take)))
-        .map(|t| (t.id, t))
-        .collect()
-}
-
-/// `take`, or a copy of it with a new id when another take of the song has its id (or its
-/// origin's): undo gives ids back, so a take kept before an undo can share an id with a take
-/// made after it, and the screen keeps takes by id.
-fn own_take(
-    take: &Arc<Take>,
-    there: &HashMap<TakeId, &Arc<Take>>,
-    renewed: &mut HashMap<TakeId, Arc<Take>>,
-    ids: &mut Ids,
-) -> Result<Arc<Take>, EditError> {
-    let free = |t: &Arc<Take>| {
-        there
-            .get(&t.id)
-            .is_none_or(|o| Arc::ptr_eq(o, t) || o == &t)
-    };
-    let origin_free = take.origin.as_ref().is_none_or(|o| free(&o.take));
-    if free(take) && origin_free {
-        return Ok(take.clone());
-    }
-    if let Some(t) = renewed.get(&take.id) {
-        return Ok(t.clone());
-    }
-    let origin = match &take.origin {
-        Some(o) if !origin_free => Some(TakeOrigin {
-            take: Arc::new(Take {
-                id: TakeId(ids.next()?),
-                ..Take::clone(&o.take)
-            }),
-            settings: o.settings,
-        }),
-        o => o.clone(),
-    };
-    let t = Arc::new(Take {
-        id: TakeId(ids.next()?),
-        origin,
-        ..Take::clone(take)
-    });
-    renewed.insert(take.id, t.clone());
-    Ok(t)
-}
-
-/// The index of the track `rows` rows from the one at `ti`; `Unchanged` past the first or the
+/// The index of the track `rows` rows from the one at `ti`; `OffTheSong` past the first or the
 /// last.
 fn row_from(doc: &Doc, ti: usize, rows: i64) -> Result<usize, EditError> {
     usize::try_from(ti as i64 + rows)
         .ok()
         .filter(|&to| to < doc.tracks.len())
-        .ok_or(EditError::Unchanged)
+        .ok_or(EditError::OffTheSong)
 }
 
 /// Takes the clips `out` away, then puts each of `placing` (a clip, the index of its track, its
@@ -266,7 +193,7 @@ fn place(
         let end = start
             .checked_add(c.end - c.start)
             .filter(|&e| e <= MAX_TICK)
-            .ok_or(EditError::Unchanged)?;
+            .ok_or(EditError::OffTheSong)?;
         let range = TickRange::new(start, end).expect("a clip is never empty");
         let clips = &mut tracks[to];
         if clips.iter().any(|o| o.range().overlaps(range)) {

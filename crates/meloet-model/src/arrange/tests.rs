@@ -94,7 +94,13 @@ fn a_move_keeps_the_id_and_the_takes() {
     let (doc, a, b) = song();
     let e = move_clips(&doc, &[a], BAR as i64, 0, false).unwrap();
     assert_eq!(e.clips[0], a);
-    assert_eq!(e.edit.step, StepKind::MoveClip { clip: a, track: T1 });
+    assert_eq!(
+        e.edit.step,
+        StepKind::MoveClips {
+            count: 1,
+            copy: false
+        }
+    );
     assert_eq!(
         spans(&e.edit.doc, T1),
         [(a, 2 * BAR, 3 * BAR), (b, 4 * BAR, 5 * BAR)]
@@ -151,7 +157,13 @@ fn a_move_stops_at_the_song_start() {
 fn a_move_to_another_track() {
     let (doc, a, b) = song();
     let e = move_clips(&doc, &[a], 0, 1, false).unwrap();
-    assert_eq!(e.edit.step, StepKind::MoveClip { clip: a, track: T2 });
+    assert_eq!(
+        e.edit.step,
+        StepKind::MoveClips {
+            count: 1,
+            copy: false
+        }
+    );
     assert_eq!(spans(&e.edit.doc, T1), [(b, 4 * BAR, 5 * BAR)]);
     assert_eq!(spans(&e.edit.doc, T2), [(a, BAR, 2 * BAR)]);
     assert_eq!(ons(&e.edit.doc, T2), [(BAR, 60), (BAR + 960, 64)]);
@@ -163,7 +175,7 @@ fn a_move_to_another_track() {
     );
     assert_eq!(
         move_clips(&doc, &[a], 0, 8, false),
-        Err(EditError::Unchanged)
+        Err(EditError::OffTheSong)
     );
 }
 
@@ -174,7 +186,13 @@ fn a_copy_shares_the_takes_and_gets_a_new_id() {
     assert_ne!(e.clips[0], a);
     assert_eq!(e.clips[0], ClipId(doc.next_id));
     assert_eq!(e.edit.doc.next_id, doc.next_id + 1);
-    assert_eq!(e.edit.step, StepKind::CopyClip { clip: a, track: T1 });
+    assert_eq!(
+        e.edit.step,
+        StepKind::MoveClips {
+            count: 1,
+            copy: true
+        }
+    );
     assert_eq!(
         spans(&e.edit.doc, T1),
         [
@@ -206,7 +224,7 @@ fn a_copy_shares_the_takes_and_gets_a_new_id() {
 fn duplicate_puts_a_copy_right_after() {
     let (doc, a, b) = song();
     let e = duplicate_clips(&doc, &[a]).unwrap();
-    assert_eq!(e.edit.step, StepKind::DuplicateClip { clip: a });
+    assert_eq!(e.edit.step, StepKind::DuplicateClips { count: 1 });
     assert_eq!(
         spans(&e.edit.doc, T1),
         [
@@ -239,7 +257,7 @@ fn a_group_moves_together_keeping_rows_and_distances() {
     // One row down, c would leave the tracks.
     assert_eq!(
         move_clips(&doc, &[a, c], 0, 1, false),
-        Err(EditError::Unchanged)
+        Err(EditError::OffTheSong)
     );
     let e = move_clips(&doc, &[c, a], BAR as i64, 0, false).unwrap();
     assert_eq!(e.clips, [c, a]);
@@ -303,7 +321,7 @@ fn a_group_duplicated_goes_right_after_its_latest_end() {
     let (doc, a, b, c) = song_two_tracks();
     // a ends at bar 3, c at bar 4: the copies come 2 bars (bars 2 to 4) later.
     let e = duplicate_clips(&doc, &[a, c]).unwrap();
-    assert_eq!(e.edit.step, StepKind::DuplicateClip { clip: a });
+    assert_eq!(e.edit.step, StepKind::DuplicateClips { count: 2 });
     let [ca, cc] = e.clips[..] else { panic!() };
     assert_eq!(
         spans(&e.edit.doc, T1),
@@ -341,6 +359,7 @@ fn copied_clips_paste_with_their_rows_and_distances() {
     );
     // On track 1 at bar 7: a's copy there, c's a row lower and a bar later.
     let e = paste_clips(&doc, &kept, T1, 6 * BAR).unwrap();
+    assert_eq!(e.edit.step, StepKind::PasteClips { count: 2 });
     let [ca, cc] = e.clips[..] else { panic!() };
     assert_eq!(spans(&e.edit.doc, T1)[2], (ca, 6 * BAR, 7 * BAR));
     assert_eq!(spans(&e.edit.doc, T2)[1], (cc, 7 * BAR, 8 * BAR));
@@ -350,43 +369,41 @@ fn copied_clips_paste_with_their_rows_and_distances() {
     // On track 2, c's copy would be below the last track.
     assert_eq!(
         paste_clips(&doc, &kept, T2, 6 * BAR),
-        Err(EditError::Unchanged)
+        Err(EditError::OffTheSong)
     );
     assert_eq!(
         paste_clips(&doc, &kept, T1, BAR + 10),
         Err(EditError::Overlap)
     );
     // What was kept stays as it was after the clips are gone.
-    let gone = crate::edit::delete_clips(&doc, &[a, c]).unwrap().doc;
+    let gone = crate::edit::delete_clips(&doc, &[a, c], false).unwrap().doc;
     let e = paste_clips(&gone, &kept, T1, 0).unwrap();
     assert_eq!(spans(&e.edit.doc, T2), [(e.clips[1], BAR, 2 * BAR)]);
     assert_eq!(paste_clips(&doc, &[], T1, 0), Err(EditError::Unchanged));
 }
 
-/// Undo gives ids back: a clip kept, then undone away, then another recording takes the same
-/// ids. The pasted takes must not share an id with a different take.
+/// A clip kept, then undone away, then another recording: the new takes get ids of their own,
+/// so the pasted take shares its id with no other take.
 #[test]
 fn pasted_takes_never_share_an_id_with_another_take() {
-    let (doc, _, _) = song();
-    let (later, d) = record(&doc, T2, take(0, BAR, vec![note(0, 100, 50)]));
-    let kept = copy_clips(&later, &[d]).unwrap();
+    let (mut doc, _, _) = song();
+    let mut h = crate::History::new();
+    let (e, added) =
+        add_recording(&doc, T2, vec![take(0, BAR, vec![note(0, 100, 50)])], 0).unwrap();
+    h.apply(&mut doc, e);
+    let kept = copy_clips(&doc, &[added.clip]).unwrap();
     let kept_take = kept[0].clip.takes[0].take.clone();
-    // Back to `doc`, and a different recording gets the same ids.
-    let (other, e) = record(&doc, T2, take(0, BAR, vec![note(10, 100, 51)]));
-    assert_eq!(e, d);
-    let (_, ec) = other.clip(e).unwrap();
-    assert_eq!(ec.takes[0].take.id, kept_take.id);
-    let pasted = paste_clips(&other, &kept, T1, 8 * BAR).unwrap();
-    let (_, p) = pasted.edit.doc.clip(pasted.clips[0]).unwrap();
-    let t = &p.takes[0].take;
-    assert_ne!(t.id, kept_take.id);
-    assert_eq!(t.notes, kept_take.notes);
-    assert!(t.id.0 < pasted.edit.doc.next_id);
-    // With no clash the take is shared, and later ids stay past it.
+    h.undo(&mut doc);
+    let (e, other) =
+        add_recording(&doc, T2, vec![take(0, BAR, vec![note(10, 100, 51)])], 0).unwrap();
+    h.apply(&mut doc, e);
+    assert_ne!(other.clip, added.clip);
+    let (_, oc) = doc.clip(other.clip).unwrap();
+    assert_ne!(oc.takes[0].take.id, kept_take.id);
     let pasted = paste_clips(&doc, &kept, T1, 8 * BAR).unwrap();
     let (_, p) = pasted.edit.doc.clip(pasted.clips[0]).unwrap();
     assert!(Arc::ptr_eq(&p.takes[0].take, &kept_take));
-    assert!(kept_take.id.0 < pasted.edit.doc.next_id);
+    assert!(pasted.clips[0].0 > oc.takes[0].take.id.0);
     assert!(pasted.clips[0].0 < pasted.edit.doc.next_id);
 }
 

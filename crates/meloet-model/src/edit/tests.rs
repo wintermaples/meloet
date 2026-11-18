@@ -307,8 +307,14 @@ fn deleting_clips() {
     let (doc, a) = record(&two_tracks(), T1, vec![take(0, 960)], 0);
     let (doc, b) = record(&doc, T1, vec![take(2000, 960)], 0);
     let (doc, c) = record(&doc, T2, vec![take(0, 960)], 0);
-    let edit = delete_clips(&doc, &[a.clip, c.clip]).unwrap();
-    assert_eq!(edit.step, StepKind::DeleteClips { count: 2 });
+    let edit = delete_clips(&doc, &[a.clip, c.clip], false).unwrap();
+    assert_eq!(
+        edit.step,
+        StepKind::DeleteClips {
+            count: 2,
+            cut: false
+        }
+    );
     assert_eq!(clips(&edit.doc, T1), [(2000, 2960, 1)]);
     assert!(clips(&edit.doc, T2).is_empty());
     assert!(Arc::ptr_eq(
@@ -316,14 +322,21 @@ fn deleting_clips() {
         &edit.doc.track(T1).unwrap().clips[0]
     ));
 
-    let only_t1 = delete_clips(&doc, &[b.clip]).unwrap();
+    let only_t1 = delete_clips(&doc, &[b.clip], true).unwrap();
+    assert_eq!(
+        only_t1.step,
+        StepKind::DeleteClips {
+            count: 1,
+            cut: true
+        }
+    );
     assert!(Arc::ptr_eq(&doc.tracks[1], &only_t1.doc.tracks[1]));
 
     assert_eq!(
-        delete_clips(&doc, &[a.clip, ClipId(999)]),
+        delete_clips(&doc, &[a.clip, ClipId(999)], false),
         Err(EditError::NoSuchClip(ClipId(999)))
     );
-    assert_eq!(delete_clips(&doc, &[]), Err(EditError::Unchanged));
+    assert_eq!(delete_clips(&doc, &[], false), Err(EditError::Unchanged));
 }
 
 #[test]

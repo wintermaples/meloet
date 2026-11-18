@@ -1,6 +1,10 @@
 //! Undo and redo. Each step keeps the whole `Doc` of the other side; untouched tracks,
 //! clips and takes are shared, and so are the unchanged chunks of notes in a changed take, so a
 //! step costs little more than what it changed.
+//!
+//! An id once given out is never given again: undo and redo bring back the `Doc` of the other
+//! side, but never its lower `next_id`. The screen keeps takes by id, and an intent aimed at a
+//! take that is gone must not find a different take with its id.
 
 use crate::TrackId;
 use crate::arrange::ClipEdge;
@@ -22,8 +26,11 @@ pub enum StepKind {
         from: usize,
         to: usize,
     },
+    /// Delete in the arrange view; `cut`: Mod X. Band: "クリップを消す（N 個）",
+    /// "クリップを切り取る（N 個）".
     DeleteClips {
         count: usize,
+        cut: bool,
     },
     Tempo {
         from: Tempo,
@@ -93,20 +100,21 @@ pub enum StepKind {
         clip: ClipId,
         count: usize,
     },
-    /// A drag in the arrange view.
-    MoveClip {
-        clip: ClipId,
-        track: TrackId,
+    /// A drag in the arrange view; `copy`: Alt + drag. Band: "クリップを動かす（N 個）",
+    /// "クリップを写す（N 個）".
+    MoveClips {
+        count: usize,
+        copy: bool,
     },
-    /// Alt + drag in the arrange view. `clip`: the one copied.
-    CopyClip {
-        clip: ClipId,
-        track: TrackId,
+    /// Mod D in the arrange view. Band: "クリップを複製（N 個）".
+    DuplicateClips {
+        count: usize,
     },
-    /// Mod D in the arrange view. `clip`: the one copied.
-    DuplicateClip {
-        clip: ClipId,
+    /// Mod V in the arrange view. Band: "クリップを貼りつける（N 個）".
+    PasteClips {
+        count: usize,
     },
+    /// Band: "クリップのはしを動かす".
     TrimClip {
         clip: ClipId,
         edge: ClipEdge,
@@ -135,6 +143,8 @@ pub struct History {
     version: u64,
     next_version: u64,
     saved: u64,
+    /// The highest `next_id` of every `Doc` seen.
+    next_id: u32,
 }
 
 impl Default for History {
@@ -152,12 +162,16 @@ impl History {
             version: 0,
             next_version: 1,
             saved: 0,
+            next_id: 0,
         }
     }
 
-    /// Puts `edit.doc` in `doc` as a new step. Steps that could be redone are dropped.
+    /// Puts `edit.doc` in `doc` as a new step. Steps that could be redone are dropped. The new
+    /// `Doc` gives out no id given out before, even by a `Doc` it does not come from.
     pub fn apply(&mut self, doc: &mut Doc, edit: Edit) {
         let before = std::mem::replace(doc, edit.doc);
+        self.next_id = self.next_id.max(before.next_id).max(doc.next_id);
+        doc.next_id = self.next_id;
         self.undo.push(Step {
             kind: edit.step,
             doc: before,
@@ -187,6 +201,8 @@ impl History {
 
     fn swap(&mut self, doc: &mut Doc, step: Step) -> Step {
         let other = std::mem::replace(doc, step.doc);
+        self.next_id = self.next_id.max(other.next_id).max(doc.next_id);
+        doc.next_id = self.next_id;
         let version = std::mem::replace(&mut self.version, step.version);
         Step {
             kind: step.kind,

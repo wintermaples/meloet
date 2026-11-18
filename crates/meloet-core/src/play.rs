@@ -721,7 +721,7 @@ impl Play {
         if self.busy() {
             return;
         }
-        if let Ok(e) = edit::delete_clips(self.doc(), &self.clips_sel) {
+        if let Ok(e) = edit::delete_clips(self.doc(), &self.clips_sel, false) {
             self.apply_selecting(e, None, Some(ClipPick::none()), effects);
         }
     }
@@ -778,7 +778,7 @@ impl Play {
             return;
         };
         let there: Vec<ClipId> = kept.iter().map(|k| k.clip.id).collect();
-        if let Ok(e) = edit::delete_clips(self.doc(), &there) {
+        if let Ok(e) = edit::delete_clips(self.doc(), &there, true) {
             self.clip_board = kept;
             let pick = ClipPick {
                 clips: self
@@ -1349,8 +1349,7 @@ impl Play {
     }
 
     /// The song brought back from the recovery file, as the first step over the song as
-    /// saved, which is how the history starts (and what counts as saved). `saved` must have
-    /// the recovered song's ids given out already: the screen keeps takes by id.
+    /// saved, which is how the history starts (and what counts as saved).
     pub fn recovered(&mut self, doc: Doc, effects: &mut Vec<Effect>) {
         self.apply(
             Edit {
@@ -1364,12 +1363,10 @@ impl Play {
     /// Puts `saved`, the song as its file has it, in place of a song brought back from the
     /// recovery file: one step, after which the song counts as saved. Undo brings the song
     /// back, unsaved. Only while not busy.
-    pub fn discard_recovered(&mut self, mut saved: Doc, effects: &mut Vec<Effect>) {
+    pub fn discard_recovered(&mut self, saved: Doc, effects: &mut Vec<Effect>) {
         if self.busy() {
             return;
         }
-        // Ids given out in the song brought back stay given out: the screen keeps takes by id.
-        saved.next_id = saved.next_id.max(self.doc().next_id);
         self.unsaved_anyway = false;
         self.apply(
             Edit {

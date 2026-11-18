@@ -669,29 +669,29 @@ SF2（サウンドフォント）のこと（ヤチヨさんの決め 2026-11-18
 | `meterFormat.ts` の `heldText` が使われなくなった | 消すか決める |
 | 再生中に音色を読みおわると、そのとき鳴っていたノートは新しい音源で鳴らない | 次のノートから鳴る |
 
-### Step 2 follow-ups (2026-11-18〜19)
+### 区切り2 のあとの足し（2026-11-18〜19）
 
-- The five FluidR3 organs (Drawbar, Percussive, Rock, Church, Reed, MIT) are in the pack (`tools/sounds/sf2.py`, 3be6402). The sound license watcher now accepts MIT (the copyright line and permission notice must be copied). The shelf's name and order wait for B-84.
-- Development builds find the pack beside the executable (`target/debug/sounds` → `target/sounds/dev`, in README). Debug builds only make the decoder and the sampler fast (Cargo.toml). The grand piano now reads in 0.28 s instead of 8.1 s.
-- Pressing a key while the track's instrument is still loading shows 「（名前）を読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。」 in the status line (the user's decision 2026-11-19, using the text from spec chapter 6).
+- FluidR3 のオルガン 5 つ（Drawbar ・ Percussive ・ Rock ・ Church ・ Reed、MIT）を包みに入れた（`tools/sounds/sf2.py`、3be6402）。音の素材のライセンスの見はりは MIT も通す（著作権の行と許諾の文の写しが要る）。棚の名前と並びは B-84 の答えを待つ。
+- 開発のビルドは、実行ファイルのそばの `sounds/` で包みを見つける（`target/debug/sounds` → `target/sounds/dev`、README）。debug のビルドでも、読む部品（symphonia）と鳴らす係だけは速くする（Cargo.toml）。グランドピアノの読みこみが 8.1 秒 → 0.28 秒。
+- 読みこみ中の音源のトラックで鍵を弾くと、状態行に「（名前）を読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。」（6 章の文。ヤチヨさんの決め 2026-11-19）。
 
-### Step 3: the mixer (2026-11-18〜19)
+### 区切り3: ミキサー（2026-11-18〜19）
 
-What got done:
-1. **The contract** (version 14): strips (tracks, returns A and B, master), fader, pan, two sends, four inserts, the params panel, and `commit: false/true` for previewing during a drag versus committing. Song file version 3 gets mixer fields (old songs have sends at −∞).
-2. **The audio path** (`architecture.md` 19-11): tracks go instrument → inserts → fader → pan, and the sends are taken after that. Returns go sends → inserts → fader → pan. The master goes fader → pan → inserts (the limiter after the fader). Values move straight to their target over 20 ms. Putting in or taking out an effect overlaps the two for 10 ms. Only the strips that changed are sent to the engine. The audition seat also sends at the defaults a new track would get.
-3. **The screen**: the mixer band (strips, inserts, sends, pan, faders, vertical meters, M/S), the params panel on the right, the effects list on the shelf, and 「空き ＋」 → 「（ストリップ）にエフェクトを入れる」 → 「入れる」. One drag is one step, and Esc goes back.
-4. **WebGL**: the input meter and the sound settings each became one region. The mixer meters are one canvas for all strips. At most 10 (actual app: 8).
-5. **Decisions** (`design-notes.md` A-14, B-86): remove with right-click 「外す」 or Delete; returns are named "A" plus the top effect; reverb and delay start at 30 % mix on tracks and the master; mixer moves are allowed while recording (mute too); the master has a pan; the fader's lowest point is −∞.
+できたこと:
+1. **約束**（版 14）: ストリップ（トラック、戻り A ・ B、マスター）、フェーダー、パン、センド 2 つ、インサート 4 つ、パラメータの欄、ドラッグ中の「音だけ変える」（`commit: false`）と「決める」（`commit: true`）。曲のファイルの版 3 にミキサーの欄（前の曲のセンドは −∞）。
+2. **音の道**（`architecture.md` 19-11）: トラックは 音源 → インサート → フェーダー → パン、センドはその後で取る。戻りは センド → インサート → フェーダー → パン。マスターは フェーダー → パン → インサート（リミッターはフェーダーの後）。値は 20 ms でまっすぐ近づく。エフェクトを入れる ・ 外すときは 10 ms 重ねる。エンジンには変わったストリップだけ送る。ためし弾きの席も、新しいトラックがつくはずのセンドで送る。
+3. **画面**: ミキサーの帯（ストリップ、インサート、センド、パン、フェーダー、縦のメーター、M ・ S）、右のパラメータの欄、棚のエフェクトの一覧、「空き ＋」→「（ストリップ）にエフェクトを入れる」→「入れる」。ドラッグ 1 回が 1 手、Esc で戻る。
+4. **WebGL**: 入力計と音の設定をそれぞれ 1 つの区画に。ミキサーのメーターは全部のストリップで 1 枚。最大 10（本物のアプリで 8）。
+5. **決め**（`design-notes.md` A-14 ・ B-86）: 外すのは右クリックの「外す」と Delete、戻りの名前は「A ＋ いちばん上のエフェクト」、トラック ・ マスターのリバーブ ・ ディレイのミックスははじめ 30 %、録音中もミキサーの手（ミュートも）を受ける、マスターにパン、フェーダーのいちばん下は −∞。
 
-What was checked:
-- `scripts/check-all.sh` passes (Rust 639 passed, 19 ignored; UI 1833).
-- Tests: the mixer's audio path 14, real effects × 16 tracks × 4 inserts with 0 allocations (1500 blocks), core's random undo test now includes mixer moves (seed 12 × 400), save → load round trip.
-- Measurements (`docs/measurements/2026-11-19-round4-mixer.md`, quiet PC, release, buffer 256):
-  - Offline, 16 tracks, EQ and compressor on every track, returns, master: average 448 µs (8.4 % of a block), p99 520 µs, never over 1 ms. The mixer's own share is about 2.5 %.
-  - In the app, playing 8 tracks: processing load averages 5.3 %, max 10.8 %.
-  - Key → sound p95 15.4–15.8 ms (unchanged).
-  - 10-minute recording (8 tracks playing, mixer open): xruns 0, 2106 notes, WebKitWebProcess 366 → 390 MB.
-  - Startup (first frame) 705–741 ms, grand piano finishes reading at 345–360 ms, main RSS 565 MB (215 MB without the pack). An 8-track song is 902 MB (six sounds, 672 MiB).
-  - **Key → screen slows down only when 8 tracks are playing and the mixer is open** (p95 15.7–17.9 ms, 87–98 % within 2 frames; with the mixer closed, 2.2 ms). A helper is now finding the cause and fixing it.
-- Screenshots: `docs/screenshots/compare/mixer-*` (real app vs A-Mixer), mixer, paramsDelay, shelfEffects in the fake scenes.
+確かめたこと:
+- `scripts/check-all.sh` が通った（Rust 639 通り ・ 19 ignored、画面 1833）。
+- 試験: ミキサーの音の道 14、本物のエフェクト × 16 トラック × インサート 4 つで割り当て 0（1500 ブロック）、core の乱数の取り消しの試験にミキサーの手（種 12 × 400）、保存 → 読むの往復。
+- 測り（`docs/measurements/2026-11-19-round4-mixer.md`、静かな PC、release、バッファ 256）:
+  - オフライン 16 トラック、全部に EQ とコンプ、戻り、マスター: 平均 448 µs（ブロックの 8.4 %）、p99 520 µs、1 ms をこえた数 0。ミキサーの分は約 2.5 %。
+  - アプリの中、8 トラックの再生: 処理の負荷 平均 5.3 %、最大 10.8 %。
+  - 鍵 → 音 p95 15.4〜15.8 ms（変わらない）。
+  - 10 分の録音（8 トラック再生、ミキサーをひらいたまま）: xrun 0、ノート 2106、WebKitWebProcess 366 → 390 MB。
+  - 起動（最初のコマ）705〜741 ms、グランドピアノの読みおわり 345〜360 ms、本体の RSS 565 MB（包みなし 215 MB）。8 トラックの曲は 902 MB（6 音色で 672 MiB）。
+  - **鍵 → 画面は、8 トラック再生中にミキサーをひらいているときだけおそい**（p95 15.7〜17.9 ms、2 コマ以内 87〜98 %。ミキサーを閉じると 2.2 ms）。いま係が原因を切り分けて直している。
+- 画面の見くらべ: `docs/screenshots/compare/mixer-*`（本物のアプリと A-Mixer）、偽物の場面の mixer ・ paramsDelay ・ shelfEffects。

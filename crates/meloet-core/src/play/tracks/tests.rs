@@ -19,14 +19,11 @@ fn ids(m: &Model) -> Vec<u32> {
     tracks(m).iter().map(|t| t.0).collect()
 }
 
-/// The places whose sequence the engine was sent, and whether it was an empty one.
-fn sequences(effects: &[Effect]) -> Vec<(usize, bool)> {
+fn engine_ops(effects: &[Effect]) -> Vec<EngineOp> {
     effects
         .iter()
         .filter_map(|e| match e {
-            Effect::Engine(EngineOp::Sequence { track, events }) => {
-                Some((*track, events.is_empty()))
-            }
+            Effect::Engine(op) => Some(op.clone()),
             _ => None,
         })
         .collect()
@@ -59,9 +56,9 @@ fn deleting_a_track_is_a_step_that_says_so_and_renumbers() {
         "the number follows the place, the color stays"
     );
     assert_eq!(
-        sequences(&effects),
-        [(1, true), (2, true)],
-        "track 3 is at place 1 now, and place 2 is emptied"
+        engine_ops(&effects),
+        [EngineOp::ClearSeat { seat: 1 }],
+        "its seat is emptied; track 3 stays on its own"
     );
     assert_eq!(m.view().song.undo_count, 1);
     assert_eq!(m.view().song.play_target, Some(1));
@@ -137,7 +134,11 @@ fn moving_renumbers_keeps_colors_and_the_selected_track() {
         [(2, 1, 2), (3, 2, 3), (1, 3, 1)]
     );
     assert_eq!(m.view().song.play_target, Some(1));
-    assert_eq!(sequences(&effects), [(0, true), (1, true), (2, true)]);
+    assert_eq!(
+        engine_ops(&effects),
+        [],
+        "every track keeps its seat: the engine is told nothing"
+    );
     assert_eq!(m.view().song.undo_count, 1);
     // Past the end is the end; where it is already is no step.
     cmd(m, Command::MoveTrack { track: 2, to: 99 });

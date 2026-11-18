@@ -6,9 +6,7 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{
-    AtomicBool, AtomicI16, AtomicU8, AtomicU64, AtomicUsize, Ordering::Relaxed,
-};
+use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -16,21 +14,22 @@ use std::time::{Duration, Instant};
 
 use meloet_devices::{DeviceWatcher, DevicesError, DevicesEvent};
 use meloet_engine::{
-    AudioOutput, BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle,
-    EngineMeters, InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, PlaceholderSynth,
-    Recorded, RunningOutput, Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
+    AudioOutput, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
+    InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, Recorded, RunningOutput,
+    Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
 };
 use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
-use meloet_model::ControlValue;
 use meloet_model::playback::{PlayEvent, PlayKind};
 use meloet_model::record::{HeldControls, RecEventKind};
+use meloet_model::{ControlValue, InstrumentRef};
 use meloet_protocol::{
     Command, Event, LiveNotesSnapshot, Snapshot, Telemetry, TransportReading, TransportState,
 };
 
 use crate::hub::{Hub, MessageSink, TelemetrySink};
+use crate::instruments;
 use crate::measure::{self, KeyToSound};
-use crate::play::{EngineOp, Heard, RecordReport};
+use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, RecordReport};
 use crate::recovery;
 use crate::settings::{self, Settings};
 use crate::songfile;
@@ -209,7 +208,9 @@ struct StreamFacts {
     lost_at_open: AtomicU64,
     /// `EngineMeters::xruns` when the stream was opened.
     xruns_at_open: AtomicU64,
-    track_count: AtomicUsize,
+    /// The engine's track of each track of the song, in the order of the song: the meters go
+    /// to the screen in that order. Only the core thread and the telemetry thread lock it.
+    track_seats: Mutex<Vec<Option<usize>>>,
     /// The core thread wants one `SoundHeard`.
     wants_sound: AtomicBool,
 }
@@ -264,12 +265,12 @@ impl Core {
 
         let parts = Engine::new(EngineConfig {
             sample_rate: 48_000,
+            max_tracks: MAX_TRACKS,
             ..EngineConfig::default()
         });
         *lock(&shared.clock) = parts.handle.clock().clone();
         let meters = parts.handle.meters().clone();
-        let track_count = model.view().song.tracks.len();
-        shared.stream.track_count.store(track_count, Relaxed);
+        *lock(&shared.stream.track_seats) = model.track_seats();
 
         let links = Links {
             hub: hub.clone(),
@@ -297,10 +298,15 @@ impl Core {
 
         let core = {
             let worker = Worker {
-                model,
                 hub: hub.clone(),
                 shared: shared.clone(),
-                audio: Audio::new(parts.engine, parts.handle, options.audio),
+                audio: Audio::new(
+                    parts.engine,
+                    parts.handle,
+                    options.audio,
+                    model.engine_seats(),
+                ),
+                model,
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
                 state_dir: options.state_dir.clone(),
@@ -676,30 +682,173 @@ struct Audio {
     allowed: bool,
     /// The ring into an engine made anew, for the MIDI thread.
     rebuilt: Option<MidiFeed>,
+    /// What the engine has on its tracks, to put it on an engine made anew.
+    seats: SeatBook,
 }
 
-/// Puts the song's instruments on `engine`.
-fn install_instruments(engine: &mut Engine, handle: &mut EngineHandle) {
-    if handle
-        .swap_instrument(0, Box::new(PlaceholderSynth::new()))
-        .is_err()
-    {
-        eprintln!("meloet: the engine did not take the instrument");
-    }
-    // One silent block on this thread puts the instrument on its track, so that every
-    // `Engine::prepare` from now on reaches it.
-    engine.process(&mut [0.0; 128], BlockTiming::default());
+/// What the engine was given: the instrument of each of its tracks (the audition track is the
+/// last), the instrument tried out on one of them, and the track the keys play.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SeatBook {
+    pub own: Vec<Option<InstrumentRef>>,
+    pub trial: Option<(usize, InstrumentRef)>,
+    pub target: Option<usize>,
 }
+
+impl SeatBook {
+    pub(crate) fn new() -> SeatBook {
+        SeatBook {
+            own: vec![None; AUDITION_SEAT + 1],
+            trial: None,
+            target: Some(0),
+        }
+    }
+
+    /// Takes in an op about instruments or the play target. Returns false for any other op.
+    pub(crate) fn note(&mut self, op: &EngineOp) -> bool {
+        match op {
+            EngineOp::Instrument { seat, instrument } => {
+                // As in the engine: on a seat with a trial, it takes the place of the tried one.
+                match (&mut self.trial, self.own.get_mut(*seat)) {
+                    (Some((s, tried)), _) if s == seat => *tried = instrument.clone(),
+                    (_, Some(own)) => *own = Some(instrument.clone()),
+                    _ => {}
+                }
+            }
+            EngineOp::TryInstrument { seat, instrument } => match self.own.get_mut(*seat) {
+                Some(Some(_)) => self.trial = Some((*seat, instrument.clone())),
+                // As in the engine: with nothing to set aside, it is the seat's own.
+                Some(own) => *own = Some(instrument.clone()),
+                None => {}
+            },
+            EngineOp::EndTrial { seat, keep } => {
+                if let Some((_, tried)) = self.trial.take_if(|(s, _)| s == seat)
+                    && *keep
+                {
+                    self.own[*seat] = Some(tried);
+                }
+            }
+            EngineOp::MoveInstrument { from, to } => {
+                if from != to && *from < self.own.len() && *to < self.own.len() {
+                    self.own[*to] = self.own[*from].take();
+                    if self.target == Some(*from) {
+                        self.target = Some(*to);
+                    }
+                }
+            }
+            EngineOp::ClearSeat { seat } => {
+                if let Some(own) = self.own.get_mut(*seat) {
+                    *own = None;
+                    self.trial = self.trial.take().filter(|(s, _)| s != seat);
+                }
+            }
+            EngineOp::PlayTarget { seat } => self.target = *seat,
+            _ => return false,
+        }
+        true
+    }
+
+    /// The ops that bring an empty engine to this.
+    fn ops(&self) -> Vec<EngineOp> {
+        let mut ops: Vec<EngineOp> = self
+            .own
+            .iter()
+            .enumerate()
+            .filter_map(|(seat, own)| {
+                own.clone()
+                    .map(|instrument| EngineOp::Instrument { seat, instrument })
+            })
+            .collect();
+        if let Some((seat, instrument)) = self.trial.clone() {
+            ops.push(EngineOp::TryInstrument { seat, instrument });
+        }
+        ops.push(EngineOp::PlayTarget { seat: self.target });
+        ops
+    }
+}
+
+/// How long a command about instruments waits for room in the engine's ring.
+const SEAT_COMMAND_WAIT: Duration = Duration::from_millis(100);
 
 impl Audio {
-    fn new(mut engine: Engine, mut handle: EngineHandle, allowed: bool) -> Audio {
-        install_instruments(&mut engine, &mut handle);
-        Audio {
+    fn new(engine: Engine, handle: EngineHandle, allowed: bool, seats: Vec<EngineOp>) -> Audio {
+        let mut audio = Audio {
             handle,
             engine: Some(engine),
             stream: None,
             allowed,
             rebuilt: None,
+            seats: SeatBook::new(),
+        };
+        for op in seats {
+            audio.op(op);
+        }
+        audio
+    }
+
+    /// While the engine is here: lets it take in the commands that wait, so that the
+    /// instruments are on their tracks before the next stream prepares them.
+    fn settle(&mut self) {
+        if let Some(engine) = &mut self.engine {
+            loop {
+                engine.settle();
+                if self.handle.drop_retired() == 0 {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// An op about instruments or the play target: for the engine also when no stream runs.
+    fn seat_op(&mut self, op: EngineOp) {
+        self.seats.note(&op);
+        if self.stream.is_none() && self.engine.is_none() {
+            // The engine is lost; the one made in its place gets what the book says.
+            return;
+        }
+        self.send_seat_op(op);
+        self.settle();
+    }
+
+    fn send_seat_op(&mut self, op: EngineOp) {
+        let made = |instrument: &InstrumentRef| instruments::make(instrument);
+        let until = Instant::now() + SEAT_COMMAND_WAIT;
+        let mut command = match op {
+            EngineOp::Instrument { seat, instrument } => {
+                match self.handle.swap_instrument(seat, made(&instrument)) {
+                    Ok(()) => return,
+                    Err(command) => command,
+                }
+            }
+            EngineOp::TryInstrument { seat, instrument } => {
+                match self.handle.try_instrument(seat, made(&instrument)) {
+                    Ok(()) => return,
+                    Err(command) => command,
+                }
+            }
+            EngineOp::EndTrial { seat, keep } => EngineCommand::EndTrial { track: seat, keep },
+            EngineOp::MoveInstrument { from, to } => EngineCommand::MoveInstrument { from, to },
+            EngineOp::ClearSeat { seat } => EngineCommand::ClearTrack { track: seat },
+            EngineOp::PlayTarget { seat: Some(track) } => EngineCommand::SetPlayTarget { track },
+            EngineOp::PlayTarget { seat: None } => EngineCommand::ClearPlayTarget,
+            _ => return,
+        };
+        // A full ring empties within a block or two; these commands must not be lost, or the
+        // engine and the song no longer agree.
+        loop {
+            command = match self.handle.send(command) {
+                Ok(()) => return,
+                Err(command) => command,
+            };
+            self.handle.drop_retired();
+            if self.stream.is_none() {
+                self.settle();
+            } else if Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(1));
+            } else {
+                eprintln!("meloet: the engine's command ring stayed full");
+                return;
+            }
         }
     }
 
@@ -711,10 +860,14 @@ impl Audio {
         let engine = self.engine.take().unwrap_or_else(|| {
             eprintln!("meloet: the engine was lost with an earlier stream; making a new one");
             self.handle.drop_retired();
-            let (mut engine, feed) = self.handle.rebuild();
-            install_instruments(&mut engine, &mut self.handle);
+            let (engine, feed) = self.handle.rebuild();
             self.rebuilt = Some(feed);
-            engine
+            self.engine = Some(engine);
+            for op in self.seats.ops() {
+                self.send_seat_op(op);
+                self.settle();
+            }
+            self.engine.take().expect("put there above")
         });
         let target = OutputTarget {
             node_name: node_name.to_owned(),
@@ -744,6 +897,7 @@ impl Audio {
             facts.open.store(false, Relaxed);
             facts.epoch.fetch_add(1, Relaxed);
             self.engine = stream.close();
+            self.settle();
         }
     }
 
@@ -756,6 +910,15 @@ impl Audio {
 
     fn op(&mut self, op: EngineOp) {
         let command = match op {
+            EngineOp::Instrument { .. }
+            | EngineOp::TryInstrument { .. }
+            | EngineOp::EndTrial { .. }
+            | EngineOp::MoveInstrument { .. }
+            | EngineOp::ClearSeat { .. }
+            | EngineOp::PlayTarget { .. } => {
+                self.seat_op(op);
+                return;
+            }
             EngineOp::Play { from } => EngineCommand::Play { from },
             EngineOp::Record {
                 from,
@@ -1142,12 +1305,13 @@ impl Worker {
         self.shared
             .fixed_velocity
             .store(self.model.fixed_velocity().unwrap_or(0), Relaxed);
-        let view = self.model.view();
-        self.shared
-            .stream
-            .track_count
-            .store(view.song.tracks.len(), Relaxed);
-        self.hub.publish(view)
+        let seats = self.model.track_seats();
+        let mut told = lock(&self.shared.stream.track_seats);
+        if *told != seats {
+            *told = seats;
+        }
+        drop(told);
+        self.hub.publish(self.model.view())
     }
 
     /// Returns whether there was a shell to ask.
@@ -1285,6 +1449,7 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
     let mut told_lost = None;
     let mut told_xruns = (0u64, 0u64);
     let mut next = Instant::now();
+    let mut seat_peaks = vec![[0.0f32; 2]; meters.track_count() + 1];
 
     while !shared.stop.load(Relaxed) {
         let stream = &shared.stream;
@@ -1319,11 +1484,14 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             }
         }
 
-        let track_peaks: Vec<[f32; 2]> = (0..stream.track_count.load(Relaxed))
-            .map(|track| meters.take_track_peak(track))
-            .collect();
+        // Every track of the engine is read, so that a seat with no track of the song (the
+        // audition, a track just deleted) leaves nothing behind for the track that gets it next.
+        for (seat, peak) in seat_peaks.iter_mut().enumerate() {
+            *peak = meters.take_track_peak(seat);
+        }
+        let track_peaks = peaks_in_song_order(&lock(&stream.track_seats), &seat_peaks);
         // Track peaks, not the master: the test tone is not what the keys played.
-        let heard = track_peaks.iter().flatten().any(|p| *p > SOUND_THRESHOLD);
+        let heard = seat_peaks.iter().flatten().any(|p| *p > SOUND_THRESHOLD);
         if open && heard && stream.wants_sound.swap(false, Relaxed) {
             let _ = tx.send(Msg::Input(Input::SoundHeard, None));
         }
@@ -1373,6 +1541,19 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
         }
         std::thread::sleep(wait);
     }
+}
+
+/// The meters of the song's tracks in the order of the song, from the peaks of the engine's
+/// tracks. A track with no seat reads 0.
+fn peaks_in_song_order(seats: &[Option<usize>], seat_peaks: &[[f32; 2]]) -> Vec<[f32; 2]> {
+    seats
+        .iter()
+        .map(|seat| {
+            seat.and_then(|s| seat_peaks.get(s))
+                .copied()
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 /// The load to send. It moves a little from block to block even in silence; a change smaller

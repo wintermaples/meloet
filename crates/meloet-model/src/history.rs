@@ -64,6 +64,14 @@ pub enum StepKind {
     MoveTrack {
         track: TrackId,
     },
+    /// The shelf's "トラック N を作る".
+    AddTrack {
+        track: TrackId,
+    },
+    /// The shelf's "入れかえる".
+    SetInstrument {
+        track: TrackId,
+    },
     /// The write tool. `clip_made`: the clip was made for the note.
     WriteNote {
         clip: ClipId,

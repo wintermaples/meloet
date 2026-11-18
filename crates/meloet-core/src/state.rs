@@ -15,8 +15,8 @@ use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
     LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, QuantizeSettings,
-    RecoveryCause, SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, StatusMessage,
-    StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    RecoveryCause, SettingsDialogView, ShelfView, SongFile, SongView, StatusMessage, StatusView,
+    TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::instruments;
@@ -162,7 +162,8 @@ pub enum Effect {
     RetryAudio {
         after: Duration,
     },
-    /// Only while a stream is open; [`Input::AudioOpened`] sends everything again.
+    /// Only while a stream is open; [`Input::AudioOpened`] sends everything again. The ops of
+    /// the instruments and the play target are for the engine at any time.
     Engine(EngineOp),
     LiveNotes(LiveNotes),
     /// Answer with [`Input::SongSaved`] or [`Input::SongNotSaved`].
@@ -469,6 +470,9 @@ impl Model {
             Input::RecoveryFound(start) => self.recovery_start(*start, &mut effects),
             Input::PcEnding => self.pc_ending(&mut effects),
         }
+        if !self.bands.side_is_open(SidePanel::Shelf) {
+            self.play.shelf_closed(&mut effects);
+        }
         self.settle(&mut effects);
         if self.open.is_none() {
             let cut = if self.audio_system_down {
@@ -490,6 +494,7 @@ impl Model {
         }
         self.watch_buffer();
         self.play.sync_silent(&mut effects);
+        self.play.sync_target(&mut effects);
         self.close_when_recorded(&mut effects);
         self.recovery_tick(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
@@ -625,7 +630,10 @@ impl Model {
             }
             Command::GoArrange => self.bands.go_arrange(),
             Command::Back => {
-                if !self.cancel_song_dialog() && self.dialog.take().is_none() {
+                if !self.cancel_song_dialog()
+                    && self.dialog.take().is_none()
+                    && !self.play.end_audition(effects)
+                {
                     self.bands.back();
                 }
             }
@@ -762,12 +770,25 @@ impl Model {
                 }
                 effects.push(Effect::SaveSettings(self.settings()));
             }
-            Command::OpenShelf { .. }
-            | Command::ShelfSelect { .. }
-            | Command::ShelfConfirm
-            | Command::ShelfCancel
-            | Command::PlaySample { .. }
-            | Command::StopSample => {}
+            Command::OpenShelf { mode } => {
+                if self.play.open_shelf(mode, effects) {
+                    self.bands.show_side(SidePanel::Shelf);
+                }
+            }
+            Command::ShelfSelect { instrument } => {
+                if self.bands.side_is_open(SidePanel::Shelf) {
+                    self.play.shelf_select(instrument, effects);
+                }
+            }
+            Command::ShelfConfirm => {
+                if let Some(n) = self.play.shelf_confirm(effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::ShelfCancel => {
+                self.play.end_audition(effects);
+            }
+            Command::PlaySample { .. } | Command::StopSample => {}
             Command::SelectClips { clips, mode } => self.play.select_clips(clips, mode),
             Command::SelectAllClips => self.play.select_all_clips(),
             Command::CopyClips { clips } => self.play.copy_clips(&clips),
@@ -1047,6 +1068,8 @@ impl Model {
             .filter(|node| self.failed.as_ref() != Some(node))
             .filter(|_| !self.audio_system_down);
         if target != self.wanted {
+            // The sound goes somewhere else, or nowhere: nothing is auditioned across that.
+            self.play.end_audition(effects);
             match &target {
                 Some(node_name) => effects.push(Effect::OpenOutput {
                     node_name: node_name.clone(),
@@ -1101,18 +1124,22 @@ impl Model {
     }
 
     fn shelf_view(&self) -> ShelfView {
-        ShelfView {
-            mode: ShelfMode::NewTrack,
-            available: vec![InstrumentKind::Sine],
-            favorites: InstrumentKind::ALL
+        self.play.shelf_view(
+            InstrumentKind::ALL
                 .into_iter()
                 .filter(|&k| self.favorites.contains(&instruments::builtin_of(k)))
                 .collect(),
-            selected: None,
-            current: None,
-            loading: None,
-            sample: None,
-        }
+        )
+    }
+
+    /// The instruments and the play target, for an engine that has none yet.
+    pub fn engine_seats(&self) -> Vec<EngineOp> {
+        self.play.engine_seats()
+    }
+
+    /// The engine's track of each track of the song, in the order of the song.
+    pub fn track_seats(&self) -> Vec<Option<usize>> {
+        self.play.track_seats()
     }
 
     /// The velocity every key played takes now, if it is fixed.
@@ -1309,6 +1336,9 @@ impl Model {
         }
         if self.notice.is_some() {
             return self.notice.clone();
+        }
+        if let Some(m) = self.play.audition_status() {
+            return Some(m);
         }
         let Some(active) = active else {
             return Some(StatusMessage::SearchingKeyboard);

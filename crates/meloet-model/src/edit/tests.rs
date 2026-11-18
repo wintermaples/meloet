@@ -526,3 +526,101 @@ fn deleting_a_take_shows_the_one_before_or_the_next_and_keeps_the_others() {
         Err(EditError::NoSuchClip(ClipId(999)))
     );
 }
+
+#[test]
+fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
+    use crate::BuiltinInstrument as B;
+    let bass = InstrumentRef::Builtin(B::SynthBass);
+    let (doc, _) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
+    assert_eq!(doc.next_id, 3, "a clip and a take");
+
+    let (e, id) = add_track(&doc, Some(T1), bass.clone()).unwrap();
+    assert_eq!(id, TrackId(3), "past every track, clip and take id");
+    assert_eq!(e.step, StepKind::AddTrack { track: id });
+    assert_eq!(e.doc.next_id, 4);
+    let rows = |doc: &Doc| -> Vec<(u32, String, u8)> {
+        doc.tracks
+            .iter()
+            .map(|t| (t.id.0, t.name.clone(), t.color.get()))
+            .collect()
+    };
+    assert_eq!(
+        rows(&e.doc),
+        [
+            (1, "ピアノ".to_owned(), 1),
+            (3, "ベース 2".to_owned(), 2),
+            (2, "ベース".to_owned(), 2)
+        ],
+        "right below the first track, with the color of its place"
+    );
+    let new = &e.doc.tracks[1];
+    assert_eq!(new.instrument, bass);
+    assert!(new.clips.is_empty() && !new.muted && new.gain_db == 0.0);
+    assert!(Arc::ptr_eq(&doc.tracks[1], &e.doc.tracks[2]));
+
+    // The smallest free number from 2, and at the end without a track to go below.
+    let (e2, id2) = add_track(&e.doc, None, InstrumentRef::Builtin(B::FingerBass)).unwrap();
+    assert_eq!(id2, TrackId(4));
+    assert_eq!(rows(&e2.doc)[3], (4, "ベース 3".to_owned(), 4));
+    let renamed = rename_track(&e2.doc, TrackId(3), "低い音").unwrap().doc;
+    let (e3, _) = add_track(&renamed, None, bass.clone()).unwrap();
+    assert_eq!(e3.doc.tracks[4].name, "ベース 2");
+    assert_eq!(e3.doc.tracks[4].color.get(), 5);
+    let (e4, _) = add_track(&e3.doc, None, InstrumentRef::Builtin(B::StudioKit)).unwrap();
+    assert_eq!(e4.doc.tracks[5].name, "ドラム");
+    assert_eq!(
+        e4.doc.tracks[5].color.get(),
+        1,
+        "the sixth is color 1 again"
+    );
+
+    // A track id above `next_id` (the first track of a new song is 1 while `next_id` is 1).
+    let fresh = Doc::new_default();
+    let (e, id) = add_track(&fresh, Some(T1), InstrumentRef::SINE).unwrap();
+    assert_eq!((id, e.doc.next_id), (TrackId(2), 3));
+    assert_eq!(e.doc.tracks[1].name, "シンセ");
+
+    // A track that is gone keeps its id to itself.
+    let none = delete_track(&fresh, T1).unwrap().doc;
+    assert_eq!(none.next_id, 2);
+    let (e, id) = add_track(&none, None, InstrumentRef::GRAND_PIANO).unwrap();
+    assert_eq!((id, e.doc.tracks.len()), (TrackId(2), 1));
+    let less = delete_track(&two_tracks(), T2).unwrap().doc;
+    let (_, id) = add_track(&less, None, InstrumentRef::SINE).unwrap();
+    assert_eq!(id, TrackId(3), "not the id the deleted track had");
+    assert_eq!(
+        add_track(&doc, Some(TrackId(9)), InstrumentRef::SINE),
+        Err(EditError::NoSuchTrack(TrackId(9)))
+    );
+    let full = Doc {
+        next_id: u32::MAX,
+        ..doc.clone()
+    };
+    assert_eq!(
+        add_track(&full, None, InstrumentRef::SINE),
+        Err(EditError::OutOfIds)
+    );
+}
+
+#[test]
+fn replacing_an_instrument_keeps_the_name_and_the_clips() {
+    let (doc, added) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
+    let organ = InstrumentRef::Builtin(crate::BuiltinInstrument::Organ);
+    let e = set_instrument(&doc, T2, organ.clone()).unwrap();
+    assert_eq!(e.step, StepKind::SetInstrument { track: T2 });
+    let t = &e.doc.tracks[1];
+    assert_eq!((t.name.as_str(), &t.instrument), ("ベース", &organ));
+    assert!(Arc::ptr_eq(
+        &t.clips[0],
+        &doc.clip(added.clip).unwrap().1.clone()
+    ));
+    assert!(Arc::ptr_eq(&doc.tracks[0], &e.doc.tracks[0]));
+    assert_eq!(
+        set_instrument(&doc, T2, InstrumentRef::SINE),
+        Err(EditError::Unchanged)
+    );
+    assert_eq!(
+        set_instrument(&doc, TrackId(9), organ),
+        Err(EditError::NoSuchTrack(TrackId(9)))
+    );
+}

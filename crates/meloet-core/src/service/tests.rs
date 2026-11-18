@@ -1,8 +1,9 @@
 use std::sync::mpsc::{Receiver, channel};
 
 use meloet_devices::{Availability, DevicesPicture, Endpoint, LinkKind};
+use meloet_engine::BlockTiming;
 use meloet_midi::Keyboard;
-use meloet_protocol::{Band, ServerMessage, StatusMessage};
+use meloet_protocol::{Band, InstrumentKind, ServerMessage, ShelfMode, StatusMessage};
 
 use super::*;
 
@@ -768,4 +769,154 @@ fn a_fixed_velocity_reaches_the_sound_the_recording_the_meter_and_the_screen() {
         })
         .collect();
     assert_eq!(notes, [(true, 90), (false, 12)], "NoteOff as it came");
+}
+
+#[test]
+fn the_meters_go_out_in_the_order_of_the_song_whatever_the_seats() {
+    let mut peaks = vec![[0.0f32; 2]; AUDITION_SEAT + 1];
+    peaks[0] = [0.1, 0.1];
+    peaks[2] = [0.3, 0.2];
+    peaks[AUDITION_SEAT] = [0.9, 0.9];
+    assert_eq!(
+        peaks_in_song_order(&[Some(2), None, Some(0), Some(1)], &peaks),
+        [[0.3, 0.2], [0.0, 0.0], [0.1, 0.1], [0.0, 0.0]]
+    );
+    assert!(peaks_in_song_order(&[], &peaks).is_empty());
+}
+
+/// The real engine with no stream, fed the ops of the rules: which of its tracks sounds when a
+/// key is played.
+struct SeatRig {
+    model: Model,
+    audio: Audio,
+    midi: MidiFeed,
+    meters: Arc<EngineMeters>,
+}
+
+impl SeatRig {
+    fn new() -> SeatRig {
+        let model = Model::new(Settings::default());
+        let parts = Engine::new(EngineConfig {
+            max_tracks: MAX_TRACKS,
+            ..EngineConfig::default()
+        });
+        let meters = parts.handle.meters().clone();
+        SeatRig {
+            audio: Audio::new(parts.engine, parts.handle, false, model.engine_seats()),
+            model,
+            midi: parts.midi_in,
+            meters,
+        }
+    }
+
+    fn send(&mut self, command: Command) {
+        for effect in self.model.handle(Input::Command(command)) {
+            if let Effect::Engine(op) = effect {
+                self.audio.op(op);
+            }
+        }
+    }
+
+    /// Plays a key and returns the engine's tracks that sounded.
+    fn sounding(&mut self) -> Vec<usize> {
+        let engine = self.audio.engine.as_mut().expect("no stream has it");
+        let mut out = [0.0f32; 512];
+        for event in [
+            InstrumentEvent::NoteOn {
+                note: 69,
+                velocity: 100,
+            },
+            InstrumentEvent::NoteOff { note: 69 },
+        ] {
+            self.midi.push(MidiIn { event, t_us: 0 }).unwrap();
+            engine.process(&mut out, BlockTiming::default());
+        }
+        // Long enough for the released note to die away before the next key.
+        for _ in 0..80 {
+            engine.process(&mut out, BlockTiming::default());
+        }
+        (0..=AUDITION_SEAT)
+            .filter(|&seat| self.meters.take_track_peak(seat)[0] > 0.01)
+            .collect()
+    }
+}
+
+#[test]
+fn keys_sound_on_the_selected_track_and_on_what_the_shelf_auditions_without_a_stream() {
+    let mut rig = SeatRig::new();
+    assert_eq!(rig.sounding(), [0], "the first track of a new song");
+
+    // A row of the shelf: the audition track, then the new track's seat.
+    rig.send(Command::OpenShelf {
+        mode: ShelfMode::NewTrack,
+    });
+    rig.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::Sine),
+    });
+    assert_eq!(rig.sounding(), [AUDITION_SEAT]);
+    rig.send(Command::ShelfCancel);
+    assert_eq!(rig.sounding(), [0]);
+    rig.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::Sine),
+    });
+    rig.send(Command::ShelfConfirm);
+    assert_eq!(rig.model.track_seats(), [Some(0), Some(1)]);
+    assert_eq!(rig.sounding(), [1], "the new track is selected");
+
+    rig.send(Command::SelectTrack {
+        track: 1,
+        from_arm: false,
+    });
+    assert_eq!(rig.sounding(), [0]);
+    // Trying another instrument on track 2: the keys go there, and come back.
+    rig.send(Command::OpenShelf {
+        mode: ShelfMode::Replace { track: 2 },
+    });
+    rig.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::Sine),
+    });
+    assert_eq!(rig.sounding(), [1]);
+    rig.send(Command::Back);
+    assert_eq!(rig.sounding(), [0]);
+
+    // The selected track goes: the one left is played. With no track, nothing sounds.
+    rig.send(Command::DeleteTrack { track: 1 });
+    assert_eq!(rig.model.track_seats(), [Some(1)]);
+    assert_eq!(rig.sounding(), [1]);
+    rig.send(Command::DeleteTrack { track: 2 });
+    assert_eq!(rig.sounding(), [] as [usize; 0]);
+    rig.send(Command::Undo);
+    assert_eq!(rig.sounding(), [0], "back on the first free seat");
+
+    // What the engine has is what the book says, for an engine made anew.
+    let book = rig.audio.seats.clone();
+    assert_eq!(book.target, Some(0));
+    assert_eq!(
+        book.own.iter().filter(|s| s.is_some()).count(),
+        1,
+        "{book:?}"
+    );
+    assert!(book.trial.is_none());
+
+    // The engine is lost with a stream: the next one is set up from the book.
+    rig.audio.engine = None;
+    rig.send(Command::Undo);
+    assert_eq!(rig.model.track_seats(), [Some(1), Some(0)]);
+    let (engine, feed) = rig.audio.handle.rebuild();
+    rig.audio.engine = Some(engine);
+    rig.midi = feed;
+    for op in rig.audio.seats.ops() {
+        rig.audio.send_seat_op(op);
+        rig.audio.settle();
+    }
+    assert_eq!(rig.sounding(), [0], "track 2, still the selected one");
+    rig.send(Command::SelectTrack {
+        track: 1,
+        from_arm: false,
+    });
+    assert_eq!(
+        rig.sounding(),
+        [1],
+        "track 1 is on the engine made anew too"
+    );
 }

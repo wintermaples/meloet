@@ -27,9 +27,47 @@
 - 実機を録った CC0: **VCSL Pipe Organ**（Simon Dalzell 録音、Loud と Quiet の 2 段、C1〜C6 の短 3 度ごと 21 音、1 段で約 46 MB）と VCSL Renaissance Organ（2 半音ごと、段なし）。どちらも教会や昔のオルガンの音で、ポップスの「オルガン」とは雰囲気がちがうかもしれない（聞いていない）。[A（中身）・C（音の印象）]
 - Pianobook の Hammond L102、Polyphone の Hammond B3、HamOrg などは、再配布できるかが読めない。[A（記載なし）・C]
 
-## ドラム、ベース、ストリングス
+## ドラム
 
-（調べ物が返ったら足す）
+12 の音（クラッシュ、ライド、オープン・ペダル・クローズのハイハット、ハイ・ミッド・ロータム、クラップ、スネア、サイドスティック、キック）が全部そろう生のキットは見つからなかった。クラップは生のキットにない。
+
+| 候補 | ライセンス | そろう音 | 段・テイク | 大きさ | 確かさ |
+|---|---|---|---|---|---|
+| Naked Drums（Wilkinson Audio、https://github.com/sfzinstruments/WilkinsonAudio.NakedDrums ） | CC BY 4.0 | クラップのほか 11（サイドスティック 37、ペダル HH 44、タム 5 つ） | 5 段 × 10 テイク | 1.3 GB（16 チャンネル。ステレオにまとめた物があるかは未確認） | A |
+| Virtuosity Drums（Versilian と Karoryfer、https://github.com/sfzinstruments/virtuosity_drums ） | CC0 | ミッドタムとクラップがない（タム 2 つ）。ジャズのキット | 最大 36 段、HH とシンバルは 4 テイク | 約 1.1 GB（ステレオのリボンマイク「mid」にキット全体） | A |
+| MuldjordKit（FreePats のステレオ版） | CC BY 4.0（DrumGizmo の名前も頼まれている） | ペダル HH・サイドスティック・クラップがない | 14 段 | 157 MiB | A |
+| クラップ: VCSL の Claps（https://github.com/sgossner/VCSL ） | CC0 | 6 テイク ＋ 4 段 | — | 約 1.2 MB | A（音は聞いていない） |
+
+- CC BY-SA のため使わない（聞かずに外した）: AVL Drumkits（BY-SA 3.0）、Salamander Drumkit（BY-SA 3.0）、Sam's Sonor（BY-SA 4.0）。[A]
+- エレクトロキット: 条件に合う素材は見つからなかった（genAudio 808TK は GPL-3.0、ほかは録音のライセンスが不明）。計算で作る。[A]
+- **GM の鍵の並び**（MIDI Association「MIDI-CI Profile for Default Drum Note Map」M2-125-UM v1.0、2025-01-31。序文に「1990 年代に General MIDI に取りこまれた」。GM1 の表の写しと 35〜81 が一致）[A]: キック 36、サイドスティック 37、スネア 38、クラップ 39、クローズ HH 42、ペダル HH 44、オープン HH 46、ロータム 45、ミッドタム 47（か 48）、ハイタム 50、クラッシュ 49、ライド 51。42・44・46 は同時に鳴らさない組（クローズを叩くとオープンが止まる）。ミッドタムを 47 にするか 48 にするかは読み（C）。
+
+## ベース（フィンガーベース）
+
+| 候補 | ライセンス | 中身 | 大きさ | 確かさ |
+|---|---|---|---|---|
+| Black And Blue Basses（Karoryfer、https://github.com/sfzinstruments/karoryfer.black-and-blue-basses ） | CC0 | 黒の中空ボディを指で弾いた音、4 段 × 4 テイク、ゴースト 2 段、5 弦 | 約 961 MB | A（ライセンス）・B（弾きかたと段は KVR の記事） |
+| FreePats Finger Bass YR（https://github.com/freepats/electric-bass-YR ） | CC0 | Yamaha RBX の指弾き、E1〜D#2 の 12 音だけ、段なし | 3.1 MiB | A |
+| Growlybass（Karoryfer） | CC0 | Squier Jazz Bass、4 段 × 4 テイク、指かピックか書いてない | 160 MB | A・B |
+
+- Karoryfer のライセンスは、昔の記事は CC BY 3.0、いまのリポジトリは CC0（食いちがい。リポジトリを採る）。
+
+## ストリングス
+
+| 候補 | ライセンス | 中身 | 確かさ |
+|---|---|---|---|
+| VSCO 2 Community Edition（Versilian、https://github.com/sgossner/VSCO-2-CE ） | CC0 | ヴァイオリン・ヴィオラ・チェロの**セクション（合奏）**の susvib（ビブラートでのばす）ほか。コントラバスはソロだけ。音は 2〜3 半音ごと、2 ファイルずつ | A（ライセンス）・C（ファイル名から読んだ細部） |
+| Karoryfer x bigcat Cello | CC0 | ソロのチェロ | A・B |
+| Meatbass（Karoryfer） | CC0 | ソロのコントラバス | A・B |
+
+- 使えない: Virtual Playing Orchestra（BY-SA と独自の文がまざる）、Sonatina（CC Sampling Plus 1.0）。[A・B]
+
+## わからないこと（取り出して確かめる）
+
+- どの素材も、サンプルレートとビット数、ステレオか、間引いたあとの大きさは、実物を取り出さないとわからない。
+- Naked Drums の「stereo-out」が、まとめた 2 チャンネルのファイルか、鳴らすときにまとめるのか。
+- GitHub の release の URL のいくつか（Black And Blue Basses、VSCO 2 CE）は、取れるか確かめていない。
+- 音の質（ジャズ寄りのドラム、古い Wurlitzer、教会のオルガン）は、聞いていない。
 
 ## 出どころ（見た日 2026-11-18）
 

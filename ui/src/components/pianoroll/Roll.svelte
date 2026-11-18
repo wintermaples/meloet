@@ -189,7 +189,9 @@
     velocityFullPx: () => sizes.velFull,
     velocityHeight: () => velH,
     send: (c: Command) => {
-      lastSent = send(c);
+      const sent = send(c);
+      lastSent = sent;
+      if (c.type === "addNote" && c.take === null) awaitMadeClip(c.start, sent);
     },
     drawVelocity: () => fixedOr100(app),
     mayAudition,
@@ -297,7 +299,7 @@
   let wheelRowZoom = 0;
   const ZOOM_NOTCH = 100;
   const scrollMaxTick = $derived.by(() => {
-    let end = Math.max(transport.position, n ? G.noteEnd(n, Math.max(0, G.noteCount(n) - 1)) : 0, shown.clip?.end ?? 0);
+    let end = Math.max(transport.position, n && G.noteCount(n) > 0 ? G.noteEnd(n, G.noteCount(n) - 1) : 0, shown.clip?.end ?? 0);
     for (const tr of song.tracks) for (const c of tr.clips) end = Math.max(end, c.end);
     return Math.max(0, end - areaW / 2 / ppt);
   });
@@ -346,6 +348,15 @@
   // ---- ひらいたとき: クリップのはじまりまで送り、入る拡大にし、ノートが見える高さに合わせる ----
 
   let fitKeysFor: number | null = null;
+  /** クリップのない所で書いた位置（ティック）。その答えでできたクリップは、ひらいたのではないので、見ている範囲をそのままにする（B-52）。 */
+  let madeAt: number | null = null;
+  function awaitMadeClip(start: number, sent: Promise<number | null>): void {
+    madeAt = start;
+    void sent.then((rev) => {
+      // 書けなかった（音階の外など）ときは、もう来ない。
+      if (madeAt === start && (rev === null || current.rev >= rev) && current.state?.arrange.pianoRollClip == null) madeAt = null;
+    });
+  }
   $effect(() => {
     const clip = shown.clip;
     const w = areaW;
@@ -356,6 +367,12 @@
     untrack(() => {
       if (prView.shownClip !== clip.id) {
         prView.shownClip = clip.id;
+        const made = madeAt !== null && clip.start <= madeAt && madeAt < clip.end;
+        madeAt = null;
+        if (made) {
+          fitKeysFor = null;
+          return;
+        }
         // 欄をたたんだすぐあとは、bind の幅がまだ前の物なので、いまの幅を読む。
         prView.quarterPx = G.fitQuarterPx(clip.end - clip.start, area?.clientWidth || w, scale);
         prView.scrollTick = clip.start;

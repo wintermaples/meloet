@@ -38,6 +38,8 @@ BOARDS = {
     "pianoRollPlay": "F-PRPlay",
     "pianoRollRec": "F-PRRec",
     "pianoRollEmpty": "F-PREmpty",
+    "pianoRollNoNotes": None,
+    "pianoRollNoNotesScrolled": None,
     "mixer": "A-Mixer",
     "history": "F-History",
     "shelf": "F-ShelfArrange",
@@ -107,6 +109,12 @@ lanes.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: t
 """
 
 
+# Turns the wheel sideways over the notes area of the piano roll by dx CSS px.
+WHEEL_ROLL = """
+document.querySelector(".roll .middle").dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaX: %d }));
+"""
+
+
 def drag_clip(x0, x1, opts="{}"):
     return "js:" + DRAG_CLIP % (x0, opts, x0, x1, opts, x1, opts)
 
@@ -140,6 +148,8 @@ CLICKS = {
     "menuFile": ("saved", '[data-menu="0"]'),
     "menuZoom": ("muted", ('[data-menu="2"]', '[data-test="menubar-list"] [data-row="10"]')),
     "menuClip": ("muted", "js:" + CONTEXT_CLIP),
+    # ノートをぜんぶ消したクリップで、横に 1 小節ぶん送る（送った先でも目盛と方眼が出る）。
+    "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -152,6 +162,8 @@ ONLY = {
     "pianoRollPlay": [(1280, 800, 100)],
     "pianoRollRec": [(1280, 800, 100)],
     "pianoRollEmpty": [(1280, 800, 100)],
+    "pianoRollNoNotes": [(1280, 800, 100)],
+    "pianoRollNoNotesScrolled": [(1280, 800, 100)],
     "noteListTyping": [(1280, 800, 100)],
     "noteListBroken": [(1280, 800, 100)],
     "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 150)],

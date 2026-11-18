@@ -32,7 +32,7 @@ function show(component: Component<any>, state: AppState): void {
   mounted = mount(component, { target });
   flushSync();
 }
-const q = (sel: string) => target.querySelector<HTMLElement>(sel);
+const q = <T extends HTMLElement = HTMLElement>(sel: string) => target.querySelector<T>(sel);
 const qa = (sel: string) => [...target.querySelectorAll<HTMLElement>(sel)];
 function press(state: AppState, key: string): Command[] {
   const sent: Command[] = [];
@@ -87,6 +87,26 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     expect(press(s, "ArrowDown")).toEqual([{ type: "shelfSelectEffect", effect: "eq4" }]);
   });
 
+  it("「入れる」のボタン: えらんだ行の下、押すと ShelfConfirm。行をえらんでいないときは一覧の下で、使えない", () => {
+    const s = scene("shelfEffects");
+    show(RightRail, s);
+    const button = () => q<HTMLButtonElement>("[data-test=shelf-insert-confirm]")!;
+    expect(text(button())).toBe("入れる Enter");
+    expect(button().classList.contains("primary")).toBe(true);
+    expect(button().disabled).toBe(false);
+    expect(q("[data-effect=compressor]")!.nextElementSibling).toBe(q("[data-test=shelf-insert]"));
+    button().click();
+    expect(app.sent).toEqual([{ type: "shelfConfirm" }]);
+
+    app.setState({ ...s, shelf: { ...s.shelf, selectedEffect: null } });
+    flushSync();
+    expect(qa("[data-test=shelf-insert-confirm]").length).toBe(1);
+    expect(button().disabled).toBe(true);
+    expect(qa("[data-effect]").at(-1)!.nextElementSibling).toBe(q("[data-test=shelf-insert]"));
+    button().click();
+    expect(app.sent.length).toBe(1);
+  });
+
   it("入ったあとは、その子がえらばれ、パラメータの欄が前に出る（偽物の答え）", () => {
     const s = scene("shelfEffects");
     const r = reduceMixer(s, s.shelf, s.song, { type: "shelfConfirm" })!;
@@ -115,6 +135,7 @@ describe("音源のモードのエフェクトは見るだけ（A-14）", () => 
     q("[data-test=shelf-effects]")!.click();
     flushSync();
     expect(qa("[data-effect]").length).toBe(6);
+    expect(q("[data-test=shelf-insert-confirm]")).toBeNull();
     expect(text(q("[data-test=shelf-mode]"))).toBe("新しいトラックの音源をえらぶ");
     q("[data-effect=reverb]")!.click();
     flushSync();

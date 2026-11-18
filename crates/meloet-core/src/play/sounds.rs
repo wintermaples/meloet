@@ -59,6 +59,16 @@ impl Play {
         wanted
     }
 
+    /// The instrument of the track the keys play, while its samples are still being read: a
+    /// key played now is silent. Not while a row is auditioned; the shelf says it then.
+    pub fn target_loading(&self) -> Option<BuiltinInstrument> {
+        if self.auditioning() {
+            return None;
+        }
+        let track = self.doc().track(self.song.session.play_target?)?;
+        Some(builtin(&track.instrument)).filter(|b| !self.sounds.ready(*b))
+    }
+
     /// Asks for the samples that are wanted and not there, and lets go of the ones nothing
     /// wants any more. After every input.
     pub fn sync_sounds(&mut self, effects: &mut Vec<Effect>) {

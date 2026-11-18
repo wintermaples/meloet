@@ -209,6 +209,8 @@
         });
       case "samplePlaying":
         return plain("msg.samplePlaying", { name: t(`instrument.${m.instrument}`) });
+      case "instrumentLoading":
+        return plain("msg.auditionLoading", { name: t(`instrument.${m.instrument}`) });
       case "undoPending":
         return plain("msg.undoPending", { count: m.count });
       case "recovered":

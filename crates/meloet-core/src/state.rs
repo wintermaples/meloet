@@ -100,6 +100,8 @@ pub enum Input {
     MidiBack,
     /// What the engine says about a recording.
     Record(RecordReport),
+    /// A key went down while [`Model::wants_loading_key`].
+    KeyWhileLoading,
     /// Nothing but the time and the heard position given with [`Model::set_now`].
     Tick,
     /// From the shell: the window's close button, or anything else that asks to end.
@@ -225,6 +227,9 @@ pub struct Model {
     bands: Bands,
     /// Something that just happened, for the status line. Gone at the next thing the user does.
     notice: Option<StatusMessage>,
+    /// A key was played on the track with this instrument while its samples were being read:
+    /// the status line says so until they are read or the keys play something else.
+    loading_said: Option<BuiltinInstrument>,
     dialog: Option<SettingsDialogView>,
     highlighted: Option<String>,
     hint: Option<Hint>,
@@ -304,6 +309,7 @@ impl Model {
             screen: None,
             bands: Bands::new(window(START_VIEWPORT, scale)),
             notice: None,
+            loading_said: None,
             dialog: None,
             highlighted: None,
             hint: None,
@@ -349,6 +355,13 @@ impl Model {
     /// Whether [`Input::SoundHeard`] would change anything now.
     pub fn wants_sound(&self) -> bool {
         self.hint_armed && !self.hint_dismissed
+    }
+
+    /// Whether [`Input::KeyWhileLoading`] would change anything now: a key played now is
+    /// silent, and the status line does not say why yet.
+    pub fn wants_loading_key(&self) -> bool {
+        let loading = self.play.target_loading();
+        loading.is_some() && loading != self.loading_said
     }
 
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
@@ -475,6 +488,7 @@ impl Model {
                 self.new_song_unsaid = true;
             }
             Input::Record(report) => self.play.report(report, &mut effects),
+            Input::KeyWhileLoading => self.loading_said = self.play.target_loading(),
             Input::Tick => {}
             Input::CloseRequested
             | Input::SongFilePicked(_)
@@ -520,6 +534,9 @@ impl Model {
         self.play.sync_mix(&mut effects);
         self.play.sync_sample(&mut effects);
         self.play.sync_sounds(&mut effects);
+        if self.loading_said != self.play.target_loading() {
+            self.loading_said = None;
+        }
         self.close_when_recorded(&mut effects);
         self.recovery_tick(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
@@ -961,6 +978,9 @@ impl Model {
                 align,
             }),
             Command::Audition { keys, velocity } => {
+                if can_play && !keys.is_empty() {
+                    self.loading_said = self.play.target_loading();
+                }
                 self.play.audition(&keys, velocity, can_play, effects);
             }
             Command::AuditionOff => self.play.audition_off(can_play, effects),
@@ -1412,6 +1432,12 @@ impl Model {
         }
         if let Some(m) = self.play.moving_status() {
             return Some(m);
+        }
+        // Before a notice: it answers the key just played, and no command puts it away.
+        if let Some(instrument) = self.loading_said {
+            return Some(StatusMessage::InstrumentLoading {
+                instrument: instruments::kind_of(instrument),
+            });
         }
         if self.notice.is_some() {
             return self.notice.clone();

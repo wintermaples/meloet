@@ -3,7 +3,8 @@
      さがす文字、お気に入りだけ、たたんだグループは画面だけが持つ（tracks.svelte.ts）。行をえらぶ ・ 入れる ・ やめる ・ 星 ・ サンプルは core への意図。
      第 4 回の棚は、プラグインの見出しもスキャンも形式の印も出さない（仕様書 3 章 Y10）。
      見出しの「音源 N」「エフェクト 6」で一覧を切りかえる。エフェクトの行は名前と「最初から入っている」だけ（サンプルの ▶ と星はない）。
-     「空き ＋」からひらいた棚（insertEffect）では、行を押す ・ ↑ ↓ でえらび、Enter で入れる。音源のモードのエフェクトは見るだけ（design-notes A-14）。 -->
+     「空き ＋」からひらいた棚（insertEffect）では、行を押す ・ ↑ ↓ でえらび、Enter か「入れる」で入れる。音源のモードのエフェクトは見るだけ（design-notes A-14）。
+     「入れる」は、音源の「トラック N を作る」と同じく、えらんだ行の下。えらんだ行が見えていないときは一覧のいちばん下（行をえらんでいなければ使えない）。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { clockOffsetUs, type EffectKind, type InstrumentKind } from "../bridge";
@@ -103,6 +104,16 @@
 {/snippet}
 {#snippet play()}<svg class="icon" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l8 5-8 5z" /></svg>{/snippet}
 {#snippet stop()}<svg class="icon" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1h8v8h-8z" /></svg>{/snippet}
+{#snippet insertButton()}
+  <div class="audition" data-test="shelf-insert">
+    <div class="buttons">
+      <Button primary onclick={() => send({ type: "shelfConfirm" })} disabled={shelf.selectedEffect === null} test="shelf-insert-confirm">
+        {t("button.insertEffect")}
+        <span class="m-num m-lbl">{t("key.enter")}</span>
+      </Button>
+    </div>
+  </div>
+{/snippet}
 
 <aside class="panel" data-band="shelf" data-shelf data-test="shelf">
   <div class="head">
@@ -140,7 +151,9 @@
           <span class="name">{t(`effect.${e}`)}</span>
           <span class="m-lbl">{t("params.builtin")}</span>
         </div>
+        {#if inserting && shelf.selectedEffect === e}{@render insertButton()}{/if}
       {/each}
+      {#if inserting && !effects.some((e) => e === shelf.selectedEffect)}{@render insertButton()}{/if}
     </ScrollArea>
   {:else}
   <div class="bar">

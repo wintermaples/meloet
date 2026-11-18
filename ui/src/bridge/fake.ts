@@ -269,6 +269,10 @@ const firstInsert = (effect: EffectKind): Inserts => [effect, null, null, null];
 /** The values of an effect that is new, in the order of its table. */
 export const effectDefaults = (effect: EffectKind): number[] => EFFECT_PARAMS[effect].map((p) => p.default);
 
+/** The same in a slot of `strip`: a reverb or a delay on a track or on the master starts with its mix at 30 % (`Insert::new_on`). */
+export const insertDefaults = (effect: EffectKind, strip: StripRef): number[] =>
+  EFFECT_PARAMS[effect].map((p) => (p.id === "mix" && (effect === "reverb" || effect === "delay") && strip.kind !== "return" ? 30 : p.default));
+
 /** What a new track sends to return A and B (spec 3, Y9). */
 const newTrackSends = (instrument: InstrumentKind): TrackView["sends"] => {
   const group = INSTRUMENT_GROUPS.find((g) => g.instruments.includes(instrument))!.group;
@@ -1991,7 +1995,7 @@ export function reduceMixer(
     const effect = insert === null ? null : (stripOf(song, insert.strip)?.inserts[insert.slot] ?? null);
     if (insert === null || effect === null) params.selected = null;
     else if (JSON.stringify(params.selected?.insert) !== JSON.stringify(insert)) {
-      params.selected = { insert, effect, values: effectDefaults(effect), row: null };
+      params.selected = { insert, effect, values: insertDefaults(effect, insert.strip), row: null };
     }
     showParams = params.selected !== null;
   };

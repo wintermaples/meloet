@@ -496,3 +496,72 @@ fn the_scale_lock_does_not_hold_on_a_drum_track() {
     );
     assert_eq!(m.view().song.undo_count, 3);
 }
+
+#[test]
+fn a_key_on_a_track_whose_samples_are_not_read_says_so_until_they_are() {
+    let loading = |instrument| Some(StatusMessage::InstrumentLoading { instrument });
+    let (m, e) = &mut rig(&[B::GrandPiano, B::Organ]);
+    assert_ne!(status(m), loading(GrandPiano), "nothing before a key");
+    assert!(m.wants_loading_key());
+
+    go(m, e, Input::KeyWhileLoading);
+    assert_eq!(status(m), loading(GrandPiano));
+    assert!(!m.wants_loading_key(), "one key is enough");
+    // What the user does meanwhile does not put it away.
+    command(m, e, Command::ToggleMetronome);
+    assert_eq!(status(m), loading(GrandPiano));
+
+    go(m, e, Input::SoundLoaded(B::GrandPiano));
+    assert_ne!(status(m), loading(GrandPiano), "read: gone");
+    assert!(!m.wants_loading_key());
+    // A key that was on its way while the samples came in.
+    go(m, e, Input::KeyWhileLoading);
+    assert_ne!(status(m), loading(GrandPiano));
+
+    // A row is auditioned: the shelf says it, as before, and the status line is the shelf's.
+    command(m, e, open(ShelfMode::NewTrack));
+    command(m, e, select(Organ));
+    assert_eq!(m.view().shelf.loading, Some(Organ));
+    assert!(!m.wants_loading_key());
+    go(m, e, Input::KeyWhileLoading);
+    let auditioning = Some(StatusMessage::AuditionNewTrack { instrument: Organ });
+    assert_eq!(status(m), auditioning);
+    // Entered before they are read: the new track is the one the keys play, silent still.
+    command(m, e, Command::ShelfConfirm);
+    assert!(m.wants_loading_key());
+    // The keys column of the piano roll counts as a key.
+    let keys = Command::Audition {
+        keys: vec![60],
+        velocity: 100,
+    };
+    command(m, e, keys.clone());
+    assert_eq!(status(m), loading(Organ));
+    // Another track, whose instrument sounds: nothing to say, with a key or without.
+    command(
+        m,
+        e,
+        Command::SelectTrack {
+            track: 1,
+            from_arm: false,
+        },
+    );
+    assert_ne!(status(m), loading(Organ));
+    assert!(!m.wants_loading_key());
+    command(m, e, keys);
+    go(m, e, Input::KeyWhileLoading);
+    assert!(!matches!(
+        status(m),
+        Some(StatusMessage::InstrumentLoading { .. })
+    ));
+    // Back on the silent track: said again only at the next key.
+    command(
+        m,
+        e,
+        Command::SelectTrack {
+            track: 2,
+            from_arm: false,
+        },
+    );
+    assert_ne!(status(m), loading(Organ));
+    assert!(m.wants_loading_key());
+}

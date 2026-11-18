@@ -1,0 +1,233 @@
+{
+  "_about": [
+    "Where each sampled instrument of meloet comes from, so the same files can be fetched again (docs/architecture.md 19-1).",
+    "One entry per source. fetch: how to get the exact same bytes (a tarball with its sha256, or a git commit with sparse-checkout paths).",
+    "use: which files we take (paths relative to the source root; '*' and '**' are glob patterns), or, for Naked Drums whose file names do not say which drum they are, an SFZ selection that tools/sounds/sfz_select.py resolves.",
+    "attribution: what a credit needs (CC BY 3.0 4(b) / CC BY 4.0 3(a)): creator, title, source URI, license URI. CC0 entries keep a credit too, because the authors ask for one (not required).",
+    "license_copies: the license and readme texts that came with the source, copied without change.",
+    "Checked on 2026-11-18. Findings: docs/measurements/2026-11-18-round4-sources.md."
+  ],
+  "sources": [
+    {
+      "id": "salamander-grand-piano",
+      "instrument": "グランドピアノ",
+      "title": "Salamander Grand Piano V3 (FreePats SFZ+FLAC v3+20200602)",
+      "fetch": {
+        "kind": "tarball",
+        "url": "https://freepats.zenvoid.org/Piano/SalamanderGrandPiano/SalamanderGrandPiano-SFZ+FLAC-V3+20200602.tar.gz",
+        "page": "https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html",
+        "sha256": "b7760e168494cf095344e217b0af013fc449ad033abbbdf1c65211cf11dc038b",
+        "bytes": 741757374
+      },
+      "license": "CC-BY-3.0",
+      "attribution": {
+        "creator": "Alexander Holm",
+        "title": "Salamander Grand Piano V3",
+        "source_uri": "https://archive.org/details/SalamanderGrandPianoV3",
+        "license_uri": "http://creativecommons.org/licenses/by/3.0/",
+        "also": "SFZ+FLAC version assembled by roberto@zenvoid.org for FreePats (https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html)",
+        "changes": "must say that the samples were changed (thinned out, cut, converted)"
+      },
+      "use": {
+        "root": "SalamanderGrandPiano-SFZ+FLAC-V3+20200602",
+        "sfz": "SalamanderGrandPiano-V3+20200602.sfz",
+        "files": ["samples/*.flac"],
+        "note": "Not checked in this round (another task measures it). Which layers to keep is not decided yet."
+      },
+      "license_copies": "licenses/sounds/salamander-grand-piano/"
+    },
+    {
+      "id": "gregsullivan-wurlitzer-ep200",
+      "instrument": "エレクトリックピアノ",
+      "title": "Greg Sullivan's E-Pianos: Wurlitzer EP200 Electric Piano v1.1 (SFZ by kinwie)",
+      "fetch": {
+        "kind": "tarball",
+        "url": "https://github.com/sfzinstruments/GregSullivan.E-Pianos/archive/8c3e581acda3594b553948ff0222d4f84a698376.tar.gz",
+        "repo": "https://github.com/sfzinstruments/GregSullivan.E-Pianos",
+        "commit": "8c3e581acda3594b553948ff0222d4f84a698376",
+        "sha256": "e88ff3a3536fb559657c2ae4e09ae201e01b60f30f97dec5c4ca98a85f7f7554",
+        "bytes": 19254201,
+        "note": "GitHub makes this tarball on demand, so the same bytes are not promised forever. If the sha256 changes, check the files against the commit."
+      },
+      "license": "CC-BY-4.0",
+      "license_note": "Two texts: the repository README and LICENSE say CC BY 3.0 Unported; the author's site says (updated 21-Oct-2026) all his instruments are now CC BY 4.0. Both are CC BY. The SFZ mapping by kinwie is only covered by the repository's CC BY 3.0.",
+      "attribution": {
+        "creator": "Greg Sullivan",
+        "title": "Wurlitzer EP200 Electric Piano v1.1 (16-May-1999), from Greg's free electric piano samples",
+        "source_uri": "http://www.sullivang.net/",
+        "license_uri": "https://creativecommons.org/licenses/by/4.0/",
+        "also": "SFZ mapping by kinwie, https://github.com/sfzinstruments/GregSullivan.E-Pianos (CC BY 3.0, http://creativecommons.org/licenses/by/3.0/)",
+        "changes": "must say that the samples were changed"
+      },
+      "use": {
+        "root": "GregSullivan.E-Pianos-8c3e581acda3594b553948ff0222d4f84a698376",
+        "sfz": "Wurlitzer EP200/Wurlitzer EP200.sfz",
+        "files": ["Wurlitzer EP200/Samples/*.flac"]
+      },
+      "license_copies": "licenses/sounds/gregsullivan-epianos/"
+    },
+    {
+      "id": "naked-drums",
+      "instrument": "スタジオキット",
+      "title": "Naked Drums (Wilkinson Audio, SFZ by kinwie)",
+      "fetch": {
+        "kind": "git",
+        "repo": "https://github.com/sfzinstruments/WilkinsonAudio.NakedDrums",
+        "commit": "407732a548606ac715ad8f3fbac63d9f4df77c0d",
+        "how": "git clone --filter=blob:none --no-checkout; git sparse-checkout set --no-cone '/*' '!/Wilkinson Audio/Naked Drums/Samples/'; checkout; then add the files that use.select prints (sparse-checkout add --stdin, one '/'-prefixed path per line)"
+      },
+      "license": "CC-BY-4.0",
+      "attribution": {
+        "creator": "Wilkinson Audio",
+        "title": "Naked Drums",
+        "source_uri": "https://github.com/sfzinstruments/WilkinsonAudio.NakedDrums",
+        "license_uri": "https://creativecommons.org/licenses/by/4.0/",
+        "also": "SFZ version by kinwie",
+        "changes": "must say that the samples were changed (mixed, thinned out, converted)"
+      },
+      "use": {
+        "root": ".",
+        "sfz": "Wilkinson Audio/Naked Drums/Stereo/Naked Drums.sfz",
+        "keymap": "Wilkinson Audio/Naked Drums/User/Naked Drums GM keymap.txt",
+        "select": [
+          "python3 -I tools/sounds/sfz_select.py '<root>/Wilkinson Audio/Naked Drums/Stereo/Naked Drums.sfz' --root '<root>'",
+          "--where master_label=Kick,Snare1,Hats,Tom1,Tom2,Tom3,Tom4,Tom5,Crash1,Ride",
+          "--where group_label=Center,Sidestick,Tight,Closed,Pedal,Open,Edge,Bow",
+          "--has-any locc41,locc42,locc43,locc44,locc45,locc46"
+        ],
+        "select_count": 2400,
+        "note": "This takes every mic for 11 sounds plus all 5 toms and both closed hi-hats (Tight, Closed), so the choice of toms and mics can still be made. Mic layers: locc41 direct, locc42 overheads, locc43 close room, locc44 far rooms, locc45 mid-side, locc46 china wide OH. The author's GM preset uses only direct + overheads (--has-any locc41,locc42: 980 files)."
+      },
+      "license_copies": "licenses/sounds/naked-drums/"
+    },
+    {
+      "id": "vcsl-claps",
+      "instrument": "スタジオキット（クラップ）",
+      "title": "VCSL (Versilian Community Sample Library): Claps",
+      "fetch": {
+        "kind": "git",
+        "repo": "https://github.com/sgossner/VCSL",
+        "commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",
+        "how": "git clone --filter=blob:none --no-checkout; git sparse-checkout set --no-cone '/*' '!/*/' '/Idiophones/Struck Idiophones/Claps/'; checkout"
+      },
+      "license": "CC0-1.0",
+      "attribution": {
+        "creator": "Versilian Studios LLC",
+        "title": "Versilian Community Sample Library (VCSL)",
+        "source_uri": "https://github.com/sgossner/VCSL",
+        "license_uri": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "changes": "not required"
+      },
+      "use": {
+        "root": ".",
+        "files": ["Idiophones/Struck Idiophones/Claps/*.wav"],
+        "note": "No SFZ in the repository (the SFZ version is a separate release download, not fetched)."
+      },
+      "license_copies": "licenses/sounds/vcsl/"
+    },
+    {
+      "id": "vcsl-pipe-organ",
+      "instrument": "オルガン",
+      "title": "VCSL (Versilian Community Sample Library): Pipe Organ",
+      "fetch": {
+        "kind": "git",
+        "repo": "https://github.com/sgossner/VCSL",
+        "commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",
+        "how": "same clone as vcsl-claps; sparse-checkout also '/Aerophones/Edge-blown Aerophones/Pipe Organ/'"
+      },
+      "license": "CC0-1.0",
+      "license_note": "Info.txt: recorded by Simon Dalzell of Ivy Audio; 'Bearer is granted right to redistribute this sample set by Versilian Studios LLC. Credit to both original author and Versilian Studios is encouraged.'",
+      "attribution": {
+        "creator": "Simon Dalzell (Ivy Audio), Versilian Studios LLC",
+        "title": "Versilian Community Sample Library (VCSL): Pipe Organ",
+        "source_uri": "https://github.com/sgossner/VCSL",
+        "license_uri": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "changes": "not required"
+      },
+      "use": {
+        "root": ".",
+        "files": [
+          "Aerophones/Edge-blown Aerophones/Pipe Organ/Loud/*.wav",
+          "Aerophones/Edge-blown Aerophones/Pipe Organ/Quiet/*.wav",
+          "Aerophones/Edge-blown Aerophones/Pipe Organ/Info.txt"
+        ],
+        "not_yet": [
+          "Aerophones/Edge-blown Aerophones/Pipe Organ/Loud Pedal/*.wav",
+          "Aerophones/Edge-blown Aerophones/Pipe Organ/Quiet Pedal/*.wav",
+          "Aerophones/Edge-blown Aerophones/Pipe Organ/Rode_Blower.wav"
+        ],
+        "note": "Fetched but not decided: the pedal division (low notes) and the blower noise."
+      },
+      "license_copies": "licenses/sounds/vcsl/"
+    },
+    {
+      "id": "black-and-blue-basses",
+      "instrument": "フィンガーベース",
+      "title": "Black And Blue Basses v1.002 (Karoryfer Samples): darkblack plucks",
+      "fetch": {
+        "kind": "git",
+        "repo": "https://github.com/sfzinstruments/karoryfer.black-and-blue-basses",
+        "commit": "6e7d674cdb41be7a54dbccb15472401ad01099b9",
+        "tag": "v1.002",
+        "how": "git clone --filter=blob:none --no-checkout; git sparse-checkout set --no-cone '/*' '!/Samples/' '!/GUI/'; checkout; sparse-checkout add '/Samples/darkblack/reg/' '/Samples/darkblack/rel/'",
+        "release_zip": "https://github.com/sfzinstruments/karoryfer.black-and-blue-basses/releases/download/v1.002/Black_And_Blue_Basses_1002.zip (962 MB, whole instrument, not fetched)"
+      },
+      "license": "CC0-1.0",
+      "attribution": {
+        "creator": "Karoryfer Samples (Drogomir Smolken)",
+        "title": "Black And Blue Basses",
+        "source_uri": "https://github.com/sfzinstruments/karoryfer.black-and-blue-basses",
+        "license_uri": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "changes": "not required"
+      },
+      "use": {
+        "root": ".",
+        "sfz": "Programs/05-darkblack_pluck.sfz",
+        "files": ["Samples/darkblack/reg/*.wav", "Samples/darkblack/rel/*.wav"],
+        "note": "darkblack = Washburn AB-95 played with the fingers, neck pickup (user guide). rel = release noises, off by default in the SFZ (cc107 = 0)."
+      },
+      "license_copies": "licenses/sounds/black-and-blue-basses/"
+    },
+    {
+      "id": "vsco-2-ce-strings",
+      "instrument": "ストリングス",
+      "title": "VS Chamber Orchestra 2: Community Edition (Versilian Studios): string sustains",
+      "fetch": {
+        "kind": "git",
+        "repo": "https://github.com/sgossner/VSCO-2-CE",
+        "commit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+        "sfz_commit": "6dd651d55dde97fd4028699be9d4481f26917891",
+        "sfz_branch": "SFZ",
+        "how": "git clone --filter=blob:none --no-checkout; git sparse-checkout set --no-cone '/*' '!/*/' plus the folders in use.files; checkout. The SFZ files live on the SFZ branch (same sample paths); fetch that branch and read them with git show <sfz_commit>:<file>."
+      },
+      "license": "CC0-1.0",
+      "license_note": "Readme.txt (2016) asks, without making it a condition of CC0: do not sell the samples directly, keep improvements open, credit Versilian Studios/Sam Gossner and/or Ivy Audio/Simon Dalzell and link to the VSCO: CE homepage.",
+      "attribution": {
+        "creator": "Versilian Studios LLC (Sam Gossner), Ivy Audio (Simon Dalzell); sample cutting by Elan Hickler/Soundemote",
+        "title": "VS Chamber Orchestra: Community Edition",
+        "source_uri": "http://vis.versilstudios.net/vsco-community.html",
+        "license_uri": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "changes": "not required"
+      },
+      "use": {
+        "root": ".",
+        "sfz": [
+          "ViolinEnsSusVib.sfz",
+          "ViolaEnsSusVib.sfz",
+          "CelloEnsSusVib.sfz",
+          "ContrabassSusVB.sfz",
+          "ContrabassSusNV.sfz"
+        ],
+        "files": [
+          "Strings/Violin Section/susVib/*.wav",
+          "Strings/Viola Section/susvib/*.wav",
+          "Strings/Cello Section/susvib/*.wav",
+          "Strings/Solo Contrabass/SusVib/*.wav"
+        ],
+        "not_yet": ["Strings/Solo Contrabass/SusNV/*.wav"],
+        "note": "Contrabass SusNV (no vibrato) was fetched too; SusVib has no E0, SusNV goes down to E0."
+      },
+      "license_copies": "licenses/sounds/vsco-2-ce/"
+    }
+  ]
+}

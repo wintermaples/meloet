@@ -8,7 +8,7 @@
   import { glRegion, glSlot } from "../gl/slot";
   import { term, tip } from "../lib/tip.svelte";
   import { current, onEvent, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { findTerm, t } from "../text/ja";
   import { textParts } from "./format";
   import { heldText, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
   import { metrics } from "./metrics.svelte";
@@ -45,9 +45,9 @@
     if (app.outputs.chosen === null) return { kind: "noOutput" as const };
     // カウントイン中と録音中は、録っているトラックと、いま録っているテイク（モック F-Connect4・F-ArrangeRec）。
     const rec = app.transport.recording;
-    const recTrack = rec && app.song.tracks.find((x) => x.number === rec.track);
+    const recTrack = rec && app.song.tracks.find((x) => x.id === rec.track);
     if (rec && recTrack) return { kind: "target" as const, track: recTrack, take: rec.take };
-    const track = app.song.tracks.find((x) => x.number === app.song.playTarget);
+    const track = app.song.tracks.find((x) => x.id === app.song.playTarget);
     return track ? { kind: "target" as const, track, take: null } : null;
   });
 
@@ -340,9 +340,9 @@
           {#if piece.instrument}
             {#if !slim && (measuring || fit.instrument)}
               <span data-part="target-instrument"
-                >{#each piece.text.split(new RegExp(`(${INSTRUMENT})`)) as bit, j (j)}{#if bit === INSTRUMENT}<span
-                      use:term={"仮の音"}>{t("instrument.placeholder")}</span
-                    >{:else}{bit}{/if}{/each}</span
+                >{#each piece.text.split(new RegExp(`(${INSTRUMENT})`)) as bit, j (j)}{#if bit === INSTRUMENT}{@const name = t(`instrument.${right.track.instrument}`)}{#if findTerm(name)}<span
+                        use:term={name}>{name}</span
+                      >{:else}<span>{name}</span>{/if}{:else}{bit}{/if}{/each}</span
               >
             {/if}
           {:else if piece.text === TRACK}

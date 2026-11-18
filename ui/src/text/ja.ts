@@ -109,6 +109,30 @@ export const texts = {
   ),
   "msg.audition": s6("ためし弾き中", "鍵盤を弾くと、この音色で鳴ります。まだトラックには入っていません。"),
   "msg.samplePlaying": s6("サンプル再生中", "サンプルを再生中 ・ {name}。行をえらぶと、鍵盤でためし弾きできます。", { name: "（名前）" }),
+  // 状態行で、ためし弾きの音色の名前のうしろに出す（新しいトラックのとき）。
+  "status.auditionNewTrack": e("{instrument} ・ まだトラックには入っていません ・ 入れるには {key}", "mock:F4-ShelfAudition", {
+    instrument: "シンセベース",
+    key: "Enter",
+  }),
+  "msg.auditionReplace": s6(
+    "ためし弾き中 ・ 入れかえ",
+    "鍵盤を弾くと、この音色で鳴ります。再生すると、録ってあるノートもこの音色で鳴ります。まだ入れかえていません。",
+  ),
+  // 仕様書 6 章の表の「出る場所」の列にある文。
+  "status.auditionReplace": e("{instrument} ・ {track} の音源は、まだ{current}です ・ 入れかえるには {key}", "spec:6", {
+    instrument: "エレクトリックピアノ",
+    track: "1 ピアノ",
+    current: "グランドピアノ",
+    key: "Enter",
+  }),
+  "msg.instrumentReplaced": s6("音源を入れかえた", "{track} の音源を {instrument} にしました。取り消せます（{undoKey}）", {
+    track: "1 ピアノ",
+    instrument: "エレクトリックピアノ",
+    undoKey: "Mod Z",
+  }),
+  "msg.trackAdded": s6("トラックを足した", "{track} を足しました。", { track: "5 シンセ" }),
+  "msg.trackDeleted": s6("トラックを消した", "{track} を消しました。取り消せます（{undoKey}）", { track: "3 ドラム", undoKey: "Mod Z" }),
+  "msg.drumsNoScaleLock": s6("ドラムとスケール固定", "ドラムには音階がないので、スケール固定は使えません。"),
   "msg.auditionLoading": s6("ためし弾きしたい音源がまだ読めない", "{name}を読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。", { name: "（名前）" }),
   "msg.pluginMissing": s6("プラグインが見つからない", "前はここにありました: {path}。曲の中の設定は残しています。", { path: "（場所）" }),
   "msg.pluginStopped": s6(
@@ -224,7 +248,9 @@ export const texts = {
   "button.clearSearch": e("さがす枠を空にする", "spec:6"),
   "button.switchFormat": e("入れかえる", "spec:6"),
   "button.cancel": e("やめる", "spec:6"),
-  "button.makeTrack": e("トラック {number} を作る", "spec:6", { number: "6" }),
+  // 仕様書 6 章は「トラック（次の番号）を作る」。番号を入れた形はモックから。
+  "button.makeTrack": e("トラック {number} を作る", "mock:F4-ShelfAudition", { number: "5" }),
+  "button.replaceInstrument": e("入れかえる", "spec:6"),
   "button.locate": e("場所をさがす", "spec:6"),
   "button.rescan": e("もう一度スキャン", "spec:6"),
   "button.removeFromSong": e("曲から外す", "spec:6"),
@@ -326,9 +352,45 @@ export const texts = {
   // カウントイン中と録音中。「● テイク {take}」は rec。
   "meter.playTargetRecording": e("{track} ● テイク {take}", "mock:F-Connect4", { track: "1 ピアノ", take: "1" }),
 
+  // ためし弾きの間の「弾くと鳴る先」。
+  "meter.auditionTarget": e("ためし弾き ・ {instrument}", "mock:F4-ShelfAudition", { instrument: "シンセベース" }),
+
   // トラックと音源
   "track.label": e("{number} {name}", "mock:F-Connect3", { number: "1", name: "ピアノ" }),
-  "instrument.placeholder": e("仮の音", "user:2026-11-14"),
+  // 最初から入っている音色（仕様書 3 章）。キーの後ろは約束の InstrumentKind。
+  "instrument.grandPiano": e("グランドピアノ", "spec:3"),
+  "instrument.electricPiano": e("エレクトリックピアノ", "spec:3"),
+  "instrument.organ": e("オルガン", "spec:3"),
+  "instrument.fingerBass": e("フィンガーベース", "spec:3"),
+  "instrument.synthBass": e("シンセベース", "spec:3"),
+  "instrument.studioKit": e("スタジオキット", "spec:3"),
+  "instrument.electroKit": e("エレクトロキット", "spec:3"),
+  "instrument.strings": e("ストリングス", "spec:3"),
+  "instrument.warmPad": e("あたたかいパッド", "spec:3"),
+  "instrument.synthLead": e("シンセリード", "spec:3"),
+  "instrument.sine": e("サイン波", "spec:3"),
+  // 棚の見出し。キーの後ろは約束の InstrumentGroup。
+  "instrumentGroup.pianoKeys": e("ピアノ ・ 鍵盤", "spec:3"),
+  "instrumentGroup.bass": e("ベース", "spec:3"),
+  "instrumentGroup.drums": e("ドラム", "spec:3"),
+  "instrumentGroup.padStrings": e("パッド ・ 弦", "spec:3"),
+  "instrumentGroup.synth": e("シンセ", "spec:3"),
+
+  // 棚（音源をえらぶ）
+  "shelf.titleNewTrack": e("新しいトラックの音源をえらぶ", "mock:F4-ShelfSample"),
+  "shelf.titleReplace": e("{track} の音源を入れかえる", "mock:F4-ShelfReplace", { track: "1 ピアノ" }),
+  "shelf.search": e("さがす", "mock:F4-ShelfSample"),
+  "shelf.searchLabel": e("名前 ・ 種類", "mock:F4-ShelfSample"),
+  "shelf.all": e("すべて", "mock:F4-ShelfSample"),
+  "shelf.favorites": e("お気に入り", "mock:F4-ShelfSample"),
+  "shelf.keys": e("サンプル {sampleKey} ・ 印 {favoriteKey}", "mock:F4-ShelfSample", { sampleKey: "Space", favoriteKey: "F" }),
+  "shelf.favorite": e("お気に入り", "mock:F4-ShelfSample"),
+  "shelf.playSample": e("サンプルを聞く", "mock:F4-ShelfSample"),
+  "shelf.sampleTime": e("{at} / {length}", "mock:F4-ShelfSample", { at: "0:02", length: "0:04" }),
+  "shelf.current": e("いまの音源", "mock:F4-ShelfReplace"),
+  "shelf.auditioning": e("ためし弾き中", "mock:F4-ShelfAudition"),
+  "shelf.instrumentCount": e("音源 {count}", "mock:F4-ShelfSample", { count: "11" }),
+  "shelf.effectCount": e("エフェクト {count}", "mock:F4-ShelfSample", { count: "6" }),
 
   // アレンジ
   "arrange.title": e("アレンジ", "mock:F-Empty"),
@@ -344,6 +406,8 @@ export const texts = {
   "arrange.armShort": e("●", "mock:F-Empty"),
   "arrange.addTrack": e("＋ トラックを追加", "mock:F-Empty"),
   "arrange.addTrackKinds": e("音源 ・ 歌", "mock:F-Empty"),
+  // 入れかえのためし弾きの間、トラックの見出しの音源の名前。
+  "arrange.instrumentAuditioned": e("{instrument}（ためし弾き）", "mock:F4-ShelfReplace", { instrument: "エレクトリックピアノ" }),
   "arrange.tempoAndSignature": e("{tempo} ・ {signature}", "mock:F-Empty", { tempo: "96.00", signature: "4/4" }),
   "arrange.emptyTitle": e("ここに、録った音がならびます。", "mock:F-Empty"),
   "arrange.emptyBody": e("鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。", "mock:F-Empty"),
@@ -394,6 +458,9 @@ export const texts = {
   "status.playing": s6("状態行の札", "▶ 再生中", undefined, "quoted"),
   "status.recording": s6("状態行の札", "● 録音中", undefined, "quoted"),
   "status.countingIn": s6("状態行の札", "● カウントイン中", undefined, "quoted"),
+  "status.auditioning": e("♪ ためし弾き中", "mock:F4-ShelfAudition"),
+  // ● から別のトラックを選んだとき。
+  "status.armMoved": e("{recordKey} を押すと {track} に録ります", "mock:R7-Arrange6", { recordKey: "R", track: "2 ベース" }),
   // 止まっているときの左の文。ある物だけを「 ・ 」でつなぐ。両方あるときは status.loopNoSelection。
   "status.loopNoSelection": s6("止まっているときの状態行の左", "ループ {from}–{to} ・ 選択なし", { from: "5", to: "9" }, "quoted"),
   "status.loop": e("ループ {from}–{to}", "mock:Main", { from: "5", to: "9" }),
@@ -655,6 +722,32 @@ const st = (term: string, description: string): Term => ({ term, description, so
 
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
+  st("サイン波", "いちばん単純な、まるい音。音の高さを確かめるのにむいている。"),
+  st("キック", "いちばん低い、足で鳴らす大きな太鼓。バスドラムとも呼ぶ。"),
+  st("スネア", "「タン」と鳴る、手前の小さな太鼓。"),
+  st("サイドスティック", "スネアのふちを、ばちで「コッ」と鳴らす音。"),
+  st("クラップ", "手をたたく音。"),
+  st("タム", "音の高さのちがう、まるい太鼓。ハイ ・ ミッド ・ ロー ・ フロアがある。"),
+  st("ハイハット", "2 枚のシンバルを合わせた物。とじて「チッ」（クローズ）、ひらいて「シャー」（オープン）、ペダルで「チャッ」（ペダル）。"),
+  st("クラッシュ", "曲の区切りで「ジャーン」と鳴らすシンバル。"),
+  st("ライド", "「チーン」と刻む、大きなシンバル。"),
+  st("リバーブ", "部屋の響きを足すエフェクト。"),
+  st("ディレイ", "やまびこのように、音をくり返すエフェクト。"),
+  st("EQ", "音の高さごとに、大きさを上げ下げするエフェクト。イコライザーとも呼ぶ。"),
+  st("コンプレッサー", "大きい音をおさえて、音量をそろえるエフェクト。"),
+  st("リミッター", "決めた大きさをこえないようにして、音割れを防ぐエフェクト。"),
+  st("コーラス", "音を少しずらして重ね、厚みを出すエフェクト。"),
+  st("響きの長さ", "響きが消えるまでの時間。ほかのリバーブでは「ディケイ」「リバーブタイム」とも呼ぶ。"),
+  st("部屋の大きさ", "響く部屋の広さ。ほかのリバーブでは「サイズ」「ルームサイズ」とも呼ぶ。"),
+  st("プリディレイ", "元の音から、響きが始まるまでの時間。"),
+  st("高い音を落とす", "この高さより上の音を弱くする。ほかでは「ハイカット」とも呼ぶ。"),
+  st("低い音を落とす", "この高さより下の音を弱くする。ほかでは「ローカット」とも呼ぶ。"),
+  st("広がり", "響きの左右の広さ。ほかでは「ワイズ」「ステレオ幅」とも呼ぶ。"),
+  st("ミックス", "元の音と、エフェクトの音の混ぜかた。戻りでは 100 %。ほかでは「ドライ ・ ウェット」とも呼ぶ。"),
+  st("間隔", "くり返すまでの時間。"),
+  st("テンポに合わせる", "オンなら、間隔を曲のテンポの音符の長さで決める。"),
+  st("くり返し", "くり返しの回数の多さ。ほかのディレイでは「フィードバック」とも呼ぶ。"),
+  st("左右にゆれる", "くり返す音が、左右に交互に鳴る。ほかでは「ピンポン」とも呼ぶ。"),
   st("取り消しの履歴", "これまでにした手の一覧。どこまで取り消したかが見える。"),
   st("ベロシティ固定", "鍵盤をどの強さで押しても、決めた強さで鳴らして録る。書く道具のノートも同じ強さになる。"),
   st("なおすためのファイル", "PC が急に終わったときのために、保存していない変更を急いで書いておくファイル。次に起動したとき、ここから戻せる。"),
@@ -697,7 +790,7 @@ export const terms: readonly Term[] = [
   st("オートメーション", "つまみの動きを時間にそって書いておく機能。"),
   st("プラグイン", "あとから足せる音源やエフェクト。中の画面は、作った人ごとに見た目がちがう。"),
   st("音源", "鍵盤を弾いたときに鳴る楽器の役。"),
-  st("サンプル", "その音色で弾いた短い見本。棚の ▶ で聞ける。"),
+  st("サンプル", "その音色で、決まった短いフレーズを鳴らす見本。棚の ▶ で聞ける。"),
   st("ためし弾き", "棚で音源をえらんでいる間だけ、鍵盤がその音色で鳴ること。トラックには入らない。"),
   st("お気に入り", "星の印をつけた音源。棚の「お気に入り」でまとめて出せる。"),
   st("エフェクト", "音に響きや変化を足す役。"),
@@ -712,7 +805,6 @@ export const terms: readonly Term[] = [
   st("遅れの補正", "録った音を、遅れのぶんだけ前へ戻して置くこと。"),
   st("サンプルレート", "1 秒を何こまに分けて音を記録するか。48000 Hz がふつう。"),
   st("書き出し", "曲を 1 つの音のファイルにすること。"),
-  { term: "仮の音", description: "本物のピアノの音が入るまでの、かわりの音。", source: "user:2026-11-14" },
 ];
 
 /** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */

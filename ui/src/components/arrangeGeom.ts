@@ -348,7 +348,7 @@ export function overviewRects(
       if (x1 > x0) out.push({ x: x0, y, w: x1 - x0, h: lineH, color });
     };
     for (const c of track.clips) line(c.start, c.end, trackColor(track));
-    if (recording && recording.track === track.number && recording.now > recording.from) {
+    if (recording && recording.track === track.id && recording.now > recording.from) {
       line(recording.from, recording.now, "color.rec");
     }
   });

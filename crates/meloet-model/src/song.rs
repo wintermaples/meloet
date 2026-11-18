@@ -187,7 +187,7 @@ impl Doc {
                 id: TrackId(1),
                 name: "ピアノ".to_owned(),
                 color: TrackColor::for_index(0),
-                instrument: InstrumentRef::Placeholder,
+                instrument: InstrumentRef::GRAND_PIANO,
                 gain_db: 0.0,
                 muted: false,
                 clips: Vec::new(),
@@ -216,10 +216,9 @@ impl Doc {
 /// What undo leaves alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
-    /// Where the keys sound.
-    pub play_target: TrackId,
-    /// The track a recording goes to.
-    pub armed: Option<TrackId>,
+    /// The selected track: where the keys sound and where a recording goes. `None` only in
+    /// a song with no tracks.
+    pub play_target: Option<TrackId>,
     pub loop_range: Option<TickRange>,
     pub loop_on: bool,
     pub roll: RollSettings,
@@ -238,8 +237,7 @@ impl Song {
         Song {
             doc: Doc::new_default(),
             session: Session {
-                play_target: TrackId(1),
-                armed: Some(TrackId(1)),
+                play_target: Some(TrackId(1)),
                 loop_range: None,
                 loop_on: false,
                 roll: RollSettings::default(),

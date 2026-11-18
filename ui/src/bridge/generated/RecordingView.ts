@@ -4,7 +4,11 @@ export type RecordingView = {
 /**
  * Counts up with each recording; `LiveNotes::recording` names it.
  */
-id: number, track: number, 
+id: number, 
+/**
+ * `TrackView::id`.
+ */
+track: number, 
 /**
  * Where recording starts in the song.
  */

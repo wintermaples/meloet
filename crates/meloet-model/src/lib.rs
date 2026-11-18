@@ -7,6 +7,7 @@ pub mod edit;
 pub mod history;
 #[cfg(test)]
 mod id_book;
+pub mod instrument;
 pub mod notes;
 pub mod playback;
 pub mod quantize;
@@ -19,6 +20,7 @@ pub use arrange::{ClipEdge, ClipEdited};
 pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
 pub use history::{History, StepKind};
+pub use instrument::{BuiltinInstrument, InstrumentGroup, InstrumentRef};
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{
@@ -58,11 +60,6 @@ impl TrackColor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InstrumentRef {
-    Placeholder,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,11 +78,10 @@ mod tests {
         assert_eq!(t.id, TrackId(1));
         assert_eq!(t.name, "ピアノ");
         assert_eq!(t.color.get(), 1);
-        assert_eq!(t.instrument, InstrumentRef::Placeholder);
+        assert_eq!(t.instrument, InstrumentRef::GRAND_PIANO);
         assert_eq!(t.gain_db, 0.0);
         assert!(t.clips.is_empty());
-        assert_eq!(song.session.play_target, TrackId(1));
-        assert_eq!(song.session.armed, Some(TrackId(1)));
+        assert_eq!(song.session.play_target, Some(TrackId(1)));
         assert_eq!(song.session.loop_range, None);
         assert!(!song.session.loop_on);
     }

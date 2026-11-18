@@ -26,14 +26,14 @@ fn flags(m: &Model) -> Vec<(bool, bool)> {
 }
 
 /// A song of three tracks, opened (as if read from a file).
-fn three_tracks(m: &mut Model) -> Vec<Effect> {
+pub(crate) fn three_tracks(m: &mut Model) -> Vec<Effect> {
     let mut song = Song::new_default();
     for id in [2, 3] {
         song.doc.tracks.push(Arc::new(Track {
             id: TrackId(id),
             name: format!("トラック {id}"),
             color: TrackColor::for_index(id as usize - 1),
-            instrument: InstrumentRef::Placeholder,
+            instrument: InstrumentRef::SINE,
             gain_db: 0.0,
             muted: false,
             clips: Vec::new(),

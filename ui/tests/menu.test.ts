@@ -246,7 +246,7 @@ describe("メニューの中身（B-59）", () => {
       { type: "copyNotes", take: 7, notes: [0] },
       { type: "saveSongAs" },
       { type: "toggleMute", track: 1 },
-      { type: "toggleArm", track: 1 },
+      { type: "selectTrack", track: 1, fromArm: true },
       { type: "setGrid", division: 4, triplet: false },
       { type: "setScale", percent: 150 },
     ]);

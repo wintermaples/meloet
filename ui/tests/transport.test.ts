@@ -772,9 +772,9 @@ describe("状態行の札と知らせ", () => {
 });
 
 describe("入力計の右（弾くと鳴る先）", () => {
-  it("止まっているときは「1 ピアノ ・ 仮の音」", () => {
+  it("止まっているときは「1 ピアノ ・ グランドピアノ」", () => {
     show(InputMeter, ready());
-    expect(text('[data-test="meter-target"]')).toBe("1 ピアノ ・ 仮の音");
+    expect(text('[data-test="meter-target"]')).toBe("1 ピアノ ・ グランドピアノ");
   });
 
   it("カウントイン中と録音中は「1 ピアノ ● テイク 1」。● から後ろが rec", () => {

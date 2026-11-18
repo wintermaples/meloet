@@ -39,7 +39,7 @@ fn eight_tracks() -> Doc {
             id: TrackId(i),
             name: format!("トラック {i}"),
             color: TrackColor::for_index(i as usize - 1),
-            instrument: InstrumentRef::Placeholder,
+            instrument: InstrumentRef::SINE,
             gain_db: 0.0,
             muted: false,
             clips: Vec::new(),

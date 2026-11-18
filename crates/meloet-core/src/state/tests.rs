@@ -160,12 +160,12 @@ fn a_new_song() {
     assert_eq!(
         song.tracks,
         [TrackView {
+            id: 1,
             number: 1,
             name: "ピアノ".into(),
             color: 1,
-            instrument: InstrumentKind::Placeholder,
+            instrument: InstrumentKind::GrandPiano,
             gain_db: 0.0,
-            armed: true,
             muted: false,
             soloed: false,
             clips: vec![],
@@ -1655,4 +1655,48 @@ fn no_pipewire_at_start_says_nothing_about_it_and_the_first_picture_goes_on_as_u
         m.view().workspace.chooser.unwrap().highlighted.as_deref(),
         Some(HP)
     );
+}
+
+#[test]
+fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
+    let mut m = fresh();
+    let shelf = m.view().shelf;
+    assert_eq!(
+        shelf,
+        ShelfView {
+            mode: ShelfMode::NewTrack,
+            available: vec![InstrumentKind::Sine],
+            favorites: vec![InstrumentKind::GrandPiano, InstrumentKind::StudioKit],
+            selected: None,
+            current: None,
+            loading: None,
+            sample: None,
+        }
+    );
+    let star = |m: &mut Model, instrument| {
+        let effects = cmd(m, Command::ToggleFavorite { instrument });
+        let saved = effects.iter().find_map(|e| match e {
+            Effect::SaveSettings(s) => Some(s.favorites.clone()),
+            _ => None,
+        });
+        (m.view().shelf.favorites, saved)
+    };
+    // The view keeps the order of the shelf, whatever the order of the clicks.
+    let (shown, saved) = star(&mut m, InstrumentKind::Organ);
+    assert_eq!(
+        shown,
+        [
+            InstrumentKind::GrandPiano,
+            InstrumentKind::Organ,
+            InstrumentKind::StudioKit
+        ]
+    );
+    assert_eq!(saved.map(|s| s.len()), Some(3));
+    let (shown, saved) = star(&mut m, InstrumentKind::GrandPiano);
+    assert_eq!(shown, [InstrumentKind::Organ, InstrumentKind::StudioKit]);
+    assert_eq!(
+        saved,
+        Some(vec![BuiltinInstrument::StudioKit, BuiltinInstrument::Organ])
+    );
+    assert_eq!(m.view().song.undo_count, 0, "not part of the song");
 }

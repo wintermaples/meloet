@@ -14,8 +14,9 @@ serial: number, name: string, tempoBpm: number, meterNum: number, meterDen: numb
  */
 noteCount: number, tracks: Array<TrackView>, 
 /**
- * The selected track (B-70: its header is gray.4), which is the one the keys play.
- * `SelectTrack`, and a click on a clip, change it.
+ * The selected track, by `TrackView::id` (B-70: its header is gray.4): the one the keys
+ * play and the one R records to, so also the one whose ● is lit. `SelectTrack`, and a
+ * click on a clip, change it. `None` only when the song has no tracks.
  */
 playTarget: number | null, 
 /**

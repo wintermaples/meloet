@@ -7,6 +7,7 @@ import type { Transport } from "./session";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
 import {
+  INSTRUMENT_GROUPS,
   PROTOCOL_VERSION,
   type AppState,
   type Band,
@@ -15,11 +16,13 @@ import {
   type Command,
   type EndpointView,
   type IndexRange,
+  type InstrumentKind,
   type LayoutView,
   type LiveNote,
   type LiveNotesSnapshot,
   type PianoRollView,
   type ServerMessage,
+  type ShelfView,
   type SongDialogKind,
   type SongView,
   type ArrangeView,
@@ -237,6 +240,22 @@ export function arrangeOf(clip: number | null): ArrangeView {
   return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0 };
 }
 
+/** Every instrument, in the order of the shelf: the fake has them all, so that the mocks can be drawn. */
+const ALL_INSTRUMENTS: InstrumentKind[] = INSTRUMENT_GROUPS.flatMap((g) => [...g.instruments]);
+
+/** The shelf as it is while closed, and when opened with "＋ トラックを追加" before a row is picked. */
+function closedShelf(): ShelfView {
+  return {
+    mode: { kind: "newTrack" },
+    available: [...ALL_INSTRUMENTS],
+    favorites: ["grandPiano", "studioKit"],
+    selected: null,
+    current: null,
+    loading: null,
+    sample: null,
+  };
+}
+
 export function fakeState(): AppState {
   const bands = new FakeBands(800);
   return {
@@ -250,7 +269,7 @@ export function fakeState(): AppState {
       undoCount: 0,
       redoCount: 0,
       noteCount: 0,
-      tracks: [{ number: 1, name: "ピアノ", color: 1, instrument: "placeholder", gainDb: 0, armed: true, muted: false, soloed: false, clips: [] }],
+      tracks: [{ id: 1, number: 1, name: "ピアノ", color: 1, instrument: "grandPiano", gainDb: 0, muted: false, soloed: false, clips: [] }],
       playTarget: 1,
       loopRange: null,
       loopOn: false,
@@ -288,6 +307,7 @@ export function fakeState(): AppState {
       songDialog: null,
       recovery: null,
     },
+    shelf: closedShelf(),
     keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null },
@@ -358,7 +378,7 @@ function withOutput(s: AppState): void {
   s.outputs.chosen = HEADPHONES.id;
   s.outputs.chosenState = "ready";
   s.transport.canPlay = true;
-  s.transport.canRecord = s.song.tracks.some((t) => t.armed);
+  s.transport.canRecord = s.song.playTarget !== null;
   Object.assign(s.audio, {
     running: true,
     sampleRate: 48000,
@@ -686,7 +706,7 @@ function pianoRollWide(s: AppState): void {
       FAKE_TAKES.set(take.id, take);
       return fakeClip(++id, name, from, to, 1, [take.id]);
     });
-    s.song.tracks.push({ ...s.song.tracks[0]!, number: i + 2, name: t.name, color: i + 2, gainDb: t.gainDb, armed: false, clips });
+    s.song.tracks.push({ ...s.song.tracks[0]!, id: i + 2, number: i + 2, name: t.name, color: i + 2, gainDb: t.gainDb, clips });
   });
 }
 
@@ -749,11 +769,11 @@ function arrangeTrimmed(s: AppState): void {
   ];
   s.song.tracks.push({
     ...s.song.tracks[0]!,
+    id: 2,
     number: 2,
     name: "ベース",
     color: 2,
     gainDb: -7.5,
-    armed: false,
     clips: [fakeClip(41, "ベース A", 5, 9, 1, [40]), { ...fakeClip(42, "ベース A", 14, 18, 1, [40]), end: 13 * BAR + BAR * 2.5 }],
   });
   s.arrange = arrangeOf(42);
@@ -887,7 +907,7 @@ export const SCENES: Record<string, SceneDef> = {
   tracks16: {
     setup(s) {
       ready(s);
-      s.song.tracks = Array.from({ length: 16 }, (_, i) => ({ ...s.song.tracks[0]!, number: i + 1, color: (i % 5) + 1 }));
+      s.song.tracks = Array.from({ length: 16 }, (_, i) => ({ ...s.song.tracks[0]!, id: i + 1, number: i + 1, color: (i % 5) + 1 }));
     },
     meters: {
       keys: [60, 64, 67],
@@ -1053,7 +1073,7 @@ export const SCENES: Record<string, SceneDef> = {
           FAKE_TAKES.set(take.id, take);
           return fakeClip(++id, name, from, to, 1, [take.id]);
         });
-        s.song.tracks.push({ ...s.song.tracks[0]!, number: i + 2, name: t.name, color: i + 2, gainDb: t.gainDb, armed: false, clips });
+        s.song.tracks.push({ ...s.song.tracks[0]!, id: i + 2, number: i + 2, name: t.name, color: i + 2, gainDb: t.gainDb, clips });
       });
       s.song.tracks[3]!.muted = true;
       s.song.undoCount = 14;
@@ -1138,14 +1158,97 @@ function arrangeSelect(s: AppState): void {
   const bass = phrase(40, 4, 11, 6);
   FAKE_TAKES.set(bass.id, bass);
   s.song.tracks.push(
-    { ...track, number: 2, name: "ベース", color: 2, gainDb: -7.5, armed: false, muted: true, clips: [fakeClip(41, "ベース A", 5, 9, 1, [40])] },
-    { ...track, number: 3, name: "ドラム", color: 3, gainDb: -6, armed: false, soloed: true, clips: [fakeClip(43, "8ビート", 1, 9, 1, [7])] },
+    { ...track, id: 2, number: 2, name: "ベース", color: 2, gainDb: -7.5, muted: true, clips: [fakeClip(41, "ベース A", 5, 9, 1, [40])] },
+    { ...track, id: 3, number: 3, name: "ドラム", color: 3, gainDb: -6, soloed: true, clips: [fakeClip(43, "8ビート", 1, 9, 1, [7])] },
   );
   s.song.playTarget = 2;
   s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1 };
   s.transport.position = 4 * BAR;
   s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: null };
 }
+
+// Round 4. The song of the mock R7-Arrange6: six tracks, each with its instrument; "2 ベース" selected. The ids are
+// not the numbers (11 to 16), as after tracks were added and moved: a command must carry the id.
+const BAND_TRACKS: { name: string; instrument: InstrumentKind; gainDb: number; clips: [string, number, number][] }[] = [
+  { name: "ピアノ", instrument: "grandPiano", gainDb: -4.8, clips: [["イントロ", 1, 5], ["サビ", 13, 17]] },
+  { name: "ベース", instrument: "fingerBass", gainDb: -7.5, clips: [["ベース A", 5, 9], ["ベース A", 9, 13], ["ベース サビ", 13, 17]] },
+  { name: "ドラム", instrument: "studioKit", gainDb: -6.0, clips: [["フィル", 3, 5], ["8ビート", 5, 13], ["サビ ビート", 13, 17]] },
+  { name: "パッド", instrument: "strings", gainDb: -12.0, clips: [["コード", 1, 5], ["コード サビ", 13, 17]] },
+  { name: "シンセ", instrument: "synthLead", gainDb: -9.0, clips: [["リード", 9, 13], ["リード サビ", 13, 17]] },
+  { name: "ベース 2", instrument: "synthBass", gainDb: -10.5, clips: [["サビ うら", 13, 17]] },
+];
+const BAND_TRACK_ID = 10;
+
+function bandSong(s: AppState, tracks = BAND_TRACKS): void {
+  ready(s);
+  let id = 300;
+  s.song.tracks = tracks.map((t, i) => ({
+    id: BAND_TRACK_ID + i + 1,
+    number: i + 1,
+    name: t.name,
+    color: (i % 5) + 1,
+    instrument: t.instrument,
+    gainDb: t.gainDb,
+    muted: false,
+    soloed: false,
+    clips: t.clips.map(([name, from, to]) => {
+      const take = phrase(++id, to - from, 4 * (to - from), id);
+      FAKE_TAKES.set(take.id, take);
+      return fakeClip(++id, name, from, to, 1, [take.id]);
+    }),
+  }));
+  s.song.playTarget = BAND_TRACK_ID + 1;
+  s.song.undoCount = 14;
+  s.song.file = "saved";
+  s.song.loopRange = { start: 4 * BAR, end: 8 * BAR };
+  s.song.loopOn = true;
+  s.transport.position = 4 * BAR;
+  s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true, notes: null };
+}
+
+/** The four tracks of the mocks F4-Shelf*, with the shelf open. */
+function shelfSong(s: AppState, shelf: Partial<ShelfView>): void {
+  bandSong(s, BAND_TRACKS.slice(0, 4));
+  s.shelf = { ...closedShelf(), ...shelf };
+}
+
+// R7-Arrange6: the ● of "2 ベース" was pressed, so it is the selected track now.
+SCENES.tracks6 = {
+  setup(s) {
+    bandSong(s);
+    s.song.playTarget = BAND_TRACK_ID + 2;
+  },
+  after: (s) => (s.status.message = { id: "armMoved", track: { number: 2, name: "ベース" } }),
+  meters: QUIET,
+};
+// F4-ShelfSample without the sample: "＋ トラックを追加" opened the shelf, no row picked yet.
+SCENES.shelfNewTrack = { setup: (s) => shelfSong(s, {}), bands: ["shelf"], meters: QUIET };
+// F4-ShelfAudition: "シンセベース" is auditioned for a new track (it would be track 5).
+SCENES.shelfAudition = {
+  setup(s) {
+    shelfSong(s, { selected: "synthBass" });
+    s.transport.canRecord = false;
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "auditionNewTrack", instrument: "synthBass" }),
+  meters: { ...QUIET, keys: [60, 64, 67], velocity: 87, sustain: 127, modulation: 12 },
+};
+// F4-ShelfReplace: "エレクトリックピアノ" is auditioned in place of the instrument of "1 ピアノ".
+SCENES.shelfReplace = {
+  setup(s) {
+    shelfSong(s, { mode: { kind: "replace", track: BAND_TRACK_ID + 1 }, selected: "electricPiano", current: "grandPiano" });
+    s.transport.canRecord = false;
+  },
+  bands: ["shelf"],
+  after: (s) =>
+    (s.status.message = {
+      id: "auditionReplace",
+      instrument: "electricPiano",
+      track: { number: 1, name: "ピアノ" },
+      current: "grandPiano",
+    }),
+  meters: { ...QUIET, keys: [60, 64, 67], velocity: 87, sustain: 127, modulation: 12 },
+};
 
 // Not from a mock: the scene recording, with the listener moving at 96.00 (the clip being recorded grows).
 SCENES.recordingMoving = {
@@ -1279,6 +1382,10 @@ const NOTICES: StatusMessage["id"][] = [
   "clipsNotDuplicated",
   "notesNotWritten",
   "notesNotResized",
+  "armMoved",
+  "trackAdded",
+  "trackDeleted",
+  "instrumentReplaced",
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 
@@ -1398,13 +1505,13 @@ export function reduceClips(
     if (arrange.selectedClip !== null) arrange.pianoRollClip = arrange.selectedClip;
   };
   const done = () => ({ song, arrange });
-  const track = (n: number) => song.tracks.find((t) => t.number === n);
+  const track = (id: number) => song.tracks.find((t) => t.id === id);
   switch (command.type) {
     case "selectClip":
       if (command.clip === null) select([], null);
       else if (clipOf(command.clip)) {
         select([command.clip], command.clip);
-        song.playTarget = song.tracks[rowOf(command.clip)]!.number;
+        song.playTarget = song.tracks[rowOf(command.clip)]!.id;
       }
       return done();
     case "selectClips": {
@@ -1417,7 +1524,7 @@ export function reduceClips(
       // Shift + click (one clip added) makes it the clip clicked last; a box does not.
       const clicked = command.mode !== "replace" && picked.length === 1 ? picked[0]! : null;
       select([...had], clicked ?? arrange.selectedClip);
-      if (clicked !== null && had.has(clicked)) song.playTarget = song.tracks[rowOf(clicked)]!.number;
+      if (clicked !== null && had.has(clicked)) song.playTarget = song.tracks[rowOf(clicked)]!.id;
       return done();
     }
     case "selectAllClips":
@@ -1534,7 +1641,7 @@ export function reduceClips(
       if (clipboard.clips.length === 0) return null;
       const perBar = (1920 / song.meterDen) * song.meterNum;
       const to = command.to ?? { track: song.playTarget ?? 0, tick: Math.floor(state.transport.position / perBar) * perBar };
-      const top = song.tracks.findIndex((t) => t.number === to.track);
+      const top = song.tracks.findIndex((t) => t.id === to.track);
       if (top < 0) return null;
       const items = clipboard.clips.map(({ row, at, clip }) => ({ row: top + row, start: to.tick + at, clip }));
       return place(items, true, [], { id: "clipsNotPasted" });

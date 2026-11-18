@@ -216,12 +216,13 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
   const clipId = state.arrange.selectedClip;
   const clip = clipId === null ? null : (state.song.tracks.flatMap((x) => x.clips).find((c) => c.id === clipId) ?? null);
   const canStepTake = clip !== null && clip.takes >= 2 && !busy;
-  const target = state.song.tracks.find((x) => x.number === state.song.playTarget) ?? null;
+  const target = state.song.tracks.find((x) => x.id === state.song.playTarget) ?? null;
   const track: ListEntry[] = [
     act("menu.mute", { kind: "trackMute" }, k.shift(t("key.mute")), { checked: target?.muted ?? false }),
     act("menu.solo", { kind: "trackSolo" }, k.shift(t("key.solo")), { checked: target?.soloed ?? false }),
-    plain("menu.arm", target !== null && !busy, () => target && deps.send({ type: "toggleArm", track: target.number }), {
-      checked: target?.armed ?? false,
+    // 録音待機は、いつも選んだトラック（仕様書 3 章）。
+    plain("menu.arm", target !== null && !busy, () => target && deps.send({ type: "selectTrack", track: target.id, fromArm: true }), {
+      checked: target !== null,
     }),
     act("menu.nextTake", { kind: "stepTake", delta: 1 }, t("key.take"), { usable: canStepTake }),
     act("menu.prevTake", { kind: "stepTake", delta: -1 }, k.shift(t("key.take")), { usable: canStepTake }),

@@ -33,14 +33,14 @@ const clip = (id: number, fromBar: number, toBar: number, takes = 1) => ({
   noteCount: 0,
 });
 const track = (number: number, clips: ReturnType<typeof clip>[], color = number): TrackView => ({
+  id: number,
   number,
   name: "ピアノ",
   color,
   muted: false,
   soloed: false,
-  instrument: "placeholder",
+  instrument: "sine",
   gainDb: 0,
-  armed: false,
   clips,
 });
 

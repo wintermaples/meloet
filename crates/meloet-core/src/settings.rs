@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use meloet_model::BuiltinInstrument;
 use meloet_protocol::DEFAULT_FIXED_VELOCITY;
 use serde::{Deserialize, Serialize};
 
@@ -26,9 +27,14 @@ pub struct Settings {
     pub velocity_fixed: bool,
     /// 1..=127, kept while off.
     pub fixed_velocity: u8,
+    /// The starred instruments of the shelf.
+    pub favorites: Vec<BuiltinInstrument>,
 }
 
 pub const DEFAULT_COUNT_IN_BARS: u8 = 1;
+/// Spec 3: 「お気に入りの印は、はじめはグランドピアノとスタジオキットについている」.
+pub const DEFAULT_FAVORITES: [BuiltinInstrument; 2] =
+    [BuiltinInstrument::GrandPiano, BuiltinInstrument::StudioKit];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -40,6 +46,7 @@ impl Default for Settings {
             count_in_bars: DEFAULT_COUNT_IN_BARS,
             velocity_fixed: false,
             fixed_velocity: DEFAULT_FIXED_VELOCITY,
+            favorites: DEFAULT_FAVORITES.to_vec(),
         }
     }
 }
@@ -59,6 +66,9 @@ struct OnDisk {
     velocity_fixed: bool,
     #[serde(default = "default_fixed_velocity")]
     fixed_velocity: u8,
+    /// The names the song file uses. Missing (a file from before the shelf): the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    favorites: Option<Vec<String>>,
 }
 
 fn default_fixed_velocity() -> u8 {
@@ -107,6 +117,19 @@ pub fn load(dir: &Path) -> Settings {
             } else {
                 DEFAULT_FIXED_VELOCITY
             },
+            favorites: match disk.favorites {
+                // Names this meloet does not know are left out; each instrument once.
+                Some(names) => {
+                    let mut favorites = Vec::new();
+                    for b in names.iter().filter_map(|n| BuiltinInstrument::from_name(n)) {
+                        if !favorites.contains(&b) {
+                            favorites.push(b);
+                        }
+                    }
+                    favorites
+                }
+                None => DEFAULT_FAVORITES.to_vec(),
+            },
         },
         _ => Settings::default(),
     }
@@ -123,6 +146,13 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         count_in_bars: settings.count_in_bars,
         velocity_fixed: settings.velocity_fixed,
         fixed_velocity: settings.fixed_velocity,
+        favorites: Some(
+            settings
+                .favorites
+                .iter()
+                .map(|b| b.name().to_owned())
+                .collect(),
+        ),
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -164,6 +194,7 @@ mod tests {
             count_in_bars: 2,
             velocity_fixed: true,
             fixed_velocity: 64,
+            favorites: vec![BuiltinInstrument::Sine, BuiltinInstrument::Organ],
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
@@ -178,6 +209,7 @@ mod tests {
         assert_eq!(json["count_in_bars"], 2);
         assert_eq!(json["velocity_fixed"], true);
         assert_eq!(json["fixed_velocity"], 64);
+        assert_eq!(json["favorites"], serde_json::json!(["sine", "organ"]));
         assert_eq!(
             json["output"],
             "alsa_card.pci-0000_0c_00.6:analog-output-headphones"
@@ -207,7 +239,27 @@ mod tests {
                 count_in_bars: 1,
                 velocity_fixed: false,
                 fixed_velocity: 100,
+                favorites: vec![BuiltinInstrument::GrandPiano, BuiltinInstrument::StudioKit],
             }
+        );
+    }
+
+    #[test]
+    fn favorites_may_be_empty_and_unknown_names_are_left_out() {
+        let dir = temp_dir("favorites");
+        let write = |favorites: &str| {
+            std::fs::write(
+                dir.join("settings.json"),
+                format!(r#"{{"version":1,"output":null,"scale":100,"favorites":{favorites}}}"#),
+            )
+            .unwrap();
+        };
+        write("[]");
+        assert_eq!(load(&dir).favorites, []);
+        write(r#"["warmPad", "theremin", "sine", "warmPad"]"#);
+        assert_eq!(
+            load(&dir).favorites,
+            [BuiltinInstrument::WarmPad, BuiltinInstrument::Sine]
         );
     }
 

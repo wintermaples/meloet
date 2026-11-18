@@ -195,7 +195,7 @@ export const texts = {
   "value.meterNum": e("拍子の上", "spec:6"),
   "value.meterNumRange": s6("使えない値を打った", "1〜12", undefined, "part"),
   // 6 章の文は「下は」。欄の名前だけで読めるように「拍子の下」にした（棟梁の決め 2026-11-15）。
-  "value.meterDen": e("拍子の下", "user:2026-11-15"),
+  "value.meterDen": e("拍子の下", "user:2026-11-18"),
   "value.meterDenRange": s6("使えない値を打った", "2 ・ 4 ・ 8 ・ 16", undefined, "part"),
   "value.velocity": e("ベロシティ", "spec:6"),
   "value.velocityRange": s6("使えない値を打った", "1〜127", undefined, "part"),

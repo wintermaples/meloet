@@ -11,18 +11,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use meloet_model::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid, InstrumentRef, MAX_TICK, Meter,
-    MusicalScale, Note, OriginIndex, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode,
-    Session, Song, Take, TakeId, TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor,
-    TrackId,
+    BuiltinInstrument, Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid,
+    InstrumentRef, MAX_TICK, Meter, MusicalScale, Note, OriginIndex, QuantizeAlign,
+    QuantizeSettings, RollSettings, ScaleMode, Session, Song, Take, TakeId, TakeOrigin, Tempo,
+    TempoChange, TickRange, Track, TrackColor, TrackId,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub const FORMAT: &str = "meloet-song";
 /// The newest shape this meloet reads and the one it writes. 2: quantized takes, with their
-/// origin take and the origin index of each note.
-pub const VERSION: u32 = 2;
+/// origin take and the origin index of each note. 3: instruments by name, a song may have no
+/// tracks, and the session has no armed track.
+pub const VERSION: u32 = 3;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
 const MAX_TRACKS: usize = 64;
@@ -103,10 +104,36 @@ struct TrackFile {
     automation: Vec<serde_json::Value>,
 }
 
+/// `{"kind": "builtin", "name": "grandPiano"}`. Versions 1 and 2 wrote
+/// `{"kind": "placeholder"}`, the sound now named "sine".
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-enum InstrumentFile {
-    Placeholder,
+#[serde(rename_all = "camelCase")]
+struct InstrumentFile {
+    kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+}
+
+const KIND_BUILTIN: &str = "builtin";
+
+fn instrument_file(instrument: &InstrumentRef) -> InstrumentFile {
+    match instrument {
+        InstrumentRef::Builtin(b) => InstrumentFile {
+            kind: KIND_BUILTIN.into(),
+            name: Some(b.name().into()),
+        },
+    }
+}
+
+/// An instrument this meloet does not know (a sound of a later meloet, a name spelled by
+/// hand) becomes the sine: the notes of a song are worth more than the name of a sound, so
+/// the song is not refused for it.
+fn instrument_of(file: &InstrumentFile) -> InstrumentRef {
+    file.name
+        .as_deref()
+        .filter(|_| file.kind == KIND_BUILTIN)
+        .and_then(BuiltinInstrument::from_name)
+        .map_or(InstrumentRef::SINE, InstrumentRef::Builtin)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -182,8 +209,10 @@ enum BendTag {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionFile {
-    play_target: u32,
-    armed: Option<u32>,
+    /// `null` in a song with no tracks. Versions 1 and 2 also wrote `armed`, which is skipped:
+    /// a recording goes to the selected track.
+    #[serde(default)]
+    play_target: Option<u32>,
     #[serde(rename = "loop")]
     loop_range: Option<SpanFile>,
     loop_on: bool,
@@ -268,9 +297,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
             id: t.id.0,
             name: t.name.clone(),
             color: t.color.get(),
-            instrument: match t.instrument {
-                InstrumentRef::Placeholder => InstrumentFile::Placeholder,
-            },
+            instrument: instrument_file(&t.instrument),
             gain_db: t.gain_db,
             muted: t.muted,
             clips: t
@@ -330,8 +357,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
         },
         takes,
         session: SessionFile {
-            play_target: s.play_target.0,
-            armed: s.armed.map(|t| t.0),
+            play_target: s.play_target.map(|t| t.0),
             loop_range: s.loop_range.map(|r| SpanFile {
                 start: r.start(),
                 end: r.end(),
@@ -490,7 +516,7 @@ fn to_song(file: SongFile) -> Option<Song> {
     }
     let d = file.song;
     let tracks_n = d.tracks.len();
-    if tracks_n == 0 || tracks_n > MAX_TRACKS {
+    if tracks_n > MAX_TRACKS {
         return None;
     }
     let mut track_ids = HashSet::new();
@@ -539,9 +565,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             id: TrackId(t.id),
             name: t.name,
             color: TrackColor::new(t.color)?,
-            instrument: match t.instrument {
-                InstrumentFile::Placeholder => InstrumentRef::Placeholder,
-            },
+            instrument: instrument_of(&t.instrument),
             gain_db: t.gain_db,
             muted: t.muted,
             clips,
@@ -578,8 +602,10 @@ fn to_song(file: SongFile) -> Option<Song> {
     let roll = roll_settings(&s);
     let session = Session {
         // A target that is gone falls back to the first track rather than failing the song.
-        play_target: known(s.play_target).unwrap_or(doc.tracks[0].id),
-        armed: s.armed.and_then(known),
+        play_target: s
+            .play_target
+            .and_then(known)
+            .or(doc.tracks.first().map(|t| t.id)),
         loop_range: match s.loop_range {
             Some(r) => Some(TickRange::new(r.start, r.end)?),
             None => None,

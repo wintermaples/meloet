@@ -301,7 +301,7 @@
 
   const noClipTrack = $derived.by((): TrackRef | null => {
     if (!pianoRollOpen || app.transport.state !== "stopped" || app.arrange.pianoRollClip !== null) return null;
-    const tr = app.song.tracks.find((x) => x.number === app.song.playTarget);
+    const tr = app.song.tracks.find((x) => x.id === app.song.playTarget);
     return tr ? { number: tr.number, name: tr.name } : null;
   });
 

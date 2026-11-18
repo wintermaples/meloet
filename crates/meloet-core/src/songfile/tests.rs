@@ -6,7 +6,7 @@ use super::*;
 use crate::settings::temp_dir;
 
 /// A song with two clips, a clip of three takes (one shared with the other clip), CC and bend
-/// at the same tick, a loop and no armed track.
+/// at the same tick and a loop.
 fn rich_song(name: &str, notes_per_take: u64) -> Song {
     let take = |id: u32, base: u8| {
         Arc::new(Take {
@@ -80,8 +80,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     Song {
         doc,
         session: Session {
-            play_target: TrackId(1),
-            armed: None,
+            play_target: Some(TrackId(1)),
             loop_range: TickRange::new(1920 * 4, 1920 * 8),
             loop_on: true,
             roll: RollSettings {
@@ -116,7 +115,7 @@ fn a_song_comes_back_as_it_was_and_shares_its_takes() {
 fn the_shape_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
     assert_eq!(v["format"], "meloet-song");
-    assert_eq!(v["version"], 2);
+    assert_eq!(v["version"], 3);
     assert_eq!(v["song"]["tempo"], 12_345);
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
     assert_eq!(v["song"]["nextId"], 8);
@@ -124,7 +123,7 @@ fn the_shape_on_disk() {
     assert!(track.get("muted").is_none(), "not muted: not written");
     assert_eq!(
         track["instrument"],
-        serde_json::json!({"kind": "placeholder"})
+        serde_json::json!({"kind": "builtin", "name": "grandPiano"})
     );
     assert_eq!(track["plugins"], serde_json::json!([]));
     assert_eq!(track["automation"], serde_json::json!([]));
@@ -145,7 +144,7 @@ fn the_shape_on_disk() {
     );
     assert_eq!(
         v["session"],
-        serde_json::json!({"playTarget": 1, "armed": null,
+        serde_json::json!({"playTarget": 1,
                            "loop": {"start": 7680, "end": 15360}, "loopOn": true,
                            "grid": {"division": 8, "triplet": true},
                            "scale": {"root": 2, "mode": "minor", "lock": true},
@@ -220,20 +219,19 @@ fn newer_and_broken_files_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(matches!(
-        with(&|v| v["version"] = 3.into()),
-        Err(ReadError::TooNew { version: 3 })
+        with(&|v| v["version"] = 4.into()),
+        Err(ReadError::TooNew { version: 4 })
     ));
     assert!(matches!(
         decode(b"{\"format\": \"meloet-song\", \"vers"),
         Err(ReadError::Broken)
     ));
     assert!(matches!(decode(b""), Err(ReadError::Broken)));
-    let broken: [&dyn Fn(&mut serde_json::Value); 9] = [
+    let broken: [&dyn Fn(&mut serde_json::Value); 8] = [
         &|v| v["format"] = "other".into(),
         &|v| v["song"]["tempo"] = 1.into(),
         &|v| v["song"]["meter"] = serde_json::json!([4, 3]),
         &|v| v["song"]["nextId"] = 3.into(),
-        &|v| v["song"]["tracks"] = serde_json::json!([]),
         &|v| v["song"]["tracks"][0]["clips"][1]["active"] = 9.into(),
         &|v| v["song"]["tracks"][0]["clips"][1]["takes"][0]["take"] = 99.into(),
         &|v| v["song"]["tracks"][0]["clips"][1]["start"] = 100.into(),
@@ -548,6 +546,12 @@ fn a_file_of_version_1_reads() {
 "#;
     let song = decode(v1.as_bytes()).unwrap();
     assert!(!song.doc.tracks[0].muted);
+    assert_eq!(
+        song.doc.tracks[0].instrument,
+        InstrumentRef::SINE,
+        "the placeholder sound is the sine"
+    );
+    assert_eq!(song.session.play_target, Some(TrackId(1)));
     // Version 2 as written before mute came: the same.
     let v2 = v1.replace(r#""version": 1"#, r#""version": 2"#);
     assert_eq!(decode(v2.as_bytes()).unwrap(), song);
@@ -564,11 +568,90 @@ fn a_file_of_version_1_reads() {
         [(0, 62, None), (480, 64, None)]
     );
     assert_eq!(clip.takes[0].take.controls.len(), 3);
-    // Written again, it is version 2 and reads the same.
+    // Written again, it is version 3 and reads the same.
     let again = encode(&song);
     assert_eq!(decode(&again).unwrap(), song);
     let v: serde_json::Value = serde_json::from_slice(&again).unwrap();
-    assert_eq!(v["version"], 2);
+    assert_eq!(v["version"], 3);
+    assert_eq!(
+        v["song"]["tracks"][0]["instrument"],
+        serde_json::json!({"kind": "builtin", "name": "sine"})
+    );
+    assert!(v["session"].get("armed").is_none());
+}
+
+#[test]
+fn every_builtin_instrument_comes_back() {
+    let mut song = rich_song("x", 1);
+    let first = song.doc.tracks[0].clone();
+    song.doc.tracks = BuiltinInstrument::all()
+        .enumerate()
+        .map(|(i, b)| {
+            Arc::new(Track {
+                id: TrackId(i as u32 + 1),
+                instrument: InstrumentRef::Builtin(b),
+                clips: if i == 0 {
+                    first.clips.clone()
+                } else {
+                    Vec::new()
+                },
+                ..Track::clone(&first)
+            })
+        })
+        .collect();
+    let bytes = encode(&song);
+    assert_eq!(decode(&bytes).unwrap(), song);
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        v["song"]["tracks"][5]["instrument"],
+        serde_json::json!({"kind": "builtin", "name": "studioKit"})
+    );
+}
+
+#[test]
+fn an_instrument_that_is_not_known_reads_as_the_sine() {
+    let good: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 3))).unwrap();
+    for instrument in [
+        serde_json::json!({"kind": "builtin", "name": "theremin"}),
+        serde_json::json!({"kind": "builtin"}),
+        serde_json::json!({"kind": "plugin", "name": "grandPiano"}),
+        serde_json::json!({"kind": "placeholder"}),
+    ] {
+        let mut v = good.clone();
+        v["song"]["tracks"][0]["instrument"] = instrument.clone();
+        let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert_eq!(
+            song.doc.tracks[0].instrument,
+            InstrumentRef::SINE,
+            "{instrument}"
+        );
+        assert_eq!(
+            song.doc.tracks[0].clips,
+            rich_song("x", 3).doc.tracks[0].clips
+        );
+    }
+}
+
+#[test]
+fn a_song_with_no_tracks_comes_back() {
+    let mut song = rich_song("x", 1);
+    song.doc.tracks.clear();
+    song.session.play_target = None;
+    let bytes = encode(&song);
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["session"]["playTarget"], serde_json::Value::Null);
+    assert_eq!(decode(&bytes).unwrap(), song);
+}
+
+#[test]
+fn a_selected_track_that_is_gone_is_the_first_track() {
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
+    v["session"]["playTarget"] = 9.into();
+    let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(song.session.play_target, Some(TrackId(1)));
+    v["session"].as_object_mut().unwrap().remove("playTarget");
+    let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(song.session.play_target, Some(TrackId(1)));
 }
 
 #[test]

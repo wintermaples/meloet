@@ -50,6 +50,20 @@ pub enum StepKind {
         track: TrackId,
         muted: bool,
     },
+    RenameTrack {
+        track: TrackId,
+    },
+    SetTrackColor {
+        track: TrackId,
+    },
+    /// The `Doc` before the step still has the track, for its name.
+    DeleteTrack {
+        track: TrackId,
+    },
+    /// A drag of the header, "上へ動かす", "下へ動かす".
+    MoveTrack {
+        track: TrackId,
+    },
     /// The write tool. `clip_made`: the clip was made for the note.
     WriteNote {
         clip: ClipId,

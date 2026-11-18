@@ -32,7 +32,7 @@ fn two_tracks() -> Doc {
         id: T2,
         name: "ベース".to_owned(),
         color: TrackColor::for_index(1),
-        instrument: InstrumentRef::Placeholder,
+        instrument: InstrumentRef::SINE,
         gain_db: 0.0,
         muted: false,
         clips: Vec::new(),
@@ -395,6 +395,83 @@ fn muting_a_track() {
     assert_eq!(back.doc, doc);
     assert_eq!(
         toggle_mute(&doc, TrackId(9)),
+        Err(EditError::NoSuchTrack(TrackId(9)))
+    );
+}
+
+#[test]
+fn renaming_a_track() {
+    let doc = two_tracks();
+    let e = rename_track(&doc, T2, "  うら  ").unwrap();
+    assert_eq!(e.step, StepKind::RenameTrack { track: T2 });
+    assert_eq!(e.doc.track(T2).unwrap().name, "うら");
+    assert!(Arc::ptr_eq(&doc.tracks[0], &e.doc.tracks[0]));
+    for same in ["", " \u{3000}\t", "ベース", " ベース "] {
+        assert_eq!(rename_track(&doc, T2, same), Err(EditError::Unchanged));
+    }
+    assert_eq!(
+        rename_track(&doc, TrackId(9), "x"),
+        Err(EditError::NoSuchTrack(TrackId(9)))
+    );
+}
+
+#[test]
+fn coloring_a_track() {
+    let doc = two_tracks();
+    let five = TrackColor::new(5).unwrap();
+    let e = set_track_color(&doc, T1, five).unwrap();
+    assert_eq!(e.step, StepKind::SetTrackColor { track: T1 });
+    assert_eq!(e.doc.track(T1).unwrap().color, five);
+    assert_eq!(e.doc.track(T2).unwrap().color.get(), 2);
+    assert_eq!(set_track_color(&e.doc, T1, five), Err(EditError::Unchanged));
+}
+
+#[test]
+fn deleting_a_track_takes_its_clips_and_may_leave_none() {
+    let (doc, added) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
+    let e = delete_track(&doc, T2).unwrap();
+    assert_eq!(e.step, StepKind::DeleteTrack { track: T2 });
+    assert_eq!(e.doc.tracks.len(), 1);
+    assert!(e.doc.clip(added.clip).is_none());
+    assert!(Arc::ptr_eq(&doc.tracks[0], &e.doc.tracks[0]));
+    assert_eq!(e.doc.next_id, doc.next_id, "ids are not given out again");
+    let none = delete_track(&e.doc, T1).unwrap().doc;
+    assert!(none.tracks.is_empty());
+    assert_eq!(delete_track(&none, T1), Err(EditError::NoSuchTrack(T1)));
+}
+
+#[test]
+fn moving_a_track_keeps_the_others_in_order_and_every_color() {
+    let mut doc = two_tracks();
+    let t3 = TrackId(3);
+    doc.tracks.push(Arc::new(Track {
+        id: t3,
+        color: TrackColor::for_index(2),
+        ..Track::clone(&doc.tracks[1])
+    }));
+    let order = |doc: &Doc| -> Vec<(u32, u8)> {
+        doc.tracks.iter().map(|t| (t.id.0, t.color.get())).collect()
+    };
+    let e = move_track(&doc, T1, 2).unwrap();
+    assert_eq!(e.step, StepKind::MoveTrack { track: T1 });
+    assert_eq!(order(&e.doc), [(2, 2), (3, 3), (1, 1)]);
+    assert_eq!(
+        order(&move_track(&doc, t3, 0).unwrap().doc),
+        [(3, 3), (1, 1), (2, 2)]
+    );
+    assert_eq!(
+        order(&move_track(&doc, T1, 1).unwrap().doc),
+        [(2, 2), (1, 1), (3, 3)]
+    );
+    assert_eq!(
+        order(&move_track(&doc, T1, 99).unwrap().doc),
+        [(2, 2), (3, 3), (1, 1)],
+        "stops at the end"
+    );
+    assert_eq!(move_track(&doc, T2, 1), Err(EditError::Unchanged));
+    assert_eq!(move_track(&doc, t3, 99), Err(EditError::Unchanged));
+    assert_eq!(
+        move_track(&doc, TrackId(9), 0),
         Err(EditError::NoSuchTrack(TrackId(9)))
     );
 }

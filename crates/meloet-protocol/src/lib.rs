@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,7 +68,9 @@ pub enum Command {
     /// Space: play when stopped, stop otherwise.
     PlayStop,
     /// R and the record button: stopped → count-in then record; playing → record from here;
-    /// counting in or recording → stop.
+    /// counting in or recording → stop. The recording goes to the selected track
+    /// (`SongView::play_target`); a song with no tracks says `StatusMessage::NoArmedTrack`.
+    /// Nothing happens while the shelf auditions (`ShelfView::selected`).
     Record,
     /// Home.
     GoToStart,
@@ -100,14 +102,22 @@ pub enum Command {
         from_bar: u32,
         to_bar: u32,
     },
-    /// The ● of a track. `track` is `TrackView::number`.
-    ToggleArm {
-        track: u32,
-    },
-    /// A click on a track's header (B-70). The track becomes the selected one, which is the
-    /// one the keys play (`SongView::play_target`). A track that is not there is ignored.
+    // Tracks are named by `TrackView::id` in every command, never by their number: the
+    // numbers change when tracks are added, deleted or moved, and a command sent just before
+    // that must not land on another track. A command for a track that is gone does nothing.
+    /// A click on a track's header (B-70). The track becomes the selected one
+    /// (`SongView::play_target`): the keys play it, and R records to it. There is no other
+    /// "armed" track (spec 3, 12-A).
+    ///
+    /// `from_arm`: sent by the ● of a track, the ● of the mixer and "録音待機" of the
+    /// right-click menu, which only select the track. On the track already selected it does
+    /// nothing (the ● cannot be turned off); on another track the status line says
+    /// `StatusMessage::ArmMoved`.
+    ///
+    /// While counting in or recording the selected track stays as it is.
     SelectTrack {
         track: u32,
+        from_arm: bool,
     },
     /// M, and Shift M on the selected track. Mute is part of the song: saved, and one step
     /// that undo takes back. A muted track is silent when the song plays (and while recording),
@@ -122,6 +132,85 @@ pub enum Command {
     ToggleSolo {
         track: u32,
     },
+    // The four below change the song: each is one step that undo takes back, and none does
+    // anything while counting in or recording.
+    /// "トラックを消す" of the right-click menu and the track menu. Does not ask. The track goes
+    /// with its clips; the track below it becomes the selected one (the one above when it was
+    /// the last; none when the song has no track left). The status line says
+    /// `StatusMessage::TrackDeleted`.
+    DeleteTrack {
+        track: u32,
+    },
+    /// Enter in the name field (a double click on the name, F2, "名前を変える"). Spaces around
+    /// the name are left out. An empty name, or one of spaces only, keeps the old name and is
+    /// no step.
+    RenameTrack {
+        track: u32,
+        name: String,
+    },
+    /// A drag of the header, "上へ動かす", "下へ動かす". `to`: the track's place among the
+    /// tracks as they are afterwards, from 0; past the end is the end. The numbers follow the
+    /// new order, the colors stay with their tracks. The selected track stays the same track.
+    MoveTrack {
+        track: u32,
+        to: u32,
+    },
+    /// "色 ▸". `color` 1..=5 (`color.track.1` to `color.track.5`); other values do nothing.
+    SetTrackColor {
+        track: u32,
+        color: u8,
+    },
+    // The shelf (round 4). Closing it stays `ToggleBand` and `Back`; closing it while it
+    // auditions is `ShelfCancel` first.
+    /// Opens the shelf (the right panel `Band::Shelf`, brought to the front) in `mode`.
+    /// `NewTrack`: "＋ トラックを追加", "トラックを足す" of the menus, P. `Replace`: a click
+    /// on the instrument's name in a track's header, or on the instrument slot of the mixer.
+    /// When the shelf is open already, the mode changes and whatever was auditioned is put
+    /// away as `ShelfCancel` does. `Replace` of a track that is gone does nothing. Not while
+    /// counting in or recording.
+    OpenShelf {
+        mode: ShelfMode,
+    },
+    /// A click on a row, ↑ ↓: the row becomes `ShelfView::selected` and is auditioned. While
+    /// a row is auditioned, the keys sound with that instrument and nothing can be recorded
+    /// (`TransportView::can_record` is false). In `Replace` mode the clips of that track play
+    /// with it too; the song itself is not changed. `None`, or an instrument that is not in
+    /// `ShelfView::available`: as `ShelfCancel`.
+    ShelfSelect {
+        instrument: Option<InstrumentKind>,
+    },
+    /// Enter, "トラック N を作る", "入れかえる". Nothing without a selected row.
+    ///
+    /// `NewTrack`: a new track with the selected instrument right below the selected track
+    /// (at the end when there is none), as one step, and that track becomes the selected one.
+    /// Its name is the short name of the instrument's group (ピアノ, ベース, ドラム, パッド,
+    /// シンセ); when a track has that name already, "ベース 2", with the smallest number from
+    /// 2 that is free. Its color is the one of its place: colors 1 to 5 in the order of the
+    /// tracks, again from 1 at the sixth. The status line says `StatusMessage::TrackAdded`.
+    ///
+    /// `Replace`: the track gets the selected instrument, as one step; its notes and its
+    /// name stay. The status line says `StatusMessage::InstrumentReplaced`. Selecting the
+    /// instrument the track has already is no step.
+    ///
+    /// Afterwards nothing is selected in the shelf, and the shelf stays open.
+    ShelfConfirm,
+    /// "やめる", and Esc while a row is auditioned: the audition ends and nothing is selected.
+    /// In `Replace` mode the track sounds with its own instrument again. The shelf stays
+    /// open; the next Esc closes it (`Back`).
+    ShelfCancel,
+    /// The star of a row, and F on the selected row. A meloet setting (settings.json), not
+    /// part of the song.
+    ToggleFavorite {
+        instrument: InstrumentKind,
+    },
+    /// The ▶ of a row, and Space on a row of the shelf: plays the fixed phrase of that
+    /// instrument's group (spec 3 「サンプル」), from its start. Another sample that is playing
+    /// stops first. The sample is not recorded and is no part of the song; it goes through
+    /// the master fader, whatever is muted or soloed. It does not select the row.
+    PlaySample {
+        instrument: InstrumentKind,
+    },
+    StopSample,
     /// A plain click on a clip: it alone is selected and shown in the piano roll, and its track
     /// becomes the selected track (as `SelectTrack`). `None`: a click where there is no clip,
     /// which unselects every clip (the selected track stays).
@@ -475,7 +564,7 @@ pub enum ControlKind {
     PitchBend,
 }
 
-/// Where pasted clips go: `track` is `TrackView::number`, `tick` a song position.
+/// Where pasted clips go: `track` is `TrackView::id`, `tick` a song position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -568,6 +657,7 @@ pub struct AppState {
     pub arrange: ArrangeView,
     pub piano_roll: PianoRollView,
     pub workspace: WorkspaceView,
+    pub shelf: ShelfView,
     pub keyboards: KeyboardsView,
     pub outputs: OutputsView,
     pub inputs: InputsView,
@@ -593,6 +683,9 @@ impl AppState {
         }
         if old.workspace != new.workspace {
             out.push(Change::Workspace(new.workspace.clone()));
+        }
+        if old.shelf != new.shelf {
+            out.push(Change::Shelf(new.shelf.clone()));
         }
         if old.keyboards != new.keyboards {
             out.push(Change::Keyboards(new.keyboards.clone()));
@@ -620,6 +713,7 @@ impl AppState {
             Change::Arrange(v) => self.arrange = v,
             Change::PianoRoll(v) => self.piano_roll = v,
             Change::Workspace(v) => self.workspace = v,
+            Change::Shelf(v) => self.shelf = v,
             Change::Keyboards(v) => self.keyboards = v,
             Change::Outputs(v) => self.outputs = v,
             Change::Inputs(v) => self.inputs = v,
@@ -646,8 +740,9 @@ pub struct SongView {
     /// For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
     pub note_count: u32,
     pub tracks: Vec<TrackView>,
-    /// The selected track (B-70: its header is gray.4), which is the one the keys play.
-    /// `SelectTrack`, and a click on a clip, change it.
+    /// The selected track, by `TrackView::id` (B-70: its header is gray.4): the one the keys
+    /// play and the one R records to, so also the one whose ● is lit. `SelectTrack`, and a
+    /// click on a clip, change it. `None` only when the song has no tracks.
     pub play_target: Option<u32>,
     /// Kept while the loop is off.
     pub loop_range: Option<TickSpan>,
@@ -682,13 +777,16 @@ pub struct TickSpan {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct TrackView {
+    /// Stays with the track for as long as the song is open, and is never given to another
+    /// track. Commands name tracks by it.
+    pub id: u32,
+    /// What is shown: the track's place in `SongView::tracks`, from 1. Not part of the name.
     pub number: u32,
     pub name: String,
+    /// 1..=5. Belongs to the track, not to its place: moving a track keeps it.
     pub color: u8,
     pub instrument: InstrumentKind,
     pub gain_db: f32,
-    /// Recording goes to this track.
-    pub armed: bool,
     /// Saved with the song (`ToggleMute`).
     pub muted: bool,
     /// Not saved (`ToggleSolo`).
@@ -716,11 +814,130 @@ pub struct ClipView {
     pub note_count: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// The sounds that come with meloet (spec 3 「最初から入っている音色」), in the order of the
+/// shelf. `Sine` is what used to be the placeholder sound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum InstrumentKind {
-    Placeholder,
+    GrandPiano,
+    ElectricPiano,
+    Organ,
+    FingerBass,
+    SynthBass,
+    StudioKit,
+    ElectroKit,
+    Strings,
+    WarmPad,
+    SynthLead,
+    Sine,
+}
+
+/// The headings of the shelf, in its order. `Drums`: the piano roll shows the kit's
+/// instruments and the scale lock cannot be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum InstrumentGroup {
+    PianoKeys,
+    Bass,
+    Drums,
+    PadStrings,
+    Synth,
+}
+
+impl InstrumentKind {
+    /// In the order of the shelf. The screen has the same list, with the groups, as
+    /// `INSTRUMENT_GROUPS` (`ui/src/bridge/generated/instruments.ts`).
+    pub const ALL: [InstrumentKind; 11] = [
+        InstrumentKind::GrandPiano,
+        InstrumentKind::ElectricPiano,
+        InstrumentKind::Organ,
+        InstrumentKind::FingerBass,
+        InstrumentKind::SynthBass,
+        InstrumentKind::StudioKit,
+        InstrumentKind::ElectroKit,
+        InstrumentKind::Strings,
+        InstrumentKind::WarmPad,
+        InstrumentKind::SynthLead,
+        InstrumentKind::Sine,
+    ];
+
+    pub fn group(self) -> InstrumentGroup {
+        use InstrumentKind as I;
+        match self {
+            I::GrandPiano | I::ElectricPiano | I::Organ => InstrumentGroup::PianoKeys,
+            I::FingerBass | I::SynthBass => InstrumentGroup::Bass,
+            I::StudioKit | I::ElectroKit => InstrumentGroup::Drums,
+            I::Strings | I::WarmPad => InstrumentGroup::PadStrings,
+            I::SynthLead | I::Sine => InstrumentGroup::Synth,
+        }
+    }
+}
+
+impl InstrumentGroup {
+    pub const ALL: [InstrumentGroup; 5] = [
+        InstrumentGroup::PianoKeys,
+        InstrumentGroup::Bass,
+        InstrumentGroup::Drums,
+        InstrumentGroup::PadStrings,
+        InstrumentGroup::Synth,
+    ];
+}
+
+/// The shelf of instruments. A section of its own: `workspace` is sent again at every step
+/// of a window resize, and the song at every edit; the shelf changes only with what the
+/// user does in it.
+///
+/// Whether the shelf is open is `LayoutView::right_open`. When it is closed, `mode` is
+/// `NewTrack` and `selected`, `current`, `loading` and `sample` are `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfView {
+    pub mode: ShelfMode,
+    /// The rows of the shelf, in its order: the instruments whose sounds are installed. One
+    /// that is not here is not shown at all, not even as unusable.
+    pub available: Vec<InstrumentKind>,
+    /// The starred instruments, in the order of the shelf. May hold instruments that are not
+    /// in `available`; the screen shows only the ones that are.
+    pub favorites: Vec<InstrumentKind>,
+    /// The row that is auditioned: the keys sound with it (`Command::ShelfSelect`).
+    pub selected: Option<InstrumentKind>,
+    /// `Replace` mode: the instrument the track has now ("いまの音源").
+    pub current: Option<InstrumentKind>,
+    /// The selected instrument is still being read: the keys do not sound with it yet
+    /// ("（名前）を読みこんでいます…"). `None` again once it sounds.
+    pub loading: Option<InstrumentKind>,
+    /// The sample that is playing (`Command::PlaySample`). `None` again when it ends.
+    pub sample: Option<SampleView>,
+}
+
+/// What Enter does in the shelf.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ShelfMode {
+    /// "新しいトラックの音源をえらぶ".
+    NewTrack,
+    /// "（トラック）の音源を入れかえる". `track` is `TrackView::id`.
+    Replace { track: u32 },
+}
+
+/// A sample that is playing. The screen counts "0:02 / 0:04" from these on its own clock
+/// (`HelloReply::mono_us`), with no message per second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SampleView {
+    pub instrument: InstrumentKind,
+    /// When its first sound reached the ear, CLOCK_MONOTONIC µs.
+    pub started_us: u64,
+    pub length_us: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -749,7 +966,8 @@ pub struct TransportView {
     pub count_in_beats: u32,
     /// False while the output is not playing.
     pub can_play: bool,
-    /// Also false with no armed track. The record button still takes a click then, to say why.
+    /// Also false with no selected track (the record button still takes a click then, to say
+    /// why), and while the shelf auditions.
     pub can_record: bool,
     /// From the record command until the take is in the song (also during the count-in).
     pub recording: Option<RecordingView>,
@@ -761,6 +979,7 @@ pub struct TransportView {
 pub struct RecordingView {
     /// Counts up with each recording; `LiveNotes::recording` names it.
     pub id: u32,
+    /// `TrackView::id`.
     pub track: u32,
     /// Where recording starts in the song.
     pub from: u64,
@@ -1138,7 +1357,7 @@ pub enum StatusMessage {
     KeyboardLost {
         keyboard: String,
     },
-    /// "出口を{output}にしました。{track} が録音待機になっています。" `track` is the armed one.
+    /// "出口を{output}にしました。{track} が録音待機になっています。" `track` is the selected one.
     OutputChosen {
         output: String,
         track: Option<TrackRef>,
@@ -1226,8 +1445,44 @@ pub enum StatusMessage {
         take: u32,
         takes: u32,
     },
-    /// The record button was pressed with no armed track.
+    /// The record button was pressed in a song with no tracks.
     NoArmedTrack,
+    /// `SelectTrack` with `from_arm` selected another track: "R を押すと 2 ベース に録ります"
+    /// (mock R7-Arrange6).
+    ArmMoved {
+        track: TrackRef,
+    },
+    /// `ShelfConfirm` made a track: "5 シンセ を足しました。"
+    TrackAdded {
+        track: TrackRef,
+    },
+    /// `DeleteTrack`: "3 ドラム を消しました。取り消せます（Mod Z）". The number it had.
+    TrackDeleted {
+        track: TrackRef,
+    },
+    /// `ShelfConfirm` in `Replace` mode: "1 ピアノ の音源を エレクトリックピアノ にしました。
+    /// 取り消せます（Mod Z）".
+    InstrumentReplaced {
+        track: TrackRef,
+        instrument: InstrumentKind,
+    },
+    /// While a row is auditioned in `NewTrack` mode, in place of the summary: "シンセベース ・
+    /// まだトラックには入っていません ・ 入れるには Enter" (mock F4-ShelfAudition).
+    AuditionNewTrack {
+        instrument: InstrumentKind,
+    },
+    /// The same in `Replace` mode: "エレクトリックピアノ ・ 1 ピアノ の音源は、まだグランドピアノ
+    /// です ・ 入れかえるには Enter". `current`: the instrument the track still has.
+    AuditionReplace {
+        instrument: InstrumentKind,
+        track: TrackRef,
+        current: InstrumentKind,
+    },
+    /// While a sample plays and no row is auditioned: "サンプルを再生中 ・ グランドピアノ。行を
+    /// えらぶと、鍵盤でためし弾きできます。"
+    SamplePlaying {
+        instrument: InstrumentKind,
+    },
     UndoPending {
         count: u32,
     },
@@ -1322,7 +1577,8 @@ pub struct NoteSelection {
 /// How many keys `NoteSelection::keys` holds at most.
 pub const NOTE_SELECTION_KEYS: usize = 4;
 
-/// "{number} {name}" (`track.label`).
+/// "{number} {name}" (`track.label`). `number` is `TrackView::number` at the time of the
+/// message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -1358,6 +1614,7 @@ pub enum Change {
     Arrange(ArrangeView),
     PianoRoll(PianoRollView),
     Workspace(WorkspaceView),
+    Shelf(ShelfView),
     Keyboards(KeyboardsView),
     Outputs(OutputsView),
     Inputs(InputsView),

@@ -2,11 +2,20 @@
 import type { ClipView } from "./ClipView";
 import type { InstrumentKind } from "./InstrumentKind";
 
-export type TrackView = { number: number, name: string, color: number, instrument: InstrumentKind, gainDb: number, 
+export type TrackView = { 
 /**
- * Recording goes to this track.
+ * Stays with the track for as long as the song is open, and is never given to another
+ * track. Commands name tracks by it.
  */
-armed: boolean, 
+id: number, 
+/**
+ * What is shown: the track's place in `SongView::tracks`, from 1. Not part of the name.
+ */
+number: number, name: string, 
+/**
+ * 1..=5. Belongs to the track, not to its place: moving a track keeps it.
+ */
+color: number, instrument: InstrumentKind, gainDb: number, 
 /**
  * Saved with the song (`ToggleMute`).
  */

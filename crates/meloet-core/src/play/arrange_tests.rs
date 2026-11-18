@@ -217,7 +217,7 @@ fn three_clips() -> (Play, ClipId, ClipId, ClipId) {
         id: TrackId(2),
         name: "ベース".into(),
         color: TrackColor::for_index(1),
-        instrument: InstrumentRef::Placeholder,
+        instrument: InstrumentRef::SINE,
         gain_db: 0.0,
         muted: false,
         clips: Vec::new(),
@@ -264,7 +264,7 @@ fn clicks_shift_clicks_boxes_and_mod_a_select_clips() {
         (v.selected_clips, v.selected_clip),
         (vec![id(a)], Some(id(a)))
     );
-    assert_eq!(p.song.session.play_target, TrackId(1));
+    assert_eq!(p.song.session.play_target, Some(TrackId(1)));
     // Shift + click: added, clicked, shown, and its track selected.
     p.select_clips(vec![c.0], SelectMode::Add);
     let v = p.arrange_view();
@@ -273,13 +273,13 @@ fn clicks_shift_clicks_boxes_and_mod_a_select_clips() {
         (v.selected_clip, v.piano_roll_clip),
         (Some(id(c)), Some(id(c)))
     );
-    assert_eq!(p.song.session.play_target, TrackId(2));
+    assert_eq!(p.song.session.play_target, Some(TrackId(2)));
     // A box: neither the piano roll nor the track changes; nothing is clicked.
     p.select_clips(vec![b.0, a.0, 999], SelectMode::Replace);
     let v = p.arrange_view();
     assert_eq!(v.selected_clips, [id(a), id(b)]);
     assert_eq!((v.selected_clip, v.piano_roll_clip), (None, Some(id(c))));
-    assert_eq!(p.song.session.play_target, TrackId(2));
+    assert_eq!(p.song.session.play_target, Some(TrackId(2)));
     // A box around one clip: that one is clicked, still not shown.
     p.select_clips(vec![b.0], SelectMode::Replace);
     let v = p.arrange_view();
@@ -299,10 +299,10 @@ fn clicks_shift_clicks_boxes_and_mod_a_select_clips() {
     p.select_clips(vec![b.0], SelectMode::Toggle);
     assert_eq!(p.arrange_view().selected_clips, [id(a), id(c)]);
     // The header of a track.
-    p.select_track(1);
-    assert_eq!(p.song.session.play_target, TrackId(1));
-    p.select_track(9);
-    assert_eq!(p.song.session.play_target, TrackId(1));
+    p.select_track(1, false);
+    assert_eq!(p.song.session.play_target, Some(TrackId(1)));
+    p.select_track(9, false);
+    assert_eq!(p.song.session.play_target, Some(TrackId(1)));
     assert_eq!(p.arrange_view().selected_clips, [id(a), id(c)]);
     p.select_clip(None);
     assert!(p.arrange_view().selected_clips.is_empty());
@@ -423,7 +423,7 @@ fn delete_cut_copy_and_paste_clips() {
     assert_eq!(p.paste_clips(to(2, 16 * BAR), e), None);
     assert_eq!(p.undo_count(), steps + 1);
     // Mod V: the selected track, the head of the bar the play line is in.
-    p.select_track(1);
+    p.select_track(1, false);
     p.locate(12 * BAR + 700, e);
     assert_eq!(p.paste_clips(None, e), None);
     let s = starts(&p);

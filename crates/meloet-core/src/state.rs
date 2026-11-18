@@ -10,14 +10,16 @@ use std::time::Duration;
 
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
-use meloet_model::{InstrumentRef, Note, Song};
+use meloet_model::{BuiltinInstrument, InstrumentRef, Note, Song};
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
     LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, QuantizeSettings,
-    RecoveryCause, SettingsDialogView, SongFile, SongView, StatusMessage, StatusView, TrackView,
-    Unusable, VelocityFixed, WorkspaceView,
+    RecoveryCause, SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, StatusMessage,
+    StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
+
+use crate::instruments;
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::{Cut, EngineOp, Heard, Play, RecordReport};
@@ -260,6 +262,8 @@ pub struct Model {
     now_us: u64,
     /// A meloet setting, not part of the song.
     velocity_fixed: VelocityFixed,
+    /// The starred instruments of the shelf. A meloet setting too.
+    favorites: Vec<BuiltinInstrument>,
 }
 
 struct OpenStream {
@@ -320,6 +324,7 @@ impl Model {
                 on: settings.velocity_fixed,
                 value: settings.fixed_velocity.clamp(1, 127),
             },
+            favorites: settings.favorites,
         }
     }
 
@@ -688,7 +693,7 @@ impl Model {
                     let output = self.endpoint(&output).map_or(output, |e| e.name.clone());
                     self.notice = Some(StatusMessage::OutputChosen {
                         output,
-                        track: self.play.armed(),
+                        track: self.play.record_target(),
                     });
                 }
             }
@@ -732,9 +737,37 @@ impl Model {
             }
             Command::ToggleLoop => self.play.toggle_loop(effects),
             Command::SetLoop { from_bar, to_bar } => self.play.set_loop(from_bar, to_bar, effects),
-            Command::ToggleArm { track } => self.play.toggle_arm(track),
             Command::SelectClip { clip } => self.play.select_clip(clip),
-            Command::SelectTrack { track } => self.play.select_track(track),
+            Command::SelectTrack { track, from_arm } => {
+                if let Some(n) = self.play.select_track(track, from_arm) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::DeleteTrack { track } => {
+                if let Some(n) = self.play.delete_track(track, effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::RenameTrack { track, name } => self.play.rename_track(track, &name, effects),
+            Command::MoveTrack { track, to } => self.play.move_track(track, to, effects),
+            Command::SetTrackColor { track, color } => {
+                self.play.set_track_color(track, color, effects);
+            }
+            Command::ToggleFavorite { instrument } => {
+                let favorite = instruments::builtin_of(instrument);
+                if !self.favorites.contains(&favorite) {
+                    self.favorites.push(favorite);
+                } else {
+                    self.favorites.retain(|&f| f != favorite);
+                }
+                effects.push(Effect::SaveSettings(self.settings()));
+            }
+            Command::OpenShelf { .. }
+            | Command::ShelfSelect { .. }
+            | Command::ShelfConfirm
+            | Command::ShelfCancel
+            | Command::PlaySample { .. }
+            | Command::StopSample => {}
             Command::SelectClips { clips, mode } => self.play.select_clips(clips, mode),
             Command::SelectAllClips => self.play.select_all_clips(),
             Command::CopyClips { clips } => self.play.copy_clips(&clips),
@@ -1063,6 +1096,22 @@ impl Model {
             count_in_bars: self.play.count_in_bars(),
             velocity_fixed: self.velocity_fixed.on,
             fixed_velocity: self.velocity_fixed.value,
+            favorites: self.favorites.clone(),
+        }
+    }
+
+    fn shelf_view(&self) -> ShelfView {
+        ShelfView {
+            mode: ShelfMode::NewTrack,
+            available: vec![InstrumentKind::Sine],
+            favorites: InstrumentKind::ALL
+                .into_iter()
+                .filter(|&k| self.favorites.contains(&instruments::builtin_of(k)))
+                .collect(),
+            selected: None,
+            current: None,
+            loading: None,
+            sample: None,
         }
     }
 
@@ -1160,6 +1209,7 @@ impl Model {
                 song_dialog: self.song_dialog_view(),
                 recovery,
             },
+            shelf: self.shelf_view(),
             keyboards: KeyboardsView {
                 list: self
                     .keyboards
@@ -1274,7 +1324,7 @@ impl Model {
                 tempo_bpm: song.tempo.bpm(),
                 meter_num: song.meter.num(),
                 meter_den: song.meter.den(),
-                track: self.play.armed(),
+                track: self.play.record_target(),
             });
         }
         let redo = self.play.redo_count();
@@ -1364,21 +1414,22 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
         tracks: doc
             .tracks
             .iter()
-            .map(|t| TrackView {
-                number: t.id.0,
+            .enumerate()
+            .map(|(i, t)| TrackView {
+                id: t.id.0,
+                number: i as u32 + 1,
                 name: t.name.clone(),
                 color: t.color.get(),
                 instrument: match t.instrument {
-                    InstrumentRef::Placeholder => InstrumentKind::Placeholder,
+                    InstrumentRef::Builtin(b) => instruments::kind_of(b),
                 },
                 gain_db: t.gain_db as f32,
-                armed: song.session.armed == Some(t.id),
                 muted: t.muted,
                 soloed: play.is_soloed(t.id),
                 clips: play.clips_of(t.id),
             })
             .collect(),
-        play_target: Some(song.session.play_target.0),
+        play_target: song.session.play_target.map(|t| t.0),
         loop_range: play.loop_span(),
         loop_on: song.session.loop_on,
         file,

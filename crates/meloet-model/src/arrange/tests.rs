@@ -40,7 +40,7 @@ fn two_tracks() -> Doc {
         id: T2,
         name: "ベース".into(),
         color: TrackColor::for_index(1),
-        instrument: InstrumentRef::Placeholder,
+        instrument: InstrumentRef::SINE,
         gain_db: 0.0,
         muted: false,
         clips: Vec::new(),

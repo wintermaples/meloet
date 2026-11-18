@@ -5,6 +5,7 @@
 //! - [`Core`]: the threads (MIDI, device watcher, audio, telemetry) around the two.
 
 mod hub;
+mod instruments;
 pub mod layout;
 pub mod measure;
 pub mod play;

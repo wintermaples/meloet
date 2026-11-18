@@ -78,14 +78,14 @@ describe("約束 8 の偽物の場面", () => {
 describe("偽物の Rust: 約束 8 の意図", () => {
   it("トラックを選ぶ、ミュートとソロを切りかえる", async () => {
     const f = await opened("arrangeSelect");
-    let s = await f.send({ type: "selectTrack", track: 3 }, { type: "toggleMute", track: 2 }, { type: "toggleSolo", track: 1 });
+    let s = await f.send({ type: "selectTrack", track: 3, fromArm: false }, { type: "toggleMute", track: 2 }, { type: "toggleSolo", track: 1 });
     expect(s.song.playTarget).toBe(3);
     expect(s.song.tracks.map((t) => [t.muted, t.soloed])).toEqual([
       [false, true],
       [false, false],
       [false, true],
     ]);
-    s = await f.send({ type: "selectTrack", track: 9 });
+    s = await f.send({ type: "selectTrack", track: 9, fromArm: false });
     expect(s.song.playTarget).toBe(3);
   });
 
@@ -157,7 +157,7 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     // 選んだトラックはベース（2）、再生の位置は 5 小節め: 重なる。
     s = await f.send({ type: "pasteClips", to: null });
     expect(clipsOf(s)[1]).toEqual([[41, 5]]);
-    s = await f.send({ type: "locate", tick: 12 * BAR + 300 }, { type: "selectTrack", track: 1 }, { type: "pasteClips", to: null });
+    s = await f.send({ type: "locate", tick: 12 * BAR + 300 }, { type: "selectTrack", track: 1, fromArm: false }, { type: "pasteClips", to: null });
     expect(clipsOf(s)[0]!.map((c) => c[1])).toEqual([1, 5, 13]);
     expect(clipsOf(s)[1]!.map((c) => c[1])).toEqual([5, 13]);
     s = await f.send({ type: "pasteClips", to: { track: 1, tick: 20 * BAR + 10 } });

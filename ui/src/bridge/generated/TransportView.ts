@@ -23,7 +23,8 @@ countInBeats: number,
  */
 canPlay: boolean, 
 /**
- * Also false with no armed track. The record button still takes a click then, to say why.
+ * Also false with no selected track (the record button still takes a click then, to say
+ * why), and while the shelf auditions.
  */
 canRecord: boolean, 
 /**

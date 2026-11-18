@@ -318,15 +318,17 @@ fn the_loop_turned_on_with_no_range_takes_four_bars_from_the_current_one() {
 }
 
 #[test]
-fn record_without_an_armed_track_says_so() {
+fn record_in_a_song_with_no_tracks_says_so() {
     let m = &mut ready();
-    cmd(m, Command::ToggleArm { track: 1 });
-    assert!(!m.view().song.tracks[0].armed);
+    assert!(m.view().transport.can_record);
+    cmd(m, Command::DeleteTrack { track: 1 });
+    assert_eq!(m.view().song.play_target, None);
     assert!(!m.view().transport.can_record);
     assert!(ops(&cmd(m, Command::Record)).is_empty());
     assert_eq!(status(m), Some(StatusMessage::NoArmedTrack));
-    cmd(m, Command::ToggleArm { track: 1 });
-    assert!(m.view().song.tracks[0].armed);
+    cmd(m, Command::Undo);
+    assert_eq!(m.view().song.play_target, Some(1));
+    assert!(m.view().transport.can_record);
 }
 
 #[test]

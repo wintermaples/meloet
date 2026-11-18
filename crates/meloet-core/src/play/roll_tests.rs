@@ -84,7 +84,7 @@ fn song(rng: &mut Rng) -> Song {
         id: TrackId(2),
         name: "ベース".into(),
         color: TrackColor::for_index(1),
-        instrument: InstrumentRef::Placeholder,
+        instrument: InstrumentRef::SINE,
         gain_db: 0.0,
         muted: false,
         clips: Vec::new(),
@@ -538,7 +538,9 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                 24 => p.delete_selected(e),
                 25 => match rng.below(4) {
                     0 => p.select_all_clips(),
-                    1 => p.select_track(rng.below(3) as u32 + 1),
+                    1 => {
+                        p.select_track(rng.below(3) as u32 + 1, false);
+                    }
                     _ => {
                         let mode = [SelectMode::Replace, SelectMode::Add, SelectMode::Toggle]
                             [rng.below(3) as usize];

@@ -391,14 +391,17 @@ impl Play {
         }
     }
 
-    pub fn armed(&self) -> Option<TrackRef> {
-        self.track_ref(self.song.session.armed?)
+    /// The track a recording goes to: the selected one.
+    pub fn record_target(&self) -> Option<TrackRef> {
+        self.track_ref(self.song.session.play_target?)
     }
 
+    /// The track as the screen names it now: its number is its place, from 1.
     fn track_ref(&self, id: TrackId) -> Option<TrackRef> {
-        self.doc().track(id).map(|t| TrackRef {
-            number: t.id.0,
-            name: t.name.clone(),
+        let index = self.track_index(id)?;
+        Some(TrackRef {
+            number: index as u32 + 1,
+            name: self.doc().tracks[index].name.clone(),
         })
     }
 
@@ -459,7 +462,7 @@ impl Play {
             _ if self.rec.is_some() || !can_play => return None,
             _ => {}
         }
-        let Some(track) = self.song.session.armed else {
+        let Some(track) = self.song.session.play_target else {
             return Some(StatusMessage::NoArmedTrack);
         };
         let index = self.track_index(track)?;
@@ -625,24 +628,17 @@ impl Play {
         }));
     }
 
-    pub fn toggle_arm(&mut self, track: u32) {
-        if self.busy() {
-            return;
-        }
+    /// A click on a track's header, or (`from_arm`) on its ●: the keys play that track and a
+    /// recording goes to it. Not while counting in or recording: the recording stays on its
+    /// track, and the keys with it. Returns the notice to show.
+    pub fn select_track(&mut self, track: u32, from_arm: bool) -> Option<StatusMessage> {
         let id = TrackId(track);
-        if self.doc().track(id).is_none() {
-            return;
+        if self.busy() || self.song.session.play_target == Some(id) {
+            return None;
         }
-        let armed = &mut self.song.session.armed;
-        *armed = if *armed == Some(id) { None } else { Some(id) };
-    }
-
-    /// A click on a track's header: the keys play that track.
-    pub fn select_track(&mut self, track: u32) {
-        let id = TrackId(track);
-        if self.doc().track(id).is_some() {
-            self.song.session.play_target = id;
-        }
+        let said = self.track_ref(id)?;
+        self.song.session.play_target = Some(id);
+        from_arm.then_some(StatusMessage::ArmMoved { track: said })
     }
 
     /// A click on a clip, or (`None`) where there is no clip.
@@ -663,7 +659,9 @@ impl Play {
     /// The clip becomes the one clicked: shown in the piano roll, its track selected.
     fn click(&mut self, id: ClipId) {
         if let Some((track, _)) = self.doc().clip(id) {
-            self.song.session.play_target = track.id;
+            if !self.busy() {
+                self.song.session.play_target = Some(track.id);
+            }
             self.selected = Some(id);
             self.piano_roll = Some(id);
             self.fix_selection();
@@ -811,7 +809,7 @@ impl Play {
         let (track, at) = match to {
             Some(s) => (TrackId(s.track), s.tick),
             None => (
-                self.song.session.play_target,
+                self.song.session.play_target?,
                 self.bar_head(self.play_line()),
             ),
         };
@@ -879,10 +877,7 @@ impl Play {
         let e = edit::switch_take(self.doc(), clip.id, to).ok()?;
         self.apply(e, effects);
         Some(StatusMessage::TakeSwitched {
-            track: TrackRef {
-                number: track.id.0,
-                name: track.name.clone(),
-            },
+            track: self.track_ref(track.id)?,
             clip: clip.name.clone(),
             take: to as u32 + 1,
             takes: n as u32,
@@ -997,14 +992,26 @@ impl Play {
     fn after_change(&mut self, before: &Doc, effects: &mut Vec<Effect>) {
         self.changes += 1;
         let doc = &self.song.doc;
+        // The engine knows tracks by their place: a track that moved is sent again, and the
+        // places past the last track are emptied.
         for (i, t) in doc.tracks.iter().enumerate() {
-            let same = before.track(t.id).is_some_and(|b| Arc::ptr_eq(b, t));
+            let same = before.tracks.get(i).is_some_and(|b| Arc::ptr_eq(b, t));
             if !same {
                 effects.push(Effect::Engine(EngineOp::Sequence {
                     track: i,
                     events: track_events(doc, t.id),
                 }));
             }
+        }
+        for track in doc.tracks.len()..before.tracks.len() {
+            effects.push(Effect::Engine(EngineOp::Sequence {
+                track,
+                events: Vec::new(),
+            }));
+        }
+        let target = &mut self.song.session.play_target;
+        if target.is_none_or(|t| doc.track(t).is_none()) {
+            *target = doc.tracks.first().map(|t| t.id);
         }
         if doc.tempo != before.tempo || doc.meter != before.meter {
             effects.push(Effect::Engine(self.tempo_op()));
@@ -1393,14 +1400,6 @@ impl Play {
             effects,
         );
         self.saved_too = Some(self.history.version());
-        let doc = &self.song.doc;
-        let session = &mut self.song.session;
-        if doc.track(session.play_target).is_none() {
-            session.play_target = doc.tracks[0].id;
-        }
-        if session.armed.is_some_and(|t| doc.track(t).is_none()) {
-            session.armed = None;
-        }
     }
 
     /// Goes up whenever the `Doc` changes or another song takes its place.
@@ -1451,7 +1450,7 @@ impl Play {
                 None => u32::from(self.count_in_bars) * u32::from(self.meter().num()),
             },
             can_play: open,
-            can_record: open && self.song.session.armed.is_some(),
+            can_record: open && self.song.session.play_target.is_some(),
             recording: self.rec.as_ref().map(|r| RecordingView {
                 id: r.id,
                 track: r.track.0,
@@ -1684,7 +1683,7 @@ impl Play {
         let at = match take {
             Some(take) => WriteAt::Clip(self.aimed(take)?),
             None if self.shown().is_some() => return None,
-            None => WriteAt::Track(self.song.session.play_target),
+            None => WriteAt::Track(self.song.session.play_target?),
         };
         let scale = self.song.session.roll.scale;
         if scale.lock && !scale.contains(note.key) {
@@ -2015,7 +2014,8 @@ impl Play {
         if keys.is_empty() {
             return;
         }
-        if let Some(track) = self.track_index(self.song.session.play_target) {
+        let target = self.song.session.play_target;
+        if let Some(track) = target.and_then(|t| self.track_index(t)) {
             effects.push(Effect::Engine(EngineOp::Audition {
                 track,
                 keys,
@@ -2086,6 +2086,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 }
 
 mod mix;
+mod tracks;
 
 #[cfg(test)]
 mod arrange_tests;

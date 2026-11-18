@@ -60,4 +60,4 @@ impl Play {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

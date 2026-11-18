@@ -150,7 +150,6 @@ fn busy_song(m: &mut Model) {
     cmd(m, Command::SelectClip { clip: Some(1) });
     cmd(m, Command::StepTake { delta: -1 });
     cmd(m, Command::SetTempo { bpm: 120.5 });
-    cmd(m, Command::ToggleArm { track: 1 });
 }
 
 #[test]
@@ -161,7 +160,6 @@ fn a_saved_song_opens_as_it_was() {
     let before = song(m);
     assert_eq!(before.doc.tracks[0].clips.len(), 2);
     assert_eq!(before.doc.tracks[0].clips[0].takes.len(), 2);
-    assert_eq!(before.session.armed, None);
     assert_eq!(file(m), SongFile::Changed);
 
     w.cmd(m, Command::SaveSong);
@@ -486,7 +484,7 @@ fn a_file_from_a_newer_meloet_counts_as_broken() {
     let w = &mut World::new("flow-newer");
     let path = write_two_versions(&w.songs);
     let mut v: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    v["version"] = 3.into();
+    v["version"] = (songfile::VERSION + 1).into();
     fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
     let m = &mut ready();
     w.pick_file = Some(path);

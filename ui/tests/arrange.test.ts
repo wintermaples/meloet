@@ -85,8 +85,8 @@ const three = (selected: number[] = [], clicked: number | null = null) =>
     const base = s.song.tracks[0]!;
     s.song.tracks = [
       { ...base, clips: [clip(1, "イントロ", 1, 5), clip(3, "Aメロ", 5, 9, 2, 3)] },
-      { ...base, number: 2, name: "ベース", color: 2, armed: false, muted: true, clips: [clip(41, "ベース A", 5, 9)] },
-      { ...base, number: 3, name: "ドラム", color: 3, armed: false, soloed: true, clips: [clip(43, "8ビート", 1, 9)] },
+      { ...base, id: 2, number: 2, name: "ベース", color: 2, muted: true, clips: [clip(41, "ベース A", 5, 9)] },
+      { ...base, id: 3, number: 3, name: "ドラム", color: 3, soloed: true, clips: [clip(43, "8ビート", 1, 9)] },
     ];
     s.song.playTarget = 2;
     s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1 };
@@ -152,11 +152,11 @@ describe("押す: クリップをえらぶ、録音待機", () => {
     ]);
   });
 
-  it("● は録音待機の切りかえ。オンは rec。M ・ S も押せて、オンは on（accent）", () => {
+  it("● は、そのトラックを選ぶ（録音待機は、いつも選んだトラック）。オンは rec。M ・ S も押せて、オンは on（accent）", () => {
     show(three());
     const arm = qa("button[aria-label=録音待機]");
-    expect(arm[0]!.getAttribute("aria-pressed")).toBe("true");
-    expect(arm[0]!.classList.contains("on")).toBe(true);
+    expect(arm.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
+    expect(arm.map((b) => b.classList.contains("on"))).toEqual([false, true, false]);
     arm[0]!.click();
     const mute = qa("button[aria-label=ミュート]");
     const solo = qa("button[aria-label=ソロ]");
@@ -167,7 +167,7 @@ describe("押す: クリップをえらぶ、録音待機", () => {
     mute[0]!.click();
     solo[2]!.click();
     expect(app.sent).toEqual([
-      { type: "toggleArm", track: 1 },
+      { type: "selectTrack", track: 1, fromArm: true },
       { type: "toggleMute", track: 1 },
       { type: "toggleSolo", track: 3 },
     ]);
@@ -187,7 +187,7 @@ describe("押す: クリップをえらぶ、録音待機", () => {
       qa("button[aria-label=録音待機]")[1]!.click();
       expect(app.sent).toEqual([
         { type: "toggleSolo", track: 1 },
-        { type: "toggleArm", track: 2 },
+        { type: "selectTrack", track: 2, fromArm: true },
       ]);
       expect(qa("button[aria-label=ソロ]")[0]!.classList.contains("live")).toBe(true);
       app.sent.length = 0;
@@ -203,7 +203,7 @@ describe("選んだトラック（B-70）", () => {
     pointer(heads[0]!, "pointerdown", 10, 10);
     pointer(heads[1]!, "pointerdown", 10, 10);
     pointer(qa("button[aria-label=ミュート]")[2]!, "pointerdown", 10, 10);
-    expect(app.sent).toEqual([{ type: "selectTrack", track: 1 }]);
+    expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
   });
 });
 
@@ -389,7 +389,7 @@ describe("右クリックの一覧（B-60）", () => {
   it("トラックの見出し: ミュート ・ ソロ ・ 録音待機。選ばれていなければ selectTrack してから", () => {
     show(three());
     ctx(qa("[data-test=track-head]")[0]!, 10, 10);
-    expect(app.sent).toEqual([{ type: "selectTrack", track: 1 }]);
+    expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
     expect(rows().map((r) => [r.label, r.key])).toEqual([
       ["menu.mute", "Shift M"],
       ["menu.solo", "Shift S"],
@@ -399,7 +399,7 @@ describe("右クリックの一覧（B-60）", () => {
     expect(app.sent.slice(1)).toEqual([
       { type: "toggleMute", track: 1 },
       { type: "toggleSolo", track: 1 },
-      { type: "toggleArm", track: 1 },
+      { type: "selectTrack", track: 1, fromArm: true },
     ]);
   });
 });

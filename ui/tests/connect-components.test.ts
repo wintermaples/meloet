@@ -98,7 +98,7 @@ describe("入力計", () => {
     expect([...right.querySelectorAll(".accent")].map((x) => x.textContent)).toEqual(["音の出口がまだです。", "下でえらんでください"]);
   });
 
-  it("出口がある: 弾くと鳴る先「1 ピアノ ・ 仮の音」", () => {
+  it("出口がある: 弾くと鳴る先「1 ピアノ ・ グランドピアノ」", () => {
     show(
       InputMeter,
       app.stateWith((s) => {
@@ -106,9 +106,9 @@ describe("入力計", () => {
         s.outputs.chosen = "hp";
       }),
     );
-    expect(text('[data-test="meter-right"]')).toBe("弾くと鳴る先 1 ピアノ ・ 仮の音");
+    expect(text('[data-test="meter-right"]')).toBe("弾くと鳴る先 1 ピアノ ・ グランドピアノ");
     // 横が足りないときは、音源の部分だけ引っこめる（仕様書 1 章「拡大率の決まり」）。
-    expect(text('[data-test="meter-right"] [data-part="target-instrument"]')).toBe("・ 仮の音");
+    expect(text('[data-test="meter-right"] [data-part="target-instrument"]')).toBe("・ グランドピアノ");
   });
 
   it("細いとき: 弾くと鳴る先は「1 ピアノ」だけで、音源の名前は出さない（モック A-PianoRoll・F-History）", () => {

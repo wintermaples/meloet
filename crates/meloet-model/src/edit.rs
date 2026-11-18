@@ -3,12 +3,12 @@
 
 use std::sync::Arc;
 
-use crate::TrackId;
 use crate::history::StepKind;
 use crate::song::{
     Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
 };
 use crate::time::{Meter, Tempo, TickRange};
+use crate::{TrackColor, TrackId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
@@ -358,6 +358,74 @@ pub fn toggle_mute(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {
             },
         ),
         step: StepKind::Mute { track, muted },
+    })
+}
+
+/// Surrounding spaces are left out. An empty name keeps the old one (`Unchanged`).
+pub fn rename_track(doc: &Doc, track: TrackId, name: &str) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    let name = name.trim();
+    if name.is_empty() || name == t.name {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                name: name.to_owned(),
+                ..Track::clone(t)
+            },
+        ),
+        step: StepKind::RenameTrack { track },
+    })
+}
+
+pub fn set_track_color(doc: &Doc, track: TrackId, color: TrackColor) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    if color == t.color {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                color,
+                ..Track::clone(t)
+            },
+        ),
+        step: StepKind::SetTrackColor { track },
+    })
+}
+
+/// The track goes with its clips. The last track can go too: a song may have none.
+pub fn delete_track(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let mut doc = doc.clone();
+    doc.tracks.remove(ti);
+    Ok(Edit {
+        doc,
+        step: StepKind::DeleteTrack { track },
+    })
+}
+
+/// Puts the track at index `to` of the tracks as they are afterwards; past the end is the
+/// end. The other tracks keep their order, and every track its color.
+pub fn move_track(doc: &Doc, track: TrackId, to: usize) -> Result<Edit, EditError> {
+    let from = track_index(doc, track)?;
+    let to = to.min(doc.tracks.len() - 1);
+    if to == from {
+        return Err(EditError::Unchanged);
+    }
+    let mut doc = doc.clone();
+    let t = doc.tracks.remove(from);
+    doc.tracks.insert(to, t);
+    Ok(Edit {
+        doc,
+        step: StepKind::MoveTrack { track },
     })
 }
 

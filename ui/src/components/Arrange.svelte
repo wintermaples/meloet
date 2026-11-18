@@ -23,7 +23,7 @@
   import { term } from "../lib/tip.svelte";
   import { openContextMenu, type MenuEntry, type MenuRow } from "./menu/contextMenu.svelte";
   import { current, send } from "../state/app.svelte";
-  import { t } from "../text/ja";
+  import { findTerm, t } from "../text/ja";
   import * as CD from "./arrangeDrag";
   import * as G from "./arrangeGeom";
   import { dbNumber, gridText, tempoText, termParts, textParts } from "./format";
@@ -92,7 +92,8 @@
   const barNumbers = $derived(
     Array.from({ length: lastBar - firstBar + 1 }, (_, i) => firstBar + i).filter((n) => (n - 1) % barLabelEvery === 0),
   );
-  const rowOf = (track: number) => song.tracks.findIndex((tr) => tr.number === track);
+  /** トラックの id から、並びの中の行。 */
+  const rowOf = (track: number) => song.tracks.findIndex((tr) => tr.id === track);
 
   // ---- テイクのノート（一度取れば id で持っておける） ----
 
@@ -171,10 +172,10 @@
     });
   });
 
-  function shapesOf(trackNumber: number, clip: ClipView): G.NoteShape[] {
+  function shapesOf(trackId: number, clip: ClipView): G.NoteShape[] {
     const take = takeOf(clip.takeId);
     if (take) return G.takeShapes(clip, take);
-    if (fallback?.track !== trackNumber) return [];
+    if (fallback?.track !== trackId) return [];
     return fallback.notes.filter((n) => n.start < clip.end && n.start + n.length > clip.start);
   }
 
@@ -239,7 +240,7 @@
     const labels: Label[] = [];
     const notesOf = (row: number, clip: ClipView) => {
       const take = takeOf(clip.takeId);
-      return take ? G.takeShapes(clip, take) : shapesOf(song.tracks[row]?.number ?? -1, clip);
+      return take ? G.takeShapes(clip, take) : shapesOf(song.tracks[row]?.id ?? -1, clip);
     };
     const labelOf = (clip: ClipView, box: G.Box): Label => ({
       id: clip.id,
@@ -315,7 +316,7 @@
           continue;
         }
         const colors = selectedSet.has(clip.id) && !dragged ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track));
-        G.paintClip(out, view, dims, box, G.clipColorsFor(colors, track.muted), shapesOf(track.number, clip));
+        G.paintClip(out, view, dims, box, G.clipColorsFor(colors, track.muted), shapesOf(track.id, clip));
       }
     });
     const shown = recShown;
@@ -366,7 +367,7 @@
         const box = G.clipBox(view, dims, row, clip.start, clip.end);
         if (box.x1 < 0 || box.x0 > view.width) continue;
         // 録っているクリップの下になったクリップの名前は出さない。
-        if (rec && shown && rec.track === track.number && clip.start < shown.commit + perBar && clip.end > shown.lapFrom) continue;
+        if (rec && shown && rec.track === track.id && clip.start < shown.commit + perBar && clip.end > shown.lapFrom) continue;
         // 動かしている・つめているクリップの名前は、動いている絵の側に出す。
         if (dragIds.has(clip.id) && dragFrame) continue;
         const x = Math.max(box.x0, 0) + dims.hair;
@@ -900,7 +901,7 @@
     const at = G.xToTick(view, p.x);
     const tick = Math.max(0, e.shiftKey ? Math.round(at) : snapTick(at, perBar));
     const paste = () => {
-      if (track) send({ type: "pasteClips", to: { track: track.number, tick } });
+      if (track) send({ type: "pasteClips", to: { track: track.id, tick } });
     };
     openContextMenu(e.clientX, e.clientY, [
       menuRow("menu.paste", !busy && track !== undefined && clipboardCount > 0, paste, modKey(t("key.paste"))),
@@ -909,18 +910,18 @@
 
   function headContext(e: MouseEvent, track: number): void {
     e.preventDefault();
-    if (song.playTarget !== track) send({ type: "selectTrack", track });
+    if (song.playTarget !== track) send({ type: "selectTrack", track, fromArm: false });
     openContextMenu(e.clientX, e.clientY, [
       menuRow("menu.mute", !busy, () => send({ type: "toggleMute", track }), shiftKey(t("key.mute"))),
       menuRow("menu.solo", true, () => send({ type: "toggleSolo", track }), shiftKey(t("key.solo"))),
-      menuRow("menu.arm", true, () => send({ type: "toggleArm", track })),
+      menuRow("menu.arm", true, () => send({ type: "selectTrack", track, fromArm: true })),
     ]);
   }
 
   /** トラックの見出しを押すと、そのトラックを選ぶ（B-70）。M ・ S ・ ● の上では選ばない。 */
   function headDown(e: PointerEvent, track: number): void {
     if (e.button !== 0 || (e.target as Element | null)?.closest("button")) return;
-    if (song.playTarget !== track) send({ type: "selectTrack", track });
+    if (song.playTarget !== track) send({ type: "selectTrack", track, fromArm: false });
   }
 
   const readingBox = $derived.by(() => {
@@ -945,6 +946,11 @@
     prView.focus = "arrange";
   }
 </script>
+
+<!-- 用語の説明がある音色（サイン波）だけ、乗せると説明が出る。 -->
+{#snippet instrumentName(name: string)}
+  {#if findTerm(name)}<span class="m-lbl instrument" use:term={name}>{name}</span>{:else}<span class="m-lbl instrument">{name}</span>{/if}
+{/snippet}
 
 {#snippet termed(text: string, word: string)}{#each termParts(text, word) as piece, j (j)}{#if piece.term}<span use:term={word}
         >{piece.text}</span
@@ -1002,14 +1008,14 @@
         <span class="m-spacer"></span>
         <span class="m-num">{t("arrange.changeCount", { count: song.tempoChanges })}</span>
       </button>
-      {#each song.tracks as track (track.number)}
+      {#each song.tracks as track (track.id)}
         <div
           class="track-head"
-          class:selected={song.playTarget === track.number}
+          class:selected={song.playTarget === track.id}
           role="presentation"
           data-test="track-head"
-          onpointerdown={(e) => headDown(e, track.number)}
-          oncontextmenu={(e) => headContext(e, track.number)}
+          onpointerdown={(e) => headDown(e, track.id)}
+          oncontextmenu={(e) => headContext(e, track.id)}
         >
           <div class="track-color" style:background="var(--color-track-{((track.color - 1) % 5) + 1})"></div>
           <div class="track-body">
@@ -1027,7 +1033,7 @@
                 aria-label={t("arrange.mute")}
                 data-test="track-mute"
                 use:term={"ミュート"}
-                onclick={() => !busy && send({ type: "toggleMute", track: track.number })}>{t("arrange.muteShort")}</button
+                onclick={() => !busy && send({ type: "toggleMute", track: track.id })}>{t("arrange.muteShort")}</button
               >
               <button
                 class="tog live"
@@ -1035,19 +1041,19 @@
                 aria-pressed={track.soloed}
                 aria-label={t("arrange.solo")}
                 use:term={"ソロ"}
-                onclick={() => send({ type: "toggleSolo", track: track.number })}>{t("arrange.soloShort")}</button
+                onclick={() => send({ type: "toggleSolo", track: track.id })}>{t("arrange.soloShort")}</button
               >
               <button
                 class="tog live arm"
-                class:on={track.armed}
-                aria-pressed={track.armed}
+                class:on={song.playTarget === track.id}
+                aria-pressed={song.playTarget === track.id}
                 aria-label={t("arrange.arm")}
                 use:term={"録音待機"}
-                onclick={() => send({ type: "toggleArm", track: track.number })}>{t("arrange.armShort")}</button
+                onclick={() => send({ type: "selectTrack", track: track.id, fromArm: true })}>{t("arrange.armShort")}</button
               >
             </div>
             <div class="line gap2">
-              <span class="m-lbl instrument" use:term={"仮の音"}>{t("instrument.placeholder")}</span>
+              {@render instrumentName(t(`instrument.${track.instrument}`))}
               <span class="m-num" use:term={"dB"}>{t("common.db", { value: dbNumber(track.gainDb) })}</span>
             </div>
             <div class="meter" use:glSlot={{ kind: "meter", source: { track: track.number }, gap: metrics.px("line.hair") }}></div>
@@ -1094,7 +1100,7 @@
         onpointercancel={cancelClipDrag}
         oncontextmenu={lanesContext}
       >
-        {#each song.tracks as track (track.number)}
+        {#each song.tracks as track (track.id)}
           <div class="lane"></div>
         {/each}
         <div class="fill" use:glSlot={{ kind: "rects", rects: laneRects }}></div>

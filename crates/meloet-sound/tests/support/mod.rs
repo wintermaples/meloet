@@ -1,5 +1,7 @@
-//! Helpers the effect tests share.
+//! Helpers the tests share.
 #![allow(dead_code)]
+
+pub mod pack;
 
 use meloet_engine::{Effect, EffectContext};
 use meloet_model::effects::EffectKind;

@@ -8,6 +8,12 @@ publish.workspace = true
 [dependencies]
 meloet-engine.workspace = true
 meloet-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# MPL-2.0: used as it is, never patched.
+symphonia = { version = "=0.6.1", default-features = false, features = ["flac"] }
 
 [dev-dependencies]
 meloet-engine = { path = "../meloet-engine", features = ["rt-check"] }
+# The tests build their little packs from WAV files.
+symphonia = { version = "=0.6.1", default-features = false, features = ["flac", "wav", "pcm"] }

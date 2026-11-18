@@ -92,7 +92,8 @@ describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベ�
     expect(q('[data-test="pr-velocity-open"]')).toBeNull();
   });
 
-  it("窓 1280×800 で 150 % のとき、ノートは 18 行。たたむと 24 行（たたんだ 72 はノートの場所へ）", () => {
+  // 仕様書 1 章の例は 18 行 ・ 24 行。上のメニューの行（150 % で 36）が入って 2 行ずつへった（design-notes B-59）。
+  it("窓 1280×800 で 150 % のとき、ノートは 16 行。たたむと 22 行（たたんだ 72 はノートの場所へ）", () => {
     const scale: Scale = 150;
     const scene = fakeScene("pianoRoll150")!;
     const band = scene.state.workspace.layout.lower.find((l) => l.band === "pianoRoll")!.height;
@@ -103,8 +104,8 @@ describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベ�
     const rows = (velocity: boolean) => Math.floor((Math.round((band * scale) / 100) - around - (velocity ? n("size.lane.vel") : 0)) / n("size.note"));
     expect(scene.state.workspace.viewportWidth).toBe(1280);
     expect(scene.state.workspace.viewportHeight).toBe(800);
-    expect(rows(true)).toBe(18);
-    expect(rows(false)).toBe(24);
+    expect(rows(true)).toBe(16);
+    expect(rows(false)).toBe(22);
   });
 });
 

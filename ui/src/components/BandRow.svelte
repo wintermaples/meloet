@@ -35,7 +35,7 @@
       open: lower.includes("mixer"),
       term: "ミキサー",
     },
-    { band: "history", name: t("band.history"), count: t("band.stepCount", { undo: app.song.undoCount, total: app.song.undoCount + app.song.redoCount }), key: t("key.history"), open: lower.includes("history") },
+    { band: "history", name: t("band.history"), count: t("band.stepCount", { undo: app.song.undoCount, total: app.song.undoCount + app.song.redoCount }), key: t("key.history"), open: lower.includes("history"), term: "取り消しの履歴" },
   ]);
 
   const backHint = $derived(app.workspace.layout.showBackHint ? t("msg.backToArrange") : null);

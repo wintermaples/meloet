@@ -11,6 +11,7 @@ let clip = $state.raw<ClipView | null>(null);
 let track = $state.raw<TrackView | null>(null);
 let take = $state.raw<TakeNotes | null>(null);
 let origin = $state.raw<TakeNotes | null>(null);
+let takeSerial = 0;
 
 export const shown = {
   /** `arrange.pianoRollClip` のクリップ。なければ null（クリップのない曲）。 */
@@ -49,6 +50,7 @@ export function followShownTake(): void {
     clip = found?.clip ?? null;
     track = found?.track ?? null;
     const id = found?.clip.takeId ?? null;
+    const serial = current.state?.song.serial ?? 0;
     const ticket = ++asked;
     if (id === null) {
       take = null;
@@ -56,11 +58,12 @@ export function followShownTake(): void {
       return;
     }
     // つながる前は取りにいけない（橋が投げる）。つながったら、この $effect がもう一度走る。
-    if (take?.id === id || !current.connected) return;
+    if ((take?.id === id && takeSerial === serial) || !current.connected) return;
     void takeNotes(id).then(async (got) => {
       if (ticket !== asked) return;
       const from = got.origin !== 0 ? await takeNotes(got.origin) : null;
       if (ticket !== asked) return;
+      takeSerial = serial;
       take = got;
       origin = from;
     });

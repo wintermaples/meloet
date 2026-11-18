@@ -95,6 +95,9 @@ export class TakeStore {
   /** Let go of, oldest first. Rust still has them, so dropping one too many only costs a fetch. */
   private readonly dropped = new Map<number, TakeNotes>();
 
+  /** Goes up on `clear`: an answer asked for before it may be of the other song. */
+  private generation = 0;
+
   constructor(private readonly fetch: (id: number) => Promise<ArrayBuffer>) {}
 
   get(id: number): Promise<TakeNotes> {
@@ -102,17 +105,30 @@ export class TakeStore {
     if (had) return Promise.resolve(had);
     let p = this.pending.get(id);
     if (!p) {
-      p = this.fetch(id)
+      const generation = this.generation;
+      const asked: Promise<TakeNotes> = this.fetch(id)
         .then((bytes) => {
+          if (generation !== this.generation) return this.get(id);
           const take = decodeTake(bytes);
           if (take.id !== id) throw new Error(`asked for take ${id}, got ${take.id}`);
           this.ready.set(id, take);
           return take;
         })
-        .finally(() => this.pending.delete(id));
+        .finally(() => {
+          if (this.pending.get(id) === asked) this.pending.delete(id);
+        });
+      p = asked;
       this.pending.set(id, p);
     }
     return p;
+  }
+
+  /** Lets go of every take, also the ones on the way: another song came, and take ids start again per song. */
+  clear(): void {
+    this.generation += 1;
+    this.pending.clear();
+    this.ready.clear();
+    this.dropped.clear();
   }
 
   /** The take if it is here already; for drawing a frame without waiting. */

@@ -2,7 +2,7 @@
 //! another). The files themselves are read and written by the core thread
 //! ([`crate::songfile`]); the windows to pick them are the shell's.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use meloet_model::Song;
 use meloet_protocol::{SongAnswer, SongDialogKind, SongDialogView, SongFile};
@@ -35,6 +35,7 @@ enum Waiting {
     Save(Then),
     PickFile,
     PickFolder(Then),
+    PickSaveAs,
     Read,
 }
 
@@ -48,6 +49,9 @@ pub(super) struct Files {
     /// Asked to close while recording: once the take is in the song.
     close_when_recorded: bool,
     exiting: bool,
+    /// The name typed in the save window, for the save that goes on from there (also after
+    /// "保存できない" and a folder picked).
+    save_as: Option<String>,
 }
 
 impl Files {
@@ -104,7 +108,18 @@ impl Model {
 
     pub(super) fn save_song(&mut self, effects: &mut Vec<Effect>) {
         if self.song_free() {
+            self.files.save_as = None;
             self.save(Then::Stay, None, effects);
+        }
+    }
+
+    /// Mod Shift S. The song gets a new folder where the user picks, and the name typed there.
+    pub(super) fn save_song_as(&mut self, effects: &mut Vec<Effect>) {
+        if self.song_free() {
+            self.files.waiting = Some(Waiting::PickSaveAs);
+            effects.push(Effect::PickSaveAs {
+                name: self.play.song().doc.name.clone(),
+            });
         }
     }
 
@@ -167,8 +182,16 @@ impl Model {
                     None => self.put_up(SongDialogKind::CannotSave, then, None),
                 }
             }
+            (Input::SaveAsPicked(picked), Some(Waiting::PickSaveAs)) => {
+                self.files.waiting = None;
+                if let Some((folder, name)) = picked.as_deref().and_then(split_save_as) {
+                    self.files.save_as = Some(name);
+                    self.save(Then::Stay, Some(folder), effects);
+                }
+            }
             (Input::SongSaved { path, name }, Some(Waiting::Save(then))) => {
                 self.files.waiting = None;
+                self.files.save_as = None;
                 self.files.path = Some(path);
                 self.play.saved_as(name);
                 self.recovery_done(effects);
@@ -225,6 +248,7 @@ impl Model {
 
     /// Asks first when there is something unsaved to lose.
     fn let_go(&mut self, then: Then, effects: &mut Vec<Effect>) {
+        self.files.save_as = None;
         if self.play.has_unsaved_changes() {
             self.put_up(SongDialogKind::Unsaved, then, None);
         } else {
@@ -238,9 +262,15 @@ impl Model {
             (None, Some(path)) => SaveTo::File(path.clone()),
             (None, None) => SaveTo::NewFolder(None),
         };
+        let mut song = self.play.song().clone();
+        if let (SaveTo::NewFolder(Some(_)), Some(name)) = (&to, &self.files.save_as) {
+            // Later the song folder holds `audio/` and `plugins/` too: a save under a new name
+            // must copy them into the new folder.
+            song.doc.name = name.clone();
+        }
         self.files.waiting = Some(Waiting::Save(then));
         effects.push(Effect::SaveSong {
-            song: Box::new(self.play.song().clone()),
+            song: Box::new(song),
             to,
         });
     }
@@ -297,6 +327,16 @@ impl Model {
             path,
         });
     }
+}
+
+/// The folder and the song's name from the path the save window gave. A name typed with the
+/// song file's extension is taken without it.
+fn split_save_as(path: &Path) -> Option<(PathBuf, String)> {
+    let folder = path.parent().filter(|d| !d.as_os_str().is_empty())?;
+    let name = path.file_name()?.to_string_lossy();
+    let suffix = format!(".{}", crate::songfile::EXTENSION);
+    let name = name.strip_suffix(&suffix).unwrap_or(&name).trim();
+    (!name.is_empty()).then(|| (folder.to_path_buf(), name.to_owned()))
 }
 
 #[cfg(test)]

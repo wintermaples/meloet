@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -250,7 +250,8 @@ pub enum Command {
     /// of key, ↑ ↓ on selected notes as a chord. Whatever was sounding stops first: this
     /// replaces it. Empty `keys` only stops. The screen times how long it sounds (↑ ↓: about
     /// 0.3 s) and sends `AuditionOff`, and sends the fixed velocity while
-    /// `KeyboardsView::velocity_fixed` is on. Keys outside the locked scale are left out.
+    /// `KeyboardsView::velocity_fixed` is on. Keys outside the locked scale are left out, and
+    /// keys past the first 16.
     ///
     /// Not recorded, and no `Event::Note` comes back for it. The keys lit in the piano roll's
     /// keyboard column are the keys played (`Event::Note`) and the keys the screen sounds
@@ -491,6 +492,16 @@ pub enum ValueField {
     Length,
     /// "1. 1. 000" of the transport (B-61).
     PlayPosition,
+    /// One part of a position ("1. 1. 000" of the transport, the position of a note), for
+    /// `ClampValue` (B-68): when the bar, the beat or the tick was put in its range, the screen
+    /// sends one `ClampValue` naming the part that was (the first of bar, beat, tick when more
+    /// than one was), with `value` the whole position as set ("3. 4. 000"). `Bar` has no
+    /// `range` ("小節は 1 からなので、1. 1. 000 にしました。"); `Beat` and `Tick` send theirs, as
+    /// they depend on the meter ("1〜4", "0〜479"). A note's position out of its clip is
+    /// `Position` with the clip's range, as before.
+    Bar,
+    Beat,
+    Tick,
 }
 
 /// The buttons of the song dialogs, one for one.
@@ -603,6 +614,9 @@ impl AppState {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SongView {
+    /// Goes up each time core puts another song in place (new, open, recovery, "戻さない"),
+    /// not on undo or redo. Take ids are per song: keep takes by (serial, id).
+    pub serial: u32,
     pub name: String,
     pub tempo_bpm: f64,
     pub meter_num: u8,
@@ -1216,6 +1230,14 @@ pub enum StatusMessage {
         count: u32,
         value: u8,
     },
+    /// `MoveClips` without `copy` did nothing, as a clip would overlap one outside the group
+    /// (B-71): "ほかのクリップと重なるので、動かしませんでした。"
+    ClipsNotMoved,
+    /// `PasteClips` did nothing for the same reason: "ほかのクリップと重なるので、貼りつけませんでした。"
+    ClipsNotPasted,
+    /// `DuplicateClips`, or `MoveClips` with `copy` (Alt + drag), did nothing for the same
+    /// reason: "ほかのクリップと重なるので、複製できませんでした。"
+    ClipsNotDuplicated,
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
     /// piano roll are selected ("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み…", mock

@@ -30,12 +30,17 @@ export async function connect(handlers: Handlers): Promise<Connection> {
     (error) => handlers.onError?.(error),
   );
   let song: AppState["song"] | null = null;
+  let serial: number | null = null;
   connection = await connectWith(pickTransport(), {
     ...handlers,
     onState(state, rev) {
       // The song section is replaced whole when it changes; that is when takes may stop being used.
       if (state.song !== song) {
         song = state.song;
+        if (song.serial !== serial) {
+          serial = song.serial;
+          takes.clear();
+        }
         takes.keepOnly(songTakeIds(song));
       }
       handlers.onState(state, rev);

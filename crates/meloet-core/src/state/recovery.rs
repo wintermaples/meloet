@@ -78,7 +78,7 @@ impl Model {
                     .map(|c| c.takes.len() as u32)
                     .sum();
                 let name = song.doc.name.clone();
-                let mut base = match (saved, &path) {
+                let base = match (saved, &path) {
                     (Some(saved), _) => saved.doc,
                     (None, None) => Doc::new_default(),
                     // The file is gone or broken: what "戻さない" gives keeps the name only.
@@ -87,7 +87,6 @@ impl Model {
                         ..Doc::new_default()
                     },
                 };
-                base.next_id = base.next_id.max(song.doc.next_id);
                 self.recovery.saved = Some(base.clone());
                 self.recovery.view = Some(RecoveryView::Recovered {
                     written_ms,

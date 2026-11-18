@@ -1,4 +1,4 @@
-<!-- 上のメニューの行（design-notes B-59）。再生まわりの上、高さ size.row。左から「ファイル 編集 表示 再生 ノート トラック」。
+<!-- 上のメニューの行（仕様書 2 章「上のメニューの行」、モック R5-Menus）。再生まわりの上、高さ size.menubar。左から「ファイル 編集 表示 再生 ノート トラック」。
      押すとすぐ下に一覧（MenuList）。ひらいている間は、ほかの名前にマウスを乗せると切りかわる。F10 は keys/attach.ts。
      Esc は Esc の順の「用語の説明やメニュー」の番（keys/attach.ts）。外を押すと、とじる。 -->
 <script lang="ts">
@@ -115,14 +115,13 @@
 {/if}
 
 <style>
-  /* 地と下の線は再生まわりと同じ。名前は文字だけのボタン（帯札と同じ）で、ひらいている名前は状態行の「拡大率」のひらいている形。 */
   .menubar {
-    height: var(--size-row);
+    height: var(--size-menubar);
     flex-shrink: 0;
     display: flex;
     align-items: stretch;
     padding: 0 var(--space-1);
-    background: var(--color-gray-3);
+    background: var(--color-gray-1);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     white-space: nowrap;
     overflow: hidden;
@@ -131,7 +130,6 @@
     display: inline-flex;
     align-items: center;
     padding: 0 var(--space-2);
-    border: var(--line-hair) solid transparent;
     color: var(--color-gray-9);
   }
   .name:hover {
@@ -139,7 +137,6 @@
   }
   .name.open {
     background: var(--color-gray-4);
-    border-color: var(--color-gray-8);
     color: var(--color-gray-10);
   }
   .name:focus-visible {

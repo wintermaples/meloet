@@ -177,6 +177,7 @@ describe("メニューの中身（B-59）", () => {
     const menus = topMenus(s, depsOf(s, []), "other");
     const checks = (entries: ListEntry[]) => rows(entries).map((r) => `${r.label}${r.checked ? "*" : ""}${r.usable ? "" : "!"}`);
     expect(checks(row(menus[2]!.entries, "拡大率").sub!)).toEqual(["100 %", "125 %*", "150 %!"]);
+    expect(rows(row(menus[2]!.entries, "拡大率").sub!).map((r) => r.hint ?? null)).toEqual([null, null, "この画面には入りません"]);
     expect(checks(menus[3]!.entries)).toContain("ループ*");
     expect(checks(menus[3]!.entries)).toContain("メトロノーム");
     expect(checks(row(menus[3]!.entries, "カウントイン").sub!)).toEqual(["なし", "1 小節", "2 小節*"]);

@@ -65,7 +65,7 @@
       <span class="rate m-num">{t("status.scale", { scale: s })}</span>
       {#if !usable}<span class="m-lbl" data-test="zoom-unfit">{t("msg.scaleDoesNotFit")}</span>{/if}
       <span class="m-spacer"></span>
-      <span class="m-num m-lbl" data-test="zoom-key">{keyLabel(i + 1)}</span>
+      <span class="m-num m-lbl key" data-test="zoom-key">{keyLabel(i + 1)}</span>
     </button>
   {/each}
 </div>
@@ -141,14 +141,15 @@
     color: var(--color-gray-10);
   }
 
-  /* 使えない（仕様書 2 章）: 枠 gray.5 ・ 文字 gray.7 ・ 押せない。理由の文とキーは gray.8 のまま（モック F-Zoom）。 */
+  /* 使えない（仕様書 2 章）: 枠 gray.5 ・ 文字 gray.7 ・ 押せない。キーも gray.7。理由の文は gray.8 のまま（モック F-Zoom）。 */
   .unusable .choice {
     border-color: var(--color-gray-5);
   }
   .unusable .choice .dot {
     background: none;
   }
-  .unusable .rate {
+  .unusable .rate,
+  .unusable .key {
     color: var(--color-gray-7);
   }
 </style>

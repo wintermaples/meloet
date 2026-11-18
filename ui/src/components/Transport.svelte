@@ -47,8 +47,8 @@
   let ruler = $state<HTMLElement>();
   let parts = $state<TransportParts>({ keys: true, songName: true, load: true, countIn: true, positionLabels: true });
 
-  // ボタンの右はしのキー（仕様書 4 章、docs/design-notes.md B-73）。▶ と ■ はどちらも Space。
-  const KEYS = [t("key.toStart"), t("key.playStop"), t("key.playStop"), t("key.record"), t("key.loop"), t("key.metronome")] as const;
+  // ボタンの右はしのキー（仕様書 4 章、モック F-WideArrange）。停止とカウントインには書かない。
+  const KEYS = [t("key.toStart"), t("key.playStop"), t("key.record"), t("key.loop"), t("key.metronome")] as const;
 
   function measure(): void {
     if (!row || !ruler) return;
@@ -122,7 +122,7 @@
 
   $effect(() => {
     // 中身が変わったら測りなおす（ResizeObserver のない所でも、決まりの通りに出す）。
-    void [counting, beatsPerBar, song.name, song.tempoBpm, meter, transport.countInBars, metrics.scale];
+    void [counting, beatsPerBar, song.name, fileText, song.tempoBpm, meter, transport.countInBars, metrics.scale];
     untrack(measure);
   });
 
@@ -197,13 +197,15 @@
       { value: { type: "saveSong" } as Command, label: t("song.save"), key: modKey(t("key.saveSong")), usable },
     ];
   });
-  const fileText = $derived(
-    song.file === "neverSaved"
-      ? t("transport.songNew")
+  // 取り消しは「取り消せる手 / 全部の手」（取り消しの履歴の帯札と同じ数）。
+  const fileText = $derived.by(() => {
+    const undo = { undo: song.undoCount, total: song.undoCount + song.redoCount };
+    return song.file === "neverSaved"
+      ? t("transport.songNewUndo", undo)
       : song.file === "saved"
-        ? t("transport.songSaved", { count: song.undoCount })
-        : t("transport.songChanged", { count: song.undoCount }),
-  );
+        ? t("transport.songSaved", undo)
+        : t("transport.songChanged", undo);
+  });
   function pickSong(command: Command): void {
     send(command);
     closeMenu();
@@ -343,7 +345,6 @@
       onclick={stop}
     >
       <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1h8v8H1z" fill="currentColor" /></svg>
-      {@render key(2)}
     </button>
     <button
       class="m-btn record"
@@ -354,7 +355,7 @@
       onclick={record}
     >
       <span class="rec"></span>
-      {@render key(3)}
+      {@render key(2)}
     </button>
     <button
       class="m-btn"
@@ -362,7 +363,7 @@
       aria-pressed={song.loopOn}
       data-test="transport-loop"
       use:term={"ループ"}
-      onclick={() => send({ type: "toggleLoop" })}>{t("transport.loop")}{@render key(4)}</button
+      onclick={() => send({ type: "toggleLoop" })}>{t("transport.loop")}{@render key(3)}</button
     >
   </div>
 
@@ -418,7 +419,7 @@
     aria-pressed={transport.metronome}
     data-test="transport-metronome"
     use:term={"メトロノーム"}
-    onclick={() => send({ type: "toggleMetronome" })}>{t("transport.metronome")}{@render key(5)}</button
+    onclick={() => send({ type: "toggleMetronome" })}>{t("transport.metronome")}{@render key(4)}</button
   >
   {#if !parts.countIn}
     <button
@@ -644,6 +645,7 @@
   .master-head {
     display: flex;
     justify-content: space-between;
+    gap: var(--space-1);
     align-items: baseline;
   }
   .master-db {

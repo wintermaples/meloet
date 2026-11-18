@@ -133,8 +133,9 @@
         >
           <span class="choice" class:selected={entry.checked === true}><span class="dot"></span></span>
           <span class="label">{entry.label}</span>
+          {#if entry.hint}<span class="m-lbl hint" data-test="menu-hint">{entry.hint}</span>{/if}
           <span class="m-spacer"></span>
-          {#if entry.sub}<span class="m-lbl">▸</span>{:else if entry.key}<span class="m-num m-lbl">{entry.key}</span>{/if}
+          {#if entry.sub}<span class="m-lbl key">▸</span>{:else if entry.key}<span class="m-num m-lbl key">{entry.key}</span>{/if}
         </button>
         {#if entry.sub && subOpen === i}
           <div class="sub">
@@ -173,11 +174,11 @@
     background: var(--color-gray-4);
     flex-shrink: 0;
   }
-  /* 行と行の間のまとまりの区切り（右クリックの一覧）。高さはとらず、行の下の線を gray.6 にする。 */
+  /* まとまりの区切り（仕様書 2 章「一覧の行 ・ 足した形」）: 上下 space.1 をあけた gray.5 の line.hair。 */
   .separator {
     flex-shrink: 0;
-    border-top: var(--line-hair) solid var(--color-gray-6);
-    margin-top: calc(-1 * var(--line-hair));
+    border-top: var(--line-hair) solid var(--color-gray-5);
+    margin: var(--space-1) 0;
   }
   .row {
     height: var(--part-list-row);
@@ -227,8 +228,9 @@
   .label {
     color: var(--color-gray-10);
   }
-  /* 使えない（仕様書 2 章）: 印の枠 gray.5 ・ 文字 gray.7 ・ 押せない。キーは gray.8 のまま（モック F-Zoom）。 */
-  .unusable .label {
+  /* 使えない（仕様書 2 章）: 印の枠 gray.5 ・ 文字 gray.7 ・ 押せない。キーも gray.7。 */
+  .unusable .label,
+  .unusable .key {
     color: var(--color-gray-7);
   }
   .unusable .choice {
@@ -236,6 +238,13 @@
   }
   .unusable .choice.selected .dot {
     background: var(--color-gray-7);
+  }
+  /* 使えない理由（「この画面には入りません」）は、乗せている間だけ出す（モック R5-Menus）。幅は先にとっておき、乗せても一覧の幅を変えない。 */
+  .hint {
+    visibility: hidden;
+  }
+  .row:hover .hint {
+    visibility: visible;
   }
   .sub {
     position: absolute;

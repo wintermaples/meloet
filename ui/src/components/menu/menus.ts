@@ -20,6 +20,8 @@ export interface ListRow {
   /** オン ・ オフの行と、えらぶ行の選ぶ印。undefined は「することの行」（印はからのまま）。 */
   checked?: boolean;
   run?: () => void;
+  /** 使えない理由。乗せている間だけ、行の中に出す。 */
+  hint?: string;
   /** ▸ の子の一覧（右にひらく）。 */
   sub?: ListEntry[];
 }
@@ -121,9 +123,11 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     plain("menu.zoomRowsIn", prOpen, () => void zoomRowsBy(1)),
     plain("menu.zoomRowsOut", prOpen, () => void zoomRowsBy(-1)),
     plain("menu.scale", true, undefined, {
-      sub: SCALES.map((s, i) =>
-        choice(t("status.scale", { scale: s }), s === scale, !unfit.includes(s), send({ type: "setScale", percent: s }), k.modAlt(String(i + 1))),
-      ),
+      sub: SCALES.map((s, i) => {
+        const fits = !unfit.includes(s);
+        const row = choice(t("status.scale", { scale: s }), s === scale, fits, send({ type: "setScale", percent: s }), k.modAlt(String(i + 1)));
+        return fits ? row : { ...row, hint: t("msg.scaleDoesNotFit") };
+      }),
     }),
   ];
 

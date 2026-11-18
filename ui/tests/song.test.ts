@@ -41,15 +41,17 @@ const text = (sel: string) => q(sel)?.textContent?.replace(/\s+/g, " ").trim() ?
 
 describe("曲の名前の下の文", () => {
   it.each([
-    ["neverSaved", 0, "新しい曲"],
-    ["saved", 14, "保存済み ・ 取り消し 14"],
-    ["changed", 12, "取り消し 12"],
-  ] as const)("%s", (file, undo, expected) => {
+    ["neverSaved", 0, 0, "新しい曲 ・ 取り消し 0 / 0"],
+    ["saved", 14, 0, "保存済み ・ 取り消し 14 / 14"],
+    ["changed", 12, 2, "未保存の変更 ・ 取り消し 12 / 14"],
+    ["changed", 1, 0, "未保存の変更 ・ 取り消し 1 / 1"],
+  ] as const)("%s %i", (file, undo, redo, expected) => {
     show(
       Transport,
       app.stateWith((s) => {
         s.song.file = file;
         s.song.undoCount = undo;
+        s.song.redoCount = redo;
       }),
     );
     expect(q('[data-test="transport-song"] .m-lbl')!.textContent).toBe(expected);

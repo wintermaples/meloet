@@ -251,6 +251,13 @@
     );
   }
 
+  /** 止まっているときの左の文の終わりに足す「4 パッド ・ 5 ベース はミュート」（モック Main）。 */
+  function mutedParts(): TextPart[] {
+    const muted = app.song.tracks.filter((x) => x.muted).map(track);
+    if (muted.length === 0) return [];
+    return textParts(muted.length === 1 ? "status.muted" : "status.mutedMany", { tracks: muted.join(STATUS_JOIN) });
+  }
+
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
@@ -259,7 +266,12 @@
       const parts = playingParts();
       if (parts) return { parts, strong: [], button: null };
     }
-    return shown(m);
+    const base = shown(m);
+    if (app.transport.state === "stopped" && (m === null || m.id === "summary")) {
+      const muted = mutedParts();
+      if (muted.length > 0) return { parts: joined(base?.parts ?? [], muted), strong: base?.strong ?? [], button: base?.button ?? null };
+    }
+    return base;
   });
 
   /** いちばん左の札（ヤチヨさんの決め 2026-11-15）。録音とカウントインは rec。 */

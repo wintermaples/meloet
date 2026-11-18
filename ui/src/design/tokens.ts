@@ -55,6 +55,7 @@ export const space = {
 export type SpaceName = keyof typeof space;
 
 export const size = {
+  "size.menubar": [24, 30, 36],
   "size.transport": [48, 60, 72],
   "size.meter.full": [52, 65, 78],
   "size.meter.slim": [24, 30, 36],
@@ -231,7 +232,7 @@ export const mock = {
   "mock.transport.master": m(132, "F-Empty"),
   // 位置のラベルを引っこめたときの、位置の枠の高さとマスターの幅。
   "mock.transport.readout-narrow": m(32, "F-PR150"),
-  "mock.transport.master-narrow": m(96, "F-PR150"),
+  "mock.transport.master-narrow": m(100, "F-PR150"),
   "mock.arrange.bar": m(64, "F-Empty"),
   "mock.arrange.add-track": m(32, "F-Empty"),
   "mock.track.number": m(16, "F-Empty"),

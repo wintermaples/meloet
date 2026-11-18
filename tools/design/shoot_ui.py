@@ -45,6 +45,10 @@ BOARDS = {
     "countIn": "F-Connect4",
     "takesArrange": "F-Takes",
     "loop": "Main",
+    "muted": "Main",
+    "menuFile": "R5-Menus",
+    "menuZoom": "R5-Menus",
+    "menuClip": "R5-Menus",
     "recover1": "F-Recover1",
     "recover2": "F-Recover2",
     "recover3": "F-Recover3",
@@ -83,6 +87,14 @@ ev("pointermove", %d, %s);
 """
 
 
+# Right-clicks "Aメロ" of the piano (bars 5–8) to open the clip's list (R5-Menus).
+CONTEXT_CLIP = """
+const lanes = document.querySelector(".lanes");
+const r = lanes.getBoundingClientRect();
+lanes.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 300, clientY: r.top + 30 }));
+"""
+
+
 def drag_clip(x0, x1, opts="{}"):
     return "js:" + DRAG_CLIP % (x0, opts, x0, x1, opts, x1, opts)
 
@@ -105,6 +117,9 @@ CLICKS = {
     "arrangeMoveDrag": ("arrangeTrimmed", drag_clip(300, 364)),
     "arrangeCopyDrag": ("arrangeTrimmed", drag_clip(300, 556, "{ altKey: true }")),
     "arrangeTrimDrag": ("arrangeTrimmed", drag_clip(509, 413, "{ shiftKey: true }")),
+    "menuFile": ("saved", '[data-menu="0"]'),
+    "menuZoom": ("muted", ('[data-menu="2"]', '[data-test="menubar-list"] [data-row="10"]')),
+    "menuClip": ("muted", "js:" + CONTEXT_CLIP),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -128,6 +143,9 @@ ONLY = {
     "arrangeMoveDrag": [(1280, 800, 100)],
     "arrangeCopyDrag": [(1280, 800, 100)],
     "arrangeTrimDrag": [(1280, 800, 100)],
+    "menuFile": [(1280, 800, 100), (1280, 800, 150)],
+    "menuZoom": [(1280, 800, 100)],
+    "menuClip": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

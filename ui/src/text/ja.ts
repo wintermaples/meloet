@@ -273,8 +273,9 @@ export const texts = {
 
   // 再生まわり
   "transport.songNew": e("新しい曲", "mock:F-Connect1"),
-  "transport.songSaved": e("保存済み ・ 取り消し {count}", "mock:Main", { count: "14" }),
-  "transport.songChanged": e("取り消し {count}", "mock:F-ArrangeRec", { count: "12" }),
+  "transport.songNewUndo": e("新しい曲 ・ 取り消し {undo} / {total}", "mock:F-PREmpty", { undo: "0", total: "0" }),
+  "transport.songSaved": e("保存済み ・ 取り消し {undo} / {total}", "mock:F-WideArrange", { undo: "14", total: "14" }),
+  "transport.songChanged": e("未保存の変更 ・ 取り消し {undo} / {total}", "mock:F-History", { undo: "12", total: "14" }),
   // 左上の曲の名前を押すとひらく一覧の行。
   "song.new": s6("曲の名前の一覧", "新しい曲", undefined, "quoted"),
   "song.open": s6("曲の名前の一覧", "ひらく…", undefined, "quoted"),
@@ -393,6 +394,9 @@ export const texts = {
   "status.loopNoSelection": s6("止まっているときの状態行の左", "ループ {from}–{to} ・ 選択なし", { from: "5", to: "9" }, "quoted"),
   "status.loop": e("ループ {from}–{to}", "mock:Main", { from: "5", to: "9" }),
   "status.noSelection": e("選択なし", "mock:Main"),
+  // ミュートしたトラック。2 本以上は名前を「 ・ 」でならべる。
+  "status.muted": e("{tracks} はミュート", "mock:Main", { tracks: "4 パッド" }),
+  "status.mutedMany": e("{tracks} はミュート", "user:2026-11-18", { tracks: "4 パッド ・ 5 ベース" }),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
   "status.outputNone": e("出口: まだ", "spec:3"),
   "status.inputs": e("入口: {inputs}", "mock:Main", { inputs: "鍵盤 49 ・ マイク" }),
@@ -628,6 +632,8 @@ const st = (term: string, description: string): Term => ({ term, description, so
 
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
+  st("取り消しの履歴", "これまでにした手の一覧。どこまで取り消したかが見える。"),
+  st("ベロシティ固定", "鍵盤をどの強さで押しても、決めた強さで鳴らして録る。書く道具のノートも同じ強さになる。"),
   st("なおすためのファイル", "PC が急に終わったときのために、保存していない変更を急いで書いておくファイル。次に起動したとき、ここから戻せる。"),
   st("トラック", "楽器ひとつぶんの列。音源をひとつ持つ。"),
   st("クリップ", "トラックの上に置く、ひとかたまりの演奏や録音。"),
@@ -684,8 +690,6 @@ export const terms: readonly Term[] = [
   st("サンプルレート", "1 秒を何こまに分けて音を記録するか。48000 Hz がふつう。"),
   st("書き出し", "曲を 1 つの音のファイルにすること。"),
   { term: "仮の音", description: "本物のピアノの音が入るまでの、かわりの音。", source: "user:2026-11-14" },
-  { term: "ベロシティ固定", description: "鍵盤をどの強さで押しても、決めた強さで鳴らして録る。書く道具のノートも同じ強さになる。", source: "user:2026-11-18" },
-  { term: "取り消しの履歴", description: "これまでにした手の一覧。どこまで取り消したかが見える。", source: "user:2026-11-18" },
 ];
 
 /** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */

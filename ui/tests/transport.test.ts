@@ -691,6 +691,44 @@ describe("状態行の札と知らせ", () => {
     expect(left()).toContain(expected);
   });
 
+  it.each([
+    [[4], "ループ 5–9 ・ 選択なし ・ 4 パッド はミュート"],
+    [[4, 5], "ループ 5–9 ・ 選択なし ・ 4 パッド ・ 5 ベース はミュート"],
+  ])("ミュートしたトラックは、止まっているときの左の終わりに（モック Main）: %o", (muted, expected) => {
+    show(
+      StatusLine,
+      msg({ id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true, notes: null }, (s) => {
+        s.song.tracks = [1, 2, 3, 4, 5].map((n) => ({
+          ...s.song.tracks[0]!,
+          number: n,
+          name: ["ピアノ", "ドラム", "ギター", "パッド", "ベース"][n - 1]!,
+          muted: muted.includes(n),
+        }));
+      }),
+    );
+    expect(left()).toContain(`■ 停止中 ${expected}`);
+  });
+
+  it("ミュートしたトラックは、ほかに言うことがなくても出す。動いているときと、ほかの知らせの間は出さない", () => {
+    const mutePiano = (s: AppState) => (s.song.tracks[0]!.muted = true);
+    show(StatusLine, msg({ id: "summary", loopBars: null, nothingSelected: false, notes: null }, mutePiano));
+    expect(left()).toContain("■ 停止中 1 ピアノ はミュート");
+    unmount(mounted!);
+    mounted = null;
+    show(StatusLine, msg({ id: "noArmedTrack" }, mutePiano));
+    expect(left()).not.toContain("ミュート");
+    unmount(mounted!);
+    mounted = null;
+    show(
+      StatusLine,
+      msg({ id: "summary", loopBars: null, nothingSelected: true, notes: null }, (s) => {
+        mutePiano(s);
+        s.transport.state = "playing";
+      }),
+    );
+    expect(left()).not.toContain("ミュート");
+  });
+
   it("summary で何もないときは、札だけ", () => {
     show(StatusLine, msg({ id: "summary", loopBars: null, nothingSelected: false, notes: null }));
     expect(text(".status .message")).toBeNull();

@@ -989,6 +989,30 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
+  // The mock Main: the loop scene with the other tracks of F-WidePR, "4 パッド" muted ("… ・ 4 パッド はミュート").
+  muted: {
+    setup(s) {
+      ready(s);
+      s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
+      let id = 200;
+      WIDE_TRACKS.forEach((t, i) => {
+        const clips = t.clips.map(([name, from, to]) => {
+          const take = phrase(++id, to - from, 4 * (to - from), id);
+          FAKE_TAKES.set(take.id, take);
+          return fakeClip(++id, name, from, to, 1, [take.id]);
+        });
+        s.song.tracks.push({ ...s.song.tracks[0]!, number: i + 2, name: t.name, color: i + 2, gainDb: t.gainDb, armed: false, clips });
+      });
+      s.song.tracks[3]!.muted = true;
+      s.song.undoCount = 14;
+      s.song.file = "saved";
+      s.song.loopRange = { start: 4 * BAR, end: 8 * BAR };
+      s.song.loopOn = true;
+      s.transport.position = 4 * BAR;
+      s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true, notes: null };
+    },
+    meters: QUIET,
+  },
   // Not from a mock (B-70, B-71): three tracks; the bass is selected (it is where the keys play) and muted, the drums
   // soloed. "Aメロ" of the piano and "ベース A" are selected together, "ベース A" clicked last. One clip is ready to paste.
   arrangeSelect: { setup: arrangeSelect, meters: QUIET },

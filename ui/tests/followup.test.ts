@@ -141,10 +141,18 @@ describe("ボタンのキー（B-73）", () => {
       edit(s);
     });
 
-  it("再生まわり: ⏮ Home、▶ ・ ■ Space、● R、ループ L、メトロノーム C", () => {
+  it("再生まわり: ⏮ Home、▶ Space、● R、ループ L、メトロノーム C。■ とカウントインには書かない（F-WideArrange）", () => {
     show(Transport, ready());
     const keyOf = (name: string) => text(q(`[data-test="transport-${name}"] .key`));
-    expect(["to-start", "play", "stop", "record", "loop", "metronome"].map(keyOf)).toEqual(["Home", "Space", "Space", "R", "L", "C"]);
+    expect(["to-start", "play", "stop", "record", "loop", "metronome", "count-in"].map(keyOf)).toEqual([
+      "Home",
+      "Space",
+      null,
+      "R",
+      "L",
+      "C",
+      null,
+    ]);
   });
 
   it("ピアノロールの道具: 選ぶ 1 ・ 書く 2 ・ 消す 3", () => {

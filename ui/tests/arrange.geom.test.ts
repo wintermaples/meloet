@@ -101,6 +101,19 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
     ]);
   });
 
+  it("ミュートしたトラック: 中の線だけ gray.7。枠、色の帯、地はそのまま（選んでいても）", () => {
+    const notes = [{ start: 0, length: 480, key: 60 }];
+    for (const colors of [G.CLIP_PLAIN("color.track.1"), G.CLIP_SELECTED]) {
+      const plain: GlRect[] = [];
+      const muted: GlRect[] = [];
+      G.paintClip(plain, view(), dims, G.clipBox(view(), dims, 0, 0, BAR), colors, notes);
+      G.paintClip(muted, view(), dims, G.clipBox(view(), dims, 0, 0, BAR), G.clipColorsFor(colors, true), notes);
+      expect(muted.slice(0, 3)).toEqual(plain.slice(0, 3));
+      expect(muted.slice(3).map((r) => r.color)).toEqual(["color.gray.7"]);
+      expect(G.clipColorsFor(colors, false)).toBe(colors);
+    }
+  });
+
   it("見えている幅の外は描かず、外へ出たはしは枠を描かない。鍵が 1 つだけならまん中", () => {
     const out: GlRect[] = [];
     G.paintClip(

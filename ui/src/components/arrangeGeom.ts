@@ -80,6 +80,11 @@ export const CLIP_RECORDING: ClipColors = {
   note: "color.rec",
 };
 
+/** ミュートしたトラックのクリップ（仕様書 2 章「ミュートしたトラック」）: 中の線だけ gray.7。名前と色の帯はそのまま。 */
+export function clipColorsFor(colors: ClipColors, muted: boolean): ClipColors {
+  return muted ? { ...colors, note: "color.gray.7" } : colors;
+}
+
 export function trackColor(track: Pick<TrackView, "color">): ColorName {
   return `color.track.${((track.color - 1) % 5) + 1}` as ColorName;
 }

@@ -262,7 +262,8 @@
       const local: G.View = { pxPerTick, scrollX: first * pxPerTick, width: Infinity };
       for (const { clip, row } of d.group) {
         const inner = G.clipBox(local, dims, row, clip.start, clip.end);
-        G.paintClip(rects, local, dims, { ...inner, y0: inner.y0 - top, y1: inner.y1 - top }, G.CLIP_SELECTED, notesOf(row, clip));
+        const colors = G.clipColorsFor(G.CLIP_SELECTED, song.tracks[row]?.muted ?? false);
+        G.paintClip(rects, local, dims, { ...inner, y0: inner.y0 - top, y1: inner.y1 - top }, colors, notesOf(row, clip));
         labels.push(labelOf(clip, G.clipBox(view, dims, row, clip.start, clip.end)));
       }
       place = { left: G.tickToX(view, first), top, width: (last - first) * pxPerTick, height: bottom - top };
@@ -272,7 +273,7 @@
       const clip = { start: d.start, end: d.end, takeOffset: d.clip.start + d.clip.takeOffset - d.start };
       const box = G.clipBox(view, dims, d.row, d.start, d.end);
       const notes = take ? G.takeShapes(clip, take) : notesOf(d.row, d.clip).filter((n) => n.start >= d.start && n.start < d.end);
-      G.paintClip(rects, view, dims, box, G.CLIP_SELECTED, notes);
+      G.paintClip(rects, view, dims, box, G.clipColorsFor(G.CLIP_SELECTED, song.tracks[d.row]?.muted ?? false), notes);
       for (const q of rects) q.y -= box.y0;
       place = { left: 0, top: box.y0, width: view.width, height: box.y1 - box.y0 };
       labels.push(labelOf(d.clip, box));
@@ -314,7 +315,7 @@
           continue;
         }
         const colors = selectedSet.has(clip.id) && !dragged ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track));
-        G.paintClip(out, view, dims, box, colors, shapesOf(track.number, clip));
+        G.paintClip(out, view, dims, box, G.clipColorsFor(colors, track.muted), shapesOf(track.number, clip));
       }
     });
     const shown = recShown;

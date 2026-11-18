@@ -1,8 +1,8 @@
 //! Band rules (design spec section 3). All sizes are px at 100 % zoom.
 //! `SIZE_*` are the spec's `size.*` values (section 1).
 
-/// The menu row above the transport (design notes B-59): `size.row`.
-pub const SIZE_ROW: f64 = 24.0;
+/// The menu row above the transport.
+pub const SIZE_MENUBAR: f64 = 24.0;
 pub const SIZE_TRANSPORT: f64 = 48.0;
 pub const SIZE_BANDROW: f64 = 24.0;
 pub const SIZE_STATUS: f64 = 24.0;
@@ -250,7 +250,8 @@ impl Bands {
     /// What is left when the arrange view is at `size.overview` and every open band at its
     /// smallest. Negative: they do not fit.
     fn spare(&self) -> f64 {
-        let fixed = SIZE_ROW + SIZE_TRANSPORT + self.meter().height() + SIZE_BANDROW + SIZE_STATUS;
+        let fixed =
+            SIZE_MENUBAR + SIZE_TRANSPORT + self.meter().height() + SIZE_BANDROW + SIZE_STATUS;
         let smallest_sum: f64 = self.bottom_open.iter().map(|&b| smallest(b)).sum();
         self.window.height - fixed - SIZE_OVERVIEW - smallest_sum
     }

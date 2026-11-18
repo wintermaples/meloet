@@ -106,7 +106,7 @@
       >
         <span class="choice" class:selected={checked === true}><span class="dot"></span></span>
         <span class="label m-num">{row.label}</span>
-        {#if row.key}<span class="m-spacer"></span><span class="m-num m-lbl">{row.key}</span>{/if}
+        {#if row.key}<span class="m-spacer"></span><span class="m-num m-lbl key">{row.key}</span>{/if}
       </button>
     {/if}
   {/each}
@@ -179,8 +179,9 @@
   .row:disabled {
     cursor: default;
   }
-  /* 使えない（仕様書 2 章）: 文字 gray.7 ・ 押せない。キーは gray.8 のまま（モック F-Zoom）。 */
-  .unusable .label {
+  /* 使えない（仕様書 2 章）: 文字 gray.7 ・ 押せない。キーも gray.7。 */
+  .unusable .label,
+  .unusable .key {
     color: var(--color-gray-7);
   }
   .unusable .choice {

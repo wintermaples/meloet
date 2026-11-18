@@ -87,6 +87,9 @@ BOARDS = {
     "about": "R7-About",
     "aboutLicenses": "R7-AboutLicense",
     "aboutPart": "R7-AboutLicense",
+    # 第 4 回 区切り3: パラメータの欄と棚のエフェクト。
+    "paramsDelay": "R6-Delay",
+    "shelfEffects": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -262,6 +265,8 @@ ONLY = {
     "aboutPart": [(1280, 800, 100), (1920, 1080, 150)],
     # 第 4 回 区切り3: ミキサー（F4-Mixer は 1280x800 の 100 %）。150 % は形が入るかを見るため。
     "mixer": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
+    "paramsDelay": [(1280, 800, 100), (1280, 800, 150)],
+    "shelfEffects": [(1280, 800, 100), (1920, 1080, 150)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

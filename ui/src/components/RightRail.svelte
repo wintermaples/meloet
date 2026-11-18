@@ -1,10 +1,12 @@
 <!-- 右はし: ひらいた欄（棚かパラメータ。前に出ている物だけ）と、たたんだ物の縦の見出し。
-     モック F-Empty（縦の見出し）、A-Mixer・F-ParamFew（ひらいた欄の見出しの行）。棚の中身は Shelf.svelte。 -->
+     モック F-Empty（縦の見出し）、F-WindowOpen（パラメータの縦の見出しの、えらんだ子の名前と数）。中身は Shelf.svelte と params/ParamsPanel.svelte。 -->
 <script lang="ts">
   import type { Band } from "../bridge";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import { metrics } from "./metrics.svelte";
+  import ParamsPanel from "./params/ParamsPanel.svelte";
+  import { allRows, rowCount } from "./params/paramRows";
   import Shelf from "./Shelf.svelte";
   import { BUILTIN_EFFECTS, shelfToggle } from "./tracks.svelte";
 
@@ -15,6 +17,10 @@
   const tabs = $derived(RIGHT.filter((b) => b !== front));
   const toggle = (band: Band) => send(band === "shelf" ? shelfToggle(current.state!) : { type: "toggleBand", band });
   const instruments = $derived(current.state!.shelf.available.length);
+  const selected = $derived(current.state!.params.selected);
+  const paramsCount = $derived(
+    selected ? t("params.tabCount", { name: t(`effect.${selected.effect}`), count: rowCount(allRows(selected.effect, selected.values)) }) : null,
+  );
 
   // When the window is too low for every vertical heading, the shelf counts go first.
   let nav = $state<HTMLElement>();
@@ -53,14 +59,7 @@
 {#if front === "shelf"}
   <Shelf />
 {:else if front}
-  <aside class="panel" data-band={front}>
-    <button class="m-plain head m-focus-in" onclick={() => toggle(front)} data-test="rail-fold">
-      <span class="m-hi">▾</span>
-      {@render title(front)}
-      <span class="m-spacer"></span>
-      <span class="m-num m-lbl">{t("key.params")}</span>
-    </button>
-  </aside>
+  <ParamsPanel onfold={() => toggle(front)} />
 {/if}
 
 <nav class="tabs" bind:this={nav}>
@@ -71,6 +70,8 @@
       <span class="vt">{@render title(band)}</span>
       {#if band === "shelf" && countsFit}
         <span class="vt m-lbl">{t("band.shelfCount", { instruments, effects: BUILTIN_EFFECTS })}</span>
+      {:else if band === "params" && paramsCount && countsFit}
+        <span class="vt m-lbl" data-test="params-tab-count">{paramsCount}</span>
       {/if}
       <span class="m-num m-lbl">{band === "shelf" ? t("key.shelf") : t("key.params")}</span>
     </button>
@@ -78,25 +79,6 @@
 </nav>
 
 <style>
-  .panel {
-    width: var(--size-shelf);
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    background: var(--color-gray-3);
-    border-left: var(--line-hair) solid var(--color-gray-6);
-  }
-  .head {
-    width: 100%;
-    height: var(--size-row);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: 0 var(--space-3);
-    background: var(--color-gray-4);
-    white-space: nowrap;
-  }
   .tabs {
     width: var(--size-tab-v);
     flex-shrink: 0;
@@ -118,12 +100,8 @@
   .tab:hover .m-lbl {
     color: var(--color-gray-10);
   }
-  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。ひらいた欄の見出し（押すとたたむ。B-74）は、乗ったときも枠。 */
-  .head:hover {
-    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
-  }
-  .tab:active,
-  .head:active {
+  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。 */
+  .tab:active {
     background: var(--color-gray-2);
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }

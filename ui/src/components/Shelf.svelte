@@ -1,17 +1,20 @@
 <!-- 棚（右の欄。モック F4-ShelfSample・F4-ShelfAudition・F4-ShelfReplace。幅 size.shelf）。
      見出し（▾ 棚、音源 N ・ エフェクト 6 の切りかえ、P）、いまのモードの文、さがす枠、すべて ・ お気に入り、グループと音源の行。
      さがす文字、お気に入りだけ、たたんだグループは画面だけが持つ（tracks.svelte.ts）。行をえらぶ ・ 入れる ・ やめる ・ 星 ・ サンプルは core への意図。
-     第 4 回の棚は、プラグインの見出しもスキャンも形式の印も出さない（仕様書 3 章 Y10）。エフェクトの中身は区切り3 なので「使えない」。 -->
+     第 4 回の棚は、プラグインの見出しもスキャンも形式の印も出さない（仕様書 3 章 Y10）。
+     見出しの「音源 N」「エフェクト 6」で一覧を切りかえる。エフェクトの行は名前と「最初から入っている」だけ（サンプルの ▶ と星はない）。
+     「空き ＋」からひらいた棚（insertEffect）では、行を押す ・ ↑ ↓ でえらび、Enter で入れる。音源のモードのエフェクトは見るだけ（design-notes A-14）。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { clockOffsetUs, type InstrumentKind } from "../bridge";
+  import { clockOffsetUs, type EffectKind, type InstrumentKind } from "../bridge";
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { findTerm, t } from "../text/ja";
   import Button from "./Button.svelte";
   import { textParts } from "./format";
-  import { BUILTIN_EFFECTS, shelfCounts, shelfGroups, shelfUi } from "./tracks.svelte";
+  import { stripName } from "./mixer/stripName";
+  import { BUILTIN_EFFECTS, shelfCounts, shelfEffects, shelfGroups, shelfUi } from "./tracks.svelte";
 
   const app = $derived(current.state!);
   const shelf = $derived(app.shelf);
@@ -21,22 +24,35 @@
 
   const replaceTrack = $derived(shelf.mode.kind === "replace" ? app.song.tracks.find((x) => x.id === (shelf.mode as { track: number }).track) : null);
   const title = $derived(
-    shelf.mode.kind === "replace" && replaceTrack
-      ? t("shelf.titleReplace", { track: t("track.label", { number: replaceTrack.number, name: replaceTrack.name }) })
-      : t("shelf.titleNewTrack"),
+    shelf.mode.kind === "insertEffect"
+      ? t("shelf.titleInsert", { strip: stripName(app.song, shelf.mode.strip) })
+      : shelf.mode.kind === "replace" && replaceTrack
+        ? t("shelf.titleReplace", { track: t("track.label", { number: replaceTrack.number, name: replaceTrack.name }) })
+        : t("shelf.titleNewTrack"),
   );
+  const inserting = $derived(shelf.mode.kind === "insertEffect");
+  const effects = $derived(shelfEffects(shelfUi.query));
 
   const nameOf = (i: InstrumentKind) => t(`instrument.${i}`);
 
-  // ひらいたとき、モード（新しいトラック ・ 入れかえ）が変わったときは、棚にキーを向ける。
-  const modeKey = $derived(shelf.mode.kind === "replace" ? `replace:${shelf.mode.track}` : "newTrack");
+  // ひらいたとき、モード（新しいトラック ・ 入れかえ ・ エフェクトを入れる）が変わったときは、棚にキーを向け、そのモードの一覧を出す。
+  const modeKey = $derived(JSON.stringify(shelf.mode));
   $effect(() => {
     void modeKey;
-    untrack(() => (shelfUi.keys = true));
+    untrack(() => {
+      shelfUi.keys = true;
+      shelfUi.view = shelf.mode.kind === "insertEffect" ? "effects" : "instruments";
+    });
   });
+
+  function pickEffect(e: EffectKind): void {
+    shelfUi.keys = true;
+    if (inserting && shelf.selectedEffect !== e) send({ type: "shelfSelectEffect", effect: e });
+  }
 
   function pick(i: InstrumentKind): void {
     shelfUi.keys = true;
+    if (inserting) return;
     if (shelf.selected !== i) send({ type: "shelfSelect", instrument: i });
   }
   function toggleGroup(group: (typeof groups)[number]["group"]): void {
@@ -96,8 +112,12 @@
     </button>
     <span class="m-spacer"></span>
     <span class="switches">
-      <Button on>{t("shelf.instrumentCount", { count: counts.all })}</Button>
-      <Button disabled>{t("shelf.effectCount", { count: BUILTIN_EFFECTS })}</Button>
+      <Button on={shelfUi.view === "instruments"} onclick={() => (shelfUi.view = "instruments")} test="shelf-instruments"
+        >{t("shelf.instrumentCount", { count: counts.all })}</Button
+      >
+      <Button on={shelfUi.view === "effects"} onclick={() => (shelfUi.view = "effects")} test="shelf-effects"
+        >{t("shelf.effectCount", { count: BUILTIN_EFFECTS })}</Button
+      >
     </span>
     <span class="m-num m-lbl">{t("key.shelf")}</span>
   </div>
@@ -106,6 +126,23 @@
     <span class="m-lbl">{t("shelf.search")}</span>
     <input class="search" type="text" placeholder={t("shelf.searchLabel")} bind:value={shelfUi.query} data-test="shelf-search" />
   </label>
+  {#if shelfUi.view === "effects"}
+    <ScrollArea data-test="shelf-list">
+      {#each effects as e (e)}
+        <div
+          class="row effect"
+          class:look={!inserting}
+          class:selected={inserting && shelf.selectedEffect === e}
+          role="presentation"
+          data-effect={e}
+          onclick={() => pickEffect(e)}
+        >
+          <span class="name">{t(`effect.${e}`)}</span>
+          <span class="m-lbl">{t("params.builtin")}</span>
+        </div>
+      {/each}
+    </ScrollArea>
+  {:else}
   <div class="bar">
     <Button on={!shelfUi.favoritesOnly} onclick={() => (shelfUi.favoritesOnly = false)} test="shelf-all"
       >{t("shelf.all")} <span class="m-num">{counts.all}</span></Button
@@ -191,6 +228,7 @@
       {/if}
     {/each}
   </ScrollArea>
+  {/if}
 </aside>
 
 <style>
@@ -290,6 +328,16 @@
     white-space: nowrap;
     cursor: pointer;
   }
+  .row.effect {
+    padding-left: var(--space-3);
+  }
+  /* 音源のモードのエフェクトは見るだけ（押せない）。 */
+  .row.look {
+    cursor: default;
+  }
+  .row.look:hover {
+    box-shadow: none;
+  }
   .row:hover {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
@@ -298,6 +346,9 @@
     background: var(--color-gray-4);
     border-left: var(--line-mark) solid var(--color-accent);
     padding-left: calc(var(--space-2) - var(--line-mark));
+  }
+  .row.effect.selected {
+    padding-left: calc(var(--space-3) - var(--line-mark));
   }
   .star-hit {
     width: var(--mock-shelf-star-hit);

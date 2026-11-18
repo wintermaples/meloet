@@ -180,6 +180,7 @@ export const part = {
   "part.dialog.foot": p(48, "s2", "ダイアログ", "下の列 48"),
   "part.dialog.margin": p(24, "s2", "ダイアログ", "上下 24 ずつ"),
   "part.scrollbar.width": p(8, "s2", "スクロールの棒", "幅 8"),
+  "part.dialognext.height": p(32, "s2", "ダイアログの 2 段目へ進む行", "高さ 32"),
   "part.unusable.height": p(24, "s2", "えらべない出口の行", "高さ 24"),
   "part.meter.name.long": p(148, "s1", "size.meter.name", "長い名前は 148"),
   "part.meter.name.slim-narrow": p(128, "s1", "size.meter.name.slim", "せまい窓は 128"),
@@ -293,6 +294,19 @@ export const mock = {
   // 棚（第 4 回）。さがす枠の行と「すべて ・ お気に入り」の行の高さ（`height:32px`）、星を押せる所（`width:16px;height:16px`）。
   "mock.shelf.bar": m(32, "F4-ShelfSample"),
   "mock.shelf.star-hit": m(16, "F4-ShelfSample"),
+  // meloet について（第 4 回）。1 段目と 2 段目の上の位置、1 段目の字の欄（`width:132px`）、名前の箱の上のあき（`padding:24px 16px 16px`）。
+  "mock.about.top": m(160, "R7-About"),
+  "mock.about.top-licenses": m(40, "R7-AboutLicense"),
+  "mock.about.label": m(132, "R7-About"),
+  "mock.about.name-pad-top": m(24, "R7-About"),
+  // 2 段目: さがす枠の行（`height:40px`）、行の字下げ（`padding-left:28px`）、音の素材の字の欄（`width:120px`）と
+  // 欄の上下（`padding:6px 0 8px`、行は `padding:2px …`）、全文の枠の高さ（`height:72px`）。
+  "mock.about.search": m(40, "R7-AboutLicense"),
+  "mock.about.indent": m(28, "R7-AboutLicense"),
+  "mock.about.field": m(120, "R7-AboutLicense"),
+  "mock.about.fields-pad-top": m(6, "R7-AboutLicense"),
+  "mock.about.field-pad-y": m(2, "R7-AboutLicense"),
+  "mock.about.text": m(72, "R7-AboutLicense"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

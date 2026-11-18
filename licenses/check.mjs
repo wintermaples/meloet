@@ -93,4 +93,16 @@ if (existsSync(soundsPath)) {
   }
   console.log(`OK  sound sources checked: ${sounds.length}`);
 }
+
+// 5. NOTICE and the about dialog's list (tools/licenses/inventory.mjs) still match what ships
+{
+  const { stale } = await import("../tools/licenses/inventory.mjs");
+  try {
+    const old = await stale(root);
+    if (old.length) fail(`out of date: ${old.join(", ")} (run: node tools/licenses/inventory.mjs write)`);
+    else console.log("OK  NOTICE and the about dialog's list match the parts");
+  } catch (e) {
+    fail(`license list: ${e.message}`);
+  }
+}
 process.exit(bad ? 1 : 0);

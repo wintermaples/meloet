@@ -136,8 +136,12 @@ describe("出どころが mock の文は、そのボードにそのまま書い�
 });
 
 describe("出どころの形", () => {
-  it("どの文も spec:<章>・mock:<ボード>・user:<日付> のどれか", () => {
-    for (const [k, e] of entries) expect(e.source, k).toMatch(/^(spec:\d|mock:[\w-]+|user:\d{4}-\d{2}-\d{2})$/);
+  it("どの文も spec:<章>・mock:<ボード>・user:<日付>・draft:<日付> のどれか", () => {
+    for (const [k, e] of entries) expect(e.source, k).toMatch(/^(spec:\d|mock:[\w-]+|(user|draft):\d{4}-\d{2}-\d{2})$/);
+  });
+
+  it("draft: の文は、音の素材の「手を加えたこと」の案だけ（ヤチヨさんに確かめる前）", () => {
+    expect(entries.filter(([, e]) => e.source.startsWith("draft:")).every(([k]) => k.startsWith("about.changes."))).toBe(true);
   });
 });
 

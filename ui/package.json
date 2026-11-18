@@ -5,7 +5,7 @@
   "license": "MIT OR Apache-2.0",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node ../tools/licenses/inventory.mjs texts dist/licenses",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run"
   },

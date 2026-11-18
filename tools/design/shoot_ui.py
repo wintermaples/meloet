@@ -83,6 +83,10 @@ BOARDS = {
     "trackDrag": "R6-Tracks",
     "trackColorMenu": "R6-Tracks",
     "drumRoll": "R7-Drum",
+    # 第 4 回 区切り2: meloet について。
+    "about": "R7-About",
+    "aboutLicenses": "R7-AboutLicense",
+    "aboutPart": "R7-AboutLicense",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -161,6 +165,14 @@ def drag_clip(x0, x1, opts="{}"):
     return "js:" + DRAG_CLIP % (x0, opts, x0, x1, opts, x1, opts)
 
 
+# Opens the second row under the first licence heading of the about dialog and scrolls it to the top.
+OPEN_PART = """
+const row = document.querySelectorAll('[data-test="about-group"] ~ [data-test="about-part"]')[1];
+row.click();
+await new Promise((r) => setTimeout(r, 300));
+row.previousElementSibling.previousElementSibling.scrollIntoView({ block: "start" });
+"""
+
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 # A selector that starts with "js:" is run as a script instead (it may await).
 # Several selectors (a tuple) are clicked one after another.
@@ -197,6 +209,11 @@ CLICKS = {
     "trackRename": ("tracks6", "js:" + RENAME_TRACK),
     "trackDrag": ("tracks6", "js:" + DRAG_TRACK),
     "trackColorMenu": ("tracks6", "js:" + TRACK_COLORS),
+    # ヘルプ ▸ meloet について、オープンソースのライセンス ▸、いちばん多いライセンスの見出しと、その 2 つめの行。
+    "about": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]')),
+    "aboutLicenses": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]')),
+    "aboutPart": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]',
+                               '[data-test="about-group"]', "js:" + OPEN_PART)),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -240,6 +257,9 @@ ONLY = {
     "trackRename": [(1280, 800, 100)],
     "trackDrag": [(1280, 800, 100)],
     "trackColorMenu": [(1280, 800, 100)],
+    "about": [(1280, 800, 100), (1280, 800, 150)],
+    "aboutLicenses": [(1280, 800, 100), (1280, 800, 150)],
+    "aboutPart": [(1280, 800, 100), (1920, 1080, 150)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

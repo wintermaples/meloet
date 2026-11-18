@@ -1,8 +1,9 @@
 // 画面の文面はすべてここに置く。
-// 出どころ: spec:<章>（docs/design/spec.html）、mock:<ボード>（docs/design/mock/<ボード>.dc.html）、user:<日付>（ヤチヨさんの決め）。
+// 出どころ: spec:<章>（docs/design/spec.html）、mock:<ボード>（docs/design/mock/<ボード>.dc.html）、user:<日付>（ヤチヨさんの決め）、
+// draft:<日付>（仕様書にもモックにもない文の、作る側の案。ヤチヨさんに確かめて user: か mock: にする）。
 // {name} はうめこむ値の穴。example は出どころに書いてある例の値で、テストがこれを入れて出どころと照らし合わせる。
 
-export type Source = `spec:${number}` | `mock:${string}` | `user:${string}`;
+export type Source = `spec:${number}` | `mock:${string}` | `user:${string}` | `draft:${string}`;
 
 export interface Entry {
   readonly text: string;
@@ -740,6 +741,50 @@ export const texts = {
   "key.favorite": e("F", "spec:4"),
   // 「＋ トラックを追加」の右の小さな文。第 4 回は歌の行を出さない（仕様書 3 章 Y10）。
   "arrange.addTrackInstrument": e("音源", "mock:R7-Arrange6"),
+
+  // [第 4 回 区切り2 ・ meloet について]（仕様書 3 章、モック R7-About ・ R7-AboutLicense）
+  "about.title": e("meloet について", "mock:R7-About"),
+  "about.close": e("閉じる", "mock:R7-About"),
+  "about.back": e("もどる", "mock:R7-AboutLicense"),
+  "about.name": e("meloet", "mock:R7-About"),
+  "about.tagline": e("MIDI 鍵盤ではじめる、音楽づくりのアプリ", "mock:R7-About"),
+  "about.version": e("バージョン", "mock:R7-About"),
+  "about.license": e("meloet のライセンス", "mock:R7-About"),
+  "about.licenseOr": e("{a} または {b}", "mock:R7-About", { a: "MIT", b: "Apache-2.0" }),
+  "about.openSource": e("オープンソースのライセンス", "mock:R7-About"),
+  "about.openSourceSummary": e("音の素材 ・ 書体 ・ 部品 約 {count}", "mock:R7-About", { count: "500" }),
+  "about.backTo": e("◂ {name}", "mock:R7-AboutLicense", { name: "meloet について" }),
+  "about.search": e("さがす", "mock:R7-AboutLicense"),
+  "about.searchLabel": e("名前 ・ ライセンス", "mock:R7-AboutLicense"),
+  "about.sounds": e("音の素材", "mock:R7-AboutLicense"),
+  "about.fonts": e("書体", "mock:R7-AboutLicense"),
+  "about.parts": e("部品（ライセンスごと）", "mock:R7-AboutLicense"),
+  "about.soundName": e("名前", "mock:R7-AboutLicense"),
+  "about.soundCreator": e("作った人", "mock:R7-AboutLicense"),
+  "about.soundLicense": e("ライセンス", "mock:R7-AboutLicense"),
+  "about.soundSource": e("出どころ", "mock:R7-AboutLicense"),
+  "about.soundChanges": e("手を加えたこと", "mock:R7-AboutLicense"),
+  // 手を加えたこと（音の素材ごと）。モックの「音の大きさをそろえ、ファイルの形を変えた」の書きかたで、
+  // tools/sounds/build.py の CHANGES（NOTICE の英語の文）と同じ中身を言う。
+  "about.changes.salamander-grand-piano": e(
+    "16 段の強さから 4 段と、離した音 ・ 共鳴 ・ ペダルの音をえらび、音の前の無音を切り、ファイルの形を変えた",
+    "draft:2026-11-18",
+  ),
+  "about.changes.gregsullivan-wurlitzer-ep200": e("音の前の無音を切り、音の終わりにくり返す所を作り、ファイルの形を変えた", "draft:2026-11-18"),
+  "about.changes.naked-drums": e(
+    "直のマイクと上のマイクを作者の GM の組みのとおりにステレオにまぜ、11 の音とテイク 4 つをえらび、音の前の無音を切り、ファイルの形を変えた",
+    "draft:2026-11-18",
+  ),
+  "about.changes.vcsl-claps": e("クラップのテイク 6 つを使い、音の前の無音を切り、ファイルの形を変えた", "draft:2026-11-18"),
+  "about.changes.vcsl-pipe-organ": e("くり返す所を作ってその終わりで切り、音の前の無音を切り、ファイルの形を変えた", "draft:2026-11-18"),
+  "about.changes.black-and-blue-basses": e(
+    "指弾きのテイク 4 つから 2 つをえらび、鍵と鳴る高さを 1 オクターブずらしてそろえ、終わりの 100 ms を小さくして消し、音の前の無音を切り、ファイルの形を変えた",
+    "draft:2026-11-18",
+  ),
+  "about.changes.vsco-2-ce-strings": e(
+    "ヴァイオリン ・ ヴィオラ ・ チェロ ・ コントラバスを 1 つの鍵の範囲にまとめ、くり返す所を作り、音の前の無音を切り、ファイルの形を変えた",
+    "draft:2026-11-18",
+  ),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;

@@ -10,10 +10,11 @@
   import { current, onEvent, send } from "../state/app.svelte";
   import { findTerm, t } from "../text/ja";
   import { textParts } from "./format";
-  import { heldText, pad3, signed4, SUSTAIN_ON } from "./meterFormat";
+  import { pad3, signed4, SUSTAIN_ON } from "./meterFormat";
   import { metrics } from "./metrics.svelte";
   import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
   import NumberField from "./NumberField.svelte";
+  import { isDrumKit, keysInstrument, keysLabel } from "./pianoroll/drums";
   import { readVelocity, type Read } from "./valueClamp";
 
   const FIRST_NOTE = 36;
@@ -24,6 +25,8 @@
   const TRACK_LABEL = "\u0003";
 
   const app = $derived(current.state);
+  /** 弾くと鳴る先がドラムなら、いま押している音は楽器の名前（仕様書 3 章「ドラムの音源」）。 */
+  const drums = $derived(app ? isDrumKit(keysInstrument(app)) : false);
   const slim = $derived(app?.workspace.layout.meter === "slim");
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
   // 鍵盤が 2 台以上なら、名前は最後に弾いた鍵盤。うしろに残りの台数（仕様書 3 章）。
@@ -239,7 +242,7 @@
     <div class="item">
       {#if !slim}<span class="label">{t("meter.held")}</span>{/if}
       <span class="value" class:held={live} class:none={!live} data-test="held">
-        {live ? heldText(held) : t("meter.heldNone")}
+        {live ? keysLabel(held, drums) : t("meter.heldNone")}
       </span>
     </div>
   {/if}

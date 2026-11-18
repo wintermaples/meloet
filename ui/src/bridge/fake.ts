@@ -1259,6 +1259,52 @@ SCENES.recordingMoving = {
   },
 };
 
+// R7-Drum: "3 ドラム" (スタジオキット) with its clip "8ビート" (bars 1–4, 53 notes) in the piano roll. An 8-beat for three
+// bars and a half, a tom fill in the last two beats; the snares of 1.2 and 2.2 selected; キック and スネア held.
+const DRUM_TAKE = 80;
+const DRUM_CLIP = 81;
+const GM = { kick: 36, snare: 38, lowTom: 45, midTom: 47, closedHiHat: 42, crash: 49, highTom: 50 } as const;
+const DRUM_NOTES: { start: number; length: number; key: number; velocity: number }[] = (() => {
+  const hit = (start: number, key: number, velocity: number) => ({ start, length: 120, key, velocity });
+  const out = [hit(0, GM.crash, 110)];
+  for (let eighth = 0; eighth < 30; eighth++) out.push(hit(eighth * 240, GM.closedHiHat, eighth % 2 === 0 ? 88 : 72));
+  for (let bar = 0; bar < 4; bar++) {
+    const b = bar * BAR;
+    out.push(hit(b, GM.kick, 104), hit(b + 720, GM.kick, 104), hit(b + 480, GM.snare, 96));
+    if (bar < 3) out.push(hit(b + 960, GM.kick, 104), hit(b + 1440, GM.snare, 96));
+  }
+  const fill = 3 * BAR + 1440;
+  out.push(hit(fill, GM.highTom, 100), hit(fill + 120, GM.highTom, 84), hit(fill + 240, GM.midTom, 100), hit(fill + 360, GM.lowTom, 104));
+  return out.sort((a, b) => a.start - b.start || a.key - b.key);
+})();
+FAKE_TAKES.set(DRUM_TAKE, { id: DRUM_TAKE, length: 4 * BAR, notes: DRUM_NOTES });
+const DRUM_SELECTED = DRUM_NOTES.flatMap((n, i) => (n.key === GM.snare && (n.start === 480 || n.start === BAR + 480) ? [i] : []));
+SCENES.drumRoll = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    const drum = s.song.tracks[2]!;
+    drum.clips = [fakeClip(DRUM_CLIP, "8ビート", 1, 5, 1, [DRUM_TAKE]), ...drum.clips.slice(1)];
+    s.song.playTarget = drum.id;
+    s.song.loopOn = false;
+    s.song.noteCount = DRUM_NOTES.length;
+    s.arrange = arrangeOf(DRUM_CLIP);
+    s.pianoRoll = {
+      ...pianoRollView(DRUM_TAKE, false),
+      selectedNotes: DRUM_SELECTED.map((i) => ({ start: i, end: i + 1 })),
+      quantize: { division: 16, triplet: false, strength: 100, swing: 0, align: "start" },
+    };
+    s.transport.position = 0;
+    s.status.message = {
+      id: "summary",
+      loopBars: null,
+      nothingSelected: false,
+      notes: { count: DRUM_SELECTED.length, keys: DRUM_SELECTED.map((i) => DRUM_NOTES[i]!.key), quantized: false },
+    };
+  },
+  bands: ["pianoRoll"],
+  meters: { ...QUIET, keys: [GM.kick, GM.snare], velocity: 104, modulation: 12 },
+};
+
 // Not from a mock: one clip of 10 000 notes over 64 bars, the first 200 selected, for measuring the piano roll.
 const TEN_THOUSAND = 90;
 FAKE_TAKES.set(TEN_THOUSAND, phrase(TEN_THOUSAND, 64, 10_000, 9));

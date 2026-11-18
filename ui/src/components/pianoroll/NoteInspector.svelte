@@ -4,7 +4,8 @@
      クオンタイズの設定は、変えるたびに setQuantize（いまの設定ぜんぶ）。「かける」（かけたあとは「かけなおす」）は quantize、
      「もとの位置へ戻す」は unquantize（選んだノート、なければ全部）。スケールは setMusicalScale。
      「長さをそろえる」と「ベロシティをまとめて変える」は、ひらくと「まとめて変える行」が 1 行（仕様書 2 章）。Enter かボタンで matchLength ・ matchVelocity。
-     欄の数は、範囲の外なら近いはしにして決める（B-68）。 -->
+     欄の数は、範囲の外なら近いはしにして決める（B-68）。
+     ドラムのトラックでは、音は楽器の名前、スケールは音階「—」・固定「使えない」（仕様書 3 章、モック R7-Drum）。 -->
 <script lang="ts">
   import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
@@ -14,6 +15,7 @@
   import { t } from "../../text/ja";
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { gridText, scaleName } from "../format";
+  import { keyLabel, rollShowsDrums } from "./drums";
   import { GRID_DIVISIONS, indexesOf } from "./geom";
   import NoteFieldInput from "./NoteFieldInput.svelte";
   import {
@@ -39,7 +41,8 @@
   const take = $derived(shown.take);
   /** 見せているテイクが Rust の pianoRoll のテイクと同じ（意図を送ってよい）。 */
   const live = $derived(take !== null && shown.clip !== null && pr.take === take.id);
-  const summary = $derived(live ? selectedSummary(take!, shown.clip!, pr.selectedNotes, meter) : null);
+  const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
+  const summary = $derived(live ? selectedSummary(take!, shown.clip!, pr.selectedNotes, meter, 64, (k) => keyLabel(k, drums)) : null);
   const count = $derived(summary?.count ?? 0);
   const selected = $derived(live ? indexesOf(pr.selectedNotes).filter((i) => i < take!.starts.length) : []);
   const quantized = $derived((take?.origin ?? 0) !== 0);
@@ -83,7 +86,7 @@
   let editing = $state<{ name: FieldName; draft: string; token: number } | null>(null);
   let tokens = 0;
   const fieldButtons: Partial<Record<FieldName, HTMLButtonElement>> = $state({});
-  const specOf = (name: FieldName) => (live && selected.length > 0 ? noteFieldSpec(name, take!, shown.clip!, selected, meter) : null);
+  const specOf = (name: FieldName) => (live && selected.length > 0 ? noteFieldSpec(name, take!, shown.clip!, selected, meter, drums) : null);
   const editSpec = $derived(editing ? specOf(editing.name) : null);
 
   function openField(name: FieldName): void {
@@ -298,7 +301,8 @@
       </span>
     {:else}
       <button
-        class="m-plain m-num m-hi value"
+        class="m-plain m-hi value"
+        class:m-num={!(drums && name === "key")}
         class:pick={summary !== null}
         disabled={summary === null}
         aria-label={LABELS[name]}
@@ -409,27 +413,38 @@
       <span class="m-hi">▾</span>
       <span class="m-hi grow">{t("inspector.scale")}</span>
     </div>
-    <div class="rw">
-      <span class="m-lbl grow">{t("inspector.musicalScale")}</span>
-      <button
-        class="m-plain m-num m-hi pick"
-        aria-haspopup="menu"
-        aria-expanded={open === "scale"}
-        data-test="inspector-scale"
-        bind:this={menuButtons.scale}
-        onclick={() => toggleMenu("scale")}>{scaleName(pr.scale.root, pr.scale.mode)}</button
-      >
-    </div>
-    <div class="rw">
-      <span class="m-lbl grow" use:term={"スケール固定"}>{t("inspector.lock")}</span>
-      <button
-        class="m-plain m-num m-hi pick"
-        class:on={pr.scale.lock}
-        aria-pressed={pr.scale.lock}
-        data-test="inspector-lock"
-        onclick={() => setScale(pr.scale.root, pr.scale.mode, !pr.scale.lock)}>{t(pr.scale.lock ? "inspector.on" : "inspector.off")}</button
-      >
-    </div>
+    {#if drums}
+      <div class="rw">
+        <span class="m-lbl grow">{t("inspector.musicalScale")}</span>
+        <span class="m-num m-lbl" data-test="inspector-scale">{t("inspector.scaleNone")}</span>
+      </div>
+      <div class="rw">
+        <span class="m-lbl grow" use:term={"スケール固定"}>{t("inspector.lock")}</span>
+        <span class="m-lbl" data-test="inspector-lock">{t("inspector.lockUnusable")}</span>
+      </div>
+    {:else}
+      <div class="rw">
+        <span class="m-lbl grow">{t("inspector.musicalScale")}</span>
+        <button
+          class="m-plain m-num m-hi pick"
+          aria-haspopup="menu"
+          aria-expanded={open === "scale"}
+          data-test="inspector-scale"
+          bind:this={menuButtons.scale}
+          onclick={() => toggleMenu("scale")}>{scaleName(pr.scale.root, pr.scale.mode)}</button
+        >
+      </div>
+      <div class="rw">
+        <span class="m-lbl grow" use:term={"スケール固定"}>{t("inspector.lock")}</span>
+        <button
+          class="m-plain m-num m-hi pick"
+          class:on={pr.scale.lock}
+          aria-pressed={pr.scale.lock}
+          data-test="inspector-lock"
+          onclick={() => setScale(pr.scale.root, pr.scale.mode, !pr.scale.lock)}>{t(pr.scale.lock ? "inspector.on" : "inspector.off")}</button
+        >
+      </div>
+    {/if}
 
     {@render bulkHead("sameLength", t("inspector.sameLength"), "inspector-same-length")}
     {#if inspectorFolds.sameLength}

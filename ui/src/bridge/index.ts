@@ -8,7 +8,7 @@ import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport, tauriUiScript 
 import type { AppState, Command } from "./types";
 
 export type * from "./types";
-export { INSTRUMENT_GROUPS, PROTOCOL_VERSION } from "./types";
+export { DRUM_ROWS, INSTRUMENT_GROUPS, PROTOCOL_VERSION } from "./types";
 export { keyIsDown, positionAt, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
 export type { LiveNotesBook } from "./live";

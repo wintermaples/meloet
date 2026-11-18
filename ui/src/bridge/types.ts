@@ -66,5 +66,6 @@ export type { Unusable } from "./generated/Unusable";
 export type { ValueField } from "./generated/ValueField";
 export type { VelocityFixed } from "./generated/VelocityFixed";
 export type { WorkspaceView } from "./generated/WorkspaceView";
+export { DRUM_ROWS, type DrumPieceId } from "./generated/drums";
 export { INSTRUMENT_GROUPS } from "./generated/instruments";
 export { PROTOCOL_VERSION } from "./generated/protocolVersion";

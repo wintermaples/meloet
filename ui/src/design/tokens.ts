@@ -198,6 +198,13 @@ export const part = {
   "part.note.resize": p(6, "s3", null, "ノートの右はし 6px"),
   "part.cc.point": p(6, "s3", null, "点は 6×6 の gray.10"),
   "part.clip.edge": p(6, "s3", null, "左右のはし 6px"),
+  // ドラムのピアノロール（第 4 回）: 鍵の列の幅、叩いた所の四角（幅はグリッドの 1 マス − 2、最小 6。高さは行 − 8）、ノートの一覧の欄。
+  "part.drum.keys": p(132, "s3", null, "鍵の列は幅 132"),
+  "part.drum.hit-inset": p(2, "s2", "ドラムの叩いた所の四角", "グリッドの 1 マス − 2"),
+  "part.drum.hit-min": p(6, "s2", "ドラムの叩いた所の四角", "最小 6"),
+  "part.drum.hit-gap": p(8, "s2", "ドラムの叩いた所の四角", "行の高さ − 8"),
+  "part.drum.list-position": p(68, "s3", null, "位置 68"),
+  "part.drum.list-velocity": p(40, "s3", null, "Vel 40"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 

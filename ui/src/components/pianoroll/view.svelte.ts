@@ -4,6 +4,7 @@
 //
 // 位置はティック（4 分音符 = 480）。幅は拡大率 100 % の CSS px で持ち、描く所で拡大率をかける。
 
+import { DRUM_ROWS } from "../../bridge";
 import { metrics } from "../metrics.svelte";
 import { TICKS_PER_QUARTER } from "../time";
 
@@ -41,6 +42,8 @@ export const prView = $state({
   focus: "arrange" as "arrange" | "pianoRoll",
   /** ピアノロールで最後に押したのはノート（ベロシティの帯もふくむ）か CC の点か。両方を選んでいるときの Delete は、こちらに向ける。 */
   picked: "notes" as "notes" | "controls",
+  /** ドラムの行を見せているか（ノートの場所の部品が入れる）。縦の拡大 ・ 縮小を、ドラムの行の高さに向ける。 */
+  drums: false,
 });
 
 /** 拡大率 scale（100・125・150）での、1 ティックの CSS px。 */
@@ -82,6 +85,7 @@ export function rowHeight(scale: number): number {
  * anchorY（ノートの場所の上はしからの CSS px）の所の行が、画面の同じ高さに残るように送る（なければ、まん中）。
  */
 export function zoomRowsBy(steps: number, anchorY?: number): boolean {
+  if (prView.drums) return zoomDrumRowsBy(steps, anchorY);
   const next = stepFrom(ROW_PX_STEPS, prView.rowPx, steps, DEFAULT_ROW_PX);
   if (next === prView.rowPx) return false;
   const scale = metrics.scale;
@@ -92,6 +96,53 @@ export function zoomRowsBy(steps: number, anchorY?: number): boolean {
   const rows = Math.max(1, Math.floor(prView.areaHeight / after));
   const top = Math.round(prView.topKey - y / before + y / after);
   prView.topKey = Math.min(127, Math.max(Math.min(127, rows - 1), top));
+  return true;
+}
+
+// ---- ドラムの行（仕様書 3 章「ドラムのピアノロール」）。ふつうの行の高さと見ている鍵とは別に持つ ----
+
+/** ドラムの行の高さ（拡大率 100 % の px）: 12〜48 を 4 ずつ。 */
+export const DRUM_ROW_MIN = 12;
+export const DRUM_ROW_MAX = 48;
+export const DRUM_ROW_STEP = 4;
+
+export const drumView = $state({
+  /** 拡大率 100 % の行の高さ。null は、まだ縦の − ＋ を押していない（全部の行がちょうど入る高さ）。 */
+  rowPx: null as number | null,
+  /** いちばん上に見えている行（DRUM_KEYS の何番目か）。 */
+  topRow: 0,
+});
+
+/** 全部の行がちょうど入る高さ: ノートの場所の高さ（CSS px）÷ 行の数を、4 の倍数に切りすて、12〜48（拡大率 100 % の px）。 */
+export function drumFitRowPx(areaHeight: number, rows: number, scale: number): number {
+  const each = (areaHeight * 100) / scale / Math.max(1, rows);
+  const floored = Math.floor(each / DRUM_ROW_STEP) * DRUM_ROW_STEP;
+  return Math.min(DRUM_ROW_MAX, Math.max(DRUM_ROW_MIN, floored));
+}
+
+/** いまのドラムの行の高さ（拡大率 100 % の px）。 */
+export function drumRowPx(rows: number, scale: number): number {
+  return drumView.rowPx ?? drumFitRowPx(prView.areaHeight, rows, scale);
+}
+
+const DRUM_ROW_COUNT = DRUM_ROWS.length;
+
+/** 見えている行の数で、いちばん上の行が動ける範囲に入れる。 */
+export function clampTopRow(top: number, rows: number, shownRows: number): number {
+  return Math.min(Math.max(0, rows - Math.max(1, shownRows)), Math.max(0, Math.round(top)));
+}
+
+function zoomDrumRowsBy(steps: number, anchorY?: number): boolean {
+  const scale = metrics.scale;
+  const now = drumRowPx(DRUM_ROW_COUNT, scale);
+  const next = Math.min(DRUM_ROW_MAX, Math.max(DRUM_ROW_MIN, now + steps * DRUM_ROW_STEP));
+  if (next === now) return false;
+  const before = (now * scale) / 100;
+  const after = (next * scale) / 100;
+  const y = anchorY ?? prView.areaHeight / 2;
+  drumView.rowPx = next;
+  const top = drumView.topRow + y / before - y / after;
+  drumView.topRow = clampTopRow(top, DRUM_ROW_COUNT, Math.floor(prView.areaHeight / after));
   return true;
 }
 

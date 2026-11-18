@@ -53,6 +53,7 @@ describe("行と名前（仕様書 3 章）", () => {
   it("ドラムのグループの音源だけがドラム", () => {
     expect(isDrumKit("studioKit")).toBe(true);
     expect(isDrumKit("electroKit")).toBe(true);
+    expect(isDrumKit("brushKit")).toBe(true);
     expect(isDrumKit("grandPiano")).toBe(false);
     expect(isDrumKit(null)).toBe(false);
   });

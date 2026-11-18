@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1039,21 +1039,42 @@ pub struct ClipView {
     pub note_count: u32,
 }
 
-/// The sounds that come with meloet (spec 3 「最初から入っている音色」), in the order of the
-/// shelf. `Sine` is what used to be the placeholder sound.
+/// The sounds that come with meloet (spec 3 「最初から入っている音色をふやす」（84）), in the
+/// order of the shelf. `Sine` is what used to be the placeholder sound; `Organ` is the pipe
+/// organ, which songs from before 84 call 「オルガン」.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum InstrumentKind {
     GrandPiano,
     ElectricPiano,
+    OrganDrawbar,
+    OrganPercussive,
+    OrganRock,
     Organ,
+    OrganQuiet,
+    OrganChurch,
+    OrganReed,
+    Vibraphone,
+    Marimba,
+    GuitarNylon,
+    GuitarSteel,
+    GuitarElectric,
+    GuitarDistortion,
     FingerBass,
+    PickBass,
+    WoodBass,
     SynthBass,
     StudioKit,
     ElectroKit,
+    BrushKit,
     Strings,
+    Pizzicato,
     WarmPad,
+    Trumpet,
+    BrassSection,
+    AltoSax,
+    Flute,
     SynthLead,
     Sine,
 }
@@ -1065,13 +1086,15 @@ pub enum InstrumentKind {
 #[serde(rename_all = "camelCase")]
 pub enum InstrumentGroup {
     PianoKeys,
+    Guitar,
     Bass,
     Drums,
     PadStrings,
+    Wind,
     Synth,
 }
 
-/// The sounds of a drum kit (the studio kit and the electro kit), top row of the drum piano roll
+/// The sounds of a drum kit (the studio kit, the electro kit and the brush kit), top row of the drum piano roll
 /// first, with the General MIDI key each sits on (spec 3 「ドラムのピアノロール」). The screen has
 /// the same table as `DRUM_ROWS` (`ui/src/bridge/generated/drums.ts`); the names shown are the
 /// screen's (`ja.ts`). A note on any other key stays in the song but does not sound, and the
@@ -1094,16 +1117,36 @@ pub const DRUM_ROWS: [(&str, u8); 12] = [
 impl InstrumentKind {
     /// In the order of the shelf. The screen has the same list, with the groups, as
     /// `INSTRUMENT_GROUPS` (`ui/src/bridge/generated/instruments.ts`).
-    pub const ALL: [InstrumentKind; 11] = [
+    pub const ALL: [InstrumentKind; 31] = [
         InstrumentKind::GrandPiano,
         InstrumentKind::ElectricPiano,
+        InstrumentKind::OrganDrawbar,
+        InstrumentKind::OrganPercussive,
+        InstrumentKind::OrganRock,
         InstrumentKind::Organ,
+        InstrumentKind::OrganQuiet,
+        InstrumentKind::OrganChurch,
+        InstrumentKind::OrganReed,
+        InstrumentKind::Vibraphone,
+        InstrumentKind::Marimba,
+        InstrumentKind::GuitarNylon,
+        InstrumentKind::GuitarSteel,
+        InstrumentKind::GuitarElectric,
+        InstrumentKind::GuitarDistortion,
         InstrumentKind::FingerBass,
+        InstrumentKind::PickBass,
+        InstrumentKind::WoodBass,
         InstrumentKind::SynthBass,
         InstrumentKind::StudioKit,
         InstrumentKind::ElectroKit,
+        InstrumentKind::BrushKit,
         InstrumentKind::Strings,
+        InstrumentKind::Pizzicato,
         InstrumentKind::WarmPad,
+        InstrumentKind::Trumpet,
+        InstrumentKind::BrassSection,
+        InstrumentKind::AltoSax,
+        InstrumentKind::Flute,
         InstrumentKind::SynthLead,
         InstrumentKind::Sine,
     ];
@@ -1111,21 +1154,37 @@ impl InstrumentKind {
     pub fn group(self) -> InstrumentGroup {
         use InstrumentKind as I;
         match self {
-            I::GrandPiano | I::ElectricPiano | I::Organ => InstrumentGroup::PianoKeys,
-            I::FingerBass | I::SynthBass => InstrumentGroup::Bass,
-            I::StudioKit | I::ElectroKit => InstrumentGroup::Drums,
-            I::Strings | I::WarmPad => InstrumentGroup::PadStrings,
+            I::GrandPiano
+            | I::ElectricPiano
+            | I::OrganDrawbar
+            | I::OrganPercussive
+            | I::OrganRock
+            | I::Organ
+            | I::OrganQuiet
+            | I::OrganChurch
+            | I::OrganReed
+            | I::Vibraphone
+            | I::Marimba => InstrumentGroup::PianoKeys,
+            I::GuitarNylon | I::GuitarSteel | I::GuitarElectric | I::GuitarDistortion => {
+                InstrumentGroup::Guitar
+            }
+            I::FingerBass | I::PickBass | I::WoodBass | I::SynthBass => InstrumentGroup::Bass,
+            I::StudioKit | I::ElectroKit | I::BrushKit => InstrumentGroup::Drums,
+            I::Strings | I::Pizzicato | I::WarmPad => InstrumentGroup::PadStrings,
+            I::Trumpet | I::BrassSection | I::AltoSax | I::Flute => InstrumentGroup::Wind,
             I::SynthLead | I::Sine => InstrumentGroup::Synth,
         }
     }
 }
 
 impl InstrumentGroup {
-    pub const ALL: [InstrumentGroup; 5] = [
+    pub const ALL: [InstrumentGroup; 7] = [
         InstrumentGroup::PianoKeys,
+        InstrumentGroup::Guitar,
         InstrumentGroup::Bass,
         InstrumentGroup::Drums,
         InstrumentGroup::PadStrings,
+        InstrumentGroup::Wind,
         InstrumentGroup::Synth,
     ];
 }

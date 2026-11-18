@@ -604,6 +604,38 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
 }
 
 #[test]
+fn a_new_track_is_named_by_its_instrument() {
+    use crate::BuiltinInstrument as B;
+    let mut doc = Doc::new_default();
+    let mut names = Vec::new();
+    for b in [
+        B::OrganChurch,
+        B::Organ,
+        B::Vibraphone,
+        B::Marimba,
+        B::GuitarNylon,
+        B::Trumpet,
+        B::ElectricPiano,
+    ] {
+        let (e, id) = add_track(&doc, None, InstrumentRef::Builtin(b)).unwrap();
+        names.push(e.doc.track(id).unwrap().name.clone());
+        doc = e.doc;
+    }
+    assert_eq!(
+        names,
+        [
+            "オルガン",
+            "オルガン 2",
+            "マレット",
+            "マレット 2",
+            "ギター",
+            "管楽器",
+            "ピアノ 2"
+        ]
+    );
+}
+
+#[test]
 fn replacing_an_instrument_keeps_the_name_and_the_clips() {
     let (doc, added) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
     let organ = InstrumentRef::Builtin(crate::BuiltinInstrument::Organ);

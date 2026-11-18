@@ -109,7 +109,7 @@ fn a_new_track_is_auditioned_on_its_own_seat_then_added_below_the_selected_one()
         [
             (1, "ピアノ".to_owned(), 1, GrandPiano),
             (2, "トラック 2".to_owned(), 2, Sine),
-            (4, "ピアノ 2".to_owned(), 3, Organ),
+            (4, "オルガン".to_owned(), 3, Organ),
             (3, "トラック 3".to_owned(), 3, Sine),
         ],
         "right below the selected track, with a new id"
@@ -119,7 +119,7 @@ fn a_new_track_is_auditioned_on_its_own_seat_then_added_below_the_selected_one()
         Some(StatusMessage::TrackAdded {
             track: TrackRef {
                 number: 3,
-                name: "ピアノ 2".into()
+                name: "オルガン".into()
             }
         })
     );
@@ -139,7 +139,7 @@ fn a_new_track_is_auditioned_on_its_own_seat_then_added_below_the_selected_one()
     assert_eq!(m.view().song.tracks.len(), 3);
     assert!(m.view().song.play_target.is_some());
     go(m, e, Command::Redo);
-    assert_eq!(rows(m)[2], (4, "ピアノ 2".to_owned(), 3, Organ));
+    assert_eq!(rows(m)[2], (4, "オルガン".to_owned(), 3, Organ));
     // The next one never gets the id again.
     go(m, e, Command::Undo);
     go(m, e, select(Sine));

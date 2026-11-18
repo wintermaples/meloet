@@ -13,12 +13,10 @@ use meloet_sound::synth::{ElectroKit, PolySynth};
 /// are always there.
 pub(crate) fn sampled(instrument: BuiltinInstrument) -> bool {
     use BuiltinInstrument as B;
-    match instrument {
-        B::GrandPiano | B::ElectricPiano | B::Organ | B::FingerBass | B::StudioKit | B::Strings => {
-            true
-        }
-        B::SynthBass | B::ElectroKit | B::WarmPad | B::SynthLead | B::Sine => false,
-    }
+    !matches!(
+        instrument,
+        B::SynthBass | B::ElectroKit | B::WarmPad | B::SynthLead | B::Sine
+    )
 }
 
 /// What the rules know about the samples: which sampled instruments the pack on this PC has,
@@ -97,13 +95,33 @@ pub(crate) fn kind_of(instrument: BuiltinInstrument) -> InstrumentKind {
     match instrument {
         B::GrandPiano => K::GrandPiano,
         B::ElectricPiano => K::ElectricPiano,
+        B::OrganDrawbar => K::OrganDrawbar,
+        B::OrganPercussive => K::OrganPercussive,
+        B::OrganRock => K::OrganRock,
         B::Organ => K::Organ,
+        B::OrganQuiet => K::OrganQuiet,
+        B::OrganChurch => K::OrganChurch,
+        B::OrganReed => K::OrganReed,
+        B::Vibraphone => K::Vibraphone,
+        B::Marimba => K::Marimba,
+        B::GuitarNylon => K::GuitarNylon,
+        B::GuitarSteel => K::GuitarSteel,
+        B::GuitarElectric => K::GuitarElectric,
+        B::GuitarDistortion => K::GuitarDistortion,
         B::FingerBass => K::FingerBass,
+        B::PickBass => K::PickBass,
+        B::WoodBass => K::WoodBass,
         B::SynthBass => K::SynthBass,
         B::StudioKit => K::StudioKit,
         B::ElectroKit => K::ElectroKit,
+        B::BrushKit => K::BrushKit,
         B::Strings => K::Strings,
+        B::Pizzicato => K::Pizzicato,
         B::WarmPad => K::WarmPad,
+        B::Trumpet => K::Trumpet,
+        B::BrassSection => K::BrassSection,
+        B::AltoSax => K::AltoSax,
+        B::Flute => K::Flute,
         B::SynthLead => K::SynthLead,
         B::Sine => K::Sine,
     }
@@ -115,13 +133,33 @@ pub(crate) fn builtin_of(kind: InstrumentKind) -> BuiltinInstrument {
     match kind {
         K::GrandPiano => B::GrandPiano,
         K::ElectricPiano => B::ElectricPiano,
+        K::OrganDrawbar => B::OrganDrawbar,
+        K::OrganPercussive => B::OrganPercussive,
+        K::OrganRock => B::OrganRock,
         K::Organ => B::Organ,
+        K::OrganQuiet => B::OrganQuiet,
+        K::OrganChurch => B::OrganChurch,
+        K::OrganReed => B::OrganReed,
+        K::Vibraphone => B::Vibraphone,
+        K::Marimba => B::Marimba,
+        K::GuitarNylon => B::GuitarNylon,
+        K::GuitarSteel => B::GuitarSteel,
+        K::GuitarElectric => B::GuitarElectric,
+        K::GuitarDistortion => B::GuitarDistortion,
         K::FingerBass => B::FingerBass,
+        K::PickBass => B::PickBass,
+        K::WoodBass => B::WoodBass,
         K::SynthBass => B::SynthBass,
         K::StudioKit => B::StudioKit,
         K::ElectroKit => B::ElectroKit,
+        K::BrushKit => B::BrushKit,
         K::Strings => B::Strings,
+        K::Pizzicato => B::Pizzicato,
         K::WarmPad => B::WarmPad,
+        K::Trumpet => B::Trumpet,
+        K::BrassSection => B::BrassSection,
+        K::AltoSax => B::AltoSax,
+        K::Flute => B::Flute,
         K::SynthLead => B::SynthLead,
         K::Sine => B::Sine,
     }
@@ -147,6 +185,39 @@ pub(crate) mod tests {
             .map(|p| (p.id(), p.note()))
             .collect();
         assert_eq!(model, meloet_protocol::DRUM_ROWS);
+        // The three kits are the drums group, so they all have these 12 rows.
+        let kits: Vec<InstrumentKind> = InstrumentKind::ALL
+            .into_iter()
+            .filter(|k| k.group() == InstrumentGroup::Drums)
+            .collect();
+        assert_eq!(
+            kits,
+            [
+                InstrumentKind::StudioKit,
+                InstrumentKind::ElectroKit,
+                InstrumentKind::BrushKit
+            ]
+        );
+        assert_eq!(meloet_protocol::DRUM_ROWS.len(), 12);
+    }
+
+    /// Five instruments are computed; the other 26 come from the sound pack.
+    #[test]
+    fn which_instruments_are_sampled() {
+        use BuiltinInstrument as B;
+        let computed: Vec<B> = B::all().filter(|i| !sampled(*i)).collect();
+        assert_eq!(
+            computed,
+            [
+                B::SynthBass,
+                B::ElectroKit,
+                B::WarmPad,
+                B::SynthLead,
+                B::Sine
+            ]
+        );
+        assert_eq!(B::all().filter(|i| sampled(*i)).count(), 26);
+        assert!(sampled(B::BrushKit) && sampled(B::Organ) && sampled(B::Flute));
     }
 
     /// The model's table and the protocol's say the same: order, names and groups.
@@ -160,9 +231,11 @@ pub(crate) mod tests {
             assert_eq!(serde_json::to_value(k).unwrap(), b.name());
             let group = match b.group() {
                 ModelGroup::PianoKeys => InstrumentGroup::PianoKeys,
+                ModelGroup::Guitar => InstrumentGroup::Guitar,
                 ModelGroup::Bass => InstrumentGroup::Bass,
                 ModelGroup::Drums => InstrumentGroup::Drums,
                 ModelGroup::PadStrings => InstrumentGroup::PadStrings,
+                ModelGroup::Wind => InstrumentGroup::Wind,
                 ModelGroup::Synth => InstrumentGroup::Synth,
             };
             assert_eq!(k.group(), group);

@@ -62,16 +62,26 @@ fn a_new_song_has_reverb_delay_and_limiter() {
 fn a_new_track_sends_by_its_group() {
     use BuiltinInstrument as I;
     let a = |i: I| new_track_sends(&InstrumentRef::Builtin(i))[0].db();
-    for i in [I::GrandPiano, I::ElectricPiano, I::Organ] {
+    for i in [
+        I::GrandPiano,
+        I::ElectricPiano,
+        I::Organ,
+        I::OrganReed,
+        I::Marimba,
+    ] {
         assert_eq!(a(i), Some(-15.0));
     }
-    for i in [I::Strings, I::WarmPad, I::SynthLead, I::Sine] {
+    for i in [I::Strings, I::Pizzicato, I::WarmPad, I::SynthLead, I::Sine] {
         assert_eq!(a(i), Some(-15.0));
     }
-    for i in [I::StudioKit, I::ElectroKit] {
+    // Not in Y9: guitars and wind instruments send as the piano does.
+    for i in [I::GuitarNylon, I::GuitarDistortion, I::Trumpet, I::Flute] {
+        assert_eq!(a(i), Some(-15.0));
+    }
+    for i in [I::StudioKit, I::ElectroKit, I::BrushKit] {
         assert_eq!(a(i), Some(-24.0));
     }
-    for i in [I::FingerBass, I::SynthBass] {
+    for i in [I::FingerBass, I::PickBass, I::WoodBass, I::SynthBass] {
         assert_eq!(a(i), None);
     }
     for i in I::all() {

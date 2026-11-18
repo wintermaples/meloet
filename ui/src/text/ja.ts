@@ -520,13 +520,180 @@ export const texts = {
     "quoted",
   ),
   // ピアノロールでクリップの外に書こうとして、クリップをのばせなかった（B-82）。
-  "msg.notesNotWritten": e(
+  "msg.notesNotWritten": s6(
+    "クリップの外に書けない",
     "ほかのクリップと重なるので、書けませんでした。",
-    "user:2026-11-18",
   ),
-  "msg.notesNotResized": e(
+  "msg.notesNotResized": s6(
+    "長さを変えられない",
     "ほかのクリップと重なるので、長さを変えられませんでした。",
-    "user:2026-11-18",
+  ),
+  "msg.notesNotMoved": s6(
+    "クリップの外へ動かせない",
+    "ほかのクリップと重なるので、動かしませんでした。",
+  ),
+  "msg.notesNotDuplicated": s6(
+    "クリップの外へ写せない",
+    "ほかのクリップと重なるので、複製できませんでした。",
+  ),
+  "msg.takeDeleted": s6(
+    "テイクを消した",
+    "テイク {take} を消しました。テイク {active} / {total} にしました。取り消せます（{undoKey}）",
+    { take: "2", active: "1", total: "2", undoKey: "Mod Z" },
+  ),
+  // 「音の設定をひらいています」は status.settingsOpen。
+  "status.dialogOpen": s6(
+    "ダイアログをひらいている",
+    "{dialog} をひらいています",
+    { dialog: "meloet について" },
+    "part",
+  ),
+  "msg.soundsMissingSong": s6(
+    "音の素材が見つからない（曲をひらいた）",
+    "音の素材が見つからないので、{count} 本のトラックをサイン波で鳴らしています。",
+    { count: "4" },
+  ),
+  "shelf.soundsMissing": s6(
+    "音の素材が見つからない（棚）",
+    "音の素材が見つかりません。いまはサイン波だけ使えます。meloet を入れなおすと、もとに戻ります。",
+  ),
+
+  // [第 5 回 ・ SF2]（仕様書 6 章）
+  "sf2.dropHere": s6(
+    "SF2 を持ってきている",
+    "ここに落とすと、棚に SF2 を足します。ファイルは meloet の中にうつします。",
+    undefined,
+    "part",
+  ),
+  "sf2.dropCancel": s6(
+    "SF2 を持ってきている",
+    "やめるには、窓の外で離すか Esc",
+    undefined,
+    "quoted",
+  ),
+  // 6 章「SF2 を持ってきている」の出る場所の列。
+  "sf2.dragging": e("SF2 のファイルを持ってきています", "spec:6"),
+  "sf2.notSf2": s6(
+    "SF2 ではないファイルを持ってきている",
+    "SF2 のファイルではないので、足せません。",
+  ),
+  "sf2.added": s6(
+    "SF2 を足した",
+    "{file} を足しました。音色 {count} ・ ドラムのキット {kits}",
+    { file: "FluidR3_GM.sf2", count: "128", kits: "9" },
+  ),
+  "sf2.unreadable": s6(
+    "SF2 が読めない",
+    "{file} は読めませんでした。ファイルがこわれているか、SF2 ではないかもしれません。",
+    { file: "FluidR3_GM.sf2" },
+  ),
+  "sf2.missing": s6(
+    "SF2 が見つからない",
+    "曲で使っている {file} が見つかりません。{count} 本のトラックはサイン波で鳴らしています。",
+    { file: "FluidR3_GM.sf2", count: "2" },
+  ),
+
+  // [第 5 回 ・ インサート]（仕様書 6 章）
+  "shelf.insertInto": s6(
+    "インサートに入れる",
+    "{strip} のインサート {slot} に入れます。",
+    { strip: "2 ベース", slot: "2" },
+  ),
+  "msg.effectInserted": s6(
+    "エフェクトを入れた",
+    "{strip} のインサート {slot} に {effect} を入れました。",
+    { strip: "2 ベース", slot: "2", effect: "リバーブ" },
+  ),
+  "msg.effectRemoved": s6(
+    "エフェクトを外した",
+    "{strip} のインサート {slot} の {effect} を外しました。取り消せます（{undoKey}）",
+    { strip: "2 ベース", slot: "1", effect: "コンプレッサー", undoKey: "Mod Z" },
+  ),
+  "msg.insertsReordered": s6(
+    "インサートを並べかえた",
+    "{strip} のインサートを並べかえました（{order}）。",
+    { strip: "2 ベース", order: "EQ 4 バンド → コンプレッサー" },
+  ),
+  "shelf.insertReplace": s6(
+    "インサートを入れかえる",
+    "{strip} のインサート {slot} の {current} を、{effect} に入れかえます。いまの設定は残りません（取り消せます）。",
+    { strip: "2 ベース", slot: "1", current: "コンプレッサー", effect: "EQ 4 バンド" },
+  ),
+  "msg.insertReplaced": s6(
+    "インサートを入れかえた",
+    "{strip} のインサート {slot} を {effect} に入れかえました。取り消せます（{undoKey}）",
+    { strip: "2 ベース", slot: "1", effect: "EQ 4 バンド", undoKey: "Mod Z" },
+  ),
+  // {target} は「{ストリップ} の {エフェクト} 」（うしろに空白）。仕様書のもどしたときの例は「…をもどしました。」。
+  "msg.effectBypassed": s6(
+    "エフェクトをとばした ・ もどした",
+    "{target}をとばしました。",
+    { target: "2 ベース の コンプレッサー " },
+    "part",
+  ),
+  "msg.effectRestored": s6(
+    "エフェクトをとばした ・ もどした",
+    "{target}をもどしました。",
+    { target: "…" },
+    "quoted",
+  ),
+  "status.paramSelectedInsert": s6(
+    "パラメータをえらんでいる（トラック ・ マスター）",
+    "{strip} ・ {effect}の「{param}」をえらんでいます",
+    { strip: "2 ベース", effect: "コンプレッサー", param: "しきい値" },
+  ),
+  "params.valueClamped": s6(
+    "打ちこんだ値がはみ出した",
+    "{param}は {range} なので、{value} にしました。",
+    { param: "レシオ", range: "1〜20", value: "20 : 1" },
+  ),
+  "params.nothingSelected": s6(
+    "何もえらんでいないパラメータの欄",
+    "ミキサーでインサートの枠をえらぶと、ここにパラメータが出ます。",
+  ),
+  "mixer.noOutput": s6("出口がない", "出口なし ▸", undefined, "part"),
+  "mixer.noOutputTip": s6(
+    "出口がない",
+    "音の出口がありません。押すと音の設定をひらきます。",
+    undefined,
+    "quoted",
+  ),
+
+  // [第 5 回 ・ プラグイン]（仕様書 6 章）
+  "plugin.newFound": s6(
+    "新しいプラグインがあった",
+    "新しいプラグインが {count} 個見つかりました。棚の「あとから入れたもの」に入れました。",
+    { count: "3" },
+  ),
+  "plugin.stoppedList": s6(
+    "スキャンで止まった物の一覧",
+    "この {count} 個は、調べている途中で止まったので、棚に入れていません。meloet と曲は無事です。次のスキャンからは、とばします。",
+    { count: "4" },
+  ),
+  "plugin.retryOk": s6(
+    "もう一度ためして入った",
+    "{name} を、もう一度ためしました。今度は入りました。",
+    { name: "Granular Fog" },
+  ),
+  "plugin.retryStopped": s6(
+    "もう一度ためしても止まった",
+    "{name} は、また止まりました。棚には入れません。",
+    { name: "Granular Fog" },
+  ),
+  "plugin.windowStep": s6(
+    "プラグインの窓で変えた（履歴）",
+    "{name} の窓で変えた所",
+    { name: "Surge XT" },
+  ),
+  "plugin.loading": s6(
+    "プラグインを読みこんでいる",
+    "{name} を読みこんでいます…",
+    { name: "Surge XT" },
+  ),
+  "plugin.loadFailed": s6(
+    "プラグインを読みこめない",
+    "{name} を読みこめませんでした。",
+    { name: "Surge XT" },
   ),
 
   // 数字の欄の名前と範囲（仕様書 6 章「範囲の外の値を打った」、3 章のテンポと拍子の枠）。
@@ -593,6 +760,8 @@ export const texts = {
   "button.dontRestore": e("戻さない", "spec:6"),
   "button.openFileLocation": e("ファイルの場所をひらく", "spec:6"),
   "button.close": e("閉じる", "spec:6"),
+  "button.addSf2": e("SF2 を足す…", "spec:6"),
+  "button.pluginFolders": e("プラグインの場所…", "spec:6"),
 
   // キーの札（帯札やボタンの右はしに小さく書くキーの名前。仕様書 4 章の表）
   "key.enter": e("Enter", "spec:4"),
@@ -724,16 +893,36 @@ export const texts = {
     number: "1",
     name: "ピアノ",
   }),
-  // 最初から入っている音色（仕様書 3 章）。キーの後ろは約束の InstrumentKind。
+  // 最初から入っている音色（仕様書 3 章 84）。キーの後ろは約束の InstrumentKind。棚の並び。
   "instrument.grandPiano": e("グランドピアノ", "spec:3"),
   "instrument.electricPiano": e("エレクトリックピアノ", "spec:3"),
-  "instrument.organ": e("オルガン", "spec:3"),
+  "instrument.organDrawbar": e("ドローバーオルガン", "spec:3"),
+  "instrument.organPercussive": e("パーカッシブオルガン", "spec:3"),
+  "instrument.organRock": e("ロックオルガン", "spec:3"),
+  "instrument.organ": e("パイプオルガン", "spec:3"),
+  "instrument.organQuiet": e("パイプオルガン（やわらかい）", "spec:3"),
+  "instrument.organChurch": e("チャーチオルガン", "spec:3"),
+  "instrument.organReed": e("リードオルガン", "spec:3"),
+  "instrument.vibraphone": e("ビブラフォン", "spec:3"),
+  "instrument.marimba": e("マリンバ", "spec:3"),
+  "instrument.guitarNylon": e("ナイロンギター", "spec:3"),
+  "instrument.guitarSteel": e("スチールギター", "spec:3"),
+  "instrument.guitarElectric": e("エレキギター", "spec:3"),
+  "instrument.guitarDistortion": e("ひずんだギター", "spec:3"),
   "instrument.fingerBass": e("フィンガーベース", "spec:3"),
+  "instrument.pickBass": e("ピックベース", "spec:3"),
+  "instrument.woodBass": e("ウッドベース", "spec:3"),
   "instrument.synthBass": e("シンセベース", "spec:3"),
   "instrument.studioKit": e("スタジオキット", "spec:3"),
   "instrument.electroKit": e("エレクトロキット", "spec:3"),
+  "instrument.brushKit": e("ブラシキット", "spec:3"),
   "instrument.strings": e("ストリングス", "spec:3"),
+  "instrument.pizzicato": e("ピチカート", "spec:3"),
   "instrument.warmPad": e("あたたかいパッド", "spec:3"),
+  "instrument.trumpet": e("トランペット", "spec:3"),
+  "instrument.brassSection": e("ブラスセクション", "spec:3"),
+  "instrument.altoSax": e("アルトサックス", "spec:3"),
+  "instrument.flute": e("フルート", "spec:3"),
   "instrument.synthLead": e("シンセリード", "spec:3"),
   "instrument.sine": e("サイン波", "spec:3"),
   // ドラムのピアノロールの行の名前（楽器の名前。キーの後ろは DRUM_ROWS の id）。
@@ -754,9 +943,11 @@ export const texts = {
   "inspector.lockUnusable": e("使えない", "spec:3"),
   // 棚の見出し。キーの後ろは約束の InstrumentGroup。
   "instrumentGroup.pianoKeys": e("ピアノ ・ 鍵盤", "spec:3"),
+  "instrumentGroup.guitar": e("ギター", "spec:3"),
   "instrumentGroup.bass": e("ベース", "spec:3"),
   "instrumentGroup.drums": e("ドラム", "spec:3"),
   "instrumentGroup.padStrings": e("パッド ・ 弦", "spec:3"),
+  "instrumentGroup.wind": e("管楽器", "spec:3"),
   "instrumentGroup.synth": e("シンセ", "spec:3"),
 
   // 棚（音源をえらぶ）
@@ -1099,6 +1290,17 @@ export const texts = {
     { tracks: "4 パッド ・ 5 ベース" },
     "quoted",
   ),
+  // 棚が音源の一覧でひらいていて、いつものまとめを出すとき。groups はひらいている見出し（status.shelfGroupsLast でつなぐ）。
+  "status.shelfOpen": e("音色 {count} ・ {groups}をひらいています", "mock:R8-Shelf84", {
+    count: "31",
+    groups: "ピアノ ・ 鍵盤とギター",
+  }),
+  "status.shelfCount": e("音色 {count}", "mock:R8-Shelf84", { count: "31" }),
+  // 3 つ以上は、前を LIST_COMMA でならべ、最後だけ「と」。
+  "status.shelfGroupsLast": e("{first}と{last}", "mock:R8-Shelf84", {
+    first: "ピアノ ・ 鍵盤",
+    last: "ギター",
+  }),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
   "status.outputNone": e("出口: まだ", "spec:3"),
   "status.inputs": e("入口: {inputs}", "mock:Main", {
@@ -1536,10 +1738,10 @@ export const texts = {
   "about.fonts": e("書体", "mock:R7-AboutLicense"),
   "about.parts": e("部品（ライセンスごと）", "mock:R7-AboutLicense"),
   "about.soundName": e("名前", "mock:R7-AboutLicense"),
-  "about.soundCreator": e("作った人", "mock:R7-AboutLicense"),
+  "about.soundCreator": e("作った人", "spec:3"),
   "about.soundLicense": e("ライセンス", "mock:R7-AboutLicense"),
-  "about.soundSource": e("出どころ", "mock:R7-AboutLicense"),
-  "about.soundChanges": e("手を加えたこと", "mock:R7-AboutLicense"),
+  "about.soundSource": e("出どころ", "spec:3"),
+  "about.soundChanges": e("手を加えたこと", "spec:3"),
   // 手を加えたこと（音の素材ごと）。モックの「音の大きさをそろえ、ファイルの形を変えた」の書きかたで、
   // tools/sounds/build.py の CHANGES（NOTICE の英語の文）と同じ中身を言う。
   "about.changes.salamander-grand-piano": e(
@@ -1593,6 +1795,18 @@ const st = (term: string, description: string): Term => ({
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
   st(
+    "とばす",
+    "エフェクトを外さずに、音がそこを通らないようにする。かける前と後をくらべるのに使う。ほかでは「バイパス」とも呼ぶ。",
+  ),
+  st("スキャン", "PC に入っているプラグインを、meloet が調べて棚に入れること。"),
+  st("作った人", "プラグインを作った人や会社。プラグインが自分で言ってくる。"),
+  st("SF2", "音色がたくさん入った 1 つのファイル。サウンドフォントとも呼ぶ。"),
+  st(
+    "GM",
+    "音色の番号の、世界共通の決まり。1 番がピアノ、ドラムは決まった鍵に決まった楽器。",
+  ),
+  st("テイク", "同じ所を何回か録ったときの、1 回分。"),
+  st(
     "サイン波",
     "いちばん単純な、まるい音。音の高さを確かめるのにむいている。",
   ),
@@ -1642,7 +1856,7 @@ export const terms: readonly Term[] = [
   st("広がり", "響きの左右の広さ。ほかでは「ワイズ」「ステレオ幅」とも呼ぶ。"),
   st(
     "ミックス",
-    "元の音と、エフェクトの音の混ぜかた。戻りでは 100 %。ほかでは「ドライ ・ ウェット」とも呼ぶ。",
+    "元の音と、エフェクトの音の混ぜかた。トラックとマスターでは、はじめ 30 %、戻りでは 100 %。ほかでは「ドライ ・ ウェット」とも呼ぶ。",
   ),
   st("間隔", "くり返すまでの時間。"),
   st("テンポに合わせる", "オンなら、間隔を曲のテンポの音符の長さで決める。"),
@@ -1796,3 +2010,6 @@ export function t(
 
 /** 状態行の左の文の、部分どうしのつなぎ（仕様書 6 章「止まっているときの状態行の左」の「 ・ 」でつなぐ）。 */
 export const STATUS_JOIN = " ・ ";
+
+/** 3 つ以上の名前をならべるときの、最後の「と」より前のつなぎ（棟梁の決め 2026-11-19。仕様書にもモックにもない）。 */
+export const LIST_COMMA = "、";

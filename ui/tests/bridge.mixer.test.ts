@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { effectDefaults, encodeTelemetry, fakeScene, fakeState, reduceMixer } from "../src/bridge/fake";
 import { decodeTelemetry } from "../src/bridge/telemetry";
-import { EFFECT_KINDS, EFFECT_PARAMS, INSERT_SLOTS, PROTOCOL_VERSION, type AppState, type Command, type InsertRef } from "../src/bridge/types";
+import { EFFECT_KINDS, EFFECT_PARAMS, INSERT_SLOTS, type AppState, type Command, type InsertRef } from "../src/bridge/types";
 import { texts } from "../src/text/ja";
 
 const scene = (name: string) => fakeScene(name)!.state;
 
 describe("約束 14: 偽物の場面（ミキサー）", () => {
-  it("版は 14", () => {
-    expect(PROTOCOL_VERSION).toBe(14);
-  });
-
   it("mixer はモック F4-Mixer の曲", () => {
     const s = scene("mixer");
     expect(s.song.tracks.map((t) => [t.number, t.name, t.instrument, t.gainDb, t.pan, t.sends, t.inserts[0]])).toEqual([

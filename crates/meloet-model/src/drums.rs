@@ -1,7 +1,7 @@
 //! The drum sounds a kit has and the keys they sit on (General MIDI's drum note map).
 //!
-//! The studio kit and the electro kit share this table. The names shown on screen belong to the
-//! UI; here a sound has only an English id.
+//! The studio kit, the electro kit and the brush kit share this table. The names shown on screen
+//! belong to the UI; here a sound has only an English id.
 
 /// One sound of a kit, in the order the drum piano roll shows its rows, top to bottom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

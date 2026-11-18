@@ -8,7 +8,7 @@
   import { menuOpened } from "../lib/menu";
   import { term } from "../lib/tip.svelte";
   import { current, onEvent, send } from "../state/app.svelte";
-  import { STATUS_JOIN, t, type TextKey } from "../text/ja";
+  import { LIST_COMMA, STATUS_JOIN, t, type TextKey } from "../text/ja";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { stripName } from "./mixer/stripName";
   import { paramName } from "./params/paramRows";
@@ -17,6 +17,7 @@
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";
   import { dragReading } from "./pianoroll/view.svelte";
+  import { shelfStatus } from "./tracks.svelte";
   import { statusFit, type StatusRightShown } from "./statusFit";
   import { shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
@@ -303,6 +304,17 @@
     return textParts(muted.length === 1 ? "status.muted" : "status.mutedMany", { tracks: muted.join(STATUS_JOIN) });
   }
 
+  /** 棚が音源の一覧でひらいているときの、いつものまとめの代わり（モック R8-Shelf84）。 */
+  const shelfParts = $derived.by((): TextPart[] | null => {
+    const s = shelfStatus(app);
+    if (!s) return null;
+    if (s.groups.length === 0) return textParts("status.shelfCount", { count: s.count });
+    const names = s.groups.map((g) => t(`instrumentGroup.${g}`));
+    const last = names.pop()!;
+    const groups = names.length === 0 ? last : t("status.shelfGroupsLast", { first: names.join(LIST_COMMA), last });
+    return textParts("status.shelfOpen", { count: s.count, groups });
+  });
+
   // ---- ピアノロールをひらいて録音しているとき（仕様書 6 章「録音中 ・ ピアノロール」）: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」 ----
 
   const recordingInPianoRoll = $derived(pianoRollOpen && app.status.message?.id === "recording");
@@ -358,7 +370,8 @@
         textParts("status.noClip", { track: track(noClipTrack) }),
       );
       base = { parts, strong: [], button: null };
-    } else base = shown(m);
+    } else if ((m === null || m.id === "summary") && shelfParts) base = { parts: shelfParts, strong: [], button: null };
+    else base = shown(m);
     if (app.transport.state === "stopped" && (m === null || m.id === "summary")) {
       const muted = mutedParts();
       if (muted.length > 0) return { parts: joined(base?.parts ?? [], muted), strong: base?.strong ?? [], button: base?.button ?? null };

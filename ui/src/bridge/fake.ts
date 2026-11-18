@@ -1279,6 +1279,9 @@ SCENES.tracks6 = {
 };
 // F4-ShelfSample without the sample: "＋ トラックを追加" opened the shelf, no row picked yet.
 SCENES.shelfNewTrack = { setup: (s) => shelfSong(s, {}), bands: ["shelf"], meters: QUIET };
+// R8-Shelf84: the 31 instruments of the shelf (spec 3, 84). The folded groups are the screen's own
+// (tools/design/shoot_ui.py folds all but "ピアノ ・ 鍵盤" and "ギター" by clicking their headings).
+SCENES.shelf84 = { setup: (s) => shelfSong(s, {}), bands: ["shelf"], meters: QUIET };
 // F4-ShelfAudition: "シンセベース" is auditioned for a new track (it would be track 5).
 SCENES.shelfAudition = {
   setup(s) {
@@ -1821,9 +1824,19 @@ const busy = (state: AppState) => state.transport.state === "recording" || state
 
 const SHELF_MESSAGES: StatusMessage["id"][] = ["auditionNewTrack", "auditionReplace", "samplePlaying"];
 const isShelfMessage = (m: StatusMessage | null) => m !== null && SHELF_MESSAGES.includes(m.id);
-/** The short names of new tracks, by group (spec 3, Y5). */
-const GROUP_TRACK_NAMES: Record<string, string> = { pianoKeys: "ピアノ", bass: "ベース", drums: "ドラム", padStrings: "パッド", synth: "シンセ" };
+/** The short names of new tracks, by group; the organs are "オルガン" and the mallets "マレット" (spec 3, トラックの名前（84）). */
+const GROUP_TRACK_NAMES: Record<string, string> = {
+  pianoKeys: "ピアノ",
+  guitar: "ギター",
+  bass: "ベース",
+  drums: "ドラム",
+  padStrings: "パッド",
+  wind: "管楽器",
+  synth: "シンセ",
+};
 const groupOf = (i: InstrumentKind) => INSTRUMENT_GROUPS.find((g) => g.instruments.includes(i))!.group;
+const trackNameOf = (i: InstrumentKind) =>
+  i.startsWith("organ") ? "オルガン" : i === "vibraphone" || i === "marimba" ? "マレット" : GROUP_TRACK_NAMES[groupOf(i)]!;
 const SAMPLE_US = 4_000_000;
 
 /** What the shelf says on the status line while it auditions or plays a sample. */
@@ -1909,7 +1922,7 @@ export function reduceTracks(
       const picked = shelf.selected;
       if (picked === null || !change) return null;
       if (shelf.mode.kind === "newTrack") {
-        const base = GROUP_TRACK_NAMES[groupOf(picked)]!;
+        const base = trackNameOf(picked);
         const names = new Set(song.tracks.map((t) => t.name));
         let name = base;
         for (let n = 2; names.has(name); n++) name = `${base} ${n}`;

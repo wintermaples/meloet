@@ -32,10 +32,11 @@ BAND = [
     ("electricPiano", "エレクトリックピアノ", "pianoKeys", (48, 85), []),
     ("synthLead", "シンセリード", "synth", (60, 85), ["compressor"]),
     ("warmPad", "あたたかいパッド", "padStrings", (48, 73), []),
-    ("organ", "オルガン", "pianoKeys", (48, 85), ["eq4", "compressor"]),
+    ("organ", "パイプオルガン", "pianoKeys", (48, 85), ["eq4", "compressor"]),
 ]
 # meloet_model::mixer::new_track_sends: [A, B] in dB, None is -inf.
-NEW_TRACK_SENDS = {"pianoKeys": -15.0, "padStrings": -15.0, "synth": -15.0, "drums": -24.0, "bass": None}
+NEW_TRACK_SENDS = {"pianoKeys": -15.0, "guitar": -15.0, "padStrings": -15.0, "wind": -15.0, "synth": -15.0,
+                   "drums": -24.0, "bass": None}
 INSERT_SLOTS = 4
 TRACK_COLORS = 5
 PANS = [0, -20, 0, 30, -40, 20, -10, 40]

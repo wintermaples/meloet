@@ -410,6 +410,21 @@ fn closing_with_nothing_unsaved_ends_at_once() {
 }
 
 #[test]
+fn quit_is_closing_the_window() {
+    let w = &mut World::new("flow-quit-clean");
+    let m = &mut ready();
+    w.input(m, Input::Command(Command::Quit));
+    assert!(w.exited);
+
+    let w = &mut World::new("flow-quit");
+    let m = &mut ready();
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+    w.input(m, Input::Command(Command::Quit));
+    assert!(!w.exited);
+    assert_eq!(kind(m), Some(SongDialogKind::Unsaved));
+}
+
+#[test]
 fn closing_with_changes_asks() {
     for (answer, exits, saved) in [
         (SongAnswer::Save, true, true),

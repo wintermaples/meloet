@@ -2,6 +2,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView } from "../src/bridge";
+import { arrangeOf } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import * as app from "./fake-app.svelte";
 
@@ -62,7 +63,7 @@ function clip(id: number, name: string, fromBar: number, toBar: number, take = 1
 const takes = (selected: number | null = 3) =>
   app.stateWith((s) => {
     s.song.tracks[0]!.clips = [clip(1, "イントロ", 1, 5), clip(3, "Aメロ", 5, 9, 2, 3)];
-    s.arrange = { selectedClip: selected, pianoRollClip: selected };
+    s.arrange = arrangeOf(selected);
   });
 
 function pointer(el: HTMLElement, type: string, clientX: number, clientY = 10): void {

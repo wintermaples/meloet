@@ -620,6 +620,15 @@ impl Play {
         }
     }
 
+    /// The number of the track `rows` rows below (above, when negative) the track of `clip`.
+    pub fn track_rows_away(&self, clip: u32, rows: i32) -> Option<u32> {
+        let (track, _) = self.doc().clip(ClipId(clip))?;
+        let tracks = &self.doc().tracks;
+        let at = tracks.iter().position(|t| t.id == track.id)?;
+        let to = usize::try_from(at as i64 + i64::from(rows)).ok()?;
+        tracks.get(to).map(|t| t.id.0)
+    }
+
     /// Mod D in the arrange view. The copy is selected and shown in the piano roll.
     pub fn duplicate_clip(&mut self, clip: u32, effects: &mut Vec<Effect>) {
         if self.busy() {
@@ -1223,8 +1232,10 @@ impl Play {
 
     pub fn arrange_view(&self) -> ArrangeView {
         ArrangeView {
+            selected_clips: self.selected.map(|c| c.0).into_iter().collect(),
             selected_clip: self.selected.map(|c| c.0),
             piano_roll_clip: self.piano_roll.map(|c| c.0),
+            clipboard_clips: 0,
         }
     }
 

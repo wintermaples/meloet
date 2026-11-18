@@ -1,4 +1,4 @@
-use meloet_protocol::{ClipEdge, Command};
+use meloet_protocol::{ClipEdge, ClipSpot, Command, SelectMode};
 
 use super::tests::{cmd, ready, record_once, report, started};
 use super::*;
@@ -33,10 +33,10 @@ fn a_move_is_one_step_and_selects_the_clip() {
     let steps = m.view().song.undo_count;
     let effects = cmd(
         m,
-        Command::MoveClip {
-            clip: c.id,
+        Command::MoveClips {
+            clips: vec![c.id],
             ticks: 2 * BAR as i64,
-            track: 1,
+            tracks: 0,
             copy: false,
         },
     );
@@ -50,19 +50,19 @@ fn a_move_is_one_step_and_selects_the_clip() {
     // Nowhere to go: no step.
     cmd(
         m,
-        Command::MoveClip {
-            clip: c.id,
+        Command::MoveClips {
+            clips: vec![c.id],
             ticks: 0,
-            track: 1,
+            tracks: 0,
             copy: false,
         },
     );
     cmd(
         m,
-        Command::MoveClip {
-            clip: c.id,
+        Command::MoveClips {
+            clips: vec![c.id],
             ticks: 0,
-            track: 7,
+            tracks: 6,
             copy: false,
         },
     );
@@ -77,10 +77,10 @@ fn a_copy_and_a_duplicate_are_selected_and_shown() {
     let m = &mut m;
     cmd(
         m,
-        Command::MoveClip {
-            clip: c.id,
+        Command::MoveClips {
+            clips: vec![c.id],
             ticks: 4 * BAR as i64,
-            track: 1,
+            tracks: 0,
             copy: true,
         },
     );
@@ -91,14 +91,14 @@ fn a_copy_and_a_duplicate_are_selected_and_shown() {
     assert_eq!(copy.take_id, c.take_id, "the take is shared");
     assert_eq!(m.view().arrange.selected_clip, Some(copy.id));
     assert_eq!(m.view().arrange.piano_roll_clip, Some(copy.id));
-    cmd(m, Command::DuplicateClip { clip: c.id });
+    cmd(m, Command::DuplicateClips { clips: vec![c.id] });
     let all = clips(m);
     assert_eq!(all.len(), 3);
     assert_eq!(all[1].start, c.end);
     assert_eq!(m.view().arrange.selected_clip, Some(all[1].id));
     // The first duplicate is right after it now: no room.
     let steps = m.view().song.undo_count;
-    cmd(m, Command::DuplicateClip { clip: c.id });
+    cmd(m, Command::DuplicateClips { clips: vec![c.id] });
     assert_eq!(m.view().song.undo_count, steps);
     // Undo takes the copy away, and the piano roll with it.
     cmd(m, Command::Undo);
@@ -152,19 +152,19 @@ fn nothing_changes_clips_while_recording() {
     started(m);
     let before = m.view().song;
     for command in [
-        Command::MoveClip {
-            clip: c.id,
+        Command::MoveClips {
+            clips: vec![c.id],
             ticks: BAR as i64,
-            track: 1,
+            tracks: 0,
             copy: false,
         },
-        Command::MoveClip {
-            clip: c.id,
+        Command::MoveClips {
+            clips: vec![c.id],
             ticks: 8 * BAR as i64,
-            track: 1,
+            tracks: 0,
             copy: true,
         },
-        Command::DuplicateClip { clip: c.id },
+        Command::DuplicateClips { clips: vec![c.id] },
         Command::TrimClip {
             clip: c.id,
             edge: ClipEdge::End,
@@ -195,4 +195,53 @@ fn nothing_changes_clips_while_recording() {
     );
     assert_eq!(sequences(&effects), 1);
     assert_eq!(clips(m)[0].end, c.end - 10);
+}
+
+/// Protocol 8 commands taken in before they are acted on: nothing breaks, nothing changes.
+#[test]
+fn the_new_commands_of_protocol_8_are_taken_in() {
+    let (mut m, c) = one_clip();
+    let m = &mut m;
+    let before = m.view();
+    for command in [
+        Command::SelectTrack { track: 1 },
+        Command::SelectTrack { track: 9 },
+        Command::ToggleMute { track: 1 },
+        Command::ToggleSolo { track: 1 },
+        Command::SelectClips {
+            clips: vec![c.id, 999],
+            mode: SelectMode::Add,
+        },
+        Command::SelectAllClips,
+        Command::CopyClips { clips: vec![c.id] },
+        Command::CutClips { clips: vec![c.id] },
+        Command::PasteClips { to: None },
+        Command::PasteClips {
+            to: Some(ClipSpot {
+                track: 1,
+                tick: 8 * BAR,
+            }),
+        },
+        Command::MoveClips {
+            clips: vec![c.id, 999],
+            ticks: BAR as i64,
+            tracks: 0,
+            copy: false,
+        },
+        Command::MoveClips {
+            clips: vec![c.id],
+            ticks: BAR as i64,
+            tracks: -1,
+            copy: false,
+        },
+        Command::DuplicateClips { clips: vec![] },
+        Command::SetVelocityFixed { on: true, value: 0 },
+        Command::SaveSongAs,
+    ] {
+        cmd(m, command);
+    }
+    let after = m.view();
+    assert_eq!(after.song.tracks, before.song.tracks);
+    assert_eq!(after.song.undo_count, before.song.undo_count);
+    assert_eq!(after.keyboards, before.keyboards);
 }

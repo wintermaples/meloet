@@ -188,6 +188,10 @@ export const texts = {
     "part",
   ),
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
+  // 範囲の外の値は近いはしにして決める（デザインに戻した事 68）。欄と範囲は value.*。
+  "msg.valueClamped": e("{field}は {range} なので、{value} にしました。", "user:2026-11-18", { field: "ベロシティ", range: "1〜127", value: "127" }),
+  // ベロシティをまとめて変える（同じく 67）。
+  "msg.velocityMatched": e("{count} ノートのベロシティを {value} にそろえました。", "user:2026-11-18", { count: "3", value: "100" }),
 
   // 使えない値を打ったときの欄の名前と範囲（仕様書 6 章「使えない値を打った」、3 章のテンポと拍子の枠）。
   "value.tempo": e("テンポ", "spec:6"),

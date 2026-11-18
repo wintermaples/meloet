@@ -52,6 +52,7 @@
     position: ["note.position", null],
     key: ["note.key", null],
     length: ["note.length", null],
+    playPosition: ["note.position", null],
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
@@ -135,6 +136,12 @@
         const [field, range] = VALUE_FIELDS[m.field];
         return plain("msg.valueRejected", { field: t(field), range: m.range ?? (range ? t(range) : ""), kept: m.kept });
       }
+      case "valueClamped": {
+        const [field, range] = VALUE_FIELDS[m.field];
+        return plain("msg.valueClamped", { field: t(field), range: m.range ?? (range ? t(range) : ""), value: m.value });
+      }
+      case "velocityMatched":
+        return plain("msg.velocityMatched", { count: m.count, value: m.value });
       case "outputChosen":
         return m.track
           ? plain("status.outputChosen", { output: m.output, track: track(m.track) })

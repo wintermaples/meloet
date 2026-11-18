@@ -395,6 +395,7 @@ export const texts = {
 
   // 棚（音源をえらぶ）
   "shelf.titleNewTrack": e("新しいトラックの音源をえらぶ", "mock:F4-ShelfSample"),
+  "shelf.titleInsert": e("{strip} にエフェクトを入れる", "user:2026-11-18", { strip: "2 ベース" }),
   "shelf.titleReplace": e("{track} の音源を入れかえる", "mock:F4-ShelfReplace", { track: "1 ピアノ" }),
   "shelf.search": e("さがす", "mock:F4-ShelfSample"),
   "shelf.searchLabel": e("名前 ・ 種類", "mock:F4-ShelfSample"),
@@ -500,6 +501,8 @@ export const texts = {
   "mixer.panCenter": e("C", "mock:F4-Mixer"),
   "mixer.panLeft": e("L {value}", "mock:F4-Mixer", { value: "20" }),
   "mixer.panRight": e("R {value}", "mock:F4-Mixer", { value: "20" }),
+  "mixer.removeEffect": e("外す", "user:2026-11-18"),
+  "mixer.returnName": e("{bus} {effect}", "user:2026-11-18", { bus: "A", effect: "リバーブ" }),
   "mixer.returnOf": e("センド {bus} の戻り", "mock:F4-Mixer", { bus: "A" }),
   "mixer.master": e("マスター", "mock:F4-Mixer"),
   "mixer.output": e("出口 ・ {name}", "mock:F4-Mixer", { name: "ヘッドホン" }),

@@ -59,7 +59,7 @@ describe("keyAction", () => {
 
   it("修飾キーつきの一文字は、一文字のキーとしては効かない", () => {
     expect(keyAction(k("e", { ctrl: true }), false, "other")).toBeNull();
-    expect(keyAction(k("M", { shift: true }), false, "other")).toBeNull();
+    expect(keyAction(k("E", { shift: true }), false, "other")).toBeNull();
     expect(keyAction(k("a", { alt: true }), false, "other")).toBeNull();
   });
 

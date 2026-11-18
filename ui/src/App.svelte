@@ -1,12 +1,14 @@
-<!-- 画面の並び（仕様書 3 章）: 上から、再生まわり、入力計、アレンジ、ひらいた下の帯、帯札の行、状態行。
+<!-- 画面の並び（仕様書 3 章）: 上から、メニューの行（design-notes B-59）、再生まわり、入力計、アレンジ、ひらいた下の帯、帯札の行、状態行。
      右はしに、ひらいた欄と縦の見出し。重なりの順は、画面の部品（WebGL の面は、それぞれの箱の中）< 案内・出口えらび（20）
-     < ダイアログ（30）< 用語の説明。 -->
+     < ダイアログ（30）< 一覧（上のメニュー、右クリック。40）< 用語の説明。 -->
 <script lang="ts">
   import { onMount } from "svelte";
   import Arrange from "./components/Arrange.svelte";
   import BandRow from "./components/BandRow.svelte";
   import InputMeter from "./components/InputMeter.svelte";
   import LowerBand from "./components/LowerBand.svelte";
+  import ContextMenu from "./components/menu/ContextMenu.svelte";
+  import MenuBar from "./components/menu/MenuBar.svelte";
   import { metrics, watchDevicePixelRatio } from "./components/metrics.svelte";
   import OutputChooser from "./components/OutputChooser.svelte";
   import RecoveryHint from "./components/RecoveryHint.svelte";
@@ -49,6 +51,7 @@
 {#if state}
   {@const layout = state.workspace.layout}
   <div class="app">
+    <MenuBar />
     <Transport />
     <div class="meter" style:height={layout.meter === "full" ? "var(--size-meter-full)" : "var(--size-meter-slim)"}>
       <InputMeter />
@@ -82,6 +85,7 @@
 {:else if current.failure}
   <pre class="failure">{current.failure}</pre>
 {/if}
+<ContextMenu />
 <Tip />
 <Surface />
 

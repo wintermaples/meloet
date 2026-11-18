@@ -341,7 +341,9 @@ describe("キーを画面につなぐ", () => {
   });
 
   it("音の出口がまだのあいだ、Space と R は何もしない。ほかは効く", () => {
-    for (const k of [" ", "r"]) expect(key(k, { code: k === " " ? "Space" : "KeyR" }).defaultPrevented).toBe(false);
+    // Space は使えないときも、フォーカスのあるボタンを押さない（再生 ・ 停止だけ）。
+    expect(key(" ", { code: "Space" }).defaultPrevented).toBe(true);
+    expect(key("r", { code: "KeyR" }).defaultPrevented).toBe(false);
     expect(sent).toEqual([]);
     key("Home");
     key("l");

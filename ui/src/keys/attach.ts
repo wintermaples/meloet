@@ -1,5 +1,8 @@
 // キーの決まり（keys.ts）を画面につなぐ。Esc の順番と、「音が出ました」の案内を消す所もここ。
+// 上のメニューの行も、キーのある行はここの runKeyAction を通す（ピアノロールとアレンジのどちらに向けるかの決めを 1 か所に）。
 import type { AppState, Command } from "../bridge";
+import { closeContextMenu } from "../components/menu/contextMenu.svelte";
+import { closeMenuBar, openMenuBar } from "../components/menu/menuBar.svelte";
 import { pianoRollCommand, type PianoRollKey } from "../components/pianoroll/commands";
 import type { Shown } from "../components/pianoroll/geom";
 import { shown } from "../components/pianoroll/shown.svelte";
@@ -23,10 +26,16 @@ export interface KeyDeps {
   playTick?: () => number;
 }
 
-const pianoRollOpen = (state: AppState) => state.workspace.layout.lower.some((l) => l.band === "pianoRoll");
+export const pianoRollOpen = (state: AppState) => state.workspace.layout.lower.some((l) => l.band === "pianoRoll");
 
-/** ピアノロールに向けるキーの意図。ピアノロールがひらいていて、最後に押したのがピアノロールのとき。 */
-function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps): Command | null | undefined {
+/** ピアノロールに向けないときは、アレンジのえらんだクリップへ向ける意図。 */
+const ARRANGE_TOO = new Set<KeyAction["kind"]>(["deleteSelected", "duplicate", "selectAll", "cut", "copy", "paste"]);
+
+/**
+ * ピアノロールに向けるキーの意図。ピアノロールがひらいていて、最後に押したのがピアノロールのとき（toPianoRoll なら、最後に押した所によらず）。
+ * undefined はピアノロールの意図ではない（アレンジかほかへ）。
+ */
+function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps, toPianoRoll: boolean): Command | null | undefined {
   let key: PianoRollKey;
   switch (action.kind) {
     case "nudge":
@@ -52,8 +61,7 @@ function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps): Comman
     default:
       return undefined;
   }
-  // Delete と Mod D は、アレンジに向けたときはえらんだクリップへ。
-  if (!pianoRollOpen(state) || prView.focus !== "pianoRoll") return action.kind === "deleteSelected" || action.kind === "duplicate" ? undefined : null;
+  if (!pianoRollOpen(state) || (!toPianoRoll && prView.focus !== "pianoRoll")) return ARRANGE_TOO.has(action.kind) ? undefined : null;
   const notes = deps.pianoRoll ? deps.pianoRoll() : shownFor(shown.take, shown.clip);
   const playTick = deps.playTick ? deps.playTick() : shownTick(state.transport, current.telemetry, null);
   return pianoRollCommand(key, { state, shown: notes, playTick });
@@ -61,7 +69,7 @@ function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps): Comman
 
 const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "OS"]);
 
-/** 録音中とカウントイン中は、曲を新しくしたり、ひらいたり、保存したりできない。 */
+/** 録音中とカウントイン中は、曲を新しくしたり、ひらいたり、保存したり、曲を変えたりできない（Rust も受けない）。 */
 export function songBusy(state: AppState): boolean {
   return state.transport.state === "recording" || state.transport.state === "countIn";
 }
@@ -69,6 +77,9 @@ export function songBusy(state: AppState): boolean {
 /** 音の出口がまだのあいだ、Space と R は何もしない（ヤチヨさんの決め 2026-11-15）。止めるほうの Space は効く。 */
 function command(action: KeyAction, state: AppState): Command | null {
   const transport = state.transport;
+  const busy = songBusy(state);
+  const clips = state.arrange.selectedClips;
+  const track = state.song.playTarget;
   switch (action.kind) {
     case "arrange":
       return { type: "goArrange" };
@@ -98,25 +109,114 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "stepTake", delta: action.delta };
     case "deleteSelected":
       return { type: "deleteSelected" };
-    // Mod D: えらんだクリップのすぐうしろに複製（録音中とカウントイン中は Rust も受けない）。
-    case "duplicate": {
-      const clips = state.arrange.selectedClips;
-      return clips.length === 0 || songBusy(state) ? null : { type: "duplicateClips", clips };
-    }
+    // アレンジにキーが向いているとき（B-71）。Mod D はえらんだクリップのすぐうしろに複製。
+    case "duplicate":
+      return clips.length === 0 || busy ? null : { type: "duplicateClips", clips };
+    case "selectAll":
+      return state.song.tracks.some((t) => t.clips.length > 0) ? { type: "selectAllClips" } : null;
+    case "copy":
+      return clips.length === 0 ? null : { type: "copyClips", clips };
+    case "cut":
+      return clips.length === 0 || busy ? null : { type: "cutClips", clips };
+    // 貼りつけは、選んだトラックの再生の位置（Rust が小節の頭に寄せる）。
+    case "paste":
+      return state.arrange.clipboardClips === 0 || busy ? null : { type: "pasteClips", to: null };
     // 録音中とカウントイン中は、曲の名前の一覧と同じく使えない。
     case "newSong":
-      return songBusy(state) ? null : { type: "newSong" };
+      return busy ? null : { type: "newSong" };
     case "openSong":
-      return songBusy(state) ? null : { type: "openSong" };
+      return busy ? null : { type: "openSong" };
     case "saveSong":
-      return songBusy(state) ? null : { type: "saveSong" };
+      return busy ? null : { type: "saveSong" };
+    case "saveSongAs":
+      return busy ? null : { type: "saveSongAs" };
+    case "quit":
+      return { type: "quit" };
     case "undo":
       return { type: "undo" };
     case "redo":
       return { type: "redo" };
+    // ミュートは曲を変える手、ソロは聞くときだけの切りかえ（B-70）。
+    case "trackMute":
+      return track === null || busy ? null : { type: "toggleMute", track };
+    case "trackSolo":
+      return track === null ? null : { type: "toggleSolo", track };
     default:
       return null;
   }
+}
+
+/** 意図から送るコマンド。null は何もしない（使えない）。toPianoRoll: メニューの「ノート」から（ピアノロールがひらいていれば、そこへ）。 */
+export function keyCommand(action: KeyAction, state: AppState, deps: KeyDeps, toPianoRoll = false): Command | null {
+  const forPianoRoll = pianoRollKey(action, state, deps, toPianoRoll);
+  return forPianoRoll !== undefined ? forPianoRoll : command(action, state);
+}
+
+/** 画面の中だけで行う意図（横の拡大、道具、F10）か。 */
+function screenOnly(action: KeyAction): boolean {
+  return action.kind === "zoom" || action.kind === "tool" || action.kind === "menuBar";
+}
+
+/** いま行えるか（メニューの行の「使えない」）。 */
+export function keyActionUsable(action: KeyAction, deps: KeyDeps, toPianoRoll = false): boolean {
+  const state = deps.state();
+  if (!state) return false;
+  if (action.kind === "tool") return pianoRollOpen(state);
+  if (screenOnly(action)) return true;
+  return keyCommand(action, state, deps, toPianoRoll) !== null;
+}
+
+/** 意図を行う。何かしたら true。キーとメニューの行の両方がここを通る。 */
+export function runKeyAction(action: KeyAction, deps: KeyDeps, toPianoRoll = false): boolean {
+  const state = deps.state();
+  if (!state) return false;
+  switch (action.kind) {
+    case "zoom":
+      // 横の拡大は画面だけが持つ見た目なので、Rust には送らない。
+      zoomHorizontal(action.delta, state);
+      return true;
+    case "tool":
+      if (!pianoRollOpen(state)) return false;
+      prView.tool = action.tool;
+      return true;
+    case "menuBar":
+      if (!closeMenuBar()) openMenuBar(0, true);
+      return true;
+  }
+  const c = keyCommand(action, state, deps, toPianoRoll);
+  if (c) deps.send(c);
+  return c !== null;
+}
+
+/** Mod つきは、使えないときもブラウザの動き（Ctrl S の保存など）に渡さない。 */
+const WITH_MOD = new Set<KeyAction["kind"]>([
+  "newSong",
+  "openSong",
+  "saveSong",
+  "saveSongAs",
+  "quit",
+  "undo",
+  "redo",
+  "selectAll",
+  "duplicate",
+  "cut",
+  "copy",
+  "paste",
+  "zoom",
+]);
+
+/** Esc の 3 つめの番（用語の説明やメニュー）。上のメニュー、右クリックの一覧、状態行などの一覧のどれかをとじたら true。 */
+function closeMenus(): boolean {
+  if (tipVisible()) {
+    hideTip();
+    return true;
+  }
+  if (closeMenuBar() || closeContextMenu()) return true;
+  if (menuVisible()) {
+    closeMenu();
+    return true;
+  }
+  return false;
 }
 
 /** keydown をひとつ受ける。テストのために外に出してある。 */
@@ -150,43 +250,32 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     // 仕様書 4 章: ドラッグ中の Esc は、動かす前に戻すだけ。そのあと 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
     if (cancelDrag()) return;
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
-    else if (tipVisible()) hideTip();
-    else if (menuVisible()) closeMenu();
-    else deps.send({ type: "back" });
-    return;
-  }
-
-  if (action.kind === "zoom") {
-    // ブラウザの拡大（Ctrl ＋）に渡さない。横の拡大は画面だけが持つ見た目なので、Rust には送らない。
-    ev.preventDefault();
-    zoomHorizontal(action.delta, state);
+    else if (!closeMenus()) deps.send({ type: "back" });
     return;
   }
 
   if (action.kind === "tool") {
-    if (pianoRollOpen(state)) {
-      ev.preventDefault();
-      prView.tool = action.tool;
-    }
+    if (runKeyAction(action, deps)) ev.preventDefault();
     return;
   }
 
-  const forPianoRoll = pianoRollKey(action, state, deps);
-  const c = forPianoRoll !== undefined ? forPianoRoll : command(action, state);
-  // Mod つきは、使えないときもブラウザの動き（Ctrl S の保存など）に渡さない。
-  const withMod = ["newSong", "openSong", "saveSong", "undo", "redo", "selectAll", "duplicate", "cut", "copy", "paste"].includes(action.kind);
-  if (withMod) ev.preventDefault();
-  if (c) {
-    // 打っている最中の Home は、枠の中のカーソルも動かす。
-    if (!typing) ev.preventDefault();
-    deps.send(c);
-  }
+  // ブラウザの拡大（Ctrl ＋）や保存（Ctrl S）などに渡さない。
+  if (WITH_MOD.has(action.kind) || action.kind === "menuBar") ev.preventDefault();
+  // Space は、使えないときも、フォーカスのあるボタンを押さない（再生 ・ 停止だけ）。
+  if (action.kind === "playStop") ev.preventDefault();
+  // 打っている最中の Home は枠の中のカーソルも動かし、Shift M ・ Shift S は文字も入る。
+  if (runKeyAction(action, deps) && !typing) ev.preventDefault();
+}
+
+/** Space の keyup。ボタンは keyup で押される（WebKit と Firefox）ので、文字を打っていなければ、ここでも止める。 */
+export function handleKeyup(ev: KeyboardEvent, doc: Document = document): void {
+  const space = ev.key === " " || ev.code === "Space";
+  if (space && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !isTyping(doc)) ev.preventDefault();
 }
 
 /** Mod ＋ ・ Mod −: 最後に押したのがピアノロールで、ひらいていればピアノロール、そうでなければアレンジ。 */
 export function zoomHorizontal(delta: 1 | -1, state: AppState): void {
-  const pianoRollOpen = state.workspace.layout.lower.some((b) => b.band === "pianoRoll");
-  if (prView.focus === "pianoRoll" && pianoRollOpen) zoomBy(delta, state.workspace.scale);
+  if (prView.focus === "pianoRoll" && pianoRollOpen(state)) zoomBy(delta, state.workspace.scale);
   else zoomArrangeBy(delta);
 }
 
@@ -199,11 +288,14 @@ export function handlePointerdown(deps: KeyDeps): void {
 export function attachKeys(deps: KeyDeps): () => void {
   const doc = deps.doc ?? document;
   const onKey = (ev: KeyboardEvent) => handleKeydown(ev, deps);
+  const onKeyup = (ev: KeyboardEvent) => handleKeyup(ev, doc);
   const onPointer = () => handlePointerdown(deps);
   doc.addEventListener("keydown", onKey);
+  doc.addEventListener("keyup", onKeyup);
   doc.addEventListener("pointerdown", onPointer, true);
   return () => {
     doc.removeEventListener("keydown", onKey);
+    doc.removeEventListener("keyup", onKeyup);
     doc.removeEventListener("pointerdown", onPointer, true);
   };
 }

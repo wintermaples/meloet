@@ -38,6 +38,13 @@ export type KeyAction =
   | { kind: "newSong" }
   | { kind: "openSong" }
   | { kind: "saveSong" }
+  | { kind: "saveSongAs" }
+  | { kind: "quit" }
+  /** Shift M ・ Shift S: 選んだトラック（song.playTarget）のミュート ・ ソロ。 */
+  | { kind: "trackMute" }
+  | { kind: "trackSolo" }
+  /** F10: 上のメニューの行の最初のメニューをひらく（B-59）。 */
+  | { kind: "menuBar" }
   | { kind: "undo" }
   | { kind: "redo" }
   /** 横に拡大（1）・縮小（-1）。ピアノロールとアレンジの、最後に押したほう。 */
@@ -119,11 +126,12 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     const zoom = k.alt ? null : zoomKey(k);
     if (zoom) return { kind: "zoom", delta: zoom };
     const l = k.alt ? null : letter(k);
-    if (k.shift) return l === "z" ? { kind: "redo" } : null;
+    if (k.shift) return l === "z" ? { kind: "redo" } : l === "s" ? { kind: "saveSongAs" } : null;
     if (l === "n") return { kind: "newSong" };
     if (l === "o") return { kind: "openSong" };
     if (l === "s") return { kind: "saveSong" };
     if (l === "z") return { kind: "undo" };
+    if (l === "q") return { kind: "quit" };
     // 文字を打っている最中の Mod A ・ X ・ C ・ V は、枠の中の文字のもの。
     if (l && MOD_EDITS[l] && !(typing && l !== "d")) return MOD_EDITS[l]!;
     if (!k.alt && (k.key === "," || k.code === "Comma")) return { kind: "audioSettings" };
@@ -138,6 +146,14 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
   if (k.alt) return null;
 
   if (k.key === "Escape") return k.shift ? null : { kind: "back" };
+  if (k.key === "F10") return k.shift ? null : { kind: "menuBar" };
+
+  // 仕様書 4 章の表: 選んだトラックのミュート ・ ソロは、文字を打っている最中も効く。
+  if (k.shift) {
+    const l = letter(k);
+    if (l === "m") return { kind: "trackMute" };
+    if (l === "s") return { kind: "trackSolo" };
+  }
 
   if (!k.shift && context === "outputChooser") {
     if (k.key === "ArrowUp") return { kind: "chooserUp" };

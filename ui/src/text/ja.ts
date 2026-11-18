@@ -553,6 +553,8 @@ export const texts = {
   "menu.params": e("パラメータ", "user:2026-11-18"),
   "menu.zoomIn": e("横に拡大", "user:2026-11-18"),
   "menu.zoomOut": e("横に縮小", "user:2026-11-18"),
+  "menu.zoomRowsIn": e("縦に拡大", "user:2026-11-18"),
+  "menu.zoomRowsOut": e("縦に縮小", "user:2026-11-18"),
   "menu.scale": e("拡大率", "user:2026-11-18"),
   "menu.playStart": e("再生", "user:2026-11-18"),
   "menu.stop": e("停止", "user:2026-11-18"),
@@ -584,6 +586,23 @@ export const texts = {
   // [アレンジ ・ 再生まわり ・ 入力計]
 
   // [メニュー ・ キー]
+  // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。
+  "key.shift": e("Shift", "spec:4"),
+  "key.delete": e("Delete", "spec:4"),
+  "key.cut": e("X", "spec:4"),
+  "key.copy": e("C", "spec:4"),
+  "key.paste": e("V", "spec:4"),
+  "key.duplicate": e("D", "spec:4"),
+  "key.selectAll": e("A", "spec:4"),
+  "key.export": e("E", "spec:4"),
+  "key.audioSettings": e(",", "spec:4"),
+  "key.zoomIn": e("+", "spec:4"),
+  "key.zoomOut": e("−", "spec:4"),
+  "key.take": e("T", "spec:4"),
+  "key.mute": e("M", "spec:4"),
+  "key.solo": e("S", "spec:4"),
+  // meloet を終わる Mod Q（4 章の表にはない。design-notes B-59）。
+  "key.quit": e("Q", "user:2026-11-18"),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;

@@ -1638,3 +1638,95 @@ fn the_start_edge_and_matching_velocities_through_the_commands() {
     );
     assert_eq!(m.view().song.undo_count, steps + 2);
 }
+
+#[test]
+fn matching_lengths_is_one_step_and_undoes() {
+    let m = &mut ready();
+    record_once(m, &[(60, 10.0, 100.0), (64, 500.0, 600.0)], 1200.0);
+    let take = clip_view(m).take_id;
+    let before = TakeNotes::decode(&m.take_notes(take).unwrap()).unwrap();
+    let steps = m.view().song.undo_count;
+    cmd(
+        m,
+        Command::MatchLength {
+            take,
+            notes: vec![1, 0, 1],
+            value: 240,
+        },
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::LengthMatched {
+            count: 2,
+            value: 240
+        })
+    );
+    assert_eq!(m.view().song.undo_count, steps + 1);
+    let matched = clip_view(m).take_id;
+    let after = TakeNotes::decode(&m.take_notes(matched).unwrap()).unwrap();
+    assert!(after.notes.iter().all(|n| n.length == 240));
+    for (a, b) in after.notes.iter().zip(&before.notes) {
+        assert_eq!(a.start, b.start, "the starts stay");
+    }
+
+    cmd(m, Command::Undo);
+    let back = TakeNotes::decode(&m.take_notes(clip_view(m).take_id).unwrap()).unwrap();
+    assert_eq!(back.notes, before.notes);
+    cmd(m, Command::Redo);
+    let take = clip_view(m).take_id;
+
+    // Already at the value: said, but no step. An old take: nothing.
+    cmd(
+        m,
+        Command::MatchLength {
+            take,
+            notes: vec![0],
+            value: 240,
+        },
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::LengthMatched {
+            count: 1,
+            value: 240
+        })
+    );
+    assert_eq!(m.view().song.undo_count, steps + 1);
+    cmd(
+        m,
+        Command::MatchLength {
+            take: take + 1000,
+            notes: vec![0],
+            value: 120,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, steps + 1);
+
+    // At least 1 tick; and no note goes past the end of its clip.
+    cmd(
+        m,
+        Command::MatchLength {
+            take,
+            notes: vec![0],
+            value: 0,
+        },
+    );
+    let take = clip_view(m).take_id;
+    let short = TakeNotes::decode(&m.take_notes(take).unwrap()).unwrap();
+    assert_eq!(short.notes[0].length, 1);
+    cmd(
+        m,
+        Command::MatchLength {
+            take,
+            notes: vec![0, 1],
+            value: u64::MAX,
+        },
+    );
+    let c = clip_view(m);
+    let long = TakeNotes::decode(&m.take_notes(c.take_id).unwrap()).unwrap();
+    let zero = (c.start as i64 + c.take_offset) as u64;
+    for n in &long.notes {
+        assert_eq!(zero + u64::from(n.start) + u64::from(n.length), c.end);
+    }
+    assert_eq!(m.view().song.undo_count, steps + 3);
+}

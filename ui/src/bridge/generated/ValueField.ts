@@ -3,4 +3,4 @@
 /**
  * The number fields whose range the status line names (spec 6 「使えない値を打った」).
  */
-export type ValueField = "tempo" | "meterNum" | "meterDen" | "velocity" | "position" | "key" | "length" | "playPosition" | "bar" | "beat" | "tick";
+export type ValueField = "tempo" | "meterNum" | "meterDen" | "velocity" | "position" | "key" | "length" | "playPosition" | "bar" | "beat" | "tick" | "controlValue";

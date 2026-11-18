@@ -256,6 +256,15 @@ export const mock = {
   "mock.inspector.slider-fill": m(3, "A-PianoRoll"),
   // ボタンの列の上下のあき（`padding:6px 12px 6px 28px`）。
   "mock.inspector.buttons-pad-y": m(6, "A-PianoRoll"),
+  // まとめて変える行（長さをそろえる ・ ベロシティをまとめて変える）。仕様書 2 章の数を、モックの書きかたで（高さ 32、字の幅 60、
+  // 入力の枠は幅 72 ・ 高さ 20 ・ 左右 6）。
+  "mock.inspector.bulk-row": m(32, "A-PianoRoll"),
+  "mock.inspector.bulk-label": m(60, "A-PianoRoll"),
+  "mock.inspector.bulk-field": m(72, "A-PianoRoll"),
+  "mock.inspector.bulk-field-h": m(20, "A-PianoRoll"),
+  "mock.inspector.bulk-field-pad": m(6, "A-PianoRoll"),
+  // ひらいた「CC の一覧」の種類の列（位置の列は mock.notelist.position、欄の左右は mock.notelist.cell-pad）。
+  "mock.cclist.kind": m(96, "R5-Lists"),
   // ピアノロールの帯（第 3 回）。目盛の高さ、鍵盤の列の音の名前の欄。
   "mock.pianoroll.ruler": m(20, "A-PianoRoll"),
   "mock.pianoroll.key-label": m(48, "A-PianoRoll"),

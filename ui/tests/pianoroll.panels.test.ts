@@ -158,14 +158,6 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(buttons[0]!.classList.contains("hi")).toBe(true);
   });
 
-  it("長さをそろえる は、たたんだ「使えない」見出し", async () => {
-    await scene("pianoRoll");
-    show(NoteInspector);
-    const folded = qa(".hd.folded");
-    expect(folded.map(text)).toEqual(["▸ 長さをそろえる"]);
-    expect(folded.every((b) => b.getAttribute("aria-disabled") === "true")).toBe(true);
-  });
-
   it("固定を押すと、オン ・ オフを入れかえる意図を送る（Rust の状態を見せるだけで、自分では変えない）", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
@@ -363,7 +355,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(field()!.closest(".row")!.getAttribute("data-note")).toBe("0");
   });
 
-  it("↑ ↓ で 1 ずつ（Shift で 10）。音は半音、位置は表示のいちばん下のけた", async () => {
+  it("↑ ↓ で 1 ずつ（Shift で 10。音は Shift で 12 半音）。音は半音、位置は表示のいちばん下のけた", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     double(2, "key");
@@ -373,7 +365,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(field()!.value).toBe("F4");
     key(field()!, "ArrowDown", { shiftKey: true });
     flushSync();
-    expect(field()!.value).toBe("G3");
+    expect(field()!.value).toBe("F3");
     key(field()!, "Tab", { shiftKey: true });
     flushSync();
     key(field()!, "ArrowUp", { shiftKey: true });

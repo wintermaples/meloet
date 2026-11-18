@@ -190,8 +190,9 @@ export const texts = {
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
   // 範囲の外の値は近いはしにして決める（デザインに戻した事 68）。欄と範囲は value.*。
   "msg.valueClamped": e("{field}は {range} なので、{value} にしました。", "user:2026-11-18", { field: "ベロシティ", range: "1〜127", value: "127" }),
-  // ベロシティをまとめて変える（同じく 67）。
-  "msg.velocityMatched": e("{count} ノートのベロシティを {value} にそろえました。", "user:2026-11-18", { count: "3", value: "100" }),
+  // ベロシティをまとめて変える（同じく 67）と長さをそろえる（C-6 51）。
+  "msg.velocityMatched": s6("まとめてそろえた", "{count} ノートのベロシティを {value} にそろえました。", { count: "3", value: "100" }, "part"),
+  "msg.lengthMatched": s6("まとめてそろえた", "{count} ノートの長さを {value} にそろえました。", { count: "3", value: "0.240" }, "part"),
   // 位置の小節を丸めたとき（同じく 68）。小節だけ「1 から」のあとに空白がない。拍とティックは msg.valueClamped。
   "msg.valueClampedBar": e("小節は 1 からなので、{value} にしました。", "user:2026-11-18", { value: "1. 1. 000" }),
   // ほかのクリップと重なって置けなかった（同じく 71）。
@@ -470,9 +471,10 @@ export const texts = {
   "inspector.swing": e("スウィング", "mock:A-PianoRoll"),
   "inspector.percent": e("{value} %", "mock:A-PianoRoll", { value: "75" }),
   "inspector.align": e("そろえる所", "mock:A-PianoRoll"),
-  "inspector.alignStart": e("はじまり", "mock:A-PianoRoll"),
+  "inspector.alignStart": e("はじまり", "mock:R5-Lists"),
   "inspector.alignStartAndEnd": e("はじまりと終わり", "user:2026-11-15"),
-  "inspector.requantize": e("かけなおす", "mock:A-PianoRoll"),
+  "inspector.quantizeApply": e("かける", "spec:3"),
+  "inspector.requantize": e("かけなおす", "spec:3"),
   "inspector.unquantize": e("もとの位置へ戻す", "mock:A-PianoRoll"),
   "inspector.scale": e("スケール", "mock:A-PianoRoll"),
   "inspector.musicalScale": e("音階", "mock:A-PianoRoll"),
@@ -592,6 +594,9 @@ export const texts = {
 
   // ---- 区切り1 で画面の係が足す文は、ここから下に（ピアノロールの係はこの段、アレンジと再生まわりの係は次の段）。
   // [ピアノロール]
+  // ひらいた「CC の一覧」の列の見出し（位置は note.position）。
+  "ccList.kind": e("種類", "mock:R5-Lists"),
+  "ccList.value": e("値", "mock:R5-Lists"),
   // [アレンジ ・ 再生まわり ・ 入力計]
   // 再生の位置の欄に読めない物を打った（デザインに戻した事 61）。再生の位置には上のはしがないので、範囲の文の形を使わない。
   "msg.playPositionRejected": e("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの {kept} のままです。", "user:2026-11-18", { kept: "1. 1. 000" }),

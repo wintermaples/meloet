@@ -55,6 +55,8 @@ BOARDS = {
     "noteListBroken": "R3-Lanes",
     "ccLanes": "R3-Lanes",
     "ccOtherMenu": "A-PianoRoll",
+    "inspectorBulk": "A-PianoRoll",
+    "ccList": "R5-Lists",
     "arrangeTrimmed": "R3-Arrange",
     "arrangeTrimmedRoll": None,
     "arrangeMoveDrag": "R3-Arrange",
@@ -102,6 +104,10 @@ CLICKS = {
     "ccLanes": ("pianoRollCc", ('[data-test="pr-cc-sustain"]', '[data-test="pr-cc-pitchBend"]', '[data-test="pr-cc-other"]',
                                 '[data-test="pr-cc-other-menu"] [data-row="0"]')),
     "ccOtherMenu": ("pianoRollCc", '[data-test="pr-cc-other"]'),
+    # 「長さをそろえる」と「ベロシティをまとめて変える」をひらく（まとめて変える行）。
+    "inspectorBulk": ("pianoRoll", ('[data-test="inspector-same-length"]', '[data-test="inspector-velocity-all"]')),
+    # ひらいた「CC の一覧」（R5-Lists）。
+    "ccList": ("pianoRollCc", '[data-test="pr-cc-list"]'),
     "arrangeMoveDrag": ("arrangeTrimmed", drag_clip(300, 364)),
     "arrangeCopyDrag": ("arrangeTrimmed", drag_clip(300, 556, "{ altKey: true }")),
     "arrangeTrimDrag": ("arrangeTrimmed", drag_clip(509, 413, "{ shiftKey: true }")),
@@ -120,6 +126,8 @@ ONLY = {
     "noteListBroken": [(1280, 800, 100)],
     "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 150)],
     "ccOtherMenu": [(1920, 1080, 100)],
+    "inspectorBulk": [(1280, 800, 100), (1920, 1080, 150)],
+    "ccList": [(1280, 800, 100)],
     "arrangeTrimmed": [(1280, 800, 100), (1280, 800, 150)],
     "arrangeZoomBeats": [(1280, 800, 100), (1280, 800, 150)],
     # At 1280x800 150 % the right panel is folded, so there is no scale button to press.

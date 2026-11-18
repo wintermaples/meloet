@@ -183,6 +183,8 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect(s.keyboards.velocityFixed).toEqual({ on: true, value: 127 });
     s = await f.send({ type: "matchVelocity", take: s.pianoRoll.take!, notes: [14, 15, 16], value: 100 });
     expect(s.status.message).toEqual({ id: "velocityMatched", count: 3, value: 100 });
+    s = await f.send({ type: "matchLength", take: s.pianoRoll.take!, notes: [14, 15, 16], value: 240 });
+    expect(s.status.message).toEqual({ id: "lengthMatched", count: 3, value: 240 });
     s = await f.send({ type: "clampValue", field: "velocity", value: "127", range: null });
     expect(s.status.message).toEqual({ id: "valueClamped", field: "velocity", value: "127", range: null });
     s = await f.send({ type: "selectAllNotes" });

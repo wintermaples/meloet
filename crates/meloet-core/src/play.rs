@@ -1758,6 +1758,36 @@ impl Play {
         })
     }
 
+    /// Like `match_velocity`: every picked note to `value` ticks (at least 1, and each kept in
+    /// its clip).
+    pub fn match_length(
+        &mut self,
+        take: u32,
+        picked: &[u32],
+        value: u64,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let clip = self.aimed(take)?;
+        let value = value.clamp(1, i64::MAX as u64);
+        let picked = indexes(picked);
+        let r = notes::set_notes_field(
+            self.doc(),
+            clip,
+            &picked,
+            ModelNoteField::Length,
+            value as i64,
+        );
+        let count = picked.iter().collect::<BTreeSet<_>>().len();
+        if count == 0 || !matches!(r, Ok(_) | Err(EditError::Unchanged)) {
+            return None;
+        }
+        self.apply_notes(r, effects);
+        Some(StatusMessage::LengthMatched {
+            count: count as u32,
+            value,
+        })
+    }
+
     pub fn delete_notes(&mut self, take: u32, picked: &[u32], effects: &mut Vec<Effect>) {
         if let Some(clip) = self.aimed(take) {
             let r = notes::delete_notes(self.doc(), clip, &indexes(picked), false);

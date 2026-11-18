@@ -9,7 +9,7 @@
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { STATUS_JOIN, t, type TextKey } from "../text/ja";
-  import { gridText, msText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
+  import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { heldText, noteName } from "./meterFormat";
   import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
@@ -56,6 +56,7 @@
     bar: ["value.bar", null],
     beat: ["value.beat", null],
     tick: ["value.tick", null],
+    controlValue: ["ccList.value", null],
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
@@ -147,6 +148,8 @@
       }
       case "velocityMatched":
         return plain("msg.velocityMatched", { count: m.count, value: m.value });
+      case "lengthMatched":
+        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, { num: app.song.meterNum, den: app.song.meterDen }) });
       case "clipsNotMoved":
         return plain("msg.clipsNotMoved");
       case "clipsNotPasted":

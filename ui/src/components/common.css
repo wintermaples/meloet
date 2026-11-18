@@ -11,6 +11,16 @@ body {
   font-size: var(--text-s-size);
   line-height: var(--text-s-line-height);
   font-weight: var(--text-s-weight-400);
+  /* ドラッグで文字が選ばれるのは、文字の枠の中だけ（WebKitGTK は -webkit- の名前も読む）。 */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable]:not([contenteditable="false"]) {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 *,
@@ -50,9 +60,14 @@ body {
 }
 
 /* 押せる物の共通の外がわの線（キーボードでえらんでる）。 */
-button:focus-visible {
+button:focus-visible,
+[role="slider"]:focus-visible {
   outline: var(--line-hair) solid var(--color-gray-10);
   outline-offset: var(--line-hair);
+}
+/* まわりの箱が外がわを切る所（帯札、縦の見出し、欄の見出し、一覧の行）は、内がわ 1px あけて描く。 */
+.m-focus-in:focus-visible {
+  outline-offset: calc(-2 * var(--line-hair));
 }
 
 /* 使えない: 枠 gray.5、文字 gray.7、押せない。用語の説明は出したいので disabled は使わない。 */

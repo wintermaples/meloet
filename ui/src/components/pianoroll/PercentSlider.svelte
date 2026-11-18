@@ -1,20 +1,30 @@
 <!-- 0〜100 % の「なめらかに動く値」（仕様書 2 章「パラメータの行」: 横の棒、線 gray.7、ぬり gray.9、つまみ 6×12 の gray.10。ぬりの太さはモック A-PianoRoll）と、
      右の値（「75 %」）。押した所へ飛び、押したまま横に動かす。動かしているあいだは画面だけが動き、離したときに onchange を 1 回（値が変わったときだけ）。
-     離したあとは、Rust の値（value）が変わるまで離した所に見せておく（ちらつかないように）。 -->
+     離したあとは、Rust の値（value）が変わるまで離した所に見せておく（ちらつかないように）。
+     Tab で届き、← → で 10 ずつ、Shift ← → で 1 ずつ（仕様書 4 章「パラメータの中: 値を動かす ・ 細かく動かす」）。押すたびに onchange。
+     ドラッグ中の Esc は、動かす前に戻す（view.svelte.ts の onDragCancel）。 -->
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { t } from "../../text/ja";
+  import { onDragCancel } from "./view.svelte";
 
   interface Props {
     value: number;
     label: string;
     test: string;
     onchange: (value: number) => void;
+    /** 動かしはじめた ・ やめた（行の「動かしている」の見た目のため）。 */
+    onmoving?: (moving: boolean) => void;
   }
-  let { value, label, test, onchange }: Props = $props();
+  let { value, label, test, onchange, onmoving }: Props = $props();
+
+  /** ← → の 1 回ぶん（Shift で細かく）。 */
+  const KEY_STEP = 10;
+  const FINE_STEP = 1;
 
   let bar = $state<HTMLElement>();
   let dragging = $state(false);
+  $effect(() => onmoving?.(dragging));
   /** 動かしている値か、離して Rust の答えを待っている値。 */
   let held = $state<number | null>(null);
   const shown = $derived(held ?? value);
@@ -44,6 +54,28 @@
     if (dragging) held = at(ev);
   }
 
+  function cancel(): boolean {
+    if (!dragging) return false;
+    dragging = false;
+    held = null;
+    return true;
+  }
+  onMount(() => onDragCancel(cancel));
+
+  function onkeydown(ev: KeyboardEvent): void {
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+    if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
+    // ノートを動かす ← → （document のキーの係）に渡さない。
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (dragging) return;
+    const step = (ev.shiftKey ? FINE_STEP : KEY_STEP) * (ev.key === "ArrowRight" ? 1 : -1);
+    const v = Math.min(100, Math.max(0, shown + step));
+    if (v === shown) return;
+    held = v;
+    onchange(v);
+  }
+
   function onup(ev: PointerEvent): void {
     if (!dragging) return;
     dragging = false;
@@ -64,16 +96,14 @@
   aria-valuemin={0}
   aria-valuemax={100}
   aria-valuenow={shown}
-  tabindex="-1"
+  tabindex="0"
   data-test={test}
   bind:this={bar}
   onpointerdown={ondown}
   onpointermove={onmove}
   onpointerup={onup}
-  onpointercancel={() => {
-    dragging = false;
-    held = null;
-  }}
+  onpointercancel={cancel}
+  {onkeydown}
 >
   <div class="track"></div>
   <div class="fill" style:width="{shown}%"></div>
@@ -95,7 +125,6 @@
     height: var(--part-param-knob-h);
     cursor: pointer;
     touch-action: none;
-    outline: none;
   }
   .track {
     position: absolute;

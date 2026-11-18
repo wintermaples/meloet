@@ -2,22 +2,39 @@
 <script lang="ts">
   import type { Band } from "../bridge";
   import { space } from "../design/tokens";
+  import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import { bandCountsShown, bandTabWidth, textWidth } from "./fit";
-  import { dbNumber } from "./format";
+  import { dbNumber, termParts } from "./format";
   import { metrics } from "./metrics.svelte";
 
-  type Tab = { band: Band | "arrange"; name: string; count: string; key: string; open: boolean };
+  /** term は名前の用語の説明、countTerm は件数の文の中の用語（仕様書 5 章にある物だけ）。 */
+  type Tab = { band: Band | "arrange"; name: string; count: string; key: string; open: boolean; term?: string; countTerm?: string };
 
   const app = $derived(current.state!);
   const lower = $derived(app.workspace.layout.lower.map((l) => l.band));
 
   const tabs: Tab[] = $derived([
-    { band: "arrange", name: t("band.arrange"), count: t("band.trackCount", { count: app.song.tracks.length }), key: t("key.arrange"), open: lower.length === 0 },
-    { band: "pianoRoll", name: t("band.pianoRoll"), count: t("band.noteCount", { count: app.song.noteCount }), key: t("key.pianoRoll"), open: lower.includes("pianoRoll") },
+    { band: "arrange", name: t("band.arrange"), count: t("band.trackCount", { count: app.song.tracks.length }), key: t("key.arrange"), open: lower.length === 0, term: "アレンジ" },
+    {
+      band: "pianoRoll",
+      name: t("band.pianoRoll"),
+      count: t("band.noteCount", { count: app.song.noteCount }),
+      key: t("key.pianoRoll"),
+      open: lower.includes("pianoRoll"),
+      term: "ピアノロール",
+      countTerm: "ノート",
+    },
     // マスターのフェーダーの値。今回は 0.0 dB のまま（docs/progress.md）。
-    { band: "mixer", name: t("band.mixer"), count: t("band.masterDb", { db: t("common.db", { value: dbNumber(0) }) }), key: t("key.mixer"), open: lower.includes("mixer") },
+    {
+      band: "mixer",
+      name: t("band.mixer"),
+      count: t("band.masterDb", { db: t("common.db", { value: dbNumber(0) }) }),
+      key: t("key.mixer"),
+      open: lower.includes("mixer"),
+      term: "ミキサー",
+    },
     { band: "history", name: t("band.history"), count: t("band.stepCount", { undo: app.song.undoCount, total: app.song.undoCount + app.song.redoCount }), key: t("key.history"), open: lower.includes("history") },
   ]);
 
@@ -41,10 +58,16 @@
 
 <nav class="row" bind:clientWidth={width}>
   {#each tabs as tab, i (tab.band)}
-    <button class="m-plain tab" class:open={tab.open} onclick={() => press(tab)} data-band={tab.band}>
+    <button class="m-plain tab m-focus-in" class:open={tab.open} onclick={() => press(tab)} data-band={tab.band}>
       <span class={tab.open ? "m-hi" : "m-lbl"}>{tab.open ? "▾" : "▸"}</span>
-      <span class="m-name">{tab.name}</span>
-      {#if shown[i]}<span class="m-lbl">{tab.count}</span>{/if}
+      {#if tab.term}<span class="m-name" use:term={tab.term}>{tab.name}</span>{:else}<span class="m-name">{tab.name}</span>{/if}
+      {#if shown[i]}
+        <span class="m-lbl"
+          >{#if tab.countTerm}{#each termParts(tab.count, tab.countTerm) as piece, j (j)}{#if piece.term}<span use:term={tab.countTerm!}
+                  >{piece.text}</span
+                >{:else}{piece.text}{/if}{/each}{:else}{tab.count}{/if}</span
+        >
+      {/if}
       <span class="m-num m-lbl">{tab.key}</span>
     </button>
   {/each}
@@ -78,6 +101,12 @@
   .tab.open {
     background: var(--color-gray-1);
     border-top-color: var(--color-accent);
+  }
+  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。 */
+  .tab:active,
+  .tab.open:active {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .hint {
     align-self: center;

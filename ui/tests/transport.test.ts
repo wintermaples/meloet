@@ -293,10 +293,11 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     vi.useRealTimers();
   });
 
-  /** jsdom には幅がないので、部品ごとの幅と帯の幅をきめる。 */
+  /** jsdom には幅がないので、部品ごとの幅と帯の幅をきめる。ボタンの右はしのキーは幅 0（ボタンの幅に入っている物として）。 */
   function widths(row: number, part: (name: string | undefined) => number): void {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(row);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("key") || this.dataset.part?.startsWith("key-")) return 0;
       return part(this.dataset.part);
     });
   }

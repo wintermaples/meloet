@@ -128,3 +128,7 @@ export type LaneTag = "sustain" | "pitchBend" | "modulation" | "other";
 
 /** open はひらいた順（古い物から）。other は「そのほかの CC」でえらんだ番号。 */
 export const ccLanes = $state({ open: [] as LaneTag[], other: null as number | null });
+
+// ---- ベロシティの帯がひらいているか（仕様書 3 章の帯の表「ベロシティ」: たたむと CC の札の左はしに「▸ ベロシティ」）。帯をたたんでも覚えている ----
+
+export const velocityLane = $state({ open: true });

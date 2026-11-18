@@ -1,6 +1,7 @@
 // ピアノロールの WebGL の絵（四角の並び）。DOM を知らない。座標は区画の canvas の画面の画素（box は slot の箱）。
 // ノートは仕様書 2 章「ノート」: 高さ 11、左はしに gray.10 の 2px、面はベロシティで gray.8 / 9 / 10、選んだら accent、
-// そろえる前の位置は gray.7 の枠だけ、書けない行は gray.0。行の地と線の色はモック A-PianoRoll。
+// そろえる前の位置は gray.7 の枠だけ（選んでいるノートの分は accent）、書けない行は gray.0。行の地と線の色はモック A-PianoRoll。
+// ドラッグ中のもとの位置は accent の枠。どちらの枠も、ノートに隠れないよう、ノートを描いたあとに描く（docs/design-notes.md B-64）。
 
 import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
@@ -57,7 +58,7 @@ function lineStep(step: number, meter: Meter, ppt: number): number {
   return perBar * Math.max(1, Math.ceil(LINE_MIN_PX / (perBar * ppt)));
 }
 
-/** ノートの印: 0 ふつう、1 動かしている（もとの所に枠）、2 長さを変えている（終わりに線）、3 囲んでいる（accent）、4 消える（gray.7）。 */
+/** ノートの印: 0 ふつう、1 動かしている（もとの所に accent の枠）、2 長さを変えている（終わりに線）、3 囲んでいる（accent）、4 消える（gray.7）。 */
 export function noteMarks(count: number, drag: Drag | null, eraseHover: number): Uint8Array | null {
   if (!drag && eraseHover < 0) return null;
   const m = new Uint8Array(count);
@@ -98,7 +99,7 @@ export function paintNote(out: Batch, x0: number, x1: number, y: number, h: numb
   out.rect(e, y, b, y + h, rgb(face));
 }
 
-/** ノートの場所: 行の地、方眼の線、そろえる前の位置の枠、ノート、ドラッグのもとの位置。 */
+/** ノートの場所: 行の地、方眼の線、ノート、そろえる前の位置の枠、ドラッグのもとの位置の枠。 */
 export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array | null, dpr: number): void {
   const { g, sizes } = p;
   const rowH = g.rowH * dpr;
@@ -129,22 +130,14 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
   }
 
   const rowTop = (key: number) => Math.round(Y(key));
+  const noteFrame = (x0: number, x1: number, y: number, color: ColorName) =>
+    frame(out, Math.round(x0) + HAIR, y, Math.max(Math.round(x0) + 2 * HAIR, Math.round(x1) - HAIR), y + noteH, color);
   const n = p.shown;
-  if (n && p.origin) {
-    const o = p.origin;
-    eachNoteIn(n, from - o.maxLength - n.maxLength, to + o.maxLength, (i) => {
-      const j = movedFrom(n.take, o.take, i);
-      if (j < 0) return;
-      const x0 = X(noteStart(o, j));
-      const x1 = X(noteEnd(o, j));
-      if (x1 < box.x0 || x0 > box.x1) return;
-      const y = rowTop(o.take.keys[j]!);
-      frame(out, Math.round(x0) + HAIR, y, Math.max(Math.round(x0) + 2 * HAIR, Math.round(x1) - HAIR), y + noteH, FRAME);
-    });
-  }
+  const sel = p.selected;
+  /** ドラッグで動かしているノート（もとの所に、あとで accent の枠を描く）。 */
+  const moving: number[] = [];
 
   if (n) {
-    const sel = p.selected;
     eachNoteIn(n, from, to, (i) => {
       const mark = marks ? marks[i]! : 0;
       const key = n.take.keys[i]!;
@@ -153,7 +146,7 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
       const x0 = X(noteStart(n, i));
       const x1 = X(noteEnd(n, i));
       if (mark === 1) {
-        frame(out, Math.round(x0) + HAIR, y, Math.max(Math.round(x0) + 2 * HAIR, Math.round(x1) - HAIR), y + noteH, FRAME);
+        moving.push(i);
         return;
       }
       if (mark === 2) {
@@ -168,6 +161,20 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
       paintNote(out, x0, x1, y, noteH, edge, face);
     });
   }
+
+  if (n && p.origin) {
+    const o = p.origin;
+    eachNoteIn(n, from - o.maxLength - n.maxLength, to + o.maxLength, (i) => {
+      const j = movedFrom(n.take, o.take, i);
+      if (j < 0) return;
+      const x0 = X(noteStart(o, j));
+      const x1 = X(noteEnd(o, j));
+      if (x1 < box.x0 || x0 > box.x1) return;
+      noteFrame(x0, x1, rowTop(o.take.keys[j]!), sel && sel[i] ? "color.accent" : FRAME);
+    });
+  }
+
+  if (n) for (const i of moving) noteFrame(X(noteStart(n, i)), X(noteEnd(n, i)), rowTop(n.take.keys[i]!), "color.accent");
 
   if (p.live) {
     for (const l of p.live) {

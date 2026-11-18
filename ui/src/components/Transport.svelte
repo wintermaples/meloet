@@ -46,7 +46,10 @@
   // 横の入れかた: 出ている物と、見えない写し（ruler）の引っこむ物を測り、仕様書 1 章の順に引っこめる。
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
-  let parts = $state<TransportParts>({ songName: true, load: true, countIn: true, positionLabels: true });
+  let parts = $state<TransportParts>({ keys: true, songName: true, load: true, countIn: true, positionLabels: true });
+
+  // ボタンの右はしのキー（仕様書 4 章、docs/design-notes.md B-73）。▶ と ■ はどちらも Space。
+  const KEYS = [t("key.toStart"), t("key.playStop"), t("key.playStop"), t("key.record"), t("key.loop"), t("key.metronome")] as const;
 
   function measure(): void {
     if (!row || !ruler) return;
@@ -63,13 +66,17 @@
       (metrics.px("space.4") - metrics.px("space.3"));
     const labels = [0, 1].reduce((sum, i) => sum + Math.max(0, w(`label-${i}`) - w(`readout-${i}`)), 0) + narrowing;
     const shownLabels = parts.positionLabels ? labels : 0;
+    // キーは、ボタンの中のすきま（space.1）とともにふえる。
+    const keys = KEYS.reduce((sum, _, i) => sum + (w(`key-${i}`) > 0 ? w(`key-${i}`) + metrics.px("space.1") : 0), 0);
+    const shownKeys = parts.keys ? keys : 0;
     // すきま（m-spacer）は残りの幅を取るので、幅は数えず、両どなりのすきまだけ数える。
     const widths = fixed.reduce((sum, el) => sum + (el.classList.contains("m-spacer") ? 0 : el.offsetWidth), 0);
-    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels;
+    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - shownLabels - shownKeys;
     parts = transportParts(
       row.clientWidth,
       {
         base,
+        keys,
         songName: w("songName") + gap,
         load: w("load") + gap,
         countIn: Math.max(w("countIn"), w("countInCounting")) + gap,
@@ -274,6 +281,7 @@
     {#each { length: beatsPerBar }, i (i)}<span class="box" class:done={i < beatInBar}></span>{/each}
   </span>
 {/snippet}
+{#snippet key(i: number)}{#if parts.keys}<span class="m-num m-lbl key" data-test="transport-key">{KEYS[i]}</span>{/if}{/snippet}
 {#snippet countInLabel()}{t("transport.countIn")}<span class="m-num value">{countInValue}</span>{/snippet}
 
 <header class="transport" bind:this={row}>
@@ -306,6 +314,7 @@
   <div class="buttons">
     <button class="m-btn" aria-label={t("transport.toStart")} data-test="transport-to-start" onclick={() => send({ type: "goToStart" })}>
       <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0h2v10H0zM10 0v10L3 5z" fill="currentColor" /></svg>
+      {@render key(0)}
     </button>
     <button
       class="m-btn"
@@ -316,6 +325,7 @@
       onclick={play}
     >
       <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l8 5-8 5z" fill="currentColor" /></svg>
+      {@render key(1)}
     </button>
     <button
       class="m-btn"
@@ -325,6 +335,7 @@
       onclick={stop}
     >
       <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1h8v8H1z" fill="currentColor" /></svg>
+      {@render key(2)}
     </button>
     <button
       class="m-btn record"
@@ -335,6 +346,7 @@
       onclick={record}
     >
       <span class="rec"></span>
+      {@render key(3)}
     </button>
     <button
       class="m-btn"
@@ -342,7 +354,7 @@
       aria-pressed={song.loopOn}
       data-test="transport-loop"
       use:term={"ループ"}
-      onclick={() => send({ type: "toggleLoop" })}>{t("transport.loop")}</button
+      onclick={() => send({ type: "toggleLoop" })}>{t("transport.loop")}{@render key(4)}</button
     >
   </div>
 
@@ -390,7 +402,7 @@
     aria-pressed={transport.metronome}
     data-test="transport-metronome"
     use:term={"メトロノーム"}
-    onclick={() => send({ type: "toggleMetronome" })}>{t("transport.metronome")}</button
+    onclick={() => send({ type: "toggleMetronome" })}>{t("transport.metronome")}{@render key(5)}</button
   >
   {#if !parts.countIn}
     <button
@@ -433,7 +445,7 @@
   <div class="master" class:narrow={!parts.positionLabels}>
     <div class="master-head">
       <span class="m-lbl" use:term={"マスター"}>{t("transport.master")}</span>
-      <span class="m-num master-db">{peakText(masterPeak)}</span>
+      <span class="m-num master-db" use:term={"dB"}>{peakText(masterPeak)}</span>
     </div>
     <div class="meter" use:glRegion={"masterMeter"} use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
   </div>
@@ -449,6 +461,7 @@
     <span class="m-readout" data-part="readout-0">{position}</span>
     <span class="m-lbl" data-part="label-1">{t("transport.time")}</span>
     <span class="m-readout" data-part="readout-1">{clock}</span>
+    {#each KEYS as k, i (i)}<span class="m-num" data-part="key-{i}">{k}</span>{/each}
   </div>
 </header>
 
@@ -517,6 +530,10 @@
   }
   .value {
     color: var(--color-gray-10);
+  }
+  /* キーは、オンでも使えないときも gray.8 のまま（一覧のキーと同じ。モック F-Zoom）。 */
+  .key {
+    color: var(--color-gray-8);
   }
 
   /* 曲の ▾（仕様書 2 章、モック F-Menus）: 28×24。 */

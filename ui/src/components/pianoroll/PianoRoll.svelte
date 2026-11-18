@@ -9,6 +9,8 @@
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { textWidth } from "../fit";
   import { menuOpened } from "../../lib/menu";
+  import { term } from "../../lib/tip.svelte";
+  import { termParts } from "../format";
   import { metrics } from "../metrics.svelte";
   import * as G from "./geom";
   import NoteInspector from "./NoteInspector.svelte";
@@ -16,7 +18,7 @@
   import Roll from "./Roll.svelte";
   import { followShownTake, shown } from "./shown.svelte";
   import Toolbar from "./Toolbar.svelte";
-  import { ccLanes, dragReading, prPanels, prView, type LaneTag } from "./view.svelte";
+  import { ccLanes, dragReading, prPanels, prView, velocityLane, type LaneTag } from "./view.svelte";
 
   let { height }: { height: number } = $props();
 
@@ -40,12 +42,14 @@
   });
 
   // CC の札: 横が足りなければ、名前と数だけにして「そのほかの CC」を出さない（F-PR150）。
+  // ベロシティの帯をたたんでいるときは、左はしに「▸ ベロシティ」（仕様書 3 章の帯の表）。
   let ccW = $state(0);
   const ccFull = $derived.by(() => {
     const pad = space["space.3"][0] * 2 + line["line.hair"];
     const gap = space["space.2"][0];
     const tag = (name: string, detail: string) => pad + textWidth("▸") + gap + textWidth(name) + gap + textWidth(detail);
     const need =
+      (velocityLane.open ? 0 : pad + textWidth("▸") + gap + textWidth(t("pr.velocity"))) +
       tag(t("pr.sustain"), t("pr.sustainDetail", { count: cc.sustain })) +
       tag(t("pr.pitchBend"), t("pr.points", { count: cc.pitchBend })) +
       tag(t("pr.modulation"), t("pr.modulationDetail", { count: cc.modulation })) +
@@ -140,14 +144,18 @@
   });
 </script>
 
+{#snippet noteWord(text: string)}{#each termParts(text, "ノート") as piece, j (j)}{#if piece.term}<span use:term={"ノート"}
+        >{piece.text}</span
+      >{:else}{piece.text}{/if}{/each}{/snippet}
+
 <section class="band" style:height="{metrics.scaled(height)}px" data-band="pianoRoll" bind:this={band} bind:clientWidth={bandW}>
   <Toolbar />
   <div class="body">
     {#if prPanels.list !== false}
       <div class="panel list">
-        <button class="m-plain hd" onclick={() => (prPanels.list = false)} data-test="pr-list-fold">
+        <button class="m-plain hd m-focus-in" onclick={() => (prPanels.list = false)} data-test="pr-list-fold">
           <span class="m-hi">▾</span>
-          <span class="m-hi grow">{t("pr.noteList")}</span>
+          <span class="m-hi grow">{@render noteWord(t("pr.noteList"))}</span>
           <span class="m-num m-lbl">{noteTotal}</span>
         </button>
         <div class="panel-body"><NoteListPanel /></div>
@@ -158,30 +166,35 @@
         </button>
       </div>
     {:else}
-      <button class="m-plain vtab left" onclick={() => (prPanels.list = true)} data-test="pr-list-open">
+      <button class="m-plain vtab left m-focus-in" onclick={() => (prPanels.list = true)} data-test="pr-list-open">
         <span class="m-lbl">▸</span>
-        <span class="vt m-name">{t("pr.noteList")}</span>
+        <span class="vt m-name">{@render noteWord(t("pr.noteList"))}</span>
         <span class="vt m-num m-lbl">{noteTotal}</span>
       </button>
     {/if}
     <div class="center">
       <Roll {onreading} />
       <div class="cc-row" bind:clientWidth={ccW}>
-        <button class="m-plain cc" aria-expanded={isOpen("sustain")} onclick={() => toggleLane("sustain")} data-test="pr-cc-sustain">
-          <span class="m-lbl">{mark("sustain")}</span><span class="m-hi">{t("pr.sustain")}</span>
+        {#if !velocityLane.open}
+          <button class="m-plain cc m-focus-in" aria-expanded="false" onclick={() => (velocityLane.open = true)} data-test="pr-velocity-open">
+            <span class="m-lbl">▸</span><span class="m-hi" use:term={"ベロシティ"}>{t("pr.velocity")}</span>
+          </button>
+        {/if}
+        <button class="m-plain cc m-focus-in" aria-expanded={isOpen("sustain")} onclick={() => toggleLane("sustain")} data-test="pr-cc-sustain">
+          <span class="m-lbl">{mark("sustain")}</span><span class="m-hi" use:term={"サステイン"}>{t("pr.sustain")}</span>
           <span class="m-lbl">{#if ccFull}{t("pr.sustainDetail", { count: cc.sustain })}{:else}<span class="m-num">{cc.sustain}</span>{/if}</span>
         </button>
-        <button class="m-plain cc" aria-expanded={isOpen("pitchBend")} onclick={() => toggleLane("pitchBend")} data-test="pr-cc-pitchBend">
-          <span class="m-lbl">{mark("pitchBend")}</span><span class="m-hi">{t("pr.pitchBend")}</span>
+        <button class="m-plain cc m-focus-in" aria-expanded={isOpen("pitchBend")} onclick={() => toggleLane("pitchBend")} data-test="pr-cc-pitchBend">
+          <span class="m-lbl">{mark("pitchBend")}</span><span class="m-hi" use:term={"ピッチベンド"}>{t("pr.pitchBend")}</span>
           <span class="m-lbl">{#if ccFull}{t("pr.points", { count: cc.pitchBend })}{:else}<span class="m-num">{cc.pitchBend}</span>{/if}</span>
         </button>
-        <button class="m-plain cc" aria-expanded={isOpen("modulation")} onclick={() => toggleLane("modulation")} data-test="pr-cc-modulation">
-          <span class="m-lbl">{mark("modulation")}</span><span class="m-hi">{t("pr.modulation")}</span>
+        <button class="m-plain cc m-focus-in" aria-expanded={isOpen("modulation")} onclick={() => toggleLane("modulation")} data-test="pr-cc-modulation">
+          <span class="m-lbl">{mark("modulation")}</span><span class="m-hi" use:term={"モジュレーション"}>{t("pr.modulation")}</span>
           <span class="m-lbl">{#if ccFull}{t("pr.modulationDetail", { count: cc.modulation })}{:else}<span class="m-num">{cc.modulation}</span>{/if}</span>
         </button>
         {#if ccFull}
           <button
-            class="m-plain cc"
+            class="m-plain cc m-focus-in"
             class:unusable={!otherUsable && !isOpen("other")}
             aria-disabled={!otherUsable && !isOpen("other")}
             aria-haspopup="menu"
@@ -190,7 +203,10 @@
             onclick={pressOther}
             data-test="pr-cc-other"
           >
-            <span class="m-lbl">{mark("other")}</span><span class="m-hi">{t("pr.otherCc")}</span>
+            <span class="m-lbl">{mark("other")}</span><span class="m-hi"
+              >{#each termParts(t("pr.otherCc"), "CC") as piece, j (j)}{#if piece.term}<span use:term={"CC"}>{piece.text}</span
+                  >{:else}{piece.text}{/if}{/each}</span
+            >
             {#if isOpen("other") && ccLanes.other !== null}<span class="m-lbl">{t("pr.ccNumber", { number: String(ccLanes.other) })}</span>{/if}
           </button>
         {/if}
@@ -198,17 +214,17 @@
     </div>
     {#if prPanels.inspector !== false}
       <div class="panel inspector">
-        <button class="m-plain hd" onclick={() => (prPanels.inspector = false)} data-test="pr-inspector-fold">
+        <button class="m-plain hd m-focus-in" onclick={() => (prPanels.inspector = false)} data-test="pr-inspector-fold">
           <span class="m-hi">▾</span>
-          <span class="m-hi grow">{t("pr.selectedNotes")}</span>
+          <span class="m-hi grow">{@render noteWord(t("pr.selectedNotes"))}</span>
           <span class="m-num" class:accent={selectedCount > 0} class:m-lbl={selectedCount === 0}>{selectedCount}</span>
         </button>
         <div class="panel-body"><NoteInspector /></div>
       </div>
     {:else}
-      <button class="m-plain vtab right" onclick={() => (prPanels.inspector = true)} data-test="pr-inspector-open">
+      <button class="m-plain vtab right m-focus-in" onclick={() => (prPanels.inspector = true)} data-test="pr-inspector-open">
         <span class="m-lbl">▸</span>
-        <span class="vt m-name">{t("pr.selectedNotes")}</span>
+        <span class="vt m-name">{@render noteWord(t("pr.selectedNotes"))}</span>
         <span class="vt m-num m-lbl">{selectedCount}</span>
       </button>
     {/if}
@@ -309,6 +325,13 @@
   .vtab:hover .m-name,
   .vtab:hover .m-lbl {
     color: var(--color-gray-10);
+  }
+  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。 */
+  .hd:not(.cc-list):active,
+  .vtab:active,
+  .cc:not(.unusable):active {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .vt {
     writing-mode: vertical-rl;

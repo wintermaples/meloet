@@ -240,6 +240,12 @@ export const texts = {
   "key.record": e("R", "spec:4"),
   "key.playStop": e("Space", "spec:4"),
   "key.metronome": e("C", "spec:4"),
+  "key.toStart": e("Home", "spec:4"),
+  "key.loop": e("L", "spec:4"),
+  "key.quantize": e("Q", "spec:4"),
+  "key.toolSelect": e("1", "spec:4"),
+  "key.toolDraw": e("2", "spec:4"),
+  "key.toolErase": e("3", "spec:4"),
   // 曲の名前の一覧のキー（Mod の読みかえは拡大率の一覧と同じ）。
   "key.newSong": e("N", "spec:4"),
   "key.openSong": e("O", "spec:4"),

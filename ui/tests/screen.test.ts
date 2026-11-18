@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeBands, SCENES, encodeTelemetry, fakeScene, fakeState, unfitScales } from "../src/bridge/fake";
 import { decodeTelemetry, keyIsDown } from "../src/bridge/telemetry";
 import type { AppState, Command } from "../src/bridge";
-import { bandCountsShown, bandTabWidth, transportParts } from "../src/components/fit";
+import { bandCountsShown, bandTabWidth, toolbarParts, transportParts, type TransportParts, type TransportWidths } from "../src/components/fit";
 import { PeakHold, dbNumber, msText, peakText, textParts } from "../src/components/format";
 import { mock, tokensAt } from "../src/design/tokens";
 import { handleKeydown, handlePointerdown } from "../src/keys/attach";
@@ -13,11 +13,17 @@ const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"
 const here = import.meta.url;
 const readMock = (board: string) => fs.readFileSync(new URL(`../../docs/design/mock/${board}.dc.html`, here), "utf8");
 
+/** キーのない再生まわり（キーの幅 0）で、キーのほかの物の組。 */
+function withoutKeys(room: number, w: Omit<TransportWidths, "keys">, stubs = {}): Omit<TransportParts, "keys"> {
+  const { keys: _keys, ...rest } = transportParts(room, { ...w, keys: 0 }, stubs);
+  return rest;
+}
+
 describe("再生まわりの引っこめかた（仕様書 1 章 (1)。幅は測った物）: ▾ を残す", () => {
   const w = { base: 800, songName: 144, load: 60, countIn: 227, positionLabels: 20 };
   const stubs = { songName: 40, countIn: 20 };
   const all = w.base + w.songName + w.load + w.countIn + w.positionLabels;
-  const at = (room: number) => transportParts(room, w, stubs);
+  const at = (room: number) => withoutKeys(room, w, stubs);
 
   it("曲の名前は ▾ のぶんだけ、カウントインはメトロノームの ▾ のぶんだけ、へる幅が少ない", () => {
     expect(at(all - 1)).toEqual({ songName: false, load: true, countIn: true, positionLabels: true });
@@ -34,7 +40,7 @@ describe("再生まわりの引っこめかた（仕様書 1 章 (1)。幅は測
 describe("再生まわりの引っこめかた（仕様書 1 章 (1)。幅は測った物）", () => {
   const w = { base: 800, songName: 144, load: 60, countIn: 227, positionLabels: 20 };
   const all = w.base + w.songName + w.load + w.countIn + w.positionLabels;
-  const at = (room: number) => transportParts(room, w);
+  const at = (room: number) => withoutKeys(room, w);
 
   it("入れば全部出す", () => {
     expect(at(all)).toEqual({ songName: true, load: true, countIn: true, positionLabels: true });
@@ -46,6 +52,34 @@ describe("再生まわりの引っこめかた（仕様書 1 章 (1)。幅は測
     expect(at(all - w.songName - w.load - 1)).toEqual({ songName: false, load: false, countIn: false, positionLabels: true });
     expect(at(w.base)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
     expect(at(10)).toEqual({ songName: false, load: false, countIn: false, positionLabels: false });
+  });
+});
+
+describe("ボタンの右はしのキー（仕様書 4 章、B-73）: ほかの物より先に引っこめる", () => {
+  // 幅は例（100 % と 150 % の大きさの見当）。本物の画面で、Main ・ F-PR720 ・ F-PR150 の幅の引っこみかたが前と同じことは、偽物の場面を撮って見た。
+  const cases = [
+    { name: "Main（100 %）", w: { base: 905, songName: 156, load: 64, countIn: 160, positionLabels: 60 }, keys: 146 },
+    { name: "F-PR150（150 %）", w: { base: 1180, songName: 228, load: 92, countIn: 238, positionLabels: 86 }, keys: 219 },
+  ];
+  const stubs = { songName: 40, countIn: 20 };
+
+  it.each(cases)("$name: どの幅でも、キーのない形と同じ物を出す。キーを出すのは、ほかが全部入るときだけ", ({ w, keys }) => {
+    const all = w.base + w.songName + w.load + w.countIn + w.positionLabels;
+    for (let room = 0; room <= all + keys + 10; room += 1) {
+      const got = transportParts(room, { ...w, keys }, stubs);
+      const { keys: shownKeys, ...rest } = got;
+      expect(rest, `room ${room}`).toEqual(withoutKeys(room, w, stubs));
+      expect(shownKeys, `room ${room}`).toBe(room >= all + keys);
+    }
+  });
+
+  it("ピアノロールの道具の列: キー、クリップの文の順。クリップの文が引っこむのは、キーがなくても入らないときだけ", () => {
+    const w = { base: 700, keys: 40, info: 300 };
+    expect(toolbarParts(1040, w)).toEqual({ keys: true, info: true });
+    expect(toolbarParts(1039, w)).toEqual({ keys: false, info: true });
+    expect(toolbarParts(1000, w)).toEqual({ keys: false, info: true });
+    expect(toolbarParts(999, w)).toEqual({ keys: false, info: false });
+    expect(toolbarParts(10, w)).toEqual({ keys: false, info: false });
   });
 });
 

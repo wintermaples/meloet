@@ -3,7 +3,9 @@
      鍵盤の列は小さな 1 枚（pianoRollKeys）で、押している鍵と鳴っている音で光る。
      ドラッグ中のノートと、録音中にのびるノートは、それだけを囲む小さな 1 枚（pianoRollLive）。動かすだけなら transform で動かす。
      pianoRollLive の箱は、ノートの場所の左上から CC の帯の下はしまで（CC の帯のドラッグも同じ 1 枚に入れる）。
-     再生の線、囲む枠、文字は HTML。 -->
+     再生の線、囲む枠、文字は HTML。
+     ベロシティの帯は「▾ ベロシティ」でたたむ（仕様書 3 章の帯の表。ひらくのは CC の札の行の「▸ ベロシティ」）。たたんだ分はノートの場所へ。
+     たたんでも区画（pianoRoll）の箱はそのままなので、WebGL の文脈は作りなおさない。 -->
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
   import { clockOffsetUs, liveNotes, type Command, type LiveNote, type LiveNotesBook } from "../../bridge";
@@ -11,6 +13,7 @@
   import { everyGlFrame, glRegion, glSlot, type GlSlot } from "../../gl/slot";
   import { platformOf } from "../../keys/keys";
   import HScrollbar from "../../lib/HScrollbar.svelte";
+  import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import { followScroll } from "../arrangeGeom";
@@ -24,7 +27,7 @@
   import { shown } from "./shown.svelte";
   import { originFor, shownFor } from "./shownNotes";
   import { sameKeys, soundingKeys } from "./sounding";
-  import { dragReading, onDragCancel, prPanels, prView, pxPerTick, scrollToTick, zoomBy } from "./view.svelte";
+  import { dragReading, onDragCancel, prPanels, prView, pxPerTick, scrollToTick, velocityLane, zoomBy } from "./view.svelte";
 
   let { onreading }: { onreading?: (at: { x: number; y: number } | null) => void } = $props();
 
@@ -616,9 +619,12 @@
     <HScrollbar total={scrollTotal} visible={areaW} offset={prView.scrollTick * ppt} onscroll={(x) => scrollToTick(x / ppt)} />
     </div>
   </div>
-  <div class="velocity">
+  {#if velocityLane.open}
+  <div class="velocity" data-test="pr-velocity">
     <div class="velocity-head">
-      <span class="m-hi">▾ {t("pr.velocity")}</span>
+      <button class="m-plain m-hi fold m-focus-in" aria-expanded="true" onclick={() => (velocityLane.open = false)} data-test="pr-velocity-fold"
+        >▾ <span use:term={"ベロシティ"}>{t("pr.velocity")}</span></button
+      >
       {#if selectedRanges.length > 0 && n}
         {@const values = G.indexesOf(selectedRanges).slice(0, 3).map((i) => n.take.velocities[i])}
         <span class="m-num m-lbl">{t("pr.velocitySelected", { values: values.join(" ") })}</span>
@@ -640,6 +646,7 @@
       <div class="fill" use:painted={"vel"}></div>
     </div>
   </div>
+  {/if}
   <CcLanes {g} {meter} {step} take={liveMode ? null : n} {areaH} {liveHost} {onreading} />
   <div class="live-host" use:glRegion={"pianoRollLive"} bind:this={liveHost}>
     {#if liveBox}
@@ -794,6 +801,16 @@
     border-right: var(--line-hair) solid var(--color-gray-6);
     white-space: nowrap;
     overflow: hidden;
+  }
+  .fold {
+    align-self: flex-start;
+  }
+  .fold:hover {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .fold:active {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .bars {
     flex: 1;

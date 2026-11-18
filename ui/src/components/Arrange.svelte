@@ -24,7 +24,7 @@
   import { t } from "../text/ja";
   import * as CD from "./arrangeDrag";
   import * as G from "./arrangeGeom";
-  import { dbNumber, gridText, tempoText, textParts } from "./format";
+  import { dbNumber, gridText, tempoText, termParts, textParts } from "./format";
   import { metrics } from "./metrics.svelte";
   import {
     arrangeView,
@@ -44,6 +44,8 @@
   const transport = $derived(current.state!.transport);
   const selected = $derived(current.state!.arrange.selectedClip);
   const layout = $derived(current.state!.workspace.layout);
+  /** キーがアレンジに向いているか（B-72。ピアノロールがひらいていなければ、いつもアレンジ）。 */
+  const keysHere = $derived(prView.focus === "arrange" || !layout.lower.some((l) => l.band === "pianoRoll"));
   const height = $derived(metrics.scaled(layout.arrangeHeight));
 
   let timeWidth = $state(0);
@@ -438,6 +440,15 @@
   function frameUp(): void {
     frameDrag = null;
   }
+  // Esc: 枠のドラッグをやめて、動かす前の所へ戻す（仕様書 4 章）。
+  onMount(() =>
+    onDragCancel(() => {
+      if (!frameDrag) return false;
+      scrollToTick(frameDrag.tick);
+      frameDrag = null;
+      return true;
+    }),
+  );
 
   // ---- 動く物: 再生の位置の線、ページ送り、録っているクリップの先 ----
 
@@ -675,10 +686,14 @@
       if (rev === before && !drag) preview = null;
     });
   }
-  function rulerCancel(): void {
+  function rulerCancel(): boolean {
+    if (!drag) return false;
     drag = null;
     preview = null;
+    return true;
   }
+  // Esc: ループの範囲のドラッグをやめて、前の範囲に戻す（仕様書 4 章）。
+  onMount(() => onDragCancel(rulerCancel));
 
   // クリップを押す: えらぶ。押したまま動かす: 動かす（Alt で複製）、左右のはし（part.clip.edge）なら長さ。録音中とカウントイン中はえらぶだけ。
   const busy = $derived(transport.state === "recording" || transport.state === "countIn");
@@ -776,9 +791,16 @@
   }
 </script>
 
+{#snippet termed(text: string, word: string)}{#each termParts(text, word) as piece, j (j)}{#if piece.term}<span use:term={word}
+        >{piece.text}</span
+      >{:else}{piece.text}{/if}{/each}{/snippet}
+
 {#if layout.arrangeOverview}
   <section class="overview" style:height="{height}px" onwheel={wheelOn(() => overviewSlot)} onpointerdowncapture={focusArrange}>
-    <div class="overview-label"><span class="m-lbl">{t("arrange.overview")}</span></div>
+    <div class="overview-label">
+      {#if keysHere}<div class="focus-mark" data-test="arrange-focus-mark"></div>{/if}
+      <span class="m-lbl">{@render termed(t("arrange.overview"), "アレンジ")}</span>
+    </div>
     <div
       class="overview-slot"
       role="presentation"
@@ -800,11 +822,12 @@
 {:else}
   <section class="arrange" style:height="{height}px" onpointerdowncapture={focusArrange}>
     <div class="head" use:glRegion={"trackMeters"}>
-      <div class="row">
-        <span class="m-name">{t("arrange.title")}</span>
+      <div class="row title-row">
+        {#if keysHere}<div class="focus-mark" data-test="arrange-focus-mark"></div>{/if}
+        <span class="m-name" use:term={"アレンジ"}>{t("arrange.title")}</span>
         <span class="zoom">
-          <button class="m-btn zoom-btn" aria-label={t("zoom.out")} onclick={() => zoomArrangeBy(-1)}>{t("zoom.outMark")}</button>
-          <button class="m-btn zoom-btn" aria-label={t("zoom.in")} onclick={() => zoomArrangeBy(1)}>{t("zoom.inMark")}</button>
+          <button class="m-btn zoom-btn m-focus-in" aria-label={t("zoom.out")} onclick={() => zoomArrangeBy(-1)}>{t("zoom.outMark")}</button>
+          <button class="m-btn zoom-btn m-focus-in" aria-label={t("zoom.in")} onclick={() => zoomArrangeBy(1)}>{t("zoom.inMark")}</button>
         </span>
         <span class="m-lbl" use:term={"グリッド"}>{t("arrange.grid")} <span class="m-num m-hi">{gridText(0, false)}</span></span>
       </div>
@@ -831,7 +854,7 @@
           <div class="track-body">
             <div class="line">
               <span class="m-num m-lbl track-number">{track.number}</span>
-              <span class="m-name track-name">{track.name}</span>
+              <span class="m-name track-name" use:term={"トラック"}>{track.name}</span>
               <button class="tog" aria-disabled="true" tabindex="-1" aria-label={t("arrange.mute")} use:term={"ミュート"}>{t("arrange.muteShort")}</button>
               <button class="tog" aria-disabled="true" tabindex="-1" aria-label={t("arrange.solo")} use:term={"ソロ"}>{t("arrange.soloShort")}</button>
               <button
@@ -845,7 +868,7 @@
             </div>
             <div class="line gap2">
               <span class="m-lbl instrument" use:term={"仮の音"}>{t("instrument.placeholder")}</span>
-              <span class="m-num">{t("common.db", { value: dbNumber(track.gainDb) })}</span>
+              <span class="m-num" use:term={"dB"}>{t("common.db", { value: dbNumber(track.gainDb) })}</span>
             </div>
             <div class="meter" use:glSlot={{ kind: "meter", source: { track: track.number }, gap: metrics.px("line.hair") }}></div>
           </div>
@@ -954,7 +977,7 @@
             <button class="tog step" aria-label={t("arrange.takePrev")} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
             <span class="m-hi">
               {#each textParts("arrange.takeSwitch", { take: switcher.take, takes: switcher.takes }) as part, i (i)}
-                {#if part.hole}<span class="m-num">{part.text}</span>{:else}{part.text}{/if}
+                {#if part.hole}<span class="m-num">{part.text}</span>{:else}{@render termed(part.text, "テイク")}{/if}
               {/each}
             </span>
             <button class="tog step" aria-label={t("arrange.takeNext")} onclick={() => send({ type: "stepTake", delta: 1 })}>▸</button>
@@ -1007,7 +1030,22 @@
     background: var(--color-gray-3);
     border-bottom: var(--line-hair) solid var(--color-gray-6);
   }
+  /* キーが向く帯の印（B-72）: 見出しの行の上辺に accent の line.mark。高さは変えず、重ねて描く。 */
+  .focus-mark {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: var(--line-mark);
+    background: var(--color-accent);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .title-row {
+    position: relative;
+  }
   .overview-label {
+    position: relative;
     width: var(--mock-overview-label);
     flex-shrink: 0;
     display: flex;
@@ -1123,6 +1161,12 @@
   .tog.arm.on {
     border-color: var(--color-rec);
     color: var(--color-rec);
+  }
+  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8）。 */
+  .tog.arm:active,
+  .tog.step:active {
+    background: var(--color-gray-2);
+    border-color: var(--color-gray-8);
   }
   .meter {
     height: calc(var(--part-meter-horizontal) * 2 + var(--line-hair));

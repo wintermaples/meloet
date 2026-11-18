@@ -49,19 +49,19 @@
 
 {#if front}
   <aside class="panel" data-band={front}>
-    <div class="head">
+    <button class="m-plain head m-focus-in" onclick={() => toggle(front)} data-test="rail-fold">
       <span class="m-hi">▾</span>
       {@render title(front)}
       <span class="m-spacer"></span>
       <span class="m-num m-lbl">{front === "shelf" ? t("key.shelf") : t("key.params")}</span>
-    </div>
+    </button>
   </aside>
 {/if}
 
 <nav class="tabs" bind:this={nav}>
   {#each tabs as band, i (band)}
     {#if i > 0}<div class="rule"></div>{/if}
-    <button class="m-plain tab" onclick={() => toggle(band)} data-band={band}>
+    <button class="m-plain tab m-focus-in" onclick={() => toggle(band)} data-band={band}>
       <span class="m-lbl">▸</span>
       <span class="vt">{@render title(band)}</span>
       {#if band === "shelf" && countsFit}
@@ -82,6 +82,7 @@
     border-left: var(--line-hair) solid var(--color-gray-6);
   }
   .head {
+    width: 100%;
     height: var(--size-row);
     flex-shrink: 0;
     display: flex;
@@ -111,6 +112,15 @@
   .tab:hover .m-name,
   .tab:hover .m-lbl {
     color: var(--color-gray-10);
+  }
+  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。ひらいた欄の見出し（押すとたたむ。B-74）は、乗ったときも枠。 */
+  .head:hover {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .tab:active,
+  .head:active {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .rule {
     height: var(--line-hair);

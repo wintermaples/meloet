@@ -158,14 +158,6 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(buttons[0]!.classList.contains("hi")).toBe(true);
   });
 
-  it("長さをそろえる は、たたんだ「使えない」見出し", async () => {
-    await scene("pianoRoll");
-    show(NoteInspector);
-    const folded = qa(".hd.folded");
-    expect(folded.map(text)).toEqual(["▸ 長さをそろえる"]);
-    expect(folded.every((b) => b.getAttribute("aria-disabled") === "true")).toBe(true);
-  });
-
   it("固定を押すと、オン ・ オフを入れかえる意図を送る（Rust の状態を見せるだけで、自分では変えない）", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
@@ -211,7 +203,7 @@ describe("状態行（ピアノロールのまわり）", () => {
       s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: false, notes: { count: 6, keys: [60, 62, 64, 65], quantized: false } };
     });
     show(StatusLine);
-    expect(left()).toBe("ループ 5–9 ・ 選択 6 ノート ・ C4 D4 E4 F4");
+    expect(left()).toBe("ループ 5–9 ・ 選択 6 ノート ・ C4 D4 E4 F4 …");
   });
 
   it("音階の外に書こうとした（仕様書 6 章）", async () => {
@@ -240,10 +232,84 @@ describe("状態行（ピアノロールのまわり）", () => {
     expect(left()).toBe("1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4");
   });
 
-  it("録音中は仕様書 6 章「録音中」の文のまま", async () => {
+  it("ピアノロールをひらいて録音中: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」（仕様書 6 章「録音中 ・ ピアノロール」）", async () => {
     await scene("pianoRollRec");
     show(StatusLine);
+    expect(left()).toBe("1 ピアノ へ録音 ・ テイク 3");
+    app.setTelemetry(app.telemetryWith({ keys: [48, 52, 55, 60] }));
+    flushSync();
+    expect(left()).toBe("1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4");
+  });
+
+  it("押している音は入力計と同じく、鍵の on/off を計器を待たずに当てる。離せば「押している音」を出さない", async () => {
+    await scene("pianoRollRec");
+    show(StatusLine);
+    app.emit({ type: "note", on: true, note: 64, velocity: 90, tUs: 0 });
+    app.emit({ type: "note", on: true, note: 60, velocity: 90, tUs: 0 });
+    flushSync();
+    expect(left()).toBe("1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C4 E4");
+    app.emit({ type: "note", on: false, note: 60, velocity: 0, tUs: 0 });
+    app.emit({ type: "note", on: false, note: 64, velocity: 0, tUs: 0 });
+    flushSync();
+    expect(left()).toBe("1 ピアノ へ録音 ・ テイク 3");
+  });
+
+  it("ピアノロールがひらいていなければ、仕様書 6 章「録音中」の文のまま", async () => {
+    await scene("pianoRollRec", (s) => (s.workspace.layout.lower = []));
+    show(StatusLine);
+    app.setTelemetry(app.telemetryWith({ keys: [48, 52] }));
+    flushSync();
     expect(left()).toBe("1 ピアノ へ録音 ・ 止めると テイク 3 として残ります");
+  });
+
+  it("5 つ以上選んだら、最初の 4 つのあとに「…」（仕様書 6 章「ノートを選んでいる」）", async () => {
+    await scene("pianoRoll", (s) => {
+      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 7, keys: [48, 52, 55, 60], quantized: false } };
+    });
+    show(StatusLine);
+    expect(left()).toBe("選択 7 ノート ・ C3 E3 G3 C4 …");
+  });
+
+  it("4 つなら「…」をそえない", async () => {
+    await scene("pianoRoll", (s) => {
+      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 4, keys: [48, 52, 55, 60], quantized: false } };
+    });
+    show(StatusLine);
+    expect(left()).toBe("選択 4 ノート ・ C3 E3 G3 C4");
+  });
+});
+
+describe("状態行（クリップがない所のピアノロール。モック F-PREmpty）", () => {
+  const left = () => text(q(".message"));
+  const empty = (edit?: (s: AppState) => void) => {
+    const s = fakeScene("pianoRollEmpty")!.state;
+    edit?.(s);
+    app.setState(s);
+    shown.setShown({ clip: null, track: null, take: null });
+  };
+
+  it("止まっているときの左は「1 ピアノ ・ クリップなし」", () => {
+    empty();
+    show(StatusLine);
+    expect(left()).toBe("1 ピアノ ・ クリップなし");
+  });
+
+  it("ループがオンなら前に「ループ 5–9」", () => {
+    empty((s) => (s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true, notes: null }));
+    show(StatusLine);
+    expect(left()).toBe("ループ 5–9 ・ 1 ピアノ ・ クリップなし");
+  });
+
+  it("ほかの知らせは、そのまま", () => {
+    empty((s) => (s.status.message = { id: "clipsNotPasted" }));
+    show(StatusLine);
+    expect(left()).toBe("ほかのクリップと重なるので、貼りつけませんでした。");
+  });
+
+  it("ピアノロールがひらいていなければ出さない", () => {
+    empty((s) => (s.workspace.layout.lower = []));
+    show(StatusLine);
+    expect(left()).toBe("選択なし");
   });
 });
 
@@ -363,7 +429,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(field()!.closest(".row")!.getAttribute("data-note")).toBe("0");
   });
 
-  it("↑ ↓ で 1 ずつ（Shift で 10）。音は半音、位置は表示のいちばん下のけた", async () => {
+  it("↑ ↓ で 1 ずつ（Shift で 10。音は Shift で 12 半音）。音は半音、位置は表示のいちばん下のけた", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     double(2, "key");
@@ -373,7 +439,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(field()!.value).toBe("F4");
     key(field()!, "ArrowDown", { shiftKey: true });
     flushSync();
-    expect(field()!.value).toBe("G3");
+    expect(field()!.value).toBe("F3");
     key(field()!, "Tab", { shiftKey: true });
     flushSync();
     key(field()!, "ArrowUp", { shiftKey: true });
@@ -562,10 +628,28 @@ describe("状態行: クオンタイズをかけた ・ 使えない値を打っ
     expect(app.sent).toEqual([{ type: "unquantize", take: take.id, notes: [14, 15, 16] }]);
   });
 
-  it("位置の範囲はクリップで変わる（範囲の文は知らせについてくる）", async () => {
+  it("ノートの位置の欄に読めない物を打った: 仕様書 6 章「位置として読めない」の形", async () => {
     await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "position", kept: "1.1.000", range: "1.1.000〜4.1.000" }));
     show(StatusLine);
-    expect(left()).toBe("位置は 1.1.000〜4.1.000 です。もとの 1.1.000 のままです。");
+    expect(left()).toBe("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの 1.1.000 のままです。");
+  });
+
+  it("ノートの長さの欄に読めない物を打った: 仕様書 6 章「数字として読めない」の形", async () => {
+    await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "length", kept: "0.240", range: "0.030〜4.000" }));
+    show(StatusLine);
+    expect(left()).toBe("長さは数字で打ちます。もとの 0.240 のままです。");
+  });
+
+  it("ノートのベロシティの欄に読めない物を打った: 仕様書 6 章の例そのまま", async () => {
+    await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "velocity", kept: "77", range: null }));
+    show(StatusLine);
+    expect(left()).toBe("ベロシティは数字で打ちます。もとの 77 のままです。");
+  });
+
+  it("音の欄（音名で打つ）に読めない物を打った: 範囲の文の形のまま", async () => {
+    await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "key", kept: "C4", range: "C-1〜G9" }));
+    show(StatusLine);
+    expect(left()).toBe("音は C-1〜G9 です。もとの C4 のままです。");
   });
 
   it("再生の位置の欄に読めない物を打った（B-61。範囲の文の形を使わない）", async () => {

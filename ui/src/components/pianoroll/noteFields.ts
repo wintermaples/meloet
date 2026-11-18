@@ -124,8 +124,10 @@ export function parseVelocity(s: string): number | null {
   return m ? Number(m[0]) : null;
 }
 
-export interface NoteFieldSpec {
-  name: FieldName;
+/** 入力の枠 1 つの決まり（ノートの欄と CC の一覧の欄）。 */
+export interface FieldSpec {
+  /** 状態行で言う欄（RejectValue ・ ClampValue の field）。 */
+  field: ValueField;
   /** 枠をひらいたときに入れておく文字。 */
   initial: string;
   /** 使えない値を打ったときの「もとの {kept} のまま」。ばらばらなら null（欄に見えていた文字を使う）。 */
@@ -136,12 +138,18 @@ export interface NoteFieldSpec {
   high: number;
   /** ↑ ↓ の 1 つぶん。 */
   unit: number;
+  /** Shift ↑ ↓ で動く数（unit の何倍か）。音の欄は 12 半音、ほかは 10。 */
+  shift: number;
   /** 状態行の範囲の文（位置 ・ 長さ ・ 音）。ベロシティは画面の文（value.velocityRange）なので null。 */
   range: string | null;
   format: (v: number) => string;
   read: (s: string) => number | null;
   /** 範囲の外も読む（B-68）。読めなければ null。 */
   loose: (s: string) => LooseValue | null;
+}
+
+export interface NoteFieldSpec extends FieldSpec {
+  name: FieldName;
 }
 
 /** 決める値と、丸めたならその言いかた（ClampValue の中身）。 */
@@ -154,11 +162,11 @@ export interface FieldRead {
  * 打った文字を決める値に。数字として読めなければ null（「こわれた」）。範囲の外なら近いはしにして、丸めた所を返す。
  * 2 つ以上丸めたときは、いちばん大きい単位だけ（クリップの範囲 → 小節 → 拍 → ティック）。
  */
-export function readField(spec: NoteFieldSpec, s: string): FieldRead | null {
+export function readField(spec: FieldSpec, s: string): FieldRead | null {
   const r = spec.loose(s);
   if (!r) return null;
   const value = clampTo(r.value, spec.low, spec.high);
-  if (value !== r.value) return { value, clamped: { field: VALUE_FIELDS[spec.name], value: spec.format(value), range: spec.range } };
+  if (value !== r.value) return { value, clamped: { field: spec.field, value: spec.format(value), range: spec.range } };
   return { value, clamped: r.unit ? { field: r.unit.field, value: spec.format(value), range: r.unit.range } : null };
 }
 
@@ -168,13 +176,13 @@ export function clampCommand(clamped: NonNullable<FieldRead["clamped"]>): Comman
 }
 
 /** 範囲の中の値。読めないか範囲の外なら null。 */
-export function parseField(spec: NoteFieldSpec, s: string): number | null {
+export function parseField(spec: FieldSpec, s: string): number | null {
   const v = spec.read(s);
   return v !== null && v >= spec.low && v <= spec.high ? v : null;
 }
 
-/** ↑ ↓ で delta（1 か 10、下は −）つぶん動かした値。範囲の外へは出ない。 */
-export function stepField(spec: NoteFieldSpec, v: number, delta: number): number {
+/** ↑ ↓ で delta（1 か spec.shift、下は −）つぶん動かした値。範囲の外へは出ない。 */
+export function stepField(spec: FieldSpec, v: number, delta: number): number {
   return Math.min(spec.high, Math.max(spec.low, v + delta * spec.unit));
 }
 
@@ -200,6 +208,8 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
       const format = (v: number) => notePositionText(v, meter);
       return {
         name,
+        field: VALUE_FIELDS[name],
+        shift: 10,
         initial: format(firstStart),
         kept: format(firstStart),
         current: firstStart,
@@ -218,6 +228,8 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
       const high = 127 - (Math.max(...keys) - lowest);
       return {
         name,
+        field: VALUE_FIELDS[name],
+        shift: 12,
         initial: noteName(lowest),
         kept: noteName(lowest),
         current: lowest,
@@ -238,6 +250,8 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
       const initial = format(same ? lengths[0]! : take.lengths[first]!);
       return {
         name,
+        field: VALUE_FIELDS[name],
+        shift: 10,
         initial,
         kept: same ? initial : null,
         current: same ? lengths[0]! : null,
@@ -256,6 +270,8 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
       const same = velocities.every((v) => v === low);
       return {
         name,
+        field: VALUE_FIELDS[name],
+        shift: 10,
         initial: String(low),
         kept: same ? String(low) : null,
         current: same ? low : null,
@@ -278,8 +294,8 @@ export function commitCommand(spec: NoteFieldSpec, value: number, take: number, 
 }
 
 /** 使えない値のまま Enter（Tab）を押した。shown は欄に見えていた文字（ばらばらのときの「ばらばら」「77 – 83」）。 */
-export function rejectCommand(spec: NoteFieldSpec, shown: string): Command {
-  return { type: "rejectValue", field: VALUE_FIELDS[spec.name], kept: spec.kept ?? shown, range: spec.range };
+export function rejectCommand(spec: FieldSpec, shown: string): Command {
+  return { type: "rejectValue", field: spec.field, kept: spec.kept ?? shown, range: spec.range };
 }
 
 /** Tab（back なら Shift Tab）で次にひらく欄。いまの行の外へ出るなら row が ±1。 */

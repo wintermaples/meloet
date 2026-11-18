@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -389,6 +389,15 @@ pub enum Command {
         notes: Vec<u32>,
         value: u8,
     },
+    /// "そろえる" of the length panel, and Enter in its field (design-notes C-6 51): every note
+    /// to `value` ticks, as one step, each kept inside its clip as `SetNotesField` does. The
+    /// status line says "3 ノートの長さを 0.240 にそろえました。" (`StatusMessage::LengthMatched`).
+    /// A clamped value: `ClampValue` after this one, as for `MatchVelocity`.
+    MatchLength {
+        take: u32,
+        notes: Vec<u32>,
+        value: u64,
+    },
     /// "固定" next to the velocity reading of the input meter, and a value typed on that reading
     /// (B-66). `value` 1..=127. A meloet setting (settings.json), not part of the song. While on,
     /// every key played sounds and is recorded at `value`, and `Event::Note` and the telemetry's
@@ -502,6 +511,9 @@ pub enum ValueField {
     Bar,
     Beat,
     Tick,
+    /// The value of a point in the CC list (design-notes C-6 50), with its `range`
+    /// ("0〜127", "−8192〜+8191").
+    ControlValue,
 }
 
 /// The buttons of the song dialogs, one for one.
@@ -1229,6 +1241,12 @@ pub enum StatusMessage {
     VelocityMatched {
         count: u32,
         value: u8,
+    },
+    /// `Command::MatchLength`: "3 ノートの長さを 0.240 にそろえました。" `value` in ticks; the
+    /// screen writes it as the note list does.
+    LengthMatched {
+        count: u32,
+        value: u64,
     },
     /// `MoveClips` without `copy` did nothing, as a clip would overlap one outside the group
     /// (B-71): "ほかのクリップと重なるので、動かしませんでした。"

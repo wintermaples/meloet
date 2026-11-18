@@ -257,6 +257,15 @@ export const mock = {
   "mock.inspector.slider-fill": m(3, "A-PianoRoll"),
   // ボタンの列の上下のあき（`padding:6px 12px 6px 28px`）。
   "mock.inspector.buttons-pad-y": m(6, "A-PianoRoll"),
+  // まとめて変える行（長さをそろえる ・ ベロシティをまとめて変える）。仕様書 2 章の数を、モックの書きかたで（高さ 32、字の幅 60、
+  // 入力の枠は幅 72 ・ 高さ 20 ・ 左右 6）。
+  "mock.inspector.bulk-row": m(32, "A-PianoRoll"),
+  "mock.inspector.bulk-label": m(60, "A-PianoRoll"),
+  "mock.inspector.bulk-field": m(72, "A-PianoRoll"),
+  "mock.inspector.bulk-field-h": m(20, "A-PianoRoll"),
+  "mock.inspector.bulk-field-pad": m(6, "A-PianoRoll"),
+  // ひらいた「CC の一覧」の種類の列（位置の列は mock.notelist.position、欄の左右は mock.notelist.cell-pad）。
+  "mock.cclist.kind": m(96, "R5-Lists"),
   // ピアノロールの帯（第 3 回）。目盛の高さ、鍵盤の列の音の名前の欄。
   "mock.pianoroll.ruler": m(20, "A-PianoRoll"),
   "mock.pianoroll.key-label": m(48, "A-PianoRoll"),
@@ -269,6 +278,11 @@ export const mock = {
   "mock.pianoroll.end-mark": m(16, "R3-PRMouse"),
   // CC の帯の、127 と 0（ピッチベンドは両はし）の点の中心の、帯の上下からのあき（`top:6px` の 6×6 の点、高さ 40 の帯で 9 と 31）。
   "mock.pianoroll.cc-pad": m(9, "R3-Lanes"),
+  // 鍵盤の列の上の角の、縦の − ＋（`.q` の幅 20 に `height:18px`、間 `gap:2px`）。
+  "mock.pianoroll.row-zoom-h": m(18, "A-PianoRoll"),
+  "mock.pianoroll.row-zoom-gap": m(2, "A-PianoRoll"),
+  // クリップがない所の案内の箱の幅（`width:460px`）。
+  "mock.pianoroll.empty-hint": m(460, "F-PREmpty"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

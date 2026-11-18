@@ -628,6 +628,23 @@ fn piano_roll_command_json_shape() {
             json!({"type": "matchVelocity", "take": 6, "notes": [1, 2, 3], "value": 100}),
         ),
         (
+            Command::MatchLength {
+                take: 6,
+                notes: vec![1, 2, 3],
+                value: 360,
+            },
+            json!({"type": "matchLength", "take": 6, "notes": [1, 2, 3], "value": 360}),
+        ),
+        (
+            Command::ClampValue {
+                field: ValueField::ControlValue,
+                value: "+8191".into(),
+                range: Some("−8192〜+8191".into()),
+            },
+            json!({"type": "clampValue", "field": "controlValue", "value": "+8191",
+                   "range": "−8192〜+8191"}),
+        ),
+        (
             Command::SetVelocityFixed {
                 on: true,
                 value: 90,
@@ -799,6 +816,13 @@ fn status_message_json_shape() {
                 value: 100,
             },
             json!({"id": "velocityMatched", "count": 3, "value": 100}),
+        ),
+        (
+            StatusMessage::LengthMatched {
+                count: 3,
+                value: 360,
+            },
+            json!({"id": "lengthMatched", "count": 3, "value": 360}),
         ),
         (
             StatusMessage::ValueClamped {

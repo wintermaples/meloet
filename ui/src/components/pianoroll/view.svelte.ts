@@ -163,6 +163,7 @@ export const ccLanes = $state({ open: [] as LaneTag[], other: null as number | n
 
 export const velocityLane = $state({ open: true });
 
-// ---- 右の欄の「ベロシティをまとめて変える」がひらいているか（design-notes B-67）。帯をたたんでも覚えている ----
+// ---- 右の欄の「長さをそろえる」「ベロシティをまとめて変える」と、左の欄の「CC の一覧」がひらいているか。帯をたたんでも覚えている ----
 
-export const inspectorFolds = $state({ velocityAll: false });
+export const inspectorFolds = $state({ sameLength: false, velocityAll: false });
+export const ccList = $state({ open: false });

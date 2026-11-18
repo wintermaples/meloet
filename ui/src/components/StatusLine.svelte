@@ -1,15 +1,15 @@
 <!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom のいちばん下の行）。 -->
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { clockOffsetUs, type Band, type Command, type NoteSelection, type StatusMessage, type TrackRef, type ValueField } from "../bridge";
+  import { onMount, untrack } from "svelte";
+  import { clockOffsetUs, keyIsDown, type Band, type Command, type NoteSelection, type StatusMessage, type TrackRef, type ValueField } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { everyGlFrame } from "../gl/slot";
   import { platformOf } from "../keys/keys";
   import { menuOpened } from "../lib/menu";
   import { term } from "../lib/tip.svelte";
-  import { current, send } from "../state/app.svelte";
+  import { current, onEvent, send } from "../state/app.svelte";
   import { STATUS_JOIN, t, type TextKey } from "../text/ja";
-  import { gridText, msText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
+  import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { heldText, noteName } from "./meterFormat";
   import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
@@ -42,7 +42,7 @@
     params: "band.params",
   };
 
-  /** 使えない値を打ったときの欄の名前と範囲。 */
+  /** 数字の欄に打った値の、欄の名前と範囲。 */
   // 範囲がクリップで変わる欄（位置・長さ）は、範囲の文が知らせについてくる（`range`）。
   const VALUE_FIELDS: Record<ValueField, [TextKey, TextKey | null]> = {
     tempo: ["value.tempo", "value.tempoRange"],
@@ -56,6 +56,7 @@
     bar: ["value.bar", null],
     beat: ["value.beat", null],
     tick: ["value.tick", null],
+    controlValue: ["ccList.value", null],
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
@@ -71,10 +72,11 @@
     return pieces.filter((p) => p.length > 0).flatMap((p, i) => (i === 0 ? p : [{ text: STATUS_JOIN, hole: null }, ...p]));
   }
 
-  /** 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）。音名は Rust が送る最初の 4 つ。 */
+  /** 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）。音名は Rust が送る最初の 4 つで、残りがあれば「…」。 */
   function notesParts(n: NoteSelection): TextPart[] {
+    const values = { count: n.count, keys: n.keys.map(noteName).join(" ") };
     return joined(
-      textParts("status.notesSelected", { count: n.count, keys: n.keys.map(noteName).join(" ") }),
+      textParts(n.count > n.keys.length ? "status.notesSelectedMore" : "status.notesSelected", values),
       n.quantized ? textParts("status.notesQuantized", {}) : [],
     );
   }
@@ -136,9 +138,10 @@
       case "bandFoldedScale":
         return plain("msg.bandFoldedScale", { scale: m.scale, band: t(BAND_NAMES[m.band]) });
       case "valueRejected": {
-        if (m.field === "playPosition") return plain("msg.playPositionRejected", { kept: m.kept });
-        const [field, range] = VALUE_FIELDS[m.field];
-        return plain("msg.valueRejected", { field: t(field), range: m.range ?? (range ? t(range) : ""), kept: m.kept });
+        if (m.field === "playPosition" || m.field === "position") return plain("msg.playPositionRejected", { kept: m.kept });
+        const [field] = VALUE_FIELDS[m.field];
+        if (m.field === "key") return plain("msg.keyRejected", { field: t(field), range: m.range ?? "", kept: m.kept });
+        return plain("msg.valueRejected", { field: t(field), kept: m.kept });
       }
       case "valueClamped": {
         if (m.field === "bar") return plain("msg.valueClampedBar", { value: m.value });
@@ -147,6 +150,8 @@
       }
       case "velocityMatched":
         return plain("msg.velocityMatched", { count: m.count, value: m.value });
+      case "lengthMatched":
+        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, { num: app.song.meterNum, den: app.song.meterDen }) });
       case "clipsNotMoved":
         return plain("msg.clipsNotMoved");
       case "clipsNotPasted":
@@ -258,6 +263,44 @@
     return textParts(muted.length === 1 ? "status.muted" : "status.mutedMany", { tracks: muted.join(STATUS_JOIN) });
   }
 
+  // ---- ピアノロールをひらいて録音しているとき（仕様書 6 章「録音中 ・ ピアノロール」）: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」 ----
+
+  const recordingInPianoRoll = $derived(pianoRollOpen && app.status.message?.id === "recording");
+
+  /** 押している鍵（入力計と同じ物: 計器で受け、鍵の on/off は計器を待たずに当てる）。録音中にピアノロールをひらいている間だけ数える。 */
+  let held = $state.raw<number[]>([]);
+  const setHeld = (keys: number[]) => {
+    if (!sameKeys(keys, held)) held = keys;
+  };
+  $effect(() => {
+    const tel = current.telemetry;
+    if (!recordingInPianoRoll || !tel) return;
+    const keys: number[] = [];
+    for (let k = 0; k < 128; k++) if (keyIsDown(tel, k)) keys.push(k);
+    untrack(() => setHeld(keys));
+  });
+  onMount(() =>
+    onEvent((e) => {
+      if (e.type !== "note" || !recordingInPianoRoll) return;
+      setHeld(e.on && e.velocity > 0 ? (held.includes(e.note) ? held : [...held, e.note].sort((a, b) => a - b)) : held.filter((k) => k !== e.note));
+    }),
+  );
+
+  function recordingParts(m: Extract<StatusMessage, { id: "recording" }>): TextPart[] {
+    return joined(
+      textParts("msg.recordingPianoRoll", { track: track(m.track), take: m.take }),
+      held.length > 0 ? textParts("status.held", { keys: heldText(held) }) : [],
+    );
+  }
+
+  // ---- クリップがない所でピアノロールをひらいて止まっているとき（モック F-PREmpty）: 「1 ピアノ ・ クリップなし」 ----
+
+  const noClipTrack = $derived.by((): TrackRef | null => {
+    if (!pianoRollOpen || app.transport.state !== "stopped" || app.arrange.pianoRollClip !== null) return null;
+    const tr = app.song.tracks.find((x) => x.number === app.song.playTarget);
+    return tr ? { number: tr.number, name: tr.name } : null;
+  });
+
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
@@ -266,7 +309,16 @@
       const parts = playingParts();
       if (parts) return { parts, strong: [], button: null };
     }
-    const base = shown(m);
+    if (recordingInPianoRoll && m?.id === "recording") return { parts: recordingParts(m), strong: [], button: null };
+    let base: Shown | null;
+    if (noClipTrack && (m === null || (m.id === "summary" && m.notes === null))) {
+      const loop = m?.id === "summary" ? m.loopBars : null;
+      const parts = joined(
+        loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [],
+        textParts("status.noClip", { track: track(noClipTrack) }),
+      );
+      base = { parts, strong: [], button: null };
+    } else base = shown(m);
     if (app.transport.state === "stopped" && (m === null || m.id === "summary")) {
       const muted = mutedParts();
       if (muted.length > 0) return { parts: joined(base?.parts ?? [], muted), strong: base?.strong ?? [], button: base?.button ?? null };

@@ -683,8 +683,9 @@ describe("状態行の札と知らせ", () => {
   it.each([
     [{ id: "bandFoldedThird", opened: "history", folded: "mixer" }, "取り消しの履歴をひらいたので、いちばん前にひらいたミキサーをたたみました。下の帯は、2 つまでひらけます。"],
     [{ id: "bandFoldedScale", scale: 150, band: "mixer" }, "拡大率を 150 % にしたので、ミキサーをたたみました。帯札を押すと、またひらきます。"],
-    [{ id: "valueRejected", field: "velocity", kept: "77" }, "ベロシティは 1〜127 です。もとの 77 のままです。"],
-    [{ id: "valueRejected", field: "meterDen", kept: "4" }, "拍子の下は 2 ・ 4 ・ 8 ・ 16 です。もとの 4 のままです。"],
+    [{ id: "valueRejected", field: "velocity", kept: "77" }, "ベロシティは数字で打ちます。もとの 77 のままです。"],
+    [{ id: "valueRejected", field: "meterDen", kept: "4" }, "拍子の下は数字で打ちます。もとの 4 のままです。"],
+    [{ id: "valueRejected", field: "tempo", kept: "96.00" }, "テンポは数字で打ちます。もとの 96.00 のままです。"],
     [{ id: "outputMissing", output: "ヘッドホン" }, "ヘッドホンが見つからなくなりました。再生を止めています。 音の設定をひらく"],
   ] as [StatusMessage, string][])("新しい知らせ %o", (m, expected) => {
     show(StatusLine, msg(m));

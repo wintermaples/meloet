@@ -14,11 +14,12 @@
   import { metrics } from "../metrics.svelte";
   import * as G from "./geom";
   import NoteInspector from "./NoteInspector.svelte";
+  import CcListPanel from "./CcListPanel.svelte";
   import NoteListPanel from "./NoteListPanel.svelte";
   import Roll from "./Roll.svelte";
   import { followShownTake, shown } from "./shown.svelte";
   import Toolbar from "./Toolbar.svelte";
-  import { ccLanes, dragReading, prPanels, prView, velocityLane, type LaneTag } from "./view.svelte";
+  import { ccLanes, ccList, dragReading, prPanels, prView, velocityLane, type LaneTag } from "./view.svelte";
 
   let { height }: { height: number } = $props();
 
@@ -159,11 +160,18 @@
           <span class="m-num m-lbl">{noteTotal}</span>
         </button>
         <div class="panel-body"><NoteListPanel /></div>
-        <button class="m-plain hd cc-list" aria-disabled="true" tabindex="-1">
-          <span>▸</span>
-          <span class="grow">{t("pr.ccList")}</span>
-          <span class="m-num">{cc.total}</span>
+        <button
+          class="m-plain hd cc-list m-focus-in"
+          class:open={ccList.open}
+          aria-expanded={ccList.open}
+          data-test="pr-cc-list"
+          onclick={() => (ccList.open = !ccList.open)}
+        >
+          <span class={ccList.open ? "m-hi" : "m-lbl"}>{ccList.open ? "▾" : "▸"}</span>
+          <span class="m-hi grow">{t("pr.ccList")}</span>
+          <span class="m-num m-lbl">{cc.total}</span>
         </button>
+        {#if ccList.open}<div class="panel-body"><CcListPanel /></div>{/if}
       </div>
     {:else}
       <button class="m-plain vtab left m-focus-in" onclick={() => (prPanels.list = true)} data-test="pr-list-open">
@@ -296,11 +304,13 @@
     flex: 1;
     min-height: 0;
   }
+  /* 「CC の一覧」の見出しは、ノートの一覧の下。ひらくと、その下に一覧（ノートの一覧と高さを分ける）。 */
   .cc-list {
     border-bottom: 0;
     border-top: var(--line-hair) solid var(--color-gray-5);
-    color: var(--color-gray-7);
-    cursor: default;
+  }
+  .cc-list.open {
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
   .accent {
     color: var(--color-accent);

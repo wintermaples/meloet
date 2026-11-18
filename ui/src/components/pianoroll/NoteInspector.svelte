@@ -1,9 +1,9 @@
 <!-- ピアノロールの右の「選んだノート」の中身（モック A-PianoRoll・F-WidePR の右の欄: 選んだノート、クオンタイズ、スケール、長さをそろえる、
      ベロシティをまとめて変える）。見出し（▾ 選んだノート 3）とたたんだ縦の見出しは、帯の部品（PianoRoll.svelte）が描く。これは、ひらいたときの中身だけを、親の箱いっぱいに描く。
      選んだノートの 位置 ・ 音 ・ 長さ ・ ベロシティ は、押すと「入力の枠」（ノートの一覧と同じ。決めると選んだぜんぶへ setNotesField）。
-     クオンタイズの設定は、変えるたびに setQuantize（いまの設定ぜんぶ）。「かけなおす」は quantize、「もとの位置へ戻す」は unquantize（選んだノート、なければ全部）。
-     スケールは setMusicalScale。「長さをそろえる」は、中身が仕様書にもモックにもないので、たたんだ見出しだけの「使えない」。
-     「ベロシティをまとめて変える」（design-notes B-67）は、ひらくと「ベロシティ」の入力の枠と「そろえる」の 1 行。Enter かボタンで matchVelocity。
+     クオンタイズの設定は、変えるたびに setQuantize（いまの設定ぜんぶ）。「かける」（かけたあとは「かけなおす」）は quantize、
+     「もとの位置へ戻す」は unquantize（選んだノート、なければ全部）。スケールは setMusicalScale。
+     「長さをそろえる」と「ベロシティをまとめて変える」は、ひらくと「まとめて変える行」が 1 行（仕様書 2 章）。Enter かボタンで matchLength ・ matchVelocity。
      欄の数は、範囲の外なら近いはしにして決める（B-68）。 -->
 <script lang="ts">
   import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
@@ -113,42 +113,52 @@
     if (editing && editSpec) send(rejectCommand(editSpec, fieldText[editing.name]));
   }
 
-  // ---- ベロシティをまとめて変える（B-67） ----
+  // ---- 長さをそろえる ・ ベロシティをまとめて変える（まとめて変える行） ----
 
-  const velocitySpec = $derived(specOf("velocity"));
+  type Bulk = "length" | "velocity";
+  const bulkSpecs = $derived({ length: specOf("length"), velocity: specOf("velocity") });
   /** 選んだノートがみな同じ値ならその値、ちがえば空。 */
-  const bulkInitial = $derived(velocitySpec?.current != null ? String(velocitySpec.current) : "");
-  let bulkDraft = $state("");
+  const bulkInitial = (name: Bulk) => {
+    const spec = bulkSpecs[name];
+    return spec?.current != null ? spec.format(spec.current) : "";
+  };
+  const bulkDrafts = $state<Record<Bulk, string>>({ length: "", velocity: "" });
   $effect(() => {
-    bulkDraft = bulkInitial;
+    bulkDrafts.length = bulkInitial("length");
   });
-  const canMatch = $derived(velocitySpec !== null);
-  const bulkBroken = $derived(canMatch && bulkDraft.trim() !== "" && readField(velocitySpec!, bulkDraft) === null);
+  $effect(() => {
+    bulkDrafts.velocity = bulkInitial("velocity");
+  });
+  const bulkBroken = (name: Bulk) => {
+    const spec = bulkSpecs[name];
+    return spec !== null && bulkDrafts[name].trim() !== "" && readField(spec, bulkDrafts[name]) === null;
+  };
 
-  function matchVelocity(): void {
-    const spec = velocitySpec;
+  function matchBulk(name: Bulk): void {
+    const spec = bulkSpecs[name];
     if (!spec || !live) return;
-    const r = readField(spec, bulkDraft);
+    const r = readField(spec, bulkDrafts[name]);
     if (r === null) {
-      send(rejectCommand(spec, fieldText.velocity));
+      send(rejectCommand(spec, fieldText[name]));
       return;
     }
-    send({ type: "matchVelocity", take: take!.id, notes: selected, value: r.value });
+    if (name === "length") send({ type: "matchLength", take: take!.id, notes: selected, value: r.value });
+    else send({ type: "matchVelocity", take: take!.id, notes: selected, value: r.value });
     if (r.clamped) send(clampCommand(r.clamped));
-    bulkDraft = String(r.value);
+    bulkDrafts[name] = spec.format(r.value);
   }
 
-  function bulkKey(ev: KeyboardEvent): void {
+  function bulkKey(ev: KeyboardEvent, name: Bulk): void {
     if (ev.isComposing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const spec = bulkSpecs[name];
     if (ev.key === "Enter" && !ev.shiftKey) {
-      matchVelocity();
+      matchBulk(name);
     } else if (ev.key === "Escape" && !ev.shiftKey) {
-      bulkDraft = bulkInitial;
+      bulkDrafts[name] = bulkInitial(name);
       (ev.currentTarget as HTMLInputElement).blur();
-    } else if ((ev.key === "ArrowUp" || ev.key === "ArrowDown") && velocitySpec) {
-      const r = readField(velocitySpec, bulkDraft);
-      const from = r?.value ?? velocitySpec.current ?? Number(velocitySpec.initial);
-      bulkDraft = String(stepField(velocitySpec, from, (ev.key === "ArrowUp" ? 1 : -1) * (ev.shiftKey ? 10 : 1)));
+    } else if ((ev.key === "ArrowUp" || ev.key === "ArrowDown") && spec) {
+      const from = readField(spec, bulkDrafts[name])?.value ?? spec.current ?? readField(spec, spec.initial)?.value ?? spec.low;
+      bulkDrafts[name] = spec.format(stepField(spec, from, (ev.key === "ArrowUp" ? 1 : -1) * (ev.shiftKey ? spec.shift : 1)));
     } else {
       return;
     }
@@ -311,6 +321,39 @@
   </div>
 {/snippet}
 
+{#snippet bulkHead(fold: "sameLength" | "velocityAll", label: string, test: string)}
+  <button class="m-plain hd m-focus-in" aria-expanded={inspectorFolds[fold]} data-test={test} onclick={() => (inspectorFolds[fold] = !inspectorFolds[fold])}>
+    <span class={inspectorFolds[fold] ? "m-hi" : "m-lbl"}>{inspectorFolds[fold] ? "▾" : "▸"}</span>
+    <span class="m-hi grow">{label}</span>
+  </button>
+{/snippet}
+
+{#snippet bulkRow(name: Bulk, label: string, termName: string | null, fieldTest: string, buttonTest: string)}
+  {@const usable = bulkSpecs[name] !== null}
+  {@const broken = bulkBroken(name)}
+  <div class="bulk-row">
+    {#if termName}
+      <span class="m-lbl bulk-label" class:off={!usable} use:term={termName}>{label}</span>
+    {:else}
+      <span class="m-lbl bulk-label" class:off={!usable}>{label}</span>
+    {/if}
+    <input
+      class="bulk-field m-num"
+      class:broken
+      type="text"
+      spellcheck="false"
+      autocomplete="off"
+      aria-label={label}
+      aria-invalid={broken}
+      disabled={!usable}
+      data-test={fieldTest}
+      bind:value={bulkDrafts[name]}
+      onkeydown={(ev) => bulkKey(ev, name)}
+    />
+    <button class="m-btn" aria-disabled={!usable} data-test={buttonTest} onclick={() => matchBulk(name)}>{t("inspector.matchVelocity")}</button>
+  </div>
+{/snippet}
+
 <div class="inspector" data-testid="pr-inspector">
   <ScrollArea>
     {@render field("position", null)}
@@ -357,7 +400,7 @@
     </div>
     <div class="buttons" bind:this={buttonsRow}>
       <button class="m-btn" class:hi={canQuantize} aria-disabled={!canQuantize} data-test="quantize-apply" onclick={quantize}
-        >{t("inspector.requantize")}{#if quantizeKey}<span class="m-num m-lbl key" data-test="quantize-key">{t("key.quantize")}</span>{/if}</button
+        >{t(quantized ? "inspector.requantize" : "inspector.quantizeApply")}{#if quantizeKey}<span class="m-num m-lbl key" data-test="quantize-key">{t("key.quantize")}</span>{/if}</button
       >
       <button class="m-btn" aria-disabled={!canUnquantize} data-test="quantize-restore" onclick={unquantize}>{t("inspector.unquantize")}</button>
     </div>
@@ -388,41 +431,13 @@
       >
     </div>
 
-    <button class="m-plain hd folded" aria-disabled="true" tabindex="-1">
-      <span class="arrow">▸</span>
-      <span class="grow">{t("inspector.sameLength")}</span>
-    </button>
-    <button
-      class="m-plain hd m-focus-in"
-      aria-expanded={inspectorFolds.velocityAll}
-      data-test="inspector-velocity-all"
-      onclick={() => (inspectorFolds.velocityAll = !inspectorFolds.velocityAll)}
-    >
-      <span class="m-hi">{inspectorFolds.velocityAll ? "▾" : "▸"}</span>
-      <span class="m-hi grow">{t("inspector.velocityAll")}</span>
-    </button>
+    {@render bulkHead("sameLength", t("inspector.sameLength"), "inspector-same-length")}
+    {#if inspectorFolds.sameLength}
+      {@render bulkRow("length", t("note.length"), null, "inspector-same-length-field", "inspector-match-length")}
+    {/if}
+    {@render bulkHead("velocityAll", t("inspector.velocityAll"), "inspector-velocity-all")}
     {#if inspectorFolds.velocityAll}
-      <div class="rw">
-        <span class="m-lbl grow" class:off={!canMatch} use:term={"ベロシティ"}>{t("pr.velocity")}</span>
-        <span class="bulk">
-          <input
-            class="bulk-field m-num"
-            class:broken={bulkBroken}
-            type="text"
-            spellcheck="false"
-            autocomplete="off"
-            aria-label={t("pr.velocity")}
-            aria-invalid={bulkBroken}
-            disabled={!canMatch}
-            data-test="inspector-velocity-all-field"
-            bind:value={bulkDraft}
-            onkeydown={bulkKey}
-          />
-        </span>
-        <button class="m-btn" aria-disabled={!canMatch} data-test="inspector-match-velocity" onclick={matchVelocity}
-          >{t("inspector.matchVelocity")}</button
-        >
-      </div>
+      {@render bulkRow("velocity", t("pr.velocity"), "ベロシティ", "inspector-velocity-all-field", "inspector-match-velocity")}
     {/if}
   </ScrollArea>
 </div>
@@ -491,11 +506,6 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     white-space: nowrap;
   }
-  /* たたんだ「使えない」見出し: 文字 gray.7、押せない。 */
-  .hd.folded {
-    color: var(--color-gray-7);
-    cursor: default;
-  }
   /* インスペクタの行（モック A-PianoRoll の .rw。左は字下げ）。 */
   .rw {
     height: var(--size-row);
@@ -524,19 +534,30 @@
   .off {
     color: var(--color-gray-7);
   }
-  /* 「ベロシティをまとめて変える」の入力の枠（仕様書 2 章「入力の枠」: 地 gray.0、枠 gray.6、乗った gray.8、
-     使えない 枠 gray.5 ・ 文字 gray.7、こわれた rec。打っている間は、ほかの入力の枠と同じ gray.10）。高さは行いっぱい。 */
-  .bulk {
-    width: 25%;
-    height: 100%;
+  /* まとめて変える行（仕様書 2 章、モック A-PianoRoll）。 */
+  .bulk-row {
+    height: var(--mock-inspector-bulk-row);
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-3) 0 var(--mock-inspector-indent);
+    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    white-space: nowrap;
   }
+  .bulk-label {
+    width: var(--mock-inspector-bulk-label);
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  /* 入力の枠（仕様書 2 章「入力の枠」: 地 gray.0、枠 gray.6、乗った gray.8、使えない 枠 gray.5 ・ 文字 gray.7、こわれた rec。
+     打っている間は、ほかの入力の枠と同じ gray.10）。 */
   .bulk-field {
     box-sizing: border-box;
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    padding: 0 var(--space-1);
+    width: var(--mock-inspector-bulk-field);
+    height: var(--mock-inspector-bulk-field-h);
+    flex-shrink: 0;
+    padding: 0 var(--mock-inspector-bulk-field-pad);
     margin: 0;
     border: var(--line-hair) solid var(--color-gray-6);
     border-radius: var(--radius-1);

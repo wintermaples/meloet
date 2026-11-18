@@ -827,6 +827,13 @@ export const SCENES: Record<string, SceneDef> = {
     },
     live: PIANO_ROLL_LIVE,
   },
+  // The mock F-PREmpty: a new song with no clip, the piano roll open (spec 3: only the grid, and the hint at the top left).
+  pianoRollEmpty: {
+    setup: ready,
+    bands: ["pianoRoll"],
+    after: (s) => (s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null }),
+    meters: QUIET,
+  },
   mixer: { setup: ready, bands: ["mixer"], meters: QUIET },
   history: { setup: ready, bands: ["history"], meters: QUIET },
   shelf: { setup: ready, bands: ["shelf"], meters: QUIET },
@@ -1042,6 +1049,12 @@ export const SCENES: Record<string, SceneDef> = {
     after: (s) => (s.status.message = { id: "velocityMatched", count: 3, value: 100 }),
     meters: QUIET,
   },
+  lengthMatched: {
+    setup: pianoRollSong,
+    bands: ["pianoRoll"],
+    after: (s) => (s.status.message = { id: "lengthMatched", count: 3, value: 240 }),
+    meters: QUIET,
+  },
   // Not from a mock (B-68): a part of a position put in its range.
   positionClamped: {
     setup: ready,
@@ -1215,6 +1228,7 @@ const NOTICES: StatusMessage["id"][] = [
   "bufferFixed",
   "valueClamped",
   "velocityMatched",
+  "lengthMatched",
   "clipsNotMoved",
   "clipsNotPasted",
   "clipsNotDuplicated",
@@ -1525,6 +1539,9 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
     // The fake does not change notes; it only says what Rust says.
     case "matchVelocity":
       if (command.take === pianoRoll.take && command.notes.length > 0) notice = { id: "velocityMatched", count: command.notes.length, value: command.value };
+      break;
+    case "matchLength":
+      if (command.take === pianoRoll.take && command.notes.length > 0) notice = { id: "lengthMatched", count: command.notes.length, value: Math.max(1, command.value) };
       break;
     case "setVelocityFixed":
       keyboards.velocityFixed = { on: command.on, value: Math.min(127, Math.max(1, command.value)) };

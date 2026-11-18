@@ -846,6 +846,11 @@ impl Model {
                     self.notice = Some(n);
                 }
             }
+            Command::MatchLength { take, notes, value } => {
+                if let Some(n) = self.play.match_length(take, &notes, value, effects) {
+                    self.notice = Some(n);
+                }
+            }
             Command::SelectControls { take, points, mode } => {
                 self.play.select_controls(take, points, mode);
             }

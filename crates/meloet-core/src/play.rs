@@ -894,7 +894,8 @@ impl Play {
             return;
         }
         let before = self.doc().clone();
-        if self.history.undo(&mut self.song.doc).is_some() {
+        if let Some(kind) = self.history.undo(&mut self.song.doc) {
+            self.crossed_songs(&kind);
             self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_undo.pop() {
@@ -909,7 +910,8 @@ impl Play {
             return;
         }
         let before = self.doc().clone();
-        if self.history.redo(&mut self.song.doc).is_some() {
+        if let Some(kind) = self.history.redo(&mut self.song.doc) {
+            self.crossed_songs(&kind);
             self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_redo.pop() {
@@ -1395,6 +1397,15 @@ impl Play {
     /// Goes up whenever the `Doc` changes or another song takes its place.
     pub fn changes(&self) -> u64 {
         self.changes
+    }
+
+    /// Undo and redo over "なおすためのファイルから戻す" or "戻さない" go between the recovered song
+    /// and the saved one, whose takes may have gone their own ways (a file changed from outside):
+    /// the screen lets go of its kept takes then too.
+    fn crossed_songs(&mut self, kind: &StepKind) {
+        if matches!(kind, StepKind::Recovered | StepKind::DiscardRecovered) {
+            self.serial += 1;
+        }
     }
 
     /// See `SongView::serial`.

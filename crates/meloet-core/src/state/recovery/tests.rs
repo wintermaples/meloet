@@ -445,7 +445,7 @@ fn dont_restore_is_the_second_step_and_undo_goes_back_through_both() {
 }
 
 #[test]
-fn the_serial_goes_up_on_coming_back_and_on_dont_restore_but_not_with_undo() {
+fn the_serial_goes_up_on_coming_back_on_dont_restore_and_on_undo_over_them() {
     let (dir, songs) = (
         temp_dir("recovery-serial"),
         temp_dir("recovery-serial-songs"),
@@ -458,10 +458,13 @@ fn the_serial_goes_up_on_coming_back_and_on_dont_restore_but_not_with_undo() {
     assert_eq!(serial(m), first + 1);
     cmd(m, Command::DiscardRecovered);
     assert_eq!(serial(m), first + 2);
+    // Undo and redo over these two steps go between the recovered and the saved song.
     cmd(m, Command::Undo);
+    assert_eq!(serial(m), first + 3);
     cmd(m, Command::Undo);
+    assert_eq!(serial(m), first + 4);
     cmd(m, Command::Redo);
-    assert_eq!(serial(m), first + 2);
+    assert_eq!(serial(m), first + 5);
     let _ = (fs::remove_dir_all(dir), fs::remove_dir_all(songs));
 }
 

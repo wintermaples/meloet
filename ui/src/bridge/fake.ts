@@ -1974,7 +1974,8 @@ const clampDb = (db: number | null) => (db === null || db < -60 ? null : Math.mi
 /**
  * Protocol 14: the mixer, enough for pictures and tests (no history, no undo count, no previews: a command with
  * `commit: false` changes nothing here, as the state never shows a preview). Returns what changed, or null when
- * the command is none of these. The values of the effects are kept only for the selected insert.
+ * the command is none of these. The values of the effects are kept only for the selected insert. Taken while
+ * recording and counting in too (design-notes A-14).
  */
 export function reduceMixer(
   state: AppState,
@@ -1985,7 +1986,6 @@ export function reduceMixer(
   const song = structuredClone(songNow);
   const params = structuredClone(state.params);
   const shelf = structuredClone(shelfNow);
-  const change = !busy(state);
   let showParams = false;
   const select = (insert: InsertRef | null) => {
     const effect = insert === null ? null : (stripOf(song, insert.strip)?.inserts[insert.slot] ?? null);
@@ -1998,24 +1998,24 @@ export function reduceMixer(
   switch (command.type) {
     case "setGain": {
       const strip = stripOf(song, command.strip);
-      if (strip && command.commit && change) strip.gainDb = clampDb(command.db);
+      if (strip && command.commit) strip.gainDb = clampDb(command.db);
       break;
     }
     case "setPan": {
       const strip = stripOf(song, command.strip);
-      if (strip && "pan" in strip && command.commit && change) strip.pan = Math.max(-100, Math.min(100, Math.round(command.pan)));
+      if (strip && "pan" in strip && command.commit) strip.pan = Math.max(-100, Math.min(100, Math.round(command.pan)));
       break;
     }
     case "setSend": {
       const track = song.tracks.find((t) => t.id === command.track);
-      if (track && command.commit && change) track.sends[command.bus === "a" ? 0 : 1] = clampDb(command.db);
+      if (track && command.commit) track.sends[command.bus === "a" ? 0 : 1] = clampDb(command.db);
       break;
     }
     case "setParam": {
       const sel = params.selected;
       const spec = EFFECT_PARAMS[command.effect][command.param];
       const there = stripOf(song, command.insert.strip)?.inserts[command.insert.slot];
-      if (!spec || there !== command.effect || !command.commit || !change) break;
+      if (!spec || there !== command.effect || !command.commit) break;
       if (sel && JSON.stringify(sel.insert) === JSON.stringify(command.insert)) {
         const v = Math.max(spec.min, Math.min(spec.max, command.value));
         sel.values[command.param] = spec.shape === "continuous" ? v : Math.round(v);
@@ -2026,12 +2026,12 @@ export function reduceMixer(
       break;
     case "toggleReturnMute": {
       const ret = song.returns[command.bus === "a" ? 0 : 1];
-      if (change) ret.muted = !ret.muted;
+      ret.muted = !ret.muted;
       break;
     }
     case "removeEffect": {
       const strip = stripOf(song, command.insert.strip);
-      if (!strip || !change) break;
+      if (!strip) break;
       strip.inserts[command.insert.slot] = null;
       if (JSON.stringify(params.selected?.insert) === JSON.stringify(command.insert)) params.selected = null;
       break;
@@ -2045,13 +2045,13 @@ export function reduceMixer(
       break;
     }
     case "shelfSelectEffect":
-      if (shelf.mode.kind === "insertEffect" && change) shelf.selectedEffect = command.effect;
+      if (shelf.mode.kind === "insertEffect") shelf.selectedEffect = command.effect;
       break;
     case "shelfConfirm": {
       if (shelf.mode.kind !== "insertEffect") return null;
       const { strip, slot } = shelf.mode;
       const to = stripOf(song, strip);
-      if (!to || shelf.selectedEffect === null || to.inserts[slot] !== null || !change) break;
+      if (!to || shelf.selectedEffect === null || to.inserts[slot] !== null) break;
       to.inserts[slot] = shelf.selectedEffect;
       shelf.mode = { kind: "newTrack" };
       shelf.selectedEffect = null;

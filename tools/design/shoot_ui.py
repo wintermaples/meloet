@@ -42,7 +42,7 @@ BOARDS = {
     "pianoRollNoNotesScrolled": None,
     "pianoRollGrown": None,
     "notesNotWritten": None,
-    "mixer": "A-Mixer",
+    "mixer": "F4-Mixer",
     "history": "F-History",
     "shelf": "F-ShelfArrange",
     "params": "F-ParamFew",
@@ -260,6 +260,8 @@ ONLY = {
     "about": [(1280, 800, 100), (1280, 800, 150)],
     "aboutLicenses": [(1280, 800, 100), (1280, 800, 150)],
     "aboutPart": [(1280, 800, 100), (1920, 1080, 150)],
+    # 第 4 回 区切り3: ミキサー（F4-Mixer は 1280x800 の 100 %）。150 % は形が入るかを見るため。
+    "mixer": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

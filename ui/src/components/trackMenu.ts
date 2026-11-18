@@ -58,10 +58,10 @@ export function trackContextMenu(
   send: (c: Command) => void,
   shiftKey: (letter: string) => string,
 ): MenuEntry[] {
-  const busy = songBusy(state);
   const rows = trackRows(state, track, send);
+  // ミュートは録音中 ・ カウントイン中も受ける（A-14）。
   return [
-    { kind: "row", label: "menu.mute", usable: !busy, run: () => send({ type: "toggleMute", track: track.id }), key: shiftKey(t("key.mute")), checked: track.muted },
+    { kind: "row", label: "menu.mute", usable: true, run: () => send({ type: "toggleMute", track: track.id }), key: shiftKey(t("key.mute")), checked: track.muted },
     { kind: "row", label: "menu.solo", usable: true, run: () => send({ type: "toggleSolo", track: track.id }), key: shiftKey(t("key.solo")), checked: track.soloed },
     { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }), checked: selected },
     { kind: "separator" },

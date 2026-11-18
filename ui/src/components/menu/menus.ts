@@ -1,6 +1,6 @@
 // 上のメニューの行の中身（design-notes B-59）。DOM を知らない。キーのある行は、キーと同じ道（keys/attach.ts の runKeyAction）を通す。
 
-import type { AppState, Command } from "../../bridge";
+import type { AppState, Band, Command } from "../../bridge";
 import { SCALES } from "../../design/tokens";
 import { keyActionUsable, pianoRollOpen, runKeyAction, songBusy, type KeyDeps } from "../../keys/attach";
 import type { KeyAction, Platform } from "../../keys/keys";
@@ -91,8 +91,10 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.openSong", { kind: "openSong" }, k.mod(t("key.openSong"))),
     act("menu.save", { kind: "saveSong" }, k.mod(t("key.saveSong"))),
     act("menu.saveAs", { kind: "saveSongAs" }, k.modShift(t("key.saveSong"))),
+    { kind: "separator" },
     plain("menu.export", false, undefined, { key: k.modShift(t("key.export")) }),
     act("menu.audioSettings", { kind: "audioSettings" }, k.mod(t("key.audioSettings"))),
+    { kind: "separator" },
     act("menu.quit", { kind: "quit" }, k.mod(t("key.quit"))),
   ];
 
@@ -101,27 +103,34 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
   const edit: ListEntry[] = [
     act("menu.undo", { kind: "undo" }, k.mod(t("key.undo")), { usable: state.song.undoCount > 0 && !busy }),
     act("menu.redo", { kind: "redo" }, k.modShift(t("key.undo")), { usable: state.song.redoCount > 0 && !busy }),
+    { kind: "separator" },
     act("menu.cut", { kind: "cut" }, k.mod(t("key.cut"))),
     act("menu.copy", { kind: "copy" }, k.mod(t("key.copy"))),
     act("menu.paste", { kind: "paste" }, k.mod(t("key.paste"))),
     act("menu.duplicate", { kind: "duplicate" }, k.mod(t("key.duplicate"))),
     act("menu.delete", { kind: "deleteSelected" }, t("key.delete"), toArrange ? { usable: state.arrange.selectedClips.length > 0 && !busy } : {}),
+    { kind: "separator" },
     act("menu.selectAll", { kind: "selectAll" }, k.mod(t("key.selectAll"))),
   ];
 
   const scale = state.workspace.scale;
   const unfit = state.workspace.unfitScales;
+  // 表示の帯の行は、ひらいているかを左の印で見せる（仕様書 3 章）。
+  const layout = state.workspace.layout;
+  const bandOpen = (band: Band) => layout.lower.some((l) => l.band === band) || layout.rightOpen.includes(band);
   const view: ListEntry[] = [
     act("menu.goArrange", { kind: "arrange" }, t("key.arrange")),
-    act("menu.pianoRoll", { kind: "toggleBand", band: "pianoRoll" }, t("key.pianoRoll")),
-    act("menu.mixer", { kind: "toggleBand", band: "mixer" }, t("key.mixer")),
-    act("menu.history", { kind: "toggleBand", band: "history" }, t("key.history")),
-    act("menu.shelf", { kind: "toggleBand", band: "shelf" }, t("key.shelf")),
-    act("menu.params", { kind: "toggleBand", band: "params" }, t("key.params")),
+    act("menu.pianoRoll", { kind: "toggleBand", band: "pianoRoll" }, t("key.pianoRoll"), { checked: bandOpen("pianoRoll") }),
+    act("menu.mixer", { kind: "toggleBand", band: "mixer" }, t("key.mixer"), { checked: bandOpen("mixer") }),
+    act("menu.history", { kind: "toggleBand", band: "history" }, t("key.history"), { checked: bandOpen("history") }),
+    act("menu.shelf", { kind: "toggleBand", band: "shelf" }, t("key.shelf"), { checked: bandOpen("shelf") }),
+    act("menu.params", { kind: "toggleBand", band: "params" }, t("key.params"), { checked: bandOpen("params") }),
+    { kind: "separator" },
     act("menu.zoomIn", { kind: "zoom", delta: 1 }, k.mod(t("key.zoomIn"))),
     act("menu.zoomOut", { kind: "zoom", delta: -1 }, k.mod(t("key.zoomOut"))),
     plain("menu.zoomRowsIn", prOpen, () => void zoomRowsBy(1)),
     plain("menu.zoomRowsOut", prOpen, () => void zoomRowsBy(-1)),
+    { kind: "separator" },
     plain("menu.scale", true, undefined, {
       sub: SCALES.map((s, i) => {
         const fits = !unfit.includes(s);

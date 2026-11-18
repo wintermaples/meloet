@@ -102,6 +102,16 @@ describe("メニューの中身（B-59）", () => {
     expect(rows(row(menus[2]!.entries, "拡大率").sub!).map((r) => r.key)).toEqual(["Cmd Option 1", "Cmd Option 2", "Cmd Option 3"]);
   });
 
+  it("表示の帯の行は、ひらいている帯に印がつき、アレンジへは印なし。ファイル ・ 編集 ・ 表示に区切りが 2 本ずつ（モック R5-Menus）", () => {
+    const s = withClip();
+    const menus = topMenus(s, depsOf(s, []), "other");
+    const view = menus[2]!.entries;
+    expect(row(view, "アレンジへ").checked).toBeUndefined();
+    expect(row(view, "ピアノロール").checked).toBe(s.workspace.layout.lower.some((l) => l.band === "pianoRoll"));
+    expect(row(view, "ミキサー").checked).toBe(false);
+    for (const i of [0, 1, 2]) expect(menus[i]!.entries.filter((e) => e.kind === "separator")).toHaveLength(2);
+  });
+
   it("まだない物（書き出し、トラックを足す）は使えない", () => {
     const menus = topMenus(withClip(), depsOf(withClip(), []), "other");
     expect(row(menus[0]!.entries, "書き出し…").usable).toBe(false);

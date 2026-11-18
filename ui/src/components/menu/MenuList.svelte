@@ -131,7 +131,7 @@
             else if (subOpen !== null) subOpen = null;
           }}
         >
-          <span class="choice" class:selected={entry.checked === true}><span class="dot"></span></span>
+          <span class="choice" class:selected={entry.checked === true} class:none={entry.checked === undefined}><span class="dot"></span></span>
           <span class="label">{entry.label}</span>
           {#if entry.hint}<span class="m-lbl hint" data-test="menu-hint">{entry.hint}</span>{/if}
           <span class="m-spacer"></span>
@@ -156,6 +156,7 @@
     flex-direction: column;
     background: var(--color-gray-3);
     border: var(--line-hair) solid var(--color-gray-8);
+    padding: var(--space-1) 0;
     outline: none;
   }
   .item {
@@ -218,6 +219,11 @@
   .choice.selected {
     border-color: var(--color-accent);
   }
+  /* することの行は、印の場所だけあけて枠を描かない（モック R5-Menus）。 */
+  .choice.none,
+  .unusable .choice.none {
+    border-color: transparent;
+  }
   .dot {
     width: var(--part-choice-dot);
     height: var(--part-choice-dot);
@@ -246,10 +252,11 @@
   .row:hover .hint {
     visibility: visible;
   }
+  /* 子は親の右に space.1 はなして、最初の行を親の行の高さにそろえる（モック R5-Menus）。 */
   .sub {
     position: absolute;
-    left: 100%;
-    top: calc(-1 * var(--line-hair));
+    left: calc(100% + var(--space-1));
+    top: calc(-1 * (var(--line-hair) + var(--space-1)));
     z-index: 1;
   }
 </style>

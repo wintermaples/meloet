@@ -889,6 +889,15 @@ impl Play {
         })
     }
 
+    pub fn delete_take(&mut self, clip: u32, effects: &mut Vec<Effect>) {
+        if self.busy() {
+            return;
+        }
+        if let Ok(e) = edit::delete_take(self.doc(), ClipId(clip)) {
+            self.apply(e, effects);
+        }
+    }
+
     pub fn undo(&mut self, effects: &mut Vec<Effect>) {
         if self.busy() {
             return;

@@ -225,6 +225,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     }),
     act("menu.nextTake", { kind: "stepTake", delta: 1 }, t("key.take"), { usable: canStepTake }),
     act("menu.prevTake", { kind: "stepTake", delta: -1 }, k.shift(t("key.take")), { usable: canStepTake }),
+    plain("menu.deleteTake", canStepTake, () => clip && deps.send({ type: "deleteTake", clip: clip.id })),
     plain("menu.addTrack", false),
   ];
 

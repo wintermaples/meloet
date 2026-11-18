@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use meloet_model::Song;
+use meloet_model::{Song, TakeId};
 use meloet_protocol::{
     Command, SongAnswer, SongDialogKind, SongDialogView, SongFile, StatusMessage, TransportState,
 };
@@ -194,6 +194,35 @@ fn a_saved_song_opens_as_it_was() {
             ..
         })
     )));
+}
+
+#[test]
+fn a_deleted_take_is_not_saved() {
+    let w = &mut World::new("flow-delete-take");
+    let m = &mut ready();
+    busy_song(m);
+    let clip = &song(m).doc.tracks[0].clips[0];
+    assert_eq!(clip.takes.len(), 2);
+    let gone = clip.active_take().take.id;
+    let kept = clip.takes[1 - clip.active].take.id;
+    cmd(m, Command::DeleteTake { clip: clip.id.0 });
+    w.cmd(m, Command::SaveSong);
+    let path = m.song_path().unwrap().to_owned();
+    let text = std::fs::read_to_string(&path).unwrap();
+    let saved = song(m);
+
+    w.cmd(m, Command::NewSong);
+    w.pick_file = Some(path);
+    w.cmd(m, Command::OpenSong);
+    assert_eq!(song(m), saved);
+    let ids: Vec<_> = song(m).doc.tracks[0].clips[0]
+        .takes
+        .iter()
+        .map(|t| t.take.id)
+        .collect();
+    assert_eq!(ids, [kept]);
+    let has = |id: TakeId| text.contains(&format!("\"id\":{}", id.0));
+    assert!(has(kept) && !has(gone));
 }
 
 #[test]

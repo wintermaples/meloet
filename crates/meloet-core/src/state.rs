@@ -268,6 +268,11 @@ struct OpenStream {
 }
 
 impl Model {
+    #[cfg(test)]
+    pub(crate) fn play(&self) -> &Play {
+        &self.play
+    }
+
     pub fn new(settings: Settings) -> Model {
         let scale = if SCALES.contains(&settings.scale) {
             settings.scale
@@ -755,6 +760,7 @@ impl Model {
             Command::Quit => self.close_requested(effects),
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
+            Command::DeleteTake { clip } => self.play.delete_take(clip, effects),
             Command::Undo => self.play.undo(effects),
             Command::Redo => self.play.redo(effects),
             Command::NewSong => self.new_song(effects),

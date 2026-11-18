@@ -93,7 +93,7 @@ describe("メニューの中身（B-59）", () => {
     ]);
     expect(keyed(3)).toEqual(["再生 Space", "停止 Space", "録音 R", "先頭へ Home", "ループ L", "メトロノーム C", "カウントイン ▸"]);
     expect(keyed(4)).toEqual(["道具 ▸", "クオンタイズ Q", "もとの位置へ戻す", "グリッド ▸", "三連符", "スケール固定 ▸"]);
-    expect(keyed(5)).toEqual(["ミュート Shift M", "ソロ Shift S", "録音待機", "次のテイク T", "前のテイク Shift T", "トラックを足す"]);
+    expect(keyed(5)).toEqual(["ミュート Shift M", "ソロ Shift S", "録音待機", "次のテイク T", "前のテイク Shift T", "テイクを消す", "トラックを足す"]);
   });
 
   it("Mac は Cmd と Option", () => {
@@ -145,8 +145,22 @@ describe("メニューの中身（B-59）", () => {
         ぜんぶ選ぶ: true,
       });
       expect(usableOf(menus[3]!.entries), st).toMatchObject({ 再生: false, 停止: true, ループ: false, メトロノーム: true });
-      expect(usableOf(menus[5]!.entries), st).toMatchObject({ ミュート: false, ソロ: true, 録音待機: false, 次のテイク: false });
+      expect(usableOf(menus[5]!.entries), st).toMatchObject({ ミュート: false, ソロ: true, 録音待機: false, 次のテイク: false, テイクを消す: false });
     }
+  });
+
+  it("テイクを消す: えらんだクリップの DeleteTake。テイクが 1 つ ・ クリップをえらんでいないときは使えない", () => {
+    const sent: Command[] = [];
+    const s = withClip();
+    const del = row(topMenus(s, depsOf(s, sent), "other")[5]!.entries, "テイクを消す");
+    expect(del.usable).toBe(true);
+    expect(del.key).toBeUndefined();
+    del.run!();
+    expect(sent).toEqual([{ type: "deleteTake", clip: 5 }]);
+    const one = withClip((s) => (s.song.tracks[0]!.clips = [{ ...CLIP, takes: 1 }]));
+    expect(row(topMenus(one, depsOf(one, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
+    const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0 }));
+    expect(row(topMenus(none, depsOf(none, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
   });
 
   it("止まっているときは使える。取り消す手がなければ「取り消す」は使えない", () => {

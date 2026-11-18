@@ -341,9 +341,10 @@ describe("右クリックの一覧（B-60）", () => {
       "-",
       "menu.nextTake",
       "menu.prevTake",
+      "menu.deleteTake",
     ]);
-    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Delete", "T", "Shift T"]);
-    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, false, false]);
+    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Delete", "T", "Shift T", undefined]);
+    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, false, false, false]);
   });
 
   it("クリップの行は、押したときの選択に向く。選んであるクリップは選びなおさない", () => {
@@ -360,6 +361,7 @@ describe("右クリックの一覧（B-60）", () => {
       { type: "deleteSelected" },
       { type: "stepTake", delta: 1 },
       { type: "stepTake", delta: -1 },
+      { type: "deleteTake", clip: 3 },
     ]);
   });
 
@@ -368,7 +370,7 @@ describe("右クリックの一覧（B-60）", () => {
     s.transport.state = "recording";
     show(s);
     ctx(q(".lanes")!, 300, 30);
-    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false]);
+    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false]);
   });
 
   it("空いた所: 貼りつけ。押した所をグリッド（1 小節）に寄せ、Shift なら寄せない", () => {

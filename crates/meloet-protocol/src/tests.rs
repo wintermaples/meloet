@@ -331,6 +331,10 @@ fn command_json_shape() {
             Command::StepTake { delta: -1 },
             json!({"type": "stepTake", "delta": -1}),
         ),
+        (
+            Command::DeleteTake { clip: 4 },
+            json!({"type": "deleteTake", "clip": 4}),
+        ),
         (Command::Undo, json!({"type": "undo"})),
         (Command::Redo, json!({"type": "redo"})),
         (Command::NewSong, json!({"type": "newSong"})),
@@ -856,6 +860,10 @@ fn status_message_json_shape() {
         (
             StatusMessage::ClipsNotDuplicated,
             json!({"id": "clipsNotDuplicated"}),
+        ),
+        (
+            StatusMessage::NotesNotWritten,
+            json!({"id": "notesNotWritten"}),
         ),
         (
             StatusMessage::ScaleDoesNotFit {

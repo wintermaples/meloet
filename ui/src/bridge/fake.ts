@@ -1320,6 +1320,7 @@ const CLIP_COMMANDS: Command["type"][] = [
   "moveClips",
   "duplicateClips",
   "trimClip",
+  "deleteTake",
   "deleteSelected",
   "copyClips",
   "cutClips",
@@ -1451,6 +1452,14 @@ export function reduceClips(
       const end = command.edge === "end" ? Math.max(Math.min(clip.end + command.ticks, after), clip.start + 1) : clip.end;
       if (start === clip.start && end === clip.end) return null;
       clips[at] = { ...clip, start, end, takeOffset: clip.takeOffset - (start - clip.start) };
+      return done();
+    }
+    case "deleteTake": {
+      // The fake keeps no other take ids: the number moves, the id stays.
+      const clip = clipOf(command.clip);
+      if (!clip || clip.takes < 2) return null;
+      clip.takes -= 1;
+      clip.take = Math.max(1, clip.take - 1);
       return done();
     }
     case "deleteSelected": {

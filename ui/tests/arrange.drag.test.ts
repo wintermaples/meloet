@@ -239,6 +239,16 @@ describe("偽物の Rust の答え（reduceClips）", () => {
     const trim = reduceClips(state(), { type: "trimClip", clip: 3, edge: "start", ticks: BAR })!;
     expect(trim.song.tracks[0]!.clips[1]).toMatchObject({ start: 5 * BAR, end: 8 * BAR, takeOffset: -BAR });
   });
+  it("DeleteTake は 1 つ前のテイク（いちばん前なら次）に。テイクが 1 つなら何もしない", () => {
+    const s = state();
+    s.song.tracks[0]!.clips[1] = { ...s.song.tracks[0]!.clips[1]!, take: 2, takes: 3 };
+    const once = reduceClips(s, { type: "deleteTake", clip: 3 })!;
+    expect(once.song.tracks[0]!.clips[1]).toMatchObject({ take: 1, takes: 2 });
+    const twice = reduceClips({ ...s, song: once.song }, { type: "deleteTake", clip: 3 })!;
+    expect(twice.song.tracks[0]!.clips[1]).toMatchObject({ take: 1, takes: 1 });
+    expect(reduceClips({ ...s, song: twice.song }, { type: "deleteTake", clip: 3 })).toBeNull();
+    expect(reduceClips(s, { type: "deleteTake", clip: 99 })).toBeNull();
+  });
 });
 
 // ---- Arrange を mount して ----

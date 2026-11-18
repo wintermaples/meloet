@@ -241,6 +241,37 @@ pub fn switch_take(doc: &Doc, clip: ClipId, index: usize) -> Result<Edit, EditEr
     })
 }
 
+/// Removes the take `clip` shows. The clip then shows the take before it, or the next one when
+/// it was the first. A clip keeps at least one take.
+pub fn delete_take(doc: &Doc, clip: ClipId) -> Result<Edit, EditError> {
+    let (ti, ci) = clip_index(doc, clip)?;
+    let track = &doc.tracks[ti];
+    let old = &track.clips[ci];
+    if old.takes.len() < 2 {
+        return Err(EditError::Unchanged);
+    }
+    let index = old.active;
+    let mut takes = old.takes.clone();
+    takes.remove(index);
+    let mut clips = track.clips.clone();
+    clips[ci] = Arc::new(Clip {
+        takes,
+        active: index.saturating_sub(1),
+        ..Clip::clone(old)
+    });
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                clips,
+                ..Track::clone(track)
+            },
+        ),
+        step: StepKind::DeleteTake { clip, index },
+    })
+}
+
 /// Removes the clips, all or none. `cut`: for Mod X.
 pub fn delete_clips(doc: &Doc, ids: &[ClipId], cut: bool) -> Result<Edit, EditError> {
     if ids.is_empty() {

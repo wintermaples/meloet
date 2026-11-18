@@ -196,6 +196,8 @@ export const texts = {
   "msg.clipsNotMoved": s6("クリップが重なる", "ほかのクリップと重なるので、動かしませんでした。", undefined, "quoted"),
   "msg.clipsNotPasted": s6("クリップが重なる", "ほかのクリップと重なるので、貼りつけませんでした。", undefined, "quoted"),
   "msg.clipsNotDuplicated": s6("クリップが重なる", "ほかのクリップと重なるので、複製できませんでした。", undefined, "quoted"),
+  // ピアノロールでクリップの外に書こうとして、クリップをのばせなかった（B-82）。
+  "msg.notesNotWritten": e("ほかのクリップと重なるので、書けませんでした。", "user:2026-11-18"),
 
   // 数字の欄の名前と範囲（仕様書 6 章「範囲の外の値を打った」、3 章のテンポと拍子の枠）。
   "value.tempo": e("テンポ", "spec:6"),
@@ -605,6 +607,7 @@ export const texts = {
   "menu.arm": e("録音待機", "user:2026-11-18"),
   "menu.nextTake": e("次のテイク", "user:2026-11-18"),
   "menu.prevTake": e("前のテイク", "user:2026-11-18"),
+  "menu.deleteTake": e("テイクを消す", "user:2026-11-18"),
   "menu.addTrack": e("トラックを足す", "user:2026-11-18"),
   "menu.openInPianoRoll": e("ピアノロールでひらく", "user:2026-11-18"),
   // ベロシティ固定（B-66）とベロシティをまとめて変える（B-67）。

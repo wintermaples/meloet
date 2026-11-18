@@ -416,3 +416,36 @@ fn which_tracks_play() {
         "a track not in the song is no solo"
     );
 }
+
+#[test]
+fn deleting_a_take_shows_the_one_before_or_the_next_and_keeps_the_others() {
+    let takes = vec![take(0, 960), take(0, 960), take(0, 960)];
+    let (doc, added) = record(&Doc::new_default(), T1, takes, 1);
+    let ids = |doc: &Doc| {
+        let c = doc.clip(added.clip).unwrap().1;
+        (
+            c.takes.iter().map(|t| t.take.id).collect::<Vec<_>>(),
+            c.active,
+        )
+    };
+    let (all, _) = ids(&doc);
+
+    let e = delete_take(&doc, added.clip).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::DeleteTake {
+            clip: added.clip,
+            index: 1
+        }
+    );
+    assert_eq!(ids(&e.doc), (vec![all[0], all[2]], 0));
+    assert_eq!(e.doc.next_id, doc.next_id);
+
+    let e = delete_take(&e.doc, added.clip).unwrap();
+    assert_eq!(ids(&e.doc), (vec![all[2]], 0));
+    assert_eq!(delete_take(&e.doc, added.clip), Err(EditError::Unchanged));
+    assert_eq!(
+        delete_take(&doc, ClipId(999)),
+        Err(EditError::NoSuchClip(ClipId(999)))
+    );
+}

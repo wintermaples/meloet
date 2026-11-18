@@ -306,6 +306,12 @@ describe("状態行（クリップがない所のピアノロール。モック 
     expect(left()).toBe("ほかのクリップと重なるので、貼りつけませんでした。");
   });
 
+  it("クリップの外に書けなかった（B-82）", () => {
+    empty((s) => (s.status.message = { id: "notesNotWritten" }));
+    show(StatusLine);
+    expect(left()).toBe("ほかのクリップと重なるので、書けませんでした。");
+  });
+
   it("ピアノロールがひらいていなければ出さない", () => {
     empty((s) => (s.workspace.layout.lower = []));
     show(StatusLine);

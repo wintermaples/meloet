@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -144,6 +144,13 @@ pub enum Command {
     /// ◂ ▸, T, Shift T on the selected clip. -1 is the take before, 1 the take after.
     StepTake {
         delta: i32,
+    },
+    /// "テイクを消す" (the right-click menu of a clip, the track menu): the take `clip` shows,
+    /// as one step. The clip then shows the take before it (the next one when it was the first),
+    /// and the takes after it move up a number. Nothing happens to a clip with one take, while
+    /// recording or counting in, or to a clip that is gone.
+    DeleteTake {
+        clip: u32,
     },
     Undo,
     Redo,
@@ -1256,6 +1263,9 @@ pub enum StatusMessage {
     /// `DuplicateClips`, or `MoveClips` with `copy` (Alt + drag), did nothing for the same
     /// reason: "ほかのクリップと重なるので、複製できませんでした。"
     ClipsNotDuplicated,
+    /// The write tool outside the clip, where the clip cannot grow as it would overlap the clip
+    /// next to it (B-82): "ほかのクリップと重なるので、書けませんでした。"
+    NotesNotWritten,
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
     /// piano roll are selected ("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み…", mock

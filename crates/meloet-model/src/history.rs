@@ -26,6 +26,11 @@ pub enum StepKind {
         from: usize,
         to: usize,
     },
+    /// Band: "テイクを消す". `index`: the place the take had in the clip.
+    DeleteTake {
+        clip: ClipId,
+        index: usize,
+    },
     /// Delete in the arrange view; `cut`: Mod X. Band: "クリップを消す（N 個）",
     /// "クリップを切り取る（N 個）".
     DeleteClips {

@@ -785,6 +785,10 @@ export const texts = {
     "ヴァイオリン ・ ヴィオラ ・ チェロ ・ コントラバスを 1 つの鍵の範囲にまとめ、くり返す所を作り、音の前の無音を切り、ファイルの形を変えた",
     "draft:2026-11-18",
   ),
+  "about.changes.fluidr3-gm": e(
+    "オルガン 5 つをとり出し、左右の組を 1 つのステレオにまとめ、くり返す所の終わりと音の前の無音を切り、フィルタと響きの送りを外し、ファイルの形を変えた",
+    "draft:2026-11-18",
+  ),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;

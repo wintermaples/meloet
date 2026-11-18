@@ -52,6 +52,12 @@ VS Chamber Orchestra: Community Edition
   license: CC0-1.0, https://creativecommons.org/publicdomain/zero/1.0/
   changes made for meloet: Joined the violin, viola and cello section and solo double bass sustains into one key range, made a crossfade loop in each sample, cut the silence before each sound, and converted the files to 16-bit FLAC.
 
+Fluid (R3) SoundFont
+  by Frank Wen
+  source: https://sources.debian.org/src/fluid-soundfont/3.1-6/
+  license: MIT, https://opensource.org/license/mit
+  changes made for meloet: Took the five organ presets (General MIDI 17 to 21) out of the SoundFont: joined each left and right sample pair into one stereo file, cut the samples at the loop end and the silence before each sound, converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback), and left out the filter, the chorus and reverb sends, the envelope delay and the velocity-to-filter modulator; a short decay to a lower sustain level became a lower level.
+
 The license texts that came with each sample set are in licenses/sounds/.
 
 == Fonts

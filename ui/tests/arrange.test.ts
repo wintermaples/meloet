@@ -173,19 +173,19 @@ describe("押す: クリップをえらぶ、録音待機", () => {
     ]);
   });
 
-  it("録音中 ・ カウントイン中は M だけ「使えない」（core が受けない）。S ・ ● は押せる", () => {
+  it("録音中 ・ カウントイン中も M ・ S ・ ● は押せる（ミュートは A-14 で受けるようになった）", () => {
     for (const state of ["recording", "countIn"] as const) {
       const s = three();
       s.transport.state = state;
       (mounted ? show2 : show)(s);
       const mute = qa("button[aria-label=ミュート]");
-      expect(mute.map((b) => b.getAttribute("aria-disabled"))).toEqual(["true", "true", "true"]);
-      expect(mute.map((b) => b.classList.contains("live"))).toEqual([false, false, false]);
-      expect(mute[0]!.tabIndex).toBe(-1);
+      expect(mute.map((b) => b.getAttribute("aria-disabled"))).toEqual([null, null, null]);
+      expect(mute.map((b) => b.classList.contains("live"))).toEqual([true, true, true]);
       mute[1]!.click();
       qa("button[aria-label=ソロ]")[0]!.click();
       qa("button[aria-label=録音待機]")[1]!.click();
       expect(app.sent).toEqual([
+        { type: "toggleMute", track: 2 },
         { type: "toggleSolo", track: 1 },
         { type: "selectTrack", track: 2, fromArm: true },
       ]);

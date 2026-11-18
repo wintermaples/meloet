@@ -506,6 +506,7 @@ export const texts = {
   "mixer.returnOf": e("センド {bus} の戻り", "mock:F4-Mixer", { bus: "A" }),
   "mixer.master": e("マスター", "mock:F4-Mixer"),
   "mixer.output": e("出口 ・ {name}", "mock:F4-Mixer", { name: "ヘッドホン" }),
+  "mixer.db": e("dB", "mock:F4-Mixer"),
 
   // アレンジ
   "arrange.title": e("アレンジ", "mock:F-Empty"),

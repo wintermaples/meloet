@@ -173,18 +173,15 @@
               ondblclick={() => !busy && (trackEdit.renaming = track.id)}>{track.name}</span
             >
           {/if}
-          <!-- 録音中 ・ カウントイン中は core がミュートを受けないので「使えない」。 -->
+          <!-- 録音中 ・ カウントイン中も使える（A-14）。 -->
           <button
-            class="tog"
-            class:live={!busy}
+            class="tog live"
             class:on={track.muted}
             aria-pressed={track.muted}
-            aria-disabled={busy || undefined}
-            tabindex={busy ? -1 : undefined}
             aria-label={t("arrange.mute")}
             data-test="track-mute"
             use:term={"ミュート"}
-            onclick={() => !busy && send({ type: "toggleMute", track: track.id })}>{t("arrange.muteShort")}</button
+            onclick={() => send({ type: "toggleMute", track: track.id })}>{t("arrange.muteShort")}</button
           >
           <button
             class="tog live"

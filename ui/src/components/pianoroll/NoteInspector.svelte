@@ -105,6 +105,33 @@
     const next = { ...q, ...change };
     send({ type: "setQuantize", ...next } satisfies Command);
   }
+  /** つまみの棒を動かしている行（仕様書 2 章「パラメータの行」の「動かしている」）。 */
+  const moving = $state({ strength: false, swing: false });
+
+  // 「かけなおす」の右はしのキー Q（B-73）。横が足りなければ出さない。
+  let buttonsRow = $state<HTMLElement>();
+  let quantizeKey = $state(true);
+  let keyWidth = 0;
+  function fitKey(): void {
+    const row = buttonsRow;
+    if (!row) return;
+    if (quantizeKey) {
+      const key = row.querySelector<HTMLElement>(".key");
+      keyWidth = key ? key.offsetWidth + parseFloat(getComputedStyle(key.parentElement!).columnGap || "0") : 0;
+      if (row.scrollWidth > row.clientWidth + 1) quantizeKey = false;
+    } else if (row.scrollWidth + keyWidth <= row.clientWidth) {
+      quantizeKey = true;
+    }
+  }
+  $effect(() => {
+    const row = buttonsRow;
+    if (!row) return;
+    const observer = new ResizeObserver(fitKey);
+    observer.observe(row);
+    fitKey();
+    return () => observer.disconnect();
+  });
+
   const canQuantize = $derived(live && take!.starts.length > 0);
   const canUnquantize = $derived(live && quantized);
   const quantize = () => canQuantize && send({ type: "quantize", take: take!.id, notes: selected });
@@ -217,13 +244,13 @@
 {/snippet}
 
 {#snippet slider(label: string, termName: string | null, value: number, test: string, key: "strength" | "swing")}
-  <div class="rw">
+  <div class="rw slider-row" class:moving={moving[key]}>
     {#if termName}
       <span class="m-lbl slider-label" use:term={termName}>{label}</span>
     {:else}
       <span class="m-lbl slider-label">{label}</span>
     {/if}
-    <PercentSlider {value} {label} {test} onchange={(v) => setQuantize({ [key]: v })} />
+    <PercentSlider {value} {label} {test} onchange={(v) => setQuantize({ [key]: v })} onmoving={(on) => (moving[key] = on)} />
   </div>
 {/snippet}
 
@@ -271,9 +298,9 @@
         onclick={() => toggleMenu("align")}>{t(q.align === "start" ? "inspector.alignStart" : "inspector.alignStartAndEnd")}</button
       >
     </div>
-    <div class="buttons">
+    <div class="buttons" bind:this={buttonsRow}>
       <button class="m-btn" class:hi={canQuantize} aria-disabled={!canQuantize} data-test="quantize-apply" onclick={quantize}
-        >{t("inspector.requantize")}</button
+        >{t("inspector.requantize")}{#if quantizeKey}<span class="m-num m-lbl key" data-test="quantize-key">{t("key.quantize")}</span>{/if}</button
       >
       <button class="m-btn" aria-disabled={!canUnquantize} data-test="quantize-restore" onclick={unquantize}>{t("inspector.unquantize")}</button>
     </div>
@@ -421,6 +448,22 @@
   .m-btn.hi:not([aria-disabled="true"]) {
     border-color: var(--color-gray-8);
     color: var(--color-gray-10);
+  }
+
+  /* つまみの棒の行: 乗った（枠 gray.8 ・ 文字 gray.10）、動かしている（行の地 gray.4、左 line.mark の accent）。枠と印は内がわに重ねる。 */
+  .slider-row:hover {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .slider-row:hover .slider-label {
+    color: var(--color-gray-10);
+  }
+  .slider-row.moving,
+  .slider-row.moving:hover {
+    background: var(--color-gray-4);
+    box-shadow: inset var(--line-mark) 0 0 0 var(--color-accent);
+  }
+  .key {
+    color: var(--color-gray-8);
   }
 
   /* つまみの棒の行のラベル（モック A-PianoRoll: 60）。 */

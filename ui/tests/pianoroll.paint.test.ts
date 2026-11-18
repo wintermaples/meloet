@@ -74,7 +74,7 @@ describe("ノート", () => {
     expect(colorOf(line(160))).toBe(is("color.gray.6"));
   });
 
-  it("クオンタイズしたテイクは、もとと位置がちがうノートだけ、もとの位置に gray.7 の枠", () => {
+  it("クオンタイズしたテイクは、もとと位置がちがうノートだけ、もとの位置に gray.7 の枠。ノートのあとに（上に）描く（B-64）", () => {
     const played = G.shownOf(take([[36, 480, 60], [480, 360, 62], [960, 240, 64]], 3), 0);
     const quantized = G.shownOf(
       take([[0, 480, 60], [480, 360, 62], [960, 240, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
@@ -84,9 +84,25 @@ describe("ノート", () => {
     const frames = rects.filter((r) => colorOf(r) === is("color.gray.7"));
     expect(frames).toHaveLength(4);
     expect(Math.min(...frames.map((r) => r[0]!))).toBe(4);
+    expect(rects.slice(-4)).toEqual(frames);
   });
 
-  it("動かしている間は、もとの位置が gray.7 の枠だけになる（ノートは動く面が描く）", () => {
+  it("そろえる前の位置の枠は、選んでいるノートの分だけ accent（B-64）", () => {
+    const played = G.shownOf(take([[36, 480, 60], [500, 360, 62], [960, 240, 64]], 3), 0);
+    const quantized = G.shownOf(
+      take([[0, 480, 60], [480, 360, 62], [960, 240, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
+      0,
+    );
+    const rects = draw(picture({ shown: quantized, origin: played, selected: Uint8Array.from([0, 1, 0]) }));
+    const gray = rects.filter((r) => colorOf(r) === is("color.gray.7"));
+    expect(gray).toHaveLength(4);
+    expect(Math.min(...gray.map((r) => r[0]!))).toBe(4);
+    const accentFrames = rects.slice(-4);
+    expect(accentFrames.every((r) => colorOf(r) === is("color.accent"))).toBe(true);
+    expect(Math.min(...accentFrames.map((r) => r[0]!))).toBe(Math.round((500 * 40) / 480) + 1);
+  });
+
+  it("動かしている間は、もとの位置が accent の枠だけになり、ほかのノートのあとに描く（ノートは動く面が描く。B-64）", () => {
     const drag: Drag = {
       kind: "move",
       press: { x: 0, y: 0, moved: true },
@@ -102,7 +118,10 @@ describe("ノート", () => {
     const rects = draw(picture({ drag }), marks);
     const y = (72 - 60) * 12;
     expect(rects.filter((r) => r[1] === y && colorOf(r) === is("color.gray.10"))).toEqual([]);
-    expect(rects.filter((r) => colorOf(r) === is("color.gray.7"))).toHaveLength(4);
+    expect(rects.filter((r) => colorOf(r) === is("color.gray.7"))).toHaveLength(0);
+    const frames = rects.slice(-4);
+    expect(frames.every((r) => colorOf(r) === is("color.accent"))).toBe(true);
+    expect(Math.min(...frames.map((r) => r[1]!))).toBe(y);
     // 複製（Alt）のときは、もとのノートはそのまま
     expect(noteMarks(3, { ...drag, copy: true }, -1)).toEqual(new Uint8Array(3));
   });

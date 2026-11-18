@@ -1,17 +1,20 @@
 <!-- ピアノロールの道具の列（モック A-PianoRoll・F-PRPlay・F-PRRec の帯のいちばん上の行）。
-     「▾ ピアノロール」、クリップの文、テイクの切りかえの札、道具（選ぶ ・ 書く ・ 消す）、横の − ＋（R3-Arrange と同じ形）、
-     グリッド（一覧）、三連符、スケール固定。横が足りなければクリップの文を引っこめる（F-PR150）。 -->
+     「▾ ピアノロール」（押すとたたむ。B-74）、クリップの文、テイクの切りかえの札、道具（選ぶ ・ 書く ・ 消す。右はしにキー）、横の − ＋（R3-Arrange と同じ形）、
+     グリッド（一覧）、三連符、スケール固定と音階の ▾（B-65）。横が足りなければ、道具のキー、クリップの文の順に引っこめる（F-PR150、B-73）。
+     キーがピアノロールに向いているときは、上辺に accent の線（B-72）。 -->
 <script lang="ts">
-  import { untrack } from "svelte";
-  import { liveNotes, type Command } from "../../bridge";
+  import { onMount, untrack } from "svelte";
+  import { liveNotes, type Command, type ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
   import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t, type TextKey } from "../../text/ja";
   import ChoiceMenu from "../ChoiceMenu.svelte";
-  import { gridText, scaleName, textParts } from "../format";
+  import { toolbarParts, type ToolbarParts } from "../fit";
+  import { gridText, scaleName, termParts, textParts } from "../format";
   import { metrics } from "../metrics.svelte";
   import * as G from "./geom";
+  import ScaleMenu from "./ScaleMenu.svelte";
   import { shown } from "./shown.svelte";
   import { prView, zoomBy, type Tool } from "./view.svelte";
 
@@ -53,21 +56,35 @@
   });
   const MONO = new Set(["number", "bars", "count"]);
 
-  // 横が足りなければ、クリップの文を出さない（中身の幅は、出していなくても scrollWidth で測れる）。
+  // 横が足りなければ、道具のキー、クリップの文の順に出さない。クリップの文の幅は、出していなくても scrollWidth で測れる。
+  // キーの幅は、見えない写し（ruler）で測る。
+  let row = $state<HTMLElement>();
+  let ruler = $state<HTMLElement>();
   let infoNode = $state<HTMLElement>();
-  let infoFits = $state(true);
-  $effect(() => {
-    const node = infoNode;
-    if (!node) return;
-    const check = () => (infoFits = node.scrollWidth <= node.clientWidth + 1);
-    const observer = new ResizeObserver(check);
-    observer.observe(node);
-    check();
+  let parts = $state<ToolbarParts>({ keys: true, info: true });
+  const infoFits = $derived(parts.info);
+
+  function measure(): void {
+    if (!row || !ruler) return;
+    const style = getComputedStyle(row);
+    const gap = parseFloat(style.columnGap) || 0;
+    const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    const children = [...row.children].filter((el) => el !== ruler && !el.classList.contains("focus-mark")) as HTMLElement[];
+    const fixed = children.filter((el) => el !== infoNode);
+    const widths = fixed.reduce((sum, el) => sum + (el.classList.contains("m-spacer") ? 0 : el.offsetWidth), 0);
+    const keys = [...ruler.children].reduce((sum, el) => sum + (el as HTMLElement).offsetWidth + metrics.px("space.1"), 0);
+    const base = pad + widths + gap * Math.max(0, fixed.length - 1) - (parts.keys ? keys : 0);
+    parts = toolbarParts(row.clientWidth, { base, keys, info: infoNode ? infoNode.scrollWidth + gap : 0 });
+  }
+  onMount(() => {
+    const observer = new ResizeObserver(() => measure());
+    if (row) observer.observe(row);
+    if (ruler) observer.observe(ruler);
     return () => observer.disconnect();
   });
   $effect(() => {
-    void info;
-    if (infoNode) infoFits = infoNode.scrollWidth <= infoNode.clientWidth + 1;
+    void [info, takeTag, gridName, scaleText, metrics.scale];
+    untrack(measure);
   });
 
   const takeTag = $derived.by(() => {
@@ -76,10 +93,10 @@
     return clip.takes >= 2 ? { take: clip.take, takes: clip.takes, recording: false } : null;
   });
 
-  const TOOLS: { tool: Tool; key: TextKey }[] = [
-    { tool: "select", key: "pr.toolSelect" },
-    { tool: "draw", key: "pr.toolDraw" },
-    { tool: "erase", key: "pr.toolErase" },
+  const TOOLS: { tool: Tool; key: TextKey; hotkey: TextKey }[] = [
+    { tool: "select", key: "pr.toolSelect", hotkey: "key.toolSelect" },
+    { tool: "draw", key: "pr.toolDraw", hotkey: "key.toolDraw" },
+    { tool: "erase", key: "pr.toolErase", hotkey: "key.toolErase" },
   ];
 
   const gridName = $derived(gridText(pr.grid.division, false));
@@ -89,21 +106,48 @@
     send({ type: "setGrid", division, triplet: pr.grid.triplet });
     closeMenu();
   }
+  // 音階の ▾ でえらんだら、スケール固定をオンにする（B-65）。
+  function pickScale(root: number, mode: ScaleMode): void {
+    send({ type: "setMusicalScale", root, mode, lock: true } satisfies Command);
+    closeMenu();
+  }
   const toggleTriplet = () => send({ type: "setGrid", division: pr.grid.division, triplet: !pr.grid.triplet });
   const toggleLock = () => send({ type: "setMusicalScale", root: pr.scale.root, mode: pr.scale.mode, lock: !pr.scale.lock } satisfies Command);
   const zoom = (steps: number) => zoomBy(steps, metrics.scale);
 
-  // グリッドの一覧（仕様書 2 章「一覧」。押した物のすぐ下にひらく。Esc か外を押すと、とじる）。
-  let menuOpen = $state(false);
+  // グリッドの一覧と音階の一覧（仕様書 2 章「一覧」。押した物のすぐ下か上にひらく。Esc か外を押すと、とじる）。
+  type Menu = "grid" | "scale";
+  let menu = $state<Menu | null>(null);
+  const menuOpen = $derived(menu === "grid");
   let gridButton = $state<HTMLButtonElement>();
+  let scaleButton = $state<HTMLButtonElement>();
+  const menuButton = $derived(menu === "scale" ? scaleButton : gridButton);
   let popup = $state<HTMLElement>();
-  let anchor = $state({ left: 0, top: 0 });
+  let anchor = $state<{ left: number; top: number | null; bottom: number | null; maxHeight: number | null }>({
+    left: 0,
+    top: 0,
+    bottom: null,
+    maxHeight: null,
+  });
   const gridRows = $derived(G.GRID_DIVISIONS.map((d) => ({ value: d as number, label: gridText(d, false) })));
 
+  /** グリッドの一覧はすぐ下（はみ出せば一覧が窓の中へずれる）。音階の一覧は長いので、右の欄と同じく、すぐ下か上の広いほうに入る高さで。 */
   function place(): void {
-    if (!gridButton) return;
-    const r = gridButton.getBoundingClientRect();
-    anchor = { left: r.left, top: r.bottom };
+    const button = menuButton;
+    if (!button) return;
+    const r = button.getBoundingClientRect();
+    if (menu !== "scale") {
+      anchor = { left: r.left, top: r.bottom, bottom: null, maxHeight: null };
+      return;
+    }
+    const below = window.innerHeight - r.bottom;
+    const above = r.top;
+    // 道具の列の右はしにあるので、窓の右からはみ出すときは窓の中へ寄せる。
+    const left = Math.max(0, Math.min(r.left, window.innerWidth - metrics.px("part.list.width")));
+    anchor =
+      below >= above
+        ? { left, top: r.bottom, bottom: null, maxHeight: below }
+        : { left, top: null, bottom: window.innerHeight - r.top, maxHeight: above };
   }
   function toBody(node: HTMLElement): { destroy(): void } {
     document.body.append(node);
@@ -111,17 +155,20 @@
   }
   function closeMenu(): void {
     const hadFocus = popup?.contains(document.activeElement) ?? false;
-    menuOpen = false;
-    if (hadFocus) gridButton?.focus();
+    const button = menuButton;
+    menu = null;
+    if (hadFocus) button?.focus();
   }
+  const toggleMenu = (which: Menu) => (menu = menu === which ? null : which);
   $effect(() => {
-    if (!menuOpen) return;
+    if (!menu) return;
+    const button = menuButton;
     place();
     window.addEventListener("resize", place);
     const forget = menuOpened(closeMenu);
     const onDown = (ev: PointerEvent) => {
       const target = ev.target as Node | null;
-      if (target && (popup?.contains(target) || gridButton?.contains(target))) return;
+      if (target && (popup?.contains(target) || button?.contains(target))) return;
       closeMenu();
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -133,14 +180,24 @@
   });
 </script>
 
-<div class="toolbar">
-  <span class="m-hi">▾</span>
-  <span class="m-name">{t("band.pianoRoll")}</span>
+{#snippet termed(text: string, word: string)}{#each termParts(text, word) as piece, j (j)}{#if piece.term}<span use:term={word}
+        >{piece.text}</span
+      >{:else}{piece.text}{/if}{/each}{/snippet}
+
+<div class="toolbar" bind:this={row}>
+  {#if prView.focus === "pianoRoll"}<div class="focus-mark" data-test="pr-focus-mark"></div>{/if}
+  <button class="m-plain head m-focus-in" onclick={() => send({ type: "toggleBand", band: "pianoRoll" })} data-test="pr-fold">
+    <span class="m-hi">▾</span>
+    <span class="m-name" use:term={"ピアノロール"}>{t("band.pianoRoll")}</span>
+  </button>
   {#if info}
     <span class="m-lbl info" class:cut={!infoFits} bind:this={infoNode} data-test="pr-info">
       {#each textParts(info.key, info.values) as part, i (i)}
         {#if part.hole === "selected"}<span class="m-num selected">{part.text}</span
-          >{:else if part.hole && MONO.has(part.hole)}<span class="m-num">{part.text}</span>{:else}{part.text}{/if}
+          >{:else if part.hole && MONO.has(part.hole)}<span class="m-num">{part.text}</span>{:else if part.hole}{part.text}{:else}{@render termed(
+            part.text,
+            "ノート",
+          )}{/if}
       {/each}
     </span>
   {/if}
@@ -152,7 +209,7 @@
       <span class="m-hi">
         {#if takeTag.recording}<span class="rec">{t("pr.recordingDot")}</span>{/if}
         {#each textParts("arrange.takeSwitch", { take: takeTag.take, takes: takeTag.takes }) as part, i (i)}
-          {#if part.hole}<span class="m-num">{part.text}</span>{:else}{part.text}{/if}
+          {#if part.hole}<span class="m-num">{part.text}</span>{:else}{@render termed(part.text, "テイク")}{/if}
         {/each}
       </span>
       <button class="m-plain step" aria-label={t("arrange.takeNext")} disabled={takeTag.recording} onclick={() => send({ type: "stepTake", delta: 1 })}
@@ -165,7 +222,7 @@
   <div class="tools">
     {#each TOOLS as tool (tool.tool)}
       <button class="m-btn" class:on={prView.tool === tool.tool} aria-pressed={prView.tool === tool.tool} onclick={() => (prView.tool = tool.tool)} data-test="pr-tool-{tool.tool}"
-        >{t(tool.key)}</button
+        >{t(tool.key)}{#if parts.keys}<span class="m-num m-lbl key" data-test="pr-tool-key">{t(tool.hotkey)}</span>{/if}</button
       >
     {/each}
   </div>
@@ -180,7 +237,7 @@
     aria-expanded={menuOpen}
     bind:this={gridButton}
     use:term={"グリッド"}
-    onclick={() => (menuOpen = !menuOpen)}
+    onclick={() => toggleMenu("grid")}
     data-test="pr-grid"
   >
     {t("pr.grid")} <span class="m-num value">{gridName}</span>
@@ -191,16 +248,43 @@
   <button class="m-btn" class:on={pr.scale.lock} aria-pressed={pr.scale.lock} use:term={"スケール固定"} onclick={toggleLock} data-test="pr-scale-lock">
     {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
   </button>
+  <button
+    class="m-btn scale-stub"
+    class:on={pr.scale.lock}
+    class:open={menu === "scale"}
+    aria-haspopup="menu"
+    aria-expanded={menu === "scale"}
+    aria-label={t("inspector.musicalScale")}
+    bind:this={scaleButton}
+    onclick={() => toggleMenu("scale")}
+    data-test="pr-scale-menu">▾</button
+  >
+  <div class="ruler" aria-hidden="true" bind:this={ruler}>
+    {#each TOOLS as tool (tool.tool)}<span class="m-num">{t(tool.hotkey)}</span>{/each}
+  </div>
 </div>
 
-{#if menuOpen}
-  <div class="popup" style:left="{anchor.left}px" style:top="{anchor.top}px" use:toBody bind:this={popup}>
-    <ChoiceMenu heading={t("pr.grid")} rows={gridRows} selected={pr.grid.division} onpick={setGrid} test="pr-grid-menu" />
+{#if menu}
+  <div
+    class="popup"
+    style:left="{anchor.left}px"
+    style:top={anchor.top === null ? null : `${anchor.top}px`}
+    style:bottom={anchor.bottom === null ? null : `${anchor.bottom}px`}
+    style:max-height={anchor.maxHeight === null ? null : `${anchor.maxHeight}px`}
+    use:toBody
+    bind:this={popup}
+  >
+    {#if menu === "scale"}
+      <ScaleMenu scale={pr.scale} onpick={pickScale} />
+    {:else}
+      <ChoiceMenu heading={t("pr.grid")} rows={gridRows} selected={pr.grid.division} onpick={setGrid} test="pr-grid-menu" />
+    {/if}
   </div>
 {/if}
 
 <style>
   .toolbar {
+    position: relative;
     height: var(--size-toolbar);
     flex-shrink: 0;
     display: flex;
@@ -211,6 +295,34 @@
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     white-space: nowrap;
     overflow: hidden;
+  }
+  /* キーが向く帯の印（B-72）: 上辺に accent の line.mark。高さは変えず、重ねて描く。 */
+  .focus-mark {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: var(--line-mark);
+    background: var(--color-accent);
+    pointer-events: none;
+  }
+  /* 「▾ ピアノロール」: 押すとたたむ。状態は仕様書 2 章のボタン（枠は内がわに描く）。 */
+  .head {
+    flex-shrink: 0;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    /* 押せる所は帯の左はしから。右どなりとの間は、ほかの物と同じ space.3 のまま。 */
+    margin: 0 calc(-1 * var(--space-2)) 0 calc(-1 * var(--space-3));
+    padding: 0 var(--space-2) 0 var(--space-3);
+  }
+  .head:hover {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .head:active {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .info {
     flex: 0 1 auto;
@@ -277,9 +389,30 @@
   .m-btn.on .m-num {
     color: var(--color-accent);
   }
+  /* キーは、オンでも gray.8 のまま（再生まわりと同じ）。 */
+  .m-btn .key {
+    color: var(--color-gray-8);
+  }
+  /* 音階の ▾（B-65）: メトロノームの ▾ と同じ形。幅 20 で、スケール固定のボタンの右にすきまなく。間の線は 1 本。 */
+  .scale-stub {
+    width: calc(var(--part-metronomemenu-width) - var(--line-hair));
+    padding: 0;
+    border-left: 0;
+    margin-left: calc(-1 * var(--space-3));
+  }
+  .ruler {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: flex;
+    visibility: hidden;
+    pointer-events: none;
+  }
   /* 重なり: ダイアログ（30）より上、用語の説明（1000）より下。 */
   .popup {
     position: fixed;
     z-index: 40;
+    display: flex;
+    flex-direction: column;
   }
 </style>

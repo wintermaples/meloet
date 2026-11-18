@@ -1,7 +1,9 @@
 <!-- ひらいた下の帯（ピアノロール、ミキサー、取り消しの履歴）。ピアノロールは中身まで（pianoroll/PianoRoll.svelte）。
-     ほかは見出しの行だけで、中身は空。見出しの行は A-Mixer・F-History の帯のいちばん上の行。 -->
+     ほかは見出しの行だけで、中身は空。見出しの行は A-Mixer・F-History の帯のいちばん上の行。「▾ 名前」を押すと、その帯をたたむ（B-74）。 -->
 <script lang="ts">
   import type { Band } from "../bridge";
+  import { term } from "../lib/tip.svelte";
+  import { send } from "../state/app.svelte";
   import { t, type TextKey } from "../text/ja";
   import { metrics } from "./metrics.svelte";
   import PianoRoll from "./pianoroll/PianoRoll.svelte";
@@ -14,6 +16,8 @@
     history: "band.history",
   };
   const name = $derived(NAMES[band]);
+  /** 用語の説明がある帯の名前（仕様書 5 章。「取り消しの履歴」は 5 章にない）。 */
+  const TERMS: Partial<Record<Band, string>> = { mixer: "ミキサー" };
 </script>
 
 {#if band === "pianoRoll"}
@@ -21,8 +25,12 @@
 {:else}
   <section class="band" style:height="{metrics.scaled(height)}px" data-band={band}>
     <div class="head">
-      <span class="m-hi">▾</span>
-      {#if name}<span class="m-name">{t(name)}</span>{/if}
+      <button class="m-plain fold m-focus-in" onclick={() => send({ type: "toggleBand", band })} data-test="band-fold">
+        <span class="m-hi">▾</span>
+        {#if name}
+          {#if TERMS[band]}<span class="m-name" use:term={TERMS[band]!}>{t(name)}</span>{:else}<span class="m-name">{t(name)}</span>{/if}
+        {/if}
+      </button>
     </div>
     <div class="body"></div>
   </section>
@@ -46,6 +54,22 @@
     background: var(--color-gray-4);
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     white-space: nowrap;
+  }
+  /* 押せる所は帯の左はしから。状態は仕様書 2 章のボタン（枠は内がわに描く）。 */
+  .fold {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: 0 calc(-1 * var(--space-2)) 0 calc(-1 * var(--space-3));
+    padding: 0 var(--space-2) 0 var(--space-3);
+  }
+  .fold:hover {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .fold:active {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .body {
     flex: 1;

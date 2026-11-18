@@ -202,7 +202,7 @@
           </div>
         {:else}
           <button
-            class="m-plain m-num cols row"
+            class="m-plain m-num cols row m-focus-in"
             class:selected={row.selected}
             style:transform="translateY({row.at * rowH}px)"
             aria-pressed={row.selected}
@@ -274,5 +274,15 @@
   .row.selected {
     background: var(--color-gray-4);
     border-left-color: var(--color-accent);
+  }
+  /* 乗った（枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は左のふちの内がわに描くので、
+     選んだ行の左 line.mark の accent とまざらない（docs/design-notes.md A-6）。 */
+  button.row:hover {
+    color: var(--color-gray-10);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  button.row:active {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
 </style>

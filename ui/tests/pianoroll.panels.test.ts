@@ -152,7 +152,8 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(body).toContain("スウィング 0 %");
     expect(body).toContain("そろえる所 はじまり");
     const buttons = qa(".buttons .m-btn");
-    expect(buttons.map(text)).toEqual(["かけなおす", "もとの位置へ戻す"]);
+    expect(buttons.map(text)).toEqual(["かけなおすQ", "もとの位置へ戻す"]);
+    expect(text(q('[data-test="quantize-key"]'))).toBe("Q");
     expect(buttons.map((b) => b.getAttribute("aria-disabled"))).toEqual(["false", "false"]);
     expect(buttons[0]!.classList.contains("hi")).toBe(true);
   });

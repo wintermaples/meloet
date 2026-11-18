@@ -22,6 +22,7 @@ use meloet_protocol::{
 use crate::instruments;
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
+use crate::play::mixer::{gain_view, inserts_view};
 use crate::play::{Cut, EngineOp, Heard, Play, RecordReport};
 use crate::settings::{SCALES, Settings};
 
@@ -804,10 +805,50 @@ impl Model {
                 }
             }
             Command::ShelfConfirm => {
+                let selected = self.play.selected_insert();
                 if let Some(n) = self.play.shelf_confirm(effects) {
                     self.notice = Some(n);
                 }
+                // An effect went in and is the selected insert now.
+                if self.play.selected_insert() != selected {
+                    self.bands.show_side(SidePanel::Params);
+                }
             }
+            Command::ShelfSelectEffect { effect } => {
+                if self.bands.side_is_open(SidePanel::Shelf) {
+                    self.play.shelf_select_effect(effect);
+                }
+            }
+            Command::SetGain { strip, db, commit } => {
+                self.play.set_gain(strip, db, commit, effects);
+            }
+            Command::SetPan { strip, pan, commit } => {
+                self.play.set_pan(strip, pan, commit, effects);
+            }
+            Command::SetSend {
+                track,
+                bus,
+                db,
+                commit,
+            } => self.play.set_send(track, bus, db, commit, effects),
+            Command::SetParam {
+                insert,
+                effect,
+                param,
+                value,
+                commit,
+            } => self
+                .play
+                .set_param(insert, effect, param, value, commit, effects),
+            Command::CancelMixPreview => self.play.cancel_mix_preview(),
+            Command::ToggleReturnMute { bus } => self.play.toggle_return_mute(bus, effects),
+            Command::RemoveEffect { insert } => self.play.remove_effect(insert, effects),
+            Command::SelectInsert { insert } => {
+                if self.play.select_insert(insert) {
+                    self.bands.show_side(SidePanel::Params);
+                }
+            }
+            Command::SelectParam { param } => self.play.select_param(param),
             Command::ShelfCancel => {
                 self.play.end_audition(effects);
             }
@@ -1273,6 +1314,7 @@ impl Model {
                 recovery,
             },
             shelf: self.shelf_view(),
+            params: self.play.params_view(),
             keyboards: KeyboardsView {
                 list: self
                     .keyboards
@@ -1400,6 +1442,11 @@ impl Model {
         if redo > 0 && !self.play.busy() {
             return Some(StatusMessage::UndoPending { count: redo });
         }
+        if self.bands.side_is_open(SidePanel::Params)
+            && let Some(m) = self.play.param_status()
+        {
+            return Some(m);
+        }
         self.play.summary()
     }
 }
@@ -1492,12 +1539,17 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
                 instrument: match t.instrument {
                     InstrumentRef::Builtin(b) => instruments::kind_of(b),
                 },
-                gain_db: t.gain_db as f32,
+                gain_db: gain_view(t.channel.gain),
+                pan: t.channel.pan.get(),
+                sends: t.sends.map(gain_view),
+                inserts: inserts_view(&t.channel.inserts),
                 muted: t.muted,
                 soloed: play.is_soloed(t.id),
                 clips: play.clips_of(t.id),
             })
             .collect(),
+        returns: play.returns_view(),
+        master: play.master_view(),
         play_target: song.session.play_target.map(|t| t.0),
         loop_range: play.loop_span(),
         loop_on: song.session.loop_on,

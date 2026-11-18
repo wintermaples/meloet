@@ -173,7 +173,7 @@ impl Play {
                         instrument: made,
                     });
                 }
-                (Mode::Replace(_), _) => {}
+                (Mode::Replace(_), _) | (Mode::InsertEffect(..), _) => {}
             }
         }
         effects.extend(ops.into_iter().map(Effect::Engine));

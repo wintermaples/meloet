@@ -28,6 +28,12 @@
     "tick": -479.75,
     "ticksPerUs": 0.000768
   },
+  "returnPeaks": [
+    0.125,
+    0.0625,
+    0.0,
+    2.0
+  ],
   "running": true,
   "sentUs": 123456789012,
   "seq": 16909060,

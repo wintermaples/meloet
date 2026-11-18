@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -165,8 +165,11 @@ pub enum Command {
     /// Opens the shelf (the right panel `Band::Shelf`, brought to the front) in `mode`.
     /// `NewTrack`: "＋ トラックを追加", "トラックを足す" of the menus, P. `Replace`: a click
     /// on the instrument's name in a track's header, or on the instrument slot of the mixer.
+    /// `InsertEffect`: a click on an empty insert slot ("空き ＋"); the shelf then lists the
+    /// effects.
     /// When the shelf is open already, the mode changes and whatever was auditioned is put
-    /// away as `ShelfCancel` does. `Replace` of a track that is gone does nothing. Not while
+    /// away as `ShelfCancel` does. `Replace` of a track that is gone does nothing, and so
+    /// does `InsertEffect` for a strip that is gone or a slot that is not empty. Not while
     /// counting in or recording.
     OpenShelf {
         mode: ShelfMode,
@@ -192,6 +195,10 @@ pub enum Command {
     /// name stay. The status line says `StatusMessage::InstrumentReplaced`. Selecting the
     /// instrument the track has already is no step.
     ///
+    /// `InsertEffect`: `ShelfView::selected_effect` goes into the slot, with the parameters
+    /// of a new one, as one step. It becomes the selected insert (as `SelectInsert`), so the
+    /// parameters panel comes to the front, and the shelf's mode goes back to `NewTrack`.
+    ///
     /// Afterwards nothing is selected in the shelf, and the shelf stays open.
     ShelfConfirm,
     /// "やめる", and Esc while a row is auditioned: the audition ends and nothing is selected.
@@ -211,6 +218,89 @@ pub enum Command {
         instrument: InstrumentKind,
     },
     StopSample,
+    // The mixer (round 4). A strip is named by `StripRef`, an insert slot by `InsertRef`.
+    //
+    // Fader, pan, send and parameter each come with `commit`, because a drag must be heard
+    // while it goes on and still be one step:
+    // - `commit: false` (every move of a drag): only the sound changes. The song does not,
+    //   nothing is a step, and no state comes back; the screen shows the value it drags.
+    //   Rust keeps the value as a "preview" of that one fader, pan, send or parameter.
+    // - `commit: true` (the button let go, a value typed, a key step): the song gets the
+    //   value as one step, and the preview of that control is over. A value the song has
+    //   already is no step.
+    // - `CancelMixPreview` (Esc during the drag): every preview is over and the sound is
+    //   back at the song's values.
+    // A preview is also over when the song changes under it (a step, undo, redo, another
+    // song). While counting in or recording the song is not to be changed: `commit: true`
+    // then only ends the preview (the sound goes back), and `commit: false` does nothing.
+    // Values out of range are brought into range by Rust.
+    /// The fader of a strip. `db`: `None` is −∞; below −60 becomes −∞, above +6 becomes +6
+    /// (spec 2 「メーターとフェーダーの目盛」). Rust keeps 0.01 steps.
+    SetGain {
+        strip: StripRef,
+        db: Option<f32>,
+        commit: bool,
+    },
+    /// The pan knob: -100 (all left) to 100 (all right), 0 the middle ("L 20" is -20). The
+    /// master has none; for it nothing happens.
+    SetPan {
+        strip: StripRef,
+        pan: i32,
+        commit: bool,
+    },
+    /// How much of a track goes to return A or B, taken after its fader. `db` as in `SetGain`.
+    SetSend {
+        track: u32,
+        bus: SendBus,
+        db: Option<f32>,
+        commit: bool,
+    },
+    /// A parameter of the effect in an insert slot. `effect` is the effect the screen shows
+    /// there and `param` the parameter's place in its table (`EFFECT_PARAMS`); when the slot
+    /// holds another effect by now, or none, the command is dropped. `value` is in the
+    /// parameter's own unit: a step is its number from 0, a switch 0 or 1.
+    SetParam {
+        insert: InsertRef,
+        effect: EffectKind,
+        param: u32,
+        value: f32,
+        commit: bool,
+    },
+    /// Esc while a fader, pan, send or parameter is dragged (see above).
+    CancelMixPreview,
+    /// The M of a return strip: the return is silent, or sounds again. Part of the song (one
+    /// step, saved), as the mute of a track is. The S and ● of a return, and M, S and ● of
+    /// the master, do nothing and have no command (design-notes A-11).
+    ToggleReturnMute {
+        bus: SendBus,
+    },
+    /// Takes the effect out of its slot, as one step. The slots below stay where they are.
+    /// When it was the selected one, nothing is selected afterwards. No part of the screen
+    /// sends this yet: where it is asked for is not decided.
+    RemoveEffect {
+        insert: InsertRef,
+    },
+    /// A click on an insert slot that holds an effect: it becomes the selected one
+    /// (`ParamsView::selected`), and the parameters panel (`Band::Params`) opens, in front
+    /// (spec 3: an effect that comes with meloet has no window). `None`, or a slot that is
+    /// empty: nothing is selected (the panel stays as it is). Not a step, and it works while
+    /// recording too. An empty slot ("空き ＋") opens the shelf instead:
+    /// `OpenShelf` with `ShelfMode::InsertEffect`.
+    SelectInsert {
+        insert: Option<InsertRef>,
+    },
+    /// A row of the parameters panel is chosen (a click, ↑ ↓): `SelectedInsert::row`. The
+    /// status line then says `StatusMessage::ParamSelected`. `None`, or a number the effect
+    /// has no parameter for: no row.
+    SelectParam {
+        param: Option<u32>,
+    },
+    /// `ShelfMode::InsertEffect`: a click on a row of the shelf's effects, ↑ ↓. The row
+    /// becomes `ShelfView::selected_effect`. There is nothing to audition: the effect is in
+    /// the song only after `ShelfConfirm`. `None`: no row.
+    ShelfSelectEffect {
+        effect: Option<EffectKind>,
+    },
     /// A plain click on a clip: it alone is selected and shown in the piano roll, and its track
     /// becomes the selected track (as `SelectTrack`). `None`: a click where there is no clip,
     /// which unselects every clip (the selected track stays).
@@ -612,6 +702,76 @@ pub enum ValueField {
     ControlValue,
 }
 
+/// A strip of the mixer. The returns are always these two, and there is one master.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum StripRef {
+    /// `id` is `TrackView::id`.
+    Track {
+        id: u32,
+    },
+    Return {
+        bus: SendBus,
+    },
+    Master,
+}
+
+/// Send A and send B, and the returns they go to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SendBus {
+    A,
+    B,
+}
+
+/// An insert slot of a strip. `slot` counts from 0, top first ("インサート 1" is 0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct InsertRef {
+    pub strip: StripRef,
+    pub slot: u8,
+}
+
+/// The insert slots of every strip (mock F4-Mixer).
+pub const INSERT_SLOTS: usize = 4;
+
+/// The effects that come with meloet (spec 3 Y8), in the order of the shelf. Their
+/// parameters (number, range, unit, steps) are the table `EFFECT_PARAMS`
+/// (`ui/src/bridge/generated/effects.ts`), written from `meloet_model::effects`; the names
+/// shown are the screen's (`ja.ts`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum EffectKind {
+    Eq4,
+    Compressor,
+    Reverb,
+    Delay,
+    Chorus,
+    Limiter,
+}
+
+impl EffectKind {
+    pub const ALL: [EffectKind; 6] = [
+        EffectKind::Eq4,
+        EffectKind::Compressor,
+        EffectKind::Reverb,
+        EffectKind::Delay,
+        EffectKind::Chorus,
+        EffectKind::Limiter,
+    ];
+}
+
+/// What each insert slot of a strip holds, top first; `None` is "空き ＋".
+pub type InsertsView = [Option<EffectKind>; INSERT_SLOTS];
+
 /// The buttons of the song dialogs, one for one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -658,6 +818,7 @@ pub struct AppState {
     pub piano_roll: PianoRollView,
     pub workspace: WorkspaceView,
     pub shelf: ShelfView,
+    pub params: ParamsView,
     pub keyboards: KeyboardsView,
     pub outputs: OutputsView,
     pub inputs: InputsView,
@@ -687,6 +848,9 @@ impl AppState {
         if old.shelf != new.shelf {
             out.push(Change::Shelf(new.shelf.clone()));
         }
+        if old.params != new.params {
+            out.push(Change::Params(new.params.clone()));
+        }
         if old.keyboards != new.keyboards {
             out.push(Change::Keyboards(new.keyboards.clone()));
         }
@@ -714,6 +878,7 @@ impl AppState {
             Change::PianoRoll(v) => self.piano_roll = v,
             Change::Workspace(v) => self.workspace = v,
             Change::Shelf(v) => self.shelf = v,
+            Change::Params(v) => self.params = v,
             Change::Keyboards(v) => self.keyboards = v,
             Change::Outputs(v) => self.outputs = v,
             Change::Inputs(v) => self.inputs = v,
@@ -740,6 +905,9 @@ pub struct SongView {
     /// For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
     pub note_count: u32,
     pub tracks: Vec<TrackView>,
+    /// Return A, then return B.
+    pub returns: [ReturnView; 2],
+    pub master: MasterView,
     /// The selected track, by `TrackView::id` (B-70: its header is gray.4): the one the keys
     /// play and the one R records to, so also the one whose ● is lit. `SelectTrack`, and a
     /// click on a clip, change it. `None` only when the song has no tracks.
@@ -786,13 +954,67 @@ pub struct TrackView {
     /// 1..=5. Belongs to the track, not to its place: moving a track keeps it.
     pub color: u8,
     pub instrument: InstrumentKind,
-    pub gain_db: f32,
+    /// The fader: `None` is −∞, otherwise −60.0..=6.0.
+    pub gain_db: Option<f32>,
+    /// -100 (all left) to 100 (all right), 0 the middle.
+    pub pan: i8,
+    /// How much goes to return A and to return B, as `gain_db`.
+    pub sends: [Option<f32>; 2],
+    pub inserts: InsertsView,
     /// Saved with the song (`ToggleMute`).
     pub muted: bool,
     /// Not saved (`ToggleSolo`).
     pub soloed: bool,
     /// In order of start, never overlapping.
     pub clips: Vec<ClipView>,
+}
+
+/// A return strip. It has no sends, no instrument and no clips; its S and ● are unusable.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ReturnView {
+    pub gain_db: Option<f32>,
+    pub pan: i8,
+    /// Saved with the song (`ToggleReturnMute`).
+    pub muted: bool,
+    pub inserts: InsertsView,
+}
+
+/// The master strip: a fader and inserts. Its M, S and ● are unusable, and it has no pan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct MasterView {
+    pub gain_db: Option<f32>,
+    pub inserts: InsertsView,
+}
+
+/// The parameters panel: the selected insert and the values of its effect. A section of its
+/// own because selecting an insert or a row is no step: `song` is not sent again for it, as
+/// with the selection of the piano roll. The mixer's own values (fader, pan, sends, which
+/// effect sits where) are in `song`: they change only by steps, and every step sends `song`
+/// anyway (`undo_count`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ParamsView {
+    /// `None`: no insert is selected (also after its effect is taken out, its track deleted,
+    /// or an undo took it away).
+    pub selected: Option<SelectedInsert>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedInsert {
+    pub insert: InsertRef,
+    pub effect: EffectKind,
+    /// One for each parameter of the effect's table (`EFFECT_PARAMS`), in its order, as the
+    /// song has them. A preview (`commit: false`) is not in here.
+    pub values: Vec<f32>,
+    /// The chosen row (`Command::SelectParam`).
+    pub row: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -910,7 +1132,10 @@ impl InstrumentGroup {
 /// user does in it.
 ///
 /// Whether the shelf is open is `LayoutView::right_open`. When it is closed, `mode` is
-/// `NewTrack` and `selected`, `current`, `loading` and `sample` are `None`.
+/// `NewTrack` and `selected`, `current`, `loading`, `sample` and `selected_effect` are `None`.
+///
+/// The shelf shows its instruments in `NewTrack` and `Replace` mode and its effects
+/// (`EffectKind::ALL`, all of them always there) in `InsertEffect` mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -931,6 +1156,8 @@ pub struct ShelfView {
     pub loading: Option<InstrumentKind>,
     /// The sample that is playing (`Command::PlaySample`). `None` again when it ends.
     pub sample: Option<SampleView>,
+    /// `InsertEffect` mode: the chosen row (`Command::ShelfSelectEffect`).
+    pub selected_effect: Option<EffectKind>,
 }
 
 /// What Enter does in the shelf.
@@ -946,6 +1173,9 @@ pub enum ShelfMode {
     NewTrack,
     /// "（トラック）の音源を入れかえる". `track` is `TrackView::id`.
     Replace { track: u32 },
+    /// From "空き ＋": Enter puts the chosen effect into this slot. When the slot is no longer
+    /// empty or its strip is gone (undo, a deleted track), the mode is `NewTrack` again.
+    InsertEffect { strip: StripRef, slot: u8 },
 }
 
 /// A sample that is playing. The screen counts "0:02 / 0:04" from these on its own clock
@@ -1544,6 +1774,15 @@ pub enum StatusMessage {
     /// A note's edge dragged outside the clip, where the clip cannot grow for the same reason:
     /// "ほかのクリップと重なるので、長さを変えられませんでした。"
     NotesNotResized,
+    /// A row of the parameters panel is chosen (`SelectedInsert::row`), in place of the
+    /// summary and also while playing: "ループ 5–9 ・ A リバーブの「響きの長さ」をえらんでいます"
+    /// (mock F4-Mixer). The screen names the strip, the effect and the parameter.
+    ParamSelected {
+        loop_bars: Option<BarSpan>,
+        insert: InsertRef,
+        effect: EffectKind,
+        param: u32,
+    },
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
     /// piano roll are selected ("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み…", mock
@@ -1635,6 +1874,7 @@ pub enum Change {
     PianoRoll(PianoRollView),
     Workspace(WorkspaceView),
     Shelf(ShelfView),
+    Params(ParamsView),
     Keyboards(KeyboardsView),
     Outputs(OutputsView),
     Inputs(InputsView),

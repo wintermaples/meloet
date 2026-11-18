@@ -1,5 +1,5 @@
 use meloet_devices::{Availability as Av, ClockSettings, Friendly as Fr, LinkKind as Link};
-use meloet_protocol::ShelfMode;
+use meloet_protocol::{EffectKind, MasterView, ParamsView, ReturnView, ShelfMode};
 
 use super::*;
 
@@ -166,12 +166,33 @@ fn a_new_song() {
             name: "ピアノ".into(),
             color: 1,
             instrument: InstrumentKind::GrandPiano,
-            gain_db: 0.0,
+            gain_db: Some(0.0),
+            pan: 0,
+            sends: [Some(-15.0), None],
+            inserts: [None; 4],
             muted: false,
             soloed: false,
             clips: vec![],
         }]
     );
+    let first = |kind| [Some(kind), None, None, None];
+    assert_eq!(
+        song.returns,
+        [EffectKind::Reverb, EffectKind::Delay].map(|kind| ReturnView {
+            gain_db: Some(0.0),
+            pan: 0,
+            muted: false,
+            inserts: first(kind),
+        })
+    );
+    assert_eq!(
+        song.master,
+        MasterView {
+            gain_db: Some(0.0),
+            inserts: first(EffectKind::Limiter),
+        }
+    );
+    assert_eq!(state.params, ParamsView::default());
     assert_eq!(state.workspace.scale, 100);
     assert_eq!(state.workspace.hint, None);
     assert_eq!(state.audio.requested_frames, 256);
@@ -1678,6 +1699,7 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
             current: None,
             loading: None,
             sample: None,
+            selected_effect: None,
         }
     );
     let star = |m: &mut Model, instrument| {

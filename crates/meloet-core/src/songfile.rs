@@ -3,18 +3,19 @@
 //!
 //! The shape lives here and not in `meloet-model`, which stays free of serde and files.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use meloet_model::effects::{EffectKind, ParamShape};
 use meloet_model::{
-    BuiltinInstrument, Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Grid,
-    InstrumentRef, MAX_TICK, Meter, MusicalScale, Note, OriginIndex, QuantizeAlign,
-    QuantizeSettings, RollSettings, ScaleMode, Session, Song, Take, TakeId, TakeOrigin, Tempo,
-    TempoChange, TickRange, Track, TrackColor, TrackId,
+    BuiltinInstrument, Bus, Channel, Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Gain,
+    Grid, Insert, Inserts, InstrumentRef, MAX_TICK, Meter, MusicalScale, Note, OriginIndex, Pan,
+    QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session, Song, Take, TakeId,
+    TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor, TrackId, mixer,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -22,7 +23,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub const FORMAT: &str = "meloet-song";
 /// The newest shape this meloet reads and the one it writes. 2: quantized takes, with their
 /// origin take and the origin index of each note. 3: instruments by name, a song may have no
-/// tracks, and the session has no armed track.
+/// tracks, the session has no armed track, and the mixer (pan, sends, inserts, the returns
+/// and the master).
 pub const VERSION: u32 = 3;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
@@ -72,6 +74,14 @@ struct DocFile {
     tempo_changes: Vec<TempoChangeFile>,
     next_id: u32,
     tracks: Vec<TrackFile>,
+    /// The returns and the master. Missing (versions 1 and 2, and version 3 before the mixer)
+    /// or not understood: the ones of a new song.
+    #[serde(
+        default,
+        deserialize_with = "or_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    mixer: Option<MixerFile>,
     /// Voice recordings, later.
     #[serde(default)]
     audio: Vec<serde_json::Value>,
@@ -92,7 +102,19 @@ struct TrackFile {
     name: String,
     color: u8,
     instrument: InstrumentFile,
-    gain_db: f64,
+    /// The fader; `null` is −∞.
+    #[serde(deserialize_with = "db")]
+    gain_db: Option<f64>,
+    /// -100..=100. Missing or not understood: the middle.
+    #[serde(default, deserialize_with = "or_default")]
+    pan: Option<i64>,
+    /// Missing or not understood: nothing is sent, so a song from before the mixer sounds
+    /// as it did.
+    #[serde(default, deserialize_with = "or_default")]
+    sends: Option<SendsFile>,
+    /// One entry for each insert slot, top first.
+    #[serde(default, deserialize_with = "or_default")]
+    inserts: Option<Vec<SlotFile>>,
     /// Left out when off: a song with no muted track is written as before, and a meloet of
     /// the same version that does not know the field skips it (an unknown field).
     #[serde(default, skip_serializing_if = "is_false")]
@@ -112,6 +134,188 @@ struct InstrumentFile {
     kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+}
+
+/// `null` is −∞.
+#[derive(Serialize, Deserialize)]
+struct SendsFile {
+    #[serde(default)]
+    a: Option<f64>,
+    #[serde(default)]
+    b: Option<f64>,
+}
+
+/// An insert slot: `null` when empty. An entry that is not an effect is read as empty.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum SlotFile {
+    Insert(InsertFile),
+    Other(serde_json::Value),
+}
+
+/// `{"effect": "reverb", "params": {"decay": 2.4, …}}`. The parameters go by the names of
+/// their tables (`meloet_model::effects`), so that a table can grow or change its order.
+#[derive(Serialize, Deserialize)]
+struct InsertFile {
+    effect: String,
+    #[serde(default)]
+    params: BTreeMap<String, ParamFile>,
+}
+
+/// A number in the parameter's unit, the name of a step, or a switch.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum ParamFile {
+    Switch(bool),
+    Number(f32),
+    Step(String),
+    Other(serde_json::Value),
+}
+
+#[derive(Serialize, Deserialize)]
+struct MixerFile {
+    returns: ReturnsFile,
+    master: MasterFile,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ReturnsFile {
+    a: ReturnFile,
+    b: ReturnFile,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReturnFile {
+    #[serde(default = "unity")]
+    gain_db: Option<f64>,
+    #[serde(default)]
+    pan: i64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    muted: bool,
+    #[serde(default)]
+    inserts: Vec<SlotFile>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MasterFile {
+    #[serde(default = "unity")]
+    gain_db: Option<f64>,
+    #[serde(default)]
+    inserts: Vec<SlotFile>,
+}
+
+fn unity() -> Option<f64> {
+    Some(0.0)
+}
+
+/// A number or `null`. A field read with this must be there.
+fn db<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {
+    Option::<f64>::deserialize(d)
+}
+
+fn gain_of(db: Option<f64>) -> Gain {
+    db.map_or(Gain::SILENT, Gain::from_db)
+}
+
+fn pan_of(pan: i64) -> Pan {
+    Pan::new(pan.clamp(-100, 100) as i32)
+}
+
+fn slots_file(inserts: &Inserts) -> Vec<SlotFile> {
+    inserts
+        .iter()
+        .map(|slot| match slot {
+            None => SlotFile::Other(serde_json::Value::Null),
+            Some(insert) => {
+                let params = insert.kind().params().iter().zip(insert.values());
+                SlotFile::Insert(InsertFile {
+                    effect: insert.kind().name().into(),
+                    params: params
+                        .map(|(spec, &v)| {
+                            let value = match spec.shape {
+                                ParamShape::Continuous => ParamFile::Number(v),
+                                ParamShape::Steps(names) => {
+                                    ParamFile::Step(names[v as usize].into())
+                                }
+                                ParamShape::Switch => ParamFile::Switch(v >= 0.5),
+                            };
+                            (spec.name.to_owned(), value)
+                        })
+                        .collect(),
+                })
+            }
+        })
+        .collect()
+}
+
+/// An effect this meloet does not know leaves its slot empty; a parameter it does not know
+/// is skipped, one that is missing or of another shape has its default, and a value out of
+/// range is brought into range. Slots past the last one are dropped.
+fn inserts_of(slots: Vec<SlotFile>) -> Inserts {
+    let mut inserts = Inserts::default();
+    for (place, slot) in inserts.iter_mut().zip(slots) {
+        let SlotFile::Insert(file) = slot else {
+            continue;
+        };
+        let Some(kind) = EffectKind::from_name(&file.effect) else {
+            continue;
+        };
+        let mut insert = Insert::new(kind);
+        for (name, value) in file.params {
+            let Some(index) = kind.param_index(&name) else {
+                continue;
+            };
+            let shape = kind.params()[index as usize].shape;
+            let value = match (shape, value) {
+                (ParamShape::Continuous, ParamFile::Number(v)) => Some(v),
+                (ParamShape::Steps(names), ParamFile::Step(step)) => {
+                    names.iter().position(|n| *n == step).map(|i| i as f32)
+                }
+                (ParamShape::Switch, ParamFile::Switch(on)) => Some(f32::from(u8::from(on))),
+                _ => None,
+            };
+            if let Some(v) = value {
+                insert.set(index, v);
+            }
+        }
+        *place = Some(insert);
+    }
+    inserts
+}
+
+fn mixer_file(doc: &Doc) -> MixerFile {
+    let ret = |bus: Bus| {
+        let r = &doc.returns[bus.index()];
+        ReturnFile {
+            gain_db: r.channel.gain.db(),
+            pan: i64::from(r.channel.pan.get()),
+            muted: r.muted,
+            inserts: slots_file(&r.channel.inserts),
+        }
+    };
+    MixerFile {
+        returns: ReturnsFile {
+            a: ret(Bus::A),
+            b: ret(Bus::B),
+        },
+        master: MasterFile {
+            gain_db: doc.master.gain.db(),
+            inserts: slots_file(&doc.master.inserts),
+        },
+    }
+}
+
+fn return_of(file: ReturnFile) -> Arc<Return> {
+    Arc::new(Return {
+        channel: Channel {
+            gain: gain_of(file.gain_db),
+            pan: pan_of(file.pan),
+            inserts: inserts_of(file.inserts),
+        },
+        muted: file.muted,
+    })
 }
 
 const KIND_BUILTIN: &str = "builtin";
@@ -298,7 +502,13 @@ pub fn encode(song: &Song) -> Vec<u8> {
             name: t.name.clone(),
             color: t.color.get(),
             instrument: instrument_file(&t.instrument),
-            gain_db: t.gain_db,
+            gain_db: t.channel.gain.db(),
+            pan: Some(i64::from(t.channel.pan.get())),
+            sends: Some(SendsFile {
+                a: t.sends[Bus::A.index()].db(),
+                b: t.sends[Bus::B.index()].db(),
+            }),
+            inserts: Some(slots_file(&t.channel.inserts)),
             muted: t.muted,
             clips: t
                 .clips
@@ -353,6 +563,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
                 .collect(),
             next_id: doc.next_id,
             tracks,
+            mixer: Some(mixer_file(doc)),
             audio: Vec::new(),
         },
         takes,
@@ -515,6 +726,7 @@ fn to_song(file: SongFile) -> Option<Song> {
         takes.insert(t.id, Arc::new(to_take(t, origin)?));
     }
     let d = file.song;
+    let (returns, master) = d.mixer.map(|m| (m.returns, m.master)).unzip();
     let tracks_n = d.tracks.len();
     if tracks_n > MAX_TRACKS {
         return None;
@@ -523,7 +735,7 @@ fn to_song(file: SongFile) -> Option<Song> {
     let mut clip_ids = HashSet::new();
     let mut tracks = Vec::with_capacity(tracks_n);
     for t in d.tracks {
-        if !track_ids.insert(t.id) || !t.gain_db.is_finite() {
+        if !track_ids.insert(t.id) {
             return None;
         }
         let mut clips: Vec<Arc<Clip>> = Vec::with_capacity(t.clips.len());
@@ -566,7 +778,12 @@ fn to_song(file: SongFile) -> Option<Song> {
             name: t.name,
             color: TrackColor::new(t.color)?,
             instrument: instrument_of(&t.instrument),
-            gain_db: t.gain_db,
+            channel: Channel {
+                gain: gain_of(t.gain_db),
+                pan: pan_of(t.pan.unwrap_or(0)),
+                inserts: inserts_of(t.inserts.unwrap_or_default()),
+            },
+            sends: (t.sends).map_or([Gain::SILENT; 2], |s| [gain_of(s.a), gain_of(s.b)]),
             muted: t.muted,
             clips,
         }));
@@ -595,6 +812,18 @@ fn to_song(file: SongFile) -> Option<Song> {
         meter: Meter::new(d.meter[0], d.meter[1])?,
         tempo_changes,
         tracks,
+        returns: match returns {
+            Some(r) => [return_of(r.a), return_of(r.b)],
+            None => mixer::new_song_returns(),
+        },
+        master: match master {
+            Some(m) => Arc::new(Channel {
+                gain: gain_of(m.gain_db),
+                pan: Pan::CENTER,
+                inserts: inserts_of(m.inserts),
+            }),
+            None => mixer::new_song_master(),
+        },
         next_id: d.next_id,
     };
     let s = file.session;

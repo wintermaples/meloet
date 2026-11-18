@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use crate::history::StepKind;
+use crate::mixer::{self, Channel};
 use crate::song::{
     Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
 };
@@ -36,6 +37,12 @@ pub enum EditError {
     Overlap,
     /// A clip would go above the first track, below the last, or past [`MAX_TICK`].
     OffTheSong,
+    /// No effect of that kind in that insert slot, or no such parameter.
+    NoSuchInsert,
+    /// The insert slot holds an effect already.
+    SlotTaken,
+    /// The master has no pan.
+    NoPan,
 }
 
 /// No clip ends after this, so that every song position of a take fits in an `i64`.
@@ -433,7 +440,8 @@ pub fn move_track(doc: &Doc, track: TrackId, to: usize) -> Result<Edit, EditErro
 
 /// A new, empty track right below `below` (at the end with `None`). Its name is the short name
 /// of the instrument's group, with the smallest number from 2 that is free when a track has
-/// that name already ("ベース 2"); its color is the one of its place. The id is one no track,
+/// that name already ("ベース 2"); its color is the one of its place, its sends the ones of the
+/// instrument's group ([`mixer::new_track_sends`]). The id is one no track,
 /// clip or take of this song has had: `next_id`, or past the highest track id when that is
 /// higher (the tracks of a song from a file are not counted in its `next_id`).
 pub fn add_track(
@@ -471,8 +479,9 @@ pub fn add_track(
             id,
             name,
             color: TrackColor::for_index(at),
+            sends: mixer::new_track_sends(&instrument),
             instrument,
-            gain_db: 0.0,
+            channel: Channel::default(),
             muted: false,
             clips: Vec::new(),
         }),

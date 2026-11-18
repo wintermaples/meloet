@@ -33,7 +33,8 @@ fn two_tracks() -> Doc {
         name: "ベース".to_owned(),
         color: TrackColor::for_index(1),
         instrument: InstrumentRef::SINE,
-        gain_db: 0.0,
+        channel: Default::default(),
+        sends: [crate::Gain::SILENT; 2],
         muted: false,
         clips: Vec::new(),
     }));
@@ -555,7 +556,7 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
     );
     let new = &e.doc.tracks[1];
     assert_eq!(new.instrument, bass);
-    assert!(new.clips.is_empty() && !new.muted && new.gain_db == 0.0);
+    assert!(new.clips.is_empty() && !new.muted && new.channel == Channel::default());
     assert!(Arc::ptr_eq(&doc.tracks[1], &e.doc.tracks[2]));
 
     // The smallest free number from 2, and at the end without a track to go below.

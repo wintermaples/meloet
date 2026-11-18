@@ -4,6 +4,7 @@ import type { AudioView } from "./AudioView";
 import type { InputsView } from "./InputsView";
 import type { KeyboardsView } from "./KeyboardsView";
 import type { OutputsView } from "./OutputsView";
+import type { ParamsView } from "./ParamsView";
 import type { PianoRollView } from "./PianoRollView";
 import type { ShelfView } from "./ShelfView";
 import type { SongView } from "./SongView";
@@ -11,4 +12,4 @@ import type { StatusView } from "./StatusView";
 import type { TransportView } from "./TransportView";
 import type { WorkspaceView } from "./WorkspaceView";
 
-export type AppState = { song: SongView, transport: TransportView, arrange: ArrangeView, pianoRoll: PianoRollView, workspace: WorkspaceView, shelf: ShelfView, keyboards: KeyboardsView, outputs: OutputsView, inputs: InputsView, audio: AudioView, status: StatusView, };
+export type AppState = { song: SongView, transport: TransportView, arrange: ArrangeView, pianoRoll: PianoRollView, workspace: WorkspaceView, shelf: ShelfView, params: ParamsView, keyboards: KeyboardsView, outputs: OutputsView, inputs: InputsView, audio: AudioView, status: StatusView, };

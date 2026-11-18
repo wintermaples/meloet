@@ -1591,6 +1591,8 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             load_permille: steady_load(open, meters.load_permille(), last.as_ref()),
             master_peak: meters.take_master_peak(),
             transport,
+            // The engine has no meters for the returns.
+            return_peaks: [[0.0; 2]; 2],
             track_peaks,
         };
         let fresh = hub.take_telemetry_fresh();

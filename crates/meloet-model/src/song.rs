@@ -5,6 +5,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use crate::chunked::ChunkedVec;
+use crate::mixer::{self, Channel, Return, Sends};
 use crate::roll::{QuantizeSettings, RollSettings};
 use crate::time::{Meter, Tempo, TickRange};
 use crate::{InstrumentRef, TempoChange, TrackColor, TrackId};
@@ -157,7 +158,9 @@ pub struct Track {
     pub name: String,
     pub color: TrackColor,
     pub instrument: InstrumentRef,
-    pub gain_db: f64,
+    /// The fader, the pan and the inserts.
+    pub channel: Channel,
+    pub sends: Sends,
     /// Its clips do not play. Keys played on it still sound.
     pub muted: bool,
     /// In order of start, never overlapping.
@@ -172,6 +175,9 @@ pub struct Doc {
     pub meter: Meter,
     pub tempo_changes: Vec<TempoChange>,
     pub tracks: Vec<Arc<Track>>,
+    /// Return A and return B.
+    pub returns: [Arc<Return>; 2],
+    pub master: Arc<Channel>,
     /// The next clip or take id to give out.
     pub next_id: u32,
 }
@@ -188,10 +194,13 @@ impl Doc {
                 name: "ピアノ".to_owned(),
                 color: TrackColor::for_index(0),
                 instrument: InstrumentRef::GRAND_PIANO,
-                gain_db: 0.0,
+                channel: Channel::default(),
+                sends: mixer::new_track_sends(&InstrumentRef::GRAND_PIANO),
                 muted: false,
                 clips: Vec::new(),
             })],
+            returns: mixer::new_song_returns(),
+            master: mixer::new_song_master(),
             next_id: 1,
         }
     }

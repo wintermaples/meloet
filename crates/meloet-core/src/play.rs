@@ -344,6 +344,7 @@ pub struct Play {
     target_sent: Option<usize>,
     shelf: Shelf,
     sounds: Sounds,
+    mixer: Mixer,
 }
 
 impl Play {
@@ -355,6 +356,7 @@ impl Play {
             seats,
             shelf: Shelf::default(),
             sounds: Sounds::default(),
+            mixer: Mixer::default(),
             song,
             history: History::new(),
             state: TransportState::Stopped,
@@ -1043,6 +1045,7 @@ impl Play {
     fn after_change(&mut self, before: &Doc, effects: &mut Vec<Effect>) {
         self.changes += 1;
         self.sync_seats(before, effects);
+        self.mixer_changed();
         let doc = &self.song.doc;
         let target = &mut self.song.session.play_target;
         if target.is_none_or(|t| doc.track(t).is_none()) {
@@ -1381,6 +1384,7 @@ impl Play {
     pub fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
         self.shelf_closed(effects);
         self.song = song;
+        self.forget_mixer();
         self.reseat(effects);
         self.changes += 1;
         self.serial += 1;
@@ -2125,11 +2129,14 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 }
 
 mod mix;
+pub(crate) mod mixer;
 mod seats;
 mod shelf;
 mod sounds;
 mod tracks;
 
+use mixer::Mixer;
+pub use mixer::Preview;
 use seats::Seats;
 pub use seats::{AUDITION_SEAT, MAX_TRACKS};
 use shelf::Shelf;

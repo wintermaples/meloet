@@ -1,11 +1,11 @@
-// Telemetry binary, version 2, little-endian. The layout is fixed in
+// Telemetry binary, version 3, little-endian. The layout is fixed in
 // crates/meloet-protocol/src/telemetry.rs (table: docs/architecture.md 3-3).
 
 import type { TransportState } from "./types";
 
 export const TELEMETRY_KIND = 1;
-export const TELEMETRY_VERSION = 2;
-export const TELEMETRY_HEADER_LEN = 72;
+export const TELEMETRY_VERSION = 3;
+export const TELEMETRY_HEADER_LEN = 88;
 const HEADER_LEN = TELEMETRY_HEADER_LEN;
 const STATES: readonly TransportState[] = ["stopped", "countIn", "playing", "recording"];
 
@@ -44,6 +44,8 @@ export interface Telemetry {
   masterPeak: [number, number];
   /** null before the audio has played anything. */
   position: TransportReading | null;
+  /** Return A, then return B, left and right of each: [aL, aR, bL, bR], as `masterPeak`. */
+  returnPeaks: Float32Array;
   /** Left, right per track: [l1, r1, l2, r2, ...]. */
   trackPeaks: Float32Array;
 }
@@ -69,6 +71,8 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
 
   const keys = new Uint32Array(4);
   for (let w = 0; w < 4; w++) keys[w] = view.getUint32(16 + 4 * w, true);
+  const returnPeaks = new Float32Array(4);
+  for (let i = 0; i < 4; i++) returnPeaks[i] = view.getFloat32(72 + 4 * i, true);
   const trackPeaks = new Float32Array(2 * tracks);
   for (let i = 0; i < trackPeaks.length; i++) {
     trackPeaks[i] = view.getFloat32(HEADER_LEN + 4 * i, true);
@@ -100,6 +104,7 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
             countInBeatsLeft: view.getUint16(66, true),
             lap: view.getUint32(68, true),
           },
+    returnPeaks,
     trackPeaks,
   };
 }

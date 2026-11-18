@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+import { effectDefaults, encodeTelemetry, fakeScene, fakeState, reduceMixer } from "../src/bridge/fake";
+import { decodeTelemetry } from "../src/bridge/telemetry";
+import { EFFECT_KINDS, EFFECT_PARAMS, INSERT_SLOTS, PROTOCOL_VERSION, type AppState, type Command, type InsertRef } from "../src/bridge/types";
+import { texts } from "../src/text/ja";
+
+const scene = (name: string) => fakeScene(name)!.state;
+
+describe("約束 14: 偽物の場面（ミキサー）", () => {
+  it("版は 14", () => {
+    expect(PROTOCOL_VERSION).toBe(14);
+  });
+
+  it("mixer はモック F4-Mixer の曲", () => {
+    const s = scene("mixer");
+    expect(s.song.tracks.map((t) => [t.number, t.name, t.instrument, t.gainDb, t.pan, t.sends, t.inserts[0]])).toEqual([
+      [1, "ピアノ", "grandPiano", 0, 0, [-15, null], null],
+      [2, "ベース", "fingerBass", 0, 0, [null, null], "compressor"],
+      [3, "ドラム", "studioKit", 0, 0, [-24, null], "compressor"],
+      [4, "パッド", "strings", -3, -20, [-15, null], "eq4"],
+      [5, "シンセ", "synthLead", 0, 20, [-15, -18], null],
+    ]);
+    for (const t of s.song.tracks) {
+      expect(t.inserts.length).toBe(INSERT_SLOTS);
+      expect(t.inserts.slice(1)).toEqual([null, null, null]);
+    }
+    expect(s.song.returns).toEqual([
+      { gainDb: 0, pan: 0, muted: false, inserts: ["reverb", null, null, null] },
+      { gainDb: 0, pan: 0, muted: false, inserts: ["delay", null, null, null] },
+    ]);
+    expect(s.song.master).toEqual({ gainDb: 0, inserts: ["limiter", null, null, null] });
+    const insert: InsertRef = { strip: { kind: "return", bus: "a" }, slot: 0 };
+    expect(s.params.selected).toEqual({ insert, effect: "reverb", values: [2.4, 60, 20, 6000, 120, 100, 100], row: 0 });
+    expect(s.status.message).toEqual({ id: "paramSelected", loopBars: { from: 5, to: 9 }, insert, effect: "reverb", param: 0 });
+    expect(s.transport.state).toBe("playing");
+    expect(s.workspace.layout.lower.map((b) => b.band)).toEqual(["mixer"]);
+    expect(s.workspace.layout.rightFront).toBe("params");
+  });
+
+  it("paramsDelay はモック R6-Delay（戻り B のディレイ）、shelfEffects は「空き ＋」からの棚", () => {
+    const delay = scene("paramsDelay").params.selected!;
+    expect(delay.insert).toEqual({ strip: { kind: "return", bus: "b" }, slot: 0 });
+    expect(delay.effect).toBe("delay");
+    // 間隔 1/8、テンポに合わせる オン、くり返し 35 %、5000 Hz、200 Hz、左右にゆれる オフ、ミックス 100 %。
+    expect(delay.values).toEqual([2, 250, 1, 35, 5000, 200, 0, 100]);
+    expect(EFFECT_PARAMS.delay[0]!.steps[delay.values[0]!]).toBe("eighth");
+
+    const shelf = scene("shelfEffects");
+    expect(shelf.shelf.mode).toEqual({ kind: "insertEffect", strip: { kind: "track", id: shelf.song.tracks[0]!.id }, slot: 1 });
+    expect(shelf.shelf.selectedEffect).toBe("compressor");
+    expect(shelf.workspace.layout.rightFront).toBe("shelf");
+  });
+
+  it("新しい曲は、戻り A にリバーブ、B にディレイ、マスターにリミッター。ピアノは A へ −15", () => {
+    const s = fakeState();
+    expect(s.song.returns.map((r) => r.inserts[0])).toEqual(["reverb", "delay"]);
+    expect(s.song.master.inserts[0]).toBe("limiter");
+    expect(s.song.tracks[0]!.sends).toEqual([-15, null]);
+    expect(s.params).toEqual({ selected: null });
+    expect(effectDefaults("limiter")).toEqual([-0.3, 0, 100]);
+  });
+});
+
+describe("約束 14: エフェクトの表と文面", () => {
+  const has = (key: string) => expect(key in texts, key).toBe(true);
+
+  it("6 つのエフェクトと、どのパラメータにも名前がある", () => {
+    expect(EFFECT_KINDS).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"]);
+    for (const kind of EFFECT_KINDS) {
+      has(`effect.${kind}`);
+      for (const p of EFFECT_PARAMS[kind]) {
+        has(`param.${kind}.${p.id}`);
+        if (p.group !== null) has(`param.${kind}.group.${p.group}`);
+        for (const step of p.steps) has(`param.${kind}.step.${step}`);
+        if (p.unit !== "none") has(`param.value.${p.unit}`);
+        expect(p.default).toBeGreaterThanOrEqual(p.min);
+        expect(p.default).toBeLessThanOrEqual(p.max);
+      }
+    }
+  });
+
+  it("リバーブとディレイは、仕様書 3 章の順", () => {
+    const names = (kind: "reverb" | "delay") => EFFECT_PARAMS[kind].map((p) => (texts as Record<string, { text: string }>)[`param.${kind}.${p.id}`]!.text);
+    expect(names("reverb")).toEqual(["響きの長さ", "部屋の大きさ", "プリディレイ", "高い音を落とす", "低い音を落とす", "広がり", "ミックス"]);
+    expect(names("delay")).toEqual(["間隔", "間隔", "テンポに合わせる", "くり返し", "高い音を落とす", "低い音を落とす", "左右にゆれる", "ミックス"]);
+  });
+});
+
+describe("約束 14: 計器（版 3）の戻り A ・ B", () => {
+  it("偽物が書いた物を、読み手が同じに読む", () => {
+    const bytes = encodeTelemetry({ master: [0.5, 0.25], returns: [[0.125, 0.0625], [0, 2]], tracks: [[0.75, 1]] }, 3, 1000, 1);
+    const t = decodeTelemetry(bytes);
+    expect(Array.from(t.returnPeaks)).toEqual([0.125, 0.0625, 0, 2]);
+    expect(Array.from(t.trackPeaks)).toEqual([0.75, 1]);
+    expect(t.masterPeak).toEqual([0.5, 0.25]);
+    expect(Array.from(decodeTelemetry(encodeTelemetry({}, 0, 0, 0)).returnPeaks)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("約束 14: 偽物の「決める」と「音だけ変える」", () => {
+  const run = (s: AppState, command: Command) => reduceMixer(s, s.shelf, s.song, command);
+
+  it("commit: false は状態を変えない。commit: true で曲が変わり、範囲に入る", () => {
+    const s = scene("mixer");
+    const track = { kind: "track", id: s.song.tracks[0]!.id } as const;
+    expect(run(s, { type: "setGain", strip: track, db: -9, commit: false })!.song).toEqual(s.song);
+    expect(run(s, { type: "setGain", strip: track, db: -9, commit: true })!.song.tracks[0]!.gainDb).toBe(-9);
+    expect(run(s, { type: "setGain", strip: track, db: -70, commit: true })!.song.tracks[0]!.gainDb).toBeNull();
+    expect(run(s, { type: "setGain", strip: { kind: "master" }, db: 9, commit: true })!.song.master.gainDb).toBe(6);
+    expect(run(s, { type: "setPan", strip: { kind: "return", bus: "b" }, pan: 150, commit: true })!.song.returns[1].pan).toBe(100);
+    expect(run(s, { type: "setSend", track: track.id, bus: "b", db: -18, commit: true })!.song.tracks[0]!.sends).toEqual([-15, -18]);
+    expect(run(s, { type: "toggleReturnMute", bus: "a" })!.song.returns[0].muted).toBe(true);
+    const insert = s.params.selected!.insert;
+    const set = (value: number, commit: boolean) => run(s, { type: "setParam", insert, effect: "reverb", param: 0, value, commit })!.params.selected!.values[0];
+    expect(set(5, false)).toBe(2.4);
+    expect(set(5, true)).toBe(5);
+    expect(set(99, true)).toBe(10);
+    expect(run(s, { type: "setParam", insert, effect: "delay", param: 0, value: 1, commit: true })!.params).toEqual(s.params);
+  });
+
+  it("えらぶ: インサートの枠、パラメータの行、棚からエフェクトを入れる", () => {
+    const s = scene("shelfEffects");
+    const master: InsertRef = { strip: { kind: "master" }, slot: 0 };
+    const picked = run(s, { type: "selectInsert", insert: master })!;
+    expect(picked.params.selected).toEqual({ insert: master, effect: "limiter", values: [-0.3, 0, 100], row: null });
+    expect(picked.showParams).toBe(true);
+    expect(run(s, { type: "selectInsert", insert: { strip: { kind: "master" }, slot: 1 } })!.params.selected).toBeNull();
+    expect(run(s, { type: "selectParam", param: 6 })!.params.selected!.row).toBe(6);
+    expect(run(s, { type: "selectParam", param: 7 })!.params.selected!.row).toBeNull();
+    expect(run(s, { type: "shelfSelectEffect", effect: "chorus" })!.shelf.selectedEffect).toBe("chorus");
+
+    const added = run(s, { type: "shelfConfirm" })!;
+    const track = { kind: "track", id: s.song.tracks[0]!.id } as const;
+    expect(added.song.tracks[0]!.inserts).toEqual([null, "compressor", null, null]);
+    expect(added.params.selected).toEqual({ insert: { strip: track, slot: 1 }, effect: "compressor", values: effectDefaults("compressor"), row: null });
+    expect(added.shelf.mode).toEqual({ kind: "newTrack" });
+    expect(added.shelf.selectedEffect).toBeNull();
+    const after = { ...s, song: added.song, params: added.params, shelf: added.shelf };
+    const removed = run(after, { type: "removeEffect", insert: { strip: track, slot: 1 } })!;
+    expect(removed.song.tracks[0]!.inserts).toEqual([null, null, null, null]);
+    expect(removed.params.selected).toBeNull();
+    // 音源の棚の Enter は、ここでは扱わない。
+    expect(run(scene("shelfAudition"), { type: "shelfConfirm" })).toBeNull();
+  });
+});

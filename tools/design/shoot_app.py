@@ -84,6 +84,18 @@ STATES = {
     "pianoRollSong": dict(board="A-PianoRoll", remembered=True, song=200,
                           commands=[(600, {"type": "selectClip", "clip": 2}),
                                     (800, {"type": "toggleBand", "band": "pianoRoll"})], snap=2500),
+    # Round 4: two tracks added through the shelf, one renamed, one recolored and moved to the top.
+    "tracks": dict(board="R7-Arrange6", remembered=True, snap=3600, commands=[
+        (400, {"type": "openShelf", "mode": {"kind": "newTrack"}}),
+        (700, {"type": "shelfSelect", "instrument": "sine"}),
+        (1000, {"type": "shelfConfirm"}),
+        (1300, {"type": "shelfSelect", "instrument": "sine"}),
+        (1600, {"type": "shelfConfirm"}),
+        (1900, {"type": "renameTrack", "track": 2, "name": "リード"}),
+        (2200, {"type": "setTrackColor", "track": 3, "color": 4}),
+        (2500, {"type": "moveTrack", "track": 3, "to": 0}),
+        (2800, {"type": "back"}),
+    ]),
     "plugIn": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "3"]], snap=1500),
     "plugOut": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "2"]], snap=4000),
 }

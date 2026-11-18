@@ -15,30 +15,6 @@ use std::time::Instant;
 use meloet_sound::sampler::{Sampler, load_instrument, read_pack};
 use shared::*;
 
-/// C, Am, F and G for two beats each; over the G the right hand climbs.
-fn keys_phrase() -> Phrase {
-    let chords: [(u8, [u8; 3]); 4] = [
-        (48, [60, 64, 67]),
-        (45, [60, 64, 69]),
-        (41, [60, 65, 69]),
-        (43, [59, 62, 67]),
-    ];
-    let mut phrase = Phrase::new();
-    for (i, (bass, hand)) in chords.into_iter().enumerate() {
-        let start = i as f64;
-        phrase.push((start, 0.95, bass));
-        // The last chord is short in the right hand: it goes on into the line.
-        let length = if i == 3 { 0.24 } else { 0.95 };
-        phrase.extend(hand.map(|key| (start, length, key)));
-    }
-    for (i, key) in [71, 74, 79].into_iter().enumerate() {
-        let last = i == 2;
-        let length = if last { 0.45 } else { 0.24 };
-        phrase.push((3.0 + (i + 1) as f64 * EIGHTH, length, key));
-    }
-    phrase
-}
-
 fn phrase_for(name: &str) -> Phrase {
     let name = name.to_lowercase();
     if name.contains("bass") {

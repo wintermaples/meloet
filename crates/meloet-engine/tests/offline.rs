@@ -458,6 +458,11 @@ fn swapped_out_instrument_comes_back_instead_of_being_dropped() {
         "the new instrument is the one rendering"
     );
     assert!(
+        rig.parts.handle.take_retired().is_none(),
+        "the placeholder synth is still fading out"
+    );
+    rig.parts.engine.process(&mut out, BlockTiming::default());
+    assert!(
         rig.parts.handle.take_retired().is_some(),
         "the placeholder synth came back"
     );
@@ -468,6 +473,12 @@ fn swapped_out_instrument_comes_back_instead_of_being_dropped() {
             .swap_instrument(0, probe(0.5, &second_dropped))
             .is_ok()
     );
+    rig.parts.engine.process(&mut out, BlockTiming::default());
+    assert!(
+        out[0] > 0.7 && out[0] <= 0.75,
+        "the old one fades out under it"
+    );
+    assert!(out[510] > 0.5 && out[510] < out[0]);
     rig.parts.engine.process(&mut out, BlockTiming::default());
     assert_eq!(&out[510..], &[0.5, -0.5]);
     assert!(
@@ -674,9 +685,10 @@ fn level_probe(level: f32) -> (Box<Probe>, Arc<AtomicBool>) {
     (probe, dropped)
 }
 
-/// One block; the left level of its last frame.
+/// Two blocks, in which whatever was replaced fades out; the left level of the last frame.
 fn level_after_a_block(rig: &mut Rig) -> f32 {
     let mut out = [0.0f32; 512];
+    rig.parts.engine.process(&mut out, BlockTiming::default());
     rig.parts.engine.process(&mut out, BlockTiming::default());
     out[510]
 }
@@ -854,6 +866,8 @@ fn tracks_tried_moved_and_emptied_under_load_do_not_allocate_in_audio_blocks() {
                 track: 10 + block % 5,
             }),
             31 => rig.send(EngineCommand::ClearPlayTarget),
+            33 | 34 => assert!(rig.parts.handle.play_sample(synth()).is_ok()),
+            35 => rig.send(EngineCommand::StopSample),
             37 => {
                 rig.send(EngineCommand::ClearTrack { track });
                 assert!(rig.parts.handle.swap_instrument(track, synth()).is_ok());
@@ -870,6 +884,184 @@ fn tracks_tried_moved_and_emptied_under_load_do_not_allocate_in_audio_blocks() {
         while rig.parts.handle.pop_latency().is_some() {}
     }
     assert!(heard > 0.05, "the run made sound");
+    assert_eq!(
+        common::audio_block_counts(),
+        (0, 0),
+        "(allocations, frees) inside audio blocks"
+    );
+}
+
+/// The same level on both sides until it is reset, which silences it.
+struct Steady {
+    level: f32,
+    resets: Arc<AtomicUsize>,
+}
+
+impl Instrument for Steady {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+    fn event(&mut self, _ev: InstrumentEvent) {}
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        left.fill(self.level);
+        right.fill(self.level);
+    }
+    fn reset(&mut self) {
+        self.resets.fetch_add(1, Relaxed);
+        self.level = 0.0;
+    }
+}
+
+fn steady(level: f32) -> (Box<Steady>, Arc<AtomicUsize>) {
+    let resets = Arc::new(AtomicUsize::new(0));
+    let sound = Box::new(Steady {
+        level,
+        resets: resets.clone(),
+    });
+    (sound, resets)
+}
+
+/// No frame differs from the one before by more than `most`.
+fn assert_no_step(samples: &[f32], most: f32, what: &str) {
+    for (i, pair) in samples.windows(2).enumerate() {
+        let step = (pair[1] - pair[0]).abs();
+        assert!(step <= most, "{what}: a step of {step} at frame {i}");
+    }
+}
+
+#[test]
+fn a_replaced_instrument_fades_out_over_ten_milliseconds() {
+    let fade = (meloet_engine::FADE_S * RATE as f32) as usize;
+    assert_eq!(fade, 480);
+    // Blocks that do not divide the fade, so that it runs over the seams.
+    let mut rig = Rig::with(EngineConfig::default(), 100);
+    assert!(rig.parts.handle.swap_instrument(0, steady(0.5).0).is_ok());
+    rig.run(1000);
+    rig.parts.handle.drop_retired();
+
+    // Swap: the old one goes down to nothing under the silent new one.
+    assert!(rig.parts.handle.swap_instrument(0, steady(0.0).0).is_ok());
+    let out = rig.run(600);
+    assert_eq!(out[0], 0.5, "no jump at the swap");
+    assert!((out[240] - 0.25).abs() < 0.002, "half way: {}", out[240]);
+    assert!(out[479] > 0.0 && out[479] < 0.002);
+    assert_eq!(peak(&out[480..]), 0.0);
+    assert_no_step(&out, 0.5 / 470.0, "swap");
+    assert_eq!(rig.parts.handle.drop_retired(), 1, "then it comes back");
+
+    // A trial: the track's own one fades out, is reset once, and stays aside.
+    let (own, own_resets) = steady(0.5);
+    assert!(rig.parts.handle.swap_instrument(0, own).is_ok());
+    rig.run(600);
+    rig.parts.handle.drop_retired();
+    assert!(rig.parts.handle.try_instrument(0, steady(0.0).0).is_ok());
+    let out = rig.run(600);
+    assert_eq!(out[0], 0.5);
+    assert_no_step(&out, 0.5 / 470.0, "trial");
+    assert_eq!(peak(&out[480..]), 0.0);
+    assert_eq!(own_resets.load(Relaxed), 1);
+    assert_eq!(rig.parts.handle.drop_retired(), 0, "the own one is kept");
+
+    // Another one tried, and the trial ended: each time what sounded fades out.
+    assert!(rig.parts.handle.try_instrument(0, steady(0.25).0).is_ok());
+    rig.run(600);
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    assert!(rig.parts.handle.try_instrument(0, steady(0.0).0).is_ok());
+    let out = rig.run(600);
+    assert_eq!(out[0], 0.25);
+    assert_no_step(&out, 0.25 / 470.0, "the second one tried");
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    assert!(rig.parts.handle.try_instrument(0, steady(0.25).0).is_ok());
+    rig.run(600);
+    rig.parts.handle.drop_retired();
+    rig.send(EngineCommand::EndTrial {
+        track: 0,
+        keep: false,
+    });
+    let out = rig.run(600);
+    assert_eq!(
+        out[0], 0.25,
+        "the own one is silent: only the tried one sounds on"
+    );
+    assert_no_step(&out, 0.25 / 470.0, "the end of the trial");
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    assert_eq!(own_resets.load(Relaxed), 1);
+
+    // Replaced again before the fade is over: the one fading goes back at once, never dropped.
+    assert!(rig.parts.handle.swap_instrument(0, steady(0.5).0).is_ok());
+    rig.run(100);
+    assert!(rig.parts.handle.swap_instrument(0, steady(0.0).0).is_ok());
+    rig.run(100);
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    rig.run(500);
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    assert_eq!(
+        common::audio_block_counts(),
+        (0, 0),
+        "(allocations, frees) inside audio blocks"
+    );
+}
+
+#[test]
+fn fades_end_at_once_when_no_stream_runs() {
+    let mut rig = Rig::new();
+    let (own, own_resets) = steady(0.5);
+    assert!(rig.parts.handle.swap_instrument(0, own).is_ok());
+    rig.parts.engine.settle();
+    assert_eq!(rig.parts.handle.drop_retired(), 1, "the placeholder synth");
+    assert!(rig.parts.handle.try_instrument(0, steady(0.25).0).is_ok());
+    assert!(rig.parts.handle.play_sample(steady(0.25).0).is_ok());
+    rig.send(EngineCommand::StopSample);
+    rig.parts.engine.settle();
+    assert_eq!(own_resets.load(Relaxed), 1, "set aside, silent");
+    assert_eq!(rig.parts.handle.drop_retired(), 1, "the sample");
+    assert_eq!(peak(&rig.run(256)), 0.25);
+
+    // A new stream: whatever fades out is gone, and so is the sample.
+    assert!(rig.parts.handle.swap_instrument(0, steady(0.5).0).is_ok());
+    assert!(rig.parts.handle.play_sample(steady(0.125).0).is_ok());
+    rig.run(100);
+    rig.parts.engine.prepare(48_000);
+    assert_eq!(rig.parts.handle.drop_retired(), 2);
+    assert_eq!(rig.run(256)[0], 0.5);
+}
+
+#[test]
+fn the_sample_seat_goes_to_the_master_and_to_no_track() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    assert!(rig.parts.handle.play_sample(steady(0.25).0).is_ok());
+    // Nothing a track obeys reaches it.
+    rig.send(EngineCommand::SetSilentTracks {
+        tracks: (0..=meters.track_count()).collect(),
+    });
+    rig.send(EngineCommand::AllNotesOff);
+    rig.send(EngineCommand::ClearPlayTarget);
+    let out = rig.run(512);
+    assert_eq!(out[0], 0.25);
+    assert_eq!(out[511], 0.25);
+    assert!(meters.take_master_peak()[0] >= 0.25);
+    for track in 0..=meters.track_count() {
+        assert_eq!(meters.take_track_peak(track), [0.0, 0.0]);
+    }
+    assert!(rig.parts.handle.pop_recorded().is_none());
+
+    // Another sample: the one playing fades out under it.
+    assert!(rig.parts.handle.play_sample(steady(0.0).0).is_ok());
+    let out = rig.run(600);
+    assert_eq!(out[0], 0.25);
+    assert_no_step(&out, 0.25 / 470.0, "another sample");
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+
+    assert!(rig.parts.handle.play_sample(steady(0.25).0).is_ok());
+    rig.run(600);
+    rig.parts.handle.drop_retired();
+    rig.send(EngineCommand::StopSample);
+    let out = rig.run(600);
+    assert_eq!(out[0], 0.25);
+    assert_no_step(&out, 0.25 / 470.0, "stopped");
+    assert_eq!(peak(&out[480..]), 0.0);
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    rig.send(EngineCommand::StopSample);
+    assert_eq!(peak(&rig.run(256)), 0.0, "nothing to stop");
     assert_eq!(
         common::audio_block_counts(),
         (0, 0),

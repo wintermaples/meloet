@@ -12,8 +12,8 @@ use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::quantize;
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{
-    Clip, ClipEdited, ClipId, Doc, History, InstrumentRef, Meter, Note, OriginIndex, Song,
-    StepKind, TakeId, Tempo, TickRange, TrackId, arrange, roll,
+    Clip, ClipEdited, ClipId, Doc, History, InstrumentGroup, InstrumentRef, Meter, Note,
+    OriginIndex, Song, StepKind, TakeId, Tempo, TickRange, TrackId, arrange, roll,
 };
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, LiveNote,
@@ -23,6 +23,7 @@ use meloet_protocol::{
     TransportState, TransportView,
 };
 
+use crate::instruments::Sounds;
 use crate::state::Effect;
 
 /// Bars the loop gets when it is turned on with no range.
@@ -154,6 +155,13 @@ pub enum EngineOp {
     PlayTarget {
         seat: Option<usize>,
     },
+    // The two below are for an open stream only, as the ones at the top.
+    /// The sample phrase of this instrument's group, played with it on the engine's sample
+    /// seat from its start. A sample that is playing fades out under it.
+    PlaySample {
+        instrument: InstrumentRef,
+    },
+    StopSample,
 }
 
 /// Selected notes and control points: indexes, in order, into the notes and the controls of
@@ -335,6 +343,7 @@ pub struct Play {
     /// What the engine was last told by `EngineOp::PlayTarget`.
     target_sent: Option<usize>,
     shelf: Shelf,
+    sounds: Sounds,
 }
 
 impl Play {
@@ -345,6 +354,7 @@ impl Play {
             target_sent: song.session.play_target.and_then(|t| seats.of(t)),
             seats,
             shelf: Shelf::default(),
+            sounds: Sounds::default(),
             song,
             history: History::new(),
             state: TransportState::Stopped,
@@ -1709,7 +1719,14 @@ impl Play {
             None => WriteAt::Track(self.song.session.play_target?),
         };
         let scale = self.song.session.roll.scale;
-        if scale.lock && !scale.contains(note.key) {
+        let track = match at {
+            WriteAt::Clip(clip) => self.doc().clip(clip).map(|(t, _)| t),
+            WriteAt::Track(track) => self.doc().track(track),
+        };
+        // A drum kit has no scale: every key is one of its instruments.
+        let InstrumentRef::Builtin(instrument) = track?.instrument;
+        let drums = instrument.group() == InstrumentGroup::Drums;
+        if scale.lock && !drums && !scale.contains(note.key) {
             return Some(StatusMessage::OutOfScale {
                 key: note.key,
                 root: scale.root(),
@@ -2110,6 +2127,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 mod mix;
 mod seats;
 mod shelf;
+mod sounds;
 mod tracks;
 
 use seats::Seats;

@@ -12,15 +12,6 @@ use meloet_engine::Instrument;
 use meloet_sound::synth::{ElectroKit, PolySynth, SineSynth};
 use shared::*;
 
-fn lead_line() -> Phrase {
-    let mut line = eighths(
-        &[72, 76, 79, 76, 81, 79, 76, 74, 72, 74, 76, 79, 84, 79, 76],
-        0.2,
-    );
-    line.push((15.0 * EIGHTH, 0.45, 72));
-    line
-}
-
 fn main() -> std::io::Result<()> {
     let dir = std::env::args()
         .nth(1)

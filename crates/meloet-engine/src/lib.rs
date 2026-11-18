@@ -17,7 +17,7 @@ pub use clock::{HeardPosition, TransportClock, TransportState};
 pub use effect::{Effect, EffectContext};
 pub use engine::{
     BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
-    EngineParts, LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,
+    EngineParts, FADE_S, LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,
 };
 pub use instrument::{Instrument, InstrumentEvent};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};

@@ -6,6 +6,7 @@ use meloet_midi::Keyboard;
 use meloet_protocol::{Band, InstrumentKind, ServerMessage, ShelfMode, StatusMessage};
 
 use super::*;
+use crate::instruments::Samples;
 
 fn keyboard() -> Keyboard {
     Keyboard {
@@ -350,6 +351,7 @@ fn the_real_keyboard_and_headphones_show_up_within_two_seconds() {
         audio: true,
         songs_dir: None,
         state_dir: None,
+        sounds_dir: None,
     });
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -401,6 +403,7 @@ fn the_remembered_headphones_open_and_silence_sends_no_telemetry() {
         audio: true,
         songs_dir: None,
         state_dir: None,
+        sounds_dir: None,
     });
     let (_messages, telemetry) = subscribe(&core);
 
@@ -802,7 +805,13 @@ impl SeatRig {
         });
         let meters = parts.handle.meters().clone();
         SeatRig {
-            audio: Audio::new(parts.engine, parts.handle, false, model.engine_seats()),
+            audio: Audio::new(
+                parts.engine,
+                parts.handle,
+                false,
+                Library::open(None, Box::new(|_, _| {})),
+                model.engine_seats(),
+            ),
             model,
             midi: parts.midi_in,
             meters,
@@ -919,4 +928,211 @@ fn keys_sound_on_the_selected_track_and_on_what_the_shelf_auditions_without_a_st
         [1],
         "track 1 is on the engine made anew too"
     );
+}
+
+/// The real engine with no stream and a little sound pack: the rules, the library and the
+/// thread that reads, joined as the core thread joins them.
+struct SoundRig {
+    seats: SeatRig,
+    read: Receiver<(BuiltinInstrument, Result<Arc<SampleBank>, LoadError>)>,
+    dir: PathBuf,
+}
+
+impl SoundRig {
+    fn new(label: &str, instruments: &[BuiltinInstrument]) -> SoundRig {
+        let dir = crate::sounds::tests::tiny_pack(label, instruments);
+        let (tx, read) = channel();
+        let done = move |instrument, bank| {
+            let _ = tx.send((instrument, bank));
+        };
+        let library = Library::open(Some(&dir), Box::new(done));
+        let model = Model::new(Settings::default()).with_sounds(library.installed());
+        let parts = Engine::new(EngineConfig {
+            max_tracks: MAX_TRACKS,
+            ..EngineConfig::default()
+        });
+        let meters = parts.handle.meters().clone();
+        let audio = Audio::new(
+            parts.engine,
+            parts.handle,
+            false,
+            library,
+            model.engine_seats(),
+        );
+        let seats = SeatRig {
+            audio,
+            model,
+            midi: parts.midi_in,
+            meters,
+        };
+        SoundRig { seats, read, dir }
+    }
+
+    fn handle(&mut self, input: Input) {
+        let rig = &mut self.seats;
+        for effect in rig.model.handle(input) {
+            match effect {
+                Effect::Engine(op) => rig.audio.op(op),
+                Effect::LoadSound(instrument) => rig.audio.sounds.load(instrument),
+                Effect::DropSound(instrument) => rig.audio.sounds.let_go(instrument),
+                _ => {}
+            }
+        }
+    }
+
+    fn send(&mut self, command: Command) {
+        self.handle(Input::Command(command));
+    }
+
+    /// Waits for the reading thread's next answer and takes it in.
+    fn read_one(&mut self) -> BuiltinInstrument {
+        let (instrument, read) = self.read.recv_timeout(Duration::from_secs(10)).unwrap();
+        let bank = read.unwrap();
+        self.seats.audio.sounds.keep(instrument, bank);
+        self.handle(Input::SoundLoaded(instrument));
+        instrument
+    }
+
+    fn in_memory(&self) -> Vec<BuiltinInstrument> {
+        self.seats.audio.sounds.in_memory()
+    }
+}
+
+impl Drop for SoundRig {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+#[test]
+fn seats_are_silent_until_their_samples_are_read_and_samples_nothing_needs_are_let_go() {
+    use BuiltinInstrument as B;
+    let mut rig = SoundRig::new("seats", &[B::GrandPiano, B::Strings, B::Organ]);
+    assert_eq!(
+        rig.seats.sounding(),
+        [] as [usize; 0],
+        "the piano is not read yet"
+    );
+    rig.handle(Input::Tick);
+    assert_eq!(rig.read_one(), B::GrandPiano);
+    assert_eq!(rig.seats.sounding(), [0], "the piano of the new song");
+    assert_eq!(rig.in_memory(), [B::GrandPiano]);
+
+    // A row of the shelf: silent on the audition seat, then sounding.
+    rig.send(Command::OpenShelf {
+        mode: ShelfMode::NewTrack,
+    });
+    rig.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::Strings),
+    });
+    assert_eq!(
+        rig.seats.model.view().shelf.loading,
+        Some(InstrumentKind::Strings)
+    );
+    assert_eq!(rig.seats.sounding(), [] as [usize; 0]);
+    assert_eq!(rig.read_one(), B::Strings);
+    assert_eq!(rig.seats.model.view().shelf.loading, None);
+    assert_eq!(rig.seats.sounding(), [AUDITION_SEAT]);
+
+    // The next row; the strings stay as the row before, and go with the row after that.
+    rig.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::Organ),
+    });
+    assert_eq!(rig.read_one(), B::Organ);
+    assert_eq!(rig.in_memory(), [B::GrandPiano, B::Strings, B::Organ]);
+    rig.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::SynthLead),
+    });
+    assert_eq!(rig.in_memory(), [B::GrandPiano, B::Organ]);
+    assert_eq!(rig.seats.sounding(), [AUDITION_SEAT], "a computed one");
+    // Entered as a track; the shelf closes: only what the song sounds with stays.
+    rig.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::Organ),
+    });
+    rig.send(Command::ShelfConfirm);
+    assert_eq!(rig.seats.sounding(), [1]);
+    rig.send(Command::ToggleBand { band: Band::Shelf });
+    assert_eq!(rig.in_memory(), [B::GrandPiano, B::Organ]);
+    rig.send(Command::Undo);
+    assert_eq!(rig.in_memory(), [B::GrandPiano]);
+    assert_eq!(rig.seats.sounding(), [0]);
+
+    // The samples of an instrument that left go when the last instrument made with them does.
+    let Samples::Ready(piano) = rig.seats.audio.sounds.samples(B::GrandPiano) else {
+        panic!("the piano is read");
+    };
+    assert_eq!(
+        Arc::strong_count(&piano),
+        3,
+        "the library, the seat and here"
+    );
+    rig.send(Command::DeleteTrack { track: 1 });
+    assert_eq!(rig.in_memory(), [] as [B; 0]);
+    assert_eq!(
+        Arc::strong_count(&piano),
+        1,
+        "the instrument came back and was dropped"
+    );
+}
+
+#[test]
+fn a_song_from_a_pc_with_more_sounds_plays_as_the_sine_wave() {
+    use BuiltinInstrument as B;
+    let mut rig = SoundRig::new("missing", &[B::Strings]);
+    rig.handle(Input::Tick);
+    assert_eq!(
+        rig.seats.sounding(),
+        [0],
+        "the piano this pack does not have"
+    );
+    assert!(rig.read.try_recv().is_err(), "nothing was read for it");
+    let view = rig.seats.model.view();
+    assert_eq!(view.song.tracks[0].instrument, InstrumentKind::GrandPiano);
+    assert!(!view.shelf.available.contains(&InstrumentKind::GrandPiano));
+    assert!(view.shelf.available.contains(&InstrumentKind::Strings));
+}
+
+#[test]
+fn the_core_reads_the_sounds_off_its_thread_and_says_when_a_row_is_ready() {
+    use BuiltinInstrument as B;
+    let dir = crate::sounds::tests::tiny_pack("core", &[B::GrandPiano, B::StudioKit]);
+    std::fs::write(dir.join("studioKit/instrument.json"), "not json").unwrap();
+    let core = Core::start(CoreOptions {
+        sounds_dir: Some(dir.clone()),
+        ..CoreOptions::offline()
+    });
+    let shelf = core.snapshot().state.shelf;
+    assert_eq!(shelf.available[0], InstrumentKind::GrandPiano);
+    assert!(shelf.available.contains(&InstrumentKind::StudioKit));
+    assert_eq!(shelf.available.len(), 7);
+
+    core.send(Command::OpenShelf {
+        mode: ShelfMode::NewTrack,
+    });
+    core.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::GrandPiano),
+    });
+    let until = Instant::now() + Duration::from_secs(10);
+    while core.snapshot().state.shelf.loading.is_some() {
+        assert!(Instant::now() < until, "the piano was never read");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        core.snapshot().state.shelf.selected,
+        Some(InstrumentKind::GrandPiano)
+    );
+
+    // Samples that do not read: the row is put away and the instrument leaves the shelf.
+    core.send(Command::ShelfSelect {
+        instrument: Some(InstrumentKind::StudioKit),
+    });
+    while core.snapshot().state.shelf.available.len() == 7 {
+        assert!(Instant::now() < until, "the kit never left the shelf");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let shelf = core.snapshot().state.shelf;
+    assert!(!shelf.available.contains(&InstrumentKind::StudioKit));
+    assert_eq!((shelf.selected, shelf.loading), (None, None));
+    core.stop();
+    let _ = std::fs::remove_dir_all(dir);
 }

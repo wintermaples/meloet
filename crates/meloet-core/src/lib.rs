@@ -13,6 +13,7 @@ pub mod recovery;
 mod service;
 pub mod settings;
 pub mod songfile;
+mod sounds;
 pub mod state;
 
 pub use hub::{MessageSink, TelemetrySink};

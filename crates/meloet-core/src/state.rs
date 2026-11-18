@@ -134,6 +134,10 @@ pub enum Input {
     /// The PC is ending (a signal, logind). Answered with [`Effect::WriteRecovery`] with
     /// `ending`, or [`Effect::EndingReady`] when there is nothing to write.
     PcEnding,
+    /// An answer to [`Effect::LoadSound`]: the samples of the instrument are in memory.
+    SoundLoaded(BuiltinInstrument),
+    /// The other answer to [`Effect::LoadSound`]: they do not read.
+    SoundUnreadable(BuiltinInstrument),
 }
 
 /// Where [`Effect::SaveSong`] writes.
@@ -199,6 +203,12 @@ pub enum Effect {
     EndingReady,
     /// Show the file in the PC's file manager.
     ShowFile(PathBuf),
+    /// Read the samples of the instrument into memory, off the core thread. Answer with
+    /// [`Input::SoundLoaded`] or [`Input::SoundUnreadable`].
+    LoadSound(BuiltinInstrument),
+    /// Let go of the samples of the instrument, read or still to be read. Instruments that
+    /// sound with them keep them until they are gone themselves.
+    DropSound(BuiltinInstrument),
 }
 
 pub struct Model {
@@ -327,6 +337,12 @@ impl Model {
             },
             favorites: settings.favorites,
         }
+    }
+
+    /// `installed`: the sampled instruments the sound pack of this PC has.
+    pub fn with_sounds(mut self, installed: Vec<BuiltinInstrument>) -> Model {
+        self.play.set_installed_sounds(installed);
+        self
     }
 
     /// Whether [`Input::SoundHeard`] would change anything now.
@@ -469,6 +485,10 @@ impl Model {
             | Input::SongUnreadable { .. } => self.song_input(input, &mut effects),
             Input::RecoveryFound(start) => self.recovery_start(*start, &mut effects),
             Input::PcEnding => self.pc_ending(&mut effects),
+            Input::SoundLoaded(instrument) => self.play.sound_loaded(instrument, &mut effects),
+            Input::SoundUnreadable(instrument) => {
+                self.play.sound_unreadable(instrument, &mut effects);
+            }
         }
         if !self.bands.side_is_open(SidePanel::Shelf) {
             self.play.shelf_closed(&mut effects);
@@ -480,6 +500,7 @@ impl Model {
             } else {
                 Cut::Output
             };
+            self.play.stop_sample(&mut effects);
             let was_recording = self.play.is_recording();
             let take = self.play.stream_gone(&mut effects);
             if let (true, Some(take)) = (was_recording, take) {
@@ -495,6 +516,8 @@ impl Model {
         self.watch_buffer();
         self.play.sync_silent(&mut effects);
         self.play.sync_target(&mut effects);
+        self.play.sync_sample(&mut effects);
+        self.play.sync_sounds(&mut effects);
         self.close_when_recorded(&mut effects);
         self.recovery_tick(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
@@ -788,7 +811,15 @@ impl Model {
             Command::ShelfCancel => {
                 self.play.end_audition(effects);
             }
-            Command::PlaySample { .. } | Command::StopSample => {}
+            Command::PlaySample { instrument } => {
+                if self.bands.side_is_open(SidePanel::Shelf) {
+                    let ms = self.audio_view().latency_ms.unwrap_or(0.0);
+                    let latency_us = (ms * 1000.0) as u64;
+                    self.play
+                        .play_sample(instrument, can_play, latency_us, effects);
+                }
+            }
+            Command::StopSample => self.play.stop_sample(effects),
             Command::SelectClips { clips, mode } => self.play.select_clips(clips, mode),
             Command::SelectAllClips => self.play.select_all_clips(),
             Command::CopyClips { clips } => self.play.copy_clips(&clips),
@@ -1132,6 +1163,11 @@ impl Model {
         )
     }
 
+    /// A sample plays: [`Input::Tick`] is wanted now and then, to end it.
+    pub fn sample_playing(&self) -> bool {
+        self.play.sample_playing()
+    }
+
     /// The instruments and the play target, for an engine that has none yet.
     pub fn engine_seats(&self) -> Vec<EngineOp> {
         self.play.engine_seats()
@@ -1338,6 +1374,9 @@ impl Model {
             return self.notice.clone();
         }
         if let Some(m) = self.play.audition_status() {
+            return Some(m);
+        }
+        if let Some(m) = self.play.sample_status() {
             return Some(m);
         }
         let Some(active) = active else {

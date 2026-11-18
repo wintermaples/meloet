@@ -1,25 +1,93 @@
-//! The instruments of the model as the screen names them.
+//! The instruments of the model as the screen names them, which of them this PC can sound,
+//! and the one place where they are made.
 
-use meloet_engine::{Instrument, PlaceholderSynth};
+use std::sync::Arc;
+
+use meloet_engine::{Instrument, InstrumentEvent, PlaceholderSynth};
 use meloet_model::{BuiltinInstrument, InstrumentRef};
 use meloet_protocol::InstrumentKind;
+use meloet_sound::sampler::{SampleBank, Sampler};
+use meloet_sound::synth::{ElectroKit, PolySynth};
 
-/// The instruments whose sound is in meloet, in the order of the shelf: the rows the shelf
-/// shows.
-pub(crate) fn available() -> Vec<BuiltinInstrument> {
-    #[cfg(test)]
-    if tests::EVERY_SOUND.get() {
-        return BuiltinInstrument::all().collect();
+/// Whether the instrument sounds with samples of the sound pack. The others are computed and
+/// are always there.
+pub(crate) fn sampled(instrument: BuiltinInstrument) -> bool {
+    use BuiltinInstrument as B;
+    match instrument {
+        B::GrandPiano | B::ElectricPiano | B::Organ | B::FingerBass | B::StudioKit | B::Strings => {
+            true
+        }
+        B::SynthBass | B::ElectroKit | B::WarmPad | B::SynthLead | B::Sine => false,
     }
-    vec![BuiltinInstrument::Sine]
+}
+
+/// What the rules know about the samples: which sampled instruments the pack on this PC has,
+/// and which of those are in memory or on their way there. The samples themselves are with
+/// the core thread ([`crate::sounds::Library`]).
+#[derive(Debug, Default)]
+pub(crate) struct Sounds {
+    pub installed: Vec<BuiltinInstrument>,
+    pub loaded: Vec<BuiltinInstrument>,
+    pub loading: Vec<BuiltinInstrument>,
+}
+
+impl Sounds {
+    /// The instruments that can sound on this PC, in the order of the shelf: the rows the
+    /// shelf shows.
+    pub fn available(&self) -> Vec<BuiltinInstrument> {
+        #[cfg(test)]
+        if tests::EVERY_SOUND.get() {
+            return BuiltinInstrument::all().collect();
+        }
+        BuiltinInstrument::all()
+            .filter(|i| !sampled(*i) || self.installed.contains(i))
+            .collect()
+    }
+
+    /// Whether an instrument made now sounds: it is computed, its samples are in memory, or
+    /// the pack does not have it (it then sounds as the sine wave).
+    pub fn ready(&self, instrument: BuiltinInstrument) -> bool {
+        !self.installed.contains(&instrument) || self.loaded.contains(&instrument)
+    }
+}
+
+/// The samples of an instrument, as far as they are there when it is made.
+pub(crate) enum Samples {
+    Ready(Arc<SampleBank>),
+    /// The pack has them, and they are not in memory (yet).
+    NotRead,
+    NotInstalled,
+}
+
+/// Sounds nothing: on a seat until the samples of its instrument are read.
+struct Silent;
+
+impl Instrument for Silent {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+    fn event(&mut self, _ev: InstrumentEvent) {}
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        left.fill(0.0);
+        right.fill(0.0);
+    }
+    fn reset(&mut self) {}
 }
 
 /// The one place where instruments are made. Call it outside the audio thread; the engine's
-/// handle prepares what it gets. An instrument whose sound is not in meloet yet sounds as the
-/// sine wave, so that a track with it is never silent.
-pub(crate) fn make(instrument: &InstrumentRef) -> Box<dyn Instrument> {
-    match instrument {
-        InstrumentRef::Builtin(_) => Box::new(PlaceholderSynth::new()),
+/// handle prepares what it gets. `samples`: those of this instrument. A sampled instrument
+/// the pack does not have (a song from a PC that has it) sounds as the sine wave, so that
+/// its track is not silent and nobody takes its notes for lost.
+pub(crate) fn make(instrument: &InstrumentRef, samples: Samples) -> Box<dyn Instrument> {
+    use BuiltinInstrument as B;
+    let InstrumentRef::Builtin(builtin) = instrument;
+    match (builtin, samples) {
+        (B::SynthLead, _) => Box::new(PolySynth::lead()),
+        (B::SynthBass, _) => Box::new(PolySynth::bass()),
+        (B::WarmPad, _) => Box::new(PolySynth::pad()),
+        (B::ElectroKit, _) => Box::new(ElectroKit::new()),
+        (B::Sine, _) => Box::new(PlaceholderSynth::new()),
+        (_, Samples::Ready(bank)) => Box::new(Sampler::new(bank)),
+        (_, Samples::NotRead) => Box::new(Silent),
+        (_, Samples::NotInstalled) => Box::new(PlaceholderSynth::new()),
     }
 }
 

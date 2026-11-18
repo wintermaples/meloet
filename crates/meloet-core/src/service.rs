@@ -15,16 +15,18 @@ use std::time::{Duration, Instant};
 use meloet_devices::{DeviceWatcher, DevicesError, DevicesEvent};
 use meloet_engine::{
     AudioOutput, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
-    InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, Recorded, RunningOutput,
-    Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
+    Instrument, InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, Recorded,
+    RunningOutput, Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
 };
 use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
 use meloet_model::playback::{PlayEvent, PlayKind};
 use meloet_model::record::{HeldControls, RecEventKind};
-use meloet_model::{ControlValue, InstrumentRef};
+use meloet_model::{BuiltinInstrument, ControlValue, InstrumentRef};
 use meloet_protocol::{
     Command, Event, LiveNotesSnapshot, Snapshot, Telemetry, TransportReading, TransportState,
 };
+use meloet_sound::phrases::{self, PhrasePlayer};
+use meloet_sound::sampler::{LoadError, SampleBank};
 
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
@@ -33,6 +35,7 @@ use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, RecordReport};
 use crate::recovery;
 use crate::settings::{self, Settings};
 use crate::songfile;
+use crate::sounds::{self, Library};
 use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, RecoveryStart, SaveTo, retry_delay};
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
@@ -62,6 +65,8 @@ pub struct CoreOptions {
     pub songs_dir: Option<PathBuf>,
     /// Where the recovery file lives. `None`: none is read or written.
     pub state_dir: Option<PathBuf>,
+    /// The folder of the sound pack. `None`: only the computed instruments sound.
+    pub sounds_dir: Option<PathBuf>,
 }
 
 /// What the core asks of the shell. Answer the windows with [`Core::song_file_picked`] and
@@ -98,6 +103,7 @@ impl CoreOptions {
             audio: true,
             songs_dir: songfile::songs_dir(),
             state_dir: recovery::dir(),
+            sounds_dir: sounds::find_dir(),
         }
     }
 
@@ -111,6 +117,7 @@ impl CoreOptions {
             audio: false,
             songs_dir: None,
             state_dir: None,
+            sounds_dir: None,
         }
     }
 }
@@ -142,6 +149,11 @@ enum Msg {
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
     /// Told once the recovery file holds the song, or there was nothing to write.
     PcEnding(Sender<()>),
+    /// From the thread that reads the sounds: the answer to [`Effect::LoadSound`].
+    SoundRead {
+        instrument: BuiltinInstrument,
+        read: Result<Arc<SampleBank>, LoadError>,
+    },
     Stop,
 }
 
@@ -251,7 +263,15 @@ impl Core {
             .config_dir
             .as_deref()
             .map_or_else(Settings::default, settings::load);
-        let model = Model::new(settings);
+        let (tx, rx) = mpsc::channel();
+        let library = {
+            let tx = tx.clone();
+            let done = move |instrument, read| {
+                let _ = tx.send(Msg::SoundRead { instrument, read });
+            };
+            Library::open(options.sounds_dir.as_deref(), Box::new(done))
+        };
+        let model = Model::new(settings).with_sounds(library.installed());
         let hub = Arc::new(Hub::new(model.view()));
         let shared = Arc::new(Shared {
             held: Held::default(),
@@ -261,7 +281,6 @@ impl Core {
             clock: Mutex::new(Arc::new(TransportClock::default())),
             shell: Mutex::new(None),
         });
-        let (tx, rx) = mpsc::channel();
 
         let parts = Engine::new(EngineConfig {
             sample_rate: 48_000,
@@ -304,6 +323,7 @@ impl Core {
                     parts.engine,
                     parts.handle,
                     options.audio,
+                    library,
                     model.engine_seats(),
                 ),
                 model,
@@ -684,6 +704,8 @@ struct Audio {
     rebuilt: Option<MidiFeed>,
     /// What the engine has on its tracks, to put it on an engine made anew.
     seats: SeatBook,
+    /// The samples the instruments are made with.
+    sounds: Library,
 }
 
 /// What the engine was given: the instrument of each of its tracks (the audition track is the
@@ -771,7 +793,13 @@ impl SeatBook {
 const SEAT_COMMAND_WAIT: Duration = Duration::from_millis(100);
 
 impl Audio {
-    fn new(engine: Engine, handle: EngineHandle, allowed: bool, seats: Vec<EngineOp>) -> Audio {
+    fn new(
+        engine: Engine,
+        handle: EngineHandle,
+        allowed: bool,
+        sounds: Library,
+        seats: Vec<EngineOp>,
+    ) -> Audio {
         let mut audio = Audio {
             handle,
             engine: Some(engine),
@@ -779,6 +807,7 @@ impl Audio {
             allowed,
             rebuilt: None,
             seats: SeatBook::new(),
+            sounds,
         };
         for op in seats {
             audio.op(op);
@@ -810,18 +839,23 @@ impl Audio {
         self.settle();
     }
 
+    /// An instrument as it can sound now: silent while its samples are still to be read.
+    fn make(&self, instrument: &InstrumentRef) -> Box<dyn Instrument> {
+        let InstrumentRef::Builtin(builtin) = instrument;
+        instruments::make(instrument, self.sounds.samples(*builtin))
+    }
+
     fn send_seat_op(&mut self, op: EngineOp) {
-        let made = |instrument: &InstrumentRef| instruments::make(instrument);
         let until = Instant::now() + SEAT_COMMAND_WAIT;
         let mut command = match op {
             EngineOp::Instrument { seat, instrument } => {
-                match self.handle.swap_instrument(seat, made(&instrument)) {
+                match self.handle.swap_instrument(seat, self.make(&instrument)) {
                     Ok(()) => return,
                     Err(command) => command,
                 }
             }
             EngineOp::TryInstrument { seat, instrument } => {
-                match self.handle.try_instrument(seat, made(&instrument)) {
+                match self.handle.try_instrument(seat, self.make(&instrument)) {
                     Ok(()) => return,
                     Err(command) => command,
                 }
@@ -955,6 +989,18 @@ impl Audio {
                 velocity,
             },
             EngineOp::AuditionOff => EngineCommand::AuditionOff,
+            EngineOp::PlaySample { instrument } => {
+                if self.stream.is_some() {
+                    let InstrumentRef::Builtin(builtin) = &instrument;
+                    let phrase = phrases::for_group(builtin.group());
+                    let player = PhrasePlayer::new(self.make(&instrument), phrase);
+                    if self.handle.play_sample(Box::new(player)).is_err() {
+                        eprintln!("meloet: the engine did not take the sample");
+                    }
+                }
+                return;
+            }
+            EngineOp::StopSample => EngineCommand::StopSample,
             EngineOp::SilentTracks { tracks } => EngineCommand::SetSilentTracks {
                 tracks: tracks.into_iter().collect::<TrackSet>(),
             },
@@ -1062,6 +1108,8 @@ impl Worker {
         if let Some(start) = self.state_dir.as_deref().and_then(recovery_start) {
             self.handle(Input::RecoveryFound(Box::new(start)));
         }
+        // The rules ask for the samples of the song they start with.
+        self.handle(Input::Tick);
         let mut kept = Instant::now();
         let mut polled = Instant::now();
         loop {
@@ -1117,6 +1165,23 @@ impl Worker {
                     self.ending.push(reply);
                     self.handle(Input::PcEnding);
                 }
+                Ok(Msg::SoundRead { instrument, read }) => {
+                    let input = match read {
+                        Ok(bank) => {
+                            self.audio.sounds.keep(instrument, bank);
+                            Input::SoundLoaded(instrument)
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "meloet: the sound of {} does not read: {e}",
+                                instrument.name()
+                            );
+                            self.audio.sounds.unreadable(instrument);
+                            Input::SoundUnreadable(instrument)
+                        }
+                    };
+                    self.handle(input);
+                }
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -1128,7 +1193,7 @@ impl Worker {
                 kept = Instant::now();
                 self.housekeeping(false);
                 self.retries(kept);
-                if self.model.recovery_waiting() {
+                if self.model.recovery_waiting() || self.model.sample_playing() {
                     self.handle(Input::Tick);
                 }
             }
@@ -1295,6 +1360,8 @@ impl Worker {
                     Effect::ShowFile(path) => {
                         self.ask_shell(ShellRequest::ShowFile { path });
                     }
+                    Effect::LoadSound(instrument) => self.audio.sounds.load(instrument),
+                    Effect::DropSound(instrument) => self.audio.sounds.let_go(instrument),
                 }
             }
         }

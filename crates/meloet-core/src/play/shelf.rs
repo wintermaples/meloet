@@ -5,13 +5,14 @@ use meloet_model::{InstrumentRef, TrackId, edit};
 use meloet_protocol::{InstrumentKind, ShelfMode, ShelfView, StatusMessage};
 
 use super::seats::{AUDITION_SEAT, MAX_TRACKS};
+use super::sounds::{Sample, SampleWaiting};
 use super::{EngineOp, Play};
 use crate::instruments;
 use crate::state::Effect;
 
 /// What Enter does in the shelf.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Mode {
+pub(super) enum Mode {
     #[default]
     NewTrack,
     Replace(TrackId),
@@ -19,10 +20,15 @@ enum Mode {
 
 #[derive(Debug, Default)]
 pub(super) struct Shelf {
-    mode: Mode,
+    pub(super) mode: Mode,
     /// The row that is auditioned. `NewTrack`: it is on the audition seat. `Replace`: it is
     /// on the track's seat, with the track's own instrument set aside.
-    trial: Option<InstrumentRef>,
+    pub(super) trial: Option<InstrumentRef>,
+    /// The row auditioned before this one, while the shelf is open: its samples stay in
+    /// memory, so that going back to it sounds at once.
+    pub(super) before: Option<InstrumentRef>,
+    pub(super) sample: Option<Sample>,
+    pub(super) sample_waiting: Option<SampleWaiting>,
 }
 
 fn kind_of(instrument: &InstrumentRef) -> InstrumentKind {
@@ -70,7 +76,7 @@ impl Play {
         }
         let Some(builtin) = instrument
             .map(instruments::builtin_of)
-            .filter(|b| instruments::available().contains(b))
+            .filter(|b| self.sounds.available().contains(b))
         else {
             self.end_audition(effects);
             return;
@@ -94,7 +100,9 @@ impl Play {
                 }));
             }
         }
-        self.shelf.trial = Some(instrument);
+        if let Some(before) = self.shelf.trial.replace(instrument) {
+            self.shelf.before = Some(before);
+        }
         self.sync_target(effects);
     }
 
@@ -149,9 +157,10 @@ impl Play {
     /// with another instrument has its own back. Returns whether a row was auditioned.
     pub fn end_audition(&mut self, effects: &mut Vec<Effect>) -> bool {
         let seat = self.audition_seat();
-        if self.shelf.trial.take().is_none() {
+        let Some(tried) = self.shelf.trial.take() else {
             return false;
-        }
+        };
+        self.shelf.before = Some(tried);
         self.sync_target(effects);
         match (self.shelf.mode, seat) {
             (Mode::NewTrack, _) => effects.push(Effect::Engine(EngineOp::ClearSeat {
@@ -168,6 +177,8 @@ impl Play {
     /// The shelf is not open (any more).
     pub fn shelf_closed(&mut self, effects: &mut Vec<Effect>) {
         self.end_audition(effects);
+        self.stop_sample(effects);
+        self.shelf.before = None;
         self.shelf.mode = Mode::NewTrack;
     }
 
@@ -202,15 +213,16 @@ impl Play {
                 Mode::NewTrack => ShelfMode::NewTrack,
                 Mode::Replace(track) => ShelfMode::Replace { track: track.0 },
             },
-            available: instruments::available()
-                .into_iter()
+            available: (self.sounds.available().into_iter())
                 .map(instruments::kind_of)
                 .collect(),
             favorites,
             selected: self.shelf.trial.as_ref().map(kind_of),
             current,
-            loading: None,
-            sample: None,
+            loading: (self.shelf.trial.as_ref())
+                .filter(|InstrumentRef::Builtin(b)| !self.sounds.ready(*b))
+                .map(kind_of),
+            sample: self.sample_view(),
         }
     }
 

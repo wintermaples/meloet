@@ -1,5 +1,6 @@
-//! The sample phrases of the shelf (spec 3 「サンプル」): one fixed phrase for each group of
-//! instruments, tempo 120, C major, two bars, every note at one velocity. [`PhrasePlayer`]
+//! The sample phrases of the shelf (spec 3 「サンプル」 and 「サンプルの ▶（84）」): one fixed
+//! phrase for each group of instruments, tempo 120, C major, two bars, every note at one
+//! velocity. [`PhrasePlayer`]
 //! sounds a phrase on an instrument by itself, on the audio thread.
 
 use meloet_engine::{Instrument, InstrumentEvent};
@@ -94,10 +95,76 @@ pub fn lead_line() -> Phrase {
     line
 }
 
-/// The phrase the ▶ of the shelf plays for an instrument of `group`.
+/// The strings of a guitar chord, lowest first, as a guitarist holds C, Am, F and G.
+pub const GUITAR_CHORDS: [&[u8]; 4] = [
+    &[48, 52, 55, 60, 64],
+    &[45, 52, 57, 60, 64],
+    &[41, 48, 53, 57, 60, 65],
+    &[43, 47, 50, 55, 59, 67],
+];
+/// How far apart the strings of one strum sound.
+pub const STRUM_GAP: f64 = 0.008;
+
+/// C, Am, F and G for two beats each, strummed on every eighth (spec 3 「サンプルの ▶（84）」):
+/// down from the lowest string on the beat, up from the highest string between the beats, the
+/// up strokes over the upper strings only and shorter.
+pub fn guitar_strum() -> Phrase {
+    let mut phrase = Phrase::new();
+    for (i, chord) in GUITAR_CHORDS.into_iter().enumerate() {
+        for stroke in 0..4 {
+            let start = i as f64 + f64::from(stroke) * EIGHTH;
+            let (strings, length): (Vec<u8>, f64) = if stroke % 2 == 0 {
+                (chord.to_vec(), 0.2)
+            } else {
+                (chord.iter().rev().take(4).copied().collect(), 0.14)
+            };
+            for (n, key) in strings.into_iter().enumerate() {
+                phrase.push((start + n as f64 * STRUM_GAP, length, key));
+            }
+        }
+    }
+    phrase
+}
+
+/// A short line from C4 that ends on a long C5 (spec 3 「サンプルの ▶（84）」). It stays
+/// between C4 and C5, where the trumpet, the alto sax and the flute all sound.
+pub fn wind_line() -> Phrase {
+    // (beat, beats, key)
+    let line: [(f64, f64, u8); 10] = [
+        (0.0, 1.0, 60),
+        (1.0, 0.5, 64),
+        (1.5, 0.5, 67),
+        (2.0, 1.0, 69),
+        (3.0, 1.0, 67),
+        (4.0, 0.5, 65),
+        (4.5, 0.5, 64),
+        (5.0, 0.5, 62),
+        (5.5, 0.5, 67),
+        (6.0, 2.0, 72),
+    ];
+    let beat = 2.0 * EIGHTH;
+    line.into_iter()
+        .enumerate()
+        .map(|(i, (at, beats, key))| {
+            let last = i == line.len() - 1;
+            // A breath between the notes; the last one is held to the end of the two bars.
+            let length = if last {
+                beats * beat
+            } else {
+                beats * beat - 0.04
+            };
+            (at * beat, length, key)
+        })
+        .collect()
+}
+
+/// The phrase the ▶ of the shelf plays for an instrument of `group`. The organs and the
+/// mallets are in the piano and keys group, and play its phrase.
 pub fn for_group(group: InstrumentGroup) -> Phrase {
     match group {
         InstrumentGroup::PianoKeys => keys_phrase(),
+        InstrumentGroup::Guitar => guitar_strum(),
+        InstrumentGroup::Wind => wind_line(),
         InstrumentGroup::Bass => bass_line(),
         InstrumentGroup::Drums => drum_beat(),
         InstrumentGroup::PadStrings => pad_chords(),

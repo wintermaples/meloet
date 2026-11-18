@@ -4,4 +4,4 @@
  * The headings of the shelf, in its order. `Drums`: the piano roll shows the kit's
  * instruments and the scale lock cannot be used.
  */
-export type InstrumentGroup = "pianoKeys" | "bass" | "drums" | "padStrings" | "synth";
+export type InstrumentGroup = "pianoKeys" | "guitar" | "bass" | "drums" | "padStrings" | "wind" | "synth";

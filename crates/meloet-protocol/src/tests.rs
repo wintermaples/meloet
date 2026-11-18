@@ -1429,23 +1429,58 @@ fn instruments_are_in_shelf_order_with_their_groups() {
         [
             "grandPiano",
             "electricPiano",
+            "organDrawbar",
+            "organPercussive",
+            "organRock",
             "organ",
+            "organQuiet",
+            "organChurch",
+            "organReed",
+            "vibraphone",
+            "marimba",
+            "guitarNylon",
+            "guitarSteel",
+            "guitarElectric",
+            "guitarDistortion",
             "fingerBass",
+            "pickBass",
+            "woodBass",
             "synthBass",
             "studioKit",
             "electroKit",
+            "brushKit",
             "strings",
+            "pizzicato",
             "warmPad",
+            "trumpet",
+            "brassSection",
+            "altoSax",
+            "flute",
             "synthLead",
-            "sine"
+            "sine",
         ]
     );
+    // Every name goes there and back, and they are all different.
+    for (i, kind) in InstrumentKind::ALL.into_iter().enumerate() {
+        let back: InstrumentKind = serde_json::from_value(names[i].clone()).unwrap();
+        assert_eq!(back, kind);
+        assert_eq!(names.iter().filter(|n| **n == names[i]).count(), 1);
+    }
+    assert!(serde_json::from_value::<InstrumentKind>(json!("kazoo")).is_err());
     let mut groups: Vec<InstrumentGroup> = InstrumentKind::ALL.iter().map(|i| i.group()).collect();
     groups.dedup();
     assert_eq!(groups, InstrumentGroup::ALL);
     assert_eq!(
         serde_json::to_value(InstrumentGroup::ALL).unwrap(),
-        json!(["pianoKeys", "bass", "drums", "padStrings", "synth"])
+        json!([
+            "pianoKeys",
+            "guitar",
+            "bass",
+            "drums",
+            "padStrings",
+            "wind",
+            "synth"
+        ])
     );
 }
 

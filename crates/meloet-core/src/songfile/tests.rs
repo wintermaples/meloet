@@ -672,8 +672,29 @@ fn every_builtin_instrument_comes_back() {
     assert_eq!(decode(&bytes).unwrap(), song);
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(
-        v["song"]["tracks"][5]["instrument"],
+        v["song"]["tracks"][19]["instrument"],
         serde_json::json!({"kind": "builtin", "name": "studioKit"})
+    );
+    assert_eq!(
+        v["song"]["tracks"][21]["instrument"],
+        serde_json::json!({"kind": "builtin", "name": "brushKit"})
+    );
+}
+
+/// The 「オルガン」 of a song from before 84 opens as the pipe organ, whose name it keeps.
+#[test]
+fn the_organ_of_an_older_song_is_the_pipe_organ() {
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 3))).unwrap();
+    v["song"]["tracks"][0]["instrument"] = serde_json::json!({"kind": "builtin", "name": "organ"});
+    let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(
+        song.doc.tracks[0].instrument,
+        InstrumentRef::Builtin(BuiltinInstrument::Organ)
+    );
+    let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(
+        again["song"]["tracks"][0]["instrument"],
+        serde_json::json!({"kind": "builtin", "name": "organ"})
     );
 }
 

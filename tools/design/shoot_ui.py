@@ -90,6 +90,8 @@ BOARDS = {
     # 第 4 回 区切り3: パラメータの欄と棚のエフェクト。
     "paramsDelay": "R6-Delay",
     "shelfEffects": None,
+    # 第 5 回の前段: 最初から入っている音色を 31 に（84）。
+    "shelf84": "R8-Shelf84",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -209,6 +211,8 @@ CLICKS = {
     "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
     # F4-ShelfSample: グランドピアノの ▶ を押した所。
     "shelfSample": ("shelfNewTrack", '[data-row="grandPiano"] [data-test="shelf-sample"]'),
+    # R8-Shelf84: 「ピアノ ・ 鍵盤」と「ギター」のほかの見出しをたたむ。
+    "shelf84": ("shelf84", tuple(f'[data-group="{g}"]' for g in ("bass", "drums", "padStrings", "wind", "synth"))),
     "trackRename": ("tracks6", "js:" + RENAME_TRACK),
     "trackDrag": ("tracks6", "js:" + DRAG_TRACK),
     "trackColorMenu": ("tracks6", "js:" + TRACK_COLORS),
@@ -267,6 +271,7 @@ ONLY = {
     "mixer": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "paramsDelay": [(1280, 800, 100), (1280, 800, 150)],
     "shelfEffects": [(1280, 800, 100), (1920, 1080, 150)],
+    "shelf84": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

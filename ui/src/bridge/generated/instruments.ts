@@ -9,13 +9,32 @@ export const INSTRUMENT_GROUPS: readonly { readonly group: InstrumentGroup; read
     "instruments": [
       "grandPiano",
       "electricPiano",
-      "organ"
+      "organDrawbar",
+      "organPercussive",
+      "organRock",
+      "organ",
+      "organQuiet",
+      "organChurch",
+      "organReed",
+      "vibraphone",
+      "marimba"
+    ]
+  },
+  {
+    "group": "guitar",
+    "instruments": [
+      "guitarNylon",
+      "guitarSteel",
+      "guitarElectric",
+      "guitarDistortion"
     ]
   },
   {
     "group": "bass",
     "instruments": [
       "fingerBass",
+      "pickBass",
+      "woodBass",
       "synthBass"
     ]
   },
@@ -23,14 +42,25 @@ export const INSTRUMENT_GROUPS: readonly { readonly group: InstrumentGroup; read
     "group": "drums",
     "instruments": [
       "studioKit",
-      "electroKit"
+      "electroKit",
+      "brushKit"
     ]
   },
   {
     "group": "padStrings",
     "instruments": [
       "strings",
+      "pizzicato",
       "warmPad"
+    ]
+  },
+  {
+    "group": "wind",
+    "instruments": [
+      "trumpet",
+      "brassSection",
+      "altoSax",
+      "flute"
     ]
   },
   {

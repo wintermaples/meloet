@@ -21,9 +21,11 @@ describe("仕様書 5 章「用語の説明」", () => {
   });
 
   it("用語と説明が全部、一字も変わらずに入っている", () => {
+    // 第 8 版の表には「テイク」と「スキャン」が 2 行ずつある（説明はちがう）。どちらの行も入っていること。
     for (const [term, desc] of specTerms) {
-      expect(findTerm(term!)?.description, term).toBe(desc);
+      expect(terms.filter((x) => x.term === term).map((x) => x.description), term).toContain(desc);
     }
+    expect(findTerm(specTerms[0]![0]!)?.description).toBe(specTerms[0]![1]);
   });
 
   it("ja.ts の spec:5 の用語は、全部仕様書にある（順番も同じ）", () => {

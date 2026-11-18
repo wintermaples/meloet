@@ -460,7 +460,7 @@ pub fn add_track(
     });
     let id = TrackId(ids.next()?);
     let InstrumentRef::Builtin(builtin) = instrument;
-    let base = builtin.group().track_name();
+    let base = builtin.track_name();
     let taken = |name: &str| doc.tracks.iter().any(|t| t.name == name);
     let name = if taken(base) {
         (2u32..)

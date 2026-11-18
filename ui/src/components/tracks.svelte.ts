@@ -102,6 +102,27 @@ export function shelfStep(
   return rows[Math.max(0, Math.min(rows.length - 1, at + delta))]!;
 }
 
+/**
+ * 状態行に出す棚のようす（モック R8-Shelf84「音色 31 ・ ピアノ ・ 鍵盤とギターをひらいています」）。
+ * 棚が前に出ていて音源の一覧を見せ、ためし弾きもサンプルもしていないときだけ。count は棚に出ている行の数、groups はひらいている見出し。
+ */
+export function shelfStatus(state: AppState): { count: number; groups: InstrumentGroup[] } | null {
+  const shelf = state.shelf;
+  if (
+    state.workspace.layout.rightFront !== "shelf" ||
+    shelf.mode.kind === "insertEffect" ||
+    shelfUi.view !== "instruments" ||
+    shelf.selected !== null ||
+    shelf.sample !== null
+  )
+    return null;
+  const groups = shelfGroups(shelf, shelfUi);
+  return {
+    count: groups.reduce((n, g) => n + g.rows.length, 0),
+    groups: groups.filter((g) => !g.folded).map((g) => g.group),
+  };
+}
+
 /** 棚の数（「音源 N」「すべて N」「お気に入り N」）。お気に入りは、棚に出る物だけ。 */
 export function shelfCounts(shelf: ShelfView): {
   all: number;

@@ -182,13 +182,16 @@ pub enum StripId {
 }
 
 /// The sends of a track that is new (spec 3 Y9): piano and keys, pads and strings, and
-/// synths send −15 dB to A, drums −24 dB, basses nothing. Nothing goes to B.
+/// synths send −15 dB to A, drums −24 dB, basses nothing. Nothing goes to B. Guitars and wind
+/// instruments are not in Y9; they send as the piano does.
 pub fn new_track_sends(instrument: &InstrumentRef) -> Sends {
     let InstrumentRef::Builtin(builtin) = instrument;
     let a = match builtin.group() {
-        InstrumentGroup::PianoKeys | InstrumentGroup::PadStrings | InstrumentGroup::Synth => {
-            Gain::from_db(-15.0)
-        }
+        InstrumentGroup::PianoKeys
+        | InstrumentGroup::Guitar
+        | InstrumentGroup::PadStrings
+        | InstrumentGroup::Wind
+        | InstrumentGroup::Synth => Gain::from_db(-15.0),
         InstrumentGroup::Drums => Gain::from_db(-24.0),
         InstrumentGroup::Bass => Gain::SILENT,
     };

@@ -6,7 +6,7 @@ mod common;
 
 use meloet_engine::{Instrument, InstrumentEvent};
 use meloet_model::InstrumentGroup;
-use meloet_sound::phrases::{EIGHTH, PHRASE_S, PhrasePlayer, VELOCITY, for_group};
+use meloet_sound::phrases::{EIGHTH, GUITAR_CHORDS, PHRASE_S, PhrasePlayer, VELOCITY, for_group};
 use meloet_sound::synth::PolySynth;
 
 /// A 1.0 on the frame a key goes down, the number of keys held on every other frame.
@@ -104,14 +104,96 @@ fn every_note_of_every_phrase_starts_on_its_own_frame() {
 }
 
 #[test]
+fn a_key_is_let_go_before_it_is_pressed_again() {
+    for group in InstrumentGroup::ALL {
+        let mut phrase = for_group(group);
+        phrase.sort_by(|a, b| (a.2, a.0).partial_cmp(&(b.2, b.0)).unwrap());
+        for w in phrase.windows(2) {
+            if w[0].2 == w[1].2 {
+                assert!(w[0].0 + w[0].1 <= w[1].0 + 1e-9, "{group:?}: {w:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_guitar_strums_c_am_f_g_on_every_eighth() {
+    let phrase = for_group(InstrumentGroup::Guitar);
+    // 16 strokes in two bars, each a little spread over its strings.
+    let mut strokes: Vec<Vec<(f64, f64, u8)>> = Vec::new();
+    for &note in &phrase {
+        let stroke = (note.0 / EIGHTH).floor() as usize;
+        assert!(note.0 - stroke as f64 * EIGHTH < 0.05, "{note:?}");
+        if strokes.len() <= stroke {
+            strokes.resize(stroke + 1, Vec::new());
+        }
+        strokes[stroke].push(note);
+    }
+    assert_eq!(strokes.len(), 16);
+    for (i, stroke) in strokes.iter().enumerate() {
+        let chord = GUITAR_CHORDS[i / 4];
+        assert!(stroke.len() >= 4, "stroke {i}");
+        assert!(stroke.iter().all(|n| chord.contains(&n.2)), "stroke {i}");
+        assert!(
+            stroke.windows(2).all(|w| w[1].0 > w[0].0),
+            "one string after another"
+        );
+        let keys: Vec<u8> = stroke.iter().map(|n| n.2).collect();
+        let down = i % 2 == 0;
+        if down {
+            assert_eq!(keys, chord, "down from the lowest string");
+        } else {
+            assert!(
+                keys.windows(2).all(|w| w[1] < w[0]),
+                "up from the highest string"
+            );
+            let longest_down = strokes[i - 1].iter().map(|n| n.1).fold(0.0, f64::max);
+            assert!(
+                stroke.iter().all(|n| n.1 < longest_down),
+                "the up stroke is shorter"
+            );
+        }
+    }
+    let end = phrase.iter().map(|n| n.0 + n.1).fold(0.0, f64::max);
+    assert!(end <= PHRASE_S, "two bars");
+}
+
+#[test]
+fn the_wind_line_starts_on_c4_stays_up_to_c5_and_holds_its_last_note() {
+    let phrase = for_group(InstrumentGroup::Wind);
+    assert_eq!(phrase[0].0, 0.0);
+    assert_eq!(phrase[0].2, 60);
+    assert!(phrase.iter().all(|n| (60..=72).contains(&n.2)));
+    assert!(
+        phrase.windows(2).all(|w| w[0].0 + w[0].1 <= w[1].0),
+        "one note at a time"
+    );
+    let last = phrase.last().unwrap();
+    assert!(last.1 >= 4.0 * EIGHTH, "the last note is held two beats");
+    assert!(
+        (last.0 + last.1 - PHRASE_S).abs() < 1e-9,
+        "to the end of the two bars"
+    );
+}
+
+#[test]
 fn a_phrase_on_a_real_instrument_sounds_and_does_not_allocate() {
-    let phrase = for_group(InstrumentGroup::Synth);
-    let mut player = PhrasePlayer::new(Box::new(PolySynth::lead()), phrase);
-    player.prepare(48_000.0, 256);
-    let (left, _) = play(&mut player, 6 * 48_000, &[256, 64, 200]);
-    let peak = |x: &[f32]| x.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
-    assert!(peak(&left[..4 * 48_000]) > 0.05);
-    assert!(peak(&left[5 * 48_000..]) < 0.001, "it has died away");
+    for group in [
+        InstrumentGroup::Synth,
+        InstrumentGroup::Guitar,
+        InstrumentGroup::Wind,
+    ] {
+        let phrase = for_group(group);
+        let mut player = PhrasePlayer::new(Box::new(PolySynth::lead()), phrase);
+        player.prepare(48_000.0, 256);
+        let (left, _) = play(&mut player, 6 * 48_000, &[256, 64, 200]);
+        let peak = |x: &[f32]| x.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
+        assert!(peak(&left[..4 * 48_000]) > 0.05, "{group:?}");
+        assert!(
+            peak(&left[5 * 48_000..]) < 0.001,
+            "{group:?}: it has died away"
+        );
+    }
     assert_eq!(
         common::audio_block_counts(),
         (0, 0),

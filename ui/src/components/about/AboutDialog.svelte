@@ -121,8 +121,8 @@
           </label>
 
           {#if sounds.length}
-            {@render sectionHead(t("about.sounds"), sounds.length, about.sections.sounds, () => toggleSection("sounds"), "about-sounds")}
-            {#if about.sections.sounds}
+            {@render sectionHead(t("about.sounds"), sounds.length, searching || about.sections.sounds, () => toggleSection("sounds"), "about-sounds")}
+            {#if searching || about.sections.sounds}
               {#each sounds as s (s.id)}
                 <div class="fields" data-test="about-sound">
                   <div class="field"><span class="label field-label">{t("about.soundName")}</span><span class="strong">{s.title}</span></div>
@@ -140,8 +140,8 @@
           {/if}
 
           {#if fonts.length}
-            {@render sectionHead(t("about.fonts"), fonts.length, about.sections.fonts, () => toggleSection("fonts"), "about-fonts")}
-            {#if about.sections.fonts}
+            {@render sectionHead(t("about.fonts"), fonts.length, searching || about.sections.fonts, () => toggleSection("fonts"), "about-fonts")}
+            {#if searching || about.sections.fonts}
               {#each fonts as f (f.package)}
                 {@render itemRow(partKey({ name: f.package, version: f.version }), f.name, f.license)}
               {/each}

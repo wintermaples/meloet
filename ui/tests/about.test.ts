@@ -194,10 +194,22 @@ describe("2 段目（R7-AboutLicense）", () => {
     await settle();
   }
 
-  it("見出しは「◂ meloet について ・ オープンソースのライセンス」。音の素材と書体ははじめからひらき、部品はたたんでいる", async () => {
+  it("見出しは「◂ meloet について ・ オープンソースのライセンス」。音の素材も書体も部品も、はじめはたたんでいる", async () => {
     await second();
     expect(about.stage).toBe(2);
     expect(words(q(".head"))).toBe("◂ meloet について ・ オープンソースのライセンス もどるEsc");
+    expect(words(q("[data-test=about-sounds]"))).toBe("▸ 音の素材 1");
+    expect(q("[data-test=about-sound]")).toBeNull();
+    expect(words(q("[data-test=about-fonts]"))).toBe("▸ 書体 2");
+    expect(all("[data-test=about-part]")).toHaveLength(0);
+    expect(words(q(".parts-label"))).toBe("部品（ライセンスごと）");
+    expect(all("[data-test=about-group]").map(words)).toEqual(["▸ Apache-2.0 または MIT 2", "▸ BSD-3-Clause 1", "▸ MIT 1"]);
+  });
+
+  it("音の素材と書体の見出しを押すとひらく", async () => {
+    await second();
+    click(q("[data-test=about-sounds]"));
+    click(q("[data-test=about-fonts]"));
     expect(words(q("[data-test=about-sounds]"))).toBe("▾ 音の素材 1");
     expect(all("[data-test=about-sound] .field").map((f) => [...f.children].map((c) => c.textContent))).toEqual([
       ["名前", "Salamander Grand Piano V3"],
@@ -208,8 +220,6 @@ describe("2 段目（R7-AboutLicense）", () => {
     ]);
     expect(words(q("[data-test=about-fonts]"))).toBe("▾ 書体 2");
     expect(all("[data-test=about-part]").map(words)).toEqual(["IBM Plex Sans JP OFL-1.1", "IBM Plex Mono OFL-1.1"]);
-    expect(words(q(".parts-label"))).toBe("部品（ライセンスごと）");
-    expect(all("[data-test=about-group]").map(words)).toEqual(["▸ Apache-2.0 または MIT 2", "▸ BSD-3-Clause 1", "▸ MIT 1"]);
   });
 
   it("見出しを押すとひらき、行を押すとその下に全文の枠（1 つずつ）", async () => {
@@ -234,6 +244,7 @@ describe("2 段目（R7-AboutLicense）", () => {
   it("音の素材と書体の見出しでたためる", async () => {
     await second();
     click(q("[data-test=about-sounds]"));
+    click(q("[data-test=about-sounds]"));
     expect(words(q("[data-test=about-sounds]"))).toBe("▸ 音の素材 1");
     expect(q("[data-test=about-sound]")).toBeNull();
   });
@@ -249,6 +260,10 @@ describe("2 段目（R7-AboutLicense）", () => {
     about.query = "OFL";
     flushSync();
     expect(all("[data-test=about-part]").map(words)).toEqual(["IBM Plex Sans JP OFL-1.1", "IBM Plex Mono OFL-1.1"]);
+    about.query = "Salamander";
+    flushSync();
+    expect(words(q("[data-test=about-sounds]"))).toBe("▾ 音の素材 1");
+    expect(all("[data-test=about-sound]")).toHaveLength(1);
   });
 
   it("「◂ meloet について」で 1 段目へ", async () => {

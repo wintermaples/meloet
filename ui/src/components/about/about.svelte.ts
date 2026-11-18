@@ -9,8 +9,8 @@ export const about = $state({
   /** 1: meloet について。2: オープンソースのライセンス。 */
   stage: 1 as 1 | 2,
   query: "",
-  /** 音の素材と書体の見出し。はじめはひらいている（仕様書 3 章）。 */
-  sections: { sounds: true, fonts: true } as Record<AboutSection, boolean>,
+  /** 音の素材と書体の見出し。はじめはたたむ（ヤチヨさんの決め 2026-11-19。仕様書 3 章は「はじめからひらいている」）。 */
+  sections: { sounds: false, fonts: false } as Record<AboutSection, boolean>,
   /** ひらいているライセンスの見出し（licenseGroup の名前）。 */
   groups: [] as string[],
   /** 全文の枠をひらいている行（"名前@版"）。1 つずつ。 */
@@ -20,7 +20,7 @@ export const about = $state({
 function reset(stage: 1 | 2): void {
   about.stage = stage;
   about.query = "";
-  about.sections = { sounds: true, fonts: true };
+  about.sections = { sounds: false, fonts: false };
   about.groups = [];
   about.part = null;
 }

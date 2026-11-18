@@ -1544,35 +1544,35 @@ export const texts = {
   // tools/sounds/build.py の CHANGES（NOTICE の英語の文）と同じ中身を言う。
   "about.changes.salamander-grand-piano": e(
     "16 段の強さから 4 段と、離した音 ・ 共鳴 ・ ペダルの音をえらび、音の前の無音を切り、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
   "about.changes.gregsullivan-wurlitzer-ep200": e(
     "音の前の無音を切り、音の終わりにくり返す所を作り、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
   "about.changes.naked-drums": e(
     "直のマイクと上のマイクを作者の GM の組みのとおりにステレオにまぜ、11 の音とテイク 4 つをえらび、音の前の無音を切り、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
   "about.changes.vcsl-claps": e(
     "クラップのテイク 6 つを使い、音の前の無音を切り、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
   "about.changes.vcsl-pipe-organ": e(
     "くり返す所を作ってその終わりで切り、音の前の無音を切り、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
   "about.changes.black-and-blue-basses": e(
     "指弾きのテイク 4 つから 2 つをえらび、鍵と鳴る高さを 1 オクターブずらしてそろえ、終わりの 100 ms を小さくして消し、音の前の無音を切り、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
   "about.changes.vsco-2-ce-strings": e(
     "ヴァイオリン ・ ヴィオラ ・ チェロ ・ コントラバスを 1 つの鍵の範囲にまとめ、くり返す所を作り、音の前の無音を切り、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
   "about.changes.fluidr3-gm": e(
     "オルガン 5 つをとり出し、左右の組を 1 つのステレオにまとめ、くり返す所の終わりと音の前の無音を切り、フィルタと響きの送りを外し、ファイルの形を変えた",
-    "draft:2026-11-18",
+    "user:2026-11-19",
   ),
 } as const satisfies Record<string, Entry>;
 

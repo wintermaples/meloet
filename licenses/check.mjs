@@ -71,4 +71,26 @@ for (const c of sys.components) {
   if (!spdxOk(c.license, dynamicOk) || (FORBIDDEN.test(c.license) && !/LGPL|\bOR\b/.test(c.license))) fail(`system ${c.name}: ${c.license} (${c.role})`);
 }
 console.log(`OK  system components checked: ${sys.components.length}`);
+
+// 4. sound sources (tools/sounds/sources.json): only CC0 or CC BY, credits complete, license texts kept
+const SOUND_LICENSES = new Set(["CC0-1.0", "CC-BY-3.0", "CC-BY-4.0"]);
+const soundsPath = join(root, "tools", "sounds", "sources.json");
+if (existsSync(soundsPath)) {
+  const sounds = JSON.parse(readFileSync(soundsPath, "utf8")).sources;
+  for (const s of sounds) {
+    if (!SOUND_LICENSES.has(s.license)) { fail(`sound ${s.id}: ${s.license}`); continue; }
+    const a = s.attribution || {};
+    if (s.license.startsWith("CC-BY-")) {
+      for (const k of ["creator", "title", "source_uri", "license_uri"]) if (!a[k]) fail(`sound ${s.id}: attribution.${k} missing`);
+      const ver = s.license.slice("CC-BY-".length);
+      if (a.license_uri && !a.license_uri.includes(`/licenses/by/${ver}`)) fail(`sound ${s.id}: license_uri ${a.license_uri} is not CC BY ${ver}`);
+    }
+    const dir = s.license_copies ? join(root, s.license_copies) : "";
+    if (!s.license_copies || !s.license_copies.startsWith("licenses/sounds/") || !existsSync(dir)) { fail(`sound ${s.id}: no license texts in licenses/sounds/`); continue; }
+    const texts = readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8"));
+    const mark = s.license === "CC0-1.0" ? /\bCC0\b|CC 0|publicdomain\/zero/i : /Creative\s+Commons|creativecommons\.org\/licenses\/by\//i;
+    if (!texts.some((t) => mark.test(t))) fail(`sound ${s.id}: no ${s.license} text in ${s.license_copies}`);
+  }
+  console.log(`OK  sound sources checked: ${sounds.length}`);
+}
 process.exit(bad ? 1 : 0);

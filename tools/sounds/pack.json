@@ -1,0 +1,8 @@
+{
+ "_about": "The sound pack that scripts/fetch-sounds.sh fetches (docs/architecture.md 19-1). tools/sounds/pack.py --manifest fills version, file, sha256 and bytes; url is the GitHub Release asset, empty until someone uploads one.",
+ "version": "",
+ "file": "",
+ "url": "",
+ "sha256": "",
+ "bytes": 0
+}

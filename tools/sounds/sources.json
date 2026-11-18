@@ -62,7 +62,8 @@
       "use": {
         "root": "GregSullivan.E-Pianos-8c3e581acda3594b553948ff0222d4f84a698376",
         "sfz": "Wurlitzer EP200/Wurlitzer EP200.sfz",
-        "files": ["Wurlitzer EP200/Samples/*.flac"]
+        "files": ["Wurlitzer EP200/Samples/*.flac"],
+        "loop_points": "Not taken from the author's .gig (wurlitzer_ep200.rar). Checked 2026-11-18: the page http://www.sullivang.net/wurlitzer-ep203w-electric-piano-for-gigasampler-gigastudio links to /downloads, which embeds the Google Drive folder https://drive.google.com/folderview?id=1lRojKMYct3uXZ07rgFwqsA0jzW3ZgZdD; without signing in, Drive answers with a sign-in page. The old file URLs (sullivang.net/samples/ and /sample-files/wurlitzer_ep200.rar) answer 404, and the Wayback Machine holds only redirects. tools/sounds/build.py makes crossfade loops instead."
       },
       "license_copies": "licenses/sounds/gregsullivan-epianos/"
     },
@@ -198,7 +199,16 @@
         "commit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
         "sfz_commit": "6dd651d55dde97fd4028699be9d4481f26917891",
         "sfz_branch": "SFZ",
-        "how": "git clone --filter=blob:none --no-checkout; git sparse-checkout set --no-cone '/*' '!/*/' plus the folders in use.files; checkout. The SFZ files live on the SFZ branch (same sample paths); fetch that branch and read them with git show <sfz_commit>:<file>."
+        "how": "git clone --filter=blob:none --no-checkout; git sparse-checkout set --no-cone '/*' '!/*/' plus the folders in use.files; checkout. The SFZ files live on the SFZ branch (same sample paths); fetch that branch and read them with git show <sfz_commit>:<file>.",
+        "sfz_files": {
+          "note": "tools/sounds/build.py reads these four as plain files from one folder (vsco2ce-sfz under --src), saved from https://raw.githubusercontent.com/sgossner/VSCO-2-CE/<sfz_commit>/<file> (or git show).",
+          "sha256": {
+            "ViolinEnsSusVib.sfz": "4591e212cccf1cbcff0c78cf8429a8221bb0820b70cb7c8dd6685f470ace4eaa",
+            "ViolaEnsSusVib.sfz": "d62dc6b6bfa83d4ebe49a44f6f1337d0621a32d7f10c699e26fc98720a640871",
+            "CelloEnsSusVib.sfz": "276352639dda425dd12a4fdb3acdf545867fdb0ff4f89876319f4ec3cf12a19f",
+            "ContrabassSusVB.sfz": "f99fd524c8558f3da235b240c40ed9854a1bbf4fa299cb0ec44b5b32c967291f"
+          }
+        }
       },
       "license": "CC0-1.0",
       "license_note": "Readme.txt (2016) asks, without making it a condition of CC0: do not sell the samples directly, keep improvements open, credit Versilian Studios/Sam Gossner and/or Ivy Audio/Simon Dalzell and link to the VSCO: CE homepage.",

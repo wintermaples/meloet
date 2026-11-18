@@ -475,6 +475,7 @@ describe("状態行と入力計（モック F4-ShelfAudition ・ F4-ShelfReplace
       "3 ドラム の音源を エレクトロキット にしました。取り消せます（Ctrl Z）",
     );
     expect(say({ id: "samplePlaying", instrument: "grandPiano" })).toBe("サンプルを再生中 ・ グランドピアノ。行をえらぶと、鍵盤でためし弾きできます。");
+    expect(say({ id: "instrumentLoading", instrument: "grandPiano" })).toBe("グランドピアノを読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。");
   });
 
   it("入力計の弾くと鳴る先: ふだんは選んだトラック、ためし弾き中は accent の「ためし弾き ・ シンセベース」", () => {

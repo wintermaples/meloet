@@ -575,6 +575,7 @@ export const texts = {
     number: "5",
   }),
   "button.replaceInstrument": e("入れかえる", "spec:6"),
+  "button.insertEffect": e("入れる", "user:2026-11-19"),
   "button.locate": e("場所をさがす", "spec:6"),
   "button.rescan": e("もう一度スキャン", "spec:6"),
   "button.removeFromSong": e("曲から外す", "spec:6"),

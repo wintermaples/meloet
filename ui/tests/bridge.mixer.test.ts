@@ -139,6 +139,15 @@ describe("約束 14: 偽物の「決める」と「音だけ変える」", () =>
     const removed = run(after, { type: "removeEffect", insert: { strip: track, slot: 1 } })!;
     expect(removed.song.tracks[0]!.inserts).toEqual([null, null, null, null]);
     expect(removed.params.selected).toBeNull();
+    // リバーブ ・ ディレイのミックス: トラック ・ マスターに入れたときは 30 %、戻りは表のとおり 100 %。
+    const mixOf = (strip: InsertRef["strip"], effect: "reverb" | "delay" | "chorus") => {
+      const open = { ...s, shelf: { ...s.shelf, mode: { kind: "insertEffect", strip, slot: 3 } as const, selectedEffect: effect } };
+      const values = run(open, { type: "shelfConfirm" })!.params.selected!.values;
+      return values[EFFECT_PARAMS[effect].findIndex((p) => p.id === "mix")];
+    };
+    expect([mixOf(track, "reverb"), mixOf(track, "delay"), mixOf({ kind: "master" }, "reverb")]).toEqual([30, 30, 30]);
+    expect([mixOf({ kind: "return", bus: "a" }, "reverb"), mixOf({ kind: "return", bus: "b" }, "delay")]).toEqual([100, 100]);
+    expect(mixOf(track, "chorus")).toBe(EFFECT_PARAMS.chorus.find((p) => p.id === "mix")!.default);
     // 音源の棚の Enter は、ここでは扱わない。
     expect(run(scene("shelfAudition"), { type: "shelfConfirm" })).toBeNull();
   });

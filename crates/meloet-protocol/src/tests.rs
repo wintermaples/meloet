@@ -1403,6 +1403,12 @@ fn status_message_json_shape() {
             },
             json!({"id": "samplePlaying", "instrument": "grandPiano"}),
         ),
+        (
+            StatusMessage::InstrumentLoading {
+                instrument: InstrumentKind::GrandPiano,
+            },
+            json!({"id": "instrumentLoading", "instrument": "grandPiano"}),
+        ),
     ] {
         assert_eq!(serde_json::to_value(&message).unwrap(), json);
         assert_eq!(

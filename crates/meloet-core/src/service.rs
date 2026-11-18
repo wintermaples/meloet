@@ -226,6 +226,8 @@ struct StreamFacts {
     track_seats: Mutex<Vec<Option<usize>>>,
     /// The core thread wants one `SoundHeard`.
     wants_sound: AtomicBool,
+    /// The core thread wants one `KeyWhileLoading`.
+    wants_loading_key: AtomicBool,
 }
 
 struct Shared {
@@ -504,6 +506,13 @@ impl Links {
                         event: instrument_event(event),
                         t_us,
                     });
+                    let stream = &shared.stream;
+                    if matches!(event, MidiEvent::NoteOn { .. })
+                        && stream.wants_loading_key.load(Relaxed)
+                        && stream.wants_loading_key.swap(false, Relaxed)
+                    {
+                        let _ = tx.send(Msg::Input(Input::KeyWhileLoading, None));
+                    }
                 }
                 shared.held.note(event);
                 hub.event(protocol_event(event, t_us));
@@ -1394,6 +1403,10 @@ impl Worker {
             .stream
             .wants_sound
             .store(self.model.wants_sound(), Relaxed);
+        self.shared
+            .stream
+            .wants_loading_key
+            .store(self.model.wants_loading_key(), Relaxed);
         self.shared
             .fixed_velocity
             .store(self.model.fixed_velocity().unwrap_or(0), Relaxed);

@@ -1736,6 +1736,11 @@ pub enum StatusMessage {
     SamplePlaying {
         instrument: InstrumentKind,
     },
+    /// A key was played on a track whose instrument is still being read, and so was silent:
+    /// "グランドピアノを読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。" Until it is read.
+    InstrumentLoading {
+        instrument: InstrumentKind,
+    },
     UndoPending {
         count: u32,
     },

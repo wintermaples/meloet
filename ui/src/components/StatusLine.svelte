@@ -180,6 +180,29 @@
         return plain("msg.takeSwitched", { track: track(m.track), clip: m.clip, take: m.take, takes: m.takes });
       case "noArmedTrack":
         return plain("msg.noArmedTrack");
+      case "armMoved":
+        return plain("status.armMoved", { recordKey: t("key.record"), track: track(m.track) });
+      case "trackAdded":
+        return plain("msg.trackAdded", { track: track(m.track) });
+      case "trackDeleted":
+        return plain("msg.trackDeleted", { track: track(m.track), undoKey: modKey(t("key.undo")) });
+      case "instrumentReplaced":
+        return plain("msg.instrumentReplaced", {
+          track: track(m.track),
+          instrument: t(`instrument.${m.instrument}`),
+          undoKey: modKey(t("key.undo")),
+        });
+      case "auditionNewTrack":
+        return plain("status.auditionNewTrack", { instrument: t(`instrument.${m.instrument}`), key: t("key.enter") });
+      case "auditionReplace":
+        return plain("status.auditionReplace", {
+          instrument: t(`instrument.${m.instrument}`),
+          track: track(m.track),
+          current: t(`instrument.${m.current}`),
+          key: t("key.enter"),
+        });
+      case "samplePlaying":
+        return plain("msg.samplePlaying", { name: t(`instrument.${m.instrument}`) });
       case "undoPending":
         return plain("msg.undoPending", { count: m.count });
       case "recovered":
@@ -330,8 +353,8 @@
     return base;
   });
 
-  /** いちばん左の札（ヤチヨさんの決め 2026-11-15）。録音とカウントインは rec。 */
-  const badge = $derived.by((): { text: string; rec: boolean } => {
+  /** いちばん左の札（ヤチヨさんの決め 2026-11-15）。録音とカウントインは rec。止まっていてためし弾き中は accent（モック F4-ShelfAudition）。 */
+  const badge = $derived.by((): { text: string; rec: boolean; accent?: boolean } => {
     switch (app.transport.state) {
       case "playing":
         return { text: t("status.playing"), rec: false };
@@ -340,6 +363,7 @@
       case "countIn":
         return { text: t("status.countingIn"), rec: true };
       default:
+        if (app.shelf.selected !== null) return { text: t("status.auditioning"), rec: false, accent: true };
         return { text: t("status.stopped"), rec: false };
     }
   });
@@ -434,7 +458,7 @@
 </script>
 
 {#snippet left()}
-  <span class:rec={badge.rec} data-test="status-badge">{badge.text}</span>
+  <span class:rec={badge.rec} class:accent={badge.accent} data-test="status-badge">{badge.text}</span>
   {#if message}
     <span class="m-lbl message">
       {#each message.parts as part, i (i)}
@@ -533,6 +557,9 @@
   }
   .rec {
     color: var(--color-rec);
+  }
+  .accent {
+    color: var(--color-accent);
   }
   .link {
     flex-shrink: 0;

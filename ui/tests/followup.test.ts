@@ -189,7 +189,7 @@ describe("ひらいた帯の見出しを押すとたたむ（B-74）", () => {
         s.workspace.layout.rightFront = "shelf";
       }),
     );
-    expect(text(q('[data-test="rail-fold"]'))).toBe("▾ 棚 P");
+    expect(text(q('[data-test="rail-fold"]'))).toBe("▾ 棚");
     click('[data-test="rail-fold"]');
     expect(app.sent).toEqual([{ type: "toggleBand", band: "shelf" }]);
   });

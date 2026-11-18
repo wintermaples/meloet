@@ -43,6 +43,8 @@
       return { kind: "missing" as const };
     }
     if (app.outputs.chosen === null) return { kind: "noOutput" as const };
+    // ためし弾き中（仕様書 3 章）: 鳴る先は棚でえらんだ音源。引っこめる順のどこでも消さない。
+    if (app.shelf.selected !== null && !app.transport.recording) return { kind: "audition" as const, instrument: app.shelf.selected };
     // カウントイン中と録音中は、録っているトラックと、いま録っているテイク（モック F-Connect4・F-ArrangeRec）。
     const rec = app.transport.recording;
     const recTrack = rec && app.song.tracks.find((x) => x.id === rec.track);
@@ -326,6 +328,13 @@
         {#if measuring || i < fit.sentences}<span class={i === 0 ? message.first : message.rest} data-part="msg-{i}">{part}</span>{/if}
       {/each}
     </span>
+  {:else if right?.kind === "audition"}
+    <div class="item target" data-test="meter-right" data-part="target">
+      {#if measuring || fit.targetLabel}<span class="label" data-part="target-label">{t("meter.playTarget")}</span>{/if}
+      <span class="target-value accent" data-part="target-value" data-test="meter-target"
+        >{t("meter.auditionTarget", { instrument: t(`instrument.${right.instrument}`) })}</span
+      >
+    </div>
   {:else if right?.kind === "target"}
     <div class="item target" data-test="meter-right" data-part="target">
       {#if measuring || fit.targetLabel}<span class="label" data-part="target-label">{t("meter.playTarget")}</span>{/if}
@@ -578,6 +587,9 @@
   }
   .slim .target-value {
     color: var(--color-gray-8);
+  }
+  .target-value.accent {
+    color: var(--color-accent);
   }
   .mono {
     font-family: var(--font-mono);

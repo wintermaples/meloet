@@ -708,6 +708,22 @@ export const texts = {
   "key.solo": e("S", "spec:4"),
   // meloet を終わる Mod Q（4 章の表にはない。design-notes B-59）。
   "key.quit": e("Q", "user:2026-11-18"),
+
+  // [第 4 回 区切り1 ・ トラックの見出しと棚の画面]
+  // 上のメニューの「トラック」と「ヘルプ」の行（仕様書 3 章の上のメニューの行）。右クリックの一覧も同じ名前。
+  "menu.renameTrack": e("名前を変える", "spec:3"),
+  "menu.trackColor": e("色", "spec:3"),
+  "menu.moveTrackUp": e("上へ動かす", "spec:3"),
+  "menu.moveTrackDown": e("下へ動かす", "spec:3"),
+  "menu.deleteTrack": e("トラックを消す", "spec:3"),
+  "menu.help": e("ヘルプ", "spec:3"),
+  "menu.about": e("meloet について", "spec:3"),
+  // 色の一覧の行（仕様書 2 章「「色 1」〜「色 5」」）。
+  "menu.colorNumber": e("色 {number}", "spec:2", { number: "1" }),
+  "key.renameTrack": e("F2", "spec:4"),
+  "key.favorite": e("F", "spec:4"),
+  // 「＋ トラックを追加」の右の小さな文。第 4 回は歌の行を出さない（仕様書 3 章 Y10）。
+  "arrange.addTrackInstrument": e("音源", "mock:R7-Arrange6"),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;

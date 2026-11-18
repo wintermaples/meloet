@@ -306,7 +306,7 @@ describe("キーを画面につなぐ", () => {
     vi.useRealTimers();
   });
 
-  it("A・E・M・H・P・U と Mod+, と Mod+Alt+数字", () => {
+  it("A・E・M・H・P・U と Mod+, と Mod+Alt+数字。とじた棚を P でひらくときは「新しいトラック」で", () => {
     for (const k of ["a", "e", "m", "h", "p", "u"]) key(k);
     key(",", { ctrlKey: true });
     key("2", { ctrlKey: true, altKey: true, code: "Digit2" });
@@ -315,7 +315,7 @@ describe("キーを画面につなぐ", () => {
       { type: "toggleBand", band: "pianoRoll" },
       { type: "toggleBand", band: "mixer" },
       { type: "toggleBand", band: "history" },
-      { type: "toggleBand", band: "shelf" },
+      { type: "openShelf", mode: { kind: "newTrack" } },
       { type: "toggleBand", band: "params" },
       { type: "openSettings", advanced: false },
       { type: "setScale", percent: 125 },

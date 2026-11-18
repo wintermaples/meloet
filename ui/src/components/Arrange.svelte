@@ -20,13 +20,14 @@
   import { everyGlFrame, glRegion, glSlot, type GlRect, type GlSlot } from "../gl/slot";
   import { platformOf } from "../keys/keys";
   import HScrollbar from "../lib/HScrollbar.svelte";
+  import TrackHeads from "./TrackHeads.svelte";
   import { term } from "../lib/tip.svelte";
   import { openContextMenu, type MenuEntry, type MenuRow } from "./menu/contextMenu.svelte";
   import { current, send } from "../state/app.svelte";
-  import { findTerm, t } from "../text/ja";
+  import { t } from "../text/ja";
   import * as CD from "./arrangeDrag";
   import * as G from "./arrangeGeom";
-  import { dbNumber, gridText, tempoText, termParts, textParts } from "./format";
+  import { gridText, tempoText, termParts, textParts } from "./format";
   import { metrics } from "./metrics.svelte";
   import {
     arrangeView,
@@ -908,22 +909,6 @@
     ]);
   }
 
-  function headContext(e: MouseEvent, track: number): void {
-    e.preventDefault();
-    if (song.playTarget !== track) send({ type: "selectTrack", track, fromArm: false });
-    openContextMenu(e.clientX, e.clientY, [
-      menuRow("menu.mute", !busy, () => send({ type: "toggleMute", track }), shiftKey(t("key.mute"))),
-      menuRow("menu.solo", true, () => send({ type: "toggleSolo", track }), shiftKey(t("key.solo"))),
-      menuRow("menu.arm", true, () => send({ type: "selectTrack", track, fromArm: true })),
-    ]);
-  }
-
-  /** トラックの見出しを押すと、そのトラックを選ぶ（B-70）。M ・ S ・ ● の上では選ばない。 */
-  function headDown(e: PointerEvent, track: number): void {
-    if (e.button !== 0 || (e.target as Element | null)?.closest("button")) return;
-    if (song.playTarget !== track) send({ type: "selectTrack", track, fromArm: false });
-  }
-
   const readingBox = $derived.by(() => {
     if (!readingAt || !dragReading.text) return null;
     const off = metrics.px("part.reading.offset");
@@ -946,11 +931,6 @@
     prView.focus = "arrange";
   }
 </script>
-
-<!-- 用語の説明がある音色（サイン波）だけ、乗せると説明が出る。 -->
-{#snippet instrumentName(name: string)}
-  {#if findTerm(name)}<span class="m-lbl instrument" use:term={name}>{name}</span>{:else}<span class="m-lbl instrument">{name}</span>{/if}
-{/snippet}
 
 {#snippet termed(text: string, word: string)}{#each termParts(text, word) as piece, j (j)}{#if piece.term}<span use:term={word}
         >{piece.text}</span
@@ -1008,61 +988,7 @@
         <span class="m-spacer"></span>
         <span class="m-num">{t("arrange.changeCount", { count: song.tempoChanges })}</span>
       </button>
-      {#each song.tracks as track (track.id)}
-        <div
-          class="track-head"
-          class:selected={song.playTarget === track.id}
-          role="presentation"
-          data-test="track-head"
-          onpointerdown={(e) => headDown(e, track.id)}
-          oncontextmenu={(e) => headContext(e, track.id)}
-        >
-          <div class="track-color" style:background="var(--color-track-{((track.color - 1) % 5) + 1})"></div>
-          <div class="track-body">
-            <div class="line">
-              <span class="m-num m-lbl track-number">{track.number}</span>
-              <span class="m-name track-name" use:term={"トラック"}>{track.name}</span>
-              <!-- 録音中 ・ カウントイン中は core がミュートを受けないので「使えない」。 -->
-              <button
-                class="tog"
-                class:live={!busy}
-                class:on={track.muted}
-                aria-pressed={track.muted}
-                aria-disabled={busy || undefined}
-                tabindex={busy ? -1 : undefined}
-                aria-label={t("arrange.mute")}
-                data-test="track-mute"
-                use:term={"ミュート"}
-                onclick={() => !busy && send({ type: "toggleMute", track: track.id })}>{t("arrange.muteShort")}</button
-              >
-              <button
-                class="tog live"
-                class:on={track.soloed}
-                aria-pressed={track.soloed}
-                aria-label={t("arrange.solo")}
-                use:term={"ソロ"}
-                onclick={() => send({ type: "toggleSolo", track: track.id })}>{t("arrange.soloShort")}</button
-              >
-              <button
-                class="tog live arm"
-                class:on={song.playTarget === track.id}
-                aria-pressed={song.playTarget === track.id}
-                aria-label={t("arrange.arm")}
-                use:term={"録音待機"}
-                onclick={() => send({ type: "selectTrack", track: track.id, fromArm: true })}>{t("arrange.armShort")}</button
-              >
-            </div>
-            <div class="line gap2">
-              {@render instrumentName(t(`instrument.${track.instrument}`))}
-              <span class="m-num" use:term={"dB"}>{t("common.db", { value: dbNumber(track.gainDb) })}</span>
-            </div>
-            <div class="meter" use:glSlot={{ kind: "meter", source: { track: track.number }, gap: metrics.px("line.hair") }}></div>
-          </div>
-        </div>
-      {/each}
-      <button class="m-plain add" aria-disabled="true" tabindex="-1">
-        {t("arrange.addTrack")}<span>{t("arrange.addTrackKinds")}</span>
-      </button>
+      <TrackHeads />
     </div>
 
     <div class="time" bind:this={timeBox} bind:clientWidth={timeWidth} onwheel={wheelOn(() => timeBox)}>
@@ -1285,104 +1211,6 @@
     width: 100%;
     background: var(--color-gray-4);
     color: var(--color-gray-7);
-  }
-
-  .track-head {
-    height: var(--size-track);
-    display: flex;
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
-  }
-  /* 選んだトラック（B-70）: 一覧の「選んだ行」と同じ地。 */
-  .track-head.selected {
-    background: var(--color-gray-4);
-  }
-  .track-color {
-    width: var(--line-track);
-    flex-shrink: 0;
-  }
-  .track-body {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-2) 0;
-  }
-  .line {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-  }
-  .line.gap2 {
-    gap: var(--space-2);
-  }
-  .track-number {
-    width: var(--mock-track-number);
-    flex-shrink: 0;
-  }
-  .track-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .instrument {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tog {
-    width: var(--part-toggle-size);
-    height: var(--part-toggle-size);
-    flex-shrink: 0;
-    padding: 0;
-    border: var(--line-hair) solid var(--color-gray-5);
-    border-radius: var(--radius-1);
-    background: var(--color-gray-1);
-    color: var(--color-gray-7);
-    font: inherit;
-    text-align: center;
-    cursor: default;
-  }
-  .tog.live,
-  .tog.step {
-    border-color: var(--color-gray-6);
-    color: var(--color-gray-8);
-    cursor: pointer;
-  }
-  .tog.live:hover,
-  .tog.step:hover {
-    border-color: var(--color-gray-8);
-    color: var(--color-gray-10);
-  }
-  /* オン（仕様書 2 章: 枠と文字 accent。● だけ rec）。 */
-  .tog.live.on {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-  }
-  .tog.arm.on {
-    border-color: var(--color-rec);
-    color: var(--color-rec);
-  }
-  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8）。 */
-  .tog.live:active,
-  .tog.step:active {
-    background: var(--color-gray-2);
-    border-color: var(--color-gray-8);
-  }
-  .meter {
-    height: calc(var(--part-meter-horizontal) * 2 + var(--line-hair));
-  }
-  .add {
-    width: 100%;
-    height: var(--mock-arrange-add-track);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: 0 var(--space-2);
-    color: var(--color-gray-7);
-    cursor: default;
   }
 
   .time {

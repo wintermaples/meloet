@@ -146,6 +146,8 @@ export const part = {
   "part.shelfrow.star": p(12, "s2", "音源の行（棚）", "12px の星"),
   "part.shelfrow.sample": p(20, "s2", "音源の行（棚）", "サンプルのボタン（20×20）"),
   "part.shelfrow.group": p(24, "s2", "音源の行（棚）", "グループの見出しは高さ 24"),
+  "part.colorlist.swatch-w": p(24, "s2", "色の一覧の行", "24×12 の色の見本"),
+  "part.colorlist.swatch-h": p(12, "s2", "色の一覧の行", "24×12 の色の見本"),
   "part.endpoint.name": p(168, "s2", "出口 ・ 入口の行", "本物の名前（168）"),
   "part.endpoint.friendly": p(150, "s2", "出口 ・ 入口の行", "やさしい言いかえ（150"),
   "part.endpoint.link": p(6, "s2", "出口 ・ 入口の行", "ささっているかの印（6×6"),
@@ -281,6 +283,9 @@ export const mock = {
   "mock.pianoroll.row-zoom-gap": m(2, "A-PianoRoll"),
   // クリップがない所の案内の箱の幅（`width:460px`）。
   "mock.pianoroll.empty-hint": m(460, "F-PREmpty"),
+  // 棚（第 4 回）。さがす枠の行と「すべて ・ お気に入り」の行の高さ（`height:32px`）、星を押せる所（`width:16px;height:16px`）。
+  "mock.shelf.bar": m(32, "F4-ShelfSample"),
+  "mock.shelf.star-hit": m(16, "F4-ShelfSample"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

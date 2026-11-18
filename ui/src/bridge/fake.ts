@@ -1533,9 +1533,13 @@ export function reduceClips(
         arrange.selectedClip,
       );
       return done();
-    case "selectTrack":
-      if (track(command.track)) song.playTarget = command.track;
-      return done();
+    case "selectTrack": {
+      const t = track(command.track);
+      if (!t || busy(state)) return done();
+      const moved = command.fromArm && song.playTarget !== command.track;
+      song.playTarget = command.track;
+      return moved ? { ...done(), notice: { id: "armMoved", track: { number: t.number, name: t.name } } } : done();
+    }
     case "toggleMute":
     case "toggleSolo": {
       const t = track(command.track);
@@ -1653,14 +1657,158 @@ export function reduceClips(
 
 const busy = (state: AppState) => state.transport.state === "recording" || state.transport.state === "countIn";
 
+const SHELF_MESSAGES: StatusMessage["id"][] = ["auditionNewTrack", "auditionReplace", "samplePlaying"];
+const isShelfMessage = (m: StatusMessage | null) => m !== null && SHELF_MESSAGES.includes(m.id);
+/** The short names of new tracks, by group (spec 3, Y5). */
+const GROUP_TRACK_NAMES: Record<string, string> = { pianoKeys: "ピアノ", bass: "ベース", drums: "ドラム", padStrings: "パッド", synth: "シンセ" };
+const groupOf = (i: InstrumentKind) => INSTRUMENT_GROUPS.find((g) => g.instruments.includes(i))!.group;
+const SAMPLE_US = 4_000_000;
+
+/** What the shelf says on the status line while it auditions or plays a sample. */
+function shelfMessage(shelf: ShelfView, song: SongView): StatusMessage | null {
+  if (shelf.selected !== null) {
+    if (shelf.mode.kind === "newTrack") return { id: "auditionNewTrack", instrument: shelf.selected };
+    const id = shelf.mode.track;
+    const t = song.tracks.find((x) => x.id === id);
+    if (t) return { id: "auditionReplace", instrument: shelf.selected, track: { number: t.number, name: t.name }, current: t.instrument };
+  }
+  return shelf.sample ? { id: "samplePlaying", instrument: shelf.sample.instrument } : null;
+}
+
+/**
+ * Protocol 13: the track commands and the shelf, enough for pictures and tests (no history, no undo count).
+ * Returns what changed, or null when the command is none of these.
+ */
+export function reduceTracks(
+  state: AppState,
+  bands: FakeBands,
+  command: Command,
+  nowUs = 0,
+): { song: SongView; shelf: ShelfView; canRecord: boolean; notice?: StatusMessage } | null {
+  const song = structuredClone(state.song);
+  const shelf = structuredClone(state.shelf);
+  const at = (id: number) => song.tracks.findIndex((t) => t.id === id);
+  const ref = (i: number): TrackRef => ({ number: i + 1, name: song.tracks[i]!.name });
+  const renumber = () => song.tracks.forEach((t, i) => (t.number = i + 1));
+  const audition = (selected: InstrumentKind | null) => {
+    shelf.selected = selected;
+    shelf.loading = null;
+  };
+  let notice: StatusMessage | undefined;
+  const change = !busy(state);
+  switch (command.type) {
+    case "deleteTrack": {
+      const i = at(command.track);
+      if (i < 0 || !change) return null;
+      notice = { id: "trackDeleted", track: ref(i) };
+      song.tracks.splice(i, 1);
+      renumber();
+      if (song.playTarget === command.track) song.playTarget = (song.tracks[i] ?? song.tracks[i - 1])?.id ?? null;
+      break;
+    }
+    case "renameTrack": {
+      const i = at(command.track);
+      const name = command.name.trim();
+      if (i < 0 || !change || name === "") return null;
+      song.tracks[i]!.name = name;
+      break;
+    }
+    case "moveTrack": {
+      const i = at(command.track);
+      if (i < 0 || !change) return null;
+      const [t] = song.tracks.splice(i, 1);
+      song.tracks.splice(Math.min(command.to, song.tracks.length), 0, t!);
+      renumber();
+      break;
+    }
+    case "setTrackColor": {
+      const i = at(command.track);
+      if (i < 0 || !change || command.color < 1 || command.color > 5) return null;
+      song.tracks[i]!.color = command.color;
+      break;
+    }
+    case "openShelf": {
+      if (!change) return null;
+      const mode = command.mode;
+      if (mode.kind === "replace" && at(mode.track) < 0) return null;
+      shelf.mode = mode;
+      shelf.current = mode.kind === "replace" ? song.tracks[at(mode.track)]!.instrument : null;
+      audition(null);
+      if (bands.side.at(-1) !== "shelf") bands.side = [...bands.side.filter((b) => b !== "shelf"), "shelf"];
+      break;
+    }
+    case "shelfSelect":
+      audition(command.instrument !== null && shelf.available.includes(command.instrument) ? command.instrument : null);
+      break;
+    case "shelfCancel":
+      audition(null);
+      break;
+    case "shelfConfirm": {
+      const picked = shelf.selected;
+      if (picked === null || !change) return null;
+      if (shelf.mode.kind === "newTrack") {
+        const base = GROUP_TRACK_NAMES[groupOf(picked)]!;
+        const names = new Set(song.tracks.map((t) => t.name));
+        let name = base;
+        for (let n = 2; names.has(name); n++) name = `${base} ${n}`;
+        const sel = song.playTarget === null ? -1 : at(song.playTarget);
+        const place = sel < 0 ? song.tracks.length : sel + 1;
+        const id = Math.max(0, ...song.tracks.map((t) => t.id)) + 1;
+        song.tracks.splice(place, 0, {
+          id,
+          number: place + 1,
+          name,
+          color: (place % 5) + 1,
+          instrument: picked,
+          gainDb: 0,
+          muted: false,
+          soloed: false,
+          clips: [],
+        });
+        renumber();
+        song.playTarget = id;
+        notice = { id: "trackAdded", track: ref(place) };
+      } else {
+        const i = at(shelf.mode.track);
+        if (i < 0) return null;
+        if (song.tracks[i]!.instrument !== picked) {
+          song.tracks[i]!.instrument = picked;
+          notice = { id: "instrumentReplaced", track: ref(i), instrument: picked };
+        }
+        shelf.current = picked;
+      }
+      audition(null);
+      break;
+    }
+    case "toggleFavorite": {
+      const had = shelf.favorites.includes(command.instrument);
+      const all = INSTRUMENT_GROUPS.flatMap((g) => [...g.instruments]);
+      shelf.favorites = all.filter((i) => (i === command.instrument ? !had : shelf.favorites.includes(i)));
+      break;
+    }
+    case "playSample":
+      shelf.sample = { instrument: command.instrument, startedUs: nowUs, lengthUs: SAMPLE_US };
+      break;
+    case "stopSample":
+      shelf.sample = null;
+      break;
+    default:
+      return null;
+  }
+  const canRecord = shelf.selected === null && song.playTarget !== null && state.transport.canPlay;
+  return { song, shelf, canRecord, notice };
+}
+
 /** `rest` is the status line when no notice is up. */
-function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command, clipboard: FakeClipboard): Change[] {
+function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command, clipboard: FakeClipboard, nowUs = 0): Change[] {
   const ws = structuredClone(state.workspace);
   const outputs = structuredClone(state.outputs);
   const keyboards = structuredClone(state.keyboards);
   const transport = structuredClone(state.transport);
   const pianoRoll = structuredClone(state.pianoRoll);
   reducePianoRoll(pianoRoll, command);
+  const tracks = reduceTracks(state, bands, command, nowUs);
+  if (tracks) transport.canRecord = tracks.canRecord;
   const choosable = outputs.list.filter((o) => o.unusable === null).map((o) => o.id);
   let notice = isNotice(state.status.message) && command.type === "setViewport" ? state.status.message : null;
   const fitWindow = (scale?: number) => {
@@ -1787,13 +1935,27 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
     if (JSON.stringify(clips.song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: clips.song });
     if (JSON.stringify(clips.arrange) !== JSON.stringify(state.arrange)) changes.push({ section: "arrange", value: clips.arrange });
   }
+  const song = tracks?.song ?? clips?.song ?? state.song;
+  if (tracks && JSON.stringify(tracks.song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: tracks.song });
+  // A closed shelf has no mode, audition or sample (protocol 13, ShelfView).
+  let shelf = tracks?.shelf ?? state.shelf;
+  if (!ws.layout.rightOpen.includes("shelf") && JSON.stringify(shelf) !== JSON.stringify({ ...closedShelf(), available: shelf.available, favorites: shelf.favorites })) {
+    shelf = { ...closedShelf(), available: shelf.available, favorites: shelf.favorites };
+    transport.canRecord = song.playTarget !== null && transport.canPlay;
+  }
+  if (JSON.stringify(shelf) !== JSON.stringify(state.shelf)) changes.push({ section: "shelf", value: shelf });
   if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
   if (JSON.stringify(outputs) !== JSON.stringify(state.outputs)) changes.push({ section: "outputs", value: outputs });
   if (JSON.stringify(keyboards) !== JSON.stringify(state.keyboards)) changes.push({ section: "keyboards", value: keyboards });
   if (JSON.stringify(transport) !== JSON.stringify(state.transport)) changes.push({ section: "transport", value: transport });
   if (JSON.stringify(pianoRoll) !== JSON.stringify(state.pianoRoll)) changes.push({ section: "pianoRoll", value: pianoRoll });
   // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
-  let message = notice ?? clips?.notice ?? (isNotice(state.status.message) ? rest : state.status.message);
+  let message =
+    notice ??
+    clips?.notice ??
+    tracks?.notice ??
+    shelfMessage(shelf, song) ??
+    (isNotice(state.status.message) || isShelfMessage(state.status.message) ? rest : state.status.message);
   if (message?.id === "summary") {
     const notes = noteSelection(pianoRoll);
     message = { ...message, notes, nothingSelected: notes === null && (clips?.arrange ?? state.arrange).selectedClips.length === 0 };
@@ -1809,7 +1971,7 @@ export function createFakeTransport(initial?: AppState): Transport {
   const bands = scene?.bands ?? new FakeBands((state.workspace.viewportHeight * 100) / state.workspace.scale);
   if (!scene) for (const l of state.workspace.layout.lower) bands.bottom.push(l.band);
   if (!scene) bands.side = [...state.workspace.layout.rightOpen];
-  const rest = isNotice(state.status.message) ? null : state.status.message;
+  const rest = isNotice(state.status.message) || isShelfMessage(state.status.message) ? null : state.status.message;
   const clipboard: FakeClipboard = { clips: [] };
   let rev = 1;
   let listener: ((message: ServerMessage) => void) | null = null;
@@ -1838,7 +2000,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduce(state, bands, rest, command, clipboard);
+      const changes = reduce(state, bands, rest, command, clipboard, nowUs());
       if (changes.length > 0) {
         rev += 1;
         state = { ...state };

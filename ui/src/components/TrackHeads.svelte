@@ -161,7 +161,8 @@
               bind:value={draft}
               onkeydown={(e) => fieldKey(e, track)}
               onblur={() => {
-                if (trackEdit.renaming === track.id) trackEdit.renaming = null;
+                // 枠の外を押したら決める（ヤチヨさんの決め 2026-11-18）。Esc のあとは renaming が null。
+                if (trackEdit.renaming === track.id) commitName(track);
               }}
             />
           {:else}

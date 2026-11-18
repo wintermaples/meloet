@@ -206,6 +206,26 @@ describe("トラックの見出し（モック R6-Tracks ・ R7-Arrange6）", ()
     expect(app.sent).toEqual([{ type: "renameTrack", track: 12, name: "ベース A" }]);
   });
 
+  it("名前の入力の枠の外を押したら決める。Esc のあとは何も送らない", () => {
+    show(Arrange, scene("tracks6"));
+    trackEdit.renaming = 12;
+    flushSync();
+    let field = q("[data-test=track-name-field]") as HTMLInputElement;
+    field.value = "外で決める";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.dispatchEvent(new FocusEvent("blur"));
+    flushSync();
+    expect(q("[data-test=track-name-field]")).toBeNull();
+    trackEdit.renaming = 12;
+    flushSync();
+    field = q("[data-test=track-name-field]") as HTMLInputElement;
+    field.value = "やめる名前";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    keyOn(field, "Escape");
+    field.dispatchEvent(new FocusEvent("blur"));
+    expect(app.sent).toEqual([{ type: "renameTrack", track: 12, name: "外で決める" }]);
+  });
+
   it("名前を 2 回押すと入力の枠", () => {
     show(Arrange, scene("tracks6"));
     qa(".track-name")[2]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));

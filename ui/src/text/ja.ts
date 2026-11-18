@@ -182,8 +182,8 @@ export const texts = {
   ),
   // 数字の欄に、数字として読めない物を打った。欄は value.* か note.*。
   "msg.valueRejected": s6("数字として読めない", "{field}は数字で打ちます。もとの {kept} のままです。", { field: "ベロシティ", kept: "77" }, "part"),
-  // 音の欄（音名で打つ）に読めない物を打った。6 章の形は数字の欄の物なので、音の欄だけ前の版の形のまま。
-  "msg.keyRejected": e("{field}は {range} です。もとの {kept} のままです。", "user:2026-11-18", { field: "音", range: "C-1〜G9", kept: "C4" }),
+  // 音の欄（音名で打つ）に読めない物を打った。
+  "msg.keyRejected": s6("音の欄で読めない", "{field}は {range} です。もとの {kept} のままです。", { field: "音", range: "C-1〜G9", kept: "C4" }),
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
   // 範囲の外の値は近いはしにして決める。欄と範囲は value.*。
   "msg.valueClamped": s6("範囲の外の値を打った", "{field}は {range} なので、{value} にしました。", { field: "ベロシティ", range: "1〜127", value: "127" }, "quoted"),
@@ -393,8 +393,8 @@ export const texts = {
   "status.loop": e("ループ {from}–{to}", "mock:Main", { from: "5", to: "9" }),
   "status.noSelection": e("選択なし", "mock:Main"),
   // ミュートしたトラック。2 本以上は名前を「 ・ 」でならべる。
-  "status.muted": e("{tracks} はミュート", "mock:Main", { tracks: "4 パッド" }),
-  "status.mutedMany": e("{tracks} はミュート", "user:2026-11-18", { tracks: "4 パッド ・ 5 ベース" }),
+  "status.muted": s6("ミュート", "{tracks} はミュート", { tracks: "4 パッド" }, "part"),
+  "status.mutedMany": s6("ミュート", "{tracks} はミュート", { tracks: "4 パッド ・ 5 ベース" }, "quoted"),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
   "status.outputNone": e("出口: まだ", "spec:3"),
   "status.inputs": e("入口: {inputs}", "mock:Main", { inputs: "鍵盤 49 ・ マイク" }),
@@ -463,9 +463,9 @@ export const texts = {
   "note.key": e("音", "mock:A-PianoRoll"),
   "note.length": e("長さ", "mock:A-PianoRoll"),
   "noteList.velocity": e("Vel", "mock:A-PianoRoll"),
-  "inspector.from": e("{position} 〜", "user:2026-11-18", { position: "3.1.000" }),
-  "inspector.mixed": e("ばらばら", "user:2026-11-18"),
-  "inspector.range": e("{low} – {high}", "user:2026-11-18", { low: "77", high: "83" }),
+  "inspector.from": s6("選んだノートの読み値", "{position} 〜", { position: "3.1.000" }, "quoted"),
+  "inspector.mixed": s6("選んだノートの読み値", "ばらばら", undefined, "quoted"),
+  "inspector.range": s6("選んだノートの読み値", "{low} – {high}", { low: "77", high: "83" }, "quoted"),
   "inspector.quantize": e("クオンタイズ", "mock:A-PianoRoll"),
   "inspector.quantized": e("かけてある", "mock:A-PianoRoll"),
   "inspector.strength": e("強さ", "mock:A-PianoRoll"),

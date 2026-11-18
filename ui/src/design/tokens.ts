@@ -268,6 +268,11 @@ export const mock = {
   "mock.pianoroll.end-mark": m(16, "R3-PRMouse"),
   // CC の帯の、127 と 0（ピッチベンドは両はし）の点の中心の、帯の上下からのあき（`top:6px` の 6×6 の点、高さ 40 の帯で 9 と 31）。
   "mock.pianoroll.cc-pad": m(9, "R3-Lanes"),
+  // 鍵盤の列の上の角の、縦の − ＋（`.q` の幅 20 に `height:18px`、間 `gap:2px`）。
+  "mock.pianoroll.row-zoom-h": m(18, "A-PianoRoll"),
+  "mock.pianoroll.row-zoom-gap": m(2, "A-PianoRoll"),
+  // クリップがない所の案内の箱の幅（`width:460px`）。
+  "mock.pianoroll.empty-hint": m(460, "F-PREmpty"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

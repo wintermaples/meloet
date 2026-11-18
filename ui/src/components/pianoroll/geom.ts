@@ -25,12 +25,35 @@ export interface RollGeom {
   rowH: number;
   width: number;
   height: number;
+  /** ドラムの行を見せているとき（仕様書 3 章「ドラムのピアノロール」）。topKey は使わない。 */
+  drum?: DrumGeom;
+}
+
+/** ドラムの行: 決まった鍵の行だけを上から。ノートは叩いた所の四角。 */
+export interface DrumGeom {
+  /** 行の鍵（上の行から）。 */
+  keys: readonly number[];
+  /** いちばん上に見えている行（keys の何番目か）。 */
+  top: number;
+  /** 四角の幅（CSS px）。グリッドの 1 マス − 2、6 より小さくしない。 */
+  hitW: number;
 }
 
 export const tickToX = (g: RollGeom, tick: number) => (tick - g.scrollTick) * g.ppt;
 export const xToTick = (g: RollGeom, x: number) => g.scrollTick + x / g.ppt;
-export const keyToY = (g: RollGeom, key: number) => (g.topKey - key) * g.rowH;
-export const yToKey = (g: RollGeom, y: number) => g.topKey - Math.floor(y / g.rowH);
+/** 鍵の行の上はし。ドラムの行にない鍵は NaN。 */
+export const keyToY = (g: RollGeom, key: number) => {
+  if (!g.drum) return (g.topKey - key) * g.rowH;
+  const row = g.drum.keys.indexOf(key);
+  return row < 0 ? NaN : (row - g.drum.top) * g.rowH;
+};
+/** y の行の鍵。ドラムの行の外（いちばん下の行より下）は -1。 */
+export const yToKey = (g: RollGeom, y: number) => {
+  if (!g.drum) return g.topKey - Math.floor(y / g.rowH);
+  return g.drum.keys[g.drum.top + Math.floor(y / g.rowH)] ?? -1;
+};
+/** 四角の幅のティック。 */
+const hitTicks = (g: RollGeom) => (g.drum ? g.drum.hitW / g.ppt : 0);
 /** 見えている行の数（下のはしの半端な行もふくむ）。 */
 export const rowsShown = (g: RollGeom) => Math.ceil(g.height / g.rowH);
 /** 全部が見えている行の数（仕様書 3 章「縦の足し算」の行の数）。 */
@@ -107,12 +130,21 @@ export function edgeWidth(noteW: number, edgePx: number, both: boolean): number 
   return 2 * edgePx > noteW ? noteW / 3 : edgePx;
 }
 
-/** (x, y) の下のノート。重なっていたら、あとに描く物（番号の大きい物）。startEdge なら左はしも見る。 */
+/** (x, y) の下のノート。重なっていたら、あとに描く物（番号の大きい物）。startEdge なら左はしも見る。ドラムは四角だけを見る（はしはない）。 */
 export function hitNote(n: Shown | null, g: RollGeom, x: number, y: number, edgePx: number, startEdge = false): Hit | null {
   if (!n || y < 0 || y >= g.height) return null;
   const key = yToKey(g, y);
   const tick = xToTick(g, x);
   let found: Hit | null = null;
+  if (g.drum) {
+    const w = g.drum.hitW;
+    eachNoteIn(n, tick - hitTicks(g), tick + 1e-9, (i) => {
+      if (n.take.keys[i] !== key) return;
+      const x0 = tickToX(g, noteStart(n, i));
+      if (x >= x0 && x < x0 + w + 1) found = { note: i, edge: false };
+    });
+    return found;
+  }
   eachNoteIn(n, tick, tick + 1e-9, (i) => {
     if (n.take.keys[i] !== key) return;
     const x0 = tickToX(g, noteStart(n, i));
@@ -131,9 +163,19 @@ export function notesInBox(n: Shown | null, g: RollGeom, ax: number, ay: number,
   if (!n) return [];
   const t0 = xToTick(g, Math.min(ax, bx));
   const t1 = xToTick(g, Math.max(ax, bx));
+  const out: number[] = [];
+  if (g.drum) {
+    const d = g.drum;
+    const top = d.top + Math.floor(Math.max(0, Math.min(ay, by)) / g.rowH);
+    const bottom = d.top + Math.floor(Math.max(ay, by) / g.rowH);
+    eachNoteIn(n, t0 - hitTicks(g), t1, (i) => {
+      const row = d.keys.indexOf(n.take.keys[i]!);
+      if (row >= top && row <= bottom && noteStart(n, i) >= t0 - hitTicks(g)) out.push(i);
+    });
+    return out;
+  }
   const high = yToKey(g, Math.min(ay, by));
   const low = yToKey(g, Math.max(ay, by));
-  const out: number[] = [];
   eachNoteIn(n, t0, t1, (i) => {
     const k = n.take.keys[i]!;
     if (k >= low && k <= high) out.push(i);
@@ -260,6 +302,23 @@ export function moveDelta(
   ticks = Math.max(ticks, -first);
   const keys = Math.min(KEY_MAX - high, Math.max(KEY_MIN - low, dKeys));
   return { ticks: ticks === 0 ? 0 : ticks, keys: keys === 0 ? 0 : keys };
+}
+
+/**
+ * ドラムの行で、つかんだノートを rows 行（下へ +）動かすときの鍵の差。動かすノートがみな同じ行数だけ動いて、キットの鍵に
+ * 入る所まで（入らなければ 0 へ近づける）。ノートはみな同じ鍵の差で動くので、行の間の鍵の差がそろう所にしか動けない。
+ */
+export function drumMoveKeys(d: Pick<DrumGeom, "keys">, keys: ArrayLike<number>, notes: readonly number[], grab: number, rows: number): number {
+  const rowOf = (k: number) => d.keys.indexOf(k);
+  const grabRow = rowOf(keys[grab]!);
+  if (grabRow < 0) return 0;
+  for (let r = rows; r !== 0; r -= Math.sign(r)) {
+    const target = grabRow + r;
+    if (target < 0 || target >= d.keys.length) continue;
+    const dk = d.keys[target]! - keys[grab]!;
+    if (notes.every((i) => rowOf(keys[i]!) >= 0 && rowOf(keys[i]! + dk) === rowOf(keys[i]!) + r)) return dk;
+  }
+  return 0;
 }
 
 /** つかんだノートの終わりがグリッドに吸いつくように、長さを変える量。どのノートも 1 ティックより短くならない（吸いつくときは、つかんだノートはグリッド 1 つより短くならない）。 */

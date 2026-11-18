@@ -369,6 +369,22 @@ export const texts = {
   "instrument.warmPad": e("あたたかいパッド", "spec:3"),
   "instrument.synthLead": e("シンセリード", "spec:3"),
   "instrument.sine": e("サイン波", "spec:3"),
+  // ドラムのピアノロールの行の名前（楽器の名前。キーの後ろは DRUM_ROWS の id）。
+  "drum.crash": e("クラッシュ", "spec:3"),
+  "drum.ride": e("ライド", "spec:3"),
+  "drum.openHiHat": e("オープンハイハット", "spec:3"),
+  "drum.pedalHiHat": e("ペダルハイハット", "spec:3"),
+  "drum.closedHiHat": e("クローズハイハット", "spec:3"),
+  "drum.highTom": e("ハイタム", "spec:3"),
+  "drum.midTom": e("ミッドタム", "spec:3"),
+  "drum.lowTom": e("ロータム", "spec:3"),
+  "drum.clap": e("クラップ", "spec:3"),
+  "drum.snare": e("スネア", "spec:3"),
+  "drum.sideStick": e("サイドスティック", "spec:3"),
+  "drum.kick": e("キック", "spec:3"),
+  // ドラムのトラックの右の欄の「スケール」（音階「—」、固定「使えない」）。道具の列の「スケール固定 —」も同じ「—」。
+  "inspector.scaleNone": e("—", "spec:3"),
+  "inspector.lockUnusable": e("使えない", "spec:3"),
   // 棚の見出し。キーの後ろは約束の InstrumentGroup。
   "instrumentGroup.pianoKeys": e("ピアノ ・ 鍵盤", "spec:3"),
   "instrumentGroup.bass": e("ベース", "spec:3"),

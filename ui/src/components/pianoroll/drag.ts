@@ -9,13 +9,13 @@ import {
   clampVelocity,
   drawLength,
   drawStart,
+  drumMoveKeys,
   hitNote,
   indexesOf,
   keyToY,
   lengthText,
   moveDelta,
   noteEnd,
-  noteName,
   noteShown,
   noteStart,
   notesInBox,
@@ -32,6 +32,7 @@ import {
   type RollGeom,
   type Shown,
 } from "./geom";
+import { keyLabel } from "./drums";
 import type { Tool } from "./view.svelte";
 import { t } from "../../text/ja";
 import type { IndexRange } from "../../bridge";
@@ -115,7 +116,7 @@ export class RollDrag {
     if (hit?.edge) cursor = "ew-resize";
     else if (i.tool() === "erase") cursor = "eraser";
     else if (hit) cursor = mods.alt ? "copy" : "move";
-    else if (i.tool() === "draw") cursor = writable(yToKey(i.geom(), y), i.scale()) ? "pencil" : "not-allowed";
+    else if (i.tool() === "draw") cursor = drawable(yToKey(i.geom(), y), i.scale()) ? "pencil" : "not-allowed";
     else cursor = "default";
     return { cursor, changed };
   }
@@ -181,6 +182,8 @@ export class RollDrag {
     }
     if (i.tool() === "draw") {
       const key = yToKey(g, y);
+      // ドラムの行より下には書かない。
+      if (key < 0) return;
       const step = i.step();
       const start = drawStart(xToTick(g, x), mods.shift ? null : step);
       const velocity = i.drawVelocity();
@@ -249,7 +252,9 @@ export class RollDrag {
     switch (d.kind) {
       case "move": {
         if (!n) return false;
-        const dKeys = yToKey(g, y) - yToKey(g, d.press.y);
+        const dKeys = g.drum
+          ? drumMoveKeys(g.drum, n.take.keys, d.notes, d.grab, Math.floor(y / g.rowH) - Math.floor(d.press.y / g.rowH))
+          : yToKey(g, y) - yToKey(g, d.press.y);
         const { ticks, keys } = moveDelta(n, d.notes, d.grab, (x - d.press.x) / g.ppt, dKeys, step);
         const copy = mods.alt;
         if (ticks === d.ticks && keys === d.keys && copy === d.copy) return false;
@@ -275,6 +280,8 @@ export class RollDrag {
         return true;
       }
       case "draw": {
+        // ドラムは長さを見せないので、書くノートはいつもグリッドの 1 マス（仕様書 3 章）。
+        if (g.drum) return false;
         const length = drawLength(d.start, xToTick(g, x), i.step(), step !== null);
         if (length === d.length) return false;
         d.length = length;
@@ -339,7 +346,7 @@ export class RollDrag {
     if (!d) return null;
     switch (d.kind) {
       case "draw":
-        return t("pr.readDraw", { key: noteName(d.key), position: positionText(d.start, meter), length: lengthText(d.length, meter) });
+        return t("pr.readDraw", { key: keyLabel(d.key, !!this.input.geom().drum), position: positionText(d.start, meter), length: lengthText(d.length, meter) });
       case "move":
         return d.press.moved ? t("pr.readMove", { ticks: signedLength(d.ticks, meter), keys: signed(d.keys) }) : null;
       case "resize": {
@@ -370,12 +377,17 @@ export class RollDrag {
     for (const k of d.notes) {
       x0 = Math.min(x0, tickToX(g, noteStart(n, k)));
       x1 = Math.max(x1, tickToX(g, noteEnd(n, k)));
-      y0 = Math.min(y0, keyToY(g, n.take.keys[k]!));
-      y1 = Math.max(y1, keyToY(g, n.take.keys[k]!) + g.rowH);
+      const top = keyToY(g, n.take.keys[k]!);
+      if (Number.isNaN(top)) continue;
+      y0 = Math.min(y0, top);
+      y1 = Math.max(y1, top + g.rowH);
     }
     return { x0, x1, y0, y1 };
   }
 }
+
+/** 書く道具で書ける行か（ドラムの行より下は書けない）。 */
+const drawable = (key: number, scale: MusicalScale) => key >= 0 && writable(key, scale);
 
 /** 離したときに送る意図。押しただけ、動かしても何も変わらないときは、選ぶ意図か null。 */
 export function finish(d: Drag, take: number | null): Command | null {

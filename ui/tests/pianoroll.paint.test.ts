@@ -9,7 +9,7 @@ import { noteMarks, paintRoll, paintRollKeys, paintVelocityLane, type RollPictur
 import { GEOM, take } from "./pianoroll-fixture";
 
 const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
-const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16 };
+const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
 const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
 const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
 

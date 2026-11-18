@@ -351,7 +351,7 @@
     border-top: var(--line-hair) solid var(--color-gray-6);
   }
   .head {
-    width: var(--size-col-keys);
+    width: var(--pr-keys, var(--size-col-keys));
     flex-shrink: 0;
     display: flex;
     align-items: flex-start;

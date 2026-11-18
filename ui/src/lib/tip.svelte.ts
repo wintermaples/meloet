@@ -99,6 +99,24 @@ export const tip: Action<HTMLElement, string | null | undefined> = (node, text) 
   };
 };
 
+/**
+ * `use:tipAround={文}`。tip と同じだが、中の用語（use:term）の説明が出ているときは出さない（ドラムの行の名前の、音名と用語の説明）。
+ * 中の用語の説明が先に出るのは、中の要素の耳が先に呼ばれて、同じ時間で先に時間切れになるから。
+ */
+export const tipAround: Action<HTMLElement, string | null | undefined> = (node, text) => {
+  let current = text;
+  const h = hover(node, () => {
+    if (!current || (owner && owner !== node && node.contains(owner) && tipView.value)) return null;
+    return { term: null, body: current };
+  });
+  return {
+    update(next: string | null | undefined) {
+      current = next;
+    },
+    destroy: h.destroy,
+  };
+};
+
 /** `use:tipWhenCut`。「…」でちぢんでいるときだけ、要素の文を全部出す。 */
 export const tipWhenCut: Action<HTMLElement> = (node) =>
   hover(node, () => (node.scrollWidth > node.clientWidth && node.textContent ? { term: null, body: node.textContent } : null));

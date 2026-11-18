@@ -3,17 +3,30 @@
      欄の見出しの行（位置 ・ 音 ・ 長さ ・ Vel）と、ノートごとの行（仕様書 2 章「一覧の行」、高さ size.row.s）。ノートが何万あっても重くならないよう、
      見えている行だけを作る。行を押すとそのノートを選ぶ（Shift で足す）。選ぶのは Rust（selectNotes を送るだけ）。
      欄を 2 回押すか、行で Enter を押すと、その欄が「入力の枠」になる（仕様書 3 章、モック R3-Lanes）。決めると setNotesField（その行のノート 1 つ）。
-     Tab で右の欄へ、右はしなら次の行の最初の欄へ（Shift Tab は逆）。打っている行は、一覧の何行目かで覚える（決めるとテイクの id が変わるため）。 -->
+     Tab で右の欄へ、右はしなら次の行の最初の欄へ（Shift Tab は逆）。打っている行は、一覧の何行目かで覚える（決めるとテイクの id が変わるため）。
+     ドラムのトラックでは「長さ」の列を出さず、位置 68 ・ 音（楽器の名前、のこり全部。入りきらなければ「…」、乗せると全部）・ Vel 40（仕様書 3 章）。
+     キットにない鍵のノートは音名で。 -->
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import ScrollArea from "../../lib/ScrollArea.svelte";
+  import { tipWhenCut } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import { noteLengthText, notePositionText } from "../format";
-  import { noteName } from "../meterFormat";
   import { metrics } from "../metrics.svelte";
+  import { drumName, keyLabel, rollShowsDrums } from "./drums";
   import NoteFieldInput from "./NoteFieldInput.svelte";
-  import { clampCommand, commitCommand, FIELD_ORDER, nextField, noteFieldSpec, rejectCommand, type FieldName, type FieldRead } from "./noteFields";
+  import {
+    clampCommand,
+    commitCommand,
+    DRUM_FIELD_ORDER,
+    FIELD_ORDER,
+    nextField,
+    noteFieldSpec,
+    rejectCommand,
+    type FieldName,
+    type FieldRead,
+  } from "./noteFields";
   import { clipNoteIndexes, inRanges } from "./notes";
   import { shown } from "./shown.svelte";
 
@@ -25,6 +38,8 @@
   const indexes = $derived(take && clip ? clipNoteIndexes(clip, take) : new Uint32Array(0));
   const selected = $derived(take && app.pianoRoll.take === take.id ? app.pianoRoll.selectedNotes : []);
   const rowH = $derived(metrics.px("size.row.s"));
+  const drums = $derived(rollShowsDrums(app, clip, shown.track));
+  const fields = $derived(drums ? DRUM_FIELD_ORDER : FIELD_ORDER);
 
   let viewport = $state<HTMLDivElement>();
   let top = $state(0);
@@ -54,6 +69,8 @@
     index: number;
     position: string;
     key: string;
+    /** 音が楽器の名前か（ドラムの、キットにある鍵）。 */
+    named: boolean;
     length: string;
     velocity: number;
     selected: boolean;
@@ -71,7 +88,8 @@
         at: r,
         index: i,
         position: notePositionText(at + take.starts[i]!, meter),
-        key: noteName(take.keys[i]!),
+        key: keyLabel(take.keys[i]!, drums),
+        named: drums && drumName(take.keys[i]!) !== null,
         length: noteLengthText(take.lengths[i]!, meter),
         velocity: take.velocities[i]!,
         selected: inRanges(selected, i),
@@ -99,7 +117,7 @@
   let tokens = 0;
 
   const specAt = (at: number, name: FieldName) =>
-    take && clip && at >= 0 && at < indexes.length ? noteFieldSpec(name, take, clip, [indexes[at]!], meter) : null;
+    take && clip && at >= 0 && at < indexes.length ? noteFieldSpec(name, take, clip, [indexes[at]!], meter, drums) : null;
   const editSpec = $derived(editing ? specAt(editing.at, editing.name) : null);
 
   /** 打っている行が見えるように送る。 */
@@ -137,7 +155,7 @@
       void close(true);
       return;
     }
-    const next = nextField(e.name, tab < 0);
+    const next = nextField(e.name, tab < 0, fields);
     const at = e.at + next.row;
     if (at < 0 || at >= indexes.length) void close(true);
     else open(at, next.name);
@@ -153,27 +171,30 @@
 
   function onRowDouble(ev: MouseEvent, at: number): void {
     const name = (ev.target as HTMLElement | null)?.closest<HTMLElement>("[data-field]")?.dataset.field;
-    if (name && (FIELD_ORDER as readonly string[]).includes(name)) open(at, name as FieldName);
+    if (name && (fields as readonly string[]).includes(name)) open(at, name as FieldName);
   }
 
   function onRowKey(ev: KeyboardEvent, at: number): void {
     if (ev.key !== "Enter" || ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
     ev.preventDefault();
     ev.stopPropagation();
-    open(at, FIELD_ORDER[0]!);
+    open(at, fields[0]!);
   }
 </script>
 
 {#snippet cell(row: Row, name: FieldName)}
-  <span class:r={name !== "key"} class:m-hi={name === "key" || name === "velocity"} data-field={name}>{row[name]}</span
-  >
+  {#if name === "key" && row.named}
+    <span class="m-hi name" data-field={name} use:tipWhenCut>{row.key}</span>
+  {:else}
+    <span class:r={name !== "key"} class:m-hi={name === "key" || name === "velocity"} data-field={name}>{row[name]}</span>
+  {/if}
 {/snippet}
 
 <div class="list" data-testid="pr-note-list">
-  <div class="cols head m-lbl">
+  <div class="cols head m-lbl" class:drums>
     <span class="r">{t("note.position")}</span>
     <span>{t("note.key")}</span>
-    <span class="r">{t("note.length")}</span>
+    {#if !drums}<span class="r">{t("note.length")}</span>{/if}
     <span class="r">{t("noteList.velocity")}</span>
   </div>
   <ScrollArea bind:viewport data-test="note-list-rows">
@@ -181,8 +202,14 @@
       {#each rows as row (row.index)}
         {#if editing && editSpec && editing.at === row.at}
           {@const e = editing}
-          <div class="m-num cols row editing" class:selected={row.selected} style:transform="translateY({row.at * rowH}px)" data-note={row.index}>
-            {#each FIELD_ORDER as name (name)}
+          <div
+            class="m-num cols row editing"
+            class:drums
+            class:selected={row.selected}
+            style:transform="translateY({row.at * rowH}px)"
+            data-note={row.index}
+          >
+            {#each fields as name (name)}
               {#if name === e.name}
                 <span class="cell">
                   <NoteFieldInput
@@ -204,6 +231,7 @@
         {:else}
           <button
             class="m-plain m-num cols row m-focus-in"
+            class:drums
             class:selected={row.selected}
             style:transform="translateY({row.at * rowH}px)"
             aria-pressed={row.selected}
@@ -215,7 +243,9 @@
           >
             {@render cell(row, "position")}
             {@render cell(row, "key")}
-            {@render cell(row, "length")}
+            {#if !drums}
+              {@render cell(row, "length")}
+            {/if}
             {@render cell(row, "velocity")}
           </button>
         {/if}
@@ -242,9 +272,18 @@
     flex-shrink: 0;
     white-space: nowrap;
   }
+  /* ドラム（仕様書 3 章）: 位置 68 ・ 音（のこり全部）・ Vel 40。 */
+  .cols.drums {
+    grid-template-columns: var(--part-drum-list-position) 1fr var(--part-drum-list-velocity);
+  }
   .cols > span {
     padding: 0 var(--mock-notelist-cell-pad);
     overflow: hidden;
+  }
+  /* 楽器の名前（モック R7-Drum: 一覧の中でも書体は本文のまま）。入りきらなければ「…」。 */
+  .cols > .name {
+    font-family: var(--font-sans);
+    text-overflow: ellipsis;
   }
   .cols > .r {
     text-align: right;

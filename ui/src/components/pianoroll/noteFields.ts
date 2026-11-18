@@ -6,10 +6,13 @@ import type { ClipView, Command, NoteField, TakeNotes, ValueField } from "../../
 import { noteLengthText, notePositionText, rangeText } from "../format";
 import { noteName } from "../meterFormat";
 import { DISPLAY_TICKS_PER_BEAT, ticksPerBar, ticksPerBeat, type Meter } from "../time";
+import { drumKeyOf, keyLabel } from "./drums";
 
 export type FieldName = "position" | "key" | "length" | "velocity";
 /** 左から右への順（一覧の欄の順、Tab の順）。 */
 export const FIELD_ORDER: readonly FieldName[] = ["position", "key", "length", "velocity"];
+/** ドラムのノートの一覧の欄（「長さ」の列を出さない。仕様書 3 章）。 */
+export const DRUM_FIELD_ORDER: readonly FieldName[] = ["position", "key", "velocity"];
 
 const NOTE_FIELDS: Record<FieldName, NoteField> = { position: "start", key: "key", length: "length", velocity: "velocity" };
 const VALUE_FIELDS: Record<FieldName, ValueField> = { position: "position", key: "key", length: "length", velocity: "velocity" };
@@ -191,8 +194,16 @@ export function stepField(spec: FieldSpec, v: number, delta: number): number {
  * 位置はいちばん早いノートを、音はいちばん低いノートを動かし、ほかはその間を保つ。長さとベロシティはぜんぶを同じ値に。
  * 枠に入れておく値は、位置はいちばん早い位置、音はいちばん低い音、長さはそろっていればその値（ばらばらなら、いちばん早いノートの長さ）、
  * ベロシティはそろっていればその値（ばらばらなら、いちばん小さい値）。
+ * drums なら、音は楽器の名前で見せ、楽器の名前でも音名でも読む。
  */
-export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes: readonly number[], meter: Meter): NoteFieldSpec | null {
+export function noteFieldSpec(
+  name: FieldName,
+  take: Notes,
+  clip: Placed,
+  notes: readonly number[],
+  meter: Meter,
+  drums = false,
+): NoteFieldSpec | null {
   const picked = notes.filter((i) => i < take.starts.length);
   if (picked.length === 0) return null;
   const at = clip.start + clip.takeOffset;
@@ -226,20 +237,26 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
       const keys = picked.map((i) => take.keys[i]!);
       const lowest = Math.min(...keys);
       const high = 127 - (Math.max(...keys) - lowest);
+      const format = (k: number) => keyLabel(k, drums);
       return {
         name,
         field: VALUE_FIELDS[name],
         shift: 12,
-        initial: noteName(lowest),
-        kept: noteName(lowest),
+        initial: format(lowest),
+        kept: format(lowest),
         current: lowest,
         low: 0,
         high,
         unit: 1,
         range: rangeText(noteName(0), noteName(high)),
-        format: noteName,
-        read: parseKeyName,
-        loose: readKeyNameLoose,
+        format,
+        read: drums ? (t) => drumKeyOf(t) ?? parseKeyName(t) : parseKeyName,
+        loose: drums
+          ? (t) => {
+              const k = drumKeyOf(t);
+              return k === null ? readKeyNameLoose(t) : { value: k, unit: null };
+            }
+          : readKeyNameLoose,
       };
     }
     case "length": {
@@ -298,10 +315,10 @@ export function rejectCommand(spec: FieldSpec, shown: string): Command {
   return { type: "rejectValue", field: spec.field, kept: spec.kept ?? shown, range: spec.range };
 }
 
-/** Tab（back なら Shift Tab）で次にひらく欄。いまの行の外へ出るなら row が ±1。 */
-export function nextField(name: FieldName, back: boolean): { name: FieldName; row: -1 | 0 | 1 } {
-  const i = FIELD_ORDER.indexOf(name) + (back ? -1 : 1);
-  if (i < 0) return { name: FIELD_ORDER[FIELD_ORDER.length - 1]!, row: -1 };
-  if (i >= FIELD_ORDER.length) return { name: FIELD_ORDER[0]!, row: 1 };
-  return { name: FIELD_ORDER[i]!, row: 0 };
+/** Tab（back なら Shift Tab）で次にひらく欄。いまの行の外へ出るなら row が ±1。order は欄の並び（ドラムの一覧は長さがない）。 */
+export function nextField(name: FieldName, back: boolean, order: readonly FieldName[] = FIELD_ORDER): { name: FieldName; row: -1 | 0 | 1 } {
+  const i = order.indexOf(name) + (back ? -1 : 1);
+  if (i < 0) return { name: order[order.length - 1]!, row: -1 };
+  if (i >= order.length) return { name: order[0]!, row: 1 };
+  return { name: order[i]!, row: 0 };
 }

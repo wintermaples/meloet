@@ -82,6 +82,7 @@ BOARDS = {
     "trackRename": "R6-Tracks",
     "trackDrag": "R6-Tracks",
     "trackColorMenu": "R6-Tracks",
+    "drumRoll": "R7-Drum",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """

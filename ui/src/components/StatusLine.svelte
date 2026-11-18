@@ -10,7 +10,7 @@
   import { current, onEvent, send } from "../state/app.svelte";
   import { STATUS_JOIN, t, type TextKey } from "../text/ja";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
-  import { heldText, noteName } from "./meterFormat";
+  import { isDrumKit, keyLabel, keysInstrument, keysLabel, rollShowsDrums } from "./pianoroll/drums";
   import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";
@@ -20,6 +20,10 @@
   import ZoomMenu from "./ZoomMenu.svelte";
 
   const app = $derived(current.state!);
+  /** ピアノロールがドラムの行を見せている（選んだノートと鳴っている音を楽器の名前で）。 */
+  const rollDrums = $derived(rollShowsDrums(app, shownNotes.clip, shownNotes.track));
+  /** 鍵を弾くと鳴る先がドラム（押している音を楽器の名前で）。 */
+  const keysDrums = $derived(isDrumKit(keysInstrument(app)));
 
   interface Shown {
     parts: TextPart[];
@@ -74,7 +78,7 @@
 
   /** 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）。音名は Rust が送る最初の 4 つで、残りがあれば「…」。 */
   function notesParts(n: NoteSelection): TextPart[] {
-    const values = { count: n.count, keys: n.keys.map(noteName).join(" ") };
+    const values = { count: n.count, keys: n.keys.map((k) => keyLabel(k, rollDrums)).join(" ") };
     return joined(
       textParts(n.count > n.keys.length ? "status.notesSelectedMore" : "status.notesSelected", values),
       n.quantized ? textParts("status.notesQuantized", {}) : [],
@@ -279,7 +283,7 @@
     return joined(
       textParts("status.pianoRollClip", { track: track({ number: tr.number, name: tr.name }), clip: clip.name }),
       clip.takes > 1 ? textParts("arrange.takeSwitch", { take: clip.take, takes: clip.takes }) : [],
-      sounding.length > 0 ? textParts("status.sounding", { keys: heldText(sounding) }) : [],
+      sounding.length > 0 ? textParts("status.sounding", { keys: keysLabel(sounding, rollDrums) }) : [],
     );
   }
 
@@ -316,7 +320,7 @@
   function recordingParts(m: Extract<StatusMessage, { id: "recording" }>): TextPart[] {
     return joined(
       textParts("msg.recordingPianoRoll", { track: track(m.track), take: m.take }),
-      held.length > 0 ? textParts("status.held", { keys: heldText(held) }) : [],
+      held.length > 0 ? textParts("status.held", { keys: keysLabel(held, keysDrums) }) : [],
     );
   }
 

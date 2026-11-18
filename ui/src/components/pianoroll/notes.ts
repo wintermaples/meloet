@@ -40,7 +40,7 @@ export interface SelectedSummary {
   count: number;
   /** いちばん早い位置（「3.1.000」）。2 つ以上なら「〜」をつけるのは見せる側。 */
   position: string;
-  /** 音名をテイクの順に（「D4 E4 F4」）。多いときは maxKeys まで（欄に入りきらない分は見せる側が切る）。 */
+  /** 音名をテイクの順に（「D4 E4 F4」。ドラムは楽器の名前）。多いときは maxKeys まで（欄に入りきらない分は見せる側が切る）。 */
   keys: string;
   /** そろっていれば「0.360」、ちがえば null（「ばらばら」）。 */
   length: string | null;
@@ -53,7 +53,14 @@ export interface SelectedSummary {
  * 選んだノートのまとめ（モック A-PianoRoll の右の欄「選んだノート」）。何も選んでいなければ null。
  * 位置は曲の中（テイクの 0 がクリップの start + takeOffset）。
  */
-export function selectedSummary(take: Notes, clip: Placed, ranges: readonly IndexRange[], meter: Meter, maxKeys = 64): SelectedSummary | null {
+export function selectedSummary(
+  take: Notes,
+  clip: Placed,
+  ranges: readonly IndexRange[],
+  meter: Meter,
+  maxKeys = 64,
+  label: (key: number) => string = noteName,
+): SelectedSummary | null {
   const n = take.starts.length;
   let count = 0;
   let first = Infinity;
@@ -69,7 +76,7 @@ export function selectedSummary(take: Notes, clip: Placed, ranges: readonly Inde
       length = length === undefined || length === len ? len : null;
       low = Math.min(low, take.velocities[i]!);
       high = Math.max(high, take.velocities[i]!);
-      if (names.length < maxKeys) names.push(noteName(take.keys[i]!));
+      if (names.length < maxKeys) names.push(label(take.keys[i]!));
     }
   }
   if (count === 0) return null;

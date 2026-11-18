@@ -819,8 +819,18 @@ describe("アレンジの上の案内", () => {
     expect(text('[data-test="sound-hint"]')).toBe("音が出ました。");
   });
 
-  it("からっぽのアレンジ: 2 文（モック F-Empty の 3 文目は出さない）", () => {
+  it("からっぽのアレンジ: 3 文（モック F-Empty）。3 文目は「＋ トラックを追加」が使えるときだけ", () => {
     show(SoundHint, ready((s) => (s.workspace.hint = "emptyArrange")));
+    expect(text('[data-test="empty-hint"]')).toBe(
+      "ここに、録った音がならびます。 鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。 トラックを増やすには左下の「＋ トラックを追加」",
+    );
+    app.setState(
+      ready((s) => {
+        s.workspace.hint = "emptyArrange";
+        s.transport.state = "countIn";
+      }),
+    );
+    flushSync();
     expect(text('[data-test="empty-hint"]')).toBe("ここに、録った音がならびます。 鍵盤を弾いて音を確かめたら、赤い丸の録音ボタンへ。");
     expect(q('[data-test="sound-hint"]')).toBeNull();
   });

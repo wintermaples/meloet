@@ -1,18 +1,19 @@
 <!-- ピアノロールの道具の列（モック A-PianoRoll・F-PRPlay・F-PRRec の帯のいちばん上の行）。
      「▾ ピアノロール」（押すとたたむ。B-74）、クリップの文、テイクの切りかえの札、道具（選ぶ ・ 書く ・ 消す。右はしにキー）、横の − ＋（R3-Arrange と同じ形）、
-     グリッド（一覧）、三連符、スケール固定と音階の ▾（B-65）。横が足りなければ、道具のキー、クリップの文の順に引っこめる（F-PR150、B-73）。
+     グリッド（一覧）、三連符、スケール固定と音階の ▾（B-65）。ドラムのトラックでは、スケール固定と ▾ は「使えない」（仕様書 3 章、6 章）。横が足りなければ、道具のキー、クリップの文の順に引っこめる（F-PR150、B-73）。
      キーがピアノロールに向いているときは、上辺に accent の線（B-72）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { liveNotes, type Command, type ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
-  import { term } from "../../lib/tip.svelte";
+  import { term, tip } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t, type TextKey } from "../../text/ja";
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { toolbarParts, type ToolbarParts } from "../fit";
   import { gridText, scaleName, termParts, textParts } from "../format";
   import { metrics } from "../metrics.svelte";
+  import { rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import ScaleMenu from "./ScaleMenu.svelte";
   import { shown } from "./shown.svelte";
@@ -29,6 +30,7 @@
       : null,
   );
   const selectedCount = $derived(G.indexesOf(pr.selectedNotes).length);
+  const drums = $derived(rollShowsDrums(app, clip, track));
 
   // 録音中のノートの数は、録っている物の数（F-PRRec「録音中 ・ ノート 22」）。
   let liveCount = $state(0);
@@ -104,7 +106,7 @@
   ];
 
   const gridName = $derived(gridText(pr.grid.division, false));
-  const scaleText = $derived(scaleName(pr.scale.root, pr.scale.mode));
+  const scaleText = $derived(drums ? t("inspector.scaleNone") : scaleName(pr.scale.root, pr.scale.mode));
 
   function setGrid(division: number): void {
     send({ type: "setGrid", division, triplet: pr.grid.triplet });
@@ -164,6 +166,10 @@
     if (hadFocus) button?.focus();
   }
   const toggleMenu = (which: Menu) => (menu = menu === which ? null : which);
+  // ドラムに切りかわったら、音階の一覧はとじる（▾ が「使えない」になる）。
+  $effect(() => {
+    if (drums && untrack(() => menu) === "scale") menu = null;
+  });
   $effect(() => {
     if (!menu) return;
     const button = menuButton;
@@ -249,20 +255,27 @@
   <button class="m-btn" class:on={pr.grid.triplet} aria-pressed={pr.grid.triplet} use:term={"三連符"} onclick={toggleTriplet} data-test="pr-triplet"
     >{t("grid.triplet")}</button
   >
-  <button class="m-btn" class:on={pr.scale.lock} aria-pressed={pr.scale.lock} use:term={"スケール固定"} onclick={toggleLock} data-test="pr-scale-lock">
-    {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
-  </button>
-  <button
-    class="m-btn scale-stub"
-    class:on={pr.scale.lock}
-    class:open={menu === "scale"}
-    aria-haspopup="menu"
-    aria-expanded={menu === "scale"}
-    aria-label={t("inspector.musicalScale")}
-    bind:this={scaleButton}
-    onclick={() => toggleMenu("scale")}
-    data-test="pr-scale-menu">▾</button
-  >
+  {#if drums}
+    <button class="m-btn" aria-disabled="true" use:tip={t("msg.drumsNoScaleLock")} data-test="pr-scale-lock">
+      {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
+    </button>
+    <button class="m-btn scale-stub" aria-disabled="true" aria-label={t("inspector.musicalScale")} data-test="pr-scale-menu">▾</button>
+  {:else}
+    <button class="m-btn" class:on={pr.scale.lock} aria-pressed={pr.scale.lock} use:term={"スケール固定"} onclick={toggleLock} data-test="pr-scale-lock">
+      {t("pr.scaleLock")} <span class="m-num">{scaleText}</span>
+    </button>
+    <button
+      class="m-btn scale-stub"
+      class:on={pr.scale.lock}
+      class:open={menu === "scale"}
+      aria-haspopup="menu"
+      aria-expanded={menu === "scale"}
+      aria-label={t("inspector.musicalScale")}
+      bind:this={scaleButton}
+      onclick={() => toggleMenu("scale")}
+      data-test="pr-scale-menu">▾</button
+    >
+  {/if}
   <div class="ruler" aria-hidden="true" bind:this={ruler}>
     {#each TOOLS as tool (tool.tool)}<span class="m-num">{t(tool.hotkey)}</span>{/each}
   </div>

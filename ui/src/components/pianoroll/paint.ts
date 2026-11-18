@@ -13,7 +13,7 @@ import { ticksPerBar, ticksPerBeat, type Meter } from "../time";
 import { draggedPoint, firstPointFrom, isOnOff, lanePoints, pointTick, valueToY, type LaneBox, type LaneDrag } from "./cc";
 import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
-import { eachNoteIn, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, type RollGeom, type Shown } from "./geom";
+import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, type RollGeom, type Shown } from "./geom";
 
 /** 寸法（CSS px、拡大率をかけたあと）。 */
 export interface RollSizes {
@@ -24,6 +24,8 @@ export interface RollSizes {
   velFull: number;
   velMid: number;
   endMark: number;
+  /** ドラムの四角の、行の高さとの差（part.drum.hit-gap）。 */
+  drumGap: number;
 }
 
 /** ノートの場所とベロシティの帯の大きな絵が使う物。変わったら slot の update を呼ぶ。 */
@@ -102,8 +104,104 @@ export function paintNote(out: Batch, x0: number, x1: number, y: number, h: numb
   out.rect(e, y, b, y + h, rgb(face));
 }
 
+/** ドラムの四角（仕様書 2 章「ドラムの叩いた所の四角」）: 始まりの線の 1px 右から、幅 hitW、行のまん中に高さ 行 − gap。 */
+function drumSquare(g: RollGeom, sizes: RollSizes, x0: number, rowTop: number, dpr: number): { x0: number; y0: number; x1: number; y1: number } {
+  const rowH = g.rowH * dpr;
+  const h = Math.max(HAIR, Math.round(rowH - sizes.drumGap * dpr));
+  const y0 = Math.round(rowTop + (rowH - h) / 2);
+  const a = Math.round(x0) + HAIR;
+  return { x0: a, y0, x1: a + Math.max(HAIR, Math.round((g.drum?.hitW ?? 0) * dpr)), y1: y0 + h };
+}
+
+/** ドラムのノートの場所: 行の地（gray.2 と gray.3 を交互に、間に gray.1 の線）、方眼の線、叩いた所の四角。 */
+function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array | null, dpr: number): void {
+  const { g, sizes } = p;
+  const d = g.drum!;
+  const rowH = g.rowH * dpr;
+  const ppt = g.ppt * dpr;
+  const X = (tick: number) => box.x0 + (tick - g.scrollTick) * ppt;
+  const rowTop = (key: number) => Math.round(box.y0 + (d.keys.indexOf(key) - d.top) * rowH);
+
+  out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
+  const rows = Math.min(d.keys.length - d.top, rowsShown(g) + 1);
+  for (let r = 0; r < rows; r++) {
+    const y = box.y0 + r * rowH;
+    out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb((d.top + r) % 2 === 0 ? "color.gray.2" : "color.gray.3"));
+  }
+  const bottom = box.y0 + rows * rowH;
+  gridLines(out, box, p, X, Math.min(box.y1, bottom));
+
+  const hitTicks = d.hitW / g.ppt;
+  const from = g.scrollTick - hitTicks;
+  const to = g.scrollTick + g.width / g.ppt;
+  const square = (start: number, key: number) => drumSquare(g, sizes, X(start), rowTop(key), dpr);
+  const n = p.shown;
+  const sel = p.selected;
+  const moving: number[] = [];
+  const shownKey = (key: number) => d.keys.includes(key);
+  if (n) {
+    eachNoteIn(n, from, to, (i) => {
+      const key = n.take.keys[i]!;
+      if (!shownKey(key)) return;
+      const mark = marks ? marks[i]! : 0;
+      if (mark === 1) {
+        moving.push(i);
+        return;
+      }
+      const q = square(noteStart(n, i), key);
+      if (q.y0 > box.y1 || q.y1 < box.y0) return;
+      const face: ColorName =
+        mark === 4 ? FRAME : mark === 3 || (sel && sel[i]) ? "color.accent" : velocityColor(n.take.velocities[i]!);
+      out.rect(q.x0, q.y0, q.x1, q.y1, rgb(face));
+    });
+  }
+  if (n && p.origin) {
+    const o = p.origin;
+    eachNoteIn(n, from - o.maxLength - n.maxLength, to + o.maxLength, (i) => {
+      const j = movedFrom(n.take, o.take, i);
+      if (j < 0 || !shownKey(o.take.keys[j]!)) return;
+      const q = square(noteStart(o, j), o.take.keys[j]!);
+      if (q.x1 < box.x0 || q.x0 > box.x1) return;
+      frame(out, q.x0, q.y0, q.x1, q.y1, sel && sel[i] ? "color.accent" : FRAME);
+    });
+  }
+  if (n) {
+    for (const i of moving) {
+      const q = square(noteStart(n, i), n.take.keys[i]!);
+      frame(out, q.x0, q.y0, q.x1, q.y1, "color.accent");
+    }
+  }
+  if (p.live) {
+    for (const l of p.live) {
+      if (l.length === null || !shownKey(l.key)) continue;
+      const q = square(l.start, l.key);
+      if (q.x1 < box.x0 || q.x0 > box.x1) continue;
+      out.rect(q.x0, q.y0, q.x1, q.y1, rgb(velocityColor(l.velocity)));
+    }
+  }
+}
+
+/** 方眼の縦の線（小節 gray.6、拍 gray.4、ほか gray.3）を、上はしから bottom まで。 */
+function gridLines(out: Batch, box: Box, p: RollPicture, X: (tick: number) => number, bottom: number): void {
+  const { g } = p;
+  const from = g.scrollTick;
+  const to = g.scrollTick + g.width / g.ppt;
+  const s = lineStep(p.step, p.meter, g.ppt);
+  const perBar = ticksPerBar(p.meter);
+  const perBeat = ticksPerBeat(p.meter);
+  for (let tick = Math.ceil(from / s) * s; tick < to; tick += s) {
+    const x = Math.round(X(tick));
+    const color = tick % perBar === 0 ? "color.gray.6" : tick % perBeat === 0 ? "color.gray.4" : "color.gray.3";
+    out.rect(x, box.y0, x + HAIR, bottom, rgb(color));
+  }
+}
+
 /** ノートの場所: 行の地、方眼の線、ノート、そろえる前の位置の枠、ドラッグのもとの位置の枠。 */
 export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array | null, dpr: number): void {
+  if (p.g.drum) {
+    paintDrumRoll(out, box, p, marks, dpr);
+    return;
+  }
   const { g, sizes } = p;
   const rowH = g.rowH * dpr;
   const ppt = g.ppt * dpr;
@@ -123,14 +221,7 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
 
   const from = g.scrollTick;
   const to = g.scrollTick + g.width / g.ppt;
-  const s = lineStep(p.step, p.meter, g.ppt);
-  const perBar = ticksPerBar(p.meter);
-  const perBeat = ticksPerBeat(p.meter);
-  for (let tick = Math.ceil(from / s) * s; tick < to; tick += s) {
-    const x = Math.round(X(tick));
-    const color = tick % perBar === 0 ? "color.gray.6" : tick % perBeat === 0 ? "color.gray.4" : "color.gray.3";
-    out.rect(x, box.y0, x + HAIR, box.y1, rgb(color));
-  }
+  gridLines(out, box, p, X, box.y1);
 
   const rowTop = (key: number) => Math.round(Y(key));
   const noteFrame = (x0: number, x1: number, y: number, color: ColorName) =>
@@ -246,6 +337,15 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
 export function paintRollKeys(out: Batch, box: Box, g: RollGeom, lit: (key: number) => boolean, dpr: number): void {
   const rowH = g.rowH * dpr;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
+  if (g.drum) {
+    // ドラムの行の名前の地（モック R7-Drum: gray.5、下に gray.1 の線）。名前は HTML。
+    const rows = Math.min(g.drum.keys.length - g.drum.top, rowsShown(g) + 1);
+    for (let r = 0; r < rows; r++) {
+      const y = box.y0 + r * rowH;
+      out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb("color.gray.5"));
+    }
+    return;
+  }
   const rows = rowsShown(g) + 1;
   for (let r = 0; r < rows; r++) {
     const key = g.topKey - r;
@@ -278,10 +378,17 @@ export function paintLive(out: Batch, box: Box, p: LivePicture, dpr: number): vo
   const areaTop = oy - p.ty * dpr;
   out.clip(box.x0, Math.max(box.y0, Math.round(areaTop)), box.x1, Math.min(box.y1, Math.round(areaTop + p.areaH * dpr)));
   for (const n of p.notes) {
+    const top = keyToY(g, n.key);
+    if (Number.isNaN(top)) continue;
     const x0 = ox + (n.start - g.scrollTick) * g.ppt * dpr;
     const x1 = ox + (n.end - g.scrollTick) * g.ppt * dpr;
-    const y = Math.round(oy + (g.topKey - n.key) * g.rowH * dpr);
-    paintNote(out, x0, x1, y, noteH, edge, n.face);
+    const y = Math.round(oy + top * dpr);
+    if (g.drum) {
+      const q = drumSquare(g, sizes, x0, y, dpr);
+      out.rect(q.x0, q.y0, q.x1, q.y1, rgb(n.face));
+    } else {
+      paintNote(out, x0, x1, y, noteH, edge, n.face);
+    }
   }
 }
 

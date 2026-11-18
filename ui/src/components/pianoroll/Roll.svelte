@@ -7,6 +7,7 @@
      行の高さは縦の拡大の段（prView.rowPx、design-notes B-63）。ノートの高さは行 − 1。縦の − ＋ は目盛の左の角。
      左の鍵盤の列を押すと、押している間だけ鳴らす（B-62。audition.ts）。目盛を押すと再生の位置、ドラッグでループの範囲（B-61）。
      右クリックは一覧（B-60。描くのは App の ContextMenu）。
+     ドラムのトラックでは、行はキットの 12 の音だけ（鍵の列は楽器の名前、幅 part.drum.keys）、ノートは叩いた所の四角（drums.ts、geom.ts の drum）。
      ベロシティの帯は「▾ ベロシティ」でたたむ（仕様書 3 章の帯の表。ひらくのは CC の札の行の「▸ ベロシティ」）。たたんだ分はノートの場所へ。
      たたんでも区画（pianoRoll）の箱はそのままなので、WebGL の文脈は作りなおさない。 -->
 <script lang="ts">
@@ -16,10 +17,10 @@
   import { everyGlFrame, glRegion, glSlot, type GlSlot } from "../../gl/slot";
   import { platformOf } from "../../keys/keys";
   import HScrollbar from "../../lib/HScrollbar.svelte";
-  import { term } from "../../lib/tip.svelte";
+  import { term, tipAround } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
-  import { textParts } from "../format";
+  import { termParts, textParts } from "../format";
   import { closeContextMenu, openContextMenu } from "../menu/contextMenu.svelte";
   import * as AG from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
@@ -29,13 +30,31 @@
   import { Auditioner, chordOf, fixedOr100, NUDGE_MS, notesMayAudition, onNudgeKeys, ticksToMs } from "./audition";
   import { pianoRollCommand } from "./commands";
   import { RollDrag, type CursorKind, type Drag, type Mods } from "./drag";
+  import { DRUM_KEYS, drumName, drumTerm, rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
   import { rollMenu, type RollMenuActions } from "./rollMenu";
   import { shown } from "./shown.svelte";
   import { originFor, shownFor } from "./shownNotes";
   import { sameKeys, soundingKeys } from "./sounding";
-  import { dragReading, onDragCancel, prPanels, prView, pxPerTick, ROW_PX_STEPS, rowHeight, scrollToTick, velocityLane, zoomBy, zoomRowsBy } from "./view.svelte";
+  import {
+    clampTopRow,
+    dragReading,
+    DRUM_ROW_MAX,
+    DRUM_ROW_MIN,
+    drumRowPx,
+    drumView,
+    onDragCancel,
+    prPanels,
+    prView,
+    pxPerTick,
+    ROW_PX_STEPS,
+    rowHeight,
+    scrollToTick,
+    velocityLane,
+    zoomBy,
+    zoomRowsBy,
+  } from "./view.svelte";
 
   let { onreading }: { onreading?: (at: { x: number; y: number } | null) => void } = $props();
 
@@ -46,7 +65,13 @@
   const meter: Meter = $derived({ num: song.meterNum, den: song.meterDen });
   const scale = $derived(metrics.scale);
 
-  const rowH = $derived(rowHeight(scale));
+  /** ドラムの行を見せているか（仕様書 3 章「ドラムのピアノロール」）。 */
+  const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
+  $effect(() => {
+    prView.drums = drums;
+  });
+  const drumRowsPx = $derived(drumRowPx(DRUM_KEYS.length, scale));
+  const rowH = $derived(drums ? (drumRowsPx * scale) / 100 : rowHeight(scale));
   const sizes: RollSizes = $derived({
     // 仕様書の size.note と part.note.height の差（行 − 1）を、どの段でも保つ。
     noteH: rowH - (metrics.px("size.note") - metrics.px("part.note.height")),
@@ -56,6 +81,7 @@
     velFull: metrics.px("mock.pianoroll.vel-full"),
     velMid: metrics.px("mock.pianoroll.vel-mid"),
     endMark: metrics.px("mock.pianoroll.end-mark"),
+    drumGap: metrics.px("part.drum.hit-gap"),
   });
 
   let area = $state<HTMLElement>();
@@ -69,8 +95,20 @@
   });
 
   const ppt = $derived(pxPerTick(scale));
-  const g: G.RollGeom = $derived({ scrollTick: prView.scrollTick, ppt, topKey: prView.topKey, rowH, width: areaW, height: areaH });
   const step = $derived(G.gridTicks(pr.grid, meter));
+  /** ドラムの行: いちばん上の行は、見えている行の数で動ける範囲に。四角の幅はグリッドの 1 マス − 2（6 より小さくしない）。 */
+  const drumGeom: G.DrumGeom | undefined = $derived(
+    drums
+      ? {
+          keys: DRUM_KEYS,
+          top: clampTopRow(drumView.topRow, DRUM_KEYS.length, G.wholeRows(areaH, rowH)),
+          hitW: Math.max(metrics.px("part.drum.hit-min"), step * ppt - metrics.px("part.drum.hit-inset")),
+        }
+      : undefined,
+  );
+  const g: G.RollGeom = $derived({ scrollTick: prView.scrollTick, ppt, topKey: prView.topKey, rowH, width: areaW, height: areaH, drum: drumGeom });
+  /** ドラムには音階がないので、スケール固定を当てない（仕様書 3 章）。 */
+  const rollScale = $derived(drums ? { ...pr.scale, lock: false } : pr.scale);
 
   const rec = $derived(transport.state === "recording" ? transport.recording : null);
   /** 録っているクリップ（か、まだクリップのない録音）を見せているときは、テイクの代わりに録っている物を描く。 */
@@ -180,7 +218,7 @@
     shown: () => (liveMode ? null : n),
     geom: () => g,
     step: () => step,
-    scale: () => pr.scale,
+    scale: () => rollScale,
     meter: () => meter,
     tool: () => prView.tool,
     selected: () => selectedRanges,
@@ -340,7 +378,8 @@
       const rows = Math.trunc(wheelRows / rowH);
       if (rows !== 0) {
         wheelRows -= rows * rowH;
-        prView.topKey = G.clampTopKey(prView.topKey - rows, G.wholeRows(areaH, rowH));
+        if (drums) drumView.topRow = clampTopRow((drumGeom?.top ?? 0) + rows, DRUM_KEYS.length, G.wholeRows(areaH, rowH));
+        else prView.topKey = G.clampTopKey(prView.topKey - rows, G.wholeRows(areaH, rowH));
       }
     }
   }
@@ -379,7 +418,8 @@
         fitKeysFor = clip.takeId;
       }
       if (fitKeysFor !== null && notes && notes.take.id === fitKeysFor) {
-        prView.topKey = G.fitTopKey(G.keyRangeOf(notes), G.wholeRows(area?.clientHeight || h, rowH));
+        // ドラムの行は、見ている範囲を別に持つ（drumView）。
+        if (!drums) prView.topKey = G.fitTopKey(G.keyRangeOf(notes), G.wholeRows(area?.clientHeight || h, rowH));
         fitKeysFor = null;
       }
     });
@@ -496,7 +536,9 @@
       if (d.kind === "move" && d.press.moved) {
         const b = movedBoxOf(d);
         if (!b) return null;
-        return { left: b.x0, top: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, tx: d.ticks * ppt, ty: -d.keys * rowH };
+        const grabKey = n.take.keys[d.grab]!;
+        const ty = d.keys === 0 ? 0 : G.keyToY(g, grabKey + d.keys) - G.keyToY(g, grabKey);
+        return { left: b.x0, top: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, tx: d.ticks * ppt, ty: Number.isNaN(ty) ? 0 : ty };
       }
       if (d.kind === "resize" && d.press.moved) {
         const b = movedBoxOf(d);
@@ -513,15 +555,18 @@
     }
     if (held.length > 0) {
       let first = Infinity;
-      let low = G.KEY_MAX;
-      let high = G.KEY_MIN;
+      let y0 = Infinity;
+      let y1 = -Infinity;
       for (const l of held) {
+        const top = G.keyToY(g, l.key);
+        if (Number.isNaN(top)) continue;
         first = Math.min(first, l.start);
-        low = Math.min(low, l.key);
-        high = Math.max(high, l.key);
+        y0 = Math.min(y0, top);
+        y1 = Math.max(y1, top + rowH);
       }
+      if (!(y1 > y0)) return null;
       const left = G.tickToX(g, first);
-      return { left, top: G.keyToY(g, high), width: Math.max(1, areaW - left), height: (high - low + 1) * rowH, tx: 0, ty: 0 };
+      return { left, top: y0, width: Math.max(1, areaW - left), height: y1 - y0, tx: 0, ty: 0 };
     }
     return null;
   });
@@ -534,11 +579,15 @@
     let y0 = Infinity;
     let y1 = -Infinity;
     for (const k of d.notes) {
+      const top = G.keyToY(g, n.take.keys[k]!);
+      if (Number.isNaN(top)) continue;
       x0 = Math.min(x0, G.tickToX(g, G.noteStart(n, k)));
-      x1 = Math.max(x1, G.tickToX(g, G.noteEnd(n, k)));
-      y0 = Math.min(y0, G.keyToY(g, n.take.keys[k]!));
-      y1 = Math.max(y1, G.keyToY(g, n.take.keys[k]!) + rowH);
+      // ドラムの四角は長さを見せないので、四角の右はしまで。
+      x1 = Math.max(x1, drumGeom ? G.tickToX(g, G.noteStart(n, k)) + drumGeom.hitW + 1 : G.tickToX(g, G.noteEnd(n, k)));
+      y0 = Math.min(y0, top);
+      y1 = Math.max(y1, top + rowH);
     }
+    if (!(x1 > x0)) return null;
     return { x0, x1, y0, y1 };
   }
 
@@ -663,8 +712,28 @@
     }
     return out;
   });
+  /** ドラムの行の名前。このクリップで叩いている行は gray.10、ほかは gray.9（モック R7-Drum。使っていない行も暗くしない）。 */
+  const usedKeys = $derived.by(() => {
+    const used = new Set<number>();
+    if (!drums || !n) return used;
+    for (let i = 0; i < n.take.keys.length; i++) if (G.noteShown(n, i)) used.add(n.take.keys[i]!);
+    return used;
+  });
+  const drumLabels = $derived.by(() => {
+    const out: { key: number; y: number; name: string; term: string | null; note: string; used: boolean }[] = [];
+    const d = drumGeom;
+    if (!d) return out;
+    const rows = Math.min(d.keys.length - d.top, G.rowsShown(g));
+    for (let r = 0; r < rows; r++) {
+      const key = d.keys[d.top + r]!;
+      const name = drumName(key) ?? G.noteName(key);
+      out.push({ key, y: r * rowH, name, term: drumTerm(name), note: G.noteName(key), used: usedKeys.has(key) });
+    }
+    return out;
+  });
   const keyLabels = $derived.by(() => {
     const out: { key: number; y: number; text: string }[] = [];
+    if (drums) return out;
     const rows = G.rowsShown(g);
     for (let r = 0; r < rows; r++) {
       const key = prView.topKey - r;
@@ -792,12 +861,12 @@
   const scrollTotal = $derived(Math.max((scrollMaxTick + areaW / 2 / ppt) * ppt + areaW / 2, prView.scrollTick * ppt + areaW));
 </script>
 
-<div class="roll" use:glRegion={"pianoRoll"}>
+<div class="roll" class:drums use:glRegion={"pianoRoll"}>
   <div class="ruler">
     <div class="ruler-gap">
       <button
         class="m-plain vzoom"
-        disabled={prView.rowPx === ROW_PX_STEPS[0]}
+        disabled={drums ? drumRowsPx <= DRUM_ROW_MIN : prView.rowPx === ROW_PX_STEPS[0]}
         aria-label={t("menu.zoomRowsOut")}
         onclick={() => zoomRowsBy(-1)}
         data-test="pr-row-zoom-out">{t("zoom.outMark")}</button
@@ -805,7 +874,7 @@
       <button
         class="m-plain vzoom"
         aria-label={t("menu.zoomRowsIn")}
-        disabled={prView.rowPx === ROW_PX_STEPS[ROW_PX_STEPS.length - 1]}
+        disabled={drums ? drumRowsPx >= DRUM_ROW_MAX : prView.rowPx === ROW_PX_STEPS[ROW_PX_STEPS.length - 1]}
         onclick={() => zoomRowsBy(1)}
         data-test="pr-row-zoom-in">{t("zoom.inMark")}</button
       >
@@ -837,11 +906,22 @@
       onpointercancel={keysUp}
       data-test="pr-keys"
     >
-      <div class="key-names">
-        {#each keyLabels as k (k.key)}
-          <span class="m-num key-name" style:top="{k.y}px" style:height="{rowH}px">{k.text}</span>
-        {/each}
-      </div>
+      {#if drums}
+        <div class="drum-names" data-test="pr-drum-names">
+          {#each drumLabels as k (k.key)}
+            <span class="drum-name" class:used={k.used} style:top="{k.y}px" style:height="{rowH}px" use:tipAround={k.note} data-key={k.key}
+              >{#if k.term}{#each termParts(k.name, k.term) as piece, j (j)}{#if piece.term}<span use:term={k.term}>{piece.text}</span
+                    >{:else}{piece.text}{/if}{/each}{:else}{k.name}{/if}</span
+            >
+          {/each}
+        </div>
+      {:else}
+        <div class="key-names">
+          {#each keyLabels as k (k.key)}
+            <span class="m-num key-name" style:top="{k.y}px" style:height="{rowH}px">{k.text}</span>
+          {/each}
+        </div>
+      {/if}
       <div class="key-shapes" use:glRegion={"pianoRollKeys"} use:painted={"keys"}></div>
     </div>
     <div class="notes">
@@ -924,12 +1004,17 @@
 
 <style>
   .roll {
+    --pr-keys: var(--size-col-keys);
     flex: 1;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
     position: relative;
+  }
+  /* ドラムの鍵の列は幅 132（仕様書 3 章）。CC の帯の見出しの列も同じ幅。 */
+  .roll.drums {
+    --pr-keys: var(--part-drum-keys);
   }
   .ruler {
     height: var(--mock-pianoroll-ruler);
@@ -940,7 +1025,7 @@
   }
   .ruler-gap {
     box-sizing: border-box;
-    width: var(--size-col-keys);
+    width: var(--pr-keys);
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -1009,7 +1094,7 @@
     display: flex;
   }
   .keys {
-    width: var(--size-col-keys);
+    width: var(--pr-keys);
     flex-shrink: 0;
     display: flex;
     background: var(--color-gray-3);
@@ -1034,6 +1119,34 @@
     flex: 1;
     min-width: 0;
   }
+  /* ドラムの行の名前（モック R7-Drum）: 地 gray.5 は WebGL（key-shapes を列いっぱいに）、名前は HTML でその上に。 */
+  .drums .keys {
+    position: relative;
+  }
+  .drums .key-shapes {
+    position: absolute;
+    inset: 0;
+  }
+  .drum-names {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+  .drum-name {
+    position: absolute;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-2);
+    overflow: hidden;
+    white-space: nowrap;
+    color: var(--color-gray-9);
+  }
+  .drum-name.used {
+    color: var(--color-gray-10);
+  }
   .notes {
     flex: 1;
     min-width: 0;
@@ -1051,7 +1164,7 @@
   }
   .live-host {
     position: absolute;
-    left: var(--size-col-keys);
+    left: var(--pr-keys);
     right: 0;
     top: var(--mock-pianoroll-ruler);
     bottom: 0;
@@ -1112,7 +1225,7 @@
     border-top: var(--line-hair) solid var(--color-gray-6);
   }
   .velocity-head {
-    width: var(--size-col-keys);
+    width: var(--pr-keys);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;

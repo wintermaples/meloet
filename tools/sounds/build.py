@@ -32,6 +32,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import sf2  # noqa: E402
 import sfz_flat  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -51,6 +52,7 @@ SRC_DIRS = {
     "vsco-2-ce-strings": "vsco2ce/repo",
     # the SFZ files of the SFZ branch, saved as plain files (sources.json, vsco-2-ce-strings fetch.how)
     "vsco-2-ce-strings-sfz": "vsco2ce-sfz",
+    "fluidr3-gm": "fluidr3",
 }
 
 FOLDERS = {
@@ -60,8 +62,14 @@ FOLDERS = {
     "studioKit": "studio-kit",
     "strings": "strings",
     "organ": "organ",
+    "organDrawbar": "organ-drawbar",
+    "organPercussive": "organ-percussive",
+    "organRock": "organ-rock",
+    "organChurch": "organ-church",
+    "organReed": "organ-reed",
 }
-ORDER = ["grandPiano", "electricPiano", "organ", "fingerBass", "studioKit", "strings"]
+ORDER = ["grandPiano", "electricPiano", "organ", "organDrawbar", "organPercussive", "organRock",
+         "organChurch", "organReed", "fingerBass", "studioKit", "strings"]
 
 CHANGES = {
     "salamander-grand-piano": "Kept 4 of the 16 velocity layers with the release, resonance and pedal samples, cut the silence before each sound, and converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback).",
@@ -70,6 +78,7 @@ CHANGES = {
     "vcsl-claps": "Used the six Clap takes, cut the silence before each sound, and converted the files to 16-bit FLAC.",
     "vcsl-pipe-organ": "Made a crossfade loop in each manual sample, shortened the files to the loop end, cut the silence before each sound, and converted the files to 16-bit FLAC.",
     "black-and-blue-basses": "Kept 2 of the 4 takes of the darkblack finger plucks, moved the key map down one octave so each key plays its own pitch, faded out the last 100 ms, cut the silence before each sound, and converted the files to 16-bit FLAC.",
+    "fluidr3-gm": "Took the five organ presets (General MIDI 17 to 21) out of the SoundFont: joined each left and right sample pair into one stereo file, cut the samples at the loop end and the silence before each sound, converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback), and left out the filter, the chorus and reverb sends, the envelope delay and the velocity-to-filter modulator; a short decay to a lower sustain level became a lower level.",
     "vsco-2-ce-strings": "Joined the violin, viola and cello section and solo double bass sustains into one key range, made a crossfade loop in each sample, cut the silence before each sound, and converted the files to 16-bit FLAC.",
 }
 
@@ -802,6 +811,216 @@ def organ_release_ms(path):
     return int(round((end - start) * w / sr * 1000, -1))
 
 
+# ---------------------------------------------------------------- FluidR3_GM organs (SoundFont 2)
+
+FLUID_ORGANS = {"organDrawbar": 16, "organPercussive": 17, "organRock": 18, "organChurch": 19, "organReed": 20}
+# SF2 2.01 8.1.2 (#38): a volume envelope release is the time to fall 100 dB, straight in dB (9.1.7
+# and FluidSynth use 96 dB); the player's releaseMs is the time to fall 60 dB (player.rs RELEASE_FLOOR).
+SF2_RELEASE_DB = 100.0
+# A decay this short to a lower sustain level is taken as that lower level from the start.
+SUSTAIN_FOLD_MS = 20.0
+# Generators the 19-8 fields carry. The others are counted as dropped when not at their default.
+SF2_USED = {"pan", "attackVolEnv", "releaseVolEnv", "initialAttenuation", "coarseTune", "fineTune",
+            "sampleModes", "overridingRootKey", "exclusiveClass", "scaleTuning", "startAddrsOffset",
+            "endAddrsOffset", "startloopAddrsOffset", "endloopAddrsOffset", "startAddrsCoarseOffset",
+            "endAddrsCoarseOffset", "startloopAddrsCoarseOffset", "endloopAddrsCoarseOffset"}
+
+
+def process_pcm(job):
+    """One output file from SF2 sample data. job: {"out", "sr", "pcm": [int16 arrays, one per
+    channel, the same length], "loop": None | (start, end) in frames of pcm}."""
+    x = np.stack([np.asarray(c, dtype=np.float64) / 32768.0 for c in job["pcm"]], axis=1)
+    sr = job["sr"]
+    x, cut = trim_head(x, sr)
+    res = {"sr": sr, "channels": x.shape[1], "headCutMs": round(1000 * cut / sr, 2)}
+    if job["loop"]:
+        ls, le = job["loop"][0] - cut, job["loop"][1] - cut
+        if ls < max(1, int(sr * FADE_IN_MS / 1000)) or le - ls < 8 or le > len(x):
+            raise ValueError(f"loop {job['loop']} does not fit after cutting {cut} frames: {job['out']}")
+        x = x[:le]
+        res.update(loopStart=int(ls), loopEnd=int(le))
+    peak = float(np.max(np.abs(x)))
+    if peak <= 0:
+        raise ValueError(f"silent file {job['out']}")
+    pcm = np.clip(np.round(x * (10 ** (NORM_DB / 20) / peak) * 32767), -32768, 32767).astype(np.int16)
+    os.makedirs(os.path.dirname(job["out"]), exist_ok=True)
+    write_flac(job["out"], pcm, sr)
+    res.update(frames=len(pcm), peakDb=round(db(peak), 3), fileGainDb=round(db(peak) - NORM_DB, 3),
+               bytes=os.path.getsize(job["out"]))
+    if job["loop"]:
+        res["check"] = loop_check(pcm, res["loopStart"], res["loopEnd"], sr)
+    return job["out"], res
+
+
+def soundfont(b, sid):
+    if not hasattr(b, "_sf2"):
+        b._sf2 = sf2.SoundFont(os.path.join(b.root(sid), b.sources[sid]["use"]["sf2"]))
+    return b._sf2
+
+
+def stereo_pairs(sf, zones):
+    """Zones as [(left or mono zone, right zone or None)]. A left zone goes with the right zone of
+    the same instrument, keys and velocities (FluidR3 leaves every sampleLink at 0, so the link
+    is not used); every generator but pan must match."""
+    out, used = [], set()
+    for i, z in enumerate(zones):
+        if i in used:
+            continue
+        t = sf.samples[z["sample"]]["type"] & ~sf2.ROM
+        if t == sf2.MONO:
+            out.append((z, None))
+            continue
+        want = sf2.RIGHT if t == sf2.LEFT else sf2.LEFT
+        same = (z["inst"], z["keyLo"], z["keyHi"], z["velLo"], z["velHi"])
+        for j in range(i + 1, len(zones)):
+            w = zones[j]
+            if j in used or sf.samples[w["sample"]]["type"] & ~sf2.ROM != want \
+                    or (w["inst"], w["keyLo"], w["keyHi"], w["velLo"], w["velHi"]) != same:
+                continue
+            if {k: v for k, v in w["gen"].items() if k != "pan"} != {k: v for k, v in z["gen"].items() if k != "pan"}:
+                raise SystemExit(f"stereo pair {sf.samples[z['sample']]['name']}: generators differ")
+            used.add(j)
+            out.append((z, w) if t == sf2.LEFT else (w, z))
+            break
+        else:
+            raise SystemExit(f"no other side for {sf.samples[z['sample']]['name']}")
+    return out
+
+
+def count(d, k):
+    d[k] = d.get(k, 0) + 1
+
+
+def build_fluid_organ(b, kind):
+    sid = "fluidr3-gm"
+    sf = soundfont(b, sid)
+    pname, zones, mods = sf.regions(0, FLUID_ORGANS[kind])
+    if mods["preset"] or mods["instrument"]:
+        raise SystemExit(f"{kind}: the preset has modulators, which this tool does not carry")
+    jobs, rows = {}, []
+    dropped, folded = {}, {}
+    for left, right in stereo_pairs(sf, zones):
+        g = left["gen"]
+        s = sf.samples[left["sample"]]
+        start, end, ls, le = sf.sample_points(left)
+        # 8.1.2 sampleModes: 1 loops, 3 loops while the key is down (the file ends at the loop end
+        # here, so both loop through the release as 19-8 says), 0 and 2 do not loop
+        loop = (ls - start, le - start) if g["sampleModes"] & 3 in (1, 3) else None
+        pcm = [sf.pcm(start, end)]
+        if right is not None:
+            r0, r1, rls, rle = sf.sample_points(right)
+            if (r1 - r0, rls - r0, rle - r0) != (end - start, ls - start, le - start):
+                raise SystemExit(f"{kind}: the two sides of {s['name']} have other lengths or loops")
+            if (g["pan"], right["gen"]["pan"]) != (-500, 500):
+                raise SystemExit(f"{kind}: stereo pair {s['name']} is not panned hard left and right")
+            pcm.append(sf.pcm(r0, r1))
+        name = safe_name(re.sub(r"\((L|R)\)$", "", s["name"]).strip().replace(" ", "_")) + ".flac"
+        out = os.path.join(b.out, FOLDERS[kind], "samples", name)
+        key = (left["sample"], right and right["sample"], start, end, loop)
+        if out in jobs and jobs[out]["_key"] != key:
+            raise SystemExit(f"{kind}: two different files would be named {name}")
+        jobs[out] = {"out": out, "sr": s["rate"], "pcm": pcm, "loop": loop, "_key": key}
+        row = {"_file": name, "_out": out, "keyLo": left["keyLo"], "keyHi": left["keyHi"],
+               "velLo": max(1, left["velLo"]), "velHi": left["velHi"],
+               # 8.4.1: the default velocity-to-attenuation modulator (960 cB, concave) is the
+               # SFZ amp_veltrack 100 curve, (vel/127)^2
+               "ampVeltrack": 100}
+        # pitch: overridingRootKey (else the sample's originalPitch), coarseTune, fineTune and the
+        # sample's pitchCorrection; with scaleTuning 100, a coarse tune is a move of the root key
+        root = g["overridingRootKey"] if g["overridingRootKey"] >= 0 else s["originalPitch"]
+        tune = g["fineTune"] + s["pitchCorrection"]
+        if g["scaleTuning"] == 100:
+            root -= g["coarseTune"]
+        else:
+            tune += 100 * g["coarseTune"]
+            row["pitchKeytrack"] = g["scaleTuning"]
+        inside = min(127, max(0, root))
+        tune += 100 * (root - inside)
+        row["root"] = inside
+        if tune:
+            row["tuneCents"] = tune
+        # 8.1.3: initialAttenuation and sustainVolEnv are in centibels (FluidSynth takes 0.4 of
+        # initialAttenuation, as the E-mu chips did; the spec value is used here)
+        vol = -g["initialAttenuation"] / 10.0
+        short_decay = sf2.timecents_ms(g["decayVolEnv"]) <= SUSTAIN_FOLD_MS and g["keynumToVolEnvDecay"] == 0
+        no_effect = set()
+        if g["sustainVolEnv"] > 0 and short_decay:
+            vol -= g["sustainVolEnv"] / 10.0
+            count(folded, "sustainVolEnv")
+            no_effect |= {"sustainVolEnv", "decayVolEnv"}
+        elif g["sustainVolEnv"] <= 0:
+            no_effect |= {"decayVolEnv", "keynumToVolEnvDecay"}
+        row["_volDb"] = vol
+        row["attackMs"] = round(sf2.timecents_ms(g["attackVolEnv"]), 1)
+        row["releaseMs"] = round(sf2.timecents_ms(g["releaseVolEnv"]) * 60.0 / SF2_RELEASE_DB, 1)
+        if right is None and g["pan"]:
+            row["pan"] = max(-1.0, min(1.0, g["pan"] / 500.0))
+        if g["exclusiveClass"]:
+            if g["exclusiveClass"] > 63:
+                raise SystemExit(f"{kind}: exclusiveClass {g['exclusiveClass']} is above 63")
+            row["chokeGroup"] = g["exclusiveClass"]
+            row["chokedBy"] = [g["exclusiveClass"]]
+        for k, v in g.items():
+            if k not in SF2_USED and k not in no_effect and v != sf2.DEFAULT.get(k, 0):
+                count(dropped, k)
+        rows.append(row)
+    for j in jobs.values():
+        j.pop("_key")
+    results = dict(b.pool.map(process_pcm, jobs.values()))
+    s = finish_instrument(b, kind, [sid], rows, results, {"polyphony": 32, "sustainPedal": True}, 60)
+    # the level is set on a chord, like the VCSL organ (build_organ)
+    path = os.path.join(b.out, FOLDERS[kind], "instrument.json")
+    with open(path, encoding="utf-8") as f:
+        inst = json.load(f)
+    before = looped_chord_peak_db(path, ORGAN_CHORD) - inst["gainDb"]
+    inst["gainDb"] = fnum(round(ORGAN_CHORD_DB - before, 1))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(inst, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    s.update(preset=pname, gainDb=inst["gainDb"], chordPeakBeforeGainDb=round(before, 2),
+             c4PeakDb=round(s["loudKeyPeakBeforeGainDb"] + inst["gainDb"], 1),
+             stereoFiles=sum(1 for j in jobs.values() if len(j["pcm"]) == 2),
+             loopedFiles=sum(1 for j in jobs.values() if j["loop"]),
+             keys=[min(r["keyLo"] for r in rows), max(r["keyHi"] for r in rows)],
+             dropped=dropped, folded=folded)
+    log = os.path.join(b.out, FOLDERS[kind], "build-log.json")
+    with open(log, encoding="utf-8") as f:
+        entry = json.load(f)
+    entry.update({k: s[k] for k in ("preset", "gainDb", "chordPeakBeforeGainDb", "dropped", "folded")})
+    with open(log, "w", encoding="utf-8") as f:
+        json.dump(entry, f, indent=1)
+        f.write("\n")
+    return s
+
+
+def looped_chord_peak_db(inst_path, keys, vel=100, seconds=3.0):
+    """chord_peak_db() for files that loop: the read position goes back to loopStart at loopEnd."""
+    with open(inst_path, encoding="utf-8") as f:
+        inst = json.load(f)
+    total = None
+    for key in keys:
+        r = next(r for r in inst["regions"] if r.get("trigger", "attack") == "attack"
+                 and r["keyLo"] <= key <= r["keyHi"] and r.get("velLo", 1) <= vel <= r.get("velHi", 127))
+        x, sr = read_audio(os.path.join(os.path.dirname(inst_path), r["sample"]))
+        ratio = 2 ** (((key - r["root"]) * r.get("pitchKeytrack", 100) + r.get("tuneCents", 0)) / 1200)
+        pos = np.arange(int(seconds * sr)) * ratio
+        if "loopStart" in r:
+            ls, le = r["loopStart"], r["loopEnd"]
+            over = pos >= le - 1
+            pos[over] = ls + np.mod(pos[over] - ls, le - ls)
+        pos = pos[pos < len(x) - 1]
+        y = np.stack([np.interp(pos, np.arange(len(x)), x[:, c]) for c in range(x.shape[1])], axis=1)
+        if y.shape[1] == 1:
+            y = np.repeat(y, 2, axis=1)
+        y *= 10 ** ((r["gainDb"] + inst["gainDb"] + vel_gain_db(vel, r.get("ampVeltrack", 100))) / 20)
+        if total is None:
+            total = y
+        else:
+            m = min(len(total), len(y))
+            total = total[:m] + y[:m]
+    return db(float(np.max(np.abs(total))))
+
+
 BUILDERS = {
     "grandPiano": build_grand_piano,
     "electricPiano": build_electric_piano,
@@ -810,6 +1029,8 @@ BUILDERS = {
     "strings": build_strings,
     "organ": build_organ,
 }
+for _kind in FLUID_ORGANS:
+    BUILDERS[_kind] = lambda b, k=_kind: build_fluid_organ(b, k)
 
 
 # ---------------------------------------------------------------- pack files and the shape check

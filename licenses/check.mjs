@@ -72,8 +72,8 @@ for (const c of sys.components) {
 }
 console.log(`OK  system components checked: ${sys.components.length}`);
 
-// 4. sound sources (tools/sounds/sources.json): only CC0 or CC BY, credits complete, license texts kept
-const SOUND_LICENSES = new Set(["CC0-1.0", "CC-BY-3.0", "CC-BY-4.0"]);
+// 4. sound sources (tools/sounds/sources.json): only CC0, CC BY or MIT, credits complete, license texts kept
+const SOUND_LICENSES = new Set(["CC0-1.0", "CC-BY-3.0", "CC-BY-4.0", "MIT"]);
 const soundsPath = join(root, "tools", "sounds", "sources.json");
 if (existsSync(soundsPath)) {
   const sounds = JSON.parse(readFileSync(soundsPath, "utf8")).sources;
@@ -88,6 +88,14 @@ if (existsSync(soundsPath)) {
     const dir = s.license_copies ? join(root, s.license_copies) : "";
     if (!s.license_copies || !s.license_copies.startsWith("licenses/sounds/") || !existsSync(dir)) { fail(`sound ${s.id}: no license texts in licenses/sounds/`); continue; }
     const texts = readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8"));
+    if (s.license === "MIT") {
+      // MIT asks that the copyright notice and the permission notice go with every copy.
+      if (!a.creator || !a.title || !a.source_uri) fail(`sound ${s.id}: attribution.creator, title or source_uri missing`);
+      const mit = texts.find((t) => /Permission is hereby granted, free of charge/.test(t) && /above copyright notice and this permission notice shall be\s+included/.test(t));
+      if (!mit) fail(`sound ${s.id}: no MIT permission notice in ${s.license_copies}`);
+      else if (!/Copyright \(c\)/i.test(mit)) fail(`sound ${s.id}: no copyright notice with the MIT text in ${s.license_copies}`);
+      continue;
+    }
     const mark = s.license === "CC0-1.0" ? /\bCC0\b|CC 0|publicdomain\/zero/i : /Creative\s+Commons|creativecommons\.org\/licenses\/by\//i;
     if (!texts.some((t) => mark.test(t))) fail(`sound ${s.id}: no ${s.license} text in ${s.license_copies}`);
   }

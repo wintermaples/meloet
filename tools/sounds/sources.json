@@ -238,6 +238,45 @@
         "note": "Contrabass SusNV (no vibrato) was fetched too; SusVib has no E0, SusNV goes down to E0."
       },
       "license_copies": "licenses/sounds/vsco-2-ce/"
+    },
+    {
+      "id": "fluidr3-gm",
+      "instrument": "オルガン（Drawbar、Percussive、Rock、Church、Reed）",
+      "title": "Fluid (R3) SoundFont: FluidR3_GM.sf2 (Debian fluid-soundfont 3.1-6)",
+      "fetch": {
+        "kind": "file",
+        "url": "https://sources.debian.org/data/main/f/fluid-soundfont/3.1-6/FluidR3_GM.sf2",
+        "page": "https://sources.debian.org/src/fluid-soundfont/3.1-6/",
+        "sha256": "74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0",
+        "bytes": 148398306,
+        "texts": {
+          "README": "2f92d462684629f207e43815115b79d7f1ce130d30ca8792b7d82b398a8306f9",
+          "COPYING": "8ef830b65c97a976b86e34bb5fde08d99dfb1db13c4149b5b20bc837ac6c4568"
+        },
+        "note": "The same bytes as /usr/share/sounds/sf2/FluidR3_GM.sf2 of Ubuntu's fluid-soundfont-gm (sha256 checked 2026-11-18). README and COPYING are fetched from the same folder."
+      },
+      "license": "MIT",
+      "license_note": "README: 'I hereby release Fluid under the MIT license, as described in COPYING.' COPYING: the MIT text, Copyright (c) 2000-2002, 2008 Frank Wen. The INFO chunk of the file says 'Licensed under the MIT License.' Where each recording came from is not listed per instrument (docs/research/fluidr3-gm.md).",
+      "attribution": {
+        "creator": "Frank Wen",
+        "title": "Fluid (R3) SoundFont",
+        "source_uri": "https://sources.debian.org/src/fluid-soundfont/3.1-6/",
+        "license_uri": "https://opensource.org/license/mit",
+        "changes": "must keep the copyright notice and the MIT permission notice"
+      },
+      "use": {
+        "root": ".",
+        "sf2": "FluidR3_GM.sf2",
+        "presets": {
+          "organDrawbar": "0:16 Drawbar Organ",
+          "organPercussive": "0:17 Percussive Organ",
+          "organRock": "0:18 Rock Organ",
+          "organChurch": "0:19 Church Organ",
+          "organReed": "0:20 Reed Organ"
+        },
+        "note": "tools/sounds/sf2.py reads the presets; tools/sounds/build.py turns them into instruments."
+      },
+      "license_copies": "licenses/sounds/fluidr3/"
     }
   ]
 }

@@ -48,3 +48,19 @@ ts-rs = "=12.0.1"
 tauri = "=2.12.5"
 tauri-build = "=2.7.4"
 
+
+# Debug builds read the sound pack almost as fast as release builds (the grand piano took 8.1 s
+# instead of about 0.3 s, and its track is silent until it is read). Only the decoder and the
+# sampler are built this way.
+[profile.dev.package.symphonia]
+opt-level = 3
+[profile.dev.package.symphonia-core]
+opt-level = 3
+[profile.dev.package.symphonia-common]
+opt-level = 3
+[profile.dev.package.symphonia-metadata]
+opt-level = 3
+[profile.dev.package.symphonia-bundle-flac]
+opt-level = 3
+[profile.dev.package.meloet-sound]
+opt-level = 3

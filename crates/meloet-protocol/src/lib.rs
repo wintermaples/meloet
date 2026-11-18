@@ -846,6 +846,26 @@ pub enum InstrumentGroup {
     Synth,
 }
 
+/// The sounds of a drum kit (the studio kit and the electro kit), top row of the drum piano roll
+/// first, with the General MIDI key each sits on (spec 3 「ドラムのピアノロール」). The screen has
+/// the same table as `DRUM_ROWS` (`ui/src/bridge/generated/drums.ts`); the names shown are the
+/// screen's (`ja.ts`). A note on any other key stays in the song but does not sound, and the
+/// drum piano roll does not show it (it is in the note list, by its note name).
+pub const DRUM_ROWS: [(&str, u8); 12] = [
+    ("crash", 49),
+    ("ride", 51),
+    ("openHiHat", 46),
+    ("pedalHiHat", 44),
+    ("closedHiHat", 42),
+    ("highTom", 50),
+    ("midTom", 47),
+    ("lowTom", 45),
+    ("clap", 39),
+    ("snare", 38),
+    ("sideStick", 37),
+    ("kick", 36),
+];
+
 impl InstrumentKind {
     /// In the order of the shelf. The screen has the same list, with the groups, as
     /// `INSTRUMENT_GROUPS` (`ui/src/bridge/generated/instruments.ts`).

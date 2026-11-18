@@ -71,6 +71,16 @@ pub(crate) mod tests {
         pub(crate) static EVERY_SOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
 
+    /// The drum rows of the protocol (and so of the screen) are the model's: order, ids, keys.
+    #[test]
+    fn the_drum_rows_agree() {
+        let model: Vec<(&str, u8)> = meloet_model::drums::DrumPiece::ROWS
+            .iter()
+            .map(|p| (p.id(), p.note()))
+            .collect();
+        assert_eq!(model, meloet_protocol::DRUM_ROWS);
+    }
+
     /// The model's table and the protocol's say the same: order, names and groups.
     #[test]
     fn the_model_and_the_protocol_agree() {

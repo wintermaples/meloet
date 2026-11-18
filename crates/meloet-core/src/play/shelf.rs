@@ -60,9 +60,10 @@ impl Play {
         }
     }
 
-    /// `OpenShelf`. Returns whether the shelf is to be shown.
+    /// `OpenShelf`. Returns whether the shelf is to be shown. While counting in or recording
+    /// only for an effect: instruments are not tried then.
     pub fn open_shelf(&mut self, mode: ShelfMode, effects: &mut Vec<Effect>) -> bool {
-        if self.busy() {
+        if self.busy() && !matches!(mode, ShelfMode::InsertEffect { .. }) {
             return false;
         }
         let mode = match mode {
@@ -92,7 +93,7 @@ impl Play {
 
     /// `ShelfSelectEffect`: only while the shelf lists the effects.
     pub fn shelf_select_effect(&mut self, effect: Option<EffectKind>) {
-        if matches!(self.shelf.mode, Mode::InsertEffect(..)) && !self.busy() {
+        if matches!(self.shelf.mode, Mode::InsertEffect(..)) {
             self.shelf.effect = effect.map(model_effect);
         }
     }
@@ -137,15 +138,15 @@ impl Play {
 
     /// `ShelfConfirm`. Returns the notice to show.
     pub fn shelf_confirm(&mut self, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
-        if self.busy() {
-            return None;
-        }
         if let Mode::InsertEffect(strip, slot) = self.shelf.mode {
             let kind = self.shelf.effect?;
             if self.add_effect(strip, slot, kind, effects) {
                 self.shelf.mode = Mode::NewTrack;
                 self.shelf.effect = None;
             }
+            return None;
+        }
+        if self.busy() {
             return None;
         }
         let instrument = self.shelf.trial.clone()?;
@@ -156,15 +157,17 @@ impl Play {
                 }
                 let below = self.song.session.play_target;
                 let (e, id) = edit::add_track(self.doc(), below, instrument.clone()).ok()?;
-                // The instrument that was auditioned becomes the track's, as it sounds.
                 let seat = self.seats.take(id, instrument)?;
+                self.shelf.trial = None;
+                self.song.session.play_target = Some(id);
+                self.apply(e, effects);
+                // The instrument that was auditioned becomes the track's, as it sounds. After
+                // the step, which gives the still empty seat its fader and sends at once: the
+                // sound then does not change as the instrument moves.
                 effects.push(Effect::Engine(EngineOp::MoveInstrument {
                     from: AUDITION_SEAT,
                     to: seat,
                 }));
-                self.shelf.trial = None;
-                self.song.session.play_target = Some(id);
-                self.apply(e, effects);
                 self.sync_target(effects);
                 Some(StatusMessage::TrackAdded {
                     track: self.track_ref(id)?,
@@ -201,9 +204,7 @@ impl Play {
         self.shelf.before = Some(tried);
         self.sync_target(effects);
         match (self.shelf.mode, seat) {
-            (Mode::NewTrack, _) => effects.push(Effect::Engine(EngineOp::ClearSeat {
-                seat: AUDITION_SEAT,
-            })),
+            (Mode::NewTrack, _) => self.clear_seat(AUDITION_SEAT, effects),
             (Mode::Replace(_), Some(seat)) => {
                 effects.push(Effect::Engine(EngineOp::EndTrial { seat, keep: false }));
             }

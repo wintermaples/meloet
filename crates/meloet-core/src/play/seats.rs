@@ -6,8 +6,9 @@
 use std::sync::Arc;
 
 use meloet_model::playback::track_events;
-use meloet_model::{Doc, InstrumentRef, TrackId};
+use meloet_model::{Doc, InstrumentRef, Track, TrackId};
 
+use super::mixsync::MixTold;
 use super::{EngineOp, Play};
 use crate::state::Effect;
 
@@ -92,8 +93,8 @@ impl Play {
         self.doc().tracks.iter().map(|t| seats.of(t.id)).collect()
     }
 
-    /// The instruments and the play target, for an engine that has none yet.
-    pub fn engine_seats(&self) -> Vec<EngineOp> {
+    /// The instruments, the play target and the mixer, for an engine that has none yet.
+    pub fn engine_seats(&mut self) -> Vec<EngineOp> {
         let mut ops: Vec<EngineOp> = self
             .seats
             .taken()
@@ -105,6 +106,13 @@ impl Play {
         ops.push(EngineOp::PlayTarget {
             seat: self.target_seat(),
         });
+        let mut mixer = Vec::new();
+        self.mix_told = MixTold::new();
+        self.sync_mix(&mut mixer);
+        ops.extend(mixer.into_iter().filter_map(|e| match e {
+            Effect::Engine(op) => Some(op),
+            _ => None,
+        }));
         ops
     }
 
@@ -143,7 +151,7 @@ impl Play {
             .collect();
         for seat in gone {
             self.seats.free(seat);
-            effects.push(Effect::Engine(EngineOp::ClearSeat { seat }));
+            self.clear_seat(seat, effects);
         }
         for t in &doc.tracks {
             let seat = match self.seats.of(t.id) {
@@ -155,7 +163,13 @@ impl Play {
                             instrument: t.instrument.clone(),
                         }));
                     }
-                    if before.track(t.id).is_some_and(|b| Arc::ptr_eq(b, t)) {
+                    // The mixer's values are not in the events: a fader that moves must not
+                    // cut the notes that sound.
+                    let same_clips = |b: &Arc<Track>| {
+                        b.clips.len() == t.clips.len()
+                            && b.clips.iter().zip(&t.clips).all(|(b, c)| Arc::ptr_eq(b, c))
+                    };
+                    if before.track(t.id).is_some_and(same_clips) {
                         continue;
                     }
                     seat
@@ -191,7 +205,7 @@ impl Play {
         }
         for seat in old {
             if self.seats.instrument(seat).is_none() {
-                effects.push(Effect::Engine(EngineOp::ClearSeat { seat }));
+                self.clear_seat(seat, effects);
             }
         }
     }

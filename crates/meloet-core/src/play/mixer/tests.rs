@@ -1,5 +1,5 @@
 use meloet_model::effects::{EffectKind as ModelEffect, reverb};
-use meloet_model::{Bus, Gain, StripId, TrackId};
+use meloet_model::{Bus, Gain, Pan, StripId, TrackId};
 use meloet_protocol::{
     Band, BarSpan, Command, EffectKind, InsertRef, SendBus, ShelfMode, SongFile, StatusMessage,
     StripRef, TransportState,
@@ -7,8 +7,8 @@ use meloet_protocol::{
 
 use super::Preview;
 use crate::play::mix::tests::three_tracks;
-use crate::play::tests::{cmd, ready, started, status};
-use crate::state::{Effect, Model};
+use crate::play::tests::{cmd, ready, status};
+use crate::state::Model;
 
 const T1: StripRef = StripRef::Track { id: 1 };
 const A: StripRef = StripRef::Return { bus: SendBus::A };
@@ -50,7 +50,7 @@ fn a_drag_is_heard_as_a_preview_and_is_one_step_when_it_ends() {
     let before = m.view();
     for db in [-1.0, -2.5, -4.0] {
         let effects = cmd(m, gain(T1, Some(db), false));
-        assert!(effects.is_empty(), "the engine does not hear the mixer yet");
+        assert_eq!(effects.len(), 1, "only the engine hears it: {effects:?}");
     }
     assert_eq!(
         previews(m),
@@ -146,10 +146,11 @@ fn values_are_brought_into_range_and_strips_that_are_not_there_do_nothing() {
     cmd(m, pan(A, 900, true));
     let song = m.view().song;
     assert_eq!((song.tracks[0].pan, song.returns[0].pan), (-20, 100));
-    let steps = undo_count(m);
     cmd(m, pan(StripRef::Master, 10, false));
+    assert_eq!(previews(m), [Preview::Pan(StripId::Master, Pan::new(10))]);
     cmd(m, pan(StripRef::Master, 10, true));
-    assert!(previews(m).is_empty(), "the master has no pan");
+    assert_eq!(m.view().song.master.pan, 10, "the master has a pan too");
+    let steps = undo_count(m);
 
     let send = |track, bus, db, commit| Command::SetSend {
         track,
@@ -432,7 +433,7 @@ fn the_mute_of_a_return_is_a_step() {
 }
 
 #[test]
-fn while_recording_the_mixer_is_not_changed() {
+fn the_mixer_works_while_recording() {
     let m = &mut ready();
     cmd(
         m,
@@ -440,48 +441,58 @@ fn while_recording_the_mixer_is_not_changed() {
             insert: Some(at(A, 0)),
         },
     );
-    // A drag that began before the recording ends without a step.
+    // A drag that began before the recording goes on and ends as a step.
     cmd(m, gain(T1, Some(-6.0), false));
-    cmd(m, Command::SetCountIn { bars: 0 });
+    cmd(m, Command::SetCountIn { bars: 1 });
     cmd(m, Command::Record);
-    started(m);
-    assert_eq!(m.view().transport.state, TransportState::Recording);
-    assert_eq!(previews(m).len(), 1);
+    assert_eq!(m.view().transport.state, TransportState::CountIn);
     cmd(m, gain(T1, Some(-9.0), false));
     assert_eq!(
         previews(m),
         [Preview::Gain(
             StripId::Track(TrackId(1)),
-            Gain::from_db(-6.0)
-        )],
-        "no new preview"
+            Gain::from_db(-9.0)
+        )]
     );
     cmd(m, gain(T1, Some(-9.0), true));
-    assert!(previews(m).is_empty(), "the commit only ends the preview");
+    assert!(previews(m).is_empty());
+    assert_eq!(m.view().song.tracks[0].gain_db, Some(-9.0));
 
-    cmd(m, gain(A, Some(-9.0), false));
     cmd(m, decay(5.0, true));
     cmd(m, Command::ToggleReturnMute { bus: SendBus::A });
-    cmd(m, Command::RemoveEffect { insert: at(A, 0) });
-    let effects: Vec<Effect> = cmd(
+    cmd(m, Command::RemoveEffect { insert: at(B, 0) });
+    cmd(
         m,
         Command::OpenShelf {
             mode: ShelfMode::InsertEffect { strip: T1, slot: 0 },
         },
     );
-    assert!(effects.is_empty());
+    cmd(
+        m,
+        Command::ShelfSelectEffect {
+            effect: Some(EffectKind::Chorus),
+        },
+    );
+    cmd(m, Command::ShelfConfirm);
     let state = m.view();
-    assert!(previews(m).is_empty());
-    assert_eq!(state.song.undo_count, 0);
-    assert_eq!(state.song.tracks[0].gain_db, Some(0.0));
-    assert!(!state.song.returns[0].muted);
-    assert_eq!(state.params.selected.unwrap().values[0], 2.4);
+    assert_eq!(state.transport.state, TransportState::CountIn);
+    assert_eq!(state.song.undo_count, 5);
+    assert!(state.song.returns[0].muted);
+    assert_eq!(state.song.returns[1].inserts[0], None);
+    assert_eq!(state.song.tracks[0].inserts[0], Some(EffectKind::Chorus));
+    assert_eq!(state.params.selected.unwrap().effect, EffectKind::Chorus);
+
+    // Instruments are not tried while recording, and nothing is undone.
+    let shelf = |mode| Command::OpenShelf { mode };
+    assert!(cmd(m, shelf(ShelfMode::NewTrack)).is_empty());
+    cmd(m, Command::Undo);
+    assert_eq!(m.view().song.undo_count, 5);
     // Looking is fine: another insert can be selected.
     cmd(
         m,
         Command::SelectInsert {
-            insert: Some(at(B, 0)),
+            insert: Some(at(A, 0)),
         },
     );
-    assert_eq!(m.view().params.selected.unwrap().effect, EffectKind::Delay);
+    assert_eq!(m.view().params.selected.unwrap().effect, EffectKind::Reverb);
 }

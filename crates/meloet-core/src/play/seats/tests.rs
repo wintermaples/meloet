@@ -1,14 +1,18 @@
 use std::collections::{HashMap, HashSet};
 
+use meloet_model::mixer::new_track_sends;
 use meloet_model::playback::{PlayEvent, track_events};
-use meloet_model::{Doc, InstrumentRef, TrackId};
-use meloet_protocol::{Band, Command, InstrumentKind, ShelfMode};
+use meloet_model::{Bus, Channel, Doc, Gain, Insert, InstrumentRef, Pan, Sends, StripId, TrackId};
+use meloet_protocol::{
+    Band, Command, EffectKind, InsertRef, InstrumentKind, SendBus, ShelfMode, StripRef,
+};
 
 use super::{AUDITION_SEAT, MAX_TRACKS};
 use crate::instruments;
-use crate::play::EngineOp;
 use crate::play::mix::tests::three_tracks;
+use crate::play::mixer::{effect_kind, strip_ref};
 use crate::play::tests::{cmd, ready, record_once};
+use crate::play::{EngineOp, Preview, StripSeat};
 use crate::songfile;
 use crate::state::{Effect, Input, Model};
 
@@ -21,14 +25,79 @@ struct Seat {
     instrument: Option<Made>,
     aside: Option<Made>,
     events: Option<Vec<PlayEvent>>,
+    strip: Strip,
+}
+
+/// A strip as the engine holds it. Every effect made gets the next number.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Strip {
+    pub gain: Gain,
+    pub pan: Pan,
+    pub sends: Sends,
+    pub inserts: [Option<(u32, Insert)>; 4],
+}
+
+impl Default for Strip {
+    fn default() -> Strip {
+        Strip {
+            gain: Gain::UNITY,
+            pan: Pan::CENTER,
+            sends: [Gain::SILENT; 2],
+            inserts: Default::default(),
+        }
+    }
+}
+
+type StripValues = (Gain, Pan, Sends, [Option<Insert>; 4]);
+
+impl Strip {
+    fn values(&self) -> StripValues {
+        let inserts = self.inserts.clone().map(|i| i.map(|(_, insert)| insert));
+        (self.gain, self.pan, self.sends, inserts)
+    }
+}
+
+/// What a strip is to sound like: the song's values under the previews.
+fn wanted(m: &Model, id: StripId, channel: &Channel, sends: Sends, muted: bool) -> StripValues {
+    let (mut gain, mut pan, mut sends) = (channel.gain, channel.pan, sends);
+    let mut inserts = channel.inserts.clone();
+    for p in m.play().mix_previews() {
+        match *p {
+            Preview::Gain(strip, g) if strip == id => gain = g,
+            Preview::Pan(strip, p) if strip == id => pan = p,
+            Preview::Send(track, bus, g) if StripId::Track(track) == id => {
+                sends[bus.index()] = g;
+            }
+            Preview::Param {
+                strip,
+                slot,
+                kind,
+                param,
+                value,
+            } if strip == id => {
+                if let Some(insert) = inserts[slot].as_mut().filter(|i| i.kind() == kind) {
+                    insert.set(param, value);
+                }
+            }
+            _ => {}
+        }
+    }
+    if muted {
+        gain = Gain::SILENT;
+    }
+    (gain, pan, sends, inserts)
 }
 
 /// What the engine does with the ops, as far as the song can be compared with it.
 pub(crate) struct FakeEngine {
     seats: Vec<Seat>,
+    returns: [Strip; 2],
+    master: Strip,
     target: Option<usize>,
     silent: Vec<usize>,
     made: u32,
+    /// Effects made or put away.
+    pub effects_made: u32,
 }
 
 impl FakeEngine {
@@ -36,9 +105,12 @@ impl FakeEngine {
     pub fn new(m: &mut Model) -> FakeEngine {
         let mut engine = FakeEngine {
             seats: vec![Seat::default(); MAX_TRACKS + 1],
+            returns: Default::default(),
+            master: Strip::default(),
             target: Some(0),
             silent: Vec::new(),
             made: 0,
+            effects_made: 0,
         };
         for op in m.engine_seats() {
             engine.op(op);
@@ -93,8 +165,63 @@ impl FakeEngine {
             EngineOp::PlayTarget { seat } => self.target = seat,
             EngineOp::Sequence { track, events } => self.seats[track].events = Some(events),
             EngineOp::SilentTracks { tracks } => self.silent = tracks,
+            EngineOp::Strip { strip, gain, pan } => {
+                let strip = self.strip_mut(strip);
+                assert_ne!((strip.gain, strip.pan), (gain, pan), "told what it has");
+                (strip.gain, strip.pan) = (gain, pan);
+            }
+            EngineOp::Sends { seat, sends } => {
+                assert_ne!(self.seats[seat].strip.sends, sends, "told what it has");
+                self.seats[seat].strip.sends = sends;
+            }
+            EngineOp::Insert {
+                strip,
+                slot,
+                insert,
+            } => {
+                self.effects_made += 1;
+                let made = self.effects_made;
+                let place = &mut self.strip_mut(strip).inserts[slot];
+                let (before, now) = (place.as_ref().map(|(_, i)| i.kind()), insert.as_ref());
+                assert_ne!(before, now.map(Insert::kind), "made anew for no reason");
+                *place = insert.map(|i| (made, i));
+            }
+            EngineOp::Param {
+                strip,
+                slot,
+                param,
+                value,
+            } => {
+                let (_, insert) = self.strip_mut(strip).inserts[slot]
+                    .as_mut()
+                    .expect("a parameter for an empty slot");
+                assert_ne!(insert.value(param), Some(value), "told what it has");
+                assert!(insert.set(param, value));
+                assert_eq!(insert.value(param), Some(value), "sent out of range");
+            }
             _ => {}
         }
+    }
+
+    fn strip_mut(&mut self, strip: StripSeat) -> &mut Strip {
+        match strip {
+            StripSeat::Track(seat) => &mut self.seats[seat].strip,
+            StripSeat::Return(bus) => &mut self.returns[bus.index()],
+            StripSeat::Master => &mut self.master,
+        }
+    }
+
+    /// The strip of a track, of a return or of the master, as the engine holds it.
+    pub fn strip(&self, m: &Model, id: StripId) -> &Strip {
+        match id {
+            StripId::Track(track) => &self.seats[m.play().seats.of(track).unwrap()].strip,
+            StripId::Return(bus) => &self.returns[bus.index()],
+            StripId::Master => &self.master,
+        }
+    }
+
+    pub fn audition_strip(&self) -> &Strip {
+        &self.seats[AUDITION_SEAT].strip
     }
 
     /// The number of the track's own instrument: the one set aside while another is tried.
@@ -168,13 +295,34 @@ impl FakeEngine {
                 "{ctx}: the notes of track {}",
                 t.id.0
             );
+            assert_eq!(
+                slot.strip.values(),
+                wanted(m, StripId::Track(t.id), &t.channel, t.sends, false),
+                "{ctx}: the strip of track {}",
+                t.id.0
+            );
         }
+        let none = [Gain::SILENT; 2];
+        for bus in Bus::ALL {
+            let r = &doc.returns[bus.index()];
+            assert_eq!(
+                self.returns[bus.index()].values(),
+                wanted(m, StripId::Return(bus), &r.channel, none, r.muted),
+                "{ctx}: return {bus:?}"
+            );
+        }
+        assert_eq!(
+            self.master.values(),
+            wanted(m, StripId::Master, &doc.master, none, false),
+            "{ctx}: the master"
+        );
         for (seat, slot) in self.seats.iter().enumerate().take(MAX_TRACKS) {
             if !used.contains(&seat) {
                 assert!(
                     slot.instrument.is_none() && slot.aside.is_none() && slot.events.is_none(),
                     "{ctx}: seat {seat} is empty"
                 );
+                assert_eq!(slot.strip, Strip::default(), "{ctx}: seat {seat} is empty");
             }
         }
         let audition = &self.seats[AUDITION_SEAT];
@@ -185,10 +333,17 @@ impl FakeEngine {
         let target = match (shelf.mode, shelf.selected) {
             (ShelfMode::NewTrack, Some(tried)) => {
                 assert_eq!(kind(&audition.instrument), Some(tried), "{ctx}: auditioned");
+                let tried = InstrumentRef::Builtin(instruments::builtin_of(tried));
+                let as_a_track = Strip {
+                    sends: new_track_sends(&tried),
+                    ..Strip::default()
+                };
+                assert_eq!(audition.strip, as_a_track, "{ctx}: auditioned");
                 Some(AUDITION_SEAT)
             }
             (mode, tried) => {
                 assert!(audition.instrument.is_none(), "{ctx}: the audition seat");
+                assert_eq!(audition.strip, Strip::default(), "{ctx}: the audition seat");
                 let track = match (mode, tried) {
                     (ShelfMode::Replace { track }, Some(_)) => Some(TrackId(track)),
                     _ => song.session.play_target,
@@ -344,7 +499,7 @@ fn held(doc: &Doc) -> Doc {
 #[test]
 fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
     instruments::tests::EVERY_SOUND.set(true);
-    const ACTIONS: usize = 16;
+    const ACTIONS: usize = 21;
     let mut made = [0usize; ACTIONS];
     let mut most_tracks = 0;
     let mut auditioned_checks = 0;
@@ -371,6 +526,20 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
             let before = m.play().song().doc.clone();
             let owned = engine.owns(m);
             let action = rng.below(ACTIONS as u64) as usize;
+            let effects_made = engine.effects_made;
+            let some_strip = |rng: &mut Rng| match rng.below(6) {
+                0 => StripRef::Master,
+                1 => StripRef::Return {
+                    bus: [SendBus::A, SendBus::B][rng.below(2) as usize],
+                },
+                _ => StripRef::Track {
+                    id: some_track(rng),
+                },
+            };
+            let some_db = |rng: &mut Rng| match rng.below(8) {
+                0 => None,
+                n => Some(n as f32 * 3.0 - 18.0),
+            };
             let mut commands = Vec::new();
             let mut go = |command: Command| commands.push(command);
             let mut record_at = None;
@@ -462,8 +631,95 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
                     2 => Command::ToggleBand { band: Band::Shelf },
                     _ => Command::ShelfSelect { instrument: None },
                 }),
-                _ => go(Command::SetTempo {
+                15 => go(Command::SetTempo {
                     bpm: 60.0 + rng.below(120) as f64,
+                }),
+                16 => {
+                    // A fader, a pan or a send: a move of a drag, or its end.
+                    let commit = rng.below(2) == 0;
+                    go(match rng.below(3) {
+                        0 => Command::SetGain {
+                            strip: some_strip(&mut rng),
+                            db: some_db(&mut rng),
+                            commit,
+                        },
+                        1 => Command::SetPan {
+                            strip: some_strip(&mut rng),
+                            pan: rng.below(9) as i32 * 25 - 100,
+                            commit,
+                        },
+                        _ => Command::SetSend {
+                            track: some_track(&mut rng),
+                            bus: [SendBus::A, SendBus::B][rng.below(2) as usize],
+                            db: some_db(&mut rng),
+                            commit,
+                        },
+                    });
+                }
+                17 => {
+                    // A parameter of an effect that is there, now and then of one that is not.
+                    let mut there = Vec::new();
+                    let strips = (before.tracks.iter().map(|t| StripId::Track(t.id))).chain([
+                        StripId::Return(Bus::A),
+                        StripId::Return(Bus::B),
+                        StripId::Master,
+                    ]);
+                    for strip in strips {
+                        for slot in 0..4 {
+                            if let Some(insert) = before.insert(strip, slot) {
+                                there.push((strip, slot as u8, insert.kind()));
+                            }
+                        }
+                    }
+                    let absent = (
+                        StripId::Master,
+                        3,
+                        meloet_model::effects::EffectKind::Chorus,
+                    );
+                    let (strip, slot, kind) = match (there.len(), rng.below(10)) {
+                        (0, _) | (_, 0) => absent,
+                        (n, _) => there[rng.below(n as u64) as usize],
+                    };
+                    let params = kind.params();
+                    let param = rng.below(params.len() as u64) as usize;
+                    let spec = &params[param];
+                    go(Command::SetParam {
+                        insert: InsertRef {
+                            strip: strip_ref(strip),
+                            slot,
+                        },
+                        effect: effect_kind(kind),
+                        param: param as u32,
+                        value: spec.min + (spec.max - spec.min) * rng.below(5) as f32 / 4.0,
+                        commit: rng.below(2) == 0,
+                    });
+                }
+                18 | 19 => {
+                    // An effect goes in from the shelf, or comes out.
+                    let insert = InsertRef {
+                        strip: some_strip(&mut rng),
+                        slot: rng.below(4) as u8,
+                    };
+                    if rng.below(3) == 0 {
+                        go(Command::RemoveEffect { insert });
+                    } else {
+                        go(Command::OpenShelf {
+                            mode: ShelfMode::InsertEffect {
+                                strip: insert.strip,
+                                slot: insert.slot,
+                            },
+                        });
+                        go(Command::ShelfSelectEffect {
+                            effect: Some(EffectKind::ALL[rng.below(6) as usize]),
+                        });
+                        go(Command::ShelfConfirm);
+                    }
+                }
+                _ => go(match rng.below(3) {
+                    0 => Command::CancelMixPreview,
+                    n => Command::ToggleReturnMute {
+                        bus: [SendBus::A, SendBus::B][n as usize - 1],
+                    },
                 }),
             }
             for command in commands {
@@ -476,6 +732,12 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
             engine.check(m, &ctx);
             if m.view().shelf.selected.is_some() {
                 auditioned_checks += 1;
+            }
+            if matches!(action, 16 | 17 | 20) {
+                assert_eq!(
+                    engine.effects_made, effects_made,
+                    "{ctx}: no effect is made"
+                );
             }
 
             let doc = m.play().song().doc.clone();
@@ -534,7 +796,7 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
     }
     // Adding, deleting, moving, renaming, coloring, replacing, muting and recording all made
     // steps, and the engine was looked at while rows were auditioned.
-    for action in [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 15] {
+    for action in [0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 15, 16, 17, 18, 19, 20] {
         assert!(made[action] > 20, "action {action}: {made:?}");
     }
     assert!(most_tracks >= 8, "{most_tracks} tracks");

@@ -41,8 +41,6 @@ pub enum EditError {
     NoSuchInsert,
     /// The insert slot holds an effect already.
     SlotTaken,
-    /// The master has no pan.
-    NoPan,
 }
 
 /// No clip ends after this, so that every song position of a take fits in an `i64`.

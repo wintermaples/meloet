@@ -12,8 +12,9 @@ use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::quantize;
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{
-    Clip, ClipEdited, ClipId, Doc, History, InstrumentGroup, InstrumentRef, Meter, Note,
-    OriginIndex, Song, StepKind, TakeId, Tempo, TickRange, TrackId, arrange, roll,
+    Bus, Clip, ClipEdited, ClipId, Doc, Gain, History, Insert, InstrumentGroup, InstrumentRef,
+    Meter, Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, Tempo, TickRange, TrackId,
+    arrange, roll,
 };
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, LiveNote,
@@ -74,7 +75,7 @@ pub enum RecordReport {
 
 /// Commands to the engine. The core thread turns them into `EngineCommand`s. A track is named
 /// by its seat ([`Play::track_seats`]), not by its place in the song.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EngineOp {
     Play {
         from: u64,
@@ -155,6 +156,31 @@ pub enum EngineOp {
     PlayTarget {
         seat: Option<usize>,
     },
+    /// The fader and the pan of a strip. A muted return has the gain −∞.
+    Strip {
+        strip: StripSeat,
+        gain: Gain,
+        pan: Pan,
+    },
+    /// What the track on the seat sends to return A and to return B.
+    Sends {
+        seat: usize,
+        sends: Sends,
+    },
+    /// A new effect with these values in the insert slot, in place of what is there; `None`
+    /// empties the slot.
+    Insert {
+        strip: StripSeat,
+        slot: usize,
+        insert: Option<Insert>,
+    },
+    /// A parameter of the effect in the slot.
+    Param {
+        strip: StripSeat,
+        slot: usize,
+        param: u32,
+        value: f32,
+    },
     // The two below are for an open stream only, as the ones at the top.
     /// The sample phrase of this instrument's group, played with it on the engine's sample
     /// seat from its start. A sample that is playing fades out under it.
@@ -162,6 +188,14 @@ pub enum EngineOp {
         instrument: InstrumentRef,
     },
     StopSample,
+}
+
+/// A strip of the engine's mixer. A track is named by its seat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum StripSeat {
+    Track(usize),
+    Return(Bus),
+    Master,
 }
 
 /// Selected notes and control points: indexes, in order, into the notes and the controls of
@@ -345,18 +379,21 @@ pub struct Play {
     shelf: Shelf,
     sounds: Sounds,
     mixer: Mixer,
+    /// What the engine was last told about the mixer.
+    mix_told: MixTold,
 }
 
 impl Play {
     pub fn new(metronome: bool, count_in_bars: u8) -> Play {
         let song = Song::new_default();
         let seats = Seats::for_song(&song.doc);
-        Play {
+        let mut play = Play {
             target_sent: song.session.play_target.and_then(|t| seats.of(t)),
             seats,
             shelf: Shelf::default(),
             sounds: Sounds::default(),
             mixer: Mixer::default(),
+            mix_told: MixTold::new(),
             song,
             history: History::new(),
             state: TransportState::Stopped,
@@ -387,7 +424,11 @@ impl Play {
             serial: 0,
             saved_too: None,
             silent_sent: Vec::new(),
-        }
+        };
+        // As with the play target: the engine gets the mixer of the first song with
+        // `engine_seats`, so it counts as told.
+        play.sync_mix(&mut Vec::new());
+        play
     }
 
     pub fn metronome(&self) -> bool {
@@ -1046,6 +1087,7 @@ impl Play {
         self.changes += 1;
         self.sync_seats(before, effects);
         self.mixer_changed();
+        self.sync_mix(effects);
         let doc = &self.song.doc;
         let target = &mut self.song.session.play_target;
         if target.is_none_or(|t| doc.track(t).is_none()) {
@@ -2130,6 +2172,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 
 mod mix;
 pub(crate) mod mixer;
+mod mixsync;
 mod seats;
 mod shelf;
 mod sounds;
@@ -2137,6 +2180,7 @@ mod tracks;
 
 use mixer::Mixer;
 pub use mixer::Preview;
+use mixsync::MixTold;
 use seats::Seats;
 pub use seats::{AUDITION_SEAT, MAX_TRACKS};
 use shelf::Shelf;

@@ -202,12 +202,19 @@ struct ReturnFile {
 struct MasterFile {
     #[serde(default = "unity")]
     gain_db: Option<f64>,
+    /// Missing, or not a whole number: the middle.
+    #[serde(default, deserialize_with = "pan_or_middle")]
+    pan: i64,
     #[serde(default)]
     inserts: Vec<SlotFile>,
 }
 
 fn unity() -> Option<f64> {
     Some(0.0)
+}
+
+fn pan_or_middle<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    Ok(serde_json::Value::deserialize(d)?.as_i64().unwrap_or(0))
 }
 
 /// A number or `null`. A field read with this must be there.
@@ -302,6 +309,7 @@ fn mixer_file(doc: &Doc) -> MixerFile {
         },
         master: MasterFile {
             gain_db: doc.master.gain.db(),
+            pan: i64::from(doc.master.pan.get()),
             inserts: slots_file(&doc.master.inserts),
         },
     }
@@ -819,7 +827,7 @@ fn to_song(file: SongFile) -> Option<Song> {
         master: match master {
             Some(m) => Arc::new(Channel {
                 gain: gain_of(m.gain_db),
-                pan: Pan::CENTER,
+                pan: pan_of(m.pan),
                 inserts: inserts_of(m.inserts),
             }),
             None => mixer::new_song_master(),

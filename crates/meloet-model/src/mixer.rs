@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use crate::edit::{Edit, EditError, track_index};
-use crate::effects::EffectKind;
+use crate::effects::{EffectKind, delay, reverb};
 use crate::history::StepKind;
 use crate::instrument::InstrumentGroup;
 use crate::song::{Doc, Track};
@@ -67,6 +67,9 @@ impl Pan {
     }
 }
 
+/// The mix, in percent, a reverb or a delay starts with on a track or on the master.
+pub const INSERT_MIX: f32 = 30.0;
+
 /// An effect in an insert slot with the values of its parameters: one for every parameter of
 /// its table, each inside its range.
 #[derive(Debug, Clone, PartialEq)]
@@ -82,6 +85,23 @@ impl Insert {
             kind,
             values: kind.params().iter().map(|p| p.default).collect(),
         }
+    }
+
+    /// As it starts in an empty slot of `strip`. A reverb or a delay on a track or on the
+    /// master, where the sound itself goes through it, starts with its mix at
+    /// [`INSERT_MIX`]; on a return, which carries only what was sent, it is all effect, as
+    /// its table says.
+    pub fn new_on(kind: EffectKind, strip: StripId) -> Insert {
+        let mut insert = Insert::new(kind);
+        let mix = match kind {
+            EffectKind::Reverb => Some(reverb::MIX),
+            EffectKind::Delay => Some(delay::MIX),
+            _ => None,
+        };
+        if let (Some(mix), StripId::Track(_) | StripId::Master) = (mix, strip) {
+            insert.set(mix, INSERT_MIX);
+        }
+        insert
     }
 
     pub fn kind(&self) -> EffectKind {
@@ -113,7 +133,7 @@ impl Insert {
 /// Sound goes through the slots from the first to the last (spec 5 「インサート」).
 pub type Inserts = [Option<Insert>; INSERT_SLOTS];
 
-/// What every strip has. The master's pan stays in the middle.
+/// What every strip has.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Channel {
     pub gain: Gain,
@@ -144,7 +164,7 @@ impl Bus {
     }
 }
 
-/// How much of a track goes to return A and to return B, taken after its fader.
+/// How much of a track goes to return A and to return B, taken after its fader and pan.
 pub type Sends = [Gain; 2];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -248,11 +268,7 @@ pub fn set_gain(doc: &Doc, strip: StripId, gain: Gain) -> Result<Edit, EditError
     })
 }
 
-/// The master has no pan (`EditError::NoPan`).
 pub fn set_pan(doc: &Doc, strip: StripId, pan: Pan) -> Result<Edit, EditError> {
-    if strip == StripId::Master {
-        return Err(EditError::NoPan);
-    }
     Ok(Edit {
         doc: with_channel(doc, strip, |c| unless_same(&mut c.pan, pan))?,
         step: StepKind::SetPan { strip },
@@ -304,7 +320,8 @@ pub fn set_param(
     })
 }
 
-/// Puts `kind`, with the defaults of its table, in an empty slot (`SlotTaken` otherwise).
+/// Puts `kind`, as it starts on that strip ([`Insert::new_on`]), in an empty slot
+/// (`SlotTaken` otherwise).
 pub fn add_effect(
     doc: &Doc,
     strip: StripId,
@@ -316,7 +333,7 @@ pub fn add_effect(
         if place.is_some() {
             return Err(EditError::SlotTaken);
         }
-        *place = Some(Insert::new(kind));
+        *place = Some(Insert::new_on(kind, strip));
         Ok(())
     })?;
     Ok(Edit {

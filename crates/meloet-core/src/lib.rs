@@ -8,6 +8,7 @@ mod hub;
 mod instruments;
 pub mod layout;
 pub mod measure;
+mod mixbook;
 pub mod play;
 pub mod recovery;
 mod service;

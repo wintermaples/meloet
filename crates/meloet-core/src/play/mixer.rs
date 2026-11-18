@@ -2,7 +2,9 @@
 //! the insert the parameters panel shows.
 //!
 //! A drag is heard while it goes on and is one step when it ends: until then its value is a
-//! preview, kept here and not in the song. The engine does not hear any of this yet.
+//! preview, kept here and not in the song. What the engine hears of it is `mixsync.rs`.
+//! All of it works while counting in or recording too: nothing here moves where a take is
+//! recorded.
 
 use meloet_model::effects::EffectKind as ModelEffect;
 use meloet_model::{Bus, Gain, INSERT_SLOTS, Inserts, Pan, StripId, TrackId, mixer};
@@ -61,6 +63,12 @@ pub(super) struct Mixer {
     selected: Option<(StripId, usize, ModelEffect)>,
     /// The chosen row of the panel.
     row: Option<u32>,
+}
+
+impl Mixer {
+    pub(super) fn previews(&self) -> &[Preview] {
+        &self.previews
+    }
 }
 
 pub(super) fn strip_id(strip: StripRef) -> StripId {
@@ -141,11 +149,7 @@ impl Play {
         edit: impl FnOnce(&Self) -> Result<meloet_model::Edit, meloet_model::EditError>,
         effects: &mut Vec<Effect>,
     ) {
-        let busy = self.busy();
         if !commit {
-            if busy {
-                return;
-            }
             match (self.mixer.previews.iter_mut()).find(|p| p.same_control(&value)) {
                 Some(p) => *p = value,
                 None => self.mixer.previews.push(value),
@@ -153,9 +157,6 @@ impl Play {
             return;
         }
         self.mixer.previews.retain(|p| !p.same_control(&value));
-        if busy {
-            return;
-        }
         if let Ok(e) = edit(self) {
             self.apply(e, effects);
         }
@@ -178,7 +179,7 @@ impl Play {
 
     pub fn set_pan(&mut self, strip: StripRef, pan: i32, commit: bool, effects: &mut Vec<Effect>) {
         let (strip, pan) = (strip_id(strip), Pan::new(pan));
-        if strip == StripId::Master || self.doc().channel(strip).is_none() {
+        if self.doc().channel(strip).is_none() {
             return;
         }
         let edit = |p: &Play| mixer::set_pan(p.doc(), strip, pan);
@@ -236,17 +237,11 @@ impl Play {
     }
 
     pub fn toggle_return_mute(&mut self, bus: SendBus, effects: &mut Vec<Effect>) {
-        if self.busy() {
-            return;
-        }
         let e = mixer::toggle_return_mute(self.doc(), bus_of(bus));
         self.apply(e, effects);
     }
 
     pub fn remove_effect(&mut self, insert: InsertRef, effects: &mut Vec<Effect>) {
-        if self.busy() {
-            return;
-        }
         let (strip, slot) = (strip_id(insert.strip), usize::from(insert.slot));
         if let Ok(e) = mixer::remove_effect(self.doc(), strip, slot) {
             self.apply(e, effects);
@@ -350,6 +345,7 @@ impl Play {
         let master = &self.doc().master;
         MasterView {
             gain_db: gain_view(master.gain),
+            pan: master.pan.get(),
             inserts: inserts_view(&master.inserts),
         }
     }

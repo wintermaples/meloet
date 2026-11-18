@@ -107,7 +107,7 @@ fn fader_pan_and_send_are_steps() {
     assert!(Arc::ptr_eq(&doc.master, &e.doc.master));
     assert!(!Arc::ptr_eq(&doc.returns[0], &e.doc.returns[0]));
 
-    for strip in [T1, A, B] {
+    for strip in [T1, A, B, StripId::Master] {
         let e = set_pan(&doc, strip, Pan::new(-20)).unwrap();
         assert_eq!(e.step, StepKind::SetPan { strip });
         assert_eq!(e.doc.channel(strip).unwrap().pan.get(), -20);
@@ -116,10 +116,6 @@ fn fader_pan_and_send_are_steps() {
             Err(EditError::Unchanged)
         );
     }
-    assert_eq!(
-        set_pan(&doc, StripId::Master, Pan::new(5)),
-        Err(EditError::NoPan)
-    );
 
     let e = set_send(&doc, TrackId(1), Bus::B, Gain::from_db(-18.0)).unwrap();
     assert_eq!(
@@ -216,6 +212,29 @@ fn effects_go_into_empty_slots_and_come_out() {
     assert_eq!(
         add_effect(&doc, T1, 4, EffectKind::Eq4),
         Err(EditError::NoSuchInsert)
+    );
+
+    // A reverb or a delay starts at 30 % mix where the sound itself goes through it, and
+    // all effect on a return. The returns of a new song are all effect.
+    for (kind, mix) in [
+        (EffectKind::Reverb, reverb::MIX),
+        (EffectKind::Delay, delay::MIX),
+    ] {
+        for (strip, percent) in [(T1, 30.0), (StripId::Master, 30.0), (A, 100.0), (B, 100.0)] {
+            let e = add_effect(&doc, strip, 3, kind).unwrap();
+            let insert = e.doc.insert(strip, 3).unwrap();
+            assert_eq!(insert.value(mix), Some(percent), "{kind:?} on {strip:?}");
+            let mut rest = insert.clone();
+            rest.set(mix, 100.0);
+            assert_eq!(rest, Insert::new(kind), "only the mix differs");
+        }
+    }
+    assert_eq!(doc.insert(A, 0).unwrap().value(reverb::MIX), Some(100.0));
+    assert_eq!(doc.insert(B, 0).unwrap().value(delay::MIX), Some(100.0));
+    let chorus = add_effect(&doc, T1, 3, EffectKind::Chorus).unwrap();
+    assert_eq!(
+        chorus.doc.insert(T1, 3),
+        Some(&Insert::new(EffectKind::Chorus))
     );
 
     let out = remove_effect(&e.doc, T1, 2).unwrap();

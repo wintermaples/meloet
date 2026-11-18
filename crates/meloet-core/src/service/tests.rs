@@ -798,7 +798,7 @@ struct SeatRig {
 
 impl SeatRig {
     fn new() -> SeatRig {
-        let model = Model::new(Settings::default());
+        let mut model = Model::new(Settings::default());
         let parts = Engine::new(EngineConfig {
             max_tracks: MAX_TRACKS,
             ..EngineConfig::default()
@@ -930,6 +930,109 @@ fn keys_sound_on_the_selected_track_and_on_what_the_shelf_auditions_without_a_st
     );
 }
 
+#[test]
+fn the_real_engine_has_the_songs_mixer_without_a_stream_and_when_made_anew() {
+    use meloet_model::effects::limiter;
+    use meloet_protocol::{EffectKind, InsertRef, SendBus, StripRef};
+
+    let mut rig = SeatRig::new();
+    let meters = rig.meters.clone();
+    let returns = |rig: &mut SeatRig| {
+        meters.take_return_peak(0);
+        meters.take_return_peak(1);
+        rig.sounding();
+        [meters.take_return_peak(0)[0], meters.take_return_peak(1)[0]]
+    };
+    // A new song: the piano sends to return A, where the reverb is.
+    let [a, b] = returns(&mut rig);
+    assert!(a > 0.001 && b == 0.0, "{a} {b}");
+    rig.send(Command::ToggleReturnMute { bus: SendBus::A });
+    assert_eq!(returns(&mut rig), [0.0, 0.0]);
+    rig.send(Command::ToggleReturnMute { bus: SendBus::A });
+    // A drag is heard before it is a step.
+    for commit in [false, true] {
+        rig.send(Command::SetSend {
+            track: 1,
+            bus: SendBus::B,
+            db: Some(-6.0),
+            commit,
+        });
+        let [a, b] = returns(&mut rig);
+        assert!(a > 0.001 && b > 0.001, "{a} {b}");
+    }
+
+    // The master's limiter comes after its fader: +6 dB on the fader does not pass the
+    // ceiling.
+    let limiter = |param, value| Command::SetParam {
+        insert: InsertRef {
+            strip: StripRef::Master,
+            slot: 0,
+        },
+        effect: EffectKind::Limiter,
+        param,
+        value,
+        commit: true,
+    };
+    rig.send(limiter(limiter::CEILING, -12.0));
+    rig.send(limiter(limiter::GAIN, 12.0));
+    for strip in [StripRef::Master, StripRef::Track { id: 1 }] {
+        rig.send(Command::SetGain {
+            strip,
+            db: Some(6.0),
+            commit: true,
+        });
+    }
+    let ceiling = 10f32.powf(-12.0 / 20.0);
+    let master = |rig: &mut SeatRig| {
+        meters.take_master_peak();
+        rig.sounding();
+        meters.take_master_peak()[0]
+    };
+    // A running effect takes 30 ms to get to a new value: one key for that.
+    rig.sounding();
+    let loud = master(&mut rig);
+    assert!(loud > ceiling * 0.9 && loud <= ceiling * 1.0001, "{loud}");
+
+    // The engine is lost with a stream: the next one gets the mixer from the book.
+    rig.audio.engine = None;
+    rig.send(Command::SetPan {
+        strip: StripRef::Track { id: 1 },
+        pan: 100,
+        commit: true,
+    });
+    let (engine, feed) = rig.audio.handle.rebuild();
+    rig.audio.engine = Some(engine);
+    rig.midi = feed;
+    for op in (rig.audio.mix.ops().into_iter()).chain(rig.audio.seats.ops()) {
+        rig.audio.send_seat_op(op);
+        rig.audio.settle();
+    }
+    let loud = master(&mut rig);
+    assert!(loud <= ceiling * 1.0001, "{loud}");
+    meters.take_return_peak(1);
+    rig.sounding();
+    let b = meters.take_return_peak(1);
+    assert!(
+        b[0] == 0.0 && b[1] > 0.001,
+        "the send follows the pan: {b:?}"
+    );
+
+    // A deleted track leaves nothing in the book.
+    rig.send(Command::DeleteTrack { track: 1 });
+    assert!(
+        !(rig.audio.mix.ops().iter()).any(|op| matches!(
+            op,
+            EngineOp::Sends { .. }
+                | EngineOp::Strip {
+                    strip: crate::play::StripSeat::Track(_),
+                    ..
+                }
+        )),
+        "{:?}",
+        rig.audio.mix.ops()
+    );
+}
+
 /// The real engine with no stream and a little sound pack: the rules, the library and the
 /// thread that reads, joined as the core thread joins them.
 struct SoundRig {
@@ -946,7 +1049,7 @@ impl SoundRig {
             let _ = tx.send((instrument, bank));
         };
         let library = Library::open(Some(&dir), Box::new(done));
-        let model = Model::new(Settings::default()).with_sounds(library.installed());
+        let mut model = Model::new(Settings::default()).with_sounds(library.installed());
         let parts = Engine::new(EngineConfig {
             max_tracks: MAX_TRACKS,
             ..EngineConfig::default()

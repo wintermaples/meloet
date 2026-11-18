@@ -61,6 +61,7 @@ fn sample_state() -> AppState {
             ],
             master: MasterView {
                 gain_db: Some(0.0),
+                pan: -5,
                 inserts: [Some(EffectKind::Limiter), None, None, None],
             },
             play_target: Some(7),
@@ -1064,7 +1065,7 @@ fn state_json_is_camel_case_and_round_trips() {
     );
     assert_eq!(
         v["state"]["song"]["master"],
-        json!({"gainDb": 0.0, "inserts": ["limiter", null, null, null]})
+        json!({"gainDb": 0.0, "pan": -5, "inserts": ["limiter", null, null, null]})
     );
     assert_eq!(
         v["state"]["params"]["selected"]["insert"],

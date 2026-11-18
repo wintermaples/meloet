@@ -339,16 +339,10 @@ fn replacing_is_one_step_that_keeps_the_name_and_undo_brings_the_instrument_back
             .iter()
             .filter(|x| matches!(x, Effect::Engine(_)))
             .collect::<Vec<_>>(),
-        [
-            &Effect::Engine(EngineOp::EndTrial {
-                seat: 0,
-                keep: true
-            }),
-            &Effect::Engine(EngineOp::Sequence {
-                track: 0,
-                events: vec![]
-            }),
-        ],
+        [&Effect::Engine(EngineOp::EndTrial {
+            seat: 0,
+            keep: true
+        }),],
         "the instrument that was tried stays; none is made anew"
     );
     e.take(&effects);
@@ -402,9 +396,9 @@ fn replacing_is_one_step_that_keeps_the_name_and_undo_brings_the_instrument_back
 
 #[test]
 fn the_engine_at_the_start_has_the_song_and_the_keys_on_its_first_track() {
-    let p = Play::new(true, 1);
+    let mut p = Play::new(true, 1);
     assert_eq!(
-        p.engine_seats(),
+        p.engine_seats()[..2],
         [
             EngineOp::Instrument {
                 seat: 0,

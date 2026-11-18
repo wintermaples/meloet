@@ -8,11 +8,8 @@ use super::{EngineOp, Play};
 use crate::state::Effect;
 
 impl Play {
-    /// Not while counting in or recording: it changes the song.
+    /// Also while counting in or recording: it does not move where the take is recorded.
     pub fn toggle_mute(&mut self, track: u32, effects: &mut Vec<Effect>) {
-        if self.busy() {
-            return;
-        }
         if let Ok(e) = edit::toggle_mute(self.doc(), TrackId(track)) {
             self.apply(e, effects);
         }

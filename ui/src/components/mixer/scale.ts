@@ -1,6 +1,5 @@
 // ミキサーの数の見せかたと、フェーダー ・ センドの位置（仕様書 2 章「メーターとフェーダーの目盛」）。DOM を知らない純粋な関数。
 
-import type { SongView } from "../../bridge";
 import { meterScale } from "../../design/tokens";
 import { t } from "../../text/ja";
 import { dbNumber } from "../format";
@@ -62,9 +61,3 @@ export const clampPan = (pan: number): number => Math.max(-100, Math.min(100, Ma
 
 /** フェーダーのいちばん短い長さ（100 % の px）。仕様書 2 章の帯の表「516（道具 32 + ストリップ 484。フェーダーの長さ 120 をのこす）」。 */
 export const FADER_MIN = 120;
-
-/** マスターのパン（A-14）。 */
-export function masterPan(song: SongView): number {
-  // 約束の MasterView に pan が来たら、song.master.pan を読む形に直す。
-  return (song.master as { pan?: number }).pan ?? 0;
-}

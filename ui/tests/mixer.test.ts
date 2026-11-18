@@ -6,7 +6,7 @@ import { fakeScene } from "../src/bridge/fake";
 import LowerBand from "../src/components/LowerBand.svelte";
 import { contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import MixerStrips from "../src/components/mixer/MixerStrips.svelte";
-import { dbToFrac, fracToDb, masterPan, panText, SCALE_MARKS } from "../src/components/mixer/scale";
+import { dbToFrac, fracToDb, panText, SCALE_MARKS } from "../src/components/mixer/scale";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
 import { trackContextMenu } from "../src/components/trackMenu";
 import { regionOf, watchSlots, type GlSlot } from "../src/gl/slot";
@@ -72,12 +72,8 @@ describe("目盛と数の見せかた", () => {
     expect(SCALE_MARKS.map((m) => m.label)).toEqual(["+6", "0", "−6", "−12", "−24", "−60"]);
   });
 
-  it("パンは C ・ L 20 ・ R 20。マスターのパンは、約束に来るまで 0", () => {
+  it("パンは C ・ L 20 ・ R 20", () => {
     expect([0, -20, 20].map(panText)).toEqual(["C", "L 20", "R 20"]);
-    const s = scene("mixer");
-    expect(masterPan(s.song)).toBe(0);
-    (s.song.master as { pan?: number }).pan = -30;
-    expect(masterPan(s.song)).toBe(-30);
   });
 });
 

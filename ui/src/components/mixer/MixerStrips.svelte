@@ -9,7 +9,6 @@
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import { openShelf } from "../tracks.svelte";
-  import { masterPan } from "./scale";
   import Strip from "./Strip.svelte";
   import { stripName } from "./stripName";
   import VScrollbar from "./VScrollbar.svelte";
@@ -128,7 +127,7 @@
         inserts={song.master.inserts}
         selectedSlot={slotOf({ kind: "master" }, selected)}
         sends={null}
-        pan={masterPan(song)}
+        pan={song.master.pan}
         gainDb={song.master.gainDb}
         meter="master"
         mute={off}

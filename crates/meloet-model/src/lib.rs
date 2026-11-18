@@ -4,6 +4,7 @@ pub mod arrange;
 pub mod chunked;
 pub mod controls;
 pub mod edit;
+pub mod effects;
 pub mod history;
 #[cfg(test)]
 mod id_book;

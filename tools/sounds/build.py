@@ -747,8 +747,10 @@ def build_organ(b):
         name = safe_name(os.path.splitext(f)[0]) + ".flac"
         job = job_for(b, "organ", name, [{"path": os.path.join(folder, f)}], loop="steady")
         jobs.append(job)
+        # A pipe organ does not get louder with velocity, but the built-in organs all do, like the
+        # FluidR3 ones (Yachiyo's decision 2026-11-19).
         rows.append({"_file": name, "_out": job["out"], "keyLo": lo, "keyHi": hi, "root": key,
-                     "ampVeltrack": 0, "attackMs": 1})
+                     "ampVeltrack": 100, "attackMs": 1})
     results = b.run(jobs)
     rel = organ_release_ms(os.path.join(folder, files[len(files) // 2][1]))
     for r in rows:

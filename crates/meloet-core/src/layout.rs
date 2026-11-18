@@ -1,6 +1,8 @@
 //! Band rules (design spec section 3). All sizes are px at 100 % zoom.
 //! `SIZE_*` are the spec's `size.*` values (section 1).
 
+/// The menu row above the transport (design notes B-59): `size.row`.
+pub const SIZE_ROW: f64 = 24.0;
 pub const SIZE_TRANSPORT: f64 = 48.0;
 pub const SIZE_BANDROW: f64 = 24.0;
 pub const SIZE_STATUS: f64 = 24.0;
@@ -248,7 +250,7 @@ impl Bands {
     /// What is left when the arrange view is at `size.overview` and every open band at its
     /// smallest. Negative: they do not fit.
     fn spare(&self) -> f64 {
-        let fixed = SIZE_TRANSPORT + self.meter().height() + SIZE_BANDROW + SIZE_STATUS;
+        let fixed = SIZE_ROW + SIZE_TRANSPORT + self.meter().height() + SIZE_BANDROW + SIZE_STATUS;
         let smallest_sum: f64 = self.bottom_open.iter().map(|&b| smallest(b)).sum();
         self.window.height - fixed - SIZE_OVERVIEW - smallest_sum
     }
@@ -312,7 +314,7 @@ mod tests {
         let l = bands(800.0).layout();
         assert_eq!(l.meter, MeterSize::Full);
         assert_eq!(l.meter.height(), 52.0);
-        assert_eq!(l.arrange_height, 800.0 - 48.0 - 52.0 - 24.0 - 24.0);
+        assert_eq!(l.arrange_height, 800.0 - 24.0 - 48.0 - 52.0 - 24.0 - 24.0);
         assert!(!l.arrange_overview);
         assert!(l.bottom.is_empty());
         assert!(!l.show_back_hint);
@@ -328,7 +330,7 @@ mod tests {
         assert!(l.arrange_overview);
         assert_eq!(
             height_of(&l, PianoRoll),
-            800.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
+            800.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
         );
         assert!(l.show_back_hint);
     }
@@ -342,7 +344,7 @@ mod tests {
         assert_eq!(open_bottom(&l), [PianoRoll]);
         assert_eq!(
             height_of(&l, PianoRoll),
-            800.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
+            800.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
         );
     }
 
@@ -363,10 +365,13 @@ mod tests {
         let mut b = bands(800.0);
         b.toggle(Mixer.into());
         b.toggle(History.into());
-        // 800 - 48 - 24 - 516 - 248 - 24 - 24 < 40
+        // 800 - 24 - 48 - 24 - 516 - 248 - 24 - 24 < 40
         let l = b.layout();
         assert_eq!(open_bottom(&l), [History]);
-        assert_eq!(l.arrange_height, 800.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0);
+        assert_eq!(
+            l.arrange_height,
+            800.0 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
+        );
     }
 
     #[test]
@@ -376,7 +381,7 @@ mod tests {
         b.toggle(Mixer.into());
         let l = b.layout();
         assert_eq!(open_bottom(&l), [Mixer]);
-        assert_eq!(height_of(&l, Mixer), 640.0);
+        assert_eq!(height_of(&l, Mixer), 616.0);
         assert_eq!(l.arrange_height, 40.0);
     }
 
@@ -385,7 +390,7 @@ mod tests {
     fn one_band_in_a_low_window_gets_the_rest() {
         // Two low windows.
         for h in [533.0, 356.0] {
-            let left = h - 48.0 - 24.0 - 40.0 - 24.0 - 24.0;
+            let left = h - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0;
             for band in [PianoRoll, Mixer] {
                 let mut b = bands(h);
                 b.toggle(band.into());
@@ -400,7 +405,10 @@ mod tests {
         b.toggle(History.into());
         let l = b.layout();
         assert_eq!(height_of(&l, History), 248.0);
-        assert_eq!(l.arrange_height, 533.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0);
+        assert_eq!(
+            l.arrange_height,
+            533.0 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
+        );
         b.set_window(WindowSize {
             width: 853.0,
             height: 356.0,
@@ -408,7 +416,7 @@ mod tests {
         let l = b.layout();
         assert_eq!(
             height_of(&l, History),
-            356.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
+            356.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
         );
         assert_eq!(l.arrange_height, 40.0);
     }
@@ -440,7 +448,7 @@ mod tests {
         assert_eq!(open_bottom(&l), [Mixer]);
         assert_eq!(
             height_of(&l, Mixer),
-            533.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
+            533.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
         );
     }
 
@@ -483,7 +491,7 @@ mod tests {
         b.toggle(Params.into());
         let l = b.layout();
         assert_eq!(l.meter, MeterSize::Full);
-        assert_eq!(l.arrange_height, 800.0 - 48.0 - 52.0 - 24.0 - 24.0);
+        assert_eq!(l.arrange_height, 800.0 - 24.0 - 48.0 - 52.0 - 24.0 - 24.0);
         assert!(!l.show_back_hint);
     }
 
@@ -545,7 +553,7 @@ mod tests {
         let l = b.layout();
         assert!(l.bottom.is_empty());
         assert_eq!(l.meter, MeterSize::Full);
-        assert_eq!(l.arrange_height, 1080.0 - 48.0 - 52.0 - 24.0 - 24.0);
+        assert_eq!(l.arrange_height, 1080.0 - 24.0 - 48.0 - 52.0 - 24.0 - 24.0);
         assert_eq!(l.side_front, Some(Shelf));
         assert!(!l.show_back_hint);
     }
@@ -579,15 +587,15 @@ mod tests {
         b
     }
 
-    /// Spec "ピアノロールの縦の足し算": the note area is the piano roll minus
-    /// tools 32, ruler 20, velocity 72 and CC row 24.
+    /// Spec "ピアノロールの縦の足し算", with the menu row (B-59): the note area is the piano roll
+    /// minus tools 32, ruler 20, velocity 72 and CC row 24.
     #[test]
     fn piano_roll_note_area_matches_spec_table() {
         for (window, notes, rows) in [
-            (448.0, 140.0, 11.0),
-            (720.0, 412.0, 34.0),
-            (768.0, 460.0, 38.0),
-            (800.0, 492.0, 41.0),
+            (448.0, 116.0, 9.0),
+            (720.0, 388.0, 32.0),
+            (768.0, 436.0, 36.0),
+            (800.0, 468.0, 39.0),
             (1080.0, 588.0, 49.0),
         ] {
             let l = opened(window, &[PianoRoll]).layout();
@@ -613,43 +621,43 @@ mod tests {
         let rows = [
             Row {
                 order: &[PianoRoll],
-                fits: 428.0,
-                arrange_grows: 896.0,
-                arrange_rows: 992.0,
-                at_800: Some(&[40.0, 640.0]),
-                at_1080: &[224.0, 736.0],
+                fits: 452.0,
+                arrange_grows: 920.0,
+                arrange_rows: 1016.0,
+                at_800: Some(&[40.0, 616.0]),
+                at_1080: &[200.0, 736.0],
             },
             Row {
                 order: &[Mixer],
-                fits: 676.0,
-                arrange_grows: 820.0,
-                arrange_rows: 916.0,
-                at_800: Some(&[40.0, 640.0]),
-                at_1080: &[300.0, 660.0],
+                fits: 700.0,
+                arrange_grows: 844.0,
+                arrange_rows: 940.0,
+                at_800: Some(&[40.0, 616.0]),
+                at_1080: &[276.0, 660.0],
             },
             Row {
                 order: &[History],
-                fits: 408.0,
-                arrange_grows: 408.0,
-                arrange_rows: 504.0,
-                at_800: Some(&[432.0, 248.0]),
-                at_1080: &[712.0, 248.0],
+                fits: 432.0,
+                arrange_grows: 432.0,
+                arrange_rows: 528.0,
+                at_800: Some(&[408.0, 248.0]),
+                at_1080: &[688.0, 248.0],
             },
             Row {
                 order: &[Mixer, PianoRoll],
-                fits: 944.0,
-                arrange_grows: 1556.0,
-                arrange_rows: 1652.0,
+                fits: 968.0,
+                arrange_grows: 1580.0,
+                arrange_rows: 1676.0,
                 at_800: None,
-                at_1080: &[40.0, 404.0, 516.0],
+                at_1080: &[40.0, 380.0, 516.0],
             },
             Row {
                 order: &[History, Mixer],
-                fits: 924.0,
-                arrange_grows: 1068.0,
-                arrange_rows: 1164.0,
+                fits: 948.0,
+                arrange_grows: 1092.0,
+                arrange_rows: 1188.0,
                 at_800: None,
-                at_1080: &[52.0, 660.0, 248.0],
+                at_1080: &[40.0, 648.0, 248.0],
             },
         ];
         let heights = |l: &Layout| {
@@ -748,7 +756,7 @@ mod tests {
                 let b = opened(h, order);
                 let l = b.layout();
                 let bands: f64 = l.bottom.iter().map(|b| b.height).sum();
-                let sum = 48.0 + l.meter.height() + l.arrange_height + bands + 24.0 + 24.0;
+                let sum = 24.0 + 48.0 + l.meter.height() + l.arrange_height + bands + 24.0 + 24.0;
                 if b.spare() >= 0.0 {
                     assert_eq!(sum, h, "{order:?}");
                 } else {
@@ -777,14 +785,14 @@ mod tests {
 
     #[test]
     fn overview_only_depends_on_the_arrange_height() {
-        // Nothing open in the smallest window: 448 - 48 - 52 - 24 - 24 = 300.
+        // Nothing open in the smallest window: 448 - 24 - 48 - 52 - 24 - 24 = 276.
         assert!(!bands(448.0).layout().arrange_overview);
         // The piano roll open with tall arrange rows above it.
         let l = opened(1080.0, &[PianoRoll]).layout();
-        assert_eq!(l.arrange_height, 224.0);
+        assert_eq!(l.arrange_height, 200.0);
         assert!(!l.arrange_overview);
         // The history open, 135 left.
-        let l = opened(503.0, &[History]).layout();
+        let l = opened(527.0, &[History]).layout();
         assert_eq!(l.arrange_height, 135.0);
         assert!(l.arrange_overview);
     }
@@ -792,13 +800,13 @@ mod tests {
     /// The older band grows only after the newest reached its largest height.
     #[test]
     fn newest_band_grows_first() {
-        // 1300: 1300 - 120 - 40 - 268 - 516 = 356 to share.
+        // 1300: 1300 - 144 - 40 - 268 - 516 = 332 to share.
         let l = opened(1300.0, &[Mixer, PianoRoll]).layout();
-        assert_eq!(height_of(&l, PianoRoll), 268.0 + 356.0);
+        assert_eq!(height_of(&l, PianoRoll), 268.0 + 332.0);
         assert_eq!(height_of(&l, Mixer), 516.0);
         let l = opened(1300.0, &[PianoRoll, Mixer]).layout();
         assert_eq!(height_of(&l, Mixer), 660.0);
-        assert_eq!(height_of(&l, PianoRoll), 268.0 + 356.0 - 144.0);
+        assert_eq!(height_of(&l, PianoRoll), 268.0 + 332.0 - 144.0);
         assert_eq!(l.arrange_height, 40.0);
         // Opening a band again makes it the newest.
         let mut b = opened(1300.0, &[PianoRoll, Mixer]);
@@ -827,7 +835,7 @@ mod tests {
         );
         assert_eq!(open_bottom(&b.layout()), [PianoRoll, History]);
         // A third band that then does not fit beside the second: the later fold is named.
-        let mut b = opened(940.0, &[History, Mixer]);
+        let mut b = opened(960.0, &[History, Mixer]);
         assert_eq!(b.toggle(PianoRoll.into()), Some(too_low(Mixer)));
         assert_eq!(open_bottom(&b.layout()), [PianoRoll]);
         // Closing a band folds nothing.
@@ -837,7 +845,7 @@ mod tests {
         let mut b = opened(1080.0, &[Mixer, PianoRoll]);
         let low = WindowSize {
             width: 1280.0,
-            height: 943.0,
+            height: 967.0,
         };
         assert_eq!(b.set_window(low), Some(Mixer));
         assert_eq!(b.set_window(low), None);

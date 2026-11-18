@@ -34,6 +34,7 @@ fn two_tracks() -> Doc {
         color: TrackColor::for_index(1),
         instrument: InstrumentRef::Placeholder,
         gain_db: 0.0,
+        muted: false,
         clips: Vec::new(),
     }));
     doc
@@ -306,8 +307,14 @@ fn deleting_clips() {
     let (doc, a) = record(&two_tracks(), T1, vec![take(0, 960)], 0);
     let (doc, b) = record(&doc, T1, vec![take(2000, 960)], 0);
     let (doc, c) = record(&doc, T2, vec![take(0, 960)], 0);
-    let edit = delete_clips(&doc, &[a.clip, c.clip]).unwrap();
-    assert_eq!(edit.step, StepKind::DeleteClips { count: 2 });
+    let edit = delete_clips(&doc, &[a.clip, c.clip], false).unwrap();
+    assert_eq!(
+        edit.step,
+        StepKind::DeleteClips {
+            count: 2,
+            cut: false
+        }
+    );
     assert_eq!(clips(&edit.doc, T1), [(2000, 2960, 1)]);
     assert!(clips(&edit.doc, T2).is_empty());
     assert!(Arc::ptr_eq(
@@ -315,14 +322,21 @@ fn deleting_clips() {
         &edit.doc.track(T1).unwrap().clips[0]
     ));
 
-    let only_t1 = delete_clips(&doc, &[b.clip]).unwrap();
+    let only_t1 = delete_clips(&doc, &[b.clip], true).unwrap();
+    assert_eq!(
+        only_t1.step,
+        StepKind::DeleteClips {
+            count: 1,
+            cut: true
+        }
+    );
     assert!(Arc::ptr_eq(&doc.tracks[1], &only_t1.doc.tracks[1]));
 
     assert_eq!(
-        delete_clips(&doc, &[a.clip, ClipId(999)]),
+        delete_clips(&doc, &[a.clip, ClipId(999)], false),
         Err(EditError::NoSuchClip(ClipId(999)))
     );
-    assert_eq!(delete_clips(&doc, &[]), Err(EditError::Unchanged));
+    assert_eq!(delete_clips(&doc, &[], false), Err(EditError::Unchanged));
 }
 
 #[test]
@@ -352,4 +366,53 @@ fn tempo_and_meter() {
         }
     );
     assert_eq!(set_meter(&doc, Meter::FOUR_FOUR), Err(EditError::Unchanged));
+}
+
+#[test]
+fn muting_a_track() {
+    let doc = two_tracks();
+    let e = toggle_mute(&doc, T2).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::Mute {
+            track: T2,
+            muted: true
+        }
+    );
+    assert!(e.doc.track(T2).unwrap().muted);
+    assert!(
+        Arc::ptr_eq(&doc.tracks[0], &e.doc.tracks[0]),
+        "the other track is shared"
+    );
+    let back = toggle_mute(&e.doc, T2).unwrap();
+    assert_eq!(
+        back.step,
+        StepKind::Mute {
+            track: T2,
+            muted: false
+        }
+    );
+    assert_eq!(back.doc, doc);
+    assert_eq!(
+        toggle_mute(&doc, TrackId(9)),
+        Err(EditError::NoSuchTrack(TrackId(9)))
+    );
+}
+
+#[test]
+fn which_tracks_play() {
+    let doc = toggle_mute(&two_tracks(), T2).unwrap().doc;
+    let plays = |soloed: &[TrackId]| {
+        let soloed = soloed.iter().copied().collect();
+        [T1, T2].map(|t| doc.plays(doc.track(t).unwrap(), &soloed))
+    };
+    assert_eq!(plays(&[]), [true, false]);
+    assert_eq!(plays(&[T1]), [true, false]);
+    assert_eq!(plays(&[T2]), [false, false], "mute beats solo");
+    assert_eq!(plays(&[T1, T2]), [true, false]);
+    assert_eq!(
+        plays(&[TrackId(9)]),
+        [true, false],
+        "a track not in the song is no solo"
+    );
 }

@@ -12,6 +12,7 @@
 use std::sync::Arc;
 
 use crate::TrackId;
+use crate::arrange::ClipEdge;
 use crate::chunked::ChunkedVec;
 use crate::edit::{Edit, EditError, Ids, clip_index, track_index, with_track};
 use crate::history::StepKind;
@@ -321,31 +322,48 @@ fn move_or_copy(
     put_notes(doc, (ti, ci), out, step(count))
 }
 
-/// Every note grows or shrinks by `ticks`, each one staying 1 tick or longer and ending by the
-/// end of the clip.
+/// Every note moves its `edge` by `ticks`, the other edge staying, each note staying 1 tick or
+/// longer and inside the clip. A note already past the clip's edge only cannot go further out.
 pub fn resize_notes(
     doc: &Doc,
     clip: ClipId,
     indexes: &[usize],
+    edge: ClipEdge,
     ticks: i64,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let end = lifted(&doc.tracks[ti].clips[ci]).0.end;
+    let c = lifted(&doc.tracks[ti].clips[ci]).0;
     change_each(
         doc,
         (ti, ci),
         indexes,
         |count| StepKind::ResizeNotes { clip, count },
-        |n| {
-            let length = n.length as i64 + ticks;
-            let length = if ticks >= 0 {
-                length.min(n.length.max(end.saturating_sub(n.start)) as i64)
-            } else {
-                length.max(1)
-            };
-            Note {
-                length: length as u64,
-                ..n
+        |n| match edge {
+            ClipEdge::End => {
+                let length = n.length as i64 + ticks;
+                let length = if ticks >= 0 {
+                    length.min(n.length.max(c.end.saturating_sub(n.start)) as i64)
+                } else {
+                    length.max(1)
+                };
+                Note {
+                    length: length as u64,
+                    ..n
+                }
+            }
+            ClipEdge::Start => {
+                let end = n.end() as i64;
+                let start = n.start as i64 + ticks;
+                let start = if ticks <= 0 {
+                    start.max(n.start.min(c.start) as i64)
+                } else {
+                    start.min(end - 1)
+                };
+                Note {
+                    start: start as u64,
+                    length: (end - start) as u64,
+                    ..n
+                }
             }
         },
     )

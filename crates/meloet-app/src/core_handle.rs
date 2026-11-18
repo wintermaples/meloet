@@ -38,6 +38,9 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// The answer of the PC's folder window. Does not wait.
     fn folder_picked(&self, path: Option<PathBuf>);
 
+    /// The answer of the PC's save window. Does not wait.
+    fn save_as_picked(&self, path: Option<PathBuf>);
+
     /// The PC is ending: waits up to `timeout` for the recovery file. Returns whether it was
     /// written in time (or there was nothing to write).
     fn pc_ending(&self, timeout: Duration) -> bool;
@@ -82,6 +85,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn folder_picked(&self, path: Option<PathBuf>) {
         meloet_core::Core::folder_picked(self, path);
+    }
+
+    fn save_as_picked(&self, path: Option<PathBuf>) {
+        meloet_core::Core::save_as_picked(self, path);
     }
 
     fn pc_ending(&self, timeout: Duration) -> bool {

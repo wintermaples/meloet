@@ -1,7 +1,9 @@
-// キー（仕様書 4 章）のうち、ピアノロールにフォーカスがあるときの意図。DOM を知らない純粋な関数。
+// キー（仕様書 4 章）のうち、ピアノロールにフォーカスがあるときの意図。DOM を知らない。
+// ↑ ↓ でノートを動かす意図を作ったときだけ、ピアノロールの部品に知らせる（動かしたノートを鳴らすため。audition.ts）。
 
 import type { AppState, Command } from "../../bridge";
 import type { Meter } from "../time";
+import { nudgedKeys } from "./audition";
 import { duplicateTicks, gridTicks, indexesOf, snapTick, type Shown } from "./geom";
 
 export type PianoRollKey =
@@ -49,8 +51,11 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
   if (notes.length === 0) return null;
   const take = n.take.id;
   switch (key.kind) {
-    case "nudge":
-      return { type: "moveNotes", take, notes, ticks: key.steps * step, keys: key.keys, copy: false };
+    case "nudge": {
+      const command = { type: "moveNotes", take, notes, ticks: key.steps * step, keys: key.keys, copy: false } as const;
+      if (key.keys !== 0) nudgedKeys(command);
+      return command;
+    }
     case "deleteNotes":
       return { type: "deleteNotes", take, notes };
     case "duplicate":

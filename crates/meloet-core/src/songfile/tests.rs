@@ -95,6 +95,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
                 )
                 .unwrap(),
             },
+            soloed: BTreeSet::new(),
         },
     }
 }
@@ -120,6 +121,7 @@ fn the_shape_on_disk() {
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
     assert_eq!(v["song"]["nextId"], 8);
     let track = &v["song"]["tracks"][0];
+    assert!(track.get("muted").is_none(), "not muted: not written");
     assert_eq!(
         track["instrument"],
         serde_json::json!({"kind": "placeholder"})
@@ -192,6 +194,21 @@ fn unknown_fields_are_skipped_and_later_places_may_be_missing() {
     v["song"].as_object_mut().unwrap().remove("audio");
     let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
     assert_eq!(back, rich_song("x", 3));
+}
+
+#[test]
+fn mute_is_saved_and_solo_is_not() {
+    let mut song = rich_song("x", 3);
+    Arc::make_mut(&mut song.doc.tracks[0]).muted = true;
+    song.session.soloed.insert(TrackId(1));
+    let bytes = encode(&song);
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["song"]["tracks"][0]["muted"], true);
+    assert!(v["session"].get("soloed").is_none());
+    let back = decode(&bytes).unwrap();
+    assert!(back.doc.tracks[0].muted);
+    assert!(back.session.soloed.is_empty());
+    assert_eq!(back.doc, song.doc);
 }
 
 #[test]
@@ -530,6 +547,10 @@ fn a_file_of_version_1_reads() {
  "session": {"playTarget": 1, "armed": 1, "loop": {"start": 0, "end": 3840}, "loopOn": false}}
 "#;
     let song = decode(v1.as_bytes()).unwrap();
+    assert!(!song.doc.tracks[0].muted);
+    // Version 2 as written before mute came: the same.
+    let v2 = v1.replace(r#""version": 1"#, r#""version": 2"#);
+    assert_eq!(decode(v2.as_bytes()).unwrap(), song);
     let clip = &song.doc.tracks[0].clips[0];
     let shown = &clip.active_take().take;
     assert_eq!(shown.id, TakeId(6));

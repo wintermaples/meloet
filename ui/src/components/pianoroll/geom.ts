@@ -92,12 +92,23 @@ export function eachNoteIn(n: Shown, from: number, to: number, each: (i: number)
 
 export interface Hit {
   note: number;
-  /** 右はしの 6px（長さを変える所） */
+  /** はしの 6px（長さを変える所）。 */
   edge: boolean;
+  /** 左はし（始まりを動かす所。design-notes B-69）。hitNote を startEdge つきで呼んだときだけ。 */
+  start?: true;
 }
 
-/** (x, y) の下のノート。重なっていたら、あとに描く物（番号の大きい物）。 */
-export function hitNote(n: Shown | null, g: RollGeom, x: number, y: number, edgePx: number): Hit | null {
+/**
+ * はしの幅（CSS px）: ふだんは edgePx。左右の両方を見るときに左右の edgePx が重なるほど短いノートは、左右それぞれ幅の 1/3。
+ * 右だけを見るときは、幅の半分まで。
+ */
+export function edgeWidth(noteW: number, edgePx: number, both: boolean): number {
+  if (!both) return Math.min(edgePx, noteW / 2);
+  return 2 * edgePx > noteW ? noteW / 3 : edgePx;
+}
+
+/** (x, y) の下のノート。重なっていたら、あとに描く物（番号の大きい物）。startEdge なら左はしも見る。 */
+export function hitNote(n: Shown | null, g: RollGeom, x: number, y: number, edgePx: number, startEdge = false): Hit | null {
   if (!n || y < 0 || y >= g.height) return null;
   const key = yToKey(g, y);
   const tick = xToTick(g, x);
@@ -107,7 +118,10 @@ export function hitNote(n: Shown | null, g: RollGeom, x: number, y: number, edge
     const x0 = tickToX(g, noteStart(n, i));
     const x1 = tickToX(g, noteEnd(n, i));
     if (x < x0 || x >= x1) return;
-    found = { note: i, edge: x >= x1 - Math.min(edgePx, (x1 - x0) / 2) };
+    const w = edgeWidth(x1 - x0, edgePx, startEdge);
+    if (x >= x1 - w) found = { note: i, edge: true };
+    else if (startEdge && x < x0 + w) found = { note: i, edge: true, start: true };
+    else found = { note: i, edge: false };
   });
   return found;
 }
@@ -258,6 +272,27 @@ export function resizeDelta(n: Shown, notes: readonly number[], grab: number, dx
   let shortest = Infinity;
   for (const i of notes) shortest = Math.min(shortest, n.take.lengths[i]!);
   ticks = Math.max(ticks, 1 - shortest);
+  return ticks === 0 ? 0 : ticks;
+}
+
+/**
+ * つかんだノートの始まりがグリッドに吸いつくように、始まりを動かす量（終わりは動かさない。+ で短くなる。design-notes B-69）。
+ * どのノートも 1 ティックより短くならず（吸いつくときは、つかんだノートはグリッド 1 つより短くならない）、曲の頭より前へは出ない。
+ */
+export function resizeStartDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null): number {
+  const start = noteStart(n, grab);
+  const target = start + dxTicks;
+  let ticks = (step ? snapTick(target, step) : Math.round(target)) - start;
+  const grabLength = n.take.lengths[grab]!;
+  if (step) ticks = Math.min(ticks, grabLength - Math.min(step, grabLength));
+  let shortest = Infinity;
+  let first = Infinity;
+  for (const i of notes) {
+    shortest = Math.min(shortest, n.take.lengths[i]!);
+    first = Math.min(first, noteStart(n, i));
+  }
+  ticks = Math.min(ticks, shortest - 1);
+  ticks = Math.max(ticks, -first);
   return ticks === 0 ? 0 : ticks;
 }
 

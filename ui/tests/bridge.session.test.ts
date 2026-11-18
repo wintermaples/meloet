@@ -297,7 +297,7 @@ describe("bridge session", () => {
     expect(rev).toBe(2);
     expect(r.states).toHaveLength(2);
     // 800 − 48 − 24（入力計が細い）− 24 − 24 − 40（ちぢんだアレンジ）
-    expect(r.states[1]!.state.workspace.layout.lower).toEqual([{ band: "pianoRoll", height: 640 }]);
+    expect(r.states[1]!.state.workspace.layout.lower).toEqual([{ band: "pianoRoll", height: 616 }]);
 
     expect(await connection.send({ type: "setScale", percent: 100 })).toBe(2);
     expect(r.states).toHaveLength(2);

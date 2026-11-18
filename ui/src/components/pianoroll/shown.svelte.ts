@@ -3,6 +3,7 @@
 //
 // 使いかた: ピアノロールの帯の部品が、初めに 1 回 `followShownTake()` を呼ぶ（部品の中なので $effect が使える）。
 
+import { untrack } from "svelte";
 import { takeNotes, type ClipView, type TakeNotes, type TrackView } from "../../bridge";
 import { current } from "../../state/app.svelte";
 
@@ -11,6 +12,7 @@ let clip = $state.raw<ClipView | null>(null);
 let track = $state.raw<TrackView | null>(null);
 let take = $state.raw<TakeNotes | null>(null);
 let origin = $state.raw<TakeNotes | null>(null);
+let takeSerial = 0;
 
 export const shown = {
   /** `arrange.pianoRollClip` のクリップ。なければ null（クリップのない曲）。 */
@@ -49,6 +51,7 @@ export function followShownTake(): void {
     clip = found?.clip ?? null;
     track = found?.track ?? null;
     const id = found?.clip.takeId ?? null;
+    const serial = current.state?.song.serial ?? 0;
     const ticket = ++asked;
     if (id === null) {
       take = null;
@@ -56,11 +59,19 @@ export function followShownTake(): void {
       return;
     }
     // つながる前は取りにいけない（橋が投げる）。つながったら、この $effect がもう一度走る。
-    if (take?.id === id || !current.connected) return;
+    // いま見せているテイクは読むだけ（ここで null にしても、この $effect をもう一度走らせない）。
+    const now = untrack(() => take);
+    if ((now?.id === id && takeSerial === serial) || !current.connected) return;
+    // 「前の物のまま」はちらつかないためだが、別の曲のノートは残さない。
+    if (now && takeSerial !== serial) {
+      take = null;
+      origin = null;
+    }
     void takeNotes(id).then(async (got) => {
       if (ticket !== asked) return;
       const from = got.origin !== 0 ? await takeNotes(got.origin) : null;
       if (ticket !== asked) return;
+      takeSerial = serial;
       take = got;
       origin = from;
     });

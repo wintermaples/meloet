@@ -49,15 +49,21 @@ pub enum EngineCommand {
     },
     TestTone,
     AllNotesOff,
-    /// Sounds a key on a track, as the keyboard would, and lets go of the key the last
+    /// Sounds keys on a track, as the keyboard would, and lets go of the keys the last
     /// `Audition` sounded. Not recorded.
     Audition {
         track: usize,
-        key: u8,
+        keys: Chord,
         velocity: u8,
     },
-    /// Lets go of the key the last `Audition` sounded.
+    /// Lets go of the keys the last `Audition` sounded.
     AuditionOff,
+    /// The tracks whose sequence does not play (mute and solo). A track that goes silent lets
+    /// go of what its sequence holds at once; one that comes back picks up at the position.
+    /// Keys played and auditioned still sound on them. [`Engine::prepare`] empties the set.
+    SetSilentTracks {
+        tracks: TrackSet,
+    },
     /// Use [`EngineHandle::swap_sequence`]. The old sequence comes back on the retired ring.
     /// Notes the old one left sounding are released, and the pedal, wheel and bend it moved go
     /// back to 0.
@@ -105,6 +111,36 @@ pub enum EngineCommand {
     Locate {
         tick: u64,
     },
+}
+
+/// Up to [`Chord::CAPACITY`] keys, kept without allocating.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Chord {
+    keys: [u8; Chord::CAPACITY],
+    len: u8,
+}
+
+impl Chord {
+    pub const CAPACITY: usize = 16;
+
+    /// Keys past the capacity, over 127, or already in are left out.
+    pub fn new(keys: &[u8]) -> Chord {
+        let mut chord = Chord::default();
+        for &key in keys {
+            if usize::from(chord.len) == Chord::CAPACITY {
+                break;
+            }
+            if key <= 127 && !chord.keys().contains(&key) {
+                chord.keys[usize::from(chord.len)] = key;
+                chord.len += 1;
+            }
+        }
+        chord
+    }
+
+    pub fn keys(&self) -> &[u8] {
+        &self.keys[..usize::from(self.len)]
+    }
 }
 
 /// What the audio thread hands back while recording, in the order it happened on that thread.
@@ -332,6 +368,8 @@ struct Transport {
     /// Where the current play or recording started; a stop that cannot be placed returns here.
     run_from: u64,
     muted: TrackSet,
+    /// Mute and solo: never play their sequence.
+    silent: TrackSet,
     session: u32,
     lap: u32,
     /// After `RecordHere`: the session whose playing stretches, already sent to the DAC, still
@@ -357,6 +395,7 @@ impl Transport {
             record_from: 0,
             run_from: 0,
             muted: TrackSet::default(),
+            silent: TrackSet::default(),
             session: 0,
             lap: 0,
             punched: None,
@@ -399,6 +438,9 @@ impl Transport {
     }
 
     fn lane_plays(&self, track: usize) -> bool {
+        if self.silent.contains(track) {
+            return false;
+        }
         match self.state {
             TransportState::Playing => true,
             TransportState::Recording => !self.muted.contains(track),
@@ -513,8 +555,8 @@ pub struct Engine {
     sample_rate: f32,
     max_frames: usize,
     tone: TestTone,
-    /// The track and key the last `Audition` sounded, until it is let go.
-    audition: Option<(usize, u8)>,
+    /// The track and keys the last `Audition` sounded, until they are let go.
+    audition: Option<(usize, Chord)>,
     last_callback: Option<(Instant, f64)>,
 }
 
@@ -616,6 +658,7 @@ impl Engine {
         t.pos = t.pos.div_euclid(t.scale) * scale;
         t.scale = scale;
         t.state = TransportState::Stopped;
+        t.silent = TrackSet::default();
         self.tone = TestTone::idle();
         self.audition = None;
         self.click = Click::idle();
@@ -719,7 +762,7 @@ impl Engine {
                 }
                 EngineCommand::Audition {
                     track,
-                    key,
+                    keys,
                     velocity,
                 } => {
                     self.audition_off();
@@ -728,14 +771,14 @@ impl Engine {
                         .get_mut(track)
                         .and_then(|t| t.instrument.as_mut())
                     {
-                        instrument.event(InstrumentEvent::NoteOn {
-                            note: key,
-                            velocity,
-                        });
-                        self.audition = Some((track, key));
+                        for &note in keys.keys() {
+                            instrument.event(InstrumentEvent::NoteOn { note, velocity });
+                        }
+                        self.audition = Some((track, keys));
                     }
                 }
                 EngineCommand::AuditionOff => self.audition_off(),
+                EngineCommand::SetSilentTracks { tracks } => self.set_silent(tracks),
                 EngineCommand::SetTempo {
                     ticks_per_beat,
                     beats_per_bar,
@@ -813,10 +856,27 @@ impl Engine {
     }
 
     fn audition_off(&mut self) {
-        if let Some((track, key)) = self.audition.take()
+        if let Some((track, keys)) = self.audition.take()
             && let Some(instrument) = self.tracks[track].instrument.as_mut()
         {
-            instrument.event(InstrumentEvent::NoteOff { note: key });
+            for &note in keys.keys() {
+                instrument.event(InstrumentEvent::NoteOff { note });
+            }
+        }
+    }
+
+    fn set_silent(&mut self, tracks: TrackSet) {
+        let before = self.transport.silent;
+        self.transport.silent = tracks;
+        for i in 0..self.tracks.len() {
+            match (before.contains(i), tracks.contains(i)) {
+                (false, true) => {
+                    let slot = &mut self.tracks[i];
+                    slot.lane.silence(slot.instrument.as_deref_mut());
+                }
+                (true, false) if self.transport.lane_plays(i) => self.seek_lane(i),
+                _ => {}
+            }
         }
     }
 

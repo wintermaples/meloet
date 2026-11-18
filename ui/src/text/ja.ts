@@ -192,6 +192,12 @@ export const texts = {
   "msg.valueClamped": e("{field}は {range} なので、{value} にしました。", "user:2026-11-18", { field: "ベロシティ", range: "1〜127", value: "127" }),
   // ベロシティをまとめて変える（同じく 67）。
   "msg.velocityMatched": e("{count} ノートのベロシティを {value} にそろえました。", "user:2026-11-18", { count: "3", value: "100" }),
+  // 位置の小節を丸めたとき（同じく 68）。小節だけ「1 から」のあとに空白がない。拍とティックは msg.valueClamped。
+  "msg.valueClampedBar": e("小節は 1 からなので、{value} にしました。", "user:2026-11-18", { value: "1. 1. 000" }),
+  // ほかのクリップと重なって置けなかった（同じく 71）。
+  "msg.clipsNotMoved": e("ほかのクリップと重なるので、動かしませんでした。", "user:2026-11-18"),
+  "msg.clipsNotPasted": e("ほかのクリップと重なるので、貼りつけませんでした。", "user:2026-11-18"),
+  "msg.clipsNotDuplicated": e("ほかのクリップと重なるので、複製できませんでした。", "user:2026-11-18"),
 
   // 使えない値を打ったときの欄の名前と範囲（仕様書 6 章「使えない値を打った」、3 章のテンポと拍子の枠）。
   "value.tempo": e("テンポ", "spec:6"),
@@ -203,6 +209,10 @@ export const texts = {
   "value.meterDenRange": s6("使えない値を打った", "2 ・ 4 ・ 8 ・ 16", undefined, "part"),
   "value.velocity": e("ベロシティ", "spec:6"),
   "value.velocityRange": s6("使えない値を打った", "1〜127", undefined, "part"),
+  // 位置の小節・拍・ティック（デザインに戻した事 68）。拍とティックの範囲は拍子で変わるので、知らせについてくる。
+  "value.bar": e("小節", "user:2026-11-18"),
+  "value.beat": e("拍", "user:2026-11-18"),
+  "value.tick": e("ティック", "user:2026-11-18"),
 
   // 仕様書 6 章のボタン（「（…）」の中は説明なので入れない）
   "button.playHere": e("ここから鳴らす", "spec:6"),
@@ -553,6 +563,8 @@ export const texts = {
   "menu.params": e("パラメータ", "user:2026-11-18"),
   "menu.zoomIn": e("横に拡大", "user:2026-11-18"),
   "menu.zoomOut": e("横に縮小", "user:2026-11-18"),
+  "menu.zoomRowsIn": e("縦に拡大", "user:2026-11-18"),
+  "menu.zoomRowsOut": e("縦に縮小", "user:2026-11-18"),
   "menu.scale": e("拡大率", "user:2026-11-18"),
   "menu.playStart": e("再生", "user:2026-11-18"),
   "menu.stop": e("停止", "user:2026-11-18"),
@@ -580,6 +592,13 @@ export const texts = {
 
   // ---- 区切り1 で画面の係が足す文は、ここから下に（ピアノロールの係はこの段、アレンジと再生まわりの係は次の段）。
   // [ピアノロール]
+  // 右クリックの一覧（B-60）の行の右のキー。「Ctrl X」の X など（Mod の字は key.ctrl ・ key.cmd）。
+  "prMenu.keyCut": e("X", "spec:4"),
+  "prMenu.keyCopy": e("C", "spec:4"),
+  "prMenu.keyPaste": e("V", "spec:4"),
+  "prMenu.keyDuplicate": e("D", "spec:4"),
+  "prMenu.keySelectAll": e("A", "spec:4"),
+  "prMenu.keyDelete": e("Delete", "spec:4"),
 
   // [アレンジ ・ 再生まわり ・ 入力計]
   // 位置の小節 ・ 拍 ・ ティックを丸めたとき（デザインに戻した事 68 の「拍は 1〜4 なので、3. 4. 000 にしました。」など）。
@@ -670,6 +689,7 @@ export const terms: readonly Term[] = [
   st("書き出し", "曲を 1 つの音のファイルにすること。"),
   { term: "仮の音", description: "本物のピアノの音が入るまでの、かわりの音。", source: "user:2026-11-14" },
   { term: "ベロシティ固定", description: "鍵盤をどの強さで押しても、決めた強さで鳴らして録る。書く道具のノートも同じ強さになる。", source: "user:2026-11-18" },
+  { term: "取り消しの履歴", description: "これまでにした手の一覧。どこまで取り消したかが見える。", source: "user:2026-11-18" },
 ];
 
 /** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */

@@ -146,6 +146,12 @@
       }
       case "velocityMatched":
         return plain("msg.velocityMatched", { count: m.count, value: m.value });
+      case "clipsNotMoved":
+        return plain("msg.clipsNotMoved");
+      case "clipsNotPasted":
+        return plain("msg.clipsNotPasted");
+      case "clipsNotDuplicated":
+        return plain("msg.clipsNotDuplicated");
       case "outputChosen":
         return m.track
           ? plain("status.outputChosen", { output: m.output, track: track(m.track) })

@@ -14,8 +14,8 @@ mod transport;
 
 pub use clock::{HeardPosition, TransportClock, TransportState};
 pub use engine::{
-    BlockTiming, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters, EngineParts,
-    LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,
+    BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
+    EngineParts, LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,
 };
 pub use instrument::{Instrument, InstrumentEvent};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};

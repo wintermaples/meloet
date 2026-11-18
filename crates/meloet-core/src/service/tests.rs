@@ -616,3 +616,156 @@ fn notes_of_takes_and_of_the_recording_are_asked_on_the_core_thread() {
     assert_eq!(t.state, meloet_protocol::TransportState::Stopped);
     assert!(t.recording.is_none());
 }
+
+#[test]
+fn the_fixed_velocity_is_saved_and_back_at_the_next_start() {
+    let dir = crate::settings::temp_dir("core-fixed");
+    let options = CoreOptions {
+        config_dir: Some(dir.clone()),
+        ..CoreOptions::offline()
+    };
+    let core = Core::start(options.clone());
+    assert_eq!(core.shared.fixed_velocity.load(Relaxed), 0);
+    core.send(Command::SetVelocityFixed {
+        on: true,
+        value: 200,
+    });
+    let fixed = core.snapshot().state.keyboards.velocity_fixed;
+    assert_eq!((fixed.on, fixed.value), (true, 127), "1..=127");
+    assert_eq!(core.shared.fixed_velocity.load(Relaxed), 127);
+    core.stop();
+
+    let core = Core::start(options.clone());
+    let fixed = core.snapshot().state.keyboards.velocity_fixed;
+    assert_eq!((fixed.on, fixed.value), (true, 127));
+    assert_eq!(
+        core.shared.fixed_velocity.load(Relaxed),
+        127,
+        "from the start"
+    );
+    core.send(Command::SetVelocityFixed {
+        on: false,
+        value: 0,
+    });
+    let fixed = core.snapshot().state.keyboards.velocity_fixed;
+    assert_eq!((fixed.on, fixed.value), (false, 1));
+    assert_eq!(core.shared.fixed_velocity.load(Relaxed), 0);
+    core.stop();
+    let loaded = settings::load(&dir);
+    assert_eq!((loaded.velocity_fixed, loaded.fixed_velocity), (false, 1));
+}
+
+/// Writes down what the engine plays on it.
+struct Tape(Sender<InstrumentEvent>);
+
+impl meloet_engine::Instrument for Tape {
+    fn prepare(&mut self, _: f32, _: usize) {}
+    fn event(&mut self, ev: InstrumentEvent) {
+        let _ = self.0.send(ev);
+    }
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        left.fill(0.0);
+        right.fill(0.0);
+    }
+    fn reset(&mut self) {}
+}
+
+#[test]
+fn a_fixed_velocity_reaches_the_sound_the_recording_the_meter_and_the_screen() {
+    let hub = Arc::new(Hub::new(Model::new(Settings::default()).view()));
+    let (screen_tx, screen) = channel();
+    hub.subscribe(
+        Box::new(move |m| screen_tx.send(m).is_ok()),
+        Box::new(|_| true),
+    );
+    let shared = Arc::new(Shared {
+        held: Held::default(),
+        fixed_velocity: AtomicU8::new(90),
+        stream: StreamFacts::default(),
+        stop: AtomicBool::new(false),
+        clock: Mutex::new(Arc::new(TransportClock::default())),
+        shell: Mutex::new(None),
+    });
+    shared.stream.open.store(true, Relaxed);
+    let (tx, _rx) = mpsc::channel();
+    let links = Links {
+        hub: hub.clone(),
+        shared: shared.clone(),
+        tx,
+    };
+    let mut parts = Engine::new(EngineConfig::default());
+    let (tape_tx, tape) = channel();
+    assert!(
+        parts
+            .handle
+            .swap_instrument(0, Box::new(Tape(tape_tx)))
+            .is_ok()
+    );
+    assert!(
+        parts
+            .handle
+            .send(EngineCommand::Record {
+                from: 0,
+                count_in_beats: 0,
+                muted: TrackSet::default(),
+            })
+            .is_ok()
+    );
+    let mut out = vec![0.0f32; 512];
+    let mut block = |engine: &mut Engine, at_us: u64| {
+        engine.process(
+            &mut out,
+            BlockTiming {
+                callback_us: at_us,
+                playback_us: at_us,
+            },
+        );
+    };
+    block(&mut parts.engine, 1_000_000);
+    let mut sink = links.midi_sink(parts.midi_in);
+    for event in [
+        MidiEvent::NoteOn {
+            note: 60,
+            velocity: 30,
+        },
+        MidiEvent::NoteOff {
+            note: 60,
+            velocity: 12,
+        },
+    ] {
+        sink(MidiMessage::Event {
+            keyboard: "kb".into(),
+            event,
+            t_us: 1_002_000,
+        });
+    }
+    block(&mut parts.engine, 1_005_333);
+
+    let played: Vec<_> = tape.try_iter().collect();
+    assert_eq!(
+        played,
+        [
+            InstrumentEvent::NoteOn {
+                note: 60,
+                velocity: 90
+            },
+            InstrumentEvent::NoteOff { note: 60 }
+        ]
+    );
+    let recorded: Vec<_> = std::iter::from_fn(|| parts.handle.pop_recorded())
+        .filter_map(|r| match r {
+            Recorded::Event { event, .. } => Some(event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(recorded, played, "recorded as played");
+    assert_eq!(shared.held.last_velocity.load(Relaxed), 90, "the meter");
+    let notes: Vec<_> = screen
+        .try_iter()
+        .filter_map(|m| match m {
+            ServerMessage::Event(Event::Note { on, velocity, .. }) => Some((on, velocity)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(notes, [(true, 90), (false, 12)], "NoteOff as it came");
+}

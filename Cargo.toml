@@ -16,6 +16,7 @@ default-members = [
     "crates/meloet-engine",
     "crates/meloet-midi",
     "crates/meloet-devices",
+    "crates/meloet-sound",
     "crates/meloet-core",
     "crates/meloet-app",
 ]
@@ -31,6 +32,7 @@ meloet-protocol = { path = "crates/meloet-protocol" }
 meloet-engine = { path = "crates/meloet-engine" }
 meloet-midi = { path = "crates/meloet-midi" }
 meloet-devices = { path = "crates/meloet-devices" }
+meloet-sound = { path = "crates/meloet-sound" }
 meloet-core = { path = "crates/meloet-core" }
 # Same versions the spikes were measured with (docs/report.md 9).
 alsa = "=0.11.0"

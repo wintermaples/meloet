@@ -32,7 +32,7 @@ afterEach(() => {
   mounted = null;
   target.remove();
   trackEdit.renaming = null;
-  Object.assign(shelfUi, { query: "", favoritesOnly: false, folded: [], keys: false });
+  Object.assign(shelfUi, { query: "", favoritesOnly: false, folded: [], keys: false, view: "instruments" });
 });
 
 function show(component: Component<any>, state: AppState): void {
@@ -295,8 +295,9 @@ describe("棚（モック F4-ShelfSample ・ F4-ShelfAudition ・ F4-ShelfReplac
       "grandPiano",
       "studioKit",
     ]);
-    // エフェクトは区切り3 なので「使えない」。
-    expect((q(".switches button:last-child") as HTMLButtonElement).disabled).toBe(true);
+    // 音源のモードでは「音源」の一覧が前。「エフェクト」も押せる（見るだけ。tests/params.shelf.test.ts）。
+    expect(q("[data-test=shelf-instruments]")!.classList.contains("on")).toBe(true);
+    expect((q("[data-test=shelf-effects]") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("グループの見出しでたたむ（見出しと数は残る）。お気に入りに切りかえ。さがす", () => {

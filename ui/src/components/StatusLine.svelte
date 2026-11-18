@@ -10,6 +10,8 @@
   import { current, onEvent, send } from "../state/app.svelte";
   import { STATUS_JOIN, t, type TextKey } from "../text/ja";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
+  import { stripName } from "./mixer/stripName";
+  import { paramName } from "./params/paramRows";
   import { isDrumKit, keyLabel, keysInstrument, keysLabel, rollShowsDrums } from "./pianoroll/drums";
   import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
@@ -233,6 +235,11 @@
       }
       case "outOfScale":
         return plain("msg.outOfScale", { key: pitchClassName(m.key), scale: scaleName(m.root, m.mode) });
+      case "paramSelected": {
+        const loop = m.loopBars;
+        const selected = textParts("status.paramSelected", { strip: stripName(app.song, m.insert.strip), param: paramName(m.effect, m.param) });
+        return { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], selected), strong: [], button: null };
+      }
       case "summary": {
         const loop = m.loopBars;
         if (m.notes) {

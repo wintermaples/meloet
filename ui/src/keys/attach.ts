@@ -4,18 +4,40 @@ import type { AppState, Command } from "../bridge";
 import { aboutBack } from "../components/about/about.svelte";
 import { closeContextMenu } from "../components/menu/contextMenu.svelte";
 import { closeMenuBar, openMenuBar } from "../components/menu/menuBar.svelte";
-import { pianoRollCommand, type PianoRollKey } from "../components/pianoroll/commands";
+import {
+  pianoRollCommand,
+  type PianoRollKey,
+} from "../components/pianoroll/commands";
 import type { Shown } from "../components/pianoroll/geom";
 import { shown } from "../components/pianoroll/shown.svelte";
 import { shownFor } from "../components/pianoroll/shownNotes";
-import { cancelDrag, prView, zoomArrangeBy, zoomBy } from "../components/pianoroll/view.svelte";
+import {
+  cancelDrag,
+  prView,
+  zoomArrangeBy,
+  zoomBy,
+} from "../components/pianoroll/view.svelte";
 import { songDialogEnter } from "../components/songDialog";
-import { shelfGroups, shelfHasKeys, shelfStep, shelfToggle, shelfUi, startRename } from "../components/tracks.svelte";
+import {
+  effectShelfCommand,
+  shelfGroups,
+  shelfHasKeys,
+  shelfStep,
+  shelfToggle,
+  shelfUi,
+  startRename,
+} from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
 import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
 import { current } from "../state/app.svelte";
-import { isTyping, keyAction, keyInputOf, platformOf, type KeyAction } from "./keys";
+import {
+  isTyping,
+  keyAction,
+  keyInputOf,
+  platformOf,
+  type KeyAction,
+} from "./keys";
 
 export interface KeyDeps {
   state(): AppState | null;
@@ -28,16 +50,29 @@ export interface KeyDeps {
   playTick?: () => number;
 }
 
-export const pianoRollOpen = (state: AppState) => state.workspace.layout.lower.some((l) => l.band === "pianoRoll");
+export const pianoRollOpen = (state: AppState) =>
+  state.workspace.layout.lower.some((l) => l.band === "pianoRoll");
 
 /** ピアノロールに向けないときは、アレンジのえらんだクリップへ向ける意図。 */
-const ARRANGE_TOO = new Set<KeyAction["kind"]>(["deleteSelected", "duplicate", "selectAll", "cut", "copy", "paste"]);
+const ARRANGE_TOO = new Set<KeyAction["kind"]>([
+  "deleteSelected",
+  "duplicate",
+  "selectAll",
+  "cut",
+  "copy",
+  "paste",
+]);
 
 /**
  * ピアノロールに向けるキーの意図。ピアノロールがひらいていて、最後に押したのがピアノロールのとき（toPianoRoll なら、最後に押した所によらず）。
  * undefined はピアノロールの意図ではない（アレンジかほかへ）。
  */
-function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps, toPianoRoll: boolean): Command | null | undefined {
+function pianoRollKey(
+  action: KeyAction,
+  state: AppState,
+  deps: KeyDeps,
+  toPianoRoll: boolean,
+): Command | null | undefined {
   let key: PianoRollKey;
   switch (action.kind) {
     case "nudge":
@@ -47,7 +82,11 @@ function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps, toPiano
       // 点とノートの両方を選んでいるときは、最後に押したほう。
       const pr = state.pianoRoll;
       const points = pr.selectedControls.length > 0;
-      key = points && (pr.selectedNotes.length === 0 || prView.picked === "controls") ? { kind: "deleteControls" } : { kind: "deleteNotes" };
+      key =
+        points &&
+        (pr.selectedNotes.length === 0 || prView.picked === "controls")
+          ? { kind: "deleteControls" }
+          : { kind: "deleteNotes" };
       break;
     }
     case "quantize":
@@ -63,17 +102,32 @@ function pianoRollKey(action: KeyAction, state: AppState, deps: KeyDeps, toPiano
     default:
       return undefined;
   }
-  if (!pianoRollOpen(state) || (!toPianoRoll && prView.focus !== "pianoRoll")) return ARRANGE_TOO.has(action.kind) ? undefined : null;
-  const notes = deps.pianoRoll ? deps.pianoRoll() : shownFor(shown.take, shown.clip);
-  const playTick = deps.playTick ? deps.playTick() : shownTick(state.transport, current.telemetry, null);
+  if (!pianoRollOpen(state) || (!toPianoRoll && prView.focus !== "pianoRoll"))
+    return ARRANGE_TOO.has(action.kind) ? undefined : null;
+  const notes = deps.pianoRoll
+    ? deps.pianoRoll()
+    : shownFor(shown.take, shown.clip);
+  const playTick = deps.playTick
+    ? deps.playTick()
+    : shownTick(state.transport, current.telemetry, null);
   return pianoRollCommand(key, { state, shown: notes, playTick });
 }
 
-const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "OS"]);
+const MODIFIERS = new Set([
+  "Shift",
+  "Control",
+  "Alt",
+  "Meta",
+  "AltGraph",
+  "CapsLock",
+  "OS",
+]);
 
 /** 録音中とカウントイン中は、曲を新しくしたり、ひらいたり、保存したり、曲を変えたりできない（Rust も受けない）。 */
 export function songBusy(state: AppState): boolean {
-  return state.transport.state === "recording" || state.transport.state === "countIn";
+  return (
+    state.transport.state === "recording" || state.transport.state === "countIn"
+  );
 }
 
 /** 音の出口がまだのあいだ、Space と R は何もしない（ヤチヨさんの決め 2026-11-15）。止めるほうの Space は効く。 */
@@ -86,7 +140,9 @@ function command(action: KeyAction, state: AppState): Command | null {
     case "arrange":
       return { type: "goArrange" };
     case "toggleBand":
-      return action.band === "shelf" ? shelfToggle(state) : { type: "toggleBand", band: action.band };
+      return action.band === "shelf"
+        ? shelfToggle(state)
+        : { type: "toggleBand", band: action.band };
     case "audioSettings":
       return { type: "openSettings", advanced: false };
     case "scale":
@@ -98,7 +154,9 @@ function command(action: KeyAction, state: AppState): Command | null {
     case "chooserConfirm":
       return { type: "chooserConfirm" };
     case "playStop":
-      return transport.canPlay || transport.state !== "stopped" ? { type: "playStop" } : null;
+      return transport.canPlay || transport.state !== "stopped"
+        ? { type: "playStop" }
+        : null;
     case "record":
       return transport.canPlay ? { type: "record" } : null;
     case "toStart":
@@ -113,16 +171,22 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "deleteSelected" };
     // アレンジにキーが向いているとき（B-71）。Mod D はえらんだクリップのすぐうしろに複製。
     case "duplicate":
-      return clips.length === 0 || busy ? null : { type: "duplicateClips", clips };
+      return clips.length === 0 || busy
+        ? null
+        : { type: "duplicateClips", clips };
     case "selectAll":
-      return state.song.tracks.some((t) => t.clips.length > 0) ? { type: "selectAllClips" } : null;
+      return state.song.tracks.some((t) => t.clips.length > 0)
+        ? { type: "selectAllClips" }
+        : null;
     case "copy":
       return clips.length === 0 ? null : { type: "copyClips", clips };
     case "cut":
       return clips.length === 0 || busy ? null : { type: "cutClips", clips };
     // 貼りつけは、選んだトラックの再生の位置（Rust が小節の頭に寄せる）。
     case "paste":
-      return state.arrange.clipboardClips === 0 || busy ? null : { type: "pasteClips", to: null };
+      return state.arrange.clipboardClips === 0 || busy
+        ? null
+        : { type: "pasteClips", to: null };
     // 録音中とカウントイン中は、曲の名前の一覧と同じく使えない。
     case "newSong":
       return busy ? null : { type: "newSong" };
@@ -144,42 +208,78 @@ function command(action: KeyAction, state: AppState): Command | null {
     case "trackSolo":
       return track === null ? null : { type: "toggleSolo", track };
     case "shelfStep": {
-      const next = shelfStep(shelfGroups(state.shelf, shelfUi), state.shelf.selected, action.delta);
-      return next === null || next === state.shelf.selected ? null : { type: "shelfSelect", instrument: next };
+      const effect = effectShelfCommand(
+        action.delta > 0 ? "down" : "up",
+        state,
+      );
+      if (effect !== undefined) return effect;
+      const next = shelfStep(
+        shelfGroups(state.shelf, shelfUi),
+        state.shelf.selected,
+        action.delta,
+      );
+      return next === null || next === state.shelf.selected
+        ? null
+        : { type: "shelfSelect", instrument: next };
     }
-    case "shelfConfirm":
+    case "shelfConfirm": {
+      const effect = effectShelfCommand("confirm", state);
+      if (effect !== undefined) return effect;
       return state.shelf.selected === null ? null : { type: "shelfConfirm" };
+    }
     case "shelfSample": {
       const row = state.shelf.selected;
       if (row === null) return null;
-      return state.shelf.sample?.instrument === row ? { type: "stopSample" } : { type: "playSample", instrument: row };
+      return state.shelf.sample?.instrument === row
+        ? { type: "stopSample" }
+        : { type: "playSample", instrument: row };
     }
     case "shelfFavorite":
-      return state.shelf.selected === null ? null : { type: "toggleFavorite", instrument: state.shelf.selected };
+      return state.shelf.selected === null
+        ? null
+        : { type: "toggleFavorite", instrument: state.shelf.selected };
     default:
       return null;
   }
 }
 
 /** 意図から送るコマンド。null は何もしない（使えない）。toPianoRoll: メニューの「ノート」から（ピアノロールがひらいていれば、そこへ）。 */
-export function keyCommand(action: KeyAction, state: AppState, deps: KeyDeps, toPianoRoll = false): Command | null {
+export function keyCommand(
+  action: KeyAction,
+  state: AppState,
+  deps: KeyDeps,
+  toPianoRoll = false,
+): Command | null {
   const forPianoRoll = pianoRollKey(action, state, deps, toPianoRoll);
   return forPianoRoll !== undefined ? forPianoRoll : command(action, state);
 }
 
 /** 画面の中だけで行う意図（横の拡大、道具、F10、名前の入力の枠）か。 */
 function screenOnly(action: KeyAction): boolean {
-  return action.kind === "zoom" || action.kind === "tool" || action.kind === "menuBar" || action.kind === "renameTrack";
+  return (
+    action.kind === "zoom" ||
+    action.kind === "tool" ||
+    action.kind === "menuBar" ||
+    action.kind === "renameTrack"
+  );
 }
 
 /** F2 で名前を変えるトラック（選んだトラック）。録音中とカウントイン中は変えられない。 */
 function renameTarget(state: AppState): number | null {
   const track = state.song.playTarget;
-  return track === null || songBusy(state) || !state.song.tracks.some((x) => x.id === track) ? null : track;
+  return track === null ||
+    songBusy(state) ||
+    !state.song.tracks.some((x) => x.id === track)
+    ? null
+    : track;
 }
 
 /** いま行えるか（メニューの行の「使えない」）。 */
-export function keyActionUsable(action: KeyAction, deps: KeyDeps, toPianoRoll = false): boolean {
+export function keyActionUsable(
+  action: KeyAction,
+  deps: KeyDeps,
+  toPianoRoll = false,
+): boolean {
   const state = deps.state();
   if (!state) return false;
   if (action.kind === "tool") return pianoRollOpen(state);
@@ -189,7 +289,11 @@ export function keyActionUsable(action: KeyAction, deps: KeyDeps, toPianoRoll = 
 }
 
 /** 意図を行う。何かしたら true。キーとメニューの行の両方がここを通る。 */
-export function runKeyAction(action: KeyAction, deps: KeyDeps, toPianoRoll = false): boolean {
+export function runKeyAction(
+  action: KeyAction,
+  deps: KeyDeps,
+  toPianoRoll = false,
+): boolean {
   const state = deps.state();
   if (!state) return false;
   switch (action.kind) {
@@ -240,7 +344,12 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
  */
 function auditionToCancel(state: AppState): boolean {
   const ws = state.workspace;
-  return ws.songDialog === null && ws.settings === null && ws.layout.rightOpen.includes("shelf") && state.shelf.selected !== null;
+  return (
+    ws.songDialog === null &&
+    ws.settings === null &&
+    ws.layout.rightOpen.includes("shelf") &&
+    state.shelf.selected !== null
+  );
 }
 
 /** Esc の 3 つめの番（用語の説明やメニュー）。上のメニュー、右クリックの一覧、状態行などの一覧のどれかをとじたら true。 */
@@ -264,18 +373,37 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
   if (!state || ev.isComposing || MODIFIERS.has(ev.key)) return;
 
   // 鍵盤以外の操作で「音が出ました」の案内を消す（ヤチヨさんの決め）。
-  if (state.workspace.hint === "soundCameOut") deps.send({ type: "dismissHint" });
+  if (state.workspace.hint === "soundCameOut")
+    deps.send({ type: "dismissHint" });
 
   const typing = isTyping(doc);
-  const context = state.workspace.chooser ? "outputChooser" : shelfHasKeys(state) ? "shelf" : "main";
-  const action = keyAction(keyInputOf(ev), typing, platformOf(deps.nav ?? navigator), context);
+  const context = state.workspace.chooser
+    ? "outputChooser"
+    : shelfHasKeys(state)
+      ? "shelf"
+      : "main";
+  const action = keyAction(
+    keyInputOf(ev),
+    typing,
+    platformOf(deps.nav ?? navigator),
+    context,
+  );
 
   if (!action) {
-    const plainEnter = ev.key === "Enter" && !ev.shiftKey && !ev.altKey && !ev.ctrlKey && !ev.metaKey;
+    const plainEnter =
+      ev.key === "Enter" &&
+      !ev.shiftKey &&
+      !ev.altKey &&
+      !ev.ctrlKey &&
+      !ev.metaKey;
     if (plainEnter && state.workspace.songDialog) {
       ev.preventDefault();
       const d = state.workspace.songDialog;
-      deps.send({ type: "answerSongDialog", dialog: d.id, answer: songDialogEnter(d) });
+      deps.send({
+        type: "answerSongDialog",
+        dialog: d.id,
+        answer: songDialogEnter(d),
+      });
     } else if (plainEnter && state.workspace.settings) {
       ev.preventDefault();
       deps.send({ type: "settingsApply" });
@@ -288,7 +416,10 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     // 仕様書 4 章: ドラッグ中の Esc は、動かす前に戻すだけ。そのあと 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
     if (cancelDrag()) return;
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
-    else if (!closeMenus() && !aboutBack()) deps.send(auditionToCancel(state) ? { type: "shelfCancel" } : { type: "back" });
+    else if (!closeMenus() && !aboutBack())
+      deps.send(
+        auditionToCancel(state) ? { type: "shelfCancel" } : { type: "back" },
+      );
     return;
   }
 
@@ -298,29 +429,45 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
   }
 
   // ブラウザの拡大（Ctrl ＋）や保存（Ctrl S）などに渡さない。
-  if (WITH_MOD.has(action.kind) || action.kind === "menuBar") ev.preventDefault();
+  if (WITH_MOD.has(action.kind) || action.kind === "menuBar")
+    ev.preventDefault();
   // Space は、使えないときも、フォーカスのあるボタンを押さない（再生 ・ 停止か、棚のサンプルだけ）。
-  if (action.kind === "playStop" || action.kind === "shelfSample") ev.preventDefault();
+  if (action.kind === "playStop" || action.kind === "shelfSample")
+    ev.preventDefault();
   // 打っている最中の Home は枠の中のカーソルも動かし、Shift M ・ Shift S は文字も入る。
   // 棚の ↑ ↓ ・ Enter は、さがす枠の中でも棚のもの（カーソルを動かさない）。
-  if (runKeyAction(action, deps) && (!typing || SHELF_KEYS.has(action.kind))) ev.preventDefault();
+  if (runKeyAction(action, deps) && (!typing || SHELF_KEYS.has(action.kind)))
+    ev.preventDefault();
 }
 
 /** Space の keyup。ボタンは keyup で押される（WebKit と Firefox）ので、文字を打っていなければ、ここでも止める。 */
 export function handleKeyup(ev: KeyboardEvent, doc: Document = document): void {
   const space = ev.key === " " || ev.code === "Space";
-  if (space && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !isTyping(doc)) ev.preventDefault();
+  if (
+    space &&
+    !ev.shiftKey &&
+    !ev.ctrlKey &&
+    !ev.metaKey &&
+    !ev.altKey &&
+    !isTyping(doc)
+  )
+    ev.preventDefault();
 }
 
 /** Mod ＋ ・ Mod −: 最後に押したのがピアノロールで、ひらいていればピアノロール、そうでなければアレンジ。 */
 export function zoomHorizontal(delta: 1 | -1, state: AppState): void {
-  if (prView.focus === "pianoRoll" && pianoRollOpen(state)) zoomBy(delta, state.workspace.scale);
+  if (prView.focus === "pianoRoll" && pianoRollOpen(state))
+    zoomBy(delta, state.workspace.scale);
   else zoomArrangeBy(delta);
 }
 
 /** マウスのボタンを押したら、案内を消す。棚を押せば棚にキーを向け、画面のほかの所を押せば外す（上にひらく一覧は .app の外）。 */
-export function handlePointerdown(deps: KeyDeps, target?: EventTarget | null): void {
-  if (deps.state()?.workspace.hint === "soundCameOut") deps.send({ type: "dismissHint" });
+export function handlePointerdown(
+  deps: KeyDeps,
+  target?: EventTarget | null,
+): void {
+  if (deps.state()?.workspace.hint === "soundCameOut")
+    deps.send({ type: "dismissHint" });
   const el = target instanceof Element ? target : null;
   if (el?.closest("[data-shelf]")) shelfUi.keys = true;
   else if (el?.closest(".app")) shelfUi.keys = false;

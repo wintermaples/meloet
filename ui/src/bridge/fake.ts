@@ -29,6 +29,7 @@ import {
 
 // ---- the band rules (a copy of the numbers in meloet-core/src/layout.rs) ----
 
+const MENU = 24;
 const TRANSPORT = 48;
 const BAND_ROW = 24;
 const STATUS = 24;
@@ -70,7 +71,7 @@ export class FakeBands {
 
   /** What is left with the arrange view at 40 and every open band at its smallest. */
   private spare(): number {
-    const fixed = TRANSPORT + this.meterHeight() + BAND_ROW + STATUS;
+    const fixed = MENU + TRANSPORT + this.meterHeight() + BAND_ROW + STATUS;
     return this.height - fixed - OVERVIEW - this.bottom.reduce((sum, b) => sum + (SMALLEST[b] ?? 0), 0);
   }
 
@@ -1016,6 +1017,33 @@ export const SCENES: Record<string, SceneDef> = {
     after: (s) => (s.status.message = { id: "velocityMatched", count: 3, value: 100 }),
     meters: QUIET,
   },
+  // Not from a mock (B-68): a part of a position put in its range.
+  positionClamped: {
+    setup: ready,
+    after: (s) => (s.status.message = { id: "valueClamped", field: "beat", value: "3. 4. 000", range: "1〜4" }),
+    meters: QUIET,
+  },
+  barClamped: {
+    setup: ready,
+    after: (s) => (s.status.message = { id: "valueClamped", field: "bar", value: "1. 1. 000", range: null }),
+    meters: QUIET,
+  },
+  // Not from a mock (B-71): clips that would overlap other clips were not put there.
+  clipsNotMoved: {
+    setup: arrangeSelect,
+    after: (s) => (s.status.message = { id: "clipsNotMoved" }),
+    meters: QUIET,
+  },
+  clipsNotPasted: {
+    setup: arrangeSelect,
+    after: (s) => (s.status.message = { id: "clipsNotPasted" }),
+    meters: QUIET,
+  },
+  clipsNotDuplicated: {
+    setup: arrangeSelect,
+    after: (s) => (s.status.message = { id: "clipsNotDuplicated" }),
+    meters: QUIET,
+  },
 };
 
 function arrangeSelect(s: AppState): void {
@@ -1162,6 +1190,9 @@ const NOTICES: StatusMessage["id"][] = [
   "bufferFixed",
   "valueClamped",
   "velocityMatched",
+  "clipsNotMoved",
+  "clipsNotPasted",
+  "clipsNotDuplicated",
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 

@@ -932,7 +932,7 @@ fn bands_and_the_scale() {
     let mut m = fresh();
     let l = layout(&m);
     assert_eq!(l.meter, MeterSize::Full);
-    assert_eq!(l.arrange_height, 800.0 - 48.0 - 52.0 - 24.0 - 24.0);
+    assert_eq!(l.arrange_height, 800.0 - 24.0 - 48.0 - 52.0 - 24.0 - 24.0);
     assert!(!l.arrange_overview);
 
     cmd(
@@ -949,7 +949,7 @@ fn bands_and_the_scale() {
         l.lower,
         [LowerBandView {
             band: Band::PianoRoll,
-            height: 800.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
+            height: 800.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
         }]
     );
     assert!(l.show_back_hint);
@@ -1008,7 +1008,7 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     assert_eq!(ws.layout.lower[0].height, 660.0);
     assert_eq!(
         ws.layout.arrange_height,
-        960.0 - 48.0 - 24.0 - 660.0 - 24.0 - 24.0
+        960.0 - 24.0 - 48.0 - 24.0 - 660.0 - 24.0 - 24.0
     );
 
     cmd(
@@ -1021,7 +1021,10 @@ fn viewport_is_css_px_and_the_rules_work_at_100_percent() {
     let l = m.view().workspace.layout;
     assert_eq!(l.meter, MeterSize::Slim);
     assert_eq!(l.arrange_height, 40.0);
-    assert_eq!(l.lower[0].height, 720.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0);
+    assert_eq!(
+        l.lower[0].height,
+        720.0 - 24.0 - 48.0 - 24.0 - 40.0 - 24.0 - 24.0
+    );
 
     // Other scales and broken sizes are ignored.
     for percent in [0, 99, 110, 200] {
@@ -1066,7 +1069,7 @@ fn arrange_lower_than_one_track_row_is_drawn_as_the_overview() {
     assert_eq!(l.arrange_height, 40.0);
     assert!(l.arrange_overview);
 
-    for (height, arrange, overview) in [(503.0, 135.0, true), (504.0, 136.0, false)] {
+    for (height, arrange, overview) in [(527.0, 135.0, true), (528.0, 136.0, false)] {
         cmd(
             &mut m,
             Command::SetViewport {
@@ -1092,7 +1095,7 @@ fn the_scale_comes_from_the_settings() {
     assert_eq!(ws.scale, 125);
     assert_eq!(
         ws.layout.arrange_height,
-        800.0 / 1.25 - 48.0 - 52.0 - 24.0 - 24.0
+        800.0 / 1.25 - 24.0 - 48.0 - 52.0 - 24.0 - 24.0
     );
 }
 
@@ -1322,7 +1325,7 @@ fn a_grown_window_is_laid_out_at_its_new_size() {
     let before = m.view().workspace.layout;
     assert_eq!(
         before.arrange_height,
-        448.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
+        448.0 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0
     );
     cmd(&mut m, Command::SetScale { percent: 150 });
     let ws = m.view().workspace;

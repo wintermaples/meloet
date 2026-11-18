@@ -156,19 +156,45 @@ fn copying_adds_and_selects_the_copies() {
 #[test]
 fn resizing_keeps_one_tick_and_the_clip_end() {
     let (doc, clip) = one_clip(vec![note(0, 100, 60), note(480, 10, 64)]);
-    let e = resize_notes(&doc, clip, &[0, 1], -50).unwrap();
+    let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::End, -50).unwrap();
     assert_eq!(notes_of(&e.edit.doc, clip), [(2400, 50, 60), (2880, 1, 64)]);
-    let e = resize_notes(&doc, clip, &[0, 1], 100_000).unwrap();
+    let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::End, 100_000).unwrap();
     assert_eq!(
         notes_of(&e.edit.doc, clip),
         [(2400, 3 * BAR - 2400, 60), (2880, 3 * BAR - 2880, 64)]
     );
     assert_eq!(shown(&e.edit.doc, clip).1.length, 3 * BAR - 2400);
-    let one = resize_notes(&doc, clip, &[1], -10).unwrap().edit.doc;
+    let one = resize_notes(&doc, clip, &[1], ClipEdge::End, -10)
+        .unwrap()
+        .edit
+        .doc;
     assert_eq!(
-        resize_notes(&one, clip, &[1], -10).unwrap_err(),
+        resize_notes(&one, clip, &[1], ClipEdge::End, -10).unwrap_err(),
         EditError::Unchanged
     );
+}
+
+/// The clip is [1920, 3840), the shown take starts at 2400.
+#[test]
+fn the_start_edge_moves_the_start_and_keeps_the_end() {
+    let (doc, clip) = one_clip(vec![note(0, 100, 60), note(480, 10, 64)]);
+    let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::Start, 50).unwrap();
+    assert_eq!(notes_of(&e.edit.doc, clip), [(2450, 50, 60), (2889, 1, 64)]);
+    assert_eq!(e.selected, [0, 1]);
+    assert_eq!(
+        resize_notes(&e.edit.doc, clip, &[1], ClipEdge::Start, 10).unwrap_err(),
+        EditError::Unchanged
+    );
+    // Out to the clip's start, before the take's tick 0: the take grows to the front.
+    let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::Start, -10_000).unwrap();
+    assert_eq!(
+        notes_of(&e.edit.doc, clip),
+        [(1920, 580, 60), (1920, 970, 64)]
+    );
+    let (zero, take) = shown(&e.edit.doc, clip);
+    assert_eq!((zero, take.length), (1920, 3360 - 1920));
+    // The control point stays where it was in the song.
+    assert_eq!(zero + take.controls[0].tick, 2400);
 }
 
 #[test]
@@ -435,7 +461,13 @@ fn shared_takes_hold_what_a_fresh_copy_holds() {
                 let picked = some(&mut rng, n);
                 move_notes(&doc, clip, &picked, rng.signed(500), 0, true)
             }
-            2 => resize_notes(&doc, clip, &some(&mut rng, n), rng.signed(300)),
+            2 => resize_notes(
+                &doc,
+                clip,
+                &some(&mut rng, n),
+                [ClipEdge::Start, ClipEdge::End][rng.below(2) as usize],
+                rng.signed(300),
+            ),
             3 => change_velocity(&doc, clip, &some(&mut rng, n), rng.signed(40) as i32),
             4 => delete_notes(&doc, clip, &some(&mut rng, n), false),
             5 => write_note(

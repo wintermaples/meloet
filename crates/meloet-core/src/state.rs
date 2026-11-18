@@ -12,11 +12,11 @@ use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
 use meloet_model::{InstrumentRef, Note, Song};
 use meloet_protocol::{
-    AppState, AudioView, Availability, Band, ChooserView, ChosenState, ClipEdge, Command,
-    EndpointView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView,
-    LayoutView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, NoteField,
-    OutputsView, QuantizeSettings, RecoveryCause, SettingsDialogView, SongFile, SongView,
-    StatusMessage, StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
+    Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
+    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, QuantizeSettings,
+    RecoveryCause, SettingsDialogView, SongFile, SongView, StatusMessage, StatusView, TrackView,
+    Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
@@ -714,15 +714,19 @@ impl Model {
             Command::SetLoop { from_bar, to_bar } => self.play.set_loop(from_bar, to_bar, effects),
             Command::ToggleArm { track } => self.play.toggle_arm(track),
             Command::SelectClip { clip } => self.play.select_clip(clip),
+            Command::SelectTrack { track } => self.play.select_track(track),
+            Command::SelectClips { clips, mode } => self.play.select_clips(clips, mode),
+            Command::SelectAllClips => self.play.select_all_clips(),
+            Command::CopyClips { clips } => self.play.copy_clips(&clips),
+            Command::CutClips { clips } => self.play.cut_clips(&clips, effects),
+            Command::PasteClips { to } => {
+                if let Some(n) = self.play.paste_clips(to, effects) {
+                    self.notice = Some(n);
+                }
+            }
             // Protocol 8: taken in, not yet acted on (the next part of round 3b).
-            Command::SelectTrack { .. }
-            | Command::ToggleMute { .. }
+            Command::ToggleMute { .. }
             | Command::ToggleSolo { .. }
-            | Command::SelectClips { .. }
-            | Command::SelectAllClips
-            | Command::CopyClips { .. }
-            | Command::CutClips { .. }
-            | Command::PasteClips { .. }
             | Command::SetVelocityFixed { .. }
             | Command::SaveSongAs => {}
             Command::Quit => self.close_requested(effects),
@@ -771,12 +775,7 @@ impl Model {
                 notes,
                 edge,
                 ticks,
-            } => {
-                // The start edge (B-69) is not acted on yet.
-                if edge == ClipEdge::End {
-                    self.play.resize_notes(take, &notes, ticks, effects);
-                }
-            }
+            } => self.play.resize_notes(take, &notes, edge, ticks, effects),
             Command::DeleteNotes { take, notes } => self.play.delete_notes(take, &notes, effects),
             Command::ChangeVelocity { take, notes, delta } => {
                 self.play.change_velocity(take, &notes, delta, effects);
@@ -821,14 +820,11 @@ impl Model {
             } => self
                 .play
                 .set_notes_field(take, &notes, field, value, effects),
-            // Not yet said in the status line (`VelocityMatched`).
-            Command::MatchVelocity { take, notes, value } => self.play.set_notes_field(
-                take,
-                &notes,
-                NoteField::Velocity,
-                i64::from(value),
-                effects,
-            ),
+            Command::MatchVelocity { take, notes, value } => {
+                if let Some(n) = self.play.match_velocity(take, &notes, value, effects) {
+                    self.notice = Some(n);
+                }
+            }
             Command::SelectControls { take, points, mode } => {
                 self.play.select_controls(take, points, mode);
             }
@@ -849,22 +845,19 @@ impl Model {
             Command::DeleteControls { take, points } => {
                 self.play.delete_controls(take, &points, effects);
             }
-            // One clip at a time for now: more than one is not acted on yet.
             Command::MoveClips {
                 clips,
                 ticks,
                 tracks,
                 copy,
             } => {
-                if let [clip] = clips[..]
-                    && let Some(track) = self.play.track_rows_away(clip, tracks)
-                {
-                    self.play.move_clip(clip, ticks, track, copy, effects);
+                if let Some(n) = self.play.move_clips(&clips, ticks, tracks, copy, effects) {
+                    self.notice = Some(n);
                 }
             }
             Command::DuplicateClips { clips } => {
-                if let [clip] = clips[..] {
-                    self.play.duplicate_clip(clip, effects);
+                if let Some(n) = self.play.duplicate_clips(&clips, effects) {
+                    self.notice = Some(n);
                 }
             }
             Command::TrimClip { clip, edge, ticks } => {

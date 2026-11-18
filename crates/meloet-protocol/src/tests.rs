@@ -800,6 +800,39 @@ fn status_message_json_shape() {
             json!({"id": "velocityMatched", "count": 3, "value": 100}),
         ),
         (
+            StatusMessage::ValueClamped {
+                field: ValueField::Beat,
+                value: "3. 4. 000".into(),
+                range: Some("1〜4".into()),
+            },
+            json!({"id": "valueClamped", "field": "beat", "value": "3. 4. 000", "range": "1〜4"}),
+        ),
+        (
+            StatusMessage::ValueClamped {
+                field: ValueField::Bar,
+                value: "1. 1. 000".into(),
+                range: None,
+            },
+            json!({"id": "valueClamped", "field": "bar", "value": "1. 1. 000", "range": null}),
+        ),
+        (
+            StatusMessage::ValueClamped {
+                field: ValueField::Tick,
+                value: "3. 4. 479".into(),
+                range: Some("0〜479".into()),
+            },
+            json!({"id": "valueClamped", "field": "tick", "value": "3. 4. 479", "range": "0〜479"}),
+        ),
+        (StatusMessage::ClipsNotMoved, json!({"id": "clipsNotMoved"})),
+        (
+            StatusMessage::ClipsNotPasted,
+            json!({"id": "clipsNotPasted"}),
+        ),
+        (
+            StatusMessage::ClipsNotDuplicated,
+            json!({"id": "clipsNotDuplicated"}),
+        ),
+        (
             StatusMessage::ScaleDoesNotFit {
                 requested: 150,
                 kept: 125,

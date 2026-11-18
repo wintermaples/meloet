@@ -491,6 +491,16 @@ pub enum ValueField {
     Length,
     /// "1. 1. 000" of the transport (B-61).
     PlayPosition,
+    /// One part of a position ("1. 1. 000" of the transport, the position of a note), for
+    /// `ClampValue` (B-68): when the bar, the beat or the tick was put in its range, the screen
+    /// sends one `ClampValue` naming the part that was (the first of bar, beat, tick when more
+    /// than one was), with `value` the whole position as set ("3. 4. 000"). `Bar` has no
+    /// `range` ("小節は 1 からなので、1. 1. 000 にしました。"); `Beat` and `Tick` send theirs, as
+    /// they depend on the meter ("1〜4", "0〜479"). A note's position out of its clip is
+    /// `Position` with the clip's range, as before.
+    Bar,
+    Beat,
+    Tick,
 }
 
 /// The buttons of the song dialogs, one for one.
@@ -1216,6 +1226,14 @@ pub enum StatusMessage {
         count: u32,
         value: u8,
     },
+    /// `MoveClips` without `copy` did nothing, as a clip would overlap one outside the group
+    /// (B-71): "ほかのクリップと重なるので、動かしませんでした。"
+    ClipsNotMoved,
+    /// `PasteClips` did nothing for the same reason: "ほかのクリップと重なるので、貼りつけませんでした。"
+    ClipsNotPasted,
+    /// `DuplicateClips`, or `MoveClips` with `copy` (Alt + drag), did nothing for the same
+    /// reason: "ほかのクリップと重なるので、複製できませんでした。"
+    ClipsNotDuplicated,
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
     /// piano roll are selected ("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み…", mock

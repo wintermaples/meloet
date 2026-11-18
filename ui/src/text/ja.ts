@@ -192,6 +192,12 @@ export const texts = {
   "msg.valueClamped": e("{field}は {range} なので、{value} にしました。", "user:2026-11-18", { field: "ベロシティ", range: "1〜127", value: "127" }),
   // ベロシティをまとめて変える（同じく 67）。
   "msg.velocityMatched": e("{count} ノートのベロシティを {value} にそろえました。", "user:2026-11-18", { count: "3", value: "100" }),
+  // 位置の小節を丸めたとき（同じく 68）。小節だけ「1 から」のあとに空白がない。拍とティックは msg.valueClamped。
+  "msg.valueClampedBar": e("小節は 1 からなので、{value} にしました。", "user:2026-11-18", { value: "1. 1. 000" }),
+  // ほかのクリップと重なって置けなかった（同じく 71）。
+  "msg.clipsNotMoved": e("ほかのクリップと重なるので、動かしませんでした。", "user:2026-11-18"),
+  "msg.clipsNotPasted": e("ほかのクリップと重なるので、貼りつけませんでした。", "user:2026-11-18"),
+  "msg.clipsNotDuplicated": e("ほかのクリップと重なるので、複製できませんでした。", "user:2026-11-18"),
 
   // 使えない値を打ったときの欄の名前と範囲（仕様書 6 章「使えない値を打った」、3 章のテンポと拍子の枠）。
   "value.tempo": e("テンポ", "spec:6"),
@@ -203,6 +209,10 @@ export const texts = {
   "value.meterDenRange": s6("使えない値を打った", "2 ・ 4 ・ 8 ・ 16", undefined, "part"),
   "value.velocity": e("ベロシティ", "spec:6"),
   "value.velocityRange": s6("使えない値を打った", "1〜127", undefined, "part"),
+  // 位置の小節・拍・ティック（デザインに戻した事 68）。拍とティックの範囲は拍子で変わるので、知らせについてくる。
+  "value.bar": e("小節", "user:2026-11-18"),
+  "value.beat": e("拍", "user:2026-11-18"),
+  "value.tick": e("ティック", "user:2026-11-18"),
 
   // 仕様書 6 章のボタン（「（…）」の中は説明なので入れない）
   "button.playHere": e("ここから鳴らす", "spec:6"),

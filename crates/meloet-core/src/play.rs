@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use meloet_model::arrange::KeptClip;
 use meloet_model::controls::{self, ControlKind as ModelControlKind};
 use meloet_model::edit::{self, Edit, EditError};
 use meloet_model::notes::{self, NoteField as ModelNoteField, NotesEdited, WriteAt};
@@ -15,11 +16,11 @@ use meloet_model::{
     Tempo, TickRange, TrackId, arrange, roll,
 };
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipEdge, ClipView, ControlKind, Grid, IndexRange, LiveNote, LiveNotes,
-    LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField, NoteSelection, PianoRollView,
-    QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode, SelectMode, StatusMessage,
-    TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef, TransportState,
-    TransportView,
+    ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, LiveNote,
+    LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField, NoteSelection,
+    PianoRollView, QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode, SelectMode,
+    StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef,
+    TransportState, TransportView,
 };
 
 use crate::state::Effect;
@@ -129,6 +130,41 @@ struct NoteSel {
     controls: Vec<u32>,
 }
 
+/// What is selected, as kept for undo: the notes and points, and the clips.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Sel {
+    notes: NoteSel,
+    clips: Vec<ClipId>,
+    clicked: Option<ClipId>,
+}
+
+/// The clips an edit leaves selected, the one of them clicked (`ArrangeView::selected_clip`),
+/// and the one the piano roll shows afterwards (`None`: as it was).
+struct ClipPick {
+    clips: Vec<ClipId>,
+    clicked: Option<ClipId>,
+    shown: Option<ClipId>,
+}
+
+impl ClipPick {
+    /// One clip, clicked and shown.
+    fn one(clip: ClipId) -> ClipPick {
+        ClipPick {
+            clips: vec![clip],
+            clicked: Some(clip),
+            shown: Some(clip),
+        }
+    }
+
+    fn none() -> ClipPick {
+        ClipPick {
+            clips: Vec::new(),
+            clicked: None,
+            shown: None,
+        }
+    }
+}
+
 /// Why a recording was cut short.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cut {
@@ -223,15 +259,20 @@ pub struct Play {
     position: u64,
     metronome: bool,
     count_in_bars: u8,
+    /// Every selected clip, in order of id.
+    clips_sel: Vec<ClipId>,
+    /// The clip clicked last, while it is selected (`ArrangeView::selected_clip`).
     selected: Option<ClipId>,
     piano_roll: Option<ClipId>,
     note_sel: NoteSel,
-    /// One for each step of the history, in the same order: the selected notes before the step
+    /// One for each step of the history, in the same order: what was selected before the step
     /// and after it.
-    sel_undo: Vec<(NoteSel, NoteSel)>,
-    sel_redo: Vec<(NoteSel, NoteSel)>,
+    sel_undo: Vec<(Sel, Sel)>,
+    sel_redo: Vec<(Sel, Sel)>,
     /// Mod C: starts count from the earliest note.
     clipboard: Vec<Note>,
+    /// Mod C in the arrange view.
+    clip_board: Vec<KeptClip>,
     rec: Option<Rec>,
     next_recording: u32,
     live_seq: u64,
@@ -264,12 +305,14 @@ impl Play {
             } else {
                 1
             },
+            clips_sel: Vec::new(),
             selected: None,
             piano_roll: None,
             note_sel: NoteSel::default(),
             sel_undo: Vec::new(),
             sel_redo: Vec::new(),
             clipboard: Vec::new(),
+            clip_board: Vec::new(),
             rec: None,
             next_recording: 1,
             live_seq: 0,
@@ -482,14 +525,20 @@ impl Play {
         effects.push(Effect::Engine(EngineOp::Stop { t_us: self.now_us }));
     }
 
-    /// Home, and a click on the ruler (moved to the head of that bar).
+    /// Home, a click on the ruler and a position typed: to `tick` as it is (the screen snaps).
     pub fn locate(&mut self, tick: u64, effects: &mut Vec<Effect>) {
         if self.busy() {
             return;
         }
-        let head = self.bar_head(tick);
-        self.position = head;
-        effects.push(Effect::Engine(EngineOp::Locate { tick: head }));
+        self.position = tick;
+        effects.push(Effect::Engine(EngineOp::Locate { tick }));
+    }
+
+    /// Where the play line is: while moving, what the listener hears.
+    fn play_line(&self) -> u64 {
+        self.heard
+            .and_then(|h| h.moving_tick())
+            .unwrap_or(self.position)
     }
 
     pub fn set_tempo(&mut self, bpm: f64, effects: &mut Vec<Effect>) {
@@ -577,66 +626,218 @@ impl Play {
         *armed = if *armed == Some(id) { None } else { Some(id) };
     }
 
+    /// A click on a track's header: the keys play that track.
+    pub fn select_track(&mut self, track: u32) {
+        let id = TrackId(track);
+        if self.doc().track(id).is_some() {
+            self.song.session.play_target = id;
+        }
+    }
+
+    /// A click on a clip, or (`None`) where there is no clip.
     pub fn select_clip(&mut self, clip: Option<u32>) {
         match clip.map(ClipId) {
-            None => self.selected = None,
+            None => {
+                self.clips_sel.clear();
+                self.selected = None;
+            }
             Some(id) if self.doc().clip(id).is_some() => {
-                self.selected = Some(id);
-                self.piano_roll = Some(id);
-                self.fix_selection();
+                self.clips_sel = vec![id];
+                self.click(id);
             }
             Some(_) => {}
         }
     }
 
+    /// The clip becomes the one clicked: shown in the piano roll, its track selected.
+    fn click(&mut self, id: ClipId) {
+        if let Some((track, _)) = self.doc().clip(id) {
+            self.song.session.play_target = track.id;
+            self.selected = Some(id);
+            self.piano_roll = Some(id);
+            self.fix_selection();
+        }
+    }
+
+    /// Shift + click (`Add` or `Toggle` with one clip, which is then clicked) and boxes.
+    pub fn select_clips(&mut self, clips: Vec<u32>, mode: SelectMode) {
+        let there: Vec<u32> = clips
+            .into_iter()
+            .filter(|&c| self.doc().clip(ClipId(c)).is_some())
+            .collect();
+        let now: Vec<u32> = self.clips_sel.iter().map(|c| c.0).collect();
+        let one = match (mode, there.as_slice()) {
+            (SelectMode::Add | SelectMode::Toggle, &[c]) => Some(ClipId(c)),
+            _ => None,
+        };
+        self.clips_sel = selected_with(&now, there, mode)
+            .into_iter()
+            .map(ClipId)
+            .collect();
+        match one.filter(|c| self.clips_sel.contains(c)) {
+            Some(id) => self.click(id),
+            None => {
+                let kept = self
+                    .selected
+                    .filter(|c| mode == SelectMode::Toggle && self.clips_sel.contains(c));
+                self.selected = kept.or_else(|| self.only_clip());
+            }
+        }
+    }
+
+    /// Mod A in the arrange view.
+    pub fn select_all_clips(&mut self) {
+        self.clips_sel = self
+            .doc()
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .map(|c| c.id)
+            .collect();
+        self.clips_sel.sort_unstable();
+        self.selected = self.only_clip();
+    }
+
+    fn only_clip(&self) -> Option<ClipId> {
+        match self.clips_sel[..] {
+            [one] => Some(one),
+            _ => None,
+        }
+    }
+
+    fn clip_ids(clips: &[u32]) -> Vec<ClipId> {
+        clips.iter().map(|&c| ClipId(c)).collect()
+    }
+
+    /// Delete in the arrange view: every selected clip, as one step.
     pub fn delete_selected(&mut self, effects: &mut Vec<Effect>) {
         if self.busy() {
             return;
         }
-        if let Some(id) = self.selected
-            && let Ok(e) = edit::delete_clips(self.doc(), &[id])
-        {
-            self.apply(e, effects);
-            self.selected = None;
+        if let Ok(e) = edit::delete_clips(self.doc(), &self.clips_sel) {
+            self.apply_selecting(e, None, Some(ClipPick::none()), effects);
         }
     }
 
-    /// A drag in the arrange view onto the track `track` (`TrackView::number`); `copy`: Alt +
-    /// drag. The clip moved, or the copy, is selected and shown in the piano roll.
-    pub fn move_clip(
+    /// A drag of clips together in the arrange view, `rows` rows of the tracks down (up when
+    /// negative); `copy`: Alt + drag. Returns the notice to show.
+    pub fn move_clips(
         &mut self,
-        clip: u32,
+        clips: &[u32],
         ticks: i64,
-        track: u32,
+        rows: i32,
         copy: bool,
         effects: &mut Vec<Effect>,
-    ) {
+    ) -> Option<StatusMessage> {
         if self.busy() {
-            return;
+            return None;
         }
-        let moved = arrange::move_clip(self.doc(), ClipId(clip), ticks, TrackId(track), copy);
-        if let Ok(e) = moved {
-            self.apply_clip(e, effects);
+        let moved = arrange::move_clips(self.doc(), &Self::clip_ids(clips), ticks, rows, copy);
+        let notice = if copy {
+            StatusMessage::ClipsNotDuplicated
+        } else {
+            StatusMessage::ClipsNotMoved
+        };
+        self.apply_placed(moved, notice, effects)
+    }
+
+    /// Mod D in the arrange view. Returns the notice to show.
+    pub fn duplicate_clips(
+        &mut self,
+        clips: &[u32],
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let copied = arrange::duplicate_clips(self.doc(), &Self::clip_ids(clips));
+        self.apply_placed(copied, StatusMessage::ClipsNotDuplicated, effects)
+    }
+
+    /// Mod C in the arrange view.
+    pub fn copy_clips(&mut self, clips: &[u32]) {
+        if let Ok(kept) = arrange::copy_clips(self.doc(), &Self::clip_ids(clips)) {
+            self.clip_board = kept;
         }
     }
 
-    /// The number of the track `rows` rows below (above, when negative) the track of `clip`.
-    pub fn track_rows_away(&self, clip: u32, rows: i32) -> Option<u32> {
-        let (track, _) = self.doc().clip(ClipId(clip))?;
-        let tracks = &self.doc().tracks;
-        let at = tracks.iter().position(|t| t.id == track.id)?;
-        let to = usize::try_from(at as i64 + i64::from(rows)).ok()?;
-        tracks.get(to).map(|t| t.id.0)
-    }
-
-    /// Mod D in the arrange view. The copy is selected and shown in the piano roll.
-    pub fn duplicate_clip(&mut self, clip: u32, effects: &mut Vec<Effect>) {
+    /// Mod X in the arrange view: a copy, and the clips deleted as one step.
+    pub fn cut_clips(&mut self, clips: &[u32], effects: &mut Vec<Effect>) {
         if self.busy() {
             return;
         }
-        if let Ok(e) = arrange::duplicate_clip(self.doc(), ClipId(clip)) {
-            self.apply_clip(e, effects);
+        let ids = Self::clip_ids(clips);
+        let Ok(kept) = arrange::copy_clips(self.doc(), &ids) else {
+            return;
+        };
+        let there: Vec<ClipId> = kept.iter().map(|k| k.clip.id).collect();
+        if let Ok(e) = edit::delete_clips(self.doc(), &there) {
+            self.clip_board = kept;
+            let pick = ClipPick {
+                clips: self
+                    .clips_sel
+                    .iter()
+                    .copied()
+                    .filter(|c| !there.contains(c))
+                    .collect(),
+                clicked: self.selected.filter(|c| !there.contains(c)),
+                shown: None,
+            };
+            self.apply_selecting(e, None, Some(pick), effects);
         }
+    }
+
+    /// Mod V (`to: None`: on the selected track, at the head of the bar the play line is in)
+    /// and the right-click menu's "貼りつけ" (where it was clicked). Returns the notice to show.
+    pub fn paste_clips(
+        &mut self,
+        to: Option<ClipSpot>,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() || self.clip_board.is_empty() {
+            return None;
+        }
+        let (track, at) = match to {
+            Some(s) => (TrackId(s.track), s.tick),
+            None => (
+                self.song.session.play_target,
+                self.bar_head(self.play_line()),
+            ),
+        };
+        let pasted = arrange::paste_clips(self.doc(), &self.clip_board, track, at);
+        self.apply_placed(pasted, StatusMessage::ClipsNotPasted, effects)
+    }
+
+    /// Selects the clips placed. The one clicked stays clicked (its copy when copied), else
+    /// a clip placed alone is; that one is shown in the piano roll.
+    fn apply_placed(
+        &mut self,
+        placed: Result<ClipEdited, EditError>,
+        overlap: StatusMessage,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let e = match placed {
+            Ok(e) => e,
+            Err(EditError::Overlap) => return Some(overlap),
+            Err(_) => return None,
+        };
+        let clicked = self
+            .selected
+            .and_then(|s| e.from.iter().position(|&f| f == s))
+            .map(|i| e.clips[i])
+            .or_else(|| match e.clips[..] {
+                [one] => Some(one),
+                _ => None,
+            });
+        let mut clips = e.clips.clone();
+        clips.sort_unstable();
+        let pick = ClipPick {
+            clips,
+            clicked,
+            shown: clicked,
+        };
+        self.apply_selecting(e.edit, None, Some(pick), effects);
+        None
     }
 
     pub fn trim_clip(&mut self, clip: u32, edge: ClipEdge, ticks: i64, effects: &mut Vec<Effect>) {
@@ -650,12 +851,6 @@ impl Play {
         if let Ok(e) = arrange::trim_clip(self.doc(), ClipId(clip), edge, ticks) {
             self.apply(e, effects);
         }
-    }
-
-    fn apply_clip(&mut self, e: ClipEdited, effects: &mut Vec<Effect>) {
-        self.selected = Some(e.clip);
-        self.piano_roll = Some(e.clip);
-        self.apply(e.edit, effects);
     }
 
     /// Returns the notice to show.
@@ -692,10 +887,9 @@ impl Play {
             self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_undo.pop() {
-                self.note_sel = sel_before.clone();
+                self.put_sel(sel_before.clone());
                 self.sel_redo.push((sel_before, sel_after));
             }
-            self.fix_selection();
         }
     }
 
@@ -708,46 +902,72 @@ impl Play {
             self.song.doc.name.clone_from(&before.name);
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_redo.pop() {
-                self.note_sel = sel_after.clone();
+                self.put_sel(sel_after.clone());
                 self.sel_undo.push((sel_before, sel_after));
             }
-            self.fix_selection();
         }
     }
 
+    fn sel(&self) -> Sel {
+        Sel {
+            notes: self.note_sel.clone(),
+            clips: self.clips_sel.clone(),
+            clicked: self.selected,
+        }
+    }
+
+    /// What was selected before or after a step, as far as it is still there. The piano roll
+    /// keeps showing what it shows.
+    fn put_sel(&mut self, sel: Sel) {
+        self.note_sel = sel.notes;
+        self.clips_sel = sel.clips;
+        self.selected = sel.clicked;
+        self.drop_gone_clips();
+    }
+
     fn apply(&mut self, e: Edit, effects: &mut Vec<Effect>) {
-        self.apply_selecting(e, None, effects);
+        self.apply_selecting(e, None, None, effects);
     }
 
     /// `selected`: the notes of the shown take to select afterwards, or its control points
     /// with `true`. The other kind stays selected: an edit of one leaves the other in order.
+    /// `clips`: the clips to select afterwards; `None` keeps them.
     fn apply_selecting(
         &mut self,
         e: Edit,
         selected: Option<(Vec<usize>, bool)>,
+        clips: Option<ClipPick>,
         effects: &mut Vec<Effect>,
     ) {
-        let sel_before = self.note_sel.clone();
+        let sel_before = self.sel();
         let before = self.doc().clone();
         self.history.apply(&mut self.song.doc, e);
+        if let Some(pick) = clips {
+            self.clips_sel = pick.clips;
+            self.selected = pick.clicked;
+            if pick.shown.is_some() {
+                self.piano_roll = pick.shown;
+            }
+        }
         self.after_change(&before, effects);
         if let Some((picked, of_controls)) = selected {
-            let same_clip = sel_before.clip.is_some() && sel_before.clip == self.piano_roll;
+            let notes = &sel_before.notes;
+            let same_clip = notes.clip.is_some() && notes.clip == self.piano_roll;
             let kept = |v: &Vec<u32>| if same_clip { v.clone() } else { Vec::new() };
             let picked = picked.into_iter().map(|i| i as u32);
             if of_controls {
-                self.set_selection(kept(&sel_before.notes), picked);
+                self.set_selection(kept(&notes.notes), picked);
             } else {
-                self.set_selection(picked, kept(&sel_before.controls));
+                self.set_selection(picked, kept(&notes.controls));
             }
         }
-        self.sel_undo.push((sel_before, self.note_sel.clone()));
+        self.sel_undo.push((sel_before, self.sel()));
         self.sel_redo.clear();
     }
 
     fn apply_notes(&mut self, edited: Result<NotesEdited, EditError>, effects: &mut Vec<Effect>) {
         if let Ok(n) = edited {
-            self.apply_selecting(n.edit, Some((n.selected, n.of_controls)), effects);
+            self.apply_selecting(n.edit, Some((n.selected, n.of_controls)), None, effects);
         }
     }
 
@@ -770,9 +990,15 @@ impl Play {
         if doc.tracks.iter().any(|t| !t.clips.is_empty()) {
             self.had_clip = true;
         }
-        let gone = |id: Option<ClipId>| id.filter(|&c| doc.clip(c).is_some());
-        self.selected = gone(self.selected);
-        self.piano_roll = gone(self.piano_roll);
+        self.drop_gone_clips();
+    }
+
+    fn drop_gone_clips(&mut self) {
+        let doc = &self.song.doc;
+        self.clips_sel.retain(|&c| doc.clip(c).is_some());
+        let sel = &self.clips_sel;
+        self.selected = self.selected.filter(|c| sel.contains(c));
+        self.piano_roll = self.piano_roll.filter(|&c| doc.clip(c).is_some());
         self.fix_selection();
     }
 
@@ -957,9 +1183,7 @@ impl Play {
         let recorded = rec.recorder?.finish(tick.round() as i64, lap)?;
         let (e, added) =
             edit::add_recording(self.doc(), rec.track, recorded.takes, recorded.active).ok()?;
-        self.selected = Some(added.clip);
-        self.piano_roll = Some(added.clip);
-        self.apply(e, effects);
+        self.apply_selecting(e, None, Some(ClipPick::one(added.clip)), effects);
         Some(added.active as u32 + 1)
     }
 
@@ -1095,6 +1319,9 @@ impl Play {
         self.saved_too = None;
         self.state = TransportState::Stopped;
         self.position = 0;
+        self.clips_sel.clear();
+        // The takes kept have ids of the other song.
+        self.clip_board.clear();
         self.selected = None;
         self.piano_roll = None;
         self.note_sel = NoteSel::default();
@@ -1232,10 +1459,17 @@ impl Play {
 
     pub fn arrange_view(&self) -> ArrangeView {
         ArrangeView {
-            selected_clips: self.selected.map(|c| c.0).into_iter().collect(),
+            selected_clips: self
+                .doc()
+                .tracks
+                .iter()
+                .flat_map(|t| &t.clips)
+                .filter(|c| self.clips_sel.contains(&c.id))
+                .map(|c| c.id.0)
+                .collect(),
             selected_clip: self.selected.map(|c| c.0),
             piano_roll_clip: self.piano_roll.map(|c| c.0),
-            clipboard_clips: 0,
+            clipboard_clips: self.clip_board.len() as u32,
         }
     }
 
@@ -1272,7 +1506,7 @@ impl Play {
         }
         let loop_bars = self.loop_on().map(|r| self.bars(r));
         let notes = self.note_selection();
-        let nothing_selected = self.selected.is_none() && notes.is_none();
+        let nothing_selected = self.clips_sel.is_empty() && notes.is_none();
         (loop_bars.is_some() || nothing_selected || notes.is_some()).then_some(
             StatusMessage::Summary {
                 loop_bars,
@@ -1429,11 +1663,8 @@ impl Play {
             ..note
         };
         let written = notes::write_note(self.doc(), at, note).ok()?;
-        if take.is_none() {
-            self.selected = Some(written.clip);
-            self.piano_roll = Some(written.clip);
-        }
-        self.apply_selecting(written.edit, Some((written.selected, false)), effects);
+        let pick = take.is_none().then(|| ClipPick::one(written.clip));
+        self.apply_selecting(written.edit, Some((written.selected, false)), pick, effects);
         None
     }
 
@@ -1456,13 +1687,48 @@ impl Play {
         &mut self,
         take: u32,
         picked: &[u32],
+        edge: ClipEdge,
         ticks: i64,
         effects: &mut Vec<Effect>,
     ) {
+        let edge = match edge {
+            ClipEdge::Start => arrange::ClipEdge::Start,
+            ClipEdge::End => arrange::ClipEdge::End,
+        };
         if let Some(clip) = self.aimed(take) {
-            let r = notes::resize_notes(self.doc(), clip, &indexes(picked), ticks);
+            let r = notes::resize_notes(self.doc(), clip, &indexes(picked), edge, ticks);
             self.apply_notes(r, effects);
         }
+    }
+
+    /// "そろえる" of the velocity panel. Returns the notice to show.
+    pub fn match_velocity(
+        &mut self,
+        take: u32,
+        picked: &[u32],
+        value: u8,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let clip = self.aimed(take)?;
+        let value = value.clamp(1, 127);
+        let picked = indexes(picked);
+        let r = notes::set_notes_field(
+            self.doc(),
+            clip,
+            &picked,
+            ModelNoteField::Velocity,
+            i64::from(value),
+        );
+        let count = picked.iter().collect::<BTreeSet<_>>().len();
+        // Notes already at the value are said to be, too.
+        if count == 0 || !matches!(r, Ok(_) | Err(EditError::Unchanged)) {
+            return None;
+        }
+        self.apply_notes(r, effects);
+        Some(StatusMessage::VelocityMatched {
+            count: count as u32,
+            value,
+        })
     }
 
     pub fn delete_notes(&mut self, take: u32, picked: &[u32], effects: &mut Vec<Effect>) {

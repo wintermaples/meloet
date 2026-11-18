@@ -384,7 +384,7 @@ export class Engine {
         break;
       case "meter": {
         // A track the song does not have reads as silence.
-        const track = slot.source === "master" ? 0 : this.trackNumbers.indexOf(slot.source.track);
+        const track = slot.source === "master" ? 0 : "track" in slot.source ? this.trackNumbers.indexOf(slot.source.track) : -1;
         const first = slot.source === "master" ? 0 : 2 + 2 * track;
         const levels = this.levels;
         paintMeter(

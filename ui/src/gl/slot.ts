@@ -17,7 +17,8 @@ export interface GlRect {
   color: ColorName;
 }
 
-export type MeterSource = "master" | { track: number };
+/** `ret`: the return strip of send A or B (mixer). */
+export type MeterSource = "master" | { track: number } | { ret: "a" | "b" };
 
 /** What a "paint" slot gets besides its box. */
 export interface PaintContext {
@@ -36,8 +37,11 @@ export type GlSlot =
   | { kind: "keyboard"; size: "full" | "slim"; narrow?: boolean; firstNote: number; lastNote: number; disabled?: boolean }
   /** The bar beside the last velocity in the input meter. */
   | { kind: "velocity" }
-  /** Two horizontal level bars (left above right) with `gap` CSS px between them. */
-  | { kind: "meter"; source: MeterSource; gap: number }
+  /**
+   * Two level bars with `gap` CSS px between them: horizontal, left above right; `vertical` (mixer strips),
+   * standing, left beside right.
+   */
+  | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean }
   /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. `beats` > 1: beat lines too, that many to a bar. */
   | { kind: "arrangeGrid"; barPx: number; firstBarX: number; beats?: number }
   /** The 40 px arrange overview (clip lines, visible range, play position). */

@@ -35,6 +35,8 @@ export const REGIONS = {
   pianoRollKeys: { opaque: true },
   /** Piano roll: what moves with the mouse or every frame (the notes being dragged, the held notes of a recording). As small as what it shows. */
   pianoRollLive: { opaque: false },
+  /** Mixer: the meters of every strip (tracks, returns, master) in one canvas, also when the strips scroll. Up to 60 Hz. */
+  mixerMeters: { opaque: false },
   /** Sound settings: the level beside the test tone. */
   settingsMeter: { opaque: false },
   /** Sound settings: the keyboard that lights. */

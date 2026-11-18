@@ -1,17 +1,13 @@
 // 約束 13: トラックは id で指す。録音待機は、いつも選んだトラック。音源の種類と、棚の状態。
 import { describe, expect, it } from "vitest";
 import { createFakeTransport, fakeScene, fakeState } from "../src/bridge/fake";
-import { INSTRUMENT_GROUPS, PROTOCOL_VERSION, type AppState, type Command, type ServerMessage } from "../src/bridge/types";
+import { INSTRUMENT_GROUPS, type AppState, type Command, type ServerMessage } from "../src/bridge/types";
 import { fill, t, texts, type TextKey } from "../src/text/ja";
 import { mockScreenText } from "./design-sources";
 
 const state = (scene: string) => fakeScene(scene)!.state;
 
 describe("約束 13 の形", () => {
-  it("版は 13", () => {
-    expect(PROTOCOL_VERSION).toBe(13);
-  });
-
   it("音源は 11、グループは 5。並びは棚の順（仕様書 3 章）で、どれにも名前がある", () => {
     expect(INSTRUMENT_GROUPS.map((g) => [t(`instrumentGroup.${g.group}`), g.instruments.map((i) => t(`instrument.${i}`))])).toEqual([
       ["ピアノ ・ 鍵盤", ["グランドピアノ", "エレクトリックピアノ", "オルガン"]],

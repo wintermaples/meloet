@@ -41,6 +41,9 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   soloed: false,
   instrument: "sine",
   gainDb: 0,
+  pan: 0,
+  sends: [null, null],
+  inserts: [null, null, null, null],
   clips,
 });
 

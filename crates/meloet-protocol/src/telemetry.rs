@@ -1,4 +1,4 @@
-//! Telemetry binary, version 2, little-endian. The layout table is docs/architecture.md 3-3;
+//! Telemetry binary, version 3, little-endian. The layout table is docs/architecture.md 3-3;
 //! this file is the one place that fixes it. `ui/src/bridge/telemetry.ts` reads it.
 
 use std::fmt;
@@ -6,8 +6,8 @@ use std::fmt;
 use crate::TransportState;
 
 pub const TELEMETRY_KIND: u8 = 1;
-pub const TELEMETRY_VERSION: u8 = 2;
-pub const TELEMETRY_HEADER_LEN: usize = 72;
+pub const TELEMETRY_VERSION: u8 = 3;
+pub const TELEMETRY_HEADER_LEN: usize = 88;
 
 const FLAG_RUNNING: u8 = 1 << 0;
 const FLAG_MASTER_CLIPPED: u8 = 1 << 1;
@@ -71,6 +71,8 @@ pub struct Telemetry {
     pub master_peak: [f32; 2],
     /// `None` before the audio has played anything.
     pub transport: Option<TransportReading>,
+    /// Return A, then return B: left, right, as `master_peak`.
+    pub return_peaks: [[f32; 2]; 2],
     pub track_peaks: Vec<[f32; 2]>,
 }
 
@@ -155,7 +157,7 @@ impl Telemetry {
         out.push(0);
         out.extend_from_slice(&t.count_in_beats_left.to_le_bytes());
         out.extend_from_slice(&t.lap.to_le_bytes());
-        for pair in &self.track_peaks {
+        for pair in self.return_peaks.iter().chain(&self.track_peaks) {
             for v in pair {
                 out.extend_from_slice(&v.to_le_bytes());
             }
@@ -209,6 +211,7 @@ impl Telemetry {
                 count_in_beats_left: u16::from_le_bytes(at(bytes, 66)),
                 lap: u32::from_le_bytes(at(bytes, 68)),
             }),
+            return_peaks: [pair(72), pair(80)],
             track_peaks: (0..n).map(|i| pair(TELEMETRY_HEADER_LEN + 8 * i)).collect(),
         })
     }
@@ -227,6 +230,7 @@ impl Telemetry {
             && self.load_permille == other.load_permille
             && self.master_peak == other.master_peak
             && self.transport == other.transport
+            && self.return_peaks == other.return_peaks
             && self.track_peaks == other.track_peaks
     }
 }

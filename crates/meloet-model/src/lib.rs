@@ -10,6 +10,7 @@ pub mod history;
 #[cfg(test)]
 mod id_book;
 pub mod instrument;
+pub mod mixer;
 pub mod notes;
 pub mod playback;
 pub mod quantize;
@@ -23,6 +24,7 @@ pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
 pub use history::{History, StepKind};
 pub use instrument::{BuiltinInstrument, InstrumentGroup, InstrumentRef};
+pub use mixer::{Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, Return, Sends, StripId};
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{
@@ -81,7 +83,8 @@ mod tests {
         assert_eq!(t.name, "ピアノ");
         assert_eq!(t.color.get(), 1);
         assert_eq!(t.instrument, InstrumentRef::GRAND_PIANO);
-        assert_eq!(t.gain_db, 0.0);
+        assert_eq!(t.channel, Channel::default());
+        assert_eq!(t.sends, [Gain::from_db(-15.0), Gain::SILENT]);
         assert!(t.clips.is_empty());
         assert_eq!(song.session.play_target, Some(TrackId(1)));
         assert_eq!(song.session.loop_range, None);

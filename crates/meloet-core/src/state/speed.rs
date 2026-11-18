@@ -24,7 +24,8 @@ fn big_song() -> Song {
             name: format!("トラック {i}"),
             color: TrackColor::for_index(i as usize - 1),
             instrument: InstrumentRef::SINE,
-            gain_db: 0.0,
+            channel: Default::default(),
+            sends: [meloet_model::Gain::SILENT; 2],
             muted: false,
             clips: Vec::new(),
         }));

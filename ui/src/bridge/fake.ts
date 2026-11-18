@@ -7,6 +7,7 @@ import type { Transport } from "./session";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
 import {
+  EFFECT_PARAMS,
   INSTRUMENT_GROUPS,
   PROTOCOL_VERSION,
   type AppState,
@@ -14,8 +15,10 @@ import {
   type Change,
   type ClipView,
   type Command,
+  type EffectKind,
   type EndpointView,
   type IndexRange,
+  type InsertRef,
   type InstrumentKind,
   type LayoutView,
   type LiveNote,
@@ -27,7 +30,9 @@ import {
   type SongView,
   type ArrangeView,
   type StatusMessage,
+  type StripRef,
   type TrackRef,
+  type TrackView,
 } from "./types";
 
 // ---- the band rules (a copy of the numbers in meloet-core/src/layout.rs) ----
@@ -253,6 +258,31 @@ function closedShelf(): ShelfView {
     current: null,
     loading: null,
     sample: null,
+    selectedEffect: null,
+  };
+}
+
+type Inserts = TrackView["inserts"];
+const noInserts = (): Inserts => [null, null, null, null];
+const firstInsert = (effect: EffectKind): Inserts => [effect, null, null, null];
+
+/** The values of an effect that is new, in the order of its table. */
+export const effectDefaults = (effect: EffectKind): number[] => EFFECT_PARAMS[effect].map((p) => p.default);
+
+/** What a new track sends to return A and B (spec 3, Y9). */
+const newTrackSends = (instrument: InstrumentKind): TrackView["sends"] => {
+  const group = INSTRUMENT_GROUPS.find((g) => g.instruments.includes(instrument))!.group;
+  return [group === "bass" ? null : group === "drums" ? -24 : -15, null];
+};
+
+/** The returns and the master of a new song: a reverb on A, a delay on B, a limiter on the master (spec 3, Y9). */
+function newSongMixer(): Pick<SongView, "returns" | "master"> {
+  return {
+    returns: [
+      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("reverb") },
+      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("delay") },
+    ],
+    master: { gainDb: 0, inserts: firstInsert("limiter") },
   };
 }
 
@@ -269,7 +299,23 @@ export function fakeState(): AppState {
       undoCount: 0,
       redoCount: 0,
       noteCount: 0,
-      tracks: [{ id: 1, number: 1, name: "ピアノ", color: 1, instrument: "grandPiano", gainDb: 0, muted: false, soloed: false, clips: [] }],
+      tracks: [
+        {
+          id: 1,
+          number: 1,
+          name: "ピアノ",
+          color: 1,
+          instrument: "grandPiano",
+          gainDb: 0,
+          pan: 0,
+          sends: newTrackSends("grandPiano"),
+          inserts: noInserts(),
+          muted: false,
+          soloed: false,
+          clips: [],
+        },
+      ],
+      ...newSongMixer(),
       playTarget: 1,
       loopRange: null,
       loopOn: false,
@@ -308,6 +354,7 @@ export function fakeState(): AppState {
       recovery: null,
     },
     shelf: closedShelf(),
+    params: { selected: null },
     keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null },
@@ -337,6 +384,8 @@ export interface FakeMeters {
   loadPermille?: number;
   /** 1.0 = 0 dBFS */
   master?: [number, number];
+  /** Return A, then return B. */
+  returns?: [[number, number], [number, number]];
   tracks?: [number, number][];
   /** Where the listener is when the scene starts. It moves by `ticksPerUs`; scenes that stand for a mock use 0. */
   position?: TransportReading;
@@ -1189,6 +1238,9 @@ function bandSong(s: AppState, tracks = BAND_TRACKS): void {
     color: (i % 5) + 1,
     instrument: t.instrument,
     gainDb: t.gainDb,
+    pan: 0,
+    sends: newTrackSends(t.instrument),
+    inserts: noInserts(),
     muted: false,
     soloed: false,
     clips: t.clips.map(([name, from, to]) => {
@@ -1248,6 +1300,65 @@ SCENES.shelfReplace = {
       current: "grandPiano",
     }),
   meters: { ...QUIET, keys: [60, 64, 67], velocity: 87, sustain: 127, modulation: 12 },
+};
+
+// F4-Mixer: five tracks, the two returns and the master, playing at 9.2.000. The reverb of return A is the selected
+// insert, and its first row "響きの長さ" is chosen in the parameters panel.
+const RETURN_A: StripRef = { kind: "return", bus: "a" };
+const RETURN_B: StripRef = { kind: "return", bus: "b" };
+const MIXER_STRIPS: Pick<TrackView, "gainDb" | "pan" | "sends" | "inserts">[] = [
+  { gainDb: 0, pan: 0, sends: [-15, null], inserts: noInserts() },
+  { gainDb: 0, pan: 0, sends: [null, null], inserts: firstInsert("compressor") },
+  { gainDb: 0, pan: 0, sends: [-24, null], inserts: firstInsert("compressor") },
+  { gainDb: -3, pan: -20, sends: [-15, null], inserts: firstInsert("eq4") },
+  { gainDb: 0, pan: 20, sends: [-15, -18], inserts: noInserts() },
+];
+function mixerSong(s: AppState, selected: InsertRef, effect: EffectKind, row: number | null): void {
+  bandSong(s, BAND_TRACKS.slice(0, 5));
+  s.song.tracks = s.song.tracks.map((t, i) => ({ ...t, ...structuredClone(MIXER_STRIPS[i]!) }));
+  s.params = { selected: { insert: selected, effect, values: effectDefaults(effect), row } };
+}
+const MIXER_METERS: FakeMeters = {
+  velocity: 83,
+  loadPermille: 120,
+  master: [dbfs(-2.5), dbfs(-4)],
+  returns: [
+    [dbfs(-13), dbfs(-15)],
+    [dbfs(-28), dbfs(-34)],
+  ],
+  tracks: [
+    [dbfs(-8), dbfs(-9.5)],
+    [dbfs(-11), dbfs(-13)],
+    [dbfs(-5), dbfs(-6.5)],
+    [dbfs(-17), dbfs(-20)],
+    [dbfs(-10), dbfs(-12)],
+  ],
+  position: { tick: 8 * BAR + 480, ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 },
+};
+SCENES.mixer = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", 0);
+    s.transport.state = "playing";
+  },
+  bands: ["mixer", "params"],
+  after: (s) =>
+    (s.status.message = { id: "paramSelected", loopBars: { from: 5, to: 9 }, insert: { strip: RETURN_A, slot: 0 }, effect: "reverb", param: 0 }),
+  meters: MIXER_METERS,
+};
+// R6-Delay: the delay of return B in the parameters panel, no row chosen.
+SCENES.paramsDelay = {
+  setup: (s) => mixerSong(s, { strip: RETURN_B, slot: 0 }, "delay", null),
+  bands: ["mixer", "params"],
+  meters: QUIET,
+};
+// Not from a mock: "空き ＋" of the second slot of "1 ピアノ" opened the shelf, which lists the effects; "コンプレッサー" is chosen.
+SCENES.shelfEffects = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.shelf = { ...closedShelf(), mode: { kind: "insertEffect", strip: { kind: "track", id: BAND_TRACK_ID + 1 }, slot: 1 }, selectedEffect: "compressor" };
+  },
+  bands: ["mixer", "shelf"],
+  meters: QUIET,
 };
 
 // Not from a mock: the scene recording, with the listener moving at 96.00 (the clip being recorded grows).
@@ -1398,6 +1509,7 @@ export function encodeTelemetry(
     v.setUint16(66, position.countInBeatsLeft, true);
     v.setUint32(68, position.lap, true);
   }
+  (m.returns ?? []).flat().forEach((peak, i) => v.setFloat32(72 + 4 * i, peak, true));
   for (let i = 0; i < trackCount; i++) {
     const [l, r] = m.tracks?.[i] ?? [0, 0];
     v.setFloat32(H + 8 * i, l, true);
@@ -1714,7 +1826,7 @@ const SAMPLE_US = 4_000_000;
 function shelfMessage(shelf: ShelfView, song: SongView): StatusMessage | null {
   if (shelf.selected !== null) {
     if (shelf.mode.kind === "newTrack") return { id: "auditionNewTrack", instrument: shelf.selected };
-    const id = shelf.mode.track;
+    const id = shelf.mode.kind === "replace" ? shelf.mode.track : null;
     const t = song.tracks.find((x) => x.id === id);
     if (t) return { id: "auditionReplace", instrument: shelf.selected, track: { number: t.number, name: t.name }, current: t.instrument };
   }
@@ -1807,6 +1919,9 @@ export function reduceTracks(
           color: (place % 5) + 1,
           instrument: picked,
           gainDb: 0,
+          pan: 0,
+          sends: newTrackSends(picked),
+          inserts: noInserts(),
           muted: false,
           soloed: false,
           clips: [],
@@ -1814,7 +1929,7 @@ export function reduceTracks(
         renumber();
         song.playTarget = id;
         notice = { id: "trackAdded", track: ref(place) };
-      } else {
+      } else if (shelf.mode.kind === "replace") {
         const i = at(shelf.mode.track);
         if (i < 0) return null;
         if (song.tracks[i]!.instrument !== picked) {
@@ -1843,6 +1958,110 @@ export function reduceTracks(
   }
   const canRecord = shelf.selected === null && song.playTarget !== null && state.transport.canPlay;
   return { song, shelf, canRecord, notice };
+}
+
+/** The strip `strip` names in `song`: a track, a return or the master. */
+function stripOf(song: SongView, strip: StripRef) {
+  if (strip.kind === "master") return song.master;
+  if (strip.kind === "return") return song.returns[strip.bus === "a" ? 0 : 1];
+  const id = strip.id;
+  return song.tracks.find((t) => t.id === id);
+}
+
+/** A level as Rust keeps it: `null` (−∞) below −60, at most +6, in steps of 0.01. */
+const clampDb = (db: number | null) => (db === null || db < -60 ? null : Math.min(6, Math.round(db * 100) / 100));
+
+/**
+ * Protocol 14: the mixer, enough for pictures and tests (no history, no undo count, no previews: a command with
+ * `commit: false` changes nothing here, as the state never shows a preview). Returns what changed, or null when
+ * the command is none of these. The values of the effects are kept only for the selected insert.
+ */
+export function reduceMixer(
+  state: AppState,
+  shelfNow: ShelfView,
+  songNow: SongView,
+  command: Command,
+): { song: SongView; params: AppState["params"]; shelf: ShelfView; showParams: boolean } | null {
+  const song = structuredClone(songNow);
+  const params = structuredClone(state.params);
+  const shelf = structuredClone(shelfNow);
+  const change = !busy(state);
+  let showParams = false;
+  const select = (insert: InsertRef | null) => {
+    const effect = insert === null ? null : (stripOf(song, insert.strip)?.inserts[insert.slot] ?? null);
+    if (insert === null || effect === null) params.selected = null;
+    else if (JSON.stringify(params.selected?.insert) !== JSON.stringify(insert)) {
+      params.selected = { insert, effect, values: effectDefaults(effect), row: null };
+    }
+    showParams = params.selected !== null;
+  };
+  switch (command.type) {
+    case "setGain": {
+      const strip = stripOf(song, command.strip);
+      if (strip && command.commit && change) strip.gainDb = clampDb(command.db);
+      break;
+    }
+    case "setPan": {
+      const strip = stripOf(song, command.strip);
+      if (strip && "pan" in strip && command.commit && change) strip.pan = Math.max(-100, Math.min(100, Math.round(command.pan)));
+      break;
+    }
+    case "setSend": {
+      const track = song.tracks.find((t) => t.id === command.track);
+      if (track && command.commit && change) track.sends[command.bus === "a" ? 0 : 1] = clampDb(command.db);
+      break;
+    }
+    case "setParam": {
+      const sel = params.selected;
+      const spec = EFFECT_PARAMS[command.effect][command.param];
+      const there = stripOf(song, command.insert.strip)?.inserts[command.insert.slot];
+      if (!spec || there !== command.effect || !command.commit || !change) break;
+      if (sel && JSON.stringify(sel.insert) === JSON.stringify(command.insert)) {
+        const v = Math.max(spec.min, Math.min(spec.max, command.value));
+        sel.values[command.param] = spec.shape === "continuous" ? v : Math.round(v);
+      }
+      break;
+    }
+    case "cancelMixPreview":
+      break;
+    case "toggleReturnMute": {
+      const ret = song.returns[command.bus === "a" ? 0 : 1];
+      if (change) ret.muted = !ret.muted;
+      break;
+    }
+    case "removeEffect": {
+      const strip = stripOf(song, command.insert.strip);
+      if (!strip || !change) break;
+      strip.inserts[command.insert.slot] = null;
+      if (JSON.stringify(params.selected?.insert) === JSON.stringify(command.insert)) params.selected = null;
+      break;
+    }
+    case "selectInsert":
+      select(command.insert);
+      break;
+    case "selectParam": {
+      const sel = params.selected;
+      if (sel) sel.row = command.param !== null && EFFECT_PARAMS[sel.effect][command.param] ? command.param : null;
+      break;
+    }
+    case "shelfSelectEffect":
+      if (shelf.mode.kind === "insertEffect" && change) shelf.selectedEffect = command.effect;
+      break;
+    case "shelfConfirm": {
+      if (shelf.mode.kind !== "insertEffect") return null;
+      const { strip, slot } = shelf.mode;
+      const to = stripOf(song, strip);
+      if (!to || shelf.selectedEffect === null || to.inserts[slot] !== null || !change) break;
+      to.inserts[slot] = shelf.selectedEffect;
+      shelf.mode = { kind: "newTrack" };
+      shelf.selectedEffect = null;
+      select({ strip, slot });
+      break;
+    }
+    default:
+      return null;
+  }
+  return { song, params, shelf, showParams };
 }
 
 /** `rest` is the status line when no notice is up. */
@@ -1981,10 +2200,16 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
     if (JSON.stringify(clips.song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: clips.song });
     if (JSON.stringify(clips.arrange) !== JSON.stringify(state.arrange)) changes.push({ section: "arrange", value: clips.arrange });
   }
-  const song = tracks?.song ?? clips?.song ?? state.song;
-  if (tracks && JSON.stringify(tracks.song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: tracks.song });
+  const mixer = reduceMixer(state, tracks?.shelf ?? state.shelf, tracks?.song ?? clips?.song ?? state.song, command);
+  if (mixer?.showParams && bands.side.at(-1) !== "params") {
+    bands.side = [...bands.side.filter((b) => b !== "params"), "params"];
+    ws.layout = bands.layout();
+  }
+  const song = mixer?.song ?? tracks?.song ?? clips?.song ?? state.song;
+  if ((tracks || mixer) && JSON.stringify(song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: song });
+  if (mixer && JSON.stringify(mixer.params) !== JSON.stringify(state.params)) changes.push({ section: "params", value: mixer.params });
   // A closed shelf has no mode, audition or sample (protocol 13, ShelfView).
-  let shelf = tracks?.shelf ?? state.shelf;
+  let shelf = mixer?.shelf ?? tracks?.shelf ?? state.shelf;
   if (!ws.layout.rightOpen.includes("shelf") && JSON.stringify(shelf) !== JSON.stringify({ ...closedShelf(), available: shelf.available, favorites: shelf.favorites })) {
     shelf = { ...closedShelf(), available: shelf.available, favorites: shelf.favorites };
     transport.canRecord = song.playTarget !== null && transport.canPlay;

@@ -2244,6 +2244,7 @@ version = "0.1.0"
 name = "meloet-protocol"
 version = "0.1.0"
 dependencies = [
+ "meloet-model",
  "serde",
  "serde_json",
  "ts-rs",

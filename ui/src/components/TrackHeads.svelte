@@ -220,7 +220,7 @@
               <button class="m-plain m-lbl instrument" data-test="track-instrument" onclick={() => replaceInstrument(track)}>{name}</button>
             {/if}
           {/if}
-          <span class="m-num" use:term={"dB"}>{t("common.db", { value: dbNumber(track.gainDb) })}</span>
+          <span class="m-num" use:term={"dB"}>{track.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(track.gainDb) })}</span>
         </div>
         <div class="meter" use:glSlot={{ kind: "meter", source: { track: track.number }, gap: metrics.px("line.hair") }}></div>
       </div>

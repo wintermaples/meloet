@@ -9,5 +9,7 @@ publish.workspace = true
 serde = { workspace = true }
 
 [dev-dependencies]
+# Only for writing the effects' parameter table for the screen.
+meloet-model = { workspace = true }
 serde_json = { workspace = true }
 ts-rs = { workspace = true }

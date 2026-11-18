@@ -1,8 +1,11 @@
 //! The shelf of instruments: trying one out with the keys before it is in the song, adding a
 //! track with it, and giving a track another one.
 
-use meloet_model::{InstrumentRef, TrackId, edit};
-use meloet_protocol::{InstrumentKind, ShelfMode, ShelfView, StatusMessage};
+use meloet_model::effects::EffectKind as ModelEffect;
+use meloet_model::{INSERT_SLOTS, InstrumentRef, StripId, TrackId, edit};
+use meloet_protocol::{EffectKind, InstrumentKind, ShelfMode, ShelfView, StatusMessage};
+
+use super::mixer::{effect_kind, model_effect, strip_id, strip_ref};
 
 use super::seats::{AUDITION_SEAT, MAX_TRACKS};
 use super::sounds::{Sample, SampleWaiting};
@@ -16,6 +19,8 @@ pub(super) enum Mode {
     #[default]
     NewTrack,
     Replace(TrackId),
+    /// The shelf lists the effects; Enter puts the chosen one into this empty slot.
+    InsertEffect(StripId, usize),
 }
 
 #[derive(Debug, Default)]
@@ -29,6 +34,8 @@ pub(super) struct Shelf {
     pub(super) before: Option<InstrumentRef>,
     pub(super) sample: Option<Sample>,
     pub(super) sample_waiting: Option<SampleWaiting>,
+    /// `InsertEffect`: the chosen row.
+    pub(super) effect: Option<ModelEffect>,
 }
 
 fn kind_of(instrument: &InstrumentRef) -> InstrumentKind {
@@ -49,6 +56,7 @@ impl Play {
         match self.shelf.mode {
             Mode::NewTrack => Some(AUDITION_SEAT),
             Mode::Replace(track) => self.seats.of(track),
+            Mode::InsertEffect(..) => None,
         }
     }
 
@@ -63,15 +71,35 @@ impl Play {
                 Mode::Replace(TrackId(track))
             }
             ShelfMode::Replace { .. } => return false,
+            ShelfMode::InsertEffect { strip, slot } => {
+                let (strip, slot) = (strip_id(strip), usize::from(slot));
+                if !self.slot_is_empty(strip, slot) {
+                    return false;
+                }
+                Mode::InsertEffect(strip, slot)
+            }
         };
         self.end_audition(effects);
         self.shelf.mode = mode;
+        self.shelf.effect = None;
         true
+    }
+
+    fn slot_is_empty(&self, strip: StripId, slot: usize) -> bool {
+        slot < INSERT_SLOTS
+            && (self.doc().channel(strip)).is_some_and(|c| c.inserts[slot].is_none())
+    }
+
+    /// `ShelfSelectEffect`: only while the shelf lists the effects.
+    pub fn shelf_select_effect(&mut self, effect: Option<EffectKind>) {
+        if matches!(self.shelf.mode, Mode::InsertEffect(..)) && !self.busy() {
+            self.shelf.effect = effect.map(model_effect);
+        }
     }
 
     /// `ShelfSelect`: the keys sound with `instrument` from now on.
     pub fn shelf_select(&mut self, instrument: Option<InstrumentKind>, effects: &mut Vec<Effect>) {
-        if self.busy() {
+        if self.busy() || matches!(self.shelf.mode, Mode::InsertEffect(..)) {
             return;
         }
         let Some(builtin) = instrument
@@ -99,6 +127,7 @@ impl Play {
                     instrument: instrument.clone(),
                 }));
             }
+            Mode::InsertEffect(..) => return,
         }
         if let Some(before) = self.shelf.trial.replace(instrument) {
             self.shelf.before = Some(before);
@@ -109,6 +138,14 @@ impl Play {
     /// `ShelfConfirm`. Returns the notice to show.
     pub fn shelf_confirm(&mut self, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
         if self.busy() {
+            return None;
+        }
+        if let Mode::InsertEffect(strip, slot) = self.shelf.mode {
+            let kind = self.shelf.effect?;
+            if self.add_effect(strip, slot, kind, effects) {
+                self.shelf.mode = Mode::NewTrack;
+                self.shelf.effect = None;
+            }
             return None;
         }
         let instrument = self.shelf.trial.clone()?;
@@ -150,6 +187,7 @@ impl Play {
                     instrument: kind,
                 })
             }
+            Mode::InsertEffect(..) => None,
         }
     }
 
@@ -169,7 +207,7 @@ impl Play {
             (Mode::Replace(_), Some(seat)) => {
                 effects.push(Effect::Engine(EngineOp::EndTrial { seat, keep: false }));
             }
-            (Mode::Replace(_), None) => {}
+            (Mode::Replace(_), None) | (Mode::InsertEffect(..), _) => {}
         }
         true
     }
@@ -180,12 +218,19 @@ impl Play {
         self.stop_sample(effects);
         self.shelf.before = None;
         self.shelf.mode = Mode::NewTrack;
+        self.shelf.effect = None;
     }
 
     /// The `Doc` changed under the shelf: a trial on a track that is gone, or whose own
     /// instrument is another one now (undo), ends; "入れかえる" of a track that is gone
     /// becomes "新しいトラック".
     pub(super) fn end_stale_audition(&mut self, effects: &mut Vec<Effect>) {
+        if let Mode::InsertEffect(strip, slot) = self.shelf.mode
+            && !self.slot_is_empty(strip, slot)
+        {
+            self.shelf.mode = Mode::NewTrack;
+            self.shelf.effect = None;
+        }
         let Mode::Replace(track) = self.shelf.mode else {
             return;
         };
@@ -205,13 +250,18 @@ impl Play {
     /// `favorites`: the starred instruments, a setting of meloet.
     pub fn shelf_view(&self, favorites: Vec<InstrumentKind>) -> ShelfView {
         let current = match self.shelf.mode {
-            Mode::NewTrack => None,
+            Mode::NewTrack | Mode::InsertEffect(..) => None,
             Mode::Replace(track) => self.doc().track(track).map(|t| kind_of(&t.instrument)),
         };
         ShelfView {
+            selected_effect: self.shelf.effect.map(effect_kind),
             mode: match self.shelf.mode {
                 Mode::NewTrack => ShelfMode::NewTrack,
                 Mode::Replace(track) => ShelfMode::Replace { track: track.0 },
+                Mode::InsertEffect(strip, slot) => ShelfMode::InsertEffect {
+                    strip: strip_ref(strip),
+                    slot: slot as u8,
+                },
             },
             available: (self.sounds.available().into_iter())
                 .map(instruments::kind_of)
@@ -236,6 +286,7 @@ impl Play {
                 track: self.track_ref(track)?,
                 current: kind_of(&self.doc().track(track)?.instrument),
             },
+            Mode::InsertEffect(..) => return None,
         })
     }
 }

@@ -9,6 +9,8 @@
 use crate::TrackId;
 use crate::arrange::ClipEdge;
 use crate::edit::Edit;
+use crate::effects::EffectKind;
+use crate::mixer::{Bus, StripId};
 use crate::song::{ClipId, Doc};
 use crate::time::{Meter, Tempo};
 
@@ -145,6 +147,40 @@ pub enum StepKind {
     TrimClip {
         clip: ClipId,
         edge: ClipEdge,
+    },
+    /// A drag of a fader, or a value typed.
+    SetGain {
+        strip: StripId,
+    },
+    SetPan {
+        strip: StripId,
+    },
+    SetSend {
+        track: TrackId,
+        bus: Bus,
+    },
+    /// A parameter of an effect; `param`: its place in the effect's table.
+    SetParam {
+        strip: StripId,
+        slot: usize,
+        kind: EffectKind,
+        param: u32,
+    },
+    /// The shelf's effects, from "空き ＋".
+    AddEffect {
+        strip: StripId,
+        slot: usize,
+        kind: EffectKind,
+    },
+    RemoveEffect {
+        strip: StripId,
+        slot: usize,
+        kind: EffectKind,
+    },
+    /// The M of a return; `muted`: the return is muted after the step.
+    MuteReturn {
+        bus: Bus,
+        muted: bool,
     },
     /// From the song as last saved to the song brought back from the recovery file, at the
     /// start. The history band calls it "なおすためのファイルから戻す" (mock F-Recover2).

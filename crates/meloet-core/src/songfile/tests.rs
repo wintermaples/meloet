@@ -2,6 +2,8 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use meloet_model::effects;
+
 use super::*;
 use crate::settings::temp_dir;
 
@@ -65,7 +67,27 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     doc.meter = Meter::new(6, 8).unwrap();
     doc.next_id = 8;
     let mut track = (*doc.tracks[0]).clone();
-    track.gain_db = -3.5;
+    track.channel.gain = Gain::from_db(-3.5);
+    track.channel.pan = Pan::new(-20);
+    track.sends = [Gain::from_db(-15.0), Gain::from_db(-18.0)];
+    let mut compressor = Insert::new(EffectKind::Compressor);
+    compressor.set(effects::compressor::THRESHOLD, -24.5);
+    let mut delay = Insert::new(EffectKind::Delay);
+    delay.set(effects::delay::INTERVAL_STEP, 1.0);
+    delay.set(effects::delay::SYNC, 0.0);
+    delay.set(effects::delay::PING_PONG, 1.0);
+    delay.set(effects::delay::FEEDBACK, 62.5);
+    track.channel.inserts = [None, Some(compressor), None, Some(delay)];
+    let a = Arc::make_mut(&mut doc.returns[0]);
+    a.muted = true;
+    a.channel.gain = Gain::from_db(-6.0);
+    a.channel.pan = Pan::new(30);
+    let b = Arc::make_mut(&mut doc.returns[1]);
+    b.channel.inserts = [None, None, Some(Insert::new(EffectKind::Chorus)), None];
+    let master = Arc::make_mut(&mut doc.master);
+    master.gain = Gain::SILENT;
+    (master.inserts[0].as_mut().unwrap()).set(effects::limiter::CEILING, -1.0);
+    master.inserts[1] = Some(Insert::new(EffectKind::Eq4));
     track.clips = vec![
         clip(1, 0, 1920 * 4, vec![(t2.clone(), 0)], 0),
         clip(
@@ -128,6 +150,46 @@ fn the_shape_on_disk() {
     assert_eq!(track["plugins"], serde_json::json!([]));
     assert_eq!(track["automation"], serde_json::json!([]));
     assert_eq!(v["song"]["audio"], serde_json::json!([]));
+    assert_eq!(track["gainDb"], -3.5);
+    assert_eq!(track["pan"], -20);
+    assert_eq!(track["sends"], serde_json::json!({"a": -15.0, "b": -18.0}));
+    assert_eq!(
+        track["inserts"],
+        serde_json::json!([
+            null,
+            {"effect": "compressor",
+             "params": {"threshold": -24.5, "ratio": 4.0, "attack": 10.0, "release": 100.0,
+                        "makeup": 0.0}},
+            null,
+            {"effect": "delay",
+             "params": {"intervalStep": "eighthDotted", "intervalMs": 250.0, "sync": false,
+                        "feedback": 62.5, "highCut": 5000.0, "lowCut": 200.0, "pingPong": true,
+                        "mix": 100.0}}
+        ])
+    );
+    let mixer = &v["song"]["mixer"];
+    let a = &mixer["returns"]["a"];
+    assert_eq!(a["gainDb"], -6.0);
+    assert_eq!(a["pan"], 30);
+    assert_eq!(a["muted"], true);
+    assert_eq!(a["inserts"][0]["effect"], "reverb");
+    assert_eq!(
+        a["inserts"][0]["params"]["decay"], 2.4,
+        "an f32 is written as it is shown"
+    );
+    let b = &mixer["returns"]["b"];
+    assert!(b.get("muted").is_none(), "not muted: not written");
+    assert_eq!(b["inserts"][0], serde_json::Value::Null);
+    assert_eq!(b["inserts"][2]["effect"], "chorus");
+    assert_eq!(
+        mixer["master"]["gainDb"],
+        serde_json::Value::Null,
+        "−∞ is null"
+    );
+    assert_eq!(mixer["master"]["inserts"][0]["params"]["ceiling"], -1.0);
+    assert_eq!(mixer["master"]["inserts"].as_array().unwrap().len(), 4);
+    let text = String::from_utf8(encode(&rich_song("x", 1))).unwrap();
+    assert!(text.contains(r#""decay":2.4,"#) && text.contains(r#""rate":0.8,"#));
     assert_eq!(
         track["clips"][1]["takes"][1],
         serde_json::json!({"take": 6, "offset": 480})
@@ -552,6 +614,11 @@ fn a_file_of_version_1_reads() {
         "the placeholder sound is the sine"
     );
     assert_eq!(song.session.play_target, Some(TrackId(1)));
+    // Nothing is sent, so it sounds as it did; the returns and the master are a new song's.
+    assert_eq!(song.doc.tracks[0].sends, [Gain::SILENT; 2]);
+    assert_eq!(song.doc.tracks[0].channel, Channel::default());
+    assert_eq!(song.doc.returns, mixer::new_song_returns());
+    assert_eq!(song.doc.master, mixer::new_song_master());
     // Version 2 as written before mute came: the same.
     let v2 = v1.replace(r#""version": 1"#, r#""version": 2"#);
     assert_eq!(decode(v2.as_bytes()).unwrap(), song);
@@ -674,4 +741,145 @@ fn offsets_below_0_read_and_offsets_out_of_range_do_not() {
             Err(ReadError::Broken)
         ));
     }
+}
+
+/// What `rich_song` is on disk, to be changed by hand.
+fn rich_json() -> serde_json::Value {
+    serde_json::from_slice(&encode(&rich_song("x", 3))).unwrap()
+}
+
+fn read_json(v: &serde_json::Value) -> Song {
+    decode(&serde_json::to_vec(v).unwrap()).unwrap()
+}
+
+#[test]
+fn a_file_of_version_3_from_before_the_mixer_reads() {
+    let mut v = rich_json();
+    v["song"].as_object_mut().unwrap().remove("mixer");
+    let track = v["song"]["tracks"][0].as_object_mut().unwrap();
+    for field in ["pan", "sends", "inserts"] {
+        track.remove(field);
+    }
+    let song = read_json(&v);
+    let t = &song.doc.tracks[0];
+    assert_eq!(t.channel.gain, Gain::from_db(-3.5), "the fader was there");
+    assert_eq!(t.channel.pan, Pan::CENTER);
+    assert_eq!(t.channel.inserts, Inserts::default());
+    assert_eq!(t.sends, [Gain::SILENT; 2]);
+    assert_eq!(song.doc.returns, mixer::new_song_returns());
+    assert_eq!(song.doc.master, mixer::new_song_master());
+    assert_eq!(t.clips, rich_song("x", 3).doc.tracks[0].clips);
+    // A track with no fader at all is still not a song.
+    v["song"]["tracks"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("gainDb");
+    assert!(matches!(
+        decode(&serde_json::to_vec(&v).unwrap()),
+        Err(ReadError::Broken)
+    ));
+}
+
+#[test]
+fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
+    let mut v = rich_json();
+    let inserts = &mut v["song"]["tracks"][0]["inserts"];
+    // An effect of a later meloet, and things that are no effect at all: empty slots.
+    inserts[0] = serde_json::json!({"effect": "phaser", "params": {"rate": 1.0}});
+    inserts[2] = serde_json::json!(["what"]);
+    // A parameter of a later meloet is skipped; one of another shape, or a step with a name
+    // not known, has its default; a missing one too.
+    inserts[1]["params"]["knee"] = 6.0.into();
+    inserts[1]["params"]["ratio"] = "steep".into();
+    inserts[1]["params"]
+        .as_object_mut()
+        .unwrap()
+        .remove("attack");
+    inserts[3]["params"]["intervalStep"] = "whole".into();
+    inserts[3]["params"]["sync"] = 1.into();
+    // More slots than this meloet has.
+    inserts
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"effect": "eq4"}));
+    let song = read_json(&v);
+    let want = rich_song("x", 3);
+    let got = &song.doc.tracks[0].channel.inserts;
+    assert!(got[0].is_none() && got[2].is_none());
+    let compressor = got[1].as_ref().unwrap();
+    assert_eq!(compressor.kind(), EffectKind::Compressor);
+    assert_eq!(
+        compressor.value(effects::compressor::THRESHOLD),
+        Some(-24.5)
+    );
+    assert_eq!(compressor.value(effects::compressor::RATIO), Some(4.0));
+    assert_eq!(compressor.value(effects::compressor::ATTACK), Some(10.0));
+    let delay = got[3].as_ref().unwrap();
+    assert_eq!(delay.value(effects::delay::INTERVAL_STEP), Some(2.0), "1/8");
+    assert_eq!(
+        delay.value(effects::delay::SYNC),
+        Some(1.0),
+        "the default: on"
+    );
+    assert_eq!(delay.value(effects::delay::PING_PONG), Some(1.0));
+    assert_eq!(delay.value(effects::delay::FEEDBACK), Some(62.5));
+    assert_eq!(song.doc.tracks[0].clips, want.doc.tracks[0].clips);
+    assert_eq!(song.doc.returns, want.doc.returns);
+    assert_eq!(song.doc.master, want.doc.master);
+
+    // An effect with no parameters written has its defaults.
+    let mut v = rich_json();
+    v["song"]["mixer"]["returns"]["b"]["inserts"] = serde_json::json!([{"effect": "reverb"}]);
+    let b = &read_json(&v).doc.returns[1].channel.inserts;
+    assert_eq!(b[0], Some(Insert::new(EffectKind::Reverb)));
+    assert!(
+        b[1..].iter().all(Option::is_none),
+        "fewer slots: the rest is empty"
+    );
+
+    // A mixer that is not understood: the one of a new song, and the tracks stay.
+    let mut v = rich_json();
+    v["song"]["mixer"] = serde_json::json!({"returns": 3});
+    let song = read_json(&v);
+    assert_eq!(song.doc.returns, mixer::new_song_returns());
+    assert_eq!(song.doc.master, mixer::new_song_master());
+    assert_eq!(song.doc.tracks, want.doc.tracks);
+}
+
+#[test]
+fn mixer_values_out_of_range_are_brought_into_range() {
+    let mut v = rich_json();
+    let track = &mut v["song"]["tracks"][0];
+    track["gainDb"] = 40.0.into();
+    track["pan"] = 500.into();
+    track["sends"] = serde_json::json!({"a": -200.0, "b": 6.004});
+    track["inserts"][1]["params"]["threshold"] = 12.0.into();
+    track["inserts"][1]["params"]["ratio"] = 1e30.into();
+    track["inserts"][3]["params"]["feedback"] = (-3.0).into();
+    let mixer = &mut v["song"]["mixer"];
+    mixer["returns"]["a"]["pan"] = (-101).into();
+    mixer["returns"]["a"]["gainDb"] = (-60.5).into();
+    mixer["master"]["gainDb"] = 6.5.into();
+    let song = read_json(&v);
+    let t = &song.doc.tracks[0];
+    assert_eq!(t.channel.gain.db(), Some(6.0));
+    assert_eq!(t.channel.pan.get(), 100);
+    assert_eq!(t.sends, [Gain::SILENT, Gain::from_db(6.0)]);
+    let compressor = t.channel.inserts[1].as_ref().unwrap();
+    assert_eq!(compressor.value(effects::compressor::THRESHOLD), Some(0.0));
+    assert_eq!(compressor.value(effects::compressor::RATIO), Some(20.0));
+    let delay = t.channel.inserts[3].as_ref().unwrap();
+    assert_eq!(delay.value(effects::delay::FEEDBACK), Some(0.0));
+    assert_eq!(song.doc.returns[0].channel.pan.get(), -100);
+    assert_eq!(song.doc.returns[0].channel.gain, Gain::SILENT);
+    assert_eq!(song.doc.master.gain.db(), Some(6.0));
+    // A pan or sends of another shape: the middle, nothing sent.
+    let mut v = rich_json();
+    v["song"]["tracks"][0]["pan"] = "left".into();
+    v["song"]["tracks"][0]["sends"] = "all".into();
+    let song = read_json(&v);
+    assert_eq!(song.doc.tracks[0].channel.pan, Pan::CENTER);
+    assert_eq!(song.doc.tracks[0].sends, [Gain::SILENT; 2]);
+    // Written again, everything is in range and reads the same.
+    assert_eq!(decode(&encode(&song)).unwrap(), song);
 }

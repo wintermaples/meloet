@@ -33,15 +33,18 @@ impl Play {
         self.song.session.soloed.contains(&track)
     }
 
+    /// The seats of the tracks that do not play, in order of seat.
     fn silent_tracks(&self) -> Vec<usize> {
         let doc = self.doc();
         let soloed = &self.song.session.soloed;
-        doc.tracks
+        let mut seats: Vec<usize> = doc
+            .tracks
             .iter()
-            .enumerate()
-            .filter(|(_, t)| !doc.plays(t, soloed))
-            .map(|(i, _)| i)
-            .collect()
+            .filter(|t| !doc.plays(t, soloed))
+            .filter_map(|t| self.seats.of(t.id))
+            .collect();
+        seats.sort_unstable();
+        seats
     }
 
     pub(super) fn send_silent(&mut self, effects: &mut Vec<Effect>) {

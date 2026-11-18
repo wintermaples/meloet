@@ -200,6 +200,16 @@ impl Bands {
     }
 
     /// A: fold every bottom band. Side panels stay.
+    /// Opens the panel, or brings it to the front.
+    pub fn show_side(&mut self, panel: SidePanel) {
+        self.side_open.retain(|&x| x != panel);
+        self.side_open.push(panel);
+    }
+
+    pub fn side_is_open(&self, panel: SidePanel) -> bool {
+        self.side_open.contains(&panel)
+    }
+
     pub fn go_arrange(&mut self) {
         self.bottom_open.clear();
     }

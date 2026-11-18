@@ -243,6 +243,9 @@ fn the_stream_opening_gets_everything() {
             events: vec![]
         }
     );
+    assert_eq!(o[6], EngineOp::SilentTracks { tracks: vec![] });
+    assert_eq!(o[7], EngineOp::PlayTarget { seat: Some(0) });
+    assert_eq!(o.len(), 8, "the instruments stay as they are in the engine");
 }
 
 #[test]

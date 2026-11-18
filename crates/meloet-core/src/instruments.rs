@@ -1,7 +1,27 @@
 //! The instruments of the model as the screen names them.
 
-use meloet_model::BuiltinInstrument;
+use meloet_engine::{Instrument, PlaceholderSynth};
+use meloet_model::{BuiltinInstrument, InstrumentRef};
 use meloet_protocol::InstrumentKind;
+
+/// The instruments whose sound is in meloet, in the order of the shelf: the rows the shelf
+/// shows.
+pub(crate) fn available() -> Vec<BuiltinInstrument> {
+    #[cfg(test)]
+    if tests::EVERY_SOUND.get() {
+        return BuiltinInstrument::all().collect();
+    }
+    vec![BuiltinInstrument::Sine]
+}
+
+/// The one place where instruments are made. Call it outside the audio thread; the engine's
+/// handle prepares what it gets. An instrument whose sound is not in meloet yet sounds as the
+/// sine wave, so that a track with it is never silent.
+pub(crate) fn make(instrument: &InstrumentRef) -> Box<dyn Instrument> {
+    match instrument {
+        InstrumentRef::Builtin(_) => Box::new(PlaceholderSynth::new()),
+    }
+}
 
 pub(crate) fn kind_of(instrument: BuiltinInstrument) -> InstrumentKind {
     use BuiltinInstrument as B;
@@ -40,11 +60,16 @@ pub(crate) fn builtin_of(kind: InstrumentKind) -> BuiltinInstrument {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use meloet_model::InstrumentGroup as ModelGroup;
     use meloet_protocol::InstrumentGroup;
 
     use super::*;
+
+    thread_local! {
+        /// For the tests of this thread, every instrument counts as being in meloet.
+        pub(crate) static EVERY_SOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
 
     /// The model's table and the protocol's say the same: order, names and groups.
     #[test]

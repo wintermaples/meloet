@@ -1,4 +1,5 @@
 use meloet_devices::{Availability as Av, ClockSettings, Friendly as Fr, LinkKind as Link};
+use meloet_protocol::ShelfMode;
 
 use super::*;
 

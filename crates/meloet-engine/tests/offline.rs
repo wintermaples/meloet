@@ -661,3 +661,218 @@ fn a_rebuilt_engine_shares_the_meters_and_plays_from_the_new_ring() {
     );
     assert_eq!(meters.callbacks(), callbacks + 2 + 19);
 }
+
+/// A probe at `level` and the flag that tells when it is dropped.
+fn level_probe(level: f32) -> (Box<Probe>, Arc<AtomicBool>) {
+    let dropped = Arc::new(AtomicBool::new(false));
+    let probe = Box::new(Probe {
+        level,
+        largest: Arc::default(),
+        dropped: dropped.clone(),
+        max_frames: 0,
+    });
+    (probe, dropped)
+}
+
+/// One block; the left level of its last frame.
+fn level_after_a_block(rig: &mut Rig) -> f32 {
+    let mut out = [0.0f32; 512];
+    rig.parts.engine.process(&mut out, BlockTiming::default());
+    out[510]
+}
+
+#[test]
+fn a_trial_sets_the_tracks_own_instrument_aside_and_brings_the_very_same_one_back() {
+    let mut rig = Rig::new();
+    let (own, own_dropped) = level_probe(0.25);
+    assert!(rig.parts.handle.swap_instrument(0, own).is_ok());
+    assert_eq!(level_after_a_block(&mut rig), 0.25);
+    assert_eq!(rig.parts.handle.drop_retired(), 1, "the placeholder synth");
+
+    let (first, first_dropped) = level_probe(0.5);
+    assert!(rig.parts.handle.try_instrument(0, first).is_ok());
+    assert_eq!(level_after_a_block(&mut rig), 0.5, "the tried one sounds");
+    assert_eq!(rig.parts.handle.drop_retired(), 0, "the own one is kept");
+
+    let (second, second_dropped) = level_probe(0.75);
+    assert!(rig.parts.handle.try_instrument(0, second).is_ok());
+    assert_eq!(level_after_a_block(&mut rig), 0.75);
+    assert!(
+        !first_dropped.load(Relaxed),
+        "not dropped on the audio side"
+    );
+    assert_eq!(rig.parts.handle.drop_retired(), 1, "the one tried before");
+    assert!(first_dropped.load(Relaxed) && !own_dropped.load(Relaxed));
+
+    rig.send(EngineCommand::EndTrial {
+        track: 0,
+        keep: false,
+    });
+    assert_eq!(level_after_a_block(&mut rig), 0.25, "its own one is back");
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    assert!(second_dropped.load(Relaxed) && !own_dropped.load(Relaxed));
+
+    // Kept: the tried one is the track's own now, and the old own one comes back.
+    let (third, third_dropped) = level_probe(0.5);
+    assert!(rig.parts.handle.try_instrument(0, third).is_ok());
+    rig.send(EngineCommand::EndTrial {
+        track: 0,
+        keep: true,
+    });
+    assert_eq!(level_after_a_block(&mut rig), 0.5);
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    assert!(own_dropped.load(Relaxed) && !third_dropped.load(Relaxed));
+    // No trial: nothing happens.
+    for keep in [false, true] {
+        rig.send(EngineCommand::EndTrial { track: 0, keep });
+        rig.send(EngineCommand::EndTrial { track: 9_999, keep });
+    }
+    assert_eq!(level_after_a_block(&mut rig), 0.5);
+    assert_eq!(rig.parts.handle.drop_retired(), 0);
+
+    // A trial that is on when the track is emptied: both come back, neither is dropped here.
+    let (fourth, fourth_dropped) = level_probe(0.125);
+    assert!(rig.parts.handle.try_instrument(0, fourth).is_ok());
+    rig.send(EngineCommand::ClearTrack { track: 0 });
+    assert_eq!(level_after_a_block(&mut rig), 0.0);
+    assert!(!third_dropped.load(Relaxed) && !fourth_dropped.load(Relaxed));
+    assert_eq!(rig.parts.handle.drop_retired(), 2);
+    assert!(third_dropped.load(Relaxed) && fourth_dropped.load(Relaxed));
+}
+
+#[test]
+fn the_audition_track_sounds_and_its_instrument_moves_to_a_track_as_it_sounds() {
+    let mut rig = Rig::new();
+    let audition = rig.parts.handle.audition_track();
+    let meters = rig.parts.handle.meters().clone();
+    assert_eq!(audition, meters.track_count());
+    assert!(
+        rig.parts
+            .handle
+            .swap_instrument(audition, Box::new(PlaceholderSynth::new()))
+            .is_ok()
+    );
+    rig.send(EngineCommand::SetPlayTarget { track: audition });
+    rig.midi(note_on(69, 100));
+    assert!(peak(&rig.run(4800)) > 0.05, "it goes to the master");
+    assert!(meters.take_track_peak(audition)[0] > 0.05);
+    assert_eq!(meters.take_track_peak(0), [0.0, 0.0]);
+
+    // The key is still down when the instrument becomes track 7's: it sounds on, and the
+    // release reaches it there.
+    rig.send(EngineCommand::MoveInstrument {
+        from: audition,
+        to: 7,
+    });
+    assert!(peak(&rig.run(4800)) > 0.02, "the held note goes on");
+    assert_eq!(meters.take_track_peak(audition), [0.0, 0.0]);
+    assert!(meters.take_track_peak(7)[0] > 0.02);
+    assert_eq!(rig.parts.handle.drop_retired(), 0, "nothing was replaced");
+    rig.midi(InstrumentEvent::NoteOff { note: 69 });
+    rig.run(48_000);
+    meters.take_track_peak(7);
+    assert_eq!(peak(&rig.run(4800)), 0.0, "the keys followed it to track 7");
+    rig.midi(note_on(60, 100));
+    rig.run(4800);
+    assert!(meters.take_track_peak(7)[0] > 0.05);
+
+    // No target: a key sounds nowhere. A track that is emptied gives its instrument back.
+    rig.send(EngineCommand::ClearPlayTarget);
+    rig.run(48_000);
+    rig.midi(note_on(72, 100));
+    assert_eq!(peak(&rig.run(4800)), 0.0);
+    rig.send(EngineCommand::ClearTrack { track: 7 });
+    rig.send(EngineCommand::SetPlayTarget { track: 7 });
+    rig.midi(note_on(72, 100));
+    assert_eq!(peak(&rig.run(4800)), 0.0, "an empty track");
+    assert_eq!(rig.parts.handle.drop_retired(), 1);
+    assert_eq!(
+        common::audio_block_counts(),
+        (0, 0),
+        "(allocations, frees) inside audio blocks"
+    );
+}
+
+#[test]
+fn settling_takes_the_commands_in_without_a_block() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    let callbacks = meters.callbacks();
+    assert!(
+        rig.parts
+            .handle
+            .swap_instrument(3, Box::new(PlaceholderSynth::new()))
+            .is_ok()
+    );
+    rig.send(EngineCommand::SetPlayTarget { track: 3 });
+    rig.parts.engine.settle();
+    assert_eq!(meters.callbacks(), callbacks, "no block was rendered");
+    // Both are in place for the first block of a stream.
+    rig.parts.engine.prepare(44_100);
+    rig.midi(note_on(69, 100));
+    rig.run(4410);
+    assert!(meters.take_track_peak(3)[0] > 0.05);
+    assert_eq!(meters.take_track_peak(0), [0.0, 0.0]);
+}
+
+#[test]
+fn tracks_tried_moved_and_emptied_under_load_do_not_allocate_in_audio_blocks() {
+    let mut rig = Rig::new();
+    let audition = rig.parts.handle.audition_track();
+    let synth = || Box::new(PlaceholderSynth::new());
+    for track in [1, 2, 3, audition] {
+        assert!(rig.parts.handle.swap_instrument(track, synth()).is_ok());
+    }
+    let mut out = vec![0.0f32; 2048 * 2];
+    let mut heard = 0.0f32;
+    for block in 0..1200usize {
+        rig.midi(note_on(
+            36 + (block * 5 % 60) as u8,
+            60 + (block % 60) as u8,
+        ));
+        if block % 2 == 0 {
+            rig.midi(InstrumentEvent::NoteOff {
+                note: 36 + ((block / 2) * 5 % 60) as u8,
+            });
+        }
+        let track = 1 + block % 3;
+        match block % 41 {
+            3 => rig.send(EngineCommand::SetPlayTarget { track }),
+            7 => rig.send(EngineCommand::SetPlayTarget { track: audition }),
+            11 => assert!(rig.parts.handle.try_instrument(track, synth()).is_ok()),
+            13 => assert!(rig.parts.handle.try_instrument(track, synth()).is_ok()),
+            17 => rig.send(EngineCommand::EndTrial {
+                track,
+                keep: block % 2 == 0,
+            }),
+            19 => rig.send(EngineCommand::MoveInstrument {
+                from: audition,
+                to: 10 + block % 5,
+            }),
+            23 => assert!(rig.parts.handle.swap_instrument(audition, synth()).is_ok()),
+            29 => rig.send(EngineCommand::ClearTrack {
+                track: 10 + block % 5,
+            }),
+            31 => rig.send(EngineCommand::ClearPlayTarget),
+            37 => {
+                rig.send(EngineCommand::ClearTrack { track });
+                assert!(rig.parts.handle.swap_instrument(track, synth()).is_ok());
+            }
+            _ => {}
+        }
+        let frames = [64, 256, 1024, 2048, 333][block % 5];
+        rig.parts
+            .engine
+            .process(&mut out[..frames * 2], BlockTiming::default());
+        heard = heard.max(peak(&out[..frames * 2]));
+        // Outside the block, as the core thread does.
+        rig.parts.handle.drop_retired();
+        while rig.parts.handle.pop_latency().is_some() {}
+    }
+    assert!(heard > 0.05, "the run made sound");
+    assert_eq!(
+        common::audio_block_counts(),
+        (0, 0),
+        "(allocations, frees) inside audio blocks"
+    );
+}

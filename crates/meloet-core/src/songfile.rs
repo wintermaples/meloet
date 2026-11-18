@@ -26,7 +26,7 @@ pub const FORMAT: &str = "meloet-song";
 pub const VERSION: u32 = 3;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
-const MAX_TRACKS: usize = 64;
+const MAX_TRACKS: usize = crate::play::MAX_TRACKS;
 
 #[derive(Debug)]
 pub enum ReadError {

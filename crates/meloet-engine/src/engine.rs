@@ -47,6 +47,35 @@ pub enum EngineCommand {
     SetPlayTarget {
         track: usize,
     },
+    /// Keyboard input plays no track (a song with no tracks). The track that was the target
+    /// gets `AllNotesOff`.
+    ClearPlayTarget,
+    /// Use [`EngineHandle::try_instrument`]. Puts the instrument on the track for a trial: the
+    /// track's own instrument is silenced and set aside, and `EndTrial` brings it back. A trial
+    /// instrument that is there already comes back on the retired ring.
+    TryInstrument {
+        track: usize,
+        instrument: Box<dyn Instrument>,
+    },
+    /// Ends the trial on a track. `keep`: the trial instrument is now the track's own, and the
+    /// one set aside comes back on the retired ring. Otherwise the one set aside plays again
+    /// and the trial instrument comes back. Does nothing on a track with no trial.
+    EndTrial {
+        track: usize,
+        keep: bool,
+    },
+    /// Moves the instrument of `from` to `to` as it sounds, held keys and all; `from` is left
+    /// empty, and what `to` had comes back on the retired ring. If `from` was the play target,
+    /// `to` is now. Sequences, gains and an instrument set aside stay where they are.
+    MoveInstrument {
+        from: usize,
+        to: usize,
+    },
+    /// Empties a track: its instrument, an instrument set aside and its sequence come back on
+    /// the retired rings, and its gain is unity again.
+    ClearTrack {
+        track: usize,
+    },
     TestTone,
     AllNotesOff,
     /// Sounds keys on a track, as the keyboard would, and lets go of the keys the last
@@ -194,6 +223,9 @@ pub struct EngineConfig {
     pub sample_rate: u32,
     /// Largest block handed to an instrument. Bigger device blocks are rendered in pieces.
     pub max_frames: usize,
+    /// Tracks 0 to `max_tracks - 1`. One more comes after them, the audition track (number
+    /// `max_tracks`): a place for an instrument that is tried out before it is on a track of
+    /// the song. It takes every command a track takes and goes to the master like the others.
     pub max_tracks: usize,
 }
 
@@ -239,7 +271,7 @@ fn take(cell: &AtomicU32) -> f32 {
 impl EngineMeters {
     fn new(config: &EngineConfig) -> Self {
         EngineMeters {
-            tracks: (0..config.max_tracks)
+            tracks: (0..=config.max_tracks)
                 .map(|_| [AtomicU32::new(0), AtomicU32::new(0)])
                 .collect(),
             master: [AtomicU32::new(0), AtomicU32::new(0)],
@@ -256,8 +288,9 @@ impl EngineMeters {
         }
     }
 
+    /// Without the audition track, whose number this is.
     pub fn track_count(&self) -> usize {
-        self.tracks.len()
+        self.tracks.len() - 1
     }
 
     /// Left and right peak of a track since the last call (after its gain). 1.0 = 0 dBFS.
@@ -336,6 +369,8 @@ impl EngineMeters {
 
 struct Track {
     instrument: Option<Box<dyn Instrument>>,
+    /// The track's own instrument while another is tried out in its place.
+    aside: Option<Box<dyn Instrument>>,
     gain: f32,
     /// Gain at the end of the last block; the next block ramps from here to `gain`.
     gain_now: f32,
@@ -536,7 +571,7 @@ pub struct EngineParts {
 /// The part the audio thread owns.
 pub struct Engine {
     tracks: Box<[Track]>,
-    play_target: usize,
+    play_target: Option<usize>,
     commands: Consumer<EngineCommand>,
     retired: Producer<Box<dyn Instrument>>,
     retired_sequences: Producer<Box<Sequence>>,
@@ -574,7 +609,8 @@ impl Engine {
 
     fn assemble(config: EngineConfig, meters: Arc<EngineMeters>) -> EngineParts {
         let (command_tx, command_rx) = RingBuffer::new(COMMAND_RING);
-        // Every command retires at most one instrument, and commands wait while this is full.
+        // Every command retires at most two instruments, and commands wait while fewer than
+        // two fit.
         let (retired_tx, retired_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (sequences_tx, sequences_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
@@ -583,15 +619,16 @@ impl Engine {
         let (latency_tx, latency_rx) = RingBuffer::new(LATENCY_RING);
         let buffer = || vec![0.0f32; config.max_frames].into_boxed_slice();
         let engine = Engine {
-            tracks: (0..config.max_tracks)
+            tracks: (0..=config.max_tracks)
                 .map(|_| Track {
                     instrument: None,
+                    aside: None,
                     gain: 1.0,
                     gain_now: 1.0,
                     lane: Lane::default(),
                 })
                 .collect(),
-            play_target: 0,
+            play_target: Some(0),
             commands: command_rx,
             retired: retired_tx,
             retired_sequences: sequences_tx,
@@ -648,7 +685,7 @@ impl Engine {
         self.sample_rate = sample_rate.max(1) as f32;
         self.meters.sample_rate.store(sample_rate.max(1), Relaxed);
         for track in self.tracks.iter_mut() {
-            if let Some(instrument) = track.instrument.as_mut() {
+            for instrument in track.instrument.iter_mut().chain(track.aside.iter_mut()) {
                 instrument.prepare(self.sample_rate, self.max_frames);
             }
             track.lane.forget();
@@ -663,6 +700,14 @@ impl Engine {
         self.audition = None;
         self.click = Click::idle();
         self.last_callback = None;
+    }
+
+    /// Takes in the commands that wait, without rendering anything. Call outside the audio
+    /// thread, while no stream is running this engine: instruments and the play target then
+    /// change without a stream. It stops early while the retired rings are full; empty them
+    /// ([`EngineHandle::drop_retired`]) and call again.
+    pub fn settle(&mut self) {
+        self.read_commands(BlockTiming::default());
     }
 
     /// One device block. `out` is interleaved stereo and is overwritten.
@@ -701,7 +746,7 @@ impl Engine {
 
     fn read_commands(&mut self, timing: BlockTiming) {
         // Stop while a retired ring is full: an instrument or a sequence must never be dropped here.
-        while !self.retired.is_full() && !self.retired_sequences.is_full() {
+        while self.retired.slots() >= 2 && !self.retired_sequences.is_full() {
             let Ok(command) = self.commands.pop() else {
                 break;
             };
@@ -745,12 +790,89 @@ impl Engine {
                     }
                 }
                 EngineCommand::SetPlayTarget { track } => {
-                    if track < self.tracks.len() && track != self.play_target {
-                        if let Some(instrument) = self.tracks[self.play_target].instrument.as_mut()
-                        {
-                            instrument.event(InstrumentEvent::AllNotesOff);
+                    if track < self.tracks.len() {
+                        self.set_play_target(Some(track));
+                    }
+                }
+                EngineCommand::ClearPlayTarget => self.set_play_target(None),
+                EngineCommand::TryInstrument { track, instrument } => {
+                    let old = match self.tracks.get_mut(track) {
+                        Some(slot) => {
+                            slot.lane.forget();
+                            let old = slot.instrument.replace(instrument);
+                            if slot.aside.is_none() {
+                                slot.aside = old;
+                                if let Some(own) = slot.aside.as_mut() {
+                                    own.reset();
+                                }
+                                None
+                            } else {
+                                old
+                            }
                         }
-                        self.play_target = track;
+                        None => Some(instrument),
+                    };
+                    if let Some(old) = old {
+                        // Cannot fail: checked above, and this is the only producer.
+                        let _ = self.retired.push(old);
+                    }
+                    self.replay_lane(track);
+                }
+                EngineCommand::EndTrial { track, keep } => {
+                    let Some(slot) = self.tracks.get_mut(track) else {
+                        continue;
+                    };
+                    let Some(own) = slot.aside.take() else {
+                        continue;
+                    };
+                    let old = if keep {
+                        Some(own)
+                    } else {
+                        slot.lane.forget();
+                        slot.instrument.replace(own)
+                    };
+                    if let Some(old) = old {
+                        let _ = self.retired.push(old);
+                    }
+                    if !keep {
+                        self.replay_lane(track);
+                    }
+                }
+                EngineCommand::MoveInstrument { from, to } => {
+                    if from == to || from >= self.tracks.len() || to >= self.tracks.len() {
+                        continue;
+                    }
+                    self.audition_off();
+                    let moved = self.tracks[from].instrument.take();
+                    self.tracks[from].lane.forget();
+                    let slot = &mut self.tracks[to];
+                    slot.lane.forget();
+                    if let Some(old) = std::mem::replace(&mut slot.instrument, moved) {
+                        let _ = self.retired.push(old);
+                    }
+                    if self.play_target == Some(from) {
+                        self.play_target = Some(to);
+                    }
+                    self.replay_lane(to);
+                }
+                EngineCommand::ClearTrack { track } => {
+                    let Some(slot) = self.tracks.get_mut(track) else {
+                        continue;
+                    };
+                    slot.lane.forget();
+                    slot.gain = 1.0;
+                    slot.gain_now = 1.0;
+                    for old in [slot.instrument.take(), slot.aside.take()]
+                        .into_iter()
+                        .flatten()
+                    {
+                        let _ = self.retired.push(old);
+                    }
+                    if let Some(old) = slot.lane.sequence.take() {
+                        let _ = self.retired_sequences.push(old);
+                    }
+                    if self.audition.is_some_and(|(t, _)| t == track) {
+                        self.audition = None;
                     }
                 }
                 EngineCommand::TestTone => self.tone.start(self.sample_rate),
@@ -852,6 +974,26 @@ impl Engine {
                     }
                 }
             }
+        }
+    }
+
+    fn set_play_target(&mut self, target: Option<usize>) {
+        if target == self.play_target {
+            return;
+        }
+        if let Some(instrument) = self
+            .play_target
+            .and_then(|t| self.tracks[t].instrument.as_mut())
+        {
+            instrument.event(InstrumentEvent::AllNotesOff);
+        }
+        self.play_target = target;
+    }
+
+    /// After a track got another instrument: its sequence picks up at the position.
+    fn replay_lane(&mut self, track: usize) {
+        if self.transport.lane_plays(track) {
+            self.seek_lane(track);
         }
     }
 
@@ -998,7 +1140,10 @@ impl Engine {
                     playback_us: timing.playback_us,
                 });
             }
-            if let Some(instrument) = self.tracks[self.play_target].instrument.as_mut() {
+            if let Some(instrument) = self
+                .play_target
+                .and_then(|t| self.tracks[t].instrument.as_mut())
+            {
                 instrument.event(midi.event);
             }
             if midi.t_us <= record_until {
@@ -1255,6 +1400,22 @@ impl EngineHandle {
     ) -> Result<(), EngineCommand> {
         instrument.prepare(self.meters.sample_rate() as f32, self.max_frames);
         self.send(EngineCommand::SwapInstrument { track, instrument })
+    }
+
+    /// Prepares `instrument` here (this may allocate) and sends it to `track` for a trial
+    /// ([`EngineCommand::TryInstrument`]).
+    pub fn try_instrument(
+        &mut self,
+        track: usize,
+        mut instrument: Box<dyn Instrument>,
+    ) -> Result<(), EngineCommand> {
+        instrument.prepare(self.meters.sample_rate() as f32, self.max_frames);
+        self.send(EngineCommand::TryInstrument { track, instrument })
+    }
+
+    /// The number of the audition track, the one after the tracks.
+    pub fn audition_track(&self) -> usize {
+        self.meters.track_count()
     }
 
     /// Sends `sequence` to `track`. The old one comes back through [`EngineHandle::drop_retired`]

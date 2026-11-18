@@ -8,7 +8,7 @@ use crate::song::{
     Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
 };
 use crate::time::{Meter, Tempo, TickRange};
-use crate::{TrackColor, TrackId};
+use crate::{InstrumentRef, TrackColor, TrackId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
@@ -401,11 +401,13 @@ pub fn set_track_color(doc: &Doc, track: TrackId, color: TrackColor) -> Result<E
     })
 }
 
-/// The track goes with its clips. The last track can go too: a song may have none.
+/// The track goes with its clips. The last track can go too: a song may have none. `next_id`
+/// goes past the track's id, so that [`add_track`] never gives it to another track.
 pub fn delete_track(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {
     let ti = track_index(doc, track)?;
     let mut doc = doc.clone();
     doc.tracks.remove(ti);
+    doc.next_id = doc.next_id.max(track.0.saturating_add(1));
     Ok(Edit {
         doc,
         step: StepKind::DeleteTrack { track },
@@ -426,6 +428,86 @@ pub fn move_track(doc: &Doc, track: TrackId, to: usize) -> Result<Edit, EditErro
     Ok(Edit {
         doc,
         step: StepKind::MoveTrack { track },
+    })
+}
+
+/// A new, empty track right below `below` (at the end with `None`). Its name is the short name
+/// of the instrument's group, with the smallest number from 2 that is free when a track has
+/// that name already ("ベース 2"); its color is the one of its place. The id is one no track,
+/// clip or take of this song has had: `next_id`, or past the highest track id when that is
+/// higher (the tracks of a song from a file are not counted in its `next_id`).
+pub fn add_track(
+    doc: &Doc,
+    below: Option<TrackId>,
+    instrument: InstrumentRef,
+) -> Result<(Edit, TrackId), EditError> {
+    let at = match below {
+        Some(id) => track_index(doc, id)? + 1,
+        None => doc.tracks.len(),
+    };
+    let highest = doc.tracks.iter().map(|t| t.id.0).max();
+    let mut ids = Ids(match highest {
+        Some(h) => doc
+            .next_id
+            .max(h.checked_add(1).ok_or(EditError::OutOfIds)?),
+        None => doc.next_id,
+    });
+    let id = TrackId(ids.next()?);
+    let InstrumentRef::Builtin(builtin) = instrument;
+    let base = builtin.group().track_name();
+    let taken = |name: &str| doc.tracks.iter().any(|t| t.name == name);
+    let name = if taken(base) {
+        (2u32..)
+            .map(|n| format!("{base} {n}"))
+            .find(|name| !taken(name))
+            .expect("fewer tracks than numbers")
+    } else {
+        base.to_owned()
+    };
+    let mut doc = doc.clone();
+    doc.tracks.insert(
+        at,
+        Arc::new(Track {
+            id,
+            name,
+            color: TrackColor::for_index(at),
+            instrument,
+            gain_db: 0.0,
+            muted: false,
+            clips: Vec::new(),
+        }),
+    );
+    doc.next_id = ids.0;
+    Ok((
+        Edit {
+            doc,
+            step: StepKind::AddTrack { track: id },
+        },
+        id,
+    ))
+}
+
+/// The track sounds with another instrument. Its notes and its name stay.
+pub fn set_instrument(
+    doc: &Doc,
+    track: TrackId,
+    instrument: InstrumentRef,
+) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    if instrument == t.instrument {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                instrument,
+                ..Track::clone(t)
+            },
+        ),
+        step: StepKind::SetInstrument { track },
     })
 }
 

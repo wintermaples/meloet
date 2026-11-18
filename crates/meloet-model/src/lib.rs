@@ -3,6 +3,7 @@
 pub mod arrange;
 pub mod chunked;
 pub mod controls;
+pub mod drums;
 pub mod edit;
 pub mod history;
 #[cfg(test)]

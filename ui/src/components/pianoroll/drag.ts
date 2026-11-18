@@ -4,8 +4,8 @@
 
 import type { Command, MusicalScale } from "../../bridge";
 import type { Meter } from "../time";
+import { chordOf } from "./audition";
 import {
-  DRAW_VELOCITY,
   clampVelocity,
   drawLength,
   drawStart,
@@ -21,6 +21,7 @@ import {
   notesInBox,
   positionText,
   resizeDelta,
+  resizeStartDelta,
   signed,
   signedLength,
   tickToX,
@@ -51,7 +52,8 @@ interface Press {
 
 export type Drag =
   | { kind: "move"; press: Press; notes: number[]; grab: number; copy: boolean; ticks: number; keys: number; selectOnClick: boolean }
-  | { kind: "resize"; press: Press; notes: number[]; grab: number; ticks: number }
+  /** edge: 動かすはし。start は始まりを動かし、ticks が + なら短くなる。 */
+  | { kind: "resize"; press: Press; notes: number[]; grab: number; edge: "start" | "end"; ticks: number }
   | { kind: "draw"; press: Press; start: number; key: number; length: number; velocity: number }
   | { kind: "box"; press: Press; x: number; y: number; add: boolean; hits: number[] }
   | { kind: "erase"; press: Press; x: number; y: number; hits: Set<number> }
@@ -77,6 +79,14 @@ export interface RollInput {
   /** ベロシティの帯の高さ（棒の下はし、CSS px） */
   velocityHeight(): number;
   send(command: Command): void;
+  /** 書く道具のノートと、その試聴の強さ（ベロシティ固定がオンならその値、ほかは 100）。 */
+  drawVelocity(): number;
+  /** ノートを押した ・ 動かしたときに鳴らすか（止まっているときだけ）。 */
+  mayAudition(): boolean;
+  /** ticks の長さが何 ms か（テンポから）。 */
+  ticksToMs(ticks: number): number;
+  /** 画面が鳴らす音（audition.ts の Auditioner）。 */
+  audition: { play(keys: readonly number[], velocity: number, ms?: number | null): void; stop(): void };
 }
 
 export class RollDrag {
@@ -97,7 +107,7 @@ export class RollDrag {
   /** 何も押していないときのカーソルと、消す道具で乗せているノート。変わったら true。 */
   hover(x: number, y: number, mods: Mods): { cursor: CursorKind; changed: boolean } {
     const i = this.input;
-    const hit = hitNote(i.shown(), i.geom(), x, y, i.edgePx());
+    const hit = hitNote(i.shown(), i.geom(), x, y, i.edgePx(), true);
     const erase = i.tool() === "erase" && hit && !hit.edge ? hit.note : -1;
     const changed = erase !== this.eraseHover;
     this.eraseHover = erase;
@@ -136,14 +146,14 @@ export class RollDrag {
     const n = i.shown();
     const g = i.geom();
     const press: Press = { x, y, moved: false };
-    const hit = hitNote(n, g, x, y, i.edgePx());
+    const hit = hitNote(n, g, x, y, i.edgePx(), true);
     const selected = this.selectedSet();
     this.eraseHover = -1;
 
     if (hit && n && hit.edge) {
       if (!selected.has(hit.note)) i.send({ type: "selectNotes", take: n.take.id, notes: [hit.note], mode: "replace" });
       const notes = selected.has(hit.note) ? [...selected] : [hit.note];
-      this.drag = { kind: "resize", press, notes, grab: hit.note, ticks: 0 };
+      this.drag = { kind: "resize", press, notes, grab: hit.note, edge: hit.start ? "start" : "end", ticks: 0 };
       return;
     }
     if (i.tool() === "erase") {
@@ -165,19 +175,22 @@ export class RollDrag {
         notes = mods.shift ? [...selected, hit.note] : [hit.note];
       }
       this.drag = { kind: "move", press, notes, grab: hit.note, copy: mods.alt, ticks: 0, keys: 0, selectOnClick };
+      // 押したノートを、その高さとベロシティで、離すまで（ノートの長さで止める）。
+      if (i.mayAudition()) i.audition.play([n.take.keys[hit.note]!], n.take.velocities[hit.note]!, i.ticksToMs(n.take.lengths[hit.note]!));
       return;
     }
     if (i.tool() === "draw") {
       const key = yToKey(g, y);
       const step = i.step();
       const start = drawStart(xToTick(g, x), mods.shift ? null : step);
+      const velocity = i.drawVelocity();
       if (!writable(key, i.scale())) {
         // 書かない。Rust が状態行で言う（仕様書 6 章「音階の外に書こうとした」）。
-        i.send({ type: "addNote", take: this.takeId(), start, length: step, key, velocity: DRAW_VELOCITY });
+        i.send({ type: "addNote", take: this.takeId(), start, length: step, key, velocity });
         return;
       }
-      i.send({ type: "audition", keys: [key], velocity: DRAW_VELOCITY });
-      this.drag = { kind: "draw", press, start, key, length: step, velocity: DRAW_VELOCITY };
+      i.audition.play([key], velocity);
+      this.drag = { kind: "draw", press, start, key, length: step, velocity };
       return;
     }
     this.drag = { kind: "box", press, x, y, add: mods.shift, hits: [] };
@@ -240,6 +253,14 @@ export class RollDrag {
         const { ticks, keys } = moveDelta(n, d.notes, d.grab, (x - d.press.x) / g.ppt, dKeys, step);
         const copy = mods.alt;
         if (ticks === d.ticks && keys === d.keys && copy === d.copy) return false;
+        // 高さが変わるたびに、動かしているノートを和音で。
+        if (keys !== d.keys && i.mayAudition()) {
+          i.audition.play(
+            chordOf(d.notes.map((k) => n.take.keys[k]!), keys),
+            n.take.velocities[d.grab]!,
+            i.ticksToMs(n.take.lengths[d.grab]!),
+          );
+        }
         d.ticks = ticks;
         d.keys = keys;
         d.copy = copy;
@@ -247,7 +268,8 @@ export class RollDrag {
       }
       case "resize": {
         if (!n) return false;
-        const ticks = resizeDelta(n, d.notes, d.grab, (x - d.press.x) / g.ppt, step);
+        const dx = (x - d.press.x) / g.ppt;
+        const ticks = d.edge === "start" ? resizeStartDelta(n, d.notes, d.grab, dx, step) : resizeDelta(n, d.notes, d.grab, dx, step);
         if (ticks === d.ticks) return false;
         d.ticks = ticks;
         return true;
@@ -295,7 +317,7 @@ export class RollDrag {
     const i = this.input;
     const take = this.takeId();
     const command = finish(d, take);
-    if (d.kind === "draw") i.send({ type: "auditionOff" });
+    if (d.kind === "draw" || d.kind === "move") i.audition.stop();
     if (command) i.send(command);
     return command;
   }
@@ -305,7 +327,7 @@ export class RollDrag {
     const d = this.drag;
     if (!d) return false;
     this.drag = null;
-    if (d.kind === "draw") this.input.send({ type: "auditionOff" });
+    if (d.kind === "draw" || d.kind === "move") this.input.audition.stop();
     return true;
   }
 
@@ -323,7 +345,8 @@ export class RollDrag {
       case "resize": {
         if (!d.press.moved || !n) return null;
         const length = n.take.lengths[d.grab]!;
-        return t("pr.readResize", { from: lengthText(length, meter), to: lengthText(length + d.ticks, meter) });
+        const to = d.edge === "start" ? length - d.ticks : length + d.ticks;
+        return t("pr.readResize", { from: lengthText(length, meter), to: lengthText(to, meter) });
       }
       case "box":
         return d.press.moved ? t("pr.readBox", { count: d.hits.length }) : null;
@@ -364,7 +387,7 @@ export function finish(d: Drag, take: number | null): Command | null {
       }
       return { type: "moveNotes", take, notes: d.notes, ticks: d.ticks, keys: d.keys, copy: d.copy };
     case "resize":
-      return take !== null && d.ticks !== 0 ? { type: "resizeNotes", take, notes: d.notes, edge: "end", ticks: d.ticks } : null;
+      return take !== null && d.ticks !== 0 ? { type: "resizeNotes", take, notes: d.notes, edge: d.edge, ticks: d.ticks } : null;
     case "draw":
       return { type: "addNote", take, start: d.start, length: d.length, key: d.key, velocity: d.velocity };
     case "box":

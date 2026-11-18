@@ -2,7 +2,9 @@
      ベロシティをまとめて変える）。見出し（▾ 選んだノート 3）とたたんだ縦の見出しは、帯の部品（PianoRoll.svelte）が描く。これは、ひらいたときの中身だけを、親の箱いっぱいに描く。
      選んだノートの 位置 ・ 音 ・ 長さ ・ ベロシティ は、押すと「入力の枠」（ノートの一覧と同じ。決めると選んだぜんぶへ setNotesField）。
      クオンタイズの設定は、変えるたびに setQuantize（いまの設定ぜんぶ）。「かけなおす」は quantize、「もとの位置へ戻す」は unquantize（選んだノート、なければ全部）。
-     スケールは setMusicalScale。「長さをそろえる」「ベロシティをまとめて変える」は、中身が仕様書にもモックにもないので、たたんだ見出しだけの「使えない」。 -->
+     スケールは setMusicalScale。「長さをそろえる」は、中身が仕様書にもモックにもないので、たたんだ見出しだけの「使えない」。
+     「ベロシティをまとめて変える」（design-notes B-67）は、ひらくと「ベロシティ」の入力の枠と「そろえる」の 1 行。Enter かボタンで matchVelocity。
+     欄の数は、範囲の外なら近いはしにして決める（B-68）。 -->
 <script lang="ts">
   import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
@@ -14,11 +16,22 @@
   import { gridText, scaleName } from "../format";
   import { GRID_DIVISIONS, indexesOf } from "./geom";
   import NoteFieldInput from "./NoteFieldInput.svelte";
-  import { commitCommand, nextField, noteFieldSpec, rejectCommand, type FieldName } from "./noteFields";
+  import {
+    clampCommand,
+    commitCommand,
+    nextField,
+    noteFieldSpec,
+    readField,
+    rejectCommand,
+    stepField,
+    type FieldName,
+    type FieldRead,
+  } from "./noteFields";
   import { selectedSummary } from "./notes";
   import PercentSlider from "./PercentSlider.svelte";
   import ScaleMenu from "./ScaleMenu.svelte";
   import { shown } from "./shown.svelte";
+  import { inspectorFolds } from "./view.svelte";
 
   const app = $derived(current.state!);
   const pr = $derived(app.pianoRoll);
@@ -84,12 +97,13 @@
     if (refocus && name) queueMicrotask(() => fieldButtons[name]?.focus());
   }
 
-  function finishField(value: number, tab: -1 | 0 | 1): void {
+  function finishField(value: number, tab: -1 | 0 | 1, clamped: FieldRead["clamped"]): void {
     const e = editing;
     const spec = editSpec;
     if (!e || !spec) return;
     const command = commitCommand(spec, value, take!.id, selected);
     if (command) send(command);
+    if (clamped) send(clampCommand(clamped));
     const next = tab === 0 ? null : nextField(e.name, tab < 0);
     if (next && next.row === 0) openField(next.name);
     else closeField(true);
@@ -97,6 +111,49 @@
 
   function rejectField(): void {
     if (editing && editSpec) send(rejectCommand(editSpec, fieldText[editing.name]));
+  }
+
+  // ---- ベロシティをまとめて変える（B-67） ----
+
+  const velocitySpec = $derived(specOf("velocity"));
+  /** 選んだノートがみな同じ値ならその値、ちがえば空。 */
+  const bulkInitial = $derived(velocitySpec?.current != null ? String(velocitySpec.current) : "");
+  let bulkDraft = $state("");
+  $effect(() => {
+    bulkDraft = bulkInitial;
+  });
+  const canMatch = $derived(velocitySpec !== null);
+  const bulkBroken = $derived(canMatch && bulkDraft.trim() !== "" && readField(velocitySpec!, bulkDraft) === null);
+
+  function matchVelocity(): void {
+    const spec = velocitySpec;
+    if (!spec || !live) return;
+    const r = readField(spec, bulkDraft);
+    if (r === null) {
+      send(rejectCommand(spec, fieldText.velocity));
+      return;
+    }
+    send({ type: "matchVelocity", take: take!.id, notes: selected, value: r.value });
+    if (r.clamped) send(clampCommand(r.clamped));
+    bulkDraft = String(r.value);
+  }
+
+  function bulkKey(ev: KeyboardEvent): void {
+    if (ev.isComposing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.key === "Enter" && !ev.shiftKey) {
+      matchVelocity();
+    } else if (ev.key === "Escape" && !ev.shiftKey) {
+      bulkDraft = bulkInitial;
+      (ev.currentTarget as HTMLInputElement).blur();
+    } else if ((ev.key === "ArrowUp" || ev.key === "ArrowDown") && velocitySpec) {
+      const r = readField(velocitySpec, bulkDraft);
+      const from = r?.value ?? velocitySpec.current ?? Number(velocitySpec.initial);
+      bulkDraft = String(stepField(velocitySpec, from, (ev.key === "ArrowUp" ? 1 : -1) * (ev.shiftKey ? 10 : 1)));
+    } else {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
   }
 
   // ---- クオンタイズ ----
@@ -335,10 +392,38 @@
       <span class="arrow">▸</span>
       <span class="grow">{t("inspector.sameLength")}</span>
     </button>
-    <button class="m-plain hd folded" aria-disabled="true" tabindex="-1">
-      <span class="arrow">▸</span>
-      <span class="grow">{t("inspector.velocityAll")}</span>
+    <button
+      class="m-plain hd m-focus-in"
+      aria-expanded={inspectorFolds.velocityAll}
+      data-test="inspector-velocity-all"
+      onclick={() => (inspectorFolds.velocityAll = !inspectorFolds.velocityAll)}
+    >
+      <span class="m-hi">{inspectorFolds.velocityAll ? "▾" : "▸"}</span>
+      <span class="m-hi grow">{t("inspector.velocityAll")}</span>
     </button>
+    {#if inspectorFolds.velocityAll}
+      <div class="rw">
+        <span class="m-lbl grow" class:off={!canMatch} use:term={"ベロシティ"}>{t("pr.velocity")}</span>
+        <span class="bulk">
+          <input
+            class="bulk-field m-num"
+            class:broken={bulkBroken}
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            aria-label={t("pr.velocity")}
+            aria-invalid={bulkBroken}
+            disabled={!canMatch}
+            data-test="inspector-velocity-all-field"
+            bind:value={bulkDraft}
+            onkeydown={bulkKey}
+          />
+        </span>
+        <button class="m-btn" aria-disabled={!canMatch} data-test="inspector-match-velocity" onclick={matchVelocity}
+          >{t("inspector.matchVelocity")}</button
+        >
+      </div>
+    {/if}
   </ScrollArea>
 </div>
 
@@ -435,6 +520,46 @@
   }
   .pick:disabled {
     cursor: default;
+  }
+  .off {
+    color: var(--color-gray-7);
+  }
+  /* 「ベロシティをまとめて変える」の入力の枠（仕様書 2 章「入力の枠」: 地 gray.0、枠 gray.6、乗った gray.8、
+     使えない 枠 gray.5 ・ 文字 gray.7、こわれた rec。打っている間は、ほかの入力の枠と同じ gray.10）。高さは行いっぱい。 */
+  .bulk {
+    width: 25%;
+    height: 100%;
+    flex-shrink: 0;
+  }
+  .bulk-field {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    padding: 0 var(--space-1);
+    margin: 0;
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-0);
+    color: var(--color-gray-10);
+    font-size: inherit;
+    line-height: inherit;
+    text-align: right;
+    outline: none;
+  }
+  .bulk-field:hover {
+    border-color: var(--color-gray-8);
+  }
+  .bulk-field:focus {
+    border-color: var(--color-gray-10);
+  }
+  .bulk-field:disabled {
+    border-color: var(--color-gray-5);
+    color: var(--color-gray-7);
+  }
+  .bulk-field.broken {
+    border-color: var(--color-rec);
+    color: var(--color-rec);
   }
   /* 三連符の切りかえ（道具の列の「三連符」と同じく、グリッドの右に別の切りかえ）: オフは gray.8、オンは accent。 */
   .toggle {

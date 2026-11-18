@@ -1,6 +1,7 @@
 // ピアノロールのマウスの決まり（drag.ts）: 吸いつき、Shift、範囲で止まる、Esc で戻る、離して 1 つだけ送る、読み値の文。
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Command, IndexRange, MusicalScale } from "../src/bridge";
+import { Auditioner, type Timer } from "../src/components/pianoroll/audition";
 import { RollDrag, type Mods } from "../src/components/pianoroll/drag";
 import * as G from "../src/components/pianoroll/geom";
 import type { Tool } from "../src/components/pianoroll/view.svelte";
@@ -27,12 +28,25 @@ let tool: Tool;
 let selected: IndexRange[];
 let scale: MusicalScale;
 let drag: RollDrag;
+/** ノートを押した ・ 動かしたときに鳴らすか（止まっているとき）。 */
+let auditionOn: boolean;
+let drawVelocity: number;
+/** 時間をはかる係の偽物: 止める時間（ms）を覚えるだけ。fire で止める。 */
+let timers: { ms: number; run: () => void }[];
+const clock: Timer = {
+  set: (run, ms) => timers.push({ ms, run }),
+  clear: () => (timers.length = 0),
+};
+const STOP: Command = { type: "audition", keys: [], velocity: 0 };
 
 beforeEach(() => {
   sent = [];
   tool = "select";
   selected = [];
   scale = { root: 0, mode: "major", lock: false };
+  auditionOn = false;
+  drawVelocity = G.DRAW_VELOCITY;
+  timers = [];
   drag = new RollDrag({
     shown: () => n,
     geom: () => GEOM,
@@ -46,6 +60,10 @@ beforeEach(() => {
     velocityFullPx: () => 64,
     velocityHeight: () => 71,
     send: (c) => void sent.push(c),
+    drawVelocity: () => drawVelocity,
+    mayAudition: () => auditionOn,
+    ticksToMs: (ticks) => ticks,
+    audition: new Auditioner((c) => void sent.push(c), undefined, clock),
   });
 });
 
@@ -71,12 +89,12 @@ describe("選ぶ道具", () => {
 
   it("選んだノートを押して動かすと、選んだぜんぶが動く。動かさずに離すと、そのノートだけを選ぶ", () => {
     selected = [{ start: 0, end: 2 }];
-    drag.down(x(500), y(62), NONE);
+    drag.down(x(560), y(62), NONE);
     expect(sent).toEqual([]);
-    drag.move(x(500) + 20, y(62), NONE);
+    drag.move(x(560) + 20, y(62), NONE);
     expect(drag.up()).toMatchObject({ type: "moveNotes", notes: [0, 1], ticks: 240 });
     sent.length = 0;
-    drag.down(x(500), y(62), NONE);
+    drag.down(x(560), y(62), NONE);
     expect(drag.up()).toEqual({ type: "selectNotes", take: 7, notes: [1], mode: "replace" });
   });
 
@@ -145,13 +163,13 @@ describe("選ぶ道具", () => {
 describe("書く道具", () => {
   beforeEach(() => (tool = "draw"));
 
-  it("押した瞬間に Audition、離して AuditionOff と AddNote（グリッド 1 つぶん）", () => {
+  it("押した瞬間に Audition、離して音を止めて AddNote（グリッド 1 つぶん）", () => {
     drag.down(x(1500), y(50), NONE);
     expect(sent).toEqual([{ type: "audition", keys: [50], velocity: G.DRAW_VELOCITY }]);
     expect(drag.reading()).toBe("D3 ・ 1.4.000 ・ 長さ 0.120");
     drag.up();
     expect(sent.slice(1)).toEqual([
-      { type: "auditionOff" },
+      STOP,
       { type: "addNote", take: 7, start: 1440, length: 120, key: 50, velocity: G.DRAW_VELOCITY },
     ]);
   });
@@ -161,7 +179,7 @@ describe("書く道具", () => {
     drag.move(x(1500) + 30, y(50), NONE);
     expect(drag.reading()).toBe("D3 ・ 1.4.000 ・ 長さ 1.000");
     expect(drag.cancel()).toBe(true);
-    expect(sent.at(-1)).toEqual({ type: "auditionOff" });
+    expect(sent.at(-1)).toEqual(STOP);
     expect(sent.some((c) => c.type === "addNote")).toBe(false);
   });
 

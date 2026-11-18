@@ -1,5 +1,6 @@
 // ノートの一覧と「選んだノート」の欄の打ちこみ（仕様書 3 章「ノートの一覧」）。DOM を知らない純粋な関数。
-// 欄の文字の読み書き、使える範囲、↑ ↓ の 1 きざみ、送る意図（SetNotesField ・ RejectValue）。
+// 欄の文字の読み書き、使える範囲、↑ ↓ の 1 きざみ、送る意図（SetNotesField ・ RejectValue ・ ClampValue）。
+// 数字として読めて範囲の外なら、近いはしに丸めて決める（design-notes B-68）。読めない物だけが「こわれた」。
 
 import type { ClipView, Command, NoteField, TakeNotes, ValueField } from "../../bridge";
 import { noteLengthText, notePositionText, rangeText } from "../format";
@@ -56,6 +57,67 @@ export function parseKeyName(s: string): number | null {
   return n >= 0 && n <= 127 ? n : null;
 }
 
+// ---- 範囲の外も読む（B-68）。丸めた所（小節 ・ 拍 ・ ティック）を返す ----
+
+/** 丸めた所の言いかた（ClampValue の field ・ range）。 */
+export interface ClampedUnit {
+  field: ValueField;
+  range: string | null;
+}
+
+export interface LooseValue {
+  value: number;
+  /** 小節 ・ 拍 ・ ティックのどれかを範囲に入れたなら、いちばん大きい単位。 */
+  unit: ClampedUnit | null;
+}
+
+/** NFKC でそろえ、数学の − も - に。 */
+const tidyMinus = (s: string) => tidy(s).replaceAll("\u2212", "-");
+const clampTo = (v: number, low: number, high: number) => Math.min(high, Math.max(low, v));
+
+/** 位置「3.5.000」「0.1.000」「3.1.999」も読み、小節は 1 から、拍は 1〜拍子の上、ティックは 0〜479 にそれぞれ入れる。 */
+export function readNotePositionLoose(s: string, meter: Meter): LooseValue | null {
+  const m = tidyMinus(s).match(/^(-?\d{1,4})(?:\.(\d{1,2})(?:\.(\d{3}))?)?$/);
+  if (!m) return null;
+  const rawBar = Number(m[1]);
+  const rawBeat = m[2] === undefined ? 1 : Number(m[2]);
+  const rawTick = m[3] === undefined ? 0 : Number(m[3]);
+  const bar = Math.max(1, rawBar);
+  const beat = clampTo(rawBeat, 1, meter.num);
+  const tick = clampTo(rawTick, 0, DISPLAY_TICKS_PER_BEAT - 1);
+  let unit: ClampedUnit | null = null;
+  if (bar !== rawBar) unit = { field: "bar", range: null };
+  else if (beat !== rawBeat) unit = { field: "beat", range: rangeText("1", String(meter.num)) };
+  else if (tick !== rawTick) unit = { field: "tick", range: rangeText("0", String(DISPLAY_TICKS_PER_BEAT - 1)) };
+  return { value: (bar - 1) * ticksPerBar(meter) + (beat - 1) * ticksPerBeat(meter) + inBeat(tick, meter), unit };
+}
+
+/** 長さ「1.999」も読み、ティックを 0〜479 に入れる。 */
+export function readNoteLengthLoose(s: string, meter: Meter): LooseValue | null {
+  const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{3}))?$/);
+  if (!m) return null;
+  const rawTick = m[2] === undefined ? 0 : Number(m[2]);
+  const tick = Math.min(rawTick, DISPLAY_TICKS_PER_BEAT - 1);
+  const unit: ClampedUnit | null = tick !== rawTick ? { field: "tick", range: rangeText("0", String(DISPLAY_TICKS_PER_BEAT - 1)) } : null;
+  return { value: Number(m[1]) * ticksPerBeat(meter) + inBeat(tick, meter), unit };
+}
+
+/** 音名を、0〜127 の外（「C10」「C-2」）も鍵の番号に。 */
+export function readKeyNameLoose(s: string): LooseValue | null {
+  const m = tidyMinus(s).match(/^([A-Ga-g])([#b]?)(-?\d{1,2})$/);
+  if (!m) return null;
+  const octave = Number(m[3]);
+  return { value: (octave + 1) * 12 + PITCH[m[1]!.toUpperCase()]! + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0), unit: null };
+}
+
+/** ベロシティ。負の数と小数も読み、小数は四捨五入。 */
+export function readVelocityLoose(s: string): LooseValue | null {
+  const m = tidyMinus(s).match(/^(-?)(\d{1,6}(?:\.\d+)?|\.\d+)$/);
+  if (!m) return null;
+  const v = Math.round(Number(m[2]));
+  return { value: m[1] ? -v : v, unit: null };
+}
+
 /** ベロシティ（整数）。読めなければ null。範囲は見ない。 */
 export function parseVelocity(s: string): number | null {
   const m = tidy(s).match(/^\d{1,3}$/);
@@ -78,6 +140,31 @@ export interface NoteFieldSpec {
   range: string | null;
   format: (v: number) => string;
   read: (s: string) => number | null;
+  /** 範囲の外も読む（B-68）。読めなければ null。 */
+  loose: (s: string) => LooseValue | null;
+}
+
+/** 決める値と、丸めたならその言いかた（ClampValue の中身）。 */
+export interface FieldRead {
+  value: number;
+  clamped: { field: ValueField; value: string; range: string | null } | null;
+}
+
+/**
+ * 打った文字を決める値に。数字として読めなければ null（「こわれた」）。範囲の外なら近いはしにして、丸めた所を返す。
+ * 2 つ以上丸めたときは、いちばん大きい単位だけ（クリップの範囲 → 小節 → 拍 → ティック）。
+ */
+export function readField(spec: NoteFieldSpec, s: string): FieldRead | null {
+  const r = spec.loose(s);
+  if (!r) return null;
+  const value = clampTo(r.value, spec.low, spec.high);
+  if (value !== r.value) return { value, clamped: { field: VALUE_FIELDS[spec.name], value: spec.format(value), range: spec.range } };
+  return { value, clamped: r.unit ? { field: r.unit.field, value: spec.format(value), range: r.unit.range } : null };
+}
+
+/** 丸めたことを状態行で言わせる意図（決める意図のあとに送る）。 */
+export function clampCommand(clamped: NonNullable<FieldRead["clamped"]>): Command {
+  return { type: "clampValue", field: clamped.field, value: clamped.value, range: clamped.range };
 }
 
 /** 範囲の中の値。読めないか範囲の外なら null。 */
@@ -122,6 +209,7 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
         range: rangeText(format(low), format(high)),
         format,
         read: (s) => parseNotePosition(s, meter),
+        loose: (s) => readNotePositionLoose(s, meter),
       };
     }
     case "key": {
@@ -139,6 +227,7 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
         range: rangeText(noteName(0), noteName(high)),
         format: noteName,
         read: parseKeyName,
+        loose: readKeyNameLoose,
       };
     }
     case "length": {
@@ -158,6 +247,7 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
         range: rangeText(format(unit), format(high)),
         format,
         read: (s) => parseNoteLength(s, meter),
+        loose: (s) => readNoteLengthLoose(s, meter),
       };
     }
     case "velocity": {
@@ -175,6 +265,7 @@ export function noteFieldSpec(name: FieldName, take: Notes, clip: Placed, notes:
         range: null,
         format: String,
         read: parseVelocity,
+        loose: readVelocityLoose,
       };
     }
   }

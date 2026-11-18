@@ -4,6 +4,9 @@
      ドラッグ中のノートと、録音中にのびるノートは、それだけを囲む小さな 1 枚（pianoRollLive）。動かすだけなら transform で動かす。
      pianoRollLive の箱は、ノートの場所の左上から CC の帯の下はしまで（CC の帯のドラッグも同じ 1 枚に入れる）。
      再生の線、囲む枠、文字は HTML。
+     行の高さは縦の拡大の段（prView.rowPx、design-notes B-63）。ノートの高さは行 − 1。縦の − ＋ は目盛の左の角。
+     左の鍵盤の列を押すと、押している間だけ鳴らす（B-62。audition.ts）。目盛を押すと再生の位置、ドラッグでループの範囲（B-61）。
+     右クリックは一覧（B-60。描くのは App の ContextMenu）。
      ベロシティの帯は「▾ ベロシティ」でたたむ（仕様書 3 章の帯の表。ひらくのは CC の札の行の「▸ ベロシティ」）。たたんだ分はノートの場所へ。
      たたんでも区画（pianoRoll）の箱はそのままなので、WebGL の文脈は作りなおさない。 -->
 <script lang="ts">
@@ -16,18 +19,22 @@
   import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
-  import { followScroll } from "../arrangeGeom";
+  import { closeContextMenu, openContextMenu } from "../menu/contextMenu.svelte";
+  import * as AG from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
   import { shownTick, ticksPerBar, ticksPerBeat, type Meter } from "../time";
   import CcLanes from "./CcLanes.svelte";
   import { cursorCss } from "./cursor";
+  import { Auditioner, chordOf, fixedOr100, NUDGE_MS, notesMayAudition, onNudgeKeys, ticksToMs } from "./audition";
+  import { pianoRollCommand } from "./commands";
   import { RollDrag, type CursorKind, type Drag, type Mods } from "./drag";
   import * as G from "./geom";
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
+  import { rollMenu, type RollMenuActions } from "./rollMenu";
   import { shown } from "./shown.svelte";
   import { originFor, shownFor } from "./shownNotes";
   import { sameKeys, soundingKeys } from "./sounding";
-  import { dragReading, onDragCancel, prPanels, prView, pxPerTick, scrollToTick, velocityLane, zoomBy } from "./view.svelte";
+  import { dragReading, onDragCancel, prPanels, prView, pxPerTick, ROW_PX_STEPS, rowHeight, scrollToTick, velocityLane, zoomBy, zoomRowsBy } from "./view.svelte";
 
   let { onreading }: { onreading?: (at: { x: number; y: number } | null) => void } = $props();
 
@@ -38,9 +45,10 @@
   const meter: Meter = $derived({ num: song.meterNum, den: song.meterDen });
   const scale = $derived(metrics.scale);
 
-  const rowH = $derived(metrics.px("size.note"));
+  const rowH = $derived(rowHeight(scale));
   const sizes: RollSizes = $derived({
-    noteH: metrics.px("part.note.height"),
+    // 仕様書の size.note と part.note.height の差（行 − 1）を、どの段でも保つ。
+    noteH: rowH - (metrics.px("size.note") - metrics.px("part.note.height")),
     edge: metrics.px("part.note.edge"),
     velBar: metrics.px("mock.pianoroll.vel-bar"),
     velCap: metrics.px("mock.pianoroll.vel-cap"),
@@ -107,6 +115,66 @@
   let pendingReplied = $state(false);
   let lastSent: Promise<unknown> | null = null;
 
+  // ---- 画面が鳴らす音（B-62）: 鍵盤の列、ノートを押す ・ 動かす、↑ ↓、書く道具 ----
+
+  /** 画面が鳴らしている鍵（鍵盤の列で光らせる）。 */
+  let heard: readonly number[] = [];
+  const audition = new Auditioner(
+    (c) => void send(c),
+    (keys) => {
+      heard = keys;
+      redraw("keys");
+    },
+  );
+  const mayAudition = () => notesMayAudition(app) && !liveMode;
+  const msOf = (ticks: number) => ticksToMs(ticks, song.tempoBpm);
+  onDestroy(() => audition.stop());
+
+  onMount(() =>
+    onNudgeKeys((c) => {
+      const notes = liveMode ? null : n;
+      if (!notes || c.take !== notes.take.id || !mayAudition()) return;
+      let velocity = 1;
+      for (const i of c.notes) velocity = Math.max(velocity, notes.take.velocities[i] ?? 1);
+      audition.play(
+        chordOf(
+          c.notes.filter((i) => i < notes.take.keys.length).map((i) => notes.take.keys[i]!),
+          c.keys,
+        ),
+        velocity,
+        NUDGE_MS,
+      );
+    }),
+  );
+
+  // 左の鍵盤の列: 押している間だけ鳴らす。押したまま上下になぞると次の鍵に入れかえる。録音中も鳴らす（テイクには入らない）。
+  let keyHeld: number | null = null;
+  function keyAt(e: PointerEvent): number | null {
+    const top = (e.currentTarget as HTMLElement).getBoundingClientRect().top;
+    const key = G.yToKey(g, e.clientY - top);
+    return key >= G.KEY_MIN && key <= G.KEY_MAX ? key : null;
+  }
+  function keysDown(e: PointerEvent): void {
+    if (e.button !== 0) return;
+    const key = keyAt(e);
+    if (key === null) return;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    keyHeld = key;
+    audition.play([key], fixedOr100(app));
+  }
+  function keysMove(e: PointerEvent): void {
+    if (keyHeld === null) return;
+    const key = keyAt(e);
+    if (key === null || key === keyHeld) return;
+    keyHeld = key;
+    audition.play([key], fixedOr100(app));
+  }
+  function keysUp(): void {
+    if (keyHeld === null) return;
+    keyHeld = null;
+    audition.stop();
+  }
+
   const drag = new RollDrag({
     shown: () => (liveMode ? null : n),
     geom: () => g,
@@ -122,6 +190,10 @@
     send: (c: Command) => {
       lastSent = send(c);
     },
+    drawVelocity: () => fixedOr100(app),
+    mayAudition,
+    ticksToMs: msOf,
+    audition,
   });
   const shownDrag = $derived.by(() => {
     void dragVersion;
@@ -217,10 +289,11 @@
     }
   });
 
-  // ---- ホイール: 縦に送る、Shift で横、Mod で拡大（カーソルの所を中心に） ----
+  // ---- ホイール: 縦に送る、Shift で横、Mod で横の拡大、Mod Shift で縦の拡大（カーソルの所を中心に） ----
 
   let wheelRows = 0;
   let wheelZoom = 0;
+  let wheelRowZoom = 0;
   const ZOOM_NOTCH = 100;
   const scrollMaxTick = $derived.by(() => {
     let end = Math.max(transport.position, n ? G.noteEnd(n, Math.max(0, G.noteCount(n) - 1)) : 0, shown.clip?.end ?? 0);
@@ -230,6 +303,18 @@
 
   function wheel(e: WheelEvent): void {
     const unit = e.deltaMode === 1 ? rowH : e.deltaMode === 2 ? areaH : 1;
+    if (modsOf(e).mod && e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Shift ＋ ホイールを横の送りに変える環境では、回した量が deltaX に来る。
+      const d = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * unit;
+      wheelRowZoom += d;
+      const steps = Math.trunc(wheelRowZoom / ZOOM_NOTCH) || (Math.abs(d) >= ZOOM_NOTCH / 2 ? Math.sign(d) : 0);
+      if (steps === 0) return;
+      wheelRowZoom = 0;
+      zoomRowsBy(-steps, area ? at(e).y : undefined);
+      return;
+    }
     if (modsOf(e).mod) {
       e.preventDefault();
       e.stopPropagation();
@@ -303,7 +388,7 @@
     keys: {
       kind: "paint",
       keys: true,
-      paint: (out, box, ctx) => paintRollKeys(out, box, keysGeom, (k) => ctx.isDown(k) || isSounding(k), ctx.dpr),
+      paint: (out, box, ctx) => paintRollKeys(out, box, keysGeom, (k) => ctx.isDown(k) || isSounding(k) || heard.includes(k), ctx.dpr),
     },
     live: { kind: "paint", paint: (out, box, ctx) => livePicture && paintLive(out, box, livePicture, ctx.dpr) },
   };
@@ -398,7 +483,10 @@
       if (d.kind === "resize" && d.press.moved) {
         const b = movedBoxOf(d);
         if (!b) return null;
-        return { left: b.x0, top: b.y0, width: Math.max(1, areaW - b.x0), height: b.y1 - b.y0, tx: 0, ty: 0 };
+        // 始まりを動かすときは、左へのびる分まで（ノートの場所の左はしから）。
+        const left = d.edge === "start" ? Math.min(0, b.x0) : b.x0;
+        const right = d.edge === "start" ? b.x1 : areaW;
+        return { left, top: b.y0, width: Math.max(1, right - left), height: b.y1 - b.y0, tx: 0, ty: 0 };
       }
     }
     if (d && d.kind === "draw") {
@@ -445,7 +533,11 @@
         return out;
       }
       if (d.kind === "resize" && d.press.moved) {
-        for (const i of d.notes) out.push({ start: G.noteStart(n, i), end: G.noteEnd(n, i) + d.ticks, key: n.take.keys[i]!, face: face(i) });
+        for (const i of d.notes) {
+          const start = G.noteStart(n, i) + (d.edge === "start" ? d.ticks : 0);
+          const end = G.noteEnd(n, i) + (d.edge === "end" ? d.ticks : 0);
+          out.push({ start, end, key: n.take.keys[i]!, face: face(i) });
+        }
         return out;
       }
     }
@@ -490,7 +582,7 @@
     const tel = current.telemetry;
     const tick = shownTick(transport, tel, offsetUs === null ? null : performance.now() * 1000 + offsetUs);
     if (prView.follow && areaW > 0) {
-      const x = followScroll(tick * ppt, prView.scrollTick * ppt, areaW);
+      const x = AG.followScroll(tick * ppt, prView.scrollTick * ppt, areaW);
       if (x !== prView.scrollTick * ppt) prView.scrollTick = x / ppt;
     }
     placeLine(tick);
@@ -564,6 +656,110 @@
     return out;
   });
 
+  // ---- 目盛: 押すと再生の位置（グリッドに寄せる。Shift で寄せない）、ドラッグでループの範囲（小節の単位。アレンジの目盛と同じ） ----
+
+  const perBar = $derived(ticksPerBar(meter));
+  const rulerView = $derived<AG.View>({ pxPerTick: ppt, scrollX: prView.scrollTick * ppt, width: areaW });
+  const songLoop = $derived(song.loopOn ? AG.loopBars(song.loopRange, perBar) : null);
+  /** ドラッグ中の見た目。Rust の答え（次の差分）が来たら消す。 */
+  let loopPreview = $state<AG.BarRange | null>(null);
+  const shownLoop = $derived(loopPreview ?? songLoop);
+  let rulerDrag: { d: AG.RulerDrag; downX: number; left: number } | null = null;
+  $effect(() => {
+    void current.rev;
+    untrack(() => {
+      if (!rulerDrag) loopPreview = null;
+    });
+  });
+  const loopX = (bar: number) => AG.tickToX(rulerView, (bar - 1) * perBar);
+
+  function rulerDown(e: PointerEvent): void {
+    if (e.button !== 0) return;
+    const left = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
+    const x = e.clientX - left;
+    rulerDrag = { d: AG.startRulerDrag(rulerView, x, perBar, songLoop, metrics.px("space.2")), downX: x, left };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  }
+  function rulerMove(e: PointerEvent): void {
+    if (!rulerDrag) return;
+    const x = e.clientX - rulerDrag.left;
+    if (Math.abs(x - rulerDrag.downX) >= metrics.px("space.1")) loopPreview = AG.dragRange(rulerDrag.d, rulerView, x, perBar);
+  }
+  function rulerUp(e: PointerEvent): void {
+    if (!rulerDrag) return;
+    const r = rulerDrag;
+    rulerDrag = null;
+    const x = e.clientX - r.left;
+    let command: Command;
+    if (Math.abs(x - r.downX) < metrics.px("space.1")) {
+      loopPreview = null;
+      const tick = AG.xToTick(rulerView, r.downX);
+      command = { type: "locate", tick: Math.max(0, e.shiftKey ? Math.round(tick) : G.snapTick(tick, step)) };
+    } else {
+      const range = AG.dragRange(r.d, rulerView, x, perBar);
+      command = { type: "setLoop", fromBar: range.from, toBar: range.to };
+    }
+    const before = current.rev;
+    // 範囲が変わらなければ差分は来ないので、返事の rev で見た目を消す。
+    void send(command).then((rev) => {
+      if (rev === before && !rulerDrag) loopPreview = null;
+    });
+  }
+  function rulerCancel(): boolean {
+    if (!rulerDrag) return false;
+    rulerDrag = null;
+    loopPreview = null;
+    return true;
+  }
+  // Esc: ループの範囲のドラッグをやめて、前の範囲に戻す（仕様書 4 章）。
+  onMount(() => onDragCancel(rulerCancel));
+
+  // ---- 右クリックの一覧（B-60）: ノートの上と、ノートの場所の空いた所 ----
+
+  function contextMenu(e: MouseEvent): void {
+    e.preventDefault();
+    if (drag.drag || !area) return;
+    prView.focus = "pianoRoll";
+    prView.picked = "notes";
+    const notes = liveMode ? null : n;
+    const p = at(e);
+    const hit = G.hitNote(notes, g, p.x, p.y, 0);
+    // 選ばれていないノートなら、それだけを選んでから。
+    if (hit && notes && !G.indexesOf(selectedRanges).includes(hit.note)) {
+      void send({ type: "selectNotes", take: notes.take.id, notes: [hit.note], mode: "replace" });
+    }
+    // 行を押すのは一覧が出たあとなので、そのときの状態で意図を作る。
+    const actions: RollMenuActions = {
+      key(k) {
+        const state = current.state;
+        if (!state) return;
+        const c = pianoRollCommand(k, { state, shown: liveMode ? null : n, playTick: shownTick(state.transport, current.telemetry, null) });
+        if (c) void send(c);
+      },
+      unquantize() {
+        const state = current.state;
+        const shownNow = liveMode ? null : n;
+        if (!state || !shownNow || state.pianoRoll.take !== shownNow.take.id) return;
+        const picked = G.indexesOf(state.pianoRoll.selectedNotes).filter((i) => i < shownNow.take.starts.length);
+        void send({ type: "unquantize", take: shownNow.take.id, notes: picked });
+      },
+      pasteAt: (tick) => void send({ type: "pasteNotes", at: tick }),
+    };
+    const entries = rollMenu(
+      {
+        onNote: hit !== null && notes !== null,
+        busy: transport.state === "recording" || transport.state === "countIn",
+        clipboard: pr.clipboardNotes > 0,
+        origin: (notes?.take.origin ?? 0) !== 0,
+        pasteAt: Math.max(0, G.snapTick(G.xToTick(g, p.x), step)),
+        mac: platform === "mac",
+      },
+      actions,
+    );
+    closeContextMenu();
+    openContextMenu(e.clientX, e.clientY, entries);
+  }
+
   // ---- 囲む枠 ----
 
   const boxFrame = $derived.by(() => {
@@ -580,18 +776,47 @@
 
 <div class="roll" use:glRegion={"pianoRoll"}>
   <div class="ruler">
-    <div class="ruler-gap"></div>
-    <div class="ruler-marks">
+    <div class="ruler-gap">
+      <button class="m-plain m-hi vzoom" disabled={prView.rowPx === ROW_PX_STEPS[0]} onclick={() => zoomRowsBy(-1)} data-test="pr-row-zoom-out"
+        >{t("zoom.outMark")}</button
+      >
+      <button
+        class="m-plain m-hi vzoom"
+        disabled={prView.rowPx === ROW_PX_STEPS[ROW_PX_STEPS.length - 1]}
+        onclick={() => zoomRowsBy(1)}
+        data-test="pr-row-zoom-in">{t("zoom.inMark")}</button
+      >
+    </div>
+    <div
+      class="ruler-marks"
+      role="presentation"
+      onpointerdown={rulerDown}
+      onpointermove={rulerMove}
+      onpointerup={rulerUp}
+      onpointercancel={rulerCancel}
+      data-test="pr-ruler"
+    >
+      {#if shownLoop}
+        <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
+      {/if}
       {#each rulerLabels as l (l.tick)}
         <span class="m-num mark" class:bar={l.bar} style:left="{l.x}px">{l.text}</span>
       {/each}
     </div>
   </div>
   <div class="middle" onwheel={wheel}>
-    <div class="keys">
+    <div
+      class="keys"
+      role="presentation"
+      onpointerdown={keysDown}
+      onpointermove={keysMove}
+      onpointerup={keysUp}
+      onpointercancel={keysUp}
+      data-test="pr-keys"
+    >
       <div class="key-names">
         {#each keyLabels as k (k.key)}
-          <span class="m-num key-name" style:top="{k.y}px">{k.text}</span>
+          <span class="m-num key-name" style:top="{k.y}px" style:height="{rowH}px">{k.text}</span>
         {/each}
       </div>
       <div class="key-shapes" use:glRegion={"pianoRollKeys"} use:painted={"keys"}></div>
@@ -609,6 +834,7 @@
       onpointerup={up}
       onpointercancel={() => drag.cancel() && changed(null)}
       onpointerleave={leave}
+      oncontextmenu={contextMenu}
     >
       <div class="fill" use:painted={"roll"}></div>
       {#if boxFrame}
@@ -682,13 +908,41 @@
   .ruler-gap {
     width: var(--size-col-keys);
     flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    padding-right: var(--space-1);
     border-right: var(--line-hair) solid var(--color-gray-6);
+  }
+  /* 縦の − ＋（B-63）: 目盛の高さ 20 にボタン（24）が入らないので、枠のない字だけのボタン。押せないときは gray.7。 */
+  .vzoom {
+    height: 100%;
+    padding: 0 var(--space-1);
+  }
+  .vzoom:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .vzoom:active:not(:disabled) {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .vzoom:disabled {
+    color: var(--color-gray-7);
+    cursor: default;
   }
   .ruler-marks {
     flex: 1;
     min-width: 0;
     position: relative;
     overflow: hidden;
+    touch-action: none;
+  }
+  .loop-mark {
+    position: absolute;
+    top: 0;
+    height: var(--mock-arrange-loop);
+    background: var(--color-accent);
+    pointer-events: none;
   }
   .mark {
     position: absolute;
@@ -715,6 +969,7 @@
     background: var(--color-gray-3);
     border-right: var(--line-hair) solid var(--color-gray-6);
     overflow: hidden;
+    touch-action: none;
   }
   .key-names {
     width: var(--mock-pianoroll-key-label);
@@ -724,7 +979,6 @@
   .key-name {
     position: absolute;
     right: 0;
-    height: var(--size-note);
     padding-right: var(--space-1);
     display: flex;
     align-items: center;

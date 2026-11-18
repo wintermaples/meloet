@@ -158,11 +158,11 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
     expect(buttons[0]!.classList.contains("hi")).toBe(true);
   });
 
-  it("長さをそろえる ・ ベロシティをまとめて変える は、たたんだ「使えない」見出し", async () => {
+  it("長さをそろえる は、たたんだ「使えない」見出し", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
     const folded = qa(".hd.folded");
-    expect(folded.map(text)).toEqual(["▸ 長さをそろえる", "▸ ベロシティをまとめて変える"]);
+    expect(folded.map(text)).toEqual(["▸ 長さをそろえる"]);
     expect(folded.every((b) => b.getAttribute("aria-disabled") === "true")).toBe(true);
   });
 
@@ -283,28 +283,57 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     expect(document.activeElement).toBe(qa(".row")[2]);
   });
 
-  it("使えない値（200）は「こわれた」の枠のまま。Enter で rejectValue を送り、決めない", async () => {
+  it("数字として読めない値（あ）は「こわれた」の枠のまま。Enter で rejectValue を送り、決めない", async () => {
     await scene("pianoRoll");
     show(NoteListPanel);
     double(4, "velocity");
     flushSync();
-    typeIn("200");
+    typeIn("あ");
     expect(field()!.classList.contains("broken")).toBe(true);
     expect(field()!.getAttribute("aria-invalid")).toBe("true");
     key(field()!, "Enter");
     flushSync();
     expect(app.sent).toEqual([{ type: "rejectValue", field: "velocity", kept: "101", range: null }]);
-    expect(field()!.value).toBe("200");
+    expect(field()!.value).toBe("あ");
   });
 
-  it("位置の使えない値は、そのクリップでの範囲の文をつけて rejectValue", async () => {
-    await scene("pianoRoll");
+  it("範囲の外の値（200）は「こわれた」にせず、127 にして決め、そのあとに clampValue（B-68）", async () => {
+    const { take } = await scene("pianoRoll");
+    show(NoteListPanel);
+    double(4, "velocity");
+    flushSync();
+    typeIn("200");
+    expect(field()!.classList.contains("broken")).toBe(false);
+    key(field()!, "Enter");
+    await settle();
+    expect(app.sent).toEqual([
+      { type: "setNotesField", take: take.id, notes: [4], field: "velocity", value: 127 },
+      { type: "clampValue", field: "velocity", value: "127", range: null },
+    ]);
+  });
+
+  it("位置: クリップの外はクリップの範囲の文、拍だけ外なら拍の範囲（B-68）", async () => {
+    const { take } = await scene("pianoRoll");
     show(NoteListPanel);
     double(0, "position");
     flushSync();
     typeIn("4.2.000");
     key(field()!, "Enter");
-    expect(app.sent).toEqual([{ type: "rejectValue", field: "position", kept: "1.1.000", range: "1.1.000〜4.1.000" }]);
+    await settle();
+    expect(app.sent).toEqual([
+      { type: "setNotesField", take: take.id, notes: [0], field: "start", value: at(4, 1, 0) },
+      { type: "clampValue", field: "position", value: "4.1.000", range: "1.1.000〜4.1.000" },
+    ]);
+    app.sent.length = 0;
+    double(0, "position");
+    flushSync();
+    typeIn("2.7.000");
+    key(field()!, "Enter");
+    await settle();
+    expect(app.sent).toEqual([
+      { type: "setNotesField", take: take.id, notes: [0], field: "start", value: at(2, 4, 0) },
+      { type: "clampValue", field: "beat", value: "2.4.000", range: "1〜4" },
+    ]);
   });
 
   it("行で Enter を押すと最初の欄（位置）。Tab で右の欄へ、右はしなら次の行の最初の欄（そこで前の欄を決める）", async () => {
@@ -422,9 +451,23 @@ describe("選んだノートの欄を打ちこむ", () => {
     show(NoteInspector);
     q('[data-test="inspector-length"]')!.click();
     flushSync();
-    typeIn("9.000");
+    typeIn("x");
     key(field()!, "Enter");
     expect(app.sent).toEqual([{ type: "rejectValue", field: "length", kept: "ばらばら", range: "0.001〜6.240" }]);
+  });
+
+  it("長さが範囲の外（9.000）なら、いちばん長い 6.240 にして決める", async () => {
+    const { take } = await scene("pianoRoll");
+    show(NoteInspector);
+    q('[data-test="inspector-length"]')!.click();
+    flushSync();
+    typeIn("9.000");
+    key(field()!, "Enter");
+    await settle();
+    expect(app.sent).toEqual([
+      { type: "setNotesField", take: take.id, notes: [14, 15, 16], field: "length", value: 6 * 480 + 240 },
+      { type: "clampValue", field: "length", value: "6.240", range: "0.001〜6.240" },
+    ]);
   });
 });
 

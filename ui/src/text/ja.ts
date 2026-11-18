@@ -580,6 +580,13 @@ export const texts = {
 
   // ---- 区切り1 で画面の係が足す文は、ここから下に（ピアノロールの係はこの段、アレンジと再生まわりの係は次の段）。
   // [ピアノロール]
+  // 右クリックの一覧（B-60）の行の右のキー。「Ctrl X」の X など（Mod の字は key.ctrl ・ key.cmd）。
+  "prMenu.keyCut": e("X", "spec:4"),
+  "prMenu.keyCopy": e("C", "spec:4"),
+  "prMenu.keyPaste": e("V", "spec:4"),
+  "prMenu.keyDuplicate": e("D", "spec:4"),
+  "prMenu.keySelectAll": e("A", "spec:4"),
+  "prMenu.keyDelete": e("Delete", "spec:4"),
 
   // [アレンジ ・ 再生まわり ・ 入力計]
 

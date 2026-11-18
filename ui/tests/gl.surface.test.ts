@@ -295,6 +295,58 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
+  it("上の帯: マスターの面は、数字の箱（cover）までおおう。ミキサーのメーターを出すコマは、変わっていなくてもマスターの面も出す", () => {
+    const { made, frame } = fakePage();
+    vi.spyOn(performance, "now").mockReturnValue(1000);
+    const bar = region(box(new DOMRect(0, 0, 1000, 48)), "masterMeter");
+    slot(box(new DOMRect(300, 10, 80, 30), bar), { kind: "cover" });
+    slot(box(new DOMRect(820, 6, 100, 38), bar), { kind: "cover" });
+    slot(box(new DOMRect(820, 32, 100, 12), bar), { kind: "meter", source: "master", gap: 1 });
+    const engine = new Engine();
+    engine.setTracks([1]);
+    const telemetry = (track: number) => ({
+      seq: 0,
+      sentUs: 0,
+      keys: new Uint32Array(4),
+      lastVelocity: 0,
+      sustain: 0,
+      modulation: 0,
+      running: true,
+      masterClipped: false,
+      pitchBend: 0,
+      loadPermille: 0,
+      masterPeak: [0.5, 0.5] as [number, number],
+      position: null,
+      returnPeaks: new Float32Array(4),
+      trackPeaks: new Float32Array([track, track]),
+    });
+    engine.onTelemetry(telemetry(0.1));
+    frame();
+    const m = made[0]!;
+    expect([m.canvas.width, m.canvas.height, m.canvas.style.left, m.canvas.style.top]).toEqual([620, 38, "300px", "6px"]);
+    expect(m.calls.clear).toBe(1);
+
+    // ミキサーがないとき: マスターが同じなら、出さない。
+    engine.onTelemetry(telemetry(0.2));
+    frame();
+    expect(m.calls.clear).toBe(1);
+
+    const strips = region(box(new DOMRect(0, 300, 1000, 200)), "mixerMeters");
+    slot(box(new DOMRect(40, 320, 9, 100), strips), { kind: "meter", source: { track: 1 }, gap: 1, vertical: true });
+    frame();
+    const x = made[1]!;
+    expect([m.calls.clear, x.calls.clear]).toEqual([2, 1]);
+    // トラックだけ変わった: ミキサーの面が出るので、マスターの面も。
+    engine.onTelemetry(telemetry(0.4));
+    frame();
+    expect([m.calls.clear, x.calls.clear]).toEqual([3, 2]);
+    // 何も変わらない: どちらも出さない。
+    engine.onTelemetry(telemetry(0.4));
+    frame();
+    expect([m.calls.clear, x.calls.clear]).toEqual([3, 2]);
+    engine.destroy();
+  });
+
   it("区画の数: 窓の高さと帯のどの組み合わせでも 10 枚まで。組み合わせを全部わたり歩いても、作る文脈は 10 個", () => {
     const { made, frame } = fakePage();
     const engine = new Engine();

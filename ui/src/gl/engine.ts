@@ -1,7 +1,7 @@
 import type { Event, Telemetry } from "../bridge";
 import { SCALES, type Scale } from "../design/tokens";
 import { Batch } from "./batch";
-import { REGIONS, fault, type RegionName } from "./budget";
+import { REGIONS, SHOWN_WITH, fault, type RegionName } from "./budget";
 import { OVERVIEW } from "./dims";
 import { HeldKeys } from "./keyboard";
 import { Levels, MASTER_CHANNEL, RETURN_A_CHANNEL, RETURN_B_CHANNEL, trackChannel } from "./levels";
@@ -281,7 +281,17 @@ export class Engine {
     }
     for (const [r, host] of due) this.place(r, host, dpr);
     if (p) p.measureMs = performance.now() - t;
-    for (const [r] of due) this.draw(r, now, dpr, p);
+    const shown = new Set<RegionName>();
+    for (const [r] of due) if (this.draw(r, now, dpr, p)) shown.add(r.name);
+    for (const name of shown) {
+      const partner = SHOWN_WITH[name];
+      if (!partner || shown.has(partner)) continue;
+      for (const r of this.regions.values()) {
+        if (r.name !== partner) continue;
+        r.mustDraw = true;
+        if (this.draw(r, now, dpr, p)) shown.add(partner);
+      }
+    }
 
     this.onFrame?.(ts);
     if (falling) this.touch("meter");
@@ -333,8 +343,9 @@ export class Engine {
     r.height = height;
   }
 
-  private draw(r: Region, nowMs: number, dpr: number, p: FrameRecord | null): void {
-    if (r.gl.lost || r.width <= 0 || r.height <= 0) return;
+  /** True when the canvas was shown: its rectangles differ from the ones it showed, or it had to be drawn. */
+  private draw(r: Region, nowMs: number, dpr: number, p: FrameRecord | null): boolean {
+    if (r.gl.lost || r.width <= 0 || r.height <= 0) return false;
     const t0 = p ? performance.now() : 0;
     const out = this.next;
     out.reset();
@@ -355,7 +366,7 @@ export class Engine {
     const same = !r.mustDraw && out.sameAs(r.drawn);
     const t1 = p ? performance.now() : 0;
     if (p) p.paintMs += t1 - t0;
-    if (same) return;
+    if (same) return false;
     r.gl.renderer.draw(out, r.width, r.height);
     [this.next, r.drawn] = [r.drawn, out];
     r.mustDraw = false;
@@ -369,6 +380,7 @@ export class Engine {
       }
       this.profile!.drew(r.name, r.drawn.rectCount);
     }
+    return true;
   }
 
   /** The left channel of a meter's source; -1 for a track the song does not have (it reads as silence). */
@@ -387,6 +399,8 @@ export class Engine {
         paintKeyboard(out, box, black, slot.firstNote, slot.lastNote, this.isDown, slot.disabled === true);
         break;
       }
+      case "cover":
+        break;
       case "velocity":
         paintVelocity(out, box, this.velocity);
         break;

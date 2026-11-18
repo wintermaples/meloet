@@ -3,7 +3,7 @@
   import { onMount, untrack } from "svelte";
   import { clockOffsetUs, type Command } from "../bridge";
   import { platformOf } from "../keys/keys";
-  import { glRegion, glSlot } from "../gl/slot";
+  import { glRegion, glSlot, type GlSlot } from "../gl/slot";
   import { menuOpened } from "../lib/menu";
   import { term, tip } from "../lib/tip.svelte";
   import { current, onTelemetry, send } from "../state/app.svelte";
@@ -43,6 +43,7 @@
   const beatInBar = $derived(((countInBeat - 1) % beatsPerBar) + 1);
 
   // 横の入れかた: 出ている物と、見えない写し（ruler）の引っこむ物を測り、仕様書 1 章の順に引っこめる。
+  const COVER: GlSlot = { kind: "cover" };
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
   let parts = $state<TransportParts>({ keys: true, songName: true, load: true, countIn: true, positionLabels: true });
@@ -55,7 +56,9 @@
     const style = getComputedStyle(row);
     const gap = parseFloat(style.columnGap) || 0;
     const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-    const fixed = [...row.children].filter((el) => el !== ruler && !(el as HTMLElement).dataset.part) as HTMLElement[];
+    const fixed = [...row.children].filter(
+      (el) => el !== ruler && !(el as HTMLElement).dataset.part && !(el instanceof HTMLCanvasElement),
+    ) as HTMLElement[];
     const w = (part: string) => ruler!.querySelector<HTMLElement>(`[data-part="${part}"]`)?.offsetWidth ?? 0;
     // 位置のラベルを引っこめると、位置の枠とマスターもモック F-PR150 の細い形になる。
     const narrowing =
@@ -294,7 +297,9 @@
 {#snippet key(i: number)}{#if parts.keys}<span class="m-num m-lbl key" data-test="transport-key">{KEYS[i]}</span>{/if}{/snippet}
 {#snippet countInLabel()}{t("transport.countIn")}<span class="m-num value">{countInValue}</span>{/snippet}
 
-<header class="transport" bind:this={row}>
+<!-- 毎コマ変わる数字（位置、時間、処理の負荷、マスターの dB）とマスターのメーターは、masterMeter の区画の 1 枚の canvas の下に入れる（cover）。
+     上下の端がそろわない小さな四角が切りあって 11 個をこえると、WebKit は窓のほとんどを描きなおす（docs/architecture.md 7 章「CPU で描く WebKit」）。 -->
+<header class="transport" bind:this={row} use:glRegion={"masterMeter"}>
   {#if parts.songName}
     <button
       class="m-plain song"
@@ -368,7 +373,7 @@
   </div>
 
   <div class="position" class:narrow={!parts.positionLabels}>
-    <div class="col">
+    <div class="col" use:glSlot={COVER}>
       {#if parts.positionLabels}<span class="m-lbl" use:term={"小節 . 拍 . ティック"}>{t("transport.position")}</span>{/if}
       <NumberField
         value={position}
@@ -380,7 +385,7 @@
         test="transport-position"
       />
     </div>
-    <div class="col">
+    <div class="col" use:glSlot={COVER}>
       {#if parts.positionLabels}<span class="m-lbl">{t("transport.time")}</span>{/if}
       <span class="m-readout" data-test="transport-time">{clock}</span>
     </div>
@@ -456,10 +461,10 @@
   <div class="m-spacer"></div>
 
   {#if parts.load}
-    <div class="col end" data-part="load">{@render loadValue()}</div>
+    <div class="col end" data-part="load" use:glSlot={COVER}>{@render loadValue()}</div>
   {/if}
 
-  <div class="master" class:narrow={!parts.positionLabels}>
+  <div class="master" class:narrow={!parts.positionLabels} use:glSlot={COVER}>
     <div class="master-head">
       <span class="m-lbl" use:term={"マスター"}>{t("transport.master")}</span>
       {#if parts.positionLabels}
@@ -470,7 +475,7 @@
         >
       {/if}
     </div>
-    <div class="meter" use:glRegion={"masterMeter"} use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
+    <div class="meter" use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
   </div>
 
   <div class="ruler" aria-hidden="true" bind:this={ruler}>

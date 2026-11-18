@@ -1042,6 +1042,28 @@ fn the_audition_sounds_on_the_play_target() {
     assert!(effects.contains(&Effect::Engine(EngineOp::AuditionOff)));
     assert_eq!(m.view().song.undo_count, 0);
 
+    // A locked scale does not keep the keys column and the notes quiet.
+    cmd(
+        m,
+        Command::SetMusicalScale {
+            root: 0,
+            mode: ScaleMode::Major,
+            lock: true,
+        },
+    );
+    let effects = cmd(
+        m,
+        Command::Audition {
+            keys: vec![61, 64],
+            velocity: 90,
+        },
+    );
+    assert!(effects.contains(&Effect::Engine(EngineOp::Audition {
+        track: 0,
+        keys: vec![61, 64],
+        velocity: 90
+    })));
+
     let mut silent = crate::state::Model::new(crate::settings::Settings::default());
     let effects = silent.handle(crate::state::Input::Command(Command::Audition {
         keys: vec![60],

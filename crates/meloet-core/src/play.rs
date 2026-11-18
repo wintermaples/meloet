@@ -1661,12 +1661,9 @@ impl Play {
             self.audition_off(open, effects);
             return;
         }
-        let scale = self.song.session.roll.scale;
-        let keys: Vec<u8> = keys
-            .iter()
-            .copied()
-            .filter(|&k| k <= 127 && !(scale.lock && !scale.contains(k)))
-            .collect();
+        // Every key sounds, also outside a locked scale: the keys column and the notes are heard
+        // as they are (B-62). The write tool does not press outside the scale on its own.
+        let keys: Vec<u8> = keys.iter().copied().filter(|&k| k <= 127).collect();
         if keys.is_empty() {
             return;
         }

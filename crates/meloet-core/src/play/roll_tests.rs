@@ -86,6 +86,7 @@ fn song(rng: &mut Rng) -> Song {
         color: TrackColor::for_index(1),
         instrument: InstrumentRef::Placeholder,
         gain_db: 0.0,
+        muted: false,
         clips: Vec::new(),
     }));
     let take = |rng: &mut Rng, origin: u64, length: u64| NewTake {
@@ -1034,7 +1035,7 @@ fn the_audition_sounds_on_the_play_target() {
     );
     assert!(effects.contains(&Effect::Engine(EngineOp::Audition {
         track: 0,
-        key: 60,
+        keys: vec![60],
         velocity: 1
     })));
     let effects = cmd(m, Command::AuditionOff);

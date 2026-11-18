@@ -105,6 +105,9 @@ pub enum Input {
     SongFilePicked(Option<PathBuf>),
     /// The answer to [`Effect::PickFolder`]; `None` when it was put away.
     FolderPicked(Option<PathBuf>),
+    /// The answer to [`Effect::PickSaveAs`]: the folder and name typed, as one path. `None`
+    /// when it was put away.
+    SaveAsPicked(Option<PathBuf>),
     /// An answer to [`Effect::SaveSong`]: the song as it is now is in `path`, named `name`.
     SongSaved {
         path: PathBuf,
@@ -169,6 +172,10 @@ pub enum Effect {
     PickSongFile,
     /// The PC's folder window. Answer with [`Input::FolderPicked`].
     PickFolder,
+    /// The PC's save window, with `name` filled in. Answer with [`Input::SaveAsPicked`].
+    PickSaveAs {
+        name: String,
+    },
     /// Read the song at `path`, or with `previous` the copy kept beside it. Answer with
     /// [`Input::SongRead`] or [`Input::SongUnreadable`].
     ReadSong {
@@ -251,6 +258,8 @@ pub struct Model {
     recovery: recovery::Recovery,
     /// The time given with `set_now`, µs.
     now_us: u64,
+    /// A meloet setting, not part of the song.
+    velocity_fixed: VelocityFixed,
 }
 
 struct OpenStream {
@@ -302,6 +311,10 @@ impl Model {
             files: songs::Files::default(),
             recovery: recovery::Recovery::default(),
             now_us: 0,
+            velocity_fixed: VelocityFixed {
+                on: settings.velocity_fixed,
+                value: settings.fixed_velocity.clamp(1, 127),
+            },
         }
     }
 
@@ -438,6 +451,7 @@ impl Model {
             Input::CloseRequested
             | Input::SongFilePicked(_)
             | Input::FolderPicked(_)
+            | Input::SaveAsPicked(_)
             | Input::SongSaved { .. }
             | Input::SongNotSaved
             | Input::SongRead { .. }
@@ -465,6 +479,7 @@ impl Model {
             }
         }
         self.watch_buffer();
+        self.play.sync_silent(&mut effects);
         self.close_when_recorded(&mut effects);
         self.recovery_tick(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
@@ -716,15 +731,24 @@ impl Model {
             Command::SelectClip { clip } => self.play.select_clip(clip),
             // Protocol 8: taken in, not yet acted on (the next part of round 3b).
             Command::SelectTrack { .. }
-            | Command::ToggleMute { .. }
-            | Command::ToggleSolo { .. }
             | Command::SelectClips { .. }
             | Command::SelectAllClips
             | Command::CopyClips { .. }
             | Command::CutClips { .. }
-            | Command::PasteClips { .. }
-            | Command::SetVelocityFixed { .. }
-            | Command::SaveSongAs => {}
+            | Command::PasteClips { .. } => {}
+            Command::ToggleMute { track } => self.play.toggle_mute(track, effects),
+            Command::ToggleSolo { track } => self.play.toggle_solo(track),
+            Command::SetVelocityFixed { on, value } => {
+                let fixed = VelocityFixed {
+                    on,
+                    value: value.clamp(1, 127),
+                };
+                if fixed != self.velocity_fixed {
+                    self.velocity_fixed = fixed;
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
+            Command::SaveSongAs => self.save_song_as(effects),
             Command::Quit => self.close_requested(effects),
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
@@ -801,11 +825,9 @@ impl Model {
                 swing,
                 align,
             }),
-            // Only the first key sounds for now; the engine sounds one key at a time.
-            Command::Audition { keys, velocity } => match keys.first() {
-                Some(&key) => self.play.audition(key, velocity, can_play, effects),
-                None => self.play.audition_off(can_play, effects),
-            },
+            Command::Audition { keys, velocity } => {
+                self.play.audition(&keys, velocity, can_play, effects);
+            }
             Command::AuditionOff => self.play.audition_off(can_play, effects),
             Command::Quantize { take, notes } => {
                 if let Some(n) = self.play.quantize(take, &notes, effects) {
@@ -1032,7 +1054,14 @@ impl Model {
             scale: self.scale,
             metronome: self.play.metronome(),
             count_in_bars: self.play.count_in_bars(),
+            velocity_fixed: self.velocity_fixed.on,
+            fixed_velocity: self.velocity_fixed.value,
         }
+    }
+
+    /// The velocity every key played takes now, if it is fixed.
+    pub fn fixed_velocity(&self) -> Option<u8> {
+        self.velocity_fixed.on.then_some(self.velocity_fixed.value)
     }
 
     /// No clip has been in the song yet, the chosen output plays, nothing is being recorded, and
@@ -1138,10 +1167,7 @@ impl Model {
                 active: self.active_keyboard().map(|k| k.id.clone()),
                 lost: self.lost.clone(),
                 input_stopped: self.midi_restarting.is_some(),
-                velocity_fixed: VelocityFixed {
-                    on: false,
-                    value: meloet_protocol::DEFAULT_FIXED_VELOCITY,
-                },
+                velocity_fixed: self.velocity_fixed,
             },
             outputs: OutputsView {
                 list: self.outputs().iter().map(endpoint_view).collect(),
@@ -1339,8 +1365,8 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
                 },
                 gain_db: t.gain_db as f32,
                 armed: song.session.armed == Some(t.id),
-                muted: false,
-                soloed: false,
+                muted: t.muted,
+                soloed: play.is_soloed(t.id),
                 clips: play.clips_of(t.id),
             })
             .collect(),

@@ -42,6 +42,7 @@ fn two_tracks() -> Doc {
         color: TrackColor::for_index(1),
         instrument: InstrumentRef::Placeholder,
         gain_db: 0.0,
+        muted: false,
         clips: Vec::new(),
     }));
     doc

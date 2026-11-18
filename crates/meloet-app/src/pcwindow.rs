@@ -11,11 +11,17 @@ use tauri::WebviewWindow;
 // ui/src/text/ja.ts. The words are spec 6 「PC のファイルの窓の題」 (ui/tests/text.test.ts reads them here).
 pub const OPEN_TITLE: &str = "ひらく";
 pub const FOLDER_TITLE: &str = "場所をえらぶ";
+// docs/design-notes.md B-59 (the user's decision of 2026-11-18); not in spec 6 yet.
+pub const SAVE_AS_TITLE: &str = "名前をつけて保存";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pick {
     SongFile,
     Folder,
+    /// The save window, with the song's name filled in.
+    SaveAs {
+        name: String,
+    },
 }
 
 #[cfg(target_os = "linux")]
@@ -26,7 +32,7 @@ mod imp {
     use gtk::prelude::*;
     use tauri::WebviewWindow;
 
-    use super::{FOLDER_TITLE, OPEN_TITLE, Pick};
+    use super::{FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE};
 
     thread_local! {
         // A native dialog is not a widget: nothing else keeps it alive until it answers.
@@ -43,12 +49,18 @@ mod imp {
         let (title, action) = match pick {
             Pick::SongFile => (OPEN_TITLE, gtk::FileChooserAction::Open),
             Pick::Folder => (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder),
+            Pick::SaveAs { .. } => (SAVE_AS_TITLE, gtk::FileChooserAction::Save),
         };
         let parent = window.gtk_window().ok();
         let dialog = gtk::FileChooserNative::new(Some(title), parent.as_ref(), action, None, None);
         dialog.set_modal(true);
         if let Some(folder) = folder {
             dialog.set_current_folder(folder);
+        }
+        if let Pick::SaveAs { name } = &pick {
+            dialog.set_current_name(name);
+            // Nothing is written over: the song gets a new folder, " 2" when the name is taken.
+            dialog.set_do_overwrite_confirmation(false);
         }
         if pick == Pick::SongFile {
             let filter = gtk::FileFilter::new();

@@ -310,6 +310,24 @@ pub fn set_meter(doc: &Doc, meter: Meter) -> Result<Edit, EditError> {
     })
 }
 
+/// Mutes the track, or lets it play again.
+pub fn toggle_mute(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    let muted = !t.muted;
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                muted,
+                ..Track::clone(t)
+            },
+        ),
+        step: StepKind::Mute { track, muted },
+    })
+}
+
 pub(crate) fn track_index(doc: &Doc, id: TrackId) -> Result<usize, EditError> {
     doc.tracks
         .iter()

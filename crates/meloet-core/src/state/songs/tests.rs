@@ -21,6 +21,8 @@ struct World {
     /// What the open window gives next; `None` puts it away.
     pick_file: Option<PathBuf>,
     pick_folder: Option<PathBuf>,
+    /// What the save window gives next; `None` puts it away.
+    pick_save_as: Option<PathBuf>,
     exited: bool,
     /// The PC's windows that were asked for.
     windows: Vec<&'static str>,
@@ -32,6 +34,7 @@ impl World {
             songs: temp_dir(label),
             pick_file: None,
             pick_folder: None,
+            pick_save_as: None,
             exited: false,
             windows: Vec::new(),
         }
@@ -52,6 +55,11 @@ impl World {
                 Effect::PickFolder => {
                     self.windows.push("folder");
                     Input::FolderPicked(self.pick_folder.take())
+                }
+                Effect::PickSaveAs { name } => {
+                    assert_eq!(name, m.view().song.name, "the song's name filled in");
+                    self.windows.push("save as");
+                    Input::SaveAsPicked(self.pick_save_as.take())
                 }
                 Effect::Exit => {
                     self.exited = true;
@@ -244,6 +252,112 @@ fn a_taken_name_gets_a_number_and_undo_keeps_it() {
     assert_eq!(file(m), SongFile::Changed);
     cmd(m, Command::Redo);
     assert_eq!(file(m), SongFile::Saved);
+}
+
+#[test]
+fn save_as_makes_a_folder_where_picked_and_takes_its_name() {
+    let w = &mut World::new("flow-save-as");
+    let m = &mut ready();
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+    w.cmd(m, Command::SaveSong);
+    let first = w.songs.join("はじめての曲/はじめての曲.meloet");
+    assert_eq!(m.song_path(), Some(first.as_path()));
+
+    let other = temp_dir("flow-save-as-other");
+    w.pick_save_as = Some(other.join("夏の曲"));
+    cmd(m, Command::SetTempo { bpm: 110.0 });
+    w.cmd(m, Command::SaveSongAs);
+    let path = other.join("夏の曲/夏の曲.meloet");
+    assert_eq!(m.song_path(), Some(path.as_path()));
+    assert_eq!(m.view().song.name, "夏の曲");
+    assert_eq!(file(m), SongFile::Saved);
+    assert_eq!(songfile::read(&path).unwrap(), song(m));
+    assert_eq!(
+        songfile::read(&first).unwrap().doc.tempo.centi(),
+        10_000,
+        "the first file stays as it was"
+    );
+
+    // Mod S from now on: the new file.
+    cmd(m, Command::SetTempo { bpm: 120.0 });
+    w.cmd(m, Command::SaveSong);
+    assert_eq!(songfile::read(&path).unwrap().doc.tempo.centi(), 12_000);
+    assert!(songfile::previous_path(&path).exists());
+
+    // A name that is taken gets " 2", and so does the song; the extension typed is dropped.
+    w.pick_save_as = Some(other.join("夏の曲.meloet"));
+    w.cmd(m, Command::SaveSongAs);
+    let second = other.join("夏の曲 2/夏の曲 2.meloet");
+    assert_eq!(m.song_path(), Some(second.as_path()));
+    assert_eq!(m.view().song.name, "夏の曲 2");
+    assert_eq!(w.windows, ["save as", "save as"]);
+    let _ = fs::remove_dir_all(other);
+}
+
+#[test]
+fn save_as_put_away_changes_nothing_and_waits_while_recording() {
+    let w = &mut World::new("flow-save-as-cancel");
+    let m = &mut ready();
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+    let effects = w.cmd(m, Command::SaveSongAs);
+    assert_eq!(w.windows, ["save as"]);
+    assert!(effects.is_empty());
+    assert_eq!(m.song_path(), None);
+    assert_eq!(file(m), SongFile::Changed);
+    assert_eq!(m.view().song.name, "はじめての曲");
+    assert_eq!(fs::read_dir(&w.songs).unwrap().count(), 0);
+    // The window is put away: Mod S works again.
+    w.cmd(m, Command::SaveSong);
+    assert_eq!(file(m), SongFile::Saved);
+
+    cmd(m, Command::SetCountIn { bars: 0 });
+    cmd(m, Command::Record);
+    w.cmd(m, Command::SaveSongAs);
+    assert_eq!(w.windows, ["save as"], "not while recording");
+}
+
+#[cfg(unix)]
+#[test]
+fn save_as_that_cannot_be_written_keeps_the_name_for_the_folder_picked() {
+    use std::os::unix::fs::PermissionsExt;
+    let w = &mut World::new("flow-save-as-cannot");
+    let locked = w.songs.join("locked");
+    fs::create_dir_all(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+    if fs::create_dir(locked.join("probe")).is_ok() {
+        return; // root
+    }
+    let m = &mut ready();
+    w.pick_save_as = Some(locked.join("冬の曲"));
+    w.cmd(m, Command::SaveSongAs);
+    assert_eq!(kind(m), Some(SongDialogKind::CannotSave));
+    assert_eq!(m.view().song.name, "はじめての曲");
+    w.pick_folder = Some(w.songs.clone());
+    w.answer(m, SongAnswer::ChooseLocation);
+    assert_eq!(
+        m.song_path(),
+        Some(w.songs.join("冬の曲/冬の曲.meloet").as_path())
+    );
+    assert_eq!(m.view().song.name, "冬の曲");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[test]
+fn mute_is_saved_and_solo_is_not() {
+    let w = &mut World::new("flow-mute");
+    let m = &mut ready();
+    cmd(m, Command::ToggleMute { track: 1 });
+    cmd(m, Command::ToggleSolo { track: 1 });
+    w.cmd(m, Command::SaveSong);
+    let path = w.songs.join("はじめての曲/はじめての曲.meloet");
+    w.cmd(m, Command::NewSong);
+    w.pick_file = Some(path);
+    let effects = w.cmd(m, Command::OpenSong);
+    let t = &m.view().song.tracks[0];
+    assert!(t.muted);
+    assert!(!t.soloed);
+    assert_eq!(m.view().song.undo_count, 0);
+    assert!(effects.contains(&Effect::Engine(EngineOp::SilentTracks { tracks: vec![0] })));
 }
 
 #[cfg(unix)]

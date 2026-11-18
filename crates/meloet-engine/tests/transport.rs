@@ -855,6 +855,95 @@ fn recording_mutes_the_armed_tracks() {
 }
 
 #[test]
+fn silent_tracks_do_not_play_their_sequence_but_keys_still_sound() {
+    let mut rig = Rig::new(256, 0);
+    let meters = rig.parts.handle.meters().clone();
+    for track in [0, 1] {
+        assert!(
+            rig.parts
+                .handle
+                .swap_instrument(track, Box::new(PlaceholderSynth::new()))
+                .is_ok()
+        );
+    }
+    let song: Vec<_> = (0..16u64)
+        .flat_map(|i| [(i * 480, on(60)), (i * 480 + 400, off(60))])
+        .collect();
+    rig.sequence(0, &song);
+    rig.sequence(1, &song);
+    rig.send(EngineCommand::SetSilentTracks {
+        tracks: [0].into_iter().collect(),
+    });
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.run(RATE);
+    assert_eq!(
+        meters.take_track_peak(0),
+        [0.0, 0.0],
+        "silent in the render"
+    );
+    assert!(meters.take_track_peak(1)[0] > 0.01);
+    // The keyboard plays track 0 (the play target) all the same.
+    let now = rig.base_us + (rig.frames as f64 * 1e6 / RATE as f64) as u64;
+    rig.key(now, on(72));
+    rig.run(RATE / 4);
+    assert!(meters.take_track_peak(0)[0] > 0.01, "a key played sounds");
+    rig.key(now + 300_000, off(72));
+    rig.run(RATE);
+    meters.take_track_peak(0);
+    rig.run(256);
+    assert_eq!(meters.take_track_peak(0), [0.0, 0.0]);
+}
+
+#[test]
+fn going_silent_lets_go_and_coming_back_picks_up() {
+    let mut rig = Rig::new(256, 0);
+    let mut tape = rig.tape(0);
+    rig.sequence(
+        0,
+        &[
+            (0, cc(64, 127)),
+            (0, on(60)),
+            (2000, on(62)),
+            (9600, off(60)),
+        ],
+    );
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.run(1024);
+    drain(&mut tape);
+    let at = rig.frames;
+    rig.send(EngineCommand::SetSilentTracks {
+        tracks: [0].into_iter().collect(),
+    });
+    // Past tick 2000: the silent track's key there is not played.
+    rig.run(frame_of(2400, 0, 12_000) - at);
+    assert_eq!(
+        drain(&mut tape),
+        vec![(at, off(60)), (at, cc(64, 0))],
+        "let go at once"
+    );
+    let back = rig.frames;
+    rig.send(EngineCommand::SetSilentTracks {
+        tracks: TrackSet::default(),
+    });
+    rig.run(256);
+    assert_eq!(
+        drain(&mut tape),
+        vec![(back, cc(64, 127))],
+        "the pedal is chased where the song is"
+    );
+    // A stream that opens again starts with no silent track.
+    rig.send(EngineCommand::SetSilentTracks {
+        tracks: [0].into_iter().collect(),
+    });
+    rig.run(256);
+    drain(&mut tape);
+    rig.parts.engine.prepare(RATE as u32);
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.run(256);
+    assert!(drain(&mut tape).contains(&(rig.frames - 256, on(60))));
+}
+
+#[test]
 fn swapping_the_sequence_while_playing_lets_go_and_returns_the_old_one() {
     let mut rig = Rig::new(256, 0);
     let mut tape = rig.tape(0);
@@ -1057,6 +1146,12 @@ fn every_transport_path_stays_off_the_allocator() {
             }),
             _ if round % 16 == 15 => rig.send(EngineCommand::RecordHere {
                 muted: [2].into_iter().collect(),
+            }),
+            7 if round % 32 == 7 => rig.send(EngineCommand::SetSilentTracks {
+                tracks: [0, 2].into_iter().collect(),
+            }),
+            7 if round % 32 == 23 => rig.send(EngineCommand::SetSilentTracks {
+                tracks: TrackSet::default(),
             }),
             _ => rig.send(EngineCommand::SetMetronome { on: round % 2 == 0 }),
         }

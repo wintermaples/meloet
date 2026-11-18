@@ -206,8 +206,6 @@ fn the_new_commands_of_protocol_8_are_taken_in() {
     for command in [
         Command::SelectTrack { track: 1 },
         Command::SelectTrack { track: 9 },
-        Command::ToggleMute { track: 1 },
-        Command::ToggleSolo { track: 1 },
         Command::SelectClips {
             clips: vec![c.id, 999],
             mode: SelectMode::Add,
@@ -235,7 +233,6 @@ fn the_new_commands_of_protocol_8_are_taken_in() {
             copy: false,
         },
         Command::DuplicateClips { clips: vec![] },
-        Command::SetVelocityFixed { on: true, value: 0 },
         Command::SaveSongAs,
     ] {
         cmd(m, command);

@@ -1,5 +1,6 @@
 //! The song: what undo covers (`Doc`) and what it does not (`Session`).
 
+use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -157,6 +158,8 @@ pub struct Track {
     pub color: TrackColor,
     pub instrument: InstrumentRef,
     pub gain_db: f64,
+    /// Its clips do not play. Keys played on it still sound.
+    pub muted: bool,
     /// In order of start, never overlapping.
     pub clips: Vec<Arc<Clip>>,
 }
@@ -186,6 +189,7 @@ impl Doc {
                 color: TrackColor::for_index(0),
                 instrument: InstrumentRef::Placeholder,
                 gain_db: 0.0,
+                muted: false,
                 clips: Vec::new(),
             })],
             next_id: 1,
@@ -194,6 +198,12 @@ impl Doc {
 
     pub fn track(&self, id: TrackId) -> Option<&Arc<Track>> {
         self.tracks.iter().find(|t| t.id == id)
+    }
+
+    /// Whether the clips of `track` play: not muted, and soloed when any track is.
+    pub fn plays(&self, track: &Track, soloed: &BTreeSet<TrackId>) -> bool {
+        let any_solo = self.tracks.iter().any(|t| soloed.contains(&t.id));
+        !track.muted && (!any_solo || soloed.contains(&track.id))
     }
 
     pub fn clip(&self, id: ClipId) -> Option<(&Arc<Track>, &Arc<Clip>)> {
@@ -213,6 +223,8 @@ pub struct Session {
     pub loop_range: Option<TickRange>,
     pub loop_on: bool,
     pub roll: RollSettings,
+    /// While any track of the song is here, only these play (a muted one still does not).
+    pub soloed: BTreeSet<TrackId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -231,6 +243,7 @@ impl Song {
                 loop_range: None,
                 loop_on: false,
                 roll: RollSettings::default(),
+                soloed: BTreeSet::new(),
             },
         }
     }

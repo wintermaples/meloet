@@ -264,8 +264,6 @@ export const mock = {
   "mock.inspector.bulk-field": m(72, "A-PianoRoll"),
   "mock.inspector.bulk-field-h": m(20, "A-PianoRoll"),
   "mock.inspector.bulk-field-pad": m(6, "A-PianoRoll"),
-  // ひらいた「CC の一覧」の種類の列（位置の列は mock.notelist.position、欄の左右は mock.notelist.cell-pad）。
-  "mock.cclist.kind": m(96, "R5-Lists"),
   // ピアノロールの帯（第 3 回）。目盛の高さ、鍵盤の列の音の名前の欄。
   "mock.pianoroll.ruler": m(20, "A-PianoRoll"),
   "mock.pianoroll.key-label": m(48, "A-PianoRoll"),

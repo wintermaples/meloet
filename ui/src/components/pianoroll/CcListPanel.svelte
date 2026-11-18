@@ -1,5 +1,6 @@
 <!-- ひらいた「CC の一覧」の中身（仕様書 3 章「第 5 版で足した決まり」、モック R5-Lists）。見出し（▾ CC の一覧 17）は帯の部品（PianoRoll.svelte）が描く。
-     列の見出しの行（位置 ・ 種類 ・ 値）と、テイクのすべての点の行（位置の順）。ノートの一覧と同じく、見えている行だけを作り、同じスクロールの棒で縦に送る。
+     列の見出しの行（位置 ・ 値）と、種類ごとの見出し（押すとたたむ）とその種類の点の行（位置の順）。見出しも点も同じ高さの行で、
+     ノートの一覧と同じく、見えている行だけを作り、同じスクロールの棒で縦に送る。
      行を押すとその点を選ぶ（Shift で足す。selectControls）。欄を 2 回押すか、行で Enter を押すと、その欄が「入力の枠」（ノートの一覧と同じ打ちこみ）。
      打ちこめるのは位置と値だけ。決めると moveControls を 1 つ。 -->
 <script lang="ts">
@@ -7,14 +8,25 @@
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
-  import { textWidth } from "../fit";
   import { metrics } from "../metrics.svelte";
-  import { CC_MAX, isOnOff, PITCH_BEND_MIN, switchText, valueText } from "./cc";
-  import { CC_FIELD_ORDER, ccRow, commitControl, controlFieldSpec, controlOf, nextCcField, type CcFieldName, type CcRow } from "./ccFields";
+  import {
+    CC_FIELD_ORDER,
+    ccGroups,
+    ccLines,
+    ccRow,
+    commitControl,
+    controlFieldSpec,
+    neighborPoint,
+    nextCcField,
+    type CcFieldName,
+    type CcGroup,
+    type CcRow,
+  } from "./ccFields";
   import NoteFieldInput from "./NoteFieldInput.svelte";
   import { clampCommand, rejectCommand, type FieldRead } from "./noteFields";
   import { inRanges } from "./notes";
   import { shown } from "./shown.svelte";
+  import { ccList } from "./view.svelte";
 
   const app = $derived(current.state!);
   const meter = $derived({ num: app.song.meterNum, den: app.song.meterDen });
@@ -24,20 +36,17 @@
   const selected = $derived(take && app.pianoRoll.take === take.id ? app.pianoRoll.selectedControls : []);
   const rowH = $derived(metrics.px("size.row.s"));
 
-  /** 値の列の、いちばん長い書きかたの幅（CSS px）。どの行も同じ幅にそろえる。 */
-  const valueMin = $derived.by(() => {
-    if (!take) return 0;
-    let longest = valueText({ kind: "cc", number: 0 }, CC_MAX);
-    for (let i = 0; i < count; i++) {
-      const c = controlOf(take, i);
-      if (isOnOff(c)) {
-        longest = switchText(CC_MAX);
-        break;
-      }
-      if (c.kind === "pitchBend") longest = valueText(c, PITCH_BEND_MIN);
+  const groups = $derived(take ? ccGroups(take) : []);
+  const layout = $derived(ccLines(groups, ccList.folded, count));
+
+  function toggle(g: CcGroup): void {
+    if (ccList.folded.includes(g.key)) {
+      ccList.folded = ccList.folded.filter((k) => k !== g.key);
+      return;
     }
-    return metrics.scaled(textWidth(longest)) + 2 * metrics.px("mock.notelist.cell-pad");
-  });
+    ccList.folded = [...ccList.folded, g.key];
+    if (editing && layout.lineOf[editing.at] === -1) editing = null;
+  }
 
   let viewport = $state<HTMLDivElement>();
   let top = $state(0);
@@ -60,12 +69,21 @@
     };
   });
 
-  const rows = $derived.by((): (CcRow & { selected: boolean })[] => {
+  type Line = { line: number; head: CcGroup | null; folded: boolean; row: CcRow | null; selected: boolean };
+
+  const lines = $derived.by((): Line[] => {
     if (!take || !clip || rowH <= 0) return [];
+    const { lines } = layout;
     const first = Math.max(0, Math.floor(top / rowH));
-    const last = Math.min(count, Math.ceil((top + viewH) / rowH) + 1);
-    const out = [];
-    for (let i = first; i < last; i++) out.push({ ...ccRow(take, clip, i, meter), selected: inRanges(selected, i) });
+    const last = Math.min(lines.length, Math.ceil((top + viewH) / rowH) + 1);
+    const out: Line[] = [];
+    for (let l = first; l < last; l++) {
+      const v = lines[l]!;
+      if (v < 0) {
+        const g = groups[-1 - v]!;
+        out.push({ line: l, head: g, folded: ccList.folded.includes(g.key), row: null, selected: false });
+      } else out.push({ line: l, head: null, folded: false, row: ccRow(take, clip, v, meter), selected: inRanges(selected, v) });
+    }
     return out;
   });
 
@@ -87,9 +105,10 @@
 
   function reveal(at: number): void {
     const v = viewport;
-    if (!v || rowH <= 0) return;
-    if (at * rowH < v.scrollTop) v.scrollTop = at * rowH;
-    else if ((at + 1) * rowH > v.scrollTop + v.clientHeight) v.scrollTop = (at + 1) * rowH - v.clientHeight;
+    const line = layout.lineOf[at] ?? -1;
+    if (!v || rowH <= 0 || line < 0) return;
+    if (line * rowH < v.scrollTop) v.scrollTop = line * rowH;
+    else if ((line + 1) * rowH > v.scrollTop + v.clientHeight) v.scrollTop = (line + 1) * rowH - v.clientHeight;
     top = v.scrollTop;
   }
 
@@ -120,8 +139,8 @@
       return;
     }
     const next = nextCcField(e.name, tab < 0);
-    const at = e.at + next.row;
-    if (at < 0 || at >= count) void close(true);
+    const at = next.row === 0 ? e.at : neighborPoint(layout.lines, layout.lineOf[e.at] ?? -1, next.row);
+    if (at === null || (layout.lineOf[at] ?? -1) < 0) void close(true);
     else open(at, next.name);
   }
 
@@ -168,37 +187,51 @@
   {/if}
 {/snippet}
 
-<div class="list" data-testid="pr-cc-list" style:--cc-value-min="{Math.ceil(valueMin)}px">
+<div class="list" data-testid="pr-cc-list">
   <div class="cols head m-lbl">
     <span class="r">{t("note.position")}</span>
-    <span>{t("ccList.kind")}</span>
     <span class="r">{t("ccList.value")}</span>
   </div>
   <ScrollArea bind:viewport data-test="cc-list-rows">
-    <div class="rows" style:height="{count * rowH}px">
-      {#each rows as row (row.index)}
-        {#if editing && editing.at === row.index}
-          <div class="m-num cols row editing" class:selected={row.selected} style:transform="translateY({row.index * rowH}px)" data-point={row.index}>
-            {#if editing.name === "position"}{@render input("position")}{:else}{@render cell(row, "position")}{/if}
-            <span class="kind">{row.kind}</span>
-            {#if editing.name === "value"}{@render input("value")}{:else}{@render cell(row, "value")}{/if}
-          </div>
-        {:else}
+    <div class="rows" style:height="{layout.lines.length * rowH}px">
+      {#each lines as l (l.line)}
+        {#if l.head}
+          {@const g = l.head}
           <button
-            class="m-plain m-num cols row m-focus-in"
-            class:selected={row.selected}
-            style:transform="translateY({row.index * rowH}px)"
-            aria-pressed={row.selected}
-            data-point={row.index}
-            data-at={row.index}
-            onclick={(e) => pick(e, row.index)}
-            onkeydown={(e) => onRowKey(e, row.index)}
-            ondblclick={(e) => onRowDouble(e, row.index)}
+            class="m-plain group m-focus-in"
+            style:transform="translateY({l.line * rowH}px)"
+            aria-expanded={!l.folded}
+            data-test="cc-list-group"
+            data-group={g.key}
+            onclick={() => toggle(g)}
           >
-            {@render cell(row, "position")}
-            <span class="kind">{row.kind}</span>
-            {@render cell(row, "value")}
+            <span class={l.folded ? "m-lbl" : "m-hi"}>{l.folded ? "▸" : "▾"}</span>
+            <span class="m-hi name">{g.name}</span>
+            <span class="m-num m-lbl">{g.points.length}</span>
           </button>
+        {:else if l.row}
+          {@const row = l.row}
+          {#if editing && editing.at === row.index}
+            <div class="m-num cols row editing" class:selected={l.selected} style:transform="translateY({l.line * rowH}px)" data-point={row.index}>
+              {#if editing.name === "position"}{@render input("position")}{:else}{@render cell(row, "position")}{/if}
+              {#if editing.name === "value"}{@render input("value")}{:else}{@render cell(row, "value")}{/if}
+            </div>
+          {:else}
+            <button
+              class="m-plain m-num cols row m-focus-in"
+              class:selected={l.selected}
+              style:transform="translateY({l.line * rowH}px)"
+              aria-pressed={l.selected}
+              data-point={row.index}
+              data-at={row.index}
+              onclick={(e) => pick(e, row.index)}
+              onkeydown={(e) => onRowKey(e, row.index)}
+              ondblclick={(e) => onRowDouble(e, row.index)}
+            >
+              {@render cell(row, "position")}
+              {@render cell(row, "value")}
+            </button>
+          {/if}
         {/if}
       {/each}
     </div>
@@ -214,11 +247,10 @@
     background: var(--color-gray-3);
     overflow: hidden;
   }
-  /* 欄の幅はモック R5-Lists（位置 76 ・ 種類 96 ・ 値は残り）。欄の幅 216 では「踏む（127）」が入らないので、
-     値の列はいちばん長い書きかたの幅を先にとり（--cc-value-min）、種類のほうを「…」で縮める。 */
+  /* 列は位置 76 と値（残り）。どちらも右よせ。 */
   .cols {
     display: grid;
-    grid-template-columns: var(--mock-notelist-position) minmax(0, var(--mock-cclist-kind)) minmax(var(--cc-value-min), 1fr);
+    grid-template-columns: var(--mock-notelist-position) minmax(0, 1fr);
     align-items: center;
     height: var(--size-row-s);
     flex-shrink: 0;
@@ -231,12 +263,6 @@
   .cols > .r {
     text-align: right;
   }
-  /* 種類は日本語の字（Mono にしない）、gray.10。 */
-  .kind {
-    font-family: var(--font-sans);
-    color: var(--color-gray-10);
-    text-overflow: ellipsis;
-  }
   /* 打っている欄: 入力の枠が欄いっぱい。 */
   .cols > .cell {
     height: 100%;
@@ -247,6 +273,31 @@
   }
   .rows {
     position: relative;
+  }
+  /* 種類ごとの見出し（R5-Lists）: 地 gray.2、▾ ▸、名前、点の数。 */
+  .group {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: var(--size-row-s);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+    background: var(--color-gray-2);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    white-space: nowrap;
+  }
+  .group .name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .group:hover,
+  .group:active {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   /* 一覧の行（仕様書 2 章）: ノートの一覧と同じ。 */
   .row {

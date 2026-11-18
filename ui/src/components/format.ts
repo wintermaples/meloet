@@ -17,8 +17,18 @@ export function dbNumber(db: number): string {
 
 /** 1.0 = 0 dBFS の値を「−8.4 dB」の文に。小さすぎれば「−∞ dB」。 */
 export function peakText(peak: number): string {
-  const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+  const db = peakDb(peak);
   return db < SILENT_DB ? t("common.dbSilent") : t("common.db", { value: dbNumber(db) });
+}
+
+/** 「dB」をはぶいた形（「−6.2」「−∞」。仕様書 3 章、再生まわりの細い形のマスター）。 */
+export function peakNumberText(peak: number): string {
+  const db = peakDb(peak);
+  return db < SILENT_DB ? t("common.dbSilentBare") : t("common.dbBare", { value: dbNumber(db) });
+}
+
+function peakDb(peak: number): number {
+  return peak > 0 ? 20 * Math.log10(peak) : -Infinity;
 }
 
 /** テンポを「96.00」の形に。 */

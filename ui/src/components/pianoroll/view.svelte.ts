@@ -166,4 +166,5 @@ export const velocityLane = $state({ open: true });
 // ---- 右の欄の「長さをそろえる」「ベロシティをまとめて変える」と、左の欄の「CC の一覧」がひらいているか。帯をたたんでも覚えている ----
 
 export const inspectorFolds = $state({ sameLength: false, velocityAll: false });
-export const ccList = $state({ open: false });
+/** folded は、たたんだ種類の見出しのキー（`ccGroupKey`）。 */
+export const ccList = $state({ open: false, folded: [] as string[] });

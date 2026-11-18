@@ -1,5 +1,5 @@
 // ひらいた「CC の一覧」（仕様書 3 章「第 5 版で足した決まり」、モック R5-Lists）の行と欄の打ちこみ。DOM を知らない。
-// 行はテイクのすべての点（テイクの中の番号 = tick の順）。打ちこめるのは位置と値だけ。決めると MoveControls を 1 つ。
+// 行は種類ごとの見出しと、その種類のすべての点（tick の順）。打ちこめるのは位置と値。決めると MoveControls を 1 つ。
 
 import { CONTROL_PITCH_BEND, type ClipView, type Command, type ControlKind, type TakeNotes } from "../../bridge";
 import { t } from "../../text/ja";
@@ -10,7 +10,7 @@ import { isOnOff, MODULATION_CC, settle, SUSTAIN_CC, switchText, valueRange, val
 import { displayTickStep, readNotePositionLoose, type FieldSpec, type LooseValue } from "./noteFields";
 
 export type CcFieldName = "position" | "value";
-/** 左から右への順（Tab の順）。種類の列は打ちこまない。 */
+/** 左から右への順（Tab の順）。 */
 export const CC_FIELD_ORDER: readonly CcFieldName[] = ["position", "value"];
 
 type Controls = Pick<TakeNotes, "controlTicks" | "controlKinds" | "controlNumbers" | "controlValues">;
@@ -34,10 +34,9 @@ export function controlValueText(c: ControlKind, v: number): string {
 }
 
 export interface CcRow {
-  /** テイクの中の番号（一覧の何行目かと同じ）。 */
+  /** テイクの中の番号。 */
   index: number;
   position: string;
-  kind: string;
   value: string;
 }
 
@@ -46,9 +45,68 @@ export function ccRow(take: Controls, clip: Placed, i: number, meter: Meter): Cc
   return {
     index: i,
     position: notePositionText(clip.start + clip.takeOffset + take.controlTicks[i]!, meter),
-    kind: controlName(c),
     value: controlValueText(c, take.controlValues[i]!),
   };
+}
+
+/** 種類ごとのまとまり。points はテイクの中の番号（tick の順）。 */
+export interface CcGroup {
+  key: string;
+  name: string;
+  points: number[];
+}
+
+/** 種類を見分けるキー（たたんだ状態を覚えるのに使う）。 */
+export function ccGroupKey(c: ControlKind): string {
+  return c.kind === "pitchBend" ? "pitchBend" : `cc${c.number}`;
+}
+
+/** CC の札と同じ順: サステイン、ピッチベンド、モジュレーション、そのほかの CC は番号の順。 */
+function groupRank(c: ControlKind): number {
+  if (c.kind === "pitchBend") return 1;
+  if (c.number === SUSTAIN_CC) return 0;
+  if (c.number === MODULATION_CC) return 2;
+  return 3 + c.number;
+}
+
+/** テイクにある種類だけのまとまり。 */
+export function ccGroups(take: Controls): CcGroup[] {
+  const byKey = new Map<string, CcGroup & { rank: number }>();
+  for (let i = 0; i < take.controlTicks.length; i++) {
+    const c = controlOf(take, i);
+    const key = ccGroupKey(c);
+    let g = byKey.get(key);
+    if (!g) byKey.set(key, (g = { key, name: controlName(c), points: [], rank: groupRank(c) }));
+    g.points.push(i);
+  }
+  return [...byKey.values()].sort((a, b) => a.rank - b.rank).map(({ key, name, points }) => ({ key, name, points }));
+}
+
+/**
+ * 一覧の行のならび。0 以上はテイクの中の番号（点の行）、負は見出し（-1 - まとまりの番号）。たたんだ種類の点は入れない。
+ * lineOf は、点の番号 → 何行目か（たたんでいれば -1）。
+ */
+export function ccLines(groups: readonly CcGroup[], folded: readonly string[], count: number): { lines: Int32Array; lineOf: Int32Array } {
+  let n = groups.length;
+  for (const g of groups) if (!folded.includes(g.key)) n += g.points.length;
+  const lines = new Int32Array(n);
+  const lineOf = new Int32Array(count).fill(-1);
+  let at = 0;
+  groups.forEach((g, gi) => {
+    lines[at++] = -1 - gi;
+    if (folded.includes(g.key)) return;
+    for (const i of g.points) {
+      lineOf[i] = at;
+      lines[at++] = i;
+    }
+  });
+  return { lines, lineOf };
+}
+
+/** line の行から dir の向きに、次の点の行のテイクの中の番号（見出しはとばす）。なければ null。 */
+export function neighborPoint(lines: Int32Array, line: number, dir: -1 | 1): number | null {
+  for (let l = line + dir; l >= 0 && l < lines.length; l += dir) if (lines[l]! >= 0) return lines[l]!;
+  return null;
 }
 
 /** 値。符号（+ − -）と小数も読み、小数は四捨五入。 */

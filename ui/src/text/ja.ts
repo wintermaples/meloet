@@ -302,6 +302,9 @@ export const texts = {
   "transport.master": e("マスター", "mock:Main"),
   "common.db": e("{value} dB", "mock:Main", { value: "−4.8" }),
   "common.dbSilent": e("−∞ dB", "mock:Main"),
+  "common.dbBare": e("{value}", "spec:3", { value: "−6.2" }),
+  "common.dbSilentBare": e("−∞", "spec:3"),
+  "transport.masterTip": e("マスター ・ {value}", "spec:3", { value: "−6.2 dB" }),
 
   // 入力計
   "meter.input": e("入力", "mock:Main"),
@@ -611,7 +614,6 @@ export const texts = {
   // ---- 区切り1 で画面の係が足す文は、ここから下に（ピアノロールの係はこの段、アレンジと再生まわりの係は次の段）。
   // [ピアノロール]
   // ひらいた「CC の一覧」の列の見出し（位置は note.position）。
-  "ccList.kind": e("種類", "mock:R5-Lists"),
   "ccList.value": e("値", "mock:R5-Lists"),
   // [アレンジ ・ 再生まわり ・ 入力計]
   // 再生の位置の欄に読めない物を打った（デザインに戻した事 61）。再生の位置には上のはしがないので、範囲の文の形を使わない。

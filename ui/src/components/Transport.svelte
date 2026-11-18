@@ -10,7 +10,7 @@
   import { t } from "../text/ja";
   import ChoiceMenu from "./ChoiceMenu.svelte";
   import { transportParts, type TransportParts } from "./fit";
-  import { PeakHold, peakText, tempoText } from "./format";
+  import { PeakHold, peakNumberText, peakText, tempoText } from "./format";
   import { metrics } from "./metrics.svelte";
   import NumberField from "./NumberField.svelte";
   import { readMeter, readPosition, readTempo, type ClampNote } from "./valueClamp";
@@ -462,7 +462,13 @@
   <div class="master" class:narrow={!parts.positionLabels}>
     <div class="master-head">
       <span class="m-lbl" use:term={"マスター"}>{t("transport.master")}</span>
-      <span class="m-num master-db" use:term={"dB"}>{peakText(masterPeak)}</span>
+      {#if parts.positionLabels}
+        <span class="m-num master-db" data-test="transport-master-db" use:term={"dB"}>{peakText(masterPeak)}</span>
+      {:else}
+        <span class="m-num master-db" data-test="transport-master-db" use:tip={t("transport.masterTip", { value: peakText(masterPeak) })}
+          >{peakNumberText(masterPeak)}</span
+        >
+      {/if}
     </div>
     <div class="meter" use:glRegion={"masterMeter"} use:glSlot={{ kind: "meter", source: "master", gap: metrics.px("space.1") }}></div>
   </div>

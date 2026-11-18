@@ -334,6 +334,33 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
     expect(tipView.value?.term).toBeNull();
   });
 
+  it("細い形のマスターは「dB」をはぶき（−∞）、乗せると「マスター ・ −∞ dB」。ふつうの形は「−∞ dB」と用語の説明（仕様書 3 章）", () => {
+    vi.useFakeTimers();
+    folded();
+    show(Transport, ready());
+    const db = () => q('[data-test="transport-master-db"]')!;
+    expect(q(".master")!.classList.contains("narrow")).toBe(true);
+    expect(db().textContent).toBe("−∞");
+    db().dispatchEvent(new PointerEvent("pointerenter"));
+    vi.advanceTimersByTime(600);
+    flushSync();
+    expect(tipView.value?.body).toBe("マスター ・ −∞ dB");
+    expect(tipView.value?.term).toBeNull();
+    db().dispatchEvent(new PointerEvent("pointerleave"));
+    unmount(mounted!);
+    mounted = null;
+
+    vi.restoreAllMocks();
+    widths(1920, () => 10);
+    show(Transport, ready());
+    expect(q(".master")!.classList.contains("narrow")).toBe(false);
+    expect(db().textContent).toBe("−∞ dB");
+    db().dispatchEvent(new PointerEvent("pointerenter"));
+    vi.advanceTimersByTime(600);
+    flushSync();
+    expect(tipView.value?.term).toBe("dB");
+  });
+
   it("カウントインが引っこむとメトロノームの ▾。メトロノームがオンなら ▾ もオン", () => {
     folded();
     show(Transport, ready((s) => (s.transport.metronome = true)));

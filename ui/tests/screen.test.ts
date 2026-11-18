@@ -3,7 +3,7 @@ import { FakeBands, SCENES, encodeTelemetry, fakeScene, fakeState, unfitScales }
 import { decodeTelemetry, keyIsDown } from "../src/bridge/telemetry";
 import type { AppState, Command } from "../src/bridge";
 import { bandCountsShown, bandTabWidth, toolbarParts, transportParts, type TransportParts, type TransportWidths } from "../src/components/fit";
-import { PeakHold, dbNumber, msText, peakText, textParts } from "../src/components/format";
+import { PeakHold, dbNumber, msText, peakNumberText, peakText, textParts } from "../src/components/format";
 import { mock, tokensAt } from "../src/design/tokens";
 import { handleKeydown, handlePointerdown } from "../src/keys/attach";
 import { hideTip, term, tipVisible } from "../src/lib/tip.svelte";
@@ -116,6 +116,8 @@ describe("数の見せかた", () => {
     expect(peakText(10 ** (-89.9 / 20))).toBe("−89.9 dB");
     expect(peakText(10 ** (-90.1 / 20))).toBe("−∞ dB");
     expect(peakText(0)).toBe("−∞ dB");
+    expect(peakNumberText(10 ** (-6.2 / 20))).toBe("−6.2");
+    expect(peakNumberText(0)).toBe("−∞");
   });
   it("直近 1 秒のいちばん大きい値", () => {
     const h = new PeakHold(1000);

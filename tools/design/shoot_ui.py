@@ -62,6 +62,8 @@ BOARDS = {
     "ccOtherMenu": "A-PianoRoll",
     "inspectorBulk": "A-PianoRoll",
     "ccList": "R5-Lists",
+    "ccListFolded": "R5-Lists",
+    "masterTip150": "F-PR150",
     "arrangeTrimmed": "R3-Arrange",
     "arrangeTrimmedRoll": None,
     "arrangeMoveDrag": "R3-Arrange",
@@ -87,6 +89,13 @@ const ev = (type, x, o) => lanes.dispatchEvent(new PointerEvent(type, { bubbles:
 ev("pointerdown", %d, %s);
 ev("pointermove", (%d + %d) / 2, %s);
 ev("pointermove", %d, %s);
+"""
+
+
+# Puts the pointer on an element and waits for its tip.
+HOVER = """
+document.querySelector('%s').dispatchEvent(new PointerEvent("pointerenter"));
+await new Promise((r) => setTimeout(r, 800));
 """
 
 
@@ -121,6 +130,10 @@ CLICKS = {
     "inspectorBulk": ("pianoRoll", ('[data-test="inspector-same-length"]', '[data-test="inspector-velocity-all"]')),
     # ひらいた「CC の一覧」（R5-Lists）。
     "ccList": ("pianoRollCc", '[data-test="pr-cc-list"]'),
+    # サステインの見出しを押してたたむ。
+    "ccListFolded": ("pianoRollCc", ('[data-test="pr-cc-list"]', '[data-group="cc64"]')),
+    # 細い形のマスターの値に乗せる（「マスター ・ −∞ dB」）。
+    "masterTip150": ("pianoRoll150", "js:" + HOVER % '[data-test="transport-master-db"]'),
     "arrangeMoveDrag": ("arrangeTrimmed", drag_clip(300, 364)),
     "arrangeCopyDrag": ("arrangeTrimmed", drag_clip(300, 556, "{ altKey: true }")),
     "arrangeTrimDrag": ("arrangeTrimmed", drag_clip(509, 413, "{ shiftKey: true }")),
@@ -145,6 +158,8 @@ ONLY = {
     "ccOtherMenu": [(1920, 1080, 100)],
     "inspectorBulk": [(1280, 800, 100), (1920, 1080, 150)],
     "ccList": [(1280, 800, 100)],
+    "ccListFolded": [(1280, 800, 100)],
+    "masterTip150": [(1280, 800, 150)],
     "arrangeTrimmed": [(1280, 800, 100), (1280, 800, 150)],
     "arrangeZoomBeats": [(1280, 800, 100), (1280, 800, 150)],
     # At 1280x800 150 % the right panel is folded, so there is no scale button to press.

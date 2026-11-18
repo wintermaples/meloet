@@ -19,6 +19,7 @@
   import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
+  import { textParts } from "../format";
   import { closeContextMenu, openContextMenu } from "../menu/contextMenu.svelte";
   import * as AG from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
@@ -778,14 +779,14 @@
   <div class="ruler">
     <div class="ruler-gap">
       <button
-        class="m-plain m-hi vzoom"
+        class="m-plain vzoom"
         disabled={prView.rowPx === ROW_PX_STEPS[0]}
         aria-label={t("menu.zoomRowsOut")}
         onclick={() => zoomRowsBy(-1)}
         data-test="pr-row-zoom-out">{t("zoom.outMark")}</button
       >
       <button
-        class="m-plain m-hi vzoom"
+        class="m-plain vzoom"
         aria-label={t("menu.zoomRowsIn")}
         disabled={prView.rowPx === ROW_PX_STEPS[ROW_PX_STEPS.length - 1]}
         onclick={() => zoomRowsBy(1)}
@@ -846,6 +847,16 @@
         <div class="box-frame" style:left="{boxFrame.x}px" style:top="{boxFrame.y}px" style:width="{boxFrame.w}px" style:height="{boxFrame.h}px"></div>
       {/if}
       <div class="play-line" class:rec={lineRec} bind:this={playLine}></div>
+      {#if shown.clip === null && !liveMode}
+        <div class="empty-hint" data-test="pr-empty-hint">
+          <span class="strong">{t("pr.emptyTitle")}</span>
+          <span
+            >{#each textParts("pr.emptyBody", { key: t("key.toolDraw") }) as part, i (i)}{#if part.hole !== null}<span class="m-num"
+                  >{part.text}</span
+                >{:else}{part.text}{/if}{/each}</span
+          >
+        </div>
+      {/if}
     </div>
     <HScrollbar total={scrollTotal} visible={areaW} offset={prView.scrollTick * ppt} onscroll={(x) => scrollToTick(x / ppt)} />
     </div>
@@ -911,27 +922,40 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
   .ruler-gap {
+    box-sizing: border-box;
     width: var(--size-col-keys);
     flex-shrink: 0;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
-    gap: var(--space-1);
-    padding-right: var(--space-1);
+    gap: var(--mock-pianoroll-row-zoom-gap);
+    padding: 0 var(--space-1);
     border-right: var(--line-hair) solid var(--color-gray-6);
   }
-  /* 縦の − ＋（B-63）: 目盛の高さ 20 にボタン（24）が入らないので、枠のない字だけのボタン。押せないときは gray.7。 */
+  /* 縦の − ＋（モック A-PianoRoll）: 幅 20 ・ 高さ 18 の切りかえ。いちばん小さい ・ 大きい段では「使えない」。 */
   .vzoom {
-    height: 100%;
-    padding: 0 var(--space-1);
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--part-toggle-size);
+    height: var(--mock-pianoroll-row-zoom-h);
+    padding: 0;
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-gray-8);
   }
   .vzoom:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
   }
   .vzoom:active:not(:disabled) {
     background: var(--color-gray-2);
-    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+    border-color: var(--color-gray-8);
   }
   .vzoom:disabled {
+    border-color: var(--color-gray-5);
     color: var(--color-gray-7);
     cursor: default;
   }
@@ -1026,6 +1050,27 @@
     border: var(--line-hair) solid var(--color-accent);
     pointer-events: none;
     z-index: 2;
+  }
+  /* クリップがない所の案内（モック F-PREmpty。形は「音が出ました」の箱と同じ）。下のノートの場所を押せるように、押せない箱。 */
+  .empty-hint {
+    position: absolute;
+    left: var(--space-6);
+    top: var(--space-6);
+    z-index: 2;
+    box-sizing: border-box;
+    width: var(--mock-pianoroll-empty-hint);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    background: var(--color-gray-3);
+    border: var(--line-hair) solid var(--color-gray-7);
+    color: var(--color-gray-8);
+    white-space: normal;
+    pointer-events: none;
+  }
+  .empty-hint .strong {
+    color: var(--color-gray-10);
   }
   .play-line {
     position: absolute;

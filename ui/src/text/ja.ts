@@ -180,36 +180,33 @@ export const texts = {
     "拡大率を {scale} % にしたので、{band}をたたみました。帯札を押すと、またひらきます。",
     { scale: "150", band: "ミキサー" },
   ),
-  // 形は棟梁の決め（2026-11-15）:「{欄}は {範囲} です。もとの {値} のままです。」。欄と範囲は value.*。
-  "msg.valueRejected": s6(
-    "使えない値を打った",
-    "{field}は {range} です。もとの {kept} のままです。",
-    { field: "ベロシティ", range: "1〜127", kept: "77" },
-    "part",
-  ),
+  // 数字の欄に、数字として読めない物を打った。欄は value.* か note.*。
+  "msg.valueRejected": s6("数字として読めない", "{field}は数字で打ちます。もとの {kept} のままです。", { field: "ベロシティ", kept: "77" }, "part"),
+  // 音の欄（音名で打つ）に読めない物を打った。6 章の形は数字の欄の物なので、音の欄だけ前の形のまま（棟梁の決め 2026-11-15）。
+  "msg.keyRejected": e("{field}は {range} です。もとの {kept} のままです。", "user:2026-11-15", { field: "音", range: "C-1〜G9", kept: "C4" }),
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
-  // 範囲の外の値は近いはしにして決める（デザインに戻した事 68）。欄と範囲は value.*。
-  "msg.valueClamped": e("{field}は {range} なので、{value} にしました。", "user:2026-11-18", { field: "ベロシティ", range: "1〜127", value: "127" }),
-  // ベロシティをまとめて変える（同じく 67）と長さをそろえる（C-6 51）。
+  // 範囲の外の値は近いはしにして決める。欄と範囲は value.*。
+  "msg.valueClamped": s6("範囲の外の値を打った", "{field}は {range} なので、{value} にしました。", { field: "ベロシティ", range: "1〜127", value: "127" }, "quoted"),
+  // ベロシティをまとめて変える、長さをそろえる。
   "msg.velocityMatched": s6("まとめてそろえた", "{count} ノートのベロシティを {value} にそろえました。", { count: "3", value: "100" }, "part"),
   "msg.lengthMatched": s6("まとめてそろえた", "{count} ノートの長さを {value} にそろえました。", { count: "3", value: "0.240" }, "part"),
-  // 位置の小節を丸めたとき（同じく 68）。小節だけ「1 から」のあとに空白がない。拍とティックは msg.valueClamped。
-  "msg.valueClampedBar": e("小節は 1 からなので、{value} にしました。", "user:2026-11-18", { value: "1. 1. 000" }),
-  // ほかのクリップと重なって置けなかった（同じく 71）。
-  "msg.clipsNotMoved": e("ほかのクリップと重なるので、動かしませんでした。", "user:2026-11-18"),
-  "msg.clipsNotPasted": e("ほかのクリップと重なるので、貼りつけませんでした。", "user:2026-11-18"),
-  "msg.clipsNotDuplicated": e("ほかのクリップと重なるので、複製できませんでした。", "user:2026-11-18"),
+  // 位置の小節を丸めたとき。小節だけ「1 から」のあとに空白がない。拍とティックは msg.valueClamped。
+  "msg.valueClampedBar": s6("位置を丸めた", "小節は 1 からなので、{value} にしました。", { value: "1. 1. 000" }, "quoted"),
+  // ほかのクリップと重なって置けなかった。
+  "msg.clipsNotMoved": s6("クリップが重なる", "ほかのクリップと重なるので、動かしませんでした。", undefined, "quoted"),
+  "msg.clipsNotPasted": s6("クリップが重なる", "ほかのクリップと重なるので、貼りつけませんでした。", undefined, "quoted"),
+  "msg.clipsNotDuplicated": s6("クリップが重なる", "ほかのクリップと重なるので、複製できませんでした。", undefined, "quoted"),
 
-  // 使えない値を打ったときの欄の名前と範囲（仕様書 6 章「使えない値を打った」、3 章のテンポと拍子の枠）。
+  // 数字の欄の名前と範囲（仕様書 6 章「範囲の外の値を打った」、3 章のテンポと拍子の枠）。
   "value.tempo": e("テンポ", "spec:6"),
-  "value.tempoRange": s6("使えない値を打った", "30.00〜300.00", undefined, "part"),
+  "value.tempoRange": s6("範囲の外の値を打った", "30.00〜300.00", undefined, "part"),
   "value.meterNum": e("拍子の上", "spec:6"),
-  "value.meterNumRange": s6("使えない値を打った", "1〜12", undefined, "part"),
+  "value.meterNumRange": s6("範囲の外の値を打った", "1〜12", undefined, "part"),
   // 6 章の文は「下は」。欄の名前だけで読めるように「拍子の下」にした（棟梁の決め 2026-11-15）。
   "value.meterDen": e("拍子の下", "user:2026-11-18"),
-  "value.meterDenRange": s6("使えない値を打った", "2 ・ 4 ・ 8 ・ 16", undefined, "part"),
+  "value.meterDenRange": s6("範囲の外の値を打った", "2 ・ 4 ・ 8 ・ 16", undefined, "part"),
   "value.velocity": e("ベロシティ", "spec:6"),
-  "value.velocityRange": s6("使えない値を打った", "1〜127", undefined, "part"),
+  "value.velocityRange": s6("範囲の外の値を打った", "1〜127", undefined, "part"),
   // 位置の小節・拍・ティック（デザインに戻した事 68）。拍とティックの範囲は拍子で変わるので、知らせについてくる。
   "value.bar": e("小節", "user:2026-11-18"),
   "value.beat": e("拍", "user:2026-11-18"),
@@ -480,7 +477,7 @@ export const texts = {
   "inspector.musicalScale": e("音階", "mock:A-PianoRoll"),
   "inspector.lock": e("固定", "mock:A-PianoRoll"),
   "inspector.on": e("オン", "mock:A-PianoRoll"),
-  "inspector.off": e("オフ", "mock:Opt3-Metro"),
+  "inspector.off": s6("音階の外の音（読み値）", "オフ", undefined, "quoted"),
   "inspector.sameLength": e("長さをそろえる", "mock:A-PianoRoll"),
   "inspector.velocityAll": e("ベロシティをまとめて変える", "mock:A-PianoRoll"),
   "scale.name": e("{root} {mode}", "mock:A-PianoRoll", { root: "C", mode: "メジャー" }),
@@ -488,12 +485,18 @@ export const texts = {
   "scale.minor": e("マイナー", "user:2026-11-15"),
   "scale.kind": e("種類", "user:2026-11-15"),
   "scale.root": e("主音", "user:2026-11-15"),
-  // 状態行。選んだノートは、数と最初の 4 つの音名。クオンタイズしたテイクなら、うしろに「 ・ クオンタイズ済み…」。
-  "status.notesSelected": e("選択 {count} ノート ・ {keys}", "mock:A-PianoRoll", { count: "3", keys: "D4 E4 F4" }),
+  // 状態行。選んだノートは、数と最初の 4 つの音名（5 つ以上は「…」をそえる）。クオンタイズしたテイクなら、うしろに「 ・ クオンタイズ済み…」。
+  "status.notesSelected": s6("ノートを選んでいる", "選択 {count} ノート ・ {keys}", { count: "3", keys: "D4 E4 F4" }, "part"),
+  "status.notesSelectedMore": s6("ノートを選んでいる", "選択 {count} ノート ・ {keys} …", { count: "7", keys: "C3 E3 G3 C4" }, "quoted"),
   "status.notesQuantized": e("クオンタイズ済み（もとの位置へ戻せます）", "mock:A-PianoRoll"),
   // ピアノロールをひらいて再生しているとき。テイクは arrange.takeSwitch。鳴っている音がなければ、その部分を出さない。
-  "status.pianoRollClip": e("{track} ・ {clip}", "mock:F-PRPlay", { track: "1 ピアノ", clip: "Aメロ" }),
-  "status.sounding": e("鳴っている音 {keys}", "mock:F-PRPlay", { keys: "C3 E3 G3 C4" }),
+  "status.pianoRollClip": s6("再生中 ・ ピアノロール", "{track} ・ {clip}", { track: "1 ピアノ", clip: "Aメロ" }, "part"),
+  "status.sounding": s6("再生中 ・ ピアノロール", "鳴っている音 {keys}", { keys: "C3 E3 G3 C4" }, "part"),
+  // ピアノロールをひらいて録音しているとき。押している鍵がなければ「 ・ 押している音 …」を出さない。
+  "msg.recordingPianoRoll": s6("録音中 ・ ピアノロール", "{track} へ録音 ・ テイク {take}", { track: "1 ピアノ", take: "3" }, "part"),
+  "status.held": s6("録音中 ・ ピアノロール", "押している音 {keys}", { keys: "C3 E3 G3 C4" }, "part"),
+  // クリップがない所でピアノロールをひらいているとき（止まっているときの左）。
+  "status.noClip": e("{track} ・ クリップなし", "mock:F-PREmpty", { track: "1 ピアノ" }),
   "msg.outOfScale": s6("音階の外に書こうとした", "{key} は {scale}の外の音です（スケール固定 ・ オン）", { key: "D#", scale: "C メジャー" }),
   // ピアノロールの帯（第 3 回）: 道具の列、左右の欄の見出し、ベロシティと CC の札、その場の読み値。
   "pr.clip": e("{number} {track} ・ {clip} ・ 小節 {bars} ・ ノート {count}", "mock:F-PRPlay", { number: "1", track: "ピアノ", clip: "Aメロ", bars: "1–4", count: "23" }),
@@ -507,6 +510,15 @@ export const texts = {
   }),
   "pr.clipRecording": e("{number} {track} ・ {clip} ・ 録音中 ・ ノート {count}", "mock:F-PRRec", { number: "1", track: "ピアノ", clip: "Aメロ", count: "22" }),
   "pr.recordingDot": e("●", "mock:F-PRRec"),
+  "pr.noClip": e("{number} {track} ・ クリップなし", "spec:3", { number: "1", track: "ピアノ" }),
+  // クリップがない所の案内（ノートの場所の左上）。{key} は書く道具のキー（key.toolDraw）。
+  "pr.emptyTitle": s6("クリップがない所のピアノロール", "ここにはクリップがありません。", undefined, "quoted"),
+  "pr.emptyBody": s6(
+    "クリップがない所のピアノロール",
+    "書く道具（{key}）で押すと、そこから 4 小節のクリップを作って書きます。鍵盤で弾いて録っても作られます。",
+    { key: "2" },
+    "quoted",
+  ),
   "pr.toolSelect": e("選ぶ", "mock:A-PianoRoll"),
   "pr.toolDraw": e("書く", "mock:A-PianoRoll"),
   "pr.toolErase": e("消す", "mock:A-PianoRoll"),
@@ -531,8 +543,8 @@ export const texts = {
   "pr.readBox": e("{count} ノート", "mock:R3-PRMouse", { count: "3" }),
   "pr.readVelocity": e("{delta}（{count} ノート）", "mock:R3-Lanes", { delta: "+12", count: "3" }),
   "pr.readControl": e("{delta} ・ {position}", "mock:R3-Lanes", { delta: "+0512", position: "1.3.000" }),
-  "pr.readSwitch": e("{state}（{value}）", "mock:R3-Lanes", { state: "踏む", value: "127" }),
-  "pr.switchOn": e("踏む", "mock:R3-Lanes"),
+  "pr.readSwitch": s6("オン ・ オフの CC の読み値", "{state}（{value}）", { state: "踏む", value: "127" }, "quoted"),
+  "pr.switchOn": s6("オン ・ オフの CC の読み値", "踏む", undefined, "part"),
   // 「そのほかの CC」の一覧の行と、えらんだ番号の帯の名前。
   "pr.ccNumber": e("CC {number}", "user:2026-11-15", { number: "7" }),
   // 上のメニューの行と右クリックの一覧（ヤチヨさんの決め 2026-11-18。design-notes B-59 ・ 60）。右クリックの一覧も同じ行の名前を使う。
@@ -599,7 +611,7 @@ export const texts = {
   "ccList.value": e("値", "mock:R5-Lists"),
   // [アレンジ ・ 再生まわり ・ 入力計]
   // 再生の位置の欄に読めない物を打った（デザインに戻した事 61）。再生の位置には上のはしがないので、範囲の文の形を使わない。
-  "msg.playPositionRejected": e("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの {kept} のままです。", "user:2026-11-18", { kept: "1. 1. 000" }),
+  "msg.playPositionRejected": s6("位置として読めない", "位置は「5」「5.2」「5.2.240」の形で打ちます。もとの {kept} のままです。", { kept: "1. 1. 000" }),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。

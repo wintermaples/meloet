@@ -115,6 +115,40 @@ describe("道具の列", () => {
   });
 });
 
+describe("クリップがない所（モック F-PREmpty、仕様書 3 章 ・ 6 章）", () => {
+  it("道具の列は「1 ピアノ ・ クリップなし」（番号は Mono）。ノートの場所の左上に案内の 2 文（「2」は Mono）", async () => {
+    show(fakeScene("pianoRollEmpty")!.state);
+    await settle();
+    expect(text(q("[data-test=pr-info]"))).toBe("1 ピアノ ・ クリップなし");
+    expect(text(q("[data-test=pr-info] .m-num"))).toBe("1");
+    const hint = q("[data-test=pr-empty-hint]")!;
+    expect(hint.closest(".area")).not.toBeNull();
+    expect([...hint.children].map(text)).toEqual([
+      "ここにはクリップがありません。",
+      "書く道具（2）で押すと、そこから 4 小節のクリップを作って書きます。鍵盤で弾いて録っても作られます。",
+    ]);
+    expect(text(hint.querySelector(".m-num"))).toBe("2");
+  });
+
+  it("書く道具でクリップができたら、案内は消え、道具の列はクリップの文", async () => {
+    const s = fakeScene("pianoRollEmpty")!.state;
+    show(s);
+    await settle();
+    expect(q("[data-test=pr-empty-hint]")).not.toBeNull();
+    const made = fakeScene("pianoRoll")!.state;
+    app.setState({ ...s, song: { ...s.song, tracks: made.song.tracks }, arrange: made.arrange });
+    await settle();
+    expect(q("[data-test=pr-empty-hint]")).toBeNull();
+    expect(text(q("[data-test=pr-info]"))).toContain("1 ピアノ ・ イントロ");
+  });
+
+  it("クリップがあれば案内は出さない", async () => {
+    show(scene());
+    await settle();
+    expect(q("[data-test=pr-empty-hint]")).toBeNull();
+  });
+});
+
 describe("左右の欄と CC の札", () => {
   it("見出しは欄ごとに 1 つ（▾ ノートの一覧 23 ・ ▾ 選んだノート 3）。押すとたたんで縦の見出し、押すとひらく", () => {
     show(scene());

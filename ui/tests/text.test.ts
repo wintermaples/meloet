@@ -90,15 +90,24 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
     expect(row[3]).toBe(t("button.openAudioSettings"));
   });
 
-  it("使えない値を打った: 4 つの欄と範囲で文になる。ベロシティは仕様書の例そのまま", () => {
-    const cell = byScene.get("使えない値を打った")![1]!;
-    const say = (field: Parameters<typeof t>[0], range: Parameters<typeof t>[0], kept: string) =>
-      t("msg.valueRejected", { field: t(field), range: t(range), kept });
-    expect(cell.startsWith(say("value.velocity", "value.velocityRange", "77"))).toBe(true);
-    expect(say("value.tempo", "value.tempoRange", "96.00")).toBe("テンポは 30.00〜300.00 です。もとの 96.00 のままです。");
-    expect(say("value.meterNum", "value.meterNumRange", "4")).toBe("拍子の上は 1〜12 です。もとの 4 のままです。");
-    expect(say("value.meterDen", "value.meterDenRange", "4")).toBe("拍子の下は 2 ・ 4 ・ 8 ・ 16 です。もとの 4 のままです。");
-    expect(cell).toContain(`（${t("value.tempo")}は ${t("value.tempoRange")}、${t("value.meterNum")}は ${t("value.meterNumRange")}、下は ${t("value.meterDenRange")}）`);
+  it("数字として読めない: 欄の名前で文になる。ベロシティは仕様書の例そのまま", () => {
+    const cell = byScene.get("数字として読めない")![1]!;
+    const say = (field: Parameters<typeof t>[0], kept: string) => t("msg.valueRejected", { field: t(field), kept });
+    expect(cell).toBe(`${say("value.velocity", "77")}（ほかの欄も同じ形）`);
+    expect(say("value.tempo", "96.00")).toBe("テンポは数字で打ちます。もとの 96.00 のままです。");
+    expect(say("value.meterNum", "4")).toBe("拍子の上は数字で打ちます。もとの 4 のままです。");
+    expect(say("value.meterDen", "4")).toBe("拍子の下は数字で打ちます。もとの 4 のままです。");
+  });
+
+  it("範囲の外の値を打った: 4 つの欄と範囲で文になる。ベロシティと拍子の下は仕様書の例そのまま", () => {
+    const cell = byScene.get("範囲の外の値を打った")![1]!;
+    const say = (field: Parameters<typeof t>[0], range: Parameters<typeof t>[0], value: string) =>
+      t("msg.valueClamped", { field: t(field), range: t(range), value });
+    expect(cell).toContain(`「${say("value.velocity", "value.velocityRange", "127")}」`);
+    expect(cell).toContain(`「${say("value.meterDen", "value.meterDenRange", "4")}」`);
+    expect(say("value.tempo", "value.tempoRange", "300.00")).toBe("テンポは 30.00〜300.00 なので、300.00 にしました。");
+    expect(say("value.meterNum", "value.meterNumRange", "12")).toBe("拍子の上は 1〜12 なので、12 にしました。");
+    expect(cell).toContain(`（${t("value.tempo")}は ${t("value.tempoRange")}、${t("value.meterNum")}は ${t("value.meterNumRange")}。どれも同じ形）`);
   });
 
   it("穴は全部、例の値で埋まる", () => {

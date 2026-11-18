@@ -827,6 +827,13 @@ export const SCENES: Record<string, SceneDef> = {
     },
     live: PIANO_ROLL_LIVE,
   },
+  // The mock F-PREmpty: a new song with no clip, the piano roll open (spec 3: only the grid, and the hint at the top left).
+  pianoRollEmpty: {
+    setup: ready,
+    bands: ["pianoRoll"],
+    after: (s) => (s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null }),
+    meters: QUIET,
+  },
   mixer: { setup: ready, bands: ["mixer"], meters: QUIET },
   history: { setup: ready, bands: ["history"], meters: QUIET },
   shelf: { setup: ready, bands: ["shelf"], meters: QUIET },

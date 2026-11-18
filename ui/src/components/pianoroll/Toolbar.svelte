@@ -47,7 +47,11 @@
   });
 
   const info = $derived.by((): { key: TextKey; values: Record<string, string | number> } | null => {
-    if (!clip || !track) return null;
+    if (!clip || !track) {
+      // クリップがない所（仕様書 3 章）: 弾くと鳴る先のトラック。
+      const target = app.song.tracks.find((x) => x.number === app.song.playTarget);
+      return !clip && target && app.transport.recording === null ? { key: "pr.noClip", values: { number: target.number, track: target.name } } : null;
+    }
     const base = { number: track.number, track: track.name, clip: clip.name, count: clip.noteCount };
     if (rec) return { key: "pr.clipRecording", values: { ...base, count: liveCount } };
     const bars = G.barsText(clip.start, clip.end, meter);

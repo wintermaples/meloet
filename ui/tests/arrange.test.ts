@@ -196,13 +196,14 @@ describe("押す: クリップをえらぶ、録音待機", () => {
 });
 
 describe("選んだトラック（B-70）", () => {
-  it("playTarget の見出しは selected（地 gray.4）。見出しを押すと selectTrack、M ・ S ・ ● の上や、選んであるトラックは送らない", () => {
+  it("playTarget の見出しは selected（地 gray.4）。見出しを押して離すと selectTrack、M ・ S ・ ● の上や、選んであるトラックは送らない", () => {
     show(three());
     const heads = qa("[data-test=track-head]");
     expect(heads.map((h) => h.classList.contains("selected"))).toEqual([false, true, false]);
-    pointer(heads[0]!, "pointerdown", 10, 10);
-    pointer(heads[1]!, "pointerdown", 10, 10);
-    pointer(qa("button[aria-label=ミュート]")[2]!, "pointerdown", 10, 10);
+    for (const el of [heads[0]!, heads[1]!, qa("button[aria-label=ミュート]")[2]!]) {
+      pointer(el, "pointerdown", 10, 10);
+      pointer(el, "pointerup", 10, 10);
+    }
     expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
   });
 });
@@ -386,20 +387,39 @@ describe("右クリックの一覧（B-60）", () => {
     ]);
   });
 
-  it("トラックの見出し: ミュート ・ ソロ ・ 録音待機。選ばれていなければ selectTrack してから", () => {
+  it("トラックの見出し（モック R6-Tracks）: ミュート ・ ソロ ・ 録音待機 ／ 名前 ・ 色 ・ 上へ ・ 下へ ／ 消す。選ばれていなければ selectTrack してから", () => {
     show(three());
     ctx(qa("[data-test=track-head]")[0]!, 10, 10);
     expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
-    expect(rows().map((r) => [r.label, r.key])).toEqual([
-      ["menu.mute", "Shift M"],
-      ["menu.solo", "Shift S"],
-      ["menu.arm", undefined],
+    expect(rows().map((r) => [r.label, r.key, r.usable, r.checked])).toEqual([
+      ["menu.mute", "Shift M", true, false],
+      ["menu.solo", "Shift S", true, false],
+      ["menu.arm", undefined, true, true],
+      ["menu.renameTrack", "F2", true, undefined],
+      ["menu.trackColor", undefined, true, undefined],
+      ["menu.moveTrackUp", undefined, false, undefined],
+      ["menu.moveTrackDown", undefined, true, undefined],
+      ["menu.deleteTrack", undefined, true, undefined],
     ]);
-    for (const r of rows()) r.run();
+    expect(contextMenu.open!.entries.map((e) => e.kind)).toEqual(["row", "row", "row", "separator", "row", "row", "row", "row", "separator", "row"]);
+    const colors = rows().find((r) => r.label === "menu.trackColor")!.sub!.filter((e) => e.kind === "row");
+    expect(colors.map((r) => [r.text, r.swatch, r.checked])).toEqual([
+      ["色 1", 1, true],
+      ["色 2", 2, false],
+      ["色 3", 3, false],
+      ["色 4", 4, false],
+      ["色 5", 5, false],
+    ]);
+    for (const r of rows().slice(0, 3)) r.run();
+    colors[2]!.run();
+    for (const r of rows().slice(5).filter((r) => r.usable)) r.run();
     expect(app.sent.slice(1)).toEqual([
       { type: "toggleMute", track: 1 },
       { type: "toggleSolo", track: 1 },
       { type: "selectTrack", track: 1, fromArm: true },
+      { type: "setTrackColor", track: 1, color: 3 },
+      { type: "moveTrack", track: 1, to: 1 },
+      { type: "deleteTrack", track: 1 },
     ]);
   });
 });

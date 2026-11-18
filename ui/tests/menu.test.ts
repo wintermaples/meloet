@@ -16,6 +16,7 @@ import { keyAction, type KeyInput } from "../src/keys/keys";
 import { closeMenu, menuOpened, menuVisible } from "../src/lib/menu";
 import * as app from "./fake-app.svelte";
 import { take } from "./pianoroll-fixture";
+import { trackEdit } from "../src/components/tracks.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
@@ -55,9 +56,9 @@ afterEach(() => {
 });
 
 describe("メニューの中身（B-59）", () => {
-  it("6 つのメニューと行の名前、行の右のキー（Linux ・ Windows）", () => {
+  it("7 つのメニューと行の名前、行の右のキー（Linux ・ Windows）", () => {
     const menus = topMenus(withClip(), depsOf(withClip(), []), "other");
-    expect(menus.map((m) => m.label)).toEqual(["ファイル", "編集", "表示", "再生", "ノート", "トラック"]);
+    expect(menus.map((m) => m.label)).toEqual(["ファイル", "編集", "表示", "再生", "ノート", "トラック", "ヘルプ"]);
     const keyed = (i: number) => rows(menus[i]!.entries).map((r) => (r.sub ? `${r.label} ▸` : r.key ? `${r.label} ${r.key}` : r.label));
     expect(keyed(0)).toEqual([
       "新しい曲 Ctrl N",
@@ -93,7 +94,22 @@ describe("メニューの中身（B-59）", () => {
     ]);
     expect(keyed(3)).toEqual(["再生 Space", "停止 Space", "録音 R", "先頭へ Home", "ループ L", "メトロノーム C", "カウントイン ▸"]);
     expect(keyed(4)).toEqual(["道具 ▸", "クオンタイズ Q", "もとの位置へ戻す", "グリッド ▸", "三連符", "スケール固定 ▸"]);
-    expect(keyed(5)).toEqual(["ミュート Shift M", "ソロ Shift S", "録音待機", "次のテイク T", "前のテイク Shift T", "テイクを消す", "トラックを足す"]);
+    // 仕様書 3 章の順。テイクを消す（B-82）は前のテイクのうしろ。
+    expect(keyed(5)).toEqual([
+      "ミュート Shift M",
+      "ソロ Shift S",
+      "録音待機",
+      "次のテイク T",
+      "前のテイク Shift T",
+      "テイクを消す",
+      "トラックを足す",
+      "名前を変える F2",
+      "色 ▸",
+      "上へ動かす",
+      "下へ動かす",
+      "トラックを消す",
+    ]);
+    expect(keyed(6)).toEqual(["meloet について"]);
   });
 
   it("Mac は Cmd と Option", () => {
@@ -112,10 +128,22 @@ describe("メニューの中身（B-59）", () => {
     for (const i of [0, 1, 2]) expect(menus[i]!.entries.filter((e) => e.kind === "separator")).toHaveLength(2);
   });
 
-  it("まだない物（書き出し、トラックを足す）は使えない", () => {
-    const menus = topMenus(withClip(), depsOf(withClip(), []), "other");
+  it("まだない物（書き出し、meloet について）は使えない。トラックを足すは棚を「新しいトラック」でひらく", () => {
+    const sent: Command[] = [];
+    const menus = topMenus(withClip(), depsOf(withClip(), sent), "other");
     expect(row(menus[0]!.entries, "書き出し…").usable).toBe(false);
-    expect(row(menus[5]!.entries, "トラックを足す").usable).toBe(false);
+    expect(row(menus[6]!.entries, "meloet について").usable).toBe(false);
+    row(menus[5]!.entries, "トラックを足す").run!();
+    expect(sent).toEqual([{ type: "openShelf", mode: { kind: "newTrack" } }]);
+  });
+
+  it("トラック 1 本では、上へ ・ 下へ動かすは使えない。名前を変えるは F2 と同じく入力の枠をひらく", () => {
+    const menus = topMenus(withClip(), depsOf(withClip(), []), "other");
+    const track = menus[5]!.entries;
+    expect([row(track, "上へ動かす").usable, row(track, "下へ動かす").usable, row(track, "トラックを消す").usable]).toEqual([false, false, true]);
+    row(track, "名前を変える").run!();
+    expect(trackEdit.renaming).toBe(1);
+    trackEdit.renaming = null;
   });
 
   it("録音中とカウントイン中は、曲を変える行と曲の名前の一覧と同じ行が使えない", () => {
@@ -406,7 +434,7 @@ describe("上のメニューの行（mount）", () => {
   };
 
   it("名前を押すとすぐ下にひらき、ひらいている間はほかの名前に乗ると切りかわる。もう一度押すととじる", async () => {
-    expect(names().map((b) => b.textContent)).toEqual(["ファイル", "編集", "表示", "再生", "ノート", "トラック"]);
+    expect(names().map((b) => b.textContent)).toEqual(["ファイル", "編集", "表示", "再生", "ノート", "トラック", "ヘルプ"]);
     names()[0]!.click();
     await settle();
     expect(list()).not.toBeNull();
@@ -452,8 +480,9 @@ describe("上のメニューの行（mount）", () => {
     expect(document.activeElement?.textContent).toContain("ひらく…");
     keydown("ArrowLeft");
     await settle();
-    expect(menuBar.open).toBe(5);
-    expect(document.activeElement?.textContent).toContain("ミュート");
+    // いちばん右は「ヘルプ」。使える行がないので、一覧そのものにフォーカス。
+    expect(menuBar.open).toBe(6);
+    expect(document.activeElement?.getAttribute("role")).toBe("menu");
     keydown("ArrowRight");
     await settle();
     expect(menuBar.open).toBe(0);

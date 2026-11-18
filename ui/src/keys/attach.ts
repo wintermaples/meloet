@@ -9,6 +9,7 @@ import { shown } from "../components/pianoroll/shown.svelte";
 import { shownFor } from "../components/pianoroll/shownNotes";
 import { cancelDrag, prView, zoomArrangeBy, zoomBy } from "../components/pianoroll/view.svelte";
 import { songDialogEnter } from "../components/songDialog";
+import { shelfGroups, shelfHasKeys, shelfStep, shelfToggle, shelfUi, startRename } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
 import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
@@ -84,7 +85,7 @@ function command(action: KeyAction, state: AppState): Command | null {
     case "arrange":
       return { type: "goArrange" };
     case "toggleBand":
-      return { type: "toggleBand", band: action.band };
+      return action.band === "shelf" ? shelfToggle(state) : { type: "toggleBand", band: action.band };
     case "audioSettings":
       return { type: "openSettings", advanced: false };
     case "scale":
@@ -141,6 +142,19 @@ function command(action: KeyAction, state: AppState): Command | null {
       return track === null || busy ? null : { type: "toggleMute", track };
     case "trackSolo":
       return track === null ? null : { type: "toggleSolo", track };
+    case "shelfStep": {
+      const next = shelfStep(shelfGroups(state.shelf, shelfUi), state.shelf.selected, action.delta);
+      return next === null || next === state.shelf.selected ? null : { type: "shelfSelect", instrument: next };
+    }
+    case "shelfConfirm":
+      return state.shelf.selected === null ? null : { type: "shelfConfirm" };
+    case "shelfSample": {
+      const row = state.shelf.selected;
+      if (row === null) return null;
+      return state.shelf.sample?.instrument === row ? { type: "stopSample" } : { type: "playSample", instrument: row };
+    }
+    case "shelfFavorite":
+      return state.shelf.selected === null ? null : { type: "toggleFavorite", instrument: state.shelf.selected };
     default:
       return null;
   }
@@ -152,9 +166,15 @@ export function keyCommand(action: KeyAction, state: AppState, deps: KeyDeps, to
   return forPianoRoll !== undefined ? forPianoRoll : command(action, state);
 }
 
-/** 画面の中だけで行う意図（横の拡大、道具、F10）か。 */
+/** 画面の中だけで行う意図（横の拡大、道具、F10、名前の入力の枠）か。 */
 function screenOnly(action: KeyAction): boolean {
-  return action.kind === "zoom" || action.kind === "tool" || action.kind === "menuBar";
+  return action.kind === "zoom" || action.kind === "tool" || action.kind === "menuBar" || action.kind === "renameTrack";
+}
+
+/** F2 で名前を変えるトラック（選んだトラック）。録音中とカウントイン中は変えられない。 */
+function renameTarget(state: AppState): number | null {
+  const track = state.song.playTarget;
+  return track === null || songBusy(state) || !state.song.tracks.some((x) => x.id === track) ? null : track;
 }
 
 /** いま行えるか（メニューの行の「使えない」）。 */
@@ -162,6 +182,7 @@ export function keyActionUsable(action: KeyAction, deps: KeyDeps, toPianoRoll = 
   const state = deps.state();
   if (!state) return false;
   if (action.kind === "tool") return pianoRollOpen(state);
+  if (action.kind === "renameTrack") return renameTarget(state) !== null;
   if (screenOnly(action)) return true;
   return keyCommand(action, state, deps, toPianoRoll) !== null;
 }
@@ -182,11 +203,18 @@ export function runKeyAction(action: KeyAction, deps: KeyDeps, toPianoRoll = fal
     case "menuBar":
       if (!closeMenuBar()) openMenuBar(0, true);
       return true;
+    case "renameTrack": {
+      const track = renameTarget(state);
+      if (track !== null) startRename(track);
+      return track !== null;
+    }
   }
   const c = keyCommand(action, state, deps, toPianoRoll);
   if (c) deps.send(c);
   return c !== null;
 }
+
+const SHELF_KEYS = new Set<KeyAction["kind"]>(["shelfStep", "shelfConfirm"]);
 
 /** Mod つきは、使えないときもブラウザの動き（Ctrl S の保存など）に渡さない。 */
 const WITH_MOD = new Set<KeyAction["kind"]>([
@@ -204,6 +232,15 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
   "paste",
   "zoom",
 ]);
+
+/**
+ * Esc の「棚」の番で、ためし弾きをしていれば、とじる前にためし弾きをやめる（仕様書 3 章: Esc でやめて元のトラックの音に戻る。
+ * 次の Esc で棚をとじる）。ダイアログがあれば、ダイアログが先。
+ */
+function auditionToCancel(state: AppState): boolean {
+  const ws = state.workspace;
+  return ws.songDialog === null && ws.settings === null && ws.layout.rightOpen.includes("shelf") && state.shelf.selected !== null;
+}
 
 /** Esc の 3 つめの番（用語の説明やメニュー）。上のメニュー、右クリックの一覧、状態行などの一覧のどれかをとじたら true。 */
 function closeMenus(): boolean {
@@ -229,7 +266,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
   if (state.workspace.hint === "soundCameOut") deps.send({ type: "dismissHint" });
 
   const typing = isTyping(doc);
-  const context = state.workspace.chooser ? "outputChooser" : "main";
+  const context = state.workspace.chooser ? "outputChooser" : shelfHasKeys(state) ? "shelf" : "main";
   const action = keyAction(keyInputOf(ev), typing, platformOf(deps.nav ?? navigator), context);
 
   if (!action) {
@@ -250,7 +287,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     // 仕様書 4 章: ドラッグ中の Esc は、動かす前に戻すだけ。そのあと 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
     if (cancelDrag()) return;
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
-    else if (!closeMenus()) deps.send({ type: "back" });
+    else if (!closeMenus()) deps.send(auditionToCancel(state) ? { type: "shelfCancel" } : { type: "back" });
     return;
   }
 
@@ -261,10 +298,11 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
 
   // ブラウザの拡大（Ctrl ＋）や保存（Ctrl S）などに渡さない。
   if (WITH_MOD.has(action.kind) || action.kind === "menuBar") ev.preventDefault();
-  // Space は、使えないときも、フォーカスのあるボタンを押さない（再生 ・ 停止だけ）。
-  if (action.kind === "playStop") ev.preventDefault();
+  // Space は、使えないときも、フォーカスのあるボタンを押さない（再生 ・ 停止か、棚のサンプルだけ）。
+  if (action.kind === "playStop" || action.kind === "shelfSample") ev.preventDefault();
   // 打っている最中の Home は枠の中のカーソルも動かし、Shift M ・ Shift S は文字も入る。
-  if (runKeyAction(action, deps) && !typing) ev.preventDefault();
+  // 棚の ↑ ↓ ・ Enter は、さがす枠の中でも棚のもの（カーソルを動かさない）。
+  if (runKeyAction(action, deps) && (!typing || SHELF_KEYS.has(action.kind))) ev.preventDefault();
 }
 
 /** Space の keyup。ボタンは keyup で押される（WebKit と Firefox）ので、文字を打っていなければ、ここでも止める。 */
@@ -279,9 +317,12 @@ export function zoomHorizontal(delta: 1 | -1, state: AppState): void {
   else zoomArrangeBy(delta);
 }
 
-/** マウスのボタンを押したら、案内を消す。 */
-export function handlePointerdown(deps: KeyDeps): void {
+/** マウスのボタンを押したら、案内を消す。棚を押せば棚にキーを向け、画面のほかの所を押せば外す（上にひらく一覧は .app の外）。 */
+export function handlePointerdown(deps: KeyDeps, target?: EventTarget | null): void {
   if (deps.state()?.workspace.hint === "soundCameOut") deps.send({ type: "dismissHint" });
+  const el = target instanceof Element ? target : null;
+  if (el?.closest("[data-shelf]")) shelfUi.keys = true;
+  else if (el?.closest(".app")) shelfUi.keys = false;
 }
 
 /** document にキーとマウスをつなぐ。はずす関数を返す。 */
@@ -289,7 +330,7 @@ export function attachKeys(deps: KeyDeps): () => void {
   const doc = deps.doc ?? document;
   const onKey = (ev: KeyboardEvent) => handleKeydown(ev, deps);
   const onKeyup = (ev: KeyboardEvent) => handleKeyup(ev, doc);
-  const onPointer = () => handlePointerdown(deps);
+  const onPointer = (ev: PointerEvent) => handlePointerdown(deps, ev.target);
   doc.addEventListener("keydown", onKey);
   doc.addEventListener("keyup", onKeyup);
   doc.addEventListener("pointerdown", onPointer, true);

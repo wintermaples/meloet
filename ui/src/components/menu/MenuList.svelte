@@ -132,6 +132,7 @@
           }}
         >
           <span class="choice" class:selected={entry.checked === true} class:none={entry.checked === undefined}><span class="dot"></span></span>
+          {#if entry.swatch !== undefined}<span class="swatch" style:background="var(--color-track-{entry.swatch})"></span>{/if}
           <span class="label">{entry.label}</span>
           {#if entry.hint}<span class="m-lbl hint" data-test="menu-hint">{entry.hint}</span>{/if}
           <span class="m-spacer"></span>
@@ -233,6 +234,12 @@
   }
   .label {
     color: var(--color-gray-10);
+  }
+  /* 色の一覧の行の色の見本（仕様書 2 章「色の一覧の行」）。 */
+  .swatch {
+    flex-shrink: 0;
+    width: var(--part-colorlist-swatch-w);
+    height: var(--part-colorlist-swatch-h);
   }
   /* 使えない（仕様書 2 章）: 印の枠 gray.5 ・ 文字 gray.7 ・ 押せない。キーも gray.7。 */
   .unusable .label,

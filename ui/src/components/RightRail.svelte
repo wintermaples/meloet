@@ -1,17 +1,20 @@
 <!-- 右はし: ひらいた欄（棚かパラメータ。前に出ている物だけ）と、たたんだ物の縦の見出し。
-     モック F-Empty（縦の見出し）、A-Mixer・F-ParamFew（ひらいた欄の見出しの行）。 -->
+     モック F-Empty（縦の見出し）、A-Mixer・F-ParamFew（ひらいた欄の見出しの行）。棚の中身は Shelf.svelte。 -->
 <script lang="ts">
   import type { Band } from "../bridge";
   import { current, send } from "../state/app.svelte";
   import { t } from "../text/ja";
   import { metrics } from "./metrics.svelte";
+  import Shelf from "./Shelf.svelte";
+  import { BUILTIN_EFFECTS, shelfToggle } from "./tracks.svelte";
 
   const layout = $derived(current.state!.workspace.layout);
   const front = $derived(layout.rightFront);
 
   const RIGHT: Band[] = ["shelf", "params"];
   const tabs = $derived(RIGHT.filter((b) => b !== front));
-  const toggle = (band: Band) => send({ type: "toggleBand", band });
+  const toggle = (band: Band) => send(band === "shelf" ? shelfToggle(current.state!) : { type: "toggleBand", band });
+  const instruments = $derived(current.state!.shelf.available.length);
 
   // When the window is too low for every vertical heading, the shelf counts go first.
   let nav = $state<HTMLElement>();
@@ -47,13 +50,15 @@
   <span class="m-name">{band === "shelf" ? t("band.shelf") : t("band.params")}</span>
 {/snippet}
 
-{#if front}
+{#if front === "shelf"}
+  <Shelf />
+{:else if front}
   <aside class="panel" data-band={front}>
     <button class="m-plain head m-focus-in" onclick={() => toggle(front)} data-test="rail-fold">
       <span class="m-hi">▾</span>
       {@render title(front)}
       <span class="m-spacer"></span>
-      <span class="m-num m-lbl">{front === "shelf" ? t("key.shelf") : t("key.params")}</span>
+      <span class="m-num m-lbl">{t("key.params")}</span>
     </button>
   </aside>
 {/if}
@@ -65,7 +70,7 @@
       <span class="m-lbl">▸</span>
       <span class="vt">{@render title(band)}</span>
       {#if band === "shelf" && countsFit}
-        <span class="vt m-lbl">{t("band.shelfCount", { instruments: 0, effects: 0 })}</span>
+        <span class="vt m-lbl">{t("band.shelfCount", { instruments, effects: BUILTIN_EFFECTS })}</span>
       {/if}
       <span class="m-num m-lbl">{band === "shelf" ? t("key.shelf") : t("key.params")}</span>
     </button>

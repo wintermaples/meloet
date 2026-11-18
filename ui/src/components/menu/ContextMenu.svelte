@@ -5,16 +5,13 @@
   import { onMount } from "svelte";
   import { platformOf } from "../../keys/keys";
   import { menuOpened } from "../../lib/menu";
-  import { t } from "../../text/ja";
   import MenuList from "./MenuList.svelte";
-  import { closeContextMenu, contextMenu, openContextMenu } from "./contextMenu.svelte";
+  import { closeContextMenu, contextMenu, listEntries, openContextMenu } from "./contextMenu.svelte";
   import { keyNames, type ListEntry, type ListRow } from "./menus";
   import { textFieldOf, textFieldRows } from "./textField";
 
   const open = $derived(contextMenu.open);
-  const entries = $derived<ListEntry[]>(
-    open?.entries.map((e) => (e.kind === "separator" ? e : { kind: "row", label: t(e.label), key: e.key, usable: e.usable, run: e.run })) ?? [],
-  );
+  const entries = $derived<ListEntry[]>(open ? listEntries(open.entries) : []);
 
   let popup = $state<HTMLElement>();
 

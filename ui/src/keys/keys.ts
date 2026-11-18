@@ -2,8 +2,8 @@
 
 export type Platform = "mac" | "other";
 
-/** 出口えらび（流れ 2）の中にいるときだけ、↑ ↓ Enter をここで受ける。 */
-export type KeyContext = "main" | "outputChooser";
+/** 出口えらび（流れ 2）の中にいるときだけ、↑ ↓ Enter をここで受ける。棚にキーが向いているときは、↑ ↓ Enter Space F を棚に。 */
+export type KeyContext = "main" | "outputChooser" | "shelf";
 
 export interface KeyInput {
   /** KeyboardEvent.key */
@@ -59,7 +59,14 @@ export type KeyAction =
   | { kind: "duplicate" }
   | { kind: "cut" }
   | { kind: "copy" }
-  | { kind: "paste" };
+  | { kind: "paste" }
+  /** F2: 選んだトラックの名前を変える（その場の入力の枠）。 */
+  | { kind: "renameTrack" }
+  // 棚の中（仕様書 4 章）。行を上下にえらぶ、えらんだ音源を入れる、サンプルを聞く ・ 止める、お気に入りの印。
+  | { kind: "shelfStep"; delta: 1 | -1 }
+  | { kind: "shelfConfirm" }
+  | { kind: "shelfSample" }
+  | { kind: "shelfFavorite" };
 
 const TOOL_DIGITS: Record<string, "select" | "draw" | "erase"> = { "1": "select", "2": "draw", "3": "erase" };
 const NUDGES: Record<string, { steps: number; keys: number }> = {
@@ -153,11 +160,19 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (k.key === "ArrowDown") return { kind: "chooserDown" };
     if (k.key === "Enter") return { kind: "chooserConfirm" };
   }
+  // 仕様書 4 章: 棚の中の ↑ ↓ と Enter は、文字を打っている最中（さがす枠）も効く。
+  if (!k.shift && context === "shelf") {
+    if (k.key === "ArrowUp") return { kind: "shelfStep", delta: -1 };
+    if (k.key === "ArrowDown") return { kind: "shelfStep", delta: 1 };
+    if (k.key === "Enter") return { kind: "shelfConfirm" };
+  }
+  if (k.key === "F2") return k.shift ? null : { kind: "renameTrack" };
 
   // 仕様書 4 章: Home は文字を打っている最中も効く。Space は効かず、空白として入る。Delete も効かず、枠の中の文字を消す。
   if (k.key === "Home") return k.shift ? null : { kind: "toStart" };
   if (typing) return null;
-  if (k.key === " " || k.code === "Space") return k.shift ? null : { kind: "playStop" };
+  // 棚の中の Space は、再生ではなくサンプル（仕様書 3 章）。
+  if (k.key === " " || k.code === "Space") return k.shift ? null : context === "shelf" ? { kind: "shelfSample" } : { kind: "playStop" };
   if (k.key === "Delete") return k.shift ? null : { kind: "deleteSelected" };
 
   const nudge = NUDGES[k.key];
@@ -173,6 +188,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     return l === "t" ? { kind: "stepTake", delta: -1 } : null;
   }
   if (l === "q") return { kind: "quantize" };
+  if (l === "f") return context === "shelf" ? { kind: "shelfFavorite" } : null;
   return (l && BAND_KEYS[l]) || null;
 }
 

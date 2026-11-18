@@ -1,0 +1,386 @@
+<!-- トラックの見出しの列（モック R7-Arrange6・R6-Tracks）と、いちばん下の「＋ トラックを追加」。アレンジの見出しの箱（trackMeters の区画）の中に置く。
+     押すとトラックを選ぶ（B-70）。名前を 2 回押す ・ F2 ・ 右クリックの「名前を変える」で、名前の場所がその場の入力の枠（仕様書 2 章）。
+     見出しを押したまま上下に動かすと並べかえ（仕様書 2 章「トラックを並べかえる印」）: 画面だけが先に動き、離したときに MoveTrack を 1 つ。
+     space.1 より動かさなかったら、ふつうに押した（選ぶ）。Esc はキーの順のいちばん前でやめる（pianoroll/view.svelte.ts の cancelDrag）。
+     音源の名前を押すと、棚が「入れかえる」でひらく。入れかえのためし弾き中は、ためし弾きの音源の名前を accent で（モック F4-ShelfReplace）。 -->
+<script lang="ts">
+  import { onMount, tick } from "svelte";
+  import type { TrackView } from "../bridge";
+  import { glSlot } from "../gl/slot";
+  import { term } from "../lib/tip.svelte";
+  import { current, send } from "../state/app.svelte";
+  import { findTerm, t } from "../text/ja";
+  import { dbNumber } from "./format";
+  import { openContextMenu } from "./menu/contextMenu.svelte";
+  import { metrics } from "./metrics.svelte";
+  import { onDragCancel } from "./pianoroll/view.svelte";
+  import { trackContextMenu } from "./trackMenu";
+  import { moveSlot, openShelf, trackEdit } from "./tracks.svelte";
+
+  const song = $derived(current.state!.song);
+  const shelf = $derived(current.state!.shelf);
+  const transport = $derived(current.state!.transport);
+  const busy = $derived(transport.state === "recording" || transport.state === "countIn");
+
+  const shiftKey = (letter: string) => `${t("key.shift")} ${letter}`;
+
+  /** 入れかえのためし弾き中のトラックの id と、ためし弾きの音源。 */
+  const auditioned = $derived(
+    shelf.mode.kind === "replace" && shelf.selected !== null ? { track: shelf.mode.track, instrument: shelf.selected } : null,
+  );
+
+  // ---- 名前の入力の枠 ----
+
+  let field = $state<HTMLInputElement>();
+  let draft = $state("");
+  $effect(() => {
+    const id = trackEdit.renaming;
+    if (id === null) return;
+    const track = song.tracks.find((x) => x.id === id);
+    if (!track) {
+      trackEdit.renaming = null;
+      return;
+    }
+    draft = track.name;
+    void tick().then(() => {
+      field?.focus();
+      field?.select();
+    });
+  });
+  // 名前を打っている間に録音が始まったら、やめる（core は受けない）。
+  $effect(() => {
+    if (busy) trackEdit.renaming = null;
+  });
+
+  function commitName(track: TrackView): void {
+    trackEdit.renaming = null;
+    const name = draft.trim();
+    // 空にしたら、もとの名前のまま（仕様書 3 章）。同じ名前なら手にしない。
+    if (name !== "" && name !== track.name) send({ type: "renameTrack", track: track.id, name });
+  }
+  function fieldKey(e: KeyboardEvent, track: TrackView): void {
+    if (e.isComposing) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      commitName(track);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      trackEdit.renaming = null;
+    }
+  }
+
+  // ---- 押す ・ 並べかえる ----
+
+  let press: { id: number; from: number; y0: number; pointer: number; el: HTMLElement } | null = null;
+  let drag = $state<{ id: number; from: number; dy: number } | null>(null);
+  const trackH = $derived(metrics.px("size.track"));
+  const slot = $derived(drag ? moveSlot(drag.from, song.tracks.length, (drag.from + 0.5) * trackH + drag.dy, trackH) : null);
+
+  function headDown(e: PointerEvent, track: TrackView, at: number): void {
+    if (e.button !== 0 || (e.target as Element | null)?.closest("button, input")) return;
+    const el = e.currentTarget as HTMLElement;
+    press = { id: track.id, from: at, y0: e.clientY, pointer: e.pointerId, el };
+    el.setPointerCapture?.(e.pointerId);
+  }
+  function headMove(e: PointerEvent): void {
+    if (!press || e.pointerId !== press.pointer) return;
+    const dy = e.clientY - press.y0;
+    if (!drag) {
+      if (busy || Math.abs(dy) < metrics.px("space.1")) return;
+      drag = { id: press.id, from: press.from, dy };
+    } else drag = { ...drag, dy };
+  }
+  function headUp(e: PointerEvent): void {
+    if (!press || e.pointerId !== press.pointer) return;
+    const p = press;
+    const d = drag;
+    endPress();
+    if (d) {
+      const to = moveSlot(d.from, song.tracks.length, (d.from + 0.5) * trackH + d.dy, trackH).to;
+      if (to !== d.from) send({ type: "moveTrack", track: d.id, to });
+    } else if (song.playTarget !== p.id) send({ type: "selectTrack", track: p.id, fromArm: false });
+  }
+  function endPress(): void {
+    if (press?.el.hasPointerCapture?.(press.pointer)) press.el.releasePointerCapture(press.pointer);
+    press = null;
+    drag = null;
+  }
+  onMount(() =>
+    onDragCancel(() => {
+      if (!drag) return false;
+      endPress();
+      return true;
+    }),
+  );
+
+  function headContext(e: MouseEvent, track: TrackView): void {
+    e.preventDefault();
+    if (drag) return;
+    const select = song.playTarget !== track.id && !busy;
+    if (select) send({ type: "selectTrack", track: track.id, fromArm: false });
+    openContextMenu(e.clientX, e.clientY, trackContextMenu(current.state!, track, song.playTarget === track.id || select, send, shiftKey));
+  }
+
+  function replaceInstrument(track: TrackView): void {
+    if (!busy) send(openShelf({ kind: "replace", track: track.id }));
+  }
+  function addTrack(): void {
+    if (!busy) send(openShelf({ kind: "newTrack" }));
+  }
+</script>
+
+<div class="tracks">
+  {#each song.tracks as track, at (track.id)}
+    {@const lifted = drag?.id === track.id}
+    <div
+      class="track-head"
+      class:selected={song.playTarget === track.id}
+      class:lifted
+      style:transform={lifted ? `translateY(${drag!.dy}px)` : null}
+      role="presentation"
+      data-test="track-head"
+      onpointerdown={(e) => headDown(e, track, at)}
+      onpointermove={headMove}
+      onpointerup={headUp}
+      onpointercancel={endPress}
+      oncontextmenu={(e) => headContext(e, track)}
+    >
+      <div class="track-color" style:background="var(--color-track-{((track.color - 1) % 5) + 1})"></div>
+      <div class="track-body">
+        <div class="line">
+          <span class="m-num m-lbl track-number">{track.number}</span>
+          {#if trackEdit.renaming === track.id}
+            <input
+              class="name-field"
+              type="text"
+              aria-label={t("menu.renameTrack")}
+              data-test="track-name-field"
+              bind:this={field}
+              bind:value={draft}
+              onkeydown={(e) => fieldKey(e, track)}
+              onblur={() => {
+                if (trackEdit.renaming === track.id) trackEdit.renaming = null;
+              }}
+            />
+          {:else}
+            <span
+              class="m-name track-name"
+              role="presentation"
+              use:term={"トラック"}
+              ondblclick={() => !busy && (trackEdit.renaming = track.id)}>{track.name}</span
+            >
+          {/if}
+          <!-- 録音中 ・ カウントイン中は core がミュートを受けないので「使えない」。 -->
+          <button
+            class="tog"
+            class:live={!busy}
+            class:on={track.muted}
+            aria-pressed={track.muted}
+            aria-disabled={busy || undefined}
+            tabindex={busy ? -1 : undefined}
+            aria-label={t("arrange.mute")}
+            data-test="track-mute"
+            use:term={"ミュート"}
+            onclick={() => !busy && send({ type: "toggleMute", track: track.id })}>{t("arrange.muteShort")}</button
+          >
+          <button
+            class="tog live"
+            class:on={track.soloed}
+            aria-pressed={track.soloed}
+            aria-label={t("arrange.solo")}
+            use:term={"ソロ"}
+            onclick={() => send({ type: "toggleSolo", track: track.id })}>{t("arrange.soloShort")}</button
+          >
+          <button
+            class="tog live arm"
+            class:on={song.playTarget === track.id}
+            aria-pressed={song.playTarget === track.id}
+            aria-label={t("arrange.arm")}
+            data-test="track-arm"
+            use:term={"録音待機"}
+            onclick={() => send({ type: "selectTrack", track: track.id, fromArm: true })}>{t("arrange.armShort")}</button
+          >
+        </div>
+        <div class="line gap2">
+          {#if auditioned?.track === track.id}
+            <button class="m-plain instrument auditioned" data-test="track-instrument" onclick={() => replaceInstrument(track)}
+              >{t("arrange.instrumentAuditioned", { instrument: t(`instrument.${auditioned.instrument}`) })}</button
+            >
+          {:else}
+            {@const name = t(`instrument.${track.instrument}`)}
+            <!-- 用語の説明がある音色（サイン波）だけ、乗せると説明が出る。 -->
+            {#if findTerm(name)}
+              <button class="m-plain m-lbl instrument" data-test="track-instrument" use:term={name} onclick={() => replaceInstrument(track)}
+                >{name}</button
+              >
+            {:else}
+              <button class="m-plain m-lbl instrument" data-test="track-instrument" onclick={() => replaceInstrument(track)}>{name}</button>
+            {/if}
+          {/if}
+          <span class="m-num" use:term={"dB"}>{t("common.db", { value: dbNumber(track.gainDb) })}</span>
+        </div>
+        <div class="meter" use:glSlot={{ kind: "meter", source: { track: track.number }, gap: metrics.px("line.hair") }}></div>
+      </div>
+    </div>
+  {/each}
+  {#if slot && drag && slot.to !== drag.from}
+    <div class="insert" style:top="{slot.slot * trackH}px" data-test="track-insert"></div>
+  {/if}
+</div>
+<button class="m-plain add" class:usable={!busy} aria-disabled={busy || undefined} data-test="add-track" onclick={addTrack}>
+  {t("arrange.addTrack")}<span class="m-lbl">{t("arrange.addTrackInstrument")}</span>
+</button>
+
+<style>
+  .tracks {
+    position: relative;
+  }
+  .track-head {
+    position: relative;
+    height: var(--size-track);
+    display: flex;
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    background: var(--color-gray-3);
+  }
+  /* 選んだトラック（B-70）: 一覧の「選んだ行」と同じ地。 */
+  .track-head.selected {
+    background: var(--color-gray-4);
+  }
+  /* つまみ上げた見出し（仕様書 2 章「トラックを並べかえる印」）: accent の line.hair の枠。ほかの見出しより上に描く。 */
+  .track-head.lifted {
+    z-index: 2;
+    outline: var(--line-hair) solid var(--color-accent);
+    outline-offset: calc(-1 * var(--line-hair));
+  }
+  /* 入る所: accent の line.mark の横線。見出しの境に重ねる。 */
+  .insert {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: var(--line-mark);
+    margin-top: calc(-1 * var(--line-mark) / 2);
+    background: var(--color-accent);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .track-color {
+    width: var(--line-track);
+    flex-shrink: 0;
+  }
+  .track-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-2) 0;
+  }
+  .line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .line.gap2 {
+    gap: var(--space-2);
+  }
+  .track-number {
+    width: var(--mock-track-number);
+    flex-shrink: 0;
+  }
+  .track-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* トラックの名前の入力の枠（仕様書 2 章: 地 gray.0、枠 gray.10、太さ 600）。高さはモック R6-Tracks の 20（M ・ S ・ ● と同じ）。 */
+  .name-field {
+    flex: 1;
+    min-width: 0;
+    height: var(--part-toggle-size);
+    padding: 0 var(--space-1);
+    background: var(--color-gray-0);
+    border: var(--line-hair) solid var(--color-gray-10);
+    border-radius: var(--radius-1);
+    color: var(--color-gray-10);
+    font: inherit;
+    font-weight: var(--text-s-weight-600);
+    outline: none;
+  }
+  .instrument {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .instrument:hover {
+    color: var(--color-gray-10);
+  }
+  .instrument.auditioned,
+  .instrument.auditioned:hover {
+    color: var(--color-accent);
+  }
+  .tog {
+    width: var(--part-toggle-size);
+    height: var(--part-toggle-size);
+    flex-shrink: 0;
+    padding: 0;
+    border: var(--line-hair) solid var(--color-gray-5);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-gray-7);
+    font: inherit;
+    text-align: center;
+    cursor: default;
+  }
+  .tog.live {
+    border-color: var(--color-gray-6);
+    color: var(--color-gray-8);
+    cursor: pointer;
+  }
+  .tog.live:hover {
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
+  }
+  /* オン（仕様書 2 章: 枠と文字 accent。● だけ rec）。 */
+  .tog.live.on {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  .tog.arm.on {
+    border-color: var(--color-rec);
+    color: var(--color-rec);
+  }
+  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8）。 */
+  .tog.live:active {
+    background: var(--color-gray-2);
+    border-color: var(--color-gray-8);
+  }
+  .meter {
+    height: calc(var(--part-meter-horizontal) * 2 + var(--line-hair));
+  }
+  /* 「＋ トラックを追加」（モック R7-Arrange6: 文字 gray.9、右の「音源」は gray.8）。録音中は「使えない」。 */
+  .add {
+    width: 100%;
+    height: var(--mock-arrange-add-track);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+    color: var(--color-gray-7);
+    cursor: default;
+  }
+  .add.usable {
+    color: var(--color-gray-9);
+    cursor: pointer;
+  }
+  .add.usable:hover {
+    color: var(--color-gray-10);
+  }
+  .add:not(.usable) .m-lbl {
+    color: var(--color-gray-7);
+  }
+</style>

@@ -73,6 +73,15 @@ BOARDS = {
     "arrangeMoveDrag": "R3-Arrange",
     "arrangeCopyDrag": "R3-Arrange",
     "arrangeTrimDrag": "R3-Arrange",
+    # 第 4 回: トラックと棚。
+    "tracks6": "R7-Arrange6",
+    "shelfNewTrack": "F4-ShelfSample",
+    "shelfSample": "F4-ShelfSample",
+    "shelfAudition": "F4-ShelfAudition",
+    "shelfReplace": "F4-ShelfReplace",
+    "trackRename": "R6-Tracks",
+    "trackDrag": "R6-Tracks",
+    "trackColorMenu": "R6-Tracks",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -117,6 +126,36 @@ document.querySelector(".roll .middle").dispatchEvent(new WheelEvent("wheel", { 
 """
 
 
+# Double-clicks the name of track 2 and types into the field (R6-Tracks: "ベース 2").
+RENAME_TRACK = """
+document.querySelectorAll(".track-name")[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+await new Promise((r) => setTimeout(r, 100));
+const input = document.querySelector('[data-test="track-name-field"]');
+input.value = "ベース 2";
+input.dispatchEvent(new Event("input", { bubbles: true }));
+"""
+
+# Presses the header of track 4 and drags it up between tracks 1 and 2 without letting go (R6-Tracks).
+DRAG_TRACK = """
+const head = document.querySelectorAll('[data-test="track-head"]')[3];
+const r = head.getBoundingClientRect();
+const ev = (type, y) => head.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + 100, clientY: y }));
+ev("pointerdown", r.top + 20);
+ev("pointermove", r.top + 10);
+ev("pointermove", r.top + 20 - r.height * 2.4);
+"""
+
+# Right-clicks the header of track 2 and opens 色 ▸ (R6-Tracks).
+TRACK_COLORS = """
+const head = document.querySelectorAll('[data-test="track-head"]')[1];
+const r = head.getBoundingClientRect();
+head.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 120, clientY: r.top + 30 }));
+await new Promise((r) => setTimeout(r, 100));
+const row = [...document.querySelectorAll('[data-test="context-menu"] button')].find((b) => b.textContent.includes("色"));
+row.dispatchEvent(new PointerEvent("pointerenter"));
+"""
+
+
 def drag_clip(x0, x1, opts="{}"):
     return "js:" + DRAG_CLIP % (x0, opts, x0, x1, opts, x1, opts)
 
@@ -152,6 +191,11 @@ CLICKS = {
     "menuClip": ("muted", "js:" + CONTEXT_CLIP),
     # ノートをぜんぶ消したクリップで、横に 1 小節ぶん送る（送った先でも目盛と方眼が出る）。
     "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
+    # F4-ShelfSample: グランドピアノの ▶ を押した所。
+    "shelfSample": ("shelfNewTrack", '[data-row="grandPiano"] [data-test="shelf-sample"]'),
+    "trackRename": ("tracks6", "js:" + RENAME_TRACK),
+    "trackDrag": ("tracks6", "js:" + DRAG_TRACK),
+    "trackColorMenu": ("tracks6", "js:" + TRACK_COLORS),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -187,6 +231,14 @@ ONLY = {
     "menuFile": [(1280, 800, 100), (1280, 800, 150)],
     "menuZoom": [(1280, 800, 100)],
     "menuClip": [(1280, 800, 100)],
+    "tracks6": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
+    "shelfNewTrack": [(1280, 800, 100), (1280, 800, 150)],
+    "shelfSample": [(1280, 800, 100)],
+    "shelfAudition": [(1280, 800, 100), (1920, 1080, 150)],
+    "shelfReplace": [(1280, 800, 100)],
+    "trackRename": [(1280, 800, 100)],
+    "trackDrag": [(1280, 800, 100)],
+    "trackColorMenu": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

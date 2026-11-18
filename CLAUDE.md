@@ -38,13 +38,14 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 - Rust、Tauri 2、Svelte 5 と TypeScript。
 - コードは MIT と Apache-2.0 の二本立て。GPL と AGPL の部品は入れない。`node licenses/check.mjs` の見はりを続ける。MPL-2.0 の部品は、ファイルを書きかえない。書体（IBM Plex）は OFL-1.1 のまま、@fontsource の woff2 を手を加えずに使う。
 - 画面は 60 Hz。大きな面（ピアノロール、アレンジのクリップ、メーター）は WebGL。Canvas 2D は大きな面に使わない。文字と小さな部品はふつうの HTML。
-- ドラッグ中は画面だけが先に動き、離したときに意図を 1 つ送る（ドラッグ 1 回が 1 手）。もとの位置は gray.7 の枠。Esc はキーの順のいちばん前でドラッグをやめる（`ui/src/components/pianoroll/view.svelte.ts` の `cancelDrag`）。
+- ドラッグ中は画面だけが先に動き、離したときに意図を 1 つ送る（ドラッグ 1 回が 1 手）。もとの位置は gray.7 の枠。Esc はキーの順のいちばん前でドラッグをやめる（`ui/src/components/pianoroll/view.svelte.ts` の `cancelDrag`）。ミキサーだけは、ドラッグ中も音を変える: 「音だけ変える」意図（`commit: false`、1 コマに 1 つまで）を送り、離して「決める」（`commit: true`、1 手）、Esc で `CancelMixPreview`（`ui/src/components/mixer/mixDrag.ts`）。
 - Tauri を知ってるのは `ui/src/bridge/`（と Rust 側の `crates/meloet-app`）だけ。
 - Rust と画面の約束は報告書の 7-3（あいさつ、聞く準備をしてから丸ごと取りにいく、rev、画面は意図だけ送る、Channel、計器はバイナリ、すぐ知らせることはすぐ）。くわしくは `docs/architecture.md` の 3 章。
 - クレートの分けかたは報告書の 7-1 に `meloet-core` を足した形（`docs/architecture.md` の 1 章）。
 - 鍵盤のぬきさしは ALSA シーケンサ。出口と入口の名前は PipeWire の Route。音は cpal。
 - バッファは、本当に動いている数を出す。PC 全体の設定（PipeWire の quantum など）は、meloet も、きみも、変えない。読むだけ。
-- 音のスレッドでは、メモリを取りにいかない、鍵を待たない。テストで機械が見はっている（`crates/meloet-engine`）。
+- 音のスレッドでは、メモリを取りにいかない、鍵を待たない。テストで機械が見はっている（`crates/meloet-engine`、`crates/meloet-sound`）。値は 20 ms でなめらかに、エフェクトや音源を入れかえるときは 10 ms 重ねる。NaN は和の所で止め、denormal はくり返しの所で小さな値を 0 にする（FTZ ・ DAZ は立てない）。
+- 最初から入っているエフェクトは自分で書く（`crates/meloet-sound/src/effects/`）。音色の素材は CC0、CC BY、MIT だけ（CC BY-SA は使わない）。帰属表示は `NOTICE` と「meloet について」で、`node licenses/check.mjs` が素材まで見はる。素材の作りかたはリポジトリ（`tools/sounds/`）、作った包みは GitHub の Release（上げる前にヤチヨさんに聞く）。
 - プラグインは、最初から別のプロセスで作る（報告書の「v1 は同じプロセス」の案は使わない）。
 - 数値は仕様書の名前（`color.gray.4`、`size.meter.slim`、`space.3` …）のまま、`ui/src/design/tokens.ts` から使う。色、文字の大きさ、すきまを勝手に足さない。
 - 画面の文面は `ui/src/text/ja.ts` の一か所。仕様書の文面は一字も変えない。モックにだけある文は、モックの文のまま（出どころつき）。ヤチヨさんが決めた文は出どころ `user:<日付>`。
@@ -53,9 +54,10 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 - 曲の中の位置はティック（4 分音符 = 480）。録った鍵は「押した瞬間に耳に届いていた位置」に置く。クオンタイズは直す操作としてだけ（`docs/architecture.md` 11・12 章）。
 - 曲を変える操作は、どれも「取り消せる手」1 つ（`meloet_model::History`）。テイクは一度できたら中身を変えない。ノートを直すと新しい id のテイクを同じ場所に入れ、テイクの数は増やさない。意図はテイクの id とその中の番号で指し、古い id の意図は何もしない。選択は core が持ち、取り消しで戻す（`docs/architecture.md` 16 章）。
 - 画面がためるテイクは、いま使っている物と新しい 16 個だけ（`ui/src/bridge/take.ts` の `keepOnly`）。取り消しで戻れる物は Rust の取り消しの履歴が持つ。
-- 曲のファイルは版つきの JSON（いまは版 2。版 1 も読める）。こわれない書きかたと `.prev` を守る（14 章）。形を変えたら版の扱いを決める。
+- 曲のファイルは版つきの JSON（いまは版 3。版 1 ・ 2 も読める。前の版の曲のセンドは −∞）。こわれない書きかたと `.prev` を守る（14 章）。形を変えたら版の扱いを決める。
 - 保存していない変更は、なおすためのファイルに書く（PC が終わるときと、変えてから 2 秒）。同じこわれない書きかたで（15 章）。
-- WebGL の文脈は予算 12（WebKitGTK は 16 まで、捨てた canvas も GC まで数に入る）。区画ごとに 1 枚、使いまわし（7 章）。文脈は区画の箱が来たとき（起動、帯をひらいた時）に作る（`getContext` は 1 回 50〜200 ms 止まるので、人が弾いている瞬間に作らない）。60 Hz で変わる物は小さな区画に、毎コマのレイアウトはしない。
+- WebGL の文脈は予算 12（WebKitGTK は 16 まで、捨てた canvas も GC まで数に入る）。区画ごとに 1 枚、使いまわし（7 章）。文脈は区画の箱が来たとき（起動、帯をひらいた時）に作る（`getContext` は 1 回 50〜200 ms 止まるので、人が弾いている瞬間に作らない）。60 Hz で変わる物は小さな区画に、毎コマのレイアウトはしない。区画はいま最大 10（本物のアプリで 8）。
+- この PC の WebKitGTK（NVIDIA ＋ Ubuntu）は、ページを CPU で描く。1 コマでよごれた四角が 11 個以上か、囲む四角の 25 % 以上だと、囲む四角をまるごと描きなおす（`docs/architecture.md` 7 章「CPU で描く WebKit」）。60 Hz で変わる物を足すときは、上の帯なら `use:glSlot={{ kind: "cover" }}` で `masterMeter` の canvas の下に入れ、ほかでは同じコマで変わる物と同じ canvas の下に入れるか上下の端をそろえる。足したら `tools/measure/webkit-damage.sh` で確かめる。
 - コメントは、意図が伝わりにくい所にだけ。変えた理由や履歴は書かない。コミットは小さく、こまめに。
 - `spikes/` は消さない。そのまま本番に写さない。学んだことだけ連れてくる。
 - sudo がいるときは、コマンドを見せてから頼む。別のユーザーで動いていて入口（ACL、xhost）をあけてもらったら、最後に閉じて、閉じたと伝える。
@@ -64,12 +66,13 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 
 ```
 crates/
-  meloet-model     曲・トラック・クリップ・テイク・ノート（純粋なデータ）、取り消しの手（History）、録った出来事をテイクにする決まり（Recorder）、ノートを直す（notes.rs）、クオンタイズ（quantize.rs）、CC の点（controls.rs）、クリップを動かす（arrange.rs）
-  meloet-protocol  Rust と画面の約束。TS の型は ui/src/bridge/generated/ に書き出す
-  meloet-engine    音の流れ、音源の口（Instrument）、仮の音、メーター、cpal の出口、再生まわり（transport.rs）、耳に届いている位置（clock.rs）
+  meloet-model     曲・トラック・クリップ・テイク・ノート（純粋なデータ）、取り消しの手（History）、録った出来事をテイクにする決まり（Recorder）、ノートを直す（notes.rs）、クオンタイズ（quantize.rs）、CC の点（controls.rs）、クリップを動かす（arrange.rs）、音色とグループ（instrument.rs）、ドラムのキット（drums.rs）、ミキサーとエフェクトのパラメータ（mixer.rs、effects.rs）
+  meloet-protocol  Rust と画面の約束（版 14）。TS の型は ui/src/bridge/generated/ に書き出す
+  meloet-engine    音の流れ、音源の口（Instrument）、トラックの席、ミキサーの音の道（mixer.rs）、メーター、cpal の出口、再生まわり（transport.rs）、耳に届いている位置（clock.rs）
+  meloet-sound     音の部品: サンプルを鳴らす係（sampler/）、エフェクト 6 つ（effects/）、計算で作る音色（synth/）、サンプルの ▶ のフレーズ（phrases.rs）
   meloet-midi      ALSA シーケンサ。鍵盤のぬきさし。meloet-vkeys（試験用の仮想の鍵盤。--name）
   meloet-devices   PipeWire の Route（人の言葉の名前）と settings（固定の quantum）を読む
-  meloet-core      状態の持ち主。コマンド → 状態 → rev つきの差分。帯の決まり（layout.rs）、再生・録音・取り消し・ピアノロールの意図（play.rs）、曲のファイル（songfile.rs）、保存の流れ（state/songs.rs）、なおすためのファイル（recovery.rs、state/recovery.rs）、つなぎなおし（service.rs）
+  meloet-core      状態の持ち主。コマンド → 状態 → rev つきの差分。帯の決まり（layout.rs）、再生・録音・取り消し・ピアノロールの意図（play.rs）、曲のファイル（songfile.rs）、保存の流れ（state/songs.rs）、なおすためのファイル（recovery.rs、state/recovery.rs）、つなぎなおし（service.rs）、音の素材の包みと読みこみ（sounds.rs、instruments.rs）、エンジンの席（play/seats.rs）、棚（play/shelf.rs）、ミキサーの意図とエンジンへの送り（play/mixer.rs、play/mixsync.rs、mixbook.rs）
   meloet-app       Tauri の殻。web プロセスの見はり（webprocess.rs）、PC のファイルの窓（pcwindow.rs）、logind の delay ロック（logind.rs）、開発のときだけのしかけ（devhooks.rs）
 ui/
   src/bridge/      Tauri を知る唯一の場所
@@ -77,6 +80,9 @@ ui/
   src/text/        文面
   src/gl/          WebGL の係（区画、使いまわし、予算）
   src/components/pianoroll/  ピアノロールの帯（見ている範囲 view.svelte.ts、見せているテイク shown.svelte.ts、ドラッグ drag.ts、CC の帯 cc.ts）
+  src/components/mixer/      ミキサーの帯（ストリップ、フェーダー、パン、センド、インサート、ドラッグ mixDrag.ts）
+  src/components/params/     右のパラメータの欄（エフェクトの値）
+  src/components/menu/       上のメニューと右クリックの一覧（menus.ts、contextMenu.svelte.ts）
   src/dev/         測るときだけ動く、ページの中の自動の係（MELOET_UI_SCRIPT）
 docs/
   design/          仕様書（spec.html）とモック（mock/）の写し
@@ -85,6 +91,9 @@ docs/
   design-notes.md  仕様書とモックの読みかた、デザインに戻した事
   measurements/    測った数
   screenshots/     本物のアプリの絵とモックのならべ
+  research/        調べ物の書類（出どころと確かさつき）
+tools/sounds/      音の素材の包みを作る（sources.json に URL と sha256、build.py、SF2 を読む sf2.py）
+licenses/          ライセンスの見はり（check.mjs）と素材のライセンスの写し
 spikes/            検証の試作（消さない、写さない）
 ```
 
@@ -100,9 +109,14 @@ python3 -I tools/design/shoot_app.py <状態>                 # 本物のアプ�
 tools/measure/latency.sh --state stopped|playing|recording  # 鍵 → 画面、鍵 → 音
 tools/measure/latency.sh --pattern mixed --piano-roll      # 和音と速い打鍵、ピアノロールをひらいたまま
 tools/measure/record-timing.sh private                      # 録った位置のずれ（自分用の PipeWire）
-tools/measure/long-record.sh [--piano-roll]                 # 10 分録りつづける
+tools/measure/latency.sh --mixer --song <曲> --state playing  # ミキサーをひらいたまま（起動の前に仮想の鍵盤を出す）
+tools/measure/long-record.sh [--piano-roll] [--mixer --song <曲>]  # 10 分録りつづける
 tools/measure/ui-script.sh                                  # 本物のアプリで、送る・拡大・ドラッグを自動で（コマの時間とメモリ）
-python3 -I tools/measure/make_song.py ...                   # 試験用の曲（ノート N 個）
+tools/measure/app-watch.sh                                  # 本物のアプリのコマ（busyMs）とメモリを見る
+tools/measure/webkit-damage.sh                              # WebKit が描きなおした四角（gdb の下で）
+python3 -I tools/measure/make_song.py ... [--tracks N]      # 試験用の曲（ノート N 個、トラック N 本）
+python3 -I tools/sounds/build.py --out target/sounds/dev    # 音の素材の包みを作る（素材は ~/.cache/meloet/sounds-src、出どころは sources.json）
+ln -sfn ../sounds/dev target/debug/sounds                   # 開発のビルドが包みを見つける（release も同じ）
 ```
 
 動かしかたは [`README.md`](README.md)。
@@ -121,3 +135,6 @@ python3 -I tools/measure/make_song.py ...                   # 試験用の曲（
 - 係の作業ツリーは `.claude/worktrees/` にできる（`.git/info/exclude` で外してある）。`meloet-app` の clippy は `ui/dist` が要るので、作業ツリーでは空の `ui/dist` を一時的に作る。
 - PC が終わるとき、アプリの scope は SIGTERM から 5 秒で SIGKILL（Ubuntu 26.04、GNOME 50 は Wayland だけ）。電源オフの前には logind の PrepareForShutdown が来る（delay ロックを持てば）。
 - WebKitGTK 2.52 の JavaScriptCore は、ひまな時に Eden の GC しか回さず、Full の GC がめったに来ない。60 Hz で動くページでは、WebKitWebProcess のメモリがふえつづける。meloet は起動のいちばん初めに `JSC_useGenerationalGC=0` を決め、毎回 Full にしている（`crates/meloet-app/src/main.rs`、`docs/measurements/2026-11-15-round3-fix-memory.md` の g）。外から同じ変数を決めればそちらが勝つ。GC のようすは `JSC_logGC=1` で見られる（ログを書く重さで、止まりが少し長く出る）。
+- この PC の WebKitGTK は、合成の層なしでページを CPU で描く（`WEBKIT_FORCE_COMPOSITING_MODE=1` などの変数でも変わらない）。WebKit の debug 情報は `~/.cache/debuginfod_client/` にある（`webkit-damage.sh` が使う）。
+- 音の出口えらびは「出口をまだ決めていない ＋ 鍵盤が 1 つ以上」のときだけ出る。測る道具は、起動の前に仮想の鍵盤（`meloet-vkeys appear`）を出しておく。
+- debug のビルドでも symphonia と `meloet-sound` は opt-level 3（`Cargo.toml`）。外すとグランドピアノの読みこみが 8 秒かかる。

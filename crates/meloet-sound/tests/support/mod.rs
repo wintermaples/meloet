@@ -1,6 +1,7 @@
 //! Helpers the tests share.
 #![allow(dead_code)]
 
+pub mod mix;
 pub mod pack;
 
 use meloet_engine::{Effect, EffectContext};

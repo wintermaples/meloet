@@ -14,8 +14,8 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use meloet_engine::{
-    AudioOutput, Engine, EngineCommand, EngineConfig, InstrumentEvent, MidiIn, OutputTarget,
-    PlaceholderSynth, monotonic_us,
+    AudioOutput, Engine, EngineCommand, EngineConfig, InstrumentEvent, MidiIn, MixStrip,
+    OutputTarget, PlaceholderSynth, monotonic_us,
 };
 
 fn target() -> OutputTarget {
@@ -65,9 +65,10 @@ fn real_output_runs_two_seconds_without_touching_the_allocator() {
     let _ = parts
         .handle
         .swap_instrument(0, Box::new(PlaceholderSynth::new()));
-    let _ = parts.handle.send(EngineCommand::SetTrackGain {
-        track: 0,
+    let _ = parts.handle.send(EngineCommand::SetStrip {
+        strip: MixStrip::Track(0),
         gain: 0.3,
+        pan: 0.0,
     });
     let meters = parts.handle.meters().clone();
 
@@ -132,9 +133,10 @@ fn engine_survives_two_output_switches() {
     let _ = parts
         .handle
         .swap_instrument(0, Box::new(PlaceholderSynth::new()));
-    let _ = parts.handle.send(EngineCommand::SetTrackGain {
-        track: 0,
+    let _ = parts.handle.send(EngineCommand::SetStrip {
+        strip: MixStrip::Track(0),
         gain: 0.3,
+        pan: 0.0,
     });
     let meters = parts.handle.meters().clone();
 

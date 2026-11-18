@@ -10,7 +10,9 @@ use std::time::Instant;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::clock::{Segment, TransportClock, TransportState, heard};
+use crate::effect::{Effect, EffectContext};
 use crate::instrument::{Instrument, InstrumentEvent};
+use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, Strip};
 use crate::rt;
 use crate::transport::{Click, Lane, Sequence, TrackSet};
 
@@ -39,10 +41,35 @@ pub enum EngineCommand {
         track: usize,
         instrument: Box<dyn Instrument>,
     },
-    /// Linear gain, 1.0 = unity.
-    SetTrackGain {
-        track: usize,
+    /// Fader and pan of a strip. `gain` is linear (1.0 = unity; a muted return gets 0), `pan`
+    /// is −1.0 (all left) to 1.0 (all right), see [`crate::pan_gains`]. The strip gets there in
+    /// a straight line over [`RAMP_S`]. A track with no instrument takes it at once, as every
+    /// strip does while no stream runs ([`Engine::settle`]).
+    SetStrip {
+        strip: MixStrip,
         gain: f32,
+        pan: f32,
+    },
+    /// How much of a track goes to return A and to return B, linear, taken after its fader
+    /// and pan. Gets there as `SetStrip` does.
+    SetSends {
+        track: usize,
+        sends: [f32; 2],
+    },
+    /// Use [`EngineHandle::set_effect`]. Puts the effect into an insert slot, or empties the
+    /// slot. What the slot sounded like before fades into what it sounds like now over
+    /// [`FADE_S`], and the effect that was there comes back on the retired ring.
+    SetEffect {
+        strip: MixStrip,
+        slot: usize,
+        effect: Option<Box<dyn Effect>>,
+    },
+    /// [`Effect::set_param`] of the effect in the slot. Does nothing on an empty slot.
+    SetEffectParam {
+        strip: MixStrip,
+        slot: usize,
+        param: u32,
+        value: f32,
     },
     /// The track that keyboard input plays. The track that was the target gets `AllNotesOff`.
     SetPlayTarget {
@@ -67,19 +94,20 @@ pub enum EngineCommand {
     },
     /// Moves the instrument of `from` to `to` as it sounds, held keys and all; `from` is left
     /// empty, and what `to` had comes back on the retired ring. If `from` was the play target,
-    /// `to` is now. Sequences, gains and an instrument set aside stay where they are.
+    /// `to` is now. Sequences, strips and an instrument set aside stay where they are.
     MoveInstrument {
         from: usize,
         to: usize,
     },
-    /// Empties a track: its instrument, an instrument set aside and its sequence come back on
-    /// the retired rings, and its gain is unity again.
+    /// Empties a track: its instrument, an instrument set aside, its effects and its sequence
+    /// come back on the retired rings, and its strip is a new one again (unity, the middle,
+    /// no sends).
     ClearTrack {
         track: usize,
     },
     /// Use [`EngineHandle::play_sample`]. Puts the instrument on the sample seat: a place of its
     /// own beside the tracks, which no key, sequence, mute or solo reaches and no meter of a
-    /// track shows. It goes to the master. What it plays is the instrument's own business (a
+    /// track shows. It goes to the master, with no sends. What it plays is the instrument's own business (a
     /// phrase it sounds by itself). One that is there already fades out and comes back on the
     /// retired ring. [`Engine::prepare`] empties the seat.
     PlaySample {
@@ -236,7 +264,7 @@ pub struct EngineConfig {
     pub max_frames: usize,
     /// Tracks 0 to `max_tracks - 1`. One more comes after them, the audition track (number
     /// `max_tracks`): a place for an instrument that is tried out before it is on a track of
-    /// the song. It takes every command a track takes and goes to the master like the others.
+    /// the song. It takes every command a track takes and has a strip like the others.
     pub max_tracks: usize,
 }
 
@@ -254,6 +282,7 @@ impl Default for EngineConfig {
 /// only raises them, the reader takes the value and puts 0 back.
 pub struct EngineMeters {
     tracks: Box<[[AtomicU32; 2]]>,
+    returns: [[AtomicU32; 2]; 2],
     master: [AtomicU32; 2],
     clipped: AtomicBool,
     load_permille: AtomicU32,
@@ -285,6 +314,7 @@ impl EngineMeters {
             tracks: (0..=config.max_tracks)
                 .map(|_| [AtomicU32::new(0), AtomicU32::new(0)])
                 .collect(),
+            returns: Default::default(),
             master: [AtomicU32::new(0), AtomicU32::new(0)],
             clipped: AtomicBool::new(false),
             load_permille: AtomicU32::new(0),
@@ -304,14 +334,23 @@ impl EngineMeters {
         self.tracks.len() - 1
     }
 
-    /// Left and right peak of a track since the last call (after its gain). 1.0 = 0 dBFS.
+    /// Left and right peak of a track since the last call (after its fader and pan).
+    /// 1.0 = 0 dBFS.
     pub fn take_track_peak(&self, track: usize) -> [f32; 2] {
         self.tracks
             .get(track)
             .map_or([0.0; 2], |t| [take(&t[0]), take(&t[1])])
     }
 
-    /// Left and right peak of the master since the last call, before the output clamp.
+    /// Left and right peak of a return (0 is A, 1 is B) since the last call, after its fader
+    /// and pan.
+    pub fn take_return_peak(&self, bus: usize) -> [f32; 2] {
+        self.returns
+            .get(bus)
+            .map_or([0.0; 2], |r| [take(&r[0]), take(&r[1])])
+    }
+
+    /// Left and right peak of what goes out since the last call, before the output clamp.
     pub fn take_master_peak(&self) -> [f32; 2] {
         [take(&self.master[0]), take(&self.master[1])]
     }
@@ -391,9 +430,7 @@ struct Track {
     /// The instrument that was here before, until it has faded out and the retired ring takes it.
     fading: Option<Box<dyn Instrument>>,
     fade_left: u32,
-    gain: f32,
-    /// Gain at the end of the last block; the next block ramps from here to `gain`.
-    gain_now: f32,
+    strip: Strip,
     lane: Lane,
 }
 
@@ -440,8 +477,7 @@ impl Track {
             aside_left: 0,
             fading: None,
             fade_left: 0,
-            gain: 1.0,
-            gain_now: 1.0,
+            strip: Strip::new(),
             lane: Lane::default(),
         }
     }
@@ -459,6 +495,11 @@ impl Track {
             let _ = retired.push(before);
         }
         self.fade_left = frames;
+    }
+
+    /// Nothing sounds here and nothing is about to: a change to the strip need not be smooth.
+    fn is_empty(&self) -> bool {
+        self.instrument.is_none() && self.fading.is_none() && self.aside.is_none()
     }
 
     /// Ends the fades without rendering them. Not on the audio thread while a stream runs.
@@ -480,6 +521,10 @@ impl Track {
 
 fn fade_frames(sample_rate: f32) -> u32 {
     ((FADE_S * sample_rate) as u32).max(1)
+}
+
+fn ramp_frames(sample_rate: f32) -> u32 {
+    ((RAMP_S * sample_rate) as u32).max(1)
 }
 
 impl Transport {
@@ -646,7 +691,11 @@ pub struct Engine {
     play_target: Option<usize>,
     commands: Consumer<EngineCommand>,
     retired: Producer<Box<dyn Instrument>>,
+    retired_effects: Producer<Box<dyn Effect>>,
     retired_sequences: Producer<Box<Sequence>>,
+    returns: [Strip; 2],
+    /// Its fader and pan come before its slots (docs/architecture.md 19-11).
+    master_strip: Strip,
     midi: Consumer<MidiIn>,
     latency: Producer<LatencyRecord>,
     recorded: Producer<Recorded>,
@@ -657,9 +706,11 @@ pub struct Engine {
     segment: Segment,
     segment_from: usize,
     meters: Arc<EngineMeters>,
-    /// Left and right of the track being rendered, then left and right of what fades out on it.
+    /// Left and right of the track being rendered, then left and right of what fades out on it
+    /// (an instrument, or a slot before its effect changed).
     scratch: [Box<[f32]>; 4],
-    master: [Box<[f32]>; 2],
+    /// Left and right of the master, of return A and of return B, as the strips add up.
+    sums: [Box<[f32]>; 6],
     sample_rate: f32,
     max_frames: usize,
     tone: TestTone,
@@ -685,6 +736,9 @@ impl Engine {
         // Every command retires at most three instruments, and commands wait while fewer than
         // three fit.
         let (retired_tx, retired_rx) = RingBuffer::new(config.max_tracks.max(16));
+        // Room for every effect of every strip at once; commands wait while those of one
+        // strip do not fit.
+        let (effects_tx, effects_rx) = RingBuffer::new((config.max_tracks + 4) * 2 * INSERT_SLOTS);
         let (sequences_tx, sequences_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
         let clock = Arc::new(TransportClock::default());
@@ -697,7 +751,10 @@ impl Engine {
             play_target: Some(0),
             commands: command_rx,
             retired: retired_tx,
+            retired_effects: effects_tx,
             retired_sequences: sequences_tx,
+            returns: [Strip::new(), Strip::new()],
+            master_strip: Strip::new(),
             midi: midi_rx,
             latency: latency_tx,
             recorded: recorded_tx,
@@ -708,7 +765,7 @@ impl Engine {
             segment_from: 0,
             meters: meters.clone(),
             scratch: [buffer(), buffer(), buffer(), buffer()],
-            master: [buffer(), buffer()],
+            sums: std::array::from_fn(|_| buffer()),
             sample_rate: config.sample_rate as f32,
             max_frames: config.max_frames,
             tone: TestTone::idle(),
@@ -718,6 +775,7 @@ impl Engine {
         let handle = EngineHandle {
             commands: command_tx,
             retired: retired_rx,
+            retired_effects: effects_rx,
             retired_sequences: sequences_rx,
             latency: latency_rx,
             recorded: recorded_rx,
@@ -745,8 +803,8 @@ impl Engine {
     }
 
     /// Get ready for a (new) stream. Call outside the audio thread, while no stream is running
-    /// this engine. Every instrument is prepared again, so all notes stop, and the transport
-    /// stops where it was (without a [`Recorded::Stopped`]: the caller knows the stream ended).
+    /// this engine. Every instrument and effect is prepared again, so all notes and tails stop,
+    /// and the transport stops where it was (without a [`Recorded::Stopped`]: the caller knows the stream ended).
     pub fn prepare(&mut self, sample_rate: u32) {
         self.sample_rate = sample_rate.max(1) as f32;
         self.meters.sample_rate.store(sample_rate.max(1), Relaxed);
@@ -768,6 +826,13 @@ impl Engine {
         if let Some(old) = self.sample.instrument.take() {
             let _ = self.retired.push(old);
         }
+        let (rate, max_frames) = (self.sample_rate, self.max_frames);
+        for strip in (self.tracks.iter_mut().map(|t| &mut t.strip))
+            .chain(&mut self.returns)
+            .chain([&mut self.master_strip])
+        {
+            strip.prepare(rate, max_frames, &mut self.retired_effects);
+        }
         let t = &mut self.transport;
         let scale = 6000 * i128::from(sample_rate.max(1));
         t.pos = t.pos.div_euclid(t.scale) * scale;
@@ -788,6 +853,25 @@ impl Engine {
         self.read_commands(BlockTiming::default());
         for track in self.tracks.iter_mut().chain([&mut self.sample]) {
             track.end_fades(&mut self.retired);
+        }
+        for strip in (self.tracks.iter_mut().map(|t| &mut t.strip))
+            .chain(&mut self.returns)
+            .chain([&mut self.master_strip])
+        {
+            strip.end_fades(&mut self.retired_effects);
+        }
+    }
+
+    /// The strip, and whether a change to it is to be smooth.
+    fn strip(&mut self, strip: MixStrip) -> Option<(&mut Strip, bool)> {
+        match strip {
+            MixStrip::Track(track) => {
+                let track = self.tracks.get_mut(track)?;
+                let smooth = !track.is_empty();
+                Some((&mut track.strip, smooth))
+            }
+            MixStrip::Return(bus) => Some((self.returns.get_mut(bus)?, true)),
+            MixStrip::Master => Some((&mut self.master_strip, true)),
         }
     }
 
@@ -826,9 +910,14 @@ impl Engine {
     }
 
     fn read_commands(&mut self, timing: BlockTiming) {
-        // Stop while a retired ring is full: an instrument or a sequence must never be dropped here.
+        // Stop while a retired ring is full: an instrument, an effect or a sequence must never
+        // be dropped here.
         let fade = fade_frames(self.sample_rate);
-        while self.retired.slots() >= 3 && !self.retired_sequences.is_full() {
+        let ramp = ramp_frames(self.sample_rate);
+        while self.retired.slots() >= 3
+            && self.retired_effects.slots() >= 2 * INSERT_SLOTS
+            && !self.retired_sequences.is_full()
+        {
             let Ok(command) = self.commands.pop() else {
                 break;
             };
@@ -865,11 +954,50 @@ impl Engine {
                         self.seek_lane(track);
                     }
                 }
-                EngineCommand::SetTrackGain { track, gain } => {
-                    if let Some(slot) = self.tracks.get_mut(track)
-                        && gain.is_finite()
-                    {
-                        slot.gain = gain.max(0.0);
+                EngineCommand::SetStrip { strip, gain, pan } => {
+                    if let Some((strip, smooth)) = self.strip(strip) {
+                        strip.set_level(gain, pan, if smooth { ramp } else { 0 });
+                    }
+                }
+                EngineCommand::SetSends { track, sends } => {
+                    if let Some((strip, smooth)) = self.strip(MixStrip::Track(track)) {
+                        strip.set_sends(sends, if smooth { ramp } else { 0 });
+                    }
+                }
+                EngineCommand::SetEffect {
+                    strip,
+                    slot,
+                    effect,
+                } => {
+                    let retired = &mut self.retired_effects;
+                    let place = match strip {
+                        MixStrip::Track(track) => self.tracks.get_mut(track).map(|t| {
+                            let smooth = !t.is_empty();
+                            (&mut t.strip, smooth)
+                        }),
+                        MixStrip::Return(bus) => self.returns.get_mut(bus).map(|s| (s, true)),
+                        MixStrip::Master => Some((&mut self.master_strip, true)),
+                    };
+                    match place {
+                        Some((strip, smooth)) => {
+                            strip.set_effect(slot, effect, if smooth { fade } else { 0 }, retired);
+                        }
+                        None => {
+                            if let Some(effect) = effect {
+                                // Cannot fail: checked above, and this is the only producer.
+                                let _ = retired.push(effect);
+                            }
+                        }
+                    }
+                }
+                EngineCommand::SetEffectParam {
+                    strip,
+                    slot,
+                    param,
+                    value,
+                } => {
+                    if let Some((strip, _)) = self.strip(strip) {
+                        strip.set_param(slot, param, value);
                     }
                 }
                 EngineCommand::SetPlayTarget { track } => {
@@ -939,8 +1067,7 @@ impl Engine {
                         continue;
                     };
                     slot.lane.forget();
-                    slot.gain = 1.0;
-                    slot.gain_now = 1.0;
+                    slot.strip.clear(&mut self.retired_effects);
                     slot.aside_left = 0;
                     slot.fade_left = 0;
                     let all = [
@@ -1387,44 +1514,99 @@ impl Engine {
         if frames == 0 {
             return;
         }
-        self.master[0][..frames].fill(0.0);
-        self.master[1][..frames].fill(0.0);
+        for sum in &mut self.sums {
+            sum[..frames].fill(0.0);
+        }
+        let fade = fade_frames(self.sample_rate);
+        let t = &self.transport;
+        let ctx = EffectContext {
+            tempo_bpm: t.bpm_centi as f32 / 100.0 * t.ticks_per_beat as f32 / 480.0,
+        };
 
         let mut from = 0;
         while from < frames {
             self.step_at(offset + from, timing);
             let to = from + self.frames_to_next_point(frames - from);
-            let [master_l, master_r] = &mut self.master;
-            let (master_l, master_r) = (&mut master_l[from..to], &mut master_r[from..to]);
+            let [master_l, master_r, sums @ ..] = &mut self.sums;
+            let [a_l, a_r, b_l, b_r] = sums.each_mut().map(|sum| &mut sum[from..to]);
             let mut mix = Mix {
                 scratch: &mut self.scratch,
                 retired: &mut self.retired,
-                fade_frames: fade_frames(self.sample_rate),
-                master_l,
-                master_r,
+                retired_effects: &mut self.retired_effects,
+                fade_frames: fade,
+                ctx,
+                master_l: &mut master_l[from..to],
+                master_r: &mut master_r[from..to],
+                returns: [[a_l, a_r], [b_l, b_r]],
             };
             for (track, meter) in self.tracks.iter_mut().zip(self.meters.tracks.iter()) {
                 mix.add(track, Some(meter));
             }
             mix.add(&mut self.sample, None);
-            self.click.add(master_l, master_r);
+            self.click.add(mix.master_l, mix.master_r);
             if self.transport.state.is_moving() {
                 self.transport.pos += self.transport.step() * (to - from) as i128;
             }
             from = to;
         }
 
-        let [master_l, master_r] = &mut self.master;
+        let [master_l, master_r, sums @ ..] = &mut self.sums;
         let (master_l, master_r) = (&mut master_l[..frames], &mut master_r[..frames]);
-        self.tone.add(master_l, master_r, self.sample_rate);
+        let [_, _, spare_l, spare_r] = &mut self.scratch;
+        let sums = sums.as_chunks_mut::<2>().0;
+        for ((strip, [left, right]), meter) in (self.returns.iter_mut())
+            .zip(sums)
+            .zip(&self.meters.returns)
+        {
+            let mut io = Io {
+                left: &mut left[..frames],
+                right: &mut right[..frames],
+                spare_l,
+                spare_r,
+                ctx,
+                fade_frames: fade,
+            };
+            strip.inserts(&mut io, &mut self.retired_effects);
+            let (peak, finite) = strip.level(io.left, io.right);
+            if !finite {
+                continue;
+            }
+            raise(&meter[0], peak[0]);
+            raise(&meter[1], peak[1]);
+            for i in 0..frames {
+                master_l[i] += io.left[i];
+                master_r[i] += io.right[i];
+            }
+        }
+
+        self.master_strip.level(master_l, master_r);
+        let mut io = Io {
+            left: master_l,
+            right: master_r,
+            spare_l,
+            spare_r,
+            ctx,
+            fade_frames: fade,
+        };
+        self.master_strip
+            .inserts(&mut io, &mut self.retired_effects);
+        // After the master's strip: the test tone tells whether the output sounds, whatever
+        // the song's mixer does.
+        self.tone.add(io.left, io.right, self.sample_rate);
 
         let mut peak = [0.0f32; 2];
         for (frame, (l, r)) in out
             .as_chunks_mut::<2>()
             .0
             .iter_mut()
-            .zip(master_l.iter().zip(master_r.iter()))
+            .zip(io.left.iter().zip(io.right.iter()))
         {
+            // What is not a number never reaches the output.
+            let (l, r) = if l.is_finite() && r.is_finite() {
+                (*l, *r)
+            } else {
+                (0.0, 0.0)
+            };
             peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
             frame[0] = l.clamp(-1.0, 1.0);
             frame[1] = r.clamp(-1.0, 1.0);
@@ -1441,13 +1623,18 @@ impl Engine {
 struct Mix<'a> {
     scratch: &'a mut [Box<[f32]>; 4],
     retired: &'a mut Producer<Box<dyn Instrument>>,
+    retired_effects: &'a mut Producer<Box<dyn Effect>>,
     fade_frames: u32,
+    ctx: EffectContext,
     master_l: &'a mut [f32],
     master_r: &'a mut [f32],
+    /// The same stretch of what goes to return A and to return B.
+    returns: [[&'a mut [f32]; 2]; 2],
 }
 
 impl Mix<'_> {
-    /// Renders `track` over the stretch, with what fades out on it, and adds it to the master.
+    /// Renders `track` over the stretch, with what fades out on it, takes it through its
+    /// strip, and adds it to the master and to the returns it sends to.
     fn add(&mut self, track: &mut Track, meter: Option<&[AtomicU32; 2]>) {
         let frames = self.master_l.len();
         let [left, right, old_l, old_r] = &mut *self.scratch;
@@ -1491,20 +1678,31 @@ impl Mix<'_> {
         }
         retire_faded(track, self.retired);
 
-        let step = (track.gain - track.gain_now) / frames as f32;
-        let mut gain = track.gain_now;
-        let mut peak = [0.0f32; 2];
-        for i in 0..frames {
-            gain += step;
-            let (l, r) = (left[i] * gain, right[i] * gain);
-            peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
-            self.master_l[i] += l;
-            self.master_r[i] += r;
+        let mut io = Io {
+            left,
+            right,
+            spare_l: old_l,
+            spare_r: old_r,
+            ctx: self.ctx,
+            fade_frames: self.fade_frames,
+        };
+        track.strip.inserts(&mut io, self.retired_effects);
+        let (peak, finite) = track.strip.level(io.left, io.right);
+        // An instrument that gives something that is not a number is left out of the sums:
+        // one track must not take the master and the returns with it.
+        if !finite {
+            return;
         }
-        track.gain_now = track.gain;
         if let Some(meter) = meter {
             raise(&meter[0], peak[0]);
             raise(&meter[1], peak[1]);
+        }
+        for i in 0..frames {
+            self.master_l[i] += io.left[i];
+            self.master_r[i] += io.right[i];
+        }
+        for (bus, [to_l, to_r]) in self.returns.iter_mut().enumerate() {
+            track.strip.send(bus, io.left, io.right, [to_l, to_r]);
         }
     }
 }
@@ -1523,6 +1721,7 @@ fn retire_faded(track: &mut Track, retired: &mut Producer<Box<dyn Instrument>>) 
 pub struct EngineHandle {
     commands: Producer<EngineCommand>,
     retired: Consumer<Box<dyn Instrument>>,
+    retired_effects: Consumer<Box<dyn Effect>>,
     retired_sequences: Consumer<Box<Sequence>>,
     latency: Consumer<LatencyRecord>,
     recorded: Consumer<Recorded>,
@@ -1570,6 +1769,25 @@ impl EngineHandle {
         self.send(EngineCommand::PlaySample { instrument })
     }
 
+    /// Prepares `effect` here (this may allocate) and puts it into an insert slot
+    /// ([`EngineCommand::SetEffect`]); `None` empties the slot. Give the effect its parameter
+    /// values first: they then apply from its first frame.
+    pub fn set_effect(
+        &mut self,
+        strip: MixStrip,
+        slot: usize,
+        mut effect: Option<Box<dyn Effect>>,
+    ) -> Result<(), EngineCommand> {
+        if let Some(effect) = effect.as_mut() {
+            effect.prepare(self.meters.sample_rate() as f32, self.max_frames);
+        }
+        self.send(EngineCommand::SetEffect {
+            strip,
+            slot,
+            effect,
+        })
+    }
+
     /// The number of the audition track, the one after the tracks.
     pub fn audition_track(&self) -> usize {
         self.meters.track_count()
@@ -1593,11 +1811,19 @@ impl EngineHandle {
         self.retired.pop().ok()
     }
 
-    /// Drops every retired instrument and sequence on this thread. Call it now and then (it is
+    /// The next effect the audio thread is done with. Dropping it is the caller's job.
+    pub fn take_retired_effect(&mut self) -> Option<Box<dyn Effect>> {
+        self.retired_effects.pop().ok()
+    }
+
+    /// Drops every retired instrument, effect and sequence on this thread. Call it now and then (it is
     /// what lets further commands through once a retired ring has filled). Returns how many.
     pub fn drop_retired(&mut self) -> usize {
         let mut count = 0;
         while self.take_retired().is_some() {
+            count += 1;
+        }
+        while self.take_retired_effect().is_some() {
             count += 1;
         }
         while self.take_retired_sequence().is_some() {
@@ -1618,7 +1844,7 @@ impl EngineHandle {
 
     /// A new, empty engine in place of one that was lost (a stream that never gave it back).
     /// This handle is rewired to it; the meters stay the same `Arc`. Every track starts without
-    /// an instrument, at unity gain, with track 0 as the play target. The returned producer
+    /// an instrument, every strip is a new one, and track 0 is the play target. The returned producer
     /// replaces the old one, whose ring nobody reads any more.
     pub fn rebuild(&mut self) -> (Engine, MidiFeed) {
         let config = EngineConfig {

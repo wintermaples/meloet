@@ -86,6 +86,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     b.channel.inserts = [None, None, Some(Insert::new(EffectKind::Chorus)), None];
     let master = Arc::make_mut(&mut doc.master);
     master.gain = Gain::SILENT;
+    master.pan = Pan::new(-30);
     (master.inserts[0].as_mut().unwrap()).set(effects::limiter::CEILING, -1.0);
     master.inserts[1] = Some(Insert::new(EffectKind::Eq4));
     track.clips = vec![
@@ -186,6 +187,7 @@ fn the_shape_on_disk() {
         serde_json::Value::Null,
         "−∞ is null"
     );
+    assert_eq!(mixer["master"]["pan"], -30);
     assert_eq!(mixer["master"]["inserts"][0]["params"]["ceiling"], -1.0);
     assert_eq!(mixer["master"]["inserts"].as_array().unwrap().len(), 4);
     let text = String::from_utf8(encode(&rich_song("x", 1))).unwrap();
@@ -836,6 +838,29 @@ fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
         b[1..].iter().all(Option::is_none),
         "fewer slots: the rest is empty"
     );
+
+    // A master with no pan (a file from before it had one), or one that does not read: the
+    // middle, and the rest of the mixer stays.
+    for pan in [
+        None,
+        Some(serde_json::json!("left")),
+        Some(serde_json::json!(1.5)),
+    ] {
+        let mut v = rich_json();
+        let master = v["song"]["mixer"]["master"].as_object_mut().unwrap();
+        match pan {
+            Some(pan) => master.insert("pan".into(), pan),
+            None => master.remove("pan"),
+        };
+        let song = read_json(&v);
+        assert_eq!(song.doc.master.pan, Pan::CENTER);
+        assert_eq!(song.doc.master.gain, want.doc.master.gain);
+        assert_eq!(song.doc.master.inserts, want.doc.master.inserts);
+        assert_eq!(song.doc.returns, want.doc.returns);
+    }
+    let mut v = rich_json();
+    v["song"]["mixer"]["master"]["pan"] = serde_json::json!(900);
+    assert_eq!(read_json(&v).doc.master.pan, Pan::new(100));
 
     // A mixer that is not understood: the one of a new song, and the tracks stay.
     let mut v = rich_json();

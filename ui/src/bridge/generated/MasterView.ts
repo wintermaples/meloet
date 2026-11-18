@@ -2,6 +2,10 @@
 import type { EffectKind } from "./EffectKind";
 
 /**
- * The master strip: a fader and inserts. Its M, S and ● are unusable, and it has no pan.
+ * The master strip: a fader, a pan and inserts. Its M, S and ● are unusable.
  */
-export type MasterView = { gainDb: number | null, inserts: [EffectKind | null, EffectKind | null, EffectKind | null, EffectKind | null], };
+export type MasterView = { gainDb: number | null, 
+/**
+ * −100 to 100, as a track's (mock F4-Mixer).
+ */
+pan: number, inserts: [EffectKind | null, EffectKind | null, EffectKind | null, EffectKind | null], };

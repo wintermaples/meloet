@@ -31,6 +31,7 @@ use meloet_sound::sampler::{LoadError, SampleBank};
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::measure::{self, KeyToSound};
+use crate::mixbook::{self, MixBook};
 use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, RecordReport};
 use crate::recovery;
 use crate::settings::{self, Settings};
@@ -271,7 +272,7 @@ impl Core {
             };
             Library::open(options.sounds_dir.as_deref(), Box::new(done))
         };
-        let model = Model::new(settings).with_sounds(library.installed());
+        let mut model = Model::new(settings).with_sounds(library.installed());
         let hub = Arc::new(Hub::new(model.view()));
         let shared = Arc::new(Shared {
             held: Held::default(),
@@ -704,6 +705,8 @@ struct Audio {
     rebuilt: Option<MidiFeed>,
     /// What the engine has on its tracks, to put it on an engine made anew.
     seats: SeatBook,
+    /// What the engine has in its mixer, for the same.
+    mix: MixBook,
     /// The samples the instruments are made with.
     sounds: Library,
 }
@@ -807,6 +810,7 @@ impl Audio {
             allowed,
             rebuilt: None,
             seats: SeatBook::new(),
+            mix: MixBook::default(),
             sounds,
         };
         for op in seats {
@@ -828,9 +832,11 @@ impl Audio {
         }
     }
 
-    /// An op about instruments or the play target: for the engine also when no stream runs.
+    /// An op about instruments, the play target or the mixer: for the engine also when no
+    /// stream runs.
     fn seat_op(&mut self, op: EngineOp) {
         self.seats.note(&op);
+        self.mix.note(&op);
         if self.stream.is_none() && self.engine.is_none() {
             // The engine is lost; the one made in its place gets what the book says.
             return;
@@ -865,7 +871,22 @@ impl Audio {
             EngineOp::ClearSeat { seat } => EngineCommand::ClearTrack { track: seat },
             EngineOp::PlayTarget { seat: Some(track) } => EngineCommand::SetPlayTarget { track },
             EngineOp::PlayTarget { seat: None } => EngineCommand::ClearPlayTarget,
-            _ => return,
+            EngineOp::Insert {
+                strip,
+                slot,
+                insert,
+            } => {
+                let effect = insert.as_ref().map(mixbook::make);
+                let strip = mixbook::mix_strip(strip);
+                match self.handle.set_effect(strip, slot, effect) {
+                    Ok(()) => return,
+                    Err(command) => command,
+                }
+            }
+            op => match mixbook::command(&op) {
+                Some(command) => command,
+                None => return,
+            },
         };
         // A full ring empties within a block or two; these commands must not be lost, or the
         // engine and the song no longer agree.
@@ -897,7 +918,7 @@ impl Audio {
             let (engine, feed) = self.handle.rebuild();
             self.rebuilt = Some(feed);
             self.engine = Some(engine);
-            for op in self.seats.ops() {
+            for op in self.mix.ops().into_iter().chain(self.seats.ops()) {
                 self.send_seat_op(op);
                 self.settle();
             }
@@ -949,7 +970,11 @@ impl Audio {
             | EngineOp::EndTrial { .. }
             | EngineOp::MoveInstrument { .. }
             | EngineOp::ClearSeat { .. }
-            | EngineOp::PlayTarget { .. } => {
+            | EngineOp::PlayTarget { .. }
+            | EngineOp::Strip { .. }
+            | EngineOp::Sends { .. }
+            | EngineOp::Insert { .. }
+            | EngineOp::Param { .. } => {
                 self.seat_op(op);
                 return;
             }
@@ -1591,8 +1616,7 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             load_permille: steady_load(open, meters.load_permille(), last.as_ref()),
             master_peak: meters.take_master_peak(),
             transport,
-            // The engine has no meters for the returns.
-            return_peaks: [[0.0; 2]; 2],
+            return_peaks: [meters.take_return_peak(0), meters.take_return_peak(1)],
             track_peaks,
         };
         let fresh = hub.take_telemetry_fresh();

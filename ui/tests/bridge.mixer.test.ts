@@ -28,7 +28,7 @@ describe("約束 14: 偽物の場面（ミキサー）", () => {
       { gainDb: 0, pan: 0, muted: false, inserts: ["reverb", null, null, null] },
       { gainDb: 0, pan: 0, muted: false, inserts: ["delay", null, null, null] },
     ]);
-    expect(s.song.master).toEqual({ gainDb: 0, inserts: ["limiter", null, null, null] });
+    expect(s.song.master).toEqual({ gainDb: 0, pan: 0, inserts: ["limiter", null, null, null] });
     const insert: InsertRef = { strip: { kind: "return", bus: "a" }, slot: 0 };
     expect(s.params.selected).toEqual({ insert, effect: "reverb", values: [2.4, 60, 20, 6000, 120, 100, 100], row: 0 });
     expect(s.status.message).toEqual({ id: "paramSelected", loopBars: { from: 5, to: 9 }, insert, effect: "reverb", param: 0 });

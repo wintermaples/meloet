@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
 
 use meloet_engine::{
     BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineParts, Instrument,
-    InstrumentEvent, LatencyRecord, MidiIn, PlaceholderSynth,
+    InstrumentEvent, LatencyRecord, MidiIn, MixStrip, PlaceholderSynth,
 };
 
 const RATE: usize = 48_000;
@@ -239,9 +239,10 @@ fn meters_move_and_reading_clears_them() {
     assert_eq!(meters.sample_rate(), 48_000);
     assert!(!meters.take_clipped());
 
-    rig.send(EngineCommand::SetTrackGain {
-        track: 0,
+    rig.send(EngineCommand::SetStrip {
+        strip: MixStrip::Track(0),
         gain: 20.0,
+        pan: 0.0,
     });
     let loud = rig.run(256 * 4);
     assert!(meters.take_master_peak()[0] > 1.0);
@@ -249,11 +250,12 @@ fn meters_move_and_reading_clears_them() {
     assert!(meters.take_clipped());
     assert!(!meters.take_clipped(), "cleared by the read");
 
-    rig.send(EngineCommand::SetTrackGain {
-        track: 0,
+    rig.send(EngineCommand::SetStrip {
+        strip: MixStrip::Track(0),
         gain: 0.0,
+        pan: 0.0,
     });
-    rig.run(256);
+    rig.run(1024);
     assert_eq!(peak(&rig.run(256)), 0.0, "gain 0 mutes the track");
 }
 
@@ -604,9 +606,10 @@ fn a_thousand_blocks_with_midi_never_touch_the_allocator() {
         }
         match block % 97 {
             5 => rig.send(EngineCommand::TestTone),
-            11 => rig.send(EngineCommand::SetTrackGain {
-                track: 0,
+            11 => rig.send(EngineCommand::SetStrip {
+                strip: MixStrip::Track(0),
                 gain: 0.5,
+                pan: 0.0,
             }),
             23 => rig.send(EngineCommand::SetPlayTarget { track: block % 2 }),
             41 => rig.send(EngineCommand::AllNotesOff),

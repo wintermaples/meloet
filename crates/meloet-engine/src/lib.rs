@@ -1,4 +1,5 @@
-//! Audio engine: instrument interface, placeholder synth, mixer, meters, transport (song
+//! Audio engine: instrument and effect interfaces, placeholder synth, mixer (strips, sends,
+//! returns, master), meters, transport (song
 //! position, loop, metronome, count-in, recording stamps), cpal output.
 //!
 //! The audio thread never allocates, never frees, never locks. Everything crossing the thread
@@ -8,6 +9,7 @@ mod clock;
 mod effect;
 mod engine;
 mod instrument;
+mod mixer;
 mod output;
 pub mod rt;
 mod synth;
@@ -20,6 +22,7 @@ pub use engine::{
     EngineParts, FADE_S, LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,
 };
 pub use instrument::{Instrument, InstrumentEvent};
+pub use mixer::{INSERT_SLOTS, MixStrip, RAMP_S, pan_gains};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};
 pub use synth::PlaceholderSynth;
 pub use transport::{Sequence, SequenceEvent, TrackSet};

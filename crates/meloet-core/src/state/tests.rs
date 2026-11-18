@@ -189,6 +189,7 @@ fn a_new_song() {
         song.master,
         MasterView {
             gain_db: Some(0.0),
+            pan: 0,
             inserts: first(EffectKind::Limiter),
         }
     );

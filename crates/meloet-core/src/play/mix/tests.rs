@@ -141,7 +141,7 @@ fn a_stream_that_opens_hears_what_is_silent() {
 }
 
 #[test]
-fn mute_waits_while_recording_and_the_recording_goes_on() {
+fn mute_is_taken_while_recording_and_the_recording_goes_on() {
     let m = &mut ready();
     cmd(m, Command::ToggleMute { track: 1 });
     cmd(m, Command::SetCountIn { bars: 0 });
@@ -155,13 +155,20 @@ fn mute_waits_while_recording_and_the_recording_goes_on() {
     started(m);
     assert_eq!(m.view().transport.state, TransportState::Recording);
     let effects = cmd(m, Command::ToggleMute { track: 1 });
-    assert_eq!(silent(&effects), None);
-    assert!(m.view().song.tracks[0].muted);
-    // Solo is only listening: it is taken.
+    assert_eq!(silent(&effects), Some(vec![]));
+    assert!(!m.view().song.tracks[0].muted);
+    assert_eq!(m.view().transport.state, TransportState::Recording);
+    let effects = cmd(m, Command::ToggleMute { track: 1 });
+    assert_eq!(silent(&effects), Some(vec![0]));
+    // Solo is only listening: it is taken too.
     assert_eq!(
         silent(&cmd(m, Command::ToggleSolo { track: 1 })),
         None,
         "track 1 is muted: still silent"
     );
     assert!(m.view().song.tracks[0].soloed);
+    // Undo waits.
+    let steps = m.view().song.undo_count;
+    cmd(m, Command::Undo);
+    assert_eq!(m.view().song.undo_count, steps);
 }

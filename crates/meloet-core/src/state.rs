@@ -168,7 +168,7 @@ pub enum Effect {
         after: Duration,
     },
     /// Only while a stream is open; [`Input::AudioOpened`] sends everything again. The ops of
-    /// the instruments and the play target are for the engine at any time.
+    /// the instruments, the play target and the mixer are for the engine at any time.
     Engine(EngineOp),
     LiveNotes(LiveNotes),
     /// Answer with [`Input::SongSaved`] or [`Input::SongNotSaved`].
@@ -517,6 +517,7 @@ impl Model {
         self.watch_buffer();
         self.play.sync_silent(&mut effects);
         self.play.sync_target(&mut effects);
+        self.play.sync_mix(&mut effects);
         self.play.sync_sample(&mut effects);
         self.play.sync_sounds(&mut effects);
         self.close_when_recorded(&mut effects);
@@ -1209,8 +1210,8 @@ impl Model {
         self.play.sample_playing()
     }
 
-    /// The instruments and the play target, for an engine that has none yet.
-    pub fn engine_seats(&self) -> Vec<EngineOp> {
+    /// The instruments, the play target and the mixer, for an engine that has none yet.
+    pub fn engine_seats(&mut self) -> Vec<EngineOp> {
         self.play.engine_seats()
     }
 

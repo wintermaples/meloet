@@ -231,8 +231,8 @@ pub enum Command {
     // - `CancelMixPreview` (Esc during the drag): every preview is over and the sound is
     //   back at the song's values.
     // A preview is also over when the song changes under it (a step, undo, redo, another
-    // song). While counting in or recording the song is not to be changed: `commit: true`
-    // then only ends the preview (the sound goes back), and `commit: false` does nothing.
+    // song). All of this works while counting in or recording too, as do `ToggleReturnMute`,
+    // `RemoveEffect` and the mute of a track: none of them moves where a take is recorded.
     // Values out of range are brought into range by Rust.
     /// The fader of a strip. `db`: `None` is −∞; below −60 becomes −∞, above +6 becomes +6
     /// (spec 2 「メーターとフェーダーの目盛」). Rust keeps 0.01 steps.
@@ -242,13 +242,14 @@ pub enum Command {
         commit: bool,
     },
     /// The pan knob: -100 (all left) to 100 (all right), 0 the middle ("L 20" is -20). The
-    /// master has none; for it nothing happens.
+    /// master has one too (mock F4-Mixer).
     SetPan {
         strip: StripRef,
         pan: i32,
         commit: bool,
     },
-    /// How much of a track goes to return A or B, taken after its fader. `db` as in `SetGain`.
+    /// How much of a track goes to return A or B, taken after its fader and pan. `db` as in
+    /// `SetGain`.
     SetSend {
         track: u32,
         bus: SendBus,
@@ -981,12 +982,14 @@ pub struct ReturnView {
     pub inserts: InsertsView,
 }
 
-/// The master strip: a fader and inserts. Its M, S and ● are unusable, and it has no pan.
+/// The master strip: a fader, a pan and inserts. Its M, S and ● are unusable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MasterView {
     pub gain_db: Option<f32>,
+    /// −100 to 100, as a track's (mock F4-Mixer).
+    pub pan: i8,
     pub inserts: InsertsView,
 }
 

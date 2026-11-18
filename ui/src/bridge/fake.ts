@@ -282,7 +282,7 @@ function newSongMixer(): Pick<SongView, "returns" | "master"> {
       { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("reverb") },
       { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("delay") },
     ],
-    master: { gainDb: 0, inserts: firstInsert("limiter") },
+    master: { gainDb: 0, pan: 0, inserts: firstInsert("limiter") },
   };
 }
 

@@ -1,6 +1,6 @@
 """Build the meloet sound pack (docs/architecture.md 19-8) from the fetched sources.
 
-python3 -I tools/sounds/build.py --out <dir> [--only grandPiano,strings] [--organ loud|quiet]
+python3 -I tools/sounds/build.py --out <dir> [--only grandPiano,strings]
                                  [--src <dir>] [--src-dir <id>=<dir> ...] [--pack <version>] [--jobs N]
 python3 -I tools/sounds/build.py --check <dir>
 
@@ -62,14 +62,33 @@ FOLDERS = {
     "studioKit": "studio-kit",
     "strings": "strings",
     "organ": "organ",
+    "organQuiet": "organ-quiet",
     "organDrawbar": "organ-drawbar",
     "organPercussive": "organ-percussive",
     "organRock": "organ-rock",
     "organChurch": "organ-church",
     "organReed": "organ-reed",
+    "vibraphone": "vibraphone",
+    "marimba": "marimba",
+    "guitarNylon": "guitar-nylon",
+    "guitarSteel": "guitar-steel",
+    "guitarElectric": "guitar-electric",
+    "guitarDistortion": "guitar-distortion",
+    "pickBass": "pick-bass",
+    "woodBass": "wood-bass",
+    "brushKit": "brush-kit",
+    "pizzicato": "pizzicato",
+    "trumpet": "trumpet",
+    "brassSection": "brass-section",
+    "altoSax": "alto-sax",
+    "flute": "flute",
 }
-ORDER = ["grandPiano", "electricPiano", "organ", "organDrawbar", "organPercussive", "organRock",
-         "organChurch", "organReed", "fingerBass", "studioKit", "strings"]
+# the order of the shelf
+ORDER = ["grandPiano", "electricPiano", "organDrawbar", "organPercussive", "organRock", "organ", "organQuiet",
+         "organChurch", "organReed", "vibraphone", "marimba",
+         "guitarNylon", "guitarSteel", "guitarElectric", "guitarDistortion",
+         "fingerBass", "pickBass", "woodBass", "studioKit", "brushKit", "strings", "pizzicato",
+         "trumpet", "brassSection", "altoSax", "flute"]
 
 CHANGES = {
     "salamander-grand-piano": "Kept 4 of the 16 velocity layers with the release, resonance and pedal samples, cut the silence before each sound, and converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback).",
@@ -78,7 +97,7 @@ CHANGES = {
     "vcsl-claps": "Used the six Clap takes, cut the silence before each sound, and converted the files to 16-bit FLAC.",
     "vcsl-pipe-organ": "Made a crossfade loop in each manual sample, shortened the files to the loop end, cut the silence before each sound, and converted the files to 16-bit FLAC.",
     "black-and-blue-basses": "Kept 2 of the 4 takes of the darkblack finger plucks, moved the key map down one octave so each key plays its own pitch, faded out the last 100 ms, cut the silence before each sound, and converted the files to 16-bit FLAC.",
-    "fluidr3-gm": "Took the five organ presets (General MIDI 17 to 21) out of the SoundFont: joined each left and right sample pair into one stereo file, cut the samples at the loop end and the silence before each sound, converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback), and left out the filter, the chorus and reverb sends, the envelope delay and the velocity-to-filter modulator; a short decay to a lower sustain level became a lower level.",
+    "fluidr3-gm": "Took 18 instrument presets (General MIDI 12, 13, 17 to 21, 25, 26, 28, 31, 33, 35, 46, 57, 62, 66 and 74) and 12 keys of the Brush drum kit out of the SoundFont: joined each left and right sample pair and the layers that sound together into one file, kept one velocity layer where the layers play the same samples, cut the samples at the loop end and the silence before each sound, baked the hold and decay of the volume envelope into the samples (repeating the loop where the decay needs it) and, in four presets, the filter, moved the stereo halves of three drums tuned 5 cents apart to one pitch, converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback), and left out the other filters, the filter sweeps, the LFOs, the chorus and reverb sends, the envelope delay and the velocity-to-filter modulators; a short decay to a lower sustain level became a lower level.",
     "vsco-2-ce-strings": "Joined the violin, viola and cello section and solo double bass sustains into one key range, made a crossfade loop in each sample, cut the silence before each sound, and converted the files to 16-bit FLAC.",
 }
 
@@ -164,6 +183,30 @@ def best_loop_start(mono, le, lmin, lmax, xf):
     return a + k + xf, float(ncc[k])
 
 
+# "steady-clean" loops: a short noise is a 20 ms peak this far over the median 20 ms peak, and the
+# level ramp inside the loop is held to this much (a noise near the loop end must not set it).
+CLEAN_SPIKE_DB = 6.0
+CLEAN_RAMP_DB = 3.0
+
+
+def clean_loop_end(mono, sr, start, end, span):
+    """The latest loop end at or before `end` (50 ms steps) whose `span` frames before it hold no
+    short noise; when every place has some, the one with the fewest."""
+    pw = int(0.02 * sr)
+    m = len(mono) // pw
+    peaks = 20 * np.log10(np.maximum(np.max(np.abs(mono[: m * pw].reshape(m, pw)), axis=1), 1e-9))
+    med = float(np.median(peaks[start // pw: end // pw]))
+    spikes = np.nonzero(peaks > med + CLEAN_SPIKE_DB)[0] * pw
+    best = (end, None)
+    for le in range(end, start + span - 1, -int(0.05 * sr)):
+        hits = int(np.sum((spikes + pw > le - span) & (spikes < le)))
+        if best[1] is None or hits < best[1]:
+            best = (le, hits)
+        if hits == 0:
+            break
+    return best[0]
+
+
 def make_loop(x, sr, mode):
     """Crossfade loop baked into x. Returns (y cut at the loop end, ls, le, decay dB/s, info)."""
     mono = x.mean(axis=1)
@@ -193,8 +236,15 @@ def make_loop(x, sr, mode):
         settled = np.nonzero(env >= med - 3)[0]
         start = (int(settled[0]) + 1) * w + int(0.3 * sr) if len(settled) else int(1.0 * sr)
         start = max(start, int(1.0 * sr))
-        still = np.nonzero(env >= med - 6)[0]
-        end = int(still[-1]) * w - int(0.3 * sr) if len(still) else n - int(0.5 * sr)
+        if mode == "steady-clean":
+            # the loop ends before the level first falls away (250 ms average), not at the last
+            # place the level is still up: noises after the key is let go do not count
+            smooth = np.convolve(env, np.ones(5) / 5, mode="same")
+            drop = np.nonzero((np.arange(len(smooth)) * w > start) & (smooth < med - 6))[0]
+            end = int(drop[0]) * w - int(0.3 * sr) if len(drop) else n - int(0.5 * sr)
+        else:
+            still = np.nonzero(env >= med - 6)[0]
+            end = int(still[-1]) * w - int(0.3 * sr) if len(still) else n - int(0.5 * sr)
         end = min(end, n - int(0.2 * sr))
         le = end
         span = le - start
@@ -206,6 +256,8 @@ def make_loop(x, sr, mode):
             lmax = le - xf - start
         if lmax <= lmin:
             raise ValueError(f"settled part too short ({span / sr:.2f} s)")
+        if mode == "steady-clean":
+            le = clean_loop_end(mono, sr, start, end, lmax + xf)
         decay = 0.0
     ls, ncc = best_loop_start(mono, le, lmin, lmax, xf)
     L = le - ls
@@ -216,6 +268,8 @@ def make_loop(x, sr, mode):
         ramp_db = decay * (L / sr)
     else:
         ramp_db = db(rms(mono[ls: ls + win])) - db(rms(mono[le - win: le]))
+        if mode == "steady-clean":
+            ramp_db = max(-CLEAN_RAMP_DB, min(CLEAN_RAMP_DB, ramp_db))
     g = 10 ** ((ramp_db * np.arange(L) / L) / 20)
     y[ls:le] *= g[:, None]
     # crossfade the frames before the end with the frames before the start
@@ -247,7 +301,7 @@ def loop_check(y, ls, le, sr):
 
 def process(job):
     """One output file. job: {"out", "inputs": [{"path", "gainL", "gainR"}], "stereo": bool,
-    "loop": None | "decay" | "steady", "fadeEndMs": float}"""
+    "loop": None | "decay" | "steady" | "steady-clean", "fadeEndMs": float}"""
     parts = []
     sr = None
     for inp in job["inputs"]:
@@ -729,11 +783,53 @@ def build_strings(b):
 NOTE = {"C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11}
 
 
-def build_organ(b):
+ORGAN_STOPS = {"organ": "Loud", "organQuiet": "Quiet"}
+# The Quiet stop has key and action noises well over its soft tone, and some files go on falling
+# after one: its loops keep clear of them.
+ORGAN_LOOPS = {"organ": "steady", "organQuiet": "steady-clean"}
+# The Quiet stop's notes were recorded up to 35 dB apart in their held level: each file's gainDb
+# moves it onto a straight line over the keys, raised by at most EVEN_MAX_UP_DB.
+ORGAN_EVEN = {"organQuiet"}
+EVEN_MAX_UP_DB = 24.0
+# Points further than this from the line are left out of the next fit.
+EVEN_FIT_OUT_DB = 6.0
+
+
+def even_steady_levels(inst_path):
+    """Moves each region's gainDb so that the RMS of its loop (as played, before the instrument
+    gain) sits on a straight line over the root keys, fitted without the outliers. Rewrites the
+    file and returns [(root, before dB, after dB, change dB)]."""
+    with open(inst_path, encoding="utf-8") as f:
+        inst = json.load(f)
+    pts = []
+    for r in inst["regions"]:
+        x, _ = read_audio(os.path.join(os.path.dirname(inst_path), r["sample"]))
+        pts.append(db(rms(x[r["loopStart"]: r["loopEnd"]])) + r["gainDb"])
+    keys = np.array([r["root"] for r in inst["regions"]], dtype=float)
+    lv = np.array(pts)
+    use = np.ones(len(lv), dtype=bool)
+    for _ in range(5):
+        slope, icpt = np.polyfit(keys[use], lv[use], 1)
+        nxt = np.abs(lv - (slope * keys + icpt)) <= EVEN_FIT_OUT_DB
+        if (nxt == use).all() or nxt.sum() < 3:
+            break
+        use = nxt
+    out = []
+    for r, k, v in zip(inst["regions"], keys, lv):
+        change = min(EVEN_MAX_UP_DB, slope * k + icpt - v)
+        r["gainDb"] = fnum(round(r["gainDb"] + change, 3))
+        out.append((int(k), round(float(v), 1), round(float(v + change), 1), round(float(change), 1)))
+    with open(inst_path, "w", encoding="utf-8") as f:
+        json.dump(inst, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    return out
+
+
+def build_organ(b, kind):
     sid = "vcsl-pipe-organ"
     root = b.root(sid)
-    which = b.args.organ
-    folder = os.path.join(root, "Aerophones/Edge-blown Aerophones/Pipe Organ", "Loud" if which == "loud" else "Quiet")
+    which = ORGAN_STOPS[kind]
+    folder = os.path.join(root, "Aerophones/Edge-blown Aerophones/Pipe Organ", which)
     files = []
     for f in sorted(os.listdir(folder)):
         m = re.search(r"_([A-G]#?)(\d)(?:_rr1)?\.wav$", f)
@@ -745,7 +841,7 @@ def build_organ(b):
         lo = key - 1 if i > 0 else key
         hi = key + 1 if i < len(files) - 1 else key
         name = safe_name(os.path.splitext(f)[0]) + ".flac"
-        job = job_for(b, "organ", name, [{"path": os.path.join(folder, f)}], loop="steady")
+        job = job_for(b, kind, name, [{"path": os.path.join(folder, f)}], loop=ORGAN_LOOPS[kind])
         jobs.append(job)
         # A pipe organ does not get louder with velocity, but the built-in organs all do, like the
         # FluidR3 ones (Yachiyo's decision 2026-11-19).
@@ -755,10 +851,12 @@ def build_organ(b):
     rel = organ_release_ms(os.path.join(folder, files[len(files) // 2][1]))
     for r in rows:
         r["releaseMs"] = rel
-    s = finish_instrument(b, "organ", [sid], rows, results, {"polyphony": 32, "sustainPedal": True}, 60)
+    s = finish_instrument(b, kind, [sid], rows, results, {"polyphony": 32, "sustainPedal": True}, 60)
     # An organ note holds its full level, so chords add up far more than on a piano: the level is
     # set on the chord the listening tool plays (C3 under C4 E4 G4) instead of on one C4.
-    path = os.path.join(b.out, FOLDERS["organ"], "instrument.json")
+    path = os.path.join(b.out, FOLDERS[kind], "instrument.json")
+    if kind in ORGAN_EVEN:
+        s["evenSteady"] = even_steady_levels(path)
     with open(path, encoding="utf-8") as f:
         inst = json.load(f)
     before = chord_peak_db(path, ORGAN_CHORD) - inst["gainDb"]
@@ -1023,16 +1121,537 @@ def looped_chord_peak_db(inst_path, keys, vel=100, seconds=3.0):
     return db(float(np.max(np.abs(total))))
 
 
+# ---------------------------------------------------------------- FluidR3_GM melodic instruments and the brush kit
+
+# kind: (bank, program, polyphony, sustainPedal). Programs count from 0 (General MIDI number - 1).
+FLUID_PRESETS = {
+    "vibraphone": (0, 11, 32, True),
+    "marimba": (0, 12, 32, True),
+    "guitarNylon": (0, 24, 32, True),
+    "guitarSteel": (0, 25, 32, True),
+    "guitarElectric": (0, 27, 32, True),
+    "guitarDistortion": (0, 30, 32, True),
+    "woodBass": (0, 32, 16, False),
+    "pickBass": (0, 34, 16, False),
+    "pizzicato": (0, 45, 32, True),
+    "trumpet": (0, 56, 16, False),
+    "brassSection": (0, 61, 32, False),
+    "altoSax": (0, 65, 16, False),
+    "flute": (0, 73, 16, False),
+    "brushKit": (128, 40, 32, False),
+}
+# A kit plays only the twelve keys of the piano roll's drum rows; a key the kit lacks comes from
+# this preset (Standard).
+FLUID_DRUM_FILL = (128, 0)
+DRUM_KEYS = [36, 37, 38, 39, 42, 44, 45, 46, 47, 49, 50, 51]
+# Velocity layers that play the same samples are folded into the one that answers this velocity.
+VEL_PICK = 100
+# A decay still going at the loop start keeps going in the loop (loopDecayDbPerS) when the sustain
+# level is at least this far down; a sustain nearer the top is reached in the file (the loop is
+# repeated in the file until then) and the loop holds it.
+DEEP_SUSTAIN_DB = 40.0
+# The filter is baked into the files of an instrument when it moves the spectral centroid of the
+# median zone down by more than this; otherwise it is left out. (The 14 presets fall into two sets:
+# up to 2 % and from 8 %.)
+FILTER_BAKE_SHIFT = 0.05
+# SF2 8.1.3: initialFilterFc at or above this is "no filter".
+FC_OFF = 13500
+# Repeats of the loop in front of the loop the file keeps, so a baked filter rings in (seconds).
+FILTER_SETTLE_S = 0.03
+# Generators this builder bakes into the files (when they change the sound) or reads otherwise.
+FLUID_READ = SF2_USED | {"initialFilterFc", "initialFilterQ", "holdVolEnv", "decayVolEnv", "sustainVolEnv",
+                         "keynumToVolEnvHold", "keynumToVolEnvDecay"}
+# 8.2.1 modulator records this builder knows. (source, destination, amount, amount source, transform)
+# with the amount 0: velocity to filter cutoff turned off. Velocity to cutoff / Q with an amount:
+# left out (counted).
+MOD_VEL_FC_OFF = (258, 8, 0)
+MOD_KNOWN_DEST = {8: "velocityToFilterFc", 9: "velocityToFilterQ"}
+
+
+def fc_hz(cents):
+    """8.1.2 #8: absolute cents, 8.176 Hz at 0."""
+    return 8.176 * 2.0 ** (cents / 1200.0)
+
+
+def lowpass_ir(fc, q_cb, sr):
+    """Impulse response of the SF2 filter (8.1.2 #8, #9): a two-pole low pass whose resonance at the
+    cutoff stands q_cb centibels above the DC gain. Made as the RBJ biquad, whose gain at the
+    cutoff is its Q; cut where it has died away."""
+    w0 = 2 * math.pi * fc / sr
+    q = 10 ** (q_cb / 200.0)
+    alpha = math.sin(w0) / (2 * q)
+    cw = math.cos(w0)
+    a0 = 1 + alpha
+    b0, b1, b2 = (1 - cw) / 2 / a0, (1 - cw) / a0, (1 - cw) / 2 / a0
+    a1, a2 = -2 * cw / a0, (1 - alpha) / a0
+    h = []
+    x1 = x2 = y1 = y2 = 0.0
+    quiet = 0
+    for n in range(int(sr)):
+        x0 = 1.0 if n == 0 else 0.0
+        y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+        h.append(y0)
+        x2, x1, y2, y1 = x1, x0, y1, y0
+        quiet = quiet + 1 if abs(y0) < 1e-9 else 0
+        if quiet >= 64:
+            break
+    return np.array(h)
+
+
+def convolve(x, h):
+    n = 1 << int(math.ceil(math.log2(len(x) + len(h))))
+    return np.fft.irfft(np.fft.rfft(x, n) * np.fft.rfft(h, n), n)[: len(x)]
+
+
+def centroid(x, sr):
+    spec = np.abs(np.fft.rfft(x[: int(sr)])) ** 2
+    f = np.fft.rfftfreq(min(len(x), int(sr)), 1.0 / sr)
+    return float(np.sum(f * spec) / max(np.sum(spec), 1e-20))
+
+
+def unroll(x, ls, le, frames):
+    """x[:le] followed by copies of the loop ls..le until it is at least `frames` long. Returns
+    (y, loop start, loop end) where the loop is the last copy."""
+    if frames <= le:
+        return x[:le], ls, le
+    n = int(math.ceil((frames - le) / (le - ls)))
+    y = np.concatenate([x[:le]] + [x[ls:le]] * n)
+    return y, len(y) - (le - ls), len(y)
+
+
+def process_fluid(job):
+    """One output file from SF2 sample data, with the filter and the volume envelope's hold, decay
+    and sustain baked in. job: {"out", "sr", "layers": [{"pcm": int16 array, "gainL", "gainR",
+    "ir": impulse response or None, "ratio": read step that moves the layer to the first one's
+    pitch}], "stereo", "loop": None | (start, end), "env": {"t0": s, "rate": dB/s, "sustain": dB}}."""
+    sr = job["sr"]
+    env = job["env"]
+    loop = job["loop"]
+    filtered = any(la["ir"] is not None for la in job["layers"])
+    reach = env["t0"] + (env["sustain"] / env["rate"] if env["rate"] > 0 else 0.0)
+    res = {"sr": sr}
+    srcs = []
+    for la in job["layers"]:
+        x = np.asarray(la["pcm"], dtype=np.float64) / 32768.0
+        if la["ratio"] != 1:
+            pos = np.arange(int(len(x) / la["ratio"])) * la["ratio"]
+            x = np.interp(pos, np.arange(len(x)), x)
+        if loop:
+            ls, le = loop
+            want = le
+            if filtered:
+                pad = max(len(la["ir"]) if la["ir"] is not None else 0, int(FILTER_SETTLE_S * sr))
+                want = le + pad + (le - ls)
+            if env["sustain"] > 0 and env["rate"] > 0:
+                deep = env["sustain"] >= DEEP_SUSTAIN_DB
+                # the loop keeps decaying from where the file leaves it, so the hold must be over by
+                # then; a shallow sustain is reached in the file
+                want = max(want, int(math.ceil((env["t0"] if deep else reach) * sr)) + (le - ls))
+            x, nls, nle = unroll(x, ls, le, want)
+        if la["ir"] is not None:
+            x = convolve(x, la["ir"])
+        srcs.append((x, la["gainL"], la["gainR"]))
+    n = min(len(y) for y, _, _ in srcs)
+    srcs = [(y[:n], gl, gr) for y, gl, gr in srcs]
+    if job["stereo"]:
+        x = np.zeros((n, 2))
+        for y, gl, gr in srcs:
+            x[:, 0] += y * gl
+            x[:, 1] += y * gr
+    else:
+        x = np.zeros((n, 1))
+        for y, gl, _ in srcs:
+            x[:, 0] += y * gl
+    # the volume envelope after the attack: hold, then straight down in dB to the sustain level
+    if env["sustain"] > 0 and env["rate"] > 0:
+        t = np.arange(n) / sr
+        g_db = -np.minimum(env["sustain"], env["rate"] * np.maximum(0.0, t - env["t0"]))
+        if loop:
+            # the loop plays at the level of its start; a decay that goes on is the loop decay
+            g_db[nls:] = g_db[nls]
+            if reach > nls / sr + 1e-9:
+                res["loopDecayDbPerS"] = round(env["rate"], 3)
+        x *= (10 ** (g_db / 20))[:, None]
+    x, cut = trim_head(x, sr)
+    res.update(channels=x.shape[1], headCutMs=round(1000 * cut / sr, 2))
+    if loop:
+        ls, le = nls - cut, nle - cut
+        if ls < max(1, int(sr * FADE_IN_MS / 1000)) or le - ls < 8 or le > len(x):
+            raise ValueError(f"loop {loop} does not fit after cutting {cut} frames: {job['out']}")
+        x = x[:le]
+        res.update(loopStart=int(ls), loopEnd=int(le), unrolledFrames=int(nle - loop[1]))
+    peak = float(np.max(np.abs(x)))
+    if peak <= 0:
+        raise ValueError(f"silent file {job['out']}")
+    pcm = np.clip(np.round(x * (10 ** (NORM_DB / 20) / peak) * 32767), -32768, 32767).astype(np.int16)
+    os.makedirs(os.path.dirname(job["out"]), exist_ok=True)
+    write_flac(job["out"], pcm, sr)
+    res.update(frames=len(pcm), peakDb=round(db(peak), 3), fileGainDb=round(db(peak) - NORM_DB, 3),
+               bytes=os.path.getsize(job["out"]))
+    if loop:
+        res["check"] = loop_check(pcm, res["loopStart"], res["loopEnd"], sr)
+    return job["out"], res
+
+
+def fluid_zones(sf, kind):
+    """The zones the instrument plays and the modulators it was read with. A kit keeps only the
+    DRUM_KEYS (each zone narrowed to one key), and takes the keys it lacks from FLUID_DRUM_FILL."""
+    bank, prog, _, _ = FLUID_PRESETS[kind]
+    pname, zones, mods = sf.regions(bank, prog)
+    if bank != 128:
+        return pname, zones, mods["preset"] + mods["instrument"], []
+    out, filled = [], []
+    have = set()
+    for z in zones:
+        for k in DRUM_KEYS:
+            if z["keyLo"] <= k <= z["keyHi"]:
+                out.append(dict(z, keyLo=k, keyHi=k))
+                have.add(k)
+    allmods = mods["preset"] + mods["instrument"]
+    missing = [k for k in DRUM_KEYS if k not in have]
+    if missing:
+        _, fill, fmods = sf.regions(*FLUID_DRUM_FILL)
+        for z in fill:
+            for k in missing:
+                if z["keyLo"] <= k <= z["keyHi"]:
+                    out.append(dict(z, keyLo=k, keyHi=k))
+                    filled.append(k)
+        allmods += fmods["preset"] + fmods["instrument"]
+    return pname, out, allmods, sorted(set(filled))
+
+
+def zone_layers(sf, zones, folded):
+    """Zones grouped into the files they become: [(keyLo, keyHi, velLo, velHi, [zone, ...])].
+    Zones with the same keys and velocities sound together (stereo halves, layers), so they are
+    mixed into one file. Velocity layers of one key range that play the same samples are folded
+    into the layer that answers VEL_PICK."""
+    by_keys = {}
+    for z in zones:
+        by_keys.setdefault((z["keyLo"], z["keyHi"]), {}).setdefault((z["velLo"], z["velHi"]), []).append(z)
+    out = []
+    for (klo, khi), vels in sorted(by_keys.items()):
+        samples = {v: sorted(z["sample"] for z in zs) for v, zs in vels.items()}
+        if len(vels) > 1 and len({tuple(s) for s in samples.values()}) == 1:
+            pick = [v for v in vels if v[0] <= VEL_PICK <= v[1]]
+            if len(pick) != 1:
+                raise SystemExit(f"keys {klo}-{khi}: {len(pick)} velocity layers answer {VEL_PICK}")
+            folded["velocityLayers"] = folded.get("velocityLayers", 0) + len(vels) - 1
+            out.append((klo, khi, 1, 127, vels[pick[0]]))
+        else:
+            for (vlo, vhi), zs in sorted(vels.items()):
+                out.append((klo, khi, max(1, vlo), vhi, zs))
+    return out
+
+
+ENV_GENS = ("attackVolEnv", "holdVolEnv", "decayVolEnv", "sustainVolEnv", "releaseVolEnv",
+            "keynumToVolEnvHold", "keynumToVolEnvDecay", "delayVolEnv", "scaleTuning", "sampleModes",
+            "exclusiveClass")
+
+
+def zone_cents(sf, z):
+    """Pitch of a zone at key 0, in cents (8.1.2 #51, #52, #58 and the sample's pitchCorrection)."""
+    g = z["gen"]
+    s = sf.samples[z["sample"]]
+    root = g["overridingRootKey"] if g["overridingRootKey"] >= 0 else s["originalPitch"]
+    return -100 * root + 100 * g["coarseTune"] + g["fineTune"] + s["pitchCorrection"]
+
+
+def fluid_filter(g, sr):
+    """(cutoff Hz or None, Q cB, how the modulation envelope moves the cutoff: None, "offset" (a
+    fixed amount, added) or "sweep" (left out)) of one zone."""
+    fc = g["initialFilterFc"]
+    how = None
+    amount = g["modEnvToFilterFc"]
+    if amount:
+        # 8.1.3: the modulation envelope starts at 0 after its delay and attack, holds its peak (1),
+        # then falls to 1 - sustainModEnv/1000. Only one that is at 1 at once and stays there is a
+        # fixed offset; a sweep is left out.
+        quick = sf2.timecents_ms(g["delayModEnv"]) + sf2.timecents_ms(g["attackModEnv"]) <= SUSTAIN_FOLD_MS
+        if quick and g["sustainModEnv"] == 0:
+            fc += amount
+            how = "offset"
+        else:
+            how = "sweep"
+    if fc >= FC_OFF or fc_hz(fc) >= 0.45 * sr:
+        return None, g["initialFilterQ"], how
+    return fc_hz(fc), g["initialFilterQ"], how
+
+
+# Guitars are levelled so that the strummed phrase of the listening tool peaks here: the peak of
+# the grand piano's sample phrase in that tool (render_pack, 2026-11-19).
+STRUMMED = {"guitarNylon", "guitarSteel", "guitarElectric", "guitarDistortion"}
+STRUM_PEAK_DB = -5.5
+PHRASE_RATE = 48000
+EIGHTH_S = 0.25
+
+
+def guitar_strum():
+    """The strummed phrase of crates/meloet-sound/examples/render_pack.rs (guitar_strum), as
+    (start s, length s, key, velocity): C, Am, F and G in eighths, down from the lowest string
+    12 ms apart at velocity 100, up over the top four strings 8 ms apart at velocity 80; the last
+    strum rings for a second."""
+    chords = [[48, 52, 55, 60, 64], [45, 52, 57, 60, 64], [41, 48, 53, 57, 60, 65], [43, 47, 50, 55, 59, 67]]
+    notes = []
+    for strum in range(16):
+        chord = chords[strum // 4]
+        start = strum * EIGHTH_S
+        end = start + (1.0 if strum == 15 else EIGHTH_S)
+        if strum % 2 == 0:
+            notes += [(start + i * 0.012, end - start - i * 0.012, k, 100) for i, k in enumerate(chord)]
+        else:
+            notes += [(start + i * 0.008, end - start - i * 0.008, k, 80) for i, k in enumerate(chord[::-1][:4])]
+    return notes
+
+
+def phrase_peak_db(inst_path, notes, seconds=6.0):
+    """Estimated peak (dBFS) of notes played on an instrument, the way the player sounds them:
+    pitch by linear interpolation, loops, the loop decay, the attack ramp, the velocity curve and
+    a release falling 60 dB in releaseMs. Mono files sound on both sides."""
+    with open(inst_path, encoding="utf-8") as f:
+        inst = json.load(f)
+    files = {}
+    n = int(seconds * PHRASE_RATE)
+    total = np.zeros((n, 2))
+    for start, length, key, vel in notes:
+        regs = [r for r in inst["regions"] if r.get("trigger", "attack") == "attack"
+                and r["keyLo"] <= key <= r["keyHi"] and r.get("velLo", 1) <= vel <= r.get("velHi", 127)]
+        for r in regs:
+            if r["sample"] not in files:
+                files[r["sample"]] = read_audio(os.path.join(os.path.dirname(inst_path), r["sample"]))
+            x, sr = files[r["sample"]]
+            step = 2 ** (((key - r["root"]) * r.get("pitchKeytrack", 100) + r.get("tuneCents", 0)) / 1200) \
+                * sr / PHRASE_RATE
+            at = int(start * PHRASE_RATE)
+            t = np.arange(n - at) / PHRASE_RATE
+            pos = np.arange(n - at) * step
+            if "loopStart" in r:
+                ls, le = r["loopStart"], r["loopEnd"]
+                over = pos >= le - 1
+                pos[over] = ls + np.mod(pos[over] - ls, le - ls)
+            else:
+                t, pos = t[pos < len(x) - 1], pos[pos < len(x) - 1]
+            y = np.stack([np.interp(pos, np.arange(len(x)), x[:, c]) for c in range(x.shape[1])], axis=1)
+            if y.shape[1] == 1:
+                y = np.repeat(y, 2, axis=1)
+            g = 10 ** ((r["gainDb"] + inst["gainDb"] + vel_gain_db(vel, r.get("ampVeltrack", 100))) / 20)
+            env = np.minimum(1.0, t / max(r.get("attackMs", 0) / 1000, 1e-9))
+            if r.get("loopDecayDbPerS") and "loopStart" in r:
+                inside = np.maximum(0.0, t - r["loopStart"] / (step * PHRASE_RATE))
+                env = env * 10 ** (-r["loopDecayDbPerS"] * inside / 20)
+            if not r.get("oneShot"):
+                rel = max(r.get("releaseMs", 200), 2) / 1000
+                env = env * 10 ** (-60 * np.maximum(0.0, t - length) / rel / 20)
+            total[at: at + len(y)] += y * (g * env)[:, None]
+    return db(float(np.max(np.abs(total))))
+
+
+def build_fluid(b, kind):
+    sid = "fluidr3-gm"
+    sf = soundfont(b, sid)
+    bank, prog, polyphony, pedal = FLUID_PRESETS[kind]
+    drums = bank == 128
+    pname, zones, mods, filled = fluid_zones(sf, kind)
+    dropped, folded, baked = {}, {}, {}
+    for m in mods:
+        if m[:3] == MOD_VEL_FC_OFF:
+            continue
+        src, dest = m[0], m[1]
+        if src & 0x7F == 2 and not src & 0x80 and dest in MOD_KNOWN_DEST:
+            count(dropped, MOD_KNOWN_DEST[dest])
+            continue
+        raise SystemExit(f"{kind}: modulator {m} is not one this tool knows")
+    groups = zone_layers(sf, zones, folded)
+    plans = []
+    for klo, khi, vlo, vhi, zs in groups:
+        first = zs[0]
+        g = first["gen"]
+        s = sf.samples[first["sample"]]
+        sr = s["rate"]
+        start, end, ls, le = sf.sample_points(first)
+        loop = (ls - start, le - start) if g["sampleModes"] & 3 in (1, 3) else None
+        layers = []
+        for z in zs:
+            zg = z["gen"]
+            if any(zg[k] != g[k] for k in ENV_GENS):
+                raise SystemExit(f"{kind}: zones of keys {klo}-{khi} sound together but differ in "
+                                 f"{[k for k in ENV_GENS if zg[k] != g[k]]}")
+            zs_ = sf.samples[z["sample"]]
+            z0, z1, zls, zle = sf.sample_points(z)
+            if zs_["rate"] != sr or (z1 - z0, zls - z0, zle - z0) != (end - start, ls - start, le - start):
+                raise SystemExit(f"{kind}: zones of keys {klo}-{khi} have other lengths, loops or rates")
+            fc, q, how = fluid_filter(zg, sr)
+            # a layer tuned apart from the first is moved to the first's pitch in the file
+            cents = zone_cents(sf, z) - zone_cents(sf, first)
+            if cents and loop:
+                raise SystemExit(f"{kind}: looped zones of keys {klo}-{khi} sound together at other pitches")
+            if cents:
+                count(baked, "fineTune of a layer")
+            # a stereo half sits on its side; any other pan is the balance of the two sides
+            p = max(-1.0, min(1.0, zg["pan"] / 500.0))
+            layers.append({"zone": z, "pcm": sf.pcm(z0, z1), "fc": fc, "q": q, "pan": p,
+                           "att": zg["initialAttenuation"] / 10.0, "mod": how,
+                           "ratio": 2 ** (cents / 1200)})
+        plans.append({"keys": (klo, khi), "vel": (vlo, vhi), "g": g, "s": s, "sr": sr, "loop": loop,
+                      "layers": layers})
+    # filter: baked for the whole instrument or left out (FILTER_BAKE_SHIFT)
+    shifts = []
+    for pl in plans:
+        if not any(la["fc"] for la in pl["layers"]):
+            continue
+        dry = sum(np.asarray(la["pcm"], dtype=np.float64) * 10 ** (-la["att"] / 20) for la in pl["layers"])
+        wet = sum(convolve(np.asarray(la["pcm"], dtype=np.float64), lowpass_ir(la["fc"], la["q"], pl["sr"]))
+                  * 10 ** (-la["att"] / 20) if la["fc"] else np.asarray(la["pcm"], dtype=np.float64) * 10 ** (-la["att"] / 20)
+                  for la in pl["layers"])
+        shifts.append(1 - centroid(wet, pl["sr"]) / max(centroid(dry, pl["sr"]), 1e-9))
+    shift = float(np.median(shifts)) if shifts else 0.0
+    bake_filter = shift > FILTER_BAKE_SHIFT
+    jobs, rows, names = {}, [], {}
+    for pl in plans:
+        g, s, sr = pl["g"], pl["s"], pl["sr"]
+        klo, khi = pl["keys"]
+        mid = (klo + khi) / 2
+        root = g["overridingRootKey"] if g["overridingRootKey"] >= 0 else s["originalPitch"]
+        tune = g["fineTune"] + s["pitchCorrection"]
+        row = {"keyLo": klo, "keyHi": khi, "velLo": pl["vel"][0], "velHi": pl["vel"][1], "ampVeltrack": 100}
+        if g["scaleTuning"] == 100:
+            root -= g["coarseTune"]
+        else:
+            tune += 100 * g["coarseTune"]
+            row["pitchKeytrack"] = g["scaleTuning"]
+        inside = min(127, max(0, root))
+        tune += 100 * (root - inside)
+        row["root"] = inside
+        if tune:
+            row["tuneCents"] = tune
+        att = min(la["att"] for la in pl["layers"])
+        vol = -att
+        # volume envelope: 8.1.2 #35-#40, the key scaling taken at the middle of the zone
+        hold_tc = g["holdVolEnv"] + g["keynumToVolEnvHold"] * (60 - mid)
+        decay_tc = g["decayVolEnv"] + g["keynumToVolEnvDecay"] * (60 - mid)
+        if g["keynumToVolEnvHold"] or g["keynumToVolEnvDecay"]:
+            count(folded, "keynumToVolEnv")
+        sustain = min(100.0, g["sustainVolEnv"] / 10.0)
+        rate = SF2_RELEASE_DB / (sf2.timecents_ms(decay_tc) / 1000.0)
+        attack_ms = sf2.timecents_ms(g["attackVolEnv"])
+        t0 = (attack_ms + sf2.timecents_ms(hold_tc)) / 1000.0
+        env = {"t0": t0, "rate": rate, "sustain": sustain}
+        if sustain > 0 and t0 * 1000 + 1000 * sustain / rate <= SUSTAIN_FOLD_MS:
+            vol -= sustain
+            env["sustain"] = 0.0
+            count(folded, "sustainVolEnv")
+        elif sustain > 0:
+            reach = t0 + sustain / rate
+            if pl["loop"] is None or reach <= pl["loop"][0] / sr:
+                count(baked, "decayVolEnv")
+            elif sustain >= DEEP_SUSTAIN_DB:
+                count(baked, "decayVolEnv (goes on as loopDecayDbPerS)")
+            else:
+                count(baked, "decayVolEnv (loop repeated in the file)")
+        row["_volDb"] = vol
+        row["attackMs"] = round(attack_ms, 1)
+        row["releaseMs"] = round(sf2.timecents_ms(g["releaseVolEnv"]) * 60.0 / SF2_RELEASE_DB, 1)
+        if g["delayVolEnv"] != sf2.DEFAULT["delayVolEnv"]:
+            count(dropped, "delayVolEnv")
+        stereo = len(pl["layers"]) > 1 and any(la["pan"] for la in pl["layers"])
+        jl = []
+        for la in pl["layers"]:
+            ir = lowpass_ir(la["fc"], la["q"], sr) if (bake_filter and la["fc"]) else None
+            if la["fc"]:
+                count(baked if ir is not None else dropped, "initialFilterFc")
+            if la["mod"] == "sweep" or (la["mod"] == "offset" and la["fc"] and ir is None):
+                count(dropped, "modEnvToFilterFc")
+            elif la["mod"] == "offset" and ir is not None:
+                count(baked, "modEnvToFilterFc")
+            gain = 10 ** (-(la["att"] - att) / 20)
+            gl = gain * min(1.0, 1 - la["pan"]) if stereo else gain
+            gr = gain * min(1.0, 1 + la["pan"]) if stereo else gain
+            jl.append({"pcm": la["pcm"], "gainL": gl, "gainR": gr, "ir": ir, "ratio": la["ratio"],
+                       "_id": (la["zone"]["sample"], round(gl, 6), round(gr, 6), la["fc"] if ir is not None else None,
+                               la["q"], la["ratio"])})
+            zg = la["zone"]["gen"]
+            for k, v in zg.items():
+                if k in FLUID_READ or k in ("modEnvToFilterFc",) or v == sf2.DEFAULT.get(k, 0):
+                    continue
+                if k in ("delayModEnv", "attackModEnv", "holdModEnv", "decayModEnv", "sustainModEnv",
+                         "releaseModEnv") and not zg["modEnvToFilterFc"] and not zg["modEnvToPitch"]:
+                    continue
+                count(dropped, k)
+        if len(pl["layers"]) == 1 and pl["layers"][0]["pan"]:
+            row["pan"] = pl["layers"][0]["pan"]
+        if drums:
+            row["oneShot"] = True
+            if klo in (42, 44):
+                row["chokeGroup"] = 1
+            elif klo == 46:
+                row["chokeGroup"] = 2
+                row["chokedBy"] = [1]
+        elif g["exclusiveClass"]:
+            row["chokeGroup"] = g["exclusiveClass"]
+            row["chokedBy"] = [g["exclusiveClass"]]
+        key = (tuple(j["_id"] for j in jl), pl["loop"], round(env["t0"], 6), round(env["rate"], 6), env["sustain"])
+        base = safe_name(re.sub(r"\((L|R)\)$", "", s["name"]).strip().replace(" ", "_"))
+        name = base + ".flac"
+        i = 1
+        while name in names and names[name] != key:
+            i += 1
+            name = f"{base}_{i}.flac"
+        names[name] = key
+        out = os.path.join(b.out, FOLDERS[kind], "samples", name)
+        for j in jl:
+            j.pop("_id")
+        jobs[out] = {"out": out, "sr": sr, "layers": jl, "stereo": stereo, "loop": pl["loop"], "env": env}
+        row.update(_file=name, _out=out)
+        rows.append(row)
+    results = dict(b.pool.map(process_fluid, jobs.values()))
+    s = finish_instrument(b, kind, [sid], rows, results, {"polyphony": polyphony, "sustainPedal": pedal},
+                          36 if drums else 60)
+    s.update(preset=f"{bank}:{prog} {pname}", zones=len(zones), files=len(jobs),
+             stereoFiles=sum(1 for j in jobs.values() if j["stereo"]),
+             loopedFiles=sum(1 for j in jobs.values() if j["loop"]),
+             unrolledS=round(sum(r.get("unrolledFrames", 0) / r["sr"] for r in results.values()), 2),
+             keys=[min(r["keyLo"] for r in rows), max(r["keyHi"] for r in rows)],
+             filterCentroidShift=round(shift, 3), filterBaked=bake_filter,
+             dropped=dropped, folded=folded, baked=baked)
+    if filled:
+        s["filledFromStandard"] = filled
+    if kind in STRUMMED:
+        # six strings sound at once, so the level is set on the strummed phrase (like the organs on
+        # a chord) instead of on one C4
+        path = os.path.join(b.out, FOLDERS[kind], "instrument.json")
+        with open(path, encoding="utf-8") as f:
+            inst = json.load(f)
+        before = phrase_peak_db(path, guitar_strum()) - inst["gainDb"]
+        gain = round(STRUM_PEAK_DB - before, 1)
+        s["strumGainChangeDb"] = round(gain - inst["gainDb"], 1)
+        inst["gainDb"] = fnum(gain)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(inst, f, ensure_ascii=False, indent=1)
+            f.write("\n")
+        s.update(gainDb=inst["gainDb"], strumPeakBeforeGainDb=round(before, 2))
+    log = os.path.join(b.out, FOLDERS[kind], "build-log.json")
+    with open(log, encoding="utf-8") as f:
+        entry = json.load(f)
+    entry.update({k: s[k] for k in ("preset", "gainDb", "zones", "unrolledS", "filterCentroidShift", "filterBaked",
+                                    "dropped", "folded", "baked")})
+    with open(log, "w", encoding="utf-8") as f:
+        json.dump(entry, f, indent=1)
+        f.write("\n")
+    return s
+
+
 BUILDERS = {
     "grandPiano": build_grand_piano,
     "electricPiano": build_electric_piano,
     "fingerBass": build_finger_bass,
     "studioKit": build_studio_kit,
     "strings": build_strings,
-    "organ": build_organ,
 }
+for _kind in ORGAN_STOPS:
+    BUILDERS[_kind] = lambda b, k=_kind: build_organ(b, k)
 for _kind in FLUID_ORGANS:
     BUILDERS[_kind] = lambda b, k=_kind: build_fluid_organ(b, k)
+for _kind in FLUID_PRESETS:
+    BUILDERS[_kind] = lambda b, k=_kind: build_fluid(b, k)
 
 
 # ---------------------------------------------------------------- pack files and the shape check
@@ -1198,7 +1817,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out")
     ap.add_argument("--only", default=",".join(ORDER))
-    ap.add_argument("--organ", choices=["loud", "quiet"], default="loud")
     ap.add_argument("--src", default="~/.cache/meloet/sounds-src")
     ap.add_argument("--src-dir", action="append", default=[])
     ap.add_argument("--pack", default="dev")

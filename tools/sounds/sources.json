@@ -128,7 +128,7 @@
     },
     {
       "id": "vcsl-pipe-organ",
-      "instrument": "オルガン",
+      "instrument": "オルガン（Loud）、パイプオルガン（やわらかい）（Quiet）",
       "title": "VCSL (Versilian Community Sample Library): Pipe Organ",
       "fetch": {
         "kind": "git",
@@ -241,7 +241,7 @@
     },
     {
       "id": "fluidr3-gm",
-      "instrument": "オルガン（Drawbar、Percussive、Rock、Church、Reed）",
+      "instrument": "オルガン（Drawbar、Percussive、Rock、Church、Reed）、ビブラフォン、マリンバ、ギター 4 つ、ピックベース、ウッドベース、ブラシキット、ピチカート、トランペット、ブラスセクション、アルトサックス、フルート",
       "title": "Fluid (R3) SoundFont: FluidR3_GM.sf2 (Debian fluid-soundfont 3.1-6)",
       "fetch": {
         "kind": "file",
@@ -272,7 +272,21 @@
           "organPercussive": "0:17 Percussive Organ",
           "organRock": "0:18 Rock Organ",
           "organChurch": "0:19 Church Organ",
-          "organReed": "0:20 Reed Organ"
+          "organReed": "0:20 Reed Organ",
+          "vibraphone": "0:11 Vibraphone",
+          "marimba": "0:12 Marimba",
+          "guitarNylon": "0:24 Nylon String Guitar",
+          "guitarSteel": "0:25 Steel String Guitar",
+          "guitarElectric": "0:27 Clean Guitar",
+          "guitarDistortion": "0:30 Distortion Guitar",
+          "woodBass": "0:32 Acoustic Bass",
+          "pickBass": "0:34 Picked Bass",
+          "pizzicato": "0:45 Pizzicato Section",
+          "trumpet": "0:56 Trumpet",
+          "brassSection": "0:61 Brass Section",
+          "altoSax": "0:65 Alto Sax",
+          "flute": "0:73 Flute",
+          "brushKit": "128:40 Brush (keys 36 37 38 39 42 44 45 46 47 49 50 51; a missing key would come from 128:0 Standard)"
         },
         "note": "tools/sounds/sf2.py reads the presets; tools/sounds/build.py turns them into instruments."
       },

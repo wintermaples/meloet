@@ -566,3 +566,51 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
 - **頭の無音を切る**: メインの音は、ピークから −40 dB に届くまで中央 8.9 ms、最大 28.5 ms ある。そのまま鳴らすと、鍵 → 音にそのぶん足される。包みを作るときに、音が始まる少し前（2 ms）から切り、短くフェードインする。
 - **読みこむのは core の外のスレッド**（2〜4 本。人が弾いている最中に 8 コアを使いきらない）。読みこんだ音色（`SampleBank`）は `Arc` でためておき、トラックの音源はそれを指す。曲で使っていない音色は、棚でえらぶ（ためし弾き・サンプルの ▶）まで読まない。読みこみ中は、仕様書 6 章の「（名前）を読みこんでいます…」。
 - 気をつける所（いまは入れない）: メモリが足りずに OS がサンプルをスワップに出すと、音のスレッドがディスクを待つ。`mlock` で止められる（この PC の `ulimit -l` は unlimited。ほかの PC は確かめていない）。宿題にする。
+
+### 19-8. 音の素材の包み（tools と鳴らす係の継ぎ目）
+
+素材の中身は `docs/measurements/2026-11-18-round4-sources.md`、出どころは `tools/sounds/sources.json`。包みは `tools/sounds/` の道具が作り、`meloet-sound` のサンプルを鳴らす係が読む。
+
+**包みの形**（1 つのフォルダ。配るときは tar にして sha256 をつける）:
+
+```
+meloet-sounds-<包みの版>/
+  pack.json          {"format": "meloet-sounds", "version": 1, "pack": "2026.11.0",
+                      "instruments": {"grandPiano": "grand-piano/instrument.json", …},
+                      "credits": "credits.json"}
+  credits.json       [{"id": "salamander-grand-piano", "title": …, "authors": […], "source": <URI>,
+                       "license": "CC-BY-3.0", "licenseUrl": …, "changes": <英語の 1 文。NOTICE 用>}, …]
+  licenses/<id>/     素材についてきたライセンスの文（licenses/sounds/ の写し）
+  grand-piano/instrument.json, grand-piano/samples/*.flac
+  …
+```
+
+**instrument.json**（版 1）: `{"format": "meloet-instrument", "version": 1, "kind": "grandPiano", "credits": ["salamander-grand-piano"], "gainDb": 0, "polyphony": 64, "sustainPedal": true, "regions": [ … ]}`。リージョンの欄（`sample`・`keyLo`・`keyHi`・`root` のほかは、ないときの値で）:
+
+| 欄 | 意味 | ないとき |
+|---|---|---|
+| `sample` | instrument.json からの道。FLAC 16 bit、モノかステレオ、サンプルレートはファイルのまま（44.1 kHz も 48 kHz も） | — |
+| `keyLo` `keyHi` `root` `tuneCents` | 鳴らす鍵の範囲、そのファイルが鳴っている高さの鍵（**鍵の番号 ＝ 鳴る高さ**。GM と同じ）、こまかい高さ | tune 0 |
+| `velLo` `velHi` | ベロシティの範囲 | 1・127 |
+| `trigger` | `attack`（押した）・`release`（離した。ハンマーや弦の音）・`pedalDown`・`pedalUp`（CC 64） | `attack` |
+| `gainDb` | そのファイルの大きさ（包みを作るときにファイルをピーク −1 dBFS まで持ち上げて 16 bit にし、その分をここで下げる。弱い音の雑音を増やさないため） | 0 |
+| `ampVeltrack` | SFZ の `amp_veltrack` と同じ意味（%） | 100 |
+| `pitchKeytrack` | SFZ の `pitch_keytrack` と同じ（リリース音は 0） | 100 |
+| `attackMs` `releaseMs` | 音量のエンベロープ | 0・楽器ごと |
+| `rtDecayDbPerS` | リリースで鳴らす音を、押していた時間だけ小さくする（SFZ の `rt_decay`） | 0 |
+| `loopStart` `loopEnd` | ループ（こま。交差のなめらかさは包みを作るときにファイルに焼きこんである）。押している間ここをくり返す | なし |
+| `loopDecayDbPerS` | ループに入ってから小さくなる速さ（エレクトリックピアノの自然な減り） | 0 |
+| `oneShot` | 離しても最後まで鳴らす（ドラム） | false |
+| `rrIndex` `rrCount` | ラウンドロビン（同じ鍵・強さの別テイクを順に） | なし |
+| `chokeGroup` `chokedBy` | 同時に鳴らさない組（ハイハット: 42 ・ 44 が 46 を止める） | なし |
+| `pan` | −1〜1（ドラムで、まぜたあとのステレオでないファイルに） | 0 |
+
+**包みを作るときの決め**（棟梁の決め 2026-11-18。音はヤチヨさんの耳で確かめて直す）:
+- どのファイルも、頭の無音を切る（ピークから −50 dB をこえる 2 ms 前から。1 ms のフェードイン）。鍵 → 音を遅らせないため（19-7）。
+- グランドピアノ: 19-7 のとおり（4 段 ＋ リリース音 ＋ 共鳴 ＋ ペダル）。
+- エレクトリックピアノ（Wurlitzer）: 42 ファイルがどれも音の途中で切れている（SFZ にするときにループが落ちた読み）。作者のもとの .gig（同じ作者、同じサイト、CC BY 4.0）からループ点を取る。取れなければ、包みを作るときに交差のループを作る。ループの間は `loopDecayDbPerS` で自然に小さくする。
+- フィンガーベース（Black And Blue Basses、黒の指弾き）: 素材は鍵の番号より 1 オクターブ低く鳴るので、`root` を 1 オクターブずらして「鍵 ＝ 鳴る高さ」にする（範囲は B0〜E4）。どのファイルも 5.00 秒で切れているので、最後の 100 ms を短くフェードする（ベースを 5 秒より長くのばすことは少ない）。4 段 × テイク 4 から、段はそのまま、テイクは 2 つに。
+- スタジオキット（Naked Drums ＋ VCSL のクラップ）: 鳴らすときに 16 本のマイクをまぜる作りなので、作者の GM の組み（直のマイク ＋ オーバーヘッド、作者の量とパン）を包みを作るときにステレオにまぜて焼きこむ。クローズ HH は Tight（作者の GM の当てかた）、タムはハイ 50 ＝ Tom1、ミッド 47 ＝ Tom3、ロー 45 ＝ Tom5。テイクは 10 から 4 つに。クラップは VCSL の Clap_rr1〜6（テイク 6）。
+- ストリングス（VSCO 2 CE のヴァイオリン・ヴィオラ・チェロのセクションとソロのコントラバス）: ループがないので、包みを作るときに交差のループを作る（6〜17 秒の、音が落ちついた所から）。ベロシティは素材どおり 2 段。
+- オルガン（VCSL のパイプオルガン）: Loud と Quiet は同じ音の強弱ではなく別の音栓なので、ベロシティで切りかえない。両方の包みを作ってヤチヨさんが聞き、1 つにする。ループを作る。
+- 大きさのそろえかた: C4（ドラムはキック）を ベロシティ 100 で 1 つ鳴らしたピークが、およそ −12 dBFS（シンセの音色と同じ目安）になるように、楽器ごとの `gainDb` を決める。

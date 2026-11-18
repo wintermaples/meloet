@@ -8,6 +8,7 @@ members = [
     "spikes/plugins/lv2",
     "spikes/plugins/probe",
     "spikes/s4-latency/src-tauri",
+    "spikes/sample-load",
 ]
 # `cargo build` / `cargo test` at the root touch only the product crates. The spikes stay buildable with -p.
 default-members = [

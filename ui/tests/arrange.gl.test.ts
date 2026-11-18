@@ -46,12 +46,12 @@ describe("場面ごとの WebGL の文脈の数", () => {
   });
 
   it.each([
-    ["recording", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
-    ["takes", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
-    ["takesArrange", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
-    ["arrangeTrimmed", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
-    ["tracks16", ["arrangeLanes", "inputKeys", "inputVelocity", "masterMeter", "recordingClip", "trackMeters"]],
-    ["pianoRollRec", ["inputKeys", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
+    ["recording", ["arrangeLanes", "inputMeter", "masterMeter", "recordingClip", "trackMeters"]],
+    ["takes", ["inputMeter", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
+    ["takesArrange", ["arrangeLanes", "inputMeter", "masterMeter", "recordingClip", "trackMeters"]],
+    ["arrangeTrimmed", ["arrangeLanes", "inputMeter", "masterMeter", "recordingClip", "trackMeters"]],
+    ["tracks16", ["arrangeLanes", "inputMeter", "masterMeter", "recordingClip", "trackMeters"]],
+    ["pianoRollRec", ["inputMeter", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
   ])("%s: 区画ごとに 1 枚で、予算をこえない", async (scene, expected) => {
     const { flushSync, mount, unmount } = await import("svelte");
     const { default: App } = await import("../src/App.svelte");

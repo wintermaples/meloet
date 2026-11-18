@@ -4,7 +4,7 @@ import { Batch } from "./batch";
 import { REGIONS, fault, type RegionName } from "./budget";
 import { OVERVIEW } from "./dims";
 import { HeldKeys } from "./keyboard";
-import { Levels } from "./levels";
+import { Levels, MASTER_CHANNEL, RETURN_A_CHANNEL, RETURN_B_CHANNEL, trackChannel } from "./levels";
 import {
   blackKeyPx,
   clipMarkPx,
@@ -18,7 +18,7 @@ import {
 } from "./paint";
 import { giveBack, takeCanvas, type GlCanvas } from "./pool";
 import type { FrameProfile, FrameRecord, MadeRecord } from "./profile";
-import { regionOf, runFrameCallbacks, watchFrames, watchSlots, type GlSlot } from "./slot";
+import { regionOf, runFrameCallbacks, watchFrames, watchSlots, type GlSlot, type MeterSource } from "./slot";
 
 export interface EngineStats {
   /** Animation frames that ran. */
@@ -371,6 +371,14 @@ export class Engine {
     }
   }
 
+  /** The left channel of a meter's source; -1 for a track the song does not have (it reads as silence). */
+  private meterChannel(source: MeterSource): number {
+    if (source === "master") return MASTER_CHANNEL;
+    if ("ret" in source) return source.ret === "a" ? RETURN_A_CHANNEL : RETURN_B_CHANNEL;
+    const i = this.trackNumbers.indexOf(source.track);
+    return i < 0 ? -1 : trackChannel(i);
+  }
+
   private paint(out: Batch, slot: GlSlot, box: Box, nowMs: number, dpr: number): void {
     switch (slot.kind) {
       case "keyboard": {
@@ -383,17 +391,16 @@ export class Engine {
         paintVelocity(out, box, this.velocity);
         break;
       case "meter": {
-        // A track the song does not have reads as silence.
-        const track = slot.source === "master" ? 0 : "track" in slot.source ? this.trackNumbers.indexOf(slot.source.track) : -1;
-        const first = slot.source === "master" ? 0 : 2 + 2 * track;
+        const first = this.meterChannel(slot.source);
         const levels = this.levels;
         paintMeter(
           out,
           box,
           Math.round(slot.gap * dpr),
           clipMarkPx(this.scale, dpr),
-          track < 0 ? SILENT : levels.bar(first, nowMs),
-          track < 0 ? SILENT : levels.bar(first + 1, nowMs),
+          first < 0 ? SILENT : levels.bar(first, nowMs),
+          first < 0 ? SILENT : levels.bar(first + 1, nowMs),
+          slot.vertical === true,
         );
         break;
       }

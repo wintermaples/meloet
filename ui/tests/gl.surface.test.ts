@@ -8,7 +8,8 @@ import { rgb } from "../src/gl/color";
 import { Engine } from "../src/gl/engine";
 import { contextsMade, resetPool } from "../src/gl/pool";
 import { Renderer } from "../src/gl/renderer";
-import { everyGlFrame, glRegion, glSlot, type GlSlot } from "../src/gl/slot";
+import { dbToLength, peakToDb } from "../src/gl/level";
+import { everyGlFrame, glRegion, glSlot, type GlSlot, type MeterSource } from "../src/gl/slot";
 import type { RegionName } from "../src/gl/budget";
 
 class FakeResizeObserver {
@@ -95,7 +96,7 @@ describe("WebGL の面", () => {
     vi.stubGlobal("cancelAnimationFrame", () => {});
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    slot(region(box(new DOMRect(0, 0, 64, 4)), "inputVelocity"), { kind: "velocity" });
+    slot(region(box(new DOMRect(0, 0, 64, 4)), "inputMeter"), { kind: "velocity" });
     slot(region(box(new DOMRect(0, 10, 64, 40)), "overview"), { kind: "overview" });
     const surface = mount(Surface, { target: document.body });
     flushSync();
@@ -109,7 +110,7 @@ describe("WebGL の面", () => {
   it("区画ごとに、slot のある所の大きさの面を 1 枚。中を全部ぬる区画は不透明。変わった面だけを描く", () => {
     const { made, frame } = fakePage();
     // 画素の間から始まる箱: 面は、はしを画素に合わせる。
-    const keys = region(box(new DOMRect(10.4, 20, 349, 32)), "inputKeys");
+    const keys = region(box(new DOMRect(10.4, 20, 349, 32)), "pianoRollKeys");
     const meterHost = region(box(new DOMRect(480, 10, 120, 30)), "masterMeter");
     const bar = box(new DOMRect(500, 20, 64, 4), meterHost);
     slot(keys, { kind: "keyboard", size: "full", firstNote: 36, lastNote: 84 });
@@ -166,27 +167,169 @@ describe("WebGL の面", () => {
   it("ひらいて閉じる区画は、文脈を作りなおさずに使いまわす", () => {
     const { made, frame } = fakePage();
     const engine = new Engine();
-    slot(region(box(new DOMRect(0, 0, 300, 20)), "inputKeys"), { kind: "keyboard", size: "full", firstNote: 36, lastNote: 84 });
+    slot(region(box(new DOMRect(0, 0, 300, 20)), "pianoRollKeys"), { kind: "keyboard", size: "full", firstNote: 36, lastNote: 84 });
     frame();
     for (let i = 0; i < 30; i++) {
       const dialog = box(new DOMRect(100, 100, 400, 300));
-      const meterBox = box(new DOMRect(110, 110, 120, 6), dialog);
-      const keysBox = box(new DOMRect(110, 130, 200, 12), dialog);
-      const ra = glRegion(meterBox, "settingsMeter");
-      const rb = glRegion(keysBox, "settingsKeys");
+      const body = box(new DOMRect(100, 130, 400, 240), dialog);
+      const meterBox = box(new DOMRect(110, 140, 120, 6), body);
+      const keysBox = box(new DOMRect(110, 160, 200, 12), body);
+      const r = glRegion(body, "settings");
       const a = slot(meterBox, { kind: "meter", source: "master", gap: 1 });
       const b = slot(keysBox, { kind: "keyboard", size: "slim", firstNote: 36, lastNote: 84 });
       frame();
-      expect(dialog.querySelectorAll("canvas")).toHaveLength(2);
+      expect(dialog.querySelectorAll("canvas")).toHaveLength(1);
       a.destroy();
       b.destroy();
-      ra.destroy();
-      rb.destroy();
+      r.destroy();
       dialog.remove();
       frame();
     }
-    expect(made).toHaveLength(3);
-    expect(contextsMade()).toBe(3);
+    expect(made).toHaveLength(2);
+    expect(contextsMade()).toBe(2);
+    engine.destroy();
+  });
+
+  it("入力計: 鍵盤とベロシティの棒で 1 枚。間の文字の所は何も描かず、すける。鍵 1 つで出す面は 1 枚", () => {
+    const { made, drawn, frame } = fakePage();
+    const meter = region(box(new DOMRect(0, 0, 1280, 52)), "inputMeter");
+    const keys = box(new DOMRect(212.5, 10, 349, 32), meter);
+    box(new DOMRect(580, 10, 120, 32), meter).textContent = "押さえている鍵";
+    const bar = box(new DOMRect(760, 30, 64, 4), meter);
+    slot(keys, { kind: "keyboard", size: "full", firstNote: 36, lastNote: 84 });
+    slot(bar, { kind: "velocity" });
+    const engine = new Engine();
+    frame();
+
+    expect(made.map((m) => m.alpha)).toEqual([true]);
+    const c = made[0]!.canvas;
+    expect(c.parentElement).toBe(meter);
+    // 鍵盤の左上から、棒の右はしまで。
+    expect([c.width, c.height, c.style.top]).toEqual([611, 32, "10px"]);
+    expect(parseFloat(c.style.left)).toBe(213);
+    // 四角は、どれも 2 つの slot の中。間（x 349〜547）には 1 つもない。
+    const inSlot = (r: number[]) => (r[2]! <= 349 && r[3]! <= 32) || (r[0]! >= 547 && r[1]! >= 20 && r[3]! <= 24);
+    expect(drawn.at(-1)!.rects.length).toBeGreaterThan(50);
+    expect(drawn.at(-1)!.rects.every(inSlot)).toBe(true);
+    expect(drawn.at(-1)!.rects.filter((r) => r[0]! >= 547).map((r) => r.slice(0, 4))).toEqual([[547, 20, 611, 24]]);
+
+    engine.onEvent({ type: "note", note: 60, on: true, velocity: 127, tUs: 1 });
+    frame();
+    expect(engine.stats).toEqual({ frames: 2, draws: 2 });
+    const filled = drawn.at(-1)!.rects.filter((r) => r[0]! >= 547);
+    expect(filled.map((r) => r.slice(0, 4))).toEqual([
+      [547, 20, 611, 24],
+      [547, 20, 611, 24],
+    ]);
+    expect(filled[1]!.slice(4)).toEqual(f32(rgb("color.accent")));
+    engine.destroy();
+  });
+
+  it("ミキサー: 縦のメーターが何本でも 1 枚。戻り A ・ B の値が出る。横にスクロールしても 1 枚のままで、slot の位置だけ変わる", () => {
+    const { made, drawn, frame } = fakePage();
+    vi.spyOn(performance, "now").mockReturnValue(1000);
+    // 横にスクロールする箱（見えているのは x 100〜500）。ストリップは 64 ごとに 12 本: トラック 9、戻り A ・ B、マスター。
+    const strips = region(box(new DOMRect(100, 300, 400, 200)), "mixerMeters");
+    const sources: MeterSource[] = [...Array.from({ length: 9 }, (_, i) => ({ track: i + 1 })), { ret: "a" }, { ret: "b" }, "master"];
+    sources.forEach((source, i) => {
+      const el = strips.appendChild(document.createElement("div"));
+      el.getBoundingClientRect = () => new DOMRect(100 + 64 * i + 40 - strips.scrollLeft, 320, 9, 100);
+      slot(el, { kind: "meter", source, gap: 1, vertical: true });
+    });
+    const engine = new Engine();
+    engine.setTracks([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    engine.onTelemetry({
+      seq: 0,
+      sentUs: 0,
+      keys: new Uint32Array(4),
+      lastVelocity: 0,
+      sustain: 0,
+      modulation: 0,
+      running: true,
+      masterClipped: false,
+      pitchBend: 0,
+      loadPermille: 0,
+      masterPeak: [1, 1],
+      position: null,
+      returnPeaks: new Float32Array([0.5, 0, 0, 1.5]),
+      trackPeaks: new Float32Array(18),
+    });
+    frame();
+
+    expect(made).toHaveLength(1);
+    const c = made[0]!.canvas;
+    expect(c.parentElement).toBe(strips);
+    // 見えているのは最初の 6 本。面は 1 本めの左（140）から、箱の右はし（500）まで（右にまだ slot があるので）。
+    expect([c.width, c.height, c.style.left, c.style.top]).toEqual([360, 100, "40px", "20px"]);
+    const ground = f32(rgb("color.gray.0")).join();
+    const ok = f32(rgb("color.meter.ok")).join();
+    const of = (color: string) => drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === color).map((r) => r.slice(0, 4));
+    expect(of(ground)).toHaveLength(12);
+    expect(of(ground).slice(0, 2)).toEqual([
+      [0, 0, 4, 100],
+      [5, 0, 9, 100],
+    ]);
+    expect(of(ok)).toEqual([]);
+
+    // 右のはしまで送る（中身 768、見える幅 400）。
+    strips.scrollLeft = 368;
+    strips.dispatchEvent(new Event("scroll"));
+    frame();
+    expect(made).toHaveLength(1);
+    expect(strips.querySelectorAll("canvas")).toHaveLength(1);
+    // 見えているのは 6 本めの右の棒の残り（x 100〜101）から、マスター（485 まで）。面は中身といっしょに流れないよう、送った分だけ右へ置く。
+    expect([c.width, c.height, c.style.left, c.style.top]).toEqual([385, 100, "368px", "20px"]);
+    expect(of(ground)[0]).toEqual([0, 0, 1, 100]);
+    expect(of(ground)).toHaveLength(13);
+    // 戻り A（10 本め）: 左だけ 0.5。下から、ok の色で。
+    const a = 64 * 9 + 40 - 368;
+    const half = Math.round(100 * dbToLength(peakToDb(0.5)));
+    expect(of(ok)).toEqual([
+      [a, 100 - half, a + 4, 100],
+      [a + 64 + 5, 30, a + 64 + 9, 100],
+      [a + 128, 30, a + 132, 100],
+      [a + 133, 30, a + 137, 100],
+    ]);
+    // 戻り B（11 本め）: 右が 0 dB をこえた。上はしに rec の 2px。
+    expect(of(f32(rgb("color.rec")).join())).toEqual([[a + 64 + 5, 0, a + 64 + 9, 2]]);
+    engine.destroy();
+  });
+
+  it("区画の数: 窓の高さと帯のどの組み合わせでも 10 枚まで。組み合わせを全部わたり歩いても、作る文脈は 10 個", () => {
+    const { made, frame } = fakePage();
+    const engine = new Engine();
+    // いつもある物。入力計は、太くても細くても箱が 1 つ。
+    const always: RegionName[] = ["inputMeter", "masterMeter"];
+    // アレンジは、トラックの行のまま（窓が高い、または下の帯がない）か、ちぢんだ形（overview）。
+    const arrange: Record<"rows" | "overview", RegionName[]> = {
+      rows: ["trackMeters", "arrangeLanes", "recordingClip"],
+      overview: ["overview"],
+    };
+    const pianoRoll: RegionName[] = ["pianoRoll", "pianoRollKeys", "pianoRollLive"];
+    let most = 0;
+    let mostAt = "";
+    for (const form of ["rows", "overview"] as const) {
+      for (const pr of [false, true]) {
+        for (const mixer of [false, true]) {
+          for (const settings of [false, true]) {
+            const names = [...always, ...arrange[form], ...(pr ? pianoRoll : []), ...(mixer ? (["mixerMeters"] as const) : []), ...(settings ? (["settings"] as const) : [])];
+            const open = names.map((name, i) => glRegion(box(new DOMRect(0, 10 * i, 100, 8)), name));
+            frame();
+            const count = document.querySelectorAll("canvas").length;
+            expect(count).toBe(names.length);
+            if (count > most) [most, mostAt] = [count, `${form} pianoRoll=${pr} mixer=${mixer} settings=${settings}`];
+            for (const r of open) r.destroy();
+            frame();
+            expect(document.querySelectorAll("canvas")).toHaveLength(0);
+          }
+        }
+      }
+    }
+    expect(most).toBe(10);
+    expect(mostAt).toBe("rows pianoRoll=true mixer=true settings=true");
+    expect(made).toHaveLength(10);
+    expect(contextsMade()).toBe(10);
+    expect(CONTEXT_BUDGET - most).toBe(2);
     engine.destroy();
   });
 

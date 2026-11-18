@@ -226,7 +226,6 @@
     <div
       class="keys"
       class:narrow={!slim && fit.narrowKeys}
-      use:glRegion={"inputKeys"}
       use:glSlot={{
         kind: "keyboard",
         size: slim ? "slim" : "full",
@@ -290,7 +289,7 @@
             {#if measuring}
               <span class="velocity-bar"></span>
             {:else}
-              <span class="velocity-bar" use:glRegion={"inputVelocity"} use:glSlot={{ kind: "velocity" }}></span>
+              <span class="velocity-bar" use:glSlot={{ kind: "velocity" }}></span>
             {/if}
           {/if}
         </span>
@@ -374,6 +373,7 @@
     class:empty={keyboard === null}
     style:--white-keys={WHITE_KEYS}
     bind:this={row}
+    use:glRegion={"inputMeter"}
   >
     {@render body(false)}
     <div class="meter ruler" class:slim aria-hidden="true" bind:this={ruler}>

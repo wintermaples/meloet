@@ -9,6 +9,7 @@ import { shownFor } from "../components/pianoroll/shownNotes";
 import { dragReading, prView, pxPerTick, rowHeight } from "../components/pianoroll/view.svelte";
 import { current } from "../state/app.svelte";
 import { browserClock, parseUiScript, SCRIPT_REPORT, UiScript, type Grab, type Target } from "./script";
+import { startWatch } from "./watch";
 
 const AREA = ".roll .notes > .area";
 /** A drag moves the note at least this far (CSS px), whole grid steps. */
@@ -77,6 +78,8 @@ function pianoRoll(): Target {
 
 /** Starts the script; returns the function that stops it. A script that does not read is reported and does nothing. */
 export function startUiScript(text: string, report: (name: string, json: string) => Promise<void>): () => void {
+  // `watch`: no input; the load and the WebGL contexts are written down (watch.ts).
+  if (text.trim() === "watch") return startWatch(report);
   const parts = parseUiScript(text);
   if (!parts) {
     void report(SCRIPT_REPORT, JSON.stringify({ script: text, done: false, error: "the script did not read", parts: [] })).catch(() => {});

@@ -67,6 +67,11 @@ def main():
                      f"(pw-top started again {watch.get('pwTopRestarts', '?')} times, last stderr "
                      f"`{watch.get('pwTopStderr')}`; nodes seen: {', '.join(names) or 'none'})")
     lines.append(f"- pw-top line of the meloet stream: `{watch.get('pwTopMeloetLine')}`")
+    # pw-top's QUANT of a stream is what the stream asked for, not what runs, so no share of the block here.
+    us = sorted(r["busyUs"] for r in rows if r.get("busyUs") is not None)
+    if us:
+        lines.append(f"- BUSY of the meloet stream (pw-top, one reading a second, n {len(us)}): mean "
+                     f"{sum(us) / len(us):.0f} us, p95 {us[int(len(us) * 0.95) - 1]:.0f} us, max {us[-1]:.0f} us")
     outs = [r.get("errOutputs") or {} for r in rows]
     outs = [o for o in outs if o]
     if outs:

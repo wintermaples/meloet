@@ -4,7 +4,7 @@
 # usage: tools/measure/latency.sh [--window 1920x1080] [--count 120] [--out DIR] [--keep-ui]
 #                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
 #                                 [--pattern spaced|mixed] [--piano-roll [--song FILE]]
-#                                 [--velocity-fixed V]
+#                                 [--velocity-fixed V] [--mixer]
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
@@ -16,8 +16,10 @@
 #   2..4 (keys 0..6 ms apart) and runs of 2..4 keys 20..150 ms apart, like real playing. The
 #   summary splits key -> screen into spaced keys and keys soon after (within one frame).
 # --piano-roll: open a song (MELOET_OPEN_SONG), select its clip (id 2) and open the piano roll
-#   band before the keys, and keep it open. --song: that song; without it, make_song.py writes
-#   one with 200 notes over 16 bars.
+#   band before the keys, and keep it open. Without --song, make_song.py writes one with 200
+#   notes over 16 bars.
+# --song: open that song (MELOET_OPEN_SONG), also without --piano-roll.
+# --mixer: open the mixer band before the keys, and keep it open.
 # --velocity-fixed: turn "ベロシティ固定" on at V (1..127) right after the chooser.
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
@@ -35,6 +37,7 @@ state=stopped
 jitter_ms=0
 pattern=spaced
 piano_roll=0
+mixer=0
 song=
 velocity_fixed=
 while [ $# -gt 0 ]; do
@@ -48,9 +51,10 @@ while [ $# -gt 0 ]; do
     --jitter-ms) jitter_ms=$2; shift 2 ;;
     --pattern) pattern=$2; shift 2 ;;
     --piano-roll) piano_roll=1; shift ;;
+    --mixer) mixer=1; shift ;;
     --song) song=$2; shift 2 ;;
     --velocity-fixed) velocity_fixed=$2; shift 2 ;;
-    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll [--song FILE]] [--velocity-fixed V]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll] [--song FILE] [--mixer] [--velocity-fixed V]" >&2; exit 2 ;;
   esac
 done
 
@@ -109,14 +113,21 @@ mkdir -p "$work/config" "$work/state" "$work/measure" "$out/raw"
 view=
 label_view=
 open_song=()
-if [ "$piano_roll" = 1 ]; then
-  if [ -z "$song" ]; then
-    song=$work/song.meloet
-    python3 -I "$root/tools/measure/make_song.py" "$song" --notes 200 --bars 16 >/dev/null
-  fi
+if [ "$piano_roll" = 1 ] && [ -z "$song" ]; then
+  song=$work/song.meloet
+  python3 -I "$root/tools/measure/make_song.py" "$song" --notes 200 --bars 16 >/dev/null
+fi
+if [ -n "$song" ]; then
   open_song=(MELOET_OPEN_SONG="$song")
+  label_view=", song $(basename "$song")"
+fi
+if [ "$piano_roll" = 1 ]; then
   view=",{\"afterMs\":$((confirm_ms - 500)),\"command\":{\"type\":\"selectClip\",\"clip\":2}},{\"afterMs\":$((confirm_ms - 300)),\"command\":{\"type\":\"toggleBand\",\"band\":\"pianoRoll\"}}"
-  label_view=", piano roll open ($(basename "$song"))"
+  label_view="$label_view, piano roll open"
+fi
+if [ "$mixer" = 1 ]; then
+  view="$view,{\"afterMs\":$((confirm_ms - 200)),\"command\":{\"type\":\"toggleBand\",\"band\":\"mixer\"}}"
+  label_view="$label_view, mixer open"
 fi
 if [ -n "$velocity_fixed" ]; then
   view="$view,{\"afterMs\":$((confirm_ms + 200)),\"command\":{\"type\":\"setVelocityFixed\",\"on\":true,\"value\":$velocity_fixed}}"

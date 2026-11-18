@@ -4,7 +4,8 @@
 usage: python3 -I tools/measure/long_record_watch.py OUT_DIR SECONDS MELOET_PID
 
 Every second: the error count (ERR, xruns) PipeWire keeps for the `meloet` stream and for each
-ALSA output (read with `pw-top -b`, nothing is changed), and the CPU time of the
+ALSA output and the BUSY time of the meloet stream (how long its callback took; read with
+`pw-top -b`, nothing is changed), and the CPU time of the
 JavaScriptCore GC helper threads (`HeapHelper`) of meloet and its WebKitWebProcess. Every 10
 seconds: the RSS of both. Writes OUT_DIR/watch.json.
 """
@@ -55,6 +56,17 @@ def rss_mb(pid):
     return None
 
 
+def micros(text):
+    """pw-top's time column (`183.2us`, `1.2ms`) in microseconds; None when it is not a time."""
+    for unit, scale in (("ns", 0.001), ("us", 1.0), ("µs", 1.0), ("ms", 1000.0), ("s", 1e6)):
+        if text.endswith(unit):
+            try:
+                return float(text[:-len(unit)]) * scale
+            except ValueError:
+                return None
+    return None
+
+
 def gc_ticks(pid):
     """CPU ticks of each HeapHelper thread, by thread id (the threads come and go)."""
     total = {}
@@ -78,6 +90,7 @@ def main():
     out, seconds, pid = sys.argv[1], float(sys.argv[2]), int(sys.argv[3])
     os.makedirs(out, exist_ok=True)
     errs = {}  # name -> last ERR seen
+    busy = {}  # the meloet stream's last BUSY (the time its callback took)
     err_lock = threading.Lock()
     raw = {}
 
@@ -97,6 +110,8 @@ def main():
                     continue
                 with err_lock:
                     errs[name] = err
+                    if name == "meloet":
+                        busy["us"] = micros(parts[5])
                     raw.setdefault("names", set()).add(name)
                     if name == "meloet" and "meloetLine" not in raw:
                         raw["meloetLine"] = line.rstrip()
@@ -131,6 +146,7 @@ def main():
                 last_gc[label] = g
         with err_lock:
             row["errMeloet"] = errs.get("meloet")
+            row["busyUs"] = busy.get("us")
             row["errOutputs"] = {n: e for n, e in errs.items() if n.startswith("alsa_output")}
         if len(rows) % 10 == 0:
             row["rssMeloetMb"] = rss_mb(pid)

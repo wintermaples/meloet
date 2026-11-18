@@ -1666,7 +1666,13 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
         shelf,
         ShelfView {
             mode: ShelfMode::NewTrack,
-            available: vec![InstrumentKind::Sine],
+            available: vec![
+                InstrumentKind::SynthBass,
+                InstrumentKind::ElectroKit,
+                InstrumentKind::WarmPad,
+                InstrumentKind::SynthLead,
+                InstrumentKind::Sine,
+            ],
             favorites: vec![InstrumentKind::GrandPiano, InstrumentKind::StudioKit],
             selected: None,
             current: None,

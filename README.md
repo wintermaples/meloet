@@ -79,6 +79,7 @@ tools/measure/long-record.sh            # 10 分録りつづける（xrun、メ�
 | `MELOET_PCWINDOW_SHOT=out.png` | PC のファイルの窓が出て 1.5 秒後に、その窓を PNG に描く |
 | `MELOET_MIDI_FAIL_AFTER=N` | 試験用: MIDI のスレッドを N 個の鍵のあとで止める |
 | `MELOET_STATE_DIR=dir` | なおすためのファイルの場所を変える |
+| `MELOET_SOUNDS_DIR=dir` | 音の素材の包み（`pack.json` のあるフォルダ）の場所を決める。ふだんの開発では `~/.cache/meloet/sounds/dev`。決めると、ほかの場所はさがさない |
 | `MELOET_OPEN_SONG=file.meloet` | 立ちあげたら、その曲をひらく（PC のファイルの窓のかわり） |
 | `MELOET_UI_SCRIPT=pr-scroll\|pr-zoom\|pr-drag:N` | `MELOET_MEASURE_DIR` があるときだけ、ページの中で送る・拡大・ドラッグを自動でくりかえして測る |
 | `JSC_useGenerationalGC` | meloet は立ちあがるときに 0 にする（ウェブのプロセスのメモリがふえつづけないように）。外から決めればそちらが勝つ |

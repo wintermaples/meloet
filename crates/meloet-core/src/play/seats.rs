@@ -76,7 +76,7 @@ impl Seats {
     }
 
     /// (seat, track, instrument) of every seat taken.
-    fn taken(&self) -> impl Iterator<Item = (usize, TrackId, &InstrumentRef)> {
+    pub(super) fn taken(&self) -> impl Iterator<Item = (usize, TrackId, &InstrumentRef)> {
         self.held
             .iter()
             .enumerate()

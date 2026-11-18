@@ -2204,8 +2204,10 @@ dependencies = [
  "meloet-midi",
  "meloet-model",
  "meloet-protocol",
+ "meloet-sound",
  "serde",
  "serde_json",
+ "symphonia",
 ]
 
 [[package]]

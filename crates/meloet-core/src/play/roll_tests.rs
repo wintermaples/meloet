@@ -142,12 +142,16 @@ fn check(p: &Play, takes_of: &HashMap<ClipId, usize>, ctx: &str) {
                 "{ctx}: takes of {:?}",
                 c.id
             );
+            let shown = &c.active_take().take;
+            assert_eq!(
+                c.note_count(),
+                shown.notes.iter().filter(|n| c.holds(n.start)).count(),
+                "{ctx}: note count"
+            );
             for ct in &c.takes {
                 let take = &ct.take;
                 assert!(
-                    take.notes
-                        .windows(2)
-                        .all(|w| (w[0].start, w[0].key) <= (w[1].start, w[1].key)),
+                    take.notes.iter().is_sorted_by_key(|n| (n.start, n.key)),
                     "{ctx}: order in {:?}",
                     take.id
                 );
@@ -168,7 +172,7 @@ fn check(p: &Play, takes_of: &HashMap<ClipId, usize>, ctx: &str) {
                         "{ctx}: from with no origin"
                     ),
                 }
-                assert!(take.controls.is_sorted_by_key(|c| c.tick), "{ctx}");
+                assert!(take.controls.iter().is_sorted_by_key(|c| c.tick), "{ctx}");
                 for c2 in &take.controls {
                     assert!(c2.tick < take.length, "{ctx}: point inside the take");
                     if let ControlValue::Cc { number: 64, value } = c2.value {
@@ -760,6 +764,7 @@ fn nothing_changes_notes_while_recording() {
         Command::ResizeNotes {
             take,
             notes: vec![0],
+            edge: ClipEdge::End,
             ticks: 10,
         },
         Command::ChangeVelocity {
@@ -864,7 +869,7 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
         cmd(
             m,
             Command::Audition {
-                key: 63,
+                keys: vec![63],
                 velocity: 100
             }
         )
@@ -1023,7 +1028,7 @@ fn the_audition_sounds_on_the_play_target() {
     let effects = cmd(
         m,
         Command::Audition {
-            key: 60,
+            keys: vec![60],
             velocity: 0,
         },
     );
@@ -1038,7 +1043,7 @@ fn the_audition_sounds_on_the_play_target() {
 
     let mut silent = crate::state::Model::new(crate::settings::Settings::default());
     let effects = silent.handle(crate::state::Input::Command(Command::Audition {
-        key: 60,
+        keys: vec![60],
         velocity: 100,
     }));
     assert!(effects.iter().all(|e| !matches!(e, Effect::Engine(_))));

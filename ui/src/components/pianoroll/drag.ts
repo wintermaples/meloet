@@ -176,7 +176,7 @@ export class RollDrag {
         i.send({ type: "addNote", take: this.takeId(), start, length: step, key, velocity: DRAW_VELOCITY });
         return;
       }
-      i.send({ type: "audition", key, velocity: DRAW_VELOCITY });
+      i.send({ type: "audition", keys: [key], velocity: DRAW_VELOCITY });
       this.drag = { kind: "draw", press, start, key, length: step, velocity: DRAW_VELOCITY };
       return;
     }
@@ -364,7 +364,7 @@ export function finish(d: Drag, take: number | null): Command | null {
       }
       return { type: "moveNotes", take, notes: d.notes, ticks: d.ticks, keys: d.keys, copy: d.copy };
     case "resize":
-      return take !== null && d.ticks !== 0 ? { type: "resizeNotes", take, notes: d.notes, ticks: d.ticks } : null;
+      return take !== null && d.ticks !== 0 ? { type: "resizeNotes", take, notes: d.notes, edge: "end", ticks: d.ticks } : null;
     case "draw":
       return { type: "addNote", take, start: d.start, length: d.length, key: d.key, velocity: d.velocity };
     case "box":

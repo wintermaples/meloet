@@ -3,6 +3,7 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use crate::chunked::ChunkedVec;
 use crate::roll::{QuantizeSettings, RollSettings};
 use crate::time::{Meter, Tempo, TickRange};
 use crate::{InstrumentRef, TempoChange, TrackColor, TrackId};
@@ -14,7 +15,7 @@ pub struct ClipId(pub u32);
 pub struct TakeId(pub u32);
 
 /// Positions in a take count from the take's tick 0.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Note {
     pub start: u64,
     /// 1 or more.
@@ -54,7 +55,7 @@ impl Note {
 pub const CC_MODULATION: u8 = 1;
 pub const CC_SUSTAIN: u8 = 64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControlValue {
     Cc {
         number: u8,
@@ -64,21 +65,22 @@ pub enum ControlValue {
     PitchBend(i16),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ControlPoint {
     pub tick: u64,
     pub value: ControlValue,
 }
 
-/// One recorded pass. Never changed once made: the screen keeps drawings by `TakeId`.
+/// One recorded pass. Never changed once made: the screen keeps drawings by `TakeId`. A take
+/// made by changing another shares the chunks of notes and points it did not change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Take {
     pub id: TakeId,
     pub length: u64,
     /// In order of start.
-    pub notes: Vec<Note>,
+    pub notes: ChunkedVec<Note>,
     /// In order of tick.
-    pub controls: Vec<ControlPoint>,
+    pub controls: ChunkedVec<ControlPoint>,
     /// Set on a quantized take, and kept by later edits until every note is back where it was.
     pub origin: Option<TakeOrigin>,
 }
@@ -135,8 +137,16 @@ impl Clip {
 
     /// The notes of the shown take that start inside the clip.
     pub fn note_count(&self) -> usize {
-        let take = &self.active_take().take;
-        take.notes.iter().filter(|n| self.holds(n.start)).count()
+        let shown = self.active_take();
+        let zero = i128::from(self.zero(shown));
+        let before = |at: u64| {
+            let at = i128::from(at) - zero;
+            shown
+                .take
+                .notes
+                .partition_point(|n| i128::from(n.start) < at)
+        };
+        before(self.end) - before(self.start)
     }
 }
 

@@ -100,8 +100,8 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "deleteSelected" };
     // Mod D: えらんだクリップのすぐうしろに複製（録音中とカウントイン中は Rust も受けない）。
     case "duplicate": {
-      const clip = state.arrange.selectedClip;
-      return clip === null || songBusy(state) ? null : { type: "duplicateClip", clip };
+      const clips = state.arrange.selectedClips;
+      return clips.length === 0 || songBusy(state) ? null : { type: "duplicateClips", clips };
     }
     // 録音中とカウントイン中は、曲の名前の一覧と同じく使えない。
     case "newSong":

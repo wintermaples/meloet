@@ -25,7 +25,7 @@ pub(crate) fn song_with_notes(name: &str, notes: u64) -> Song {
                 velocity: 1 + (i % 127) as u8,
             })
             .collect(),
-        controls: Vec::new(),
+        controls: Vec::new().into(),
     });
     let mut track = (*song.doc.tracks[0]).clone();
     track.clips = vec![Arc::new(Clip {

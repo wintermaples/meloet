@@ -8,6 +8,14 @@ export type TrackView = { number: number, name: string, color: number, instrumen
  */
 armed: boolean, 
 /**
+ * Saved with the song (`ToggleMute`).
+ */
+muted: boolean, 
+/**
+ * Not saved (`ToggleSolo`).
+ */
+soloed: boolean, 
+/**
  * In order of start, never overlapping.
  */
 clips: Array<ClipView>, };

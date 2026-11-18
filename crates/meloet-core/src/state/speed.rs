@@ -125,11 +125,16 @@ fn a_big_song() {
     let id = m.view().piano_roll.take.unwrap();
     let binary = time(50, || m.take_notes(id).unwrap());
     let size = m.take_notes(id).unwrap().len();
+    let doc = m.play.song().doc.clone();
+    let events = time(50, || {
+        meloet_model::playback::track_events(&doc, TrackId(1))
+    });
 
     println!(
         "{TRACKS} tracks × {CLIPS} clips, one take of {BIG} notes:\n\
          view {view:?}, compare two equal views {same:?} (song section alone {song_only:?})\n\
          move 1 note (median of 50): handled {handled:?}, with view and patch {patched:?}\n\
-         take_notes of {BIG} notes: {binary:?}, {size} B"
+         take_notes of {BIG} notes: {binary:?}, {size} B\n\
+         events of track 1 ({BIG} + 99 × 20 notes): {events:?}"
     );
 }

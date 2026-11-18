@@ -3,7 +3,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, Command, TrackView } from "../src/bridge";
-import { fakeState, reduceClips } from "../src/bridge/fake";
+import { arrangeOf, fakeState, reduceClips } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import * as CD from "../src/components/arrangeDrag";
 import * as G from "../src/components/arrangeGeom";
@@ -24,7 +24,7 @@ function clip(id: number, name: string, fromBar: number, toBar: number): ClipVie
   return { id, name, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0 };
 }
 function track(number: number, clips: ClipView[]): TrackView {
-  return { number, name: `トラック ${number}`, color: number, instrument: "placeholder", gainDb: 0, armed: false, clips };
+  return { number, name: `トラック ${number}`, color: number, instrument: "placeholder", gainDb: 0, armed: false, muted: false, soloed: false, clips };
 }
 
 // 1 小節 64 px、行の高さ 64、クリップは行の上下 3 あける（拡大率 100 %）。
@@ -70,7 +70,7 @@ describe("動かす（arrangeDrag）", () => {
     expect(d).toMatchObject({ kind: "move", ticks: BAR, toRow: 0, ok: true });
     expect(CD.clipDragReading(d, METER)).toBe("6.1.000（+1 小節）");
     expect(CD.clipDragCursor(d)).toBe("move");
-    expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClip", clip: 3, ticks: BAR, track: 1, copy: false });
+    expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClips", clips: [3], ticks: BAR, tracks: 0, copy: false });
   });
 
   it("Shift で吸いつかない（読み値は小節の小数）", () => {
@@ -110,7 +110,7 @@ describe("動かす（arrangeDrag）", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [300 + 128, 94]);
     expect(d).toMatchObject({ toRow: 1, ok: true });
-    expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClip", clip: 3, ticks: 2 * BAR, track: 2, copy: false });
+    expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClips", clips: [3], ticks: 2 * BAR, tracks: 1, copy: false });
     expect(drag(tracks, [300, 30], [300, 400])).toMatchObject({ toRow: 1 });
     // ベース A（3–4 小節）の所へは置けない
     expect(drag(tracks, [300, 30], [300 - 128, 94])).toMatchObject({ toRow: 1, ok: false });
@@ -122,7 +122,7 @@ describe("動かす（arrangeDrag）", () => {
     const d = drag(tracks, [300, 30], [300 + 256, 30], alt);
     expect(CD.clipDragReading(d, METER)).toBe("複製 ・ 9.1.000");
     expect(CD.clipDragCursor(d)).toBe("copy");
-    expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClip", clip: 3, ticks: 4 * BAR, track: 1, copy: true });
+    expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClips", clips: [3], ticks: 4 * BAR, tracks: 0, copy: true });
     const same = drag(tracks, [300, 30], [310, 30], alt);
     expect(same).toMatchObject({ ticks: 0, ok: false });
     expect(CD.clipDragCommand(same, tracks)).toBeNull();
@@ -221,18 +221,18 @@ describe("偽物の Rust の答え（reduceClips）", () => {
     return s;
   };
   it("MoveClip で動かし、写しは新しい id。動かしたクリップ（写し）をえらぶ。重なるときは何もしない", () => {
-    const moved = reduceClips(state(), { type: "moveClip", clip: 3, ticks: BAR, track: 2, copy: false })!;
+    const moved = reduceClips(state(), { type: "moveClips", clips: [3], ticks: BAR, tracks: 1, copy: false })!;
     expect(moved.song.tracks[0]!.clips.map((c) => c.id)).toEqual([1]);
     expect(moved.song.tracks[1]!.clips.map((c) => [c.id, c.start])).toEqual([[5, 2 * BAR], [3, 5 * BAR]]);
     expect(moved.arrange.selectedClip).toBe(3);
-    const copied = reduceClips(state(), { type: "moveClip", clip: 3, ticks: 4 * BAR, track: 1, copy: true })!;
+    const copied = reduceClips(state(), { type: "moveClips", clips: [3], ticks: 4 * BAR, tracks: 0, copy: true })!;
     const ids = copied.song.tracks[0]!.clips.map((c) => c.id);
     expect(ids.slice(0, 2)).toEqual([1, 3]);
     expect(copied.arrange.selectedClip).toBe(ids[2]);
-    expect(reduceClips(state(), { type: "moveClip", clip: 1, ticks: BAR, track: 1, copy: false })).toBeNull();
+    expect(reduceClips(state(), { type: "moveClips", clips: [1], ticks: BAR, tracks: 0, copy: false })).toBeNull();
   });
   it("DuplicateClip はすぐうしろ。TrimClip はテイクの 0 を動かさない", () => {
-    const dup = reduceClips(state(), { type: "duplicateClip", clip: 3 })!;
+    const dup = reduceClips(state(), { type: "duplicateClips", clips: [3] })!;
     expect(dup.song.tracks[0]!.clips.map((c) => [c.start, c.end])).toEqual([[0, 4 * BAR], [4 * BAR, 8 * BAR], [8 * BAR, 12 * BAR]]);
     const trim = reduceClips(state(), { type: "trimClip", clip: 3, edge: "start", ticks: BAR })!;
     expect(trim.song.tracks[0]!.clips[1]).toMatchObject({ start: 5 * BAR, end: 8 * BAR, takeOffset: -BAR });
@@ -273,7 +273,7 @@ describe("Arrange のマウス", () => {
     app.setState(
       app.stateWith((s) => {
         s.song.tracks = twoTracks();
-        s.arrange = { selectedClip: 3, pianoRollClip: 3 };
+        s.arrange = arrangeOf(3);
         edit(s);
       }),
     );
@@ -314,7 +314,7 @@ describe("Arrange のマウス", () => {
     expect(laneRects()).toBe(before);
     expect(box.style.transform).toBe("translate(128px)");
     pointer("pointerup", 366, 30);
-    expect(moves()).toEqual([{ type: "moveClip", clip: 3, ticks: 2 * BAR, track: 1, copy: false }]);
+    expect(moves()).toEqual([{ type: "moveClips", clips: [3], ticks: 2 * BAR, tracks: 0, copy: false }]);
     expect(dragReading.text).toBeNull();
   });
 
@@ -326,7 +326,7 @@ describe("Arrange のマウス", () => {
     pointer("pointerup", 0, 0);
     expect(app.sent).toEqual([
       { type: "selectClip", clip: 1 },
-      { type: "moveClip", clip: 1, ticks: 6 * BAR, track: 2, copy: false },
+      { type: "moveClips", clips: [1], ticks: 6 * BAR, tracks: 1, copy: false },
     ]);
   });
 
@@ -361,7 +361,7 @@ describe("Arrange のマウス", () => {
     expect(dragReading.text).toBe("複製 ・ 9.1.000");
     expect(laneRects().some((r) => r.color === "color.gray.7")).toBe(false);
     pointer("pointerup", 556, 30, { altKey: true });
-    expect(moves()).toEqual([{ type: "moveClip", clip: 3, ticks: 4 * BAR, track: 1, copy: true }]);
+    expect(moves()).toEqual([{ type: "moveClips", clips: [3], ticks: 4 * BAR, tracks: 0, copy: true }]);
   });
 
   it("はし: 乗せると左右のカーソル。つめている間は行の幅の箱に描き、つめた所はもとの枠の中。離して TrimClip 1 つ", () => {
@@ -412,17 +412,17 @@ describe("Mod D（仕様書 4 章「複製」）", () => {
     const state = fakeState();
     const sent: Command[] = [];
     const deps: KeyDeps = { state: () => state, send: (c) => void sent.push(c), nav: { platform: "Linux" } };
-    state.arrange = { selectedClip: 3, pianoRollClip: 3 };
+    state.arrange = arrangeOf(3);
     expect(press(deps).defaultPrevented).toBe(true);
-    state.arrange = { selectedClip: null, pianoRollClip: null };
+    state.arrange = arrangeOf(null);
     press(deps);
-    expect(sent).toEqual([{ type: "duplicateClip", clip: 3 }]);
+    expect(sent).toEqual([{ type: "duplicateClips", clips: [3] }]);
   });
 
   it("ピアノロールがひらいていても、最後に押したのがアレンジならクリップ。ピアノロールならノートのまま", () => {
     const state = fakeState();
     state.workspace.layout = { ...state.workspace.layout, lower: [{ band: "pianoRoll", height: 640 }] };
-    state.arrange = { selectedClip: 3, pianoRollClip: 3 };
+    state.arrange = arrangeOf(3);
     state.pianoRoll = { ...state.pianoRoll, take: 7, selectedNotes: [] };
     const sent: Command[] = [];
     const deps: KeyDeps = { state: () => state, send: (c) => void sent.push(c), nav: { platform: "Linux" }, pianoRoll: () => null };
@@ -430,12 +430,12 @@ describe("Mod D（仕様書 4 章「複製」）", () => {
     press(deps);
     prView.focus = "pianoRoll";
     press(deps);
-    expect(sent).toEqual([{ type: "duplicateClip", clip: 3 }]);
+    expect(sent).toEqual([{ type: "duplicateClips", clips: [3] }]);
   });
 
   it("録音中とカウントイン中は送らない", () => {
     const state = fakeState();
-    state.arrange = { selectedClip: 3, pianoRollClip: 3 };
+    state.arrange = arrangeOf(3);
     state.transport.state = "recording";
     const sent: Command[] = [];
     press({ state: () => state, send: (c) => void sent.push(c), nav: { platform: "Linux" } });

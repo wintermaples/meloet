@@ -45,7 +45,7 @@ const PIANO = { number: 1, name: "ピアノ" };
 /** 鍵盤と出口があり、ピアノが録音待機。 */
 const ready = (edit: (s: AppState) => void = () => {}) =>
   app.stateWith((s) => {
-    s.keyboards = { list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
+    s.keyboards = { ...s.keyboards, list: [KEYBOARD], active: "kb", lost: null, inputStopped: false };
     s.outputs.chosen = s.outputs.list[0]!.id;
     s.transport.canPlay = true;
     s.transport.canRecord = true;

@@ -119,7 +119,7 @@ describe("選ぶ道具", () => {
       drag.down(x(478), y(60), NONE);
       drag.move(x(478) + 20, y(60), NONE);
       expect(drag.reading()).toBe("長さ 1.000 → 1.240");
-      expect(drag.up()).toEqual({ type: "resizeNotes", take: 7, notes: [0], ticks: 240 });
+      expect(drag.up()).toEqual({ type: "resizeNotes", take: 7, notes: [0], edge: "end", ticks: 240 });
     }
   });
 
@@ -147,7 +147,7 @@ describe("書く道具", () => {
 
   it("押した瞬間に Audition、離して AuditionOff と AddNote（グリッド 1 つぶん）", () => {
     drag.down(x(1500), y(50), NONE);
-    expect(sent).toEqual([{ type: "audition", key: 50, velocity: G.DRAW_VELOCITY }]);
+    expect(sent).toEqual([{ type: "audition", keys: [50], velocity: G.DRAW_VELOCITY }]);
     expect(drag.reading()).toBe("D3 ・ 1.4.000 ・ 長さ 0.120");
     drag.up();
     expect(sent.slice(1)).toEqual([

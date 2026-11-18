@@ -7,7 +7,12 @@ export type SongView = { name: string, tempoBpm: number, meterNum: number, meter
 /**
  * For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
  */
-noteCount: number, tracks: Array<TrackView>, playTarget: number | null, 
+noteCount: number, tracks: Array<TrackView>, 
+/**
+ * The selected track (B-70: its header is gray.4), which is the one the keys play.
+ * `SelectTrack`, and a click on a clip, change it.
+ */
+playTarget: number | null, 
 /**
  * Kept while the loop is off.
  */

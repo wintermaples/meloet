@@ -231,6 +231,11 @@ const keyboard = (name: string, n = 1) => ({ id: `kb-${n}`, name, portName: name
 const PIANO: TrackRef = { number: 1, name: "ピアノ" };
 const NEW_SONG: StatusMessage = { id: "newSong", tempoBpm: 96, meterNum: 4, meterDen: 4, track: PIANO };
 
+/** One clip selected (and shown in the piano roll), or none; nothing to paste. */
+export function arrangeOf(clip: number | null): ArrangeView {
+  return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0 };
+}
+
 export function fakeState(): AppState {
   const bands = new FakeBands(800);
   return {
@@ -243,7 +248,7 @@ export function fakeState(): AppState {
       undoCount: 0,
       redoCount: 0,
       noteCount: 0,
-      tracks: [{ number: 1, name: "ピアノ", color: 1, instrument: "placeholder", gainDb: 0, armed: true, clips: [] }],
+      tracks: [{ number: 1, name: "ピアノ", color: 1, instrument: "placeholder", gainDb: 0, armed: true, muted: false, soloed: false, clips: [] }],
       playTarget: 1,
       loopRange: null,
       loopOn: false,
@@ -259,7 +264,7 @@ export function fakeState(): AppState {
       canRecord: false,
       recording: null,
     },
-    arrange: { selectedClip: null, pianoRollClip: null },
+    arrange: arrangeOf(null),
     pianoRoll: {
       take: null,
       selectedNotes: [],
@@ -281,7 +286,7 @@ export function fakeState(): AppState {
       songDialog: null,
       recovery: null,
     },
-    keyboards: { list: [], active: null, lost: null, inputStopped: false },
+    keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null },
     audio: {
@@ -343,7 +348,7 @@ const dbfs = (db: number) => 10 ** (db / 20);
 
 function withKeyboard(s: AppState, name = "Keystation 49 MK3"): void {
   const kb = keyboard(name);
-  s.keyboards = { list: [kb], active: kb.id, lost: null, inputStopped: false };
+  s.keyboards = { ...s.keyboards, list: [kb], active: kb.id, lost: null, inputStopped: false };
   s.audio.midiInput = kb.portName;
 }
 
@@ -647,7 +652,7 @@ function pianoRollSong(s: AppState): void {
   s.song.file = "changed";
   s.song.tracks[0]!.clips = [fakeClip(10, "イントロ", 1, 5, 1, [QUANTIZED_TAKE])];
   s.song.noteCount = MOCK_NOTES.length;
-  s.arrange = { selectedClip: 10, pianoRollClip: 10 };
+  s.arrange = arrangeOf(10);
   s.pianoRoll = pianoRollView(QUANTIZED_TAKE, true);
   s.transport.position = at("3.1.000");
   s.status.message = {
@@ -679,7 +684,7 @@ function aMelody(s: AppState, takes: number[]): void {
   s.song.file = "saved";
   s.song.tracks[0]!.clips = [fakeClip(13, "Aメロ", 1, 5, 2, takes)];
   s.song.noteCount = MOCK_NOTES.length;
-  s.arrange = { selectedClip: 13, pianoRollClip: 13 };
+  s.arrange = arrangeOf(13);
   s.pianoRoll = pianoRollView(QUANTIZED_TAKE, false);
   s.status.message = null;
 }
@@ -738,7 +743,7 @@ function arrangeTrimmed(s: AppState): void {
     armed: false,
     clips: [fakeClip(41, "ベース A", 5, 9, 1, [40]), { ...fakeClip(42, "ベース A", 14, 18, 1, [40]), end: 13 * BAR + BAR * 2.5 }],
   });
-  s.arrange = { selectedClip: 42, pianoRollClip: 42 };
+  s.arrange = arrangeOf(42);
   s.status.message = null;
 }
 
@@ -881,7 +886,7 @@ export const SCENES: Record<string, SceneDef> = {
       s.song.undoCount = 3;
       s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
       s.song.noteCount = FAKE_TAKES.get(6)!.notes.length;
-      s.arrange = { selectedClip: 3, pianoRollClip: 3 };
+      s.arrange = arrangeOf(3);
       s.transport.position = 4 * BAR;
       s.status.message = null;
     },
@@ -905,7 +910,7 @@ export const SCENES: Record<string, SceneDef> = {
     setup(s) {
       ready(s);
       s.song.tracks[0]!.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
-      s.arrange = { selectedClip: 3, pianoRollClip: 3 };
+      s.arrange = arrangeOf(3);
       s.transport.position = 4 * BAR;
       s.status.message = null;
     },
@@ -982,7 +987,54 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
+  // Not from a mock (B-70, B-71): three tracks; the bass is selected (it is where the keys play) and muted, the drums
+  // soloed. "Aメロ" of the piano and "ベース A" are selected together, "ベース A" clicked last. One clip is ready to paste.
+  arrangeSelect: { setup: arrangeSelect, meters: QUIET },
+  // Not from a mock (B-66): ベロシティ固定 is on at 100.
+  velocityFixed: {
+    setup(s) {
+      ready(s);
+      s.keyboards.velocityFixed = { on: true, value: 100 };
+    },
+    meters: { ...QUIET, velocity: 100 },
+  },
+  // Not from a mock (B-68, B-67): the piano roll after a velocity out of range was typed, and after "そろえる".
+  valueClamped: {
+    setup: pianoRollSong,
+    bands: ["pianoRoll"],
+    after: (s) => (s.status.message = { id: "valueClamped", field: "velocity", value: "127", range: null }),
+    meters: QUIET,
+  },
+  meterClamped: {
+    setup: ready,
+    after: (s) => (s.status.message = { id: "valueClamped", field: "meterDen", value: "4", range: null }),
+    meters: QUIET,
+  },
+  velocityMatched: {
+    setup: pianoRollSong,
+    bands: ["pianoRoll"],
+    after: (s) => (s.status.message = { id: "velocityMatched", count: 3, value: 100 }),
+    meters: QUIET,
+  },
 };
+
+function arrangeSelect(s: AppState): void {
+  ready(s);
+  s.song.undoCount = 5;
+  s.song.file = "changed";
+  const track = s.song.tracks[0]!;
+  track.clips = [fakeClip(1, "イントロ", 1, 5, 1, [2]), fakeClip(3, "Aメロ", 5, 9, 2, [5, 6, 7])];
+  const bass = phrase(40, 4, 11, 6);
+  FAKE_TAKES.set(bass.id, bass);
+  s.song.tracks.push(
+    { ...track, number: 2, name: "ベース", color: 2, gainDb: -7.5, armed: false, muted: true, clips: [fakeClip(41, "ベース A", 5, 9, 1, [40])] },
+    { ...track, number: 3, name: "ドラム", color: 3, gainDb: -6, armed: false, soloed: true, clips: [fakeClip(43, "8ビート", 1, 9, 1, [7])] },
+  );
+  s.song.playTarget = 2;
+  s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1 };
+  s.transport.position = 4 * BAR;
+  s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: null };
+}
 
 // Not from a mock: the scene recording, with the listener moving at 96.00 (the clip being recorded grows).
 SCENES.recordingMoving = {
@@ -1001,7 +1053,7 @@ SCENES.pianoRoll10k = {
     pianoRollSong(s);
     s.song.tracks[0]!.clips = [fakeClip(91, "イントロ", 1, 65, 1, [TEN_THOUSAND])];
     s.song.noteCount = 10_000;
-    s.arrange = { selectedClip: 91, pianoRollClip: 91 };
+    s.arrange = arrangeOf(91);
     s.pianoRoll = { ...pianoRollView(TEN_THOUSAND, false), selectedNotes: [{ start: 0, end: 200 }] };
     s.status.message = null;
   },
@@ -1108,6 +1160,8 @@ const NOTICES: StatusMessage["id"][] = [
   "scaleWindowGrown",
   "scaleLoweredForScreen",
   "bufferFixed",
+  "valueClamped",
+  "velocityMatched",
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 
@@ -1181,53 +1235,192 @@ function noteSelection(pr: PianoRollView): Extract<StatusMessage, { id: "summary
   return { count: picked.length, keys: picked.slice(0, 4).map((i) => take.notes[i]!.key), quantized: (take.origin ?? 0) !== 0 };
 }
 
-/**
- * The clip edits of docs/architecture.md 17, enough for pictures and tests: no history, no undo count.
- * Returns the new song and arrange, or null when nothing changes (as Rust does on an overlap).
- */
-export function reduceClips(state: AppState, command: Command): { song: SongView; arrange: ArrangeView } | null {
-  if (command.type !== "moveClip" && command.type !== "duplicateClip" && command.type !== "trimClip") return null;
-  if (state.transport.state === "recording" || state.transport.state === "countIn") return null;
-  const song = structuredClone(state.song);
-  const from = song.tracks.findIndex((t) => t.clips.some((c) => c.id === command.clip));
-  if (from < 0) return null;
-  const clips = song.tracks[from]!.clips;
-  const at = clips.findIndex((c) => c.id === command.clip);
-  const clip = clips[at]!;
-  const free = (clips: ClipView[], start: number, end: number, without: number | null) =>
-    start >= 0 && !clips.some((c) => c.id !== without && c.start < end && start < c.end);
-  const nextId = () => Math.max(0, ...FAKE_TAKES.keys(), ...song.tracks.flatMap((t) => t.clips.map((c) => c.id))) + 1;
-  const byStart = (a: ClipView, b: ClipView) => a.start - b.start;
-  let selected = clip.id;
-  if (command.type === "trimClip") {
-    const before = clips.filter((c) => c.end <= clip.start).reduce((m, c) => Math.max(m, c.end), 0);
-    const after = clips.filter((c) => c.start >= clip.end).reduce((m, c) => Math.min(m, c.start), Infinity);
-    const start = command.edge === "start" ? Math.min(Math.max(clip.start + command.ticks, before), clip.end - 1) : clip.start;
-    const end = command.edge === "end" ? Math.max(Math.min(clip.end + command.ticks, after), clip.start + 1) : clip.end;
-    if (start === clip.start && end === clip.end) return null;
-    clips[at] = { ...clip, start, end, takeOffset: clip.takeOffset - (start - clip.start) };
-    return { song, arrange: state.arrange };
-  }
-  const len = clip.end - clip.start;
-  const start = command.type === "duplicateClip" ? clip.end : Math.max(0, clip.start + command.ticks);
-  const copy = command.type === "duplicateClip" || command.copy;
-  const to = command.type === "duplicateClip" ? from : song.tracks.findIndex((t) => t.number === command.track);
-  if (to < 0) return null;
-  const dest = song.tracks[to]!.clips;
-  if (!copy && to === from && start === clip.start) return null;
-  if (!free(dest, start, start + len, copy ? null : clip.id)) return null;
-  if (!copy) clips.splice(at, 1);
-  const placed = { ...clip, id: copy ? nextId() : clip.id, start, end: start + len };
-  selected = placed.id;
-  dest.push(placed);
-  dest.sort(byStart);
-  return { song, arrange: { selectedClip: selected, pianoRollClip: selected } };
+/** What `copyClips` and `cutClips` keep: each clip with its row and start counted from the first row and the earliest start. */
+export interface FakeClipboard {
+  clips: { row: number; at: number; clip: ClipView }[];
 }
 
+const CLIP_COMMANDS: Command["type"][] = [
+  "selectClip",
+  "selectClips",
+  "selectAllClips",
+  "selectTrack",
+  "toggleMute",
+  "toggleSolo",
+  "moveClips",
+  "duplicateClips",
+  "trimClip",
+  "deleteSelected",
+  "copyClips",
+  "cutClips",
+  "pasteClips",
+];
+
+/**
+ * The clip and track commands of docs/architecture.md 17 and protocol 8, enough for pictures and tests: no history,
+ * no undo count. Returns the new song and arrange, or null when nothing changes (as Rust does on an overlap).
+ */
+export function reduceClips(
+  state: AppState,
+  command: Command,
+  clipboard: FakeClipboard = { clips: [] },
+): { song: SongView; arrange: ArrangeView } | null {
+  if (!CLIP_COMMANDS.includes(command.type)) return null;
+  const song = structuredClone(state.song);
+  const arrange = structuredClone(state.arrange);
+  const rowOf = (id: number) => song.tracks.findIndex((t) => t.clips.some((c) => c.id === id));
+  const clipOf = (id: number) => song.tracks.flatMap((t) => t.clips).find((c) => c.id === id);
+  const inOrder = (ids: Iterable<number>) => {
+    const set = new Set(ids);
+    return song.tracks.flatMap((t) => t.clips.filter((c) => set.has(c.id)).map((c) => c.id));
+  };
+  const select = (ids: number[], last: number | null) => {
+    arrange.selectedClips = inOrder(ids);
+    arrange.selectedClip = last !== null && arrange.selectedClips.includes(last) ? last : arrange.selectedClips.length === 1 ? arrange.selectedClips[0]! : null;
+    if (arrange.selectedClip !== null) arrange.pianoRollClip = arrange.selectedClip;
+  };
+  const done = () => ({ song, arrange });
+  const track = (n: number) => song.tracks.find((t) => t.number === n);
+  switch (command.type) {
+    case "selectClip":
+      if (command.clip === null) select([], null);
+      else if (clipOf(command.clip)) {
+        select([command.clip], command.clip);
+        song.playTarget = song.tracks[rowOf(command.clip)]!.number;
+      }
+      return done();
+    case "selectClips": {
+      const picked = command.clips.filter((id) => clipOf(id));
+      const had = new Set(command.mode === "replace" ? [] : arrange.selectedClips);
+      for (const id of picked) {
+        if (command.mode === "toggle" && had.has(id)) had.delete(id);
+        else had.add(id);
+      }
+      // Shift + click (one clip added) makes it the clip clicked last; a box does not.
+      const clicked = command.mode !== "replace" && picked.length === 1 ? picked[0]! : null;
+      select([...had], clicked ?? arrange.selectedClip);
+      if (clicked !== null && had.has(clicked)) song.playTarget = song.tracks[rowOf(clicked)]!.number;
+      return done();
+    }
+    case "selectAllClips":
+      select(
+        song.tracks.flatMap((t) => t.clips.map((c) => c.id)),
+        arrange.selectedClip,
+      );
+      return done();
+    case "selectTrack":
+      if (track(command.track)) song.playTarget = command.track;
+      return done();
+    case "toggleMute":
+    case "toggleSolo": {
+      const t = track(command.track);
+      if (!t) return null;
+      if (command.type === "toggleMute") t.muted = !t.muted;
+      else t.soloed = !t.soloed;
+      return done();
+    }
+    case "copyClips":
+    case "cutClips": {
+      const ids = inOrder(command.clips);
+      if (ids.length === 0) return null;
+      const rows = ids.map(rowOf);
+      const top = Math.min(...rows);
+      const first = Math.min(...ids.map((id) => clipOf(id)!.start));
+      clipboard.clips = ids.map((id, i) => ({ row: rows[i]! - top, at: clipOf(id)!.start - first, clip: { ...clipOf(id)! } }));
+      arrange.clipboardClips = ids.length;
+      if (command.type === "copyClips") return done();
+      if (busy(state)) return null;
+      for (const t of song.tracks) t.clips = t.clips.filter((c) => !ids.includes(c.id));
+      select([], null);
+      return done();
+    }
+    default:
+      break;
+  }
+  if (busy(state)) return null;
+  const nextId = () => Math.max(0, ...FAKE_TAKES.keys(), ...song.tracks.flatMap((t) => t.clips.map((c) => c.id))) + 1;
+  const byStart = (a: ClipView, b: ClipView) => a.start - b.start;
+  /** Puts `items` (copies when `fresh`) where they say, or returns false when one does not fit. */
+  const place = (items: { row: number; start: number; clip: ClipView }[], fresh: boolean, taken: number[]): boolean => {
+    for (const t of song.tracks) t.clips = t.clips.filter((c) => !taken.includes(c.id));
+    const fits = items.every(
+      ({ row, start, clip }) =>
+        row >= 0 &&
+        row < song.tracks.length &&
+        start >= 0 &&
+        !song.tracks[row]!.clips.some((c) => c.start < start + clip.end - clip.start && start < c.end),
+    );
+    if (!fits) return false;
+    const placed: number[] = [];
+    let last: number | null = null;
+    for (const { row, start, clip } of items) {
+      const id = fresh ? nextId() : clip.id;
+      song.tracks[row]!.clips.push({ ...clip, id, start, end: start + clip.end - clip.start });
+      song.tracks[row]!.clips.sort(byStart);
+      placed.push(id);
+      if (clip.id === arrange.selectedClip || last === null) last = id;
+    }
+    select(placed, last);
+    return true;
+  };
+  switch (command.type) {
+    case "trimClip": {
+      const from = rowOf(command.clip);
+      if (from < 0) return null;
+      const clips = song.tracks[from]!.clips;
+      const at = clips.findIndex((c) => c.id === command.clip);
+      const clip = clips[at]!;
+      const before = clips.filter((c) => c.end <= clip.start).reduce((m, c) => Math.max(m, c.end), 0);
+      const after = clips.filter((c) => c.start >= clip.end).reduce((m, c) => Math.min(m, c.start), Infinity);
+      const start = command.edge === "start" ? Math.min(Math.max(clip.start + command.ticks, before), clip.end - 1) : clip.start;
+      const end = command.edge === "end" ? Math.max(Math.min(clip.end + command.ticks, after), clip.start + 1) : clip.end;
+      if (start === clip.start && end === clip.end) return null;
+      clips[at] = { ...clip, start, end, takeOffset: clip.takeOffset - (start - clip.start) };
+      return done();
+    }
+    case "deleteSelected": {
+      const ids = arrange.selectedClips;
+      if (ids.length === 0) return null;
+      for (const t of song.tracks) t.clips = t.clips.filter((c) => !ids.includes(c.id));
+      select([], null);
+      return done();
+    }
+    case "moveClips":
+    case "duplicateClips": {
+      const ids = inOrder(command.clips);
+      if (ids.length === 0) return null;
+      const clips = ids.map((id) => clipOf(id)!);
+      const copy = command.type === "duplicateClips" || command.copy;
+      const rows = command.type === "duplicateClips" ? 0 : command.tracks;
+      const earliest = Math.min(...clips.map((c) => c.start));
+      // The group stops at the song's start.
+      const ticks = command.type === "duplicateClips" ? Math.max(...clips.map((c) => c.end)) - earliest : Math.max(command.ticks, -earliest);
+      if (!copy && ticks === 0 && rows === 0) return null;
+      const items = clips.map((clip) => ({ row: rowOf(clip.id) + rows, start: clip.start + ticks, clip }));
+      return place(items, copy, copy ? [] : ids) ? done() : null;
+    }
+    case "pasteClips": {
+      if (clipboard.clips.length === 0) return null;
+      const perBar = (1920 / song.meterDen) * song.meterNum;
+      const to = command.to ?? { track: song.playTarget ?? 0, tick: Math.floor(state.transport.position / perBar) * perBar };
+      const top = song.tracks.findIndex((t) => t.number === to.track);
+      if (top < 0) return null;
+      const items = clipboard.clips.map(({ row, at, clip }) => ({ row: top + row, start: to.tick + at, clip }));
+      return place(items, true, []) ? done() : null;
+    }
+    default:
+      return null;
+  }
+}
+
+const busy = (state: AppState) => state.transport.state === "recording" || state.transport.state === "countIn";
+
 /** `rest` is the status line when no notice is up. */
-function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command): Change[] {
+function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command, clipboard: FakeClipboard): Change[] {
   const ws = structuredClone(state.workspace);
   const outputs = structuredClone(state.outputs);
+  const keyboards = structuredClone(state.keyboards);
+  const transport = structuredClone(state.transport);
   const pianoRoll = structuredClone(state.pianoRoll);
   reducePianoRoll(pianoRoll, command);
   const choosable = outputs.list.filter((o) => o.unusable === null).map((o) => o.id);
@@ -1265,6 +1458,19 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
       if (fold?.why === "tooLow") notice = { id: "bandFoldedToOpen", opened: command.band, folded: fold.band };
       break;
     }
+    case "clampValue":
+      notice = { id: "valueClamped", field: command.field, value: command.value, range: command.range };
+      break;
+    // The fake does not change notes; it only says what Rust says.
+    case "matchVelocity":
+      if (command.take === pianoRoll.take && command.notes.length > 0) notice = { id: "velocityMatched", count: command.notes.length, value: command.value };
+      break;
+    case "setVelocityFixed":
+      keyboards.velocityFixed = { on: command.on, value: Math.min(127, Math.max(1, command.value)) };
+      break;
+    case "locate":
+      if (transport.state === "stopped") transport.position = command.tick;
+      break;
     case "rejectValue":
       notice = { id: "valueRejected", field: command.field, kept: command.kept, range: command.range };
       break;
@@ -1335,19 +1541,21 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
   }
   ws.layout = bands.layout();
   const changes: Change[] = [];
-  const clips = reduceClips(state, command);
+  const clips = reduceClips(state, command, clipboard);
   if (clips) {
-    changes.push({ section: "song", value: clips.song });
+    if (JSON.stringify(clips.song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: clips.song });
     if (JSON.stringify(clips.arrange) !== JSON.stringify(state.arrange)) changes.push({ section: "arrange", value: clips.arrange });
   }
   if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
   if (JSON.stringify(outputs) !== JSON.stringify(state.outputs)) changes.push({ section: "outputs", value: outputs });
+  if (JSON.stringify(keyboards) !== JSON.stringify(state.keyboards)) changes.push({ section: "keyboards", value: keyboards });
+  if (JSON.stringify(transport) !== JSON.stringify(state.transport)) changes.push({ section: "transport", value: transport });
   if (JSON.stringify(pianoRoll) !== JSON.stringify(state.pianoRoll)) changes.push({ section: "pianoRoll", value: pianoRoll });
   // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
   let message = notice ?? (isNotice(state.status.message) ? rest : state.status.message);
   if (message?.id === "summary") {
     const notes = noteSelection(pianoRoll);
-    message = { ...message, notes, nothingSelected: notes === null && state.arrange.selectedClip === null };
+    message = { ...message, notes, nothingSelected: notes === null && (clips?.arrange ?? state.arrange).selectedClips.length === 0 };
   }
   if (JSON.stringify(message) !== JSON.stringify(state.status.message)) changes.push({ section: "status", value: { message } });
   return changes;
@@ -1361,6 +1569,7 @@ export function createFakeTransport(initial?: AppState): Transport {
   if (!scene) for (const l of state.workspace.layout.lower) bands.bottom.push(l.band);
   if (!scene) bands.side = [...state.workspace.layout.rightOpen];
   const rest = isNotice(state.status.message) ? null : state.status.message;
+  const clipboard: FakeClipboard = { clips: [] };
   let rev = 1;
   let listener: ((message: ServerMessage) => void) | null = null;
   const start = performance.now();
@@ -1388,7 +1597,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduce(state, bands, rest, command);
+      const changes = reduce(state, bands, rest, command, clipboard);
       if (changes.length > 0) {
         rev += 1;
         state = { ...state };

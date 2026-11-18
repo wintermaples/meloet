@@ -170,7 +170,7 @@ fn nothing_sounds_after_the_clip_end() {
         origin: None,
         id: TakeId(2),
         length: 3000,
-        notes: vec![note(0, 50, 59), note(900, 200, 62), note(1100, 10, 64)],
+        notes: vec![note(0, 50, 59), note(900, 200, 62), note(1100, 10, 64)].into(),
         controls: vec![
             point(
                 50,
@@ -180,7 +180,8 @@ fn nothing_sounds_after_the_clip_end() {
                 },
             ),
             point(1500, sustain(127)),
-        ],
+        ]
+        .into(),
     };
     let doc = doc_with(clip(1000, 2000, 0, take));
     assert_eq!(

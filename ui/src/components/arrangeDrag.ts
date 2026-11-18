@@ -130,7 +130,7 @@ export function clipDragCommand(d: ClipDrag, tracks: readonly TrackView[]): Comm
   if (d.kind === "move") {
     const track = tracks[d.toRow];
     if (!d.ok || !track || (d.ticks === 0 && d.toRow === d.row && !d.copy)) return null;
-    return { type: "moveClip", clip: d.clip.id, ticks: d.ticks, track: track.number, copy: d.copy };
+    return { type: "moveClips", clips: [d.clip.id], ticks: d.ticks, tracks: d.toRow - d.row, copy: d.copy };
   }
   const ticks = d.edge === "start" ? d.start - d.clip.start : d.end - d.clip.end;
   return ticks === 0 ? null : { type: "trimClip", clip: d.clip.id, edge: d.edge, ticks };

@@ -349,3 +349,183 @@ fn the_fields_of_the_note_list() {
         EditError::Unchanged
     );
 }
+
+/// xorshift64*, so the test needs nothing outside std.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n
+    }
+
+    fn signed(&mut self, n: i64) -> i64 {
+        self.below(2 * n as u64 + 1) as i64 - n
+    }
+}
+
+/// A take of 3000 notes and 600 points, edited at random with undo and redo between: every take
+/// holds what a fresh copy of its notes and points holds, cut the same way, the clip keeps its
+/// one take, and undo and redo walk back to the same songs.
+#[test]
+fn shared_takes_hold_what_a_fresh_copy_holds() {
+    use crate::History;
+    use crate::controls::{ControlKind, add_control, delete_controls, move_controls};
+    use crate::quantize::{quantize, unquantize};
+    use crate::roll::QuantizeSettings;
+
+    let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+    let length = 3000 * 120;
+    let take = NewTake {
+        origin: BAR,
+        length,
+        notes: (0..3000u64)
+            .map(|i| Note {
+                velocity: 1 + rng.below(127) as u8,
+                ..note(
+                    i * 120 + rng.below(60),
+                    1 + rng.below(400),
+                    rng.below(128) as u8,
+                )
+            })
+            .collect(),
+        controls: (0..600u64)
+            .map(|i| ControlPoint {
+                tick: i * 600,
+                value: ControlValue::PitchBend(rng.signed(8000) as i16),
+            })
+            .collect(),
+    };
+    let (mut doc, clip) = record(&Doc::new_default(), vec![take]);
+    let mut h = History::new();
+    let mut line = vec![doc.clone()];
+    let mut at = 0;
+    let mut made = 0;
+    for round in 0..400 {
+        let (_, c) = doc.clip(clip).unwrap();
+        let n = c.active_take().take.notes.len() as u64;
+        let p = c.active_take().take.controls.len() as u64;
+        let some = |rng: &mut Rng, of: u64| -> Vec<usize> {
+            if of == 0 {
+                return Vec::new();
+            }
+            (0..1 + rng.below(3))
+                .map(|_| rng.below(of) as usize)
+                .collect()
+        };
+        let edited = match rng.below(12) {
+            0 => {
+                let picked = some(&mut rng, n);
+                move_notes(
+                    &doc,
+                    clip,
+                    &picked,
+                    rng.signed(2000),
+                    rng.signed(5) as i32,
+                    false,
+                )
+            }
+            1 => {
+                let picked = some(&mut rng, n);
+                move_notes(&doc, clip, &picked, rng.signed(500), 0, true)
+            }
+            2 => resize_notes(&doc, clip, &some(&mut rng, n), rng.signed(300)),
+            3 => change_velocity(&doc, clip, &some(&mut rng, n), rng.signed(40) as i32),
+            4 => delete_notes(&doc, clip, &some(&mut rng, n), false),
+            5 => write_note(
+                &doc,
+                WriteAt::Clip(clip),
+                note(
+                    BAR + rng.below(length),
+                    1 + rng.below(500),
+                    rng.below(128) as u8,
+                ),
+            ),
+            6 => {
+                let picked = if rng.below(4) == 0 {
+                    Vec::new()
+                } else {
+                    some(&mut rng, n)
+                };
+                quantize(&doc, clip, &picked, QuantizeSettings::default()).map(|(e, _)| e)
+            }
+            7 => unquantize(&doc, clip, &some(&mut rng, n)),
+            8 => add_control(
+                &doc,
+                clip,
+                BAR + rng.below(length),
+                ControlKind::Cc(1),
+                rng.below(128) as i64,
+            ),
+            9 => move_controls(&doc, clip, &some(&mut rng, p), rng.signed(900), 3),
+            10 => delete_controls(&doc, clip, &some(&mut rng, p)),
+            _ => {
+                if rng.below(2) == 0 {
+                    h.undo(&mut doc);
+                    at -= usize::from(at > 0);
+                } else {
+                    h.redo(&mut doc);
+                    at = (at + 1).min(line.len() - 1);
+                }
+                Err(EditError::Unchanged)
+            }
+        };
+        if let Ok(e) = edited {
+            h.apply(&mut doc, e.edit);
+            made += 1;
+            line.truncate(at + 1);
+            line.push(doc.clone());
+            at += 1;
+        }
+        let ctx = format!("round {round}");
+        assert_eq!(doc, line[at], "{ctx}");
+        let (_, c) = doc.clip(clip).unwrap();
+        assert_eq!(c.takes.len(), 1, "{ctx}");
+        let t = &c.active_take().take;
+        let inside = t.notes.iter().filter(|n| c.holds(n.start)).count();
+        assert_eq!(c.note_count(), inside, "{ctx}");
+        let fresh_notes = ChunkedVec::from(t.notes.to_vec());
+        let fresh_controls = ChunkedVec::from(t.controls.to_vec());
+        assert!(t.notes.chunk_lens().eq(fresh_notes.chunk_lens()), "{ctx}");
+        assert!(
+            t.controls.chunk_lens().eq(fresh_controls.chunk_lens()),
+            "{ctx}"
+        );
+        assert!(t.notes.iter().is_sorted_by_key(|n| n.start), "{ctx}");
+    }
+    assert!(made > 200, "{made}");
+    while h.undo(&mut doc).is_some() {}
+    assert_eq!(doc, line[0]);
+    while h.redo(&mut doc).is_some() {}
+    assert_eq!(&doc, line.last().unwrap());
+}
+
+/// Moving one note of 10 000 makes one or two chunks; the rest are the old take's.
+#[test]
+fn a_moved_note_shares_the_rest_of_the_take() {
+    let take = NewTake {
+        origin: 0,
+        length: 10_000 * 120,
+        notes: (0..10_000u64)
+            .map(|i| note(i * 120, 100, 36 + (i % 48) as u8))
+            .collect(),
+        controls: Vec::new(),
+    };
+    let (doc, clip) = record(&Doc::new_default(), vec![take]);
+    let (_, before) = shown(&doc, clip);
+    for i in [0, 1, 4999, 9998, 9999] {
+        let e = move_notes(&doc, clip, &[i], 10, 0, false).unwrap();
+        let (_, after) = shown(&e.edit.doc, clip);
+        let mut moved = before.notes.to_vec();
+        moved[i].start += 10;
+        assert_eq!(after.notes, moved);
+        let bytes = after.notes.bytes_not_in(&before.notes);
+        assert!(bytes < 16_000, "note {i}: {bytes} B");
+    }
+}

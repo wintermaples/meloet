@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 
 use meloet_devices::{DeviceWatcher, DevicesError, DevicesEvent};
 use meloet_engine::{
-    AudioOutput, BlockTiming, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
-    InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, PlaceholderSynth, Recorded,
-    RunningOutput, Sequence, SequenceEvent, TransportClock, monotonic_us,
+    AudioOutput, BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle,
+    EngineMeters, InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, PlaceholderSynth,
+    Recorded, RunningOutput, Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
 };
 use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
 use meloet_model::ControlValue;
@@ -73,6 +73,12 @@ pub enum ShellRequest {
     PickSongFile { folder: Option<PathBuf> },
     /// The PC's folder window, starting in `folder`.
     PickFolder { folder: Option<PathBuf> },
+    /// The PC's save window ("名前をつけて保存"), starting in `folder` with `name` filled in.
+    /// Answer with [`Core::save_as_picked`].
+    PickSaveAs {
+        folder: Option<PathBuf>,
+        name: String,
+    },
     /// End meloet: everything that had to be asked or saved is done.
     Exit,
     /// Show this file in the PC's file manager.
@@ -210,6 +216,9 @@ struct StreamFacts {
 
 struct Shared {
     held: Held,
+    /// The velocity every NoteOn played takes; 0 while not fixed. The core thread writes it,
+    /// the MIDI thread reads it.
+    fixed_velocity: AtomicU8,
     stream: StreamFacts,
     stop: AtomicBool,
     /// The engine's clock; a new one when the engine is made anew.
@@ -245,6 +254,7 @@ impl Core {
         let hub = Arc::new(Hub::new(model.view()));
         let shared = Arc::new(Shared {
             held: Held::default(),
+            fixed_velocity: AtomicU8::new(model.fixed_velocity().unwrap_or(0)),
             stream: StreamFacts::default(),
             stop: AtomicBool::new(false),
             clock: Mutex::new(Arc::new(TransportClock::default())),
@@ -364,6 +374,12 @@ impl Core {
         let _ = self.tx.send(Msg::Input(Input::FolderPicked(path), None));
     }
 
+    /// The answer to [`ShellRequest::PickSaveAs`]: the folder and the name typed, as one path.
+    /// Does not wait.
+    pub fn save_as_picked(&self, path: Option<PathBuf>) {
+        let _ = self.tx.send(Msg::Input(Input::SaveAsPicked(path), None));
+    }
+
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after
     /// `subscribe` returns misses nothing.
     pub fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {
@@ -454,6 +470,7 @@ impl Links {
                 event,
                 t_us,
             } => {
+                let event = fixed(event, shared.fixed_velocity.load(Relaxed));
                 // Keys played while no stream runs must not sound when one opens.
                 if shared.stream.open.load(Relaxed) {
                     let _ = midi_in.push(MidiIn {
@@ -602,6 +619,19 @@ enum DevicesState {
         attempt: u32,
         at: Instant,
     },
+}
+
+/// A NoteOn at the fixed velocity (B-66), when there is one (`fixed` 1..=127; 0: not fixed).
+/// Done first on the MIDI thread, so the sound, the recording, the meter and the screen all get
+/// the same value.
+fn fixed(event: MidiEvent, fixed: u8) -> MidiEvent {
+    match event {
+        MidiEvent::NoteOn { note, .. } if fixed > 0 => MidiEvent::NoteOn {
+            note,
+            velocity: fixed,
+        },
+        other => other,
+    }
 }
 
 fn instrument_event(event: MidiEvent) -> InstrumentEvent {
@@ -754,14 +784,17 @@ impl Audio {
             EngineOp::Metronome { on } => EngineCommand::SetMetronome { on },
             EngineOp::Audition {
                 track,
-                key,
+                keys,
                 velocity,
             } => EngineCommand::Audition {
                 track,
-                key,
+                keys: Chord::new(&keys),
                 velocity,
             },
             EngineOp::AuditionOff => EngineCommand::AuditionOff,
+            EngineOp::SilentTracks { tracks } => EngineCommand::SetSilentTracks {
+                tracks: tracks.into_iter().collect::<TrackSet>(),
+            },
             EngineOp::Sequence { track, events } => {
                 if self.stream.is_some() {
                     let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());
@@ -1057,6 +1090,12 @@ impl Worker {
                             inputs.push_back(Input::FolderPicked(None));
                         }
                     }
+                    Effect::PickSaveAs { name } => {
+                        let folder = self.start_folder();
+                        if !self.ask_shell(ShellRequest::PickSaveAs { folder, name }) {
+                            inputs.push_back(Input::SaveAsPicked(None));
+                        }
+                    }
                     Effect::Exit => {
                         self.ask_shell(ShellRequest::Exit);
                     }
@@ -1100,6 +1139,9 @@ impl Worker {
             .stream
             .wants_sound
             .store(self.model.wants_sound(), Relaxed);
+        self.shared
+            .fixed_velocity
+            .store(self.model.fixed_velocity().unwrap_or(0), Relaxed);
         let view = self.model.view();
         self.shared
             .stream

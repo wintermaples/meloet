@@ -250,7 +250,8 @@ pub enum Command {
     /// of key, ↑ ↓ on selected notes as a chord. Whatever was sounding stops first: this
     /// replaces it. Empty `keys` only stops. The screen times how long it sounds (↑ ↓: about
     /// 0.3 s) and sends `AuditionOff`, and sends the fixed velocity while
-    /// `KeyboardsView::velocity_fixed` is on. Keys outside the locked scale are left out.
+    /// `KeyboardsView::velocity_fixed` is on. Keys outside the locked scale are left out, and
+    /// keys past the first 16.
     ///
     /// Not recorded, and no `Event::Note` comes back for it. The keys lit in the piano roll's
     /// keyboard column are the keys played (`Event::Note`) and the keys the screen sounds

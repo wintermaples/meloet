@@ -49,7 +49,7 @@ impl Sequence {
     }
 }
 
-/// The set of tracks that do not play their sequence while recording.
+/// A set of track indexes (the tracks that do not play their sequence).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TrackSet {
     bits: [u64; 4],

@@ -254,6 +254,12 @@ export const texts = {
   "key.record": e("R", "spec:4"),
   "key.playStop": e("Space", "spec:4"),
   "key.metronome": e("C", "spec:4"),
+  "key.toStart": e("Home", "spec:4"),
+  "key.loop": e("L", "spec:4"),
+  "key.quantize": e("Q", "spec:4"),
+  "key.toolSelect": e("1", "spec:4"),
+  "key.toolDraw": e("2", "spec:4"),
+  "key.toolErase": e("3", "spec:4"),
   // 曲の名前の一覧のキー（Mod の読みかえは拡大率の一覧と同じ）。
   "key.newSong": e("N", "spec:4"),
   "key.openSong": e("O", "spec:4"),
@@ -527,6 +533,69 @@ export const texts = {
   "pr.switchOn": e("踏む", "mock:R3-Lanes"),
   // 「そのほかの CC」の一覧の行と、えらんだ番号の帯の名前。
   "pr.ccNumber": e("CC {number}", "user:2026-11-15", { number: "7" }),
+  // 上のメニューの行と右クリックの一覧（ヤチヨさんの決め 2026-11-18。design-notes B-59 ・ 60）。右クリックの一覧も同じ行の名前を使う。
+  "menu.file": e("ファイル", "user:2026-11-18"),
+  "menu.edit": e("編集", "user:2026-11-18"),
+  "menu.view": e("表示", "user:2026-11-18"),
+  "menu.play": e("再生", "user:2026-11-18"),
+  "menu.notes": e("ノート", "user:2026-11-18"),
+  "menu.track": e("トラック", "user:2026-11-18"),
+  "menu.newSong": e("新しい曲", "user:2026-11-18"),
+  "menu.openSong": e("ひらく…", "user:2026-11-18"),
+  "menu.save": e("保存", "user:2026-11-18"),
+  "menu.saveAs": e("名前をつけて保存…", "user:2026-11-18"),
+  "menu.export": e("書き出し…", "user:2026-11-18"),
+  "menu.audioSettings": e("音の設定…", "user:2026-11-18"),
+  "menu.quit": e("meloet を終わる", "user:2026-11-18"),
+  "menu.undo": e("取り消す", "user:2026-11-18"),
+  "menu.redo": e("やりなおす", "user:2026-11-18"),
+  "menu.cut": e("切り取り", "user:2026-11-18"),
+  "menu.copy": e("コピー", "user:2026-11-18"),
+  "menu.paste": e("貼りつけ", "user:2026-11-18"),
+  "menu.duplicate": e("複製", "user:2026-11-18"),
+  "menu.delete": e("消す", "user:2026-11-18"),
+  "menu.selectAll": e("ぜんぶ選ぶ", "user:2026-11-18"),
+  "menu.goArrange": e("アレンジへ", "user:2026-11-18"),
+  "menu.pianoRoll": e("ピアノロール", "user:2026-11-18"),
+  "menu.mixer": e("ミキサー", "user:2026-11-18"),
+  "menu.history": e("取り消しの履歴", "user:2026-11-18"),
+  "menu.shelf": e("棚", "user:2026-11-18"),
+  "menu.params": e("パラメータ", "user:2026-11-18"),
+  "menu.zoomIn": e("横に拡大", "user:2026-11-18"),
+  "menu.zoomOut": e("横に縮小", "user:2026-11-18"),
+  "menu.zoomRowsIn": e("縦に拡大", "user:2026-11-18"),
+  "menu.zoomRowsOut": e("縦に縮小", "user:2026-11-18"),
+  "menu.scale": e("拡大率", "user:2026-11-18"),
+  "menu.playStart": e("再生", "user:2026-11-18"),
+  "menu.stop": e("停止", "user:2026-11-18"),
+  "menu.record": e("録音", "user:2026-11-18"),
+  "menu.toStart": e("先頭へ", "user:2026-11-18"),
+  "menu.loop": e("ループ", "user:2026-11-18"),
+  "menu.metronome": e("メトロノーム", "user:2026-11-18"),
+  "menu.countIn": e("カウントイン", "user:2026-11-18"),
+  "menu.tools": e("道具", "user:2026-11-18"),
+  "menu.quantize": e("クオンタイズ", "user:2026-11-18"),
+  "menu.unquantize": e("もとの位置へ戻す", "user:2026-11-18"),
+  "menu.grid": e("グリッド", "user:2026-11-18"),
+  "menu.triplet": e("三連符", "user:2026-11-18"),
+  "menu.scaleLock": e("スケール固定", "user:2026-11-18"),
+  "menu.mute": e("ミュート", "user:2026-11-18"),
+  "menu.solo": e("ソロ", "user:2026-11-18"),
+  "menu.arm": e("録音待機", "user:2026-11-18"),
+  "menu.nextTake": e("次のテイク", "user:2026-11-18"),
+  "menu.prevTake": e("前のテイク", "user:2026-11-18"),
+  "menu.addTrack": e("トラックを足す", "user:2026-11-18"),
+  "menu.openInPianoRoll": e("ピアノロールでひらく", "user:2026-11-18"),
+  // ベロシティ固定（B-66）とベロシティをまとめて変える（B-67）。
+  "input.velocityFixed": e("固定", "user:2026-11-18"),
+  "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),
+
+  // ---- 区切り1 で画面の係が足す文は、ここから下に（ピアノロールの係はこの段、アレンジと再生まわりの係は次の段）。
+  // [ピアノロール]
+
+  // [アレンジ ・ 再生まわり ・ 入力計]
+
+  // [メニュー ・ キー]
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;
@@ -597,6 +666,8 @@ export const terms: readonly Term[] = [
   st("サンプルレート", "1 秒を何こまに分けて音を記録するか。48000 Hz がふつう。"),
   st("書き出し", "曲を 1 つの音のファイルにすること。"),
   { term: "仮の音", description: "本物のピアノの音が入るまでの、かわりの音。", source: "user:2026-11-14" },
+  { term: "ベロシティ固定", description: "鍵盤をどの強さで押しても、決めた強さで鳴らして録る。書く道具のノートも同じ強さになる。", source: "user:2026-11-18" },
+  { term: "取り消しの履歴", description: "これまでにした手の一覧。どこまで取り消したかが見える。", source: "user:2026-11-18" },
 ];
 
 /** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */

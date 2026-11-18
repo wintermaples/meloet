@@ -53,7 +53,7 @@
   {#each SCALES as s, i (s)}
     {@const usable = !unfit.includes(s)}
     <button
-      class="m-plain row"
+      class="m-plain row m-focus-in"
       class:unusable={!usable}
       role="menuitemradio"
       aria-checked={s === scale}
@@ -100,6 +100,18 @@
   }
   .row:last-child {
     border-bottom: 0;
+  }
+  /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は行の内がわに描き、
+     「選んだ行」（地 gray.4 ・ 左 line.mark の accent）とまざらないようにする（docs/design-notes.md A-6）。 */
+  .row:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .row:hover:not(:disabled) :global(.m-lbl) {
+    color: var(--color-gray-10);
+  }
+  .row:active:not(:disabled) {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .row:disabled {
     cursor: default;

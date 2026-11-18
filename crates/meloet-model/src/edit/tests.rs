@@ -34,6 +34,7 @@ fn two_tracks() -> Doc {
         color: TrackColor::for_index(1),
         instrument: InstrumentRef::Placeholder,
         gain_db: 0.0,
+        muted: false,
         clips: Vec::new(),
     }));
     doc
@@ -352,4 +353,53 @@ fn tempo_and_meter() {
         }
     );
     assert_eq!(set_meter(&doc, Meter::FOUR_FOUR), Err(EditError::Unchanged));
+}
+
+#[test]
+fn muting_a_track() {
+    let doc = two_tracks();
+    let e = toggle_mute(&doc, T2).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::Mute {
+            track: T2,
+            muted: true
+        }
+    );
+    assert!(e.doc.track(T2).unwrap().muted);
+    assert!(
+        Arc::ptr_eq(&doc.tracks[0], &e.doc.tracks[0]),
+        "the other track is shared"
+    );
+    let back = toggle_mute(&e.doc, T2).unwrap();
+    assert_eq!(
+        back.step,
+        StepKind::Mute {
+            track: T2,
+            muted: false
+        }
+    );
+    assert_eq!(back.doc, doc);
+    assert_eq!(
+        toggle_mute(&doc, TrackId(9)),
+        Err(EditError::NoSuchTrack(TrackId(9)))
+    );
+}
+
+#[test]
+fn which_tracks_play() {
+    let doc = toggle_mute(&two_tracks(), T2).unwrap().doc;
+    let plays = |soloed: &[TrackId]| {
+        let soloed = soloed.iter().copied().collect();
+        [T1, T2].map(|t| doc.plays(doc.track(t).unwrap(), &soloed))
+    };
+    assert_eq!(plays(&[]), [true, false]);
+    assert_eq!(plays(&[T1]), [true, false]);
+    assert_eq!(plays(&[T2]), [false, false], "mute beats solo");
+    assert_eq!(plays(&[T1, T2]), [true, false]);
+    assert_eq!(
+        plays(&[TrackId(9)]),
+        [true, false],
+        "a track not in the song is no solo"
+    );
 }

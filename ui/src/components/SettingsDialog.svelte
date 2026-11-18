@@ -226,7 +226,7 @@
                 <span class="mono strong value">{app.audio.outputDevice ?? ""}</span>
               </div>
               <div class="line">
-                <span class="label field">{t("settings.midiInput")}</span>
+                <span class="label field" use:term={"MIDI"}>{t("settings.midiInput")}</span>
                 <span class="mono strong value">{app.audio.midiInput ?? ""}</span>
               </div>
               <div class="line">

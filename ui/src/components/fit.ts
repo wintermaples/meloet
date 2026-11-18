@@ -3,8 +3,11 @@
 
 import { line, space, text } from "../design/tokens";
 
-/** 引っこめる順（仕様書 1 章 (1)）。 */
-const TRANSPORT_ORDER = ["songName", "load", "countIn", "positionLabels"] as const;
+/**
+ * 引っこめる順（仕様書 1 章 (1)）。ボタンの右はしのキー（4 章「キーは、帯札やボタンの右はしに小さく書いて見せる」）は、
+ * それより前に引っこめる（docs/design-notes.md B-73）。
+ */
+const TRANSPORT_ORDER = ["keys", "songName", "load", "countIn", "positionLabels"] as const;
 export type TransportPart = (typeof TRANSPORT_ORDER)[number];
 export type TransportParts = Record<TransportPart, boolean>;
 
@@ -21,17 +24,37 @@ export type TransportWidths = { base: number } & Record<TransportPart, number>;
  */
 export type TransportStubs = Partial<Record<TransportPart, number>>;
 
-/** 出す物の組。available は再生まわりの使える幅（CSS px）。入るまで、仕様書の順に引っこめる。 */
-export function transportParts(available: number, widths: TransportWidths, stubs: TransportStubs = {}): TransportParts {
-  const shown: TransportParts = { songName: true, load: true, countIn: true, positionLabels: true };
+/** order の順に、available に入るまで引っこめる。widths は base と、部品ごとのふえる幅。stubs は引っこめたあとに残す物の幅。 */
+function foldParts<K extends string>(
+  order: readonly K[],
+  available: number,
+  widths: { base: number } & Record<K, number>,
+  stubs: Partial<Record<K, number>>,
+): Record<K, boolean> {
+  const shown = Object.fromEntries(order.map((k) => [k, true])) as Record<K, boolean>;
   let need = widths.base;
-  for (const k of TRANSPORT_ORDER) need += widths[k];
-  for (const k of TRANSPORT_ORDER) {
+  for (const k of order) need += widths[k];
+  for (const k of order) {
     if (need <= available) break;
     shown[k] = false;
     need -= widths[k] - (stubs[k] ?? 0);
   }
   return shown;
+}
+
+/** 出す物の組。available は再生まわりの使える幅（CSS px）。入るまで、仕様書の順に引っこめる。 */
+export function transportParts(available: number, widths: TransportWidths, stubs: TransportStubs = {}): TransportParts {
+  return foldParts(TRANSPORT_ORDER, available, widths, stubs);
+}
+
+/** ピアノロールの道具の列で引っこめる順: 道具のキー、クリップの文（モック F-PR150）。 */
+const TOOLBAR_ORDER = ["keys", "info"] as const;
+export type ToolbarPart = (typeof TOOLBAR_ORDER)[number];
+export type ToolbarParts = Record<ToolbarPart, boolean>;
+
+/** ピアノロールの道具の列。widths は再生まわりと同じ形（base は、いつも出す物）。 */
+export function toolbarParts(available: number, widths: { base: number } & Record<ToolbarPart, number>): ToolbarParts {
+  return foldParts(TOOLBAR_ORDER, available, widths, {});
 }
 
 /** IBM Plex Mono の 1 字の送り（文字の大きさを 1 として）。 */

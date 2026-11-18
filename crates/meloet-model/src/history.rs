@@ -33,6 +33,11 @@ pub enum StepKind {
         from: Meter,
         to: Meter,
     },
+    /// M; `muted`: the track is muted after the step.
+    Mute {
+        track: TrackId,
+        muted: bool,
+    },
     /// The write tool. `clip_made`: the clip was made for the note.
     WriteNote {
         clip: ClipId,

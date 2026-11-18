@@ -299,14 +299,16 @@ fn shell_request(
             (pcwindow::Pick::SongFile, folder)
         }
         ShellRequest::PickFolder { folder } => (pcwindow::Pick::Folder, folder),
+        ShellRequest::PickSaveAs { folder, name } => (pcwindow::Pick::SaveAs { name }, folder),
     };
     let answer = {
-        let core = core.clone();
+        let (core, pick) = (core.clone(), pick.clone());
         move |path| {
             if let Some(core) = core.upgrade() {
                 match pick {
                     pcwindow::Pick::SongFile => core.song_file_picked(path),
                     pcwindow::Pick::Folder => core.folder_picked(path),
+                    pcwindow::Pick::SaveAs { .. } => core.save_as_picked(path),
                 }
             }
         }

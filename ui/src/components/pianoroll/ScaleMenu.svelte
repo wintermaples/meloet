@@ -59,7 +59,7 @@
 {#snippet group(heading: string, rows: Row[])}
   <div class="head"><span class="m-lbl">{heading}</span></div>
   {#each rows as row (row.label)}
-    <button class="m-plain row" role="menuitemradio" aria-checked={row.selected} onclick={() => onpick(row.root, row.mode)}>
+    <button class="m-plain row m-focus-in" role="menuitemradio" aria-checked={row.selected} onclick={() => onpick(row.root, row.mode)}>
       <span class="choice" class:selected={row.selected}><span class="dot"></span></span>
       <span class="label m-num">{row.label}</span>
     </button>
@@ -99,6 +99,18 @@
     padding: 0 var(--space-3);
     border-bottom: var(--line-hair) solid var(--color-gray-4);
     white-space: nowrap;
+  }
+  /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は行の内がわに描き、
+     「選んだ行」（地 gray.4 ・ 左 line.mark の accent）とまざらないようにする（docs/design-notes.md A-6）。 */
+  .row:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .row:hover:not(:disabled) :global(.m-lbl) {
+    color: var(--color-gray-10);
+  }
+  .row:active:not(:disabled) {
+    background: var(--color-gray-2);
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .choice {
     flex-shrink: 0;

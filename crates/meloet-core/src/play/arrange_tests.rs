@@ -207,26 +207,6 @@ fn nothing_changes_clips_while_recording() {
     assert_eq!(clips(m)[0].end, c.end - 10);
 }
 
-/// Protocol 8 commands taken in before they are acted on: nothing breaks, nothing changes.
-#[test]
-fn the_new_commands_of_protocol_8_are_taken_in() {
-    let (mut m, _) = one_clip();
-    let m = &mut m;
-    let before = m.view();
-    for command in [
-        Command::ToggleMute { track: 1 },
-        Command::ToggleSolo { track: 1 },
-        Command::SetVelocityFixed { on: true, value: 0 },
-        Command::SaveSongAs,
-    ] {
-        cmd(m, command);
-    }
-    let after = m.view();
-    assert_eq!(after.song.tracks, before.song.tracks);
-    assert_eq!(after.song.undo_count, before.song.undo_count);
-    assert_eq!(after.keyboards, before.keyboards);
-}
-
 /// Track 1: a over bar 1, b over bar 5. Track 2: c over bar 3. Nothing selected.
 fn three_clips() -> (Play, ClipId, ClipId, ClipId) {
     use meloet_model::edit::{NewTake, add_recording};
@@ -239,6 +219,7 @@ fn three_clips() -> (Play, ClipId, ClipId, ClipId) {
         color: TrackColor::for_index(1),
         instrument: InstrumentRef::Placeholder,
         gain_db: 0.0,
+        muted: false,
         clips: Vec::new(),
     }));
     let mut ids = Vec::new();

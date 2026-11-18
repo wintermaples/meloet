@@ -90,6 +90,10 @@
   .shown {
     color: var(--color-gray-10);
   }
+  /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）。読み値の大きさを変えないよう、枠は外がわに重ねて描く。 */
+  .shown:hover {
+    box-shadow: 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
   /* 入力の枠: 高さ 24、地 gray.0、角 1。打っている最中は「押した」と同じ枠 gray.8。 */
   .field {
     box-sizing: border-box;

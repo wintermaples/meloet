@@ -111,13 +111,17 @@ pub enum EngineOp {
         track: usize,
         events: Vec<PlayEvent>,
     },
-    /// Sounds a key on the track at this index, and stops the key it sounded before.
+    /// Sounds keys on the track at this index, and stops the keys it sounded before.
     Audition {
         track: usize,
-        key: u8,
+        keys: Vec<u8>,
         velocity: u8,
     },
     AuditionOff,
+    /// The indexes of the tracks whose clips do not play (mute and solo).
+    SilentTracks {
+        tracks: Vec<usize>,
+    },
 }
 
 /// Selected notes and control points: indexes, in order, into the notes and the controls of
@@ -290,6 +294,8 @@ pub struct Play {
     /// A second version that matches the file: after "戻さない", the song as saved is both the
     /// version before the recovered step and the one after "戻さない".
     saved_too: Option<u64>,
+    /// What the engine was last told by `EngineOp::SilentTracks`.
+    silent_sent: Vec<usize>,
 }
 
 impl Play {
@@ -323,6 +329,7 @@ impl Play {
             unsaved_anyway: false,
             changes: 0,
             saved_too: None,
+            silent_sent: Vec::new(),
         }
     }
 
@@ -1028,6 +1035,7 @@ impl Play {
                 events: track_events(doc, t.id),
             }));
         }
+        self.send_silent(effects);
     }
 
     /// The stream is gone: stops where the listener was. A recording keeps what was played up
@@ -1908,17 +1916,27 @@ impl Play {
         }
     }
 
-    /// The write tool sounds the key on the track the keys play: not a key it may not write
-    /// (outside the locked scale), and nothing without an output.
-    pub fn audition(&self, key: u8, velocity: u8, open: bool, effects: &mut Vec<Effect>) {
-        let scale = self.song.session.roll.scale;
-        if !open || key > 127 || (scale.lock && !scale.contains(key)) {
+    /// The piano roll sounds keys on the track the keys play, in place of what it sounded: not
+    /// keys it may not write (outside the locked scale), and nothing without an output. No keys
+    /// only stops; keys all left out change nothing.
+    pub fn audition(&self, keys: &[u8], velocity: u8, open: bool, effects: &mut Vec<Effect>) {
+        if !open {
+            return;
+        }
+        if keys.is_empty() {
+            self.audition_off(open, effects);
+            return;
+        }
+        // Every key sounds, also outside a locked scale: the keys column and the notes are heard
+        // as they are (B-62). The write tool does not press outside the scale on its own.
+        let keys: Vec<u8> = keys.iter().copied().filter(|&k| k <= 127).collect();
+        if keys.is_empty() {
             return;
         }
         if let Some(track) = self.track_index(self.song.session.play_target) {
             effects.push(Effect::Engine(EngineOp::Audition {
                 track,
-                key,
+                keys,
                 velocity: velocity.clamp(1, 127),
             }));
         }
@@ -1984,6 +2002,8 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
     }
     out
 }
+
+mod mix;
 
 #[cfg(test)]
 mod arrange_tests;

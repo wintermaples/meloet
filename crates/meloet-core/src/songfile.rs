@@ -3,7 +3,7 @@
 //!
 //! The shape lives here and not in `meloet-model`, which stays free of serde and files.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -92,6 +92,10 @@ struct TrackFile {
     color: u8,
     instrument: InstrumentFile,
     gain_db: f64,
+    /// Left out when off: a song with no muted track is written as before, and a meloet of
+    /// the same version that does not know the field skips it (an unknown field).
+    #[serde(default, skip_serializing_if = "is_false")]
+    muted: bool,
     clips: Vec<ClipFile>,
     #[serde(default)]
     plugins: Vec<serde_json::Value>,
@@ -235,6 +239,10 @@ enum AlignFile {
     StartAndEnd,
 }
 
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
 /// A value of a shape this meloet does not know is read as `None`, not as a broken song.
 fn or_default<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Option<T>, D::Error> {
     let value = serde_json::Value::deserialize(d)?;
@@ -264,6 +272,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
                 InstrumentRef::Placeholder => InstrumentFile::Placeholder,
             },
             gain_db: t.gain_db,
+            muted: t.muted,
             clips: t
                 .clips
                 .iter()
@@ -534,6 +543,7 @@ fn to_song(file: SongFile) -> Option<Song> {
                 InstrumentFile::Placeholder => InstrumentRef::Placeholder,
             },
             gain_db: t.gain_db,
+            muted: t.muted,
             clips,
         }));
     }
@@ -576,6 +586,7 @@ fn to_song(file: SongFile) -> Option<Song> {
         },
         loop_on: s.loop_on,
         roll,
+        soloed: BTreeSet::new(),
     };
     Some(Song { doc, session })
 }

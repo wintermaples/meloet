@@ -445,6 +445,27 @@ fn dont_restore_is_the_second_step_and_undo_goes_back_through_both() {
 }
 
 #[test]
+fn the_serial_goes_up_on_coming_back_and_on_dont_restore_but_not_with_undo() {
+    let (dir, songs) = (
+        temp_dir("recovery-serial"),
+        temp_dir("recovery-serial-songs"),
+    );
+    saved_then_changed(&dir, &songs);
+    let first = ready().view().song.serial;
+    let (mut m, _) = start_from(&dir);
+    let m = &mut m;
+    let serial = |m: &Model| m.view().song.serial;
+    assert_eq!(serial(m), first + 1);
+    cmd(m, Command::DiscardRecovered);
+    assert_eq!(serial(m), first + 2);
+    cmd(m, Command::Undo);
+    cmd(m, Command::Undo);
+    cmd(m, Command::Redo);
+    assert_eq!(serial(m), first + 2);
+    let _ = (fs::remove_dir_all(dir), fs::remove_dir_all(songs));
+}
+
+#[test]
 fn a_new_song_never_saved_comes_back_and_dont_restore_empties_it() {
     let dir = temp_dir("recovery-new");
     let m = &mut ready();

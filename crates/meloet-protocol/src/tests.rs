@@ -12,6 +12,7 @@ fn ui_dir() -> PathBuf {
 fn sample_state() -> AppState {
     AppState {
         song: SongView {
+            serial: 1,
             name: "はじめての曲".into(),
             tempo_bpm: 96.0,
             meter_num: 4,

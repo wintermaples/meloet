@@ -241,6 +241,7 @@ export function fakeState(): AppState {
   const bands = new FakeBands(800);
   return {
     song: {
+      serial: 1,
       name: "はじめての曲",
       tempoBpm: 96,
       meterNum: 4,

@@ -291,6 +291,9 @@ pub struct Play {
     unsaved_anyway: bool,
     /// Goes up whenever the `Doc` changes or another song takes its place.
     changes: u64,
+    /// Goes up whenever another `Doc` is put in from outside the history (another song, or
+    /// "戻さない"): take ids start again per song, so the screen lets go of the takes it kept.
+    serial: u32,
     /// A second version that matches the file: after "戻さない", the song as saved is both the
     /// version before the recovered step and the one after "戻さない".
     saved_too: Option<u64>,
@@ -328,6 +331,7 @@ impl Play {
             had_clip: false,
             unsaved_anyway: false,
             changes: 0,
+            serial: 0,
             saved_too: None,
             silent_sent: Vec::new(),
         }
@@ -1322,6 +1326,7 @@ impl Play {
         let old_tracks = self.song.doc.tracks.len();
         self.song = song;
         self.changes += 1;
+        self.serial += 1;
         self.history = History::new();
         self.unsaved_anyway = unsaved;
         self.saved_too = None;
@@ -1368,6 +1373,7 @@ impl Play {
             return;
         }
         self.unsaved_anyway = false;
+        self.serial += 1;
         self.apply(
             Edit {
                 doc: saved,
@@ -1389,6 +1395,11 @@ impl Play {
     /// Goes up whenever the `Doc` changes or another song takes its place.
     pub fn changes(&self) -> u64 {
         self.changes
+    }
+
+    /// See `SongView::serial`.
+    pub fn serial(&self) -> u32 {
+        self.serial
     }
 
     #[cfg(test)]

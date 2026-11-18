@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -614,6 +614,9 @@ impl AppState {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SongView {
+    /// Goes up each time core puts another song in place (new, open, recovery, "戻さない"),
+    /// not on undo or redo. Take ids are per song: keep takes by (serial, id).
+    pub serial: u32,
     pub name: String,
     pub tempo_bpm: f64,
     pub meter_num: u8,

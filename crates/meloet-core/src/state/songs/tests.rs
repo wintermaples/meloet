@@ -635,3 +635,39 @@ fn closing_while_recording_stops_and_keeps_the_take_first() {
     let saved = songfile::read(&w.songs.join("はじめての曲/はじめての曲.meloet")).unwrap();
     assert_eq!(saved.doc.tracks[0].clips.len(), 1);
 }
+
+fn serial(m: &Model) -> u32 {
+    m.view().song.serial
+}
+
+#[test]
+fn the_serial_goes_up_with_each_song_put_in_and_not_with_undo() {
+    let w = &mut World::new("flow-serial");
+    let m = &mut ready();
+    let first = serial(m);
+    busy_song(m);
+    cmd(m, Command::Undo);
+    cmd(m, Command::Redo);
+    w.cmd(m, Command::SaveSong);
+    assert_eq!(serial(m), first, "steps, undo, redo and saving keep it");
+    let path = m.song_path().unwrap().to_path_buf();
+
+    w.cmd(m, Command::NewSong);
+    assert_eq!(serial(m), first + 1);
+
+    w.pick_file = Some(path);
+    w.cmd(m, Command::OpenSong);
+    assert_eq!(serial(m), first + 2);
+    cmd(m, Command::SetTempo { bpm: 97.0 });
+    cmd(m, Command::Undo);
+    assert_eq!(serial(m), first + 2);
+
+    let path = write_two_versions(&w.songs);
+    fs::write(&path, b"{").unwrap();
+    w.pick_file = Some(path);
+    w.cmd(m, Command::OpenSong);
+    assert_eq!(dialog(m).map(|d| d.previous), Some(true));
+    assert_eq!(serial(m), first + 2, "a broken file puts nothing in");
+    w.answer(m, SongAnswer::OpenPrevious);
+    assert_eq!(serial(m), first + 3);
+}

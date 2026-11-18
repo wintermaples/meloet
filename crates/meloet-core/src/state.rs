@@ -1337,6 +1337,7 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
     let song = play.song();
     let doc = &song.doc;
     SongView {
+        serial: play.serial(),
         name: doc.name.clone(),
         tempo_bpm: doc.tempo.bpm(),
         meter_num: doc.meter.num(),

@@ -196,21 +196,39 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
     });
   });
 
-  it("離したとき: 動かしていれば setLoop、押すだけなら locate（小節の頭に寄せるのは Rust）", () => {
+  it("離したとき: 動かしていれば setLoop、押すだけなら locate（step が null なら吸いつかない）", () => {
     const d = G.startRulerDrag(v, 256, BAR, null, 8);
-    expect(G.rulerCommand(d, v, 256, 512, BAR, 4)).toEqual({
+    expect(G.rulerCommand(d, v, 256, 512, BAR, 4, BAR)).toEqual({
       type: "setLoop",
       fromBar: 5,
       toBar: 9,
     });
-    expect(G.rulerCommand(d, v, 300, 302, BAR, 4)).toEqual({
+    expect(G.rulerCommand(d, v, 300, 302, BAR, 4, null)).toEqual({
       type: "locate",
       tick: 9000,
     });
-    expect(G.rulerCommand(d, view(64), 0, 0, BAR, 4)).toEqual({
+    expect(G.rulerCommand(d, view(64), 0, 0, BAR, 4, null)).toEqual({
       type: "locate",
       tick: 1920,
     });
+  });
+
+  it("押すだけの locate は、目盛に見えている線に吸いつく（B-61）: 近いほうの小節の頭、拡大すると拍", () => {
+    const d = G.startRulerDrag(v, 256, BAR, null, 8);
+    // 300 px = 9000 ティック。小節きざみなら 5 小節目の頭（7680）と 6 小節目の頭（9600）の近いほう。
+    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, BAR)).toEqual({ type: "locate", tick: 9600 });
+    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, 480)).toEqual({ type: "locate", tick: 9120 });
+    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, 2 * BAR)).toEqual({ type: "locate", tick: 7680 });
+  });
+
+  it("吸いつくきざみ: ふだんは 1 小節、番号を間引けば番号おき、1 拍が番号の間より広ければ拍", () => {
+    expect(G.rulerStep(64, BAR, 480, 1, 32)).toBe(BAR);
+    expect(G.rulerStep(16, BAR, 480, 2, 32)).toBe(2 * BAR);
+    expect(G.rulerStep(8, BAR, 480, 4, 32)).toBe(4 * BAR);
+    expect(G.rulerStep(127, BAR, 480, 1, 32)).toBe(BAR);
+    expect(G.rulerStep(128, BAR, 480, 1, 32)).toBe(480);
+    // 6/8 は 1 拍が 8 分音符（240）。
+    expect(G.rulerStep(192, 1440, 240, 1, 32)).toBe(240);
   });
 
   it("ループの範囲（ティック）→ 小節の線の番号", () => {

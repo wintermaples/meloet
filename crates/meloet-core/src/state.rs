@@ -12,11 +12,11 @@ use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
 use meloet_model::{InstrumentRef, Note, Song};
 use meloet_protocol::{
-    AppState, AudioView, Availability, Band, ChooserView, ChosenState, ClipEdge, Command,
-    EndpointView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView,
-    LayoutView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, NoteField,
-    OutputsView, QuantizeSettings, RecoveryCause, SettingsDialogView, SongFile, SongView,
-    StatusMessage, StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
+    Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
+    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, QuantizeSettings,
+    RecoveryCause, SettingsDialogView, SongFile, SongView, StatusMessage, StatusView, TrackView,
+    Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
@@ -105,6 +105,9 @@ pub enum Input {
     SongFilePicked(Option<PathBuf>),
     /// The answer to [`Effect::PickFolder`]; `None` when it was put away.
     FolderPicked(Option<PathBuf>),
+    /// The answer to [`Effect::PickSaveAs`]: the folder and name typed, as one path. `None`
+    /// when it was put away.
+    SaveAsPicked(Option<PathBuf>),
     /// An answer to [`Effect::SaveSong`]: the song as it is now is in `path`, named `name`.
     SongSaved {
         path: PathBuf,
@@ -169,6 +172,10 @@ pub enum Effect {
     PickSongFile,
     /// The PC's folder window. Answer with [`Input::FolderPicked`].
     PickFolder,
+    /// The PC's save window, with `name` filled in. Answer with [`Input::SaveAsPicked`].
+    PickSaveAs {
+        name: String,
+    },
     /// Read the song at `path`, or with `previous` the copy kept beside it. Answer with
     /// [`Input::SongRead`] or [`Input::SongUnreadable`].
     ReadSong {
@@ -251,6 +258,8 @@ pub struct Model {
     recovery: recovery::Recovery,
     /// The time given with `set_now`, µs.
     now_us: u64,
+    /// A meloet setting, not part of the song.
+    velocity_fixed: VelocityFixed,
 }
 
 struct OpenStream {
@@ -302,6 +311,10 @@ impl Model {
             files: songs::Files::default(),
             recovery: recovery::Recovery::default(),
             now_us: 0,
+            velocity_fixed: VelocityFixed {
+                on: settings.velocity_fixed,
+                value: settings.fixed_velocity.clamp(1, 127),
+            },
         }
     }
 
@@ -438,6 +451,7 @@ impl Model {
             Input::CloseRequested
             | Input::SongFilePicked(_)
             | Input::FolderPicked(_)
+            | Input::SaveAsPicked(_)
             | Input::SongSaved { .. }
             | Input::SongNotSaved
             | Input::SongRead { .. }
@@ -465,6 +479,7 @@ impl Model {
             }
         }
         self.watch_buffer();
+        self.play.sync_silent(&mut effects);
         self.close_when_recorded(&mut effects);
         self.recovery_tick(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
@@ -714,17 +729,29 @@ impl Model {
             Command::SetLoop { from_bar, to_bar } => self.play.set_loop(from_bar, to_bar, effects),
             Command::ToggleArm { track } => self.play.toggle_arm(track),
             Command::SelectClip { clip } => self.play.select_clip(clip),
-            // Protocol 8: taken in, not yet acted on (the next part of round 3b).
-            Command::SelectTrack { .. }
-            | Command::ToggleMute { .. }
-            | Command::ToggleSolo { .. }
-            | Command::SelectClips { .. }
-            | Command::SelectAllClips
-            | Command::CopyClips { .. }
-            | Command::CutClips { .. }
-            | Command::PasteClips { .. }
-            | Command::SetVelocityFixed { .. }
-            | Command::SaveSongAs => {}
+            Command::SelectTrack { track } => self.play.select_track(track),
+            Command::SelectClips { clips, mode } => self.play.select_clips(clips, mode),
+            Command::SelectAllClips => self.play.select_all_clips(),
+            Command::CopyClips { clips } => self.play.copy_clips(&clips),
+            Command::CutClips { clips } => self.play.cut_clips(&clips, effects),
+            Command::PasteClips { to } => {
+                if let Some(n) = self.play.paste_clips(to, effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Command::ToggleMute { track } => self.play.toggle_mute(track, effects),
+            Command::ToggleSolo { track } => self.play.toggle_solo(track),
+            Command::SetVelocityFixed { on, value } => {
+                let fixed = VelocityFixed {
+                    on,
+                    value: value.clamp(1, 127),
+                };
+                if fixed != self.velocity_fixed {
+                    self.velocity_fixed = fixed;
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
+            Command::SaveSongAs => self.save_song_as(effects),
             Command::Quit => self.close_requested(effects),
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
@@ -771,12 +798,7 @@ impl Model {
                 notes,
                 edge,
                 ticks,
-            } => {
-                // The start edge (B-69) is not acted on yet.
-                if edge == ClipEdge::End {
-                    self.play.resize_notes(take, &notes, ticks, effects);
-                }
-            }
+            } => self.play.resize_notes(take, &notes, edge, ticks, effects),
             Command::DeleteNotes { take, notes } => self.play.delete_notes(take, &notes, effects),
             Command::ChangeVelocity { take, notes, delta } => {
                 self.play.change_velocity(take, &notes, delta, effects);
@@ -801,11 +823,9 @@ impl Model {
                 swing,
                 align,
             }),
-            // Only the first key sounds for now; the engine sounds one key at a time.
-            Command::Audition { keys, velocity } => match keys.first() {
-                Some(&key) => self.play.audition(key, velocity, can_play, effects),
-                None => self.play.audition_off(can_play, effects),
-            },
+            Command::Audition { keys, velocity } => {
+                self.play.audition(&keys, velocity, can_play, effects);
+            }
             Command::AuditionOff => self.play.audition_off(can_play, effects),
             Command::Quantize { take, notes } => {
                 if let Some(n) = self.play.quantize(take, &notes, effects) {
@@ -821,14 +841,11 @@ impl Model {
             } => self
                 .play
                 .set_notes_field(take, &notes, field, value, effects),
-            // Not yet said in the status line (`VelocityMatched`).
-            Command::MatchVelocity { take, notes, value } => self.play.set_notes_field(
-                take,
-                &notes,
-                NoteField::Velocity,
-                i64::from(value),
-                effects,
-            ),
+            Command::MatchVelocity { take, notes, value } => {
+                if let Some(n) = self.play.match_velocity(take, &notes, value, effects) {
+                    self.notice = Some(n);
+                }
+            }
             Command::SelectControls { take, points, mode } => {
                 self.play.select_controls(take, points, mode);
             }
@@ -849,22 +866,19 @@ impl Model {
             Command::DeleteControls { take, points } => {
                 self.play.delete_controls(take, &points, effects);
             }
-            // One clip at a time for now: more than one is not acted on yet.
             Command::MoveClips {
                 clips,
                 ticks,
                 tracks,
                 copy,
             } => {
-                if let [clip] = clips[..]
-                    && let Some(track) = self.play.track_rows_away(clip, tracks)
-                {
-                    self.play.move_clip(clip, ticks, track, copy, effects);
+                if let Some(n) = self.play.move_clips(&clips, ticks, tracks, copy, effects) {
+                    self.notice = Some(n);
                 }
             }
             Command::DuplicateClips { clips } => {
-                if let [clip] = clips[..] {
-                    self.play.duplicate_clip(clip, effects);
+                if let Some(n) = self.play.duplicate_clips(&clips, effects) {
+                    self.notice = Some(n);
                 }
             }
             Command::TrimClip { clip, edge, ticks } => {
@@ -1032,7 +1046,14 @@ impl Model {
             scale: self.scale,
             metronome: self.play.metronome(),
             count_in_bars: self.play.count_in_bars(),
+            velocity_fixed: self.velocity_fixed.on,
+            fixed_velocity: self.velocity_fixed.value,
         }
+    }
+
+    /// The velocity every key played takes now, if it is fixed.
+    pub fn fixed_velocity(&self) -> Option<u8> {
+        self.velocity_fixed.on.then_some(self.velocity_fixed.value)
     }
 
     /// No clip has been in the song yet, the chosen output plays, nothing is being recorded, and
@@ -1138,10 +1159,7 @@ impl Model {
                 active: self.active_keyboard().map(|k| k.id.clone()),
                 lost: self.lost.clone(),
                 input_stopped: self.midi_restarting.is_some(),
-                velocity_fixed: VelocityFixed {
-                    on: false,
-                    value: meloet_protocol::DEFAULT_FIXED_VELOCITY,
-                },
+                velocity_fixed: self.velocity_fixed,
             },
             outputs: OutputsView {
                 list: self.outputs().iter().map(endpoint_view).collect(),
@@ -1319,6 +1337,7 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
     let song = play.song();
     let doc = &song.doc;
     SongView {
+        serial: play.serial(),
         name: doc.name.clone(),
         tempo_bpm: doc.tempo.bpm(),
         meter_num: doc.meter.num(),
@@ -1339,8 +1358,8 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
                 },
                 gain_db: t.gain_db as f32,
                 armed: song.session.armed == Some(t.id),
-                muted: false,
-                soloed: false,
+                muted: t.muted,
+                soloed: play.is_soloed(t.id),
                 clips: play.clips_of(t.id),
             })
             .collect(),

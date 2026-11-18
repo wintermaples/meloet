@@ -34,6 +34,8 @@ pub enum EditError {
     OutOfClip,
     /// A clip would overlap another clip of its track.
     Overlap,
+    /// A clip would go above the first track, below the last, or past [`MAX_TICK`].
+    OffTheSong,
 }
 
 /// No clip ends after this, so that every song position of a take fits in an `i64`.
@@ -239,8 +241,8 @@ pub fn switch_take(doc: &Doc, clip: ClipId, index: usize) -> Result<Edit, EditEr
     })
 }
 
-/// Removes the clips, all or none.
-pub fn delete_clips(doc: &Doc, ids: &[ClipId]) -> Result<Edit, EditError> {
+/// Removes the clips, all or none. `cut`: for Mod X.
+pub fn delete_clips(doc: &Doc, ids: &[ClipId], cut: bool) -> Result<Edit, EditError> {
     if ids.is_empty() {
         return Err(EditError::Unchanged);
     }
@@ -274,7 +276,7 @@ pub fn delete_clips(doc: &Doc, ids: &[ClipId]) -> Result<Edit, EditError> {
             tracks,
             ..doc.clone()
         },
-        step: StepKind::DeleteClips { count },
+        step: StepKind::DeleteClips { count, cut },
     })
 }
 
@@ -307,6 +309,24 @@ pub fn set_meter(doc: &Doc, meter: Meter) -> Result<Edit, EditError> {
             from: doc.meter,
             to: meter,
         },
+    })
+}
+
+/// Mutes the track, or lets it play again.
+pub fn toggle_mute(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    let muted = !t.muted;
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                muted,
+                ..Track::clone(t)
+            },
+        ),
+        step: StepKind::Mute { track, muted },
     })
 }
 

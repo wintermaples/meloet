@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
 
 use meloet_engine::{
-    BlockTiming, Engine, EngineCommand, EngineConfig, EngineParts, Instrument, InstrumentEvent,
-    LatencyRecord, MidiIn, PlaceholderSynth,
+    BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineParts, Instrument,
+    InstrumentEvent, LatencyRecord, MidiIn, PlaceholderSynth,
 };
 
 const RATE: usize = 48_000;
@@ -286,7 +286,7 @@ fn audition_sounds_on_its_track_until_let_go() {
     );
     rig.send(EngineCommand::Audition {
         track: 2,
-        key: 60,
+        keys: Chord::new(&[60]),
         velocity: 100,
     });
     rig.run(2048);
@@ -299,7 +299,7 @@ fn audition_sounds_on_its_track_until_let_go() {
     // The next audition lets go of the first; the off lets go of the second.
     rig.send(EngineCommand::Audition {
         track: 2,
-        key: 64,
+        keys: Chord::new(&[64]),
         velocity: 100,
     });
     rig.run(256);
@@ -310,11 +310,52 @@ fn audition_sounds_on_its_track_until_let_go() {
     // A track with no instrument is no trouble.
     rig.send(EngineCommand::Audition {
         track: 40,
-        key: 64,
+        keys: Chord::new(&[64]),
         velocity: 100,
     });
     rig.send(EngineCommand::AuditionOff);
     rig.run(256);
+}
+
+#[test]
+fn audition_sounds_a_chord_and_replaces_it() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    rig.send(EngineCommand::Audition {
+        track: 0,
+        keys: Chord::new(&[60, 64, 67]),
+        velocity: 100,
+    });
+    let chord = peak(&rig.run(4096));
+    rig.send(EngineCommand::AuditionOff);
+    rig.run(RATE);
+    rig.send(EngineCommand::Audition {
+        track: 0,
+        keys: Chord::new(&[60]),
+        velocity: 100,
+    });
+    let one = peak(&rig.run(4096));
+    assert!(
+        chord > one * 1.5,
+        "three keys are louder than one: {chord} {one}"
+    );
+    // Empty keys only let go.
+    rig.send(EngineCommand::Audition {
+        track: 0,
+        keys: Chord::new(&[]),
+        velocity: 100,
+    });
+    rig.run(RATE);
+    meters.take_track_peak(0);
+    assert_eq!(peak(&rig.run(256)), 0.0, "all let go");
+}
+
+#[test]
+fn a_chord_keeps_sixteen_keys_without_doubles() {
+    let keys: Vec<u8> = (40..70).collect();
+    assert_eq!(Chord::new(&keys).keys(), &keys[..16]);
+    assert_eq!(Chord::new(&[60, 60, 200, 61]).keys(), &[60, 61]);
+    assert!(Chord::new(&[]).keys().is_empty());
 }
 
 #[test]
@@ -560,10 +601,13 @@ fn a_thousand_blocks_with_midi_never_touch_the_allocator() {
             41 => rig.send(EngineCommand::AllNotesOff),
             47 | 71 => rig.send(EngineCommand::Audition {
                 track: block % 3,
-                key: 40 + (block % 40) as u8,
+                keys: Chord::new(&[40 + (block % 40) as u8, 47, 52, 59]),
                 velocity: 90,
             }),
             53 | 83 => rig.send(EngineCommand::AuditionOff),
+            61 | 89 => rig.send(EngineCommand::SetSilentTracks {
+                tracks: [block % 2].into_iter().collect(),
+            }),
             60 => {
                 assert!(
                     rig.parts

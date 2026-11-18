@@ -258,7 +258,16 @@ export function dragRange(drag: RulerDrag, v: View, x: number, perBar: number): 
   return { from: Math.min(at, fixed), to: Math.max(at, fixed) };
 }
 
-/** 目盛を離したときの命令。動かしていなければ、その位置へ（小節の頭に寄せるのは Rust）。 */
+/**
+ * 目盛を押したときに吸いつく線のきざみ（docs/design-notes.md B-61「目盛に見えている線」）。縮小して番号を間引いているときは
+ * 番号のある小節おき、ふだんは 1 小節。拡大して 1 拍が minGap px（番号どうしの間と同じ）以上になれば拍。
+ */
+export function rulerStep(barPx: number, perBar: number, perBeat: number, labelEvery: number, minGap: number): number {
+  if ((barPx * perBeat) / perBar >= minGap) return perBeat;
+  return labelEvery * perBar;
+}
+
+/** 目盛を離したときの命令。動かしていなければ、押した所へ（step のきざみの近い線に吸いつく。Shift のときは step が null で吸いつかない）。 */
 export function rulerCommand(
   drag: RulerDrag,
   v: View,
@@ -266,8 +275,12 @@ export function rulerCommand(
   upX: number,
   perBar: number,
   still: number,
+  step: number | null,
 ): Command {
-  if (Math.abs(upX - downX) < still) return { type: "locate", tick: Math.max(0, Math.round(xToTick(v, downX))) };
+  if (Math.abs(upX - downX) < still) {
+    const at = xToTick(v, downX);
+    return { type: "locate", tick: Math.max(0, step ? Math.round(at / step) * step : Math.round(at)) };
+  }
   const r = dragRange(drag, v, upX, perBar);
   return { type: "setLoop", fromBar: r.from, toBar: r.to };
 }

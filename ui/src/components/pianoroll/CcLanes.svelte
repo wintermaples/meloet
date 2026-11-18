@@ -36,7 +36,8 @@
   const pr = $derived(current.state!.pianoRoll);
   const scale = $derived(metrics.scale);
   const laneH = $derived(metrics.px("size.lane"));
-  const rowH = $derived(metrics.px("size.note"));
+  /** 行の高さ（縦の拡大の段。B-63）。 */
+  const rowH = $derived(g.rowH);
   const pad = $derived(metrics.px("mock.pianoroll.cc-pad"));
   const point = $derived(metrics.px("part.cc.point"));
 

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::*;
 use crate::edit::{self, NewTake};
+use crate::id_book::{IdBook, held};
 use crate::song::Note;
 
 const T1: TrackId = TrackId(1);
@@ -122,6 +123,35 @@ fn undo_keeps_untouched_parts_shared() {
     assert_eq!(doc.clip(a.clip).map(|(_, c)| c.takes.len()), Some(1));
 }
 
+#[test]
+fn ids_undone_are_not_given_again() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    let (e, a) = edit::add_recording(&doc, T1, vec![take(0, 960, 60)], 0).unwrap();
+    h.apply(&mut doc, e);
+    let (e, b) = edit::add_recording(&doc, T1, vec![take(5000, 960, 62)], 0).unwrap();
+    h.apply(&mut doc, e);
+    let given = doc.next_id;
+    let b_take = doc.clip(b.clip).unwrap().1.takes[0].take.id;
+    h.undo(&mut doc);
+    assert_eq!(doc.next_id, given, "undo keeps the ids given out");
+    assert!(doc.clip(b.clip).is_none());
+    let (e, c) = edit::add_recording(&doc, T1, vec![take(5000, 960, 64)], 0).unwrap();
+    h.apply(&mut doc, e);
+    assert!(c.clip.0 >= given);
+    assert!(doc.clip(c.clip).unwrap().1.takes[0].take.id.0 >= given);
+    assert_ne!(doc.clip(c.clip).unwrap().1.takes[0].take.id, b_take);
+    // All the way back, then a new step: still past every id given out.
+    h.undo(&mut doc);
+    h.undo(&mut doc);
+    assert!(doc.clip(a.clip).is_none());
+    let past = doc.next_id;
+    assert!(past > c.clip.0);
+    let (e, d) = edit::add_recording(&doc, T1, vec![take(0, 960, 65)], 0).unwrap();
+    h.apply(&mut doc, e);
+    assert!(d.clip.0 >= past);
+}
+
 /// xorshift64*, so the test needs nothing outside std.
 struct Rng(u64);
 
@@ -164,7 +194,7 @@ fn random_edit(rng: &mut Rng, doc: &Doc) -> Option<edit::Edit> {
         }
         _ => {
             let c = clips.get(rng.below(clips.len().max(1) as u64) as usize)?;
-            edit::delete_clips(doc, &[c.id]).ok()
+            edit::delete_clips(doc, &[c.id], false).ok()
         }
     }
 }
@@ -176,6 +206,7 @@ fn random_walks_come_back_to_the_same_docs() {
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
         let mut h = History::new();
         let mut doc = Doc::new_default();
+        let mut book = IdBook::new(&doc);
         // What the history should be: every Doc in order, with a mark for each.
         let mut line = vec![(doc.clone(), 0u32)];
         let mut at = 0usize;
@@ -186,7 +217,10 @@ fn random_walks_come_back_to_the_same_docs() {
                 0..=3 => {
                     if let Some(e) = random_edit(&mut rng, &doc) {
                         applied[kind_index(&e.step)] += 1;
+                        let before = doc.clone();
                         h.apply(&mut doc, e);
+                        book.saw(&doc, Some(&before))
+                            .unwrap_or_else(|e| panic!("seed {seed}, round {round}: {e}"));
                         marks += 1;
                         line.truncate(at + 1);
                         line.push((doc.clone(), marks));
@@ -209,16 +243,18 @@ fn random_walks_come_back_to_the_same_docs() {
                 }
             }
             let ctx = format!("seed {seed}, round {round}");
-            assert_eq!(doc, line[at].0, "{ctx}");
+            book.saw(&doc, None)
+                .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+            assert_eq!(held(&doc), held(&line[at].0), "{ctx}");
             assert_eq!(h.undo_count(), at, "{ctx}");
             assert_eq!(h.redo_count(), line.len() - 1 - at, "{ctx}");
             assert_eq!(h.has_unsaved_changes(), saved != line[at].1, "{ctx}");
         }
         // All the way back and all the way forward.
         while h.undo(&mut doc).is_some() {}
-        assert_eq!(doc, line[0].0);
+        assert_eq!(held(&doc), held(&line[0].0));
         while h.redo(&mut doc).is_some() {}
-        assert_eq!(doc, line.last().unwrap().0);
+        assert_eq!(held(&doc), held(&line.last().unwrap().0));
     }
     assert!(applied.iter().all(|&n| n > 100), "{applied:?}");
 }

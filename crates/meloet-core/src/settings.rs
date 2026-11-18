@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use meloet_protocol::DEFAULT_FIXED_VELOCITY;
 use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "settings.json";
@@ -21,6 +22,10 @@ pub struct Settings {
     pub metronome: bool,
     /// 0, 1 or 2.
     pub count_in_bars: u8,
+    /// "ベロシティ固定" (B-66): every key played sounds and is recorded at `fixed_velocity`.
+    pub velocity_fixed: bool,
+    /// 1..=127, kept while off.
+    pub fixed_velocity: u8,
 }
 
 pub const DEFAULT_COUNT_IN_BARS: u8 = 1;
@@ -33,6 +38,8 @@ impl Default for Settings {
             scale: DEFAULT_SCALE,
             metronome: false,
             count_in_bars: DEFAULT_COUNT_IN_BARS,
+            velocity_fixed: false,
+            fixed_velocity: DEFAULT_FIXED_VELOCITY,
         }
     }
 }
@@ -48,6 +55,14 @@ struct OnDisk {
     metronome: bool,
     #[serde(default = "default_count_in_bars")]
     count_in_bars: u8,
+    #[serde(default)]
+    velocity_fixed: bool,
+    #[serde(default = "default_fixed_velocity")]
+    fixed_velocity: u8,
+}
+
+fn default_fixed_velocity() -> u8 {
+    DEFAULT_FIXED_VELOCITY
 }
 
 fn default_count_in_bars() -> u8 {
@@ -86,6 +101,12 @@ pub fn load(dir: &Path) -> Settings {
             } else {
                 DEFAULT_COUNT_IN_BARS
             },
+            velocity_fixed: disk.velocity_fixed,
+            fixed_velocity: if (1..=127).contains(&disk.fixed_velocity) {
+                disk.fixed_velocity
+            } else {
+                DEFAULT_FIXED_VELOCITY
+            },
         },
         _ => Settings::default(),
     }
@@ -100,6 +121,8 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         scale: settings.scale,
         metronome: settings.metronome,
         count_in_bars: settings.count_in_bars,
+        velocity_fixed: settings.velocity_fixed,
+        fixed_velocity: settings.fixed_velocity,
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -139,6 +162,8 @@ mod tests {
             scale: 125,
             metronome: true,
             count_in_bars: 2,
+            velocity_fixed: true,
+            fixed_velocity: 64,
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
@@ -151,6 +176,8 @@ mod tests {
         assert_eq!(json["scale"], 125);
         assert_eq!(json["metronome"], true);
         assert_eq!(json["count_in_bars"], 2);
+        assert_eq!(json["velocity_fixed"], true);
+        assert_eq!(json["fixed_velocity"], 64);
         assert_eq!(
             json["output"],
             "alsa_card.pci-0000_0c_00.6:analog-output-headphones"
@@ -178,6 +205,8 @@ mod tests {
                 scale: 150,
                 metronome: false,
                 count_in_bars: 1,
+                velocity_fixed: false,
+                fixed_velocity: 100,
             }
         );
     }
@@ -212,6 +241,14 @@ mod tests {
         .unwrap();
         assert!(load(&dir).metronome);
         assert_eq!(load(&dir).count_in_bars, 1, "out of range: the default");
+
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"version":1,"output":null,"scale":100,"velocity_fixed":true,"fixed_velocity":0}"#,
+        )
+        .unwrap();
+        assert!(load(&dir).velocity_fixed);
+        assert_eq!(load(&dir).fixed_velocity, 100, "out of range: the default");
     }
 
     #[test]

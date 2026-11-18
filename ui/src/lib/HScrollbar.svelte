@@ -1,9 +1,12 @@
 <!-- 横の棒（仕様書 2 章「スクロールの棒」を横にした物、3 章「横の拡大 ・ 縮小」）。トラックの行やノートの場所のいちばん下に重ねて描く。
      場所はとらない。入りきるとき（visible >= total）は出さない。数は CSS px（棒の長さは visible と同じと見る）。
      高さ 8（上の gray.5 の線 line.hair をふくむ）、地 gray.3、つまみ gray.6、乗ると gray.8、動かしていると gray.9、角 0。
-     つまみのいちばん短い長さは棒の太さと同じ 8（縦の棒と同じ。docs/design-notes.md A-3）、つまみの外を押すと 1 画面ぶん。 -->
+     つまみのいちばん短い長さは棒の太さと同じ 8（縦の棒と同じ。docs/design-notes.md A-3）、つまみの外を押すと 1 画面ぶん。
+     つまみのドラッグ中の Esc は、動かす前の所へ戻す（仕様書 4 章）。 -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import { metrics } from "../components/metrics.svelte";
+  import { onDragCancel } from "../components/pianoroll/view.svelte";
   import { dragTo, pageTo, thumbOf, type ScrollBox } from "./scrollbar";
 
   interface Props {
@@ -44,6 +47,16 @@
     drag = null;
     dragging = false;
   }
+
+  onMount(() =>
+    onDragCancel(() => {
+      if (!drag) return false;
+      const back = drag.offset;
+      onThumbUp();
+      onscroll(back);
+      return true;
+    }),
+  );
 
   function onBarDown(e: PointerEvent): void {
     // 下の物（クリップをえらぶ、ノートの場所）に押したことを渡さない。

@@ -13,7 +13,7 @@
   import { noteName } from "../meterFormat";
   import { metrics } from "../metrics.svelte";
   import NoteFieldInput from "./NoteFieldInput.svelte";
-  import { commitCommand, FIELD_ORDER, nextField, noteFieldSpec, rejectCommand, type FieldName } from "./noteFields";
+  import { clampCommand, commitCommand, FIELD_ORDER, nextField, noteFieldSpec, rejectCommand, type FieldName, type FieldRead } from "./noteFields";
   import { clipNoteIndexes, inRanges } from "./notes";
   import { shown } from "./shown.svelte";
 
@@ -126,12 +126,13 @@
     viewport?.querySelector<HTMLElement>(`[data-at="${at}"]`)?.focus();
   }
 
-  function finish(value: number, tab: -1 | 0 | 1): void {
+  function finish(value: number, tab: -1 | 0 | 1, clamped: FieldRead["clamped"]): void {
     const e = editing;
     const spec = editSpec;
     if (!e || !spec || !take) return;
     const command = commitCommand(spec, value, take.id, [indexes[e.at]!]);
     if (command) send(command);
+    if (clamped) send(clampCommand(clamped));
     if (tab === 0) {
       void close(true);
       return;

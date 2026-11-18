@@ -55,6 +55,24 @@ describe("約束 8 の偽物の場面", () => {
     expect(fill(fakeScene("meterClamped")!.state.status.message)).toBe("拍子の下は 2 ・ 4 ・ 8 ・ 16 なので、4 にしました。");
     expect(fill(fakeScene("velocityMatched")!.state.status.message)).toBe("3 ノートのベロシティを 100 にそろえました。");
   });
+
+  it("位置の小節・拍・ティックを丸めた文（小節だけ「1 から」のあとに空白がない）", () => {
+    const pos = fakeScene("positionClamped")!.state.status.message;
+    expect(pos).toEqual({ id: "valueClamped", field: "beat", value: "3. 4. 000", range: "1〜4" });
+    if (pos?.id !== "valueClamped") throw new Error();
+    expect(t("msg.valueClamped", { field: t("value.beat"), range: pos.range!, value: pos.value })).toBe("拍は 1〜4 なので、3. 4. 000 にしました。");
+    expect(t("msg.valueClamped", { field: t("value.tick"), range: "0〜479", value: "3. 4. 479" })).toBe("ティックは 0〜479 なので、3. 4. 479 にしました。");
+    const bar = fakeScene("barClamped")!.state.status.message;
+    if (bar?.id !== "valueClamped") throw new Error();
+    expect(t("msg.valueClampedBar", { value: bar.value })).toBe("小節は 1 からなので、1. 1. 000 にしました。");
+  });
+
+  it("クリップが重なって置けなかった文（ヤチヨさんの決めのまま）", () => {
+    expect(fakeScene("clipsNotMoved")!.state.status.message).toEqual({ id: "clipsNotMoved" });
+    expect(t("msg.clipsNotMoved")).toBe("ほかのクリップと重なるので、動かしませんでした。");
+    expect(t("msg.clipsNotPasted")).toBe("ほかのクリップと重なるので、貼りつけませんでした。");
+    expect(t("msg.clipsNotDuplicated")).toBe("ほかのクリップと重なるので、複製できませんでした。");
+  });
 });
 
 describe("偽物の Rust: 約束 8 の意図", () => {

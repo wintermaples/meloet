@@ -5,6 +5,8 @@ pub mod chunked;
 pub mod controls;
 pub mod edit;
 pub mod history;
+#[cfg(test)]
+mod id_book;
 pub mod notes;
 pub mod playback;
 pub mod quantize;

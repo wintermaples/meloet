@@ -274,10 +274,16 @@ fn play_starts_at_the_loop_when_the_position_is_outside_it() {
             tick: 5 * BAR + 700,
         },
     );
-    assert_eq!(m.view().transport.position, 5 * BAR);
+    assert_eq!(
+        m.view().transport.position,
+        5 * BAR + 700,
+        "where it was put"
+    );
     assert_eq!(
         ops(&cmd(m, Command::PlayStop)),
-        [EngineOp::Play { from: 5 * BAR }],
+        [EngineOp::Play {
+            from: 5 * BAR + 700
+        }],
         "inside the loop: from there"
     );
 }
@@ -834,7 +840,7 @@ fn takes_step_round_and_undo_and_redo_come_back_to_the_same_song() {
     assert_eq!(ops(&back).len(), 1);
     assert_eq!(ops(&forth), last_step, "the engine plays the same again");
 
-    // Delete: one step, the selection goes; undo brings the clip back, unselected.
+    // Delete: one step, the selection goes; undo brings the clip back, selected again.
     let effects = cmd(m, Command::DeleteSelected);
     assert_eq!(
         ops(&effects),
@@ -849,7 +855,7 @@ fn takes_step_round_and_undo_and_redo_come_back_to_the_same_song() {
     assert_eq!(view.arrange.piano_roll_clip, None);
     cmd(m, Command::Undo);
     assert_eq!(m.view().song.tracks[0].clips.len(), 1);
-    assert_eq!(m.view().arrange.selected_clip, None);
+    assert_eq!(m.view().arrange.selected_clip, Some(c.id));
 
     // Undoing the first recording takes the clip away, and the selection with it.
     cmd(m, Command::SelectClip { clip: Some(c.id) });
@@ -902,11 +908,11 @@ fn tempo_and_meter_in_range_are_steps() {
     cmd(m, Command::Undo);
     cmd(m, Command::Undo);
     assert_eq!(m.view().song.tempo_bpm, 96.0);
-    // A bar of 6/8 is 1440 ticks.
+    // The position goes where it is put, not to the head of a bar.
     cmd(m, Command::Redo);
     cmd(m, Command::Redo);
     cmd(m, Command::Locate { tick: 1500 });
-    assert_eq!(m.view().transport.position, 1440);
+    assert_eq!(m.view().transport.position, 1500);
 }
 
 #[test]

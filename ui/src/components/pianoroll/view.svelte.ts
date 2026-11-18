@@ -4,6 +4,7 @@
 //
 // 位置はティック（4 分音符 = 480）。幅は拡大率 100 % の CSS px で持ち、描く所で拡大率をかける。
 
+import { metrics } from "../metrics.svelte";
 import { TICKS_PER_QUARTER } from "../time";
 
 export type Tool = "select" | "draw" | "erase";
@@ -71,11 +72,26 @@ export function zoomBy(steps: number, scale: number, anchorTick?: number): void 
   prView.scrollTick = Math.max(0, anchor - x / pxPerTick(scale));
 }
 
-/** 縦の拡大 ・ 縮小（鍵盤の列の上の − ＋、Mod Shift ＋ ホイール、メニューの「表示」）を 1 段。変わったら true。 */
-export function zoomRowsBy(steps: number): boolean {
+/** 拡大率 scale での 1 行の CSS px（ROW_PX_STEPS は 100 % の値。125 % でも整数になる）。 */
+export function rowHeight(scale: number): number {
+  return (prView.rowPx * scale) / 100;
+}
+
+/**
+ * 縦の拡大 ・ 縮小（鍵盤の列の上の − ＋、Mod Shift ＋ ホイール、メニューの「表示」）を 1 段。変わったら true。
+ * anchorY（ノートの場所の上はしからの CSS px）の所の行が、画面の同じ高さに残るように送る（なければ、まん中）。
+ */
+export function zoomRowsBy(steps: number, anchorY?: number): boolean {
   const next = stepFrom(ROW_PX_STEPS, prView.rowPx, steps, DEFAULT_ROW_PX);
   if (next === prView.rowPx) return false;
+  const scale = metrics.scale;
+  const before = rowHeight(scale);
+  const y = anchorY ?? prView.areaHeight / 2;
   prView.rowPx = next;
+  const after = rowHeight(scale);
+  const rows = Math.max(1, Math.floor(prView.areaHeight / after));
+  const top = Math.round(prView.topKey - y / before + y / after);
+  prView.topKey = Math.min(127, Math.max(Math.min(127, rows - 1), top));
   return true;
 }
 
@@ -146,3 +162,7 @@ export const ccLanes = $state({ open: [] as LaneTag[], other: null as number | n
 // ---- ベロシティの帯がひらいているか（仕様書 3 章の帯の表「ベロシティ」: たたむと CC の札の左はしに「▸ ベロシティ」）。帯をたたんでも覚えている ----
 
 export const velocityLane = $state({ open: true });
+
+// ---- 右の欄の「ベロシティをまとめて変える」がひらいているか（design-notes B-67）。帯をたたんでも覚えている ----
+
+export const inspectorFolds = $state({ velocityAll: false });

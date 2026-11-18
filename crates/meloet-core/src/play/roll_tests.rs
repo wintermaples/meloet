@@ -1,6 +1,6 @@
 //! The piano roll: editing notes, the selection, the clipboard, the settings, the audition.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use meloet_model::ControlPoint;
 use meloet_model::ControlValue;
@@ -8,7 +8,7 @@ use meloet_model::edit::{NewTake, add_recording};
 use meloet_model::song::Track;
 use meloet_model::{InstrumentRef, Take, TrackColor};
 use meloet_protocol::{
-    Command, ControlKind, IndexRange, NoteField, SelectMode, StatusMessage, TakeNotes,
+    ClipSpot, Command, ControlKind, IndexRange, NoteField, SelectMode, StatusMessage, TakeNotes,
 };
 
 use super::tests::{cmd, ready, record_once, report, started, status};
@@ -86,6 +86,7 @@ fn song(rng: &mut Rng) -> Song {
         color: TrackColor::for_index(1),
         instrument: InstrumentRef::Placeholder,
         gain_db: 0.0,
+        muted: false,
         clips: Vec::new(),
     }));
     let take = |rng: &mut Rng, origin: u64, length: u64| NewTake {
@@ -104,6 +105,64 @@ fn song(rng: &mut Rng) -> Song {
     let doc = add(&doc, 2, vec![take(rng, 0, 2 * BAR)]);
     s.doc = doc;
     s
+}
+
+/// The doc with `next_id` left out: undo and redo bring the rest back, never a lower `next_id`.
+fn held(doc: &Doc) -> Doc {
+    Doc {
+        next_id: 0,
+        ..doc.clone()
+    }
+}
+
+/// Every id given out so far: a take id always names the same take, a clip new in a step has an
+/// id never given out, and `next_id` never goes back.
+#[derive(Default)]
+struct Given {
+    takes: HashMap<TakeId, Arc<Take>>,
+    clips: HashSet<ClipId>,
+    next_id: u32,
+}
+
+impl Given {
+    /// `before`: the doc a new step was made on. Without it (undo, redo) clips may come back.
+    fn saw(&mut self, doc: &Doc, before: Option<&Doc>, ctx: &str) {
+        assert!(doc.next_id >= self.next_id, "{ctx}: next_id went back");
+        self.next_id = doc.next_id;
+        let takes = doc
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .flat_map(|c| &c.takes)
+            .flat_map(|ct| {
+                std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take))
+            });
+        for t in takes {
+            assert!(t.id.0 < doc.next_id, "{ctx}: take {}", t.id.0);
+            assert!(
+                !self.clips.contains(&ClipId(t.id.0)),
+                "{ctx}: take {}",
+                t.id.0
+            );
+            let had = self.takes.entry(t.id).or_insert_with(|| t.clone());
+            assert_eq!(had, t, "{ctx}: take id {} given twice", t.id.0);
+        }
+        for c in doc.tracks.iter().flat_map(|t| &t.clips) {
+            let new = before.is_some_and(|b| b.clip(c.id).is_none());
+            assert!(c.id.0 < doc.next_id, "{ctx}: clip {}", c.id.0);
+            assert!(
+                !self.takes.contains_key(&TakeId(c.id.0)),
+                "{ctx}: clip {}",
+                c.id.0
+            );
+            assert!(
+                !(new && self.clips.contains(&c.id)),
+                "{ctx}: clip id {} given twice",
+                c.id.0
+            );
+            self.clips.insert(c.id);
+        }
+    }
 }
 
 fn fresh(song: Song) -> Play {
@@ -259,8 +318,8 @@ fn some_notes(rng: &mut Rng, p: &Play) -> Vec<u32> {
 
 #[test]
 fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
-    let mut counts = [0usize; 23];
-    let mut made = [0usize; 23];
+    let mut counts = [0usize; 27];
+    let mut made = [0usize; 27];
     let mut applied = 0usize;
     let mut saved_negative = 0usize;
     for seed in 1..=12u64 {
@@ -284,11 +343,20 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                 .collect()
         };
         p.select_clip(Some(clips(&p)[0].0));
+        let mut given = Given::default();
+        given.saw(&p.song().doc, None, "first");
         let mut line = vec![p.song().doc.clone()];
         let mut at = 0usize;
         let e = &mut Vec::new();
         for round in 0..400 {
             let ctx = format!("seed {seed}, round {round}");
+            if clips(&p).is_empty() {
+                // Cut or deleted every clip: back one step.
+                p.undo(e);
+                at = p.undo_count() as usize;
+                assert_eq!(held(&p.song().doc), held(&line[at]), "{ctx}");
+                given.saw(&p.song().doc, None, &ctx);
+            }
             if p.shown().is_none() {
                 // Undo took away the copy the piano roll showed.
                 let all = clips(&p);
@@ -296,16 +364,26 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
             }
             let all = clips(&p);
             let some_clip = all[rng.below(all.len() as u64) as usize];
-            let copied_takes = p.song().doc.clip(some_clip).unwrap().1.takes.len();
+            // Sometimes the selection, else a few clips, now and then one that is not there.
+            let group: Vec<u32> = match rng.below(4) {
+                0 => p.clips_sel.iter().map(|c| c.0).collect(),
+                _ => (0..1 + rng.below(3))
+                    .map(|_| match rng.below(15) {
+                        0 => 99_999,
+                        _ => all[rng.below(all.len() as u64) as usize].0,
+                    })
+                    .collect(),
+            };
             let steps = p.undo_count();
+            let before = p.song().doc.clone();
             let take = if rng.below(20) == 0 {
                 // An old id: dropped.
                 shown_id(&p) + 1000
             } else {
                 shown_id(&p)
             };
-            let action = rng.below(25);
-            counts[action.min(22) as usize] += 1;
+            let action = rng.below(29);
+            counts[action.min(26) as usize] += 1;
             match action {
                 0 => {
                     let c = p.shown().unwrap().clone();
@@ -331,7 +409,8 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                 }
                 3 => {
                     let picked = some_notes(&mut rng, &p);
-                    p.resize_notes(take, &picked, rng.signed(1000), e);
+                    let edge = [ClipEdge::Start, ClipEdge::End][rng.below(2) as usize];
+                    p.resize_notes(take, &picked, edge, rng.signed(1000), e);
                 }
                 4 => {
                     let picked = some_notes(&mut rng, &p);
@@ -432,14 +511,40 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                         0 => rng.signed(8) * BAR as i64,
                         _ => rng.signed(6 * BAR as i64),
                     };
-                    let track = [1, 2, 1, 9][rng.below(4) as usize];
-                    p.move_clip(some_clip.0, ticks, track, action == 19, e);
+                    let rows = [0, 1, 0, -1, 0, 5][rng.below(6) as usize];
+                    p.move_clips(&group, ticks, rows, action == 19, e);
                 }
-                20 => p.duplicate_clip(some_clip.0, e),
+                20 => {
+                    p.duplicate_clips(&group, e);
+                }
                 21 => {
                     let edge = [ClipEdge::Start, ClipEdge::End][rng.below(2) as usize];
                     p.trim_clip(some_clip.0, edge, rng.signed(2 * BAR as i64), e);
                 }
+                22 => {
+                    if rng.below(2) == 0 {
+                        p.copy_clips(&group);
+                    }
+                    let to = match rng.below(3) {
+                        0 => None,
+                        _ => Some(ClipSpot {
+                            track: [1, 2, 1, 7][rng.below(4) as usize],
+                            tick: rng.below(12 * BAR),
+                        }),
+                    };
+                    p.paste_clips(to, e);
+                }
+                23 => p.cut_clips(&group, e),
+                24 => p.delete_selected(e),
+                25 => match rng.below(4) {
+                    0 => p.select_all_clips(),
+                    1 => p.select_track(rng.below(3) as u32 + 1),
+                    _ => {
+                        let mode = [SelectMode::Replace, SelectMode::Add, SelectMode::Toggle]
+                            [rng.below(3) as usize];
+                        p.select_clips(group.clone(), mode);
+                    }
+                },
                 _ => match rng.below(5) {
                     0 => p.select_clip(Some(some_clip.0)),
                     1 => p.select_all_notes(),
@@ -458,23 +563,39 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                 10 => assert!(now == steps + 1 || now == steps, "{ctx}"),
                 _ if now == steps + 1 => {
                     applied += 1;
-                    made[action.min(22) as usize] += 1;
-                    if matches!(action, 19 | 20) {
-                        let copy = p.selected.unwrap();
-                        assert_ne!(copy, some_clip, "{ctx}");
-                        assert_eq!(p.piano_roll, Some(copy), "{ctx}");
-                        takes_of.insert(copy, copied_takes);
+                    made[action.min(26) as usize] += 1;
+                    // The clips placed are selected: moved ones keep their ids, copies are new.
+                    if matches!(action, 18..=20 | 22) {
+                        assert!(!p.clips_sel.is_empty(), "{ctx}");
+                        let given = |c: &ClipId| group.contains(&c.0);
+                        if action == 18 {
+                            assert!(p.clips_sel.iter().all(given), "{ctx}");
+                        } else {
+                            assert!(!p.clips_sel.iter().any(given), "{ctx}");
+                        }
+                        for &c in &p.clips_sel {
+                            let takes = p.song().doc.clip(c).unwrap().1.takes.len();
+                            takes_of.insert(c, takes);
+                        }
+                        if let Some(c) = p.selected {
+                            assert_eq!(p.piano_roll, Some(c), "{ctx}");
+                        }
                     }
-                    if action == 18 {
-                        assert_eq!(p.selected, Some(some_clip), "{ctx}");
+                    if matches!(action, 23 | 24) {
+                        assert!(
+                            p.clips_sel.iter().all(|&c| p.song().doc.clip(c).is_some()),
+                            "{ctx}"
+                        );
                     }
                     line.truncate(at + 1);
                     line.push(p.song().doc.clone());
+                    given.saw(&p.song().doc, Some(&before), &ctx);
                 }
                 _ => assert_eq!(now, steps, "{ctx}: one command, one step at most"),
             }
             at = now as usize;
-            assert_eq!(&p.song().doc, &line[at], "{ctx}");
+            assert_eq!(held(&p.song().doc), held(&line[at]), "{ctx}");
+            given.saw(&p.song().doc, None, &ctx);
             check(&p, &takes_of, &ctx);
             if round % 50 == 49 {
                 let back = songfile::decode(&songfile::encode(p.song())).unwrap();
@@ -493,13 +614,17 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
         while p.history.undo_count() > 0 {
             p.undo(e);
         }
-        assert_eq!(p.song().doc, first.doc, "seed {seed}: all undone");
+        assert_eq!(
+            held(&p.song().doc),
+            held(&first.doc),
+            "seed {seed}: all undone"
+        );
         while p.history.redo_count() > 0 {
             p.redo(e);
         }
         assert_eq!(
-            &p.song().doc,
-            line.last().unwrap(),
+            held(&p.song().doc),
+            held(line.last().unwrap()),
             "seed {seed}: all redone"
         );
     }
@@ -507,8 +632,9 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
     assert!(applied > 1500, "{applied} steps");
     // Quantize, back, the fields, and the three edits of points all made steps.
     assert!(made[11..=16].iter().all(|&n| n > 30), "{made:?}");
-    // Move, copy, duplicate and trim too; some saved songs had takes trimmed at the head.
-    assert!(made[18..=21].iter().all(|&n| n > 30), "{made:?}");
+    // Move, copy, duplicate, trim, paste, cut and delete too; some saved songs had takes trimmed
+    // at the head.
+    assert!(made[18..=24].iter().all(|&n| n > 30), "{made:?}");
     assert!(saved_negative > 10, "{saved_negative}");
 }
 
@@ -865,6 +991,7 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
             lock: true,
         },
     );
+    // The audition sounds every key (B-62); writing is what the lock keeps on its keys.
     assert!(
         cmd(
             m,
@@ -874,7 +1001,7 @@ fn the_locked_scale_keeps_the_write_tool_on_its_keys() {
             }
         )
         .iter()
-        .all(|e| !matches!(e, Effect::Engine(_)))
+        .any(|e| matches!(e, Effect::Engine(EngineOp::Audition { .. })))
     );
     cmd(
         m,
@@ -1034,12 +1161,34 @@ fn the_audition_sounds_on_the_play_target() {
     );
     assert!(effects.contains(&Effect::Engine(EngineOp::Audition {
         track: 0,
-        key: 60,
+        keys: vec![60],
         velocity: 1
     })));
     let effects = cmd(m, Command::AuditionOff);
     assert!(effects.contains(&Effect::Engine(EngineOp::AuditionOff)));
     assert_eq!(m.view().song.undo_count, 0);
+
+    // A locked scale does not keep the keys column and the notes quiet.
+    cmd(
+        m,
+        Command::SetMusicalScale {
+            root: 0,
+            mode: ScaleMode::Major,
+            lock: true,
+        },
+    );
+    let effects = cmd(
+        m,
+        Command::Audition {
+            keys: vec![61, 64],
+            velocity: 90,
+        },
+    );
+    assert!(effects.contains(&Effect::Engine(EngineOp::Audition {
+        track: 0,
+        keys: vec![61, 64],
+        velocity: 90
+    })));
 
     let mut silent = crate::state::Model::new(crate::settings::Settings::default());
     let effects = silent.handle(crate::state::Input::Command(Command::Audition {
@@ -1418,4 +1567,74 @@ fn quantizing_all_of_a_trimmed_clip_moves_only_the_notes_inside() {
             count: 2
         })
     );
+}
+
+#[test]
+fn the_start_edge_and_matching_velocities_through_the_commands() {
+    let m = &mut ready();
+    record_once(m, &[(60, 10.0, 100.0), (64, 500.0, 600.0)], 1200.0);
+    let take = clip_view(m).take_id;
+    let before = TakeNotes::decode(&m.take_notes(take).unwrap()).unwrap();
+    let steps = m.view().song.undo_count;
+    cmd(
+        m,
+        Command::ResizeNotes {
+            take,
+            notes: vec![0, 1],
+            edge: ClipEdge::Start,
+            ticks: 20,
+        },
+    );
+    let take = clip_view(m).take_id;
+    let after = TakeNotes::decode(&m.take_notes(take).unwrap()).unwrap();
+    for (a, b) in after.notes.iter().zip(&before.notes) {
+        assert_eq!(a.start, b.start + 20);
+        assert_eq!(a.start + a.length, b.start + b.length, "the end stays");
+    }
+    assert_eq!(m.view().song.undo_count, steps + 1);
+    cmd(
+        m,
+        Command::MatchVelocity {
+            take,
+            notes: vec![1, 0, 1],
+            value: 64,
+        },
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::VelocityMatched {
+            count: 2,
+            value: 64
+        })
+    );
+    assert_eq!(m.view().song.undo_count, steps + 2);
+    let take = clip_view(m).take_id;
+    let after = TakeNotes::decode(&m.take_notes(take).unwrap()).unwrap();
+    assert!(after.notes.iter().all(|n| n.velocity == 64));
+    // Already at the value: said, but no step. An old take: nothing.
+    cmd(
+        m,
+        Command::MatchVelocity {
+            take,
+            notes: vec![0],
+            value: 64,
+        },
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::VelocityMatched {
+            count: 1,
+            value: 64
+        })
+    );
+    assert_eq!(m.view().song.undo_count, steps + 2);
+    cmd(
+        m,
+        Command::MatchVelocity {
+            take: take + 1000,
+            notes: vec![0],
+            value: 20,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, steps + 2);
 }

@@ -160,19 +160,19 @@ describe("偽物の場面", () => {
   it("窓 800、ピアノロール: 入力計は細く、アレンジ 40、ロールは残りぜんぶ", () => {
     const l = fakeScene("pianoRoll")!.state.workspace.layout;
     expect(l).toMatchObject({ meter: "slim", arrangeHeight: 40, arrangeOverview: true, showBackHint: true });
-    expect(l.lower).toEqual([{ band: "pianoRoll", height: 800 - 48 - 24 - 24 - 24 - 40 }]);
+    expect(l.lower).toEqual([{ band: "pianoRoll", height: 800 - 24 - 48 - 24 - 24 - 24 - 40 }]);
   });
   it("窓 800 のミキサーはアレンジを 40 にして残りぜんぶ。履歴は 248 で、残りはアレンジ", () => {
-    expect(fakeScene("mixer")!.state.workspace.layout).toMatchObject({ arrangeHeight: 40, lower: [{ band: "mixer", height: 680 - 40 }] });
-    expect(fakeScene("history")!.state.workspace.layout).toMatchObject({ arrangeHeight: 680 - 248, lower: [{ band: "history", height: 248 }] });
+    expect(fakeScene("mixer")!.state.workspace.layout).toMatchObject({ arrangeHeight: 40, lower: [{ band: "mixer", height: 656 - 40 }] });
+    expect(fakeScene("history")!.state.workspace.layout).toMatchObject({ arrangeHeight: 656 - 248, lower: [{ band: "history", height: 248 }] });
   });
   // 仕様書 3 章「縦の分けかたの例」。order は古い順。高さは アレンジ、帯（上から）。
   it.each([
-    { order: ["pianoRoll"], fits: 428, grows: 896, rows: 992, at800: [40, 640], at1080: [224, 736] },
-    { order: ["mixer"], fits: 676, grows: 820, rows: 916, at800: [40, 640], at1080: [300, 660] },
-    { order: ["history"], fits: 408, grows: 408, rows: 504, at800: [432, 248], at1080: [712, 248] },
-    { order: ["mixer", "pianoRoll"], fits: 944, grows: 1556, rows: 1652, at800: null, at1080: [40, 404, 516] },
-    { order: ["history", "mixer"], fits: 924, grows: 1068, rows: 1164, at800: null, at1080: [52, 660, 248] },
+    { order: ["pianoRoll"], fits: 452, grows: 920, rows: 1016, at800: [40, 616], at1080: [200, 736] },
+    { order: ["mixer"], fits: 700, grows: 844, rows: 940, at800: [40, 616], at1080: [276, 660] },
+    { order: ["history"], fits: 432, grows: 432, rows: 528, at800: [408, 248], at1080: [688, 248] },
+    { order: ["mixer", "pianoRoll"], fits: 968, grows: 1580, rows: 1676, at800: null, at1080: [40, 380, 516] },
+    { order: ["history", "mixer"], fits: 948, grows: 1092, rows: 1188, at800: null, at1080: [40, 648, 248] },
   ] as const)("縦の分けかたの例: $order", ({ order, fits, grows, rows, at800, at1080 }) => {
     const at = (height: number) => {
       const b = new FakeBands(height);
@@ -215,11 +215,11 @@ describe("偽物の場面", () => {
     tall.toggle("history");
     tall.toggle("mixer");
     expect(tall.toggle("pianoRoll")).toEqual({ band: "history", why: "third" });
-    const mid = new FakeBands(940);
+    const mid = new FakeBands(960);
     mid.toggle("history");
     mid.toggle("mixer");
     expect(mid.toggle("pianoRoll")).toEqual({ band: "mixer", why: "tooLow" });
-    expect(tall.setHeight(943)).toBe("mixer");
+    expect(tall.setHeight(967)).toBe("mixer");
     expect(tall.setHeight(2000)).toBeNull();
     expect(tall.layout().lower.map((x) => x.band)).toEqual(["pianoRoll"]);
   });
@@ -236,11 +236,11 @@ describe("偽物の場面", () => {
     expect(s.status.message).toEqual({ id: "bandFoldedToOpen", opened: "pianoRoll", folded: "mixer" });
   });
   it("アレンジだけなら入力計は太く、アレンジが残りぜんぶ", () => {
-    expect(fakeScene("empty")!.state.workspace.layout).toMatchObject({ meter: "full", arrangeHeight: 800 - 48 - 52 - 24 - 24, lower: [] });
+    expect(fakeScene("empty")!.state.workspace.layout).toMatchObject({ meter: "full", arrangeHeight: 800 - 24 - 48 - 52 - 24 - 24, lower: [] });
   });
   it("拡大率は 100 % の px にしてから決める", () => {
     const l = fakeScene("empty", 125, { width: 1280, height: 800 })!.state.workspace.layout;
-    expect(l.arrangeHeight).toBe(640 - 48 - 52 - 24 - 24);
+    expect(l.arrangeHeight).toBe(640 - 24 - 48 - 52 - 24 - 24);
   });
   it("下の帯は 2 つまで。入りきらなければ古いほうをたたむ", () => {
     const b = new FakeBands(800);

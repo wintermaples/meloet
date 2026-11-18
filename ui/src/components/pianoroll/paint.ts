@@ -58,7 +58,10 @@ function lineStep(step: number, meter: Meter, ppt: number): number {
   return perBar * Math.max(1, Math.ceil(LINE_MIN_PX / (perBar * ppt)));
 }
 
-/** ノートの印: 0 ふつう、1 動かしている（もとの所に accent の枠）、2 長さを変えている（終わりに線）、3 囲んでいる（accent）、4 消える（gray.7）。 */
+/**
+ * ノートの印: 0 ふつう、1 動かしている（もとの所に accent の枠）、2 終わりを動かしている（もとの終わりに線）、3 囲んでいる（accent）、
+ * 4 消える（gray.7）、5 始まりを動かしている（もとの始まりに線）。
+ */
 export function noteMarks(count: number, drag: Drag | null, eraseHover: number): Uint8Array | null {
   if (!drag && eraseHover < 0) return null;
   const m = new Uint8Array(count);
@@ -69,7 +72,7 @@ export function noteMarks(count: number, drag: Drag | null, eraseHover: number):
       if (drag.press.moved && !drag.copy) for (const i of drag.notes) m[i] = 1;
       break;
     case "resize":
-      if (drag.press.moved) for (const i of drag.notes) m[i] = 2;
+      if (drag.press.moved) for (const i of drag.notes) m[i] = drag.edge === "start" ? 5 : 2;
       break;
     case "box":
       for (const i of drag.hits) m[i] = 3;
@@ -149,10 +152,10 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
         moving.push(i);
         return;
       }
-      if (mark === 2) {
+      if (mark === 2 || mark === 5) {
         const h = Math.round(sizes.endMark * dpr);
         const top = Math.round(y + rowH / 2 - h / 2);
-        const x = Math.round(x1);
+        const x = Math.round(mark === 2 ? x1 : x0);
         out.rect(x, top, x + HAIR, top + h, rgb(FRAME));
         return;
       }

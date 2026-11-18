@@ -1,0 +1,82 @@
+Copy of the visible text of Greg Sullivan's web site, taken for the meloet project.
+Fetched: 2026-11-18 10:45 UTC (curl, HTTP 200 after a 301 from http:// to https://).
+Only the text was kept; the HTML (Google Sites) was not copied. Nothing was changed in the text below.
+
+========================================================================
+URL: https://www.sullivang.net/
+sha256 of the fetched HTML: 7c24712aaa10e8e9e87cfbcd1c6527bbec7ff1f025aebc5f1ded062fa89be57f
+========================================================================
+Greg's Homepage
+Greg's Homepage
+Home
+Conversions
+Downloads
+Hohner Pianet T electric piano Instrument for Gigasampler/Gigastudio
+Wurlitzer EP203W Electric Piano for Gigasampler & Gigastudio
+Yamaha CP80 Electric Grand Instrument for Gigasampler/Gigastudio
+Greg's Homepage
+Home
+Greg's free electric piano samples for Gigastudio/Gigasampler
+Licensing (updated 21-Oct-2026)
+: All these instruments I host here now have Creative Commons Attribution 4.0 International  licensing. (CC BY 4.0)
+Wurlitzer EP203W electric piano
+Yamaha CP80 Electric Grand
+Hohner Pianet T
+Conversions to other formats
+
+========================================================================
+URL: https://www.sullivang.net/wurlitzer-ep203w-electric-piano-for-gigasampler-gigastudio
+sha256 of the fetched HTML: 8802e68d8cec3a79ba094c86f91c5bb760b636d3371c2874ccd1ec56c39e6fd6
+========================================================================
+Greg's Homepage - Wurlitzer EP203W Electric Piano for Gigasampler & Gigastudio
+Greg's Homepage
+Home
+Conversions
+Downloads
+Hohner Pianet T electric piano Instrument for Gigasampler/Gigastudio
+Wurlitzer EP203W Electric Piano for Gigasampler & Gigastudio
+Yamaha CP80 Electric Grand Instrument for Gigasampler/Gigastudio
+Greg's Homepage
+Wurlitzer EP203W Electric Piano for Gigasampler & Gigastudio
+V1.1 16-MAY-1999
+Download size: 3Mbytes
+Uncompressed size: 8.7Mbytes  (note: lossless compression has been employed)
+Author: Greg Sullivan,
+greg.sullivan@sullivang.net
+Download wurlitzer_ep200.rar
+Unpack wurlitzer_ep200.rar using an archive program which can process the RAR format, such as
+Stuffit Expander
+. This will create wurlitzer_ep200.gig
+Description
+This Giga-instrument was created by sampling my own Wurlitzer EP203W (a member of the EP200 series) electric piano. Most samples have been recorded at 4 different velocities (pp, mp, f, and ff).
+Due to the fact that MIDI keyboards have different key pressure vs velocity curves, you will probably need to experiment to obtain the best velocity switch points. I.e, the default values merely represent my own personal preference for the keyboard I was using at the time. (a Roland RD300s digital piano)
+On a real Wurlitzer, the lowest note is A1. (note number 33). I decided to enable notes below this because it sounds acceptable to me. To be more authentic, however, you may disable notes below A1. Another idea would be to use some Rhodes 88 samples for the lower notes, if you feel that that the lowest samples are being transposed down too far for your liking. .
+Ideas for improvement
+Improve the tuning
+Include some pedal-down "ambience" - the Wurlitzer does have a lot of this, believe it or not. (reeds are shocked into vibration through the harp)
+Clean up the audible loop artifacts
+Alternative sample player compatibility:
+Samplelord
+Revision History
+V1.1, 16-May-99
+: Removed 8ms of silence from the attack of sample Db4FF. This silence was causing a small amount of appregiation when playing chords.
+V1.0, 6-Feb-1999
+Initial release
+
+========================================================================
+URL: https://www.sullivang.net/conversions
+sha256 of the fetched HTML: ad74f4b60acecead5c24cbe96983b7293b8038ec1a9feeb29b90512ee38eade0
+========================================================================
+Greg's Homepage - Conversions
+Greg's Homepage
+Home
+Conversions
+Downloads
+Hohner Pianet T electric piano Instrument for Gigasampler/Gigastudio
+Wurlitzer EP203W Electric Piano for Gigasampler & Gigastudio
+Yamaha CP80 Electric Grand Instrument for Gigasampler/Gigastudio
+Greg's Homepage
+Conversions
+I am very grateful for the work others have done to convert the samples into other formats:
+SFZ:
+https://github.com/sfzinstruments/GregSullivan.E-Pianos

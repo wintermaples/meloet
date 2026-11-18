@@ -35,6 +35,12 @@ export type GlSlot =
    * `narrow` (only with size "full"): the black keys of the narrow form, for a box whose white keys are 8 wide.
    */
   | { kind: "keyboard"; size: "full" | "slim"; narrow?: boolean; firstNote: number; lastNote: number; disabled?: boolean }
+  /**
+   * Paints nothing: the region's canvas covers this box too. For HTML that changes in the same frames
+   * as the canvas (the numbers beside a meter): WebKit then repaints one rectangle instead of many
+   * small ones that cut each other (docs/architecture.md, chapter 7, "CPU で描く WebKit").
+   */
+  | { kind: "cover" }
   /** The bar beside the last velocity in the input meter. */
   | { kind: "velocity" }
   /**

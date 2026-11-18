@@ -145,6 +145,13 @@ fi
 launcher=()
 if command -v dbus-run-session >/dev/null; then launcher=(dbus-run-session --); fi
 
+# The output chooser comes up only when there is a keyboard, and the stream opens when it is
+# confirmed: a keyboard has to be there from the start, not only when the keys are played.
+"$target/release/meloet-vkeys" appear --name "$vkeys_name" --seconds $((exit_ms / 1000 + 60)) >/dev/null 2>&1 &
+standby=$!
+trap 'kill "$standby" 2>/dev/null || true; rm -rf "$work"' EXIT
+sleep 1
+
 env "${open_song[@]}" \
 MELOET_CONFIG_DIR="$work/config" \
 MELOET_STATE_DIR="$work/state" \

@@ -45,6 +45,15 @@ export const REGIONS = {
 
 export type RegionName = keyof typeof REGIONS;
 
+/**
+ * A frame that shows the canvas of the key shows the canvas of the value too, changed or not.
+ * Where WebKit paints the page on the CPU, it repaints one rectangle around everything that changed
+ * when the changes fill a quarter of that rectangle. The mixer's meters are wide and low on the
+ * screen; with the master meter (top right) always among the changes, the rectangle around them is
+ * big enough for each to be painted by itself (docs/architecture.md, chapter 7, "CPU で描く WebKit").
+ */
+export const SHOWN_WITH: Partial<Record<RegionName, RegionName>> = { mixerMeters: "masterMeter" };
+
 /** A mistake in how the surfaces are used: stops development and tests; only logged in the app. */
 export function fault(message: string): void {
   if (import.meta.env.DEV) throw new Error(message);

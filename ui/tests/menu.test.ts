@@ -128,11 +128,10 @@ describe("メニューの中身（B-59）", () => {
     for (const i of [0, 1, 2]) expect(menus[i]!.entries.filter((e) => e.kind === "separator")).toHaveLength(2);
   });
 
-  it("まだない物（書き出し、meloet について）は使えない。トラックを足すは棚を「新しいトラック」でひらく", () => {
+  it("まだない物（書き出し）は使えない。トラックを足すは棚を「新しいトラック」でひらく", () => {
     const sent: Command[] = [];
     const menus = topMenus(withClip(), depsOf(withClip(), sent), "other");
     expect(row(menus[0]!.entries, "書き出し…").usable).toBe(false);
-    expect(row(menus[6]!.entries, "meloet について").usable).toBe(false);
     row(menus[5]!.entries, "トラックを足す").run!();
     expect(sent).toEqual([{ type: "openShelf", mode: { kind: "newTrack" } }]);
   });
@@ -480,9 +479,9 @@ describe("上のメニューの行（mount）", () => {
     expect(document.activeElement?.textContent).toContain("ひらく…");
     keydown("ArrowLeft");
     await settle();
-    // いちばん右は「ヘルプ」。使える行がないので、一覧そのものにフォーカス。
+    // いちばん右は「ヘルプ」。最初の使える行「meloet について」にフォーカス。
     expect(menuBar.open).toBe(6);
-    expect(document.activeElement?.getAttribute("role")).toBe("menu");
+    expect(document.activeElement?.textContent).toContain("meloet について");
     keydown("ArrowRight");
     await settle();
     expect(menuBar.open).toBe(0);

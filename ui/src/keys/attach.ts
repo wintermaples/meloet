@@ -1,6 +1,7 @@
 // キーの決まり（keys.ts）を画面につなぐ。Esc の順番と、「音が出ました」の案内を消す所もここ。
 // 上のメニューの行も、キーのある行はここの runKeyAction を通す（ピアノロールとアレンジのどちらに向けるかの決めを 1 か所に）。
 import type { AppState, Command } from "../bridge";
+import { aboutBack } from "../components/about/about.svelte";
 import { closeContextMenu } from "../components/menu/contextMenu.svelte";
 import { closeMenuBar, openMenuBar } from "../components/menu/menuBar.svelte";
 import { pianoRollCommand, type PianoRollKey } from "../components/pianoroll/commands";
@@ -287,7 +288,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     // 仕様書 4 章: ドラッグ中の Esc は、動かす前に戻すだけ。そのあと 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
     if (cancelDrag()) return;
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
-    else if (!closeMenus()) deps.send(auditionToCancel(state) ? { type: "shelfCancel" } : { type: "back" });
+    else if (!closeMenus() && !aboutBack()) deps.send(auditionToCancel(state) ? { type: "shelfCancel" } : { type: "back" });
     return;
   }
 

@@ -10,6 +10,7 @@ import { GRID_DIVISIONS, indexesOf } from "../pianoroll/geom";
 import { shown } from "../pianoroll/shown.svelte";
 import { shownFor } from "../pianoroll/shownNotes";
 import { prView, zoomRowsBy } from "../pianoroll/view.svelte";
+import { openAbout } from "../about/about.svelte";
 import { trackRows } from "../trackMenu";
 import { openShelf } from "../tracks.svelte";
 import { listEntries } from "./contextMenu.svelte";
@@ -240,7 +241,8 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
   ];
 
   // 「meloet について」の中身（ダイアログ）は区切り2。
-  const help: ListEntry[] = [plain("menu.about", false)];
+  // ほかのダイアログ（曲 ・ 音の設定）がひらいている間はひらかない（Esc の順が 1 つに決まるように）。
+  const help: ListEntry[] = [plain("menu.about", !state.workspace.songDialog && !state.workspace.settings, openAbout)];
 
   return [file, edit, view, play, notes, track, help].map((entries, i) => ({ label: t(TOP_MENUS[i]!), entries }));
 }

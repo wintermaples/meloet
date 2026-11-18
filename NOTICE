@@ -1,0 +1,238 @@
+meloet
+Version 0.1.0. Licensed under MIT or Apache-2.0 (LICENSE-MIT, LICENSE-APACHE).
+
+This file lists the work of others that ships with meloet. The about dialog of meloet
+(Help > About meloet > Open source licenses) shows the same list with the full license texts.
+This file is made by tools/licenses/inventory.mjs; do not edit it by hand.
+
+== Sound samples
+
+Salamander Grand Piano V3
+  by Alexander Holm
+  source: https://archive.org/details/SalamanderGrandPianoV3
+  also: SFZ+FLAC version assembled by roberto@zenvoid.org for FreePats (https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html)
+  license: CC-BY-3.0, http://creativecommons.org/licenses/by/3.0/
+  changes made for meloet: Kept 4 of the 16 velocity layers with the release, resonance and pedal samples, cut the silence before each sound, and converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback).
+
+Wurlitzer EP200 Electric Piano v1.1 (16-May-1999), from Greg's free electric piano samples
+  by Greg Sullivan
+  source: http://www.sullivang.net/
+  also: SFZ mapping by kinwie, https://github.com/sfzinstruments/GregSullivan.E-Pianos (CC BY 3.0, http://creativecommons.org/licenses/by/3.0/)
+  license: CC-BY-4.0, https://creativecommons.org/licenses/by/4.0/
+  changes made for meloet: Cut the silence before each sound, made a crossfade loop at the end of each sample (the original loops were lost), and converted the files to 16-bit FLAC raised to -1 dBFS (the level is restored at playback).
+
+Naked Drums
+  by Wilkinson Audio
+  source: https://github.com/sfzinstruments/WilkinsonAudio.NakedDrums
+  also: SFZ version by kinwie
+  license: CC-BY-4.0, https://creativecommons.org/licenses/by/4.0/
+  changes made for meloet: Mixed the direct and overhead microphones to stereo with the levels and pans of the author's GM preset, kept 11 sounds and 4 of the 10 takes, cut the silence before each sound, and converted the files to 16-bit FLAC.
+
+Versilian Community Sample Library (VCSL)
+  by Versilian Studios LLC
+  source: https://github.com/sgossner/VCSL
+  license: CC0-1.0, https://creativecommons.org/publicdomain/zero/1.0/
+  changes made for meloet: Used the six Clap takes, cut the silence before each sound, and converted the files to 16-bit FLAC.
+
+Versilian Community Sample Library (VCSL): Pipe Organ
+  by Simon Dalzell (Ivy Audio), Versilian Studios LLC
+  source: https://github.com/sgossner/VCSL
+  license: CC0-1.0, https://creativecommons.org/publicdomain/zero/1.0/
+  changes made for meloet: Made a crossfade loop in each manual sample, shortened the files to the loop end, cut the silence before each sound, and converted the files to 16-bit FLAC.
+
+Black And Blue Basses
+  by Karoryfer Samples (Drogomir Smolken)
+  source: https://github.com/sfzinstruments/karoryfer.black-and-blue-basses
+  license: CC0-1.0, https://creativecommons.org/publicdomain/zero/1.0/
+  changes made for meloet: Kept 2 of the 4 takes of the darkblack finger plucks, moved the key map down one octave so each key plays its own pitch, faded out the last 100 ms, cut the silence before each sound, and converted the files to 16-bit FLAC.
+
+VS Chamber Orchestra: Community Edition
+  by Versilian Studios LLC (Sam Gossner), Ivy Audio (Simon Dalzell); sample cutting by Elan Hickler/Soundemote
+  source: http://vis.versilstudios.net/vsco-community.html
+  license: CC0-1.0, https://creativecommons.org/publicdomain/zero/1.0/
+  changes made for meloet: Joined the violin, viola and cello section and solo double bass sustains into one key range, made a crossfade loop in each sample, cut the silence before each sound, and converted the files to 16-bit FLAC.
+
+The license texts that came with each sample set are in licenses/sounds/.
+
+== Fonts
+
+IBM Plex Mono (@fontsource/ibm-plex-mono 5.3.0): OFL-1.1. Copyright IBM Corp. The woff2 files are used without change.
+IBM Plex Sans JP (@fontsource/ibm-plex-sans-jp 5.3.1): OFL-1.1. Copyright IBM Corp. The woff2 files are used without change.
+The license text of IBM (github.com/IBM/plex, LICENSE.txt) names "Plex" as a Reserved Font Name.
+
+== Source code of the MPL-2.0 parts
+
+meloet uses these parts without changing them. Their source code is here:
+option-ext 0.2.0: https://github.com/soc/option-ext.git (also https://crates.io/crates/option-ext/0.2.0)
+
+== Parts (169: 166 Rust crates, 3 npm packages)
+
+@tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
+aho-corasick 1.1.5 (Rust): Unlicense OR MIT
+alloc-no-stdlib 3.0.0 (Rust): BSD-3-Clause
+alloc-stdlib 0.3.0 (Rust): BSD-3-Clause
+alsa 0.11.0 (Rust): Apache-2.0 OR MIT
+alsa-sys 0.4.0 (Rust): MIT
+anyhow 1.0.104 (Rust): MIT OR Apache-2.0
+atk 0.18.2 (Rust): MIT
+atk-sys 0.18.2 (Rust): MIT
+base64 0.23.1 (Rust): MIT OR Apache-2.0
+bitflags 1.3.2 (Rust): MIT OR Apache-2.0
+bitflags 2.13.2 (Rust): MIT OR Apache-2.0
+brotli 9.1.1 (Rust): BSD-3-Clause AND MIT
+brotli-decompressor 6.3.1 (Rust): BSD-3-Clause OR MIT
+bytes 1.12.1 (Rust): MIT
+cairo-rs 0.18.5 (Rust): MIT
+cairo-sys-rs 0.18.2 (Rust): MIT
+cfb 0.14.0 (Rust): MIT
+cfg-if 1.0.5 (Rust): MIT OR Apache-2.0
+clsx 2.1.1 (npm): MIT
+cookie 0.18.2 (Rust): MIT OR Apache-2.0
+cookie-factory 0.3.3 (Rust): MIT
+cpal 0.18.2 (Rust): Apache-2.0
+crossbeam-channel 0.5.17 (Rust): MIT OR Apache-2.0
+crossbeam-utils 0.8.23 (Rust): MIT OR Apache-2.0
+ctor 1.0.14 (Rust): Apache-2.0 OR MIT
+dasp_sample 0.11.0 (Rust): MIT OR Apache-2.0
+dbus 0.9.12 (Rust): Apache-2.0 OR MIT
+deranged 0.5.9 (Rust): MIT OR Apache-2.0
+dirs 7.0.0 (Rust): MIT OR Apache-2.0
+dirs-sys 0.5.0 (Rust): MIT OR Apache-2.0
+dlopen2 0.8.2 (Rust): MIT
+dpi 0.1.2 (Rust): Apache-2.0 AND MIT
+dunce 1.0.5 (Rust): CC0-1.0 OR MIT-0 OR Apache-2.0
+equivalent 1.0.3 (Rust): Apache-2.0 OR MIT
+erased-serde 0.4.11 (Rust): MIT OR Apache-2.0
+field-offset 0.3.6 (Rust): MIT OR Apache-2.0
+fnv 1.0.7 (Rust): Apache-2.0 OR MIT
+form_urlencoded 1.2.2 (Rust): MIT OR Apache-2.0
+futures-channel 0.3.34 (Rust): MIT OR Apache-2.0
+futures-core 0.3.34 (Rust): MIT OR Apache-2.0
+futures-executor 0.3.34 (Rust): MIT OR Apache-2.0
+futures-io 0.3.34 (Rust): MIT OR Apache-2.0
+futures-task 0.3.34 (Rust): MIT OR Apache-2.0
+futures-util 0.3.34 (Rust): MIT OR Apache-2.0
+gdk 0.18.2 (Rust): MIT
+gdk-pixbuf 0.18.5 (Rust): MIT
+gdk-pixbuf-sys 0.18.0 (Rust): MIT
+gdk-sys 0.18.2 (Rust): MIT
+gdkwayland-sys 0.18.2 (Rust): MIT
+gdkx11 0.18.2 (Rust): MIT
+gdkx11-sys 0.18.2 (Rust): MIT
+getrandom 0.3.4 (Rust): MIT OR Apache-2.0
+gio 0.18.4 (Rust): MIT
+gio-sys 0.18.1 (Rust): MIT
+glib 0.18.5 (Rust): MIT
+glib-sys 0.18.1 (Rust): MIT
+glob 0.3.4 (Rust): MIT OR Apache-2.0
+gobject-sys 0.18.0 (Rust): MIT
+gtk 0.18.2 (Rust): MIT
+gtk-sys 0.18.2 (Rust): MIT
+hashbrown 0.17.1 (Rust): MIT OR Apache-2.0
+heck 0.5.0 (Rust): MIT OR Apache-2.0
+http 1.5.0 (Rust): MIT OR Apache-2.0
+icu_collections 2.4.0 (Rust): Unicode-3.0
+icu_locale_core 2.4.0 (Rust): Unicode-3.0
+icu_normalizer 2.4.0 (Rust): Unicode-3.0
+icu_normalizer_data 2.4.0 (Rust): Unicode-3.0
+icu_properties 2.4.0 (Rust): Unicode-3.0
+icu_properties_data 2.4.0 (Rust): Unicode-3.0
+icu_provider 2.4.0 (Rust): Unicode-3.0
+idna 1.1.0 (Rust): MIT OR Apache-2.0
+idna_adapter 1.2.2 (Rust): Apache-2.0 OR MIT
+indexmap 2.14.2 (Rust): Apache-2.0 OR MIT
+infer 0.22.0 (Rust): MIT
+itoa 1.0.19 (Rust): MIT OR Apache-2.0
+javascriptcore-rs 1.1.2 (Rust): MIT
+javascriptcore-rs-sys 1.1.1 (Rust): MIT
+json-patch 4.2.0 (Rust): MIT OR Apache-2.0
+jsonptr 0.7.1 (Rust): MIT OR Apache-2.0
+keyboard-types 0.8.3 (Rust): MIT OR Apache-2.0
+libc 0.2.191 (Rust): MIT OR Apache-2.0
+libdbus-sys 0.2.7 (Rust): Apache-2.0 OR MIT
+libspa 0.10.1 (Rust): MIT
+libspa-sys 0.10.1 (Rust): MIT
+linux-raw-sys 0.12.1 (Rust): Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+litemap 0.8.3 (Rust): Unicode-3.0
+lock_api 0.4.14 (Rust): MIT OR Apache-2.0
+log 0.4.35 (Rust): MIT OR Apache-2.0
+memchr 2.8.3 (Rust): Unlicense OR MIT
+memoffset 0.9.1 (Rust): MIT
+mime 0.3.18 (Rust): MIT OR Apache-2.0
+muda 0.20.0 (Rust): Apache-2.0 OR MIT
+nom 8.0.0 (Rust): MIT
+num-conv 0.2.2 (Rust): MIT OR Apache-2.0
+once_cell 1.21.4 (Rust): MIT OR Apache-2.0
+option-ext 0.2.0 (Rust): MPL-2.0
+pango 0.18.3 (Rust): MIT
+pango-sys 0.18.0 (Rust): MIT
+parking_lot 0.12.5 (Rust): MIT OR Apache-2.0
+parking_lot_core 0.9.12 (Rust): MIT OR Apache-2.0
+percent-encoding 2.3.2 (Rust): MIT OR Apache-2.0
+phf 0.13.1 (Rust): MIT
+phf_shared 0.13.1 (Rust): MIT
+pin-project-lite 0.2.17 (Rust): Apache-2.0 OR MIT
+pipewire 0.10.1 (Rust): MIT
+pipewire-sys 0.10.1 (Rust): MIT
+plist 1.10.3 (Rust): MIT
+potential_utf 0.1.6 (Rust): Unicode-3.0
+powerfmt 0.2.1 (Rust): MIT OR Apache-2.0
+quick-xml 0.42.0 (Rust): MIT
+raw-window-handle 0.6.2 (Rust): MIT OR Apache-2.0 OR Zlib
+regex 1.13.1 (Rust): MIT OR Apache-2.0
+regex-automata 0.4.18 (Rust): MIT OR Apache-2.0
+regex-syntax 0.8.11 (Rust): MIT OR Apache-2.0
+rtrb 0.4.1 (Rust): MIT OR Apache-2.0
+rustix 1.1.6 (Rust): Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+same-file 1.0.6 (Rust): Unlicense OR MIT
+scopeguard 1.2.0 (Rust): MIT OR Apache-2.0
+semver 1.0.28 (Rust): MIT OR Apache-2.0
+serde 1.0.229 (Rust): MIT OR Apache-2.0
+serde_core 1.0.229 (Rust): MIT OR Apache-2.0
+serde_json 1.0.154 (Rust): MIT OR Apache-2.0
+serde_spanned 1.1.3 (Rust): MIT OR Apache-2.0
+serde_with 3.24.0 (Rust): MIT OR Apache-2.0
+serde-untagged 0.1.9 (Rust): MIT OR Apache-2.0
+serialize-to-javascript 0.1.2 (Rust): MIT OR Apache-2.0
+siphasher 1.0.4 (Rust): MIT OR Apache-2.0
+slab 0.4.12 (Rust): MIT
+smallvec 1.16.5 (Rust): MIT OR Apache-2.0
+soup3 0.5.0 (Rust): MIT
+soup3-sys 0.5.0 (Rust): MIT
+stable_deref_trait 1.2.1 (Rust): MIT OR Apache-2.0
+svelte 5.57.3 (npm): MIT
+tao 0.37.2 (Rust): Apache-2.0
+tauri 2.12.5 (Rust): Apache-2.0 OR MIT
+tauri-runtime 2.12.2 (Rust): Apache-2.0 OR MIT
+tauri-runtime-wry 2.12.3 (Rust): Apache-2.0 OR MIT
+tauri-utils 2.10.2 (Rust): Apache-2.0 OR MIT
+thiserror 1.0.69 (Rust): MIT OR Apache-2.0
+thiserror 2.0.21 (Rust): MIT OR Apache-2.0
+time 0.3.55 (Rust): MIT OR Apache-2.0
+time-core 0.1.9 (Rust): MIT OR Apache-2.0
+tinystr 0.8.5 (Rust): Unicode-3.0
+tokio 1.54.1 (Rust): MIT
+toml 1.2.1+spec-1.1.0 (Rust): MIT OR Apache-2.0
+toml_datetime 1.1.3+spec-1.1.0 (Rust): MIT OR Apache-2.0
+toml_parser 1.1.5+spec-1.1.0 (Rust): MIT OR Apache-2.0
+toml_writer 1.2.0+spec-1.1.0 (Rust): MIT OR Apache-2.0
+typeid 1.0.3 (Rust): MIT OR Apache-2.0
+url 2.5.8 (Rust): MIT OR Apache-2.0
+urlpattern 0.6.0 (Rust): MIT
+utf_types 1.0.0 (Rust): Apache-2.0 OR MIT
+utf8_iter 1.1.0 (Rust): Apache-2.0 OR MIT
+uuid 1.29.2 (Rust): Apache-2.0 OR MIT
+walkdir 2.5.0 (Rust): Unlicense OR MIT
+web-time 1.1.0 (Rust): MIT OR Apache-2.0
+webkit2gtk 2.0.2 (Rust): MIT
+webkit2gtk-sys 2.0.2 (Rust): MIT
+winnow 1.0.5 (Rust): MIT
+writeable 0.6.4 (Rust): Unicode-3.0
+wry 0.57.2 (Rust): Apache-2.0 OR MIT
+x11 2.21.0 (Rust): MIT
+x11-dl 2.21.0 (Rust): MIT
+yoke 0.8.4 (Rust): Unicode-3.0
+zerofrom 0.1.8 (Rust): Unicode-3.0
+zerotrie 0.2.5 (Rust): Unicode-3.0
+zerovec 0.11.9 (Rust): Unicode-3.0
+zmij 1.0.23 (Rust): MIT

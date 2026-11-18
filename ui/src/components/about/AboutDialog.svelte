@@ -1,0 +1,429 @@
+<!-- meloet について（仕様書 3 章、えらぶ 10 は 10-A を 2 段にしたもの。モック R7-About ・ R7-AboutLicense。仕様書 2 章「ダイアログ」
+     「ダイアログの 2 段目へ進む行」「スクロールの棒」）。画面だけが持つ（about.svelte.ts）。 -->
+<script lang="ts">
+  import { movableDialog } from "../../lib/dialogMove";
+  import ScrollArea from "../../lib/ScrollArea.svelte";
+  import { STATUS_JOIN, t, texts, type TextKey } from "../../text/ja";
+  import Button from "../Button.svelte";
+  import { about, closeAbout, showFirstStage, showLicenses, toggleGroup, togglePart, toggleSection } from "./about.svelte";
+  import {
+    fontsMatching,
+    fullText,
+    licenseList,
+    licenseText,
+    loadTexts,
+    partGroups,
+    partKey,
+    soundLicenseText,
+    soundsMatching,
+    type TextsFile,
+  } from "./licenses";
+
+  let { list = licenseList, load = loadTexts }: { list?: typeof licenseList; load?: () => Promise<TextsFile | null> } = $props();
+
+  const searching = $derived(about.query.trim() !== "");
+  const sounds = $derived(soundsMatching(list.sounds, about.query));
+  const fonts = $derived(fontsMatching(list.fonts, about.query));
+  const groups = $derived(partGroups(list.parts, about.query));
+
+  let fullTexts = $state<TextsFile | null>(null);
+  $effect(() => {
+    if (about.stage === 2 && !fullTexts) void load().then((f) => (fullTexts = f));
+  });
+  const textOf = (key: string): string => (fullTexts ? (fullText(fullTexts, key) ?? "") : "");
+
+  const changesOf = (id: string): string => {
+    const key = `about.changes.${id}`;
+    return key in texts ? t(key as TextKey) : "";
+  };
+  // さがしているときは、合う物のある見出しをひらいて見せる。
+  const groupOpen = (g: string): boolean => searching || about.groups.includes(g);
+</script>
+
+{#snippet textBox(key: string)}
+  <div class="text-box" data-test="about-text">
+    <ScrollArea>
+      <div class="text">{textOf(key)}</div>
+    </ScrollArea>
+  </div>
+{/snippet}
+
+{#snippet itemRow(key: string, name: string, right: string)}
+  {@const opened = about.part === key}
+  <button type="button" class="row m-focus-in" class:opened onclick={() => togglePart(key)} data-test="about-part" data-key={key}>
+    <span class="mark strong">{opened ? "▾" : ""}</span>
+    <span class="strong grow">{name}</span>
+    <span class="mono label">{right}</span>
+  </button>
+  {#if opened}{@render textBox(key)}{/if}
+{/snippet}
+
+{#snippet sectionHead(name: string, count: number, open: boolean, onclick: () => void, test: string)}
+  <button type="button" class="hd m-focus-in" {onclick} data-test={test}>
+    <span class={open ? "strong" : "label"}>{open ? "▾" : "▸"}</span>
+    <span class="strong grow">{name}</span>
+    <span class="mono label">{count}</span>
+  </button>
+{/snippet}
+
+{#if about.open}
+  <div class="place" class:licenses={about.stage === 2}>
+    <div class="lead"></div>
+    <div class="dialog" role="dialog" aria-label={t("about.title")} data-test="about-dialog" use:movableDialog>
+      <div class="head" data-dialog-head>
+        {#if about.stage === 1}
+          <span class="title">{t("about.title")}</span>
+        {:else}
+          <span class="title">
+            <button type="button" class="back" onclick={showFirstStage} data-test="about-back">{t("about.backTo", { name: t("about.title") })}</button
+            >{STATUS_JOIN}{t("about.openSource")}
+          </span>
+        {/if}
+        <span class="spacer"></span>
+        {#if about.stage === 1}
+          <button type="button" class="close" onclick={closeAbout} data-test="about-close-head">
+            {t("about.close")}<span class="mono">{t("key.esc")}</span>
+          </button>
+        {:else}
+          <button type="button" class="close" onclick={showFirstStage} data-test="about-back-head">
+            {t("about.back")}<span class="mono">{t("key.esc")}</span>
+          </button>
+        {/if}
+      </div>
+
+      {#if about.stage === 1}
+        <ScrollArea data-test="about-body">
+          <div class="name-box">
+            <span class="name">{t("about.name")}</span>
+            <span class="label">{t("about.tagline")}</span>
+          </div>
+          <div class="facts">
+            <div class="fact">
+              <span class="label fact-label">{t("about.version")}</span>
+              <span class="mono strong" data-test="about-version">{list.meloet.version}</span>
+            </div>
+            <div class="fact">
+              <span class="label fact-label">{t("about.license")}</span>
+              <span class="strong">{licenseText(list.meloet.license)}</span>
+            </div>
+          </div>
+          <button type="button" class="next" onclick={showLicenses} data-test="about-licenses">
+            <span class="strong grow">{t("about.openSource")}</span>
+            <span class="label" data-test="about-summary">{t("about.openSourceSummary", { count: list.parts.length })}</span>
+            <span class="label">▸</span>
+          </button>
+        </ScrollArea>
+      {:else}
+        <ScrollArea data-test="about-body">
+          <label class="search-bar">
+            <span class="label">{t("about.search")}</span>
+            <input class="search" type="text" placeholder={t("about.searchLabel")} bind:value={about.query} data-test="about-search" />
+          </label>
+
+          {#if sounds.length}
+            {@render sectionHead(t("about.sounds"), sounds.length, about.sections.sounds, () => toggleSection("sounds"), "about-sounds")}
+            {#if about.sections.sounds}
+              {#each sounds as s (s.id)}
+                <div class="fields" data-test="about-sound">
+                  <div class="field"><span class="label field-label">{t("about.soundName")}</span><span class="strong">{s.title}</span></div>
+                  <div class="field"><span class="label field-label">{t("about.soundCreator")}</span><span class="strong">{s.creator}</span></div>
+                  <div class="field">
+                    <span class="label field-label">{t("about.soundLicense")}</span><span class="strong">{soundLicenseText(s.license)}</span>
+                  </div>
+                  <div class="field"><span class="label field-label">{t("about.soundSource")}</span><span class="strong mono">{s.source}</span></div>
+                  <div class="field">
+                    <span class="label field-label">{t("about.soundChanges")}</span><span class="strong">{changesOf(s.id)}</span>
+                  </div>
+                </div>
+              {/each}
+            {/if}
+          {/if}
+
+          {#if fonts.length}
+            {@render sectionHead(t("about.fonts"), fonts.length, about.sections.fonts, () => toggleSection("fonts"), "about-fonts")}
+            {#if about.sections.fonts}
+              {#each fonts as f (f.package)}
+                {@render itemRow(partKey({ name: f.package, version: f.version }), f.name, f.license)}
+              {/each}
+            {/if}
+          {/if}
+
+          {#if groups.length}
+            <div class="parts-label"><span class="label">{t("about.parts")}</span></div>
+            {#each groups as g (g.group)}
+              {@const open = groupOpen(g.group)}
+              {@render sectionHead(g.label, g.parts.length, open, () => toggleGroup(g.group), "about-group")}
+              {#if open}
+                {#each g.parts as p (partKey(p))}
+                  {@render itemRow(partKey(p), p.name, p.version)}
+                {/each}
+              {/if}
+            {/each}
+          {/if}
+        </ScrollArea>
+      {/if}
+
+      <div class="foot">
+        <Button primary test="about-close" onclick={closeAbout}>{t("about.close")}</Button>
+      </div>
+    </div>
+    <div class="lead-end"></div>
+  </div>
+{/if}
+
+<style>
+  /* 上はモックの位置。窓が低ければ、上下 24 ずつのあきまで上へ寄せ、それでも入らなければ中身をスクロールする。 */
+  .place {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--part-dialog-margin) 0;
+  }
+  .lead {
+    flex: 0 1 calc(var(--mock-about-top) - var(--part-dialog-margin));
+  }
+  .place.licenses .lead {
+    flex-basis: calc(var(--mock-about-top-licenses) - var(--part-dialog-margin));
+  }
+  .lead-end {
+    flex: 1 1 0;
+  }
+  .dialog {
+    flex-shrink: 0;
+    pointer-events: auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: var(--part-dialog-width);
+    max-height: 100%;
+    background: var(--color-gray-3);
+    border: var(--line-hair) solid var(--color-gray-8);
+    border-radius: var(--radius-1);
+    color: var(--color-gray-9);
+    font-family: var(--font-sans);
+    font-size: var(--text-s-size);
+    line-height: var(--text-s-line-height);
+    font-weight: var(--text-s-weight-400);
+    white-space: nowrap;
+    color-scheme: dark;
+  }
+  .head {
+    flex-shrink: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    height: var(--part-dialog-head);
+    padding: 0 var(--space-4);
+    border-bottom: var(--line-hair) solid var(--color-gray-6);
+    cursor: move;
+  }
+  .title {
+    color: var(--color-gray-10);
+    font-weight: var(--text-s-weight-600);
+  }
+  .back,
+  .close {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  .back {
+    color: var(--color-gray-10);
+  }
+  .close {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-gray-8);
+  }
+  .back:hover,
+  .close:hover {
+    color: var(--color-gray-10);
+  }
+  .spacer,
+  .grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .label {
+    color: var(--color-gray-8);
+  }
+  .strong {
+    color: var(--color-gray-10);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 1 段目 */
+  .name-box {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--mock-about-name-pad-top) var(--space-4) var(--space-4);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .name {
+    color: var(--color-gray-10);
+    font-size: var(--text-l-size);
+    line-height: var(--text-l-line-height);
+    font-weight: var(--text-l-weight-600);
+  }
+  .facts {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2) var(--space-4);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .fact {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--size-row);
+  }
+  .fact-label {
+    flex-shrink: 0;
+    width: var(--mock-about-label);
+  }
+  /* ダイアログの 2 段目へ進む行（仕様書 2 章: 高さ 32、左右 16、下に gray.3 の線）。 */
+  .next {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--part-dialognext-height);
+    padding: 0 var(--space-4);
+    border: 0;
+    border-bottom: var(--line-hair) solid var(--color-gray-3);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .next:hover {
+    background: var(--color-gray-4);
+  }
+
+  /* 2 段目 */
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--mock-about-search);
+    padding: 0 var(--space-4);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .search {
+    flex: 1;
+    min-width: 0;
+    height: var(--part-input-height);
+    padding: 0 var(--part-input-pad-x);
+    background: var(--color-gray-0);
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    color: var(--color-gray-9);
+    font: inherit;
+    outline: none;
+  }
+  .search::placeholder {
+    color: var(--color-gray-7);
+  }
+  .search:focus {
+    border-color: var(--color-gray-8);
+  }
+  .hd,
+  .row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--size-row);
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .hd {
+    padding: 0 var(--space-3);
+    background: var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .row {
+    padding: 0 var(--space-3) 0 var(--mock-about-indent);
+    background: none;
+    border-bottom: var(--line-hair) solid var(--color-gray-4);
+  }
+  .row.opened {
+    background: var(--color-gray-4);
+  }
+  .hd:hover,
+  .row:hover {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .grow {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fields {
+    display: flex;
+    flex-direction: column;
+    padding: var(--mock-about-fields-pad-top) 0 var(--space-2);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .field {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--mock-about-field-pad-y) var(--space-4) var(--mock-about-field-pad-y) var(--mock-about-indent);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .field-label {
+    flex-shrink: 0;
+    width: var(--mock-about-field);
+  }
+  .parts-label {
+    display: flex;
+    align-items: center;
+    height: var(--size-row);
+    padding: 0 var(--space-4);
+    background: var(--color-gray-1);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  /* 全文の枠: この枠の中だけスクロールする。 */
+  .text-box {
+    display: flex;
+    flex-direction: column;
+    height: var(--mock-about-text);
+    margin: 0 var(--space-4) var(--space-2) var(--mock-about-indent);
+    background: var(--color-gray-0);
+    border: var(--line-hair) solid var(--color-gray-5);
+  }
+  .text {
+    padding: var(--space-2);
+    color: var(--color-gray-8);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .foot {
+    flex-shrink: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    height: var(--part-dialog-foot);
+    padding: 0 var(--space-4);
+    border-top: var(--line-hair) solid var(--color-gray-6);
+  }
+</style>

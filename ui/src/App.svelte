@@ -3,6 +3,8 @@
      < ダイアログ（30）< 一覧（上のメニュー、右クリック。40）< 用語の説明。 -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import AboutDialog from "./components/about/AboutDialog.svelte";
+  import { about } from "./components/about/about.svelte";
   import Arrange from "./components/Arrange.svelte";
   import BandRow from "./components/BandRow.svelte";
   import InputMeter from "./components/InputMeter.svelte";
@@ -80,6 +82,11 @@
   {#if state.workspace.settings}
     <div class="dialog">
       <SettingsDialog />
+    </div>
+  {/if}
+  {#if about.open}
+    <div class="dialog">
+      <AboutDialog />
     </div>
   {/if}
 {:else if current.failure}

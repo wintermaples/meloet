@@ -3,6 +3,7 @@
 //
 // 使いかた: ピアノロールの帯の部品が、初めに 1 回 `followShownTake()` を呼ぶ（部品の中なので $effect が使える）。
 
+import { untrack } from "svelte";
 import { takeNotes, type ClipView, type TakeNotes, type TrackView } from "../../bridge";
 import { current } from "../../state/app.svelte";
 
@@ -58,7 +59,14 @@ export function followShownTake(): void {
       return;
     }
     // つながる前は取りにいけない（橋が投げる）。つながったら、この $effect がもう一度走る。
-    if ((take?.id === id && takeSerial === serial) || !current.connected) return;
+    // いま見せているテイクは読むだけ（ここで null にしても、この $effect をもう一度走らせない）。
+    const now = untrack(() => take);
+    if ((now?.id === id && takeSerial === serial) || !current.connected) return;
+    // 「前の物のまま」はちらつかないためだが、別の曲のノートは残さない。
+    if (now && takeSerial !== serial) {
+      take = null;
+      origin = null;
+    }
     void takeNotes(id).then(async (got) => {
       if (ticket !== asked) return;
       const from = got.origin !== 0 ? await takeNotes(got.origin) : null;

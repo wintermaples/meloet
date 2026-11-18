@@ -101,6 +101,8 @@ describe("shown", () => {
     song.key = 72;
     app.setState(stateWith(2, 3));
     flushSync();
+    // 新しい曲の中身が届くまで、前の曲のノートは見せない。
+    expect(shown.take).toBeNull();
     await settle();
     expect(song.asked).toEqual([3, 3]);
     expect(shown.take?.keys[0]).toBe(72);

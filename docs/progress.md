@@ -668,3 +668,30 @@ SF2（サウンドフォント）のこと（ヤチヨさんの決め 2026-11-18
 | 上のメニューの「スケール固定」が、ドラムでも押せる | `menus.ts` の小さな直し |
 | `meterFormat.ts` の `heldText` が使われなくなった | 消すか決める |
 | 再生中に音色を読みおわると、そのとき鳴っていたノートは新しい音源で鳴らない | 次のノートから鳴る |
+
+### Step 2 follow-ups (2026-11-18〜19)
+
+- The five FluidR3 organs (Drawbar, Percussive, Rock, Church, Reed, MIT) are in the pack (`tools/sounds/sf2.py`, 3be6402). The sound license watcher now accepts MIT (the copyright line and permission notice must be copied). The shelf's name and order wait for B-84.
+- Development builds find the pack beside the executable (`target/debug/sounds` → `target/sounds/dev`, in README). Debug builds only make the decoder and the sampler fast (Cargo.toml). The grand piano now reads in 0.28 s instead of 8.1 s.
+- Pressing a key while the track's instrument is still loading shows 「（名前）を読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。」 in the status line (the user's decision 2026-11-19, using the text from spec chapter 6).
+
+### Step 3: the mixer (2026-11-18〜19)
+
+What got done:
+1. **The contract** (version 14): strips (tracks, returns A and B, master), fader, pan, two sends, four inserts, the params panel, and `commit: false/true` for previewing during a drag versus committing. Song file version 3 gets mixer fields (old songs have sends at −∞).
+2. **The audio path** (`architecture.md` 19-11): tracks go instrument → inserts → fader → pan, and the sends are taken after that. Returns go sends → inserts → fader → pan. The master goes fader → pan → inserts (the limiter after the fader). Values move straight to their target over 20 ms. Putting in or taking out an effect overlaps the two for 10 ms. Only the strips that changed are sent to the engine. The audition seat also sends at the defaults a new track would get.
+3. **The screen**: the mixer band (strips, inserts, sends, pan, faders, vertical meters, M/S), the params panel on the right, the effects list on the shelf, and 「空き ＋」 → 「（ストリップ）にエフェクトを入れる」 → 「入れる」. One drag is one step, and Esc goes back.
+4. **WebGL**: the input meter and the sound settings each became one region. The mixer meters are one canvas for all strips. At most 10 (actual app: 8).
+5. **Decisions** (`design-notes.md` A-14, B-86): remove with right-click 「外す」 or Delete; returns are named "A" plus the top effect; reverb and delay start at 30 % mix on tracks and the master; mixer moves are allowed while recording (mute too); the master has a pan; the fader's lowest point is −∞.
+
+What was checked:
+- `scripts/check-all.sh` passes (Rust 639 passed, 19 ignored; UI 1833).
+- Tests: the mixer's audio path 14, real effects × 16 tracks × 4 inserts with 0 allocations (1500 blocks), core's random undo test now includes mixer moves (seed 12 × 400), save → load round trip.
+- Measurements (`docs/measurements/2026-11-19-round4-mixer.md`, quiet PC, release, buffer 256):
+  - Offline, 16 tracks, EQ and compressor on every track, returns, master: average 448 µs (8.4 % of a block), p99 520 µs, never over 1 ms. The mixer's own share is about 2.5 %.
+  - In the app, playing 8 tracks: processing load averages 5.3 %, max 10.8 %.
+  - Key → sound p95 15.4–15.8 ms (unchanged).
+  - 10-minute recording (8 tracks playing, mixer open): xruns 0, 2106 notes, WebKitWebProcess 366 → 390 MB.
+  - Startup (first frame) 705–741 ms, grand piano finishes reading at 345–360 ms, main RSS 565 MB (215 MB without the pack). An 8-track song is 902 MB (six sounds, 672 MiB).
+  - **Key → screen slows down only when 8 tracks are playing and the mixer is open** (p95 15.7–17.9 ms, 87–98 % within 2 frames; with the mixer closed, 2.2 ms). A helper is now finding the cause and fixing it.
+- Screenshots: `docs/screenshots/compare/mixer-*` (real app vs A-Mixer), mixer, paramsDelay, shelfEffects in the fake scenes.

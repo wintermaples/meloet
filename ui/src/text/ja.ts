@@ -553,6 +553,8 @@ export const texts = {
   "menu.params": e("パラメータ", "user:2026-11-18"),
   "menu.zoomIn": e("横に拡大", "user:2026-11-18"),
   "menu.zoomOut": e("横に縮小", "user:2026-11-18"),
+  "menu.zoomRowsIn": e("縦に拡大", "user:2026-11-18"),
+  "menu.zoomRowsOut": e("縦に縮小", "user:2026-11-18"),
   "menu.scale": e("拡大率", "user:2026-11-18"),
   "menu.playStart": e("再生", "user:2026-11-18"),
   "menu.stop": e("停止", "user:2026-11-18"),
@@ -655,6 +657,7 @@ export const terms: readonly Term[] = [
   st("書き出し", "曲を 1 つの音のファイルにすること。"),
   { term: "仮の音", description: "本物のピアノの音が入るまでの、かわりの音。", source: "user:2026-11-14" },
   { term: "ベロシティ固定", description: "鍵盤をどの強さで押しても、決めた強さで鳴らして録る。書く道具のノートも同じ強さになる。", source: "user:2026-11-18" },
+  { term: "取り消しの履歴", description: "これまでにした手の一覧。どこまで取り消したかが見える。", source: "user:2026-11-18" },
 ];
 
 /** 用語と用語の説明をつなぐ記号（仕様書 5 章「用語 — 説明」）。 */

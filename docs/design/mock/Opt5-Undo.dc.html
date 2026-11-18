@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>えらぶ 15 ・ プラグインの窓で動かした所と、取り消し（Y15）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{color:#9A9A9A;white-space:nowrap}
+.w{color:#F2F2F2}.a{color:#FFB000}.r{color:#FF3B30}
+.s6{font-weight:600}.t16{font-size:16px;line-height:20px}.t20{font-size:20px;line-height:24px}
+.f{display:flex}.fc{display:flex;flex-direction:column}.ac{align-items:center}.x1{flex:1;min-width:0;min-height:0}.nw{white-space:nowrap}
+.g4{gap:4px}.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}
+.rel{position:relative}.abs{position:absolute}.oh{overflow:hidden}
+.b{height:24px;min-width:28px;padding:0 8px;border:1px solid #3A3A3A;background:#222222;color:#D6D6D6;border-radius:1px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.b.on{color:#FFB000;border-color:#FFB000}
+.b.hi{color:#F2F2F2;border-color:#9A9A9A}
+.q{width:20px;height:20px;border:1px solid #3A3A3A;background:#121212;color:#9A9A9A;border-radius:1px;text-align:center;line-height:18px}
+.hd{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px;background:#222222;white-space:nowrap;flex-shrink:0}
+.rw{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px 0 28px;border-bottom:1px solid #222222;white-space:nowrap;flex-shrink:0}
+.tip{position:absolute;z-index:9;width:248px;padding:8px;background:#F2F2F2;color:#0A0A0A;border-radius:1px;white-space:normal}
+.fm{padding:0 4px;border:1px solid #5E5E5E;color:#9A9A9A;border-radius:1px}
+.vt{writing-mode:vertical-rl;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1280px;height:720px;display:flex;flex-direction:column;background:#121212;color:#D6D6D6;font-family:'IBM Plex Sans JP','Noto Sans JP',sans-serif;font-size:12px;line-height:16px;overflow:hidden"><div class="fc g16" style="padding:24px 32px;height:720px;line-height:18px"><div class="f g16" style="align-items:baseline"><span class="t20 s6 w">えらぶ 15 ・ 窓と取り消し</span><span class="l">絵は、Surge XT の窓でつまみを 3 回回して、meloet に戻ったところの履歴。meloet の欄で動かしたときは、どの案でもドラッグ 1 回が 1 手（今のまま）。</span></div><div class="f x1" style="gap:24px"><div class="fc g8 x1"><span class="t16 s6 w">15-A つまみの動き 1 回ごとに 1 手</span><span class="l" style="white-space:normal">プラグインが「動かし始め ・ 終わり」を知らせる子（VST3 ・ CLAP）は、その間を 1 手。知らせない子（LV2 の多く）は、止まって 1 秒たったら 1 手にまとめる。</span><div class="fc" style="width:100%;background:#1A1A1A;border:1px solid #3A3A3A"><div class="hd"><span class="w">▾</span><span class="s6 w">取り消しの履歴</span><div class="x1"></div><span class="m l">H</span></div><div class="rw" style="padding-left:12px;"><span class="l" style="x1">2 ベース の音量</span></div><div class="rw" style="padding-left:12px;"><span class="w" style="x1">Surge XT ・ Filter 1 Cutoff</span></div><div class="rw" style="padding-left:12px;"><span class="w" style="x1">Surge XT ・ Filter 1 Resonance</span></div><div class="rw" style="padding-left:12px;background:#222222;border-left:2px solid #FFB000;padding-left:10px"><span class="w" style="x1">Surge XT ・ Osc 1 Pitch</span></div></div><span style="white-space:normal"><span class="w">あきらめるもの: </span>LV2 の 1 秒のまとめは、ゆっくり回す人だと 1 回が何手にも分かれる。プラグインの中のプリセットをえらんだ所など、パラメータでない変化は取り消せない。</span></div><div class="fc g8 x1"><span class="t16 s6 w">15-B 取り消せない（履歴に入らない）</span><span class="l" style="white-space:normal">プラグインの窓で動かした所は、履歴に入れない。Mod Z は meloet で最後にしたことを戻す。窓の下の帯に、ひとことを出す。</span><div class="fc" style="width:100%;background:#1A1A1A;border:1px solid #3A3A3A"><div class="hd"><span class="w">▾</span><span class="s6 w">取り消しの履歴</span><div class="x1"></div><span class="m l">H</span></div><div class="rw" style="padding-left:12px;background:#222222;border-left:2px solid #FFB000;padding-left:10px"><span class="w" style="x1">2 ベース の音量</span></div></div><div class="f ac" style="min-height:24px;padding:3px 12px;background:#121212;border:1px solid #2C2C2C"><span class="l" style="white-space:normal">この窓で動かした所は、取り消せません。プリセットに保存しておくと安心です。</span></div><span style="white-space:normal"><span class="w">あきらめるもの: </span>meloet の中と窓とで、取り消しの決まりがちがう。はじめての人は、Mod Z で窓のつまみが戻らないことにおどろく。</span></div><div class="fc g8 x1"><span class="t16 s6 w">15-C 窓にいた間を 1 手</span><span class="l" style="white-space:normal">プラグインの窓にいた間に変わった所を、meloet に戻ったとき（窓を閉じたときも）1 手にまとめる。プラグインの「ぜんぶの状態」を、窓に入る前と出たあとで写しておく。</span><div class="fc" style="width:100%;background:#1A1A1A;border:1px solid #3A3A3A"><div class="hd"><span class="w">▾</span><span class="s6 w">取り消しの履歴</span><div class="x1"></div><span class="m l">H</span></div><div class="rw" style="padding-left:12px;"><span class="l" style="x1">2 ベース の音量</span></div><div class="rw" style="padding-left:12px;background:#222222;border-left:2px solid #FFB000;padding-left:10px"><span class="w" style="x1">Surge XT の窓で変えた所</span></div></div><span style="white-space:normal"><span class="w">いいところ: </span>つまみも、プラグインの中のプリセットえらびも、まとめて戻る。LV2 でも VST3 でも CLAP でも同じに動く。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>窓で 3 か所動かしたら、Mod Z 1 回で 3 か所とも戻る（1 か所だけは戻せない）。状態の大きいプラグインは、写すのに少し時間とメモリを使う。</span></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

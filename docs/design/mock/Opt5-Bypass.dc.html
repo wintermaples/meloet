@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>えらぶ 13 ・ エフェクトをとばす（バイパス）の見せかた（86-1）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{color:#9A9A9A;white-space:nowrap}
+.w{color:#F2F2F2}.a{color:#FFB000}.r{color:#FF3B30}
+.s6{font-weight:600}.t16{font-size:16px;line-height:20px}.t20{font-size:20px;line-height:24px}
+.f{display:flex}.fc{display:flex;flex-direction:column}.ac{align-items:center}.x1{flex:1;min-width:0;min-height:0}.nw{white-space:nowrap}
+.g4{gap:4px}.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}
+.rel{position:relative}.abs{position:absolute}.oh{overflow:hidden}
+.b{height:24px;min-width:28px;padding:0 8px;border:1px solid #3A3A3A;background:#222222;color:#D6D6D6;border-radius:1px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.b.on{color:#FFB000;border-color:#FFB000}
+.b.hi{color:#F2F2F2;border-color:#9A9A9A}
+.q{width:20px;height:20px;border:1px solid #3A3A3A;background:#121212;color:#9A9A9A;border-radius:1px;text-align:center;line-height:18px}
+.hd{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px;background:#222222;white-space:nowrap;flex-shrink:0}
+.rw{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px 0 28px;border-bottom:1px solid #222222;white-space:nowrap;flex-shrink:0}
+.tip{position:absolute;z-index:9;width:248px;padding:8px;background:#F2F2F2;color:#0A0A0A;border-radius:1px;white-space:normal}
+.fm{padding:0 4px;border:1px solid #5E5E5E;color:#9A9A9A;border-radius:1px}
+.vt{writing-mode:vertical-rl;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1280px;height:720px;display:flex;flex-direction:column;background:#121212;color:#D6D6D6;font-family:'IBM Plex Sans JP','Noto Sans JP',sans-serif;font-size:12px;line-height:16px;overflow:hidden"><div class="fc g16" style="padding:24px 32px;height:720px;line-height:18px"><div class="f g16" style="align-items:baseline"><span class="t20 s6 w">えらぶ 13 ・ エフェクトをとばす</span><span class="l">どの案も: 取り消せる 1 手。曲に保存する。とばしている間も、パラメータは動かせる。止まったプラグインは今のまま（赤い枠と「止」）。</span></div><div class="f x1" style="gap:24px"><div class="fc g8 x1"><span class="t16 s6 w">13-A 枠の左に、オンの印</span><span class="l" style="white-space:normal">入っている枠の左に、選ぶ印（□）。オンは accent の点、とばすと空。とばした枠は名前が gray.7。印を押すか、えらんだ枠で B。</span><div class="f g16" style="align-items:flex-start"><div class="fc g4" style="width:108px"><span class="l">2 ベース</span><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #5E5E5E;background:#121212;color:#F2F2F2;white-space:nowrap;overflow:hidden"><span style="flex-shrink:0;width:12px;height:12px;padding:2px;border:1px solid #FFB000"><div style="width:6px;height:6px;background:#FFB000"></div></span><span class="x1" style="overflow:hidden;text-overflow:ellipsis">EQ 4 バンド</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #5E5E5E;background:#121212;color:#5E5E5E;white-space:nowrap;overflow:hidden"><span style="flex-shrink:0;width:12px;height:12px;padding:2px;border:1px solid #9A9A9A"><div style="width:6px;height:6px;"></div></span><span class="x1" style="overflow:hidden;text-overflow:ellipsis">コンプレッサー</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #FF3B30;background:#121212;color:#F2F2F2;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">Brick EQ</span><span style="color:#FF3B30">止</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #2C2C2C;background:#121212;color:#9A9A9A;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">空き</span><span>＋</span></div></div></div><div class="f ac g8" style="width:320px;height:32px;padding:0 12px;background:#222222;border:1px solid #3A3A3A;white-space:nowrap"><span class="s6 w">コンプレッサー</span><div class="x1"></div><button class="b">とばす <span class="m l">B</span></button></div><span style="white-space:normal"><span class="w">見わけ: </span>自分でとばした ＝ 灰色の名前と空の印。止まった ＝ 赤い枠と「止」。色がまざらない。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>枠の中の名前の場所が 16 せまくなる（「コンプレッサー」がぎりぎり）。</span></div><div class="fc g8 x1"><span class="t16 s6 w">13-B 枠には札だけ、切りかえは欄と右クリック</span><span class="l" style="white-space:normal">枠には印を置かず、とばした枠だけ名前を gray.7 にして右に「とばす」の札。切りかえはパラメータの欄の見出しのボタン、右クリック、B。</span><div class="f g16" style="align-items:flex-start"><div class="fc g4" style="width:108px"><span class="l">2 ベース</span><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #5E5E5E;background:#121212;color:#F2F2F2;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">EQ 4 バンド</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #5E5E5E;background:#121212;color:#5E5E5E;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">コンプレッサー</span><span class="l">とばす</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #FF3B30;background:#121212;color:#F2F2F2;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">Brick EQ</span><span style="color:#FF3B30">止</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #2C2C2C;background:#121212;color:#9A9A9A;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">空き</span><span>＋</span></div></div></div><div class="f ac g8" style="width:320px;height:32px;padding:0 12px;background:#222222;border:1px solid #3A3A3A;white-space:nowrap"><span class="s6 w">コンプレッサー</span><div class="x1"></div><button class="b on">とばしている <span class="m l">B</span></button></div><span style="white-space:normal"><span class="w">あきらめるもの: </span>ミキサーから 1 回で切りかえられない。前と後をくらべるのに、枠をえらんでから B か、欄まで手をのばす。</span></div><div class="fc g8 x1"><span class="t16 s6 w">13-C 押している間だけとばす</span><span class="l" style="white-space:normal">曲には残さない聞きくらべ。パラメータの欄の見出しの「押している間とばす」を押している間（か B を押している間）だけ、とばして鳴らす。枠の名前もその間だけ gray.7。</span><div class="f g16" style="align-items:flex-start"><div class="fc g4" style="width:108px"><span class="l">2 ベース</span><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #5E5E5E;background:#121212;color:#F2F2F2;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">EQ 4 バンド</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #5E5E5E;background:#121212;color:#5E5E5E;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">コンプレッサー</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #FF3B30;background:#121212;color:#F2F2F2;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">Brick EQ</span><span style="color:#FF3B30">止</span></div><div class="f ac g4" style="width:96px;height:24px;padding:0 6px;border:1px solid #2C2C2C;background:#121212;color:#9A9A9A;white-space:nowrap;overflow:hidden"><span class="x1" style="overflow:hidden;text-overflow:ellipsis">空き</span><span>＋</span></div></div></div><div class="f ac g8" style="width:320px;height:32px;padding:0 12px;background:#222222;border:1px solid #3A3A3A;white-space:nowrap"><span class="s6 w">コンプレッサー</span><div class="x1"></div><button class="b on">押している間とばす <span class="m l">B</span></button></div><span style="white-space:normal"><span class="w">あきらめるもの: </span>「とばしたまま」にしておけない。重いプラグインを止めておく使いかたもできない。</span></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

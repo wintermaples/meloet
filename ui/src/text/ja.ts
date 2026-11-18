@@ -182,8 +182,8 @@ export const texts = {
   ),
   // 数字の欄に、数字として読めない物を打った。欄は value.* か note.*。
   "msg.valueRejected": s6("数字として読めない", "{field}は数字で打ちます。もとの {kept} のままです。", { field: "ベロシティ", kept: "77" }, "part"),
-  // 音の欄（音名で打つ）に読めない物を打った。6 章の形は数字の欄の物なので、音の欄だけ前の形のまま（棟梁の決め 2026-11-15）。
-  "msg.keyRejected": e("{field}は {range} です。もとの {kept} のままです。", "user:2026-11-15", { field: "音", range: "C-1〜G9", kept: "C4" }),
+  // 音の欄（音名で打つ）に読めない物を打った。6 章の形は数字の欄の物なので、音の欄だけ前の版の形のまま。
+  "msg.keyRejected": e("{field}は {range} です。もとの {kept} のままです。", "user:2026-11-18", { field: "音", range: "C-1〜G9", kept: "C4" }),
   "msg.backToArrange": s6("アレンジへ帰る道", "Esc ・ ひとつ戻る。何度か押すとアレンジへ"),
   // 範囲の外の値は近いはしにして決める。欄と範囲は value.*。
   "msg.valueClamped": s6("範囲の外の値を打った", "{field}は {range} なので、{value} にしました。", { field: "ベロシティ", range: "1〜127", value: "127" }, "quoted"),
@@ -463,9 +463,9 @@ export const texts = {
   "note.key": e("音", "mock:A-PianoRoll"),
   "note.length": e("長さ", "mock:A-PianoRoll"),
   "noteList.velocity": e("Vel", "mock:A-PianoRoll"),
-  "inspector.from": e("{position} 〜", "mock:A-PianoRoll", { position: "3.1.000" }),
-  "inspector.mixed": e("ばらばら", "mock:A-PianoRoll"),
-  "inspector.range": e("{low} – {high}", "mock:A-PianoRoll", { low: "77", high: "83" }),
+  "inspector.from": e("{position} 〜", "user:2026-11-18", { position: "3.1.000" }),
+  "inspector.mixed": e("ばらばら", "user:2026-11-18"),
+  "inspector.range": e("{low} – {high}", "user:2026-11-18", { low: "77", high: "83" }),
   "inspector.quantize": e("クオンタイズ", "mock:A-PianoRoll"),
   "inspector.quantized": e("かけてある", "mock:A-PianoRoll"),
   "inspector.strength": e("強さ", "mock:A-PianoRoll"),

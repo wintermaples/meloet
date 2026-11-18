@@ -629,6 +629,15 @@ for (const t of [phrase(14, 4, 21, 6), phrase(15, 4, 19, 7)]) FAKE_TAKES.set(t.i
 const NO_NOTES_TAKE = 16;
 FAKE_TAKES.set(NO_NOTES_TAKE, { id: NO_NOTES_TAKE, length: 4 * BAR, notes: [] });
 
+/** The quantized take of A-PianoRoll with G4 written at 5.1.000, after the clip's end (B-82): the clip grew to bar 5. */
+const GROWN_TAKE = 18;
+FAKE_TAKES.set(GROWN_TAKE, {
+  ...FAKE_TAKES.get(QUANTIZED_TAKE)!,
+  id: GROWN_TAKE,
+  length: 4 * BAR + BAR / 4,
+  notes: [...FAKE_TAKES.get(QUANTIZED_TAKE)!.notes, { start: 4 * BAR, length: BAR / 4, key: key("G4"), velocity: 100 }],
+});
+
 /** The other tracks of F-WidePR (MIDI clips only: the fake cannot show the sung clips). */
 const WIDE_TRACKS: { name: string; gainDb: number; clips: [string, number, number][] }[] = [
   { name: "ベース", gainDb: -7.5, clips: [["ベース A", 5, 9], ["ベース A", 9, 13], ["ベース サビ", 13, 17]] },
@@ -846,6 +855,28 @@ export const SCENES: Record<string, SceneDef> = {
       s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null };
     },
     bands: ["pianoRoll"],
+    meters: QUIET,
+  },
+  // Not from a mock (B-82): A-PianoRoll after G4 was written at 5.1.000; the clip grew to bars 1–5, the note is selected.
+  pianoRollGrown: {
+    setup(s) {
+      pianoRollSong(s);
+      s.song.undoCount = 15;
+      s.song.tracks[0]!.clips = [fakeClip(10, "イントロ", 1, 6, 1, [GROWN_TAKE])];
+      s.song.noteCount = MOCK_NOTES.length + 1;
+      const last = MOCK_NOTES.length;
+      s.pianoRoll = { ...s.pianoRoll, take: GROWN_TAKE, selectedNotes: [{ start: last, end: last + 1 }] };
+      s.transport.position = 4 * BAR;
+      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 1, keys: [key("G4")], quantized: false } };
+    },
+    bands: ["pianoRoll"],
+    meters: QUIET,
+  },
+  // Not from a mock (B-82): the write tool after the clip, where it cannot grow over the next clip.
+  notesNotWritten: {
+    setup: pianoRollSong,
+    bands: ["pianoRoll"],
+    after: (s) => (s.status.message = { id: "notesNotWritten" }),
     meters: QUIET,
   },
   mixer: { setup: ready, bands: ["mixer"], meters: QUIET },
@@ -1246,6 +1277,7 @@ const NOTICES: StatusMessage["id"][] = [
   "clipsNotMoved",
   "clipsNotPasted",
   "clipsNotDuplicated",
+  "notesNotWritten",
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 

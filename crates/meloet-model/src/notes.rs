@@ -6,15 +6,20 @@
 //! When the shown take's tick 0 is before the song's (its head trimmed off and the clip moved
 //! to the song's start), the work is done on the clip [`lifted`] by that much, so that every
 //! note of the take has a position.
-//! A changed take keeps its notes in order of start, then key, then the order they had. Notes
-//! stay inside the clip; the take grows (never shrinks) to hold them, and its offset follows.
+//! A changed take keeps its notes in order of start, then key, then the order they had. The take
+//! grows (never shrinks) to hold them, and its offset follows.
+//!
+//! Notes written, moved or resized out of the clip make the clip grow by whole bars, as the same
+//! step (B-82): back to the head of the bar with the earliest start, on to the end of the bar
+//! with the latest end. Not before the song's start; not over another clip of the track, which
+//! does nothing and says [`EditError::Overlap`]. The other edits keep notes inside the clip.
 
 use std::sync::Arc;
 
 use crate::TrackId;
 use crate::arrange::ClipEdge;
 use crate::chunked::ChunkedVec;
-use crate::edit::{Edit, EditError, Ids, clip_index, track_index, with_track};
+use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index, with_track};
 use crate::history::StepKind;
 use crate::song::{
     Clip, ClipId, ClipTake, ControlPoint, Doc, Note, Take, TakeId, TakeOrigin, Track,
@@ -126,7 +131,7 @@ pub fn clipboard(clip: &Clip, indexes: &[usize]) -> Result<Vec<Note>, EditError>
         .collect())
 }
 
-/// The write tool. The note is cut at the end of the clip.
+/// The write tool. Outside the clip given, the clip grows to hold the note.
 pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, EditError> {
     if note.length == 0 || note.key > 127 || !(1..=127).contains(&note.velocity) {
         return Err(EditError::BadNote);
@@ -147,15 +152,18 @@ pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, Edi
         }
     };
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = &doc.tracks[ti].clips[ci];
-    if note.start < c.start || note.start >= c.end {
-        return Err(EditError::OutOfClip);
+    if note.start >= MAX_TICK {
+        return Err(EditError::OffTheSong);
     }
-    let (c, l) = lifted(c);
+    let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let note = Note {
         start: note.start + l,
-        length: note.length.min(c.end - note.start - l),
+        length: note.length.min(MAX_TICK - note.start),
         ..note
+    };
+    let reach = Reach {
+        start: Some(note.start),
+        end: Some(note.end()),
     };
     let mut notes = unmarked(&c);
     notes.push((note, true));
@@ -167,6 +175,7 @@ pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, Edi
             clip,
             clip_made: false,
         },
+        reach,
     )
 }
 
@@ -241,7 +250,8 @@ fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdite
 }
 
 /// Moves the notes by `ticks` and `keys`, or with `copy` adds moved copies. The notes move
-/// together and stop where the first of them would leave the clip or the keys 0..=127.
+/// together and stop where the first of them would leave the song or the keys 0..=127; the clip
+/// grows to hold them.
 pub fn move_notes(
     doc: &Doc,
     clip: ClipId,
@@ -250,11 +260,13 @@ pub fn move_notes(
     keys: i32,
     copy: bool,
 ) -> Result<NotesEdited, EditError> {
-    move_or_copy(doc, clip, indexes, ticks, keys, copy, |count| {
+    move_or_copy(doc, clip, indexes, ticks, keys, copy, true, |count| {
         StepKind::MoveNotes { clip, count, copy }
     })
 }
 
+/// `grow`: the clip grows to hold the notes moved; else they stop at its edges.
+#[allow(clippy::too_many_arguments)]
 fn move_or_copy(
     doc: &Doc,
     clip: ClipId,
@@ -262,10 +274,11 @@ fn move_or_copy(
     ticks: i64,
     keys: i32,
     copy: bool,
+    grow: bool,
     step: impl FnOnce(usize) -> StepKind,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
+    let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let notes = song_notes(&c);
     let picked = pick(indexes, notes.len())?;
     let chosen = || {
@@ -285,8 +298,13 @@ fn move_or_copy(
     let low = chosen().map(|n| n.key).min().expect("picked one at least");
     let high = chosen().map(|n| n.key).max().expect("picked one at least");
     // A note already outside is not pulled in; it only cannot go further out.
-    let before = c.start as i64 - first as i64;
-    let after = c.end as i64 - last as i64;
+    let (floor, ceiling) = if grow {
+        (l, MAX_TICK + l)
+    } else {
+        (c.start, c.end)
+    };
+    let before = floor as i64 - first as i64;
+    let after = ceiling as i64 - last as i64;
     let ticks = ticks.clamp(before.min(0), after.max(0));
     let keys = keys.clamp(-i32::from(low), 127 - i32::from(high));
     if ticks == 0 && keys == 0 && !copy {
@@ -298,6 +316,14 @@ fn move_or_copy(
         ..*n
     };
     let count = indexes_count(&picked);
+    let reach = if grow {
+        Reach {
+            start: (ticks < 0).then(|| (first as i64 + ticks) as u64),
+            end: (ticks > 0).then(|| (last as i64 + ticks) as u64),
+        }
+    } else {
+        Reach::NONE
+    };
     let out: Vec<(Note, bool)> = if copy {
         notes
             .iter()
@@ -319,11 +345,11 @@ fn move_or_copy(
             .map(|(n, &p)| if p { (moved(n), true) } else { (*n, false) })
             .collect()
     };
-    put_notes(doc, (ti, ci), out, step(count))
+    put_notes(doc, (ti, ci), out, step(count), reach)
 }
 
 /// Every note moves its `edge` by `ticks`, the other edge staying, each note staying 1 tick or
-/// longer and inside the clip. A note already past the clip's edge only cannot go further out.
+/// longer and inside the song. The clip grows to hold the notes made longer.
 pub fn resize_notes(
     doc: &Doc,
     clip: ClipId,
@@ -332,40 +358,68 @@ pub fn resize_notes(
     ticks: i64,
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
-    let c = lifted(&doc.tracks[ti].clips[ci]).0;
-    change_each(
+    let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
+    let l = l as i64;
+    let resized = |n: Note| match edge {
+        ClipEdge::End => {
+            let length = n.length as i64 + ticks;
+            let length = if ticks >= 0 {
+                length.min((MAX_TICK as i64 + l - n.start as i64).max(n.length as i64))
+            } else {
+                length.max(1)
+            };
+            Note {
+                length: length as u64,
+                ..n
+            }
+        }
+        ClipEdge::Start => {
+            let end = n.end() as i64;
+            let start = n.start as i64 + ticks;
+            let start = if ticks <= 0 {
+                start.max(l.min(n.start as i64))
+            } else {
+                start.min(end - 1)
+            };
+            Note {
+                start: start as u64,
+                length: (end - start) as u64,
+                ..n
+            }
+        }
+    };
+    let notes = song_notes(&c);
+    let picked = pick(indexes, notes.len())?;
+    let changed = || {
+        notes
+            .iter()
+            .zip(&picked)
+            .filter(|&(_, &p)| p)
+            .map(|(n, _)| resized(*n))
+    };
+    let reach = match edge {
+        ClipEdge::End if ticks > 0 => Reach {
+            start: None,
+            end: changed().map(|n| n.end()).max(),
+        },
+        ClipEdge::Start if ticks < 0 => Reach {
+            start: changed().map(|n| n.start).min(),
+            end: None,
+        },
+        _ => Reach::NONE,
+    };
+    let count = indexes_count(&picked);
+    let out = notes
+        .iter()
+        .zip(&picked)
+        .map(|(n, &p)| if p { (resized(*n), true) } else { (*n, false) })
+        .collect();
+    put_notes(
         doc,
         (ti, ci),
-        indexes,
-        |count| StepKind::ResizeNotes { clip, count },
-        |n| match edge {
-            ClipEdge::End => {
-                let length = n.length as i64 + ticks;
-                let length = if ticks >= 0 {
-                    length.min(n.length.max(c.end.saturating_sub(n.start)) as i64)
-                } else {
-                    length.max(1)
-                };
-                Note {
-                    length: length as u64,
-                    ..n
-                }
-            }
-            ClipEdge::Start => {
-                let end = n.end() as i64;
-                let start = n.start as i64 + ticks;
-                let start = if ticks <= 0 {
-                    start.max(n.start.min(c.start) as i64)
-                } else {
-                    start.min(end - 1)
-                };
-                Note {
-                    start: start as u64,
-                    length: (end - start) as u64,
-                    ..n
-                }
-            }
-        },
+        out,
+        StepKind::ResizeNotes { clip, count },
+        reach,
     )
 }
 
@@ -410,6 +464,7 @@ pub fn delete_notes(
         (ti, ci),
         out,
         StepKind::DeleteNotes { clip, count, cut },
+        Reach::NONE,
     )
 }
 
@@ -448,7 +503,13 @@ pub fn paste_notes(
     let count = pasted.len();
     let mut out = unmarked(&c);
     out.extend(pasted);
-    put_notes(doc, (ti, ci), out, StepKind::PasteNotes { clip, count })
+    put_notes(
+        doc,
+        (ti, ci),
+        out,
+        StepKind::PasteNotes { clip, count },
+        Reach::NONE,
+    )
 }
 
 /// The note list and the "選んだノート" panel. `Length` and `Velocity` set every note to
@@ -476,13 +537,13 @@ pub fn set_notes_field(
         NoteField::Start => {
             let first = chosen().map(|n| n.start).min().expect("picked one");
             let ticks = value.saturating_add(l as i64).saturating_sub(first as i64);
-            move_or_copy(doc, clip, indexes, ticks, 0, false, step)
+            move_or_copy(doc, clip, indexes, ticks, 0, false, false, step)
         }
         NoteField::Key => {
             let low = chosen().map(|n| n.key).min().expect("picked one");
             let keys = value.saturating_sub(i64::from(low));
             let keys = keys.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
-            move_or_copy(doc, clip, indexes, 0, keys, false, step)
+            move_or_copy(doc, clip, indexes, 0, keys, false, false, step)
         }
         NoteField::Length => {
             let end = c.end;
@@ -516,7 +577,7 @@ fn change_each(
         .zip(picked)
         .map(|(n, p)| if p { (change(n), true) } else { (n, false) })
         .collect();
-    put_notes(doc, (ti, ci), out, step(count))
+    put_notes(doc, (ti, ci), out, step(count), Reach::NONE)
 }
 
 pub(crate) fn unmarked(clip: &Clip) -> Vec<(Note, bool)> {
@@ -539,6 +600,22 @@ pub(crate) fn indexes_count(picked: &[bool]) -> usize {
     picked.iter().filter(|&&p| p).count()
 }
 
+/// Positions (of the [`lifted`] clip) that the clip must hold after an edit: it grows by bars to
+/// those outside it.
+#[derive(Debug, Clone, Copy)]
+struct Reach {
+    start: Option<u64>,
+    /// The end of a note: held when the clip ends there or later.
+    end: Option<u64>,
+}
+
+impl Reach {
+    const NONE: Reach = Reach {
+        start: None,
+        end: None,
+    };
+}
+
 /// The new take of the clip at `(ti, ci)` holds `notes` (positions of the [`lifted`] clip;
 /// marked ones are selected afterwards), with the shown take's control points and origin.
 fn put_notes(
@@ -546,6 +623,7 @@ fn put_notes(
     (ti, ci): (usize, usize),
     notes: Vec<(Note, bool)>,
     step: StepKind,
+    reach: Reach,
 ) -> Result<NotesEdited, EditError> {
     let clip = &doc.tracks[ti].clips[ci];
     let content = Content {
@@ -556,7 +634,7 @@ fn put_notes(
             .collect(),
         origin: clip.active_take().take.origin.clone(),
     };
-    put_take(doc, (ti, ci), content, false, step)
+    put_take_reaching(doc, (ti, ci), content, false, step, reach)
 }
 
 /// What a changed take holds, in positions of the [`lifted`] clip. Marked notes or points are selected afterwards.
@@ -587,14 +665,26 @@ fn marked<T>(items: &[(T, bool)]) -> Vec<usize> {
 /// points are the ones to select, else the marked notes.
 pub(crate) fn put_take(
     doc: &Doc,
+    at: (usize, usize),
+    content: Content,
+    of_controls: bool,
+    step: StepKind,
+) -> Result<NotesEdited, EditError> {
+    put_take_reaching(doc, at, content, of_controls, step, Reach::NONE)
+}
+
+/// [`put_take`], the clip grown to hold `reach`.
+fn put_take_reaching(
+    doc: &Doc,
     (ti, ci): (usize, usize),
     mut content: Content,
     of_controls: bool,
     step: StepKind,
+    reach: Reach,
 ) -> Result<NotesEdited, EditError> {
     let track = &doc.tracks[ti];
     let clip = &track.clips[ci];
-    let (up, _) = lifted(clip);
+    let (up, l) = lifted(clip);
     content.notes.sort_by_key(|(n, _)| (n.start, n.key));
     content.controls.sort_by_key(|(c, _)| c.tick);
     let shown = clip.active_take();
@@ -622,6 +712,7 @@ pub(crate) fn put_take(
         .chain(content.controls.iter().map(|(c, _)| c.tick + 1))
         .fold(origin + shown.take.length, u64::max);
     let shift = origin - origin_new;
+    let (start, clip_end) = grown(doc, (ti, ci), reach, l)?;
     let mut ids = Ids(doc.next_id);
     let id = TakeId(ids.next()?);
     let take_origin = match content.origin {
@@ -686,13 +777,24 @@ pub(crate) fn put_take(
         ),
         origin: take_origin,
     };
-    let mut takes = clip.takes.clone();
+    // A start moved back leaves every take where it is in the song.
+    let back = clip.start as i64 - start as i64;
+    let mut takes: Vec<ClipTake> = clip
+        .takes
+        .iter()
+        .map(|ct| ClipTake {
+            take: ct.take.clone(),
+            offset: ct.offset + back,
+        })
+        .collect();
     takes[clip.active] = ClipTake {
         take: Arc::new(take),
-        offset: origin_new as i64 - up.start as i64,
+        offset: origin_new as i64 - (start + l) as i64,
     };
     let mut clips = track.clips.clone();
     clips[ci] = Arc::new(Clip {
+        start,
+        end: clip_end,
         takes,
         ..Clip::clone(clip)
     });
@@ -711,6 +813,40 @@ pub(crate) fn put_take(
         selected,
         of_controls,
     })
+}
+
+/// The start and end (song positions) of the clip at `(ti, ci)` grown by bars to hold `reach`
+/// (positions of the clip lifted by `l`). `Overlap` when it would then overlap another clip.
+fn grown(
+    doc: &Doc,
+    (ti, ci): (usize, usize),
+    reach: Reach,
+    l: u64,
+) -> Result<(u64, u64), EditError> {
+    let track = &doc.tracks[ti];
+    let c = &track.clips[ci];
+    let per_bar = doc.meter.ticks_per_bar();
+    let start = reach
+        .start
+        .map(|s| s.saturating_sub(l))
+        .filter(|&s| s < c.start)
+        .map_or(c.start, |s| s / per_bar * per_bar);
+    let end = reach
+        .end
+        .map(|e| e.saturating_sub(l))
+        .filter(|&e| e > c.end)
+        .map_or(c.end, |e| {
+            e.div_ceil(per_bar).saturating_mul(per_bar).min(MAX_TICK)
+        });
+    let overlaps = track
+        .clips
+        .iter()
+        .enumerate()
+        .any(|(i, o)| i != ci && o.start < end && start < o.end);
+    if overlaps {
+        return Err(EditError::Overlap);
+    }
+    Ok((start, end))
 }
 
 #[cfg(test)]

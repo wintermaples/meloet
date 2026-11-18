@@ -1670,7 +1670,8 @@ impl Play {
     }
 
     /// The write tool. `take: None` only when the piano roll shows no clip: the note goes on the
-    /// track the keys play, in the clip there or in a new one. Returns the notice to show.
+    /// track the keys play, in the clip there or in a new one. Outside the shown clip, the clip
+    /// grows by bars (B-82). Returns the notice to show.
     pub fn add_note(
         &mut self,
         take: Option<u32>,
@@ -1698,12 +1699,17 @@ impl Play {
             velocity: note.velocity.clamp(1, 127),
             ..note
         };
-        let written = notes::write_note(self.doc(), at, note).ok()?;
+        let written = match notes::write_note(self.doc(), at, note) {
+            Ok(w) => w,
+            Err(EditError::Overlap) => return Some(StatusMessage::NotesNotWritten),
+            Err(_) => return None,
+        };
         let pick = take.is_none().then(|| ClipPick::one(written.clip));
         self.apply_selecting(written.edit, Some((written.selected, false)), pick, effects);
         None
     }
 
+    /// Out of the shown clip, the clip grows by bars (B-82). Returns the notice to show.
     pub fn move_notes(
         &mut self,
         take: u32,
@@ -1712,13 +1718,18 @@ impl Play {
         keys: i32,
         copy: bool,
         effects: &mut Vec<Effect>,
-    ) {
-        if let Some(clip) = self.aimed(take) {
-            let r = notes::move_notes(self.doc(), clip, &indexes(picked), ticks, keys, copy);
-            self.apply_notes(r, effects);
-        }
+    ) -> Option<StatusMessage> {
+        let clip = self.aimed(take)?;
+        let r = notes::move_notes(self.doc(), clip, &indexes(picked), ticks, keys, copy);
+        let overlap = if copy {
+            StatusMessage::ClipsNotDuplicated
+        } else {
+            StatusMessage::ClipsNotMoved
+        };
+        self.apply_growing(r, overlap, effects)
     }
 
+    /// Out of the shown clip, the clip grows by bars (B-82). Returns the notice to show.
     pub fn resize_notes(
         &mut self,
         take: u32,
@@ -1726,15 +1737,28 @@ impl Play {
         edge: ClipEdge,
         ticks: i64,
         effects: &mut Vec<Effect>,
-    ) {
+    ) -> Option<StatusMessage> {
         let edge = match edge {
             ClipEdge::Start => arrange::ClipEdge::Start,
             ClipEdge::End => arrange::ClipEdge::End,
         };
-        if let Some(clip) = self.aimed(take) {
-            let r = notes::resize_notes(self.doc(), clip, &indexes(picked), edge, ticks);
-            self.apply_notes(r, effects);
+        let clip = self.aimed(take)?;
+        let r = notes::resize_notes(self.doc(), clip, &indexes(picked), edge, ticks);
+        self.apply_growing(r, StatusMessage::ClipsNotMoved, effects)
+    }
+
+    /// Like `apply_notes`; `overlap` is said when the clip could not grow.
+    fn apply_growing(
+        &mut self,
+        edited: Result<NotesEdited, EditError>,
+        overlap: StatusMessage,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if edited == Err(EditError::Overlap) {
+            return Some(overlap);
         }
+        self.apply_notes(edited, effects);
+        None
     }
 
     /// "そろえる" of the velocity panel. Returns the notice to show.

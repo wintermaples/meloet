@@ -58,6 +58,11 @@ fn shown(doc: &Doc, clip: ClipId) -> (u64, Arc<Take>) {
     (c.zero(ct) as u64, ct.take.clone())
 }
 
+fn range(doc: &Doc, clip: ClipId) -> (u64, u64) {
+    let c = doc.clip(clip).unwrap().1;
+    (c.start, c.end)
+}
+
 fn notes_of(doc: &Doc, clip: ClipId) -> Vec<(u64, u64, u8)> {
     song_notes(doc.clip(clip).unwrap().1)
         .iter()
@@ -95,20 +100,24 @@ fn moving_makes_a_new_take_in_the_same_place() {
 }
 
 #[test]
-fn moving_stops_at_the_clip_and_the_keys() {
+fn moving_out_of_the_clip_grows_it_by_bars() {
     let (doc, clip) = one_clip(vec![note(0, 100, 60), note(480, 100, 120)]);
+    // The earliest stops at the song's start, the highest at key 127; the clip grows to bar 1.
     let e = move_notes(&doc, clip, &[0, 1], -100_000, 50, false).unwrap();
-    // The earliest stops at the clip start, the highest at key 127.
+    assert_eq!(notes_of(&e.edit.doc, clip), [(0, 100, 67), (480, 100, 127)]);
+    assert_eq!(range(&e.edit.doc, clip), (0, 3 * BAR));
+    assert_eq!(
+        move_notes(&e.edit.doc, clip, &[0, 1], -100, 1, false).unwrap_err(),
+        EditError::Unchanged
+    );
+    // Later: to the end of the bar with the latest end.
+    let e = move_notes(&doc, clip, &[0, 1], 2 * BAR as i64, -100, false).unwrap();
     assert_eq!(
         notes_of(&e.edit.doc, clip),
-        [(BAR, 100, 67), (BAR + 480, 100, 127)]
+        [(2400 + 2 * BAR, 100, 0), (2880 + 2 * BAR, 100, 60)]
     );
-    let e = move_notes(&doc, clip, &[0, 1], 100_000, -100, false).unwrap();
-    assert_eq!(
-        notes_of(&e.edit.doc, clip),
-        [(3 * BAR - 580, 100, 0), (3 * BAR - 100, 100, 60)]
-    );
-    // The take grew both ways; the sustain stays where it was in the song.
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 4 * BAR));
+    // Inside: the clip stays.
     let (origin, take) = shown(
         &move_notes(&doc, clip, &[0], -480, 0, false)
             .unwrap()
@@ -119,18 +128,146 @@ fn moving_stops_at_the_clip_and_the_keys() {
     assert_eq!(origin, 1920);
     assert_eq!(take.length, 960 + 480);
     assert_eq!(take.controls[0].tick, 480);
-    let (origin, take) = shown(
-        &move_notes(&doc, clip, &[1], 960, 0, false)
-            .unwrap()
-            .edit
-            .doc,
-        clip,
-    );
+    let e = move_notes(&doc, clip, &[1], 960, 0, false).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 3 * BAR));
+    let (origin, take) = shown(&e.edit.doc, clip);
     assert_eq!(origin, 2400);
     assert_eq!(take.length, 480 + 960 + 100);
-    // Against the wall: nothing to do.
-    let at_top = move_notes(&e.edit.doc, clip, &[0, 1], 100, 0, false);
-    assert_eq!(at_top.unwrap_err(), EditError::Unchanged);
+}
+
+#[test]
+fn moving_back_keeps_the_other_takes_in_the_song() {
+    let (doc, clip) = one_clip(vec![note(0, 100, 60)]);
+    let zeros = |doc: &Doc| -> Vec<i64> {
+        let c = doc.clip(clip).unwrap().1;
+        c.takes.iter().map(|t| c.zero(t)).collect()
+    };
+    let before = zeros(&doc);
+    // From 2400 back 1000: in bar 1, so the clip starts at 0.
+    let e = move_notes(&doc, clip, &[0], -1000, 0, false).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (0, 3 * BAR));
+    assert_eq!(notes_of(&e.edit.doc, clip), [(1400, 100, 60)]);
+    let after = zeros(&e.edit.doc);
+    assert_eq!(after[1], before[1]);
+    // The sustain of the shown take stays at 2400 in the song.
+    let (zero, take) = shown(&e.edit.doc, clip);
+    assert_eq!(zero + take.controls[0].tick, 2400);
+    // The ← key: one grid step out, the clip grows by one bar only.
+    let e = move_notes(&doc, clip, &[0], -480 - 120, 0, false).unwrap();
+    assert_eq!(notes_of(&e.edit.doc, clip), [(1800, 100, 60)]);
+    assert_eq!(range(&e.edit.doc, clip), (0, 3 * BAR));
+}
+
+/// Clip a [1920, 5760) and clip b [7680, 9600) on the same track.
+fn two_clips() -> (Doc, ClipId, ClipId) {
+    let (doc, a) = one_clip(vec![note(0, 100, 60), note(480, 100, 64)]);
+    let (doc, b) = record(
+        &doc,
+        vec![NewTake {
+            origin: 4 * BAR,
+            length: BAR,
+            notes: vec![note(0, 10, 50)],
+            controls: Vec::new(),
+        }],
+    );
+    (doc, a, b)
+}
+
+#[test]
+fn growing_over_another_clip_does_nothing() {
+    let (doc, a, b) = two_clips();
+    assert_eq!(range(&doc, b), (4 * BAR, 5 * BAR));
+    // Up to b's start is fine: ends that touch do not overlap.
+    let e = write_note(&doc, WriteAt::Clip(a), note(3 * BAR + 100, 480, 62)).unwrap();
+    assert_eq!(range(&e.edit.doc, a), (BAR, 4 * BAR));
+    // A note ending in b's bar would make a overlap b.
+    assert_eq!(
+        write_note(&doc, WriteAt::Clip(a), note(3 * BAR + 100, BAR, 62)).unwrap_err(),
+        EditError::Overlap
+    );
+    assert_eq!(
+        move_notes(&doc, a, &[1], 3 * BAR as i64, 0, false).unwrap_err(),
+        EditError::Overlap
+    );
+    assert_eq!(
+        move_notes(&doc, a, &[1], 3 * BAR as i64, 0, true).unwrap_err(),
+        EditError::Overlap
+    );
+    assert_eq!(
+        resize_notes(&doc, a, &[1], ClipEdge::End, 3 * BAR as i64).unwrap_err(),
+        EditError::Overlap
+    );
+    // b grows back over a.
+    assert_eq!(
+        move_notes(&doc, b, &[0], -(BAR as i64) - 100, 0, false).unwrap_err(),
+        EditError::Overlap
+    );
+    // Inside a, nothing is said.
+    assert!(move_notes(&doc, a, &[1], 480, 0, false).is_ok());
+}
+
+#[test]
+fn growing_brings_back_what_was_trimmed() {
+    let (doc, clip) = record(
+        &Doc::new_default(),
+        vec![NewTake {
+            origin: 0,
+            length: 4 * BAR,
+            notes: vec![note(100, 10, 60), note(3 * BAR + 100, 10, 62)],
+            controls: Vec::new(),
+        }],
+    );
+    let doc = crate::arrange::trim_clip(&doc, clip, ClipEdge::End, -2 * BAR as i64)
+        .unwrap()
+        .doc;
+    assert_eq!(doc.clip(clip).unwrap().1.note_count(), 1);
+    let e = write_note(&doc, WriteAt::Clip(clip), note(2 * BAR + 10, 10, 64)).unwrap();
+    let c = e.edit.doc.clip(clip).unwrap().1;
+    assert_eq!((c.start, c.end), (0, 3 * BAR));
+    assert_eq!(c.note_count(), 2);
+    let e = write_note(&doc, WriteAt::Clip(clip), note(3 * BAR + 10, 10, 64)).unwrap();
+    assert_eq!(e.edit.doc.clip(clip).unwrap().1.note_count(), 3);
+    // Selected is the note written, by its place in the new take.
+    assert_eq!(e.selected, [1]);
+}
+
+/// A clip whose head was trimmed off and that was then moved to the song's start: its take's
+/// tick 0 is before the song's.
+#[test]
+fn a_lifted_clip_grows_too() {
+    let (doc, clip) = record(
+        &Doc::new_default(),
+        vec![NewTake {
+            origin: 0,
+            length: 2 * BAR,
+            notes: vec![note(100, 10, 60), note(BAR + 100, 10, 62)],
+            controls: Vec::new(),
+        }],
+    );
+    let doc = crate::arrange::trim_clip(&doc, clip, ClipEdge::Start, BAR as i64)
+        .unwrap()
+        .doc;
+    let doc = crate::arrange::move_clips(&doc, &[clip], -(BAR as i64), 0, false)
+        .unwrap()
+        .edit
+        .doc;
+    assert_eq!(range(&doc, clip), (0, BAR));
+    assert_eq!(lift(doc.clip(clip).unwrap().1), BAR);
+    let e = write_note(&doc, WriteAt::Clip(clip), note(BAR + 500, 10, 64)).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (0, 2 * BAR));
+    let c = e.edit.doc.clip(clip).unwrap().1;
+    assert_eq!(c.note_count(), 2);
+    assert_eq!(c.zero(c.active_take()), -(BAR as i64));
+    // Back: stops at the song's start; the hidden note stays hidden.
+    let e = move_notes(&doc, clip, &[1], -1000, 0, false).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (0, BAR));
+    let c = e.edit.doc.clip(clip).unwrap().1;
+    let (up, l) = lifted(c);
+    let starts: Vec<i64> = song_notes(&up)
+        .iter()
+        .map(|n| n.start as i64 - l as i64)
+        .collect();
+    assert_eq!(starts, [100 - BAR as i64, 0]);
 }
 
 #[test]
@@ -154,16 +291,21 @@ fn copying_adds_and_selects_the_copies() {
 }
 
 #[test]
-fn resizing_keeps_one_tick_and_the_clip_end() {
+fn resizing_keeps_one_tick_and_grows_the_clip() {
     let (doc, clip) = one_clip(vec![note(0, 100, 60), note(480, 10, 64)]);
     let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::End, -50).unwrap();
     assert_eq!(notes_of(&e.edit.doc, clip), [(2400, 50, 60), (2880, 1, 64)]);
-    let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::End, 100_000).unwrap();
+    let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::End, 3000).unwrap();
     assert_eq!(
         notes_of(&e.edit.doc, clip),
-        [(2400, 3 * BAR - 2400, 60), (2880, 3 * BAR - 2880, 64)]
+        [(2400, 3100, 60), (2880, 3010, 64)]
     );
-    assert_eq!(shown(&e.edit.doc, clip).1.length, 3 * BAR - 2400);
+    // 2880 + 3010 = 5890 is in bar 4.
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 4 * BAR));
+    assert_eq!(shown(&e.edit.doc, clip).1.length, 5890 - 2400);
+    // Shorter does not grow the clip, even for a note that ends past it.
+    let e2 = resize_notes(&e.edit.doc, clip, &[1], ClipEdge::End, -10).unwrap();
+    assert_eq!(range(&e2.edit.doc, clip), (BAR, 4 * BAR));
     let one = resize_notes(&doc, clip, &[1], ClipEdge::End, -10)
         .unwrap()
         .edit
@@ -185,16 +327,17 @@ fn the_start_edge_moves_the_start_and_keeps_the_end() {
         resize_notes(&e.edit.doc, clip, &[1], ClipEdge::Start, 10).unwrap_err(),
         EditError::Unchanged
     );
-    // Out to the clip's start, before the take's tick 0: the take grows to the front.
+    // Out to the song's start, before the take's tick 0: the take and the clip grow to the front.
     let e = resize_notes(&doc, clip, &[0, 1], ClipEdge::Start, -10_000).unwrap();
-    assert_eq!(
-        notes_of(&e.edit.doc, clip),
-        [(1920, 580, 60), (1920, 970, 64)]
-    );
+    assert_eq!(notes_of(&e.edit.doc, clip), [(0, 2500, 60), (0, 2890, 64)]);
+    assert_eq!(range(&e.edit.doc, clip), (0, 3 * BAR));
     let (zero, take) = shown(&e.edit.doc, clip);
-    assert_eq!((zero, take.length), (1920, 3360 - 1920));
+    assert_eq!((zero, take.length), (0, 3360));
     // The control point stays where it was in the song.
     assert_eq!(zero + take.controls[0].tick, 2400);
+    // Inside the clip: it stays.
+    let e = resize_notes(&doc, clip, &[0], ClipEdge::Start, -480).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 3 * BAR));
 }
 
 #[test]
@@ -268,16 +411,29 @@ fn pasting_leaves_out_what_does_not_fit() {
 #[test]
 fn writing_in_a_clip() {
     let (doc, clip) = one_clip(vec![note(0, 100, 60)]);
+    // Ending past the clip: the clip grows to the end of that bar.
     let e = write_note(&doc, WriteAt::Clip(clip), note(3 * BAR - 10, 480, 62)).unwrap();
     assert_eq!(
         notes_of(&e.edit.doc, clip),
-        [(2400, 100, 60), (3 * BAR - 10, 10, 62)]
+        [(2400, 100, 60), (3 * BAR - 10, 480, 62)]
     );
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 4 * BAR));
     assert_eq!(e.selected, [1]);
     assert_eq!(
-        write_note(&doc, WriteAt::Clip(clip), note(3 * BAR, 10, 62)).unwrap_err(),
-        EditError::OutOfClip
+        e.edit.step,
+        StepKind::WriteNote {
+            clip,
+            clip_made: false
+        }
     );
+    // Ending right at a bar's head: not that bar.
+    let e = write_note(&doc, WriteAt::Clip(clip), note(3 * BAR, BAR, 62)).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 4 * BAR));
+    // Before the clip: from the head of the note's bar.
+    let e = write_note(&doc, WriteAt::Clip(clip), note(100, 10, 62)).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (0, 3 * BAR));
+    assert_eq!(notes_of(&e.edit.doc, clip)[0], (100, 10, 62));
+    assert_eq!(e.edit.doc.next_id, doc.next_id + 1);
     assert_eq!(
         write_note(&doc, WriteAt::Clip(clip), note(BAR, 0, 62)).unwrap_err(),
         EditError::BadNote

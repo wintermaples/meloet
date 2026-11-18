@@ -634,7 +634,7 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
     assert!(made[11..=16].iter().all(|&n| n > 30), "{made:?}");
     // Move, copy, duplicate, trim, paste, cut and delete too; some saved songs had takes trimmed
     // at the head.
-    assert!(made[18..=24].iter().all(|&n| n > 30), "{made:?}");
+    assert!(made[18..=24].iter().all(|&n| n > 20), "{made:?}");
     assert!(saved_negative > 10, "{saved_negative}");
 }
 
@@ -1729,4 +1729,130 @@ fn matching_lengths_is_one_step_and_undoes() {
         assert_eq!(zero + u64::from(n.start) + u64::from(n.length), c.end);
     }
     assert_eq!(m.view().song.undo_count, steps + 3);
+}
+
+fn clip_range(p: &Play) -> (u64, u64) {
+    let c = &p.song().doc.tracks[0].clips[0];
+    (c.start, c.end)
+}
+
+/// B-82: written, moved or resized out of the clip, the clip grows by bars as the same step.
+#[test]
+fn notes_out_of_the_clip_grow_it_in_one_step() {
+    let mut p = two_notes();
+    let e = &mut Vec::new();
+    let t0 = shown_id(&p);
+    assert_eq!(clip_range(&p), (BAR, 2 * BAR));
+    let note = Note {
+        from: None,
+        start: 2 * BAR + 100,
+        length: 240,
+        key: 67,
+        velocity: 90,
+    };
+    assert_eq!(p.add_note(Some(t0), note, e), None);
+    assert_eq!(clip_range(&p), (BAR, 3 * BAR));
+    assert_eq!(p.undo_count(), 1);
+    assert_eq!(p.note_sel.notes, [2]);
+    let t1 = shown_id(&p);
+    p.undo(e);
+    assert_eq!((clip_range(&p), shown_id(&p)), ((BAR, 2 * BAR), t0));
+    p.redo(e);
+    assert_eq!((clip_range(&p), shown_id(&p)), ((BAR, 3 * BAR), t1));
+
+    // Back past the song's start: the notes stop at 0, the clip starts at 0.
+    assert_eq!(
+        p.move_notes(t1, &[0, 1], -10 * BAR as i64, 0, false, e),
+        None
+    );
+    assert_eq!(clip_range(&p), (0, 3 * BAR));
+    assert_eq!(p.undo_count(), 2);
+    let t2 = shown_id(&p);
+    // The old take: nothing.
+    assert_eq!(p.move_notes(t1, &[0], 5 * BAR as i64, 0, false, e), None);
+    assert_eq!(
+        p.resize_notes(t1, &[0], ClipEdge::End, 5 * BAR as i64, e),
+        None
+    );
+    assert_eq!((p.undo_count(), shown_id(&p)), (2, t2));
+    // The end of the last note, out to bar 6.
+    assert_eq!(
+        p.resize_notes(t2, &[2], ClipEdge::End, 3 * BAR as i64, e),
+        None
+    );
+    assert_eq!(clip_range(&p), (0, 6 * BAR));
+    p.undo(e);
+    assert_eq!(clip_range(&p), (0, 3 * BAR));
+    p.undo(e);
+    assert_eq!((clip_range(&p), shown_id(&p)), ((BAR, 3 * BAR), t1));
+}
+
+#[test]
+fn the_status_line_says_when_the_clip_cannot_grow() {
+    let m = &mut ready();
+    record_once(m, &[(60, 10.0, 100.0)], 1200.0);
+    let c = clip_view(m);
+    cmd(m, Command::DuplicateClips { clips: vec![c.id] });
+    cmd(m, Command::SelectClip { clip: Some(c.id) });
+    let take = clip_view(m).take_id;
+    let steps = m.view().song.undo_count;
+    let end = c.end;
+    cmd(
+        m,
+        Command::AddNote {
+            take: Some(take),
+            start: end + 10,
+            length: 10,
+            key: 60,
+            velocity: 100,
+        },
+    );
+    assert_eq!(status(m), Some(StatusMessage::NotesNotWritten));
+    cmd(
+        m,
+        Command::MoveNotes {
+            take,
+            notes: vec![0],
+            ticks: (end + BAR) as i64,
+            keys: 0,
+            copy: false,
+        },
+    );
+    assert_eq!(status(m), Some(StatusMessage::ClipsNotMoved));
+    cmd(
+        m,
+        Command::MoveNotes {
+            take,
+            notes: vec![0],
+            ticks: (end + BAR) as i64,
+            keys: 0,
+            copy: true,
+        },
+    );
+    assert_eq!(status(m), Some(StatusMessage::ClipsNotDuplicated));
+    cmd(
+        m,
+        Command::ResizeNotes {
+            take,
+            notes: vec![0],
+            edge: ClipEdge::End,
+            ticks: (end + BAR) as i64,
+        },
+    );
+    assert_eq!(status(m), Some(StatusMessage::ClipsNotMoved));
+    assert_eq!(m.view().song.undo_count, steps);
+    assert_eq!(clip_view(m).end, end);
+    // Inside the clip: a step, and nothing said.
+    cmd(
+        m,
+        Command::MoveNotes {
+            take,
+            notes: vec![0],
+            ticks: 1,
+            keys: 0,
+            copy: false,
+        },
+    );
+    assert_eq!(m.view().song.undo_count, steps + 1);
+    assert_ne!(status(m), Some(StatusMessage::ClipsNotMoved));
 }

@@ -796,15 +796,19 @@ impl Model {
                 ticks,
                 keys,
                 copy,
-            } => self
-                .play
-                .move_notes(take, &notes, ticks, keys, copy, effects),
+            } => {
+                self.notice = self
+                    .play
+                    .move_notes(take, &notes, ticks, keys, copy, effects);
+            }
             Command::ResizeNotes {
                 take,
                 notes,
                 edge,
                 ticks,
-            } => self.play.resize_notes(take, &notes, edge, ticks, effects),
+            } => {
+                self.notice = self.play.resize_notes(take, &notes, edge, ticks, effects);
+            }
             Command::DeleteNotes { take, notes } => self.play.delete_notes(take, &notes, effects),
             Command::ChangeVelocity { take, notes, delta } => {
                 self.play.change_velocity(take, &notes, delta, effects);

@@ -172,7 +172,7 @@ describe("メニューの中身（B-59）", () => {
         ぜんぶ選ぶ: true,
       });
       expect(usableOf(menus[3]!.entries), st).toMatchObject({ 再生: false, 停止: true, ループ: false, メトロノーム: true });
-      expect(usableOf(menus[5]!.entries), st).toMatchObject({ ミュート: false, ソロ: true, 録音待機: false, 次のテイク: false, テイクを消す: false });
+      expect(usableOf(menus[5]!.entries), st).toMatchObject({ ミュート: true, ソロ: true, 録音待機: false, 次のテイク: false, テイクを消す: false });
     }
   });
 
@@ -315,7 +315,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
     return ev;
   };
 
-  it("送る意図。録音中は名前をつけて保存とミュートを送らない", () => {
+  it("送る意図。録音中は名前をつけて保存を送らない（ミュートは送る。A-14）", () => {
     const sent: Command[] = [];
     let s = withClip();
     const deps = depsOf(s, sent, { state: () => s });
@@ -329,7 +329,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
     expect(press(deps, "S", { ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true);
     press(deps, "M", { shiftKey: true });
     press(deps, "S", { shiftKey: true });
-    expect(sent).toEqual([{ type: "toggleSolo", track: 1 }]);
+    expect(sent).toEqual([{ type: "toggleMute", track: 1 }, { type: "toggleSolo", track: 1 }]);
   });
 
   it("アレンジにキーが向いているとき: Mod A ・ C ・ X ・ V ・ D はクリップへ", () => {

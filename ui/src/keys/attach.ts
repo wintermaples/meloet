@@ -202,9 +202,9 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "undo" };
     case "redo":
       return { type: "redo" };
-    // ミュートは曲を変える手、ソロは聞くときだけの切りかえ（B-70）。
+    // ミュートは曲を変える手、ソロは聞くときだけの切りかえ（B-70）。ミュートは録音中も受ける（A-14）。
     case "trackMute":
-      return track === null || busy ? null : { type: "toggleMute", track };
+      return track === null ? null : { type: "toggleMute", track };
     case "trackSolo":
       return track === null ? null : { type: "toggleSolo", track };
     case "shelfStep": {

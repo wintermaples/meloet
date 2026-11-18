@@ -777,11 +777,16 @@
 <div class="roll" use:glRegion={"pianoRoll"}>
   <div class="ruler">
     <div class="ruler-gap">
-      <button class="m-plain m-hi vzoom" disabled={prView.rowPx === ROW_PX_STEPS[0]} onclick={() => zoomRowsBy(-1)} data-test="pr-row-zoom-out"
-        >{t("zoom.outMark")}</button
+      <button
+        class="m-plain m-hi vzoom"
+        disabled={prView.rowPx === ROW_PX_STEPS[0]}
+        aria-label={t("menu.zoomRowsOut")}
+        onclick={() => zoomRowsBy(-1)}
+        data-test="pr-row-zoom-out">{t("zoom.outMark")}</button
       >
       <button
         class="m-plain m-hi vzoom"
+        aria-label={t("menu.zoomRowsIn")}
         disabled={prView.rowPx === ROW_PX_STEPS[ROW_PX_STEPS.length - 1]}
         onclick={() => zoomRowsBy(1)}
         data-test="pr-row-zoom-in">{t("zoom.inMark")}</button

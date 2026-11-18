@@ -398,7 +398,7 @@ export class Engine {
         break;
       }
       case "arrangeGrid":
-        paintArrangeGrid(out, box, slot.firstBarX * dpr, slot.barPx * dpr);
+        paintArrangeGrid(out, box, slot.firstBarX * dpr, slot.barPx * dpr, slot.beats ?? 1);
         break;
       case "overview":
         paintOverview(out, box, Math.max(1, Math.round(((OVERVIEW.inset * this.scale) / 100) * dpr)));

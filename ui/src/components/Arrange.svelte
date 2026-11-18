@@ -68,6 +68,11 @@
   const barLabelEvery = $derived(G.labelEvery(barPx, metrics.px("mock.arrange.bar") / 2));
   const perBar = $derived(ticksPerBar({ num: song.meterNum, den: song.meterDen }));
   const pxPerTick = $derived(barPx / perBar);
+  /** クリップの場所に描く 1 小節の拍の数。拍に吸いつくほど拡大していなければ 1（小節の線だけ）。 */
+  const gridBeats = $derived.by(() => {
+    const perBeat = ticksPerBeat({ num: song.meterNum, den: song.meterDen });
+    return G.beatsShown(barPx, perBar, perBeat, metrics.px("mock.arrange.bar") / 2) ? Math.round(perBar / perBeat) : 1;
+  });
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
   const view: G.View = $derived({ pxPerTick, scrollX: scrollTick * pxPerTick, width: viewWidth });
   const dims: G.LaneDims = $derived({
@@ -853,6 +858,7 @@
 
   const platform = platformOf(navigator);
   const modKey = (letter: string) => `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${letter}`;
+  const shiftKey = (letter: string) => `${t("key.shift")} ${letter}`;
   const menuRow = (label: MenuRow["label"], usable: boolean, run: () => void, key?: string): MenuRow => ({ kind: "row", label, key, usable, run });
   /** 行を押したときの選択（右クリックで選びなおした分は、そのときには届いている）。 */
   const chosen = () => current.state!.arrange.selectedClips;
@@ -866,14 +872,14 @@
     };
     return [
       menuRow("menu.openInPianoRoll", true, open, t("key.pianoRoll")),
-      menuRow("menu.cut", change, () => send({ type: "cutClips", clips: chosen() }), modKey(t("ctxKey.cut"))),
-      menuRow("menu.copy", true, () => send({ type: "copyClips", clips: chosen() }), modKey(t("ctxKey.copy"))),
-      menuRow("menu.paste", change && clipboardCount > 0, () => send({ type: "pasteClips", to: null }), modKey(t("ctxKey.paste"))),
-      menuRow("menu.duplicate", change, () => send({ type: "duplicateClips", clips: chosen() }), modKey(t("ctxKey.duplicate"))),
-      menuRow("menu.delete", change, () => send({ type: "deleteSelected" }), t("ctxKey.delete")),
+      menuRow("menu.cut", change, () => send({ type: "cutClips", clips: chosen() }), modKey(t("key.cut"))),
+      menuRow("menu.copy", true, () => send({ type: "copyClips", clips: chosen() }), modKey(t("key.copy"))),
+      menuRow("menu.paste", change && clipboardCount > 0, () => send({ type: "pasteClips", to: null }), modKey(t("key.paste"))),
+      menuRow("menu.duplicate", change, () => send({ type: "duplicateClips", clips: chosen() }), modKey(t("key.duplicate"))),
+      menuRow("menu.delete", change, () => send({ type: "deleteSelected" }), t("key.delete")),
       { kind: "separator" },
-      menuRow("menu.nextTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: 1 }), t("ctxKey.nextTake")),
-      menuRow("menu.prevTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: -1 }), t("ctxKey.prevTake")),
+      menuRow("menu.nextTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: 1 }), t("key.take")),
+      menuRow("menu.prevTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: -1 }), shiftKey(t("key.take"))),
     ];
   }
 
@@ -895,7 +901,7 @@
       if (track) send({ type: "pasteClips", to: { track: track.number, tick } });
     };
     openContextMenu(e.clientX, e.clientY, [
-      menuRow("menu.paste", !busy && track !== undefined && clipboardCount > 0, paste, modKey(t("ctxKey.paste"))),
+      menuRow("menu.paste", !busy && track !== undefined && clipboardCount > 0, paste, modKey(t("key.paste"))),
     ]);
   }
 
@@ -903,8 +909,8 @@
     e.preventDefault();
     if (song.playTarget !== track) send({ type: "selectTrack", track });
     openContextMenu(e.clientX, e.clientY, [
-      menuRow("menu.mute", !busy, () => send({ type: "toggleMute", track }), t("ctxKey.mute")),
-      menuRow("menu.solo", true, () => send({ type: "toggleSolo", track }), t("ctxKey.solo")),
+      menuRow("menu.mute", !busy, () => send({ type: "toggleMute", track }), shiftKey(t("key.mute"))),
+      menuRow("menu.solo", true, () => send({ type: "toggleSolo", track }), shiftKey(t("key.solo"))),
       menuRow("menu.arm", true, () => send({ type: "toggleArm", track })),
     ]);
   }
@@ -1008,13 +1014,18 @@
             <div class="line">
               <span class="m-num m-lbl track-number">{track.number}</span>
               <span class="m-name track-name" use:term={"トラック"}>{track.name}</span>
+              <!-- 録音中 ・ カウントイン中は core がミュートを受けないので「使えない」。 -->
               <button
-                class="tog live"
+                class="tog"
+                class:live={!busy}
                 class:on={track.muted}
                 aria-pressed={track.muted}
+                aria-disabled={busy || undefined}
+                tabindex={busy ? -1 : undefined}
                 aria-label={t("arrange.mute")}
+                data-test="track-mute"
                 use:term={"ミュート"}
-                onclick={() => send({ type: "toggleMute", track: track.number })}>{t("arrange.muteShort")}</button
+                onclick={() => !busy && send({ type: "toggleMute", track: track.number })}>{t("arrange.muteShort")}</button
               >
               <button
                 class="tog live"
@@ -1072,7 +1083,7 @@
         class="lanes"
         role="presentation"
         use:glRegion={"arrangeLanes"}
-        use:glSlot={{ kind: "arrangeGrid", barPx, firstBarX: -view.scrollX }}
+        use:glSlot={{ kind: "arrangeGrid", barPx, firstBarX: -view.scrollX, beats: gridBeats }}
         bind:this={lanesBox}
         style:cursor={laneCursor}
         onpointerdown={lanesDown}

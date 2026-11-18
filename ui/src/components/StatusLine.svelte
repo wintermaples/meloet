@@ -136,6 +136,7 @@
       case "bandFoldedScale":
         return plain("msg.bandFoldedScale", { scale: m.scale, band: t(BAND_NAMES[m.band]) });
       case "valueRejected": {
+        if (m.field === "playPosition") return plain("msg.playPositionRejected", { kept: m.kept });
         const [field, range] = VALUE_FIELDS[m.field];
         return plain("msg.valueRejected", { field: t(field), range: m.range ?? (range ? t(range) : ""), kept: m.kept });
       }

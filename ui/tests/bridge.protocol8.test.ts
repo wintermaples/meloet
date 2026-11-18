@@ -103,6 +103,31 @@ describe("偽物の Rust: 約束 8 の意図", () => {
     expect([s.arrange.selectedClips, s.arrange.selectedClip]).toEqual([[], null]);
   });
 
+  it("もう選んであるクリップを Shift で押すと、それが押したクリップになる（core と同じ）", async () => {
+    const f = await opened("arrangeSelect");
+    let s = await f.send({ type: "selectClip", clip: 1 }, { type: "selectClips", clips: [43], mode: "add" });
+    expect([s.arrange.selectedClips, s.arrange.selectedClip]).toEqual([[1, 43], 43]);
+    s = await f.send({ type: "selectClips", clips: [1], mode: "add" });
+    expect([s.arrange.selectedClips, s.arrange.selectedClip, s.arrange.pianoRollClip, s.song.playTarget]).toEqual([[1, 43], 1, 1, 1]);
+  });
+
+  it("重なって置けないときは状態行で言う。トラックの外へはみだすときは言わない", async () => {
+    const f = await opened("arrangeSelect");
+    const before = clipsOf(f.now());
+    let s = await f.send({ type: "moveClips", clips: [1], ticks: 4 * BAR, tracks: 0, copy: false });
+    expect([clipsOf(s), s.status.message]).toEqual([before, { id: "clipsNotMoved" }]);
+    s = await f.send({ type: "selectClip", clip: null });
+    expect(s.status.message?.id).not.toBe("clipsNotMoved");
+    s = await f.send({ type: "moveClips", clips: [1], ticks: 4 * BAR, tracks: 0, copy: true });
+    expect([clipsOf(s), s.status.message]).toEqual([before, { id: "clipsNotDuplicated" }]);
+    s = await f.send({ type: "duplicateClips", clips: [1] });
+    expect([clipsOf(s), s.status.message]).toEqual([before, { id: "clipsNotDuplicated" }]);
+    s = await f.send({ type: "copyClips", clips: [3] }, { type: "pasteClips", to: { track: 1, tick: 0 } });
+    expect([clipsOf(s), s.status.message]).toEqual([before, { id: "clipsNotPasted" }]);
+    s = await f.send({ type: "selectClip", clip: null }, { type: "moveClips", clips: [43], ticks: 40 * BAR, tracks: 1, copy: false });
+    expect([clipsOf(s), s.status.message?.id]).toEqual([before, "summary"]);
+  });
+
   it("まとめて動かす（トラックの行の差で）。はみだす・重なるときは何もしない", async () => {
     const f = await opened("arrangeSelect");
     // ピアノの「Aメロ」（5–9）とベースの「ベース A」（5–9）を 1 行下、4 小節うしろへ。

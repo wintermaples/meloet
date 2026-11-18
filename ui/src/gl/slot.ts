@@ -38,8 +38,8 @@ export type GlSlot =
   | { kind: "velocity" }
   /** Two horizontal level bars (left above right) with `gap` CSS px between them. */
   | { kind: "meter"; source: MeterSource; gap: number }
-  /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. */
-  | { kind: "arrangeGrid"; barPx: number; firstBarX: number }
+  /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. `beats` > 1: beat lines too, that many to a bar. */
+  | { kind: "arrangeGrid"; barPx: number; firstBarX: number; beats?: number }
   /** The 40 px arrange overview (clip lines, visible range, play position). */
   | { kind: "overview" }
   /** Any rectangles (clips, the notes in them). Later ones on top; slots later in the page on top of earlier ones. */

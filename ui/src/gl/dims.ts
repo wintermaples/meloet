@@ -67,7 +67,8 @@ export const METER = {
 } as const satisfies Record<string, ColorName>;
 
 /** F-Empty / F-Connect1, the bar lines of the arrange area. */
-export const ARRANGE_GRID = { line: "color.gray.4" } as const;
+/** Bar lines alone are gray.4 (Main). With beat lines (B-61), as in the piano roll: bars gray.6, beats gray.4. */
+export const ARRANGE_GRID = { line: "color.gray.4", bar: "color.gray.6", beat: "color.gray.4" } as const;
 
 /** A-PianoRoll, the frame of the visible range. */
 export const OVERVIEW = { frame: "color.accent", inset: mock["mock.range-frame.inset"].value } as const;

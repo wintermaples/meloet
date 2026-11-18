@@ -6,7 +6,7 @@ import { metrics } from "../components/metrics.svelte";
 import * as G from "../components/pianoroll/geom";
 import { shown } from "../components/pianoroll/shown.svelte";
 import { shownFor } from "../components/pianoroll/shownNotes";
-import { dragReading, prView, pxPerTick } from "../components/pianoroll/view.svelte";
+import { dragReading, prView, pxPerTick, rowHeight } from "../components/pianoroll/view.svelte";
 import { current } from "../state/app.svelte";
 import { browserClock, parseUiScript, SCRIPT_REPORT, UiScript, type Grab, type Target } from "./script";
 
@@ -19,7 +19,7 @@ function geom(): G.RollGeom {
     scrollTick: prView.scrollTick,
     ppt: pxPerTick(metrics.scale),
     topKey: prView.topKey,
-    rowH: metrics.px("size.note"),
+    rowH: rowHeight(metrics.scale),
     width: prView.areaWidth,
     height: prView.areaHeight,
   };

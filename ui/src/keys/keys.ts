@@ -148,13 +148,6 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
   if (k.key === "Escape") return k.shift ? null : { kind: "back" };
   if (k.key === "F10") return k.shift ? null : { kind: "menuBar" };
 
-  // 仕様書 4 章の表: 選んだトラックのミュート ・ ソロは、文字を打っている最中も効く。
-  if (k.shift) {
-    const l = letter(k);
-    if (l === "m") return { kind: "trackMute" };
-    if (l === "s") return { kind: "trackSolo" };
-  }
-
   if (!k.shift && context === "outputChooser") {
     if (k.key === "ArrowUp") return { kind: "chooserUp" };
     if (k.key === "ArrowDown") return { kind: "chooserDown" };
@@ -173,7 +166,12 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
   if (d && TOOL_DIGITS[d]) return k.shift ? null : { kind: "tool", tool: TOOL_DIGITS[d]! };
 
   const l = letter(k);
-  if (k.shift) return l === "t" ? { kind: "stepTake", delta: -1 } : null;
+  if (k.shift) {
+    // Shift M ・ Shift S は選んだトラックのミュート ・ ソロ。ほかの一文字のキーと同じく、文字を打っている最中は効かない（B-70）。
+    if (l === "m") return { kind: "trackMute" };
+    if (l === "s") return { kind: "trackSolo" };
+    return l === "t" ? { kind: "stepTake", delta: -1 } : null;
+  }
   if (l === "q") return { kind: "quantize" };
   return (l && BAND_KEYS[l]) || null;
 }

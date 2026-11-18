@@ -98,15 +98,19 @@ export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left
   bar(y1 - h, right);
 }
 
-/** Bar lines. `firstBarX` and `barPx` are device pixels and may have a fraction. */
-export function paintArrangeGrid(out: Batch, box: Box, firstBarX: number, barPx: number): void {
+/** Bar lines, and `beats` lines to a bar when it is more than 1. `firstBarX` and `barPx` are device pixels and may have a fraction. */
+export function paintArrangeGrid(out: Batch, box: Box, firstBarX: number, barPx: number, beats = 1): void {
   if (!(barPx >= 1)) return;
   const { x0, y0, x1, y1 } = box;
-  const first = Math.max(0, Math.ceil(-firstBarX / barPx));
+  const n = Math.max(1, Math.floor(beats));
+  const step = barPx / n;
+  const bar = rgb(n > 1 ? ARRANGE_GRID.bar : ARRANGE_GRID.line);
+  const beat = rgb(ARRANGE_GRID.beat);
+  const first = Math.max(0, Math.ceil(-firstBarX / step));
   for (let k = first; ; k++) {
-    const x = x0 + Math.round(firstBarX + k * barPx);
+    const x = x0 + Math.round(firstBarX + k * step);
     if (x >= x1) break;
-    out.rect(x, y0, x + HAIR, y1, rgb(ARRANGE_GRID.line));
+    out.rect(x, y0, x + HAIR, y1, k % n === 0 ? bar : beat);
   }
 }
 

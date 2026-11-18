@@ -592,25 +592,9 @@ export const texts = {
 
   // ---- 区切り1 で画面の係が足す文は、ここから下に（ピアノロールの係はこの段、アレンジと再生まわりの係は次の段）。
   // [ピアノロール]
-  // 右クリックの一覧（B-60）の行の右のキー。「Ctrl X」の X など（Mod の字は key.ctrl ・ key.cmd）。
-  "prMenu.keyCut": e("X", "spec:4"),
-  "prMenu.keyCopy": e("C", "spec:4"),
-  "prMenu.keyPaste": e("V", "spec:4"),
-  "prMenu.keyDuplicate": e("D", "spec:4"),
-  "prMenu.keySelectAll": e("A", "spec:4"),
-  "prMenu.keyDelete": e("Delete", "spec:4"),
-
   // [アレンジ ・ 再生まわり ・ 入力計]
-  // 右クリックの一覧の行の右のキー（仕様書 4 章の表。Mod は key.ctrl ・ key.cmd で読みかえる）。
-  "ctxKey.cut": e("X", "spec:4"),
-  "ctxKey.copy": e("C", "spec:4"),
-  "ctxKey.paste": e("V", "spec:4"),
-  "ctxKey.duplicate": e("D", "spec:4"),
-  "ctxKey.delete": e("Delete", "spec:4"),
-  "ctxKey.nextTake": e("T", "spec:4"),
-  "ctxKey.prevTake": e("Shift T", "spec:4"),
-  "ctxKey.mute": e("Shift M", "spec:4"),
-  "ctxKey.solo": e("Shift S", "spec:4"),
+  // 再生の位置の欄に読めない物を打った（デザインに戻した事 61）。再生の位置には上のはしがないので、範囲の文の形を使わない。
+  "msg.playPositionRejected": e("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの {kept} のままです。", "user:2026-11-18", { kept: "1. 1. 000" }),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。

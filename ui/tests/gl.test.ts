@@ -405,6 +405,18 @@ describe("四角の並び", () => {
     paintArrangeGrid(none, { x0: 0, y0: 0, x1: 100, y1: 10 }, 0, 0);
     expect(none.rectCount).toBe(0);
   });
+  it("拍の線も描くとき（B-61）: 小節 gray.6、拍 gray.4（ピアノロールと同じ分けかた）", () => {
+    const b = batch();
+    b.clip(0, 0, 300, 10);
+    paintArrangeGrid(b, { x0: 0, y0: 0, x1: 300, y1: 10 }, 0, 128, 4);
+    expect(ofColor(b, "color.gray.6").map((r) => r[0])).toEqual([0, 128, 256]);
+    expect(ofColor(b, "color.gray.4").map((r) => r[0])).toEqual([32, 64, 96, 160, 192, 224, 288]);
+    const scrolled = batch();
+    scrolled.clip(0, 0, 100, 10);
+    paintArrangeGrid(scrolled, { x0: 0, y0: 0, x1: 100, y1: 10 }, -150, 120, 6);
+    expect(ofColor(scrolled, "color.gray.6").map((r) => r[0])).toEqual([90]);
+    expect(ofColor(scrolled, "color.gray.4").map((r) => r[0])).toEqual([10, 30, 50, 70]);
+  });
   it("ちぢんだアレンジの枠のあきは、A-PianoRoll のモックの値", () => {
     expect(mockHtml("A-PianoRoll")).toContain(`top:${OVERVIEW.inset}px;width:256px;height:37px;border:1px solid ${colors[OVERVIEW.frame]}`);
   });

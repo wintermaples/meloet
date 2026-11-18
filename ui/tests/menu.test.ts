@@ -244,13 +244,16 @@ describe("メニューの中身（B-59）", () => {
 });
 
 describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
-  it("Mod Shift S、Mod Q、F10、Shift M ・ Shift S（文字を打っている最中も効く）", () => {
+  it("Mod Shift S、Mod Q、F10、Shift M ・ Shift S（文字を打っている最中は効かない。ヤチヨさんの決め 2026-11-18）", () => {
     expect(keyAction(k("S", { ctrl: true, shift: true }), false, "other")).toEqual({ kind: "saveSongAs" });
     expect(keyAction(k("q", { ctrl: true }), true, "other")).toEqual({ kind: "quit" });
     expect(keyAction(k("q", { meta: true }), false, "mac")).toEqual({ kind: "quit" });
     expect(keyAction(k("F10"), false, "other")).toEqual({ kind: "menuBar" });
-    expect(keyAction(k("M", { shift: true }), true, "other")).toEqual({ kind: "trackMute" });
+    expect(keyAction(k("M", { shift: true }), false, "other")).toEqual({ kind: "trackMute" });
     expect(keyAction(k("S", { shift: true, code: "KeyS" }), false, "other")).toEqual({ kind: "trackSolo" });
+    expect(keyAction(k("M", { shift: true }), true, "other")).toBeNull();
+    expect(keyAction(k("S", { shift: true, code: "KeyS" }), true, "other")).toBeNull();
+    expect(keyAction(k("m", { shift: true, code: "KeyM" }), false, "other", "outputChooser")).toEqual({ kind: "trackMute" });
     expect(keyAction(k("q"), false, "other")).toEqual({ kind: "quantize" });
   });
 

@@ -33,16 +33,16 @@ export function rollMenu(f: RollMenuFacts, act: RollMenuActions): MenuEntry[] {
   const paste = f.clipboard && edit;
   if (!f.onNote) {
     return [
-      { kind: "row", label: "menu.paste", key: mod(t("prMenu.keyPaste")), usable: paste, run: () => act.pasteAt(f.pasteAt) },
-      { kind: "row", label: "menu.selectAll", key: mod(t("prMenu.keySelectAll")), usable: true, run: () => act.key({ kind: "selectAll" }) },
+      { kind: "row", label: "menu.paste", key: mod(t("key.paste")), usable: paste, run: () => act.pasteAt(f.pasteAt) },
+      { kind: "row", label: "menu.selectAll", key: mod(t("key.selectAll")), usable: true, run: () => act.key({ kind: "selectAll" }) },
     ];
   }
   return [
-    { kind: "row", label: "menu.cut", key: mod(t("prMenu.keyCut")), usable: edit, run: () => act.key({ kind: "cut" }) },
-    { kind: "row", label: "menu.copy", key: mod(t("prMenu.keyCopy")), usable: true, run: () => act.key({ kind: "copy" }) },
-    { kind: "row", label: "menu.paste", key: mod(t("prMenu.keyPaste")), usable: paste, run: () => act.key({ kind: "paste" }) },
-    { kind: "row", label: "menu.duplicate", key: mod(t("prMenu.keyDuplicate")), usable: edit, run: () => act.key({ kind: "duplicate" }) },
-    { kind: "row", label: "menu.delete", key: t("prMenu.keyDelete"), usable: edit, run: () => act.key({ kind: "deleteNotes" }) },
+    { kind: "row", label: "menu.cut", key: mod(t("key.cut")), usable: edit, run: () => act.key({ kind: "cut" }) },
+    { kind: "row", label: "menu.copy", key: mod(t("key.copy")), usable: true, run: () => act.key({ kind: "copy" }) },
+    { kind: "row", label: "menu.paste", key: mod(t("key.paste")), usable: paste, run: () => act.key({ kind: "paste" }) },
+    { kind: "row", label: "menu.duplicate", key: mod(t("key.duplicate")), usable: edit, run: () => act.key({ kind: "duplicate" }) },
+    { kind: "row", label: "menu.delete", key: t("key.delete"), usable: edit, run: () => act.key({ kind: "deleteNotes" }) },
     { kind: "separator" },
     { kind: "row", label: "menu.quantize", key: t("key.quantize"), usable: edit, run: () => act.key({ kind: "quantize" }) },
     { kind: "row", label: "menu.unquantize", usable: edit && f.origin, run: act.unquantize },

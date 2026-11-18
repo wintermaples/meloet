@@ -567,4 +567,10 @@ describe("状態行: クオンタイズをかけた ・ 使えない値を打っ
     show(StatusLine);
     expect(left()).toBe("位置は 1.1.000〜4.1.000 です。もとの 1.1.000 のままです。");
   });
+
+  it("再生の位置の欄に読めない物を打った（B-61。範囲の文の形を使わない）", async () => {
+    await scene("pianoRoll", (s) => (s.status.message = { id: "valueRejected", field: "playPosition", kept: "1. 1. 000", range: null }));
+    show(StatusLine);
+    expect(left()).toBe("位置は「5」「5.2」「5.2.240」の形で打ちます。もとの 1. 1. 000 のままです。");
+  });
 });

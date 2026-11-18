@@ -172,6 +172,27 @@ describe("押す: クリップをえらぶ、録音待機", () => {
       { type: "toggleSolo", track: 3 },
     ]);
   });
+
+  it("録音中 ・ カウントイン中は M だけ「使えない」（core が受けない）。S ・ ● は押せる", () => {
+    for (const state of ["recording", "countIn"] as const) {
+      const s = three();
+      s.transport.state = state;
+      (mounted ? show2 : show)(s);
+      const mute = qa("button[aria-label=ミュート]");
+      expect(mute.map((b) => b.getAttribute("aria-disabled"))).toEqual(["true", "true", "true"]);
+      expect(mute.map((b) => b.classList.contains("live"))).toEqual([false, false, false]);
+      expect(mute[0]!.tabIndex).toBe(-1);
+      mute[1]!.click();
+      qa("button[aria-label=ソロ]")[0]!.click();
+      qa("button[aria-label=録音待機]")[1]!.click();
+      expect(app.sent).toEqual([
+        { type: "toggleSolo", track: 1 },
+        { type: "toggleArm", track: 2 },
+      ]);
+      expect(qa("button[aria-label=ソロ]")[0]!.classList.contains("live")).toBe(true);
+      app.sent.length = 0;
+    }
+  });
 });
 
 describe("選んだトラック（B-70）", () => {

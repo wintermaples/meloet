@@ -1296,7 +1296,7 @@ export function reduceClips(
   state: AppState,
   command: Command,
   clipboard: FakeClipboard = { clips: [] },
-): { song: SongView; arrange: ArrangeView } | null {
+): { song: SongView; arrange: ArrangeView; notice?: StatusMessage } | null {
   if (!CLIP_COMMANDS.includes(command.type)) return null;
   const song = structuredClone(state.song);
   const arrange = structuredClone(state.arrange);
@@ -1372,17 +1372,22 @@ export function reduceClips(
   if (busy(state)) return null;
   const nextId = () => Math.max(0, ...FAKE_TAKES.keys(), ...song.tracks.flatMap((t) => t.clips.map((c) => c.id))) + 1;
   const byStart = (a: ClipView, b: ClipView) => a.start - b.start;
-  /** Puts `items` (copies when `fresh`) where they say, or returns false when one does not fit. */
-  const place = (items: { row: number; start: number; clip: ClipView }[], fresh: boolean, taken: number[]): boolean => {
+  /**
+   * Puts `items` (copies when `fresh`) where they say. When one is off the tracks nothing changes; when one would
+   * overlap another clip nothing changes either, and the status line says `overlap` (as core does).
+   */
+  const place = (
+    items: { row: number; start: number; clip: ClipView }[],
+    fresh: boolean,
+    taken: number[],
+    overlap: StatusMessage,
+  ): ReturnType<typeof reduceClips> => {
+    if (!items.every(({ row, start }) => row >= 0 && row < song.tracks.length && start >= 0)) return null;
     for (const t of song.tracks) t.clips = t.clips.filter((c) => !taken.includes(c.id));
-    const fits = items.every(
-      ({ row, start, clip }) =>
-        row >= 0 &&
-        row < song.tracks.length &&
-        start >= 0 &&
-        !song.tracks[row]!.clips.some((c) => c.start < start + clip.end - clip.start && start < c.end),
+    const overlaps = items.some(({ row, start, clip }) =>
+      song.tracks[row]!.clips.some((c) => c.start < start + clip.end - clip.start && start < c.end),
     );
-    if (!fits) return false;
+    if (overlaps) return { song: state.song, arrange: state.arrange, notice: overlap };
     const placed: number[] = [];
     let last: number | null = null;
     for (const { row, start, clip } of items) {
@@ -1393,7 +1398,7 @@ export function reduceClips(
       if (clip.id === arrange.selectedClip || last === null) last = id;
     }
     select(placed, last);
-    return true;
+    return done();
   };
   switch (command.type) {
     case "trimClip": {
@@ -1429,7 +1434,7 @@ export function reduceClips(
       const ticks = command.type === "duplicateClips" ? Math.max(...clips.map((c) => c.end)) - earliest : Math.max(command.ticks, -earliest);
       if (!copy && ticks === 0 && rows === 0) return null;
       const items = clips.map((clip) => ({ row: rowOf(clip.id) + rows, start: clip.start + ticks, clip }));
-      return place(items, copy, copy ? [] : ids) ? done() : null;
+      return place(items, copy, copy ? [] : ids, { id: copy ? "clipsNotDuplicated" : "clipsNotMoved" });
     }
     case "pasteClips": {
       if (clipboard.clips.length === 0) return null;
@@ -1438,7 +1443,7 @@ export function reduceClips(
       const top = song.tracks.findIndex((t) => t.number === to.track);
       if (top < 0) return null;
       const items = clipboard.clips.map(({ row, at, clip }) => ({ row: top + row, start: to.tick + at, clip }));
-      return place(items, true, []) ? done() : null;
+      return place(items, true, [], { id: "clipsNotPasted" });
     }
     default:
       return null;
@@ -1584,7 +1589,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
   if (JSON.stringify(transport) !== JSON.stringify(state.transport)) changes.push({ section: "transport", value: transport });
   if (JSON.stringify(pianoRoll) !== JSON.stringify(state.pianoRoll)) changes.push({ section: "pianoRoll", value: pianoRoll });
   // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
-  let message = notice ?? (isNotice(state.status.message) ? rest : state.status.message);
+  let message = notice ?? clips?.notice ?? (isNotice(state.status.message) ? rest : state.status.message);
   if (message?.id === "summary") {
     const notes = noteSelection(pianoRoll);
     message = { ...message, notes, nothingSelected: notes === null && (clips?.arrange ?? state.arrange).selectedClips.length === 0 };

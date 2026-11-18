@@ -231,6 +231,14 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
     expect(G.rulerStep(192, 1440, 240, 1, 32)).toBe(240);
   });
 
+  it("拍の線を描くのは、目盛が拍に吸いつくときと同じ条件（B-61）", () => {
+    for (const [barPx, perBar, perBeat] of [[127, BAR, 480], [128, BAR, 480], [64, BAR, 480], [191, 1440, 240], [192, 1440, 240]]) {
+      expect(G.beatsShown(barPx, perBar, perBeat, 32)).toBe(G.rulerStep(barPx, perBar, perBeat, 1, 32) === perBeat);
+    }
+    expect(G.beatsShown(127, BAR, 480, 32)).toBe(false);
+    expect(G.beatsShown(128, BAR, 480, 32)).toBe(true);
+  });
+
   it("ループの範囲（ティック）→ 小節の線の番号", () => {
     expect(G.loopBars({ start: 4 * BAR, end: 8 * BAR }, BAR)).toEqual({
       from: 5,

@@ -64,6 +64,7 @@ describe("縦の − ＋（B-63）", () => {
     const zoomOut = q<HTMLButtonElement>('[data-test="pr-row-zoom-out"]')!;
     expect(zoomIn.closest(".ruler-gap")).not.toBeNull();
     expect([text(zoomOut), text(zoomIn)]).toEqual(["−", "＋"]);
+    expect([zoomOut.getAttribute("aria-label"), zoomIn.getAttribute("aria-label")]).toEqual(["縦に縮小", "縦に拡大"]);
     zoomIn.click();
     flushSync();
     expect(prView.rowPx).toBe(16);

@@ -263,8 +263,12 @@ export function dragRange(drag: RulerDrag, v: View, x: number, perBar: number): 
  * 番号のある小節おき、ふだんは 1 小節。拡大して 1 拍が minGap px（番号どうしの間と同じ）以上になれば拍。
  */
 export function rulerStep(barPx: number, perBar: number, perBeat: number, labelEvery: number, minGap: number): number {
-  if ((barPx * perBeat) / perBar >= minGap) return perBeat;
-  return labelEvery * perBar;
+  return beatsShown(barPx, perBar, perBeat, minGap) ? perBeat : labelEvery * perBar;
+}
+
+/** 目盛が拍に吸いつくほど拡大しているか。このときだけ、クリップの場所に拍の線も描く（B-61）。 */
+export function beatsShown(barPx: number, perBar: number, perBeat: number, minGap: number): boolean {
+  return (barPx * perBeat) / perBar >= minGap;
 }
 
 /** 目盛を離したときの命令。動かしていなければ、押した所へ（step のきざみの近い線に吸いつく。Shift のときは step が null で吸いつかない）。 */

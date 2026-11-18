@@ -220,7 +220,7 @@ describe("偽物の Rust の答え（reduceClips）", () => {
     s.song.tracks = twoTracks();
     return s;
   };
-  it("MoveClip で動かし、写しは新しい id。動かしたクリップ（写し）をえらぶ。重なるときは何もしない", () => {
+  it("MoveClip で動かし、写しは新しい id。動かしたクリップ（写し）をえらぶ。重なるときは何もせず、状態行で言う", () => {
     const moved = reduceClips(state(), { type: "moveClips", clips: [3], ticks: BAR, tracks: 1, copy: false })!;
     expect(moved.song.tracks[0]!.clips.map((c) => c.id)).toEqual([1]);
     expect(moved.song.tracks[1]!.clips.map((c) => [c.id, c.start])).toEqual([[5, 2 * BAR], [3, 5 * BAR]]);
@@ -229,7 +229,9 @@ describe("偽物の Rust の答え（reduceClips）", () => {
     const ids = copied.song.tracks[0]!.clips.map((c) => c.id);
     expect(ids.slice(0, 2)).toEqual([1, 3]);
     expect(copied.arrange.selectedClip).toBe(ids[2]);
-    expect(reduceClips(state(), { type: "moveClips", clips: [1], ticks: BAR, tracks: 0, copy: false })).toBeNull();
+    const s = state();
+    expect(reduceClips(s, { type: "moveClips", clips: [1], ticks: BAR, tracks: 0, copy: false })).toEqual({ song: s.song, arrange: s.arrange, notice: { id: "clipsNotMoved" } });
+    expect(reduceClips(s, { type: "moveClips", clips: [1], ticks: BAR, tracks: 2, copy: false })).toBeNull();
   });
   it("DuplicateClip はすぐうしろ。TrimClip はテイクの 0 を動かさない", () => {
     const dup = reduceClips(state(), { type: "duplicateClips", clips: [3] })!;

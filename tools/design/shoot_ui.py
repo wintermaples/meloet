@@ -49,6 +49,7 @@ BOARDS = {
     "recover2": "F-Recover2",
     "recover3": "F-Recover3",
     "arrangeZoomIn": "R3-Arrange",
+    "arrangeZoomBeats": "R3-Arrange",
     "scaleMenu": "A-PianoRoll",
     "noteListTyping": "R3-Lanes",
     "noteListBroken": "R3-Lanes",
@@ -93,6 +94,8 @@ CLICKS = {
     "songMenu": ("saved", '[data-test="transport-song"]'),
     "countInMenu": ("empty", '[data-test="transport-count-in"]'),
     "arrangeZoomIn": ("loop", '[aria-label="横に拡大"]'),
+    # Two steps in: 1 beat is as wide as the gap between bar numbers, so beat lines show (B-61).
+    "arrangeZoomBeats": ("loop", ('[aria-label="横に拡大"]', '[aria-label="横に拡大"]')),
     "scaleMenu": ("pianoRoll", '[data-test="inspector-scale"]'),
     "noteListTyping": ("pianoRoll", "js:" + TYPE_IN_LIST % (2, "96")),
     "noteListBroken": ("pianoRoll", "js:" + TYPE_IN_LIST % (4, "200")),
@@ -118,6 +121,9 @@ ONLY = {
     "ccLanes": [(1280, 800, 100), (1920, 1080, 100), (1920, 1080, 150)],
     "ccOtherMenu": [(1920, 1080, 100)],
     "arrangeTrimmed": [(1280, 800, 100), (1280, 800, 150)],
+    "arrangeZoomBeats": [(1280, 800, 100), (1280, 800, 150)],
+    # At 1280x800 150 % the right panel is folded, so there is no scale button to press.
+    "scaleMenu": [(1280, 800, 100), (1920, 1080, 150)],
     "arrangeTrimmedRoll": [(1280, 800, 100)],
     "arrangeMoveDrag": [(1280, 800, 100)],
     "arrangeCopyDrag": [(1280, 800, 100)],
@@ -149,13 +155,40 @@ try {
   ws.onmessage = (m) => { const d = JSON.parse(m.data); waiting.get(d.id)?.(d.result); };
   const call = (method, params = {}) => new Promise((r) => { waiting.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
   await call("Emulation.setDeviceMetricsOverride", { width: Number(w), height: Number(h), deviceScaleFactor: 1, mobile: false });
-  await sleep(2500);
+  // The first tab can still be about:blank; load the scene in the tab we hold.
+  await call("Page.enable");
+  await call("Page.navigate", { url });
+  const evaluate = async (expression) => (await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }))?.result?.value;
+  // Waits (in the page, up to 60 s) until `test` is true, then until the page stops changing: fonts loaded, no change
+  // to the DOM for 300 ms (at most 5 s more: a playing scene never stops), and two frames for WebGL to paint.
+  const settle = async (test) => {
+    const ok = await evaluate(`(async () => {
+      const end = Date.now() + 60000;
+      while (!(${test}) && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+      if (!(${test})) return false;
+      await document.fonts.ready;
+      await new Promise((done) => {
+        let t = setTimeout(stop, 300);
+        const cap = setTimeout(stop, 5000);
+        const mo = new MutationObserver(() => { clearTimeout(t); t = setTimeout(stop, 300); });
+        mo.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+        function stop() { mo.disconnect(); clearTimeout(t); clearTimeout(cap); done(); }
+      });
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+    if (!ok) throw new Error(`the page did not get ready: ${test}`);
+  };
+  await settle(`location.href === ${JSON.stringify(url)} && document.readyState === "complete" && document.querySelector(".app .status") !== null`);
   for (const selector of JSON.parse(selectors)) {
-    const expression = selector.startsWith("js:")
-      ? `(async () => {${selector.slice(3)}})()`
-      : `document.querySelector(${JSON.stringify(selector)}).click()`;
-    await call("Runtime.evaluate", { expression, awaitPromise: true });
-    await sleep(800);
+    if (selector.startsWith("js:")) {
+      await evaluate(`(async () => {${selector.slice(3)}})()`);
+      await settle("true");
+    } else {
+      await settle(`document.querySelector(${JSON.stringify(selector)}) !== null`);
+      await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+      await settle("true");
+    }
   }
   const shot = await call("Page.captureScreenshot", { format: "png" });
   writeFileSync(out, Buffer.from(shot.data, "base64"));
@@ -207,9 +240,11 @@ try:
             if scene in CLICKS:
                 base, selector = CLICKS[scene]
                 selectors = json.dumps([selector] if isinstance(selector, str) else list(selector))
-                run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
-                     f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selectors, shot, str(w), str(h)],
-                    env=env, capture_output=True, timeout=60)
+                done = subprocess.run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
+                                       f"http://127.0.0.1:{port}/?scene={base}&scale={scale}", selectors, shot, str(w), str(h)],
+                                      env=env, capture_output=True, text=True, timeout=180)
+                if done.returncode != 0:
+                    sys.exit(f"{stem}: {done.stderr.strip() or done.returncode}")
             else:
                 run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
                      "--force-device-scale-factor=1", "--virtual-time-budget=3000",

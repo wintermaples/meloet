@@ -30,9 +30,14 @@ describe("仕様書 5 章「用語の説明」", () => {
     expect(terms.filter((x) => x.source === "spec:5").map((x) => [x.term, x.description])).toEqual(specTerms);
   });
 
-  it("仕様書の外の用語は、ヤチヨさんが決めた「仮の音」だけ", () => {
+  it("仕様書の外の用語は、ヤチヨさんが決めた「仮の音」と「ベロシティ固定」だけ", () => {
     expect(terms.filter((x) => x.source !== "spec:5")).toEqual([
       { term: "仮の音", description: "本物のピアノの音が入るまでの、かわりの音。", source: "user:2026-11-14" },
+      {
+        term: "ベロシティ固定",
+        description: "鍵盤をどの強さで押しても、決めた強さで鳴らして録る。書く道具のノートも同じ強さになる。",
+        source: "user:2026-11-18",
+      },
     ]);
     expect(t("instrument.placeholder")).toBe("仮の音");
   });

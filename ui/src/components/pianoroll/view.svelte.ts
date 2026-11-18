@@ -15,10 +15,16 @@ export type Tool = "select" | "draw" | "erase";
 export const QUARTER_PX_STEPS = [10, 14, 20, 28, 40, 57, 80, 113, 160, 226, 320] as const;
 export const DEFAULT_QUARTER_PX = 80;
 
+/** 縦の拡大の段（拡大率 100 % で、1 行＝半音ひとつの px。design-notes B-63）。はじめは仕様書の size.note の 12。 */
+export const ROW_PX_STEPS = [8, 12, 16, 20, 24] as const;
+export const DEFAULT_ROW_PX = 12;
+
 export const prView = $state({
   tool: "select" as Tool,
   /** 拡大率 100 % で、4 分音符 1 つの px（QUARTER_PX_STEPS のどれか）。 */
   quarterPx: DEFAULT_QUARTER_PX as number,
+  /** 拡大率 100 % で、1 行の px（ROW_PX_STEPS のどれか）。 */
+  rowPx: DEFAULT_ROW_PX as number,
   /** ノートの場所の左はしの、曲の中のティック。 */
   scrollTick: 0,
   /** ノートの場所のいちばん上の行の鍵（MIDI 0〜127）。 */
@@ -63,6 +69,14 @@ export function zoomBy(steps: number, scale: number, anchorTick?: number): void 
   const x = (anchor - prView.scrollTick) * pxPerTick(scale);
   prView.quarterPx = next;
   prView.scrollTick = Math.max(0, anchor - x / pxPerTick(scale));
+}
+
+/** 縦の拡大 ・ 縮小（鍵盤の列の上の − ＋、Mod Shift ＋ ホイール、メニューの「表示」）を 1 段。変わったら true。 */
+export function zoomRowsBy(steps: number): boolean {
+  const next = stepFrom(ROW_PX_STEPS, prView.rowPx, steps, DEFAULT_ROW_PX);
+  if (next === prView.rowPx) return false;
+  prView.rowPx = next;
+  return true;
 }
 
 // ---- ドラッグ中の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す） ----

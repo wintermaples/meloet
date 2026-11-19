@@ -38,6 +38,9 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// The answer of the PC's folder window. Does not wait.
     fn folder_picked(&self, path: Option<PathBuf>);
 
+    /// The answer of the PC's folder window for a place to look for plugins in. Does not wait.
+    fn plugin_place_picked(&self, path: Option<PathBuf>);
+
     /// The answer of the PC's save window. Does not wait.
     fn save_as_picked(&self, path: Option<PathBuf>);
 
@@ -85,6 +88,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn folder_picked(&self, path: Option<PathBuf>) {
         meloet_core::Core::folder_picked(self, path);
+    }
+
+    fn plugin_place_picked(&self, path: Option<PathBuf>) {
+        meloet_core::Core::plugin_place_picked(self, path);
     }
 
     fn save_as_picked(&self, path: Option<PathBuf>) {

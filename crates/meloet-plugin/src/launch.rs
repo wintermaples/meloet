@@ -13,10 +13,11 @@
 //! [`crate::wire::ScanOutput`] to `--out-fd`, one plugin after another and passing over the
 //! ids `--skip` names, and ends after `Done` or `Broken`.
 
-use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use crate::key::PluginFormat;
 
@@ -96,6 +97,75 @@ pub fn scan_command(
     }
     command.arg("--out-fd").arg(out.as_raw_fd().to_string());
     finish(command, vec![out.as_raw_fd()], log)
+}
+
+/// Starts the child as the least urgent of the ordinary processes (nice 19): a scan must not
+/// take the processor from the screen while a person plays. Not `SCHED_IDLE`: a scan's time
+/// limit is wall-clock time, and on a busy PC an idle-class child may get no time at all and
+/// be taken for a plugin that hangs. meloet's audio thread is real-time and is ahead of any
+/// ordinary process either way.
+pub fn low_priority(command: &mut Command) {
+    // SAFETY: the closure runs between fork and exec and only calls setpriority, which is a
+    // plain system call and allocates nothing.
+    unsafe {
+        command.pre_exec(|| {
+            libc::setpriority(libc::PRIO_PROCESS, 0, 19);
+            Ok(())
+        });
+    }
+}
+
+/// Waits until `fd` has something to read, or its other end closed. False when `timeout`
+/// passed first.
+pub fn wait_readable(fd: BorrowedFd<'_>, timeout: Duration) -> bool {
+    let mut poll = libc::pollfd {
+        fd: fd.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let ms = timeout.as_millis().min(i32::MAX as u128) as libc::c_int;
+    // SAFETY: one valid pollfd.
+    unsafe { libc::poll(&mut poll, 1, ms) > 0 }
+}
+
+/// A handle on a child process that stays the same process whatever happens to its pid
+/// (docs/research/plugin-ipc.md). Open it before the child is waited for.
+pub struct PidFd(OwnedFd);
+
+impl PidFd {
+    pub fn open(pid: u32) -> std::io::Result<PidFd> {
+        // SAFETY: a plain system call; the descriptor it returns is ours alone. It is
+        // close-on-exec by itself.
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: just opened, owned by nothing else.
+        Ok(PidFd(unsafe { OwnedFd::from_raw_fd(fd as RawFd) }))
+    }
+
+    /// Whether the process has ended, waiting up to `timeout` for it.
+    pub fn exited(&self, timeout: Duration) -> bool {
+        wait_readable(self.0.as_fd(), timeout)
+    }
+
+    /// SIGKILL. An error when the process is gone already.
+    pub fn kill(&self) -> std::io::Result<()> {
+        // SAFETY: a plain system call on a descriptor this owns.
+        let done = unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                self.0.as_raw_fd(),
+                libc::SIGKILL,
+                std::ptr::null::<libc::siginfo_t>(),
+                0,
+            )
+        };
+        if done < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
 }
 
 /// In the child, first of all: standard input from `/dev/null`, standard output and standard

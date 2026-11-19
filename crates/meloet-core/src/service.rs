@@ -22,6 +22,7 @@ use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
 use meloet_model::playback::{PlayEvent, PlayKind};
 use meloet_model::record::{HeldControls, RecEventKind};
 use meloet_model::{BuiltinInstrument, ControlValue, InstrumentRef};
+use meloet_plugin::ScanCache;
 use meloet_protocol::{
     Command, Event, LiveNotesSnapshot, Snapshot, Telemetry, TransportReading, TransportState,
 };
@@ -33,6 +34,9 @@ use crate::instruments;
 use crate::measure::{self, KeyToSound};
 use crate::mixbook::{self, MixBook};
 use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, RecordReport};
+use crate::plugins::hosts::{DEFAULT_GEOMETRY, HostNews, HostOptions, Hosts};
+use crate::plugins::scanner::Scanner;
+use crate::plugins::{PluginOptions, ScanNews};
 use crate::recovery;
 use crate::settings::{self, Settings};
 use crate::songfile;
@@ -68,6 +72,8 @@ pub struct CoreOptions {
     pub state_dir: Option<PathBuf>,
     /// The folder of the sound pack. `None`: only the computed instruments sound.
     pub sounds_dir: Option<PathBuf>,
+    /// `None`: no plugins; nothing is scanned and no process is started.
+    pub plugins: Option<PluginOptions>,
 }
 
 /// What the core asks of the shell. Answer the windows with [`Core::song_file_picked`] and
@@ -88,6 +94,9 @@ pub enum ShellRequest {
     Exit,
     /// Show this file in the PC's file manager.
     ShowFile { path: PathBuf },
+    /// The PC's folder window for a place to look for plugins in, starting in `folder`.
+    /// Answer with [`Core::plugin_place_picked`].
+    PickPluginPlace { folder: Option<PathBuf> },
 }
 
 /// Called on the core thread; must not wait for the main thread.
@@ -105,6 +114,7 @@ impl CoreOptions {
             songs_dir: songfile::songs_dir(),
             state_dir: recovery::dir(),
             sounds_dir: sounds::find_dir(),
+            plugins: PluginOptions::from_env(),
         }
     }
 
@@ -119,6 +129,7 @@ impl CoreOptions {
             songs_dir: None,
             state_dir: None,
             sounds_dir: None,
+            plugins: None,
         }
     }
 }
@@ -155,6 +166,10 @@ enum Msg {
         instrument: BuiltinInstrument,
         read: Result<Arc<SampleBank>, LoadError>,
     },
+    /// From the scanner's threads.
+    Scan(ScanNews),
+    /// From the thread of the plugin processes.
+    Plugins(HostNews),
     Stop,
 }
 
@@ -275,6 +290,9 @@ impl Core {
             Library::open(options.sounds_dir.as_deref(), Box::new(done))
         };
         let mut model = Model::new(settings).with_sounds(library.installed());
+        if let Some(plugin_options) = &options.plugins {
+            model = model.with_plugin_places(plugin_options.usual_places.clone());
+        }
         let hub = Arc::new(Hub::new(model.view()));
         let shared = Arc::new(Shared {
             held: Held::default(),
@@ -299,6 +317,32 @@ impl Core {
             shared: shared.clone(),
             tx: tx.clone(),
         };
+        let plugins = options.plugins.as_ref().map(|plugin_options| {
+            let scan_tx = Mutex::new(tx.clone());
+            let scanner = Scanner::start(plugin_options, move |news| {
+                let _ = lock(&scan_tx).send(Msg::Scan(news));
+            });
+            let host_tx = tx.clone();
+            let hosts = Hosts::start(
+                HostOptions {
+                    exe: plugin_options.host_exe.clone(),
+                    env: plugin_options.child_env.clone(),
+                    geometry: DEFAULT_GEOMETRY,
+                },
+                move |news| {
+                    let _ = host_tx.send(Msg::Plugins(news));
+                },
+            );
+            let dir = plugin_options.cache_dir.as_deref();
+            PluginSide {
+                scanner,
+                _hosts: hosts,
+                start: Some(Input::PluginsStart {
+                    cache: Box::new(dir.map_or_else(ScanCache::default, ScanCache::load)),
+                    first: !dir.is_some_and(ScanCache::is_saved),
+                }),
+            }
+        });
         let midi = options.midi.and_then(|midi_options| {
             MidiInput::start_boxed(midi_options.clone(), links.midi_sink(parts.midi_in))
                 .inspect_err(|(e, _)| eprintln!("meloet: no keyboard input: {e}"))
@@ -340,6 +384,7 @@ impl Core {
                 midi,
                 devices,
                 audio_retry_at: None,
+                plugins,
             };
             std::thread::Builder::new()
                 .name("meloet-core".into())
@@ -401,6 +446,12 @@ impl Core {
     /// The answer to [`ShellRequest::PickFolder`]. Does not wait.
     pub fn folder_picked(&self, path: Option<PathBuf>) {
         let _ = self.tx.send(Msg::Input(Input::FolderPicked(path), None));
+    }
+
+    /// The answer to [`ShellRequest::PickPluginPlace`]. Does not wait.
+    pub fn plugin_place_picked(&self, path: Option<PathBuf>) {
+        let input = Input::PluginPlacePicked(path);
+        let _ = self.tx.send(Msg::Input(input, None));
     }
 
     /// The answer to [`ShellRequest::PickSaveAs`]: the folder and the name typed, as one path.
@@ -1135,6 +1186,17 @@ struct Worker {
     midi: Option<Midi>,
     devices: Option<DevicesState>,
     audio_retry_at: Option<Instant>,
+    plugins: Option<PluginSide>,
+}
+
+/// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
+/// the scan file is written and every plugin process is ended.
+struct PluginSide {
+    scanner: Scanner,
+    /// No track or insert holds a plugin yet; the processes are started through this.
+    _hosts: Hosts,
+    /// Given to the rules when the core thread starts.
+    start: Option<Input>,
 }
 
 impl Worker {
@@ -1144,6 +1206,9 @@ impl Worker {
         }
         // The rules ask for the samples of the song they start with.
         self.handle(Input::Tick);
+        if let Some(start) = self.plugins.as_mut().and_then(|p| p.start.take()) {
+            self.handle(start);
+        }
         let mut kept = Instant::now();
         let mut polled = Instant::now();
         loop {
@@ -1216,6 +1281,18 @@ impl Worker {
                     };
                     self.handle(input);
                 }
+                Ok(Msg::Scan(news)) => {
+                    self.handle(Input::PluginScan(news));
+                }
+                Ok(Msg::Plugins(news)) => {
+                    // Until tracks and inserts hold plugins there is no slot to name.
+                    if let HostNews::Stopped { key, slots } = news {
+                        eprintln!(
+                            "meloet: the process of {key} stopped ({} plugins)",
+                            slots.len()
+                        );
+                    }
+                }
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -1238,6 +1315,7 @@ impl Worker {
         drop(self.midi.take());
         drop(self.devices.take());
         self.audio.close(&self.shared.stream);
+        drop(self.plugins.take());
     }
 
     /// Takes in what the engine said about the recording, and what the listener hears now.
@@ -1396,6 +1474,24 @@ impl Worker {
                     }
                     Effect::LoadSound(instrument) => self.audio.sounds.load(instrument),
                     Effect::DropSound(instrument) => self.audio.sounds.let_go(instrument),
+                    Effect::ScanPlugins(job) => {
+                        if let Some(plugins) = &self.plugins {
+                            plugins.scanner.scan(*job);
+                        }
+                    }
+                    Effect::SavePluginScan(cache) => {
+                        if let Some(plugins) = &self.plugins {
+                            plugins.scanner.save(*cache);
+                        }
+                    }
+                    Effect::PickPluginPlace => {
+                        let folder = dirs::home_dir().filter(|d| d.is_dir());
+                        if !self.ask_shell(ShellRequest::PickPluginPlace { folder }) {
+                            inputs.push_back(Input::PluginPlacePicked(None));
+                        }
+                    }
+                    // No track or insert holds a plugin yet, so there is no process to ask.
+                    Effect::ReloadPlugin { .. } | Effect::UnloadPlugin { .. } => {}
                 }
             }
         }

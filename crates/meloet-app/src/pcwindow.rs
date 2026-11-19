@@ -18,6 +18,9 @@ pub const SAVE_AS_TITLE: &str = "名前をつけて保存";
 pub enum Pick {
     SongFile,
     Folder,
+    /// The folder window again, for a place to look for plugins in (design-notes A-16: the
+    /// same title).
+    PluginPlace,
     /// The save window, with the song's name filled in.
     SaveAs {
         name: String,
@@ -48,7 +51,9 @@ mod imp {
     ) {
         let (title, action) = match pick {
             Pick::SongFile => (OPEN_TITLE, gtk::FileChooserAction::Open),
-            Pick::Folder => (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder),
+            Pick::Folder | Pick::PluginPlace => {
+                (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder)
+            }
             Pick::SaveAs { .. } => (SAVE_AS_TITLE, gtk::FileChooserAction::Save),
         };
         let parent = window.gtk_window().ok();

@@ -14,8 +14,8 @@ use meloet_model::{
 };
 use meloet_protocol::{
     EffectKind, EffectName, InsertRef, MasterView, NamedInsert, ParamEnd, ParamRef, ParamsView,
-    PluginState, PluginWindowKind, ReturnView, SelectedInsert, SelectedParams, SelectedPlugin,
-    SendBus, SlotsView, StatusMessage, StripRef,
+    PluginSlotRef, PluginState, PluginWindowKind, ReturnView, SelectedInsert, SelectedParams,
+    SelectedPlugin, SendBus, SlotsView, StatusMessage, StripRef,
 };
 
 use super::Play;
@@ -64,7 +64,7 @@ impl Preview {
 
 /// What the parameters panel shows, as it was when it was selected.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Picked {
+pub(super) enum Picked {
     /// An effect that comes with meloet, in an insert slot.
     Effect(StripId, usize, ModelEffect),
     /// A plugin, by its key: in an insert slot, or the instrument of a track.
@@ -94,6 +94,8 @@ pub struct Selecting {
     /// The parameters panel is to be shown, in front.
     pub panel: bool,
     pub notice: Option<StatusMessage>,
+    /// The window of this plugin is to open, or to come to the front.
+    pub window: Option<PluginSlotRef>,
 }
 
 pub(crate) fn effect_name(insert: &Insert) -> EffectName {
@@ -274,8 +276,9 @@ impl Play {
     }
 
     /// Esc during a drag: the sound is the song's again.
-    pub fn cancel_mix_preview(&mut self) {
+    pub fn cancel_mix_preview(&mut self, effects: &mut Vec<Effect>) {
         self.mixer.previews.clear();
+        self.cancel_plugin_drags(effects);
     }
 
     pub fn toggle_return_mute(&mut self, bus: SendBus, effects: &mut Vec<Effect>) {
@@ -339,21 +342,24 @@ impl Play {
         })
     }
 
-    /// `TypeParam` for an effect that comes with meloet. A plugin reads its own values:
-    /// not made yet.
+    /// `TypeParam`. An effect that comes with meloet is read here; a plugin reads its own
+    /// values, and what the status line says comes with its answer.
     pub fn type_param(
         &mut self,
         param: ParamRef,
         text: &str,
         effects: &mut Vec<Effect>,
     ) -> Option<StatusMessage> {
-        let ParamRef::Builtin {
-            insert,
-            effect,
-            param,
-        } = param
-        else {
-            return None;
+        let (insert, effect, param) = match param {
+            ParamRef::Builtin {
+                insert,
+                effect,
+                param,
+            } => (insert, effect, param),
+            ParamRef::Plugin { slot, table, param } => {
+                self.type_plugin_param(slot, table, param, text, effects);
+                return None;
+            }
         };
         let (strip, slot, kind) = (
             strip_id(insert.strip),
@@ -474,18 +480,20 @@ impl Play {
             None => Selecting::default(),
             Some(Picked::Effect(..)) => Selecting {
                 panel: true,
-                notice: None,
+                ..Selecting::default()
             },
             Some(Picked::Plugin(place, key)) => {
                 if self.plugin_state(*place) != PluginState::Ready {
                     return Selecting::default();
                 }
-                match self.window_kind(key) {
-                    // Its window opens instead: not made yet.
-                    PluginWindowKind::Opens => Selecting::default(),
+                match self.window_kind(*place, key) {
+                    PluginWindowKind::Opens => Selecting {
+                        window: Some(Self::slot_ref(*place)),
+                        ..Selecting::default()
+                    },
                     PluginWindowKind::None => Selecting {
                         panel: true,
-                        notice: None,
+                        ..Selecting::default()
                     },
                     PluginWindowKind::NotYet => Selecting {
                         panel: true,
@@ -495,6 +503,7 @@ impl Play {
                                 name: p.name.to_string(),
                             }
                         }),
+                        window: None,
                     },
                 }
             }
@@ -551,13 +560,22 @@ impl Play {
         self.selecting()
     }
 
-    /// A row of a plugin is named by the plugin's own table, which is not made yet: a
-    /// plugin has no chosen row.
+    /// `SelectParam`: a place in the table of an effect of meloet, or the plugin's own
+    /// number for one of the parameters it lists.
     pub fn select_param(&mut self, param: Option<u32>) {
-        let Some(Picked::Effect(_, _, kind)) = self.mixer.selected else {
-            return;
+        self.mixer.row = match &self.mixer.selected {
+            Some(Picked::Effect(_, _, kind)) => param.filter(|&p| kind.param(p).is_some()),
+            Some(Picked::Plugin(..)) => param.filter(|&p| self.has_param(p)),
+            None => None,
         };
-        self.mixer.row = param.filter(|&p| kind.param(p).is_some());
+    }
+
+    pub(super) fn selected_pick(&self) -> Option<&Picked> {
+        self.mixer.selected.as_ref()
+    }
+
+    pub(super) fn mixer_row(&self) -> Option<u32> {
+        self.mixer.row
     }
 
     /// The selected insert, as the screen names it; `None` also while an instrument is
@@ -601,15 +619,17 @@ impl Play {
                         row: self.mixer.row,
                     }))
                 }
-                // Its parameters come from the plugin itself: not made yet, so it has no table.
-                Picked::Plugin(place, key) => Some(SelectedParams::Plugin(SelectedPlugin {
-                    slot: Self::slot_ref(*place),
-                    window: self.window_kind(key),
-                    table: None,
-                    count: 0,
-                    row: None,
-                    automated: Vec::new(),
-                })),
+                Picked::Plugin(place, key) => {
+                    let table = self.table_shown();
+                    Some(SelectedParams::Plugin(SelectedPlugin {
+                        slot: Self::slot_ref(*place),
+                        window: self.window_kind(*place, key),
+                        table: table.map(|(number, _)| number),
+                        count: table.map_or(0, |(_, count)| count),
+                        row: self.mixer.row.filter(|&row| self.has_param(row)),
+                        automated: Vec::new(),
+                    }))
+                }
             });
         ParamsView { selected }
     }
@@ -638,18 +658,24 @@ impl Play {
     /// The status line while a row of the parameters panel is chosen. Not while counting in
     /// or recording, which have their own line.
     pub fn param_status(&self) -> Option<StatusMessage> {
-        let Picked::Effect(strip, slot, kind) = *self.mixer.selected.as_ref()? else {
-            return None;
-        };
         let param = self.mixer.row?;
         if self.rec.is_some() {
             return None;
         }
-        Some(StatusMessage::ParamSelected {
-            loop_bars: self.loop_on().map(|r| self.bars(r)),
-            insert: insert_ref(strip, slot),
-            effect: effect_kind(kind),
-            param,
+        let loop_bars = self.loop_on().map(|r| self.bars(r));
+        Some(match self.mixer.selected.as_ref()? {
+            Picked::Effect(strip, slot, kind) => StatusMessage::ParamSelected {
+                loop_bars,
+                insert: insert_ref(*strip, *slot),
+                effect: effect_kind(*kind),
+                param,
+            },
+            Picked::Plugin(place, _) => StatusMessage::PluginParamSelected {
+                loop_bars,
+                slot: Self::slot_ref(*place),
+                plugin: self.doc().plugin(*place)?.name.to_string(),
+                param: self.param_name(param)?.to_owned(),
+            },
         })
     }
 

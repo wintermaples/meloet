@@ -105,7 +105,7 @@ impl Play {
     }
 
     /// Where in the engine the row that is auditioned is.
-    fn trial_spot(&self) -> Option<Spot> {
+    pub(super) fn trial_spot(&self) -> Option<Spot> {
         self.shelf.trial.as_ref()?;
         match self.shelf.mode {
             Mode::NewTrack => Some(Spot::Seat(AUDITION_SEAT)),

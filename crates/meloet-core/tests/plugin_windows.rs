@@ -143,6 +143,26 @@ fn a_window_that_cannot_be_made_is_news_without_another_ask() {
 }
 
 #[test]
+fn states_put_back_into_plugins_of_one_process_are_a_block_apart() {
+    let side = side();
+    let (first, second) = (side.load("sine"), side.load("sine"));
+    assert_eq!(side.hosts.processes().len(), 1);
+    let state = wait(|done| side.hosts.state(first.id, done)).unwrap();
+    // The longest block the engine may run: 1024 frames at 48 kHz.
+    let block = Duration::from_secs_f64(f64::from(DEFAULT_GEOMETRY.max_frames) / 48_000.0);
+    let started = Instant::now();
+    wait(|done| side.hosts.set_state(first.id, state.clone(), done)).unwrap();
+    let after_one = started.elapsed();
+    wait(|done| side.hosts.set_state(second.id, state.clone(), done)).unwrap();
+    let after_two = started.elapsed();
+    assert!(
+        after_one < block / 2,
+        "the first is not held back: {after_one:?}"
+    );
+    assert!(after_two >= block, "the second waits: {after_two:?}");
+}
+
+#[test]
 #[ignore = "needs an X display"]
 fn a_window_opens_and_what_is_turned_in_it_is_news_and_is_kept_for_a_reload() {
     let side = side();

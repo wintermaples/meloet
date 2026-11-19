@@ -362,8 +362,10 @@ pub enum Command {
     /// typed, with or without the unit. For an effect that comes with meloet Rust reads the
     /// number in it ("4" is 4 : 1); for a plugin the plugin reads it. The value is set as one
     /// step. A value past an end of the range is put at that end, and the status line says
-    /// `StatusMessage::ParamClamped`. A text that does not read as a value changes nothing
-    /// and says nothing. A stale `param` is dropped as for `SetParam` and `SetPluginParam`.
+    /// `StatusMessage::ParamClamped`. A text that does not read as a value changes nothing,
+    /// and the status line says `StatusMessage::ParamRejected`. A stale `param` is dropped as
+    /// for `SetParam` and `SetPluginParam`. For a plugin the value is set, and the status
+    /// line speaks, once the plugin has read the text: a moment after the command.
     TypeParam {
         param: ParamRef,
         text: String,
@@ -802,8 +804,9 @@ pub enum Command {
         slot: Option<PluginSlotRef>,
     },
     /// Closes the window of the plugin at `slot` (`PluginWindowView::slot`), as its own close
-    /// button does. Nothing when it has no window open. No part of the screen sends this yet
-    /// (a window is closed with its own button, and when its plugin leaves the song).
+    /// button does: what was changed in it becomes a step first. Nothing when it has no
+    /// window open. No part of the screen sends this (user:2026-11-19: a window is closed
+    /// with its own button, and when its plugin leaves the song).
     ClosePluginWindow {
         slot: Option<PluginSlotRef>,
     },
@@ -2309,7 +2312,10 @@ pub enum StatusMessage {
     /// `Command::TypeParam` with a text that does not read as a value (spec 6 「数字として
     /// 読めない」): "しきい値は数字で打ちます。もとの −24.0 dB のままです。" The screen names the
     /// parameter from `param` (its table for an effect that comes with meloet, the plugin's
-    /// `ParamTable` row otherwise) and shows `kept` as the row shows the value.
+    /// `ParamTable` row otherwise). `kept`: for an effect that comes with meloet the value
+    /// as a plain number in the parameter's own unit, which the screen writes as the row
+    /// does; for a plugin the plugin's own text of the value (`ParamRow::text`; the number
+    /// with two decimals when the plugin gives no text, empty when it tells no value).
     ParamRejected {
         param: ParamRef,
         kept: String,

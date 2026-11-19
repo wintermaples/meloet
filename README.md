@@ -69,6 +69,7 @@ tools/measure/long-record.sh            # 10 分録りつづける（xrun、メ�
 | `MELOET_SNAPSHOT=out.png`、`MELOET_SNAPSHOT_AFTER_MS=1500` | 画面を PNG に書いて終わる |
 | `MELOET_COMMANDS='[{"afterMs":800,"command":{"type":"chooserConfirm"}}]'` | 決まった時間に意図を送る |
 | `MELOET_EVAL='[{"afterMs":900,"js":"…"}]'` | 決まった時間にページの中で JavaScript を動かす（本物のアプリの絵で、画面だけが知っている所をひらくため） |
+| `MELOET_PIPE=fifo` | その名前つきパイプから行を読みつづける。`{"command":{…}}` は意図、`{"js":"…"}` はページの中の JavaScript（外の道具が、見た物から次の手を決めて動かすため。`tools/measure/remote.py`） |
 | `MELOET_EXIT_AFTER_MS=10000` | その時間のあとに終わる |
 | `MELOET_CONFIG_DIR=dir` | 設定ファイルの場所を変える |
 | `MELOET_MEASURE_DIR=dir` | 鍵 → 音、鍵 → 画面の記録を書く |

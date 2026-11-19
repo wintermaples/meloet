@@ -16,7 +16,8 @@ others share <target>/shoot/cache, which holds the record of one whole scan (mad
 its own when it is not there yet), so nothing of the scan shows.
 Every start also gets its own MELOET_SF2_DIR: empty, or for a state with sf2=True
 <target>/shoot/sf2 with a copy of this PC's FluidR3_GM.sf2. The states of round 5 step 2 need
-Surge XT and ZamComp (VST3) among the plugins of this PC.
+Surge XT and ZamComp (VST3) among the plugins of this PC; those of step 3 also Dragonfly Hall
+Reverb and abGate (LV2), and DISPLAY (an X screen) for the plugin windows, which come up for real.
 Out: docs/screenshots/app/<state>-<w>x<h>-<scale>.png and docs/screenshots/compare/ (app on
 the left, mock on the right, laid out as in shoot_ui.py). --compare-small makes compare sheets
 only for 100 % (to keep the PNGs small). --only 1280x800-100 shoots that one size and scale.
@@ -57,9 +58,21 @@ def click(selector):
     return f"document.querySelector('{selector}').click()"
 
 
-def typed(text):
-    return ("const input = document.querySelector('[data-test=\"shelf-search\"]'); "
+def typed(text, field="shelf-search"):
+    return (f"const input = document.querySelector('[data-test=\"{field}\"]'); "
             f"input.value = '{text}'; input.dispatchEvent(new Event('input', {{ bubbles: true }}));")
+
+
+def context(selector):
+    """A right click on the element."""
+    return (f"const e = document.querySelector('{selector}'), r = e.getBoundingClientRect(); "
+            "e.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, "
+            "clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 2 }));")
+
+
+WINDOWS_SONG = ["--tracks", "2", "--notes", "60", "--bars", "8", "--instruments", "plugin,builtin",
+                "--plugin", "Surge XT", "--effect-plugin", "Dragonfly Hall Reverb", "--effect-format", "lv2"]
+REVERB_SLOT = {"kind": "insert", "insert": {"strip": {"kind": "track", "id": 1}, "slot": 2}}
 
 
 # board: mock to compare with. remembered: start with the output already chosen.
@@ -167,6 +180,38 @@ STATES = {
     "missingStatusApp": dict(remembered=True, snap=3500, gone=True,
                              song=["--tracks", "3", "--notes", "60", "--bars", "8", "--instruments", "plugin,sf2,builtin",
                                    "--plugin", "Surge XT", "--effect-plugin", "ZamComp", "--sf2", "{sf2}:0:4:Rhodes EP"]),
+    # Round 5 step 3: plugin windows, the parameters panel, the mixer's inserts. The windows of
+    # Surge XT and Dragonfly open on the X screen for real (they are not in the shot).
+    "windowOpenApp": dict(board="F-WindowOpen", remembered=True, snap=4800, song=WINDOWS_SONG,
+                       commands=[(1500, {"type": "toggleBand", "band": "mixer"}),
+                                 (2000, {"type": "openPluginWindow", "slot": {"kind": "instrument", "track": 1}}),
+                                 (2700, {"type": "openPluginWindow", "slot": REVERB_SLOT})],
+                       evals=[(3800, click('[data-test="status-windows"]'))]),
+    "paramManyApp": dict(board="F-ParamMany", remembered=True, snap=4500, song=WINDOWS_SONG,
+                      commands=[(1500, {"type": "selectInstrument", "track": 1}),
+                                (2200, {"type": "toggleBand", "band": "params"})],
+                      evals=[(3300, "[...document.querySelectorAll('[data-test=\"params-group\"]')]"
+                                    ".find((e) => e.innerText.includes('Macros')).click()")]),
+    "paramSearchApp": dict(board="F-ParamSearch", remembered=True, snap=4500, song=WINDOWS_SONG,
+                        commands=[(1500, {"type": "selectInstrument", "track": 1}),
+                                  (2200, {"type": "toggleBand", "band": "params"})],
+                        evals=[(3300, typed("cutoff", "params-search"))]),
+    "paramNoWindowApp": dict(board="F-ParamNoWindow", remembered=True, snap=4000,
+                          song=["--tracks", "2", "--notes", "60", "--bars", "8", "--instruments", "plugin,builtin",
+                                "--plugin", "Surge XT", "--effect-plugin", "abGate", "--effect-format", "lv2"],
+                          commands=[(1500, {"type": "toggleBand", "band": "mixer"}),
+                                    # Selecting a plugin that has no window meloet can open
+                                    # unfolds the parameters panel by itself.
+                                    (2000, {"type": "selectInsert", "insert": REVERB_SLOT["insert"]})]),
+    "mixerBypassApp": dict(board="F5-MixerBypass", remembered=True, snap=3500, song=WINDOWS_SONG,
+                        commands=[(1500, {"type": "toggleBypass", "insert": REVERB_SLOT["insert"]}),
+                                  (2200, {"type": "toggleBand", "band": "mixer"})]),
+    "insertReplaceApp": dict(board="R9-Inserts", remembered=True, snap=4000, song=WINDOWS_SONG,
+                          commands=[(1500, {"type": "toggleBand", "band": "mixer"})],
+                          evals=[(2600, context('[data-strip="track-1"] [data-test="mixer-insert"][data-slot="2"]'))]),
+    # No keyboard and no output chosen: the master's frame says 「出口なし ▸」.
+    "noOutputApp": dict(board="R9-Params", only_virtual=True, snap=2500,
+                     commands=[(800, {"type": "toggleBand", "band": "mixer"})]),
     "plugIn": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "3"]], snap=1500),
     "plugOut": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "2"]], snap=4000),
 }

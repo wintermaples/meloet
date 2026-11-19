@@ -5,6 +5,7 @@
 #                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
 #                                 [--pattern spaced|mixed] [--piano-roll [--song FILE]]
 #                                 [--velocity-fixed V] [--mixer] [--cache-home DIR]
+#                                 [--plugin-window]
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
@@ -23,6 +24,8 @@
 # --cache-home: XDG_CACHE_HOME for the app. An empty folder makes this start the first one for
 #   the plugin scan (the scan then runs while the keys are played); scan_watch.py writes down
 #   the scanning children to DIR/raw/scan-watch.json.
+# --plugin-window: open the window of the plugin that is the instrument of track 1 (a --song
+#   with a plugin track, and DISPLAY for the plugin host) before the keys, and keep it open.
 # --velocity-fixed: turn "ベロシティ固定" on at V (1..127) right after the chooser.
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
@@ -44,6 +47,7 @@ mixer=0
 song=
 velocity_fixed=
 cache_home=
+plugin_window=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
@@ -59,6 +63,7 @@ while [ $# -gt 0 ]; do
     --song) song=$2; shift 2 ;;
     --velocity-fixed) velocity_fixed=$2; shift 2 ;;
     --cache-home) cache_home=$2; shift 2 ;;
+    --plugin-window) plugin_window=1; shift ;;
     *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll] [--song FILE] [--mixer] [--velocity-fixed V] [--cache-home DIR]" >&2; exit 2 ;;
   esac
 done
@@ -133,6 +138,10 @@ fi
 if [ "$mixer" = 1 ]; then
   view="$view,{\"afterMs\":$((confirm_ms - 200)),\"command\":{\"type\":\"toggleBand\",\"band\":\"mixer\"}}"
   label_view="$label_view, mixer open"
+fi
+if [ "$plugin_window" = 1 ]; then
+  view="$view,{\"afterMs\":$((confirm_ms + 400)),\"command\":{\"type\":\"openPluginWindow\",\"slot\":{\"kind\":\"instrument\",\"track\":1}}}"
+  label_view="$label_view, plugin window open"
 fi
 if [ -n "$velocity_fixed" ]; then
   view="$view,{\"afterMs\":$((confirm_ms + 200)),\"command\":{\"type\":\"setVelocityFixed\",\"on\":true,\"value\":$velocity_fixed}}"

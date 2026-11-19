@@ -8,6 +8,10 @@
 //! - `MELOET_EVAL='[{"afterMs":900,"js":"document.querySelector(…).click()"}]'`: that long after
 //!   the page finished loading, run each piece of JavaScript in the page. For what only the
 //!   screen knows (a folded heading, the text in a search field) when shooting the real app.
+//! - `MELOET_PIPE=/path/fifo`: reads lines from that named pipe for as long as the app runs.
+//!   `{"command": {…}}` sends the intent to the core, `{"js": "…"}` runs the JavaScript in the
+//!   page, `{"shot": "/path/out.png"}` writes what the WebView shows (the app goes on). For a driver outside the app that decides its next step from what it sees
+//!   (`tools/measure/remote.py`; the page answers through `measure_report`).
 //! - `MELOET_EXIT_AFTER_MS=20000`: that long after the page finished loading, exit the usual
 //!   way (the core stops and writes its measurements).
 //! - `MELOET_CLOSE_AFTER_MS=2500`: that long after the page finished loading, close the window
@@ -184,7 +188,7 @@ pub fn on_page_load(webview: &Webview, payload: &PageLoadPayload<'_>) {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(after));
         let app = tauri::Manager::app_handle(&webview).clone();
-        let asked = webview.with_webview(move |platform| snapshot(platform, path, app));
+        let asked = webview.with_webview(move |platform| snapshot(platform, path, Some(app)));
         if let Err(e) = asked {
             eprintln!("MELOET_SNAPSHOT: {e}");
             std::process::exit(1);
@@ -219,6 +223,10 @@ fn run_script(webview: &Webview) {
             }
         });
     }
+    if let Some(path) = std::env::var_os("MELOET_PIPE").map(PathBuf::from) {
+        let (app, webview) = (app.clone(), webview.clone());
+        std::thread::spawn(move || follow_pipe(&path, &app, &webview));
+    }
     if let Some(after_ms) = script.exit_after_ms {
         let app = app.clone();
         std::thread::spawn(move || {
@@ -240,8 +248,71 @@ fn run_script(webview: &Webview) {
     }
 }
 
+/// A writer that closes the pipe ends one read; the pipe is opened again for the next writer.
+fn follow_pipe(path: &std::path::Path, app: &tauri::AppHandle, webview: &Webview) {
+    use std::io::BufRead;
+
+    loop {
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(e) => {
+                eprintln!("MELOET_PIPE: {}: {e}", path.display());
+                return;
+            }
+        };
+        for line in std::io::BufReader::new(file).lines() {
+            let Ok(line) = line else { break };
+            match parse_pipe_line(&line) {
+                Ok(PipeLine::Command(command)) => {
+                    app.state::<crate::Core>().send(*command);
+                }
+                Ok(PipeLine::Js(js)) => {
+                    if let Err(e) = webview.eval(js) {
+                        eprintln!("MELOET_PIPE: {e}");
+                    }
+                }
+                Ok(PipeLine::Shot(path)) => {
+                    if let Err(e) = webview.with_webview(move |w| snapshot(w, path, None)) {
+                        eprintln!("MELOET_PIPE: {e}");
+                    }
+                }
+                Err(e) => eprintln!("MELOET_PIPE: {e}"),
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum PipeLine {
+    Command(Box<Command>),
+    Js(String),
+    Shot(PathBuf),
+}
+
+fn parse_pipe_line(line: &str) -> Result<PipeLine, String> {
+    let mut entry: serde_json::Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+    if let Some(js) = entry.get("js").and_then(serde_json::Value::as_str) {
+        return Ok(PipeLine::Js(js.to_string()));
+    }
+    if let Some(path) = entry.get("shot").and_then(serde_json::Value::as_str) {
+        return Ok(PipeLine::Shot(PathBuf::from(path)));
+    }
+    let command = entry
+        .get_mut("command")
+        .map(serde_json::Value::take)
+        .ok_or("no js, shot or command")?;
+    serde_json::from_value(command)
+        .map(|command| PipeLine::Command(Box::new(command)))
+        .map_err(|e| format!("command: {e}"))
+}
+
+/// Writes the PNG, and with `exit` ends the app after it.
 #[cfg(target_os = "linux")]
-fn snapshot(platform: tauri::webview::PlatformWebview, path: PathBuf, app: tauri::AppHandle) {
+fn snapshot(
+    platform: tauri::webview::PlatformWebview,
+    path: PathBuf,
+    exit: Option<tauri::AppHandle>,
+) {
     use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
     platform.inner().snapshot(
@@ -253,24 +324,29 @@ fn snapshot(platform: tauri::webview::PlatformWebview, path: PathBuf, app: tauri
                 let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
                 surface.write_to_png(&mut file).map_err(|e| e.to_string())
             });
-            match written {
+            let code = match written {
                 Ok(()) => {
                     eprintln!("MELOET_SNAPSHOT: wrote {}", path.display());
-                    app.exit(0);
+                    0
                 }
                 Err(e) => {
                     eprintln!("MELOET_SNAPSHOT: {e}");
-                    app.exit(1);
+                    1
                 }
+            };
+            if let Some(app) = exit {
+                app.exit(code);
             }
         },
     );
 }
 
 #[cfg(not(target_os = "linux"))]
-fn snapshot(_: tauri::webview::PlatformWebview, _: PathBuf, app: tauri::AppHandle) {
+fn snapshot(_: tauri::webview::PlatformWebview, _: PathBuf, exit: Option<tauri::AppHandle>) {
     eprintln!("MELOET_SNAPSHOT: only on Linux (webkit2gtk)");
-    app.exit(1);
+    if let Some(app) = exit {
+        app.exit(1);
+    }
 }
 
 /// Main thread only, right after the PC's window titled `title` was shown.
@@ -322,7 +398,10 @@ pub fn after_pc_window(_: &'static str) {}
 mod tests {
     use meloet_protocol::Command;
 
-    use super::{Script, parse_commands, parse_page_scripts, parse_script, parse_size};
+    use super::{
+        PipeLine, Script, parse_commands, parse_page_scripts, parse_pipe_line, parse_script,
+        parse_size,
+    };
 
     #[test]
     fn window_size_text() {
@@ -376,6 +455,30 @@ mod tests {
             r#"[{"afterMs": 1, "js": 2}]"#,
         ] {
             assert!(parse_page_scripts(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn pipe_lines() {
+        assert_eq!(
+            parse_pipe_line(r#"{"command": {"type": "back"}}"#),
+            Ok(PipeLine::Command(Box::new(Command::Back)))
+        );
+        assert_eq!(
+            parse_pipe_line(r#"{"js": "a()"}"#),
+            Ok(PipeLine::Js("a()".to_string()))
+        );
+        assert_eq!(
+            parse_pipe_line(r#"{"shot": "/tmp/a.png"}"#),
+            Ok(PipeLine::Shot("/tmp/a.png".into()))
+        );
+        for bad in [
+            "",
+            "{}",
+            r#"{"js": 2}"#,
+            r#"{"command": {"type": "noSuchThing"}}"#,
+        ] {
+            assert!(parse_pipe_line(bad).is_err(), "{bad}");
         }
     }
 

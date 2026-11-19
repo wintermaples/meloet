@@ -6,6 +6,7 @@ usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16
                                              [--instruments plugin,sf2,builtin]
                                              [--scan SCAN.json] [--plugin NAME] [--plugin-format vst3|lv2]
                                              [--sf2 FILE.sf2[:BANK:PROGRAM[:NAME]]] [--effect-plugin NAME]
+                                             [--effect-format vst3|lv2]
                                              [--stagger TICKS] [--hard-pan]
 
 --tracks N (1..64): a version 3 song with N tracks, each with one clip and one take of --notes
@@ -21,6 +22,7 @@ names (the file itself has to be in meloet's SF2 folder, $MELOET_SF2_DIR or
 $XDG_DATA_HOME/meloet/sf2; only its name, its sha256 and the preset go into the song). Plugins
 are looked up by their name in a scan record (--scan, <XDG_CACHE_HOME>/meloet/plugins/scan.json);
 the song gets the key, name, vendor and path found there and no state. --effect-plugin: that
+(--effect-format: its format when it is not --plugin-format)
 effect in the first free insert slot of every "plugin" and "sf2" track. --stagger: track i
 starts its notes i * TICKS later (16 plugins that all start a chord in the same block are a
 case of their own, docs/measurements/2026-11-19-round5-plughost.md). --hard-pan: the "plugin"
@@ -225,6 +227,7 @@ def main(argv):
     p.add_argument("--plugin-format", default="vst3", choices=["vst3", "lv2"])
     p.add_argument("--sf2")
     p.add_argument("--effect-plugin")
+    p.add_argument("--effect-format", choices=["vst3", "lv2"])
     p.add_argument("--stagger", type=int, default=0)
     p.add_argument("--hard-pan", action="store_true")
     a = p.parse_args(argv)
@@ -252,7 +255,7 @@ def main(argv):
             a.tracks, a.notes, a.bars, a.tempo, a.cc, a.seed, words,
             scanned_plugin(a.scan, a.plugin, a.plugin_format, "instrument") if a.plugin else None,
             sf2_preset(a.sf2) if a.sf2 else None,
-            scanned_plugin(a.scan, a.effect_plugin, a.plugin_format, "effect") if a.effect_plugin else None,
+            scanned_plugin(a.scan, a.effect_plugin, a.effect_format or a.plugin_format, "effect") if a.effect_plugin else None,
             a.stagger, a.hard_pan)
     data = json.dumps(made, ensure_ascii=False, separators=(",", ":"))
     tmp = a.out + ".tmp"

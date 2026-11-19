@@ -423,9 +423,6 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
         audio_inputs: main(BusDirections_::kInput as i32),
         audio_outputs: main(BusDirections_::kOutput as i32),
     };
-    // Not ended: the scan's process goes when the bundle is read, and ending a plugin can
-    // take longer than reading it (LSP: 40 to 100 ms each, 194 of them in one bundle).
-    std::mem::forget(instance);
     Ok(info)
 }
 

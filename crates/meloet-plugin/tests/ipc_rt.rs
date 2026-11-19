@@ -158,6 +158,7 @@ fn a_block_allocates_nothing_on_either_audio_thread() {
     engine.submit();
     assert!(!engine.wait(monotonic_ns() + 2_000_000));
     assert!(!engine.begin(64));
+    assert!(!engine.await_overdue(monotonic_ns() + 2_000_000));
     assert!(engine.stopped());
     engine.submit();
     assert!(!engine.wait(monotonic_ns() + 2_000_000));

@@ -77,9 +77,12 @@ fn read_channel(map: &Mapping, base: usize, area: usize, channel: usize, dst: &m
 /// `begin` → `write_input` / `push_event` / `set_transport` → `submit` → `wait` →
 /// `read_output` / `pop_event`.
 ///
-/// When `wait` times out, the block has no output. If the answer is still missing at the next
-/// `begin`, that is two blocks in a row without one: the slot is stopped and is never waited
-/// for again ([`EngineEnd::stopped`]).
+/// When `wait` times out, the block has no output, and the next `begin` says false for as
+/// long as that answer is missing ([`EngineEnd::overdue`]). Each block after waits for it once
+/// more ([`EngineEnd::await_overdue`]). When the answer is missing over two time limits in a
+/// row and the host process shows no sign of working towards it (see the module's text), the
+/// slot is stopped and is never waited for again ([`EngineEnd::stopped`]), and so is every
+/// other slot of the same mapping.
 pub struct EngineEnd {
     map: Arc<Mapping>,
     slot: u32,
@@ -90,6 +93,10 @@ pub struct EngineEnd {
     /// `seq` was asked for and has not been seen in `done`.
     pending: bool,
     stopped: bool,
+    /// The last time limit that passed without the answer, and the host's count of progress
+    /// then.
+    seen_deadline_ns: u64,
+    seen_progress: u32,
     to_plugin: Writer,
     from_plugin: Reader,
 }
@@ -110,6 +117,8 @@ impl EngineEnd {
             &words.to_plugin_tail,
             &words.from_plugin_head,
             &words.from_plugin_tail,
+            &words.taken,
+            &words.taken_ms,
         ] {
             word.store(0, SeqCst);
         }
@@ -122,6 +131,8 @@ impl EngineEnd {
             flags: 0,
             pending: false,
             stopped: false,
+            seen_deadline_ns: 0,
+            seen_progress: 0,
             to_plugin: Writer::default(),
             from_plugin: Reader::default(),
         })
@@ -136,14 +147,15 @@ impl EngineEnd {
     }
 
     /// Starts a block of `frames` frames (brought into 1..=max_frames). False when the slot is
-    /// stopped: do nothing more with it this block.
+    /// stopped, or when the answer to the block before is still missing
+    /// ([`EngineEnd::overdue`]): then nothing can be asked of it yet.
     pub fn begin(&mut self, frames: usize) -> bool {
-        if self.stopped {
+        if self.stopped() {
+            self.stopped = true;
             return false;
         }
         if self.pending {
             if self.map.slot_words(self.base).done.load(Acquire) != self.seq {
-                self.stopped = true;
                 return false;
             }
             // The answer came after its block was over. Its output is not used.
@@ -153,9 +165,68 @@ impl EngineEnd {
         true
     }
 
-    /// True once two blocks in a row went without an answer. It stays true.
+    /// The answer to a block before this one is still missing, and the slot is not stopped.
+    pub fn overdue(&self) -> bool {
+        self.pending
+            && !self.stopped()
+            && self.map.slot_words(self.base).done.load(Acquire) != self.seq
+    }
+
+    /// What the host process shows of the request that is waited for: for how many
+    /// milliseconds a thread has held it, if one took it, and the host's count of progress.
+    fn signs(&self) -> (Option<u32>, u32) {
+        let words = self.map.slot_words(self.base);
+        let held = (words.taken.load(Acquire) == self.seq).then(|| {
+            let now_ms = (futex::monotonic_ns() / 1_000_000) as u32;
+            // A time from the future is a host that writes nonsense: held for no time.
+            let held = now_ms.wrapping_sub(words.taken_ms.load(Acquire));
+            if held > u32::MAX / 2 { 0 } else { held }
+        });
+        (held, self.map.header().progress.load(Acquire))
+    }
+
+    /// In a block after one that went without an answer: sleeps until that answer is there
+    /// or `deadline_ns`. True when it came; its output is not used, and `begin` starts a new
+    /// block. False when it is still missing: then either the slot is stopped, and with it
+    /// every slot of the mapping ([`EngineEnd::stopped`]), or the host process is busy and the
+    /// answer is waited for again in the next block.
+    pub fn await_overdue(&mut self, deadline_ns: u64) -> bool {
+        if !self.pending {
+            return !self.stopped();
+        }
+        if self.stopped() {
+            self.stopped = true;
+            return false;
+        }
+        let words = self.map.slot_words(self.base);
+        let seq = self.seq;
+        let answered = futex::wait_until(&words.done, &words.engine_waiting, deadline_ns, |done| {
+            done == seq
+        });
+        if answered {
+            self.pending = false;
+            return true;
+        }
+        let (held, progress) = self.signs();
+        let block_ms = deadline_ns.saturating_sub(self.seen_deadline_ns) / 1_000_000;
+        // Held by a thread for a block and a half: the plugin hangs. Taken by none while the
+        // host did nothing at all: the process is gone or frozen.
+        let dead = match held {
+            Some(held_ms) => u64::from(held_ms) * 2 >= block_ms * 3,
+            None => progress == self.seen_progress,
+        };
+        (self.seen_deadline_ns, self.seen_progress) = (deadline_ns, progress);
+        if dead {
+            self.stopped = true;
+            self.map.mark_stopped();
+        }
+        false
+    }
+
+    /// True once two blocks in a row went without an answer, here or in another slot of the
+    /// same mapping. It stays true.
     pub fn stopped(&self) -> bool {
-        self.stopped
+        self.stopped || self.map.is_stopped()
     }
 
     pub fn write_input(&mut self, channel: usize, samples: &[f32]) {
@@ -187,7 +258,7 @@ impl EngineEnd {
 
     /// Hands the block to the host process and wakes its audio thread if it sleeps.
     pub fn submit(&mut self) {
-        if self.stopped || self.pending {
+        if self.stopped() || self.pending {
             return;
         }
         let words = self.map.slot_words(self.base);
@@ -207,7 +278,7 @@ impl EngineEnd {
     /// Sleeps until the block is answered or `deadline_ns` ([`futex::monotonic_ns`]). True
     /// when the output is there to read.
     pub fn wait(&mut self, deadline_ns: u64) -> bool {
-        if self.stopped || !self.pending {
+        if self.stopped() || !self.pending {
             return false;
         }
         let words = self.map.slot_words(self.base);
@@ -217,8 +288,15 @@ impl EngineEnd {
         });
         if answered {
             self.pending = false;
+        } else {
+            (self.seen_deadline_ns, self.seen_progress) = (deadline_ns, self.signs().1);
         }
         answered
+    }
+
+    /// A block was asked for and its answer has not been taken with `wait`.
+    pub fn asked(&self) -> bool {
+        self.pending
     }
 
     /// The answered block's output; frames past the block's length are zeroed.
@@ -302,6 +380,11 @@ impl PluginEnd {
             return None;
         }
         self.current = request;
+        words
+            .taken_ms
+            .store((futex::monotonic_ns() / 1_000_000) as u32, SeqCst);
+        words.taken.store(request, SeqCst);
+        self.map.header().progress.fetch_add(1, SeqCst);
         let max = self.map.geometry().max_frames;
         self.frames = words.frames.load(Relaxed).clamp(1, max);
         Some(Block {
@@ -355,6 +438,7 @@ impl PluginEnd {
     pub fn finish(&mut self) {
         self.answered = self.current;
         let words = self.map.slot_words(self.base);
+        self.map.header().progress.fetch_add(1, SeqCst);
         futex::store_and_wake(&words.done, self.answered, &words.engine_waiting);
     }
 }
@@ -375,22 +459,29 @@ impl Bell {
         self.map.header().bell.load(SeqCst)
     }
 
-    /// Sleeps until the bell is rung after `seen` was read, for `timeout_ns` at most.
+    /// Sleeps until the bell is rung after `seen` was read, for `timeout_ns` at most. Any
+    /// number of threads may sleep here; each ring of the engine wakes one of them.
     pub fn wait(&self, seen: u32, timeout_ns: u64) {
         let header = self.map.header();
-        let deadline = futex::monotonic_ns().saturating_add(timeout_ns);
-        futex::wait_until(&header.bell, &header.plugin_waiting, deadline, |count| {
-            count != seen
-        });
+        if header.bell.load(SeqCst) != seen {
+            return;
+        }
+        // As `futex::wait_until`, with a count of sleepers in place of its flag: raised
+        // before the word is looked at again, so a ring in between is not missed.
+        header.plugin_waiting.fetch_add(1, SeqCst);
+        if header.bell.load(SeqCst) == seen {
+            futex::wait(&header.bell, seen, timeout_ns);
+        }
+        header.plugin_waiting.fetch_sub(1, SeqCst);
     }
 
-    /// Rings it without a block: another thread of the host process has something for the
-    /// audio thread (a plugin to put into a slot).
+    /// Rings it without a block and wakes every sleeper: another thread of the host process
+    /// has something for the audio threads (a plugin to put into a slot, the end).
     pub fn ring(&self) {
         let header = self.map.header();
         header.bell.fetch_add(1, SeqCst);
         if header.plugin_waiting.load(SeqCst) != 0 {
-            futex::wake(&header.bell, 1);
+            futex::wake(&header.bell, u32::MAX);
         }
     }
 }
@@ -526,8 +617,16 @@ mod tests {
         assert!(!engine.wait(began + 5_000_000));
         assert!(futex::monotonic_ns() - began >= 5_000_000);
         assert!(!engine.stopped());
+        // The next block cannot ask anything yet, and waits for the missing answer once more.
         assert!(!engine.begin(64));
-        assert!(engine.stopped());
+        assert!(engine.overdue() && !engine.stopped());
+        let began = futex::monotonic_ns();
+        assert!(!engine.await_overdue(began + 5_000_000));
+        assert!(futex::monotonic_ns() - began >= 5_000_000);
+        assert!(engine.stopped() && !engine.overdue());
+        // Every slot of the mapping stops with it, without a wait of its own.
+        let mut other = EngineEnd::new(map.clone(), 1).unwrap();
+        assert!(other.stopped() && !other.begin(64));
         // From here on it neither asks nor waits.
         let request = map.slot_words(engine.base).request.load(SeqCst);
         engine.submit();
@@ -536,6 +635,48 @@ mod tests {
         assert!(!engine.wait(began + SOON));
         assert!(futex::monotonic_ns() - began < SOON / 2);
         assert!(!engine.begin(64));
+    }
+
+    #[test]
+    fn a_busy_host_is_late_and_not_stopped() {
+        let map = Arc::new(Mapping::create(geometry()).unwrap());
+        let mut waiting = EngineEnd::new(map.clone(), 0).unwrap();
+        let mut other = EngineEnd::new(map.clone(), 1).unwrap();
+        let mut plugin = PluginEnd::new(map.clone(), 0).unwrap();
+        let mut busy = PluginEnd::new(map.clone(), 1).unwrap();
+        let soon = || futex::monotonic_ns() + 3_000_000;
+        assert!(waiting.begin(8));
+        waiting.submit();
+        assert!(!waiting.wait(soon()));
+        // Block after block the host works on another slot and does not come to this one.
+        for _ in 0..5 {
+            assert!(other.begin(8));
+            other.submit();
+            assert!(busy.take_request().is_some());
+            busy.finish();
+            assert!(other.wait(futex::monotonic_ns() + SOON));
+            assert!(!waiting.begin(8));
+            assert!(!waiting.await_overdue(soon()));
+            assert!(waiting.overdue() && !waiting.stopped());
+        }
+        // Then it does, and is not done at the next time limit (a block of 20 ms after the
+        // last one): still only late.
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        assert!(plugin.take_request().is_some());
+        assert!(!waiting.await_overdue(soon()));
+        assert!(!waiting.stopped());
+        plugin.finish();
+        assert!(waiting.await_overdue(futex::monotonic_ns() + SOON));
+        assert!(waiting.begin(8));
+        // A request a thread holds for a block and a half is a plugin that hangs. Blocks of
+        // 20 ms here: held for 20 ms at the first time limit, for 40 at the second.
+        waiting.submit();
+        assert!(plugin.take_request().is_some());
+        let began = futex::monotonic_ns();
+        assert!(!waiting.wait(began + 20_000_000));
+        assert!(!waiting.stopped());
+        assert!(!waiting.await_overdue(began + 40_000_000));
+        assert!(waiting.stopped() && other.stopped());
     }
 
     #[test]

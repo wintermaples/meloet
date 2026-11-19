@@ -2,21 +2,24 @@
 //! every slot meloet asks a block of, runs that slot's plugin.
 //!
 //! Inside the loop nothing allocates, locks or blocks, apart from the sleep on the bell.
-//! Plugins come and go through two `rtrb` rings: the main thread makes a [`SlotRun`] with all
-//! its buffers, the audio thread only takes it into its row of slots, and hands it back to be
-//! dropped on the main thread.
+//! There may be several such threads (as many as plugins, up to half the CPUs and four): the
+//! engine asks all its instruments for a block at once, and the plugins of one process then
+//! run side by side. A slot's plugin sits in a [`Seat`] that one thread at a time is at; a
+//! thread never waits for a seat. The main thread makes a [`SlotRun`] with all its buffers,
+//! puts it into its seat, and takes it out again to drop it.
 //!
-//! The thread asks for a real-time priority for itself: with `sched_setscheduler` where the
+//! Each thread asks for a real-time priority for itself: with `sched_setscheduler` where the
 //! PC's limits allow it (`RLIMIT_RTPRIO`), through rtkit otherwise. Without one it still runs,
 //! late whenever the PC is busy, and the log says so. `MELOET_PLUGHOST_RT` chooses for tests
 //! and measurements: `off` asks for nothing, `rtkit` asks rtkit even where the limits allow.
 
+use std::cell::UnsafeCell;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use meloet_plugin::ipc::{Bell, FromPlugin, Mapping, PluginEnd, ToPlugin, block_flags};
-use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::formats::{EventSink, ProcessBlock, Processor};
 use crate::rtcheck;
@@ -124,122 +127,188 @@ impl SlotRun {
     }
 }
 
-enum Command {
-    Install(Box<SlotRun>),
-    Remove(u32),
-    Param { slot: u32, id: u32, value: f64 },
-    ForgetParams(u32),
-    Quit,
+/// One slot's place in the host process: its plugin, and whether a thread is at it.
+struct Seat {
+    busy: AtomicBool,
+    run: UnsafeCell<Option<Box<SlotRun>>>,
 }
 
-enum Returned {
-    Installed(u32),
-    Removed(u32, Option<Box<SlotRun>>),
+// SAFETY: `run` is reached only through `Seat::take`, which lets one thread in at a time.
+unsafe impl Sync for Seat {}
+
+impl Seat {
+    /// The seat, if no other thread is at it. Never waits.
+    fn take(&self) -> Option<Taken<'_>> {
+        self.busy
+            .compare_exchange(false, true, SeqCst, SeqCst)
+            .ok()
+            .map(|_| Taken(self))
+    }
 }
 
-type Slots = Box<[Option<Box<SlotRun>>]>;
+struct Taken<'a>(&'a Seat);
 
-/// The main thread's hold on the audio thread.
+impl Taken<'_> {
+    fn run(&mut self) -> &mut Option<Box<SlotRun>> {
+        // SAFETY: this thread holds the seat until the guard is dropped.
+        unsafe { &mut *self.0.run.get() }
+    }
+}
+
+impl Drop for Taken<'_> {
+    fn drop(&mut self) {
+        self.0.busy.store(false, SeqCst);
+    }
+}
+
+struct Shared {
+    map: Arc<Mapping>,
+    seats: Box<[Seat]>,
+    quit: AtomicBool,
+    /// The first audio thread got a real-time priority.
+    first_is_realtime: AtomicBool,
+}
+
+/// The main thread's hold on the audio threads.
 pub struct Handle {
-    commands: Producer<Command>,
-    returned: Consumer<Returned>,
+    shared: Arc<Shared>,
     bell: Bell,
-    thread: Option<JoinHandle<Slots>>,
+    threads: Vec<JoinHandle<()>>,
+    loaded: usize,
+    most_threads: usize,
 }
 
-/// How long the main thread waits for the audio thread to take a command. The audio thread
-/// may be inside a plugin that hangs; then meloet has already seen the slot stop.
+/// How long the main thread waits for a seat. The audio thread at it may be inside a plugin
+/// that hangs; then meloet has already seen the slot stop.
 const ANSWER: Duration = Duration::from_secs(2);
+/// No more audio threads than this, however many plugins and CPUs there are: the threads of
+/// all host processes together must fit what rtkit gives one user (25, docs/research/
+/// plugin-ipc.md).
+const MOST_THREADS: usize = 4;
 
 pub fn start(map: Arc<Mapping>) -> std::io::Result<Handle> {
-    let (commands_tx, commands_rx) = RingBuffer::new(COMMANDS);
-    let (returned_tx, returned_rx) = RingBuffer::new(COMMANDS);
-    let slots: Slots = (0..map.geometry().slots).map(|_| None).collect();
-    let bell = Bell::new(map.clone());
-    let thread = std::thread::Builder::new()
-        .name("plughost-audio".into())
-        .spawn(move || run(Bell::new(map), commands_rx, returned_tx, slots))?;
-    Ok(Handle {
-        commands: commands_tx,
-        returned: returned_rx,
-        bell,
-        thread: Some(thread),
-    })
+    let seats = (0..map.geometry().slots)
+        .map(|_| Seat {
+            busy: AtomicBool::new(false),
+            run: UnsafeCell::new(None),
+        })
+        .collect();
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let mut handle = Handle {
+        bell: Bell::new(map.clone()),
+        shared: Arc::new(Shared {
+            map,
+            seats,
+            quit: AtomicBool::new(false),
+            first_is_realtime: AtomicBool::new(false),
+        }),
+        threads: Vec::new(),
+        loaded: 0,
+        most_threads: (cpus / 2).clamp(1, MOST_THREADS),
+    };
+    handle.grow()?;
+    Ok(handle)
 }
 
 impl Handle {
-    fn send(&mut self, command: Command) -> Result<(), String> {
-        self.commands
-            .push(command)
-            .map_err(|_| "the audio thread is not taking commands".to_string())?;
-        self.bell.ring();
+    /// As many audio threads as there are plugins, up to half the CPUs and [`MOST_THREADS`];
+    /// one at least. Threads are never taken away again.
+    fn grow(&mut self) -> std::io::Result<()> {
+        while self.threads.len() < self.loaded.clamp(1, self.most_threads) {
+            let shared = self.shared.clone();
+            let first = self.threads.is_empty();
+            let thread = std::thread::Builder::new()
+                .name(format!("plughost-audio-{}", self.threads.len()))
+                .spawn(move || run(shared, first))?;
+            self.threads.push(thread);
+        }
         Ok(())
     }
 
-    fn answer(&mut self) -> Result<Returned, String> {
+    /// The seat of a slot, for the main thread: waits for the audio thread that is at it.
+    fn seat(&self, slot: u32) -> Result<Taken<'_>, String> {
+        let seat = (self.shared.seats.get(slot as usize)).ok_or(format!("no slot {slot}"))?;
         let until = Instant::now() + ANSWER;
         loop {
-            if let Ok(returned) = self.returned.pop() {
-                return Ok(returned);
+            if let Some(taken) = seat.take() {
+                return Ok(taken);
             }
             if Instant::now() > until {
                 return Err("the audio thread did not answer".into());
             }
-            std::thread::sleep(Duration::from_micros(200));
+            std::thread::sleep(Duration::from_micros(100));
         }
     }
 
-    /// Hands the plugin to the audio thread; back once it runs there.
+    /// Hands the plugin to the audio threads; they run it from the next block asked for.
     pub fn install(&mut self, run: SlotRun) -> Result<(), String> {
         let slot = run.slot() as u32;
-        self.send(Command::Install(Box::new(run)))?;
-        match self.answer()? {
-            Returned::Installed(got) if got == slot => Ok(()),
-            _ => Err(format!("slot {slot} was not free")),
+        {
+            let mut seat = self.seat(slot)?;
+            if seat.run().is_some() {
+                return Err(format!("slot {slot} was not free"));
+            }
+            *seat.run() = Some(Box::new(run));
         }
+        self.loaded += 1;
+        if let Err(e) = self.grow() {
+            // Fewer threads than wanted still run every plugin.
+            eprintln!("meloet-plughost: audio thread: {e}");
+        }
+        // A block asked for while the main thread was at the seat was passed over.
+        self.bell.ring();
+        Ok(())
     }
 
-    /// Takes the plugin back from the audio thread and drops it here.
+    /// Takes the plugin back from the audio threads and drops it here.
     pub fn remove(&mut self, slot: u32) -> Result<(), String> {
-        self.send(Command::Remove(slot))?;
-        match self.answer()? {
-            Returned::Removed(got, run) if got == slot => {
-                drop(run);
-                Ok(())
-            }
-            _ => Err(format!("slot {slot} did not come back")),
+        let run = self.seat(slot)?.run().take();
+        self.bell.ring();
+        if run.is_some() {
+            self.loaded = self.loaded.saturating_sub(1);
         }
+        drop(run);
+        Ok(())
     }
 
     pub fn set_param(&mut self, slot: u32, id: u32, value: f64) -> Result<(), String> {
-        self.send(Command::Param { slot, id, value })
+        if let Some(run) = self.seat(slot)?.run() {
+            run.queue(id, value);
+        }
+        self.bell.ring();
+        Ok(())
     }
 
     /// Drops the parameter changes of `set_param` that no block has taken yet. Before a state
     /// is put back: a change made before it must not land after it.
     pub fn forget_params(&mut self, slot: u32) -> Result<(), String> {
-        self.send(Command::ForgetParams(slot))
+        if let Some(run) = self.seat(slot)?.run() {
+            run.events.clear();
+        }
+        self.bell.ring();
+        Ok(())
     }
 
-    /// Ends the audio thread and drops every plugin it held; true when it did. A thread stuck
-    /// inside a plugin is left behind with its plugins (false): the process is about to end,
-    /// and nothing of those plugins may be touched any more.
-    pub fn stop(mut self) -> bool {
-        let Some(thread) = self.thread.take() else {
-            return false;
-        };
-        if self.send(Command::Quit).is_err() {
-            return false;
-        }
+    /// Ends the audio threads and drops every plugin they ran; true when it did. A thread
+    /// stuck inside a plugin is left behind with all the plugins (false): the process is about
+    /// to end, and nothing of those plugins may be touched any more.
+    pub fn stop(self) -> bool {
+        self.shared.quit.store(true, SeqCst);
+        self.bell.ring();
         let until = Instant::now() + ANSWER;
-        while !thread.is_finished() && Instant::now() < until {
+        while self.threads.iter().any(|t| !t.is_finished()) && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(1));
+            self.bell.ring();
         }
-        let ended = thread.is_finished();
-        if ended {
+        if self.threads.iter().any(|t| !t.is_finished()) {
+            // Never dropped: a thread is still inside one of the plugins.
+            std::mem::forget(self.shared);
+            return false;
+        }
+        for thread in self.threads {
             drop(thread.join());
         }
-        ended
+        true
     }
 }
 
@@ -313,8 +382,8 @@ fn realtime_by_rtkit() -> Result<u32, String> {
 }
 
 /// Asks for a real-time priority for this thread, before its loop starts (this may wait for
-/// the bus). Without one the thread still runs, late whenever the PC is busy.
-fn realtime() {
+/// the bus). True when it got one.
+fn realtime() -> bool {
     let choice = std::env::var(RT_ENV).unwrap_or_default();
     let got = match choice.as_str() {
         "off" => Err("switched off".to_string()),
@@ -322,60 +391,41 @@ fn realtime() {
         _ => realtime_by_limit()
             .or_else(|limit| realtime_by_rtkit().map_err(|rtkit| format!("{limit}; {rtkit}"))),
     };
-    match got {
+    match &got {
         Ok(priority) => eprintln!("meloet-plughost: audio thread at real-time priority {priority}"),
         Err(why) => eprintln!("meloet-plughost: no real-time priority for the audio thread: {why}"),
     }
+    got.is_ok()
 }
 
-fn run(
-    bell: Bell,
-    mut commands: Consumer<Command>,
-    mut returned: Producer<Returned>,
-    mut slots: Slots,
-) -> Slots {
-    realtime();
+/// One audio thread. All of them do the same: sleep on the bell, and run whatever block is
+/// asked for at a seat no other thread is at.
+fn run(shared: Arc<Shared>, first: bool) {
+    let realtime = realtime();
+    if first {
+        shared.first_is_realtime.store(realtime, SeqCst);
+    } else if !realtime && shared.first_is_realtime.load(SeqCst) {
+        // Without a real-time priority (rtkit gives one user only so many) this thread would
+        // take blocks and then be late with them, while the real-time threads sleep. Fewer
+        // threads serve every seat all the same.
+        eprintln!("meloet-plughost: this audio thread ends; the others run the plugins");
+        return;
+    }
+    let bell = Bell::new(shared.map.clone());
     loop {
         let seen = bell.count();
-        // A command is taken only while its answer fits.
-        while !returned.is_full() {
-            let Ok(command) = commands.pop() else {
-                break;
-            };
-            let answer = match command {
-                Command::Install(run) => {
-                    let slot = run.slot();
-                    match slots.get_mut(slot) {
-                        Some(place) if place.is_none() => {
-                            *place = Some(run);
-                            Returned::Installed(slot as u32)
-                        }
-                        _ => Returned::Removed(u32::MAX, Some(run)),
-                    }
-                }
-                Command::Remove(slot) => {
-                    Returned::Removed(slot, slots.get_mut(slot as usize).and_then(Option::take))
-                }
-                Command::Param { slot, id, value } => {
-                    if let Some(Some(run)) = slots.get_mut(slot as usize) {
-                        run.queue(id, value);
-                    }
-                    continue;
-                }
-                Command::ForgetParams(slot) => {
-                    if let Some(Some(run)) = slots.get_mut(slot as usize) {
-                        run.events.clear();
-                    }
-                    continue;
-                }
-                Command::Quit => return slots,
-            };
-            // Cannot fail: checked above, and this thread is the only producer.
-            let _ = returned.push(answer);
+        if shared.quit.load(SeqCst) {
+            return;
         }
         let mut worked = false;
-        for run in slots.iter_mut().flatten() {
-            worked |= run.serve();
+        for seat in shared.seats.iter() {
+            // A seat another thread is at is passed over: that thread looks at every seat
+            // again when it is done, and the main thread rings the bell when it leaves one.
+            if let Some(mut taken) = seat.take()
+                && let Some(run) = taken.run()
+            {
+                worked |= run.serve();
+            }
         }
         if !worked {
             bell.wait(seen, IDLE_NS);

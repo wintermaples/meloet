@@ -186,13 +186,12 @@ fn a_host_process_stopped_from_outside(signal: i32) {
     assert!(first <= 2, "noticed only at block {first}");
     let noticed = killed.elapsed();
     assert!(noticed < Duration::from_millis(60), "{noticed:?}");
-    // Each slot missed exactly one block, and the block they missed in was waited for once
-    // (to the deadline both slots share), not once for each slot.
+    // The instrument waited twice (the block it missed, and once more in the next); the
+    // effect, later in the same blocks, only found the deadline past and then the process
+    // stopped. A block is waited for once, to the deadline all slots share.
     let after = unanswered(&watches);
-    assert!(
-        (before.iter().zip(&after)).all(|(b, a)| a - b == 1),
-        "{after:?}"
-    );
+    let missed: Vec<u64> = (before.iter().zip(&after)).map(|(b, a)| a - b).collect();
+    assert_eq!(missed, [2, 1]);
     let share_ns = (BLOCK_NS as f64 * PLUGIN_WAIT_SHARE) as u64;
     assert!(times[first] < share_ns + BLOCK_NS, "{times:?}");
 

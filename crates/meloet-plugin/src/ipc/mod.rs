@@ -7,10 +7,11 @@
 //! header (64 bytes, all u32)
 //!    0 magic   4 version   8 max_frames  12 channels  16 slots
 //!   20 to_plugin_events   24 from_plugin_events   28 slot_stride
-//!   32 bell (futex)       36 plugin_waiting
+//!   32 bell (futex)       36 plugin_waiting     40 stopped     44 progress
 //! slot (slot_stride bytes each, the first at 64)
 //!    0 request (futex)    4 done (futex)    8 engine_waiting   12 frames   16 flags
 //!   20 to_plugin head    24 to_plugin tail  28 from_plugin head  32 from_plugin tail
+//!   36 taken             40 taken_ms
 //!   64 Transport (64 bytes)
 //!  128 input:  channels × max_frames f32
 //!      output: channels × max_frames f32
@@ -25,6 +26,21 @@
 //! 2. The host's audio thread reads them, runs the plugin, writes the output and its events,
 //!    stores the same number in `done` and wakes the engine if it sleeps.
 //! 3. The engine, which slept on `done` with a time limit, reads the output.
+//!
+//! An answer that is not there at the time limit leaves its block without output, and the
+//! block after it waits for that answer once more. Whether a slot whose answer is still missing
+//! then is stopped depends on what the host process shows of itself. Its audio threads write
+//! the request they take into the slot's `taken`, with the time (`taken_ms`, the low bits of
+//! CLOCK_MONOTONIC in milliseconds), and count every request taken or answered in the header's
+//! `progress`. A request that a thread has held for one and a half times the distance of the
+//! last two time limits (one and a half blocks) is a plugin that hangs. A request nobody took
+//! while `progress` stood still over two time limits is a process that is gone or frozen. Either stops the slot and raises `stopped` in the header,
+//! which stops every other slot of the mapping with it: they are plugins of the same process.
+//! A request that waits its turn while the process works on others is only late, however
+//! long: a process with more work than fits a block must not be taken for a dead one.
+//!
+//! The host process may run several audio threads. Each sleeps on `bell`, and
+//! `plugin_waiting` counts the sleepers.
 //!
 //! The engine trusts nothing the host process writes: it keeps the geometry and its own ring
 //! positions in its own memory, and every length and position read from the shared memory is
@@ -154,7 +170,9 @@ struct HeaderWords {
     slot_stride: AtomicU32,
     bell: AtomicU32,
     plugin_waiting: AtomicU32,
-    _reserved: [AtomicU32; 6],
+    stopped: AtomicU32,
+    progress: AtomicU32,
+    _reserved: [AtomicU32; 4],
 }
 const _: () = assert!(std::mem::size_of::<HeaderWords>() == HEADER_LEN);
 
@@ -169,7 +187,9 @@ struct SlotWords {
     to_plugin_tail: AtomicU32,
     from_plugin_head: AtomicU32,
     from_plugin_tail: AtomicU32,
-    _reserved: [AtomicU32; 7],
+    taken: AtomicU32,
+    taken_ms: AtomicU32,
+    _reserved: [AtomicU32; 5],
 }
 const _: () = assert!(std::mem::size_of::<SlotWords>() == SLOT_WORDS_LEN);
 
@@ -318,6 +338,17 @@ impl Mapping {
 
     pub fn geometry(&self) -> Geometry {
         self.geometry
+    }
+
+    /// The host process is gone or hangs: every slot of this mapping is stopped from its
+    /// next block on, without being waited for. Raised by the engine's end of a slot that
+    /// went two blocks without an answer, and by whoever watches the process.
+    pub fn mark_stopped(&self) {
+        self.header().stopped.store(1, Relaxed);
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.header().stopped.load(Relaxed) != 0
     }
 
     /// The memfd, to hand to the host process.

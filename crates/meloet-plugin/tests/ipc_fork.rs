@@ -160,10 +160,13 @@ fn a_process_that_dies_stops_its_slot_at_the_second_block() {
     let waited = monotonic_ns() - began;
     assert!((4_000_000..1_000_000_000).contains(&waited), "{waited}");
     assert!(!engine.stopped());
-    // … and at the second one the slot is stopped, without another wait.
-    let began = monotonic_ns();
+    // … and the second one waits for it once more, then the slot is stopped for good.
     assert!(!engine.begin(256));
+    assert!(engine.overdue());
+    let began = monotonic_ns();
+    assert!(!engine.await_overdue(began + 4_000_000));
     assert!(engine.stopped());
+    assert!(!engine.begin(256));
     assert!(!engine.wait(monotonic_ns() + 1_000_000_000));
     assert!(monotonic_ns() - began < 500_000_000);
 }

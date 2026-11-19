@@ -41,4 +41,9 @@ pub trait Effect: Send {
     fn set_param(&mut self, index: u32, value: f32);
     fn process(&mut self, left: &mut [f32], right: &mut [f32], ctx: &EffectContext);
     fn reset(&mut self);
+    /// Frames by which the effect delays the sound; the built-in ones add none. Read on the
+    /// audio thread at every block (see [`crate::Instrument::latency`]).
+    fn latency(&self) -> u32 {
+        0
+    }
 }

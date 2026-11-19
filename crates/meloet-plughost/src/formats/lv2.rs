@@ -574,9 +574,6 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
         transport: &Default::default(),
         sink: &mut sink,
     });
-    // Not ended: the scan's process goes when the bundle is read, and ending a plugin can
-    // take longer than reading it (LSP).
-    std::mem::forget((_shared, processor));
     Ok(info)
 }
 

@@ -44,4 +44,16 @@ pub trait Instrument: Send {
     fn render(&mut self, left: &mut [f32], right: &mut [f32]);
     /// Silence at once: all voices and all held state (pedal, bend, modulation) are cleared.
     fn reset(&mut self);
+    /// On the audio thread, as soon as the engine knows the length of the next `render` and
+    /// has sent every event that comes before it. An instrument that renders somewhere else
+    /// (a plugin in another process) starts now, so that all of them work at the same time
+    /// while the engine goes through its tracks. No `event` comes between this and the
+    /// `render` it announces; a `render` may also come unannounced.
+    fn ask(&mut self, _frames: usize) {}
+    /// Frames by which the sound comes out late (a plugin that looks ahead). Read on the
+    /// audio thread at every block; the engine sends the track's sequence early by this much
+    /// (docs/architecture.md 20-8).
+    fn latency(&self) -> u32 {
+        0
+    }
 }

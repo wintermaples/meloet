@@ -10,6 +10,8 @@ use meloet_engine::{
 };
 use meloet_plugin::ipc::Transport;
 use rtrb::{Consumer, Producer, RingBuffer};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 const RATE: u64 = 48_000;
 /// At 120 beats a minute one tick is 50 frames.
@@ -23,15 +25,8 @@ struct Late {
     delay: usize,
     /// Frames until each click still to come; 0 is a free place.
     due: [usize; 32],
-}
-
-impl Late {
-    fn new(delay: usize) -> Box<Late> {
-        Box::new(Late {
-            delay,
-            due: [0; 32],
-        })
-    }
+    /// The delay it tells the engine of.
+    says: Arc<AtomicU32>,
 }
 
 impl Instrument for Late {
@@ -62,12 +57,17 @@ impl Instrument for Late {
     fn reset(&mut self) {
         self.due = [0; 32];
     }
+
+    fn latency(&self) -> u32 {
+        self.says.load(Relaxed)
+    }
 }
 
 /// Writes down every event with the frame (counted from the first render) it took effect on.
 struct Tape {
     tx: Producer<(u64, InstrumentEvent)>,
     frames: u64,
+    says: Arc<AtomicU32>,
 }
 
 impl Instrument for Tape {
@@ -81,11 +81,16 @@ impl Instrument for Tape {
         self.frames += left.len() as u64;
     }
     fn reset(&mut self) {}
+    fn latency(&self) -> u32 {
+        self.says.load(Relaxed)
+    }
 }
 
 struct Rig {
     parts: EngineParts,
     frames: u64,
+    /// The delay the instrument of each track says it has.
+    says: [Arc<AtomicU32>; 2],
 }
 
 impl Rig {
@@ -93,6 +98,7 @@ impl Rig {
         let mut rig = Rig {
             parts: Engine::new(EngineConfig::default()),
             frames: 0,
+            says: Default::default(),
         };
         rig.send(EngineCommand::SetTempo {
             ticks_per_beat: 480,
@@ -112,8 +118,23 @@ impl Rig {
 
     fn tape(&mut self, track: usize) -> Consumer<(u64, InstrumentEvent)> {
         let (tx, rx) = RingBuffer::new(1 << 16);
-        self.instrument(track, Box::new(Tape { tx, frames: 0 }));
+        let tape = Tape {
+            tx,
+            frames: 0,
+            says: self.says[track].clone(),
+        };
+        self.instrument(track, Box::new(tape));
         rx
+    }
+
+    /// An instrument that delays by `delay` frames; what it says of that is `lookahead`'s.
+    fn late(&mut self, track: usize, delay: usize) {
+        let late = Late {
+            delay,
+            due: [0; 32],
+            says: self.says[track].clone(),
+        };
+        self.instrument(track, Box::new(late));
     }
 
     fn sequence(&mut self, track: usize, events: &[(u64, InstrumentEvent)]) {
@@ -125,8 +146,9 @@ impl Rig {
         assert!(self.parts.handle.swap_sequence(track, sequence).is_ok());
     }
 
+    /// What the track's instrument says its delay is, from the next block on.
     fn lookahead(&mut self, track: usize, frames: u32) {
-        self.send(EngineCommand::SetLookahead { track, frames });
+        self.says[track].store(frames, Relaxed);
     }
 
     /// Renders `blocks` device blocks; the left channel.
@@ -178,8 +200,8 @@ fn a_track_that_delays_starts_its_notes_with_the_others() {
     let at = |tick: u64| (tick * FRAMES_PER_TICK) as usize;
     let play = |ahead: u32| {
         let mut rig = Rig::new();
-        rig.instrument(0, Late::new(0));
-        rig.instrument(1, Late::new(DELAY));
+        rig.late(0, 0);
+        rig.late(1, DELAY);
         rig.sequence(0, &notes);
         rig.sequence(1, &notes);
         rig.lookahead(1, ahead);
@@ -188,14 +210,14 @@ fn a_track_that_delays_starts_its_notes_with_the_others() {
         clicks(&rig.run(250))
     };
 
-    // Without the lookahead the late track is late by its delay.
+    // A plugin that does not say its delay is late by it.
     let apart: Vec<(usize, f32)> = [0, 480, 960, 1000]
         .iter()
         .flat_map(|&tick| [(at(tick), LEVEL), (at(tick) + DELAY, LEVEL)])
         .collect();
     assert_eq!(play(0), apart);
 
-    // With it, every note after the first frames of the play comes out of both tracks on the
+    // When it says it, every note after the first frames of the play comes out of both tracks on the
     // same frame. The note at the very start cannot be sent early: it is late, not lost.
     assert_eq!(
         play(DELAY as u32),

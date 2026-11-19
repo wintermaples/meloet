@@ -265,6 +265,10 @@ fn blocks_until_stopped(engine: &mut EngineEnd) -> (u32, Duration) {
     let mut silent = 0;
     loop {
         if !engine.begin(256) {
+            // The block after the one that went without an answer waits for it once more.
+            // By then the plugin has held the request for more than a block and a half.
+            assert!(engine.overdue());
+            assert!(!engine.await_overdue(monotonic_ns() + BUDGET_NS));
             assert!(engine.stopped());
             return (silent, failed_at.elapsed());
         }
@@ -292,9 +296,10 @@ fn a_plugin_that_crashes_is_seen_within_two_blocks() {
         assert_eq!(block(&mut engine, &[0.5; 256], &[]).0, [0.5; 256]);
     }
     let (silent, took) = blocks_until_stopped(&mut engine);
-    // The block it crashed in went without output; at the next one the slot is stopped.
+    // The block it crashed in went without output; the next one waited once more and then
+    // the slot is stopped.
     assert_eq!(silent, 1);
-    assert!(took < BLOCK * 2, "{took:?}");
+    assert!(took < BLOCK * 3, "{took:?}");
     let status = host
         .child
         .wait_for_exit(Duration::from_secs(10))
@@ -317,19 +322,16 @@ fn a_plugin_that_hangs_is_seen_within_two_blocks() {
     }
     let (silent, took) = blocks_until_stopped(&mut engine);
     assert_eq!(silent, 1);
-    assert!(took < BLOCK * 2, "{took:?}");
-    // The process is still there, and its audio thread is stuck: the other plugins of the
-    // same process stop with it (docs/architecture.md 20-1).
+    assert!(took < BLOCK * 3, "{took:?}");
+    // The process is still there, with an audio thread stuck in the plugin: the other plugins
+    // of the same process are stopped with it, without a wait (docs/architecture.md 20-1).
     assert!(
         host.child
             .wait_for_exit(Duration::from_millis(50))
             .is_none()
     );
-    assert!(other.begin(256));
-    other.submit();
-    assert!(!other.wait(monotonic_ns() + BUDGET_NS));
     assert!(!other.begin(256));
-    assert!(other.stopped());
+    assert!(other.stopped() && !other.overdue());
 }
 
 struct Scan {

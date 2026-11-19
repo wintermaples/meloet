@@ -1,0 +1,15 @@
+{
+  "note": "The work of others inside a Rust crate that the crate's own license files do not name. tools/licenses/inventory.mjs puts each entry into NOTICE and beside the crate's own texts in the about dialog. text = a copy kept under licenses/. checked = date read.",
+  "upstream": [
+    {
+      "crate": "vst3",
+      "title": "bindings generated from the header files of the VST 3 SDK 3.8.0 (pluginterfaces)",
+      "copyright": "Copyright (c) Steinberg Media Technologies GmbH",
+      "license": "MIT",
+      "source": "https://github.com/steinbergmedia/vst3_pluginterfaces",
+      "text": "licenses/rust/vst3/VST3-SDK-LICENSE.txt",
+      "read": "https://raw.githubusercontent.com/steinbergmedia/vst3_pluginterfaces/master/LICENSE.txt on 2026-11-19 (sha256 e86d79e19e4a33ebc442d2e0d083887dfc75a2a8de9fe17eeddedb84810ad74e; the text of the master branch, whose copyright line says 2026)",
+      "checked": "2026-11-19"
+    }
+  ]
+}

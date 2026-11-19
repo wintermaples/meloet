@@ -15,6 +15,8 @@ mod mixbook;
 pub mod play;
 pub mod plugins;
 pub mod recovery;
+#[cfg(test)]
+mod seen;
 mod service;
 pub mod settings;
 pub mod sf2store;

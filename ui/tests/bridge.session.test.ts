@@ -75,6 +75,9 @@ function scripted(version = PROTOCOL_VERSION) {
     async takeNotes() {
       return new ArrayBuffer(0);
     },
+    async pluginParams() {
+      return null;
+    },
     async liveNotes() {
       return { seq: 0, recording: null, notes: [] };
     },

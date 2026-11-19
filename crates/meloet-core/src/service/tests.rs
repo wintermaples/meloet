@@ -1,3 +1,4 @@
+use crate::seen::*;
 use std::sync::mpsc::{Receiver, channel};
 
 use meloet_devices::{Availability, DevicesPicture, Endpoint, LinkKind};
@@ -1135,12 +1136,12 @@ fn seats_are_silent_until_their_samples_are_read_and_samples_nothing_needs_are_l
         instrument: Some(InstrumentKind::Strings),
     });
     assert_eq!(
-        rig.seats.model.view().shelf.loading,
+        rig.seats.model.view().shelf.loading(),
         Some(InstrumentKind::Strings)
     );
     assert_eq!(rig.seats.sounding(), [] as [usize; 0]);
     assert_eq!(rig.read_one(), B::Strings);
-    assert_eq!(rig.seats.model.view().shelf.loading, None);
+    assert_eq!(rig.seats.model.view().shelf.loading(), None);
     assert_eq!(rig.seats.sounding(), [AUDITION_SEAT]);
 
     // The next row; the strings stay as the row before, and go with the row after that.
@@ -1196,7 +1197,7 @@ fn a_song_from_a_pc_with_more_sounds_plays_as_the_sine_wave() {
     );
     assert!(rig.read.try_recv().is_err(), "nothing was read for it");
     let view = rig.seats.model.view();
-    assert_eq!(view.song.tracks[0].instrument, InstrumentKind::GrandPiano);
+    assert_eq!(view.song.tracks[0].instrument(), InstrumentKind::GrandPiano);
     assert!(!view.shelf.available.contains(&InstrumentKind::GrandPiano));
     assert!(view.shelf.available.contains(&InstrumentKind::Strings));
 }
@@ -1222,12 +1223,12 @@ fn the_core_reads_the_sounds_off_its_thread_and_says_when_a_row_is_ready() {
         instrument: Some(InstrumentKind::GrandPiano),
     });
     let until = Instant::now() + Duration::from_secs(10);
-    while core.snapshot().state.shelf.loading.is_some() {
+    while core.snapshot().state.shelf.loading().is_some() {
         assert!(Instant::now() < until, "the piano was never read");
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(
-        core.snapshot().state.shelf.selected,
+        core.snapshot().state.shelf.selected(),
         Some(InstrumentKind::GrandPiano)
     );
 
@@ -1241,7 +1242,7 @@ fn the_core_reads_the_sounds_off_its_thread_and_says_when_a_row_is_ready() {
     }
     let shelf = core.snapshot().state.shelf;
     assert!(!shelf.available.contains(&InstrumentKind::StudioKit));
-    assert_eq!((shelf.selected, shelf.loading), (None, None));
+    assert_eq!((shelf.selected(), shelf.loading()), (None, None));
     core.stop();
     let _ = std::fs::remove_dir_all(dir);
 }

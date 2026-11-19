@@ -589,6 +589,12 @@ impl Core {
         answer.recv().ok().flatten()
     }
 
+    /// The parameters of the plugin the parameters panel shows, when `table` is still
+    /// `SelectedPlugin::table`. No plugin is shown there yet, so there is never one.
+    pub fn plugin_params(&self, _table: u32) -> Option<meloet_protocol::ParamTable> {
+        None
+    }
+
     fn input(&self, input: Input) -> u64 {
         let (reply, rev) = mpsc::channel();
         if self.tx.send(Msg::Input(input, Some(reply))).is_err() {

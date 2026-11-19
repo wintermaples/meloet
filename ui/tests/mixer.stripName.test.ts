@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { SongView } from "../src/bridge/types";
+import type { EffectKind, SongView } from "../src/bridge/types";
 import { stripName } from "../src/components/mixer/stripName";
 
-const slots = (effects: SongView["returns"][0]["inserts"]) =>
+const slots = (effects: (EffectKind | null)[]) =>
   effects.map((effect) => (effect === null ? null : { effect: { kind: "builtin", effect }, bypassed: false }));
-const song = (returnA: SongView["returns"][0]["inserts"]) =>
+const song = (returnA: (EffectKind | null)[]) =>
   ({
     tracks: [{ id: 7, number: 2, name: "ベース" }],
     returns: [

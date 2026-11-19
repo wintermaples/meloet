@@ -6,6 +6,7 @@
 //! carries nanoseconds. Song positions are ticks, 480 to a quarter note (docs/architecture.md 11).
 
 mod added;
+mod params;
 mod take;
 mod telemetry;
 
@@ -17,6 +18,10 @@ pub use added::{
     PluginKindView, PluginRole, PluginRowView, PluginState, PluginView, SamplePlaying, Sf2FileView,
     Sf2PresetView, SoundName, SoundRef, SoundSampleView, SoundView, StandIn,
 };
+pub use params::{
+    EffectName, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable, ParamValue,
+    ParamValues, PluginWindowKind, PluginWindowView, SelectedParams, SelectedPlugin, WindowsView,
+};
 pub use take::{
     TAKE_CONTROL_LEN, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NO_FROM, TAKE_NOTE_LEN, TAKE_VERSION,
     TakeControl, TakeControlValue, TakeError, TakeNote, TakeNotes,
@@ -26,7 +31,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 17;
+pub const PROTOCOL_VERSION: u32 = 18;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -77,7 +82,7 @@ pub enum Command {
     /// R and the record button: stopped → count-in then record; playing → record from here;
     /// counting in or recording → stop. The recording goes to the selected track
     /// (`SongView::play_target`); a song with no tracks says `StatusMessage::NoArmedTrack`.
-    /// Nothing happens while the shelf auditions (`ShelfView::selected`).
+    /// Nothing happens while the shelf auditions (`ShelfView::selected_sound`).
     Record,
     /// Home.
     GoToStart,
@@ -173,18 +178,21 @@ pub enum Command {
     /// `NewTrack`: "＋ トラックを追加", "トラックを足す" of the menus, P. `Replace`: a click
     /// on the instrument's name in a track's header, or on the instrument slot of the mixer.
     /// `InsertEffect`: a click on an empty insert slot ("空き ＋"); the shelf then lists the
-    /// effects.
+    /// effects. `ReplaceEffect`: 「入れかえる…」 of the right-click menu of a slot that holds
+    /// an effect (spec 3, 86-3); the shelf lists the effects, and the row of the effect the
+    /// slot holds is `ShelfView::current_effect`.
     /// When the shelf is open already, the mode changes and whatever was auditioned is put
     /// away as `ShelfCancel` does. `Replace` of a track that is gone does nothing, and so
-    /// does `InsertEffect` for a strip that is gone or a slot that is not empty. Not while
-    /// counting in or recording.
+    /// does `InsertEffect` for a strip that is gone or a slot that is not empty, and
+    /// `ReplaceEffect` for a strip that is gone or a slot that is empty. Not while counting
+    /// in or recording, but for `InsertEffect` and `ReplaceEffect`.
     OpenShelf {
         mode: ShelfMode,
     },
-    /// A click on a row, ↑ ↓: the row becomes `ShelfView::selected` and is auditioned. While
-    /// a row is auditioned, the keys sound with that instrument and nothing can be recorded
-    /// (`TransportView::can_record` is false). In `Replace` mode the clips of that track play
-    /// with it too; the song itself is not changed. `None`, or an instrument that is not in
+    /// A click on a row, ↑ ↓: the row becomes `ShelfView::selected_sound` and is auditioned.
+    /// While a row is auditioned, the keys sound with that instrument and nothing can be
+    /// recorded (`TransportView::can_record` is false). In `Replace` mode the clips of that
+    /// track play with it too; the song itself is not changed. `None`, or an instrument that is not in
     /// `ShelfView::available`: as `ShelfCancel`.
     ShelfSelect {
         instrument: Option<InstrumentKind>,
@@ -202,9 +210,16 @@ pub enum Command {
     /// name stay. The status line says `StatusMessage::InstrumentReplaced`. Selecting the
     /// instrument the track has already is no step.
     ///
-    /// `InsertEffect`: `ShelfView::selected_effect` goes into the slot, with the parameters
+    /// `InsertEffect`: `ShelfView::chosen_effect` goes into the slot, with the parameters
     /// of a new one, as one step. It becomes the selected insert (as `SelectInsert`), so the
     /// parameters panel comes to the front, and the shelf's mode goes back to `NewTrack`.
+    /// The status line says `StatusMessage::EffectInserted`.
+    ///
+    /// `ReplaceEffect`: `ShelfView::chosen_effect` takes the place of what the slot holds,
+    /// with the parameters of a new one, as one step; undo brings the old effect back with
+    /// its settings. What follows is as for `InsertEffect`, and the status line says
+    /// `StatusMessage::InsertReplaced`. Choosing the effect the slot holds already
+    /// (`ShelfView::current_effect`) is no step.
     ///
     /// Afterwards nothing is selected in the shelf, and the shelf stays open.
     ShelfConfirm,
@@ -237,6 +252,10 @@ pub enum Command {
     //   already is no step.
     // - `CancelMixPreview` (Esc during the drag): every preview is over and the sound is
     //   back at the song's values.
+    // The keys (spec 3, 86-7: ↑ ↓ ← →, Home on a fader, pan or send that has the focus) use
+    // the same two: every key step is sent with `commit: false`, and the screen sends the
+    // value once more with `commit: true` when no key was pressed for 1 second after the last
+    // one was let go, or the focus leaves. So the run of key steps is one step.
     // A preview is also over when the song changes under it (a step, undo, redo, another
     // song). All of this works while counting in or recording too, as do `ToggleReturnMute`,
     // `RemoveEffect` and the mute of a track: none of them moves where a take is recorded.
@@ -263,7 +282,8 @@ pub enum Command {
         db: Option<f32>,
         commit: bool,
     },
-    /// A parameter of the effect in an insert slot. `effect` is the effect the screen shows
+    /// A parameter of an effect that comes with meloet, in an insert slot (a plugin's:
+    /// `SetPluginParam`). `effect` is the effect the screen shows
     /// there and `param` the parameter's place in its table (`EFFECT_PARAMS`); when the slot
     /// holds another effect by now, or none, the command is dropped. `value` is in the
     /// parameter's own unit: a step is its number from 0, a switch 0 or 1.
@@ -283,28 +303,90 @@ pub enum Command {
         bus: SendBus,
     },
     /// Takes the effect out of its slot, as one step. The slots below stay where they are.
-    /// When it was the selected one, nothing is selected afterwards. No part of the screen
-    /// sends this yet: where it is asked for is not decided.
+    /// When it was the selected one, nothing is selected afterwards. 「外す」 of the slot's
+    /// right-click menu, and Delete on the selected slot. A plugin goes the same way (its
+    /// window closes). The status line says `StatusMessage::EffectRemoved`.
     RemoveEffect {
         insert: InsertRef,
     },
-    /// A click on an insert slot that holds an effect: it becomes the selected one
-    /// (`ParamsView::selected`), and the parameters panel (`Band::Params`) opens, in front
-    /// (spec 3: an effect that comes with meloet has no window). `None`, or a slot that is
-    /// empty: nothing is selected (the panel stays as it is). Not a step, and it works while
-    /// recording too. An empty slot ("空き ＋") opens the shelf instead:
-    /// `OpenShelf` with `ShelfMode::InsertEffect`.
+    /// A click on an insert slot that holds an effect or a plugin: it becomes the selected
+    /// one (`ParamsView::selected`). `None`, or a slot that is empty: nothing is selected
+    /// (the panel stays as it is). Not a step, and it works while recording too. An empty
+    /// slot ("空き ＋") opens the shelf instead: `OpenShelf` with `ShelfMode::InsertEffect`.
+    ///
+    /// What comes with it (spec 3 「パラメータ」): for an effect that comes with meloet, and
+    /// for a plugin whose `PluginWindowKind` is `NotYet` or `None`, the parameters panel
+    /// (`Band::Params`) opens, in front; for `NotYet` the status line says
+    /// `StatusMessage::PluginWindowNotYet`. For a plugin whose window opens, the window opens
+    /// as `OpenPluginWindow` does (it comes to the front when it is open already) and the
+    /// panel stays as it is. A plugin that is not `PluginState::Ready` is selected and
+    /// nothing else happens.
     SelectInsert {
         insert: Option<InsertRef>,
     },
-    /// A row of the parameters panel is chosen (a click, ↑ ↓): `SelectedInsert::row`. The
-    /// status line then says `StatusMessage::ParamSelected`. `None`, or a number the effect
-    /// has no parameter for: no row.
+    /// A click on the instrument slot of a track whose sound is a plugin: the plugin becomes
+    /// the selected one (`SelectedParams::Plugin` with `PluginSlotRef::Instrument`), with
+    /// its window or the panel as for `SelectInsert`. Nothing for a track that is gone or
+    /// whose sound is no plugin (those have no parameters).
+    SelectInstrument {
+        track: u32,
+    },
+    /// A row of the parameters panel is chosen (a click, ↑ ↓): `SelectedInsert::row` or
+    /// `SelectedPlugin::row`. `param` is the parameter's place in the effect's table for an
+    /// effect that comes with meloet, `ParamRow::id` for a plugin. The status line then says
+    /// `StatusMessage::ParamSelected` or `StatusMessage::PluginParamSelected`. `None`, or a
+    /// number the effect has no parameter for: no row.
     SelectParam {
         param: Option<u32>,
     },
+    /// A parameter of the selected plugin, moved in the parameters panel. `table` is the
+    /// table the screen shows (`SelectedPlugin::table`) and `param` a `ParamRow::id` of it;
+    /// when the plugin at `slot` has another table by now, or `slot` holds no plugin that is
+    /// `PluginState::Ready`, the command is dropped. `value` is 0.0..=1.0 (`ParamRow::value`;
+    /// a step as n / (steps − 1), a switch 0 or 1). `commit` as for `SetParam`: with `false`
+    /// only the plugin hears the value, with `true` the song gets it as one step, and
+    /// `CancelMixPreview` puts the plugin back at the song's value. Either way the value and
+    /// its text come back in a `ParamValues` message.
+    ///
+    /// While the plugin's window is open, a `commit: true` first makes a step of what was
+    /// changed in the window until then (spec 3, Y15), then its own.
+    SetPluginParam {
+        slot: PluginSlotRef,
+        table: u32,
+        param: u32,
+        value: f64,
+        commit: bool,
+    },
+    /// Enter in the value field of a row of the parameters panel (spec 3, 86-6): `text` as
+    /// typed, with or without the unit. For an effect that comes with meloet Rust reads the
+    /// number in it ("4" is 4 : 1); for a plugin the plugin reads it. The value is set as one
+    /// step. A value past an end of the range is put at that end, and the status line says
+    /// `StatusMessage::ParamClamped`. A text that does not read as a value changes nothing
+    /// and says nothing. A stale `param` is dropped as for `SetParam` and `SetPluginParam`.
+    TypeParam {
+        param: ParamRef,
+        text: String,
+    },
+    /// 「とばす」 and 「もどす」 (spec 3, 13-A, 86-1): the mark at the left of a slot, B on the
+    /// selected slot, 「とばす」 in the head of the parameters panel and in the right-click
+    /// menu. Flips `InsertView::bypassed`, as one step, saved with the song. Nothing for an
+    /// empty slot, and nothing for a plugin that is `PluginState::Stopped`. It works while
+    /// counting in or recording too. The status line says `StatusMessage::EffectBypassed`.
+    ToggleBypass {
+        insert: InsertRef,
+    },
+    /// A drag of a slot inside its strip, 「上へ動かす」 and 「下へ動かす」 (spec 3, 86-2), as
+    /// one step. `to`: the place of the slot among the four as they are afterwards, from 0;
+    /// past the end is the end. The slots between move by one, empty ones too, as tracks do
+    /// for `MoveTrack` (「上へ動かす」 is `to: slot − 1`). The selected insert and the open
+    /// windows stay with their effects. Nothing for an empty slot, or when `to` is where it
+    /// is. The status line says `StatusMessage::InsertsReordered`.
+    MoveInsert {
+        insert: InsertRef,
+        to: u8,
+    },
     /// `ShelfMode::InsertEffect`: a click on a row of the shelf's effects, ↑ ↓. The row
-    /// becomes `ShelfView::selected_effect`. There is nothing to audition: the effect is in
+    /// becomes `ShelfView::chosen_effect`. There is nothing to audition: the effect is in
     /// the song only after `ShelfConfirm`. `None`: no row.
     ShelfSelectEffect {
         effect: Option<EffectKind>,
@@ -700,13 +782,33 @@ pub enum Command {
     UsePluginFormat {
         key: String,
     },
-    /// 「窓をひらく」: the plugin's own window. `None`: of the plugin the shelf auditions
-    /// (`ShelfView::selected_sound`), which sits in no slot of the song yet; nothing while it
-    /// is still read or when the row is no plugin. `Some`: of a plugin of the song; nothing
-    /// for a slot that holds no plugin, or one that is not `PluginState::Ready`.
+    /// 「窓をひらく」, 「窓を前に出す」, and a row of the list above 「窓 N」: the plugin's own
+    /// window opens, or comes to the front when it is open already (`WindowsView::list`).
+    /// `None`: of the plugin the shelf auditions (`ShelfView::selected_sound`), which sits in
+    /// no slot of the song yet; nothing while it is still read or when the row is no plugin.
+    /// `Some`: of a plugin of the song; nothing for a slot that holds no plugin, one that is
+    /// not `PluginState::Ready`, or one whose `PluginWindowKind` is not `Opens`.
+    ///
+    /// When the window is not up 0.2 s later, the status line says
+    /// `StatusMessage::PluginWindowOpening` until it is; when it is up and does not fit the
+    /// screen, `StatusMessage::PluginWindowLarge`.
+    ///
+    /// What was changed in the window becomes one step when the person comes back to meloet
+    /// (the window closed, or another window got the keys), if the plugin's state differs
+    /// from the one it had when the window got the keys (spec 3, Y15). Nothing of that is
+    /// in the contract: `SongView::undo_count` goes up by one.
     OpenPluginWindow {
         slot: Option<PluginSlotRef>,
     },
+    /// Closes the window of the plugin at `slot` (`PluginWindowView::slot`), as its own close
+    /// button does. Nothing when it has no window open. No part of the screen sends this yet
+    /// (a window is closed with its own button, and when its plugin leaves the song).
+    ClosePluginWindow {
+        slot: Option<PluginSlotRef>,
+    },
+    /// 「ぜんぶ前に出す」 at the bottom of the list above 「窓 N」: every window of
+    /// `WindowsView::list` comes in front of meloet's window, in the order of the list.
+    RaisePluginWindows,
     /// 「SF2 を足す…」 (the heading 「あとから入れたもの」, and the notice of an SF2 file that is
     /// not found): Rust shows the PC's window for choosing a file. The file is copied into
     /// meloet, joins `LibraryView::sf2` as `opened_sf2`, and the shelf opens on its
@@ -1000,10 +1102,6 @@ impl EffectKind {
     ];
 }
 
-/// The effects that come with meloet in the insert slots of a strip, top first: `None` for a
-/// slot that is empty and for one that holds a plugin. `SlotsView` tells those apart.
-pub type InsertsView = [Option<EffectKind>; INSERT_SLOTS];
-
 /// What each insert slot of a strip holds, top first; `None` is "空き ＋".
 pub type SlotsView = [Option<InsertView>; INSERT_SLOTS];
 
@@ -1056,6 +1154,7 @@ pub struct AppState {
     pub library: LibraryView,
     pub params: ParamsView,
     pub plugins: PluginsView,
+    pub windows: WindowsView,
     pub keyboards: KeyboardsView,
     pub outputs: OutputsView,
     pub inputs: InputsView,
@@ -1094,6 +1193,9 @@ impl AppState {
         if old.plugins != new.plugins {
             out.push(Change::Plugins(new.plugins.clone()));
         }
+        if old.windows != new.windows {
+            out.push(Change::Windows(new.windows.clone()));
+        }
         if old.keyboards != new.keyboards {
             out.push(Change::Keyboards(new.keyboards.clone()));
         }
@@ -1124,6 +1226,7 @@ impl AppState {
             Change::Library(v) => self.library = v,
             Change::Params(v) => self.params = v,
             Change::Plugins(v) => self.plugins = v,
+            Change::Windows(v) => self.windows = v,
             Change::Keyboards(v) => self.keyboards = v,
             Change::Outputs(v) => self.outputs = v,
             Change::Inputs(v) => self.inputs = v,
@@ -1198,9 +1301,6 @@ pub struct TrackView {
     pub name: String,
     /// 1..=5. Belongs to the track, not to its place: moving a track keeps it.
     pub color: u8,
-    /// The sound of `sound` when it is one that comes with meloet; `Sine` for an SF2 preset
-    /// and for a plugin.
-    pub instrument: InstrumentKind,
     /// What the track sounds with, as the song has it.
     pub sound: SoundView,
     /// The track sounds as the sine wave for now: its header, the mixer and the input meter
@@ -1218,7 +1318,9 @@ pub struct TrackView {
     pub pan: i8,
     /// How much goes to return A and to return B, as `gain_db`.
     pub sends: [Option<f32>; 2],
-    pub inserts: InsertsView,
+    /// What Home puts the sends at (spec 3, 86-7): the amounts a new track with this sound
+    /// starts with.
+    pub send_defaults: [Option<f32>; 2],
     pub slots: SlotsView,
     /// Saved with the song (`ToggleMute`).
     pub muted: bool,
@@ -1237,7 +1339,6 @@ pub struct ReturnView {
     pub pan: i8,
     /// Saved with the song (`ToggleReturnMute`).
     pub muted: bool,
-    pub inserts: InsertsView,
     pub slots: SlotsView,
 }
 
@@ -1249,22 +1350,23 @@ pub struct MasterView {
     pub gain_db: Option<f32>,
     /// −100 to 100, as a track's (mock F4-Mixer).
     pub pan: i8,
-    pub inserts: InsertsView,
     pub slots: SlotsView,
 }
 
-/// The parameters panel: the selected insert and the values of its effect. A section of its
-/// own because selecting an insert or a row is no step: `song` is not sent again for it, as
-/// with the selection of the piano roll. The mixer's own values (fader, pan, sends, which
-/// effect sits where) are in `song`: they change only by steps, and every step sends `song`
-/// anyway (`undo_count`).
+/// The parameters panel: the selected insert or instrument, and for an effect that comes
+/// with meloet its values. A section of its own because selecting an insert or a row is no
+/// step: `song` is not sent again for it, as with the selection of the piano roll. The
+/// mixer's own values (fader, pan, sends, which effect sits where, what is passed by) are in
+/// `song`: they change only by steps, and every step sends `song` anyway (`undo_count`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ParamsView {
-    /// `None`: no insert is selected (also after its effect is taken out, its track deleted,
-    /// or an undo took it away).
-    pub selected: Option<SelectedInsert>,
+    /// `None`: nothing is selected (also after the effect is taken out, its track deleted,
+    /// or an undo took it away): the panel says "ミキサーでインサートの枠をえらぶと、ここに
+    /// パラメータが出ます。" (spec 3, 86-5), which needs nothing from Rust. The selection stays
+    /// with its effect when inserts are moved (`Command::MoveInsert`).
+    pub selected: Option<SelectedParams>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1454,10 +1556,12 @@ impl InstrumentGroup {
 /// user does in it.
 ///
 /// Whether the shelf is open is `LayoutView::right_open`. When it is closed, `mode` is
-/// `NewTrack` and `selected`, `current`, `loading`, `sample` and `selected_effect` are `None`.
+/// `NewTrack` and `selected_sound`, `current_sound`, `loading_sound`, `sound_sample`,
+/// `chosen_effect` and `current_effect` are `None`.
 ///
 /// The shelf shows its instruments in `NewTrack` and `Replace` mode and its effects
-/// (`EffectKind::ALL`, all of them always there) in `InsertEffect` mode.
+/// (`EffectKind::ALL`, all of them always there, and the plugins of `LibraryView`) in
+/// `InsertEffect` and `ReplaceEffect` mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -1466,40 +1570,31 @@ pub struct ShelfView {
     /// The rows of the shelf, in its order: the instruments whose sounds are installed. One
     /// that is not here is not shown at all, not even as unusable.
     pub available: Vec<InstrumentKind>,
-    /// The starred instruments, in the order of the shelf. May hold instruments that are not
-    /// in `available`; the screen shows only the ones that are.
-    pub favorites: Vec<InstrumentKind>,
-    /// The row that is auditioned: the keys sound with it (`Command::ShelfSelect`).
-    pub selected: Option<InstrumentKind>,
-    /// `Replace` mode: the instrument the track has now ("いまの音源").
-    pub current: Option<InstrumentKind>,
-    /// The selected instrument is still being read: the keys do not sound with it yet
-    /// ("（名前）を読みこんでいます…"). `None` again once it sounds.
-    pub loading: Option<InstrumentKind>,
-    /// The sample that is playing (`Command::PlaySample`). `None` again when it ends.
-    pub sample: Option<SampleView>,
-    /// `InsertEffect` mode: the chosen row (`Command::ShelfSelectEffect`).
-    pub selected_effect: Option<EffectKind>,
-    // 「あとから入れたもの」 (round 5). The five fields above that name an `InstrumentKind` or
-    // an `EffectKind` are the next five as far as these name something that comes with
-    // meloet, and `None` or left out for an SF2 preset or a plugin.
-    /// The row that is auditioned, of any kind (`Command::ShelfSelectSound`).
+    /// The row that is auditioned: the keys sound with it (`Command::ShelfSelectSound`).
     pub selected_sound: Option<SoundRef>,
-    /// `Replace` mode: the sound the track has now.
+    /// `Replace` mode: the sound the track has now ("いまの音源").
     pub current_sound: Option<SoundRef>,
-    /// The selected sound is still being read: under its row "Surge XT を読みこんでいます…"
-    /// with "やめる" (`ShelfCancel`). `None` again once it sounds.
+    /// The selected sound is still being read: the keys do not sound with it yet
+    /// ("（名前）を読みこんでいます…", for a plugin with "やめる", `ShelfCancel`). `None` again
+    /// once it sounds.
     pub loading_sound: Option<SoundRef>,
     /// The sample that is playing, or is about to once its sound is read
-    /// (`Command::PlaySampleOf`).
+    /// (`Command::PlaySampleOf`). `None` again when it ends.
     pub sound_sample: Option<SoundSampleView>,
-    /// `InsertEffect` mode: the chosen row, of any kind (`Command::ShelfChooseEffect`).
+    /// `InsertEffect` and `ReplaceEffect` mode: the chosen row
+    /// (`Command::ShelfChooseEffect`).
     pub chosen_effect: Option<EffectRef>,
+    /// `ReplaceEffect` mode: the effect the slot holds now ("いまのエフェクト"). With
+    /// `chosen_effect` the screen writes under the chosen row "（トラック）のインサート（番号）
+    /// の（いま）を、（新しい物）に入れかえます。…" (spec 6) and 「入れかえる（Enter）」.
+    pub current_effect: Option<EffectRef>,
     /// The plugin selected last did not load: under its row "Surge XT を読みこめません
     /// でした。" (spec 3 Y14). Nothing is selected then. Until another row is selected or the
     /// shelf is closed.
     pub unreadable: Option<SoundRef>,
-    /// Every starred sound. A plugin is named by the key its row uses now.
+    /// Every starred sound, in the order of the shelf. A plugin is named by the key its row
+    /// uses now. May hold sounds the shelf does not have; the screen shows only the ones it
+    /// has.
     pub favorite_sounds: Vec<SoundRef>,
     /// The starred effects (spec 3, 86-4).
     pub favorite_effects: Vec<EffectRef>,
@@ -1524,18 +1619,11 @@ pub enum ShelfMode {
     /// From "空き ＋": Enter puts the chosen effect into this slot. When the slot is no longer
     /// empty or its strip is gone (undo, a deleted track), the mode is `NewTrack` again.
     InsertEffect { strip: StripRef, slot: u8 },
-}
-
-/// A sample that is playing. The screen counts "0:02 / 0:04" from these on its own clock
-/// (`HelloReply::mono_us`), with no message per second.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(rename_all = "camelCase")]
-pub struct SampleView {
-    pub instrument: InstrumentKind,
-    /// When its first sound reached the ear, CLOCK_MONOTONIC µs.
-    pub started_us: u64,
-    pub length_us: u64,
+    /// "（トラック）のインサート（番号）を入れかえる" (spec 3, 86-3), from 「入れかえる…」: Enter
+    /// puts the chosen effect in place of the one this slot holds. When the slot is empty by
+    /// now or its strip is gone, the mode is `NewTrack` again; when its effect is moved
+    /// (`Command::MoveInsert`), `slot` follows it.
+    ReplaceEffect { strip: StripRef, slot: u8 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -2139,6 +2227,77 @@ pub enum StatusMessage {
         effect: EffectKind,
         param: u32,
     },
+    /// The same for a row of a plugin (`SelectedPlugin::row`): "1 ピアノ ・ Surge XT の
+    /// 「Macro 1」をえらんでいます". `plugin` and `param` are the names the plugin gives; the
+    /// screen names the strip from `slot`.
+    PluginParamSelected {
+        loop_bars: Option<BarSpan>,
+        slot: PluginSlotRef,
+        plugin: String,
+        param: String,
+    },
+    /// `Command::TypeParam` put the value at an end of its range (spec 6 「打ちこんだ値が
+    /// はみ出した」): "レシオは 1〜20 なので、20 : 1 にしました。"
+    ParamClamped {
+        to: ParamEnd,
+    },
+    // The inserts (spec 6, 86-9). The screen names the strip from `insert.strip` or `strip`
+    // ("2 ベース", "A リバーブ", "マスター") and writes "インサート 2" from `insert.slot` + 1.
+    /// `ShelfConfirm` in `InsertEffect` mode: "2 ベース のインサート 2 に リバーブ を入れました。"
+    EffectInserted {
+        insert: InsertRef,
+        effect: EffectName,
+    },
+    /// `RemoveEffect`: "2 ベース のインサート 1 の コンプレッサー を外しました。取り消せます
+    /// （Mod Z）". The slot and the effect it held.
+    EffectRemoved {
+        insert: InsertRef,
+        effect: EffectName,
+    },
+    /// `MoveInsert`: "2 ベース のインサートを並べかえました（EQ 4 バンド → コンプレッサー）。"
+    /// `order`: the effects of the strip as they are now, top first, empty slots left out.
+    InsertsReordered {
+        strip: StripRef,
+        order: Vec<EffectName>,
+    },
+    /// `ShelfConfirm` in `ReplaceEffect` mode: "2 ベース のインサート 1 を EQ 4 バンド に入れかえ
+    /// ました。取り消せます（Mod Z）". `effect`: the new one.
+    InsertReplaced {
+        insert: InsertRef,
+        effect: EffectName,
+    },
+    /// `ToggleBypass`: "2 ベース の コンプレッサー をとばしました。", with `bypassed` false
+    /// "…をもどしました。"
+    EffectBypassed {
+        insert: InsertRef,
+        effect: EffectName,
+        bypassed: bool,
+    },
+    // The plugin windows (spec 6). In the two sentences about one window 「（名前）」 is the
+    // place and the plugin, "1 ピアノ ・ Surge XT" (mock F-ParamMany): the screen names the
+    // strip from `slot`, and writes `name` alone for the plugin the shelf auditions (`None`).
+    /// A window was asked for (`OpenPluginWindow`, `SelectInsert`, `SelectInstrument`) and is
+    /// not up after 0.2 s: "1 ピアノ ・ Surge XT の窓をひらいています…". Until it is up, or the
+    /// plugin gives up.
+    PluginWindowOpening {
+        name: String,
+        slot: Option<PluginSlotRef>,
+    },
+    /// A window came up that does not fit the screen: "1 ピアノ ・ Surge XT の窓がひらいて
+    /// います（1597×995 ・ この画面より大きい窓です）。パラメータは右でも動かせます。"
+    PluginWindowLarge {
+        name: String,
+        slot: Option<PluginSlotRef>,
+        width: u32,
+        height: u32,
+    },
+    /// A plugin whose window meloet cannot open yet was selected (`PluginWindowKind::NotYet`):
+    /// "ループ 5–9 ・ Mossy Verb の窓はまだひらけません。パラメータは右で動かせます" (mock
+    /// F-ParamNoWindow). `name` is the plugin's alone.
+    PluginWindowNotYet {
+        loop_bars: Option<BarSpan>,
+        name: String,
+    },
     /// The left of the status line when nothing else is to be said: "ループ 5–9" when the loop
     /// is on, "選択なし" when nothing is selected, joined by " ・ ". `notes` while notes of the
     /// piano roll are selected ("選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み…", mock
@@ -2328,6 +2487,7 @@ pub enum Change {
     Library(LibraryView),
     Params(ParamsView),
     Plugins(PluginsView),
+    Windows(WindowsView),
     Keyboards(KeyboardsView),
     Outputs(OutputsView),
     Inputs(InputsView),
@@ -2369,6 +2529,7 @@ pub enum ServerMessage {
     Patch(Patch),
     Event(Event),
     LiveNotes(LiveNotes),
+    ParamValues(ParamValues),
 }
 
 /// Notes of the recording going on, added a little at a time. `seq` goes up by one with every

@@ -1,3 +1,4 @@
+use crate::seen::*;
 use std::collections::{HashMap, HashSet};
 
 use meloet_model::mixer::new_track_sends;
@@ -271,7 +272,7 @@ impl FakeEngine {
             assert!(seat < MAX_TRACKS && used.insert(seat), "{ctx}: seat {seat}");
             let slot = &self.seats[seat];
             let tried = shelf
-                .selected
+                .selected()
                 .filter(|_| shelf.mode == ShelfMode::Replace { track: t.id.0 });
             match tried {
                 Some(tried) => {
@@ -328,7 +329,7 @@ impl FakeEngine {
             audition.aside.is_none() && audition.events.is_none(),
             "{ctx}"
         );
-        let target = match (shelf.mode, shelf.selected) {
+        let target = match (shelf.mode, shelf.selected()) {
             (ShelfMode::NewTrack, Some(tried)) => {
                 assert_eq!(kind(&audition.instrument), Some(tried), "{ctx}: auditioned");
                 let tried = InstrumentRef::Builtin(instruments::builtin_of(tried));
@@ -728,7 +729,7 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
                 engine.take(&record_once(m, &notes, at + 960.0));
             }
             engine.check(m, &ctx);
-            if m.view().shelf.selected.is_some() {
+            if m.view().shelf.selected().is_some() {
                 auditioned_checks += 1;
             }
             if matches!(action, 16 | 17 | 20) {
@@ -837,7 +838,7 @@ fn a_song_takes_no_more_tracks_than_the_engine_has_seats() {
     engine.check(m, "one too many");
     assert_eq!(m.view().song.tracks.len(), MAX_TRACKS);
     assert_eq!(m.view().song.undo_count, steps);
-    assert!(m.view().shelf.selected.is_some());
+    assert!(m.view().shelf.selected().is_some());
     assert!(!matches!(
         m.view().status.message,
         Some(meloet_protocol::StatusMessage::TrackAdded { .. })

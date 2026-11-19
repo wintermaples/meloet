@@ -126,6 +126,19 @@ BOARDS = {
     "missingPlugin": None,
     "drumPlay": "R8-DrumPlay",
     "drumRollSf2": "R7-Drum",
+    # 第 5 回 区切り3: プラグインの窓、パラメータの欄のプラグイン、ミキサーの 86 の残り。
+    "windowOpen": "F-WindowOpen",
+    "paramFew": "F-ParamFew",
+    "paramMany": "F-ParamMany",
+    "paramSearch": "F-ParamSearch",
+    "paramNoWindow": "F-ParamNoWindow",
+    "mixerBypass": "F5-MixerBypass",
+    "insertReplace": "R9-Inserts",
+    "mixerFx": "R8-MixerFx",
+    "paramsNone": "R9-Params",
+    "noOutput": "R9-Params",
+    "paramClamped": "R9-Params",
+    "windowUndo": "Opt5-Undo",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -149,6 +162,15 @@ for (const g of %s) {
   await new Promise((r) => setTimeout(r, 50));
 }
 list.scrollTop = 0;
+"""
+
+# Types into the search field of the parameters panel (F-ParamSearch).
+TYPE_PARAM_SEARCH = """
+const input = document.querySelector('[data-test="params-search"]');
+if (input) {
+  input.value = "%s";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
 """
 
 # Types into the shelf's search field (F5-ShelfSearch).
@@ -302,6 +324,7 @@ CLICKS = {
     "pluginLoading": ("pluginLoading", '[data-group="c:instrument:synth"]'),
     "pluginAudition": ("pluginAudition", '[data-group="c:instrument:synth"]'),
     "pluginUnreadable": ("pluginUnreadable", '[data-group="c:instrument:synth"]'),
+    "paramSearch": ("paramSearch", "js:" + TYPE_PARAM_SEARCH % "cutoff"),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -324,6 +347,18 @@ ONLY = {
     "missingPlugin": [(1280, 800, 100)],
     "drumPlay": [(1280, 800, 100)],
     "drumRollSf2": [(1280, 800, 100)],
+    "windowOpen": [(1280, 800, 100)],
+    "paramFew": [(1280, 800, 100)],
+    "paramMany": [(1280, 800, 100)],
+    "paramSearch": [(1280, 800, 100)],
+    "paramNoWindow": [(1280, 800, 100)],
+    "mixerBypass": [(1280, 800, 100)],
+    "insertReplace": [(1280, 800, 100)],
+    "mixerFx": [(1280, 800, 100)],
+    "paramsNone": [(1280, 800, 100)],
+    "noOutput": [(1280, 800, 100)],
+    "paramClamped": [(1280, 800, 100)],
+    "windowUndo": [(1280, 800, 100)],
     "pianoRoll": [(1280, 800, 100)],
     "pianoRoll720": [(1280, 720, 100)],
     "pianoRoll150": [(1280, 800, 150)],

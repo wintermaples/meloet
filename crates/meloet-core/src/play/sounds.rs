@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use meloet_model::mixer::new_track_sends;
 use meloet_model::{BuiltinInstrument, InstrumentGroup, InstrumentRef, Song};
-use meloet_protocol::{InstrumentKind, SampleView, StatusMessage};
+use meloet_protocol::{InstrumentKind, StatusMessage};
 
 use super::plugs::Spot;
 use super::seats::{AUDITION_SEAT, Seats};
@@ -440,16 +440,6 @@ impl Play {
     /// A sample plays: its end needs the time to be told ([`crate::state::Input::Tick`]).
     pub fn sample_playing(&self) -> bool {
         self.shelf.sample.is_some()
-    }
-
-    /// The sample of a sound of meloet, as the screen had it before 「あとから入れたもの」.
-    pub(super) fn sample_view(&self) -> Option<SampleView> {
-        let s = self.shelf.sample.as_ref()?;
-        Some(SampleView {
-            instrument: instruments::kind_of(builtin(&s.instrument)?),
-            started_us: s.started_us,
-            length_us: SAMPLE_US,
-        })
     }
 
     /// The status line while a sample plays and no row is auditioned.

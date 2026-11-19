@@ -2,8 +2,8 @@
 // Arrange を mount してマウスで動かしたときに送る物、ドラッグ中の絵、Mod D、偽物の Rust の答え。
 import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppState, ClipView, Command, TrackView } from "../src/bridge";
-import { arrangeOf, fakeState, reduceClips } from "../src/bridge/fake";
+import type { AppState, ClipView, Command } from "../src/bridge";
+import { arrangeOf, fakeState, reduceClips, type FakeState, type FakeTrack as TrackView } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import * as CD from "../src/components/arrangeDrag";
 import * as G from "../src/components/arrangeGeom";
@@ -24,7 +24,7 @@ function clip(id: number, name: string, fromBar: number, toBar: number): ClipVie
   return { id, name, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0 };
 }
 function track(number: number, clips: ClipView[]): TrackView {
-  return { id: number, number, name: `トラック ${number}`, color: number, instrument: "sine", sound: { kind: "builtin", instrument: "sine" }, standIn: null, drumKeys: null, gainDb: 0, pan: 0, sends: [null, null], inserts: [null, null, null, null], slots: [null, null, null, null], muted: false, soloed: false, clips };
+  return { id: number, number, name: `トラック ${number}`, color: number, instrument: "sine", sound: { kind: "builtin", instrument: "sine" }, standIn: null, drumKeys: null, gainDb: 0, pan: 0, sends: [null, null], sendDefaults: [null, null], inserts: [null, null, null, null], slots: [null, null, null, null], muted: false, soloed: false, clips };
 }
 
 // 1 小節 64 px、行の高さ 64、クリップは行の上下 3 あける（拡大率 100 %）。
@@ -215,7 +215,7 @@ describe("つめたクリップの絵", () => {
 });
 
 describe("偽物の Rust の答え（reduceClips）", () => {
-  const state = (): AppState => {
+  const state = (): FakeState => {
     const s = fakeState();
     s.song.tracks = twoTracks();
     return s;

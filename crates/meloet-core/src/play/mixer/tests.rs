@@ -1,3 +1,4 @@
+use crate::seen::*;
 use meloet_model::effects::{EffectKind as ModelEffect, reverb};
 use meloet_model::{Bus, Gain, Pan, StripId, TrackId};
 use meloet_protocol::{
@@ -198,7 +199,7 @@ fn a_parameter_names_its_effect_and_is_clamped() {
             value: 10.0
         }]
     );
-    let values = |m: &Model| m.view().params.selected.unwrap().values;
+    let values = |m: &Model| m.view().params.selected.builtin().values;
     assert_eq!(values(m)[0], 2.4, "a preview is not in the state");
     cmd(m, decay(4.0, true));
     assert!(previews(m).is_empty());
@@ -242,7 +243,7 @@ fn an_insert_is_selected_and_the_panel_opens_in_front() {
             insert: Some(at(A, 0)),
         },
     );
-    let selected = m.view().params.selected.unwrap();
+    let selected = m.view().params.selected.builtin();
     assert_eq!(selected.insert, at(A, 0));
     assert_eq!(selected.effect, EffectKind::Reverb);
     assert_eq!(
@@ -255,7 +256,7 @@ fn an_insert_is_selected_and_the_panel_opens_in_front() {
 
     // A row, and the status line for it; the loop goes in front (mock F4-Mixer).
     cmd(m, Command::SelectParam { param: Some(0) });
-    assert_eq!(m.view().params.selected.unwrap().row, Some(0));
+    assert_eq!(m.view().params.selected.builtin().row, Some(0));
     let said = |loop_bars| {
         Some(StatusMessage::ParamSelected {
             loop_bars,
@@ -284,7 +285,7 @@ fn an_insert_is_selected_and_the_panel_opens_in_front() {
     cmd(m, Command::ToggleBand { band: Band::Params });
 
     cmd(m, Command::SelectParam { param: Some(7) });
-    assert_eq!(m.view().params.selected.unwrap().row, None, "no such row");
+    assert_eq!(m.view().params.selected.builtin().row, None, "no such row");
     cmd(m, Command::SelectParam { param: Some(6) });
     // Another insert: no row. The master's limiter.
     cmd(
@@ -293,7 +294,7 @@ fn an_insert_is_selected_and_the_panel_opens_in_front() {
             insert: Some(at(StripRef::Master, 0)),
         },
     );
-    let selected = m.view().params.selected.unwrap();
+    let selected = m.view().params.selected.builtin();
     assert_eq!((selected.effect, selected.row), (EffectKind::Limiter, None));
     assert_eq!(selected.values, [-0.3, 0.0, 100.0]);
     cmd(m, Command::SelectInsert { insert: None });
@@ -318,29 +319,32 @@ fn an_effect_goes_in_from_the_shelf_and_comes_out() {
     }
     cmd(m, Command::OpenShelf { mode: slot });
     let shelf = m.view().shelf;
-    assert_eq!((shelf.mode, shelf.selected_effect), (slot, None));
+    assert_eq!((shelf.mode, shelf.selected_effect()), (slot, None));
     assert_eq!(m.view().workspace.layout.right_front, Some(Band::Shelf));
     cmd(m, Command::ShelfConfirm);
     assert_eq!(undo_count(m), 0, "no row chosen");
     let choose = |effect| Command::ShelfSelectEffect { effect };
     cmd(m, choose(Some(EffectKind::Eq4)));
     cmd(m, choose(Some(EffectKind::Compressor)));
-    assert_eq!(m.view().shelf.selected_effect, Some(EffectKind::Compressor));
+    assert_eq!(
+        m.view().shelf.selected_effect(),
+        Some(EffectKind::Compressor)
+    );
     assert_eq!(undo_count(m), 0, "nothing is in the song before Enter");
     assert!(m.view().transport.can_record);
 
     cmd(m, Command::ShelfConfirm);
     let state = m.view();
     assert_eq!(
-        state.song.tracks[0].inserts,
+        state.song.tracks[0].inserts(),
         [None, Some(EffectKind::Compressor), None, None]
     );
     assert_eq!(state.song.undo_count, 1);
     assert_eq!(
-        (state.shelf.mode, state.shelf.selected_effect),
+        (state.shelf.mode, state.shelf.selected_effect()),
         (ShelfMode::NewTrack, None)
     );
-    let selected = state.params.selected.unwrap();
+    let selected = state.params.selected.builtin();
     assert_eq!(selected.insert, at(T1, 1));
     assert_eq!(selected.values, [-18.0, 4.0, 10.0, 100.0, 0.0]);
     assert!(params_in_front(m), "the new effect is shown at once");
@@ -348,7 +352,7 @@ fn an_effect_goes_in_from_the_shelf_and_comes_out() {
 
     // Undo takes it out and nothing is selected; redo does not select it again.
     cmd(m, Command::Undo);
-    assert_eq!(m.view().song.tracks[0].inserts, [None; 4]);
+    assert_eq!(m.view().song.tracks[0].inserts(), [None; 4]);
     assert_eq!(m.view().params.selected, None);
     cmd(m, Command::Redo);
     assert_eq!(m.view().params.selected, None);
@@ -360,12 +364,12 @@ fn an_effect_goes_in_from_the_shelf_and_comes_out() {
     cmd(m, Command::Redo);
     let shelf = m.view().shelf;
     assert_eq!(
-        (shelf.mode, shelf.selected_effect),
+        (shelf.mode, shelf.selected_effect()),
         (ShelfMode::NewTrack, None)
     );
     // A row of the effects is not chosen while the shelf lists instruments.
     cmd(m, choose(Some(EffectKind::Chorus)));
-    assert_eq!(m.view().shelf.selected_effect, None);
+    assert_eq!(m.view().shelf.selected_effect(), None);
 
     // Taking it out is a step; the selected one is no longer selected.
     cmd(
@@ -375,14 +379,14 @@ fn an_effect_goes_in_from_the_shelf_and_comes_out() {
         },
     );
     cmd(m, Command::RemoveEffect { insert: at(T1, 1) });
-    assert_eq!(m.view().song.tracks[0].inserts, [None; 4]);
+    assert_eq!(m.view().song.tracks[0].inserts(), [None; 4]);
     assert_eq!(m.view().params.selected, None);
     let steps = undo_count(m);
     cmd(m, Command::RemoveEffect { insert: at(T1, 1) });
     assert_eq!(undo_count(m), steps, "an empty slot");
     cmd(m, Command::Undo);
     assert_eq!(
-        m.view().song.tracks[0].inserts[1],
+        m.view().song.tracks[0].inserts()[1],
         Some(EffectKind::Compressor)
     );
 }
@@ -413,7 +417,10 @@ fn a_deleted_track_takes_its_selected_insert_along() {
         None,
         "undo does not select it again"
     );
-    assert_eq!(m.view().song.tracks[0].inserts[0], Some(EffectKind::Delay));
+    assert_eq!(
+        m.view().song.tracks[0].inserts()[0],
+        Some(EffectKind::Delay)
+    );
 }
 
 #[test]
@@ -478,9 +485,9 @@ fn the_mixer_works_while_recording() {
     assert_eq!(state.transport.state, TransportState::CountIn);
     assert_eq!(state.song.undo_count, 5);
     assert!(state.song.returns[0].muted);
-    assert_eq!(state.song.returns[1].inserts[0], None);
-    assert_eq!(state.song.tracks[0].inserts[0], Some(EffectKind::Chorus));
-    assert_eq!(state.params.selected.unwrap().effect, EffectKind::Chorus);
+    assert_eq!(state.song.returns[1].inserts()[0], None);
+    assert_eq!(state.song.tracks[0].inserts()[0], Some(EffectKind::Chorus));
+    assert_eq!(state.params.selected.builtin().effect, EffectKind::Chorus);
 
     // Instruments are not tried while recording, and nothing is undone.
     let shelf = |mode| Command::OpenShelf { mode };
@@ -494,5 +501,8 @@ fn the_mixer_works_while_recording() {
             insert: Some(at(A, 0)),
         },
     );
-    assert_eq!(m.view().params.selected.unwrap().effect, EffectKind::Reverb);
+    assert_eq!(
+        m.view().params.selected.builtin().effect,
+        EffectKind::Reverb
+    );
 }

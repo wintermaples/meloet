@@ -6,12 +6,13 @@
 import type { Transport } from "./session";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
-import { FLUID, emptyLibrary, fullLibrary, lv2Key } from "./fakeLibrary";
+import { FLUID, emptyLibrary, fullLibrary, lv2Key, vst3Key } from "./fakeLibrary";
+import { FAKE_TABLES, SURGE_AUTOMATED, fakeParamCount, fakeParamTable } from "./fakeParams";
 import {
   EFFECT_PARAMS,
   INSTRUMENT_GROUPS,
   PROTOCOL_VERSION,
-  type AppState,
+  type AppState as WireState,
   type Band,
   type Change,
   type ClipView,
@@ -31,13 +32,16 @@ import {
   type MissingView,
   type PianoRollView,
   type PluginPlaceView,
+  type PluginSlotRef,
   type PluginState,
   type PluginView,
+  type PluginWindowView,
   type PluginsView,
+  type SelectedPlugin,
   type ServerMessage,
-  type ShelfView,
+  type ShelfView as WireShelf,
   type SongDialogKind,
-  type SongView,
+  type SongView as WireSong,
   type SoundName,
   type SoundRef,
   type SoundView,
@@ -46,8 +50,37 @@ import {
   type StoppedPluginView,
   type StripRef,
   type TrackRef,
-  type TrackView,
+  type TrackView as WireTrack,
 } from "./types";
+
+// The scenes and the commands below keep, next to the contract's fields, fields of their own that
+// name only what comes with meloet (the instrument of a track, the effects in its slots, the row
+// the shelf auditions…). `settleSong` and `settleShelf` bring the contract's fields in line with
+// them. The screen reads only the contract's fields; these ride along on the state the fake holds.
+type Inserts = [EffectKind | null, EffectKind | null, EffectKind | null, EffectKind | null];
+interface OwnStrip {
+  /** The effects that come with meloet, top first; `null` for an empty slot and for a plugin's. */
+  inserts: Inserts;
+}
+export type FakeTrack = WireTrack & OwnStrip & { /** "sine" for an SF2 preset and for a plugin. */ instrument: InstrumentKind };
+export type FakeSong = Omit<WireSong, "tracks" | "returns" | "master"> & {
+  tracks: FakeTrack[];
+  returns: [WireSong["returns"][0] & OwnStrip, WireSong["returns"][1] & OwnStrip];
+  master: WireSong["master"] & OwnStrip;
+};
+export type FakeShelf = WireShelf & {
+  favorites: InstrumentKind[];
+  selected: InstrumentKind | null;
+  current: InstrumentKind | null;
+  loading: InstrumentKind | null;
+  sample: { instrument: InstrumentKind; startedUs: number; lengthUs: number } | null;
+  selectedEffect: EffectKind | null;
+};
+export type FakeState = Omit<WireState, "song" | "shelf"> & { song: FakeSong; shelf: FakeShelf };
+type AppState = FakeState;
+type SongView = FakeSong;
+type ShelfView = FakeShelf;
+type TrackView = FakeTrack;
 
 // ---- the band rules (a copy of the numbers in meloet-core/src/layout.rs) ----
 
@@ -317,6 +350,7 @@ function closedShelf(): ShelfView {
     loadingSound: null,
     soundSample: null,
     chosenEffect: null,
+    currentEffect: null,
     unreadable: null,
     favoriteSounds: [builtinSound("grandPiano"), builtinSound("studioKit")],
     favoriteEffects: [builtinEffect("reverb"), builtinEffect("delay")],
@@ -324,7 +358,6 @@ function closedShelf(): ShelfView {
   };
 }
 
-type Inserts = TrackView["inserts"];
 type Slots = TrackView["slots"];
 const noInserts = (): Inserts => [null, null, null, null];
 const firstInsert = (effect: EffectKind): Inserts => [effect, null, null, null];
@@ -348,10 +381,9 @@ export function keyCounts(keys: number[]): KeyCount[] {
   return [...counts].sort((a, b) => a[0] - b[0]).slice(0, 5).map(([key, count]) => ({ key, count }));
 }
 
-// The scenes and the commands below write the fields that name what comes with meloet (`instrument`,
-// `inserts`, the shelf's `selected`…). The three functions below bring the fields for any sound and
-// effect (`sound`, `slots`, `selectedSound`…) in line with them, and leave alone what names an SF2
-// preset or a plugin: a plugin's slot has `null` in `inserts`, its track "sine" as `instrument`.
+// The three functions below bring the contract's fields (`sound`, `slots`, `selectedSound`…) in line
+// with the fake's own (`instrument`, `inserts`, the shelf's `selected`…), and leave alone what names
+// an SF2 preset or a plugin.
 
 function settleSlots(inserts: Inserts, slots: Slots): Slots {
   return inserts.map((effect, i): InsertView | null => {
@@ -447,6 +479,7 @@ export function fakeState(): AppState {
           gainDb: 0,
           pan: 0,
           sends: newTrackSends("grandPiano"),
+          sendDefaults: newTrackSends("grandPiano"),
           inserts: noInserts(),
           slots: builtinSlots(noInserts()),
           muted: false,
@@ -497,6 +530,7 @@ export function fakeState(): AppState {
     library: emptyLibrary(),
     params: { selected: null },
     plugins: fakePlugins(),
+    windows: { list: [] },
     keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null },
@@ -1509,6 +1543,7 @@ function bandSong(s: AppState, tracks = BAND_TRACKS): void {
     gainDb: t.gainDb,
     pan: 0,
     sends: newTrackSends(t.instrument),
+    sendDefaults: newTrackSends(t.instrument),
     inserts: noInserts(),
     slots: builtinSlots(noInserts()),
     muted: false,
@@ -1589,7 +1624,7 @@ const MIXER_STRIPS: Pick<TrackView, "gainDb" | "pan" | "sends" | "inserts">[] = 
 function mixerSong(s: AppState, selected: InsertRef, effect: EffectKind, row: number | null): void {
   bandSong(s, BAND_TRACKS.slice(0, 5));
   s.song.tracks = s.song.tracks.map((t, i) => ({ ...t, ...structuredClone(MIXER_STRIPS[i]!) }));
-  s.params = { selected: { insert: selected, effect, values: effectDefaults(effect), row } };
+  s.params = { selected: { kind: "builtin", insert: selected, effect, values: effectDefaults(effect), row } };
 }
 const MIXER_METERS: FakeMeters = {
   velocity: 83,
@@ -1980,6 +2015,166 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   state.shelf = settleShelf(state.shelf);
   return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE };
 }
+
+// ---- round 5, step 3: plugin windows, a plugin in the parameters panel, what is left of 86 (protocol 18) ----
+
+const SURGE_VST3: PluginView = { key: vst3Key("Surge XT"), name: "Surge XT", format: "vst3", state: "ready" };
+const trackStrip = (number: number): StripRef => ({ kind: "track", id: BAND_TRACK_ID + number });
+const pluginSelected = (slot: PluginSlotRef, table: number, more: Partial<SelectedPlugin> = {}): AppState["params"] => ({
+  selected: { kind: "plugin", slot, window: "opens", table, count: fakeParamCount(table), row: null, automated: [], ...more },
+});
+const playingAt = (text: string): FakeMeters["position"] => ({ tick: at(text), ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 });
+
+/**
+ * The song of the mocks F-WindowOpen, F-ParamFew and F-ParamNoWindow, playing at 9.2.000: "Brick EQ" on "3 ドラム"
+ * has stopped, "Dragonfly Reverb" sits on return A. The mocks' fifth track is a voice from the microphone,
+ * which is not made yet: here it keeps the band's fifth instrument.
+ */
+function windowSong(s: AppState): void {
+  bandSong(s, BAND_TRACKS.slice(0, 5));
+  const [piano, bass, drums, pad, vocal] = s.song.tracks as [TrackView, TrackView, TrackView, TrackView, TrackView];
+  Object.assign(piano, { inserts: ["eq4", "compressor", null, null], sends: [-12, null], pan: -12 });
+  Object.assign(bass, { inserts: firstInsert("compressor"), sends: [null, null] });
+  Object.assign(drums, { inserts: firstInsert("compressor"), slots: [null, pluginSlot("Brick EQ", "stopped"), null, null], sends: [-18, null] });
+  Object.assign(pad, { instrument: "warmPad", sends: [-6, -15], pan: 24 });
+  Object.assign(vocal, { name: "ボーカル", inserts: ["eq4", "compressor", null, null], sends: [-9, -18], gainDb: -3.2 });
+  Object.assign(s.song.returns[0], { inserts: noInserts(), slots: [pluginSlot("Dragonfly Reverb"), null, null, null] });
+  s.song.returns[1].gainDb = -2;
+  s.transport.state = "playing";
+  s.transport.position = at("9.2.000");
+}
+const WINDOW_METERS: FakeMeters = { ...QUIET, loadPermille: 210, master: [dbfs(-6.2), dbfs(-7)], position: playingAt("9.2.000") };
+const DRAGONFLY_SLOT: PluginSlotRef = { kind: "insert", insert: { strip: RETURN_A, slot: 0 } };
+const SURGE_SLOT: PluginSlotRef = { kind: "instrument", track: BAND_TRACK_ID + 1 };
+const SURGE_WINDOW: PluginWindowView = { slot: SURGE_SLOT, name: "Surge XT", width: 1597, height: 995, largerThanScreen: true };
+
+// F-WindowOpen: the windows of Surge XT ("1 ピアノ") and of Dragonfly Reverb (return A) are open. The list above
+// 「窓 2」 is the screen's own (tools/design/shoot_ui.py clicks it open). The mock gives no size for the second window.
+SCENES.windowOpen = {
+  setup(s) {
+    windowSong(s);
+    Object.assign(s.song.tracks[0]!, { instrument: "sine", sound: { kind: "plugin", ...SURGE_VST3 } satisfies SoundView });
+    s.windows = { list: [SURGE_WINDOW, { slot: DRAGONFLY_SLOT, name: "Dragonfly Reverb", width: 640, height: 480, largerThanScreen: false }] };
+    s.params = pluginSelected(SURGE_SLOT, FAKE_TABLES.surge);
+  },
+  bands: ["mixer"],
+  meters: WINDOW_METERS,
+};
+// F-ParamFew: Dragonfly Reverb (LV2, 18 parameters, no groups) in the panel; its window is not open. "…の Decay を
+// 動かしています" of the mock's status line is the screen's own, while a row is dragged.
+SCENES.paramFew = {
+  setup(s) {
+    windowSong(s);
+    s.params = pluginSelected(DRAGONFLY_SLOT, FAKE_TABLES.dragonfly);
+  },
+  bands: ["mixer", "params"],
+  meters: WINDOW_METERS,
+};
+// F-ParamNoWindow: Mossy Verb on "4 パッド" has a window meloet cannot open yet; a list of steps and switches among its 12 parameters.
+SCENES.paramNoWindow = {
+  setup(s) {
+    windowSong(s);
+    s.song.tracks[3]!.slots = [pluginSlot("Mossy Verb"), null, null, null];
+    s.params = pluginSelected({ kind: "insert", insert: { strip: trackStrip(4), slot: 0 } }, FAKE_TABLES.mossy, { window: "notYet" });
+  },
+  bands: ["mixer", "params"],
+  after: (s) => (s.status.message = { id: "pluginWindowNotYet", loopBars: { from: 5, to: 9 }, name: "Mossy Verb" }),
+  meters: WINDOW_METERS,
+};
+// F-ParamMany: Surge XT (VST3, 2855 parameters in six groups) is the sound of "1 ピアノ"; its window is open and
+// larger than the screen. Two of its parameters are written by automation lanes, which are not made yet.
+SCENES.paramMany = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    Object.assign(s.song.tracks[0]!, { instrument: "sine", sound: { kind: "plugin", ...SURGE_VST3 } satisfies SoundView });
+    s.windows = { list: [SURGE_WINDOW] };
+    s.params = pluginSelected(SURGE_SLOT, FAKE_TABLES.surge, { automated: [...SURGE_AUTOMATED] });
+  },
+  bands: ["params"],
+  after: (s) => (s.status.message = { id: "pluginWindowLarge", name: "Surge XT", slot: SURGE_SLOT, width: 1597, height: 995 }),
+  meters: QUIET,
+};
+// F-ParamSearch: the same while "cutoff" is in the search field, which is the screen's own, as is what the status
+// line says then (tools/design/shoot_ui.py types it).
+SCENES.paramSearch = {
+  ...SCENES.paramMany,
+  after: (s) => (s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null }),
+};
+// F5-MixerBypass: MVerb on "4 パッド" is passed by (13-A) and selected; "Brick EQ" on "3 ドラム" has stopped. When the
+// mock's status line ("… をとばしています ・ … は止まっています…") is said is not decided.
+SCENES.mixerBypass = {
+  setup(s) {
+    surgeMixer(s);
+    s.song.tracks[3]!.slots = [pluginSlot("MVerb", "ready", true), null, null, null];
+    s.params = pluginSelected({ kind: "insert", insert: { strip: trackStrip(4), slot: 0 } }, FAKE_TABLES.mverb);
+    s.transport.state = "playing";
+    s.transport.position = at("9.2.000");
+  },
+  bands: ["mixer", "params"],
+  meters: { ...WINDOW_METERS, loadPermille: 240 },
+};
+// R9-Inserts: 「入れかえる…」 on the compressor of "2 ベース" opened the shelf on the effects; "EQ 4 バンド" is chosen.
+SCENES.insertReplace = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.params = { selected: null };
+    s.shelf = { ...closedShelf(), mode: { kind: "replaceEffect", strip: trackStrip(2), slot: 0 }, selectedEffect: "eq4", currentEffect: builtinEffect("compressor") };
+  },
+  bands: ["mixer", "shelf"],
+  meters: QUIET,
+};
+// R8-MixerFx: "空き ＋" of the second slot of "2 ベース" opened the shelf on the effects; "リバーブ" is chosen.
+SCENES.mixerFx = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.params = { selected: null };
+    s.shelf = { ...closedShelf(), mode: { kind: "insertEffect", strip: trackStrip(2), slot: 1 }, selectedEffect: "reverb" };
+  },
+  bands: ["mixer", "shelf"],
+  meters: QUIET,
+};
+// R9-Params (86-5): the parameters panel with nothing selected.
+SCENES.paramsNone = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.params = { selected: null };
+  },
+  bands: ["mixer", "params"],
+  meters: QUIET,
+};
+// R9-Params (86-8): no output is chosen, so the master's output slot says "出口なし ▸" and no meter moves.
+SCENES.noOutput = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.params = { selected: null };
+    s.outputs = { ...s.outputs, chosen: null, chosenState: null };
+    Object.assign(s.audio, { running: false, outputDevice: null });
+    Object.assign(s.transport, { canPlay: false, canRecord: false });
+  },
+  bands: ["mixer"],
+  meters: { velocity: 83, loadPermille: 0 },
+};
+// R9-Params (86-6, 86-10): "40" was typed for the ratio of the compressor of "2 ベース", and put at 20 : 1.
+SCENES.paramClamped = {
+  setup(s) {
+    mixerSong(s, { strip: trackStrip(2), slot: 0 }, "compressor", 1);
+    if (s.params.selected?.kind === "builtin") s.params.selected.values[1] = 20;
+  },
+  bands: ["mixer", "params"],
+  after: (s) => (s.status.message = { id: "paramClamped", to: { kind: "builtin", effect: "compressor", param: 1, value: 20 } }),
+  meters: QUIET,
+};
+// Opt5-Undo (15-C): back from the window of Surge XT, where three knobs were turned: one more step, which undo takes
+// back. (What the history band lists is not made yet.)
+SCENES.windowUndo = {
+  setup(s) {
+    surgeSong(s);
+    s.library = fullLibrary();
+    Object.assign(s.song, { playTarget: s.song.tracks[4]!.id, undoCount: 15, redoCount: 0, file: "changed" });
+  },
+  bands: ["history"],
+  meters: QUIET,
+};
 
 function sceneFromUrl(): Scene | null {
   if (typeof location === "undefined") return null;
@@ -2452,13 +2647,13 @@ function reduceAdded(command: Command, shelf: ShelfView, library: LibraryView, w
       shelf.chosenEffect = null;
       break;
     case "shelfSelectSound":
-      if (shelf.mode.kind === "insertEffect") break;
+      if (shelf.mode.kind === "insertEffect" || shelf.mode.kind === "replaceEffect") break;
       shelf.selected = shelf.loading = shelf.loadingSound = shelf.unreadable = null;
       shelf.selectedSound = command.sound !== null && inLibrary(command.sound, library) ? command.sound : null;
       break;
     case "shelfChooseEffect": {
       const effect = command.effect;
-      if (shelf.mode.kind !== "insertEffect") break;
+      if (shelf.mode.kind !== "insertEffect" && shelf.mode.kind !== "replaceEffect") break;
       const has = effect?.kind === "plugin" && library.plugins.some((r) => r.kind.role === "effect" && r.formats.some((f) => f.key === effect.key));
       shelf.selectedEffect = null;
       shelf.chosenEffect = has ? effect : null;
@@ -2553,8 +2748,11 @@ export function reduceTracks(
       if (!change) return null;
       const mode = command.mode;
       if (mode.kind === "replace" && at(mode.track) < 0) return null;
+      const held = mode.kind === "replaceEffect" ? (stripOf(song, mode.strip)?.slots[mode.slot] ?? null) : null;
+      if (mode.kind === "replaceEffect" && !held) return null;
       shelf.mode = mode;
       shelf.current = mode.kind === "replace" ? song.tracks[at(mode.track)]!.instrument : null;
+      shelf.currentEffect = held ? (held.effect.kind === "builtin" ? builtinEffect(held.effect.effect) : { kind: "plugin", key: held.effect.key }) : null;
       audition(null);
       if (bands.side.at(-1) !== "shelf") bands.side = [...bands.side.filter((b) => b !== "shelf"), "shelf"];
       break;
@@ -2588,6 +2786,7 @@ export function reduceTracks(
           gainDb: 0,
           pan: 0,
           sends: newTrackSends(picked),
+          sendDefaults: newTrackSends(picked),
           inserts: noInserts(),
           slots: builtinSlots(noInserts()),
           muted: false,
@@ -2628,6 +2827,14 @@ export function reduceTracks(
   return { song, shelf, canRecord, notice };
 }
 
+/** The table of each fake plugin that has parameters, by its name. */
+const PLUGIN_TABLES: Record<string, number> = {
+  "Dragonfly Reverb": FAKE_TABLES.dragonfly,
+  "Mossy Verb": FAKE_TABLES.mossy,
+  MVerb: FAKE_TABLES.mverb,
+  "Surge XT": FAKE_TABLES.surge,
+};
+
 /** The strip `strip` names in `song`: a track, a return or the master. */
 function stripOf(song: SongView, strip: StripRef) {
   if (strip.kind === "master") return song.master;
@@ -2650,16 +2857,44 @@ export function reduceMixer(
   shelfNow: ShelfView,
   songNow: SongView,
   command: Command,
-): { song: SongView; params: AppState["params"]; shelf: ShelfView; showParams: boolean } | null {
+): { song: SongView; params: AppState["params"]; shelf: ShelfView; windows: AppState["windows"]; showParams: boolean } | null {
   const song = structuredClone(songNow);
   const params = structuredClone(state.params);
   const shelf = structuredClone(shelfNow);
+  const windows = structuredClone(state.windows);
   let showParams = false;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  /** The selected insert when it holds an effect that comes with meloet. */
+  const own = () => (params.selected?.kind === "builtin" ? params.selected : null);
+  const pluginAt = (slot: PluginSlotRef): PluginView | null => {
+    if (slot.kind === "instrument") {
+      const sound = song.tracks.find((t) => t.id === slot.track)?.sound;
+      return sound?.kind === "plugin" ? sound : null;
+    }
+    const held = stripOf(song, slot.insert.strip)?.slots[slot.insert.slot]?.effect;
+    return held?.kind === "plugin" ? held : null;
+  };
+  const openWindow = (slot: PluginSlotRef, name: string) => {
+    if (!windows.list.some((w) => same(w.slot, slot))) windows.list.push({ slot, name, width: 800, height: 600, largerThanScreen: false });
+  };
+  // A plugin's window opens with it; one that has none the fake could open brings the panel to the front.
+  const selectPlugin = (slot: PluginSlotRef, plugin: PluginView) => {
+    if (params.selected?.kind !== "plugin" || !same(params.selected.slot, slot)) {
+      const table = PLUGIN_TABLES[plugin.name] ?? null;
+      const window = plugin.name === "Mossy Verb" ? "notYet" : "opens";
+      params.selected = { kind: "plugin", slot, window, table, count: table === null ? 0 : fakeParamCount(table), row: null, automated: [] };
+    }
+    if (plugin.state !== "ready") return;
+    if (params.selected.window === "opens") openWindow(slot, plugin.name);
+    else showParams = true;
+  };
   const select = (insert: InsertRef | null) => {
+    const plugin = insert === null ? null : pluginAt({ kind: "insert", insert });
+    if (insert !== null && plugin) return selectPlugin({ kind: "insert", insert }, plugin);
     const effect = insert === null ? null : (stripOf(song, insert.strip)?.inserts[insert.slot] ?? null);
     if (insert === null || effect === null) params.selected = null;
-    else if (JSON.stringify(params.selected?.insert) !== JSON.stringify(insert)) {
-      params.selected = { insert, effect, values: insertDefaults(effect, insert.strip), row: null };
+    else if (!same(own()?.insert, insert)) {
+      params.selected = { kind: "builtin", insert, effect, values: insertDefaults(effect, insert.strip), row: null };
     }
     showParams = params.selected !== null;
   };
@@ -2680,7 +2915,7 @@ export function reduceMixer(
       break;
     }
     case "setParam": {
-      const sel = params.selected;
+      const sel = own();
       const spec = EFFECT_PARAMS[command.effect][command.param];
       const there = stripOf(song, command.insert.strip)?.inserts[command.insert.slot];
       if (!spec || there !== command.effect || !command.commit) break;
@@ -2700,36 +2935,80 @@ export function reduceMixer(
     case "removeEffect": {
       const strip = stripOf(song, command.insert.strip);
       if (!strip) break;
+      const at: PluginSlotRef = { kind: "insert", insert: command.insert };
       strip.inserts[command.insert.slot] = null;
-      if (JSON.stringify(params.selected?.insert) === JSON.stringify(command.insert)) params.selected = null;
+      strip.slots[command.insert.slot] = null;
+      if (same(own()?.insert, command.insert) || (params.selected?.kind === "plugin" && same(params.selected.slot, at))) params.selected = null;
+      windows.list = windows.list.filter((w) => !same(w.slot, at));
       break;
     }
     case "selectInsert":
       select(command.insert);
       break;
-    case "selectParam": {
-      const sel = params.selected;
-      if (sel) sel.row = command.param !== null && EFFECT_PARAMS[sel.effect][command.param] ? command.param : null;
+    case "selectInstrument": {
+      const slot: PluginSlotRef = { kind: "instrument", track: command.track };
+      const plugin = pluginAt(slot);
+      if (plugin) selectPlugin(slot, plugin);
       break;
     }
+    case "selectParam": {
+      const sel = params.selected;
+      if (sel?.kind === "builtin") sel.row = command.param !== null && EFFECT_PARAMS[sel.effect][command.param] ? command.param : null;
+      else if (sel) sel.row = command.param;
+      break;
+    }
+    case "toggleBypass": {
+      const held = stripOf(song, command.insert.strip)?.slots[command.insert.slot];
+      if (held && !(held.effect.kind === "plugin" && held.effect.state === "stopped")) held.bypassed = !held.bypassed;
+      break;
+    }
+    case "moveInsert": {
+      const strip = stripOf(song, command.insert.strip);
+      const from = command.insert.slot;
+      const to = Math.min(strip ? strip.slots.length - 1 : 0, command.to);
+      if (!strip || !strip.slots[from] || to === from) break;
+      for (const list of [strip.inserts, strip.slots] as unknown[][]) list.splice(to, 0, ...list.splice(from, 1));
+      // Where a slot of this strip is afterwards: the selection and the windows stay with their effects.
+      const moved = (slot: number) => (slot === from ? to : slot > from && slot <= to ? slot - 1 : slot < from && slot >= to ? slot + 1 : slot);
+      const follow = (insert: InsertRef) => {
+        if (same(insert.strip, command.insert.strip)) insert.slot = moved(insert.slot);
+      };
+      const sel = params.selected;
+      if (sel?.kind === "builtin") follow(sel.insert);
+      else if (sel?.slot.kind === "insert") follow(sel.slot.insert);
+      for (const w of windows.list) if (w.slot?.kind === "insert") follow(w.slot.insert);
+      break;
+    }
+    case "openPluginWindow": {
+      const plugin = command.slot && pluginAt(command.slot);
+      if (command.slot && plugin && plugin.state === "ready" && plugin.name !== "Mossy Verb") openWindow(command.slot, plugin.name);
+      break;
+    }
+    case "closePluginWindow":
+      windows.list = windows.list.filter((w) => !same(w.slot, command.slot));
+      break;
     case "shelfSelectEffect":
-      if (shelf.mode.kind === "insertEffect") shelf.selectedEffect = command.effect;
+      if (shelf.mode.kind === "insertEffect" || shelf.mode.kind === "replaceEffect") shelf.selectedEffect = command.effect;
       break;
     case "shelfConfirm": {
-      if (shelf.mode.kind !== "insertEffect") return null;
-      const { strip, slot } = shelf.mode;
+      if (shelf.mode.kind !== "insertEffect" && shelf.mode.kind !== "replaceEffect") return null;
+      const { kind, strip, slot } = shelf.mode;
       const to = stripOf(song, strip);
-      if (!to || shelf.selectedEffect === null || to.inserts[slot] !== null) break;
+      if (!to || shelf.selectedEffect === null || (to.slots[slot] !== null) !== (kind === "replaceEffect")) break;
+      if (same(shelf.currentEffect, builtinEffect(shelf.selectedEffect))) break;
       to.inserts[slot] = shelf.selectedEffect;
+      to.slots[slot] = null;
+      windows.list = windows.list.filter((w) => !same(w.slot, { kind: "insert", insert: { strip, slot } }));
       shelf.mode = { kind: "newTrack" };
-      shelf.selectedEffect = null;
+      shelf.selectedEffect = shelf.currentEffect = null;
+      params.selected = null;
       select({ strip, slot });
       break;
     }
     default:
       return null;
   }
-  return { song, params, shelf, showParams };
+  return { song, params, shelf, windows, showParams };
 }
 
 /** `rest` is the status line when no notice is up. */
@@ -2904,8 +3183,9 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     song = withoutMissing(song, command.missing);
     if (JSON.stringify(song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: song });
   }
-  for (const c of changes) if (c.section === "song") song = c.value = settleSong(c.value);
+  for (const c of changes) if (c.section === "song") song = c.value = settleSong(c.value as SongView);
   if (mixer && JSON.stringify(mixer.params) !== JSON.stringify(state.params)) changes.push({ section: "params", value: mixer.params });
+  if (mixer && JSON.stringify(mixer.windows) !== JSON.stringify(state.windows)) changes.push({ section: "windows", value: mixer.windows });
   let shelf = structuredClone(mixer?.shelf ?? tracks?.shelf ?? state.shelf);
   reduceAdded(command, shelf, library, ws);
   // A closed shelf has no mode, audition or sample (protocol 13, ShelfView). Its stars and what is missing stay.
@@ -2995,6 +3275,9 @@ export function createFakeTransport(initial?: AppState): Transport {
     },
     async liveNotes() {
       return scene?.live ?? NO_LIVE;
+    },
+    async pluginParams(table) {
+      return fakeParamTable(table);
     },
   };
 }

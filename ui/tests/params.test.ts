@@ -5,6 +5,7 @@ import type { AppState, EffectKind } from "../src/bridge";
 import { EFFECT_PARAMS } from "../src/bridge/types";
 import { fakeScene } from "../src/bridge/fake";
 import { allRows, fractionOf, keyStep, searchRows, stepRow, valueAt, valueText } from "../src/components/params/paramRows";
+import { builtinOf } from "../src/components/params/selected";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
 import RightRail from "../src/components/RightRail.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
@@ -291,7 +292,7 @@ describe("ディレイ（モック R6-Delay）", () => {
 
   it("テンポに合わせるがオフなら、間隔は ms の棒", () => {
     const s = scene("paramsDelay");
-    s.params.selected!.values[param("delay", "sync")] = 0;
+    builtinOf(s.params)!.values[param("delay", "sync")] = 0;
     show(RightRail, s);
     expect(qa("[data-test=param-row]").length).toBe(7);
     expect(text(qa("[data-test=param-value]")[0]!)).toBe("250 ms");

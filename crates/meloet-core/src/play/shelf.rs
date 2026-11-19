@@ -106,12 +106,16 @@ impl Play {
         if self.busy() && !matches!(mode, ShelfMode::InsertEffect { .. }) {
             return false;
         }
+        // Replacing an effect is not made yet: the shelf stays as it is.
+        if matches!(mode, ShelfMode::ReplaceEffect { .. }) {
+            return false;
+        }
         let mode = match mode {
             ShelfMode::NewTrack => Mode::NewTrack,
             ShelfMode::Replace { track } if self.doc().track(TrackId(track)).is_some() => {
                 Mode::Replace(TrackId(track))
             }
-            ShelfMode::Replace { .. } => return false,
+            ShelfMode::Replace { .. } | ShelfMode::ReplaceEffect { .. } => return false,
             ShelfMode::InsertEffect { strip, slot } => {
                 let (strip, slot) = (strip_id(strip), usize::from(slot));
                 if !self.slot_is_empty(strip, slot) {
@@ -365,7 +369,6 @@ impl Play {
         };
         let trial = self.shelf.trial.as_ref();
         let loading = trial.filter(|_| self.trial_loading());
-        let sample = self.sample_view();
         let playing = self.shelf.sample.as_ref().map(|s| SoundSampleView {
             sound: sound_ref(&s.instrument),
             playing: Some(SamplePlaying {
@@ -377,17 +380,12 @@ impl Play {
             sound: sound_ref(&w.instrument),
             playing: None,
         });
-        let (chosen_effect, selected_effect) = match &self.shelf.effect {
-            Some(Chosen::Builtin(kind)) => {
-                let kind = effect_kind(*kind);
-                (Some(effect_ref(kind)), Some(kind))
-            }
-            Some(Chosen::Plugin(p)) => {
-                let key = p.key.to_string();
-                (Some(EffectRef::Plugin { key }), None)
-            }
-            None => (None, None),
-        };
+        let chosen_effect = self.shelf.effect.as_ref().map(|chosen| match chosen {
+            Chosen::Builtin(kind) => effect_ref(effect_kind(*kind)),
+            Chosen::Plugin(p) => EffectRef::Plugin {
+                key: p.key.to_string(),
+            },
+        });
         let (starred_sounds, favorite_effects) = stars;
         ShelfView {
             selected_sound: trial.map(sound_ref),
@@ -395,13 +393,13 @@ impl Play {
             loading_sound: loading.map(sound_ref),
             sound_sample: playing.or(waiting),
             chosen_effect,
+            current_effect: None,
             unreadable: self.shelf.unreadable.clone(),
             favorite_sounds: (favorites.iter().copied().map(builtin_sound))
                 .chain(starred_sounds)
                 .collect(),
             favorite_effects,
             missing: missing(self.doc(), library, home),
-            selected_effect,
             mode: match self.shelf.mode {
                 Mode::NewTrack => ShelfMode::NewTrack,
                 Mode::Replace(track) => ShelfMode::Replace { track: track.0 },
@@ -413,11 +411,6 @@ impl Play {
             available: (self.sounds.shelf_rows().into_iter())
                 .map(instruments::kind_of)
                 .collect(),
-            favorites,
-            selected: trial.and_then(builtin),
-            current: current.and_then(builtin),
-            loading: loading.and_then(builtin),
-            sample,
         }
     }
 

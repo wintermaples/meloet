@@ -30,7 +30,7 @@ use crate::instruments;
 use crate::sf2store::{self, Sf2Info, Sf2Key};
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
-use crate::play::mixer::{gain_view, inserts_view};
+use crate::play::mixer::gain_view;
 use crate::play::{Cut, EngineOp, Heard, Play, PlugState, RecordReport};
 use crate::plugins::{Plugins, ScanJob, ScanNews};
 use crate::settings::{SCALES, Settings};
@@ -1371,8 +1371,16 @@ impl Model {
                     self.play.remove_missing(missing, effects);
                 }
             }
-            // The plugin's own window comes with the parameters panel for plugins.
-            Command::OpenPluginWindow { .. } => {}
+            // Not made yet: the plugin windows, a plugin in the parameters panel, and passing
+            // by, moving and replacing an insert.
+            Command::OpenPluginWindow { .. }
+            | Command::ClosePluginWindow { .. }
+            | Command::RaisePluginWindows
+            | Command::SelectInstrument { .. }
+            | Command::SetPluginParam { .. }
+            | Command::TypeParam { .. }
+            | Command::ToggleBypass { .. }
+            | Command::MoveInsert { .. } => {}
         }
         None
     }
@@ -1725,6 +1733,7 @@ impl Model {
             library,
             params: self.play.params_view(),
             plugins: self.plugins.view(),
+            windows: meloet_protocol::WindowsView::default(),
             keyboards: KeyboardsView {
                 list: self
                     .keyboards
@@ -1985,7 +1994,6 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
                 number: i as u32 + 1,
                 name: t.name.clone(),
                 color: t.color.get(),
-                instrument: instruments::kind_of(added::builtin_or_sine(&t.instrument)),
                 sound: added::sound_view(
                     &t.instrument,
                     play.plugin_state(PluginPlace::Instrument(t.id)),
@@ -2000,7 +2008,7 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
                 gain_db: gain_view(t.channel.gain),
                 pan: t.channel.pan.get(),
                 sends: t.sends.map(gain_view),
-                inserts: inserts_view(&t.channel.inserts),
+                send_defaults: meloet_model::mixer::new_track_sends(&t.instrument).map(gain_view),
                 slots: play.slots_of(StripId::Track(t.id), &t.channel.inserts),
                 muted: t.muted,
                 soloed: play.is_soloed(t.id),

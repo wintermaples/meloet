@@ -400,8 +400,7 @@ fn run_child(
     // window. The processes plugins sound in are not given this: they do show windows.
     command.env("QT_QPA_PLATFORM", "offscreen");
     command.envs(context.env.iter().map(|(name, value)| (name, value)));
-    let mut child = command
-        .spawn()
+    let mut child = launch::spawn(&mut command)
         .inspect_err(|e| eprintln!("meloet: cannot start {}: {e}", context.exe.display()))
         .ok()?;
     // The command holds a copy of the socket: with it open here, the child's end would

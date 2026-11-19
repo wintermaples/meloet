@@ -549,7 +549,7 @@ impl Run {
         let mut command = launch::host_command(&self.options.exe, theirs.as_fd(), map.fd(), None)
             .map_err(|e| start(&e))?;
         command.envs(self.options.env.iter().map(|(name, value)| (name, value)));
-        let mut child = command.spawn().map_err(|e| start(&e))?;
+        let mut child = launch::spawn(&mut command).map_err(|e| start(&e))?;
         drop((command, theirs));
         let pidfd = match PidFd::open(child.id()) {
             Ok(pidfd) => pidfd,

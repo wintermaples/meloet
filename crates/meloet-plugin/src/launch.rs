@@ -24,7 +24,8 @@
 
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::key::PluginFormat;
@@ -87,6 +88,15 @@ pub fn scan_command(
     }
     command.stdout(hand(out)?);
     finish(command, log)
+}
+
+/// Starts `command`, one child at a time in all of meloet. Under LLDB (CodeLLDB 1.12.3 in
+/// VS Code) meloet stayed stopped for good when the scan's threads started children at the
+/// same moment (2026-11-19); gdb and no debugger were fine. A start takes about a millisecond.
+pub fn spawn(command: &mut Command) -> std::io::Result<Child> {
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    command.spawn()
 }
 
 /// In a scanning child: be the least urgent of the ordinary processes (nice 19). A scan must

@@ -10,6 +10,7 @@ pub mod layout;
 pub mod measure;
 mod mixbook;
 pub mod play;
+mod plugins;
 pub mod recovery;
 mod service;
 pub mod settings;

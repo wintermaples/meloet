@@ -13,6 +13,7 @@ use crate::clock::{Segment, TransportClock, TransportState, heard};
 use crate::effect::{Effect, EffectContext};
 use crate::instrument::{Instrument, InstrumentEvent};
 use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, Strip};
+use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::rt;
 use crate::transport::{Click, Lane, Sequence, TrackSet};
 
@@ -178,6 +179,14 @@ pub enum EngineCommand {
     },
     Locate {
         tick: u64,
+    },
+    /// How many frames early a track's sequence is read and sent to its instrument, so that a
+    /// track whose plugins delay the sound still reaches the master in time with the others
+    /// (docs/architecture.md 20-8). The sum of the delays of the track's instrument and
+    /// inserts ([`crate::PluginWatch::latency`]); 0 for a track without plugins.
+    SetLookahead {
+        track: usize,
+        frames: u32,
     },
 }
 
@@ -432,6 +441,10 @@ struct Track {
     fade_left: u32,
     strip: Strip,
     lane: Lane,
+    /// `EngineCommand::SetLookahead`. Kept here for the reading of the sequence, which does not
+    /// use it yet.
+    #[allow(dead_code)]
+    lookahead: u32,
 }
 
 /// The song clock on the audio thread.
@@ -479,6 +492,7 @@ impl Track {
             fade_left: 0,
             strip: Strip::new(),
             lane: Lane::default(),
+            lookahead: 0,
         }
     }
 
@@ -713,6 +727,7 @@ pub struct Engine {
     sums: [Box<[f32]>; 6],
     sample_rate: f32,
     max_frames: usize,
+    plugin_block: Arc<PluginBlock>,
     tone: TestTone,
     /// The track and keys the last `Audition` sounded, until they are let go.
     audition: Option<(usize, Chord)>,
@@ -728,10 +743,14 @@ impl Engine {
             max_tracks: config.max_tracks.max(1),
         };
         let meters = Arc::new(EngineMeters::new(&config));
-        Engine::assemble(config, meters)
+        Engine::assemble(config, meters, Arc::new(PluginBlock::default()))
     }
 
-    fn assemble(config: EngineConfig, meters: Arc<EngineMeters>) -> EngineParts {
+    fn assemble(
+        config: EngineConfig,
+        meters: Arc<EngineMeters>,
+        plugin_block: Arc<PluginBlock>,
+    ) -> EngineParts {
         let (command_tx, command_rx) = RingBuffer::new(COMMAND_RING);
         // Every command retires at most three instruments, and commands wait while fewer than
         // three fit.
@@ -768,6 +787,7 @@ impl Engine {
             sums: std::array::from_fn(|_| buffer()),
             sample_rate: config.sample_rate as f32,
             max_frames: config.max_frames,
+            plugin_block: plugin_block.clone(),
             tone: TestTone::idle(),
             audition: None,
             last_callback: None,
@@ -782,6 +802,7 @@ impl Engine {
             clock,
             meters,
             max_frames: config.max_frames,
+            plugin_block,
         };
         EngineParts {
             engine,
@@ -890,6 +911,11 @@ impl Engine {
         self.last_callback = Some((began, block_s));
         self.meters.callbacks.fetch_add(1, Relaxed);
         self.meters.last_frames.store(frames as u32, Relaxed);
+        // Plugins in other processes are waited for until this far into the block, all of
+        // them together. The transport they are told is filled in with the plugin formats.
+        let wait_ns = (block_s * PLUGIN_WAIT_SHARE * 1e9) as u64;
+        self.plugin_block
+            .set_deadline(meloet_plugin::ipc::futex::monotonic_ns().saturating_add(wait_ns));
 
         self.read_commands(timing);
         self.read_midi(timing, u64::MAX);
@@ -1142,6 +1168,11 @@ impl Engine {
                     t.before_loop_end = t.pos < i128::from(end) * t.scale;
                 }
                 EngineCommand::SetMetronome { on } => self.transport.metronome = on,
+                EngineCommand::SetLookahead { track, frames } => {
+                    if let Some(slot) = self.tracks.get_mut(track) {
+                        slot.lookahead = frames;
+                    }
+                }
                 EngineCommand::Play { from } => {
                     self.end_recording(timing);
                     self.silence_lanes();
@@ -1728,6 +1759,7 @@ pub struct EngineHandle {
     clock: Arc<TransportClock>,
     meters: Arc<EngineMeters>,
     max_frames: usize,
+    plugin_block: Arc<PluginBlock>,
 }
 
 impl EngineHandle {
@@ -1852,9 +1884,15 @@ impl EngineHandle {
             max_frames: self.max_frames,
             max_tracks: self.meters.track_count(),
         };
-        let parts = Engine::assemble(config, self.meters.clone());
+        let parts = Engine::assemble(config, self.meters.clone(), self.plugin_block.clone());
         *self = parts.handle;
         (parts.engine, parts.midi_in)
+    }
+
+    /// What every [`crate::PluginSlot`] of this engine is made with. The same `Arc` after
+    /// [`EngineHandle::rebuild`], so the slots made before it still read the right block.
+    pub fn plugin_block(&self) -> &Arc<PluginBlock> {
+        &self.plugin_block
     }
 
     pub fn pop_latency(&mut self) -> Option<LatencyRecord> {

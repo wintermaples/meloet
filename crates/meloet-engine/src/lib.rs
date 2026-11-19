@@ -11,6 +11,7 @@ mod engine;
 mod instrument;
 mod mixer;
 mod output;
+mod plugin;
 pub mod rt;
 mod synth;
 mod transport;
@@ -24,5 +25,8 @@ pub use engine::{
 pub use instrument::{Instrument, InstrumentEvent};
 pub use mixer::{INSERT_SLOTS, MixStrip, RAMP_S, pan_gains};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};
+pub use plugin::{
+    PLUGIN_WAIT_SHARE, PluginBlock, PluginEffect, PluginInstrument, PluginSlot, PluginWatch,
+};
 pub use synth::PlaceholderSynth;
 pub use transport::{Sequence, SequenceEvent, TrackSet};

@@ -24,12 +24,15 @@ import {
   type LiveNote,
   type LiveNotesSnapshot,
   type PianoRollView,
+  type PluginPlaceView,
+  type PluginsView,
   type ServerMessage,
   type ShelfView,
   type SongDialogKind,
   type SongView,
   type ArrangeView,
   type StatusMessage,
+  type StoppedPluginView,
   type StripRef,
   type TrackRef,
   type TrackView,
@@ -240,6 +243,37 @@ const keyboard = (name: string, n = 1) => ({ id: `kb-${n}`, name, portName: name
 const PIANO: TrackRef = { number: 1, name: "ピアノ" };
 const NEW_SONG: StatusMessage = { id: "newSong", tempoBpm: 96, meterNum: 4, meterDen: 4, track: PIANO };
 
+const FAKE_HOME = "/home/yachiyo";
+const place = (shownPath: string, added = false): PluginPlaceView => ({ path: shownPath.replace(/^~/, FAKE_HOME), shownPath, added });
+
+/** The usual places of Linux for LV2 and VST3 (protocol 16): no scan running, nothing stopped. */
+export function fakePlugins(): PluginsView {
+  return {
+    scan: { state: "idle" },
+    stopped: [],
+    places: ["~/.lv2", "/usr/lib/lv2", "/usr/local/lib/lv2", "~/.vst3", "/usr/lib/vst3", "/usr/local/lib/vst3"].map((p) => place(p)),
+    stoppedOpen: false,
+    placesOpen: false,
+  };
+}
+
+// The rows of the mock F5-ScanStopped. Its third row is a CLAP plugin (~/.clap/TapeWobble.clap); CLAP is not read in round 5
+// (docs/architecture.md 20-9), so that row is an LV2 bundle here.
+const stoppedPlugin = (name: string, format: StoppedPluginView["format"], reason: StoppedPluginView["reason"], shownPath: string): StoppedPluginView => ({
+  name,
+  format,
+  reason,
+  path: shownPath.replace(/^~/, FAKE_HOME),
+  shownPath,
+  retrying: false,
+});
+const STOPPED_PLUGINS: StoppedPluginView[] = [
+  stoppedPlugin("Old Chorus", "vst3", "crashed", "~/.vst3/OldChorus.vst3"),
+  stoppedPlugin("Granular Fog", "lv2", "timedOut", "/usr/lib/lv2/granfog.lv2"),
+  stoppedPlugin("Tape Wobble", "lv2", "broken", "~/.lv2/TapeWobble.lv2"),
+  stoppedPlugin("Brick EQ 1.0", "vst3", "crashed", "/usr/lib/vst3/BrickEQ.vst3"),
+];
+
 /** One clip selected (and shown in the piano roll), or none; nothing to paste. */
 export function arrangeOf(clip: number | null): ArrangeView {
   return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0 };
@@ -359,6 +393,7 @@ export function fakeState(): AppState {
     },
     shelf: closedShelf(),
     params: { selected: null },
+    plugins: fakePlugins(),
     keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null },
@@ -1080,6 +1115,89 @@ export const SCENES: Record<string, SceneDef> = {
       s.song.file = "saved";
       s.workspace.recovery = { kind: "unreadable", song: "はじめての曲" };
       s.status.message = { id: "recoveryUnreadable", savedSong: true };
+    },
+    meters: QUIET,
+  },
+  // The mock R9-Scan: the first start, the shelf open, 37 of 112 bundles looked at ("スキャン中 37 / 112").
+  scanning: {
+    setup(s) {
+      ready(s);
+      s.plugins.scan = { state: "running", done: 37, total: 112 };
+    },
+    bands: ["shelf"],
+    meters: QUIET,
+  },
+  // R9-Scan's status line when that scan is over: 667 plugins in the shelf, 4 bundles stopped ("止まった 4 個を見る").
+  scanFinished: {
+    setup(s) {
+      ready(s);
+      s.plugins.scan = { state: "finished", added: 667, stopped: 4 };
+      s.plugins.stopped = structuredClone(STOPPED_PLUGINS);
+    },
+    bands: ["shelf"],
+    after: (s) => (s.status.message = { id: "scanFinished", added: 667, stopped: 4 }),
+    meters: QUIET,
+  },
+  // R9-Scan's status line from the second start on: "新しいプラグインが 3 個見つかりました。…"
+  pluginsFound: {
+    setup(s) {
+      ready(s);
+      s.status.message = { id: "pluginsFound", count: 3 };
+    },
+    meters: QUIET,
+  },
+  // R9-Scan: 音の設定 ▸ くわしい設定 ▸ プラグインの場所, with the two places of the mock added by hand. The mock also
+  // lists ~/.clap and /usr/lib/clap; CLAP is not read in round 5, so they are not here.
+  pluginPlaces: {
+    setup(s) {
+      settings(s);
+      s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: true };
+      s.plugins.places.push(place("~/音楽/プラグイン", true), place("/opt/surge-xt/lib/vst3", true));
+      s.plugins.placesOpen = true;
+    },
+    meters: QUIET,
+    scrollToEnd: true,
+  },
+  // The mock F5-ScanStopped: the dialog 「スキャンで止まったプラグイン」 over the saved song.
+  scanStopped: {
+    setup(s) {
+      changedSong(s);
+      s.song.undoCount = 14;
+      s.song.file = "saved";
+      s.plugins.stopped = structuredClone(STOPPED_PLUGINS);
+      s.plugins.stoppedOpen = true;
+      s.status.message = { id: "scanStoppedOpen" };
+    },
+    meters: QUIET,
+  },
+  // The same with "もう一度ためす" pressed on the second row ("ためしています…").
+  scanStoppedRetrying: {
+    setup(s) {
+      ready(s);
+      s.plugins.stopped = structuredClone(STOPPED_PLUGINS);
+      s.plugins.stopped[1]!.retrying = true;
+      s.plugins.stoppedOpen = true;
+      s.status.message = { id: "scanStoppedOpen" };
+    },
+    meters: QUIET,
+  },
+  // Spec 6 「もう一度ためして入った」: the row is gone and the status line says so.
+  scanRetryAdded: {
+    setup(s) {
+      ready(s);
+      s.plugins.stopped = structuredClone(STOPPED_PLUGINS).filter((p) => p.name !== "Granular Fog");
+      s.plugins.stoppedOpen = true;
+      s.status.message = { id: "scanRetryAdded", name: "Granular Fog" };
+    },
+    meters: QUIET,
+  },
+  // Spec 6 「もう一度ためしても止まった」.
+  scanRetryStopped: {
+    setup(s) {
+      ready(s);
+      s.plugins.stopped = structuredClone(STOPPED_PLUGINS);
+      s.plugins.stoppedOpen = true;
+      s.status.message = { id: "scanRetryStopped", name: "Granular Fog" };
     },
     meters: QUIET,
   },
@@ -2088,6 +2206,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
   const keyboards = structuredClone(state.keyboards);
   const transport = structuredClone(state.transport);
   const pianoRoll = structuredClone(state.pianoRoll);
+  const plugins = structuredClone(state.plugins);
   reducePianoRoll(pianoRoll, command);
   const tracks = reduceTracks(state, bands, command, nowUs);
   if (tracks) transport.canRecord = tracks.canRecord;
@@ -2156,7 +2275,8 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
       bands.goArrange();
       break;
     case "back":
-      if (ws.songDialog) ws.songDialog = null;
+      if (plugins.stoppedOpen) plugins.stoppedOpen = false;
+      else if (ws.songDialog) ws.songDialog = null;
       else if (ws.settings) ws.settings = null;
       else bands.back();
       break;
@@ -2207,6 +2327,27 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
     case "discardRecovered":
       if (ws.recovery?.kind === "recovered") ws.recovery = null;
       break;
+    // The fake scans nothing: a retry stays "ためしています…", and "場所を足す…" and "もう一度スキャン" do nothing.
+    case "openScanStopped":
+      plugins.stoppedOpen = true;
+      break;
+    case "closeScanStopped":
+      plugins.stoppedOpen = false;
+      break;
+    case "openPluginPlaces":
+      plugins.stoppedOpen = false;
+      plugins.placesOpen = true;
+      ws.settings = { draftOutput: ws.settings?.draftOutput ?? outputs.chosen, advancedOpen: true };
+      break;
+    case "togglePluginPlaces":
+      plugins.placesOpen = !plugins.placesOpen;
+      break;
+    case "removePluginPlace":
+      plugins.places = plugins.places.filter((p) => !p.added || p.path !== command.path);
+      break;
+    case "retryStoppedPlugin":
+      for (const p of plugins.stopped) if (p.path === command.path) p.retrying = true;
+      break;
     default:
       break;
   }
@@ -2237,6 +2378,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
   if (JSON.stringify(keyboards) !== JSON.stringify(state.keyboards)) changes.push({ section: "keyboards", value: keyboards });
   if (JSON.stringify(transport) !== JSON.stringify(state.transport)) changes.push({ section: "transport", value: transport });
   if (JSON.stringify(pianoRoll) !== JSON.stringify(state.pianoRoll)) changes.push({ section: "pianoRoll", value: pianoRoll });
+  if (JSON.stringify(plugins) !== JSON.stringify(state.plugins)) changes.push({ section: "plugins", value: plugins });
   // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
   let message =
     notice ??

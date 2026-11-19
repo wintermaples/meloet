@@ -1062,6 +1062,17 @@ impl Model {
             }
             Command::DiscardRecovered => self.discard_recovered(effects),
             Command::ShowRecoveryFile => self.show_recovery_file(effects),
+            // Plugins: the scan and the plugin slots are not here yet (round 5).
+            Command::RescanPlugins
+            | Command::RetryStoppedPlugin { .. }
+            | Command::AddPluginPlace
+            | Command::RemovePluginPlace { .. }
+            | Command::OpenScanStopped
+            | Command::CloseScanStopped
+            | Command::OpenPluginPlaces
+            | Command::TogglePluginPlaces
+            | Command::ReloadPlugin { .. }
+            | Command::RemovePlugin { .. } => {}
         }
         None
     }
@@ -1336,6 +1347,7 @@ impl Model {
             },
             shelf: self.shelf_view(),
             params: self.play.params_view(),
+            plugins: crate::plugins::view(|name| std::env::var_os(name)),
             keyboards: KeyboardsView {
                 list: self
                     .keyboards

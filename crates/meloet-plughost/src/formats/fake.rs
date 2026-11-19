@@ -37,7 +37,11 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
     if !enabled() || key.format() != PluginFormat::Lv2 {
         return None;
     }
-    let name = key.id().strip_prefix(PREFIX)?;
+    Some(make(key.id().strip_prefix(PREFIX)?, activation))
+}
+
+/// The fake plugin of that name, whatever the environment says.
+pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     let level = Arc::new(AtomicU64::new(DEFAULT_LEVEL.to_bits()));
     let processor: Box<dyn Processor> = match name {
         "sine" => Box::new(Sine {
@@ -53,10 +57,10 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
         "hang" => Box::new(Pass {
             fault: Some(Fault::Hang),
         }),
-        _ => return Some(Err(format!("no fake plugin {name}"))),
+        _ => return Err(format!("no fake plugin {name}")),
     };
     let instrument = name == "sine";
-    Some(Ok(Loaded {
+    Ok(Loaded {
         plugin: LoadedPlugin {
             latency: 0,
             audio_inputs: if instrument { 0 } else { 2 },
@@ -68,7 +72,7 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
             has_level: instrument,
         }),
         processor,
-    }))
+    })
 }
 
 /// Never returns: nothing may come back from a plugin that crashed or hung.
@@ -227,6 +231,8 @@ impl Controller for FakeController {
     fn close_editor(&mut self) {}
 
     fn idle(&mut self) {}
+
+    fn poll(&mut self, _said: &mut Vec<super::Said>) {}
 }
 
 fn info(name: &str, kind: PluginKind) -> PluginInfo {

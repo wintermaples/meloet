@@ -2246,9 +2246,15 @@ version = "0.1.0"
 name = "meloet-plughost"
 version = "0.1.0"
 dependencies = [
+ "dbus",
  "libc",
+ "livi",
+ "lv2_raw",
+ "meloet-engine",
  "meloet-plugin",
  "rtrb",
+ "serde_json",
+ "vst3",
 ]
 
 [[package]]

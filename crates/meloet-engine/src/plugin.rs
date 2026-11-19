@@ -18,15 +18,21 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering::Relaxed};
 
+use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{EngineEnd, FromPlugin, ToPlugin, Transport, block_flags};
 
 use crate::effect::{Effect, EffectContext};
 use crate::instrument::{Instrument, InstrumentEvent};
 
 /// How much of a block may pass, from the start of the engine's callback, before a plugin that
-/// has not answered is given up on for that block. A first value, to be set by measuring a
-/// real stream.
-pub const PLUGIN_WAIT_SHARE: f64 = 0.5;
+/// has not answered is given up on for that block.
+///
+/// Nearly the whole block: a plugin that is only slow must not be taken for one that is gone
+/// (two blocks in a row without an answer stop a slot for good), and one that is gone costs
+/// this wait once. Measured with 16 tracks of Surge XT and a compressor on each
+/// (docs/measurements/2026-11-19-round5-plughost.md): the engine's block took up to 88 % of
+/// its length; at 0.5 slots went unanswered and were stopped, at 0.9 none.
+pub const PLUGIN_WAIT_SHARE: f64 = 0.9;
 
 /// What every plugin slot needs to know about the block the engine is in. The engine writes
 /// it at the start of each block; the slots read it in that block, on the same thread. One for
@@ -95,6 +101,7 @@ impl PluginBlock {
 pub struct PluginWatch {
     stopped: AtomicBool,
     unanswered: AtomicU64,
+    waited_ns: AtomicU64,
     latency: AtomicU32,
 }
 
@@ -109,6 +116,12 @@ impl PluginWatch {
     /// Blocks that got no answer in time, since the slot was made.
     pub fn unanswered(&self) -> u64 {
         self.unanswered.load(Relaxed)
+    }
+
+    /// How long the audio thread has waited for this plugin's answers in all, in nanoseconds:
+    /// the way there, the plugin's own work and the way back.
+    pub fn waited_ns(&self) -> u64 {
+        self.waited_ns.load(Relaxed)
     }
 
     /// The plugin's delay in frames, as it last said (20-8). The control side adds up a
@@ -165,8 +178,12 @@ impl PluginSlot {
         if std::mem::take(&mut self.reset) {
             self.end.set_flags(block_flags::RESET);
         }
+        let asked = monotonic_ns();
         self.end.submit();
         let answered = self.end.wait(self.block.deadline_ns());
+        self.watch
+            .waited_ns
+            .fetch_add(monotonic_ns().saturating_sub(asked), Relaxed);
         if answered {
             self.end.read_output(0, left);
             self.end.read_output(1, right);

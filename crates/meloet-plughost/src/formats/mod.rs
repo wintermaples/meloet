@@ -18,6 +18,8 @@ pub mod lv2;
 pub mod vst3;
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU8, Ordering::SeqCst};
+use std::time::{Duration, Instant};
 
 use meloet_plugin::ipc::{FromPlugin, ToPlugin, Transport};
 use meloet_plugin::wire::{LoadedPlugin, ParamInfo};
@@ -31,15 +33,79 @@ pub struct Activation {
     pub max_frames: usize,
 }
 
+/// Keeps the audio thread and the main thread out of a plugin at the same time, for the calls
+/// a format does not allow together with `run` (LV2 state, VST3 `setActive`). The audio thread
+/// never waits here: while the main thread is inside, its block goes without the plugin.
+#[derive(Default)]
+pub struct Gate(AtomicU8);
+
+const GATE_FREE: u8 = 0;
+const GATE_AUDIO: u8 = 1;
+const GATE_MAIN: u8 = 2;
+
+impl Gate {
+    /// On the audio thread. False while the main thread is inside; then the plugin must not
+    /// be touched this block. After true, [`Gate::leave`].
+    pub fn enter(&self) -> bool {
+        self.0
+            .compare_exchange(GATE_FREE, GATE_AUDIO, SeqCst, SeqCst)
+            .is_ok()
+    }
+
+    pub fn leave(&self) {
+        self.0.store(GATE_FREE, SeqCst);
+    }
+
+    /// On the main thread: waits for the audio thread to come out of the plugin, for `within`
+    /// at most (it may be stuck inside a plugin that hangs).
+    pub fn claim(&self, within: Duration) -> Option<Claim<'_>> {
+        let until = Instant::now() + within;
+        loop {
+            if self
+                .0
+                .compare_exchange(GATE_FREE, GATE_MAIN, SeqCst, SeqCst)
+                .is_ok()
+            {
+                return Some(Claim(self));
+            }
+            if Instant::now() > until {
+                return None;
+            }
+            std::thread::sleep(Duration::from_micros(100));
+        }
+    }
+}
+
+pub struct Claim<'a>(&'a Gate);
+
+impl Drop for Claim<'_> {
+    fn drop(&mut self) {
+        self.0.0.store(GATE_FREE, SeqCst);
+    }
+}
+
+/// How long the main thread waits at a [`Gate`].
+pub const GATE_WAIT: Duration = Duration::from_secs(2);
+
+/// What a plugin did by itself, as its controller tells it on the main thread
+/// ([`Controller::poll`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Said {
+    ParamBegin(u32),
+    /// Goes to meloet and to the plugin's own processor.
+    ParamChanged(u32, f64),
+    ParamEnd(u32),
+    Latency(u32),
+    /// Any parameter may have another value now.
+    ParamsChanged,
+}
+
 /// What a processor tells meloet during a block. Holds a fixed number of events; more are
 /// dropped.
-// The fake plugins say nothing; the formats will.
-#[allow(dead_code)]
 pub struct EventSink {
     events: Vec<FromPlugin>,
 }
 
-#[allow(dead_code)]
 impl EventSink {
     pub fn with_capacity(capacity: usize) -> EventSink {
         EventSink {
@@ -66,7 +132,6 @@ impl EventSink {
 }
 
 /// One block. All four slices have the block's length, 1..=`Activation::max_frames`.
-#[allow(dead_code)]
 pub struct ProcessBlock<'a> {
     /// Left and right. Silence for an instrument.
     pub inputs: [&'a [f32]; 2],
@@ -106,6 +171,9 @@ pub trait Controller {
     fn close_editor(&mut self);
     /// Called about 60 times a second on the main thread while a window is open.
     fn idle(&mut self);
+    /// Called on the main thread many times a second and after every request: the plugin's
+    /// housekeeping outside its window, and what it did by itself since the last call.
+    fn poll(&mut self, said: &mut Vec<Said>);
 }
 
 /// A plugin a bundle says it holds, before it is read. `id` is what its `PluginKey::id` will

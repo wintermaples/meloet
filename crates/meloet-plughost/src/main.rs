@@ -7,6 +7,7 @@
 mod control;
 mod formats;
 mod rt;
+mod rtcheck;
 mod scan;
 
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
@@ -43,6 +44,11 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     launch::quiet_stdio(value(&args, "--log-fd").and_then(|fd| fd.parse().ok()));
     launch::die_with_parent(value(&args, "--parent").and_then(|pid| pid.parse().ok()));
+    if std::env::var_os("MELOET_PLUGHOST_NO_DUMP").is_some_and(|v| !v.is_empty()) {
+        // For tests that crash this process on purpose: no core file, no crash report.
+        // SAFETY: a plain call.
+        unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0) };
+    }
 
     let code = match args.get(1).map(String::as_str) {
         Some("host") => match (
@@ -63,5 +69,9 @@ fn main() {
         }
         _ => 2,
     };
-    std::process::exit(code);
+    // Not `exit`: that would run what the plugins' libraries registered for the end of the
+    // process, which is where a plugin crashes or hangs once more. Everything of meloet's is
+    // written by now; the plugins that were unloaded were ended the way their format says.
+    // SAFETY: a plain call.
+    unsafe { libc::_exit(code) }
 }

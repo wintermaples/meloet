@@ -2,157 +2,25 @@
 //! requests over the socket, and what meloet's side sees when a plugin crashes or hangs.
 //! Every child is killed when its test ends.
 
+mod common;
+
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{Child, ExitStatus};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::{EXE, FAKE, GEOMETRY, Host, Killed, PATIENT_NS, block, note_on, peak};
 use meloet_plugin::ipc::futex::monotonic_ns;
-use meloet_plugin::ipc::{EngineEnd, Geometry, Mapping, ToPlugin};
+use meloet_plugin::ipc::{EngineEnd, Mapping, ToPlugin};
 use meloet_plugin::wire::{
-    FromHost, LoadedPlugin, Reply, Request, ScanOutput, ToHost, WIRE_VERSION, WireError,
-    read_frame, write_frame,
+    FromHost, LoadedPlugin, Reply, Request, ScanOutput, ToHost, WireError, read_frame, write_frame,
 };
 use meloet_plugin::{PluginFormat, PluginKey, launch};
 
-const EXE: &str = env!("CARGO_BIN_EXE_meloet-plughost");
-const FAKE: &str = "MELOET_PLUGHOST_FAKE";
-const GEOMETRY: Geometry = Geometry {
-    max_frames: 256,
-    channels: 2,
-    slots: 4,
-    to_plugin_events: 64,
-    from_plugin_events: 64,
-};
 /// One block at 48 kHz, and how much of it the engine would wait.
 const BLOCK: Duration = Duration::from_micros(5333);
 const BUDGET_NS: u64 = 4_000_000;
-/// For blocks that must be answered: long, so a busy PC does not fail the test.
-const PATIENT_NS: u64 = 5_000_000_000;
-
-struct Killed(Child);
-
-impl Killed {
-    fn wait_for_exit(&mut self, within: Duration) -> Option<ExitStatus> {
-        let until = Instant::now() + within;
-        loop {
-            if let Some(status) = self.0.try_wait().unwrap() {
-                return Some(status);
-            }
-            if Instant::now() > until {
-                return None;
-            }
-            std::thread::sleep(Duration::from_millis(2));
-        }
-    }
-}
-
-impl Drop for Killed {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-struct Host {
-    child: Killed,
-    control: UnixStream,
-    map: Arc<Mapping>,
-    next_id: u64,
-}
-
-impl Host {
-    fn start() -> Host {
-        let map = Arc::new(Mapping::create(GEOMETRY).unwrap());
-        let (ours, theirs) = UnixStream::pair().unwrap();
-        let child = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None)
-            .env(FAKE, "1")
-            .spawn()
-            .unwrap();
-        drop(theirs);
-        ours.set_read_timeout(Some(Duration::from_secs(10)))
-            .unwrap();
-        let mut host = Host {
-            child: Killed(child),
-            control: ours,
-            map,
-            next_id: 1,
-        };
-        assert_eq!(
-            host.ask(Request::Hello {
-                version: WIRE_VERSION
-            }),
-            Reply::Hello {
-                version: WIRE_VERSION
-            }
-        );
-        host
-    }
-
-    fn ask_with(&mut self, request: Request, blob: &[u8]) -> (Reply, Vec<u8>) {
-        let id = self.next_id;
-        self.next_id += 1;
-        write_frame(&mut self.control, &ToHost { id, request }, blob).unwrap();
-        match read_frame::<FromHost>(&mut self.control).unwrap() {
-            (FromHost::Reply { id: got, reply }, blob) => {
-                assert_eq!(got, id);
-                (reply, blob)
-            }
-            (other, _) => panic!("{other:?}"),
-        }
-    }
-
-    fn ask(&mut self, request: Request) -> Reply {
-        self.ask_with(request, &[]).0
-    }
-
-    /// Makes the engine's end of the slot, then loads the fake plugin into it.
-    fn load(&mut self, slot: u32, fake: &str) -> (EngineEnd, LoadedPlugin) {
-        let engine = EngineEnd::new(self.map.clone(), slot).unwrap();
-        let reply = self.ask(Request::Load {
-            slot,
-            key: PluginKey::lv2(&format!("urn:meloet:fake:{fake}")).unwrap(),
-            bundle: "/nowhere/fake.lv2".into(),
-            sample_rate: 48_000,
-            max_frames: 256,
-        });
-        match reply {
-            Reply::Loaded { plugin } => (engine, plugin),
-            other => panic!("{other:?}"),
-        }
-    }
-}
-
-/// One answered block: `input` on both channels, `events` at their frames; the left and right
-/// output.
-fn block(engine: &mut EngineEnd, input: &[f32], events: &[ToPlugin]) -> (Vec<f32>, Vec<f32>) {
-    assert!(engine.begin(input.len()));
-    engine.write_input(0, input);
-    engine.write_input(1, input);
-    for event in events {
-        assert!(engine.push_event(*event));
-    }
-    engine.submit();
-    assert!(engine.wait(monotonic_ns() + PATIENT_NS));
-    let (mut left, mut right) = (vec![9.0; input.len()], vec![9.0; input.len()]);
-    engine.read_output(0, &mut left);
-    engine.read_output(1, &mut right);
-    (left, right)
-}
-
-fn note_on(key: u8) -> ToPlugin {
-    ToPlugin::Midi {
-        frame: 0,
-        data: [0x90, key, 100],
-    }
-}
-
-fn peak(samples: &[f32]) -> f32 {
-    samples.iter().fold(0.0, |m, x| m.max(x.abs()))
-}
 
 #[test]
 fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
@@ -646,7 +514,8 @@ fn a_scan_that_crashes_or_hangs_stops_after_probing() {
 
 #[test]
 fn the_fake_plugins_are_not_there_without_the_variable() {
-    // The formats are not built yet: a real bundle reads as broken, and nothing crashes.
+    // Without the variable these are bundles like any other, and there is nothing at their
+    // paths: they read as broken, and nothing crashes.
     for bundle in ["/nowhere/segv.lv2", "/nowhere/mixed.lv2"] {
         let mut real = scan(PluginFormat::Lv2, bundle, &[], false);
         let (frames, error) = real.frames();
@@ -667,5 +536,49 @@ fn a_bad_command_line_ends_with_an_error_code() {
     ] {
         let status = std::process::Command::new(EXE).args(args).status().unwrap();
         assert_eq!(status.code(), Some(2), "{args:?}");
+    }
+}
+
+#[test]
+fn the_log_says_which_priority_the_audio_thread_got() {
+    // The default (whatever this PC allows), rtkit asked on purpose, and nothing asked for:
+    // each ends in one line of the log, and the host answers either way.
+    for choice in ["", "rtkit", "off"] {
+        let log = std::env::temp_dir().join(format!(
+            "meloet-plughost-test-{}-{choice}.log",
+            std::process::id()
+        ));
+        let file = std::fs::File::create(&log).unwrap();
+        let map = Mapping::create(GEOMETRY).unwrap();
+        let (mut ours, theirs) = UnixStream::pair().unwrap();
+        let child =
+            launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), Some(file.as_fd()))
+                .env(FAKE, "1")
+                .env("MELOET_PLUGHOST_RT", choice)
+                .spawn()
+                .unwrap();
+        let mut child = Killed(child);
+        drop(theirs);
+        ours.set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let quit = ToHost {
+            id: 1,
+            request: Request::Quit,
+        };
+        write_frame(&mut ours, &quit, &[]).unwrap();
+        read_frame::<FromHost>(&mut ours).unwrap();
+        assert_eq!(
+            child.wait_for_exit(Duration::from_secs(5)).unwrap().code(),
+            Some(0)
+        );
+        let text = std::fs::read_to_string(&log).unwrap();
+        let _ = std::fs::remove_file(&log);
+        println!("{choice:?}: {}", text.trim());
+        let got = text.contains("audio thread at real-time priority");
+        let not = text.contains("no real-time priority for the audio thread");
+        assert!(got != not, "{choice:?}: {text}");
+        if choice == "off" {
+            assert!(not, "{text}");
+        }
     }
 }

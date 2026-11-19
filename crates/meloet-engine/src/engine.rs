@@ -181,14 +181,6 @@ pub enum EngineCommand {
     Locate {
         tick: u64,
     },
-    /// How many frames early a track's sequence is read and sent to its instrument, so that a
-    /// track whose plugins delay the sound still reaches the master in time with the others
-    /// (docs/architecture.md 20-8). The sum of the delays of the track's instrument and
-    /// inserts ([`crate::PluginWatch::latency`]); 0 for a track without plugins.
-    SetLookahead {
-        track: usize,
-        frames: u32,
-    },
 }
 
 /// Up to [`Chord::CAPACITY`] keys, kept without allocating.
@@ -442,7 +434,9 @@ struct Track {
     fade_left: u32,
     strip: Strip,
     lane: Lane,
-    /// `EngineCommand::SetLookahead`: the sequence is read this many frames ahead of the song.
+    /// The sequence is read this many frames ahead of the song, so that a track whose plugins
+    /// delay the sound still reaches the master in time with the others (docs/architecture.md
+    /// 20-8). The delays of the track's instrument and inserts, added up at every block.
     lookahead: u32,
     /// The lane, reading ahead, has gone round the loop and the song has not yet: it reads
     /// one loop's length behind where its lookahead alone would put it.
@@ -1004,6 +998,10 @@ impl Engine {
             .set_deadline(meloet_plugin::ipc::futex::monotonic_ns().saturating_add(wait_ns));
 
         self.read_commands(timing);
+        for track in self.tracks.iter_mut() {
+            let instrument = track.instrument.as_ref().map_or(0, |i| i.latency());
+            track.lookahead = instrument.saturating_add(track.strip.latency());
+        }
         self.read_midi(timing, u64::MAX);
         self.open_segment(0, timing);
         let mut offset = 0;
@@ -1262,11 +1260,6 @@ impl Engine {
                     }
                 }
                 EngineCommand::SetMetronome { on } => self.transport.metronome = on,
-                EngineCommand::SetLookahead { track, frames } => {
-                    if let Some(slot) = self.tracks.get_mut(track) {
-                        slot.lookahead = frames;
-                    }
-                }
                 EngineCommand::Play { from } => {
                     self.end_recording(timing);
                     self.silence_lanes();
@@ -1679,6 +1672,12 @@ impl Engine {
             let to = from + self.frames_to_next_point(frames - from);
             self.plugin_block
                 .set_transport(&self.transport.for_plugins());
+            // Every instrument that renders in another process starts on this stretch now.
+            for track in self.tracks.iter_mut().chain([&mut self.sample]) {
+                if let Some(instrument) = track.instrument.as_mut() {
+                    instrument.ask(to - from);
+                }
+            }
             let [master_l, master_r, sums @ ..] = &mut self.sums;
             let [a_l, a_r, b_l, b_r] = sums.each_mut().map(|sum| &mut sum[from..to]);
             let mut mix = Mix {

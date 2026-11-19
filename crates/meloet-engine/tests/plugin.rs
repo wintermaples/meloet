@@ -169,13 +169,6 @@ fn a_plugin_sits_where_an_instrument_and_an_effect_go() {
         .ok()
         .unwrap();
     handle
-        .send(EngineCommand::SetLookahead {
-            track: 0,
-            frames: 64,
-        })
-        .ok()
-        .unwrap();
-    handle
         .send(EngineCommand::Audition {
             track: 0,
             keys: meloet_engine::Chord::new(&[60, 64]),
@@ -241,21 +234,27 @@ fn a_plugin_sits_where_an_instrument_and_an_effect_go() {
         (0, 0)
     );
 
-    // The host process goes. The engine goes on: the first stretch waits out its deadline,
-    // and from the next one on both slots are stopped and cost no time.
+    // The host process goes. The engine goes on: the first block waits out its deadline, the
+    // second waits for the missing answer once more, and then both slots are stopped (the
+    // effect with the instrument: they are in one host process) and cost no time.
     host.stop();
     let began = monotonic_ns();
     engine.process(&mut out, BlockTiming::default());
+    assert!(!instrument_watch.stopped() && !effect_watch.stopped());
     engine.process(&mut out, BlockTiming::default());
     let took = monotonic_ns() - began;
     assert!(instrument_watch.stopped() && effect_watch.stopped());
     assert_eq!(
         (instrument_watch.unanswered(), effect_watch.unanswered()),
-        (1, 1)
+        (2, 1)
     );
     assert!(out.iter().all(|x| *x == 0.0));
-    // One deadline (most of a block of 0.2 s, shared), not one for every stretch or slot.
-    assert!(took < 390_000_000, "{took}");
+    // One deadline a block (most of a block of 0.2 s, shared), not one for every stretch or
+    // slot.
+    assert!(took < 450_000_000, "{took}");
+    let began = monotonic_ns();
+    engine.process(&mut out, BlockTiming::default());
+    assert!(monotonic_ns() - began < 100_000_000);
 
     assert_eq!(common::audio_block_counts(), (0, 0));
     drop(engine);
@@ -320,6 +319,6 @@ fn a_stopped_effect_lets_the_sound_through_and_a_reset_reaches_the_plugin() {
         effect.reset();
     }
     assert!(watch.stopped());
-    assert_eq!(watch.unanswered(), 1);
+    assert_eq!(watch.unanswered(), 2);
     assert_eq!(common::audio_block_counts(), (0, 0));
 }

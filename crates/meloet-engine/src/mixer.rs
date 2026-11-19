@@ -197,6 +197,13 @@ impl Strip {
         }
     }
 
+    /// The delays of the effects in the slots, added up.
+    pub fn latency(&self) -> u32 {
+        (self.slots.iter())
+            .filter_map(|slot| slot.effect.as_ref())
+            .fold(0u32, |sum, effect| sum.saturating_add(effect.latency()))
+    }
+
     /// `gain` is linear. `frames` 0: at once.
     pub fn set_level(&mut self, gain: f32, pan: f32, frames: u32) {
         if !gain.is_finite() {

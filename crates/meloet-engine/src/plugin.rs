@@ -9,8 +9,16 @@
 //! and sleeps on a futex until the answer is there or the block's deadline ([`PluginBlock`])
 //! has passed. That sleep is the one wait on the audio thread; nothing here allocates or
 //! locks. A block without an answer is silence for an instrument and the untouched sound for
-//! an effect. Two blocks in a row without one and the slot is stopped: it is never waited for
-//! again, and [`PluginWatch::stopped`] tells the control side.
+//! an effect. The block after waits for the missing answer once more. If it is still missing
+//! then and the host process shows no sign of working towards it (a plugin that hangs, a
+//! process that is gone), the slot is stopped with every other slot of that process: they are
+//! never waited for again, and [`PluginWatch::stopped`] tells the control side. A process that
+//! only has more work than fits the block stays; its slots go without sound until it catches
+//! up.
+//!
+//! The instruments are asked ahead ([`Instrument::ask`]): the engine asks all of them for the
+//! next stretch before it goes through its tracks, so the host processes work at the same
+//! time and the engine only waits where an answer is not there yet.
 //!
 //! The control side (meloet-core) makes the slot before it asks the host process to load the
 //! plugin, and keeps the [`PluginWatch`].
@@ -118,14 +126,14 @@ impl PluginWatch {
         self.unanswered.load(Relaxed)
     }
 
-    /// How long the audio thread has waited for this plugin's answers in all, in nanoseconds:
-    /// the way there, the plugin's own work and the way back.
+    /// How long the audio thread has slept waiting for this plugin's answers in all, in
+    /// nanoseconds.
     pub fn waited_ns(&self) -> u64 {
         self.waited_ns.load(Relaxed)
     }
 
-    /// The plugin's delay in frames, as it last said (20-8). The control side adds up a
-    /// track's and sends the sum with `EngineCommand::SetLookahead`.
+    /// The plugin's delay in frames, as it last said (20-8). The engine adds up a track's by
+    /// itself, at every block.
     pub fn latency(&self) -> u32 {
         self.latency.load(Relaxed)
     }
@@ -137,6 +145,10 @@ pub struct PluginSlot {
     block: Arc<PluginBlock>,
     watch: Arc<PluginWatch>,
     reset: bool,
+    /// The length of the block asked for ahead of its `render` ([`Instrument::ask`]).
+    asked: Option<usize>,
+    /// The deadline of the engine's block in which an answer was last missed.
+    missed_at: u64,
 }
 
 impl PluginSlot {
@@ -155,6 +167,8 @@ impl PluginSlot {
             block,
             watch: watch.clone(),
             reset: false,
+            asked: None,
+            missed_at: 0,
         };
         (slot, watch)
     }
@@ -163,27 +177,53 @@ impl PluginSlot {
         self.end.push_event(ToPlugin::Midi { frame: 0, data });
     }
 
-    /// One round trip for a stretch of at most the slot's block size. True when `left` and
-    /// `right` hold the plugin's output; false leaves them as they were.
-    fn piece(&mut self, input: bool, left: &mut [f32], right: &mut [f32]) -> bool {
-        if !self.end.begin(left.len()) {
-            self.watch.stopped.store(true, Relaxed);
-            return false;
-        }
-        if input {
-            self.end.write_input(0, left);
-            self.end.write_input(1, right);
-        }
+    /// Hands the block that `begin` started to the host process.
+    fn submit(&mut self) {
         self.end.set_transport(&self.block.transport());
         if std::mem::take(&mut self.reset) {
             self.end.set_flags(block_flags::RESET);
         }
-        let asked = monotonic_ns();
         self.end.submit();
-        let answered = self.end.wait(self.block.deadline_ns());
-        self.watch
-            .waited_ns
-            .fetch_add(monotonic_ns().saturating_sub(asked), Relaxed);
+    }
+
+    /// Asks for a block without input now, to be waited for by the next `piece` of the same
+    /// length. Does nothing when the slot cannot be asked yet (the answer before is missing);
+    /// `piece` deals with that.
+    fn ask(&mut self, frames: usize) {
+        if self.asked.is_none() && frames <= self.end.max_frames() && self.end.begin(frames) {
+            self.submit();
+            self.asked = Some(frames);
+        }
+    }
+
+    /// One round trip for a stretch of at most the slot's block size. True when `left` and
+    /// `right` hold the plugin's output; false leaves them as they were.
+    fn piece(&mut self, input: bool, left: &mut [f32], right: &mut [f32]) -> bool {
+        let deadline = self.block.deadline_ns();
+        let ahead = self.asked.take() == Some(left.len()) && !input && self.end.asked();
+        if !ahead {
+            // The answer to the block before may still be missing: this block waits for it
+            // once more. If it comes, its sound is too late to use, and the slot goes on.
+            // "Once more" is in the engine's next block, not in a later stretch of the block
+            // the answer was missed in: that one has the same deadline, already past.
+            if !self.end.begin(left.len())
+                && !(self.end.overdue()
+                    && deadline != self.missed_at
+                    && self.sleep(|end| end.await_overdue(deadline))
+                    && self.end.begin(left.len()))
+            {
+                if self.end.stopped() {
+                    self.watch.stopped.store(true, Relaxed);
+                }
+                return false;
+            }
+            if input {
+                self.end.write_input(0, left);
+                self.end.write_input(1, right);
+            }
+            self.submit();
+        }
+        let answered = self.sleep(|end| end.wait(deadline));
         if answered {
             self.end.read_output(0, left);
             self.end.read_output(1, right);
@@ -192,8 +232,6 @@ impl PluginSlot {
                 left.fill(0.0);
                 right.fill(0.0);
             }
-        } else {
-            self.watch.unanswered.fetch_add(1, Relaxed);
         }
         while let Some(event) = self.end.pop_event() {
             match event {
@@ -201,6 +239,20 @@ impl PluginSlot {
                 // Parameters the plugin moves by itself have nowhere to go yet.
                 FromPlugin::Param { .. } => {}
             }
+        }
+        answered
+    }
+
+    /// One of the two waits, with its time and its outcome written down for the control side.
+    fn sleep(&mut self, wait: impl FnOnce(&mut EngineEnd) -> bool) -> bool {
+        let began = monotonic_ns();
+        let answered = wait(&mut self.end);
+        self.watch
+            .waited_ns
+            .fetch_add(monotonic_ns().saturating_sub(began), Relaxed);
+        if !answered {
+            self.watch.unanswered.fetch_add(1, Relaxed);
+            self.missed_at = self.block.deadline_ns();
         }
         answered
     }
@@ -253,6 +305,14 @@ impl Instrument for PluginInstrument {
     fn reset(&mut self) {
         self.0.reset = true;
     }
+
+    fn ask(&mut self, frames: usize) {
+        self.0.ask(frames);
+    }
+
+    fn latency(&self) -> u32 {
+        self.0.watch.latency()
+    }
 }
 
 /// A plugin as an effect. A parameter's position is the plugin's parameter id, and its value
@@ -281,5 +341,9 @@ impl Effect for PluginEffect {
 
     fn reset(&mut self) {
         self.0.reset = true;
+    }
+
+    fn latency(&self) -> u32 {
+        self.0.watch.latency()
     }
 }

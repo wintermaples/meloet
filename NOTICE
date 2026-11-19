@@ -76,7 +76,14 @@ symphonia-common 0.6.1: https://github.com/pdeljanov/Symphonia (also https://cra
 symphonia-core 0.6.1: https://github.com/pdeljanov/Symphonia (also https://crates.io/crates/symphonia-core/0.6.1)
 symphonia-metadata 0.6.1: https://github.com/pdeljanov/Symphonia (also https://crates.io/crates/symphonia-metadata/0.6.1)
 
-== Parts (179: 176 Rust crates, 3 npm packages)
+== Parts made from the work of others
+
+vst3 (Rust): bindings generated from the header files of the VST 3 SDK 3.8.0 (pluginterfaces)
+  Copyright (c) Steinberg Media Technologies GmbH
+  source: https://github.com/steinbergmedia/vst3_pluginterfaces
+  license: MIT; the text is in licenses/rust/vst3/VST3-SDK-LICENSE.txt
+
+== Parts (190: 187 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
 aho-corasick 1.1.5 (Rust): Unlicense OR MIT
@@ -99,6 +106,7 @@ cairo-sys-rs 0.18.2 (Rust): MIT
 cfb 0.14.0 (Rust): MIT
 cfg-if 1.0.5 (Rust): MIT OR Apache-2.0
 clsx 2.1.1 (npm): MIT
+com-scrape-types 0.1.1 (Rust): MIT OR Apache-2.0
 cookie 0.18.2 (Rust): MIT OR Apache-2.0
 cookie-factory 0.3.3 (Rust): MIT
 cpal 0.18.2 (Rust): Apache-2.0
@@ -165,10 +173,16 @@ libc 0.2.191 (Rust): MIT OR Apache-2.0
 libdbus-sys 0.2.7 (Rust): Apache-2.0 OR MIT
 libspa 0.10.1 (Rust): MIT
 libspa-sys 0.10.1 (Rust): MIT
+lilv 0.3.1 (Rust): MIT
+lilv-sys 0.3.0 (Rust): MIT
 linux-raw-sys 0.12.1 (Rust): Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
 litemap 0.8.3 (Rust): Unicode-3.0
+livi 0.9.0 (Rust): MIT
 lock_api 0.4.14 (Rust): MIT OR Apache-2.0
+lock_api 0.5.0 (Rust): MIT OR Apache-2.0
 log 0.4.35 (Rust): MIT OR Apache-2.0
+lv2_raw 0.3.2 (Rust): ISC OR MIT OR Apache-2.0
+lv2-sys 2.0.0 (Rust): MIT OR Apache-2.0
 memchr 2.8.3 (Rust): Unlicense OR MIT
 memoffset 0.9.1 (Rust): MIT
 mime 0.3.18 (Rust): MIT OR Apache-2.0
@@ -182,7 +196,9 @@ option-ext 0.2.0 (Rust): MPL-2.0
 pango 0.18.3 (Rust): MIT
 pango-sys 0.18.0 (Rust): MIT
 parking_lot 0.12.5 (Rust): MIT OR Apache-2.0
+parking_lot 0.13.0 (Rust): MIT OR Apache-2.0
 parking_lot_core 0.9.12 (Rust): MIT OR Apache-2.0
+parking_lot_core 0.10.0 (Rust): MIT OR Apache-2.0
 percent-encoding 2.3.2 (Rust): MIT OR Apache-2.0
 phf 0.13.1 (Rust): MIT
 phf_shared 0.13.1 (Rust): MIT
@@ -198,6 +214,7 @@ regex 1.13.1 (Rust): MIT OR Apache-2.0
 regex-automata 0.4.18 (Rust): MIT OR Apache-2.0
 regex-lite 0.1.9 (Rust): MIT OR Apache-2.0
 regex-syntax 0.8.11 (Rust): MIT OR Apache-2.0
+ringbuf 0.5.3 (Rust): MIT OR Apache-2.0
 rtrb 0.4.1 (Rust): MIT OR Apache-2.0
 rustix 1.1.6 (Rust): Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
 same-file 1.0.6 (Rust): Unlicense OR MIT
@@ -243,6 +260,7 @@ urlpattern 0.6.0 (Rust): MIT
 utf_types 1.0.0 (Rust): Apache-2.0 OR MIT
 utf8_iter 1.1.0 (Rust): Apache-2.0 OR MIT
 uuid 1.29.2 (Rust): Apache-2.0 OR MIT
+vst3 0.3.0 (Rust): MIT OR Apache-2.0
 walkdir 2.5.0 (Rust): Unlicense OR MIT
 web-time 1.1.0 (Rust): MIT OR Apache-2.0
 webkit2gtk 2.0.2 (Rust): MIT

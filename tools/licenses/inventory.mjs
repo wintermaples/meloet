@@ -5,10 +5,12 @@
 //   node tools/licenses/inventory.mjs texts DIR    DIR/texts.json: every license text, for the about dialog (npm run build)
 //   node tools/licenses/inventory.mjs check        exit 1 when NOTICE or licenses.json no longer match the parts
 //
-// Rust: the crates inside the meloet-app binary, for the target of this PC: cargo tree from meloet-app
-// over normal dependencies only (as `cargo build -p meloet-app` resolves features); dev and build
-// dependencies, proc-macro crates (they run in the compiler, nothing of them is linked) and the
-// workspace crates are left out. Licenses and folders come from cargo metadata.
+// Rust: the crates inside the binaries meloet ships (BINARIES: the app and the plugin host process), for
+// the target of this PC: cargo tree from each over normal dependencies only (as `cargo build -p` resolves
+// features); dev and build dependencies, proc-macro crates (they run in the compiler, nothing of them is
+// linked) and the workspace crates are left out. Licenses and folders come from cargo metadata.
+// A crate made from somebody else's work whose text the crate does not carry (bindings generated from
+// headers) has that text in licenses/upstream.json; it goes into NOTICE and beside the crate's own texts.
 // npm: the packages whose modules end up in the bundle that `vite build` writes (the dependencies of
 // ui/package.json that are really used; the fonts come in through their CSS).
 import { execFileSync } from "node:child_process";
@@ -22,6 +24,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(here, "..", "..");
 export const LIST_PATH = join("ui", "src", "components", "about", "generated", "licenses.json");
 export const NOTICE_PATH = "NOTICE";
+
+/** The workspace crates that are shipped as programs. */
+export const BINARIES = ["meloet-app", "meloet-plughost"];
+export const UPSTREAM_PATH = join("licenses", "upstream.json");
 
 const TEXT_FILE = /^(licen[cs]e|copying|copyright|notice|unlicense)([-._].*)?$/i;
 const FONT_PACKAGE = /^@fontsource\//;
@@ -56,31 +62,44 @@ function cargoMetadata(root, target) {
 }
 
 /**
- * name@version of the crates in a `cargo build -p meloet-app` for this target. cargo tree, not the resolve of
- * cargo metadata: the resolve joins the features of every workspace member (spikes, dev and build
- * dependencies), and lists about 60 crates more than the binary has.
+ * name@version of the crates in a `cargo build -p <binary>` of each of BINARIES for this target. cargo tree,
+ * not the resolve of cargo metadata: the resolve joins the features of every workspace member (spikes, dev
+ * and build dependencies), and lists about 60 crates more than the binaries have.
  */
 function builtCrates(root, target) {
-  const out = execFileSync(
-    "cargo",
-    ["tree", "-p", "meloet-app", "-e", "normal,no-proc-macro", "--target", target, "--prefix", "none", "-f", "{p}", "--locked", "--offline"],
-    { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-  );
   const set = new Set();
-  for (const line of out.split("\n")) {
-    const m = /^(\S+) v(\S+)/.exec(line.trim());
-    if (m) set.add(`${m[1]}@${m[2]}`);
+  for (const binary of BINARIES) {
+    const out = execFileSync(
+      "cargo",
+      ["tree", "-p", binary, "-e", "normal,no-proc-macro", "--target", target, "--prefix", "none", "-f", "{p}", "--locked", "--offline"],
+      { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    );
+    for (const line of out.split("\n")) {
+      const m = /^(\S+) v(\S+)/.exec(line.trim());
+      if (m) set.add(`${m[1]}@${m[2]}`);
+    }
   }
   return set;
 }
 
-/** Crates linked into meloet-app: [{ name, version, license, repository, dir }]. Details from cargo metadata. */
+/**
+ * The work of others inside a crate that the crate's own files do not name:
+ * [{ crate, title, copyright, license, source, text }], `text` a file under licenses/.
+ */
+export function upstreamParts(root = ROOT) {
+  const path = join(root, UPSTREAM_PATH);
+  if (!existsSync(path)) return [];
+  return JSON.parse(readFileSync(path, "utf8")).upstream;
+}
+
+/** Crates linked into the shipped binaries: [{ name, version, license, repository, dir }]. Details from cargo metadata. */
 export function rustParts(root = ROOT) {
   const target = hostTarget();
   const meta = cargoMetadata(root, target);
   const built = builtCrates(root, target);
   const workspace = new Set(meta.workspace_members);
-  if (!built.has(`meloet-app@${meta.packages.find((p) => p.name === "meloet-app")?.version}`)) throw new Error("cargo tree did not list meloet-app");
+  for (const binary of BINARIES)
+    if (!built.has(`${binary}@${meta.packages.find((p) => p.name === binary)?.version}`)) throw new Error(`cargo tree did not list ${binary}`);
   const seen = meta.packages.filter((p) => !workspace.has(p.id) && built.has(`${p.name}@${p.version}`)).map((p) => p.id);
   const pkgs = new Map(meta.packages.map((p) => [p.id, p]));
   return seen
@@ -217,6 +236,7 @@ export async function makeList(root = ROOT) {
     meloet: appInfo(root),
     sounds: soundParts(root),
     fonts,
+    upstream: upstreamParts(root).filter((u) => rust.some((p) => p.name === u.crate)),
     parts: [
       ...rust.map((p) => ({ kind: "crate", ...strip(p) })),
       ...npm.filter((p) => !FONT_PACKAGE.test(p.name)).map((p) => ({ kind: "npm", ...strip(p) })),
@@ -259,6 +279,17 @@ export function noticeText(list) {
   line("meloet uses these parts without changing them. Their source code is here:");
   for (const p of mpl) line(`${p.name} ${p.version}: ${p.repository ?? `https://crates.io/crates/${p.name}/${p.version}`} (also https://crates.io/crates/${p.name}/${p.version})`);
   line();
+  if (list.upstream.length) {
+    line("== Parts made from the work of others");
+    line();
+    for (const u of list.upstream) {
+      line(`${u.crate} (Rust): ${u.title}`);
+      line(`  ${u.copyright}`);
+      line(`  source: ${u.source}`);
+      line(`  license: ${u.license}; the text is in ${u.text}`);
+      line();
+    }
+  }
   line(`== Parts (${list.parts.length}: ${list.parts.filter((p) => p.kind === "crate").length} Rust crates, ${list.parts.filter((p) => p.kind === "npm").length} npm packages)`);
   line();
   for (const p of list.parts) line(`${p.name} ${p.version} (${p.kind === "crate" ? "Rust" : "npm"}): ${p.license}`);
@@ -315,8 +346,11 @@ export async function makeTexts(root = ROOT) {
     texts[h] = text;
     return h;
   };
+  const upstream = upstreamParts(root);
   for (const p of [...rust, ...npm]) {
     let found = readTexts(p.dir, p.licenseFile);
+    for (const u of upstream.filter((u) => rust.includes(p) && u.crate === p.name))
+      found.push({ file: `${u.text} (${u.title})`, text: readFileSync(join(root, u.text), "utf8") });
     if (!found.length) {
       const ids = [...new Set(p.license.replace(/[()]/g, " ").split(/\s+(?:OR|AND|WITH)\s+|\s+/).filter(Boolean))];
       found = ids.flatMap((id) => {

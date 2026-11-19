@@ -233,8 +233,6 @@ export const mock = {
   "mock.chooser.width": m(640, "F-Connect2"),
   "mock.sound-hint.width": m(420, "F-Connect3"),
   "mock.recovery-hint.width": m(480, "F-Recover1"),
-  "mock.settings.top": m(80, "F-Settings"),
-  "mock.settings.top-advanced": m(40, "F-SettingsAdvFixed"),
   "mock.settings.label": m(132, "F-Settings"),
   "mock.settings.meter": m(160, "F-Settings"),
   "mock.transport.name": m(132, "F-Empty"),
@@ -294,9 +292,7 @@ export const mock = {
   // 棚（第 4 回）。さがす枠の行と「すべて ・ お気に入り」の行の高さ（`height:32px`）、星を押せる所（`width:16px;height:16px`）。
   "mock.shelf.bar": m(32, "F4-ShelfSample"),
   "mock.shelf.star-hit": m(16, "F4-ShelfSample"),
-  // meloet について（第 4 回）。1 段目と 2 段目の上の位置、1 段目の字の欄（`width:132px`）、名前の箱の上のあき（`padding:24px 16px 16px`）。
-  "mock.about.top": m(160, "R7-About"),
-  "mock.about.top-licenses": m(40, "R7-AboutLicense"),
+  // meloet について（第 4 回）。1 段目の字の欄（`width:132px`）、名前の箱の上のあき（`padding:24px 16px 16px`）。
   "mock.about.label": m(132, "R7-About"),
   "mock.about.name-pad-top": m(24, "R7-About"),
   // 2 段目: さがす枠の行（`height:40px`）、行の字下げ（`padding-left:28px`）、音の素材の字の欄（`width:120px`）と
@@ -307,6 +303,9 @@ export const mock = {
   "mock.about.fields-pad-top": m(6, "R7-AboutLicense"),
   "mock.about.field-pad-y": m(2, "R7-AboutLicense"),
   "mock.about.text": m(72, "R7-AboutLicense"),
+  // スキャン（第 5 回）。棚の下の帯の進みの棒（`height:2px`）、ダイアログ「スキャンで止まったプラグイン」の幅（`width:640px`。仕様書 3 章 Y13 も 640）。
+  "mock.scan.progress": m(2, "R9-Scan"),
+  "mock.scan-stopped.width": m(640, "F5-ScanStopped"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

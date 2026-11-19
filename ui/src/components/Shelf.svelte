@@ -1,7 +1,7 @@
 <!-- 棚（右の欄。モック F4-ShelfSample・F4-ShelfAudition・F4-ShelfReplace。幅 size.shelf）。
      見出し（▾ 棚、音源 N ・ エフェクト 6 の切りかえ、P）、いまのモードの文、さがす枠、すべて ・ お気に入り、グループと音源の行。
      さがす文字、お気に入りだけ、たたんだグループは画面だけが持つ（tracks.svelte.ts）。行をえらぶ ・ 入れる ・ やめる ・ 星 ・ サンプルは core への意図。
-     第 4 回の棚は、プラグインの見出しもスキャンも形式の印も出さない（仕様書 3 章 Y10）。
+     プラグインの見出しと形式の印は、まだ出さない（仕様書 3 章 Y10）。スキャン中だけ、いちばん下にスキャンの帯（Y13）。
      見出しの「音源 N」「エフェクト 6」で一覧を切りかえる。エフェクトの行は名前と「最初から入っている」だけ（サンプルの ▶ と星はない）。
      「空き ＋」からひらいた棚（insertEffect）では、行を押す ・ ↑ ↓ でえらび、Enter か「入れる」で入れる。音源のモードのエフェクトは見るだけ（design-notes A-14）。
      「入れる」は、音源の「トラック N を作る」と同じく、えらんだ行の下。えらんだ行が見えていないときは一覧のいちばん下（行をえらんでいなければ使えない）。 -->
@@ -15,10 +15,12 @@
   import Button from "./Button.svelte";
   import { textParts } from "./format";
   import { stripName } from "./mixer/stripName";
+  import ScanStrip from "./plugins/ScanStrip.svelte";
   import { BUILTIN_EFFECTS, shelfCounts, shelfEffects, shelfGroups, shelfUi } from "./tracks.svelte";
 
   const app = $derived(current.state!);
   const shelf = $derived(app.shelf);
+  const scan = $derived(app.plugins.scan);
   const groups = $derived(shelfGroups(shelf, shelfUi));
   const counts = $derived(shelfCounts(shelf));
   const busy = $derived(app.transport.state === "recording" || app.transport.state === "countIn");
@@ -242,6 +244,7 @@
     {/each}
   </ScrollArea>
   {/if}
+  {#if scan.state === "running"}<ScanStrip done={scan.done} total={scan.total} />{/if}
 </aside>
 
 <style>

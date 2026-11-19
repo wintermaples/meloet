@@ -67,7 +67,7 @@
 {/snippet}
 
 {#if about.open}
-  <div class="place" class:licenses={about.stage === 2}>
+  <div class="place">
     <div class="lead"></div>
     <div class="dialog" role="dialog" aria-label={t("about.title")} data-test="about-dialog" use:movableDialog>
       <div class="head" data-dialog-head>
@@ -167,7 +167,7 @@
         <Button primary test="about-close" onclick={closeAbout}>{t("about.close")}</Button>
       </div>
     </div>
-    <div class="lead-end"></div>
+    <div class="lead"></div>
   </div>
 {/if}
 
@@ -182,13 +182,8 @@
     align-items: center;
     padding: var(--part-dialog-margin) 0;
   }
+  /* 窓の上下のまん中（仕様書 3 章 82）。 */
   .lead {
-    flex: 0 1 calc(var(--mock-about-top) - var(--part-dialog-margin));
-  }
-  .place.licenses .lead {
-    flex-basis: calc(var(--mock-about-top-licenses) - var(--part-dialog-margin));
-  }
-  .lead-end {
     flex: 1 1 0;
   }
   .dialog {
@@ -219,6 +214,10 @@
     padding: 0 var(--space-4);
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     cursor: move;
+  }
+  /* 見出しの行に乗る ・ 動かしている: 地 gray.4（仕様書 2 章「ダイアログの見出しの行（動かす）」）。 */
+  .head:hover {
+    background: var(--color-gray-4);
   }
   .title {
     color: var(--color-gray-10);

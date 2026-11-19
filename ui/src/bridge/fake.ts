@@ -1209,6 +1209,47 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
+  // Spec 6 「スキャンが終わった」 with nothing stopped: only the first half of the sentence (design-notes A-16).
+  scanFinishedNone: {
+    setup(s) {
+      ready(s);
+      s.plugins.scan = { state: "finished", added: 667, stopped: 0 };
+    },
+    bands: ["shelf"],
+    after: (s) => (s.status.message = { id: "scanFinished", added: 667, stopped: 0 }),
+    meters: QUIET,
+  },
+  // 「プラグインの場所」 folded (▸ and the count).
+  pluginPlacesFolded: {
+    setup(s) {
+      settings(s);
+      s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: true };
+      s.plugins.places.push(place("~/音楽/プラグイン", true));
+      s.plugins.placesOpen = false;
+    },
+    meters: QUIET,
+    scrollToEnd: true,
+  },
+  // More stopped bundles than fit in a low window: only the rows scroll (spec 2 「ダイアログ」).
+  scanStoppedMany: {
+    setup(s) {
+      ready(s);
+      s.plugins.stopped = Array.from({ length: 5 }, () => structuredClone(STOPPED_PLUGINS)).flatMap((list, n) =>
+        list.map((p) => ({ ...p, path: `${p.path}.${n}`, shownPath: `${p.shownPath}.${n}` })),
+      );
+      s.plugins.stoppedOpen = true;
+      s.status.message = { id: "scanStoppedOpen" };
+    },
+    meters: QUIET,
+  },
+  // Spec 6 「プラグインが止まった」 in the status line: an instrument plugin of track 1.
+  pluginStopped: {
+    setup(s) {
+      ready(s);
+      s.status.message = { id: "pluginStopped", name: "Surge XT", slot: { kind: "instrument", track: s.song.tracks[0]!.id } };
+    },
+    meters: QUIET,
+  },
   // The song name of the mock Main: saved, 14 steps ("保存済み ・ 取り消し 14").
   saved: {
     setup(s) {

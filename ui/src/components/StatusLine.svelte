@@ -1,7 +1,17 @@
 <!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom のいちばん下の行）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { clockOffsetUs, keyIsDown, type Band, type Command, type NoteSelection, type StatusMessage, type TrackRef, type ValueField } from "../bridge";
+  import {
+    clockOffsetUs,
+    keyIsDown,
+    type Band,
+    type Command,
+    type NoteSelection,
+    type PluginSlotRef,
+    type StatusMessage,
+    type TrackRef,
+    type ValueField,
+  } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { everyGlFrame } from "../gl/slot";
   import { platformOf } from "../keys/keys";
@@ -9,6 +19,7 @@
   import { term } from "../lib/tip.svelte";
   import { current, onEvent, send } from "../state/app.svelte";
   import { LIST_COMMA, STATUS_JOIN, t, type TextKey } from "../text/ja";
+  import { about } from "./about/about.svelte";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { stripName } from "./mixer/stripName";
   import { paramName } from "./params/paramRows";
@@ -67,6 +78,10 @@
   };
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
+
+  /** プラグインのいる所の名前（音源ならそのトラック、インサートならそのストリップ）。 */
+  const slotName = (s: PluginSlotRef): string =>
+    stripName(app.song, s.kind === "instrument" ? { kind: "track", id: s.track } : s.insert.strip);
 
   /** カウントイン中の「あと {beats} 拍」。計器がカウントインを言っていれば、その残りの拍。 */
   function beatsLeft(fallback: number): number {
@@ -130,6 +145,23 @@
         };
       case "settingsOpen":
         return plain("status.settingsOpen");
+      case "scanStoppedOpen":
+        return plain("status.dialogOpen", { dialog: t("plugin.stoppedTitle") });
+      case "pluginsFound":
+        return plain("plugin.newFound", { count: m.count });
+      case "scanFinished":
+        return m.stopped === 0
+          ? plain("msg.scanDoneNone", { added: m.added })
+          : {
+              ...plain("msg.scanDone", { added: m.added, stopped: m.stopped }),
+              button: { label: t("button.showStopped", { count: m.stopped }), command: { type: "openScanStopped" } },
+            };
+      case "scanRetryAdded":
+        return plain("plugin.retryOk", { name: m.name });
+      case "scanRetryStopped":
+        return plain("plugin.retryStopped", { name: m.name });
+      case "pluginStopped":
+        return plain("msg.pluginStopped", { name: m.name, track: slotName(m.slot) });
       case "scaleDoesNotFit":
         return plain("msg.scaleKept", { requested: m.requested, kept: m.kept });
       case "scaleWindowGrown":
@@ -356,6 +388,8 @@
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
+    // 「meloet について」は画面だけが持つダイアログなので、core の知らせの代わりにここで言う（仕様書 3 章 85）。
+    if (about.open) return { parts: textParts("status.dialogOpen", { dialog: t("about.title") }), strong: [], button: null };
     const m = app.status.message;
     if (playingInPianoRoll && (m === null || m.id === "summary")) {
       const parts = playingParts();

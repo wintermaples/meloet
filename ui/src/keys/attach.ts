@@ -347,6 +347,7 @@ function auditionToCancel(state: AppState): boolean {
   return (
     ws.songDialog === null &&
     ws.settings === null &&
+    !state.plugins.stoppedOpen &&
     ws.layout.rightOpen.includes("shelf") &&
     state.shelf.selected !== null
   );
@@ -396,7 +397,11 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       !ev.altKey &&
       !ev.ctrlKey &&
       !ev.metaKey;
-    if (plainEnter && state.workspace.songDialog) {
+    if (plainEnter && state.plugins.stoppedOpen) {
+      // 右はしの明るいボタン「閉じる」（3 章の保存まわりのダイアログと同じ決まり）。
+      ev.preventDefault();
+      deps.send({ type: "closeScanStopped" });
+    } else if (plainEnter && state.workspace.songDialog) {
       ev.preventDefault();
       const d = state.workspace.songDialog;
       deps.send({

@@ -96,6 +96,18 @@ BOARDS = {
     "shelfEffects": None,
     # 第 5 回の前段: 最初から入っている音色を 31 に（84）。
     "shelf84": "R8-Shelf84",
+    # 第 5 回 区切り1: スキャンの画面とダイアログを動かす。
+    "scanStoppedRetrying": "F5-ScanStopped",
+    "scanStoppedMany": "F5-ScanStopped",
+    "scanRetryAdded": "R9-Scan",
+    "scanRetryStopped": "R9-Scan",
+    "scanFinishedNone": "R9-Scan",
+    "pluginsFound": "R9-Scan",
+    "pluginPlacesFolded": "R9-Scan",
+    "pluginStopped": None,
+    "settingsAdv": "F-SettingsAdv",
+    "settingsMoved": "R8-Clip",
+    "scanStoppedMoved": "R8-Clip",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -117,6 +129,21 @@ ev("pointerdown", %d, %s);
 ev("pointermove", (%d + %d) / 2, %s);
 ev("pointermove", %d, %s);
 """
+
+
+# Drags the head row of a dialog by (dx, dy) and lets go (spec 3, 82).
+DRAG_DIALOG = """
+const head = document.querySelector('%s [data-dialog-head]');
+const r = head.getBoundingClientRect();
+const ev = (type, x, y) => head.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
+ev("pointerdown", r.left + 40, r.top + 10);
+ev("pointermove", r.left + 40 + %d, r.top + 10 + %d);
+ev("pointerup", r.left + 40 + %d, r.top + 10 + %d);
+"""
+
+
+def drag_dialog(dialog, dx, dy):
+    return "js:" + DRAG_DIALOG % (dialog, dx, dy, dx, dy)
 
 
 # Puts the pointer on an element and waits for its tip.
@@ -225,6 +252,9 @@ CLICKS = {
     "aboutLicenses": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]')),
     "aboutPart": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]',
                                '[data-test="about-group"]', "js:" + OPEN_PART)),
+    "settingsAdv": ("settings", '[data-test="settings-advanced"]'),
+    "settingsMoved": ("settings", drag_dialog('[data-test="settings-dialog"]', -200, -40)),
+    "scanStoppedMoved": ("scanStopped", drag_dialog('[data-test="scan-stopped-dialog"]', 260, 120)),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -276,6 +306,22 @@ ONLY = {
     "paramsDelay": [(1280, 800, 100), (1280, 800, 150)],
     "shelfEffects": [(1280, 800, 100), (1920, 1080, 150)],
     "shelf84": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
+    # 第 5 回 区切り1: スキャン。R9-Scan と F5-ScanStopped は 1280x720 ・ 1280x800 の 100 %。150 % は入るかを見るため。
+    "scanning": [(1280, 800, 100), (1280, 800, 150)],
+    "scanFinished": [(1280, 800, 100)],
+    "scanFinishedNone": [(1280, 800, 100)],
+    "pluginsFound": [(1280, 800, 100)],
+    "pluginPlaces": [(1280, 800, 100), (1280, 800, 150)],
+    "pluginPlacesFolded": [(1280, 800, 100)],
+    "scanStopped": [(1280, 800, 100), (1280, 800, 150)],
+    "scanStoppedRetrying": [(1280, 800, 100)],
+    "scanStoppedMany": [(1280, 720, 100), (1280, 800, 150)],
+    "scanRetryAdded": [(1280, 800, 100)],
+    "scanRetryStopped": [(1280, 800, 100)],
+    "pluginStopped": [(1280, 800, 100)],
+    "settingsAdv": [(1280, 800, 100)],
+    "settingsMoved": [(1280, 800, 100)],
+    "scanStoppedMoved": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

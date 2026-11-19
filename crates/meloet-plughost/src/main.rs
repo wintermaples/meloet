@@ -20,6 +20,14 @@ fn value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.get(at + 1).map(String::as_str)
 }
 
+/// Every value of an option that may be given more than once.
+fn values(args: &[String], name: &str) -> Vec<String> {
+    args.windows(2)
+        .filter(|pair| pair[0] == name)
+        .map(|pair| pair[1].clone())
+        .collect()
+}
+
 /// A descriptor this process inherited for itself, by the number on the command line.
 fn inherited(args: &[String], name: &str) -> Option<OwnedFd> {
     let fd: RawFd = value(args, name)?.parse().ok()?;
@@ -48,7 +56,7 @@ fn main() {
             let format = args.get(2).and_then(|f| PluginFormat::from_prefix(f));
             match (format, args.get(3), inherited(&args, "--out-fd")) {
                 (Some(format), Some(bundle), Some(out)) => {
-                    scan::run(format, Path::new(bundle), out)
+                    scan::run(format, Path::new(bundle), &values(&args, "--skip"), out)
                 }
                 _ => 2,
             }

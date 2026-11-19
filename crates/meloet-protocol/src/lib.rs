@@ -609,12 +609,14 @@ pub enum Command {
     /// places): every bundle of every place is looked at again, the ones that stopped before
     /// too. While it runs, `PluginsView::scan` counts; does nothing while a scan is running.
     RescanPlugins,
-    /// "もう一度ためす" on a row of the dialog 「スキャンで止まったプラグイン」: that one bundle
-    /// is scanned again. `path` is `StoppedPluginView::path`. The row is `retrying` until it is
-    /// done; then it is gone (the plugins are in the shelf) or back as it was, and the status
-    /// line says `ScanRetryAdded` or `ScanRetryStopped`.
+    /// "もう一度ためす" on a row of the dialog 「スキャンで止まったプラグイン」: that one plugin
+    /// (or that whole bundle) is scanned again. `path` and `id` are `StoppedPluginView::path`
+    /// and `StoppedPluginView::id`. The row is `retrying` until it is done; then it is gone
+    /// (the plugin is in the shelf) or back as it was, and the status line says
+    /// `ScanRetryAdded` or `ScanRetryStopped`.
     RetryStoppedPlugin {
         path: String,
+        id: Option<String>,
     },
     /// "場所を足す…": Rust shows the PC's window for choosing a folder. The folder joins
     /// `PluginsView::places` and it alone is scanned. Cancelling the window, or choosing a
@@ -865,13 +867,16 @@ pub enum ScanView {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct StoppedPluginView {
-    /// The plugin's name where a scan before this one read it; else the bundle's file name
-    /// without its ending.
+    /// The plugin's name as the scan that stopped read it, or where a scan before this one
+    /// read it; else the bundle's file name without its ending.
     pub name: String,
     pub format: PluginFormat,
     pub reason: ScanStopReason,
-    /// The bundle; what `RetryStoppedPlugin` names.
+    /// The bundle; with `id`, what `RetryStoppedPlugin` names.
     pub path: String,
+    /// The plugin in the bundle (an LV2 URI, a VST3 class id); `None` is the whole bundle
+    /// (it could not be read at all).
+    pub id: Option<String>,
     /// `path` as shown, the home folder written as "~".
     pub shown_path: String,
     /// `RetryStoppedPlugin` is at work on it: the button says "ためしています…".

@@ -7,14 +7,19 @@ import type { ScanStopReason } from "./ScanStopReason";
  */
 export type StoppedPluginView = { 
 /**
- * The plugin's name where a scan before this one read it; else the bundle's file name
- * without its ending.
+ * The plugin's name as the scan that stopped read it, or where a scan before this one
+ * read it; else the bundle's file name without its ending.
  */
 name: string, format: PluginFormat, reason: ScanStopReason, 
 /**
- * The bundle; what `RetryStoppedPlugin` names.
+ * The bundle; with `id`, what `RetryStoppedPlugin` names.
  */
 path: string, 
+/**
+ * The plugin in the bundle (an LV2 URI, a VST3 class id); `None` is the whole bundle
+ * (it could not be read at all).
+ */
+id: string | null, 
 /**
  * `path` as shown, the home folder written as "~".
  */

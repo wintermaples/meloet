@@ -9,19 +9,20 @@
 //!
 //! To scan (by the bundle's file name without its ending):
 //! - `found`: two plugins. `empty`: none. `broken`: a bundle that cannot be read.
-//! - `segv`: the scan crashes. `hang`: the scan never ends.
+//! - `segv`: one plugin; reading it crashes. `hang`: one plugin; reading it never ends.
+//! - `mixed`: `urn:meloet:fake:a`, `…:b` and `…:c`. Reading `b` crashes; `a` and `c` are read.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use meloet_plugin::ipc::ToPlugin;
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamShape, ScanOutput};
+use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamShape};
 use meloet_plugin::{
     EditorKind, EffectCategory, InstrumentCategory, PluginFormat, PluginInfo, PluginKey, PluginKind,
 };
 
-use super::{Activation, Controller, Loaded, ProcessBlock, Processor};
+use super::{Activation, Candidate, Controller, Loaded, ProcessBlock, Processor};
 
 pub const ENV: &str = "MELOET_PLUGHOST_FAKE";
 const PREFIX: &str = "urn:meloet:fake:";
@@ -245,23 +246,63 @@ fn info(name: &str, kind: PluginKind) -> PluginInfo {
     }
 }
 
-pub fn scan(bundle: &Path) -> Option<ScanOutput> {
+/// What a fake bundle holds: each plugin's name (its id is [`PREFIX`] and the name in lower
+/// case), what it is, and what goes wrong when it is read.
+fn contents(stem: &str) -> Option<Vec<(&'static str, PluginKind, Option<Fault>)>> {
+    let synth = PluginKind::Instrument(InstrumentCategory::Synth);
+    let effect = PluginKind::Effect(EffectCategory::Other);
+    Some(match stem {
+        "found" => vec![("Sine", synth, None), ("Pass", effect, None)],
+        "empty" => vec![],
+        "segv" => vec![("Segv", effect, Some(Fault::Crash))],
+        "hang" => vec![("Hang", effect, Some(Fault::Hang))],
+        "mixed" => vec![
+            ("A", effect, None),
+            ("B", effect, Some(Fault::Crash)),
+            ("C", synth, None),
+        ],
+        _ => return None,
+    })
+}
+
+fn stem(bundle: &Path) -> Option<&str> {
+    bundle.file_stem()?.to_str()
+}
+
+/// `None` when this is not a fake bundle.
+pub fn list(bundle: &Path) -> Option<Result<Vec<Candidate>, String>> {
     if !enabled() {
         return None;
     }
-    match bundle.file_stem()?.to_str()? {
-        "found" => Some(ScanOutput::Found {
-            plugins: vec![
-                info("Sine", PluginKind::Instrument(InstrumentCategory::Synth)),
-                info("Pass", PluginKind::Effect(EffectCategory::Other)),
-            ],
-        }),
-        "empty" => Some(ScanOutput::Found { plugins: vec![] }),
-        "broken" => Some(ScanOutput::Broken {
-            message: "a fake broken bundle".into(),
-        }),
-        "segv" => fail(Fault::Crash),
-        "hang" => fail(Fault::Hang),
-        _ => None,
+    let stem = stem(bundle)?;
+    if stem == "broken" {
+        return Some(Err("a fake broken bundle".into()));
     }
+    let candidates = contents(stem)?
+        .into_iter()
+        .map(|(name, _, _)| Candidate {
+            id: format!("{PREFIX}{}", name.to_lowercase()),
+            name: Some(format!("Fake {name}")),
+        })
+        .collect();
+    Some(Ok(candidates))
+}
+
+/// `None` when this is not a fake bundle.
+pub fn probe(bundle: &Path, id: &str) -> Option<Result<PluginInfo, String>> {
+    if !enabled() {
+        return None;
+    }
+    let stem = stem(bundle)?;
+    if stem == "broken" {
+        return Some(Err("a fake broken bundle".into()));
+    }
+    let found = contents(stem)?
+        .into_iter()
+        .find(|(name, _, _)| format!("{PREFIX}{}", name.to_lowercase()) == id);
+    Some(match found {
+        Some((_, _, Some(fault))) => fail(fault),
+        Some((name, kind, None)) => Ok(info(name, kind)),
+        None => Err(format!("no fake plugin {id} in {stem}")),
+    })
 }

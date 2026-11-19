@@ -209,6 +209,7 @@ fn sample_state() -> AppState {
                 format: PluginFormat::Lv2,
                 reason: ScanStopReason::TimedOut,
                 path: "/usr/lib/lv2/granfog.lv2".into(),
+                id: Some("urn:granfog:fog".into()),
                 shown_path: "/usr/lib/lv2/granfog.lv2".into(),
                 retrying: false,
             }],
@@ -1650,7 +1651,7 @@ fn plugins_json_shape() {
             "scan": {"state": "running", "done": 37, "total": 112},
             "stopped": [{"name": "Granular Fog", "format": "lv2", "reason": "timedOut",
                          "path": "/usr/lib/lv2/granfog.lv2", "shownPath": "/usr/lib/lv2/granfog.lv2",
-                         "retrying": false}],
+                         "id": "urn:granfog:fog", "retrying": false}],
             "places": [
                 {"path": "/home/yachiyo/.lv2", "shownPath": "~/.lv2", "added": false},
                 {"path": "/opt/surge-xt/lib/vst3", "shownPath": "/opt/surge-xt/lib/vst3", "added": true},
@@ -1740,8 +1741,16 @@ fn plugins_json_shape() {
         (
             Command::RetryStoppedPlugin {
                 path: "/usr/lib/lv2/granfog.lv2".into(),
+                id: Some("urn:granfog:fog".into()),
             },
-            json!({"type": "retryStoppedPlugin", "path": "/usr/lib/lv2/granfog.lv2"}),
+            json!({"type": "retryStoppedPlugin", "path": "/usr/lib/lv2/granfog.lv2", "id": "urn:granfog:fog"}),
+        ),
+        (
+            Command::RetryStoppedPlugin {
+                path: "/home/me/.vst3/OldChorus.vst3".into(),
+                id: None,
+            },
+            json!({"type": "retryStoppedPlugin", "path": "/home/me/.vst3/OldChorus.vst3", "id": null}),
         ),
         (Command::AddPluginPlace, json!({"type": "addPluginPlace"})),
         (

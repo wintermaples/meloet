@@ -258,20 +258,28 @@ export function fakePlugins(): PluginsView {
 }
 
 // The rows of the mock F5-ScanStopped. Its third row is a CLAP plugin (~/.clap/TapeWobble.clap); CLAP is not read in round 5
-// (docs/architecture.md 20-9), so that row is an LV2 bundle here.
-const stoppedPlugin = (name: string, format: StoppedPluginView["format"], reason: StoppedPluginView["reason"], shownPath: string): StoppedPluginView => ({
+// (docs/architecture.md 20-9), so that row is an LV2 bundle here. Tape Wobble is a whole bundle that could not be read (id null);
+// the others are one plugin each of their bundles.
+const stoppedPlugin = (
+  name: string,
+  format: StoppedPluginView["format"],
+  reason: StoppedPluginView["reason"],
+  shownPath: string,
+  id: string | null,
+): StoppedPluginView => ({
   name,
   format,
   reason,
   path: shownPath.replace(/^~/, FAKE_HOME),
+  id,
   shownPath,
   retrying: false,
 });
 const STOPPED_PLUGINS: StoppedPluginView[] = [
-  stoppedPlugin("Old Chorus", "vst3", "crashed", "~/.vst3/OldChorus.vst3"),
-  stoppedPlugin("Granular Fog", "lv2", "timedOut", "/usr/lib/lv2/granfog.lv2"),
-  stoppedPlugin("Tape Wobble", "lv2", "broken", "~/.lv2/TapeWobble.lv2"),
-  stoppedPlugin("Brick EQ 1.0", "vst3", "crashed", "/usr/lib/vst3/BrickEQ.vst3"),
+  stoppedPlugin("Old Chorus", "vst3", "crashed", "~/.vst3/OldChorus.vst3", "4F4C4443484F52555330303030303031"),
+  stoppedPlugin("Granular Fog", "lv2", "timedOut", "/usr/lib/lv2/granfog.lv2", "urn:granfog:fog"),
+  stoppedPlugin("Tape Wobble", "lv2", "broken", "~/.lv2/TapeWobble.lv2", null),
+  stoppedPlugin("Brick EQ 1.0", "vst3", "crashed", "/usr/lib/vst3/BrickEQ.vst3", "4252494B455131303030303030303031"),
 ];
 
 /** One clip selected (and shown in the piano roll), or none; nothing to paste. */
@@ -2346,7 +2354,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
       plugins.places = plugins.places.filter((p) => !p.added || p.path !== command.path);
       break;
     case "retryStoppedPlugin":
-      for (const p of plugins.stopped) if (p.path === command.path) p.retrying = true;
+      for (const p of plugins.stopped) if (p.path === command.path && p.id === command.id) p.retrying = true;
       break;
     default:
       break;

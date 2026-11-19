@@ -90,7 +90,9 @@ describe("約束 16 の意図（偽物）", () => {
     const { held, send } = await open("scanFinished");
     await send({ type: "openScanStopped" });
     expect(held.s.plugins.stoppedOpen).toBe(true);
-    await send({ type: "retryStoppedPlugin", path: "/usr/lib/lv2/granfog.lv2" });
+    await send({ type: "retryStoppedPlugin", path: "/usr/lib/lv2/granfog.lv2", id: "urn:other" });
+    expect(held.s.plugins.stopped.map((p) => p.retrying)).toEqual([false, false, false, false]);
+    await send({ type: "retryStoppedPlugin", path: "/usr/lib/lv2/granfog.lv2", id: "urn:granfog:fog" });
     expect(held.s.plugins.stopped.map((p) => p.retrying)).toEqual([false, true, false, false]);
     await send({ type: "closeScanStopped" });
     expect(held.s.plugins.stoppedOpen).toBe(false);

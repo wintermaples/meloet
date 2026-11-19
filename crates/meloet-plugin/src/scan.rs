@@ -1,9 +1,10 @@
 //! What a scan found, and the file it is remembered in (docs/architecture.md 20-4).
 //!
-//! A bundle (a `.vst3` or `.lv2` directory) is scanned by one child process. Its record is
-//! kept with the bundle's stamp, and the bundle is scanned again only when the stamp changed.
-//! A bundle whose scan stopped is kept too, with the reason, and is skipped until the person
-//! asks for it again or its stamp changes.
+//! A bundle (a `.vst3` or `.lv2` directory) is scanned by one child process, one plugin after
+//! another. Its record is kept with the bundle's stamp, and the bundle is scanned again only
+//! when the stamp changed. A plugin that stopped the scan is kept in the record too, with the
+//! reason, and is skipped until the person asks for it again or the stamp changes; the other
+//! plugins of the bundle go on the shelf.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -51,27 +52,61 @@ pub enum StopReason {
     Crashed,
     /// 「30 秒たっても終わりませんでした」.
     TimedOut,
-    /// 「作りがこわれています」: the process answered that the bundle cannot be read.
+    /// 「作りがこわれています」: the process answered that the plugin, or the bundle, cannot be
+    /// read.
     Broken,
 }
 
 /// A scan of one bundle gives up after this long.
 pub const SCAN_TIMEOUT_S: u64 = 30;
 
+/// A plugin, or a whole bundle, that a scan stopped at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    tag = "result",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum ScanOutcome {
-    /// May be empty: a bundle with nothing meloet can use.
-    Found {
-        plugins: Vec<PluginInfo>,
-    },
-    Stopped {
-        reason: StopReason,
-    },
+#[serde(rename_all = "camelCase")]
+pub struct StoppedEntry {
+    /// The plugin's id in its bundle (`PluginKey::id`); `None` is the whole bundle.
+    pub id: Option<String>,
+    /// What the dialog shows; see [`stopped_name`].
+    pub name: String,
+    pub reason: StopReason,
+}
+
+/// The name a stopped plugin is listed by: what the child said while reading it (`Probing`),
+/// else the name a scan before this one read for the same id, else the bundle's file name.
+pub fn stopped_name(
+    bundle: &Path,
+    id: Option<&str>,
+    probing: Option<&str>,
+    before: Option<&BundleRecord>,
+) -> String {
+    let earlier = || {
+        let id = id?;
+        let before = before?;
+        before
+            .plugins
+            .iter()
+            .find(|p| p.key.id() == id)
+            .map(|p| p.name.clone())
+            .or_else(|| {
+                before
+                    .stopped
+                    .iter()
+                    .find(|s| s.id.as_deref() == Some(id))
+                    .map(|s| s.name.clone())
+            })
+    };
+    probing
+        .filter(|n| !n.is_empty())
+        .map(str::to_owned)
+        .or_else(earlier)
+        .unwrap_or_else(|| file_stem(bundle))
+}
+
+fn file_stem(bundle: &Path) -> String {
+    bundle
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// What tells a changed bundle from an unchanged one: the newest change time of any file in
@@ -126,17 +161,16 @@ pub struct BundleRecord {
     pub path: PathBuf,
     pub format: PluginFormat,
     pub stamp: BundleStamp,
-    pub outcome: ScanOutcome,
+    /// What went on the shelf. May be empty: a bundle with nothing meloet can use.
+    pub plugins: Vec<PluginInfo>,
+    pub stopped: Vec<StoppedEntry>,
 }
 
 impl BundleRecord {
-    /// The name the list of stopped bundles shows when nothing better is known: the bundle's
-    /// file name without `.vst3` or `.lv2`.
+    /// The bundle's file name without `.vst3` or `.lv2`: the name of a stopped plugin when
+    /// nothing better is known.
     pub fn file_name(&self) -> String {
-        self.path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default()
+        file_stem(&self.path)
     }
 }
 
@@ -174,20 +208,15 @@ impl ScanCache {
     }
 
     pub fn plugins(&self) -> impl Iterator<Item = (&BundleRecord, &PluginInfo)> {
-        self.bundles.iter().flat_map(|b| {
-            let plugins: &[PluginInfo] = match &b.outcome {
-                ScanOutcome::Found { plugins } => plugins,
-                ScanOutcome::Stopped { .. } => &[],
-            };
-            plugins.iter().map(move |p| (b, p))
-        })
+        self.bundles
+            .iter()
+            .flat_map(|b| b.plugins.iter().map(move |p| (b, p)))
     }
 
-    pub fn stopped(&self) -> impl Iterator<Item = (&BundleRecord, StopReason)> {
-        self.bundles.iter().filter_map(|b| match b.outcome {
-            ScanOutcome::Stopped { reason } => Some((b, reason)),
-            ScanOutcome::Found { .. } => None,
-        })
+    pub fn stopped(&self) -> impl Iterator<Item = (&BundleRecord, &StoppedEntry)> {
+        self.bundles
+            .iter()
+            .flat_map(|b| b.stopped.iter().map(move |s| (b, s)))
     }
 
     /// A missing, unreadable or broken file, or one of another version, is an empty cache:
@@ -314,25 +343,52 @@ mod tests {
                     path: "/usr/lib/lv2/Surge XT.lv2".into(),
                     format: PluginFormat::Lv2,
                     stamp,
-                    outcome: ScanOutcome::Found {
-                        plugins: vec![surge()],
-                    },
+                    plugins: vec![surge()],
+                    stopped: vec![],
                 },
                 BundleRecord {
                     path: "/usr/lib/vst3/ZamComp.vst3".into(),
                     format: PluginFormat::Vst3,
                     stamp,
-                    outcome: ScanOutcome::Found { plugins: vec![zam] },
+                    plugins: vec![zam],
+                    stopped: vec![],
                 },
                 BundleRecord {
                     path: "/home/me/.vst3/OldChorus.vst3".into(),
                     format: PluginFormat::Vst3,
                     stamp,
-                    outcome: ScanOutcome::Stopped {
+                    plugins: vec![],
+                    stopped: vec![StoppedEntry {
+                        id: None,
+                        name: "OldChorus".into(),
                         reason: StopReason::TimedOut,
-                    },
+                    }],
+                },
+                BundleRecord {
+                    path: "/usr/lib/lv2/lsp-plugins.lv2".into(),
+                    format: PluginFormat::Lv2,
+                    stamp,
+                    plugins: vec![lsp("comp")],
+                    stopped: vec![StoppedEntry {
+                        id: Some("http://lsp-plug.in/plugins/lv2/gate".into()),
+                        name: "LSP Gate".into(),
+                        reason: StopReason::Crashed,
+                    }],
                 },
             ],
+        }
+    }
+
+    fn lsp(what: &str) -> PluginInfo {
+        PluginInfo {
+            key: PluginKey::lv2(&format!("http://lsp-plug.in/plugins/lv2/{what}")).unwrap(),
+            name: format!("LSP {what}"),
+            vendor: "LSP".into(),
+            version: "1.2".into(),
+            kind: PluginKind::Effect(EffectCategory::Dynamics),
+            editor: EditorKind::X11,
+            audio_inputs: 2,
+            audio_outputs: 2,
         }
     }
 
@@ -344,11 +400,13 @@ mod tests {
         cache.save(&dir).unwrap();
         assert_eq!(ScanCache::load(&dir), cache);
         assert!(!dir.join("scan.json.tmp").exists());
-        assert_eq!(cache.plugins().count(), 2);
+        assert_eq!(cache.plugins().count(), 3);
         let stopped: Vec<_> = cache.stopped().collect();
-        assert_eq!(stopped.len(), 1);
+        assert_eq!(stopped.len(), 2);
         assert_eq!(stopped[0].0.file_name(), "OldChorus");
-        assert_eq!(stopped[0].1, StopReason::TimedOut);
+        assert_eq!(stopped[0].1.reason, StopReason::TimedOut);
+        assert_eq!(stopped[1].0.file_name(), "lsp-plugins");
+        assert_eq!(stopped[1].1.name, "LSP Gate");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -362,9 +420,25 @@ mod tests {
                 "path": "/home/me/.vst3/OldChorus.vst3",
                 "format": "vst3",
                 "stamp": { "modifiedNs": 1_763_500_000_000_000_000u64, "size": 4096 },
-                "outcome": { "result": "stopped", "reason": "timedOut" },
+                "plugins": [],
+                "stopped": [{ "id": null, "name": "OldChorus", "reason": "timedOut" }],
             })
         );
+        let json = serde_json::to_value(&cache.bundles[3]).unwrap();
+        assert_eq!(
+            json["stopped"],
+            serde_json::json!([{
+                "id": "http://lsp-plug.in/plugins/lv2/gate",
+                "name": "LSP Gate",
+                "reason": "crashed",
+            }])
+        );
+        assert_eq!(
+            json["plugins"][0]["key"],
+            "lv2:http://lsp-plug.in/plugins/lv2/comp"
+        );
+        let back: BundleRecord = serde_json::from_value(json).unwrap();
+        assert_eq!(back, cache.bundles[3]);
         let json = serde_json::to_value(surge()).unwrap();
         assert_eq!(
             json,
@@ -390,8 +464,9 @@ mod tests {
         assert_eq!(ScanCache::load(&dir), ScanCache::default());
         // One record with a key this meloet cannot read spoils the file: scan again.
         let bad = r#"{"version":1,"bundles":[{"path":"/x.lv2","format":"lv2","stamp":{"modifiedNs":1,"size":1},
-            "outcome":{"result":"found","plugins":[{"key":"clap:x","name":"","vendor":"","version":"",
-            "kind":{"role":"effect","category":"other"},"editor":"none","audioInputs":2,"audioOutputs":2}]}}]}"#;
+            "plugins":[{"key":"clap:x","name":"","vendor":"","version":"",
+            "kind":{"role":"effect","category":"other"},"editor":"none","audioInputs":2,"audioOutputs":2}],
+            "stopped":[]}]}"#;
         std::fs::write(dir.join("scan.json"), bad).unwrap();
         assert_eq!(ScanCache::load(&dir), ScanCache::default());
         std::fs::remove_dir_all(dir).unwrap();
@@ -401,13 +476,40 @@ mod tests {
     fn put_replaces_the_record_of_the_same_bundle() {
         let mut cache = sample();
         let mut again = cache.bundles[2].clone();
-        again.outcome = ScanOutcome::Found { plugins: vec![] };
+        again.stopped.clear();
         cache.put(again.clone());
-        assert_eq!(cache.bundles.len(), 3);
+        assert_eq!(cache.bundles.len(), 4);
         assert_eq!(cache.get(&again.path), Some(&again));
-        assert_eq!(cache.stopped().count(), 0);
+        assert_eq!(cache.stopped().count(), 1);
         assert!(cache.remove(&again.path).is_some());
         assert!(cache.get(&again.path).is_none());
+    }
+
+    #[test]
+    fn a_stopped_plugin_is_named_by_probing_then_the_scan_before_then_the_file() {
+        let cache = sample();
+        let lsp_bundle = &cache.bundles[3];
+        let path = lsp_bundle.path.as_path();
+        let comp = Some("http://lsp-plug.in/plugins/lv2/comp");
+        let gate = Some("http://lsp-plug.in/plugins/lv2/gate");
+        assert_eq!(
+            stopped_name(path, comp, Some("LSP Compressor"), Some(lsp_bundle)),
+            "LSP Compressor"
+        );
+        assert_eq!(stopped_name(path, comp, None, Some(lsp_bundle)), "LSP comp");
+        assert_eq!(
+            stopped_name(path, gate, Some(""), Some(lsp_bundle)),
+            "LSP Gate"
+        );
+        assert_eq!(stopped_name(path, comp, None, None), "lsp-plugins");
+        assert_eq!(
+            stopped_name(path, Some("urn:other"), None, Some(lsp_bundle)),
+            "lsp-plugins"
+        );
+        assert_eq!(
+            stopped_name(path, None, None, Some(lsp_bundle)),
+            "lsp-plugins"
+        );
     }
 
     #[test]

@@ -18,5 +18,5 @@ pub mod wire;
 pub use category::{EffectCategory, InstrumentCategory, PluginKind, PluginRole};
 pub use key::{MergeKey, PluginFormat, PluginKey};
 pub use scan::{
-    BundleRecord, BundleStamp, EditorKind, PluginInfo, ScanCache, ScanOutcome, StopReason,
+    BundleRecord, BundleStamp, EditorKind, PluginInfo, ScanCache, StopReason, StoppedEntry,
 };

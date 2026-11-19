@@ -4,6 +4,8 @@ use std::ops::Range;
 
 use serde::Deserialize;
 
+use super::shape::{EnvShape, LfoShape, Shape};
+
 pub(super) const INSTRUMENT_FORMAT: &str = "meloet-instrument";
 pub(super) const INSTRUMENT_VERSION: u32 = 1;
 const DEFAULT_POLYPHONY: u32 = 64;
@@ -143,6 +145,42 @@ pub(super) struct Region {
     pub choke_group: u64,
     /// The bits of the groups that stop this region's voices.
     pub choked_by: u64,
+    /// Envelopes, LFOs and filter of a SoundFont zone. With it the attack, release and decay
+    /// fields above are not used.
+    pub shape: Option<Box<Shape>>,
+}
+
+/// One zone of a SoundFont preset in the player's own units. The files are mono.
+pub(crate) struct ZoneSpec {
+    /// The place of the zone's file in the list given with it.
+    pub sample: u32,
+    pub key_lo: u8,
+    pub key_hi: u8,
+    pub vel_lo: u8,
+    pub vel_hi: u8,
+    pub root: u8,
+    pub tune_cents: f32,
+    /// Cents of pitch per key.
+    pub scale_cents: f32,
+    pub gain_db: f32,
+    /// Frames `start..end` of the file.
+    pub looped: Option<(usize, usize)>,
+    /// Voices of the same class stop each other; 0 is no class.
+    pub exclusive_class: u16,
+    pub volume: EnvShape,
+    pub modulation: EnvShape,
+    pub mod_to_pitch: f32,
+    pub mod_to_filter: f32,
+    pub vibrato: LfoShape,
+    pub vibrato_to_pitch: f32,
+    pub lfo: LfoShape,
+    pub lfo_to_pitch: f32,
+    pub lfo_to_filter: f32,
+    pub lfo_to_volume_db: f32,
+    pub filter_cents: f32,
+    pub filter_q: f32,
+    pub pan: f32,
+    pub loop_until_release: bool,
 }
 
 /// (trigger, keys, velocities, count) of a set of regions that take turns.
@@ -162,10 +200,47 @@ pub struct SampleBank {
     pedal_down: Range<u32>,
     pedal_up: Range<u32>,
     pub(super) round_robin_groups: usize,
+    /// Some region has a [`Shape`].
+    pub(super) shaped: bool,
+}
+
+/// Region numbers grouped by trigger and key, and the tables that point into them.
+struct Tables {
+    order: Vec<u32>,
+    attack: Vec<Range<u32>>,
+    release: Vec<Range<u32>>,
+    pedal_down: Range<u32>,
+    pedal_up: Range<u32>,
+}
+
+/// `spans[i]` is the trigger and the keys of region i.
+fn tables(spans: &[(Trigger, u8, u8)]) -> Tables {
+    let mut order = Vec::new();
+    let mut table = |trigger: Trigger, key: Option<u8>| {
+        let start = order.len() as u32;
+        for (index, &(its, lo, hi)) in spans.iter().enumerate() {
+            if its == trigger && key.is_none_or(|k| (lo..=hi).contains(&k)) {
+                order.push(index as u32);
+            }
+        }
+        start..order.len() as u32
+    };
+    let attack = (0..128).map(|k| table(Trigger::Attack, Some(k))).collect();
+    let release = (0..128).map(|k| table(Trigger::Release, Some(k))).collect();
+    let pedal_down = table(Trigger::PedalDown, None);
+    let pedal_up = table(Trigger::PedalUp, None);
+    Tables {
+        order,
+        attack,
+        release,
+        pedal_down,
+        pedal_up,
+    }
 }
 
 impl SampleBank {
-    /// The instrument's name in the pack (`grandPiano`, `studioKit`, ...).
+    /// The instrument's name in the pack (`grandPiano`, `studioKit`, ...), or the name of a
+    /// SoundFont's preset.
     pub fn kind(&self) -> &str {
         &self.kind
     }
@@ -242,20 +317,18 @@ impl SampleBank {
             });
         }
 
-        let mut order = Vec::new();
-        let mut table = |trigger: Trigger, key: Option<u8>| {
-            let start = order.len() as u32;
-            for (index, r) in file.regions.iter().enumerate() {
-                if r.trigger == trigger && key.is_none_or(|k| (r.key_lo..=r.key_hi).contains(&k)) {
-                    order.push(index as u32);
-                }
-            }
-            start..order.len() as u32
-        };
-        let attack = (0..128).map(|k| table(Trigger::Attack, Some(k))).collect();
-        let release = (0..128).map(|k| table(Trigger::Release, Some(k))).collect();
-        let pedal_down = table(Trigger::PedalDown, None);
-        let pedal_up = table(Trigger::PedalUp, None);
+        let spans: Vec<_> = file
+            .regions
+            .iter()
+            .map(|r| (r.trigger, r.key_lo, r.key_hi))
+            .collect();
+        let Tables {
+            order,
+            attack,
+            release,
+            pedal_down,
+            pedal_up,
+        } = tables(&spans);
 
         Ok(SampleBank {
             kind: file.kind,
@@ -269,7 +342,107 @@ impl SampleBank {
             pedal_down,
             pedal_up,
             round_robin_groups: groups.len(),
+            shaped: false,
         })
+    }
+
+    /// A bank from the zones of one SoundFont preset. `samples` are mono files as
+    /// (frames a second, frames); `gain_db` is added to every zone. The caller has checked
+    /// that every zone's file and loop are there.
+    pub(crate) fn from_zones(
+        name: String,
+        polyphony: usize,
+        gain_db: f32,
+        samples: Vec<(f32, Vec<i16>)>,
+        zones: Vec<ZoneSpec>,
+    ) -> SampleBank {
+        let samples: Vec<SampleData> = samples
+            .into_iter()
+            .map(|(rate, data)| SampleData {
+                rate,
+                channels: 1,
+                frames: data.len(),
+                data,
+            })
+            .collect();
+        let mut classes: Vec<u16> = Vec::new();
+        let mut spans = Vec::with_capacity(zones.len());
+        let mut regions = Vec::with_capacity(zones.len());
+        for z in zones {
+            // Only the first 64 classes of a preset stop their voices.
+            let class = match z.exclusive_class {
+                0 => 0,
+                class => {
+                    let place = classes.iter().position(|c| *c == class).unwrap_or_else(|| {
+                        classes.push(class);
+                        classes.len() - 1
+                    });
+                    1_u64.checked_shl(place as u32).unwrap_or(0)
+                }
+            };
+            spans.push((Trigger::Attack, z.key_lo, z.key_hi));
+            regions.push(Region {
+                sample: z.sample,
+                vel_lo: z.vel_lo,
+                vel_hi: z.vel_hi,
+                root: z.root,
+                tune_semitones: z.tune_cents / 100.0,
+                keytrack: z.scale_cents / 100.0,
+                // FluidSynth takes half of the resonance off the loudness of every voice,
+                // whether its filter is heard or not: 1/sqrt(Q), which is 1.5 dB up for the
+                // flat response.
+                gain: db_to_gain(z.gain_db + gain_db) / z.filter_q.sqrt() / 32768.0,
+                pan_left: 1.0,
+                pan_right: 1.0,
+                veltrack: 1.0,
+                attack_s: 0.0,
+                release_s: 0.0,
+                rt_decay_db_per_s: 0.0,
+                looped: z.looped,
+                loop_decay_db_per_s: 0.0,
+                one_shot: false,
+                round_robin: None,
+                choke_group: class,
+                choked_by: class,
+                shape: Some(Box::new(Shape {
+                    volume: z.volume,
+                    modulation: z.modulation,
+                    mod_to_pitch: z.mod_to_pitch,
+                    mod_to_filter: z.mod_to_filter,
+                    vibrato: z.vibrato,
+                    vibrato_to_pitch: z.vibrato_to_pitch,
+                    lfo: z.lfo,
+                    lfo_to_pitch: z.lfo_to_pitch,
+                    lfo_to_filter: z.lfo_to_filter,
+                    lfo_to_volume_db: z.lfo_to_volume_db,
+                    filter_cents: z.filter_cents,
+                    filter_q: z.filter_q,
+                    pan: z.pan,
+                    loop_until_release: z.loop_until_release,
+                })),
+            });
+        }
+        let Tables {
+            order,
+            attack,
+            release,
+            pedal_down,
+            pedal_up,
+        } = tables(&spans);
+        SampleBank {
+            kind: name,
+            polyphony: polyphony.clamp(1, MAX_POLYPHONY as usize),
+            sustain_pedal: true,
+            samples,
+            regions,
+            order,
+            attack,
+            release,
+            pedal_down,
+            pedal_up,
+            round_robin_groups: 0,
+            shaped: true,
+        }
     }
 }
 
@@ -381,6 +554,7 @@ fn region(
         round_robin,
         choke_group: choke_bits("chokeGroup", r.choke_group.as_slice())?,
         choked_by: choke_bits("chokedBy", &r.choked_by)?,
+        shape: None,
     })
 }
 

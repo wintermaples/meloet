@@ -7,7 +7,10 @@
 mod bank;
 mod load;
 mod player;
+mod shape;
 
 pub use bank::SampleBank;
+pub(crate) use bank::ZoneSpec;
 pub use load::{LoadError, Pack, load_instrument, read_pack};
 pub use player::Sampler;
+pub(crate) use shape::{EnvShape, LfoShape};

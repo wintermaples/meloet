@@ -3,6 +3,7 @@
 
 pub mod mix;
 pub mod pack;
+pub mod sf2;
 
 use meloet_engine::{Effect, EffectContext};
 use meloet_model::effects::EffectKind;

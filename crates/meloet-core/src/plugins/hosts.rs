@@ -493,10 +493,11 @@ impl Run {
         let start = |e: &dyn std::fmt::Display| HostError::Start(e.to_string());
         let map = Arc::new(Mapping::create(self.options.geometry).map_err(|e| start(&e))?);
         let (ours, theirs) = UnixStream::pair().map_err(|e| start(&e))?;
-        let mut command = launch::host_command(&self.options.exe, theirs.as_fd(), map.fd(), None);
+        let mut command = launch::host_command(&self.options.exe, theirs.as_fd(), map.fd(), None)
+            .map_err(|e| start(&e))?;
         command.envs(self.options.env.iter().map(|(name, value)| (name, value)));
         let mut child = command.spawn().map_err(|e| start(&e))?;
-        drop(theirs);
+        drop((command, theirs));
         let pidfd = match PidFd::open(child.id()) {
             Ok(pidfd) => pidfd,
             Err(e) => {

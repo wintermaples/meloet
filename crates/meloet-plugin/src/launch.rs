@@ -1,43 +1,33 @@
 //! Starting `meloet-plughost`, and what that process does first.
 //!
-//! The process gets its file descriptors by inheriting them at the numbers its command line
-//! names:
-//!
 //! ```text
-//! meloet-plughost host --parent <pid> --control-fd <n> --memory-fd <n> [--log-fd <n>]
-//! meloet-plughost scan <vst3|lv2> <bundle> [--skip <id>]... --parent <pid> --out-fd <n> [--log-fd <n>]
+//! meloet-plughost host --parent <pid> [--log]
+//! meloet-plughost scan <vst3|lv2> <bundle> [--skip <id>]... --parent <pid> [--log]
 //! ```
+//!
+//! The process gets its descriptors as its standard ones: `host` the control socket as
+//! standard input and the shared memory as standard output, `scan` the socket it writes to as
+//! standard output, and both, with `--log`, the log as standard error. The first thing the
+//! process does is to move them away and to put `/dev/null` (or the log) in their place
+//! ([`take_stdio`]), because plugins print to the standard ones.
+//!
+//! Nothing here runs between fork and exec (no `pre_exec`), so that `Command::spawn` uses
+//! `posix_spawn`, which shares meloet's memory with the child until the exec. A fork would
+//! copy the page tables of all of meloet's memory and make every page of it copy-on-write,
+//! also the ones the audio thread writes to. What had to happen in between is done by the
+//! child itself: [`die_with_parent`], [`low_priority`].
 //!
 //! `host` answers [`crate::wire`] requests on the control socket and runs plugins in the
 //! slots of the shared memory until the socket closes. `scan` writes frames of
-//! [`crate::wire::ScanOutput`] to `--out-fd`, one plugin after another and passing over the
-//! ids `--skip` names, and ends after `Done` or `Broken`.
+//! [`crate::wire::ScanOutput`], one plugin after another and passing over the ids `--skip`
+//! names, and ends after `Done` or `Broken`.
 
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use crate::key::PluginFormat;
-
-/// Lets the child inherit these descriptors at their numbers. They must stay open in this
-/// process until the child is spawned.
-fn inherit(command: &mut Command, fds: Vec<RawFd>) {
-    // SAFETY: the closure runs between fork and exec and only calls fcntl, which is
-    // async-signal-safe. It allocates nothing: `fds` was built before the fork.
-    unsafe {
-        command.pre_exec(move || {
-            for &fd in &fds {
-                let flags = libc::fcntl(fd, libc::F_GETFD);
-                if flags < 0 || libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-            }
-            Ok(())
-        });
-    }
-}
 
 fn base(exe: &Path, mode: &str) -> Command {
     let mut command = Command::new(exe);
@@ -49,14 +39,18 @@ fn base(exe: &Path, mode: &str) -> Command {
     command
 }
 
-fn finish(mut command: Command, mut fds: Vec<RawFd>, log: Option<BorrowedFd<'_>>) -> Command {
+/// A copy of `fd` for the child's standard input, output or error. The command owns it:
+/// drop the command once the child is spawned, or a socket handed over never reads as closed.
+fn hand(fd: BorrowedFd<'_>) -> std::io::Result<Stdio> {
+    Ok(Stdio::from(fd.try_clone_to_owned()?))
+}
+
+fn finish(mut command: Command, log: Option<BorrowedFd<'_>>) -> std::io::Result<Command> {
     command.arg("--parent").arg(std::process::id().to_string());
     if let Some(log) = log {
-        command.arg("--log-fd").arg(log.as_raw_fd().to_string());
-        fds.push(log.as_raw_fd());
+        command.arg("--log").stderr(hand(log)?);
     }
-    inherit(&mut command, fds);
-    command
+    Ok(command)
 }
 
 /// The command for a host process. Spawn it from a thread that lives as long as the child
@@ -70,18 +64,14 @@ pub fn host_command(
     control: BorrowedFd<'_>,
     memory: BorrowedFd<'_>,
     log: Option<BorrowedFd<'_>>,
-) -> Command {
+) -> std::io::Result<Command> {
     let mut command = base(exe, "host");
-    command
-        .arg("--control-fd")
-        .arg(control.as_raw_fd().to_string())
-        .arg("--memory-fd")
-        .arg(memory.as_raw_fd().to_string());
-    finish(command, vec![control.as_raw_fd(), memory.as_raw_fd()], log)
+    command.stdin(hand(control)?).stdout(hand(memory)?);
+    finish(command, log)
 }
 
 /// The command that scans one bundle and writes what it found to `out`. The plugins whose ids
-/// are in `skip` are not read.
+/// are in `skip` are not read. The child runs at a low priority ([`low_priority`]).
 pub fn scan_command(
     exe: &Path,
     format: PluginFormat,
@@ -89,30 +79,24 @@ pub fn scan_command(
     skip: &[String],
     out: BorrowedFd<'_>,
     log: Option<BorrowedFd<'_>>,
-) -> Command {
+) -> std::io::Result<Command> {
     let mut command = base(exe, "scan");
     command.arg(format.prefix()).arg(bundle);
     for id in skip {
         command.arg("--skip").arg(id);
     }
-    command.arg("--out-fd").arg(out.as_raw_fd().to_string());
-    finish(command, vec![out.as_raw_fd()], log)
+    command.stdout(hand(out)?);
+    finish(command, log)
 }
 
-/// Starts the child as the least urgent of the ordinary processes (nice 19): a scan must not
-/// take the processor from the screen while a person plays. Not `SCHED_IDLE`: a scan's time
-/// limit is wall-clock time, and on a busy PC an idle-class child may get no time at all and
-/// be taken for a plugin that hangs. meloet's audio thread is real-time and is ahead of any
-/// ordinary process either way.
-pub fn low_priority(command: &mut Command) {
-    // SAFETY: the closure runs between fork and exec and only calls setpriority, which is a
-    // plain system call and allocates nothing.
-    unsafe {
-        command.pre_exec(|| {
-            libc::setpriority(libc::PRIO_PROCESS, 0, 19);
-            Ok(())
-        });
-    }
+/// In a scanning child: be the least urgent of the ordinary processes (nice 19). A scan must
+/// not take the processor from the screen while a person plays. Not `SCHED_IDLE`: a scan's
+/// time limit is wall-clock time, and on a busy PC an idle-class child may get no time at all
+/// and be taken for a plugin that hangs. meloet's audio thread is real-time and is ahead of
+/// any ordinary process either way.
+pub fn low_priority() {
+    // SAFETY: a plain system call.
+    unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, 19) };
 }
 
 /// Waits until `fd` has something to read, or its other end closed. False when `timeout`
@@ -168,18 +152,33 @@ impl PidFd {
     }
 }
 
-/// In the child, first of all: standard input from `/dev/null`, standard output and standard
-/// error to `log` or `/dev/null`. Whatever a plugin prints ends up there and nowhere else.
-pub fn quiet_stdio(log: Option<RawFd>) {
-    // SAFETY: plain descriptor calls; a failure leaves the descriptor as it was.
+/// What the parent handed over as standard input and standard output.
+pub struct Handed {
+    pub input: Option<OwnedFd>,
+    pub output: Option<OwnedFd>,
+}
+
+/// In the child, first of all: takes the descriptors the parent handed over as the standard
+/// ones, and puts `/dev/null` in their place: standard input, and standard output and
+/// standard error unless `log`, which sends both to what came as standard error. Whatever a
+/// plugin prints ends up there and nowhere else.
+pub fn take_stdio(log: bool) -> Handed {
+    // SAFETY: plain descriptor calls; a failure leaves the descriptor as it was. The copies
+    // are above 2, close-on-exec and owned by nothing else.
     unsafe {
+        let take = |fd: RawFd| {
+            let copy = libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 3);
+            (copy >= 0).then(|| OwnedFd::from_raw_fd(copy))
+        };
+        let handed = Handed {
+            input: take(0),
+            output: take(1),
+        };
         let null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR | libc::O_CLOEXEC);
         if null >= 0 {
             libc::dup2(null, 0);
         }
-        let out = log
-            .filter(|&fd| libc::fcntl(fd, libc::F_GETFD) >= 0)
-            .unwrap_or(null);
+        let out = if log { 2 } else { null };
         if out >= 0 {
             libc::dup2(out, 1);
             libc::dup2(out, 2);
@@ -187,12 +186,22 @@ pub fn quiet_stdio(log: Option<RawFd>) {
         if null > 2 {
             libc::close(null);
         }
+        handed
+    }
+}
+
+/// Whether `fd` is a socket.
+pub fn is_socket(fd: BorrowedFd<'_>) -> bool {
+    // SAFETY: fstat fills the zeroed struct or fails.
+    unsafe {
+        let mut stat: libc::stat = std::mem::zeroed();
+        libc::fstat(fd.as_raw_fd(), &mut stat) == 0 && stat.st_mode & libc::S_IFMT == libc::S_IFSOCK
     }
 }
 
 /// In the child: be killed when the thread that started this process ends, so no host process
 /// is left behind by a meloet that crashed. Ends the process at once if the parent is already
-/// gone (it went between the fork and this call).
+/// gone (it went before this call).
 pub fn die_with_parent(parent: Option<u32>) {
     // SAFETY: plain calls.
     unsafe {

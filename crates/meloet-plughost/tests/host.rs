@@ -226,6 +226,7 @@ fn nothing_is_done_before_hello_and_a_closed_socket_ends_the_process() {
     let map = Mapping::create(GEOMETRY).unwrap();
     let (mut ours, theirs) = UnixStream::pair().unwrap();
     let child = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None)
+        .unwrap()
         .env(FAKE, "1")
         .spawn()
         .unwrap();
@@ -349,14 +350,15 @@ fn scan(format: PluginFormat, bundle: &str, skip: &[&str], fake: bool) -> Scan {
         &skip,
         theirs.as_fd(),
         None,
-    );
+    )
+    .unwrap();
     if fake {
         command.env(FAKE, "1");
     } else {
         command.env_remove(FAKE);
     }
     let child = Killed(command.spawn().unwrap());
-    drop(theirs);
+    drop((command, theirs));
     ours.set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
     Scan { child, out: ours }
@@ -529,13 +531,7 @@ fn the_fake_plugins_are_not_there_without_the_variable() {
 
 #[test]
 fn a_bad_command_line_ends_with_an_error_code() {
-    for args in [
-        &[][..],
-        &["host"],
-        &["host", "--control-fd", "999", "--memory-fd", "998"],
-        &["scan", "clap", "/x"],
-        &["dance"],
-    ] {
+    for args in [&[][..], &["host"], &["scan", "clap", "/x"], &["dance"]] {
         let status = std::process::Command::new(EXE).args(args).status().unwrap();
         assert_eq!(status.code(), Some(2), "{args:?}");
     }
@@ -555,6 +551,7 @@ fn the_log_says_which_priority_the_audio_thread_got() {
         let (mut ours, theirs) = UnixStream::pair().unwrap();
         let child =
             launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), Some(file.as_fd()))
+                .unwrap()
                 .env(FAKE, "1")
                 .env("MELOET_PLUGHOST_RT", choice)
                 .spawn()

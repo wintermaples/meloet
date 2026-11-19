@@ -71,13 +71,14 @@ impl Host {
     pub fn start_with(geometry: Geometry, env: &[(&str, &str)]) -> Host {
         let map = Arc::new(Mapping::create(geometry).unwrap());
         let (ours, theirs) = UnixStream::pair().unwrap();
-        let mut command = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None);
+        let mut command =
+            launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None).unwrap();
         command.env_remove(FAKE);
         for (name, value) in env {
             command.env(name, value);
         }
         let child = command.spawn().unwrap();
-        drop(theirs);
+        drop((command, theirs));
         ours.set_read_timeout(Some(Duration::from_secs(30)))
             .unwrap();
         let mut host = Host {

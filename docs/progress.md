@@ -817,3 +817,33 @@ SF2（サウンドフォント）のこと（ヤチヨさんの決め 2026-11-18
 - `scripts/check-all.sh`（係の作業ツリーで）: Rust 646、画面 1934、fmt ・ clippy ・ 型 ・ ライセンスの見はり。棟梁がもう一度、Rust 524（model ・ protocol ・ core ・ sound）と画面 1934。
 - 書き出した 52 の WAV（`target/listen/round5/`）: クリップ 0、ループのつなぎ目 1.17 以下。
 - 画面の見くらべ: `docs/screenshots/compare/shelf84-*`（グループ、並び、数、状態行がモックと同じ）。
+8. **包み**（版 2026.11.1、`target/sounds/meloet-sounds-2026.11.1.tar`、238,776,320 バイト、sha256 `c9000223…dcbe`）は作ったが、**Release にはまだ上げない**（ヤチヨさんの決め 2026-11-19）。`tools/sounds/pack.json` は 2026.11.0 のまま。開発のビルドの包み（`target/sounds/dev`）は 31 の音色の物にした。
+9. check-all（foundation、1d60194 の前の 89efa39）: Rust 646 ・ ignored 19、画面 1934、ライセンスの見はり。
+
+### 区切り0: 調べ物と、決める事（2026-11-19）
+
+- **調べ物**（どれも出どころと確かさつき）: [`research/plugin-formats.md`](research/plugin-formats.md)（vst3 ・ livi は今の版が最新、VST3 SDK は 3.8.0 から MIT、Surge XT の LV2 はつまみ 775 個をぜんぶ patch:Set ・ Get で出す、CLAP の重さ、遅れの知らせかた、形式をまとめる鍵、種類の文字列、ふつうの場所）、[`research/plugin-ipc.md`](research/plugin-ipc.md)（Carla ・ yabridge は同じブロックで往復、rtkit のプロセス 15 ・ スレッド 25 のしばり、futex）、[`research/sf2-playback.md`](research/sf2-playback.md)（部品のライセンス、仕様 2.01、FluidSynth とのちがい、段の案、FluidR3 で数えた事）。
+- **測った数**（[`measurements/2026-11-19-round5-ipc.md`](measurements/2026-11-19-round5-ipc.md)、試作 `spikes/plugins/ipcbench/`。この PC は `audio` グループで親も子も SCHED_FIFO が取れた。とちゅうで root の rsync が動いていた）:
+
+| 測った物 | 数 |
+|---|---|
+| 往復（子 1 つ、futex、FIFO） | p50 12.8 µs、p99 26.4 µs、最大 34 µs |
+| 80 の枠を順に往復（futex、FIFO） | p99 0.63〜0.74 ms（ブロック 5.33 ms の 12〜14 %） |
+| 重さがあって子が SCHED_OTHER | 子 1 つで最大 3〜13.5 ms、80 の枠で p99 5.1〜5.9 ms（ブロックをこえる） |
+| 80 個（16 トラック ×（Surge XT ＋ エフェクト 4）、VST3）の PSS | 1 つずつ 688 MB、同じプラグインでまとめて 385 MB、トラックごと 545 MB、全部 380 MB |
+| Surge XT 1 つ（VST3）の PSS | 窓なし 39.5 MB、窓あり 74.5 MB、読みこみ 155 ms |
+| 状態をとる（Surge XT） | 1.2 ms（最大 2.0 ms）、50〜67 KB。戻した次のブロックが 1.6 ms |
+| スキャン（試作、670 個） | 243 秒（うち LSP の LV2 で 224.5 秒。プラグインごとに子を起こし TTL を読みなおすため） |
+
+- **決めた事**（理由は [`architecture.md`](architecture.md) 20 章）: 同じプラグインを 1 つのプロセスにまとめる（20-1）。共有メモリと futex で同じブロックの中で往復、待つのは時間切れつきの futex だけ、2 ブロック返事がなければ止まった（20-2）。状態を写す重さ（20-3）。スキャンは包みごとに子 1 つ（20-4）。曲の中は形式ごとの正確な鍵、棚でまとめる鍵は名前と作った人が両方一致したときだけ（20-5）。曲のファイルは版 4（20-6）。SF2 は読む所を自分で書き、鳴らす係を広げ、FluidSynth に合わせる（20-7）。
+- **ヤチヨさんに聞いて決めた事**（2026-11-19）:
+
+| 問い | 答え |
+|---|---|
+| プラグインの遅れ | 合わせる。meloet はノートを遅れのぶん先に送る形で作る（20-8） |
+| CLAP | 第 5 回は入れない（20-9） |
+| 第 7 版の答えのうち、まだ作っていない小さな物（82 のダイアログを動かす、85 のドラムの鍵の光りかた ・ 「スネア ×2」・ 押している音 ・ ダイアログの間の状態行 ・ 音の素材が見つからないとき） | 第 5 回でいっしょに作る（区切り2 ・ 3） |
+| 包みの Release | まだ上げない |
+
+- 測っているあいだ、プラグインの窓がヤチヨさんの画面に 3 秒ずつ 20 回ほど出た（窓の測定）。スキャンで SIGSEGV が 4 つ（padthv1、ZynAddSubFX のエフェクト 3 つ。前の検証と同じ物）。
+

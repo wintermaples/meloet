@@ -5,10 +5,11 @@ use std::sync::Arc;
 use meloet_engine::{Instrument, InstrumentEvent};
 
 use super::bank::{Region, SampleBank, SampleData, Trigger};
+use super::shape::Shaped;
 
 /// Loudness, loop decay and bend are worked out once per this many frames and move in a
 /// straight line in between.
-const CHUNK: usize = 32;
+pub(super) const CHUNK: usize = 32;
 /// Fade of a voice that gives its place to a new note.
 const STEAL_S: f32 = 0.003;
 /// Fade of a voice stopped by its choke group (the length SFZ players use for `off_mode=fast`).
@@ -22,6 +23,15 @@ const RELEASE_FLOOR: f32 = 1.0e-3;
 const SMOOTH_S: f32 = 0.005;
 const BEND_SEMITONES: f32 = 2.0;
 const CC_SUSTAIN: u8 = 64;
+const CC_VOLUME: u8 = 7;
+const CC_PAN: u8 = 10;
+const CC_EXPRESSION: u8 = 11;
+/// What General MIDI has the volume controller at before anything moves it.
+const DEFAULT_VOLUME: u8 = 100;
+/// Volume, expression and pan reach a new value in about this time.
+const MIX_SMOOTH_S: f32 = 0.02;
+/// A voice with a shape is never further from its file's pitch than this.
+const MAX_SHAPED_SEMITONES: f32 = 120.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Hold {
@@ -147,7 +157,7 @@ impl Voice {
 
 /// Catmull-Rom through four neighbouring frames, `t` in 0..1 between the middle two.
 #[inline]
-fn interpolate(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
+pub(super) fn interpolate(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
     let c1 = 0.5 * (y2 - y0);
     let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
     let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
@@ -251,6 +261,9 @@ struct State {
     /// Twice the polyphony: a voice that gives its place fades in its own slot while the new
     /// note starts in another, so no note waits for a fade.
     voices: Vec<Voice>,
+    /// The same places as `voices`, for the voices of regions with a shape; empty when the
+    /// bank has none.
+    shaped: Vec<Shaped>,
     polyphony: usize,
     sustain_pedal: bool,
     /// One counter for each set of regions that take turns.
@@ -267,6 +280,16 @@ struct State {
     bend: f32,
     /// The bend in semitones at each chunk of the block being rendered.
     bend_curve: Vec<f32>,
+    /// Controllers 7 and 11, 0..=127. Only voices with a shape listen to them and to pan.
+    volume_cc: u8,
+    expression_cc: u8,
+    volume_target: f32,
+    volume: f32,
+    /// -1..1 from controller 10.
+    pan_target: f32,
+    pan: f32,
+    /// (volume, pan) at each chunk of the block being rendered.
+    mix_curve: Vec<(f32, f32)>,
     frame: u64,
     events: u64,
     births: u64,
@@ -282,6 +305,18 @@ impl State {
         self.pedal = false;
         self.bend_target = 0.0;
         self.bend = 0.0;
+        self.volume_cc = DEFAULT_VOLUME;
+        self.expression_cc = 127;
+        self.set_volume();
+        self.volume = self.volume_target;
+        self.pan_target = 0.0;
+        self.pan = 0.0;
+    }
+
+    /// Each controller is a loudness of (value / 127)^2, as the velocity is.
+    fn set_volume(&mut self) {
+        let share = f32::from(self.volume_cc) * f32::from(self.expression_cc) / (127.0 * 127.0);
+        self.volume_target = share * share;
     }
 
     /// `held_s`: how long the key was down, for a release sound.
@@ -376,8 +411,11 @@ impl State {
             }
         };
 
-        let semitones =
+        let mut semitones =
             (f32::from(key) - f32::from(region.root)) * region.keytrack + region.tune_semitones;
+        if region.shape.is_some() {
+            semitones = semitones.clamp(-MAX_SHAPED_SEMITONES, MAX_SHAPED_SEMITONES);
+        }
         let step = f64::from(semitones / 12.0).exp2() * f64::from(sample.rate)
             / f64::from(self.sample_rate);
         // SFZ's amp_veltrack: (velocity / 127)^2 at 100 %, no change at 0 %, turned round below 0.
@@ -421,6 +459,10 @@ impl State {
             fade_step: 0.0,
             amp: env,
         };
+        if let Some(shape) = region.shape.as_deref() {
+            self.voices[slot].follow = 1.0;
+            self.shaped[slot] = Shaped::start(shape, key, self.sample_rate);
+        }
     }
 
     fn note_on(&mut self, bank: &SampleBank, key: u8, velocity: u8) {
@@ -511,10 +553,72 @@ impl State {
             *bend = self.bend;
         }
 
-        for v in self.voices.iter_mut().filter(|v| v.active) {
+        if bank.shaped {
+            let share = 1.0 - (-(CHUNK as f32) / (MIX_SMOOTH_S * self.sample_rate)).exp();
+            for mix in &mut self.mix_curve[..chunks] {
+                self.volume += (self.volume_target - self.volume) * share;
+                if (self.volume_target - self.volume).abs() < 1.0e-5 {
+                    self.volume = self.volume_target;
+                }
+                self.pan += (self.pan_target - self.pan) * share;
+                if (self.pan_target - self.pan).abs() < 1.0e-4 {
+                    self.pan = self.pan_target;
+                }
+                *mix = (self.volume, self.pan);
+            }
+        }
+
+        for (slot, v) in self.voices.iter_mut().enumerate().filter(|(_, v)| v.active) {
             let region = &bank.regions[v.region as usize];
             let sample = &bank.samples[region.sample as usize];
             let chunked = left.chunks_mut(CHUNK).zip(right.chunks_mut(CHUNK));
+            if let Some(shape) = region.shape.as_deref() {
+                let x = &mut self.shaped[slot];
+                let curves = self.bend_curve[..chunks]
+                    .iter()
+                    .zip(&self.mix_curve[..chunks]);
+                for ((l, r), (&bend, &(volume, pan))) in chunked.zip(curves) {
+                    if v.stage == Stage::Release && !x.released {
+                        x.release();
+                    }
+                    let moved = x.advance(shape, l.len());
+                    let mut alive = moved.alive;
+                    if v.fading() {
+                        v.fade -= v.fade_step * l.len() as f32;
+                        alive &= v.fade > 0.0;
+                    }
+                    let cents = bend * 100.0 + moved.pitch_cents;
+                    let step = if cents == 0.0 {
+                        v.step
+                    } else {
+                        v.step * f64::from(cents / 1200.0).exp2()
+                    };
+                    x.set_pan((shape.pan + pan).clamp(-1.0, 1.0));
+                    // With a shape `gain_left` is the gain of both sides; the shape has the pan.
+                    let amp = if alive {
+                        moved.level * v.fade * volume * v.gain_left
+                    } else {
+                        0.0
+                    };
+                    let to = (amp * x.pan_left, amp * x.pan_right);
+                    if x.fresh {
+                        x.fresh = false;
+                        if x.starts_full() {
+                            (x.amp_left, x.amp_right) = to;
+                        }
+                    }
+                    let looped = region
+                        .looped
+                        .filter(|_| !(shape.loop_until_release && x.released));
+                    let rate = self.sample_rate;
+                    let more = x.mix(shape, sample, looped, &mut v.pos, step, to, rate, l, r);
+                    if !(alive && more) {
+                        v.active = false;
+                        break;
+                    }
+                }
+                continue;
+            }
             for ((l, r), &bend) in chunked.zip(&self.bend_curve[..chunks]) {
                 let step = if bend == 0.0 || v.follow == 0.0 {
                     v.step
@@ -549,6 +653,11 @@ impl Sampler {
         let state = State {
             sample_rate: 48_000.0,
             voices: vec![Voice::FREE; bank.polyphony() * 2],
+            shaped: if bank.shaped {
+                vec![Shaped::IDLE; bank.polyphony() * 2]
+            } else {
+                Vec::new()
+            },
             polyphony: bank.polyphony(),
             sustain_pedal: bank.sustain_pedal(),
             turns: vec![0; bank.round_robin_groups],
@@ -561,6 +670,13 @@ impl Sampler {
             bend_target: 0.0,
             bend: 0.0,
             bend_curve: vec![0.0; 1],
+            volume_cc: DEFAULT_VOLUME,
+            expression_cc: 127,
+            volume_target: 1.0,
+            volume: 1.0,
+            pan_target: 0.0,
+            pan: 0.0,
+            mix_curve: vec![(1.0, 0.0); 1],
             frame: 0,
             events: 0,
             births: 0,
@@ -582,6 +698,7 @@ impl Instrument for Sampler {
     fn prepare(&mut self, sample_rate: f32, max_frames: usize) {
         self.state.sample_rate = sample_rate;
         self.state.bend_curve = vec![0.0; max_frames.div_ceil(CHUNK).max(1)];
+        self.state.mix_curve = vec![(1.0, 0.0); self.state.bend_curve.len()];
         self.state.clear();
     }
 
@@ -597,7 +714,16 @@ impl Instrument for Sampler {
                 controller: CC_SUSTAIN,
                 value,
             } => state.set_pedal(bank, value >= 64),
-            InstrumentEvent::Control { .. } => {}
+            InstrumentEvent::Control { controller, value } => {
+                let value = value.min(127);
+                match controller {
+                    CC_VOLUME => state.volume_cc = value,
+                    CC_EXPRESSION => state.expression_cc = value,
+                    CC_PAN => state.pan_target = ((f32::from(value) - 64.0) / 63.0).max(-1.0),
+                    _ => {}
+                }
+                state.set_volume();
+            }
             InstrumentEvent::PitchBend { value } => {
                 let value = f32::from(value.clamp(-8192, 8191));
                 state.bend_target = value / 8192.0 * BEND_SEMITONES;

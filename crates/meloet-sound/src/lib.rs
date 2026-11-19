@@ -8,4 +8,5 @@
 pub mod effects;
 pub mod phrases;
 pub mod sampler;
+pub mod sf2;
 pub mod synth;

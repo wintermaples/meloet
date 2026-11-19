@@ -557,19 +557,26 @@ fn a_plugin_is_selected_passed_by_moved_and_replaced_as_an_effect_of_meloet_is()
     let steps = m.view().song.undo_count;
     cmd(m, Command::ToggleBypass { insert: at(2) });
     assert_eq!(m.view().song.undo_count, steps);
-    cmd(m, mixer);
-    // What stopped is said before anything else, until it is loaded again or removed.
+    // What stopped is said until it is loaded again or removed.
     assert!(matches!(
         status(m),
         Some(StatusMessage::PluginStopped { .. })
     ));
+    // The summary of the mixer just opened is said once over it, and names it as stopped.
+    cmd(m, mixer.clone());
     assert_eq!(
-        m.play().mixer_passes_by(),
+        status(m),
         Some(StatusMessage::MixerPassesBy {
             bypassed: Vec::new(),
             stopped: named(),
         })
     );
+    cmd(m, mixer.clone());
+    assert!(matches!(
+        status(m),
+        Some(StatusMessage::PluginStopped { .. })
+    ));
+    cmd(m, mixer);
     cmd(
         m,
         Command::ReloadPlugin {
@@ -764,6 +771,30 @@ fn a_plugin_loaded_again_is_stopped_no_more() {
         Some(StatusMessage::PluginStopped { .. })
     ));
     assert!(cmd(&mut m, Command::ReloadPlugin { slot }).is_empty());
+}
+
+#[test]
+fn a_window_just_opened_is_said_until_its_plugin_stops() {
+    let (mut m, ticket, slot) = with_surge();
+    let editor = PluginSaid::Editor(meloet_protocol::PluginWindowKind::Opens);
+    m.handle(Input::PluginSaid {
+        ticket,
+        said: editor,
+    });
+    cmd(&mut m, Command::OpenPluginWindow { slot: Some(slot) });
+    let said = PluginSaid::WindowOpened {
+        width: 320,
+        height: 200,
+        larger_than_screen: false,
+    };
+    m.handle(Input::PluginSaid { ticket, said });
+    let open = StatusMessage::PluginWindowsOpen { count: 1 };
+    assert_eq!(status(&m), Some(open));
+    m.handle(Input::PluginStopped { ticket });
+    assert!(matches!(
+        status(&m),
+        Some(StatusMessage::PluginStopped { .. })
+    ));
 }
 
 fn song_with_missing() -> Song {

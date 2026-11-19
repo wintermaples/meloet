@@ -407,6 +407,194 @@ fn windows_meloet_does_not_open_and_plugins_without_one() {
 /// Drags upward at points all over the plugin's window, with made-up pointer events, until
 /// a knob is hit: what the window then tells of the parameter must reach meloet and the
 /// plugin's sound side.
+fn read_typed(host: &mut Host, id: u32, text: &str) -> Option<TextValue> {
+    match host.ask(Request::ReadText {
+        slot: 0,
+        id,
+        text: text.into(),
+    }) {
+        Reply::Read { read } => read,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Typed texts: a number is its value, a number past an end is that end and said to be,
+/// and what is no number and no text of the plugin's is not read.
+fn typed(plugin: Plugin, name: Option<&str>) {
+    if !installed(plugin) {
+        return;
+    }
+    let mut host = Host::start_with(GEOMETRY, &[]);
+    let (mut engine, _) = load(&mut host, 0, plugin);
+    play(&mut engine, 8);
+    let (list, _) = params(&mut host, 0);
+    let param = (list.iter())
+        .find(|p| match name {
+            Some(name) => p.name == name,
+            None => p.shape == ParamShape::Continuous && p.automatable,
+        })
+        .unwrap_or_else(|| panic!("{}: no parameter {name:?}", plugin.0));
+    let name = &param.name;
+    let texts = match host.ask(Request::Texts {
+        slot: 0,
+        id: param.id,
+        values: vec![0.0, 0.5, 1.0],
+    }) {
+        Reply::Texts { texts } => texts,
+        other => panic!("{other:?}"),
+    };
+    let [low, middle, high] = &texts[..] else {
+        panic!("{texts:?}");
+    };
+    eprintln!("{} {name:?}: {low:?} … {middle:?} … {high:?}", plugin.0);
+    let mut read = |text: &str| {
+        let read = read_typed(&mut host, param.id, text);
+        eprintln!(
+            "  {text:?} -> {:?}",
+            read.as_ref().map(|r| (r.value, r.clamped, r.text.clone()))
+        );
+        read
+    };
+    let top = read("99999999").expect("a number past the top");
+    assert!(top.clamped && top.value == 1.0, "{top:?}");
+    let bottom = read("-99999999").expect("a number past the bottom");
+    // An end without a bound ("-inf dB") has nothing past it.
+    let bound = !low.as_deref().unwrap_or_default().contains("inf");
+    assert!(bottom.clamped == bound && bottom.value == 0.0, "{bottom:?}");
+    for text in ["???", "", "abc"] {
+        assert_eq!(read(text), None, "{text:?}");
+    }
+    let wide = read("９９９９９９９９").expect("wide digits");
+    assert!(wide.clamped && wide.value == 1.0, "{wide:?}");
+    // The plugin's own text of the middle comes back as the middle.
+    let back = read(middle.as_deref().unwrap()).expect("the plugin's own text");
+    assert!(!back.clamped, "{back:?}");
+    assert!((back.value - 0.5).abs() < 0.02, "{back:?}");
+    assert_eq!(host.ask(Request::Quit), Reply::Ok);
+    assert!(host.child.wait_for_exit(WAIT).is_some());
+}
+
+macro_rules! typed {
+    ($($name:ident: $plugin:expr, $param:expr;)*) => {$(
+        #[test]
+        #[ignore = "needs the plugins of this PC"]
+        fn $name() {
+            let _alone = alone();
+            typed($plugin, $param);
+        }
+    )*};
+}
+
+typed! {
+    surge_xt_vst3_typed_volume: SURGE_VST3, Some("Global Volume");
+    surge_xt_vst3_typed_cutoff: SURGE_VST3, Some("A Filter 1 Cutoff");
+    surge_xt_vst3_typed_pitch: SURGE_VST3, Some("A Osc 1 Pitch");
+    surge_xt_lv2_typed: SURGE_LV2, Some("A Filter 1 Cutoff");
+    zamcomp_vst3_typed: ZAMCOMP_VST3, None;
+    zamcomp_lv2_typed: ZAMCOMP_LV2, None;
+    lsp_compressor_vst3_typed: LSP_COMP_VST3, None;
+    lsp_compressor_lv2_typed: LSP_COMP_LV2, None;
+    dragonfly_lv2_typed: DRAGONFLY_LV2, None;
+}
+
+/// Surge XT takes a state in with the next block, and its controller (JUCE's) shows the
+/// values of before until it is given the component's state again.
+#[test]
+#[ignore = "needs Surge XT"]
+fn surge_xt_vst3_values_follow_a_state() {
+    let _alone = alone();
+    if !installed(SURGE_VST3) {
+        return;
+    }
+    let mut host = Host::start_with(GEOMETRY, &[]);
+    let (mut engine, _) = load(&mut host, 0, SURGE_VST3);
+    play(&mut engine, 8);
+    let (list, _) = params(&mut host, 0);
+    let cutoff = list.iter().find(|p| p.name == "A Filter 1 Cutoff").unwrap();
+    let first = host.state(0);
+    let set = host.ask(Request::SetParam {
+        slot: 0,
+        id: cutoff.id,
+        value: 0.2,
+    });
+    assert!(matches!(set, Reply::Param { .. }));
+    play(&mut engine, 4);
+    let second = host.state(0);
+    host.wait_for(QUIET, |_| false);
+
+    for (state, value) in [
+        (&first, cutoff.value.unwrap()),
+        (&second, 0.2),
+        (&first, cutoff.value.unwrap()),
+    ] {
+        host.notices.clear();
+        assert_eq!(
+            host.ask_with(Request::SetState { slot: 0 }, state).0,
+            Reply::Ok
+        );
+        play(&mut engine, 4);
+        // The values that came with the state are told once they are there.
+        let told = host.wait_for(WAIT, |n| *n == Notice::ParamsChanged { slot: 0 });
+        assert!(told.is_some());
+        let now = host.value(0, cutoff.id).unwrap();
+        assert!((now - value).abs() < 1e-6, "{now} is not {value}");
+        let (again, _) = params(&mut host, 0);
+        let listed = again.iter().find(|p| p.id == cutoff.id).unwrap();
+        assert!((listed.value.unwrap() - value).abs() < 1e-6);
+        // Told once: nothing follows when nothing changes.
+        host.notices.clear();
+        play(&mut engine, 8);
+        host.wait_for(QUIET, |_| false);
+        assert!(!host.notices.contains(&Notice::ParamsChanged { slot: 0 }));
+    }
+    assert_eq!(host.ask(Request::Quit), Reply::Ok);
+    assert!(host.child.wait_for_exit(WAIT).is_some());
+}
+
+/// A patch chosen in Surge XT's window changes most values without an edit being told.
+#[test]
+#[ignore = "needs an X display and Surge XT"]
+fn surge_xt_vst3_values_follow_a_patch_chosen_in_its_window() {
+    let _alone = alone();
+    if !installed(SURGE_VST3) {
+        return;
+    }
+    let x = X::open();
+    let mut host = Host::start_with(GEOMETRY, &[]);
+    let pid = host.child.0.id();
+    let (mut engine, _) = load(&mut host, 0, SURGE_VST3);
+    play(&mut engine, 8);
+    let (before, _) = params(&mut host, 0);
+    open(&mut host, 0, SURGE_VST3.0);
+    let window = x.wait(pid, SURGE_VST3.0, true).expect("the window");
+    play(&mut engine, 60);
+    host.wait_for(QUIET, |_| false);
+    host.notices.clear();
+    x.focus(window);
+    // The arrow to the next patch, in a window of 1597x995.
+    let size = x.size(window);
+    let at = |place: u32, whole: u32, of: u32| (place * whole / of) as i16;
+    x.drag(window, at(470, size.0, 1597), at(80, size.1, 995), 40);
+    play(&mut engine, 40);
+    let told = host.wait_for(WAIT, |n| *n == Notice::ParamsChanged { slot: 0 });
+    assert!(told.is_some(), "the new patch was not told");
+    let (after, _) = params(&mut host, 0);
+    let moved = (before.iter().zip(&after))
+        .filter(|(a, b)| a.id == b.id && a.value != b.value)
+        .count();
+    eprintln!("the next patch: {moved} of {} values changed", after.len());
+    assert!(moved > 0);
+    // Leaving the window with nothing changed since tells nothing.
+    host.notices.clear();
+    x.unfocus();
+    play(&mut engine, 12);
+    host.wait_for(QUIET, |_| false);
+    assert!(!host.notices.contains(&Notice::ParamsChanged { slot: 0 }));
+    close(&mut host, 0);
+    assert_eq!(host.ask(Request::Quit), Reply::Ok);
+    assert!(host.child.wait_for_exit(WAIT).is_some());
+}
+
 fn drag_a_knob(x: &X, plugin: Plugin, step: usize) {
     if !installed(plugin) {
         return;

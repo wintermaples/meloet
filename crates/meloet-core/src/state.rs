@@ -745,7 +745,13 @@ impl Model {
             Input::PluginUnreadable { ticket } => {
                 self.play.plugin_unreadable(ticket, &mut effects);
             }
-            Input::PluginStopped { ticket } => self.play.plugin_stopped(ticket, &mut effects),
+            Input::PluginStopped { ticket } => {
+                self.play.plugin_stopped(ticket, &mut effects);
+                // The stop is the newer news.
+                if self.notice.as_ref().is_some_and(asked_to_see) {
+                    self.notice = None;
+                }
+            }
             Input::PluginsLost => self.play.plugs_lost(&mut effects),
             Input::PluginSaid { ticket, said } => {
                 if let Some(n) = self.play.plugin_said(ticket, said, &mut effects) {
@@ -1999,8 +2005,11 @@ impl Model {
             });
         }
         // Said until the plugin is loaded again or removed, also over a recording: it goes
-        // on, and the person should know why the track is silent.
-        if let Some((slot, name)) = self.play.stopped_plugin() {
+        // on, and the person should know why the track is silent. What the person just
+        // asked to see is said once over it; the next operation brings it back.
+        if !self.notice.as_ref().is_some_and(asked_to_see)
+            && let Some((slot, name)) = self.play.stopped_plugin()
+        {
             return Some(StatusMessage::PluginStopped { name, slot });
         }
         if self.file_drop.as_ref().is_some_and(|d| d.addable) {
@@ -2214,6 +2223,17 @@ fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
             d::Unusable::StoppedByPc => Unusable::StoppedByPc,
         }),
     }
+}
+
+/// The notices that answer "show me": the summary of a mixer just opened (it names the
+/// stopped plugins itself) and the word of a plugin's window just opened.
+fn asked_to_see(notice: &StatusMessage) -> bool {
+    matches!(
+        notice,
+        StatusMessage::MixerPassesBy { .. }
+            | StatusMessage::PluginWindowsOpen { .. }
+            | StatusMessage::PluginWindowLarge { .. }
+    )
 }
 
 #[cfg(test)]

@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
+use std::time::{Duration, Instant};
 
 use meloet_plugin::ipc::{FromPlugin, MAX_LATENCY_FRAMES, ToPlugin, Transport};
 use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow, ParamShape};
@@ -45,7 +46,7 @@ use vst3::{ComPtr, ComWrapper, Interface};
 use self::com::{EventList, Frame, Handler, HostApp, MemStream, ParamChanges};
 use super::{
     Activation, Candidate, Controller, GATE_WAIT, Gate, Loaded, Opened, ProcessBlock, Processor,
-    Read, Said,
+    Read, Said, judge_typed,
 };
 use crate::rtcheck;
 
@@ -61,6 +62,10 @@ const CONTROLLERS: usize = 130;
 const NO_PARAM: u32 = u32::MAX;
 /// A parameter with more steps than this is shown as a smooth one.
 const MOST_STEPS: i32 = 128;
+/// How many blocks the audio thread is given to take in a state or an edit before the
+/// controller is brought up to date with it, and how long when no blocks run.
+const SETTLE_BLOCKS: u32 = 2;
+const SETTLE_WAIT: Duration = Duration::from_millis(200);
 
 struct Module {
     factory: ComPtr<IPluginFactory>,
@@ -273,6 +278,8 @@ struct Instance {
     active: AtomicBool,
     gate: Gate,
     latency: AtomicU32,
+    /// The blocks the plugin has processed.
+    blocks: AtomicU32,
 }
 
 impl Instance {
@@ -328,6 +335,7 @@ impl Instance {
                 active: AtomicBool::new(false),
                 gate: Gate::default(),
                 latency: AtomicU32::new(0),
+                blocks: AtomicU32::new(0),
             })
         }
     }
@@ -550,6 +558,7 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
         instance,
         from_audio,
         units: None,
+        settle: None,
     };
     Ok(Loaded {
         plugin,
@@ -803,6 +812,7 @@ impl Processor for Vst3Processor {
                 block.sink.push(FromPlugin::Param { id, value });
             }
         }
+        self.instance.blocks.fetch_add(1, Relaxed);
         self.instance.gate.leave();
     }
 
@@ -830,6 +840,18 @@ struct Vst3Controller {
     from_audio: rtrb::Consumer<(u32, f64)>,
     /// What each parameter is measured in, by id; filled when the parameters are first listed.
     units: Option<HashMap<u32, String>>,
+    settle: Option<Settle>,
+}
+
+/// The controller's values are to be read anew from the component. Some plugins take a
+/// state in with the next block (Surge XT) and change values in their window (a patch)
+/// without a word, and their controller (JUCE's) goes on showing the values of before.
+struct Settle {
+    /// `Instance::blocks` and the time when this was asked for.
+    blocks: u32,
+    since: Instant,
+    /// The list is told to have changed even when no value did (the names may have).
+    say: bool,
 }
 
 /// The text the plugin shows for a value, with the parameter's unit.
@@ -914,6 +936,52 @@ impl Vst3Controller {
                 (id, tree[&top].1.clone())
             })
             .collect()
+    }
+
+    fn settle_later(&mut self, say: bool) {
+        self.settle = Some(Settle {
+            blocks: self.instance.blocks.load(Relaxed),
+            since: Instant::now(),
+            say: say || self.settle.as_ref().is_some_and(|settle| settle.say),
+        });
+    }
+
+    /// Gives the controller the component's state as it is now. Whether a listed parameter
+    /// has another value after it.
+    fn resync(&mut self) -> bool {
+        let Some(controller) = &self.instance.controller else {
+            return false;
+        };
+        let ids: Vec<u32> = (self.units.iter().flatten().map(|(&id, _)| id)).collect();
+        let values = || -> Vec<u64> {
+            // SAFETY: plain questions on the main thread.
+            (ids.iter())
+                .map(|&id| unsafe { controller.getParamNormalized(id) }.to_bits())
+                .collect()
+        };
+        let before = values();
+        let stream = ComWrapper::new(MemStream::default());
+        let Some(at) = stream.as_com_ref::<IBStream>() else {
+            return false;
+        };
+        // SAFETY: as in `save_state` and `load_state`.
+        unsafe {
+            if self.instance.component.getState(at.as_ptr()) != kResultOk {
+                return false;
+            }
+            stream.rewind();
+            controller.setComponentState(at.as_ptr());
+        }
+        self.forget_values_changed();
+        before != values()
+    }
+
+    /// A controller says `kParamValuesChanged` from inside `setComponentState` (JUCE):
+    /// meloet asked for that itself.
+    fn forget_values_changed(&self) {
+        if let Ok(mut told) = self.instance.handler.told.lock() {
+            told.restart &= !RestartFlags_::kParamValuesChanged;
+        }
     }
 
     /// After `kLatencyChanged`: off and on again, as VST3 asks, then the new delay.
@@ -1027,17 +1095,17 @@ impl Controller for Vst3Controller {
             .then(|| text.strip_suffix(unit.as_str()))
             .flatten()
             .map(str::trim_end);
-        [Some(text), bare].into_iter().flatten().find_map(|text| {
+        let answer = [Some(text), bare].into_iter().flatten().find_map(|text| {
             let mut wide: Vec<u16> = text.encode_utf16().chain([0]).collect();
             let mut value = f64::NAN;
             // SAFETY: a 0-terminated UTF-16 string and a place for the answer.
             let read =
                 unsafe { controller.getParamValueByString(id, wide.as_mut_ptr(), &mut value) };
-            (read == kResultOk && value.is_finite()).then(|| Read {
-                value: value.clamp(0.0, 1.0),
-                clamped: (!(-1e-9..=1.0 + 1e-9).contains(&value)).then_some(true),
-            })
-        })
+            (read == kResultOk && value.is_finite()).then_some(value)
+        });
+        let shown = |value| value_text(controller, id, value, unit);
+        let (low, high) = (shown(0.0), shown(1.0));
+        judge_typed(text, answer, low.as_deref(), high.as_deref(), shown)
     }
 
     fn set_param(&mut self, id: u32, value: f64) {
@@ -1103,6 +1171,8 @@ impl Controller for Vst3Controller {
         }
         // What the audio thread reported before belongs to the state that was replaced.
         while self.from_audio.pop().is_ok() {}
+        self.forget_values_changed();
+        self.settle_later(false);
         Ok(())
     }
 
@@ -1177,6 +1247,10 @@ impl Controller for Vst3Controller {
         }
     }
 
+    fn editor_left(&mut self) {
+        self.settle_later(false);
+    }
+
     // A VST3 view lives on the run loop (`runloop`), not on an idle call.
     fn idle(&mut self) {}
 
@@ -1207,6 +1281,17 @@ impl Controller for Vst3Controller {
             }
         }
         if restart & RestartFlags_::kParamValuesChanged != 0 {
+            said.push(Said::ParamsChanged);
+        }
+        if restart & RestartFlags_::kParamTitlesChanged != 0 {
+            self.settle_later(true);
+        }
+        let blocks = self.instance.blocks.load(Relaxed);
+        if let Some(settle) = (self.settle).take_if(|settle| {
+            blocks.wrapping_sub(settle.blocks) >= SETTLE_BLOCKS
+                || settle.since.elapsed() >= SETTLE_WAIT
+        }) && (self.resync() || settle.say)
+        {
             said.push(Said::ParamsChanged);
         }
     }

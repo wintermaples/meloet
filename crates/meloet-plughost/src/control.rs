@@ -24,7 +24,7 @@ use meloet_plugin::wire::{
     ToHost, WIRE_VERSION, WireError, read_frame, write_frame,
 };
 
-use crate::formats::{self, Activation, Controller, Said, leading_number, runloop};
+use crate::formats::{self, Activation, Controller, Said, half_width, past_the_end, runloop};
 use crate::rt::{self, SlotRun};
 use crate::window::{Display, FocusAt, WindowEvent};
 
@@ -99,33 +99,6 @@ fn error(message: impl Into<String>) -> Answer {
         },
         Vec::new(),
     )
-}
-
-/// Whether a typed text names a value past the end of the range its value was put at, as far
-/// as the numbers in the texts tell. For the formats that cannot say it themselves.
-fn past_the_end(typed: &str, value: f64, low: Option<&str>, high: Option<&str>) -> bool {
-    let number = |text: Option<&str>| text.and_then(leading_number);
-    let (Some(typed), Some(low), Some(high)) = (leading_number(typed), number(low), number(high))
-    else {
-        return false;
-    };
-    // One end may be without bound ("-inf dB"); the other is still an end.
-    let span = high - low;
-    if span.is_nan() || span == 0.0 {
-        return false;
-    }
-    let slack = if span.is_finite() {
-        span.abs() * 1e-6
-    } else {
-        1e-9
-    };
-    if value >= 1.0 {
-        (typed - high) * span.signum() > slack
-    } else if value <= 0.0 {
-        (low - typed) * span.signum() > slack
-    } else {
-        false
-    }
 }
 
 impl Host {
@@ -333,6 +306,9 @@ impl Host {
                 entered = Some(slot);
             } else {
                 self.notices.push(Notice::EditorLeft { slot });
+                if let Some(controller) = self.slots[slot as usize].as_mut() {
+                    controller.editor_left();
+                }
             }
         }
         // Leaving one window is told before entering the next.
@@ -612,6 +588,7 @@ impl Host {
             },
             Request::ReadText { slot, id, text } => match self.controller(slot) {
                 Ok(controller) => {
+                    let text = half_width(&text);
                     let read = controller.read_text(id, &text).map(|read| {
                         let value = read.value.clamp(0.0, 1.0);
                         let (low, high) = (controller.text(id, 0.0), controller.text(id, 1.0));
@@ -852,39 +829,4 @@ pub fn run(control: UnixStream, memory: OwnedFd) -> i32 {
         std::mem::forget(slots);
     }
     code
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn numbers_at_the_start_of_texts() {
-        assert_eq!(leading_number("523.25 Hz"), Some(523.25));
-        assert_eq!(leading_number(" -12.5 dB"), Some(-12.5));
-        assert_eq!(leading_number("−3 st"), Some(-3.0));
-        assert_eq!(leading_number("+7"), Some(7.0));
-        assert_eq!(leading_number("-inf dB"), Some(f64::NEG_INFINITY));
-        assert_eq!(leading_number("Hall"), None);
-        assert_eq!(leading_number(""), None);
-    }
-
-    #[test]
-    fn a_typed_value_past_the_end_is_seen_from_the_texts() {
-        let ends = (Some("0.00 %"), Some("100.00 %"));
-        assert!(past_the_end("150", 1.0, ends.0, ends.1));
-        assert!(past_the_end("-5 %", 0.0, ends.0, ends.1));
-        assert!(!past_the_end("100", 1.0, ends.0, ends.1));
-        assert!(!past_the_end("0", 0.0, ends.0, ends.1));
-        assert!(!past_the_end("50", 0.5, ends.0, ends.1));
-        // A range that runs downward.
-        assert!(!past_the_end("30", 1.0, Some("20 dB"), Some("-60 dB")));
-        assert!(past_the_end("-70", 1.0, Some("20 dB"), Some("-60 dB")));
-        assert!(past_the_end("30", 0.0, Some("20 dB"), Some("-60 dB")));
-        // Texts without numbers say nothing.
-        assert!(!past_the_end("Hall", 1.0, Some("Room"), Some("Hall")));
-        assert!(!past_the_end("-80", 0.0, Some("-inf dB"), Some("0 dB")));
-        assert!(past_the_end("30", 1.0, Some("-inf dB"), Some("20.00 dB")));
-        assert!(!past_the_end("20", 1.0, Some("-inf dB"), Some("20.00 dB")));
-    }
 }

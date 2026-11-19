@@ -288,6 +288,11 @@ fn a_plugin_says_what_window_it_has_and_lists_its_parameters_with_values_and_tex
     assert_eq!(read(0, " 100"), value(1.0, false, "100 %"));
     assert_eq!(read(0, "250 %"), value(1.0, true, "100 %"));
     assert_eq!(read(0, "-3"), value(0.0, true, "0 %"));
+    // The wide digits and signs of a Japanese keyboard.
+    assert_eq!(read(0, "３０"), value(0.3, false, "30 %"));
+    assert_eq!(read(0, "１２．０ %"), value(0.12, false, "12 %"));
+    assert_eq!(read(0, "−３"), value(0.0, true, "0 %"));
+    assert_eq!(read(0, "－３"), value(0.0, true, "0 %"));
     assert_eq!(read(0, "loud"), None);
     assert_eq!(
         read(1, "odd").map(|read| (read.value, read.text)),

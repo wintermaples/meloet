@@ -405,6 +405,8 @@ fn run_child(
     // a platform that needs a display (X), and abort where there is none. A scan shows no
     // window. The processes plugins sound in are not given this: they do show windows.
     command.env("QT_QPA_PLATFORM", "offscreen");
+    // The X display stays, slow as it makes some (LSP's VST3 bundle: 38 s with it, 8 s
+    // without): without it those plugins say they have no window.
     command.envs(context.env.iter().map(|(name, value)| (name, value)));
     let mut child = launch::spawn(&mut command)
         .inspect_err(|e| eprintln!("meloet: cannot start {}: {e}", context.exe.display()))

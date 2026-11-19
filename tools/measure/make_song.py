@@ -3,6 +3,10 @@
 
 usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16] [--tempo 96]
                                              [--cc 0] [--seed 1] [--tracks N]
+                                             [--instruments plugin,sf2,builtin]
+                                             [--scan SCAN.json] [--plugin NAME] [--plugin-format vst3|lv2]
+                                             [--sf2 FILE.sf2[:BANK:PROGRAM[:NAME]]] [--effect-plugin NAME]
+                                             [--stagger TICKS] [--hard-pan]
 
 --tracks N (1..64): a version 3 song with N tracks, each with one clip and one take of --notes
 notes. The instruments go round BAND (the groups mixed), with the sends a new track of that
@@ -10,12 +14,25 @@ group gets, an EQ and a compressor on some tracks, a reverb on return A, a delay
 and the limiter on the master (every parameter at its default). The first track keeps the ids
 1, 2, 3 (track, clip, take), so `selectClip 2` works for both shapes.
 
+--instruments (with --tracks): what each track sounds with, in the order of the tracks; the last
+word goes on for the tracks after it ("plugin": every track; "plugin,builtin": the first one).
+The song is then version 4. "plugin" is the instrument --plugin names and "sf2" the preset --sf2
+names (the file itself has to be in meloet's SF2 folder, $MELOET_SF2_DIR or
+$XDG_DATA_HOME/meloet/sf2; only its name, its sha256 and the preset go into the song). Plugins
+are looked up by their name in a scan record (--scan, <XDG_CACHE_HOME>/meloet/plugins/scan.json);
+the song gets the key, name, vendor and path found there and no state. --effect-plugin: that
+effect in the first free insert slot of every "plugin" and "sf2" track. --stagger: track i
+starts its notes i * TICKS later (16 plugins that all start a chord in the same block are a
+case of their own, docs/measurements/2026-11-19-round5-plughost.md). --hard-pan: the "plugin"
+tracks all the way left, the others all the way right, no sends and no built-in inserts, so
+that a recording of the output tells the two apart (plugin-stop.sh).
+
 Without --tracks the shape is crates/meloet-core/src/songfile.rs, version 1. The clip starts at the song's start
 and is --bars bars of 4/4 long. Notes are spread over the clip in start order, keys 48..84,
 lengths of a 16th to a half note (never past the clip's end), velocity 40..100. --cc puts that
 many sustain (CC 64) points in the take, evenly. The same arguments always write the same file.
 """
-import argparse, json, os, random, sys
+import argparse, hashlib, json, os, random, sys
 
 TICKS_PER_QUARTER = 480
 TICKS_PER_BAR = 4 * TICKS_PER_QUARTER
@@ -58,25 +75,72 @@ def slots(effects):
     return made + [None] * (INSERT_SLOTS - len(made))
 
 
-def band_song(tracks, notes, bars, tempo, cc, seed):
-    """Version 3: `tracks` tracks, ids 1 + 3 i (track), 2 + 3 i (clip), 3 + 3 i (take)."""
+def scanned_plugin(scan, name, fmt, kind):
+    """The fields a song keeps of the plugin called `name` in the scan record at `scan`."""
+    with open(scan, encoding="utf-8") as f:
+        record = json.load(f)
+    for bundle in record["bundles"]:
+        for plugin in bundle["plugins"]:
+            if (plugin["name"] == name and plugin["key"].startswith(fmt + ":")
+                    and plugin["kind"]["role"] == kind):
+                return {"key": plugin["key"], "name": plugin["name"], "vendor": plugin["vendor"],
+                        "path": bundle["path"]}
+    sys.exit(f"make_song.py: no {fmt} {kind} named {name!r} in {scan}")
+
+
+def sf2_preset(text):
+    """--sf2 FILE[:BANK:PROGRAM[:NAME]] as the fields a song keeps."""
+    parts = text.split(":")
+    path = parts[0]
+    bank, program = (int(parts[1]), int(parts[2])) if len(parts) >= 3 else (0, 0)
+    name = parts[3] if len(parts) >= 4 else f"{bank}:{program}"
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return {"file": os.path.basename(path), "sha256": digest.hexdigest(), "bank": bank,
+            "program": program, "name": name}
+
+
+def band_song(tracks, notes, bars, tempo, cc, seed, instruments=(), plugin=None, sf2=None,
+              effect=None, stagger=0, hard_pan=False):
+    """Version 3: `tracks` tracks, ids 1 + 3 i (track), 2 + 3 i (clip), 3 + 3 i (take).
+
+    Version 4 when `instruments` (the words of --instruments) names what the tracks sound with.
+    """
     length = bars * TICKS_PER_BAR
     controls = [[(i * length) // max(cc, 1), 64, 127 if i % 2 == 0 else 0] for i in range(cc)]
     track_list, takes = [], []
     for i in range(tracks):
         file_name, name, group, keys, effects = BAND[i % len(BAND)]
         track, clip, take = 1 + 3 * i, 2 + 3 * i, 3 + 3 * i
+        word = instruments[min(i, len(instruments) - 1)] if instruments else "builtin"
+        instrument = {"kind": "builtin", "name": file_name}
+        inserts = slots([] if hard_pan else effects)
+        if word == "plugin":
+            instrument, name = {"kind": "plugin", **plugin}, plugin["name"]
+        elif word == "sf2":
+            instrument, name = {"kind": "sf2", **sf2}, sf2["name"]
+        if word != "builtin":
+            if group in ("drums", "bass"):
+                keys = (48, 73)
+            if effect:
+                inserts[inserts.index(None)] = {"plugin": dict(effect)}
         made = take_notes(random.Random(seed * 1000 + i), notes, length, keys)
+        if stagger:
+            made = [[min(start + i * stagger, length - 1), n_len, key, vel] for start, n_len, key, vel in made]
+            made = [[start, min(n_len, length - start), key, vel] for start, n_len, key, vel in made]
         takes.append({"id": take, "length": length, "notes": made, "controls": controls if i == 0 else []})
         track_list.append({
             "id": track,
-            "name": name if i < len(BAND) else f"{name} {i // len(BAND) + 1}",
+            "name": (name if i < len(BAND) else f"{name} {i // len(BAND) + 1}") if word == "builtin"
+            else f"{name} {i + 1}",
             "color": i % TRACK_COLORS + 1,
-            "instrument": {"kind": "builtin", "name": file_name},
+            "instrument": instrument,
             "gainDb": -9.0,
-            "pan": PANS[i % len(PANS)],
-            "sends": {"a": NEW_TRACK_SENDS[group], "b": None},
-            "inserts": slots(effects),
+            "pan": (-100 if word == "plugin" else 100) if hard_pan else PANS[i % len(PANS)],
+            "sends": {"a": None if hard_pan else NEW_TRACK_SENDS[group], "b": None},
+            "inserts": inserts,
             "clips": [{"id": clip, "name": name, "start": 0, "end": length, "active": 0,
                        "takes": [{"take": take, "offset": 0}]}],
             "plugins": [],
@@ -84,7 +148,7 @@ def band_song(tracks, notes, bars, tempo, cc, seed):
         })
     return {
         "format": "meloet-song",
-        "version": 3,
+        "version": 4 if instruments else 3,
         "app": "tools/measure/make_song.py",
         "song": {
             "name": f"測る曲 {tracks} トラック {notes} ノート",
@@ -155,15 +219,41 @@ def main(argv):
     p.add_argument("--cc", type=int, default=0)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--tracks", type=int)
+    p.add_argument("--instruments")
+    p.add_argument("--scan")
+    p.add_argument("--plugin")
+    p.add_argument("--plugin-format", default="vst3", choices=["vst3", "lv2"])
+    p.add_argument("--sf2")
+    p.add_argument("--effect-plugin")
+    p.add_argument("--stagger", type=int, default=0)
+    p.add_argument("--hard-pan", action="store_true")
     a = p.parse_args(argv)
     if a.notes < 0 or a.bars < 1 or a.cc < 0 or not 30 <= a.tempo <= 300:
         p.error("notes >= 0, bars >= 1, cc >= 0, tempo 30..300")
     if a.tracks is not None and not 1 <= a.tracks <= 64:
         p.error("tracks 1..64")
+    words = a.instruments.split(",") if a.instruments else []
+    if any(w not in ("plugin", "sf2", "builtin") for w in words):
+        p.error("--instruments: plugin, sf2 or builtin, with commas between")
+    if (words or a.effect_plugin or a.stagger or a.hard_pan) and a.tracks is None:
+        p.error("--instruments, --effect-plugin, --stagger and --hard-pan need --tracks")
+    if a.effect_plugin and not words:
+        p.error("--effect-plugin needs --instruments")
+    if "plugin" in words and not a.plugin or "sf2" in words and not a.sf2:
+        p.error("--instruments plugin needs --plugin, sf2 needs --sf2")
+    if (a.plugin or a.effect_plugin) and not a.scan:
+        p.error("--plugin and --effect-plugin need --scan")
+    if a.stagger < 0:
+        p.error("stagger >= 0")
     if a.tracks is None:
         made = song(a.notes, a.bars, a.tempo, a.cc, a.seed)
     else:
-        made = band_song(a.tracks, a.notes, a.bars, a.tempo, a.cc, a.seed)
+        made = band_song(
+            a.tracks, a.notes, a.bars, a.tempo, a.cc, a.seed, words,
+            scanned_plugin(a.scan, a.plugin, a.plugin_format, "instrument") if a.plugin else None,
+            sf2_preset(a.sf2) if a.sf2 else None,
+            scanned_plugin(a.scan, a.effect_plugin, a.plugin_format, "effect") if a.effect_plugin else None,
+            a.stagger, a.hard_pan)
     data = json.dumps(made, ensure_ascii=False, separators=(",", ":"))
     tmp = a.out + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:

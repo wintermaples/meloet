@@ -5,6 +5,9 @@
 //!   page finished loading, write what the WebView shows to the PNG and exit.
 //! - `MELOET_COMMANDS='[{"afterMs":800,"command":{"type":"chooserConfirm"}}]'`: that long after
 //!   the page finished loading, send each intent to the core, the way the screen does.
+//! - `MELOET_EVAL='[{"afterMs":900,"js":"document.querySelector(…).click()"}]'`: that long after
+//!   the page finished loading, run each piece of JavaScript in the page. For what only the
+//!   screen knows (a folded heading, the text in a search field) when shooting the real app.
 //! - `MELOET_EXIT_AFTER_MS=20000`: that long after the page finished loading, exit the usual
 //!   way (the core stops and writes its measurements).
 //! - `MELOET_CLOSE_AFTER_MS=2500`: that long after the page finished loading, close the window
@@ -110,6 +113,36 @@ fn parse_commands(text: &str) -> Result<Vec<(u64, Command)>, String> {
         .collect()
 }
 
+/// `MELOET_EVAL`: all or nothing, as `MELOET_COMMANDS`.
+fn page_scripts() -> Vec<(u64, String)> {
+    let Ok(text) = std::env::var("MELOET_EVAL") else {
+        return Vec::new();
+    };
+    parse_page_scripts(&text).unwrap_or_else(|e| {
+        eprintln!("MELOET_EVAL: {e}");
+        Vec::new()
+    })
+}
+
+fn parse_page_scripts(text: &str) -> Result<Vec<(u64, String)>, String> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let after_ms = entry
+                .get("afterMs")
+                .and_then(serde_json::Value::as_u64)
+                .ok_or(format!("entry {index}: afterMs must be a whole number"))?;
+            let js = entry
+                .get("js")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(format!("entry {index}: js must be text"))?;
+            Ok((after_ms, js.to_string()))
+        })
+        .collect()
+}
+
 pub fn apply_window_size(window: &WebviewWindow) {
     let Ok(text) = std::env::var("MELOET_WINDOW") else {
         return;
@@ -175,6 +208,15 @@ fn run_script(webview: &Webview) {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(after_ms));
             app.state::<crate::Core>().send(command);
+        });
+    }
+    for (after_ms, js) in page_scripts() {
+        let webview = webview.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(after_ms));
+            if let Err(e) = webview.eval(js) {
+                eprintln!("MELOET_EVAL: {e}");
+            }
         });
     }
     if let Some(after_ms) = script.exit_after_ms {
@@ -280,7 +322,7 @@ pub fn after_pc_window(_: &'static str) {}
 mod tests {
     use meloet_protocol::Command;
 
-    use super::{Script, parse_commands, parse_script, parse_size};
+    use super::{Script, parse_commands, parse_page_scripts, parse_script, parse_size};
 
     #[test]
     fn window_size_text() {
@@ -318,6 +360,22 @@ mod tests {
             format!(r#"[{good}, {{"afterMs": 1, "command": {{"type": "noSuchThing"}}}}]"#),
         ] {
             assert!(parse_commands(&bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn page_scripts_text() {
+        assert_eq!(
+            parse_page_scripts(r#"[{"afterMs": 900, "js": "a()"}, {"afterMs": 0, "js": "b()"}]"#),
+            Ok(vec![(900, "a()".to_string()), (0, "b()".to_string())])
+        );
+        for bad in [
+            "not json",
+            r#"[{"afterMs": 1}]"#,
+            r#"[{"js": "a()"}]"#,
+            r#"[{"afterMs": 1, "js": 2}]"#,
+        ] {
+            assert!(parse_page_scripts(bad).is_err(), "{bad}");
         }
     }
 

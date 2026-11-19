@@ -35,7 +35,7 @@ use meloet_sound::sampler::{LoadError, SampleBank};
 
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
-use crate::measure::{self, KeyToSound};
+use crate::measure::{self, KeyToSound, PluginLog};
 use crate::mixbook::{self, MixBook};
 use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot};
 use crate::plugins::hosts::{
@@ -424,6 +424,7 @@ impl Core {
                 recovery: options.state_dir.clone().map(recovery::Writer::start),
                 ending: Vec::new(),
                 key_to_sound: options.measure_dir.clone().map(KeyToSound::new),
+                plugin_log: options.measure_dir.clone().map(PluginLog::new),
                 links,
                 midi,
                 devices,
@@ -1296,6 +1297,7 @@ struct Worker {
     /// Waiting for the recovery file, for the PC ending.
     ending: Vec<Sender<()>>,
     key_to_sound: Option<KeyToSound>,
+    plugin_log: Option<PluginLog>,
     links: Links,
     midi: Option<Midi>,
     devices: Option<DevicesState>,
@@ -2028,6 +2030,9 @@ impl Worker {
                 state.requested_frames,
                 state.actual_frames,
             );
+        }
+        if let (Some(log), Some(side)) = (&mut self.plugin_log, &self.plugins) {
+            log.look(last, || side.hosts.processes());
         }
     }
 }

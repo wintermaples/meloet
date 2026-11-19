@@ -6,11 +6,15 @@
 //! All of it works while counting in or recording too: nothing here moves where a take is
 //! recorded.
 
+use std::sync::Arc;
+
 use meloet_model::effects::EffectKind as ModelEffect;
-use meloet_model::{Bus, Gain, INSERT_SLOTS, Inserts, Pan, StripId, TrackId, mixer};
+use meloet_model::{
+    Bus, Gain, INSERT_SLOTS, Inserts, Pan, PluginPlace, PluginRef, StripId, TrackId, mixer,
+};
 use meloet_protocol::{
-    EffectKind, InsertRef, InsertsView, MasterView, ParamsView, PluginState, ReturnView,
-    SelectedInsert, SendBus, StatusMessage, StripRef,
+    EffectKind, InsertRef, InsertsView, MasterView, ParamsView, ReturnView, SelectedInsert,
+    SendBus, SlotsView, StatusMessage, StripRef,
 };
 
 use super::Play;
@@ -96,7 +100,7 @@ fn bus_of(bus: SendBus) -> Bus {
     }
 }
 
-pub(super) fn model_effect(kind: EffectKind) -> ModelEffect {
+pub(crate) fn model_effect(kind: EffectKind) -> ModelEffect {
     match kind {
         EffectKind::Eq4 => ModelEffect::Eq4,
         EffectKind::Compressor => ModelEffect::Compressor,
@@ -266,6 +270,29 @@ impl Play {
         true
     }
 
+    /// Puts a plugin, as the shelf has it, into an empty slot. Returns whether it went in.
+    /// It is loaded then, and the slot lets the sound through until it is.
+    pub(super) fn add_plugin_effect(
+        &mut self,
+        strip: StripId,
+        slot: usize,
+        plugin: Arc<PluginRef>,
+        effects: &mut Vec<Effect>,
+    ) -> bool {
+        let Ok(e) = mixer::add_plugin_effect(self.doc(), strip, slot, plugin) else {
+            return false;
+        };
+        self.apply(e, effects);
+        true
+    }
+
+    /// The insert slots of a strip, each plugin as it is now.
+    pub fn slots_of(&self, strip: StripId, inserts: &Inserts) -> SlotsView {
+        slots_view(inserts, |slot| {
+            self.plugin_state(PluginPlace::Insert(strip, slot))
+        })
+    }
+
     /// `SelectInsert`. Returns whether an insert is selected now: the parameters panel is
     /// then to be shown.
     pub fn select_insert(&mut self, insert: Option<InsertRef>) -> bool {
@@ -338,7 +365,7 @@ impl Play {
                 pan: r.channel.pan.get(),
                 muted: r.muted,
                 inserts: inserts_view(&r.channel.inserts),
-                slots: slots_view(&r.channel.inserts, |_| PluginState::Missing),
+                slots: self.slots_of(StripId::Return(bus), &r.channel.inserts),
             }
         })
     }
@@ -349,7 +376,7 @@ impl Play {
             gain_db: gain_view(master.gain),
             pan: master.pan.get(),
             inserts: inserts_view(&master.inserts),
-            slots: slots_view(&master.inserts, |_| PluginState::Missing),
+            slots: self.slots_of(StripId::Master, &master.inserts),
         }
     }
 

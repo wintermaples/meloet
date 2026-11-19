@@ -6,27 +6,32 @@ mod songs;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
-use meloet_model::{BuiltinInstrument, Note, Song};
+use meloet_model::drums::gm_kit_rows;
+use meloet_model::mixer::Missing;
+use meloet_model::{BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace, Song, StripId};
 use meloet_plugin::ScanCache;
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
-    EndpointView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView,
-    LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize,
-    OutputsView, PluginSlotRef, PluginState, QuantizeSettings, RecoveryCause, SettingsDialogView,
-    ShelfView, SongFile, SongView, SoundRef, StatusMessage, StatusView, TrackView, Unusable,
-    VelocityFixed, WorkspaceView,
+    EndpointView, FileDropView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView,
+    KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
+    MeterSize, MissingRef, MissingView, OutputsView, QuantizeSettings, RecoveryCause,
+    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
+    StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
+use crate::catalog::Catalog;
 use crate::instruments;
+use crate::sf2store::{self, Sf2Info, Sf2Key};
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::mixer::{gain_view, inserts_view};
-use crate::play::{Cut, EngineOp, Heard, Play, RecordReport};
+use crate::play::{Cut, EngineOp, Heard, Play, PlugState, RecordReport};
 use crate::plugins::{Plugins, ScanJob, ScanNews};
 use crate::settings::{SCALES, Settings};
 
@@ -155,15 +160,40 @@ pub enum Input {
     PluginScan(ScanNews),
     /// The answer to [`Effect::PickPluginPlace`]; `None` when the window was put away.
     PluginPlacePicked(Option<PathBuf>),
-    /// The process of the plugin in `slot` answers no more. A recording goes on.
+    /// An answer to [`Effect::LoadPlugin`] and to [`Effect::ReloadPlugin`]: the plugin is
+    /// ready to be put into the engine (`EngineOp::Plug`).
+    PluginLoaded {
+        ticket: u64,
+    },
+    /// The other answer to them: it did not load.
+    PluginUnreadable {
+        ticket: u64,
+    },
+    /// The process of the plugin loaded under `ticket` answers no more. A recording goes on.
     PluginStopped {
-        name: String,
-        slot: PluginSlotRef,
+        ticket: u64,
     },
-    /// The answer to [`Effect::ReloadPlugin`]: the plugin sounds again.
-    PluginReloaded {
-        slot: PluginSlotRef,
+    /// The engine was made anew, without the plugins the old one held.
+    PluginsLost,
+    /// An answer to [`Effect::LoadSf2`]: the samples of the preset are in memory.
+    Sf2Loaded(Sf2Key),
+    /// The other answer to [`Effect::LoadSf2`]: they do not read.
+    Sf2Unreadable(Sf2Key),
+    /// The answer to [`Effect::PickSf2`]; `None` when the window was put away.
+    Sf2Picked(Option<PathBuf>),
+    /// An answer to [`Effect::AddSf2`]: the file is in meloet's folder, and this is what it
+    /// holds.
+    Sf2Added(Box<Sf2Info>),
+    /// The other answer to [`Effect::AddSf2`]: the file of this name does not read.
+    Sf2NotAdded {
+        file: String,
     },
+    /// From the shell: files are held over the window.
+    FilesOver(Vec<PathBuf>),
+    /// From the shell: they were taken out of the window again, or the drag was given up.
+    FilesLeft,
+    /// From the shell: they were let go of over the window.
+    FilesDropped(Vec<PathBuf>),
 }
 
 /// Where [`Effect::SaveSong`] writes.
@@ -243,15 +273,41 @@ pub enum Effect {
     /// The PC's folder window for a place to look for plugins in. Answer with
     /// [`Input::PluginPlacePicked`].
     PickPluginPlace,
-    /// Start a new process for the stopped plugin in `slot`, with the state remembered for
-    /// it. Answer with [`Input::PluginReloaded`], or [`Input::PluginStopped`] again.
+    /// Load the plugin of `key` from `bundle` into a process, off the core thread, with
+    /// `state`, for a stream of `sample_rate`. Answer with [`Input::PluginLoaded`] or
+    /// [`Input::PluginUnreadable`]. The loaded plugin waits for `EngineOp::Plug` or
+    /// [`Effect::DropPlugin`].
+    LoadPlugin {
+        ticket: u64,
+        key: Arc<str>,
+        bundle: PathBuf,
+        state: PlugState,
+        sample_rate: u32,
+    },
+    /// The plugin loaded under `ticket` is not put into the engine after all: let go of it.
+    DropPlugin {
+        ticket: u64,
+    },
+    /// Give the plugin loaded under `ticket` this state.
+    SetPluginState {
+        ticket: u64,
+        state: Arc<[u8]>,
+    },
+    /// Start a new process for the stopped plugin loaded under `ticket`, with the state
+    /// remembered for it. Answer as for [`Effect::LoadPlugin`], with the same ticket.
     ReloadPlugin {
-        slot: PluginSlotRef,
+        ticket: u64,
     },
-    /// Let go of the stopped plugin that was in `slot`.
-    UnloadPlugin {
-        slot: PluginSlotRef,
-    },
+    /// Read the samples of the preset into memory, off the core thread. Answer with
+    /// [`Input::Sf2Loaded`] or [`Input::Sf2Unreadable`].
+    LoadSf2(Sf2Key),
+    /// Let go of the samples of the preset, as [`Effect::DropSound`].
+    DropSf2(Sf2Key),
+    /// The PC's open window for an SF2 file. Answer with [`Input::Sf2Picked`].
+    PickSf2,
+    /// Read the SF2 file and copy it into meloet's folder, off the core thread. Answer with
+    /// [`Input::Sf2Added`] or [`Input::Sf2NotAdded`].
+    AddSf2(PathBuf),
 }
 
 pub struct Model {
@@ -267,9 +323,9 @@ pub struct Model {
     bands: Bands,
     /// Something that just happened, for the status line. Gone at the next thing the user does.
     notice: Option<StatusMessage>,
-    /// A key was played on the track with this instrument while its samples were being read:
-    /// the status line says so until they are read or the keys play something else.
-    loading_said: Option<BuiltinInstrument>,
+    /// A key was played on the track with this instrument while it was being read: the
+    /// status line says so until it is read or the keys play something else.
+    loading_said: Option<InstrumentRef>,
     dialog: Option<SettingsDialogView>,
     highlighted: Option<String>,
     hint: Option<Hint>,
@@ -322,9 +378,13 @@ pub struct Model {
     /// The starred instruments of the shelf. A meloet setting too.
     favorites: Vec<BuiltinInstrument>,
     plugins: Plugins,
-    /// The plugins whose process stopped, with their names, until they are loaded again or
-    /// removed.
-    stopped_plugins: Vec<(PluginSlotRef, String)>,
+    catalog: Catalog,
+    /// `Plugins::rows_rev` when the catalog last took in what the scan knows.
+    rows_seen: u64,
+    /// The files held over the window.
+    file_drop: Option<FileDropView>,
+    /// Esc while files were held over the window: letting go of them adds nothing.
+    drop_cancelled: bool,
 }
 
 struct OpenStream {
@@ -388,8 +448,19 @@ impl Model {
             },
             favorites: settings.favorites,
             plugins: Plugins::new(|name| std::env::var_os(name), settings.plugin_places),
-            stopped_plugins: Vec::new(),
+            catalog: Catalog::new(settings.shelf),
+            rows_seen: 0,
+            file_drop: None,
+            drop_cancelled: false,
         }
+    }
+
+    /// `files`: the SF2 files that were added before, as meloet's folder has them.
+    pub fn with_sf2(mut self, files: Vec<Sf2Info>) -> Model {
+        self.play
+            .set_sf2_presets(files.iter().flat_map(sf2_keys).collect());
+        self.catalog.set_sf2(files);
+        self
     }
 
     /// `installed`: the sampled instruments the sound pack of this PC has.
@@ -459,6 +530,7 @@ impl Model {
                         sample_rate,
                     });
                     self.play.stream_opened(&mut effects);
+                    self.play.set_plug_rate(sample_rate, &mut effects);
                 }
             }
             Input::AudioOpenFailed { node_name } => {
@@ -572,12 +644,52 @@ impl Model {
                     effects.push(Effect::SaveSettings(self.settings()));
                 }
             }
-            Input::PluginStopped { name, slot } => {
-                self.stopped_plugins.retain(|(s, _)| *s != slot);
-                self.stopped_plugins.push((slot, name));
+            Input::PluginLoaded { ticket } => self.play.plugin_loaded(ticket, &mut effects),
+            Input::PluginUnreadable { ticket } => {
+                self.play.plugin_unreadable(ticket, &mut effects);
             }
-            Input::PluginReloaded { slot } => self.stopped_plugins.retain(|(s, _)| *s != slot),
+            Input::PluginStopped { ticket } => self.play.plugin_stopped(ticket, &mut effects),
+            Input::PluginsLost => self.play.plugs_lost(&mut effects),
+            Input::Sf2Loaded(key) => self.play.sf2_loaded(&key, &mut effects),
+            Input::Sf2Unreadable(key) => {
+                (self.catalog).sf2_unreadable(&key.file, key.bank, key.program);
+                self.play.sf2_unreadable(&key, &mut effects);
+            }
+            Input::Sf2Picked(path) => {
+                if let Some(path) = path {
+                    effects.push(Effect::AddSf2(path));
+                }
+            }
+            Input::Sf2Added(info) => self.sf2_added(*info, &mut effects),
+            Input::Sf2NotAdded { file } => {
+                self.notice = Some(StatusMessage::Sf2Unreadable { file });
+            }
+            Input::FilesOver(paths) => {
+                self.drop_cancelled = false;
+                self.file_drop = paths.first().map(|path| FileDropView {
+                    name: (path.file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    addable: sf2store::looks_like_sf2(path),
+                });
+            }
+            Input::FilesLeft => {
+                self.file_drop = None;
+                self.drop_cancelled = false;
+            }
+            Input::FilesDropped(paths) => {
+                self.file_drop = None;
+                let cancelled = std::mem::take(&mut self.drop_cancelled);
+                // Of several files the first is taken (design-notes A-16).
+                if let (false, false, Some(first)) =
+                    (cancelled, self.play.busy(), paths.into_iter().next())
+                    && sf2store::looks_like_sf2(&first)
+                {
+                    effects.push(Effect::AddSf2(first));
+                }
+            }
         }
+        self.refresh_catalog();
         if !self.bands.side_is_open(SidePanel::Shelf) {
             self.play.shelf_closed(&mut effects);
         }
@@ -605,6 +717,7 @@ impl Model {
         self.play.sync_silent(&mut effects);
         self.play.sync_target(&mut effects);
         self.play.sync_mix(&mut effects);
+        self.play.sync_plugs(&mut effects);
         self.play.sync_sample(&mut effects);
         self.play.sync_sounds(&mut effects);
         if self.loading_said != self.play.target_loading() {
@@ -1162,50 +1275,159 @@ impl Model {
                 }
             }
             Command::TogglePluginPlaces => self.plugins.toggle_places(),
-            Command::ReloadPlugin { slot } => {
-                if self.stopped_plugins.iter().any(|(s, _)| *s == slot) {
-                    effects.push(Effect::ReloadPlugin { slot });
-                }
-            }
+            Command::ReloadPlugin { slot } => self.play.reload_plugin(slot, effects),
+            // The engine hands the plugin back when the step takes it out of the song, and
+            // it is let go of then.
             Command::RemovePlugin { slot } => {
-                if self.stopped_plugins.iter().any(|(s, _)| *s == slot)
-                    && self.play.remove_plugin(slot, effects)
-                {
-                    self.stopped_plugins.retain(|(s, _)| *s != slot);
-                    effects.push(Effect::UnloadPlugin { slot });
+                if self.play.plugin_is_down(slot) {
+                    self.play.remove_plugin(slot, effects);
                 }
             }
-            // The shelf has no SF2 preset and no plugin yet: a sound or an effect that does not
-            // come with meloet is one the shelf does not have.
-            Command::ShelfSelectSound { sound } => {
-                let instrument = sound.and_then(builtin_sound);
-                return self.command(Command::ShelfSelect { instrument }, effects);
-            }
-            Command::PlaySampleOf { sound } => {
-                if let Some(instrument) = builtin_sound(sound) {
+            Command::ShelfSelectSound { sound } => match sound {
+                Some(SoundRef::Builtin { instrument }) => {
+                    let instrument = Some(instrument);
+                    return self.command(Command::ShelfSelect { instrument }, effects);
+                }
+                // A sound the shelf does not have is no row: as `ShelfCancel`.
+                sound => {
+                    if self.bands.side_is_open(SidePanel::Shelf) {
+                        let found = sound.and_then(|s| self.catalog.instrument(&s));
+                        (self.play).shelf_select_sound(found.map(|(i, _)| i), effects);
+                    }
+                }
+            },
+            Command::PlaySampleOf { sound } => match sound {
+                SoundRef::Builtin { instrument } => {
                     return self.command(Command::PlaySample { instrument }, effects);
                 }
-            }
-            Command::ToggleFavoriteSound { sound } => {
-                if let Some(instrument) = builtin_sound(sound) {
+                sound => {
+                    if self.bands.side_is_open(SidePanel::Shelf)
+                        && let Some((instrument, group)) = self.catalog.instrument(&sound)
+                    {
+                        let ms = self.audio_view().latency_ms.unwrap_or(0.0);
+                        let latency_us = (ms * 1000.0) as u64;
+                        (self.play)
+                            .play_sample_of(instrument, group, can_play, latency_us, effects);
+                    }
+                }
+            },
+            Command::ToggleFavoriteSound { sound } => match sound {
+                SoundRef::Builtin { instrument } => {
                     return self.command(Command::ToggleFavorite { instrument }, effects);
                 }
+                sound => {
+                    if self.catalog.toggle_sound(sound) {
+                        effects.push(Effect::SaveSettings(self.settings()));
+                    }
+                }
+            },
+            Command::ToggleFavoriteEffect { effect } => {
+                if self.catalog.toggle_effect(effect) {
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
             }
-            Command::ShelfChooseEffect { effect } => {
-                let effect = effect.and_then(|e| match e {
-                    EffectRef::Builtin { effect } => Some(effect),
-                    EffectRef::Plugin { .. } => None,
+            Command::ShelfChooseEffect { effect } => match effect {
+                Some(EffectRef::Plugin { key }) => {
+                    if self.bands.side_is_open(SidePanel::Shelf) {
+                        let found = self.catalog.plugin(&key).filter(|f| !f.instrument);
+                        self.play.shelf_choose_plugin(found.map(|f| f.plugin));
+                    }
+                }
+                Some(EffectRef::Builtin { effect }) => {
+                    let effect = Some(effect);
+                    return self.command(Command::ShelfSelectEffect { effect }, effects);
+                }
+                None => return self.command(Command::ShelfSelectEffect { effect: None }, effects),
+            },
+            Command::UsePluginFormat { key } => {
+                if self.catalog.use_format(&key) {
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
+            Command::AddSf2 => {
+                if !self.play.busy() {
+                    effects.push(Effect::PickSf2);
+                }
+            }
+            Command::CancelFileDrop => {
+                if self.file_drop.take().is_some() {
+                    self.drop_cancelled = true;
+                }
+            }
+            Command::RemoveMissing { missing } => {
+                // Only what a notice names: what this PC has is taken out in the usual ways.
+                let doc = &self.play.song().doc;
+                let notices = added::missing(doc, &self.library_view(), self.plugins.home());
+                let named = notices.iter().any(|notice| match (notice, &missing) {
+                    (MissingView::Sf2 { file, .. }, MissingRef::Sf2 { file: f }) => file == f,
+                    (MissingView::Plugin { key, .. }, MissingRef::Plugin { key: k }) => key == k,
+                    _ => false,
                 });
-                return self.command(Command::ShelfSelectEffect { effect }, effects);
+                let missing = match &missing {
+                    MissingRef::Sf2 { file } => Missing::Sf2(file),
+                    MissingRef::Plugin { key } => Missing::Plugin(key),
+                };
+                if named {
+                    self.play.remove_missing(missing, effects);
+                }
             }
-            Command::ToggleFavoriteEffect { .. }
-            | Command::UsePluginFormat { .. }
-            | Command::OpenPluginWindow { .. }
-            | Command::AddSf2
-            | Command::CancelFileDrop
-            | Command::RemoveMissing { .. } => {}
+            // The plugin's own window comes with the parameters panel for plugins.
+            Command::OpenPluginWindow { .. } => {}
         }
         None
+    }
+
+    /// Takes in what the scan knows, when that changed since the catalog last looked: the
+    /// rows of the shelf, and which plugins of the song this PC has.
+    fn refresh_catalog(&mut self) {
+        let rev = self.plugins.rows_rev();
+        if rev != self.rows_seen {
+            self.rows_seen = rev;
+            self.catalog.set_plugins(self.plugins.cache());
+            self.play.set_known_plugins(self.catalog.bundles());
+        }
+    }
+
+    /// The file is in meloet's folder: the shelf opens on its instruments with the file's
+    /// heading unfolded, and the tracks that name it sound with it.
+    fn sf2_added(&mut self, info: Sf2Info, effects: &mut Vec<Effect>) {
+        let kits = (info.presets.iter())
+            .filter(|p| p.family() == GmFamily::DrumKit)
+            .count() as u32;
+        self.notice = Some(StatusMessage::Sf2Added {
+            file: info.file.clone(),
+            presets: info.presets.len() as u32 - kits,
+            kits,
+        });
+        self.play
+            .sf2_added(&info.file, sf2_keys(&info).collect(), effects);
+        self.catalog.sf2_added(info);
+        let lists_instruments = self.bands.side_is_open(SidePanel::Shelf)
+            && !matches!(
+                self.shelf_view(&self.library_view()).mode,
+                ShelfMode::InsertEffect { .. }
+            );
+        if !lists_instruments && self.play.open_shelf(ShelfMode::NewTrack, effects) {
+            self.bands.show_side(SidePanel::Shelf);
+        }
+    }
+
+    /// A song was opened: says so when it uses sounds this PC does not have (spec 6).
+    pub(super) fn say_missing(&mut self) {
+        let library = self.library_view();
+        let sounds = self.play.available_sounds();
+        let doc = &self.play.song().doc;
+        let pack = (doc.tracks.iter())
+            .filter(|t| {
+                added::stand_in(&t.instrument, &library, &sounds) == Some(StandIn::PackMissing)
+            })
+            .count() as u32;
+        let missing = added::missing(doc, &library, self.plugins.home());
+        if pack > 0 {
+            self.notice = Some(StatusMessage::SoundsMissing { tracks: pack });
+        } else if let Some(MissingView::Sf2 { file, tracks }) = missing.into_iter().next() {
+            self.notice = Some(StatusMessage::Sf2Missing { file, tracks });
+        }
     }
 
     /// Lays the bands out for the window as it is now. A band folded here was folded because
@@ -1356,26 +1578,36 @@ impl Model {
             fixed_velocity: self.velocity_fixed.value,
             favorites: self.favorites.clone(),
             plugin_places: self.plugins.added_places().to_vec(),
+            shelf: self.catalog.settings().clone(),
         }
     }
 
-    fn shelf_view(&self) -> ShelfView {
+    fn shelf_view(&self, library: &LibraryView) -> ShelfView {
+        let used = added::plugin_keys(&self.play.song().doc);
         self.play.shelf_view(
             InstrumentKind::ALL
                 .into_iter()
                 .filter(|&k| self.favorites.contains(&instruments::builtin_of(k)))
                 .collect(),
-            &self.library_view(),
+            (
+                self.catalog.favorite_sounds(&used),
+                self.catalog.favorite_effects(&used),
+            ),
+            library,
             self.plugins.home(),
         )
     }
 
-    /// 「あとから入れたもの」. Nothing adds an SF2 file or lists the scanned plugins yet.
+    /// 「あとから入れたもの」: the SF2 files that were added, and the scanned plugins as the
+    /// catalog last took them in.
     fn library_view(&self) -> LibraryView {
-        LibraryView {
-            pack_missing: self.play.pack_missing(),
-            ..LibraryView::default()
-        }
+        let used = added::plugin_keys(&self.play.song().doc);
+        self.catalog.view(&used, self.play.pack_missing())
+    }
+
+    /// The plugins of the song that sound, by the ticket each was loaded under.
+    pub fn plugin_tickets(&self) -> Vec<(PluginPlace, u64)> {
+        self.play.plugin_tickets()
     }
 
     /// A sample plays: [`Input::Tick`] is wanted now and then, to end it.
@@ -1461,8 +1693,9 @@ impl Model {
         let status = self.status(chosen_state);
         // Choosing the output comes first; the recovery hint waits behind it, in the same place.
         let recovery = self.recovery_view().filter(|_| !self.chooser_shown());
+        let library = self.library_view();
         AppState {
-            song: song_view(&self.play, self.song_file(), &self.library_view()),
+            song: song_view(&self.play, self.song_file(), &library, &self.catalog),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
             piano_roll: self.play.piano_roll_view(),
@@ -1486,10 +1719,10 @@ impl Model {
                     .filter(|_| recovery.is_none()),
                 song_dialog: self.song_dialog_view(),
                 recovery,
-                file_drop: None,
+                file_drop: self.file_drop.clone(),
             },
-            shelf: self.shelf_view(),
-            library: self.library_view(),
+            shelf: self.shelf_view(&library),
+            library,
             params: self.play.params_view(),
             plugins: self.plugins.view(),
             keyboards: KeyboardsView {
@@ -1598,19 +1831,24 @@ impl Model {
         }
         // Said until the plugin is loaded again or removed, also over a recording: it goes
         // on, and the person should know why the track is silent.
-        if let Some((slot, name)) = self.stopped_plugins.last() {
-            return Some(StatusMessage::PluginStopped {
-                name: name.clone(),
-                slot: *slot,
-            });
+        if let Some((slot, name)) = self.play.stopped_plugin() {
+            return Some(StatusMessage::PluginStopped { name, slot });
+        }
+        if self.file_drop.as_ref().is_some_and(|d| d.addable) {
+            return Some(StatusMessage::Sf2Dragging);
         }
         if let Some(m) = self.play.moving_status() {
             return Some(m);
         }
         // Before a notice: it answers the key just played, and no command puts it away.
-        if let Some(instrument) = self.loading_said {
-            return Some(StatusMessage::InstrumentLoading {
-                instrument: instruments::kind_of(instrument),
+        if let Some(instrument) = &self.loading_said {
+            return Some(match instrument {
+                InstrumentRef::Builtin(b) => StatusMessage::InstrumentLoading {
+                    instrument: instruments::kind_of(*b),
+                },
+                other => StatusMessage::SoundLoading {
+                    sound: added::sound_name(other),
+                },
             });
         }
         if self.notice.is_some() {
@@ -1715,15 +1953,16 @@ fn layout_view(layout: &layout::Layout) -> LayoutView {
     }
 }
 
-/// `None` for an SF2 preset and for a plugin.
-fn builtin_sound(sound: SoundRef) -> Option<InstrumentKind> {
-    match sound {
-        SoundRef::Builtin { instrument } => Some(instrument),
-        SoundRef::Sf2 { .. } | SoundRef::Plugin { .. } => None,
-    }
+fn sf2_keys(info: &Sf2Info) -> impl Iterator<Item = Sf2Key> + '_ {
+    let file: Arc<str> = info.file.as_str().into();
+    info.presets.iter().map(move |p| Sf2Key {
+        file: file.clone(),
+        bank: p.bank,
+        program: p.program,
+    })
 }
 
-fn song_view(play: &Play, file: SongFile, library: &LibraryView) -> SongView {
+fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catalog) -> SongView {
     let song = play.song();
     let doc = &song.doc;
     let sounds = play.available_sounds();
@@ -1747,14 +1986,22 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView) -> SongView {
                 name: t.name.clone(),
                 color: t.color.get(),
                 instrument: instruments::kind_of(added::builtin_or_sine(&t.instrument)),
-                sound: added::sound_view(&t.instrument, PluginState::Missing),
+                sound: added::sound_view(
+                    &t.instrument,
+                    play.plugin_state(PluginPlace::Instrument(t.id)),
+                ),
                 stand_in: added::stand_in(&t.instrument, library, &sounds),
-                drum_keys: None,
+                drum_keys: match &t.instrument {
+                    InstrumentRef::Sf2(s) if s.family() == GmFamily::DrumKit => catalog
+                        .sf2_preset(&s.file, s.bank, s.program)
+                        .map(|(_, preset)| gm_kit_rows(&preset.keys)),
+                    _ => None,
+                },
                 gain_db: gain_view(t.channel.gain),
                 pan: t.channel.pan.get(),
                 sends: t.sends.map(gain_view),
                 inserts: inserts_view(&t.channel.inserts),
-                slots: added::slots_view(&t.channel.inserts, |_| PluginState::Missing),
+                slots: play.slots_of(StripId::Track(t.id), &t.channel.inserts),
                 muted: t.muted,
                 soloed: play.is_soloed(t.id),
                 clips: play.clips_of(t.id),
@@ -1798,6 +2045,8 @@ fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod added_tests;
 #[cfg(test)]
 mod plugin_tests;
 #[cfg(test)]

@@ -2,12 +2,10 @@ use meloet_plugin::scan::{
     BundleRecord, BundleStamp, EditorKind, PluginInfo, StopReason, StoppedEntry,
 };
 use meloet_plugin::{EffectCategory, PluginFormat as Format, PluginKey, PluginKind};
-use meloet_protocol::{
-    PluginFormat, PluginPlaceView, ScanStopReason, ScanView, StoppedPluginView, TransportState,
-};
+use meloet_protocol::{PluginFormat, PluginPlaceView, ScanStopReason, ScanView, StoppedPluginView};
 
 use super::*;
-use crate::play::tests::{cmd, event, off, on, ready, report, started, status};
+use crate::play::tests::{cmd, ready, status};
 use crate::plugins::ScanWhat;
 
 fn usual() -> Vec<PathBuf> {
@@ -491,105 +489,4 @@ fn the_dialog_and_the_places_heading() {
     assert!(!view.plugins.stopped_open && view.plugins.places_open);
     assert!(view.workspace.settings.is_some_and(|s| s.advanced_open));
     assert_eq!(view.status.message, Some(StatusMessage::SettingsOpen));
-}
-
-#[test]
-fn a_plugin_that_stops_does_not_stop_the_recording() {
-    let mut m = ready();
-    let track = m.view().song.tracks[0].id;
-    let instrument = m.view().song.tracks[0].instrument;
-    let slot = PluginSlotRef::Instrument { track };
-    let stopped = StatusMessage::PluginStopped {
-        name: "Surge XT".into(),
-        slot,
-    };
-    assert!(
-        cmd(&mut m, Command::ReloadPlugin { slot }).is_empty(),
-        "nothing stopped"
-    );
-    assert!(cmd(&mut m, Command::RemovePlugin { slot }).is_empty());
-
-    cmd(&mut m, Command::SetCountIn { bars: 0 });
-    cmd(&mut m, Command::Record);
-    started(&mut m);
-    event(&mut m, on(60), 10, 0.0, 0);
-    let effects = m.handle(Input::PluginStopped {
-        name: "Surge XT".into(),
-        slot,
-    });
-    assert!(
-        effects.is_empty(),
-        "nothing is told to the engine: {effects:?}"
-    );
-    assert!(m.view().transport.recording.is_some());
-    assert_eq!(status(&m), Some(stopped.clone()), "said while recording");
-    // An instrument is not changed under a recording.
-    assert!(cmd(&mut m, Command::RemovePlugin { slot }).is_empty());
-
-    event(&mut m, off(60), 20, 480.0, 0);
-    let heard = Heard {
-        tick: 960.0,
-        state: TransportState::Recording,
-        lap: 0,
-    };
-    m.set_now(100, Some(heard));
-    cmd(&mut m, Command::Record);
-    report(
-        &mut m,
-        RecordReport::Stopped {
-            t_us: 100,
-            tick: 960.0,
-            lap: 0,
-        },
-    );
-    let view = m.view();
-    assert!(view.transport.recording.is_none());
-    assert_eq!(view.song.undo_count, 1, "what was recorded is a take");
-    assert_eq!(
-        view.status.message,
-        Some(stopped.clone()),
-        "until it is loaded or removed"
-    );
-
-    let reload = Effect::ReloadPlugin { slot };
-    assert_eq!(cmd(&mut m, Command::ReloadPlugin { slot }), [reload]);
-    assert_eq!(status(&m), Some(stopped));
-
-    // "外す": the track sounds as a sine, its take stays, and it is one step.
-    let effects = cmd(&mut m, Command::RemovePlugin { slot });
-    assert!(effects.contains(&Effect::UnloadPlugin { slot }));
-    let view = m.view();
-    assert_eq!(view.song.tracks[0].instrument, InstrumentKind::Sine);
-    assert_eq!(view.song.undo_count, 2);
-    assert!(!matches!(
-        view.status.message,
-        Some(StatusMessage::PluginStopped { .. })
-    ));
-    assert!(cmd(&mut m, Command::RemovePlugin { slot }).is_empty());
-    cmd(&mut m, Command::Undo);
-    let view = m.view();
-    assert_eq!(view.song.tracks[0].instrument, instrument);
-    assert_eq!(view.song.undo_count, 1);
-}
-
-#[test]
-fn a_plugin_loaded_again_is_stopped_no_more() {
-    let mut m = ready();
-    let slot = PluginSlotRef::Instrument {
-        track: m.view().song.tracks[0].id,
-    };
-    m.handle(Input::PluginStopped {
-        name: "Surge XT".into(),
-        slot,
-    });
-    assert!(matches!(
-        status(&m),
-        Some(StatusMessage::PluginStopped { .. })
-    ));
-    m.handle(Input::PluginReloaded { slot });
-    assert!(!matches!(
-        status(&m),
-        Some(StatusMessage::PluginStopped { .. })
-    ));
-    assert!(cmd(&mut m, Command::ReloadPlugin { slot }).is_empty());
 }

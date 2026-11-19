@@ -100,7 +100,7 @@ impl Play {
             .taken()
             .map(|(seat, _, instrument)| EngineOp::Instrument {
                 seat,
-                instrument: instrument.clone(),
+                instrument: self.engine_instrument(instrument),
             })
             .collect();
         ops.push(EngineOp::PlayTarget {
@@ -158,10 +158,7 @@ impl Play {
                 Some(seat) => {
                     if self.seats.instrument(seat) != Some(&t.instrument) {
                         self.seats.set_instrument(seat, t.instrument.clone());
-                        effects.push(Effect::Engine(EngineOp::Instrument {
-                            seat,
-                            instrument: t.instrument.clone(),
-                        }));
+                        self.seat_instrument(seat, &t.instrument, effects);
                     }
                     // The mixer's values are not in the events: a fader that moves must not
                     // cut the notes that sound.
@@ -178,10 +175,7 @@ impl Play {
                     let Some(seat) = self.seats.take(t.id, t.instrument.clone()) else {
                         continue;
                     };
-                    effects.push(Effect::Engine(EngineOp::Instrument {
-                        seat,
-                        instrument: t.instrument.clone(),
-                    }));
+                    self.seat_instrument(seat, &t.instrument, effects);
                     seat
                 }
             };
@@ -193,15 +187,16 @@ impl Play {
     }
 
     /// Another song: its tracks take the first seats, each with an instrument made anew, and
-    /// the seats left over are emptied.
+    /// the seats left over are emptied. A plugin that is on its seat already, the same one
+    /// in the same state, stays: loading one takes long.
     pub(super) fn reseat(&mut self, effects: &mut Vec<Effect>) {
         let old: Vec<usize> = self.seats.taken().map(|(seat, _, _)| seat).collect();
         self.seats = Seats::for_song(&self.song.doc);
-        for (seat, _, instrument) in self.seats.taken() {
-            effects.push(Effect::Engine(EngineOp::Instrument {
-                seat,
-                instrument: instrument.clone(),
-            }));
+        let taken: Vec<(usize, InstrumentRef)> = (self.seats.taken())
+            .map(|(seat, _, instrument)| (seat, instrument.clone()))
+            .collect();
+        for (seat, instrument) in taken {
+            self.seat_instrument(seat, &instrument, effects);
         }
         for seat in old {
             if self.seats.instrument(seat).is_none() {

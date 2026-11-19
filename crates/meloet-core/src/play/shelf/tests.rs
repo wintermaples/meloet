@@ -11,9 +11,7 @@ use crate::play::tests::{cmd, ready, status};
 use crate::play::{EngineOp, Play};
 use crate::state::{Effect, Input, Model};
 
-use InstrumentKind::{
-    ElectricPiano, ElectroKit, GrandPiano, Organ, Sine, SynthBass, SynthLead, WarmPad,
-};
+use InstrumentKind::{ElectricPiano, GrandPiano, Organ, Sine, SynthBass};
 
 /// Three tracks (グランドピアノ, サイン波, サイン波), every sound in the shelf, and the engine.
 fn rig() -> (Model, FakeEngine) {
@@ -204,12 +202,11 @@ fn an_audition_ends_with_cancel_esc_closing_the_shelf_and_a_row_that_is_not_ther
     go(m, e, Command::ShelfSelect { instrument: None });
     ended(m, e);
 
-    // A sound that is not on this PC is no row: without a sound pack, only the computed ones.
+    // A sound that is not on this PC is no row: without a sound pack, only the sine wave
+    // (spec 3, 85).
     instruments::tests::EVERY_SOUND.set(false);
-    assert_eq!(
-        m.view().shelf.available,
-        [SynthBass, ElectroKit, WarmPad, SynthLead, Sine]
-    );
+    assert_eq!(m.view().shelf.available, [Sine]);
+    assert!(m.view().library.pack_missing);
     go(m, e, select(Sine));
     assert_eq!(m.view().shelf.selected, Some(Sine));
     go(m, e, select(Organ));

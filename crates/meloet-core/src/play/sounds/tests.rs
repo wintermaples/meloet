@@ -79,11 +79,10 @@ fn tried(seat: usize, instrument: InstrumentRef) -> Effect {
 
 #[test]
 fn the_shelf_has_the_computed_instruments_and_the_ones_of_the_pack() {
+    // Without the pack the shelf offers the sine wave alone (spec 3, 85).
     let (m, _) = &mut rig(&[]);
-    assert_eq!(
-        m.view().shelf.available,
-        [SynthBass, ElectroKit, WarmPad, SynthLead, Sine]
-    );
+    assert_eq!(m.view().shelf.available, [Sine]);
+    assert!(m.view().library.pack_missing);
     let (m, _) = &mut rig(&[B::StudioKit, B::GrandPiano]);
     assert_eq!(
         m.view().shelf.available,

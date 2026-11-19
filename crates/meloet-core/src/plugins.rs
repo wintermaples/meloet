@@ -6,6 +6,7 @@
 //! for each bundle. [`hosts`] keeps the processes plugins sound in.
 
 pub mod hosts;
+pub(crate) mod housed;
 pub mod scanner;
 
 use std::collections::VecDeque;
@@ -142,6 +143,9 @@ pub(crate) struct Plugins {
     stopped_open: bool,
     places_open: bool,
     saved_us: u64,
+    /// Goes up when the shelf is to take in what the record holds now: at the start, when
+    /// a scan ends, and while one runs as often as its record is written.
+    rows_rev: u64,
 }
 
 fn format_view(format: meloet_plugin::PluginFormat) -> PluginFormat {
@@ -178,6 +182,7 @@ impl Plugins {
             // Mock R9-Scan shows it unfolded (design-notes A-16).
             places_open: true,
             saved_us: 0,
+            rows_rev: 0,
         };
         for place in added {
             if !plugins.has_place(&place) {
@@ -198,6 +203,7 @@ impl Plugins {
     pub fn start(&mut self, cache: ScanCache, first: bool, effects: &mut Vec<Effect>) {
         self.cache = cache;
         self.scanning = true;
+        self.rows_rev += 1;
         let kind = if first { Kind::First } else { Kind::Quiet };
         let places = self.places().cloned().collect();
         self.push(ScanWhat::Places { places, all: false }, kind, effects);
@@ -212,9 +218,12 @@ impl Plugins {
         &self.added
     }
 
-    #[cfg(test)]
     pub fn cache(&self) -> &ScanCache {
         &self.cache
+    }
+
+    pub fn rows_rev(&self) -> u64 {
+        self.rows_rev
     }
 
     fn places(&self) -> impl Iterator<Item = &PathBuf> {
@@ -259,6 +268,7 @@ impl Plugins {
 
     fn save(&mut self, now_us: u64, effects: &mut Vec<Effect>) {
         self.saved_us = now_us;
+        self.rows_rev += 1;
         effects.push(Effect::SavePluginScan(Box::new(self.cache.clone())));
     }
 
@@ -322,8 +332,11 @@ impl Plugins {
             .filter(|b| self.place_of(&b.path).is_some())
             .collect();
         self.cache.bundles = kept;
-        if self.cache.bundles.len() != before && self.scanning {
-            self.save(now_us, effects);
+        if self.cache.bundles.len() != before {
+            self.rows_rev += 1;
+            if self.scanning {
+                self.save(now_us, effects);
+            }
         }
         true
     }

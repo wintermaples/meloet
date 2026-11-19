@@ -353,6 +353,7 @@ fn the_real_keyboard_and_headphones_show_up_within_two_seconds() {
         state_dir: None,
         sounds_dir: None,
         plugins: None,
+        sf2_dir: None,
     });
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -406,6 +407,7 @@ fn the_remembered_headphones_open_and_silence_sends_no_telemetry() {
         state_dir: None,
         sounds_dir: None,
         plugins: None,
+        sf2_dir: None,
     });
     let (_messages, telemetry) = subscribe(&core);
 
@@ -812,6 +814,7 @@ impl SeatRig {
                 parts.handle,
                 false,
                 Library::open(None, Box::new(|_, _| {})),
+                Sf2Store::open(None, Box::new(|_| {})),
                 model.engine_seats(),
             ),
             model,
@@ -1062,6 +1065,7 @@ impl SoundRig {
             parts.handle,
             false,
             library,
+            Sf2Store::open(None, Box::new(|_| {})),
             model.engine_seats(),
         );
         let seats = SeatRig {

@@ -195,10 +195,13 @@ impl Model {
                 self.files.path = Some(path);
                 self.play.saved_as(name);
                 self.recovery_done(effects);
+                // What was changed while the save went on is not in the file.
+                self.recovery_changed_again();
                 self.then(then, effects);
             }
             (Input::SongNotSaved, Some(Waiting::Save(then))) => {
                 self.files.waiting = None;
+                self.play.not_saved();
                 self.put_up(SongDialogKind::CannotSave, then, None);
             }
             (
@@ -212,6 +215,7 @@ impl Model {
                 self.files.waiting = None;
                 self.files.path = Some(path);
                 self.take_song(*song, from_previous, effects);
+                self.say_missing();
             }
             (Input::SongUnreadable { path, previous }, _) if reading => {
                 self.files.waiting = None;
@@ -269,6 +273,7 @@ impl Model {
             song.doc.name = name.clone();
         }
         self.files.waiting = Some(Waiting::Save(then));
+        self.play.saving();
         effects.push(Effect::SaveSong {
             song: Box::new(song),
             to,

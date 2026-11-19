@@ -2,10 +2,13 @@
 //! the controls being dragged on top. Only what differs from what the engine was told last
 //! is sent, strip by strip (docs/architecture.md 19-11).
 
+use std::sync::Arc;
+
 use meloet_model::mixer::new_track_sends;
-use meloet_model::{Bus, Channel, Gain, Insert, Inserts, Pan, Sends, StripId};
+use meloet_model::{Bus, Channel, Gain, Insert, Inserts, Pan, PluginRef, Sends, StripId};
 
 use super::mixer::Preview;
+use super::plugs::{Spot, Want};
 use super::seats::AUDITION_SEAT;
 use super::shelf::Mode;
 use super::{EngineOp, Play, StripSeat};
@@ -68,7 +71,17 @@ struct Wanted<'a> {
     muted: bool,
 }
 
-fn sync_strip(told: &mut Told, want: Wanted, previews: &[Preview], effects: &mut Vec<Effect>) {
+/// An insert slot and the plugin the song has in it now; `None` when it held one before and
+/// holds none now.
+type PlugAsk = (StripSeat, usize, Option<Arc<PluginRef>>);
+
+fn sync_strip(
+    told: &mut Told,
+    want: Wanted,
+    previews: &[Preview],
+    plugs: &mut Vec<PlugAsk>,
+    effects: &mut Vec<Effect>,
+) {
     let mine = |strip: &StripId| Some(*strip) == want.id;
     let mut gain = want.channel.gain;
     let mut pan = want.channel.pan;
@@ -99,9 +112,26 @@ fn sync_strip(told: &mut Told, want: Wanted, previews: &[Preview], effects: &mut
         .zip(&want.channel.inserts)
         .enumerate()
     {
-        // The engine is told only of the effects that come with meloet: to it the slot of a
-        // plugin is empty.
-        let insert = insert.as_ref().filter(|i| i.kind().is_some());
+        let insert = insert.as_ref();
+        if let Some(plugin) = insert.and_then(Insert::plugin_ref) {
+            // A plugin is not made here: the book loads it and puts it into the slot, which
+            // is empty until then. An effect of meloet that was there goes now.
+            if told.as_ref().is_some_and(|t| t.kind().is_some()) {
+                effects.push(Effect::Engine(EngineOp::Insert {
+                    strip,
+                    slot,
+                    insert: None,
+                }));
+            }
+            if told.as_ref() != insert {
+                told.clone_from(&insert.cloned());
+            }
+            plugs.push((strip, slot, Some(plugin.clone())));
+            continue;
+        }
+        if told.as_ref().is_some_and(|t| t.kind().is_none()) {
+            plugs.push((strip, slot, None));
+        }
         let previewed = |param: u32, value: f32| {
             let hit = previews.iter().find_map(|p| match p {
                 Preview::Param {
@@ -122,7 +152,7 @@ fn sync_strip(told: &mut Told, want: Wanted, previews: &[Preview], effects: &mut
             hit.unwrap_or(value)
         };
         match (told.as_mut(), insert) {
-            (Some(told), Some(insert)) if told.kind() == insert.kind() => {
+            (Some(told), Some(insert)) if told.kind().is_some() && told.kind() == insert.kind() => {
                 for (param, value) in insert.values().iter().enumerate() {
                     let param = param as u32;
                     let value = previewed(param, *value);
@@ -165,6 +195,7 @@ impl Play {
         let doc = &self.song.doc;
         let previews = self.mixer.previews();
         let told = &mut self.mix_told;
+        let asks = &mut Vec::new();
         for t in &doc.tracks {
             let Some(seat) = self.seats.of(t.id) else {
                 continue;
@@ -176,7 +207,7 @@ impl Play {
                 sends: t.sends,
                 muted: false,
             };
-            sync_strip(&mut told.tracks[seat], want, previews, effects);
+            sync_strip(&mut told.tracks[seat], want, previews, asks, effects);
         }
         // An instrument tried for a new track sounds as the track will: with the sends a
         // track of its group starts with.
@@ -191,7 +222,13 @@ impl Play {
             },
             muted: false,
         };
-        sync_strip(&mut told.tracks[AUDITION_SEAT], audition, previews, effects);
+        sync_strip(
+            &mut told.tracks[AUDITION_SEAT],
+            audition,
+            previews,
+            asks,
+            effects,
+        );
         for bus in Bus::ALL {
             let r = &doc.returns[bus.index()];
             let want = Wanted {
@@ -201,7 +238,13 @@ impl Play {
                 sends: [Gain::SILENT; 2],
                 muted: r.muted,
             };
-            sync_strip(&mut told.returns[bus.index()], want, previews, effects);
+            sync_strip(
+                &mut told.returns[bus.index()],
+                want,
+                previews,
+                asks,
+                effects,
+            );
         }
         let master = Wanted {
             seat: StripSeat::Master,
@@ -210,12 +253,29 @@ impl Play {
             sends: [Gain::SILENT; 2],
             muted: false,
         };
-        sync_strip(&mut told.master, master, previews, effects);
+        sync_strip(&mut told.master, master, previews, asks, effects);
+        for (strip, slot, plugin) in std::mem::take(asks) {
+            let spot = Spot::Insert(strip, slot);
+            let Some(plugin) = plugin else {
+                self.drop_plug(spot, effects);
+                continue;
+            };
+            let held = self.plug_ticket(spot).is_some();
+            // Another plugin was in the slot, and the engine still has it.
+            if self.want_plug(spot, &plugin, None, effects) != Want::Kept && held {
+                effects.push(Effect::Engine(EngineOp::Insert {
+                    strip,
+                    slot,
+                    insert: None,
+                }));
+            }
+        }
     }
 
     /// The seat's track is gone: the engine empties the seat, strip and all.
     pub(super) fn clear_seat(&mut self, seat: usize, effects: &mut Vec<Effect>) {
         self.mix_told.seat_cleared(seat);
+        self.seat_plugs_gone(seat, effects);
         effects.push(Effect::Engine(EngineOp::ClearSeat { seat }));
     }
 }

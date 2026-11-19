@@ -169,6 +169,14 @@ impl Model {
         effects.push(Effect::RemoveRecovery);
     }
 
+    /// The song has changes its file does not have, though it was just saved (they came
+    /// while the save went on): they are written as any other change.
+    pub(super) fn recovery_changed_again(&mut self) {
+        if self.play.has_unsaved_changes() {
+            self.recovery.changed_at_us = Some(self.now_us);
+        }
+    }
+
     /// The PC is ending: the song is written as soon as it is free.
     pub(super) fn pc_ending(&mut self, effects: &mut Vec<Effect>) {
         self.recovery.ending = true;

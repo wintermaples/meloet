@@ -2,6 +2,7 @@
 //! happens while counting in or recording.
 
 use meloet_model::edit;
+use meloet_model::mixer::{self, Missing};
 use meloet_model::{BuiltinInstrument, InstrumentRef, TrackColor, TrackId};
 use meloet_protocol::{PluginSlotRef, StatusMessage};
 
@@ -43,6 +44,21 @@ impl Play {
             PluginSlotRef::Insert { insert } => self.remove_effect(insert, effects),
         }
         self.changes != before
+    }
+
+    /// 「曲から外す」 on something this PC does not have: its tracks get the sine wave and
+    /// its insert slots are emptied, as one step. Returns whether the song changed.
+    pub fn remove_missing(&mut self, missing: Missing, effects: &mut Vec<Effect>) -> bool {
+        if self.busy() {
+            return false;
+        }
+        match mixer::remove_missing(self.doc(), missing) {
+            Ok(e) => {
+                self.apply(e, effects);
+                true
+            }
+            Err(_) => false,
+        }
     }
 
     pub fn rename_track(&mut self, track: u32, name: &str, effects: &mut Vec<Effect>) {

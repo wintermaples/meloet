@@ -181,6 +181,19 @@ pub enum EngineOp {
         param: u32,
         value: f32,
     },
+    /// The plugin loaded under `ticket` goes into the engine at `spot`, in place of what is
+    /// there (the silent instrument, the empty slot, or the plugin as it was before it was
+    /// loaded again).
+    Plug {
+        ticket: u64,
+        spot: Spot,
+    },
+    /// The plugin loaded under `ticket` plays the sample phrase of `group` on the engine's
+    /// sample seat. For an open stream only.
+    PlugSample {
+        ticket: u64,
+        group: InstrumentGroup,
+    },
     // The two below are for an open stream only, as the ones at the top.
     /// The sample phrase of this instrument's group, played with it on the engine's sample
     /// seat from its start. A sample that is playing fades out under it.
@@ -373,6 +386,8 @@ pub struct Play {
     saved_too: Option<u64>,
     /// What the engine was last told by `EngineOp::SilentTracks`.
     silent_sent: Vec<usize>,
+    /// The version of the `Doc` a save that is under way writes.
+    saving: Option<u64>,
     seats: Seats,
     /// What the engine was last told by `EngineOp::PlayTarget`.
     target_sent: Option<usize>,
@@ -381,6 +396,7 @@ pub struct Play {
     mixer: Mixer,
     /// What the engine was last told about the mixer.
     mix_told: MixTold,
+    plugs: Plugs,
 }
 
 impl Play {
@@ -394,6 +410,7 @@ impl Play {
             sounds: Sounds::default(),
             mixer: Mixer::default(),
             mix_told: MixTold::new(),
+            plugs: Plugs::default(),
             song,
             history: History::new(),
             state: TransportState::Stopped,
@@ -424,6 +441,7 @@ impl Play {
             serial: 0,
             saved_too: None,
             silent_sent: Vec::new(),
+            saving: None,
         };
         // As with the play target: the engine gets the mixer of the first song with
         // `engine_seats`, so it counts as told.
@@ -1406,9 +1424,23 @@ impl Play {
     /// The name is not a step: undo and redo keep it.
     pub fn saved_as(&mut self, name: String) {
         self.song.doc.name = name;
-        self.history.mark_saved();
+        match self.saving.take() {
+            Some(version) => self.history.mark_saved_at(version),
+            None => self.history.mark_saved(),
+        }
         self.unsaved_anyway = false;
         self.saved_too = None;
+    }
+
+    /// A save of the song as it is now begins. It may take a while (the plugins are asked
+    /// for their states): what changes meanwhile is not what was saved.
+    pub fn saving(&mut self) {
+        self.saving = Some(self.history.version());
+    }
+
+    /// The save did not come about.
+    pub fn not_saved(&mut self) {
+        self.saving = None;
     }
 
     /// Stops a count-in or a recording; what was played comes in with the engine's report.
@@ -1426,6 +1458,7 @@ impl Play {
     pub fn replace_song(&mut self, song: Song, unsaved: bool, effects: &mut Vec<Effect>) {
         self.shelf_closed(effects);
         self.song = song;
+        self.saving = None;
         self.forget_mixer();
         self.reseat(effects);
         self.changes += 1;
@@ -2188,6 +2221,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 mod mix;
 pub(crate) mod mixer;
 mod mixsync;
+mod plugs;
 mod seats;
 mod shelf;
 mod sounds;
@@ -2196,6 +2230,8 @@ mod tracks;
 use mixer::Mixer;
 pub use mixer::Preview;
 use mixsync::MixTold;
+use plugs::Plugs;
+pub use plugs::{PlugState, Spot};
 use seats::Seats;
 pub use seats::{AUDITION_SEAT, MAX_TRACKS};
 use shelf::Shelf;

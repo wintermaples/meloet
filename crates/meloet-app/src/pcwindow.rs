@@ -25,7 +25,13 @@ pub enum Pick {
     SaveAs {
         name: String,
     },
+    /// The open window again, for an SF2 file to add to the shelf (spec 6 has one title for
+    /// opening: 「ひらく」).
+    Sf2,
 }
+
+/// The ending of the files the SF2 window offers.
+const SF2_EXTENSION: &str = "sf2";
 
 #[cfg(target_os = "linux")]
 mod imp {
@@ -35,7 +41,7 @@ mod imp {
     use gtk::prelude::*;
     use tauri::WebviewWindow;
 
-    use super::{FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE};
+    use super::{FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE, SF2_EXTENSION};
 
     thread_local! {
         // A native dialog is not a widget: nothing else keeps it alive until it answers.
@@ -50,7 +56,7 @@ mod imp {
         answer: impl FnOnce(Option<PathBuf>) + 'static,
     ) {
         let (title, action) = match pick {
-            Pick::SongFile => (OPEN_TITLE, gtk::FileChooserAction::Open),
+            Pick::SongFile | Pick::Sf2 => (OPEN_TITLE, gtk::FileChooserAction::Open),
             Pick::Folder | Pick::PluginPlace => {
                 (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder)
             }
@@ -72,6 +78,15 @@ mod imp {
             let pattern = format!("*.{}", meloet_core::songfile::EXTENSION);
             filter.add_pattern(&pattern);
             filter.set_name(Some(&pattern));
+            dialog.add_filter(filter);
+        }
+        if pick == Pick::Sf2 {
+            // Only SF2 files can be chosen, whatever case their ending is written in.
+            let filter = gtk::FileFilter::new();
+            let lower = format!("*.{SF2_EXTENSION}");
+            filter.add_pattern(&lower);
+            filter.add_pattern(&lower.to_uppercase());
+            filter.set_name(Some(&lower));
             dialog.add_filter(filter);
         }
         let answer = RefCell::new(Some(answer));

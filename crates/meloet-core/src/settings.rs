@@ -5,7 +5,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use meloet_model::BuiltinInstrument;
-use meloet_protocol::DEFAULT_FIXED_VELOCITY;
+use meloet_model::effects::EffectKind as ModelEffect;
+use meloet_protocol::{DEFAULT_FIXED_VELOCITY, EffectKind, EffectRef, SoundRef};
 use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "settings.json";
@@ -31,6 +32,34 @@ pub struct Settings {
     pub favorites: Vec<BuiltinInstrument>,
     /// The places the person added to look for plugins in, in the order they were added.
     pub plugin_places: Vec<PathBuf>,
+    pub shelf: ShelfSettings,
+}
+
+/// What the shelf keeps of 「あとから入れたもの」 and of its effects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShelfSettings {
+    /// The starred SF2 presets, then the starred plugin instruments (each by a key of its
+    /// row). The starred sounds of meloet are `Settings::favorites`.
+    pub favorite_sounds: Vec<SoundRef>,
+    /// The starred effects of meloet, then the starred plugin effects.
+    pub favorite_effects: Vec<EffectRef>,
+    /// The format the person chose for a plugin's row, as the exact key of that format.
+    pub plugin_formats: Vec<String>,
+}
+
+/// Spec 3 (86-4): 「はじめはリバーブとディレイに印」.
+pub const DEFAULT_FAVORITE_EFFECTS: [EffectKind; 2] = [EffectKind::Reverb, EffectKind::Delay];
+
+impl Default for ShelfSettings {
+    fn default() -> Self {
+        ShelfSettings {
+            favorite_sounds: Vec::new(),
+            favorite_effects: (DEFAULT_FAVORITE_EFFECTS.into_iter())
+                .map(|effect| EffectRef::Builtin { effect })
+                .collect(),
+            plugin_formats: Vec::new(),
+        }
+    }
 }
 
 pub const DEFAULT_COUNT_IN_BARS: u8 = 1;
@@ -50,6 +79,7 @@ impl Default for Settings {
             fixed_velocity: DEFAULT_FIXED_VELOCITY,
             favorites: DEFAULT_FAVORITES.to_vec(),
             plugin_places: Vec::new(),
+            shelf: ShelfSettings::default(),
         }
     }
 }
@@ -74,6 +104,63 @@ struct OnDisk {
     favorites: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     plugin_places: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    favorite_sf2: Vec<DiskSf2>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    favorite_plugins: Vec<String>,
+    /// The names the song file uses. Missing (a file from before the star): the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    favorite_effects: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    favorite_plugin_effects: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    plugin_formats: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DiskSf2 {
+    file: String,
+    bank: u16,
+    program: u8,
+}
+
+fn once<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut kept = Vec::new();
+    for item in items {
+        if !kept.contains(&item) {
+            kept.push(item);
+        }
+    }
+    kept
+}
+
+fn shelf_from_disk(disk: &mut OnDisk) -> ShelfSettings {
+    let sf2 = std::mem::take(&mut disk.favorite_sf2).into_iter();
+    let sf2 = sf2.map(|s| SoundRef::Sf2 {
+        file: s.file,
+        bank: s.bank,
+        program: s.program,
+    });
+    let plugins = std::mem::take(&mut disk.favorite_plugins).into_iter();
+    let effects = match disk.favorite_effects.take() {
+        // Names this meloet does not know are left out.
+        Some(names) => (names.iter())
+            .filter_map(|n| ModelEffect::from_name(n))
+            .map(crate::play::mixer::effect_kind)
+            .collect(),
+        None => DEFAULT_FAVORITE_EFFECTS.to_vec(),
+    };
+    let plugin_effects = std::mem::take(&mut disk.favorite_plugin_effects).into_iter();
+    ShelfSettings {
+        favorite_sounds: once(sf2.chain(plugins.map(|key| SoundRef::Plugin { key }))),
+        favorite_effects: once(
+            (effects
+                .into_iter()
+                .map(|effect| EffectRef::Builtin { effect }))
+            .chain(plugin_effects.map(|key| EffectRef::Plugin { key })),
+        ),
+        plugin_formats: once(std::mem::take(&mut disk.plugin_formats)),
+    }
 }
 
 fn default_fixed_velocity() -> u8 {
@@ -102,7 +189,8 @@ pub fn load(dir: &Path) -> Settings {
         return Settings::default();
     };
     match serde_json::from_str::<OnDisk>(&text) {
-        Ok(disk) if disk.version == VERSION => Settings {
+        Ok(mut disk) if disk.version == VERSION => Settings {
+            shelf: shelf_from_disk(&mut disk),
             output_name: disk.output_name.filter(|_| disk.output.is_some()),
             output: disk.output,
             scale: if SCALES.contains(&disk.scale) {
@@ -151,6 +239,7 @@ pub fn load(dir: &Path) -> Settings {
 
 /// Writes a temporary file next to the real one and renames it over it.
 pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
+    let shelf = &settings.shelf;
     let disk = OnDisk {
         version: VERSION,
         output: settings.output.clone(),
@@ -168,6 +257,43 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
                 .collect(),
         ),
         plugin_places: settings.plugin_places.clone(),
+        favorite_sf2: (shelf.favorite_sounds.iter())
+            .filter_map(|s| match s {
+                SoundRef::Sf2 {
+                    file,
+                    bank,
+                    program,
+                } => Some(DiskSf2 {
+                    file: file.clone(),
+                    bank: *bank,
+                    program: *program,
+                }),
+                _ => None,
+            })
+            .collect(),
+        favorite_plugins: (shelf.favorite_sounds.iter())
+            .filter_map(|s| match s {
+                SoundRef::Plugin { key } => Some(key.clone()),
+                _ => None,
+            })
+            .collect(),
+        favorite_effects: Some(
+            (shelf.favorite_effects.iter())
+                .filter_map(|e| match e {
+                    EffectRef::Builtin { effect } => {
+                        Some(crate::play::mixer::model_effect(*effect).name().to_owned())
+                    }
+                    EffectRef::Plugin { .. } => None,
+                })
+                .collect(),
+        ),
+        favorite_plugin_effects: (shelf.favorite_effects.iter())
+            .filter_map(|e| match e {
+                EffectRef::Plugin { key } => Some(key.clone()),
+                EffectRef::Builtin { .. } => None,
+            })
+            .collect(),
+        plugin_formats: shelf.plugin_formats.clone(),
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -211,6 +337,27 @@ mod tests {
             fixed_velocity: 64,
             favorites: vec![BuiltinInstrument::Sine, BuiltinInstrument::Organ],
             plugin_places: vec!["/home/me/Plugins".into(), "/opt/vst3".into()],
+            shelf: ShelfSettings {
+                favorite_sounds: vec![
+                    SoundRef::Sf2 {
+                        file: "FluidR3_GM.sf2".into(),
+                        bank: 128,
+                        program: 8,
+                    },
+                    SoundRef::Plugin {
+                        key: "lv2:urn:x:synth".into(),
+                    },
+                ],
+                favorite_effects: vec![
+                    EffectRef::Builtin {
+                        effect: EffectKind::Chorus,
+                    },
+                    EffectRef::Plugin {
+                        key: "vst3:ABCDEF0123456789ABCDEF0123456789".into(),
+                    },
+                ],
+                plugin_formats: vec!["lv2:urn:x:synth".into()],
+            },
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
@@ -257,6 +404,7 @@ mod tests {
                 fixed_velocity: 100,
                 favorites: vec![BuiltinInstrument::GrandPiano, BuiltinInstrument::StudioKit],
                 plugin_places: vec![],
+                shelf: ShelfSettings::default(),
             }
         );
     }

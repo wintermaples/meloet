@@ -80,6 +80,17 @@ pub struct LoadSpec {
     pub sample_rate: u32,
 }
 
+/// The state a plugin has when its load is answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartState {
+    /// As the plugin starts.
+    Fresh,
+    Bytes(Vec<u8>),
+    /// What this plugin says its state is now; when it cannot say (it stopped), what is
+    /// remembered of it.
+    Of(SlotId),
+}
+
 /// A plugin ready for the engine.
 pub struct Loaded {
     pub id: SlotId,
@@ -145,7 +156,7 @@ pub struct ProcessInfo {
 }
 
 enum Ask {
-    Load(LoadSpec, Arc<PluginBlock>, Done<Loaded>),
+    Load(LoadSpec, StartState, Arc<PluginBlock>, Done<Loaded>),
     Reload(SlotId, Arc<PluginBlock>, Done<Loaded>),
     Unload(SlotId, Done<()>),
     State(SlotId, Done<Vec<u8>>),
@@ -205,7 +216,19 @@ impl Hosts {
     /// Loads the plugin into a process of its key. `block` is the engine's
     /// (`EngineHandle::plugin_block`).
     pub fn load(&self, spec: LoadSpec, block: Arc<PluginBlock>, done: Done<Loaded>) {
-        self.ask(Ask::Load(spec, block, done));
+        self.load_with(spec, StartState::Fresh, block, done);
+    }
+
+    /// As [`Hosts::load`], and the plugin has `state` before the answer comes. The state is
+    /// remembered for `reload`.
+    pub fn load_with(
+        &self,
+        spec: LoadSpec,
+        state: StartState,
+        block: Arc<PluginBlock>,
+        done: Done<Loaded>,
+    ) {
+        self.ask(Ask::Load(spec, state, block, done));
     }
 
     /// A plugin that stopped, into a new process, with the state and the parameter values
@@ -322,10 +345,15 @@ impl Run {
 
     fn answer(&mut self, ask: Ask) {
         match ask {
-            Ask::Load(spec, block, done) => {
+            Ask::Load(spec, start, block, done) => {
                 let id = SlotId(self.next);
                 self.next += 1;
-                done(self.place(&spec, None, &BTreeMap::new(), &block).map(
+                let (state, params) = match start {
+                    StartState::Fresh => (None, BTreeMap::new()),
+                    StartState::Bytes(state) => (Some(state), BTreeMap::new()),
+                    StartState::Of(other) => self.state_now(other),
+                };
+                done(self.place(&spec, state.as_deref(), &params, &block).map(
                     |(home, slot, watch, plugin)| {
                         self.slots.insert(
                             id,
@@ -333,8 +361,8 @@ impl Run {
                                 spec,
                                 home: Some(home),
                                 watch: watch.clone(),
-                                state: None,
-                                params: BTreeMap::new(),
+                                state,
+                                params,
                             },
                         );
                         self.seat(home, Some(id));
@@ -407,6 +435,17 @@ impl Run {
                     slots: p.places.iter().flatten().copied().collect(),
                 })
                 .collect())),
+        }
+    }
+
+    /// The state of a plugin as it says it now. When it does not answer: the last state
+    /// taken or put back, with the parameters set since.
+    fn state_now(&mut self, id: SlotId) -> (Option<Vec<u8>>, BTreeMap<u32, f64>) {
+        match self.ask_slot(id, |slot| Request::GetState { slot }, &[]) {
+            Ok((Reply::State, state)) => (Some(state), BTreeMap::new()),
+            _ => (self.slots.get(&id))
+                .map(|slot| (slot.state.clone(), slot.params.clone()))
+                .unwrap_or_default(),
         }
     }
 

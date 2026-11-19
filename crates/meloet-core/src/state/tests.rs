@@ -1709,13 +1709,7 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
         shelf,
         ShelfView {
             mode: ShelfMode::NewTrack,
-            available: vec![
-                InstrumentKind::SynthBass,
-                InstrumentKind::ElectroKit,
-                InstrumentKind::WarmPad,
-                InstrumentKind::SynthLead,
-                InstrumentKind::Sine,
-            ],
+            available: vec![InstrumentKind::Sine],
             favorites: vec![InstrumentKind::GrandPiano, InstrumentKind::StudioKit],
             selected: None,
             current: None,
@@ -1799,7 +1793,7 @@ fn the_shelf_commands_for_any_sound_do_what_the_ones_for_meloet_s_sounds_do() {
             .favorites
             .contains(&InstrumentKind::SynthBass)
     );
-    // What is not made yet changes nothing.
+    // What the shelf does not have, and what is not made yet, changes nothing.
     let before = m.view();
     for command in [
         Command::ToggleFavoriteSound {
@@ -1807,8 +1801,8 @@ fn the_shelf_commands_for_any_sound_do_what_the_ones_for_meloet_s_sounds_do() {
         },
         Command::PlaySampleOf { sound: surge },
         Command::ToggleFavoriteEffect {
-            effect: EffectRef::Builtin {
-                effect: EffectKind::Chorus,
+            effect: EffectRef::Plugin {
+                key: "lv2:urn:not:there".into(),
             },
         },
         Command::ShelfChooseEffect { effect: None },
@@ -1816,7 +1810,6 @@ fn the_shelf_commands_for_any_sound_do_what_the_ones_for_meloet_s_sounds_do() {
             key: "vst3:00".into(),
         },
         Command::OpenPluginWindow { slot: None },
-        Command::AddSf2,
         Command::CancelFileDrop,
         Command::RemoveMissing {
             missing: MissingRef::Sf2 {

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use meloet_core::{MessageSink, ShellSink, TelemetrySink};
-use meloet_protocol::{Command, LiveNotesSnapshot, Snapshot};
+use meloet_protocol::{Command, LiveNotesSnapshot, ParamTable, Snapshot};
 
 pub trait CoreHandle: Send + Sync + 'static {
     /// The whole state and its rev.
@@ -25,6 +25,9 @@ pub trait CoreHandle: Send + Sync + 'static {
 
     /// Every note of the recording going on.
     fn live_notes(&self) -> LiveNotesSnapshot;
+
+    /// The parameters of the plugin in the parameters panel, when `table` still names them.
+    fn plugin_params(&self, table: u32) -> Option<ParamTable>;
 
     /// Where the core's requests to the shell go (the PC's windows, the end).
     fn set_shell(&self, shell: ShellSink);
@@ -84,6 +87,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn live_notes(&self) -> LiveNotesSnapshot {
         meloet_core::Core::live_notes(self)
+    }
+
+    fn plugin_params(&self, table: u32) -> Option<ParamTable> {
+        meloet_core::Core::plugin_params(self, table)
     }
 
     fn set_shell(&self, shell: ShellSink) {

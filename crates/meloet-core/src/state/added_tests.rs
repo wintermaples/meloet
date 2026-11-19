@@ -1,6 +1,7 @@
 //! 「あとから入れたもの」 through the rules: SF2 presets and plugins in the shelf, on tracks
 //! and in insert slots, and what is said when one of them is not there.
 
+use crate::seen::*;
 use std::sync::Arc;
 
 use meloet_model::{InstrumentRef, Kept, PluginRef, Sf2Ref, Song, edit, mixer};
@@ -147,7 +148,7 @@ fn a_plugin_is_read_before_it_is_tried_and_enter_makes_its_track() {
     let shelf = m.view().shelf;
     assert_eq!(shelf.selected_sound, Some(plugin(SURGE_VST3)));
     assert_eq!(shelf.loading_sound, Some(plugin(SURGE_VST3)));
-    assert_eq!(shelf.selected, None, "no sound of meloet");
+    assert_eq!(shelf.selected(), None, "no sound of meloet");
     let name = "Surge XT".to_owned();
     assert_eq!(status(&m), Some(StatusMessage::PluginLoading { name }));
     assert!(
@@ -330,7 +331,7 @@ fn a_plugin_effect_goes_into_a_slot_is_loaded_and_comes_out_again() {
         key: COMP_LV2.into(),
     };
     assert_eq!(m.view().shelf.chosen_effect, Some(chosen));
-    assert_eq!(m.view().shelf.selected_effect, None);
+    assert_eq!(m.view().shelf.selected_effect(), None);
 
     let effects = cmd(&mut m, Command::ShelfConfirm);
     let ticket = one_load(&effects);
@@ -345,7 +346,7 @@ fn a_plugin_effect_goes_into_a_slot_is_loaded_and_comes_out_again() {
     };
     assert_eq!(state(&m), ("ZamComp".into(), PluginState::Loading));
     assert_eq!(
-        m.view().song.tracks[0].inserts[1],
+        m.view().song.tracks[0].inserts()[1],
         None,
         "no effect of meloet"
     );
@@ -468,7 +469,7 @@ fn a_plugin_that_stops_does_not_stop_the_recording() {
         ]
     ));
     let view = m.view();
-    assert_eq!(view.song.tracks[0].instrument, InstrumentKind::Sine);
+    assert_eq!(view.song.tracks[0].instrument(), InstrumentKind::Sine);
     assert_eq!(view.song.tracks[0].clips.len(), 1);
     assert_eq!(view.song.undo_count, 3);
     assert!(!matches!(
@@ -667,7 +668,7 @@ fn an_opened_song_says_which_sf2_file_is_not_found_and_it_can_be_taken_out() {
         ]
     ));
     let view = m.view();
-    assert_eq!(view.song.tracks[2].instrument, InstrumentKind::Sine);
+    assert_eq!(view.song.tracks[2].instrument(), InstrumentKind::Sine);
     assert_eq!(view.song.tracks[2].name, "ドラム", "the name stays");
     assert_eq!((view.song.undo_count, view.shelf.missing.len()), (1, 2));
     assert!(remove(&mut m, file).is_empty(), "not in the song any more");
@@ -781,7 +782,7 @@ fn an_sf2_preset_is_tried_added_as_a_track_and_its_sample_waits_for_its_samples(
         }]
     ));
     assert!(m.view().shelf.sound_sample.unwrap().playing.is_some());
-    assert_eq!(m.view().shelf.sample, None, "no sound of meloet");
+    assert_eq!(m.view().shelf.sample(), None, "no sound of meloet");
     assert!(matches!(
         status(&m),
         Some(StatusMessage::SamplePlayingSound {

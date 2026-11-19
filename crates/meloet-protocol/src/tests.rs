@@ -30,7 +30,6 @@ fn sample_state() -> AppState {
                 number: 1,
                 name: "ピアノ".into(),
                 color: 1,
-                instrument: InstrumentKind::GrandPiano,
                 sound: SoundView::Builtin {
                     instrument: InstrumentKind::GrandPiano,
                 },
@@ -39,7 +38,7 @@ fn sample_state() -> AppState {
                 gain_db: Some(-3.0),
                 pan: -20,
                 sends: [Some(-15.0), None],
-                inserts: [None, Some(EffectKind::Compressor), None, None],
+                send_defaults: [Some(-15.0), None],
                 slots: [
                     None,
                     Some(InsertView::builtin(EffectKind::Compressor)),
@@ -65,7 +64,6 @@ fn sample_state() -> AppState {
                     gain_db: Some(0.0),
                     pan: 0,
                     muted: false,
-                    inserts: [Some(EffectKind::Reverb), None, None, None],
                     slots: [
                         Some(InsertView::builtin(EffectKind::Reverb)),
                         None,
@@ -77,7 +75,6 @@ fn sample_state() -> AppState {
                     gain_db: None,
                     pan: 100,
                     muted: true,
-                    inserts: [Some(EffectKind::Delay), None, None, None],
                     slots: [
                         Some(InsertView::builtin(EffectKind::Delay)),
                         None,
@@ -89,7 +86,6 @@ fn sample_state() -> AppState {
             master: MasterView {
                 gain_db: Some(0.0),
                 pan: -5,
-                inserts: [Some(EffectKind::Limiter), None, None, None],
                 slots: [
                     Some(InsertView::builtin(EffectKind::Limiter)),
                     None,
@@ -227,16 +223,6 @@ fn sample_state() -> AppState {
         shelf: ShelfView {
             mode: ShelfMode::Replace { track: 7 },
             available: vec![InstrumentKind::GrandPiano, InstrumentKind::Sine],
-            favorites: vec![InstrumentKind::GrandPiano, InstrumentKind::StudioKit],
-            selected: Some(InstrumentKind::Sine),
-            current: Some(InstrumentKind::GrandPiano),
-            loading: None,
-            sample: Some(SampleView {
-                instrument: InstrumentKind::GrandPiano,
-                started_us: 1_000_000,
-                length_us: 4_000_000,
-            }),
-            selected_effect: None,
             selected_sound: Some(SoundRef::Builtin {
                 instrument: InstrumentKind::Sine,
             }),
@@ -253,6 +239,9 @@ fn sample_state() -> AppState {
                 playing: None,
             }),
             chosen_effect: Some(EffectRef::Plugin { key: MVERB.into() }),
+            current_effect: Some(EffectRef::Builtin {
+                effect: EffectKind::Compressor,
+            }),
             unreadable: None,
             favorite_sounds: vec![SoundRef::Builtin {
                 instrument: InstrumentKind::GrandPiano,
@@ -271,7 +260,7 @@ fn sample_state() -> AppState {
             }],
         },
         params: ParamsView {
-            selected: Some(SelectedInsert {
+            selected: Some(SelectedParams::Builtin(SelectedInsert {
                 insert: InsertRef {
                     strip: StripRef::Return { bus: SendBus::A },
                     slot: 0,
@@ -279,7 +268,16 @@ fn sample_state() -> AppState {
                 effect: EffectKind::Reverb,
                 values: vec![2.4, 60.0, 20.0, 6000.0, 120.0, 100.0, 100.0],
                 row: Some(0),
-            }),
+            })),
+        },
+        windows: WindowsView {
+            list: vec![PluginWindowView {
+                slot: Some(PluginSlotRef::Instrument { track: 7 }),
+                name: "Surge XT".into(),
+                width: 1597,
+                height: 995,
+                larger_than_screen: true,
+            }],
         },
         keyboards: KeyboardsView {
             list: vec![],
@@ -432,6 +430,7 @@ fn export_typescript() {
     Snapshot::export_all(&cfg).unwrap();
     ServerMessage::export_all(&cfg).unwrap();
     HelloReply::export_all(&cfg).unwrap();
+    ParamTable::export_all(&cfg).unwrap();
     SendReply::export_all(&cfg).unwrap();
     LiveNotesSnapshot::export_all(&cfg).unwrap();
     InstrumentGroup::export_all(&cfg).unwrap();
@@ -1207,7 +1206,6 @@ fn state_json_is_camel_case_and_round_trips() {
     let v = serde_json::to_value(&snap).unwrap();
     assert_eq!(v["rev"], 7);
     assert_eq!(v["state"]["song"]["tempoBpm"], 96.0);
-    assert_eq!(v["state"]["song"]["tracks"][0]["instrument"], "grandPiano");
     assert_eq!(v["state"]["song"]["tracks"][0]["id"], 7);
     assert_eq!(v["state"]["song"]["tracks"][0]["number"], 1);
     assert_eq!(v["state"]["song"]["playTarget"], 7);
@@ -1215,11 +1213,6 @@ fn state_json_is_camel_case_and_round_trips() {
         v["state"]["shelf"],
         json!({"mode": {"kind": "replace", "track": 7},
                "available": ["grandPiano", "sine"],
-               "favorites": ["grandPiano", "studioKit"],
-               "selected": "sine", "current": "grandPiano", "loading": null,
-               "sample": {"instrument": "grandPiano", "startedUs": 1_000_000,
-                          "lengthUs": 4_000_000},
-               "selectedEffect": null,
                "selectedSound": {"kind": "builtin", "instrument": "sine"},
                "currentSound": {"kind": "plugin", "key": SURGE_LV2},
                "loadingSound": null,
@@ -1227,6 +1220,7 @@ fn state_json_is_camel_case_and_round_trips() {
                                          "program": 27},
                                "playing": null},
                "chosenEffect": {"kind": "plugin", "key": MVERB},
+               "currentEffect": {"kind": "builtin", "effect": "compressor"},
                "unreadable": null,
                "favoriteSounds": [{"kind": "builtin", "instrument": "grandPiano"}],
                "favoriteEffects": [{"kind": "builtin", "effect": "reverb"},
@@ -1253,7 +1247,8 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(track["gainDb"], -3.0);
     assert_eq!(track["pan"], -20);
     assert_eq!(track["sends"], json!([-15.0, null]), "null is −∞");
-    assert_eq!(track["inserts"], json!([null, "compressor", null, null]));
+    assert_eq!(track["sendDefaults"], json!([-15.0, null]));
+    assert!(track.get("inserts").is_none() && track.get("instrument").is_none());
     assert_eq!(
         track["slots"],
         json!([null, {"effect": {"kind": "builtin", "effect": "compressor"}, "bypassed": false},
@@ -1269,21 +1264,27 @@ fn state_json_is_camel_case_and_round_trips() {
         |effect: &str| json!({"effect": {"kind": "builtin", "effect": effect}, "bypassed": false});
     assert_eq!(
         v["state"]["song"]["returns"],
-        json!([{"gainDb": 0.0, "pan": 0, "muted": false, "inserts": ["reverb", null, null, null],
+        json!([{"gainDb": 0.0, "pan": 0, "muted": false,
                 "slots": [slot("reverb"), null, null, null]},
-               {"gainDb": null, "pan": 100, "muted": true, "inserts": ["delay", null, null, null],
+               {"gainDb": null, "pan": 100, "muted": true,
                 "slots": [slot("delay"), null, null, null]}])
     );
     assert_eq!(
         v["state"]["song"]["master"],
-        json!({"gainDb": 0.0, "pan": -5, "inserts": ["limiter", null, null, null],
+        json!({"gainDb": 0.0, "pan": -5,
                "slots": [slot("limiter"), null, null, null]})
     );
     assert_eq!(
         v["state"]["params"]["selected"]["insert"],
         json!({"strip": {"kind": "return", "bus": "a"}, "slot": 0})
     );
+    assert_eq!(v["state"]["params"]["selected"]["kind"], "builtin");
     assert_eq!(v["state"]["params"]["selected"]["effect"], "reverb");
+    assert_eq!(
+        v["state"]["windows"],
+        json!({"list": [{"slot": {"kind": "instrument", "track": 7}, "name": "Surge XT",
+                         "width": 1597, "height": 995, "largerThanScreen": true}]})
+    );
     assert_eq!(v["state"]["params"]["selected"]["values"][3], 6000.0);
     assert_eq!(v["state"]["params"]["selected"]["row"], 0);
     assert_eq!(
@@ -2304,6 +2305,310 @@ fn plugins_json_shape() {
     }
 }
 
+/// Protocol 18: the plugin windows, a plugin in the parameters panel, and what is left of 86.
+#[test]
+fn windows_and_plugin_params_json_shape() {
+    let surge = PluginSlotRef::Instrument { track: 7 };
+    let insert = InsertRef {
+        strip: StripRef::Track { id: 8 },
+        slot: 0,
+    };
+    let both = |command: Command, json: serde_json::Value| {
+        assert_eq!(serde_json::to_value(&command).unwrap(), json);
+        assert_eq!(serde_json::from_value::<Command>(json).unwrap(), command);
+    };
+    both(
+        Command::SelectInstrument { track: 7 },
+        json!({"type": "selectInstrument", "track": 7}),
+    );
+    both(
+        Command::SetPluginParam {
+            slot: surge,
+            table: 3,
+            param: 1024,
+            value: 0.5,
+            commit: false,
+        },
+        json!({"type": "setPluginParam", "slot": {"kind": "instrument", "track": 7},
+               "table": 3, "param": 1024, "value": 0.5, "commit": false}),
+    );
+    both(
+        Command::TypeParam {
+            param: ParamRef::Builtin {
+                insert,
+                effect: EffectKind::Compressor,
+                param: 1,
+            },
+            text: "40".into(),
+        },
+        json!({"type": "typeParam",
+               "param": {"kind": "builtin",
+                         "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
+                         "effect": "compressor", "param": 1},
+               "text": "40"}),
+    );
+    both(
+        Command::TypeParam {
+            param: ParamRef::Plugin {
+                slot: surge,
+                table: 3,
+                param: 1024,
+            },
+            text: "440 Hz".into(),
+        },
+        json!({"type": "typeParam",
+               "param": {"kind": "plugin", "slot": {"kind": "instrument", "track": 7},
+                         "table": 3, "param": 1024},
+               "text": "440 Hz"}),
+    );
+    both(
+        Command::ToggleBypass { insert },
+        json!({"type": "toggleBypass",
+               "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0}}),
+    );
+    both(
+        Command::MoveInsert { insert, to: 3 },
+        json!({"type": "moveInsert",
+               "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0}, "to": 3}),
+    );
+    both(
+        Command::ClosePluginWindow { slot: None },
+        json!({"type": "closePluginWindow", "slot": null}),
+    );
+    both(
+        Command::RaisePluginWindows,
+        json!({"type": "raisePluginWindows"}),
+    );
+    both(
+        Command::OpenShelf {
+            mode: ShelfMode::ReplaceEffect {
+                strip: StripRef::Track { id: 8 },
+                slot: 0,
+            },
+        },
+        json!({"type": "openShelf",
+               "mode": {"kind": "replaceEffect", "strip": {"kind": "track", "id": 8},
+                        "slot": 0}}),
+    );
+
+    let selected = SelectedParams::Plugin(SelectedPlugin {
+        slot: surge,
+        window: PluginWindowKind::Opens,
+        table: Some(3),
+        count: 2855,
+        row: Some(1024),
+        automated: vec![],
+    });
+    let json = json!({"kind": "plugin", "slot": {"kind": "instrument", "track": 7},
+                      "window": "opens", "table": 3, "count": 2855, "row": 1024,
+                      "automated": []});
+    assert_eq!(serde_json::to_value(&selected).unwrap(), json);
+    assert_eq!(
+        serde_json::from_value::<SelectedParams>(json).unwrap(),
+        selected
+    );
+    assert_eq!(
+        serde_json::to_value([PluginWindowKind::NotYet, PluginWindowKind::None]).unwrap(),
+        json!(["notYet", "none"])
+    );
+
+    let table = ParamTable {
+        table: 3,
+        seq: 0,
+        groups: vec![
+            ParamGroup {
+                name: Some("Macros".into()),
+                params: vec![ParamRow {
+                    id: 1024,
+                    name: "Macro 1".into(),
+                    kind: ParamKind::Smooth,
+                    default: 0.0,
+                    value: Some(0.35),
+                    text: Some("35.00 %".into()),
+                }],
+            },
+            ParamGroup {
+                name: None,
+                params: vec![
+                    ParamRow {
+                        id: 7,
+                        name: "Type".into(),
+                        kind: ParamKind::Steps {
+                            steps: 3,
+                            labels: vec!["Room".into(), "Hall".into(), "Plate".into()],
+                        },
+                        default: 0.0,
+                        value: Some(0.5),
+                        text: Some("Hall".into()),
+                    },
+                    ParamRow {
+                        id: 8,
+                        name: "Freeze".into(),
+                        kind: ParamKind::Toggle,
+                        default: 0.0,
+                        value: None,
+                        text: None,
+                    },
+                ],
+            },
+        ],
+    };
+    let json = json!({"table": 3, "seq": 0, "groups": [
+        {"name": "Macros", "params": [
+            {"id": 1024, "name": "Macro 1", "kind": {"kind": "smooth"}, "default": 0.0,
+             "value": 0.35, "text": "35.00 %"}]},
+        {"name": null, "params": [
+            {"id": 7, "name": "Type",
+             "kind": {"kind": "steps", "steps": 3, "labels": ["Room", "Hall", "Plate"]},
+             "default": 0.0, "value": 0.5, "text": "Hall"},
+            {"id": 8, "name": "Freeze", "kind": {"kind": "toggle"}, "default": 0.0,
+             "value": null, "text": null}]}]});
+    assert_eq!(serde_json::to_value(&table).unwrap(), json);
+    assert_eq!(serde_json::from_value::<ParamTable>(json).unwrap(), table);
+
+    let message = ServerMessage::ParamValues(ParamValues {
+        table: 3,
+        seq: 1,
+        values: vec![ParamValue {
+            id: 1024,
+            value: Some(0.4),
+            text: Some("40.00 %".into()),
+        }],
+    });
+    let json = json!({"kind": "paramValues", "table": 3, "seq": 1,
+                      "values": [{"id": 1024, "value": 0.4, "text": "40.00 %"}]});
+    assert_eq!(serde_json::to_value(&message).unwrap(), json);
+    assert_eq!(
+        serde_json::from_value::<ServerMessage>(json).unwrap(),
+        message
+    );
+
+    let compressor = EffectName::Builtin {
+        effect: EffectKind::Compressor,
+    };
+    for (message, json) in [
+        (
+            StatusMessage::PluginParamSelected {
+                loop_bars: None,
+                slot: surge,
+                plugin: "Surge XT".into(),
+                param: "Macro 1".into(),
+            },
+            json!({"id": "pluginParamSelected", "loopBars": null,
+                   "slot": {"kind": "instrument", "track": 7},
+                   "plugin": "Surge XT", "param": "Macro 1"}),
+        ),
+        (
+            StatusMessage::ParamClamped {
+                to: ParamEnd::Builtin {
+                    effect: EffectKind::Compressor,
+                    param: 1,
+                    value: 20.0,
+                },
+            },
+            json!({"id": "paramClamped",
+                   "to": {"kind": "builtin", "effect": "compressor", "param": 1,
+                          "value": 20.0}}),
+        ),
+        (
+            StatusMessage::ParamClamped {
+                to: ParamEnd::Plugin {
+                    name: "Decay".into(),
+                    value: "10.0 s".into(),
+                    range: "0.1 s〜10.0 s".into(),
+                },
+            },
+            json!({"id": "paramClamped",
+                   "to": {"kind": "plugin", "name": "Decay", "value": "10.0 s",
+                          "range": "0.1 s〜10.0 s"}}),
+        ),
+        (
+            StatusMessage::EffectInserted {
+                insert,
+                effect: EffectName::Plugin {
+                    name: "MVerb".into(),
+                },
+            },
+            json!({"id": "effectInserted",
+                   "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
+                   "effect": {"kind": "plugin", "name": "MVerb"}}),
+        ),
+        (
+            StatusMessage::EffectRemoved {
+                insert,
+                effect: compressor.clone(),
+            },
+            json!({"id": "effectRemoved",
+                   "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
+                   "effect": {"kind": "builtin", "effect": "compressor"}}),
+        ),
+        (
+            StatusMessage::InsertsReordered {
+                strip: StripRef::Track { id: 8 },
+                order: vec![
+                    EffectName::Builtin {
+                        effect: EffectKind::Eq4,
+                    },
+                    compressor.clone(),
+                ],
+            },
+            json!({"id": "insertsReordered", "strip": {"kind": "track", "id": 8},
+                   "order": [{"kind": "builtin", "effect": "eq4"},
+                             {"kind": "builtin", "effect": "compressor"}]}),
+        ),
+        (
+            StatusMessage::InsertReplaced {
+                insert,
+                effect: compressor.clone(),
+            },
+            json!({"id": "insertReplaced",
+                   "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
+                   "effect": {"kind": "builtin", "effect": "compressor"}}),
+        ),
+        (
+            StatusMessage::EffectBypassed {
+                insert,
+                effect: compressor,
+                bypassed: true,
+            },
+            json!({"id": "effectBypassed",
+                   "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
+                   "effect": {"kind": "builtin", "effect": "compressor"}, "bypassed": true}),
+        ),
+        (
+            StatusMessage::PluginWindowOpening {
+                name: "Surge XT".into(),
+                slot: None,
+            },
+            json!({"id": "pluginWindowOpening", "name": "Surge XT", "slot": null}),
+        ),
+        (
+            StatusMessage::PluginWindowLarge {
+                name: "Surge XT".into(),
+                slot: Some(surge),
+                width: 1597,
+                height: 995,
+            },
+            json!({"id": "pluginWindowLarge", "name": "Surge XT",
+                   "slot": {"kind": "instrument", "track": 7}, "width": 1597, "height": 995}),
+        ),
+        (
+            StatusMessage::PluginWindowNotYet {
+                loop_bars: Some(BarSpan { from: 5, to: 9 }),
+                name: "Mossy Verb".into(),
+            },
+            json!({"id": "pluginWindowNotYet", "loopBars": {"from": 5, "to": 9},
+                   "name": "Mossy Verb"}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&message).unwrap(), json);
+        assert_eq!(
+            serde_json::from_value::<StatusMessage>(json).unwrap(),
+            message
+        );
+    }
+}
+
 /// The `section` of a change is the key of that section in the state JSON.
 #[test]
 fn change_section_names_match_state_keys() {
@@ -2319,6 +2624,7 @@ fn change_section_names_match_state_keys() {
         Change::Library(state.library.clone()),
         Change::Params(state.params.clone()),
         Change::Plugins(state.plugins.clone()),
+        Change::Windows(state.windows.clone()),
         Change::Keyboards(state.keyboards.clone()),
         Change::Outputs(state.outputs.clone()),
         Change::Inputs(state.inputs.clone()),
@@ -2342,9 +2648,10 @@ fn changes_from_gives_only_changed_sections() {
     new.transport.state = TransportState::Stopped;
     new.piano_roll.selected_notes.clear();
     new.workspace.scale = 125;
-    new.shelf.selected = None;
+    new.shelf.selected_sound = None;
     new.params.selected = None;
     new.plugins.scan = ScanView::Idle;
+    new.windows.list.clear();
     new.status.message = Some(StatusMessage::NoArmedTrack);
     let changes = AppState::changes_from(&old, &new);
     assert_eq!(
@@ -2356,6 +2663,7 @@ fn changes_from_gives_only_changed_sections() {
             Change::Shelf(new.shelf.clone()),
             Change::Params(new.params.clone()),
             Change::Plugins(new.plugins.clone()),
+            Change::Windows(new.windows.clone()),
             Change::Status(new.status.clone())
         ]
     );

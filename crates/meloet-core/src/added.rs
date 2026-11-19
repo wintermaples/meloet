@@ -17,6 +17,7 @@ use crate::plugins::shown_path;
 
 /// The sound of meloet an instrument is made as. An SF2 preset and a plugin have none of
 /// their own here: they sound as the sine wave.
+#[cfg(test)]
 pub(crate) fn builtin_or_sine(instrument: &InstrumentRef) -> BuiltinInstrument {
     match instrument {
         InstrumentRef::Builtin(b) => *b,

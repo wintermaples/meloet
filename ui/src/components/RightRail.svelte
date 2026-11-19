@@ -7,6 +7,7 @@
   import { metrics } from "./metrics.svelte";
   import ParamsPanel from "./params/ParamsPanel.svelte";
   import { allRows, rowCount } from "./params/paramRows";
+  import { pluginAt } from "./params/selected";
   import Shelf from "./Shelf.svelte";
   import { shelfCounts } from "./shelfList";
   import { shelfToggle } from "./tracks.svelte";
@@ -19,9 +20,14 @@
   const toggle = (band: Band) => send(band === "shelf" ? shelfToggle(current.state!) : { type: "toggleBand", band });
   const counts = $derived(shelfCounts(current.state!.shelf, current.state!.library));
   const selected = $derived(current.state!.params.selected);
-  const paramsCount = $derived(
-    selected ? t("params.tabCount", { name: t(`effect.${selected.effect}`), count: rowCount(allRows(selected.effect, selected.values)) }) : null,
-  );
+  const paramsCount = $derived.by(() => {
+    if (!selected) return null;
+    if (selected.kind === "builtin") {
+      return t("params.tabCount", { name: t(`effect.${selected.effect}`), count: rowCount(allRows(selected.effect, selected.values)) });
+    }
+    const plugin = pluginAt(current.state!.song, selected.slot);
+    return plugin ? t("params.tabCount", { name: plugin.name, count: selected.count }) : null;
+  });
 
   // When the window is too low for every vertical heading, the shelf counts go first.
   let nav = $state<HTMLElement>();

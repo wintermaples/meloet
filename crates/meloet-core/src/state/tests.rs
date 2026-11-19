@@ -1,3 +1,4 @@
+use crate::seen::*;
 use meloet_devices::{Availability as Av, ClockSettings, Friendly as Fr, LinkKind as Link};
 use meloet_protocol::{
     EffectKind, InsertView, MasterView, ParamsView, ReturnView, ShelfMode, SoundView, StandIn,
@@ -167,7 +168,6 @@ fn a_new_song() {
             number: 1,
             name: "ピアノ".into(),
             color: 1,
-            instrument: InstrumentKind::GrandPiano,
             sound: SoundView::Builtin {
                 instrument: InstrumentKind::GrandPiano
             },
@@ -177,7 +177,7 @@ fn a_new_song() {
             gain_db: Some(0.0),
             pan: 0,
             sends: [Some(-15.0), None],
-            inserts: [None; 4],
+            send_defaults: [Some(-15.0), None],
             slots: [const { None }; 4],
             muted: false,
             soloed: false,
@@ -193,7 +193,6 @@ fn a_new_song() {
         }
     );
     assert_eq!(state.workspace.file_drop, None);
-    let first = |kind| [Some(kind), None, None, None];
     let first_slot = |kind| [Some(InsertView::builtin(kind)), None, None, None];
     assert_eq!(
         song.returns,
@@ -201,7 +200,6 @@ fn a_new_song() {
             gain_db: Some(0.0),
             pan: 0,
             muted: false,
-            inserts: first(kind),
             slots: first_slot(kind),
         })
     );
@@ -210,7 +208,6 @@ fn a_new_song() {
         MasterView {
             gain_db: Some(0.0),
             pan: 0,
-            inserts: first(EffectKind::Limiter),
             slots: first_slot(EffectKind::Limiter),
         }
     );
@@ -1710,17 +1707,12 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
         ShelfView {
             mode: ShelfMode::NewTrack,
             available: vec![InstrumentKind::Sine],
-            favorites: vec![InstrumentKind::GrandPiano, InstrumentKind::StudioKit],
-            selected: None,
-            current: None,
-            loading: None,
-            sample: None,
-            selected_effect: None,
             selected_sound: None,
             current_sound: None,
             loading_sound: None,
             sound_sample: None,
             chosen_effect: None,
+            current_effect: None,
             unreadable: None,
             favorite_sounds: [InstrumentKind::GrandPiano, InstrumentKind::StudioKit]
                 .map(|instrument| SoundRef::Builtin { instrument })
@@ -1737,7 +1729,7 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
             Effect::SaveSettings(s) => Some(s.favorites.clone()),
             _ => None,
         });
-        (m.view().shelf.favorites, saved)
+        (m.view().shelf.favorites(), saved)
     };
     // The view keeps the order of the shelf, whatever the order of the clicks.
     let (shown, saved) = star(&mut m, InstrumentKind::Organ);
@@ -1775,7 +1767,7 @@ fn the_shelf_commands_for_any_sound_do_what_the_ones_for_meloet_s_sounds_do() {
     let sound = Some(bass.clone());
     cmd(&mut m, Command::ShelfSelectSound { sound });
     let shelf = m.view().shelf;
-    assert_eq!(shelf.selected, Some(InstrumentKind::SynthBass));
+    assert_eq!(shelf.selected(), Some(InstrumentKind::SynthBass));
     assert_eq!(shelf.selected_sound, Some(bass.clone()));
     // The shelf has no plugin: selecting one ends the audition, as a sound it does not have.
     let surge = SoundRef::Plugin {
@@ -1790,7 +1782,7 @@ fn the_shelf_commands_for_any_sound_do_what_the_ones_for_meloet_s_sounds_do() {
     assert!(
         m.view()
             .shelf
-            .favorites
+            .favorites()
             .contains(&InstrumentKind::SynthBass)
     );
     // What the shelf does not have, and what is not made yet, changes nothing.
@@ -1879,7 +1871,7 @@ fn a_song_with_what_this_pc_does_not_have_keeps_it_and_says_so() {
         state: PluginState::Missing,
     };
     assert_eq!(tracks[1].sound, SoundView::Plugin(surge_view));
-    assert_eq!(tracks[1].instrument, InstrumentKind::Sine);
+    assert_eq!(tracks[1].instrument(), InstrumentKind::Sine);
     assert_eq!(tracks[1].stand_in, Some(StandIn::PluginMissing));
     assert_eq!(
         tracks[2].sound,
@@ -1894,7 +1886,8 @@ fn a_song_with_what_this_pc_does_not_have_keeps_it_and_says_so() {
     assert_eq!(tracks[2].stand_in, Some(StandIn::Sf2Missing));
     assert_eq!(tracks[2].drum_keys, None);
     assert_eq!(
-        tracks[0].inserts, [None; 4],
+        tracks[0].inserts(),
+        [None; 4],
         "a plugin is no effect of meloet"
     );
     let slot = tracks[0].slots[1].as_ref().unwrap();

@@ -2,7 +2,7 @@
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { INSTRUMENT_GROUPS, type AppState, type Command, type InstrumentKind, type ShelfView } from "../src/bridge";
-import { createFakeTransport, fakeScene, FakeBands, reduceTracks } from "../src/bridge/fake";
+import { createFakeTransport, fakeScene, FakeBands, reduceTracks, type FakeState } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
 import InputMeter from "../src/components/InputMeter.svelte";
@@ -419,7 +419,7 @@ describe("棚（モック F4-ShelfSample ・ F4-ShelfAudition ・ F4-ShelfReplac
 });
 
 describe("偽物の答え（約束 13）", () => {
-  const run = (state: AppState, c: Command) => reduceTracks(state, new FakeBands(800), c)!;
+  const run = (state: FakeState, c: Command) => reduceTracks(state, new FakeBands(800), c)!;
 
   it("消す: 下のトラックが選ばれ、番号をふりなおし、状態行は消した番号", () => {
     const s = scene("tracks6");
@@ -475,12 +475,12 @@ describe("偽物の答え（約束 13）", () => {
     );
     await transport.send({ type: "openShelf", mode: { kind: "replace", track: 11 } });
     expect(state.workspace.layout.rightFront).toBe("shelf");
-    expect(state.shelf.current).toBe("grandPiano");
+    expect(state.shelf.currentSound).toEqual({ kind: "builtin", instrument: "grandPiano" });
     await transport.send({ type: "shelfSelect", instrument: "organ" });
     expect(state.transport.canRecord).toBe(false);
     expect(state.status.message).toEqual({ id: "auditionReplace", instrument: "organ", track: { number: 1, name: "ピアノ" }, current: "grandPiano" });
     await transport.send({ type: "shelfConfirm" });
-    expect(state.song.tracks[0]!.instrument).toBe("organ");
+    expect(state.song.tracks[0]!.sound).toEqual({ kind: "builtin", instrument: "organ" });
     expect(state.status.message).toEqual({ id: "instrumentReplaced", track: { number: 1, name: "ピアノ" }, instrument: "organ" });
     await transport.send({ type: "toggleBand", band: "shelf" });
     expect(state.workspace.layout.rightOpen).toEqual([]);

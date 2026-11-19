@@ -1,7 +1,6 @@
+use crate::seen::*;
 use meloet_model::{BuiltinInstrument as B, InstrumentRef, Song};
-use meloet_protocol::{
-    Band, Command, InstrumentKind, SampleView, ScaleMode, ShelfMode, StatusMessage,
-};
+use meloet_protocol::{Band, Command, InstrumentKind, ScaleMode, ShelfMode, StatusMessage};
 
 use crate::play::EngineOp;
 use crate::play::seats::AUDITION_SEAT;
@@ -119,12 +118,15 @@ fn the_sounds_of_the_song_are_read_at_the_start_and_its_seats_made_again_with_th
         [tried(0, ORGAN), Effect::LoadSound(B::Organ)]
     );
     let shelf = m.view().shelf;
-    assert_eq!((shelf.selected, shelf.loading), (Some(Organ), Some(Organ)));
+    assert_eq!(
+        (shelf.selected(), shelf.loading()),
+        (Some(Organ), Some(Organ))
+    );
     assert_eq!(
         sound(&go(m, e, Input::SoundLoaded(B::Organ))),
         [tried(0, ORGAN)]
     );
-    assert_eq!(m.view().shelf.loading, None);
+    assert_eq!(m.view().shelf.loading(), None);
     // Entered: the piano is in no track and no row any more, and is let go of.
     assert_eq!(
         sound(&command(m, e, Command::ShelfConfirm)),
@@ -167,7 +169,7 @@ fn a_row_whose_samples_are_not_read_says_so_and_another_row_puts_it_away() {
         sound(&command(m, e, select(Organ))),
         [made(AUDITION_SEAT, ORGAN), Effect::LoadSound(B::Organ)]
     );
-    assert_eq!(m.view().shelf.loading, Some(Organ));
+    assert_eq!(m.view().shelf.loading(), Some(Organ));
     assert_eq!(
         e.target(),
         Some(AUDITION_SEAT),
@@ -183,7 +185,7 @@ fn a_row_whose_samples_are_not_read_says_so_and_another_row_puts_it_away() {
             Effect::LoadSound(B::StudioKit)
         ]
     );
-    assert_eq!(m.view().shelf.loading, Some(StudioKit));
+    assert_eq!(m.view().shelf.loading(), Some(StudioKit));
     // One more: now nothing wants the organ.
     assert_eq!(
         sound(&command(m, e, select(Sine))),
@@ -193,7 +195,7 @@ fn a_row_whose_samples_are_not_read_says_so_and_another_row_puts_it_away() {
         ]
     );
     assert_eq!(
-        m.view().shelf.loading,
+        m.view().shelf.loading(),
         None,
         "a computed one sounds at once"
     );
@@ -208,11 +210,11 @@ fn a_row_whose_samples_are_not_read_says_so_and_another_row_puts_it_away() {
         sound(&command(m, e, select(StudioKit))),
         [made(AUDITION_SEAT, studio_kit.clone())]
     );
-    assert_eq!(m.view().shelf.loading, None);
+    assert_eq!(m.view().shelf.loading(), None);
 
     // Entered while read: the track has it. Closing the shelf lets go of the row before.
     command(m, e, select(Organ));
-    assert_eq!(m.view().shelf.loading, Some(Organ));
+    assert_eq!(m.view().shelf.loading(), Some(Organ));
     let effects = command(m, e, Command::ShelfConfirm);
     assert_eq!(
         sound(&effects),
@@ -244,7 +246,7 @@ fn samples_that_do_not_read_take_the_instrument_off_the_shelf() {
         })]
     );
     let shelf = m.view().shelf;
-    assert_eq!((shelf.selected, shelf.loading), (None, None));
+    assert_eq!((shelf.selected(), shelf.loading()), (None, None));
     assert!(!shelf.available.contains(&Organ) && shelf.available.contains(&GrandPiano));
     assert_eq!(sound(&command(m, e, select(Organ))), [], "no row any more");
 
@@ -254,7 +256,7 @@ fn samples_that_do_not_read_take_the_instrument_off_the_shelf() {
         [made(0, PIANO)]
     );
     assert!(!m.view().shelf.available.contains(&GrandPiano));
-    assert_eq!(m.view().song.tracks[0].instrument, GrandPiano);
+    assert_eq!(m.view().song.tracks[0].instrument(), GrandPiano);
     assert_eq!(sound(&go(m, e, Input::Tick)), []);
     assert_eq!(sound(&go(m, e, Input::SoundUnreadable(B::GrandPiano))), []);
 }
@@ -283,7 +285,7 @@ fn the_tracks_own_instrument_is_made_again_under_a_trial() {
     let (m, e) = &mut rig(&[B::GrandPiano]);
     command(m, e, open(ShelfMode::Replace { track: 1 }));
     command(m, e, select(GrandPiano));
-    assert_eq!(m.view().shelf.loading, Some(GrandPiano));
+    assert_eq!(m.view().shelf.loading(), Some(GrandPiano));
     assert_eq!(
         sound(&go(m, e, Input::SoundLoaded(B::GrandPiano))),
         [
@@ -325,15 +327,15 @@ fn a_sample_plays_stops_and_ends_by_itself() {
         [sample_op(B::SynthLead)]
     );
     let playing = |instrument, at_us: u64| {
-        Some(SampleView {
+        Some(Sample {
             instrument,
             started_us: at_us + latency_us,
             length_us: 4_000_000,
         })
     };
     let shelf = m.view().shelf;
-    assert_eq!(shelf.sample, playing(SynthLead, 1_000_000));
-    assert_eq!(shelf.selected, None, "it does not select the row");
+    assert_eq!(shelf.sample(), playing(SynthLead, 1_000_000));
+    assert_eq!(shelf.selected(), None, "it does not select the row");
     assert_eq!(
         status(m),
         Some(StatusMessage::SamplePlaying {
@@ -349,18 +351,18 @@ fn a_sample_plays_stops_and_ends_by_itself() {
         sound(&command(m, e, play_sample(ElectroKit))),
         [sample_op(B::ElectroKit)]
     );
-    assert_eq!(m.view().shelf.sample, playing(ElectroKit, 2_000_000));
+    assert_eq!(m.view().shelf.sample(), playing(ElectroKit, 2_000_000));
     // A row that is auditioned has the status line; the sample plays on.
     command(m, e, select(Sine));
     assert_eq!(
         status(m),
         Some(StatusMessage::AuditionNewTrack { instrument: Sine })
     );
-    assert_eq!(m.view().shelf.sample, playing(ElectroKit, 2_000_000));
+    assert_eq!(m.view().shelf.sample(), playing(ElectroKit, 2_000_000));
     command(m, e, Command::ShelfCancel);
 
     assert_eq!(sound(&command(m, e, Command::StopSample)), [STOP]);
-    assert_eq!(m.view().shelf.sample, None);
+    assert_eq!(m.view().shelf.sample(), None);
     assert_eq!(sound(&command(m, e, Command::StopSample)), []);
 
     // It ends by itself after its two bars and the tail.
@@ -369,10 +371,10 @@ fn a_sample_plays_stops_and_ends_by_itself() {
     m.set_now(started + 5_900_000, None);
     assert!(m.sample_playing(), "the time is to be told");
     assert_eq!(sound(&go(m, e, Input::Tick)), []);
-    assert_eq!(m.view().shelf.sample, playing(Sine, 2_000_000));
+    assert_eq!(m.view().shelf.sample(), playing(Sine, 2_000_000));
     m.set_now(started + 6_000_000, None);
     assert_eq!(sound(&go(m, e, Input::Tick)), [STOP]);
-    assert_eq!(m.view().shelf.sample, None);
+    assert_eq!(m.view().shelf.sample(), None);
     assert!(!m.sample_playing());
 
     // Closing the shelf stops it.
@@ -381,7 +383,7 @@ fn a_sample_plays_stops_and_ends_by_itself() {
         sound(&command(m, e, Command::ToggleBand { band: Band::Shelf })),
         [STOP]
     );
-    assert_eq!(m.view().shelf.sample, None);
+    assert_eq!(m.view().shelf.sample(), None);
 
     // An instrument that is no row has no sample.
     command(m, e, open(ShelfMode::NewTrack));
@@ -390,7 +392,7 @@ fn a_sample_plays_stops_and_ends_by_itself() {
     // The output goes away: the engine's sample seat is emptied with the stream.
     command(m, e, play_sample(Sine));
     go(m, e, Input::AudioLost);
-    assert_eq!(m.view().shelf.sample, None);
+    assert_eq!(m.view().shelf.sample(), None);
 }
 
 #[test]
@@ -401,9 +403,9 @@ fn a_sample_waits_for_its_samples_and_nothing_plays_without_an_output() {
         sound(&command(m, e, play_sample(Organ))),
         [Effect::LoadSound(B::Organ)]
     );
-    assert_eq!(m.view().shelf.sample, None);
+    assert_eq!(m.view().shelf.sample(), None);
     assert_eq!(
-        m.view().shelf.loading,
+        m.view().shelf.loading(),
         None,
         "that is about the selected row"
     );
@@ -412,8 +414,8 @@ fn a_sample_waits_for_its_samples_and_nothing_plays_without_an_output() {
         sound(&go(m, e, Input::SoundLoaded(B::Organ))),
         [sample_op(B::Organ)]
     );
-    assert_eq!(m.view().shelf.sample.unwrap().instrument, Organ);
-    assert_eq!(m.view().shelf.sample.unwrap().started_us, 3_000_000);
+    assert_eq!(m.view().shelf.sample().unwrap().instrument, Organ);
+    assert_eq!(m.view().shelf.sample().unwrap().started_us, 3_000_000);
 
     // ▶ on another one that is not read: the one playing stops, and only the last one asked
     // for plays when it is there. The organ is let go of.
@@ -433,13 +435,13 @@ fn a_sample_waits_for_its_samples_and_nothing_plays_without_an_output() {
         sound(&go(m, e, Input::SoundLoaded(B::StudioKit))),
         [Effect::DropSound(B::StudioKit)]
     );
-    assert_eq!(m.view().shelf.sample, None);
+    assert_eq!(m.view().shelf.sample(), None);
 
     // No output: nothing would be heard, so nothing plays.
     let mut silent = Model::new(Settings::default());
     cmd(&mut silent, open(ShelfMode::NewTrack));
     assert_eq!(sound(&cmd(&mut silent, play_sample(Sine))), []);
-    assert_eq!(silent.view().shelf.sample, None);
+    assert_eq!(silent.view().shelf.sample(), None);
 }
 
 #[test]
@@ -520,7 +522,7 @@ fn a_key_on_a_track_whose_samples_are_not_read_says_so_until_they_are() {
     // A row is auditioned: the shelf says it, as before, and the status line is the shelf's.
     command(m, e, open(ShelfMode::NewTrack));
     command(m, e, select(Organ));
-    assert_eq!(m.view().shelf.loading, Some(Organ));
+    assert_eq!(m.view().shelf.loading(), Some(Organ));
     assert!(!m.wants_loading_key());
     go(m, e, Input::KeyWhileLoading);
     let auditioning = Some(StatusMessage::AuditionNewTrack { instrument: Organ });

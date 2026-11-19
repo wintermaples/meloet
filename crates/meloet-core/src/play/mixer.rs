@@ -9,11 +9,9 @@
 use std::sync::Arc;
 
 use meloet_model::effects::EffectKind as ModelEffect;
-use meloet_model::{
-    Bus, Gain, INSERT_SLOTS, Inserts, Pan, PluginPlace, PluginRef, StripId, TrackId, mixer,
-};
+use meloet_model::{Bus, Gain, Inserts, Pan, PluginPlace, PluginRef, StripId, TrackId, mixer};
 use meloet_protocol::{
-    EffectKind, InsertRef, InsertsView, MasterView, ParamsView, ReturnView, SelectedInsert,
+    EffectKind, InsertRef, MasterView, ParamsView, ReturnView, SelectedInsert, SelectedParams,
     SendBus, SlotsView, StatusMessage, StripRef,
 };
 
@@ -129,14 +127,6 @@ fn gain_of(db: Option<f32>) -> Gain {
 /// `None` is −∞.
 pub(crate) fn gain_view(gain: Gain) -> Option<f32> {
     gain.db().map(|db| db as f32)
-}
-
-pub(crate) fn inserts_view(inserts: &Inserts) -> InsertsView {
-    let mut view = [None; INSERT_SLOTS];
-    for (to, from) in view.iter_mut().zip(inserts) {
-        *to = from.as_ref().and_then(|i| i.kind()).map(effect_kind);
-    }
-    view
 }
 
 impl Play {
@@ -344,7 +334,7 @@ impl Play {
     pub fn params_view(&self) -> ParamsView {
         let selected = self.mixer.selected.and_then(|(strip, slot, _)| {
             let insert = self.doc().insert(strip, slot)?;
-            Some(SelectedInsert {
+            Some(SelectedParams::Builtin(SelectedInsert {
                 insert: InsertRef {
                     strip: strip_ref(strip),
                     slot: slot as u8,
@@ -352,7 +342,7 @@ impl Play {
                 effect: effect_kind(insert.kind()?),
                 values: insert.values().to_vec(),
                 row: self.mixer.row,
-            })
+            }))
         });
         ParamsView { selected }
     }
@@ -364,7 +354,6 @@ impl Play {
                 gain_db: gain_view(r.channel.gain),
                 pan: r.channel.pan.get(),
                 muted: r.muted,
-                inserts: inserts_view(&r.channel.inserts),
                 slots: self.slots_of(StripId::Return(bus), &r.channel.inserts),
             }
         })
@@ -375,7 +364,6 @@ impl Play {
         MasterView {
             gain_db: gain_view(master.gain),
             pan: master.pan.get(),
-            inserts: inserts_view(&master.inserts),
             slots: self.slots_of(StripId::Master, &master.inserts),
         }
     }

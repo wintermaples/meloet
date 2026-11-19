@@ -1,6 +1,6 @@
 // 約束 17: 棚の「あとから入れたもの」（SF2 とプラグイン）、プラグインの音源とエフェクト、見つからない物。
 import { describe, expect, it } from "vitest";
-import { SCENES, createFakeTransport, fakeScene, fakeState, keyCounts } from "../src/bridge/fake";
+import { SCENES, createFakeTransport, fakeScene, fakeState, keyCounts, type FakeState } from "../src/bridge/fake";
 import { FLUID, fakePluginRows, fluidFile, lv2Key } from "../src/bridge/fakeLibrary";
 import {
   GM_FAMILIES,
@@ -29,7 +29,7 @@ const state = (scene: string) => fakeScene(scene)!.state;
 async function open(scene: string) {
   const start = state(scene);
   const transport = createFakeTransport(structuredClone(start));
-  const held = { s: structuredClone(start) as AppState };
+  const held = { s: structuredClone(start) as FakeState };
   await transport.subscribe(
     (m: ServerMessage) => {
       if (m.kind !== "patch") return;
@@ -44,8 +44,8 @@ async function open(scene: string) {
 const SURGE: SoundRef = { kind: "plugin", key: lv2Key("Surge XT") };
 
 describe("約束 17 の形", () => {
-  it("版は 17。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
-    expect(PROTOCOL_VERSION).toBe(17);
+  it("版は 18 に上がった。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
+    expect(PROTOCOL_VERSION).toBe(18);
     const s = fakeState();
     expect(s.library).toEqual({ sf2: [], plugins: [], openedSf2: null, packMissing: false });
     expect(s.workspace.fileDrop).toBeNull();

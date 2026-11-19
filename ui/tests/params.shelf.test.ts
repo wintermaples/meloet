@@ -3,6 +3,7 @@ import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
 import { fakeScene, reduceMixer } from "../src/bridge/fake";
+import { builtinOf } from "../src/components/params/selected";
 import RightRail from "../src/components/RightRail.svelte";
 import { shelfModel } from "../src/components/shelfList";
 import { shelfStepCommand, shelfUi } from "../src/components/tracks.svelte";
@@ -124,8 +125,8 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     const r = reduceMixer(s, s.shelf, s.song, { type: "shelfConfirm" })!;
     const mode = s.shelf.mode as { strip: { kind: "track"; id: number }; slot: number };
     expect(r.song.tracks.find((x) => x.id === mode.strip.id)!.inserts[mode.slot]).toBe("compressor");
-    expect(r.params.selected?.effect).toBe("compressor");
-    expect(r.params.selected?.insert).toEqual({ strip: mode.strip, slot: mode.slot });
+    expect(builtinOf(r.params)?.effect).toBe("compressor");
+    expect(builtinOf(r.params)?.insert).toEqual({ strip: mode.strip, slot: mode.slot });
     expect(r.showParams).toBe(true);
     expect(r.shelf.mode).toEqual({ kind: "newTrack" });
   });

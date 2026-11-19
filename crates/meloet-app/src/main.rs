@@ -355,7 +355,8 @@ fn main() {
             measure_report,
             ui_script,
             takes::take_notes,
-            takes::live_notes
+            takes::live_notes,
+            takes::plugin_params
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {

@@ -9,6 +9,7 @@
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import { insertName, soundRefName, soundViewName, standInTip } from "../sounds";
+  import { selectedInsert } from "../params/selected";
   import { openShelf } from "../tracks.svelte";
   import Strip from "./Strip.svelte";
   import { stripName } from "./stripName";
@@ -17,7 +18,7 @@
   const app = $derived(current.state!);
   const song = $derived(app.song);
   const busy = $derived(app.transport.state === "recording" || app.transport.state === "countIn");
-  const selected = $derived(app.params.selected?.insert ?? null);
+  const selected = $derived(selectedInsert(app.params));
   const shelf = $derived(app.shelf);
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
 

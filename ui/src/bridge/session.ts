@@ -10,6 +10,8 @@ import {
   type HelloReply,
   type LiveNotes,
   type LiveNotesSnapshot,
+  type ParamTable,
+  type ParamValues,
   type Patch,
   type SendReply,
   type ServerMessage,
@@ -30,6 +32,8 @@ export interface Transport {
   /** The take binary (docs/architecture.md 3-4). */
   takeNotes(id: number): Promise<ArrayBuffer>;
   liveNotes(): Promise<LiveNotesSnapshot>;
+  /** The parameters of the plugin in the parameters panel; null when `table` names them no more. */
+  pluginParams(table: number): Promise<ParamTable | null>;
 }
 
 export interface Handlers {
@@ -39,6 +43,8 @@ export interface Handlers {
   onEvent?(event: Event): void;
   /** Notes of the recording going on, in Channel order. */
   onLiveNotes?(notes: LiveNotes): void;
+  /** Values of the plugin in the parameters panel that changed, in Channel order. */
+  onParamValues?(values: ParamValues): void;
   onTelemetry?(telemetry: Telemetry): void;
   /** A snapshot that failed after connect, or telemetry that could not be read. */
   onError?(error: unknown): void;
@@ -52,6 +58,7 @@ export interface Connection {
   rev(): number;
   takeNotes(id: number): Promise<ArrayBuffer>;
   liveNotes(): Promise<LiveNotesSnapshot>;
+  pluginParams(table: number): Promise<ParamTable | null>;
 }
 
 export class ProtocolVersionError extends Error {
@@ -140,6 +147,7 @@ export async function connectWith(
   function onMessage(message: ServerMessage): void {
     if (message.kind === "event") handlers.onEvent?.(message);
     else if (message.kind === "liveNotes") handlers.onLiveNotes?.(message);
+    else if (message.kind === "paramValues") handlers.onParamValues?.(message);
     else onPatch(message);
   }
 
@@ -182,5 +190,6 @@ export async function connectWith(
     rev: () => current?.rev ?? 0,
     takeNotes: (id) => transport.takeNotes(id),
     liveNotes: () => transport.liveNotes(),
+    pluginParams: (table) => transport.pluginParams(table),
   };
 }

@@ -1,3 +1,4 @@
+use crate::seen::*;
 use meloet_devices::{ClockSettings, DevicesPicture};
 use meloet_protocol::{
     Band, Command, InstrumentKind, ShelfMode, StatusMessage, TrackRef, TransportState,
@@ -47,7 +48,7 @@ fn rows(m: &Model) -> Vec<(u32, String, u8, InstrumentKind)> {
         .song
         .tracks
         .iter()
-        .map(|t| (t.id, t.name.clone(), t.color, t.instrument))
+        .map(|t| (t.id, t.name.clone(), t.color, t.instrument()))
         .collect()
 }
 
@@ -57,11 +58,11 @@ fn a_new_track_is_auditioned_on_its_own_seat_then_added_below_the_selected_one()
     go(m, e, open(ShelfMode::NewTrack));
     assert!(shelf_open(m));
     assert_eq!(m.view().workspace.layout.right_front, Some(Band::Shelf));
-    assert_eq!(m.view().shelf.selected, None);
+    assert_eq!(m.view().shelf.selected(), None);
     assert!(m.view().transport.can_record);
 
     go(m, e, select(SynthBass));
-    assert_eq!(m.view().shelf.selected, Some(SynthBass));
+    assert_eq!(m.view().shelf.selected(), Some(SynthBass));
     assert_eq!(e.target(), Some(AUDITION_SEAT), "the keys play the row");
     assert_eq!(e.sounding(AUDITION_SEAT), Some(SynthBass));
     assert_eq!(
@@ -124,7 +125,7 @@ fn a_new_track_is_auditioned_on_its_own_seat_then_added_below_the_selected_one()
     let view = m.view();
     assert_eq!(view.song.play_target, Some(4), "the new track is selected");
     assert_eq!(view.song.undo_count, 1, "one step");
-    assert_eq!(view.shelf.selected, None);
+    assert_eq!(view.shelf.selected(), None);
     assert!(shelf_open(m), "the shelf stays open");
     assert!(view.transport.can_record);
     assert_eq!(e.target(), Some(3));
@@ -169,7 +170,7 @@ fn an_audition_ends_with_cancel_esc_closing_the_shelf_and_a_row_that_is_not_ther
         assert_eq!(e.target(), Some(AUDITION_SEAT));
     };
     let ended = |m: &Model, e: &FakeEngine| {
-        assert_eq!(m.view().shelf.selected, None);
+        assert_eq!(m.view().shelf.selected(), None);
         assert_eq!(
             e.target(),
             Some(0),
@@ -208,7 +209,7 @@ fn an_audition_ends_with_cancel_esc_closing_the_shelf_and_a_row_that_is_not_ther
     assert_eq!(m.view().shelf.available, [Sine]);
     assert!(m.view().library.pack_missing);
     go(m, e, select(Sine));
-    assert_eq!(m.view().shelf.selected, Some(Sine));
+    assert_eq!(m.view().shelf.selected(), Some(Sine));
     go(m, e, select(Organ));
     ended(m, e);
     instruments::tests::EVERY_SOUND.set(true);
@@ -233,7 +234,7 @@ fn another_song_and_another_output_end_the_audition() {
     e.take(&three_tracks(m));
     e.check(m, "another song");
     let shelf = m.view().shelf;
-    assert_eq!((shelf.mode, shelf.selected), (ShelfMode::NewTrack, None));
+    assert_eq!((shelf.mode, shelf.selected()), (ShelfMode::NewTrack, None));
     assert!(shelf_open(m), "the shelf itself stays");
 
     // The output goes away: the stream closes, and the row with it.
@@ -247,7 +248,7 @@ fn another_song_and_another_output_end_the_audition() {
     assert!(effects.contains(&Effect::CloseOutput));
     e.take(&effects);
     e.check(m, "the output is gone");
-    assert_eq!(m.view().shelf.selected, None);
+    assert_eq!(m.view().shelf.selected(), None);
     assert_eq!(e.target(), Some(0));
 
     // Without a stream a row can still be picked and a track added.
@@ -265,7 +266,7 @@ fn the_shelf_does_not_open_or_audition_while_counting_in() {
     assert!(!shelf_open(m));
     go(m, e, Command::ToggleBand { band: Band::Shelf });
     go(m, e, select(Organ));
-    assert_eq!(m.view().shelf.selected, None);
+    assert_eq!(m.view().shelf.selected(), None);
     go(m, e, Command::ShelfConfirm);
     assert_eq!(m.view().song.tracks.len(), 3);
 }
@@ -280,7 +281,7 @@ fn replacing_tries_the_row_on_the_track_and_puts_its_own_instrument_back_on_canc
     go(m, e, open(ShelfMode::Replace { track: 2 }));
     let shelf = m.view().shelf;
     assert_eq!(shelf.mode, ShelfMode::Replace { track: 2 });
-    assert_eq!((shelf.current, shelf.selected), (Some(Sine), None));
+    assert_eq!((shelf.current(), shelf.selected()), (Some(Sine), None));
     assert_eq!(e.target(), Some(0), "nothing is tried yet");
 
     go(m, e, select(ElectricPiano));
@@ -314,14 +315,14 @@ fn replacing_tries_the_row_on_the_track_and_puts_its_own_instrument_back_on_canc
     assert_eq!(e.target(), Some(0));
     let shelf = m.view().shelf;
     assert_eq!(shelf.mode, ShelfMode::Replace { track: 2 });
-    assert_eq!(shelf.selected, None);
+    assert_eq!(shelf.selected(), None);
     assert!(m.view().transport.can_record);
 
     // The instrument it has already: no step, and its own one stays.
     go(m, e, select(Sine));
     go(m, e, Command::ShelfConfirm);
     assert_eq!(m.view().song.undo_count, 0);
-    assert_eq!(m.view().shelf.selected, None);
+    assert_eq!(m.view().shelf.selected(), None);
     assert_eq!(e.owns(m), own);
 }
 
@@ -359,7 +360,7 @@ fn replacing_is_one_step_that_keeps_the_name_and_undo_brings_the_instrument_back
     assert_eq!(view.song.undo_count, 1);
     assert_eq!(view.shelf.mode, ShelfMode::Replace { track: 1 });
     assert_eq!(
-        (view.shelf.current, view.shelf.selected),
+        (view.shelf.current(), view.shelf.selected()),
         (Some(ElectricPiano), None)
     );
     let other = e.owns(m);
@@ -367,7 +368,7 @@ fn replacing_is_one_step_that_keeps_the_name_and_undo_brings_the_instrument_back
     go(m, e, Command::Undo);
     assert_eq!(rows(m)[0].3, GrandPiano);
     assert_eq!(e.sounding(0), Some(GrandPiano));
-    assert_eq!(m.view().shelf.current, Some(GrandPiano));
+    assert_eq!(m.view().shelf.current(), Some(GrandPiano));
     let now = e.owns(m);
     assert_eq!(
         now[&meloet_model::TrackId(2)],
@@ -380,15 +381,15 @@ fn replacing_is_one_step_that_keeps_the_name_and_undo_brings_the_instrument_back
     // has what the song says.
     go(m, e, select(Organ));
     go(m, e, Command::Undo);
-    assert_eq!(m.view().shelf.selected, None);
+    assert_eq!(m.view().shelf.selected(), None);
     assert_eq!(e.sounding(0), Some(GrandPiano));
 
     // The track goes while it is tried: the shelf is for a new track again.
     go(m, e, select(Organ));
     go(m, e, Command::DeleteTrack { track: 1 });
     let shelf = m.view().shelf;
-    assert_eq!((shelf.mode, shelf.selected), (ShelfMode::NewTrack, None));
-    assert_eq!(shelf.current, None);
+    assert_eq!((shelf.mode, shelf.selected()), (ShelfMode::NewTrack, None));
+    assert_eq!(shelf.current(), None);
 }
 
 #[test]

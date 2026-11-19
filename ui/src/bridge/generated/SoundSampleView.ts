@@ -8,6 +8,7 @@ import type { SoundRef } from "./SoundRef";
 export type SoundSampleView = { sound: SoundRef, 
 /**
  * `None`: the sound is still being read, and the place of the time says "読みこみ中…"
- * (spec 3 Y14). Then as `SampleView`: the screen counts from these on its own clock.
+ * (spec 3 Y14). Then the screen counts "0:02 / 0:04" from these on its own clock
+ * (`HelloReply::mono_us`), with no message per second.
  */
 playing: SamplePlaying | null, };

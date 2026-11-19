@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { effectDefaults, encodeTelemetry, fakeScene, fakeState, reduceMixer } from "../src/bridge/fake";
+import { effectDefaults, encodeTelemetry, fakeScene, fakeState, reduceMixer, type FakeState as AppState } from "../src/bridge/fake";
 import { decodeTelemetry } from "../src/bridge/telemetry";
-import { EFFECT_KINDS, EFFECT_PARAMS, INSERT_SLOTS, type AppState, type Command, type InsertRef } from "../src/bridge/types";
+import { EFFECT_KINDS, EFFECT_PARAMS, INSERT_SLOTS, type Command, type InsertRef } from "../src/bridge/types";
+import { builtinOf } from "../src/components/params/selected";
 import { texts } from "../src/text/ja";
 
 const scene = (name: string) => fakeScene(name)!.state;
@@ -26,7 +27,7 @@ describe("約束 14: 偽物の場面（ミキサー）", () => {
     ]);
     expect(s.song.master).toMatchObject({ gainDb: 0, pan: 0, inserts: ["limiter", null, null, null] });
     const insert: InsertRef = { strip: { kind: "return", bus: "a" }, slot: 0 };
-    expect(s.params.selected).toEqual({ insert, effect: "reverb", values: [2.4, 60, 20, 6000, 120, 100, 100], row: 0 });
+    expect(s.params.selected).toEqual({ kind: "builtin", insert, effect: "reverb", values: [2.4, 60, 20, 6000, 120, 100, 100], row: 0 });
     expect(s.status.message).toEqual({ id: "paramSelected", loopBars: { from: 5, to: 9 }, insert, effect: "reverb", param: 0 });
     expect(s.transport.state).toBe("playing");
     expect(s.workspace.layout.lower.map((b) => b.band)).toEqual(["mixer"]);
@@ -34,7 +35,7 @@ describe("約束 14: 偽物の場面（ミキサー）", () => {
   });
 
   it("paramsDelay はモック R6-Delay（戻り B のディレイ）、shelfEffects は「空き ＋」からの棚", () => {
-    const delay = scene("paramsDelay").params.selected!;
+    const delay = builtinOf(scene("paramsDelay").params)!;
     expect(delay.insert).toEqual({ strip: { kind: "return", bus: "b" }, slot: 0 });
     expect(delay.effect).toBe("delay");
     // 間隔 1/8、テンポに合わせる オン、くり返し 35 %、5000 Hz、200 Hz、左右にゆれる オフ、ミックス 100 %。
@@ -106,8 +107,8 @@ describe("約束 14: 偽物の「決める」と「音だけ変える」", () =>
     expect(run(s, { type: "setPan", strip: { kind: "return", bus: "b" }, pan: 150, commit: true })!.song.returns[1].pan).toBe(100);
     expect(run(s, { type: "setSend", track: track.id, bus: "b", db: -18, commit: true })!.song.tracks[0]!.sends).toEqual([-15, -18]);
     expect(run(s, { type: "toggleReturnMute", bus: "a" })!.song.returns[0].muted).toBe(true);
-    const insert = s.params.selected!.insert;
-    const set = (value: number, commit: boolean) => run(s, { type: "setParam", insert, effect: "reverb", param: 0, value, commit })!.params.selected!.values[0];
+    const insert = builtinOf(s.params)!.insert;
+    const set = (value: number, commit: boolean) => builtinOf(run(s, { type: "setParam", insert, effect: "reverb", param: 0, value, commit })!.params)!.values[0];
     expect(set(5, false)).toBe(2.4);
     expect(set(5, true)).toBe(5);
     expect(set(99, true)).toBe(10);
@@ -118,17 +119,17 @@ describe("約束 14: 偽物の「決める」と「音だけ変える」", () =>
     const s = scene("shelfEffects");
     const master: InsertRef = { strip: { kind: "master" }, slot: 0 };
     const picked = run(s, { type: "selectInsert", insert: master })!;
-    expect(picked.params.selected).toEqual({ insert: master, effect: "limiter", values: [-0.3, 0, 100], row: null });
+    expect(picked.params.selected).toEqual({ kind: "builtin", insert: master, effect: "limiter", values: [-0.3, 0, 100], row: null });
     expect(picked.showParams).toBe(true);
     expect(run(s, { type: "selectInsert", insert: { strip: { kind: "master" }, slot: 1 } })!.params.selected).toBeNull();
-    expect(run(s, { type: "selectParam", param: 6 })!.params.selected!.row).toBe(6);
-    expect(run(s, { type: "selectParam", param: 7 })!.params.selected!.row).toBeNull();
+    expect(builtinOf(run(s, { type: "selectParam", param: 6 })!.params)!.row).toBe(6);
+    expect(builtinOf(run(s, { type: "selectParam", param: 7 })!.params)!.row).toBeNull();
     expect(run(s, { type: "shelfSelectEffect", effect: "chorus" })!.shelf.selectedEffect).toBe("chorus");
 
     const added = run(s, { type: "shelfConfirm" })!;
     const track = { kind: "track", id: s.song.tracks[0]!.id } as const;
     expect(added.song.tracks[0]!.inserts).toEqual([null, "compressor", null, null]);
-    expect(added.params.selected).toEqual({ insert: { strip: track, slot: 1 }, effect: "compressor", values: effectDefaults("compressor"), row: null });
+    expect(added.params.selected).toEqual({ kind: "builtin", insert: { strip: track, slot: 1 }, effect: "compressor", values: effectDefaults("compressor"), row: null });
     expect(added.shelf.mode).toEqual({ kind: "newTrack" });
     expect(added.shelf.selectedEffect).toBeNull();
     const after = { ...s, song: added.song, params: added.params, shelf: added.shelf };
@@ -138,7 +139,7 @@ describe("約束 14: 偽物の「決める」と「音だけ変える」", () =>
     // リバーブ ・ ディレイのミックス: トラック ・ マスターに入れたときは 30 %、戻りは表のとおり 100 %。
     const mixOf = (strip: InsertRef["strip"], effect: "reverb" | "delay" | "chorus") => {
       const open = { ...s, shelf: { ...s.shelf, mode: { kind: "insertEffect", strip, slot: 3 } as const, selectedEffect: effect } };
-      const values = run(open, { type: "shelfConfirm" })!.params.selected!.values;
+      const values = builtinOf(run(open, { type: "shelfConfirm" })!.params)!.values;
       return values[EFFECT_PARAMS[effect].findIndex((p) => p.id === "mix")];
     };
     expect([mixOf(track, "reverb"), mixOf(track, "delay"), mixOf({ kind: "master" }, "reverb")]).toEqual([30, 30, 30]);

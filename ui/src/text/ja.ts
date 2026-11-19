@@ -796,6 +796,44 @@ export const texts = {
     "quoted",
   ),
 
+  // [第 5 回 区切り3 ・ 窓とパラメータ] モックにだけある文。
+  // 6 章の窓の文の「（名前）」は、居場所とプラグインの名前（うしろに空白。design-notes A-17）。
+  "status.windowPlace": e("{strip} ・ {name}", "mock:F-ParamMany", {
+    strip: "1 ピアノ",
+    name: "Surge XT",
+  }),
+  "status.windowNotYet": e(
+    "{name} の窓はまだひらけません。パラメータは右で動かせます",
+    "mock:F-ParamNoWindow",
+    { name: "Mossy Verb" },
+  ),
+  "status.paramMoving": e(
+    "{name} の {param} を動かしています",
+    "mock:F-ParamFew",
+    { name: "Dragonfly Reverb", param: "Decay" },
+  ),
+  "status.paramSearching": e(
+    "パラメータをさがしています ・「{query}」・ {count} 個",
+    "mock:F-ParamSearch",
+    { query: "cutoff", count: "24" },
+  ),
+  "status.insertBypassedNow": e(
+    "{strip} の {effect} をとばしています",
+    "mock:F5-MixerBypass",
+    { strip: "4 パッド", effect: "MVerb" },
+  ),
+  "status.pluginStoppedNow": e(
+    "{strip} の {name} は止まっています（音は、その枠をとばして流しています）",
+    "mock:F5-MixerBypass",
+    { strip: "3 ドラム", name: "Brick EQ" },
+  ),
+  "windows.heading": e("ひらいている窓 ・ 押すと前に出ます", "mock:F-WindowOpen"),
+  "windows.raiseAll": e("ぜんぶ前に出す", "mock:F-WindowOpen"),
+  "params.whereInstrument": e("{strip} ・ 音源", "mock:F-ParamMany", {
+    strip: "1 ピアノ",
+  }),
+  "button.raiseWindow": e("窓を前に出す", "mock:F-ParamMany"),
+
   // [第 5 回 ・ プラグイン]（仕様書 6 章）
   "plugin.newFound": s6(
     "新しいプラグインがあった",

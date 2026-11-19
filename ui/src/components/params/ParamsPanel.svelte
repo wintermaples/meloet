@@ -1,5 +1,6 @@
 <!-- パラメータの欄（右の欄。仕様書 1 章「パラメータ」: 見出し 24、名前と形式と居場所 48、さがす枠 32、一覧。モック F4-Mixer ・ R6-Delay）。
      えらんだ子は core が持つ（AppState.params.selected）。さがす文字とたたんだ見出しは画面だけが持ち、えらぶ子が変わるとはじめに戻す。
+     いま出すのは最初から入っているエフェクトだけ（プラグインをえらんでいるときは見出しだけ）。
      最初から入っているエフェクトは窓を持たず、名前の右は形式の印ではなく「最初から入っている」。「この子は窓を持ちません。」の行は出さない（仕様書 3 章 Y8）。
      何もえらんでいないときは見出しだけ（仕様書にもモックにも形がない）。 -->
 <script lang="ts">
@@ -11,11 +12,12 @@
   import { stripName } from "../mixer/stripName";
   import ParamRow from "./ParamRow.svelte";
   import { allRows, rowCount, searchRows, stepRow } from "./paramRows";
+  import { builtinOf } from "./selected";
 
   let { onfold }: { onfold: () => void } = $props();
 
   const app = $derived(current.state!);
-  const sel = $derived(app.params.selected);
+  const sel = $derived(builtinOf(app.params));
 
   let query = $state("");
   let folded = $state<string[]>([]);

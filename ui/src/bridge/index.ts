@@ -2,6 +2,7 @@
 
 import { createFakeTransport, fakeMeasureEnabled, fakeMeasureReport, fakeUiScript } from "./fake";
 import { LiveNotesBook } from "./live";
+import { ParamTableBook } from "./paramTable";
 import { connectWith, type Connection, type Handlers, type Transport } from "./session";
 import { songTakeIds, TakeStore, type TakeNotes } from "./take";
 import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport, tauriUiScript } from "./tauri";
@@ -12,6 +13,7 @@ export { DRUM_ROWS, INSTRUMENT_GROUPS, PROTOCOL_VERSION } from "./types";
 export { keyIsDown, positionAt, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
 export type { LiveNotesBook } from "./live";
+export type { ParamTableBook, ParamTableListener } from "./paramTable";
 export { ProtocolVersionError, type Connection, type Handlers } from "./session";
 
 let connection: Connection | null = null;
@@ -22,6 +24,7 @@ function pickTransport(): Transport {
 
 const takes = new TakeStore((id) => connected().takeNotes(id));
 let book: LiveNotesBook | null = null;
+let params: ParamTableBook | null = null;
 
 /** hello → subscribe → snapshot. Rejects when the protocol versions differ. */
 export async function connect(handlers: Handlers): Promise<Connection> {
@@ -29,6 +32,11 @@ export async function connect(handlers: Handlers): Promise<Connection> {
     () => connected().liveNotes(),
     (error) => handlers.onError?.(error),
   );
+  const table = new ParamTableBook(
+    (id) => connected().pluginParams(id),
+    (error) => handlers.onError?.(error),
+  );
+  params = table;
   let song: AppState["song"] | null = null;
   let serial: number | null = null;
   connection = await connectWith(pickTransport(), {
@@ -43,7 +51,13 @@ export async function connect(handlers: Handlers): Promise<Connection> {
         }
         takes.keepOnly(songTakeIds(song));
       }
+      const shown = state.params.selected;
+      table.show(shown?.kind === "plugin" ? shown.table : null);
       handlers.onState(state, rev);
+    },
+    onParamValues(values) {
+      table.receive(values);
+      handlers.onParamValues?.(values);
     },
     onLiveNotes(notes) {
       live.receive(notes);
@@ -69,6 +83,12 @@ export function peekTakeNotes(id: number): TakeNotes | undefined {
 export function liveNotes(): LiveNotesBook {
   if (!book) throw new Error("bridge: connect() has not finished");
   return book;
+}
+
+/** The parameters of the plugin the parameters panel shows. */
+export function paramTable(): ParamTableBook {
+  if (!params) throw new Error("bridge: connect() has not started");
+  return params;
 }
 
 function connected(): Connection {

@@ -4,4 +4,4 @@ import type { StripRef } from "./StripRef";
 /**
  * What Enter does in the shelf.
  */
-export type ShelfMode = { "kind": "newTrack" } | { "kind": "replace", track: number, } | { "kind": "insertEffect", strip: StripRef, slot: number, };
+export type ShelfMode = { "kind": "newTrack" } | { "kind": "replace", track: number, } | { "kind": "insertEffect", strip: StripRef, slot: number, } | { "kind": "replaceEffect", strip: StripRef, slot: number, };

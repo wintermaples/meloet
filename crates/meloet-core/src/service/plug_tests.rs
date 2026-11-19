@@ -5,6 +5,7 @@
 #[path = "../../tests/plughost/mod.rs"]
 mod plughost;
 
+use crate::seen::*;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -250,7 +251,7 @@ fn plugins_on_a_track_and_in_a_slot_are_saved_come_back_stop_and_are_loaded_agai
     });
     core.send(Command::RemovePlugin { slot });
     let state = core.snapshot().state;
-    assert_eq!(state.song.tracks[1].instrument, InstrumentKind::Sine);
+    assert_eq!(state.song.tracks[1].instrument(), InstrumentKind::Sine);
     assert_eq!(state.song.tracks[1].name, "Fake Sine", "the name stays");
     core.send(Command::Undo);
     state_when(&core, "back", |s| {

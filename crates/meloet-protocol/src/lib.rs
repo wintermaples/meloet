@@ -606,8 +606,9 @@ pub enum Command {
     /// "ファイルの場所をひらく" on the hint about a recovery file that did not read.
     ShowRecoveryFile,
     /// "もう一度スキャン" (right of the shelf's heading 「あとから入れたもの」, and under the plugin
-    /// places): every bundle of every place is looked at again, the ones that stopped before
-    /// too. While it runs, `PluginsView::scan` counts; does nothing while a scan is running.
+    /// places): every bundle of every place is looked at again. Plugins that stopped a scan
+    /// before are passed over (spec 3 Y13); `RetryStoppedPlugin` tries one of them again.
+    /// While it runs, `PluginsView::scan` counts; does nothing while a counted scan runs.
     RescanPlugins,
     /// "もう一度ためす" on a row of the dialog 「スキャンで止まったプラグイン」: that one plugin
     /// (or that whole bundle) is scanned again. `path` and `id` are `StoppedPluginView::path`

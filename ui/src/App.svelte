@@ -13,6 +13,7 @@
   import MenuBar from "./components/menu/MenuBar.svelte";
   import { metrics, watchDevicePixelRatio } from "./components/metrics.svelte";
   import OutputChooser from "./components/OutputChooser.svelte";
+  import ScanStoppedDialog from "./components/plugins/ScanStoppedDialog.svelte";
   import RecoveryHint from "./components/RecoveryHint.svelte";
   import RightRail from "./components/RightRail.svelte";
   import SettingsDialog from "./components/SettingsDialog.svelte";
@@ -87,6 +88,11 @@
   {#if about.open}
     <div class="dialog">
       <AboutDialog />
+    </div>
+  {/if}
+  {#if state.plugins.stoppedOpen}
+    <div class="dialog">
+      <ScanStoppedDialog />
     </div>
   {/if}
 {:else if current.failure}

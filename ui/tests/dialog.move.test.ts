@@ -1,8 +1,10 @@
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
+import { fakeScene } from "../src/bridge/fake";
 import SettingsDialog from "../src/components/SettingsDialog.svelte";
 import SongDialog from "../src/components/SongDialog.svelte";
+import ScanStoppedDialog from "../src/components/plugins/ScanStoppedDialog.svelte";
 import { handleKeydown } from "../src/keys/attach";
 import { clampOffset } from "../src/lib/dialogMove";
 import * as app from "./fake-app.svelte";
@@ -53,6 +55,8 @@ const song = () =>
     s.workspace.songDialog = { id: 7, kind: "unsaved", title: "はじめての曲", previous: false };
   });
 
+const scanStopped = () => fakeScene("scanStopped")!.state;
+
 const q = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const dialog = () => q('[role="dialog"]');
 const head = () => q("[data-dialog-head]");
@@ -97,6 +101,7 @@ describe("clampOffset", () => {
 describe.each([
   ["音の設定", SettingsDialog as Component<any>, settings],
   ["曲のダイアログ", SongDialog as Component<any>, song],
+  ["スキャンで止まったプラグイン", ScanStoppedDialog as Component<any>, scanStopped],
 ])("%s を動かす", (_name, component, state) => {
   it("見出しの行を押したまま動かすと動く", () => {
     show(component, state());

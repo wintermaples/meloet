@@ -53,7 +53,8 @@ export function shelfHasKeys(state: AppState): boolean {
     shelfUi.keys &&
     ws.layout.rightFront === "shelf" &&
     ws.songDialog === null &&
-    ws.settings === null
+    ws.settings === null &&
+    !state.plugins.stoppedOpen
   );
 }
 

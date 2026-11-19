@@ -74,6 +74,10 @@
     overflow: hidden;
     cursor: move;
   }
+  /* 見出しの行に乗る ・ 動かしている: 地 gray.4（仕様書 2 章「ダイアログの見出しの行（動かす）」）。 */
+  .head:hover {
+    background: var(--color-gray-4);
+  }
   .title {
     overflow: hidden;
     text-overflow: ellipsis;

@@ -695,6 +695,24 @@ export const texts = {
     "{name} を読みこめませんでした。",
     { name: "Surge XT" },
   ),
+  // 止まった物が 0 のときは、6 章の文の前半だけ（design-notes A-16）。
+  "msg.scanDoneNone": s6(
+    "スキャンが終わった",
+    "スキャンが終わりました ・ {added} 個を棚に入れました。",
+    { added: "667" },
+    "part",
+  ),
+  // ダイアログ「スキャンで止まったプラグイン」と「プラグインの場所」（仕様書 2 章・3 章 Y13、モック F5-ScanStopped・R9-Scan）。
+  "plugin.stoppedTitle": e("スキャンで止まったプラグイン", "spec:3"),
+  "plugin.reason.crashed": e("読みこむと止まりました", "spec:3"),
+  "plugin.reason.timedOut": e("30 秒たっても終わりませんでした", "spec:3"),
+  "plugin.reason.broken": e("作りがこわれています", "spec:3"),
+  "plugin.retrying": e("ためしています…", "spec:2"),
+  "plugin.format.vst3": e("VST3", "mock:F5-ScanStopped"),
+  "plugin.format.lv2": e("LV2", "mock:F5-ScanStopped"),
+  "plugin.places": e("プラグインの場所", "spec:3"),
+  "plugin.usualPlace": e("ふつうの場所", "spec:2"),
+  "button.addPlace": e("場所を足す…", "mock:R9-Scan"),
 
   // 数字の欄の名前と範囲（仕様書 6 章「範囲の外の値を打った」、3 章のテンポと拍子の枠）。
   "value.tempo": e("テンポ", "spec:6"),

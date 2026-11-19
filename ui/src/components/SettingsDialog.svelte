@@ -13,6 +13,7 @@
   import UnusableEndpoints from "./UnusableEndpoints.svelte";
   import { endpointGroups, type EndpointLook } from "./endpoint";
   import { msText } from "./format";
+  import PluginPlaces from "./plugins/PluginPlaces.svelte";
 
   const SYSTEMS = [
     { name: "PipeWire", key: "settings.systemPipeWire" },
@@ -89,7 +90,7 @@
 {/snippet}
 
 {#if app && settings}
-  <div class="place" class:advanced>
+  <div class="place">
     <div class="lead"></div>
     <div class="dialog" role="dialog" aria-label={t("settings.title")} data-test="settings-dialog" use:movableDialog>
       <div class="head" data-dialog-head>
@@ -286,6 +287,7 @@
                   </div>
                   <Button disabled>{t("settings.remeasure")}</Button>
                 </div>
+                <PluginPlaces plugins={app.plugins} />
               </div>
             </div>
           {/if}
@@ -297,11 +299,12 @@
         <Button primary test="settings-apply" onclick={() => send({ type: "settingsApply" })}>{t("settings.ok")}</Button>
       </div>
     </div>
+    <div class="lead"></div>
   </div>
 {/if}
 
 <style>
-  /* 上はモックの位置。窓が低ければ、上下 24 ずつのあきまで上へ寄せ、それでも入らなければ中身をスクロールする。 */
+  /* 窓の上下のまん中（仕様書 3 章）。高さは中身に合わせ、窓の上下 24 ずつのあきまで。それをこえたら、中身をスクロールする。 */
   .place {
     position: absolute;
     inset: 0;
@@ -312,10 +315,7 @@
     padding: var(--part-dialog-margin) 0;
   }
   .lead {
-    flex: 0 1 calc(var(--mock-settings-top) - var(--part-dialog-margin));
-  }
-  .place.advanced .lead {
-    flex-basis: calc(var(--mock-settings-top-advanced) - var(--part-dialog-margin));
+    flex: 1 1 0;
   }
   .dialog {
     flex-shrink: 0;
@@ -345,6 +345,10 @@
     padding: 0 var(--space-4);
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     cursor: move;
+  }
+  /* 見出しの行に乗る ・ 動かしている: 地 gray.4（仕様書 2 章「ダイアログの見出しの行（動かす）」）。 */
+  .head:hover {
+    background: var(--color-gray-4);
   }
   .title {
     color: var(--color-gray-10);

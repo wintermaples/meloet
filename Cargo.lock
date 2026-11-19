@@ -2934,6 +2934,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pk-ipcbench"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "livi",
+ "pk-core",
+ "pk-lv2",
+ "pk-vst3",
+ "serde_json",
+]
+
+[[package]]
 name = "pk-lv2"
 version = "0.0.0"
 dependencies = [

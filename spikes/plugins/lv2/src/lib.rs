@@ -92,6 +92,10 @@ pub fn probe(uri: &str, bundle_uri: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn bundle_world(bundle_uri: &str) -> Rc<livi::World> {
+    Rc::new(livi::World::with_load_bundle(bundle_uri))
+}
+
 struct Control {
     host_only: bool,
     index: livi::PortIndex,
@@ -103,7 +107,7 @@ struct Control {
 
 pub struct Lv2Plugin {
     info: PluginInfo,
-    world: livi::World,
+    world: Rc<livi::World>,
     features: Arc<livi::Features>,
     instance: Option<livi::Instance>,
     controls: Vec<Control>,
@@ -116,7 +120,16 @@ pub struct Lv2Plugin {
 
 impl Lv2Plugin {
     pub fn load(uri: &str) -> Result<Lv2Plugin> {
-        let world = livi::World::new();
+        Self::load_in(Rc::new(livi::World::new()), uri)
+    }
+
+    /// Reads only this plugin's own bundle, not every installed TTL file (for the memory and start-up numbers).
+    pub fn load_bundle(uri: &str, bundle_uri: &str) -> Result<Lv2Plugin> {
+        Self::load_in(bundle_world(bundle_uri), uri)
+    }
+
+    /// Several plugins on one world: the parsed TTL is paid once per process, not once per plugin.
+    pub fn load_in(world: Rc<livi::World>, uri: &str) -> Result<Lv2Plugin> {
         let plugin = world.plugin_by_uri(uri).ok_or("plugin not found")?;
         let info = info_of(&plugin);
         let features = world.try_build_features(livi::FeaturesBuilder { min_block_length: 1, max_block_length: 4096 })

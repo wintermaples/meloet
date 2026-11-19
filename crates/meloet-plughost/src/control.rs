@@ -2,18 +2,28 @@
 //! (`meloet_plugin::wire`) and owns the controller half of every plugin.
 //!
 //! The process ends when the socket closes: meloet is gone, or it let this process go.
+//!
+//! The thread sleeps in `poll`, never in a read: on the socket, and for no longer than a tick
+//! while a plugin is loaded, so that every plugin is looked after many times a second
+//! ([`Controller::poll`]). What a plugin's window needs later (the X11 connection, the
+//! descriptors and timers a VST3 view registers, the idle call of an LV2 UI) joins the same
+//! `poll`.
 
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
 use meloet_plugin::ipc::{Mapping, PluginEnd};
 use meloet_plugin::wire::{
-    FromHost, Reply, Request, ToHost, WIRE_VERSION, WireError, read_frame, write_frame,
+    FromHost, MAX_BLOB_LEN, MAX_TEXT_LEN, Notice, Reply, Request, ToHost, WIRE_VERSION, WireError,
+    read_frame, write_frame,
 };
 
-use crate::formats::{self, Activation, Controller};
+use crate::formats::{self, Activation, Controller, Said};
 use crate::rt::{self, SlotRun};
+
+/// How long the thread sleeps at most while a plugin is loaded.
+const TICK_MS: i32 = 10;
 
 struct Host {
     map: Arc<Mapping>,
@@ -112,11 +122,18 @@ impl Host {
                 else {
                     return error(format!("no plugin in slot {slot}"));
                 };
-                let removed = self.audio.remove(slot);
-                drop(controller);
-                match removed {
-                    Ok(()) => ok(),
-                    Err(message) => error(message),
+                match self.audio.remove(slot) {
+                    Ok(()) => {
+                        drop(controller);
+                        ok()
+                    }
+                    Err(message) => {
+                        // The audio thread is stuck inside a plugin and still holds this
+                        // one's other half: ending it now would pull it from under that
+                        // thread.
+                        std::mem::forget(controller);
+                        error(message)
+                    }
                 }
             }
             Request::GetState { slot } => match self.controller(slot).map(|c| c.save_state()) {
@@ -162,11 +179,100 @@ impl Host {
                     Err(message) => error(message),
                 }
             }
-            // The windows and the scan inside this process come with the formats.
             Request::OpenEditor { .. } | Request::CloseEditor { .. } => error("no windows yet"),
-            Request::Scan { .. } => error("no scan in a host process yet"),
             Request::Quit => ok(),
         }
+    }
+}
+
+/// Looks after every plugin and tells meloet what they did by themselves.
+fn look_after(
+    host: &mut Host,
+    said: &mut Vec<Said>,
+    writer: &mut UnixStream,
+) -> Result<(), WireError> {
+    for slot in 0..host.slots.len() {
+        let Some(controller) = host.slots[slot].as_mut() else {
+            continue;
+        };
+        said.clear();
+        controller.poll(said);
+        let slot = slot as u32;
+        for &event in said.iter() {
+            let notice = match event {
+                Said::ParamBegin(id) => Notice::ParamBegin { slot, id },
+                Said::ParamChanged(id, value) => {
+                    // What the person did in the plugin's window reaches the plugin's sound
+                    // with the next block.
+                    let _ = host.audio.set_param(slot, id, value);
+                    Notice::ParamChanged { slot, id, value }
+                }
+                Said::ParamEnd(id) => Notice::ParamEnd { slot, id },
+                Said::Latency(frames) => Notice::LatencyChanged { slot, frames },
+                Said::ParamsChanged => Notice::ParamsChanged { slot },
+            };
+            write_frame(writer, &FromHost::Notice { notice }, &[])?;
+        }
+    }
+    Ok(())
+}
+
+/// What has arrived on the socket and is not a whole frame yet.
+#[derive(Default)]
+struct Inbox {
+    bytes: Vec<u8>,
+    closed: bool,
+}
+
+impl Inbox {
+    /// Takes what is there without waiting.
+    fn fill(&mut self, socket: &UnixStream) -> Result<(), WireError> {
+        let mut chunk = [0u8; 64 * 1024];
+        loop {
+            // SAFETY: `chunk` is writable for its whole length.
+            let n = unsafe {
+                libc::recv(
+                    socket.as_raw_fd(),
+                    chunk.as_mut_ptr().cast(),
+                    chunk.len(),
+                    libc::MSG_DONTWAIT,
+                )
+            };
+            match n {
+                0 => {
+                    self.closed = true;
+                    return Ok(());
+                }
+                n if n > 0 => self.bytes.extend_from_slice(&chunk[..n as usize]),
+                _ => {
+                    let e = std::io::Error::last_os_error();
+                    return match e.kind() {
+                        std::io::ErrorKind::WouldBlock => Ok(()),
+                        std::io::ErrorKind::Interrupted => continue,
+                        _ => Err(WireError::Io(e)),
+                    };
+                }
+            }
+        }
+    }
+
+    /// The next whole frame, if all of it is here.
+    fn next(&mut self) -> Result<Option<(ToHost, Vec<u8>)>, WireError> {
+        let Some(head) = self.bytes.first_chunk::<8>() else {
+            return Ok(None);
+        };
+        let text = u32::from_le_bytes([head[0], head[1], head[2], head[3]]) as usize;
+        let blob = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
+        if text > MAX_TEXT_LEN || blob > MAX_BLOB_LEN {
+            return Err(WireError::Malformed(format!("lengths {text} and {blob}")));
+        }
+        let len = 8 + text + blob;
+        if self.bytes.len() < len {
+            return Ok(None);
+        }
+        let frame = read_frame::<ToHost>(&mut &self.bytes[..len])?;
+        self.bytes.drain(..len);
+        Ok(Some(frame))
     }
 }
 
@@ -192,38 +298,66 @@ pub fn run(control: UnixStream, memory: OwnedFd) -> i32 {
         audio,
         greeted: false,
     };
-    let (mut reader, mut writer) = match control.try_clone() {
-        Ok(reader) => (reader, control),
-        Err(e) => {
-            eprintln!("meloet-plughost: control socket: {e}");
-            return 2;
-        }
-    };
-    let code = loop {
-        let (message, blob) = match read_frame::<ToHost>(&mut reader) {
-            Ok(frame) => frame,
-            Err(WireError::Closed) => break 0,
-            Err(e) => {
-                eprintln!("meloet-plughost: {e}");
-                break 2;
-            }
+    let mut writer = control;
+    let mut inbox = Inbox::default();
+    let mut said = Vec::new();
+    let code = 'run: loop {
+        let mut poll = libc::pollfd {
+            fd: writer.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
         };
-        let quit = matches!(message.request, Request::Quit);
-        let (reply, blob) = host.handle(message.request, blob);
-        let answer = FromHost::Reply {
-            id: message.id,
-            reply,
+        let tick = if host.slots.iter().any(Option::is_some) {
+            TICK_MS
+        } else {
+            -1
         };
-        if let Err(e) = write_frame(&mut writer, &answer, &blob) {
+        // SAFETY: one valid pollfd.
+        unsafe { libc::poll(&mut poll, 1, tick) };
+        if poll.revents != 0
+            && let Err(e) = inbox.fill(&writer)
+        {
             eprintln!("meloet-plughost: {e}");
             break 2;
         }
-        if quit {
+        loop {
+            let (message, blob) = match inbox.next() {
+                Ok(Some(frame)) => frame,
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("meloet-plughost: {e}");
+                    break 'run 2;
+                }
+            };
+            let quit = matches!(message.request, Request::Quit);
+            let (reply, blob) = host.handle(message.request, blob);
+            let answer = FromHost::Reply {
+                id: message.id,
+                reply,
+            };
+            if let Err(e) = write_frame(&mut writer, &answer, &blob) {
+                eprintln!("meloet-plughost: {e}");
+                break 'run 2;
+            }
+            if quit {
+                break 'run 0;
+            }
+        }
+        if inbox.closed {
             break 0;
         }
+        if let Err(e) = look_after(&mut host, &mut said, &mut writer) {
+            eprintln!("meloet-plughost: {e}");
+            break 2;
+        }
     };
-    // As when one plugin is unloaded: the audio thread lets go first.
-    host.audio.stop();
-    host.slots.clear();
+    // As when one plugin is unloaded: the audio thread lets go first. If it cannot (it is
+    // stuck inside a plugin), no plugin is ended; the process is about to go anyway.
+    let Host { audio, slots, .. } = host;
+    if audio.stop() {
+        drop(slots);
+    } else {
+        std::mem::forget(slots);
+    }
     code
 }

@@ -42,8 +42,11 @@ meloet-plugin = { path = "crates/meloet-plugin" }
 # Same versions the spikes were measured with (docs/report.md 9).
 alsa = "=0.11.0"
 cpal = { version = "=0.18.2", default-features = false, features = ["pipewire"] }
+dbus = "0.9.12"
 dirs = "7.0.0"
 libc = "0.2.191"
+livi = "=0.9.0"
+lv2_raw = "=0.3.2"
 pipewire = "=0.10.1"
 rtrb = "=0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -51,6 +54,7 @@ serde_json = "1.0.154"
 ts-rs = "=12.0.1"
 tauri = "=2.12.5"
 tauri-build = "=2.7.4"
+vst3 = "=0.3.0"
 
 
 # Debug builds read the sound pack almost as fast as release builds (the grand piano took 8.1 s

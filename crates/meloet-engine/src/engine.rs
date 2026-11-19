@@ -16,6 +16,7 @@ use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, Strip};
 use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::rt;
 use crate::transport::{Click, Lane, Sequence, TrackSet};
+use meloet_plugin::ipc::Transport as PluginTransport;
 
 const COMMAND_RING: usize = 256;
 const MIDI_RING: usize = 1024;
@@ -441,10 +442,11 @@ struct Track {
     fade_left: u32,
     strip: Strip,
     lane: Lane,
-    /// `EngineCommand::SetLookahead`. Kept here for the reading of the sequence, which does not
-    /// use it yet.
-    #[allow(dead_code)]
+    /// `EngineCommand::SetLookahead`: the sequence is read this many frames ahead of the song.
     lookahead: u32,
+    /// The lane, reading ahead, has gone round the loop and the song has not yet: it reads
+    /// one loop's length behind where its lookahead alone would put it.
+    ahead_wrapped: bool,
 }
 
 /// The song clock on the audio thread.
@@ -493,7 +495,42 @@ impl Track {
             strip: Strip::new(),
             lane: Lane::default(),
             lookahead: 0,
+            ahead_wrapped: false,
         }
+    }
+
+    /// Where this track's lane reads: the song's position (ticks × scale) moved on by the
+    /// lookahead, and back by the loop's length once the lane has gone round ahead of the song.
+    fn lane_pos(&self, pos: i128, step: i128, looped: Option<(i128, i128)>) -> i128 {
+        let ahead = pos + i128::from(self.lookahead) * step;
+        match looped {
+            Some((start, end)) if self.ahead_wrapped => ahead - (end - start),
+            _ => ahead,
+        }
+    }
+
+    /// Sends what the sequence has for the next frame. `looped`: the loop's start and end
+    /// (ticks × scale) while the song goes round it.
+    ///
+    /// A lane that reads ahead comes to the loop's end before the song does. It goes round by
+    /// itself there, so that the notes at the loop's start are sent early like any others, and
+    /// the song's own jump later leaves it alone.
+    fn play_due(&mut self, pos: i128, scale: i128, step: i128, looped: Option<(i128, i128)>) {
+        if self.lookahead > 0
+            && !self.ahead_wrapped
+            && let Some((start, end)) = looped
+            && self.lane_pos(pos, step, looped) >= end
+        {
+            let instrument = self.instrument.as_deref_mut();
+            // Up to the loop's end, the end itself left out.
+            self.lane.fire_due(end - 1, scale, instrument);
+            self.lane.silence(self.instrument.as_deref_mut());
+            self.lane.seek(start, scale, self.instrument.as_deref_mut());
+            self.ahead_wrapped = true;
+        }
+        let at = self.lane_pos(pos, step, looped);
+        self.lane
+            .fire_due(at, scale, self.instrument.as_deref_mut());
     }
 
     /// `old` was replaced: it fades out from here. One that was still fading goes back at once.
@@ -572,11 +609,60 @@ impl Transport {
 
     /// Frames from the next frame until the first one at or past `tick`.
     fn frames_until(&self, tick: i128) -> i128 {
-        let gap = tick * self.scale - self.pos;
+        self.frames_between(self.pos, tick * self.scale)
+    }
+
+    /// Frames it takes to come from `from` to `to` or past it (both ticks × scale).
+    fn frames_between(&self, from: i128, to: i128) -> i128 {
+        let gap = to - from;
         if gap <= 0 {
             0
         } else {
             (gap + self.step() - 1) / self.step()
+        }
+    }
+
+    /// The loop's start and end (ticks × scale) while the song goes round it.
+    fn looped(&self) -> Option<(i128, i128)> {
+        self.loop_active().then(|| {
+            (
+                i128::from(self.loop_start) * self.scale,
+                i128::from(self.loop_end) * self.scale,
+            )
+        })
+    }
+
+    /// What plugins are told of the song, at the next frame.
+    fn for_plugins(&self) -> PluginTransport {
+        let mut flags = 0;
+        if matches!(
+            self.state,
+            TransportState::Playing | TransportState::Recording
+        ) {
+            flags |= PluginTransport::PLAYING;
+        }
+        if self.state == TransportState::Recording {
+            flags |= PluginTransport::RECORDING;
+        }
+        if self.loop_active() {
+            flags |= PluginTransport::LOOPING;
+        }
+        // A beat is `ticks_per_beat` ticks, and a quarter note is 480.
+        let quarter = 480.0;
+        let beat = f64::from(self.ticks_per_beat.max(1));
+        let bar = beat * f64::from(self.beats_per_bar.max(1));
+        let tick = self.tick();
+        PluginTransport {
+            flags,
+            meter_num: self.beats_per_bar.clamp(1, u32::from(u16::MAX)) as u16,
+            meter_den: (4.0 * quarter / beat).round().clamp(1.0, 64.0) as u16,
+            tempo_bpm: f64::from(self.bpm_centi) / 100.0 * beat / quarter,
+            position_quarters: tick / quarter,
+            bar_start_quarters: (tick / bar).floor() * bar / quarter,
+            loop_start_quarters: self.loop_start as f64 / quarter,
+            loop_end_quarters: self.loop_end as f64 / quarter,
+            position_frames: (self.pos / self.step().max(1)) as i64,
+            reserved: 0,
         }
     }
 
@@ -912,7 +998,7 @@ impl Engine {
         self.meters.callbacks.fetch_add(1, Relaxed);
         self.meters.last_frames.store(frames as u32, Relaxed);
         // Plugins in other processes are waited for until this far into the block, all of
-        // them together. The transport they are told is filled in with the plugin formats.
+        // them together.
         let wait_ns = (block_s * PLUGIN_WAIT_SHARE * 1e9) as u64;
         self.plugin_block
             .set_deadline(meloet_plugin::ipc::futex::monotonic_ns().saturating_add(wait_ns));
@@ -1166,6 +1252,14 @@ impl Engine {
                     t.loop_start = start;
                     t.loop_end = end;
                     t.before_loop_end = t.pos < i128::from(end) * t.scale;
+                    // A lane that went round the old loop ahead of the song is put back.
+                    for track in 0..self.tracks.len() {
+                        if self.tracks[track].ahead_wrapped {
+                            let slot = &mut self.tracks[track];
+                            slot.lane.silence(slot.instrument.as_deref_mut());
+                            self.seek_lane(track);
+                        }
+                    }
                 }
                 EngineCommand::SetMetronome { on } => self.transport.metronome = on,
                 EngineCommand::SetLookahead { track, frames } => {
@@ -1376,6 +1470,9 @@ impl Engine {
     fn seek_lane(&mut self, track: usize) {
         let (pos, scale) = (self.transport.pos, self.transport.scale);
         if let Some(slot) = self.tracks.get_mut(track) {
+            // At the song's position, not ahead of it: what lies inside the lookahead is sent
+            // at once by the next `play_due` and sounds late, rather than not at all.
+            slot.ahead_wrapped = false;
             slot.lane.seek(pos, scale, slot.instrument.as_deref_mut());
         }
     }
@@ -1482,7 +1579,14 @@ impl Engine {
         let t = &mut self.transport;
         if t.loop_active() && t.pos >= i128::from(t.loop_end) * t.scale {
             self.close_segment(frame);
-            self.silence_lanes();
+            // The lanes that read ahead went round already.
+            let went_round: TrackSet = (self.tracks.iter().enumerate())
+                .filter(|(_, track)| track.ahead_wrapped)
+                .map(|(i, _)| i)
+                .collect();
+            for track in self.tracks.iter_mut().filter(|t| !t.ahead_wrapped) {
+                track.lane.silence(track.instrument.as_deref_mut());
+            }
             let t = &mut self.transport;
             t.set_pos(i128::from(t.loop_start));
             if t.state == TransportState::Recording {
@@ -1491,16 +1595,21 @@ impl Engine {
                 let t_us = self.dac_us(frame, timing).round() as u64;
                 self.push_recorded(Recorded::LapChanged { lap, t_us });
             }
-            self.seek_lanes();
+            for i in 0..self.tracks.len() {
+                if went_round.contains(i) {
+                    self.tracks[i].ahead_wrapped = false;
+                } else if self.transport.lane_plays(i) {
+                    self.seek_lane(i);
+                }
+            }
             self.open_segment(frame, timing);
         }
 
-        let (pos, scale) = (self.transport.pos, self.transport.scale);
+        let t = &self.transport;
+        let (pos, scale, step, looped) = (t.pos, t.scale, t.step(), t.looped());
         for (i, track) in self.tracks.iter_mut().enumerate() {
             if self.transport.lane_plays(i) {
-                track
-                    .lane
-                    .fire_due(pos, scale, track.instrument.as_deref_mut());
+                track.play_due(pos, scale, step, looped);
             }
         }
         let t = &mut self.transport;
@@ -1528,11 +1637,21 @@ impl Engine {
         if t.loop_active() {
             n = n.min(t.frames_until(i128::from(t.loop_end)));
         }
+        let looped = t.looped();
         for (i, track) in self.tracks.iter().enumerate() {
-            if t.lane_plays(i)
-                && let Some(tick) = track.lane.next_tick()
+            if !t.lane_plays(i) {
+                continue;
+            }
+            let lane_pos = track.lane_pos(t.pos, t.step(), looped);
+            if let Some(tick) = track.lane.next_tick() {
+                n = n.min(t.frames_between(lane_pos, i128::from(tick) * t.scale));
+            }
+            // Where a lane that reads ahead goes round the loop by itself.
+            if track.lookahead > 0
+                && !track.ahead_wrapped
+                && let Some((_, end)) = looped
             {
-                n = n.min(t.frames_until(i128::from(tick)));
+                n = n.min(t.frames_between(lane_pos, end));
             }
         }
         n.max(1) as usize
@@ -1558,6 +1677,8 @@ impl Engine {
         while from < frames {
             self.step_at(offset + from, timing);
             let to = from + self.frames_to_next_point(frames - from);
+            self.plugin_block
+                .set_transport(&self.transport.for_plugins());
             let [master_l, master_r, sums @ ..] = &mut self.sums;
             let [a_l, a_r, b_l, b_r] = sums.each_mut().map(|sum| &mut sum[from..to]);
             let mut mix = Mix {

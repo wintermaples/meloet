@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::key::{PluginFormat, PluginKey};
+use crate::key::PluginKey;
 use crate::scan::PluginInfo;
 
 pub const WIRE_VERSION: u32 = 1;
@@ -91,12 +91,6 @@ pub enum Request {
     CloseEditor {
         slot: u32,
     },
-    /// Scans one bundle in this process and answers `Scanned`. A scan that must not take the
-    /// process's other plugins down with it uses the host's `scan` mode instead.
-    Scan {
-        format: PluginFormat,
-        bundle: PathBuf,
-    },
     /// Unloads everything and ends the process.
     Quit,
 }
@@ -139,9 +133,6 @@ pub enum Reply {
     Param {
         value: f64,
         text: String,
-    },
-    Scanned {
-        output: Box<ScanOutput>,
     },
 }
 
@@ -232,6 +223,11 @@ pub enum Notice {
     LatencyChanged {
         slot: u32,
         frames: u32,
+    },
+    /// The plugin says that any of its parameters may have another value now (it loaded a
+    /// program by itself; VST3 `kParamValuesChanged`). The values are to be read again.
+    ParamsChanged {
+        slot: u32,
     },
 }
 
@@ -457,13 +453,6 @@ mod tests {
             json!({ "id": 1, "request": { "type": "setParam", "slot": 2, "id": 9, "value": 0.5 } })
         );
         assert_eq!(
-            to(Request::Scan {
-                format: PluginFormat::Lv2,
-                bundle: "/usr/lib/lv2/ZamComp.lv2".into()
-            }),
-            json!({ "id": 1, "request": { "type": "scan", "format": "lv2", "bundle": "/usr/lib/lv2/ZamComp.lv2" } })
-        );
-        assert_eq!(
             to(Request::Quit),
             json!({ "id": 1, "request": { "type": "quit" } })
         );
@@ -595,6 +584,7 @@ mod tests {
                 slot: 1,
                 frames: 128,
             },
+            Notice::ParamsChanged { slot: 1 },
         ];
         for notice in notices {
             let message = FromHost::Notice { notice };
@@ -612,9 +602,6 @@ mod tests {
             Reply::Param {
                 value: 0.5,
                 text: "-6.0 dB".into(),
-            },
-            Reply::Scanned {
-                output: Box::new(ScanOutput::Done),
             },
         ];
         for reply in replies {

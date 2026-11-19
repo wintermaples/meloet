@@ -24,7 +24,7 @@ const GEOMETRY: Geometry = Geometry {
     to_plugin_events: 64,
     from_plugin_events: 16,
 };
-/// Long blocks, so that their deadline (half a block) is far away on a busy PC.
+/// Long blocks, so that their deadline (most of a block) is far away on a busy PC.
 const DEVICE_FRAMES: usize = 9600;
 
 struct FakeHost {
@@ -254,8 +254,8 @@ fn a_plugin_sits_where_an_instrument_and_an_effect_go() {
         (1, 1)
     );
     assert!(out.iter().all(|x| *x == 0.0));
-    // One deadline each (half a block of 0.2 s, shared), not one for every stretch.
-    assert!(took < 400_000_000, "{took}");
+    // One deadline (most of a block of 0.2 s, shared), not one for every stretch or slot.
+    assert!(took < 390_000_000, "{took}");
 
     assert_eq!(common::audio_block_counts(), (0, 0));
     drop(engine);

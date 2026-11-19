@@ -346,9 +346,13 @@ export class RollDrag {
     if (!d) return null;
     switch (d.kind) {
       case "draw":
-        return t("pr.readDraw", { key: keyLabel(d.key, !!this.input.geom().drum), position: positionText(d.start, meter), length: lengthText(d.length, meter) });
-      case "move":
-        return d.press.moved ? t("pr.readMove", { ticks: signedLength(d.ticks, meter), keys: signed(d.keys) }) : null;
+        return t("pr.readDraw", { key: keyLabel(d.key, this.input.geom().drum ? (this.input.geom().drum!.names ?? "builtin") : false), position: positionText(d.start, meter), length: lengthText(d.length, meter) });
+      case "move": {
+        if (!d.press.moved) return null;
+        const drum = this.input.geom().drum;
+        if (!drum || !n) return t("pr.readMove", { ticks: signedLength(d.ticks, meter), keys: signed(d.keys) });
+        return drumMoveReading(drum.keys, n.take.keys[d.grab]!, d.keys, signedLength(d.ticks, meter), d.ticks !== 0);
+      }
       case "resize": {
         if (!d.press.moved || !n) return null;
         const length = n.take.lengths[d.grab]!;
@@ -416,4 +420,17 @@ export function finish(d: Drag, take: number | null): Command | null {
 /** ベロシティの帯で動かしている間の値（1〜127 で止まる）。 */
 export function draggedVelocity(v: number, delta: number): number {
   return clampVelocity(v + delta);
+}
+
+/**
+ * ドラムでノートを上下に動かすときの読み値（仕様書 3 章 85）: 「+0.120 ・ 上へ 1 行」「下へ 2 行」。
+ * 横に動かしていなければ行だけ、行が変わらなければ横の量だけ。
+ */
+export function drumMoveReading(rows: readonly number[], grabKey: number, keys: number, ticks: string, sideways: boolean): string {
+  const from = rows.indexOf(grabKey);
+  const to = rows.indexOf(grabKey + keys);
+  const moved = from < 0 || to < 0 ? 0 : to - from;
+  if (moved === 0) return ticks;
+  const rowText = t(moved < 0 ? "pr.rowsUp" : "pr.rowsDown", { count: Math.abs(moved) });
+  return sideways ? t("pr.readMoveRows", { ticks, rows: rowText }) : rowText;
 }

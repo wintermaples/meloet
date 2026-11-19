@@ -8,6 +8,7 @@
   import HScrollbar from "../../lib/HScrollbar.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
+  import { insertName, soundRefName, soundViewName, standInTip } from "../sounds";
   import { openShelf } from "../tracks.svelte";
   import Strip from "./Strip.svelte";
   import { stripName } from "./stripName";
@@ -25,12 +26,19 @@
   const off = { on: false, usable: false, run: () => {} };
   const BUSES = ["a", "b"] as const;
 
-  /** 入れかえのためし弾き中は、ためしの音源の名前を accent で（トラックの見出しと同じ）。 */
+  /**
+   * 入れかえのためし弾き中は、ためしの音源の名前を accent で（トラックの見出しと同じ）。
+   * サイン波で代わりに鳴らしている間は「サイン波で代わり」（gray.8。仕様書 3 章 85）、止まったプラグインは赤い枠と「止」。
+   */
   function instrumentFrame(track: TrackView) {
-    const trial = shelf.mode.kind === "replace" && shelf.mode.track === track.id ? shelf.selected : null;
+    const trial = shelf.mode.kind === "replace" && shelf.mode.track === track.id ? shelf.selectedSound : null;
+    const name = trial ? soundRefName(trial, app.library) : track.standIn ? t("track.standIn") : soundViewName(track.sound);
     return {
-      text: t("mixer.instrument", { name: t(`instrument.${trial ?? track.instrument}`) }),
+      text: t("mixer.instrument", { name }),
       accent: trial !== null,
+      dim: trial === null && track.standIn !== null,
+      tip: trial === null && track.standIn ? standInTip(track.standIn) : null,
+      stopped: trial === null && track.sound.kind === "plugin" && track.sound.state === "stopped",
       usable: !busy,
       run: () => send(openShelf({ kind: "replace", track: track.id })),
     };
@@ -86,7 +94,7 @@
           name={track.name}
           color="var(--color-track-{((track.color - 1) % 5) + 1})"
           frame={instrumentFrame(track)}
-          inserts={track.inserts}
+          slots={track.slots}
           selectedSlot={slotOf(strip, selected)}
           sends={{ track: track.id, dbs: track.sends }}
           pan={track.pan}
@@ -100,14 +108,14 @@
       {#each BUSES as bus, i (bus)}
         {@const ret = song.returns[i]!}
         {@const strip: StripRef = { kind: "return", bus }}
-        {@const top = ret.inserts.find((e) => e !== null)}
+        {@const top = ret.slots.find((e) => e !== null)}
         <Strip
           {strip}
           mark={t(bus === "a" ? "mixer.sendA" : "mixer.sendB")}
-          name={top ? t(`effect.${top}`) : ""}
+          name={top ? insertName(top) : ""}
           color="var(--color-gray-8)"
           frame={{ text: t("mixer.returnOf", { bus: t(bus === "a" ? "mixer.sendA" : "mixer.sendB") }) }}
-          inserts={ret.inserts}
+          slots={ret.slots}
           selectedSlot={slotOf(strip, selected)}
           sends={null}
           pan={ret.pan}
@@ -124,7 +132,7 @@
         name={stripName(song, { kind: "master" })}
         color="var(--color-gray-10)"
         frame={{ text: outputName ? t("mixer.output", { name: outputName }) : "" }}
-        inserts={song.master.inserts}
+        slots={song.master.slots}
         selectedSlot={slotOf({ kind: "master" }, selected)}
         sends={null}
         pan={song.master.pan}

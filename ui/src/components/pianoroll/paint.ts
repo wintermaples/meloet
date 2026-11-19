@@ -334,15 +334,25 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
 }
 
 /** 鍵盤の列の、鍵の所（音の名前の欄の右）。白鍵 gray.5、黒鍵 gray.0、光る鍵 accent、下に gray.1 の線。 */
-export function paintRollKeys(out: Batch, box: Box, g: RollGeom, lit: (key: number) => boolean, dpr: number): void {
+export function paintRollKeys(
+  out: Batch,
+  box: Box,
+  g: RollGeom,
+  lit: (key: number) => boolean,
+  dpr: number,
+  mark: { width: number; color: ColorName } = { width: 2, color: "color.accent" },
+): void {
   const rowH = g.rowH * dpr;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
   if (g.drum) {
     // ドラムの行の名前の地（モック R7-Drum: gray.5、下に gray.1 の線）。名前は HTML。
+    // 鳴っている行と弾いている行は、左に mark の太さの印（仕様書 3 章 85、モック R8-DrumPlay）。
     const rows = Math.min(g.drum.keys.length - g.drum.top, rowsShown(g) + 1);
+    const markW = Math.max(HAIR, Math.round(mark.width * dpr));
     for (let r = 0; r < rows; r++) {
       const y = box.y0 + r * rowH;
       out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb("color.gray.5"));
+      if (lit(g.drum.keys[g.drum.top + r]!)) out.rect(box.x0, y, box.x0 + markW, y + rowH - HAIR, rgb(mark.color));
     }
     return;
   }

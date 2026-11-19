@@ -19,10 +19,12 @@ import {
 } from "../components/pianoroll/view.svelte";
 import { songDialogEnter } from "../components/songDialog";
 import {
-  effectShelfCommand,
-  shelfGroups,
+  shelfConfirmCommand,
+  shelfFavoriteCommand,
   shelfHasKeys,
-  shelfStep,
+  shelfHasPick,
+  shelfSampleCommand,
+  shelfStepCommand,
   shelfToggle,
   shelfUi,
   startRename,
@@ -207,37 +209,14 @@ function command(action: KeyAction, state: AppState): Command | null {
       return track === null ? null : { type: "toggleMute", track };
     case "trackSolo":
       return track === null ? null : { type: "toggleSolo", track };
-    case "shelfStep": {
-      const effect = effectShelfCommand(
-        action.delta > 0 ? "down" : "up",
-        state,
-      );
-      if (effect !== undefined) return effect;
-      const next = shelfStep(
-        shelfGroups(state.shelf, shelfUi),
-        state.shelf.selected,
-        action.delta,
-      );
-      return next === null || next === state.shelf.selected
-        ? null
-        : { type: "shelfSelect", instrument: next };
-    }
-    case "shelfConfirm": {
-      const effect = effectShelfCommand("confirm", state);
-      if (effect !== undefined) return effect;
-      return state.shelf.selected === null ? null : { type: "shelfConfirm" };
-    }
-    case "shelfSample": {
-      const row = state.shelf.selected;
-      if (row === null) return null;
-      return state.shelf.sample?.instrument === row
-        ? { type: "stopSample" }
-        : { type: "playSample", instrument: row };
-    }
+    case "shelfStep":
+      return shelfStepCommand(state, action.delta);
+    case "shelfConfirm":
+      return shelfConfirmCommand(state);
+    case "shelfSample":
+      return shelfSampleCommand(state);
     case "shelfFavorite":
-      return state.shelf.selected === null
-        ? null
-        : { type: "toggleFavorite", instrument: state.shelf.selected };
+      return shelfFavoriteCommand(state);
     default:
       return null;
   }
@@ -349,7 +328,7 @@ function auditionToCancel(state: AppState): boolean {
     ws.settings === null &&
     !state.plugins.stoppedOpen &&
     ws.layout.rightOpen.includes("shelf") &&
-    state.shelf.selected !== null
+    shelfHasPick(state)
   );
 }
 
@@ -420,6 +399,11 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     ev.preventDefault();
     // 仕様書 4 章: ドラッグ中の Esc は、動かす前に戻すだけ。そのあと 3 章: 文字を打っている枠 → 用語の説明やメニュー → ダイアログ → …
     if (cancelDrag()) return;
+    // ファイルを持ってきている間の Esc は、持ってきた物を落とさないことにする（仕様書 6 章「やめるには、窓の外で離すか Esc」）。
+    if (state.workspace.fileDrop) {
+      deps.send({ type: "cancelFileDrop" });
+      return;
+    }
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
     else if (!closeMenus() && !aboutBack())
       deps.send(

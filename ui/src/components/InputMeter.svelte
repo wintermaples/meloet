@@ -14,7 +14,8 @@
   import { metrics } from "./metrics.svelte";
   import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
   import NumberField from "./NumberField.svelte";
-  import { isDrumKit, keysInstrument, keysLabel } from "./pianoroll/drums";
+  import { keysDrums, keysLabel } from "./pianoroll/drums";
+  import { soundRefName, soundViewName, standInTip } from "./sounds";
   import { readVelocity, type Read } from "./valueClamp";
 
   const FIRST_NOTE = 36;
@@ -26,7 +27,7 @@
 
   const app = $derived(current.state);
   /** 弾くと鳴る先がドラムなら、いま押している音は楽器の名前（仕様書 3 章「ドラムの音源」）。 */
-  const drums = $derived(app ? isDrumKit(keysInstrument(app)) : false);
+  const drums = $derived(app ? keysDrums(app) : false);
   const slim = $derived(app?.workspace.layout.meter === "slim");
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
   // 鍵盤が 2 台以上なら、名前は最後に弾いた鍵盤。うしろに残りの台数（仕様書 3 章）。
@@ -47,7 +48,8 @@
     }
     if (app.outputs.chosen === null) return { kind: "noOutput" as const };
     // ためし弾き中（仕様書 3 章）: 鳴る先は棚でえらんだ音源。引っこめる順のどこでも消さない。
-    if (app.shelf.selected !== null && !app.transport.recording) return { kind: "audition" as const, instrument: app.shelf.selected };
+    const picked = app.shelf.selectedSound;
+    if (picked !== null && !app.transport.recording) return { kind: "audition" as const, name: soundRefName(picked, app.library) };
     // カウントイン中と録音中は、録っているトラックと、いま録っているテイク（モック F-Connect4・F-ArrangeRec）。
     const rec = app.transport.recording;
     const recTrack = rec && app.song.tracks.find((x) => x.id === rec.track);
@@ -334,7 +336,7 @@
     <div class="item target" data-test="meter-right" data-part="target">
       {#if measuring || fit.targetLabel}<span class="label" data-part="target-label">{t("meter.playTarget")}</span>{/if}
       <span class="target-value accent" data-part="target-value" data-test="meter-target"
-        >{t("meter.auditionTarget", { instrument: t(`instrument.${right.instrument}`) })}</span
+        >{t("meter.auditionTarget", { instrument: right.name })}</span
       >
     </div>
   {:else if right?.kind === "target"}
@@ -351,9 +353,11 @@
           {#if piece.instrument}
             {#if !slim && (measuring || fit.instrument)}
               <span data-part="target-instrument"
-                >{#each piece.text.split(new RegExp(`(${INSTRUMENT})`)) as bit, j (j)}{#if bit === INSTRUMENT}{@const name = t(`instrument.${right.track.instrument}`)}{#if findTerm(name)}<span
-                        use:term={name}>{name}</span
-                      >{:else}<span>{name}</span>{/if}{:else}{bit}{/if}{/each}</span
+                >{#each piece.text.split(new RegExp(`(${INSTRUMENT})`)) as bit, j (j)}{#if bit === INSTRUMENT}{@const standIn = right.track.standIn}{@const name = standIn
+                      ? t("track.standIn")
+                      : soundViewName(right.track.sound)}{#if standIn}<span class="stand-in" use:tip={standInTip(standIn)}
+                        >{name}</span
+                      >{:else if findTerm(name)}<span use:term={name}>{name}</span>{:else}<span>{name}</span>{/if}{:else}{bit}{/if}{/each}</span
               >
             {/if}
           {:else if piece.text === TRACK}
@@ -593,6 +597,10 @@
   }
   .target-value.accent {
     color: var(--color-accent);
+  }
+  /* 「サイン波で代わり」（仕様書 3 章 85: gray.8）。 */
+  .stand-in {
+    color: var(--color-gray-8);
   }
   .mono {
     font-family: var(--font-mono);

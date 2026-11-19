@@ -23,7 +23,8 @@
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { stripName } from "./mixer/stripName";
   import { paramName } from "./params/paramRows";
-  import { isDrumKit, keyLabel, keysInstrument, keysLabel, rollShowsDrums } from "./pianoroll/drums";
+  import { keyCountsText, keysDrums, keysLabel, rollShowsDrums } from "./pianoroll/drums";
+  import { soundNameText } from "./sounds";
   import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";
@@ -37,7 +38,7 @@
   /** ピアノロールがドラムの行を見せている（選んだノートと鳴っている音を楽器の名前で）。 */
   const rollDrums = $derived(rollShowsDrums(app, shownNotes.clip, shownNotes.track));
   /** 鍵を弾くと鳴る先がドラム（押している音を楽器の名前で）。 */
-  const keysDrums = $derived(isDrumKit(keysInstrument(app)));
+  const heldDrums = $derived(keysDrums(app));
 
   interface Shown {
     parts: TextPart[];
@@ -94,11 +95,14 @@
     return pieces.filter((p) => p.length > 0).flatMap((p, i) => (i === 0 ? p : [{ text: STATUS_JOIN, hole: null }, ...p]));
   }
 
-  /** 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）。音名は Rust が送る最初の 4 つで、残りがあれば「…」。 */
+  /**
+   * 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）。同じ名前はまとめて「スネア ×2」（仕様書 3 章 85）。
+   * 名前が 5 つ以上なら、4 つのあとに「…」。
+   */
   function notesParts(n: NoteSelection): TextPart[] {
-    const values = { count: n.count, keys: n.keys.map((k) => keyLabel(k, rollDrums)).join(" ") };
+    const values = { count: n.count, keys: keyCountsText(n.names.slice(0, 4), rollDrums) };
     return joined(
-      textParts(n.count > n.keys.length ? "status.notesSelectedMore" : "status.notesSelected", values),
+      textParts(n.names.length > 4 ? "status.notesSelectedMore" : "status.notesSelected", values),
       n.quantized ? textParts("status.notesQuantized", {}) : [],
     );
   }
@@ -244,6 +248,33 @@
         return plain("msg.samplePlaying", { name: t(`instrument.${m.instrument}`) });
       case "instrumentLoading":
         return plain("msg.auditionLoading", { name: t(`instrument.${m.instrument}`) });
+      case "auditionNewTrackSound":
+        return plain("status.auditionNewTrack", { instrument: soundNameText(m.sound), key: t("key.enter") });
+      case "auditionReplaceSound":
+        return plain("status.auditionReplace", {
+          instrument: soundNameText(m.sound),
+          track: track(m.track),
+          current: soundNameText(m.current),
+          key: t("key.enter"),
+        });
+      case "samplePlayingSound":
+        return plain("msg.samplePlaying", { name: soundNameText(m.sound) });
+      case "instrumentReplacedSound":
+        return plain("msg.instrumentReplaced", { track: track(m.track), instrument: soundNameText(m.sound), undoKey: modKey(t("key.undo")) });
+      case "soundLoading":
+        return plain("msg.auditionLoading", { name: soundNameText(m.sound) });
+      case "pluginLoading":
+        return { parts: joined(textParts("plugin.loading", { name: m.name }), textParts("status.cancelKey", { key: t("key.esc") })), strong: [], button: null };
+      case "sf2Dragging":
+        return plain("sf2.dragging");
+      case "sf2Added":
+        return plain("sf2.added", { file: m.file, count: m.presets, kits: m.kits });
+      case "sf2Unreadable":
+        return plain("sf2.unreadable", { file: m.file });
+      case "sf2Missing":
+        return plain("sf2.missing", { file: m.file, count: m.tracks });
+      case "soundsMissing":
+        return plain("msg.soundsMissingSong", { count: m.tracks });
       case "undoPending":
         return plain("msg.undoPending", { count: m.count });
       case "recovered":
@@ -336,12 +367,18 @@
     return textParts(muted.length === 1 ? "status.muted" : "status.mutedMany", { tracks: muted.join(STATUS_JOIN) });
   }
 
-  /** 棚が音源の一覧でひらいているときの、いつものまとめの代わり（モック R8-Shelf84）。 */
+  /** 棚がひらいているときの、いつものまとめの代わり（モック R8-Shelf84 ・ F5-ShelfFx ・ F5-ShelfSearch）。 */
   const shelfParts = $derived.by((): TextPart[] | null => {
     const s = shelfStatus(app);
     if (!s) return null;
+    if (s.kind === "search") return textParts("status.shelfSearch", { query: s.query, count: s.count });
+    if (s.kind === "effects")
+      return joined(
+        textParts("shelf.effectCount", { count: s.count }),
+        ...s.open.map((o) => textParts("status.shelfHeading", { name: o.label, count: o.count })),
+      );
     if (s.groups.length === 0) return textParts("status.shelfCount", { count: s.count });
-    const names = s.groups.map((g) => t(`instrumentGroup.${g}`));
+    const names = [...s.groups];
     const last = names.pop()!;
     const groups = names.length === 0 ? last : t("status.shelfGroupsLast", { first: names.join(LIST_COMMA), last });
     return textParts("status.shelfOpen", { count: s.count, groups });
@@ -350,22 +387,31 @@
   // ---- ピアノロールをひらいて録音しているとき（仕様書 6 章「録音中 ・ ピアノロール」）: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」 ----
 
   const recordingInPianoRoll = $derived(pianoRollOpen && app.status.message?.id === "recording");
+  /** 止まっているときも、鍵盤を押している間は終わりに「・ 押している音 キック スネア」（仕様書 3 章 85）。 */
+  const stoppedSummary = $derived(
+    app.transport.state === "stopped" && (app.status.message === null || app.status.message.id === "summary"),
+  );
+  const countingHeld = $derived(recordingInPianoRoll || stoppedSummary);
 
-  /** 押している鍵（入力計と同じ物: 計器で受け、鍵の on/off は計器を待たずに当てる）。録音中にピアノロールをひらいている間だけ数える。 */
+  /** 押している鍵（入力計と同じ物: 計器で受け、鍵の on/off は計器を待たずに当てる）。録音中にピアノロールをひらいている間と、止まっている間だけ数える。 */
   let held = $state.raw<number[]>([]);
   const setHeld = (keys: number[]) => {
     if (!sameKeys(keys, held)) held = keys;
   };
   $effect(() => {
     const tel = current.telemetry;
-    if (!recordingInPianoRoll || !tel) return;
+    if (!countingHeld) {
+      untrack(() => setHeld([]));
+      return;
+    }
+    if (!tel) return;
     const keys: number[] = [];
     for (let k = 0; k < 128; k++) if (keyIsDown(tel, k)) keys.push(k);
     untrack(() => setHeld(keys));
   });
   onMount(() =>
     onEvent((e) => {
-      if (e.type !== "note" || !recordingInPianoRoll) return;
+      if (e.type !== "note" || !countingHeld) return;
       setHeld(e.on && e.velocity > 0 ? (held.includes(e.note) ? held : [...held, e.note].sort((a, b) => a - b)) : held.filter((k) => k !== e.note));
     }),
   );
@@ -373,7 +419,7 @@
   function recordingParts(m: Extract<StatusMessage, { id: "recording" }>): TextPart[] {
     return joined(
       textParts("msg.recordingPianoRoll", { track: track(m.track), take: m.take }),
-      held.length > 0 ? textParts("status.held", { keys: keysLabel(held, keysDrums) }) : [],
+      held.length > 0 ? textParts("status.held", { keys: keysLabel(held, heldDrums) }) : [],
     );
   }
 
@@ -406,9 +452,11 @@
       base = { parts, strong: [], button: null };
     } else if ((m === null || m.id === "summary") && shelfParts) base = { parts: shelfParts, strong: [], button: null };
     else base = shown(m);
-    if (app.transport.state === "stopped" && (m === null || m.id === "summary")) {
+    if (stoppedSummary) {
       const muted = mutedParts();
-      if (muted.length > 0) return { parts: joined(base?.parts ?? [], muted), strong: base?.strong ?? [], button: base?.button ?? null };
+      const keys = held.length > 0 ? textParts("status.held", { keys: keysLabel(held, heldDrums) }) : [];
+      if (muted.length > 0 || keys.length > 0)
+        return { parts: joined(base?.parts ?? [], muted, keys), strong: base?.strong ?? [], button: base?.button ?? null };
     }
     return base;
   });
@@ -423,7 +471,7 @@
       case "countIn":
         return { text: t("status.countingIn"), rec: true };
       default:
-        if (app.shelf.selected !== null) return { text: t("status.auditioning"), rec: false, accent: true };
+        if (app.shelf.selectedSound !== null && app.shelf.loadingSound === null) return { text: t("status.auditioning"), rec: false, accent: true };
         return { text: t("status.stopped"), rec: false };
     }
   });

@@ -146,6 +146,8 @@ export const part = {
   "part.shelfrow.star": p(12, "s2", "音源の行（棚）", "12px の星"),
   "part.shelfrow.sample": p(20, "s2", "音源の行（棚）", "サンプルのボタン（20×20）"),
   "part.shelfrow.group": p(24, "s2", "音源の行（棚）", "グループの見出しは高さ 24"),
+  "part.shelfrow.vendor": p(96, "s2", "棚のプラグインの行", "作った人は最大 96"),
+  "part.filedrop.width": p(400, "s2", "ファイルを持ってきている間の知らせ", "幅 400"),
   "part.colorlist.swatch-w": p(24, "s2", "色の一覧の行", "24×12 の色の見本"),
   "part.colorlist.swatch-h": p(12, "s2", "色の一覧の行", "24×12 の色の見本"),
   "part.endpoint.name": p(168, "s2", "出口 ・ 入口の行", "本物の名前（168）"),
@@ -292,6 +294,8 @@ export const mock = {
   // 棚（第 4 回）。さがす枠の行と「すべて ・ お気に入り」の行の高さ（`height:32px`）、星を押せる所（`width:16px;height:16px`）。
   "mock.shelf.bar": m(32, "F4-ShelfSample"),
   "mock.shelf.star-hit": m(16, "F4-ShelfSample"),
+  // 第 5 回。SF2 の仲間の見出しの字下げ（`padding-left:28px`）。
+  "mock.shelf.indent": m(28, "F5-SF2Shelf"),
   // meloet について（第 4 回）。1 段目の字の欄（`width:132px`）、名前の箱の上のあき（`padding:24px 16px 16px`）。
   "mock.about.label": m(132, "R7-About"),
   "mock.about.name-pad-top": m(24, "R7-About"),

@@ -4,7 +4,7 @@
 import type { AppState, Command } from "../../bridge";
 import type { Meter } from "../time";
 import { nudgedKeys } from "./audition";
-import { DRUM_KEYS, pianoRollDrums } from "./drums";
+import { drumKeysOf, pianoRollDrums, pianoRollTrack } from "./drums";
 import { drumMoveKeys, duplicateTicks, gridTicks, indexesOf, snapTick, type Shown } from "./geom";
 
 export type PianoRollKey =
@@ -55,8 +55,10 @@ export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Com
     case "nudge": {
       let keys = key.keys;
       // ドラムの行は鍵の順ではないので、↑ ↓ は 1 行ずつ（動かせる所がなければ動かさない）。Shift ↑ ↓（1 オクターブ）は使わない。
-      if (keys !== 0 && pianoRollDrums(c.state)) {
-        keys = Math.abs(keys) === 1 ? drumMoveKeys({ keys: DRUM_KEYS }, n.take.keys, notes, notes[0]!, -keys) : 0;
+      const drums = pianoRollDrums(c.state);
+      if (keys !== 0 && drums) {
+        const rows = drumKeysOf(pianoRollTrack(c.state), drums);
+        keys = Math.abs(keys) === 1 ? drumMoveKeys({ keys: rows }, n.take.keys, notes, notes[0]!, -keys) : 0;
         if (keys === 0 && key.steps === 0) return null;
       }
       const command = { type: "moveNotes", take, notes, ticks: key.steps * step, keys, copy: false } as const;

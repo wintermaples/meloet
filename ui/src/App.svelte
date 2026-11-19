@@ -7,6 +7,7 @@
   import { about } from "./components/about/about.svelte";
   import Arrange from "./components/Arrange.svelte";
   import BandRow from "./components/BandRow.svelte";
+  import FileDropNotice from "./components/FileDropNotice.svelte";
   import InputMeter from "./components/InputMeter.svelte";
   import LowerBand from "./components/LowerBand.svelte";
   import ContextMenu from "./components/menu/ContextMenu.svelte";
@@ -95,6 +96,7 @@
       <ScanStoppedDialog />
     </div>
   {/if}
+  {#if state.workspace.fileDrop}<FileDropNotice drop={state.workspace.fileDrop} />{/if}
 {:else if current.failure}
   <pre class="failure">{current.failure}</pre>
 {/if}

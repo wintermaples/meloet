@@ -8,7 +8,8 @@
   import ParamsPanel from "./params/ParamsPanel.svelte";
   import { allRows, rowCount } from "./params/paramRows";
   import Shelf from "./Shelf.svelte";
-  import { BUILTIN_EFFECTS, shelfToggle } from "./tracks.svelte";
+  import { shelfCounts } from "./shelfList";
+  import { shelfToggle } from "./tracks.svelte";
 
   const layout = $derived(current.state!.workspace.layout);
   const front = $derived(layout.rightFront);
@@ -16,7 +17,7 @@
   const RIGHT: Band[] = ["shelf", "params"];
   const tabs = $derived(RIGHT.filter((b) => b !== front));
   const toggle = (band: Band) => send(band === "shelf" ? shelfToggle(current.state!) : { type: "toggleBand", band });
-  const instruments = $derived(current.state!.shelf.available.length);
+  const counts = $derived(shelfCounts(current.state!.shelf, current.state!.library));
   const selected = $derived(current.state!.params.selected);
   const paramsCount = $derived(
     selected ? t("params.tabCount", { name: t(`effect.${selected.effect}`), count: rowCount(allRows(selected.effect, selected.values)) }) : null,
@@ -69,7 +70,7 @@
       <span class="m-lbl">▸</span>
       <span class="vt">{@render title(band)}</span>
       {#if band === "shelf" && countsFit}
-        <span class="vt m-lbl">{t("band.shelfCount", { instruments, effects: BUILTIN_EFFECTS })}</span>
+        <span class="vt m-lbl">{t("band.shelfCount", { instruments: counts.instruments, effects: counts.effects })}</span>
       {:else if band === "params" && paramsCount && countsFit}
         <span class="vt m-lbl" data-test="params-tab-count">{paramsCount}</span>
       {/if}

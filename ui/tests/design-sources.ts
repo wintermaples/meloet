@@ -61,9 +61,10 @@ export function tableAfterH3(doc: Document, title: string): HTMLTableElement {
 export function mockScreenText(board: string): string {
   const doc = new DOMParser().parseFromString(read(`mock/${board}.dc.html`), "text/html");
   doc.querySelectorAll("script, style, helmet, title").forEach((n) => n.remove());
-  const attrs = Array.from(doc.querySelectorAll("[aria-label], [placeholder]")).flatMap((n) => [
+  const attrs = Array.from(doc.querySelectorAll("[aria-label], [placeholder], [title]")).flatMap((n) => [
     n.getAttribute("aria-label") ?? "",
     n.getAttribute("placeholder") ?? "",
+    n.getAttribute("title") ?? "",
   ]);
   return norm([doc.body.textContent ?? "", ...attrs].join(" \n "));
 }

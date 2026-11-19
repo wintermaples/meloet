@@ -1,11 +1,19 @@
 <!-- ミキサーの 1 本（モック F4-Mixer）。上から、見出し（番号か A ・ B と名前）、音源 ・ 戻り ・ 出口の枠、インサート 4 つ、センド、パン、
-     目盛とフェーダーとメーター、フェーダーの値、M ・ S ・ ●。メーターは mixerMeters の区画（MixerStrips の箱）の中の slot。 -->
+     目盛とフェーダーとメーター、フェーダーの値、M ・ S ・ ●。メーターは mixerMeters の区画（MixerStrips の箱）の中の slot。
+     インサートの並べかえ（仕様書 3 章 86-2）: 入っている枠を押したまま上下に動かす。入る所に accent の線、離して MoveInsert を 1 つ、Esc でやめる。同じストリップの中だけ。 -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { InsertView, StripRef } from "../../bridge";
+  import { INSERT_SLOTS } from "../../bridge/types";
   import { glSlot, type MeterSource } from "../../gl/slot";
   import { term, tip } from "../../lib/tip.svelte";
   import { t } from "../../text/ja";
   import { metrics } from "../metrics.svelte";
+  import ValueField from "../params/ValueField.svelte";
+  import { onDragCancel } from "../pianoroll/view.svelte";
+  import { moveSlot } from "../tracks.svelte";
+  import WindowMark from "../WindowMark.svelte";
+  import { send } from "../../state/app.svelte";
   import Fader from "./Fader.svelte";
   import InsertSlot from "./InsertSlot.svelte";
   import PanKnob from "./PanKnob.svelte";
@@ -27,11 +35,24 @@
     /** 見出しの上辺の色（CSS の変数）。 */
     color: string;
     /** dim: 「サイン波で代わり」（gray.8、乗ると tip）。stopped: 止まったプラグインの音源（赤い枠と「止」）。 */
-    frame: { text: string; accent?: boolean; run?: () => void; usable?: boolean; dim?: boolean; tip?: string | null; stopped?: boolean };
+    /** window: プラグインの窓がひらいている（右はしに窓の印）。context: 右クリック。 */
+    frame: {
+      text: string;
+      accent?: boolean;
+      run?: () => void;
+      usable?: boolean;
+      dim?: boolean;
+      tip?: string | null;
+      stopped?: boolean;
+      window?: boolean;
+      context?: (e: MouseEvent) => void;
+    };
     slots: readonly (InsertView | null)[];
     selectedSlot: number | null;
-    /** トラックだけ。 */
-    sends: { track: number; dbs: readonly [number | null, number | null] } | null;
+    /** 窓がひらいているインサート（枠の番号）。 */
+    windowSlots?: readonly number[];
+    /** トラックだけ。homes は Home で戻す量（トラックを足したときの量）。 */
+    sends: { track: number; dbs: readonly [number | null, number | null]; homes: readonly [number | null, number | null] } | null;
     pan: number;
     gainDb: number | null;
     meter: MeterSource;
@@ -39,7 +60,7 @@
     solo: Toggle;
     arm: Toggle;
   }
-  let { strip, mark, name, color, frame, slots, selectedSlot, sends, pan, gainDb, meter, mute, solo, arm }: Props = $props();
+  let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm }: Props = $props();
 
   const kind = $derived(strip.kind);
   const fader = faderControl(
@@ -47,6 +68,65 @@
     () => gainDb,
   );
   const meterGap = $derived(metrics.px("space.1") / 2);
+
+  // ---- インサートの並べかえ ----
+
+  let group = $state<HTMLElement>();
+  let press: { slot: number; y0: number; pointer: number; el: HTMLElement; pitch: number } | null = null;
+  let drag = $state<{ slot: number; dy: number; pitch: number } | null>(null);
+  /** ドラッグのあとの click は、枠を押したことにしない。 */
+  let dragged = false;
+  const target = $derived(drag ? moveSlot(drag.slot, INSERT_SLOTS, (drag.slot + 0.5) * drag.pitch + drag.dy, drag.pitch) : null);
+
+  function slotDown(e: PointerEvent, slot: number): void {
+    if (e.button !== 0 || drag) return;
+    const boxes = [...(group?.querySelectorAll<HTMLElement>('[data-test="mixer-insert"]') ?? [])].map((el) => el.getBoundingClientRect());
+    const pitch = boxes.length > 1 ? boxes[1]!.top - boxes[0]!.top : boxes[0]?.height ?? 1;
+    // つかむのは動きだしてから（その前につかむと、枠を押した click が枠に届かない）。
+    press = { slot, y0: e.clientY, pointer: e.pointerId, el: e.currentTarget as HTMLElement, pitch };
+    dragged = false;
+  }
+  function slotMove(e: PointerEvent): void {
+    if (!press || e.pointerId !== press.pointer) return;
+    const dy = e.clientY - press.y0;
+    if (!drag) {
+      if (Math.abs(dy) < metrics.px("space.1")) return;
+      press.el.setPointerCapture?.(press.pointer);
+      drag = { slot: press.slot, dy, pitch: press.pitch };
+    } else drag = { ...drag, dy };
+  }
+  function slotUp(e: PointerEvent): void {
+    if (!press || e.pointerId !== press.pointer) return;
+    const d = drag;
+    const to = target?.to;
+    endPress();
+    if (!d) return;
+    dragged = true;
+    if (to !== undefined && to !== d.slot) send({ type: "moveInsert", insert: { strip, slot: d.slot }, to });
+  }
+  function endPress(): void {
+    if (press?.el.hasPointerCapture?.(press.pointer)) press.el.releasePointerCapture(press.pointer);
+    press = null;
+    drag = null;
+  }
+  function swallowClick(e: MouseEvent): void {
+    if (!dragged) return;
+    dragged = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  onMount(() =>
+    onDragCancel(() => {
+      if (!drag) return false;
+      endPress();
+      return true;
+    }),
+  );
+  const lineOf = (slot: number): "above" | "below" | null => {
+    if (!target || !drag || target.to === drag.slot) return null;
+    if (target.slot === slot) return "above";
+    return target.slot === INSERT_SLOTS && slot === INSERT_SLOTS - 1 ? "below" : null;
+  };
   const toggles = $derived([
     { key: "mute", tog: mute, label: "arrange.mute", short: "arrange.muteShort", word: "ミュート" },
     { key: "solo", tog: solo, label: "arrange.solo", short: "arrange.soloShort", word: "ソロ" },
@@ -70,22 +150,32 @@
       data-test="mixer-frame"
       use:tip={frame.tip}
       onclick={() => frame.usable && frame.run?.()}
-      ><span class="cut">{frame.text}</span>{#if frame.stopped}<span class="stop">{t("mixer.stoppedMark")}</span>{/if}</button
+      oncontextmenu={frame.context}
+      ><span class="cut">{frame.text}</span>{#if frame.stopped}<span class="stop">{t("mixer.stoppedMark")}</span>{/if}{#if frame.window}<WindowMark
+        />{/if}</button
     >
   {:else}
     <div class="frame" data-test="mixer-frame"><span class="cut">{frame.text}</span></div>
   {/if}
-  <div class="group">
+  <div class="group" bind:this={group} onclickcapture={swallowClick} onpointermove={slotMove} onpointerup={slotUp} onpointercancel={endPress} role="presentation">
     <span class="m-lbl" use:term={"インサート"}>{t("mixer.inserts")}</span>
     {#each slots as view, slot (slot)}
-      <InsertSlot insert={{ strip, slot }} {view} selected={selectedSlot === slot} />
+      <InsertSlot
+        insert={{ strip, slot }}
+        {view}
+        selected={selectedSlot === slot}
+        windowOpen={windowSlots.includes(slot)}
+        lift={drag?.slot === slot ? drag.dy : null}
+        line={lineOf(slot)}
+        ondown={(e) => slotDown(e, slot)}
+      />
     {/each}
   </div>
   <div class="group">
     <span class="m-lbl" use:term={"センド"}>{t("mixer.sends")}</span>
     {#if sends}
-      <SendBar track={sends.track} bus="a" db={sends.dbs[0]} />
-      <SendBar track={sends.track} bus="b" db={sends.dbs[1]} />
+      <SendBar track={sends.track} bus="a" db={sends.dbs[0]} home={sends.homes[0]} />
+      <SendBar track={sends.track} bus="b" db={sends.dbs[1]} home={sends.homes[1]} />
     {:else}
       <div class="empty-row"></div>
       <div class="empty-row"></div>
@@ -97,7 +187,11 @@
     <div class="meter" use:glSlot={{ kind: "meter", vertical: true, source: meter, gap: meterGap }}></div>
   </div>
   <div class="value">
-    <span class="m-num m-hi db" data-test="mixer-gain">{faderText(fader.shown)}</span>
+    {#if fader.typing}
+      <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
+    {:else}
+      <span class="m-num m-hi db" data-test="mixer-gain">{faderText(fader.shown)}</span>
+    {/if}
     <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
   </div>
   <div class="toggles">
@@ -185,6 +279,10 @@
   }
   button.frame.usable.dim {
     color: var(--color-gray-8);
+  }
+  button.frame.usable {
+    gap: var(--space-1);
+    justify-content: space-between;
   }
   /* 止まったプラグイン（仕様書 2 章「インサートの枠」と同じ赤い枠と「止」）。 */
   button.frame.usable.stopped,

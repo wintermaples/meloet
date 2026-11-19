@@ -74,7 +74,7 @@ export function vst3Key(name: string): string {
   return `vst3:${hex}`;
 }
 
-function row(name: string, vendor: string, kind: PluginKindView, formats: PluginFormat[], used: PluginFormat = formats[0]!): PluginRowView {
+export function row(name: string, vendor: string, kind: PluginKindView, formats: PluginFormat[], used: PluginFormat = formats[0]!): PluginRowView {
   const keyOf = (f: PluginFormat) => (f === "lv2" ? lv2Key(name) : vst3Key(name));
   return { name, vendor, kind, key: keyOf(used), formats: formats.map((format) => ({ format, key: keyOf(format) })) };
 }

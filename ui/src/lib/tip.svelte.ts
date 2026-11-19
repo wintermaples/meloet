@@ -117,6 +117,21 @@ export const tipAround: Action<HTMLElement, string | null | undefined> = (node, 
   };
 };
 
+/** `use:tipOf={() => 文}`。乗った時に文を作る（null なら出さない）。 */
+export const tipOf: Action<HTMLElement, () => string | null> = (node, make) => {
+  let current = make;
+  const h = hover(node, () => {
+    const body = current();
+    return body ? { term: null, body } : null;
+  });
+  return {
+    update(next: () => string | null) {
+      current = next;
+    },
+    destroy: h.destroy,
+  };
+};
+
 /** `use:tipWhenCut`。「…」でちぢんでいるときだけ、要素の文を全部出す。 */
 export const tipWhenCut: Action<HTMLElement> = (node) =>
   hover(node, () => (node.scrollWidth > node.clientWidth && node.textContent ? { term: null, body: node.textContent } : null));

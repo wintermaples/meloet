@@ -159,7 +159,9 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
   it("名前、最初から入っている、居場所、さがす枠と数、行と値。えらんだ行の印", () => {
     show(RightRail, scene("mixer"));
     expect(text(q("[data-test=params-name]"))).toBe("リバーブ");
-    expect(text(q("[data-test=params] .who"))).toBe("リバーブ 最初から入っている A リバーブ ・ インサート 1");
+    // インサートの子は「とばす B」（仕様書 3 章 86-1）。最初から入っている物に窓のボタンはない。
+    expect(text(q("[data-test=params] .who"))).toBe("リバーブ 最初から入っている とばす B A リバーブ ・ インサート 1");
+    expect(q("[data-test=params-window]")).toBeNull();
     expect((q("[data-test=params-search]") as HTMLInputElement).placeholder).toBe("名前");
     expect(text(q("[data-test=params-count]"))).toBe("7 / 7");
     expect(qa("[data-test=param-value]").map(text)).toEqual(["2.40 s", "60 %", "20 ms", "6000 Hz", "120 Hz", "100 %", "100 %"]);
@@ -259,16 +261,19 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
     expect(qa("[data-test=param-row]").length).toBe(7);
   });
 
-  it("何もえらんでいなければ見出しだけ", () => {
+  it("何もえらんでいなければ、見出しの下に 2 行（仕様書 3 章 86-5）", () => {
     show(RightRail, scene("params"));
-    expect(text(q("[data-test=params]"))).toBe("▾ パラメータ U");
+    expect(text(q("[data-test=params]"))).toBe(
+      "▾ パラメータ U ミキサーでインサートの枠をえらぶと、ここにパラメータが出ます。 音源の枠をえらぶと、音源のパラメータが出ます。",
+    );
+    expect(q("[data-test=params-nothing] .m-lbl")?.textContent).toBe("音源の枠をえらぶと、音源のパラメータが出ます。");
   });
 });
 
 describe("ディレイ（モック R6-Delay）", () => {
   it("間隔は段階（◂ 5 つの四角 ▸）、テンポに合わせるはオン、左右にゆれるはオフ", () => {
     show(RightRail, scene("paramsDelay"));
-    expect(text(q("[data-test=params] .who"))).toBe("ディレイ 最初から入っている B ディレイ ・ インサート 1");
+    expect(text(q("[data-test=params] .who"))).toBe("ディレイ 最初から入っている とばす B B ディレイ ・ インサート 1");
     expect(text(q("[data-test=params-count]"))).toBe("7 / 7");
     expect(qa("[data-test=param-value]").map(text)).toEqual(["1/8", "オン", "35 %", "5000 Hz", "200 Hz", "オフ", "100 %"]);
     expect(qa(".square").map((s) => s.classList.contains("on"))).toEqual([false, false, true, false, false]);
@@ -313,11 +318,11 @@ describe("縦の見出しと状態行", () => {
     expect(text(q(".status"))).toContain("ループ 5–9 ・ A リバーブの「響きの長さ」をえらんでいます");
   });
 
-  it("状態行: トラックのストリップと、ループのないとき", () => {
+  it("状態行: トラックのストリップは「2 ベース ・ コンプレッサーの「…」」（仕様書 3 章 86-10）と、ループのないとき", () => {
     const s = scene("mixer");
     s.status.message = { id: "paramSelected", loopBars: null, insert: { strip: { kind: "track", id: s.song.tracks[1]!.id }, slot: 0 }, effect: "compressor", param: 1 };
     show(StatusLine, s);
-    expect(text(q(".status"))).toContain(`${s.song.tracks[1]!.number} ${s.song.tracks[1]!.name}の「おさえる強さ」をえらんでいます`);
+    expect(text(q(".status"))).toContain(`${s.song.tracks[1]!.number} ${s.song.tracks[1]!.name} ・ コンプレッサーの「おさえる強さ」をえらんでいます`);
     expect(text(q(".status"))).not.toContain("ループ");
   });
 });

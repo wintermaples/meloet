@@ -1,0 +1,151 @@
+<!-- 最初から入っているエフェクトのパラメータの一覧（モック F4-Mixer ・ R6-Delay）。見出しのある物はグループ、さがす枠で残る行だけ。
+     ↑ ↓ で行をえらぶ。Enter は、なめらかな値なら打ちこむ枠、段階の値なら段の一覧、オン ・ オフなら切りかえ（仕様書 3 章 86-6）。 -->
+<script lang="ts">
+  import { untrack } from "svelte";
+  import type { SelectedInsert } from "../../bridge";
+  import { EFFECT_PARAMS } from "../../bridge/types";
+  import ScrollArea from "../../lib/ScrollArea.svelte";
+  import { send } from "../../state/app.svelte";
+  import { t } from "../../text/ja";
+  import Button from "../Button.svelte";
+  import { openContextMenu } from "../menu/contextMenu.svelte";
+  import ParamRow from "./ParamRow.svelte";
+  import { allRows, rowCount, searchRows, stepRow, valueText } from "./paramRows";
+  import { paramUi } from "./paramUi.svelte";
+
+  let { sel }: { sel: SelectedInsert } = $props();
+
+  let folded = $state<string[]>([]);
+  const insertKey = $derived(`${JSON.stringify(sel.insert)}:${sel.effect}`);
+  $effect(() => {
+    void insertKey;
+    untrack(() => (folded = []));
+  });
+
+  const groups = $derived(allRows(sel.effect, sel.values));
+  const found = $derived(searchRows(groups, paramUi.query));
+  const shownCount = $derived(rowCount(found));
+  $effect(() => {
+    paramUi.matches = shownCount;
+  });
+  const visibleRows = $derived(found.flatMap((g) => (g.group !== null && folded.includes(g.group) ? [] : g.rows)));
+
+  let list = $state<HTMLElement>();
+
+  function pick(param: number): void {
+    if (list && !list.contains(document.activeElement)) list.focus({ preventScroll: true });
+    if (sel.row !== param) send({ type: "selectParam", param });
+  }
+  function toggleGroup(group: string): void {
+    folded = folded.includes(group) ? folded.filter((g) => g !== group) : [...folded, group];
+  }
+
+  function enter(): void {
+    const row = visibleRows.find((r) => sel.row !== null && r.covers.includes(sel.row));
+    if (!row) return;
+    const spec = EFFECT_PARAMS[sel.effect][row.param]!;
+    const value = sel.values[row.param] ?? spec.default;
+    if (spec.shape === "continuous") paramUi.typing = row.param;
+    else if (spec.shape === "switch") send({ type: "setParam", insert: sel.insert, effect: sel.effect, param: row.param, value: value >= 0.5 ? 0 : 1, commit: true });
+    else {
+      const el = list?.querySelector<HTMLElement>(`[data-param="${row.param}"]`);
+      const box = el?.getBoundingClientRect();
+      openContextMenu(
+        box?.right ?? 0,
+        box?.bottom ?? 0,
+        spec.steps.map((_, i) => ({
+          kind: "row" as const,
+          label: "params.search" as const,
+          text: valueText(sel.effect, spec, i),
+          checked: i === Math.round(value),
+          usable: true,
+          run: () => send({ type: "setParam", insert: sel.insert, effect: sel.effect, param: row.param, value: i, commit: true }),
+        })),
+      );
+    }
+  }
+
+  // 仕様書 4 章「パラメータの中: 行を上下にえらぶ」（↑ ↓）と「値を打ちこむ」（Enter）。欄の中にフォーカスがあるときだけ。
+  function onkeydown(ev: KeyboardEvent): void {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      enter();
+      return;
+    }
+    if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const next = stepRow(visibleRows, sel.row, ev.key === "ArrowDown" ? 1 : -1);
+    if (next !== null) pick(next);
+  }
+</script>
+
+<ScrollArea data-test="params-list">
+  <div class="list" role="presentation" tabindex="-1" bind:this={list} {onkeydown}>
+    {#each found as g, gi (g.group ?? `-${gi}`)}
+      {#if g.group !== null}
+        {@const isFolded = folded.includes(g.group)}
+        <button class="m-plain group m-focus-in" onclick={() => toggleGroup(g.group!)} data-group={g.group}>
+          <span class={isFolded ? "m-lbl" : "m-hi"}>{isFolded ? "▸" : "▾"}</span>
+          <span class="m-hi group-name">{g.name}</span>
+          <span class="m-num m-lbl">{g.rows.length}</span>
+        </button>
+      {/if}
+      {#if g.group === null || !folded.includes(g.group)}
+        {#each g.rows as r (r.param)}
+          <ParamRow
+            insert={sel.insert}
+            effect={sel.effect}
+            param={r.param}
+            name={r.name}
+            value={sel.values[r.param] ?? 0}
+            selected={sel.row !== null && r.covers.includes(sel.row)}
+            onselect={() => pick(r.param)}
+          />
+        {/each}
+      {/if}
+    {/each}
+    {#if shownCount === 0 && paramUi.query.trim() !== ""}
+      <div class="none" data-test="params-none">
+        <span>{t("msg.searchNoMatch", { query: paramUi.query.trim() })}</span>
+        <Button onclick={() => (paramUi.query = "")} test="params-clear">{t("button.clearSearch")}</Button>
+      </div>
+    {/if}
+  </div>
+</ScrollArea>
+
+<style>
+  .list {
+    outline: none;
+  }
+  .group {
+    width: 100%;
+    height: var(--part-paramgroup-height);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+    background: var(--color-gray-4);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    white-space: nowrap;
+  }
+  .group:hover {
+    box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
+  }
+  .group-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .none {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    white-space: normal;
+  }
+</style>

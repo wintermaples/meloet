@@ -15,6 +15,7 @@ export type { Command } from "./generated/Command";
 export type { ControlKind } from "./generated/ControlKind";
 export type { EffectKind } from "./generated/EffectKind";
 export type { EffectName } from "./generated/EffectName";
+export type { NamedInsert } from "./generated/NamedInsert";
 export type { EffectRef } from "./generated/EffectRef";
 export type { EndpointView } from "./generated/EndpointView";
 export type { Event } from "./generated/Event";

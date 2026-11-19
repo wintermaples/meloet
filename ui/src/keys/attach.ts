@@ -17,6 +17,7 @@ import {
   zoomArrangeBy,
   zoomBy,
 } from "../components/pianoroll/view.svelte";
+import { selectedInsert } from "../components/params/selected";
 import { songDialogEnter } from "../components/songDialog";
 import {
   shelfConfirmCommand,
@@ -217,6 +218,12 @@ function command(action: KeyAction, state: AppState): Command | null {
       return shelfSampleCommand(state);
     case "shelfFavorite":
       return shelfFavoriteCommand(state);
+    // えらんでいるインサートがあり、ミキサーかパラメータの欄が見えているとき（仕様書 4 章「効かない（一文字 ・ ミキサー）」）。
+    case "bypass": {
+      const insert = selectedInsert(state.params);
+      const seen = state.workspace.layout.lower.some((l) => l.band === "mixer") || state.workspace.layout.rightFront === "params";
+      return insert && seen ? { type: "toggleBypass", insert } : null;
+    }
     default:
       return null;
   }

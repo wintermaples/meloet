@@ -66,7 +66,9 @@ export type KeyAction =
   | { kind: "shelfStep"; delta: 1 | -1 }
   | { kind: "shelfConfirm" }
   | { kind: "shelfSample" }
-  | { kind: "shelfFavorite" };
+  | { kind: "shelfFavorite" }
+  /** B: えらんでいるインサートをとばす ・ もどす（仕様書 3 章 86-1）。 */
+  | { kind: "bypass" };
 
 const TOOL_DIGITS: Record<string, "select" | "draw" | "erase"> = { "1": "select", "2": "draw", "3": "erase" };
 const NUDGES: Record<string, { steps: number; keys: number }> = {
@@ -104,6 +106,7 @@ const BAND_KEYS: Record<string, KeyAction> = {
   l: { kind: "loop" },
   c: { kind: "metronome" },
   t: { kind: "stepTake", delta: 1 },
+  b: { kind: "bypass" },
 };
 
 /** 英字 1 つ（小文字）。key が英字でなければ（かな入力の配列など）code の KeyA… から読む。 */

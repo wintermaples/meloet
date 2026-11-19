@@ -56,6 +56,19 @@ export function valueText(
     : t(`param.value.${p.unit}` as TextKey, { value: s });
 }
 
+/** 打ちこむ枠にはじめに入れる数（単位なし、マイナスは打てる「-」）。 */
+export function typedText(p: EffectParam, value: number): string {
+  let s = roundTo(p, value).toFixed(p.shape === "continuous" ? decimals(p) : 0);
+  if (/^-0(\.0*)?$/.test(s)) s = s.slice(1);
+  return s;
+}
+
+/** 打ちこむ枠のうしろにそえる単位（「dB」「: 1」）。 */
+export function unitText(p: EffectParam): string {
+  if (p.shape !== "continuous" || p.unit === "none") return "";
+  return t(`param.value.${p.unit}` as TextKey, { value: "" }).trim();
+}
+
 /** 棒を対数で動かすか（音の高さはいつも。時間は何十倍にも広がる物）。 */
 function logScale(p: EffectParam): boolean {
   if (p.min <= 0) return false;

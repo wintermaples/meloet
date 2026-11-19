@@ -192,6 +192,17 @@ ev("pointermove", %d, %s);
 """
 
 
+# Presses the bar of a parameter row (by its name) and holds it a little to the right (F-ParamFew: "… を動かしています").
+DRAG_PARAM = """
+const row = [...document.querySelectorAll('[data-test="param-row"]')].find((r) => r.querySelector(".name")?.textContent === "%s");
+const bar = row.querySelector('[data-test="param-slider"]');
+const r = bar.getBoundingClientRect();
+const ev = (type, f) => bar.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + r.width * f, clientY: r.top + 6 }));
+ev("pointerdown", %f);
+ev("pointermove", %f);
+"""
+
+
 # Drags the head row of a dialog by (dx, dy) and lets go (spec 3, 82).
 DRAG_DIALOG = """
 const head = document.querySelector('%s [data-dialog-head]');
@@ -325,6 +336,8 @@ CLICKS = {
     "pluginAudition": ("pluginAudition", '[data-group="c:instrument:synth"]'),
     "pluginUnreadable": ("pluginUnreadable", '[data-group="c:instrument:synth"]'),
     "paramSearch": ("paramSearch", "js:" + TYPE_PARAM_SEARCH % "cutoff"),
+    "windowOpen": ("windowOpen", '[data-test="status-windows"]'),
+    "paramFew": ("paramFew", "js:" + DRAG_PARAM % ("Decay", 0.1, 0.12)),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]

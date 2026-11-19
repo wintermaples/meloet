@@ -1,7 +1,9 @@
 <!-- フェーダー（仕様書 2 章「フェーダー」「メーターとフェーダーの目盛」、モック F4-Mixer）。左に目盛の字、まん中に溝とつまみ。
-     いちばん下は −∞（A-14）。押したまま上下に動かすと、画面だけが先に動き、音だけ変える意図（commit: false）を送る。離したら 1 手（faderControl）。 -->
+     いちばん下は −∞（A-14）。押したまま上下に動かすと、画面だけが先に動き、音だけ変える意図（commit: false）を送る。離したら 1 手（faderControl）。
+     Tab でフォーカスをあて、↑ ↓ で 1 dB、Shift で 0.1 dB、Home で 0.0 dB、Enter で打ちこむ（仕様書 3 章 86-7。枠は Strip の値の所）。 -->
 <script lang="ts">
   import type { MixControl } from "./control.svelte";
+  import { t } from "../../text/ja";
   import { dbToFrac, SCALE_MARKS } from "./scale";
 
   /** ドラッグは Strip が持つ（下のフェーダーの値の字も、動かしている間の値を出すため）。 */
@@ -18,13 +20,19 @@
 <div
   class="fader"
   class:dragging={c.drag !== null}
-  role="presentation"
+  role="slider"
+  tabindex="0"
+  aria-label={t("mixer.db")}
+  aria-valuenow={c.shown ?? undefined}
   data-test="mixer-fader"
   data-db={c.shown ?? "-inf"}
   onpointerdown={c.down}
   onpointermove={c.move}
   onpointerup={c.up}
   onpointercancel={() => c.cancel()}
+  onkeydown={c.keydown}
+  onkeyup={c.keyup}
+  onblur={c.blur}
 >
   <div class="groove"></div>
   <div class="zero" style:top={top(dbToFrac(0))}></div>

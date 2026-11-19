@@ -286,16 +286,27 @@ describe("インサートの枠", () => {
     ]);
   });
 
-  it("右クリック: えらんでから「外す」の一覧。空きでは何も出さない", () => {
+  it("右クリック: えらんでから一覧（入れかえる… ・ 上へ ・ 下へ ・ とばす ／ 外す。モック R9-Inserts）。空きでは何も出さない", () => {
     show(scene("mixer"));
     const slot = allIn("track-14", "[data-test=mixer-insert]")[0]!;
     slot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
-    const rows = contextMenu.open!.entries.filter((e): e is MenuRow => e.kind === "row");
-    expect(rows.map((r) => [r.label, r.usable])).toEqual([["mixer.removeEffect", true]]);
-    rows[0]!.run();
+    const entries = contextMenu.open!.entries;
+    expect(entries.map((e) => (e.kind === "row" ? [e.label, e.usable, e.key ?? null, e.checked ?? null] : "-"))).toEqual([
+      ["insert.replace", true, null, null],
+      ["insert.moveUp", false, null, null],
+      ["insert.moveDown", true, null, null],
+      ["params.bypass", true, "B", false],
+      "-",
+      ["mixer.removeEffect", true, "Delete", null],
+    ]);
+    const rows = entries.filter((e): e is MenuRow => e.kind === "row");
+    for (const r of rows) if (r.usable) r.run();
     const insert = { strip: { kind: "track", id: 14 }, slot: 0 };
     expect(app.sent).toEqual([
       { type: "selectInsert", insert },
+      { type: "openShelf", mode: { kind: "replaceEffect", strip: insert.strip, slot: 0 } },
+      { type: "moveInsert", insert, to: 1 },
+      { type: "toggleBypass", insert },
       { type: "removeEffect", insert },
     ]);
     contextMenu.open = null;

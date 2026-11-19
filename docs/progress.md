@@ -881,3 +881,11 @@ SF2（サウンドフォント）のこと（ヤチヨさんの決め 2026-11-18
 - 本物のアプリの絵: `docs/screenshots/app/scanApp*`、`docs/screenshots/compare/scanApp*`（R9-Scan、F5-ScanStopped とならべた）。
 - 見つけて直した事: core の見はりが子の終わりを知ったら、エンジンは待たずに止める。`latency.sh` と `shoot_app.py` が plughost もビルドする。`app-watch.sh` の起動の時刻（この PC の `date` が、ミリ秒の頭の 0 を落としていた。前の起動の数は、たまたま当たらなかったと見ている）。
 - 残した事: はじめてのスキャンで WebKitWebProcess が ＋85 MB（343 → 415 MB）になり、戻らない。2 回目の起動で `scan.json` を中身が同じでも書きなおす（害はない）。
+
+区切り1 は終わり（2433f9c）。子のプロセスは posix_spawn で起こす形にし、はじめての起動の最初のコマは 809〜823 ms（2 回目 716〜762 ms）。スキャンは 857 入って 3 止まった（padthv1 は自分のスレッドで落ちる、swh の 2 つは作りがこわれている）。
+
+### 区切り2: 棚と、音源のプラグインと、SF2（2026-11-19〜）
+
+- 1 回目（作っている）: 曲のデータ（プラグインと SF2 の音源、プラグインのエフェクト、インサートのとばした印）、曲のファイルの版 4、約束の版 17、偽物の場面（F5-SF2Shelf ・ SF2Drop ・ ShelfFx ・ ShelfSearch ・ PluginLoading ・ PluginAudition ・ PluginTrack、R8-Missing ・ DrumPlay、Opt5-Plugins）。
+- 同時に: SF2 を読んで鳴らす所（`meloet_sound::sf2`、鳴らす係にエンベロープ 6 段 ・ フィルター ・ LFO ・ モジュレーションのエンベロープ ・ exclusiveClass、FluidSynth と包みの音色との聞きくらべ）。
+- 2 回目: core（棚の中身、プラグインの音源 ・ エフェクトを入れる、SF2 を写して読む、保存のときにプラグインの状態を集める、見つからないとき）と画面（棚、ためし弾きの箱、SF2 を落とす知らせ、見つからない物の知らせ、85 の 6 つ）。

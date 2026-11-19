@@ -36,7 +36,7 @@ const PLACE_DEPTH: u32 = 3;
 /// How many bundles are scanned at once: half of the processors, so that the other half stays
 /// with the screen and whatever else the PC does, and four at most: the big bundles are read
 /// from the disk and more children gain little. The children run at the lowest priority of
-/// the ordinary processes ([`launch::low_priority`]).
+/// the ordinary processes (`launch::low_priority`).
 fn workers() -> usize {
     let cpus = std::thread::available_parallelism().map_or(1, usize::from);
     (cpus / 2).clamp(1, 4)
@@ -394,14 +394,19 @@ fn run_child(
 ) -> Option<End> {
     let (mut ours, theirs) = UnixStream::pair().ok()?;
     let mut command =
-        launch::scan_command(&context.exe, format, bundle, skip, theirs.as_fd(), None);
+        launch::scan_command(&context.exe, format, bundle, skip, theirs.as_fd(), None).ok()?;
+    // Plugins built on Qt make a Qt application when they are read. Without this they pick
+    // a platform that needs a display (X), and abort where there is none. A scan shows no
+    // window. The processes plugins sound in are not given this: they do show windows.
+    command.env("QT_QPA_PLATFORM", "offscreen");
     command.envs(context.env.iter().map(|(name, value)| (name, value)));
-    launch::low_priority(&mut command);
     let mut child = command
         .spawn()
         .inspect_err(|e| eprintln!("meloet: cannot start {}: {e}", context.exe.display()))
         .ok()?;
-    drop(theirs);
+    // The command holds a copy of the socket: with it open here, the child's end would
+    // never read as closed.
+    drop((command, theirs));
     // The time limit runs from the last `Probing`; before the first one, from the start.
     let mut last = Instant::now();
     let mut at: Option<(String, Option<String>)> = None;

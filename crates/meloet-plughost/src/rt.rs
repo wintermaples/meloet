@@ -572,5 +572,21 @@ mod tests {
             "/usr/lib/vst3/ZamComp.vst3",
         );
         real("lv2:urn:zamaudio:ZamComp", "/usr/lib/lv2/ZamComp.lv2");
+        // What the audio thread does for an LV2 plugin's window.
+        for (key, bundle) in [
+            (
+                "lv2:https://surge-synthesizer.github.io/lv2/surge-xt",
+                "/usr/lib/lv2/Surge XT.lv2",
+            ),
+            (
+                "lv2:http://lsp-plug.in/plugins/lv2/compressor_stereo",
+                "/usr/lib/lv2/lsp-plugins.lv2",
+            ),
+        ] {
+            let key: PluginKey = key.parse().unwrap();
+            let loaded = lv2::load_with_window(&key, Path::new(bundle), ACTIVATION).unwrap();
+            let (counted, _) = drive(loaded);
+            assert_eq!(counted, 0, "{key:?} with a window");
+        }
     }
 }

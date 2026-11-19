@@ -17,10 +17,19 @@
 //!
 //! Parameter ids: a control port's is its index. A `patch:writable` parameter has no number
 //! of its own, so its id is made from its URI ([`patch_id`]), with the top bit set.
+//!
+//! The plugin's window ([`ui`]) is on the main thread and talks to the instance on the audio
+//! thread through the same doors as meloet: what it writes to a control port or sends as
+//! `patch:Set` becomes a parameter change of the next block; any other message it sends, and
+//! everything the instance sends back, crosses in two rings of bytes. The audio thread fills
+//! its ring only while a window is open.
 
-use std::cell::{RefCell, UnsafeCell};
+mod ui;
+
+use std::cell::{Cell, RefCell, UnsafeCell};
 use std::collections::HashMap;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -30,13 +39,14 @@ use livi::event::{LV2AtomEventBuilder, LV2AtomSequence};
 use livi::lilv;
 use livi::{EmptyPortConnections, Features, FeaturesBuilder, PortIndex, PortType};
 use meloet_plugin::ipc::{FromPlugin, MAX_LATENCY_FRAMES, ToPlugin};
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamShape};
+use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow, ParamShape};
 use meloet_plugin::{
     EditorKind, InstrumentCategory, PluginInfo, PluginKey, PluginKind, PluginRole,
 };
 
 use super::{
-    Activation, Candidate, Controller, GATE_WAIT, Gate, Loaded, ProcessBlock, Processor, Said,
+    Activation, Candidate, Controller, GATE_WAIT, Gate, Loaded, Opened, ProcessBlock, Processor,
+    Read, Said, leading_number,
 };
 use crate::rtcheck;
 
@@ -53,12 +63,22 @@ const NOT_ON_GUI: &str = "http://lv2plug.in/ns/ext/port-props#notOnGUI";
 const UNIT: &str = "http://lv2plug.in/ns/extensions/units#unit";
 const UNIT_SYMBOL: &str = "http://lv2plug.in/ns/extensions/units#symbol";
 const SIDE_CHAIN_OF: &str = "http://lv2plug.in/ns/ext/port-groups#sideChainOf";
+const SUB_GROUP_OF: &str = "http://lv2plug.in/ns/ext/port-groups#subGroupOf";
+/// How far up a tree of groups its top is looked for.
+const MOST_GROUPS: usize = 16;
 
 /// Bytes an atom port holds when the plugin does not ask for more.
 const ATOM_BYTES: usize = 16 * 1024;
 /// `patch:writable` parameters that change in one block; a block with more loses the rest.
 const BLOCK_SETS: usize = 256;
 const PATCH_BIT: u32 = 1 << 31;
+/// The largest message a window sends its plugin in one piece; larger ones are dropped.
+const UI_ATOM_BYTES: usize = 2048;
+/// The rings between a window and its plugin.
+const FROM_UI_BYTES: usize = 64 * 1024;
+const TO_UI_BYTES: usize = 256 * 1024;
+/// A parameter with more steps than this has no list of their texts.
+const MOST_LABELS: u32 = 128;
 
 struct World {
     world: livi::World,
@@ -171,7 +191,7 @@ pub fn list(bundle: &Path) -> Result<Vec<Candidate>, String> {
     Ok(runnable)
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Range {
     Float,
     Double,
@@ -197,6 +217,9 @@ struct Param {
     default: f64,
     shape: ParamShape,
     automatable: bool,
+    /// Not for a person: the plugin says so (`notOnGUI`), or it is the host's own switch
+    /// (`lv2:enabled`, `lv2:freeWheeling`). The plugin's window may still write it.
+    hidden: bool,
     /// Values with names of their own.
     points: Vec<(f64, String)>,
 }
@@ -233,6 +256,52 @@ impl Param {
             text.push_str(&self.unit);
         }
         text
+    }
+
+    /// The text of every step, for a parameter with few enough.
+    fn labels(&self) -> Vec<String> {
+        match self.shape {
+            ParamShape::Stepped { steps } if steps <= MOST_LABELS => (0..steps)
+                .map(|step| self.text(f64::from(step) / f64::from(steps - 1)))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The value a typed text stands for: the name of one of its values, on and off for a
+    /// switch, or a number in the parameter's own unit.
+    fn read(&self, text: &str) -> Option<Read> {
+        let text = text.trim();
+        let exact = |plain: f64| Read {
+            value: self.normal(plain),
+            clamped: Some(false),
+        };
+        if let Some((plain, _)) =
+            (self.points.iter()).find(|(_, name)| name.eq_ignore_ascii_case(text))
+        {
+            return Some(exact(*plain));
+        }
+        if self.shape == ParamShape::Toggle {
+            if text.eq_ignore_ascii_case("on") {
+                return Some(exact(self.max));
+            }
+            if text.eq_ignore_ascii_case("off") {
+                return Some(exact(self.min));
+            }
+        }
+        let plain = leading_number(text)?;
+        if plain.is_nan() {
+            return None;
+        }
+        let slack = (self.max - self.min) * 1e-9;
+        Some(Read {
+            value: if plain == f64::INFINITY {
+                1.0
+            } else {
+                self.normal(plain)
+            },
+            clamped: Some(plain < self.min - slack || plain > self.max + slack),
+        })
     }
 }
 
@@ -284,12 +353,44 @@ fn unit_symbol(world: &World, subject: &lilv::node::Node) -> String {
         .map_or(String::new(), |(_, symbol)| symbol.to_string())
 }
 
-fn group_name(world: &World, subject: &lilv::node::Node) -> Option<String> {
-    let group = world.get(subject, GROUP)?;
-    world
-        .text(&group, &format!("{LV2}name"))
-        .or_else(|| world.text(&group, &format!("{RDFS}label")))
-        .filter(|name| !name.is_empty())
+/// The name of the group a port or a parameter is shown under: of a tree of groups, the one
+/// right below the tree's root. What sits in the root itself is in no group (Surge XT has one
+/// root, "Root", with fourteen groups in it).
+fn group_name(
+    world: &World,
+    subject: &lilv::node::Node,
+    names: &mut HashMap<String, Option<String>>,
+) -> Option<String> {
+    let mut group = world.get(subject, GROUP)?;
+    let uri = group.as_uri()?.to_string();
+    if let Some(name) = names.get(&uri) {
+        return name.clone();
+    }
+    let mut below_root = None;
+    for _ in 0..MOST_GROUPS {
+        let Some(parent) = world.get(&group, SUB_GROUP_OF) else {
+            break;
+        };
+        below_root = Some(group);
+        group = parent;
+    }
+    let is_root = |group: &lilv::node::Node| {
+        let children = (world.world.raw()).find_nodes(None, &world.uri(SUB_GROUP_OF), Some(group));
+        children.count() > 0
+    };
+    let named = match below_root {
+        Some(group) => Some(group),
+        None if is_root(&group) => None,
+        None => Some(group),
+    };
+    let name = named.and_then(|group| {
+        world
+            .text(&group, &format!("{LV2}name"))
+            .or_else(|| world.text(&group, &format!("{RDFS}label")))
+            .filter(|name| !name.is_empty())
+    });
+    names.insert(uri, name.clone());
+    name
 }
 
 /// What the plugin's description says of its ports and parameters.
@@ -305,6 +406,13 @@ struct Layout {
     /// plugin's main sound (left, right).
     main_in: Vec<usize>,
     main_out: Vec<usize>,
+    /// The port numbers of the atom inputs, of the atom outputs and of the control outputs,
+    /// each in the order livi has them.
+    atom_in_ports: Vec<u32>,
+    atom_out_ports: Vec<u32>,
+    control_out_ports: Vec<u32>,
+    /// Every port's number by its symbol.
+    symbols: HashMap<CString, u32>,
 }
 
 /// Which of the audio ports of one direction are the main ones: not a side chain, in the same
@@ -344,13 +452,11 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
             .is_some_and(|d| d.as_uri() == Some(&format!("{LV2}{what}")))
     };
     let mut params = Vec::new();
+    let mut groups = HashMap::new();
     for port in plugin.ports_with_type(PortType::ControlInput) {
         let Some(lilv_port) = raw.port_by_index(port.index.0) else {
             continue;
         };
-        if has(&lilv_port, NOT_ON_GUI) {
-            continue;
-        }
         let (min, max) = (
             f64::from(port.min_value.unwrap_or(0.0)),
             f64::from(port.max_value.unwrap_or(1.0)),
@@ -374,19 +480,19 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
             })
             .collect();
         let subject = lilv_port.node();
+        let hosts_own = designated(&lilv_port, "enabled") || designated(&lilv_port, "freeWheeling");
         params.push(Param {
             id: port.index.0 as u32,
             target: Target::Port(port.index),
             name: port.name.clone(),
-            group: group_name(world, &subject),
+            group: group_name(world, &subject, &mut groups),
             unit: unit_symbol(world, &subject),
             min,
             max,
             default: f64::from(port.default_value),
             shape,
-            // `lv2:enabled` and `lv2:freeWheeling` are the host's switches, not a person's.
-            automatable: !designated(&lilv_port, "enabled")
-                && !designated(&lilv_port, "freeWheeling"),
+            automatable: !hosts_own,
+            hidden: hosts_own || has(&lilv_port, NOT_ON_GUI),
             points,
         });
     }
@@ -431,7 +537,7 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
                 range,
             },
             name: world.text(&node, &format!("{RDFS}label")).unwrap_or(uri),
-            group: group_name(world, &node),
+            group: group_name(world, &node, &mut groups),
             unit: unit_symbol(world, &node),
             min,
             max,
@@ -442,6 +548,7 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
                 Range::Float | Range::Double => ParamShape::Continuous,
             },
             automatable: true,
+            hidden: false,
             points: Vec::new(),
         });
     }
@@ -454,6 +561,17 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
             .map_or(0, |n| n.max(0) as usize);
         asked.max(ATOM_BYTES)
     };
+    let numbers = |kind: PortType| -> Vec<u32> {
+        (plugin.ports_with_type(kind))
+            .map(|port| port.index.0 as u32)
+            .collect()
+    };
+    let symbols = (plugin.ports())
+        .filter_map(|port| {
+            let symbol = raw.port_by_index(port.index.0)?.symbol()?;
+            Some((CString::new(symbol.as_str()?).ok()?, port.index.0 as u32))
+        })
+        .collect();
     let (mut midi_in, mut patch_in) = (None, None);
     let mut atom_in_bytes = Vec::new();
     for (at, port) in plugin
@@ -489,7 +607,88 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
         latency_port: raw.latency_port_index().map(PortIndex),
         main_in: main_ports(world, plugin, PortType::AudioInput),
         main_out: main_ports(world, plugin, PortType::AudioOutput),
+        atom_in_ports: numbers(PortType::AtomSequenceInput),
+        atom_out_ports: numbers(PortType::AtomSequenceOutput),
+        control_out_ports: numbers(PortType::ControlOutput),
+        symbols,
     }
+}
+
+/// `/usr/lib/lv2/Surge XT.lv2/x.so` from the `file:` URI lilv names a file by.
+fn file_path(uri: &str) -> Option<PathBuf> {
+    let path = uri.strip_prefix("file://")?;
+    let mut bytes = Vec::with_capacity(path.len());
+    let mut rest = path.as_bytes();
+    while let Some((&byte, after)) = rest.split_first() {
+        let hex = (byte == b'%')
+            .then(|| after.get(..2))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok());
+        match hex {
+            Some(byte) => {
+                bytes.push(byte);
+                rest = &after[2..];
+            }
+            None => {
+                bytes.push(byte);
+                rest = after;
+            }
+        }
+    }
+    Some(std::ffi::OsString::from_vec(bytes).into())
+}
+
+/// The files of the window meloet opens for a plugin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UiFiles {
+    uri: String,
+    bundle: PathBuf,
+    binary: PathBuf,
+}
+
+/// Whether the plugin has a window, and the one meloet can open if it has: an `ui:X11UI`
+/// that needs nothing meloet does not hand it.
+fn window(world: &World, raw: &lilv::plugin::Plugin) -> (EditorKind, Option<UiFiles>) {
+    let Some(uis) = raw.uis() else {
+        return (EditorKind::None, None);
+    };
+    let x11 = world.uri(&format!("{UI}X11UI"));
+    let required = world.uri(&format!("{LV2}requiredFeature"));
+    let mut any = false;
+    for ui in uis.iter() {
+        any = true;
+        if !ui.is_a(&x11) {
+            continue;
+        }
+        let subject = ui.uri();
+        let needs = world
+            .world
+            .raw()
+            .find_nodes(Some(&subject), &required, None);
+        let has_all = (needs.iter())
+            .all(|feature| (feature.as_uri()).is_some_and(|uri| ui::FEATURES.contains(&uri)));
+        let path = |node: Option<lilv::node::Node>| file_path(node?.as_uri()?);
+        if let (true, Some(uri), Some(bundle), Some(binary)) = (
+            has_all,
+            subject.as_uri(),
+            path(ui.bundle_uri()),
+            path(ui.binary_uri()),
+        ) && binary.is_file()
+        {
+            let files = UiFiles {
+                uri: uri.to_string(),
+                bundle,
+                binary,
+            };
+            return (EditorKind::X11, Some(files));
+        }
+    }
+    let kind = if any {
+        EditorKind::Unsupported
+    } else {
+        EditorKind::None
+    };
+    (kind, None)
 }
 
 /// Reads one plugin of [`list`]; `Err` when that plugin cannot be read. The plugin is made
@@ -521,19 +720,7 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
     {
         kind = PluginKind::Instrument(InstrumentCategory::Other);
     }
-    let editor = match raw.uis() {
-        None => EditorKind::None,
-        Some(uis) => {
-            let x11 = lv2_world.uri(&format!("{UI}X11UI"));
-            if uis.iter().any(|ui| ui.is_a(&x11)) {
-                EditorKind::X11
-            } else if uis.count() > 0 {
-                EditorKind::Unsupported
-            } else {
-                EditorKind::None
-            }
-        }
-    };
+    let (editor, _) = window(&lv2_world, raw);
     let whole = |predicate: &str| {
         raw.value(&lv2_world.uri(&format!("{LV2}{predicate}")))
             .iter()
@@ -561,7 +748,7 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
         sample_rate: 48_000.0,
         max_frames: 256,
     };
-    let (_shared, mut processor) = instantiate(&lv2_world, &plugin, activation)?;
+    let (_shared, mut processor, _link) = instantiate(&lv2_world, &plugin, activation)?;
     info.audio_inputs = processor.main_in.len() as u32;
     info.audio_outputs = processor.main_out.len() as u32;
     let silence = [0.0f32; 256];
@@ -662,9 +849,21 @@ struct Shared {
     by_urid: HashMap<u32, usize>,
     /// Each parameter's value, 0..=1, as last set or as the plugin last said (f64 bits).
     values: Box<[AtomicU64]>,
+    /// Whether that value is the plugin's: a control port's always is, a `patch` parameter's
+    /// once it was set or the plugin spoke of it.
+    known: Box<[AtomicBool]>,
     /// The next block asks the plugin for all its `patch` properties.
     ask_all: AtomicBool,
     latency: AtomicU32,
+    /// A window is open: the audio thread keeps `control_out` and the ring to the window
+    /// filled.
+    ui_open: AtomicBool,
+    /// Every control output: its port number and its value as of the last block (f32 bits).
+    control_out: Box<[(u32, AtomicU32)]>,
+    /// The plugin's `LV2_Handle` and its `extension_data`, for its window.
+    handle: *mut c_void,
+    extension_data: Option<ui::ExtensionData>,
+    sample_rate: f64,
 }
 
 // SAFETY: `instance` is reached only inside the gate, by one thread at a time; everything else
@@ -679,6 +878,17 @@ impl Shared {
 
     fn set_value(&self, at: usize, normal: f64) {
         self.values[at].store(normal.to_bits(), Relaxed);
+        self.known[at].store(true, Relaxed);
+    }
+
+    fn now(&self, at: usize) -> ParamNow {
+        let param = &self.params[at];
+        let value = self.known[at].load(Relaxed).then(|| self.value(at));
+        ParamNow {
+            id: param.id,
+            value,
+            text: value.map(|value| param.text(value)),
+        }
     }
 }
 
@@ -686,7 +896,7 @@ fn instantiate(
     world: &World,
     plugin: &livi::Plugin,
     activation: Activation,
-) -> Result<(Arc<Shared>, Lv2Processor), String> {
+) -> Result<(Arc<Shared>, Lv2Processor, Box<Link>), String> {
     let features = world.features(activation.max_frames)?;
     let layout = layout(world, plugin, &features);
     // SAFETY: running a plugin's code is what this process is for; livi's own conditions (one
@@ -696,6 +906,17 @@ fn instantiate(
         .map_err(|e| format!("instantiate: {e:?}"))?;
     let counts = instance.port_counts();
     let frames = activation.max_frames;
+    let handle = instance.raw().instance().handle().cast::<c_void>();
+    let extension_data =
+        (instance.raw().instance().descriptor()).and_then(|descriptor| descriptor.extension_data);
+    let known = (layout.params.iter())
+        .map(|param| AtomicBool::new(matches!(param.target, Target::Port(_))))
+        .collect();
+    let control_out = (layout.control_out_ports.iter())
+        .map(|&port| (port, AtomicU32::new(0)))
+        .collect();
+    let (to_dsp, from_ui) = rtrb::RingBuffer::new(FROM_UI_BYTES);
+    let (to_ui, from_dsp) = rtrb::RingBuffer::new(TO_UI_BYTES);
     let values: Box<[AtomicU64]> = layout
         .params
         .iter()
@@ -725,9 +946,27 @@ fn instantiate(
         by_id,
         by_urid,
         values,
+        known,
         ask_all: AtomicBool::new(layout.patch_in.is_some()),
         latency: AtomicU32::new(0),
+        ui_open: AtomicBool::new(false),
+        control_out,
+        handle,
+        extension_data,
+        sample_rate: activation.sample_rate,
         features: features.clone(),
+    });
+    let link = Box::new(Link {
+        shared: shared.clone(),
+        urids: Urids::new(&features),
+        event_transfer: features.urid(c"http://lv2plug.in/ns/ext/atom#eventTransfer"),
+        symbols: layout.symbols,
+        to_dsp: RefCell::new(to_dsp),
+        from_dsp: RefCell::new(from_dsp),
+        said: RefCell::new(Vec::new()),
+        asked: Cell::new(None),
+        shown: shared.values.iter().map(|_| Cell::new(0)).collect(),
+        out_shown: shared.control_out.iter().map(|_| Cell::new(0)).collect(),
     });
     let sequence = |bytes: &usize| LV2AtomSequence::new(&features, *bytes);
     let processor = Lv2Processor {
@@ -749,30 +988,71 @@ fn instantiate(
         cv_out: vec![0.0; frames * counts.cv_outputs].into_boxed_slice(),
         sets: Vec::with_capacity(BLOCK_SETS),
         quiet: false,
+        atom_in_ports: layout.atom_in_ports,
+        atom_out_ports: layout.atom_out_ports,
+        from_ui,
+        to_ui,
+        from_ui_atom: vec![0; UI_ATOM_BYTES + 8].into_boxed_slice(),
     };
-    Ok((shared, processor))
+    Ok((shared, processor, link))
 }
 
 pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Loaded, String> {
+    load_as(key, bundle, activation, false)
+}
+
+/// As [`load`], and as if the plugin's window were open and had just sent the plugin a few
+/// messages: the audio thread then does everything it does for a window.
+#[cfg(test)]
+pub fn load_with_window(
+    key: &PluginKey,
+    bundle: &Path,
+    activation: Activation,
+) -> Result<Loaded, String> {
+    load_as(key, bundle, activation, true)
+}
+
+fn load_as(
+    key: &PluginKey,
+    bundle: &Path,
+    activation: Activation,
+    as_with_window: bool,
+) -> Result<Loaded, String> {
     let lv2_world = world(bundle)?;
     let plugin = lv2_world
         .world
         .plugin_by_uri(key.id())
         .ok_or_else(|| format!("no plugin {} in the bundle", key.id()))?;
-    let (shared, processor) = instantiate(&lv2_world, &plugin, activation)?;
+    let (shared, processor, link) = instantiate(&lv2_world, &plugin, activation)?;
+    if as_with_window {
+        shared.ui_open.store(true, Relaxed);
+        if let Some(&port) = processor.atom_in_ports.first() {
+            let mut atom = Vec::new();
+            atom.extend_from_slice(&4u32.to_ne_bytes());
+            atom.extend_from_slice(&link.urids.float.to_ne_bytes());
+            atom.extend_from_slice(&1.0f32.to_ne_bytes());
+            for _ in 0..8 {
+                link.wrote_atom(port, &atom);
+            }
+        }
+    }
+    let (editor, window) = window(&lv2_world, plugin.raw());
     let plugin = LoadedPlugin {
         latency: 0,
         audio_inputs: processor.main_in.len() as u32,
         audio_outputs: processor.main_out.len() as u32,
-        // The windows are not opened yet.
-        editor: false,
+        editor,
     };
     Ok(Loaded {
         plugin,
         controller: Box::new(Lv2Controller {
+            ui: None,
+            link,
             world: lv2_world,
             shared,
             told_latency: 0,
+            plugin_uri: key.id().to_string(),
+            window,
         }),
         processor: Box::new(processor),
     })
@@ -802,6 +1082,14 @@ struct Lv2Processor {
     sets: Vec<(usize, usize)>,
     /// Send "all sound off" with the next block.
     quiet: bool,
+    atom_in_ports: Vec<u32>,
+    atom_out_ports: Vec<u32>,
+    /// Messages of the plugin's window, each as: port (u32), length (u32), the atom.
+    from_ui: rtrb::Consumer<u8>,
+    /// What the plugin sends out while a window is open, in the same form.
+    to_ui: rtrb::Producer<u8>,
+    /// One message of the window on its way into a port.
+    from_ui_atom: Box<[u8]>,
 }
 
 impl Lv2Processor {
@@ -881,6 +1169,58 @@ impl Lv2Processor {
         let _ = self.atom_in[port].push_event(&event);
     }
 
+    /// Puts the messages the plugin's window sent since the last block into their ports.
+    fn hear_window(&mut self) {
+        let word = |bytes: &[u8]| u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        while self.from_ui.slots() >= 8 {
+            let mut head = [0u8; 8];
+            if self.from_ui.pop_entire_slice(&mut head).is_err() {
+                return;
+            }
+            let (port, len) = (word(&head), word(&head[4..]) as usize);
+            let fits = (8..=self.from_ui_atom.len()).contains(&len);
+            if !fits || (self.from_ui.pop_entire_slice(&mut self.from_ui_atom[..len])).is_err() {
+                // The ring is out of step with its writer; what is in it is of no use.
+                while self.from_ui.pop().is_ok() {}
+                return;
+            }
+            let atom = &self.from_ui_atom[..len];
+            let (size, kind) = (word(atom) as usize, word(&atom[4..]));
+            let (Some(at), Some(body)) = (
+                self.atom_in_ports.iter().position(|p| *p == port),
+                atom.get(8..8 + size),
+            ) else {
+                continue;
+            };
+            if let Ok(event) = LV2AtomEventBuilder::<UI_ATOM_BYTES>::new(0, kind, body) {
+                let _ = self.atom_in[at].push_event(&event);
+            }
+        }
+    }
+
+    /// Copies what the plugin's window shows of this block: the control outputs, and every
+    /// message the plugin sent.
+    fn tell_window(&mut self, instance: &livi::Instance) {
+        for (port, value) in self.shared.control_out.iter() {
+            if let Some(now) = instance.control_output(PortIndex(*port as usize)) {
+                value.store(now.to_bits(), Relaxed);
+            }
+        }
+        for (sequence, port) in self.atom_out.iter().zip(&self.atom_out_ports) {
+            for event in sequence.iter() {
+                let size = event.data.len() as u32;
+                // A full ring loses the message: the window draws a little late.
+                let Ok(chunk) = self.to_ui.write_chunk_uninit(16 + event.data.len()) else {
+                    return;
+                };
+                let head = [*port, size + 8, size, event.event.body.type_];
+                chunk.fill_from_iter(
+                    (head.into_iter().flat_map(u32::to_ne_bytes)).chain(event.data.iter().copied()),
+                );
+            }
+        }
+    }
+
     /// One property the plugin says the value of.
     fn heard(shared: &Shared, urid: u32, plain: f64, sink: &mut super::EventSink) {
         if let Some(&at) = shared.by_urid.get(&urid) {
@@ -954,6 +1294,7 @@ impl Processor for Lv2Processor {
         if shared.ask_all.swap(false, Relaxed) {
             self.ask_all();
         }
+        self.hear_window();
         if std::mem::take(&mut self.quiet) {
             // All sound off, all notes off.
             self.midi(0, &[0xb0, 120, 0]);
@@ -1050,6 +1391,9 @@ impl Processor for Lv2Processor {
         }
         if ran {
             self.hear(block.sink);
+            if shared.ui_open.load(Relaxed) {
+                self.tell_window(instance);
+            }
             if let Some(frames) = self.latency_port.and_then(|p| instance.control_output(p))
                 && frames.is_finite()
                 && frames >= 0.0
@@ -1070,33 +1414,237 @@ impl Processor for Lv2Processor {
     }
 }
 
+/// What a plugin's window calls back into. It stays where it is for as long as the plugin:
+/// the window keeps a pointer to it.
+struct Link {
+    shared: Arc<Shared>,
+    urids: Urids,
+    event_transfer: u32,
+    symbols: HashMap<CString, u32>,
+    to_dsp: RefCell<rtrb::Producer<u8>>,
+    from_dsp: RefCell<rtrb::Consumer<u8>>,
+    /// What the person did in the window since the main thread last asked.
+    said: RefCell<Vec<Said>>,
+    /// The size the window last asked for.
+    asked: Cell<Option<(u32, u32)>>,
+    /// What the window was last told of each parameter (as `Shared::values`) and of each
+    /// control output (as `Shared::control_out`).
+    shown: Box<[Cell<u64>]>,
+    out_shown: Box<[Cell<u32>]>,
+}
+
+impl Link {
+    /// The parameter a port of the plugin is, with its place.
+    fn port_param(&self, port: u32) -> Option<(usize, &Param)> {
+        let &at = self.shared.by_id.get(&port)?;
+        let param = &self.shared.params[at];
+        matches!(param.target, Target::Port(_)).then_some((at, param))
+    }
+
+    fn moved(&self, at: usize, normal: f64) {
+        self.shared.set_value(at, normal);
+        self.shown[at].set(normal.to_bits());
+        (self.said.borrow_mut()).push(Said::ParamChanged(self.shared.params[at].id, normal));
+    }
+
+    /// The window wrote one atom to a port. A `patch:Set` of a parameter is a parameter
+    /// change like any other; everything else goes to the plugin as it is.
+    fn wrote_atom(&self, port: u32, atom: &[u8]) {
+        let word = |at: usize| Some(u32::from_ne_bytes(*atom.get(at..)?.first_chunk::<4>()?));
+        let (Some(size), Some(kind)) = (word(0), word(4)) else {
+            return;
+        };
+        let Some(body) = atom.get(8..8 + size as usize) else {
+            return;
+        };
+        let urids = &self.urids;
+        if (kind == urids.object || kind == urids.blank) && object_type(body) == Some(urids.set) {
+            let (mut property, mut value) = (None, None);
+            for (key, kind, body) in properties(body) {
+                if key == urids.property && kind == urids.urid {
+                    property = body.first_chunk::<4>().map(|b| u32::from_ne_bytes(*b));
+                } else if key == urids.value {
+                    value = urids.number(kind, body);
+                }
+            }
+            if let (Some(property), Some(plain)) = (property, value)
+                && let Some(&at) = self.shared.by_urid.get(&property)
+            {
+                self.moved(at, self.shared.params[at].normal(plain));
+                return;
+            }
+        }
+        if body.len() > UI_ATOM_BYTES {
+            return;
+        }
+        let mut frame = Vec::with_capacity(16 + body.len());
+        frame.extend_from_slice(&port.to_ne_bytes());
+        frame.extend_from_slice(&(size + 8).to_ne_bytes());
+        frame.extend_from_slice(&atom[..8 + body.len()]);
+        // A full ring loses the message.
+        let _ = self.to_dsp.borrow_mut().push_entire_slice(&frame);
+    }
+}
+
+/// `LV2UI_Write_Function`: `controller` is the plugin's [`Link`].
+unsafe extern "C" fn ui_write(
+    controller: *mut c_void,
+    port: u32,
+    size: u32,
+    protocol: u32,
+    buffer: *const c_void,
+) {
+    if controller.is_null() || buffer.is_null() {
+        return;
+    }
+    // SAFETY: the handle given to the window is its plugin's `Link`, which outlives it; the
+    // buffer has `size` bytes, as the window says.
+    let (link, bytes) = unsafe {
+        (
+            &*controller.cast::<Link>(),
+            std::slice::from_raw_parts(buffer.cast::<u8>(), size as usize),
+        )
+    };
+    if protocol == 0 {
+        if let (Ok(bytes), Some((at, param))) = (<[u8; 4]>::try_from(bytes), link.port_param(port))
+        {
+            let plain = f32::from_ne_bytes(bytes);
+            if plain.is_finite() {
+                link.moved(at, param.normal(f64::from(plain)));
+            }
+        }
+    } else if protocol == link.event_transfer {
+        link.wrote_atom(port, bytes);
+    }
+}
+
+/// `LV2UI_Resize::ui_resize`.
+unsafe extern "C" fn ui_resize(handle: *mut c_void, width: c_int, height: c_int) -> c_int {
+    if handle.is_null() || width < 1 || height < 1 {
+        return 1;
+    }
+    // SAFETY: as in `ui_write`.
+    let link = unsafe { &*handle.cast::<Link>() };
+    link.asked.set(Some((width as u32, height as u32)));
+    0
+}
+
+/// `LV2UI_Touch::touch`.
+unsafe extern "C" fn ui_touch(handle: *mut c_void, port: u32, grabbed: bool) {
+    if handle.is_null() {
+        return;
+    }
+    // SAFETY: as in `ui_write`.
+    let link = unsafe { &*handle.cast::<Link>() };
+    if let Some((_, param)) = link.port_param(port)
+        && !param.hidden
+    {
+        link.said.borrow_mut().push(if grabbed {
+            Said::ParamBegin(param.id)
+        } else {
+            Said::ParamEnd(param.id)
+        });
+    }
+}
+
+/// `LV2UI_Port_Map::port_index`.
+unsafe extern "C" fn ui_port_index(handle: *mut c_void, symbol: *const c_char) -> u32 {
+    if handle.is_null() || symbol.is_null() {
+        return ui::NO_PORT;
+    }
+    // SAFETY: as in `ui_write`; a symbol is a C string.
+    let (link, symbol) = unsafe { (&*handle.cast::<Link>(), CStr::from_ptr(symbol)) };
+    link.symbols.get(symbol).copied().unwrap_or(ui::NO_PORT)
+}
+
 struct Lv2Controller {
+    // Before `link` and `shared`: the window calls into both until it is gone.
+    ui: Option<ui::Ui>,
+    link: Box<Link>,
     /// Keeps the bundle's description for the state calls.
     world: Rc<World>,
     shared: Arc<Shared>,
     told_latency: u32,
+    plugin_uri: String,
+    /// The window meloet can open, if the plugin has one.
+    window: Option<UiFiles>,
+}
+
+impl Lv2Controller {
+    /// Tells the window what changed in the plugin since it was last told.
+    fn show(&self, ui: &ui::Ui) {
+        let (shared, link) = (&self.shared, &self.link);
+        for (at, param) in shared.params.iter().enumerate() {
+            let Target::Port(index) = param.target else {
+                continue;
+            };
+            let bits = shared.values[at].load(Relaxed);
+            if link.shown[at].replace(bits) != bits {
+                let plain = param.plain(f64::from_bits(bits)) as f32;
+                ui.port_event(index.0 as u32, 0, &plain.to_ne_bytes());
+            }
+        }
+        for ((port, value), shown) in shared.control_out.iter().zip(&link.out_shown) {
+            let bits = value.load(Relaxed);
+            if shown.replace(bits) != bits {
+                ui.port_event(*port, 0, &bits.to_ne_bytes());
+            }
+        }
+        let mut atom = Vec::new();
+        loop {
+            let port = {
+                let mut from = link.from_dsp.borrow_mut();
+                let mut head = [0u8; 8];
+                if from.slots() < 8 || from.pop_entire_slice(&mut head).is_err() {
+                    break;
+                }
+                let word = |at: usize| u32::from_ne_bytes([0, 1, 2, 3].map(|i| head[at + i]));
+                atom.resize(word(4) as usize, 0);
+                if from.pop_entire_slice(&mut atom).is_err() {
+                    break;
+                }
+                word(0)
+            };
+            ui.port_event(port, link.event_transfer, &atom);
+        }
+    }
 }
 
 impl Controller for Lv2Controller {
     fn params(&mut self) -> Vec<ParamInfo> {
-        self.shared
-            .params
-            .iter()
-            .map(|param| ParamInfo {
-                id: param.id,
-                name: param.name.clone(),
-                group: param.group.clone(),
-                default: param.normal(param.default),
-                shape: param.shape,
-                automatable: param.automatable,
+        let shared = &self.shared;
+        (shared.params.iter().enumerate())
+            .filter(|(_, param)| !param.hidden)
+            .map(|(at, param)| {
+                let now = shared.now(at);
+                ParamInfo {
+                    id: param.id,
+                    name: param.name.clone(),
+                    group: param.group.clone(),
+                    default: param.normal(param.default),
+                    shape: param.shape,
+                    labels: param.labels(),
+                    automatable: param.automatable,
+                    value: now.value,
+                    text: now.text,
+                }
             })
             .collect()
     }
 
-    fn param(&mut self, id: u32) -> Option<(f64, String)> {
+    fn param(&mut self, id: u32) -> Option<ParamNow> {
         let &at = self.shared.by_id.get(&id)?;
-        let value = self.shared.value(at);
-        Some((value, self.shared.params[at].text(value)))
+        Some(self.shared.now(at))
+    }
+
+    fn text(&mut self, id: u32, value: f64) -> Option<String> {
+        let &at = self.shared.by_id.get(&id)?;
+        Some(self.shared.params[at].text(value))
+    }
+
+    fn read_text(&mut self, id: u32, text: &str) -> Option<Read> {
+        let &at = self.shared.by_id.get(&id)?;
+        self.shared.params[at].read(text)
     }
 
     fn set_param(&mut self, id: u32, value: f64) {
@@ -1124,8 +1672,11 @@ impl Controller for Lv2Controller {
             .to_string(STATE_URI)
             .map_err(|e| format!("state: {e:?}"))?;
         let shared = &self.shared;
+        // Only what is known: a value nobody knows is not made known by being saved.
         let kept: Vec<(u32, f64)> = (shared.params.iter().enumerate())
-            .filter(|(_, param)| matches!(param.target, Target::Patch { .. }))
+            .filter(|(at, param)| {
+                matches!(param.target, Target::Patch { .. }) && shared.known[*at].load(Relaxed)
+            })
             .map(|(at, param)| (param.id, shared.value(at)))
             .collect();
         let mut bytes = Vec::with_capacity(8 + kept.len() * 12 + text.len());
@@ -1161,10 +1712,14 @@ impl Controller for Lv2Controller {
             .restore_state(&state)
             .map_err(|e| format!("state: {e:?}"))?;
         for (at, param) in self.shared.params.iter().enumerate() {
-            if let Target::Port(index) = param.target
-                && let Some(plain) = instance.control_input(index)
-            {
-                self.shared.set_value(at, param.normal(f64::from(plain)));
+            match param.target {
+                Target::Port(index) => {
+                    if let Some(plain) = instance.control_input(index) {
+                        self.shared.set_value(at, param.normal(f64::from(plain)));
+                    }
+                }
+                // Whatever the state made it: not known until the state or the plugin says.
+                Target::Patch { .. } => self.shared.known[at].store(false, Relaxed),
             }
         }
         for (id, value) in kept.as_chunks::<12>().0.iter().map(|one| {
@@ -1187,19 +1742,98 @@ impl Controller for Lv2Controller {
         Ok(())
     }
 
-    fn open_editor(&mut self, _parent: u32) -> Result<(u32, u32), String> {
-        Err("no windows yet".into())
+    fn open_editor(&mut self, parent: u32) -> Result<Opened, String> {
+        self.close_editor();
+        let files = self.window.as_ref().ok_or("no window meloet can open")?;
+        let (shared, link) = (&self.shared, &self.link);
+        let features = &shared.features;
+        let no_worker = lv2_raw::LV2Feature {
+            uri: c"urn:meloet:none".as_ptr(),
+            data: std::ptr::null_mut(),
+        };
+        let mut urid = features.iter_features(&no_worker).filter(|feature| {
+            // SAFETY: a feature's URI is a C string.
+            let uri = unsafe { CStr::from_ptr(feature.uri) }.to_bytes();
+            uri == b"http://lv2plug.in/ns/ext/urid#map"
+                || uri == b"http://lv2plug.in/ns/ext/urid#unmap"
+        });
+        let (Some(map), Some(unmap)) = (urid.next(), urid.next()) else {
+            return Err("no URID map".into());
+        };
+        let plugin = ui::Plugin {
+            uri: &self.plugin_uri,
+            instance: shared.handle,
+            extension_data: shared.extension_data,
+            urid: [map, unmap],
+            sample_rate: shared.sample_rate as f32,
+            option_urids: [
+                features.urid(c"http://lv2plug.in/ns/ext/parameters#sampleRate"),
+                features.urid(c"http://lv2plug.in/ns/extensions/ui#updateRate"),
+                features.urid(c"http://lv2plug.in/ns/ext/atom#Float"),
+            ],
+        };
+        let callbacks = ui::Callbacks {
+            handle: (&raw const **link).cast_mut().cast(),
+            write: ui_write,
+            resize: ui_resize,
+            touch: ui_touch,
+            port_index: ui_port_index,
+        };
+        link.asked.set(None);
+        // What the plugin sent while no window was there is old.
+        while link.from_dsp.borrow_mut().pop().is_ok() {}
+        // SAFETY: the instance lives in `shared` and the callbacks' handle is `link`; both
+        // are dropped after `ui`.
+        let ui = unsafe {
+            ui::Ui::open(
+                &files.uri,
+                &files.bundle,
+                &files.binary,
+                parent,
+                &plugin,
+                &callbacks,
+            )
+        }?;
+        // The window starts from every port's value, whatever it was told the last time.
+        for (at, shown) in link.shown.iter().enumerate() {
+            shown.set(!shared.values[at].load(Relaxed));
+        }
+        for ((_, value), shown) in shared.control_out.iter().zip(&link.out_shown) {
+            shown.set(!value.load(Relaxed));
+        }
+        shared.ui_open.store(true, Relaxed);
+        self.show(&ui);
+        self.ui = Some(ui);
+        Ok(Opened {
+            size: link.asked.take(),
+            resizable: false,
+        })
     }
 
-    fn close_editor(&mut self) {}
+    fn close_editor(&mut self) {
+        self.shared.ui_open.store(false, Relaxed);
+        self.ui = None;
+        self.link.asked.set(None);
+    }
 
-    fn idle(&mut self) {}
+    fn idle(&mut self) {
+        if let Some(ui) = &self.ui {
+            self.show(ui);
+            if !ui.idle() {
+                self.link.said.borrow_mut().push(Said::Closed);
+            }
+        }
+    }
 
     fn poll(&mut self, said: &mut Vec<Said>) {
         let latency = self.shared.latency.load(Relaxed);
         if latency != self.told_latency {
             self.told_latency = latency;
             said.push(Said::Latency(latency));
+        }
+        said.append(&mut self.link.said.borrow_mut());
+        if let Some((width, height)) = self.link.asked.take() {
+            said.push(Said::Resized(width, height));
         }
     }
 }

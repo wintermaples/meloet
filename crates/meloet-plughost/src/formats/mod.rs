@@ -17,12 +17,15 @@ pub mod fake;
 pub mod lv2;
 pub mod vst3;
 
+/// What plugins asked the main thread to watch and to call. Only VST3 has such a thing.
+pub use vst3::runloop;
+
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering::SeqCst};
 use std::time::{Duration, Instant};
 
 use meloet_plugin::ipc::{FromPlugin, ToPlugin, Transport};
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo};
+use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow};
 use meloet_plugin::{PluginFormat, PluginKey};
 
 /// What a plugin is made ready for.
@@ -98,6 +101,30 @@ pub enum Said {
     Latency(u32),
     /// Any parameter may have another value now.
     ParamsChanged,
+    /// The plugin wants its window to have this size.
+    Resized(u32, u32),
+    /// The plugin closed its window by itself.
+    Closed,
+}
+
+/// A plugin's window, just put into the X11 window it was given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Opened {
+    /// The size the plugin wants; `None` when it does not say (then the size of the window
+    /// it made inside is taken).
+    pub size: Option<(u32, u32)>,
+    /// The person may give the window another size ([`Controller::resize_editor`]).
+    pub resizable: bool,
+}
+
+/// What a typed text stands for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Read {
+    /// 0..=1.
+    pub value: f64,
+    /// Whether the text named a value outside the range; `None` when the format cannot
+    /// tell.
+    pub clamped: Option<bool>,
 }
 
 /// What a processor tells meloet during a block. Holds a fixed number of events; more are
@@ -157,23 +184,55 @@ pub trait Processor: Send {
 }
 
 /// The half of a plugin on the main thread.
-// The windows are not opened yet.
-#[allow(dead_code)]
 pub trait Controller {
+    /// Every parameter a person can move, with its value now.
     fn params(&mut self) -> Vec<ParamInfo>;
-    /// The value and the text the plugin shows for it; `None` for a parameter it does not have.
-    fn param(&mut self, id: u32) -> Option<(f64, String)>;
+    /// The value now and the text the plugin shows for it; `None` for a parameter it does
+    /// not have.
+    fn param(&mut self, id: u32) -> Option<ParamNow>;
+    /// The text the plugin shows for a value, 0..=1.
+    fn text(&mut self, id: u32, value: f64) -> Option<String>;
+    /// The value a typed text stands for; `None` when it cannot be read.
+    fn read_text(&mut self, id: u32, text: &str) -> Option<Read>;
     fn set_param(&mut self, id: u32, value: f64);
     fn save_state(&mut self) -> Result<Vec<u8>, String>;
     fn load_state(&mut self, state: &[u8]) -> Result<(), String>;
-    /// Puts the plugin's window into the X11 window `parent`; the size it wants.
-    fn open_editor(&mut self, parent: u32) -> Result<(u32, u32), String>;
+    /// Puts the plugin's window into the X11 window `parent`.
+    fn open_editor(&mut self, parent: u32) -> Result<Opened, String>;
+    /// Takes the plugin's window out again. Before `parent` goes.
     fn close_editor(&mut self);
+    /// The person gave the window this size; what the plugin makes of it.
+    fn resize_editor(&mut self, width: u32, height: u32) -> (u32, u32) {
+        (width, height)
+    }
     /// Called about 60 times a second on the main thread while a window is open.
     fn idle(&mut self);
     /// Called on the main thread many times a second and after every request: the plugin's
     /// housekeeping outside its window, and what it did by itself since the last call.
     fn poll(&mut self, said: &mut Vec<Said>);
+}
+
+/// The number a text starts with ("-12.5 dB", "+3", "−inf dB").
+pub fn leading_number(text: &str) -> Option<f64> {
+    let text = text.trim_start();
+    let (sign, rest) = match text.chars().next()? {
+        '-' | '−' => (-1.0, &text[text.chars().next()?.len_utf8()..]),
+        '+' => (1.0, &text[1..]),
+        _ => (1.0, text),
+    };
+    let rest = rest.trim_start();
+    if rest
+        .get(..3)
+        .is_some_and(|inf| inf.eq_ignore_ascii_case("inf"))
+        || rest.starts_with('∞')
+    {
+        return Some(sign * f64::INFINITY);
+    }
+    let end = rest
+        .char_indices()
+        .find(|(_, c)| !(c.is_ascii_digit() || *c == '.'))
+        .map_or(rest.len(), |(at, _)| at);
+    rest[..end].parse::<f64>().ok().map(|number| sign * number)
 }
 
 /// A plugin a bundle says it holds, before it is read. `id` is what its `PluginKey::id` will

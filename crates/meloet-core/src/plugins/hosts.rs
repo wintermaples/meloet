@@ -19,6 +19,13 @@
 //! is marked as stopped, so the engine waits for none of its slots again, and every slot it
 //! had is told as stopped with [`HostNews::Stopped`]. [`Hosts::reload`] puts such a slot into
 //! a new process, with the state remembered for it.
+//!
+//! Windows and parameters (20-13): a plugin's window is a window of its process, on that
+//! process's main thread, which is not the thread its sound runs on. Every call here is
+//! answered with a callback on the hosts' thread and none waits for a window: `open_window`
+//! is answered as soon as the process has heard it, and the window itself is told later with
+//! [`HostNews::WindowOpened`]. What the person does in a window comes as news. Parameter
+//! values are 0..=1 everywhere here, whatever the plugin's own range.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
@@ -32,9 +39,11 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use meloet_engine::{PluginBlock, PluginSlot, PluginWatch};
+pub use meloet_plugin::EditorKind;
 use meloet_plugin::PluginKey;
 use meloet_plugin::ipc::{EngineEnd, Geometry, Mapping};
 use meloet_plugin::launch::{self, PidFd};
+pub use meloet_plugin::wire::{EditorOpen, ParamNow, ParamShape, TextValue};
 use meloet_plugin::wire::{
     FromHost, LoadedPlugin, Notice, ParamInfo, Reply, Request, ToHost, WIRE_VERSION, read_frame,
     write_frame,
@@ -129,19 +138,60 @@ impl std::fmt::Display for HostError {
 
 impl std::error::Error for HostError {}
 
-/// What happens without being asked for. Told on the hosts' thread.
+/// What happens without being asked for. Told on the hosts' thread, at most one
+/// [`WATCH_TICK`] after the process said it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HostNews {
     /// The process of these plugins stopped and is gone. The engine plays silence for an
-    /// instrument and lets the sound through an effect until they are loaded again.
-    Stopped {
-        key: PluginKey,
-        slots: Vec<SlotId>,
-    },
-    Notice {
+    /// instrument and lets the sound through an effect until they are loaded again. Their
+    /// windows went with the process, without a `WindowClosed` or a `WindowLeft`; a window
+    /// that was being opened will not be told either.
+    Stopped { key: PluginKey, slots: Vec<SlotId> },
+    /// The window asked for with [`Hosts::open_window`] is on the screen. The size is in
+    /// pixels of the screen, as the plugin made it.
+    WindowOpened {
         slot: SlotId,
-        notice: Notice,
+        width: u32,
+        height: u32,
+        /// It does not fit the screen it is on.
+        larger_than_screen: bool,
     },
+    /// The window asked for with [`Hosts::open_window`] could not be made; there is none.
+    /// `message` is for the log.
+    WindowFailed { slot: SlotId, message: String },
+    /// The plugin gave its open window another size (also when the person resized a window
+    /// whose plugin allows that).
+    WindowResized {
+        slot: SlotId,
+        width: u32,
+        height: u32,
+        larger_than_screen: bool,
+    },
+    /// The person closed the window with its own close button, or the plugin closed it. Not
+    /// told after [`Hosts::close_window`] or [`Hosts::unload`]. When the person was in the
+    /// window, `WindowLeft` comes first.
+    WindowClosed { slot: SlotId },
+    /// The keyboard came to the plugin's window: the person is in the plugin now. A menu or
+    /// a dialog the plugin opens from its window counts as the window.
+    WindowEntered { slot: SlotId },
+    /// The keyboard went somewhere else. Not told when the window goes away under the
+    /// person by [`Hosts::close_window`], [`Hosts::unload`] or `Stopped`: the visit ends
+    /// with the window then.
+    WindowLeft { slot: SlotId },
+    /// The rest of what a plugin does by itself:
+    /// - `ParamBegin`, `ParamChanged`, `ParamEnd`: the person takes hold of a parameter in
+    ///   the plugin's window, moves it, lets it go. The plugin's sound has the value
+    ///   already. `ParamChanged` comes at most 30 times a second for one parameter, the last
+    ///   value before `ParamEnd` always, each with the plugin's text for the value. LV2
+    ///   windows often send no `ParamBegin` and `ParamEnd`, and may move parameters that are
+    ///   not in [`Hosts::params`] (the plugin hides them); those are to be passed over. The
+    ///   value is remembered for `reload` as with [`Hosts::set_param`].
+    /// - `ParamsChanged`: any parameter may have another value (the plugin loaded a program
+    ///   by itself): [`Hosts::params`] reads them again.
+    /// - `LatencyChanged`: the plugin's delay changed outside a block.
+    ///
+    /// The notices about windows never come this way; they are the news above.
+    Notice { slot: SlotId, notice: Notice },
 }
 
 /// Called once, on the hosts' thread, with the answer.
@@ -170,7 +220,11 @@ enum Ask {
     SetState(SlotId, Vec<u8>, Done<()>),
     Params(SlotId, Done<Vec<ParamInfo>>),
     Param(SlotId, u32, Done<(f64, String)>),
-    SetParam(SlotId, u32, f64, Done<()>),
+    SetParam(SlotId, u32, f64, Done<ParamNow>),
+    Texts(SlotId, u32, Vec<f64>, Done<Vec<Option<String>>>),
+    ReadText(SlotId, u32, String, Done<Option<TextValue>>),
+    OpenWindow(SlotId, String, Done<EditorOpen>),
+    CloseWindow(SlotId, Done<()>),
     Processes(Done<Vec<ProcessInfo>>),
 }
 
@@ -261,19 +315,79 @@ impl Hosts {
         self.ask(Ask::SetState(id, state, done));
     }
 
+    /// Every parameter a person can move, in the plugin's order: name, group (the top of a
+    /// VST3 unit tree, an LV2 port group; `None` for those in no group), shape (with the
+    /// texts of the steps of a stepped one), default, and the value now with the plugin's
+    /// text for it. Parameters the plugin hides, only reports, or passes itself by with are
+    /// not in it. A `value` of `None` is one the plugin does not tell (an LV2 `patch`
+    /// parameter nobody has set yet).
+    ///
+    /// Answered on the hosts' thread, when the process's main thread has listed them: a few
+    /// milliseconds, tens for a plugin with thousands (Surge XT). A stopped plugin answers
+    /// `Gone`. The list of one loaded plugin stays as it is; its values change, and
+    /// `Notice::ParamsChanged` says when all of them may have.
     pub fn params(&self, id: SlotId, done: Done<Vec<ParamInfo>>) {
         self.ask(Ask::Params(id, done));
     }
 
-    /// A parameter's value, 0..=1, and the text the plugin shows for it.
+    /// One parameter's value, 0..=1, and the text the plugin shows for it. `Refused` for a
+    /// parameter the plugin does not have and for a value it does not tell; [`Hosts::params`]
+    /// tells those as `None`.
     pub fn param(&self, id: SlotId, param: u32, done: Done<(f64, String)>) {
         self.ask(Ask::Param(id, param, done));
     }
 
-    /// Sets a parameter over the socket, outside a block. The value is remembered for
-    /// `reload` until a newer state is.
-    pub fn set_param(&self, id: SlotId, param: u32, value: f64, done: Done<()>) {
+    /// Sets a parameter over the socket, outside a block; the plugin's sound has it with its
+    /// next block and its window shows it. Answered with the value as the plugin took it
+    /// (a stepped parameter lands on a step) and its text, so a dragged value can show its
+    /// text. The value is remembered for `reload` until a newer state is. No news follows:
+    /// `ParamChanged` is only for what the person does in the plugin's window. A stopped
+    /// plugin answers `Gone` and remembers nothing.
+    pub fn set_param(&self, id: SlotId, param: u32, value: f64, done: Done<ParamNow>) {
         self.ask(Ask::SetParam(id, param, value, done));
+    }
+
+    /// The plugin's texts for some values of a parameter, each 0..=1, without setting
+    /// anything: `vec![0.0, 1.0]` asks for both ends of its range. One answer for each
+    /// value, `None` where the plugin has no text. A stopped plugin answers `Gone`.
+    pub fn texts(&self, id: SlotId, param: u32, values: Vec<f64>, done: Done<Vec<Option<String>>>) {
+        self.ask(Ask::Texts(id, param, values, done));
+    }
+
+    /// What value a typed text stands for, as the plugin reads it ("440 Hz", "Hall", "on"),
+    /// without setting anything. `None`: it cannot be read. Otherwise the value, 0..=1,
+    /// whether the text named a value outside the range (`value` is then the nearest end),
+    /// and the plugin's texts for the value and for both ends. For VST3 "outside" is told
+    /// from the numbers in the texts and may be missed when a plugin's texts are not
+    /// numbers. A stopped plugin answers `Gone`.
+    pub fn read_text(&self, id: SlotId, param: u32, text: String, done: Done<Option<TextValue>>) {
+        self.ask(Ask::ReadText(id, param, text, done));
+    }
+
+    /// Opens the plugin's window, headed `title`, or brings it to the front when it is open
+    /// (or being opened). Only a plugin whose `Loaded::plugin.editor` is `EditorKind::X11`
+    /// has a window to open; for the others `Opening` is followed by `WindowFailed`.
+    ///
+    /// Answered on the hosts' thread as soon as the process has heard it, a millisecond or
+    /// so: `Opening` means the window is being made now, and
+    /// [`HostNews::WindowOpened`] or [`HostNews::WindowFailed`] follows when the plugin is
+    /// done (30 to 300 ms for the plugins measured; the caller counts the 0.2 s from
+    /// `Opening`). `Raised` means there was a window already; nothing follows.
+    ///
+    /// The window is made on the main thread of the plugin's process. The plugin's sound
+    /// goes on meanwhile, but that thread answers nothing until the window is up, so other
+    /// asks for plugins of the same process are answered after it. A plugin that hangs in
+    /// its window is found by the next ask that goes unanswered for 5 s; the process is then
+    /// killed and told as `Stopped`. A stopped plugin answers `Gone`.
+    pub fn open_window(&self, id: SlotId, title: String, done: Done<EditorOpen>) {
+        self.ask(Ask::OpenWindow(id, title, done));
+    }
+
+    /// Closes the plugin's window; `Ok` also when it has none. The window is gone when the
+    /// answer comes, and no `WindowClosed` or `WindowLeft` follows. `unload` closes the
+    /// window too. A stopped plugin answers `Gone` (its window went with its process).
+    pub fn close_window(&self, id: SlotId, done: Done<()>) {
+        self.ask(Ask::CloseWindow(id, done));
     }
 
     /// The processes that run now.
@@ -346,6 +460,7 @@ impl Run {
             if let Some(ask) = ask {
                 self.answer(ask);
             }
+            self.listen();
             self.watch();
         }
     }
@@ -417,7 +532,17 @@ impl Run {
             Ask::Param(id, param, done) => done(
                 self.ask_slot(id, |slot| Request::GetParam { slot, id: param }, &[])
                     .and_then(|answer| match answer.0 {
-                        Reply::Param { value, text } => Ok((value, text)),
+                        Reply::Param {
+                            now:
+                                ParamNow {
+                                    value: Some(value),
+                                    text,
+                                    ..
+                                },
+                        } => Ok((value, text.unwrap_or_default())),
+                        Reply::Param { .. } => Err(HostError::Refused(
+                            "the plugin does not tell this value".into(),
+                        )),
                         other => Err(refused(other)),
                     }),
             ),
@@ -427,12 +552,54 @@ impl Run {
                     id: param,
                     value,
                 };
-                let set = self.ask_slot(id, request, &[]).and_then(ok);
-                if let (Ok(()), Some(slot)) = (&set, self.slots.get_mut(&id)) {
+                let set = self.ask_slot(id, request, &[]).and_then(param_now);
+                if let (Ok(_), Some(slot)) = (&set, self.slots.get_mut(&id)) {
                     slot.params.insert(param, value);
                 }
                 done(set);
             }
+            Ask::Texts(id, param, values, done) => {
+                let request = |slot| Request::Texts {
+                    slot,
+                    id: param,
+                    values,
+                };
+                done(
+                    self.ask_slot(id, request, &[])
+                        .and_then(|answer| match answer.0 {
+                            Reply::Texts { texts } => Ok(texts),
+                            other => Err(refused(other)),
+                        }),
+                );
+            }
+            Ask::ReadText(id, param, text, done) => {
+                let request = |slot| Request::ReadText {
+                    slot,
+                    id: param,
+                    text,
+                };
+                done(
+                    self.ask_slot(id, request, &[])
+                        .and_then(|answer| match answer.0 {
+                            Reply::Read { read } => Ok(read),
+                            other => Err(refused(other)),
+                        }),
+                );
+            }
+            Ask::OpenWindow(id, title, done) => {
+                let request = |slot| Request::OpenEditor { slot, title };
+                done(
+                    self.ask_slot(id, request, &[])
+                        .and_then(|answer| match answer.0 {
+                            Reply::Editor { open } => Ok(open),
+                            other => Err(refused(other)),
+                        }),
+                );
+            }
+            Ask::CloseWindow(id, done) => done(
+                self.ask_slot(id, |slot| Request::CloseEditor { slot }, &[])
+                    .and_then(ok),
+            ),
             Ask::Processes(done) => done(Ok(self
                 .procs
                 .iter()
@@ -519,13 +686,75 @@ impl Run {
                     return Ok((reply, blob));
                 }
                 Ok((FromHost::Reply { .. }, _)) => {}
-                Ok((FromHost::Notice { notice }, _)) => {
-                    let place = notice_slot(&notice) as usize;
-                    if let Some(slot) = proc.places.get(place).copied().flatten() {
-                        (self.news)(HostNews::Notice { slot, notice });
+                Ok((FromHost::Notice { notice }, _)) => self.heard(at, notice),
+                Err(_) => return Err(HostError::Gone),
+            }
+        }
+    }
+
+    /// Something a plugin of this process did by itself: remembered where `reload` needs
+    /// it, and told.
+    fn heard(&mut self, at: usize, notice: Notice) {
+        let place = notice_slot(&notice) as usize;
+        let Some(slot) = self.procs[at].places.get(place).copied().flatten() else {
+            return;
+        };
+        let news = match notice {
+            Notice::EditorOpened {
+                width,
+                height,
+                larger_than_screen,
+                ..
+            } => HostNews::WindowOpened {
+                slot,
+                width,
+                height,
+                larger_than_screen,
+            },
+            Notice::EditorFailed { message, .. } => HostNews::WindowFailed { slot, message },
+            Notice::EditorResized {
+                width,
+                height,
+                larger_than_screen,
+                ..
+            } => HostNews::WindowResized {
+                slot,
+                width,
+                height,
+                larger_than_screen,
+            },
+            Notice::EditorClosed { .. } => HostNews::WindowClosed { slot },
+            Notice::EditorEntered { .. } => HostNews::WindowEntered { slot },
+            Notice::EditorLeft { .. } => HostNews::WindowLeft { slot },
+            notice => {
+                if let (Notice::ParamChanged { id, value, .. }, Some(kept)) =
+                    (&notice, self.slots.get_mut(&slot))
+                {
+                    kept.params.insert(*id, *value);
+                }
+                HostNews::Notice { slot, notice }
+            }
+        };
+        (self.news)(news);
+    }
+
+    /// Takes what the processes said by themselves since the last look. A process that
+    /// starts a notice and does not finish it within the answer time is killed; `watch`
+    /// then finds it stopped.
+    fn listen(&mut self) {
+        for at in 0..self.procs.len() {
+            while launch::wait_readable(self.procs[at].control.as_fd(), Duration::ZERO) {
+                let proc = &mut self.procs[at];
+                let _ = proc.control.set_read_timeout(Some(ANSWER_WAIT));
+                match read_frame::<FromHost>(&mut proc.control) {
+                    Ok((FromHost::Notice { notice }, _)) => self.heard(at, notice),
+                    // An answer nobody waits for any more.
+                    Ok((FromHost::Reply { .. }, _)) => {}
+                    Err(_) => {
+                        let _ = proc.pidfd.kill();
+                        break;
                     }
                 }
-                Err(_) => return Err(HostError::Gone),
             }
         }
     }
@@ -631,7 +860,7 @@ impl Run {
                         id,
                         value,
                     };
-                    self.request(at, set, &[], ANSWER_WAIT).and_then(ok)?;
+                    (self.request(at, set, &[], ANSWER_WAIT)).and_then(param_now)?;
                 }
                 Ok(loaded)
             });
@@ -762,9 +991,18 @@ fn ok((reply, _): (Reply, Vec<u8>)) -> Result<(), HostError> {
     }
 }
 
+fn param_now((reply, _): (Reply, Vec<u8>)) -> Result<ParamNow, HostError> {
+    match reply {
+        Reply::Param { now } => Ok(now),
+        other => Err(refused(other)),
+    }
+}
+
 fn notice_slot(notice: &Notice) -> u32 {
     match *notice {
-        Notice::EditorOpened { slot }
+        Notice::EditorOpened { slot, .. }
+        | Notice::EditorFailed { slot, .. }
+        | Notice::EditorResized { slot, .. }
         | Notice::EditorClosed { slot }
         | Notice::EditorEntered { slot }
         | Notice::EditorLeft { slot }

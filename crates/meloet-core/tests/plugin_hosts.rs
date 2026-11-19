@@ -133,9 +133,10 @@ impl Side {
     /// The next `Stopped`, and when it was told.
     fn stopped(&self) -> (Instant, Vec<SlotId>) {
         loop {
-            match self.news.recv_timeout(PATIENCE).expect("a plugin stopped") {
-                (at, HostNews::Stopped { slots, .. }) => return (at, slots),
-                (_, HostNews::Notice { .. }) => {}
+            if let (at, HostNews::Stopped { slots, .. }) =
+                self.news.recv_timeout(PATIENCE).expect("a plugin stopped")
+            {
+                return (at, slots);
             }
         }
     }

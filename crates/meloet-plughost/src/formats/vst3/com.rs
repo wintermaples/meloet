@@ -12,6 +12,9 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::sync::Mutex;
 
+use vst3::Steinberg::Linux::{
+    FileDescriptor, IEventHandler, IRunLoop, IRunLoopTrait, ITimerHandler, TimerInterval,
+};
 use vst3::Steinberg::Vst::{
     Event, IAttributeList, IAttributeListTrait, IComponentHandler, IComponentHandlerTrait,
     IEventList, IEventListTrait, IHostApplication, IHostApplicationTrait, IMessage, IMessageTrait,
@@ -19,11 +22,13 @@ use vst3::Steinberg::Vst::{
     ParamValue, String128, TChar,
 };
 use vst3::Steinberg::{
-    FIDString, IBStream, IBStreamTrait, TUID, int32, int64, kInvalidArgument, kNoInterface,
-    kResultFalse, kResultOk, tresult, uint32,
+    FIDString, IBStream, IBStreamTrait, IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewTrait,
+    TUID, ViewRect, int32, int64, kInvalidArgument, kNoInterface, kResultFalse, kResultOk,
+    kResultTrue, tresult, uint32,
 };
-use vst3::{Class, ComWrapper, Interface};
+use vst3::{Class, ComRef, ComWrapper, Interface};
 
+use super::runloop;
 use crate::formats::Said;
 
 pub fn write_string128(to: &mut String128, text: &str) {
@@ -65,7 +70,76 @@ unsafe fn is<I: Interface>(tuid: *const TUID) -> bool {
 pub struct HostApp;
 
 impl Class for HostApp {
-    type Interfaces = (IHostApplication,);
+    type Interfaces = (IHostApplication, IRunLoop);
+}
+
+macro_rules! run_loop {
+    ($class:ty) => {
+        impl IRunLoopTrait for $class {
+            unsafe fn registerEventHandler(
+                &self,
+                handler: *mut IEventHandler,
+                fd: FileDescriptor,
+            ) -> tresult {
+                // SAFETY: the plugin hands in its own handler.
+                unsafe { runloop::watch(handler, fd) }
+            }
+
+            unsafe fn unregisterEventHandler(&self, handler: *mut IEventHandler) -> tresult {
+                runloop::unwatch(handler)
+            }
+
+            unsafe fn registerTimer(
+                &self,
+                handler: *mut ITimerHandler,
+                milliseconds: TimerInterval,
+            ) -> tresult {
+                // SAFETY: as above.
+                unsafe { runloop::start_timer(handler, milliseconds) }
+            }
+
+            unsafe fn unregisterTimer(&self, handler: *mut ITimerHandler) -> tresult {
+                runloop::stop_timer(handler)
+            }
+        }
+    };
+}
+
+run_loop!(HostApp);
+
+/// What a plugin's view is put into, as the plugin sees it: where it asks for another size,
+/// and for the run loop.
+#[derive(Default)]
+pub struct Frame {
+    /// The size the plugin last asked for, until the main thread takes it.
+    pub asked: Cell<Option<(u32, u32)>>,
+}
+
+impl Class for Frame {
+    type Interfaces = (IPlugFrame, IRunLoop);
+}
+
+run_loop!(Frame);
+
+impl IPlugFrameTrait for Frame {
+    unsafe fn resizeView(&self, view: *mut IPlugView, new_size: *mut ViewRect) -> tresult {
+        // SAFETY: the plugin hands in its own view and a rectangle.
+        let (Some(view), Some(rect)) = (unsafe { ComRef::from_raw(view) }, unsafe {
+            new_size.as_ref()
+        }) else {
+            return kInvalidArgument;
+        };
+        let size = (rect.right - rect.left, rect.bottom - rect.top);
+        if size.0 < 1 || size.1 < 1 {
+            return kInvalidArgument;
+        }
+        self.asked.set(Some((size.0 as u32, size.1 as u32)));
+        // The window itself follows on the main thread's next round; the view is told now, as
+        // VST3 has the host do from inside this call.
+        // SAFETY: the view is the plugin's own, alive for this call.
+        unsafe { view.onSize(new_size) };
+        kResultTrue
+    }
 }
 
 impl IHostApplicationTrait for HostApp {

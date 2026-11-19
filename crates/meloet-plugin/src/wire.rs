@@ -17,9 +17,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::key::PluginKey;
-use crate::scan::PluginInfo;
+use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 1;
+pub const WIRE_VERSION: u32 = 2;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -44,9 +44,7 @@ pub struct ToHost {
 pub enum Request {
     /// First on every connection. The host answers with its own version; when they differ
     /// meloet lets the process go.
-    Hello {
-        version: u32,
-    },
+    Hello { version: u32 },
     /// Loads a plugin into a slot of the shared memory and makes it ready to run. The engine's
     /// end of the slot exists already. Answered by `Loaded` once the audio thread runs it.
     Load {
@@ -58,39 +56,33 @@ pub enum Request {
     },
     /// Takes the plugin out of the slot (closing its window). After the `Ok` the host does not
     /// touch the slot any more.
-    Unload {
-        slot: u32,
-    },
+    Unload { slot: u32 },
     /// The plugin's whole state. The reply `State` carries it in the frame's blob.
-    GetState {
-        slot: u32,
-    },
+    GetState { slot: u32 },
     /// Puts back a state taken with `GetState` from the same plugin; it is this frame's blob.
-    SetState {
-        slot: u32,
-    },
-    /// The list of parameters, in the plugin's order.
-    Params {
-        slot: u32,
-    },
+    SetState { slot: u32 },
+    /// The list of parameters, in the plugin's order, each with its value now.
+    Params { slot: u32 },
     /// One parameter's value now, with the text the plugin shows for it.
-    GetParam {
-        slot: u32,
-        id: u32,
-    },
+    GetParam { slot: u32, id: u32 },
     /// Sets a parameter outside a block (the audio path uses the slot's ring). `value` 0..=1.
-    SetParam {
+    /// Answered by `Param`: the value as the plugin took it, with its text.
+    SetParam { slot: u32, id: u32, value: f64 },
+    /// The texts the plugin shows for these values of a parameter (each 0..=1), without
+    /// setting anything. Answered by `Texts`.
+    Texts {
         slot: u32,
         id: u32,
-        value: f64,
+        values: Vec<f64>,
     },
-    /// Opens the plugin's window, or brings it to the front when it is open.
-    OpenEditor {
-        slot: u32,
-    },
-    CloseEditor {
-        slot: u32,
-    },
+    /// What value a typed text stands for, without setting anything. Answered by `Read`.
+    ReadText { slot: u32, id: u32, text: String },
+    /// Opens the plugin's window, or brings it to the front when it is open. Answered at
+    /// once by `Editor`; a window that is being opened is told later, by `EditorOpened` or
+    /// `EditorFailed`. `title` is what the window is headed with.
+    OpenEditor { slot: u32, title: String },
+    /// Closes the plugin's window; `Ok` also when there was none. No `EditorClosed` follows.
+    CloseEditor { slot: u32 },
     /// Unloads everything and ends the process.
     Quit,
 }
@@ -131,9 +123,57 @@ pub enum Reply {
         params: Vec<ParamInfo>,
     },
     Param {
-        value: f64,
-        text: String,
+        now: ParamNow,
     },
+    /// One for each value asked for; `None` where the plugin has no text.
+    Texts {
+        texts: Vec<Option<String>>,
+    },
+    /// `None`: the plugin cannot read the text as a value of this parameter.
+    Read {
+        read: Option<TextValue>,
+    },
+    Editor {
+        open: EditorOpen,
+    },
+}
+
+/// A parameter's value now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParamNow {
+    pub id: u32,
+    /// 0..=1. `None`: the plugin does not tell (an LV2 `patch` parameter nobody has set and
+    /// the plugin has not spoken of).
+    pub value: Option<f64>,
+    /// As the plugin writes the value, with its unit. `None` with no value, or when the
+    /// plugin has no text for it.
+    pub text: Option<String>,
+}
+
+/// What a typed text stands for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextValue {
+    /// 0..=1.
+    pub value: f64,
+    /// The text named a value outside the parameter's range; `value` is the end nearest to
+    /// it.
+    pub clamped: bool,
+    /// The plugin's text for `value`.
+    pub text: Option<String>,
+    /// The plugin's texts for 0 and for 1.
+    pub low: Option<String>,
+    pub high: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EditorOpen {
+    /// The window is being made now.
+    Opening,
+    /// The window was open (or already being made) and was brought to the front.
+    Raised,
 }
 
 /// What meloet needs to know about a plugin it just loaded.
@@ -144,8 +184,8 @@ pub struct LoadedPlugin {
     pub latency: u32,
     pub audio_inputs: u32,
     pub audio_outputs: u32,
-    /// It has a window meloet can open.
-    pub editor: bool,
+    /// Whether it has a window, and whether meloet can open it.
+    pub editor: EditorKind,
 }
 
 /// One parameter (spec 3: 「パラメータの行」). Values are 0..=1 at this boundary.
@@ -159,8 +199,14 @@ pub struct ParamInfo {
     pub group: Option<String>,
     pub default: f64,
     pub shape: ParamShape,
+    /// The text of each step of a `Stepped` parameter, in order. Empty for the other shapes,
+    /// when the plugin names no steps, and for more than 128 steps.
+    pub labels: Vec<String>,
     /// It may be written by automation.
     pub automatable: bool,
+    /// As `ParamNow`.
+    pub value: Option<f64>,
+    pub text: Option<String>,
 }
 
 /// Which of the three kinds of row the parameter is shown as.
@@ -179,8 +225,8 @@ pub enum ParamShape {
     Toggle,
 }
 
-/// Things that happen in a plugin without being asked for. The four about the window are what
-/// meloet folds a visit to the plugin's window into one step with (spec 3, 15-C).
+/// Things that happen in a plugin without being asked for. Entering and leaving the window
+/// are what meloet folds a visit to the plugin's window into one step with (spec 3, 15-C).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -188,47 +234,47 @@ pub enum ParamShape {
     rename_all_fields = "camelCase"
 )]
 pub enum Notice {
+    /// The window asked for with `OpenEditor` is on the screen, with this size in pixels.
     EditorOpened {
         slot: u32,
+        width: u32,
+        height: u32,
+        /// It does not fit the screen it is on.
+        larger_than_screen: bool,
     },
-    /// Closed by `CloseEditor`, by the person, or by the plugin.
-    EditorClosed {
+    /// The window asked for with `OpenEditor` could not be made. `message` is for the log.
+    EditorFailed { slot: u32, message: String },
+    /// The plugin gave its window another size.
+    EditorResized {
         slot: u32,
+        width: u32,
+        height: u32,
+        larger_than_screen: bool,
     },
+    /// Closed by the person (the window's own close button) or by the plugin. Not sent
+    /// after `CloseEditor` or `Unload`.
+    EditorClosed { slot: u32 },
     /// The window got the keyboard: the person is in the plugin now.
-    EditorEntered {
-        slot: u32,
-    },
+    EditorEntered { slot: u32 },
     /// The window lost the keyboard: the person went somewhere else.
-    EditorLeft {
-        slot: u32,
-    },
+    EditorLeft { slot: u32 },
     /// The person took hold of a parameter in the plugin's window …
-    ParamBegin {
-        slot: u32,
-        id: u32,
-    },
-    /// … moved it …
+    ParamBegin { slot: u32, id: u32 },
+    /// … moved it … At most 30 of these a second for one parameter; the last value before
+    /// `ParamEnd` is always told. `text` as `ParamNow::text`.
     ParamChanged {
         slot: u32,
         id: u32,
         value: f64,
+        text: Option<String>,
     },
     /// … and let it go.
-    ParamEnd {
-        slot: u32,
-        id: u32,
-    },
+    ParamEnd { slot: u32, id: u32 },
     /// The plugin says its delay changed, outside a block (VST3 `kLatencyChanged`).
-    LatencyChanged {
-        slot: u32,
-        frames: u32,
-    },
+    LatencyChanged { slot: u32, frames: u32 },
     /// The plugin says that any of its parameters may have another value now (it loaded a
     /// program by itself; VST3 `kParamValuesChanged`). The values are to be read again.
-    ParamsChanged {
-        slot: u32,
-    },
+    ParamsChanged { slot: u32 },
 }
 
 /// One of the frames the host's `scan` mode writes, in order, until `Done` or `Broken`. A
@@ -466,11 +512,11 @@ mod tests {
                         latency: 64,
                         audio_inputs: 0,
                         audio_outputs: 2,
-                        editor: true
+                        editor: EditorKind::X11
                     }
                 }
             }),
-            json!({ "kind": "reply", "id": 4, "reply": { "type": "loaded", "plugin": { "latency": 64, "audioInputs": 0, "audioOutputs": 2, "editor": true } } })
+            json!({ "kind": "reply", "id": 4, "reply": { "type": "loaded", "plugin": { "latency": 64, "audioInputs": 0, "audioOutputs": 2, "editor": "x11" } } })
         );
         assert_eq!(
             from(FromHost::Reply {
@@ -484,10 +530,11 @@ mod tests {
                 notice: Notice::ParamChanged {
                     slot: 1,
                     id: 2,
-                    value: 0.25
+                    value: 0.25,
+                    text: Some("25 %".into()),
                 }
             }),
-            json!({ "kind": "notice", "notice": { "type": "paramChanged", "slot": 1, "id": 2, "value": 0.25 } })
+            json!({ "kind": "notice", "notice": { "type": "paramChanged", "slot": 1, "id": 2, "value": 0.25, "text": "25 %" } })
         );
         assert_eq!(
             from(FromHost::Notice {
@@ -501,7 +548,10 @@ mod tests {
             group: Some("Envelope".into()),
             default: 0.1,
             shape: ParamShape::Stepped { steps: 5 },
+            labels: vec!["a".into(), "b".into()],
             automatable: true,
+            value: None,
+            text: None,
         };
         assert_eq!(
             from(FromHost::Reply {
@@ -511,7 +561,7 @@ mod tests {
                 }
             }),
             json!({ "kind": "reply", "id": 6, "reply": { "type": "params", "params": [
-                { "id": 3, "name": "Attack", "group": "Envelope", "default": 0.1, "shape": { "kind": "stepped", "steps": 5 }, "automatable": true } ] } })
+                { "id": 3, "name": "Attack", "group": "Envelope", "default": 0.1, "shape": { "kind": "stepped", "steps": 5 }, "labels": ["a", "b"], "automatable": true, "value": null, "text": null } ] } })
         );
         assert_eq!(
             serde_json::to_value(ScanOutput::Broken {
@@ -553,7 +603,20 @@ mod tests {
             Request::SetState { slot: 1 },
             Request::Params { slot: 1 },
             Request::GetParam { slot: 1, id: 2 },
-            Request::OpenEditor { slot: 1 },
+            Request::Texts {
+                slot: 1,
+                id: 2,
+                values: vec![0.0, 1.0],
+            },
+            Request::ReadText {
+                slot: 1,
+                id: 2,
+                text: "440 Hz".into(),
+            },
+            Request::OpenEditor {
+                slot: 1,
+                title: "Surge XT".into(),
+            },
             Request::CloseEditor { slot: 1 },
             Request::Quit,
         ];
@@ -569,7 +632,22 @@ mod tests {
             );
         }
         let notices = [
-            Notice::EditorOpened { slot: 1 },
+            Notice::EditorOpened {
+                slot: 1,
+                width: 904,
+                height: 569,
+                larger_than_screen: false,
+            },
+            Notice::EditorFailed {
+                slot: 1,
+                message: "x".into(),
+            },
+            Notice::EditorResized {
+                slot: 1,
+                width: 1808,
+                height: 1138,
+                larger_than_screen: true,
+            },
             Notice::EditorClosed { slot: 1 },
             Notice::EditorEntered { slot: 1 },
             Notice::EditorLeft { slot: 1 },
@@ -578,6 +656,7 @@ mod tests {
                 slot: 1,
                 id: 2,
                 value: 1.0,
+                text: None,
             },
             Notice::ParamEnd { slot: 1, id: 2 },
             Notice::LatencyChanged {
@@ -600,8 +679,27 @@ mod tests {
             },
             Reply::State,
             Reply::Param {
-                value: 0.5,
-                text: "-6.0 dB".into(),
+                now: ParamNow {
+                    id: 2,
+                    value: Some(0.5),
+                    text: Some("-6.0 dB".into()),
+                },
+            },
+            Reply::Texts {
+                texts: vec![Some("0 %".into()), None],
+            },
+            Reply::Read {
+                read: Some(TextValue {
+                    value: 1.0,
+                    clamped: true,
+                    text: Some("100 %".into()),
+                    low: Some("0 %".into()),
+                    high: Some("100 %".into()),
+                }),
+            },
+            Reply::Read { read: None },
+            Reply::Editor {
+                open: EditorOpen::Opening,
             },
         ];
         for reply in replies {

@@ -66,7 +66,10 @@ fn params(host: &mut Host, slot: u32) -> Vec<ParamInfo> {
 }
 
 fn set(host: &mut Host, slot: u32, id: u32, value: f64) {
-    assert_eq!(host.ask(Request::SetParam { slot, id, value }), Reply::Ok);
+    assert!(matches!(
+        host.ask(Request::SetParam { slot, id, value }),
+        Reply::Param { .. }
+    ));
 }
 
 fn rms(samples: &[f32]) -> f32 {
@@ -185,13 +188,14 @@ fn instrument_round_trip(plugin: (&str, &str), least_params: usize) {
         let value = if id == ring_id { ring_value } else { value };
         let (kept, _) = host.param(0, id);
         let (read, _) = host.param(1, id);
-        let (untouched, _) = host.param(2, id);
+        // A plugin just made may not tell its values at all (Surge XT's LV2).
+        let untouched = host.value(2, id);
         assert!(
             near(read, kept),
             "restored {id}: {read}, the first has {kept}"
         );
         as_sent += usize::from(near(read, value));
-        changed += usize::from(!near(read, untouched));
+        changed += usize::from(untouched.is_none_or(|untouched| !near(read, untouched)));
     }
     assert!(
         changed >= 12,

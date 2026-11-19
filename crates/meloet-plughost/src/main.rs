@@ -9,6 +9,7 @@ mod formats;
 mod rt;
 mod rtcheck;
 mod scan;
+mod window;
 
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;

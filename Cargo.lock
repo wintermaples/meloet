@@ -2256,6 +2256,7 @@ dependencies = [
  "rtrb",
  "serde_json",
  "vst3",
+ "x11rb",
 ]
 
 [[package]]

@@ -16,6 +16,7 @@ use meloet_engine::{
     MixStrip, PluginEffect, PluginInstrument, Recorded, TrackSet, monotonic_us,
 };
 use meloet_plugin::PluginKey;
+use meloet_plugin::ipc::HANG_MS;
 
 use plughost::{alive, wait_for};
 
@@ -319,6 +320,16 @@ fn a_plugin_that_is_killed_crashes_or_hangs_is_told_and_its_process_is_gone() {
         eprintln!(
             "{fault:?} at 1024 frames: given up after {blocks} block(s), told after {told:?}"
         );
+        if let Fault::Hang = fault {
+            // A plugin at work on one block for long (reading a patch) is not a dead one;
+            // only after `HANG_MS` it is.
+            let hang = Duration::from_millis(u64::from(HANG_MS));
+            assert!(
+                told >= hang && told < hang + Duration::from_millis(500),
+                "{told:?}"
+            );
+            continue;
+        }
         assert!(blocks <= 2, "{fault:?}: {blocks} blocks");
         assert!(told < Duration::from_millis(500), "{fault:?}: {told:?}");
         // What meloet asks for (256 frames, 5.33 ms). Not held to the clock here: on a busy

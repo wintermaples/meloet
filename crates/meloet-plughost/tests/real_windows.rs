@@ -595,6 +595,107 @@ fn surge_xt_vst3_values_follow_a_patch_chosen_in_its_window() {
     assert!(host.child.wait_for_exit(WAIT).is_some());
 }
 
+/// One block as the engine asks for it: with a time limit, and after a block without an
+/// answer the way `meloet-engine` goes on. True when the answer came in time.
+fn clocked_block(engine: &mut EngineEnd) -> bool {
+    let deadline = monotonic_ns() + BLOCK.as_nanos() as u64 * 9 / 10;
+    if !engine.begin(256)
+        && !(engine.overdue() && engine.await_overdue(deadline) && engine.begin(256))
+    {
+        return false;
+    }
+    engine.write_input(0, &[0.0; 256]);
+    engine.write_input(1, &[0.0; 256]);
+    engine.submit();
+    engine.wait(deadline)
+}
+
+/// A patch of Surge XT that takes many blocks to read (a wavetable; 112 ms on the PC this was
+/// written on), four patches after the first one of the seventh category after "Templates".
+const SLOW_PATCH: &str = "/usr/share/surge-xt/patches_3rdparty/A.Liv/Plucks/Taped Plucks.fxp";
+
+/// Goes to the slow patch with the arrows of Surge XT's window (`MELOET_CATEGORY_STEPS` and
+/// `MELOET_PATCH_STEPS` say another way; `MELOET_SHOT_DIR` is where pictures of the window
+/// go), with blocks on the engine's clock. Surge XT reads a patch in its audio callback: the
+/// blocks meanwhile go without sound, and the plugin is not taken for a dead one.
+fn slow_patch(x: &X, plugin: Plugin) {
+    if !installed(plugin) || !installed(("", "", SLOW_PATCH)) {
+        return;
+    }
+    let number = |name: &str, or: usize| {
+        (std::env::var(name).ok())
+            .and_then(|text| text.parse().ok())
+            .unwrap_or(or)
+    };
+    let categories = number("MELOET_CATEGORY_STEPS", 7);
+    let steps = number("MELOET_PATCH_STEPS", 4);
+    let shots = std::env::var_os("MELOET_SHOT_DIR").map(std::path::PathBuf::from);
+    let mut host = Host::start_with(GEOMETRY, &[]);
+    let pid = host.child.0.id();
+    let (mut engine, _) = load(&mut host, 0, plugin);
+    play(&mut engine, 8);
+    open(&mut host, 0, plugin.0);
+    let window = x.wait(pid, plugin.0, true).expect("the window");
+    play(&mut engine, 60);
+    x.focus(window);
+    let size = x.size(window);
+    let at = |place: u32, whole: u32, of: u32| (place * whole / of) as i16;
+    let mut most = 0;
+    for step in 0..categories + steps {
+        // The arrows to the next category and to the next patch, in a window of 1597x995.
+        let arrow = if step < categories { 315 } else { 470 };
+        x.drag(window, at(arrow, size.0, 1597), at(83, size.1, 995), 0);
+        let started = Instant::now();
+        let (mut silent, mut longest) = (0, 0);
+        for n in 0..60 {
+            if clocked_block(&mut engine) {
+                silent = 0;
+            } else {
+                silent += 1;
+                longest = longest.max(silent);
+            }
+            let gone = host.child.0.try_wait().unwrap();
+            assert!(gone.is_none(), "{}: step {step}: {gone:?}", plugin.0);
+            assert!(
+                !engine.stopped(),
+                "{}: step {step}: taken for stopped after {silent} blocks without an answer",
+                plugin.0
+            );
+            std::thread::sleep((BLOCK * (n + 1)).saturating_sub(started.elapsed()));
+        }
+        most = most.max(longest);
+        host.wait_for(Duration::from_millis(20), |_| false);
+        let state = host.state(0);
+        eprintln!(
+            "{}: step {step}: {longest} blocks in a row without an answer, a state of {} bytes",
+            plugin.0,
+            state.len(),
+        );
+        if let Some(dir) = &shots {
+            x.shot(window, &dir.join(format!("step-{step:03}.ppm")));
+        }
+    }
+    assert!(most >= 2, "no patch was slow: nothing tested");
+    play(&mut engine, 12);
+    close(&mut host, 0);
+    assert_eq!(host.ask(Request::Quit), Reply::Ok);
+    assert!(host.child.wait_for_exit(WAIT).is_some());
+}
+
+#[test]
+#[ignore = "needs an X display and Surge XT"]
+fn surge_xt_vst3_patch_that_takes_many_blocks_to_read() {
+    let _alone = alone();
+    slow_patch(&X::open(), SURGE_VST3);
+}
+
+#[test]
+#[ignore = "needs an X display and Surge XT"]
+fn surge_xt_lv2_patch_that_takes_many_blocks_to_read() {
+    let _alone = alone();
+    slow_patch(&X::open(), SURGE_LV2);
+}
+
 fn drag_a_knob(x: &X, plugin: Plugin, step: usize) {
     if !installed(plugin) {
         return;

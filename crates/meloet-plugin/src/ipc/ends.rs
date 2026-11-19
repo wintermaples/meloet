@@ -69,6 +69,11 @@ fn read_channel(map: &Mapping, base: usize, area: usize, channel: usize, dst: &m
     dst[frames..].fill(0.0);
 }
 
+/// A request that one audio thread of the host process has held for this long is a plugin that
+/// hangs. Long: plugins do slow work in a block now and then (Surge XT reads a patch with a
+/// wavetable in 112 ms on a fast PC), and a plugin taken for dead is killed with its process.
+pub const HANG_MS: u32 = 5_000;
+
 /// The engine's end of a slot. Made on the control side before the plugin is loaded into the
 /// slot; everything else here is for the audio thread and neither allocates nor locks. The one
 /// call that sleeps is [`EngineEnd::wait`], on a futex, up to the deadline it is given.
@@ -200,19 +205,29 @@ impl EngineEnd {
         }
         let words = self.map.slot_words(self.base);
         let seq = self.seq;
-        let answered = futex::wait_until(&words.done, &words.engine_waiting, deadline_ns, |done| {
-            done == seq
-        });
+        let block_ms = deadline_ns.saturating_sub(self.seen_deadline_ns) / 1_000_000;
+        // A thread that has held the request for a block and a half is in the middle of
+        // something long (a synthesizer reading a patch in its audio callback takes 100 ms and
+        // more). The answer's sound is lost anyway; sleeping for it block after block would
+        // only make every other track late.
+        let long = (self.signs().0).is_some_and(|held_ms| u64::from(held_ms) * 2 >= block_ms * 3);
+        let answered = if long {
+            words.done.load(Acquire) == seq
+        } else {
+            futex::wait_until(&words.done, &words.engine_waiting, deadline_ns, |done| {
+                done == seq
+            })
+        };
         if answered {
             self.pending = false;
             return true;
         }
         let (held, progress) = self.signs();
-        let block_ms = deadline_ns.saturating_sub(self.seen_deadline_ns) / 1_000_000;
-        // Held by a thread for a block and a half: the plugin hangs. Taken by none while the
-        // host did nothing at all: the process is gone or frozen.
+        // Held by a thread for longer than any plugin may take for one block: the plugin
+        // hangs. Taken by none while the host did nothing at all: the process is gone or
+        // frozen.
         let dead = match held {
-            Some(held_ms) => u64::from(held_ms) * 2 >= block_ms * 3,
+            Some(held_ms) => held_ms >= HANG_MS,
             None => progress == self.seen_progress,
         };
         (self.seen_deadline_ns, self.seen_progress) = (deadline_ns, progress);
@@ -668,14 +683,32 @@ mod tests {
         plugin.finish();
         assert!(waiting.await_overdue(futex::monotonic_ns() + SOON));
         assert!(waiting.begin(8));
-        // A request a thread holds for a block and a half is a plugin that hangs. Blocks of
-        // 20 ms here: held for 20 ms at the first time limit, for 40 at the second.
+        // A request a thread holds for many blocks is a plugin with slow work in its block
+        // (reading a patch): late, not stopped. Blocks of 20 ms here: held for 20 ms at the
+        // first time limit, for 40 at the second. The blocks after that do not sleep for it.
         waiting.submit();
         assert!(plugin.take_request().is_some());
         let began = futex::monotonic_ns();
         assert!(!waiting.wait(began + 20_000_000));
-        assert!(!waiting.stopped());
         assert!(!waiting.await_overdue(began + 40_000_000));
+        assert!(!waiting.stopped());
+        let asked = futex::monotonic_ns();
+        assert!(!waiting.await_overdue(began + 60_000_000));
+        assert!(futex::monotonic_ns() - asked < 5_000_000);
+        assert!(waiting.overdue() && !waiting.stopped() && !waiting.begin(8));
+        plugin.finish();
+        assert!(waiting.await_overdue(began + 80_000_000));
+        assert!(waiting.begin(8));
+        // Held for longer than any plugin may take for a block: a plugin that hangs.
+        waiting.submit();
+        assert!(plugin.take_request().is_some());
+        let began = futex::monotonic_ns();
+        assert!(!waiting.wait(began + 20_000_000));
+        assert!(!waiting.await_overdue(began + 40_000_000));
+        assert!(!waiting.stopped());
+        let taken = &map.slot_words(waiting.base).taken_ms;
+        taken.store(taken.load(SeqCst).wrapping_sub(HANG_MS), SeqCst);
+        assert!(!waiting.await_overdue(began + 60_000_000));
         assert!(waiting.stopped() && other.stopped());
     }
 

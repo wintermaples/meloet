@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     AtomEnum, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ButtonPressEvent, ClientMessageEvent,
-    ConnectionExt as _, EventMask, InputFocus, KeyButMask, MOTION_NOTIFY_EVENT, MapState, Motion,
-    MotionNotifyEvent,
+    ConnectionExt as _, EventMask, ImageFormat, InputFocus, KeyButMask, MOTION_NOTIFY_EVENT,
+    MapState, Motion, MotionNotifyEvent,
 };
 use x11rb::xcb_ffi::XCBConnection;
 
@@ -193,6 +193,29 @@ impl X {
             EventMask::BUTTON_RELEASE,
             button(BUTTON_RELEASE_EVENT, dy, KeyButMask::BUTTON1),
         );
+    }
+
+    /// Writes what the window shows to a PPM file, when a person wants to look at it.
+    pub fn shot(&self, window: u32, path: &std::path::Path) {
+        let (width, height) = self.size(window);
+        let image = (self.conn)
+            .get_image(
+                ImageFormat::Z_PIXMAP,
+                window,
+                0,
+                0,
+                width as u16,
+                height as u16,
+                !0,
+            )
+            .ok()
+            .and_then(|cookie| cookie.reply().ok());
+        let Some(image) = image else { return };
+        let mut ppm = format!("P6 {width} {height} 255\n").into_bytes();
+        for pixel in image.data.as_chunks::<4>().0 {
+            ppm.extend([pixel[2], pixel[1], pixel[0]]);
+        }
+        let _ = std::fs::write(path, ppm);
     }
 
     /// What the window's close button does.

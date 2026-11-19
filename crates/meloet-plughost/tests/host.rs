@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use common::{EXE, FAKE, GEOMETRY, Host, Killed, PATIENT_NS, block, note_on, peak};
 use meloet_plugin::ipc::futex::monotonic_ns;
-use meloet_plugin::ipc::{EngineEnd, Mapping, ToPlugin};
+use meloet_plugin::ipc::{EngineEnd, HANG_MS, Mapping, ToPlugin};
 use meloet_plugin::wire::{
     FromHost, LoadedPlugin, ParamNow, Reply, Request, ScanOutput, ToHost, WireError, read_frame,
     write_frame,
@@ -385,55 +385,37 @@ fn nothing_is_done_before_hello_and_a_closed_socket_ends_the_process() {
     );
 }
 
-/// Runs blocks on the engine's clock until the slot is stopped; how many blocks after the
-/// one the plugin failed in, and how long that took.
-fn blocks_until_stopped(engine: &mut EngineEnd) -> (u32, Duration) {
-    let failed_at = Instant::now();
-    let mut next = failed_at;
-    let mut silent = 0;
-    loop {
-        if !engine.begin(256) {
-            // The block after the one that went without an answer waits for it once more.
-            // By then the plugin has held the request for more than a block and a half.
-            assert!(engine.overdue());
-            assert!(!engine.await_overdue(monotonic_ns() + BUDGET_NS));
-            assert!(engine.stopped());
-            return (silent, failed_at.elapsed());
-        }
-        engine.write_input(0, &[0.5; 256]);
-        if silent == 0 {
-            assert!(engine.push_event(note_on(60)));
-        }
-        engine.submit();
-        assert!(
-            !engine.wait(monotonic_ns() + BUDGET_NS),
-            "a failed plugin answered"
-        );
-        silent += 1;
-        assert!(silent < 5);
-        next += BLOCK;
-        std::thread::sleep(next.saturating_duration_since(Instant::now()));
-    }
+/// The block that brings the plugin its first note, which it fails in: no answer.
+fn failing_block(engine: &mut EngineEnd) {
+    assert!(engine.begin(256));
+    engine.write_input(0, &[0.5; 256]);
+    assert!(engine.push_event(note_on(60)));
+    engine.submit();
+    assert!(
+        !engine.wait(monotonic_ns() + BUDGET_NS),
+        "a failed plugin answered"
+    );
 }
 
 #[test]
-fn a_plugin_that_crashes_is_seen_within_two_blocks() {
+fn a_plugin_that_crashes_takes_its_process_with_it() {
     let mut host = Host::start();
     let (mut engine, _) = host.load(1, "segv");
     for _ in 0..50 {
         assert_eq!(block(&mut engine, &[0.5; 256], &[]).0, [0.5; 256]);
     }
-    let (silent, took) = blocks_until_stopped(&mut engine);
-    // The block it crashed in went without output; the next one waited once more and then
-    // the slot is stopped.
-    assert_eq!(silent, 1);
-    assert!(took < BLOCK * 3, "{took:?}");
+    failing_block(&mut engine);
+    // The process is gone at once; that is how meloet knows (the pidfd), not by the time
+    // the request has been held.
     let status = host
         .child
         .wait_for_exit(Duration::from_secs(10))
         .expect("the process is gone");
     assert_eq!(status.signal(), Some(libc::SIGSEGV));
-    // The socket says so too, later than the audio thread knew.
+    assert!(!engine.begin(256) && engine.overdue());
+    host.map.mark_stopped();
+    assert!(engine.stopped() && !engine.overdue());
+    // The socket says so too.
     assert!(matches!(
         read_frame::<FromHost>(&mut host.control),
         Err(WireError::Closed)
@@ -441,16 +423,40 @@ fn a_plugin_that_crashes_is_seen_within_two_blocks() {
 }
 
 #[test]
-fn a_plugin_that_hangs_is_seen_within_two_blocks() {
+fn a_plugin_that_hangs_is_stopped_after_seconds_and_not_slept_for() {
     let mut host = Host::start();
     let (mut engine, _) = host.load(1, "hang");
     let (mut other, _) = host.load(2, "pass");
     for _ in 0..50 {
         assert_eq!(block(&mut engine, &[0.5; 256], &[]).0, [0.5; 256]);
     }
-    let (silent, took) = blocks_until_stopped(&mut engine);
-    assert_eq!(silent, 1);
-    assert!(took < BLOCK * 3, "{took:?}");
+    failing_block(&mut engine);
+    let failed_at = Instant::now();
+    let hang = Duration::from_millis(u64::from(HANG_MS));
+    // A plugin that takes long for one block (a patch being read) looks the same for a
+    // while: the blocks go on without it, and without sleeping for it.
+    let mut longest = Duration::ZERO;
+    loop {
+        std::thread::sleep(BLOCK);
+        assert!(!engine.begin(256));
+        let asked = Instant::now();
+        assert!(!engine.await_overdue(monotonic_ns() + BUDGET_NS));
+        if failed_at.elapsed() > BLOCK * 4 {
+            longest = longest.max(asked.elapsed());
+        }
+        if engine.stopped() {
+            break;
+        }
+        assert_eq!(block(&mut other, &[0.25; 256], &[]).0, [0.25; 256]);
+        assert!(failed_at.elapsed() < hang * 2, "never stopped");
+    }
+    // The time is counted from when the plugin took the block, one block before.
+    let took = failed_at.elapsed() + BLOCK * 2;
+    assert!(took >= hang, "{took:?}");
+    assert!(
+        longest < BLOCK / 2,
+        "slept {longest:?} for a plugin at work"
+    );
     // The process is still there, with an audio thread stuck in the plugin: the other plugins
     // of the same process are stopped with it, without a wait (docs/architecture.md 20-1).
     assert!(

@@ -32,8 +32,9 @@
 //! then is stopped depends on what the host process shows of itself. Its audio threads write
 //! the request they take into the slot's `taken`, with the time (`taken_ms`, the low bits of
 //! CLOCK_MONOTONIC in milliseconds), and count every request taken or answered in the header's
-//! `progress`. A request that a thread has held for one and a half times the distance of the
-//! last two time limits (one and a half blocks) is a plugin that hangs. A request nobody took
+//! `progress`. A request that a thread has held for [`HANG_MS`] is a plugin that hangs;
+//! one held for less is a plugin with slow work in its block, and once that has lasted a block
+//! and a half the engine no longer sleeps for the answer. A request nobody took
 //! while `progress` stood still over two time limits is a process that is gone or frozen. Either stops the slot and raises `stopped` in the header,
 //! which stops every other slot of the mapping with it: they are plugins of the same process.
 //! A request that waits its turn while the process works on others is only late, however
@@ -55,7 +56,7 @@ mod ring;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
-pub use ends::{Bell, Block, EngineEnd, PluginEnd};
+pub use ends::{Bell, Block, EngineEnd, HANG_MS, PluginEnd};
 pub use ring::{RAW_EVENT_LEN, RawEvent};
 
 /// "MLPH", little endian.

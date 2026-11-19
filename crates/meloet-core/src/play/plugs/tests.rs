@@ -2,12 +2,13 @@ use std::collections::{BTreeSet, HashMap};
 
 use meloet_model::{Doc, InstrumentRef, StripId, TrackId};
 use meloet_protocol::{
-    Band, Command, EffectKind, EffectRef, InsertRef, InstrumentKind, PluginSlotRef, SendBus,
-    ShelfMode, SoundRef, StripRef,
+    Band, Command, EffectKind, EffectRef, InsertRef, InstrumentKind, ParamRef, PluginSlotRef,
+    SelectedParams, SendBus, ShelfMode, SoundRef, StripRef,
 };
 
 use super::*;
 use crate::catalog::tests::{COMP_LV2, COMP_VST3, DRUMS_LV2, SURGE_LV2, SURGE_VST3};
+use crate::play::seats::tests::FakeEngine;
 use crate::sf2store::Sf2Key;
 use crate::state::added_tests::{plugin, rigged, sf2};
 use crate::state::{Input, Model};
@@ -23,8 +24,9 @@ enum Held {
 
 /// What the engine and the plugins' thread do with the effects, as far as plugins go: where
 /// each loaded plugin is, and which loads wait for an answer.
-#[derive(Default)]
 struct Mini {
+    /// The strips, as far as the song can be compared with them.
+    strips: FakeEngine,
     sounding: HashMap<usize, Held>,
     /// The seat's own instrument, set aside under a trial.
     aside: HashMap<usize, Held>,
@@ -42,7 +44,17 @@ struct Mini {
 
 impl Mini {
     fn new(m: &mut Model) -> Mini {
-        let mut mini = Mini::default();
+        let mut mini = Mini {
+            strips: FakeEngine::new(m),
+            sounding: HashMap::new(),
+            aside: HashMap::new(),
+            inserts: HashMap::new(),
+            sample: None,
+            waiting: BTreeSet::new(),
+            asked: Vec::new(),
+            sf2_asked: Vec::new(),
+            plugged: 0,
+        };
         for op in m.engine_seats() {
             mini.op(op);
         }
@@ -50,6 +62,7 @@ impl Mini {
     }
 
     fn take(&mut self, effects: &[Effect]) {
+        self.strips.take(effects);
         for effect in effects {
             match effect {
                 Effect::Engine(op) => self.op(op.clone()),
@@ -93,6 +106,15 @@ impl Mini {
             }
             EngineOp::Insert { strip, slot, .. } => {
                 self.inserts.remove(&(strip, slot));
+            }
+            EngineOp::MoveInsert { strip, from, to } => {
+                let held = std::mem::take(&mut self.inserts);
+                self.inserts = (held.into_iter())
+                    .map(|((s, slot), ticket)| match s == strip {
+                        true => ((s, moved_slot(slot, from, to)), ticket),
+                        false => ((s, slot), ticket),
+                    })
+                    .collect();
             }
             EngineOp::Plug { ticket, spot } => {
                 assert!(self.waiting.remove(&ticket), "plugged what is not loaded");
@@ -152,6 +174,7 @@ impl Mini {
 
     /// The book and the engine agree, and no loaded plugin is forgotten.
     fn check(&self, m: &Model, ctx: &str) {
+        self.strips.check_mixer(m, ctx);
         let p = m.play();
         let book = &p.plugs;
         for ticket in &self.waiting {
@@ -195,15 +218,41 @@ impl Mini {
                 }
                 other => assert_eq!(own, &Held::Made(other.clone()), "{ctx}: seat {seat}"),
             }
-            for (slot, insert) in t.channel.inserts.iter().enumerate() {
-                let spot = Spot::Insert(StripSeat::Track(seat), slot);
-                let plugin = insert.as_ref().and_then(|i| i.plugin_ref());
-                assert_eq!(
-                    book.at(spot).map(|plug| &plug.plugin.key),
-                    plugin.map(|plugin| &plugin.key),
-                    "{ctx}: {spot:?}"
-                );
+            self.check_slots(m, StripSeat::Track(seat), &t.channel.inserts, ctx);
+        }
+        for bus in meloet_model::Bus::ALL {
+            let inserts = &doc.returns[bus.index()].channel.inserts;
+            self.check_slots(m, StripSeat::Return(bus), inserts, ctx);
+        }
+        self.check_slots(m, StripSeat::Master, &doc.master.inserts, ctx);
+        // What the panel shows is in the song, where the panel says it is.
+        match m.view().params.selected {
+            Some(SelectedParams::Builtin(insert)) => {
+                let (strip, slot) = (strip_id(insert.insert.strip), insert.insert.slot);
+                let held = doc.insert(strip, usize::from(slot));
+                let kind = held
+                    .and_then(|i| i.kind())
+                    .map(crate::play::mixer::effect_kind);
+                assert_eq!(kind, Some(insert.effect), "{ctx}: the selected insert");
             }
+            Some(SelectedParams::Plugin(plugin)) => {
+                let place = Play::slot_place(plugin.slot);
+                assert!(doc.plugin(place).is_some(), "{ctx}: the selected plugin");
+            }
+            None => {}
+        }
+    }
+
+    /// Every plugin the song has in a slot of the strip is the one the book has there.
+    fn check_slots(&self, m: &Model, strip: StripSeat, inserts: &meloet_model::Inserts, ctx: &str) {
+        for (slot, insert) in inserts.iter().enumerate() {
+            let spot = Spot::Insert(strip, slot);
+            let plugin = insert.as_ref().and_then(|i| i.plugin_ref());
+            assert_eq!(
+                m.play().plugs.at(spot).map(|plug| &plug.plugin.key),
+                plugin.map(|plugin| &plugin.key),
+                "{ctx}: {spot:?}"
+            );
         }
     }
 }
@@ -225,6 +274,35 @@ impl Rng {
     fn of<T: Clone>(&mut self, items: &[T]) -> T {
         items[self.below(items.len() as u64) as usize].clone()
     }
+}
+
+/// Every insert slot of the song that holds something, with the effect of meloet it holds.
+fn filled_slots(doc: &Doc) -> Vec<(InsertRef, Option<EffectKind>)> {
+    let tracks = doc.tracks.iter().map(|t| {
+        let strip = StripRef::Track { id: t.id.0 };
+        (strip, &t.channel.inserts)
+    });
+    let returns = [SendBus::A, SendBus::B]
+        .into_iter()
+        .zip(&doc.returns)
+        .map(|(bus, r)| (StripRef::Return { bus }, &r.channel.inserts));
+    let mut filled = Vec::new();
+    for (strip, inserts) in tracks
+        .chain(returns)
+        .chain([(StripRef::Master, &doc.master.inserts)])
+    {
+        for (slot, insert) in inserts.iter().enumerate() {
+            if let Some(insert) = insert {
+                let at = InsertRef {
+                    strip,
+                    slot: slot as u8,
+                };
+                let kind = insert.kind().map(crate::play::mixer::effect_kind);
+                filled.push((at, kind));
+            }
+        }
+    }
+    filled
 }
 
 fn held(doc: &Doc) -> Doc {
@@ -280,6 +358,8 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
         }),
     ];
     let (mut plugged, mut plugin_tracks, mut plugin_inserts, mut steps) = (0, 0, 0, 0);
+    let (mut passed, mut moved, mut replaced, mut typed, mut other) = (0, 0, 0, 0, 0);
+    let texts = ["4", "−3 dB", "999", "x", "0.5 s", "1"];
     for seed in 1..=10u64 {
         let rng = &mut Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         let m = &mut rigged();
@@ -307,8 +387,15 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                 0 => PluginSlotRef::Instrument { track },
                 _ => PluginSlotRef::Insert { insert },
             };
+            // For what is done to a slot that holds something: mostly one that does.
+            let filled = filled_slots(&m.play().song().doc);
+            let (held, held_kind) = match rng.below(4) {
+                0 => (insert, None),
+                _ if filled.is_empty() => (insert, None),
+                _ => rng.of(&filled),
+            };
             let mut commands = Vec::new();
-            match rng.below(20) {
+            match rng.below(30) {
                 0..=2 => {
                     // A row is tried for a new track or in place of a track's sound; now and
                     // then its load is answered before Enter, and now and then Enter is not
@@ -376,6 +463,47 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                         sound: rng.of(&sounds),
                     },
                 }),
+                20..=22 => commands.push(Command::ToggleBypass { insert: held }),
+                23..=25 => commands.push(Command::MoveInsert {
+                    insert: held,
+                    to: rng.below(5) as u8,
+                }),
+                26 => {
+                    let insert = held;
+                    let mode = ShelfMode::ReplaceEffect {
+                        strip: insert.strip,
+                        slot: insert.slot,
+                    };
+                    commands.push(Command::OpenShelf { mode });
+                    let effect = match rng.below(3) {
+                        0 => Some(EffectRef::Builtin {
+                            effect: EffectKind::Chorus,
+                        }),
+                        _ => rng.of(&effects),
+                    };
+                    commands.push(Command::ShelfChooseEffect { effect });
+                    // Now and then the slot moves before Enter.
+                    if rng.below(3) == 0 {
+                        let to = rng.below(4) as u8;
+                        commands.push(Command::MoveInsert { insert, to });
+                    }
+                    commands.push(Command::ShelfConfirm);
+                }
+                27 => {
+                    let effect = held_kind.unwrap_or(EffectKind::Reverb);
+                    let param = ParamRef::Builtin {
+                        insert: held,
+                        effect,
+                        param: rng.below(8) as u32,
+                    };
+                    let text = rng.of(&texts).to_owned();
+                    commands.push(Command::TypeParam { param, text });
+                }
+                28 => commands.push(match rng.below(3) {
+                    0 => Command::SelectInstrument { track },
+                    1 => Command::SelectInsert { insert: None },
+                    _ => Command::SelectInsert { insert: Some(held) },
+                }),
                 _ => {
                     let fader = Command::SetGain {
                         strip,
@@ -386,7 +514,19 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                 }
             }
             for command in commands {
+                let before = m.view();
+                let replaces = matches!(before.shelf.mode, ShelfMode::ReplaceEffect { .. });
+                let count = match command {
+                    Command::ToggleBypass { .. } => &mut passed,
+                    Command::MoveInsert { .. } => &mut moved,
+                    Command::TypeParam { .. } => &mut typed,
+                    Command::ShelfConfirm if replaces => &mut replaced,
+                    _ => &mut other,
+                };
                 go(m, mini, Input::Command(command), &ctx);
+                if m.view().song.undo_count > before.song.undo_count {
+                    *count += 1;
+                }
             }
         }
         // Everything is answered, then every step is taken back and made again.
@@ -427,5 +567,9 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
     // The test did what it is for.
     assert!(plugged > 300, "{plugged} plugins were put into the engine");
     assert!(plugin_tracks > 5 && plugin_inserts > 10 && steps > 300);
+    assert!(
+        passed > 100 && moved > 100 && replaced > 20 && typed > 10 && other > 300,
+        "{passed} passed by, {moved} moved, {replaced} replaced, {typed} typed"
+    );
     let _ = (StripId::Master, TrackId(0));
 }

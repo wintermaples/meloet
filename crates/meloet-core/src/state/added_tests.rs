@@ -399,6 +399,267 @@ fn a_plugin_effect_goes_into_a_slot_is_loaded_and_comes_out_again() {
     assert_eq!(m.plugin_tickets().len(), 2);
 }
 
+fn selected_plugin(m: &Model) -> meloet_protocol::SelectedPlugin {
+    match m.view().params.selected {
+        Some(meloet_protocol::SelectedParams::Plugin(plugin)) => plugin,
+        other => panic!("no plugin is selected: {other:?}"),
+    }
+}
+
+fn params_in_front(m: &Model) -> bool {
+    m.view().workspace.layout.right_front == Some(Band::Params)
+}
+
+#[test]
+fn a_plugin_is_selected_passed_by_moved_and_replaced_as_an_effect_of_meloet_is() {
+    use crate::catalog::tests::COMP_VST3;
+    use meloet_protocol::{EffectName, NamedInsert, PluginWindowKind};
+    let (mut m, _, surge) = with_surge();
+    let m = &mut m;
+    let track = m.view().song.tracks[0].id;
+    let seat = m.track_seats()[0].unwrap();
+    let strip = StripRef::Track { id: track };
+    let at = |slot| InsertRef { strip, slot };
+    let zam = || EffectName::Plugin {
+        name: "ZamComp".into(),
+    };
+
+    // The instrument of a track: only a plugin has parameters. Its window opens, so the
+    // panel stays as it is.
+    cmd(m, Command::SelectInstrument { track });
+    let selected = selected_plugin(m);
+    assert_eq!(selected.slot, surge);
+    assert_eq!(selected.window, PluginWindowKind::Opens);
+    assert_eq!(
+        (selected.table, selected.count, selected.row),
+        (None, 0, None)
+    );
+    assert!(!params_in_front(m));
+    assert_eq!(m.view().song.undo_count, 1, "selecting is no step");
+    let other = m.view().song.tracks.len() as u32 + 90;
+    cmd(m, Command::SelectInstrument { track: other });
+    assert_eq!(selected_plugin(m).slot, surge, "no such track: it stays");
+
+    // A plugin whose window meloet does not open yet, in a slot: selected as it goes in,
+    // and once it is read the panel shows it.
+    cmd(m, open(ShelfMode::InsertEffect { strip, slot: 0 }));
+    let choose = |key: &str| Command::ShelfChooseEffect {
+        effect: Some(EffectRef::Plugin { key: key.into() }),
+    };
+    cmd(m, choose(COMP_VST3));
+    let ticket = one_load(&cmd(m, Command::ShelfConfirm));
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::EffectInserted {
+            insert: at(0),
+            effect: zam(),
+        })
+    );
+    let comp = PluginSlotRef::Insert { insert: at(0) };
+    assert_eq!(selected_plugin(m).slot, comp);
+    assert!(!params_in_front(m), "not read yet");
+    loaded(m, ticket);
+    cmd(
+        m,
+        Command::SelectInsert {
+            insert: Some(at(0)),
+        },
+    );
+    assert_eq!(selected_plugin(m).window, PluginWindowKind::NotYet);
+    assert!(params_in_front(m));
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::PluginWindowNotYet {
+            loop_bars: None,
+            name: "ZamComp".into(),
+        })
+    );
+    cmd(m, Command::SelectParam { param: Some(3) });
+    assert_eq!(selected_plugin(m).row, None, "its rows are not made yet");
+
+    // Passed by: the engine is told, and nothing is loaded.
+    let effects = cmd(m, Command::ToggleBypass { insert: at(0) });
+    let strip_seat = StripSeat::Track(seat);
+    assert_eq!(
+        ops(&effects),
+        [EngineOp::Bypass {
+            strip: strip_seat,
+            slot: 0,
+            bypassed: true
+        }]
+    );
+    assert!(loads(&effects).is_empty());
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::EffectBypassed {
+            insert: at(0),
+            effect: zam(),
+            bypassed: true,
+        })
+    );
+    assert!(m.view().song.tracks[0].slots[0].as_ref().unwrap().bypassed);
+
+    // Moved: the engine moves what it has, the book and the selection follow.
+    let effects = cmd(
+        m,
+        Command::MoveInsert {
+            insert: at(0),
+            to: 2,
+        },
+    );
+    assert_eq!(
+        ops(&effects),
+        [EngineOp::MoveInsert {
+            strip: strip_seat,
+            from: 0,
+            to: 2
+        }]
+    );
+    assert!(loads(&effects).is_empty());
+    let place = |slot| PluginPlace::Insert(StripId::Track(TrackId(track)), slot);
+    assert!(m.plugin_tickets().contains(&(place(2), ticket)));
+    assert_eq!(
+        selected_plugin(m).slot,
+        PluginSlotRef::Insert { insert: at(2) }
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::InsertsReordered {
+            strip,
+            order: vec![zam()],
+        })
+    );
+    let effects = cmd(m, Command::Undo);
+    assert!(loads(&effects).is_empty());
+    assert!(m.plugin_tickets().contains(&(place(0), ticket)));
+    assert_eq!(selected_plugin(m).slot, comp);
+    cmd(m, Command::Redo);
+
+    // Opening the mixer names it; once it has stopped, it is named as stopped, and
+    // 「とばす」 does nothing for it.
+    let mixer = Command::ToggleBand { band: Band::Mixer };
+    let named = || {
+        vec![NamedInsert {
+            insert: at(2),
+            effect: zam(),
+        }]
+    };
+    cmd(m, mixer.clone());
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::MixerPassesBy {
+            bypassed: named(),
+            stopped: Vec::new(),
+        })
+    );
+    cmd(m, mixer.clone());
+    m.handle(Input::PluginStopped { ticket });
+    let steps = m.view().song.undo_count;
+    cmd(m, Command::ToggleBypass { insert: at(2) });
+    assert_eq!(m.view().song.undo_count, steps);
+    cmd(m, mixer);
+    // What stopped is said before anything else, until it is loaded again or removed.
+    assert!(matches!(
+        status(m),
+        Some(StatusMessage::PluginStopped { .. })
+    ));
+    assert_eq!(
+        m.play().mixer_passes_by(),
+        Some(StatusMessage::MixerPassesBy {
+            bypassed: Vec::new(),
+            stopped: named(),
+        })
+    );
+    cmd(
+        m,
+        Command::ReloadPlugin {
+            slot: PluginSlotRef::Insert { insert: at(2) },
+        },
+    );
+    loaded(m, ticket);
+
+    // Replaced by an effect of meloet: the shelf names what the slot holds, the engine
+    // empties the slot and gets the new effect, and the plugin is let go of.
+    let mode = ShelfMode::ReplaceEffect { strip, slot: 2 };
+    cmd(m, open(mode));
+    let held = EffectRef::Plugin {
+        key: COMP_VST3.into(),
+    };
+    assert_eq!(m.view().shelf.current_effect, Some(held));
+    cmd(m, choose(COMP_VST3));
+    assert!(loads(&cmd(m, Command::ShelfConfirm)).is_empty());
+    assert_eq!(m.view().shelf.mode, mode, "the plugin it holds: no step");
+    cmd(
+        m,
+        Command::ShelfChooseEffect {
+            effect: Some(EffectRef::Builtin {
+                effect: EffectKind::Chorus,
+            }),
+        },
+    );
+    let effects = cmd(m, Command::ShelfConfirm);
+    assert!(ops(&effects).iter().any(|op| matches!(
+        op,
+        EngineOp::Insert {
+            slot: 2,
+            insert: Some(_),
+            ..
+        }
+    )));
+    assert!(ops(&effects).contains(&EngineOp::Bypass {
+        strip: strip_seat,
+        slot: 2,
+        bypassed: false
+    }));
+    assert!(!m.plugin_tickets().iter().any(|(p, _)| *p == place(2)));
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::InsertReplaced {
+            insert: at(2),
+            effect: EffectName::Builtin {
+                effect: EffectKind::Chorus
+            },
+        })
+    );
+
+    // Undo: the plugin is loaded again with the state the song has, passed by as it was.
+    let effects = cmd(m, Command::Undo);
+    let again = one_load(&effects);
+    assert!(ops(&effects).contains(&EngineOp::Bypass {
+        strip: strip_seat,
+        slot: 2,
+        bypassed: true
+    }));
+    loaded(m, again);
+    assert!(m.plugin_tickets().contains(&(place(2), again)));
+
+    // A plugin in place of a plugin, and of an effect of meloet.
+    cmd(m, open(mode));
+    cmd(m, choose(COMP_LV2));
+    let lv2 = one_load(&cmd(m, Command::ShelfConfirm));
+    loaded(m, lv2);
+    assert_eq!(m.plugin_tickets().len(), 2, "the track's and this one");
+    assert!(m.plugin_tickets().contains(&(place(2), lv2)));
+    let on_a = StripRef::Return { bus: SendBus::A };
+    cmd(
+        m,
+        open(ShelfMode::ReplaceEffect {
+            strip: on_a,
+            slot: 0,
+        }),
+    );
+    cmd(m, choose(COMP_LV2));
+    let on_return = one_load(&cmd(m, Command::ShelfConfirm));
+    loaded(m, on_return);
+    assert_eq!(m.view().song.returns[0].inserts(), [None; 4]);
+    cmd(m, Command::Undo);
+    assert_eq!(
+        m.view().song.returns[0].inserts()[0],
+        Some(EffectKind::Reverb)
+    );
+    assert_eq!(m.plugin_tickets().len(), 2);
+}
+
 #[test]
 fn a_plugin_that_stops_does_not_stop_the_recording() {
     let (mut m, ticket, slot) = with_surge();

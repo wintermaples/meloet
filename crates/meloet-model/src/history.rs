@@ -192,6 +192,26 @@ pub enum StepKind {
     RemovePlugin {
         place: PluginPlace,
     },
+    /// 「とばす」 and 「もどす」; `bypassed`: the slot is passed by after the step. Either `Doc`
+    /// has the effect, for its name.
+    Bypass {
+        strip: StripId,
+        slot: usize,
+        bypassed: bool,
+    },
+    /// A drag of a slot inside its strip, 「上へ動かす」, 「下へ動かす」: the slot `from` is at
+    /// `to` after the step, and the slots between moved by one.
+    MoveInsert {
+        strip: StripId,
+        from: usize,
+        to: usize,
+    },
+    /// The shelf's 「入れかえる」 for a slot. The `Doc` before the step has the old effect or
+    /// plugin, the one after it the new.
+    ReplaceEffect {
+        strip: StripId,
+        slot: usize,
+    },
     /// Band: "（プラグイン）の窓で変えた所", at "（トラック）・ プラグインの窓" (spec 3, 15-C).
     PluginWindow {
         place: PluginPlace,

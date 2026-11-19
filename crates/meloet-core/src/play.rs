@@ -181,6 +181,20 @@ pub enum EngineOp {
         param: u32,
         value: f32,
     },
+    /// 「とばす」: the sound passes the slot by, or goes through it again. The mark is the
+    /// slot's; what is put into the slot later comes in with it.
+    Bypass {
+        strip: StripSeat,
+        slot: usize,
+        bypassed: bool,
+    },
+    /// The slot `from` goes to `to` with what it holds, as it sounds, and the slots between
+    /// move by one.
+    MoveInsert {
+        strip: StripSeat,
+        from: usize,
+        to: usize,
+    },
     /// The plugin loaded under `ticket` goes into the engine at `spot`, in place of what is
     /// there (the silent instrument, the empty slot, or the plugin as it was before it was
     /// loaded again).
@@ -1013,6 +1027,9 @@ impl Play {
         if let Some(kind) = self.history.undo(&mut self.song.doc) {
             self.crossed_songs(&kind);
             self.song.doc.name.clone_from(&before.name);
+            if let StepKind::MoveInsert { strip, from, to } = kind {
+                self.insert_moved(strip, to, from, effects);
+            }
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_undo.pop() {
                 self.put_sel(sel_before.clone());
@@ -1029,6 +1046,9 @@ impl Play {
         if let Some(kind) = self.history.redo(&mut self.song.doc) {
             self.crossed_songs(&kind);
             self.song.doc.name.clone_from(&before.name);
+            if let StepKind::MoveInsert { strip, from, to } = kind {
+                self.insert_moved(strip, from, to, effects);
+            }
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_redo.pop() {
                 self.put_sel(sel_after.clone());
@@ -1070,7 +1090,11 @@ impl Play {
     ) {
         let sel_before = self.sel();
         let before = self.doc().clone();
+        let step = e.step;
         self.history.apply(&mut self.song.doc, e);
+        if let StepKind::MoveInsert { strip, from, to } = step {
+            self.insert_moved(strip, from, to, effects);
+        }
         if let Some(pick) = clips {
             self.clips_sel = pick.clips;
             self.selected = pick.clicked;
@@ -2228,7 +2252,7 @@ mod sounds;
 mod tracks;
 
 use mixer::Mixer;
-pub use mixer::Preview;
+pub use mixer::{Preview, Selecting};
 use mixsync::MixTold;
 use plugs::Plugs;
 pub use plugs::{PlugState, Spot};

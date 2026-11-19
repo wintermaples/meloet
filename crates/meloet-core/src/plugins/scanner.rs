@@ -1,6 +1,7 @@
-//! Runs the scans (docs/architecture.md 20-4): one thread takes the jobs in order and writes
-//! the scan file; while a job runs, a few more threads each scan one bundle at a time with a
-//! child process (`meloet-plughost scan`).
+//! Runs the scans (docs/architecture.md 20-4): one thread takes the jobs in order; while a job
+//! runs, a few more threads each scan one bundle at a time with a child process
+//! (`meloet-plughost scan`). Another thread writes the scan file, so that it is written
+//! while a job runs too: a first scan takes minutes.
 //!
 //! A child that dies or goes quiet after a `Probing` stopped at that plugin: the plugin is
 //! recorded as stopped and the bundle is scanned on by a new child that passes it over. A
@@ -44,24 +45,19 @@ fn workers() -> usize {
 
 type News = Arc<dyn Fn(ScanNews) + Send + Sync>;
 
-enum Ask {
-    Job(Box<ScanJob>),
-    Save(Box<ScanCache>),
-}
-
 struct Context {
     exe: PathBuf,
     env: Vec<(OsString, OsString)>,
     timeout: Duration,
-    cache_dir: Option<PathBuf>,
     stop: Arc<AtomicBool>,
     news: News,
 }
 
 pub struct Scanner {
-    tx: Option<Sender<Ask>>,
+    tx: Option<Sender<Box<ScanJob>>>,
+    saves: Option<Sender<Box<ScanCache>>>,
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    threads: Vec<JoinHandle<()>>,
 }
 
 impl Scanner {
@@ -75,33 +71,40 @@ impl Scanner {
             exe: options.host_exe.clone(),
             env: options.child_env.clone(),
             timeout: options.scan_timeout,
-            cache_dir: options.cache_dir.clone(),
             stop: stop.clone(),
             news: Arc::new(news),
         };
         let (tx, rx) = mpsc::channel();
-        let thread = std::thread::Builder::new()
+        let scans = std::thread::Builder::new()
             .name("meloet-scan".into())
             .spawn(move || run(&context, &rx))
             .expect("failed to start the scan thread");
+        let (saves, to_save) = mpsc::channel();
+        let cache_dir = options.cache_dir.clone();
+        let writes = std::thread::Builder::new()
+            .name("meloet-scan-save".into())
+            .spawn(move || write(cache_dir.as_deref(), &to_save))
+            .expect("failed to start the thread that writes the scan file");
         Scanner {
             tx: Some(tx),
+            saves: Some(saves),
             stop,
-            thread: Some(thread),
+            threads: vec![scans, writes],
         }
     }
 
     /// Runs after the jobs asked for before it. Its news end with `ScanNews::Done`.
     pub fn scan(&self, job: ScanJob) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(Ask::Job(Box::new(job)));
+            let _ = tx.send(Box::new(job));
         }
     }
 
-    /// Writes the scan file, after the jobs asked for before it.
+    /// Writes the scan file, after the ones asked for before it and whatever the jobs do
+    /// meanwhile.
     pub fn save(&self, cache: ScanCache) {
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(Ask::Save(Box::new(cache)));
+        if let Some(saves) = &self.saves {
+            let _ = saves.send(Box::new(cache));
         }
     }
 }
@@ -111,28 +114,31 @@ impl Drop for Scanner {
     /// and waits for the threads.
     fn drop(&mut self) {
         self.stop.store(true, Relaxed);
-        drop(self.tx.take());
-        if let Some(thread) = self.thread.take() {
+        drop((self.tx.take(), self.saves.take()));
+        for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
     }
 }
 
-fn run(context: &Context, rx: &Receiver<Ask>) {
-    while let Ok(ask) = rx.recv() {
-        match ask {
-            Ask::Job(job) => {
-                if !context.stop.load(Relaxed) {
-                    run_job(context, *job);
-                }
-            }
-            Ask::Save(cache) => {
-                if let Some(dir) = &context.cache_dir
-                    && let Err(e) = cache.save(dir)
-                {
-                    eprintln!("meloet: the plugin scan was not saved: {e}");
-                }
-            }
+fn run(context: &Context, rx: &Receiver<Box<ScanJob>>) {
+    while let Ok(job) = rx.recv() {
+        if !context.stop.load(Relaxed) {
+            run_job(context, *job);
+        }
+    }
+}
+
+fn write(cache_dir: Option<&Path>, rx: &Receiver<Box<ScanCache>>) {
+    while let Ok(mut cache) = rx.recv() {
+        // Each one is the whole file: only the newest of those that wait is worth writing.
+        while let Ok(newer) = rx.try_recv() {
+            cache = newer;
+        }
+        if let Some(dir) = cache_dir
+            && let Err(e) = cache.save(dir)
+        {
+            eprintln!("meloet: the plugin scan was not saved: {e}");
         }
     }
 }
@@ -506,6 +512,62 @@ mod tests {
                 stopped: stops.iter().map(|id| stopped(*id)).collect(),
             }],
         }
+    }
+
+    #[test]
+    fn the_scan_file_is_written_while_a_scan_runs() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp_dir("save-while-scanning");
+        let path = bundle(&root, "lv2/slow.lv2");
+        // A child that says nothing: its bundle is scanned until the time limit.
+        let exe = root.join("quiet-host");
+        std::fs::write(&exe, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let cache_dir = root.join("cache");
+        let options = PluginOptions {
+            host_exe: exe,
+            cache_dir: Some(cache_dir.clone()),
+            usual_places: Vec::new(),
+            scan_timeout: Duration::from_secs(3),
+            child_env: Vec::new(),
+            wait_for_screen: false,
+        };
+        let (news_tx, news) = mpsc::channel();
+        let scanner = Scanner::start(&options, move |n| {
+            let _ = news_tx.send(n);
+        });
+        scanner.scan(ScanJob {
+            id: 1,
+            what: ScanWhat::Places {
+                places: vec![root.join("lv2")],
+                all: false,
+            },
+            known: ScanCache::default(),
+        });
+        let counted = news.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(matches!(counted, ScanNews::Counted { total: 1, .. }));
+
+        let began = Instant::now();
+        scanner.save(known(&path, &["urn:a"], &[]));
+        while !ScanCache::is_saved(&cache_dir) {
+            assert!(began.elapsed() < Duration::from_secs(1), "not written");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            news.try_recv().is_err(),
+            "written before the scan had anything to say"
+        );
+        assert_eq!(ScanCache::load(&cache_dir).plugins().count(), 1);
+
+        // Ending gives the scan up, and what was asked for last is what the file holds.
+        scanner.save(ScanCache::default());
+        scanner.save(known(&path, &["urn:a", "urn:b"], &[]));
+        drop(scanner);
+        assert!(
+            began.elapsed() < Duration::from_secs(2),
+            "waited for the child"
+        );
+        assert_eq!(ScanCache::load(&cache_dir).plugins().count(), 2);
     }
 
     #[test]

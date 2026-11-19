@@ -5,13 +5,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use meloet_model::effects::EffectKind as ModelEffect;
-use meloet_model::{INSERT_SLOTS, InstrumentRef, PluginRef, StripId, TrackId, edit};
+use meloet_model::mixer::moved_slot;
+use meloet_model::{INSERT_SLOTS, Insert, InstrumentRef, PluginRef, StripId, TrackId, edit};
 use meloet_protocol::{
-    EffectKind, EffectRef, InstrumentKind, LibraryView, SamplePlaying, ShelfMode, ShelfView,
-    SoundRef, SoundSampleView, StatusMessage,
+    EffectKind, EffectRef, InsertRef, InstrumentKind, LibraryView, SamplePlaying, ShelfMode,
+    ShelfView, SoundRef, SoundSampleView, StatusMessage,
 };
 
-use super::mixer::{effect_kind, model_effect, strip_id, strip_ref};
+use super::mixer::{effect_kind, effect_name, model_effect, strip_id, strip_ref};
 
 use super::plugs::{Spot, Want};
 use super::seats::{AUDITION_SEAT, MAX_TRACKS};
@@ -29,6 +30,16 @@ pub(super) enum Mode {
     Replace(TrackId),
     /// The shelf lists the effects; Enter puts the chosen one into this empty slot.
     InsertEffect(StripId, usize),
+    /// The shelf lists the effects; Enter puts the chosen one in place of what this slot
+    /// holds.
+    ReplaceEffect(StripId, usize),
+}
+
+impl Mode {
+    /// The shelf lists the effects, not the instruments.
+    fn lists_effects(self) -> bool {
+        matches!(self, Mode::InsertEffect(..) | Mode::ReplaceEffect(..))
+    }
 }
 
 /// The chosen row of the shelf's effects.
@@ -49,7 +60,7 @@ pub(super) struct Shelf {
     pub(super) before: Option<InstrumentRef>,
     pub(super) sample: Option<Sample>,
     pub(super) sample_waiting: Option<SampleWaiting>,
-    /// `InsertEffect`: the chosen row.
+    /// `InsertEffect` and `ReplaceEffect`: the chosen row.
     pub(super) effect: Option<Chosen>,
     /// The plugin selected last did not load.
     pub(super) unreadable: Option<SoundRef>,
@@ -66,6 +77,17 @@ fn builtin_sound(instrument: InstrumentKind) -> SoundRef {
     SoundRef::Builtin { instrument }
 }
 
+/// What a slot holds, as the shelf names its rows.
+fn held_ref(insert: &Insert) -> EffectRef {
+    match (insert.kind(), insert.plugin_ref()) {
+        (Some(kind), _) => effect_ref(effect_kind(kind)),
+        (None, Some(plugin)) => EffectRef::Plugin {
+            key: plugin.key.to_string(),
+        },
+        (None, None) => unreachable!("an insert is an effect of meloet or a plugin"),
+    }
+}
+
 impl Play {
     /// While the shelf auditions, the keys sound with the row and nothing is recorded.
     pub fn auditioning(&self) -> bool {
@@ -78,7 +100,7 @@ impl Play {
         match self.shelf.mode {
             Mode::NewTrack => Some(AUDITION_SEAT),
             Mode::Replace(track) => self.seats.of(track),
-            Mode::InsertEffect(..) => None,
+            Mode::InsertEffect(..) | Mode::ReplaceEffect(..) => None,
         }
     }
 
@@ -88,7 +110,7 @@ impl Play {
         match self.shelf.mode {
             Mode::NewTrack => Some(Spot::Seat(AUDITION_SEAT)),
             Mode::Replace(track) => self.seats.of(track).map(Spot::Trial),
-            Mode::InsertEffect(..) => None,
+            Mode::InsertEffect(..) | Mode::ReplaceEffect(..) => None,
         }
     }
 
@@ -103,11 +125,11 @@ impl Play {
     /// `OpenShelf`. Returns whether the shelf is to be shown. While counting in or recording
     /// only for an effect: instruments are not tried then.
     pub fn open_shelf(&mut self, mode: ShelfMode, effects: &mut Vec<Effect>) -> bool {
-        if self.busy() && !matches!(mode, ShelfMode::InsertEffect { .. }) {
-            return false;
-        }
-        // Replacing an effect is not made yet: the shelf stays as it is.
-        if matches!(mode, ShelfMode::ReplaceEffect { .. }) {
+        let for_effect = matches!(
+            mode,
+            ShelfMode::InsertEffect { .. } | ShelfMode::ReplaceEffect { .. }
+        );
+        if self.busy() && !for_effect {
             return false;
         }
         let mode = match mode {
@@ -115,13 +137,20 @@ impl Play {
             ShelfMode::Replace { track } if self.doc().track(TrackId(track)).is_some() => {
                 Mode::Replace(TrackId(track))
             }
-            ShelfMode::Replace { .. } | ShelfMode::ReplaceEffect { .. } => return false,
+            ShelfMode::Replace { .. } => return false,
             ShelfMode::InsertEffect { strip, slot } => {
                 let (strip, slot) = (strip_id(strip), usize::from(slot));
                 if !self.slot_is_empty(strip, slot) {
                     return false;
                 }
                 Mode::InsertEffect(strip, slot)
+            }
+            ShelfMode::ReplaceEffect { strip, slot } => {
+                let (strip, slot) = (strip_id(strip), usize::from(slot));
+                if self.doc().insert(strip, slot).is_none() {
+                    return false;
+                }
+                Mode::ReplaceEffect(strip, slot)
             }
         };
         self.end_audition(effects);
@@ -138,14 +167,14 @@ impl Play {
 
     /// `ShelfSelectEffect`: only while the shelf lists the effects.
     pub fn shelf_select_effect(&mut self, effect: Option<EffectKind>) {
-        if matches!(self.shelf.mode, Mode::InsertEffect(..)) {
+        if self.shelf.mode.lists_effects() {
             self.shelf.effect = effect.map(|kind| Chosen::Builtin(model_effect(kind)));
         }
     }
 
     /// `ShelfChooseEffect` with a plugin, as the shelf has it.
     pub fn shelf_choose_plugin(&mut self, plugin: Option<Arc<PluginRef>>) {
-        if matches!(self.shelf.mode, Mode::InsertEffect(..)) {
+        if self.shelf.mode.lists_effects() {
             self.shelf.effect = plugin.map(Chosen::Plugin);
         }
     }
@@ -166,7 +195,7 @@ impl Play {
         instrument: Option<InstrumentRef>,
         effects: &mut Vec<Effect>,
     ) {
-        if self.busy() || matches!(self.shelf.mode, Mode::InsertEffect(..)) {
+        if self.busy() || self.shelf.mode.lists_effects() {
             return;
         }
         let Some(instrument) = instrument else {
@@ -205,7 +234,7 @@ impl Play {
                     }
                 }
             }
-            Mode::InsertEffect(..) => return,
+            Mode::InsertEffect(..) | Mode::ReplaceEffect(..) => return,
         }
         if let Some(before) = self.shelf.trial.replace(instrument) {
             self.shelf.before = Some(before);
@@ -215,16 +244,32 @@ impl Play {
 
     /// `ShelfConfirm`. Returns the notice to show.
     pub fn shelf_confirm(&mut self, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
-        if let Mode::InsertEffect(strip, slot) = self.shelf.mode {
-            let went_in = match self.shelf.effect.clone()? {
-                Chosen::Builtin(kind) => self.add_effect(strip, slot, kind, effects),
-                Chosen::Plugin(plugin) => self.add_plugin_effect(strip, slot, plugin, effects),
+        if let Mode::InsertEffect(strip, slot) | Mode::ReplaceEffect(strip, slot) = self.shelf.mode
+        {
+            let chosen = self.shelf.effect.clone()?;
+            let replaces = matches!(self.shelf.mode, Mode::ReplaceEffect(..));
+            let went_in = match &chosen {
+                _ if replaces => self.replace_effect(strip, slot, &chosen, effects),
+                Chosen::Builtin(kind) => self.add_effect(strip, slot, *kind, effects),
+                Chosen::Plugin(plugin) => {
+                    self.add_plugin_effect(strip, slot, plugin.clone(), effects)
+                }
             };
-            if went_in {
-                self.shelf.mode = Mode::NewTrack;
-                self.shelf.effect = None;
+            if !went_in {
+                return None;
             }
-            return None;
+            self.shelf.mode = Mode::NewTrack;
+            self.shelf.effect = None;
+            let insert = InsertRef {
+                strip: strip_ref(strip),
+                slot: slot as u8,
+            };
+            let effect = effect_name(self.doc().insert(strip, slot)?);
+            return Some(if replaces {
+                StatusMessage::InsertReplaced { insert, effect }
+            } else {
+                StatusMessage::EffectInserted { insert, effect }
+            });
         }
         // A plugin that is still being read may yet not load: no track is made for it.
         if self.busy() || self.trial_loading() && self.trial_is_plugin() {
@@ -278,7 +323,7 @@ impl Play {
                     },
                 })
             }
-            Mode::InsertEffect(..) => None,
+            Mode::InsertEffect(..) | Mode::ReplaceEffect(..) => None,
         }
     }
 
@@ -312,7 +357,9 @@ impl Play {
                     _ => self.place_waiting(seat, effects),
                 }
             }
-            (Mode::Replace(_), None) | (Mode::InsertEffect(..), _) => {}
+            (Mode::Replace(_), None)
+            | (Mode::InsertEffect(..), _)
+            | (Mode::ReplaceEffect(..), _) => {}
         }
         true
     }
@@ -331,9 +378,12 @@ impl Play {
     /// instrument is another one now (undo), ends; "入れかえる" of a track that is gone
     /// becomes "新しいトラック".
     pub(super) fn end_stale_audition(&mut self, effects: &mut Vec<Effect>) {
-        if let Mode::InsertEffect(strip, slot) = self.shelf.mode
-            && !self.slot_is_empty(strip, slot)
-        {
+        let stale = match self.shelf.mode {
+            Mode::InsertEffect(strip, slot) => !self.slot_is_empty(strip, slot),
+            Mode::ReplaceEffect(strip, slot) => self.doc().insert(strip, slot).is_none(),
+            Mode::NewTrack | Mode::Replace(_) => false,
+        };
+        if stale {
             self.shelf.mode = Mode::NewTrack;
             self.shelf.effect = None;
         }
@@ -353,6 +403,16 @@ impl Play {
         }
     }
 
+    /// An insert moved inside its strip: the slot the shelf is open for stays the same one.
+    pub(super) fn shelf_follows(&mut self, strip: StripId, from: usize, to: usize) {
+        match &mut self.shelf.mode {
+            Mode::InsertEffect(s, slot) | Mode::ReplaceEffect(s, slot) if *s == strip => {
+                *slot = moved_slot(*slot, from, to);
+            }
+            _ => {}
+        }
+    }
+
     /// `favorites`: the starred instruments of meloet, a setting. `stars`: the other starred
     /// sounds, and the starred effects. `library`: what the shelf has of SF2 files and
     /// plugins; `home`: the home folder, shown as "~".
@@ -364,8 +424,12 @@ impl Play {
         home: Option<&Path>,
     ) -> ShelfView {
         let current = match self.shelf.mode {
-            Mode::NewTrack | Mode::InsertEffect(..) => None,
+            Mode::NewTrack | Mode::InsertEffect(..) | Mode::ReplaceEffect(..) => None,
             Mode::Replace(track) => self.doc().track(track).map(|t| &t.instrument),
+        };
+        let current_effect = match self.shelf.mode {
+            Mode::ReplaceEffect(strip, slot) => self.doc().insert(strip, slot).map(held_ref),
+            _ => None,
         };
         let trial = self.shelf.trial.as_ref();
         let loading = trial.filter(|_| self.trial_loading());
@@ -393,7 +457,7 @@ impl Play {
             loading_sound: loading.map(sound_ref),
             sound_sample: playing.or(waiting),
             chosen_effect,
-            current_effect: None,
+            current_effect,
             unreadable: self.shelf.unreadable.clone(),
             favorite_sounds: (favorites.iter().copied().map(builtin_sound))
                 .chain(starred_sounds)
@@ -404,6 +468,10 @@ impl Play {
                 Mode::NewTrack => ShelfMode::NewTrack,
                 Mode::Replace(track) => ShelfMode::Replace { track: track.0 },
                 Mode::InsertEffect(strip, slot) => ShelfMode::InsertEffect {
+                    strip: strip_ref(strip),
+                    slot: slot as u8,
+                },
+                Mode::ReplaceEffect(strip, slot) => ShelfMode::ReplaceEffect {
                     strip: strip_ref(strip),
                     slot: slot as u8,
                 },
@@ -445,7 +513,7 @@ impl Play {
                     },
                 }
             }
-            Mode::InsertEffect(..) => return None,
+            Mode::InsertEffect(..) | Mode::ReplaceEffect(..) => return None,
         })
     }
 }

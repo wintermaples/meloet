@@ -2,8 +2,8 @@ use crate::seen::*;
 use meloet_model::effects::{EffectKind as ModelEffect, reverb};
 use meloet_model::{Bus, Gain, Pan, StripId, TrackId};
 use meloet_protocol::{
-    Band, BarSpan, Command, EffectKind, InsertRef, SendBus, ShelfMode, SongFile, StatusMessage,
-    StripRef, TransportState,
+    Band, BarSpan, Command, EffectKind, EffectName, EffectRef, InsertRef, NamedInsert, ParamEnd,
+    ParamRef, SendBus, ShelfMode, SongFile, StatusMessage, StripRef, TransportState,
 };
 
 use super::Preview;
@@ -505,4 +505,503 @@ fn the_mixer_works_while_recording() {
         m.view().params.selected.builtin().effect,
         EffectKind::Reverb
     );
+}
+
+fn builtin(effect: EffectKind) -> EffectName {
+    EffectName::Builtin { effect }
+}
+
+fn passed_by(m: &Model, strip: StripRef) -> [bool; 4] {
+    let song = m.view().song;
+    let slots = match strip {
+        StripRef::Track { id } => song.tracks.into_iter().find(|t| t.id == id).unwrap().slots,
+        StripRef::Return { bus: SendBus::A } => song.returns[0].slots.clone(),
+        StripRef::Return { bus: SendBus::B } => song.returns[1].slots.clone(),
+        StripRef::Master => song.master.slots,
+    };
+    slots.map(|slot| slot.is_some_and(|i| i.bypassed))
+}
+
+/// Puts `effect` into an empty slot from the shelf.
+fn put(m: &mut Model, strip: StripRef, slot: u8, effect: EffectKind) {
+    let mode = ShelfMode::InsertEffect { strip, slot };
+    cmd(m, Command::OpenShelf { mode });
+    let effect = Some(effect);
+    cmd(m, Command::ShelfSelectEffect { effect });
+    cmd(m, Command::ShelfConfirm);
+}
+
+fn selected_at(m: &Model) -> (InsertRef, EffectKind, Option<u32>) {
+    let selected = m.view().params.selected.builtin();
+    (selected.insert, selected.effect, selected.row)
+}
+
+#[test]
+fn passing_an_insert_by_is_a_step_that_is_said_and_keeps_the_values() {
+    let m = &mut ready();
+    let reverb = at(A, 0);
+    let said = |bypassed| {
+        Some(StatusMessage::EffectBypassed {
+            insert: reverb,
+            effect: builtin(EffectKind::Reverb),
+            bypassed,
+        })
+    };
+    cmd(m, Command::ToggleBypass { insert: reverb });
+    assert_eq!(passed_by(m, A), [true, false, false, false]);
+    assert_eq!(status(m), said(true));
+    let song = m.view().song;
+    assert_eq!((song.undo_count, song.file), (1, SongFile::Changed));
+
+    // The parameters still move while it is passed by.
+    cmd(m, decay(4.0, true));
+    cmd(
+        m,
+        Command::SelectInsert {
+            insert: Some(reverb),
+        },
+    );
+    assert_eq!(m.view().params.selected.builtin().values[0], 4.0);
+
+    cmd(m, Command::ToggleBypass { insert: reverb });
+    assert_eq!(passed_by(m, A), [false; 4]);
+    assert_eq!(status(m), said(false));
+    assert_eq!(undo_count(m), 3);
+    cmd(m, Command::Undo);
+    assert_eq!(passed_by(m, A), [true, false, false, false]);
+    cmd(m, Command::Undo);
+    cmd(m, Command::Undo);
+    assert_eq!(passed_by(m, A), [false; 4]);
+    cmd(m, Command::Redo);
+    assert_eq!(passed_by(m, A), [true, false, false, false]);
+
+    // An empty slot, and a strip that is not there: nothing.
+    let steps = undo_count(m);
+    for insert in [
+        at(T1, 0),
+        at(A, 1),
+        at(StripRef::Track { id: 9 }, 0),
+        at(A, 7),
+    ] {
+        cmd(m, Command::ToggleBypass { insert });
+        assert_eq!(undo_count(m), steps);
+        assert!(!matches!(
+            status(m),
+            Some(StatusMessage::EffectBypassed { .. })
+        ));
+    }
+
+    // While recording too.
+    cmd(m, Command::SetCountIn { bars: 0 });
+    cmd(m, Command::Record);
+    crate::play::tests::started(m);
+    cmd(
+        m,
+        Command::ToggleBypass {
+            insert: at(StripRef::Master, 0),
+        },
+    );
+    assert_eq!(m.view().transport.state, TransportState::Recording);
+    assert_eq!(passed_by(m, StripRef::Master), [true, false, false, false]);
+}
+
+#[test]
+fn an_insert_moves_inside_its_strip_and_what_names_it_goes_along() {
+    let m = &mut ready();
+    put(m, T1, 0, EffectKind::Eq4);
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::EffectInserted {
+            insert: at(T1, 0),
+            effect: builtin(EffectKind::Eq4),
+        })
+    );
+    put(m, T1, 1, EffectKind::Compressor);
+    cmd(m, Command::ToggleBypass { insert: at(T1, 0) });
+    cmd(
+        m,
+        Command::SelectInsert {
+            insert: Some(at(T1, 0)),
+        },
+    );
+    cmd(m, Command::SelectParam { param: Some(2) });
+    let steps = undo_count(m);
+
+    // To the last slot: the ones between move up by one, the empty one too.
+    let moved = Command::MoveInsert {
+        insert: at(T1, 0),
+        to: 3,
+    };
+    cmd(m, moved.clone());
+    use EffectKind::{Compressor, Eq4};
+    let inserts = |m: &Model| m.view().song.tracks[0].inserts();
+    assert_eq!(inserts(m), [Some(Compressor), None, None, Some(Eq4)]);
+    assert_eq!(passed_by(m, T1), [false, false, false, true]);
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::InsertsReordered {
+            strip: T1,
+            order: vec![builtin(Compressor), builtin(Eq4)],
+        })
+    );
+    assert_eq!(undo_count(m), steps + 1);
+    assert_eq!(
+        selected_at(m),
+        (at(T1, 3), Eq4, Some(2)),
+        "it stays selected"
+    );
+
+    // Undo and redo take the selection along.
+    cmd(m, Command::Undo);
+    assert_eq!(inserts(m), [Some(Eq4), Some(Compressor), None, None]);
+    assert_eq!(selected_at(m), (at(T1, 0), Eq4, Some(2)));
+    cmd(m, Command::Redo);
+    assert_eq!(selected_at(m), (at(T1, 3), Eq4, Some(2)));
+
+    // Past the end is the end, where it is already; an empty slot does not move.
+    for (slot, to) in [(3, 9), (3, 3), (1, 0), (2, 3), (7, 0)] {
+        let insert = at(T1, slot);
+        cmd(m, Command::MoveInsert { insert, to });
+        assert_eq!(undo_count(m), steps + 1, "{slot} to {to}");
+    }
+    let nowhere = at(StripRef::Track { id: 9 }, 0);
+    cmd(
+        m,
+        Command::MoveInsert {
+            insert: nowhere,
+            to: 1,
+        },
+    );
+    assert_eq!(undo_count(m), steps + 1);
+
+    // Another one moves past the selected one.
+    let insert = at(T1, 0);
+    cmd(m, Command::MoveInsert { insert, to: 9 });
+    assert_eq!(inserts(m), [None, None, Some(Eq4), Some(Compressor)]);
+    assert_eq!(selected_at(m), (at(T1, 2), Eq4, Some(2)));
+    assert_eq!(passed_by(m, T1), [false, false, true, false]);
+
+    // The shelf, open for a slot of the strip, stays with that slot.
+    let replace = |slot| ShelfMode::ReplaceEffect { strip: T1, slot };
+    cmd(m, Command::OpenShelf { mode: replace(2) });
+    let insert = at(T1, 2);
+    cmd(m, Command::MoveInsert { insert, to: 0 });
+    assert_eq!(m.view().shelf.mode, replace(0));
+    let empty = |slot| ShelfMode::InsertEffect { strip: T1, slot };
+    cmd(m, Command::OpenShelf { mode: empty(1) });
+    let insert = at(T1, 3);
+    cmd(m, Command::MoveInsert { insert, to: 1 });
+    assert_eq!(inserts(m), [Some(Eq4), Some(Compressor), None, None]);
+    assert_eq!(m.view().shelf.mode, empty(2));
+    cmd(m, Command::Undo);
+    assert_eq!(m.view().shelf.mode, empty(1));
+
+    // The returns and the master move theirs the same way.
+    put(m, A, 2, EffectKind::Chorus);
+    let insert = at(A, 2);
+    cmd(m, Command::MoveInsert { insert, to: 0 });
+    assert_eq!(
+        m.view().song.returns[0].inserts(),
+        [
+            Some(EffectKind::Chorus),
+            Some(EffectKind::Reverb),
+            None,
+            None
+        ]
+    );
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::InsertsReordered {
+            strip: A,
+            order: vec![builtin(EffectKind::Chorus), builtin(EffectKind::Reverb)],
+        })
+    );
+}
+
+#[test]
+fn an_effect_is_replaced_from_the_shelf_and_undo_brings_the_old_one_back_as_it_was() {
+    let m = &mut ready();
+    let reverb = at(A, 0);
+    cmd(m, decay(4.0, true));
+    cmd(m, Command::ToggleBypass { insert: reverb });
+    let steps = undo_count(m);
+
+    // Not for an empty slot, nor for one that is not there.
+    for mode in [
+        ShelfMode::ReplaceEffect { strip: A, slot: 1 },
+        ShelfMode::ReplaceEffect { strip: T1, slot: 0 },
+        ShelfMode::ReplaceEffect { strip: A, slot: 4 },
+        ShelfMode::ReplaceEffect {
+            strip: StripRef::Track { id: 9 },
+            slot: 0,
+        },
+    ] {
+        cmd(m, Command::OpenShelf { mode });
+        assert!(m.view().workspace.layout.right_open.is_empty());
+    }
+    let mode = ShelfMode::ReplaceEffect { strip: A, slot: 0 };
+    cmd(m, Command::OpenShelf { mode });
+    let shelf = m.view().shelf;
+    assert_eq!(m.view().workspace.layout.right_front, Some(Band::Shelf));
+    assert_eq!((shelf.mode, shelf.chosen_effect), (mode, None));
+    let current = EffectRef::Builtin {
+        effect: EffectKind::Reverb,
+    };
+    assert_eq!(shelf.current_effect, Some(current));
+    assert!(m.view().transport.can_record, "nothing is tried");
+
+    // No row, and the row of what it holds already: no step, and the shelf waits.
+    let choose = |effect| Command::ShelfSelectEffect { effect };
+    cmd(m, Command::ShelfConfirm);
+    cmd(m, choose(Some(EffectKind::Reverb)));
+    cmd(m, Command::ShelfConfirm);
+    assert_eq!(undo_count(m), steps);
+    assert_eq!(m.view().shelf.mode, mode);
+
+    cmd(m, choose(Some(EffectKind::Delay)));
+    assert_eq!(undo_count(m), steps, "nothing is in the song before Enter");
+    cmd(m, Command::ShelfConfirm);
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::InsertReplaced {
+            insert: reverb,
+            effect: builtin(EffectKind::Delay),
+        })
+    );
+    let state = m.view();
+    assert_eq!(state.song.undo_count, steps + 1);
+    assert_eq!(state.song.returns[0].inserts()[0], Some(EffectKind::Delay));
+    assert_eq!(passed_by(m, A), [false; 4], "the new one is heard");
+    let shelf = state.shelf;
+    assert_eq!(
+        (shelf.mode, shelf.chosen_effect, shelf.current_effect),
+        (ShelfMode::NewTrack, None, None)
+    );
+    // As a new one on a return, selected and shown.
+    let selected = state.params.selected.builtin();
+    assert_eq!(
+        (selected.insert, selected.effect),
+        (reverb, EffectKind::Delay)
+    );
+    assert_eq!(selected.values[7], 100.0);
+    assert!(params_in_front(m));
+
+    // Undo: the reverb with its decay, passed by as it was.
+    cmd(m, Command::Undo);
+    let selected = m.view().params.selected.builtin();
+    assert_eq!(
+        (selected.effect, selected.values[0]),
+        (EffectKind::Reverb, 4.0)
+    );
+    assert_eq!(passed_by(m, A), [true, false, false, false]);
+    cmd(m, Command::Redo);
+    assert_eq!(
+        m.view().song.returns[0].inserts()[0],
+        Some(EffectKind::Delay)
+    );
+
+    // The shelf waiting for a slot that is emptied goes back to the instruments.
+    cmd(m, Command::OpenShelf { mode });
+    cmd(m, choose(Some(EffectKind::Chorus)));
+    cmd(m, Command::RemoveEffect { insert: reverb });
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::EffectRemoved {
+            insert: reverb,
+            effect: builtin(EffectKind::Delay),
+        })
+    );
+    let shelf = m.view().shelf;
+    assert_eq!(
+        (shelf.mode, shelf.chosen_effect),
+        (ShelfMode::NewTrack, None)
+    );
+
+    // While recording too.
+    cmd(m, Command::Undo);
+    cmd(m, Command::SetCountIn { bars: 0 });
+    cmd(m, Command::Record);
+    crate::play::tests::started(m);
+    cmd(m, Command::OpenShelf { mode });
+    cmd(m, choose(Some(EffectKind::Chorus)));
+    cmd(m, Command::ShelfConfirm);
+    assert_eq!(
+        m.view().song.returns[0].inserts()[0],
+        Some(EffectKind::Chorus)
+    );
+    assert_eq!(m.view().transport.state, TransportState::Recording);
+}
+
+#[test]
+fn a_typed_value_is_read_brought_into_range_or_turned_down() {
+    let m = &mut ready();
+    let of = |effect, param| ParamRef::Builtin {
+        insert: at(A, 0),
+        effect,
+        param,
+    };
+    let typed = |m: &mut Model, text: &str| {
+        let param = of(EffectKind::Reverb, reverb::DECAY);
+        let text = text.to_owned();
+        cmd(m, Command::TypeParam { param, text });
+    };
+    let decay_now = |m: &Model| {
+        let reverb = m.play().song().doc.returns[0].channel.inserts[0].clone();
+        reverb.unwrap().value(reverb::DECAY).unwrap()
+    };
+    let spoke = |m: &Model| {
+        matches!(
+            status(m),
+            Some(StatusMessage::ParamClamped { .. } | StatusMessage::ParamRejected { .. })
+        )
+    };
+    typed(m, "4");
+    assert_eq!((decay_now(m), undo_count(m)), (4.0, 1));
+    assert!(!spoke(m));
+    typed(m, "1.5 s");
+    assert_eq!((decay_now(m), undo_count(m)), (1.5, 2));
+    typed(m, "800 ms");
+    assert_eq!(decay_now(m), 0.8);
+    typed(m, "0.8");
+    assert_eq!(undo_count(m), 3, "the value it has is no step");
+
+    // Past the end: the end, and the status line says so.
+    let clamped = |value| {
+        Some(StatusMessage::ParamClamped {
+            to: ParamEnd::Builtin {
+                effect: EffectKind::Reverb,
+                param: reverb::DECAY,
+                value,
+            },
+        })
+    };
+    typed(m, "99");
+    assert_eq!((decay_now(m), undo_count(m)), (10.0, 4));
+    assert_eq!(status(m), clamped(10.0));
+    typed(m, "25 s");
+    assert_eq!(undo_count(m), 4);
+    assert_eq!(
+        status(m),
+        clamped(10.0),
+        "said again, though nothing changed"
+    );
+    typed(m, "−3");
+    assert_eq!(decay_now(m), 0.2);
+    assert_eq!(status(m), clamped(0.2));
+
+    // No number: nothing changes, and the status line names what stays.
+    for text in ["", "long", "s"] {
+        typed(m, text);
+        assert_eq!((decay_now(m), undo_count(m)), (0.2, 5), "{text:?}");
+        assert_eq!(
+            status(m),
+            Some(StatusMessage::ParamRejected {
+                param: of(EffectKind::Reverb, reverb::DECAY),
+                kept: "0.2".into(),
+            })
+        );
+    }
+
+    // A value typed while the control is previewed ends the preview.
+    cmd(m, decay(7.0, false));
+    typed(m, "3");
+    assert!(previews(m).is_empty());
+    assert_eq!(decay_now(m), 3.0);
+
+    // Another effect than the slot holds, a parameter it has not, an empty slot: dropped.
+    let steps = undo_count(m);
+    for param in [
+        of(EffectKind::Delay, 1),
+        of(EffectKind::Reverb, 7),
+        ParamRef::Builtin {
+            insert: at(T1, 0),
+            effect: EffectKind::Reverb,
+            param: 0,
+        },
+    ] {
+        let text = "5".to_owned();
+        cmd(m, Command::TypeParam { param, text });
+        assert_eq!(undo_count(m), steps);
+        assert!(!spoke(m));
+    }
+    // A step and a switch read their number too.
+    cmd(m, Command::RemoveEffect { insert: at(B, 0) });
+    cmd(m, Command::Undo);
+    for (param, text, value) in [(0, "3", 3.0), (0, "9", 4.0), (2, "0", 0.0)] {
+        let param = ParamRef::Builtin {
+            insert: at(B, 0),
+            effect: EffectKind::Delay,
+            param,
+        };
+        let text = text.to_owned();
+        cmd(
+            m,
+            Command::TypeParam {
+                param: param.clone(),
+                text,
+            },
+        );
+        cmd(
+            m,
+            Command::SelectInsert {
+                insert: Some(at(B, 0)),
+            },
+        );
+        let ParamRef::Builtin { param, .. } = param else {
+            unreachable!()
+        };
+        assert_eq!(
+            m.view().params.selected.builtin().values[param as usize],
+            value
+        );
+    }
+}
+
+#[test]
+fn opening_the_mixer_says_once_what_is_passed_by() {
+    let m = &mut ready();
+    let mixer = Command::ToggleBand { band: Band::Mixer };
+    let open = |m: &Model| {
+        let lower = m.view().workspace.layout.lower;
+        lower.iter().any(|b| b.band == Band::Mixer)
+    };
+    assert!(!open(m));
+    cmd(m, mixer.clone());
+    assert!(open(m));
+    assert!(!matches!(
+        status(m),
+        Some(StatusMessage::MixerPassesBy { .. })
+    ));
+    cmd(m, mixer.clone());
+    put(m, T1, 2, EffectKind::Chorus);
+    for insert in [at(StripRef::Master, 0), at(T1, 2), at(B, 0)] {
+        cmd(m, Command::ToggleBypass { insert });
+    }
+    let named = |insert, effect| NamedInsert {
+        insert,
+        effect: builtin(effect),
+    };
+    let said = Some(StatusMessage::MixerPassesBy {
+        bypassed: vec![
+            named(at(T1, 2), EffectKind::Chorus),
+            named(at(B, 0), EffectKind::Delay),
+            named(at(StripRef::Master, 0), EffectKind::Limiter),
+        ],
+        stopped: Vec::new(),
+    });
+    cmd(m, mixer.clone());
+    assert_eq!(status(m), said, "tracks, returns, master");
+    // Once: the next command puts it away, and folding the mixer does not say it.
+    cmd(
+        m,
+        Command::SelectTrack {
+            track: 1,
+            from_arm: false,
+        },
+    );
+    assert_ne!(status(m), said);
+    cmd(m, mixer.clone());
+    assert_ne!(status(m), said);
+    cmd(m, mixer);
+    assert_eq!(status(m), said);
 }

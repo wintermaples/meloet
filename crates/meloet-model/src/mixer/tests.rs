@@ -265,6 +265,135 @@ fn effects_go_into_empty_slots_and_come_out() {
 }
 
 #[test]
+fn passing_by_moving_and_replacing_are_steps_that_undo_takes_back() {
+    let mut doc = Doc::new_default();
+    let mut h = History::new();
+    let kinds = |doc: &Doc| {
+        let c = doc.channel(T1).unwrap();
+        c.inserts.clone().map(|i| i.and_then(|i| i.kind()))
+    };
+    for (slot, kind) in [(0, EffectKind::Eq4), (1, EffectKind::Compressor)] {
+        let e = add_effect(&doc, T1, slot, kind).unwrap();
+        h.apply(&mut doc, e);
+    }
+    let e = add_effect(&doc, T1, 3, EffectKind::Delay).unwrap();
+    h.apply(&mut doc, e);
+    let start = held(&doc);
+
+    // 「とばす」 keeps the values, and flips back.
+    let e = set_param(&doc, T1, 1, EffectKind::Compressor, 1, 8.0).unwrap();
+    h.apply(&mut doc, e);
+    let e = toggle_bypass(&doc, T1, 1).unwrap();
+    let step = StepKind::Bypass {
+        strip: T1,
+        slot: 1,
+        bypassed: true,
+    };
+    assert_eq!(e.step, step);
+    h.apply(&mut doc, e);
+    let comp = doc.insert(T1, 1).unwrap();
+    assert!(comp.bypassed && comp.value(1) == Some(8.0));
+    assert!(!doc.insert(T1, 0).unwrap().bypassed);
+    assert_eq!(
+        toggle_bypass(&doc, T1, 2).unwrap_err(),
+        EditError::NoSuchInsert
+    );
+    assert!(toggle_bypass(&doc, StripId::Track(TrackId(9)), 0).is_err());
+
+    // A slot moves with what it holds; the ones between move by one, the empty one too.
+    let e = move_insert(&doc, T1, 1, 3).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::MoveInsert {
+            strip: T1,
+            from: 1,
+            to: 3
+        }
+    );
+    h.apply(&mut doc, e);
+    use EffectKind::{Compressor, Delay, Eq4, Reverb};
+    assert_eq!(
+        kinds(&doc),
+        [Some(Eq4), None, Some(Delay), Some(Compressor)]
+    );
+    let comp = doc.insert(T1, 3).unwrap();
+    assert!(comp.bypassed && comp.value(1) == Some(8.0));
+    let e = move_insert(&doc, T1, 3, 0).unwrap();
+    h.apply(&mut doc, e);
+    assert_eq!(
+        kinds(&doc),
+        [Some(Compressor), Some(Eq4), None, Some(Delay)]
+    );
+    // Past the end is the end.
+    let e = move_insert(&doc, T1, 0, 9).unwrap();
+    assert_eq!(doc.insert(T1, 0), e.doc.insert(T1, 3));
+    assert_eq!(
+        move_insert(&doc, T1, 3, 9).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        move_insert(&doc, T1, 1, 1).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        move_insert(&doc, T1, 2, 0).unwrap_err(),
+        EditError::NoSuchInsert
+    );
+    assert_eq!(
+        move_insert(&doc, T1, 4, 0).unwrap_err(),
+        EditError::NoSuchInsert
+    );
+    for (from, to) in [(0, 3), (3, 0), (1, 2), (2, 1), (0, 1), (3, 3)] {
+        let mut slots = [0, 1, 2, 3];
+        move_slot(&mut slots, from, to);
+        for was in 0..4 {
+            assert_eq!(slots[moved_slot(was, from, to)], was, "{from} to {to}");
+        }
+    }
+
+    // Another effect in its place, as a new one on that strip and heard.
+    let e = replace_effect(&doc, T1, 0, Reverb).unwrap();
+    assert_eq!(e.step, StepKind::ReplaceEffect { strip: T1, slot: 0 });
+    h.apply(&mut doc, e);
+    assert_eq!(doc.insert(T1, 0), Some(&Insert::new_on(Reverb, T1)));
+    assert_eq!(
+        replace_effect(&doc, T1, 0, Reverb).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        replace_effect(&doc, T1, 2, Reverb).unwrap_err(),
+        EditError::NoSuchInsert
+    );
+    let e = replace_plugin_effect(&doc, T1, 0, mverb()).unwrap();
+    h.apply(&mut doc, e);
+    assert_eq!(doc.plugin(PluginPlace::Insert(T1, 0)), Some(&mverb()));
+    assert_eq!(
+        replace_plugin_effect(&doc, T1, 0, mverb()).unwrap_err(),
+        EditError::Unchanged
+    );
+    let e = replace_plugin_effect(&doc, T1, 0, surge()).unwrap();
+    h.apply(&mut doc, e);
+    let e = replace_effect(&doc, T1, 0, Eq4).unwrap();
+    h.apply(&mut doc, e);
+
+    // The old one comes back as it was: its values, and passed by.
+    h.undo(&mut doc);
+    h.undo(&mut doc);
+    h.undo(&mut doc);
+    h.undo(&mut doc);
+    let comp = doc.insert(T1, 0).unwrap();
+    assert!(comp.bypassed && comp.value(1) == Some(8.0));
+    for _ in 0..4 {
+        h.undo(&mut doc);
+    }
+    assert_eq!(held(&doc), start);
+    for _ in 0..8 {
+        h.redo(&mut doc);
+    }
+    assert_eq!(doc.insert(T1, 0), Some(&Insert::new_on(Eq4, T1)));
+}
+
+#[test]
 fn return_mute_flips() {
     let doc = Doc::new_default();
     let e = toggle_return_mute(&doc, Bus::B);

@@ -66,6 +66,46 @@ impl ParamSpec {
             ParamShape::Steps(_) | ParamShape::Switch => v.round(),
         }
     }
+
+    /// Reads a value as a person types it into the parameters panel, with or without its
+    /// unit ("4" and "4 : 1", "−24 dB", "１２０"): the number the text starts with, in the
+    /// parameter's own unit. A unit that says another scale is followed ("500 ms" for
+    /// seconds, "1.5 s" for milliseconds, "2 kHz"). `None` when the text starts with no
+    /// number. The value is not brought into the range.
+    pub fn read(&self, text: &str) -> Option<f32> {
+        let text: String = (text.trim().chars())
+            .map(|c| match c {
+                '０'..='９' => char::from_digit(c as u32 - '０' as u32, 10).unwrap_or(c),
+                '−' | '－' => '-',
+                '＋' => '+',
+                '．' => '.',
+                c => c,
+            })
+            .collect();
+        let (sign, rest) = match text.strip_prefix(['-', '+']) {
+            Some(rest) if text.starts_with('-') => (-1.0, rest.trim_start()),
+            Some(rest) => (1.0, rest.trim_start()),
+            None => (1.0, &*text),
+        };
+        let whole = rest.chars().take_while(char::is_ascii_digit).count();
+        let part = match rest[whole..].strip_prefix('.') {
+            Some(after) => 1 + after.chars().take_while(char::is_ascii_digit).count(),
+            None => 0,
+        };
+        let end = whole + part;
+        if !rest[..end].contains(|c: char| c.is_ascii_digit()) {
+            return None;
+        }
+        let number: f32 = rest[..end].parse().ok()?;
+        let unit = rest[end..].trim_start().to_lowercase();
+        let scale = match self.unit {
+            Unit::Seconds if unit.starts_with("ms") => 0.001,
+            Unit::Ms if unit.starts_with('s') => 1000.0,
+            Unit::Hz if unit.starts_with('k') => 1000.0,
+            _ => 1.0,
+        };
+        Some(sign * number * scale)
+    }
 }
 
 const fn cont(name: &'static str, unit: Unit, min: f32, max: f32, default: f32) -> ParamSpec {
@@ -413,6 +453,37 @@ mod tests {
             Some("lowMid"),
             "the EQ's headings"
         );
+    }
+
+    #[test]
+    fn a_typed_value_reads_with_or_without_its_unit() {
+        let of = |kind: EffectKind, i: u32, text: &str| kind.param(i).unwrap().read(text);
+        let comp = EffectKind::Compressor;
+        assert_eq!(of(comp, compressor::RATIO, "4"), Some(4.0));
+        assert_eq!(of(comp, compressor::RATIO, "4 : 1"), Some(4.0));
+        assert_eq!(of(comp, compressor::RATIO, " 2.5:1 "), Some(2.5));
+        assert_eq!(of(comp, compressor::RATIO, "25"), Some(25.0), "not clamped");
+        assert_eq!(of(comp, compressor::THRESHOLD, "−24.0 dB"), Some(-24.0));
+        assert_eq!(of(comp, compressor::THRESHOLD, "-24"), Some(-24.0));
+        assert_eq!(of(comp, compressor::THRESHOLD, "－ ２４．５"), Some(-24.5));
+        assert_eq!(of(comp, compressor::MAKEUP, "+3 dB"), Some(3.0));
+        assert_eq!(of(comp, compressor::MAKEUP, ".5"), Some(0.5));
+        assert_eq!(of(comp, compressor::MAKEUP, "5."), Some(5.0));
+        assert_eq!(of(comp, compressor::ATTACK, "0.02 s"), Some(20.0));
+        assert_eq!(of(comp, compressor::ATTACK, "20 ms"), Some(20.0));
+        let reverb = EffectKind::Reverb;
+        assert_eq!(of(reverb, reverb::DECAY, "1.8"), Some(1.8));
+        assert_eq!(of(reverb, reverb::DECAY, "1.8 s"), Some(1.8));
+        assert_eq!(of(reverb, reverb::DECAY, "500 ms"), Some(0.5));
+        assert_eq!(of(reverb, reverb::HIGH_CUT, "6 kHz"), Some(6000.0));
+        assert_eq!(of(reverb, reverb::HIGH_CUT, "6000 Hz"), Some(6000.0));
+        assert_eq!(of(reverb, reverb::MIX, "30%"), Some(30.0));
+        assert_eq!(of(EffectKind::Delay, delay::SYNC, "1"), Some(1.0));
+        for text in [
+            "", " ", "dB", "abc", "-", "+ dB", ".", "- .", "x4", "NaN", "inf",
+        ] {
+            assert_eq!(of(comp, compressor::THRESHOLD, text), None, "{text:?}");
+        }
     }
 
     #[test]

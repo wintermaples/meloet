@@ -107,15 +107,52 @@ impl Ramp {
 
 /// One insert slot. When its effect changes, what it sounded like before (the effect that
 /// was there, or the sound passing through untouched) fades into what it sounds like now.
+///
+/// A slot that is passed by lets the sound through untouched and keeps its effect running on
+/// that sound, unheard: when the effect is heard again, its tail and its envelopes are where
+/// they would have been, and nothing starts from silence.
 #[derive(Default)]
 struct Slot {
     effect: Option<Box<dyn Effect>>,
     /// The effect that was here before, until the fade is over and the retired ring takes it.
     old: Option<Box<dyn Effect>>,
     fade_left: u32,
+    /// 「とばす」. Belongs to the slot: an effect put into it later comes in passed by.
+    bypassed: bool,
+    /// Taken out of the chain while it goes to another place of its strip.
+    lifted: bool,
+    /// Frames until the slot is all the way passed by, or all the way heard again.
+    pass_left: u32,
 }
 
 impl Slot {
+    fn passed_by(&self) -> bool {
+        self.bypassed || self.lifted
+    }
+
+    fn holds(&self) -> bool {
+        self.effect.is_some() || self.old.is_some()
+    }
+
+    /// Neither heard nor on its way to being heard.
+    fn unheard(&self) -> bool {
+        !self.holds() || self.passed_by() && self.pass_left == 0
+    }
+
+    /// `fade` 0: at once. A fade that is under way turns around where it is.
+    fn pass(&mut self, bypassed: bool, lifted: bool, fade: u32) {
+        let was = self.passed_by();
+        self.bypassed = bypassed;
+        self.lifted = lifted;
+        if self.passed_by() != was {
+            self.pass_left = if self.holds() {
+                fade.saturating_sub(self.pass_left)
+            } else {
+                0
+            };
+        }
+    }
+
     /// `fade` 0: at once.
     fn set(
         &mut self,
@@ -138,6 +175,18 @@ impl Slot {
     }
 
     fn process(&mut self, io: &mut Io<'_>, retired: &mut Producer<Box<dyn Effect>>) {
+        if !self.holds() {
+            self.fade_left = 0;
+            self.pass_left = 0;
+            return;
+        }
+        let frames = io.left.len();
+        let passed_by = self.passed_by();
+        let around = passed_by || self.pass_left > 0;
+        if around {
+            io.dry_l[..frames].copy_from_slice(io.left);
+            io.dry_r[..frames].copy_from_slice(io.right);
+        }
         if self.fade_left > 0 {
             let n = io.left.len().min(self.fade_left as usize);
             let (before_l, before_r) = (&mut io.spare_l[..n], &mut io.spare_r[..n]);
@@ -158,6 +207,20 @@ impl Slot {
         } else if let Some(effect) = self.effect.as_mut() {
             effect.process(io.left, io.right, &io.ctx);
         }
+        if around {
+            let n = frames.min(self.pass_left as usize);
+            for i in 0..n {
+                let to_go = (self.pass_left - i as u32) as f32 / io.fade_frames as f32;
+                let heard = if passed_by { to_go } else { 1.0 - to_go };
+                io.left[i] = io.dry_l[i] + (io.left[i] - io.dry_l[i]) * heard;
+                io.right[i] = io.dry_r[i] + (io.right[i] - io.dry_r[i]) * heard;
+            }
+            self.pass_left -= n as u32;
+            if passed_by {
+                io.left[n..].copy_from_slice(&io.dry_l[n..frames]);
+                io.right[n..].copy_from_slice(&io.dry_r[n..frames]);
+            }
+        }
         if self.fade_left == 0
             && self.old.is_some()
             && !retired.is_full()
@@ -175,12 +238,54 @@ pub(crate) struct Io<'a> {
     /// As long as `left` at least; for the sound of a slot before its effect changed.
     pub spare_l: &'a mut [f32],
     pub spare_r: &'a mut [f32],
+    /// As long as `left` at least; for the sound that goes past a slot.
+    pub dry_l: &'a mut [f32],
+    pub dry_r: &'a mut [f32],
     pub ctx: EffectContext,
     pub fade_frames: u32,
 }
 
+/// An effect on its way to another slot of its strip.
+///
+/// The same effect cannot sound at both places at once, so the two orders cannot be laid over
+/// each other. Instead the effect fades out of the chain where it is, the slots change places
+/// while it is not heard (the others keep their order, so nothing is heard of that), and it
+/// fades in where it is now: two fades of [`crate::FADE_S`], each between two sounds that are
+/// both whole. The effect runs all the while.
+#[derive(Clone, Copy)]
+struct Move {
+    from: usize,
+    to: usize,
+    fade: u32,
+}
+
+impl Move {
+    /// Where the slot that will be at `slot` is until the move lands.
+    fn before(&self, slot: usize) -> usize {
+        let (from, to) = (self.from, self.to);
+        if slot == to {
+            from
+        } else if from < to && (from..to).contains(&slot) {
+            slot + 1
+        } else if to < from && (to + 1..=from).contains(&slot) {
+            slot - 1
+        } else {
+            slot
+        }
+    }
+}
+
+fn rotate(slots: &mut [Slot], from: usize, to: usize) {
+    if from < to {
+        slots[from..=to].rotate_left(1);
+    } else {
+        slots[to..=from].rotate_right(1);
+    }
+}
+
 pub(crate) struct Strip {
     slots: [Slot; INSERT_SLOTS],
+    moving: Option<Move>,
     /// Fader × pan, per side.
     left: Ramp,
     right: Ramp,
@@ -191,15 +296,18 @@ impl Strip {
     pub fn new() -> Strip {
         Strip {
             slots: Default::default(),
+            moving: None,
             left: Ramp::at(1.0),
             right: Ramp::at(1.0),
             sends: [Ramp::at(0.0); 2],
         }
     }
 
-    /// The delays of the effects in the slots, added up.
+    /// The delays of the effects in the slots, added up. A slot that is passed by delays
+    /// nothing.
     pub fn latency(&self) -> u32 {
         (self.slots.iter())
+            .filter(|slot| !slot.bypassed)
             .filter_map(|slot| slot.effect.as_ref())
             .fold(0u32, |sum, effect| sum.saturating_add(effect.latency()))
     }
@@ -231,6 +339,7 @@ impl Strip {
         fade: u32,
         retired: &mut Producer<Box<dyn Effect>>,
     ) {
+        self.land();
         match self.slots.get_mut(slot) {
             Some(slot) => slot.set(effect, fade, retired),
             None => {
@@ -241,13 +350,62 @@ impl Strip {
         }
     }
 
+    /// The slot as the commands number it: a move that has not landed yet counts as done.
+    fn slot_mut(&mut self, slot: usize) -> Option<&mut Slot> {
+        let slot = self.moving.map_or(slot, |m| m.before(slot));
+        self.slots.get_mut(slot)
+    }
+
     pub fn set_param(&mut self, slot: usize, param: u32, value: f32) {
-        if let Some(effect) = self.slots.get_mut(slot).and_then(|s| s.effect.as_mut()) {
+        if let Some(effect) = self.slot_mut(slot).and_then(|s| s.effect.as_mut()) {
             effect.set_param(param, value);
         }
     }
 
+    /// 「とばす」 and 「もどす」. `fade` 0: at once.
+    pub fn set_bypass(&mut self, slot: usize, bypassed: bool, fade: u32) {
+        if let Some(slot) = self.slot_mut(slot) {
+            slot.pass(bypassed, slot.lifted, fade);
+        }
+    }
+
+    /// The slot `from` goes to `to`, and the slots between move by one. `fade` 0: at once.
+    pub fn move_effect(&mut self, from: usize, to: usize, fade: u32) {
+        self.land();
+        if from >= INSERT_SLOTS || to >= INSERT_SLOTS || from == to {
+            return;
+        }
+        // Passing only slots that are not heard changes nothing in the sound, and neither
+        // does moving one that is not heard.
+        let passes_heard = (from.min(to)..=from.max(to))
+            .filter(|at| *at != from)
+            .any(|at| !self.slots[at].unheard());
+        if fade == 0 || self.slots[from].unheard() || !passes_heard {
+            rotate(&mut self.slots, from, to);
+            return;
+        }
+        let slot = &mut self.slots[from];
+        slot.pass(slot.bypassed, true, fade);
+        self.moving = Some(Move { from, to, fade });
+    }
+
+    /// The effect on its way is at its new place, and fades in there from as far out as it
+    /// had got.
+    fn land(&mut self) {
+        if let Some(m) = self.moving.take() {
+            rotate(&mut self.slots, m.from, m.to);
+            let slot = &mut self.slots[m.to];
+            slot.pass(slot.bypassed, false, m.fade);
+        }
+    }
+
     pub fn inserts(&mut self, io: &mut Io<'_>, retired: &mut Producer<Box<dyn Effect>>) {
+        if self
+            .moving
+            .is_some_and(|m| self.slots[m.from].pass_left == 0)
+        {
+            self.land();
+        }
         for slot in &mut self.slots {
             slot.process(io, retired);
         }
@@ -299,8 +457,10 @@ impl Strip {
         for send in &mut self.sends {
             send.snap();
         }
+        self.land();
         for slot in &mut self.slots {
             slot.fade_left = 0;
+            slot.pass_left = 0;
             if !retired.is_full()
                 && let Some(old) = slot.old.take()
             {
@@ -333,7 +493,9 @@ impl Strip {
                 let _ = retired.push(effect);
             }
             slot.fade_left = 0;
+            slot.pass(false, false, 0);
         }
+        self.moving = None;
         self.left = Ramp::at(1.0);
         self.right = Ramp::at(1.0);
         self.sends = [Ramp::at(0.0); 2];

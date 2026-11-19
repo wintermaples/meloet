@@ -842,7 +842,13 @@ impl Model {
                 }
             }
             Command::ToggleBand { band } => {
-                if let Some(fold) = self.bands.toggle(band_of(band)) {
+                let mixer_was_open = self.mixer_is_open();
+                let fold = self.bands.toggle(band_of(band));
+                // Said once as the mixer opens; a band folded for it is said instead.
+                if !mixer_was_open && self.mixer_is_open() {
+                    self.notice = self.play.mixer_passes_by();
+                }
+                if let Some(fold) = fold {
                     let folded = bottom_band(fold.band);
                     self.notice = Some(match fold.why {
                         FoldWhy::Third => StatusMessage::BandFoldedThird {
@@ -1010,13 +1016,16 @@ impl Model {
                 }
             }
             Command::ShelfConfirm => {
-                let selected = self.play.selected_insert();
+                let lists_effects = matches!(
+                    self.shelf_view(&self.library_view()).mode,
+                    ShelfMode::InsertEffect { .. } | ShelfMode::ReplaceEffect { .. }
+                );
                 if let Some(n) = self.play.shelf_confirm(effects) {
                     self.notice = Some(n);
-                }
-                // An effect went in and is the selected insert now.
-                if self.play.selected_insert() != selected {
-                    self.bands.show_side(SidePanel::Params);
+                    // An effect went in and is the selected insert now.
+                    if lists_effects && self.play.selection_wants_panel() {
+                        self.bands.show_side(SidePanel::Params);
+                    }
                 }
             }
             Command::ShelfSelectEffect { effect } => {
@@ -1047,11 +1056,25 @@ impl Model {
                 .set_param(insert, effect, param, value, commit, effects),
             Command::CancelMixPreview => self.play.cancel_mix_preview(),
             Command::ToggleReturnMute { bus } => self.play.toggle_return_mute(bus, effects),
-            Command::RemoveEffect { insert } => self.play.remove_effect(insert, effects),
+            Command::RemoveEffect { insert } => {
+                self.notice = self.play.remove_effect(insert, effects);
+            }
+            Command::ToggleBypass { insert } => {
+                self.notice = self.play.toggle_bypass(insert, effects);
+            }
+            Command::MoveInsert { insert, to } => {
+                self.notice = self.play.move_insert(insert, to, effects);
+            }
+            Command::TypeParam { param, text } => {
+                self.notice = self.play.type_param(param, &text, effects);
+            }
             Command::SelectInsert { insert } => {
-                if self.play.select_insert(insert) {
-                    self.bands.show_side(SidePanel::Params);
-                }
+                let selecting = self.play.select_insert(insert);
+                self.selected(selecting);
+            }
+            Command::SelectInstrument { track } => {
+                let selecting = self.play.select_instrument(track);
+                self.selected(selecting);
             }
             Command::SelectParam { param } => self.play.select_param(param),
             Command::ShelfCancel => {
@@ -1371,18 +1394,28 @@ impl Model {
                     self.play.remove_missing(missing, effects);
                 }
             }
-            // Not made yet: the plugin windows, a plugin in the parameters panel, and passing
-            // by, moving and replacing an insert.
+            // Not made yet: the plugin windows, and the parameters of a plugin.
             Command::OpenPluginWindow { .. }
             | Command::ClosePluginWindow { .. }
             | Command::RaisePluginWindows
-            | Command::SelectInstrument { .. }
-            | Command::SetPluginParam { .. }
-            | Command::TypeParam { .. }
-            | Command::ToggleBypass { .. }
-            | Command::MoveInsert { .. } => {}
+            | Command::SetPluginParam { .. } => {}
         }
         None
+    }
+
+    fn mixer_is_open(&self) -> bool {
+        let open = self.bands.layout().bottom;
+        open.iter().any(|b| b.band == BottomBand::Mixer)
+    }
+
+    /// An insert or an instrument was selected: its panel and what the status line says.
+    fn selected(&mut self, selecting: crate::play::Selecting) {
+        if selecting.panel {
+            self.bands.show_side(SidePanel::Params);
+        }
+        if selecting.notice.is_some() {
+            self.notice = selecting.notice;
+        }
     }
 
     /// Takes in what the scan knows, when that changed since the catalog last looked: the
@@ -1413,7 +1446,7 @@ impl Model {
         let lists_instruments = self.bands.side_is_open(SidePanel::Shelf)
             && !matches!(
                 self.shelf_view(&self.library_view()).mode,
-                ShelfMode::InsertEffect { .. }
+                ShelfMode::InsertEffect { .. } | ShelfMode::ReplaceEffect { .. }
             );
         if !lists_instruments && self.play.open_shelf(ShelfMode::NewTrack, effects) {
             self.bands.show_side(SidePanel::Shelf);

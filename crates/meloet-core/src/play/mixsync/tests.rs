@@ -397,3 +397,167 @@ fn the_engine_hears_the_mixer_while_recording() {
     assert_eq!(m.view().transport.state, TransportState::Recording);
     assert_eq!(m.view().song.undo_count, 4);
 }
+
+#[test]
+fn passing_by_and_moving_tell_the_engine_and_make_no_effect() {
+    let (m, e) = &mut rig();
+    add(m, e, T1, 0, EffectKind::Eq4);
+    go(m, e, Command::ShelfConfirm);
+    add(m, e, T1, 1, EffectKind::Compressor);
+    go(m, e, Command::ShelfConfirm);
+    let eq = e.strip(m, S1).inserts[0].clone().unwrap();
+    let made = e.effects_made;
+    let strip = StripSeat::Track(0);
+    let bypass = |slot, bypassed| EngineOp::Bypass {
+        strip,
+        slot,
+        bypassed,
+    };
+    let moved = |from, to| EngineOp::MoveInsert { strip, from, to };
+
+    let ops = go(m, e, Command::ToggleBypass { insert: at(T1, 0) });
+    assert_eq!(ops, [bypass(0, true)]);
+    let insert = at(T1, 0);
+    let ops = go(m, e, Command::MoveInsert { insert, to: 2 });
+    assert_eq!(ops, [moved(0, 2)], "the mark goes along in the engine");
+    assert_eq!(e.strip(m, S1).inserts[2], Some(eq.clone()), "the same one");
+    assert_eq!(e.strip(m, S1).bypassed, [false, false, true, false]);
+
+    // A parameter of the moved one goes to where it is now.
+    let low = Command::SetParam {
+        insert: at(T1, 2),
+        effect: EffectKind::Eq4,
+        param: 1,
+        value: 6.0,
+        commit: true,
+    };
+    let ops = go(m, e, low);
+    assert_eq!(
+        ops,
+        [EngineOp::Param {
+            strip,
+            slot: 2,
+            param: 1,
+            value: 6.0
+        }]
+    );
+
+    assert_eq!(go(m, e, Command::Undo).len(), 1);
+    assert_eq!(go(m, e, Command::Undo), [moved(2, 0)]);
+    assert_eq!(go(m, e, Command::Undo), [bypass(0, false)]);
+    assert_eq!(e.strip(m, S1).inserts[0], Some(eq.clone()));
+    assert_eq!(go(m, e, Command::Redo), [bypass(0, true)]);
+    assert_eq!(go(m, e, Command::Redo), [moved(0, 2)]);
+    assert_eq!(e.effects_made, made, "nothing made, nothing put away");
+
+    // Replaced: a new effect, heard; undo makes the old one anew, passed by as it was.
+    let mode = ShelfMode::ReplaceEffect { strip: T1, slot: 2 };
+    go(m, e, Command::OpenShelf { mode });
+    let effect = Some(EffectKind::Reverb);
+    go(m, e, Command::ShelfSelectEffect { effect });
+    let ops = go(m, e, Command::ShelfConfirm);
+    let mut reverb = Insert::new(ModelEffect::Reverb);
+    reverb.set(reverb::MIX, 30.0);
+    assert_eq!(ops.len(), 2, "{ops:?}");
+    assert!(ops.contains(&bypass(2, false)));
+    assert!(ops.contains(&EngineOp::Insert {
+        strip,
+        slot: 2,
+        insert: Some(reverb)
+    }));
+    let ops = go(m, e, Command::Undo);
+    assert_eq!(ops.len(), 2, "{ops:?}");
+    assert!(ops.contains(&bypass(2, true)));
+    assert_eq!(e.effects_made, made + 2);
+    let back = e.strip(m, S1).inserts[2].clone().unwrap();
+    assert_eq!(back.1.kind(), Some(ModelEffect::Eq4));
+    assert_ne!(back.0, eq.0, "made anew");
+
+    // While a control is dragged, a move ends the preview and takes the effect as it is.
+    go(m, e, gain(T1, -3.0, false));
+    let insert = at(T1, 0);
+    let ops = go(m, e, Command::MoveInsert { insert, to: 3 });
+    assert!(ops.contains(&moved(0, 3)), "{ops:?}");
+    assert_eq!(e.strip(m, S1).gain, Gain::UNITY);
+}
+
+#[test]
+fn what_is_passed_by_and_the_order_come_back_from_the_file_and_for_a_new_engine() {
+    let (m, e) = &mut rig();
+    add(m, e, T2, 0, EffectKind::Eq4);
+    go(m, e, Command::ShelfConfirm);
+    add(m, e, T2, 1, EffectKind::Chorus);
+    go(m, e, Command::ShelfConfirm);
+    go(m, e, Command::ToggleBypass { insert: at(T2, 0) });
+    let insert = at(T2, 0);
+    go(m, e, Command::MoveInsert { insert, to: 3 });
+    go(m, e, Command::ToggleBypass { insert: at(A, 0) });
+    let made = e.effects_made;
+    let before = m.view().song;
+
+    // Saved and read: the same song, and the engine keeps what it has.
+    let song = songfile::decode(&songfile::encode(m.play().song())).unwrap();
+    let passed = |song: &Song, strip, slot| song.doc.insert(strip, slot).unwrap().bypassed;
+    assert!(passed(&song, S2, 3) && passed(&song, SA, 0) && !passed(&song, S2, 0));
+    assert_eq!(
+        song.doc.insert(S2, 0).unwrap().kind(),
+        Some(ModelEffect::Chorus)
+    );
+    e.take(&open(m, song));
+    e.check(m, "read");
+    assert_eq!(e.effects_made, made);
+    let after = m.view().song;
+    assert_eq!(after.tracks[1].slots, before.tracks[1].slots);
+    assert_eq!(after.returns, before.returns);
+    assert_eq!(e.strip(m, S2).bypassed, [false, false, false, true]);
+
+    // An engine made anew is told the marks with the effects.
+    let ops = m.engine_seats();
+    for (strip, slot) in [(StripSeat::Track(1), 3), (StripSeat::Return(Bus::A), 0)] {
+        let mark = EngineOp::Bypass {
+            strip,
+            slot,
+            bypassed: true,
+        };
+        assert!(ops.contains(&mark), "{ops:?}");
+    }
+    assert_eq!(
+        ops.iter()
+            .filter(|op| matches!(op, EngineOp::Bypass { .. }))
+            .count(),
+        2
+    );
+    let mut book = crate::mixbook::MixBook::default();
+    for op in &ops {
+        book.note(op);
+    }
+    book.note(&EngineOp::MoveInsert {
+        strip: StripSeat::Track(1),
+        from: 3,
+        to: 1,
+    });
+    let again = book.ops();
+    assert!(again.contains(&EngineOp::Bypass {
+        strip: StripSeat::Track(1),
+        slot: 1,
+        bypassed: true
+    }));
+    assert!(again.iter().any(|op| matches!(
+        op,
+        EngineOp::Insert { strip: StripSeat::Track(1), slot: 1, insert: Some(i) }
+            if i.kind() == Some(ModelEffect::Eq4)
+    )));
+    assert!(!again.iter().any(|op| matches!(
+        op,
+        EngineOp::Insert {
+            strip: StripSeat::Track(1),
+            slot: 3,
+            ..
+        }
+    )));
+
+    // A new song has nothing passed by.
+    e.take(&open(m, Song::new_default()));
+    e.check(m, "new");
+    assert_eq!(e.strip(m, SA).bypassed, [false; 4]);
+}

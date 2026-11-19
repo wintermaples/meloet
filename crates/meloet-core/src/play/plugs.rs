@@ -10,8 +10,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use meloet_model::mixer::moved_slot;
 use meloet_model::{InstrumentGroup, InstrumentRef, PluginPlace, PluginRef, StripId, TrackId};
-use meloet_protocol::{InsertRef, PluginSlotRef, PluginState};
+use meloet_protocol::{InsertRef, PluginSlotRef, PluginState, PluginWindowKind};
 
 use super::mixer::{strip_id, strip_ref};
 use super::seats::AUDITION_SEAT;
@@ -75,8 +76,9 @@ struct Plug {
 pub(super) struct Plugs {
     list: Vec<Plug>,
     next: u64,
-    /// Every plugin this PC has, by its exact key, with the bundle it is loaded from.
-    known: HashMap<Arc<str>, PathBuf>,
+    /// Every plugin this PC has, by its exact key, with the bundle it is loaded from and
+    /// what the scan says of its window.
+    known: HashMap<Arc<str>, (PathBuf, PluginWindowKind)>,
     rate: u32,
     /// The tickets of the song's plugins that stopped, in the order they did.
     stopped: Vec<u64>,
@@ -125,8 +127,16 @@ pub(super) enum Want {
 
 impl Play {
     /// The plugins this PC has. Told at the start and whenever the scan has news.
-    pub fn set_known_plugins(&mut self, known: Vec<(Arc<str>, PathBuf)>) {
-        self.plugs.known = known.into_iter().collect();
+    pub fn set_known_plugins(&mut self, known: Vec<(Arc<str>, PathBuf, PluginWindowKind)>) {
+        self.plugs.known = (known.into_iter())
+            .map(|(key, bundle, window)| (key, (bundle, window)))
+            .collect();
+    }
+
+    /// Whether the plugin has a window of its own that meloet opens, as the scan found it.
+    /// One this PC does not have counts as having none.
+    pub(super) fn window_kind(&self, key: &str) -> PluginWindowKind {
+        (self.plugs.known.get(key)).map_or(PluginWindowKind::None, |(_, window)| *window)
     }
 
     pub(super) fn has_plugin(&self, key: &str) -> bool {
@@ -185,7 +195,7 @@ impl Play {
             }
         }
         self.drop_plug(spot, effects);
-        let Some(bundle) = self.plugs.known.get(&*plugin.key).cloned() else {
+        let Some((bundle, _)) = self.plugs.known.get(&*plugin.key).cloned() else {
             return Want::Missing;
         };
         let ticket = self.plugs.ticket();
@@ -265,6 +275,18 @@ impl Play {
         }
         if let Some(plug) = self.plugs.at_mut(from) {
             plug.spot = to;
+        }
+    }
+
+    /// The slot `from` of the strip went to `to` in the engine, and the slots between moved
+    /// by one: the plugins in them are where the engine has them.
+    pub(super) fn plugs_follow(&mut self, strip: StripSeat, from: usize, to: usize) {
+        for plug in &mut self.plugs.list {
+            if let Spot::Insert(s, slot) = plug.spot
+                && s == strip
+            {
+                plug.spot = Spot::Insert(s, moved_slot(slot, from, to));
+            }
         }
     }
 
@@ -380,7 +402,7 @@ impl Play {
                 Phase::Ready | Phase::Loading => PlugState::Bytes(old.plugin.state.clone()),
                 Phase::Stopped | Phase::Reloading | Phase::Failed => continue,
             };
-            let Some(bundle) = plugs.known.get(&*old.plugin.key).cloned() else {
+            let Some((bundle, _)) = plugs.known.get(&*old.plugin.key).cloned() else {
                 continue;
             };
             let ticket = plugs.ticket();
@@ -502,7 +524,7 @@ impl Play {
             .collect()
     }
 
-    fn slot_ref(place: PluginPlace) -> PluginSlotRef {
+    pub(super) fn slot_ref(place: PluginPlace) -> PluginSlotRef {
         match place {
             PluginPlace::Instrument(track) => PluginSlotRef::Instrument { track: track.0 },
             PluginPlace::Insert(strip, slot) => PluginSlotRef::Insert {

@@ -1,7 +1,7 @@
 use crate::seen::*;
 use std::collections::{HashMap, HashSet};
 
-use meloet_model::mixer::new_track_sends;
+use meloet_model::mixer::{move_slot, new_track_sends};
 use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::{Bus, Channel, Doc, Gain, Insert, InstrumentRef, Pan, Sends, StripId, TrackId};
 use meloet_protocol::{
@@ -37,6 +37,8 @@ pub(crate) struct Strip {
     pub pan: Pan,
     pub sends: Sends,
     pub inserts: [Option<(u32, Insert)>; 4],
+    /// The slots that are passed by, whatever they hold.
+    pub bypassed: [bool; 4],
 }
 
 impl Default for Strip {
@@ -46,16 +48,28 @@ impl Default for Strip {
             pan: Pan::CENTER,
             sends: [Gain::SILENT; 2],
             inserts: Default::default(),
+            bypassed: [false; 4],
         }
     }
 }
 
-type StripValues = (Gain, Pan, Sends, [Option<Insert>; 4]);
+/// The effects are the ones of meloet, as if none were passed by; a plugin is not made by an
+/// op that names it, so its slot counts as empty here.
+type StripValues = (Gain, Pan, Sends, [Option<Insert>; 4], [bool; 4]);
+
+fn heard(insert: Option<Insert>) -> Option<Insert> {
+    let mut insert = insert.filter(|i| i.kind().is_some())?;
+    insert.bypassed = false;
+    Some(insert)
+}
 
 impl Strip {
     fn values(&self) -> StripValues {
-        let inserts = self.inserts.clone().map(|i| i.map(|(_, insert)| insert));
-        (self.gain, self.pan, self.sends, inserts)
+        let inserts = self
+            .inserts
+            .clone()
+            .map(|i| heard(i.map(|(_, insert)| insert)));
+        (self.gain, self.pan, self.sends, inserts, self.bypassed)
     }
 }
 
@@ -87,7 +101,8 @@ fn wanted(m: &Model, id: StripId, channel: &Channel, sends: Sends, muted: bool) 
     if muted {
         gain = Gain::SILENT;
     }
-    (gain, pan, sends, inserts)
+    let bypassed = [0, 1, 2, 3].map(|slot| inserts[slot].as_ref().is_some_and(|i| i.bypassed));
+    (gain, pan, sends, inserts.map(heard), bypassed)
 }
 
 /// What the engine does with the ops, as far as the song can be compared with it.
@@ -185,7 +200,11 @@ impl FakeEngine {
                 let made = self.effects_made;
                 let place = &mut self.strip_mut(strip).inserts[slot];
                 let (before, now) = (place.as_ref().map(|(_, i)| i.kind()), insert.as_ref());
-                assert_ne!(before, now.map(Insert::kind), "made anew for no reason");
+                // A slot that held a plugin is emptied by this op too, and the plugin is not
+                // seen here.
+                if before.is_some() || now.is_some() {
+                    assert_ne!(before, now.map(Insert::kind), "made anew for no reason");
+                }
                 *place = insert.map(|i| (made, i));
             }
             EngineOp::Param {
@@ -200,6 +219,21 @@ impl FakeEngine {
                 assert_ne!(insert.value(param), Some(value), "told what it has");
                 assert!(insert.set(param, value));
                 assert_eq!(insert.value(param), Some(value), "sent out of range");
+            }
+            EngineOp::Bypass {
+                strip,
+                slot,
+                bypassed,
+            } => {
+                let mark = &mut self.strip_mut(strip).bypassed[slot];
+                assert_ne!(*mark, bypassed, "told what it has");
+                *mark = bypassed;
+            }
+            EngineOp::MoveInsert { strip, from, to } => {
+                assert_ne!(from, to, "moved to where it is");
+                let strip = self.strip_mut(strip);
+                move_slot(&mut strip.inserts, from, to);
+                move_slot(&mut strip.bypassed, from, to);
             }
             _ => {}
         }
@@ -253,6 +287,35 @@ impl FakeEngine {
     pub fn sounding(&self, seat: usize) -> Option<InstrumentKind> {
         let (_, instrument) = self.seats[seat].instrument.as_ref()?;
         Some(instruments::kind_of(builtin_or_sine(instrument)))
+    }
+
+    /// The strips of the engine are what the song and the previews say.
+    pub fn check_mixer(&self, m: &Model, ctx: &str) {
+        let p = m.play();
+        let doc = &p.song().doc;
+        for (t, seat) in doc.tracks.iter().zip(p.track_seats()) {
+            let seat = seat.unwrap_or_else(|| panic!("{ctx}: track {} has no seat", t.id.0));
+            assert_eq!(
+                self.seats[seat].strip.values(),
+                wanted(m, StripId::Track(t.id), &t.channel, t.sends, false),
+                "{ctx}: the strip of track {}",
+                t.id.0
+            );
+        }
+        let none = [Gain::SILENT; 2];
+        for bus in Bus::ALL {
+            let r = &doc.returns[bus.index()];
+            assert_eq!(
+                self.returns[bus.index()].values(),
+                wanted(m, StripId::Return(bus), &r.channel, none, r.muted),
+                "{ctx}: return {bus:?}"
+            );
+        }
+        assert_eq!(
+            self.master.values(),
+            wanted(m, StripId::Master, &doc.master, none, false),
+            "{ctx}: the master"
+        );
     }
 
     /// The engine has what the song and the shelf say, and nothing else.

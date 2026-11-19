@@ -13,7 +13,8 @@ use meloet_plugin::{
 };
 use meloet_protocol::{
     EffectRef, LibraryView, PluginEffectCategory, PluginFormat, PluginFormatView,
-    PluginInstrumentCategory, PluginKindView, PluginRowView, Sf2FileView, Sf2PresetView, SoundRef,
+    PluginInstrumentCategory, PluginKindView, PluginRowView, PluginWindowKind, Sf2FileView,
+    Sf2PresetView, SoundRef,
 };
 
 use crate::added::family;
@@ -31,6 +32,7 @@ struct Entry {
     bundle: PathBuf,
     /// meloet can open its window.
     window: bool,
+    window_kind: PluginWindowKind,
 }
 
 /// One plugin in every format it was found in, VST3 before LV2.
@@ -128,6 +130,11 @@ fn entry(bundle: &std::path::Path, info: &PluginInfo) -> Entry {
         kind: info.kind,
         bundle: bundle.to_path_buf(),
         window: info.editor == EditorKind::X11,
+        window_kind: match info.editor {
+            EditorKind::X11 => PluginWindowKind::Opens,
+            EditorKind::Unsupported => PluginWindowKind::NotYet,
+            EditorKind::None => PluginWindowKind::None,
+        },
     }
 }
 
@@ -215,11 +222,12 @@ impl Catalog {
         self.rows.iter().find(|row| row.has(key))
     }
 
-    /// Every plugin by its exact key, with the bundle it is loaded from.
-    pub fn bundles(&self) -> Vec<(Arc<str>, PathBuf)> {
+    /// Every plugin by its exact key, with the bundle it is loaded from and what the scan
+    /// says of its window.
+    pub fn bundles(&self) -> Vec<(Arc<str>, PathBuf, PluginWindowKind)> {
         (self.rows.iter())
             .flat_map(|row| &row.entries)
-            .map(|e| (Arc::from(e.key.as_str()), e.bundle.clone()))
+            .map(|e| (Arc::from(e.key.as_str()), e.bundle.clone(), e.window_kind))
             .collect()
     }
 

@@ -73,6 +73,20 @@ impl Drop for Fx {
     }
 }
 
+/// Silences what goes through it, and counts the frames it was given.
+struct Counting(Arc<AtomicUsize>);
+
+impl Effect for Counting {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+    fn set_param(&mut self, _index: u32, _value: f32) {}
+    fn process(&mut self, left: &mut [f32], right: &mut [f32], _ctx: &EffectContext) {
+        self.0.fetch_add(left.len(), Relaxed);
+        left.fill(0.0);
+        right.fill(0.0);
+    }
+    fn reset(&mut self) {}
+}
+
 struct Rig {
     parts: EngineParts,
     prepared: Arc<AtomicUsize>,
@@ -126,6 +140,18 @@ impl Rig {
 
     fn effect(&mut self, strip: MixStrip, slot: usize, effect: Option<Box<dyn Effect>>) {
         assert!(self.parts.handle.set_effect(strip, slot, effect).is_ok());
+    }
+
+    fn bypass(&mut self, strip: MixStrip, slot: usize, bypassed: bool) {
+        self.send(EngineCommand::SetBypass {
+            strip,
+            slot,
+            bypassed,
+        });
+    }
+
+    fn move_effect(&mut self, strip: MixStrip, from: usize, to: usize) {
+        self.send(EngineCommand::MoveEffect { strip, from, to });
     }
 
     /// Renders `frames` frames in blocks of 256 and returns left and right.
@@ -392,6 +418,150 @@ fn an_effect_fades_in_and_out_over_10_ms_and_comes_back_on_the_ring() {
 }
 
 #[test]
+fn a_slot_is_passed_by_over_10_ms_and_its_effect_keeps_running() {
+    let mut rig = Rig::new();
+    let track = MixStrip::Track(0);
+    let step = 0.1 / FADE as f32;
+    let counted = Arc::new(AtomicUsize::new(0));
+    rig.effect(track, 1, Some(Box::new(Counting(counted.clone()))));
+    near(rig.settled(), (0.0, 0.0));
+
+    rig.bypass(track, 1, true);
+    let before = counted.load(Relaxed);
+    let (left, right) = rig.run(FADE + 256);
+    assert!((largest_step(&left) - step).abs() < step * 0.01);
+    assert!((largest_step(&right) - step * 2.0).abs() < step * 0.02);
+    assert_eq!(left[0], 0.0, "starts as it was");
+    assert_eq!((left[FADE], right[FADE]), (0.1, 0.2));
+    assert_eq!(counted.load(Relaxed) - before, FADE + 256, "still running");
+
+    rig.bypass(track, 1, false);
+    let (left, _) = rig.run(FADE + 256);
+    assert!((largest_step(&left) - step).abs() < step * 0.01);
+    assert_eq!((left[0], left[FADE]), (0.1, 0.0));
+
+    // Turned around within the fade: it goes back from where it was.
+    rig.bypass(track, 1, true);
+    let (out, _) = rig.run(FADE / 4);
+    rig.bypass(track, 1, false);
+    let (back, _) = rig.run(FADE);
+    let all: Vec<f32> = out.into_iter().chain(back).collect();
+    assert!(largest_step(&all) < step * 1.01, "{}", largest_step(&all));
+    assert!(all[FADE / 4 - 1] > 0.02 && all[FADE / 2] == 0.0);
+
+    // The mark is the slot's: an effect put into a slot that is passed by is not heard, and
+    // one that changes while it is passed by is not heard either.
+    rig.bypass(track, 3, true);
+    rig.run(64);
+    for value in [0.0, 5.0] {
+        let fx = rig.fx(Op::Scale, value);
+        rig.effect(track, 3, fx);
+        let (left, _) = rig.run(FADE + 64);
+        assert!(left.iter().all(|s| *s == 0.0));
+    }
+    rig.bypass(track, 1, true);
+    near(rig.settled(), (0.1, 0.2));
+    rig.bypass(track, 3, false);
+    near(rig.settled(), (0.5, 1.0));
+
+    // Passed by and given another effect in the same block: the two fades multiply, with
+    // no jump.
+    let quiet = rig.fx(Op::Scale, 1.0);
+    rig.effect(track, 3, quiet);
+    rig.bypass(track, 3, true);
+    let (left, _) = rig.run(FADE + 64);
+    assert!(largest_step(&left) < 0.8 / FADE as f32 * 1.01);
+    assert_eq!(left[FADE], 0.1);
+
+    // A track with no instrument takes it at once, and so does a slot that does not exist.
+    rig.bypass(MixStrip::Track(3), 0, true);
+    rig.bypass(track, INSERT_SLOTS, true);
+    rig.bypass(MixStrip::Return(5), 0, true);
+    near(rig.settled(), (0.1, 0.2));
+    rig.parts.handle.drop_retired();
+    rig.check_rules();
+}
+
+#[test]
+fn an_effect_moves_to_another_slot_as_it_is_with_two_fades_of_10_ms() {
+    let mut rig = Rig::new();
+    let track = MixStrip::Track(0);
+    let (add, double) = (rig.fx(Op::Add, 0.1), rig.fx(Op::Scale, 2.0));
+    rig.effect(track, 0, add);
+    rig.effect(track, 1, double);
+    near(rig.settled(), (0.4, 0.6));
+    let prepared = rig.prepared.load(Relaxed);
+    rig.parts.handle.drop_retired();
+
+    // (x + 0.1) × 2 becomes x × 2 + 0.1: the one that moves fades out of the chain where it
+    // was, and into it where it is now. Swapped at once, the sound would jump by 0.1.
+    rig.move_effect(track, 0, 1);
+    let (left, right) = rig.run(2 * FADE + 512);
+    let step = 0.2 / FADE as f32;
+    assert!((largest_step(&left) - step).abs() < step * 0.01);
+    assert!((largest_step(&right) - step).abs() < step * 0.01);
+    assert_eq!(left[0], 0.4, "starts as it was");
+    assert!(
+        (left[FADE] - 0.2).abs() < 1e-6,
+        "without it: {}",
+        left[FADE]
+    );
+    assert!(left.iter().all(|s| (0.2 - 1e-6..=0.4 + 1e-6).contains(s)));
+    near((left[2 * FADE + 511], right[2 * FADE + 511]), (0.3, 0.5));
+    assert_eq!(rig.prepared.load(Relaxed), prepared, "nothing made anew");
+    assert_eq!(rig.parts.handle.drop_retired(), 0, "nothing put away");
+
+    // While it is on its way, the slots are numbered as they will be.
+    rig.move_effect(track, 1, 0);
+    rig.send(EngineCommand::SetEffectParam {
+        strip: track,
+        slot: 0,
+        param: 0,
+        value: 0.2,
+    });
+    let (left, _) = rig.run(2 * FADE + 512);
+    assert!(largest_step(&left) < 0.4 / FADE as f32 * 1.01);
+    near(rig.settled(), (0.6, 0.8));
+
+    // What is passed by moves at once, and stays passed by where it lands.
+    rig.bypass(track, 0, true);
+    near(rig.settled(), (0.2, 0.4));
+    rig.move_effect(track, 0, 3);
+    let (left, _) = rig.run(512);
+    assert!(left.iter().all(|s| (s - 0.2).abs() < 1e-6));
+    rig.bypass(track, 3, false);
+    near(rig.settled(), (0.4, 0.6));
+
+    // Past empty slots only: the order of what is heard stays, so nothing fades.
+    rig.move_effect(track, 3, 1);
+    let (left, _) = rig.run(512);
+    assert!(left.iter().all(|s| (s - 0.4).abs() < 1e-6));
+    rig.move_effect(track, 0, 2);
+    near(rig.settled(), (0.6, 0.8));
+
+    // Moved again before it landed: the first move counts as done.
+    rig.move_effect(track, 2, 1);
+    rig.run(FADE / 2);
+    rig.move_effect(track, 1, 2);
+    let (left, _) = rig.run(2 * FADE + 512);
+    assert!(largest_step(&left) < 0.4 / FADE as f32 * 1.01);
+    near(rig.settled(), (0.6, 0.8));
+
+    // No stream, or no instrument: at once.
+    rig.move_effect(track, 2, 0);
+    rig.parts.engine.settle();
+    let (left, _) = rig.run(64);
+    assert!(left.iter().all(|s| (s - 0.4).abs() < 1e-6), "{left:?}");
+    rig.move_effect(track, 0, INSERT_SLOTS);
+    rig.move_effect(MixStrip::Return(4), 0, 1);
+    rig.move_effect(MixStrip::Track(5), 0, 1);
+    near(rig.settled(), (0.4, 0.6));
+    assert_eq!(rig.prepared.load(Relaxed), prepared);
+    assert_eq!(rig.parts.handle.drop_retired(), 0);
+    rig.check_rules();
+}
+
+#[test]
 fn clearing_a_track_gives_its_effects_back_and_its_strip_is_new() {
     let mut rig = Rig::new();
     for slot in 0..INSERT_SLOTS {
@@ -508,7 +678,7 @@ fn every_mixer_command_on_every_strip_never_touches_the_allocator() {
     let mut out = vec![0.0f32; 2048 * 2];
     for block in 0..3000usize {
         let strip = strips[next(strips.len())];
-        match next(8) {
+        match next(11) {
             0 | 1 => rig.level(strip, next(21) as f32 / 10.0, next(21) as f32 / 10.0 - 1.0),
             2 => rig.sends(next(18), next(11) as f32 / 10.0, next(11) as f32 / 10.0),
             3 => {
@@ -522,6 +692,8 @@ fn every_mixer_command_on_every_strip_never_touches_the_allocator() {
                 param: next(2) as u32,
                 value: next(11) as f32 / 10.0,
             }),
+            7 | 8 => rig.bypass(strip, next(INSERT_SLOTS + 1), next(2) == 0),
+            9 | 10 => rig.move_effect(strip, next(INSERT_SLOTS + 1), next(INSERT_SLOTS + 1)),
             6 if block % 50 == 0 => {
                 let track = next(16);
                 rig.send(EngineCommand::ClearTrack { track });

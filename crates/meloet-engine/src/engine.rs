@@ -66,6 +66,24 @@ pub enum EngineCommand {
         slot: usize,
         effect: Option<Box<dyn Effect>>,
     },
+    /// 「とばす」 and 「もどす」: the sound passes the slot by, or goes through its effect again;
+    /// one fades into the other over [`FADE_S`]. The effect keeps running while it is passed
+    /// by, so its tail is there when it comes back. The mark belongs to the slot: an effect
+    /// put into it later comes in passed by, and `MoveEffect` takes it along.
+    SetBypass {
+        strip: MixStrip,
+        slot: usize,
+        bypassed: bool,
+    },
+    /// The slot `from` goes to `to` and the slots between move by one, with the effects as
+    /// they sound. When that changes the order of effects that are heard, the moved one fades
+    /// out of the chain over [`FADE_S`] and into it at its new place over another. Until it
+    /// has landed, the other commands already number the slots as they will be.
+    MoveEffect {
+        strip: MixStrip,
+        from: usize,
+        to: usize,
+    },
     /// [`Effect::set_param`] of the effect in the slot. Does nothing on an empty slot.
     SetEffectParam {
         strip: MixStrip,
@@ -801,8 +819,9 @@ pub struct Engine {
     segment_from: usize,
     meters: Arc<EngineMeters>,
     /// Left and right of the track being rendered, then left and right of what fades out on it
-    /// (an instrument, or a slot before its effect changed).
-    scratch: [Box<[f32]>; 4],
+    /// (an instrument, or a slot before its effect changed), then left and right of the sound
+    /// that goes past a slot.
+    scratch: [Box<[f32]>; 6],
     /// Left and right of the master, of return A and of return B, as the strips add up.
     sums: [Box<[f32]>; 6],
     /// The metronome over the block. It joins the output after the master's meter is taken,
@@ -866,7 +885,7 @@ impl Engine {
             segment: Segment::default(),
             segment_from: 0,
             meters: meters.clone(),
-            scratch: [buffer(), buffer(), buffer(), buffer()],
+            scratch: std::array::from_fn(|_| buffer()),
             sums: std::array::from_fn(|_| buffer()),
             click_sum: buffer(),
             sample_rate: config.sample_rate as f32,
@@ -1102,6 +1121,20 @@ impl Engine {
                                 let _ = retired.push(effect);
                             }
                         }
+                    }
+                }
+                EngineCommand::SetBypass {
+                    strip,
+                    slot,
+                    bypassed,
+                } => {
+                    if let Some((strip, smooth)) = self.strip(strip) {
+                        strip.set_bypass(slot, bypassed, if smooth { fade } else { 0 });
+                    }
+                }
+                EngineCommand::MoveEffect { strip, from, to } => {
+                    if let Some((strip, smooth)) = self.strip(strip) {
+                        strip.move_effect(from, to, if smooth { fade } else { 0 });
                     }
                 }
                 EngineCommand::SetEffectParam {
@@ -1708,7 +1741,7 @@ impl Engine {
 
         let [master_l, master_r, sums @ ..] = &mut self.sums;
         let (master_l, master_r) = (&mut master_l[..frames], &mut master_r[..frames]);
-        let [_, _, spare_l, spare_r] = &mut self.scratch;
+        let [_, _, spare_l, spare_r, dry_l, dry_r] = &mut self.scratch;
         let sums = sums.as_chunks_mut::<2>().0;
         for ((strip, [left, right]), meter) in (self.returns.iter_mut())
             .zip(sums)
@@ -1719,6 +1752,8 @@ impl Engine {
                 right: &mut right[..frames],
                 spare_l,
                 spare_r,
+                dry_l,
+                dry_r,
                 ctx,
                 fade_frames: fade,
             };
@@ -1741,6 +1776,8 @@ impl Engine {
             right: master_r,
             spare_l,
             spare_r,
+            dry_l,
+            dry_r,
             ctx,
             fade_frames: fade,
         };
@@ -1778,7 +1815,7 @@ impl Engine {
 
 /// One stretch of the master, and what it takes to render a track into it.
 struct Mix<'a> {
-    scratch: &'a mut [Box<[f32]>; 4],
+    scratch: &'a mut [Box<[f32]>; 6],
     retired: &'a mut Producer<Box<dyn Instrument>>,
     retired_effects: &'a mut Producer<Box<dyn Effect>>,
     fade_frames: u32,
@@ -1794,7 +1831,7 @@ impl Mix<'_> {
     /// strip, and adds it to the master and to the returns it sends to.
     fn add(&mut self, track: &mut Track, meter: Option<&[AtomicU32; 2]>) {
         let frames = self.master_l.len();
-        let [left, right, old_l, old_r] = &mut *self.scratch;
+        let [left, right, old_l, old_r, dry_l, dry_r] = &mut *self.scratch;
         let (left, right) = (&mut left[..frames], &mut right[..frames]);
         let aside_fading = track.aside_left > 0;
         let fading = track.fade_left > 0 || aside_fading;
@@ -1840,6 +1877,8 @@ impl Mix<'_> {
             right,
             spare_l: old_l,
             spare_r: old_r,
+            dry_l,
+            dry_r,
             ctx: self.ctx,
             fade_frames: self.fade_frames,
         };

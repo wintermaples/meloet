@@ -83,7 +83,7 @@ vst3 (Rust): bindings generated from the header files of the VST 3 SDK 3.8.0 (pl
   source: https://github.com/steinbergmedia/vst3_pluginterfaces
   license: MIT; the text is in licenses/rust/vst3/VST3-SDK-LICENSE.txt
 
-== Parts (197: 194 Rust crates, 3 npm packages)
+== Parts (201: 198 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
 aho-corasick 1.1.5 (Rust): Unlicense OR MIT
@@ -92,6 +92,7 @@ alloc-stdlib 0.3.0 (Rust): BSD-3-Clause
 alsa 0.11.0 (Rust): Apache-2.0 OR MIT
 alsa-sys 0.4.0 (Rust): MIT
 anyhow 1.0.104 (Rust): MIT OR Apache-2.0
+as-raw-xcb-connection 1.0.1 (Rust): MIT OR Apache-2.0
 atk 0.18.2 (Rust): MIT
 atk-sys 0.18.2 (Rust): MIT
 base64 0.23.1 (Rust): MIT OR Apache-2.0
@@ -144,6 +145,7 @@ gdkwayland-sys 0.18.2 (Rust): MIT
 gdkx11 0.18.2 (Rust): MIT
 gdkx11-sys 0.18.2 (Rust): MIT
 generic-array 0.14.7 (Rust): MIT
+gethostname 1.1.0 (Rust): Apache-2.0
 getrandom 0.3.4 (Rust): MIT OR Apache-2.0
 gio 0.18.4 (Rust): MIT
 gio-sys 0.18.1 (Rust): MIT
@@ -277,6 +279,8 @@ writeable 0.6.4 (Rust): Unicode-3.0
 wry 0.57.2 (Rust): Apache-2.0 OR MIT
 x11 2.21.0 (Rust): MIT
 x11-dl 2.21.0 (Rust): MIT
+x11rb 0.14.0 (Rust): MIT OR Apache-2.0
+x11rb-protocol 0.14.0 (Rust): MIT OR Apache-2.0
 yoke 0.8.4 (Rust): Unicode-3.0
 zerofrom 0.1.8 (Rust): Unicode-3.0
 zerotrie 0.2.5 (Rust): Unicode-3.0

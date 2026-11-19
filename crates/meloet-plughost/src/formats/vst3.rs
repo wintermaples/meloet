@@ -11,6 +11,7 @@
 //! last plugin goes.
 
 mod com;
+pub mod runloop;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -22,7 +23,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 
 use meloet_plugin::ipc::{FromPlugin, MAX_LATENCY_FRAMES, ToPlugin, Transport};
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamShape};
+use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow, ParamShape};
 use meloet_plugin::{EditorKind, PluginInfo, PluginKey, PluginKind};
 use vst3::Steinberg::Vst::{
     AudioBusBuffers, AudioBusBuffers__type0, BusDirections_, BusInfo, ControllerNumbers_, Event,
@@ -34,16 +35,17 @@ use vst3::Steinberg::Vst::{
     ProcessModes_, ProcessSetup, RestartFlags_, String128, SymbolicSampleSizes_, UnitInfo,
 };
 use vst3::Steinberg::{
-    FUnknown, IBStream, IPlugViewTrait, IPluginBaseTrait, IPluginFactory, IPluginFactory2,
-    IPluginFactory2Trait, IPluginFactory3, IPluginFactory3Trait, IPluginFactoryTrait, PClassInfo,
-    PClassInfo2, PClassInfoW, PFactoryInfo, TUID, kNotImplemented, kPlatformTypeX11EmbedWindowID,
-    kResultOk, kResultTrue,
+    FUnknown, IBStream, IPlugFrame, IPlugView, IPlugViewTrait, IPluginBaseTrait, IPluginFactory,
+    IPluginFactory2, IPluginFactory2Trait, IPluginFactory3, IPluginFactory3Trait,
+    IPluginFactoryTrait, PClassInfo, PClassInfo2, PClassInfoW, PFactoryInfo, TUID, ViewRect,
+    kNotImplemented, kPlatformTypeX11EmbedWindowID, kResultOk, kResultTrue,
 };
 use vst3::{ComPtr, ComWrapper, Interface};
 
-use self::com::{EventList, Handler, HostApp, MemStream, ParamChanges};
+use self::com::{EventList, Frame, Handler, HostApp, MemStream, ParamChanges};
 use super::{
-    Activation, Candidate, Controller, GATE_WAIT, Gate, Loaded, ProcessBlock, Processor, Said,
+    Activation, Candidate, Controller, GATE_WAIT, Gate, Loaded, Opened, ProcessBlock, Processor,
+    Read, Said,
 };
 use crate::rtcheck;
 
@@ -57,6 +59,8 @@ const TO_CONTROLLER: usize = 1024;
 /// Controller numbers a plugin can map to parameters: 0..=127, after-touch, pitch bend.
 const CONTROLLERS: usize = 130;
 const NO_PARAM: u32 = u32::MAX;
+/// A parameter with more steps than this is shown as a smooth one.
+const MOST_STEPS: i32 = 128;
 
 struct Module {
     factory: ComPtr<IPluginFactory>,
@@ -517,8 +521,7 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
         latency: instance.latency.load(Relaxed),
         audio_inputs: in_channels as u32,
         audio_outputs: out_channels as u32,
-        // The windows are not opened yet.
-        editor: false,
+        editor: instance.editor(),
     };
     let processor = Vst3Processor {
         instance: instance.clone(),
@@ -543,6 +546,7 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
         frames_run: 0,
     };
     let controller = Vst3Controller {
+        view: None,
         instance,
         from_audio,
         units: None,
@@ -820,10 +824,40 @@ impl Processor for Vst3Processor {
 }
 
 struct Vst3Controller {
+    // Before `instance`: the view goes before the controller that made it.
+    view: Option<(ComPtr<IPlugView>, ComWrapper<Frame>)>,
     instance: Arc<Instance>,
     from_audio: rtrb::Consumer<(u32, f64)>,
     /// What each parameter is measured in, by id; filled when the parameters are first listed.
     units: Option<HashMap<u32, String>>,
+}
+
+/// The text the plugin shows for a value, with the parameter's unit.
+fn value_text(
+    controller: &ComPtr<IEditController>,
+    id: u32,
+    value: f64,
+    unit: &str,
+) -> Option<String> {
+    let mut text: String128 = [0; 128];
+    // SAFETY: a plain question on the main thread; `text` is filled by the plugin.
+    if unsafe { controller.getParamStringByValue(id, value, &mut text) } != kResultOk {
+        return None;
+    }
+    let mut text = com::read_utf16(&text);
+    if !unit.is_empty() {
+        text.push(' ');
+        text.push_str(unit);
+    }
+    (!text.is_empty()).then_some(text)
+}
+
+fn normal(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 impl Vst3Controller {
@@ -841,19 +875,45 @@ impl Vst3Controller {
     }
 
     fn group_names(controller: &ComPtr<IEditController>) -> HashMap<i32, String> {
-        let mut names = HashMap::new();
+        // Each unit's parent and name.
+        let mut tree: HashMap<i32, (i32, String)> = HashMap::new();
         if let Some(units) = controller.cast::<IUnitInfo>() {
             // SAFETY: plain questions; `info` is filled by the plugin.
             unsafe {
                 for index in 0..units.getUnitCount() {
                     let mut info: UnitInfo = std::mem::zeroed();
                     if units.getUnitInfo(index, &mut info) == kResultOk && info.id != 0 {
-                        names.insert(info.id, com::read_utf16(&info.name));
+                        tree.insert(info.id, (info.parentUnitId, com::read_utf16(&info.name)));
                     }
                 }
             }
         }
-        names
+        // A plugin may hang its whole tree under one unit of its own (JUCE's "Root"): that
+        // one is the tree's root then, and names no group.
+        let tops: Vec<i32> = (tree.iter())
+            .filter(|(_, (parent, _))| !tree.contains_key(parent))
+            .map(|(&id, _)| id)
+            .collect();
+        let root = match tops[..] {
+            [only] if tree.values().any(|(parent, _)| *parent == only) => Some(only),
+            _ => None,
+        };
+        // A unit deep in the tree goes by the name of the one at the top above it.
+        (tree.keys())
+            .filter(|&&id| Some(id) != root)
+            .map(|&id| {
+                let mut top = id;
+                for _ in 0..tree.len() {
+                    match tree.get(&top) {
+                        Some((parent, _)) if tree.contains_key(parent) && Some(*parent) != root => {
+                            top = *parent;
+                        }
+                        _ => break,
+                    }
+                }
+                (id, tree[&top].1.clone())
+            })
+            .collect()
     }
 
     /// After `kLatencyChanged`: off and on again, as VST3 asks, then the new delay.
@@ -887,60 +947,97 @@ impl Controller for Vst3Controller {
                 if controller.getParameterInfo(index, &mut info) != kResultOk {
                     continue;
                 }
-                // Hidden ones are not for people, read-only ones are meters.
-                if info.flags & (ParameterFlags_::kIsHidden | ParameterFlags_::kIsReadOnly) != 0 {
+                // Hidden ones are not for people, read-only ones are meters, and passing the
+                // plugin by is meloet's own switch.
+                let not_shown = ParameterFlags_::kIsHidden
+                    | ParameterFlags_::kIsReadOnly
+                    | ParameterFlags_::kIsBypass;
+                if info.flags & not_shown != 0 {
                     continue;
                 }
-                units.insert(info.id, com::read_utf16(&info.units));
-                let default = info.defaultNormalizedValue;
+                let unit = com::read_utf16(&info.units);
+                let shape = match info.stepCount {
+                    1 => ParamShape::Toggle,
+                    steps @ 2..=MOST_STEPS => ParamShape::Stepped {
+                        steps: steps as u32 + 1,
+                    },
+                    _ => ParamShape::Continuous,
+                };
+                let labels = match shape {
+                    ParamShape::Stepped { steps } if steps <= MOST_STEPS as u32 => (0..steps)
+                        .map(|step| {
+                            let at = f64::from(step) / f64::from(steps - 1);
+                            value_text(controller, info.id, at, &unit).unwrap_or_default()
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                let value = normal(controller.getParamNormalized(info.id));
                 params.push(ParamInfo {
                     id: info.id,
                     name: com::read_utf16(&info.title),
                     group: groups.get(&info.unitId).filter(|n| !n.is_empty()).cloned(),
-                    default: if default.is_finite() {
-                        default.clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    },
-                    shape: match info.stepCount {
-                        1 => ParamShape::Toggle,
-                        steps @ 2.. => ParamShape::Stepped {
-                            steps: steps as u32 + 1,
-                        },
-                        _ => ParamShape::Continuous,
-                    },
+                    default: normal(info.defaultNormalizedValue),
+                    shape,
+                    labels,
                     automatable: info.flags & ParameterFlags_::kCanAutomate != 0,
+                    value: Some(value),
+                    text: value_text(controller, info.id, value, &unit),
                 });
+                units.insert(info.id, unit);
             }
         }
         self.units = Some(units);
         params
     }
 
-    fn param(&mut self, id: u32) -> Option<(f64, String)> {
+    fn param(&mut self, id: u32) -> Option<ParamNow> {
         if self.units.is_none() {
             self.params();
         }
         self.hear_audio();
         let unit = self.units.as_ref()?.get(&id)?;
         let controller = self.instance.controller.as_ref()?;
-        // SAFETY: plain questions on the main thread; `text` is filled by the plugin.
-        unsafe {
-            let value = controller.getParamNormalized(id);
-            let mut text: String128 = [0; 128];
-            controller.getParamStringByValue(id, value, &mut text);
-            let mut text = com::read_utf16(&text);
-            if !unit.is_empty() {
-                text.push(' ');
-                text.push_str(unit);
-            }
-            let value = if value.is_finite() {
-                value.clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            Some((value, text))
+        // SAFETY: a plain question on the main thread.
+        let value = normal(unsafe { controller.getParamNormalized(id) });
+        Some(ParamNow {
+            id,
+            value: Some(value),
+            text: value_text(controller, id, value, unit),
+        })
+    }
+
+    fn text(&mut self, id: u32, value: f64) -> Option<String> {
+        if self.units.is_none() {
+            self.params();
         }
+        let unit = self.units.as_ref()?.get(&id)?;
+        value_text(self.instance.controller.as_ref()?, id, value, unit)
+    }
+
+    fn read_text(&mut self, id: u32, text: &str) -> Option<Read> {
+        if self.units.is_none() {
+            self.params();
+        }
+        let unit = self.units.as_ref()?.get(&id)?;
+        let controller = self.instance.controller.as_ref()?;
+        let text = text.trim();
+        // As typed, and without the unit: plugins differ in what they can read.
+        let bare = (!unit.is_empty())
+            .then(|| text.strip_suffix(unit.as_str()))
+            .flatten()
+            .map(str::trim_end);
+        [Some(text), bare].into_iter().flatten().find_map(|text| {
+            let mut wide: Vec<u16> = text.encode_utf16().chain([0]).collect();
+            let mut value = f64::NAN;
+            // SAFETY: a 0-terminated UTF-16 string and a place for the answer.
+            let read =
+                unsafe { controller.getParamValueByString(id, wide.as_mut_ptr(), &mut value) };
+            (read == kResultOk && value.is_finite()).then(|| Read {
+                value: value.clamp(0.0, 1.0),
+                clamped: (!(-1e-9..=1.0 + 1e-9).contains(&value)).then_some(true),
+            })
+        })
     }
 
     fn set_param(&mut self, id: u32, value: f64) {
@@ -1009,16 +1106,86 @@ impl Controller for Vst3Controller {
         Ok(())
     }
 
-    fn open_editor(&mut self, _parent: u32) -> Result<(u32, u32), String> {
-        Err("no windows yet".into())
+    fn open_editor(&mut self, parent: u32) -> Result<Opened, String> {
+        self.close_editor();
+        let controller = self.instance.controller.as_ref().ok_or("no controller")?;
+        // SAFETY: the calls VST3 opens a view with, in its order, on the main thread.
+        unsafe {
+            let view = ComPtr::from_raw(controller.createView(c"editor".as_ptr()))
+                .ok_or("the plugin has no view")?;
+            if view.isPlatformTypeSupported(kPlatformTypeX11EmbedWindowID) != kResultTrue {
+                return Err("the view does not go into an X11 window".into());
+            }
+            let frame = ComWrapper::new(Frame::default());
+            view.setFrame(raw::<_, IPlugFrame>(&frame));
+            let attached = view.attached(
+                parent as usize as *mut c_void,
+                kPlatformTypeX11EmbedWindowID,
+            );
+            if attached != kResultOk {
+                view.setFrame(std::ptr::null_mut());
+                return Err(format!("attached failed ({attached})"));
+            }
+            let mut rect: ViewRect = std::mem::zeroed();
+            let size = (view.getSize(&mut rect) == kResultOk)
+                .then(|| (rect.right - rect.left, rect.bottom - rect.top))
+                .filter(|size| size.0 > 1 && size.1 > 1)
+                .map(|size| (size.0 as u32, size.1 as u32));
+            // What the plugin asked for while it was being attached is this size or older.
+            let asked = frame.asked.take();
+            let resizable = view.canResize() == kResultTrue;
+            self.view = Some((view, frame));
+            Ok(Opened {
+                size: size.or(asked),
+                resizable,
+            })
+        }
     }
 
-    fn close_editor(&mut self) {}
+    fn close_editor(&mut self) {
+        if let Some((view, frame)) = self.view.take() {
+            // SAFETY: the way VST3 closes a view, on the main thread.
+            unsafe {
+                view.removed();
+                view.setFrame(std::ptr::null_mut());
+            }
+            drop(view);
+            drop(frame);
+        }
+    }
 
+    fn resize_editor(&mut self, width: u32, height: u32) -> (u32, u32) {
+        let Some((view, _)) = &self.view else {
+            return (width, height);
+        };
+        let mut rect = ViewRect {
+            left: 0,
+            top: 0,
+            right: width as i32,
+            bottom: height as i32,
+        };
+        // SAFETY: plain calls on the main thread; the plugin may change `rect`.
+        unsafe {
+            view.checkSizeConstraint(&mut rect);
+            view.onSize(&mut rect);
+        }
+        let size = (rect.right - rect.left, rect.bottom - rect.top);
+        if size.0 > 1 && size.1 > 1 {
+            (size.0 as u32, size.1 as u32)
+        } else {
+            (width, height)
+        }
+    }
+
+    // A VST3 view lives on the run loop (`runloop`), not on an idle call.
     fn idle(&mut self) {}
 
     fn poll(&mut self, said: &mut Vec<Said>) {
         self.hear_audio();
+        if let Some((width, height)) = self.view.as_ref().and_then(|(_, frame)| frame.asked.take())
+        {
+            said.push(Said::Resized(width, height));
+        }
         let (told, restart) = match self.instance.handler.told.lock() {
             Ok(mut told) => (
                 std::mem::take(&mut told.said),
@@ -1042,6 +1209,12 @@ impl Controller for Vst3Controller {
         if restart & RestartFlags_::kParamValuesChanged != 0 {
             said.push(Said::ParamsChanged);
         }
+    }
+}
+
+impl Drop for Vst3Controller {
+    fn drop(&mut self) {
+        self.close_editor();
     }
 }
 

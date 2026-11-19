@@ -14,9 +14,10 @@ use common::{EXE, FAKE, GEOMETRY, Host, Killed, PATIENT_NS, block, note_on, peak
 use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{EngineEnd, Mapping, ToPlugin};
 use meloet_plugin::wire::{
-    FromHost, LoadedPlugin, Reply, Request, ScanOutput, ToHost, WireError, read_frame, write_frame,
+    FromHost, LoadedPlugin, ParamNow, Reply, Request, ScanOutput, ToHost, WireError, read_frame,
+    write_frame,
 };
-use meloet_plugin::{PluginFormat, PluginKey, launch};
+use meloet_plugin::{EditorKind, PluginFormat, PluginKey, launch};
 
 /// One block at 48 kHz, and how much of it the engine would wait.
 const BLOCK: Duration = Duration::from_micros(5333);
@@ -32,7 +33,7 @@ fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
             latency: 0,
             audio_inputs: 0,
             audio_outputs: 2,
-            editor: false
+            editor: EditorKind::None
         }
     );
     let silence = [0.0f32; 256];
@@ -89,15 +90,24 @@ fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
             id: 0,
             value: 0.25
         }),
-        Reply::Ok
+        Reply::Param {
+            now: ParamNow {
+                id: 0,
+                value: Some(0.25),
+                text: Some("25 %".into())
+            }
+        }
     );
     let (left, _) = block(&mut engine, &silence, &[]);
     assert!((peak(&left) - 0.25).abs() < 0.01);
     assert_eq!(
         host.ask(Request::GetParam { slot: 0, id: 0 }),
         Reply::Param {
-            value: 0.25,
-            text: "25 %".into()
+            now: ParamNow {
+                id: 0,
+                value: Some(0.25),
+                text: Some("25 %".into())
+            }
         }
     );
     match host.ask(Request::Params { slot: 0 }) {
@@ -117,7 +127,13 @@ fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
             id: 0,
             value: 0.75
         }),
-        Reply::Ok
+        Reply::Param {
+            now: ParamNow {
+                id: 0,
+                value: Some(0.75),
+                text: Some("75 %".into())
+            }
+        }
     );
     assert_eq!(
         host.ask_with(Request::SetState { slot: 0 }, &state).0,
@@ -192,6 +208,103 @@ fn two_slots_run_side_by_side_and_a_slot_is_used_again() {
 }
 
 #[test]
+fn a_plugin_says_what_window_it_has_and_lists_its_parameters_with_values_and_texts() {
+    use meloet_plugin::wire::{ParamShape, TextValue};
+
+    let mut host = Host::start();
+    let editor = |host: &mut Host, slot, fake| host.load(slot, fake).1.editor;
+    assert_eq!(editor(&mut host, 0, "window"), EditorKind::X11);
+    assert_eq!(editor(&mut host, 1, "notyet"), EditorKind::Unsupported);
+    assert_eq!(editor(&mut host, 2, "sine"), EditorKind::None);
+
+    let Reply::Params { params } = host.ask(Request::Params { slot: 0 }) else {
+        panic!("no list");
+    };
+    let shown: Vec<_> = (params.iter())
+        .map(|p| (p.id, p.name.as_str(), p.group.as_deref(), p.shape))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (0, "Level", None, ParamShape::Continuous),
+            (1, "Mode", Some("Shape"), ParamShape::Stepped { steps: 3 }),
+            (2, "Loud", Some("Shape"), ParamShape::Toggle),
+        ]
+    );
+    assert_eq!(params[1].labels, ["Soft", "Hard", "Odd"]);
+    assert!(params[0].labels.is_empty() && params[2].labels.is_empty());
+    let now: Vec<_> = (params.iter())
+        .map(|p| (p.value, p.text.as_deref()))
+        .collect();
+    assert_eq!(
+        now,
+        [
+            (Some(0.5), Some("50 %")),
+            (Some(0.0), Some("Soft")),
+            (Some(0.0), Some("Off"))
+        ]
+    );
+
+    // A stepped parameter lands on a step, and the answer says where.
+    let set = host.ask(Request::SetParam {
+        slot: 0,
+        id: 1,
+        value: 0.6,
+    });
+    let landed = ParamNow {
+        id: 1,
+        value: Some(0.5),
+        text: Some("Hard".into()),
+    };
+    assert_eq!(set, Reply::Param { now: landed });
+
+    let texts = host.ask(Request::Texts {
+        slot: 0,
+        id: 0,
+        values: vec![0.0, 1.0],
+    });
+    let ends = vec![Some("0 %".to_string()), Some("100 %".to_string())];
+    assert_eq!(texts, Reply::Texts { texts: ends });
+
+    let read = |host: &mut Host, id, text: &str| match host.ask(Request::ReadText {
+        slot: 0,
+        id,
+        text: text.into(),
+    }) {
+        Reply::Read { read } => read,
+        other => panic!("{other:?}"),
+    };
+    let mut read = |id, text: &str| read(&mut host, id, text);
+    let value = |value, clamped, text: &str| {
+        Some(TextValue {
+            value,
+            clamped,
+            text: Some(text.into()),
+            low: Some("0 %".into()),
+            high: Some("100 %".into()),
+        })
+    };
+    assert_eq!(read(0, "25 %"), value(0.25, false, "25 %"));
+    assert_eq!(read(0, " 100"), value(1.0, false, "100 %"));
+    assert_eq!(read(0, "250 %"), value(1.0, true, "100 %"));
+    assert_eq!(read(0, "-3"), value(0.0, true, "0 %"));
+    assert_eq!(read(0, "loud"), None);
+    assert_eq!(
+        read(1, "odd").map(|read| (read.value, read.text)),
+        Some((1.0, Some("Odd".into())))
+    );
+    assert_eq!(read(2, "On").map(|read| read.value), Some(1.0));
+    // A parameter the plugin does not have.
+    assert_eq!(read(7, "1"), None);
+    // Nothing was set by reading.
+    assert_eq!(host.param(0, 0), (0.5, "50 %".into()));
+    assert!(matches!(
+        host.ask(Request::GetParam { slot: 0, id: 7 }),
+        Reply::Error { .. }
+    ));
+}
+
+#[test]
 fn requests_that_cannot_be_done_are_answered_with_an_error() {
     let mut host = Host::start();
     let load = |slot, key: &str, max_frames| Request::Load {
@@ -209,7 +322,16 @@ fn requests_that_cannot_be_done_are_answered_with_an_error() {
         load(0, "vst3:647370206B31732020202020756E7363", 256),
         Request::Unload { slot: 1 },
         Request::Params { slot: 1 },
-        Request::OpenEditor { slot: 0 },
+        Request::OpenEditor {
+            slot: 0,
+            title: "x".into(),
+        },
+        Request::CloseEditor { slot: 0 },
+        Request::Texts {
+            slot: 0,
+            id: 0,
+            values: vec![0.0],
+        },
     ] {
         assert!(
             matches!(host.ask(request.clone()), Reply::Error { .. }),

@@ -2,6 +2,8 @@
 //! running blocks through the shared memory. Every child is killed when its test ends.
 #![allow(dead_code)]
 
+pub mod x11;
+
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -154,10 +156,44 @@ impl Host {
         }
     }
 
+    /// The value and the text of a parameter whose value the plugin tells.
     pub fn param(&mut self, slot: u32, id: u32) -> (f64, String) {
         match self.ask(Request::GetParam { slot, id }) {
-            Reply::Param { value, text } => (value, text),
+            Reply::Param { now } => (now.value.unwrap(), now.text.unwrap_or_default()),
             other => panic!("{other:?}"),
+        }
+    }
+
+    /// The value of a parameter, if the plugin tells it.
+    pub fn value(&mut self, slot: u32, id: u32) -> Option<f64> {
+        match self.ask(Request::GetParam { slot, id }) {
+            Reply::Param { now } => now.value,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// Reads what the host says by itself until `wanted` is among it, for `within` at most.
+    /// Everything read is in `notices`.
+    pub fn wait_for(
+        &mut self,
+        within: Duration,
+        mut wanted: impl FnMut(&Notice) -> bool,
+    ) -> Option<Notice> {
+        let until = Instant::now() + within;
+        let mut seen = 0;
+        loop {
+            if let Some(found) = self.notices[seen..].iter().find(|n| wanted(n)) {
+                return Some(found.clone());
+            }
+            seen = self.notices.len();
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() || !launch::wait_readable(self.control.as_fd(), left) {
+                return None;
+            }
+            match read_frame::<FromHost>(&mut self.control).unwrap() {
+                (FromHost::Notice { notice }, _) => self.notices.push(notice),
+                (FromHost::Reply { .. }, _) => panic!("an answer nobody asked for"),
+            }
         }
     }
 }

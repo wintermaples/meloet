@@ -6,6 +6,12 @@
 //! - `urn:meloet:fake:pass`: an effect. The input, untouched.
 //! - `urn:meloet:fake:segv`: as `pass` until its first note, then it crashes inside `process`.
 //! - `urn:meloet:fake:hang`: as `pass` until its first note, then `process` never returns.
+//! - `urn:meloet:fake:window`: as `sine`, with a window meloet opens (an empty one) and two
+//!   more parameters in a group, a list of three steps and a switch.
+//! - `urn:meloet:fake:knob`: as `window`; someone in its window takes hold of the level as
+//!   soon as it is open, turns it up to 90 % in forty moves and lets it go.
+//! - `urn:meloet:fake:slowwindow`: as `window`; its window takes 0.4 s to open.
+//! - `urn:meloet:fake:notyet`: as `pass`, with a window of a kind meloet does not open.
 //!
 //! To scan (by the bundle's file name without its ending):
 //! - `found`: two plugins. `empty`: none. `broken`: a bundle that cannot be read.
@@ -17,17 +23,28 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use meloet_plugin::ipc::ToPlugin;
-use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamShape};
+use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow, ParamShape};
 use meloet_plugin::{
     EditorKind, EffectCategory, InstrumentCategory, PluginFormat, PluginInfo, PluginKey, PluginKind,
 };
 
-use super::{Activation, Candidate, Controller, Loaded, ProcessBlock, Processor};
+use super::{
+    Activation, Candidate, Controller, Loaded, Opened, ProcessBlock, Processor, Read, Said,
+    leading_number,
+};
 
 pub const ENV: &str = "MELOET_PLUGHOST_FAKE";
 const PREFIX: &str = "urn:meloet:fake:";
 const LEVEL: u32 = 0;
 const DEFAULT_LEVEL: f64 = 0.5;
+/// The two parameters only the fakes with a window have. They change no sound.
+const MODE: u32 = 1;
+const LOUD: u32 = 2;
+const MODES: [&str; 3] = ["Soft", "Hard", "Odd"];
+const WINDOW_SIZE: (u32, u32) = (320, 200);
+/// The moves of the person in the window of `knob`, two with every idle call.
+const KNOB_MOVES: u32 = 40;
+const KNOB_END: f64 = 0.9;
 
 fn enabled() -> bool {
     std::env::var_os(ENV).is_some_and(|v| !v.is_empty())
@@ -44,13 +61,13 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
 pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     let level = Arc::new(AtomicU64::new(DEFAULT_LEVEL.to_bits()));
     let processor: Box<dyn Processor> = match name {
-        "sine" => Box::new(Sine {
+        "sine" | "window" | "knob" | "slowwindow" => Box::new(Sine {
             sample_rate: activation.sample_rate,
             level: level.clone(),
             key: None,
             phase: 0.0,
         }),
-        "pass" => Box::new(Pass { fault: None }),
+        "pass" | "notyet" => Box::new(Pass { fault: None }),
         "segv" => Box::new(Pass {
             fault: Some(Fault::Crash),
         }),
@@ -59,17 +76,30 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
         }),
         _ => return Err(format!("no fake plugin {name}")),
     };
-    let instrument = name == "sine";
+    let window = matches!(name, "window" | "knob" | "slowwindow");
+    let instrument = name == "sine" || window;
+    let editor = match name {
+        _ if window => EditorKind::X11,
+        "notyet" => EditorKind::Unsupported,
+        _ => EditorKind::None,
+    };
     Ok(Loaded {
         plugin: LoadedPlugin {
             latency: 0,
             audio_inputs: if instrument { 0 } else { 2 },
             audio_outputs: 2,
-            editor: false,
+            editor,
         },
         controller: Box::new(FakeController {
             level,
             has_level: instrument,
+            window,
+            mode: 0.0,
+            loud: 0.0,
+            slow: name == "slowwindow",
+            knob: (name == "knob").then_some(0),
+            open: false,
+            said: Vec::new(),
         }),
         processor,
     })
@@ -176,37 +206,127 @@ struct FakeController {
     /// Shared with the processor, which stands in for a real plugin's own inner link.
     level: Arc<AtomicU64>,
     has_level: bool,
+    /// It has a window, and the parameters `MODE` and `LOUD`.
+    window: bool,
+    mode: f64,
+    loud: f64,
+    slow: bool,
+    /// How many idle calls the person in the window of `knob` has been at it.
+    knob: Option<u32>,
+    open: bool,
+    said: Vec<Said>,
 }
 
 impl FakeController {
     fn level(&self) -> f64 {
         f64::from_bits(self.level.load(Relaxed))
     }
+
+    fn value(&self, id: u32) -> Option<f64> {
+        match id {
+            LEVEL if self.has_level => Some(self.level()),
+            MODE if self.window => Some(self.mode),
+            LOUD if self.window => Some(self.loud),
+            _ => None,
+        }
+    }
+
+    fn step(value: f64) -> usize {
+        (value.clamp(0.0, 1.0) * (MODES.len() - 1) as f64).round() as usize
+    }
+
+    fn now(&self, id: u32) -> Option<ParamNow> {
+        let value = self.value(id)?;
+        Some(ParamNow {
+            id,
+            value: Some(value),
+            text: Self::text_of(id, value),
+        })
+    }
+
+    fn text_of(id: u32, value: f64) -> Option<String> {
+        Some(match id {
+            LEVEL => format!("{:.0} %", value * 100.0),
+            MODE => MODES[Self::step(value)].to_string(),
+            LOUD => if value >= 0.5 { "On" } else { "Off" }.to_string(),
+            _ => return None,
+        })
+    }
 }
 
 impl Controller for FakeController {
     fn params(&mut self) -> Vec<ParamInfo> {
-        if !self.has_level {
-            return Vec::new();
+        let param = |id, name: &str, group: Option<&str>, default, shape, labels: &[&str]| {
+            let now = self.now(id);
+            ParamInfo {
+                id,
+                name: name.into(),
+                group: group.map(str::to_owned),
+                default,
+                shape,
+                labels: labels.iter().map(|label| label.to_string()).collect(),
+                automatable: true,
+                value: now.as_ref().and_then(|now| now.value),
+                text: now.and_then(|now| now.text),
+            }
+        };
+        let mut params = Vec::new();
+        if self.has_level {
+            let shape = ParamShape::Continuous;
+            params.push(param(LEVEL, "Level", None, DEFAULT_LEVEL, shape, &[]));
         }
-        vec![ParamInfo {
-            id: LEVEL,
-            name: "Level".into(),
-            group: None,
-            default: DEFAULT_LEVEL,
-            shape: ParamShape::Continuous,
-            automatable: true,
-        }]
+        if self.window {
+            let steps = ParamShape::Stepped {
+                steps: MODES.len() as u32,
+            };
+            params.push(param(MODE, "Mode", Some("Shape"), 0.0, steps, &MODES));
+            let toggle = ParamShape::Toggle;
+            params.push(param(LOUD, "Loud", Some("Shape"), 0.0, toggle, &[]));
+        }
+        params
     }
 
-    fn param(&mut self, id: u32) -> Option<(f64, String)> {
-        (self.has_level && id == LEVEL)
-            .then(|| (self.level(), format!("{:.0} %", self.level() * 100.0)))
+    fn param(&mut self, id: u32) -> Option<ParamNow> {
+        self.now(id)
+    }
+
+    fn text(&mut self, id: u32, value: f64) -> Option<String> {
+        self.value(id).and_then(|_| Self::text_of(id, value))
+    }
+
+    fn read_text(&mut self, id: u32, text: &str) -> Option<Read> {
+        self.value(id)?;
+        let text = text.trim();
+        let exact = |value| Read {
+            value,
+            clamped: Some(false),
+        };
+        match id {
+            LEVEL => {
+                let percent = leading_number(text).filter(|n| !n.is_nan())?;
+                Some(Read {
+                    value: (percent / 100.0).clamp(0.0, 1.0),
+                    clamped: Some(!(0.0..=100.0).contains(&percent)),
+                })
+            }
+            MODE => (MODES.iter())
+                .position(|mode| mode.eq_ignore_ascii_case(text))
+                .map(|step| exact(step as f64 / (MODES.len() - 1) as f64)),
+            _ if text.eq_ignore_ascii_case("on") => Some(exact(1.0)),
+            _ if text.eq_ignore_ascii_case("off") => Some(exact(0.0)),
+            _ => None,
+        }
     }
 
     fn set_param(&mut self, id: u32, value: f64) {
-        if self.has_level && id == LEVEL && value.is_finite() {
-            self.level.store(value.clamp(0.0, 1.0).to_bits(), Relaxed);
+        if self.value(id).is_none() || !value.is_finite() {
+            return;
+        }
+        let value = value.clamp(0.0, 1.0);
+        match id {
+            LEVEL => self.level.store(value.to_bits(), Relaxed),
+            MODE => self.mode = Self::step(value) as f64 / (MODES.len() - 1) as f64,
+            _ => self.loud = value.round(),
         }
     }
 
@@ -224,15 +344,51 @@ impl Controller for FakeController {
         Ok(())
     }
 
-    fn open_editor(&mut self, _parent: u32) -> Result<(u32, u32), String> {
-        Err("a fake plugin has no window".into())
+    fn open_editor(&mut self, _parent: u32) -> Result<Opened, String> {
+        if !self.window {
+            return Err("this fake plugin has no window".into());
+        }
+        if self.slow {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+        self.open = true;
+        if self.knob.is_some() {
+            self.knob = Some(0);
+        }
+        Ok(Opened {
+            size: Some(WINDOW_SIZE),
+            resizable: false,
+        })
     }
 
-    fn close_editor(&mut self) {}
+    fn close_editor(&mut self) {
+        self.open = false;
+    }
 
-    fn idle(&mut self) {}
+    fn idle(&mut self) {
+        let (true, Some(turn)) = (self.open, self.knob) else {
+            return;
+        };
+        let moves = KNOB_MOVES / 2;
+        match turn {
+            0 => self.said.push(Said::ParamBegin(LEVEL)),
+            turn if turn <= moves => {
+                for half in [1, 0] {
+                    let done = f64::from(turn * 2 - half) / f64::from(KNOB_MOVES);
+                    let level = DEFAULT_LEVEL + (KNOB_END - DEFAULT_LEVEL) * done;
+                    self.level.store(level.to_bits(), Relaxed);
+                    self.said.push(Said::ParamChanged(LEVEL, level));
+                }
+            }
+            turn if turn == moves + 1 => self.said.push(Said::ParamEnd(LEVEL)),
+            _ => return,
+        }
+        self.knob = Some(turn + 1);
+    }
 
-    fn poll(&mut self, _said: &mut Vec<super::Said>) {}
+    fn poll(&mut self, said: &mut Vec<Said>) {
+        said.append(&mut self.said);
+    }
 }
 
 fn info(name: &str, kind: PluginKind) -> PluginInfo {

@@ -835,3 +835,23 @@ flowchart LR
 - **出口がないマスター**（86-8）: 足さない。`outputs.chosen` が `null`、または `outputs.chosen_state` が `missing` のとき「出口なし ▸」。
 - **15-C**（窓にいた間を 1 手）: 約束は足さない。`song.undo_count` が 1 ふえる。手の名前（「（プラグイン）の窓で変えた所」）は、履歴の帯（第 6 回）で要る。いまの状態行には、取り消した手の名前を言う文がない。
 - **偽物**（`ui/src/bridge/fake.ts`）は、場面と意図を「最初から入っているもの」の欄（`instrument` ・ `inserts` ・ 棚の `selected` …）で書いたままで、約束の欄はそこから作る。その欄は約束から消えたので、偽物だけの型（`FakeState` ・ `FakeTrack` ・ `FakeShelf`）として持つ（宿題: 偽物を約束の欄だけで書きなおす）。
+
+### 20-13. プラグインの窓とパラメータ（区切り3 の 2 回目、`crates/meloet-plughost/src/{window.rs,control.rs,formats/}`、`crates/meloet-core/src/plugins/hosts.rs`）
+
+- **窓は plughost の主スレッド**。上の窓（X11、Wayland では Xwayland の上）を plughost が自分で作り、その中にプラグインの窓を入れる（VST3 は `IPlugView::attached` に `kPlatformTypeX11EmbedWindowID`、LV2 は X11UI に `ui:parent`）。主スレッドは `poll` 1 つで、ソケット ・ 窓の X の接続 ・ VST3 の `IRunLoop` に頼まれた fd とタイマーを待ち、LV2 の `ui:idleInterface` を 16 ms ごとに呼ぶ。音のスレッド（`rt.rs`）は主スレッドを待たないので、窓が固まっても音は続く。
+  - X の接続は x11rb を libxcb 経由で（`docs/report.md` 3-1: ファイルのソケットがない X にも入れる）。最初の窓のときに 1 回だけつなぐ。プラグインは自分の接続を持つ。
+  - `IRunLoop` はプロセスに 1 つ（`formats/vst3/runloop.rs`）。プラグインはホストの文脈からも、view の枠（`IPlugFrame`）からも同じ物をもらう。
+  - 窓の題はプラグインの名前だけ（core がわたす）。前に出すのは `_NET_ACTIVE_WINDOW`（「人が頼んだ」の印 2）と raise。
+- **ひらき始めと、ひらき終えたは別**。`OpenEditor` の返事（`Opening`）は窓を作る前に書く。`EditorOpened` は、デスクトップが窓を画面に出したとき（自分の窓の MapNotify。0.5 秒来なければ、そこで知らせる）。core は `Opening` から 0.2 秒を数える。**理由**: 窓を作るのはプラグインの中で 10〜200 ms 止まる仕事で、その間、主スレッドは返事を書けない。
+- **大きさ**: VST3 は `getSize` と `IPlugFrame::resizeView`（その中で `onSize` を呼ぶ）。`canResize` の view は、人が窓を引っぱったら `checkSizeConstraint` → `onSize`。LV2 は `ui:resize`、言ってこない物（Dragonfly）は、プラグインが中に作った窓の大きさに合わせる（`SubstructureNotify`）。LV2 の窓は人が大きさを変えられない形にした（min = max）。「画面より大きい」は、窓の左上があるモニタ（RandR）とくらべる。
+- **窓に入った ・ 出た**: 自分の窓の FocusIn ・ FocusOut をきっかけに、X に「いまキーボードはどこ」を聞いて決める。プラグインが自分で出すメニューやダイアログ（同じ X のクライアントの別の窓）にいる間は「まだ中」。その間は 0.1 秒ごとに聞きなおす（そこからよそへ行っても、自分の窓には何も来ないため）。
+- **閉じる**: 先にプラグインに窓を外させてから（`removed`、LV2 は `cleanup`）、上の窓をこわす。逆だと、プラグインの Xlib がエラーでプロセスごと終わる。人が × で閉じたときだけ `EditorClosed`（中にいたら、その前に `EditorLeft`）。meloet が閉じた ・ 外したときは何も知らせない。
+- **パラメータの一覧**（`Params`）は、名前 ・ グループ ・ 型 ・ 段の文字 ・ はじめの値に、いまの値と文字もつけて 1 回で返す（Surge XT の VST3 2854 個で 33 ms）。値は 0〜1。
+  - VST3: `kIsHidden` ・ `kIsReadOnly` ・ `kIsBypass` は出さない。`stepCount` 1 はオン ・ オフ、2〜128 は段（文字は `getParamStringByValue`）、ほかはなめらか。グループは `IUnitInfo` の木のいちばん上の段。**根の下に段が 1 つだけあって、その下に段がある木（JUCE の「Root」）は、その 1 つを根として読む**（そうしないと、全部が「Root」になる）。
+  - LV2: control の入力ポートと `patch:writable`。`notOnGUI` と、ホストのスイッチ（`lv2:enabled` ・ `lv2:freeWheeling`）は出さない（窓からは書ける）。グループは `pg:group` を `pg:subGroupOf` でたどった、根のすぐ下の段。文字は scale point の名前か、数と `units:unit`。
+  - **わからない値**: LV2 の `patch` のパラメータは、meloet が決めるか、プラグインが自分で言うまで `None`（Surge XT の LV2 は `patch:Get` に答えない）。状態には、わかっている値だけを入れる。
+- **文字 → 値**（`ReadText`）: VST3 は `getParamValueByString`（単位つきと単位なしの両方をためす）。LV2 は scale point の名前、on ・ off、数。「はみ出した」は、LV2 は範囲から、VST3 は 0〜1 の外の答えか、打った数と両端の文字の数をくらべて決める（プラグインは、はみ出した数をだまって端に合わせるため）。
+- **窓で動かした値**: VST3 は `IComponentHandler` の `beginEdit` ・ `performEdit` ・ `endEdit`。LV2 は窓の `write_function`（control のポート、`patch:Set`）と `ui:touch`。どれも次のブロックで音のスレッドへ行き（間引かない）、core への知らせは同じパラメータで 33 ms に 1 つまで（最後の値は、手を離す前に必ず知らせる）。知らせにはプラグインの文字をつける。
+- **LV2 の窓と DSP の間**: 窓が送る、パラメータでないメッセージ（atom）と、DSP が出すメッセージ ・ control の出力は、バイトの輪 2 本で運ぶ。音のスレッドが輪に書くのは、窓がひらいている間だけ。メモリは取らない（見はりの試験に入れた）。
+- **Hosts** は、頼み事のないときも 10 ms ごとに子のソケットを読む（前は、次の頼み事の返事を待つ間しか読まなかった）。窓の知らせは `HostNews` の `Window…`、パラメータの知らせは今までの `HostNews::Notice`。窓で動かした値は、もう一度読みこむときのために覚える。
+- 測った数は `docs/measurements/2026-11-19-round5-windows.md`。

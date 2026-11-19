@@ -14,6 +14,7 @@
     { "name": "sord", "version": "0.16.20-1", "role": "system-dynamic", "license": "ISC", "source": "/usr/share/doc/libsord-0-0/copyright", "checked": "2026-11-14" },
     { "name": "sratom", "version": "0.6.20-1", "role": "system-dynamic", "license": "ISC", "source": "/usr/share/doc/libsratom-0-0/copyright", "checked": "2026-11-14" },
     { "name": "zix", "version": "0.8.0-1", "role": "system-dynamic", "license": "ISC", "source": "/usr/share/doc/libzix-0-0/copyright", "checked": "2026-11-14" },
+    { "name": "libxcb", "version": "1.17.0-2ubuntu1", "role": "system-dynamic", "license": "MIT", "source": "/usr/share/doc/libxcb1/copyright (the MIT permission notice; meloet-plughost uses it through the x11rb crate for the windows plugin windows are put into)", "checked": "2026-11-20" },
     { "name": "VST 3 SDK headers (via the vst3 crate's generated bindings)", "version": "3.8", "role": "system-dynamic", "license": "MIT", "source": "https://steinbergmedia.github.io/vst3_dev_portal/pages/VST+3+Licensing/VST3+License", "checked": "2026-11-14" },
 
     { "name": "Surge XT", "version": "1.3.4 (official .deb)", "role": "test-target", "license": "GPL-3.0-or-later", "source": "/usr/share/surge-xt/doc/copyright", "checked": "2026-11-14" },

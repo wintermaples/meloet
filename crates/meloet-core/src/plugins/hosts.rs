@@ -713,6 +713,7 @@ fn notice_slot(notice: &Notice) -> u32 {
         | Notice::ParamBegin { slot, .. }
         | Notice::ParamChanged { slot, .. }
         | Notice::ParamEnd { slot, .. }
+        | Notice::ParamsChanged { slot }
         | Notice::LatencyChanged { slot, .. } => slot,
     }
 }

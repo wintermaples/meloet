@@ -174,7 +174,9 @@ impl BundleRecord {
     }
 }
 
-pub const SCAN_CACHE_VERSION: u32 = 1;
+/// A cache of another version is thrown away and every bundle is scanned again. 2: the host
+/// reads VST3 and LV2 (version 1 came from a host that could not, and marked them broken).
+pub const SCAN_CACHE_VERSION: u32 = 2;
 const SCAN_FILE: &str = "scan.json";
 
 /// Everything the last scans found, and what stopped them.

@@ -1,9 +1,9 @@
 <!-- ミキサーの 1 本（モック F4-Mixer）。上から、見出し（番号か A ・ B と名前）、音源 ・ 戻り ・ 出口の枠、インサート 4 つ、センド、パン、
      目盛とフェーダーとメーター、フェーダーの値、M ・ S ・ ●。メーターは mixerMeters の区画（MixerStrips の箱）の中の slot。 -->
 <script lang="ts">
-  import type { EffectKind, StripRef } from "../../bridge";
+  import type { InsertView, StripRef } from "../../bridge";
   import { glSlot, type MeterSource } from "../../gl/slot";
-  import { term } from "../../lib/tip.svelte";
+  import { term, tip } from "../../lib/tip.svelte";
   import { t } from "../../text/ja";
   import { metrics } from "../metrics.svelte";
   import Fader from "./Fader.svelte";
@@ -26,8 +26,9 @@
     name: string;
     /** 見出しの上辺の色（CSS の変数）。 */
     color: string;
-    frame: { text: string; accent?: boolean; run?: () => void; usable?: boolean };
-    inserts: readonly (EffectKind | null)[];
+    /** dim: 「サイン波で代わり」（gray.8、乗ると tip）。stopped: 止まったプラグインの音源（赤い枠と「止」）。 */
+    frame: { text: string; accent?: boolean; run?: () => void; usable?: boolean; dim?: boolean; tip?: string | null; stopped?: boolean };
+    slots: readonly (InsertView | null)[];
     selectedSlot: number | null;
     /** トラックだけ。 */
     sends: { track: number; dbs: readonly [number | null, number | null] } | null;
@@ -38,7 +39,7 @@
     solo: Toggle;
     arm: Toggle;
   }
-  let { strip, mark, name, color, frame, inserts, selectedSlot, sends, pan, gainDb, meter, mute, solo, arm }: Props = $props();
+  let { strip, mark, name, color, frame, slots, selectedSlot, sends, pan, gainDb, meter, mute, solo, arm }: Props = $props();
 
   const kind = $derived(strip.kind);
   const fader = faderControl(
@@ -63,17 +64,21 @@
       class="m-plain frame"
       class:usable={frame.usable}
       class:accent={frame.accent}
+      class:dim={frame.dim}
+      class:stopped={frame.stopped}
       aria-disabled={!frame.usable || undefined}
       data-test="mixer-frame"
-      onclick={() => frame.usable && frame.run?.()}><span class="cut">{frame.text}</span></button
+      use:tip={frame.tip}
+      onclick={() => frame.usable && frame.run?.()}
+      ><span class="cut">{frame.text}</span>{#if frame.stopped}<span class="stop">{t("mixer.stoppedMark")}</span>{/if}</button
     >
   {:else}
     <div class="frame" data-test="mixer-frame"><span class="cut">{frame.text}</span></div>
   {/if}
   <div class="group">
     <span class="m-lbl" use:term={"インサート"}>{t("mixer.inserts")}</span>
-    {#each inserts as effect, slot (slot)}
-      <InsertSlot insert={{ strip, slot }} {effect} selected={selectedSlot === slot} />
+    {#each slots as view, slot (slot)}
+      <InsertSlot insert={{ strip, slot }} {view} selected={selectedSlot === slot} />
     {/each}
   </div>
   <div class="group">
@@ -177,6 +182,17 @@
   button.frame.accent,
   button.frame.accent:hover {
     color: var(--color-accent);
+  }
+  button.frame.usable.dim {
+    color: var(--color-gray-8);
+  }
+  /* 止まったプラグイン（仕様書 2 章「インサートの枠」と同じ赤い枠と「止」）。 */
+  button.frame.usable.stopped,
+  button.frame.usable.stopped:hover {
+    border-color: var(--color-rec);
+    color: var(--color-rec);
+    justify-content: space-between;
+    gap: var(--space-1);
   }
   .cut {
     min-width: 0;

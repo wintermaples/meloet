@@ -6,7 +6,7 @@ import { fakeScene } from "../src/bridge/fake";
 import { Auditioner } from "../src/components/pianoroll/audition";
 import { pianoRollCommand } from "../src/components/pianoroll/commands";
 import { RollDrag, type Mods } from "../src/components/pianoroll/drag";
-import { DRUM_KEYS, drumKeyOf, drumName, drumTerm, isDrumKit, keyLabel, keysInstrument, keysLabel, pianoRollDrums } from "../src/components/pianoroll/drums";
+import { DRUM_KEYS, drumKeyOf, drumName, drumTerm, isDrumKit, keyLabel, keysDrums, keysLabel, pianoRollDrums } from "../src/components/pianoroll/drums";
 import * as G from "../src/components/pianoroll/geom";
 import { DRUM_FIELD_ORDER, nextField, noteFieldSpec, readField } from "../src/components/pianoroll/noteFields";
 import { noteMarks, paintRoll, paintRollKeys, type RollPicture } from "../src/components/pianoroll/paint";
@@ -81,15 +81,15 @@ describe("行と名前（仕様書 3 章）", () => {
 
   it("鍵を弾くと鳴る先: ためし弾きの音源、録っているトラック、選んだトラックの順", () => {
     const s = fakeScene("drumRoll")!.state;
-    expect(keysInstrument(s)).toBe("studioKit");
-    expect(pianoRollDrums(s)).toBe(true);
-    s.shelf.selected = "grandPiano";
-    expect(keysInstrument(s)).toBe("grandPiano");
-    s.shelf.selected = null;
+    expect(keysDrums(s)).toBe("builtin");
+    expect(pianoRollDrums(s)).toBe("builtin");
+    s.shelf.selectedSound = { kind: "builtin", instrument: "grandPiano" };
+    expect(keysDrums(s)).toBe(false);
+    s.shelf.selectedSound = null;
     s.song.playTarget = s.song.tracks[0]!.id;
-    expect(keysInstrument(s)).toBe("grandPiano");
+    expect(keysDrums(s)).toBe(false);
     // ピアノロールは見せているクリップのトラックで決まる。
-    expect(pianoRollDrums(s)).toBe(true);
+    expect(pianoRollDrums(s)).toBe("builtin");
   });
 });
 

@@ -6,7 +6,9 @@ import type { ClipView, Command, NoteField, TakeNotes, ValueField } from "../../
 import { noteLengthText, notePositionText, rangeText } from "../format";
 import { noteName } from "../meterFormat";
 import { DISPLAY_TICKS_PER_BEAT, ticksPerBar, ticksPerBeat, type Meter } from "../time";
-import { drumKeyOf, keyLabel } from "./drums";
+import { drumKeyOf, keyLabel, type Drums } from "./drums";
+
+const kitOf = (d: Drums | boolean): Drums => (d === true ? "builtin" : d);
 
 export type FieldName = "position" | "key" | "length" | "velocity";
 /** 左から右への順（一覧の欄の順、Tab の順）。 */
@@ -202,7 +204,7 @@ export function noteFieldSpec(
   clip: Placed,
   notes: readonly number[],
   meter: Meter,
-  drums = false,
+  drums: Drums | boolean = false,
 ): NoteFieldSpec | null {
   const picked = notes.filter((i) => i < take.starts.length);
   if (picked.length === 0) return null;
@@ -250,10 +252,10 @@ export function noteFieldSpec(
         unit: 1,
         range: rangeText(noteName(0), noteName(high)),
         format,
-        read: drums ? (t) => drumKeyOf(t) ?? parseKeyName(t) : parseKeyName,
+        read: drums ? (t) => drumKeyOf(t, kitOf(drums)) ?? parseKeyName(t) : parseKeyName,
         loose: drums
           ? (t) => {
-              const k = drumKeyOf(t);
+              const k = drumKeyOf(t, kitOf(drums));
               return k === null ? readKeyNameLoose(t) : { value: k, unit: null };
             }
           : readKeyNameLoose,

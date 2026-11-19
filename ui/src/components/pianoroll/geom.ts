@@ -37,6 +37,8 @@ export interface DrumGeom {
   top: number;
   /** 四角の幅（CSS px）。グリッドの 1 マス − 2、6 より小さくしない。 */
   hitW: number;
+  /** 行の名前の表（最初から入っているキットか、SF2 のキットか）。 */
+  names?: "builtin" | "sf2";
 }
 
 export const tickToX = (g: RollGeom, tick: number) => (tick - g.scrollTick) * g.ppt;

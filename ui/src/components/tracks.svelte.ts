@@ -1,18 +1,9 @@
 // トラックの見出しと棚の、画面だけが持つ状態（名前の入力の枠、棚のさがす文字 ・ お気に入り ・ たたんだグループ、棚にキーが向いているか）。
 // 曲や棚の中身は core が持つ。ここは見せかただけ。
 
-import {
-  INSTRUMENT_GROUPS,
-  type AppState,
-  type Command,
-  type EffectKind,
-  type InstrumentGroup,
-  type InstrumentKind,
-  type ShelfMode,
-  type ShelfView,
-} from "../bridge";
-import { EFFECT_KINDS } from "../bridge/types";
-import { t } from "../text/ja";
+import type { AppState, Command, LibraryView, ShelfMode, SoundRef } from "../bridge";
+import { headingOpen, rowIs, shelfModel, stepRow, type ShelfList, type ShelfModel, type ShelfRow } from "./shelfList";
+import { sameSound } from "./sounds";
 
 /** いま名前を打っているトラックの id（`TrackView::id`）。 */
 export const trackEdit = $state({ renaming: null as number | null });
@@ -24,15 +15,31 @@ export function startRename(track: number): void {
 export const shelfUi = $state({
   query: "",
   favoritesOnly: false,
-  /** たたんだグループ（仕様書 3 章: たたんでも見出しと数はのこる）。画面の中だけで覚える。 */
-  folded: [] as InstrumentGroup[],
+  /** 見出しをひらいた ・ たたんだ（はじめの形からかえた物だけ。仕様書 3 章: たたんでも見出しと数はのこる）。画面の中だけで覚える。 */
+  open: {} as Record<string, boolean>,
+  /** さがしている間にひらいた ・ たたんだ見出し（searchFor の文字のときだけ）。さがす文字が変わると、はじめの形（ひらく）に戻る。 */
+  searchOpen: {} as Record<string, boolean>,
+  searchFor: "",
   /** 棚の中の ↑ ↓ ・ Enter ・ F ・ Space を棚に向けるか。棚をひらいたとき、棚を押したときに向き、ほかの帯を押すと外れる。 */
   keys: false,
   /** 棚の一覧に出している物（見出しの「音源 N」「エフェクト 6」の切りかえ）。棚のモードが変わると、そのモードの物に戻す（Shelf.svelte）。 */
   view: "instruments" as ShelfList,
 });
 
-export type ShelfList = "instruments" | "effects";
+/** 見出しをひらく ・ たたむ。 */
+export function toggleHeading(id: string, library: LibraryView): void {
+  if (shelfUi.query.trim() !== "") {
+    if (shelfUi.searchFor !== shelfUi.query) {
+      shelfUi.searchOpen = {};
+      shelfUi.searchFor = shelfUi.query;
+    }
+    shelfUi.searchOpen = { ...shelfUi.searchOpen, [id]: !headingOpen(id, shelfUi, library) };
+    return;
+  }
+  shelfUi.open = { ...shelfUi.open, [id]: !headingOpen(id, shelfUi, library) };
+}
+
+export type { ShelfList };
 
 /** 棚をひらく意図。ひらいた棚には、Shelf.svelte がキーを向ける（ひらいたとき、モードが変わったとき）。 */
 export function openShelf(mode: ShelfMode): Command {
@@ -58,128 +65,98 @@ export function shelfHasKeys(state: AppState): boolean {
   );
 }
 
-export interface ShelfGroup {
-  group: InstrumentGroup;
-  /** さがす文字とお気に入りで残った行（たたんでいても数える）。 */
-  rows: InstrumentKind[];
-  folded: boolean;
+/** いまの棚の一覧（音源のモードのエフェクト、エフェクトのモードの音源は見るだけ）。 */
+export function currentShelf(state: AppState): ShelfModel {
+  return shelfModel(shelfUi.view, state.shelf, state.library, shelfUi);
 }
 
-/** 棚に出すグループと行。出す行が 1 つもないグループは、見出しごと出さない。 */
-export function shelfGroups(
-  shelf: ShelfView,
-  ui: {
-    query: string;
-    favoritesOnly: boolean;
-    folded: readonly InstrumentGroup[];
-  },
-): ShelfGroup[] {
-  const query = ui.query.trim().toLowerCase();
-  const hit = (text: string) => text.toLowerCase().includes(query);
-  return INSTRUMENT_GROUPS.flatMap(({ group, instruments }) => {
-    const groupHit = query === "" || hit(t(`instrumentGroup.${group}`));
-    const rows = instruments.filter(
-      (i) =>
-        shelf.available.includes(i) &&
-        (!ui.favoritesOnly || shelf.favorites.includes(i)) &&
-        (groupHit || hit(t(`instrument.${i}`))),
-    );
-    return rows.length === 0
-      ? []
-      : [{ group, rows, folded: ui.folded.includes(group) }];
-  });
+/** 棚の一覧で、えらべる（えらぶと、ためし弾きか「入れる」の箱が出る）か。 */
+export function shelfPicks(state: AppState): boolean {
+  const inserting = state.shelf.mode.kind === "insertEffect";
+  return inserting === (shelfUi.view === "effects");
 }
 
-/** ↑ ↓ でえらぶ次の行。見えている行（たたんだグループの行は見えない）の中で動き、はしでは止まる。 */
-export function shelfStep(
-  groups: readonly ShelfGroup[],
-  selected: InstrumentKind | null,
-  delta: 1 | -1,
-): InstrumentKind | null {
-  const rows = groups.flatMap((g) => (g.folded ? [] : g.rows));
-  if (rows.length === 0) return null;
-  const at = selected === null ? -1 : rows.indexOf(selected);
-  if (at < 0) return delta > 0 ? rows[0]! : rows.at(-1)!;
-  return rows[Math.max(0, Math.min(rows.length - 1, at + delta))]!;
+/** 棚の一覧でえらばれている行（ためし弾き ・ 読みこみ中 ・ 読みこめない ・ 入れるエフェクト）。 */
+export function pickedRow(state: AppState, rows: readonly ShelfRow[]): ShelfRow | null {
+  const shelf = state.shelf;
+  if (!shelfPicks(state)) return null;
+  if (shelfUi.view === "effects") return rows.find((r) => rowIs(r, null, shelf.chosenEffect)) ?? null;
+  const sound = shelf.selectedSound ?? shelf.loadingSound ?? shelf.unreadable;
+  return rows.find((r) => rowIs(r, sound)) ?? null;
 }
+
+/** 行をえらぶ意図（音源はためし弾き、エフェクトは「入れる」の箱）。見るだけの一覧では null。 */
+export function pickCommand(state: AppState, row: ShelfRow): Command | null {
+  if (!shelfPicks(state)) return null;
+  if (row.effect) return rowIs(row, null, state.shelf.chosenEffect) ? null : { type: "shelfChooseEffect", effect: row.effect };
+  if (!row.sound) return null;
+  const shelf = state.shelf;
+  if (rowIs(row, shelf.selectedSound ?? shelf.loadingSound)) return null;
+  return { type: "shelfSelectSound", sound: row.sound };
+}
+
+/** ↑ ↓: 見えている行の中で次の行をえらぶ。はしでは止まる。 */
+export function shelfStepCommand(state: AppState, delta: 1 | -1): Command | null {
+  if (!shelfPicks(state)) return null;
+  const { rows } = currentShelf(state);
+  const picked = pickedRow(state, rows);
+  const next = stepRow(rows, picked ? rows.indexOf(picked) : -1, delta);
+  return next ? pickCommand(state, next) : null;
+}
+
+/** Enter: えらんだ音源を入れる ・ えらんだエフェクトを入れる。 */
+export function shelfConfirmCommand(state: AppState): Command | null {
+  const shelf = state.shelf;
+  if (!shelfPicks(state)) return null;
+  if (shelfUi.view === "effects") return shelf.chosenEffect === null ? null : { type: "shelfConfirm" };
+  return shelf.selectedSound === null || shelf.loadingSound !== null ? null : { type: "shelfConfirm" };
+}
+
+/** Space: えらんだ音源のサンプルを鳴らす ・ 止める。 */
+export function sampleCommand(state: AppState, sound: SoundRef): Command {
+  const playing = state.shelf.soundSample?.sound;
+  return playing && sameSound(playing, sound) ? { type: "stopSample" } : { type: "playSampleOf", sound };
+}
+
+export function shelfSampleCommand(state: AppState): Command | null {
+  if (shelfUi.view !== "instruments" || !shelfPicks(state)) return null;
+  const sound = state.shelf.selectedSound;
+  return sound === null ? null : sampleCommand(state, sound);
+}
+
+/** F: えらんだ行のお気に入りの印（エフェクトの一覧でも。仕様書 3 章 86-4）。 */
+export function shelfFavoriteCommand(state: AppState): Command | null {
+  if (!shelfPicks(state)) return null;
+  const shelf = state.shelf;
+  if (shelfUi.view === "effects") return shelf.chosenEffect === null ? null : { type: "toggleFavoriteEffect", effect: shelf.chosenEffect };
+  return shelf.selectedSound === null ? null : { type: "toggleFavoriteSound", sound: shelf.selectedSound };
+}
+
+/** 棚の中の Esc の前の番: ためし弾き ・ 読みこみ ・ 入れるエフェクトをやめる。 */
+export function shelfHasPick(state: AppState): boolean {
+  const shelf = state.shelf;
+  return shelf.selectedSound !== null || shelf.loadingSound !== null || shelf.chosenEffect !== null;
+}
+
+export type ShelfStatus =
+  | { kind: "search"; query: string; count: number }
+  | { kind: "instruments"; count: number; groups: string[] }
+  | { kind: "effects"; count: number; open: { label: string; count: number }[] };
 
 /**
- * 状態行に出す棚のようす（モック R8-Shelf84「音色 31 ・ ピアノ ・ 鍵盤とギターをひらいています」）。
- * 棚が前に出ていて音源の一覧を見せ、ためし弾きもサンプルもしていないときだけ。count は棚に出ている行の数、groups はひらいている見出し。
+ * 状態行に出す棚のようす。棚が前に出ていて、ためし弾きもサンプルもしていないときだけ。
+ * さがしているとき「さがす「Dragonfly」・ 合う物 4 個」（モック F5-ShelfSearch）。
+ * 音源の一覧は「音色 31 ・ ピアノ ・ 鍵盤とギターをひらいています」（モック R8-Shelf84）。count は出ている行の数、groups はひらいている見出し。
+ * エフェクトの一覧は「エフェクト 512 ・ リバーブ 23」（モック F5-ShelfFx）。
  */
-export function shelfStatus(state: AppState): { count: number; groups: InstrumentGroup[] } | null {
+export function shelfStatus(state: AppState): ShelfStatus | null {
   const shelf = state.shelf;
-  if (
-    state.workspace.layout.rightFront !== "shelf" ||
-    shelf.mode.kind === "insertEffect" ||
-    shelfUi.view !== "instruments" ||
-    shelf.selected !== null ||
-    shelf.sample !== null
-  )
+  if (state.workspace.layout.rightFront !== "shelf" || shelf.selectedSound !== null || shelf.loadingSound !== null || shelf.soundSample !== null)
     return null;
-  const groups = shelfGroups(shelf, shelfUi);
-  return {
-    count: groups.reduce((n, g) => n + g.rows.length, 0),
-    groups: groups.filter((g) => !g.folded).map((g) => g.group),
-  };
-}
-
-/** 棚の数（「音源 N」「すべて N」「お気に入り N」）。お気に入りは、棚に出る物だけ。 */
-export function shelfCounts(shelf: ShelfView): {
-  all: number;
-  favorites: number;
-} {
-  return {
-    all: shelf.available.length,
-    favorites: shelf.favorites.filter((i) => shelf.available.includes(i))
-      .length,
-  };
-}
-
-/** 最初から入っているエフェクトの数（仕様書 3 章 Y8: EQ 4 バンド、コンプレッサー、リバーブ、ディレイ、コーラス、リミッター）。 */
-export const BUILTIN_EFFECTS = EFFECT_KINDS.length;
-
-/** 棚の「エフェクト」の行（EFFECT_KINDS の順）。さがす文字は名前にふくまれる物（英字の大小は見ない）。 */
-export function shelfEffects(query: string): EffectKind[] {
-  const q = query.trim().toLowerCase();
-  return EFFECT_KINDS.filter(
-    (e) => q === "" || t(`effect.${e}`).toLowerCase().includes(q),
-  );
-}
-
-/**
- * 棚の ↑ ↓ と Enter のうち、エフェクトにかかわる物。undefined は音源の棚の決まりのまま（音源のモードで音源を見ているとき）。
- * 音源のモードでエフェクトの一覧を見ているときは、見るだけで入れない（design-notes A-14）。
- * 「空き ＋」からひらいた棚（insertEffect）で音源の一覧を見ているときも、何もしない。
- */
-export function effectShelfCommand(
-  action: "up" | "down" | "confirm",
-  state: AppState,
-): Command | null | undefined {
-  const shelf = state.shelf;
-  const inserting = shelf.mode.kind === "insertEffect";
-  if (!inserting && shelfUi.view === "instruments") return undefined;
-  if (!inserting || shelfUi.view !== "effects") return null;
-  if (action === "confirm")
-    return shelf.selectedEffect === null ? null : { type: "shelfConfirm" };
-  const rows = shelfEffects(shelfUi.query);
-  if (rows.length === 0) return null;
-  const at =
-    shelf.selectedEffect === null ? -1 : rows.indexOf(shelf.selectedEffect);
-  const next =
-    at < 0
-      ? action === "down"
-        ? rows[0]!
-        : rows.at(-1)!
-      : rows[
-          Math.max(
-            0,
-            Math.min(rows.length - 1, at + (action === "down" ? 1 : -1)),
-          )
-        ]!;
-  return next === shelf.selectedEffect
-    ? null
-    : { type: "shelfSelectEffect", effect: next };
+  const model = currentShelf(state);
+  if (shelfUi.query.trim() !== "") return { kind: "search", query: shelfUi.query.trim(), count: model.shown };
+  if (shelfUi.view === "effects") return { kind: "effects", count: model.shown, open: model.open };
+  return { kind: "instruments", count: model.shown, groups: model.open.map((o) => o.label) };
 }
 
 /**

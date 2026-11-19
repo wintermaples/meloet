@@ -89,7 +89,7 @@
         index: i,
         position: notePositionText(at + take.starts[i]!, meter),
         key: keyLabel(take.keys[i]!, drums),
-        named: drums && drumName(take.keys[i]!) !== null,
+        named: !!drums && drumName(take.keys[i]!, drums) !== null,
         length: noteLengthText(take.lengths[i]!, meter),
         velocity: take.velocities[i]!,
         selected: inRanges(selected, i),

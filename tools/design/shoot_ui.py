@@ -137,6 +137,27 @@ input.value = "%s";
 input.dispatchEvent(new Event("input", { bubbles: true }));
 """
 
+# Folds headings of the shelf. The shelf makes only the rows it shows, so it scrolls down to a heading that is not there yet.
+FOLD_SHELF = """
+const list = document.querySelector('[data-test="shelf-list"]');
+for (const g of %s) {
+  for (let i = 0; i < 40 && !document.querySelector(`[data-group="${g}"]`); i++) {
+    list.scrollTop += 100;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  document.querySelector(`[data-group="${g}"]`).click();
+  await new Promise((r) => setTimeout(r, 50));
+}
+list.scrollTop = 0;
+"""
+
+# Types into the shelf's search field (F5-ShelfSearch).
+TYPE_SEARCH = """
+const input = document.querySelector('[data-test="shelf-search"]');
+input.value = "%s";
+input.dispatchEvent(new Event("input", { bubbles: true }));
+"""
+
 # Presses "ベース A" (track 2, bars 5–8) of the scene arrangeTrimmed and drags it without letting go (R3-Arrange).
 # Arguments: x pressed, x moved to (CSS px from the left of the lanes, 1 bar = 64 at 100 %), and the PointerEvent options.
 DRAG_CLIP = """
@@ -261,7 +282,7 @@ CLICKS = {
     # F4-ShelfSample: グランドピアノの ▶ を押した所。
     "shelfSample": ("shelfNewTrack", '[data-row="grandPiano"] [data-test="shelf-sample"]'),
     # R8-Shelf84: 「ピアノ ・ 鍵盤」と「ギター」のほかの見出しをたたむ。
-    "shelf84": ("shelf84", tuple(f'[data-group="{g}"]' for g in ("bass", "drums", "padStrings", "wind", "synth"))),
+    "shelf84": ("shelf84", "js:" + FOLD_SHELF % '["bass", "drums", "padStrings", "wind", "synth"]'),
     "trackRename": ("tracks6", "js:" + RENAME_TRACK),
     "trackDrag": ("tracks6", "js:" + DRAG_TRACK),
     "trackColorMenu": ("tracks6", "js:" + TRACK_COLORS),
@@ -273,11 +294,36 @@ CLICKS = {
     "settingsAdv": ("settings", '[data-test="settings-advanced"]'),
     "settingsMoved": ("settings", drag_dialog('[data-test="settings-dialog"]', -200, -40)),
     "scanStoppedMoved": ("scanStopped", drag_dialog('[data-test="scan-stopped-dialog"]', 260, 120)),
+    # 第 5 回 区切り2: 棚の見出しをモックのとおりにひらく（はじめはどれもたたむ。仕様書 3 章 Y12）。
+    "sf2Shelf": ("sf2Shelf", '[data-group="ff:guitar:FluidR3_GM.sf2"]'),
+    "shelfFx": ("shelfFx", '[data-group="c:effect:reverb"]'),
+    "shelfSearch": ("shelfSearch", "js:" + TYPE_SEARCH % "Dragonfly"),
+    "shelfPlugins": ("shelfPlugins", ('[data-test="shelf-effects"]', '[data-group="c:effect:reverb"]')),
+    "pluginLoading": ("pluginLoading", '[data-group="c:instrument:synth"]'),
+    "pluginAudition": ("pluginAudition", '[data-group="c:instrument:synth"]'),
+    "pluginUnreadable": ("pluginUnreadable", '[data-group="c:instrument:synth"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
 # Scenes that stand for one board at one window size and zoom: name -> [(w, h, scale)].
 ONLY = {
+    "sf2Shelf": [(1280, 800, 100), (1280, 800, 150)],
+    "sf2Added": [(1280, 800, 100)],
+    "sf2Unreadable": [(1280, 800, 100)],
+    "sf2DropAddable": [(1280, 800, 100), (1280, 800, 150)],
+    "sf2DropNotAddable": [(1280, 800, 100)],
+    "shelfFx": [(1280, 800, 100)],
+    "shelfSearch": [(1280, 800, 100)],
+    "shelfPlugins": [(1280, 800, 100)],
+    "pluginLoading": [(1280, 800, 100)],
+    "pluginAudition": [(1280, 800, 100), (1920, 1080, 150)],
+    "pluginUnreadable": [(1280, 800, 100)],
+    "pluginTrack": [(1280, 800, 100)],
+    "missingPack": [(1280, 800, 100)],
+    "missingSf2": [(1280, 800, 100)],
+    "missingPlugin": [(1280, 800, 100)],
+    "drumPlay": [(1280, 800, 100)],
+    "drumRollSf2": [(1280, 800, 100)],
     "pianoRoll": [(1280, 800, 100)],
     "pianoRoll720": [(1280, 720, 100)],
     "pianoRoll150": [(1280, 800, 150)],

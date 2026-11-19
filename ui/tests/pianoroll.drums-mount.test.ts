@@ -176,7 +176,7 @@ describe("右の欄（選んだノート）", () => {
   it("音は楽器の名前。スケールは音階「—」、固定「使えない」", async () => {
     await drumSong();
     show(NoteInspector);
-    expect(text(q("[data-test=inspector-keys]"))).toBe("スネア スネア");
+    expect(text(q("[data-test=inspector-keys]"))).toBe("スネア ×2");
     expect(text(q("[data-test=inspector-scale]"))).toBe("—");
     expect(text(q("[data-test=inspector-lock]"))).toBe("使えない");
     expect(q("[data-test=inspector-lock]")!.tagName).toBe("SPAN");
@@ -187,7 +187,7 @@ describe("状態行と入力計", () => {
   it("選んだノートの音名は楽器の名前", async () => {
     await drumSong();
     show(StatusLine);
-    expect(text(q(".status"))).toContain("選択 2 ノート ・ スネア スネア");
+    expect(text(q(".status"))).toContain("選択 2 ノート ・ スネア ×2");
   });
 
   it("入力計の「いま押している音」: 弾くと鳴る先がドラムなら楽器の名前（「キック スネア」）", async () => {

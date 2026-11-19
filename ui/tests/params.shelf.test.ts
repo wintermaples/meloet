@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command } from "../src/bridge";
 import { fakeScene, reduceMixer } from "../src/bridge/fake";
 import RightRail from "../src/components/RightRail.svelte";
-import { effectShelfCommand, shelfEffects, shelfUi } from "../src/components/tracks.svelte";
+import { shelfModel } from "../src/components/shelfList";
+import { shelfStepCommand, shelfUi } from "../src/components/tracks.svelte";
 import { handleKeydown, type KeyDeps } from "../src/keys/attach";
 import * as app from "./fake-app.svelte";
 
@@ -25,7 +26,7 @@ afterEach(() => {
   if (mounted) unmount(mounted);
   mounted = null;
   target.remove();
-  Object.assign(shelfUi, { query: "", favoritesOnly: false, folded: [], keys: false, view: "instruments" });
+  Object.assign(shelfUi, { query: "", favoritesOnly: false, open: {}, searchOpen: {}, searchFor: "", keys: false, view: "instruments" });
 });
 function show(component: Component<any>, state: AppState): void {
   app.setState(state);
@@ -42,15 +43,20 @@ function press(state: AppState, key: string): Command[] {
 }
 
 describe("棚のエフェクトの行", () => {
+  const effects = (query: string) => {
+    const s = scene("shelfEffects");
+    const look = { query, favoritesOnly: false, open: {}, searchOpen: {}, searchFor: "" };
+    return shelfModel("effects", s.shelf, s.library, look).rows.map((r) => (r.effect?.kind === "builtin" ? r.effect.effect : null));
+  };
   it("EFFECT_KINDS の順。さがす文字は名前にふくまれる物", () => {
-    expect(shelfEffects("")).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"]);
-    expect(shelfEffects("ー")).toEqual(["compressor", "reverb", "chorus", "limiter"]);
-    expect(shelfEffects("eq")).toEqual(["eq4"]);
+    expect(effects("")).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"]);
+    expect(effects("ー")).toEqual(["compressor", "reverb", "chorus", "limiter"]);
+    expect(effects("eq")).toEqual(["eq4"]);
   });
 });
 
 describe("「空き ＋」からひらいた棚（insertEffect）", () => {
-  it("見出しは「（ストリップ）にエフェクトを入れる」、一覧はエフェクト、名前の右は「最初から入っている」。▶ と星はない", () => {
+  it("見出しは「（ストリップ）にエフェクトを入れる」、一覧はエフェクト、名前の右は「最初から入っている」。▶ はなく、星はある（86-4）", () => {
     const s = scene("shelfEffects");
     show(RightRail, s);
     const track = s.song.tracks.find((x) => x.id === (s.shelf.mode as { strip: { id: number } }).strip.id)!;
@@ -65,26 +71,30 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
       "リミッター 最初から入っている",
     ]);
     expect(q("[data-effect] [data-test=shelf-sample]")).toBeNull();
-    expect(q("[data-effect] [aria-label=お気に入り]")).toBeNull();
+    expect(qa("[data-effect] [aria-label=お気に入り]").map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "false", "true", "true", "false", "false"]);
     expect(qa("[data-effect].selected").map((r) => r.dataset.effect)).toEqual(["compressor"]);
   });
 
-  it("行を押すと ShelfSelectEffect（えらんでいる行では送らない）", () => {
+  it("行を押すと ShelfChooseEffect（えらんでいる行では送らない）", () => {
     show(RightRail, scene("shelfEffects"));
     q("[data-effect=compressor]")!.click();
     q("[data-effect=delay]")!.click();
-    expect(app.sent).toEqual([{ type: "shelfSelectEffect", effect: "delay" }]);
+    expect(app.sent).toEqual([{ type: "shelfChooseEffect", effect: { kind: "builtin", effect: "delay" } }]);
   });
 
   it("↑ ↓ でえらび、Enter で ShelfConfirm", () => {
     const s = scene("shelfEffects");
     show(RightRail, s);
-    expect(press(s, "ArrowDown")).toEqual([{ type: "shelfSelectEffect", effect: "reverb" }]);
-    expect(press(s, "ArrowUp")).toEqual([{ type: "shelfSelectEffect", effect: "eq4" }]);
+    const choose = (effect: string) => [{ type: "shelfChooseEffect", effect: { kind: "builtin", effect } }];
+    expect(press(s, "ArrowDown")).toEqual(choose("reverb"));
+    expect(press(s, "ArrowUp")).toEqual(choose("eq4"));
     expect(press(s, "Enter")).toEqual([{ type: "shelfConfirm" }]);
-    s.shelf.selectedEffect = null;
+    // F はえらんだエフェクトのお気に入り（仕様書 4 章「棚の中（エフェクト）: お気に入りの印」）。
+    expect(press(s, "f")).toEqual([{ type: "toggleFavoriteEffect", effect: { kind: "builtin", effect: "compressor" } }]);
+    s.shelf.chosenEffect = null;
     expect(press(s, "Enter")).toEqual([]);
-    expect(press(s, "ArrowDown")).toEqual([{ type: "shelfSelectEffect", effect: "eq4" }]);
+    expect(press(s, "f")).toEqual([]);
+    expect(press(s, "ArrowDown")).toEqual(choose("eq4"));
   });
 
   it("「入れる」のボタン: えらんだ行の下、押すと ShelfConfirm。行をえらんでいないときは一覧の下で、使えない", () => {
@@ -94,15 +104,17 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     expect(text(button())).toBe("入れる Enter");
     expect(button().classList.contains("primary")).toBe(true);
     expect(button().disabled).toBe(false);
-    expect(q("[data-effect=compressor]")!.nextElementSibling).toBe(q("[data-test=shelf-insert]"));
+    expect(q("[data-effect=compressor]")!.nextElementSibling!.contains(q("[data-test=shelf-insert]"))).toBe(true);
     button().click();
     expect(app.sent).toEqual([{ type: "shelfConfirm" }]);
 
-    app.setState({ ...s, shelf: { ...s.shelf, selectedEffect: null } });
+    app.setState({ ...s, shelf: { ...s.shelf, chosenEffect: null } });
     flushSync();
     expect(qa("[data-test=shelf-insert-confirm]").length).toBe(1);
     expect(button().disabled).toBe(true);
-    expect(qa("[data-effect]").at(-1)!.nextElementSibling).toBe(q("[data-test=shelf-insert]"));
+    // 一覧のいちばん下（「あとから入れたもの ・ 0」の行の下）。
+    const list = q("[data-test=shelf-list]")!;
+    expect([...list.querySelectorAll("[data-effect], [data-test=section\\:added], [data-test=shelf-insert]")].at(-1)).toBe(q("[data-test=shelf-insert]"));
     button().click();
     expect(app.sent.length).toBe(1);
   });
@@ -124,7 +136,7 @@ describe("「空き ＋」からひらいた棚（insertEffect）", () => {
     flushSync();
     q("[data-row=grandPiano]")!.click();
     expect(app.sent).toEqual([]);
-    expect(effectShelfCommand("down", scene("shelfEffects"))).toBeNull();
+    expect(shelfStepCommand(scene("shelfEffects"), 1)).toBeNull();
   });
 });
 

@@ -1,14 +1,16 @@
 // 第 4 回 区切り1 の画面: トラックの見出し（名前 ・ 並べかえ ・ 色 ・ 消す ・ 音源の名前）、棚、キー、偽物の答え。
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { INSTRUMENT_GROUPS, type AppState, type Command } from "../src/bridge";
+import { INSTRUMENT_GROUPS, type AppState, type Command, type InstrumentKind, type ShelfView } from "../src/bridge";
 import { createFakeTransport, fakeScene, FakeBands, reduceTracks } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
 import InputMeter from "../src/components/InputMeter.svelte";
 import RightRail from "../src/components/RightRail.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
-import { moveSlot, shelfGroups, shelfStep, shelfUi, trackEdit } from "../src/components/tracks.svelte";
+import { emptyLibrary } from "../src/bridge/fakeLibrary";
+import { shelfModel, type ShelfLook } from "../src/components/shelfList";
+import { moveSlot, shelfStepCommand, shelfUi, trackEdit } from "../src/components/tracks.svelte";
 import { handleKeydown, handlePointerdown, type KeyDeps } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
 import { t } from "../src/text/ja";
@@ -32,7 +34,7 @@ afterEach(() => {
   mounted = null;
   target.remove();
   trackEdit.renaming = null;
-  Object.assign(shelfUi, { query: "", favoritesOnly: false, folded: [], keys: false, view: "instruments" });
+  Object.assign(shelfUi, { query: "", favoritesOnly: false, open: {}, searchOpen: {}, searchFor: "", keys: false, view: "instruments" });
 });
 
 function show(component: Component<any>, state: AppState): void {
@@ -56,10 +58,20 @@ function keyOn(el: Element, key: string): KeyboardEvent {
 
 describe("棚の行の決まり（画面だけ）", () => {
   const shelf = () => scene("shelfNewTrack").shelf;
+  const look = (o: Partial<ShelfLook> = {}): ShelfLook => ({ query: "", favoritesOnly: false, open: {}, searchOpen: {}, searchFor: "", ...o });
+  /** 見出しと、その下の行（最初から入っている音源の名前）。 */
+  function groups(sh: ShelfView, l: ShelfLook): [string, string[]][] {
+    const out: [string, string[]][] = [];
+    for (const e of shelfModel("instruments", sh, emptyLibrary(), l).entries) {
+      if (e.kind === "heading") out.push([e.id, []]);
+      if (e.kind === "row" && e.sound?.kind === "builtin") out.at(-1)![1].push(e.sound.instrument);
+    }
+    return out;
+  }
+  const rowsOf = (sh: ShelfView, l: ShelfLook) => groups(sh, l).map((g) => g[1]);
 
   it("グループの順と数。さがす文字は名前かグループの名前にふくまれる行だけ。出す物がないグループは見出しごと出さない", () => {
-    const all = shelfGroups(shelf(), { query: "", favoritesOnly: false, folded: [] });
-    expect(all.map((g) => [g.group, g.rows.length])).toEqual([
+    expect(groups(shelf(), look()).map(([g, rows]) => [g, rows.length])).toEqual([
       ["pianoKeys", 11],
       ["guitar", 4],
       ["bass", 4],
@@ -68,34 +80,37 @@ describe("棚の行の決まり（画面だけ）", () => {
       ["wind", 4],
       ["synth", 2],
     ]);
-    expect(shelfGroups(shelf(), { query: "ベース", favoritesOnly: false, folded: [] }).map((g) => g.rows)).toEqual([
-      ["fingerBass", "pickBass", "woodBass", "synthBass"],
-    ]);
+    expect(rowsOf(shelf(), look({ query: "ベース" }))).toEqual([["fingerBass", "pickBass", "woodBass", "synthBass"]]);
     // グループの名前に当たれば、そのグループの行はぜんぶ。
-    expect(shelfGroups(shelf(), { query: "弦", favoritesOnly: false, folded: [] }).map((g) => g.rows)).toEqual([["strings", "pizzicato", "warmPad"]]);
-    expect(shelfGroups(shelf(), { query: "オルガン", favoritesOnly: false, folded: [] }).map((g) => g.rows)).toEqual([
+    expect(rowsOf(shelf(), look({ query: "弦" }))).toEqual([["strings", "pizzicato", "warmPad"]]);
+    expect(rowsOf(shelf(), look({ query: "オルガン" }))).toEqual([
       ["organDrawbar", "organPercussive", "organRock", "organ", "organQuiet", "organChurch", "organReed"],
     ]);
-    expect(shelfGroups(shelf(), { query: "シンセ", favoritesOnly: false, folded: [] }).map((g) => g.rows)).toEqual([
-      ["synthBass"],
-      ["synthLead", "sine"],
-    ]);
+    expect(rowsOf(shelf(), look({ query: "シンセ" }))).toEqual([["synthBass"], ["synthLead", "sine"]]);
   });
 
   it("お気に入りだけ。棚にない音源は出さない（available だけ）", () => {
     const s = { ...shelf(), available: shelf().available.filter((i) => i !== "studioKit") };
-    expect(shelfGroups(s, { query: "", favoritesOnly: true, folded: [] }).map((g) => g.rows)).toEqual([["grandPiano"]]);
-    expect(shelfGroups({ ...s, available: ["sine"] }, { query: "", favoritesOnly: false, folded: [] }).map((g) => g.group)).toEqual(["synth"]);
+    expect(rowsOf(s, look({ favoritesOnly: true }))).toEqual([["grandPiano"]]);
+    expect(groups({ ...s, available: ["sine"] }, look()).map((g) => g[0])).toEqual(["synth"]);
   });
 
   it("↑ ↓ は見えている行の中で動き、はしで止まる。たたんだグループはとばす", () => {
-    const groups = shelfGroups(shelf(), { query: "", favoritesOnly: false, folded: ["bass"] });
-    expect(shelfStep(groups, null, 1)).toBe("grandPiano");
-    expect(shelfStep(groups, null, -1)).toBe("sine");
-    expect(shelfStep(groups, "organ", 1)).toBe("organQuiet");
-    expect(shelfStep(groups, "marimba", 1)).toBe("guitarNylon");
-    expect(shelfStep(groups, "guitarDistortion", 1)).toBe("studioKit");
-    expect(shelfStep(groups, "grandPiano", -1)).toBe("grandPiano");
+    const s = scene("shelfNewTrack");
+    shelfUi.open = { bass: false };
+    shelfUi.view = "instruments";
+    const step = (from: InstrumentKind | null, delta: 1 | -1) => {
+      s.shelf.selectedSound = from === null ? null : { kind: "builtin", instrument: from };
+      const c = shelfStepCommand(s, delta);
+      return c?.type === "shelfSelectSound" && c.sound?.kind === "builtin" ? c.sound.instrument : null;
+    };
+    expect(step(null, 1)).toBe("grandPiano");
+    expect(step(null, -1)).toBe("sine");
+    expect(step("organ", 1)).toBe("organQuiet");
+    expect(step("marimba", 1)).toBe("guitarNylon");
+    expect(step("guitarDistortion", 1)).toBe("studioKit");
+    // はしでは止まる（同じ行は送らない）。
+    expect(step("grandPiano", -1)).toBeNull();
   });
 
   it("並べかえの線と行き先: まん中が越えた境の線。自分のまわりの線は動かない", () => {
@@ -143,10 +158,10 @@ describe("キー（仕様書 4 章）", () => {
     expect(press(d, " ", { code: "Space" }).defaultPrevented).toBe(true);
     press(d, "f");
     expect(sent).toEqual([
-      { type: "shelfSelect", instrument: "studioKit" },
+      { type: "shelfSelectSound", sound: { kind: "builtin", instrument: "studioKit" } },
       { type: "shelfConfirm" },
-      { type: "playSample", instrument: "synthBass" },
-      { type: "toggleFavorite", instrument: "synthBass" },
+      { type: "playSampleOf", sound: { kind: "builtin", instrument: "synthBass" } },
+      { type: "toggleFavoriteSound", sound: { kind: "builtin", instrument: "synthBass" } },
     ]);
   });
 
@@ -327,21 +342,22 @@ describe("棚（モック F4-ShelfSample ・ F4-ShelfAudition ・ F4-ShelfReplac
     flushSync();
     expect(qa("[data-group]").map(text)).toEqual(["▸ ピアノ ・ 鍵盤 1", "▾ ドラム 1"]);
     shelfUi.favoritesOnly = false;
-    shelfUi.folded = [];
+    shelfUi.open = {};
     shelfUi.query = "あたたか";
     flushSync();
     expect(qa("[data-row]").map((r) => r.getAttribute("data-row"))).toEqual(["warmPad"]);
   });
 
-  it("行を押すと ShelfSelect、星は ToggleFavorite、▶ は PlaySample（行はえらばない）", () => {
+  it("行を押すと ShelfSelectSound、星は ToggleFavoriteSound、▶ は PlaySampleOf（行はえらばない）", () => {
     show(RightRail, scene("shelfNewTrack"));
     q("[data-row=organ]")!.click();
     q("[data-row=organ] [aria-label=お気に入り]")!.click();
     q("[data-row=organ] [data-test=shelf-sample]")!.click();
+    const organ = { kind: "builtin", instrument: "organ" };
     expect(app.sent).toEqual([
-      { type: "shelfSelect", instrument: "organ" },
-      { type: "toggleFavorite", instrument: "organ" },
-      { type: "playSample", instrument: "organ" },
+      { type: "shelfSelectSound", sound: organ },
+      { type: "toggleFavoriteSound", sound: organ },
+      { type: "playSampleOf", sound: organ },
     ]);
   });
 
@@ -349,7 +365,7 @@ describe("棚（モック F4-ShelfSample ・ F4-ShelfAudition ・ F4-ShelfReplac
     show(RightRail, scene("shelfAudition"));
     expect(q("[data-row=synthBass]")!.classList.contains("selected")).toBe(true);
     const box = q("[data-test=shelf-audition]")!;
-    expect(box.previousElementSibling).toBe(q("[data-row=synthBass]"));
+    expect(box.parentElement!.previousElementSibling).toBe(q("[data-row=synthBass]"));
     expect(text(box)).toBe(`ためし弾き中 ${t("msg.audition")} トラック 5 を作る Enter やめる Esc`);
     q("[data-test=shelf-confirm]")!.click();
     q("[data-test=shelf-cancel]")!.click();
@@ -365,7 +381,7 @@ describe("棚（モック F4-ShelfSample ・ F4-ShelfAudition ・ F4-ShelfReplac
 
   it("サンプル再生中: ▶ が accent の停止になり、右に「0:00 / 0:04」", () => {
     const s = scene("shelfNewTrack");
-    s.shelf.sample = { instrument: "grandPiano", startedUs: 0, lengthUs: 4_000_000 };
+    s.shelf.soundSample = { sound: { kind: "builtin", instrument: "grandPiano" }, playing: { startedUs: 0, lengthUs: 4_000_000 } };
     show(RightRail, s);
     expect(q("[data-row=grandPiano] [data-test=shelf-sample]")!.classList.contains("playing")).toBe(true);
     expect(text(q("[data-test=shelf-sample-time]"))).toMatch(/^0:0\d \/ 0:04$/);
@@ -392,7 +408,6 @@ describe("棚（モック F4-ShelfSample ・ F4-ShelfAudition ・ F4-ShelfReplac
       ...INSTRUMENT_GROUPS[0]!.instruments,
       ...INSTRUMENT_GROUPS[1]!.instruments,
     ]);
-    shelfUi.folded = [];
   });
 
   it("とじた棚の縦の見出しの数は、棚に出る音源の数", () => {
@@ -498,24 +513,26 @@ describe("状態行と入力計（モック F4-ShelfAudition ・ F4-ShelfReplace
     const s = scene("shelf84");
     mountOf(StatusLine, s);
     const say = () => (flushSync(), text(q(".message")));
-    shelfUi.folded = ["bass", "drums", "padStrings", "wind", "synth"];
+    const fold = (groups: string[]) => (shelfUi.open = Object.fromEntries(groups.map((g) => [g, false])));
+    fold(["bass", "drums", "padStrings", "wind", "synth"]);
     expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤とギターをひらいています");
-    shelfUi.folded = ["guitar", "bass", "drums", "padStrings", "wind", "synth"];
+    fold(["guitar", "bass", "drums", "padStrings", "wind", "synth"]);
     expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤をひらいています");
-    shelfUi.folded = ["bass", "drums", "padStrings", "synth"];
+    fold(["bass", "drums", "padStrings", "synth"]);
     expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤、ギターと管楽器をひらいています");
-    shelfUi.folded = ["pianoKeys", "guitar", "bass", "drums", "padStrings", "wind", "synth"];
+    fold(["pianoKeys", "guitar", "bass", "drums", "padStrings", "wind", "synth"]);
     expect(say()).toBe("音色 31");
-    // 数は棚に出ている行の数。
-    shelfUi.folded = [];
+    // 数は棚に出ている行の数。さがしているときは「さがす「オルガン」・ 合う物 7 個」（モック F5-ShelfSearch）。
+    fold([]);
     shelfUi.query = "オルガン";
-    expect(say()).toBe("音色 7 ・ ピアノ ・ 鍵盤をひらいています");
+    expect(say()).toBe("さがす「オルガン」・ 合う物 7 個");
     shelfUi.query = "";
-    // エフェクトの一覧、ためし弾き、サンプル再生中、棚がとじているときは、いつもの文。
+    // エフェクトの一覧は「エフェクト 6」（モック F5-ShelfFx。ひらいている見出しがあれば「・ リバーブ 23」）。
     shelfUi.view = "effects";
-    expect(say()).toBe("ループ 5–9 ・ 選択なし");
+    expect(say()).toBe("エフェクト 6");
+    // ためし弾き、サンプル再生中、棚がとじているときは、いつもの文。
     shelfUi.view = "instruments";
-    app.setState({ ...s, shelf: { ...s.shelf, sample: { instrument: "grandPiano", startedUs: 0, lengthUs: 4_000_000 } } });
+    app.setState({ ...s, shelf: { ...s.shelf, soundSample: { sound: { kind: "builtin", instrument: "grandPiano" }, playing: { startedUs: 0, lengthUs: 4_000_000 } } } });
     expect(say()).not.toContain("音色");
     app.setState({ ...s, workspace: { ...s.workspace, layout: { ...s.workspace.layout, rightOpen: [], rightFront: null } } });
     expect(say()).toBe("ループ 5–9 ・ 選択なし");

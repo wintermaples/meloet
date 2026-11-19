@@ -15,7 +15,7 @@
   import { t } from "../../text/ja";
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { gridText, scaleName } from "../format";
-  import { keyLabel, rollShowsDrums } from "./drums";
+  import { keyLabel, rollShowsDrums, selectedKeysText } from "./drums";
   import { GRID_DIVISIONS, indexesOf } from "./geom";
   import NoteFieldInput from "./NoteFieldInput.svelte";
   import {
@@ -44,6 +44,8 @@
   const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
   const summary = $derived(live ? selectedSummary(take!, shown.clip!, pr.selectedNotes, meter, 64, (k) => keyLabel(k, drums)) : null);
   const count = $derived(summary?.count ?? 0);
+  /** 選んだノートの鍵（同じ名前をまとめて出す。仕様書 3 章 85）。 */
+  const selectedKeys = $derived(live ? indexesOf(pr.selectedNotes).filter((i) => i < take!.keys.length).map((i) => take!.keys[i]!) : []);
   const selected = $derived(live ? indexesOf(pr.selectedNotes).filter((i) => i < take!.starts.length) : []);
   const quantized = $derived((take?.origin ?? 0) !== 0);
   const q = $derived(pr.quantize);
@@ -59,7 +61,7 @@
   /** 欄に見えている文字（使えない値を打ったときの「もとの … のまま」に使う）。 */
   const fieldText = $derived<Record<FieldName, string>>({
     position: summary ? (count > 1 ? t("inspector.from", { position: summary.position }) : summary.position) : "",
-    key: summary?.keys ?? "",
+    key: summary ? selectedKeysText(selectedKeys, drums) : "",
     length: summary ? (summary.length ?? t("inspector.mixed")) : "",
     velocity,
   });

@@ -7,7 +7,7 @@
   import { onMount, tick } from "svelte";
   import type { TrackView } from "../bridge";
   import { glSlot } from "../gl/slot";
-  import { term } from "../lib/tip.svelte";
+  import { term, tip } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
   import { findTerm, t } from "../text/ja";
   import { dbNumber } from "./format";
@@ -15,6 +15,7 @@
   import { metrics } from "./metrics.svelte";
   import { onDragCancel } from "./pianoroll/view.svelte";
   import { trackContextMenu } from "./trackMenu";
+  import { soundRefName, soundViewName, standInTip } from "./sounds";
   import { moveSlot, openShelf, trackEdit } from "./tracks.svelte";
 
   const song = $derived(current.state!.song);
@@ -26,7 +27,9 @@
 
   /** 入れかえのためし弾き中のトラックの id と、ためし弾きの音源。 */
   const auditioned = $derived(
-    shelf.mode.kind === "replace" && shelf.selected !== null ? { track: shelf.mode.track, instrument: shelf.selected } : null,
+    shelf.mode.kind === "replace" && shelf.selectedSound !== null
+      ? { track: shelf.mode.track, name: soundRefName(shelf.selectedSound, current.state!.library) }
+      : null,
   );
 
   // ---- 名前の入力の枠 ----
@@ -204,10 +207,15 @@
         <div class="line gap2">
           {#if auditioned?.track === track.id}
             <button class="m-plain instrument auditioned" data-test="track-instrument" onclick={() => replaceInstrument(track)}
-              >{t("arrange.instrumentAuditioned", { instrument: t(`instrument.${auditioned.instrument}`) })}</button
+              >{t("arrange.instrumentAuditioned", { instrument: auditioned.name })}</button
+            >
+          {:else if track.standIn}
+            <!-- サイン波で代わりに鳴らしている（仕様書 3 章 85: gray.8。乗ると、わけ）。 -->
+            <button class="m-plain m-lbl instrument" data-test="track-instrument" use:tip={standInTip(track.standIn)} onclick={() => replaceInstrument(track)}
+              >{t("track.standIn")}</button
             >
           {:else}
-            {@const name = t(`instrument.${track.instrument}`)}
+            {@const name = soundViewName(track.sound)}
             <!-- 用語の説明がある音色（サイン波）だけ、乗せると説明が出る。 -->
             {#if findTerm(name)}
               <button class="m-plain m-lbl instrument" data-test="track-instrument" use:term={name} onclick={() => replaceInstrument(track)}

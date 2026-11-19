@@ -2,6 +2,7 @@
 
 import type { SongView, StripRef } from "../../bridge/types";
 import { t } from "../../text/ja";
+import { insertName } from "../sounds";
 
 /** A track: "2 ベース". A return: its letter and its top-most effect ("A リバーブ"), or the letter alone. */
 export function stripName(song: SongView, strip: StripRef): string {
@@ -12,8 +13,8 @@ export function stripName(song: SongView, strip: StripRef): string {
     }
     case "return": {
       const bus = t(strip.bus === "a" ? "mixer.sendA" : "mixer.sendB");
-      const top = song.returns[strip.bus === "a" ? 0 : 1].inserts.find((e) => e !== null);
-      return top ? t("mixer.returnName", { bus, effect: t(`effect.${top}`) }) : bus;
+      const top = song.returns[strip.bus === "a" ? 0 : 1].slots.find((e) => e !== null);
+      return top ? t("mixer.returnName", { bus, effect: insertName(top) }) : bus;
     }
     case "master":
       return t("mixer.master");

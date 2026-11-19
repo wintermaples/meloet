@@ -109,8 +109,10 @@ export const DRUM_ROW_STEP = 4;
 export const drumView = $state({
   /** 拡大率 100 % の行の高さ。null は、まだ縦の − ＋ を押していない（全部の行がちょうど入る高さ）。 */
   rowPx: null as number | null,
-  /** いちばん上に見えている行（DRUM_KEYS の何番目か）。 */
+  /** いちばん上に見えている行（行の鍵の何番目か）。 */
   topRow: 0,
+  /** 行の数（最初から入っているキットは 12、SF2 のキットはキットが持つ音の数）。ピアノロールが決める。 */
+  rows: DRUM_ROWS.length as number,
 });
 
 /** 全部の行がちょうど入る高さ: ノートの場所の高さ（CSS px）÷ 行の数を、4 の倍数に切りすて、12〜48（拡大率 100 % の px）。 */
@@ -125,8 +127,6 @@ export function drumRowPx(rows: number, scale: number): number {
   return drumView.rowPx ?? drumFitRowPx(prView.areaHeight, rows, scale);
 }
 
-const DRUM_ROW_COUNT = DRUM_ROWS.length;
-
 /** 見えている行の数で、いちばん上の行が動ける範囲に入れる。 */
 export function clampTopRow(top: number, rows: number, shownRows: number): number {
   return Math.min(Math.max(0, rows - Math.max(1, shownRows)), Math.max(0, Math.round(top)));
@@ -134,7 +134,7 @@ export function clampTopRow(top: number, rows: number, shownRows: number): numbe
 
 function zoomDrumRowsBy(steps: number, anchorY?: number): boolean {
   const scale = metrics.scale;
-  const now = drumRowPx(DRUM_ROW_COUNT, scale);
+  const now = drumRowPx(drumView.rows, scale);
   const next = Math.min(DRUM_ROW_MAX, Math.max(DRUM_ROW_MIN, now + steps * DRUM_ROW_STEP));
   if (next === now) return false;
   const before = (now * scale) / 100;
@@ -142,7 +142,7 @@ function zoomDrumRowsBy(steps: number, anchorY?: number): boolean {
   const y = anchorY ?? prView.areaHeight / 2;
   drumView.rowPx = next;
   const top = drumView.topRow + y / before - y / after;
-  drumView.topRow = clampTopRow(top, DRUM_ROW_COUNT, Math.floor(prView.areaHeight / after));
+  drumView.topRow = clampTopRow(top, drumView.rows, Math.floor(prView.areaHeight / after));
   return true;
 }
 

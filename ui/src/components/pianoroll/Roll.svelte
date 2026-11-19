@@ -30,7 +30,7 @@
   import { Auditioner, chordOf, fixedOr100, NUDGE_MS, notesMayAudition, onNudgeKeys, ticksToMs } from "./audition";
   import { pianoRollCommand } from "./commands";
   import { RollDrag, type CursorKind, type Drag, type Mods } from "./drag";
-  import { DRUM_KEYS, drumName, drumTerm, rollShowsDrums } from "./drums";
+  import { drumKeysOf, drumName, drumTerm, rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
   import { rollMenu, type RollMenuActions } from "./rollMenu";
@@ -67,10 +67,15 @@
 
   /** ドラムの行を見せているか（仕様書 3 章「ドラムのピアノロール」）。 */
   const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
+  /** ドラムの行の鍵（上から）。SF2 のキットは、そのキットが音を持つ鍵だけ。 */
+  const drumKeys = $derived(
+    drumKeysOf(shown.clip ? shown.track : (song.tracks.find((x) => x.id === song.playTarget) ?? null), drums),
+  );
   $effect(() => {
-    prView.drums = drums;
+    prView.drums = !!drums;
+    drumView.rows = drumKeys.length;
   });
-  const drumRowsPx = $derived(drumRowPx(DRUM_KEYS.length, scale));
+  const drumRowsPx = $derived(drumRowPx(drumKeys.length, scale));
   const rowH = $derived(drums ? (drumRowsPx * scale) / 100 : rowHeight(scale));
   const sizes: RollSizes = $derived({
     // 仕様書の size.note と part.note.height の差（行 − 1）を、どの段でも保つ。
@@ -100,9 +105,10 @@
   const drumGeom: G.DrumGeom | undefined = $derived(
     drums
       ? {
-          keys: DRUM_KEYS,
-          top: clampTopRow(drumView.topRow, DRUM_KEYS.length, G.wholeRows(areaH, rowH)),
+          keys: drumKeys,
+          top: clampTopRow(drumView.topRow, drumKeys.length, G.wholeRows(areaH, rowH)),
           hitW: Math.max(metrics.px("part.drum.hit-min"), step * ppt - metrics.px("part.drum.hit-inset")),
+          names: drums,
         }
       : undefined,
   );
@@ -378,7 +384,7 @@
       const rows = Math.trunc(wheelRows / rowH);
       if (rows !== 0) {
         wheelRows -= rows * rowH;
-        if (drums) drumView.topRow = clampTopRow((drumGeom?.top ?? 0) + rows, DRUM_KEYS.length, G.wholeRows(areaH, rowH));
+        if (drums) drumView.topRow = clampTopRow((drumGeom?.top ?? 0) + rows, drumKeys.length, G.wholeRows(areaH, rowH));
         else prView.topKey = G.clampTopKey(prView.topKey - rows, G.wholeRows(areaH, rowH));
       }
     }
@@ -440,13 +446,35 @@
   }
   let keysGeom: G.RollGeom = { scrollTick: 0, ppt: 1, topKey: 60, rowH: 12, width: 0, height: 0 };
 
+  /**
+   * ドラムの行の名前の光り（仕様書 3 章 85）: 鳴っている行と弾いている行の名前を accent（録音中は rec）に。左の line.mark は WebGL。
+   * 鍵の列の絵と同じコマで書きかえる（名前は鍵の列の canvas の上にあるので、よごれる四角が増えない）。
+   */
+  let drumNamesBox = $state<HTMLElement>();
+  function markDrumNames(lit: (key: number) => boolean): void {
+    if (!drumNamesBox) return;
+    for (const el of drumNamesBox.children as HTMLCollectionOf<HTMLElement>) {
+      const on = lit(Number(el.dataset.key));
+      if (el.classList.contains("lit") !== on) el.classList.toggle("lit", on);
+    }
+  }
+  $effect(() => {
+    void transport.state;
+    untrack(() => redraw("keys"));
+  });
+
   const SLOTS: Record<"roll" | "vel" | "keys" | "live", GlSlot> = {
     roll: { kind: "paint", paint: (out, box, ctx) => rollPicture && paintRoll(out, box, rollPicture, rollMarks, ctx.dpr) },
     vel: { kind: "paint", paint: (out, box, ctx) => rollPicture && paintVelocityLane(out, box, rollPicture, ctx.dpr) },
     keys: {
       kind: "paint",
       keys: true,
-      paint: (out, box, ctx) => paintRollKeys(out, box, keysGeom, (k) => ctx.isDown(k) || isSounding(k) || heard.includes(k), ctx.dpr),
+      paint: (out, box, ctx) => {
+        const lit = (k: number) => ctx.isDown(k) || isSounding(k) || heard.includes(k);
+        const recording = transport.state === "recording";
+        paintRollKeys(out, box, keysGeom, lit, ctx.dpr, { width: metrics.px("line.mark"), color: recording ? "color.rec" : "color.accent" });
+        if (keysGeom.drum) markDrumNames(lit);
+      },
     },
     live: { kind: "paint", paint: (out, box, ctx) => livePicture && paintLive(out, box, livePicture, ctx.dpr) },
   };
@@ -726,7 +754,7 @@
     const rows = Math.min(d.keys.length - d.top, G.rowsShown(g));
     for (let r = 0; r < rows; r++) {
       const key = d.keys[d.top + r]!;
-      const name = drumName(key) ?? G.noteName(key);
+      const name = drumName(key, d.names) ?? G.noteName(key);
       out.push({ key, y: r * rowH, name, term: drumTerm(name), note: G.noteName(key), used: usedKeys.has(key) });
     }
     return out;
@@ -907,7 +935,7 @@
       data-test="pr-keys"
     >
       {#if drums}
-        <div class="drum-names" data-test="pr-drum-names">
+        <div class="drum-names" class:rec={transport.state === "recording"} data-test="pr-drum-names" bind:this={drumNamesBox}>
           {#each drumLabels as k (k.key)}
             <span class="drum-name" class:used={k.used} style:top="{k.y}px" style:height="{rowH}px" use:tipAround={k.note} data-key={k.key}
               >{#if k.term}{#each termParts(k.name, k.term) as piece, j (j)}{#if piece.term}<span use:term={k.term}>{piece.text}</span
@@ -1146,6 +1174,12 @@
   }
   .drum-name.used {
     color: var(--color-gray-10);
+  }
+  .drum-names :global(.drum-name.lit) {
+    color: var(--color-accent);
+  }
+  .drum-names.rec :global(.drum-name.lit) {
+    color: var(--color-rec);
   }
   .notes {
     flex: 1;

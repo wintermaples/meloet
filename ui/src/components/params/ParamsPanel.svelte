@@ -1,57 +1,72 @@
-<!-- パラメータの欄（右の欄。仕様書 1 章「パラメータ」: 見出し 24、名前と形式と居場所 48、さがす枠 32、一覧。モック F4-Mixer ・ R6-Delay）。
-     えらんだ子は core が持つ（AppState.params.selected）。さがす文字とたたんだ見出しは画面だけが持ち、えらぶ子が変わるとはじめに戻す。
-     いま出すのは最初から入っているエフェクトだけ（プラグインをえらんでいるときは見出しだけ）。
-     最初から入っているエフェクトは窓を持たず、名前の右は形式の印ではなく「最初から入っている」。「この子は窓を持ちません。」の行は出さない（仕様書 3 章 Y8）。
-     何もえらんでいないときは見出しだけ（仕様書にもモックにも形がない）。 -->
+<!-- パラメータの欄（右の欄。仕様書 1 章「パラメータ」: 見出し 24、名前と形式と居場所 48、さがす枠 32、一覧。モック F4-Mixer ・ F-ParamFew ・ F-ParamMany ・
+     F-ParamNoWindow ・ F5-MixerBypass ・ R9-Params）。えらんだ子は core が持つ（AppState.params.selected）。さがす文字は画面だけが持ち（paramUi）、えらぶ子が変わると空に戻す。
+     名前の行: 名前、形式の印（最初から入っている物は「最初から入っている」）、インサートなら「とばす」（とばしている間は「とばしている」で、えらんでいる形）、
+     窓をひらける子は「窓をひらく」か「窓を前に出す」。まだ窓をひらけない子 ・ 窓を持たない子は、一覧の上に文。
+     何もえらんでいないときは 2 行（86-5）。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import ScrollArea from "../../lib/ScrollArea.svelte";
+  import type { InsertRef, InsertView, SongView } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import Button from "../Button.svelte";
   import { stripName } from "../mixer/stripName";
-  import ParamRow from "./ParamRow.svelte";
-  import { allRows, rowCount, searchRows, stepRow } from "./paramRows";
-  import { builtinOf } from "./selected";
+  import { formatName } from "../sounds";
+  import WindowMark from "../WindowMark.svelte";
+  import BuiltinList from "./BuiltinList.svelte";
+  import { allRows, rowCount } from "./paramRows";
+  import { paramUi, stopTyping } from "./paramUi.svelte";
+  import PluginList from "./PluginList.svelte";
+  import { builtinOf, pluginAt, pluginOf, selectedInsert, windowOf } from "./selected";
 
   let { onfold }: { onfold: () => void } = $props();
 
   const app = $derived(current.state!);
-  const sel = $derived(builtinOf(app.params));
+  const builtin = $derived(builtinOf(app.params));
+  const plugin = $derived(pluginOf(app.params));
+  const insert = $derived(selectedInsert(app.params));
+  const pluginView = $derived(plugin ? pluginAt(app.song, plugin.slot) : null);
 
-  let query = $state("");
-  let folded = $state<string[]>([]);
-  const insertKey = $derived(sel ? `${JSON.stringify(sel.insert)}:${sel.effect}` : "");
+  function slotView(song: SongView, at: InsertRef): InsertView | null {
+    const { strip, slot } = at;
+    const slots = strip.kind === "master" ? song.master.slots : strip.kind === "return" ? song.returns[strip.bus === "a" ? 0 : 1].slots : song.tracks.find((x) => x.id === strip.id)?.slots;
+    return slots?.[slot] ?? null;
+  }
+  const held = $derived(insert ? slotView(app.song, insert) : null);
+
+  const selKey = $derived(JSON.stringify(builtin ? [builtin.insert, builtin.effect] : plugin ? [plugin.slot, plugin.table] : null));
   $effect(() => {
-    void insertKey;
+    void selKey;
     untrack(() => {
-      query = "";
-      folded = [];
+      paramUi.query = "";
+      stopTyping();
     });
   });
 
-  const groups = $derived(sel ? allRows(sel.effect, sel.values) : []);
-  const found = $derived(searchRows(groups, query));
-  const total = $derived(rowCount(groups));
-  const shownCount = $derived(rowCount(found));
-  const visibleRows = $derived(found.flatMap((g) => (g.group !== null && folded.includes(g.group) ? [] : g.rows)));
+  const name = $derived(builtin ? t(`effect.${builtin.effect}`) : (pluginView?.name ?? ""));
+  const where = $derived.by(() => {
+    if (insert) return t("params.where", { strip: stripName(app.song, insert.strip, app.library), slot: insert.slot + 1 });
+    if (plugin?.slot.kind === "instrument") return t("params.whereInstrument", { strip: stripName(app.song, { kind: "track", id: plugin.slot.track }, app.library) });
+    return "";
+  });
+  const ready = $derived(pluginView?.state === "ready");
+  const open = $derived(plugin ? windowOf(app.windows, plugin.slot) !== null : false);
+  /** とばせるか（止まったプラグインはとばせない）。 */
+  const canBypass = $derived(insert !== null && held !== null && !(held.effect.kind === "plugin" && held.effect.state === "stopped"));
 
-  function pick(param: number): void {
-    if (sel && sel.row !== param) send({ type: "selectParam", param });
-  }
-  function toggleGroup(group: string): void {
-    folded = folded.includes(group) ? folded.filter((g) => g !== group) : [...folded, group];
+  /** さがしているときの Esc は、さがす枠を空にする（モック F-ParamSearch「さがす枠を空にすると、グループの一覧に戻ります Esc」）。 */
+  function searchKey(e: KeyboardEvent): void {
+    if (e.key !== "Escape" || e.isComposing || paramUi.query === "") return;
+    e.preventDefault();
+    e.stopPropagation();
+    paramUi.query = "";
   }
 
-  // 仕様書 4 章「パラメータの中: 行を上下にえらぶ」（↑ ↓）。欄の中にフォーカスがあるときだけ。
-  function onkeydown(ev: KeyboardEvent): void {
-    if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
-    if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing || !sel) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    const next = stepRow(visibleRows, sel.row, ev.key === "ArrowDown" ? 1 : -1);
-    if (next !== null) pick(next);
-  }
+  /** まだ窓をひらけない子の文は、はじめの 2 文を gray.10、のこりを gray.8（モック F-ParamNoWindow）。 */
+  const notice = $derived.by(() => {
+    if (!plugin || plugin.window === "opens") return null;
+    const sentences = t(plugin.window === "notYet" ? "msg.windowNotYet" : "msg.noWindow").match(/[^。]+。/g) ?? [];
+    return { strong: sentences.slice(0, 2).join(""), rest: sentences.slice(2).join("") };
+  });
 </script>
 
 <aside class="panel" data-band="params" data-test="params">
@@ -61,54 +76,56 @@
     <span class="m-spacer"></span>
     <span class="m-num m-lbl">{t("key.params")}</span>
   </button>
-  {#if sel}
+  {#if builtin || plugin}
     <div class="who">
       <div class="line">
-        <span class="m-name" data-test="params-name">{t(`effect.${sel.effect}`)}</span>
-        <span class="m-lbl">{t("params.builtin")}</span>
-      </div>
-      <span class="m-lbl where" data-test="params-where"
-        >{t("params.where", { strip: stripName(app.song, sel.insert.strip), slot: sel.insert.slot + 1 })}</span
-      >
-    </div>
-    <label class="bar">
-      <span class="m-lbl">{t("params.search")}</span>
-      <input class="search" type="text" placeholder={t("params.searchLabel")} bind:value={query} data-test="params-search" />
-      <span class="m-num m-lbl" data-test="params-count">{t("params.count", { shown: shownCount, total })}</span>
-    </label>
-    <ScrollArea data-test="params-list">
-      <div role="presentation" {onkeydown}>
-        {#each found as g, gi (g.group ?? `-${gi}`)}
-          {#if g.group !== null}
-            {@const isFolded = folded.includes(g.group)}
-            <button class="m-plain group m-focus-in" onclick={() => toggleGroup(g.group!)} data-group={g.group}>
-              <span class="m-hi">{isFolded ? "▸" : "▾"}</span>
-              <span class="m-hi group-name">{g.name}</span>
-              <span class="m-num m-lbl">{g.rows.length}</span>
-            </button>
-          {/if}
-          {#if g.group === null || !folded.includes(g.group)}
-            {#each g.rows as r (r.param)}
-              <ParamRow
-                insert={sel.insert}
-                effect={sel.effect}
-                param={r.param}
-                name={r.name}
-                value={sel.values[r.param] ?? 0}
-                selected={sel.row !== null && r.covers.includes(sel.row)}
-                onselect={() => pick(r.param)}
-              />
-            {/each}
-          {/if}
-        {/each}
-        {#if shownCount === 0 && query.trim() !== ""}
-          <div class="none" data-test="params-none">
-            <span>{t("msg.searchNoMatch", { query: query.trim() })}</span>
-            <Button onclick={() => (query = "")} test="params-clear">{t("button.clearSearch")}</Button>
-          </div>
+        <span class="m-name name" data-test="params-name">{name}</span>
+        {#if builtin}
+          <span class="m-lbl">{t("params.builtin")}</span>
+        {:else if pluginView?.format}
+          <span class="m-num mark" data-test="params-format">{formatName(pluginView.format)}</span>
+        {/if}
+        <span class="m-spacer"></span>
+        {#if insert}
+          <Button on={held?.bypassed === true} disabled={!canBypass} onclick={() => send({ type: "toggleBypass", insert: insert! })} test="params-bypass"
+            >{t(held?.bypassed ? "params.bypassing" : "params.bypass")} <span class="m-num m-lbl">{t("key.bypass")}</span></Button
+          >
+        {/if}
+        {#if plugin?.window === "opens"}
+          <Button disabled={!ready} onclick={() => send({ type: "openPluginWindow", slot: plugin!.slot })} test="params-window"
+            >{#if open}<WindowMark />{t("button.raiseWindow")}{:else}{t("button.openWindow")}{/if}</Button
+          >
         {/if}
       </div>
-    </ScrollArea>
+      <span class="m-lbl where" data-test="params-where">{where}</span>
+    </div>
+    {#if notice}
+      <div class="notice" data-test="params-notice">
+        <span>{notice.strong}</span>
+        {#if notice.rest}<span class="m-lbl">{notice.rest}</span>{/if}
+      </div>
+    {/if}
+    {#if builtin || plugin?.table !== null}
+      <label class="bar">
+        <span class="m-lbl">{t("params.search")}</span>
+        <input class="search" type="text" placeholder={t("params.searchLabel")} bind:value={paramUi.query} onkeydown={searchKey} data-test="params-search" />
+        <span class="m-num m-lbl" data-test="params-count"
+          >{t("params.count", { shown: paramUi.matches, total: builtin ? rowCount(allRows(builtin.effect, builtin.values)) : plugin!.count })}</span
+        >
+      </label>
+    {/if}
+    {#if builtin}
+      <BuiltinList sel={builtin} />
+    {:else if plugin && plugin.table !== null}
+      {#key plugin.table}
+        <PluginList sel={plugin} plugin={name} usable={pluginView?.state !== "stopped"} />
+      {/key}
+    {/if}
+  {:else}
+    <div class="nothing" data-test="params-nothing">
+      <span>{t("params.nothingSelected")}</span>
+      <span class="m-lbl">{t("params.nothingInstrument")}</span>
+    </div>
   {/if}
 </aside>
 
@@ -122,8 +139,7 @@
     background: var(--color-gray-3);
     border-left: var(--line-hair) solid var(--color-gray-6);
   }
-  .head,
-  .group {
+  .head {
     width: 100%;
     height: var(--size-row);
     flex-shrink: 0;
@@ -134,22 +150,12 @@
     background: var(--color-gray-4);
     white-space: nowrap;
   }
-  .head:hover,
-  .group:hover {
+  .head:hover {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
   .head:active {
     background: var(--color-gray-2);
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
-  }
-  .group {
-    border-bottom: var(--line-hair) solid var(--color-gray-5);
-  }
-  .group-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   /* 名前と形式と居場所（高さ 48。モック F4-Mixer: 左右 12、下に gray.5 の線）。 */
   .who {
@@ -167,10 +173,34 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    min-width: 0;
+  }
+  .name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mark {
+    flex-shrink: 0;
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid var(--color-gray-7);
+    border-radius: var(--radius-1);
+    color: var(--color-gray-8);
   }
   .where {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* まだ窓をひらけない子 ・ 窓を持たない子（モック F-ParamNoWindow: 左に gray.7 の line.mark）。 */
+  .notice {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border-left: var(--line-mark) solid var(--color-gray-7);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+    white-space: normal;
   }
   .bar {
     height: var(--mock-shelf-bar);
@@ -199,12 +229,11 @@
   .search:focus {
     border-color: var(--color-gray-8);
   }
-  .none {
+  .nothing {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3);
     white-space: normal;
   }
 </style>

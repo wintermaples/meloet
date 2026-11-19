@@ -46,3 +46,44 @@ export class MixPreview<V> {
     this.pending = null;
   }
 }
+
+/** キーを離してから、1 手にまとめるまで（仕様書 3 章 86-7）。 */
+export const KEY_COMMIT_MS = 1000;
+
+/**
+ * フェーダー ・ パン ・ センドのキー（約束の Command のコメント「keys」）。押すたびに commit: false、キーを離して 1 秒たつか、
+ * フォーカスが外れたら（flush）、いちばん新しい値を commit: true で 1 つ。そのあいだに押せば、まとめる時を数えなおす。
+ */
+export class KeySteps<V> {
+  private last: { value: V } | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    private readonly make: (value: V, commit: boolean) => Command,
+    private readonly send: (c: Command) => void,
+  ) {}
+
+  step(value: V): void {
+    this.clear();
+    this.last = { value };
+    this.send(this.make(value, false));
+  }
+
+  release(): void {
+    if (!this.last) return;
+    this.clear();
+    this.timer = setTimeout(() => this.flush(), KEY_COMMIT_MS);
+  }
+
+  flush(): void {
+    this.clear();
+    const last = this.last;
+    this.last = null;
+    if (last) this.send(this.make(last.value, true));
+  }
+
+  private clear(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+  }
+}

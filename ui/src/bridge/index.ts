@@ -32,8 +32,11 @@ export async function connect(handlers: Handlers): Promise<Connection> {
     () => connected().liveNotes(),
     (error) => handlers.onError?.(error),
   );
+  // The first state comes before connectWith has finished: the table it names is fetched once the connection is there.
+  let ready: (c: Connection) => void = () => {};
+  const made = new Promise<Connection>((resolve) => (ready = resolve));
   const table = new ParamTableBook(
-    (id) => connected().pluginParams(id),
+    (id) => (connection ? Promise.resolve(connection) : made).then((c) => c.pluginParams(id)),
     (error) => handlers.onError?.(error),
   );
   params = table;
@@ -64,6 +67,7 @@ export async function connect(handlers: Handlers): Promise<Connection> {
       handlers.onLiveNotes?.(notes);
     },
   });
+  ready(connection);
   book = live;
   live.start();
   return connection;

@@ -2,6 +2,7 @@
      動かす所は 3 種類: なめらかに動く値 ＝ 横の棒、段階 ＝ ◂ ▸ と 6×6 の四角のならび（6 段からは「3 / 12」）、オン ・ オフ ＝ 12×12 の四角の印。
      棒のドラッグ中は画面だけが先に動き、音は SetParam { commit: false }（1 コマに 1 回まで）、離したときに commit: true で 1 手。
      もとの位置は gray.7 の枠。Esc は動かす前に戻して CancelMixPreview（pianoroll/view.svelte.ts の cancelDrag）。
+     行をえらんで Enter か、値を 2 回押すと、値を打ちこむ枠（仕様書 3 章 86-6。ValueField）。Enter で TypeParam。
      オートメーションはまだないので、右の印は「使えない」。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -10,7 +11,9 @@
   import { send } from "../../state/app.svelte";
   import { findTerm, t } from "../../text/ja";
   import { onDragCancel } from "../pianoroll/view.svelte";
-  import { fractionOf, keyStep, valueAt, valueText } from "./paramRows";
+  import { fractionOf, keyStep, typedText, unitText, valueAt, valueText } from "./paramRows";
+  import { paramUi, stopTyping } from "./paramUi.svelte";
+  import ValueField from "./ValueField.svelte";
 
   interface Props {
     insert: InsertRef;
@@ -132,6 +135,15 @@
     change(keyStep(spec, shown, ev.key === "ArrowRight" ? 1 : -1, ev.shiftKey));
   }
 
+  const typing = $derived(paramUi.typing === param && spec.shape === "continuous");
+  function startTyping(): void {
+    if (spec.shape === "continuous") paramUi.typing = param;
+  }
+  function submit(text: string): void {
+    stopTyping();
+    send({ type: "typeParam", param: { kind: "builtin", insert, effect: kind, param }, text });
+  }
+
   const fraction = $derived(fractionOf(spec, shown));
   const step = $derived(Math.round(shown));
   const SQUARES_UP_TO = 5;
@@ -151,7 +163,9 @@
   {:else}
     <span class="name" title={name}>{name}</span>
   {/if}
-  {#if spec.shape === "continuous"}
+  {#if typing}
+    <ValueField initial={typedText(spec, shown)} label={name} unit={unitText(spec)} onsubmit={submit} oncancel={stopTyping} />
+  {:else if spec.shape === "continuous"}
     <div
       class="slider"
       role="slider"
@@ -209,7 +223,9 @@
       >
     </div>
   {/if}
-  <span class="m-num m-hi value" data-test="param-value">{valueText(kind, spec, shown)}</span>
+  {#if !typing}
+    <span class="m-num m-hi value" role="presentation" data-test="param-value" ondblclick={startTyping}>{valueText(kind, spec, shown)}</span>
+  {/if}
   <button class="automation" disabled aria-label={t("params.automation")}
     ><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 8L3 3l3 4 4-6" /></svg></button
   >

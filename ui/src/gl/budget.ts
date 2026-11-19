@@ -54,6 +54,15 @@ export type RegionName = keyof typeof REGIONS;
  */
 export const SHOWN_WITH: Partial<Record<RegionName, RegionName>> = { mixerMeters: "masterMeter" };
 
+/**
+ * How often a region may be shown, in Hz. The mixer's meters of more than 10 tracks are drawn at 30 Hz (spec 3, the 8th
+ * edition): they look the same, and the page paints half as often. The keys and the play line stay at 60 Hz.
+ */
+export function regionHz(name: RegionName, tracks: number): number {
+  return name === "mixerMeters" && tracks > MIXER_FULL_RATE_TRACKS ? 30 : 60;
+}
+export const MIXER_FULL_RATE_TRACKS = 10;
+
 /** A mistake in how the surfaces are used: stops development and tests; only logged in the app. */
 export function fault(message: string): void {
   if (import.meta.env.DEV) throw new Error(message);

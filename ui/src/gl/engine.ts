@@ -1,7 +1,7 @@
 import type { Event, Telemetry } from "../bridge";
 import { SCALES, type Scale } from "../design/tokens";
 import { Batch } from "./batch";
-import { REGIONS, SHOWN_WITH, fault, type RegionName } from "./budget";
+import { REGIONS, SHOWN_WITH, fault, regionHz, type RegionName } from "./budget";
 import { OVERVIEW } from "./dims";
 import { HeldKeys } from "./keyboard";
 import { Levels, MASTER_CHANNEL, RETURN_A_CHANNEL, RETURN_B_CHANNEL, trackChannel } from "./levels";
@@ -57,6 +57,10 @@ interface Region {
   drawn: Batch;
   /** The profile's record of the context made for this region, until its first draw. */
   made: MadeRecord | null;
+  /** When the canvas was last looked at for drawing (performance.now()), for a region drawn below 60 Hz. */
+  lastMs: number;
+  /** Something moved or changed size, not only the levels: drawn now even below 60 Hz. */
+  urgent: boolean;
 }
 
 /**
@@ -87,7 +91,7 @@ export class Engine {
   private frameId = 0;
   private clipTimer = 0;
   private readonly again = () => {
-    for (const r of this.regions.values()) r.dirty = true;
+    for (const r of this.regions.values()) r.dirty = r.urgent = true;
     this.invalidate();
   };
   private readonly sizes = new ResizeObserver(this.again);
@@ -110,7 +114,7 @@ export class Engine {
           const s = this.slots.get(node);
           if (!s) return;
           s.slot = slot;
-          if (s.region) s.region.dirty = true;
+          if (s.region) s.region.dirty = s.region.urgent = true;
           this.invalidate();
         },
         detach: (node) => this.detach(node),
@@ -154,7 +158,7 @@ export class Engine {
     const r = s.region;
     if (!r) return;
     r.slots.splice(r.slots.indexOf(s), 1);
-    r.dirty = true;
+    r.dirty = r.urgent = true;
     this.invalidate();
   }
 
@@ -187,14 +191,14 @@ export class Engine {
       const after = r.slots.findIndex((o) => o.node.compareDocumentPosition(s.node) & Node.DOCUMENT_POSITION_PRECEDING);
       r.slots.splice(after < 0 ? r.slots.length : after, 0, s);
       s.region = r;
-      r.dirty = true;
+      r.dirty = r.urgent = true;
     }
   }
 
   private open(host: HTMLElement, name: RegionName): Region | null {
     const gl = takeCanvas(REGIONS[name].opaque, name);
     if (!gl) return null;
-    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch(), made: null };
+    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch(), made: null, lastMs: -Infinity, urgent: true };
     if (gl.fresh && this.profile) {
       const m = gl.renderer.madeMs;
       r.made = { region: name, contextMs: m.context, programMs: m.program, firstDrawMs: null };
@@ -203,7 +207,7 @@ export class Engine {
     gl.fresh = false;
     gl.onRestored = () => {
       r.mustDraw = true;
-      r.dirty = true;
+      r.dirty = r.urgent = true;
       this.invalidate();
     };
     // The canvas is placed against the region's own box.
@@ -273,8 +277,17 @@ export class Engine {
 
     // All the measuring first, then all the writing, so the page is laid out once.
     const due: [Region, DOMRect][] = [];
+    let held = false;
     for (const r of this.regions.values()) {
       if (!r.dirty) continue;
+      // A region drawn below 60 Hz waits for its turn; a frame between two of 60 Hz comes a few ms early or late.
+      const hz = regionHz(r.name, this.trackNumbers.length);
+      if (hz < 60 && !r.mustDraw && !r.urgent && now - r.lastMs < 1000 / hz - SLACK_MS) {
+        held = true;
+        continue;
+      }
+      r.lastMs = now;
+      r.urgent = false;
       r.dirty = false;
       due.push([r, r.host.getBoundingClientRect()]);
       for (const s of r.slots) measure(s, dpr);
@@ -295,7 +308,7 @@ export class Engine {
 
     this.onFrame?.(ts);
     if (falling) this.touch("meter");
-    if (moving) this.invalidate();
+    if (moving || held) this.invalidate();
     clearTimeout(this.clipTimer);
     const clipEnd = this.levels.nextClipEnd(now);
     if (clipEnd !== null) this.clipTimer = window.setTimeout(() => this.touch("meter"), clipEnd - now + 1);
@@ -435,6 +448,8 @@ export class Engine {
 }
 
 const SILENT = { length: 0, clipped: false } as const;
+/** How early a frame may come for a region drawn below 60 Hz (a frame of 60 Hz is 16.7 ms). */
+const SLACK_MS = 4;
 
 function measure(s: Slot, dpr: number): void {
   const r = s.node.getBoundingClientRect();

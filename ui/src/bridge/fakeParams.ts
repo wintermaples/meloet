@@ -2,7 +2,7 @@
 // F-ParamFew, F-ParamMany, F-ParamSearch, F-ParamNoWindow and F5-MixerBypass. Where a mock shows
 // only some rows of a group, the rest are filler with plain names.
 
-import type { ParamGroup, ParamKind, ParamRow, ParamTable } from "./types";
+import type { ParamGroup, ParamKind, ParamRow, ParamTable, ParamValues } from "./types";
 
 const SMOOTH: ParamKind = { kind: "smooth" };
 const TOGGLE: ParamKind = { kind: "toggle" };
@@ -120,3 +120,67 @@ export function fakeParamTable(table: number): ParamTable | null {
 }
 
 export const fakeParamCount = (table: number): number => (GROUPS[table]?.() ?? []).reduce((n, g) => n + g.params.length, 0);
+
+/** The fake plugin's text of a value: the number in its unit for "%", the step's name, オン ・ オフ; else 0..1. */
+function textOf(row: ParamRow, value: number): string {
+  const kind = row.kind;
+  if (kind.kind === "toggle") return value >= 0.5 ? "オン" : "オフ";
+  if (kind.kind === "steps") {
+    const step = Math.round(value * (kind.steps - 1));
+    return kind.labels[step] ?? `${step + 1} / ${kind.steps}`;
+  }
+  const unit = row.text?.match(/^[+−-]?[\d.]+\s*(.*)$/)?.[1] ?? "";
+  const places = row.text?.match(/\.(\d+)/)?.[1]?.length ?? 0;
+  return unit === "%" ? `${(value * 100).toFixed(places)} %` : value.toFixed(2);
+}
+
+/**
+ * The values of the fake's plugins, as one transport holds them: `SetPluginParam` and `TypeParam` change them, and
+ * each change comes back as a `ParamValues` message of its table (with `seq` one up).
+ */
+export class FakeParamTables {
+  private readonly tables = new Map<number, ParamTable>();
+
+  private held(table: number): ParamTable | null {
+    let t = this.tables.get(table);
+    if (!t) {
+      const made = fakeParamTable(table);
+      if (!made) return null;
+      this.tables.set(table, (t = made));
+    }
+    return t;
+  }
+
+  private row(table: number, id: number): ParamRow | null {
+    for (const g of this.held(table)?.groups ?? []) for (const r of g.params) if (r.id === id) return r;
+    return null;
+  }
+
+  /** The reply of `plugin_params`. */
+  table(table: number): ParamTable | null {
+    const t = this.held(table);
+    return t ? structuredClone(t) : null;
+  }
+
+  set(table: number, id: number, value: number): ParamValues | null {
+    const row = this.row(table, id);
+    const t = this.held(table);
+    if (!row || !t) return null;
+    row.value = Math.max(0, Math.min(1, value));
+    row.text = textOf(row, row.value);
+    t.seq += 1;
+    return { table, seq: t.seq, values: [{ id, value: row.value, text: row.text }] };
+  }
+
+  /** A typed value: the number is read as % of the range. Past an end: put at the end, `clamped` says so. Unreadable: `rejected`. */
+  type(table: number, id: number, text: string): { values: ParamValues | null; clamped: { name: string; value: string; range: string } | null; rejected: string | null } {
+    const row = this.row(table, id);
+    if (!row) return { values: null, clamped: null, rejected: null };
+    const n = Number.parseFloat(text.trim().replace(/^[−ー]/, "-"));
+    if (!Number.isFinite(n)) return { values: null, clamped: null, rejected: row.text ?? "—" };
+    const want = n / 100;
+    const values = this.set(table, id, want);
+    const clamped = want < 0 || want > 1 ? { name: row.name, value: row.text ?? "", range: `${textOf(row, 0)}〜${textOf(row, 1)}` } : null;
+    return { values, clamped, rejected: null };
+  }
+}

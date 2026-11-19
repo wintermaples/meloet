@@ -17,6 +17,8 @@
   import { trackContextMenu } from "./trackMenu";
   import { soundRefName, soundViewName, standInTip } from "./sounds";
   import { moveSlot, openShelf, trackEdit } from "./tracks.svelte";
+  import { windowOf } from "./params/selected";
+  import WindowMark from "./WindowMark.svelte";
 
   const song = $derived(current.state!.song);
   const shelf = $derived(current.state!.shelf);
@@ -129,6 +131,11 @@
   function replaceInstrument(track: TrackView): void {
     if (!busy) send(openShelf({ kind: "replace", track: track.id }));
   }
+  function instrumentContext(e: MouseEvent, track: TrackView): void {
+    e.preventDefault();
+    e.stopPropagation();
+    openContextMenu(e.clientX, e.clientY, [{ kind: "row", label: "track.replaceSound", usable: !busy, run: () => replaceInstrument(track) }]);
+  }
   function addTrack(): void {
     if (!busy) send(openShelf({ kind: "newTrack" }));
   }
@@ -213,6 +220,16 @@
             <!-- サイン波で代わりに鳴らしている（仕様書 3 章 85: gray.8。乗ると、わけ）。 -->
             <button class="m-plain m-lbl instrument" data-test="track-instrument" use:tip={standInTip(track.standIn)} onclick={() => replaceInstrument(track)}
               >{t("track.standIn")}</button
+            >
+          {:else if track.sound.kind === "plugin"}
+            <!-- プラグインの音源: 押すと、えらぶ ＋ 窓（SelectInstrument）。入れかえは右クリックの「音源を入れかえる…」（user:2026-11-19）。 -->
+            <button
+              class="m-plain m-lbl instrument plugin"
+              data-test="track-instrument"
+              onclick={() => send({ type: "selectInstrument", track: track.id })}
+              oncontextmenu={(e) => instrumentContext(e, track)}
+              ><span class="cut">{track.sound.name}</span>{#if windowOf(current.state!.windows, { kind: "instrument", track: track.id })}<WindowMark
+                />{/if}</button
             >
           {:else}
             {@const name = soundViewName(track.sound)}
@@ -324,6 +341,16 @@
   }
   .instrument:hover {
     color: var(--color-gray-10);
+  }
+  .instrument.plugin {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .cut {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .instrument.auditioned,
   .instrument.auditioned:hover {

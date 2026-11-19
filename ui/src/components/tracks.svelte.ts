@@ -72,7 +72,7 @@ export function currentShelf(state: AppState): ShelfModel {
 
 /** 棚の一覧で、えらべる（えらぶと、ためし弾きか「入れる」の箱が出る）か。 */
 export function shelfPicks(state: AppState): boolean {
-  const inserting = state.shelf.mode.kind === "insertEffect";
+  const inserting = state.shelf.mode.kind === "insertEffect" || state.shelf.mode.kind === "replaceEffect";
   return inserting === (shelfUi.view === "effects");
 }
 

@@ -833,6 +833,28 @@ export const texts = {
     strip: "1 ピアノ",
   }),
   "button.raiseWindow": e("窓を前に出す", "mock:F-ParamMany"),
+  "windows.button": e("窓 {count}", "spec:6", { count: "2" }),
+  // 状態行の「（ストリップ）の（エフェクト）」。うしろに空白（msg.effectBypassed の {target}）。
+  "status.insertTarget": e("{strip} の {effect} ", "spec:6", { strip: "2 ベース", effect: "コンプレッサー" }),
+  "windows.shelfAudition": e("棚 ・ ためし弾き", "user:2026-11-19"),
+  "params.foldedHint": e("40 個をこえる子は、グループをたたんで始めます", "mock:F-ParamMany"),
+  "params.searchHint": e("さがす枠を空にすると、グループの一覧に戻ります", "mock:F-ParamSearch"),
+  "params.more": e("… ほか {count}", "spec:3", { count: "6" }),
+  "params.groupOther": e("そのほか", "mock:F-ParamMany"),
+  "params.automated": e("オートメーションに書いている", "spec:3"),
+  "params.unknownValue": e("—", "user:2026-11-19"),
+  "params.nothingInstrument": e("音源の枠をえらぶと、音源のパラメータが出ます。", "spec:3"),
+  "params.bypass": e("とばす", "spec:3"),
+  "params.bypassing": e("とばしている", "spec:3"),
+  "key.bypass": e("B", "spec:4"),
+  // インサートの枠に乗ったとき、名前のうしろにそえる（仕様書 2 章「インサートの枠のオンの印」）。
+  "mixer.bypassedTip": e("（とばしている）", "spec:2"),
+  "insert.replace": e("入れかえる…", "spec:3"),
+  "insert.moveUp": e("上へ動かす", "spec:3"),
+  "insert.moveDown": e("下へ動かす", "spec:3"),
+  "track.replaceSound": e("音源を入れかえる…", "user:2026-11-19"),
+  "shelf.titleReplaceEffect": e("{strip} のインサート {slot} を入れかえる", "mock:R9-Inserts", { strip: "2 ベース", slot: "1" }),
+  "shelf.currentEffect": e("いまのエフェクト", "spec:3"),
 
   // [第 5 回 ・ プラグイン]（仕様書 6 章）
   "plugin.newFound": s6(

@@ -59,5 +59,23 @@ export function panAngle(pan: number): number {
 
 export const clampPan = (pan: number): number => Math.max(-100, Math.min(100, Math.round(pan)));
 
+/** 打ちこんだ dB（「-3」「−3.0」「+2 dB」「−∞」）。範囲の外は Rust が中に入れる。読めなければ undefined。 */
+export function parseDb(text: string): number | null | undefined {
+  const s = text.trim().replace(/[−ー]/g, "-").replace(/\s*dB$/i, "");
+  if (/^-?(∞|inf)$/i.test(s)) return null;
+  if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(s)) return undefined;
+  return Math.round(Number(s) * 100) / 100;
+}
+
+/** 打ちこんだパン（「C」「L 20」「R20」「-20」「20」）。読めなければ undefined。 */
+export function parsePan(text: string): number | undefined {
+  const s = text.trim().replace(/[−ー]/g, "-").toUpperCase();
+  if (s === t("mixer.panCenter").toUpperCase() || s === "0") return 0;
+  const m = s.match(/^([LR])\s*(\d+)$/);
+  if (m) return clampPan(Number(m[2]) * (m[1] === "L" ? -1 : 1));
+  if (!/^[+-]?\d+$/.test(s)) return undefined;
+  return clampPan(Number(s));
+}
+
 /** フェーダーのいちばん短い長さ（100 % の px）。仕様書 2 章の帯の表「516（道具 32 + ストリップ 484。フェーダーの長さ 120 をのこす）」。 */
 export const FADER_MIN = 120;

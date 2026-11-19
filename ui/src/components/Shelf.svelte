@@ -3,6 +3,7 @@
      一覧は 最初から入っているもの → あとから入れたもの（SF2 のファイル → プラグインの種類）。何百行あっても、見えている所の行だけを作る。
      さがす文字、お気に入りだけ、見出しのたたみは画面だけが持つ（tracks.svelte.ts）。行をえらぶ ・ 入れる ・ やめる ・ 星 ・ サンプルは core への意図。
      「空き ＋」からひらいた棚（insertEffect）では、エフェクトの行を押す ・ ↑ ↓ でえらび、Enter か「入れる」で入れる。音源のモードのエフェクトは見るだけ（design-notes A-14）。
+     右クリックの「入れかえる…」からひらいた棚（replaceEffect。仕様書 3 章 86-3、モック R9-Inserts）も同じ形で、いまの行に「いまのエフェクト」、箱は入れかえの文と「入れかえる」。
      えらんだ行の下に箱（ためし弾き ・ 読みこみ中 ・ 読みこめない ・ インサートに入れる）。入れるエフェクトの行が見えていないときは一覧のいちばん下。
      スキャン中は「あとから入れたもの」の見出しのすぐ下にスキャンの帯（Y13）。止まったプラグインは棚の下に赤い枠の箱（6 章「プラグインが止まった」）。 -->
 <script lang="ts">
@@ -19,7 +20,7 @@
   import { stripName } from "./mixer/stripName";
   import ScanStrip from "./plugins/ScanStrip.svelte";
   import { favoriteCount, rowIs, shelfCounts, shelfModel, withBox, type ShelfEntry, type ShelfRow } from "./shelfList";
-  import { formatName, formatsTip, rowHasKey, sameSound, soundRefName } from "./sounds";
+  import { effectRefName, formatName, formatsTip, rowHasKey, sameSound, soundRefName } from "./sounds";
   import { pickCommand, pickedRow, sampleCommand, shelfPicks, shelfUi, toggleHeading } from "./tracks.svelte";
 
   const app = $derived(current.state!);
@@ -31,12 +32,14 @@
   const replaceTrack = $derived(shelf.mode.kind === "replace" ? app.song.tracks.find((x) => x.id === (shelf.mode as { track: number }).track) : null);
   const title = $derived(
     shelf.mode.kind === "insertEffect"
-      ? t("shelf.titleInsert", { strip: stripName(app.song, shelf.mode.strip) })
-      : shelf.mode.kind === "replace" && replaceTrack
+      ? t("shelf.titleInsert", { strip: stripName(app.song, shelf.mode.strip, library) })
+      : shelf.mode.kind === "replaceEffect"
+        ? t("shelf.titleReplaceEffect", { strip: stripName(app.song, shelf.mode.strip, library), slot: shelf.mode.slot + 1 })
+        : shelf.mode.kind === "replace" && replaceTrack
         ? t("shelf.titleReplace", { track: t("track.label", { number: replaceTrack.number, name: replaceTrack.name }) })
         : t("shelf.titleNewTrack"),
   );
-  const inserting = $derived(shelf.mode.kind === "insertEffect");
+  const inserting = $derived(shelf.mode.kind === "insertEffect" || shelf.mode.kind === "replaceEffect");
   const effectsView = $derived(shelfUi.view === "effects");
   const counts = $derived(shelfCounts(shelf, library));
   const favorites = $derived(favoriteCount(shelfUi.view, shelf, library));
@@ -62,7 +65,7 @@
     void modeKey;
     untrack(() => {
       shelfUi.keys = true;
-      shelfUi.view = shelf.mode.kind === "insertEffect" ? "effects" : "instruments";
+      shelfUi.view = shelf.mode.kind === "insertEffect" || shelf.mode.kind === "replaceEffect" ? "effects" : "instruments";
     });
   });
 
@@ -219,7 +222,7 @@
     const song = app.song;
     for (const tr of song.tracks) {
       if (tr.sound.kind === "plugin" && tr.sound.state === "stopped")
-        out.push({ name: tr.sound.name, where: stripName(song, { kind: "track", id: tr.id }), slot: { kind: "instrument", track: tr.id } });
+        out.push({ name: tr.sound.name, where: stripName(song, { kind: "track", id: tr.id }, library), slot: { kind: "instrument", track: tr.id } });
     }
     const strips = [
       ...song.tracks.map((tr) => ({ strip: { kind: "track" as const, id: tr.id }, slots: tr.slots })),
@@ -230,7 +233,7 @@
     for (const { strip, slots } of strips)
       slots.forEach((s, slot) => {
         if (s?.effect.kind === "plugin" && s.effect.state === "stopped")
-          out.push({ name: s.effect.name, where: stripName(song, strip), slot: { kind: "insert", insert: { strip, slot } } });
+          out.push({ name: s.effect.name, where: stripName(song, strip, library), slot: { kind: "insert", insert: { strip, slot } } });
       });
     return out;
   });
@@ -305,6 +308,8 @@
       <span class="m-num time" data-test="shelf-sample-time">{sampleTime}</span>
     {:else if r.sound && shelf.mode.kind === "replace" && rowIs(r, shelf.currentSound)}
       <span class="m-lbl">{t("shelf.current")}</span>
+    {:else if !r.sound && shelf.mode.kind === "replaceEffect" && rowIs(r, null, shelf.currentEffect)}
+      <span class="m-lbl" data-test="shelf-current-effect">{t("shelf.currentEffect")}</span>
     {:else if r.number}
       <span class="m-num m-lbl">{r.number}</span>
     {:else if r.plugin}
@@ -322,12 +327,21 @@
     <div class="box" data-test="shelf-insert">
       {#if mode.kind === "insertEffect" && shelf.chosenEffect}
         <span class="say"
-          >{t("shelf.insertInto", { strip: stripName(app.song, mode.strip), slot: mode.slot + 1 })}{#if mixStart}{t("shelf.mixStart")}{/if}</span
+          >{t("shelf.insertInto", { strip: stripName(app.song, mode.strip, library), slot: mode.slot + 1 })}{#if mixStart}{t("shelf.mixStart")}{/if}</span
+        >
+      {:else if mode.kind === "replaceEffect" && shelf.chosenEffect}
+        <span class="say"
+          >{t("shelf.insertReplace", {
+            strip: stripName(app.song, mode.strip, library),
+            slot: mode.slot + 1,
+            current: shelf.currentEffect ? effectRefName(shelf.currentEffect, library) : "",
+            effect: effectRefName(shelf.chosenEffect, library),
+          })}</span
         >
       {/if}
       <div class="buttons">
         <Button primary onclick={() => send({ type: "shelfConfirm" })} disabled={shelf.chosenEffect === null} test="shelf-insert-confirm">
-          {t("button.insertEffect")}
+          {mode.kind === "replaceEffect" ? t("button.replaceInstrument") : t("button.insertEffect")}
           <span class="m-num m-lbl">{t("key.enter")}</span>
         </Button>
         {#if shelf.chosenEffect !== null}

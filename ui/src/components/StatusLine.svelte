@@ -1,11 +1,18 @@
-<!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom のいちばん下の行）。 -->
+<!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom ・ F-WindowOpen のいちばん下の行）。
+     右がわは 出口、入口、「窓 N ▾」（プラグインの窓が 1 つもなければ出さない。押すと上に一覧）、バッファ、拡大率。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import {
     clockOffsetUs,
     keyIsDown,
+    paramTable,
     type Band,
     type Command,
+    type EffectName,
+    type InsertRef,
+    type ParamEnd,
+    type ParamRef,
+    type PluginWindowView,
     type NoteSelection,
     type PluginSlotRef,
     type StatusMessage,
@@ -22,7 +29,11 @@
   import { about } from "./about/about.svelte";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { stripName } from "./mixer/stripName";
-  import { paramName } from "./params/paramRows";
+  import { paramName, valueText } from "./params/paramRows";
+  import { paramUi } from "./params/paramUi.svelte";
+  import { EFFECT_PARAMS } from "../bridge/types";
+  import WindowMark from "./WindowMark.svelte";
+  import WindowsMenu from "./WindowsMenu.svelte";
   import { keyCountsText, keysDrums, keysLabel, rollShowsDrums } from "./pianoroll/drums";
   import { soundNameText } from "./sounds";
   import { indexesOf } from "./pianoroll/geom";
@@ -82,7 +93,54 @@
 
   /** プラグインのいる所の名前（音源ならそのトラック、インサートならそのストリップ）。 */
   const slotName = (s: PluginSlotRef): string =>
-    stripName(app.song, s.kind === "instrument" ? { kind: "track", id: s.track } : s.insert.strip);
+    stripName(app.song, s.kind === "instrument" ? { kind: "track", id: s.track } : s.insert.strip, app.library);
+
+  const effectName = (e: EffectName) => (e.kind === "builtin" ? t(`effect.${e.effect}`) : e.name);
+  const insertStrip = (i: InsertRef) => stripName(app.song, i.strip, app.library);
+  /** 「2 ベース の コンプレッサー 」（うしろに空白）。 */
+  const insertTarget = (i: InsertRef, e: EffectName) => t("status.insertTarget", { strip: insertStrip(i), effect: effectName(e) });
+  /** 6 章の窓の文の「（名前）」: 居場所とプラグインの名前、うしろに空白。棚でためし弾き中の子は名前だけ（design-notes A-17）。 */
+  const windowName = (name: string, slot: PluginSlotRef | null) => `${slot ? t("status.windowPlace", { strip: slotName(slot), name }) : name} `;
+  /** プラグインが言ってきた名前は、うしろの「は」「の」との間に空白を置く（「Surge XT の」）。 */
+  const spaced = (name: string) => `${name} `;
+  const MINUS = "−";
+  const plainNumber = (n: number) => String(n).replace("-", MINUS);
+
+  /** 打ちこんだ値の文に出すパラメータの名前（最初から入っている物は表から、プラグインは見せている表から）。 */
+  function typedParamName(p: ParamRef): string {
+    if (p.kind === "builtin") return paramName(p.effect, p.param);
+    try {
+      const book = paramTable();
+      const row = book.table()?.table === p.table ? book.row(p.param) : undefined;
+      return row ? spaced(row.name) : "";
+    } catch {
+      return "";
+    }
+  }
+
+  /** 打ちこむ前の値。最初から入っているエフェクトは整えていない数（"-24"）で来るので、行の値と同じ単位とけたで。プラグインは来た文字のまま。 */
+  function keptText(p: ParamRef, kept: string): string {
+    if (p.kind !== "builtin") return kept;
+    const spec = EFFECT_PARAMS[p.effect][p.param];
+    const n = Number(kept.replace("−", "-"));
+    return spec && kept.trim() !== "" && Number.isFinite(n) ? valueText(p.effect, spec, n) : kept;
+  }
+
+  /** 「レシオは 1〜20 なので、20.0 : 1 にしました。」の 3 つ。 */
+  function clampedParts(to: ParamEnd): { param: string; range: string; value: string } {
+    if (to.kind === "plugin") return { param: spaced(to.name), range: to.range, value: to.value };
+    const spec = EFFECT_PARAMS[to.effect][to.param];
+    if (!spec) return { param: "", range: "", value: "" };
+    return { param: paramName(to.effect, to.param), range: `${plainNumber(spec.min)}〜${plainNumber(spec.max)}`, value: valueText(to.effect, spec, to.value) };
+  }
+
+  /** プラグインの窓の居場所（「1 ピアノ ・ 音源」「A リバーブ ・ インサート 1」「棚 ・ ためし弾き」）。 */
+  function windowPlace(w: PluginWindowView): string {
+    const slot = w.slot;
+    if (!slot) return t("windows.shelfAudition");
+    if (slot.kind === "instrument") return t("params.whereInstrument", { strip: slotName(slot) });
+    return t("params.where", { strip: slotName(slot), slot: slot.insert.slot + 1 });
+  }
 
   /** カウントイン中の「あと {beats} 拍」。計器がカウントインを言っていれば、その残りの拍。 */
   function beatsLeft(fallback: number): number {
@@ -303,9 +361,59 @@
         return plain("msg.outOfScale", { key: pitchClassName(m.key), scale: scaleName(m.root, m.mode) });
       case "paramSelected": {
         const loop = m.loopBars;
-        const selected = textParts("status.paramSelected", { strip: stripName(app.song, m.insert.strip), param: paramName(m.effect, m.param) });
+        // 戻りは名前にエフェクトが入っているので「A リバーブの「…」」、トラックとマスターは「2 ベース ・ コンプレッサーの「…」」（仕様書 3 章 86-10）。
+        const selected =
+          m.insert.strip.kind === "return"
+            ? textParts("status.paramSelected", { strip: insertStrip(m.insert), param: paramName(m.effect, m.param) })
+            : textParts("status.paramSelectedInsert", { strip: insertStrip(m.insert), effect: t(`effect.${m.effect}`), param: paramName(m.effect, m.param) });
         return { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], selected), strong: [], button: null };
       }
+      case "pluginParamSelected": {
+        const loop = m.loopBars;
+        const s = m.slot;
+        const selected =
+          s.kind === "insert" && s.insert.strip.kind === "return"
+            ? textParts("status.paramSelected", { strip: slotName(s), param: m.param })
+            : textParts("status.paramSelectedInsert", { strip: slotName(s), effect: spaced(m.plugin), param: m.param });
+        return { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], selected), strong: [], button: null };
+      }
+      case "paramClamped":
+        return plain("params.valueClamped", clampedParts(m.to));
+      case "paramRejected":
+        return plain("msg.valueRejected", { field: typedParamName(m.param), kept: keptText(m.param, m.kept) });
+      case "effectInserted":
+        return plain("msg.effectInserted", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect) });
+      case "effectRemoved":
+        return plain("msg.effectRemoved", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect), undoKey: modKey(t("key.undo")) });
+      case "insertsReordered":
+        return plain("msg.insertsReordered", { strip: stripName(app.song, m.strip, app.library), order: m.order.map(effectName).join(" → ") });
+      case "insertReplaced":
+        return plain("msg.insertReplaced", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect), undoKey: modKey(t("key.undo")) });
+      case "effectBypassed":
+        return plain(m.bypassed ? "msg.effectBypassed" : "msg.effectRestored", { target: insertTarget(m.insert, m.effect) });
+      case "pluginWindowOpening":
+        return plain("msg.windowOpening", { name: windowName(m.name, m.slot) });
+      case "pluginWindowLarge":
+        return plain("msg.windowTooLarge", { name: windowName(m.name, m.slot), width: m.width, height: m.height });
+      case "pluginWindowsOpen":
+        return plain("msg.windowsOpen", { count: m.count });
+      case "pluginWindowNotYet": {
+        const loop = m.loopBars;
+        return {
+          parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], textParts("status.windowNotYet", { name: m.name })),
+          strong: [],
+          button: null,
+        };
+      }
+      case "mixerPassesBy":
+        return {
+          parts: joined(
+            ...m.bypassed.map((b) => textParts("status.insertBypassedNow", { strip: insertStrip(b.insert), effect: effectName(b.effect) })),
+            ...m.stopped.map((b) => textParts("status.pluginStoppedNow", { strip: insertStrip(b.insert), name: effectName(b.effect) })),
+          ),
+          strong: [],
+          button: null,
+        };
       case "summary": {
         const loop = m.loopBars;
         if (m.notes) {
@@ -436,7 +544,18 @@
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
     // 「meloet について」は画面だけが持つダイアログなので、core の知らせの代わりにここで言う（仕様書 3 章 85）。
     if (about.open) return { parts: textParts("status.dialogOpen", { dialog: t("about.title") }), strong: [], button: null };
+    // 欄の行をドラッグしている間（ドラッグ中の値は core に戻らない。モック F-ParamFew）。
+    if (paramUi.moving) return { parts: textParts("status.paramMoving", paramUi.moving), strong: [], button: null };
     const m = app.status.message;
+    const usual = m === null || m.id === "summary";
+    // 「窓」の一覧をひらいている間は、いつものまとめに代えて（user:2026-11-19、モック F-WindowOpen）。
+    if (windowsOpen && usual) {
+      const loop = m?.loopBars ?? null;
+      const parts = joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], textParts("msg.windowsOpen", { count: windows.length }));
+      return { parts, strong: [], button: null };
+    }
+    // パラメータをさがしている間（さがすのは画面。モック F-ParamSearch）。
+    if (searching && usual) return { parts: textParts("status.paramSearching", { query: paramUi.query.trim(), count: paramUi.matches }), strong: [], button: null };
     if (playingInPianoRoll && (m === null || m.id === "summary")) {
       const parts = playingParts();
       if (parts) return { parts, strong: [], button: null };
@@ -474,6 +593,51 @@
         if (app.shelf.selectedSound !== null && app.shelf.loadingSound === null) return { text: t("status.auditioning"), rec: false, accent: true };
         return { text: t("status.stopped"), rec: false };
     }
+  });
+
+  // ---- 「窓 N ▾」と、その上の一覧（画面だけが持つ「ひらいている」） ----
+
+  const windows = $derived(app.windows.list);
+  let windowsOpen = $state(false);
+  let windowsButton = $state<HTMLButtonElement>();
+  let windowsPopup = $state<HTMLElement>();
+  let windowsAnchor = $state({ right: 0, bottom: 0 });
+  const searching = $derived(paramUi.query.trim() !== "" && app.workspace.layout.rightFront === "params" && app.params.selected !== null);
+  $effect(() => {
+    if (windows.length === 0) windowsOpen = false;
+  });
+  function placeWindows(): void {
+    if (!windowsButton) return;
+    const r = windowsButton.getBoundingClientRect();
+    const top = row?.getBoundingClientRect().top ?? r.top;
+    windowsAnchor = { right: window.innerWidth - r.right, bottom: window.innerHeight - top };
+  }
+  function closeWindows(): void {
+    const hadFocus = windowsPopup?.contains(document.activeElement) ?? false;
+    windowsOpen = false;
+    if (hadFocus) windowsButton?.focus();
+  }
+  function pickWindow(command: Command): void {
+    send(command);
+    closeWindows();
+  }
+  $effect(() => {
+    if (!windowsOpen) return;
+    placeWindows();
+    window.addEventListener("resize", placeWindows);
+    const close = () => closeWindows();
+    const forget = menuOpened(close);
+    const onDown = (ev: PointerEvent) => {
+      const target = ev.target as Node | null;
+      if (target && (windowsPopup?.contains(target) || windowsButton?.contains(target))) return;
+      close();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      forget();
+      window.removeEventListener("resize", placeWindows);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
   });
 
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
@@ -549,7 +713,8 @@
       gap,
       left: width("left") ?? 0,
       right: { inputs: width("inputs"), output: width("output"), buffer: width("buffer") },
-      scale: width("scale") ?? 0,
+      // 「窓」も拡大率と同じく消さない。
+      scale: (width("scale") ?? 0) + (windows.length > 0 ? (width("windows") ?? 0) + gap : 0),
     });
   }
 
@@ -560,7 +725,7 @@
     return () => observer.disconnect();
   });
   $effect(() => {
-    void [badge, message, outputName, keyboardName, actual, requested, scale];
+    void [badge, message, outputName, keyboardName, actual, requested, scale, windows.length];
     measure();
   });
 </script>
@@ -599,6 +764,7 @@
     {/each}
   {/if}
 {/snippet}
+{#snippet windowsLabel()}<WindowMark /><span class="m-num">{t("windows.button", { count: windows.length })}</span>▾{/snippet}
 {#snippet zoom()}<span class="m-num rate">{t("status.scale", { scale })}</span>▾{/snippet}
 
 <div class="status-line">
@@ -607,11 +773,28 @@
       <ZoomMenu {scale} {unfit} {platform} onpick={pick} />
     </div>
   {/if}
+  {#if windowsOpen}
+    <div class="popup windows" style:right="{windowsAnchor.right}px" style:bottom="{windowsAnchor.bottom}px" use:toBody bind:this={windowsPopup}>
+      <WindowsMenu list={windows} placeOf={windowPlace} onpick={pickWindow} />
+    </div>
+  {/if}
   <footer class="status" bind:this={row}>
     {@render left()}
     <span class="m-spacer"></span>
     {#if fit.output}<span class="m-lbl" data-test="status-output">{@render output()}</span>{/if}
     {#if fit.inputs}<span class="m-lbl" data-test="status-inputs">{@render inputs()}</span>{/if}
+    {#if windows.length > 0}
+      <button
+        class="m-plain zoom"
+        class:open={windowsOpen}
+        aria-label={t("windows.heading")}
+        aria-haspopup="menu"
+        aria-expanded={windowsOpen}
+        data-test="status-windows"
+        bind:this={windowsButton}
+        onclick={() => (windowsOpen = !windowsOpen)}>{@render windowsLabel()}</button
+      >
+    {/if}
     {#if actual !== null && fit.buffer}
       <span class="m-lbl" data-test="status-buffer" use:term={"バッファ"}>{@render buffer()}</span>
     {/if}
@@ -631,6 +814,7 @@
     <span class="m-lbl" data-part="output">{@render output()}</span>
     <span class="m-lbl" data-part="inputs">{@render inputs()}</span>
     {#if actual !== null}<span class="m-lbl" data-part="buffer">{@render buffer()}</span>{/if}
+    <span class="zoom wide" data-part="windows">{@render windowsLabel()}</span>
     <span class="zoom wide" data-part="scale">{@render zoom()}</span>
   </div>
 </div>
@@ -645,6 +829,9 @@
     position: fixed;
     z-index: 40;
     margin-right: var(--space-3);
+  }
+  .popup.windows {
+    margin-right: 0;
   }
   .status {
     height: var(--size-status);

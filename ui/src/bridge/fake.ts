@@ -6,8 +6,8 @@
 import type { Transport } from "./session";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
-import { FLUID, emptyLibrary, fullLibrary, lv2Key, vst3Key } from "./fakeLibrary";
-import { FAKE_TABLES, SURGE_AUTOMATED, fakeParamCount, fakeParamTable } from "./fakeParams";
+import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
+import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
 import {
   EFFECT_PARAMS,
   INSTRUMENT_GROUPS,
@@ -33,6 +33,7 @@ import {
   type PianoRollView,
   type PluginPlaceView,
   type PluginSlotRef,
+  type PluginEffectCategory,
   type PluginState,
   type PluginView,
   type PluginWindowView,
@@ -47,6 +48,9 @@ import {
   type SoundView,
   type ArrangeView,
   type StatusMessage,
+  type EffectName,
+  type NamedInsert,
+  type ParamValues,
   type StoppedPluginView,
   type StripRef,
   type TrackRef,
@@ -2040,6 +2044,16 @@ function windowSong(s: AppState): void {
   Object.assign(vocal, { name: "ボーカル", inserts: ["eq4", "compressor", null, null], sends: [-9, -18], gainDb: -3.2 });
   Object.assign(s.song.returns[0], { inserts: noInserts(), slots: [pluginSlot("Dragonfly Reverb"), null, null, null] });
   s.song.returns[1].gainDb = -2;
+  // The shelf knows the plugins of the song: the return takes the kind of its plugin as its name ("A リバーブ", user:2026-11-19).
+  const effect = (category: PluginEffectCategory) => ({ role: "effect", category }) as const;
+  s.library = {
+    ...emptyLibrary(),
+    plugins: [
+      pluginRow("Dragonfly Reverb", "Michael Willis", effect("reverb"), ["lv2"]),
+      pluginRow("Mossy Verb", "Example Audio", effect("reverb"), ["lv2"]),
+      pluginRow("Brick EQ", "Example Audio", effect("eq"), ["lv2"]),
+    ],
+  };
   s.transport.state = "playing";
   s.transport.position = at("9.2.000");
 }
@@ -2259,6 +2273,15 @@ const NOTICES: StatusMessage["id"][] = [
   "trackAdded",
   "trackDeleted",
   "instrumentReplaced",
+  "paramClamped",
+  "paramRejected",
+  "effectInserted",
+  "effectRemoved",
+  "insertsReordered",
+  "insertReplaced",
+  "effectBypassed",
+  "pluginWindowsOpen",
+  "mixerPassesBy",
 ];
 const isNotice = (m: StatusMessage | null) => m !== null && NOTICES.includes(m.id);
 
@@ -2857,8 +2880,16 @@ export function reduceMixer(
   shelfNow: ShelfView,
   songNow: SongView,
   command: Command,
-): { song: SongView; params: AppState["params"]; shelf: ShelfView; windows: AppState["windows"]; showParams: boolean } | null {
+): {
+  song: SongView;
+  params: AppState["params"];
+  shelf: ShelfView;
+  windows: AppState["windows"];
+  showParams: boolean;
+  notice: StatusMessage | null;
+} | null {
   const song = structuredClone(songNow);
+  let notice: StatusMessage | null = null;
   const params = structuredClone(state.params);
   const shelf = structuredClone(shelfNow);
   const windows = structuredClone(state.windows);
@@ -2875,7 +2906,15 @@ export function reduceMixer(
     return held?.kind === "plugin" ? held : null;
   };
   const openWindow = (slot: PluginSlotRef, name: string) => {
-    if (!windows.list.some((w) => same(w.slot, slot))) windows.list.push({ slot, name, width: 800, height: 600, largerThanScreen: false });
+    if (windows.list.some((w) => same(w.slot, slot))) return;
+    windows.list.push({ slot, name, width: 800, height: 600, largerThanScreen: false });
+    notice = { id: "pluginWindowsOpen", count: windows.list.length };
+  };
+  /** The effect in a slot, as the status line names it. */
+  const nameAt = (insert: InsertRef): EffectName | null => {
+    const held = stripOf(song, insert.strip)?.slots[insert.slot];
+    if (!held) return null;
+    return held.effect.kind === "builtin" ? { kind: "builtin", effect: held.effect.effect } : { kind: "plugin", name: held.effect.name };
   };
   // A plugin's window opens with it; one that has none the fake could open brings the panel to the front.
   const selectPlugin = (slot: PluginSlotRef, plugin: PluginView) => {
@@ -2927,6 +2966,26 @@ export function reduceMixer(
     }
     case "cancelMixPreview":
       break;
+    // A typed value of an effect that comes with meloet: the number in it, put at an end of the range (and said so); a
+    // text with no number changes nothing and says so with the value as a bare number ("-24"), as core does. A plugin's is the
+    // transport's (FakeParamTables).
+    case "typeParam": {
+      const p = command.param;
+      if (p.kind !== "builtin") return null;
+      const spec = EFFECT_PARAMS[p.effect][p.param];
+      const sel = own();
+      if (!spec || stripOf(song, p.insert.strip)?.inserts[p.insert.slot] !== p.effect) break;
+      const now = sel && same(sel.insert, p.insert) ? (sel.values[p.param] ?? spec.default) : spec.default;
+      const n = Number.parseFloat(command.text.trim().replace(/^[−ー]/, "-"));
+      if (!Number.isFinite(n)) {
+        notice = { id: "paramRejected", param: p, kept: String(now) };
+        break;
+      }
+      const v = Math.max(spec.min, Math.min(spec.max, spec.shape === "continuous" ? n : Math.round(n)));
+      if (v !== n) notice = { id: "paramClamped", to: { kind: "builtin", effect: p.effect, param: p.param, value: v } };
+      if (sel && same(sel.insert, p.insert)) sel.values[p.param] = v;
+      break;
+    }
     case "toggleReturnMute": {
       const ret = song.returns[command.bus === "a" ? 0 : 1];
       ret.muted = !ret.muted;
@@ -2936,6 +2995,8 @@ export function reduceMixer(
       const strip = stripOf(song, command.insert.strip);
       if (!strip) break;
       const at: PluginSlotRef = { kind: "insert", insert: command.insert };
+      const gone = nameAt(command.insert);
+      if (gone) notice = { id: "effectRemoved", insert: command.insert, effect: gone };
       strip.inserts[command.insert.slot] = null;
       strip.slots[command.insert.slot] = null;
       if (same(own()?.insert, command.insert) || (params.selected?.kind === "plugin" && same(params.selected.slot, at))) params.selected = null;
@@ -2959,7 +3020,9 @@ export function reduceMixer(
     }
     case "toggleBypass": {
       const held = stripOf(song, command.insert.strip)?.slots[command.insert.slot];
-      if (held && !(held.effect.kind === "plugin" && held.effect.state === "stopped")) held.bypassed = !held.bypassed;
+      if (!held || (held.effect.kind === "plugin" && held.effect.state === "stopped")) break;
+      held.bypassed = !held.bypassed;
+      notice = { id: "effectBypassed", insert: command.insert, effect: nameAt(command.insert)!, bypassed: held.bypassed };
       break;
     }
     case "moveInsert": {
@@ -2977,6 +3040,8 @@ export function reduceMixer(
       if (sel?.kind === "builtin") follow(sel.insert);
       else if (sel?.slot.kind === "insert") follow(sel.slot.insert);
       for (const w of windows.list) if (w.slot?.kind === "insert") follow(w.slot.insert);
+      const order = strip.slots.flatMap((_, i) => nameAt({ strip: command.insert.strip, slot: i }) ?? []);
+      notice = { id: "insertsReordered", strip: command.insert.strip, order };
       break;
     }
     case "openPluginWindow": {
@@ -2996,6 +3061,8 @@ export function reduceMixer(
       const to = stripOf(song, strip);
       if (!to || shelf.selectedEffect === null || (to.slots[slot] !== null) !== (kind === "replaceEffect")) break;
       if (same(shelf.currentEffect, builtinEffect(shelf.selectedEffect))) break;
+      const effect: EffectName = { kind: "builtin", effect: shelf.selectedEffect };
+      notice = kind === "replaceEffect" ? { id: "insertReplaced", insert: { strip, slot }, effect } : { id: "effectInserted", insert: { strip, slot }, effect };
       to.inserts[slot] = shelf.selectedEffect;
       to.slots[slot] = null;
       windows.list = windows.list.filter((w) => !same(w.slot, { kind: "insert", insert: { strip, slot } }));
@@ -3008,7 +3075,27 @@ export function reduceMixer(
     default:
       return null;
   }
-  return { song, params, shelf, windows, showParams };
+  return { song, params, shelf, windows, showParams, notice };
+}
+
+/** The slots the mixer passes by as it opens (MixerPassesBy): in the mixer's order, the bypassed ones and the stopped ones. */
+function passedBy(song: SongView): StatusMessage | null {
+  const strips: { strip: StripRef; slots: SongView["master"]["slots"] }[] = [
+    ...song.tracks.map((t) => ({ strip: { kind: "track", id: t.id } as StripRef, slots: t.slots })),
+    { strip: RETURN_A, slots: song.returns[0].slots },
+    { strip: { kind: "return", bus: "b" }, slots: song.returns[1].slots },
+    { strip: { kind: "master" }, slots: song.master.slots },
+  ];
+  const bypassed: NamedInsert[] = [];
+  const stopped: NamedInsert[] = [];
+  for (const { strip, slots } of strips)
+    slots.forEach((held, slot) => {
+      if (!held) return;
+      const effect: EffectName = held.effect.kind === "builtin" ? { kind: "builtin", effect: held.effect.effect } : { kind: "plugin", name: held.effect.name };
+      if (held.effect.kind === "plugin" && held.effect.state === "stopped") stopped.push({ insert: { strip, slot }, effect });
+      else if (held.bypassed) bypassed.push({ insert: { strip, slot }, effect });
+    });
+  return bypassed.length + stopped.length > 0 ? { id: "mixerPassesBy", bypassed, stopped } : null;
 }
 
 /** `rest` is the status line when no notice is up. */
@@ -3054,7 +3141,9 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
       break;
     }
     case "toggleBand": {
+      const mixerWasOpen = bands.bottom.includes("mixer");
       const fold = bands.toggle(command.band);
+      if (command.band === "mixer" && !mixerWasOpen && bands.bottom.includes("mixer")) notice = passedBy(state.song);
       if (fold?.why === "third") notice = { id: "bandFoldedThird", opened: command.band, folded: fold.band };
       if (fold?.why === "tooLow") notice = { id: "bandFoldedToOpen", opened: command.band, folded: fold.band };
       break;
@@ -3208,6 +3297,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
   // Scenes set the rest of the status line by hand; only the notices and the selected notes move here.
   let message =
     notice ??
+    mixer?.notice ??
     clips?.notice ??
     tracks?.notice ??
     shelfMessage(shelf, song, library) ??
@@ -3229,6 +3319,7 @@ export function createFakeTransport(initial?: AppState): Transport {
   if (!scene) bands.side = [...state.workspace.layout.rightOpen];
   const rest = isNotice(state.status.message) || isShelfMessage(state.status.message) ? null : state.status.message;
   const clipboard: FakeClipboard = { clips: [] };
+  const tables = new FakeParamTables();
   let rev = 1;
   let listener: ((message: ServerMessage) => void) | null = null;
   const start = performance.now();
@@ -3257,12 +3348,31 @@ export function createFakeTransport(initial?: AppState): Transport {
     },
     async send(command) {
       const changes = reduce(state, bands, rest, command, clipboard, nowUs());
+      // The fake plugins' parameters: the value and its text come back on the messages Channel; a typed one may be put at an end.
+      let values: ParamValues | null = null;
+      if (command.type === "setPluginParam") values = tables.set(command.table, command.param, command.value);
+      if (command.type === "typeParam" && command.param.kind === "plugin") {
+        const p = command.param;
+        const typed = tables.type(p.table, p.param, command.text);
+        values = typed.values;
+        const said: StatusMessage | null = typed.rejected !== null
+          ? { id: "paramRejected", param: p, kept: typed.rejected }
+          : typed.clamped
+            ? { id: "paramClamped", to: { kind: "plugin", ...typed.clamped } }
+            : null;
+        if (said) {
+          const at = changes.findIndex((c) => c.section === "status");
+          if (at >= 0) changes.splice(at, 1);
+          changes.push({ section: "status", value: { message: said } });
+        }
+      }
       if (changes.length > 0) {
         rev += 1;
         state = { ...state };
         for (const c of changes) (state as Record<string, unknown>)[c.section] = c.value;
         listener?.({ kind: "patch", rev, changes });
       }
+      if (values) listener?.({ kind: "paramValues", ...values });
       return { rev };
     },
     async clock() {
@@ -3277,7 +3387,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return scene?.live ?? NO_LIVE;
     },
     async pluginParams(table) {
-      return fakeParamTable(table);
+      return tables.table(table);
     },
   };
 }

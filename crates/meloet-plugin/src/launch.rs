@@ -5,12 +5,13 @@
 //!
 //! ```text
 //! meloet-plughost host --parent <pid> --control-fd <n> --memory-fd <n> [--log-fd <n>]
-//! meloet-plughost scan <vst3|lv2> <bundle> --parent <pid> --out-fd <n> [--log-fd <n>]
+//! meloet-plughost scan <vst3|lv2> <bundle> [--skip <id>]... --parent <pid> --out-fd <n> [--log-fd <n>]
 //! ```
 //!
 //! `host` answers [`crate::wire`] requests on the control socket and runs plugins in the
-//! slots of the shared memory until the socket closes. `scan` writes one frame holding a
-//! [`crate::wire::ScanOutput`] to `--out-fd` and ends.
+//! slots of the shared memory until the socket closes. `scan` writes frames of
+//! [`crate::wire::ScanOutput`] to `--out-fd`, one plugin after another and passing over the
+//! ids `--skip` names, and ends after `Done` or `Broken`.
 
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::os::unix::process::CommandExt;
@@ -78,20 +79,22 @@ pub fn host_command(
     finish(command, vec![control.as_raw_fd(), memory.as_raw_fd()], log)
 }
 
-/// The command that scans one bundle and writes what it found to `out`.
+/// The command that scans one bundle and writes what it found to `out`. The plugins whose ids
+/// are in `skip` are not read.
 pub fn scan_command(
     exe: &Path,
     format: PluginFormat,
     bundle: &Path,
+    skip: &[String],
     out: BorrowedFd<'_>,
     log: Option<BorrowedFd<'_>>,
 ) -> Command {
     let mut command = base(exe, "scan");
-    command
-        .arg(format.prefix())
-        .arg(bundle)
-        .arg("--out-fd")
-        .arg(out.as_raw_fd().to_string());
+    command.arg(format.prefix()).arg(bundle);
+    for id in skip {
+        command.arg("--skip").arg(id);
+    }
+    command.arg("--out-fd").arg(out.as_raw_fd().to_string());
     finish(command, vec![out.as_raw_fd()], log)
 }
 

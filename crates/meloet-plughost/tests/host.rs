@@ -469,12 +469,14 @@ struct Scan {
     out: UnixStream,
 }
 
-fn scan(format: PluginFormat, bundle: &str, fake: bool) -> Scan {
+fn scan(format: PluginFormat, bundle: &str, skip: &[&str], fake: bool) -> Scan {
     let (ours, theirs) = UnixStream::pair().unwrap();
+    let skip: Vec<String> = skip.iter().map(|s| s.to_string()).collect();
     let mut command = launch::scan_command(
         Path::new(EXE),
         format,
         Path::new(bundle),
+        &skip,
         theirs.as_fd(),
         None,
     );
@@ -490,67 +492,151 @@ fn scan(format: PluginFormat, bundle: &str, fake: bool) -> Scan {
     Scan { child, out: ours }
 }
 
-#[test]
-fn scan_mode_writes_what_it_found_and_ends() {
-    let mut found = scan(PluginFormat::Lv2, "/nowhere/found.lv2", true);
-    match read_frame::<ScanOutput>(&mut found.out).unwrap().0 {
-        ScanOutput::Found { plugins } => {
-            let names: Vec<&str> = plugins.iter().map(|p| p.name.as_str()).collect();
-            assert_eq!(names, ["Fake Sine", "Fake Pass"]);
+impl Scan {
+    /// Every frame up to `Done` or `Broken`, or up to the error that ended the reading.
+    fn frames(&mut self) -> (Vec<ScanOutput>, Option<WireError>) {
+        let mut frames = Vec::new();
+        loop {
+            match read_frame::<ScanOutput>(&mut self.out) {
+                Ok((frame, _)) => {
+                    let last = matches!(frame, ScanOutput::Done | ScanOutput::Broken { .. });
+                    frames.push(frame);
+                    if last {
+                        return (frames, None);
+                    }
+                }
+                Err(e) => return (frames, Some(e)),
+            }
         }
-        other => panic!("{other:?}"),
     }
-    assert_eq!(
-        found
-            .child
+
+    fn exit_code(&mut self) -> Option<i32> {
+        self.child
             .wait_for_exit(Duration::from_secs(5))
             .unwrap()
-            .code(),
-        Some(0)
-    );
+            .code()
+    }
+}
 
-    let mut empty = scan(PluginFormat::Vst3, "/nowhere/empty.vst3", true);
-    assert_eq!(
-        read_frame::<ScanOutput>(&mut empty.out).unwrap().0,
-        ScanOutput::Found { plugins: vec![] }
-    );
+/// A frame in short: `probing <id>`, `found <name>`, `pluginBroken <id>`, `broken`, `done`.
+fn short(frame: &ScanOutput) -> String {
+    match frame {
+        ScanOutput::Probing { id, .. } => format!("probing {id}"),
+        ScanOutput::Found { plugin } => format!("found {}", plugin.name),
+        ScanOutput::PluginBroken { id, .. } => format!("pluginBroken {id}"),
+        ScanOutput::Broken { .. } => "broken".into(),
+        ScanOutput::Done => "done".into(),
+    }
+}
 
-    let mut broken = scan(PluginFormat::Vst3, "/nowhere/broken.vst3", true);
-    assert!(matches!(
-        read_frame::<ScanOutput>(&mut broken.out).unwrap().0,
-        ScanOutput::Broken { .. }
-    ));
-    assert_eq!(
-        broken
-            .child
-            .wait_for_exit(Duration::from_secs(5))
-            .unwrap()
-            .code(),
-        Some(0)
-    );
+fn shorts(frames: &[ScanOutput]) -> Vec<String> {
+    frames.iter().map(short).collect()
 }
 
 #[test]
-fn a_scan_that_crashes_or_hangs_writes_nothing() {
-    let mut crashed = scan(PluginFormat::Lv2, "/nowhere/segv.lv2", true);
-    assert!(matches!(
-        read_frame::<ScanOutput>(&mut crashed.out),
-        Err(WireError::Closed)
-    ));
+fn scan_mode_writes_one_plugin_after_another_and_ends() {
+    let mut found = scan(PluginFormat::Lv2, "/nowhere/found.lv2", &[], true);
+    let (frames, error) = found.frames();
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(
+        shorts(&frames),
+        [
+            "probing urn:meloet:fake:sine",
+            "found Fake Sine",
+            "probing urn:meloet:fake:pass",
+            "found Fake Pass",
+            "done"
+        ]
+    );
+    assert_eq!(
+        frames[0],
+        ScanOutput::Probing {
+            id: "urn:meloet:fake:sine".into(),
+            name: Some("Fake Sine".into())
+        }
+    );
+    match &frames[1] {
+        ScanOutput::Found { plugin } => {
+            assert_eq!(plugin.key, PluginKey::lv2("urn:meloet:fake:sine").unwrap());
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(found.exit_code(), Some(0));
+
+    let mut empty = scan(PluginFormat::Vst3, "/nowhere/empty.vst3", &[], true);
+    let (frames, error) = empty.frames();
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(frames, [ScanOutput::Done]);
+    assert_eq!(empty.exit_code(), Some(0));
+
+    let mut broken = scan(PluginFormat::Vst3, "/nowhere/broken.vst3", &[], true);
+    let (frames, error) = broken.frames();
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(shorts(&frames), ["broken"]);
+    assert_eq!(broken.exit_code(), Some(0));
+}
+
+#[test]
+fn a_plugin_that_crashes_stops_only_itself() {
+    let mut mixed = scan(PluginFormat::Lv2, "/nowhere/mixed.lv2", &[], true);
+    let (frames, error) = mixed.frames();
+    assert!(matches!(error, Some(WireError::Closed)), "{error:?}");
+    assert_eq!(
+        shorts(&frames),
+        [
+            "probing urn:meloet:fake:a",
+            "found Fake A",
+            "probing urn:meloet:fake:b"
+        ]
+    );
+    let status = mixed.child.wait_for_exit(Duration::from_secs(10)).unwrap();
+    assert_eq!(status.signal(), Some(libc::SIGSEGV));
+
+    // Scanned again without the plugin that stopped it, the bundle reads to its end.
+    let mut again = scan(
+        PluginFormat::Lv2,
+        "/nowhere/mixed.lv2",
+        &["urn:meloet:fake:b"],
+        true,
+    );
+    let (frames, error) = again.frames();
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(
+        shorts(&frames),
+        [
+            "probing urn:meloet:fake:a",
+            "found Fake A",
+            "probing urn:meloet:fake:c",
+            "found Fake C",
+            "done"
+        ]
+    );
+    assert_eq!(again.exit_code(), Some(0));
+}
+
+#[test]
+fn a_scan_that_crashes_or_hangs_stops_after_probing() {
+    let mut crashed = scan(PluginFormat::Lv2, "/nowhere/segv.lv2", &[], true);
+    let (frames, error) = crashed.frames();
+    assert!(matches!(error, Some(WireError::Closed)), "{error:?}");
+    assert_eq!(shorts(&frames), ["probing urn:meloet:fake:segv"]);
     let status = crashed
         .child
         .wait_for_exit(Duration::from_secs(10))
         .unwrap();
     assert_eq!(status.signal(), Some(libc::SIGSEGV));
 
-    let mut hung = scan(PluginFormat::Lv2, "/nowhere/hang.lv2", true);
+    let mut hung = scan(PluginFormat::Lv2, "/nowhere/hang.lv2", &[], true);
+    assert_eq!(
+        short(&read_frame::<ScanOutput>(&mut hung.out).unwrap().0),
+        "probing urn:meloet:fake:hang"
+    );
     hung.out
         .set_read_timeout(Some(Duration::from_millis(300)))
         .unwrap();
-    assert!(matches!(
-        read_frame::<ScanOutput>(&mut hung.out),
-        Err(WireError::Io(_))
-    ));
+    let (frames, error) = hung.frames();
+    assert!(frames.is_empty(), "{frames:?}");
+    assert!(matches!(error, Some(WireError::Io(_))), "{error:?}");
     assert!(
         hung.child
             .wait_for_exit(Duration::from_millis(10))
@@ -561,18 +647,13 @@ fn a_scan_that_crashes_or_hangs_writes_nothing() {
 #[test]
 fn the_fake_plugins_are_not_there_without_the_variable() {
     // The formats are not built yet: a real bundle reads as broken, and nothing crashes.
-    let mut real = scan(PluginFormat::Lv2, "/nowhere/segv.lv2", false);
-    assert!(matches!(
-        read_frame::<ScanOutput>(&mut real.out).unwrap().0,
-        ScanOutput::Broken { .. }
-    ));
-    assert_eq!(
-        real.child
-            .wait_for_exit(Duration::from_secs(5))
-            .unwrap()
-            .code(),
-        Some(0)
-    );
+    for bundle in ["/nowhere/segv.lv2", "/nowhere/mixed.lv2"] {
+        let mut real = scan(PluginFormat::Lv2, bundle, &[], false);
+        let (frames, error) = real.frames();
+        assert!(error.is_none(), "{error:?}");
+        assert_eq!(shorts(&frames), ["broken"]);
+        assert_eq!(real.exit_code(), Some(0));
+    }
 }
 
 #[test]

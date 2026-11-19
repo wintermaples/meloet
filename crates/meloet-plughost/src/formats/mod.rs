@@ -108,6 +108,14 @@ pub trait Controller {
     fn idle(&mut self);
 }
 
+/// A plugin a bundle says it holds, before it is read. `id` is what its `PluginKey::id` will
+/// be and what `--skip` names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate {
+    pub id: String,
+    pub name: Option<String>,
+}
+
 pub struct Loaded {
     pub plugin: LoadedPlugin,
     pub controller: Box<dyn Controller>,

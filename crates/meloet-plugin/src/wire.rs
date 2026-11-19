@@ -141,7 +141,7 @@ pub enum Reply {
         text: String,
     },
     Scanned {
-        output: ScanOutput,
+        output: Box<ScanOutput>,
     },
 }
 
@@ -235,7 +235,9 @@ pub enum Notice {
     },
 }
 
-/// What the host's `scan` mode writes, once, before it ends.
+/// One of the frames the host's `scan` mode writes, in order, until `Done` or `Broken`. A
+/// plugin's `Probing` comes before its `Found` or `PluginBroken`, so a `Probing` with neither
+/// after it names the plugin the child died or went quiet at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "result",
@@ -243,13 +245,27 @@ pub enum Notice {
     rename_all_fields = "camelCase"
 )]
 pub enum ScanOutput {
-    Found {
-        plugins: Vec<PluginInfo>,
+    /// This plugin is being read. If the child dies or goes quiet after this, this plugin
+    /// stopped it.
+    Probing {
+        id: String,
+        name: Option<String>,
     },
-    /// 「作りがこわれています」. `message` is for the log.
+    Found {
+        plugin: PluginInfo,
+    },
+    /// This plugin cannot be read (「作りがこわれています」); the others go on. `message` is for
+    /// the log.
+    PluginBroken {
+        id: String,
+        message: String,
+    },
+    /// The bundle itself cannot be read, not even the list of what is in it. The last frame.
     Broken {
         message: String,
     },
+    /// The end.
+    Done,
 }
 
 #[derive(Debug)]
@@ -515,6 +531,26 @@ mod tests {
             .unwrap(),
             json!({ "result": "broken", "message": "no factory" })
         );
+        assert_eq!(
+            serde_json::to_value(ScanOutput::Probing {
+                id: "urn:x".into(),
+                name: None
+            })
+            .unwrap(),
+            json!({ "result": "probing", "id": "urn:x", "name": null })
+        );
+        assert_eq!(
+            serde_json::to_value(ScanOutput::PluginBroken {
+                id: "urn:x".into(),
+                message: "no ports".into()
+            })
+            .unwrap(),
+            json!({ "result": "pluginBroken", "id": "urn:x", "message": "no ports" })
+        );
+        assert_eq!(
+            serde_json::to_value(ScanOutput::Done).unwrap(),
+            json!({ "result": "done" })
+        );
     }
 
     #[test]
@@ -578,7 +614,7 @@ mod tests {
                 text: "-6.0 dB".into(),
             },
             Reply::Scanned {
-                output: ScanOutput::Found { plugins: vec![] },
+                output: Box::new(ScanOutput::Done),
             },
         ];
         for reply in replies {

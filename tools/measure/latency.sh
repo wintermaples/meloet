@@ -4,7 +4,7 @@
 # usage: tools/measure/latency.sh [--window 1920x1080] [--count 120] [--out DIR] [--keep-ui]
 #                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
 #                                 [--pattern spaced|mixed] [--piano-roll [--song FILE]]
-#                                 [--velocity-fixed V] [--mixer]
+#                                 [--velocity-fixed V] [--mixer] [--cache-home DIR]
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
@@ -20,6 +20,9 @@
 #   notes over 16 bars.
 # --song: open that song (MELOET_OPEN_SONG), also without --piano-roll.
 # --mixer: open the mixer band before the keys, and keep it open.
+# --cache-home: XDG_CACHE_HOME for the app. An empty folder makes this start the first one for
+#   the plugin scan (the scan then runs while the keys are played); scan_watch.py writes down
+#   the scanning children to DIR/raw/scan-watch.json.
 # --velocity-fixed: turn "ベロシティ固定" on at V (1..127) right after the chooser.
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
@@ -40,6 +43,7 @@ piano_roll=0
 mixer=0
 song=
 velocity_fixed=
+cache_home=
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
@@ -54,7 +58,8 @@ while [ $# -gt 0 ]; do
     --mixer) mixer=1; shift ;;
     --song) song=$2; shift 2 ;;
     --velocity-fixed) velocity_fixed=$2; shift 2 ;;
-    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll] [--song FILE] [--mixer] [--velocity-fixed V]" >&2; exit 2 ;;
+    --cache-home) cache_home=$2; shift 2 ;;
+    *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll] [--song FILE] [--mixer] [--velocity-fixed V] [--cache-home DIR]" >&2; exit 2 ;;
   esac
 done
 
@@ -95,9 +100,9 @@ esac
 
 if [ "$build" = 1 ]; then
   if [ "$keep_ui" = 0 ]; then (cd "$root/ui" && npm run build); fi
-  (cd "$root" && cargo build --release -p meloet-app -p meloet-midi)
+  (cd "$root" && cargo build --release -p meloet-app -p meloet-midi -p meloet-plughost)
 fi
-for bin in meloet meloet-vkeys; do
+for bin in meloet meloet-vkeys meloet-plughost; do
   if [ ! -x "$target/release/$bin" ]; then
     echo "latency.sh: $target/release/$bin is not there (build it, or run without --no-build)" >&2
     exit 1
@@ -152,6 +157,16 @@ standby=$!
 trap 'kill "$standby" 2>/dev/null || true; rm -rf "$work"' EXIT
 sleep 1
 
+scan_watch=
+if [ -n "$cache_home" ]; then
+  mkdir -p "$cache_home"
+  open_song+=(XDG_CACHE_HOME="$cache_home")
+  label_view="$label_view, cache home $cache_home"
+  python3 -I "$root/tools/measure/scan_watch.py" "$out/raw/scan-watch.json" "$target/release/meloet-plughost" \
+    --seconds $((exit_ms / 1000 + 20)) &
+  scan_watch=$!
+fi
+
 env "${open_song[@]}" \
 MELOET_CONFIG_DIR="$work/config" \
 MELOET_STATE_DIR="$work/state" \
@@ -184,6 +199,11 @@ if kill -0 "$app" 2>/dev/null; then
   kill "$app"
 fi
 wait "$app" || true
+if [ -n "$scan_watch" ]; then
+  kill -TERM "$scan_watch" 2>/dev/null || true
+  wait "$scan_watch" || true
+  cp "$cache_home/meloet/plugins/scan.json" "$out/raw/" 2>/dev/null || true
+fi
 
 cp "$work/vkeys.json" "$out/raw/" 2>/dev/null || true
 cp "$work/measure/"*.json "$out/raw/" 2>/dev/null || true

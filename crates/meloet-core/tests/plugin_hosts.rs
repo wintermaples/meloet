@@ -328,6 +328,33 @@ fn a_plugin_that_is_killed_crashes_or_hangs_is_told_and_its_process_is_gone() {
 }
 
 #[test]
+fn the_engine_does_not_wait_for_a_process_known_to_have_ended() {
+    // No clock here: a block of 200 ms, so a wait up to the deadline would show.
+    let mut rig = Rig::new(LONG);
+    let side = side();
+    let loaded = side.load(&rig, "sine");
+    let (id, watch) = (loaded.id, loaded.watch.clone());
+    rig.instrument(0, loaded);
+    rig.keys(0, &[69]);
+    rig.block();
+    assert!(near(rig.block(), 0.5));
+    let pid = side.pids()[0];
+    kill(pid);
+    // Told by the pidfd alone: the engine runs no block in between.
+    assert_eq!(side.stopped().1, [id]);
+    assert!(!watch.stopped(), "the engine has not looked yet");
+    let (unanswered, waited) = (watch.unanswered(), watch.waited_ns());
+
+    let began = Instant::now();
+    assert_eq!(rig.block(), 0.0);
+    let took = began.elapsed();
+    assert!(watch.stopped(), "stopped at the first block after the end");
+    assert_eq!(watch.unanswered(), unanswered, "no answer was waited for");
+    assert_eq!(watch.waited_ns(), waited);
+    eprintln!("the first block after the process ended took {took:?}");
+}
+
+#[test]
 fn a_stopped_plugin_is_loaded_again_with_what_was_remembered() {
     let mut rig = Rig::new(LONG);
     let side = side();

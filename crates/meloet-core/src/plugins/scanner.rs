@@ -198,6 +198,7 @@ fn run_job(context: &Context, job: ScanJob) {
             retry_todo(path, plugin, &job.known).into_iter().collect()
         }
     };
+    let (began, bundles) = (Instant::now(), todo.len());
     let queue = Mutex::new(VecDeque::from(todo));
     std::thread::scope(|scope| {
         for n in 0..workers() {
@@ -225,6 +226,12 @@ fn run_job(context: &Context, job: ScanJob) {
     });
     if !context.stop.load(Relaxed) {
         (context.news)(ScanNews::Done { job: id });
+        if bundles > 0 {
+            eprintln!(
+                "meloet: scanned {bundles} plugin bundle(s) in {:.1} s",
+                began.elapsed().as_secs_f64()
+            );
+        }
     }
 }
 

@@ -15,7 +15,8 @@
 //!
 //! Watching: a process has stopped when it has ended (its pidfd says so) or when the engine
 //! gave up on one of its slots (`PluginWatch::stopped`: two blocks without an answer). It is
-//! then killed through its pidfd, so a process that hangs does not stay, and every slot it
+//! then killed through its pidfd, so a process that hangs does not stay, its shared memory
+//! is marked as stopped, so the engine waits for none of its slots again, and every slot it
 //! had is told as stopped with [`HostNews::Stopped`]. [`Hosts::reload`] puts such a slot into
 //! a new process, with the state remembered for it.
 
@@ -646,6 +647,9 @@ impl Run {
     /// stopped from now on.
     fn bury(&mut self, at: usize) -> Vec<SlotId> {
         let mut proc = self.procs.remove(at);
+        // The engine reads this at its next block and does not wait for an answer that
+        // cannot come.
+        proc.map.mark_stopped();
         let _ = proc.pidfd.kill();
         let _ = proc.child.wait();
         let slots: Vec<SlotId> = proc.places.iter().flatten().copied().collect();

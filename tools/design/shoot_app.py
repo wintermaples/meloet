@@ -10,11 +10,15 @@ state, window size and scale, each time with a new config dir. It drives the app
 development variables (README) and with meloet-vkeys, and lets MELOET_SNAPSHOT write the PNG.
 States that start from a remembered output copy settings.json from one first run that
 confirmed the chooser.
+Every start gets its own XDG_CACHE_HOME, so that the plugin scan is the same each time: a
+state with scan="first" an empty one (the scan runs from the beginning, with its band); the
+others share <target>/shoot/cache, which holds the record of one whole scan (made by a run of
+its own when it is not there yet), so nothing of the scan shows.
 Out: docs/screenshots/app/<state>-<w>x<h>-<scale>.png and docs/screenshots/compare/ (app on
 the left, mock on the right, laid out as in shoot_ui.py). --compare-small makes compare sheets
 only for 100 % (to keep the PNGs small).
 """
-import json, os, shutil, subprocess, sys, tempfile, time
+import json, os, shutil, signal, subprocess, sys, tempfile, time
 
 from PIL import Image, ImageDraw
 
@@ -96,6 +100,16 @@ STATES = {
         (2500, {"type": "moveTrack", "track": 3, "to": 0}),
         (2800, {"type": "back"}),
     ]),
+    # Round 5: the plugin scan of the real app, over the plugins of this PC. scan="first": no
+    # record yet. The others start with the record of a whole scan. scanAppDone waits for the
+    # scan to end (19 s on the agent PC).
+    "scanApp": dict(board="R9-Scan", remembered=True, scan="first", commands=band("shelf"), snap=3000),
+    "scanAppDone": dict(board="R9-Scan", remembered=True, scan="first", commands=band("shelf"), snap=24000),
+    "scanAppPlaces": dict(board="R9-Scan", remembered=True,
+                          commands=[(400, {"type": "openPluginPlaces"})]),
+    "scanAppStopped": dict(board="F5-ScanStopped", remembered=True,
+                           commands=[(400, {"type": "toggleBand", "band": "shelf"}),
+                                     (700, {"type": "openScanStopped"})]),
     "plugIn": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "3"]], snap=1500),
     "plugOut": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "2"]], snap=4000),
 }
@@ -109,7 +123,8 @@ def build():
     env = dict(os.environ)
     env["PATH"] = os.path.expanduser("~/.local/node/bin") + os.pathsep + env.get("PATH", "")
     run(["npm", "run", "build"], cwd=os.path.join(root, "ui"), env=env, stdout=subprocess.DEVNULL)
-    run(["cargo", "build", "--release", "-p", "meloet-app", "-p", "meloet-midi"], cwd=root, env=env)
+    run(["cargo", "build", "--release", "-p", "meloet-app", "-p", "meloet-midi", "-p", "meloet-plughost"],
+        cwd=root, env=env)
 
 
 def start_app(config, size, extra, log):
@@ -136,6 +151,31 @@ def remembered_settings(work):
     return path
 
 
+def scanned_cache(work):
+    """An XDG_CACHE_HOME that holds the record of one whole plugin scan."""
+    cache = os.path.join(target, "shoot", "cache")
+    if os.path.exists(os.path.join(cache, "meloet", "plugins", "scan.json")):
+        return cache
+    shutil.rmtree(cache, ignore_errors=True)
+    os.makedirs(cache)
+    config = os.path.join(work, "scan-seed")
+    os.makedirs(config)
+    log_path = os.path.join(work, "scan-seed.log")
+    with open(log_path, "wb") as log:
+        app = start_app(config, SIZES[0], dict(XDG_CACHE_HOME=cache, MELOET_EXIT_AFTER_MS="300000"), log)
+        # The scanner says so on stderr when a scan that had bundles to read has ended.
+        for _ in range(600):
+            if app.poll() is not None or b"plugin bundle(s) in" in open(log_path, "rb").read():
+                break
+            time.sleep(0.5)
+        # The app is the child of dbus-run-session; it ends the usual way at SIGTERM.
+        for pid in subprocess.run(["pgrep", "-P", str(app.pid), "-x", "meloet"],
+                                  capture_output=True, text=True).stdout.split():
+            os.kill(int(pid), signal.SIGTERM)
+        app.wait(timeout=60)
+    return cache
+
+
 def shoot(state, size, scale, settings, work, png):
     s = STATES[state]
     config = tempfile.mkdtemp(prefix="cfg-", dir=work)
@@ -143,7 +183,9 @@ def shoot(state, size, scale, settings, work, png):
         shutil.copy(settings, os.path.join(config, "settings.json"))
     commands = ([(100, {"type": "setScale", "percent": scale})] if scale != 100 else []) + s.get("commands", [])
     extra = dict(MELOET_SNAPSHOT=png, MELOET_SNAPSHOT_AFTER_MS=str(s.get("snap", 1500)),
-                 MELOET_EXIT_AFTER_MS="20000")
+                 MELOET_EXIT_AFTER_MS=str(max(20000, s.get("snap", 0) + 5000)))
+    extra["XDG_CACHE_HOME"] = (tempfile.mkdtemp(prefix="cache-", dir=work) if s.get("scan") == "first"
+                               else scanned_cache(work))
     if commands:
         extra["MELOET_COMMANDS"] = json.dumps([{"afterMs": ms, "command": c} for ms, c in commands])
     if s.get("song"):

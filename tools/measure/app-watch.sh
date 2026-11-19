@@ -88,7 +88,8 @@ t0 = int(sys.argv[1])
 for line in sys.stdin:
     print(int(time.time() * 1000) - t0, line, end="", flush=True)' "$1"
 }
-launched_ms=$(date +%s%3N)
+# Not `date +%s%3N`: uutils date 0.10 drops the leading zeros of the milliseconds.
+launched_ms=$(($(date +%s%N) / 1000000))
 env "${vars[@]}" "${launcher[@]}" "$target/release/meloet" 2> >(stamp "$launched_ms" >"$out/raw/meloet.stderr") &
 launched=$!
 

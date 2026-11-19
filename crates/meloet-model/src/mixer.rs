@@ -438,6 +438,117 @@ pub fn remove_effect(doc: &Doc, strip: StripId, slot: usize) -> Result<Edit, Edi
     })
 }
 
+/// Flips 「とばす」 of the effect or plugin in `slot` (`NoSuchInsert` for an empty one).
+pub fn toggle_bypass(doc: &Doc, strip: StripId, slot: usize) -> Result<Edit, EditError> {
+    let mut bypassed = false;
+    let new = with_channel(doc, strip, |c| {
+        let insert =
+            (c.inserts.get_mut(slot).and_then(Option::as_mut)).ok_or(EditError::NoSuchInsert)?;
+        insert.bypassed = !insert.bypassed;
+        bypassed = insert.bypassed;
+        Ok(())
+    })?;
+    Ok(Edit {
+        doc: new,
+        step: StepKind::Bypass {
+            strip,
+            slot,
+            bypassed,
+        },
+    })
+}
+
+/// Where the slot `slot` of a strip is once its slot `from` went to `to`: the slots between
+/// the two move by one, towards where `from` was.
+pub fn moved_slot(slot: usize, from: usize, to: usize) -> usize {
+    if slot == from {
+        to
+    } else if from < to && (from + 1..=to).contains(&slot) {
+        slot - 1
+    } else if to < from && (to..from).contains(&slot) {
+        slot + 1
+    } else {
+        slot
+    }
+}
+
+/// Takes the slot `from` to `to`, moving the slots between by one. Nothing for a place
+/// that is not there.
+pub fn move_slot<T>(slots: &mut [T], from: usize, to: usize) {
+    if from >= slots.len() || to >= slots.len() {
+        return;
+    }
+    if from < to {
+        slots[from..=to].rotate_left(1);
+    } else {
+        slots[to..=from].rotate_right(1);
+    }
+}
+
+/// Moves what `from` holds to the slot `to` (past the last slot is the last slot); the slots
+/// between move by one, empty ones too. `NoSuchInsert` for an empty slot, `Unchanged` when it
+/// is there already.
+pub fn move_insert(doc: &Doc, strip: StripId, from: usize, to: usize) -> Result<Edit, EditError> {
+    let to = to.min(INSERT_SLOTS - 1);
+    let new = with_channel(doc, strip, |c| {
+        if c.inserts.get(from).is_none_or(Option::is_none) {
+            return Err(EditError::NoSuchInsert);
+        }
+        if from == to {
+            return Err(EditError::Unchanged);
+        }
+        move_slot(&mut c.inserts, from, to);
+        Ok(())
+    })?;
+    Ok(Edit {
+        doc: new,
+        step: StepKind::MoveInsert { strip, from, to },
+    })
+}
+
+fn replace(doc: &Doc, strip: StripId, slot: usize, with: Insert) -> Result<Edit, EditError> {
+    let new = with_channel(doc, strip, |c| {
+        let place =
+            (c.inserts.get_mut(slot).and_then(Option::as_mut)).ok_or(EditError::NoSuchInsert)?;
+        let same_plugin = match (place.plugin_ref(), with.plugin_ref()) {
+            (Some(a), Some(b)) => a.key == b.key,
+            _ => false,
+        };
+        if same_plugin || place.kind().is_some() && place.kind() == with.kind() {
+            return Err(EditError::Unchanged);
+        }
+        *place = with;
+        Ok(())
+    })?;
+    Ok(Edit {
+        doc: new,
+        step: StepKind::ReplaceEffect { strip, slot },
+    })
+}
+
+/// Puts `kind`, as it starts on that strip ([`Insert::new_on`]), in place of what `slot`
+/// holds, and heard. `NoSuchInsert` for an empty slot, `Unchanged` when it holds that kind
+/// already.
+pub fn replace_effect(
+    doc: &Doc,
+    strip: StripId,
+    slot: usize,
+    kind: EffectKind,
+) -> Result<Edit, EditError> {
+    replace(doc, strip, slot, Insert::new_on(kind, strip))
+}
+
+/// Puts a plugin, as it is given, in place of what `slot` holds, and heard. `NoSuchInsert`
+/// for an empty slot, `Unchanged` when it holds the plugin of that key already.
+pub fn replace_plugin_effect(
+    doc: &Doc,
+    strip: StripId,
+    slot: usize,
+    plugin: Arc<PluginRef>,
+) -> Result<Edit, EditError> {
+    replace(doc, strip, slot, Insert::plugin(plugin))
+}
+
 /// What 「曲から外す」 names: every preset of an SF2 file, or a plugin by its exact key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Missing<'a> {

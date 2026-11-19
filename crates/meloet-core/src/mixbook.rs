@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use meloet_engine::{Effect, EngineCommand, MixStrip};
-use meloet_model::{Gain, Insert, Inserts, Pan, Sends};
+use meloet_model::mixer::move_slot;
+use meloet_model::{Gain, INSERT_SLOTS, Insert, Inserts, Pan, Sends};
 use meloet_sound::effects;
 
 use crate::play::{EngineOp, StripSeat};
@@ -13,6 +14,8 @@ struct Strip {
     level: Option<(Gain, Pan)>,
     sends: Option<Sends>,
     inserts: Inserts,
+    /// The slots that are passed by, whatever they hold (a plugin is not in `inserts`).
+    bypassed: [bool; INSERT_SLOTS],
 }
 
 /// What the engine was told about each strip, to tell an engine made anew.
@@ -58,6 +61,21 @@ impl MixBook {
                     insert.set(*param, *value);
                 }
             }
+            EngineOp::Bypass {
+                strip,
+                slot,
+                bypassed,
+            } => {
+                let strip = self.strips.entry(*strip).or_default();
+                if let Some(mark) = strip.bypassed.get_mut(*slot) {
+                    *mark = *bypassed;
+                }
+            }
+            EngineOp::MoveInsert { strip, from, to } => {
+                let strip = self.strips.entry(*strip).or_default();
+                move_slot(&mut strip.inserts, *from, *to);
+                move_slot(&mut strip.bypassed, *from, *to);
+            }
             // The engine empties the strip with the seat. Not a mixer op: the seats see it.
             EngineOp::ClearSeat { seat } => {
                 self.strips.remove(&StripSeat::Track(*seat));
@@ -84,6 +102,15 @@ impl MixBook {
                         strip,
                         slot,
                         insert: insert.clone(),
+                    });
+                }
+            }
+            for (slot, bypassed) in s.bypassed.iter().enumerate() {
+                if *bypassed {
+                    ops.push(EngineOp::Bypass {
+                        strip,
+                        slot,
+                        bypassed: true,
                     });
                 }
             }
@@ -132,6 +159,20 @@ pub(crate) fn command(op: &EngineOp) -> Option<EngineCommand> {
             slot,
             param,
             value,
+        },
+        EngineOp::Bypass {
+            strip,
+            slot,
+            bypassed,
+        } => EngineCommand::SetBypass {
+            strip: mix_strip(strip),
+            slot,
+            bypassed,
+        },
+        EngineOp::MoveInsert { strip, from, to } => EngineCommand::MoveEffect {
+            strip: mix_strip(strip),
+            from,
+            to,
         },
         _ => return None,
     })

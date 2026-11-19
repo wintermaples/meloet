@@ -345,7 +345,7 @@ impl Play {
                         instrument: tried,
                     });
                 }
-                (Mode::Replace(_), _) | (Mode::InsertEffect(..), _) => {}
+                (Mode::Replace(_) | Mode::InsertEffect(..) | Mode::ReplaceEffect(..), _) => {}
             }
         }
         effects.extend(ops.into_iter().map(Effect::Engine));

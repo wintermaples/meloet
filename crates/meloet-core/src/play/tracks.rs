@@ -41,7 +41,9 @@ impl Play {
                     self.apply(e, effects);
                 }
             }
-            PluginSlotRef::Insert { insert } => self.remove_effect(insert, effects),
+            PluginSlotRef::Insert { insert } => {
+                self.remove_effect(insert, effects);
+            }
         }
         self.changes != before
     }

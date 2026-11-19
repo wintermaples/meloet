@@ -1160,7 +1160,9 @@ impl Audio {
             | EngineOp::Strip { .. }
             | EngineOp::Sends { .. }
             | EngineOp::Insert { .. }
-            | EngineOp::Param { .. } => {
+            | EngineOp::Param { .. }
+            | EngineOp::Bypass { .. }
+            | EngineOp::MoveInsert { .. } => {
                 self.seat_op(op);
                 return;
             }

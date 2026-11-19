@@ -4,8 +4,10 @@
 
 use std::sync::Arc;
 
-use meloet_model::mixer::new_track_sends;
-use meloet_model::{Bus, Channel, Gain, Insert, Inserts, Pan, PluginRef, Sends, StripId};
+use meloet_model::mixer::{move_slot, moved_slot, new_track_sends};
+use meloet_model::{
+    Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginPlace, PluginRef, Sends, StripId,
+};
 
 use super::mixer::Preview;
 use super::plugs::{Spot, Want};
@@ -22,6 +24,8 @@ struct Told {
     pan: Pan,
     sends: Sends,
     inserts: Inserts,
+    /// The slots it was told to pass by. A mark of the slot, apart from what it holds.
+    bypassed: [bool; INSERT_SLOTS],
 }
 
 impl Told {
@@ -31,6 +35,7 @@ impl Told {
             pan: Pan::CENTER,
             sends: [Gain::SILENT; 2],
             inserts: Inserts::default(),
+            bypassed: [false; INSERT_SLOTS],
         }
     }
 }
@@ -56,6 +61,14 @@ impl MixTold {
     pub fn seat_cleared(&mut self, seat: usize) {
         if let Some(told) = self.tracks.get_mut(seat) {
             *told = Told::new();
+        }
+    }
+
+    fn strip_mut(&mut self, strip: StripSeat) -> Option<&mut Told> {
+        match strip {
+            StripSeat::Track(seat) => self.tracks.get_mut(seat),
+            StripSeat::Return(bus) => Some(&mut self.returns[bus.index()]),
+            StripSeat::Master => Some(&mut self.master),
         }
     }
 }
@@ -108,11 +121,21 @@ fn sync_strip(
         told.sends = sends;
         effects.push(Effect::Engine(EngineOp::Sends { seat, sends }));
     }
+    let told_bypassed = &mut told.bypassed;
     for (slot, (told, insert)) in (told.inserts.iter_mut())
         .zip(&want.channel.inserts)
         .enumerate()
     {
         let insert = insert.as_ref();
+        let bypassed = insert.is_some_and(|i| i.bypassed);
+        if told_bypassed[slot] != bypassed {
+            told_bypassed[slot] = bypassed;
+            effects.push(Effect::Engine(EngineOp::Bypass {
+                strip,
+                slot,
+                bypassed,
+            }));
+        }
         if let Some(plugin) = insert.and_then(Insert::plugin_ref) {
             // A plugin is not made here: the book loads it and puts it into the slot, which
             // is empty until then. An effect of meloet that was there goes now.
@@ -270,6 +293,42 @@ impl Play {
                 }));
             }
         }
+    }
+
+    /// The slot `from` of `strip` is at `to` now with what it held, by a step or by taking
+    /// one back: the engine moves what it has there as it sounds, and whatever names a slot
+    /// of the strip follows.
+    pub(super) fn insert_moved(
+        &mut self,
+        strip: StripId,
+        from: usize,
+        to: usize,
+        effects: &mut Vec<Effect>,
+    ) {
+        if from >= INSERT_SLOTS || to >= INSERT_SLOTS || from == to {
+            return;
+        }
+        let follow = |place: PluginPlace| match place {
+            PluginPlace::Insert(s, slot) if s == strip => {
+                PluginPlace::Insert(s, moved_slot(slot, from, to))
+            }
+            other => other,
+        };
+        self.selection_follows(follow);
+        self.shelf_follows(strip, from, to);
+        let Some(seat) = self.strip_seat(strip) else {
+            return;
+        };
+        if let Some(told) = self.mix_told.strip_mut(seat) {
+            move_slot(&mut told.inserts, from, to);
+            move_slot(&mut told.bypassed, from, to);
+        }
+        self.plugs_follow(seat, from, to);
+        effects.push(Effect::Engine(EngineOp::MoveInsert {
+            strip: seat,
+            from,
+            to,
+        }));
     }
 
     /// The seat's track is gone: the engine empties the seat, strip and all.

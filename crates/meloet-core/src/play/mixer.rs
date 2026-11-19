@@ -9,9 +9,12 @@
 use std::sync::Arc;
 
 use meloet_model::effects::EffectKind as ModelEffect;
-use meloet_model::{Bus, Gain, Inserts, Pan, PluginPlace, PluginRef, StripId, TrackId, mixer};
+use meloet_model::{
+    Bus, Gain, Insert, Inserts, Pan, PluginPlace, PluginRef, StepKind, StripId, TrackId, mixer,
+};
 use meloet_protocol::{
-    EffectKind, InsertRef, MasterView, ParamsView, ReturnView, SelectedInsert, SelectedParams,
+    EffectKind, EffectName, InsertRef, MasterView, NamedInsert, ParamEnd, ParamRef, ParamsView,
+    PluginState, PluginWindowKind, ReturnView, SelectedInsert, SelectedParams, SelectedPlugin,
     SendBus, SlotsView, StatusMessage, StripRef,
 };
 
@@ -59,13 +62,57 @@ impl Preview {
     }
 }
 
+/// What the parameters panel shows, as it was when it was selected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Picked {
+    /// An effect that comes with meloet, in an insert slot.
+    Effect(StripId, usize, ModelEffect),
+    /// A plugin, by its key: in an insert slot, or the instrument of a track.
+    Plugin(PluginPlace, Arc<str>),
+}
+
+impl Picked {
+    fn place(&self) -> PluginPlace {
+        match self {
+            Picked::Effect(strip, slot, _) => PluginPlace::Insert(*strip, *slot),
+            Picked::Plugin(place, _) => *place,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct Mixer {
     previews: Vec<Preview>,
-    /// The insert the parameters panel shows, with the effect it held when it was selected.
-    selected: Option<(StripId, usize, ModelEffect)>,
+    selected: Option<Picked>,
     /// The chosen row of the panel.
     row: Option<u32>,
+}
+
+/// What selecting an insert or an instrument brings with it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Selecting {
+    /// The parameters panel is to be shown, in front.
+    pub panel: bool,
+    pub notice: Option<StatusMessage>,
+}
+
+pub(crate) fn effect_name(insert: &Insert) -> EffectName {
+    match (insert.kind(), insert.plugin_ref()) {
+        (Some(kind), _) => EffectName::Builtin {
+            effect: effect_kind(kind),
+        },
+        (None, Some(plugin)) => EffectName::Plugin {
+            name: plugin.name.to_string(),
+        },
+        (None, None) => unreachable!("an insert is an effect of meloet or a plugin"),
+    }
+}
+
+fn insert_ref(strip: StripId, slot: usize) -> InsertRef {
+    InsertRef {
+        strip: strip_ref(strip),
+        slot: slot as u8,
+    }
 }
 
 impl Mixer {
@@ -236,11 +283,112 @@ impl Play {
         self.apply(e, effects);
     }
 
-    pub fn remove_effect(&mut self, insert: InsertRef, effects: &mut Vec<Effect>) {
+    /// `RemoveEffect`. Returns what the status line says of it.
+    pub fn remove_effect(
+        &mut self,
+        insert: InsertRef,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
         let (strip, slot) = (strip_id(insert.strip), usize::from(insert.slot));
-        if let Ok(e) = mixer::remove_effect(self.doc(), strip, slot) {
-            self.apply(e, effects);
+        let effect = effect_name(self.doc().insert(strip, slot)?);
+        let e = mixer::remove_effect(self.doc(), strip, slot).ok()?;
+        self.apply(e, effects);
+        Some(StatusMessage::EffectRemoved {
+            insert: insert_ref(strip, slot),
+            effect,
+        })
+    }
+
+    /// `ToggleBypass`. A plugin that stopped stays as it is: the sound passes it by already.
+    pub fn toggle_bypass(
+        &mut self,
+        insert: InsertRef,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let (strip, slot) = (strip_id(insert.strip), usize::from(insert.slot));
+        let held = self.doc().insert(strip, slot)?;
+        let place = PluginPlace::Insert(strip, slot);
+        if held.plugin_ref().is_some() && self.plugin_state(place) == PluginState::Stopped {
+            return None;
         }
+        let effect = effect_name(held);
+        let e = mixer::toggle_bypass(self.doc(), strip, slot).ok()?;
+        let bypassed = matches!(e.step, StepKind::Bypass { bypassed: true, .. });
+        self.apply(e, effects);
+        Some(StatusMessage::EffectBypassed {
+            insert: insert_ref(strip, slot),
+            effect,
+            bypassed,
+        })
+    }
+
+    /// `MoveInsert`. What names a slot of the strip follows in [`Play::insert_moved`].
+    pub fn move_insert(
+        &mut self,
+        insert: InsertRef,
+        to: u8,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let (strip, slot) = (strip_id(insert.strip), usize::from(insert.slot));
+        let e = mixer::move_insert(self.doc(), strip, slot, usize::from(to)).ok()?;
+        self.apply(e, effects);
+        let inserts = &self.doc().channel(strip)?.inserts;
+        Some(StatusMessage::InsertsReordered {
+            strip: strip_ref(strip),
+            order: inserts.iter().flatten().map(effect_name).collect(),
+        })
+    }
+
+    /// `TypeParam` for an effect that comes with meloet. A plugin reads its own values:
+    /// not made yet.
+    pub fn type_param(
+        &mut self,
+        param: ParamRef,
+        text: &str,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let ParamRef::Builtin {
+            insert,
+            effect,
+            param,
+        } = param
+        else {
+            return None;
+        };
+        let (strip, slot, kind) = (
+            strip_id(insert.strip),
+            usize::from(insert.slot),
+            model_effect(effect),
+        );
+        let held = (self.doc().insert(strip, slot)).filter(|i| i.kind() == Some(kind))?;
+        let (spec, now) = (kind.param(param)?, held.value(param)?);
+        let Some(typed) = spec.read(text) else {
+            return Some(StatusMessage::ParamRejected {
+                param: ParamRef::Builtin {
+                    insert: insert_ref(strip, slot),
+                    effect,
+                    param,
+                },
+                kept: now.to_string(),
+            });
+        };
+        let value = spec.clamp(typed);
+        let preview = Preview::Param {
+            strip,
+            slot,
+            kind,
+            param,
+            value,
+        };
+        let edit = |p: &Play| mixer::set_param(p.doc(), strip, slot, kind, param, value);
+        self.mix(preview, true, edit, effects);
+        (typed < spec.min || typed > spec.max).then_some(StatusMessage::ParamClamped {
+            to: ParamEnd::Builtin {
+                effect,
+                param,
+                value,
+            },
+        })
     }
 
     /// Puts `kind` into an empty slot and selects it. Returns whether it went in.
@@ -255,13 +403,13 @@ impl Play {
             return false;
         };
         self.apply(e, effects);
-        self.mixer.selected = Some((strip, slot, kind));
-        self.mixer.row = None;
+        self.pick(PluginPlace::Insert(strip, slot));
         true
     }
 
-    /// Puts a plugin, as the shelf has it, into an empty slot. Returns whether it went in.
-    /// It is loaded then, and the slot lets the sound through until it is.
+    /// Puts a plugin, as the shelf has it, into an empty slot and selects it. Returns
+    /// whether it went in. It is loaded then, and the slot lets the sound through until it
+    /// is.
     pub(super) fn add_plugin_effect(
         &mut self,
         strip: StripId,
@@ -273,7 +421,103 @@ impl Play {
             return false;
         };
         self.apply(e, effects);
+        self.pick(PluginPlace::Insert(strip, slot));
         true
+    }
+
+    /// Puts `with` in place of what the slot holds, and selects it. Returns whether it did.
+    pub(super) fn replace_effect(
+        &mut self,
+        strip: StripId,
+        slot: usize,
+        with: &super::shelf::Chosen,
+        effects: &mut Vec<Effect>,
+    ) -> bool {
+        use super::shelf::Chosen;
+        let edit = match with {
+            Chosen::Builtin(kind) => mixer::replace_effect(self.doc(), strip, slot, *kind),
+            Chosen::Plugin(plugin) => {
+                mixer::replace_plugin_effect(self.doc(), strip, slot, plugin.clone())
+            }
+        };
+        let Ok(e) = edit else {
+            return false;
+        };
+        self.apply(e, effects);
+        self.pick(PluginPlace::Insert(strip, slot));
+        true
+    }
+
+    /// What is at `place` now, as the panel can show it.
+    fn picked_at(&self, place: PluginPlace) -> Option<Picked> {
+        if let PluginPlace::Insert(strip, slot) = place
+            && let Some(kind) = self.doc().insert(strip, slot)?.kind()
+        {
+            return Some(Picked::Effect(strip, slot, kind));
+        }
+        let plugin = self.doc().plugin(place)?;
+        Some(Picked::Plugin(place, plugin.key.clone()))
+    }
+
+    /// Makes what is at `place` the selected one; nothing is selected when nothing is there.
+    fn pick(&mut self, place: PluginPlace) {
+        let picked = self.picked_at(place);
+        if picked != self.mixer.selected {
+            self.mixer.selected = picked;
+            self.mixer.row = None;
+        }
+    }
+
+    /// What comes with the selection as it is now (spec 3 「パラメータ」).
+    fn selecting(&self) -> Selecting {
+        match &self.mixer.selected {
+            None => Selecting::default(),
+            Some(Picked::Effect(..)) => Selecting {
+                panel: true,
+                notice: None,
+            },
+            Some(Picked::Plugin(place, key)) => {
+                if self.plugin_state(*place) != PluginState::Ready {
+                    return Selecting::default();
+                }
+                match self.window_kind(key) {
+                    // Its window opens instead: not made yet.
+                    PluginWindowKind::Opens => Selecting::default(),
+                    PluginWindowKind::None => Selecting {
+                        panel: true,
+                        notice: None,
+                    },
+                    PluginWindowKind::NotYet => Selecting {
+                        panel: true,
+                        notice: self.doc().plugin(*place).map(|p| {
+                            StatusMessage::PluginWindowNotYet {
+                                loop_bars: self.loop_on().map(|r| self.bars(r)),
+                                name: p.name.to_string(),
+                            }
+                        }),
+                    },
+                }
+            }
+        }
+    }
+
+    /// Whether the parameters panel is to come to the front for what is selected now.
+    pub fn selection_wants_panel(&self) -> bool {
+        self.selecting().panel
+    }
+
+    /// An insert moved inside its strip: what is selected stays with its effect.
+    pub(super) fn selection_follows(&mut self, follow: impl Fn(PluginPlace) -> PluginPlace) {
+        self.mixer.selected = match self.mixer.selected.take() {
+            Some(Picked::Effect(strip, slot, kind)) => {
+                match follow(PluginPlace::Insert(strip, slot)) {
+                    PluginPlace::Insert(strip, slot) => Some(Picked::Effect(strip, slot, kind)),
+                    PluginPlace::Instrument(_) => None,
+                }
+            }
+            Some(Picked::Plugin(place, key)) => Some(Picked::Plugin(follow(place), key)),
+            None => None,
+        };
     }
 
     /// The insert slots of a strip, each plugin as it is now.
@@ -283,47 +527,58 @@ impl Play {
         })
     }
 
-    /// `SelectInsert`. Returns whether an insert is selected now: the parameters panel is
-    /// then to be shown.
-    pub fn select_insert(&mut self, insert: Option<InsertRef>) -> bool {
-        let picked = insert.and_then(|i| {
-            let (strip, slot) = (strip_id(i.strip), usize::from(i.slot));
-            let kind = self.doc().insert(strip, slot)?.kind()?;
-            Some((strip, slot, kind))
-        });
-        if picked != self.mixer.selected {
-            self.mixer.selected = picked;
-            self.mixer.row = None;
+    /// `SelectInsert`: an effect of meloet or a plugin. `None`, or an empty slot: nothing
+    /// is selected.
+    pub fn select_insert(&mut self, insert: Option<InsertRef>) -> Selecting {
+        match insert {
+            Some(i) => self.pick(PluginPlace::Insert(strip_id(i.strip), usize::from(i.slot))),
+            None => {
+                self.mixer.selected = None;
+                self.mixer.row = None;
+            }
         }
-        picked.is_some()
+        self.selecting()
     }
 
+    /// `SelectInstrument`: only a plugin has parameters; for any other sound, what is
+    /// selected stays.
+    pub fn select_instrument(&mut self, track: u32) -> Selecting {
+        let place = PluginPlace::Instrument(TrackId(track));
+        if self.doc().plugin(place).is_none() {
+            return Selecting::default();
+        }
+        self.pick(place);
+        self.selecting()
+    }
+
+    /// A row of a plugin is named by the plugin's own table, which is not made yet: a
+    /// plugin has no chosen row.
     pub fn select_param(&mut self, param: Option<u32>) {
-        let Some((_, _, kind)) = self.mixer.selected else {
+        let Some(Picked::Effect(_, _, kind)) = self.mixer.selected else {
             return;
         };
         self.mixer.row = param.filter(|&p| kind.param(p).is_some());
     }
 
-    /// The selected insert, as the screen names it.
+    /// The selected insert, as the screen names it; `None` also while an instrument is
+    /// selected.
     pub fn selected_insert(&self) -> Option<InsertRef> {
-        let (strip, slot, _) = self.mixer.selected?;
-        Some(InsertRef {
-            strip: strip_ref(strip),
-            slot: slot as u8,
-        })
+        match self.mixer.selected.as_ref()?.place() {
+            PluginPlace::Insert(strip, slot) => Some(insert_ref(strip, slot)),
+            PluginPlace::Instrument(_) => None,
+        }
     }
 
     /// The song changed, or another one took its place: previews are over, and what is
     /// selected stays only as far as it is still there.
     pub(super) fn mixer_changed(&mut self) {
         self.mixer.previews.clear();
-        if let Some((strip, slot, kind)) = self.mixer.selected {
-            let now = self.doc().insert(strip, slot).and_then(|i| i.kind());
-            self.mixer.selected = now.map(|k| (strip, slot, k));
-            if now != Some(kind) {
+        if let Some(picked) = self.mixer.selected.take() {
+            let now = self.picked_at(picked.place());
+            if now.as_ref() != Some(&picked) {
                 self.mixer.row = None;
             }
+            self.mixer.selected = now;
         }
     }
 
@@ -332,18 +587,30 @@ impl Play {
     }
 
     pub fn params_view(&self) -> ParamsView {
-        let selected = self.mixer.selected.and_then(|(strip, slot, _)| {
-            let insert = self.doc().insert(strip, slot)?;
-            Some(SelectedParams::Builtin(SelectedInsert {
-                insert: InsertRef {
-                    strip: strip_ref(strip),
-                    slot: slot as u8,
-                },
-                effect: effect_kind(insert.kind()?),
-                values: insert.values().to_vec(),
-                row: self.mixer.row,
-            }))
-        });
+        let selected = self
+            .mixer
+            .selected
+            .as_ref()
+            .and_then(|picked| match picked {
+                Picked::Effect(strip, slot, _) => {
+                    let insert = self.doc().insert(*strip, *slot)?;
+                    Some(SelectedParams::Builtin(SelectedInsert {
+                        insert: insert_ref(*strip, *slot),
+                        effect: effect_kind(insert.kind()?),
+                        values: insert.values().to_vec(),
+                        row: self.mixer.row,
+                    }))
+                }
+                // Its parameters come from the plugin itself: not made yet, so it has no table.
+                Picked::Plugin(place, key) => Some(SelectedParams::Plugin(SelectedPlugin {
+                    slot: Self::slot_ref(*place),
+                    window: self.window_kind(key),
+                    table: None,
+                    count: 0,
+                    row: None,
+                    automated: Vec::new(),
+                })),
+            });
         ParamsView { selected }
     }
 
@@ -371,20 +638,51 @@ impl Play {
     /// The status line while a row of the parameters panel is chosen. Not while counting in
     /// or recording, which have their own line.
     pub fn param_status(&self) -> Option<StatusMessage> {
-        let (strip, slot, kind) = self.mixer.selected?;
+        let Picked::Effect(strip, slot, kind) = *self.mixer.selected.as_ref()? else {
+            return None;
+        };
         let param = self.mixer.row?;
         if self.rec.is_some() {
             return None;
         }
         Some(StatusMessage::ParamSelected {
             loop_bars: self.loop_on().map(|r| self.bars(r)),
-            insert: InsertRef {
-                strip: strip_ref(strip),
-                slot: slot as u8,
-            },
+            insert: insert_ref(strip, slot),
             effect: effect_kind(kind),
             param,
         })
+    }
+
+    /// What the mixer says once as it opens (design-notes A-17): the slots that are passed
+    /// by and the ones whose plugin stopped, each in the mixer's order. `None` when there
+    /// are none. A slot that is both counts as stopped.
+    pub fn mixer_passes_by(&self) -> Option<StatusMessage> {
+        let doc = self.doc();
+        let strips = (doc.tracks.iter())
+            .map(|t| (StripId::Track(t.id), &t.channel))
+            .chain(Bus::ALL.map(|bus| (StripId::Return(bus), &doc.returns[bus.index()].channel)))
+            .chain([(StripId::Master, &*doc.master)]);
+        let (mut bypassed, mut stopped) = (Vec::new(), Vec::new());
+        for (strip, channel) in strips {
+            for (slot, insert) in channel.inserts.iter().enumerate() {
+                let Some(insert) = insert else {
+                    continue;
+                };
+                let named = NamedInsert {
+                    insert: insert_ref(strip, slot),
+                    effect: effect_name(insert),
+                };
+                let state = (insert.plugin_ref())
+                    .map(|_| self.plugin_state(PluginPlace::Insert(strip, slot)));
+                if state == Some(PluginState::Stopped) {
+                    stopped.push(named);
+                } else if insert.bypassed {
+                    bypassed.push(named);
+                }
+            }
+        }
+        (!bypassed.is_empty() || !stopped.is_empty())
+            .then_some(StatusMessage::MixerPassesBy { bypassed, stopped })
     }
 }
 

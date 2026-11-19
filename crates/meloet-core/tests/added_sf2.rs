@@ -68,6 +68,22 @@ fn add(core: &Core, pick: &Pick, path: &Path) {
     core.send(Command::AddSf2);
 }
 
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    (sha2::Sha256::digest(bytes).iter())
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// The hashes the song file at `path` has for its SF2 tracks, in the order of the tracks.
+fn sf2_hashes(path: &Path) -> Vec<String> {
+    let song: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    (song["song"]["tracks"].as_array().unwrap().iter())
+        .filter(|t| t["instrument"]["kind"] == "sf2")
+        .map(|t| t["instrument"]["sha256"].as_str().unwrap().to_string())
+        .collect()
+}
+
 fn preset(file: &str, bank: u16, program: u8) -> SoundRef {
     SoundRef::Sf2 {
         file: file.into(),
@@ -186,7 +202,8 @@ fn presets_go_on_tracks_are_saved_and_are_missing_on_a_pc_without_the_file() {
     }
     let state = core.snapshot().state;
     let names: Vec<&str> = state.song.tracks.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["ピアノ", "ピアノ 2", "ドラム"]);
+    // No sound pack in this test: the first track is the sine wave.
+    assert_eq!(names, ["シンセ", "ピアノ", "ドラム"]);
     assert!(matches!(
         &state.song.tracks[1].sound,
         SoundView::Sf2 { file, bank: 0, program: 0, name, family: GmFamily::Piano }
@@ -226,7 +243,13 @@ fn presets_go_on_tracks_are_saved_and_are_missing_on_a_pc_without_the_file() {
         .join(&name)
         .join(format!("{name}.meloet"));
     assert!(path.is_file());
+    // The song says which file it was, by the hash of its bytes.
+    let hash = sha256(&font::rich().bytes());
+    assert_eq!(sf2_hashes(&path), [hash.clone(), hash.clone()]);
     drop(core);
+    // The hash was noted beside the copy, for the starts after.
+    let listed = meloet_core::sf2store::list(&root.join("sf2"));
+    assert_eq!(listed[0].sha256, hash);
 
     // The next start has the file, and the song opens with its presets.
     let (core, pick) = start(&root, "sf2");
@@ -261,19 +284,24 @@ fn presets_go_on_tracks_are_saved_and_are_missing_on_a_pc_without_the_file() {
     let stand_ins: Vec<Option<StandIn>> = state.song.tracks.iter().map(|t| t.stand_in).collect();
     assert_eq!(stand_ins[1..], [Some(StandIn::Sf2Missing); 2]);
     assert_eq!(state.song.tracks[2].drum_keys, None);
-    // The grand piano of the first track is missing too (no sound pack in this test), and
-    // that is said first; the shelf has the notice of the file.
-    assert_eq!(
-        state.status.message,
-        Some(StatusMessage::SoundsMissing { tracks: 1 })
-    );
+    // It is said, and the shelf has the notice of the file.
+    let said = StatusMessage::Sf2Missing {
+        file: RICH.into(),
+        tracks: 2,
+    };
+    assert_eq!(state.status.message, Some(said));
     let notice = MissingView::Sf2 {
         file: RICH.into(),
         tracks: 2,
     };
     assert_eq!(state.shelf.missing, [notice]);
-    // 「SF2 を足す…」 with a file of that name: the tracks are tied to it.
-    add(&core, &pick, &rich);
+    // 「SF2 を足す…」 with a file of that name: the tracks are tied to it, though it is not
+    // the same file byte for byte (the hash in the song is a record only).
+    let mut other = font::rich();
+    other.version = (2, 4);
+    assert_ne!(sha256(&other.bytes()), hash);
+    let other = write(&root, "in-other", RICH, &other.bytes());
+    add(&core, &pick, &other);
     let state = state_when(&core, "tied", |s| {
         s.song.tracks.iter().skip(1).all(|t| t.stand_in.is_none())
     });
@@ -335,7 +363,7 @@ fn fluidr3_is_added_listed_and_played_when_this_pc_has_it() {
     core.send(Command::ShelfConfirm);
     select_kit(&core, &file);
     let state = core.snapshot().state;
-    assert_eq!(state.song.tracks[1].name, "ピアノ 2");
+    assert_eq!(state.song.tracks[1].name, "ピアノ");
     assert!(
         state.song.tracks[2]
             .drum_keys

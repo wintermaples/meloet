@@ -2208,6 +2208,7 @@ dependencies = [
  "meloet-sound",
  "serde",
  "serde_json",
+ "sha2",
  "symphonia",
 ]
 

@@ -7,7 +7,9 @@ use meloet_protocol::{
 };
 
 use super::QUIET_US;
-use crate::play::tests::{cmd, event, on, ready, record_once, report, started, status};
+use crate::play::tests::{
+    cmd, event, new_song_without_pack, on, ready, record_once, report, started, status,
+};
 use crate::play::{Heard, RecordReport};
 use crate::recovery;
 use crate::service::{recovery_start, save_song};
@@ -505,13 +507,13 @@ fn a_new_song_never_saved_comes_back_and_dont_restore_empties_it() {
         })
     );
     cmd(m, Command::DiscardRecovered);
-    assert_eq!(song(m).doc.tracks, Song::new_default().doc.tracks);
+    assert_eq!(song(m).doc.tracks, new_song_without_pack().doc.tracks);
     assert_eq!(file(m), SongFile::NeverSaved);
     cmd(m, Command::Undo);
     assert_eq!(song(m), *written);
     assert_eq!(file(m), SongFile::Changed);
     cmd(m, Command::Undo);
-    assert_eq!(song(m).doc.tracks, Song::new_default().doc.tracks);
+    assert_eq!(song(m).doc.tracks, new_song_without_pack().doc.tracks);
     assert_eq!(file(m), SongFile::NeverSaved);
     let _ = fs::remove_dir_all(dir);
 }

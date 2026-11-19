@@ -4,11 +4,14 @@
 //! they are read, every seat with that instrument gets one made anew, which sounds. The
 //! sounds of meloet and the presets of SF2 files go the same way.
 
-use meloet_model::{BuiltinInstrument, InstrumentGroup, InstrumentRef};
+use std::sync::Arc;
+
+use meloet_model::mixer::new_track_sends;
+use meloet_model::{BuiltinInstrument, InstrumentGroup, InstrumentRef, Song};
 use meloet_protocol::{InstrumentKind, SampleView, StatusMessage};
 
 use super::plugs::Spot;
-use super::seats::AUDITION_SEAT;
+use super::seats::{AUDITION_SEAT, Seats};
 use super::shelf::Mode;
 use super::{EngineOp, Play};
 use crate::added::sound_name;
@@ -53,6 +56,27 @@ impl Play {
     /// The sampled instruments the sound pack of this PC has. Told once, at the start.
     pub fn set_installed_sounds(&mut self, installed: Vec<BuiltinInstrument>) {
         self.sounds.installed = installed;
+        // The song is still the one `new` made, and the engine was told nothing of it yet.
+        if self.song == Song::new_default() {
+            self.song = self.new_song();
+            self.seats = Seats::for_song(&self.song.doc);
+        }
+    }
+
+    /// The song a person starts from. On a PC without the sound pack its first track is the
+    /// sine wave under the name of its group, not a grand piano that cannot sound (spec 3,
+    /// 85).
+    pub fn new_song(&self) -> Song {
+        let mut song = Song::new_default();
+        if self.pack_missing()
+            && let Some(first) = song.doc.tracks.first_mut()
+        {
+            let track = Arc::make_mut(first);
+            track.instrument = InstrumentRef::SINE;
+            track.name = InstrumentRef::SINE.track_name().to_owned();
+            track.sends = new_track_sends(&InstrumentRef::SINE);
+        }
+        song
     }
 
     /// The sounds of meloet that can sound on this PC.

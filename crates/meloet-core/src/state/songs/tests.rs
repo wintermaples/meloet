@@ -6,7 +6,9 @@ use meloet_protocol::{
     Command, SongAnswer, SongDialogKind, SongDialogView, SongFile, StatusMessage, TransportState,
 };
 
-use crate::play::tests::{cmd, event, off, on, ready, record_once, report, started, status};
+use crate::play::tests::{
+    cmd, event, new_song_without_pack, off, on, ready, record_once, report, started, status,
+};
 use crate::play::{EngineOp, Heard, RecordReport};
 use crate::service::{read_song, save_song};
 use crate::settings::temp_dir;
@@ -169,7 +171,7 @@ fn a_saved_song_opens_as_it_was() {
 
     w.cmd(m, Command::NewSong);
     assert_eq!(dialog(m), None, "nothing unsaved: no question");
-    assert_eq!(song(m), Song::new_default());
+    assert_eq!(song(m), new_song_without_pack());
     assert_eq!(file(m), SongFile::NeverSaved);
     assert!(matches!(status(m), Some(StatusMessage::NewSong { .. })));
 
@@ -534,7 +536,7 @@ fn a_new_song_asks_first() {
     w.cmd(m, Command::NewSong);
     assert_eq!(kind(m), Some(SongDialogKind::Unsaved));
     w.answer(m, SongAnswer::Save);
-    assert_eq!(song(m), Song::new_default());
+    assert_eq!(song(m), new_song_without_pack());
     assert_eq!(file(m), SongFile::NeverSaved);
     assert_eq!(m.song_path(), None);
     let saved = songfile::read(&w.songs.join("はじめての曲/はじめての曲.meloet")).unwrap();

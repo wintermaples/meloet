@@ -291,7 +291,7 @@ impl Model {
             }
             Then::NewSong => {
                 self.files.path = None;
-                self.take_song(Song::new_default(), false, effects);
+                self.take_song(self.play.new_song(), false, effects);
                 self.new_song_unsaid = true;
             }
             Then::Open => {

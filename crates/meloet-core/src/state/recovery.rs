@@ -80,11 +80,11 @@ impl Model {
                 let name = song.doc.name.clone();
                 let base = match (saved, &path) {
                     (Some(saved), _) => saved.doc,
-                    (None, None) => Doc::new_default(),
+                    (None, None) => self.play.new_song().doc,
                     // The file is gone or broken: what "戻さない" gives keeps the name only.
                     (None, Some(_)) => Doc {
                         name: name.clone(),
-                        ..Doc::new_default()
+                        ..self.play.new_song().doc
                     },
                 };
                 self.recovery.saved = Some(base.clone());

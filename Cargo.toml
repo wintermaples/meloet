@@ -7,6 +7,7 @@ members = [
     "spikes/plugins/vst3",
     "spikes/plugins/lv2",
     "spikes/plugins/probe",
+    "spikes/plugins/ipcbench",
     "spikes/s4-latency/src-tauri",
     "spikes/sample-load",
 ]

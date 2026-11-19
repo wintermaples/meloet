@@ -39,6 +39,8 @@ pub enum EditError {
     OffTheSong,
     /// No effect of that kind in that insert slot, or no such parameter.
     NoSuchInsert,
+    /// No plugin of that key at that place.
+    NoSuchPlugin,
     /// The insert slot holds an effect already.
     SlotTaken,
 }
@@ -459,8 +461,7 @@ pub fn add_track(
         None => doc.next_id,
     });
     let id = TrackId(ids.next()?);
-    let InstrumentRef::Builtin(builtin) = instrument;
-    let base = builtin.track_name();
+    let base = instrument.track_name();
     let taken = |name: &str| doc.tracks.iter().any(|t| t.name == name);
     let name = if taken(base) {
         (2u32..)

@@ -1,15 +1,21 @@
 //! The shelf of instruments: trying one out with the keys before it is in the song, adding a
 //! track with it, and giving a track another one.
 
+use std::path::Path;
+
 use meloet_model::effects::EffectKind as ModelEffect;
 use meloet_model::{INSERT_SLOTS, InstrumentRef, StripId, TrackId, edit};
-use meloet_protocol::{EffectKind, InstrumentKind, ShelfMode, ShelfView, StatusMessage};
+use meloet_protocol::{
+    EffectKind, InstrumentKind, LibraryView, SamplePlaying, ShelfMode, ShelfView, SoundRef,
+    SoundSampleView, StatusMessage,
+};
 
 use super::mixer::{effect_kind, model_effect, strip_id, strip_ref};
 
 use super::seats::{AUDITION_SEAT, MAX_TRACKS};
 use super::sounds::{Sample, SampleWaiting};
 use super::{EngineOp, Play};
+use crate::added::{builtin_or_sine, effect_ref, missing, sound_name, sound_ref};
 use crate::instruments;
 use crate::state::Effect;
 
@@ -39,10 +45,15 @@ pub(super) struct Shelf {
 }
 
 fn kind_of(instrument: &InstrumentRef) -> InstrumentKind {
-    match instrument {
-        InstrumentRef::Builtin(b) => instruments::kind_of(*b),
-    }
+    instruments::kind_of(builtin_or_sine(instrument))
 }
+
+fn builtin_sound(instrument: InstrumentKind) -> SoundRef {
+    SoundRef::Builtin { instrument }
+}
+
+/// The effects starred before the person stars any (spec 3, 86-4).
+const DEFAULT_FAVORITE_EFFECTS: [EffectKind; 2] = [EffectKind::Reverb, EffectKind::Delay];
 
 impl Play {
     /// While the shelf auditions, the keys sound with the row and nothing is recorded.
@@ -248,14 +259,43 @@ impl Play {
         }
     }
 
-    /// `favorites`: the starred instruments, a setting of meloet.
-    pub fn shelf_view(&self, favorites: Vec<InstrumentKind>) -> ShelfView {
+    /// `favorites`: the starred instruments, a setting of meloet. `library`: what the shelf
+    /// has of SF2 files and plugins; `home`: the home folder, shown as "~".
+    pub fn shelf_view(
+        &self,
+        favorites: Vec<InstrumentKind>,
+        library: &LibraryView,
+        home: Option<&Path>,
+    ) -> ShelfView {
         let current = match self.shelf.mode {
             Mode::NewTrack | Mode::InsertEffect(..) => None,
-            Mode::Replace(track) => self.doc().track(track).map(|t| kind_of(&t.instrument)),
+            Mode::Replace(track) => self.doc().track(track).map(|t| &t.instrument),
         };
+        let builtin = |i: &InstrumentRef| match i {
+            InstrumentRef::Builtin(b) => Some(instruments::kind_of(*b)),
+            InstrumentRef::Plugin(_) | InstrumentRef::Sf2(_) => None,
+        };
+        let trial = self.shelf.trial.as_ref();
+        let loading = trial.filter(|i| !self.sounds.ready(builtin_or_sine(i)));
+        let sample = self.sample_view();
+        let chosen = self.shelf.effect.map(effect_kind);
         ShelfView {
-            selected_effect: self.shelf.effect.map(effect_kind),
+            selected_sound: trial.map(sound_ref),
+            current_sound: current.map(sound_ref),
+            loading_sound: loading.map(sound_ref),
+            sound_sample: sample.map(|s| SoundSampleView {
+                sound: builtin_sound(s.instrument),
+                playing: Some(SamplePlaying {
+                    started_us: s.started_us,
+                    length_us: s.length_us,
+                }),
+            }),
+            chosen_effect: chosen.map(effect_ref),
+            unreadable: None,
+            favorite_sounds: favorites.iter().copied().map(builtin_sound).collect(),
+            favorite_effects: DEFAULT_FAVORITE_EFFECTS.map(effect_ref).to_vec(),
+            missing: missing(self.doc(), library, home),
+            selected_effect: chosen,
             mode: match self.shelf.mode {
                 Mode::NewTrack => ShelfMode::NewTrack,
                 Mode::Replace(track) => ShelfMode::Replace { track: track.0 },
@@ -268,24 +308,30 @@ impl Play {
                 .map(instruments::kind_of)
                 .collect(),
             favorites,
-            selected: self.shelf.trial.as_ref().map(kind_of),
-            current,
-            loading: (self.shelf.trial.as_ref())
-                .filter(|InstrumentRef::Builtin(b)| !self.sounds.ready(*b))
-                .map(kind_of),
-            sample: self.sample_view(),
+            selected: trial.and_then(builtin),
+            current: current.and_then(builtin),
+            loading: loading.and_then(builtin),
+            sample,
         }
     }
 
     /// The status line while a row is auditioned.
     pub fn audition_status(&self) -> Option<StatusMessage> {
-        let instrument = kind_of(self.shelf.trial.as_ref()?);
+        let trial = self.shelf.trial.as_ref()?;
+        let instrument = kind_of(trial);
         Some(match self.shelf.mode {
             Mode::NewTrack => StatusMessage::AuditionNewTrack { instrument },
-            Mode::Replace(track) => StatusMessage::AuditionReplace {
-                instrument,
-                track: self.track_ref(track)?,
-                current: kind_of(&self.doc().track(track)?.instrument),
+            Mode::Replace(track) => match &self.doc().track(track)?.instrument {
+                InstrumentRef::Builtin(current) => StatusMessage::AuditionReplace {
+                    instrument,
+                    track: self.track_ref(track)?,
+                    current: instruments::kind_of(*current),
+                },
+                current => StatusMessage::AuditionReplaceSound {
+                    sound: sound_name(trial),
+                    track: self.track_ref(track)?,
+                    current: sound_name(current),
+                },
             },
             Mode::InsertEffect(..) => return None,
         })

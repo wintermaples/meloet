@@ -9,6 +9,7 @@ use meloet_protocol::{InstrumentKind, SampleView, StatusMessage};
 use super::seats::AUDITION_SEAT;
 use super::shelf::Mode;
 use super::{EngineOp, Play};
+use crate::added::builtin_or_sine;
 use crate::instruments;
 use crate::state::Effect;
 
@@ -31,15 +32,20 @@ pub(super) struct SampleWaiting {
     latency_us: u64,
 }
 
-fn builtin(instrument: &InstrumentRef) -> BuiltinInstrument {
-    let InstrumentRef::Builtin(b) = instrument;
-    *b
-}
-
 impl Play {
     /// The sampled instruments the sound pack of this PC has. Told once, at the start.
     pub fn set_installed_sounds(&mut self, installed: Vec<BuiltinInstrument>) {
         self.sounds.installed = installed;
+    }
+
+    /// The sounds of meloet that can sound on this PC.
+    pub fn available_sounds(&self) -> Vec<BuiltinInstrument> {
+        self.sounds.available()
+    }
+
+    /// None of the sounds that need the sound pack can sound: the pack is not found.
+    pub fn pack_missing(&self) -> bool {
+        !(self.sounds.available().into_iter()).any(instruments::sampled)
     }
 
     /// The instruments whose samples are to be in memory: the ones of the song's tracks, the
@@ -51,7 +57,7 @@ impl Play {
         let samples = (shelf.sample.map(|s| s.instrument).into_iter())
             .chain(shelf.sample_waiting.map(|w| w.instrument));
         let mut wanted = Vec::new();
-        for b in tracks.chain(rows).map(builtin).chain(samples) {
+        for b in tracks.chain(rows).map(builtin_or_sine).chain(samples) {
             if self.sounds.installed.contains(&b) && !wanted.contains(&b) {
                 wanted.push(b);
             }
@@ -66,7 +72,7 @@ impl Play {
             return None;
         }
         let track = self.doc().track(self.song.session.play_target?)?;
-        Some(builtin(&track.instrument)).filter(|b| !self.sounds.ready(*b))
+        Some(builtin_or_sine(&track.instrument)).filter(|b| !self.sounds.ready(*b))
     }
 
     /// Asks for the samples that are wanted and not there, and lets go of the ones nothing

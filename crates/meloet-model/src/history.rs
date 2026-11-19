@@ -10,7 +10,7 @@ use crate::TrackId;
 use crate::arrange::ClipEdge;
 use crate::edit::Edit;
 use crate::effects::EffectKind;
-use crate::mixer::{Bus, StripId};
+use crate::mixer::{Bus, PluginPlace, StripId};
 use crate::song::{ClipId, Doc};
 use crate::time::{Meter, Tempo};
 
@@ -176,6 +176,25 @@ pub enum StepKind {
         strip: StripId,
         slot: usize,
         kind: EffectKind,
+    },
+    /// A plugin put into an insert slot from the shelf. The `Doc` after the step has it, for
+    /// its name.
+    AddPlugin {
+        place: PluginPlace,
+    },
+    /// A plugin taken out of an insert slot. The `Doc` before the step has it.
+    RemovePlugin {
+        place: PluginPlace,
+    },
+    /// Band: "（プラグイン）の窓で変えた所", at "（トラック）・ プラグインの窓" (spec 3, 15-C).
+    PluginWindow {
+        place: PluginPlace,
+    },
+    /// A parameter of a plugin, moved in the parameters panel; `param`: the plugin's own
+    /// number for it.
+    SetPluginParam {
+        place: PluginPlace,
+        param: u32,
     },
     /// The M of a return; `muted`: the return is muted after the step.
     MuteReturn {

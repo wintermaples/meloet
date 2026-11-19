@@ -2,7 +2,7 @@
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, TakeNotes } from "../src/bridge";
-import { createFakeTransport, fakeScene } from "../src/bridge/fake";
+import { createFakeTransport, fakeScene, keyCounts } from "../src/bridge/fake";
 import { decodeTake } from "../src/bridge/take";
 import { runFrameCallbacks } from "../src/gl/slot";
 import NoteInspector from "../src/components/pianoroll/NoteInspector.svelte";
@@ -200,7 +200,7 @@ describe("状態行（ピアノロールのまわり）", () => {
 
   it("クオンタイズしていなければ、うしろは出さない。ループがオンなら前に「ループ 5–9」", async () => {
     await scene("pianoRoll", (s) => {
-      s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: false, notes: { count: 6, keys: [60, 62, 64, 65], quantized: false } };
+      s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: false, notes: { count: 6, keys: [60, 62, 64, 65], quantized: false, names: keyCounts([60, 62, 64, 65, 67, 69]) } };
     });
     show(StatusLine);
     expect(left()).toBe("ループ 5–9 ・ 選択 6 ノート ・ C4 D4 E4 F4 …");
@@ -264,7 +264,7 @@ describe("状態行（ピアノロールのまわり）", () => {
 
   it("5 つ以上選んだら、最初の 4 つのあとに「…」（仕様書 6 章「ノートを選んでいる」）", async () => {
     await scene("pianoRoll", (s) => {
-      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 7, keys: [48, 52, 55, 60], quantized: false } };
+      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 7, keys: [48, 52, 55, 60], quantized: false, names: keyCounts([48, 52, 55, 60, 64, 67, 72]) } };
     });
     show(StatusLine);
     expect(left()).toBe("選択 7 ノート ・ C3 E3 G3 C4 …");
@@ -272,7 +272,7 @@ describe("状態行（ピアノロールのまわり）", () => {
 
   it("4 つなら「…」をそえない", async () => {
     await scene("pianoRoll", (s) => {
-      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 4, keys: [48, 52, 55, 60], quantized: false } };
+      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 4, keys: [48, 52, 55, 60], quantized: false, names: keyCounts([48, 52, 55, 60]) } };
     });
     show(StatusLine);
     expect(left()).toBe("選択 4 ノート ・ C3 E3 G3 C4");

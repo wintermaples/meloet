@@ -29,6 +29,7 @@ use meloet_protocol::{
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
+use crate::added::builtin_or_sine;
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::measure::{self, KeyToSound};
@@ -907,8 +908,8 @@ impl Audio {
 
     /// An instrument as it can sound now: silent while its samples are still to be read.
     fn make(&self, instrument: &InstrumentRef) -> Box<dyn Instrument> {
-        let InstrumentRef::Builtin(builtin) = instrument;
-        instruments::make(instrument, self.sounds.samples(*builtin))
+        let builtin = builtin_or_sine(instrument);
+        instruments::make(instrument, self.sounds.samples(builtin))
     }
 
     fn send_seat_op(&mut self, op: EngineOp) {
@@ -936,7 +937,7 @@ impl Audio {
                 slot,
                 insert,
             } => {
-                let effect = insert.as_ref().map(mixbook::make);
+                let effect = insert.as_ref().and_then(mixbook::make);
                 let strip = mixbook::mix_strip(strip);
                 match self.handle.set_effect(strip, slot, effect) {
                     Ok(()) => return,
@@ -1076,8 +1077,7 @@ impl Audio {
             EngineOp::AuditionOff => EngineCommand::AuditionOff,
             EngineOp::PlaySample { instrument } => {
                 if self.stream.is_some() {
-                    let InstrumentRef::Builtin(builtin) = &instrument;
-                    let phrase = phrases::for_group(builtin.group());
+                    let phrase = phrases::for_group(instrument.group());
                     let player = PhrasePlayer::new(self.make(&instrument), phrase);
                     if self.handle.play_sample(Box::new(player)).is_err() {
                         eprintln!("meloet: the engine did not take the sample");

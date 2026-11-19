@@ -1,5 +1,7 @@
 use meloet_devices::{Availability as Av, ClockSettings, Friendly as Fr, LinkKind as Link};
-use meloet_protocol::{EffectKind, MasterView, ParamsView, ReturnView, ShelfMode};
+use meloet_protocol::{
+    EffectKind, InsertView, MasterView, ParamsView, ReturnView, ShelfMode, SoundView, StandIn,
+};
 
 use super::*;
 
@@ -166,16 +168,33 @@ fn a_new_song() {
             name: "ピアノ".into(),
             color: 1,
             instrument: InstrumentKind::GrandPiano,
+            sound: SoundView::Builtin {
+                instrument: InstrumentKind::GrandPiano
+            },
+            // This model was told of no sound pack.
+            stand_in: Some(StandIn::PackMissing),
+            drum_keys: None,
             gain_db: Some(0.0),
             pan: 0,
             sends: [Some(-15.0), None],
             inserts: [None; 4],
+            slots: [const { None }; 4],
             muted: false,
             soloed: false,
             clips: vec![],
         }]
     );
+    assert!(state.library.pack_missing);
+    assert_eq!(
+        state.library,
+        LibraryView {
+            pack_missing: true,
+            ..LibraryView::default()
+        }
+    );
+    assert_eq!(state.workspace.file_drop, None);
     let first = |kind| [Some(kind), None, None, None];
+    let first_slot = |kind| [Some(InsertView::builtin(kind)), None, None, None];
     assert_eq!(
         song.returns,
         [EffectKind::Reverb, EffectKind::Delay].map(|kind| ReturnView {
@@ -183,6 +202,7 @@ fn a_new_song() {
             pan: 0,
             muted: false,
             inserts: first(kind),
+            slots: first_slot(kind),
         })
     );
     assert_eq!(
@@ -191,6 +211,7 @@ fn a_new_song() {
             gain_db: Some(0.0),
             pan: 0,
             inserts: first(EffectKind::Limiter),
+            slots: first_slot(EffectKind::Limiter),
         }
     );
     assert_eq!(state.params, ParamsView::default());
@@ -1701,6 +1722,19 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
             loading: None,
             sample: None,
             selected_effect: None,
+            selected_sound: None,
+            current_sound: None,
+            loading_sound: None,
+            sound_sample: None,
+            chosen_effect: None,
+            unreadable: None,
+            favorite_sounds: [InstrumentKind::GrandPiano, InstrumentKind::StudioKit]
+                .map(|instrument| SoundRef::Builtin { instrument })
+                .to_vec(),
+            favorite_effects: [EffectKind::Reverb, EffectKind::Delay]
+                .map(|effect| EffectRef::Builtin { effect })
+                .to_vec(),
+            missing: vec![],
         }
     );
     let star = |m: &mut Model, instrument| {
@@ -1729,4 +1763,180 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
         Some(vec![BuiltinInstrument::StudioKit, BuiltinInstrument::Organ])
     );
     assert_eq!(m.view().song.undo_count, 0, "not part of the song");
+}
+
+#[test]
+fn the_shelf_commands_for_any_sound_do_what_the_ones_for_meloet_s_sounds_do() {
+    use meloet_protocol::MissingRef;
+    let mut m = fresh();
+    cmd(
+        &mut m,
+        Command::OpenShelf {
+            mode: ShelfMode::NewTrack,
+        },
+    );
+    let bass = SoundRef::Builtin {
+        instrument: InstrumentKind::SynthBass,
+    };
+    let sound = Some(bass.clone());
+    cmd(&mut m, Command::ShelfSelectSound { sound });
+    let shelf = m.view().shelf;
+    assert_eq!(shelf.selected, Some(InstrumentKind::SynthBass));
+    assert_eq!(shelf.selected_sound, Some(bass.clone()));
+    // The shelf has no plugin: selecting one ends the audition, as a sound it does not have.
+    let surge = SoundRef::Plugin {
+        key: "lv2:https://surge-synthesizer.github.io/lv2/surge-xt".into(),
+    };
+    let sound = Some(surge.clone());
+    cmd(&mut m, Command::ShelfSelectSound { sound });
+    assert_eq!(m.view().shelf.selected_sound, None);
+    let sound = bass.clone();
+    cmd(&mut m, Command::ToggleFavoriteSound { sound });
+    assert!(m.view().shelf.favorite_sounds.contains(&bass));
+    assert!(
+        m.view()
+            .shelf
+            .favorites
+            .contains(&InstrumentKind::SynthBass)
+    );
+    // What is not made yet changes nothing.
+    let before = m.view();
+    for command in [
+        Command::ToggleFavoriteSound {
+            sound: surge.clone(),
+        },
+        Command::PlaySampleOf { sound: surge },
+        Command::ToggleFavoriteEffect {
+            effect: EffectRef::Builtin {
+                effect: EffectKind::Chorus,
+            },
+        },
+        Command::ShelfChooseEffect { effect: None },
+        Command::UsePluginFormat {
+            key: "vst3:00".into(),
+        },
+        Command::OpenPluginWindow { slot: None },
+        Command::AddSf2,
+        Command::CancelFileDrop,
+        Command::RemoveMissing {
+            missing: MissingRef::Sf2 {
+                file: "Old Keys.sf2".into(),
+            },
+        },
+    ] {
+        assert!(cmd(&mut m, command.clone()).is_empty(), "{command:?}");
+        assert_eq!(m.view(), before, "{command:?}");
+    }
+}
+
+/// A song that uses a plugin and an SF2 preset opens on a PC that has neither.
+#[test]
+fn a_song_with_what_this_pc_does_not_have_keeps_it_and_says_so() {
+    use std::sync::Arc;
+
+    use meloet_model::{InstrumentRef, Kept, PluginRef, Sf2Ref, edit, mixer};
+    use meloet_protocol::{
+        GmFamily, MissingView, PluginFormat, PluginRole, PluginState, PluginView,
+    };
+    let mut song = Song::new_default();
+    let surge = PluginRef::new(
+        "vst3:00112233445566778899AABBCCDDEEFF",
+        "Surge XT",
+        "Surge",
+        "",
+    );
+    let kit = Sf2Ref {
+        file: "FluidR3_GM.sf2".into(),
+        sha256: "".into(),
+        bank: 128,
+        program: 0,
+        name: "Standard".into(),
+        kept: Kept::NONE,
+    };
+    for instrument in [
+        InstrumentRef::Plugin(Arc::new(surge.clone())),
+        InstrumentRef::Sf2(Arc::new(kit)),
+    ] {
+        song.doc = edit::add_track(&song.doc, None, instrument).unwrap().0.doc;
+    }
+    let strip = meloet_model::StripId::Track(song.doc.tracks[0].id);
+    let mverb = PluginRef::new("lv2:urn:mverb", "MVerb", "DISTRHO", "");
+    song.doc = mixer::add_plugin_effect(&song.doc, strip, 1, Arc::new(mverb))
+        .unwrap()
+        .doc;
+    let mut m = fresh();
+    cmd(&mut m, Command::OpenSong);
+    let path = std::path::PathBuf::from("/nowhere/曲/曲.meloet");
+    m.handle(Input::SongFilePicked(Some(path.clone())));
+    m.handle(Input::SongRead {
+        path,
+        song: Box::new(song.clone()),
+        from_previous: false,
+    });
+    let view = m.view();
+    let tracks = &view.song.tracks;
+    assert_eq!(
+        tracks.iter().map(|t| &*t.name).collect::<Vec<_>>(),
+        ["ピアノ", "Surge XT", "ドラム"]
+    );
+    let surge_view = PluginView {
+        key: surge.key.to_string(),
+        name: "Surge XT".into(),
+        format: Some(PluginFormat::Vst3),
+        state: PluginState::Missing,
+    };
+    assert_eq!(tracks[1].sound, SoundView::Plugin(surge_view));
+    assert_eq!(tracks[1].instrument, InstrumentKind::Sine);
+    assert_eq!(tracks[1].stand_in, Some(StandIn::PluginMissing));
+    assert_eq!(
+        tracks[2].sound,
+        SoundView::Sf2 {
+            file: "FluidR3_GM.sf2".into(),
+            bank: 128,
+            program: 0,
+            name: "Standard".into(),
+            family: GmFamily::DrumKit,
+        }
+    );
+    assert_eq!(tracks[2].stand_in, Some(StandIn::Sf2Missing));
+    assert_eq!(tracks[2].drum_keys, None);
+    assert_eq!(
+        tracks[0].inserts, [None; 4],
+        "a plugin is no effect of meloet"
+    );
+    let slot = tracks[0].slots[1].as_ref().unwrap();
+    assert!(!slot.bypassed);
+    assert!(matches!(
+        &slot.effect,
+        meloet_protocol::InsertEffectView::Plugin(p)
+            if p.name == "MVerb" && p.state == PluginState::Missing
+    ));
+    assert_eq!(
+        view.shelf.missing,
+        [
+            MissingView::Sf2 {
+                file: "FluidR3_GM.sf2".into(),
+                tracks: 1
+            },
+            // In the order of the tracks: MVerb sits on the first one.
+            MissingView::Plugin {
+                key: "lv2:urn:mverb".into(),
+                name: "MVerb".into(),
+                vendor: "DISTRHO".into(),
+                format: Some(PluginFormat::Lv2),
+                role: PluginRole::Effect,
+                shown_path: None,
+            },
+            MissingView::Plugin {
+                key: surge.key.to_string(),
+                name: "Surge XT".into(),
+                vendor: "Surge".into(),
+                format: Some(PluginFormat::Vst3),
+                role: PluginRole::Instrument,
+                shown_path: None,
+            },
+        ]
+    );
+    // The song itself is as it was: saving writes the plugin and the preset back.
+    assert_eq!(m.play().song().doc, song.doc);
 }

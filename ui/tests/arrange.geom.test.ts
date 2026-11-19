@@ -40,10 +40,14 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   muted: false,
   soloed: false,
   instrument: "sine",
+  sound: { kind: "builtin", instrument: "sine" },
+  standIn: null,
+  drumKeys: null,
   gainDb: 0,
   pan: 0,
   sends: [null, null],
   inserts: [null, null, null, null],
+  slots: [null, null, null, null],
   clips,
 });
 

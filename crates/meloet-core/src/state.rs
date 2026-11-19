@@ -10,16 +10,18 @@ use std::time::Duration;
 
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
-use meloet_model::{BuiltinInstrument, InstrumentRef, Note, Song};
+use meloet_model::{BuiltinInstrument, Note, Song};
 use meloet_plugin::ScanCache;
 use meloet_protocol::{
-    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
-    Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
-    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, PluginSlotRef,
-    QuantizeSettings, RecoveryCause, SettingsDialogView, ShelfView, SongFile, SongView,
-    StatusMessage, StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
+    EndpointView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView,
+    LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize,
+    OutputsView, PluginSlotRef, PluginState, QuantizeSettings, RecoveryCause, SettingsDialogView,
+    ShelfView, SongFile, SongView, SoundRef, StatusMessage, StatusView, TrackView, Unusable,
+    VelocityFixed, WorkspaceView,
 };
 
+use crate::added;
 use crate::instruments;
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
@@ -1173,6 +1175,35 @@ impl Model {
                     effects.push(Effect::UnloadPlugin { slot });
                 }
             }
+            // The shelf has no SF2 preset and no plugin yet: a sound or an effect that does not
+            // come with meloet is one the shelf does not have.
+            Command::ShelfSelectSound { sound } => {
+                let instrument = sound.and_then(builtin_sound);
+                return self.command(Command::ShelfSelect { instrument }, effects);
+            }
+            Command::PlaySampleOf { sound } => {
+                if let Some(instrument) = builtin_sound(sound) {
+                    return self.command(Command::PlaySample { instrument }, effects);
+                }
+            }
+            Command::ToggleFavoriteSound { sound } => {
+                if let Some(instrument) = builtin_sound(sound) {
+                    return self.command(Command::ToggleFavorite { instrument }, effects);
+                }
+            }
+            Command::ShelfChooseEffect { effect } => {
+                let effect = effect.and_then(|e| match e {
+                    EffectRef::Builtin { effect } => Some(effect),
+                    EffectRef::Plugin { .. } => None,
+                });
+                return self.command(Command::ShelfSelectEffect { effect }, effects);
+            }
+            Command::ToggleFavoriteEffect { .. }
+            | Command::UsePluginFormat { .. }
+            | Command::OpenPluginWindow { .. }
+            | Command::AddSf2
+            | Command::CancelFileDrop
+            | Command::RemoveMissing { .. } => {}
         }
         None
     }
@@ -1334,7 +1365,17 @@ impl Model {
                 .into_iter()
                 .filter(|&k| self.favorites.contains(&instruments::builtin_of(k)))
                 .collect(),
+            &self.library_view(),
+            self.plugins.home(),
         )
+    }
+
+    /// 「あとから入れたもの」. Nothing adds an SF2 file or lists the scanned plugins yet.
+    fn library_view(&self) -> LibraryView {
+        LibraryView {
+            pack_missing: self.play.pack_missing(),
+            ..LibraryView::default()
+        }
     }
 
     /// A sample plays: [`Input::Tick`] is wanted now and then, to end it.
@@ -1421,7 +1462,7 @@ impl Model {
         // Choosing the output comes first; the recovery hint waits behind it, in the same place.
         let recovery = self.recovery_view().filter(|_| !self.chooser_shown());
         AppState {
-            song: song_view(&self.play, self.song_file()),
+            song: song_view(&self.play, self.song_file(), &self.library_view()),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
             piano_roll: self.play.piano_roll_view(),
@@ -1445,8 +1486,10 @@ impl Model {
                     .filter(|_| recovery.is_none()),
                 song_dialog: self.song_dialog_view(),
                 recovery,
+                file_drop: None,
             },
             shelf: self.shelf_view(),
+            library: self.library_view(),
             params: self.play.params_view(),
             plugins: self.plugins.view(),
             keyboards: KeyboardsView {
@@ -1672,9 +1715,18 @@ fn layout_view(layout: &layout::Layout) -> LayoutView {
     }
 }
 
-fn song_view(play: &Play, file: SongFile) -> SongView {
+/// `None` for an SF2 preset and for a plugin.
+fn builtin_sound(sound: SoundRef) -> Option<InstrumentKind> {
+    match sound {
+        SoundRef::Builtin { instrument } => Some(instrument),
+        SoundRef::Sf2 { .. } | SoundRef::Plugin { .. } => None,
+    }
+}
+
+fn song_view(play: &Play, file: SongFile, library: &LibraryView) -> SongView {
     let song = play.song();
     let doc = &song.doc;
+    let sounds = play.available_sounds();
     SongView {
         serial: play.serial(),
         name: doc.name.clone(),
@@ -1694,13 +1746,15 @@ fn song_view(play: &Play, file: SongFile) -> SongView {
                 number: i as u32 + 1,
                 name: t.name.clone(),
                 color: t.color.get(),
-                instrument: match t.instrument {
-                    InstrumentRef::Builtin(b) => instruments::kind_of(b),
-                },
+                instrument: instruments::kind_of(added::builtin_or_sine(&t.instrument)),
+                sound: added::sound_view(&t.instrument, PluginState::Missing),
+                stand_in: added::stand_in(&t.instrument, library, &sounds),
+                drum_keys: None,
                 gain_db: gain_view(t.channel.gain),
                 pan: t.channel.pan.get(),
                 sends: t.sends.map(gain_view),
                 inserts: inserts_view(&t.channel.inserts),
+                slots: added::slots_view(&t.channel.inserts, |_| PluginState::Missing),
                 muted: t.muted,
                 soloed: play.is_soloed(t.id),
                 clips: play.clips_of(t.id),

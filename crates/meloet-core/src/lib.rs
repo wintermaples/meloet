@@ -5,6 +5,7 @@
 //! - [`Core`]: the threads (MIDI, device watcher, audio, telemetry) around the two.
 //! - [`plugins`]: the scan for plugins and the processes they sound in.
 
+mod added;
 mod hub;
 mod instruments;
 pub mod layout;

@@ -138,7 +138,7 @@ fn a_song_comes_back_as_it_was_and_shares_its_takes() {
 fn the_shape_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
     assert_eq!(v["format"], "meloet-song");
-    assert_eq!(v["version"], 3);
+    assert_eq!(v["version"], 4);
     assert_eq!(v["song"]["tempo"], 12_345);
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
     assert_eq!(v["song"]["nextId"], 8);
@@ -283,8 +283,8 @@ fn newer_and_broken_files_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(matches!(
-        with(&|v| v["version"] = 4.into()),
-        Err(ReadError::TooNew { version: 4 })
+        with(&|v| v["version"] = 5.into()),
+        Err(ReadError::TooNew { version: 5 })
     ));
     assert!(matches!(
         decode(b"{\"format\": \"meloet-song\", \"vers"),
@@ -641,7 +641,7 @@ fn a_file_of_version_1_reads() {
     let again = encode(&song);
     assert_eq!(decode(&again).unwrap(), song);
     let v: serde_json::Value = serde_json::from_slice(&again).unwrap();
-    assert_eq!(v["version"], 3);
+    assert_eq!(v["version"], 4);
     assert_eq!(
         v["song"]["tracks"][0]["instrument"],
         serde_json::json!({"kind": "builtin", "name": "sine"})
@@ -830,7 +830,7 @@ fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
     let got = &song.doc.tracks[0].channel.inserts;
     assert!(got[0].is_none() && got[2].is_none());
     let compressor = got[1].as_ref().unwrap();
-    assert_eq!(compressor.kind(), EffectKind::Compressor);
+    assert_eq!(compressor.kind(), Some(EffectKind::Compressor));
     assert_eq!(
         compressor.value(effects::compressor::THRESHOLD),
         Some(-24.5)
@@ -928,4 +928,388 @@ fn mixer_values_out_of_range_are_brought_into_range() {
     assert_eq!(song.doc.tracks[0].sends, [Gain::SILENT; 2]);
     // Written again, everything is in range and reads the same.
     assert_eq!(decode(&encode(&song)).unwrap(), song);
+}
+
+// ---- version 4: plugins, SF2 presets, inserts that are passed by ----
+
+use meloet_model::{InstrumentGroup, PluginChange, PluginPlace};
+
+const SURGE: &str = "vst3:535247455375726758545379000000AA";
+const MVERB: &str = "lv2:http://distrho.sf.net/plugins/MVerb";
+
+fn surge(state: &[u8]) -> Arc<PluginRef> {
+    let plugin = PluginRef::new(
+        SURGE,
+        "Surge XT",
+        "Surge Synth Team",
+        "/usr/lib/vst3/Surge XT.vst3",
+    );
+    Arc::new(plugin.with_state(state.into()))
+}
+
+fn clean_guitar() -> Arc<Sf2Ref> {
+    Arc::new(Sf2Ref {
+        file: "FluidR3_GM.sf2".into(),
+        sha256: "74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0".into(),
+        bank: 0,
+        program: 27,
+        name: "Clean Guitar".into(),
+        kept: Kept::NONE,
+    })
+}
+
+/// `rich_song` with a track of Surge XT (a state of every byte value), a track of an SF2
+/// preset and one of an SF2 drum kit; MVerb passed by in the first track's last slot, a
+/// compressor passed by on return A, and a plugin with no state on the master.
+fn added_song() -> Song {
+    let mut song = rich_song("x", 3);
+    let state: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
+    let kit = Sf2Ref {
+        bank: 128,
+        program: 40,
+        name: "Brush".into(),
+        ..(*clean_guitar()).clone()
+    };
+    let doc = &mut song.doc;
+    for (id, name, instrument) in [
+        (20, "Surge XT", InstrumentRef::Plugin(surge(&state))),
+        (21, "ギター", InstrumentRef::Sf2(clean_guitar())),
+        (22, "ドラム", InstrumentRef::Sf2(Arc::new(kit))),
+    ] {
+        doc.tracks.push(Arc::new(Track {
+            id: TrackId(id),
+            name: name.into(),
+            color: TrackColor::for_index(1),
+            sends: mixer::new_track_sends(&instrument),
+            instrument,
+            channel: Channel::default(),
+            muted: false,
+            clips: Vec::new(),
+        }));
+    }
+    let mverb = PluginRef::new(MVERB, "MVerb", "DISTRHO", "").with_state([9u8, 8, 7].into());
+    let mut passed = Insert::plugin(Arc::new(mverb));
+    passed.bypassed = true;
+    let mut first = Track::clone(&doc.tracks[0]);
+    first.channel.inserts[3] = Some(passed);
+    doc.tracks[0] = Arc::new(first);
+    let mut a = Return::clone(&doc.returns[0]);
+    let mut compressor = Insert::new(EffectKind::Compressor);
+    compressor.bypassed = true;
+    a.channel.inserts[1] = Some(compressor);
+    doc.returns[0] = Arc::new(a);
+    let mut master = Channel::clone(&doc.master);
+    master.inserts[2] = Some(Insert::plugin(surge(&[])));
+    doc.master = Arc::new(master);
+    song
+}
+
+#[test]
+fn base64_is_the_usual_one() {
+    for (bytes, text) in [
+        (&b""[..], ""),
+        (b"f", "Zg=="),
+        (b"fo", "Zm8="),
+        (b"foo", "Zm9v"),
+        (b"foob", "Zm9vYg=="),
+        (b"fooba", "Zm9vYmE="),
+        (b"foobar", "Zm9vYmFy"),
+        (&[0xfb, 0xff, 0xfe], "+//+"),
+    ] {
+        assert_eq!(base64::encode(bytes), text);
+        assert_eq!(base64::decode(text).as_deref(), Some(bytes));
+    }
+    let every: Vec<u8> = (0..=255u8).cycle().take(70_001).collect();
+    assert_eq!(base64::decode(&base64::encode(&every)), Some(every));
+    for bad in [
+        "Z", "Zg", "Zg=", "Zg==Zg==", "Z===", "====", "Zm9v\n", "Zm 9", "Zh==", "Zm9=",
+    ] {
+        assert_eq!(base64::decode(bad), None, "{bad:?}");
+    }
+}
+
+#[test]
+fn plugins_sf2_presets_and_bypassed_inserts_come_back() {
+    let song = added_song();
+    let bytes = encode(&song);
+    let back = decode(&bytes).unwrap();
+    assert_eq!(back, song);
+    assert_eq!(encode(&back), bytes, "and are written the same again");
+    let t = &back.doc.tracks;
+    let InstrumentRef::Plugin(plugin) = &t[1].instrument else {
+        panic!("{:?}", t[1].instrument);
+    };
+    assert_eq!(plugin.state.len(), 1000);
+    assert_eq!(plugin.state[255], 255);
+    assert_eq!(t[2].instrument, InstrumentRef::Sf2(clean_guitar()));
+    assert_eq!(t[3].instrument.group(), InstrumentGroup::Drums);
+    let passed = t[0].channel.inserts[3].as_ref().unwrap();
+    assert!(passed.bypassed);
+    assert_eq!(*passed.plugin_ref().unwrap().state, [9, 8, 7]);
+    assert!(
+        back.doc.returns[0].channel.inserts[1]
+            .as_ref()
+            .unwrap()
+            .bypassed
+    );
+    assert!(
+        !back.doc.returns[0].channel.inserts[0]
+            .as_ref()
+            .unwrap()
+            .bypassed
+    );
+    assert!(!back.doc.master.inserts[2].as_ref().unwrap().bypassed);
+}
+
+#[test]
+fn the_shape_of_version_4_on_disk() {
+    let v: serde_json::Value = serde_json::from_slice(&encode(&added_song())).unwrap();
+    assert_eq!(v["version"], 4);
+    let tracks = &v["song"]["tracks"];
+    let state: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
+    assert_eq!(
+        tracks[1]["instrument"],
+        serde_json::json!({"kind": "plugin", "key": SURGE, "name": "Surge XT",
+            "vendor": "Surge Synth Team", "path": "/usr/lib/vst3/Surge XT.vst3",
+            "state": base64::encode(&state)})
+    );
+    assert_eq!(
+        tracks[2]["instrument"],
+        serde_json::json!({"kind": "sf2", "file": "FluidR3_GM.sf2",
+            "sha256": "74594e8f4250680adf590507a306655a299935343583256f3b722c48a1bc1cb0",
+            "bank": 0, "program": 27, "name": "Clean Guitar"})
+    );
+    assert_eq!(tracks[3]["instrument"]["bank"], 128);
+    assert_eq!(
+        tracks[0]["inserts"][3],
+        serde_json::json!({"plugin": {"key": MVERB, "name": "MVerb", "vendor": "DISTRHO",
+                                      "state": "CQgH"},
+                           "bypassed": true}),
+        "no path: not written"
+    );
+    let a = &v["song"]["mixer"]["returns"]["a"]["inserts"];
+    assert_eq!(a[1]["effect"], "compressor");
+    assert_eq!(a[1]["bypassed"], true);
+    assert!(a[0].get("bypassed").is_none(), "not passed by: not written");
+    assert_eq!(
+        v["song"]["mixer"]["master"]["inserts"][2],
+        serde_json::json!({"plugin": {"key": SURGE, "name": "Surge XT",
+            "vendor": "Surge Synth Team", "path": "/usr/lib/vst3/Surge XT.vst3"}}),
+        "no state: not written"
+    );
+    assert_eq!(
+        tracks[0]["instrument"],
+        serde_json::json!({"kind": "builtin", "name": "grandPiano"})
+    );
+}
+
+/// A song as version 3 wrote it (docs/architecture.md 19-4), by hand.
+const VERSION_3: &str = r#"{"format": "meloet-song", "version": 3, "app": "meloet 0.1.0",
+ "song": {"name": "バンド", "tempo": 9600, "meter": [4, 4], "tempoChanges": [], "nextId": 8,
+   "tracks": [
+     {"id": 1, "name": "ピアノ", "color": 1, "instrument": {"kind": "builtin", "name": "grandPiano"},
+      "gainDb": -4.8, "pan": -20, "sends": {"a": -15.0, "b": null},
+      "inserts": [{"effect": "compressor", "params": {"threshold": -18.0, "ratio": 4.0}}, null, null, null],
+      "clips": [{"id": 3, "name": "ピアノ", "start": 0, "end": 7680, "active": 0,
+                 "takes": [{"take": 5, "offset": 0}]}],
+      "plugins": [], "automation": []},
+     {"id": 2, "name": "ドラム", "color": 2, "instrument": {"kind": "builtin", "name": "studioKit"},
+      "gainDb": null, "pan": 0, "sends": {"a": -24.0, "b": null}, "inserts": [null, null, null, null],
+      "muted": true, "clips": [], "plugins": [], "automation": []}],
+   "mixer": {
+     "returns": {"a": {"gainDb": 0.0, "pan": 0, "inserts": [{"effect": "reverb", "params": {"decay": 3.1}}, null, null, null]},
+                 "b": {"gainDb": -6.0, "pan": 10, "muted": true, "inserts": [{"effect": "delay", "params": {}}, null, null, null]}},
+     "master": {"gainDb": 0.0, "pan": 0, "inserts": [{"effect": "limiter", "params": {"ceiling": -0.3}}, null, null, null]}},
+   "audio": []},
+ "takes": [{"id": 5, "length": 7680, "notes": [[0, 30, 60, 100], [480, 30, 64, 90]],
+            "controls": [[0, 64, 127], [240, "bend", -8192]]}],
+ "session": {"playTarget": 2, "loop": {"start": 0, "end": 3840}, "loopOn": true}}"#;
+
+#[test]
+fn a_song_of_version_3_saved_as_version_4_is_the_same_song() {
+    let song = decode(VERSION_3.as_bytes()).unwrap();
+    let doc = &song.doc;
+    assert_eq!(doc.tracks.len(), 2);
+    assert_eq!(doc.tracks[0].instrument, InstrumentRef::GRAND_PIANO);
+    assert_eq!(doc.tracks[0].channel.pan, Pan::new(-20));
+    let compressor = doc.tracks[0].channel.inserts[0].as_ref().unwrap();
+    assert_eq!(compressor.kind(), Some(EffectKind::Compressor));
+    assert_eq!(
+        compressor.value(effects::compressor::THRESHOLD),
+        Some(-18.0)
+    );
+    let inserts = (doc.tracks.iter().map(|t| &t.channel.inserts))
+        .chain(doc.returns.iter().map(|r| &r.channel.inserts))
+        .chain([&doc.master.inserts]);
+    for insert in inserts.flatten().flatten() {
+        assert!(
+            !insert.bypassed,
+            "version 3 has no insert that is passed by"
+        );
+        assert!(insert.plugin_ref().is_none());
+    }
+    assert!(doc.tracks[1].muted && doc.returns[1].muted);
+    assert_eq!(song.session.play_target, Some(TrackId(2)));
+
+    let saved = encode(&song);
+    let v: serde_json::Value = serde_json::from_slice(&saved).unwrap();
+    assert_eq!(v["version"], 4);
+    assert_eq!(decode(&saved).unwrap(), song);
+    // What version 3 wrote of the tracks and the mixer is written the same: version 4 only
+    // adds to it. (The piano roll's settings, which this file left out, are written now.)
+    let old: serde_json::Value = serde_json::from_str(VERSION_3).unwrap();
+    assert_eq!(v["song"]["tracks"][1], old["song"]["tracks"][1]);
+    assert_eq!(v["song"]["mixer"]["returns"]["b"]["muted"], true);
+    assert_eq!(
+        v["song"]["tracks"][0]["inserts"][0]["params"]["threshold"],
+        -18.0
+    );
+    assert_eq!(v["takes"], old["takes"]);
+}
+
+#[test]
+fn fields_and_formats_that_are_not_known_are_kept_and_written_back() {
+    let mut v: serde_json::Value = serde_json::from_slice(&encode(&added_song())).unwrap();
+    // A plugin of a format this meloet does not read, with fields of a later meloet.
+    let clap = serde_json::json!({"kind": "plugin", "key": "clap:org.surge-synth-team.surge-xt",
+        "name": "Surge XT", "vendor": "Surge Synth Team", "state": "AAEC",
+        "preset": {"name": "Init Saw", "bank": 3}, "latency": 64});
+    v["song"]["tracks"][1]["instrument"] = clap.clone();
+    let preset = serde_json::json!({"kind": "sf2", "file": "Old Keys.sf2", "sha256": "",
+        "bank": 8, "program": 4, "name": "Detuned EP", "tuning": [0.5, null]});
+    v["song"]["tracks"][2]["instrument"] = preset.clone();
+    let slot = serde_json::json!({"plugin": {"key": "ladspa:1433", "name": "", "vendor": "",
+                                             "ports": {"2": 0.25}},
+                                  "bypassed": true});
+    v["song"]["tracks"][0]["inserts"][3] = slot.clone();
+
+    let song = read_json(&v);
+    let InstrumentRef::Plugin(plugin) = &song.doc.tracks[1].instrument else {
+        panic!("{:?}", song.doc.tracks[1].instrument);
+    };
+    assert_eq!(&*plugin.key, "clap:org.surge-synth-team.surge-xt");
+    assert_eq!(*plugin.state, [0, 1, 2]);
+    assert!(plugin.kept.text().unwrap().contains("Init Saw"));
+    let InstrumentRef::Sf2(sf2) = &song.doc.tracks[2].instrument else {
+        panic!("{:?}", song.doc.tracks[2].instrument);
+    };
+    assert_eq!((&*sf2.file, sf2.bank, sf2.program), ("Old Keys.sf2", 8, 4));
+    let insert = song.doc.tracks[0].channel.inserts[3].as_ref().unwrap();
+    assert!(insert.bypassed);
+    assert_eq!(&*insert.plugin_ref().unwrap().key, "ladspa:1433");
+
+    // Saved, every field is there again; and the song reads the same from that file.
+    let saved = encode(&song);
+    let again: serde_json::Value = serde_json::from_slice(&saved).unwrap();
+    assert_eq!(again["song"]["tracks"][1]["instrument"], clap);
+    assert_eq!(again["song"]["tracks"][2]["instrument"], preset);
+    assert_eq!(again["song"]["tracks"][0]["inserts"][3], slot);
+    assert_eq!(decode(&saved).unwrap(), song);
+
+    // A step that gives the plugin another state keeps what was kept.
+    let place = PluginPlace::Instrument(song.doc.tracks[1].id);
+    let key = "clap:org.surge-synth-team.surge-xt";
+    let e = mixer::set_plugin_state(&song.doc, place, key, [5u8].into(), PluginChange::Window);
+    let changed = Song {
+        doc: e.unwrap().doc,
+        ..song
+    };
+    let v: serde_json::Value = serde_json::from_slice(&encode(&changed)).unwrap();
+    let written = &v["song"]["tracks"][1]["instrument"];
+    assert_eq!(written["state"], "BQ==");
+    assert_eq!(written["preset"], clap["preset"]);
+    assert_eq!(written["latency"], 64);
+}
+
+#[test]
+fn plugins_and_presets_that_cannot_be_read_do_not_cost_the_song() {
+    let good = rich_json();
+    let clips = &rich_song("x", 3).doc.tracks[0].clips;
+    // No key, no file, a bank or a program that cannot be: the sine, as any unknown sound.
+    for instrument in [
+        serde_json::json!({"kind": "plugin"}),
+        serde_json::json!({"kind": "plugin", "key": ""}),
+        serde_json::json!({"kind": "plugin", "key": 7, "name": "x"}),
+        serde_json::json!({"kind": "sf2", "bank": 0, "program": 0}),
+        serde_json::json!({"kind": "sf2", "file": "", "bank": 0, "program": 0}),
+        serde_json::json!({"kind": "sf2", "file": "a.sf2", "bank": 0, "program": 128}),
+        serde_json::json!({"kind": "sf2", "file": "a.sf2", "bank": -1, "program": 0}),
+        serde_json::json!({"kind": "sf2", "file": "a.sf2", "bank": 70000, "program": 0}),
+        serde_json::json!({"kind": "sf2", "file": "a.sf2", "bank": "0", "program": 0}),
+        serde_json::json!({"kind": "sf2", "file": "a.sf2", "program": 0}),
+        serde_json::json!({"kind": 4}),
+        serde_json::json!({}),
+    ] {
+        let mut v = good.clone();
+        v["song"]["tracks"][0]["instrument"] = instrument.clone();
+        let song = read_json(&v);
+        assert_eq!(
+            song.doc.tracks[0].instrument,
+            InstrumentRef::SINE,
+            "{instrument}"
+        );
+        assert_eq!(&song.doc.tracks[0].clips, clips);
+    }
+    // Fields of another shape than expected: read as empty, the plugin itself is kept.
+    let mut v = good.clone();
+    v["song"]["tracks"][0]["instrument"] = serde_json::json!({"kind": "plugin", "key": "lv2:urn:x",
+        "name": 3, "vendor": null, "path": [], "state": "not base64!"});
+    let song = read_json(&v);
+    assert_eq!(
+        song.doc.tracks[0].instrument,
+        InstrumentRef::Plugin(Arc::new(PluginRef::new("lv2:urn:x", "", "", "")))
+    );
+    assert_eq!(&song.doc.tracks[0].clips, clips);
+    // Slots: a plugin with no key is an empty slot, and what `bypassed` is, if not a switch,
+    // does not cost the effect.
+    let mut v = good.clone();
+    v["song"]["tracks"][0]["inserts"] = serde_json::json!([
+        {"plugin": {"name": "nameless"}},
+        {"plugin": "lv2:urn:x"},
+        {"effect": "reverb", "params": {}, "bypassed": "yes"},
+        {"plugin": {"key": "lv2:urn:x"}, "bypassed": 1}
+    ]);
+    let song = read_json(&v);
+    let inserts = &song.doc.tracks[0].channel.inserts;
+    assert!(inserts[0].is_none() && inserts[1].is_none());
+    let reverb = inserts[2].as_ref().unwrap();
+    assert_eq!(reverb.kind(), Some(EffectKind::Reverb));
+    assert!(!reverb.bypassed);
+    let plugin = inserts[3].as_ref().unwrap();
+    assert_eq!(&*plugin.plugin_ref().unwrap().key, "lv2:urn:x");
+    assert!(!plugin.bypassed);
+    // The instrument is still an object or the file is no song.
+    let mut v = good.clone();
+    v["song"]["tracks"][0]["instrument"] = "grandPiano".into();
+    assert!(matches!(
+        decode(&serde_json::to_vec(&v).unwrap()),
+        Err(ReadError::Broken)
+    ));
+}
+
+#[test]
+fn a_step_on_a_plugin_and_its_undo_are_saved_as_the_song_is() {
+    let song = added_song();
+    let mut doc = song.doc.clone();
+    let mut history = meloet_model::History::new();
+    let place = PluginPlace::Insert(meloet_model::StripId::Master, 2);
+    let e = mixer::set_plugin_state(
+        &doc,
+        place,
+        SURGE,
+        [1u8, 2, 3].into(),
+        PluginChange::Param(4),
+    );
+    history.apply(&mut doc, e.unwrap());
+    let stepped = Song {
+        doc: doc.clone(),
+        session: song.session.clone(),
+    };
+    assert_eq!(decode(&encode(&stepped)).unwrap(), stepped);
+    assert!(history.undo(&mut doc).is_some());
+    let undone = Song {
+        doc,
+        session: song.session.clone(),
+    };
+    assert_eq!(encode(&undone), encode(&song));
 }

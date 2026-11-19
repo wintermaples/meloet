@@ -19,6 +19,8 @@ default-members = [
     "crates/meloet-midi",
     "crates/meloet-devices",
     "crates/meloet-sound",
+    "crates/meloet-plugin",
+    "crates/meloet-plughost",
     "crates/meloet-core",
     "crates/meloet-app",
 ]
@@ -36,6 +38,7 @@ meloet-midi = { path = "crates/meloet-midi" }
 meloet-devices = { path = "crates/meloet-devices" }
 meloet-sound = { path = "crates/meloet-sound" }
 meloet-core = { path = "crates/meloet-core" }
+meloet-plugin = { path = "crates/meloet-plugin" }
 # Same versions the spikes were measured with (docs/report.md 9).
 alsa = "=0.11.0"
 cpal = { version = "=0.18.2", default-features = false, features = ["pipewire"] }

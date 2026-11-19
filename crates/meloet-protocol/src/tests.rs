@@ -199,6 +199,34 @@ fn sample_state() -> AppState {
             chosen: None,
             chosen_state: None,
         },
+        plugins: PluginsView {
+            scan: ScanView::Running {
+                done: 37,
+                total: 112,
+            },
+            stopped: vec![StoppedPluginView {
+                name: "Granular Fog".into(),
+                format: PluginFormat::Lv2,
+                reason: ScanStopReason::TimedOut,
+                path: "/usr/lib/lv2/granfog.lv2".into(),
+                shown_path: "/usr/lib/lv2/granfog.lv2".into(),
+                retrying: false,
+            }],
+            places: vec![
+                PluginPlaceView {
+                    path: "/home/yachiyo/.lv2".into(),
+                    shown_path: "~/.lv2".into(),
+                    added: false,
+                },
+                PluginPlaceView {
+                    path: "/opt/surge-xt/lib/vst3".into(),
+                    shown_path: "/opt/surge-xt/lib/vst3".into(),
+                    added: true,
+                },
+            ],
+            stopped_open: false,
+            places_open: false,
+        },
         inputs: InputsView {
             list: vec![],
             chosen: None,
@@ -1613,6 +1641,142 @@ fn recovery_json_shape() {
     }
 }
 
+#[test]
+fn plugins_json_shape() {
+    let state = sample_state();
+    assert_eq!(
+        serde_json::to_value(&state.plugins).unwrap(),
+        json!({
+            "scan": {"state": "running", "done": 37, "total": 112},
+            "stopped": [{"name": "Granular Fog", "format": "lv2", "reason": "timedOut",
+                         "path": "/usr/lib/lv2/granfog.lv2", "shownPath": "/usr/lib/lv2/granfog.lv2",
+                         "retrying": false}],
+            "places": [
+                {"path": "/home/yachiyo/.lv2", "shownPath": "~/.lv2", "added": false},
+                {"path": "/opt/surge-xt/lib/vst3", "shownPath": "/opt/surge-xt/lib/vst3", "added": true},
+            ],
+            "stoppedOpen": false,
+            "placesOpen": false,
+        })
+    );
+    for (scan, json) in [
+        (ScanView::Idle, json!({"state": "idle"})),
+        (
+            ScanView::Finished {
+                added: 667,
+                stopped: 4,
+            },
+            json!({"state": "finished", "added": 667, "stopped": 4}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(scan).unwrap(), json);
+    }
+    for (reason, json) in [
+        (ScanStopReason::Crashed, json!("crashed")),
+        (ScanStopReason::TimedOut, json!("timedOut")),
+        (ScanStopReason::Broken, json!("broken")),
+    ] {
+        assert_eq!(serde_json::to_value(reason).unwrap(), json);
+    }
+    assert_eq!(
+        serde_json::to_value(PluginFormat::Vst3).unwrap(),
+        json!("vst3")
+    );
+
+    let instrument = PluginSlotRef::Instrument { track: 5 };
+    let insert = PluginSlotRef::Insert {
+        insert: InsertRef {
+            strip: StripRef::Return { bus: SendBus::A },
+            slot: 1,
+        },
+    };
+    let insert_json =
+        json!({"kind": "insert", "insert": {"strip": {"kind": "return", "bus": "a"}, "slot": 1}});
+    for (message, json) in [
+        (
+            StatusMessage::PluginsFound { count: 3 },
+            json!({"id": "pluginsFound", "count": 3}),
+        ),
+        (
+            StatusMessage::ScanFinished {
+                added: 667,
+                stopped: 4,
+            },
+            json!({"id": "scanFinished", "added": 667, "stopped": 4}),
+        ),
+        (
+            StatusMessage::ScanRetryAdded {
+                name: "Granular Fog".into(),
+            },
+            json!({"id": "scanRetryAdded", "name": "Granular Fog"}),
+        ),
+        (
+            StatusMessage::ScanRetryStopped {
+                name: "Granular Fog".into(),
+            },
+            json!({"id": "scanRetryStopped", "name": "Granular Fog"}),
+        ),
+        (
+            StatusMessage::ScanStoppedOpen,
+            json!({"id": "scanStoppedOpen"}),
+        ),
+        (
+            StatusMessage::PluginStopped {
+                name: "Surge XT".into(),
+                slot: instrument,
+            },
+            json!({"id": "pluginStopped", "name": "Surge XT",
+                   "slot": {"kind": "instrument", "track": 5}}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&message).unwrap(), json);
+        assert_eq!(
+            serde_json::from_value::<StatusMessage>(json).unwrap(),
+            message
+        );
+    }
+    for (command, json) in [
+        (Command::RescanPlugins, json!({"type": "rescanPlugins"})),
+        (
+            Command::RetryStoppedPlugin {
+                path: "/usr/lib/lv2/granfog.lv2".into(),
+            },
+            json!({"type": "retryStoppedPlugin", "path": "/usr/lib/lv2/granfog.lv2"}),
+        ),
+        (Command::AddPluginPlace, json!({"type": "addPluginPlace"})),
+        (
+            Command::RemovePluginPlace {
+                path: "/opt/surge-xt/lib/vst3".into(),
+            },
+            json!({"type": "removePluginPlace", "path": "/opt/surge-xt/lib/vst3"}),
+        ),
+        (Command::OpenScanStopped, json!({"type": "openScanStopped"})),
+        (
+            Command::CloseScanStopped,
+            json!({"type": "closeScanStopped"}),
+        ),
+        (
+            Command::OpenPluginPlaces,
+            json!({"type": "openPluginPlaces"}),
+        ),
+        (
+            Command::TogglePluginPlaces,
+            json!({"type": "togglePluginPlaces"}),
+        ),
+        (
+            Command::ReloadPlugin { slot: instrument },
+            json!({"type": "reloadPlugin", "slot": {"kind": "instrument", "track": 5}}),
+        ),
+        (
+            Command::RemovePlugin { slot: insert },
+            json!({"type": "removePlugin", "slot": insert_json}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&command).unwrap(), json);
+        assert_eq!(serde_json::from_value::<Command>(json).unwrap(), command);
+    }
+}
+
 /// The `section` of a change is the key of that section in the state JSON.
 #[test]
 fn change_section_names_match_state_keys() {
@@ -1626,6 +1790,7 @@ fn change_section_names_match_state_keys() {
         Change::Workspace(state.workspace.clone()),
         Change::Shelf(state.shelf.clone()),
         Change::Params(state.params.clone()),
+        Change::Plugins(state.plugins.clone()),
         Change::Keyboards(state.keyboards.clone()),
         Change::Outputs(state.outputs.clone()),
         Change::Inputs(state.inputs.clone()),
@@ -1651,6 +1816,7 @@ fn changes_from_gives_only_changed_sections() {
     new.workspace.scale = 125;
     new.shelf.selected = None;
     new.params.selected = None;
+    new.plugins.scan = ScanView::Idle;
     new.status.message = Some(StatusMessage::NoArmedTrack);
     let changes = AppState::changes_from(&old, &new);
     assert_eq!(
@@ -1661,6 +1827,7 @@ fn changes_from_gives_only_changed_sections() {
             Change::Workspace(new.workspace.clone()),
             Change::Shelf(new.shelf.clone()),
             Change::Params(new.params.clone()),
+            Change::Plugins(new.plugins.clone()),
             Change::Status(new.status.clone())
         ]
     );

@@ -1,0 +1,268 @@
+//! Where a plugin that runs in another process sits in the engine (docs/architecture.md 20-2).
+//!
+//! A [`PluginSlot`] is the engine's end of one slot of the shared memory. Wrapped as a
+//! [`PluginInstrument`] it goes where any instrument goes (`EngineCommand::SwapInstrument`),
+//! wrapped as a [`PluginEffect`] where any effect goes (`EngineHandle::set_effect`), and it
+//! comes back on the same retired rings. The engine knows nothing of plugin formats.
+//!
+//! On the audio thread a slot writes the block into the shared memory, wakes the host process
+//! and sleeps on a futex until the answer is there or the block's deadline ([`PluginBlock`])
+//! has passed. That sleep is the one wait on the audio thread; nothing here allocates or
+//! locks. A block without an answer is silence for an instrument and the untouched sound for
+//! an effect. Two blocks in a row without one and the slot is stopped: it is never waited for
+//! again, and [`PluginWatch::stopped`] tells the control side.
+//!
+//! The control side (meloet-core) makes the slot before it asks the host process to load the
+//! plugin, and keeps the [`PluginWatch`].
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering::Relaxed};
+
+use meloet_plugin::ipc::{EngineEnd, FromPlugin, ToPlugin, Transport, block_flags};
+
+use crate::effect::{Effect, EffectContext};
+use crate::instrument::{Instrument, InstrumentEvent};
+
+/// How much of a block may pass, from the start of the engine's callback, before a plugin that
+/// has not answered is given up on for that block. A first value, to be set by measuring a
+/// real stream.
+pub const PLUGIN_WAIT_SHARE: f64 = 0.5;
+
+/// What every plugin slot needs to know about the block the engine is in. The engine writes
+/// it at the start of each block; the slots read it in that block, on the same thread. One for
+/// each engine ([`crate::EngineHandle::plugin_block`]).
+#[derive(Default)]
+pub struct PluginBlock {
+    deadline_ns: AtomicU64,
+    flags: AtomicU32,
+    /// Numerator in the low half, denominator in the high half.
+    meter: AtomicU32,
+    tempo_bpm: AtomicU64,
+    position_quarters: AtomicU64,
+    bar_start_quarters: AtomicU64,
+    loop_start_quarters: AtomicU64,
+    loop_end_quarters: AtomicU64,
+    position_frames: AtomicI64,
+}
+
+impl PluginBlock {
+    /// Until when this block's plugins are waited for, CLOCK_MONOTONIC in nanoseconds.
+    pub fn set_deadline(&self, deadline_ns: u64) {
+        self.deadline_ns.store(deadline_ns, Relaxed);
+    }
+
+    pub fn deadline_ns(&self) -> u64 {
+        self.deadline_ns.load(Relaxed)
+    }
+
+    /// Where the song is at the first frame of the stretch about to be rendered.
+    pub fn set_transport(&self, transport: &Transport) {
+        self.flags.store(transport.flags, Relaxed);
+        let meter = u32::from(transport.meter_num) | u32::from(transport.meter_den) << 16;
+        self.meter.store(meter, Relaxed);
+        self.tempo_bpm.store(transport.tempo_bpm.to_bits(), Relaxed);
+        self.position_quarters
+            .store(transport.position_quarters.to_bits(), Relaxed);
+        self.bar_start_quarters
+            .store(transport.bar_start_quarters.to_bits(), Relaxed);
+        self.loop_start_quarters
+            .store(transport.loop_start_quarters.to_bits(), Relaxed);
+        self.loop_end_quarters
+            .store(transport.loop_end_quarters.to_bits(), Relaxed);
+        self.position_frames
+            .store(transport.position_frames, Relaxed);
+    }
+
+    pub fn transport(&self) -> Transport {
+        let meter = self.meter.load(Relaxed);
+        Transport {
+            flags: self.flags.load(Relaxed),
+            meter_num: meter as u16,
+            meter_den: (meter >> 16) as u16,
+            tempo_bpm: f64::from_bits(self.tempo_bpm.load(Relaxed)),
+            position_quarters: f64::from_bits(self.position_quarters.load(Relaxed)),
+            bar_start_quarters: f64::from_bits(self.bar_start_quarters.load(Relaxed)),
+            loop_start_quarters: f64::from_bits(self.loop_start_quarters.load(Relaxed)),
+            loop_end_quarters: f64::from_bits(self.loop_end_quarters.load(Relaxed)),
+            position_frames: self.position_frames.load(Relaxed),
+            reserved: 0,
+        }
+    }
+}
+
+/// What the control side reads of a slot while the audio thread runs it.
+#[derive(Default)]
+pub struct PluginWatch {
+    stopped: AtomicBool,
+    unanswered: AtomicU64,
+    latency: AtomicU32,
+}
+
+impl PluginWatch {
+    /// Two blocks in a row went without an answer. The slot plays silence (an instrument) or
+    /// lets the sound through (an effect) from then on, until the control side puts another
+    /// one in its place.
+    pub fn stopped(&self) -> bool {
+        self.stopped.load(Relaxed)
+    }
+
+    /// Blocks that got no answer in time, since the slot was made.
+    pub fn unanswered(&self) -> u64 {
+        self.unanswered.load(Relaxed)
+    }
+
+    /// The plugin's delay in frames, as it last said (20-8). The control side adds up a
+    /// track's and sends the sum with `EngineCommand::SetLookahead`.
+    pub fn latency(&self) -> u32 {
+        self.latency.load(Relaxed)
+    }
+}
+
+/// The engine's end of one plugin in another process.
+pub struct PluginSlot {
+    end: EngineEnd,
+    block: Arc<PluginBlock>,
+    watch: Arc<PluginWatch>,
+    reset: bool,
+}
+
+impl PluginSlot {
+    /// `end`: made on this slot before the plugin was loaded into it. `block`: the engine's
+    /// ([`crate::EngineHandle::plugin_block`]). `latency`: what the host process said when it
+    /// loaded the plugin.
+    pub fn new(
+        end: EngineEnd,
+        block: Arc<PluginBlock>,
+        latency: u32,
+    ) -> (PluginSlot, Arc<PluginWatch>) {
+        let watch = Arc::new(PluginWatch::default());
+        watch.latency.store(latency, Relaxed);
+        let slot = PluginSlot {
+            end,
+            block,
+            watch: watch.clone(),
+            reset: false,
+        };
+        (slot, watch)
+    }
+
+    fn midi(&mut self, data: [u8; 3]) {
+        self.end.push_event(ToPlugin::Midi { frame: 0, data });
+    }
+
+    /// One round trip for a stretch of at most the slot's block size. True when `left` and
+    /// `right` hold the plugin's output; false leaves them as they were.
+    fn piece(&mut self, input: bool, left: &mut [f32], right: &mut [f32]) -> bool {
+        if !self.end.begin(left.len()) {
+            self.watch.stopped.store(true, Relaxed);
+            return false;
+        }
+        if input {
+            self.end.write_input(0, left);
+            self.end.write_input(1, right);
+        }
+        self.end.set_transport(&self.block.transport());
+        if std::mem::take(&mut self.reset) {
+            self.end.set_flags(block_flags::RESET);
+        }
+        self.end.submit();
+        let answered = self.end.wait(self.block.deadline_ns());
+        if answered {
+            self.end.read_output(0, left);
+            self.end.read_output(1, right);
+            // What comes from another process is not trusted to be numbers.
+            if left.iter().chain(right.iter()).any(|x| !x.is_finite()) {
+                left.fill(0.0);
+                right.fill(0.0);
+            }
+        } else {
+            self.watch.unanswered.fetch_add(1, Relaxed);
+        }
+        while let Some(event) = self.end.pop_event() {
+            match event {
+                FromPlugin::Latency { frames } => self.watch.latency.store(frames, Relaxed),
+                // Parameters the plugin moves by itself have nowhere to go yet.
+                FromPlugin::Param { .. } => {}
+            }
+        }
+        answered
+    }
+
+    /// Runs the plugin over `left` and `right`, in place. False when any stretch of them got
+    /// no answer; those stretches are as they were.
+    fn run(&mut self, input: bool, left: &mut [f32], right: &mut [f32]) -> bool {
+        let step = self.end.max_frames();
+        let mut all = true;
+        for (left, right) in left.chunks_mut(step).zip(right.chunks_mut(step)) {
+            all &= self.piece(input, left, right);
+        }
+        all
+    }
+}
+
+/// A plugin as an instrument.
+///
+/// `prepare` does nothing: the plugin itself is made ready by the host process, for the sample
+/// rate it was loaded with. When the sample rate changes the control side loads it again.
+pub struct PluginInstrument(pub PluginSlot);
+
+impl Instrument for PluginInstrument {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+
+    fn event(&mut self, ev: InstrumentEvent) {
+        let data = match ev {
+            InstrumentEvent::NoteOn { note, velocity } => [0x90, note & 0x7f, velocity & 0x7f],
+            InstrumentEvent::NoteOff { note } => [0x80, note & 0x7f, 0],
+            InstrumentEvent::Control { controller, value } => {
+                [0xb0, controller & 0x7f, value & 0x7f]
+            }
+            InstrumentEvent::PitchBend { value } => {
+                let bend = (i32::from(value) + 8192).clamp(0, 16_383);
+                [0xe0, (bend & 0x7f) as u8, (bend >> 7) as u8]
+            }
+            // CC 123, all notes off.
+            InstrumentEvent::AllNotesOff => [0xb0, 123, 0],
+        };
+        self.0.midi(data);
+    }
+
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        // An instrument overwrites; what is there is not its input.
+        left.fill(0.0);
+        right.fill(0.0);
+        self.0.run(false, left, right);
+    }
+
+    fn reset(&mut self) {
+        self.0.reset = true;
+    }
+}
+
+/// A plugin as an effect. A parameter's position is the plugin's parameter id, and its value
+/// is 0..=1 whatever the parameter's own range.
+///
+/// `prepare`: as for [`PluginInstrument`].
+pub struct PluginEffect(pub PluginSlot);
+
+impl Effect for PluginEffect {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+
+    fn set_param(&mut self, index: u32, value: f32) {
+        if value.is_finite() {
+            let value = f64::from(value.clamp(0.0, 1.0));
+            self.0.end.push_event(ToPlugin::Param {
+                frame: 0,
+                id: index,
+                value,
+            });
+        }
+    }
+
+    fn process(&mut self, left: &mut [f32], right: &mut [f32], _ctx: &EffectContext) {
+        self.0.run(true, left, right);
+    }
+
+    fn reset(&mut self) {
+        self.0.reset = true;
+    }
+}

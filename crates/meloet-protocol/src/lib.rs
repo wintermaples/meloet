@@ -19,7 +19,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -605,6 +605,47 @@ pub enum Command {
     DiscardRecovered,
     /// "ファイルの場所をひらく" on the hint about a recovery file that did not read.
     ShowRecoveryFile,
+    /// "もう一度スキャン" (right of the shelf's heading 「あとから入れたもの」, and under the plugin
+    /// places): every bundle of every place is looked at again, the ones that stopped before
+    /// too. While it runs, `PluginsView::scan` counts; does nothing while a scan is running.
+    RescanPlugins,
+    /// "もう一度ためす" on a row of the dialog 「スキャンで止まったプラグイン」: that one bundle
+    /// is scanned again. `path` is `StoppedPluginView::path`. The row is `retrying` until it is
+    /// done; then it is gone (the plugins are in the shelf) or back as it was, and the status
+    /// line says `ScanRetryAdded` or `ScanRetryStopped`.
+    RetryStoppedPlugin {
+        path: String,
+    },
+    /// "場所を足す…": Rust shows the PC's window for choosing a folder. The folder joins
+    /// `PluginsView::places` and it alone is scanned. Cancelling the window, or choosing a
+    /// folder that is in the list already, changes nothing.
+    AddPluginPlace,
+    /// "外す" on a place the person added (`PluginPlaceView::added`); `path` is
+    /// `PluginPlaceView::path`. Its plugins leave the shelf. A usual place stays.
+    RemovePluginPlace {
+        path: String,
+    },
+    /// "止まった 4 個を見る": puts up the dialog 「スキャンで止まったプラグイン」
+    /// (`PluginsView::stopped_open`).
+    OpenScanStopped,
+    /// "閉じる" and Esc on that dialog.
+    CloseScanStopped,
+    /// "プラグインの場所…" on that dialog: closes it and opens the sound settings with the
+    /// advanced part and 「プラグインの場所」 unfolded.
+    OpenPluginPlaces,
+    /// The ▾ of 「プラグインの場所」 in the advanced part of the sound settings.
+    TogglePluginPlaces,
+    /// "もう一度読みこむ" for a plugin that stopped (spec 6 「プラグインが止まった」): its host
+    /// process is started again and the plugin gets back the state it had. Not used before
+    /// plugins can be put on a track.
+    ReloadPlugin {
+        slot: PluginSlotRef,
+    },
+    /// "外す" for a plugin that stopped: takes it out of its slot, as one step. Not used before
+    /// plugins can be put on a track.
+    RemovePlugin {
+        slot: PluginSlotRef,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -743,6 +784,114 @@ pub struct InsertRef {
 /// The insert slots of every strip (mock F4-Mixer).
 pub const INSERT_SLOTS: usize = 4;
 
+/// Where a plugin sits: as the instrument of a track (`track` is `TrackView::id`) or in an
+/// insert slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum PluginSlotRef {
+    Instrument { track: u32 },
+    Insert { insert: InsertRef },
+}
+
+/// The formats of plugins meloet reads; the mark on a row ("VST3", "LV2").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum PluginFormat {
+    Vst3,
+    Lv2,
+}
+
+/// Why the scan of a bundle stopped (spec 3, Y13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum ScanStopReason {
+    /// "読みこむと止まりました"
+    Crashed,
+    /// "30 秒たっても終わりませんでした"
+    TimedOut,
+    /// "作りがこわれています"
+    Broken,
+}
+
+/// The scan for plugins, what it could not read, and where it looks. A section of its own:
+/// while a scan runs its count changes with every bundle, and neither the shelf nor the
+/// workspace should be sent again for that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PluginsView {
+    pub scan: ScanView,
+    /// The bundles whose scan stopped, in the order of `places`. They are not in the shelf,
+    /// and a scan passes them over until `RetryStoppedPlugin` or `RescanPlugins`.
+    pub stopped: Vec<StoppedPluginView>,
+    /// The usual places first, then the ones the person added, each in the order it has in
+    /// the settings.
+    pub places: Vec<PluginPlaceView>,
+    /// The dialog 「スキャンで止まったプラグイン」 is up (`OpenScanStopped`).
+    pub stopped_open: bool,
+    /// 「プラグインの場所」 in the advanced part of the sound settings is unfolded.
+    pub places_open: bool,
+}
+
+/// The strip under the shelf.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ScanView {
+    /// Nothing to say.
+    Idle,
+    /// "スキャン中 37 / 112 ・ 調べ終えた分から、もう使えます". Bundles looked at, and bundles
+    /// this scan looks at in all.
+    Running { done: u32, total: u32 },
+    /// "スキャンが終わりました ・ 667 個を棚に入れました。4 個は…": the last scan that showed
+    /// its count (the first one, and `RescanPlugins`) is over. `added` plugins are in the
+    /// shelf; `stopped` is the length of `PluginsView::stopped` at that time.
+    Finished { added: u32, stopped: u32 },
+}
+
+/// A row of the dialog 「スキャンで止まったプラグイン」.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct StoppedPluginView {
+    /// The plugin's name where a scan before this one read it; else the bundle's file name
+    /// without its ending.
+    pub name: String,
+    pub format: PluginFormat,
+    pub reason: ScanStopReason,
+    /// The bundle; what `RetryStoppedPlugin` names.
+    pub path: String,
+    /// `path` as shown, the home folder written as "~".
+    pub shown_path: String,
+    /// `RetryStoppedPlugin` is at work on it: the button says "ためしています…".
+    pub retrying: bool,
+}
+
+/// A row of 「プラグインの場所」.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPlaceView {
+    /// What `RemovePluginPlace` names.
+    pub path: String,
+    /// `path` as shown, the home folder written as "~".
+    pub shown_path: String,
+    /// The person added it ("外す"). False: a usual place of Linux ("ふつうの場所"), which
+    /// cannot be removed.
+    pub added: bool,
+}
+
 /// The effects that come with meloet (spec 3 Y8), in the order of the shelf. Their
 /// parameters (number, range, unit, steps) are the table `EFFECT_PARAMS`
 /// (`ui/src/bridge/generated/effects.ts`), written from `meloet_model::effects`; the names
@@ -820,6 +969,7 @@ pub struct AppState {
     pub workspace: WorkspaceView,
     pub shelf: ShelfView,
     pub params: ParamsView,
+    pub plugins: PluginsView,
     pub keyboards: KeyboardsView,
     pub outputs: OutputsView,
     pub inputs: InputsView,
@@ -852,6 +1002,9 @@ impl AppState {
         if old.params != new.params {
             out.push(Change::Params(new.params.clone()));
         }
+        if old.plugins != new.plugins {
+            out.push(Change::Plugins(new.plugins.clone()));
+        }
         if old.keyboards != new.keyboards {
             out.push(Change::Keyboards(new.keyboards.clone()));
         }
@@ -880,6 +1033,7 @@ impl AppState {
             Change::Workspace(v) => self.workspace = v,
             Change::Shelf(v) => self.shelf = v,
             Change::Params(v) => self.params = v,
+            Change::Plugins(v) => self.plugins = v,
             Change::Keyboards(v) => self.keyboards = v,
             Change::Outputs(v) => self.outputs = v,
             Change::Inputs(v) => self.inputs = v,
@@ -1884,6 +2038,39 @@ pub enum StatusMessage {
     RecoveryUnreadable {
         saved_song: bool,
     },
+    /// A scan that shows no count (from the second start on, a place added) found new
+    /// plugins: "新しいプラグインが 3 個見つかりました。棚の「あとから入れたもの」に入れました。"
+    PluginsFound {
+        count: u32,
+    },
+    /// The first scan, or `RescanPlugins`, is over: "スキャンが終わりました ・ 667 個を棚に入れ
+    /// ました。4 個は調べている途中で止まったので、入れていません。meloet と曲は無事です。" with
+    /// the button "止まった 4 個を見る" (`Command::OpenScanStopped`). The numbers of
+    /// `ScanView::Finished`.
+    ScanFinished {
+        added: u32,
+        stopped: u32,
+    },
+    /// `RetryStoppedPlugin` and the bundle read: "Granular Fog を、もう一度ためしました。今度は
+    /// 入りました。" `name` is `StoppedPluginView::name`.
+    ScanRetryAdded {
+        name: String,
+    },
+    /// `RetryStoppedPlugin` and it stopped again: "Granular Fog は、また止まりました。棚には
+    /// 入れません。"
+    ScanRetryStopped {
+        name: String,
+    },
+    /// The dialog is up (mock F5-ScanStopped): "スキャンで止まったプラグイン をひらいています".
+    ScanStoppedOpen,
+    /// A plugin's host process answered no more (spec 6 「プラグインが止まった」): "（名前）が
+    /// 止まりました ・ （トラック）。曲のほかの部分は動いています。音はこの枠をとばして流して
+    /// います。パラメータの値は残っています。" with "もう一度読みこむ" (`Command::ReloadPlugin`)
+    /// and "外す" (`Command::RemovePlugin`). The screen names the strip from `slot`.
+    PluginStopped {
+        name: String,
+        slot: PluginSlotRef,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -1942,6 +2129,7 @@ pub enum Change {
     Workspace(WorkspaceView),
     Shelf(ShelfView),
     Params(ParamsView),
+    Plugins(PluginsView),
     Keyboards(KeyboardsView),
     Outputs(OutputsView),
     Inputs(InputsView),

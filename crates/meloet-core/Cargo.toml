@@ -11,6 +11,7 @@ meloet-devices = { workspace = true }
 meloet-engine = { workspace = true }
 meloet-midi = { workspace = true }
 meloet-model = { workspace = true }
+meloet-plugin = { workspace = true }
 meloet-protocol = { workspace = true }
 meloet-sound = { workspace = true }
 serde = { workspace = true }

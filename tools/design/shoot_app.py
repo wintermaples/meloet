@@ -14,9 +14,12 @@ Every start gets its own XDG_CACHE_HOME, so that the plugin scan is the same eac
 state with scan="first" an empty one (the scan runs from the beginning, with its band); the
 others share <target>/shoot/cache, which holds the record of one whole scan (made by a run of
 its own when it is not there yet), so nothing of the scan shows.
+Every start also gets its own MELOET_SF2_DIR: empty, or for a state with sf2=True
+<target>/shoot/sf2 with a copy of this PC's FluidR3_GM.sf2. The states of round 5 step 2 need
+Surge XT and ZamComp (VST3) among the plugins of this PC.
 Out: docs/screenshots/app/<state>-<w>x<h>-<scale>.png and docs/screenshots/compare/ (app on
 the left, mock on the right, laid out as in shoot_ui.py). --compare-small makes compare sheets
-only for 100 % (to keep the PNGs small).
+only for 100 % (to keep the PNGs small). --only 1280x800-100 shoots that one size and scale.
 """
 import json, os, shutil, signal, subprocess, sys, tempfile, time
 
@@ -48,6 +51,15 @@ def held_chord(lead_ms, hold_ms):
     # One vkeys per note: `play` lets go of a note before it presses the next one.
     return [["play", "--notes", n, "--count", "1", "--hold-ms", str(hold_ms),
              "--velocity", QUIET, "--lead-ms", str(lead_ms)] for n in CHORD]
+
+
+def click(selector):
+    return f"document.querySelector('{selector}').click()"
+
+
+def typed(text):
+    return ("const input = document.querySelector('[data-test=\"shelf-search\"]'); "
+            f"input.value = '{text}'; input.dispatchEvent(new Event('input', {{ bubbles: true }}));")
 
 
 # board: mock to compare with. remembered: start with the output already chosen.
@@ -110,6 +122,51 @@ STATES = {
     "scanAppStopped": dict(board="F5-ScanStopped", remembered=True,
                            commands=[(400, {"type": "toggleBand", "band": "shelf"}),
                                      (700, {"type": "openScanStopped"})]),
+    # Round 5 step 2: the shelf's 「あとから入れたもの」, plugin and SF2 tracks, a plugin host
+    # stopped from outside, and what a song names that is not there. click / typed: what only
+    # the screen knows (MELOET_EVAL). song: arguments for make_song.py. stop_host: (seconds
+    # after the start, signal) for the first plugin host. gone: the song's plugin is renamed to
+    # one this PC does not have.
+    "sf2ShelfApp": dict(board="F5-SF2Shelf", remembered=True, sf2=True, snap=2500,
+                        commands=band("shelf"),
+                        evals=[(1200, click('[data-group="f:FluidR3_GM.sf2"]')),
+                               (1600, click('[data-group="ff:guitar:FluidR3_GM.sf2"]'))]),
+    "shelfPluginsApp": dict(board="Opt5-Plugins", remembered=True, sf2=True, snap=2500,
+                            commands=band("shelf"),
+                            evals=[(1200, click('[data-test="shelf-effects"]')),
+                                   (1600, click('[data-group="c:effect:reverb"]'))]),
+    "shelfSearchApp": dict(board="F5-ShelfSearch", remembered=True, sf2=True, snap=2500,
+                           commands=band("shelf"),
+                           evals=[(1200, click('[data-test="shelf-effects"]')), (1600, typed("Dragonfly"))]),
+    "pluginAuditionApp": dict(board="F5-PluginAudition", remembered=True, sf2=True, only_virtual=True,
+                              snap=5000, commands=band("shelf"), select_plugin=(1800, "Surge XT"),
+                              evals=[(1200, click('[data-group="c:instrument:synth"]'))],
+                              keys=held_chord(4300, 2500)),
+    "pluginTrackApp": dict(board="F5-PluginTrack", remembered=True, sf2=True, snap=5000,
+                           song=["--tracks", "3", "--notes", "60", "--bars", "8", "--instruments", "plugin,sf2,builtin",
+                                 "--plugin", "Surge XT", "--effect-plugin", "ZamComp", "--sf2", "{sf2}:0:4:Rhodes EP"],
+                           commands=[(1500, {"type": "toggleBand", "band": "mixer"}),
+                                     (2500, {"type": "playStop"})]),
+    "pluginStoppedApp": dict(remembered=True, sf2=True, snap=7000, stop_host=(5.5, "KILL"),
+                             song=["--tracks", "3", "--notes", "60", "--bars", "8", "--instruments", "plugin,sf2,builtin",
+                                   "--plugin", "Surge XT", "--sf2", "{sf2}:0:4:Rhodes EP"],
+                             commands=[(1500, {"type": "toggleBand", "band": "shelf"}),
+                                       (1700, {"type": "toggleBand", "band": "mixer"}),
+                                       (2500, {"type": "playStop"})]),
+    "missingSf2App": dict(board="R8-Missing", remembered=True, snap=3500,
+                          song=["--tracks", "3", "--notes", "60", "--bars", "8", "--instruments", "plugin,sf2,builtin",
+                                "--plugin", "Surge XT", "--sf2", "{sf2}:0:4:Rhodes EP"],
+                          commands=band("shelf")),
+    "missingPluginApp": dict(remembered=True, sf2=True, snap=3500, gone=True,
+                             song=["--tracks", "3", "--notes", "60", "--bars", "8", "--instruments", "plugin,sf2,builtin",
+                                   "--plugin", "Surge XT", "--effect-plugin", "ZamComp", "--sf2", "{sf2}:0:4:Rhodes EP"],
+                             commands=[(400, {"type": "toggleBand", "band": "shelf"}),
+                                       (600, {"type": "toggleBand", "band": "mixer"})]),
+    # Neither the plugins nor the SF2 file are there, and no band is opened: the status line
+    # still holds what meloet said when the song was opened.
+    "missingStatusApp": dict(remembered=True, snap=3500, gone=True,
+                             song=["--tracks", "3", "--notes", "60", "--bars", "8", "--instruments", "plugin,sf2,builtin",
+                                   "--plugin", "Surge XT", "--effect-plugin", "ZamComp", "--sf2", "{sf2}:0:4:Rhodes EP"]),
     "plugIn": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "3"]], snap=1500),
     "plugOut": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "2"]], snap=4000),
 }
@@ -176,6 +233,51 @@ def scanned_cache(work):
     return cache
 
 
+SF2_SOURCE = "/usr/share/sounds/sf2/FluidR3_GM.sf2"
+
+
+def sf2_dir():
+    """A MELOET_SF2_DIR that holds FluidR3_GM.sf2, as if the person had added it."""
+    folder = os.path.join(target, "shoot", "sf2")
+    if not os.path.exists(os.path.join(folder, os.path.basename(SF2_SOURCE))):
+        if not os.path.exists(SF2_SOURCE):
+            sys.exit(f"no {SF2_SOURCE} on this PC")
+        os.makedirs(folder, exist_ok=True)
+        shutil.copy(SF2_SOURCE, folder)
+    return folder
+
+
+def plugin_key(scan, name):
+    """The VST3 key of the plugin with that name in the scan record."""
+    with open(scan, encoding="utf-8") as f:
+        record = json.load(f)
+    for bundle in record["bundles"]:
+        for plugin in bundle["plugins"]:
+            if plugin["name"] == name and plugin["key"].startswith("vst3:"):
+                return plugin["key"]
+    sys.exit(f"no VST3 plugin named {name!r} in {scan}")
+
+
+def rename_plugins(song):
+    """Every plugin of the song becomes one this PC does not have (its settings stay)."""
+    with open(song, encoding="utf-8") as f:
+        data = json.load(f)
+
+    def gone(plugin, name):
+        plugin.update(key="vst3:00000000000000000000000000000000", name=name, vendor="Nobody",
+                      path=f"/usr/lib/vst3/{name}.vst3")
+
+    for track in data["song"]["tracks"]:
+        if track["instrument"].get("kind") == "plugin":
+            gone(track["instrument"], "Lost Synth")
+        for slot in track["inserts"]:
+            if slot and "plugin" in slot:
+                gone(slot["plugin"], "Lost Comp")
+                slot["plugin"]["key"] = "vst3:11111111111111111111111111111111"
+    with open(song, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
 def shoot(state, size, scale, settings, work, png):
     s = STATES[state]
     config = tempfile.mkdtemp(prefix="cfg-", dir=work)
@@ -188,12 +290,28 @@ def shoot(state, size, scale, settings, work, png):
                                else scanned_cache(work))
     if commands:
         extra["MELOET_COMMANDS"] = json.dumps([{"afterMs": ms, "command": c} for ms, c in commands])
+    scan = os.path.join(extra["XDG_CACHE_HOME"], "meloet", "plugins", "scan.json")
+    extra["MELOET_SF2_DIR"] = sf2_dir() if s.get("sf2") else tempfile.mkdtemp(prefix="sf2-", dir=work)
+    if s.get("select_plugin"):
+        ms, name = s["select_plugin"]
+        commands = commands + [(ms, {"type": "shelfSelectSound", "sound": {"kind": "plugin", "key": plugin_key(scan, name)}})]
+        extra["MELOET_COMMANDS"] = json.dumps([{"afterMs": ms, "command": c} for ms, c in commands])
+    if s.get("evals"):
+        extra["MELOET_EVAL"] = json.dumps([{"afterMs": ms, "js": js} for ms, js in s["evals"]])
     if s.get("song"):
-        song = os.path.join(work, f"song-{s['song']}.meloet")
-        if not os.path.exists(song):
-            run([sys.executable, "-I", os.path.join(root, "tools", "measure", "make_song.py"), song,
-                 "--notes", str(s["song"])], stdout=subprocess.DEVNULL)
+        song = os.path.join(work, f"song-{state}.meloet")
+        make_song = [sys.executable, "-I", os.path.join(root, "tools", "measure", "make_song.py"), song]
+        if isinstance(s["song"], int):
+            run(make_song + ["--notes", str(s["song"])], stdout=subprocess.DEVNULL)
+        else:
+            run(make_song + ["--scan", scan] + [a.replace("{sf2}", SF2_SOURCE) for a in s["song"]],
+                stdout=subprocess.DEVNULL)
+        if s.get("gone"):
+            rename_plugins(song)
         extra.update(MELOET_OPEN_SONG=song, MELOET_STATE_DIR=tempfile.mkdtemp(prefix="state-", dir=work))
+    if s.get("stop_host"):
+        # The host that is stopped on purpose writes no crash report.
+        extra["MELOET_PLUGHOST_NO_DUMP"] = "1"
     if s.get("only_virtual"):
         extra["MELOET_ONLY_VIRTUAL"] = "1"
     if s.get("accept_virtual"):
@@ -208,6 +326,12 @@ def shoot(state, size, scale, settings, work, png):
         app = start_app(config, size, extra, log)
         keys = [subprocess.Popen([vkeys_bin, *k, "--name", n], stdout=log, stderr=subprocess.STDOUT)
                 for k, n in zip(s.get("keys", []), names)]
+        if s.get("stop_host"):
+            at, sig = s["stop_host"]
+            keys.append(subprocess.Popen(
+                [sys.executable, "-I", os.path.join(root, "tools", "measure", "plug_watch.py"), os.devnull,
+                 os.path.join(target, "release", "meloet-plughost"), "--seconds", str(at + 2),
+                 "--signal", sig, "--at", str(at)], stdout=subprocess.DEVNULL))
         app.wait(timeout=60)
         for k in keys:
             k.wait(timeout=30)
@@ -237,6 +361,9 @@ def main():
     args = sys.argv[1:]
     no_build = "--no-build" in args
     small = "--compare-small" in args
+    only = args[args.index("--only") + 1] if "--only" in args else None
+    if only:
+        args.remove(only)
     states = [a for a in args if not a.startswith("--")] or list(STATES)
     unknown = [s for s in states if s not in STATES]
     if unknown:
@@ -257,6 +384,8 @@ def main():
             for size in SIZES:
                 for scale in SCALES:
                     stem = f"{state}-{size[0]}x{size[1]}-{scale}"
+                    if only and only != f"{size[0]}x{size[1]}-{scale}":
+                        continue
                     shot = os.path.join(out, "app", stem + ".png")
                     shoot(state, size, scale, settings, work, shot)
                     print(shot)

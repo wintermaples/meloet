@@ -1,11 +1,15 @@
 //! Development measurements. Nothing here runs unless `MELOET_MEASURE_DIR` is set.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use meloet_engine::LatencyRecord;
 
+use crate::plugins::hosts::ProcessInfo;
+
 const FILE_NAME: &str = "key-to-sound.json";
+const PLUGINS_FILE_NAME: &str = "plugins.json";
 const WRITE_EVERY: Duration = Duration::from_secs(2);
 const MAX_RECORDS: usize = 100_000;
 
@@ -30,6 +34,51 @@ fn write_whole(dir: &Path, name: &str, text: &str) -> std::io::Result<()> {
     let temporary = dir.join(format!(".{name}.tmp"));
     std::fs::write(&temporary, text)?;
     std::fs::rename(&temporary, dir.join(name))
+}
+
+/// Writes what the engine saw of each plugin process to `plugins.json`: the blocks that got no
+/// answer in time, the time waited for answers, the delay the plugins say they have. A process
+/// that has ended keeps the numbers it had when last looked at.
+pub(crate) struct PluginLog {
+    dir: PathBuf,
+    seen: BTreeMap<u32, ProcessInfo>,
+    looked_at: Instant,
+}
+
+impl PluginLog {
+    pub fn new(dir: PathBuf) -> PluginLog {
+        PluginLog {
+            dir,
+            seen: BTreeMap::new(),
+            looked_at: Instant::now(),
+        }
+    }
+
+    /// Looks and writes when the last look is old enough (or `now` is set).
+    pub fn look(&mut self, now: bool, processes: impl FnOnce() -> Vec<ProcessInfo>) {
+        if !(now || self.looked_at.elapsed() >= WRITE_EVERY) {
+            return;
+        }
+        self.looked_at = Instant::now();
+        let found = processes();
+        if found.is_empty() && self.seen.is_empty() {
+            return;
+        }
+        self.seen.extend(found.into_iter().map(|p| (p.pid, p)));
+        let report = serde_json::json!({
+            "processes": self.seen.values().map(|p| serde_json::json!({
+                "key": p.key.to_string(),
+                "pid": p.pid,
+                "plugins": p.slots.len(),
+                "unansweredBlocks": p.unanswered,
+                "waitedMs": p.waited_ns as f64 / 1e6,
+                "latencyFrames": p.latency,
+            })).collect::<Vec<_>>(),
+        });
+        if let Err(e) = write_whole(&self.dir, PLUGINS_FILE_NAME, &format!("{report:#}\n")) {
+            eprintln!("meloet: MELOET_MEASURE_DIR: {e}");
+        }
+    }
 }
 
 /// Collects every key-to-sound record and writes them all to `key-to-sound.json`.

@@ -51,6 +51,28 @@ def check_band(tracks, notes, bars):
     assert make_song.band_song(tracks, notes, bars, 96.0, 4, 1) == s
 
 
+def check_added():
+    """Version 4: plugin and SF2 instruments, a plugin effect, the notes inside their clips."""
+    plugin = {"key": "vst3:AB", "name": "Synth", "vendor": "V", "path": "/p/Synth.vst3"}
+    sf2 = {"file": "a.sf2", "sha256": "00", "bank": 0, "program": 4, "name": "EP"}
+    effect = {"key": "vst3:CD", "name": "Comp", "vendor": "V", "path": "/p/Comp.vst3"}
+    s = make_song.band_song(4, 30, 2, 96.0, 0, 1, ["plugin", "sf2", "builtin"], plugin, sf2, effect, 7, True)
+    assert s["version"] == 4
+    made = s["song"]["tracks"]
+    assert [t["instrument"]["kind"] for t in made] == ["plugin", "sf2", "builtin", "builtin"]
+    assert made[0]["instrument"]["key"] == "vst3:AB" and made[1]["instrument"]["program"] == 4
+    assert [t["pan"] for t in made] == [-100, 100, 100, 100] and all(t["sends"]["a"] is None for t in made)
+    for t in made[:2]:
+        assert t["inserts"] == [{"plugin": effect}, None, None, None]
+    assert made[2]["inserts"] == [None] * 4
+    takes = {t["id"]: t for t in s["takes"]}
+    for t in made:
+        clip = t["clips"][0]
+        for start, length, key, velocity in takes[clip["takes"][0]["take"]]["notes"]:
+            assert length >= 1 and start + length <= clip["end"] and 0 <= key <= 127 and 1 <= velocity <= 127
+
+
 for args in [(8, 200, 16), (1, 5, 1), (16, 50, 4)]:
     check_band(*args)
+check_added()
 print("make_song: ok")

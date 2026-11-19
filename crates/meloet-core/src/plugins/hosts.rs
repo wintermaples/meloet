@@ -153,6 +153,13 @@ pub struct ProcessInfo {
     pub key: PluginKey,
     pub pid: u32,
     pub slots: Vec<SlotId>,
+    /// Blocks of the engine in which a plugin of this process gave no answer in time (each
+    /// such block is a gap in that plugin's sound), added up over its plugins.
+    pub unanswered: u64,
+    /// How long the audio thread waited for the answers of these plugins in all.
+    pub waited_ns: u64,
+    /// The largest delay, in frames, a plugin of this process says it has.
+    pub latency: u32,
 }
 
 enum Ask {
@@ -429,10 +436,17 @@ impl Run {
             Ask::Processes(done) => done(Ok(self
                 .procs
                 .iter()
-                .map(|p| ProcessInfo {
-                    key: p.key.clone(),
-                    pid: p.child.id(),
-                    slots: p.places.iter().flatten().copied().collect(),
+                .map(|p| {
+                    let slots: Vec<SlotId> = p.places.iter().flatten().copied().collect();
+                    let watches = || slots.iter().filter_map(|id| self.slots.get(id));
+                    ProcessInfo {
+                        key: p.key.clone(),
+                        pid: p.child.id(),
+                        unanswered: watches().map(|s| s.watch.unanswered()).sum(),
+                        waited_ns: watches().map(|s| s.watch.waited_ns()).sum(),
+                        latency: watches().map(|s| s.watch.latency()).max().unwrap_or(0),
+                        slots,
+                    }
                 })
                 .collect())),
         }

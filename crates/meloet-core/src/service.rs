@@ -43,7 +43,7 @@ use crate::plugins::hosts::{
 };
 use crate::plugins::housed::{HousedEffect, HousedInstrument, Which};
 use crate::plugins::scanner::Scanner;
-use crate::plugins::{PluginOptions, ScanNews};
+use crate::plugins::{PluginOptions, ScanJob, ScanNews};
 use crate::recovery;
 use crate::settings::{self, Settings};
 use crate::sf2store::{self, Sf2Done, Sf2Store};
@@ -52,6 +52,8 @@ use crate::sounds::{self, Library};
 use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, RecoveryStart, SaveTo, retry_delay};
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
+/// How long scanning waits for the screen at most (`PluginOptions::wait_for_screen`).
+const SCAN_WAITS_FOR_SCREEN: Duration = Duration::from_secs(10);
 /// How often the core thread reads the engine's reports while the transport moves.
 const MOVING_TICK: Duration = Duration::from_millis(15);
 /// How often the core thread looks at the engine's rings when no message wakes it.
@@ -186,6 +188,8 @@ enum Msg {
     },
     /// From the scanner's threads.
     Scan(ScanNews),
+    /// The screen subscribed: its page is up.
+    ScreenReady,
     /// From the thread of the plugin processes.
     Plugins(HostNews),
     /// From the thread of the plugin processes: the answer to [`Effect::LoadPlugin`] and to
@@ -380,6 +384,7 @@ impl Core {
                     cache: Box::new(dir.map_or_else(ScanCache::default, ScanCache::load)),
                     first: !dir.is_some_and(ScanCache::is_saved),
                 }),
+                held: plugin_options.wait_for_screen.then(Vec::new),
                 ready: HashMap::new(),
                 ids: HashMap::new(),
                 gone_tx,
@@ -530,6 +535,7 @@ impl Core {
     /// `subscribe` returns misses nothing.
     pub fn subscribe(&self, messages: MessageSink, telemetry: TelemetrySink) {
         self.hub.subscribe(messages, telemetry);
+        let _ = self.tx.send(Msg::ScreenReady);
     }
 
     /// Stops every thread, closes the stream, and writes what is left to write. Dropping the
@@ -1312,6 +1318,9 @@ struct PluginSide {
     hosts: Hosts,
     /// Given to the rules when the core thread starts.
     start: Option<Input>,
+    /// `Some` until the screen is up (`PluginOptions::wait_for_screen`): the scans asked for
+    /// by then, in order.
+    held: Option<Vec<ScanJob>>,
     /// The plugins that are loaded and not in the engine yet, by the ticket of their load.
     ready: HashMap<u64, Loaded>,
     /// Which plugin a ticket stands for, from its load until the engine handed it back.
@@ -1322,6 +1331,13 @@ struct PluginSide {
 }
 
 impl PluginSide {
+    /// Gives the scans held for the screen to the scanner; from now on none are held.
+    fn release(&mut self) {
+        for job in self.held.take().into_iter().flatten() {
+            self.scanner.scan(job);
+        }
+    }
+
     /// The plugin of a ticket, wrapped for the engine. `None` when it is not waiting.
     fn take(&mut self, ticket: u64) -> Option<(meloet_engine::PluginSlot, Which, Sender<Which>)> {
         let loaded = self.ready.remove(&ticket)?;
@@ -1352,6 +1368,7 @@ impl Worker {
         if let Some(start) = self.plugins.as_mut().and_then(|p| p.start.take()) {
             self.handle(start);
         }
+        let began = Instant::now();
         let mut kept = Instant::now();
         let mut polled = Instant::now();
         loop {
@@ -1486,6 +1503,11 @@ impl Worker {
                     };
                     self.handle(input);
                 }
+                Ok(Msg::ScreenReady) => {
+                    if let Some(plugins) = &mut self.plugins {
+                        plugins.release();
+                    }
+                }
                 #[cfg(test)]
                 Ok(Msg::Peek(look)) => look(&mut self),
                 Err(RecvTimeoutError::Timeout) => {}
@@ -1497,6 +1519,11 @@ impl Worker {
             }
             if kept.elapsed() >= HOUSEKEEPING {
                 kept = Instant::now();
+                if began.elapsed() >= SCAN_WAITS_FOR_SCREEN
+                    && let Some(plugins) = &mut self.plugins
+                {
+                    plugins.release();
+                }
                 self.housekeeping(false);
                 self.retries(kept);
                 if self.model.recovery_waiting() || self.model.sample_playing() {
@@ -1677,8 +1704,11 @@ impl Worker {
                     Effect::LoadSound(instrument) => self.audio.sounds.load(instrument),
                     Effect::DropSound(instrument) => self.audio.sounds.let_go(instrument),
                     Effect::ScanPlugins(job) => {
-                        if let Some(plugins) = &self.plugins {
-                            plugins.scanner.scan(*job);
+                        if let Some(plugins) = &mut self.plugins {
+                            match &mut plugins.held {
+                                Some(held) => held.push(*job),
+                                None => plugins.scanner.scan(*job),
+                            }
                         }
                     }
                     Effect::SavePluginScan(cache) => {

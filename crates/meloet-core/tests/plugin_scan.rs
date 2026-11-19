@@ -30,6 +30,7 @@ fn options(root: &Path) -> CoreOptions {
             usual_places: vec![root.join("lv2"), root.join("vst3")],
             scan_timeout: TIMEOUT,
             child_env: plughost::fake_env(),
+            wait_for_screen: false,
         }),
         ..CoreOptions::offline()
     }

@@ -39,6 +39,11 @@ pub struct PluginOptions {
     pub scan_timeout: Duration,
     /// Set for every child, on top of meloet's own environment.
     pub child_env: Vec<(OsString, OsString)>,
+    /// Scanning waits until the screen first subscribes (its page is up), at most
+    /// `SCAN_WAITS_FOR_SCREEN` in `service.rs`, so the window comes up before hundreds of
+    /// children start and end. Under LLDB (VS Code), children started while WebKit loaded its
+    /// libraries made LLDB show its own stop in the dynamic loader as a pause (2026-11-19).
+    pub wait_for_screen: bool,
 }
 
 impl PluginOptions {
@@ -57,6 +62,7 @@ impl PluginOptions {
             usual_places: scan::default_places(var),
             scan_timeout: Duration::from_secs(scan::SCAN_TIMEOUT_S),
             child_env: Vec::new(),
+            wait_for_screen: true,
         })
     }
 }

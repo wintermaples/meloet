@@ -36,6 +36,7 @@ fn options(root: &Path) -> CoreOptions {
             usual_places: vec![root.join("lv2")],
             scan_timeout: Duration::from_secs(20),
             child_env: plughost::fake_env(),
+            wait_for_screen: false,
         }),
         ..CoreOptions::offline()
     }
@@ -348,6 +349,7 @@ fn surge_xt_sounds_the_same_after_the_song_is_saved_and_opened() {
             usual_places: vec![root.join("vst3")],
             scan_timeout: Duration::from_secs(30),
             child_env: Vec::new(),
+            wait_for_screen: false,
         }),
         ..CoreOptions::offline()
     });
@@ -439,4 +441,24 @@ fn surge_xt_sounds_the_same_after_the_song_is_saved_and_opened() {
     assert!(near(again.rms, changed.rms, 0.15), "{changed:?} {again:?}");
     drop(core);
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_scan_waits_for_the_screen() {
+    let root = plughost::temp_dir("plug-screen");
+    let mut waiting = options(&root);
+    if let Some(plugins) = waiting.plugins.as_mut() {
+        plugins.wait_for_screen = true;
+    }
+    let core = Core::start(waiting);
+    std::thread::sleep(Duration::from_millis(500));
+    let held = core.peek(|w| w.plugins.as_ref().unwrap().held.as_ref().map(Vec::len));
+    assert_eq!(held, Some(1), "the first scan is held");
+    assert!(core.snapshot().state.library.plugins.is_empty());
+    core.subscribe(Box::new(|_| true), Box::new(|_| true));
+    state_when(&core, "the scan after the screen", |s| {
+        s.library.plugins.len() == 2
+    });
+    let held = core.peek(|w| w.plugins.as_ref().unwrap().held.is_none());
+    assert!(held, "nothing is held any more");
 }

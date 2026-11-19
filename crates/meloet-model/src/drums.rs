@@ -90,6 +90,22 @@ impl DrumPiece {
     }
 }
 
+/// The keys General MIDI names, in the order the rows of an SF2 kit are shown, top first: the
+/// cymbals and hi-hats, the toms, the skins, the kicks (spec 3 「SF2 のドラムのキット」).
+const GM_KIT_ORDER: [u8; 22] = [
+    49, 57, 55, 52, 51, 59, 53, 46, 44, 42, 50, 48, 47, 45, 43, 41, 39, 38, 40, 37, 36, 35,
+];
+
+/// The rows of the drum piano roll for an SF2 kit that has a sound on each of `keys`, top row
+/// first: the keys of [`GM_KIT_ORDER`] the kit has, then its other keys from the lowest up.
+/// A key given twice is one row; a key over 127 is none.
+pub fn gm_kit_rows(keys: &[u8]) -> Vec<u8> {
+    let has = |key: u8| keys.contains(&key);
+    let mut rows: Vec<u8> = GM_KIT_ORDER.into_iter().filter(|&k| has(k)).collect();
+    rows.extend((0..=127).filter(|&k| has(k) && !GM_KIT_ORDER.contains(&k)));
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,5 +138,24 @@ mod tests {
             .filter(|p| p.stops_open_hi_hat())
             .collect();
         assert_eq!(stoppers, [DrumPiece::PedalHiHat, DrumPiece::ClosedHiHat]);
+    }
+
+    #[test]
+    fn rows_of_an_sf2_kit() {
+        let keys = [
+            35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 49, 51, 54, 56, 27, 81, 200, 36,
+        ];
+        assert_eq!(
+            gm_kit_rows(&keys),
+            [
+                49, 51, 46, 44, 42, 43, 41, 39, 38, 40, 37, 36, 35, 27, 54, 56, 81
+            ]
+        );
+        assert_eq!(gm_kit_rows(&[]), [] as [u8; 0]);
+        let all: Vec<u8> = (0..=127).collect();
+        let rows = gm_kit_rows(&all);
+        assert_eq!(rows.len(), 128);
+        assert_eq!(rows[..22], GM_KIT_ORDER);
+        assert!(rows[22..].is_sorted());
     }
 }

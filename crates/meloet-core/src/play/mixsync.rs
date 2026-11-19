@@ -99,6 +99,9 @@ fn sync_strip(told: &mut Told, want: Wanted, previews: &[Preview], effects: &mut
         .zip(&want.channel.inserts)
         .enumerate()
     {
+        // The engine is told only of the effects that come with meloet: to it the slot of a
+        // plugin is empty.
+        let insert = insert.as_ref().filter(|i| i.kind().is_some());
         let previewed = |param: u32, value: f32| {
             let hit = previews.iter().find_map(|p| match p {
                 Preview::Param {
@@ -109,7 +112,7 @@ fn sync_strip(told: &mut Told, want: Wanted, previews: &[Preview], effects: &mut
                     value,
                 } if mine(s)
                     && *at == slot
-                    && Some(*kind) == insert.as_ref().map(Insert::kind)
+                    && Some(*kind) == insert.and_then(Insert::kind)
                     && *n == param =>
                 {
                     Some(*value)
@@ -137,7 +140,7 @@ fn sync_strip(told: &mut Told, want: Wanted, previews: &[Preview], effects: &mut
             (None, None) => {}
             // Another effect, one more or one less: only then is an effect made or put away.
             _ => {
-                let mut insert = insert.clone();
+                let mut insert = insert.cloned();
                 if let Some(insert) = insert.as_mut() {
                     for param in 0..insert.values().len() as u32 {
                         let value = previewed(param, insert.values()[param as usize]);

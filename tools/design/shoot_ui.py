@@ -108,6 +108,24 @@ BOARDS = {
     "settingsAdv": "F-SettingsAdv",
     "settingsMoved": "R8-Clip",
     "scanStoppedMoved": "R8-Clip",
+    # 第 5 回 区切り2: 棚の「あとから入れたもの」（SF2 とプラグイン）、見つからない物、ドラムの再生中。
+    "sf2Shelf": "F5-SF2Shelf",
+    "sf2Added": "F5-SF2Shelf",
+    "sf2Unreadable": None,
+    "sf2DropAddable": "F5-SF2Drop",
+    "sf2DropNotAddable": "F5-SF2Drop",
+    "shelfFx": "F5-ShelfFx",
+    "shelfSearch": "F5-ShelfSearch",
+    "shelfPlugins": "Opt5-Plugins",
+    "pluginLoading": "F5-PluginLoading",
+    "pluginAudition": "F5-PluginAudition",
+    "pluginUnreadable": "F5-PluginLoading",
+    "pluginTrack": "F5-PluginTrack",
+    "missingPack": "R8-Missing",
+    "missingSf2": "R8-Missing",
+    "missingPlugin": None,
+    "drumPlay": "R8-DrumPlay",
+    "drumRollSf2": "R7-Drum",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """

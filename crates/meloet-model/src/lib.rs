@@ -23,8 +23,14 @@ pub use arrange::{ClipEdge, ClipEdited};
 pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
 pub use history::{History, StepKind};
-pub use instrument::{BuiltinInstrument, InstrumentGroup, InstrumentRef};
-pub use mixer::{Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, Return, Sends, StripId};
+pub use instrument::{
+    BuiltinInstrument, GmFamily, InstrumentGroup, InstrumentRef, Kept, PluginRef, SF2_DRUM_BANK,
+    Sf2Ref,
+};
+pub use mixer::{
+    Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginChange, PluginPlace, Return,
+    Sends, StripId,
+};
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{

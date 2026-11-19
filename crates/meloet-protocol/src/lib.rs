@@ -5,11 +5,18 @@
 //! All times are CLOCK_MONOTONIC. JSON carries microseconds (`tUs`); the telemetry binary
 //! carries nanoseconds. Song positions are ticks, 480 to a quarter note (docs/architecture.md 11).
 
+mod added;
 mod take;
 mod telemetry;
 
 use serde::{Deserialize, Serialize};
 
+pub use added::{
+    EffectRef, FileDropView, GmFamily, InsertEffectView, InsertView, KeyCount, LibraryView,
+    MissingRef, MissingView, PluginEffectCategory, PluginFormatView, PluginInstrumentCategory,
+    PluginKindView, PluginRole, PluginRowView, PluginState, PluginView, SamplePlaying, Sf2FileView,
+    Sf2PresetView, SoundName, SoundRef, SoundSampleView, SoundView, StandIn,
+};
 pub use take::{
     TAKE_CONTROL_LEN, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NO_FROM, TAKE_NOTE_LEN, TAKE_VERSION,
     TakeControl, TakeControlValue, TakeError, TakeNote, TakeNotes,
@@ -19,7 +26,7 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 16;
+pub const PROTOCOL_VERSION: u32 = 17;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -649,6 +656,74 @@ pub enum Command {
     RemovePlugin {
         slot: PluginSlotRef,
     },
+    // 「あとから入れたもの」 (round 5): SF2 presets and plugins in the shelf. The four below
+    // do for any sound or effect what `ShelfSelect`, `PlaySample`, `ToggleFavorite` and
+    // `ShelfSelectEffect` do for the ones that come with meloet; with a `Builtin` they are
+    // the same command.
+    /// A click on a row, ↑ ↓: as `ShelfSelect`, the row becomes `ShelfView::selected_sound`
+    /// and is auditioned. A plugin, and an SF2 preset, is read first: until then it is
+    /// `ShelfView::loading_sound` and the keys are silent. A plugin that does not load
+    /// becomes `ShelfView::unreadable` and nothing is selected; its window is not opened.
+    /// `None`, or a sound the shelf does not have: as `ShelfCancel`.
+    ShelfSelectSound {
+        sound: Option<SoundRef>,
+    },
+    /// The ▶ of a row: as `PlaySample`, with the phrase of the sound's group. An SF2 preset
+    /// plays the phrase of the nearest group; a plugin the drum phrase when it says it is a
+    /// drum, the piano phrase when it says piano or keys, else the synth phrase, with the
+    /// sound it has when loaded (spec 3 Y14). While the sound is read, `ShelfView::sound_sample`
+    /// has no `playing`.
+    PlaySampleOf {
+        sound: SoundRef,
+    },
+    /// The star of a row, and F on the selected row: `ShelfView::favorite_sounds`. A meloet
+    /// setting.
+    ToggleFavoriteSound {
+        sound: SoundRef,
+    },
+    /// The star of a row of the shelf's effects, and F (spec 3, 86-4):
+    /// `ShelfView::favorite_effects`. A meloet setting; it starts with the reverb and the
+    /// delay.
+    ToggleFavoriteEffect {
+        effect: EffectRef,
+    },
+    /// `ShelfMode::InsertEffect`: as `ShelfSelectEffect`, the row becomes
+    /// `ShelfView::chosen_effect`. `ShelfConfirm` then puts it into the slot as one step: a
+    /// plugin with the state it starts with. `None`, or an effect the shelf does not have: no
+    /// row.
+    ShelfChooseEffect {
+        effect: Option<EffectRef>,
+    },
+    /// "＋1" on a plugin's row, then one of its formats: the row uses `key`
+    /// (`PluginFormatView::key`) from now on. A meloet setting. What the song already holds
+    /// stays in the format it was put in with. A key no row has does nothing.
+    UsePluginFormat {
+        key: String,
+    },
+    /// 「窓をひらく」: the plugin's own window. `None`: of the plugin the shelf auditions
+    /// (`ShelfView::selected_sound`), which sits in no slot of the song yet; nothing while it
+    /// is still read or when the row is no plugin. `Some`: of a plugin of the song; nothing
+    /// for a slot that holds no plugin, or one that is not `PluginState::Ready`.
+    OpenPluginWindow {
+        slot: Option<PluginSlotRef>,
+    },
+    /// 「SF2 を足す…」 (the heading 「あとから入れたもの」, and the notice of an SF2 file that is
+    /// not found): Rust shows the PC's window for choosing a file. The file is copied into
+    /// meloet, joins `LibraryView::sf2` as `opened_sf2`, and the shelf opens on its
+    /// instruments; the status line says `StatusMessage::Sf2Added`. A file of a name that is
+    /// there already takes that one's place. A file that does not read is not added
+    /// (`StatusMessage::Sf2Unreadable`). Dropping a file on the window does the same with no
+    /// command. Not while counting in or recording.
+    AddSf2,
+    /// Esc while files are held over the window: `WorkspaceView::file_drop` is `None` again,
+    /// and letting go of them adds nothing.
+    CancelFileDrop,
+    /// 「曲から外す」 on a notice of `ShelfView::missing`, as one step: every track that uses
+    /// it gets the sine wave (its notes and its name stay), and every insert slot that holds
+    /// it is emptied. Not while counting in or recording.
+    RemoveMissing {
+        missing: MissingRef,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -925,8 +1000,12 @@ impl EffectKind {
     ];
 }
 
-/// What each insert slot of a strip holds, top first; `None` is "空き ＋".
+/// The effects that come with meloet in the insert slots of a strip, top first: `None` for a
+/// slot that is empty and for one that holds a plugin. `SlotsView` tells those apart.
 pub type InsertsView = [Option<EffectKind>; INSERT_SLOTS];
+
+/// What each insert slot of a strip holds, top first; `None` is "空き ＋".
+pub type SlotsView = [Option<InsertView>; INSERT_SLOTS];
 
 /// The buttons of the song dialogs, one for one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -974,6 +1053,7 @@ pub struct AppState {
     pub piano_roll: PianoRollView,
     pub workspace: WorkspaceView,
     pub shelf: ShelfView,
+    pub library: LibraryView,
     pub params: ParamsView,
     pub plugins: PluginsView,
     pub keyboards: KeyboardsView,
@@ -988,7 +1068,7 @@ impl AppState {
     pub fn changes_from(old: &AppState, new: &AppState) -> Vec<Change> {
         let mut out = Vec::new();
         if old.song != new.song {
-            out.push(Change::Song(new.song.clone()));
+            out.push(Change::Song(Box::new(new.song.clone())));
         }
         if old.transport != new.transport {
             out.push(Change::Transport(new.transport.clone()));
@@ -1004,6 +1084,9 @@ impl AppState {
         }
         if old.shelf != new.shelf {
             out.push(Change::Shelf(new.shelf.clone()));
+        }
+        if old.library != new.library {
+            out.push(Change::Library(new.library.clone()));
         }
         if old.params != new.params {
             out.push(Change::Params(new.params.clone()));
@@ -1032,12 +1115,13 @@ impl AppState {
     /// Replaces the section a change names.
     pub fn apply(&mut self, change: Change) {
         match change {
-            Change::Song(v) => self.song = v,
+            Change::Song(v) => self.song = *v,
             Change::Transport(v) => self.transport = v,
             Change::Arrange(v) => self.arrange = v,
             Change::PianoRoll(v) => self.piano_roll = v,
             Change::Workspace(v) => self.workspace = v,
             Change::Shelf(v) => self.shelf = v,
+            Change::Library(v) => self.library = v,
             Change::Params(v) => self.params = v,
             Change::Plugins(v) => self.plugins = v,
             Change::Keyboards(v) => self.keyboards = v,
@@ -1114,7 +1198,20 @@ pub struct TrackView {
     pub name: String,
     /// 1..=5. Belongs to the track, not to its place: moving a track keeps it.
     pub color: u8,
+    /// The sound of `sound` when it is one that comes with meloet; `Sine` for an SF2 preset
+    /// and for a plugin.
     pub instrument: InstrumentKind,
+    /// What the track sounds with, as the song has it.
+    pub sound: SoundView,
+    /// The track sounds as the sine wave for now: its header, the mixer and the input meter
+    /// say 「サイン波で代わり」 in place of the sound's name (spec 3, 85). The song keeps
+    /// `sound`.
+    pub stand_in: Option<StandIn>,
+    /// A drum kit of an SF2 file (`GmFamily::DrumKit`): the keys the kit has a sound on, as
+    /// the rows of the drum piano roll, top row first (spec 3 「SF2 のドラムのキット」). The
+    /// screen names a row by its key. `None` for every other sound, and while the kit is not
+    /// read.
+    pub drum_keys: Option<Vec<u8>>,
     /// The fader: `None` is −∞, otherwise −60.0..=6.0.
     pub gain_db: Option<f32>,
     /// -100 (all left) to 100 (all right), 0 the middle.
@@ -1122,6 +1219,7 @@ pub struct TrackView {
     /// How much goes to return A and to return B, as `gain_db`.
     pub sends: [Option<f32>; 2],
     pub inserts: InsertsView,
+    pub slots: SlotsView,
     /// Saved with the song (`ToggleMute`).
     pub muted: bool,
     /// Not saved (`ToggleSolo`).
@@ -1140,6 +1238,7 @@ pub struct ReturnView {
     /// Saved with the song (`ToggleReturnMute`).
     pub muted: bool,
     pub inserts: InsertsView,
+    pub slots: SlotsView,
 }
 
 /// The master strip: a fader, a pan and inserts. Its M, S and ● are unusable.
@@ -1151,6 +1250,7 @@ pub struct MasterView {
     /// −100 to 100, as a track's (mock F4-Mixer).
     pub pan: i8,
     pub inserts: InsertsView,
+    pub slots: SlotsView,
 }
 
 /// The parameters panel: the selected insert and the values of its effect. A section of its
@@ -1380,6 +1480,32 @@ pub struct ShelfView {
     pub sample: Option<SampleView>,
     /// `InsertEffect` mode: the chosen row (`Command::ShelfSelectEffect`).
     pub selected_effect: Option<EffectKind>,
+    // 「あとから入れたもの」 (round 5). The five fields above that name an `InstrumentKind` or
+    // an `EffectKind` are the next five as far as these name something that comes with
+    // meloet, and `None` or left out for an SF2 preset or a plugin.
+    /// The row that is auditioned, of any kind (`Command::ShelfSelectSound`).
+    pub selected_sound: Option<SoundRef>,
+    /// `Replace` mode: the sound the track has now.
+    pub current_sound: Option<SoundRef>,
+    /// The selected sound is still being read: under its row "Surge XT を読みこんでいます…"
+    /// with "やめる" (`ShelfCancel`). `None` again once it sounds.
+    pub loading_sound: Option<SoundRef>,
+    /// The sample that is playing, or is about to once its sound is read
+    /// (`Command::PlaySampleOf`).
+    pub sound_sample: Option<SoundSampleView>,
+    /// `InsertEffect` mode: the chosen row, of any kind (`Command::ShelfChooseEffect`).
+    pub chosen_effect: Option<EffectRef>,
+    /// The plugin selected last did not load: under its row "Surge XT を読みこめません
+    /// でした。" (spec 3 Y14). Nothing is selected then. Until another row is selected or the
+    /// shelf is closed.
+    pub unreadable: Option<SoundRef>,
+    /// Every starred sound. A plugin is named by the key its row uses now.
+    pub favorite_sounds: Vec<SoundRef>,
+    /// The starred effects (spec 3, 86-4).
+    pub favorite_effects: Vec<EffectRef>,
+    /// What the song uses and this PC does not have, SF2 files first, each once. Also while
+    /// the shelf is closed.
+    pub missing: Vec<MissingView>,
 }
 
 /// What Enter does in the shelf.
@@ -1559,6 +1685,9 @@ pub struct WorkspaceView {
     /// The hint about the recovery file. While it is up, `hint` is `None`. It stays until the
     /// song is saved, "戻さない" or "閉じる" (`DismissHint`), or the song is let go.
     pub recovery: Option<RecoveryView>,
+    /// Files are held over the window. `None` again when they are let go, taken out of the
+    /// window, or Esc (`Command::CancelFileDrop`).
+    pub file_drop: Option<FileDropView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2077,6 +2206,63 @@ pub enum StatusMessage {
         name: String,
         slot: PluginSlotRef,
     },
+    // 「あとから入れたもの」 (round 5). The five below say for an SF2 preset or a plugin what
+    // `AuditionNewTrack`, `AuditionReplace`, `SamplePlaying`, `InstrumentReplaced` and
+    // `InstrumentLoading` say for a sound that comes with meloet; with `SoundName::Builtin`
+    // they are the same sentence.
+    /// "Surge XT ・ まだトラックには入っていません ・ 入れるには Enter" (mock
+    /// F5-PluginAudition), "Clean Guitar ・ FluidR3_GM.sf2 ・ まだトラックには…" (mock
+    /// F5-SF2Shelf).
+    AuditionNewTrackSound {
+        sound: SoundName,
+    },
+    AuditionReplaceSound {
+        sound: SoundName,
+        track: TrackRef,
+        current: SoundName,
+    },
+    SamplePlayingSound {
+        sound: SoundName,
+    },
+    InstrumentReplacedSound {
+        track: TrackRef,
+        sound: SoundName,
+    },
+    /// A key was played on a track whose sound is still being read.
+    SoundLoading {
+        sound: SoundName,
+    },
+    /// The selected plugin is being read (`ShelfView::loading_sound`): "Surge XT を読みこんで
+    /// います… ・ やめるには Esc" (mock F5-PluginLoading).
+    PluginLoading {
+        name: String,
+    },
+    /// Files are held over the window (`WorkspaceView::file_drop`): "SF2 のファイルを持って
+    /// きています".
+    Sf2Dragging,
+    /// "FluidR3_GM.sf2 を足しました。音色 128 ・ ドラムのキット 9": the presets of the file that
+    /// are no drum kits, and its drum kits.
+    Sf2Added {
+        file: String,
+        presets: u32,
+        kits: u32,
+    },
+    /// "FluidR3_GM.sf2 は読めませんでした。ファイルがこわれているか、SF2 ではないかもしれません。"
+    Sf2Unreadable {
+        file: String,
+    },
+    /// A song was opened that uses an SF2 file this PC does not have: "曲で使っている
+    /// FluidR3_GM.sf2 が見つかりません。2 本のトラックはサイン波で鳴らしています。" The first
+    /// such file; the shelf has a notice for each (`ShelfView::missing`).
+    Sf2Missing {
+        file: String,
+        tracks: u32,
+    },
+    /// A song was opened whose tracks use sounds of the pack this PC does not have: "音の素材
+    /// が見つからないので、4 本のトラックをサイン波で鳴らしています。"
+    SoundsMissing {
+        tracks: u32,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -2091,6 +2277,10 @@ pub struct NoteSelection {
     pub keys: Vec<u8>,
     /// The take is quantized (it has an origin take), so it can go back ("もとの位置へ戻せます").
     pub quantized: bool,
+    /// The keys of all the selected notes, each once with how many notes are on it, lowest
+    /// first ("キック ×4 スネア ×2", spec 3, 85). At most `NOTE_SELECTION_KEYS` + 1: a fifth
+    /// only says that there are more ("…").
+    pub names: Vec<KeyCount>,
 }
 
 /// How many keys `NoteSelection::keys` holds at most.
@@ -2128,12 +2318,14 @@ pub struct Patch {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "section", content = "value", rename_all = "camelCase")]
 pub enum Change {
-    Song(SongView),
+    /// Boxed: with its strips it is far larger than the other sections.
+    Song(Box<SongView>),
     Transport(TransportView),
     Arrange(ArrangeView),
     PianoRoll(PianoRollView),
     Workspace(WorkspaceView),
     Shelf(ShelfView),
+    Library(LibraryView),
     Params(ParamsView),
     Plugins(PluginsView),
     Keyboards(KeyboardsView),

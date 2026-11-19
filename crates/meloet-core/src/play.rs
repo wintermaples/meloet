@@ -17,11 +17,11 @@ use meloet_model::{
     arrange, roll,
 };
 use meloet_protocol::{
-    ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, LiveNote,
-    LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField, NoteSelection,
-    PianoRollView, QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode, SelectMode,
-    StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan, TrackRef,
-    TransportState, TransportView,
+    ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
+    LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
+    NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode,
+    SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan,
+    TrackRef, TransportState, TransportView,
 };
 
 use crate::instruments::Sounds;
@@ -1636,7 +1636,22 @@ impl Play {
             return None;
         }
         let take = &self.shown()?.active_take().take;
+        let mut on_key = [0u32; 128];
+        for &i in sel.iter() {
+            if let Some(n) = take.notes.get(i as usize) {
+                on_key[usize::from(n.key)] += 1;
+            }
+        }
+        let names = (0u8..=127)
+            .map(|key| KeyCount {
+                key,
+                count: on_key[usize::from(key)],
+            })
+            .filter(|k| k.count > 0)
+            .take(NOTE_SELECTION_KEYS + 1)
+            .collect();
         Some(NoteSelection {
+            names,
             count: sel.len() as u32,
             keys: sel
                 .iter()
@@ -1770,8 +1785,8 @@ impl Play {
             WriteAt::Track(track) => self.doc().track(track),
         };
         // A drum kit has no scale: every key is one of its instruments.
-        let InstrumentRef::Builtin(instrument) = track?.instrument;
-        let drums = instrument.group() == InstrumentGroup::Drums;
+
+        let drums = track?.instrument.group() == InstrumentGroup::Drums;
         if scale.lock && !drums && !scale.contains(note.key) {
             return Some(StatusMessage::OutOfScale {
                 key: note.key,

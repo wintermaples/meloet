@@ -6,6 +6,7 @@
 import type { Transport } from "./session";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
+import { FLUID, emptyLibrary, fullLibrary, lv2Key } from "./fakeLibrary";
 import {
   EFFECT_PARAMS,
   INSTRUMENT_GROUPS,
@@ -16,20 +17,30 @@ import {
   type ClipView,
   type Command,
   type EffectKind,
+  type EffectRef,
   type EndpointView,
   type IndexRange,
   type InsertRef,
+  type InsertView,
   type InstrumentKind,
+  type KeyCount,
   type LayoutView,
+  type LibraryView,
   type LiveNote,
   type LiveNotesSnapshot,
+  type MissingView,
   type PianoRollView,
   type PluginPlaceView,
+  type PluginState,
+  type PluginView,
   type PluginsView,
   type ServerMessage,
   type ShelfView,
   type SongDialogKind,
   type SongView,
+  type SoundName,
+  type SoundRef,
+  type SoundView,
   type ArrangeView,
   type StatusMessage,
   type StoppedPluginView,
@@ -301,12 +312,90 @@ function closedShelf(): ShelfView {
     loading: null,
     sample: null,
     selectedEffect: null,
+    selectedSound: null,
+    currentSound: null,
+    loadingSound: null,
+    soundSample: null,
+    chosenEffect: null,
+    unreadable: null,
+    favoriteSounds: [builtinSound("grandPiano"), builtinSound("studioKit")],
+    favoriteEffects: [builtinEffect("reverb"), builtinEffect("delay")],
+    missing: [],
   };
 }
 
 type Inserts = TrackView["inserts"];
+type Slots = TrackView["slots"];
 const noInserts = (): Inserts => [null, null, null, null];
 const firstInsert = (effect: EffectKind): Inserts => [effect, null, null, null];
+
+function builtinSound(instrument: InstrumentKind): Extract<SoundRef, { kind: "builtin" }> {
+  return { kind: "builtin", instrument };
+}
+function builtinEffect(effect: EffectKind): EffectRef {
+  return { kind: "builtin", effect };
+}
+
+/** The slots of a strip that holds only effects that come with meloet, none passed by. */
+export function builtinSlots(inserts: Inserts): Slots {
+  return inserts.map((effect): InsertView | null => (effect === null ? null : { effect: { kind: "builtin", effect }, bypassed: false })) as Slots;
+}
+
+/** The counts of `NoteSelection.names`: each key once, lowest first, five at most. */
+export function keyCounts(keys: number[]): KeyCount[] {
+  const counts = new Map<number, number>();
+  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
+  return [...counts].sort((a, b) => a[0] - b[0]).slice(0, 5).map(([key, count]) => ({ key, count }));
+}
+
+// The scenes and the commands below write the fields that name what comes with meloet (`instrument`,
+// `inserts`, the shelf's `selected`…). The three functions below bring the fields for any sound and
+// effect (`sound`, `slots`, `selectedSound`…) in line with them, and leave alone what names an SF2
+// preset or a plugin: a plugin's slot has `null` in `inserts`, its track "sine" as `instrument`.
+
+function settleSlots(inserts: Inserts, slots: Slots): Slots {
+  return inserts.map((effect, i): InsertView | null => {
+    const had = slots[i] ?? null;
+    if (effect === null) return had?.effect.kind === "plugin" ? had : null;
+    return had?.effect.kind === "builtin" && had.effect.effect === effect ? had : { effect: { kind: "builtin", effect }, bypassed: false };
+  }) as Slots;
+}
+
+function settleSong(song: SongView): SongView {
+  const strip = <T extends { inserts: Inserts; slots: Slots }>(s: T): T => ({ ...s, slots: settleSlots(s.inserts, s.slots) });
+  return {
+    ...song,
+    tracks: song.tracks.map((t) => {
+      const own = t.sound.kind === "builtin" || t.instrument !== "sine";
+      return strip({
+        ...t,
+        sound: own ? builtinSound(t.instrument) : t.sound,
+        standIn: own && t.standIn !== "packMissing" ? null : t.standIn,
+        drumKeys: own ? null : t.drumKeys,
+      });
+    }),
+    returns: [strip(song.returns[0]), strip(song.returns[1])],
+    master: strip(song.master),
+  };
+}
+
+function settleShelf(shelf: ShelfView): ShelfView {
+  const sound = (own: InstrumentKind | null, any: SoundRef | null): SoundRef | null =>
+    own !== null ? builtinSound(own) : any?.kind === "builtin" ? null : any;
+  return {
+    ...shelf,
+    selectedSound: sound(shelf.selected, shelf.selectedSound),
+    currentSound: sound(shelf.current, shelf.currentSound),
+    loadingSound: sound(shelf.loading, shelf.loadingSound),
+    soundSample: shelf.sample
+      ? { sound: builtinSound(shelf.sample.instrument), playing: { startedUs: shelf.sample.startedUs, lengthUs: shelf.sample.lengthUs } }
+      : shelf.soundSample?.sound.kind === "builtin"
+        ? null
+        : shelf.soundSample,
+    chosenEffect: shelf.selectedEffect !== null ? builtinEffect(shelf.selectedEffect) : shelf.chosenEffect?.kind === "builtin" ? null : shelf.chosenEffect,
+    favoriteSounds: [...shelf.favorites.map(builtinSound), ...shelf.favoriteSounds.filter((s) => s.kind !== "builtin")],
+  };
+}
 
 /** The values of an effect that is new, in the order of its table. */
 export const effectDefaults = (effect: EffectKind): number[] => EFFECT_PARAMS[effect].map((p) => p.default);
@@ -325,10 +414,10 @@ const newTrackSends = (instrument: InstrumentKind): TrackView["sends"] => {
 function newSongMixer(): Pick<SongView, "returns" | "master"> {
   return {
     returns: [
-      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("reverb") },
-      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("delay") },
+      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("reverb"), slots: builtinSlots(firstInsert("reverb")) },
+      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("delay"), slots: builtinSlots(firstInsert("delay")) },
     ],
-    master: { gainDb: 0, pan: 0, inserts: firstInsert("limiter") },
+    master: { gainDb: 0, pan: 0, inserts: firstInsert("limiter"), slots: builtinSlots(firstInsert("limiter")) },
   };
 }
 
@@ -352,10 +441,14 @@ export function fakeState(): AppState {
           name: "ピアノ",
           color: 1,
           instrument: "grandPiano",
+          sound: builtinSound("grandPiano"),
+          standIn: null,
+          drumKeys: null,
           gainDb: 0,
           pan: 0,
           sends: newTrackSends("grandPiano"),
           inserts: noInserts(),
+          slots: builtinSlots(noInserts()),
           muted: false,
           soloed: false,
           clips: [],
@@ -398,8 +491,10 @@ export function fakeState(): AppState {
       hint: null,
       songDialog: null,
       recovery: null,
+      fileDrop: null,
     },
     shelf: closedShelf(),
+    library: emptyLibrary(),
     params: { selected: null },
     plugins: fakePlugins(),
     keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
@@ -788,7 +883,7 @@ function pianoRollSong(s: AppState): void {
     id: "summary",
     loopBars: null,
     nothingSelected: false,
-    notes: { count: 3, keys: [key("D4"), key("E4"), key("F4")], quantized: true },
+    notes: { count: 3, keys: [key("D4"), key("E4"), key("F4")], quantized: true, names: keyCounts([key("D4"), key("E4"), key("F4")]) },
   };
 }
 
@@ -983,7 +1078,7 @@ export const SCENES: Record<string, SceneDef> = {
       const last = MOCK_NOTES.length;
       s.pianoRoll = { ...s.pianoRoll, take: GROWN_TAKE, selectedNotes: [{ start: last, end: last + 1 }] };
       s.transport.position = 4 * BAR;
-      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 1, keys: [key("G4")], quantized: false } };
+      s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: { count: 1, keys: [key("G4")], quantized: false, names: keyCounts([key("G4")]) } };
     },
     bands: ["pianoRoll"],
     meters: QUIET,
@@ -1408,10 +1503,14 @@ function bandSong(s: AppState, tracks = BAND_TRACKS): void {
     name: t.name,
     color: (i % 5) + 1,
     instrument: t.instrument,
+    sound: builtinSound(t.instrument),
+    standIn: null,
+    drumKeys: null,
     gainDb: t.gainDb,
     pan: 0,
     sends: newTrackSends(t.instrument),
     inserts: noInserts(),
+    slots: builtinSlots(noInserts()),
     muted: false,
     soloed: false,
     clips: t.clips.map(([name, from, to]) => {
@@ -1583,7 +1682,7 @@ SCENES.drumRoll = {
       id: "summary",
       loopBars: null,
       nothingSelected: false,
-      notes: { count: DRUM_SELECTED.length, keys: DRUM_SELECTED.map((i) => DRUM_NOTES[i]!.key), quantized: false },
+      notes: { count: DRUM_SELECTED.length, keys: DRUM_SELECTED.map((i) => DRUM_NOTES[i]!.key), quantized: false, names: keyCounts(DRUM_SELECTED.map((i) => DRUM_NOTES[i]!.key)) },
     };
   },
   bands: ["pianoRoll"],
@@ -1616,6 +1715,251 @@ SCENES.pianoRoll10kPlay = {
   meters: { ...QUIET, position: { tick: 0, ticksPerUs: 768e-6, state: "playing", countInBeatsLeft: 0, lap: 0 } },
 };
 
+// ---- round 5, step 2: 「あとから入れたもの」 (protocol 17) ----
+
+const SURGE = lv2Key("Surge XT");
+const SURGE_SOUND: SoundRef = { kind: "plugin", key: SURGE };
+const CLEAN_GUITAR: Extract<SoundRef, { kind: "sf2" }> = { kind: "sf2", file: FLUID, bank: 0, program: 27 };
+const playingKeys: Partial<FakeMeters> = { keys: [60, 64, 67], velocity: 87, sustain: 127, modulation: 12 };
+
+const pluginView = (name: string, state: PluginState = "ready"): PluginView => ({ key: lv2Key(name), name, format: "lv2", state });
+const pluginSlot = (name: string, state: PluginState = "ready", bypassed = false): InsertView => ({ effect: { kind: "plugin", ...pluginView(name, state) }, bypassed });
+
+/** The song of the mocks F5-Plugin*: the four tracks of the band and "5 Surge XT", a track of the plugin. */
+function surgeSong(s: AppState, state: PluginState = "ready"): void {
+  bandSong(s, BAND_TRACKS.slice(0, 5));
+  const surge = s.song.tracks[4]!;
+  Object.assign(surge, { name: "Surge XT", instrument: "sine", sound: { kind: "plugin", ...pluginView("Surge XT", state) } satisfies SoundView });
+  s.song.loopOn = false;
+  s.status.message = { id: "summary", loopBars: null, nothingSelected: true, notes: null };
+}
+
+function shelfOpen(s: AppState, shelf: Partial<ShelfView>, library: LibraryView): void {
+  s.shelf = { ...closedShelf(), ...shelf };
+  s.library = library;
+  s.transport.canRecord = s.shelf.selected === null && (s.shelf.selectedSound ?? null) === null;
+}
+
+// F5-SF2Shelf: FluidR3_GM.sf2 was added (its heading is the open one); "Clean Guitar" is auditioned for a new track.
+SCENES.sf2Shelf = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    shelfOpen(s, { selectedSound: CLEAN_GUITAR }, { ...emptyLibrary(), sf2: fullLibrary().sf2, openedSf2: FLUID });
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "auditionNewTrackSound", sound: { kind: "sf2", name: "Clean Guitar", file: FLUID } }),
+  meters: { ...QUIET, ...playingKeys },
+};
+// Not from a mock (spec 6 「SF2 を足した」): right after the file was added, nothing auditioned yet.
+SCENES.sf2Added = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    shelfOpen(s, {}, { ...emptyLibrary(), sf2: fullLibrary().sf2, openedSf2: FLUID });
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "sf2Added", file: FLUID, presets: 128, kits: 9 }),
+  meters: QUIET,
+};
+// Not from a mock (spec 6 「SF2 が読めない」): the file was not added.
+SCENES.sf2Unreadable = {
+  setup: (s) => bandSong(s, BAND_TRACKS.slice(0, 4)),
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "sf2Unreadable", file: FLUID }),
+  meters: QUIET,
+};
+// F5-SF2Drop: an SF2 file is held over the window; nothing was added yet.
+SCENES.sf2DropAddable = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.workspace.fileDrop = { name: FLUID, addable: true };
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "sf2Dragging" }),
+  meters: QUIET,
+};
+// The same with a file that is no SF2 (spec 2: 「足せない」). What the status line says then is not in the spec.
+SCENES.sf2DropNotAddable = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.workspace.fileDrop = { name: "piano-demo.wav", addable: false };
+  },
+  bands: ["shelf"],
+  meters: QUIET,
+};
+
+/** F5-ShelfFx: the inserts of the five strips, with the plugins among them ("Brick EQ" has stopped). */
+function surgeMixer(s: AppState): void {
+  surgeSong(s);
+  const [piano, bass, drums, pad, surge] = s.song.tracks as [TrackView, TrackView, TrackView, TrackView, TrackView];
+  piano.inserts = ["eq4", "compressor", null, null];
+  bass.inserts = ["compressor", null, null, null];
+  bass.sends = [null, null];
+  drums.inserts = ["compressor", null, null, null];
+  drums.slots = [null, pluginSlot("Brick EQ", "stopped"), null, null];
+  pad.inserts = [null, "eq4", null, null];
+  pad.slots = [pluginSlot("MVerb"), null, null, null];
+  Object.assign(pad, { pan: -20, gainDb: -3 });
+  surge.slots = [pluginSlot("Calf Reverb"), null, null, null];
+  Object.assign(surge, { pan: 20, gainDb: 0, sends: [-15, -18] });
+  for (const t of [piano, bass, drums]) t.gainDb = 0;
+}
+
+// F5-ShelfFx: "空き ＋" of the second slot of "5 Surge XT" opened the shelf on the effects; "Dragonfly Hall Reverb" is chosen.
+SCENES.shelfFx = {
+  setup(s) {
+    surgeMixer(s);
+    const surge = s.song.tracks[4]!;
+    shelfOpen(s, { mode: { kind: "insertEffect", strip: { kind: "track", id: surge.id }, slot: 1 }, chosenEffect: { kind: "plugin", key: lv2Key("Dragonfly Hall Reverb") } }, fullLibrary());
+    s.transport.state = "playing";
+    s.transport.position = at("9.2.000");
+  },
+  bands: ["mixer", "shelf"],
+  meters: { ...QUIET, loadPermille: 240, master: [dbfs(-6.2), dbfs(-7)], position: { tick: at("9.2.000"), ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 } },
+};
+// F5-ShelfSearch: the same before a row is chosen. What is typed into the search field is the screen's own
+// (tools/design/shoot_ui.py types "Dragonfly").
+SCENES.shelfSearch = {
+  ...SCENES.shelfFx,
+  setup(s) {
+    SCENES.shelfFx!.setup(s);
+    s.shelf.chosenEffect = null;
+  },
+};
+// Opt5-Plugins (14-A): the shelf with FluidR3 and the 540 plugins, opened for a new track. Which of the two
+// lists is shown, and which headings are unfolded, is the screen's own.
+SCENES.shelfPlugins = {
+  setup(s) {
+    surgeSong(s);
+    shelfOpen(s, {}, fullLibrary());
+  },
+  bands: ["shelf"],
+  meters: QUIET,
+};
+// F5-PluginLoading: "Surge XT" was selected and is being read.
+SCENES.pluginLoading = {
+  setup(s) {
+    surgeSong(s);
+    shelfOpen(s, { selectedSound: SURGE_SOUND, loadingSound: SURGE_SOUND }, fullLibrary());
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "pluginLoading", name: "Surge XT" }),
+  meters: QUIET,
+};
+// F5-PluginAudition: it is read, and the keys sound with it ("窓をひらく").
+SCENES.pluginAudition = {
+  setup(s) {
+    surgeSong(s);
+    shelfOpen(s, { selectedSound: SURGE_SOUND }, fullLibrary());
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "auditionNewTrackSound", sound: { kind: "plugin", name: "Surge XT" } }),
+  meters: { ...QUIET, ...playingKeys },
+};
+// Not from a mock (spec 6 「プラグインを読みこめない」): it did not load; nothing is selected.
+SCENES.pluginUnreadable = {
+  setup(s) {
+    surgeSong(s);
+    shelfOpen(s, { unreadable: SURGE_SOUND }, fullLibrary());
+  },
+  bands: ["shelf"],
+  meters: QUIET,
+};
+// F5-PluginTrack: "5 Surge XT" is the selected track; two of sixteen steps are undone. (What the history band lists is not made yet.)
+SCENES.pluginTrack = {
+  setup(s) {
+    surgeSong(s);
+    s.library = fullLibrary();
+    Object.assign(s.song, { playTarget: s.song.tracks[4]!.id, undoCount: 14, redoCount: 2, file: "changed" });
+    s.transport.position = at("9.1.000");
+  },
+  bands: ["history"],
+  after: (s) => (s.status.message = { id: "undoPending", count: 2 }),
+  meters: QUIET,
+};
+// R8-Missing: the sound pack is not found. The four tracks keep their sounds' names and sound as the sine wave.
+SCENES.missingPack = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    for (const t of s.song.tracks) t.standIn = "packMissing";
+    shelfOpen(s, { available: ["sine"] }, { ...emptyLibrary(), packMissing: true });
+    s.song.loopOn = false;
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "soundsMissing", tracks: 4 }),
+  meters: QUIET,
+};
+
+const MISSING_PLUGINS: MissingView[] = [
+  { kind: "plugin", key: SURGE, name: "Surge XT", vendor: "Surge Synth Team", format: "lv2", role: "instrument", shownPath: "/usr/lib/lv2/Surge XT.lv2" },
+  { kind: "plugin", key: lv2Key("MVerb"), name: "MVerb", vendor: "DISTRHO", format: "lv2", role: "effect", shownPath: "~/.lv2/MVerb.lv2" },
+];
+
+// Not from a mock (spec 3 「SF2 が見つからないとき」): a song from another PC. Two of its tracks use presets of a file
+// this PC does not have.
+SCENES.missingSf2 = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    const preset = (program: number, name: string): Partial<TrackView> => ({
+      instrument: "sine",
+      sound: { kind: "sf2", file: FLUID, bank: 0, program, name, family: "guitar" },
+      standIn: "sf2Missing",
+    });
+    Object.assign(s.song.tracks[0]!, preset(27, "Clean Guitar"), { name: "ギター" });
+    Object.assign(s.song.tracks[3]!, preset(24, "Nylon String Guitar"), { name: "ギター 2" });
+    shelfOpen(s, { missing: [{ kind: "sf2", file: FLUID, tracks: 2 }] }, emptyLibrary());
+    s.song.loopOn = false;
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "sf2Missing", file: FLUID, tracks: 2 }),
+  meters: QUIET,
+};
+// Not from a mock (spec 6 「プラグインが見つからない」): the song uses a plugin instrument and a plugin effect this PC
+// does not have. The track sounds as the sine wave; the slot is passed by.
+SCENES.missingPlugin = {
+  setup(s) {
+    surgeMixer(s);
+    Object.assign(s.song.tracks[4]!, { sound: { kind: "plugin", ...pluginView("Surge XT", "missing") } satisfies SoundView, standIn: "pluginMissing" });
+    s.song.tracks[3]!.slots = [pluginSlot("MVerb", "missing"), null, null, null];
+    s.song.tracks[2]!.slots = [null, null, null, null];
+    s.song.tracks[4]!.slots = [null, null, null, null];
+    shelfOpen(s, { missing: MISSING_PLUGINS.map((m) => ({ ...m })) }, emptyLibrary());
+  },
+  bands: ["mixer", "shelf"],
+  meters: QUIET,
+};
+// R8-DrumPlay: the scene drumRoll while it plays, at 2.2.000: the closed hi-hat and the snare sound.
+SCENES.drumPlay = {
+  ...SCENES.drumRoll!,
+  setup(s) {
+    SCENES.drumRoll!.setup(s);
+    s.pianoRoll.selectedNotes = [];
+    s.transport.state = "playing";
+    s.transport.position = 0;
+    s.status.message = null;
+  },
+  meters: { ...QUIET, loadPermille: 140, master: [dbfs(-8), dbfs(-8.6)], position: { tick: BAR + 480, ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 } },
+};
+/** A kit with a sound on every key from 35 to 81, as `meloet_model::drums::gm_kit_rows` orders its rows. */
+const SF2_KIT_ROWS = [
+  ...[49, 57, 55, 52, 51, 59, 53, 46, 44, 42, 50, 48, 47, 45, 43, 41, 39, 38, 40, 37, 36, 35],
+  ...[54, 56, 58],
+  ...Array.from({ length: 22 }, (_, i) => 60 + i),
+];
+// Not from a mock (spec 3 「SF2 のドラムのキット」): "3 ドラム" sounds with the standard kit of FluidR3; its rows are the
+// keys the kit has, in the order of the spec.
+SCENES.drumRollSf2 = {
+  ...SCENES.drumRoll!,
+  setup(s) {
+    SCENES.drumRoll!.setup(s);
+    s.library = { ...emptyLibrary(), sf2: fullLibrary().sf2 };
+    Object.assign(s.song.tracks[2]!, {
+      instrument: "sine",
+      sound: { kind: "sf2", file: FLUID, bank: 128, program: 0, name: "Standard", family: "drumKit" } satisfies SoundView,
+      drumKeys: SF2_KIT_ROWS,
+    });
+  },
+};
+
 export function fakeScene(name: string, scale?: number, viewport = { width: 1280, height: 800 }): Scene | null {
   const def = SCENES[name];
   if (!def) return null;
@@ -1632,6 +1976,8 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   state.workspace.unfitScales = unfit;
   state.workspace.layout = bands.layout();
   def.after?.(state);
+  state.song = settleSong(state.song);
+  state.shelf = settleShelf(state.shelf);
   return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE };
 }
 
@@ -1788,7 +2134,8 @@ function noteSelection(pr: PianoRollView): Extract<StatusMessage, { id: "summary
   const take = pr.take === null ? undefined : FAKE_TAKES.get(pr.take);
   const picked = fromRanges(pr.selectedNotes);
   if (!take || picked.length === 0) return null;
-  return { count: picked.length, keys: picked.slice(0, 4).map((i) => take.notes[i]!.key), quantized: (take.origin ?? 0) !== 0 };
+  const keys = picked.map((i) => take.notes[i]!.key);
+  return { count: picked.length, keys: keys.slice(0, 4), quantized: (take.origin ?? 0) !== 0, names: keyCounts(keys) };
 }
 
 /** What `copyClips` and `cutClips` keep: each clip with its row and start counted from the first row and the earliest start. */
@@ -1989,7 +2336,15 @@ export function reduceClips(
 
 const busy = (state: AppState) => state.transport.state === "recording" || state.transport.state === "countIn";
 
-const SHELF_MESSAGES: StatusMessage["id"][] = ["auditionNewTrack", "auditionReplace", "samplePlaying"];
+const SHELF_MESSAGES: StatusMessage["id"][] = [
+  "auditionNewTrack",
+  "auditionReplace",
+  "samplePlaying",
+  "auditionNewTrackSound",
+  "auditionReplaceSound",
+  "samplePlayingSound",
+  "pluginLoading",
+];
 const isShelfMessage = (m: StatusMessage | null) => m !== null && SHELF_MESSAGES.includes(m.id);
 /** The short names of new tracks, by group; the organs are "オルガン" and the mallets "マレット" (spec 3, トラックの名前（84）). */
 const GROUP_TRACK_NAMES: Record<string, string> = {
@@ -2006,15 +2361,140 @@ const trackNameOf = (i: InstrumentKind) =>
   i.startsWith("organ") ? "オルガン" : i === "vibraphone" || i === "marimba" ? "マレット" : GROUP_TRACK_NAMES[groupOf(i)]!;
 const SAMPLE_US = 4_000_000;
 
+/** Whether the shelf has the sound: one that comes with meloet, a preset of a file that was added, or a plugin in one of its formats. */
+function inLibrary(sound: SoundRef, library: LibraryView): boolean {
+  if (sound.kind === "builtin") return true;
+  if (sound.kind === "plugin") return library.plugins.some((r) => r.kind.role === "instrument" && r.formats.some((f) => f.key === sound.key));
+  return library.sf2.some((f) => f.file === sound.file && f.presets.some((p) => p.bank === sound.bank && p.program === sound.program));
+}
+
+/** The name the status line gives a sound of the shelf. */
+function soundName(sound: SoundRef, library: LibraryView): SoundName {
+  if (sound.kind === "builtin") return sound;
+  if (sound.kind === "plugin") return { kind: "plugin", name: library.plugins.find((r) => r.formats.some((f) => f.key === sound.key))?.name ?? sound.key };
+  const preset = library.sf2.find((f) => f.file === sound.file)?.presets.find((p) => p.bank === sound.bank && p.program === sound.program);
+  return { kind: "sf2", name: preset?.name ?? "", file: sound.file };
+}
+
+function soundNameOf(view: SoundView): SoundName {
+  if (view.kind === "builtin") return view;
+  return view.kind === "plugin" ? { kind: "plugin", name: view.name } : { kind: "sf2", name: view.name, file: view.file };
+}
+
 /** What the shelf says on the status line while it auditions or plays a sample. */
-function shelfMessage(shelf: ShelfView, song: SongView): StatusMessage | null {
+function shelfMessage(shelf: ShelfView, song: SongView, library: LibraryView): StatusMessage | null {
+  const replaced = shelf.mode.kind === "replace" ? song.tracks.find((x) => x.id === (shelf.mode as { track: number }).track) : undefined;
   if (shelf.selected !== null) {
     if (shelf.mode.kind === "newTrack") return { id: "auditionNewTrack", instrument: shelf.selected };
-    const id = shelf.mode.kind === "replace" ? shelf.mode.track : null;
-    const t = song.tracks.find((x) => x.id === id);
-    if (t) return { id: "auditionReplace", instrument: shelf.selected, track: { number: t.number, name: t.name }, current: t.instrument };
+    if (replaced) return { id: "auditionReplace", instrument: shelf.selected, track: { number: replaced.number, name: replaced.name }, current: replaced.instrument };
+  }
+  const picked = shelf.selectedSound;
+  if (picked !== null && picked.kind !== "builtin") {
+    const sound = soundName(picked, library);
+    if (shelf.loadingSound !== null && sound.kind === "plugin") return { id: "pluginLoading", name: sound.name };
+    if (shelf.mode.kind === "newTrack") return { id: "auditionNewTrackSound", sound };
+    if (replaced) return { id: "auditionReplaceSound", sound, track: { number: replaced.number, name: replaced.name }, current: soundNameOf(replaced.sound) };
   }
   return shelf.sample ? { id: "samplePlaying", instrument: shelf.sample.instrument } : null;
+}
+
+/** 「曲から外す」: the tracks that use it get the sine wave, and the slots that hold it are emptied. */
+function withoutMissing(song: SongView, gone: Extract<Command, { type: "removeMissing" }>["missing"]): SongView {
+  const is = (p: PluginView) => gone.kind === "plugin" && p.key === gone.key;
+  const strip = <T extends { slots: Slots }>(s: T): T => ({ ...s, slots: s.slots.map((x) => (x?.effect.kind === "plugin" && is(x.effect) ? null : x)) as Slots });
+  return {
+    ...song,
+    tracks: song.tracks.map((t) => {
+      const uses = t.sound.kind === "plugin" ? is(t.sound) : t.sound.kind === "sf2" && gone.kind === "sf2" && t.sound.file === gone.file;
+      return strip(uses ? { ...t, instrument: "sine", sound: builtinSound("sine"), standIn: null, drumKeys: null } : t);
+    }),
+    returns: [strip(song.returns[0]), strip(song.returns[1])],
+    master: strip(song.master),
+  };
+}
+
+/** The commands for any sound or effect, as the ones for what comes with meloet when they name one of those. */
+function ownCommand(command: Command): Command {
+  switch (command.type) {
+    case "shelfSelectSound":
+      return command.sound === null || command.sound.kind === "builtin" ? { type: "shelfSelect", instrument: command.sound?.instrument ?? null } : command;
+    case "playSampleOf":
+      return command.sound.kind === "builtin" ? { type: "playSample", instrument: command.sound.instrument } : command;
+    case "toggleFavoriteSound":
+      return command.sound.kind === "builtin" ? { type: "toggleFavorite", instrument: command.sound.instrument } : command;
+    case "shelfChooseEffect":
+      return command.effect === null || command.effect.kind === "builtin" ? { type: "shelfSelectEffect", effect: command.effect?.effect ?? null } : command;
+    default:
+      return command;
+  }
+}
+
+const sameRef = (a: SoundRef | EffectRef, b: SoundRef | EffectRef) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Protocol 17: SF2 presets and plugins in the shelf, enough for pictures and tests. A plugin is read at once
+ * (the scenes show the reading), `shelfConfirm` puts none of them into the song, and nothing sounds.
+ * Changes `shelf`, `library` and `fileDrop` in place.
+ */
+function reduceAdded(command: Command, shelf: ShelfView, library: LibraryView, ws: AppState["workspace"]): void {
+  const toggle = <T extends SoundRef | EffectRef>(list: T[], item: T): T[] =>
+    list.some((x) => sameRef(x, item)) ? list.filter((x) => !sameRef(x, item)) : [...list, item];
+  switch (command.type) {
+    // What ends an audition, or starts one of a sound of meloet, puts away the SF2 preset or plugin that was auditioned.
+    case "shelfSelect":
+    case "shelfCancel":
+    case "shelfConfirm":
+    case "openShelf":
+      shelf.selectedSound = shelf.loadingSound = shelf.unreadable = null;
+      if (command.type !== "shelfSelect") shelf.chosenEffect = null;
+      break;
+    case "shelfSelectEffect":
+      shelf.chosenEffect = null;
+      break;
+    case "shelfSelectSound":
+      if (shelf.mode.kind === "insertEffect") break;
+      shelf.selected = shelf.loading = shelf.loadingSound = shelf.unreadable = null;
+      shelf.selectedSound = command.sound !== null && inLibrary(command.sound, library) ? command.sound : null;
+      break;
+    case "shelfChooseEffect": {
+      const effect = command.effect;
+      if (shelf.mode.kind !== "insertEffect") break;
+      const has = effect?.kind === "plugin" && library.plugins.some((r) => r.kind.role === "effect" && r.formats.some((f) => f.key === effect.key));
+      shelf.selectedEffect = null;
+      shelf.chosenEffect = has ? effect : null;
+      break;
+    }
+    case "toggleFavoriteSound":
+      if (inLibrary(command.sound, library)) shelf.favoriteSounds = toggle(shelf.favoriteSounds, command.sound);
+      break;
+    case "toggleFavoriteEffect": {
+      const effect = command.effect;
+      if (effect.kind === "builtin" || library.plugins.some((r) => r.formats.some((f) => f.key === effect.key))) {
+        shelf.favoriteEffects = toggle(shelf.favoriteEffects, effect);
+      }
+      break;
+    }
+    case "usePluginFormat": {
+      const row = library.plugins.find((r) => r.formats.some((f) => f.key === command.key));
+      if (!row || row.key === command.key) break;
+      // What named the row by the format it used names it by the new one: the star stays on the row.
+      const moved = <T extends SoundRef | EffectRef>(x: T): T => (x.kind === "plugin" && x.key === row.key ? { ...x, key: command.key } : x);
+      shelf.favoriteSounds = shelf.favoriteSounds.map(moved);
+      shelf.favoriteEffects = shelf.favoriteEffects.map(moved);
+      row.key = command.key;
+      break;
+    }
+    case "cancelFileDrop":
+      ws.fileDrop = null;
+      break;
+    case "removeMissing": {
+      const gone = command.missing;
+      shelf.missing = shelf.missing.filter((m) => !(m.kind === gone.kind && (m.kind === "sf2" ? gone.kind === "sf2" && m.file === gone.file : gone.kind === "plugin" && m.key === gone.key)));
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 /**
@@ -2102,10 +2582,14 @@ export function reduceTracks(
           name,
           color: (place % 5) + 1,
           instrument: picked,
+          sound: builtinSound(picked),
+          standIn: null,
+          drumKeys: null,
           gainDb: 0,
           pan: 0,
           sends: newTrackSends(picked),
           inserts: noInserts(),
+          slots: builtinSlots(noInserts()),
           muted: false,
           soloed: false,
           clips: [],
@@ -2249,7 +2733,9 @@ export function reduceMixer(
 }
 
 /** `rest` is the status line when no notice is up. */
-function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, command: Command, clipboard: FakeClipboard, nowUs = 0): Change[] {
+function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, sent: Command, clipboard: FakeClipboard, nowUs = 0): Change[] {
+  const command = ownCommand(sent);
+  const library = structuredClone(state.library);
   const ws = structuredClone(state.workspace);
   const outputs = structuredClone(state.outputs);
   const keyboards = structuredClone(state.keyboards);
@@ -2412,16 +2898,27 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
     bands.side = [...bands.side.filter((b) => b !== "params"), "params"];
     ws.layout = bands.layout();
   }
-  const song = mixer?.song ?? tracks?.song ?? clips?.song ?? state.song;
+  let song = mixer?.song ?? tracks?.song ?? clips?.song ?? state.song;
   if ((tracks || mixer) && JSON.stringify(song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: song });
+  if (command.type === "removeMissing") {
+    song = withoutMissing(song, command.missing);
+    if (JSON.stringify(song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: song });
+  }
+  for (const c of changes) if (c.section === "song") song = c.value = settleSong(c.value);
   if (mixer && JSON.stringify(mixer.params) !== JSON.stringify(state.params)) changes.push({ section: "params", value: mixer.params });
-  // A closed shelf has no mode, audition or sample (protocol 13, ShelfView).
-  let shelf = mixer?.shelf ?? tracks?.shelf ?? state.shelf;
-  if (!ws.layout.rightOpen.includes("shelf") && JSON.stringify(shelf) !== JSON.stringify({ ...closedShelf(), available: shelf.available, favorites: shelf.favorites })) {
-    shelf = { ...closedShelf(), available: shelf.available, favorites: shelf.favorites };
-    transport.canRecord = song.playTarget !== null && transport.canPlay;
+  let shelf = structuredClone(mixer?.shelf ?? tracks?.shelf ?? state.shelf);
+  reduceAdded(command, shelf, library, ws);
+  // A closed shelf has no mode, audition or sample (protocol 13, ShelfView). Its stars and what is missing stay.
+  if (!ws.layout.rightOpen.includes("shelf")) {
+    const { available, favorites, favoriteSounds, favoriteEffects, missing } = shelf;
+    shelf = { ...closedShelf(), available, favorites, favoriteSounds, favoriteEffects, missing };
+  }
+  shelf = settleShelf(shelf);
+  if (JSON.stringify(shelf.selectedSound) !== JSON.stringify(state.shelf.selectedSound)) {
+    transport.canRecord = shelf.selectedSound === null && song.playTarget !== null && transport.canPlay;
   }
   if (JSON.stringify(shelf) !== JSON.stringify(state.shelf)) changes.push({ section: "shelf", value: shelf });
+  if (JSON.stringify(library) !== JSON.stringify(state.library)) changes.push({ section: "library", value: library });
   if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
   if (JSON.stringify(outputs) !== JSON.stringify(state.outputs)) changes.push({ section: "outputs", value: outputs });
   if (JSON.stringify(keyboards) !== JSON.stringify(state.keyboards)) changes.push({ section: "keyboards", value: keyboards });
@@ -2433,7 +2930,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, c
     notice ??
     clips?.notice ??
     tracks?.notice ??
-    shelfMessage(shelf, song) ??
+    shelfMessage(shelf, song, library) ??
     (isNotice(state.status.message) || isShelfMessage(state.status.message) ? rest : state.status.message);
   if (message?.id === "summary") {
     const notes = noteSelection(pianoRoll);

@@ -101,13 +101,13 @@ pub(crate) fn mix_strip(strip: StripSeat) -> MixStrip {
 }
 
 /// The effect of an insert with its values. Call it outside the audio thread; the engine's
-/// handle prepares what it gets.
-pub(crate) fn make(insert: &Insert) -> Box<dyn Effect> {
-    let mut effect = effects::create(insert.kind());
+/// handle prepares what it gets. `None` for a plugin: its effect is not made here.
+pub(crate) fn make(insert: &Insert) -> Option<Box<dyn Effect>> {
+    let mut effect = effects::create(insert.kind()?);
     for (param, value) in insert.values().iter().enumerate() {
         effect.set_param(param as u32, *value);
     }
-    effect
+    Some(effect)
 }
 
 /// The command of a mixer op that carries no effect. `None` for any other op.

@@ -812,7 +812,11 @@ fn the_screen_sees_new_takes_selections_and_the_summary() {
             notes: Some(NoteSelection {
                 count: 2,
                 keys: vec![60, 67],
-                quantized: false
+                quantized: false,
+                names: vec![
+                    KeyCount { key: 60, count: 1 },
+                    KeyCount { key: 67, count: 1 },
+                ],
             }),
         })
     );

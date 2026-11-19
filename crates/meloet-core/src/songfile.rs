@@ -13,9 +13,10 @@ use std::sync::Arc;
 use meloet_model::effects::{EffectKind, ParamShape};
 use meloet_model::{
     BuiltinInstrument, Bus, Channel, Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Gain,
-    Grid, Insert, Inserts, InstrumentRef, MAX_TICK, Meter, MusicalScale, Note, OriginIndex, Pan,
-    QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session, Song, Take, TakeId,
-    TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor, TrackId, mixer,
+    Grid, Insert, Inserts, InstrumentRef, Kept, MAX_TICK, Meter, MusicalScale, Note, OriginIndex,
+    Pan, PluginRef, QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session,
+    Sf2Ref, Song, Take, TakeId, TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor,
+    TrackId, mixer,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -24,8 +25,9 @@ pub const FORMAT: &str = "meloet-song";
 /// The newest shape this meloet reads and the one it writes. 2: quantized takes, with their
 /// origin take and the origin index of each note. 3: instruments by name, a song may have no
 /// tracks, the session has no armed track, and the mixer (pan, sends, inserts, the returns
-/// and the master).
-pub const VERSION: u32 = 3;
+/// and the master). 4: plugins and SF2 presets as instruments, plugins in insert slots, and
+/// the mark of an insert that is passed by.
+pub const VERSION: u32 = 4;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
 const MAX_TRACKS: usize = crate::play::MAX_TRACKS;
@@ -126,15 +128,21 @@ struct TrackFile {
     automation: Vec<serde_json::Value>,
 }
 
-/// `{"kind": "builtin", "name": "grandPiano"}`. Versions 1 and 2 wrote
-/// `{"kind": "placeholder"}`, the sound now named "sine".
+/// The fields of an entry that is kept as it was read: the ones this meloet knows are taken
+/// out, the others go back into the file untouched.
+type Fields = serde_json::Map<String, serde_json::Value>;
+
+/// One of (version 4; before it only the first)
+/// - `{"kind": "builtin", "name": "grandPiano"}`. Versions 1 and 2 wrote
+///   `{"kind": "placeholder"}`, the sound now named "sine".
+/// - `{"kind": "plugin", "key": "vst3:…", "name": "Surge XT", "vendor": "Surge Synth Team",
+///   "path": "/usr/lib/vst3/Surge XT.vst3", "state": "<base64>"}`. `path` and `state` are
+///   left out when empty.
+/// - `{"kind": "sf2", "file": "FluidR3_GM.sf2", "sha256": "<hex>", "bank": 0, "program": 27,
+///   "name": "Clean Guitar"}`.
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InstrumentFile {
-    kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-}
+#[serde(transparent)]
+struct InstrumentFile(Fields);
 
 /// `null` is −∞.
 #[derive(Serialize, Deserialize)]
@@ -145,11 +153,13 @@ struct SendsFile {
     b: Option<f64>,
 }
 
-/// An insert slot: `null` when empty. An entry that is not an effect is read as empty.
+/// An insert slot: `null` when empty. An entry that is neither an effect nor a plugin is read
+/// as empty.
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum SlotFile {
     Insert(InsertFile),
+    Plugin(PluginSlotFile),
     Other(serde_json::Value),
 }
 
@@ -160,6 +170,32 @@ struct InsertFile {
     effect: String,
     #[serde(default)]
     params: BTreeMap<String, ParamFile>,
+    /// 「とばす」. Left out when off; not a switch, or missing: off.
+    #[serde(
+        default,
+        deserialize_with = "bool_or_false",
+        skip_serializing_if = "is_false"
+    )]
+    bypassed: bool,
+}
+
+/// `{"plugin": {"key": "lv2:…", "name": "MVerb", "vendor": "DISTRHO", "state": "<base64>"}}`,
+/// with the fields of a plugin instrument.
+#[derive(Serialize, Deserialize)]
+struct PluginSlotFile {
+    plugin: Fields,
+    #[serde(
+        default,
+        deserialize_with = "bool_or_false",
+        skip_serializing_if = "is_false"
+    )]
+    bypassed: bool,
+}
+
+fn bool_or_false<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    Ok(serde_json::Value::deserialize(d)?
+        .as_bool()
+        .unwrap_or(false))
 }
 
 /// A number in the parameter's unit, the name of a step, or a switch.
@@ -233,12 +269,20 @@ fn pan_of(pan: i64) -> Pan {
 fn slots_file(inserts: &Inserts) -> Vec<SlotFile> {
     inserts
         .iter()
-        .map(|slot| match slot {
-            None => SlotFile::Other(serde_json::Value::Null),
-            Some(insert) => {
-                let params = insert.kind().params().iter().zip(insert.values());
+        .map(|slot| match (slot, slot.as_ref().and_then(Insert::kind)) {
+            (None, _) => SlotFile::Other(serde_json::Value::Null),
+            (Some(insert), None) => match insert.plugin_ref() {
+                Some(plugin) => SlotFile::Plugin(PluginSlotFile {
+                    plugin: plugin_fields(plugin),
+                    bypassed: insert.bypassed,
+                }),
+                None => SlotFile::Other(serde_json::Value::Null),
+            },
+            (Some(insert), Some(kind)) => {
+                let params = kind.params().iter().zip(insert.values());
                 SlotFile::Insert(InsertFile {
-                    effect: insert.kind().name().into(),
+                    effect: kind.name().into(),
+                    bypassed: insert.bypassed,
                     params: params
                         .map(|(spec, &v)| {
                             let value = match spec.shape {
@@ -259,17 +303,28 @@ fn slots_file(inserts: &Inserts) -> Vec<SlotFile> {
 
 /// An effect this meloet does not know leaves its slot empty; a parameter it does not know
 /// is skipped, one that is missing or of another shape has its default, and a value out of
-/// range is brought into range. Slots past the last one are dropped.
+/// range is brought into range. A plugin stays in its slot whether or not this PC has it.
+/// Slots past the last one are dropped.
 fn inserts_of(slots: Vec<SlotFile>) -> Inserts {
     let mut inserts = Inserts::default();
     for (place, slot) in inserts.iter_mut().zip(slots) {
-        let SlotFile::Insert(file) = slot else {
-            continue;
+        let file = match slot {
+            SlotFile::Insert(file) => file,
+            SlotFile::Plugin(file) => {
+                *place = plugin_of(file.plugin).map(|plugin| {
+                    let mut insert = Insert::plugin(Arc::new(plugin));
+                    insert.bypassed = file.bypassed;
+                    insert
+                });
+                continue;
+            }
+            SlotFile::Other(_) => continue,
         };
         let Some(kind) = EffectKind::from_name(&file.effect) else {
             continue;
         };
         let mut insert = Insert::new(kind);
+        insert.bypassed = file.bypassed;
         for (name, value) in file.params {
             let Some(index) = kind.param_index(&name) else {
                 continue;
@@ -327,25 +382,181 @@ fn return_of(file: ReturnFile) -> Arc<Return> {
 }
 
 const KIND_BUILTIN: &str = "builtin";
+const KIND_PLUGIN: &str = "plugin";
+const KIND_SF2: &str = "sf2";
 
-fn instrument_file(instrument: &InstrumentRef) -> InstrumentFile {
-    match instrument {
-        InstrumentRef::Builtin(b) => InstrumentFile {
-            kind: KIND_BUILTIN.into(),
-            name: Some(b.name().into()),
-        },
+fn text(text: &str) -> serde_json::Value {
+    serde_json::Value::String(text.to_owned())
+}
+
+/// The field `name` when it is text. It is taken out either way.
+fn take_text(fields: &mut Fields, name: &str) -> Option<String> {
+    match fields.remove(name)? {
+        serde_json::Value::String(text) => Some(text),
+        _ => None,
     }
 }
 
+fn take_number<T: TryFrom<u64>>(fields: &mut Fields, name: &str) -> Option<T> {
+    T::try_from(fields.remove(name)?.as_u64()?).ok()
+}
+
+/// What is left of an entry after the known fields were taken out.
+fn kept_of(fields: Fields) -> Kept {
+    if fields.is_empty() {
+        return Kept::NONE;
+    }
+    Kept::new(&serde_json::to_string(&fields).expect("a map of JSON values serializes"))
+}
+
+fn kept_fields(kept: &Kept) -> Fields {
+    (kept.text())
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or_default()
+}
+
+/// The fields of a plugin: the ones it was read with that this meloet does not know, and
+/// over them the ones it knows.
+fn plugin_fields(plugin: &PluginRef) -> Fields {
+    let mut fields = kept_fields(&plugin.kept);
+    fields.insert("key".into(), text(&plugin.key));
+    fields.insert("name".into(), text(&plugin.name));
+    fields.insert("vendor".into(), text(&plugin.vendor));
+    if !plugin.path.is_empty() {
+        fields.insert("path".into(), text(&plugin.path));
+    }
+    if !plugin.state.is_empty() {
+        fields.insert("state".into(), text(&base64::encode(&plugin.state)));
+    }
+    fields
+}
+
+/// `None` without a key. Whether this PC has the plugin, or reads its format, is not asked
+/// here: the song keeps it either way. A state that is not base64 is read as no state.
+fn plugin_of(mut fields: Fields) -> Option<PluginRef> {
+    let key = take_text(&mut fields, "key").filter(|key| !key.is_empty())?;
+    let mut word = |name| take_text(&mut fields, name).unwrap_or_default();
+    let (name, vendor, path) = (word("name"), word("vendor"), word("path"));
+    let state = take_text(&mut fields, "state")
+        .and_then(|state| base64::decode(&state))
+        .unwrap_or_default();
+    Some(PluginRef {
+        key: key.into(),
+        name: name.into(),
+        vendor: vendor.into(),
+        path: path.into(),
+        state: state.into(),
+        kept: kept_of(fields),
+    })
+}
+
+fn sf2_fields(sf2: &Sf2Ref) -> Fields {
+    let mut fields = kept_fields(&sf2.kept);
+    fields.insert("file".into(), text(&sf2.file));
+    fields.insert("sha256".into(), text(&sf2.sha256));
+    fields.insert("bank".into(), sf2.bank.into());
+    fields.insert("program".into(), sf2.program.into());
+    fields.insert("name".into(), text(&sf2.name));
+    fields
+}
+
+/// `None` without the name of the file, a bank and a program from 0 to 127.
+fn sf2_of(mut fields: Fields) -> Option<Sf2Ref> {
+    let file = take_text(&mut fields, "file").filter(|file| !file.is_empty())?;
+    let bank = take_number::<u16>(&mut fields, "bank")?;
+    let program = take_number::<u8>(&mut fields, "program").filter(|p| *p <= 127)?;
+    let mut word = |name| take_text(&mut fields, name).unwrap_or_default();
+    let (sha256, name) = (word("sha256"), word("name"));
+    Some(Sf2Ref {
+        file: file.into(),
+        sha256: sha256.into(),
+        bank,
+        program,
+        name: name.into(),
+        kept: kept_of(fields),
+    })
+}
+
+fn instrument_file(instrument: &InstrumentRef) -> InstrumentFile {
+    let (kind, mut fields) = match instrument {
+        InstrumentRef::Builtin(b) => {
+            let mut fields = Fields::new();
+            fields.insert("name".into(), text(b.name()));
+            (KIND_BUILTIN, fields)
+        }
+        InstrumentRef::Plugin(plugin) => (KIND_PLUGIN, plugin_fields(plugin)),
+        InstrumentRef::Sf2(sf2) => (KIND_SF2, sf2_fields(sf2)),
+    };
+    fields.insert("kind".into(), text(kind));
+    InstrumentFile(fields)
+}
+
 /// An instrument this meloet does not know (a sound of a later meloet, a name spelled by
-/// hand) becomes the sine: the notes of a song are worth more than the name of a sound, so
-/// the song is not refused for it.
-fn instrument_of(file: &InstrumentFile) -> InstrumentRef {
-    file.name
-        .as_deref()
-        .filter(|_| file.kind == KIND_BUILTIN)
-        .and_then(BuiltinInstrument::from_name)
-        .map_or(InstrumentRef::SINE, InstrumentRef::Builtin)
+/// hand, a kind it has no word for) becomes the sine: the notes of a song are worth more than
+/// the name of a sound, so the song is not refused for it. A plugin or an SF2 preset is not
+/// such a one: it is kept as it was read, whether or not this PC has it.
+fn instrument_of(file: InstrumentFile) -> InstrumentRef {
+    let mut fields = file.0;
+    let known = match take_text(&mut fields, "kind").as_deref() {
+        Some(KIND_BUILTIN) => take_text(&mut fields, "name")
+            .and_then(|name| BuiltinInstrument::from_name(&name))
+            .map(InstrumentRef::Builtin),
+        Some(KIND_PLUGIN) => plugin_of(fields).map(|p| InstrumentRef::Plugin(Arc::new(p))),
+        Some(KIND_SF2) => sf2_of(fields).map(|s| InstrumentRef::Sf2(Arc::new(s))),
+        _ => None,
+    };
+    known.unwrap_or(InstrumentRef::SINE)
+}
+
+/// Base64 with the usual alphabet and padding: how a plugin's state sits in the JSON.
+mod base64 {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    pub fn encode(bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+        for chunk in bytes.chunks(3) {
+            let n = chunk
+                .iter()
+                .enumerate()
+                .fold(0u32, |n, (i, b)| n | u32::from(*b) << (16 - 8 * i));
+            for i in 0..4 {
+                if i <= chunk.len() {
+                    out.push(char::from(ALPHABET[(n >> (18 - 6 * i) & 63) as usize]));
+                } else {
+                    out.push('=');
+                }
+            }
+        }
+        out
+    }
+
+    /// `None` for text that `encode` does not write.
+    pub fn decode(text: &str) -> Option<Vec<u8>> {
+        let text = text.as_bytes();
+        if !text.len().is_multiple_of(4) {
+            return None;
+        }
+        let mut out = Vec::with_capacity(text.len() / 4 * 3);
+        let last = text.len().saturating_sub(4);
+        for (at, chunk) in text.chunks(4).enumerate() {
+            let pad = chunk.iter().rev().take_while(|c| **c == b'=').count();
+            if pad > 2 || (pad > 0 && at * 4 != last) {
+                return None;
+            }
+            let mut n = 0u32;
+            for c in &chunk[..4 - pad] {
+                let six = ALPHABET.iter().position(|a| a == c)? as u32;
+                n = n << 6 | six;
+            }
+            n <<= 6 * pad as u32;
+            // The bits that padding leaves over are zero in what `encode` writes.
+            if n & ((1 << (8 * pad)) - 1) != 0 {
+                return None;
+            }
+            out.extend_from_slice(&n.to_be_bytes()[1..4 - pad]);
+        }
+        Some(out)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -785,7 +996,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             id: TrackId(t.id),
             name: t.name,
             color: TrackColor::new(t.color)?,
-            instrument: instrument_of(&t.instrument),
+            instrument: instrument_of(t.instrument),
             channel: Channel {
                 gain: gain_of(t.gain_db),
                 pan: pan_of(t.pan.unwrap_or(0)),

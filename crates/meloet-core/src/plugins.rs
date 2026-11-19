@@ -203,6 +203,11 @@ impl Plugins {
         self.push(ScanWhat::Places { places, all: false }, kind, effects);
     }
 
+    /// The home folder, which the screen shows as "~".
+    pub fn home(&self) -> Option<&Path> {
+        self.home.as_deref()
+    }
+
     pub fn added_places(&self) -> &[PathBuf] {
         &self.added
     }

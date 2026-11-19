@@ -173,7 +173,7 @@ fn an_effect_is_made_only_when_its_slot_gets_another_kind() {
     let (m, e) = &mut rig();
     let made = e.effects_made;
     let reverb = e.strip(m, SA).inserts[0].clone().unwrap();
-    assert_eq!(reverb.1.kind(), ModelEffect::Reverb);
+    assert_eq!(reverb.1.kind(), Some(ModelEffect::Reverb));
 
     // Parameters go to the effect that is there.
     let decay = |value, commit| Command::SetParam {

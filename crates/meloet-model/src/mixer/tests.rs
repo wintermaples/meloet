@@ -40,12 +40,12 @@ fn pan_keeps_to_its_range() {
 fn a_new_song_has_reverb_delay_and_limiter() {
     let doc = Doc::new_default();
     let first = |strip| doc.insert(strip, 0).unwrap();
-    assert_eq!(first(A).kind(), EffectKind::Reverb);
+    assert_eq!(first(A).kind(), Some(EffectKind::Reverb));
     assert_eq!(first(A).value(reverb::MIX), Some(100.0));
     assert_eq!(first(A).value(reverb::DECAY), Some(2.4));
-    assert_eq!(first(B).kind(), EffectKind::Delay);
+    assert_eq!(first(B).kind(), Some(EffectKind::Delay));
     assert_eq!(first(B).value(delay::MIX), Some(100.0));
-    assert_eq!(first(StripId::Master).kind(), EffectKind::Limiter);
+    assert_eq!(first(StripId::Master).kind(), Some(EffectKind::Limiter));
     assert_eq!(first(StripId::Master).value(limiter::CEILING), Some(-0.3));
     for strip in [A, B, StripId::Master] {
         let c = doc.channel(strip).unwrap();
@@ -311,4 +311,156 @@ fn undo_and_redo_bring_the_mixer_back() {
         assert!(history.redo(&mut doc).is_some());
         assert_eq!(&held(&doc), want);
     }
+}
+
+fn surge() -> Arc<PluginRef> {
+    Arc::new(PluginRef::new(
+        "vst3:535247455375726758545379",
+        "Surge XT",
+        "Surge Synth Team",
+        "/usr/lib/vst3/Surge XT.vst3",
+    ))
+}
+
+fn mverb() -> Arc<PluginRef> {
+    Arc::new(PluginRef::new(
+        "lv2:http://distrho.sf.net/plugins/MVerb",
+        "MVerb",
+        "DISTRHO",
+        "/usr/lib/lv2/MVerb.lv2",
+    ))
+}
+
+#[test]
+fn a_plugin_goes_into_a_slot_and_out_again() {
+    let doc = Doc::new_default();
+    let e = add_plugin_effect(&doc, T1, 1, mverb()).unwrap();
+    let place = PluginPlace::Insert(T1, 1);
+    assert_eq!(e.step, StepKind::AddPlugin { place });
+    let insert = e.doc.insert(T1, 1).unwrap();
+    assert_eq!(insert.kind(), None);
+    assert_eq!(insert.plugin_ref(), Some(&mverb()));
+    assert_eq!(insert.values(), [] as [f32; 0]);
+    assert!(!insert.bypassed);
+    assert_eq!(e.doc.plugin(place), Some(&mverb()));
+    assert_eq!(
+        add_plugin_effect(&e.doc, T1, 1, mverb()).unwrap_err(),
+        EditError::SlotTaken
+    );
+    assert_eq!(
+        add_plugin_effect(&doc, T1, INSERT_SLOTS, mverb()).unwrap_err(),
+        EditError::NoSuchInsert
+    );
+    // A parameter of a table is not a parameter of a plugin.
+    assert_eq!(
+        set_param(&e.doc, T1, 1, EffectKind::Reverb, 0, 1.0).unwrap_err(),
+        EditError::NoSuchInsert
+    );
+    let gone = remove_effect(&e.doc, T1, 1).unwrap();
+    assert_eq!(gone.step, StepKind::RemovePlugin { place });
+    assert_eq!(gone.doc, doc);
+    // An effect that comes with meloet still says which it was.
+    let limiter = remove_effect(&doc, StripId::Master, 0).unwrap();
+    assert_eq!(
+        limiter.step,
+        StepKind::RemoveEffect {
+            strip: StripId::Master,
+            slot: 0,
+            kind: EffectKind::Limiter
+        }
+    );
+}
+
+#[test]
+fn the_state_of_a_plugin_changes_as_one_step_and_undo_brings_the_old_state_back() {
+    let start = Doc::new_default();
+    let (e, track) = edit::add_track(&start, None, InstrumentRef::Plugin(surge())).unwrap();
+    assert_eq!(e.doc.track(track).unwrap().name, "Surge XT");
+    let doc = add_plugin_effect(&e.doc, StripId::Track(track), 0, mverb())
+        .unwrap()
+        .doc;
+    let instrument = PluginPlace::Instrument(track);
+    let insert = PluginPlace::Insert(StripId::Track(track), 0);
+    let state: Arc<[u8]> = Arc::from(vec![7u8; 60_000]);
+
+    let window = PluginChange::Window;
+    let e = set_plugin_state(&doc, instrument, &surge().key, state.clone(), window).unwrap();
+    assert_eq!(e.step, StepKind::PluginWindow { place: instrument });
+    assert_eq!(e.doc.plugin(instrument).unwrap().state, state);
+    assert_eq!(e.doc.plugin(instrument).unwrap().name, surge().name);
+    assert_eq!(
+        e.doc.plugin(insert),
+        Some(&mverb()),
+        "the insert is as it was"
+    );
+    // The tracks that did not change are shared, and so is the state itself.
+    assert!(Arc::ptr_eq(&e.doc.tracks[0], &doc.tracks[0]));
+    assert!(Arc::ptr_eq(
+        &e.doc.plugin(instrument).unwrap().state,
+        &state
+    ));
+
+    let mut history = History::new();
+    let mut now = doc.clone();
+    history.apply(&mut now, e);
+    let param = PluginChange::Param(12);
+    let e = set_plugin_state(&now, insert, &mverb().key, Arc::from([1u8, 2]), param).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::SetPluginParam {
+            place: insert,
+            param: 12
+        }
+    );
+    history.apply(&mut now, e);
+    assert_eq!(*now.plugin(insert).unwrap().state, [1, 2]);
+    assert!(!now.insert(StripId::Track(track), 0).unwrap().bypassed);
+    assert!(history.undo(&mut now).is_some());
+    assert_eq!(now.plugin(insert), Some(&mverb()));
+    assert_eq!(now.plugin(instrument).unwrap().state, state);
+    assert!(history.undo(&mut now).is_some());
+    assert_eq!(held(&now), held(&doc));
+
+    // The same state again is no step; another plugin at the place, or none, is no step.
+    let again = set_plugin_state(&doc, instrument, &surge().key, Arc::from([]), window);
+    assert_eq!(again.unwrap_err(), EditError::Unchanged);
+    let other = set_plugin_state(&doc, instrument, &mverb().key, state.clone(), window);
+    assert_eq!(other.unwrap_err(), EditError::NoSuchPlugin);
+    for place in [
+        PluginPlace::Instrument(TrackId(1)),
+        PluginPlace::Instrument(TrackId(99)),
+        PluginPlace::Insert(StripId::Master, 0),
+        PluginPlace::Insert(StripId::Track(track), 3),
+        PluginPlace::Insert(StripId::Track(track), 9),
+    ] {
+        let e = set_plugin_state(&doc, place, &surge().key, state.clone(), window);
+        assert_eq!(e.unwrap_err(), EditError::NoSuchPlugin, "{place:?}");
+    }
+}
+
+#[test]
+fn a_track_of_a_plugin_or_an_sf2_preset_sends_as_its_group() {
+    use crate::{Kept, SF2_DRUM_BANK, Sf2Ref};
+    let preset = |bank, program| {
+        InstrumentRef::Sf2(Arc::new(Sf2Ref {
+            file: "FluidR3_GM.sf2".into(),
+            sha256: "".into(),
+            bank,
+            program,
+            name: "".into(),
+            kept: Kept::NONE,
+        }))
+    };
+    let a = |i: &InstrumentRef| new_track_sends(i)[0];
+    assert_eq!(a(&InstrumentRef::Plugin(surge())), Gain::from_db(-15.0));
+    assert_eq!(a(&preset(0, 27)), Gain::from_db(-15.0));
+    assert_eq!(a(&preset(0, 33)), Gain::SILENT, "a bass sends nothing");
+    assert_eq!(a(&preset(SF2_DRUM_BANK, 0)), Gain::from_db(-24.0));
+    // The second track of the same name gets a number (spec 3 Y14).
+    let doc = Doc::new_default();
+    let (e, _) = edit::add_track(&doc, None, InstrumentRef::Plugin(surge())).unwrap();
+    let (e, second) = edit::add_track(&e.doc, None, InstrumentRef::Plugin(surge())).unwrap();
+    assert_eq!(e.doc.track(second).unwrap().name, "Surge XT 2");
+    let (e, guitar) = edit::add_track(&e.doc, None, preset(0, 27)).unwrap();
+    assert_eq!(e.doc.track(guitar).unwrap().name, "ギター");
 }

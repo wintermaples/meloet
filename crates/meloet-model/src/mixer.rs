@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::edit::{Edit, EditError, track_index};
 use crate::effects::{EffectKind, delay, reverb};
 use crate::history::StepKind;
-use crate::instrument::InstrumentGroup;
+use crate::instrument::{InstrumentGroup, PluginRef};
 use crate::song::{Doc, Track};
 use crate::{InstrumentRef, TrackId};
 
@@ -70,20 +70,37 @@ impl Pan {
 /// The mix, in percent, a reverb or a delay starts with on a track or on the master.
 pub const INSERT_MIX: f32 = 30.0;
 
-/// An effect in an insert slot with the values of its parameters: one for every parameter of
-/// its table, each inside its range.
+/// What sits in an insert slot: an effect that comes with meloet, with one value for every
+/// parameter of its table, each inside its range, or a plugin with its state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Insert {
-    kind: EffectKind,
-    values: Vec<f32>,
+    effect: InsertEffect,
+    /// 「とばす」 (spec 3, 13-A): the sound passes the slot by. The values stay.
+    pub bypassed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum InsertEffect {
+    Builtin { kind: EffectKind, values: Vec<f32> },
+    Plugin(Arc<PluginRef>),
 }
 
 impl Insert {
     /// With the defaults of the table.
     pub fn new(kind: EffectKind) -> Insert {
         Insert {
-            kind,
-            values: kind.params().iter().map(|p| p.default).collect(),
+            effect: InsertEffect::Builtin {
+                kind,
+                values: kind.params().iter().map(|p| p.default).collect(),
+            },
+            bypassed: false,
+        }
+    }
+
+    pub fn plugin(plugin: Arc<PluginRef>) -> Insert {
+        Insert {
+            effect: InsertEffect::Plugin(plugin),
+            bypassed: false,
         }
     }
 
@@ -104,30 +121,64 @@ impl Insert {
         insert
     }
 
-    pub fn kind(&self) -> EffectKind {
-        self.kind
+    /// `None` for a plugin.
+    pub fn kind(&self) -> Option<EffectKind> {
+        match &self.effect {
+            InsertEffect::Builtin { kind, .. } => Some(*kind),
+            InsertEffect::Plugin(_) => None,
+        }
     }
 
-    /// In the order of the table.
+    /// `None` for an effect that comes with meloet.
+    pub fn plugin_ref(&self) -> Option<&Arc<PluginRef>> {
+        match &self.effect {
+            InsertEffect::Builtin { .. } => None,
+            InsertEffect::Plugin(plugin) => Some(plugin),
+        }
+    }
+
+    /// In the order of the table. Empty for a plugin: its values are in its state.
     pub fn values(&self) -> &[f32] {
-        &self.values
+        match &self.effect {
+            InsertEffect::Builtin { values, .. } => values,
+            InsertEffect::Plugin(_) => &[],
+        }
     }
 
     pub fn value(&self, param: u32) -> Option<f32> {
-        self.values.get(param as usize).copied()
+        self.values().get(param as usize).copied()
     }
 
     /// Sets a parameter, brought into its range. `false` when the effect has no such
-    /// parameter.
+    /// parameter, and for a plugin.
     pub fn set(&mut self, param: u32, value: f32) -> bool {
-        match self.kind.clamp(param, value) {
+        let InsertEffect::Builtin { kind, values } = &mut self.effect else {
+            return false;
+        };
+        match kind.clamp(param, value) {
             Some(v) => {
-                self.values[param as usize] = v;
+                values[param as usize] = v;
                 true
             }
             None => false,
         }
     }
+}
+
+/// Where a plugin sits in the song: as the instrument of a track, or in an insert slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PluginPlace {
+    Instrument(TrackId),
+    Insert(StripId, usize),
+}
+
+/// Why the state of a plugin changed, for the step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginChange {
+    /// Whatever was changed while the person was in the plugin's window (spec 3, 15-C).
+    Window,
+    /// One parameter, moved in the parameters panel; the plugin's own number for it.
+    Param(u32),
 }
 
 /// Sound goes through the slots from the first to the last (spec 5 「インサート」).
@@ -183,10 +234,10 @@ pub enum StripId {
 
 /// The sends of a track that is new (spec 3 Y9): piano and keys, pads and strings, and
 /// synths send −15 dB to A, drums −24 dB, basses nothing. Nothing goes to B. Guitars and wind
-/// instruments are not in Y9; they send as the piano does.
+/// instruments are not in Y9; they send as the piano does. An SF2 preset and a plugin send as
+/// their group does ([`InstrumentRef::group`]).
 pub fn new_track_sends(instrument: &InstrumentRef) -> Sends {
-    let InstrumentRef::Builtin(builtin) = instrument;
-    let a = match builtin.group() {
+    let a = match instrument.group() {
         InstrumentGroup::PianoKeys
         | InstrumentGroup::Guitar
         | InstrumentGroup::PadStrings
@@ -303,7 +354,7 @@ pub fn set_param(
 ) -> Result<Edit, EditError> {
     let new = with_channel(doc, strip, |c| {
         let insert = (c.inserts.get_mut(slot).and_then(Option::as_mut))
-            .filter(|i| i.kind() == kind)
+            .filter(|i| i.kind() == Some(kind))
             .ok_or(EditError::NoSuchInsert)?;
         let before = insert.value(param).ok_or(EditError::NoSuchInsert)?;
         insert.set(param, value);
@@ -345,6 +396,29 @@ pub fn add_effect(
     })
 }
 
+/// Puts a plugin, as it is given, in an empty slot (`SlotTaken` otherwise).
+pub fn add_plugin_effect(
+    doc: &Doc,
+    strip: StripId,
+    slot: usize,
+    plugin: Arc<PluginRef>,
+) -> Result<Edit, EditError> {
+    let new = with_channel(doc, strip, |c| {
+        let place = c.inserts.get_mut(slot).ok_or(EditError::NoSuchInsert)?;
+        if place.is_some() {
+            return Err(EditError::SlotTaken);
+        }
+        *place = Some(Insert::plugin(plugin));
+        Ok(())
+    })?;
+    Ok(Edit {
+        doc: new,
+        step: StepKind::AddPlugin {
+            place: PluginPlace::Insert(strip, slot),
+        },
+    })
+}
+
 /// Empties the slot. The other slots stay where they are.
 pub fn remove_effect(doc: &Doc, strip: StripId, slot: usize) -> Result<Edit, EditError> {
     let mut kind = None;
@@ -355,10 +429,67 @@ pub fn remove_effect(doc: &Doc, strip: StripId, slot: usize) -> Result<Edit, Edi
     })?;
     Ok(Edit {
         doc: new,
-        step: StepKind::RemoveEffect {
-            strip,
-            slot,
-            kind: kind.expect("set when the slot held an effect"),
+        step: match kind.expect("set when the slot held an effect") {
+            Some(kind) => StepKind::RemoveEffect { strip, slot, kind },
+            None => StepKind::RemovePlugin {
+                place: PluginPlace::Insert(strip, slot),
+            },
+        },
+    })
+}
+
+impl Doc {
+    /// The plugin at `place`; `None` when something else is there, or nothing.
+    pub fn plugin(&self, place: PluginPlace) -> Option<&Arc<PluginRef>> {
+        match place {
+            PluginPlace::Instrument(track) => match &self.track(track)?.instrument {
+                InstrumentRef::Plugin(plugin) => Some(plugin),
+                _ => None,
+            },
+            PluginPlace::Insert(strip, slot) => self.insert(strip, slot)?.plugin_ref(),
+        }
+    }
+}
+
+/// The plugin at `place` has another state: what it said of itself after the change. `key` is
+/// the plugin the caller means: `NoSuchPlugin` when the place holds another one by now, or
+/// none. The same state again is `Unchanged`.
+pub fn set_plugin_state(
+    doc: &Doc,
+    place: PluginPlace,
+    key: &str,
+    state: Arc<[u8]>,
+    change: PluginChange,
+) -> Result<Edit, EditError> {
+    let old = (doc.plugin(place))
+        .filter(|p| &*p.key == key)
+        .ok_or(EditError::NoSuchPlugin)?;
+    if old.state == state {
+        return Err(EditError::Unchanged);
+    }
+    let plugin = Arc::new(old.with_state(state));
+    let new = match place {
+        PluginPlace::Instrument(track) => {
+            let ti = track_index(doc, track)?;
+            let mut new = doc.clone();
+            new.tracks[ti] = Arc::new(Track {
+                instrument: InstrumentRef::Plugin(plugin),
+                ..Track::clone(&doc.tracks[ti])
+            });
+            new
+        }
+        PluginPlace::Insert(strip, slot) => with_channel(doc, strip, |c| {
+            let insert = (c.inserts.get_mut(slot).and_then(Option::as_mut))
+                .ok_or(EditError::NoSuchPlugin)?;
+            insert.effect = InsertEffect::Plugin(plugin);
+            Ok(())
+        })?,
+    };
+    Ok(Edit {
+        doc: new,
+        step: match change {
+            PluginChange::Window => StepKind::PluginWindow { place },
+            PluginChange::Param(param) => StepKind::SetPluginParam { place, param },
         },
     })
 }

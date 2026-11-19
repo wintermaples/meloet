@@ -8,6 +8,7 @@ use meloet_protocol::{
 };
 
 use super::{AUDITION_SEAT, MAX_TRACKS};
+use crate::added::builtin_or_sine;
 use crate::instruments;
 use crate::play::mix::tests::three_tracks;
 use crate::play::mixer::{effect_kind, strip_ref};
@@ -75,7 +76,7 @@ fn wanted(m: &Model, id: StripId, channel: &Channel, sends: Sends, muted: bool) 
                 param,
                 value,
             } if strip == id => {
-                if let Some(insert) = inserts[slot].as_mut().filter(|i| i.kind() == kind) {
+                if let Some(insert) = inserts[slot].as_mut().filter(|i| i.kind() == Some(kind)) {
                     insert.set(param, value);
                 }
             }
@@ -249,8 +250,8 @@ impl FakeEngine {
 
     /// The kind of what sounds on a seat.
     pub fn sounding(&self, seat: usize) -> Option<InstrumentKind> {
-        let (_, InstrumentRef::Builtin(b)) = self.seats[seat].instrument.as_ref()?;
-        Some(instruments::kind_of(*b))
+        let (_, instrument) = self.seats[seat].instrument.as_ref()?;
+        Some(instruments::kind_of(builtin_or_sine(instrument)))
     }
 
     /// The engine has what the song and the shelf say, and nothing else.
@@ -261,12 +262,9 @@ impl FakeEngine {
         let shelf = m.view().shelf;
         let kind = |made: &Option<Made>| {
             made.as_ref()
-                .map(|(_, InstrumentRef::Builtin(b))| instruments::kind_of(*b))
+                .map(|(_, i)| instruments::kind_of(builtin_or_sine(i)))
         };
-        let of = |i: &InstrumentRef| {
-            let InstrumentRef::Builtin(b) = i;
-            Some(instruments::kind_of(*b))
-        };
+        let of = |i: &InstrumentRef| Some(instruments::kind_of(builtin_or_sine(i)));
         let mut used = HashSet::new();
         for (t, seat) in doc.tracks.iter().zip(p.track_seats()) {
             let seat = seat.unwrap_or_else(|| panic!("{ctx}: track {} has no seat", t.id.0));
@@ -666,8 +664,8 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
                     ]);
                     for strip in strips {
                         for slot in 0..4 {
-                            if let Some(insert) = before.insert(strip, slot) {
-                                there.push((strip, slot as u8, insert.kind()));
+                            if let Some(kind) = before.insert(strip, slot).and_then(Insert::kind) {
+                                there.push((strip, slot as u8, kind));
                             }
                         }
                     }

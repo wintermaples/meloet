@@ -5,6 +5,10 @@ use ts_rs::TS;
 
 use super::*;
 
+const SURGE_VST3: &str = "vst3:535247455375726758545379000000AA";
+const SURGE_LV2: &str = "lv2:https://surge-synthesizer.github.io/lv2/surge-xt";
+const MVERB: &str = "lv2:http://distrho.sf.net/plugins/MVerb";
+
 fn ui_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ui")
 }
@@ -27,10 +31,21 @@ fn sample_state() -> AppState {
                 name: "ピアノ".into(),
                 color: 1,
                 instrument: InstrumentKind::GrandPiano,
+                sound: SoundView::Builtin {
+                    instrument: InstrumentKind::GrandPiano,
+                },
+                stand_in: None,
+                drum_keys: None,
                 gain_db: Some(-3.0),
                 pan: -20,
                 sends: [Some(-15.0), None],
                 inserts: [None, Some(EffectKind::Compressor), None, None],
+                slots: [
+                    None,
+                    Some(InsertView::builtin(EffectKind::Compressor)),
+                    None,
+                    None,
+                ],
                 muted: true,
                 soloed: false,
                 clips: vec![ClipView {
@@ -51,18 +66,36 @@ fn sample_state() -> AppState {
                     pan: 0,
                     muted: false,
                     inserts: [Some(EffectKind::Reverb), None, None, None],
+                    slots: [
+                        Some(InsertView::builtin(EffectKind::Reverb)),
+                        None,
+                        None,
+                        None,
+                    ],
                 },
                 ReturnView {
                     gain_db: None,
                     pan: 100,
                     muted: true,
                     inserts: [Some(EffectKind::Delay), None, None, None],
+                    slots: [
+                        Some(InsertView::builtin(EffectKind::Delay)),
+                        None,
+                        None,
+                        None,
+                    ],
                 },
             ],
             master: MasterView {
                 gain_db: Some(0.0),
                 pan: -5,
                 inserts: [Some(EffectKind::Limiter), None, None, None],
+                slots: [
+                    Some(InsertView::builtin(EffectKind::Limiter)),
+                    None,
+                    None,
+                    None,
+                ],
             },
             play_target: Some(7),
             loop_range: Some(TickSpan {
@@ -149,6 +182,47 @@ fn sample_state() -> AppState {
                 song: None,
                 takes: 2,
             }),
+            file_drop: Some(FileDropView {
+                name: "FluidR3_GM.sf2".into(),
+                addable: true,
+            }),
+        },
+        library: LibraryView {
+            sf2: vec![Sf2FileView {
+                file: "FluidR3_GM.sf2".into(),
+                presets: vec![
+                    Sf2PresetView {
+                        bank: 8,
+                        program: 27,
+                        name: "Clean Guitar".into(),
+                        family: GmFamily::Guitar,
+                    },
+                    Sf2PresetView {
+                        bank: 128,
+                        program: 0,
+                        name: "Standard".into(),
+                        family: GmFamily::DrumKit,
+                    },
+                ],
+            }],
+            plugins: vec![PluginRowView {
+                name: "Surge XT".into(),
+                vendor: "Surge Synth Team".into(),
+                kind: PluginKindView::Instrument(PluginInstrumentCategory::Synth),
+                key: SURGE_LV2.into(),
+                formats: vec![
+                    PluginFormatView {
+                        format: PluginFormat::Vst3,
+                        key: SURGE_VST3.into(),
+                    },
+                    PluginFormatView {
+                        format: PluginFormat::Lv2,
+                        key: SURGE_LV2.into(),
+                    },
+                ],
+            }],
+            opened_sf2: Some("FluidR3_GM.sf2".into()),
+            pack_missing: false,
         },
         shelf: ShelfView {
             mode: ShelfMode::Replace { track: 7 },
@@ -163,6 +237,38 @@ fn sample_state() -> AppState {
                 length_us: 4_000_000,
             }),
             selected_effect: None,
+            selected_sound: Some(SoundRef::Builtin {
+                instrument: InstrumentKind::Sine,
+            }),
+            current_sound: Some(SoundRef::Plugin {
+                key: SURGE_LV2.into(),
+            }),
+            loading_sound: None,
+            sound_sample: Some(SoundSampleView {
+                sound: SoundRef::Sf2 {
+                    file: "FluidR3_GM.sf2".into(),
+                    bank: 8,
+                    program: 27,
+                },
+                playing: None,
+            }),
+            chosen_effect: Some(EffectRef::Plugin { key: MVERB.into() }),
+            unreadable: None,
+            favorite_sounds: vec![SoundRef::Builtin {
+                instrument: InstrumentKind::GrandPiano,
+            }],
+            favorite_effects: vec![
+                EffectRef::Builtin {
+                    effect: EffectKind::Reverb,
+                },
+                EffectRef::Builtin {
+                    effect: EffectKind::Delay,
+                },
+            ],
+            missing: vec![MissingView::Sf2 {
+                file: "Old Keys.sf2".into(),
+                tracks: 2,
+            }],
         },
         params: ParamsView {
             selected: Some(SelectedInsert {
@@ -368,6 +474,33 @@ fn export_typescript() {
     )
     .unwrap();
     std::fs::write(dir.join("effects.ts"), effects_ts()).unwrap();
+    let list = |v: serde_json::Value| serde_json::to_string(&v).unwrap();
+    std::fs::write(
+        dir.join("added.ts"),
+        format!(
+            "// Written by `cargo test -p meloet-protocol`. Do not edit this file manually.\n\
+             import type {{ GmFamily }} from \"./GmFamily\";\n\
+             import type {{ PluginEffectCategory }} from \"./PluginEffectCategory\";\n\
+             import type {{ PluginFormat }} from \"./PluginFormat\";\n\
+             import type {{ PluginInstrumentCategory }} from \"./PluginInstrumentCategory\";\n\n\
+             /** The headings under an SF2 file, in the order of the shelf. */\n\
+             export const GM_FAMILIES: readonly GmFamily[] = {};\n\n\
+             /** The headings of the plugin instruments, in the order of the shelf. */\n\
+             export const PLUGIN_INSTRUMENT_CATEGORIES: readonly PluginInstrumentCategory[] = {};\n\n\
+             /** The headings of the plugin effects, in the order of the shelf. */\n\
+             export const PLUGIN_EFFECT_CATEGORIES: readonly PluginEffectCategory[] = {};\n\n\
+             /** The formats of plugins, in the order a row lists them. */\n\
+             export const PLUGIN_FORMATS: readonly PluginFormat[] = {};\n\n\
+             /** The bank an SF2 file keeps its drum kits in. */\n\
+             export const SF2_DRUM_BANK = {};\n",
+            list(json!(GmFamily::ALL)),
+            list(json!(PluginInstrumentCategory::ALL)),
+            list(json!(PluginEffectCategory::ALL)),
+            list(json!([PluginFormat::Vst3, PluginFormat::Lv2])),
+            meloet_model::SF2_DRUM_BANK,
+        ),
+    )
+    .unwrap();
     std::fs::write(
         dir.join("protocolVersion.ts"),
         format!(
@@ -460,6 +593,12 @@ fn effects_are_the_models_in_the_same_order() {
         );
     }
     assert_eq!(INSERT_SLOTS, meloet_model::INSERT_SLOTS);
+    let names = |all: &[String]| all.join(" ");
+    assert_eq!(
+        names(&GmFamily::ALL.map(|f| format!("{f:?}"))),
+        names(&meloet_model::GmFamily::ALL.map(|f| format!("{f:?}"))),
+        "the families of an SF2 file are the model's, in the same order"
+    );
     let text = effects_ts();
     assert!(text.contains("\"id\": \"decay\""));
     assert!(text.contains("\"eighthDotted\""));
@@ -1080,7 +1219,35 @@ fn state_json_is_camel_case_and_round_trips() {
                "selected": "sine", "current": "grandPiano", "loading": null,
                "sample": {"instrument": "grandPiano", "startedUs": 1_000_000,
                           "lengthUs": 4_000_000},
-               "selectedEffect": null})
+               "selectedEffect": null,
+               "selectedSound": {"kind": "builtin", "instrument": "sine"},
+               "currentSound": {"kind": "plugin", "key": SURGE_LV2},
+               "loadingSound": null,
+               "soundSample": {"sound": {"kind": "sf2", "file": "FluidR3_GM.sf2", "bank": 8,
+                                         "program": 27},
+                               "playing": null},
+               "chosenEffect": {"kind": "plugin", "key": MVERB},
+               "unreadable": null,
+               "favoriteSounds": [{"kind": "builtin", "instrument": "grandPiano"}],
+               "favoriteEffects": [{"kind": "builtin", "effect": "reverb"},
+                                   {"kind": "builtin", "effect": "delay"}],
+               "missing": [{"kind": "sf2", "file": "Old Keys.sf2", "tracks": 2}]})
+    );
+    assert_eq!(
+        v["state"]["library"],
+        json!({"sf2": [{"file": "FluidR3_GM.sf2", "presets": [
+                   {"bank": 8, "program": 27, "name": "Clean Guitar", "family": "guitar"},
+                   {"bank": 128, "program": 0, "name": "Standard", "family": "drumKit"}]}],
+               "plugins": [{"name": "Surge XT", "vendor": "Surge Synth Team",
+                            "kind": {"role": "instrument", "category": "synth"},
+                            "key": SURGE_LV2,
+                            "formats": [{"format": "vst3", "key": SURGE_VST3},
+                                        {"format": "lv2", "key": SURGE_LV2}]}],
+               "openedSf2": "FluidR3_GM.sf2", "packMissing": false})
+    );
+    assert_eq!(
+        v["state"]["workspace"]["fileDrop"],
+        json!({"name": "FluidR3_GM.sf2", "addable": true})
     );
     let track = &v["state"]["song"]["tracks"][0];
     assert_eq!(track["gainDb"], -3.0);
@@ -1088,13 +1255,29 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(track["sends"], json!([-15.0, null]), "null is −∞");
     assert_eq!(track["inserts"], json!([null, "compressor", null, null]));
     assert_eq!(
+        track["slots"],
+        json!([null, {"effect": {"kind": "builtin", "effect": "compressor"}, "bypassed": false},
+               null, null])
+    );
+    assert_eq!(
+        track["sound"],
+        json!({"kind": "builtin", "instrument": "grandPiano"})
+    );
+    assert_eq!(track["standIn"], json!(null));
+    assert_eq!(track["drumKeys"], json!(null));
+    let slot =
+        |effect: &str| json!({"effect": {"kind": "builtin", "effect": effect}, "bypassed": false});
+    assert_eq!(
         v["state"]["song"]["returns"],
-        json!([{"gainDb": 0.0, "pan": 0, "muted": false, "inserts": ["reverb", null, null, null]},
-               {"gainDb": null, "pan": 100, "muted": true, "inserts": ["delay", null, null, null]}])
+        json!([{"gainDb": 0.0, "pan": 0, "muted": false, "inserts": ["reverb", null, null, null],
+                "slots": [slot("reverb"), null, null, null]},
+               {"gainDb": null, "pan": 100, "muted": true, "inserts": ["delay", null, null, null],
+                "slots": [slot("delay"), null, null, null]}])
     );
     assert_eq!(
         v["state"]["song"]["master"],
-        json!({"gainDb": 0.0, "pan": -5, "inserts": ["limiter", null, null, null]})
+        json!({"gainDb": 0.0, "pan": -5, "inserts": ["limiter", null, null, null],
+               "slots": [slot("limiter"), null, null, null]})
     );
     assert_eq!(
         v["state"]["params"]["selected"]["insert"],
@@ -1378,10 +1561,15 @@ fn status_message_json_shape() {
                     count: 3,
                     keys: vec![62, 64, 65],
                     quantized: true,
+                    names: vec![
+                        KeyCount { key: 62, count: 2 },
+                        KeyCount { key: 64, count: 1 },
+                    ],
                 }),
             },
             json!({"id": "summary", "loopBars": null, "nothingSelected": false,
-                   "notes": {"count": 3, "keys": [62, 64, 65], "quantized": true}}),
+                   "notes": {"count": 3, "keys": [62, 64, 65], "quantized": true,
+                             "names": [{"key": 62, "count": 2}, {"key": 64, "count": 1}]}}),
         ),
         (
             StatusMessage::OutOfScale {
@@ -1642,6 +1830,336 @@ fn recovery_json_shape() {
     }
 }
 
+/// Protocol 17: SF2 files and plugins in the shelf, on tracks and in insert slots.
+#[test]
+fn added_things_json_shape() {
+    let guitar = SoundRef::Sf2 {
+        file: "FluidR3_GM.sf2".into(),
+        bank: 0,
+        program: 27,
+    };
+    let guitar_json = json!({"kind": "sf2", "file": "FluidR3_GM.sf2", "bank": 0, "program": 27});
+    let surge = SoundRef::Plugin {
+        key: SURGE_LV2.into(),
+    };
+    let surge_json = json!({"kind": "plugin", "key": SURGE_LV2});
+    for (command, json) in [
+        (
+            Command::ShelfSelectSound {
+                sound: Some(surge.clone()),
+            },
+            json!({"type": "shelfSelectSound", "sound": surge_json}),
+        ),
+        (
+            Command::ShelfSelectSound { sound: None },
+            json!({"type": "shelfSelectSound", "sound": null}),
+        ),
+        (
+            Command::PlaySampleOf {
+                sound: guitar.clone(),
+            },
+            json!({"type": "playSampleOf", "sound": guitar_json}),
+        ),
+        (
+            Command::ToggleFavoriteSound {
+                sound: SoundRef::Builtin {
+                    instrument: InstrumentKind::Marimba,
+                },
+            },
+            json!({"type": "toggleFavoriteSound",
+                   "sound": {"kind": "builtin", "instrument": "marimba"}}),
+        ),
+        (
+            Command::ToggleFavoriteEffect {
+                effect: EffectRef::Builtin {
+                    effect: EffectKind::Chorus,
+                },
+            },
+            json!({"type": "toggleFavoriteEffect",
+                   "effect": {"kind": "builtin", "effect": "chorus"}}),
+        ),
+        (
+            Command::ShelfChooseEffect {
+                effect: Some(EffectRef::Plugin { key: MVERB.into() }),
+            },
+            json!({"type": "shelfChooseEffect", "effect": {"kind": "plugin", "key": MVERB}}),
+        ),
+        (
+            Command::ShelfChooseEffect { effect: None },
+            json!({"type": "shelfChooseEffect", "effect": null}),
+        ),
+        (
+            Command::UsePluginFormat {
+                key: SURGE_VST3.into(),
+            },
+            json!({"type": "usePluginFormat", "key": SURGE_VST3}),
+        ),
+        (
+            Command::OpenPluginWindow { slot: None },
+            json!({"type": "openPluginWindow", "slot": null}),
+        ),
+        (
+            Command::OpenPluginWindow {
+                slot: Some(PluginSlotRef::Instrument { track: 5 }),
+            },
+            json!({"type": "openPluginWindow", "slot": {"kind": "instrument", "track": 5}}),
+        ),
+        (Command::AddSf2, json!({"type": "addSf2"})),
+        (Command::CancelFileDrop, json!({"type": "cancelFileDrop"})),
+        (
+            Command::RemoveMissing {
+                missing: MissingRef::Sf2 {
+                    file: "Old Keys.sf2".into(),
+                },
+            },
+            json!({"type": "removeMissing", "missing": {"kind": "sf2", "file": "Old Keys.sf2"}}),
+        ),
+        (
+            Command::RemoveMissing {
+                missing: MissingRef::Plugin { key: MVERB.into() },
+            },
+            json!({"type": "removeMissing", "missing": {"kind": "plugin", "key": MVERB}}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&command).unwrap(), json);
+        assert_eq!(serde_json::from_value::<Command>(json).unwrap(), command);
+    }
+
+    let plugin = |state| PluginView {
+        key: SURGE_LV2.into(),
+        name: "Surge XT".into(),
+        format: Some(PluginFormat::Lv2),
+        state,
+    };
+    let check = |value: serde_json::Value, json: serde_json::Value| assert_eq!(value, json);
+    check(
+        serde_json::to_value(SoundView::Plugin(plugin(PluginState::Loading))).unwrap(),
+        json!({"kind": "plugin", "key": SURGE_LV2, "name": "Surge XT", "format": "lv2",
+               "state": "loading"}),
+    );
+    check(
+        serde_json::to_value(SoundView::Sf2 {
+            file: "FluidR3_GM.sf2".into(),
+            bank: 128,
+            program: 40,
+            name: "Brush".into(),
+            family: GmFamily::DrumKit,
+        })
+        .unwrap(),
+        json!({"kind": "sf2", "file": "FluidR3_GM.sf2", "bank": 128, "program": 40,
+               "name": "Brush", "family": "drumKit"}),
+    );
+    check(
+        serde_json::to_value(InsertView {
+            effect: InsertEffectView::Plugin(PluginView {
+                key: "clap:org.example.verb".into(),
+                name: "Some Verb".into(),
+                format: None,
+                state: PluginState::Missing,
+            }),
+            bypassed: true,
+        })
+        .unwrap(),
+        json!({"effect": {"kind": "plugin", "key": "clap:org.example.verb", "name": "Some Verb",
+                          "format": null, "state": "missing"},
+               "bypassed": true}),
+    );
+    check(
+        serde_json::to_value([
+            PluginState::Ready,
+            PluginState::Loading,
+            PluginState::Stopped,
+            PluginState::Missing,
+        ])
+        .unwrap(),
+        json!(["ready", "loading", "stopped", "missing"]),
+    );
+    check(
+        serde_json::to_value([
+            StandIn::PackMissing,
+            StandIn::Sf2Missing,
+            StandIn::PluginMissing,
+        ])
+        .unwrap(),
+        json!(["packMissing", "sf2Missing", "pluginMissing"]),
+    );
+    check(
+        serde_json::to_value(GmFamily::ALL).unwrap(),
+        json!([
+            "piano",
+            "mallet",
+            "organ",
+            "guitar",
+            "bass",
+            "strings",
+            "ensemble",
+            "brass",
+            "reed",
+            "pipe",
+            "synthLead",
+            "synthPad",
+            "synthEffects",
+            "ethnic",
+            "percussive",
+            "soundEffects",
+            "drumKit"
+        ]),
+    );
+    check(
+        serde_json::to_value(PluginInstrumentCategory::ALL).unwrap(),
+        json!(["synth", "sampler", "drum", "keys", "other"]),
+    );
+    check(
+        serde_json::to_value(PluginEffectCategory::ALL).unwrap(),
+        json!([
+            "eq",
+            "dynamics",
+            "reverb",
+            "delay",
+            "modulation",
+            "distortion",
+            "filter",
+            "pitch",
+            "spatial",
+            "analysis",
+            "other"
+        ]),
+    );
+    check(
+        serde_json::to_value(PluginKindView::Effect(PluginEffectCategory::Reverb)).unwrap(),
+        json!({"role": "effect", "category": "reverb"}),
+    );
+    check(
+        serde_json::to_value(MissingView::Plugin {
+            key: MVERB.into(),
+            name: "MVerb".into(),
+            vendor: "DISTRHO".into(),
+            format: Some(PluginFormat::Lv2),
+            role: PluginRole::Effect,
+            shown_path: Some("~/.lv2/MVerb.lv2".into()),
+        })
+        .unwrap(),
+        json!({"kind": "plugin", "key": MVERB, "name": "MVerb", "vendor": "DISTRHO",
+               "format": "lv2", "role": "effect", "shownPath": "~/.lv2/MVerb.lv2"}),
+    );
+    check(
+        serde_json::to_value(SoundSampleView {
+            sound: surge,
+            playing: Some(SamplePlaying {
+                started_us: 5,
+                length_us: 6_000_000,
+            }),
+        })
+        .unwrap(),
+        json!({"sound": surge_json, "playing": {"startedUs": 5, "lengthUs": 6_000_000}}),
+    );
+
+    let track = TrackRef {
+        number: 5,
+        name: "Surge XT".into(),
+    };
+    let track_json = json!({"number": 5, "name": "Surge XT"});
+    let surge_name = SoundName::Plugin {
+        name: "Surge XT".into(),
+    };
+    let guitar_name = SoundName::Sf2 {
+        name: "Clean Guitar".into(),
+        file: "FluidR3_GM.sf2".into(),
+    };
+    let guitar_name_json = json!({"kind": "sf2", "name": "Clean Guitar", "file": "FluidR3_GM.sf2"});
+    for (message, json) in [
+        (
+            StatusMessage::AuditionNewTrackSound {
+                sound: surge_name.clone(),
+            },
+            json!({"id": "auditionNewTrackSound", "sound": {"kind": "plugin", "name": "Surge XT"}}),
+        ),
+        (
+            StatusMessage::AuditionReplaceSound {
+                sound: guitar_name.clone(),
+                track: track.clone(),
+                current: SoundName::Builtin {
+                    instrument: InstrumentKind::GrandPiano,
+                },
+            },
+            json!({"id": "auditionReplaceSound", "sound": guitar_name_json, "track": track_json,
+                   "current": {"kind": "builtin", "instrument": "grandPiano"}}),
+        ),
+        (
+            StatusMessage::SamplePlayingSound {
+                sound: guitar_name.clone(),
+            },
+            json!({"id": "samplePlayingSound", "sound": guitar_name_json}),
+        ),
+        (
+            StatusMessage::InstrumentReplacedSound {
+                track: track.clone(),
+                sound: surge_name.clone(),
+            },
+            json!({"id": "instrumentReplacedSound", "track": track_json,
+                   "sound": {"kind": "plugin", "name": "Surge XT"}}),
+        ),
+        (
+            StatusMessage::SoundLoading {
+                sound: guitar_name.clone(),
+            },
+            json!({"id": "soundLoading", "sound": guitar_name_json}),
+        ),
+        (
+            StatusMessage::PluginLoading {
+                name: "Surge XT".into(),
+            },
+            json!({"id": "pluginLoading", "name": "Surge XT"}),
+        ),
+        (StatusMessage::Sf2Dragging, json!({"id": "sf2Dragging"})),
+        (
+            StatusMessage::Sf2Added {
+                file: "FluidR3_GM.sf2".into(),
+                presets: 128,
+                kits: 9,
+            },
+            json!({"id": "sf2Added", "file": "FluidR3_GM.sf2", "presets": 128, "kits": 9}),
+        ),
+        (
+            StatusMessage::Sf2Unreadable {
+                file: "FluidR3_GM.sf2".into(),
+            },
+            json!({"id": "sf2Unreadable", "file": "FluidR3_GM.sf2"}),
+        ),
+        (
+            StatusMessage::Sf2Missing {
+                file: "FluidR3_GM.sf2".into(),
+                tracks: 2,
+            },
+            json!({"id": "sf2Missing", "file": "FluidR3_GM.sf2", "tracks": 2}),
+        ),
+        (
+            StatusMessage::SoundsMissing { tracks: 4 },
+            json!({"id": "soundsMissing", "tracks": 4}),
+        ),
+    ] {
+        assert_eq!(serde_json::to_value(&message).unwrap(), json);
+        assert_eq!(
+            serde_json::from_value::<StatusMessage>(json).unwrap(),
+            message
+        );
+    }
+
+    // A change of the library is a section of its own.
+    let old = sample_state();
+    let mut new = old.clone();
+    new.library.opened_sf2 = None;
+    new.library.pack_missing = true;
+    let changes = AppState::changes_from(&old, &new);
+    assert_eq!(changes, [Change::Library(new.library.clone())]);
+    let json = serde_json::to_value(&changes[0]).unwrap();
+    assert_eq!(json["section"], "library");
+    assert_eq!(json["value"]["packMissing"], true);
+    let mut applied = old.clone();
+    applied.apply(changes[0].clone());
+    assert_eq!(applied, new);
+}
+
 #[test]
 fn plugins_json_shape() {
     let state = sample_state();
@@ -1792,12 +2310,13 @@ fn change_section_names_match_state_keys() {
     let state = sample_state();
     let v = serde_json::to_value(&state).unwrap();
     let all = [
-        Change::Song(state.song.clone()),
+        Change::Song(Box::new(state.song.clone())),
         Change::Transport(state.transport.clone()),
         Change::Arrange(state.arrange.clone()),
         Change::PianoRoll(state.piano_roll.clone()),
         Change::Workspace(state.workspace.clone()),
         Change::Shelf(state.shelf.clone()),
+        Change::Library(state.library.clone()),
         Change::Params(state.params.clone()),
         Change::Plugins(state.plugins.clone()),
         Change::Keyboards(state.keyboards.clone()),

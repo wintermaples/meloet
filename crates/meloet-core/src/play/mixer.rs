@@ -9,11 +9,12 @@
 use meloet_model::effects::EffectKind as ModelEffect;
 use meloet_model::{Bus, Gain, INSERT_SLOTS, Inserts, Pan, StripId, TrackId, mixer};
 use meloet_protocol::{
-    EffectKind, InsertRef, InsertsView, MasterView, ParamsView, ReturnView, SelectedInsert,
-    SendBus, StatusMessage, StripRef,
+    EffectKind, InsertRef, InsertsView, MasterView, ParamsView, PluginState, ReturnView,
+    SelectedInsert, SendBus, StatusMessage, StripRef,
 };
 
 use super::Play;
+use crate::added::slots_view;
 use crate::state::Effect;
 
 /// A value that sounds in place of the song's while its control is dragged.
@@ -106,7 +107,7 @@ pub(super) fn model_effect(kind: EffectKind) -> ModelEffect {
     }
 }
 
-pub(super) fn effect_kind(kind: ModelEffect) -> EffectKind {
+pub(crate) fn effect_kind(kind: ModelEffect) -> EffectKind {
     match kind {
         ModelEffect::Eq4 => EffectKind::Eq4,
         ModelEffect::Compressor => EffectKind::Compressor,
@@ -129,7 +130,7 @@ pub(crate) fn gain_view(gain: Gain) -> Option<f32> {
 pub(crate) fn inserts_view(inserts: &Inserts) -> InsertsView {
     let mut view = [None; INSERT_SLOTS];
     for (to, from) in view.iter_mut().zip(inserts) {
-        *to = from.as_ref().map(|i| effect_kind(i.kind()));
+        *to = from.as_ref().and_then(|i| i.kind()).map(effect_kind);
     }
     view
 }
@@ -216,7 +217,7 @@ impl Play {
             usize::from(insert.slot),
             model_effect(effect),
         );
-        let there = self.doc().insert(strip, slot).map(|i| i.kind());
+        let there = self.doc().insert(strip, slot).and_then(|i| i.kind());
         let (Some(value), true) = (kind.clamp(param, value), there == Some(kind)) else {
             return;
         };
@@ -270,7 +271,7 @@ impl Play {
     pub fn select_insert(&mut self, insert: Option<InsertRef>) -> bool {
         let picked = insert.and_then(|i| {
             let (strip, slot) = (strip_id(i.strip), usize::from(i.slot));
-            let kind = self.doc().insert(strip, slot)?.kind();
+            let kind = self.doc().insert(strip, slot)?.kind()?;
             Some((strip, slot, kind))
         });
         if picked != self.mixer.selected {
@@ -301,7 +302,7 @@ impl Play {
     pub(super) fn mixer_changed(&mut self) {
         self.mixer.previews.clear();
         if let Some((strip, slot, kind)) = self.mixer.selected {
-            let now = self.doc().insert(strip, slot).map(|i| i.kind());
+            let now = self.doc().insert(strip, slot).and_then(|i| i.kind());
             self.mixer.selected = now.map(|k| (strip, slot, k));
             if now != Some(kind) {
                 self.mixer.row = None;
@@ -321,7 +322,7 @@ impl Play {
                     strip: strip_ref(strip),
                     slot: slot as u8,
                 },
-                effect: effect_kind(insert.kind()),
+                effect: effect_kind(insert.kind()?),
                 values: insert.values().to_vec(),
                 row: self.mixer.row,
             })
@@ -337,6 +338,7 @@ impl Play {
                 pan: r.channel.pan.get(),
                 muted: r.muted,
                 inserts: inserts_view(&r.channel.inserts),
+                slots: slots_view(&r.channel.inserts, |_| PluginState::Missing),
             }
         })
     }
@@ -347,6 +349,7 @@ impl Play {
             gain_db: gain_view(master.gain),
             pan: master.pan.get(),
             inserts: inserts_view(&master.inserts),
+            slots: slots_view(&master.inserts, |_| PluginState::Missing),
         }
     }
 

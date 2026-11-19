@@ -9,6 +9,8 @@ use meloet_protocol::InstrumentKind;
 use meloet_sound::sampler::{SampleBank, Sampler};
 use meloet_sound::synth::{ElectroKit, PolySynth};
 
+use crate::added::builtin_or_sine;
+
 /// Whether the instrument sounds with samples of the sound pack. The others are computed and
 /// are always there.
 pub(crate) fn sampled(instrument: BuiltinInstrument) -> bool {
@@ -76,7 +78,7 @@ impl Instrument for Silent {
 /// its track is not silent and nobody takes its notes for lost.
 pub(crate) fn make(instrument: &InstrumentRef, samples: Samples) -> Box<dyn Instrument> {
     use BuiltinInstrument as B;
-    let InstrumentRef::Builtin(builtin) = instrument;
+    let builtin = builtin_or_sine(instrument);
     match (builtin, samples) {
         (B::SynthLead, _) => Box::new(PolySynth::lead()),
         (B::SynthBass, _) => Box::new(PolySynth::bass()),

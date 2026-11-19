@@ -43,7 +43,10 @@ function fakePage() {
   vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => frames.push(f));
   vi.stubGlobal("cancelAnimationFrame", () => {});
   const made: Made[] = [];
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (this: HTMLCanvasElement, _id: string, options?: unknown) {
+  /** 写しを受けとった canvas（bitmaprenderer。WebGL の文脈ではない）。 */
+  const copied: HTMLCanvasElement[] = [];
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (this: HTMLCanvasElement, id: string, options?: unknown) {
+    if (id === "bitmaprenderer") return { transferFromImageBitmap: () => void copied.push(this) } as never;
     const { gl, calls } = fakeGl();
     made.push({ canvas: this, alpha: (options as { alpha: boolean }).alpha, calls });
     return gl as never;
@@ -57,7 +60,7 @@ function fakePage() {
   const frame = () => {
     for (const f of frames.splice(0)) f(0);
   };
-  return { made, drawn, frame };
+  return { made, drawn, frame, copied };
 }
 
 function box(rect: DOMRect, parent: HTMLElement = document.body): HTMLElement {
@@ -292,6 +295,137 @@ describe("WebGL の面", () => {
     ]);
     // 戻り B（11 本め）: 右が 0 dB をこえた。上はしに rec の 2px。
     expect(of(f32(rgb("color.rec")).join())).toEqual([[a + 64 + 5, 0, a + 64 + 9, 2]]);
+    engine.destroy();
+  });
+
+  it("ミキサー、トラックが 10 本をこえたとき: WebGL の面はページの外に置き、左と右の 2 つの写しを 1 コマに 1 つずつ出す。文脈は 1 つのまま", async () => {
+    const { made, drawn, frame, copied } = fakePage();
+    vi.spyOn(performance, "now").mockReturnValue(1000);
+    const asked: number[][] = [];
+    vi.stubGlobal("createImageBitmap", (_c: HTMLCanvasElement, x: number, y: number, w: number, h: number) => {
+      asked.push([x, y, w, h]);
+      return Promise.resolve({ close() {} });
+    });
+    // ストリップは 64 ごとに 15 本（トラック 12、戻り A ・ B、マスター）。全部見えている。
+    const strips = region(box(new DOMRect(0, 300, 1000, 200)), "mixerMeters");
+    const sources: MeterSource[] = [...Array.from({ length: 12 }, (_, i) => ({ track: i + 1 })), { ret: "a" }, { ret: "b" }, "master"];
+    sources.forEach((source, i) => {
+      const el = strips.appendChild(document.createElement("div"));
+      el.getBoundingClientRect = () => new DOMRect(64 * i + 40, 320, 9, 100);
+      slot(el, { kind: "meter", source, gap: 1, vertical: true });
+    });
+    const engine = new Engine();
+    const tracks = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+    const levels = (peak: number) =>
+      engine.onTelemetry({
+        seq: 0,
+        sentUs: 0,
+        keys: new Uint32Array(4),
+        lastVelocity: 0,
+        sustain: 0,
+        modulation: 0,
+        running: true,
+        masterClipped: false,
+        pitchBend: 0,
+        loadPermille: 0,
+        masterPeak: [peak, peak],
+        position: null,
+        returnPeaks: new Float32Array(4),
+        trackPeaks: new Float32Array(24).fill(peak),
+      });
+    engine.setTracks(tracks(12));
+    frame();
+
+    expect(made).toHaveLength(1);
+    expect(contextsMade()).toBe(1);
+    const gl = made[0]!.canvas;
+    expect(gl.parentElement).toBeNull();
+    const tiles = [...strips.querySelectorAll("canvas")];
+    expect(tiles).toHaveLength(2);
+    // 左は 1〜7 本め（40 から 393）、右は 8〜15 本め（488 から 945）。間のすきまは、どちらの面にも入らない。
+    expect(tiles.map((c) => [c.style.left, c.style.top, c.style.width, c.style.height])).toEqual([
+      ["40px", "20px", "393px", "100px"],
+      ["488px", "20px", "457px", "100px"],
+    ]);
+    // WebGL の面は、大きいほうの写しの大きさ。はじめのコマは 2 つとも描く。
+    expect([gl.width, gl.height]).toEqual([457, 100]);
+    expect(drawn.map((d) => [d.width, d.height])).toEqual([
+      [393, 100],
+      [457, 100],
+    ]);
+    expect(asked).toEqual([
+      [0, 0, 393, 100],
+      [0, 0, 457, 100],
+    ]);
+    await Promise.resolve();
+    expect(copied).toEqual(tiles);
+
+    // 値が変わった: 1 コマに 1 つ。左、次のコマで右、そのあとは描かない。
+    levels(0.5);
+    frame();
+    expect(drawn.slice(2).map((d) => d.width)).toEqual([393]);
+    frame();
+    expect(drawn.slice(2).map((d) => d.width)).toEqual([393, 457]);
+    frame();
+    frame();
+    expect(drawn).toHaveLength(4);
+    // 次も左から。
+    levels(0.8);
+    frame();
+    frame();
+    expect(drawn.slice(4).map((d) => d.width)).toEqual([393, 457]);
+
+    // 送る ・ 大きさが変わる（すぐ描くコマ）は、2 つとも同じコマで。
+    strips.dispatchEvent(new Event("scroll"));
+    levels(0.95);
+    frame();
+    expect(drawn.slice(6).map((d) => d.width)).toEqual([393, 457]);
+
+    // 10 本に戻ると、WebGL の面そのものを箱に戻す（60 Hz、1 枚）。
+    engine.setTracks(tracks(10));
+    frame();
+    expect([...strips.querySelectorAll("canvas")]).toEqual([gl]);
+    expect(made).toHaveLength(1);
+    engine.destroy();
+    expect(strips.querySelectorAll("canvas")).toHaveLength(0);
+  });
+
+  it("写しを作れない所（createImageBitmap がない）では、10 本をこえても WebGL の面 1 枚のまま、33 ms に 1 回描く", () => {
+    const { made, drawn, frame } = fakePage();
+    const now = vi.spyOn(performance, "now").mockReturnValue(1000);
+    const strips = region(box(new DOMRect(0, 300, 1000, 200)), "mixerMeters");
+    const el = strips.appendChild(document.createElement("div"));
+    el.getBoundingClientRect = () => new DOMRect(40, 320, 9, 100);
+    slot(el, { kind: "meter", source: { track: 1 }, gap: 1, vertical: true });
+    const engine = new Engine();
+    engine.setTracks(Array.from({ length: 12 }, (_, i) => i + 1));
+    frame();
+    expect([...strips.querySelectorAll("canvas")]).toEqual([made[0]!.canvas]);
+    expect(drawn).toHaveLength(1);
+    const levels = (peak: number) =>
+      engine.onTelemetry({
+        seq: 0,
+        sentUs: 0,
+        keys: new Uint32Array(4),
+        lastVelocity: 0,
+        sustain: 0,
+        modulation: 0,
+        running: true,
+        masterClipped: false,
+        pitchBend: 0,
+        loadPermille: 0,
+        masterPeak: [0, 0],
+        position: null,
+        returnPeaks: new Float32Array(4),
+        trackPeaks: new Float32Array(24).fill(peak),
+      });
+    now.mockReturnValue(1016);
+    levels(0.5);
+    frame();
+    expect(drawn).toHaveLength(1);
+    now.mockReturnValue(1033);
+    frame();
+    expect(drawn).toHaveLength(2);
     engine.destroy();
   });
 

@@ -56,7 +56,12 @@ export const SHOWN_WITH: Partial<Record<RegionName, RegionName>> = { mixerMeters
 
 /**
  * How often a region may be shown, in Hz. The mixer's meters of more than 10 tracks are drawn at 30 Hz (spec 3, the 8th
- * edition): they look the same, and the page paints half as often. The keys and the play line stay at 60 Hz.
+ * edition): they look the same. The keys and the play line stay at 60 Hz.
+ *
+ * A region at 30 Hz is shown as two parts, left and right, one each frame (engine.ts, `Tile`): that many strips are
+ * as wide as the window, and one canvas over all of them fills a quarter of the rectangle around a frame's changes,
+ * so WebKit would repaint that whole rectangle (docs/architecture.md, chapter 7, "CPU で描く WebKit"). The parts are
+ * plain canvases that show copies of the region's one WebGL canvas, so the contexts stay as counted above.
  */
 export function regionHz(name: RegionName, tracks: number): number {
   return name === "mixerMeters" && tracks > MIXER_FULL_RATE_TRACKS ? 30 : 60;

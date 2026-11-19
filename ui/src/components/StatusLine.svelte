@@ -61,6 +61,8 @@
   }
 
   const RECOVERY_TERM = "なおすためのファイル";
+  /** 名前（ストリップ、プラグイン、エフェクト、パラメータ）の穴。文と同じ字で出す（モックの状態行）。ほかの穴（数、値、キー）は等幅。 */
+  const NAME_HOLES = new Set(["name", "strip", "track", "effect", "plugin", "param", "target", "order"]);
   const platform = platformOf(navigator);
   const modKey = (letter: string) => `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${letter}`;
 
@@ -223,7 +225,7 @@
       case "scanRetryStopped":
         return plain("plugin.retryStopped", { name: m.name });
       case "pluginStopped":
-        return plain("msg.pluginStopped", { name: m.name, track: slotName(m.slot) });
+        return plain("msg.pluginStopped", { name: spaced(m.name), track: slotName(m.slot) });
       case "scaleDoesNotFit":
         return plain("msg.scaleKept", { requested: m.requested, kept: m.kept });
       case "scaleWindowGrown":
@@ -736,7 +738,7 @@
     <span class="m-lbl message">
       {#each message.parts as part, i (i)}
         {#if part.hole !== null}
-          <span class="m-num" class:m-hi={message.strong.includes(part.hole)}>{part.text}</span>
+          <span class:m-num={!NAME_HOLES.has(part.hole)} class:m-hi={message.strong.includes(part.hole)}>{part.text}</span>
         {:else if message.term}
           {#each termParts(part.text, message.term) as piece, j (j)}{#if piece.term}<span use:term={message.term}
                 >{piece.text}</span

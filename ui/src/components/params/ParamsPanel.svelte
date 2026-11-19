@@ -1,5 +1,6 @@
 <!-- パラメータの欄（右の欄。仕様書 1 章「パラメータ」: 見出し 24、名前と形式と居場所 48、さがす枠 32、一覧。モック F4-Mixer ・ F-ParamFew ・ F-ParamMany ・
      F-ParamNoWindow ・ F5-MixerBypass ・ R9-Params）。えらんだ子は core が持つ（AppState.params.selected）。さがす文字は画面だけが持ち（paramUi）、えらぶ子が変わると空に戻す。
+     同じ枠の同じ子のあいだは、一覧の番号（table）が変わっても（取り消し ・ やりなおし）、さがす文字 ・ ひらいたグループ ・ スクロールを残す。
      名前の行: 名前、形式の印（最初から入っている物は「最初から入っている」）、インサートなら「とばす」（とばしている間は「とばしている」で、えらんでいる形）、
      窓をひらける子は「窓をひらく」か「窓を前に出す」。まだ窓をひらけない子 ・ 窓を持たない子は、一覧の上に文。
      何もえらんでいないときは 2 行（86-5）。 -->
@@ -33,7 +34,7 @@
   }
   const held = $derived(insert ? slotView(app.song, insert) : null);
 
-  const selKey = $derived(JSON.stringify(builtin ? [builtin.insert, builtin.effect] : plugin ? [plugin.slot, plugin.table] : null));
+  const selKey = $derived(JSON.stringify(builtin ? [builtin.insert, builtin.effect] : plugin ? [plugin.slot, pluginView?.key ?? null] : null));
   $effect(() => {
     void selKey;
     untrack(() => {
@@ -117,7 +118,7 @@
     {#if builtin}
       <BuiltinList sel={builtin} />
     {:else if plugin && plugin.table !== null}
-      {#key plugin.table}
+      {#key selKey}
         <PluginList sel={plugin} plugin={name} usable={pluginView?.state !== "stopped"} />
       {/key}
     {/if}
@@ -200,6 +201,9 @@
     padding: var(--space-2) var(--space-3);
     border-left: var(--line-mark) solid var(--color-gray-7);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
+    white-space: normal;
+  }
+  .notice .m-lbl {
     white-space: normal;
   }
   .bar {

@@ -61,6 +61,34 @@ interface Region {
   lastMs: number;
   /** Something moved or changed size, not only the levels: drawn now even below 60 Hz. */
   urgent: boolean;
+  /**
+   * The parts of a region shown below 60 Hz, left to right; empty when the WebGL canvas itself is in the page.
+   * Each frame shows one part, in turn, so the page repaints a part's rectangle and not the whole region's.
+   */
+  tiles: Tile[];
+  /** The tile whose turn is next. */
+  turn: number;
+  /** This frame draws every tile (see `urgent`, `mustDraw`). */
+  whole: boolean;
+}
+
+/**
+ * A canvas in the page that shows a copy of what the region's WebGL canvas drew for some of its slots.
+ * It has no WebGL context of its own (budget.ts counts those), only a place to put the copy.
+ */
+interface Tile {
+  canvas: HTMLCanvasElement;
+  out: ImageBitmapRenderingContext;
+  slots: Slot[];
+  /** In device pixels of the window. */
+  x0: number;
+  y0: number;
+  width: number;
+  height: number;
+  drawn: Batch;
+  mustDraw: boolean;
+  /** Goes up with each copy asked for; a copy that comes after a newer one was asked for is dropped. */
+  asked: number;
 }
 
 /**
@@ -98,6 +126,8 @@ export class Engine {
   private readonly stop: (() => void)[] = [];
   private readonly isDown = (note: number) => this.held.isDown(note);
   private readonly box: Box = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  /** The page gives no place to put a copy of a canvas: regions below 60 Hz are drawn whole, less often. */
+  private noTiles = false;
 
   constructor() {
     const scrolled = { capture: true, passive: true } as const;
@@ -166,6 +196,7 @@ export class Engine {
   private close(r: Region): void {
     this.regions.delete(r.host);
     if (!this.slots.has(r.host)) this.sizes.unobserve(r.host);
+    this.split(r, 1);
     giveBack(r.gl);
     for (const s of r.slots) {
       s.region = null;
@@ -198,7 +229,7 @@ export class Engine {
   private open(host: HTMLElement, name: RegionName): Region | null {
     const gl = takeCanvas(REGIONS[name].opaque, name);
     if (!gl) return null;
-    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch(), made: null, lastMs: -Infinity, urgent: true };
+    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch(), made: null, lastMs: -Infinity, urgent: true, tiles: [], turn: 0, whole: true };
     if (gl.fresh && this.profile) {
       const m = gl.renderer.madeMs;
       r.made = { region: name, contextMs: m.context, programMs: m.program, firstDrawMs: null };
@@ -280,13 +311,16 @@ export class Engine {
     let held = false;
     for (const r of this.regions.values()) {
       if (!r.dirty) continue;
-      // A region drawn below 60 Hz waits for its turn; a frame between two of 60 Hz comes a few ms early or late.
       const hz = regionHz(r.name, this.trackNumbers.length);
-      if (hz < 60 && !r.mustDraw && !r.urgent && now - r.lastMs < 1000 / hz - SLACK_MS) {
+      const parts = hz < 60 && this.canCopy() ? Math.round(60 / hz) : 1;
+      if (parts !== Math.max(1, r.tiles.length)) this.split(r, parts);
+      // Without tiles, a region drawn below 60 Hz waits for its turn; a frame between two of 60 Hz comes a few ms early or late.
+      if (r.tiles.length === 0 && hz < 60 && !r.mustDraw && !r.urgent && now - r.lastMs < 1000 / hz - SLACK_MS) {
         held = true;
         continue;
       }
       r.lastMs = now;
+      r.whole = r.urgent || r.mustDraw;
       r.urgent = false;
       r.dirty = false;
       due.push([r, r.host.getBoundingClientRect()]);
@@ -295,7 +329,7 @@ export class Engine {
     for (const [r, host] of due) this.place(r, host, dpr);
     if (p) p.measureMs = performance.now() - t;
     const shown = new Set<RegionName>();
-    for (const [r] of due) if (this.draw(r, now, dpr, p)) shown.add(r.name);
+    for (const [r] of due) if (r.tiles.length > 0 ? this.drawTiles(r, now, dpr, p) : this.draw(r, now, dpr, p)) shown.add(r.name);
     for (const name of shown) {
       const partner = SHOWN_WITH[name];
       if (!partner || shown.has(partner)) continue;
@@ -337,45 +371,178 @@ export class Engine {
     let width = x1 - x0;
     let height = y1 - y0;
     if (!(width > 0 && height > 0)) x0 = y0 = width = height = 0;
-
-    const canvas = r.gl.canvas;
-    const h = r.host;
-    const style = canvas.style;
-    style.left = `${x0 / dpr - host.left - h.clientLeft + h.scrollLeft}px`;
-    style.top = `${y0 / dpr - host.top - h.clientTop + h.scrollTop}px`;
-    style.width = `${width / dpr}px`;
-    style.height = `${height / dpr}px`;
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-      r.mustDraw = true;
-    }
     r.x0 = x0;
     r.y0 = y0;
     r.width = width;
     r.height = height;
+
+    const canvas = r.gl.canvas;
+    if (r.tiles.length === 0) {
+      put(canvas, r.host, host, x0, y0, width, height, dpr);
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        r.mustDraw = true;
+      }
+      return;
+    }
+
+    // The slots that show, left to right, in as many runs as there are tiles; a tile covers its run.
+    const right = x0 + width;
+    const bottom = y0 + height;
+    const seen = r.slots.filter((s) => s.x1 > x0 && s.x0 < right && s.y1 > y0 && s.y0 < bottom).sort((a, b) => a.x0 - b.x0);
+    const n = r.tiles.length;
+    let widest = 0;
+    let highest = 0;
+    r.tiles.forEach((tile, i) => {
+      const run = new Set(seen.slice(Math.floor((i * seen.length) / n), Math.floor(((i + 1) * seen.length) / n)));
+      // Page order, as in the canvas of a region without tiles.
+      tile.slots = r.slots.filter((s) => run.has(s));
+      let tx0 = Infinity;
+      let ty0 = Infinity;
+      let tx1 = -Infinity;
+      let ty1 = -Infinity;
+      for (const s of tile.slots) {
+        tx0 = Math.min(tx0, s.x0);
+        ty0 = Math.min(ty0, s.y0);
+        tx1 = Math.max(tx1, s.x1);
+        ty1 = Math.max(ty1, s.y1);
+      }
+      tx0 = Math.max(tx0, x0);
+      ty0 = Math.max(ty0, y0);
+      let w = Math.min(tx1, right) - tx0;
+      let t = Math.min(ty1, bottom) - ty0;
+      if (!(w > 0 && t > 0)) tx0 = ty0 = w = t = 0;
+      if (tile.x0 !== tx0 || tile.y0 !== ty0 || tile.width !== w || tile.height !== t) tile.mustDraw = true;
+      tile.x0 = tx0;
+      tile.y0 = ty0;
+      tile.width = w;
+      tile.height = t;
+      put(tile.canvas, r.host, host, tx0, ty0, w, t, dpr);
+      widest = Math.max(widest, w);
+      highest = Math.max(highest, t);
+    });
+    // The WebGL canvas, out of the page, is as big as the biggest tile: each tile is drawn at its top left.
+    if (canvas.width !== widest) canvas.width = widest;
+    if (canvas.height !== highest) canvas.height = highest;
+  }
+
+  /** `createImageBitmap` copies a WebGL canvas within the frame (WebKitGTK 2.52: under 1 ms for 900×264). */
+  private canCopy(): boolean {
+    return !this.noTiles && typeof createImageBitmap === "function";
+  }
+
+  /** Shows the region as `parts` tiles, or (1) as its WebGL canvas itself. */
+  private split(r: Region, parts: number): void {
+    for (const tile of r.tiles) {
+      tile.asked += 1;
+      tile.canvas.remove();
+    }
+    r.tiles = [];
+    r.turn = 0;
+    if (parts > 1) {
+      for (let i = 0; i < parts; i++) {
+        const canvas = document.createElement("canvas");
+        canvas.setAttribute("aria-hidden", "true");
+        canvas.style.cssText = "position:absolute;pointer-events:none";
+        const out = canvas.getContext("bitmaprenderer");
+        if (!out) {
+          this.noTiles = true;
+          return this.split(r, 1);
+        }
+        r.tiles.push({ canvas, out, slots: [], x0: 0, y0: 0, width: 0, height: 0, drawn: new Batch(), mustDraw: true, asked: 0 });
+      }
+      r.gl.canvas.remove();
+      for (const tile of r.tiles) r.host.appendChild(tile.canvas);
+    } else if (r.gl.canvas.parentElement !== r.host && this.regions.get(r.host) === r) r.host.appendChild(r.gl.canvas);
+    r.mustDraw = true;
+    r.dirty = r.urgent = true;
+  }
+
+  /**
+   * Draws the tile whose turn it is, or the next one whose picture changed, and leaves the others for
+   * the coming frames; every tile when the region moved. True when a tile was shown.
+   */
+  private drawTiles(r: Region, nowMs: number, dpr: number, p: FrameRecord | null): boolean {
+    const n = r.tiles.length;
+    let shown = false;
+    for (let k = 0; k < n; k++) {
+      const i = (r.turn + k) % n;
+      if (!this.drawTile(r, r.tiles[i]!, nowMs, dpr, p)) continue;
+      shown = true;
+      if (r.whole) continue;
+      r.turn = (i + 1) % n;
+      if (k < n - 1) {
+        r.dirty = true;
+        this.invalidate();
+      }
+      break;
+    }
+    if (r.whole && !r.gl.lost) r.mustDraw = false;
+    return shown;
+  }
+
+  private drawTile(r: Region, tile: Tile, nowMs: number, dpr: number, p: FrameRecord | null): boolean {
+    if (r.gl.lost || tile.width <= 0 || tile.height <= 0) return false;
+    const t0 = p ? performance.now() : 0;
+    const out = this.build(tile.slots, tile.x0, tile.y0, tile.width, tile.height, nowMs, dpr);
+    const same = !tile.mustDraw && !r.mustDraw && out.sameAs(tile.drawn);
+    const t1 = p ? performance.now() : 0;
+    if (p) p.paintMs += t1 - t0;
+    if (same) return false;
+    const canvas = r.gl.canvas;
+    r.gl.renderer.draw(out, tile.width, tile.height, canvas.height - tile.height);
+    [this.next, tile.drawn] = [tile.drawn, out];
+    tile.mustDraw = false;
+    const asked = ++tile.asked;
+    createImageBitmap(canvas, 0, 0, tile.width, tile.height).then(
+      (copy) => {
+        if (tile.asked === asked) tile.out.transferFromImageBitmap(copy);
+        else copy.close();
+      },
+      () => {
+        tile.mustDraw = true;
+      },
+    );
+    this.stats.draws += 1;
+    if (p) {
+      const t2 = performance.now();
+      p.glMs += t2 - t1;
+      if (r.made) {
+        r.made.firstDrawMs = t2 - t1;
+        r.made = null;
+      }
+      this.profile!.drew(r.name, tile.drawn.rectCount);
+    }
+    return true;
+  }
+
+  /** The rectangles of `slots`, in device pixels from (x0, y0), cut to a picture of width × height. */
+  private build(slots: readonly Slot[], x0: number, y0: number, width: number, height: number, nowMs: number, dpr: number): Batch {
+    const out = this.next;
+    out.reset();
+    const box = this.box;
+    for (const s of slots) {
+      box.x0 = s.x0 - x0;
+      box.y0 = s.y0 - y0;
+      box.x1 = s.x1 - x0;
+      box.y1 = s.y1 - y0;
+      const cx0 = Math.max(box.x0, 0);
+      const cy0 = Math.max(box.y0, 0);
+      const cx1 = Math.min(box.x1, width);
+      const cy1 = Math.min(box.y1, height);
+      if (cx1 <= cx0 || cy1 <= cy0) continue;
+      out.clip(cx0, cy0, cx1, cy1);
+      this.paint(out, s.slot, box, nowMs, dpr);
+    }
+    return out;
   }
 
   /** True when the canvas was shown: its rectangles differ from the ones it showed, or it had to be drawn. */
   private draw(r: Region, nowMs: number, dpr: number, p: FrameRecord | null): boolean {
     if (r.gl.lost || r.width <= 0 || r.height <= 0) return false;
     const t0 = p ? performance.now() : 0;
-    const out = this.next;
-    out.reset();
-    const box = this.box;
-    for (const s of r.slots) {
-      box.x0 = s.x0 - r.x0;
-      box.y0 = s.y0 - r.y0;
-      box.x1 = s.x1 - r.x0;
-      box.y1 = s.y1 - r.y0;
-      const cx0 = Math.max(box.x0, 0);
-      const cy0 = Math.max(box.y0, 0);
-      const cx1 = Math.min(box.x1, r.width);
-      const cy1 = Math.min(box.y1, r.height);
-      if (cx1 <= cx0 || cy1 <= cy0) continue;
-      out.clip(cx0, cy0, cx1, cy1);
-      this.paint(out, s.slot, box, nowMs, dpr);
-    }
+    const out = this.build(r.slots, r.x0, r.y0, r.width, r.height, nowMs, dpr);
     const same = !r.mustDraw && out.sameAs(r.drawn);
     const t1 = p ? performance.now() : 0;
     if (p) p.paintMs += t1 - t0;
@@ -450,6 +617,15 @@ export class Engine {
 const SILENT = { length: 0, clipped: false } as const;
 /** How early a frame may come for a region drawn below 60 Hz (a frame of 60 Hz is 16.7 ms). */
 const SLACK_MS = 4;
+
+/** Places a canvas of a region at a rectangle given in device pixels of the window. */
+function put(canvas: HTMLCanvasElement, h: HTMLElement, host: DOMRect, x0: number, y0: number, width: number, height: number, dpr: number): void {
+  const style = canvas.style;
+  style.left = `${x0 / dpr - host.left - h.clientLeft + h.scrollLeft}px`;
+  style.top = `${y0 / dpr - host.top - h.clientTop + h.scrollTop}px`;
+  style.width = `${width / dpr}px`;
+  style.height = `${height / dpr}px`;
+}
 
 function measure(s: Slot, dpr: number): void {
   const r = s.node.getBoundingClientRect();

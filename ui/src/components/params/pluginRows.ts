@@ -34,6 +34,11 @@ export function foldedAtFirst(table: ParamTable): Set<string> {
   return new Set(table.groups.map((_, i) => groupId(i)));
 }
 
+/** 2 つの表のグループの並び（名前と数）が同じ。同じなら、たたみ方（groupId は並びの番号）をそのまま使える。 */
+export function sameGroups(a: ParamTable, b: ParamTable): boolean {
+  return a.groups.length === b.groups.length && a.groups.every((g, i) => g.name === b.groups[i]!.name && g.params.length === b.groups[i]!.params.length);
+}
+
 /** グループの見出しの名前。名前のない物は、名前のあるグループがほかにあるときだけ「そのほか」（モック F-ParamMany）。見出しを出さないなら null。 */
 function headingName(group: ParamGroup, table: ParamTable): string | null {
   if (group.name !== null) return group.name;

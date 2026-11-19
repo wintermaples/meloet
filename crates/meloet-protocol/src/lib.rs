@@ -19,8 +19,9 @@ pub use added::{
     Sf2PresetView, SoundName, SoundRef, SoundSampleView, SoundView, StandIn,
 };
 pub use params::{
-    EffectName, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable, ParamValue,
-    ParamValues, PluginWindowKind, PluginWindowView, SelectedParams, SelectedPlugin, WindowsView,
+    EffectName, NamedInsert, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable,
+    ParamValue, ParamValues, PluginWindowKind, PluginWindowView, SelectedParams, SelectedPlugin,
+    WindowsView,
 };
 pub use take::{
     TAKE_CONTROL_LEN, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NO_FROM, TAKE_NOTE_LEN, TAKE_VERSION,
@@ -2290,6 +2291,28 @@ pub enum StatusMessage {
         slot: Option<PluginSlotRef>,
         width: u32,
         height: u32,
+    },
+    /// A plugin window came up (user:2026-11-19): "プラグインの窓が 2 つひらいています".
+    /// `count`: the windows open now, this one with them.
+    PluginWindowsOpen {
+        count: u32,
+    },
+    /// The mixer was opened while insert slots are passed by (user:2026-11-19, mock
+    /// F5-MixerBypass): "4 パッド の MVerb をとばしています ・ 3 ドラム の Brick EQ は止まって
+    /// います（音は、その枠をとばして流しています）". Said once as the mixer opens, and only when
+    /// one of the two lists is not empty. The slots in the mixer's order (tracks, returns,
+    /// master; top first), the bypassed ones first.
+    MixerPassesBy {
+        bypassed: Vec<NamedInsert>,
+        stopped: Vec<NamedInsert>,
+    },
+    /// `Command::TypeParam` with a text that does not read as a value (spec 6 「数字として
+    /// 読めない」): "しきい値は数字で打ちます。もとの −24.0 dB のままです。" The screen names the
+    /// parameter from `param` (its table for an effect that comes with meloet, the plugin's
+    /// `ParamTable` row otherwise) and shows `kept` as the row shows the value.
+    ParamRejected {
+        param: ParamRef,
+        kept: String,
     },
     /// A plugin whose window meloet cannot open yet was selected (`PluginWindowKind::NotYet`):
     /// "ループ 5–9 ・ Mossy Verb の窓はまだひらけません。パラメータは右で動かせます" (mock

@@ -2593,6 +2593,39 @@ fn windows_and_plugin_params_json_shape() {
                    "slot": {"kind": "instrument", "track": 7}, "width": 1597, "height": 995}),
         ),
         (
+            StatusMessage::PluginWindowsOpen { count: 2 },
+            json!({"id": "pluginWindowsOpen", "count": 2}),
+        ),
+        (
+            StatusMessage::MixerPassesBy {
+                bypassed: vec![NamedInsert {
+                    insert,
+                    effect: EffectName::Plugin {
+                        name: "MVerb".into(),
+                    },
+                }],
+                stopped: Vec::new(),
+            },
+            json!({"id": "mixerPassesBy",
+                   "bypassed": [{"insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
+                                 "effect": {"kind": "plugin", "name": "MVerb"}}],
+                   "stopped": []}),
+        ),
+        (
+            StatusMessage::ParamRejected {
+                param: ParamRef::Plugin {
+                    slot: surge,
+                    table: 3,
+                    param: 12,
+                },
+                kept: "523.25 Hz".into(),
+            },
+            json!({"id": "paramRejected",
+                   "param": {"kind": "plugin", "slot": {"kind": "instrument", "track": 7},
+                             "table": 3, "param": 12},
+                   "kept": "523.25 Hz"}),
+        ),
+        (
             StatusMessage::PluginWindowNotYet {
                 loop_bars: Some(BarSpan { from: 5, to: 9 }),
                 name: "Mossy Verb".into(),

@@ -255,6 +255,16 @@ pub enum ParamEnd {
     },
 }
 
+/// An insert slot and the effect in it, as the status line names them ("4 パッド の MVerb"):
+/// the screen names the strip from `insert.strip`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct NamedInsert {
+    pub insert: InsertRef,
+    pub effect: EffectName,
+}
+
 /// An effect by the name the status line gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

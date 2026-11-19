@@ -299,6 +299,7 @@ fn shell_request(
             (pcwindow::Pick::SongFile, folder)
         }
         ShellRequest::PickFolder { folder } => (pcwindow::Pick::Folder, folder),
+        ShellRequest::PickPluginPlace { folder } => (pcwindow::Pick::PluginPlace, folder),
         ShellRequest::PickSaveAs { folder, name } => (pcwindow::Pick::SaveAs { name }, folder),
     };
     let answer = {
@@ -308,6 +309,7 @@ fn shell_request(
                 match pick {
                     pcwindow::Pick::SongFile => core.song_file_picked(path),
                     pcwindow::Pick::Folder => core.folder_picked(path),
+                    pcwindow::Pick::PluginPlace => core.plugin_place_picked(path),
                     pcwindow::Pick::SaveAs { .. } => core.save_as_picked(path),
                 }
             }

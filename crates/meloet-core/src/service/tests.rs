@@ -352,6 +352,7 @@ fn the_real_keyboard_and_headphones_show_up_within_two_seconds() {
         songs_dir: None,
         state_dir: None,
         sounds_dir: None,
+        plugins: None,
     });
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -404,6 +405,7 @@ fn the_remembered_headphones_open_and_silence_sends_no_telemetry() {
         songs_dir: None,
         state_dir: None,
         sounds_dir: None,
+        plugins: None,
     });
     let (_messages, telemetry) = subscribe(&core);
 

@@ -11,12 +11,13 @@ use std::time::Duration;
 use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
 use meloet_model::{BuiltinInstrument, InstrumentRef, Note, Song};
+use meloet_plugin::ScanCache;
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EndpointView,
     Friendly, Hint, InputsView, InstrumentKind, KeyboardView, KeyboardsView, LayoutView, LinkKind,
-    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, QuantizeSettings,
-    RecoveryCause, SettingsDialogView, ShelfView, SongFile, SongView, StatusMessage, StatusView,
-    TrackView, Unusable, VelocityFixed, WorkspaceView,
+    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, OutputsView, PluginSlotRef,
+    QuantizeSettings, RecoveryCause, SettingsDialogView, ShelfView, SongFile, SongView,
+    StatusMessage, StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::instruments;
@@ -24,6 +25,7 @@ use crate::instruments;
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::mixer::{gain_view, inserts_view};
 use crate::play::{Cut, EngineOp, Heard, Play, RecordReport};
+use crate::plugins::{Plugins, ScanJob, ScanNews};
 use crate::settings::{SCALES, Settings};
 
 pub use recovery::{QUIET_US, RecoveryStart};
@@ -141,6 +143,25 @@ pub enum Input {
     SoundLoaded(BuiltinInstrument),
     /// The other answer to [`Effect::LoadSound`]: they do not read.
     SoundUnreadable(BuiltinInstrument),
+    /// There is a scanner. `cache`: what the scan file held. `first`: there was no scan file,
+    /// so the scan that starts now shows its count.
+    PluginsStart {
+        cache: Box<ScanCache>,
+        first: bool,
+    },
+    /// What the scanner says about a scan asked for with [`Effect::ScanPlugins`].
+    PluginScan(ScanNews),
+    /// The answer to [`Effect::PickPluginPlace`]; `None` when the window was put away.
+    PluginPlacePicked(Option<PathBuf>),
+    /// The process of the plugin in `slot` answers no more. A recording goes on.
+    PluginStopped {
+        name: String,
+        slot: PluginSlotRef,
+    },
+    /// The answer to [`Effect::ReloadPlugin`]: the plugin sounds again.
+    PluginReloaded {
+        slot: PluginSlotRef,
+    },
 }
 
 /// Where [`Effect::SaveSong`] writes.
@@ -212,6 +233,23 @@ pub enum Effect {
     /// Let go of the samples of the instrument, read or still to be read. Instruments that
     /// sound with them keep them until they are gone themselves.
     DropSound(BuiltinInstrument),
+    /// Run this scan off the core thread. Answer with [`Input::PluginScan`], ending with
+    /// `ScanNews::Done`.
+    ScanPlugins(Box<ScanJob>),
+    /// Write the scan file, off the core thread.
+    SavePluginScan(Box<ScanCache>),
+    /// The PC's folder window for a place to look for plugins in. Answer with
+    /// [`Input::PluginPlacePicked`].
+    PickPluginPlace,
+    /// Start a new process for the stopped plugin in `slot`, with the state remembered for
+    /// it. Answer with [`Input::PluginReloaded`], or [`Input::PluginStopped`] again.
+    ReloadPlugin {
+        slot: PluginSlotRef,
+    },
+    /// Let go of the stopped plugin that was in `slot`.
+    UnloadPlugin {
+        slot: PluginSlotRef,
+    },
 }
 
 pub struct Model {
@@ -281,6 +319,10 @@ pub struct Model {
     velocity_fixed: VelocityFixed,
     /// The starred instruments of the shelf. A meloet setting too.
     favorites: Vec<BuiltinInstrument>,
+    plugins: Plugins,
+    /// The plugins whose process stopped, with their names, until they are loaded again or
+    /// removed.
+    stopped_plugins: Vec<(PluginSlotRef, String)>,
 }
 
 struct OpenStream {
@@ -343,12 +385,21 @@ impl Model {
                 value: settings.fixed_velocity.clamp(1, 127),
             },
             favorites: settings.favorites,
+            plugins: Plugins::new(|name| std::env::var_os(name), settings.plugin_places),
+            stopped_plugins: Vec::new(),
         }
     }
 
     /// `installed`: the sampled instruments the sound pack of this PC has.
     pub fn with_sounds(mut self, installed: Vec<BuiltinInstrument>) -> Model {
         self.play.set_installed_sounds(installed);
+        self
+    }
+
+    /// `usual`: the places that are always looked in for plugins, in place of the ones the
+    /// environment gives.
+    pub fn with_plugin_places(mut self, usual: Vec<PathBuf>) -> Model {
+        self.plugins.set_usual(usual);
         self
     }
 
@@ -504,6 +555,26 @@ impl Model {
             Input::SoundUnreadable(instrument) => {
                 self.play.sound_unreadable(instrument, &mut effects);
             }
+            Input::PluginsStart { cache, first } => {
+                self.plugins.start(*cache, first, &mut effects);
+            }
+            Input::PluginScan(news) => {
+                if let Some(n) = self.plugins.news(news, self.now_us, &mut effects) {
+                    self.notice = Some(n);
+                }
+            }
+            Input::PluginPlacePicked(place) => {
+                if let Some(place) = place
+                    && self.plugins.place_picked(place, &mut effects)
+                {
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
+            Input::PluginStopped { name, slot } => {
+                self.stopped_plugins.retain(|(s, _)| *s != slot);
+                self.stopped_plugins.push((slot, name));
+            }
+            Input::PluginReloaded { slot } => self.stopped_plugins.retain(|(s, _)| *s != slot),
         }
         if !self.bands.side_is_open(SidePanel::Shelf) {
             self.play.shelf_closed(&mut effects);
@@ -672,7 +743,8 @@ impl Model {
             }
             Command::GoArrange => self.bands.go_arrange(),
             Command::Back => {
-                if !self.cancel_song_dialog()
+                if !self.plugins.close_stopped()
+                    && !self.cancel_song_dialog()
                     && self.dialog.take().is_none()
                     && !self.play.end_audition(effects)
                 {
@@ -1062,17 +1134,45 @@ impl Model {
             }
             Command::DiscardRecovered => self.discard_recovered(effects),
             Command::ShowRecoveryFile => self.show_recovery_file(effects),
-            // Plugins: the scan and the plugin slots are not here yet (round 5).
-            Command::RescanPlugins
-            | Command::RetryStoppedPlugin { .. }
-            | Command::AddPluginPlace
-            | Command::RemovePluginPlace { .. }
-            | Command::OpenScanStopped
-            | Command::CloseScanStopped
-            | Command::OpenPluginPlaces
-            | Command::TogglePluginPlaces
-            | Command::ReloadPlugin { .. }
-            | Command::RemovePlugin { .. } => {}
+            Command::RescanPlugins => self.plugins.rescan(effects),
+            Command::RetryStoppedPlugin { path, id } => self.plugins.retry(&path, id, effects),
+            Command::AddPluginPlace => effects.push(Effect::PickPluginPlace),
+            Command::RemovePluginPlace { path } => {
+                if self.plugins.remove_place(&path, self.now_us, effects) {
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
+            Command::OpenScanStopped => self.plugins.open_stopped(),
+            Command::CloseScanStopped => {
+                self.plugins.close_stopped();
+            }
+            Command::OpenPluginPlaces => {
+                self.plugins.close_stopped();
+                self.plugins.unfold_places();
+                match &mut self.dialog {
+                    Some(dialog) => dialog.advanced_open = true,
+                    None => {
+                        self.dialog = Some(SettingsDialogView {
+                            draft_output: self.chosen.clone(),
+                            advanced_open: true,
+                        });
+                    }
+                }
+            }
+            Command::TogglePluginPlaces => self.plugins.toggle_places(),
+            Command::ReloadPlugin { slot } => {
+                if self.stopped_plugins.iter().any(|(s, _)| *s == slot) {
+                    effects.push(Effect::ReloadPlugin { slot });
+                }
+            }
+            Command::RemovePlugin { slot } => {
+                if self.stopped_plugins.iter().any(|(s, _)| *s == slot)
+                    && self.play.remove_plugin(slot, effects)
+                {
+                    self.stopped_plugins.retain(|(s, _)| *s != slot);
+                    effects.push(Effect::UnloadPlugin { slot });
+                }
+            }
         }
         None
     }
@@ -1224,6 +1324,7 @@ impl Model {
             velocity_fixed: self.velocity_fixed.on,
             fixed_velocity: self.velocity_fixed.value,
             favorites: self.favorites.clone(),
+            plugin_places: self.plugins.added_places().to_vec(),
         }
     }
 
@@ -1347,7 +1448,7 @@ impl Model {
             },
             shelf: self.shelf_view(),
             params: self.play.params_view(),
-            plugins: crate::plugins::view(|name| std::env::var_os(name)),
+            plugins: self.plugins.view(),
             keyboards: KeyboardsView {
                 list: self
                     .keyboards
@@ -1410,6 +1511,16 @@ impl Model {
         if self.dialog.is_some() {
             return Some(StatusMessage::SettingsOpen);
         }
+        if self.plugins.stopped_open() {
+            // What "もう一度ためす" came to is said over the open dialog.
+            return match &self.notice {
+                Some(
+                    m @ (StatusMessage::ScanRetryAdded { .. }
+                    | StatusMessage::ScanRetryStopped { .. }),
+                ) => Some(m.clone()),
+                _ => Some(StatusMessage::ScanStoppedOpen),
+            };
+        }
         if let Some(
             m @ (StatusMessage::RecordingStoppedAudioSystem { .. }
             | StatusMessage::RecordingStoppedOutputMissing { .. }),
@@ -1440,6 +1551,14 @@ impl Model {
         if let (None, Some(keyboard)) = (active, &self.lost) {
             return Some(StatusMessage::KeyboardLost {
                 keyboard: keyboard.clone(),
+            });
+        }
+        // Said until the plugin is loaded again or removed, also over a recording: it goes
+        // on, and the person should know why the track is silent.
+        if let Some((slot, name)) = self.stopped_plugins.last() {
+            return Some(StatusMessage::PluginStopped {
+                name: name.clone(),
+                slot: *slot,
             });
         }
         if let Some(m) = self.play.moving_status() {
@@ -1625,6 +1744,8 @@ fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
     }
 }
 
+#[cfg(test)]
+mod plugin_tests;
 #[cfg(test)]
 mod speed;
 #[cfg(test)]

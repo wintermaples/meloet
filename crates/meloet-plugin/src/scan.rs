@@ -219,6 +219,12 @@ impl ScanCache {
             .flat_map(|b| b.stopped.iter().map(move |s| (b, s)))
     }
 
+    /// Whether a scan was ever written to `dir`. Without one, the scan at start is the first:
+    /// it shows its count.
+    pub fn is_saved(dir: &Path) -> bool {
+        dir.join(SCAN_FILE).exists()
+    }
+
     /// A missing, unreadable or broken file, or one of another version, is an empty cache:
     /// everything is scanned again.
     pub fn load(dir: &Path) -> ScanCache {

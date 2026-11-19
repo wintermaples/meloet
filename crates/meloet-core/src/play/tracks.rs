@@ -2,8 +2,8 @@
 //! happens while counting in or recording.
 
 use meloet_model::edit;
-use meloet_model::{TrackColor, TrackId};
-use meloet_protocol::StatusMessage;
+use meloet_model::{BuiltinInstrument, InstrumentRef, TrackColor, TrackId};
+use meloet_protocol::{PluginSlotRef, StatusMessage};
 
 use super::Play;
 use crate::state::Effect;
@@ -25,6 +25,24 @@ impl Play {
         }
         self.apply(e, effects);
         Some(StatusMessage::TrackDeleted { track: said })
+    }
+
+    /// "外す" on a plugin that stopped: an instrument leaves its track to the sine, an effect
+    /// leaves its slot empty. The notes stay. One step. Returns whether the song changed.
+    pub fn remove_plugin(&mut self, slot: PluginSlotRef, effects: &mut Vec<Effect>) -> bool {
+        let before = self.changes;
+        match slot {
+            PluginSlotRef::Instrument { track } => {
+                let sine = InstrumentRef::Builtin(BuiltinInstrument::Sine);
+                if !self.busy()
+                    && let Ok(e) = edit::set_instrument(self.doc(), TrackId(track), sine)
+                {
+                    self.apply(e, effects);
+                }
+            }
+            PluginSlotRef::Insert { insert } => self.remove_effect(insert, effects),
+        }
+        self.changes != before
     }
 
     pub fn rename_track(&mut self, track: u32, name: &str, effects: &mut Vec<Effect>) {

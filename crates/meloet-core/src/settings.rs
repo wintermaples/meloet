@@ -29,6 +29,8 @@ pub struct Settings {
     pub fixed_velocity: u8,
     /// The starred instruments of the shelf.
     pub favorites: Vec<BuiltinInstrument>,
+    /// The places the person added to look for plugins in, in the order they were added.
+    pub plugin_places: Vec<PathBuf>,
 }
 
 pub const DEFAULT_COUNT_IN_BARS: u8 = 1;
@@ -47,6 +49,7 @@ impl Default for Settings {
             velocity_fixed: false,
             fixed_velocity: DEFAULT_FIXED_VELOCITY,
             favorites: DEFAULT_FAVORITES.to_vec(),
+            plugin_places: Vec::new(),
         }
     }
 }
@@ -69,6 +72,8 @@ struct OnDisk {
     /// The names the song file uses. Missing (a file from before the shelf): the defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     favorites: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    plugin_places: Vec<PathBuf>,
 }
 
 fn default_fixed_velocity() -> u8 {
@@ -130,6 +135,15 @@ pub fn load(dir: &Path) -> Settings {
                 }
                 None => DEFAULT_FAVORITES.to_vec(),
             },
+            plugin_places: {
+                let mut places: Vec<PathBuf> = Vec::new();
+                for place in disk.plugin_places {
+                    if place.is_absolute() && !places.contains(&place) {
+                        places.push(place);
+                    }
+                }
+                places
+            },
         },
         _ => Settings::default(),
     }
@@ -153,6 +167,7 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
                 .map(|b| b.name().to_owned())
                 .collect(),
         ),
+        plugin_places: settings.plugin_places.clone(),
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -195,6 +210,7 @@ mod tests {
             velocity_fixed: true,
             fixed_velocity: 64,
             favorites: vec![BuiltinInstrument::Sine, BuiltinInstrument::Organ],
+            plugin_places: vec!["/home/me/Plugins".into(), "/opt/vst3".into()],
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
@@ -240,6 +256,7 @@ mod tests {
                 velocity_fixed: false,
                 fixed_velocity: 100,
                 favorites: vec![BuiltinInstrument::GrandPiano, BuiltinInstrument::StudioKit],
+                plugin_places: vec![],
             }
         );
     }

@@ -3,6 +3,7 @@
 //! - [`state`]: the pure rules. No threads, no devices.
 //! - [`hub`]: the state the screens see, its rev, and the sinks, behind one lock.
 //! - [`Core`]: the threads (MIDI, device watcher, audio, telemetry) around the two.
+//! - [`plugins`]: the scan for plugins and the processes they sound in.
 
 mod hub;
 mod instruments;
@@ -10,7 +11,7 @@ pub mod layout;
 pub mod measure;
 mod mixbook;
 pub mod play;
-mod plugins;
+pub mod plugins;
 pub mod recovery;
 mod service;
 pub mod settings;

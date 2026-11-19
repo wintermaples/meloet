@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use meloet_model::{Doc, InstrumentRef, StripId, TrackId};
+use meloet_model::{Doc, InstrumentRef, StepKind, StripId, TrackId};
 use meloet_protocol::{
     Band, Command, EffectKind, EffectRef, InsertRef, InstrumentKind, ParamRef, PluginSlotRef,
     SelectedParams, SendBus, ShelfMode, SoundRef, StripRef,
@@ -9,9 +9,10 @@ use meloet_protocol::{
 use super::*;
 use crate::catalog::tests::{COMP_LV2, COMP_VST3, DRUMS_LV2, SURGE_LV2, SURGE_VST3};
 use crate::play::seats::tests::FakeEngine;
+use crate::play::windows::tests::{FRESH, FakeHost, state_of};
 use crate::sf2store::Sf2Key;
 use crate::state::added_tests::{plugin, rigged, sf2};
-use crate::state::{Input, Model};
+use crate::state::{Input, Model, PluginSaid};
 
 /// What the engine holds where an instrument goes.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +41,12 @@ struct Mini {
     sf2_asked: Vec<Sf2Key>,
     /// How many plugins were put into the engine.
     plugged: u32,
+    /// The plugin processes: what each plugin has, and its answers on their way.
+    host: FakeHost,
+    /// The plugins whose window the keyboard is in.
+    visited: Vec<u64>,
+    /// The plugins whose window was asked for, in order.
+    window_asked: Vec<u64>,
 }
 
 impl Mini {
@@ -54,6 +61,9 @@ impl Mini {
             asked: Vec::new(),
             sf2_asked: Vec::new(),
             plugged: 0,
+            host: FakeHost::default(),
+            visited: Vec::new(),
+            window_asked: Vec::new(),
         };
         for op in m.engine_seats() {
             mini.op(op);
@@ -63,6 +73,7 @@ impl Mini {
 
     fn take(&mut self, effects: &[Effect]) {
         self.strips.take(effects);
+        self.host.take(effects);
         for effect in effects {
             match effect {
                 Effect::Engine(op) => self.op(op.clone()),
@@ -73,6 +84,10 @@ impl Mini {
                     self.waiting.remove(ticket);
                 }
                 Effect::LoadSf2(key) => self.sf2_asked.push(key.clone()),
+                Effect::AskPlugin {
+                    ticket,
+                    ask: crate::state::PluginAsk::OpenWindow { .. },
+                } => self.window_asked.push(*ticket),
                 _ => {}
             }
         }
@@ -169,6 +184,8 @@ impl Mini {
             held.push((Spot::Insert(strip, slot), ticket));
         }
         held.extend(self.sample.map(|ticket| (Spot::Sample, ticket)));
+        // The maps have no order of their own: the same seed is the same run every time.
+        held.sort_by_key(|(_, ticket)| *ticket);
         held
     }
 
@@ -238,8 +255,48 @@ impl Mini {
             Some(SelectedParams::Plugin(plugin)) => {
                 let place = Play::slot_place(plugin.slot);
                 assert!(doc.plugin(place).is_some(), "{ctx}: the selected plugin");
+                // The table the panel names is there to be fetched, with as many rows.
+                let rows = plugin.table.map(|table| {
+                    let table = m.plugin_params(table).expect("the table of the panel");
+                    table.groups.iter().map(|g| g.params.len()).sum::<usize>()
+                });
+                assert_eq!(rows.unwrap_or(0), plugin.count as usize, "{ctx}");
             }
             None => {}
+        }
+        // Every window is of a plugin that sounds, and no two are of one slot.
+        let windows = m.view().windows.list;
+        for (at, window) in windows.iter().enumerate() {
+            assert!(
+                windows[..at].iter().all(|w| w.slot != window.slot),
+                "{ctx}: {windows:?}"
+            );
+            if let Some(slot) = window.slot {
+                let state = p.plugin_state(Play::slot_place(slot));
+                assert_eq!(state, meloet_protocol::PluginState::Ready, "{ctx}");
+            }
+        }
+    }
+
+    /// The plugins of the song that sound, with the place each is at.
+    fn of_song(&self, m: &Model) -> Vec<(meloet_model::PluginPlace, u64)> {
+        let p = m.play();
+        (p.plugs.list.iter())
+            .filter(|plug| plug.sounds() && !self.host.dead.contains(&plug.ticket))
+            .filter_map(|plug| Some((p.place_of(plug.spot)?, plug.ticket)))
+            .collect()
+    }
+
+    /// Every plugin of the song that sounds has the state the song has for it.
+    fn check_states(&self, m: &Model, ctx: &str) {
+        let doc = &m.play().song().doc;
+        for (place, ticket) in self.of_song(m) {
+            let in_song = &doc.plugin(place).expect("in the song").state;
+            let has = self.host.plugins[&ticket];
+            match in_song.is_empty() {
+                true => assert_eq!(has, FRESH, "{ctx}: {place:?} ({ticket}) is as it starts"),
+                false => assert_eq!(state_of(has), *in_song, "{ctx}: {place:?} ({ticket})"),
+            }
         }
     }
 
@@ -313,9 +370,35 @@ fn held(doc: &Doc) -> Doc {
 }
 
 fn go(m: &mut Model, mini: &mut Mini, input: Input, ctx: &str) {
+    if let Input::PluginStopped { ticket } = input {
+        mini.host.dead.insert(ticket);
+        mini.visited.retain(|t| *t != ticket);
+    }
+    mini.host.now_us += 700;
+    m.set_now(mini.host.now_us, None);
     let effects = m.handle(input.clone());
     mini.take(&effects);
     mini.check(m, &format!("{ctx}: {input:?}"));
+}
+
+/// The oldest `count` answers of the plugins get to the rules.
+fn hear(m: &mut Model, mini: &mut Mini, count: usize, ctx: &str) {
+    for _ in 0..count {
+        match mini.host.answers.pop_front() {
+            Some(input) => go(m, mini, input, ctx),
+            None => return,
+        }
+    }
+}
+
+/// The person leaves every window, lets go of every drag, and every answer comes.
+fn settle(m: &mut Model, mini: &mut Mini, ctx: &str) {
+    for ticket in std::mem::take(&mut mini.visited) {
+        let said = PluginSaid::WindowLeft;
+        go(m, mini, Input::PluginSaid { ticket, said }, ctx);
+    }
+    go(m, mini, Input::Command(Command::CancelMixPreview), ctx);
+    hear(m, mini, usize::MAX, ctx);
 }
 
 /// Answers the load asked for at `at`: the plugin is loaded, or with `fails` it is not.
@@ -359,13 +442,14 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
     ];
     let (mut plugged, mut plugin_tracks, mut plugin_inserts, mut steps) = (0, 0, 0, 0);
     let (mut passed, mut moved, mut replaced, mut typed, mut other) = (0, 0, 0, 0, 0);
+    let (mut entered, mut visits, mut dragged, mut windows) = (0, 0, 0, 0);
     let texts = ["4", "−3 dB", "999", "x", "0.5 s", "1"];
     for seed in 1..=10u64 {
         let rng = &mut Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         let m = &mut rigged();
         let mini = &mut Mini::new(m);
         mini.check(m, "first");
-        for round in 0..500 {
+        for round in 0..800 {
             let ctx = format!("seed {seed}, round {round}");
             let ids: Vec<u32> = (m.play().song().doc.tracks.iter())
                 .map(|t| t.id.0)
@@ -395,7 +479,7 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                 _ => rng.of(&filled),
             };
             let mut commands = Vec::new();
-            match rng.below(30) {
+            match rng.below(46) {
                 0..=2 => {
                     // A row is tried for a new track or in place of a track's sound; now and
                     // then its load is answered before Enter, and now and then Enter is not
@@ -504,6 +588,123 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                     1 => Command::SelectInsert { insert: None },
                     _ => Command::SelectInsert { insert: Some(held) },
                 }),
+                30..=32 => {
+                    // The keyboard comes to the window of a plugin of the song.
+                    let of_song = mini.of_song(m);
+                    if !of_song.is_empty() {
+                        let (_, ticket) = rng.of(&of_song);
+                        if !mini.visited.contains(&ticket) {
+                            mini.visited.push(ticket);
+                        }
+                        let said = PluginSaid::WindowEntered;
+                        go(m, mini, Input::PluginSaid { ticket, said }, &ctx);
+                        entered += 1;
+                        // Mostly they turn something right away, and often that is all.
+                        for _ in 0..rng.below(4) {
+                            if !m.play().dragging(ticket) {
+                                let value = rng.below(11) as f64 / 10.0;
+                                let turned = mini.host.turn(ticket, rng.below(3) as u32, value);
+                                go(m, mini, turned, &ctx);
+                            }
+                        }
+                        if rng.below(2) == 0 {
+                            mini.visited.retain(|t| *t != ticket);
+                            let said = PluginSaid::WindowLeft;
+                            go(m, mini, Input::PluginSaid { ticket, said }, &ctx);
+                        }
+                    }
+                }
+                33..=35 => {
+                    // The person turns something in a window they are in.
+                    // Not in one whose parameter they are dragging in the panel: nobody is
+                    // in two places.
+                    let sounding: Vec<u64> = mini.of_song(m).iter().map(|(_, t)| *t).collect();
+                    mini.visited.retain(|t| sounding.contains(t));
+                    mini.visited.retain(|t| !m.play().dragging(*t));
+                    if !mini.visited.is_empty() {
+                        let ticket = rng.of(&mini.visited);
+                        let value = rng.below(11) as f64 / 10.0;
+                        let turned = mini.host.turn(ticket, rng.below(3) as u32, value);
+                        go(m, mini, turned, &ctx);
+                    }
+                }
+                36..=38 => {
+                    // They leave it, or close it with its button.
+                    if !mini.visited.is_empty() {
+                        let at = rng.below(mini.visited.len() as u64) as usize;
+                        let ticket = mini.visited.remove(at);
+                        let said = match rng.below(3) {
+                            0 => PluginSaid::WindowClosed,
+                            _ => PluginSaid::WindowLeft,
+                        };
+                        go(m, mini, Input::PluginSaid { ticket, said }, &ctx);
+                    }
+                }
+                39..=42 => {
+                    // A row of the panel is dragged: let go, given up, or left hanging; now
+                    // and then a value is typed.
+                    let of_song = mini.of_song(m);
+                    if !of_song.is_empty() {
+                        let (place, _) = rng.of(&of_song);
+                        let slot = Play::slot_ref(place);
+                        let select = match slot {
+                            PluginSlotRef::Instrument { track } => {
+                                Command::SelectInstrument { track }
+                            }
+                            PluginSlotRef::Insert { insert } => Command::SelectInsert {
+                                insert: Some(insert),
+                            },
+                        };
+                        go(m, mini, Input::Command(select), &ctx);
+                        if rng.below(4) > 0 {
+                            hear(m, mini, usize::MAX, &ctx);
+                        }
+                        let table = match m.view().params.selected {
+                            Some(SelectedParams::Plugin(plugin)) => plugin.table.unwrap_or(0),
+                            _ => 0,
+                        };
+                        let param = rng.below(4) as u32;
+                        let end = rng.below(8);
+                        for n in 0..=rng.below(4) {
+                            commands.push(Command::SetPluginParam {
+                                slot,
+                                table,
+                                param,
+                                value: rng.below(11) as f64 / 10.0,
+                                commit: n == 0 && end < 5,
+                            });
+                        }
+                        commands.reverse();
+                        match end {
+                            5 => commands.push(Command::CancelMixPreview),
+                            6 => {
+                                let param = ParamRef::Plugin { slot, table, param };
+                                let text = rng.of(&["40", "250 %", "x"]).to_owned();
+                                commands.push(Command::TypeParam { param, text });
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                43 | 44 => {
+                    // A window is asked for and comes up, now or never.
+                    commands.push(match rng.below(4) {
+                        0 => Command::RaisePluginWindows,
+                        1 => Command::OpenPluginWindow { slot: None },
+                        2 => Command::ClosePluginWindow { slot: Some(slot) },
+                        _ => Command::OpenPluginWindow { slot: Some(slot) },
+                    });
+                    if rng.below(3) > 0 && !mini.window_asked.is_empty() {
+                        let at = rng.below(mini.window_asked.len() as u64) as usize;
+                        let ticket = mini.window_asked.remove(at);
+                        let said = PluginSaid::WindowOpened {
+                            width: 640,
+                            height: 480,
+                            larger_than_screen: rng.below(4) == 0,
+                        };
+                        go(m, mini, Input::PluginSaid { ticket, said }, &ctx);
+                    }
+                }
                 _ => {
                     let fader = Command::SetGain {
                         strip,
@@ -523,10 +724,37 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                     Command::ShelfConfirm if replaces => &mut replaced,
                     _ => &mut other,
                 };
+                // A window meloet closes takes the person out of it.
+                if let Command::ClosePluginWindow { slot: Some(slot) } = command {
+                    let place = Play::slot_place(slot);
+                    let closed = mini.of_song(m).into_iter().find(|(p, _)| *p == place);
+                    mini.visited.retain(|t| Some(*t) != closed.map(|(_, t)| t));
+                }
                 go(m, mini, Input::Command(command), &ctx);
                 if m.view().song.undo_count > before.song.undo_count {
                     *count += 1;
                 }
+            }
+            // The answers of the plugins come soon, mostly; now and then they are overtaken
+            // by what the person does next.
+            let steps = m.play().steps().len();
+            match rng.below(6) {
+                0 => {}
+                1 => hear(m, mini, 1 + rng.below(3) as usize, &ctx),
+                _ => hear(m, mini, usize::MAX, &ctx),
+            }
+            for step in m.play().steps().iter().skip(steps) {
+                match step {
+                    StepKind::PluginWindow { .. } => visits += 1,
+                    StepKind::SetPluginParam { .. } => dragged += 1,
+                    _ => {}
+                }
+            }
+            windows += m.view().windows.list.len();
+            // Now and then everything comes to rest, and the plugins have what the song has.
+            if rng.below(25) == 0 {
+                settle(m, mini, &ctx);
+                mini.check_states(m, &ctx);
             }
         }
         // Everything is answered, then every step is taken back and made again.
@@ -534,6 +762,8 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
         while !mini.asked.is_empty() {
             answer(m, mini, 0, false, "end");
         }
+        settle(m, mini, "end");
+        mini.check_states(m, "end");
         let doc = &m.play().song().doc;
         plugin_tracks += (doc.tracks.iter())
             .filter(|t| matches!(t.instrument, InstrumentRef::Plugin(_)))
@@ -553,6 +783,13 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
         while !mini.asked.is_empty() {
             answer(m, mini, 0, false, "after redo");
         }
+        settle(m, mini, "after redo");
+        assert_eq!(
+            held(&m.play().song().doc),
+            last,
+            "seed {seed}: no step came late"
+        );
+        mini.check_states(m, "after redo");
         // Every plugin of the song that this PC has is loaded and in the engine again.
         let p = m.play();
         for plug in &p.plugs.list {
@@ -570,6 +807,10 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
     assert!(
         passed > 100 && moved > 100 && replaced > 20 && typed > 10 && other > 300,
         "{passed} passed by, {moved} moved, {replaced} replaced, {typed} typed"
+    );
+    assert!(
+        entered > 300 && visits > 100 && dragged > 80 && windows > 1000,
+        "{entered} visits, {visits} were steps, {dragged} drags were, {windows} windows seen"
     );
     let _ = (StripId::Master, TrackId(0));
 }

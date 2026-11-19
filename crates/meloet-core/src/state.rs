@@ -15,13 +15,15 @@ use meloet_model::drums::gm_kit_rows;
 use meloet_model::mixer::Missing;
 use meloet_model::{BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace, Song, StripId};
 use meloet_plugin::ScanCache;
+use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
     EndpointView, FileDropView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView,
     KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
-    MeterSize, MissingRef, MissingView, OutputsView, QuantizeSettings, RecoveryCause,
-    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
-    StatusView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginWindowKind,
+    QuantizeSettings, RecoveryCause, SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView,
+    SoundRef, StandIn, StatusMessage, StatusView, TrackView, Unusable, VelocityFixed,
+    WorkspaceView,
 };
 
 use crate::added;
@@ -175,6 +177,12 @@ pub enum Input {
     },
     /// The engine was made anew, without the plugins the old one held.
     PluginsLost,
+    /// From the plugins' thread: something the plugin loaded under `ticket` did by itself,
+    /// or its answer to an [`Effect::AskPlugin`].
+    PluginSaid {
+        ticket: u64,
+        said: PluginSaid,
+    },
     /// An answer to [`Effect::LoadSf2`]: the samples of the preset are in memory.
     Sf2Loaded(Sf2Key),
     /// The other answer to [`Effect::LoadSf2`]: they do not read.
@@ -194,6 +202,87 @@ pub enum Input {
     FilesLeft,
     /// From the shell: they were let go of over the window.
     FilesDropped(Vec<PathBuf>),
+}
+
+/// What a loaded plugin tells: its window, its parameters, its state.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PluginSaid {
+    /// What window it has, as the plugin itself says once it is loaded. Comes before its
+    /// [`Input::PluginLoaded`].
+    Editor(PluginWindowKind),
+    /// The window asked for with [`PluginAsk::OpenWindow`] is on the screen.
+    WindowOpened {
+        width: u32,
+        height: u32,
+        larger_than_screen: bool,
+    },
+    /// It could not be made, or the plugin did not hear the ask.
+    WindowFailed,
+    WindowResized {
+        width: u32,
+        height: u32,
+        larger_than_screen: bool,
+    },
+    /// The person closed the window with its own button, or the plugin did.
+    WindowClosed,
+    /// The keyboard came to the window: the person is in the plugin.
+    WindowEntered,
+    WindowLeft,
+    /// A parameter has this value now: moved in the plugin's window, or the answer to
+    /// [`PluginAsk::SetParam`].
+    Param(ParamNow),
+    /// Any of its parameters may have another value now.
+    ParamsChanged,
+    /// The answer to [`PluginAsk::Params`].
+    Params {
+        ask: u64,
+        params: Vec<ParamInfo>,
+    },
+    /// The answer to [`PluginAsk::State`]. `None`: it could not say.
+    State {
+        ask: StateAsk,
+        state: Option<Arc<[u8]>>,
+    },
+    /// The answer to [`PluginAsk::ReadText`]. `None`: the text does not read as a value.
+    TextRead {
+        param: u32,
+        read: Option<TextValue>,
+    },
+}
+
+/// What is asked of a loaded plugin. Asks of one plugin are answered in the order they
+/// were made.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PluginAsk {
+    /// Open its window, or bring it to the front. [`PluginSaid::WindowOpened`] or
+    /// [`PluginSaid::WindowFailed`] follows a window that was not there.
+    OpenWindow { title: String },
+    /// Nothing follows.
+    CloseWindow,
+    /// List its parameters. Answer with [`PluginSaid::Params`] and the same `ask`.
+    Params { ask: u64 },
+    /// `value` is 0..=1. Answer with [`PluginSaid::Param`]: the value as the plugin took it.
+    SetParam { param: u32, value: f64 },
+    /// Its whole state. Answer with [`PluginSaid::State`].
+    State(StateAsk),
+    /// What value the typed text stands for. Answer with [`PluginSaid::TextRead`].
+    ReadText { param: u32, text: String },
+}
+
+/// What a state is asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateAsk {
+    /// Before anything is changed in a plugin the song has "as it starts": what undo puts
+    /// back.
+    Base,
+    /// As the person comes into the plugin's window; the number of the visit.
+    Entered(u64),
+    /// As the visit ends.
+    Left(u64),
+    /// After this parameter was set from the parameters panel, for the step. `puts`: how
+    /// many states had been put back into the plugin by then; an answer that comes after
+    /// another one was put back is of no use.
+    Param { param: u32, puts: u32 },
 }
 
 /// Where [`Effect::SaveSong`] writes.
@@ -298,6 +387,14 @@ pub enum Effect {
     ReloadPlugin {
         ticket: u64,
     },
+    /// Ask the plugin loaded under `ticket`, off the core thread. Answers come as
+    /// [`Input::PluginSaid`].
+    AskPlugin {
+        ticket: u64,
+        ask: PluginAsk,
+    },
+    /// Values of the table the parameters panel shows, for the messages Channel.
+    ParamValues(ParamValues),
     /// Read the samples of the preset into memory, off the core thread. Answer with
     /// [`Input::Sf2Loaded`] or [`Input::Sf2Unreadable`].
     LoadSf2(Sf2Key),
@@ -650,6 +747,11 @@ impl Model {
             }
             Input::PluginStopped { ticket } => self.play.plugin_stopped(ticket, &mut effects),
             Input::PluginsLost => self.play.plugs_lost(&mut effects),
+            Input::PluginSaid { ticket, said } => {
+                if let Some(n) = self.play.plugin_said(ticket, said, &mut effects) {
+                    self.notice = Some(n);
+                }
+            }
             Input::Sf2Loaded(key) => self.play.sf2_loaded(&key, &mut effects),
             Input::Sf2Unreadable(key) => {
                 (self.catalog).sf2_unreadable(&key.file, key.bank, key.program);
@@ -718,6 +820,8 @@ impl Model {
         self.play.sync_target(&mut effects);
         self.play.sync_mix(&mut effects);
         self.play.sync_plugs(&mut effects);
+        self.play.sync_windows(&mut effects);
+        self.play.sync_panel(&mut effects);
         self.play.sync_sample(&mut effects);
         self.play.sync_sounds(&mut effects);
         if self.loading_said != self.play.target_loading() {
@@ -1054,7 +1158,7 @@ impl Model {
             } => self
                 .play
                 .set_param(insert, effect, param, value, commit, effects),
-            Command::CancelMixPreview => self.play.cancel_mix_preview(),
+            Command::CancelMixPreview => self.play.cancel_mix_preview(effects),
             Command::ToggleReturnMute { bus } => self.play.toggle_return_mute(bus, effects),
             Command::RemoveEffect { insert } => {
                 self.notice = self.play.remove_effect(insert, effects);
@@ -1070,11 +1174,11 @@ impl Model {
             }
             Command::SelectInsert { insert } => {
                 let selecting = self.play.select_insert(insert);
-                self.selected(selecting);
+                self.selected(selecting, effects);
             }
             Command::SelectInstrument { track } => {
                 let selecting = self.play.select_instrument(track);
-                self.selected(selecting);
+                self.selected(selecting, effects);
             }
             Command::SelectParam { param } => self.play.select_param(param),
             Command::ShelfCancel => {
@@ -1394,11 +1498,18 @@ impl Model {
                     self.play.remove_missing(missing, effects);
                 }
             }
-            // Not made yet: the plugin windows, and the parameters of a plugin.
-            Command::OpenPluginWindow { .. }
-            | Command::ClosePluginWindow { .. }
-            | Command::RaisePluginWindows
-            | Command::SetPluginParam { .. } => {}
+            Command::OpenPluginWindow { slot } => self.play.open_plugin_window(slot, effects),
+            Command::ClosePluginWindow { slot } => self.play.close_plugin_window(slot, effects),
+            Command::RaisePluginWindows => self.play.raise_plugin_windows(effects),
+            Command::SetPluginParam {
+                slot,
+                table,
+                param,
+                value,
+                commit,
+            } => self
+                .play
+                .set_plugin_param(slot, table, param, value, commit, effects),
         }
         None
     }
@@ -1408,10 +1519,14 @@ impl Model {
         open.iter().any(|b| b.band == BottomBand::Mixer)
     }
 
-    /// An insert or an instrument was selected: its panel and what the status line says.
-    fn selected(&mut self, selecting: crate::play::Selecting) {
+    /// An insert or an instrument was selected: its panel or its window, and what the
+    /// status line says.
+    fn selected(&mut self, selecting: crate::play::Selecting, effects: &mut Vec<Effect>) {
         if selecting.panel {
             self.bands.show_side(SidePanel::Params);
+        }
+        if let Some(slot) = selecting.window {
+            self.play.open_plugin_window(Some(slot), effects);
         }
         if selecting.notice.is_some() {
             self.notice = selecting.notice;
@@ -1651,6 +1766,18 @@ impl Model {
         self.play.plugin_tickets()
     }
 
+    /// The parameters of the plugin the parameters panel shows, when `table` is still the
+    /// number of its table.
+    pub fn plugin_params(&self, table: u32) -> Option<ParamTable> {
+        self.play.plugin_params(table)
+    }
+
+    /// When an [`Input::Tick`] is wanted next, as the time given with `set_now`: a window
+    /// that is slow to open is said then, or parameter values held back are sent.
+    pub fn wake_at_us(&self) -> Option<u64> {
+        self.play.wake_at_us()
+    }
+
     /// A sample plays: [`Input::Tick`] is wanted now and then, to end it.
     pub fn sample_playing(&self) -> bool {
         self.play.sample_playing()
@@ -1766,7 +1893,7 @@ impl Model {
             library,
             params: self.play.params_view(),
             plugins: self.plugins.view(),
-            windows: meloet_protocol::WindowsView::default(),
+            windows: self.play.windows_view(),
             keyboards: KeyboardsView {
                 list: self
                     .keyboards
@@ -1892,6 +2019,9 @@ impl Model {
                     sound: added::sound_name(other),
                 },
             });
+        }
+        if let Some(m) = self.play.window_status() {
+            return Some(m);
         }
         if self.notice.is_some() {
             return self.notice.clone();

@@ -26,9 +26,11 @@ use meloet_model::{
     BuiltinInstrument, ControlValue, InstrumentGroup, InstrumentRef, PluginChange, PluginPlace,
     Song,
 };
+use meloet_plugin::wire::Notice;
 use meloet_plugin::{PluginKey, ScanCache};
 use meloet_protocol::{
-    Command, Event, LiveNotesSnapshot, Snapshot, Telemetry, TransportReading, TransportState,
+    Command, Event, LiveNotesSnapshot, ParamTable, PluginWindowKind, Snapshot, Telemetry,
+    TransportReading, TransportState,
 };
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
@@ -39,7 +41,8 @@ use crate::measure::{self, KeyToSound, PluginLog};
 use crate::mixbook::{self, MixBook};
 use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot};
 use crate::plugins::hosts::{
-    DEFAULT_GEOMETRY, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded, SlotId, StartState,
+    DEFAULT_GEOMETRY, EditorKind, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded,
+    ParamNow, SlotId, StartState,
 };
 use crate::plugins::housed::{HousedEffect, HousedInstrument, Which};
 use crate::plugins::scanner::Scanner;
@@ -49,7 +52,10 @@ use crate::settings::{self, Settings};
 use crate::sf2store::{self, Sf2Done, Sf2Store};
 use crate::songfile;
 use crate::sounds::{self, Library};
-use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, RecoveryStart, SaveTo, retry_delay};
+use crate::state::{
+    Effect, Input, Model, PluginAsk, PluginSaid, REQUESTED_FRAMES, RecoveryStart, SaveTo,
+    retry_delay,
+};
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
 /// How long scanning waits for the screen at most (`PluginOptions::wait_for_screen`).
@@ -179,6 +185,7 @@ enum Msg {
     DevicesLost,
     LiveNotes(Sender<LiveNotesSnapshot>),
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
+    PluginParams(u32, Sender<Option<ParamTable>>),
     /// Told once the recovery file holds the song, or there was nothing to write.
     PcEnding(Sender<()>),
     /// From the thread that reads the sounds: the answer to [`Effect::LoadSound`].
@@ -590,9 +597,12 @@ impl Core {
     }
 
     /// The parameters of the plugin the parameters panel shows, when `table` is still
-    /// `SelectedPlugin::table`. No plugin is shown there yet, so there is never one.
-    pub fn plugin_params(&self, _table: u32) -> Option<meloet_protocol::ParamTable> {
-        None
+    /// `SelectedPlugin::table`: the screen has another table by now otherwise, and fetches
+    /// that one.
+    pub fn plugin_params(&self, table: u32) -> Option<ParamTable> {
+        let (reply, answer) = mpsc::channel();
+        self.tx.send(Msg::PluginParams(table, reply)).ok()?;
+        answer.recv().ok().flatten()
     }
 
     fn input(&self, input: Input) -> u64 {
@@ -1353,6 +1363,66 @@ impl PluginSide {
         Some((loaded.slot, which, self.gone_tx.clone()))
     }
 
+    /// News of one plugin, for the rules: which ticket it was loaded under, and what it
+    /// said. `None` for a plugin no ticket stands for any more.
+    fn said(&self, news: HostNews) -> Option<(u64, PluginSaid)> {
+        let (slot, said) = match news {
+            HostNews::Stopped { .. } => return None,
+            HostNews::WindowOpened {
+                slot,
+                width,
+                height,
+                larger_than_screen,
+            } => {
+                let said = PluginSaid::WindowOpened {
+                    width,
+                    height,
+                    larger_than_screen,
+                };
+                (slot, said)
+            }
+            HostNews::WindowFailed { slot, message } => {
+                eprintln!("meloet: a plugin's window did not open: {message}");
+                (slot, PluginSaid::WindowFailed)
+            }
+            HostNews::WindowResized {
+                slot,
+                width,
+                height,
+                larger_than_screen,
+            } => {
+                let said = PluginSaid::WindowResized {
+                    width,
+                    height,
+                    larger_than_screen,
+                };
+                (slot, said)
+            }
+            HostNews::WindowClosed { slot } => (slot, PluginSaid::WindowClosed),
+            HostNews::WindowEntered { slot } => (slot, PluginSaid::WindowEntered),
+            HostNews::WindowLeft { slot } => (slot, PluginSaid::WindowLeft),
+            HostNews::Notice { slot, notice } => match notice {
+                Notice::ParamChanged {
+                    id, value, text, ..
+                } => {
+                    let now = ParamNow {
+                        id,
+                        value: Some(value),
+                        text,
+                    };
+                    (slot, PluginSaid::Param(now))
+                }
+                Notice::ParamsChanged { .. } => (slot, PluginSaid::ParamsChanged),
+                // The step is made when the person leaves the window, and the engine counts
+                // the delays by itself.
+                _ => return None,
+            },
+        };
+        let mut tickets = self.ids.iter();
+        let ticket = tickets.find_map(|(ticket, (id, _))| (*id == slot).then_some(*ticket));
+        Some((ticket?, said))
+    }
+
     /// Lets go of the plugins the engine handed back since the last look.
     fn unload_gone(&mut self) {
         while let Ok(which) = self.gone_rx.try_recv() {
@@ -1385,6 +1455,10 @@ impl Worker {
             } else {
                 HOUSEKEEPING
             };
+            let wake = self.model.wake_at_us();
+            let wait = wake.map_or(wait, |at| {
+                wait.min(Duration::from_micros(at.saturating_sub(monotonic_us())))
+            });
             match rx.recv_timeout(wait) {
                 Ok(Msg::Input(input, reply)) => {
                     let rev = self.handle(input);
@@ -1428,6 +1502,9 @@ impl Worker {
                 Ok(Msg::TakeNotes(id, reply)) => {
                     let _ = reply.send(self.model.take_notes(id));
                 }
+                Ok(Msg::PluginParams(table, reply)) => {
+                    let _ = reply.send(self.model.plugin_params(table));
+                }
                 Ok(Msg::PcEnding(reply)) => {
                     self.ending.push(reply);
                     self.handle(Input::PcEnding);
@@ -1452,21 +1529,25 @@ impl Worker {
                 Ok(Msg::Scan(news)) => {
                     self.handle(Input::PluginScan(news));
                 }
+                Ok(Msg::Plugins(HostNews::Stopped { key, slots })) => {
+                    eprintln!(
+                        "meloet: the process of {key} stopped ({} plugins)",
+                        slots.len()
+                    );
+                    let ids = self.plugins.iter().flat_map(|side| &side.ids);
+                    let mut tickets: Vec<u64> = ids
+                        .filter(|(_, (id, _))| slots.contains(id))
+                        .map(|(ticket, _)| *ticket)
+                        .collect();
+                    tickets.sort_unstable();
+                    for ticket in tickets {
+                        self.handle(Input::PluginStopped { ticket });
+                    }
+                }
                 Ok(Msg::Plugins(news)) => {
-                    if let HostNews::Stopped { key, slots } = news {
-                        eprintln!(
-                            "meloet: the process of {key} stopped ({} plugins)",
-                            slots.len()
-                        );
-                        let ids = self.plugins.iter().flat_map(|side| &side.ids);
-                        let mut tickets: Vec<u64> = ids
-                            .filter(|(_, (id, _))| slots.contains(id))
-                            .map(|(ticket, _)| *ticket)
-                            .collect();
-                        tickets.sort_unstable();
-                        for ticket in tickets {
-                            self.handle(Input::PluginStopped { ticket });
-                        }
+                    let said = self.plugins.as_ref().and_then(|side| side.said(news));
+                    if let Some((ticket, said)) = said {
+                        self.handle(Input::PluginSaid { ticket, said });
                     }
                 }
                 Ok(Msg::PluginLoaded { ticket, loaded }) => {
@@ -1478,7 +1559,13 @@ impl Worker {
                                 None => (loaded.id, 0),
                             };
                             side.ids.insert(ticket, which);
+                            let said = PluginSaid::Editor(match loaded.plugin.editor {
+                                EditorKind::X11 => PluginWindowKind::Opens,
+                                EditorKind::Unsupported => PluginWindowKind::NotYet,
+                                EditorKind::None => PluginWindowKind::None,
+                            });
                             side.ready.insert(ticket, loaded);
+                            self.handle(Input::PluginSaid { ticket, said });
                             Input::PluginLoaded { ticket }
                         }
                         (Ok(_), None) => Input::PluginUnreadable { ticket },
@@ -1520,6 +1607,9 @@ impl Worker {
                 Ok(Msg::Peek(look)) => look(&mut self),
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+            }
+            if (self.model.wake_at_us()).is_some_and(|at| at <= monotonic_us()) {
+                self.handle(Input::Tick);
             }
             if self.model.is_moving() && polled.elapsed() >= MOVING_TICK {
                 polled = Instant::now();
@@ -1770,6 +1860,12 @@ impl Worker {
                             None => inputs.push_back(Input::PluginUnreadable { ticket }),
                         }
                     }
+                    Effect::AskPlugin { ticket, ask } => {
+                        if let Some(lost) = self.ask_plugin(ticket, ask) {
+                            inputs.push_back(Input::PluginSaid { ticket, said: lost });
+                        }
+                    }
+                    Effect::ParamValues(values) => self.hub.param_values(values),
                     Effect::LoadSf2(key) => {
                         let rate = self.audio.handle.meters().sample_rate();
                         self.audio.sf2.load(key, rate);
@@ -1821,6 +1917,67 @@ impl Worker {
         Box::new(move |loaded| {
             let _ = tx.send(Msg::PluginLoaded { ticket, loaded });
         })
+    }
+
+    /// [`Effect::AskPlugin`]: the answer comes from the plugins' thread, as an input. Returns
+    /// the answer when there is no plugin to ask and the rules wait for one.
+    fn ask_plugin(&self, ticket: u64, ask: PluginAsk) -> Option<PluginSaid> {
+        let side = self.plugins.as_ref();
+        let Some((side, id)) = side.and_then(|side| Some((side, side.ids.get(&ticket)?.0))) else {
+            return match ask {
+                PluginAsk::State(ask) => Some(PluginSaid::State { ask, state: None }),
+                PluginAsk::OpenWindow { .. } => Some(PluginSaid::WindowFailed),
+                _ => None,
+            };
+        };
+        let tx = self.links.tx.clone();
+        let say = move |said| {
+            let _ = tx.send(Msg::Input(Input::PluginSaid { ticket, said }, None));
+        };
+        let hosts = &side.hosts;
+        match ask {
+            PluginAsk::OpenWindow { title } => {
+                let done = move |open: Result<_, HostError>| {
+                    if let Err(e) = open {
+                        eprintln!("meloet: a plugin's window was not opened: {e}");
+                        say(PluginSaid::WindowFailed);
+                    }
+                };
+                hosts.open_window(id, title, Box::new(done));
+            }
+            PluginAsk::CloseWindow => hosts.close_window(id, Box::new(|_| {})),
+            PluginAsk::Params { ask } => {
+                let done = move |params: Result<_, HostError>| match params {
+                    Ok(params) => say(PluginSaid::Params { ask, params }),
+                    Err(e) => eprintln!("meloet: a plugin did not list its parameters: {e}"),
+                };
+                hosts.params(id, Box::new(done));
+            }
+            PluginAsk::SetParam { param, value } => {
+                let done = move |now: Result<_, HostError>| {
+                    if let Ok(now) = now {
+                        say(PluginSaid::Param(now));
+                    }
+                };
+                hosts.set_param(id, param, value, Box::new(done));
+            }
+            PluginAsk::State(ask) => {
+                let done = move |state: Result<Vec<u8>, HostError>| {
+                    let state = state.ok().map(Arc::from);
+                    say(PluginSaid::State { ask, state });
+                };
+                hosts.state(id, Box::new(done));
+            }
+            PluginAsk::ReadText { param, text } => {
+                let done = move |read: Result<_, HostError>| {
+                    if let Ok(read) = read {
+                        say(PluginSaid::TextRead { param, read });
+                    }
+                };
+                hosts.read_text(id, param, text, Box::new(done));
+            }
+        }
+        None
     }
 
     /// [`Effect::LoadPlugin`]. Returns whether the load was asked for.
@@ -2215,3 +2372,5 @@ fn steady_load(open: bool, permille: u32, last: Option<&Telemetry>) -> u16 {
 mod plug_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod window_tests;

@@ -411,6 +411,8 @@ pub struct Play {
     /// What the engine was last told about the mixer.
     mix_told: MixTold,
     plugs: Plugs,
+    wins: Windows,
+    panel: Panel,
 }
 
 impl Play {
@@ -425,6 +427,8 @@ impl Play {
             mixer: Mixer::default(),
             mix_told: MixTold::new(),
             plugs: Plugs::default(),
+            wins: Windows::default(),
+            panel: Panel::default(),
             song,
             history: History::new(),
             state: TransportState::Stopped,
@@ -1127,6 +1131,8 @@ impl Play {
     /// Sends what the engine must hear again, and lets go of clips that are gone.
     fn after_change(&mut self, before: &Doc, effects: &mut Vec<Effect>) {
         self.changes += 1;
+        // Before any state is put back into a plugin: that takes in what a drag changed.
+        self.song_changed_under_drags(effects);
         self.sync_seats(before, effects);
         self.mixer_changed();
         self.sync_mix(effects);
@@ -2245,20 +2251,24 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 mod mix;
 pub(crate) mod mixer;
 mod mixsync;
+mod params;
 mod plugs;
 mod seats;
 mod shelf;
 mod sounds;
 mod tracks;
+mod windows;
 
 use mixer::Mixer;
 pub use mixer::{Preview, Selecting};
 use mixsync::MixTold;
+use params::Panel;
 use plugs::Plugs;
 pub use plugs::{PlugState, Spot};
 use seats::Seats;
 pub use seats::{AUDITION_SEAT, MAX_TRACKS};
 use shelf::Shelf;
+use windows::Windows;
 
 #[cfg(test)]
 mod arrange_tests;

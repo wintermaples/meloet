@@ -310,7 +310,10 @@ impl Hosts {
         self.ask(Ask::State(id, done));
     }
 
-    /// Puts back a state taken from the same plugin. It is remembered for `reload`.
+    /// Puts back a state taken from the same plugin. It is remembered for `reload`. The
+    /// plugin takes the state in with its next block, which costs it part of that block
+    /// (20-3), so two of these for plugins of one process are kept a block apart: the second
+    /// is asked for that much later, and so is everything asked after it.
     pub fn set_state(&self, id: SlotId, state: Vec<u8>, done: Done<()>) {
         self.ask(Ask::SetState(id, state, done));
     }
@@ -420,6 +423,8 @@ struct Proc {
     next_request: u64,
     /// By the slot's place in the shared memory.
     places: Vec<Option<SlotId>>,
+    /// When a state was last put back into one of its plugins.
+    state_put: Option<Instant>,
 }
 
 struct Slot {
@@ -513,6 +518,7 @@ impl Run {
                 done(state);
             }
             Ask::SetState(id, state, done) => {
+                self.space_states(id);
                 let set = self
                     .ask_slot(id, |slot| Request::SetState { slot }, &state)
                     .and_then(ok);
@@ -628,6 +634,24 @@ impl Run {
                 .map(|slot| (slot.state.clone(), slot.params.clone()))
                 .unwrap_or_default(),
         }
+    }
+
+    /// Waits until the longest block the engine may run has passed since a state was last
+    /// put back into a plugin of the same process.
+    fn space_states(&mut self, id: SlotId) {
+        let Some(slot) = self.slots.get(&id) else {
+            return;
+        };
+        let rate = f64::from(slot.spec.sample_rate.max(1));
+        let block = Duration::from_secs_f64(f64::from(self.options.geometry.max_frames) / rate);
+        let Some(at) = slot.home.and_then(|(proc, _)| self.proc_at(proc)) else {
+            return;
+        };
+        let proc = &mut self.procs[at];
+        if let Some(left) = (proc.state_put).and_then(|put| block.checked_sub(put.elapsed())) {
+            std::thread::sleep(left);
+        }
+        proc.state_put = Some(Instant::now());
     }
 
     fn proc_at(&self, id: u64) -> Option<usize> {
@@ -799,6 +823,7 @@ impl Run {
             map,
             next_request: 1,
             places: vec![None; self.options.geometry.slots as usize],
+            state_put: None,
         });
         let at = self.procs.len() - 1;
         let hello = Request::Hello {

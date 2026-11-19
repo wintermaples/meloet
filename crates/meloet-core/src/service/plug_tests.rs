@@ -3,7 +3,7 @@
 //! loaded again and taken out.
 
 #[path = "../../tests/plughost/mod.rs"]
-mod plughost;
+pub(super) mod plughost;
 
 use crate::seen::*;
 use std::path::{Path, PathBuf};
@@ -18,13 +18,13 @@ use super::*;
 use crate::plugins::hosts::{ProcessInfo, wait};
 use plughost::wait_for;
 
-const PATIENCE: Duration = Duration::from_secs(60);
+pub(super) const PATIENCE: Duration = Duration::from_secs(60);
 const SINE: &str = "lv2:urn:meloet:fake:sine";
 const PASS: &str = "lv2:urn:meloet:fake:pass";
 /// The fake sine's one parameter.
 const LEVEL: u32 = 0;
 
-fn options(root: &Path) -> CoreOptions {
+pub(super) fn options(root: &Path) -> CoreOptions {
     let bundle = root.join("lv2/found.lv2");
     std::fs::create_dir_all(&bundle).unwrap();
     std::fs::write(bundle.join("plugin.so"), [0u8; 16]).unwrap();
@@ -43,12 +43,12 @@ fn options(root: &Path) -> CoreOptions {
     }
 }
 
-fn state_when(core: &Core, what: &str, done: impl Fn(&AppState) -> bool) -> AppState {
+pub(super) fn state_when(core: &Core, what: &str, done: impl Fn(&AppState) -> bool) -> AppState {
     wait_for(PATIENCE, || Some(core.snapshot().state).filter(|s| done(s)))
         .unwrap_or_else(|| panic!("{what}: {:#?}", core.snapshot().state.shelf))
 }
 
-fn plugin_of(state: &AppState, track: usize) -> Option<PluginState> {
+pub(super) fn plugin_of(state: &AppState, track: usize) -> Option<PluginState> {
     match &state.song.tracks.get(track)?.sound {
         SoundView::Plugin(p) => Some(p.state),
         _ => None,
@@ -64,7 +64,10 @@ fn master_plugin(state: &AppState) -> Option<PluginState> {
 
 impl Core {
     /// Runs `look` on the core thread and gives what it gives.
-    fn peek<T: Send + 'static>(&self, look: impl FnOnce(&mut Worker) -> T + Send + 'static) -> T {
+    pub(super) fn peek<T: Send + 'static>(
+        &self,
+        look: impl FnOnce(&mut Worker) -> T + Send + 'static,
+    ) -> T {
         let (tx, rx) = mpsc::channel();
         let look = Box::new(move |worker: &mut Worker| {
             let _ = tx.send(look(worker));
@@ -73,12 +76,12 @@ impl Core {
         rx.recv().expect("the core answers")
     }
 
-    fn processes(&self) -> Vec<ProcessInfo> {
+    pub(super) fn processes(&self) -> Vec<ProcessInfo> {
         self.peek(|w| w.plugins.as_ref().unwrap().hosts.processes())
     }
 
     /// The slot of the plugin that is the instrument of the song's track at `index`.
-    fn track_plugin(&self, index: usize) -> SlotId {
+    pub(super) fn track_plugin(&self, index: usize) -> SlotId {
         self.peek(move |w| {
             let track = w.model.view().song.tracks[index].id;
             let place = PluginPlace::Instrument(meloet_model::TrackId(track));
@@ -96,7 +99,7 @@ impl Core {
     }
 }
 
-fn kill(pid: u32) {
+pub(super) fn kill(pid: u32) {
     let killed = std::process::Command::new("kill")
         .args(["-9", &pid.to_string()])
         .status();
@@ -274,7 +277,7 @@ fn plugins_on_a_track_and_in_a_slot_are_saved_come_back_stop_and_are_loaded_agai
     let _ = std::fs::remove_dir_all(root);
 }
 
-const SURGE_BUNDLE: &str = "/usr/lib/vst3/Surge XT.vst3";
+pub(super) const SURGE_BUNDLE: &str = "/usr/lib/vst3/Surge XT.vst3";
 
 /// What a rendered note is told by: how loud it is and how often it crosses zero upwards.
 #[derive(Debug, Clone, Copy)]

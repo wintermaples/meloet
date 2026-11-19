@@ -10,8 +10,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use meloet_model::mixer::moved_slot;
-use meloet_model::{InstrumentGroup, InstrumentRef, PluginPlace, PluginRef, StripId, TrackId};
+use meloet_model::mixer::{moved_slot, set_plugin_state};
+use meloet_model::{
+    InstrumentGroup, InstrumentRef, PluginChange, PluginPlace, PluginRef, StripId, TrackId,
+};
 use meloet_protocol::{InsertRef, PluginSlotRef, PluginState, PluginWindowKind};
 
 use super::mixer::{strip_id, strip_ref};
@@ -20,7 +22,7 @@ use super::shelf::Mode;
 use super::sounds::Sample;
 use super::{EngineOp, Play, StripSeat};
 use crate::added::sound_ref;
-use crate::state::Effect;
+use crate::state::{Effect, PluginAsk, StateAsk};
 
 /// The sample rate of the engine before any stream told another.
 const START_RATE: u32 = 48_000;
@@ -49,7 +51,7 @@ pub enum PlugState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Phase {
+pub(super) enum Phase {
     Loading,
     Ready,
     /// Its process answers no more.
@@ -61,20 +63,36 @@ enum Phase {
 }
 
 #[derive(Debug, Clone)]
-struct Plug {
-    spot: Spot,
-    ticket: u64,
+pub(super) struct Plug {
+    pub spot: Spot,
+    pub ticket: u64,
     /// As it was asked for: the key, and the state it was given.
-    plugin: Arc<PluginRef>,
-    phase: Phase,
+    pub plugin: Arc<PluginRef>,
+    pub phase: Phase,
     /// It is in the engine. A plugin that became ready under a trial waits until the trial
     /// is over.
-    placed: bool,
+    pub placed: bool,
+    /// What window it has, as the plugin itself said when it was loaded.
+    window: Option<PluginWindowKind>,
+    /// What the plugin said its state was while the song had it "as it starts" (an empty
+    /// state): taking a step back to that puts this state back, in place of loading the
+    /// plugin anew.
+    base: Option<Arc<[u8]>>,
+    base_asked: bool,
+    /// How many states were put back into it.
+    pub puts: u32,
+}
+
+impl Plug {
+    /// It sounds: its window can be opened and its parameters moved.
+    pub fn sounds(&self) -> bool {
+        self.phase == Phase::Ready && self.placed
+    }
 }
 
 #[derive(Debug)]
 pub(super) struct Plugs {
-    list: Vec<Plug>,
+    pub list: Vec<Plug>,
     next: u64,
     /// Every plugin this PC has, by its exact key, with the bundle it is loaded from and
     /// what the scan says of its window.
@@ -100,8 +118,16 @@ impl Default for Plugs {
 }
 
 impl Plugs {
-    fn at(&self, spot: Spot) -> Option<&Plug> {
+    pub fn at(&self, spot: Spot) -> Option<&Plug> {
         self.list.iter().find(|p| p.spot == spot)
+    }
+
+    pub fn of(&self, ticket: u64) -> Option<&Plug> {
+        self.list.iter().find(|p| p.ticket == ticket)
+    }
+
+    fn of_mut(&mut self, ticket: u64) -> Option<&mut Plug> {
+        self.list.iter_mut().find(|p| p.ticket == ticket)
     }
 
     fn at_mut(&mut self, spot: Spot) -> Option<&mut Plug> {
@@ -133,10 +159,84 @@ impl Play {
             .collect();
     }
 
-    /// Whether the plugin has a window of its own that meloet opens, as the scan found it.
-    /// One this PC does not have counts as having none.
-    pub(super) fn window_kind(&self, key: &str) -> PluginWindowKind {
-        (self.plugs.known.get(key)).map_or(PluginWindowKind::None, |(_, window)| *window)
+    /// Whether the plugin at `place` has a window of its own that meloet opens: as the
+    /// plugin said when it was loaded, before that as the scan found it. One this PC does
+    /// not have counts as having none.
+    pub(super) fn window_kind(&self, place: PluginPlace, key: &str) -> PluginWindowKind {
+        let said = (self.spot_of(place))
+            .and_then(|spot| self.plugs.at(spot))
+            .filter(|plug| &*plug.plugin.key == key)
+            .and_then(|plug| plug.window);
+        let scanned = || (self.plugs.known.get(key)).map(|(_, window)| *window);
+        said.or_else(scanned).unwrap_or(PluginWindowKind::None)
+    }
+
+    /// `PluginSaid::Editor`.
+    pub(super) fn plug_window_said(&mut self, ticket: u64, window: PluginWindowKind) {
+        if let Some(plug) = self.plugs.of_mut(ticket) {
+            plug.window = Some(window);
+        }
+    }
+
+    /// Whether meloet opens the plugin's window.
+    pub(super) fn plug_opens(&self, plug: &Plug) -> bool {
+        let scanned = || (self.plugs.known.get(&*plug.plugin.key)).map(|(_, window)| *window);
+        plug.window.or_else(scanned) == Some(PluginWindowKind::Opens)
+    }
+
+    /// Before the first change to a plugin the song has "as it starts": its state is asked
+    /// for, so that a step back has something to put back.
+    pub(super) fn want_base(&mut self, ticket: u64, effects: &mut Vec<Effect>) {
+        if let Some(plug) = self.plugs.of_mut(ticket)
+            && plug.plugin.state.is_empty()
+            && plug.base.is_none()
+            && !plug.base_asked
+        {
+            plug.base_asked = true;
+            effects.push(Effect::AskPlugin {
+                ticket,
+                ask: PluginAsk::State(StateAsk::Base),
+            });
+        }
+    }
+
+    /// The plugin said its state while nothing was changed in it yet.
+    pub(super) fn base_said(&mut self, ticket: u64, state: &Arc<[u8]>) {
+        if let Some(plug) = self.plugs.of_mut(ticket)
+            && plug.plugin.state.is_empty()
+            && plug.base.is_none()
+        {
+            plug.base = Some(state.clone());
+        }
+    }
+
+    /// The plugin said its state after a change made in it (its window, the parameters
+    /// panel): the song gets the state as one step. The plugin has the state already, so
+    /// nothing is put back into it. The state the song has already is no step.
+    pub(super) fn plugin_changed(
+        &mut self,
+        ticket: u64,
+        state: Arc<[u8]>,
+        change: PluginChange,
+        effects: &mut Vec<Effect>,
+    ) {
+        let Some(plug) = self.plugs.of(ticket) else {
+            return;
+        };
+        // The state it started with, said again: the song has that as "as it starts".
+        if plug.plugin.state.is_empty() && plug.base.as_ref() == Some(&state) {
+            return;
+        }
+        let (Some(place), key) = (self.place_of(plug.spot), plug.plugin.key.clone()) else {
+            return;
+        };
+        let Ok(edit) = set_plugin_state(self.doc(), place, &key, state, change) else {
+            return;
+        };
+        if let (Some(now), Some(plug)) = (edit.doc.plugin(place), self.plugs.of_mut(ticket)) {
+            plug.plugin = now.clone();
+        }
+        self.apply_own(edit, effects);
     }
 
     pub(super) fn has_plugin(&self, key: &str) -> bool {
@@ -185,12 +285,17 @@ impl Play {
                 have.plugin = plugin.clone();
                 return Want::Kept;
             }
-            if have.phase == Phase::Ready && !plugin.state.is_empty() {
+            let state = match plugin.state.is_empty() {
+                true => have.base.clone(),
+                false => Some(plugin.state.clone()),
+            };
+            if let (Phase::Ready, Some(state)) = (have.phase, state) {
                 have.plugin = plugin.clone();
-                effects.push(Effect::SetPluginState {
-                    ticket: have.ticket,
-                    state: plugin.state.clone(),
-                });
+                have.puts += 1;
+                let ticket = have.ticket;
+                effects.push(Effect::SetPluginState { ticket, state });
+                self.table_stale(ticket);
+                self.visit_overtaken(ticket, effects);
                 return Want::Kept;
             }
         }
@@ -205,6 +310,10 @@ impl Play {
             plugin: plugin.clone(),
             phase: Phase::Loading,
             placed: false,
+            window: None,
+            base: None,
+            base_asked: false,
+            puts: 0,
         });
         effects.push(Effect::LoadPlugin {
             ticket,
@@ -324,6 +433,8 @@ impl Play {
             return;
         };
         plug.phase = Phase::Ready;
+        // A process started again answers no ask the old one was sent.
+        plug.base_asked = plug.base.is_some();
         plugs.stopped.retain(|t| *t != ticket);
         let spot = plug.spot;
         match spot {
@@ -345,6 +456,8 @@ impl Play {
                 effects.push(Effect::Engine(EngineOp::Plug { ticket, spot }));
             }
         }
+        // Loaded again, it may list its parameters another way.
+        self.table_stale(ticket);
     }
 
     /// The row that is tried could not be loaded, or stopped: the shelf says so under it and
@@ -485,7 +598,7 @@ impl Play {
         })
     }
 
-    fn place_of(&self, spot: Spot) -> Option<PluginPlace> {
+    pub(super) fn place_of(&self, spot: Spot) -> Option<PluginPlace> {
         match spot {
             Spot::Seat(seat) => Some(PluginPlace::Instrument(self.track_on(seat)?)),
             Spot::Insert(strip, slot) => Some(PluginPlace::Insert(self.strip_of(strip)?, slot)),
@@ -493,7 +606,7 @@ impl Play {
         }
     }
 
-    fn spot_of(&self, place: PluginPlace) -> Option<Spot> {
+    pub(super) fn spot_of(&self, place: PluginPlace) -> Option<Spot> {
         Some(match place {
             PluginPlace::Instrument(track) => Spot::Seat(self.seats.of(track)?),
             PluginPlace::Insert(strip, slot) => Spot::Insert(self.strip_seat(strip)?, slot),
@@ -536,7 +649,7 @@ impl Play {
         }
     }
 
-    fn slot_place(slot: PluginSlotRef) -> PluginPlace {
+    pub(super) fn slot_place(slot: PluginSlotRef) -> PluginPlace {
         match slot {
             PluginSlotRef::Instrument { track } => PluginPlace::Instrument(TrackId(track)),
             PluginSlotRef::Insert { insert } => {

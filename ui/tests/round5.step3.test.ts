@@ -11,7 +11,7 @@ import { KEY_COMMIT_MS, KeySteps } from "../src/components/mixer/mixDrag";
 import MixerStrips from "../src/components/mixer/MixerStrips.svelte";
 import { parseDb, parsePan } from "../src/components/mixer/scale";
 import { paramUi } from "../src/components/params/paramUi.svelte";
-import { FOLD_OVER, foldedAtFirst, matchCount, pluginEntries, pluginValueText, stepLabels } from "../src/components/params/pluginRows";
+import { FOLD_OVER, foldedAtFirst, matchCount, pluginEntries, pluginValueText, sameGroups, stepLabels } from "../src/components/params/pluginRows";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
 import RightRail from "../src/components/RightRail.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
@@ -179,6 +179,57 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(text(q("[data-test=params-none] span"))).toBe("「xyz」に合うパラメータはありません。");
     expect(key(input, "Escape").defaultPrevented).toBe(true);
     expect(paramUi.query).toBe("");
+  });
+
+  it("取り消しで一覧の番号が変わっても、同じ枠の同じ子なら、さがす文字 ・ ひらいたグループ ・ 行を残す。ほかの子をえらぶと、はじめに戻す", async () => {
+    // どの番号でも Surge XT の表を返す（取り消すたびに、core は同じ子の表に新しい番号をつける）。
+    book.current = new ParamTableBook(async (table) => ({ ...surge(), table }));
+    const s = scene("paramMany");
+    s.workspace.layout.rightFront = "params";
+    show(s, RightRail);
+    await settle(FAKE_TABLES.surge);
+    q('[data-group="g:1"]')!.click();
+    flushSync();
+    const groups = () => qa("[data-test=params-group]").map(text);
+    expect(groups()[2]).toBe("▾ Global 21");
+    const rows = qa("[data-test=param-row]").length;
+    expect(rows).toBeGreaterThan(20);
+
+    const sel = s.params.selected!;
+    if (sel.kind !== "plugin") throw new Error("the scene selects a plugin");
+    const renumbered = (table: number): AppState => ({ ...s, params: { selected: { ...sel, table } } });
+    app.setState(renumbered(77));
+    book.current.show(77);
+    flushSync();
+    // 新しい表が届く前: 前の表の行を見せたまま（一覧が空になると、スクロールが上に戻る）。
+    expect(qa("[data-test=param-row]")).toHaveLength(rows);
+    await settle(77);
+    expect(groups()[2]).toBe("▾ Global 21");
+    expect(qa("[data-test=param-row]")).toHaveLength(rows);
+
+    // さがしている間も同じ。
+    const input = q("[data-test=params-search]") as HTMLInputElement;
+    input.value = "cutoff";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    app.setState(renumbered(78));
+    await settle(78);
+    expect(paramUi.query).toBe("cutoff");
+    expect(input.value).toBe("cutoff");
+    expect(text(q("[data-test=params-count]"))).toBe("24 / 2855");
+
+    // ほかの枠の子をえらぶと、さがす文字は空、グループはたたんだ形。
+    app.setState({ ...s, params: { selected: { ...sel, slot: { kind: "instrument", track: s.song.tracks[1]!.id }, table: 79 } } });
+    await settle(79);
+    expect(paramUi.query).toBe("");
+    expect(groups()[2]).toBe("▸ Global 21");
+  });
+
+  it("グループの並びがちがう表が来たら、たたみ方ははじめに戻す", () => {
+    const a = surge();
+    expect(sameGroups(a, { ...surge(), table: 9 })).toBe(true);
+    expect(sameGroups(a, { ...a, groups: a.groups.slice(1) })).toBe(false);
+    expect(sameGroups(a, fakeParamTable(FAKE_TABLES.dragonfly)!)).toBe(false);
   });
 
   it("まだ窓をひらけない子: 一覧の上に文。窓のボタンはない", async () => {
@@ -373,6 +424,35 @@ describe("状態行の新しい文（仕様書 6 章 ・ モック）", () => {
     ).toBe("4 パッド の MVerb をとばしています ・ 3 ドラム の Brick EQ は止まっています（音は、その枠をとばして流しています）");
   });
 
+  it("名前の穴（ストリップ ・ プラグイン ・ パラメータ）は文と同じ字。等幅は数や値の穴だけ（モックの状態行）", () => {
+    const mono = (message: StatusMessage) => {
+      const base = scene("mixerBypass");
+      base.status.message = message;
+      show(base, StatusLine);
+      const out = [...q(".message")!.querySelectorAll(".m-num")].map(text);
+      unmount(mounted!);
+      mounted = null;
+      return out;
+    };
+    const s = scene("mixerBypass");
+    const pad = { strip: { kind: "track", id: s.song.tracks[3]!.id }, slot: 0 } as const;
+    expect(mono({ id: "mixerPassesBy", bypassed: [{ insert: pad, effect: { kind: "plugin", name: "MVerb" } }], stopped: [{ insert: pad, effect: { kind: "plugin", name: "Brick EQ" } }] })).toEqual([]);
+    expect(mono({ id: "pluginWindowNotYet", loopBars: null, name: "Mossy Verb" })).toEqual([]);
+    expect(mono({ id: "pluginStopped", name: "Surge XT", slot: { kind: "insert", insert: pad } })).toEqual([]);
+    expect(mono({ id: "effectBypassed", insert: pad, effect: { kind: "plugin", name: "MVerb" }, bypassed: true })).toEqual([]);
+    expect(mono({ id: "pluginWindowsOpen", count: 2 })).toEqual(["2"]);
+    expect(mono({ id: "pluginWindowLarge", name: "Surge XT", slot: null, width: 1597, height: 995 })).toEqual(["1597", "995"]);
+    expect(mono({ id: "effectInserted", insert: pad, effect: { kind: "plugin", name: "MVerb" } })).toEqual(["1"]);
+    expect(mono({ id: "paramClamped", to: { kind: "plugin", name: "Mix", range: "0 %〜100 %", value: "100 %" } })).toEqual(["0 %〜100 %", "100 %"]);
+  });
+
+  it("止まった知らせ: プラグインの名前のうしろに空白（A-18）", () => {
+    const s = scene("mixerBypass");
+    expect(says({ id: "pluginStopped", name: "Dragonfly Hall Reverb", slot: { kind: "instrument", track: s.song.tracks[0]!.id } })).toBe(
+      `Dragonfly Hall Reverb が止まりました ・ 1 ${s.song.tracks[0]!.name}。曲のほかの部分は動いています。音はこの枠をとばして流しています。パラメータの値は残っています。`,
+    );
+  });
+
   it("窓とパラメータ", () => {
     const s = scene("paramMany");
     const piano: PluginSlotRef = { kind: "instrument", track: s.song.tracks[0]!.id };
@@ -439,6 +519,20 @@ describe("ミキサーの 86 の残り", () => {
     slots[0]!.querySelector<HTMLElement>("[data-test=mixer-bypass]")!.click();
     // 印を押しても、枠をえらんだことにはしない。
     expect(app.sent).toEqual([{ type: "toggleBypass", insert: { strip: { kind: "track", id: Number(pad.dataset.strip!.slice(6)) }, slot: 0 } }]);
+  });
+
+  it("えらんでいないプラグインの枠の右クリックは、一覧を出すだけ。えらぶ意図（窓がひらく）は送らない", () => {
+    show(scene("mixerBypass"), MixerStrips);
+    const slots = qa("[data-test=mixer-insert].filled:not(.selected)").filter((el) => !el.classList.contains("stopped"));
+    const plugin = qa("[data-test=mixer-insert].filled.stopped")[0]!;
+    for (const el of [slots[0]!, plugin]) {
+      contextMenu.open = null;
+      const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 });
+      el.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(true);
+      expect(contextMenu.open).not.toBeNull();
+    }
+    expect(app.sent).toEqual([]);
   });
 
   it("窓がひらいているインサートと音源の枠に窓の印", () => {
@@ -610,6 +704,7 @@ describe("キー B（とばす）", () => {
   });
 });
 
+// 30 Hz の出しかた（左と右を 1 コマずつ）は gl.surface.test.ts。
 describe("ミキサーのメーターは、トラックが 10 本をこえると 30 Hz（仕様書 3 章 第 8 版）", () => {
   it("mixerMeters だけ。ほかの区画（鍵 ・ 再生の線 ・ マスター）は 60 Hz のまま", () => {
     expect(regionHz("mixerMeters", 10)).toBe(60);

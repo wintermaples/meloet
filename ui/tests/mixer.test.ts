@@ -286,7 +286,7 @@ describe("インサートの枠", () => {
     ]);
   });
 
-  it("右クリック: えらんでから一覧（入れかえる… ・ 上へ ・ 下へ ・ とばす ／ 外す。モック R9-Inserts）。空きでは何も出さない", () => {
+  it("右クリック: えらばずに一覧（入れかえる… ・ 上へ ・ 下へ ・ とばす ／ 外す。モック R9-Inserts）。行はその枠をさす。空きでは何も出さない", () => {
     show(scene("mixer"));
     const slot = allIn("track-14", "[data-test=mixer-insert]")[0]!;
     slot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
@@ -299,11 +299,12 @@ describe("インサートの枠", () => {
       "-",
       ["mixer.removeEffect", true, "Delete", null],
     ]);
+    // えらぶ意図は送らない（プラグインでは、えらぶと窓がひらく）。
+    expect(app.sent).toEqual([]);
     const rows = entries.filter((e): e is MenuRow => e.kind === "row");
     for (const r of rows) if (r.usable) r.run();
     const insert = { strip: { kind: "track", id: 14 }, slot: 0 };
     expect(app.sent).toEqual([
-      { type: "selectInsert", insert },
       { type: "openShelf", mode: { kind: "replaceEffect", strip: insert.strip, slot: 0 } },
       { type: "moveInsert", insert, to: 1 },
       { type: "toggleBypass", insert },

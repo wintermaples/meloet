@@ -99,7 +99,7 @@ describe("状態行の文（6 章）", () => {
     ["scanStopped", "スキャンで止まったプラグイン をひらいています"],
     [
       "pluginStopped",
-      "Surge XTが止まりました ・ 1 ピアノ。曲のほかの部分は動いています。音はこの枠をとばして流しています。パラメータの値は残っています。",
+      "Surge XT が止まりました ・ 1 ピアノ。曲のほかの部分は動いています。音はこの枠をとばして流しています。パラメータの値は残っています。",
     ],
   ])("%s", (name, text) => {
     show(StatusLine, scene(name));
@@ -110,7 +110,7 @@ describe("状態行の文（6 章）", () => {
     const s = scene("pluginStopped");
     s.status.message = { id: "pluginStopped", name: "Dragonfly", slot: { kind: "insert", insert: { strip: { kind: "master" }, slot: 0 } } };
     show(StatusLine, s);
-    expect(status()).toContain(`Dragonflyが止まりました ・ ${t("mixer.master")}。`);
+    expect(status()).toContain(`Dragonfly が止まりました ・ ${t("mixer.master")}。`);
   });
 
   it("ダイアログをひらいている間（85）: 音の設定、meloet について", () => {

@@ -1,6 +1,7 @@
 <!-- プラグインのパラメータの一覧（仕様書 3 章「パラメータ」、モック F-ParamFew ・ F-ParamMany ・ F-ParamSearch ・ F-ParamNoWindow）。
      名前とグループは ParamTableBook が 1 回だけ取り、変わった値は paramValues で届く。行と見出しは高さ 24 で、見えている所だけを作る（2855 行でも）。
-     たたむグループと「… ほか N」を広げたグループは画面だけが持ち、表が変わるとはじめに戻す。 -->
+     たたむグループは画面だけが持つ。この部品は 1 つの枠の 1 つの子のあいだ生きていて、新しい表（取り消しのあとなど）が同じグループの並びなら、
+     たたみ方とスクロールを残す。新しい表が届くまでは、前の表を見せておく（一覧が空になると、スクロールがいちばん上に戻る）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { paramTable, type ParamTable, type SelectedPlugin } from "../../bridge";
@@ -12,7 +13,7 @@
   import { metrics } from "../metrics.svelte";
   import { paramUi } from "./paramUi.svelte";
   import PluginParamRow from "./PluginParamRow.svelte";
-  import { foldedAtFirst, matchCount, pluginEntries, stepLabels, stepOf, stepPluginRow, tableCount, valueOfStep, type PluginEntry } from "./pluginRows";
+  import { foldedAtFirst, matchCount, pluginEntries, sameGroups, stepLabels, stepOf, stepPluginRow, tableCount, valueOfStep, type PluginEntry } from "./pluginRows";
 
   let { sel, plugin, usable }: { sel: SelectedPlugin; plugin: string; usable: boolean } = $props();
 
@@ -26,10 +27,13 @@
     const book = paramTable();
     const take = () => {
       const now = book.table();
-      if (now !== table) {
+      if (now && now !== table) {
+        const kept = table !== null && sameGroups(table, now);
         table = now;
-        folded = now ? foldedAtFirst(now) : new Set();
-        expanded = new Set();
+        if (!kept) {
+          folded = foldedAtFirst(now);
+          expanded = new Set();
+        }
       }
       tick += 1;
     };
@@ -44,7 +48,7 @@
   });
 
   const entries = $derived(
-    table && table.table === sel.table ? pluginEntries(table, sel.automated, { query: paramUi.query, folded, expanded }) : [],
+    table ? pluginEntries(table, sel.automated, { query: paramUi.query, folded, expanded }) : [],
   );
   const total = $derived(table ? tableCount(table) : sel.count);
   $effect(() => {

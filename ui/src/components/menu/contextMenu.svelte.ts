@@ -1,6 +1,7 @@
 // 右クリックの一覧（design-notes B-60）。右クリックされた部品が openContextMenu を呼び、App にひとつだけ置く
 // ContextMenu.svelte が描く。形は仕様書 2 章の「一覧」（行の右にキー）。WebKit の一覧は、どこでも出さない。
 // 選ばれていない物を右クリックしたら、部品がそれだけを選んでから呼ぶ。どの道具でも右クリックは一覧。
+// インサートと音源の枠は選ばない（選ぶとプラグインの窓がひらく）。行が、その枠をさして動く。
 
 import { t, type TextKey } from "../../text/ja";
 import type { ListEntry } from "./menus";

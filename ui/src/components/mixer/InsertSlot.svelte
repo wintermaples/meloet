@@ -2,7 +2,8 @@
      入っている枠の左にオンの印（12×12。オンは accent の点、とばすと空で名前 gray.7）。押すと ToggleBypass。止まった枠と空きの枠には印なし。
      名前の場所は印のぶんせまく、入りきらない名前は「…」。乗ると名前の全部（とばしている枠は「（とばしている）」をそえて）。
      窓がひらいているプラグインは、右はしに窓の印。止まった物は赤い枠と「止」、見つからない物は名前を gray.8。
-     入っている枠を押すと、その子をえらぶ（SelectInsert）。右クリックは、えらんでから一覧（insertMenu）。えらんでいる枠は Delete で外す。
+     入っている枠を押すと、その子をえらぶ（SelectInsert。プラグインは窓もひらく）。右クリックは、えらばずに一覧（insertMenu。行はこの枠を InsertRef でさす。
+     えらぶとプラグインの窓がひらくので）。えらんでいる枠は Delete で外す。
      空きを押すと、棚が「（ストリップ）にエフェクトを入れる」でひらく。録音中 ・ カウントイン中も使える（A-14）。
      並べかえのドラッグは Strip が持つ（lift: 動かしている枠の上下のずれ、line: 入る所の線）。 -->
 <script lang="ts">
@@ -47,7 +48,6 @@
   function context(e: MouseEvent): void {
     e.preventDefault();
     if (view === null) return;
-    if (!selected) send({ type: "selectInsert", insert });
     openContextMenu(e.clientX, e.clientY, insertMenu(insert, view, send));
   }
 

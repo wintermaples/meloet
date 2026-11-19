@@ -1146,6 +1146,20 @@ export const SCENES: Record<string, SceneDef> = {
       tracks: Array.from({ length: 16 }, (_, i): [number, number] => [dbfs(-3 - 2 * i), dbfs(-4 - 2 * i)]),
     },
   },
+  // Not from a mock: the same 16 tracks with the mixer open. Over 10 tracks the mixer's meters are shown as a left and a
+  // right part in turn (docs/architecture.md, chapter 7).
+  mixer16: {
+    setup(s) {
+      ready(s);
+      s.song.tracks = Array.from({ length: 16 }, (_, i) => ({ ...s.song.tracks[0]!, id: i + 1, number: i + 1, color: (i % 5) + 1 }));
+    },
+    bands: ["mixer"],
+    meters: {
+      loadPermille: 120,
+      master: [dbfs(-6.2), dbfs(-7.0)],
+      tracks: Array.from({ length: 16 }, (_, i): [number, number] => [dbfs(-3 - 2 * i), dbfs(-4 - 2 * i)]),
+    },
+  },
   // The mock F-ArrangeRec without the loop: recording to the piano from bar 5, over a clip with one take.
   recording: {
     setup(s) {

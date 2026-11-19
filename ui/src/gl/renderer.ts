@@ -83,9 +83,10 @@ export class Renderer {
     gl.clearColor(0, 0, 0, 0);
   }
 
-  draw(batch: Batch, width: number, height: number): void {
+  /** `below`: rows of the canvas under the picture, when the canvas is higher than the picture (the picture is at its top left). */
+  draw(batch: Batch, width: number, height: number, below = 0): void {
     const gl = this.gl;
-    gl.viewport(0, 0, width, height);
+    gl.viewport(0, below, width, height);
     gl.uniform2f(this.size, width, height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (batch.length === 0) return;

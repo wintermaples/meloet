@@ -288,16 +288,15 @@ impl Click {
         };
     }
 
-    /// Adds to `left` and `right`. The first frame after `start` is the loudest.
-    pub fn add(&mut self, left: &mut [f32], right: &mut [f32]) {
-        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+    /// Adds to `out` (the same on the left and the right). The first frame after `start` is
+    /// the loudest.
+    pub fn add(&mut self, out: &mut [f32]) {
+        for o in out.iter_mut() {
             if self.frame >= self.total {
                 return;
             }
             let fade = ((self.total - self.frame) as f32 / 48.0).min(1.0);
-            let s = self.level * fade * (TAU * self.phase).cos();
-            *l += s;
-            *r += s;
+            *o += self.level * fade * (TAU * self.phase).cos();
             self.phase = (self.phase + self.inc).fract();
             self.level *= self.decay;
             self.frame += 1;

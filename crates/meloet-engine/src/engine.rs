@@ -805,6 +805,9 @@ pub struct Engine {
     scratch: [Box<[f32]>; 4],
     /// Left and right of the master, of return A and of return B, as the strips add up.
     sums: [Box<[f32]>; 6],
+    /// The metronome over the block. It joins the output after the master's meter is taken,
+    /// so the meters show the song only, and the master's fader and limiter leave it alone.
+    click_sum: Box<[f32]>,
     sample_rate: f32,
     max_frames: usize,
     plugin_block: Arc<PluginBlock>,
@@ -865,6 +868,7 @@ impl Engine {
             meters: meters.clone(),
             scratch: [buffer(), buffer(), buffer(), buffer()],
             sums: std::array::from_fn(|_| buffer()),
+            click_sum: buffer(),
             sample_rate: config.sample_rate as f32,
             max_frames: config.max_frames,
             plugin_block: plugin_block.clone(),
@@ -1660,6 +1664,7 @@ impl Engine {
         for sum in &mut self.sums {
             sum[..frames].fill(0.0);
         }
+        self.click_sum[..frames].fill(0.0);
         let fade = fade_frames(self.sample_rate);
         let t = &self.transport;
         let ctx = EffectContext {
@@ -1694,7 +1699,7 @@ impl Engine {
                 mix.add(track, Some(meter));
             }
             mix.add(&mut self.sample, None);
-            self.click.add(mix.master_l, mix.master_r);
+            self.click.add(&mut self.click_sum[from..to]);
             if self.transport.state.is_moving() {
                 self.transport.pos += self.transport.step() * (to - from) as i128;
             }
@@ -1746,11 +1751,12 @@ impl Engine {
         self.tone.add(io.left, io.right, self.sample_rate);
 
         let mut peak = [0.0f32; 2];
-        for (frame, (l, r)) in out
+        for ((frame, (l, r)), click) in out
             .as_chunks_mut::<2>()
             .0
             .iter_mut()
             .zip(io.left.iter().zip(io.right.iter()))
+            .zip(&self.click_sum[..frames])
         {
             // What is not a number never reaches the output.
             let (l, r) = if l.is_finite() && r.is_finite() {
@@ -1759,8 +1765,8 @@ impl Engine {
                 (0.0, 0.0)
             };
             peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
-            frame[0] = l.clamp(-1.0, 1.0);
-            frame[1] = r.clamp(-1.0, 1.0);
+            frame[0] = (l + click).clamp(-1.0, 1.0);
+            frame[1] = (r + click).clamp(-1.0, 1.0);
         }
         raise(&self.meters.master[0], peak[0]);
         raise(&self.meters.master[1], peak[1]);

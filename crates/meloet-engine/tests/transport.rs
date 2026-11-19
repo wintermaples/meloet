@@ -357,7 +357,11 @@ fn clicks_reach_the_dac_on_the_beat() {
             );
             let meters = rig.parts.handle.meters();
             assert_eq!(meters.take_track_peak(0), [0.0, 0.0], "not on a track");
-            assert!(meters.take_master_peak()[0] > 0.1, "on the master");
+            assert_eq!(
+                meters.take_master_peak(),
+                [0.0, 0.0],
+                "not on the master's meter"
+            );
         }
     }
 }

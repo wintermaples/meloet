@@ -163,7 +163,10 @@ fn a_host_process_stopped_from_outside(signal: i32) {
         at = monotonic_ns();
     }
     let killed = Instant::now();
-    // The first block that goes without an answer, then the block after it: stopped.
+    // The first block that goes without an answer, then the block after it: the process is
+    // given up on. A slot's own watch says so when the slot next runs, so one that ran in that
+    // block before the process was given up on says it a block later; the control side takes
+    // any one of a process's slots for all of them.
     let mut first_missed = None;
     let mut times = Vec::new();
     for n in 0..8 {
@@ -176,7 +179,7 @@ fn a_host_process_stopped_from_outside(signal: i32) {
                 assert!(watches.iter().all(|w| !w.stopped()), "stopped at once");
             }
             Some(first) if n == first + 1 => {
-                assert!(watches.iter().all(|w| w.stopped()), "block {n}");
+                assert!(watches.iter().any(|w| w.stopped()), "block {n}");
                 break;
             }
             _ => {}
@@ -186,12 +189,17 @@ fn a_host_process_stopped_from_outside(signal: i32) {
     assert!(first <= 2, "noticed only at block {first}");
     let noticed = killed.elapsed();
     assert!(noticed < Duration::from_millis(60), "{noticed:?}");
-    // The instrument waited twice (the block it missed, and once more in the next); the
-    // effect, later in the same blocks, only found the deadline past and then the process
-    // stopped. A block is waited for once, to the deadline all slots share.
+    // A block is waited for once, to the deadline all slots share: the slot that is first to
+    // go without an answer waits twice (the block it missed, and once more in the next), the
+    // other once. Which is first depends on where in a block the process went: before the
+    // instrument's answer, or between that and the effect's.
     let after = unanswered(&watches);
     let missed: Vec<u64> = (before.iter().zip(&after)).map(|(b, a)| a - b).collect();
-    assert_eq!(missed, [2, 1]);
+    assert!(missed == [2, 1] || missed == [1, 2], "{missed:?}");
+    let (took, _) = block(&mut parts, &mut out, &mut at);
+    assert!(watches.iter().all(|w| w.stopped()));
+    assert_eq!(unanswered(&watches), after);
+    assert!(took < BLOCK_NS / 2, "a stopped slot was waited for: {took}");
     let share_ns = (BLOCK_NS as f64 * PLUGIN_WAIT_SHARE) as u64;
     assert!(times[first] < share_ns + BLOCK_NS, "{times:?}");
 

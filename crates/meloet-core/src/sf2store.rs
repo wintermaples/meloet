@@ -4,6 +4,7 @@
 //! A file is known by its name ("FluidR3_GM.sf2"); that is also what a song names it by. A
 //! file added under a name that is there already takes that one's place.
 
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
@@ -12,6 +13,7 @@ use std::thread::JoinHandle;
 use meloet_model::{GmFamily, SF2_DRUM_BANK, Sf2Ref};
 use meloet_sound::sampler::SampleBank;
 use meloet_sound::sf2::{Sf2Error, Sf2File};
+use sha2::{Digest, Sha256};
 
 use crate::instruments::Samples;
 
@@ -45,8 +47,8 @@ impl Sf2Preset {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sf2Info {
     pub file: String,
-    /// In lower-case hex; empty when not known. Nothing works it out yet, so a preset put
-    /// into a song says no hash.
+    /// Of the file as it was copied in, in lower-case hex; empty when not known (a file put
+    /// into the folder by hand). A record only: a song is tied to a file by its name.
     pub sha256: String,
     pub presets: Vec<Sf2Preset>,
 }
@@ -82,17 +84,11 @@ pub fn describe(path: &Path) -> Result<Vec<Sf2Preset>, Sf2Error> {
     let mut presets: Vec<Sf2Preset> = (file.presets().into_iter())
         .filter(|p| p.program <= 127 && p.bank <= SF2_DRUM_BANK)
         .map(|p| {
-            let mut keys = Vec::new();
-            if p.bank == SF2_DRUM_BANK {
-                let mut has = [false; 128];
-                for zone in file.zones(p.bank, p.program).unwrap_or_default() {
-                    let (lo, hi) = (zone.keys.0.min(127), zone.keys.1.min(127));
-                    for key in lo..=hi {
-                        has[usize::from(key)] = true;
-                    }
-                }
-                keys = (0..=127u8).filter(|k| has[usize::from(*k)]).collect();
-            }
+            let keys = if p.bank == SF2_DRUM_BANK {
+                file.keys(p.bank, p.program).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             Sf2Preset {
                 bank: p.bank,
                 program: p.program as u8,
@@ -122,6 +118,23 @@ pub fn looks_like_sf2(path: &Path) -> bool {
     is_sf2_name(&file_name(path))
 }
 
+/// Where the hash of a copied file is noted, beside it: "<hex> <length of the file>".
+fn hash_note(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".sha256");
+    PathBuf::from(name)
+}
+
+/// The hash noted when the file was copied in. None when there is no note, or the file is
+/// not as long as the one the note is of.
+fn noted_hash(path: &Path) -> Option<String> {
+    let note = std::fs::read_to_string(hash_note(path)).ok()?;
+    let (hash, len) = note.trim_end().split_once(' ')?;
+    let fits = hash.len() == 64 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    let same = len.parse::<u64>().ok()? == std::fs::metadata(path).ok()?.len();
+    (fits && same).then(|| hash.to_string())
+}
+
 /// Every SF2 file in `dir` that reads, in the order of their names.
 pub fn list(dir: &Path) -> Vec<Sf2Info> {
     let mut files: Vec<Sf2Info> = std::fs::read_dir(dir)
@@ -136,8 +149,8 @@ pub fn list(dir: &Path) -> Vec<Sf2Info> {
             }
             match describe(&path) {
                 Ok(presets) => Some(Sf2Info {
+                    sha256: noted_hash(&path).unwrap_or_default(),
                     file,
-                    sha256: String::new(),
                     presets,
                 }),
                 Err(e) => {
@@ -165,18 +178,36 @@ pub fn add(dir: &Path, source: &Path) -> Result<Sf2Info, Sf2Error> {
     let copied = (|| {
         let mut from = std::fs::File::open(source)?;
         let mut to = std::fs::File::create(&temporary)?;
-        std::io::copy(&mut from, &mut to)?;
+        let (mut hash, mut len) = (Sha256::new(), 0u64);
+        let mut buffer = vec![0u8; 1 << 16];
+        loop {
+            let n = match from.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            };
+            hash.update(&buffer[..n]);
+            to.write_all(&buffer[..n])?;
+            len += n as u64;
+        }
         to.sync_all()?;
         drop(to);
+        let sha256: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        // The note of a file this one takes the place of must not be read as this one's.
+        let note = hash_note(&target);
+        let _ = std::fs::remove_file(&note);
         std::fs::rename(&temporary, &target)?;
+        // Without the note the hash is only not known at the next start.
+        let _ = std::fs::write(&note, format!("{sha256} {len}\n"));
         #[cfg(unix)]
         std::fs::File::open(dir)?.sync_all()?;
-        Ok(())
+        Ok(sha256)
     })();
     match copied {
-        Ok(()) => Ok(Sf2Info {
+        Ok(sha256) => Ok(Sf2Info {
             file,
-            sha256: String::new(),
+            sha256,
             presets,
         }),
         Err(e) => {

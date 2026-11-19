@@ -40,6 +40,16 @@ fn piano() -> TrackRef {
     }
 }
 
+/// What a new song is on a PC without the sound pack, as the models of these tests are
+/// unless they say otherwise: the first track is the sine wave.
+pub(crate) fn new_song_without_pack() -> Song {
+    let mut song = Song::new_default();
+    let track = Arc::make_mut(&mut song.doc.tracks[0]);
+    track.instrument = InstrumentRef::SINE;
+    track.name = "シンセ".to_owned();
+    song
+}
+
 /// The headphones chosen before, a keyboard, and the stream open: ready to play and record.
 pub(crate) fn ready() -> Model {
     let mut m = Model::new(Settings {

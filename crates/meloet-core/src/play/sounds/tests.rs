@@ -1,4 +1,4 @@
-use meloet_model::{BuiltinInstrument as B, InstrumentRef};
+use meloet_model::{BuiltinInstrument as B, InstrumentRef, Song};
 use meloet_protocol::{
     Band, Command, InstrumentKind, SampleView, ScaleMode, ShelfMode, StatusMessage,
 };
@@ -563,4 +563,31 @@ fn a_key_on_a_track_whose_samples_are_not_read_says_so_until_they_are() {
     );
     assert_ne!(status(m), loading(Organ));
     assert!(m.wants_loading_key());
+}
+
+#[test]
+fn without_the_sound_pack_a_new_song_starts_with_the_sine_wave_named_synth() {
+    // No pack: the song the app starts with, and every new song after it.
+    let (mut m, mut engine) = rig(&[]);
+    for _ in 0..2 {
+        let song = m.play().song().clone();
+        assert_eq!(song.doc.tracks.len(), 1);
+        let track = &song.doc.tracks[0];
+        assert_eq!(
+            (track.name.as_str(), &track.instrument),
+            ("シンセ", &InstrumentRef::SINE)
+        );
+        let view = m.view();
+        assert_eq!(view.song.tracks[0].stand_in, None, "it is no stand-in");
+        // The rest is the song as ever.
+        assert_eq!(song, crate::play::tests::new_song_without_pack());
+        command(&mut m, &mut engine, Command::NewSong);
+    }
+
+    // With the pack: the grand piano, as ever.
+    let (mut m, mut engine) = rig(&[B::GrandPiano]);
+    for _ in 0..2 {
+        assert_eq!(*m.play().song(), Song::new_default());
+        command(&mut m, &mut engine, Command::NewSong);
+    }
 }

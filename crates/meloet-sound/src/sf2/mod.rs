@@ -156,6 +156,19 @@ impl Sf2File {
             .collect())
     }
 
+    /// The keys the preset has a zone on, lowest first.
+    pub fn keys(&self, bank: u16, program: u16) -> Result<Vec<u8>, Sf2Error> {
+        let index = self.find(bank, program)?;
+        let mut has = [false; 128];
+        for zone in zones::zones(&self.tables, index) {
+            let (lo, hi) = (zone.key_lo.min(127), zone.key_hi.min(127));
+            for key in lo..=hi {
+                has[usize::from(key)] = true;
+            }
+        }
+        Ok((0..=127u8).filter(|k| has[usize::from(*k)]).collect())
+    }
+
     /// Reads the samples one preset uses and builds its bank. A zone whose sample or values
     /// make no sense is left out. The left and right halves of a stereo sample are two zones
     /// with their own pan and play as two voices.

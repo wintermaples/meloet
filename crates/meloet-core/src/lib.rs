@@ -6,6 +6,7 @@
 //! - [`plugins`]: the scan for plugins and the processes they sound in.
 
 mod added;
+mod catalog;
 mod hub;
 mod instruments;
 pub mod layout;
@@ -16,6 +17,7 @@ pub mod plugins;
 pub mod recovery;
 mod service;
 pub mod settings;
+pub mod sf2store;
 pub mod songfile;
 mod sounds;
 pub mod state;

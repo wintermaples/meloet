@@ -77,6 +77,7 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
             state_dir: None,
             sounds_dir: None,
             plugins: None,
+            sf2_dir: None,
         });
         let latest = record_timing::listen(&core);
         record_timing::wait_for(&core, "the output runs", Duration::from_secs(10), |s| {

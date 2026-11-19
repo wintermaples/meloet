@@ -4,7 +4,7 @@
 //! telemetry thread send it what they learn over one channel. The core thread owns the MIDI
 //! input and the device watcher, and starts them again when they stop by themselves.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -19,27 +19,34 @@ use meloet_engine::{
     RunningOutput, Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
 };
 use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
+use meloet_model::mixer::set_plugin_state;
 use meloet_model::playback::{PlayEvent, PlayKind};
 use meloet_model::record::{HeldControls, RecEventKind};
-use meloet_model::{BuiltinInstrument, ControlValue, InstrumentRef};
-use meloet_plugin::ScanCache;
+use meloet_model::{
+    BuiltinInstrument, ControlValue, InstrumentGroup, InstrumentRef, PluginChange, PluginPlace,
+    Song,
+};
+use meloet_plugin::{PluginKey, ScanCache};
 use meloet_protocol::{
     Command, Event, LiveNotesSnapshot, Snapshot, Telemetry, TransportReading, TransportState,
 };
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
-use crate::added::builtin_or_sine;
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::measure::{self, KeyToSound};
 use crate::mixbook::{self, MixBook};
-use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, RecordReport};
-use crate::plugins::hosts::{DEFAULT_GEOMETRY, HostNews, HostOptions, Hosts};
+use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot};
+use crate::plugins::hosts::{
+    DEFAULT_GEOMETRY, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded, SlotId, StartState,
+};
+use crate::plugins::housed::{HousedEffect, HousedInstrument, Which};
 use crate::plugins::scanner::Scanner;
 use crate::plugins::{PluginOptions, ScanNews};
 use crate::recovery;
 use crate::settings::{self, Settings};
+use crate::sf2store::{self, Sf2Done, Sf2Store};
 use crate::songfile;
 use crate::sounds::{self, Library};
 use crate::state::{Effect, Input, Model, REQUESTED_FRAMES, RecoveryStart, SaveTo, retry_delay};
@@ -54,6 +61,9 @@ const SOUND_THRESHOLD: f32 = 0.001;
 const LOAD_STEP: u16 = 10;
 /// A key-to-sound time above this is a key that waited for a stream, not a measurement.
 const LATENCY_SANE_US: u64 = 1_000_000;
+/// How long a save waits for the plugins of the song to say their states. One that has not
+/// answered by then is saved with the last state the song knows of it.
+const STATE_WAIT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
 pub struct CoreOptions {
@@ -75,6 +85,8 @@ pub struct CoreOptions {
     pub sounds_dir: Option<PathBuf>,
     /// `None`: no plugins; nothing is scanned and no process is started.
     pub plugins: Option<PluginOptions>,
+    /// Where added SF2 files are copied to. `None`: none is listed, and none can be added.
+    pub sf2_dir: Option<PathBuf>,
 }
 
 /// What the core asks of the shell. Answer the windows with [`Core::song_file_picked`] and
@@ -98,6 +110,9 @@ pub enum ShellRequest {
     /// The PC's folder window for a place to look for plugins in, starting in `folder`.
     /// Answer with [`Core::plugin_place_picked`].
     PickPluginPlace { folder: Option<PathBuf> },
+    /// The PC's open window for an SF2 file, starting in `folder`. Answer with
+    /// [`Core::sf2_picked`].
+    PickSf2 { folder: Option<PathBuf> },
 }
 
 /// Called on the core thread; must not wait for the main thread.
@@ -116,6 +131,7 @@ impl CoreOptions {
             state_dir: recovery::dir(),
             sounds_dir: sounds::find_dir(),
             plugins: PluginOptions::from_env(),
+            sf2_dir: sf2store::dir(),
         }
     }
 
@@ -131,6 +147,7 @@ impl CoreOptions {
             state_dir: None,
             sounds_dir: None,
             plugins: None,
+            sf2_dir: None,
         }
     }
 }
@@ -171,6 +188,17 @@ enum Msg {
     Scan(ScanNews),
     /// From the thread of the plugin processes.
     Plugins(HostNews),
+    /// From the thread of the plugin processes: the answer to [`Effect::LoadPlugin`] and to
+    /// [`Effect::ReloadPlugin`].
+    PluginLoaded {
+        ticket: u64,
+        loaded: Result<Loaded, HostError>,
+    },
+    /// From the thread that reads SF2 files.
+    Sf2(Sf2Done),
+    /// A look at the worker, for a test.
+    #[cfg(test)]
+    Peek(Box<dyn FnOnce(&mut Worker) + Send>),
     Stop,
 }
 
@@ -290,7 +318,16 @@ impl Core {
             };
             Library::open(options.sounds_dir.as_deref(), Box::new(done))
         };
-        let mut model = Model::new(settings).with_sounds(library.installed());
+        let sf2 = {
+            let tx = Mutex::new(tx.clone());
+            let done = move |done| {
+                let _ = lock(&tx).send(Msg::Sf2(done));
+            };
+            Sf2Store::open(options.sf2_dir.clone(), Box::new(done))
+        };
+        let mut model = Model::new(settings)
+            .with_sounds(library.installed())
+            .with_sf2(sf2.files().to_vec());
         if let Some(plugin_options) = &options.plugins {
             model = model.with_plugin_places(plugin_options.usual_places.clone());
         }
@@ -335,13 +372,18 @@ impl Core {
                 },
             );
             let dir = plugin_options.cache_dir.as_deref();
+            let (gone_tx, gone_rx) = mpsc::channel();
             PluginSide {
                 scanner,
-                _hosts: hosts,
+                hosts,
                 start: Some(Input::PluginsStart {
                     cache: Box::new(dir.map_or_else(ScanCache::default, ScanCache::load)),
                     first: !dir.is_some_and(ScanCache::is_saved),
                 }),
+                ready: HashMap::new(),
+                ids: HashMap::new(),
+                gone_tx,
+                gone_rx,
             }
         });
         let midi = options.midi.and_then(|midi_options| {
@@ -372,6 +414,7 @@ impl Core {
                     parts.handle,
                     options.audio,
                     library,
+                    sf2,
                     model.engine_seats(),
                 ),
                 model,
@@ -453,6 +496,27 @@ impl Core {
     pub fn plugin_place_picked(&self, path: Option<PathBuf>) {
         let input = Input::PluginPlacePicked(path);
         let _ = self.tx.send(Msg::Input(input, None));
+    }
+
+    /// The answer to [`ShellRequest::PickSf2`]. Does not wait.
+    pub fn sf2_picked(&self, path: Option<PathBuf>) {
+        let _ = self.tx.send(Msg::Input(Input::Sf2Picked(path), None));
+    }
+
+    /// Files are held over the window. Does not wait.
+    pub fn files_over(&self, paths: Vec<PathBuf>) {
+        let _ = self.tx.send(Msg::Input(Input::FilesOver(paths), None));
+    }
+
+    /// The files held over the window were taken out of it, or the drag was given up. Does
+    /// not wait.
+    pub fn files_left(&self) {
+        let _ = self.tx.send(Msg::Input(Input::FilesLeft, None));
+    }
+
+    /// The files held over the window were let go of there. Does not wait.
+    pub fn files_dropped(&self, paths: Vec<PathBuf>) {
+        let _ = self.tx.send(Msg::Input(Input::FilesDropped(paths), None));
     }
 
     /// The answer to [`ShellRequest::PickSaveAs`]: the folder and the name typed, as one path.
@@ -770,6 +834,8 @@ struct Audio {
     mix: MixBook,
     /// The samples the instruments are made with.
     sounds: Library,
+    /// The same for the presets of the added SF2 files.
+    sf2: Sf2Store,
 }
 
 /// What the engine was given: the instrument of each of its tracks (the audition track is the
@@ -862,6 +928,7 @@ impl Audio {
         handle: EngineHandle,
         allowed: bool,
         sounds: Library,
+        sf2: Sf2Store,
         seats: Vec<EngineOp>,
     ) -> Audio {
         let mut audio = Audio {
@@ -873,6 +940,7 @@ impl Audio {
             seats: SeatBook::new(),
             mix: MixBook::default(),
             sounds,
+            sf2,
         };
         for op in seats {
             audio.op(op);
@@ -908,13 +976,52 @@ impl Audio {
 
     /// An instrument as it can sound now: silent while its samples are still to be read.
     fn make(&self, instrument: &InstrumentRef) -> Box<dyn Instrument> {
-        let builtin = builtin_or_sine(instrument);
-        instruments::make(instrument, self.sounds.samples(builtin))
+        let samples = match instrument {
+            InstrumentRef::Builtin(b) => self.sounds.samples(*b),
+            InstrumentRef::Sf2(preset) => self.sf2.samples(preset),
+            InstrumentRef::Plugin(_) => instruments::Samples::NotRead,
+        };
+        instruments::make(instrument, samples)
+    }
+
+    /// `EngineOp::Plug` for an instrument: a loaded plugin goes on the seat, as its own or,
+    /// with `trial`, as the one tried on it.
+    fn plug_instrument(&mut self, seat: usize, trial: bool, plugin: Box<dyn Instrument>) {
+        if self.stream.is_none() && self.engine.is_none() {
+            // The engine is lost. The plugin is let go of here, and loaded again for the
+            // engine made in its place.
+            return;
+        }
+        let sent = if trial {
+            self.handle.try_instrument(seat, plugin)
+        } else {
+            self.handle.swap_instrument(seat, plugin)
+        };
+        if let Err(command) = sent {
+            self.push(command);
+        }
+        self.settle();
+    }
+
+    /// `EngineOp::Plug` for an effect.
+    fn plug_effect(
+        &mut self,
+        strip: crate::play::StripSeat,
+        slot: usize,
+        plugin: Box<dyn meloet_engine::Effect>,
+    ) {
+        if self.stream.is_none() && self.engine.is_none() {
+            return;
+        }
+        let strip = mixbook::mix_strip(strip);
+        if let Err(command) = self.handle.set_effect(strip, slot, Some(plugin)) {
+            self.push(command);
+        }
+        self.settle();
     }
 
     fn send_seat_op(&mut self, op: EngineOp) {
-        let until = Instant::now() + SEAT_COMMAND_WAIT;
-        let mut command = match op {
+        let command = match op {
             EngineOp::Instrument { seat, instrument } => {
                 match self.handle.swap_instrument(seat, self.make(&instrument)) {
                     Ok(()) => return,
@@ -949,8 +1056,13 @@ impl Audio {
                 None => return,
             },
         };
-        // A full ring empties within a block or two; these commands must not be lost, or the
-        // engine and the song no longer agree.
+        self.push(command);
+    }
+
+    /// Sends a command that must not be lost, or the engine and the song no longer agree.
+    /// A full ring empties within a block or two.
+    fn push(&mut self, mut command: EngineCommand) {
+        let until = Instant::now() + SEAT_COMMAND_WAIT;
         loop {
             command = match self.handle.send(command) {
                 Ok(()) => return,
@@ -1085,6 +1197,8 @@ impl Audio {
                 }
                 return;
             }
+            // The worker gives these the loaded plugin (`Worker::plug`).
+            EngineOp::Plug { .. } | EngineOp::PlugSample { .. } => return,
             EngineOp::StopSample => EngineCommand::StopSample,
             EngineOp::SilentTracks { tracks } => EngineCommand::SetSilentTracks {
                 tracks: tracks.into_iter().collect::<TrackSet>(),
@@ -1193,10 +1307,37 @@ struct Worker {
 /// the scan file is written and every plugin process is ended.
 struct PluginSide {
     scanner: Scanner,
-    /// No track or insert holds a plugin yet; the processes are started through this.
-    _hosts: Hosts,
+    hosts: Hosts,
     /// Given to the rules when the core thread starts.
     start: Option<Input>,
+    /// The plugins that are loaded and not in the engine yet, by the ticket of their load.
+    ready: HashMap<u64, Loaded>,
+    /// Which plugin a ticket stands for, from its load until the engine handed it back.
+    ids: HashMap<u64, Which>,
+    /// Where a plugin the engine handed back tells so (`plugins::housed`).
+    gone_tx: Sender<Which>,
+    gone_rx: Receiver<Which>,
+}
+
+impl PluginSide {
+    /// The plugin of a ticket, wrapped for the engine. `None` when it is not waiting.
+    fn take(&mut self, ticket: u64) -> Option<(meloet_engine::PluginSlot, Which, Sender<Which>)> {
+        let loaded = self.ready.remove(&ticket)?;
+        let which = *self.ids.get(&ticket)?;
+        Some((loaded.slot, which, self.gone_tx.clone()))
+    }
+
+    /// Lets go of the plugins the engine handed back since the last look.
+    fn unload_gone(&mut self) {
+        while let Ok(which) = self.gone_rx.try_recv() {
+            let ticket = (self.ids.iter()).find_map(|(t, w)| (*w == which).then_some(*t));
+            // A plugin that was loaded again has another number by now: it stays.
+            if let Some(ticket) = ticket {
+                self.ids.remove(&ticket);
+                self.hosts.unload(which.0, Box::new(|_| {}));
+            }
+        }
+    }
 }
 
 impl Worker {
@@ -1285,14 +1426,66 @@ impl Worker {
                     self.handle(Input::PluginScan(news));
                 }
                 Ok(Msg::Plugins(news)) => {
-                    // Until tracks and inserts hold plugins there is no slot to name.
                     if let HostNews::Stopped { key, slots } = news {
                         eprintln!(
                             "meloet: the process of {key} stopped ({} plugins)",
                             slots.len()
                         );
+                        let ids = self.plugins.iter().flat_map(|side| &side.ids);
+                        let mut tickets: Vec<u64> = ids
+                            .filter(|(_, (id, _))| slots.contains(id))
+                            .map(|(ticket, _)| *ticket)
+                            .collect();
+                        tickets.sort_unstable();
+                        for ticket in tickets {
+                            self.handle(Input::PluginStopped { ticket });
+                        }
                     }
                 }
+                Ok(Msg::PluginLoaded { ticket, loaded }) => {
+                    let input = match (loaded, &mut self.plugins) {
+                        (Ok(loaded), Some(side)) => {
+                            // Loaded again, it is the same plugin under another number.
+                            let which = match side.ids.get(&ticket) {
+                                Some((_, times)) => (loaded.id, times + 1),
+                                None => (loaded.id, 0),
+                            };
+                            side.ids.insert(ticket, which);
+                            side.ready.insert(ticket, loaded);
+                            Input::PluginLoaded { ticket }
+                        }
+                        (Ok(_), None) => Input::PluginUnreadable { ticket },
+                        (Err(e), _) => {
+                            eprintln!("meloet: a plugin did not load: {e}");
+                            Input::PluginUnreadable { ticket }
+                        }
+                    };
+                    self.handle(input);
+                }
+                Ok(Msg::Sf2(done)) => {
+                    let input = match done {
+                        Sf2Done::Added(Ok(info)) => {
+                            self.audio.sf2.added(info.clone());
+                            Input::Sf2Added(Box::new(info))
+                        }
+                        Sf2Done::Added(Err(file)) => Input::Sf2NotAdded { file },
+                        Sf2Done::Loaded(key, Ok(bank)) => {
+                            self.audio.sf2.keep(key.clone(), bank);
+                            Input::Sf2Loaded(key)
+                        }
+                        Sf2Done::Loaded(key, Err(e)) => {
+                            eprintln!(
+                                "meloet: preset {}:{} of {} does not read: {e}",
+                                key.bank, key.program, key.file
+                            );
+                            self.audio.sf2.unreadable(&key);
+                            Input::Sf2Unreadable(key)
+                        }
+                    };
+                    self.handle(input);
+                }
+                #[cfg(test)]
+                Ok(Msg::Peek(look)) => look(&mut self),
                 Err(RecvTimeoutError::Timeout) => {}
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -1392,6 +1585,7 @@ impl Worker {
                             if let Some(midi) = &mut self.midi {
                                 midi.feed(self.links.midi_sink(feed));
                             }
+                            inputs.push_back(Input::PluginsLost);
                         }
                     }
                     Effect::CloseOutput => self.audio.close(&self.shared.stream),
@@ -1403,6 +1597,10 @@ impl Worker {
                     Effect::RetryAudio { after } => {
                         self.audio_retry_at = Some(Instant::now() + after);
                     }
+                    Effect::Engine(EngineOp::Plug { ticket, spot }) => self.plug(ticket, spot),
+                    Effect::Engine(EngineOp::PlugSample { ticket, group }) => {
+                        self.plug_sample(ticket, group);
+                    }
                     Effect::Engine(op) => self.audio.op(op),
                     Effect::LiveNotes(notes) => self.hub.live_notes(notes),
                     Effect::SaveSettings(settings) => {
@@ -1413,7 +1611,9 @@ impl Worker {
                         }
                     }
                     Effect::SaveSong { song, to } => {
-                        inputs.push_back(save_song(self.songs_dir.as_deref(), &song, to));
+                        if let Some(saved) = self.save_song(song, to) {
+                            inputs.push_back(saved);
+                        }
                     }
                     Effect::ReadSong { path, previous } => {
                         inputs.push_back(read_song(path, previous));
@@ -1490,9 +1690,69 @@ impl Worker {
                             inputs.push_back(Input::PluginPlacePicked(None));
                         }
                     }
-                    // No track or insert holds a plugin yet, so there is no process to ask.
-                    Effect::ReloadPlugin { .. } | Effect::UnloadPlugin { .. } => {}
+                    Effect::LoadPlugin {
+                        ticket,
+                        key,
+                        bundle,
+                        state,
+                        sample_rate,
+                    } => {
+                        if !self.load_plugin(ticket, &key, bundle, state, sample_rate) {
+                            inputs.push_back(Input::PluginUnreadable { ticket });
+                        }
+                    }
+                    Effect::DropPlugin { ticket } => {
+                        if let Some(side) = &mut self.plugins
+                            && let Some(loaded) = side.ready.remove(&ticket)
+                        {
+                            side.ids.remove(&ticket);
+                            // The engine's end first; it never was in the engine.
+                            let id = loaded.id;
+                            drop(loaded);
+                            side.hosts.unload(id, Box::new(|_| {}));
+                        }
+                    }
+                    Effect::SetPluginState { ticket, state } => {
+                        if let Some(side) = &self.plugins
+                            && let Some((id, _)) = side.ids.get(&ticket)
+                        {
+                            side.hosts.set_state(*id, state.to_vec(), Box::new(|_| {}));
+                        }
+                    }
+                    Effect::ReloadPlugin { ticket } => {
+                        let id = (self.plugins.as_ref())
+                            .and_then(|side| Some((side, side.ids.get(&ticket)?.0)));
+                        match id {
+                            Some((side, id)) => {
+                                let block = self.audio.handle.plugin_block().clone();
+                                side.hosts.reload(id, block, self.loaded_sink(ticket));
+                            }
+                            None => inputs.push_back(Input::PluginUnreadable { ticket }),
+                        }
+                    }
+                    Effect::LoadSf2(key) => {
+                        let rate = self.audio.handle.meters().sample_rate();
+                        self.audio.sf2.load(key, rate);
+                    }
+                    Effect::DropSf2(key) => self.audio.sf2.let_go(&key),
+                    Effect::PickSf2 => {
+                        let folder = dirs::home_dir().filter(|d| d.is_dir());
+                        if !self.ask_shell(ShellRequest::PickSf2 { folder }) {
+                            inputs.push_back(Input::Sf2Picked(None));
+                        }
+                    }
+                    Effect::AddSf2(path) => {
+                        if !self.audio.sf2.add(path.clone()) {
+                            let file = path.file_name().unwrap_or_default();
+                            inputs.push_back(Input::Sf2NotAdded {
+                                file: file.to_string_lossy().into_owned(),
+                            });
+                        }
+                    }
                 }
+            }
+            if let Some(side) = &mut self.plugins {
+                side.unload_gone();
             }
         }
         self.shared
@@ -1515,6 +1775,126 @@ impl Worker {
         self.hub.publish(self.model.view())
     }
 
+    /// Where the answer to a load goes: to the core thread, from the plugins' thread.
+    fn loaded_sink(&self, ticket: u64) -> Box<dyn FnOnce(Result<Loaded, HostError>) + Send> {
+        let tx = self.links.tx.clone();
+        Box::new(move |loaded| {
+            let _ = tx.send(Msg::PluginLoaded { ticket, loaded });
+        })
+    }
+
+    /// [`Effect::LoadPlugin`]. Returns whether the load was asked for.
+    fn load_plugin(
+        &self,
+        ticket: u64,
+        key: &str,
+        bundle: PathBuf,
+        state: PlugState,
+        sample_rate: u32,
+    ) -> bool {
+        let (Some(side), Ok(key)) = (&self.plugins, key.parse::<PluginKey>()) else {
+            return false;
+        };
+        let start = match state {
+            PlugState::Fresh => StartState::Fresh,
+            PlugState::Bytes(state) => StartState::Bytes(state.to_vec()),
+            PlugState::Of(other) => match side.ids.get(&other) {
+                Some((id, _)) => StartState::Of(*id),
+                None => StartState::Fresh,
+            },
+        };
+        let spec = LoadSpec {
+            key,
+            bundle,
+            sample_rate,
+        };
+        let block = self.audio.handle.plugin_block().clone();
+        (side.hosts).load_with(spec, start, block, self.loaded_sink(ticket));
+        true
+    }
+
+    /// `EngineOp::Plug`: the plugin loaded under the ticket goes into the engine.
+    fn plug(&mut self, ticket: u64, spot: Spot) {
+        let Some((slot, which, tell)) = self.plugins.as_mut().and_then(|s| s.take(ticket)) else {
+            return;
+        };
+        match spot {
+            Spot::Seat(seat) | Spot::Trial(seat) => {
+                let plugin = Box::new(HousedInstrument::new(slot, which, tell));
+                (self.audio).plug_instrument(seat, matches!(spot, Spot::Trial(_)), plugin);
+            }
+            Spot::Insert(strip, slot_at) => {
+                let plugin = Box::new(HousedEffect::new(slot, which, tell));
+                self.audio.plug_effect(strip, slot_at, plugin);
+            }
+            // A sample comes with its phrase (`EngineOp::PlugSample`).
+            Spot::Sample => {}
+        }
+    }
+
+    /// `EngineOp::PlugSample`: the plugin plays the phrase of the group on the sample seat.
+    fn plug_sample(&mut self, ticket: u64, group: InstrumentGroup) {
+        let Some((slot, which, tell)) = self.plugins.as_mut().and_then(|s| s.take(ticket)) else {
+            return;
+        };
+        let plugin = Box::new(HousedInstrument::new(slot, which, tell));
+        if self.audio.stream.is_some() {
+            let player = PhrasePlayer::new(plugin, phrases::for_group(group));
+            if self.audio.handle.play_sample(Box::new(player)).is_err() {
+                eprintln!("meloet: the engine did not take the sample");
+            }
+        }
+    }
+
+    /// [`Effect::SaveSong`]. With plugins in the song their states are asked for first, all
+    /// at once, and the song is written on a thread of its own once they have answered or
+    /// [`STATE_WAIT`] is over: the answer then comes later, as a message. Without plugins
+    /// the song is written here and the answer is returned.
+    fn save_song(&mut self, song: Box<Song>, to: SaveTo) -> Option<Input> {
+        let songs_dir = self.songs_dir.clone();
+        let asked: Vec<(PluginPlace, SlotId)> = match &self.plugins {
+            Some(side) => (self.model.plugin_tickets().into_iter())
+                .filter_map(|(place, ticket)| Some((place, side.ids.get(&ticket)?.0)))
+                .collect(),
+            None => Vec::new(),
+        };
+        let Some(side) = self.plugins.as_ref().filter(|_| !asked.is_empty()) else {
+            return Some(save_song(songs_dir.as_deref(), &song, to));
+        };
+        let (states, answers) = mpsc::channel();
+        for &(place, id) in &asked {
+            let states = states.clone();
+            let done = move |state| {
+                let _ = states.send((place, state));
+            };
+            side.hosts.state(id, Box::new(done));
+        }
+        drop(states);
+        let tx = self.links.tx.clone();
+        let saver = std::thread::Builder::new()
+            .name("meloet-save".into())
+            .spawn(move || {
+                let until = Instant::now() + STATE_WAIT;
+                let mut song = *song;
+                // Ends early when every plugin has answered: the senders are gone then.
+                while let Ok((place, state)) =
+                    answers.recv_timeout(until.saturating_duration_since(Instant::now()))
+                {
+                    if let Ok(state) = state {
+                        with_plugin_state(&mut song, place, state);
+                    }
+                }
+                let _ = tx.send(Msg::Input(save_song(songs_dir.as_deref(), &song, to), None));
+            });
+        match saver {
+            Ok(_) => None,
+            Err(e) => {
+                eprintln!("meloet: the song was not saved: {e}");
+                Some(Input::SongNotSaved)
+            }
+        }
+    }
+
     /// Returns whether there was a shell to ask.
     fn ask_shell(&self, request: ShellRequest) -> bool {
         match &*lock(&self.shared.shell) {
@@ -1534,6 +1914,20 @@ impl Worker {
             .map(PathBuf::from)
             .or_else(|| self.songs_dir.clone())
             .filter(|d| d.is_dir())
+    }
+}
+
+/// The song with `state` as the state of the plugin at `place`: what a save writes. The
+/// song itself keeps the state it knows.
+fn with_plugin_state(song: &mut Song, place: PluginPlace, state: Vec<u8>) {
+    let Some(key) = song.doc.plugin(place).map(|p| p.key.clone()) else {
+        return;
+    };
+    if state.is_empty() {
+        return;
+    }
+    if let Ok(edit) = set_plugin_state(&song.doc, place, &key, state.into(), PluginChange::Window) {
+        song.doc = edit.doc;
     }
 }
 
@@ -1611,6 +2005,9 @@ impl Worker {
     fn housekeeping(&mut self, last: bool) {
         self.poll_engine();
         self.audio.handle.drop_retired();
+        if let Some(side) = &mut self.plugins {
+            side.unload_gone();
+        }
         let mut samples = Vec::new();
         while let Some(record) = self.audio.handle.pop_latency() {
             if let Some(ms) = key_to_sound_ms(record) {
@@ -1771,5 +2168,7 @@ fn steady_load(open: bool, permille: u32, last: Option<&Telemetry>) -> u16 {
     }
 }
 
+#[cfg(test)]
+mod plug_tests;
 #[cfg(test)]
 mod tests;

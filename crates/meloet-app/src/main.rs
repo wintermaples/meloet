@@ -18,7 +18,9 @@ use meloet_protocol::{
 };
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, LogicalSize, Manager, RunEvent, State, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, DragDropEvent, LogicalSize, Manager, RunEvent, State, WebviewWindow, WindowEvent,
+};
 
 use crate::core_handle::CoreHandle;
 
@@ -301,6 +303,7 @@ fn shell_request(
         ShellRequest::PickFolder { folder } => (pcwindow::Pick::Folder, folder),
         ShellRequest::PickPluginPlace { folder } => (pcwindow::Pick::PluginPlace, folder),
         ShellRequest::PickSaveAs { folder, name } => (pcwindow::Pick::SaveAs { name }, folder),
+        ShellRequest::PickSf2 { folder } => (pcwindow::Pick::Sf2, folder),
     };
     let answer = {
         let (core, pick) = (core.clone(), pick.clone());
@@ -311,6 +314,7 @@ fn shell_request(
                     pcwindow::Pick::Folder => core.folder_picked(path),
                     pcwindow::Pick::PluginPlace => core.plugin_place_picked(path),
                     pcwindow::Pick::SaveAs { .. } => core.save_as_picked(path),
+                    pcwindow::Pick::Sf2 => core.sf2_picked(path),
                 }
             }
         }
@@ -371,6 +375,24 @@ fn main() {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         closing.close_requested();
+                    }
+                });
+                // Files held over the window and let go of there (an SF2 file to add). The
+                // core decides what they are; the screen only shows what the core says.
+                let dropping = window_side.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::DragDrop(drag) = event {
+                        match drag {
+                            DragDropEvent::Enter { paths, .. } => {
+                                dropping.files_over(paths.clone());
+                            }
+                            DragDropEvent::Drop { paths, .. } => {
+                                dropping.files_dropped(paths.clone());
+                            }
+                            DragDropEvent::Leave => dropping.files_left(),
+                            // `Over` only moves; the enum may grow.
+                            _ => {}
+                        }
                     }
                 });
             }

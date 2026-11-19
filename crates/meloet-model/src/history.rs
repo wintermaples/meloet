@@ -74,6 +74,12 @@ pub enum StepKind {
     SetInstrument {
         track: TrackId,
     },
+    /// 「曲から外す」 on a notice of something this PC does not have: `tracks` tracks sound as
+    /// the sine wave from now on, and `inserts` insert slots are empty.
+    RemoveMissing {
+        tracks: u32,
+        inserts: u32,
+    },
     /// The write tool. `clip_made`: the clip was made for the note.
     WriteNote {
         clip: ClipId,
@@ -316,6 +322,12 @@ impl History {
 
     pub fn mark_saved(&mut self) {
         self.saved = self.version;
+    }
+
+    /// The `Doc` that had `version` is the one that was saved: a save that takes a while
+    /// does not count the steps made meanwhile as saved.
+    pub fn mark_saved_at(&mut self, version: u64) {
+        self.saved = version;
     }
 
     pub fn has_unsaved_changes(&self) -> bool {

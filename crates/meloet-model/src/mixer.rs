@@ -438,6 +438,67 @@ pub fn remove_effect(doc: &Doc, strip: StripId, slot: usize) -> Result<Edit, Edi
     })
 }
 
+/// What 「曲から外す」 names: every preset of an SF2 file, or a plugin by its exact key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Missing<'a> {
+    Sf2(&'a str),
+    Plugin(&'a str),
+}
+
+/// Takes `missing` out of the song: every track that sounds with it gets the sine wave (its
+/// name and its notes stay), and every insert slot that holds it is emptied. `Unchanged`
+/// when the song does not use it.
+pub fn remove_missing(doc: &Doc, missing: Missing) -> Result<Edit, EditError> {
+    let uses = |instrument: &InstrumentRef| match (instrument, missing) {
+        (InstrumentRef::Sf2(s), Missing::Sf2(file)) => &*s.file == file,
+        (InstrumentRef::Plugin(p), Missing::Plugin(key)) => &*p.key == key,
+        _ => false,
+    };
+    let held = |insert: &Option<Insert>| {
+        let plugin = insert.as_ref().and_then(Insert::plugin_ref);
+        matches!((plugin, missing), (Some(p), Missing::Plugin(key)) if &*p.key == key)
+    };
+    let (mut tracks, mut inserts) = (0, 0);
+    let mut empty = |channel: &mut Channel| {
+        for slot in channel.inserts.iter_mut().filter(|slot| held(slot)) {
+            *slot = None;
+            inserts += 1;
+        }
+    };
+    let mut new = doc.clone();
+    for slot in &mut new.tracks {
+        if !uses(&slot.instrument) && !slot.channel.inserts.iter().any(held) {
+            continue;
+        }
+        let mut track = Track::clone(slot);
+        if uses(&track.instrument) {
+            track.instrument = InstrumentRef::SINE;
+            tracks += 1;
+        }
+        empty(&mut track.channel);
+        *slot = Arc::new(track);
+    }
+    for slot in &mut new.returns {
+        if slot.channel.inserts.iter().any(held) {
+            let mut ret = Return::clone(slot);
+            empty(&mut ret.channel);
+            *slot = Arc::new(ret);
+        }
+    }
+    if new.master.inserts.iter().any(held) {
+        let mut master = Channel::clone(&new.master);
+        empty(&mut master);
+        new.master = Arc::new(master);
+    }
+    if tracks + inserts == 0 {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: new,
+        step: StepKind::RemoveMissing { tracks, inserts },
+    })
+}
+
 impl Doc {
     /// The plugin at `place`; `None` when something else is there, or nothing.
     pub fn plugin(&self, place: PluginPlace) -> Option<&Arc<PluginRef>> {

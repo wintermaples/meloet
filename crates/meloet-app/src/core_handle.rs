@@ -44,6 +44,18 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// The answer of the PC's save window. Does not wait.
     fn save_as_picked(&self, path: Option<PathBuf>);
 
+    /// The answer of the PC's open window for an SF2 file. Does not wait.
+    fn sf2_picked(&self, path: Option<PathBuf>);
+
+    /// Files are held over the window. Does not wait.
+    fn files_over(&self, paths: Vec<PathBuf>);
+
+    /// The files held over the window left it, or the drag was given up. Does not wait.
+    fn files_left(&self);
+
+    /// The files held over the window were let go of there. Does not wait.
+    fn files_dropped(&self, paths: Vec<PathBuf>);
+
     /// The PC is ending: waits up to `timeout` for the recovery file. Returns whether it was
     /// written in time (or there was nothing to write).
     fn pc_ending(&self, timeout: Duration) -> bool;
@@ -96,6 +108,22 @@ impl CoreHandle for meloet_core::Core {
 
     fn save_as_picked(&self, path: Option<PathBuf>) {
         meloet_core::Core::save_as_picked(self, path);
+    }
+
+    fn sf2_picked(&self, path: Option<PathBuf>) {
+        meloet_core::Core::sf2_picked(self, path);
+    }
+
+    fn files_over(&self, paths: Vec<PathBuf>) {
+        meloet_core::Core::files_over(self, paths);
+    }
+
+    fn files_left(&self) {
+        meloet_core::Core::files_left(self);
+    }
+
+    fn files_dropped(&self, paths: Vec<PathBuf>) {
+        meloet_core::Core::files_dropped(self, paths);
     }
 
     fn pc_ending(&self, timeout: Duration) -> bool {

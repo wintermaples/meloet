@@ -9,7 +9,7 @@ use meloet_protocol::InstrumentKind;
 use meloet_sound::sampler::{SampleBank, Sampler};
 use meloet_sound::synth::{ElectroKit, PolySynth};
 
-use crate::added::builtin_or_sine;
+use crate::sf2store::Sf2Key;
 
 /// Whether the instrument sounds with samples of the sound pack. The others are computed and
 /// are always there.
@@ -29,6 +29,11 @@ pub(crate) struct Sounds {
     pub installed: Vec<BuiltinInstrument>,
     pub loaded: Vec<BuiltinInstrument>,
     pub loading: Vec<BuiltinInstrument>,
+    /// The presets of the SF2 files that were added, and which of them are in memory or on
+    /// their way there.
+    pub sf2_listed: Vec<Sf2Key>,
+    pub sf2_loaded: Vec<Sf2Key>,
+    pub sf2_loading: Vec<Sf2Key>,
 }
 
 impl Sounds {
@@ -48,6 +53,22 @@ impl Sounds {
     /// the pack does not have it (it then sounds as the sine wave).
     pub fn ready(&self, instrument: BuiltinInstrument) -> bool {
         !self.installed.contains(&instrument) || self.loaded.contains(&instrument)
+    }
+
+    /// The same for an SF2 preset: its samples are in memory, or no added file has it.
+    pub fn sf2_ready(&self, key: &Sf2Key) -> bool {
+        !self.sf2_listed.contains(key) || self.sf2_loaded.contains(key)
+    }
+
+    /// The rows of the shelf's own instruments. Without the sound pack only the sine wave
+    /// is offered (spec 3, 85), though the other computed sounds still sound in a song.
+    pub fn shelf_rows(&self) -> Vec<BuiltinInstrument> {
+        let available = self.available();
+        if available.iter().any(|i| sampled(*i)) {
+            available
+        } else {
+            vec![BuiltinInstrument::Sine]
+        }
     }
 }
 
@@ -76,9 +97,23 @@ impl Instrument for Silent {
 /// handle prepares what it gets. `samples`: those of this instrument. A sampled instrument
 /// the pack does not have (a song from a PC that has it) sounds as the sine wave, so that
 /// its track is not silent and nobody takes its notes for lost.
+///
+/// An SF2 preset goes the same way with the samples of its file. A plugin is not made here:
+/// until it is loaded and put on the seat (`EngineOp::Plug`) its seat is silent. A plugin
+/// this PC does not have never comes here; the rules ask for the sine wave in its place.
 pub(crate) fn make(instrument: &InstrumentRef, samples: Samples) -> Box<dyn Instrument> {
     use BuiltinInstrument as B;
-    let builtin = builtin_or_sine(instrument);
+    let builtin = match instrument {
+        InstrumentRef::Builtin(b) => *b,
+        InstrumentRef::Plugin(_) => return Box::new(Silent),
+        InstrumentRef::Sf2(_) => {
+            return match samples {
+                Samples::Ready(bank) => Box::new(Sampler::new(bank)),
+                Samples::NotRead => Box::new(Silent),
+                Samples::NotInstalled => Box::new(PlaceholderSynth::new()),
+            };
+        }
+    };
     match (builtin, samples) {
         (B::SynthLead, _) => Box::new(PolySynth::lead()),
         (B::SynthBass, _) => Box::new(PolySynth::bass()),

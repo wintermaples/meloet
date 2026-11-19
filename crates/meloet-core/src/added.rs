@@ -140,6 +140,27 @@ fn insert_view(insert: &Insert, plugin: PluginState) -> InsertView {
     }
 }
 
+/// The exact key of every plugin the song holds, instruments and effects.
+pub(crate) fn plugin_keys(doc: &Doc) -> Vec<&str> {
+    fn of(inserts: &Inserts) -> impl Iterator<Item = &str> {
+        (inserts.iter().flatten())
+            .filter_map(Insert::plugin_ref)
+            .map(|p| &*p.key)
+    }
+    let mut keys = Vec::new();
+    for t in &doc.tracks {
+        if let InstrumentRef::Plugin(p) = &t.instrument {
+            keys.push(&*p.key);
+        }
+        keys.extend(of(&t.channel.inserts));
+    }
+    for r in &doc.returns {
+        keys.extend(of(&r.channel.inserts));
+    }
+    keys.extend(of(&doc.master.inserts));
+    keys
+}
+
 fn has_sf2(library: &LibraryView, file: &str, bank: u16, program: u8) -> bool {
     library.sf2.iter().any(|f| {
         f.file == file && (f.presets.iter()).any(|p| p.bank == bank && p.program == program)

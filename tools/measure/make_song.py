@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes a song file for measuring: one track, one clip with one take of N notes.
+"""Writes a song file (version 6) for measuring: one track, one clip with one take of N notes.
 
 usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16] [--tempo 96]
                                              [--cc 0] [--seed 1] [--tracks N]
@@ -14,7 +14,7 @@ usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16
                                              [--lanes volume,pan,send:a,send:b,plugin:PARAM,effect:PARAM,builtin:EFFECT.ID]
                                              [--lane-points 16] [--lane-resting] [--lane-tracks 1,4]
 
---tracks N (1..64): a version 3 song with N tracks, each with one clip and one take of --notes
+--tracks N (1..64): a song with N tracks, each with one clip and one take of --notes
 notes. The instruments go round BAND (the groups mixed), with the sends a new track of that
 group gets, an EQ and a compressor on some tracks, a reverb on return A, a delay on return B
 and the limiter on the master (every parameter at its default). The first track keeps the ids
@@ -22,7 +22,7 @@ and the limiter on the master (every parameter at its default). The first track 
 
 --instruments (with --tracks): what each track sounds with, in the order of the tracks; the last
 word goes on for the tracks after it ("plugin": every track; "plugin,builtin": the first one).
-The song is then version 4. "plugin" is the instrument --plugin names and "sf2" the preset --sf2
+"plugin" is the instrument --plugin names and "sf2" the preset --sf2
 names (the file itself has to be in meloet's SF2 folder, $MELOET_SF2_DIR or
 $XDG_DATA_HOME/meloet/sf2; only its name, its sha256 and the preset go into the song). Plugins
 are looked up by their name in a scan record (--scan, <XDG_CACHE_HOME>/meloet/plugins/scan.json);
@@ -34,15 +34,15 @@ case of their own, docs/measurements/2026-11-19-round5-plughost.md). --hard-pan:
 tracks all the way left, the others all the way right, no sends and no built-in inserts, so
 that a recording of the output tells the two apart (plugin-stop.sh).
 
---tempo-points, --head-ramp, --meter-changes and --markers make the song version 5 (either
-shape): tempo points at ticks (TICKS_PER_QUARTER to a quarter note; "ramp": a straight line to the next
-point; --head-ramp: from the song's head to the first point), meter changes at the heads of
+--tempo-points, --head-ramp, --meter-changes and --markers (either shape): tempo points at
+ticks (TICKS_PER_QUARTER to a quarter note; "ramp": a straight line to the next point;
+--head-ramp: from the song's head to the first point), meter changes at the heads of
 bars (bars count from 0, so 8 is the bar shown as 9), markers at ticks. The notes stay where
 they are in ticks: --bars still counts bars of 4/4. Example, the spec's 104 to 120 over bars
 5 to 9 and 3/4 from bar 9: --tempo-points T5:104:ramp,T9:120 --meter-changes 8:3/4, where T5 is
 16 * TICKS_PER_QUARTER (the head of bar 5) and T9 is 32 * TICKS_PER_QUARTER.
 
---lanes makes the song version 5 too: automation lanes on every track, in the order given.
+--lanes: automation lanes on every track, in the order given.
 "volume", "pan", "send:a" and "send:b"; "plugin:PARAM" a parameter of the instrument by the
 plugin's own number (only on the "plugin" tracks); "effect:PARAM" a parameter of the
 --effect-plugin insert (only on the tracks that have it); "builtin:EFFECT.ID" the parameter of
@@ -52,16 +52,21 @@ from its start, with values (the place of the knob, 0..1) from --seed. --lane-re
 lanes rest (spec 3, 17-A). --lane-tracks: only the tracks of these places (from 1, in the
 order of the tracks) get the lanes.
 
-Without --tracks the shape is crates/meloet-core/src/songfile.rs, version 1. The clip starts at the song's start
+The shape is crates/meloet-core/src/songfile.rs, version 6 (a tempo is quarter notes a minute
+whatever the meter). Without --tracks the track has the sine and the mixer is left out (read
+as a new song's). The clip starts at the song's start
 and is --bars bars of 4/4 long. Notes are spread over the clip in start order, keys 48..84,
 lengths of a 16th to a half note (never past the clip's end), velocity 40..100. --cc puts that
 many sustain (CC 64) points in the take, evenly. The same arguments always write the same file.
 """
 import argparse, hashlib, json, os, random, sys
 
-TICKS_PER_QUARTER = 480
+TICKS_PER_QUARTER = 1920
 TICKS_PER_BAR = 4 * TICKS_PER_QUARTER
 TRACK, CLIP, TAKE = 1, 2, 3
+# crates/meloet-core/src/songfile.rs, VERSION.
+VERSION = 6
+NO_TIMELINE = {"headRamp": False, "tempoPoints": [], "meterChanges": [], "markers": [], "loop": None}
 LENGTHS = [TICKS_PER_QUARTER // 4, TICKS_PER_QUARTER // 2, TICKS_PER_QUARTER, 2 * TICKS_PER_QUARTER]
 
 
@@ -129,9 +134,8 @@ def sf2_preset(text):
 
 def band_song(tracks, notes, bars, tempo, cc, seed, instruments=(), plugin=None, sf2=None,
               effect=None, stagger=0, hard_pan=False):
-    """Version 3: `tracks` tracks, ids 1 + 3 i (track), 2 + 3 i (clip), 3 + 3 i (take).
-
-    Version 4 when `instruments` (the words of --instruments) names what the tracks sound with.
+    """`tracks` tracks, ids 1 + 3 i (track), 2 + 3 i (clip), 3 + 3 i (take). `instruments`
+    (the words of --instruments) names what the tracks sound with.
     """
     length = bars * TICKS_PER_BAR
     controls = [[(i * length) // max(cc, 1), 64, 127 if i % 2 == 0 else 0] for i in range(cc)]
@@ -173,13 +177,13 @@ def band_song(tracks, notes, bars, tempo, cc, seed, instruments=(), plugin=None,
         })
     return {
         "format": "meloet-song",
-        "version": 4 if instruments else 3,
+        "version": VERSION,
         "app": "tools/measure/make_song.py",
         "song": {
             "name": f"測る曲 {tracks} トラック {notes} ノート",
             "tempo": round(tempo * 100),
             "meter": [4, 4],
-            "tempoChanges": [],
+            **NO_TIMELINE,
             "nextId": 3 * tracks + 1,
             "tracks": track_list,
             "mixer": {
@@ -190,7 +194,7 @@ def band_song(tracks, notes, bars, tempo, cc, seed, instruments=(), plugin=None,
             "audio": [],
         },
         "takes": takes,
-        "session": {"playTarget": TRACK, "loop": None, "loopOn": False},
+        "session": {"playTarget": TRACK, "loopOn": False},
     }
 
 
@@ -203,19 +207,19 @@ def song(notes, bars, tempo, cc, seed):
         controls.append([(i * length) // max(cc, 1), 64, 127 if i % 2 == 0 else 0])
     return {
         "format": "meloet-song",
-        "version": 1,
+        "version": VERSION,
         "app": "tools/measure/make_song.py",
         "song": {
             "name": f"測る曲 {notes} ノート",
             "tempo": round(tempo * 100),
             "meter": [4, 4],
-            "tempoChanges": [],
+            **NO_TIMELINE,
             "nextId": TAKE + 1,
             "tracks": [{
                 "id": TRACK,
                 "name": "ピアノ",
                 "color": 1,
-                "instrument": {"kind": "placeholder"},
+                "instrument": {"kind": "builtin", "name": "sine"},
                 "gainDb": 0.0,
                 "clips": [{
                     "id": CLIP,
@@ -231,7 +235,7 @@ def song(notes, bars, tempo, cc, seed):
             "audio": [],
         },
         "takes": [{"id": TAKE, "length": length, "notes": made, "controls": controls}],
-        "session": {"playTarget": TRACK, "armed": TRACK, "loop": None, "loopOn": False},
+        "session": {"playTarget": TRACK, "loopOn": False},
     }
 
 
@@ -278,17 +282,13 @@ def markers(text, first_id):
 
 
 def with_timeline(made, points, head_ramp, changes, marks):
-    """The song as version 5 (crates/meloet-core/src/songfile.rs): the loop's range is in the
-    song, and the seat `tempoChanges` of the older versions is gone."""
-    doc, session = made["song"], made["session"]
-    made["version"] = 5
-    del doc["tempoChanges"]
+    """The song with tempo points, meter changes and markers."""
+    doc = made["song"]
     doc["headRamp"] = head_ramp
     doc["tempoPoints"] = points
     doc["meterChanges"] = changes
     doc["markers"] = markers(marks, doc["nextId"]) if marks else []
     doc["nextId"] += len(doc["markers"])
-    doc["loop"] = session.pop("loop")
     return made
 
 

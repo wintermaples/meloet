@@ -17,7 +17,7 @@ use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, SlotAuto, Strip};
 use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::rt;
 use crate::transport::{Click, Lane, Sequence, TrackSet};
-use meloet_model::{AutoTarget, Beat, Meter, Tempo, TempoMap, Timeline};
+use meloet_model::{AutoTarget, Beat, Meter, TICKS_PER_QUARTER, Tempo, TempoMap, Timeline};
 use meloet_plugin::ipc::Transport as PluginTransport;
 
 const COMMAND_RING: usize = 256;
@@ -26,7 +26,7 @@ const LATENCY_RING: usize = 1024;
 const RECORDED_RING: usize = 4096;
 const MAP_RING: usize = 16;
 /// Ticks per second for one quarter note per minute.
-const TICKS_PER_S_PER_BPM: f64 = 8.0;
+const TICKS_PER_S_PER_BPM: f64 = TICKS_PER_QUARTER as f64 / 60.0;
 
 /// Microseconds on `CLOCK_MONOTONIC`: the clock of [`MidiIn::t_us`] and of [`BlockTiming`].
 pub fn monotonic_us() -> u64 {
@@ -198,7 +198,8 @@ pub enum EngineCommand {
     Play {
         from: u64,
     },
-    /// Count `count_in_beats` beats, then record from `from`. The tracks in `muted` do not play
+    /// Count `count_in_beats` clicks of the metronome ([`Meter::ticks_per_click`]), then record
+    /// from `from`. The tracks in `muted` do not play
     /// their sequence while recording.
     Record {
         from: u64,
@@ -537,6 +538,8 @@ struct Transport {
     record_from: u64,
     /// Ticks per beat of the meter at `record_from`.
     record_beat: u32,
+    /// Ticks per click of the metronome there.
+    record_click: u32,
     /// Where the current play or recording started; a stop that cannot be placed returns here.
     run_from: u64,
     muted: TrackSet,
@@ -552,7 +555,7 @@ struct Transport {
 }
 
 /// The count-in is not on the map: it is a straight line at the tempo and meter of the place
-/// the recording starts from, and its beats are that meter's beats, carried on backwards.
+/// the recording starts from, and its clicks are that meter's clicks, carried on backwards.
 #[derive(Clone, Copy, Default)]
 struct CountIn {
     ticks_per_s: f64,
@@ -560,8 +563,8 @@ struct CountIn {
     end_frame: u64,
     /// The head of the bar `record_from` is in.
     bar_tick: i64,
-    ticks_per_beat: i64,
-    beats_per_bar: i64,
+    ticks_per_click: i64,
+    clicks_per_bar: i64,
 }
 
 /// A position within a millionth of a tick of a whole tick is that tick: the last bits of the
@@ -712,7 +715,8 @@ impl Transport {
             cut_tick: None,
             cut_frame: u64::MAX,
             record_from: 0,
-            record_beat: 480,
+            record_beat: TICKS_PER_QUARTER as u32,
+            record_click: TICKS_PER_QUARTER as u32,
             run_from: 0,
             muted: TrackSet::default(),
             silent: TrackSet::default(),
@@ -759,7 +763,7 @@ impl Transport {
         match self.state {
             TransportState::Stopped => 0.0,
             TransportState::CountIn => self.count_in.ticks_per_s,
-            _ => self.map.quarter_bpm_at(tick) * TICKS_PER_S_PER_BPM,
+            _ => self.map.tempo_at(tick) * TICKS_PER_S_PER_BPM,
         }
     }
 
@@ -775,26 +779,26 @@ impl Transport {
         self.frames = 0;
         self.passed_tick = tick;
         self.before_loop_end = tick < self.loop_end as f64;
-        self.record_beat = self.map.meter_at(self.record_from).meter.ticks_per_beat() as u32;
+        self.aim_record_beat();
         if self.state == TransportState::CountIn {
             let at = self.map.meter_at(self.record_from);
             self.count_in = CountIn {
-                ticks_per_s: self.map.quarter_bpm_at(self.record_from as f64) * TICKS_PER_S_PER_BPM,
+                ticks_per_s: self.map.tempo_at(self.record_from as f64) * TICKS_PER_S_PER_BPM,
                 end_frame: 0,
                 bar_tick: at.bar_tick as i64,
-                ticks_per_beat: at.meter.ticks_per_beat() as i64,
-                beats_per_bar: i64::from(at.meter.num()),
+                ticks_per_click: at.meter.ticks_per_click() as i64,
+                clicks_per_bar: i64::from(at.meter.clicks_per_bar()),
             };
             self.count_in.end_frame = self.frame_of(self.record_from as f64);
             let c = &self.count_in;
-            let beats = ((tick - c.bar_tick as f64) / c.ticks_per_beat as f64).ceil() as i64;
+            let beats = ((tick - c.bar_tick as f64) / c.ticks_per_click as f64).ceil() as i64;
             self.next_click = Beat {
-                tick: c.bar_tick + beats * c.ticks_per_beat,
-                downbeat: beats.rem_euclid(c.beats_per_bar) == 0,
+                tick: c.bar_tick + beats * c.ticks_per_click,
+                downbeat: beats.rem_euclid(c.clicks_per_bar) == 0,
             };
             self.cut_tick = None;
         } else {
-            self.next_click = self.map.next_beat(tick);
+            self.next_click = self.map.next_click(tick);
             self.cut_tick = self.map.next_change(tick);
         }
         self.click_frame = self.frame_of(self.next_click.tick as f64);
@@ -802,6 +806,12 @@ impl Transport {
             .cut_tick
             .map_or(u64::MAX, |cut| self.frame_of(cut as f64));
         self.aim_loop();
+    }
+
+    fn aim_record_beat(&mut self) {
+        let meter = self.map.meter_at(self.record_from).meter;
+        self.record_beat = meter.ticks_per_beat() as u32;
+        self.record_click = meter.ticks_per_click() as u32;
     }
 
     fn aim_loop(&mut self) {
@@ -814,14 +824,14 @@ impl Transport {
     fn advance_click(&mut self) {
         if self.state == TransportState::CountIn {
             let c = &self.count_in;
-            let tick = self.next_click.tick + c.ticks_per_beat;
-            let beats = (tick - c.bar_tick).div_euclid(c.ticks_per_beat);
+            let tick = self.next_click.tick + c.ticks_per_click;
+            let beats = (tick - c.bar_tick).div_euclid(c.ticks_per_click);
             self.next_click = Beat {
                 tick,
-                downbeat: beats.rem_euclid(c.beats_per_bar) == 0,
+                downbeat: beats.rem_euclid(c.clicks_per_bar) == 0,
             };
         } else {
-            self.next_click = self.map.next_beat((self.next_click.tick + 1) as f64);
+            self.next_click = self.map.next_click((self.next_click.tick + 1) as f64);
         }
         self.click_frame = self.frame_of(self.next_click.tick as f64);
     }
@@ -852,12 +862,12 @@ impl Transport {
         if self.loop_active() {
             flags |= PluginTransport::LOOPING;
         }
-        let quarter = 480.0;
+        let quarter = TICKS_PER_QUARTER as f64;
         let tick = self.head_tick();
         let (meter, bar, bar_tick, tempo_bpm, seconds) = if self.state == TransportState::CountIn {
             let c = &self.count_in;
             let at = self.map.meter_at(self.record_from);
-            let per_bar = (c.ticks_per_beat * c.beats_per_bar) as f64;
+            let per_bar = (c.ticks_per_click * c.clicks_per_bar) as f64;
             let bars = ((tick - c.bar_tick as f64) / per_bar).floor();
             let bar_tick = bars * per_bar;
             // Counted back from where the recording starts.
@@ -876,7 +886,7 @@ impl Transport {
                 at.meter,
                 at.bar,
                 at.bar_tick as f64,
-                self.map.quarter_bpm_at(tick),
+                self.map.tempo_at(tick),
                 self.anchor_sec + self.frames as f64 / self.sample_rate,
             )
         };
@@ -1634,8 +1644,8 @@ impl Engine {
                         self.seek_lanes();
                     } else {
                         t.state = TransportState::CountIn;
-                        let beat = t.map.meter_at(from).meter.ticks_per_beat();
-                        t.set_pos(from as f64 - (u64::from(count_in_beats) * beat) as f64);
+                        let click = t.map.meter_at(from).meter.ticks_per_click();
+                        t.set_pos(from as f64 - (u64::from(count_in_beats) * click) as f64);
                     }
                 }
                 EngineCommand::RecordHere { muted } => self.record_here(muted, timing),
@@ -1753,7 +1763,7 @@ impl Engine {
         t.session = t.session.wrapping_add(1);
         t.lap = 0;
         t.record_from = from;
-        t.record_beat = t.map.meter_at(from).meter.ticks_per_beat() as u32;
+        t.aim_record_beat();
         t.run_from = from;
         t.muted = muted;
         t.state = TransportState::Recording;
@@ -1894,7 +1904,7 @@ impl Engine {
             session: t.session,
             lap: t.lap,
             record_from: t.record_from as i64,
-            ticks_per_beat: t.record_beat,
+            ticks_per_beat: t.record_click,
         };
         self.segment_from = frame;
     }

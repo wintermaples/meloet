@@ -179,7 +179,7 @@ fn a_song_comes_back_as_it_was_and_shares_its_takes() {
 fn the_shape_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
     assert_eq!(v["format"], "meloet-song");
-    assert_eq!(v["version"], 5);
+    assert_eq!(v["version"], 6);
     assert_eq!(v["song"]["tempo"], 12_345);
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
     assert_eq!(
@@ -320,7 +320,7 @@ fn mute_is_saved_and_solo_is_not() {
 }
 
 #[test]
-fn newer_and_broken_files_do_not_read() {
+fn newer_older_and_broken_files_do_not_read() {
     let good: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 3))).unwrap();
     let with = |f: &dyn Fn(&mut serde_json::Value)| {
         let mut v = good.clone();
@@ -328,9 +328,16 @@ fn newer_and_broken_files_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(matches!(
-        with(&|v| v["version"] = 6.into()),
-        Err(ReadError::TooNew { version: 6 })
+        with(&|v| v["version"] = 7.into()),
+        Err(ReadError::TooNew { version: 7 })
     ));
+    // Before version 6 a tick and a tempo meant something else.
+    for version in 1..=5u32 {
+        assert!(matches!(
+            with(&|v| v["version"] = version.into()),
+            Err(ReadError::TooOld { version: v }) if v == version
+        ));
+    }
     assert!(matches!(
         decode(b"{\"format\": \"meloet-song\", \"vers"),
         Err(ReadError::Broken)
@@ -641,69 +648,6 @@ fn origins_that_cannot_be_do_not_read() {
 }
 
 #[test]
-fn a_file_of_version_1_reads() {
-    let v1 = r#"{"format": "meloet-song", "version": 1, "app": "meloet 0.1.0",
- "song": {"name": "はじめての曲", "tempo": 9600, "meter": [4, 4], "tempoChanges": [], "nextId": 8,
-   "tracks": [{"id": 1, "name": "ピアノ", "color": 1, "instrument": {"kind": "placeholder"}, "gainDb": 0.0,
-     "clips": [{"id": 3, "name": "ピアノ", "start": 7680, "end": 15360, "active": 1,
-                "takes": [{"take": 5, "offset": 0}, {"take": 6, "offset": 480}]}],
-     "plugins": [], "automation": []}],
-   "audio": []},
- "takes": [{"id": 5, "length": 7680, "notes": [[0, 30, 60, 100]],
-            "controls": [[0, 64, 127], [240, "bend", -8192], [240, 1, 12]]},
-           {"id": 6, "length": 960, "notes": [[0, 30, 62, 100], [480, 30, 64, 90]]}],
- "session": {"playTarget": 1, "armed": 1, "loop": {"start": 0, "end": 3840}, "loopOn": false}}
-"#;
-    let song = decode(v1.as_bytes()).unwrap();
-    assert!(!song.doc.tracks[0].muted);
-    assert_eq!(
-        song.doc.tracks[0].instrument,
-        InstrumentRef::SINE,
-        "the placeholder sound is the sine"
-    );
-    assert_eq!(song.session.play_target, Some(TrackId(1)));
-    assert_eq!(song.doc.loop_range, TickRange::new(0, 3840));
-    assert_eq!(
-        *song.doc.timeline,
-        Timeline::new(Tempo::from_centi(9_600).unwrap(), Meter::FOUR_FOUR)
-    );
-    assert!(song.doc.markers.is_empty());
-    // Nothing is sent, so it sounds as it did; the returns and the master are a new song's.
-    assert_eq!(song.doc.tracks[0].sends, [Gain::SILENT; 2]);
-    assert_eq!(song.doc.tracks[0].channel, Channel::default());
-    assert_eq!(
-        mixer_without_ids(&song.doc),
-        mixer_without_ids(&Doc::new_default())
-    );
-    // Version 2 as written before mute came: the same.
-    let v2 = v1.replace(r#""version": 1"#, r#""version": 2"#);
-    assert_eq!(decode(v2.as_bytes()).unwrap(), song);
-    let clip = &song.doc.tracks[0].clips[0];
-    let shown = &clip.active_take().take;
-    assert_eq!(shown.id, TakeId(6));
-    assert!(shown.origin.is_none());
-    assert_eq!(
-        shown
-            .notes
-            .iter()
-            .map(|n| (n.start, n.key, n.from))
-            .collect::<Vec<_>>(),
-        [(0, 62, None), (480, 64, None)]
-    );
-    assert_eq!(clip.takes[0].take.controls.len(), 3);
-    // Written again, it is version 3 and reads the same.
-    let again = encode(&song);
-    assert_eq!(decode(&again).unwrap(), song);
-    let v: serde_json::Value = serde_json::from_slice(&again).unwrap();
-    assert_eq!(v["version"], 5);
-    assert_eq!(
-        v["song"]["tracks"][0]["instrument"],
-        serde_json::json!({"kind": "builtin", "name": "sine"})
-    );
-    assert!(v["session"].get("armed").is_none());
-}
-
-#[test]
 fn every_builtin_instrument_comes_back() {
     let mut song = rich_song("x", 1);
     let first = song.doc.tracks[0].clone();
@@ -831,7 +775,7 @@ fn read_json(v: &serde_json::Value) -> Song {
 }
 
 #[test]
-fn a_file_of_version_3_from_before_the_mixer_reads() {
+fn a_file_without_the_mixer_reads() {
     let mut v = rich_json();
     v["song"].as_object_mut().unwrap().remove("mixer");
     let track = v["song"]["tracks"][0].as_object_mut().unwrap();
@@ -990,7 +934,7 @@ fn mixer_values_out_of_range_are_brought_into_range() {
     assert_eq!(decode(&encode(&song)).unwrap(), song);
 }
 
-// ---- version 4: plugins, SF2 presets, inserts that are passed by ----
+// ---- plugins, SF2 presets, inserts that are passed by ----
 
 use meloet_model::{InstrumentGroup, PluginChange, PluginPlace};
 
@@ -1124,9 +1068,9 @@ fn plugins_sf2_presets_and_bypassed_inserts_come_back() {
 }
 
 #[test]
-fn the_shape_of_version_4_on_disk() {
+fn the_shape_of_plugins_and_presets_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&added_song())).unwrap();
-    assert_eq!(v["version"], 5);
+    assert_eq!(v["version"], 6);
     let tracks = &v["song"]["tracks"];
     let state: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
     assert_eq!(
@@ -1164,70 +1108,6 @@ fn the_shape_of_version_4_on_disk() {
         tracks[0]["instrument"],
         serde_json::json!({"kind": "builtin", "name": "grandPiano"})
     );
-}
-
-/// A song as version 3 wrote it (docs/architecture.md 19-4), by hand.
-const VERSION_3: &str = r#"{"format": "meloet-song", "version": 3, "app": "meloet 0.1.0",
- "song": {"name": "バンド", "tempo": 9600, "meter": [4, 4], "tempoChanges": [], "nextId": 8,
-   "tracks": [
-     {"id": 1, "name": "ピアノ", "color": 1, "instrument": {"kind": "builtin", "name": "grandPiano"},
-      "gainDb": -4.8, "pan": -20, "sends": {"a": -15.0, "b": null},
-      "inserts": [{"effect": "compressor", "params": {"threshold": -18.0, "ratio": 4.0}}, null, null, null],
-      "clips": [{"id": 3, "name": "ピアノ", "start": 0, "end": 7680, "active": 0,
-                 "takes": [{"take": 5, "offset": 0}]}],
-      "plugins": [], "automation": []},
-     {"id": 2, "name": "ドラム", "color": 2, "instrument": {"kind": "builtin", "name": "studioKit"},
-      "gainDb": null, "pan": 0, "sends": {"a": -24.0, "b": null}, "inserts": [null, null, null, null],
-      "muted": true, "clips": [], "plugins": [], "automation": []}],
-   "mixer": {
-     "returns": {"a": {"gainDb": 0.0, "pan": 0, "inserts": [{"effect": "reverb", "params": {"decay": 3.1}}, null, null, null]},
-                 "b": {"gainDb": -6.0, "pan": 10, "muted": true, "inserts": [{"effect": "delay", "params": {}}, null, null, null]}},
-     "master": {"gainDb": 0.0, "pan": 0, "inserts": [{"effect": "limiter", "params": {"ceiling": -0.3}}, null, null, null]}},
-   "audio": []},
- "takes": [{"id": 5, "length": 7680, "notes": [[0, 30, 60, 100], [480, 30, 64, 90]],
-            "controls": [[0, 64, 127], [240, "bend", -8192]]}],
- "session": {"playTarget": 2, "loop": {"start": 0, "end": 3840}, "loopOn": true}}"#;
-
-#[test]
-fn a_song_of_version_3_saved_as_version_4_is_the_same_song() {
-    let song = decode(VERSION_3.as_bytes()).unwrap();
-    let doc = &song.doc;
-    assert_eq!(doc.tracks.len(), 2);
-    assert_eq!(doc.tracks[0].instrument, InstrumentRef::GRAND_PIANO);
-    assert_eq!(doc.tracks[0].channel.pan, Pan::new(-20));
-    let compressor = doc.tracks[0].channel.inserts[0].as_ref().unwrap();
-    assert_eq!(compressor.kind(), Some(EffectKind::Compressor));
-    assert_eq!(
-        compressor.value(effects::compressor::THRESHOLD),
-        Some(-18.0)
-    );
-    let inserts = (doc.tracks.iter().map(|t| &t.channel.inserts))
-        .chain(doc.returns.iter().map(|r| &r.channel.inserts))
-        .chain([&doc.master.inserts]);
-    for insert in inserts.flatten().flatten() {
-        assert!(
-            !insert.bypassed,
-            "version 3 has no insert that is passed by"
-        );
-        assert!(insert.plugin_ref().is_none());
-    }
-    assert!(doc.tracks[1].muted && doc.returns[1].muted);
-    assert_eq!(song.session.play_target, Some(TrackId(2)));
-
-    let saved = encode(&song);
-    let v: serde_json::Value = serde_json::from_slice(&saved).unwrap();
-    assert_eq!(v["version"], 5);
-    assert_eq!(decode(&saved).unwrap(), song);
-    // What version 3 wrote of the tracks and the mixer is written the same: version 4 only
-    // adds to it. (The piano roll's settings, which this file left out, are written now.)
-    let old: serde_json::Value = serde_json::from_str(VERSION_3).unwrap();
-    assert_eq!(v["song"]["tracks"][1], old["song"]["tracks"][1]);
-    assert_eq!(v["song"]["mixer"]["returns"]["b"]["muted"], true);
-    assert_eq!(
-        v["song"]["tracks"][0]["inserts"][0]["params"]["threshold"],
-        -18.0
-    );
-    assert_eq!(v["takes"], old["takes"]);
 }
 
 #[test]
@@ -1380,13 +1260,13 @@ fn a_step_on_a_plugin_and_its_undo_are_saved_as_the_song_is() {
     assert_eq!(encode(&undone), encode(&song));
 }
 
-// ---- version 5: tempo points, meter changes, markers, the loop's range in the song ----
+// ---- tempo points, meter changes, markers, the loop's range in the song ----
 
 #[test]
-fn the_shape_of_version_5_on_disk() {
+fn the_shape_of_the_timeline_on_disk() {
     let song = rich_song("x", 1);
     let v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
-    assert_eq!(v["version"], 5);
+    assert_eq!(v["version"], 6);
     let s = &v["song"];
     assert_eq!(s["tempo"], 12_345);
     assert_eq!(s["meter"], serde_json::json!([6, 8]));
@@ -1428,97 +1308,6 @@ fn the_shape_of_version_5_on_disk() {
         v["song"].as_object_mut().unwrap().remove(field);
     }
     assert_eq!(read_json(&v), plain);
-}
-
-#[test]
-fn versions_1_to_4_have_the_loop_in_the_session_and_no_changes() {
-    for version in 1..=4 {
-        let mut v = rich_json();
-        v["version"] = version.into();
-        let range = v["song"].as_object_mut().unwrap().remove("loop").unwrap();
-        // What an older meloet can not have written is not read from its files.
-        v["song"]["loop"] = serde_json::json!({"start": 0, "end": Q});
-        v["session"]["loop"] = range;
-        let song = read_json(&v);
-        let rich = rich_song("x", 3);
-        assert_eq!(song.doc.loop_range, rich.doc.loop_range, "{version}");
-        assert!(song.session.loop_on);
-        assert!(song.doc.timeline.tempo_points.is_empty(), "{version}");
-        assert!(song.doc.timeline.meter_changes.is_empty(), "{version}");
-        assert!(!song.doc.timeline.head_ramp);
-        assert!(song.doc.markers.is_empty(), "{version}");
-        assert_eq!(song.doc.timeline.tempo, rich.doc.timeline.tempo);
-        assert_eq!(song.doc.tracks, rich.doc.tracks, "{version}");
-        // No loop at all.
-        v["session"]["loop"] = serde_json::Value::Null;
-        assert_eq!(read_json(&v).doc.loop_range, None);
-        // Saved again it is version 5, with the range in the song.
-        let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
-        assert_eq!(again["version"], 5);
-        assert_eq!(
-            again["song"]["loop"],
-            serde_json::json!({"start": 16 * Q, "end": 32 * Q})
-        );
-        assert!(again["session"].get("loop").is_none());
-        assert_eq!(read_json(&again), song);
-    }
-}
-
-#[test]
-fn the_seat_for_tempo_changes_of_versions_1_to_4_is_read_when_it_is_not_empty() {
-    let mut v = rich_json();
-    v["version"] = 4.into();
-    v["song"]["meter"] = serde_json::json!([4, 4]);
-    for field in ["headRamp", "tempoPoints", "meterChanges", "loop"] {
-        v["song"].as_object_mut().unwrap().remove(field);
-    }
-    // Not in order, as nothing ever checked them.
-    v["song"]["tempoChanges"] = serde_json::json!([
-        // Not at the head of a bar (bars of 3/4 from 8 * Q on): the tempo only.
-        {"tick": 12 * Q, "tempo": 9000, "meter": [4, 4]},
-        // The head has its own tempo and meter.
-        {"tick": 0, "tempo": 20000, "meter": [5, 4]},
-        // At the head of bar 2: a tempo point and a meter change.
-        {"tick": 8 * Q, "tempo": 12000, "meter": [3, 4]},
-        // At the head of a bar with the meter already in force: the tempo only.
-        {"tick": 14 * Q, "tempo": 9000, "meter": [3, 4]},
-        // And back to 4/4 at the head of bar 5.
-        {"tick": 17 * Q, "tempo": 9000, "meter": [4, 4]},
-    ]);
-    let song = read_json(&v);
-    let t = &song.doc.timeline;
-    assert_eq!((t.tempo.centi(), t.meter), (12_345, Meter::FOUR_FOUR));
-    assert_eq!(
-        (t.tempo_points.iter())
-            .map(|p| (p.tick, p.tempo.centi(), p.ramp))
-            .collect::<Vec<_>>(),
-        [
-            (8 * Q, 12_000, false),
-            (12 * Q, 9_000, false),
-            (14 * Q, 9_000, false),
-            (17 * Q, 9_000, false)
-        ]
-    );
-    assert_eq!(
-        (t.meter_changes.iter())
-            .map(|c| (c.bar, c.meter.num(), c.meter.den()))
-            .collect::<Vec<_>>(),
-        [(2, 3, 4), (5, 4, 4)]
-    );
-    assert_eq!(t.check(), Ok(()));
-    // Written as version 5 it comes back the same, and the old seat is not written.
-    let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
-    assert!(again["song"].get("tempoChanges").is_none());
-    assert_eq!(read_json(&again), song);
-    // A value that is no tempo or no meter is still not a song.
-    v["song"]["tempoChanges"][0]["tempo"] = 1.into();
-    assert!(matches!(
-        decode(&serde_json::to_vec(&v).unwrap()),
-        Err(ReadError::Broken)
-    ));
-    // Version 5 does not look at the seat.
-    v["version"] = 5.into();
-    assert!(read_json(&v).doc.timeline.tempo_points.is_empty());
 }
 
 #[test]

@@ -15,7 +15,8 @@ position: number, metronome: boolean,
  */
 countInBars: number, 
 /**
- * Beats of the count-in: of the one running, or else of the next one.
+ * Clicks of the metronome in the count-in (6/8 has 2 to a bar): of the one running, or
+ * else of the next one.
  */
 countInBeats: number, 
 /**

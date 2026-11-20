@@ -2,7 +2,8 @@
 //! 256, 512 and 1024 frames in turn (the PipeWire of the person using the PC is never touched).
 //! Run with `-- --ignored --nocapture`; needs `pipewire`, `wireplumber`, `pw-link` and the ALSA
 //! sequencer. `MELOET_TIMING_QUANTA=64,256`, `MELOET_TIMING_BEATS=64` and `MELOET_TIMING_MAPS=0`
-//! narrow it. After the runs at one tempo, each quantum records twice on a timeline with tempo
+//! narrow it; `MELOET_TIMING_TEMPOS=120,30` and `MELOET_TIMING_METER=6/8` change the tempos
+//! and the meter of the runs at one tempo. After the runs at one tempo, each quantum records twice on a timeline with tempo
 //! points, two ramps and two meter changes.
 //! See `tools/measure/record-timing.sh`.
 
@@ -131,6 +132,14 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
     let beats = env_list("MELOET_TIMING_BEATS", &[64])[0];
     // `MELOET_TIMING_MAPS=0`: only the runs at one tempo.
     let maps = env_list("MELOET_TIMING_MAPS", &[1])[0] != 0;
+    let tempos: Vec<f64> = std::env::var("MELOET_TIMING_TEMPOS").map_or_else(
+        |_| vec![96.0, 137.5],
+        |v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect(),
+    );
+    let meter: Option<(u8, u8)> = std::env::var("MELOET_TIMING_METER").ok().map(|v| {
+        let (num, den) = v.split_once('/').expect("a meter as 6/8");
+        (num.parse().expect("a meter"), den.parse().expect("a meter"))
+    });
     let config = pw.dir().join("config-meloet");
     record_timing::write_settings(&config, private_pw::SINK);
 
@@ -166,9 +175,16 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
             "the stream runs at the fixed quantum"
         );
 
-        for bpm in [96.0, 137.5] {
+        let mut meter_label = String::new();
+        if let Some((num, den)) = meter {
+            core.send(meloet_protocol::Command::SetMeter { num, den });
+            let t = core.snapshot().state.timeline;
+            assert_eq!((t.meter_num, t.meter_den), (num, den));
+            meter_label = format!(" {num}/{den}");
+        }
+        for &bpm in &tempos {
             for late_ms in [0.0, 5.0] {
-                let label = format!("private q{quantum} {bpm} +{late_ms}ms");
+                let label = format!("private q{quantum}{meter_label} {bpm} +{late_ms}ms");
                 let o = record_timing::record(
                     &core,
                     &latest,

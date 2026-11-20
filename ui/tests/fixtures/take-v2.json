@@ -9,17 +9,17 @@
     {
       "kind": "pitchBend",
       "number": 0,
-      "tick": 480,
+      "tick": 1920,
       "value": -8192
     }
   ],
   "id": 16909060,
-  "length": 15360,
+  "length": 61440,
   "notes": [
     {
       "from": 235868177,
       "key": 60,
-      "length": 240,
+      "length": 960,
       "start": 0,
       "velocity": 100
     },

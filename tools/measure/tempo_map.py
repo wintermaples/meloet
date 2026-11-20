@@ -9,6 +9,7 @@ against it), and checked against the answers Rust writes into ui/src/time/tempoM
     from tempo_map import TempoMap
     m = TempoMap.of_song(json.load(open("x.meloet")))
     m.seconds_at(16.0 * TICKS_PER_QUARTER); m.tick_at(10.0); m.beats(until_tick)   # [(tick, downbeat), ...]
+    m.clicks(until_tick)  # the same shape, where the metronome sounds
 
 usage: python3 -I tools/measure/tempo_map.py cycle N
   prints the --tempo-points and --meter-changes of make_song.py for N rounds of 16 bars:
@@ -107,6 +108,14 @@ class TempoMap:
         per = _per_click(num, den)
         k = math.ceil((tick - t0) / per)
         return t0 + k * per, k % (num * (4 * TICKS_PER_QUARTER // den) // per) == 0
+
+    def clicks(self, until_tick):
+        """The clicks of the metronome from tick 0 to before `until_tick`: (tick, the strong one)."""
+        out, click = [], self.next_click(0)
+        while click[0] < until_tick:
+            out.append(click)
+            click = self.next_click(click[0] + 1)
+        return out
 
     def frame_of(self, tick, from_seconds=0.0, rate=48000.0):
         """As the engine counts: from `from_seconds`, the first frame at `tick` or past it."""

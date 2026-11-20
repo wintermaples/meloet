@@ -805,8 +805,9 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
 /// The body of a `time:Position` object: id and type, then eight properties of 24 bytes.
 const POSITION_BYTES: usize = 8 + 8 * 24;
 
-/// The song's position as LV2's `time` says it: a beat is the note of the meter's lower
-/// number (`beatUnit`), so in 6/8 the beats are eighths and `beats_per_minute` counts eighths.
+/// The song's position for LV2's `time:Position`. `beat` and `beats_per_minute` count quarter
+/// notes whatever the meter, as the hosts and plugins found do (docs/architecture.md 22-2);
+/// only `bar_beat` counts notes of the meter's lower number (`beatUnit`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct SongTime {
     frame: i64,
@@ -826,7 +827,7 @@ impl SongTime {
             (0, _) | (_, 0) => (4, 4),
             meter => meter,
         };
-        // Beats of this meter to a quarter note.
+        // Notes of `beatUnit` to a quarter note.
         let per_quarter = f64::from(den) / 4.0;
         let position = number(transport.position_quarters);
         let quarter_bpm = match number(transport.tempo_bpm) {
@@ -842,10 +843,10 @@ impl SongTime {
             },
             bar: transport.bar.min(i64::MAX as u64) as i64,
             bar_beat: ((position - number(transport.bar_start_quarters)) * per_quarter) as f32,
-            beat: position * per_quarter,
+            beat: position,
             beat_unit: i32::from(den),
             beats_per_bar: f32::from(num),
-            beats_per_minute: (quarter_bpm * per_quarter) as f32,
+            beats_per_minute: quarter_bpm as f32,
         }
     }
 
@@ -2200,7 +2201,7 @@ mod time_tests {
     }
 
     #[test]
-    fn the_position_counts_beats_of_the_meters_lower_number() {
+    fn the_position_counts_quarter_notes_and_the_place_in_the_bar_the_meters_notes() {
         // 6/8 at 90 quarters a minute, two eighths into the fourth bar (bars from 0).
         let transport = Transport {
             flags: Transport::PLAYING,
@@ -2220,10 +2221,10 @@ mod time_tests {
             speed: 1.0,
             bar: 3,
             bar_beat: 2.0,
-            beat: 20.0,
+            beat: 10.0,
             beat_unit: 8,
             beats_per_bar: 6.0,
-            beats_per_minute: 180.0,
+            beats_per_minute: 90.0,
         };
         assert_eq!(time, want);
 

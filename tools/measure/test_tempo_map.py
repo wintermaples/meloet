@@ -35,6 +35,7 @@ for case in table["maps"]:
         if tick == 0:
             assert heads[row["tick"]] == (beat == 1), (case["name"], row)
         checked += 1
+    assert all(m.next_click(t) == (t, down) for t, down in m.clicks(last + 1)), case["name"]
     for row in case["clicks"]:
         assert m.next_click(row["tick"]) == (row["next"], row["downbeat"]), (case["name"], row, m.next_click(row["tick"]))
         checked += 1

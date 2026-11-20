@@ -319,15 +319,15 @@ fn notes_of(timeline: &Timeline, until: u64) -> Vec<u64> {
     ticks
 }
 
-/// Every beat from `from` until `until`, with the frame the map gives it counting from
-/// `from_seconds`.
+/// Every click of the metronome from `from` until `until`, with the frame the map gives it
+/// counting from `from_seconds`.
 fn beats(map: &TempoMap, from: u64, until: u64, from_seconds: f64, rate: f64) -> Vec<(u64, bool)> {
     let mut out = Vec::new();
-    let mut beat = map.next_beat(from as f64);
+    let mut beat = map.next_click(from as f64);
     while (beat.tick as u64) < until {
         let frame = map.frame_of(beat.tick as f64, from_seconds, rate);
         out.push((frame, beat.downbeat));
-        beat = map.next_beat((beat.tick + 1) as f64);
+        beat = map.next_click((beat.tick + 1) as f64);
     }
     out
 }
@@ -689,9 +689,7 @@ fn keys_get_the_tick_of_the_formula_around_points_ramps_and_meter_changes() {
             let h = rig.parts.handle.heard_at(t_us).unwrap();
             let want = map.tick_at(rig.frame_at(t_us) / 48_000.0);
             assert!((h.tick - want).abs() < 1e-6);
-            assert!(
-                (h.ticks_per_us - map.quarter_bpm_at(want) * Q as f64 / 60.0 / 1e6).abs() < 1e-12
-            );
+            assert!((h.ticks_per_us - map.tempo_at(want) * Q as f64 / 60.0 / 1e6).abs() < 1e-12);
         }
         let got = events(&rig.recorded());
         assert_eq!(got.len(), keys.len(), "block {block}");
@@ -780,13 +778,15 @@ fn the_count_in_keeps_the_tempo_and_meter_of_where_the_recording_starts() {
     let map = keys_map();
     let rate = 48_000.0;
     // In the ramp (192 going down to 40), on a beat of 4/4. And in the 6/8 part, at 40: the
-    // beats are eighths, and the bar's first one is the loud click.
-    for (from, count_in) in [(9 * Q, 4u32), (KEYS_FLAG + 3 * (Q / 2), 6)] {
+    // clicks are dotted quarters, and the bar's first one is the loud click.
+    for (from, count_in) in [(9 * Q, 4u32), (KEYS_FLAG + 3 * (Q / 2), 2)] {
         let at = map.meter_at(from);
         let beat = at.meter.ticks_per_beat();
-        let ticks_per_s = map.quarter_bpm_at(from as f64) * Q as f64 / 60.0;
+        let click = at.meter.ticks_per_click();
+        let ticks_per_s = map.tempo_at(from as f64) * Q as f64 / 60.0;
         let frames_per_beat = beat as f64 / ticks_per_s * rate;
-        let switch = (f64::from(count_in) * frames_per_beat - 1e-6).ceil() as u64;
+        let frames_per_click = click as f64 / ticks_per_s * rate;
+        let switch = (f64::from(count_in) * frames_per_click - 1e-6).ceil() as u64;
 
         let mut rig = Rig::new(48_000, 10_000);
         rig.map(&map);
@@ -807,13 +807,14 @@ fn the_count_in_keeps_the_tempo_and_meter_of_where_the_recording_starts() {
         }
         rig.run(switch + 48_000, &mut fixed(256));
 
-        // The clicks of the count-in are that meter's beats, one tempo; the song's own
+        // The clicks of the count-in are that meter's clicks, one tempo; the song's own
         // follow from the start.
         let want: Vec<(u64, bool)> = (0..count_in)
             .map(|k| {
-                let frame = (f64::from(k) * frames_per_beat - 1e-6).ceil() as u64;
-                let beats_in = ((from - at.bar_tick) / beat) as i64 - i64::from(count_in - k);
-                (frame, beats_in.rem_euclid(i64::from(at.meter.num())) == 0)
+                let frame = (f64::from(k) * frames_per_click - 1e-6).ceil() as u64;
+                let clicks_in = ((from - at.bar_tick) / click) as i64 - i64::from(count_in - k);
+                let per_bar = i64::from(at.meter.clicks_per_bar());
+                (frame, clicks_in.rem_euclid(per_bar) == 0)
             })
             .collect();
         assert!(want.iter().any(|c| c.1));
@@ -833,7 +834,7 @@ fn the_count_in_keeps_the_tempo_and_meter_of_where_the_recording_starts() {
         );
         // The count-in is one straight line from its first frame.
         let line =
-            (from - u64::from(count_in) * beat) as f64 + rig.frame_at(early) / rate * ticks_per_s;
+            (from - u64::from(count_in) * click) as f64 + rig.frame_at(early) / rate * ticks_per_s;
         assert!((got[0].1 - line).abs() < 1e-6, "{} {line}", got[0].1);
         let since = (rig.frame_at(late) - switch as f64) / rate;
         let on_map = map.tick_at(map.seconds_at(from as f64) + since);
@@ -890,15 +891,15 @@ fn plugins_and_effects_hear_the_tempo_and_meter_from_the_very_frame_of_a_change(
             );
             assert_eq!(t.position_frames, frame as i64);
             let tick = t.position_quarters * Q as f64;
-            assert!((t.tempo_bpm - map.quarter_bpm_at(tick)).abs() < 1e-9);
+            assert!((t.tempo_bpm - map.tempo_at(tick)).abs() < 1e-9);
             assert_eq!(t.flags, Transport::PLAYING);
         }
         // A stretch begins on the frame of every change, and is told what holds from there.
         for (tick, bpm, meter, bar_start) in [
             (KEYS_POINT, 192.0, (4, 4), 0.0),
             (KEYS_RAMP.1, 40.0, (4, 4), 8.0),
-            (KEYS_FLAG, 20.0, (6, 8), 12.0),
-            (KEYS_LAST, 150.0, (6, 8), 12.0),
+            (KEYS_FLAG, 40.0, (6, 8), 12.0),
+            (KEYS_LAST, 300.0, (6, 8), 12.0),
         ] {
             let tick = tick as f64;
             let frame = map.frame_of(tick, 0.0, rate);
@@ -930,7 +931,7 @@ fn plugins_and_effects_hear_the_tempo_and_meter_from_the_very_frame_of_a_change(
             heard[1],
             (map.frame_of(KEYS_POINT as f64, 0.0, rate), 192.0)
         );
-        for (tick, bpm) in [(KEYS_RAMP.1, 40.0), (KEYS_FLAG, 20.0), (KEYS_LAST, 150.0)] {
+        for (tick, bpm) in [(KEYS_RAMP.1, 40.0), (KEYS_LAST, 300.0)] {
             assert!(
                 heard.contains(&(map.frame_of(tick as f64, 0.0, rate), bpm)),
                 "at {tick}"

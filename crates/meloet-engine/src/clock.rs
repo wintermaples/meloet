@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering, fence};
 
-use meloet_model::TempoMap;
+use meloet_model::{TICKS_PER_QUARTER, TempoMap};
 
 use crate::engine::monotonic_us;
 
@@ -74,6 +74,7 @@ pub(crate) struct Segment {
     pub session: u32,
     pub lap: u32,
     pub record_from: i64,
+    /// Of the metronome's clicks at `record_from`: the count-in is counted in these.
     pub ticks_per_beat: u32,
 }
 
@@ -88,8 +89,7 @@ impl Segment {
         match map {
             Some(map) if on_map => {
                 let tick = map.tick_at(self.sec0 + (t_us - self.start_us) / 1e6);
-                // 8 ticks a second for each quarter note a minute.
-                (tick, map.quarter_bpm_at(tick) * 8.0 / 1e6)
+                (tick, map.tempo_at(tick) * TICKS_PER_QUARTER as f64 / 60e6)
             }
             _ => {
                 let per_us = self.ticks_per_frame * f64::from(self.sample_rate) / 1e6;
@@ -138,7 +138,7 @@ pub struct HeardPosition {
     pub state: TransportState,
     /// Loop lap of the current recording, 0 for the first pass.
     pub lap: u32,
-    /// Beats still to come before recording starts; 0 outside a count-in.
+    /// Clicks of the metronome still to come before recording starts; 0 outside a count-in.
     pub count_in_beats_left: u32,
     /// How fast `tick` moves; 0 while stopped.
     pub ticks_per_us: f64,

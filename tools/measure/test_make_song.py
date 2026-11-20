@@ -10,7 +10,7 @@ spec.loader.exec_module(make_song)
 
 def check(notes, bars, cc):
     s = make_song.song(notes, bars, 96.0, cc, 1)
-    assert s["format"] == "meloet-song" and s["version"] == 1
+    assert s["format"] == "meloet-song" and s["version"] == 6
     take = s["takes"][0]
     clip = s["song"]["tracks"][0]["clips"][0]
     assert len(take["notes"]) == notes
@@ -30,7 +30,7 @@ for args in [(200, 16, 0), (10000, 100, 32), (0, 1, 0), (5, 1, 3)]:
 
 def check_band(tracks, notes, bars):
     s = make_song.band_song(tracks, notes, bars, 96.0, 4, 1)
-    assert s["format"] == "meloet-song" and s["version"] == 3
+    assert s["format"] == "meloet-song" and s["version"] == 6
     made = s["song"]["tracks"]
     takes = {t["id"]: t for t in s["takes"]}
     ids = [i for t in made for i in (t["id"], t["clips"][0]["id"], t["clips"][0]["takes"][0]["take"])]
@@ -52,12 +52,12 @@ def check_band(tracks, notes, bars):
 
 
 def check_added():
-    """Version 4: plugin and SF2 instruments, a plugin effect, the notes inside their clips."""
+    """Plugin and SF2 instruments, a plugin effect, the notes inside their clips."""
     plugin = {"key": "vst3:AB", "name": "Synth", "vendor": "V", "path": "/p/Synth.vst3"}
     sf2 = {"file": "a.sf2", "sha256": "00", "bank": 0, "program": 4, "name": "EP"}
     effect = {"key": "vst3:CD", "name": "Comp", "vendor": "V", "path": "/p/Comp.vst3"}
     s = make_song.band_song(4, 30, 2, 96.0, 0, 1, ["plugin", "sf2", "builtin"], plugin, sf2, effect, 7, True)
-    assert s["version"] == 4
+    assert s["version"] == 6
     made = s["song"]["tracks"]
     assert [t["instrument"]["kind"] for t in made] == ["plugin", "sf2", "builtin", "builtin"]
     assert made[0]["instrument"]["key"] == "vst3:AB" and made[1]["instrument"]["program"] == 4

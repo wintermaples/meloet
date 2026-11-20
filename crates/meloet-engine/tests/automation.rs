@@ -1,5 +1,5 @@
 //! Automation on the audio thread (docs/architecture.md 21-5 to 21-7), frame by frame, with
-//! instruments and effects that are arithmetic, at 120 beats a minute.
+//! instruments and effects that are arithmetic, at a tempo that puts 50 frames in a tick.
 
 mod common;
 
@@ -17,8 +17,9 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 const RATE: usize = 48_000;
 const Q: usize = meloet_model::TICKS_PER_QUARTER as usize;
-/// Frames in a tick at 120 beats a minute.
-const PER_TICK: usize = RATE * 60 / (120 * Q);
+const TEMPO_CENTI: usize = 12_000 * 480 / Q;
+const PER_TICK: usize = RATE * 6000 / (TEMPO_CENTI * Q);
+const _: () = assert!(PER_TICK == 50 && PER_TICK * TEMPO_CENTI * Q == RATE * 6000);
 const BLOCK: usize = 256;
 const RAMP: usize = (RAMP_S * RATE as f32) as usize;
 
@@ -178,7 +179,7 @@ impl Rig {
         let mut rig = Rig {
             parts: Engine::new(EngineConfig::default()),
         };
-        let map = common::flat_map(12_000, 4, 4);
+        let map = common::flat_map(TEMPO_CENTI as u32, 4, 4);
         assert!(rig.parts.handle.set_tempo_map(map).is_ok());
         rig
     }

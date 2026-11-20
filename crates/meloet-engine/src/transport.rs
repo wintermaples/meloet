@@ -14,7 +14,7 @@ const MOVED_BEND: u8 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SequenceEvent {
-    /// Song position, 480 ticks to a quarter note.
+    /// Song position in ticks ([`meloet_model::TICKS_PER_QUARTER`]).
     pub tick: u64,
     pub event: InstrumentEvent,
 }

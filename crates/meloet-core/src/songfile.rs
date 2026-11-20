@@ -16,21 +16,17 @@ use meloet_model::{
     ControlValue, Doc, Gain, Grid, Insert, InsertId, Inserts, InstrumentRef, Kept, Lane, LaneId,
     MAX_TICK, Marker, MarkerId, Meter, MeterChange, MusicalScale, Note, OriginIndex, Pan,
     PluginRef, QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session, Sf2Ref,
-    Song, Take, TakeId, TakeOrigin, Tempo, TempoMap, TempoPoint, TickRange, Timeline, Track,
-    TrackColor, TrackId, mixer,
+    Song, Take, TakeId, TakeOrigin, Tempo, TempoPoint, TickRange, Timeline, Track, TrackColor,
+    TrackId, mixer,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub const FORMAT: &str = "meloet-song";
-/// The newest shape this meloet reads and the one it writes. 2: quantized takes, with their
-/// origin take and the origin index of each note. 3: instruments by name, a song may have no
-/// tracks, the session has no armed track, and the mixer (pan, sends, inserts, the returns
-/// and the master). 4: plugins and SF2 presets as instruments, plugins in insert slots, and
-/// the mark of an insert that is passed by. 5: tempo points, meter changes and markers, the
-/// loop's range in the song (what undo covers) and not in the session, the ids of the inserts,
-/// the automation lanes of a track, and the folded lanes in the session.
-pub const VERSION: u32 = 5;
+/// The shape this meloet writes, and the only one it reads. 6: 1920 ticks to a quarter note,
+/// and the tempo is quarter notes a minute whatever the meter. The versions before it (480
+/// ticks, the tempo in beats of the meter) do not read.
+pub const VERSION: u32 = 6;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
 const MAX_TRACKS: usize = crate::play::MAX_TRACKS;
@@ -42,6 +38,10 @@ pub enum ReadError {
     Broken,
     /// Written by a newer meloet.
     TooNew {
+        version: u32,
+    },
+    /// Of a version from before [`VERSION`], whose ticks and tempos mean something else.
+    TooOld {
         version: u32,
     },
 }
@@ -86,16 +86,11 @@ struct DocFile {
     meter_changes: Vec<MeterChangeFile>,
     #[serde(default)]
     markers: Vec<MarkerFile>,
-    /// The loop's range. Versions 1 to 4 had it in the session.
     #[serde(default, rename = "loop")]
     loop_range: Option<SpanFile>,
-    /// A seat versions 1 to 4 kept and never filled. Read from those, never written.
-    #[serde(default, skip_serializing)]
-    tempo_changes: Vec<TempoChangeFile>,
     next_id: u32,
     tracks: Vec<TrackFile>,
-    /// The returns and the master. Missing (versions 1 and 2, and version 3 before the mixer)
-    /// or not understood: the ones of a new song.
+    /// The returns and the master. Missing or not understood: the ones of a new song.
     #[serde(
         default,
         deserialize_with = "or_default",
@@ -105,14 +100,6 @@ struct DocFile {
     /// Voice recordings, later.
     #[serde(default)]
     audio: Vec<serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TempoChangeFile {
-    tick: u64,
-    tempo: u32,
-    meter: [u8; 2],
 }
 
 #[derive(Serialize, Deserialize)]
@@ -155,8 +142,7 @@ struct TrackFile {
     /// -100..=100. Missing or not understood: the middle.
     #[serde(default, deserialize_with = "or_default")]
     pan: Option<i64>,
-    /// Missing or not understood: nothing is sent, so a song from before the mixer sounds
-    /// as it did.
+    /// Missing or not understood: nothing is sent.
     #[serde(default, deserialize_with = "or_default")]
     sends: Option<SendsFile>,
     /// One entry for each insert slot, top first.
@@ -169,7 +155,7 @@ struct TrackFile {
     clips: Vec<ClipFile>,
     #[serde(default)]
     plugins: Vec<serde_json::Value>,
-    /// Version 5: the lanes (`LaneFile`), in the order they were added. Read in `lanes_of`
+    /// The lanes (`LaneFile`), in the order they were added. Read in `lanes_of`
     /// once the inserts have their ids.
     #[serde(default)]
     automation: Vec<serde_json::Value>,
@@ -203,9 +189,8 @@ struct LaneRefFile {
 /// out, the others go back into the file untouched.
 type Fields = serde_json::Map<String, serde_json::Value>;
 
-/// One of (version 4; before it only the first)
-/// - `{"kind": "builtin", "name": "grandPiano"}`. Versions 1 and 2 wrote
-///   `{"kind": "placeholder"}`, the sound now named "sine".
+/// One of
+/// - `{"kind": "builtin", "name": "grandPiano"}`.
 /// - `{"kind": "plugin", "key": "vst3:…", "name": "Surge XT", "vendor": "Surge Synth Team",
 ///   "path": "/usr/lib/vst3/Surge XT.vst3", "state": "<base64>"}`. `path` and `state` are
 ///   left out when empty.
@@ -238,7 +223,7 @@ enum SlotFile {
 /// their tables (`meloet_model::effects`), so that a table can grow or change its order.
 #[derive(Serialize, Deserialize)]
 struct InsertFile {
-    /// `Insert::id`. Missing in files written before inserts had ids: given when read.
+    /// `Insert::id`. Missing: given when read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     id: Option<u32>,
     effect: String,
@@ -873,13 +858,9 @@ enum BendTag {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionFile {
-    /// `null` in a song with no tracks. Versions 1 and 2 also wrote `armed`, which is skipped:
-    /// a recording goes to the selected track.
+    /// `null` in a song with no tracks.
     #[serde(default)]
     play_target: Option<u32>,
-    /// Versions 1 to 4. From version 5 the range is in the song.
-    #[serde(default, rename = "loop", skip_serializing)]
-    loop_range: Option<SpanFile>,
     loop_on: bool,
     /// The piano roll's settings. Missing or not understood: the default.
     #[serde(default, deserialize_with = "or_default")]
@@ -888,7 +869,7 @@ struct SessionFile {
     scale: Option<ScaleFile>,
     #[serde(default, deserialize_with = "or_default")]
     quantize: Option<QuantizeFile>,
-    /// Version 5: the folded lanes. One that is not understood, or names no lane, is skipped.
+    /// The folded lanes. One that is not understood, or names no lane, is skipped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     folded_lanes: Vec<serde_json::Value>,
 }
@@ -1052,7 +1033,6 @@ pub fn encode(song: &Song) -> Vec<u8> {
                 start: r.start(),
                 end: r.end(),
             }),
-            tempo_changes: Vec::new(),
             next_id: doc.next_id,
             tracks,
             mixer: Some(mixer_file(doc)),
@@ -1061,7 +1041,6 @@ pub fn encode(song: &Song) -> Vec<u8> {
         takes,
         session: SessionFile {
             play_target: s.play_target.map(|t| t.0),
-            loop_range: None,
             loop_on: s.loop_on,
             grid: Some(grid_file(s.roll.grid)),
             scale: Some(ScaleFile {
@@ -1187,17 +1166,19 @@ pub fn decode(bytes: &[u8]) -> Result<Song, ReadError> {
     if head.format != FORMAT {
         return Err(ReadError::Broken);
     }
-    if head.version > VERSION {
-        return Err(ReadError::TooNew {
-            version: head.version,
-        });
+    let version = head.version;
+    if version > VERSION {
+        return Err(ReadError::TooNew { version });
+    }
+    if version < VERSION {
+        return Err(ReadError::TooOld { version });
     }
     let file: SongFile = serde_json::from_slice(bytes).map_err(|_| ReadError::Broken)?;
-    to_song(file, head.version).ok_or(ReadError::Broken)
+    to_song(file).ok_or(ReadError::Broken)
 }
 
 /// `None` when anything breaks a rule the model keeps.
-fn to_song(file: SongFile, version: u32) -> Option<Song> {
+fn to_song(file: SongFile) -> Option<Song> {
     let mut takes = HashMap::new();
     // Origin takes first: they have no origin themselves.
     let (derived, recorded): (Vec<TakeFile>, Vec<TakeFile>) =
@@ -1301,32 +1282,27 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
         Tempo::from_centi(d.tempo)?,
         Meter::new(d.meter[0], d.meter[1])?,
     );
-    let mut s = file.session;
-    let loop_range = if version >= 5 {
-        timeline.head_ramp = d.head_ramp;
-        for p in d.tempo_points {
-            timeline.tempo_points.push(TempoPoint {
-                tick: Some(p.tick).filter(|&t| t <= MAX_TICK)?,
-                tempo: Tempo::from_centi(p.tempo)?,
-                ramp: p.ramp,
-            });
-        }
-        for c in d.meter_changes {
-            timeline.meter_changes.push(MeterChange {
-                bar: c.bar,
-                meter: Meter::new(c.meter[0], c.meter[1])?,
-            });
-        }
-        // Out of order, two at one place, or one at the head.
-        timeline.check().ok()?;
-        d.loop_range
-    } else {
-        old_tempo_changes(&mut timeline, d.tempo_changes)?;
-        s.loop_range.take()
-    };
+    let s = file.session;
+    timeline.head_ramp = d.head_ramp;
+    for p in d.tempo_points {
+        timeline.tempo_points.push(TempoPoint {
+            tick: Some(p.tick).filter(|&t| t <= MAX_TICK)?,
+            tempo: Tempo::from_centi(p.tempo)?,
+            ramp: p.ramp,
+        });
+    }
+    for c in d.meter_changes {
+        timeline.meter_changes.push(MeterChange {
+            bar: c.bar,
+            meter: Meter::new(c.meter[0], c.meter[1])?,
+        });
+    }
+    // Out of order, two at one place, or one at the head.
+    timeline.check().ok()?;
+    let loop_range = d.loop_range;
     let mut markers = Vec::with_capacity(d.markers.len());
     let mut marker_ids = HashSet::new();
-    for m in d.markers.into_iter().filter(|_| version >= 5) {
+    for m in d.markers {
         // A marker's id is no clip's, no take's and no other marker's.
         if !marker_ids.insert(m.id)
             || m.id >= d.next_id
@@ -1384,11 +1360,9 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
     give_insert_ids(&mut doc, |id| {
         clip_ids.contains(&id) || takes.contains_key(&id) || marker_ids.contains(&id)
     })?;
-    if version >= 5 {
-        for (slot, files) in doc.tracks.iter_mut().zip(lane_files) {
-            let track = Arc::make_mut(slot);
-            track.automation = lanes_of(track, files, &mut doc.next_id)?;
-        }
+    for (slot, files) in doc.tracks.iter_mut().zip(lane_files) {
+        let track = Arc::make_mut(slot);
+        track.automation = lanes_of(track, files, &mut doc.next_id)?;
     }
     let known = |id: u32| track_ids.contains(&id).then_some(TrackId(id));
     let roll = roll_settings(&s);
@@ -1411,40 +1385,6 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
             .collect(),
     };
     Some(Song { doc, session })
-}
-
-/// The seat of versions 1 to 4 should be empty. When it is not: each entry's tempo is a tempo
-/// point, and its meter a meter change when the entry is at the head of a bar (of the bars as
-/// the entries before it left them). An entry at tick 0 is left out: the head has its own.
-fn old_tempo_changes(timeline: &mut Timeline, mut changes: Vec<TempoChangeFile>) -> Option<()> {
-    changes.sort_by_key(|c| c.tick);
-    for c in changes {
-        let tempo = Tempo::from_centi(c.tempo)?;
-        let meter = Meter::new(c.meter[0], c.meter[1])?;
-        if c.tick == 0 || c.tick > MAX_TICK {
-            continue;
-        }
-        match timeline.tempo_points.last_mut() {
-            Some(last) if last.tick == c.tick => last.tempo = tempo,
-            _ => timeline.tempo_points.push(TempoPoint {
-                tick: c.tick,
-                tempo,
-                ramp: false,
-            }),
-        }
-        let at = TempoMap::new(timeline).meter_at(c.tick);
-        let Ok(bar) = u32::try_from(at.bar) else {
-            continue;
-        };
-        if at.bar_tick != c.tick || at.meter == meter {
-            continue;
-        }
-        match timeline.meter_changes.last_mut() {
-            Some(last) if last.bar == bar => last.meter = meter,
-            _ => timeline.meter_changes.push(MeterChange { bar, meter }),
-        }
-    }
-    Some(())
 }
 
 fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {

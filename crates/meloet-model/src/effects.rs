@@ -54,6 +54,48 @@ pub struct ParamSpec {
 }
 
 impl ParamSpec {
+    /// Whether the bar of the parameters panel moves over this parameter by its logarithm:
+    /// frequencies always, times that span 50 times or more.
+    fn log_scale(&self) -> bool {
+        self.min > 0.0
+            && (self.unit == Unit::Hz
+                || matches!(self.unit, Unit::Ms | Unit::Seconds) && self.max / self.min >= 50.0)
+    }
+
+    /// Where a value is on the bar of the parameters panel, 0..=1; a step n is
+    /// n / (steps − 1), a switch 0 or 1. What an automation point of the parameter holds
+    /// (docs/architecture.md 21-5); the screen's `fractionOf` gives the same.
+    pub fn position(&self, value: f32) -> f32 {
+        let v = f64::from(if value.is_nan() { self.default } else { value })
+            .clamp(f64::from(self.min), f64::from(self.max));
+        let (min, max) = (f64::from(self.min), f64::from(self.max));
+        let f = if self.log_scale() {
+            (v / min).ln() / (max / min).ln()
+        } else {
+            (v - min) / (max - min)
+        };
+        if f.is_finite() {
+            f.clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        }
+    }
+
+    /// The value at a place on the bar, the other way from [`ParamSpec::position`]. Steps
+    /// and switches go to the nearest whole number; a continuous value is not rounded to
+    /// what the panel shows (the screen's `valueAt` is, for its text), so that a line of
+    /// automation moves without stairs.
+    pub fn value_at(&self, position: f32) -> f32 {
+        let f = f64::from(if position.is_nan() { 0.0 } else { position }).clamp(0.0, 1.0);
+        let (min, max) = (f64::from(self.min), f64::from(self.max));
+        let v = if self.log_scale() {
+            min * (max / min).powf(f)
+        } else {
+            min + f * (max - min)
+        };
+        self.clamp(v as f32)
+    }
+
     /// Brings a value into the range: steps and switches to the nearest whole number, a value
     /// that is not a number to the default.
     pub fn clamp(&self, value: f32) -> f32 {

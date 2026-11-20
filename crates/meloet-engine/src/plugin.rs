@@ -175,6 +175,13 @@ impl PluginSlot {
         (slot, watch)
     }
 
+    fn param_at(&mut self, frame: u32, id: u32, value: f32) {
+        if value.is_finite() {
+            let value = f64::from(value.clamp(0.0, 1.0));
+            self.end.push_event(ToPlugin::Param { frame, id, value });
+        }
+    }
+
     fn midi(&mut self, data: [u8; 3]) {
         self.end.push_event(ToPlugin::Midi { frame: 0, data });
     }
@@ -315,6 +322,10 @@ impl Instrument for PluginInstrument {
     fn latency(&self) -> u32 {
         self.0.watch.latency()
     }
+
+    fn set_param_at(&mut self, frame: u32, id: u32, value: f32) {
+        self.0.param_at(frame, id, value);
+    }
 }
 
 /// A plugin as an effect. A parameter's position is the plugin's parameter id, and its value
@@ -327,14 +338,15 @@ impl Effect for PluginEffect {
     fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
 
     fn set_param(&mut self, index: u32, value: f32) {
-        if value.is_finite() {
-            let value = f64::from(value.clamp(0.0, 1.0));
-            self.0.end.push_event(ToPlugin::Param {
-                frame: 0,
-                id: index,
-                value,
-            });
-        }
+        self.0.param_at(0, index, value);
+    }
+
+    fn takes_points(&self) -> bool {
+        true
+    }
+
+    fn set_param_at(&mut self, frame: u32, index: u32, value: f32) {
+        self.0.param_at(frame, index, value);
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], _ctx: &EffectContext) {

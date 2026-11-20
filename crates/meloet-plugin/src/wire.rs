@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::PluginKey;
 use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 2;
+pub const WIRE_VERSION: u32 = 3;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -260,20 +260,28 @@ pub enum Notice {
     EditorClosed { slot: u32 },
     /// The window got the keyboard: the person is in the plugin now.
     EditorEntered { slot: u32 },
-    /// The window lost the keyboard: the person went somewhere else.
-    EditorLeft { slot: u32 },
-    /// The person took hold of a parameter in the plugin's window …
-    ParamBegin { slot: u32, id: u32 },
+    /// The window lost the keyboard: the person went somewhere else. `touches`: how many
+    /// times the person took hold of a parameter (every `ParamBegin` since `EditorEntered`)
+    /// or loaded a program in the window while in it (docs/architecture.md 21-10).
+    EditorLeft { slot: u32, touches: u32 },
+    /// The person took hold of a parameter in the plugin's window … (VST3 `beginEdit`, LV2
+    /// `ui:touch`; told also before the first change of a parameter that came without one,
+    /// which then is let go 0.5 s after its last change.) While held, the automation of the
+    /// parameter is not given to the plugin.
+    ///
+    /// `t_us` here and below: when the plugin said it, CLOCK_MONOTONIC in microseconds.
+    ParamBegin { slot: u32, id: u32, t_us: u64 },
     /// … moved it … At most 30 of these a second for one parameter; the last value before
-    /// `ParamEnd` is always told. `text` as `ParamNow::text`.
+    /// `ParamEnd` is always told, with the time of that value. `text` as `ParamNow::text`.
     ParamChanged {
         slot: u32,
         id: u32,
         value: f64,
         text: Option<String>,
+        t_us: u64,
     },
     /// … and let it go.
-    ParamEnd { slot: u32, id: u32 },
+    ParamEnd { slot: u32, id: u32, t_us: u64 },
     /// The plugin says its delay changed, outside a block (VST3 `kLatencyChanged`).
     LatencyChanged { slot: u32, frames: u32 },
     /// The plugin says that any of its parameters may have another value now (it loaded a
@@ -536,15 +544,19 @@ mod tests {
                     id: 2,
                     value: 0.25,
                     text: Some("25 %".into()),
+                    t_us: 7,
                 }
             }),
-            json!({ "kind": "notice", "notice": { "type": "paramChanged", "slot": 1, "id": 2, "value": 0.25, "text": "25 %" } })
+            json!({ "kind": "notice", "notice": { "type": "paramChanged", "slot": 1, "id": 2, "value": 0.25, "text": "25 %", "tUs": 7 } })
         );
         assert_eq!(
             from(FromHost::Notice {
-                notice: Notice::EditorLeft { slot: 1 }
+                notice: Notice::EditorLeft {
+                    slot: 1,
+                    touches: 2
+                }
             }),
-            json!({ "kind": "notice", "notice": { "type": "editorLeft", "slot": 1 } })
+            json!({ "kind": "notice", "notice": { "type": "editorLeft", "slot": 1, "touches": 2 } })
         );
         let param = ParamInfo {
             id: 3,
@@ -655,15 +667,27 @@ mod tests {
             },
             Notice::EditorClosed { slot: 1 },
             Notice::EditorEntered { slot: 1 },
-            Notice::EditorLeft { slot: 1 },
-            Notice::ParamBegin { slot: 1, id: 2 },
+            Notice::EditorLeft {
+                slot: 1,
+                touches: 0,
+            },
+            Notice::ParamBegin {
+                slot: 1,
+                id: 2,
+                t_us: 1,
+            },
             Notice::ParamChanged {
                 slot: 1,
                 id: 2,
                 value: 1.0,
                 text: None,
+                t_us: 2,
             },
-            Notice::ParamEnd { slot: 1, id: 2 },
+            Notice::ParamEnd {
+                slot: 1,
+                id: 2,
+                t_us: 3,
+            },
             Notice::LatencyChanged {
                 slot: 1,
                 frames: 128,

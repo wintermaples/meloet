@@ -550,6 +550,7 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
         mono: vec![0.0; frames].into_boxed_slice(),
         cc,
         to_controller,
+        told: Vec::with_capacity(BLOCK_PARAMS),
         sample_rate: activation.sample_rate,
         frames_run: 0,
     };
@@ -586,6 +587,8 @@ struct Vst3Processor {
     mono: Box<[f32]>,
     cc: Box<[u32; CONTROLLERS]>,
     to_controller: rtrb::Producer<(u32, f64)>,
+    /// The parameters whose value the window was told in this block.
+    told: Vec<u32>,
     sample_rate: f64,
     frames_run: i64,
 }
@@ -717,7 +720,6 @@ impl Vst3Processor {
             }
             ToPlugin::Param { frame, id, value } => {
                 self.changes.add(id, frame as i32, value);
-                let _ = self.to_controller.push((id, value));
             }
         }
     }
@@ -738,6 +740,17 @@ impl Processor for Vst3Processor {
         self.changes_out.clear();
         for event in block.events {
             self.take(event);
+        }
+        // The window is told the last value of each parameter of the block, once.
+        self.told.clear();
+        for event in block.events.iter().rev() {
+            if let ToPlugin::Param { id, value, .. } = *event
+                && !self.told.contains(&id)
+                && self.told.len() < self.told.capacity()
+            {
+                self.told.push(id);
+                let _ = self.to_controller.push((id, value));
+            }
         }
 
         let [in_left, in_right] = block.inputs;
@@ -1311,9 +1324,11 @@ impl Controller for Vst3Controller {
             }
         }
         if restart & RestartFlags_::kParamValuesChanged != 0 {
+            said.push(Said::Preset);
             said.push(Said::ParamsChanged);
         }
         if restart & RestartFlags_::kParamTitlesChanged != 0 {
+            said.push(Said::Preset);
             self.settle_later(true);
         }
         let blocks = self.instance.blocks.load(Relaxed);

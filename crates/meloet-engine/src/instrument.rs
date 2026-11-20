@@ -56,4 +56,8 @@ pub trait Instrument: Send {
     fn latency(&self) -> u32 {
         0
     }
+    /// An automation point of a parameter of a plugin: `value` 0..=1 at `frame` of the next
+    /// `render`, a straight line from the point before. Comes before the `ask` of that
+    /// `render`. An instrument without parameters passes it over.
+    fn set_param_at(&mut self, _frame: u32, _id: u32, _value: f32) {}
 }

@@ -248,6 +248,27 @@ pub enum PluginSaid {
         param: u32,
         read: Option<TextValue>,
     },
+    /// The person took hold of a parameter in the plugin's window (`on`), or let go of it
+    /// (VST3 `beginEdit` / `endEdit`, LV2 `ui:touch`, else 0.5 s after the last change).
+    /// While held the plugin passes over the automation of it by itself. `t_us`: when the
+    /// plugin said it, CLOCK_MONOTONIC in microseconds (docs/architecture.md 21-9, 21-10).
+    ParamTouch {
+        param: u32,
+        on: bool,
+        t_us: u64,
+    },
+    /// What a [`PluginSaid::Param`] moved in the window was, with when the plugin said it:
+    /// for writing it into a lane. Comes right after that `Param`.
+    ParamMoved {
+        param: u32,
+        value: f64,
+        t_us: u64,
+    },
+    /// How often the person took hold of a parameter or loaded a program while in the
+    /// window (every `ParamTouch` with `on` counts). Comes right before its `WindowLeft`.
+    WindowTouches {
+        touches: u32,
+    },
 }
 
 /// What is asked of a loaded plugin. Asks of one plugin are answered in the order they

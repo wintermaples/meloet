@@ -372,16 +372,17 @@ impl Controller for FakeController {
         };
         let moves = KNOB_MOVES / 2;
         match turn {
-            0 => self.said.push(Said::ParamBegin(LEVEL)),
+            0 => self.said.push(Said::ParamBegin(LEVEL, super::now_us())),
             turn if turn <= moves => {
                 for half in [1, 0] {
                     let done = f64::from(turn * 2 - half) / f64::from(KNOB_MOVES);
                     let level = DEFAULT_LEVEL + (KNOB_END - DEFAULT_LEVEL) * done;
                     self.level.store(level.to_bits(), Relaxed);
-                    self.said.push(Said::ParamChanged(LEVEL, level));
+                    self.said
+                        .push(Said::ParamChanged(LEVEL, level, super::now_us()));
                 }
             }
-            turn if turn == moves + 1 => self.said.push(Said::ParamEnd(LEVEL)),
+            turn if turn == moves + 1 => self.said.push(Said::ParamEnd(LEVEL, super::now_us())),
             _ => return,
         }
         self.knob = Some(turn + 1);

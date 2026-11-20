@@ -65,6 +65,12 @@ impl TrackSet {
         }
     }
 
+    pub fn remove(&mut self, track: usize) {
+        if track < Self::CAPACITY {
+            self.bits[track / 64] &= !(1 << (track % 64));
+        }
+    }
+
     pub fn contains(&self, track: usize) -> bool {
         track < Self::CAPACITY && self.bits[track / 64] & 1 << (track % 64) != 0
     }

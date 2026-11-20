@@ -9,14 +9,15 @@ use std::time::Instant;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
+use crate::automation::{AutoClock, AutoSet, HOLDS, MIX_STEP};
 use crate::clock::{HeardPosition, Segment, TransportClock, TransportState, heard};
 use crate::effect::{Effect, EffectContext};
 use crate::instrument::{Instrument, InstrumentEvent};
-use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, Strip};
+use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, SlotAuto, Strip};
 use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::rt;
 use crate::transport::{Click, Lane, Sequence, TrackSet};
-use meloet_model::{Beat, Meter, Tempo, TempoMap, Timeline};
+use meloet_model::{AutoTarget, Beat, Meter, Tempo, TempoMap, Timeline};
 use meloet_plugin::ipc::Transport as PluginTransport;
 
 const COMMAND_RING: usize = 256;
@@ -169,6 +170,21 @@ pub enum EngineCommand {
     SetTempoMap {
         map: Arc<TempoMap>,
         map_gen: u32,
+    },
+    /// Use [`EngineHandle::set_automation`]. The lanes of a track that play from now on, in
+    /// place of the ones before (`None`: no lane plays); the old set comes back on a retired
+    /// ring. A fader, a pan or a send goes on from where the set before had got it to.
+    SetAutomation {
+        track: usize,
+        set: Option<Box<AutoSet>>,
+    },
+    /// A person has hold of what the lane moves (docs/architecture.md 21-9, 21-11): until
+    /// `on` is false the lane plays nothing, and the value is the hand's. Kept for the track,
+    /// whatever sets come; at most [`HOLDS`] at once.
+    HoldLane {
+        track: usize,
+        target: AutoTarget,
+        on: bool,
     },
     /// `[start, end)` in ticks. A loop with `end <= start` does nothing.
     SetLoop {
@@ -466,6 +482,14 @@ struct Track {
     /// [`Track::next_due`], kept while what it was worked out from stays the same.
     due: u64,
     due_key: Option<((usize, u32), u64, bool)>,
+    auto: Option<Box<AutoSet>>,
+    holds: [Option<AutoTarget>; HOLDS],
+    /// Fader and pan, or a send, went where automation took them, not where the hand put
+    /// them.
+    steered: bool,
+    sends_steered: [bool; 2],
+    /// The frame, from the anchor, where the mute lane next changes (`u64::MAX`: never).
+    mute_due: u64,
 }
 
 /// The song clock on the audio thread (docs/architecture.md 21-3).
@@ -518,6 +542,8 @@ struct Transport {
     muted: TrackSet,
     /// Mute and solo: never play their sequence.
     silent: TrackSet,
+    /// Muted by their mute lane, where it is read.
+    auto_silent: TrackSet,
     session: u32,
     lap: u32,
     /// After `RecordHere`: the session whose playing stretches, already sent to the DAC, still
@@ -563,6 +589,11 @@ impl Track {
             ahead_wrapped: false,
             due: u64::MAX,
             due_key: None,
+            auto: None,
+            holds: [None; HOLDS],
+            steered: false,
+            sends_steered: [false; 2],
+            mute_due: u64::MAX,
         }
     }
 
@@ -685,6 +716,7 @@ impl Transport {
             run_from: 0,
             muted: TrackSet::default(),
             silent: TrackSet::default(),
+            auto_silent: TrackSet::default(),
             session: 0,
             lap: 0,
             punched: None,
@@ -873,7 +905,7 @@ impl Transport {
     }
 
     fn lane_plays(&self, track: usize) -> bool {
-        if self.silent.contains(track) {
+        if self.silent.contains(track) || self.auto_silent.contains(track) {
             return false;
         }
         match self.state {
@@ -889,6 +921,38 @@ impl Transport {
             TransportState::Playing | TransportState::Recording => self.metronome,
             TransportState::Stopped => false,
         }
+    }
+}
+
+impl AutoClock for Transport {
+    fn tick_ahead(&self, ahead: u64) -> f64 {
+        let at = self.frames + ahead;
+        match self.state {
+            TransportState::Stopped => self.tick(),
+            TransportState::CountIn => {
+                self.anchor_tick + at as f64 / self.sample_rate * self.count_in.ticks_per_s
+            }
+            _ if self.loop_active() && at >= self.loop_end_frame => {
+                let past = (at - self.loop_end_frame) as f64 / self.sample_rate;
+                self.map.tick_at(self.loop_start_sec + past)
+            }
+            _ => self
+                .map
+                .tick_at(self.anchor_sec + at as f64 / self.sample_rate),
+        }
+    }
+
+    fn frames_to(&self, tick: f64, ahead: u64) -> Option<u64> {
+        let from = self.frames + ahead;
+        let looped = self.loop_active();
+        if !self.state.is_moving() || looped && from >= self.loop_end_frame {
+            return None;
+        }
+        let frame = self.frame_of(tick);
+        if looped && frame >= self.loop_end_frame {
+            return None;
+        }
+        Some(frame.saturating_sub(from))
     }
 }
 
@@ -967,6 +1031,9 @@ pub struct Engine {
     retired_effects: Producer<Box<dyn Effect>>,
     retired_sequences: Producer<Box<Sequence>>,
     retired_maps: Producer<Arc<TempoMap>>,
+    retired_autos: Producer<Box<AutoSet>>,
+    /// The ticks where the steps of the fader's lanes end, in the stretch being rendered.
+    auto_ticks: Box<[f64]>,
     returns: [Strip; 2],
     /// Its fader and pan come before its slots (docs/architecture.md 19-11).
     master_strip: Strip,
@@ -1024,6 +1091,7 @@ impl Engine {
         let (effects_tx, effects_rx) = RingBuffer::new((config.max_tracks + 4) * 2 * INSERT_SLOTS);
         let (sequences_tx, sequences_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (maps_tx, maps_rx) = RingBuffer::new(MAP_RING);
+        let (autos_tx, autos_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
         let clock = Arc::new(TransportClock::default());
         let (midi_tx, midi_rx) = RingBuffer::new(MIDI_RING);
@@ -1040,6 +1108,8 @@ impl Engine {
             retired_effects: effects_tx,
             retired_sequences: sequences_tx,
             retired_maps: maps_tx,
+            retired_autos: autos_tx,
+            auto_ticks: vec![0.0; config.max_frames.div_ceil(MIX_STEP) + 1].into_boxed_slice(),
             returns: [Strip::new(), Strip::new()],
             master_strip: Strip::new(),
             midi: midi_rx,
@@ -1067,6 +1137,7 @@ impl Engine {
             retired_effects: effects_rx,
             retired_sequences: sequences_rx,
             retired_maps: maps_rx,
+            retired_autos: autos_rx,
             map,
             map_gen: 0,
             last_map_gen: 0,
@@ -1109,6 +1180,9 @@ impl Engine {
             track.aside_left = 0;
             track.fade_left = 0;
             track.lane.forget();
+            if let Some(set) = track.auto.as_deref_mut() {
+                set.forget();
+            }
         }
         self.sample.fade_left = 0;
         // What is still here when the ring is full is dropped, which is allowed on this thread.
@@ -1133,6 +1207,7 @@ impl Engine {
         t.state = TransportState::Stopped;
         t.set_pos(tick);
         t.silent = TrackSet::default();
+        t.auto_silent = TrackSet::default();
         self.tone = TestTone::idle();
         self.audition = None;
         self.click = Click::idle();
@@ -1221,6 +1296,7 @@ impl Engine {
             && self.retired_effects.slots() >= 2 * INSERT_SLOTS
             && !self.retired_sequences.is_full()
             && !self.retired_maps.is_full()
+            && !self.retired_autos.is_full()
         {
             let Ok(command) = self.commands.pop() else {
                 break;
@@ -1304,8 +1380,48 @@ impl Engine {
                     }
                 }
                 EngineCommand::MoveEffect { strip, from, to } => {
+                    if let MixStrip::Track(track) = strip
+                        && from < INSERT_SLOTS
+                        && to < INSERT_SLOTS
+                        && let Some(set) = self.tracks.get_mut(track).and_then(|t| t.auto.as_mut())
+                    {
+                        set.move_slot(from, to);
+                    }
                     if let Some((strip, smooth)) = self.strip(strip) {
                         strip.move_effect(from, to, if smooth { fade } else { 0 });
+                    }
+                }
+                EngineCommand::SetAutomation { track, mut set } => {
+                    let old = match self.tracks.get_mut(track) {
+                        Some(slot) => {
+                            if let Some(new) = set.as_deref_mut() {
+                                new.follow(slot.auto.as_deref(), &slot.holds);
+                            }
+                            std::mem::replace(&mut slot.auto, set)
+                        }
+                        None => set,
+                    };
+                    if let Some(old) = old {
+                        // Cannot fail: checked above, and this is the only producer.
+                        let _ = self.retired_autos.push(old);
+                    }
+                }
+                EngineCommand::HoldLane { track, target, on } => {
+                    let Some(slot) = self.tracks.get_mut(track) else {
+                        continue;
+                    };
+                    let place = slot.holds.iter().position(|h| *h == Some(target));
+                    match (place, on) {
+                        (None, true) => {
+                            if let Some(free) = slot.holds.iter_mut().find(|h| h.is_none()) {
+                                *free = Some(target);
+                            }
+                        }
+                        (Some(at), false) => slot.holds[at] = None,
+                        _ => {}
+                    }
+                    if let Some(set) = slot.auto.as_deref_mut() {
+                        set.hold(target, on);
                     }
                 }
                 EngineCommand::SetEffectParam {
@@ -1388,6 +1504,14 @@ impl Engine {
                     slot.strip.clear(&mut self.retired_effects);
                     slot.aside_left = 0;
                     slot.fade_left = 0;
+                    slot.holds = [None; HOLDS];
+                    slot.steered = false;
+                    slot.sends_steered = [false; 2];
+                    slot.mute_due = u64::MAX;
+                    self.transport.auto_silent.remove(track);
+                    if let Some(old) = slot.auto.take() {
+                        let _ = self.retired_autos.push(old);
+                    }
                     let all = [
                         slot.instrument.take(),
                         slot.aside.take(),
@@ -1826,6 +1950,7 @@ impl Engine {
             self.open_segment(frame, timing);
         }
 
+        self.mute_lanes();
         let t = &self.transport;
         for (i, track) in self.tracks.iter_mut().enumerate() {
             if t.lane_plays(i) {
@@ -1841,6 +1966,39 @@ impl Engine {
         }
         if t.cut_frame <= t.frames {
             t.advance_cut();
+        }
+    }
+
+    /// The mute lanes, read where the sequences are read: a track whose lane mutes it lets
+    /// go of what its sequence holds, one whose lane lets it play picks up at the position.
+    fn mute_lanes(&mut self) {
+        for i in 0..self.tracks.len() {
+            let t = &self.transport;
+            let track = &mut self.tracks[i];
+            let ahead = u64::from(track.lookahead);
+            let (muted, due) = match track.auto.as_deref() {
+                Some(set) => {
+                    let tick = t.tick_ahead(ahead);
+                    let due = (set.next_mute_change(tick))
+                        .and_then(|change| t.frames_to(change as f64, ahead))
+                        .map_or(u64::MAX, |frames| t.frames + frames);
+                    (set.mute_at(tick).unwrap_or(false), due)
+                }
+                None => (false, u64::MAX),
+            };
+            track.mute_due = due;
+            if muted == t.auto_silent.contains(i) {
+                continue;
+            }
+            if muted {
+                self.transport.auto_silent.insert(i);
+                track.lane.silence(track.instrument.as_deref_mut());
+            } else {
+                self.transport.auto_silent.remove(i);
+                if self.transport.lane_plays(i) {
+                    self.seek_lane(i);
+                }
+            }
         }
     }
 
@@ -1863,6 +2021,7 @@ impl Engine {
             n = n.min(t.loop_end_frame.saturating_sub(t.frames));
         }
         for (i, track) in self.tracks.iter().enumerate() {
+            n = n.min(track.mute_due.saturating_sub(t.frames));
             if !t.lane_plays(i) {
                 continue;
             }
@@ -1874,6 +2033,32 @@ impl Engine {
             }
         }
         n.max(1) as usize
+    }
+
+    /// The automation of a stretch of `frames` that comes before the instruments are asked
+    /// for it: the points of their parameters, and where the fader's lanes are read.
+    fn automate(&mut self, frames: usize) {
+        let t = &self.transport;
+        let mut mixing = false;
+        for track in self.tracks.iter_mut() {
+            let Some(set) = track.auto.as_deref_mut() else {
+                continue;
+            };
+            mixing |= set.has_mix();
+            if set.has_instrument()
+                && let Some(instrument) = track.instrument.as_deref_mut()
+            {
+                set.instrument_points(t, u64::from(track.lookahead), frames, instrument);
+            }
+        }
+        if mixing {
+            for (k, tick) in (self.auto_ticks.iter_mut())
+                .take(frames.div_ceil(MIX_STEP))
+                .enumerate()
+            {
+                *tick = t.tick_ahead(((k + 1) * MIX_STEP).min(frames) as u64 - 1);
+            }
+        }
     }
 
     /// Renders at most `max_frames` frames. `offset` is the frame of the device block where
@@ -1902,6 +2087,7 @@ impl Engine {
                 tempo_bpm: told.tempo_bpm as f32,
             };
             piece_ctx.get_or_insert(ctx);
+            self.automate(to - from);
             // Every instrument that renders in another process starts on this stretch now.
             for track in self.tracks.iter_mut().chain([&mut self.sample]) {
                 if let Some(instrument) = track.instrument.as_mut() {
@@ -1915,6 +2101,9 @@ impl Engine {
                 retired: &mut self.retired,
                 retired_effects: &mut self.retired_effects,
                 fade_frames: fade,
+                ramp_frames: ramp_frames(self.sample_rate),
+                clock: &self.transport,
+                ticks: &self.auto_ticks,
                 ctx,
                 master_l: &mut master_l[from..to],
                 master_r: &mut master_r[from..to],
@@ -1952,7 +2141,7 @@ impl Engine {
                 ctx,
                 fade_frames: fade,
             };
-            strip.inserts(&mut io, &mut self.retired_effects);
+            strip.inserts(&mut io, &mut self.retired_effects, None);
             let (peak, finite) = strip.level(io.left, io.right);
             if !finite {
                 continue;
@@ -1977,7 +2166,7 @@ impl Engine {
             fade_frames: fade,
         };
         self.master_strip
-            .inserts(&mut io, &mut self.retired_effects);
+            .inserts(&mut io, &mut self.retired_effects, None);
         // After the master's strip: the test tone tells whether the output sounds, whatever
         // the song's mixer does.
         self.tone.add(io.left, io.right, self.sample_rate);
@@ -2014,6 +2203,11 @@ struct Mix<'a> {
     retired: &'a mut Producer<Box<dyn Instrument>>,
     retired_effects: &'a mut Producer<Box<dyn Effect>>,
     fade_frames: u32,
+    /// [`RAMP_S`] in frames: how long a fader's lane takes to go the whole way.
+    ramp_frames: u32,
+    clock: &'a Transport,
+    /// Where each [`MIX_STEP`] of the stretch ends ([`Engine::automate`]).
+    ticks: &'a [f64],
     ctx: EffectContext,
     master_l: &'a mut [f32],
     master_r: &'a mut [f32],
@@ -2077,8 +2271,12 @@ impl Mix<'_> {
             ctx: self.ctx,
             fade_frames: self.fade_frames,
         };
-        track.strip.inserts(&mut io, self.retired_effects);
-        let (peak, finite) = track.strip.level(io.left, io.right);
+        let auto = (track.auto.as_deref_mut()).map(|set| SlotAuto {
+            set,
+            clock: self.clock,
+        });
+        track.strip.inserts(&mut io, self.retired_effects, auto);
+        let (peak, finite) = Mix::level(track, io.left, io.right, self.ticks, self.ramp_frames);
         // An instrument that gives something that is not a number is left out of the sums:
         // one track must not take the master and the returns with it.
         if !finite {
@@ -2092,8 +2290,82 @@ impl Mix<'_> {
             self.master_l[i] += io.left[i];
             self.master_r[i] += io.right[i];
         }
-        for (bus, [to_l, to_r]) in self.returns.iter_mut().enumerate() {
-            track.strip.send(bus, io.left, io.right, [to_l, to_r]);
+        for (bus, into) in self.returns.iter_mut().enumerate() {
+            Mix::send(
+                track,
+                bus,
+                io.left,
+                io.right,
+                into,
+                self.ticks,
+                self.ramp_frames,
+            );
+        }
+    }
+
+    /// Fader and pan, where the hand put them or where the track's lanes take them.
+    fn level(
+        track: &mut Track,
+        left: &mut [f32],
+        right: &mut [f32],
+        ticks: &[f64],
+        ramp: u32,
+    ) -> ([f32; 2], bool) {
+        let Some(set) = track.auto.as_deref_mut().filter(|set| set.has_level()) else {
+            if std::mem::take(&mut track.steered) {
+                let (gain, pan) = track.strip.hand();
+                track.strip.steer_level(gain, pan, ramp);
+            }
+            return track.strip.level(left, right);
+        };
+        track.steered = true;
+        let mut peak = [0.0f32; 2];
+        let mut finite = true;
+        for ((l, r), tick) in (left.chunks_mut(MIX_STEP))
+            .zip(right.chunks_mut(MIX_STEP))
+            .zip(ticks)
+        {
+            let (gain, pan) = set.level(*tick, l.len(), ramp as f32, track.strip.hand());
+            track.strip.steer_level(gain, pan, l.len() as u32);
+            let (p, f) = track.strip.level(l, r);
+            peak = [peak[0].max(p[0]), peak[1].max(p[1])];
+            finite &= f;
+        }
+        (peak, finite)
+    }
+
+    /// What the track sends to return `bus`, as [`Mix::level`] does it.
+    fn send(
+        track: &mut Track,
+        bus: usize,
+        left: &[f32],
+        right: &[f32],
+        [to_l, to_r]: &mut [&mut [f32]; 2],
+        ticks: &[f64],
+        ramp: u32,
+    ) {
+        let Some(set) = track.auto.as_deref_mut().filter(|set| set.has_send(bus)) else {
+            if std::mem::take(&mut track.sends_steered[bus]) {
+                let hand = track.strip.hand_send(bus);
+                track.strip.steer_send(bus, hand, ramp);
+            }
+            track.strip.send(bus, left, right, [to_l, to_r]);
+            return;
+        };
+        track.sends_steered[bus] = true;
+        for (k, tick) in ticks.iter().enumerate() {
+            let from = k * MIX_STEP;
+            if from >= left.len() {
+                break;
+            }
+            let to = (from + MIX_STEP).min(left.len());
+            let hand = track.strip.hand_send(bus);
+            let gain = set.send(bus, *tick, to - from, ramp as f32, hand);
+            track.strip.steer_send(bus, gain, (to - from) as u32);
+            let into = [&mut to_l[from..to], &mut to_r[from..to]];
+            track
+                .strip
+                .send(bus, &left[from..to], &right[from..to], into);
         }
     }
 }
@@ -2115,6 +2387,7 @@ pub struct EngineHandle {
     retired_effects: Consumer<Box<dyn Effect>>,
     retired_sequences: Consumer<Box<Sequence>>,
     retired_maps: Consumer<Arc<TempoMap>>,
+    retired_autos: Consumer<Box<AutoSet>>,
     /// The map last sent to the engine, and its number.
     map: Arc<TempoMap>,
     map_gen: u32,
@@ -2204,6 +2477,21 @@ impl EngineHandle {
         self.retired_sequences.pop().ok()
     }
 
+    /// Sends the lanes of `track` that play from now on ([`EngineCommand::SetAutomation`]);
+    /// none: no lane plays. The set is made here (this allocates).
+    pub fn set_automation(
+        &mut self,
+        track: usize,
+        lanes: Vec<crate::AutoLane>,
+    ) -> Result<(), EngineCommand> {
+        let set = (!lanes.is_empty()).then(|| Box::new(AutoSet::new(lanes)));
+        self.send(EngineCommand::SetAutomation { track, set })
+    }
+
+    pub fn take_retired_automation(&mut self) -> Option<Box<AutoSet>> {
+        self.retired_autos.pop().ok()
+    }
+
     /// Sends the song's tempo map ([`EngineCommand::SetTempoMap`]) and gives it the next
     /// number. A reader of the clock on another thread needs the same map and number
     /// ([`TransportClock::heard_at`]); [`EngineHandle::tempo_map`] has them.
@@ -2257,6 +2545,9 @@ impl EngineHandle {
             count += 1;
         }
         while self.retired_maps.pop().is_ok() {
+            count += 1;
+        }
+        while self.take_retired_automation().is_some() {
             count += 1;
         }
         count

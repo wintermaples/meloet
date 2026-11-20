@@ -570,6 +570,11 @@ impl ParamQueue {
     /// block with is the one that must not be lost.
     fn add(&self, offset: int32, value: ParamValue) -> usize {
         let at = self.len.get().min(QUEUE_POINTS - 1);
+        // The points of a queue go forward in the block.
+        let offset = match at.checked_sub(1) {
+            Some(before) => offset.max(self.points()[before].0),
+            None => offset,
+        };
         self.points()[at] = (offset, value);
         self.len.set(at + 1);
         at
@@ -749,21 +754,24 @@ impl Class for Handler {
 
 impl IComponentHandlerTrait for Handler {
     unsafe fn beginEdit(&self, id: ParamID) -> tresult {
-        self.tell(|told| told.said.push(Said::ParamBegin(id)))
+        let at = super::super::now_us();
+        self.tell(|told| told.said.push(Said::ParamBegin(id, at)))
     }
 
     unsafe fn performEdit(&self, id: ParamID, value: ParamValue) -> tresult {
         if !value.is_finite() {
             return kInvalidArgument;
         }
+        let at = super::super::now_us();
         self.tell(|told| {
             told.said
-                .push(Said::ParamChanged(id, value.clamp(0.0, 1.0)))
+                .push(Said::ParamChanged(id, value.clamp(0.0, 1.0), at))
         })
     }
 
     unsafe fn endEdit(&self, id: ParamID) -> tresult {
-        self.tell(|told| told.said.push(Said::ParamEnd(id)))
+        let at = super::super::now_us();
+        self.tell(|told| told.said.push(Said::ParamEnd(id, at)))
     }
 
     unsafe fn restartComponent(&self, flags: int32) -> tresult {

@@ -5,6 +5,7 @@ use std::f32::consts::FRAC_PI_2;
 
 use rtrb::Producer;
 
+use crate::automation::{AutoClock, AutoSet, EFFECT_STEP};
 use crate::effect::{Effect, EffectContext};
 
 /// The insert slots of a strip. Sound goes through them from the first to the last.
@@ -290,6 +291,16 @@ pub(crate) struct Strip {
     left: Ramp,
     right: Ramp,
     sends: [Ramp; 2],
+    /// The values the hand put, which automation that plays takes the place of: the gain
+    /// (linear), the pan (−1..=1) and the sends (linear).
+    hand: (f32, f32),
+    hand_sends: [f32; 2],
+}
+
+/// The automation of an insert's parameters, with where the song is.
+pub(crate) struct SlotAuto<'a> {
+    pub set: &'a mut AutoSet,
+    pub clock: &'a dyn AutoClock,
 }
 
 impl Strip {
@@ -300,7 +311,37 @@ impl Strip {
             left: Ramp::at(1.0),
             right: Ramp::at(1.0),
             sends: [Ramp::at(0.0); 2],
+            hand: (1.0, 0.0),
+            hand_sends: [0.0; 2],
         }
+    }
+
+    pub fn hand(&self) -> (f32, f32) {
+        self.hand
+    }
+
+    pub fn hand_send(&self, bus: usize) -> f32 {
+        self.hand_sends[bus]
+    }
+
+    /// Fader and pan go to these values over `frames`, whatever the hand put (automation).
+    pub fn steer_level(&mut self, gain: f32, pan: f32, frames: u32) {
+        let [l, r] = pan_gains(pan);
+        self.left.set(gain * l, frames);
+        self.right.set(gain * r, frames);
+    }
+
+    /// A send goes to `gain` over `frames` (automation).
+    pub fn steer_send(&mut self, bus: usize, gain: f32, frames: u32) {
+        self.sends[bus].set(gain, frames);
+    }
+
+    /// The delays of the slots from `slot` on, which hear the sound ahead of the song.
+    fn delay_from(&self, slot: usize) -> u32 {
+        (self.slots[slot..].iter())
+            .filter(|slot| !slot.bypassed)
+            .filter_map(|slot| slot.effect.as_ref())
+            .fold(0u32, |sum, effect| sum.saturating_add(effect.latency()))
     }
 
     /// The delays of the effects in the slots, added up. A slot that is passed by delays
@@ -319,6 +360,7 @@ impl Strip {
         }
         let [l, r] = pan_gains(pan);
         let gain = gain.max(0.0);
+        self.hand = (gain, if pan.is_finite() { pan } else { 0.0 });
         self.left.set(gain * l, frames);
         self.right.set(gain * r, frames);
     }
@@ -327,6 +369,11 @@ impl Strip {
         for (ramp, gain) in self.sends.iter_mut().zip(sends) {
             if gain.is_finite() {
                 ramp.set(gain.max(0.0), frames);
+            }
+        }
+        for (hand, gain) in self.hand_sends.iter_mut().zip(sends) {
+            if gain.is_finite() {
+                *hand = gain.max(0.0);
             }
         }
     }
@@ -399,15 +446,60 @@ impl Strip {
         }
     }
 
-    pub fn inserts(&mut self, io: &mut Io<'_>, retired: &mut Producer<Box<dyn Effect>>) {
+    pub fn inserts(
+        &mut self,
+        io: &mut Io<'_>,
+        retired: &mut Producer<Box<dyn Effect>>,
+        mut auto: Option<SlotAuto<'_>>,
+    ) {
         if self
             .moving
             .is_some_and(|m| self.slots[m.from].pass_left == 0)
         {
             self.land();
         }
-        for slot in &mut self.slots {
-            slot.process(io, retired);
+        let moving = self.moving;
+        for at in 0..INSERT_SLOTS {
+            // The lanes number the slots as the commands do.
+            let named = (0..INSERT_SLOTS).find(|&s| moving.map_or(s, |m| m.before(s)) == at);
+            let lanes = (auto.as_mut()).filter(|a| named.is_some_and(|s| a.set.has_slot(s)));
+            let (Some(a), Some(named)) = (lanes, named) else {
+                self.slots[at].process(io, retired);
+                continue;
+            };
+            let ahead = u64::from(self.delay_from(at));
+            let slot = &mut self.slots[at];
+            let Some(effect) = slot.effect.as_mut() else {
+                slot.process(io, retired);
+                continue;
+            };
+            if effect.takes_points() {
+                a.set
+                    .effect_points(named, a.clock, ahead, io.left.len(), effect.as_mut());
+                slot.process(io, retired);
+                continue;
+            }
+            let frames = io.left.len();
+            let mut from = 0;
+            while from < frames {
+                let to = (from + EFFECT_STEP).min(frames);
+                if let Some(effect) = slot.effect.as_mut() {
+                    a.set
+                        .effect_values(named, a.clock, ahead + from as u64, effect.as_mut());
+                }
+                let mut piece = Io {
+                    left: &mut io.left[from..to],
+                    right: &mut io.right[from..to],
+                    spare_l: &mut *io.spare_l,
+                    spare_r: &mut *io.spare_r,
+                    dry_l: &mut *io.dry_l,
+                    dry_r: &mut *io.dry_r,
+                    ctx: io.ctx,
+                    fade_frames: io.fade_frames,
+                };
+                slot.process(&mut piece, retired);
+                from = to;
+            }
         }
     }
 
@@ -499,5 +591,7 @@ impl Strip {
         self.left = Ramp::at(1.0);
         self.right = Ramp::at(1.0);
         self.sends = [Ramp::at(0.0); 2];
+        self.hand = (1.0, 0.0);
+        self.hand_sends = [0.0; 2];
     }
 }

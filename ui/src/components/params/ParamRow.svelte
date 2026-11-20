@@ -10,6 +10,7 @@
   import { term } from "../../lib/tip.svelte";
   import { send } from "../../state/app.svelte";
   import { findTerm, t } from "../../text/ja";
+  import { metrics } from "../metrics.svelte";
   import { onDragCancel } from "../pianoroll/view.svelte";
   import { fractionOf, keyStep, typedText, unitText, valueAt, valueText } from "./paramRows";
   import { paramUi, stopTyping } from "./paramUi.svelte";
@@ -150,6 +151,10 @@
   }
 
   const fraction = $derived(fractionOf(spec, shown));
+  /** 棒とつまみは transform で動かす（幅や left を変えると、行のレイアウトが走る。docs/architecture.md 7 章「CPU で描く WebKit」）。 */
+  let barWidth = $state(0);
+  /** はしを、幅や left のときと同じく画面の画素に合わせる。 */
+  const snapped = $derived(Math.round(fraction * barWidth * metrics.dpr) / metrics.dpr);
   const step = $derived(Math.round(shown));
   const SQUARES_UP_TO = 5;
 </script>
@@ -181,6 +186,7 @@
       tabindex="0"
       data-test="param-slider"
       bind:this={bar}
+      bind:clientWidth={barWidth}
       onpointerdown={ondown}
       onpointermove={onmove}
       onpointerup={onup}
@@ -188,9 +194,9 @@
       {onkeydown}
     >
       <div class="track"></div>
-      <div class="fill" style:width="{fraction * 100}%"></div>
+      <div class="fill" style:transform="scaleX({barWidth > 0 ? snapped / barWidth : fraction})"></div>
       {#if dragging}<div class="knob ghost" style:left="{fractionOf(spec, from) * 100}%"></div>{/if}
-      <div class="knob" style:left="{fraction * 100}%"></div>
+      <div class="knob" style:transform="translateX({snapped}px)" data-test="param-knob"></div>
     </div>
   {:else if spec.shape === "steps"}
     <div class="control" role="slider" aria-label={name} aria-valuemin={0} aria-valuemax={spec.steps.length - 1} aria-valuenow={step} aria-valuetext={valueText(kind, spec, step)} tabindex="0" {onkeydown} data-test="param-steps">
@@ -229,7 +235,9 @@
     </div>
   {/if}
   {#if !typing}
-    <span class="m-num m-hi value" role="presentation" data-test="param-value" ondblclick={startTyping}>{valueText(kind, spec, shown)}</span>
+    <span class="m-num m-hi value live"
+      ><span class="in" role="presentation" data-test="param-value" ondblclick={startTyping}>{valueText(kind, spec, shown)}</span></span
+    >
   {/if}
   <AutoMark {...mark} />
 </div>
@@ -285,11 +293,14 @@
     position: absolute;
     left: 0;
     top: calc((var(--part-param-knob-h) - var(--mock-inspector-slider-fill)) / 2);
+    width: 100%;
     height: var(--mock-inspector-slider-fill);
     background: var(--color-gray-9);
+    transform-origin: 0 50%;
   }
   .knob {
     position: absolute;
+    left: 0;
     top: 0;
     width: var(--part-param-knob-w);
     height: var(--part-param-knob-h);
@@ -353,8 +364,20 @@
   .value {
     width: var(--part-param-value);
     flex-shrink: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
     text-align: right;
+  }
+  /* 帯が動かす値の字は、流れの外の箱に入れる: 字が変わっても、行はレイアウトしなおされない（mixer/Strip.svelte の .live と同じ）。 */
+  .live {
+    position: relative;
+  }
+  .live::before {
+    content: "\200b";
+  }
+  .live > .in {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 </style>

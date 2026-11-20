@@ -3,14 +3,14 @@
      キー（仕様書 3 章 86-7）: ↑ ↓ で 1 dB、Shift で 0.1 dB、Home でトラックを足したときの量（TrackView.sendDefaults）、Enter で打ちこむ。 -->
 <script lang="ts">
   import type { SendBus } from "../../bridge";
-  import { coverIf } from "../automation/coverIf";
   import { t } from "../../text/ja";
+  import { metrics } from "../metrics.svelte";
   import { mixControl } from "./control.svelte";
   import ValueField from "../params/ValueField.svelte";
   import { stepDb } from "./control.svelte";
   import { dbToFrac, fracToDb, parseDb, sendText } from "./scale";
 
-  /** auto: オートメーションが動かしている（棒の枠が accent。毎コマ変わるので、行を mixerMeters の canvas の下に入れる）。 */
+  /** auto: オートメーションが動かしている（棒の枠が accent）。 */
   let { track, bus, db, home, auto = false }: { track: number; bus: SendBus; db: number | null; home: number | null; auto?: boolean } = $props();
 
   const c = mixControl<number | null>({
@@ -22,9 +22,16 @@
     parse: parseDb,
   });
   const pct = (v: number | null) => `${dbToFrac(v) * 100}%`;
+  /** 棒は transform でのばす（幅を変えると、行のレイアウトが走る。docs/architecture.md 7 章「CPU で描く WebKit」）。 */
+  let width = $state(0);
+  /** 棒の右のはしを、幅のときと同じく画面の画素に合わせる。 */
+  const scale = (v: number | null) => {
+    const f = dbToFrac(v);
+    return `scaleX(${width > 0 ? Math.round(f * width * metrics.dpr) / metrics.dpr / width : f})`;
+  };
 </script>
 
-<div class="row" use:coverIf={auto}>
+<div class="row">
   <span class="m-lbl bus">{t(bus === "a" ? "mixer.sendA" : "mixer.sendB")}</span>
   <div
     class="hit"
@@ -44,8 +51,8 @@
     onkeyup={c.keyup}
     onblur={c.blur}
   >
-    <div class="bar" class:auto>
-      <div class="fill" style:width={pct(c.shown)}></div>
+    <div class="bar" class:auto bind:clientWidth={width}>
+      <div class="fill" style:transform={scale(c.shown)}></div>
       {#if c.drag}
         <div class="from" style:width={pct(c.drag.from)} data-test="mixer-send-from"></div>
       {/if}
@@ -54,7 +61,7 @@
   {#if c.typing}
     <span class="value"><ValueField initial={sendText(c.shown)} label={t(bus === "a" ? "mixer.sendA" : "mixer.sendB")} onsubmit={(text) => c.submit(text)} oncancel={c.stopTyping} /></span>
   {:else}
-    <span class="m-num value">{sendText(c.shown)}</span>
+    <span class="m-num value live"><span class="in">{sendText(c.shown)}</span></span>
   {/if}
 </div>
 
@@ -90,6 +97,7 @@
   .fill {
     height: 100%;
     background: var(--color-gray-9);
+    transform-origin: 0 50%;
   }
   .from {
     position: absolute;
@@ -104,5 +112,18 @@
     justify-content: flex-end;
     width: calc(var(--space-6) + var(--space-4));
     text-align: right;
+  }
+  /* 毎コマ変わるかもしれない字は、流れの外の箱に入れる（Strip.svelte の .live と同じ）。 */
+  .live {
+    position: relative;
+  }
+  .live::before {
+    content: "\200b";
+  }
+  .live > .in {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
 </style>

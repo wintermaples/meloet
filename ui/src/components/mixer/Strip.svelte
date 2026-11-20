@@ -65,6 +65,15 @@
   }
   let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null }: Props = $props();
   const moving = $derived(auto?.gain === "moving");
+  // 帯が動かしている物は、毎コマ変わるので mixerMeters の canvas の下に入れる（coverIf。docs/architecture.md 7 章）。
+  // 音量だけならフェーダーと値の箱（.gain-box）、パンも動くならパンから値までの箱（.pan-box）、センドも動くならセンドから値までの
+  // 箱（.moving-box）。canvas が高くなるほど、1 コマに描きなおす広さが 25 % の決まりに近づくので、要る分だけにする。
+  const trackId = $derived(strip.kind === "track" ? strip.id : null);
+  const sendsMove = $derived(auto?.sends[0] === "moving" || auto?.sends[1] === "moving");
+  const panMoves = $derived(auto?.pan === "moving");
+  const wideTrack = $derived(sendsMove ? trackId : null);
+  const panTrack = $derived(panMoves && !sendsMove ? trackId : null);
+  const gainTrack = $derived(moving && !panMoves && !sendsMove ? trackId : null);
 
   const kind = $derived(strip.kind);
   const fader = faderControl(
@@ -175,6 +184,7 @@
       />
     {/each}
   </div>
+  <div class="moving-box" use:coverIf={wideTrack}>
   <div class="group">
     <span class="m-lbl" use:term={"センド"}>{t("mixer.sends")}</span>
     {#if sends}
@@ -185,19 +195,23 @@
       <div class="empty-row"></div>
     {/if}
   </div>
-  <PanKnob {strip} {pan} auto={auto?.pan === "moving"} />
-  <!-- 動いているフェーダーと値は、毎コマ変わるので mixerMeters の canvas の下に入れる（docs/architecture.md 7 章）。 -->
-  <div class="level" style:min-height="{metrics.scaled(FADER_MIN)}px" use:coverIf={moving}>
+  <div class="pan-box" use:coverIf={panTrack}>
+  <PanKnob {strip} {pan} auto={panMoves} />
+  <div class="gain-box" use:coverIf={gainTrack}>
+  <div class="level" style:min-height="{metrics.scaled(FADER_MIN)}px">
     <Fader control={fader} auto={moving} />
     <div class="meter" use:glSlot={{ kind: "meter", vertical: true, source: meter, gap: meterGap }}></div>
   </div>
-  <div class="value" use:coverIf={moving}>
+  <div class="value">
     {#if fader.typing}
       <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
     {:else}
-      <span class="m-num m-hi db" data-test="mixer-gain">{faderText(fader.shown)}</span>
+      <span class="m-num m-hi db live"><span class="in" data-test="mixer-gain">{faderText(fader.shown)}</span></span>
     {/if}
     <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
+  </div>
+  </div>
+  </div>
   </div>
   {#if auto?.row}
     <div class="auto-row" data-test="mixer-auto">
@@ -326,6 +340,20 @@
   .empty-row {
     height: var(--size-row);
   }
+  /* ストリップの縦のならびを、そのまま中に続ける箱（すきまは同じ）。 */
+  .moving-box,
+  .pan-box,
+  .gain-box {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    /* coverIf が、箱いっぱいの空の箱を中に置く。その箱は、ストリップの幅いっぱいまで左右に出す: となりのストリップの箱とつながって、
+       WebKit のためる四角が 1 つになる（docs/architecture.md 7 章「レイアウトでためる Region」）。 */
+    position: relative;
+    --ask-left: calc(-1 * var(--space-1));
+    --ask-right: calc(-1 * var(--space-1) - var(--line-hair));
+  }
   .level {
     flex: 1;
     display: flex;
@@ -342,8 +370,24 @@
     align-items: baseline;
   }
   .db {
+    flex: 1;
+    min-width: 0;
     font-size: var(--text-m-size);
     line-height: var(--text-m-line-height);
+  }
+  /* 毎コマ変わるかもしれない字は、流れの外の箱に入れる: 字が変わっても、ストリップの縦のならびはレイアウトしなおされない
+     （docs/architecture.md 7 章「CPU で描く WebKit」）。外の箱は、字と同じ高さとベースラインを幅のない字で保つ。 */
+  .live {
+    position: relative;
+  }
+  .live::before {
+    content: "\200b";
+  }
+  .live > .in {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
   /* フェーダーの値の下（モック F6-MixerAuto ・ F6-MixerRest: 高さ 20、gray.8 の「オートメーション」、休みは「休み」と「もどす」）。 */
   .auto-row {

@@ -47,6 +47,7 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 - クレートの分けかたは報告書の 7-1 に `meloet-core` を足した形（`docs/architecture.md` の 1 章）。
 - 鍵盤のぬきさしは ALSA シーケンサ。出口と入口の名前は PipeWire の Route。音は cpal。
 - バッファは、本当に動いている数を出す。PC 全体の設定（PipeWire の quantum など）は、meloet も、きみも、変えない。読むだけ。
+  - ただし、測りや試験のときだけ、きみが `clock.force-quantum` を一時的に変えてよい（オーナーさん 2026-11-21）。変える前に `pw-metadata -n settings 0` で前の値を読み（いまは 256）、終わったらその値に戻し、変えた事と戻した事をオーナーさんに伝える。meloet が変えないのは同じ。
 - 音のスレッドでは、メモリを取りにいかない、鍵を待たない。テストで機械が見はっている（`crates/meloet-engine`、`crates/meloet-sound`）。値は 20 ms でなめらかに、エフェクトや音源を入れかえるときは 10 ms 重ねる。NaN は和の所で止め、denormal はくり返しの所で小さな値を 0 にする（FTZ ・ DAZ は立てない）。
 - 最初から入っているエフェクトは自分で書く（`crates/meloet-sound/src/effects/`）。音色の素材は CC0、CC BY、MIT だけ（CC BY-SA は使わない）。帰属表示は `NOTICE` と「meloet について」で、`node licenses/check.mjs` が素材まで見はる。素材の作りかたはリポジトリ（`tools/sounds/`）、作った包みは GitHub の Release（上げる前にオーナーさんに聞く）。
 - プラグインは別のプロセス（`meloet-plughost`、同じプラグインは 1 つのプロセスにまとめる）。標準出力 ・ 標準エラーをやりとりに使わない。止まったかは時間で見はる（`docs/architecture.md` 20 章）。子のプロセスは `meloet_plugin::launch::spawn` で 1 つずつ起こす（VS Code の LLDB のため）。形式は VST3 と LV2（CLAP は入れていない）。

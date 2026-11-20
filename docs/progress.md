@@ -1129,3 +1129,4 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
   - (a) 動くフェーダー ・ 値の字（a2cc4cb、merge 5cb251c）: つまみと棒は `transform`、値の字は流れの外の箱、帯が動かす物を囲む箱を canvas の下に入れて箱まるごとの四角を先に頼む、つまみと字は上の canvas を描くコマに見せる。音量 ・ 音量とパンの帯は、ミキサー 8 本 ・ 16 本、アレンジ 16 本とも 62 コマ（busyMs 9.1〜11.8 ms、前は 21.5〜33.2 ms）。値の字は間引かない（間引くと変わるコマだけ重く p95 が残る）。WebKit の Region の決まり（`gridSize` 256）は `transform` にも効く、を 7 章に。レイアウトの四角を読む道具 `tools/measure/webkit-layout.sh`。ドラッグの意図は 1 コマに 1 つまで（数えた）。**センドの帯の曲は 44〜46 コマのまま**（レイアウトではなく、メーターの面が大きく 1 コマの描きなおしが 25 % をこえる）。[`measurements/2026-11-20-round6-fix-redraw.md`](measurements/2026-11-20-round6-fix-redraw.md)。
   - ヤチヨさんの決め（C-10）: ミキサーのメーターはいつも 30 Hz。64 本でも大丈夫かを確かめる。(a) の係を呼びもどして頼んだ。
   - merge の後の check-all で、plughost の `a_host_process_crashed_from_outside_stops_its_slots_at_the_second_block` が 1 回落ちた（待った回数が `[2, 2]`。続けて 6 回は通る。時間のぶれ。宿題）。
+- 区切り2 ・ 3 の直し（a ・ b ・ c）が入った後の check-all（7ecf8b6）: Rust 999 ・ ignored 78、画面 2596、fmt ・ clippy ・ 型 ・ ライセンスの見はり。

@@ -25,9 +25,9 @@ enum Held {
 
 /// What the engine and the plugins' thread do with the effects, as far as plugins go: where
 /// each loaded plugin is, and which loads wait for an answer.
-struct Mini {
+pub(crate) struct Mini {
     /// The strips, as far as the song can be compared with them.
-    strips: FakeEngine,
+    pub strips: FakeEngine,
     sounding: HashMap<usize, Held>,
     /// The seat's own instrument, set aside under a trial.
     aside: HashMap<usize, Held>,
@@ -35,14 +35,14 @@ struct Mini {
     inserts: HashMap<(StripSeat, usize), u64>,
     sample: Option<u64>,
     /// Loaded, and waiting to be put into the engine or let go of.
-    waiting: BTreeSet<u64>,
+    pub waiting: BTreeSet<u64>,
     /// Loads asked for and not answered yet.
-    asked: Vec<u64>,
+    pub asked: Vec<u64>,
     sf2_asked: Vec<Sf2Key>,
     /// How many plugins were put into the engine.
     plugged: u32,
     /// The plugin processes: what each plugin has, and its answers on their way.
-    host: FakeHost,
+    pub host: FakeHost,
     /// The plugins whose window the keyboard is in.
     visited: Vec<u64>,
     /// The plugins whose window was asked for, in order.
@@ -50,7 +50,7 @@ struct Mini {
 }
 
 impl Mini {
-    fn new(m: &mut Model) -> Mini {
+    pub fn new(m: &mut Model) -> Mini {
         let mut mini = Mini {
             strips: FakeEngine::new(m),
             sounding: HashMap::new(),
@@ -71,7 +71,7 @@ impl Mini {
         mini
     }
 
-    fn take(&mut self, effects: &[Effect]) {
+    pub fn take(&mut self, effects: &[Effect]) {
         self.strips.take(effects);
         self.host.take(effects);
         for effect in effects {
@@ -190,7 +190,7 @@ impl Mini {
     }
 
     /// The book and the engine agree, and no loaded plugin is forgotten.
-    fn check(&self, m: &Model, ctx: &str) {
+    pub fn check(&self, m: &Model, ctx: &str) {
         self.strips.check_mixer(m, ctx);
         let p = m.play();
         let book = &p.plugs;
@@ -279,7 +279,7 @@ impl Mini {
     }
 
     /// The plugins of the song that sound, with the place each is at.
-    fn of_song(&self, m: &Model) -> Vec<(meloet_model::PluginPlace, u64)> {
+    pub fn of_song(&self, m: &Model) -> Vec<(meloet_model::PluginPlace, u64)> {
         let p = m.play();
         (p.plugs.list.iter())
             .filter(|plug| plug.sounds() && !self.host.dead.contains(&plug.ticket))
@@ -288,7 +288,7 @@ impl Mini {
     }
 
     /// Every plugin of the song that sounds has the state the song has for it.
-    fn check_states(&self, m: &Model, ctx: &str) {
+    pub fn check_states(&self, m: &Model, ctx: &str) {
         let doc = &m.play().song().doc;
         for (place, ticket) in self.of_song(m) {
             let in_song = &doc.plugin(place).expect("in the song").state;
@@ -314,7 +314,7 @@ impl Mini {
     }
 }
 
-struct Rng(u64);
+pub(crate) struct Rng(pub u64);
 
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -324,17 +324,17 @@ impl Rng {
         self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
     }
 
-    fn below(&mut self, n: u64) -> u64 {
+    pub fn below(&mut self, n: u64) -> u64 {
         self.next() % n.max(1)
     }
 
-    fn of<T: Clone>(&mut self, items: &[T]) -> T {
+    pub fn of<T: Clone>(&mut self, items: &[T]) -> T {
         items[self.below(items.len() as u64) as usize].clone()
     }
 }
 
 /// Every insert slot of the song that holds something, with the effect of meloet it holds.
-fn filled_slots(doc: &Doc) -> Vec<(InsertRef, Option<EffectKind>)> {
+pub(crate) fn filled_slots(doc: &Doc) -> Vec<(InsertRef, Option<EffectKind>)> {
     let tracks = doc.tracks.iter().map(|t| {
         let strip = StripRef::Track { id: t.id.0 };
         (strip, &t.channel.inserts)
@@ -362,7 +362,7 @@ fn filled_slots(doc: &Doc) -> Vec<(InsertRef, Option<EffectKind>)> {
     filled
 }
 
-fn held(doc: &Doc) -> Doc {
+pub(crate) fn held(doc: &Doc) -> Doc {
     Doc {
         next_id: 0,
         ..doc.clone()

@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use meloet_model::mixer::{move_slot, moved_slot, new_track_sends};
+use meloet_model::mixer::{insert_moves, move_slot, moved_slot, new_track_sends};
 use meloet_model::{
     Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginPlace, PluginRef, Sends, StripId,
 };
@@ -61,6 +61,14 @@ impl MixTold {
     pub fn seat_cleared(&mut self, seat: usize) {
         if let Some(told) = self.tracks.get_mut(seat) {
             *told = Told::new();
+        }
+    }
+
+    fn strip(&self, strip: StripSeat) -> Option<&Told> {
+        match strip {
+            StripSeat::Track(seat) => self.tracks.get(seat),
+            StripSeat::Return(bus) => Some(&self.returns[bus.index()]),
+            StripSeat::Master => Some(&self.master),
         }
     }
 
@@ -176,6 +184,9 @@ fn sync_strip(
         };
         match (told.as_mut(), insert) {
             (Some(told), Some(insert)) if told.kind().is_some() && told.kind() == insert.kind() => {
+                // The effect of the slot is this insert's from now on, as it is when the
+                // song is another one: a later move finds it by the id.
+                told.id = insert.id;
                 for (param, value) in insert.values().iter().enumerate() {
                     let param = param as u32;
                     let value = previewed(param, *value);
@@ -295,40 +306,48 @@ impl Play {
         }
     }
 
-    /// The slot `from` of `strip` is at `to` now with what it held, by a step or by taking
-    /// one back: the engine moves what it has there as it sounds, and whatever names a slot
-    /// of the strip follows.
-    pub(super) fn insert_moved(
-        &mut self,
-        strip: StripId,
-        from: usize,
-        to: usize,
-        effects: &mut Vec<Effect>,
-    ) {
-        if from >= INSERT_SLOTS || to >= INSERT_SLOTS || from == to {
-            return;
-        }
-        let follow = |place: PluginPlace| match place {
-            PluginPlace::Insert(s, slot) if s == strip => {
-                PluginPlace::Insert(s, moved_slot(slot, from, to))
+    /// The song is another `Doc` of its history (a step, one taken back, a jump over many):
+    /// an insert the engine was told of that is in another slot of its strip now, told by
+    /// its `InsertId`, is moved there as it sounds, and whatever names a slot of the strip
+    /// follows. [`Play::sync_mix`] then finds it where it is, and makes nothing anew for it.
+    pub(super) fn inserts_follow(&mut self, effects: &mut Vec<Effect>) {
+        let doc = &self.song.doc;
+        let tracks = doc
+            .tracks
+            .iter()
+            .map(|t| (StripId::Track(t.id), &t.channel));
+        let returns = Bus::ALL.map(|bus| (StripId::Return(bus), &doc.returns[bus.index()].channel));
+        let master: &Channel = &doc.master;
+        let mut moved = Vec::new();
+        for (strip, channel) in tracks.chain(returns).chain([(StripId::Master, master)]) {
+            let seat = self.strip_seat(strip);
+            let Some((seat, told)) = seat.and_then(|s| Some((s, self.mix_told.strip(s)?))) else {
+                continue;
+            };
+            for (from, to) in insert_moves(&told.inserts, &channel.inserts) {
+                moved.push((strip, seat, from, to));
             }
-            other => other,
-        };
-        self.selection_follows(follow);
-        self.shelf_follows(strip, from, to);
-        let Some(seat) = self.strip_seat(strip) else {
-            return;
-        };
-        if let Some(told) = self.mix_told.strip_mut(seat) {
-            move_slot(&mut told.inserts, from, to);
-            move_slot(&mut told.bypassed, from, to);
         }
-        self.plugs_follow(seat, from, to);
-        effects.push(Effect::Engine(EngineOp::MoveInsert {
-            strip: seat,
-            from,
-            to,
-        }));
+        for (strip, seat, from, to) in moved {
+            let follow = |place: PluginPlace| match place {
+                PluginPlace::Insert(s, slot) if s == strip => {
+                    PluginPlace::Insert(s, moved_slot(slot, from, to))
+                }
+                other => other,
+            };
+            self.selection_follows(follow);
+            self.shelf_follows(strip, from, to);
+            if let Some(told) = self.mix_told.strip_mut(seat) {
+                move_slot(&mut told.inserts, from, to);
+                move_slot(&mut told.bypassed, from, to);
+            }
+            self.plugs_follow(seat, from, to);
+            effects.push(Effect::Engine(EngineOp::MoveInsert {
+                strip: seat,
+                from,
+                to,
+            }));
+        }
     }
 
     /// The seat's track is gone: the engine empties the seat, strip and all.

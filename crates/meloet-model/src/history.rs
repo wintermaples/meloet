@@ -452,6 +452,21 @@ impl History {
         Some(kind)
     }
 
+    /// Undoes or redoes until `to` steps are done (the row `to` of the history band is the
+    /// last one done; more than there are is all of them). Returns how many steps that
+    /// were. Each is one swap of what the steps share already, as in [`History::undo`].
+    pub fn jump(&mut self, doc: &mut Doc, to: usize) -> usize {
+        let to = to.min(self.undo.len() + self.redo.len());
+        let steps = self.undo.len().abs_diff(to);
+        while self.undo.len() > to {
+            self.undo(doc);
+        }
+        while self.undo.len() < to {
+            self.redo(doc);
+        }
+        steps
+    }
+
     fn swap(&mut self, doc: &mut Doc, step: Step) -> Step {
         let other = std::mem::replace(doc, step.doc);
         self.next_id = self.next_id.max(other.next_id).max(doc.next_id);

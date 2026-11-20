@@ -235,7 +235,15 @@ impl Play {
                 plug.plugin = now;
             }
         }
+        let name = match change {
+            PluginChange::Param(param) => self.panel_param_name(ticket, param),
+            PluginChange::Window => None,
+        };
+        let steps = self.history.undo_count();
         self.apply_resting(edit, &rests, true, effects);
+        if let (Some(name), true) = (name, self.history.undo_count() > steps) {
+            self.note_param_step(name);
+        }
     }
 
     fn plugin_place_of(&self, ticket: u64) -> Option<PluginPlace> {
@@ -788,4 +796,4 @@ impl Play {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

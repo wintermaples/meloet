@@ -389,6 +389,8 @@ pub struct Play {
     /// and after it.
     sel_undo: Vec<(Sel, Sel)>,
     sel_redo: Vec<(Sel, Sel)>,
+    /// What the history band says of steps that the `Doc`s around them do not tell.
+    step_notes: history::StepNotes,
     /// Mod C: starts count from the earliest note.
     clipboard: Vec<Note>,
     /// Mod C in the arrange view.
@@ -466,6 +468,7 @@ impl Play {
             note_sel: NoteSel::default(),
             sel_undo: Vec::new(),
             sel_redo: Vec::new(),
+            step_notes: history::StepNotes::default(),
             clipboard: Vec::new(),
             clip_board: Vec::new(),
             rec: None,
@@ -1044,46 +1047,6 @@ impl Play {
         }
     }
 
-    pub fn undo(&mut self, effects: &mut Vec<Effect>) {
-        if self.busy() {
-            return;
-        }
-        let before = self.doc().clone();
-        self.tl.forget_fresh();
-        if let Some(kind) = self.history.undo(&mut self.song.doc) {
-            self.crossed_songs(&kind);
-            self.song.doc.name.clone_from(&before.name);
-            if let StepKind::MoveInsert { strip, from, to } = kind {
-                self.insert_moved(strip, to, from, effects);
-            }
-            self.after_change(&before, effects);
-            if let Some((sel_before, sel_after)) = self.sel_undo.pop() {
-                self.put_sel(sel_before.clone(), effects);
-                self.sel_redo.push((sel_before, sel_after));
-            }
-        }
-    }
-
-    pub fn redo(&mut self, effects: &mut Vec<Effect>) {
-        if self.busy() {
-            return;
-        }
-        let before = self.doc().clone();
-        self.tl.forget_fresh();
-        if let Some(kind) = self.history.redo(&mut self.song.doc) {
-            self.crossed_songs(&kind);
-            self.song.doc.name.clone_from(&before.name);
-            if let StepKind::MoveInsert { strip, from, to } = kind {
-                self.insert_moved(strip, from, to, effects);
-            }
-            self.after_change(&before, effects);
-            if let Some((sel_before, sel_after)) = self.sel_redo.pop() {
-                self.put_sel(sel_after.clone(), effects);
-                self.sel_undo.push((sel_before, sel_after));
-            }
-        }
-    }
-
     fn sel(&self) -> Sel {
         Sel {
             notes: self.note_sel.clone(),
@@ -1121,12 +1084,9 @@ impl Play {
     ) {
         let sel_before = self.sel();
         let before = self.doc().clone();
-        let step = e.step;
         self.tl.forget_fresh();
+        self.forget_undone_steps();
         self.history.apply(&mut self.song.doc, e);
-        if let StepKind::MoveInsert { strip, from, to } = step {
-            self.insert_moved(strip, from, to, effects);
-        }
         if let Some(pick) = clips {
             self.clips_sel = pick.clips;
             self.selected = pick.clicked;
@@ -1159,6 +1119,7 @@ impl Play {
     /// Sends what the engine must hear again, and lets go of clips that are gone.
     fn after_change(&mut self, before: &Doc, effects: &mut Vec<Effect>) {
         self.changes += 1;
+        self.inserts_follow(effects);
         // Before any state is put back into a plugin: that takes in what a drag changed.
         self.song_changed_under_drags(effects);
         self.sync_seats(before, effects);
@@ -1543,6 +1504,7 @@ impl Play {
         self.tl = timeline::Tl::default();
         self.sel_undo.clear();
         self.sel_redo.clear();
+        self.step_notes = history::StepNotes::default();
         self.rec = None;
         self.heard = None;
         self.last_heard = None;
@@ -1584,15 +1546,6 @@ impl Play {
     /// Goes up whenever the `Doc` changes or another song takes its place.
     pub fn changes(&self) -> u64 {
         self.changes
-    }
-
-    /// Undo and redo over "なおすためのファイルから戻す" or "戻さない" go between the recovered song
-    /// and the saved one, whose takes may have gone their own ways (a file changed from outside):
-    /// the screen lets go of its kept takes then too.
-    fn crossed_songs(&mut self, kind: &StepKind) {
-        if matches!(kind, StepKind::Recovered | StepKind::DiscardRecovered) {
-            self.serial += 1;
-        }
     }
 
     /// See `SongView::serial`.

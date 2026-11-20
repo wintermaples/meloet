@@ -172,6 +172,18 @@ impl Core {
         });
     }
 
+    /// As the plugin process says of a hand that took a parameter in the window. What
+    /// [`Core::turn`] does comes from the host's side, and the plugin counts no hand for it.
+    fn hand(&self, track: u32) {
+        self.peek(move |w| {
+            let place = meloet_model::PluginPlace::Instrument(meloet_model::TrackId(track));
+            let tickets = w.model.plugin_tickets();
+            let (_, ticket) = *tickets.iter().find(|(p, _)| *p == place).expect("loaded");
+            let said = crate::state::PluginSaid::WindowTouches { touches: 1 };
+            w.handle(crate::state::Input::PluginSaid { ticket, said });
+        });
+    }
+
     /// Waits until a visit to a plugin's window is under way, or until none is.
     fn visit_when(&self, under_way: bool) {
         let visiting = || self.peek(|w| w.model.play().visiting());
@@ -649,6 +661,135 @@ fn surge_xt_a_visit_to_its_window_is_one_step_and_undo_puts_it_back() {
     core.send(Command::DeleteTrack { track });
     state_when(&core, "no window", |s| s.windows.list.is_empty());
     assert_eq!(x.wait(pid, "Surge XT", false), None);
+    drop(core);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The real Surge XT (VST3): a jump through the history over two visits to its window and
+/// steps of other things gives the plugin the state of the row, once, in the same process.
+#[test]
+#[ignore = "needs an X display and Surge XT (VST3)"]
+fn surge_xt_a_jump_over_visits_to_its_window_puts_the_state_of_the_row_back() {
+    assert!(Path::new(SURGE_BUNDLE).is_dir(), "no {SURGE_BUNDLE}");
+    let root = plughost::temp_dir("plug-surge-jump");
+    std::fs::create_dir_all(root.join("vst3")).unwrap();
+    std::os::unix::fs::symlink(SURGE_BUNDLE, root.join("vst3/Surge XT.vst3")).unwrap();
+    let core = Core::start(CoreOptions {
+        config_dir: Some(root.join("config")),
+        songs_dir: Some(root.join("songs")),
+        plugins: Some(PluginOptions {
+            host_exe: plughost::exe(),
+            cache_dir: Some(root.join("cache")),
+            usual_places: vec![root.join("vst3")],
+            scan_timeout: Duration::from_secs(30),
+            child_env: Vec::new(),
+            wait_for_screen: false,
+        }),
+        ..CoreOptions::offline()
+    });
+    let x = X::open();
+    let state = state_when(&core, "the scan", |s| {
+        s.library.plugins.iter().any(|row| row.name == "Surge XT")
+    });
+    let rows = &state.library.plugins;
+    let key = rows.iter().find(|row| row.name == "Surge XT").unwrap();
+    let key = key.key.clone();
+    let track = core.plugin_track(&key);
+    let id = core.track_plugin(1);
+    core.send(Command::SelectInstrument { track });
+    state_when(&core, "Surge XT's window", |s| !s.windows.list.is_empty());
+    let pid = core.window_pid(&key);
+    let window = x.wait(pid, "Surge XT", true).expect("on the screen");
+    let table = table_when(&core, None);
+    let rows = core.plugin_params(table).expect("the table");
+    let all = || rows.groups.iter().flat_map(|g| &g.params);
+    let octave = all().find(|p| p.name == "A Octave").expect("A Octave");
+    let (octave, before) = (octave.id, octave.value.expect("its value"));
+    std::thread::sleep(QUIET);
+    x.unfocus();
+    core.visit_when(false);
+    std::thread::sleep(QUIET);
+
+    // Steps of other things, a visit that turns the octave up, more steps, a visit that
+    // turns it down, more steps.
+    let visit = |value: f64, what: &str| {
+        let steps = core.undo_count();
+        x.focus(window);
+        core.visit_when(true);
+        core.turn(id, octave, value);
+        core.hand(track);
+        x.unfocus();
+        core.steps_when(steps + 1, what);
+        assert!(matches!(
+            core.last_step(),
+            Some(StepKind::PluginWindow { .. })
+        ));
+        steps + 1
+    };
+    let other = |n: u32| {
+        let steps = core.undo_count();
+        core.send(Command::SetTempo {
+            bpm: 100.0 + f64::from(n),
+        });
+        let strip = StripRef::Track { id: track };
+        let db = Some(-(n as f32));
+        core.send(Command::SetGain {
+            strip,
+            db,
+            commit: true,
+        });
+        core.steps_when(steps + 2, "two steps of other things");
+    };
+    let start = core.undo_count();
+    other(1);
+    let up = visit(1.0, "the first visit is a step");
+    other(2);
+    let down = visit(0.0, "the second visit is a step");
+    other(3);
+    let end = core.undo_count();
+    assert_eq!(end, start + 8);
+    core.near_when(id, octave, 0.0, 0.01, "after the second visit");
+
+    let jump = |index: u32, octave_then: f64, what: &str| {
+        let row = core.history_rows(index, index).remove(0);
+        let was = core.undo_count();
+        let asked = Instant::now();
+        core.send(Command::HistoryJump {
+            index,
+            step: row.step,
+        });
+        core.steps_when(index, what);
+        core.near_when(id, octave, octave_then, 0.01, what);
+        eprintln!(
+            "{what}: {} steps, the plugin has the state after {:?}",
+            was.abs_diff(index),
+            asked.elapsed()
+        );
+        let said = core.snapshot().state.status.message;
+        assert!(
+            matches!(said, Some(StatusMessage::HistoryJumped { steps, .. }) if steps == was.abs_diff(index)),
+            "{what}: {said:?}"
+        );
+        assert_eq!(core.window_pid(&key), pid, "{what}: not loaded anew");
+        assert_eq!(core.snapshot().state.windows.list.len(), 1, "{what}");
+        assert!(x.on_screen(window), "{what}");
+    };
+    // Back over both visits: as it started. Forward over both: as the second left it.
+    jump(start + 1, before, "back over both visits");
+    jump(end, 0.0, "forward over both visits");
+    // Between the visits, from either side.
+    jump(up + 1, 1.0, "back to between the visits");
+    jump(start + 2, before, "back before the first visit");
+    jump(down - 1, 1.0, "forward to between the visits");
+    // Over steps that are not the plugin's: it is given nothing.
+    jump(up, 1.0, "back over steps of other things");
+    jump(down, 0.0, "onto the second visit");
+    jump(end, 0.0, "to the newest step");
+    std::thread::sleep(QUIET);
+    assert_eq!(core.undo_count(), end, "no visit was made of the jumps");
+
+    core.send(Command::DeleteTrack { track });
+    state_when(&core, "no window", |s| s.windows.list.is_empty());
     drop(core);
     let _ = std::fs::remove_dir_all(root);
 }

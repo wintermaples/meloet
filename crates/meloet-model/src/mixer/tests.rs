@@ -662,3 +662,66 @@ fn an_insert_keeps_its_id_and_no_id_is_given_twice() {
     let again = doc.insert(T1, 3).unwrap().id;
     assert!(again != comp && again != chorus);
 }
+
+/// Every way to fill the slots from the ids `1..=ids` with no id twice.
+fn every_filling(ids: u32) -> Vec<[Option<u32>; INSERT_SLOTS]> {
+    let mut all = vec![[None; INSERT_SLOTS]];
+    for slot in 0..INSERT_SLOTS {
+        let mut more = Vec::new();
+        for filling in &all {
+            for id in 1..=ids {
+                if !filling.contains(&Some(id)) {
+                    let mut with = *filling;
+                    with[slot] = Some(id);
+                    more.push(with);
+                }
+            }
+        }
+        all.extend(more);
+    }
+    all
+}
+
+fn inserts_of(ids: [Option<u32>; INSERT_SLOTS]) -> Inserts {
+    ids.map(|id| id.map(|id| Insert::new(InsertId(id), EffectKind::Eq4)))
+}
+
+#[test]
+fn insert_moves_bring_every_kept_insert_to_its_slot() {
+    let all = every_filling(5);
+    let mut most = 0;
+    for have in &all {
+        for want in &all {
+            let moves = insert_moves(&inserts_of(*have), &inserts_of(*want));
+            let mut now = *have;
+            for &(from, to) in &moves {
+                assert_ne!(from, to, "{have:?} -> {want:?}");
+                move_slot(&mut now, from, to);
+            }
+            for slot in 0..INSERT_SLOTS {
+                if want[slot].is_some() && have.contains(&want[slot]) {
+                    assert_eq!(now[slot], want[slot], "{have:?} -> {want:?}: {moves:?}");
+                }
+            }
+            if have == want {
+                assert!(moves.is_empty());
+            }
+            most = most.max(moves.len());
+        }
+    }
+    assert!(most < INSERT_SLOTS, "{most}");
+}
+
+#[test]
+fn one_move_of_a_slot_is_one_insert_move() {
+    for have in every_filling(4) {
+        for from in 0..INSERT_SLOTS {
+            for to in 0..INSERT_SLOTS {
+                let mut want = have;
+                move_slot(&mut want, from, to);
+                let moves = insert_moves(&inserts_of(have), &inserts_of(want));
+                assert!(moves.len() <= 1, "{have:?} {from} -> {to}: {moves:?}");
+            }
+        }
+    }
+}

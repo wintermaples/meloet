@@ -348,3 +348,78 @@ fn rows_have_the_docs_around_each_step_and_numbers_of_their_own() {
     assert_ne!(amended.number, now[2]);
     assert_eq!(amended.after.name, "べつの名前");
 }
+
+#[test]
+fn a_jump_lands_where_single_steps_do() {
+    for seed in 1..=40u64 {
+        let mut rng = Rng(seed.wrapping_mul(0xD6E8_FEB8_6659_FD93) | 1);
+        // The same steps in two histories: one jumps, the other walks.
+        let (mut h, mut walked) = (History::new(), History::new());
+        let (mut doc, mut walked_doc) = (Doc::new_default(), Doc::new_default());
+        let mut book = IdBook::new(&doc);
+        for round in 0..300 {
+            let ctx = format!("seed {seed}, round {round}");
+            if rng.below(3) > 0 {
+                if let Some(e) = random_edit(&mut rng, &doc) {
+                    let before = doc.clone();
+                    walked.apply(&mut walked_doc, e.clone());
+                    h.apply(&mut doc, e);
+                    book.saw(&doc, Some(&before))
+                        .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+                }
+            } else {
+                let total = h.undo_count() + h.redo_count();
+                // Now and then past the newest step, which is the newest step.
+                let to = rng.below(total as u64 + 2) as usize;
+                let was = h.undo_count();
+                let steps = h.jump(&mut doc, to);
+                let to = to.min(total);
+                assert_eq!(steps, was.abs_diff(to), "{ctx}");
+                while walked.undo_count() > to {
+                    walked.undo(&mut walked_doc);
+                }
+                while walked.undo_count() < to {
+                    walked.redo(&mut walked_doc);
+                }
+                if rng.below(4) == 0 {
+                    h.mark_saved();
+                    walked.mark_saved();
+                }
+            }
+            book.saw(&doc, None)
+                .unwrap_or_else(|e| panic!("{ctx}: {e}"));
+            assert_eq!(held(&doc), held(&walked_doc), "{ctx}");
+            assert_eq!(doc.next_id, walked_doc.next_id, "{ctx}");
+            assert_eq!(h.undo_count(), walked.undo_count(), "{ctx}");
+            assert_eq!(h.redo_count(), walked.redo_count(), "{ctx}");
+            assert_eq!(h.version(), walked.version(), "{ctx}");
+            assert_eq!(
+                h.has_unsaved_changes(),
+                walked.has_unsaved_changes(),
+                "{ctx}"
+            );
+            for index in 0..h.undo_count() + h.redo_count() {
+                let (a, b) = (h.row(&doc, index), walked.row(&walked_doc, index));
+                let (a, b) = (a.unwrap(), b.unwrap());
+                assert_eq!((a.kind, a.number), (b.kind, b.number), "{ctx}, row {index}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_jump_of_no_steps_changes_nothing() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    assert_eq!(h.jump(&mut doc, 0), 0);
+    assert_eq!(h.jump(&mut doc, 3), 0);
+    set_tempo(&mut h, &mut doc, 9_000);
+    set_tempo(&mut h, &mut doc, 10_000);
+    let version = h.version();
+    assert_eq!(h.jump(&mut doc, 2), 0);
+    assert_eq!(h.version(), version);
+    assert_eq!(h.jump(&mut doc, 0), 2);
+    assert_eq!(doc.timeline.tempo, Doc::new_default().timeline.tempo);
+    assert_eq!(h.jump(&mut doc, 9), 2);
+    assert_eq!(doc.timeline.tempo, tempo(10_000));
+}

@@ -1,6 +1,7 @@
 // プラグインのパラメータの一覧（仕様書 3 章「パラメータ」）。DOM を知らない純粋な関数。
 // 一覧はプラグインが言ってきた順とグループのまま。40 個をこえる子は、グループをたたんで始める（たたむのは画面だけ）。
 // いちばん上に「オートメーションに書いている」。さがすと、合う物だけがグループごとに出て、1 グループ 6 個まで、残りは「… ほか N」。
+// 鍵盤のつまみを受けるだけのパラメータ（ParamTable.keyboardKnobs）は、さがしているときだけ、いちばん下のグループ「鍵盤のつまみを受ける所」に出す（仕様書 3 章 91-3）。
 
 import type { ParamGroup, ParamKind, ParamRow, ParamTable } from "../../bridge";
 import { t } from "../../text/ja";
@@ -10,6 +11,7 @@ export const FOLD_OVER = 40;
 /** さがしているとき、1 グループに出す数。 */
 export const SEARCH_SHOWN = 6;
 export const AUTOMATED_GROUP = "auto";
+export const KNOBS_GROUP = "knobs";
 
 export type PluginEntry =
   | { kind: "heading"; id: string; group: string; name: string; count: number; folded: boolean }
@@ -73,14 +75,38 @@ export function pluginEntries(table: ParamTable, automated: readonly number[], l
     for (let k = 0; k < cut; k++) out.push({ kind: "row", id: `${id}:${rows[k]!.id}`, row: rows[k]! });
     if (cut < rows.length) out.push({ kind: "more", id: `m:${id}`, group: id, count: rows.length - cut });
   });
+  if (searching) {
+    const rows = table.keyboardKnobs.filter((r) => matches(r, q));
+    if (rows.length > 0) {
+      const id = KNOBS_GROUP;
+      out.push({ kind: "heading", id: `h:${id}`, group: id, name: t("params.keyboardKnobs"), count: rows.length, folded: false });
+      const cut = !look.expanded.has(id) && rows.length > SEARCH_SHOWN ? SEARCH_SHOWN : rows.length;
+      for (let k = 0; k < cut; k++) out.push({ kind: "row", id: `${id}:${rows[k]!.id}`, row: rows[k]! });
+      if (cut < rows.length) out.push({ kind: "more", id: `m:${id}`, group: id, count: rows.length - cut });
+    }
+  }
   return out;
+}
+
+/**
+ * 一覧の下の「ほかに、鍵盤のつまみを受けるだけの 2080 個（MIDI CC 0|0 〜 15|129）は出していません。さがすと出ます。」の穴。
+ * 最後の名前は、最初の名前と同じ頭（最後の空白まで）を外す。鍵盤のつまみを受けるだけの物がなければ null。
+ */
+export function hiddenKnobs(table: ParamTable): { count: number; first: string; last: string } | null {
+  const knobs = table.keyboardKnobs;
+  if (knobs.length === 0) return null;
+  const first = knobs[0]!.name;
+  const last = knobs.at(-1)!.name;
+  const head = first.slice(0, first.lastIndexOf(" ") + 1);
+  return { count: knobs.length, first, last: head !== "" && last.startsWith(head) ? last.slice(head.length) : last };
 }
 
 /** さがす枠に合う数（「24 / 2855」の 24）。空なら全部。 */
 export function matchCount(table: ParamTable, query: string): number {
   const q = query.trim().toLowerCase();
   if (q === "") return tableCount(table);
-  return table.groups.reduce((n, g) => n + g.params.filter((r) => matches(r, q)).length, 0);
+  const knobs = table.keyboardKnobs.filter((r) => matches(r, q)).length;
+  return table.groups.reduce((n, g) => n + g.params.filter((r) => matches(r, q)).length, knobs);
 }
 
 /** ↑ ↓ でえらぶ次の行（見えている行の中。はしで止まる）。 */

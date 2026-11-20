@@ -304,6 +304,8 @@ pub enum StandIn {
     /// The SF2 file is not found, or it has no such preset.
     Sf2Missing,
     PluginMissing,
+    /// The plugin is there and did not load (spec 3, 89-12).
+    PluginUnreadable,
 }
 
 /// What sits in an insert slot.
@@ -424,8 +426,13 @@ pub enum SoundName {
 pub struct FileDropView {
     /// The name of the file, without its folder; of the first one when there are more.
     pub name: String,
-    /// False: "SF2 のファイルではないので、足せません。"
+    /// False: "SF2 のファイルではないので、足せません。" True when one of the files is an SF2
+    /// file.
     pub addable: bool,
+    /// How many files are held, and how many of them are SF2 files: with more than one the
+    /// box says "3 つのファイル ・ SF2 は 2 つ" in place of the name (spec 3, 89-10).
+    pub files: u32,
+    pub sf2: u32,
 }
 
 /// One name of the selected notes and how many of them have it ("スネア ×2").

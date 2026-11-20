@@ -345,7 +345,9 @@ fn windows_open_are_listed_and_a_visit_is_one_step_through_the_core() {
     core.send(Command::SelectInstrument { track });
     let state = state_when(&core, "the window is up", |s| !s.windows.list.is_empty());
     assert_eq!(state.windows.list, [window_row(slot, "Fake window")]);
-    let one = StatusMessage::PluginWindowsOpen { count: 1 };
+    let one = StatusMessage::PluginWindowOpen {
+        name: "Fake window".into(),
+    };
     assert_eq!(state.status.message, Some(one));
     assert_eq!(
         selected(&state).unwrap().window,
@@ -567,7 +569,12 @@ fn surge_xt_a_visit_to_its_window_is_one_step_and_undo_puts_it_back() {
             state.status.message,
             Some(StatusMessage::PluginWindowLarge { .. })
         ),
-        false => state.status.message == Some(StatusMessage::PluginWindowsOpen { count: 1 }),
+        false => {
+            let one = StatusMessage::PluginWindowOpen {
+                name: "Surge XT".into(),
+            };
+            state.status.message == Some(one)
+        }
     };
     assert!(said, "{:?}", state.status.message);
     let window = x

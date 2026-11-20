@@ -71,8 +71,9 @@ const MVERB: Spec[] = [
 /** The ids of the two rows an automation lane writes in F-ParamMany. */
 export const SURGE_AUTOMATED = [1000, 1012];
 
-// F-ParamMany and F-ParamSearch: 2855 parameters in six groups (8 + 21 + 400 + 613 + 613 + 1200). "cutoff" is in
-// 12 names of Scene A and 12 of Scene B, and nowhere else.
+// F6-ParamMany (and F-ParamMany, F-ParamSearch, whose 2855 the spec reads as 774, 91-3): 774 parameters in six groups
+// (8 + 21 + 120 + 300 + 300 + 25), and 2080 that only take a keyboard's knobs ("MIDI CC 0|0" … "MIDI CC 15|129").
+// "cutoff" is in 12 names of Scene A and 12 of Scene B, and nowhere else.
 function surgeGroups(): ParamGroup[] {
   const filler = (from: number, count: number, name: (n: number) => string): ParamRow[] =>
     rows(from, Array.from({ length: count }, (_, i): Spec => [name(i + 1), "0.00 %", 0]));
@@ -88,7 +89,7 @@ function surgeGroups(): ParamGroup[] {
       ...Array.from({ length: 6 }, (_, i): Spec => [`${s} LFO ${i + 1} > Filter 1 Cutoff`, "+0.00", 0.5]),
       [`${s} Osc 1 Pitch`, "+0.00", 0.5],
     ];
-    return [...rows(from, named), ...filler(from + named.length, 613 - named.length, (n) => `${s} Parameter ${n}`)];
+    return [...rows(from, named), ...filler(from + named.length, 300 - named.length, (n) => `${s} Parameter ${n}`)];
   };
   const macros: Spec[] = ["35.00 %", "0.00 %", "62.50 %", "0.00 %", "0.00 %", "100.00 %", "0.00 %", "12.00 %"].map(
     (text, i): Spec => [`Macro ${i + 1}`, text, Number.parseFloat(text) / 100],
@@ -96,15 +97,22 @@ function surgeGroups(): ParamGroup[] {
   return [
     { name: "Macros", params: rows(0, macros) },
     { name: "Global", params: filler(100, 21, (n) => `Global ${n}`) },
-    { name: "FX", params: filler(200, 400, (n) => `FX ${n}`) },
+    { name: "FX", params: filler(200, 120, (n) => `FX ${n}`) },
     { name: "Scene A", params: scene(1000, "A") },
     { name: "Scene B", params: scene(2000, "B") },
-    { name: null, params: filler(3000, 1200, (n) => `MIDI ${n}`) },
+    { name: null, params: filler(3000, 25, (n) => `Other ${n}`) },
   ];
+}
+
+function surgeKnobs(): ParamRow[] {
+  const names = Array.from({ length: 16 * 130 }, (_, i): Spec => [`MIDI CC ${Math.floor(i / 130)}|${i % 130}`, "0.00 %", 0]);
+  return rows(4000, names);
 }
 
 /** `SelectedPlugin.table` of each fake plugin: a scene names the plugin by it. */
 export const FAKE_TABLES = { dragonfly: 1, mossy: 2, mverb: 3, surge: 4 } as const;
+
+const KNOBS: Record<number, () => ParamRow[]> = { [FAKE_TABLES.surge]: surgeKnobs };
 
 const GROUPS: Record<number, () => ParamGroup[]> = {
   [FAKE_TABLES.dragonfly]: () => one(DRAGONFLY),
@@ -116,7 +124,7 @@ const GROUPS: Record<number, () => ParamGroup[]> = {
 /** The reply of `plugin_params`. */
 export function fakeParamTable(table: number): ParamTable | null {
   const groups = GROUPS[table];
-  return groups ? { table, seq: 0, groups: groups(), keyboardKnobs: [] } : null;
+  return groups ? { table, seq: 0, groups: groups(), keyboardKnobs: KNOBS[table]?.() ?? [] } : null;
 }
 
 export const fakeParamCount = (table: number): number => (GROUPS[table]?.() ?? []).reduce((n, g) => n + g.params.length, 0);
@@ -152,8 +160,9 @@ export class FakeParamTables {
   }
 
   private row(table: number, id: number): ParamRow | null {
-    for (const g of this.held(table)?.groups ?? []) for (const r of g.params) if (r.id === id) return r;
-    return null;
+    const held = this.held(table);
+    for (const g of held?.groups ?? []) for (const r of g.params) if (r.id === id) return r;
+    return held?.keyboardKnobs.find((r) => r.id === id) ?? null;
   }
 
   /** The reply of `plugin_params`. */

@@ -29,23 +29,29 @@ impl Play {
     }
 
     /// "外す" on a plugin that stopped: an instrument leaves its track to the sine, an effect
-    /// leaves its slot empty. The notes stay. One step. Returns whether the song changed.
-    pub fn remove_plugin(&mut self, slot: PluginSlotRef, effects: &mut Vec<Effect>) -> bool {
-        let before = self.changes;
+    /// leaves its slot empty. The notes stay. One step. Returns what the status line says of
+    /// an instrument taken out (spec 3, 89-5).
+    pub fn remove_plugin(
+        &mut self,
+        slot: PluginSlotRef,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
         match slot {
             PluginSlotRef::Instrument { track } => {
                 let sine = InstrumentRef::Builtin(BuiltinInstrument::Sine);
-                if !self.busy()
-                    && let Ok(e) = edit::set_instrument(self.doc(), TrackId(track), sine)
-                {
-                    self.apply(e, effects);
+                if self.busy() {
+                    return None;
                 }
+                let e = edit::set_instrument(self.doc(), TrackId(track), sine).ok()?;
+                self.apply(e, effects);
+                let track = self.track_ref(TrackId(track))?;
+                Some(StatusMessage::InstrumentPluginRemoved { track })
             }
             PluginSlotRef::Insert { insert } => {
                 self.remove_effect(insert, effects);
+                None
             }
         }
-        self.changes != before
     }
 
     /// 「曲から外す」 on something this PC does not have: its tracks get the sine wave and

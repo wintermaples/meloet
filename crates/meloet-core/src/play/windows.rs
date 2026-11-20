@@ -59,6 +59,8 @@ pub(super) struct Windows {
     inside: Vec<u64>,
     visits: Vec<Visit>,
     next_visit: u64,
+    /// A window that was asked for did not come up: what the status line is to say of it.
+    failed: Option<StatusMessage>,
 }
 
 impl Play {
@@ -153,14 +155,29 @@ impl Play {
                 width,
                 height,
             },
+            false if wins.open.len() == 1 => StatusMessage::PluginWindowOpen { name },
             false => StatusMessage::PluginWindowsOpen {
                 count: wins.open.len() as u32,
             },
         })
     }
 
+    /// The window asked for did not come up; one that was not asked for is not said.
     pub(super) fn window_failed(&mut self, ticket: u64) {
+        let asked = self.wins.opening.len();
         self.wins.opening.retain(|(t, _)| *t != ticket);
+        if self.wins.opening.len() < asked
+            && let Some(plug) = self.plugs.of(ticket)
+        {
+            self.wins.failed = Some(StatusMessage::PluginWindowFailed {
+                name: plug.plugin.name.to_string(),
+            });
+        }
+    }
+
+    /// What the status line says of a window that did not come up, once.
+    pub fn take_window_failed(&mut self) -> Option<StatusMessage> {
+        self.wins.failed.take()
     }
 
     pub(super) fn window_resized(&mut self, ticket: u64, size: (u32, u32), larger: bool) {

@@ -132,22 +132,22 @@ export function shelfFavoriteCommand(state: AppState): Command | null {
   return shelf.selectedSound === null ? null : { type: "toggleFavoriteSound", sound: shelf.selectedSound };
 }
 
-/** 棚の中の Esc の前の番: ためし弾き ・ 読みこみ ・ 入れるエフェクトをやめる。 */
+/** 棚の中の Esc の前の番: ためし弾き ・ 読みこみ ・ 入れるエフェクト ・ 読みこめなかった知らせをやめる。 */
 export function shelfHasPick(state: AppState): boolean {
   const shelf = state.shelf;
-  return shelf.selectedSound !== null || shelf.loadingSound !== null || shelf.chosenEffect !== null;
+  return shelf.selectedSound !== null || shelf.loadingSound !== null || shelf.chosenEffect !== null || shelf.unreadable !== null;
 }
 
 export type ShelfStatus =
   | { kind: "search"; query: string; count: number }
   | { kind: "instruments"; count: number; groups: string[] }
-  | { kind: "effects"; count: number; open: { label: string; count: number }[] };
+  | { kind: "effects"; count: number; groups: string[] };
 
 /**
  * 状態行に出す棚のようす。棚が前に出ていて、ためし弾きもサンプルもしていないときだけ。
  * さがしているとき「さがす「Dragonfly」・ 合う物 4 個」（モック F5-ShelfSearch）。
- * 音源の一覧は「音色 31 ・ ピアノ ・ 鍵盤とギターをひらいています」（モック R8-Shelf84）。count は出ている行の数、groups はひらいている見出し。
- * エフェクトの一覧は「エフェクト 512 ・ リバーブ 23」（モック F5-ShelfFx）。
+ * 音源の一覧は「音色 31 ・ ピアノ ・ 鍵盤 と ギター をひらいています」、エフェクトの一覧は「エフェクト 512 ・ リバーブ をひらいています」
+ * （仕様書 6 章）。count は出ている行の数、groups はひらいている見出し。
  */
 export function shelfStatus(state: AppState): ShelfStatus | null {
   const shelf = state.shelf;
@@ -155,7 +155,7 @@ export function shelfStatus(state: AppState): ShelfStatus | null {
     return null;
   const model = currentShelf(state);
   if (shelfUi.query.trim() !== "") return { kind: "search", query: shelfUi.query.trim(), count: model.shown };
-  if (shelfUi.view === "effects") return { kind: "effects", count: model.shown, open: model.open };
+  if (shelfUi.view === "effects") return { kind: "effects", count: model.shown, groups: model.open.map((o) => o.label) };
   return { kind: "instruments", count: model.shown, groups: model.open.map((o) => o.label) };
 }
 

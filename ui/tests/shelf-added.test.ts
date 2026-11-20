@@ -68,12 +68,18 @@ function press(state: AppState, key: string): Command[] {
 describe("棚の見出し（モック F5-SF2Shelf ・ F5-PluginLoading、仕様書 3 章 83 ・ Y12）", () => {
   it("最初から入っているもの → あとから入れたもの。いま足した SF2 のファイルだけひらき、仲間とほかの見出しはたたむ", () => {
     show(RightRail, scene("sf2Shelf"));
-    expect(text(q("[data-test='section:builtin']"))).toBe("最初から入っているもの ・ 31");
+    // 「最初から入っているもの」は、ほかと同じたためる見出し（仕様書 3 章 89-11）。はじめはたたむ。
+    expect(q("[data-test='section:builtin']")).toBeNull();
     expect(text(q("[data-test='section:added']"))).toBe("あとから入れたもの ・ 137 SF2 を足す…");
-    const h = headings();
-    expect(h.slice(0, 7)).toEqual(["▸ ピアノ ・ 鍵盤 11", "▸ ギター 4", "▸ ベース 4", "▸ ドラム 3", "▸ パッド ・ 弦 3", "▸ 管楽器 4", "▸ シンセ 2"]);
-    expect(h[7]).toBe(`▾ ${FLUID} SF2 137`);
-    expect(h.slice(8, 11)).toEqual(["▸ ピアノ 8", "▸ マレット 8", "▸ オルガン 8"]);
+    let h = headings();
+    expect(h[0]).toBe("▸ 最初から入っているもの 31");
+    expect(h[1]).toBe(`▾ ${FLUID} SF2 137`);
+    expect(h.slice(2, 5)).toEqual(["▸ ピアノ 8", "▸ マレット 8", "▸ オルガン 8"]);
+    click('[data-group="builtin:sounds"]');
+    h = headings();
+    expect(h.slice(0, 8)).toEqual(["▾ 最初から入っているもの 31", "▸ ピアノ ・ 鍵盤 11", "▸ ギター 4", "▸ ベース 4", "▸ ドラム 3", "▸ パッド ・ 弦 3", "▸ 管楽器 4", "▸ シンセ 2"]);
+    expect(q('[data-group="guitar"]')!.classList.contains("sub")).toBe(true);
+    click('[data-group="builtin:sounds"]');
     expect(h.at(-1)).toBe("▸ ドラムのキット 9");
     expect(qa("[data-test=shelf-row]")).toEqual([]);
     // 仲間をひらくと行（英語の名前のまま、右に GM の番号。形式の印「SF2」は行には出さない）。
@@ -247,7 +253,7 @@ describe("お気に入り（仕様書 3 章 86-4）", () => {
     ]);
     // お気に入りだけにすると、星のある行の見出しだけ。
     click("[data-test=shelf-favorites]");
-    expect(headings().filter((h) => !h!.includes("鍵盤") && !h!.includes("ドラム"))).toEqual(["▾ シンセ 1"]);
+    expect(headings().filter((h) => !h!.includes("鍵盤") && !h!.includes("ドラム") && !h!.includes("最初から"))).toEqual(["▾ シンセ 1"]);
   });
 });
 
@@ -262,10 +268,15 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
     expect(app.sent).toEqual([{ type: "shelfCancel" }]);
   });
 
-  it("読みこめない: 「Surge XT を読みこめませんでした。」だけ（何もえらんでいない）", () => {
+  it("読みこめない: 見つからない物の知らせの箱に「Surge XT を読みこめませんでした。こわれているか…」と「やめる Esc」（仕様書 3 章 89-12）", () => {
     show(RightRail, scene("pluginUnreadable"));
     click('[data-group="c:instrument:synth"]');
-    expect(text(q("[data-test=shelf-unreadable]"))).toBe("Surge XT を読みこめませんでした。");
+    const box = q("[data-test=shelf-unreadable]")!;
+    expect(text(box)).toBe("Surge XT を読みこめませんでした。こわれているか、この PC では動かないのかもしれません。 やめる Esc");
+    expect(box.classList.contains("notice")).toBe(true);
+    click("[data-test=shelf-unreadable] [data-test=shelf-cancel]");
+    expect(app.sent).toEqual([{ type: "shelfCancel" }]);
+    expect(press(scene("pluginUnreadable"), "Escape")).toEqual([{ type: "shelfCancel" }]);
     expect(rowNamed("Surge XT").classList.contains("selected")).toBe(true);
     expect(q("[data-test=shelf-confirm]")).toBeNull();
   });
@@ -305,13 +316,20 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
 
 describe("ファイルを持ってきている間の知らせ（仕様書 2 章、モック F5-SF2Drop）", () => {
   it("足せる: ファイルの名前、落とすと何が起きるか、やめかた。足せない: 「SF2 のファイルではないので、足せません。」と gray.8", () => {
-    show(FileDropNotice, scene("sf2DropAddable"), { drop: { name: FLUID, addable: true } });
+    show(FileDropNotice, scene("sf2DropAddable"), { drop: { name: FLUID, addable: true, files: 1, sf2: 1 } });
     expect(text(q("[data-test=file-drop]"))).toBe(`${FLUID} ${t("sf2.dropHere")} ${t("sf2.dropCancel")}`);
     expect(q(".box")!.classList.contains("no")).toBe(false);
     unmount(mounted!);
-    show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "piano-demo.wav", addable: false } });
+    show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "piano-demo.wav", addable: false, files: 1, sf2: 0 } });
     expect(text(q("[data-test=file-drop]"))).toBe(`piano-demo.wav SF2 のファイルではないので、足せません。 ${t("sf2.dropCancel")}`);
     expect(q(".box")!.classList.contains("no")).toBe(true);
+    // いくつも持ってきたときは「3 つのファイル ・ SF2 は 2 つ」（仕様書 3 章 89-10）。
+    unmount(mounted!);
+    show(FileDropNotice, scene("sf2DropMany"), { drop: { name: FLUID, addable: true, files: 3, sf2: 2 } });
+    expect(text(q("[data-test=file-drop-name]"))).toBe("3 つのファイル ・ SF2 は 2 つ");
+    unmount(mounted!);
+    show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "a.wav", addable: false, files: 2, sf2: 0 } });
+    expect(text(q("[data-test=file-drop]"))).toBe(`2 つのファイル SF2 のファイルではないので、足せません。 ${t("sf2.dropCancel")}`);
   });
 
   it("Esc は CancelFileDrop（棚をとじる番より前）。状態行は「SF2 のファイルを持ってきています」", () => {
@@ -452,7 +470,7 @@ describe("状態行の新しい文（約束 17）", () => {
     expect(say({ id: "soundLoading", sound: surge })).toBe("Surge XTを読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。");
     expect(say({ id: "pluginLoading", name: "Surge XT" })).toBe("Surge XT を読みこんでいます… ・ やめるには Esc");
     expect(say({ id: "sf2Dragging" })).toBe("SF2 のファイルを持ってきています");
-    expect(say({ id: "sf2Added", file: FLUID, presets: 128, kits: 9 })).toBe("FluidR3_GM.sf2 を足しました。音色 128 ・ ドラムのキット 9");
+    expect(say({ id: "sf2Added", file: FLUID, presets: 128, kits: 9, skipped: 0 })).toBe("FluidR3_GM.sf2 を足しました。音色 128 ・ ドラムのキット 9");
     expect(say({ id: "sf2Unreadable", file: FLUID })).toBe("FluidR3_GM.sf2 は読めませんでした。ファイルがこわれているか、SF2 ではないかもしれません。");
     expect(say({ id: "sf2Missing", file: FLUID, tracks: 2 })).toBe("曲で使っている FluidR3_GM.sf2 が見つかりません。2 本のトラックはサイン波で鳴らしています。");
     expect(say({ id: "soundsMissing", tracks: 4 })).toBe("音の素材が見つからないので、4 本のトラックをサイン波で鳴らしています。");

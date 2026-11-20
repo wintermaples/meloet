@@ -222,8 +222,13 @@ fn a_plugin_that_does_not_load_makes_no_track_and_the_shelf_says_so() {
     assert_eq!((shelf.selected_sound, shelf.loading_sound), (None, None));
     assert!(cmd(&mut m, Command::ShelfConfirm).is_empty());
     assert_eq!(m.view().song.tracks.len(), 1);
-    // Until another row is selected.
+    // Until another row is selected, or 「やめる（Esc）」.
     cmd(&mut m, select(sf2(0, 0)));
+    assert_eq!(m.view().shelf.unreadable, None);
+    let ticket = one_load(&cmd(&mut m, select(plugin(SURGE_LV2))));
+    m.handle(Input::PluginUnreadable { ticket });
+    assert!(m.view().shelf.unreadable.is_some());
+    cmd(&mut m, Command::ShelfCancel);
     assert_eq!(m.view().shelf.unreadable, None);
 
     // A load that answers after the row was left is let go of.
@@ -738,12 +743,21 @@ fn a_plugin_that_stops_does_not_stop_the_recording() {
     ));
     let view = m.view();
     assert_eq!(view.song.tracks[0].instrument(), InstrumentKind::Sine);
+    assert_eq!(
+        view.song.tracks[0].stand_in, None,
+        "taken out, not stood in for"
+    );
+    assert_eq!(view.song.tracks[0].name, "ピアノ", "the name stays");
     assert_eq!(view.song.tracks[0].clips.len(), 1);
     assert_eq!(view.song.undo_count, 3);
-    assert!(!matches!(
+    let track = TrackRef {
+        number: 1,
+        name: "ピアノ".into(),
+    };
+    assert_eq!(
         view.status.message,
-        Some(StatusMessage::PluginStopped { .. })
-    ));
+        Some(StatusMessage::InstrumentPluginRemoved { track })
+    );
     assert!(cmd(&mut m, Command::RemovePlugin { slot }).is_empty());
     // Undo brings the plugin back, loaded anew.
     let again = one_load(&cmd(&mut m, Command::Undo));
@@ -788,7 +802,9 @@ fn a_window_just_opened_is_said_until_its_plugin_stops() {
         larger_than_screen: false,
     };
     m.handle(Input::PluginSaid { ticket, said });
-    let open = StatusMessage::PluginWindowsOpen { count: 1 };
+    let open = StatusMessage::PluginWindowOpen {
+        name: "Surge XT".into(),
+    };
     assert_eq!(status(&m), Some(open));
     m.handle(Input::PluginStopped { ticket });
     assert!(matches!(
@@ -930,6 +946,67 @@ fn what_this_pc_does_not_have_sounds_as_the_sine_wave_until_it_is_there() {
             ..
         }]
     ));
+}
+
+#[test]
+fn an_opened_song_says_which_plugin_is_not_found() {
+    let mut m = ready()
+        .with_sounds(BuiltinInstrument::all().collect())
+        .with_sf2(vec![tiny()]);
+    m.handle(Input::SoundLoaded(BuiltinInstrument::GrandPiano));
+    opened(&mut m, song_with_missing());
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::PluginMissing {
+            name: "Surge XT".into(),
+            tracks: 1
+        }),
+        "the effect that is not found is not said here"
+    );
+}
+
+#[test]
+fn a_plugin_of_the_song_that_does_not_load_sounds_as_the_sine_wave() {
+    let mut m = rigged();
+    let effects = opened(&mut m, song_with_missing());
+    let surge = loads(&effects)
+        .iter()
+        .find(|l| l.1 == SURGE_VST3)
+        .unwrap()
+        .0;
+    let effects = m.handle(Input::PluginUnreadable { ticket: surge });
+    assert!(matches!(
+        &ops(&effects)[..],
+        [EngineOp::Instrument { instrument, .. }] if *instrument == InstrumentRef::SINE
+    ));
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::PluginUnreadable {
+            name: "Surge XT".into(),
+            tracks: 1
+        })
+    );
+    let view = m.view();
+    assert_eq!(
+        view.song.tracks[1].stand_in,
+        Some(StandIn::PluginUnreadable)
+    );
+    assert!(view.shelf.missing.iter().all(|m| !matches!(m,
+        MissingView::Plugin { key, .. } if key == SURGE_VST3)));
+
+    // 「もう一度読みこむ」: loaded as the song has it, silent until it is there.
+    let slot = PluginSlotRef::Instrument {
+        track: view.song.tracks[1].id,
+    };
+    let effects = cmd(&mut m, Command::ReloadPlugin { slot });
+    let again = one_load(&effects);
+    assert!(matches!(
+        &ops(&effects)[..],
+        [EngineOp::Instrument { instrument: InstrumentRef::Plugin(p), .. }] if &*p.key == SURGE_VST3
+    ));
+    assert_eq!(m.view().song.tracks[1].stand_in, None);
+    loaded(&mut m, again);
+    assert_eq!(plugin_state(&m, 1), Some(PluginState::Ready));
 }
 
 #[test]
@@ -1144,7 +1221,8 @@ fn an_sf2_file_is_added_from_the_window_or_by_dropping_it() {
         Some(StatusMessage::Sf2Added {
             file: "FluidR3_GM.sf2".into(),
             presets: 3,
-            kits: 1
+            kits: 1,
+            skipped: 0
         })
     );
     assert!(view.workspace.layout.right_open.contains(&Band::Shelf));
@@ -1161,29 +1239,72 @@ fn an_sf2_file_is_added_from_the_window_or_by_dropping_it() {
     m.handle(Input::Sf2NotAdded { file: file.clone() });
     assert_eq!(status(&m), Some(StatusMessage::Sf2Unreadable { file }));
 
-    // Held over the window: the first file is named, and says whether it can be added.
+    // Held over the window: the first file is named, with how many files and SF2 files.
     let song = PathBuf::from("/home/me/曲.meloet");
     m.handle(Input::FilesOver(vec![path.clone(), song.clone()]));
-    let held = |name: &str, addable| {
+    let held = |name: &str, files, sf2| {
         Some(FileDropView {
             name: name.into(),
-            addable,
+            addable: sf2 > 0,
+            files,
+            sf2,
         })
     };
-    assert_eq!(m.view().workspace.file_drop, held("FluidR3_GM.sf2", true));
+    assert_eq!(m.view().workspace.file_drop, held("FluidR3_GM.sf2", 2, 1));
     assert_eq!(status(&m), Some(StatusMessage::Sf2Dragging));
     assert_eq!(
         m.handle(Input::FilesDropped(vec![path.clone(), song.clone()])),
         std::slice::from_ref(&add)
     );
     assert_eq!(m.view().workspace.file_drop, None);
+    let mut info = tiny();
+    info.file = "FluidR3_GM.sf2".into();
+    m.handle(Input::Sf2Added(Box::new(info)));
+    let added = |skipped| StatusMessage::Sf2Added {
+        file: "FluidR3_GM.sf2".into(),
+        presets: 3,
+        kits: 1,
+        skipped,
+    };
+    assert_eq!(status(&m), Some(added(1)), "the song file is passed over");
 
-    m.handle(Input::FilesOver(vec![song.clone(), path.clone()]));
-    assert_eq!(m.view().workspace.file_drop, held("曲.meloet", false));
-    assert_ne!(status(&m), Some(StatusMessage::Sf2Dragging));
-    assert!(
-        m.handle(Input::FilesDropped(vec![song, path.clone()]))
-            .is_empty()
+    // No SF2 file among them: said, and nothing is added.
+    m.handle(Input::FilesOver(vec![song.clone()]));
+    assert_eq!(m.view().workspace.file_drop, held("曲.meloet", 1, 0));
+    assert_eq!(status(&m), Some(StatusMessage::NotSf2Dragging));
+    assert!(m.handle(Input::FilesDropped(vec![song.clone()])).is_empty());
+
+    // Several SF2 files: every one, in the order they were held, said as one.
+    let other = PathBuf::from("/home/me/Other.sf2");
+    let third = PathBuf::from("/home/me/Broken.sf2");
+    let all = vec![other.clone(), song.clone(), path.clone(), third.clone()];
+    m.handle(Input::FilesOver(all.clone()));
+    assert_eq!(m.view().workspace.file_drop, held("Other.sf2", 4, 3));
+    assert_eq!(
+        m.handle(Input::FilesDropped(all)),
+        [Effect::AddSf2(other), add.clone(), Effect::AddSf2(third)]
+    );
+    let mut info = tiny();
+    info.file = "Other.sf2".into();
+    m.handle(Input::Sf2Added(Box::new(info)));
+    assert_eq!(
+        status(&m),
+        Some(added(1)),
+        "not said before the last answer"
+    );
+    let mut info = tiny();
+    info.file = "FluidR3_GM.sf2".into();
+    m.handle(Input::Sf2Added(Box::new(info)));
+    m.handle(Input::Sf2NotAdded {
+        file: "Broken.sf2".into(),
+    });
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::Sf2AddedMany {
+            added: 2,
+            first: "Other.sf2".into(),
+            skipped: 2
+        })
     );
 
     // Taken out of the window, or Esc: nothing is added.

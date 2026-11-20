@@ -15,6 +15,7 @@
     type PluginWindowView,
     type NoteSelection,
     type PluginSlotRef,
+    type SongDialogKind,
     type StatusMessage,
     type TrackRef,
     type ValueField,
@@ -40,7 +41,7 @@
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";
   import { dragReading } from "./pianoroll/view.svelte";
-  import { shelfStatus } from "./tracks.svelte";
+  import { shelfStatus, shelfUi } from "./tracks.svelte";
   import { statusFit, type StatusRightShown } from "./statusFit";
   import { shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
@@ -65,6 +66,12 @@
   const NAME_HOLES = new Set(["name", "strip", "track", "effect", "plugin", "param", "target", "order"]);
   const platform = platformOf(navigator);
   const modKey = (letter: string) => `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${letter}`;
+
+  const SONG_DIALOG_NAMES: Record<SongDialogKind, TextKey> = {
+    unsaved: "songDialog.unsaved",
+    cannotSave: "songDialog.cannotSave",
+    broken: "songDialog.broken",
+  };
 
   const BAND_NAMES: Record<Band, TextKey> = {
     pianoRoll: "band.pianoRoll",
@@ -148,6 +155,16 @@
   function beatsLeft(fallback: number): number {
     const p = current.telemetry?.position;
     return p?.state === "countIn" ? p.countInBeatsLeft : fallback;
+  }
+
+  /** 「1 つは SF2 ではないので、足していません。」（持ってきたファイルのうち、足さなかった物があるとき）。 */
+  const skippedParts = (skipped: number): TextPart[] => (skipped > 0 ? textParts("sf2.skipped", { count: skipped }) : []);
+
+  /** 「ピアノ ・ 鍵盤 と ギター」「ピアノ ・ 鍵盤、ギター と ベース」「ピアノ ・ 鍵盤 ほか 4 つ」（仕様書 6 章「棚をひらいている（見出し）」）。 */
+  function groupsText(names: readonly string[]): string {
+    if (names.length >= 5) return t("status.shelfGroupsMore", { first: names[0]!, count: names.length - 1 });
+    if (names.length === 1) return names[0]!;
+    return t("status.shelfGroupsLast", { first: names.slice(0, -1).join(LIST_COMMA), last: names.at(-1)! });
   }
 
   /** 文の部分どうしを「 ・ 」でつなぐ（仕様書 6 章「止まっているときの状態行の左」）。 */
@@ -327,8 +344,23 @@
         return { parts: joined(textParts("plugin.loading", { name: m.name }), textParts("status.cancelKey", { key: t("key.esc") })), strong: [], button: null };
       case "sf2Dragging":
         return plain("sf2.dragging");
+      case "notSf2Dragging":
+        return plain("sf2.notSf2Dragging");
+      // 「音色 128 ・ ドラムのキット 9」は「。」で終わらないので、足さなかった物の文とは「 ・ 」でつなぐ（design-notes A-19）。
       case "sf2Added":
-        return plain("sf2.added", { file: m.file, count: m.presets, kits: m.kits });
+        return { parts: joined(textParts("sf2.added", { file: m.file, count: m.presets, kits: m.kits }), skippedParts(m.skipped)), strong: [], button: null };
+      case "sf2AddedMany":
+        return {
+          parts: [...textParts("sf2.addedMany", { count: m.added, file: m.first, others: m.added - 1 }), ...skippedParts(m.skipped)],
+          strong: [],
+          button: null,
+        };
+      case "pluginMissing":
+        return plain("plugin.missingSong", { name: m.name, count: m.tracks });
+      case "pluginUnreadable":
+        return plain("plugin.unreadableSong", { name: m.name, count: m.tracks });
+      case "instrumentPluginRemoved":
+        return plain("plugin.instrumentRemoved", { track: track(m.track), undoKey: modKey(t("key.undo")) });
       case "sf2Unreadable":
         return plain("sf2.unreadable", { file: m.file });
       case "sf2Missing":
@@ -397,8 +429,12 @@
         return plain("msg.windowOpening", { name: windowName(m.name, m.slot) });
       case "pluginWindowLarge":
         return plain("msg.windowTooLarge", { name: windowName(m.name, m.slot), width: m.width, height: m.height });
+      case "pluginWindowOpen":
+        return plain("msg.windowOpen", { name: m.name });
       case "pluginWindowsOpen":
         return plain("msg.windowsOpen", { count: m.count });
+      case "pluginWindowFailed":
+        return plain("msg.windowFailed", { name: m.name });
       case "pluginWindowNotYet": {
         const loop = m.loopBars;
         return {
@@ -477,22 +513,28 @@
     return textParts(muted.length === 1 ? "status.muted" : "status.mutedMany", { tracks: muted.join(STATUS_JOIN) });
   }
 
-  /** 棚がひらいているときの、いつものまとめの代わり（モック R8-Shelf84 ・ F5-ShelfFx ・ F5-ShelfSearch）。 */
+  /**
+   * 棚がひらいているときの、いつものまとめの代わり（仕様書 6 章「棚をひらいている（見出し）」、モック F5-ShelfSearch）。
+   * 見出しの文は、棚をひらいた時と、見出しをひらく ・ たたむ時に言い、core の知らせが変わるまで出す。さがしている間の文は、いつも。
+   */
   const shelfParts = $derived.by((): TextPart[] | null => {
     const s = shelfStatus(app);
     if (!s) return null;
     if (s.kind === "search") return textParts("status.shelfSearch", { query: s.query, count: s.count });
-    if (s.kind === "effects")
-      return joined(
-        textParts("shelf.effectCount", { count: s.count }),
-        ...s.open.map((o) => textParts("status.shelfHeading", { name: o.label, count: o.count })),
-      );
-    if (s.groups.length === 0) return textParts("status.shelfCount", { count: s.count });
-    const names = [...s.groups];
-    const last = names.pop()!;
-    const groups = names.length === 0 ? last : t("status.shelfGroupsLast", { first: names.join(LIST_COMMA), last });
-    return textParts("status.shelfOpen", { count: s.count, groups });
+    if (!shelfAnnounced) return null;
+    if (s.groups.length === 0) return textParts(s.kind === "effects" ? "shelf.effectCount" : "status.shelfCount", { count: s.count });
+    return textParts(s.kind === "effects" ? "status.shelfEffectsOpen" : "status.shelfOpen", { count: s.count, groups: groupsText(s.groups) });
   });
+  const shelfFront = $derived(app.workspace.layout.rightFront === "shelf");
+  /** 見出しの文を言った時の core の知らせ。知らせが変わったら、もう言わない。 */
+  let shelfMark = $state.raw<{ message: StatusMessage | null } | null>(null);
+  $effect(() => {
+    void shelfUi.open;
+    void shelfUi.view;
+    const front = shelfFront;
+    untrack(() => (shelfMark = front ? { message: app.status.message } : null));
+  });
+  const shelfAnnounced = $derived(shelfMark !== null && shelfMark.message === app.status.message);
 
   // ---- ピアノロールをひらいて録音しているとき（仕様書 6 章「録音中 ・ ピアノロール」）: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」 ----
 
@@ -546,6 +588,9 @@
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
     // 「meloet について」は画面だけが持つダイアログなので、core の知らせの代わりにここで言う（仕様書 3 章 85）。
     if (about.open) return { parts: textParts("status.dialogOpen", { dialog: t("about.title") }), strong: [], button: null };
+    // 曲のダイアログは、ダイアログの名前で（仕様書 3 章 89-6。曲の名前は出さない）。
+    const songDialog = app.workspace.songDialog;
+    if (songDialog) return { parts: textParts("status.songDialogOpen", { dialog: t(SONG_DIALOG_NAMES[songDialog.kind]) }), strong: [], button: null };
     // 欄の行をドラッグしている間（ドラッグ中の値は core に戻らない。モック F-ParamFew）。
     if (paramUi.moving) return { parts: textParts("status.paramMoving", paramUi.moving), strong: [], button: null };
     const m = app.status.message;
@@ -553,7 +598,8 @@
     // 「窓」の一覧をひらいている間は、いつものまとめに代えて（user:2026-11-19、モック F-WindowOpen）。
     if (windowsOpen && usual) {
       const loop = m?.loopBars ?? null;
-      const parts = joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], textParts("msg.windowsOpen", { count: windows.length }));
+      const open = windows.length === 1 ? textParts("msg.windowOpen", { name: windows[0]!.name }) : textParts("msg.windowsOpen", { count: windows.length });
+      const parts = joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], open);
       return { parts, strong: [], button: null };
     }
     // パラメータをさがしている間（さがすのは画面。モック F-ParamSearch）。

@@ -53,16 +53,16 @@ export interface ShelfHeading {
   label: string;
   count: string;
   folded: boolean;
-  /** 0: 左 space.3、1: SF2 の仲間（左 mock.shelf.indent）。 */
+  /** 0: 左 space.3、1: SF2 の仲間と、最初から入っているもののグループ（左 mock.shelf.indent）。 */
   depth: 0 | 1;
   /** SF2 のファイルの見出し（形式の印「SF2」）。 */
   sf2: boolean;
 }
 
-/** 「最初から入っているもの ・ 31」「あとから入れたもの ・ 1」の行。 */
+/** 「あとから入れたもの ・ 1」の行。 */
 export interface ShelfSection {
   kind: "section";
-  id: "section:builtin" | "section:added";
+  id: "section:added";
   label: string;
 }
 
@@ -231,9 +231,12 @@ export function shelfModel(list: ShelfList, shelf: ShelfView, library: LibraryVi
         }
     }
   } else if (list === "instruments") {
+    // 「最初から入っているもの」は、ほかと同じたためる見出し。中のグループは 1 段下げる（仕様書 3 章 89-11）。
     if (builtinShown > 0 || !searching) {
-      entries.push({ kind: "section", id: "section:builtin", label: t("shelf.sectionCount", { name: t("shelf.builtin"), count: count(builtinShown, builtinTotal) }) });
-      for (const b of builtin) group(b.heading, b.items, b.total);
+      const id = "builtin:sounds";
+      const folded = !headingOpen(id, look, library);
+      entries.push({ kind: "heading", id, label: t("shelf.builtin"), count: count(builtinShown, builtinTotal), folded, depth: 0, sf2: false });
+      if (!folded) for (const b of builtin) group({ ...b.heading, depth: 1 }, b.items, b.total);
     }
   } else {
     const b = builtin[0]!;

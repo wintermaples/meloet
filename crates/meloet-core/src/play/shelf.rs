@@ -364,6 +364,11 @@ impl Play {
         true
     }
 
+    /// `ShelfCancel` also puts away the notice of a row that could not be loaded.
+    pub fn forget_unreadable(&mut self) {
+        self.shelf.unreadable = None;
+    }
+
     /// The shelf is not open (any more).
     pub fn shelf_closed(&mut self, effects: &mut Vec<Effect>) {
         self.end_audition(effects);

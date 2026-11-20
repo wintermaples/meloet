@@ -1,17 +1,21 @@
 <!-- ファイルを持ってきている間の知らせ（仕様書 2 章、6 章「SF2 を持ってきている」、モック F5-SF2Drop）。
      窓のふちの内側に accent の line.mark、まん中に幅 400 の箱（地 gray.3、枠 accent の line.hair、内 16）。ファイルの名前（text.l、600）、落とすと何が起きるか、やめかた。
      足せないファイルは、箱の枠と名前を gray.8 にし、文を「SF2 のファイルではないので、足せません。」に。
+     いくつも持ってきたときは、名前の所が「3 つのファイル ・ SF2 は 2 つ」（仕様書 3 章 89-10）。
      ファイルを受けるのは Rust（PC から聞く）。画面は見せるだけで、押せない（下の物をさえぎらない）。Esc は keys/attach.ts。 -->
 <script lang="ts">
   import type { FileDropView } from "../bridge";
   import { t } from "../text/ja";
 
   let { drop }: { drop: FileDropView } = $props();
+  const title = $derived(
+    drop.files <= 1 ? drop.name : drop.sf2 > 0 ? t("sf2.manyFiles", { files: drop.files, sf2: drop.sf2 }) : t("sf2.manyFilesNoSf2", { files: drop.files }),
+  );
 </script>
 
 <div class="edge" data-test="file-drop">
   <div class="box" class:no={!drop.addable}>
-    <span class="name" data-test="file-drop-name">{drop.name}</span>
+    <span class="name" data-test="file-drop-name">{title}</span>
     <span class="say">{drop.addable ? t("sf2.dropHere") : t("sf2.notSf2")}</span>
     <span class="m-lbl">{t("sf2.dropCancel")}</span>
   </div>

@@ -509,25 +509,35 @@ describe("状態行と入力計（モック F4-ShelfAudition ・ F4-ShelfReplace
     expect(text(q(".message"))).toBe("エレクトリックピアノ ・ 1 ピアノ の音源は、まだグランドピアノです ・ 入れかえるには Enter");
   });
 
-  it("棚が音源の一覧でひらいていれば、まとめの代わりに「音色 31 ・ …をひらいています」（モック R8-Shelf84）", () => {
+  it("棚をひらいた時と見出しをひらく ・ たたむ時に「音色 31 ・ …をひらいています」（仕様書 6 章「棚をひらいている（見出し）」）", () => {
     const s = scene("shelf84");
     mountOf(StatusLine, s);
     const say = () => (flushSync(), text(q(".message")));
     const fold = (groups: string[]) => (shelfUi.open = Object.fromEntries(groups.map((g) => [g, false])));
     fold(["bass", "drums", "padStrings", "wind", "synth"]);
-    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤とギターをひらいています");
+    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤 と ギター をひらいています");
     fold(["guitar", "bass", "drums", "padStrings", "wind", "synth"]);
-    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤をひらいています");
-    fold(["bass", "drums", "padStrings", "synth"]);
-    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤、ギターと管楽器をひらいています");
+    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤 をひらいています");
+    fold(["drums", "padStrings", "wind", "synth"]);
+    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤、ギター と ベース をひらいています");
+    fold(["padStrings", "wind", "synth"]);
+    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤、ギター、ベース と ドラム をひらいています");
+    fold(["wind", "synth"]);
+    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤 ほか 4 つ をひらいています");
     fold(["pianoKeys", "guitar", "bass", "drums", "padStrings", "wind", "synth"]);
     expect(say()).toBe("音色 31");
+    // core の知らせが変わったら、もう言わない（次に見出しをひらく ・ たたむまで）。
+    app.setState({ ...s, status: { message: { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: true, notes: null } } });
+    expect(say()).toBe("ループ 5–9 ・ 選択なし");
+    fold(["bass", "drums", "padStrings", "wind", "synth"]);
+    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤 と ギター をひらいています");
+    app.setState(s);
     // 数は棚に出ている行の数。さがしているときは「さがす「オルガン」・ 合う物 7 個」（モック F5-ShelfSearch）。
     fold([]);
     shelfUi.query = "オルガン";
     expect(say()).toBe("さがす「オルガン」・ 合う物 7 個");
     shelfUi.query = "";
-    // エフェクトの一覧は「エフェクト 6」（モック F5-ShelfFx。ひらいている見出しがあれば「・ リバーブ 23」）。
+    // エフェクトの一覧は「エフェクト 6」、ひらいている見出しがあれば「エフェクト 512 ・ リバーブ をひらいています」。
     shelfUi.view = "effects";
     expect(say()).toBe("エフェクト 6");
     // ためし弾き、サンプル再生中、棚がとじているときは、いつもの文。
@@ -538,7 +548,7 @@ describe("状態行と入力計（モック F4-ShelfAudition ・ F4-ShelfReplace
     expect(say()).toBe("ループ 5–9 ・ 選択なし");
     // ミュートの文は、いつもどおりうしろにつく。
     app.setState({ ...s, song: { ...s.song, tracks: s.song.tracks.map((x, i) => ({ ...x, muted: i === 3 })) } });
-    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤、ギター、ベース、ドラム、パッド ・ 弦、管楽器とシンセをひらいています ・ 4 パッド はミュート");
+    expect(say()).toBe("音色 31 ・ ピアノ ・ 鍵盤 ほか 6 つ をひらいています ・ 4 パッド はミュート");
   });
 
   it("● で別のトラック: 「R を押すと 2 ベース に録ります」", () => {

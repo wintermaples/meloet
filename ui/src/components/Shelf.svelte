@@ -352,8 +352,14 @@
       </div>
     </div>
   {:else if shelf.selectedSound === null && shelf.loadingSound === null && shelf.unreadable}
-    <div class="box" data-test="shelf-unreadable">
-      <span class="say">{t("plugin.loadFailed", { name: soundRefName(shelf.unreadable, library) })}</span>
+    <!-- 読みこめなかった行の下は、見つからない物の知らせの箱（仕様書 3 章 89-12）。 -->
+    <div class="notice" data-test="shelf-unreadable">
+      <span class="say">{t("plugin.loadFailedShelf", { name: soundRefName(shelf.unreadable, library) })}</span>
+      <div class="buttons">
+        <Button onclick={() => send({ type: "shelfCancel" })} test="shelf-cancel"
+          >{t("button.cancel")} <span class="m-num m-lbl">{t("key.esc")}</span></Button
+        >
+      </div>
     </div>
   {:else if shelf.loadingSound}
     {@const plugin = shelf.loadingSound.kind === "plugin"}

@@ -198,16 +198,15 @@ impl GmFamily {
         }
     }
 
-    /// The nearest group that comes with meloet (spec 3: guitars and ethnic instruments go
-    /// with piano and keys, brass, reeds and pipes with the wind instruments, percussive
-    /// sounds and sound effects with the synths).
+    /// The nearest group that comes with meloet (spec 3: guitars with the guitars, ethnic
+    /// instruments with piano and keys, brass, reeds and pipes with the wind instruments,
+    /// percussive sounds and sound effects with the synths).
     pub fn group(self) -> InstrumentGroup {
         match self {
-            GmFamily::Piano
-            | GmFamily::Mallet
-            | GmFamily::Organ
-            | GmFamily::Guitar
-            | GmFamily::Ethnic => InstrumentGroup::PianoKeys,
+            GmFamily::Piano | GmFamily::Mallet | GmFamily::Organ | GmFamily::Ethnic => {
+                InstrumentGroup::PianoKeys
+            }
+            GmFamily::Guitar => InstrumentGroup::Guitar,
             GmFamily::Bass => InstrumentGroup::Bass,
             GmFamily::Strings | GmFamily::Ensemble | GmFamily::SynthPad => {
                 InstrumentGroup::PadStrings
@@ -563,7 +562,7 @@ mod tests {
                 G::PianoKeys,
                 G::PianoKeys,
                 G::PianoKeys,
-                G::PianoKeys,
+                G::Guitar,
                 G::Bass,
                 G::PadStrings,
                 G::PadStrings,
@@ -603,7 +602,7 @@ mod tests {
         };
         let guitar = preset(0, 27, "Clean Guitar");
         assert_eq!(guitar.track_name(), "ギター");
-        assert_eq!(guitar.group(), InstrumentGroup::PianoKeys);
+        assert_eq!(guitar.group(), InstrumentGroup::Guitar);
         let kit = preset(SF2_DRUM_BANK, 0, "Standard");
         assert_eq!(kit.track_name(), "ドラム");
         assert_eq!(kit.group(), InstrumentGroup::Drums);

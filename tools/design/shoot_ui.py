@@ -140,6 +140,12 @@ BOARDS = {
     "noOutput": "R9-Params",
     "paramClamped": "R9-Params",
     "windowUndo": "Opt5-Undo",
+    # デザインの第 9 版の 88〜91（第 6 回 区切り0）。
+    "paramMany6": "F6-ParamMany",
+    "paramKnobsSearch": None,
+    "sf2DropMany": "F5-SF2Drop",
+    "sf2AddedMany": None,
+    "shelfBuiltinOpen": "F5-PluginLoading",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -337,6 +343,8 @@ CLICKS = {
     "pluginAudition": ("pluginAudition", '[data-group="c:instrument:synth"]'),
     "pluginUnreadable": ("pluginUnreadable", '[data-group="c:instrument:synth"]'),
     "paramSearch": ("paramSearch", "js:" + TYPE_PARAM_SEARCH % "cutoff"),
+    "paramKnobsSearch": ("paramMany6", "js:" + TYPE_PARAM_SEARCH % "cc 1|"),
+    "shelfBuiltinOpen": ("shelfPlugins", ('[data-group="builtin:sounds"]', '[data-group="guitar"]')),
     "windowOpen": ("windowOpen", '[data-test="status-windows"]'),
     "paramFew": ("paramFew", "js:" + DRAG_PARAM % ("Decay", 0.1, 0.12)),
 }
@@ -373,6 +381,11 @@ ONLY = {
     "noOutput": [(1280, 800, 100)],
     "paramClamped": [(1280, 800, 100)],
     "windowUndo": [(1280, 800, 100)],
+    "paramMany6": [(1280, 800, 100)],
+    "paramKnobsSearch": [(1280, 800, 100)],
+    "sf2DropMany": [(1280, 800, 100)],
+    "sf2AddedMany": [(1280, 800, 100)],
+    "shelfBuiltinOpen": [(1280, 800, 100)],
     "pianoRoll": [(1280, 800, 100)],
     "pianoRoll720": [(1280, 720, 100)],
     "pianoRoll150": [(1280, 800, 150)],

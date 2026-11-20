@@ -162,6 +162,8 @@ BOARDS = {
     "autoAdd": "R10-AutoEdit",
     "autoMove": "R10-AutoEdit",
     "autoBox": "R10-AutoEdit",
+    "autoPress": "R10-AutoEdit",
+    "autoBoxDrag": "R10-AutoEdit",
     "historyList": "F-History",
     "historyUndone3": "R10-History",
 }
@@ -331,6 +333,32 @@ ev("pointermove", %d + %d, y0 + %d);
 """
 
 
+# Presses the first automation lane at a song place (bar, beat) and moves by (beats, dy) without letting go: on a point
+# that drags it (R10-AutoEdit 「動かしている」), on an empty place that shows the reading of the point it would add
+# (「書いている」), and with box=True from an empty place it draws the selection box (「囲んでえらんだ」).
+DRAG_LANE = """
+// The takes and the lane's points come a moment after the page settles; wait for them (as TYPE_MARKER).
+await new Promise((r) => setTimeout(r, 5000));
+const lane = document.querySelector('[data-test="auto-lane"]');
+const r = lane.getBoundingClientRect();
+const bars = [...document.querySelectorAll(".bar-number")];
+const xOf = (n) => parseFloat(bars.find((b) => b.textContent === String(n)).style.left);
+const barPx = xOf(2) - xOf(1);
+const x0 = xOf(1) + barPx * (%d - 1 + (%d - 1) / 4);
+const y0 = %s;
+const ev = (type, x, y) => lane.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + x, clientY: r.top + y }));
+ev("pointerdown", x0, y0);
+if (%f !== 0 || %d !== 0) {
+  ev("pointermove", x0 + (barPx / 4) * %f / 2, y0 + %d / 2);
+  ev("pointermove", x0 + (barPx / 4) * %f, y0 + %d);
+}
+"""
+
+
+def drag_lane(bar, beat, y, beats=0.0, dy=0):
+    return "js:" + DRAG_LANE % (bar, beat, y, beats, dy, beats, dy, beats, dy)
+
+
 def drag_tempo(x, y, dx, dy):
     return "js:" + DRAG_TEMPO % (y, x, x, dx, dy, x, dx, dy)
 
@@ -407,6 +435,11 @@ CLICKS = {
     "markerMoving": ("markerMoving", "js:" + DRAG_MARKER % ("Aメロ", 64, 64)),
     # 9 小節目の点（120.00）を 1 拍右、少し上へ動かしている途中（もとの所に accent の枠、読み値は位置）。
     "tempoDrag": ("tempo", drag_tempo(512, 12, 16, -6)),
+    # 第 6 回 区切り2: R10-AutoEdit の 3 つ。3 小節目の点（−2.1 dB）を 1 拍右、上へ（−0.6 dB）。5. 3. 000 の空いた所を押したまま。
+    # 2 小節目の後ろから 6 小節目まで囲む。点の高さは帯の中の位置（4 + (1 − 位置) × 39）。
+    "autoMove": ("autoMove", drag_lane(3, 1, "4 + (1 - 0.73) * 39", 1, -4)),
+    "autoPress": ("autoMove", drag_lane(5, 3, "4 + (1 - 0.52) * 39")),
+    "autoBoxDrag": ("autoMove", drag_lane(2, 3, "4", 14, 40)),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -523,6 +556,8 @@ ONLY = {
     "autoAdd": [(1280, 800, 100)],
     "autoMove": [(1280, 800, 100)],
     "autoBox": [(1280, 800, 100)],
+    "autoPress": [(1280, 800, 100)],
+    "autoBoxDrag": [(1280, 800, 100)],
     "historyList": [(1280, 800, 100), (1280, 800, 150)],
     "historyUndone3": [(1280, 800, 100)],
 }

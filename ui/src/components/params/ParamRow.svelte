@@ -3,7 +3,7 @@
      棒のドラッグ中は画面だけが先に動き、音は SetParam { commit: false }（1 コマに 1 回まで）、離したときに commit: true で 1 手。
      もとの位置は gray.7 の枠。Esc は動かす前に戻して CancelMixPreview（pianoroll/view.svelte.ts の cancelDrag）。
      行をえらんで Enter か、値を 2 回押すと、値を打ちこむ枠（仕様書 3 章 86-6。ValueField）。Enter で TypeParam。
-     オートメーションはまだないので、右の印は「使えない」。 -->
+     右の印はオートメーションに書く（AutoMark）。帯が動かしているあいだは、値は線の上の値（auto。画面が出す。docs/architecture.md 21-8）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { EFFECT_PARAMS, type EffectKind, type InsertRef } from "../../bridge/types";
@@ -14,6 +14,7 @@
   import { fractionOf, keyStep, typedText, unitText, valueAt, valueText } from "./paramRows";
   import { paramUi, stopTyping } from "./paramUi.svelte";
   import ValueField from "./ValueField.svelte";
+  import AutoMark from "./AutoMark.svelte";
 
   interface Props {
     insert: InsertRef;
@@ -24,8 +25,12 @@
     value: number;
     selected: boolean;
     onselect: () => void;
+    /** 右の印。 */
+    mark: { on: boolean; usable: boolean; add: () => void };
+    /** 帯が動かしている値（なければ null）。 */
+    auto?: number | null;
   }
-  let { insert, effect: kind, param, name, value, selected, onselect }: Props = $props();
+  let { insert, effect: kind, param, name, value, selected, onselect, mark, auto = null }: Props = $props();
 
   const spec = $derived(EFFECT_PARAMS[kind][param]!);
 
@@ -33,7 +38,7 @@
   let dragging = $state(false);
   /** 動かしている値か、送って Rust の答えを待っている値。 */
   let held = $state<number | null>(null);
-  const shown = $derived(held ?? value);
+  const shown = $derived(held ?? auto ?? value);
   let from = $state(0);
   let previewed = false;
   let lastSent: number | null = null;
@@ -226,9 +231,7 @@
   {#if !typing}
     <span class="m-num m-hi value" role="presentation" data-test="param-value" ondblclick={startTyping}>{valueText(kind, spec, shown)}</span>
   {/if}
-  <button class="automation" disabled aria-label={t("params.automation")}
-    ><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 8L3 3l3 4 4-6" /></svg></button
-  >
+  <AutoMark {...mark} />
 </div>
 
 <style>
@@ -353,27 +356,5 @@
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: right;
-  }
-  /* オートメーションに書く印（20×20）。まだないので「使えない」: 枠 gray.5、文字 gray.7、押せない。 */
-  .automation {
-    box-sizing: border-box;
-    width: var(--part-param-automation);
-    height: var(--part-param-automation);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: var(--line-hair) solid var(--color-gray-5);
-    border-radius: var(--radius-1);
-    background: var(--color-gray-1);
-    color: var(--color-gray-7);
-  }
-  .automation svg {
-    width: var(--part-button-icon);
-    height: var(--part-button-icon);
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1;
   }
 </style>

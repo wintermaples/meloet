@@ -168,8 +168,8 @@ describe("パラメータの欄（モック F4-Mixer）", () => {
     expect(qa("[data-test=param-row]").map((r) => r.classList.contains("selected"))).toEqual([true, false, false, false, false, false, false]);
     // 「この子は窓を持ちません。」の行は出さない（仕様書 3 章 Y8）。
     expect(target.textContent).not.toContain("窓を持ちません");
-    // オートメーションはまだないので「使えない」。
-    expect(qa("[data-test=param-row] button[aria-label=オートメーションに書く]").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    // オートメーションに書く印は、トラックのインサートなら押せる（戻り ・ マスターは「使えない」。design-notes A-19 の 7）。
+    expect(qa("[data-test=param-row] button[aria-label=オートメーションに書く]").length).toBe(7);
   });
 
   it("行を押すと SelectParam（えらんでいる行では送らない）", () => {

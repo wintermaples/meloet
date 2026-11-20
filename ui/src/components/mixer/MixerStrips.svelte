@@ -15,6 +15,10 @@
   import { selectedInsert, windowOf } from "../params/selected";
   import { openShelf } from "../tracks.svelte";
   import Strip from "./Strip.svelte";
+  import { livePosition } from "../automation/autoState.svelte";
+  import { hasLaneRef, laneMoves, laneOf, panAt, type AutoLook, type StripAuto } from "../automation/laneValue";
+  import { fracToDb } from "./scale";
+  import type { AutoTarget } from "../../bridge";
   import { returnEffectName, stripName } from "./stripName";
   import VScrollbar from "./VScrollbar.svelte";
 
@@ -37,6 +41,48 @@
     return app.windows.list.flatMap((w) => (w.slot?.kind === "insert" && sameStrip(w.slot.insert.strip, strip) ? [w.slot.insert.slot] : []));
   }
 
+  // ---- オートメーション（docs/architecture.md 21-8: 帯の点と再生の線の所から、画面が自分で値を出す） ----
+
+  /** どこかのトラックに音量の帯があれば、どのストリップにも値の下の行を出す。 */
+  const autoRow = $derived(song.tracks.some((tr) => laneOf(tr, { kind: "volume" }) !== undefined));
+  function lookOf(track: TrackView, target: AutoTarget): AutoLook {
+    const lane = laneOf(track, target);
+    if (!lane) return null;
+    if (laneMoves(lane, app.automation.held, track.id)) return "moving";
+    return lane.resting || hasLaneRef(app.automation.held, track.id, target) ? "resting" : null;
+  }
+  function autoOf(track: TrackView): StripAuto {
+    const volume = laneOf(track, { kind: "volume" });
+    return {
+      gain: lookOf(track, { kind: "volume" }),
+      pan: lookOf(track, { kind: "pan" }),
+      sends: [lookOf(track, { kind: "send", bus: "a" }), lookOf(track, { kind: "send", bus: "b" })],
+      row: autoRow,
+      restore: volume?.resting && !busy ? () => send({ type: "restoreLane", track: track.id, target: { kind: "volume" } }) : null,
+    };
+  }
+  /** 戻りとマスターには帯がない（A-19 の 7）。値の下の行だけ、高さをそろえるために出す。 */
+  const noAuto = $derived<StripAuto>({ gain: null, pan: null, sends: [null, null], row: autoRow, restore: null });
+  /** 帯が動かしている物は線の上の値、ほかは手で置いた値。 */
+  function shownGain(track: TrackView, look: AutoLook): number | null {
+    const pos = look === "moving" ? livePosition(track.id, { kind: "volume" }) : null;
+    return pos === null ? track.gainDb : fracToDb(pos);
+  }
+  function shownPan(track: TrackView, look: AutoLook): number {
+    const pos = look === "moving" ? livePosition(track.id, { kind: "pan" }) : null;
+    return pos === null ? track.pan : panAt(pos);
+  }
+  function shownSends(track: TrackView, auto: StripAuto): [number | null, number | null] {
+    return BUSES.map((bus, i) => {
+      const pos = auto.sends[i] === "moving" ? livePosition(track.id, { kind: "send", bus }) : null;
+      return pos === null ? track.sends[i]! : fracToDb(pos);
+    }) as [number | null, number | null];
+  }
+  function shownMuted(track: TrackView): boolean {
+    const lane = laneOf(track, { kind: "mute" });
+    const pos = laneMoves(lane, app.automation.held, track.id) ? livePosition(track.id, { kind: "mute" }) : null;
+    return pos === null ? track.muted : pos >= 0.5;
+  }
   const sameStrip = (a: StripRef, b: StripRef) => JSON.stringify(a) === JSON.stringify(b);
   const slotOf = (strip: StripRef, sel: InsertRef | null) => (sel && sameStrip(sel.strip, strip) ? sel.slot : null);
   const off = { on: false, usable: false, run: () => {} };
@@ -123,6 +169,7 @@
     <div class="row">
       {#each song.tracks as track (track.id)}
         {@const strip: StripRef = { kind: "track", id: track.id }}
+        {@const auto = autoOf(track)}
         <Strip
           {strip}
           mark={String(track.number)}
@@ -132,11 +179,12 @@
           slots={track.slots}
           selectedSlot={slotOf(strip, selected)}
           windowSlots={windowSlots(strip)}
-          sends={{ track: track.id, dbs: track.sends, homes: track.sendDefaults }}
-          pan={track.pan}
-          gainDb={track.gainDb}
+          sends={{ track: track.id, dbs: shownSends(track, auto), homes: track.sendDefaults }}
+          pan={shownPan(track, auto.pan)}
+          gainDb={shownGain(track, auto.gain)}
           meter={{ track: track.number }}
-          mute={{ on: track.muted, usable: true, run: () => send({ type: "toggleMute", track: track.id }) }}
+          mute={{ on: shownMuted(track), usable: true, run: () => send({ type: "toggleMute", track: track.id }) }}
+          {auto}
           solo={{ on: track.soloed, usable: true, run: () => send({ type: "toggleSolo", track: track.id }) }}
           arm={{ on: song.playTarget === track.id, usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }) }}
         />
@@ -161,6 +209,7 @@
           mute={{ on: ret.muted, usable: true, run: () => send({ type: "toggleReturnMute", bus }) }}
           solo={off}
           arm={off}
+          auto={noAuto}
         />
       {/each}
       <Strip
@@ -179,6 +228,7 @@
         mute={off}
         solo={off}
         arm={off}
+        auto={noAuto}
       />
     </div>
   </div>

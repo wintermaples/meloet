@@ -31,6 +31,7 @@ import {
   startRename,
 } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
+import { laneDeleteCommand } from "../components/automation/laneKeys";
 import { timelineKeyCommand } from "../components/timeline/keys";
 import { pickTimeline } from "../components/timeline/pick";
 import { closeMenu, menuVisible } from "../lib/menu";
@@ -374,6 +375,16 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
 
   // テンポ ・ 拍子の変更とマーカーのキー（K、Alt ← →、マーカーをえらんでいるときの F2、えらんだ物の Delete）。Esc はここを通さない。
   if (context === "main" && ev.key !== "Escape") {
+    const lane = laneDeleteCommand(
+      keyInputOf(ev),
+      { typing, busy: songBusy(state), toArrange: prView.focus === "arrange" || !pianoRollOpen(state) },
+      state.automation,
+    );
+    if (lane) {
+      ev.preventDefault();
+      if (lane !== "none") deps.send(lane);
+      return;
+    }
     const tl = timelineKeyCommand(
       keyInputOf(ev),
       {

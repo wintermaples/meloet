@@ -16,7 +16,10 @@
   import { onDragCancel } from "./pianoroll/view.svelte";
   import { trackContextMenu } from "./trackMenu";
   import { soundRefName, soundViewName, standInTip } from "./sounds";
-  import { moveSlot, openShelf, trackEdit } from "./tracks.svelte";
+  import { moveSlotAt, openShelf, trackEdit } from "./tracks.svelte";
+  import { arrangeRows, showsAddRow } from "./automation/autoGeom";
+  import LaneAddRow from "./automation/LaneAddRow.svelte";
+  import LaneHead from "./automation/LaneHead.svelte";
   import { windowOf } from "./params/selected";
   import WindowMark from "./WindowMark.svelte";
 
@@ -81,7 +84,13 @@
   let press: { id: number; from: number; y0: number; pointer: number; el: HTMLElement } | null = null;
   let drag = $state<{ id: number; from: number; dy: number } | null>(null);
   const trackH = $derived(metrics.px("size.track"));
-  const slot = $derived(drag ? moveSlot(drag.from, song.tracks.length, (drag.from + 0.5) * trackH + drag.dy, trackH) : null);
+  /** トラックの行と、その下のオートメーションの帯（時間の側と同じ並び。automation/autoGeom.ts）。 */
+  const rows = $derived(
+    arrangeRows(song.tracks, current.state!.automation.folded, { trackH, laneH: metrics.px("size.lane"), rowH: metrics.px("size.row") }),
+  );
+  const bounds = $derived([...rows.tops, rows.height]);
+  const dropAt = (d: { from: number; dy: number }) => moveSlotAt(d.from, bounds, rows.tops[d.from]! + trackH / 2 + d.dy);
+  const slot = $derived(drag ? dropAt(drag) : null);
 
   function headDown(e: PointerEvent, track: TrackView, at: number): void {
     if (e.button !== 0 || (e.target as Element | null)?.closest("button, input")) return;
@@ -103,7 +112,7 @@
     const d = drag;
     endPress();
     if (d) {
-      const to = moveSlot(d.from, song.tracks.length, (d.from + 0.5) * trackH + d.dy, trackH).to;
+      const to = dropAt(d).to;
       if (to !== d.from) send({ type: "moveTrack", track: d.id, to });
     } else if (song.playTarget !== p.id) send({ type: "selectTrack", track: p.id, fromArm: false });
   }
@@ -257,9 +266,13 @@
         <div class="meter" use:glSlot={{ kind: "meter", source: { track: track.number }, gap: metrics.px("line.hair") }}></div>
       </div>
     </div>
+    {#each rows.lanes.filter((l) => l.track.id === track.id) as l (JSON.stringify(l.lane.target))}
+      <LaneHead {track} lane={l.lane} />
+    {/each}
+    {#if showsAddRow(track)}<LaneAddRow {track} />{/if}
   {/each}
   {#if slot && drag && slot.to !== drag.from}
-    <div class="insert" style:top="{slot.slot * trackH}px" data-test="track-insert"></div>
+    <div class="insert" style:top="{bounds[slot.slot]}px" data-test="track-insert"></div>
   {/if}
 </div>
 <button class="m-plain add" class:usable={!busy} aria-disabled={busy || undefined} data-test="add-track" onclick={addTrack}>

@@ -5,7 +5,7 @@
 
 import type { ClipEdge, ClipView, Command, TrackView } from "../bridge";
 import { t } from "../text/ja";
-import { clipBox, type LaneDims, type View } from "./arrangeGeom";
+import { blockAt, clipBox, trackRowAt, type LaneDims, type View } from "./arrangeGeom";
 import { positionText, signed, snapTick } from "./pianoroll/geom";
 import { barFloat, barsMap } from "../time/bars";
 import { DISPLAY_TICKS_PER_BEAT, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "./time";
@@ -19,7 +19,7 @@ export interface ClipHit {
 
 /** (x, y) の下のクリップ。はしの幅は、せまいクリップでもまん中が残るように、幅の 1/3 まで。 */
 export function clipHit(v: View, d: LaneDims, tracks: readonly TrackView[], x: number, y: number, edgePx: number): ClipHit | null {
-  const row = Math.floor(y / d.trackH);
+  const row = trackRowAt(d, y);
   const track = tracks[row];
   if (!track) return null;
   for (const clip of track.clips) {
@@ -157,7 +157,7 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
     // つかんだクリップをグリッドに吸いつけ、ほかは同じ間をあけてついてくる。いちばん前のクリップが曲の頭で止まる。
     const earliest = Math.min(...d.group.map((g) => g.clip.start));
     const ticks = Math.max(snap(c.start + dx) - c.start, -earliest) || 0;
-    const rows = Math.floor(y / i.dims.trackH) - Math.floor(press.y / i.dims.trackH);
+    const rows = blockAt(i.dims, y) - blockAt(i.dims, press.y);
     const toRow = Math.min(i.tracks.length - 1, Math.max(0, d.row + rows));
     const copy = mods.alt;
     const next = {

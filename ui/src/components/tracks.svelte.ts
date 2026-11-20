@@ -173,3 +173,12 @@ export function moveSlot(
   const slot = Math.max(0, Math.min(count, Math.round(center / h)));
   return { slot, to: slot > from ? slot - 1 : slot };
 }
+
+/** moveSlot の、行の高さがそろっていない形（トラックの下にオートメーションの帯がある）。bounds は行の境の y（上から、いちばん下もふくむ）。 */
+export function moveSlotAt(from: number, bounds: readonly number[], center: number): { slot: number; to: number } {
+  let slot = 0;
+  bounds.forEach((b, i) => {
+    if (Math.abs(center - b) <= Math.abs(center - bounds[slot]!)) slot = i;
+  });
+  return { slot, to: slot > from ? slot - 1 : slot };
+}

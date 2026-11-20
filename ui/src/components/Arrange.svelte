@@ -46,6 +46,8 @@
   import TempoBand from "./timeline/TempoBand.svelte";
   import { changeCount, summaries } from "./timeline/tempoGeom";
   import { pickClips } from "./timeline/pick";
+  import { arrangeRows, showsAddRow } from "./automation/autoGeom";
+  import AutoLane from "./automation/AutoLane.svelte";
 
   let { children }: { children?: Snippet } = $props();
 
@@ -82,7 +84,16 @@
   const gridBeats = $derived(G.beatsShown(barPx, perBar, ticksPerBeat({ num: timeline.meterNum, den: timeline.meterDen }), metrics.px("mock.arrange.bar") / 2));
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
   const view: G.View = $derived({ pxPerTick, scrollX: scrollTick * pxPerTick, width: viewWidth });
+  /** トラックの行と、その下のオートメーションの帯（見出しの側と同じ並び。automation/autoGeom.ts）。 */
+  const rows = $derived(
+    arrangeRows(song.tracks, current.state!.automation.folded, {
+      trackH: metrics.px("size.track"),
+      laneH: metrics.px("size.lane"),
+      rowH: metrics.px("size.row"),
+    }),
+  );
   const dims: G.LaneDims = $derived({
+    tops: rows.tops,
     trackH: metrics.px("size.track"),
     inset: metrics.px("mock.arrange.clip-inset"),
     hair: metrics.px("line.hair"),
@@ -241,7 +252,7 @@
   const dragShift = $derived.by(() => {
     const d = shownDrag;
     if (!d || d.kind !== "move" || (d.ticks === 0 && d.toRow === d.row)) return null;
-    return `translate(${d.ticks * pxPerTick}px, ${(d.toRow - d.row) * dims.trackH}px)`;
+    return `translate(${d.ticks * pxPerTick}px, ${G.rowTop(dims, d.toRow) - G.rowTop(dims, d.row)}px)`;
   });
 
   $effect(() => {
@@ -355,7 +366,7 @@
       }
     }
     if (shownLoop) {
-      const h = song.tracks.length * dims.trackH;
+      const h = rows.height;
       for (const bar of [shownLoop.from, shownLoop.to]) {
         const x = loopX(bar);
         if (x >= 0 && x < view.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.7" });
@@ -544,7 +555,7 @@
   }
 
   /** いま描いてある、のびている先の形。どれも同じなら、四角を作りなおさない。 */
-  const tailDrawn = { nowPx: NaN, scrollX: NaN, live: -1, lapFrom: NaN, commit: NaN, row: -1, pxPerTick: NaN, trackH: NaN, labelPx: NaN };
+  const tailDrawn = { nowPx: NaN, scrollX: NaN, live: -1, lapFrom: NaN, commit: NaN, row: -1, pxPerTick: NaN, trackH: NaN, top: NaN, labelPx: NaN };
   let labelNode: HTMLElement | null = null;
   let labelTake = 0;
   let labelFullPx = 0;
@@ -590,11 +601,12 @@
       d.commit === commit &&
       d.row === row &&
       d.pxPerTick === pxPerTick &&
-      d.trackH === dims.trackH
+      d.trackH === dims.trackH &&
+      d.top === G.rowTop(dims, row)
     ) {
       return;
     }
-    const placeChanged = d.scrollX !== scrollX || d.commit !== commit || d.lapFrom !== lapFrom || d.row !== row || d.pxPerTick !== pxPerTick || d.trackH !== dims.trackH;
+    const placeChanged = d.scrollX !== scrollX || d.commit !== commit || d.lapFrom !== lapFrom || d.row !== row || d.pxPerTick !== pxPerTick || d.trackH !== dims.trackH || d.top !== G.rowTop(dims, row);
     d.nowPx = nowPx;
     d.scrollX = scrollX;
     d.live = liveVersion;
@@ -603,6 +615,7 @@
     d.row = row;
     d.pxPerTick = pxPerTick;
     d.trackH = dims.trackH;
+    d.top = G.rowTop(dims, row);
 
     const v: G.View = { pxPerTick, scrollX, width: viewWidth };
     const box = G.clipBox(v, dims, row, tailFrom, at);
@@ -655,10 +668,17 @@
     return t("arrange.tempoAndSignature", { tempo: tempoText(Math.round(map.tempoAt(at) * 100) / 100), signature: `${m.num}/${m.den}` });
   }
   let now = $state("");
+  /** 動いている間は 1 秒に 10 回まで書く（毎コマ書くと、再生の線の四角を切って、描きなおしの四角がふえる。2026-11-20-round6-step1.md の 5）。 */
+  const NOW_EVERY_MS = 100;
+  let nowAt = -Infinity;
   function showNow(tick: number): void {
     if (timeline.open) return;
+    const ms = performance.now();
+    if (ms - nowAt < NOW_EVERY_MS) return;
     const text = nowText(tick);
-    if (text !== now) now = text;
+    if (text === now) return;
+    now = text;
+    nowAt = ms;
   }
   $effect(() => {
     if (transport.state === "stopped") now = nowText(transport.position);
@@ -945,7 +965,7 @@
       return;
     }
     // 押した所を、クリップを動かすときと同じグリッド（ふだん 1 小節）に寄せる。Shift なら寄せない。
-    const track = song.tracks[Math.floor(p.y / dims.trackH)];
+    const track = song.tracks[G.trackRowAt(dims, p.y)];
     const at = G.xToTick(view, p.x);
     const tick = Math.max(0, e.shiftKey ? Math.round(at) : nearestBarTick(map, at));
     const paste = () => {
@@ -1086,6 +1106,10 @@
       >
         {#each song.tracks as track (track.id)}
           <div class="lane"></div>
+          {#each rows.lanes.filter((l) => l.track.id === track.id) as l (JSON.stringify(l.lane.target))}
+            <AutoLane {track} lane={l.lane} {view} {map} {busy} />
+          {/each}
+          {#if showsAddRow(track)}<div class="add-row"></div>{/if}
         {/each}
         <div class="fill" use:glSlot={{ kind: "rects", rects: laneRects }}></div>
         <div class="rec-host" use:glRegion={"recordingClip"}>
@@ -1124,7 +1148,7 @@
               class="clip-label recording"
               bind:this={recLabel}
               style:left="{Math.max(G.tickToX(view, recShown.lapFrom), 0) + dims.hair}px"
-              style:top="{row * dims.trackH + dims.inset + dims.mark}px"
+              style:top="{G.rowTop(dims, row) + dims.inset + dims.mark}px"
             >
               {t("arrange.recordingClip", { take: rec.take })}
             </div>
@@ -1337,6 +1361,11 @@
   }
   .lane {
     height: var(--size-track);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  /* 「▸ パン ▸ プラグインのパラメータ」の行の時間の側（何も置かない）。 */
+  .add-row {
+    height: var(--size-row);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
   .rec-host {

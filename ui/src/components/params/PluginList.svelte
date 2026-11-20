@@ -6,7 +6,7 @@
   import { onMount, untrack } from "svelte";
   import { paramTable, type ParamTable, type SelectedPlugin } from "../../bridge";
   import ScrollArea from "../../lib/ScrollArea.svelte";
-  import { send } from "../../state/app.svelte";
+  import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import Button from "../Button.svelte";
   import { openContextMenu } from "../menu/contextMenu.svelte";
@@ -171,6 +171,38 @@
   }
 
   const automated = $derived(new Set(sel.automated));
+
+  // 帯はトラックの下だけ（戻り ・ マスターのインサートの印は「使えない」。design-notes A-19 の 7）。
+  const markTrack = $derived.by((): number | null => {
+    const s = sel.slot;
+    if (s.kind === "instrument") return s.track;
+    return s.insert.strip.kind === "track" ? s.insert.strip.id : null;
+  });
+  const busy = $derived(current.state!.transport.state === "recording" || current.state!.transport.state === "countIn");
+  /** 帯があるパラメータ（core の automated が、まだ帯を数えていなくても印を accent に）。 */
+  const laneParams = $derived.by(() => {
+    const s = sel.slot;
+    const track = current.state!.song.tracks.find((tr) => tr.id === markTrack);
+    const out = new Set<number>();
+    if (!track) return out;
+    const id = s.kind === "insert" ? track.slots[s.insert.slot]?.id : undefined;
+    for (const l of track.lanes) {
+      if (s.kind === "instrument" && l.target.kind === "instrument") out.add(l.target.param);
+      if (s.kind === "insert" && l.target.kind === "insert" && l.target.insert === id) out.add(l.target.param);
+    }
+    return out;
+  });
+  function addLane(param: number): void {
+    const s = sel.slot;
+    const track = markTrack;
+    if (track === null) return;
+    if (s.kind === "instrument") {
+      send({ type: "addLane", track, target: { kind: "instrument", param } });
+      return;
+    }
+    const id = current.state!.song.tracks.find((tr) => tr.id === track)?.slots[s.insert.slot]?.id;
+    if (id !== undefined) send({ type: "addLane", track, target: { kind: "insert", insert: id, param } });
+  }
   const key = (e: PluginEntry) => e.id;
 </script>
 
@@ -194,9 +226,11 @@
           row={e.row}
           {tick}
           selected={sel.row === e.row.id}
-          automated={automated.has(e.row.id)}
+          automated={automated.has(e.row.id) || laneParams.has(e.row.id)}
           {usable}
           onselect={() => pick(e.row.id)}
+          markUsable={markTrack !== null && !busy}
+          add={() => addLane(e.row.id)}
         />
       {/if}
     {/each}

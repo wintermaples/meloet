@@ -20,6 +20,8 @@
   import { faderControl } from "./control.svelte";
   import { FADER_MIN, faderText } from "./scale";
   import SendBar from "./SendBar.svelte";
+  import { coverIf } from "../automation/coverIf";
+  import type { StripAuto } from "../automation/laneValue";
 
   interface Toggle {
     on: boolean;
@@ -59,8 +61,10 @@
     mute: Toggle;
     solo: Toggle;
     arm: Toggle;
+    auto?: StripAuto | null;
   }
-  let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm }: Props = $props();
+  let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null }: Props = $props();
+  const moving = $derived(auto?.gain === "moving");
 
   const kind = $derived(strip.kind);
   const fader = faderControl(
@@ -174,19 +178,20 @@
   <div class="group">
     <span class="m-lbl" use:term={"センド"}>{t("mixer.sends")}</span>
     {#if sends}
-      <SendBar track={sends.track} bus="a" db={sends.dbs[0]} home={sends.homes[0]} />
-      <SendBar track={sends.track} bus="b" db={sends.dbs[1]} home={sends.homes[1]} />
+      <SendBar track={sends.track} bus="a" db={sends.dbs[0]} home={sends.homes[0]} auto={auto?.sends[0] === "moving"} />
+      <SendBar track={sends.track} bus="b" db={sends.dbs[1]} home={sends.homes[1]} auto={auto?.sends[1] === "moving"} />
     {:else}
       <div class="empty-row"></div>
       <div class="empty-row"></div>
     {/if}
   </div>
-  <PanKnob {strip} {pan} />
-  <div class="level" style:min-height="{metrics.scaled(FADER_MIN)}px">
-    <Fader control={fader} />
+  <PanKnob {strip} {pan} auto={auto?.pan === "moving"} />
+  <!-- 動いているフェーダーと値は、毎コマ変わるので mixerMeters の canvas の下に入れる（docs/architecture.md 7 章）。 -->
+  <div class="level" style:min-height="{metrics.scaled(FADER_MIN)}px" use:coverIf={moving}>
+    <Fader control={fader} auto={moving} />
     <div class="meter" use:glSlot={{ kind: "meter", vertical: true, source: meter, gap: meterGap }}></div>
   </div>
-  <div class="value">
+  <div class="value" use:coverIf={moving}>
     {#if fader.typing}
       <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
     {:else}
@@ -194,6 +199,21 @@
     {/if}
     <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
   </div>
+  {#if auto?.row}
+    <div class="auto-row" data-test="mixer-auto">
+      {#if auto.gain === "moving"}
+        <span class="m-lbl">{t("mixer.automation")}</span>
+      {:else if auto.gain === "resting"}
+        <span class="m-lbl">{t("lane.restingBare")}</span>
+        <button
+          class="m-btn restore"
+          aria-disabled={!auto.restore || undefined}
+          data-test="mixer-auto-restore"
+          onclick={() => auto.restore?.()}>{t("lane.restore")}</button
+        >
+      {/if}
+    </div>
+  {/if}
   <div class="toggles">
     {#each toggles as b (b.key)}
       <button
@@ -324,6 +344,17 @@
   .db {
     font-size: var(--text-m-size);
     line-height: var(--text-m-line-height);
+  }
+  /* フェーダーの値の下（モック F6-MixerAuto ・ F6-MixerRest: 高さ 20、gray.8 の「オートメーション」、休みは「休み」と「もどす」）。 */
+  .auto-row {
+    height: var(--part-toggle-size);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .restore {
+    height: var(--part-toggle-size);
   }
   .toggles {
     flex-shrink: 0;

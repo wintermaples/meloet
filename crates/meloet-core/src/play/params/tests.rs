@@ -4,7 +4,7 @@ use meloet_protocol::{Band, Command, InsertRef, PluginWindowKind, StripRef};
 use super::*;
 use crate::catalog::tests::COMP_VST3;
 use crate::play::tests::status;
-use crate::play::windows::tests::{FRESH, LEVEL, LOUD, MODE, Rig, state_of};
+use crate::play::windows::tests::{FRESH, KNOB, LEVEL, LOUD, MODE, Rig, state_of};
 use crate::state::Input;
 use crate::state::added_tests::loads;
 
@@ -115,6 +115,41 @@ fn the_list_is_a_table_with_a_number_and_a_new_one_when_it_may_have_changed() {
     r.cmd(Command::SelectInsert { insert: None });
     assert_eq!(r.m.view().params.selected, None);
     assert_eq!(r.m.plugin_params(5), None);
+}
+
+#[test]
+fn parameters_that_only_take_a_keyboards_knobs_are_apart_and_not_counted() {
+    let mut r = Rig::new();
+    r.host.knobs = 4;
+    let (_, track, _) = r.surge();
+    r.cmd(Command::SelectInstrument { track });
+    r.settle();
+
+    let selected = r.selected();
+    assert_eq!((selected.table, selected.count), (Some(1), 3));
+    let table = r.m.plugin_params(1).expect("the table");
+    let names: Vec<Vec<&str>> = (table.groups.iter())
+        .map(|g| g.params.iter().map(|p| p.name.as_str()).collect())
+        .collect();
+    assert_eq!(names, [vec!["Level"], vec!["Mode", "Loud"]]);
+    let knobs: Vec<(u32, &str)> = (table.keyboard_knobs.iter())
+        .map(|p| (p.id, p.name.as_str()))
+        .collect();
+    assert_eq!(
+        knobs,
+        [
+            (KNOB, "MIDI CC 0|0"),
+            (KNOB + 1, "MIDI CC 0|1"),
+            (KNOB + 2, "MIDI CC 0|2"),
+            (KNOB + 3, "MIDI CC 0|3"),
+        ]
+    );
+
+    // One found by searching can be chosen like any row.
+    r.cmd(Command::SelectParam {
+        param: Some(KNOB + 2),
+    });
+    assert_eq!(r.selected().row, Some(KNOB + 2));
 }
 
 #[test]

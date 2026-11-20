@@ -229,6 +229,15 @@ pub fn half_width(text: &str) -> String {
         .collect()
 }
 
+/// A name as JUCE gives the parameters it makes only to take a keyboard's knobs:
+/// "MIDI CC 0|0" to "MIDI CC 15|129" (channel, then controller).
+pub fn named_midi_cc(name: &str) -> bool {
+    let digits = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+    (name.trim().strip_prefix("MIDI CC "))
+        .and_then(|rest| rest.split_once('|'))
+        .is_some_and(|(channel, number)| digits(channel) && digits(number))
+}
+
 /// The number a text starts with.
 pub fn leading_number(text: &str) -> Option<f64> {
     number_and_rest(text).map(|(number, _)| number)
@@ -447,6 +456,26 @@ mod tests {
                 clamped: Some(true)
             })
         );
+    }
+
+    #[test]
+    fn names_of_parameters_that_only_take_a_keyboards_knobs() {
+        for name in ["MIDI CC 0|0", "MIDI CC 15|129", " MIDI CC 3|74 "] {
+            assert!(named_midi_cc(name), "{name}");
+        }
+        for name in [
+            "MIDI CC",
+            "MIDI CC 3",
+            "MIDI CC 3|",
+            "MIDI CC |4",
+            "MIDI CC a|4",
+            "MIDI CC 3|4 Depth",
+            "Midi CC 3|4",
+            "CC 3|4",
+            "Global Volume",
+        ] {
+            assert!(!named_midi_cc(name), "{name}");
+        }
     }
 
     #[test]

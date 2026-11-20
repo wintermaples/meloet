@@ -238,6 +238,50 @@ fn surge_xt_lv2_sounds_takes_parameters_and_keeps_its_state() {
     instrument_round_trip(SURGE_LV2, 700);
 }
 
+/// How many parameters are for people, and how many only take a keyboard's knobs.
+fn knobs_apart(plugin: (&str, &str)) -> Option<(usize, usize)> {
+    if !installed(plugin) {
+        return None;
+    }
+    let mut host = Host::start_with(GEOMETRY, &[]);
+    let _engine = load(&mut host, 0, plugin);
+    let list = params(&mut host, 0);
+    let knobs = list.iter().filter(|p| p.midi_cc).count();
+    if let Some(first) = list.iter().find(|p| p.midi_cc) {
+        let last = list.iter().rfind(|p| p.midi_cc).unwrap();
+        eprintln!("{}: {} .. {}", plugin.0, first.name, last.name);
+    }
+    assert_eq!(host.ask(Request::Unload { slot: 0 }), Reply::Ok);
+    assert_eq!(host.ask(Request::Quit), Reply::Ok);
+    Some((list.len() - knobs, knobs))
+}
+
+#[test]
+#[ignore = "needs Surge XT (VST3)"]
+fn surge_xt_vst3_has_774_parameters_and_2080_for_a_keyboards_knobs() {
+    if let Some(counts) = knobs_apart(SURGE_VST3) {
+        assert_eq!(counts, (774, 2080));
+    }
+}
+
+#[test]
+#[ignore = "needs Surge XT (LV2)"]
+fn surge_xt_lv2_has_none_for_a_keyboards_knobs() {
+    if let Some(counts) = knobs_apart(SURGE_LV2) {
+        assert_eq!(counts, (775, 0));
+    }
+}
+
+#[test]
+#[ignore = "needs LSP Plugins and Zam plugins (VST3)"]
+fn plugins_that_map_no_knob_only_parameters_keep_all_of_theirs() {
+    for plugin in [LSP_COMP_VST3, LSP_LIMITER_VST3, ZAMCOMP_VST3] {
+        if let Some((_, knobs)) = knobs_apart(plugin) {
+            assert_eq!(knobs, 0, "{}", plugin.0);
+        }
+    }
+}
+
 /// Sound through, a parameter that reads back, and two plugins just made that sound the same
 /// sample for sample once both have the first one's state.
 fn effect_round_trip(plugin: (&str, &str)) {

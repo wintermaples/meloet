@@ -17,6 +17,9 @@ use crate::state::{Input, Model, PluginSaid};
 pub(crate) const LEVEL: u32 = 0;
 pub(crate) const MODE: u32 = 1;
 pub(crate) const LOUD: u32 = 2;
+/// The first id of the parameters that only take a keyboard's knobs (`FakeHost::knobs`).
+pub(crate) const KNOB: u32 = 1000;
+
 /// What a plugin of the fake host starts with: its level, its mode, its switch.
 pub(crate) const FRESH: [f64; 3] = [0.5, 0.0, 0.0];
 
@@ -36,6 +39,9 @@ pub(crate) struct FakeHost {
     /// How often a state was put back into a plugin.
     pub states_put: u32,
     pub now_us: u64,
+    /// How many parameters that only take a keyboard's knobs every plugin lists besides
+    /// its three, from id `KNOB`.
+    pub knobs: u32,
 }
 
 pub(crate) fn state_of(values: [f64; 3]) -> Arc<[u8]> {
@@ -122,11 +128,26 @@ impl FakeHost {
             text: Some(text_of(id, values[id as usize])),
         };
         let steps = ParamShape::Stepped { steps: 3 };
-        vec![
-            row(LEVEL, "Level", None, ParamShape::Continuous, &[]),
+        let knob = |at: u32| ParamInfo {
+            id: KNOB + at,
+            name: format!("MIDI CC 0|{at}"),
+            group: None,
+            default: 0.0,
+            shape: ParamShape::Continuous,
+            labels: Vec::new(),
+            automatable: false,
+            midi_cc: true,
+            value: Some(0.0),
+            text: None,
+        };
+        let mut list = vec![row(LEVEL, "Level", None, ParamShape::Continuous, &[])];
+        // Between the others, as a plugin may list them anywhere.
+        list.extend((0..self.knobs).map(knob));
+        list.extend([
             row(MODE, "Mode", Some("Shape"), steps, &["Soft", "Hard", "Odd"]),
             row(LOUD, "Loud", Some("Shape"), ParamShape::Toggle, &[]),
-        ]
+        ]);
+        list
     }
 
     /// Does what the plugin is asked. `None`: it has no answer.

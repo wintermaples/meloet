@@ -321,7 +321,8 @@ impl Play {
     /// The number of the table the panel shows and how many parameters it has.
     pub(super) fn table_shown(&self) -> Option<(u32, u32)> {
         let table = self.panel.table.as_ref()?;
-        Some((table.number, table.rows.len() as u32))
+        let count = table.rows.iter().filter(|row| !row.midi_cc).count();
+        Some((table.number, count as u32))
     }
 
     /// After every input: the table follows what is selected, a list that is wanted is asked
@@ -392,6 +393,7 @@ impl Play {
     pub fn plugin_params(&self, table: u32) -> Option<ParamTable> {
         let shown = self.panel.table.as_ref().filter(|t| t.number == table)?;
         let mut groups: Vec<ParamGroup> = Vec::new();
+        let mut keyboard_knobs = Vec::new();
         for info in &shown.rows {
             let row = ParamRow {
                 id: info.id,
@@ -401,6 +403,10 @@ impl Play {
                 value: info.value,
                 text: info.text.clone(),
             };
+            if info.midi_cc {
+                keyboard_knobs.push(row);
+                continue;
+            }
             match groups.iter_mut().find(|g| g.name == info.group) {
                 Some(group) => group.params.push(row),
                 None => groups.push(ParamGroup {
@@ -413,7 +419,7 @@ impl Play {
             table,
             seq: shown.seq,
             groups,
-            keyboard_knobs: Vec::new(),
+            keyboard_knobs,
         })
     }
 

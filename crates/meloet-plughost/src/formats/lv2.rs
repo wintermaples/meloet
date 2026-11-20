@@ -1625,7 +1625,7 @@ impl Controller for Lv2Controller {
                     shape: param.shape,
                     labels: param.labels(),
                     automatable: param.automatable,
-                    midi_cc: false,
+                    midi_cc: super::named_midi_cc(&param.name),
                     value: now.value,
                     text: now.text,
                 }

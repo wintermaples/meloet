@@ -57,6 +57,7 @@ pub struct PluginBlock {
     loop_start_quarters: AtomicU64,
     loop_end_quarters: AtomicU64,
     position_frames: AtomicI64,
+    bar: AtomicU64,
 }
 
 impl PluginBlock {
@@ -85,6 +86,7 @@ impl PluginBlock {
             .store(transport.loop_end_quarters.to_bits(), Relaxed);
         self.position_frames
             .store(transport.position_frames, Relaxed);
+        self.bar.store(transport.bar, Relaxed);
     }
 
     pub fn transport(&self) -> Transport {
@@ -99,7 +101,7 @@ impl PluginBlock {
             loop_start_quarters: f64::from_bits(self.loop_start_quarters.load(Relaxed)),
             loop_end_quarters: f64::from_bits(self.loop_end_quarters.load(Relaxed)),
             position_frames: self.position_frames.load(Relaxed),
-            reserved: 0,
+            bar: self.bar.load(Relaxed),
         }
     }
 }

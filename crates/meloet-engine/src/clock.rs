@@ -7,10 +7,12 @@
 
 use std::sync::atomic::{AtomicU64, Ordering, fence};
 
+use meloet_model::TempoMap;
+
 use crate::engine::monotonic_us;
 
 const SLOTS: usize = 512;
-const WORDS: usize = 7;
+const WORDS: usize = 9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TransportState {
@@ -45,7 +47,14 @@ impl TransportState {
     }
 }
 
-/// One stretch of frames with a straight line from frames to song position.
+/// One stretch of frames, and where in the song its first frame is.
+///
+/// While the song plays, the position at a moment in the stretch (or after it, until the next
+/// one) is the map's tick at `sec0` plus the time since `start_us`: a stretch may run over a
+/// tempo point or lie in a ramp, and a straight line from its first frame would be off there.
+/// The straight line (`tick`, `ticks_per_frame`) is for the count-in, which is not on the
+/// map, for a stretch that stands still, and for a reader whose map is not the one the
+/// stretch was rendered on (docs/architecture.md 21-3).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Segment {
     /// When the first frame reaches the DAC, [`monotonic_us`] clock, with the fraction kept.
@@ -54,8 +63,12 @@ pub(crate) struct Segment {
     pub sample_rate: u32,
     /// Song position of the first frame, in ticks. Negative during a count-in from near 0.
     pub tick: f64,
-    /// 0 while stopped.
+    /// At the first frame. 0 while stopped.
     pub ticks_per_frame: f64,
+    /// The first frame in the map's seconds.
+    pub sec0: f64,
+    /// The map the stretch was rendered on.
+    pub map_gen: u32,
     pub state: TransportState,
     /// Recording session the stretch belongs to.
     pub session: u32,
@@ -65,12 +78,24 @@ pub(crate) struct Segment {
 }
 
 impl Segment {
-    fn tick_at(&self, t_us: f64) -> f64 {
-        self.tick + (t_us - self.start_us) * self.ticks_per_us()
-    }
-
-    fn ticks_per_us(&self) -> f64 {
-        self.ticks_per_frame * f64::from(self.sample_rate) / 1e6
+    /// The position and how fast it moves (ticks per microsecond) at `t_us`. `map`: the map
+    /// of this stretch, if the reader has it.
+    fn at(&self, t_us: f64, map: Option<&TempoMap>) -> (f64, f64) {
+        let on_map = matches!(
+            self.state,
+            TransportState::Playing | TransportState::Recording
+        );
+        match map {
+            Some(map) if on_map => {
+                let tick = map.tick_at(self.sec0 + (t_us - self.start_us) / 1e6);
+                // 8 ticks a second for each quarter note a minute.
+                (tick, map.quarter_bpm_at(tick) * 8.0 / 1e6)
+            }
+            _ => {
+                let per_us = self.ticks_per_frame * f64::from(self.sample_rate) / 1e6;
+                (self.tick + (t_us - self.start_us) * per_us, per_us)
+            }
+        }
     }
 
     fn encode(&self) -> [u64; WORDS] {
@@ -82,6 +107,8 @@ impl Segment {
             self.state.to_bits() | u64::from(self.lap) << 32,
             self.record_from as u64,
             u64::from(self.ticks_per_beat) | u64::from(self.session) << 32,
+            self.sec0.to_bits(),
+            u64::from(self.map_gen),
         ]
     }
 
@@ -97,6 +124,8 @@ impl Segment {
             record_from: w[5] as i64,
             ticks_per_beat: w[6] as u32,
             session: (w[6] >> 32) as u32,
+            sec0: f64::from_bits(w[7]),
+            map_gen: w[8] as u32,
         }
     }
 }
@@ -187,17 +216,25 @@ impl TransportClock {
     /// Where the listener was in the song at `t_us` ([`monotonic_us`] clock). `None` before the
     /// engine has rendered anything, or for a moment older than the ring remembers (about 512
     /// blocks).
-    pub fn heard_at(&self, t_us: u64) -> Option<HeardPosition> {
-        self.segment_at(t_us as f64).map(|s| heard(&s, t_us as f64))
+    ///
+    /// `map` and `map_gen` are the tempo map the reader holds and its number
+    /// ([`crate::EngineHandle::tempo_map`]). For the one or two blocks where the engine is
+    /// still on another map, the answer is a straight line from the block's first frame.
+    pub fn heard_at(&self, t_us: u64, map: &TempoMap, map_gen: u32) -> Option<HeardPosition> {
+        self.segment_at(t_us as f64).map(|s| {
+            let map = (s.map_gen == map_gen).then_some(map);
+            heard(&s, t_us as f64, map)
+        })
     }
 
-    pub fn heard_now(&self) -> Option<HeardPosition> {
-        self.heard_at(monotonic_us())
+    pub fn heard_now(&self, map: &TempoMap, map_gen: u32) -> Option<HeardPosition> {
+        self.heard_at(monotonic_us(), map, map_gen)
     }
 }
 
-pub(crate) fn heard(segment: &Segment, t_us: f64) -> HeardPosition {
-    let tick = segment.tick_at(t_us);
+/// `map`: the map `segment` was rendered on, if the reader has it.
+pub(crate) fn heard(segment: &Segment, t_us: f64, map: Option<&TempoMap>) -> HeardPosition {
+    let (tick, ticks_per_us) = segment.at(t_us, map);
     let count_in_beats_left = if segment.state == TransportState::CountIn {
         let left = (segment.record_from as f64 - tick) / f64::from(segment.ticks_per_beat.max(1));
         left.ceil().max(0.0) as u32
@@ -209,6 +246,6 @@ pub(crate) fn heard(segment: &Segment, t_us: f64) -> HeardPosition {
         state: segment.state,
         lap: segment.lap,
         count_in_beats_left,
-        ticks_per_us: segment.ticks_per_us(),
+        ticks_per_us,
     }
 }

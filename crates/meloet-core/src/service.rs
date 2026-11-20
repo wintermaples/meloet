@@ -19,6 +19,7 @@ use meloet_engine::{
     RunningOutput, Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
 };
 use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
+use meloet_model::TempoMap;
 use meloet_model::mixer::set_plugin_state;
 use meloet_model::playback::{PlayEvent, PlayKind};
 use meloet_model::record::{HeldControls, RecEventKind};
@@ -294,6 +295,9 @@ struct Shared {
     stop: AtomicBool,
     /// The engine's clock; a new one when the engine is made anew.
     clock: Mutex<Arc<TransportClock>>,
+    /// The tempo map the engine was last sent and its number, for the meter thread to read
+    /// the clock with.
+    tempo_map: Mutex<(Arc<TempoMap>, u32)>,
     shell: Mutex<Option<ShellSink>>,
 }
 
@@ -343,21 +347,20 @@ impl Core {
             model = model.with_plugin_places(plugin_options.usual_places.clone());
         }
         let hub = Arc::new(Hub::new(model.view()));
-        let shared = Arc::new(Shared {
-            held: Held::default(),
-            fixed_velocity: AtomicU8::new(model.fixed_velocity().unwrap_or(0)),
-            stream: StreamFacts::default(),
-            stop: AtomicBool::new(false),
-            clock: Mutex::new(Arc::new(TransportClock::default())),
-            shell: Mutex::new(None),
-        });
-
         let parts = Engine::new(EngineConfig {
             sample_rate: 48_000,
             max_tracks: MAX_TRACKS,
             ..EngineConfig::default()
         });
-        *lock(&shared.clock) = parts.handle.clock().clone();
+        let shared = Arc::new(Shared {
+            held: Held::default(),
+            fixed_velocity: AtomicU8::new(model.fixed_velocity().unwrap_or(0)),
+            stream: StreamFacts::default(),
+            stop: AtomicBool::new(false),
+            clock: Mutex::new(parts.handle.clock().clone()),
+            tempo_map: Mutex::new(map_of(&parts.handle)),
+            shell: Mutex::new(None),
+        });
         let meters = parts.handle.meters().clone();
         *lock(&shared.stream.track_seats) = model.track_seats();
 
@@ -1191,15 +1194,14 @@ impl Audio {
             },
             EngineOp::Stop { t_us } => EngineCommand::Stop { t_us },
             EngineOp::Locate { tick } => EngineCommand::Locate { tick },
-            EngineOp::Tempo {
-                ticks_per_beat,
-                beats_per_bar,
-                bpm_centi,
-            } => EngineCommand::SetTempo {
-                ticks_per_beat,
-                beats_per_bar,
-                bpm_centi,
-            },
+            EngineOp::Timeline { timeline } => {
+                // Made here, off the audio thread; the engine only swaps it in.
+                let map = Arc::new(TempoMap::new(&timeline));
+                if self.stream.is_some() && self.handle.set_tempo_map(map).is_err() {
+                    eprintln!("meloet: the engine did not take the tempo map");
+                }
+                return;
+            }
             EngineOp::Loop { start, end, on } => EngineCommand::SetLoop { start, end, on },
             EngineOp::Metronome { on } => EngineCommand::SetMetronome { on },
             EngineOp::Audition {
@@ -1654,7 +1656,7 @@ impl Worker {
         if !self.shared.stream.open.load(Relaxed) {
             return None;
         }
-        self.audio.handle.clock().heard_now().map(|h| Heard {
+        self.audio.handle.heard_now().map(|h| Heard {
             tick: h.tick,
             state: transport_state(h.state),
             lap: h.lap,
@@ -1709,6 +1711,7 @@ impl Worker {
                         });
                         if let Some(feed) = self.audio.rebuilt.take() {
                             *lock(&self.shared.clock) = self.audio.handle.clock().clone();
+                            *lock(&self.shared.tempo_map) = map_of(&self.audio.handle);
                             if let Some(midi) = &mut self.midi {
                                 midi.feed(self.links.midi_sink(feed));
                             }
@@ -1728,7 +1731,13 @@ impl Worker {
                     Effect::Engine(EngineOp::PlugSample { ticket, group }) => {
                         self.plug_sample(ticket, group);
                     }
-                    Effect::Engine(op) => self.audio.op(op),
+                    Effect::Engine(op) => {
+                        let timeline = matches!(op, EngineOp::Timeline { .. });
+                        self.audio.op(op);
+                        if timeline {
+                            *lock(&self.shared.tempo_map) = map_of(&self.audio.handle);
+                        }
+                    }
                     Effect::LiveNotes(notes) => self.hub.live_notes(notes),
                     Effect::SaveSettings(settings) => {
                         if let Some(dir) = &self.config_dir
@@ -2232,6 +2241,12 @@ impl Worker {
     }
 }
 
+/// The map the engine was last sent, and its number.
+fn map_of(handle: &EngineHandle) -> (Arc<TempoMap>, u32) {
+    let (map, map_gen) = handle.tempo_map();
+    (map.clone(), map_gen)
+}
+
 fn key_to_sound_ms(record: LatencyRecord) -> Option<f32> {
     let us = record.playback_us.checked_sub(record.key_us)?;
     (us < LATENCY_SANE_US).then(|| us as f32 / 1000.0)
@@ -2295,16 +2310,15 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
         }
 
         let transport = if open {
-            lock(&shared.clock)
-                .clone()
-                .heard_now()
-                .map(|h| TransportReading {
-                    tick: h.tick,
-                    ticks_per_us: h.ticks_per_us,
-                    state: transport_state(h.state),
-                    count_in_beats_left: h.count_in_beats_left.min(u32::from(u16::MAX)) as u16,
-                    lap: h.lap,
-                })
+            let clock = lock(&shared.clock).clone();
+            let (map, map_gen) = lock(&shared.tempo_map).clone();
+            clock.heard_now(&map, map_gen).map(|h| TransportReading {
+                tick: h.tick,
+                ticks_per_us: h.ticks_per_us,
+                state: transport_state(h.state),
+                count_in_beats_left: h.count_in_beats_left.min(u32::from(u16::MAX)) as u16,
+                lap: h.lap,
+            })
         } else {
             None
         };

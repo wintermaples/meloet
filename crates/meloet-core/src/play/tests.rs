@@ -231,10 +231,11 @@ fn the_stream_opening_gets_everything() {
     assert_eq!(o[1], EngineOp::Locate { tick: 0 });
     assert_eq!(
         o[2],
-        EngineOp::Tempo {
-            ticks_per_beat: 480,
-            beats_per_bar: 4,
-            bpm_centi: 9600
+        EngineOp::Timeline {
+            timeline: Arc::new(Timeline::new(
+                Tempo::from_centi(9600).unwrap(),
+                Meter::FOUR_FOUR
+            ))
         }
     );
     assert_eq!(
@@ -990,19 +991,21 @@ fn tempo_and_meter_in_range_are_steps() {
     assert!(cmd(m, Command::SetMeter { num: 3, den: 3 }).is_empty());
     assert_eq!(
         ops(&cmd(m, Command::SetTempo { bpm: 120.004 })),
-        [EngineOp::Tempo {
-            ticks_per_beat: 480,
-            beats_per_bar: 4,
-            bpm_centi: 12_000
+        [EngineOp::Timeline {
+            timeline: Arc::new(Timeline::new(
+                Tempo::from_centi(12_000).unwrap(),
+                Meter::FOUR_FOUR
+            ))
         }]
     );
     assert_eq!(m.view().timeline.tempo_bpm, 120.0);
     assert_eq!(
         ops(&cmd(m, Command::SetMeter { num: 6, den: 8 })),
-        [EngineOp::Tempo {
-            ticks_per_beat: 240,
-            beats_per_bar: 6,
-            bpm_centi: 12_000
+        [EngineOp::Timeline {
+            timeline: Arc::new(Timeline::new(
+                Tempo::from_centi(12_000).unwrap(),
+                Meter::new(6, 8).unwrap()
+            ))
         }]
     );
     assert_eq!(m.view().transport.count_in_beats, 6);

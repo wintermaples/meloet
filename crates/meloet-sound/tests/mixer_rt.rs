@@ -84,6 +84,28 @@ fn the_whole_mixer_never_touches_the_allocator() {
             }
             _ => {}
         }
+        if round % 50 == 25 {
+            // A tempo map with a ramp and a meter change, made here and swapped in by the
+            // engine while the song plays (the delay follows the tempo it is told).
+            use meloet_model::{Meter, MeterChange, Tempo, TempoMap, TempoPoint, Timeline};
+            let tempo = |centi: u32| Tempo::from_centi(centi).unwrap();
+            let timeline = Timeline {
+                tempo: tempo(9_000 + (round as u32 % 7) * 1_000),
+                meter: Meter::FOUR_FOUR,
+                head_ramp: true,
+                tempo_points: vec![TempoPoint {
+                    tick: 4_000,
+                    tempo: tempo(15_000),
+                    ramp: false,
+                }],
+                meter_changes: vec![MeterChange {
+                    bar: 1,
+                    meter: Meter::new(6, 8).unwrap(),
+                }],
+            };
+            let map = std::sync::Arc::new(TempoMap::new(&timeline));
+            assert!(song.parts.handle.set_tempo_map(map).is_ok());
+        }
         let frames = [256, 64, 1024, 333, 2048, 1][round % 6];
         let out = song.block(frames);
         assert!(out.iter().all(|s| s.is_finite()), "round {round}");

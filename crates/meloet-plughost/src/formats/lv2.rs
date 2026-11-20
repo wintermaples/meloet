@@ -38,7 +38,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 use livi::event::{LV2AtomEventBuilder, LV2AtomSequence};
 use livi::lilv;
 use livi::{EmptyPortConnections, Features, FeaturesBuilder, PortIndex, PortType};
-use meloet_plugin::ipc::{FromPlugin, MAX_LATENCY_FRAMES, ToPlugin};
+use meloet_plugin::ipc::{FromPlugin, MAX_LATENCY_FRAMES, ToPlugin, Transport};
 use meloet_plugin::wire::{LoadedPlugin, ParamInfo, ParamNow, ParamShape};
 use meloet_plugin::{
     EditorKind, InstrumentCategory, PluginInfo, PluginKey, PluginKind, PluginRole,
@@ -53,6 +53,7 @@ use crate::rtcheck;
 const LV2: &str = "http://lv2plug.in/ns/lv2core#";
 const ATOM: &str = "http://lv2plug.in/ns/ext/atom#";
 const PATCH: &str = "http://lv2plug.in/ns/ext/patch#";
+const TIME: &str = "http://lv2plug.in/ns/ext/time#";
 const UI: &str = "http://lv2plug.in/ns/extensions/ui#";
 const RDFS: &str = "http://www.w3.org/2000/01/rdf-schema#";
 const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
@@ -396,9 +397,15 @@ fn group_name(
 /// What the plugin's description says of its ports and parameters.
 struct Layout {
     params: Vec<Param>,
-    /// Among the atom inputs: where MIDI goes, and where `patch` messages go.
+    /// Among the atom inputs: where MIDI goes, where `patch` messages go, and where the
+    /// song's position (`time:Position`) goes.
     midi_in: Option<usize>,
     patch_in: Option<usize>,
+    time_in: Option<usize>,
+    /// The control inputs that are the host's to fill with the tempo (`lv2:designation
+    /// time:beatsPerMinute`) and with whether the song moves (`time:speed`).
+    tempo_ports: Vec<PortIndex>,
+    speed_ports: Vec<PortIndex>,
     atom_in_bytes: Vec<usize>,
     atom_out_bytes: Vec<usize>,
     latency_port: Option<PortIndex>,
@@ -451,8 +458,13 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
         port.get(&world.uri(&format!("{LV2}designation")))
             .is_some_and(|d| d.as_uri() == Some(&format!("{LV2}{what}")))
     };
+    let timed = |port: &lilv::port::Port, what: &str| {
+        port.get(&world.uri(&format!("{LV2}designation")))
+            .is_some_and(|d| d.as_uri() == Some(&format!("{TIME}{what}")))
+    };
     let mut params = Vec::new();
     let mut groups = HashMap::new();
+    let (mut tempo_ports, mut speed_ports) = (Vec::new(), Vec::new());
     for port in plugin.ports_with_type(PortType::ControlInput) {
         let Some(lilv_port) = raw.port_by_index(port.index.0) else {
             continue;
@@ -480,7 +492,20 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
             })
             .collect();
         let subject = lilv_port.node();
-        let hosts_own = designated(&lilv_port, "enabled") || designated(&lilv_port, "freeWheeling");
+        let (tempo, speed) = (
+            timed(&lilv_port, "beatsPerMinute"),
+            timed(&lilv_port, "speed"),
+        );
+        if tempo {
+            tempo_ports.push(port.index);
+        }
+        if speed {
+            speed_ports.push(port.index);
+        }
+        let hosts_own = designated(&lilv_port, "enabled")
+            || designated(&lilv_port, "freeWheeling")
+            || tempo
+            || speed;
         params.push(Param {
             id: port.index.0 as u32,
             target: Target::Port(port.index),
@@ -554,6 +579,7 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
     }
 
     let (midi, message) = (world.uri(MIDI_EVENT), world.uri(&format!("{PATCH}Message")));
+    let position = world.uri(&format!("{TIME}Position"));
     let bytes = |port: &lilv::port::Port| {
         let asked = port
             .get(&world.uri(MINIMUM_SIZE))
@@ -572,7 +598,7 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
             Some((CString::new(symbol.as_str()?).ok()?, port.index.0 as u32))
         })
         .collect();
-    let (mut midi_in, mut patch_in) = (None, None);
+    let (mut midi_in, mut patch_in, mut time_in) = (None, None, None);
     let mut atom_in_bytes = Vec::new();
     for (at, port) in plugin
         .ports_with_type(PortType::AtomSequenceInput)
@@ -590,6 +616,9 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
         if port.supports_event(&message) && (patch_in.is_none() || control) {
             patch_in = Some(at);
         }
+        if port.supports_event(&position) && (time_in.is_none() || control) {
+            time_in = Some(at);
+        }
     }
     let atom_out_bytes = plugin
         .ports_with_type(PortType::AtomSequenceOutput)
@@ -602,6 +631,9 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
         params,
         midi_in,
         patch_in,
+        time_in,
+        tempo_ports,
+        speed_ports,
         atom_in_bytes,
         atom_out_bytes,
         latency_port: raw.latency_port_index().map(PortIndex),
@@ -764,6 +796,95 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
     Ok(info)
 }
 
+/// The body of a `time:Position` object: id and type, then eight properties of 24 bytes.
+const POSITION_BYTES: usize = 8 + 8 * 24;
+
+/// The song's position as LV2's `time` says it: a beat is the note of the meter's lower
+/// number (`beatUnit`), so in 6/8 the beats are eighths and `beats_per_minute` counts eighths.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SongTime {
+    frame: i64,
+    speed: f32,
+    bar: i64,
+    bar_beat: f32,
+    beat: f64,
+    beat_unit: i32,
+    beats_per_bar: f32,
+    beats_per_minute: f32,
+}
+
+impl SongTime {
+    fn of(transport: &Transport) -> SongTime {
+        let number = |x: f64| if x.is_finite() { x } else { 0.0 };
+        let (num, den) = match (transport.meter_num, transport.meter_den) {
+            (0, _) | (_, 0) => (4, 4),
+            meter => meter,
+        };
+        // Beats of this meter to a quarter note.
+        let per_quarter = f64::from(den) / 4.0;
+        let position = number(transport.position_quarters);
+        let quarter_bpm = match number(transport.tempo_bpm) {
+            bpm if bpm > 0.0 => bpm,
+            _ => 120.0,
+        };
+        SongTime {
+            frame: transport.position_frames,
+            speed: if transport.flags & Transport::PLAYING != 0 {
+                1.0
+            } else {
+                0.0
+            },
+            bar: transport.bar.min(i64::MAX as u64) as i64,
+            bar_beat: ((position - number(transport.bar_start_quarters)) * per_quarter) as f32,
+            beat: position * per_quarter,
+            beat_unit: i32::from(den),
+            beats_per_bar: f32::from(num),
+            beats_per_minute: (quarter_bpm * per_quarter) as f32,
+        }
+    }
+
+    fn object(&self, urids: &Urids) -> [u8; POSITION_BYTES] {
+        let time = &urids.time;
+        let mut body = [0u8; POSITION_BYTES];
+        body[4..8].copy_from_slice(&time.position.to_ne_bytes());
+        let mut at = 8;
+        // A property: key, context, size and type of the value, the value in 8 bytes.
+        let mut property = |key: u32, kind: u32, size: u32, value: [u8; 8]| {
+            for (i, word) in [key, 0, size, kind].into_iter().enumerate() {
+                body[at + i * 4..at + i * 4 + 4].copy_from_slice(&word.to_ne_bytes());
+            }
+            body[at + 16..at + 24].copy_from_slice(&value);
+            at += 24;
+        };
+        let float = |x: f32| {
+            let mut value = [0u8; 8];
+            value[..4].copy_from_slice(&x.to_ne_bytes());
+            value
+        };
+        let mut int = [0u8; 8];
+        int[..4].copy_from_slice(&self.beat_unit.to_ne_bytes());
+        property(time.frame, urids.long, 8, self.frame.to_ne_bytes());
+        property(time.speed, urids.float, 4, float(self.speed));
+        property(time.bar, urids.long, 8, self.bar.to_ne_bytes());
+        property(time.bar_beat, urids.float, 4, float(self.bar_beat));
+        property(time.beat, urids.double, 8, self.beat.to_ne_bytes());
+        property(time.beat_unit, urids.int, 4, int);
+        property(
+            time.beats_per_bar,
+            urids.float,
+            4,
+            float(self.beats_per_bar),
+        );
+        property(
+            time.beats_per_minute,
+            urids.float,
+            4,
+            float(self.beats_per_minute),
+        );
+        body
+    }
+}
+
 struct Urids {
     midi: u32,
     object: u32,
@@ -780,6 +901,20 @@ struct Urids {
     property: u32,
     value: u32,
     body: u32,
+    time: TimeUrids,
+}
+
+/// `time:Position` and its fields.
+struct TimeUrids {
+    position: u32,
+    frame: u32,
+    speed: u32,
+    bar: u32,
+    bar_beat: u32,
+    beat: u32,
+    beat_unit: u32,
+    beats_per_bar: u32,
+    beats_per_minute: u32,
 }
 
 impl Urids {
@@ -801,6 +936,17 @@ impl Urids {
             property: atom(c"http://lv2plug.in/ns/ext/patch#property"),
             value: atom(c"http://lv2plug.in/ns/ext/patch#value"),
             body: atom(c"http://lv2plug.in/ns/ext/patch#body"),
+            time: TimeUrids {
+                position: atom(c"http://lv2plug.in/ns/ext/time#Position"),
+                frame: atom(c"http://lv2plug.in/ns/ext/time#frame"),
+                speed: atom(c"http://lv2plug.in/ns/ext/time#speed"),
+                bar: atom(c"http://lv2plug.in/ns/ext/time#bar"),
+                bar_beat: atom(c"http://lv2plug.in/ns/ext/time#barBeat"),
+                beat: atom(c"http://lv2plug.in/ns/ext/time#beat"),
+                beat_unit: atom(c"http://lv2plug.in/ns/ext/time#beatUnit"),
+                beats_per_bar: atom(c"http://lv2plug.in/ns/ext/time#beatsPerBar"),
+                beats_per_minute: atom(c"http://lv2plug.in/ns/ext/time#beatsPerMinute"),
+            },
         }
     }
 
@@ -976,6 +1122,9 @@ fn instantiate(
         atom_out: layout.atom_out_bytes.iter().map(sequence).collect(),
         midi_in: layout.midi_in,
         patch_in: layout.patch_in,
+        time_in: layout.time_in,
+        tempo_ports: layout.tempo_ports,
+        speed_ports: layout.speed_ports,
         latency_port: layout.latency_port,
         main_in: layout.main_in,
         main_out: layout.main_out,
@@ -1065,6 +1214,9 @@ struct Lv2Processor {
     atom_out: Vec<LV2AtomSequence>,
     midi_in: Option<usize>,
     patch_in: Option<usize>,
+    time_in: Option<usize>,
+    tempo_ports: Vec<PortIndex>,
+    speed_ports: Vec<PortIndex>,
     latency_port: Option<PortIndex>,
     main_in: Vec<usize>,
     main_out: Vec<usize>,
@@ -1154,6 +1306,26 @@ impl Lv2Processor {
         if let Ok(event) =
             LV2AtomEventBuilder::<56>::new(i64::from(frame), urids.object, &body[..len])
         {
+            let _ = self.atom_in[port].push_event(&event);
+        }
+    }
+
+    /// Where the song is at the first frame of the block: one `time:Position` at time 0 for a
+    /// plugin with a port for it (a JUCE plugin forgets the position at every block and knows
+    /// only what the block brings), and the tempo and speed for control ports that are the
+    /// host's to fill.
+    fn tell_time(&mut self, instance: &mut livi::Instance, transport: &Transport) {
+        let time = SongTime::of(transport);
+
+        for &port in &self.tempo_ports {
+            instance.set_control_input(port, time.beats_per_minute);
+        }
+        for &port in &self.speed_ports {
+            instance.set_control_input(port, time.speed);
+        }
+        if let Some(port) = self.time_in {
+            let body = time.object(&self.urids);
+            let event = LV2AtomEventBuilder::<POSITION_BYTES>::new_full(0, self.urids.object, body);
             let _ = self.atom_in[port].push_event(&event);
         }
     }
@@ -1291,6 +1463,7 @@ impl Processor for Lv2Processor {
         for sequence in &mut self.atom_in {
             sequence.clear();
         }
+        self.tell_time(instance, block.transport);
         if shared.ask_all.swap(false, Relaxed) {
             self.ask_all();
         }
@@ -1843,3 +2016,109 @@ const STATE_URI: &str = "urn:meloet:state";
 /// A state is: this, the number of `patch` parameters kept, for each its id (u32) and value
 /// (f64, 0..=1), little endian, then the state as lilv writes it (Turtle).
 const STATE_MAGIC: &[u8; 4] = b"ML2S";
+
+#[cfg(test)]
+mod time_tests {
+    use super::*;
+
+    fn urids() -> Urids {
+        Urids {
+            midi: 1,
+            object: 2,
+            blank: 3,
+            urid: 4,
+            float: 5,
+            double: 6,
+            int: 7,
+            long: 8,
+            bool: 9,
+            get: 10,
+            set: 11,
+            put: 12,
+            property: 13,
+            value: 14,
+            body: 15,
+            time: TimeUrids {
+                position: 20,
+                frame: 21,
+                speed: 22,
+                bar: 23,
+                bar_beat: 24,
+                beat: 25,
+                beat_unit: 26,
+                beats_per_bar: 27,
+                beats_per_minute: 28,
+            },
+        }
+    }
+
+    #[test]
+    fn the_position_counts_beats_of_the_meters_lower_number() {
+        // 6/8 at 90 quarters a minute, two eighths into the fourth bar (bars from 0).
+        let transport = Transport {
+            flags: Transport::PLAYING,
+            meter_num: 6,
+            meter_den: 8,
+            tempo_bpm: 90.0,
+            position_quarters: 10.0,
+            bar_start_quarters: 9.0,
+            loop_start_quarters: 0.0,
+            loop_end_quarters: 0.0,
+            position_frames: 320_000,
+            bar: 3,
+        };
+        let time = SongTime::of(&transport);
+        let want = SongTime {
+            frame: 320_000,
+            speed: 1.0,
+            bar: 3,
+            bar_beat: 2.0,
+            beat: 20.0,
+            beat_unit: 8,
+            beats_per_bar: 6.0,
+            beats_per_minute: 180.0,
+        };
+        assert_eq!(time, want);
+
+        // Stopped, and nothing told yet: 4/4 at 120, standing at the head.
+        let nothing = SongTime::of(&Transport::default());
+        assert_eq!((nothing.speed, nothing.beat_unit), (0.0, 4));
+        assert_eq!(
+            (nothing.beats_per_bar, nothing.beats_per_minute),
+            (4.0, 120.0)
+        );
+    }
+
+    #[test]
+    fn the_position_object_has_every_field_with_its_type() {
+        let urids = urids();
+        let time = SongTime {
+            frame: -7,
+            speed: 1.0,
+            bar: 3,
+            bar_beat: 2.5,
+            beat: 20.5,
+            beat_unit: 8,
+            beats_per_bar: 6.0,
+            beats_per_minute: 180.0,
+        };
+        let body = time.object(&urids);
+        assert_eq!(object_type(&body), Some(urids.time.position));
+        let got: Vec<(u32, u32, Option<f64>, usize)> = properties(&body)
+            .map(|(key, kind, value)| (key, kind, urids.number(kind, value), value.len()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (21, urids.long, Some(-7.0), 8),
+                (22, urids.float, Some(1.0), 4),
+                (23, urids.long, Some(3.0), 8),
+                (24, urids.float, Some(2.5), 4),
+                (25, urids.double, Some(20.5), 8),
+                (26, urids.int, Some(8.0), 4),
+                (27, urids.float, Some(6.0), 4),
+                (28, urids.float, Some(180.0), 4),
+            ]
+        );
+    }
+}

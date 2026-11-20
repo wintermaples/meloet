@@ -76,11 +76,8 @@ impl Rig {
     }
 
     fn tempo(&mut self, bpm_centi: u32) {
-        self.send(EngineCommand::SetTempo {
-            ticks_per_beat: TPB as u32,
-            beats_per_bar: 4,
-            bpm_centi,
-        });
+        let map = common::flat_map(bpm_centi, 4, 4);
+        assert!(self.parts.handle.set_tempo_map(map).is_ok());
     }
 
     fn sequence(&mut self, track: usize, events: &[(u64, InstrumentEvent)]) {
@@ -410,7 +407,7 @@ fn count_in_clicks_then_records_without_a_gap() {
                 // 512 blocks of 64 frames do not reach back to the start of the count-in.
                 continue;
             }
-            let clock = rig.parts.handle.clock();
+            let clock = &rig.parts.handle;
             let at = |n: usize| clock.heard_at(rig.dac_us(n as u64).ceil() as u64).unwrap();
             let before = at(switch - 1);
             assert_eq!(before.state, TransportState::CountIn);
@@ -438,7 +435,6 @@ fn zero_count_in_records_at_once() {
     let heard = rig
         .parts
         .handle
-        .clock()
         .heard_at(rig.dac_us(first).round() as u64)
         .unwrap();
     assert_eq!(heard.state, TransportState::Recording);
@@ -709,7 +705,7 @@ fn stop_cuts_the_recording_at_its_time() {
         Some(got.len() - 1),
         "nothing comes after the stop mark"
     );
-    let heard = rig.parts.handle.clock().heard_now();
+    let heard = rig.parts.handle.heard_now();
     assert!(heard.is_none_or(|h| h.state == TransportState::Stopped));
 }
 
@@ -801,7 +797,7 @@ fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
                 "{label}: {muted:?}"
             );
             assert!(!muted.is_empty());
-            let clock = rig.parts.handle.clock();
+            let clock = &rig.parts.handle;
             let h = clock
                 .heard_at(rig.dac_us(rig.frames - 1).round() as u64)
                 .unwrap();
@@ -1023,7 +1019,7 @@ fn the_heard_position_follows_the_loop_and_the_count_in() {
         muted: TrackSet::default(),
     });
     rig.run(RATE * 5);
-    let clock = rig.parts.handle.clock().clone();
+    let clock = &rig.parts.handle;
     let heard = |n: u64| -> HeardPosition { clock.heard_at(rig.dac_us(n).ceil() as u64).unwrap() };
     let switch = start + frame_of(1920, 0, bpm);
     let wrap = switch + frame_of(3840, 1920, bpm);
@@ -1063,6 +1059,8 @@ fn another_thread_reads_the_position_while_the_engine_runs() {
     let mut rig = Rig::new(64, 0);
     rig.send(EngineCommand::Play { from: 0 });
     let clock = rig.parts.handle.clock().clone();
+    let (map, map_gen) = rig.parts.handle.tempo_map();
+    let map = map.clone();
     let done = Arc::new(AtomicBool::new(false));
     let reader = {
         let done = done.clone();
@@ -1071,7 +1069,7 @@ fn another_thread_reads_the_position_while_the_engine_runs() {
             let mut reads = 0u64;
             let mut t = base;
             while !done.load(Relaxed) {
-                if let Some(h) = clock.heard_at(t) {
+                if let Some(h) = clock.heard_at(t, &map, map_gen) {
                     // Playing from 0 at 120 bpm: 960 ticks a second, from the base time on.
                     if h.state == TransportState::Playing {
                         let want = (t - base) as f64 * 960.0 / 1e6;
@@ -1093,6 +1091,9 @@ fn another_thread_reads_the_position_while_the_engine_runs() {
 
 #[test]
 fn every_transport_path_stays_off_the_allocator() {
+    use meloet_model::{Meter, MeterChange, Tempo, TempoMap, TempoPoint, Timeline};
+    use std::sync::Arc;
+
     let mut rig = Rig::new(256, 13_000);
     for track in [0, 1, 2] {
         assert!(
@@ -1135,11 +1136,32 @@ fn every_transport_path_stays_off_the_allocator() {
             }),
             2 => rig.sequence(round as usize % 3, &song),
             3 => rig.send(EngineCommand::Locate { tick: 700 }),
-            4 => rig.send(EngineCommand::SetTempo {
-                ticks_per_beat: 240,
-                beats_per_bar: 3,
-                bpm_centi: 7_000 + round as u32 * 500,
-            }),
+            4 => {
+                // Made here, off the audio thread; the engine only swaps it in.
+                let timeline = Timeline {
+                    tempo: Tempo::from_centi(7_000 + round as u32 * 500).unwrap(),
+                    meter: Meter::new(3, 8).unwrap(),
+                    head_ramp: round % 16 == 4,
+                    tempo_points: vec![
+                        TempoPoint {
+                            tick: 600,
+                            tempo: Tempo::from_centi(14_000).unwrap(),
+                            ramp: true,
+                        },
+                        TempoPoint {
+                            tick: 1500,
+                            tempo: Tempo::from_centi(9_000).unwrap(),
+                            ramp: false,
+                        },
+                    ],
+                    meter_changes: vec![MeterChange {
+                        bar: 2,
+                        meter: Meter::FOUR_FOUR,
+                    }],
+                };
+                let map = Arc::new(TempoMap::new(&timeline));
+                assert!(rig.parts.handle.set_tempo_map(map).is_ok());
+            }
             5 => rig.send(EngineCommand::Stop {
                 t_us: rig.base_us + (rig.frames as f64 * 1e6 / RATE as f64) as u64,
             }),
@@ -1169,7 +1191,7 @@ fn every_transport_path_stays_off_the_allocator() {
         // Off the audio thread: empty what came back.
         rig.recorded();
         rig.parts.handle.drop_retired();
-        rig.parts.handle.clock().heard_now();
+        rig.parts.handle.heard_now();
     }
     assert_eq!(rig.parts.handle.meters().record_overflows(), 0);
     assert_eq!(

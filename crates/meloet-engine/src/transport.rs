@@ -81,7 +81,9 @@ impl FromIterator<usize> for TrackSet {
 /// A track's place in its sequence and what the sequence has left switched on.
 #[derive(Default)]
 pub(crate) struct Lane {
-    pub sequence: Option<Box<Sequence>>,
+    sequence: Option<Box<Sequence>>,
+    /// Counts the sequences that were put here.
+    version: u32,
     cursor: usize,
     /// Notes the sequence pressed and has not released, one bit per key.
     sounding: [u64; 2],
@@ -157,12 +159,12 @@ impl Lane {
         self.moved = 0;
     }
 
-    /// Puts the cursor at the first event at or after `pos` (ticks × `scale`) and applies the
-    /// last pedal, wheel and bend before it.
+    /// Puts the cursor at the first event that is not `before` the position (`before` is given
+    /// an event's tick, and holds for the events up to some tick only) and applies the last
+    /// pedal, wheel and bend before it.
     pub fn seek(
         &mut self,
-        pos: i128,
-        scale: i128,
+        before: impl Fn(u64) -> bool,
         instrument: Option<&mut (dyn Instrument + 'static)>,
     ) {
         let Some(sequence) = self.sequence.as_deref() else {
@@ -170,7 +172,7 @@ impl Lane {
             return;
         };
         let events = sequence.events();
-        let cursor = events.partition_point(|e| i128::from(e.tick) * scale < pos);
+        let cursor = events.partition_point(|e| before(e.tick));
         self.cursor = cursor;
         let (mut sustain, mut modulation, mut bend) = (None, None, None);
         for e in events[..cursor].iter().rev() {
@@ -212,25 +214,27 @@ impl Lane {
         }
     }
 
-    /// Sends every event at or before `pos` that has not been sent yet.
-    pub fn fire_due(
-        &mut self,
-        pos: i128,
-        scale: i128,
-        mut instrument: Option<&mut (dyn Instrument + 'static)>,
-    ) {
-        let Some(sequence) = self.sequence.take() else {
-            return;
-        };
-        let events = sequence.events();
-        while let Some(e) = events.get(self.cursor) {
-            if i128::from(e.tick) * scale > pos {
-                break;
-            }
-            self.send(e.event, instrument.as_deref_mut());
+    /// Sends the next event not yet sent.
+    pub fn fire_next(&mut self, instrument: Option<&mut (dyn Instrument + 'static)>) {
+        let next = self
+            .sequence
+            .as_deref()
+            .and_then(|s| s.events().get(self.cursor));
+        if let Some(&e) = next {
+            self.send(e.event, instrument);
             self.cursor += 1;
         }
-        self.sequence = Some(sequence);
+    }
+
+    /// Sends every event before `tick` that has not been sent yet.
+    pub fn fire_before(
+        &mut self,
+        tick: u64,
+        mut instrument: Option<&mut (dyn Instrument + 'static)>,
+    ) {
+        while self.next_tick().is_some_and(|next| next < tick) {
+            self.fire_next(instrument.as_deref_mut());
+        }
     }
 
     /// Position of the next event not yet sent, in ticks.
@@ -239,6 +243,17 @@ impl Lane {
             .as_deref()
             .and_then(|s| s.events().get(self.cursor))
             .map(|e| e.tick)
+    }
+
+    /// Changes whenever [`Lane::next_tick`] may give another answer.
+    pub fn place(&self) -> (usize, u32) {
+        (self.cursor, self.version)
+    }
+
+    /// The sequence that was here comes back.
+    pub fn replace_sequence(&mut self, sequence: Option<Box<Sequence>>) -> Option<Box<Sequence>> {
+        self.version = self.version.wrapping_add(1);
+        std::mem::replace(&mut self.sequence, sequence)
     }
 }
 

@@ -1061,3 +1061,7 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 
 - 1 回目（78c0814、meloet-hard）: 約束の版 20。区画 `timeline`（テンポと拍子は `song` から移した）、意図 17、状態行の文 6（2 つは 6 章、4 つは仮）。テンポの点はティック、拍子の旗は小節の番号で指す（取り消しでずれた古い意図は、何もしないか同じ所に当たる）。画面のテンポの地図 `ui/src/time/tempoMap.ts`（Rust の答えの表と相対 1e-9 で合う。1 回 17〜35 ns、Node）。偽物の場面 5（`tempo` ・ `tempoFolded` ・ `markerAdded` ・ `markerRenaming` ・ `markerMoving`）。core は区画を曲の頭から出すだけで、意図はまだ何もしない。試験: Rust 386（protocol ・ core）、画面 2334。
 - 棟梁の決め（係の問いへ）: 出どころ `builder:<日付>` を使う。マーカーを足して名前を打つまでは 1 手。Alt ← → で行ったマーカーはえらぶ。「テンポ ・ 拍子の変更」の行のひらき具合は保存しない。件数は変わる所の数（B-92）。
+
+- 2 回目（2026-11-20、3 人が同時に。どれも ec7597d から）: (a) エンジン（meloet-hard）、(b) core（meloet-hard）、(c) 画面（meloet-impl）。
+  - (b) core（15c9a42）: `Doc` に地図 ・ マーカー ・ ループの範囲、意図 17 と手 14、小節の計算を地図に（クオンタイズ、貼りつけ、クリップのないときに書く、ループを作る）、曲のファイルの版 5、`make_song.py`（`--tempo-points` ・ `--head-ramp` ・ `--meter-changes` ・ `--markers`）。試験: model ・ core ・ protocol で 582、乱数の試験（model 30 種 × 600 回、core 12 種 × 500 回）。決めた事は 21-13。エンジンには、まだ曲の頭のテンポと拍子しか送らない（(a) と merge でつなぐ）。
+  - 10:4x に使える量の上限で (a) と (c) が止まり、11:10 の予約で呼びもどした。

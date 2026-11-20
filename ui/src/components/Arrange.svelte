@@ -50,6 +50,9 @@
   import { pickClips } from "./timeline/pick";
   import { arrangeRows, showsAddRow } from "./automation/autoGeom";
   import AutoLane from "./automation/AutoLane.svelte";
+  import AudioClipHandles from "./arrange/AudioClipHandles.svelte";
+  import AudioClipNotes from "./arrange/AudioClipNotes.svelte";
+  import DropFrame from "./arrange/DropFrame.svelte";
 
   let { children }: { children?: Snippet } = $props();
 
@@ -92,10 +95,12 @@
       trackH: metrics.px("size.track"),
       laneH: metrics.px("size.lane"),
       rowH: metrics.px("size.row"),
+      tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
     }),
   );
   const dims: G.LaneDims = $derived({
     tops: rows.tops,
+    heights: rows.heights,
     trackH: metrics.px("size.track"),
     inset: metrics.px("mock.arrange.clip-inset"),
     hair: metrics.px("line.hair"),
@@ -1104,6 +1109,15 @@
     ];
   }
 
+  /** 歌のクリップを 2 回押す: そのトラックの行を 160 に（もう一度で戻す。仕様書 3 章、B-94-23）。 */
+  function lanesDouble(e: MouseEvent): void {
+    if (e.button !== 0 || clipDrag || boxSel) return;
+    const hit = hitAt(lanePoint(e));
+    if (!hit || hit.clip.audio === null) return;
+    const track = song.tracks[hit.row];
+    if (track) send({ type: "setTallTrack", track: track.id });
+  }
+
   function lanesContext(e: MouseEvent): void {
     e.preventDefault();
     if (clipDrag || boxSel) return;
@@ -1257,9 +1271,10 @@
         onpointerup={lanesUp}
         onpointercancel={cancelClipDrag}
         oncontextmenu={lanesContext}
+        ondblclick={lanesDouble}
       >
         {#each song.tracks as track (track.id)}
-          <div class="lane"></div>
+          <div class="lane" style:height={track.id === current.state!.arrange.tallTrack ? `${metrics.px("part.track.vocal")}px` : null}></div>
           {#each rows.lanes.filter((l) => l.track.id === track.id) as l (JSON.stringify(l.lane.target))}
             <AutoLane {track} lane={l.lane} {view} {map} {busy} />
           {/each}
@@ -1340,6 +1355,9 @@
             </div>
           {/each}
         </div>
+        <AudioClipNotes {view} {dims} tracks={song.tracks} />
+        <AudioClipHandles {view} {dims} tracks={song.tracks} selected={selectedSet} {busy} />
+        <DropFrame {view} {dims} tracks={song.tracks} {map} {perBar} />
         {#if boxFrame}
           <div
             class="box-frame"

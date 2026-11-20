@@ -195,6 +195,17 @@ BOARDS = {
     "latencyFailed": None,
     "vocalFit": "R11-Fit",
     "paramsSound": "F7-Answers92",
+    # 第 7 回 区切り3: 歌のクリップ、音のファイルを入れる、見つからない音（約束 24）。
+    "audioEdit": "F7-AudioEdit",
+    "audioTall": "F7-AudioEdit",
+    "audioDropOne": "F7-AudioDrop",
+    "audioDrop": "F7-AudioDrop",
+    "audioDropRight": "F7-AudioDrop",
+    "audioDropMixed": "F7-AudioDrop",
+    "audioMissing": "F7-AudioMissing",
+    "audioLoading": None,
+    "audioKinds": "R11-Audio",
+    "recoverVocal": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """

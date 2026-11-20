@@ -5,7 +5,8 @@
      窓をひらける子は「窓をひらく」か「窓を前に出す」。まだ窓をひらけない子 ・ 窓を持たない子は、一覧の上に文。
      何もえらんでいないときは 2 行（86-5）。
      最初から入っている音色と SF2 の音色（SelectedParams の sound。仕様書 3 章 92-1 ・ 19-A、モック F7-Answers92）: 名前と「最初から入っている」（SF2 は「SF2」の印）、
-     「この音色には、動かせるパラメータがありません。」、gray.8 で「音量とパンはミキサーで、音色を変えるには入れかえます。」、ボタン「音源を入れかえる…」。 -->
+     「この音色には、動かせるパラメータがありません。」、gray.8 で「音量とパンはミキサーで、音色を変えるには入れかえます。」、ボタン「音源を入れかえる…」。
+     歌のクリップ（SelectedParams の clip）: 選んだクリップの欄（ClipPanel）。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { InsertRef, InsertView, SongView } from "../../bridge";
@@ -17,6 +18,7 @@
   import { openShelf } from "../tracks.svelte";
   import WindowMark from "../WindowMark.svelte";
   import BuiltinList from "./BuiltinList.svelte";
+  import ClipPanel from "./ClipPanel.svelte";
   import { allRows, rowCount } from "./paramRows";
   import { paramUi, stopTyping } from "./paramUi.svelte";
   import PluginList from "./PluginList.svelte";
@@ -30,6 +32,7 @@
   const insert = $derived(selectedInsert(app.params));
   const pluginView = $derived(plugin ? pluginAt(app.song, plugin.slot) : null);
   const sound = $derived(app.params.selected?.kind === "sound" ? app.params.selected : null);
+  const clip = $derived(app.params.selected?.kind === "clip" ? app.params.selected : null);
   const busy = $derived(app.transport.state === "recording" || app.transport.state === "countIn");
 
   function slotView(song: SongView, at: InsertRef): InsertView | null {
@@ -127,6 +130,8 @@
         <PluginList sel={plugin} plugin={name} usable={pluginView?.state !== "stopped"} />
       {/key}
     {/if}
+  {:else if clip}
+    <ClipPanel sel={clip} />
   {:else if sound}
     <div class="who">
       <div class="line">

@@ -1776,3 +1776,10 @@ pub struct AudioShape {
 
 - **先読みの係は core に置く**（`crates/meloet-core/src/readahead.rs`）。**理由**: エンジンのクレートは clippy で Mutex を禁じていて、ディスクに書く係（22-7）も core にある。エンジンは輪から取るだけ。
 - **音の置き場所の係** `crate::audiofiles::AudioStore`（`PcmStore` を持つ。core の `Worker.audio_store` に 1 つ、先読みの係と分けあう）。曲のフォルダ（`set_song_dir`）は A2 が、ひらく ・ 保存 ・ 名前をつけて保存のときに。音の表（`set_sources`）は A1 が、曲が変わってエンジンへ送るときに。`open` の中身（`音/` ・ 作業の場所 ・ しまっておく所をさがす）は A2。**理由**: 2 人が `service.rs` の同じ所を書かずにすむ。
+
+### 22-18 C. 画面の HTML の部品（区切り3 の 2 回目、2026-11-21、meloet-impl）
+
+- **160 の行**: 行の高さは `automation/autoGeom.ts` の `arrangeRows` が 1 か所で決める（`RowDims.tall` に `ArrangeView.tallTrack` と `part.track.vocal`。答えに `heights`）。見出しの列（`TrackHeads`）とクリップの面（`Arrange` の `LaneDims.heights`）が同じ答えを読む。**理由**: 帯（オートメーション）の上の位置も同じ所で足しあわせているので、行の高さだけ別の所で数えると、帯がずれる。歌のクリップを 2 回押すと `setTallTrack`（鍵盤のクリップの 2 回押しは、まだ何もしない）。
+- **取っ手と音量の線**（`arrange/AudioClipHandles.svelte`）: クリップの面（`.lanes`）にかさねた HTML。取っ手は `part.audioclip.handle`（仕様書 2 章「歌のクリップ」の 6×6）、線は accent の `line.hair`。押せる所は線の上下に取っ手と同じ高さ。ドラッグの間は `audioDrag.now` だけを書き、離したら `setClipField` を 1 つ。答えの rev が来るまで `audioDrag.now` を残す（クリップのドラッグの `clipPending` と同じ考え）。フェードは吸いつかない（ティックのまま。仮）。音量の読み値は「その場の読み値」（カーソルの左上）と状態行（`dragReading`）で、ドラッグの間だけ出す。
+- **持ってきている間**（`arrange/fileDrag.svelte.ts`）: `fileDrag` ・ `fileDrop` は、読みこんだ時に `onEvent` で聞く（部品がまだない時に来ても落とさない）。入る所の計算はアレンジの `DropFrame` が登録し、知らせの箱と落とした時の `dropAudio` が同じ計算を使う。音のファイルが 1 つなら `mode` は `inRow`（落とした所の歌のトラックへ）、2 つ以上は窓の左右（B-94-21）。「別々のトラックに」の枠は、歌のトラックの上でも新しい行に出す。落とした時に知らせの箱がもう閉じていても数がわかるよう、最後の `fileDrag` の時の数を覚えておく。
+- **選んだクリップの欄**（`params/ClipPanel.svelte`、字は `params/clipFields.ts`）: 値を 2 回押すと打ちこむ枠（パラメータの行と同じ `ValueField`）。フェードは「前」と「後」の数を別々に打つ。読めない位置 ・ 長さ ・ フェードは `rejectValue`（`position` ・ `length`）、読めない音量は何もしない（`ValueField` に音量の欄がない）。範囲の外は Rust がだまって中に入れる（B-94-29）。

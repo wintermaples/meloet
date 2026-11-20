@@ -20,6 +20,8 @@ export interface RowDims {
   laneH: number;
   /** size.row: 「＋ 帯を足す ▾」の行 */
   rowH: number;
+  /** 歌を直している行（ArrangeView.tallTrack）と、その高さ（part.track.vocal）。 */
+  tall?: { track: number | null; h: number };
 }
 
 export interface OpenLane {
@@ -38,6 +40,8 @@ export interface ArrangeRows {
   tops: number[];
   /** トラックのかたまり（行と、その下の帯と行）の下。 */
   bottoms: number[];
+  /** トラックの行の高さ（歌を直している行だけ高い）。 */
+  heights: number[];
   lanes: OpenLane[];
   rows: AddRow[];
   height: number;
@@ -51,11 +55,13 @@ export const showsAddRow = (track: TrackView) => track.lanes.length > 0;
 
 /** 帯は足した順。たたんだ帯は出さない（「＋ 帯を足す ▾」の一覧から、ひらきなおす）。 */
 export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneRef[], d: RowDims): ArrangeRows {
-  const out: ArrangeRows = { tops: [], bottoms: [], lanes: [], rows: [], height: 0 };
+  const out: ArrangeRows = { tops: [], bottoms: [], heights: [], lanes: [], rows: [], height: 0 };
   let y = 0;
   for (const track of tracks) {
+    const h = d.tall && d.tall.track === track.id ? d.tall.h : d.trackH;
     out.tops.push(y);
-    y += d.trackH;
+    out.heights.push(h);
+    y += h;
     for (const lane of track.lanes) {
       if (hasLaneRef(folded, track.id, lane.target)) continue;
       out.lanes.push({ track, lane, top: y });

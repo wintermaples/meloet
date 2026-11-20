@@ -1211,3 +1211,26 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 - 出口を `pw-record` で録ると、`pw-record` 自身の xrun で 5 秒おきくらいに 768 か 1024 こま抜ける（meloet なしでも起きる）。出口を録る測りでは `pw-record` の ERR を横で見る。歌の測り（出口から入口へ回す）は、自分用の PipeWire（`crates/meloet-engine/tests/private_pw/`）で。
 - meloet の窓は Wayland の窓なので、`remote.py` の X の作り物の出来事は届かない（プラグインの窓だけ）。ページの中のポインタの出来事は `remote_page.js` の `ptr`。
 - 音のファイルを読む部品はいま symphonia 0.6.1（wav ・ flac ・ pcm だけオン）。
+
+## 第 7 回: 歌と音のファイル（2026-11-21〜）
+
+頼みは `round-7-prompt.md`（オーナーさんから。文はヤチヨ）。第 6 回の締め（終わりの数、本物のアプリの絵、聞いていること）を先に終えてから入った。
+
+### 係のモデル（2026-11-21 に呼んで確かめた）
+
+| 係 | 動いたモデル | 何を頼んだか |
+|---|---|---|
+| meloet-research | Sonnet 5.5（claude-sonnet-5-5）、4 人 | 0-3 の調べ物 |
+| meloet-impl | Opus 5.5（claude-opus-5-5） | 第 6 回の場面を本物のアプリで撮る（第 6 回の締め） |
+| meloet-hard | Fable 5.2（claude-fable-5-2） | 0-4 の 22 章の下書き |
+
+### 区切り0（2026-11-21）
+
+- **呼び名の直し**: `CLAUDE.md` の「ヤチヨさん」をオーナーさんに。progress ・ design-notes ・ architecture の頭に読みかえの 1 行。
+- **0-1 写し ・ 0-2 92 の答え: 止めている**。第 10 版の仕様書とモックの 2 つのリンクが、このアカウントから「見つからない」になって読めない（第 6 回は同じ仕様書のリンクを読めた）。オーナーさんに聞いている。
+- **0-3 調べ物**（`docs/research/`）:
+  - [`audio-input-and-latency.md`](research/audio-input-and-latency.md): 入口は出口と別のスレッドと接続で立つが、cpal が同じ `node.group` をつけるので同じ driver ・ 同じ `CLOCK_MONOTONIC` の時刻（A）。cpal から取れる遅れは `delay` だけ。DAC ・ ADC の中の遅れは入らない。ほかの DAW は手の数かループバックで足す。**12 章の「入っていない遅れの分だけ早めに出る」は向きが逆（遅めに出る）。直した**。
+  - [`audio-files-and-export.md`](research/audio-files-and-export.md): mp3 ・ ogg は symphonia の feature（MPL-2.0）、opus は読めない。rubato（MIT OR Apache-2.0）。wav は自分で、flac は `flacenc`（Apache-2.0）。**mp3 を書く部品で LGPL でない物は `rusty_mp3`（Apache-2.0、2026-07 に出たばかり）だけ**。VST3 は `kOffline` を 2 か所、LV2 は `freeWheeling`。速く回してこわれるプラグインを見分ける DAW はない。
+  - [`stretch-and-pitch.md`](research/stretch-and-pitch.md): **Signalsmith Stretch（MIT、C++ のヘッダ）**をすすめる（声の感じ、ブロックごとの比）。Rubber Band は GPL か商用、SoundTouch は LGPL、aubio ・ Essentia は GPL ・ AGPL。声の良さと CPU の数は見つからない（区切り4 で聞いて測る）。
+  - [`drop-and-tempo-x8.md`](research/drop-and-tempo-x8.md): ドラッグは Tauri の標準のまま Wayland でも動くはず（本物の Nautilus の記録はない）。位置は拡大率をかけない論理ピクセル。プラグインへのテンポは VST3 も LV2 も 4 分音符の数（Ardour ・ Surge XT と同じ。LV2 の仕様の文とはずれる）。
+- **0-4 決める事**: `architecture.md` 22 章（149063d）。ティック 1920（直しは 2 歩: 数に名前をつけてから 1920）、テンポは 4 分音符、曲の版 6（版 1〜5 は読めなくする）、曲のフォルダと作業の場所、入口と出口の時刻、録った歌の位置（頭だけ時刻、あとはこまを数える）、録る流れ（自分で書く wav、`0xFFFFFFFF` の長さ）、先読みの係、波形（5 段のピーク、テクスチャ、区画をふやさない）、歌のクリップのデータ、書き出し（2 つめのエンジンと書き出しのプラグイン係、しめきりなしで待つ）、版の上げかた、区切り1 の切り分け。棟梁の決めは 22-14。

@@ -11,7 +11,7 @@ usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16
                                              [--tempo-points TICK:BPM[:ramp],...] [--head-ramp]
                                              [--meter-changes BAR:NUM/DEN,...]
                                              [--markers TICK:NAME,...]
-                                             [--lanes volume,pan,plugin:PARAM,effect:PARAM]
+                                             [--lanes volume,pan,send:a,send:b,plugin:PARAM,effect:PARAM,builtin:EFFECT.ID]
                                              [--lane-points 16] [--lane-resting]
 
 --tracks N (1..64): a version 3 song with N tracks, each with one clip and one take of --notes
@@ -42,9 +42,11 @@ they are in ticks: --bars still counts bars of 4/4. Example, the spec's 104 to 1
 5 to 9 and 3/4 from bar 9: --tempo-points 7680:104:ramp,15360:120 --meter-changes 8:3/4
 
 --lanes makes the song version 5 too: automation lanes on every track, in the order given.
-"volume" and "pan"; "plugin:PARAM" a parameter of the instrument by the plugin's own number
-(only on the "plugin" tracks); "effect:PARAM" a parameter of the --effect-plugin insert (only
-on the tracks that have it). Each lane has --lane-points points spread evenly over the clip
+"volume", "pan", "send:a" and "send:b"; "plugin:PARAM" a parameter of the instrument by the
+plugin's own number (only on the "plugin" tracks); "effect:PARAM" a parameter of the
+--effect-plugin insert (only on the tracks that have it); "builtin:EFFECT.ID" the parameter of
+that id of the track's built-in effect of that kind, both as in the song file, e.g.
+"builtin:compressor.threshold" (only on the tracks that have that effect). Each lane has --lane-points points spread evenly over the clip
 from its start, with values (the place of the knob, 0..1) from --seed. --lane-resting: the
 lanes rest (spec 3, 17-A).
 
@@ -294,10 +296,14 @@ def lane_words(text):
         kind, sep, param = word.partition(":")
         if kind in ("volume", "pan") and not sep:
             words.append((kind, None))
+        elif kind == "send" and param in ("a", "b"):
+            words.append((kind, param))
         elif kind in ("plugin", "effect") and sep and param.isdigit():
             words.append((kind, int(param)))
+        elif kind == "builtin" and "." in param:
+            words.append((kind, param))
         else:
-            raise ValueError(f"lane {word!r}: volume, pan, plugin:PARAM or effect:PARAM")
+            raise ValueError(f"lane {word!r}: volume, pan, send:a, send:b, plugin:PARAM, effect:PARAM or builtin:EFFECT.ID")
     if len(set(words)) != len(words):
         raise ValueError("two lanes of one target")
     return words
@@ -316,12 +322,18 @@ def with_lanes(made, words, count, resting, seed):
                 target = {"kind": "volume"}
             elif kind == "pan":
                 target = {"kind": "pan"}
+            elif kind == "send":
+                target = {"kind": "send", "bus": param}
             elif kind == "plugin":
                 if track["instrument"].get("kind") != "plugin":
                     continue
                 target = {"kind": "instrument", "param": param}
             else:
-                held = [s for s in track.get("inserts") or [] if s and "plugin" in s]
+                if kind == "builtin":
+                    effect, _, param = param.partition(".")
+                    held = [s for s in track.get("inserts") or [] if s and s.get("effect") == effect]
+                else:
+                    held = [s for s in track.get("inserts") or [] if s and "plugin" in s]
                 if not held:
                     continue
                 if "id" not in held[0]:

@@ -3,6 +3,7 @@
      いまの値と点の数）。休みのときは「もどす」と「休み ・ （いまの値）」。右クリックで「帯を消す」。
      いまの値は再生中に毎コマ変わるので、trackMeters の canvas の下に入れる（cover。docs/architecture.md 7 章「CPU で描く WebKit」）。 -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { LaneView, TrackView } from "../../bridge";
   import { glSlot } from "../../gl/slot";
   import { term } from "../../lib/tip.svelte";
@@ -35,12 +36,24 @@
   /** 動かしているときは線の上の値。書く係（AutoClock）がまだ書いていなければ、止まっている所の値をここで出す。 */
   const position = $derived.by(() => {
     if (!moves) return handPosition(track, lane.target, values);
-    const live = livePosition(track.id, lane.target);
+    // 見えていない見出しは、毎コマの値を読まない（64 本の曲で、見えない字を毎コマ書きかえないため）。
+    const live = visible ? livePosition(track.id, lane.target) : null;
     if (live !== null) return live;
     const points = pointsOf(lane.laneId);
     return points ? valueAt(points, current.state!.transport.position) : null;
   });
   const value = $derived(position === null ? null : positionText(lane.name, position));
+
+  let box = $state<HTMLElement>();
+  let visible = $state(true);
+  onMount(() => {
+    if (!box || typeof IntersectionObserver === "undefined") return;
+    const seen = new IntersectionObserver((entries) => (visible = entries[entries.length - 1]!.isIntersecting));
+    seen.observe(box);
+    return () => seen.disconnect();
+  });
+  /** いまの値の字が変わるコマは、上の canvas（trackMeters）も出す: 字の四角が canvas の中に入り、再生の線の四角を切らない。 */
+  const stamp = $derived(position ?? -1);
 
   function fold(): void {
     send({ type: "foldLane", track: track.id, target: lane.target, folded: true });
@@ -53,7 +66,7 @@
 
 {#snippet parts(list: TextPart[])}{#each list as part, i (i)}{#if part.hole}<span class="m-num">{part.text}</span>{:else}{part.text}{/if}{/each}{/snippet}
 
-<div class="lane-head" role="presentation" data-test="lane-head" oncontextmenu={context}>
+<div class="lane-head" role="presentation" data-test="lane-head" bind:this={box} oncontextmenu={context}>
   <button class="m-plain title" aria-expanded="true" data-test="lane-fold" onclick={fold}
     ><span class="m-hi">▾</span>
     {#each title as piece, i (i)}{#if piece.term}<span use:term={"オートメーション"}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</button
@@ -67,7 +80,7 @@
         data-test="lane-restore"
         onclick={() => usable && send({ type: "restoreLane", track: track.id, target: lane.target })}>{t("lane.restore")}</button
       >
-      <span class="m-lbl live" use:glSlot={{ kind: "cover" }}
+      <span class="m-lbl live" use:glSlot={{ kind: "cover", stamp }}
         ><span class="in" data-test="lane-state"
           >{#if value === null}{t("lane.restingBare")}{:else}{@render parts(textParts("lane.resting", { value }))}{/if}</span
         ></span
@@ -81,7 +94,7 @@
         data-test="lane-write"
         onclick={() => !busy && send({ type: "setLaneWrite", track: track.id, target: lane.target, on: !armed })}>{t("lane.write")}</button
       >
-      <span class="m-lbl live" use:glSlot={{ kind: "cover" }}
+      <span class="m-lbl live" use:glSlot={{ kind: "cover", stamp }}
         ><span class="in" data-test="lane-state"
           >{#if writing}{t("lane.writing")}{:else if value !== null}{@render parts(textParts("lane.now", { value, count: lane.points }))}{:else}{@render parts(
               textParts("lane.count", { count: lane.points }),
@@ -95,6 +108,8 @@
 <style>
   /* 帯の見出し（モック F6-AutoRec: 高さ size.lane、地 gray.2、左のあき space.6）。 */
   .lane-head {
+    /* 縦に送った外の帯は、中を描かない ・ レイアウトしない（64 本の曲。高さは決まっている）。 */
+    content-visibility: auto;
     height: var(--size-lane);
     display: flex;
     flex-direction: column;

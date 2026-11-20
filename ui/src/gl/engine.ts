@@ -144,8 +144,10 @@ export class Engine {
         update: (node, slot) => {
           const s = this.slots.get(node);
           if (!s) return;
+          const stamped = slot.kind === "cover" && s.slot.kind === "cover" && slot.stamp !== s.slot.stamp;
           s.slot = slot;
           if (s.region) s.region.dirty = s.region.urgent = true;
+          if (s.region && stamped) s.region.mustDraw = true;
           this.invalidate();
         },
         detach: (node) => this.detach(node),
@@ -312,7 +314,7 @@ export class Engine {
     let held = false;
     for (const r of this.regions.values()) {
       if (!r.dirty) continue;
-      const hz = regionHz(r.name, this.trackNumbers.length);
+      const hz = regionHz(r.name);
       const parts = hz < 60 && this.canCopy() ? Math.round(60 / hz) : 1;
       if (parts !== Math.max(1, r.tiles.length)) this.split(r, parts);
       // Without tiles, a region drawn below 60 Hz waits for its turn; a frame between two of 60 Hz comes a few ms early or late.
@@ -388,17 +390,17 @@ export class Engine {
       return;
     }
 
-    // The slots that show, left to right, in as many runs as there are tiles; a tile covers its run.
+    // The slots that show, left to right, in as many runs as there are tiles, each run as wide as the others (a slot
+    // goes where its middle lies): the widest tile decides how much of the page a frame repaints. A tile covers its run.
     const right = x0 + width;
     const bottom = y0 + height;
-    const seen = r.slots.filter((s) => s.x1 > x0 && s.x0 < right && s.y1 > y0 && s.y0 < bottom).sort((a, b) => a.x0 - b.x0);
     const n = r.tiles.length;
+    const runOf = (s: Slot) => Math.min(n - 1, Math.max(0, Math.floor((((s.x0 + s.x1) / 2 - x0) * n) / width)));
     let widest = 0;
     let highest = 0;
     r.tiles.forEach((tile, i) => {
-      const run = new Set(seen.slice(Math.floor((i * seen.length) / n), Math.floor(((i + 1) * seen.length) / n)));
       // Page order, as in the canvas of a region without tiles.
-      tile.slots = r.slots.filter((s) => run.has(s));
+      tile.slots = r.slots.filter((s) => s.x1 > x0 && s.x0 < right && s.y1 > y0 && s.y0 < bottom && runOf(s) === i);
       let tx0 = Infinity;
       let ty0 = Infinity;
       let tx1 = -Infinity;

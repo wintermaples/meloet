@@ -45,8 +45,9 @@ export type GlSlot =
    * Paints nothing: the region's canvas covers this box too. For HTML that changes in the same frames
    * as the canvas (the numbers beside a meter): WebKit then repaints one rectangle instead of many
    * small ones that cut each other (docs/architecture.md, chapter 7, "CPU で描く WebKit").
+   * `stamp`: the canvas is shown in the frame this changes, its picture changed or not (the HTML in the box changed).
    */
-  | { kind: "cover" }
+  | { kind: "cover"; stamp?: number }
   /** The bar beside the last velocity in the input meter. */
   | { kind: "velocity" }
   /**

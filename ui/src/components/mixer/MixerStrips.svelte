@@ -15,7 +15,7 @@
   import { selectedInsert, windowOf } from "../params/selected";
   import { openShelf } from "../tracks.svelte";
   import Strip from "./Strip.svelte";
-  import { livePosition } from "../automation/autoState.svelte";
+  import { shownPosition } from "../automation/autoState.svelte";
   import { hasLaneRef, laneMoves, laneOf, panAt, type AutoLook, type StripAuto } from "../automation/laneValue";
   import { fracToDb } from "./scale";
   import type { AutoTarget } from "../../bridge";
@@ -65,22 +65,22 @@
   const noAuto = $derived<StripAuto>({ gain: null, pan: null, sends: [null, null], row: autoRow, restore: null });
   /** 帯が動かしている物は線の上の値、ほかは手で置いた値。 */
   function shownGain(track: TrackView, look: AutoLook): number | null {
-    const pos = look === "moving" ? livePosition(track.id, { kind: "volume" }) : null;
+    const pos = look === "moving" ? shownPosition(track.id, { kind: "volume" }) : null;
     return pos === null ? track.gainDb : fracToDb(pos);
   }
   function shownPan(track: TrackView, look: AutoLook): number {
-    const pos = look === "moving" ? livePosition(track.id, { kind: "pan" }) : null;
+    const pos = look === "moving" ? shownPosition(track.id, { kind: "pan" }) : null;
     return pos === null ? track.pan : panAt(pos);
   }
   function shownSends(track: TrackView, auto: StripAuto): [number | null, number | null] {
     return BUSES.map((bus, i) => {
-      const pos = auto.sends[i] === "moving" ? livePosition(track.id, { kind: "send", bus }) : null;
+      const pos = auto.sends[i] === "moving" ? shownPosition(track.id, { kind: "send", bus }) : null;
       return pos === null ? track.sends[i]! : fracToDb(pos);
     }) as [number | null, number | null];
   }
   function shownMuted(track: TrackView): boolean {
     const lane = laneOf(track, { kind: "mute" });
-    const pos = laneMoves(lane, app.automation.held, track.id) ? livePosition(track.id, { kind: "mute" }) : null;
+    const pos = laneMoves(lane, app.automation.held, track.id) ? shownPosition(track.id, { kind: "mute" }) : null;
     return pos === null ? track.muted : pos >= 0.5;
   }
   const sameStrip = (a: StripRef, b: StripRef) => JSON.stringify(a) === JSON.stringify(b);

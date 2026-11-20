@@ -7,7 +7,7 @@
 import { clockOffsetUs, lanePoints, peekLanePoints, type AppState, type AutoTarget, type LanePoints, type TrackView } from "../../bridge";
 import { current } from "../../state/app.svelte";
 import { shownTick } from "../time";
-import { laneKey, laneMoves, valueAt } from "./laneValue";
+import { laneMoves, targetKey, valueAt } from "./laneValue";
 
 let version = $state(0);
 const RETRY_MS = 100;
@@ -37,129 +37,230 @@ export function pointsOf(laneId: number): LanePoints | undefined {
 
 // ---- いまの位置 ----
 
-// 位置はふつうの Map に持ち、変わったら数を 1 つ進める（読む所はこの数で読みなおす）。位置ごとに $state を作らないのは、
-// 読む所（$derived の中）で初めて作った $state は、その $derived の依存にならず、あとで変わっても読みなおされないため。
-/** 見せている位置。 */
-const positions = new Map<string, number>();
-/** 線の上のいちばん新しい位置。 */
-const latest = new Map<string, number>();
-let moved = $state(0);
+// 位置はふつうの Map に持ち、変わったらトラックごとの数を 1 つ進める（読む所はこの数で読みなおす）。トラックごとなので、
+// 64 本の曲でも、読みなおすのは動いたトラックを見せている所だけ。数（$state）は書く側が先に作る: 読む所（$derived の中）で初めて
+// 作った $state は、その $derived の依存にならない。まだない数を読んだ所は made で読みなおす。
+class Tick {
+  n = $state(0);
+}
+let made = $state(0);
+function reads(ticks: Map<number, Tick>, track: number): void {
+  const t = ticks.get(track);
+  if (t) void t.n;
+  else void made;
+}
+function bump(ticks: Map<number, Tick>, track: number): void {
+  const t = ticks.get(track);
+  if (t) t.n += 1;
+  else {
+    ticks.set(track, new Tick());
+    made += 1;
+  }
+}
+
+/** 線の上のいちばん新しい位置（トラック → 何を（targetKey）→ 位置）。帯の見出しとパラメータの欄が読む。 */
+const latest = new Map<number, Map<string, number>>();
+const latestTicks = new Map<number, Tick>();
+/** ミキサーのストリップに見せている位置。待つトラックでは、latest よりおくれる。 */
+const shown = new Map<number, Map<string, number>>();
+const shownTicks = new Map<number, Tick>();
+/** 位置を画面に書いた回数（書いたあとに何かする所が読む）。 */
+let wrote = $state(0);
+let any = false;
 
 // ミキサーのストリップは、自分の上の canvas が出るコマにだけ動かす（docs/architecture.md 7 章「CPU で描く WebKit」: 同じコマで変わる物は
-// 1 枚の canvas の下）。トラックが 10 本をこえると canvas は左右の半分ずつ 1 コマおきに出るので、出ない半分のつまみと字を同じコマで
-// 動かすと、よごれた四角が 11 個をこえて窓ぜんぶの描きなおしになる。
-/** 待つトラック → 待たせている箱（coverIf）が、位置を見せたときに呼んでほしい関数。 */
-const gates = new Map<number, Set<() => void>>();
-/** 今回、見せる位置が変わった待つトラック。 */
-const touched = new Set<number>();
+// 1 枚の canvas の下）。ミキサーの canvas は左右の半分ずつ 1 コマおきに出るので、出ない半分のつまみと字を同じコマで動かすと、
+// よごれた四角が 11 個をこえて窓ぜんぶの描きなおしになる。
+/** ストリップの中の、帯が動かす物の組。 */
+export type StripPart = "gain" | "pan" | "sends";
+const PARTS: readonly StripPart[] = ["gain", "pan", "sends"];
+/** ストリップが見せない物（エフェクトや音源のパラメータ）は null。 */
+function partOf(key: string): StripPart | null {
+  if (key === "volume" || key === "mute") return "gain";
+  if (key === "pan") return "pan";
+  return key.startsWith("send:") ? "sends" : null;
+}
+/** 待つトラック → 組ごとの、位置を見せたときに呼んでほしい関数（coverIf ・ askIf）。 */
+const gates = new Map<number, Map<StripPart, Set<() => void>>>();
+/**
+ * 待つトラックのパンとセンドは、1 回に片方ずつ見せる: パンの行とセンドの行は canvas の外にあるので、同じコマに両方の四角を足すと、
+ * 1 コマに描きなおす広さが 25 % の決まりに近づく。どちらの番かは、どのトラックも同じ（コマ 2 つごとに入れかわる。canvas は左右の半分を
+ * 1 コマおきに出すので、どちらの半分にも、パンの番とセンドの番が交互に来る）。そろえないと、行の四角がストリップごとにばらばらになる。
+ */
+const rowTurn = (): StripPart => ((frameNo >> 1) & 1 ? "pan" : "sends");
 /** いちばん新しい位置をまだ見せていない、待つトラック → 待ったコマの数。 */
 const waiting = new Map<number, number>();
 /**
  * 上の canvas が描かれないまま待つコマの数の上限。メーターの知らせが来ないコマは canvas が描かれないので、次の番まで待つ。
  * 待たずに見せると、左右の半分のつまみが同じコマで動いて、窓ぜんぶの描きなおしになる。
+ * ほかのトラックの canvas は描かれているのに自分の番が来ないトラックは、見えていない（横に送った外）ので、見えるまで待つ。
  */
 export const MAX_WAIT_FRAMES = 3;
+let frameNo = 0;
+/** どれかの箱の上の canvas が、最後に描かれたコマ。 */
+let paintedAt = -Infinity;
 
 /** 帯が動かしている物の、線の上のいまの位置（0〜1）。動かしていなければ null（手で置いた値のまま）。 */
 export function livePosition(track: number, target: AutoTarget): number | null {
-  void moved;
-  return positions.get(laneKey(track, target)) ?? null;
+  reads(latestTicks, track);
+  return latest.get(track)?.get(targetKey(target)) ?? null;
+}
+
+/** ミキサーのストリップに見せる位置（待つトラックでは、その上の canvas を描いたコマの位置）。 */
+export function shownPosition(track: number, target: AutoTarget): number | null {
+  reads(shownTicks, track);
+  return shown.get(track)?.get(targetKey(target)) ?? null;
 }
 
 /** 位置を書く細かさ（つまみの長さの 1/4096）。同じなら書かない。 */
 const STEP = 1 / 4096;
 
-const seen = new Set<string>();
+const seenTracks = new Set<number>();
+const seenKeys = new Set<string>();
+/** 帯の番号 → 何を（毎コマ文字を作らない）。 */
+const laneKeys = new Map<number, string>();
 
 /**
  * tick の所の線の上の位置を書く。動かしていない帯と、なくなった帯は null に。
- * inFrame: WebGL の係のコマの中。待つトラックの位置は、その上の canvas を描くとき（showTrack）か、MAX_WAIT_FRAMES コマ描かれなければ見せる。
+ * inFrame: WebGL の係のコマの中。待つトラックの位置は、その上の canvas を描くとき（showTrack）に見せる。
  */
 export function refreshPositions(state: AppState, tick: number, inFrame = false): void {
-  changed = false;
+  any = false;
+  if (inFrame) frameNo += 1;
+  const drawing = inFrame && frameNo - paintedAt <= MAX_WAIT_FRAMES;
   for (const [track, frames] of waiting) {
-    if (inFrame && frames < MAX_WAIT_FRAMES) {
-      waiting.set(track, frames + 1);
+    if (inFrame && (frames < MAX_WAIT_FRAMES || drawing)) {
+      if (frames < MAX_WAIT_FRAMES) waiting.set(track, frames + 1);
       continue;
     }
     waiting.delete(track);
     show(track);
   }
-  seen.clear();
+  seenTracks.clear();
   const held = state.automation.held;
   for (const track of state.song.tracks) refreshTrack(track, held, tick, inFrame && gates.has(track.id));
-  for (const key of latest.keys()) {
-    if (seen.has(key)) continue;
-    latest.delete(key);
-    if (positions.delete(key)) changed = true;
+  for (const track of latest.keys()) {
+    if (seenTracks.has(track)) continue;
+    latest.delete(track);
+    bump(latestTicks, track);
+    waiting.delete(track);
+    show(track);
   }
-  told();
+  if (laneKeys.size > 4 * latest.size + 256) laneKeys.clear();
+  if (any) wrote += 1;
 }
-let changed = false;
-
-/** 見せる位置が変わったら、読んでいる所と、待たせていた箱に知らせる。 */
-function told(): void {
-  if (changed) moved += 1;
-  for (const track of touched) for (const shown of gates.get(track) ?? []) shown();
-  touched.clear();
-}
-
-function show(track: number): void {
-  const prefix = `${track}/`;
-  for (const [key, pos] of latest) {
-    if (!key.startsWith(prefix) || positions.get(key) === pos) continue;
-    positions.set(key, pos);
-    changed = true;
-    touched.add(track);
-  }
-}
-
-/** 待っていたトラックの、いちばん新しい位置を見せる（そのトラックの箱の上の canvas を描くとき）。 */
-export function showTrack(track: number): void {
-  if (!waiting.delete(track)) return;
-  changed = false;
-  show(track);
-  told();
-}
-
-/** そのトラックを待たせる（箱が canvas の下にある間）。shown は、そのトラックの見せる位置が変わるたびに呼ぶ。返す関数でやめる。 */
-export function gateTrack(track: number, shown: () => void): () => void {
-  const set = gates.get(track) ?? new Set();
-  gates.set(track, set);
-  set.add(shown);
-  return () => {
-    set.delete(shown);
-    if (set.size > 0 || gates.get(track) !== set) return;
-    gates.delete(track);
-    showTrack(track);
-  };
-}
-
-/** 見せる位置が変わった数（変わったあとに何かするために読む）。 */
-export const positionsVersion = () => moved;
 
 function refreshTrack(track: TrackView, held: AppState["automation"]["held"], tick: number, wait: boolean): void {
+  let map = latest.get(track.id);
+  let changed = false;
+  seenKeys.clear();
   for (const lane of track.lanes) {
     if (!laneMoves(lane, held, track.id)) continue;
     const points = peekLanePoints(lane.laneId) ?? pointsOf(lane.laneId);
     if (!points) continue;
     const v = valueAt(points, tick);
     if (v === null) continue;
-    const key = laneKey(track.id, lane.target);
-    seen.add(key);
+    let key = laneKeys.get(lane.laneId);
+    if (key === undefined) laneKeys.set(lane.laneId, (key = targetKey(lane.target)));
+    seenKeys.add(key);
     const pos = Math.round(v / STEP) * STEP;
-    latest.set(key, pos);
-    if (positions.get(key) === pos) continue;
-    if (wait) {
-      if (!waiting.has(track.id)) waiting.set(track.id, 0);
-    }
-    else {
-      positions.set(key, pos);
-      changed = true;
-      if (gates.has(track.id)) touched.add(track.id);
+    if (map?.get(key) === pos) continue;
+    if (!map) latest.set(track.id, (map = new Map()));
+    map.set(key, pos);
+    changed = true;
+  }
+  if (!map) return;
+  if (map.size > seenKeys.size) {
+    for (const key of map.keys()) if (!seenKeys.has(key)) map.delete(key);
+    changed = true;
+  }
+  if (map.size === 0) return;
+  seenTracks.add(track.id);
+  if (!changed) return;
+  bump(latestTicks, track.id);
+  if (!wait) show(track.id);
+  else if (!waiting.has(track.id)) waiting.set(track.id, 0);
+}
+
+const differs: Record<StripPart, boolean> = { gain: false, pan: false, sends: false };
+
+/**
+ * そのトラックのいちばん新しい位置を、ストリップに見せる。変わったら、読んでいる所と、待たせていた箱に知らせる。
+ * turn: canvas を描くコマの 1 回分。パンとセンドは、番のほうだけ見せる。番でないほうが残っていれば true を返す。
+ */
+function show(track: number, turn = false): boolean {
+  const from = latest.get(track);
+  let to = shown.get(track);
+  differs.gain = differs.pan = differs.sends = false;
+  if (from) {
+    for (const [key, pos] of from) {
+      const part = partOf(key);
+      if (part && to?.get(key) !== pos) differs[part] = true;
     }
   }
+  if (to) {
+    for (const key of to.keys()) if (!from?.has(key)) differs[partOf(key)!] = true;
+  }
+  if (!differs.gain && !differs.pan && !differs.sends) return false;
+  const skip: StripPart | null = turn ? (rowTurn() === "pan" ? "sends" : "pan") : null;
+  const left = skip !== null && differs[skip];
+  if (left) {
+    differs[skip!] = false;
+    if (!differs.gain && !differs.pan && !differs.sends) return true;
+  }
+  if (from) {
+    for (const [key, pos] of from) {
+      const part = partOf(key);
+      if (!part || part === skip || to?.get(key) === pos) continue;
+      if (!to) shown.set(track, (to = new Map()));
+      to.set(key, pos);
+    }
+  }
+  if (to) {
+    for (const key of to.keys()) if (!from?.has(key) && partOf(key) !== skip) to.delete(key);
+    if (to.size === 0) shown.delete(track);
+  }
+  any = true;
+  bump(shownTicks, track);
+  const told = gates.get(track);
+  if (told) for (const part of PARTS) if (differs[part]) for (const tell of told.get(part) ?? []) tell();
+  return left;
 }
+
+/** 待っていたトラックの、いちばん新しい位置を見せる（そのトラックの箱の上の canvas を描くとき）。 */
+export function showTrack(track: number): void {
+  paintedAt = frameNo;
+  if (!waiting.has(track)) return;
+  any = false;
+  if (show(track, true)) waiting.set(track, 0);
+  else waiting.delete(track);
+  if (any) wrote += 1;
+}
+
+/**
+ * そのトラックを待たせる（箱が canvas の下か、そのとなりにある間）。told は、そのトラックの、その組の見せる位置が変わるたびに呼ぶ。
+ * 返す関数でやめる。
+ */
+export function gateTrack(track: number, part: StripPart, told: () => void): () => void {
+  const parts = gates.get(track) ?? new Map<StripPart, Set<() => void>>();
+  gates.set(track, parts);
+  const set = parts.get(part) ?? new Set();
+  parts.set(part, set);
+  set.add(told);
+  return () => {
+    set.delete(told);
+    if (set.size === 0) parts.delete(part);
+    if (parts.size > 0 || gates.get(track) !== parts) return;
+    gates.delete(track);
+    if (!waiting.delete(track)) return;
+    any = false;
+    show(track);
+    if (any) wrote += 1;
+  };
+}
+
+/** 位置を画面に書いた回数（書いたあとに何かするために読む）。 */
+export const wroteVersion = () => wrote;
 
 /** 帯があるか（コマごとに値を出すかどうか）。 */
 export const anyLane = (state: AppState) => state.song.tracks.some((t) => t.lanes.length > 0);

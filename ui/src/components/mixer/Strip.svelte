@@ -20,7 +20,7 @@
   import { faderControl } from "./control.svelte";
   import { FADER_MIN, faderText } from "./scale";
   import SendBar from "./SendBar.svelte";
-  import { coverIf } from "../automation/coverIf";
+  import { askIf, coverIf } from "../automation/coverIf";
   import type { StripAuto } from "../automation/laneValue";
 
   interface Toggle {
@@ -65,15 +65,15 @@
   }
   let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null }: Props = $props();
   const moving = $derived(auto?.gain === "moving");
-  // 帯が動かしている物は、毎コマ変わるので mixerMeters の canvas の下に入れる（coverIf。docs/architecture.md 7 章）。
-  // 音量だけならフェーダーと値の箱（.gain-box）、パンも動くならパンから値までの箱（.pan-box）、センドも動くならセンドから値までの
-  // 箱（.moving-box）。canvas が高くなるほど、1 コマに描きなおす広さが 25 % の決まりに近づくので、要る分だけにする。
+  // 帯が動かしている物（docs/architecture.md 7 章「レイアウトでためる Region」）。
+  // - フェーダーと値の箱（.gain-box）は、帯がこのストリップの何かを動かしている間、mixerMeters の canvas の下に入れる（coverIf）。
+  //   メーターとほぼ同じ高さなので、canvas は広がらない。その canvas を描くコマに、このストリップの位置を見せる。
+  // - パンの行（.pan-box）とセンドの 2 行（.sends-box）は、canvas の下に入れない（入れると、1 コマに描きなおす広さが 25 % の決まりを
+  //   こえる）。動いた行の四角だけを頼む（askIf）。両方動くときは、1 回に片方ずつ見せる（autoState）。
   const trackId = $derived(strip.kind === "track" ? strip.id : null);
   const sendsMove = $derived(auto?.sends[0] === "moving" || auto?.sends[1] === "moving");
   const panMoves = $derived(auto?.pan === "moving");
-  const wideTrack = $derived(sendsMove ? trackId : null);
-  const panTrack = $derived(panMoves && !sendsMove ? trackId : null);
-  const gainTrack = $derived(moving && !panMoves && !sendsMove ? trackId : null);
+  const movingTrack = $derived(moving || panMoves || sendsMove ? trackId : null);
 
   const kind = $derived(strip.kind);
   const fader = faderControl(
@@ -184,34 +184,34 @@
       />
     {/each}
   </div>
-  <div class="moving-box" use:coverIf={wideTrack}>
   <div class="group">
     <span class="m-lbl" use:term={"センド"}>{t("mixer.sends")}</span>
-    {#if sends}
-      <SendBar track={sends.track} bus="a" db={sends.dbs[0]} home={sends.homes[0]} auto={auto?.sends[0] === "moving"} />
-      <SendBar track={sends.track} bus="b" db={sends.dbs[1]} home={sends.homes[1]} auto={auto?.sends[1] === "moving"} />
-    {:else}
-      <div class="empty-row"></div>
-      <div class="empty-row"></div>
-    {/if}
+    <div class="sends-box" use:askIf={sendsMove && trackId !== null ? { track: trackId, part: "sends" } : null}>
+      {#if sends}
+        <SendBar track={sends.track} bus="a" db={sends.dbs[0]} home={sends.homes[0]} auto={auto?.sends[0] === "moving"} />
+        <SendBar track={sends.track} bus="b" db={sends.dbs[1]} home={sends.homes[1]} auto={auto?.sends[1] === "moving"} />
+      {:else}
+        <div class="empty-row"></div>
+        <div class="empty-row"></div>
+      {/if}
+    </div>
   </div>
-  <div class="pan-box" use:coverIf={panTrack}>
-  <PanKnob {strip} {pan} auto={panMoves} />
-  <div class="gain-box" use:coverIf={gainTrack}>
-  <div class="level" style:min-height="{metrics.scaled(FADER_MIN)}px">
-    <Fader control={fader} auto={moving} />
-    <div class="meter" use:glSlot={{ kind: "meter", vertical: true, source: meter, gap: meterGap }}></div>
+  <div class="pan-box" use:askIf={panMoves && trackId !== null ? { track: trackId, part: "pan" } : null}>
+    <PanKnob {strip} {pan} auto={panMoves} />
   </div>
-  <div class="value">
-    {#if fader.typing}
-      <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
-    {:else}
-      <span class="m-num m-hi db live"><span class="in" data-test="mixer-gain">{faderText(fader.shown)}</span></span>
-    {/if}
-    <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
-  </div>
-  </div>
-  </div>
+  <div class="gain-box" use:coverIf={movingTrack}>
+    <div class="level" style:min-height="{metrics.scaled(FADER_MIN)}px">
+      <Fader control={fader} auto={moving} />
+      <div class="meter" use:glSlot={{ kind: "meter", vertical: true, source: meter, gap: meterGap }}></div>
+    </div>
+    <div class="value">
+      {#if fader.typing}
+        <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
+      {:else}
+        <span class="m-num m-hi db live"><span class="in" data-test="mixer-gain">{faderText(fader.shown)}</span></span>
+      {/if}
+      <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
+    </div>
   </div>
   {#if auto?.row}
     <div class="auto-row" data-test="mixer-auto">
@@ -256,6 +256,9 @@
     padding: 0 var(--space-1) var(--space-2);
     background: var(--color-gray-3);
     border-right: var(--line-hair) solid var(--color-gray-5);
+    /* 横に送った外のストリップは、中を描かない ・ レイアウトしない（64 本の曲で、見えていない 40 本ぶんの箱を、描きなおしのたびにたどらない）。
+       幅は決まっていて、高さはとなりにそろうので、大きさは変わらない。Tab やさがす時は、ブラウザが中を作る。 */
+    content-visibility: auto;
   }
   .strip.return {
     background: var(--color-gray-2);
@@ -340,19 +343,31 @@
   .empty-row {
     height: var(--size-row);
   }
-  /* ストリップの縦のならびを、そのまま中に続ける箱（すきまは同じ）。 */
-  .moving-box,
+  /* 帯が動かす物の箱。coverIf ・ askIf が、箱いっぱいの空の箱を中に置く。その箱は、ストリップの幅いっぱいまで左右に出す:
+     となりのストリップの箱とつながって、WebKit のためる四角が 1 つになる（docs/architecture.md 7 章「レイアウトでためる Region」）。 */
+  .sends-box,
   .pan-box,
+  .gain-box {
+    position: relative;
+    --ask-left: calc(-1 * var(--space-1));
+    --ask-right: calc(-1 * var(--space-1) - var(--line-hair));
+  }
+  /* 中のならびは、もとのまま（.group、ストリップ）。 */
+  .sends-box {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--space-1) / 2);
+  }
+  .pan-box {
+    flex-shrink: 0;
+  }
   .gain-box {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    /* coverIf が、箱いっぱいの空の箱を中に置く。その箱は、ストリップの幅いっぱいまで左右に出す: となりのストリップの箱とつながって、
-       WebKit のためる四角が 1 つになる（docs/architecture.md 7 章「レイアウトでためる Region」）。 */
-    position: relative;
-    --ask-left: calc(-1 * var(--space-1));
-    --ask-right: calc(-1 * var(--space-1) - var(--line-hair));
+    /* いちばん上（+6 dB）のつまみは、フェーダーの上へ高さの半分だけ出る。 */
+    --ask-top: calc(var(--part-fader-knob-h) / -2 - var(--line-hair));
   }
   .level {
     flex: 1;

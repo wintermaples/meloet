@@ -298,7 +298,7 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
-  it("ミキサー、トラックが 10 本をこえたとき: WebGL の面はページの外に置き、左と右の 2 つの写しを 1 コマに 1 つずつ出す。文脈は 1 つのまま", async () => {
+  it("ミキサーは、いつも: WebGL の面はページの外に置き、左と右の 2 つの写しを 1 コマに 1 つずつ出す。文脈は 1 つのまま", async () => {
     const { made, drawn, frame, copied } = fakePage();
     vi.spyOn(performance, "now").mockReturnValue(1000);
     const asked: number[][] = [];
@@ -381,16 +381,16 @@ describe("WebGL の面", () => {
     frame();
     expect(drawn.slice(6).map((d) => d.width)).toEqual([393, 457]);
 
-    // 10 本に戻ると、WebGL の面そのものを箱に戻す（60 Hz、1 枚）。
+    // トラックが 10 本にへっても、分けたまま（いつも 30 Hz。user:2026-11-20）。
     engine.setTracks(tracks(10));
     frame();
-    expect([...strips.querySelectorAll("canvas")]).toEqual([gl]);
+    expect([...strips.querySelectorAll("canvas")]).toEqual(tiles);
     expect(made).toHaveLength(1);
     engine.destroy();
     expect(strips.querySelectorAll("canvas")).toHaveLength(0);
   });
 
-  it("写しを作れない所（createImageBitmap がない）では、10 本をこえても WebGL の面 1 枚のまま、33 ms に 1 回描く", () => {
+  it("写しを作れない所（createImageBitmap がない）では、WebGL の面 1 枚のまま、33 ms に 1 回描く", () => {
     const { made, drawn, frame } = fakePage();
     const now = vi.spyOn(performance, "now").mockReturnValue(1000);
     const strips = region(box(new DOMRect(0, 300, 1000, 200)), "mixerMeters");
@@ -431,7 +431,7 @@ describe("WebGL の面", () => {
 
   it("上の帯: マスターの面は、数字の箱（cover）までおおう。ミキサーのメーターを出すコマは、変わっていなくてもマスターの面も出す", () => {
     const { made, frame } = fakePage();
-    vi.spyOn(performance, "now").mockReturnValue(1000);
+    const now = vi.spyOn(performance, "now").mockReturnValue(1000);
     const bar = region(box(new DOMRect(0, 0, 1000, 48)), "masterMeter");
     slot(box(new DOMRect(300, 10, 80, 30), bar), { kind: "cover" });
     slot(box(new DOMRect(820, 6, 100, 38), bar), { kind: "cover" });
@@ -470,11 +470,13 @@ describe("WebGL の面", () => {
     frame();
     const x = made[1]!;
     expect([m.calls.clear, x.calls.clear]).toEqual([2, 1]);
-    // トラックだけ変わった: ミキサーの面が出るので、マスターの面も。
+    // トラックだけ変わった: ミキサーの面が出るので、マスターの面も（ミキサーは 30 Hz なので、33 ms あと）。
+    now.mockReturnValue(1040);
     engine.onTelemetry(telemetry(0.4));
     frame();
     expect([m.calls.clear, x.calls.clear]).toEqual([3, 2]);
     // 何も変わらない: どちらも出さない。
+    now.mockReturnValue(1080);
     engine.onTelemetry(telemetry(0.4));
     frame();
     expect([m.calls.clear, x.calls.clear]).toEqual([3, 2]);

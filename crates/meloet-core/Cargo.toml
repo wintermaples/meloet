@@ -17,9 +17,10 @@ meloet-sound = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+# Audio files brought into a song: decoded here, and brought to the rate the audio runs at.
+symphonia = { version = "=0.6.1", default-features = false, features = ["flac", "wav", "pcm", "mp3", "ogg", "vorbis"] }
+rubato = { version = "=5.1.0", default-features = false, features = ["fft_resampler"] }
 
 [dev-dependencies]
 # The tests look at the plugin windows as a person's desktop has them.
 x11rb = { version = "=0.14.0", features = ["allow-unsafe-code"] }
-# The tests build their little sound packs from WAV files.
-symphonia = { version = "=0.6.1", default-features = false, features = ["flac", "wav", "pcm"] }

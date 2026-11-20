@@ -49,7 +49,10 @@ impl World {
         let mut queue = std::collections::VecDeque::from(effects);
         while let Some(effect) = queue.pop_front() {
             let input = match effect {
-                Effect::SaveSong { song, to } => save_song(Some(&self.songs), &song, to),
+                Effect::SaveSong { song, to } => {
+                    let store = crate::audiofiles::AudioStore::new(None);
+                    save_song(Some(&self.songs), &song, to, &store)
+                }
                 Effect::ReadSong { path, previous } => read_song(path, previous),
                 Effect::PickSongFile => {
                     self.windows.push("file");

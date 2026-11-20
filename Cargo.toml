@@ -73,3 +73,26 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.meloet-sound]
 opt-level = 3
+# The same for audio files brought into a song: the decoders, the resampler and the hash.
+[profile.dev.package.symphonia-bundle-mp3]
+opt-level = 3
+[profile.dev.package.symphonia-codec-vorbis]
+opt-level = 3
+[profile.dev.package.symphonia-codec-pcm]
+opt-level = 3
+[profile.dev.package.symphonia-format-ogg]
+opt-level = 3
+[profile.dev.package.symphonia-format-riff]
+opt-level = 3
+[profile.dev.package.rubato]
+opt-level = 3
+[profile.dev.package.audioadapter]
+opt-level = 3
+[profile.dev.package.audioadapter-buffers]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
+[profile.dev.package.realfft]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3

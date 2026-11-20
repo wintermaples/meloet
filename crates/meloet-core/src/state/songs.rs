@@ -268,8 +268,6 @@ impl Model {
         };
         let mut song = self.play.song().clone();
         if let (SaveTo::NewFolder(Some(_)), Some(name)) = (&to, &self.files.save_as) {
-            // Later the song folder holds `audio/` and `plugins/` too: a save under a new name
-            // must copy them into the new folder.
             song.doc.name = name.clone();
         }
         self.files.waiting = Some(Waiting::Save(then));
@@ -287,6 +285,7 @@ impl Model {
                 self.files.exiting = true;
                 // Ending the usual way: whatever was not saved was let go on purpose.
                 self.recovery_done(effects);
+                effects.push(Effect::ClearWorkAudio);
                 effects.push(Effect::Exit);
             }
             Then::NewSong => {
@@ -305,6 +304,9 @@ impl Model {
     fn take_song(&mut self, song: Song, from_previous: bool, effects: &mut Vec<Effect>) {
         self.replace_song(song, from_previous, effects);
         self.recovery_done(effects);
+        // What the song before left in the work place is named by nothing now
+        // (docs/architecture.md 22-4).
+        effects.push(Effect::ClearWorkAudio);
     }
 
     /// `unsaved`: the song does not match its file.

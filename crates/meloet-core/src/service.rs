@@ -36,6 +36,7 @@ use meloet_protocol::{
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
+use crate::audiofiles::keeper::AudioNews;
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::measure::{self, KeyToSound, PluginLog};
@@ -99,6 +100,11 @@ pub struct CoreOptions {
     pub plugins: Option<PluginOptions>,
     /// Where added SF2 files are copied to. `None`: none is listed, and none can be added.
     pub sf2_dir: Option<PathBuf>,
+    /// Where what can be made again is kept (`$XDG_CACHE_HOME/meloet`): the peaks of the
+    /// audio files in `peaks/`, the decoded and resampled audio in `audio/`. `None`:
+    /// nothing is kept; only plain wav files at the rate of the stream sound, and no
+    /// waveform is drawn.
+    pub cache_dir: Option<PathBuf>,
 }
 
 /// What the core asks of the shell. Answer the windows with [`Core::song_file_picked`] and
@@ -125,6 +131,9 @@ pub enum ShellRequest {
     /// The PC's open window for an SF2 file, starting in `folder`. Answer with
     /// [`Core::sf2_picked`].
     PickSf2 { folder: Option<PathBuf> },
+    /// The PC's open window for audio files (wav, mp3, flac, ogg), starting in `folder`.
+    /// `many`: more than one may be chosen. Answer with [`Core::audio_picked`].
+    PickAudio { folder: Option<PathBuf>, many: bool },
 }
 
 /// Called on the core thread; must not wait for the main thread.
@@ -144,6 +153,7 @@ impl CoreOptions {
             sounds_dir: sounds::find_dir(),
             plugins: PluginOptions::from_env(),
             sf2_dir: sf2store::dir(),
+            cache_dir: dirs::cache_dir().map(|d| d.join("meloet")),
         }
     }
 
@@ -160,6 +170,7 @@ impl CoreOptions {
             sounds_dir: None,
             plugins: None,
             sf2_dir: None,
+            cache_dir: None,
         }
     }
 }
@@ -352,7 +363,21 @@ impl Core {
         let wishes = (settings.sound.buffer, settings.sound.sample_rate);
         let mut model = Model::new(settings)
             .with_sounds(library.installed())
-            .with_sf2(sf2.files().to_vec());
+            .with_sf2(sf2.files().to_vec())
+            .with_cache_dir(options.cache_dir.clone());
+        let audio_store = Arc::new(
+            crate::audiofiles::AudioStore::new(options.state_dir.clone())
+                .with_cache(options.cache_dir.clone()),
+        );
+        let keeper = {
+            let tx = tx.clone();
+            let tell = move |news| {
+                let _ = tx.send(Msg::Input(Input::Audio(news), None));
+            };
+            crate::audiofiles::keeper::Keeper::spawn(audio_store.clone(), tell)
+                .inspect_err(|e| eprintln!("meloet: no thread for the audio files: {e}"))
+                .ok()
+        };
         // For the measurements that need a loop with no cable: the monitor of this sink is
         // the input.
         if let Some(sink) = std::env::var("MELOET_INPUT_SINK_MONITOR")
@@ -455,9 +480,9 @@ impl Core {
                 ),
                 model,
                 input: input::InputSide::new(options.state_dir.clone()),
-                audio_store: Arc::new(crate::audiofiles::AudioStore::new(
-                    options.state_dir.clone(),
-                )),
+                audio_store,
+                keeper,
+                song_told: None,
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
                 state_dir: options.state_dir.clone(),
@@ -542,6 +567,12 @@ impl Core {
     /// The answer to [`ShellRequest::PickSf2`]. Does not wait.
     pub fn sf2_picked(&self, path: Option<PathBuf>) {
         let _ = self.tx.send(Msg::Input(Input::Sf2Picked(path), None));
+    }
+
+    /// The answer to [`ShellRequest::PickAudio`]: the files chosen, none when the window
+    /// was put away. Does not wait.
+    pub fn audio_picked(&self, paths: Vec<PathBuf>) {
+        let _ = self.tx.send(Msg::Input(Input::AudioPicked(paths), None));
     }
 
     /// Files are held over the window. Does not wait.
@@ -1458,9 +1489,12 @@ struct Worker {
     audio_retry_at: Option<Instant>,
     plugins: Option<PluginSide>,
     input: input::InputSide,
-    /// Shared with the read-ahead thread (22-8).
-    #[expect(dead_code, reason = "the read-ahead thread comes in round 7 step 3")]
+    /// Shared with the read-ahead thread (22-8) and with the thread of the audio files.
     audio_store: Arc<crate::audiofiles::AudioStore>,
+    /// The thread that reads audio files in.
+    keeper: Option<crate::audiofiles::keeper::Keeper>,
+    /// The song and the folder of its file that `audio_store` was last told.
+    song_told: Option<(u32, Option<PathBuf>)>,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
@@ -1613,8 +1647,12 @@ impl PluginSide {
 
 impl Worker {
     fn run(mut self, rx: Receiver<Msg>) {
-        if let Some(start) = self.state_dir.as_deref().and_then(recovery_start) {
-            self.handle(Input::RecoveryFound(Box::new(start)));
+        match self.state_dir.as_deref().and_then(recovery_start) {
+            Some(start) => {
+                self.handle(Input::RecoveryFound(Box::new(start)));
+            }
+            // Nothing names what the work place holds (docs/architecture.md 22-4).
+            None => self.audio_store.clear_work(),
         }
         // The rules ask for the samples of the song they start with.
         self.handle(Input::Tick);
@@ -1902,7 +1940,10 @@ impl Worker {
         let mut inputs = VecDeque::from([input]);
         while let Some(input) = inputs.pop_front() {
             self.model.set_now(monotonic_us(), self.heard());
-            for effect in self.model.handle(input) {
+            let effects = self.model.handle(input);
+            // Before anything is asked about the song's audio: where it is looked for.
+            self.tell_song_dir();
+            for effect in effects {
                 match effect {
                     Effect::OpenOutput { node_name } => {
                         self.close_input();
@@ -2130,6 +2171,40 @@ impl Worker {
                             });
                         }
                     }
+                    Effect::PickAudio { many } => {
+                        let folder =
+                            (dirs::audio_dir().or_else(dirs::home_dir)).filter(|d| d.is_dir());
+                        if !self.ask_shell(ShellRequest::PickAudio { folder, many }) {
+                            inputs.push_back(Input::AudioPicked(Vec::new()));
+                        }
+                    }
+                    Effect::BringAudio {
+                        ticket,
+                        paths,
+                        taken,
+                    } => match &self.keeper {
+                        Some(keeper) => keeper.bring(ticket, paths, taken),
+                        None => inputs.push_back(Input::Audio(AudioNews::Brought {
+                            ticket,
+                            files: Vec::new(),
+                        })),
+                    },
+                    Effect::WatchAudio {
+                        serial,
+                        sources,
+                        sample_rate,
+                    } => {
+                        if let Some(keeper) = &self.keeper {
+                            keeper.watch(serial, sources, sample_rate);
+                        }
+                    }
+                    Effect::FindAudio { source, path } => {
+                        if let Some(keeper) = &self.keeper {
+                            keeper.find(source, path);
+                        }
+                    }
+                    // Here and now: meloet may end right after.
+                    Effect::ClearWorkAudio => self.audio_store.clear_work(),
                 }
             }
             if let Some(side) = &mut self.plugins {
@@ -2290,6 +2365,24 @@ impl Worker {
         }
     }
 
+    /// Tells the audio store where the song's file is, when that changed: another song
+    /// (opened, new), or the same song in another folder (saved, saved under another name).
+    fn tell_song_dir(&mut self) {
+        let now = (self.model.song_serial(), self.model.song_dir());
+        if self.song_told.as_ref() == Some(&now) {
+            return;
+        }
+        let same_song = self
+            .song_told
+            .as_ref()
+            .is_some_and(|(serial, _)| *serial == now.0);
+        match (same_song, &now.1) {
+            (true, Some(dir)) => self.audio_store.song_moved(dir.clone()),
+            (_, dir) => self.audio_store.set_song_dir(dir.clone()),
+        }
+        self.song_told = Some(now);
+    }
+
     /// [`Effect::SaveSong`]. With plugins in the song their states are asked for first, all
     /// at once, and the song is written on a thread of its own once they have answered or
     /// [`STATE_WAIT`] is over: the answer then comes later, as a message. Without plugins
@@ -2302,8 +2395,9 @@ impl Worker {
                 .collect(),
             None => Vec::new(),
         };
+        let store = self.audio_store.clone();
         let Some(side) = self.plugins.as_ref().filter(|_| !asked.is_empty()) else {
-            return Some(save_song(songs_dir.as_deref(), &song, to));
+            return Some(save_song(songs_dir.as_deref(), &song, to, &store));
         };
         let (states, answers) = mpsc::channel();
         for &(place, id) in &asked {
@@ -2328,7 +2422,8 @@ impl Worker {
                         with_plugin_state(&mut song, place, state);
                     }
                 }
-                let _ = tx.send(Msg::Input(save_song(songs_dir.as_deref(), &song, to), None));
+                let saved = save_song(songs_dir.as_deref(), &song, to, &store);
+                let _ = tx.send(Msg::Input(saved, None));
             });
         match saver {
             Ok(_) => None,
@@ -2375,12 +2470,25 @@ fn with_plugin_state(song: &mut Song, place: PluginPlace, state: Vec<u8>) {
     }
 }
 
-/// Does [`Effect::SaveSong`] and gives its answer.
-pub(crate) fn save_song(songs_dir: Option<&Path>, song: &meloet_model::Song, to: SaveTo) -> Input {
+/// Does [`Effect::SaveSong`] and gives its answer. The audio the song names is put into
+/// the song's folder first, then the song's file is written (docs/architecture.md 22-4).
+pub(crate) fn save_song(
+    songs_dir: Option<&Path>,
+    song: &meloet_model::Song,
+    to: SaveTo,
+    store: &crate::audiofiles::AudioStore,
+) -> Input {
+    let names: Vec<String> = song.doc.audio.iter().map(|a| a.file.clone()).collect();
     let saved = match to {
-        SaveTo::File(path) => songfile::save(&path, song).map(|()| (path, song.doc.name.clone())),
+        SaveTo::File(path) => {
+            let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
+            store
+                .settle(dir.unwrap_or(Path::new(".")), &names)
+                .and_then(|()| songfile::save(&path, song))
+                .map(|()| (path, song.doc.name.clone()))
+        }
         SaveTo::NewFolder(folder) => match folder.as_deref().or(songs_dir) {
-            Some(folder) => songfile::save_new(folder, song),
+            Some(folder) => songfile::save_new_with(folder, song, |dir| store.settle(dir, &names)),
             None => Err(std::io::Error::other("no songs folder")),
         },
     };

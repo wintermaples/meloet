@@ -89,6 +89,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
         sounds_dir: None,
         plugins: None,
         sf2_dir: None,
+        cache_dir: None,
     });
     let latest = record_timing::listen(&core);
     record_timing::wait_for(&core, "the output runs", Duration::from_secs(10), |s| {

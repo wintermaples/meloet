@@ -176,6 +176,7 @@ impl AudioShape {
     }
 }
 
+pub mod clips;
 pub mod fade;
 pub mod record;
 

@@ -53,6 +53,7 @@ fn start(config: &Path, state: &Path, audio: bool) -> Core {
         sounds_dir: None,
         plugins: None,
         sf2_dir: None,
+        cache_dir: None,
     })
 }
 

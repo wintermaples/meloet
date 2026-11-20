@@ -27,6 +27,8 @@ pub struct Endpoint {
     pub device_name: Option<String>,
     /// `device.description`, the name the PC shows for the device.
     pub device_description: Option<String>,
+    /// How many channels the node has (`audio.channels`). `None`: no node, or it does not say.
+    pub channels: Option<u8>,
 }
 
 /// Why meloet cannot play through an endpoint without changing a PC-wide setting.
@@ -129,6 +131,7 @@ mod tests {
             node_name: Some("node".into()),
             device_name: None,
             device_description: None,
+            channels: None,
         }
     }
 

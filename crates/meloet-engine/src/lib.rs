@@ -14,6 +14,7 @@ mod instrument;
 mod mixer;
 mod output;
 mod plugin;
+mod probe;
 pub mod rt;
 mod synth;
 mod transport;
@@ -23,18 +24,22 @@ pub use clock::{HeardPosition, TransportClock, TransportState};
 pub use effect::{Effect, EffectContext};
 pub use engine::{
     BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
-    EngineParts, FADE_S, LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,
+    EngineParts, FADE_S, LatencyRecord, MidiFeed, MidiIn, ProbeSent, Recorded, Voice, monotonic_us,
 };
 pub use input::{
-    AudioInput, InputBlock, InputEnds, InputError, InputMeters, InputRingReader, InputRingWriter,
-    InputTap, InputTarget, MAX_INPUT_CHANNELS, MONITOR_RING_SECONDS, RECORD_RING_SECONDS,
-    RunningInput, input_ends, input_ring,
+    AudioInput, InputBlock, InputEnds, InputError, InputFeed, InputMeters, InputRingReader,
+    InputRingWriter, InputTap, InputTarget, MAX_INPUT_CHANNELS, MONITOR_RING_SECONDS,
+    RECORD_RING_SECONDS, RunningInput, input_ends, input_ring,
 };
 pub use instrument::{Instrument, InstrumentEvent};
 pub use mixer::{INSERT_SLOTS, MixStrip, RAMP_S, pan_gains};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};
 pub use plugin::{
     PLUGIN_WAIT_SHARE, PluginBlock, PluginEffect, PluginInstrument, PluginSlot, PluginWatch,
+};
+pub use probe::{
+    FrameClock, PROBE_LISTEN_S, PROBE_PEAK, ProbeFound, ProbeHeard, ProbeVerdict, find_probe,
+    judge_probes, probe_wave,
 };
 pub use synth::PlaceholderSynth;
 pub use transport::{Sequence, SequenceEvent, TrackSet};

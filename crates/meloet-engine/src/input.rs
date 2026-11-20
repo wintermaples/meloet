@@ -17,20 +17,25 @@
 //! and its header says so, so that the reader can put silence in their place and keep every
 //! later frame where it belongs.
 //!
-//! What is here already: the rings, the block header and the meters. What is not yet:
-//! [`AudioInput::open`], which says [`InputError::NotYet`].
+//! The output's side of the monitor ring is [`InputFeed`]: the engine takes one device
+//! block's worth of frames out of it at every block of its own.
 
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 /// A PipeWire source, by its `node.name` (for example
-/// `alsa_input.usb-Focusrite_Scarlett_2i2-00.analog-stereo`). Never the monitor of a sink.
+/// `alsa_input.usb-Focusrite_Scarlett_2i2-00.analog-stereo`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InputTarget {
     pub node_name: String,
+    /// `node_name` is a sink, and what is opened is its monitor: what the sink plays comes
+    /// back as input. For the measurements and tests that need a loop with no cable; the
+    /// list a person chooses from has sources only.
+    pub sink_monitor: bool,
 }
 
 /// Channels the meters have room for. An input with more is opened with its first ones.
@@ -58,6 +63,19 @@ pub struct InputBlock {
     pub callback_us: u64,
     /// The ring had no room: the samples of this block are not in it.
     pub dropped: bool,
+}
+
+impl InputBlock {
+    /// When the block's first frame was captured, in microseconds on the clock of the
+    /// output's `playback` times.
+    ///
+    /// `capture_us` is one block later than that: a click the engine plays at a frame comes
+    /// back through a sink's monitor stamped exactly one quantum after the `playback` time
+    /// of that frame, at every quantum from 64 to 1024 (`tests/input_loop.rs` measures it
+    /// and keeps watch). So the block's own length is taken off.
+    pub fn first_frame_us(&self, sample_rate: u32) -> f64 {
+        self.capture_us as f64 - f64::from(self.frames) * 1e6 / f64::from(sample_rate.max(1))
+    }
 }
 
 /// The writing end of a ring, inside the input callback.
@@ -177,6 +195,7 @@ pub struct InputMeters {
     clipped: [AtomicBool; MAX_INPUT_CHANNELS],
     frames: AtomicU64,
     last_frames: AtomicU32,
+    delay_us: AtomicU32,
     record_dropped: AtomicU64,
     monitor_dropped: AtomicU64,
     xruns: AtomicU64,
@@ -263,6 +282,12 @@ impl InputMeters {
         self.frames.load(Relaxed)
     }
 
+    /// What the PC says the last block took from its capture to the callback, in
+    /// microseconds.
+    pub fn delay_us(&self) -> u32 {
+        self.delay_us.load(Relaxed)
+    }
+
     /// The frames of the last block: what really runs, not what was asked for.
     pub fn last_frames(&self) -> u32 {
         self.last_frames.load(Relaxed)
@@ -311,6 +336,10 @@ impl InputTap {
             dropped: false,
         };
         self.next_frame += u64::from(frames);
+        let delay = callback_us
+            .saturating_sub(capture_us)
+            .min(u64::from(u32::MAX));
+        self.meters.delay_us.store(delay as u32, Relaxed);
         self.meters.note_block(data, self.channels);
         if self.meters.monitoring() && !self.monitor.push(block, data) {
             self.meters.count_monitor_dropped(frames);
@@ -353,8 +382,6 @@ pub fn input_ends(channels: u16, sample_rate: u32) -> InputEnds {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputError {
-    /// Opening the input is not written yet.
-    NotYet,
     /// No PipeWire source of that name.
     NoSuchInput(String),
     /// What cpal said.
@@ -364,7 +391,6 @@ pub enum InputError {
 impl fmt::Display for InputError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InputError::NotYet => f.write_str("the audio input cannot be opened yet"),
             InputError::NoSuchInput(name) => write!(f, "no PipeWire input node named {name}"),
             InputError::Other(message) => f.write_str(message),
         }
@@ -372,6 +398,28 @@ impl fmt::Display for InputError {
 }
 
 impl std::error::Error for InputError {}
+
+fn other(e: impl fmt::Display) -> InputError {
+    InputError::Other(e.to_string())
+}
+
+/// As the output's: xruns from inside the process callback, the end of the stream from
+/// cpal's main loop. A stream that meloet closes says `DeviceNotAvailable` on the way out;
+/// `closing` keeps that from counting.
+fn stream_error_counter(
+    meters: Arc<InputMeters>,
+    closing: Arc<AtomicBool>,
+) -> impl FnMut(cpal::Error) + Send + 'static {
+    move |error| match error.kind() {
+        _ if closing.load(Relaxed) => {}
+        cpal::ErrorKind::Xrun => meters.count_xrun(),
+        cpal::ErrorKind::DeviceNotAvailable
+        | cpal::ErrorKind::StreamInvalidated
+        | cpal::ErrorKind::HostUnavailable
+        | cpal::ErrorKind::UnsupportedConfig => meters.count_stream_lost(),
+        _ => {}
+    }
+}
 
 pub struct AudioInput;
 
@@ -381,23 +429,76 @@ impl AudioInput {
     ///
     /// `sample_rate`: the output's, so that both run at one rate. `request_frames` is only a
     /// wish, as the output's; what runs is [`InputMeters::last_frames`].
-    ///
-    /// To be written as [`AudioOutput::open`](crate::AudioOutput::open) is: a fresh
-    /// `cpal::host_from_id(HostId::PipeWire)`, the device whose id is `target` and that
-    /// `supports_input()`, `default_input_config()` for the channels, [`input_ends`], then
-    /// `build_input_stream` with [`InputTap::block`] as the whole data callback, and `play()`.
     pub fn open(
-        _target: &InputTarget,
-        _sample_rate: u32,
-        _request_frames: u32,
+        target: &InputTarget,
+        sample_rate: u32,
+        request_frames: u32,
     ) -> Result<RunningInput, InputError> {
-        Err(InputError::NotYet)
+        // A fresh host each time, as for the output: cpal's device list is a snapshot.
+        let host = cpal::host_from_id(cpal::HostId::PipeWire).map_err(other)?;
+        let wanted = cpal::DeviceId::new(cpal::HostId::PipeWire, &target.node_name);
+        let device = host.devices().map_err(other)?.find(|d| {
+            // cpal lists a sink as a device that takes input too (its monitor).
+            let source = d
+                .description()
+                .is_ok_and(|about| about.direction() == cpal::DeviceDirection::Input);
+            d.supports_input()
+                && source != target.sink_monitor
+                && d.id().is_ok_and(|id| id == wanted)
+        });
+        let Some(device) = device else {
+            return Err(InputError::NoSuchInput(target.node_name.clone()));
+        };
+        let channels = device
+            .default_input_config()
+            .map_err(other)?
+            .channels()
+            .clamp(1, MAX_INPUT_CHANNELS as u16);
+
+        let InputEnds {
+            mut tap,
+            monitor,
+            record,
+            meters,
+        } = input_ends(channels, sample_rate);
+        let config = cpal::StreamConfig {
+            channels,
+            sample_rate,
+            buffer_size: cpal::BufferSize::Fixed(request_frames),
+        };
+        let closing = Arc::new(AtomicBool::new(false));
+        let stream = device
+            .build_input_stream(
+                config,
+                move |data: &[f32], info: &cpal::InputCallbackInfo| {
+                    let stamp = info.timestamp();
+                    tap.block(
+                        data,
+                        (stamp.capture.as_nanos() / 1_000) as u64,
+                        (stamp.callback.as_nanos() / 1_000) as u64,
+                    );
+                },
+                stream_error_counter(meters.clone(), closing.clone()),
+                None,
+            )
+            .map_err(other)?;
+        stream.play().map_err(other)?;
+        Ok(RunningInput {
+            stream,
+            closing,
+            channels,
+            sample_rate,
+            meters,
+            monitor: Some(monitor),
+            record: Some(record),
+        })
     }
 }
 
 /// A running input stream. Dropping it closes the input.
 pub struct RunningInput {
-    // The stream itself comes here with `AudioInput::open`.
+    stream: cpal::Stream,
+    closing: Arc<AtomicBool>,
     channels: u16,
     sample_rate: u32,
     meters: Arc<InputMeters>,
@@ -419,7 +520,7 @@ impl RunningInput {
         &self.meters
     }
 
-    /// The monitor ring's reader, once: it goes to the engine.
+    /// The monitor ring's reader, once: it goes to the engine, inside an [`InputFeed`].
     pub fn take_monitor(&mut self) -> Option<InputRingReader> {
         self.monitor.take()
     }
@@ -427,6 +528,145 @@ impl RunningInput {
     /// The record ring's reader, once: it goes to the disk writer.
     pub fn take_record(&mut self) -> Option<InputRingReader> {
         self.record.take()
+    }
+
+    /// Stops the stream. Do not call this from inside a stream callback.
+    pub fn close(self) {
+        self.closing.store(true, Relaxed);
+        drop(self.stream);
+    }
+}
+
+/// The largest block of the input the engine takes whole; a longer one counts as lost.
+const FEED_BLOCK_FRAMES: usize = 8_192;
+/// How many blocks in a row may find a whole block more than they need before the feed
+/// lets the oldest go.
+const FEED_PATIENCE: u32 = 64;
+
+/// The engine's end of the monitor ring: the input, a block of the output at a time.
+///
+/// The two callbacks come in no promised order, so a block of the output finds the input's
+/// block of the same cycle or the one before: the voice is up to one block late. A block
+/// that finds too little plays silence and takes nothing, which is how the feed comes to
+/// wait one block behind; one that finds more than a block too much, for long, lets the
+/// oldest go, so the voice does not stay late after a hiccup.
+pub struct InputFeed {
+    reader: InputRingReader,
+    meters: Arc<InputMeters>,
+    /// One block as it comes out of the ring.
+    scratch: Box<[f32]>,
+    /// Interleaved frames that wait, as a ring of its own.
+    fifo: Box<[f32]>,
+    head: usize,
+    frames: usize,
+    channels: usize,
+    /// The device block being rendered has its frames.
+    live: bool,
+    ahead: u32,
+}
+
+impl InputFeed {
+    /// Takes all the memory the feed will ever use.
+    pub fn new(reader: InputRingReader, meters: Arc<InputMeters>) -> InputFeed {
+        let channels = usize::from(reader.channels()).max(1);
+        InputFeed {
+            reader,
+            meters,
+            scratch: vec![0.0; FEED_BLOCK_FRAMES * channels].into_boxed_slice(),
+            fifo: vec![0.0; 4 * FEED_BLOCK_FRAMES * channels].into_boxed_slice(),
+            head: 0,
+            frames: 0,
+            channels,
+            live: false,
+            ahead: 0,
+        }
+    }
+
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    /// The engine lets go of the feed: the callback stops feeding the ring.
+    pub(crate) fn stop(&self) {
+        self.meters.set_monitoring(false);
+    }
+
+    fn capacity(&self) -> usize {
+        self.fifo.len() / self.channels
+    }
+
+    fn skip(&mut self, frames: usize) {
+        let frames = frames.min(self.frames);
+        self.head = (self.head + frames) % self.capacity();
+        self.frames -= frames;
+    }
+
+    /// Before a device block of `block` frames: `wanted` tells the callback whether to feed
+    /// the ring at all. Takes in what waits and says whether the block has its frames.
+    pub(crate) fn begin(&mut self, block: usize, wanted: bool) -> bool {
+        if self.meters.monitoring() != wanted {
+            self.meters.set_monitoring(wanted);
+        }
+        let capacity = self.capacity();
+        while let Some(header) = self.reader.pop(&mut self.scratch) {
+            let n = (header.frames as usize).min(capacity);
+            if self.frames + n > capacity {
+                self.skip(self.frames + n - capacity);
+            }
+            let at = (self.head + self.frames) % capacity;
+            let first = n.min(capacity - at);
+            let (ch, lost) = (self.channels, header.dropped);
+            for (to, from, len) in [(at, 0, first), (0, first, n - first)] {
+                let room = &mut self.fifo[to * ch..(to + len) * ch];
+                if lost {
+                    room.fill(0.0);
+                } else {
+                    room.copy_from_slice(&self.scratch[from * ch..(from + len) * ch]);
+                }
+            }
+            self.frames += n;
+        }
+        if !wanted {
+            self.skip(self.frames);
+            self.ahead = 0;
+        } else if self.frames > 3 * block {
+            self.skip(self.frames - block);
+            self.ahead = 0;
+        } else if self.frames >= 2 * block && block > 0 {
+            self.ahead += 1;
+            if self.ahead > FEED_PATIENCE {
+                self.skip(self.frames - block);
+                self.ahead = 0;
+            }
+        } else {
+            self.ahead = 0;
+        }
+        self.live = wanted && block > 0 && self.frames >= block;
+        self.live
+    }
+
+    /// The next `frames` frames, a channel to each of `bus`. Only in a block that
+    /// [`InputFeed::begin`] said has its frames; in any other the bus is silent.
+    pub(crate) fn take(&mut self, frames: usize, bus: &mut [Box<[f32]>]) {
+        if !self.live || self.frames < frames {
+            for channel in bus.iter_mut() {
+                channel[..frames].fill(0.0);
+            }
+            return;
+        }
+        let capacity = self.capacity();
+        for (ch, channel) in bus.iter_mut().enumerate() {
+            if ch >= self.channels {
+                channel[..frames].fill(0.0);
+                continue;
+            }
+            for (i, sample) in channel[..frames].iter_mut().enumerate() {
+                let value = self.fifo[((self.head + i) % capacity) * self.channels + ch];
+                // What is not a number never reaches the mixer.
+                *sample = if value.is_finite() { value } else { 0.0 };
+            }
+        }
+        self.skip(frames);
     }
 }
 
@@ -576,16 +816,5 @@ mod tests {
             Some(240_000),
             "frames count on while the ring is not fed"
         );
-    }
-
-    #[test]
-    fn opening_is_not_written_yet() {
-        let target = InputTarget {
-            node_name: "alsa_input.test".into(),
-        };
-        assert!(matches!(
-            AudioInput::open(&target, 48_000, 256),
-            Err(InputError::NotYet)
-        ));
     }
 }

@@ -131,7 +131,14 @@ fn busy_song(m: &mut Model) {
     started(m);
     event(m, on(60), 10, 100.0, 0);
     event(m, off(60), 11, 200.0, 0);
-    report(m, RecordReport::LapChanged { lap: 1 });
+    report(
+        m,
+        RecordReport::LapChanged {
+            lap: 1,
+            frame: 0,
+            file_frame: None,
+        },
+    );
     event(m, on(64), 12, 300.0, 1);
     event(m, off(64), 13, 500.0, 1);
     cmd(m, Command::PlayStop);

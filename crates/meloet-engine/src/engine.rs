@@ -12,9 +12,11 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use crate::automation::{AutoClock, AutoSet, HOLDS, MIX_STEP};
 use crate::clock::{HeardPosition, Segment, TransportClock, TransportState, heard};
 use crate::effect::{Effect, EffectContext};
+use crate::input::{InputFeed, MAX_INPUT_CHANNELS};
 use crate::instrument::{Instrument, InstrumentEvent};
 use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, SlotAuto, Strip};
 use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
+use crate::probe::probe_wave;
 use crate::rt;
 use crate::transport::{Click, Lane, Sequence, TrackSet};
 use meloet_model::{AutoTarget, Beat, Meter, TICKS_PER_QUARTER, Tempo, TempoMap, Timeline};
@@ -25,6 +27,8 @@ const MIDI_RING: usize = 1024;
 const LATENCY_RING: usize = 1024;
 const RECORDED_RING: usize = 4096;
 const MAP_RING: usize = 16;
+const INPUT_RING: usize = 4;
+const PROBE_RING: usize = 16;
 /// Ticks per second for one quarter note per minute.
 const TICKS_PER_S_PER_BPM: f64 = TICKS_PER_QUARTER as f64 / 60.0;
 
@@ -186,6 +190,21 @@ pub enum EngineCommand {
         target: AutoTarget,
         on: bool,
     },
+    /// Use [`EngineHandle::set_input`]. The PC's input, for the voices of the vocal tracks,
+    /// in place of the one before (`None`: no input is open); the old feed comes back on a
+    /// retired ring.
+    SetInput {
+        feed: Option<Box<InputFeed>>,
+    },
+    /// The track sounds the input instead of its instrument (a vocal track), or its
+    /// instrument again (`None`). The voice comes and goes over [`RAMP_S`].
+    SetVoice {
+        track: usize,
+        voice: Option<Voice>,
+    },
+    /// One click of the latency measurement, from the first frame of the next block, after
+    /// the master. Which frame that was comes back as a [`ProbeSent`].
+    Probe,
     /// `[start, end)` in ticks. A loop with `end <= start` does nothing.
     SetLoop {
         start: u64,
@@ -252,11 +271,42 @@ impl Chord {
     }
 }
 
+/// What a vocal track sounds: channels of the input, while its ● and its monitor are on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Voice {
+    /// The input's channel that goes left, and the one that goes right (the same one for a
+    /// mono input).
+    pub left: u8,
+    pub right: u8,
+    /// Off: silence, with the strip still running.
+    pub on: bool,
+}
+
+/// A click of the latency measurement left the engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProbeSent {
+    /// The click's first frame, counted as [`Recorded::Rolling::frame`] is.
+    pub frame: u64,
+}
+
 /// What the audio thread hands back while recording, in the order it happened on that thread.
+///
+/// `frame` counts every frame the engine rendered since it was made (the output's frames,
+/// as [`crate::InputBlock::first_frame`] counts the input's): with it a recording of the
+/// input is placed by counting frames, not by reading the time again
+/// (docs/architecture.md 22-6).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Recorded {
     /// Sent when the record command is taken, before anything else of this recording.
-    Started { from: u64, count_in_beats: u32 },
+    /// `frame`: the first frame of the block that took it.
+    Started {
+        from: u64,
+        count_in_beats: u32,
+        frame: u64,
+    },
+    /// The song is at `tick` at `frame` and is recorded from there: at once, or when the
+    /// count-in ends.
+    Rolling { frame: u64, tick: f64 },
     /// A keyboard event and where the person was in the song when they played it.
     Event {
         event: InstrumentEvent,
@@ -267,9 +317,16 @@ pub enum Recorded {
     },
     /// The loop went round while recording. `t_us` is when the first frame of the new lap
     /// reaches the DAC.
-    LapChanged { lap: u32, t_us: u64 },
-    /// The recording ended. `tick` and `lap` are the heard position at `t_us`.
-    Stopped { t_us: u64, tick: f64, lap: u32 },
+    /// `frame`: the first frame of the new lap, where the song is at the loop's start.
+    LapChanged { lap: u32, t_us: u64, frame: u64 },
+    /// The recording ended. `tick` and `lap` are the heard position at `t_us`. `frame`: the
+    /// first frame of the block that took the stop.
+    Stopped {
+        t_us: u64,
+        tick: f64,
+        lap: u32,
+        frame: u64,
+    },
 }
 
 /// One keyboard event, pushed by the MIDI thread straight into the engine's ring.
@@ -335,6 +392,7 @@ pub struct EngineMeters {
     other_errors: AtomicU64,
     record_overflows: AtomicU64,
     sample_rate: AtomicU32,
+    out_delay_us: AtomicU32,
 }
 
 // The bit patterns of non-negative floats order the same way as the floats, so `fetch_max` on
@@ -367,7 +425,13 @@ impl EngineMeters {
             other_errors: AtomicU64::new(0),
             record_overflows: AtomicU64::new(0),
             sample_rate: AtomicU32::new(config.sample_rate),
+            out_delay_us: AtomicU32::new(0),
         }
+    }
+
+    /// What the PC says the last block takes from its callback to the DAC, in microseconds.
+    pub fn out_delay_us(&self) -> u32 {
+        self.out_delay_us.load(Relaxed)
     }
 
     /// Without the audition track, whose number this is.
@@ -491,6 +555,47 @@ struct Track {
     sends_steered: [bool; 2],
     /// The frame, from the anchor, where the mute lane next changes (`u64::MAX`: never).
     mute_due: u64,
+    /// A vocal track: the input is heard here, and the instrument is not.
+    voice: Option<VoiceState>,
+}
+
+struct VoiceState {
+    voice: Voice,
+    /// 0 to 1, on its way to where `voice.on` and the input put it.
+    gain: f32,
+}
+
+impl VoiceState {
+    /// `live`: the input has frames for this block. `bus`: the input's channels over the
+    /// stretch.
+    fn render(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        bus: &[Box<[f32]>; MAX_INPUT_CHANNELS],
+        from: usize,
+        live: bool,
+        ramp: u32,
+    ) {
+        let target = if self.voice.on && live { 1.0 } else { 0.0 };
+        if self.gain == 0.0 && target == 0.0 {
+            left.fill(0.0);
+            right.fill(0.0);
+            return;
+        }
+        let step = 1.0 / ramp.max(1) as f32;
+        let channel = |ch: u8| &bus[usize::from(ch).min(MAX_INPUT_CHANNELS - 1)][from..];
+        let (in_l, in_r) = (channel(self.voice.left), channel(self.voice.right));
+        for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
+            self.gain = if target > self.gain {
+                (self.gain + step).min(1.0)
+            } else {
+                (self.gain - step).max(target)
+            };
+            *l = in_l[i] * self.gain;
+            *r = in_r[i] * self.gain;
+        }
+    }
 }
 
 /// The song clock on the audio thread (docs/architecture.md 21-3).
@@ -597,6 +702,7 @@ impl Track {
             steered: false,
             sends_steered: [false; 2],
             mute_due: u64::MAX,
+            voice: None,
         }
     }
 
@@ -656,7 +762,10 @@ impl Track {
 
     /// Nothing sounds here and nothing is about to: a change to the strip need not be smooth.
     fn is_empty(&self) -> bool {
-        self.instrument.is_none() && self.fading.is_none() && self.aside.is_none()
+        self.instrument.is_none()
+            && self.fading.is_none()
+            && self.aside.is_none()
+            && self.voice.is_none()
     }
 
     /// Ends the fades without rendering them. Not on the audio thread while a stream runs.
@@ -1020,6 +1129,36 @@ impl TestTone {
     }
 }
 
+/// The click of the latency measurement: [`probe_wave`], once, on both sides.
+struct Probe {
+    wave: Box<[f32]>,
+    /// The next sample of the wave; past its end when nothing sounds.
+    at: usize,
+    asked: bool,
+}
+
+impl Probe {
+    fn new(sample_rate: u32) -> Probe {
+        let wave = probe_wave(sample_rate).into_boxed_slice();
+        Probe {
+            at: wave.len(),
+            wave,
+            asked: false,
+        }
+    }
+
+    fn add(&mut self, left: &mut [f32], right: &mut [f32]) {
+        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+            let Some(sample) = self.wave.get(self.at) else {
+                return;
+            };
+            *l += sample;
+            *r += sample;
+            self.at += 1;
+        }
+    }
+}
+
 /// Everything [`Engine::new`] makes.
 pub struct EngineParts {
     /// Goes to the audio thread (through [`crate::AudioOutput::open`]).
@@ -1042,6 +1181,17 @@ pub struct Engine {
     retired_sequences: Producer<Box<Sequence>>,
     retired_maps: Producer<Arc<TempoMap>>,
     retired_autos: Producer<Box<AutoSet>>,
+    retired_inputs: Producer<Box<InputFeed>>,
+    /// The PC's input, while one is open.
+    input: Option<Box<InputFeed>>,
+    /// The input's channels over the piece being rendered.
+    input_bus: [Box<[f32]>; MAX_INPUT_CHANNELS],
+    input_live: bool,
+    /// Frames rendered since the engine was made, and where the device block began.
+    stream_frame: u64,
+    block_frame: u64,
+    probe: Probe,
+    probes: Producer<ProbeSent>,
     /// The ticks where the steps of the fader's lanes end, in the stretch being rendered.
     auto_ticks: Box<[f64]>,
     returns: [Strip; 2],
@@ -1102,6 +1252,8 @@ impl Engine {
         let (sequences_tx, sequences_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (maps_tx, maps_rx) = RingBuffer::new(MAP_RING);
         let (autos_tx, autos_rx) = RingBuffer::new(config.max_tracks.max(16));
+        let (inputs_tx, inputs_rx) = RingBuffer::new(INPUT_RING);
+        let (probes_tx, probes_rx) = RingBuffer::new(PROBE_RING);
         let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
         let clock = Arc::new(TransportClock::default());
         let (midi_tx, midi_rx) = RingBuffer::new(MIDI_RING);
@@ -1119,6 +1271,14 @@ impl Engine {
             retired_sequences: sequences_tx,
             retired_maps: maps_tx,
             retired_autos: autos_tx,
+            retired_inputs: inputs_tx,
+            input: None,
+            input_bus: std::array::from_fn(|_| buffer()),
+            input_live: false,
+            stream_frame: 0,
+            block_frame: 0,
+            probe: Probe::new(config.sample_rate),
+            probes: probes_tx,
             auto_ticks: vec![0.0; config.max_frames.div_ceil(MIX_STEP) + 1].into_boxed_slice(),
             returns: [Strip::new(), Strip::new()],
             master_strip: Strip::new(),
@@ -1148,6 +1308,8 @@ impl Engine {
             retired_sequences: sequences_rx,
             retired_maps: maps_rx,
             retired_autos: autos_rx,
+            retired_inputs: inputs_rx,
+            probes: probes_rx,
             map,
             map_gen: 0,
             last_map_gen: 0,
@@ -1219,6 +1381,7 @@ impl Engine {
         t.silent = TrackSet::default();
         t.auto_silent = TrackSet::default();
         self.tone = TestTone::idle();
+        self.probe = Probe::new(sample_rate.max(1));
         self.audition = None;
         self.click = Click::idle();
         self.last_callback = None;
@@ -1269,13 +1432,28 @@ impl Engine {
         self.last_callback = Some((began, block_s));
         self.meters.callbacks.fetch_add(1, Relaxed);
         self.meters.last_frames.store(frames as u32, Relaxed);
+        let out_delay = timing.playback_us.saturating_sub(timing.callback_us);
+        (self.meters.out_delay_us).store(out_delay.min(u64::from(u32::MAX)) as u32, Relaxed);
         // Plugins in other processes are waited for until this far into the block, all of
         // them together.
         let wait_ns = (block_s * PLUGIN_WAIT_SHARE * 1e9) as u64;
         self.plugin_block
             .set_deadline(meloet_plugin::ipc::futex::monotonic_ns().saturating_add(wait_ns));
 
+        self.block_frame = self.stream_frame;
         self.read_commands(timing);
+        if std::mem::take(&mut self.probe.asked) {
+            self.probe.at = 0;
+            let _ = self.probes.push(ProbeSent {
+                frame: self.block_frame,
+            });
+        }
+        let voices = (self.tracks.iter().filter_map(|t| t.voice.as_ref()))
+            .any(|v| v.voice.on || v.gain > 0.0);
+        self.input_live = match self.input.as_deref_mut() {
+            Some(feed) => feed.begin(frames, voices),
+            None => false,
+        };
         for track in self.tracks.iter_mut() {
             let instrument = track.instrument.as_ref().map_or(0, |i| i.latency());
             track.lookahead = instrument.saturating_add(track.strip.latency());
@@ -1288,6 +1466,7 @@ impl Engine {
             offset += piece.len() / 2;
         }
         self.close_segment(frames);
+        self.stream_frame += frames as u64;
 
         if block_s > 0.0 {
             let load = began.elapsed().as_secs_f64() / block_s * 1000.0;
@@ -1307,6 +1486,7 @@ impl Engine {
             && !self.retired_sequences.is_full()
             && !self.retired_maps.is_full()
             && !self.retired_autos.is_full()
+            && !self.retired_inputs.is_full()
         {
             let Ok(command) = self.commands.pop() else {
                 break;
@@ -1518,6 +1698,7 @@ impl Engine {
                     slot.steered = false;
                     slot.sends_steered = [false; 2];
                     slot.mute_due = u64::MAX;
+                    slot.voice = None;
                     self.transport.auto_silent.remove(track);
                     if let Some(old) = slot.auto.take() {
                         let _ = self.retired_autos.push(old);
@@ -1593,6 +1774,24 @@ impl Engine {
                     // Cannot fail: checked above, and this is the only producer.
                     let _ = self.retired_maps.push(old);
                 }
+                EngineCommand::SetInput { feed } => {
+                    if let Some(old) = std::mem::replace(&mut self.input, feed) {
+                        old.stop();
+                        let _ = self.retired_inputs.push(old);
+                    }
+                }
+                EngineCommand::SetVoice { track, voice } => {
+                    if let Some(slot) = self.tracks.get_mut(track) {
+                        slot.voice = voice.map(|voice| VoiceState {
+                            voice,
+                            gain: match &slot.voice {
+                                Some(before) => before.gain,
+                                None => 0.0,
+                            },
+                        });
+                    }
+                }
+                EngineCommand::Probe => self.probe.asked = true,
                 EngineCommand::SetLoop { start, end, on } => {
                     let t = &mut self.transport;
                     t.looping = on;
@@ -1633,15 +1832,19 @@ impl Engine {
                     t.record_from = from;
                     t.run_from = from;
                     t.muted = muted;
+                    let frame = self.block_frame;
                     self.push_recorded(Recorded::Started {
                         from,
                         count_in_beats,
+                        frame,
                     });
                     let t = &mut self.transport;
                     if count_in_beats == 0 {
                         t.state = TransportState::Recording;
                         t.set_pos(from as f64);
                         self.seek_lanes();
+                        let tick = from as f64;
+                        self.push_recorded(Recorded::Rolling { frame, tick });
                     } else {
                         t.state = TransportState::CountIn;
                         let click = t.map.meter_at(from).meter.ticks_per_click();
@@ -1723,7 +1926,13 @@ impl Engine {
                 Some((TransportState::CountIn | TransportState::Recording, h)) => (h.tick, h.lap),
                 _ => (t.record_from as f64, 0),
             };
-            self.push_recorded(Recorded::Stopped { t_us, tick, lap });
+            let frame = self.block_frame;
+            self.push_recorded(Recorded::Stopped {
+                t_us,
+                tick,
+                lap,
+                frame,
+            });
         }
         let to = match heard_then {
             Some((TransportState::Playing | TransportState::Recording, h)) => {
@@ -1741,14 +1950,17 @@ impl Engine {
         let t = &self.transport;
         if t.state != TransportState::Playing {
             let from = t.tick().max(0.0).floor() as u64;
+            let frame = self.block_frame;
             self.push_recorded(Recorded::Started {
                 from,
                 count_in_beats: 0,
+                frame,
             });
             self.push_recorded(Recorded::Stopped {
                 t_us: timing.callback_us,
                 tick: from as f64,
                 lap: 0,
+                frame,
             });
             return;
         }
@@ -1767,10 +1979,13 @@ impl Engine {
         t.run_from = from;
         t.muted = muted;
         t.state = TransportState::Recording;
+        let (frame, tick) = (self.block_frame, t.tick());
         self.push_recorded(Recorded::Started {
             from,
             count_in_beats: 0,
+            frame,
         });
+        self.push_recorded(Recorded::Rolling { frame, tick });
         for (i, slot) in self.tracks.iter_mut().enumerate() {
             if muted.contains(i) {
                 slot.lane.silence(slot.instrument.as_deref_mut());
@@ -1894,6 +2109,7 @@ impl Engine {
         let tick = t.tick();
         self.segment = Segment {
             start_us: self.dac_us(frame, timing),
+            frame0: self.block_frame + frame as u64,
             frames: 0,
             sample_rate: self.sample_rate as u32,
             tick,
@@ -1928,7 +2144,12 @@ impl Engine {
             let t = &mut self.transport;
             t.state = TransportState::Recording;
             t.set_pos(t.record_from as f64);
+            let tick = t.record_from as f64;
             self.seek_lanes();
+            self.push_recorded(Recorded::Rolling {
+                frame: self.block_frame + frame as u64,
+                tick,
+            });
             self.open_segment(frame, timing);
         }
         let t = &mut self.transport;
@@ -1948,7 +2169,8 @@ impl Engine {
                 t.lap += 1;
                 let lap = t.lap;
                 let t_us = self.dac_us(frame, timing).round() as u64;
-                self.push_recorded(Recorded::LapChanged { lap, t_us });
+                let frame = self.block_frame + frame as u64;
+                self.push_recorded(Recorded::LapChanged { lap, t_us, frame });
             }
             for i in 0..self.tracks.len() {
                 if went_round.contains(i) {
@@ -2082,6 +2304,9 @@ impl Engine {
             sum[..frames].fill(0.0);
         }
         self.click_sum[..frames].fill(0.0);
+        if let Some(feed) = self.input.as_deref_mut() {
+            feed.take(frames, &mut self.input_bus);
+        }
         let fade = fade_frames(self.sample_rate);
         // The returns and the master are not cut into stretches: they hear the tempo at the
         // first frame of the piece.
@@ -2114,6 +2339,9 @@ impl Engine {
                 ramp_frames: ramp_frames(self.sample_rate),
                 clock: &self.transport,
                 ticks: &self.auto_ticks,
+                input: &self.input_bus,
+                input_from: from,
+                input_live: self.input_live && self.input.is_some(),
                 ctx,
                 master_l: &mut master_l[from..to],
                 master_r: &mut master_r[from..to],
@@ -2180,6 +2408,7 @@ impl Engine {
         // After the master's strip: the test tone tells whether the output sounds, whatever
         // the song's mixer does.
         self.tone.add(io.left, io.right, self.sample_rate);
+        self.probe.add(io.left, io.right);
 
         let mut peak = [0.0f32; 2];
         for ((frame, (l, r)), click) in out
@@ -2218,6 +2447,10 @@ struct Mix<'a> {
     clock: &'a Transport,
     /// Where each [`MIX_STEP`] of the stretch ends ([`Engine::automate`]).
     ticks: &'a [f64],
+    /// The input's channels over the piece; the stretch begins at `input_from`.
+    input: &'a [Box<[f32]>; MAX_INPUT_CHANNELS],
+    input_from: usize,
+    input_live: bool,
     ctx: EffectContext,
     master_l: &'a mut [f32],
     master_r: &'a mut [f32],
@@ -2234,13 +2467,21 @@ impl Mix<'_> {
         let (left, right) = (&mut left[..frames], &mut right[..frames]);
         let aside_fading = track.aside_left > 0;
         let fading = track.fade_left > 0 || aside_fading;
-        match track.instrument.as_mut() {
-            Some(instrument) => instrument.render(left, right),
-            None if fading => {
+        match (track.voice.as_mut(), track.instrument.as_mut()) {
+            (Some(voice), _) => voice.render(
+                left,
+                right,
+                self.input,
+                self.input_from,
+                self.input_live,
+                self.ramp_frames,
+            ),
+            (None, Some(instrument)) => instrument.render(left, right),
+            (None, None) if fading => {
                 left.fill(0.0);
                 right.fill(0.0);
             }
-            None => {
+            (None, None) => {
                 retire_faded(track, self.retired);
                 return;
             }
@@ -2398,6 +2639,8 @@ pub struct EngineHandle {
     retired_sequences: Consumer<Box<Sequence>>,
     retired_maps: Consumer<Arc<TempoMap>>,
     retired_autos: Consumer<Box<AutoSet>>,
+    retired_inputs: Consumer<Box<InputFeed>>,
+    probes: Consumer<ProbeSent>,
     /// The map last sent to the engine, and its number.
     map: Arc<TempoMap>,
     map_gen: u32,
@@ -2560,7 +2803,24 @@ impl EngineHandle {
         while self.take_retired_automation().is_some() {
             count += 1;
         }
+        while self.retired_inputs.pop().is_ok() {
+            count += 1;
+        }
         count
+    }
+
+    /// The PC's input for the voices of the vocal tracks, or none. The feed before comes
+    /// back on a retired ring ([`EngineHandle::drop_retired`]). An engine made anew
+    /// ([`EngineHandle::rebuild`]) has none.
+    pub fn set_input(&mut self, feed: Option<InputFeed>) -> Result<(), EngineCommand> {
+        self.send(EngineCommand::SetInput {
+            feed: feed.map(Box::new),
+        })
+    }
+
+    /// The clicks of the latency measurement that left the engine.
+    pub fn pop_probe(&mut self) -> Option<ProbeSent> {
+        self.probes.pop().ok()
     }
 
     pub fn pop_recorded(&mut self) -> Option<Recorded> {

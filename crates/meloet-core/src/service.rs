@@ -40,7 +40,9 @@ use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::measure::{self, KeyToSound, PluginLog};
 use crate::mixbook::{self, MixBook};
-use crate::play::{AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot};
+use crate::play::{
+    AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot, VoiceSpec,
+};
 use crate::plugins::hosts::{
     DEFAULT_GEOMETRY, EditorKind, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded,
     ParamNow, SlotId, StartState,
@@ -54,11 +56,12 @@ use crate::sf2store::{self, Sf2Done, Sf2Store};
 use crate::songfile;
 use crate::sounds::{self, Library};
 use crate::state::{
-    Effect, Input, Model, PluginAsk, PluginSaid, REQUESTED_FRAMES, RecoveryStart, SaveTo,
-    retry_delay,
+    Effect, Input, Model, PluginAsk, PluginSaid, RecoveryStart, SaveTo, retry_delay,
 };
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
+/// How often at most the status line is told that the microphone is too loud.
+const MIC_LOUD_EVERY: Duration = Duration::from_secs(3);
 /// How long scanning waits for the screen at most (`PluginOptions::wait_for_screen`).
 const SCAN_WAITS_FOR_SCREEN: Duration = Duration::from_secs(10);
 /// How often the core thread reads the engine's reports while the transport moves.
@@ -301,6 +304,9 @@ struct Shared {
     /// the clock with.
     tempo_map: Mutex<(Arc<TempoMap>, u32)>,
     shell: Mutex<Option<ShellSink>>,
+    /// The open input's meters and the vocal tracks they are read for. The core thread
+    /// writes it, the telemetry thread reads it.
+    mics: Mutex<Option<input::MicFacts>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -342,9 +348,19 @@ impl Core {
             };
             Sf2Store::open(options.sf2_dir.clone(), Box::new(done))
         };
+        let wishes = (settings.sound.buffer, settings.sound.sample_rate);
         let mut model = Model::new(settings)
             .with_sounds(library.installed())
             .with_sf2(sf2.files().to_vec());
+        // For the measurements that need a loop with no cable: the monitor of this sink is
+        // the input.
+        if let Some(sink) = std::env::var("MELOET_INPUT_SINK_MONITOR")
+            .ok()
+            .filter(|s| !s.is_empty())
+        {
+            model = model.with_input_stand_in(&sink);
+        }
+        model.set_uid_seed(recovery::now_ms() ^ u64::from(std::process::id()) << 40);
         if let Some(plugin_options) = &options.plugins {
             model = model.with_plugin_places(plugin_options.usual_places.clone());
         }
@@ -362,6 +378,7 @@ impl Core {
             clock: Mutex::new(parts.handle.clock().clone()),
             tempo_map: Mutex::new(map_of(&parts.handle)),
             shell: Mutex::new(None),
+            mics: Mutex::new(None),
         });
         let meters = parts.handle.meters().clone();
         *lock(&shared.stream.track_seats) = model.track_seats();
@@ -433,8 +450,10 @@ impl Core {
                     library,
                     sf2,
                     model.engine_seats(),
+                    wishes,
                 ),
                 model,
+                input: input::InputSide::new(options.state_dir.clone()),
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
                 state_dir: options.state_dir.clone(),
@@ -881,6 +900,11 @@ struct Audio {
     sounds: Library,
     /// The same for the presets of the added SF2 files.
     sf2: Sf2Store,
+    /// The frames and the rate asked of the PC (the advanced sound settings).
+    wish_frames: u32,
+    wish_rate: u32,
+    /// The seats that sound the input, for the same as `seats`.
+    voices: Vec<(usize, VoiceSpec)>,
 }
 
 /// What the engine was given: the instrument of each of its tracks (the audition track is the
@@ -975,6 +999,7 @@ impl Audio {
         sounds: Library,
         sf2: Sf2Store,
         seats: Vec<EngineOp>,
+        (wish_frames, wish_rate): (u32, u32),
     ) -> Audio {
         let mut audio = Audio {
             handle,
@@ -986,6 +1011,9 @@ impl Audio {
             mix: MixBook::default(),
             sounds,
             sf2,
+            wish_frames,
+            wish_rate,
+            voices: Vec::new(),
         };
         for op in seats {
             audio.op(op);
@@ -1140,12 +1168,16 @@ impl Audio {
                 self.send_seat_op(op);
                 self.settle();
             }
+            for (seat, voice) in self.voices.clone() {
+                self.push(voice_command(seat, Some(voice)));
+                self.settle();
+            }
             self.engine.take().expect("put there above")
         });
         let target = OutputTarget {
             node_name: node_name.to_owned(),
         };
-        match AudioOutput::open(&target, REQUESTED_FRAMES, engine) {
+        match AudioOutput::open_at(&target, self.wish_frames, Some(self.wish_rate), engine) {
             Ok(stream) => {
                 let sample_rate = stream.sample_rate();
                 let meters = self.handle.meters();
@@ -1245,6 +1277,15 @@ impl Audio {
             }
             // The worker gives these the loaded plugin (`Worker::plug`).
             EngineOp::Plug { .. } | EngineOp::PlugSample { .. } => return,
+            EngineOp::Voice { seat, voice } => {
+                self.voices.retain(|(s, _)| *s != seat);
+                self.voices.extend(voice.map(|v| (seat, v)));
+                if self.stream.is_some() || self.engine.is_some() {
+                    self.push(voice_command(seat, voice));
+                    self.settle();
+                }
+                return;
+            }
             EngineOp::StopSample => EngineCommand::StopSample,
             EngineOp::SilentTracks { tracks } => EngineCommand::SetSilentTracks {
                 tracks: tracks.into_iter().collect::<TrackSet>(),
@@ -1285,6 +1326,20 @@ impl Audio {
     }
 }
 
+fn voice_command(seat: usize, voice: Option<VoiceSpec>) -> EngineCommand {
+    EngineCommand::SetVoice {
+        track: seat,
+        voice: voice.map(|v| {
+            let channels = v.input.channels();
+            meloet_engine::Voice {
+                left: channels[0],
+                right: channels[channels.len() - 1],
+                on: v.on,
+            }
+        }),
+    }
+}
+
 fn sequence_event(e: PlayEvent) -> SequenceEvent {
     SequenceEvent {
         tick: e.tick,
@@ -1305,7 +1360,7 @@ fn sequence_event(e: PlayEvent) -> SequenceEvent {
     }
 }
 
-fn record_report(r: Recorded, held: &Held) -> Option<RecordReport> {
+fn record_report(r: Recorded, held: &Held, file_frame: Option<f64>) -> Option<RecordReport> {
     Some(match r {
         Recorded::Started { from, .. } => RecordReport::Started {
             from,
@@ -1338,8 +1393,19 @@ fn record_report(r: Recorded, held: &Held) -> Option<RecordReport> {
             tick,
             lap,
         },
-        Recorded::LapChanged { lap, .. } => RecordReport::LapChanged { lap },
-        Recorded::Stopped { t_us, tick, lap } => RecordReport::Stopped { t_us, tick, lap },
+        Recorded::Rolling { frame, tick } => RecordReport::Rolling {
+            frame,
+            tick,
+            file_frame,
+        },
+        Recorded::LapChanged { lap, frame, .. } => RecordReport::LapChanged {
+            lap,
+            frame,
+            file_frame,
+        },
+        Recorded::Stopped {
+            t_us, tick, lap, ..
+        } => RecordReport::Stopped { t_us, tick, lap },
     })
 }
 
@@ -1370,6 +1436,7 @@ struct Worker {
     devices: Option<DevicesState>,
     audio_retry_at: Option<Instant>,
     plugins: Option<PluginSide>,
+    input: input::InputSide,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
@@ -1543,6 +1610,11 @@ impl Worker {
             let wait = wake.map_or(wait, |at| {
                 wait.min(Duration::from_micros(at.saturating_sub(monotonic_us())))
             });
+            let wait = if self.input.click_out() {
+                wait.min(input::CLICK_TICK)
+            } else {
+                wait
+            };
             match rx.recv_timeout(wait) {
                 Ok(Msg::Input(input, reply)) => {
                     let rev = self.handle(input);
@@ -1705,6 +1777,9 @@ impl Worker {
             if (self.model.wake_at_us()).is_some_and(|at| at <= monotonic_us()) {
                 self.handle(Input::Tick);
             }
+            if self.input.click_out() {
+                self.poll_input();
+            }
             if self.model.is_moving() && polled.elapsed() >= MOVING_TICK {
                 polled = Instant::now();
                 self.poll_engine();
@@ -1724,6 +1799,7 @@ impl Worker {
             }
         }
         self.housekeeping(true);
+        self.close_input();
         // Waits for the recovery file asked for so far.
         drop(self.recovery.take());
         drop(self.midi.take());
@@ -1735,13 +1811,15 @@ impl Worker {
     /// Takes in what the engine said about the recording, and what the listener hears now.
     fn poll_engine(&mut self) {
         while let Some(r) = self.audio.handle.pop_recorded() {
-            if let Some(report) = record_report(r, &self.shared.held) {
+            let file_frame = self.vocal_mark(&r);
+            if let Some(report) = record_report(r, &self.shared.held, file_frame) {
                 self.handle(Input::Record(report));
             }
         }
         if self.model.is_moving() {
             self.handle(Input::Tick);
         }
+        self.poll_input();
     }
 
     fn heard(&self) -> Option<Heard> {
@@ -1800,6 +1878,7 @@ impl Worker {
             for effect in self.model.handle(input) {
                 match effect {
                     Effect::OpenOutput { node_name } => {
+                        self.close_input();
                         inputs.push_back(match self.audio.open(&node_name, &self.shared.stream) {
                             Some(sample_rate) => Input::AudioOpened {
                                 node_name,
@@ -1816,7 +1895,36 @@ impl Worker {
                             inputs.push_back(Input::PluginsLost);
                         }
                     }
-                    Effect::CloseOutput => self.audio.close(&self.shared.stream),
+                    Effect::CloseOutput => {
+                        self.close_input();
+                        self.audio.close(&self.shared.stream);
+                    }
+                    Effect::OpenInput {
+                        node_name,
+                        sink_monitor,
+                    } => inputs.push_back(self.open_input(node_name, sink_monitor)),
+                    Effect::CloseInput => self.close_input(),
+                    Effect::StartVocalRecording {
+                        files,
+                        format,
+                        x_us,
+                    } => inputs.push_back(self.start_vocals(files, format, x_us)),
+                    Effect::StopVocalRecording => inputs.push_back(self.stop_vocals()),
+                    Effect::WriteRecNote(note) => {
+                        if let Some(dir) = &self.state_dir
+                            && let Err(e) = crate::vocalrec::write_note(dir, &note)
+                        {
+                            eprintln!("meloet: the note about the recording was not written: {e}");
+                        }
+                    }
+                    Effect::RemoveRecNote => {
+                        if let Some(dir) = &self.state_dir {
+                            crate::vocalrec::remove_note(dir);
+                        }
+                    }
+                    Effect::DropVocalFiles(names) => self.drop_vocal_files(&names),
+                    Effect::LatencyListen(on) => self.latency_listen(on),
+                    Effect::LatencyClick => self.latency_click(),
                     Effect::TestTone => self.audio.command(EngineCommand::TestTone),
                     Effect::AllNotesOff => {
                         self.shared.held.release_all();
@@ -1838,6 +1946,8 @@ impl Worker {
                     }
                     Effect::LiveNotes(notes) => self.hub.live_notes(notes),
                     Effect::SaveSettings(settings) => {
+                        self.audio.wish_frames = settings.sound.buffer;
+                        self.audio.wish_rate = settings.sound.sample_rate;
                         if let Some(dir) = &self.config_dir
                             && let Err(e) = settings::save(dir, &settings)
                         {
@@ -2015,6 +2125,7 @@ impl Worker {
             *told = seats;
         }
         drop(told);
+        self.sync_mics();
         self.hub.publish(self.model.view())
     }
 
@@ -2283,14 +2394,46 @@ pub(crate) fn recovery_start(dir: &Path) -> Option<RecoveryStart> {
             .ok()
             .map(Box::new)
     };
-    Some(match recovery::find(dir)? {
-        recovery::Found::Read(r) => RecoveryStart::Read {
-            saved: r.path.as_deref().and_then(read_saved),
-            song: Box::new(r.song),
-            path: r.path,
-            cause: r.cause,
-            written_ms: r.written_ms,
-        },
+    let found = recovery::find(dir);
+    // A recording of the input that was going on when meloet ended (docs/architecture.md
+    // 22-7). With a recovery file that does not read, the note waits for the next start.
+    let note = match found {
+        Some(recovery::Found::Unreadable { .. }) => None,
+        _ => crate::vocalrec::read_note(dir),
+    };
+    let found = match (found, &note) {
+        (Some(found), _) => found,
+        (None, None) => return None,
+        // Only the recording was left: as a recovery file written now, of the song as saved.
+        (None, Some(note)) => {
+            let path = note.song.as_ref().map(PathBuf::from);
+            let song =
+                (path.as_deref().and_then(read_saved)).map_or_else(Song::new_default, |s| *s);
+            recovery::Found::Read(Box::new(recovery::Recovered {
+                song,
+                path,
+                cause: meloet_protocol::RecoveryCause::Sudden,
+                written_ms: recovery::now_ms(),
+            }))
+        }
+    };
+    Some(match found {
+        recovery::Found::Read(r) => {
+            let mut song = r.song;
+            let vocals = note.and_then(|note| {
+                let kept = input::keep_vocals(dir, &note, &mut song.doc);
+                crate::vocalrec::remove_note(dir);
+                kept
+            });
+            RecoveryStart::Read {
+                saved: r.path.as_deref().and_then(read_saved),
+                song: Box::new(song),
+                path: r.path,
+                cause: r.cause,
+                written_ms: r.written_ms,
+                vocals,
+            }
+        }
         recovery::Found::Unreadable { kept, unread } => {
             eprintln!(
                 "meloet: the recovery file did not read; kept as {}",
@@ -2362,6 +2505,7 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
     let mut told_xruns = (0u64, 0u64);
     let mut next = Instant::now();
     let mut seat_peaks = vec![[0.0f32; 2]; meters.track_count() + 1];
+    let mut said_loud = None;
 
     while !shared.stop.load(Relaxed) {
         let stream = &shared.stream;
@@ -2437,7 +2581,14 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             transport,
             return_peaks: [meters.take_return_peak(0), meters.take_return_peak(1)],
             track_peaks,
-            mics: Vec::new(),
+            mics: {
+                let (mics, clipped) = input::mic_meters(shared);
+                if clipped && said_loud.is_none_or(|at: Instant| at.elapsed() >= MIC_LOUD_EVERY) {
+                    said_loud = Some(Instant::now());
+                    let _ = tx.send(Msg::Input(Input::MicClipped, None));
+                }
+                mics
+            },
         };
         let fresh = hub.take_telemetry_fresh();
         if fresh || !last.as_ref().is_some_and(|l| l.same_readings(&now)) {
@@ -2482,6 +2633,7 @@ fn steady_load(open: bool, permille: u32, last: Option<&Telemetry>) -> u16 {
     }
 }
 
+mod input;
 #[cfg(test)]
 mod plug_tests;
 #[cfg(test)]

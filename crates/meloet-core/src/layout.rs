@@ -206,6 +206,10 @@ impl Bands {
         self.side_open.push(panel);
     }
 
+    pub fn bottom_is_open(&self, band: BottomBand) -> bool {
+        self.bottom_open.contains(&band)
+    }
+
     pub fn side_is_open(&self, panel: SidePanel) -> bool {
         self.side_open.contains(&panel)
     }

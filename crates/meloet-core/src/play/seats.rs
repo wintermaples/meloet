@@ -119,7 +119,7 @@ impl Play {
     /// Where the keys sound: the selected track, or what the shelf auditions.
     pub(super) fn target_seat(&self) -> Option<usize> {
         self.audition_seat()
-            .or_else(|| self.seats.of(self.song.session.play_target?))
+            .or_else(|| self.seats.of(self.song.keys_target()?))
     }
 
     /// Tells the engine when the keys sound somewhere else now.

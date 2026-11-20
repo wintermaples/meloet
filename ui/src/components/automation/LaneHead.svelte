@@ -45,7 +45,8 @@
   const value = $derived(position === null ? null : positionText(lane.name, position));
 
   let box = $state<HTMLElement>();
-  let visible = $state(true);
+  // IntersectionObserver のない所（テスト）では、いつも見えているとする。
+  let visible = $state(typeof IntersectionObserver === "undefined");
   onMount(() => {
     if (!box || typeof IntersectionObserver === "undefined") return;
     const seen = new IntersectionObserver((entries) => (visible = entries[entries.length - 1]!.isIntersecting));
@@ -54,6 +55,22 @@
   });
   /** いまの値の字が変わるコマは、上の canvas（trackMeters）も出す: 字の四角が canvas の中に入り、再生の線の四角を切らない。 */
   const stamp = $derived(position ?? -1);
+  /** 見えている間だけ、字の箱を canvas の下に入れる（見えない見出しの箱を、WebGL の係が毎コマ測らない）。 */
+  function coverWhile(node: HTMLElement, now: { on: boolean; stamp: number }) {
+    let slot = now.on ? glSlot(node, { kind: "cover", stamp: now.stamp }) : null;
+    return {
+      update(next: { on: boolean; stamp: number }) {
+        if (!next.on) {
+          slot?.destroy();
+          slot = null;
+        } else if (slot) slot.update({ kind: "cover", stamp: next.stamp });
+        else slot = glSlot(node, { kind: "cover", stamp: next.stamp });
+      },
+      destroy() {
+        slot?.destroy();
+      },
+    };
+  }
 
   function fold(): void {
     send({ type: "foldLane", track: track.id, target: lane.target, folded: true });
@@ -80,7 +97,7 @@
         data-test="lane-restore"
         onclick={() => usable && send({ type: "restoreLane", track: track.id, target: lane.target })}>{t("lane.restore")}</button
       >
-      <span class="m-lbl live" use:glSlot={{ kind: "cover", stamp }}
+      <span class="m-lbl live" use:coverWhile={{ on: visible, stamp }}
         ><span class="in" data-test="lane-state"
           >{#if value === null}{t("lane.restingBare")}{:else}{@render parts(textParts("lane.resting", { value }))}{/if}</span
         ></span
@@ -94,7 +111,7 @@
         data-test="lane-write"
         onclick={() => !busy && send({ type: "setLaneWrite", track: track.id, target: lane.target, on: !armed })}>{t("lane.write")}</button
       >
-      <span class="m-lbl live" use:glSlot={{ kind: "cover", stamp }}
+      <span class="m-lbl live" use:coverWhile={{ on: visible, stamp }}
         ><span class="in" data-test="lane-state"
           >{#if writing}{t("lane.writing")}{:else if value !== null}{@render parts(textParts("lane.now", { value, count: lane.points }))}{:else}{@render parts(
               textParts("lane.count", { count: lane.points }),
@@ -108,7 +125,7 @@
 <style>
   /* 帯の見出し（モック F6-AutoRec: 高さ size.lane、地 gray.2、左のあき space.6）。 */
   .lane-head {
-    /* 縦に送った外の帯は、中を描かない ・ レイアウトしない（64 本の曲。高さは決まっている）。 */
+    /* 縦に送った外の見出しは、中を描かない ・ レイアウトしない（64 本の曲。高さは決まっている）。 */
     content-visibility: auto;
     height: var(--size-lane);
     display: flex;

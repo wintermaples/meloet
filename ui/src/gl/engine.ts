@@ -37,6 +37,16 @@ interface Slot {
   y0: number;
   x1: number;
   y1: number;
+  /**
+   * The nearest box around the slot marked `data-gl-clip` (inside the region box), or null: a box that scrolls its
+   * content. The slot is drawn only where that box shows it, and the canvas covers only that part.
+   */
+  clip: HTMLElement | null;
+  /** The part of the box that shows (the box cut to `clip`). */
+  vx0: number;
+  vy0: number;
+  vx1: number;
+  vy1: number;
 }
 
 /** The one canvas of a region box, covering the part of the box (and the window) that its slots cover. */
@@ -125,6 +135,8 @@ export class Engine {
   };
   private readonly sizes = new ResizeObserver(this.again);
   private readonly stop: (() => void)[] = [];
+  /** The boxes of the `data-gl-clip` elements, measured once a frame. */
+  private readonly clips = new Map<HTMLElement, DOMRect>();
   private readonly isDown = (note: number) => this.held.isDown(note);
   private readonly box: Box = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** The page gives no place to put a copy of a canvas: regions below 60 Hz are drawn whole, less often. */
@@ -175,7 +187,7 @@ export class Engine {
   }
 
   private attach(node: HTMLElement, slot: GlSlot): void {
-    const s: Slot = { node, slot, region: null, x0: 0, y0: 0, x1: 0, y1: 0 };
+    const s: Slot = { node, slot, region: null, x0: 0, y0: 0, x1: 0, y1: 0, clip: null, vx0: 0, vy0: 0, vx1: 0, vy1: 0 };
     this.slots.set(node, s);
     this.pending.add(s);
     this.sizes.observe(node);
@@ -225,6 +237,8 @@ export class Engine {
       const after = r.slots.findIndex((o) => o.node.compareDocumentPosition(s.node) & Node.DOCUMENT_POSITION_PRECEDING);
       r.slots.splice(after < 0 ? r.slots.length : after, 0, s);
       s.region = r;
+      const clip = s.node.closest<HTMLElement>("[data-gl-clip]");
+      s.clip = clip && found.host.contains(clip) && clip !== found.host ? clip : null;
       r.dirty = r.urgent = true;
     }
   }
@@ -327,7 +341,8 @@ export class Engine {
       r.urgent = false;
       r.dirty = false;
       due.push([r, r.host.getBoundingClientRect()]);
-      for (const s of r.slots) measure(s, dpr);
+      this.clips.clear();
+      for (const s of r.slots) measure(s, dpr, this.clips);
     }
     for (const [r, host] of due) this.place(r, host, dpr);
     if (p) p.measureMs = performance.now() - t;
@@ -361,11 +376,11 @@ export class Engine {
     let x1 = -Infinity;
     let y1 = -Infinity;
     for (const s of r.slots) {
-      if (s.x1 <= s.x0 || s.y1 <= s.y0) continue;
-      x0 = Math.min(x0, s.x0);
-      y0 = Math.min(y0, s.y0);
-      x1 = Math.max(x1, s.x1);
-      y1 = Math.max(y1, s.y1);
+      if (s.vx1 <= s.vx0 || s.vy1 <= s.vy0) continue;
+      x0 = Math.min(x0, s.vx0);
+      y0 = Math.min(y0, s.vy0);
+      x1 = Math.max(x1, s.vx1);
+      y1 = Math.max(y1, s.vy1);
     }
     x0 = Math.max(x0, Math.round(host.left * dpr), 0);
     y0 = Math.max(y0, Math.round(host.top * dpr), 0);
@@ -395,21 +410,21 @@ export class Engine {
     const right = x0 + width;
     const bottom = y0 + height;
     const n = r.tiles.length;
-    const runOf = (s: Slot) => Math.min(n - 1, Math.max(0, Math.floor((((s.x0 + s.x1) / 2 - x0) * n) / width)));
+    const runOf = (s: Slot) => Math.min(n - 1, Math.max(0, Math.floor((((s.vx0 + s.vx1) / 2 - x0) * n) / width)));
     let widest = 0;
     let highest = 0;
     r.tiles.forEach((tile, i) => {
       // Page order, as in the canvas of a region without tiles.
-      tile.slots = r.slots.filter((s) => s.x1 > x0 && s.x0 < right && s.y1 > y0 && s.y0 < bottom && runOf(s) === i);
+      tile.slots = r.slots.filter((s) => s.vx1 > x0 && s.vx0 < right && s.vy1 > y0 && s.vy0 < bottom && runOf(s) === i);
       let tx0 = Infinity;
       let ty0 = Infinity;
       let tx1 = -Infinity;
       let ty1 = -Infinity;
       for (const s of tile.slots) {
-        tx0 = Math.min(tx0, s.x0);
-        ty0 = Math.min(ty0, s.y0);
-        tx1 = Math.max(tx1, s.x1);
-        ty1 = Math.max(ty1, s.y1);
+        tx0 = Math.min(tx0, s.vx0);
+        ty0 = Math.min(ty0, s.vy0);
+        tx1 = Math.max(tx1, s.vx1);
+        ty1 = Math.max(ty1, s.vy1);
       }
       tx0 = Math.max(tx0, x0);
       ty0 = Math.max(ty0, y0);
@@ -530,10 +545,10 @@ export class Engine {
       box.y0 = s.y0 - y0;
       box.x1 = s.x1 - x0;
       box.y1 = s.y1 - y0;
-      const cx0 = Math.max(box.x0, 0);
-      const cy0 = Math.max(box.y0, 0);
-      const cx1 = Math.min(box.x1, width);
-      const cy1 = Math.min(box.y1, height);
+      const cx0 = Math.max(s.vx0 - x0, 0);
+      const cy0 = Math.max(s.vy0 - y0, 0);
+      const cx1 = Math.min(s.vx1 - x0, width);
+      const cy1 = Math.min(s.vy1 - y0, height);
       if (cx1 <= cx0 || cy1 <= cy0) continue;
       out.clip(cx0, cy0, cx1, cy1);
       this.paint(out, s.slot, box, nowMs, dpr);
@@ -633,10 +648,17 @@ function put(canvas: HTMLCanvasElement, h: HTMLElement, host: DOMRect, x0: numbe
   style.height = `${height / dpr}px`;
 }
 
-function measure(s: Slot, dpr: number): void {
+function measure(s: Slot, dpr: number, clips: Map<HTMLElement, DOMRect>): void {
   const r = s.node.getBoundingClientRect();
-  s.x0 = Math.round(r.left * dpr);
-  s.y0 = Math.round(r.top * dpr);
-  s.x1 = Math.round(r.right * dpr);
-  s.y1 = Math.round(r.bottom * dpr);
+  s.x0 = s.vx0 = Math.round(r.left * dpr);
+  s.y0 = s.vy0 = Math.round(r.top * dpr);
+  s.x1 = s.vx1 = Math.round(r.right * dpr);
+  s.y1 = s.vy1 = Math.round(r.bottom * dpr);
+  if (!s.clip) return;
+  let c = clips.get(s.clip);
+  if (!c) clips.set(s.clip, (c = s.clip.getBoundingClientRect()));
+  s.vx0 = Math.max(s.vx0, Math.round(c.left * dpr));
+  s.vy0 = Math.max(s.vy0, Math.round(c.top * dpr));
+  s.vx1 = Math.min(s.vx1, Math.round(c.right * dpr));
+  s.vy1 = Math.min(s.vy1, Math.round(c.bottom * dpr));
 }

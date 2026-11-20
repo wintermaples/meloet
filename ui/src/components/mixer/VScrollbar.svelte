@@ -6,7 +6,14 @@
   import { metrics } from "../metrics.svelte";
   import { onDragCancel } from "../pianoroll/view.svelte";
 
-  let { total, visible, offset, onscroll }: { total: number; visible: number; offset: number; onscroll: (offset: number) => void } = $props();
+  /** test: data-test の名前（アレンジの縦の棒も、この部品）。 */
+  let {
+    total,
+    visible,
+    offset,
+    onscroll,
+    test = "mixer-vscrollbar",
+  }: { total: number; visible: number; offset: number; onscroll: (offset: number) => void; test?: string } = $props();
 
   const minLength = $derived(metrics.px("part.scrollbar.width"));
   const box: ScrollBox = $derived({ view: visible, content: total, top: offset });
@@ -51,7 +58,7 @@
 
 {#if thumb}
   <!-- マウスだけの部品。ホイールは、ストリップの箱がそのまま受ける。 -->
-  <div class="vbar" role="presentation" aria-hidden="true" bind:this={bar} onpointerdown={onBarDown} data-test="mixer-vscrollbar">
+  <div class="vbar" role="presentation" aria-hidden="true" bind:this={bar} onpointerdown={onBarDown} data-test={test}>
     <div
       role="presentation"
       class="thumb"

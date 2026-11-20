@@ -2,6 +2,8 @@
 // `use:glSlot={...}`, inside a box (or on the same box) marked with `use:glRegion={name}`. The engine
 // (engine.ts) puts one canvas into each region's box, as big as the part of the box its slots cover,
 // above what the box holds, and draws every slot of the region into it when the picture changes.
+// A box inside the region that scrolls its content is marked `data-gl-clip`: the slots in it are drawn
+// only where that box shows them (the arrange's track rows, scrolled up and down below the tempo band).
 
 import type { ColorName } from "../design/tokens";
 import type { Batch } from "./batch";

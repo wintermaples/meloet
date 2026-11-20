@@ -21,6 +21,7 @@
   import { platformOf } from "../keys/keys";
   import HScrollbar from "../lib/HScrollbar.svelte";
   import TrackHeads from "./TrackHeads.svelte";
+  import VScrollbar from "./mixer/VScrollbar.svelte";
   import { term } from "../lib/tip.svelte";
   import { openContextMenu, type MenuEntry, type MenuRow } from "./menu/contextMenu.svelte";
   import { current, send } from "../state/app.svelte";
@@ -738,14 +739,68 @@
 
   function wheel(e: WheelEvent): void {
     let dx = e.deltaX;
-    if (dx === 0 && e.shiftKey) dx = e.deltaY;
-    if (dx === 0) return;
-    e.preventDefault();
-    const unit = e.deltaMode === 1 ? metrics.px("size.row") : e.deltaMode === 2 ? viewWidth : 1;
-    const max = G.scrollMax(song.tracks, song.loopRange, transport.position, { pxPerTick, width: viewWidth });
-    scrollTick = G.wheelScroll(view.scrollX, dx * unit, max) / pxPerTick;
-    follow = false;
+    let dy = e.deltaY;
+    if (e.shiftKey) {
+      if (dx === 0) dx = dy;
+      dy = 0;
+    }
+    if (dx !== 0) {
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? metrics.px("size.row") : e.deltaMode === 2 ? viewWidth : 1;
+      const max = G.scrollMax(song.tracks, song.loopRange, transport.position, { pxPerTick, width: viewWidth });
+      scrollTick = G.wheelScroll(view.scrollX, dx * unit, max) / pxPerTick;
+      follow = false;
+    }
+    if (dy !== 0 && wheelRows(dy, e.deltaMode)) e.preventDefault();
   }
+
+  // ---- トラックの行を縦に送る（仮の形。user:2026-11-20。見出しの列とレーンを同じだけ。上の目盛 ・ マーカー ・ テンポの行は動かない） ----
+  // 送った位置は画面だけが持つ（曲にも、取り消しにも入らない）。送るのは、ブラウザのスクロール（scrollTop）: 見えない行は
+  // content-visibility で描かれず、WebGL の印は箱ごと動く（gl/engine.ts は data-gl-clip の箱で切る）。
+
+  let lanesView = $state<HTMLElement>();
+  let headsView = $state<HTMLElement>();
+  let rowsHeight = $state(0);
+  let scrollY = $state(0);
+  /** 行ぜんぶの高さ。見出しの列のいちばん下には「＋ トラック」の行があるので、レーンの側も同じだけあける。 */
+  const rowsTotal = $derived(rows.height + metrics.px("mock.arrange.add-track"));
+  const maxScrollY = $derived(Math.max(0, rowsTotal - rowsHeight));
+  /** 行がへったり窓が高くなったりしたら、下のはしで止める。 */
+  const shownY = $derived(Math.min(scrollY, maxScrollY));
+  $effect(() => {
+    const y = shownY;
+    if (lanesView) lanesView.scrollTop = y;
+    if (headsView) headsView.scrollTop = y;
+  });
+  const rowsScroll = (y: number) => (scrollY = Math.max(0, Math.min(y, maxScrollY)));
+
+  /** ホイールで縦に送る。クリップのドラッグ中と囲んでえらぶ間は送らない（つかんだ物が、ポインタの下からずれる）。送ったら true。 */
+  function wheelRows(dy: number, mode: number): boolean {
+    if (layout.arrangeOverview || clipDrag || boxSel || maxScrollY <= 0) return false;
+    const unit = mode === 1 ? metrics.px("size.row") : mode === 2 ? rowsHeight : 1;
+    rowsScroll(shownY + dy * unit);
+    return true;
+  }
+  function wheelHeads(e: WheelEvent): void {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.deltaY === 0) return;
+    if (wheelRows(e.deltaY, e.deltaMode)) e.preventDefault();
+  }
+
+  // えらんだトラックが変わった時（キー、足した時）は、そのトラックの行と帯が見える所まで送る。再生や録音では送らない。
+  let seenTarget: number | null | undefined = undefined;
+  let seenTracks = 0;
+  $effect(() => {
+    const target = song.playTarget;
+    const count = song.tracks.length;
+    untrack(() => {
+      const row = song.tracks.findIndex((tr) => tr.id === target);
+      if (seenTarget !== undefined && (target !== seenTarget || count > seenTracks) && row >= 0) {
+        rowsScroll(G.revealRange(rows.tops[row]!, rows.bottoms[row]!, shownY, rowsHeight));
+      }
+      seenTarget = target;
+      seenTracks = count;
+    });
+  });
 
   let drag: { d: G.RulerDrag; downX: number; left: number } | null = null;
   const still = () => metrics.px("space.1");
@@ -1030,7 +1085,7 @@
   </section>
 {:else}
   <section class="arrange" style:height="{height}px" onpointerdowncapture={focusArrange}>
-    <div class="head" use:glRegion={"trackMeters"}>
+    <div class="head" onwheel={wheelHeads}>
       <div class="row title-row">
         <span class="m-name" use:term={"アレンジ"}>{t("arrange.title")}</span>
         <span class="zoom">
@@ -1070,7 +1125,9 @@
           </div>
         {/if}
       </div>
-      <TrackHeads />
+      <div class="heads-view" bind:this={headsView} use:glRegion={"trackMeters"}>
+        <TrackHeads />
+      </div>
     </div>
 
     <div class="time" bind:this={timeBox} bind:clientWidth={timeWidth} onwheel={wheelOn(() => timeBox)}>
@@ -1093,10 +1150,11 @@
       <!-- テンポの帯の線と点も、クリップと同じ arrangeLanes の 1 枚に描く（区画をふやさない）。区画の箱は、帯とクリップの場所を囲む。 -->
       <div class="lanes-wrap" use:glRegion={"arrangeLanes"}>
       <TempoBand {view} {map} {timeline} {now} {busy} />
+      <div class="lanes-box">
+      <div class="lanes-view" data-gl-clip bind:this={lanesView} bind:clientHeight={rowsHeight} use:glSlot={{ kind: "gridLines", lines: gridLines, beats: gridBeats }}>
       <div
         class="lanes"
         role="presentation"
-        use:glSlot={{ kind: "gridLines", lines: gridLines, beats: gridBeats }}
         bind:this={lanesBox}
         style:cursor={laneCursor}
         onpointerdown={lanesDown}
@@ -1189,7 +1247,10 @@
             <span class="m-num m-lbl">{t("arrange.takeKey")}</span>
           </div>
         {/if}
+      </div>
+      </div>
         <HScrollbar total={Math.max(scrollRight, view.scrollX) + viewWidth} visible={viewWidth} offset={view.scrollX} onscroll={barScroll} />
+        <VScrollbar total={rowsTotal} visible={rowsHeight} offset={shownY} onscroll={rowsScroll} test="arrange-vscrollbar" />
       </div>
       </div>
       {#if readingBox}
@@ -1268,11 +1329,20 @@
   .head {
     width: var(--size-col-head);
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
     background: var(--color-gray-3);
     border-right: var(--line-hair) solid var(--color-gray-6);
     overflow: hidden;
   }
+  /* トラックの見出しの行。レーンと同じだけ縦に送る（scrollTop は Arrange が書く）。上の 3 行は動かない。 */
+  .heads-view {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
   .row {
+    flex-shrink: 0;
     height: var(--size-row);
     display: flex;
     align-items: center;
@@ -1292,6 +1362,7 @@
     padding: 0;
   }
   .tempo-head {
+    flex-shrink: 0;
     background: var(--color-gray-4);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
@@ -1355,10 +1426,26 @@
     flex-direction: column;
     position: relative;
   }
-  .lanes {
+  /* トラックの行の場所。横と縦の棒は、この箱に重ねる。 */
+  .lanes-box {
     flex: 1;
     min-height: 0;
     position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  /* 見えている所（小節の線は、ここいっぱいに描く）。中の行は縦に送る。 */
+  .lanes-view {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  /* 行ぜんぶ（見えている所より高ければ、送れる）。クリップの絵と名前は、この箱の左上から。 */
+  .lanes {
+    position: relative;
+    min-height: 100%;
+    box-sizing: border-box;
+    padding-bottom: var(--mock-arrange-add-track);
   }
   .lane {
     height: var(--size-track);

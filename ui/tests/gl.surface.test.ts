@@ -483,6 +483,33 @@ describe("WebGL の面", () => {
     engine.destroy();
   });
 
+  it("中身を送る箱（data-gl-clip）の中の slot は、その箱が見せている所だけ描く。面も、そこまで（アレンジのトラックの行）", () => {
+    const { made, drawn, frame } = fakePage();
+    // 区画の箱（y 100〜400）。上の 50 は送らない帯、その下（y 150〜400）が、中身を送る箱。
+    const wrap = region(box(new DOMRect(0, 100, 300, 300)), "arrangeLanes");
+    slot(box(new DOMRect(0, 100, 300, 50), wrap), { kind: "rects", rects: [{ x: 10, y: 10, w: 20, h: 20, color: "color.rec" }] });
+    const view = box(new DOMRect(0, 150, 300, 250), wrap);
+    view.setAttribute("data-gl-clip", "");
+    // 中身は 1000 高く、120 上へ送ってある（y 30 から）。四角は、中身の y 0・100・200・900。
+    const rows = box(new DOMRect(0, 30, 300, 1000), view);
+    slot(rows, { kind: "rects", rects: [0, 100, 200, 900].map((y) => ({ x: 0, y, w: 50, h: 40, color: "color.accent" as const })) });
+    const engine = new Engine();
+    frame();
+
+    const c = made[0]!.canvas;
+    expect(c.parentElement).toBe(wrap);
+    // 面は区画の箱いっぱい（上の帯から、送る箱の下まで）。送る箱の上へはみ出した中身の分は、広がらない。
+    expect([c.width, c.height, c.style.top]).toEqual([300, 300, "0px"]);
+    const accent = f32(rgb("color.accent")).join();
+    const got = drawn.at(-1)!.rects.filter((r) => r.slice(4).join() === accent).map((r) => r.slice(0, 4));
+    // 窓の y 30（見えない）、130〜170（送る箱の上 150 で切る）、230〜270、930（箱の下の外）。面の左上は y 100。
+    expect(got).toEqual([
+      [0, 50, 50, 70],
+      [0, 130, 50, 170],
+    ]);
+    engine.destroy();
+  });
+
   it("区画の数: 窓の高さと帯のどの組み合わせでも 10 枚まで。組み合わせを全部わたり歩いても、作る文脈は 10 個", () => {
     const { made, frame } = fakePage();
     const engine = new Engine();

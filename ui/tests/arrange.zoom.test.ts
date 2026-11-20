@@ -117,7 +117,7 @@ describe("横の棒（仕様書 2 章「スクロールの棒」を横にした�
     mounted = null;
     show(longSong());
     const bar = q('[data-testid="hscrollbar"]')!;
-    expect(bar.parentElement!.classList.contains("lanes")).toBe(true);
+    expect(bar.parentElement!.classList.contains("lanes-box")).toBe(true);
     // 右のはし: 34 小節目の頭（33 × 64 = 2112 px）が画面のまん中まで。中身は 2112 − 500 + 1000 = 2612。
     expect(Number(bar.dataset.total)).toBeCloseTo(2612, 5);
     expect(bar.dataset.visible).toBe(String(WIDTH));
@@ -196,5 +196,85 @@ describe("全体図の「見えている範囲の枠」", () => {
     const top = accent()[0]!;
     expect(top.x).toBeGreaterThanOrEqual(0);
     expect(top.x + top.w).toBeLessThanOrEqual(WIDTH);
+  });
+});
+
+describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", () => {
+  /** トラック 6 本（行の高さ 64 × 6 = 384）。見えている高さは、上の beforeAll の 39。 */
+  const six = (target = 100) =>
+    app.stateWith((s) => {
+      const first = s.song.tracks[0]!;
+      s.song.tracks = Array.from({ length: 6 }, (_, i) => ({ ...first, id: 100 + i, number: i + 1, clips: i === 0 ? [clip(1, 1, 5)] : [] }));
+      s.song.playTarget = target;
+    });
+  const wheel = (el: Element, init: WheelEventInit) => {
+    const e = new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(e);
+    flushSync();
+    return e;
+  };
+  const tops = () => [q(".lanes-view")!.scrollTop, q(".heads-view")!.scrollTop];
+
+  it("ふつうのホイールで、見出しの列とレーンを同じだけ送る。下のはしで止まる。上の行は、送る箱の外", () => {
+    show(six());
+    expect(tops()).toEqual([0, 0]);
+    const e = wheel(q(".time")!, { deltaY: 30 });
+    expect(e.defaultPrevented).toBe(true);
+    expect(tops()).toEqual([30, 30]);
+    wheel(q(".head")!, { deltaY: 50 });
+    expect(tops()).toEqual([80, 80]);
+    wheel(q(".time")!, { deltaY: 10000 });
+    expect(tops()).toEqual([384 + 32 - 39, 384 + 32 - 39]);
+    wheel(q(".time")!, { deltaY: -10000 });
+    expect(tops()).toEqual([0, 0]);
+    for (const sel of [".ruler", ".tempo-head", ".title-row"]) expect(q(sel)!.closest(".lanes-view, .heads-view"), sel).toBeNull();
+    expect(q(".heads-view")!.dataset.glRegion).toBe("trackMeters");
+    expect(q(".lanes-view")!.hasAttribute("data-gl-clip")).toBe(true);
+  });
+
+  it("Shift ＋ ホイールは横、Mod ＋ ホイールは拡大のまま（縦には送らない）", () => {
+    show(six());
+    wheel(q(".time")!, { deltaY: 40, shiftKey: true });
+    expect(tops()).toEqual([0, 0]);
+    wheel(q(".time")!, { deltaY: -100, ctrlKey: true });
+    expect(tops()).toEqual([0, 0]);
+  });
+
+  it("右はしに縦の棒（入りきるときは出さない）。棒で送れる", () => {
+    show(six());
+    const bar = q("[data-test=arrange-vscrollbar]")!;
+    expect(bar.parentElement!.classList.contains("lanes-box")).toBe(true);
+    bar.getBoundingClientRect = () => new DOMRect(0, 0, 8, 39);
+    bar.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientY: 38 }));
+    flushSync();
+    expect(tops()[0]).toBeGreaterThan(0);
+    expect(tops()[0]).toBe(tops()[1]);
+    unmount(mounted!);
+    mounted = null;
+    const h = Object.getOwnPropertyDescriptor(proto, "clientHeight")!;
+    Object.defineProperty(proto, "clientHeight", { configurable: true, get: () => 1000 });
+    try {
+      show(six());
+      expect(q("[data-test=arrange-vscrollbar]")).toBeNull();
+      expect(wheel(q(".time")!, { deltaY: 30 }).defaultPrevented).toBe(false);
+    } finally {
+      Object.defineProperty(proto, "clientHeight", h);
+    }
+  });
+
+  it("えらんだトラックが変わったら、そのトラックが見える所まで送る。同じトラックのままなら送らない", () => {
+    show(six());
+    app.setState(six(105));
+    flushSync();
+    // 6 本めの行は 320〜384。見えている 39 より高いので、行の上に合わせる。
+    expect(tops()).toEqual([320, 320]);
+    wheel(q(".time")!, { deltaY: -100 });
+    expect(tops()).toEqual([220, 220]);
+    app.setState(six(105));
+    flushSync();
+    expect(tops()).toEqual([220, 220]);
+    app.setState(six(100));
+    flushSync();
+    expect(tops()).toEqual([0, 0]);
   });
 });

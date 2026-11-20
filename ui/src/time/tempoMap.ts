@@ -1,7 +1,7 @@
 // 曲のテンポと拍子の地図（docs/architecture.md 21-1）。crates/meloet-model/src/tempo_map.rs と同じ式で、
 // 同じ答えを出す（tempoMap.table.json と相対 1e-9 まで合う。ui/tests/tempoMap.test.ts）。DOM も Tauri も知らない。
 //
-// テンポは「その所の拍子の 1 拍（下の数の音符）の、1 分間の数」。だんだんはティックに対してまっすぐ。
+// テンポは、拍子によらず「1 分間の 4 分音符の数」（22-2）。だんだんはティックに対してまっすぐ。
 // 0 より前は、曲の頭のテンポと拍子がそのまま前へ続く。
 //
 // 作ったあとは変えない。どの関数も、呼ぶたびに配列を作らない（60 Hz で使う）。いくつも値を返す関数は、
@@ -9,8 +9,6 @@
 
 import type { TimelineView } from "../bridge/generated/TimelineView";
 import { TICKS_PER_QUARTER } from "./ticks";
-
-const DISPLAY_TICKS_PER_BEAT = 480;
 
 /** 地図を作るのに要る所（`timeline` の区画をそのまま渡せる）。 */
 export type TimelineShape = Pick<TimelineView, "tempoBpm" | "meterNum" | "meterDen" | "headRamp" | "tempoPoints" | "meterChanges">;
@@ -24,7 +22,7 @@ export interface MeterAt {
   barTick: number;
 }
 
-/** 表示の形: 小節と拍は 1 から、ティックは 1 拍の 480 分の 1。 */
+/** 表示の形: 小節と拍は 1 から、ティックはその拍の中のティックそのまま。 */
 export interface BarBeatTick {
   bar: number;
   beat: number;
@@ -43,11 +41,24 @@ const ln1pOver = (x: number) => (x === 0 ? 1 : Math.log1p(x) / x);
 /** `(exp(y) − 1) / y`。0 で段なく 1 になる。 */
 const expm1Over = (y: number) => (y === 0 ? 1 : Math.expm1(y) / y);
 
-const secondsOf = (u: number, tpb: number, a: number, s: number) => ((u * 60) / (tpb * a)) * ln1pOver((s * u) / a);
+const Q = TICKS_PER_QUARTER;
 
-function ticksOf(seconds: number, tpb: number, a: number, s: number): number {
+const secondsOf = (u: number, a: number, s: number) => ((u * 60) / (Q * a)) * ln1pOver((s * u) / a);
+
+function ticksOf(seconds: number, a: number, s: number): number {
   const minutes = seconds / 60;
-  return a * tpb * minutes * expm1Over(s * tpb * minutes);
+  return a * Q * minutes * expm1Over(s * Q * minutes);
+}
+
+/** メトロノームが鳴る間のティック: 6/8 ・ 9/8 ・ 12/8 は付点 4 分、そのほかは 1 拍（crates/meloet-model の `Meter::ticks_per_click`）。 */
+export function ticksPerClick(num: number, den: number): number {
+  const perBeat = (Q * 4) / den;
+  return den === 8 && (num === 6 || num === 9 || num === 12) ? 3 * perBeat : perBeat;
+}
+
+/** 1 小節でメトロノームが鳴る数（6/8 は 2、5/8 は 5、4/4 は 4）。 */
+export function clicksPerBar(num: number, den: number): number {
+  return (num * ((Q * 4) / den)) / ticksPerClick(num, den);
 }
 
 /** `xs[i] <= x` である最後の i（なければ 0）。xs は小さい順で、空でない。 */
@@ -66,8 +77,6 @@ export class TempoMap {
   // かけら（1 つの拍子と 1 本のテンポの線が続く所）。u は tick0 からのティック。
   private readonly pTick0: Float64Array;
   private readonly pSec0: Float64Array;
-  /** 1 拍のティック。 */
-  private readonly pTpb: Float64Array;
   /** tick0 でのテンポ。 */
   private readonly pA: Float64Array;
   /** 1 ティックあたりのテンポの増え。だんだんでなければ 0。 */
@@ -124,27 +133,22 @@ export class TempoMap {
     const n = cuts.length;
     this.pTick0 = new Float64Array(n);
     this.pSec0 = new Float64Array(n);
-    this.pTpb = new Float64Array(n);
     this.pA = new Float64Array(n);
     this.pS = new Float64Array(n);
     let pi = 0;
-    let ri = 0;
     let sec0 = 0;
     for (let i = 0; i < n; i++) {
       const cut = cuts[i]!;
       while (pi + 1 < points.length && points[pi + 1]!.tick <= cut) pi++;
-      while (ri + 1 < rn && this.rTick0[ri + 1]! <= cut) ri++;
       const point = points[pi]!;
       const next = points[pi + 1];
       const s = next && point.ramp ? (next.tempoBpm - point.tempoBpm) / (next.tick - point.tick) : 0;
-      const tpb = this.rPerBeat[ri]!;
       const a = point.tempoBpm + s * (cut - point.tick);
       this.pTick0[i] = cut;
       this.pSec0[i] = sec0;
-      this.pTpb[i] = tpb;
       this.pA[i] = a;
       this.pS[i] = s;
-      if (i + 1 < n) sec0 += secondsOf(cuts[i + 1]! - cut, tpb, a, s);
+      if (i + 1 < n) sec0 += secondsOf(cuts[i + 1]! - cut, a, s);
     }
   }
 
@@ -155,29 +159,23 @@ export class TempoMap {
 
   /** 曲の頭から tick までの秒。頭より前は負。 */
   secondsAt(tick: number): number {
-    if (tick < 0) return secondsOf(tick, this.pTpb[0]!, this.pA[0]!, 0);
+    if (tick < 0) return secondsOf(tick, this.pA[0]!, 0);
     const i = lastAtOrBefore(this.pTick0, tick);
-    return this.pSec0[i]! + secondsOf(tick - this.pTick0[i]!, this.pTpb[i]!, this.pA[i]!, this.pS[i]!);
+    return this.pSec0[i]! + secondsOf(tick - this.pTick0[i]!, this.pA[i]!, this.pS[i]!);
   }
 
   /** 曲の頭から seconds 秒の所のティック（小数）。 */
   tickAt(seconds: number): number {
-    if (seconds < 0) return ticksOf(seconds, this.pTpb[0]!, this.pA[0]!, 0);
+    if (seconds < 0) return ticksOf(seconds, this.pA[0]!, 0);
     const i = lastAtOrBefore(this.pSec0, seconds);
-    return this.pTick0[i]! + ticksOf(seconds - this.pSec0[i]!, this.pTpb[i]!, this.pA[i]!, this.pS[i]!);
+    return this.pTick0[i]! + ticksOf(seconds - this.pSec0[i]!, this.pA[i]!, this.pS[i]!);
   }
 
-  /** 運びに出すテンポ: その所の拍子の拍の、1 分間の数。 */
+  /** 運びに出すテンポ: 1 分間の 4 分音符の数。 */
   tempoAt(tick: number): number {
     if (tick < 0) return this.pA[0]!;
     const i = lastAtOrBefore(this.pTick0, tick);
     return this.pA[i]! + this.pS[i]! * (tick - this.pTick0[i]!);
-  }
-
-  /** 4 分音符の 1 分間の数。 */
-  quarterBpmAt(tick: number): number {
-    const tpb = tick < 0 ? this.pTpb[0]! : this.pTpb[lastAtOrBefore(this.pTick0, tick)]!;
-    return (this.tempoAt(tick) * tpb) / TICKS_PER_QUARTER;
   }
 
   /** その所の拍子と、その小節。小数のティックは切りすて、0 より前は 0 として読む。 */
@@ -209,19 +207,35 @@ export class TempoMap {
     const inBar = from % perBar;
     out.bar = this.rBar0[r]! + Math.floor(from / perBar) + 1;
     out.beat = Math.floor(inBar / perBeat) + 1;
-    out.tick = Math.floor(((inBar % perBeat) * DISPLAY_TICKS_PER_BEAT) / perBeat);
+    out.tick = inBar % perBeat;
     return out;
   }
 
   /** tick か、その後ろの、最初の拍の頭。曲の頭より前は、頭の拍子の拍がそのまま前へ続く。 */
   nextBeat(tick: number, out: Beat = { tick: 0, downbeat: false }): Beat {
     const r = lastAtOrBefore(this.rTick0, tick);
-    const perBeat = this.rPerBeat[r]!;
-    // 区間は小節の整数個なので、終わりをこえて見つけた拍は、次の区間の最初の拍。
-    const beats = Math.ceil((tick - this.rTick0[r]!) / perBeat);
-    const num = this.rNum[r]!;
-    out.tick = this.rTick0[r]! + beats * perBeat;
-    out.downbeat = ((beats % num) + num) % num === 0;
+    return this.nextStep(tick, r, this.rPerBeat[r]!, out);
+  }
+
+  /** tick か、その後ろの、メトロノームが最初に鳴る所（`ticksPerClick`）。downbeat は強い音。0 より前は `nextBeat` と同じ。 */
+  nextClick(tick: number, out: Beat = { tick: 0, downbeat: false }): Beat {
+    const r = lastAtOrBefore(this.rTick0, tick);
+    return this.nextStep(tick, r, ticksPerClick(this.rNum[r]!, this.rDen[r]!), out);
+  }
+
+  /** その所の拍子で、1 小節にメトロノームが鳴る数。小数のティックは切りすて、0 より前は 0 として読む。 */
+  clicksPerBarAt(tick: number): number {
+    const r = lastAtOrBefore(this.rTick0, Math.max(0, Math.floor(tick)));
+    return clicksPerBar(this.rNum[r]!, this.rDen[r]!);
+  }
+
+  /** step は区間 r の 1 小節を整数個に分ける。 */
+  private nextStep(tick: number, r: number, step: number, out: Beat): Beat {
+    const steps = this.rPerBar[r]! / step;
+    // 区間は小節の整数個なので、終わりをこえて見つけた段は、次の区間の最初の段。
+    const n = Math.ceil((tick - this.rTick0[r]!) / step);
+    out.tick = this.rTick0[r]! + n * step;
+    out.downbeat = ((n % steps) + steps) % steps === 0;
     return out;
   }
 }

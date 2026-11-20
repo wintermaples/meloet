@@ -5,8 +5,8 @@
 import type { ClipView, Command, NoteField, TakeNotes, ValueField } from "../../bridge";
 import { noteLengthText, notePositionText, rangeText } from "../format";
 import { noteName } from "../meterFormat";
-import { barAt, barsMap, meterAtOf, tickOfPosition } from "../../time/bars";
-import { DISPLAY_TICKS_PER_BEAT, ticksPerBeat, type Bars, type Meter } from "../time";
+import { barAt, barsMap, meterAtOf, perBeatOf, tickOfPosition, tickRangeText } from "../../time/bars";
+import { ticksPerBeat, type Bars, type Meter } from "../time";
 import { drumKeyOf, keyLabel, type Drums } from "./drums";
 
 const kitOf = (d: Drums | boolean): Drums => (d === true ? "builtin" : d);
@@ -26,32 +26,27 @@ type Placed = Pick<ClipView, "start" | "end" | "takeOffset">;
 /** 打ちこんだ文字を、全角の数字や記号も読めるようにそろえる。 */
 const tidy = (s: string) => s.normalize("NFKC").trim();
 
-/** 表示の「ティック」1 つぶんの、中のティック（1 より小さくはしない）。 */
-export function displayTickStep(meter: Meter): number {
-  return Math.max(1, Math.round(ticksPerBeat(meter) / DISPLAY_TICKS_PER_BEAT));
-}
-
-const inBeat = (displayTick: number, meter: Meter) => Math.round((displayTick * ticksPerBeat(meter)) / DISPLAY_TICKS_PER_BEAT);
-
-/** 位置「3.1.000」（「3.1」「3」も）を曲の中のティックに。読めなければ null。範囲は見ない。 */
+/** 位置「3.1.0000」（「3.1」「3」も）を曲の中のティックに。読めなければ null。範囲は見ない。 */
 export function parseNotePosition(s: string, bars: Bars): number | null {
-  const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{1,2})(?:\.(\d{3}))?)?$/);
+  const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{1,2})(?:\.(\d{1,4}))?)?$/);
   if (!m) return null;
   const bar = Number(m[1]);
   const beat = m[2] === undefined ? 1 : Number(m[2]);
   const tick = m[3] === undefined ? 0 : Number(m[3]);
   const map = barsMap(bars);
-  if (bar < 1 || beat < 1 || beat > barAt(map, bar).num || tick >= DISPLAY_TICKS_PER_BEAT) return null;
+  if (bar < 1 || beat < 1) return null;
+  const at = barAt(map, bar);
+  if (beat > at.num || tick >= perBeatOf(at)) return null;
   return tickOfPosition(map, bar, beat, tick);
 }
 
-/** 長さ「1.240」（拍 . ティック。「2」も）をティックに。読めなければ null。範囲は見ない。 */
+/** 長さ「1.0960」（拍 . ティック。「2」も）をティックに。読めなければ null。範囲は見ない。 */
 export function parseNoteLength(s: string, meter: Meter): number | null {
-  const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{3}))?$/);
+  const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{1,4}))?$/);
   if (!m) return null;
   const tick = m[2] === undefined ? 0 : Number(m[2]);
-  if (tick >= DISPLAY_TICKS_PER_BEAT) return null;
-  return Number(m[1]) * ticksPerBeat(meter) + inBeat(tick, meter);
+  if (tick >= ticksPerBeat(meter)) return null;
+  return Number(m[1]) * ticksPerBeat(meter) + tick;
 }
 
 const PITCH: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -82,33 +77,36 @@ export interface LooseValue {
 const tidyMinus = (s: string) => tidy(s).replaceAll("\u2212", "-");
 const clampTo = (v: number, low: number, high: number) => Math.min(high, Math.max(low, v));
 
-/** 位置「3.5.000」「0.1.000」「3.1.999」も読み、小節は 1 から、拍は 1〜拍子の上、ティックは 0〜479 にそれぞれ入れる。 */
+/** 位置「3.5.0000」「0.1.0000」「3.1.9999」も読み、小節は 1 から、拍は 1〜拍子の上、ティックは 0〜1 拍のティック − 1 にそれぞれ入れる。 */
 export function readNotePositionLoose(s: string, bars: Bars): LooseValue | null {
-  const m = tidyMinus(s).match(/^(-?\d{1,4})(?:\.(\d{1,2})(?:\.(\d{3}))?)?$/);
+  const m = tidyMinus(s).match(/^(-?\d{1,4})(?:\.(\d{1,2})(?:\.(\d{1,4}))?)?$/);
   if (!m) return null;
   const rawBar = Number(m[1]);
   const rawBeat = m[2] === undefined ? 1 : Number(m[2]);
   const rawTick = m[3] === undefined ? 0 : Number(m[3]);
   const bar = Math.max(1, rawBar);
   const map = barsMap(bars);
-  const num = barAt(map, bar).num;
+  const at = barAt(map, bar);
+  const num = at.num;
+  const perBeat = perBeatOf(at);
   const beat = clampTo(rawBeat, 1, num);
-  const tick = clampTo(rawTick, 0, DISPLAY_TICKS_PER_BEAT - 1);
+  const tick = clampTo(rawTick, 0, perBeat - 1);
   let unit: ClampedUnit | null = null;
   if (bar !== rawBar) unit = { field: "bar", range: null };
   else if (beat !== rawBeat) unit = { field: "beat", range: rangeText("1", String(num)) };
-  else if (tick !== rawTick) unit = { field: "tick", range: rangeText("0", String(DISPLAY_TICKS_PER_BEAT - 1)) };
+  else if (tick !== rawTick) unit = { field: "tick", range: tickRangeText(perBeat) };
   return { value: tickOfPosition(map, bar, beat, tick), unit };
 }
 
-/** 長さ「1.999」も読み、ティックを 0〜479 に入れる。 */
+/** 長さ「1.9999」も読み、ティックを 0〜1 拍のティック − 1 に入れる。 */
 export function readNoteLengthLoose(s: string, meter: Meter): LooseValue | null {
-  const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{3}))?$/);
+  const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{1,4}))?$/);
   if (!m) return null;
+  const perBeat = ticksPerBeat(meter);
   const rawTick = m[2] === undefined ? 0 : Number(m[2]);
-  const tick = Math.min(rawTick, DISPLAY_TICKS_PER_BEAT - 1);
-  const unit: ClampedUnit | null = tick !== rawTick ? { field: "tick", range: rangeText("0", String(DISPLAY_TICKS_PER_BEAT - 1)) } : null;
-  return { value: Number(m[1]) * ticksPerBeat(meter) + inBeat(tick, meter), unit };
+  const tick = Math.min(rawTick, perBeat - 1);
+  const unit: ClampedUnit | null = tick !== rawTick ? { field: "tick", range: tickRangeText(perBeat) } : null;
+  return { value: Number(m[1]) * perBeat + tick, unit };
 }
 
 /** 音名を、0〜127 の外（「C10」「C-2」）も鍵の番号に。 */
@@ -217,7 +215,8 @@ export function noteFieldSpec(
   const first = picked[starts.indexOf(Math.min(...starts))]!;
   // 長さとティックの目盛りは、いちばん早いノートの所の拍子で数える。
   const meter = meterAtOf(bars, Math.min(...starts));
-  const unit = displayTickStep(meter);
+  // ↑ ↓ と長さのいちばん下は 1 ティック（表示のいちばん下のけた）。
+  const unit = 1;
   switch (name) {
     case "position": {
       const firstStart = Math.min(...starts);

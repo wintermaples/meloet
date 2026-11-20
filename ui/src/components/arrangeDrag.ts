@@ -8,7 +8,7 @@ import { t } from "../text/ja";
 import { blockAt, clipBox, trackRowAt, type LaneDims, type View } from "./arrangeGeom";
 import { positionText, signed, snapTick } from "./pianoroll/geom";
 import { barFloat, barsMap } from "../time/bars";
-import { DISPLAY_TICKS_PER_BEAT, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "./time";
+import { tickText, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "./time";
 
 export interface ClipHit {
   clip: ClipView;
@@ -216,15 +216,14 @@ export function barsDeltaText(ticks: number, perBar: number): string {
   return `${bars < 0 ? "−" : "+"}${Number(Math.abs(bars).toFixed(3))}`;
 }
 
-/** 「2.2.000」: クリップの長さを 小節 . 拍 . ティック（どれも 0 から）。 */
+/** 「2.2.0000」: クリップの長さを 小節 . 拍 . ティック（どれも 0 から）。 */
 export function clipLengthText(ticks: number, meter: Meter): string {
   const perBar = ticksPerBar(meter);
   const perBeat = ticksPerBeat(meter);
   const t = Math.max(0, Math.round(ticks));
   const bars = Math.floor(t / perBar);
   const beats = Math.floor((t % perBar) / perBeat);
-  const rest = Math.floor(((t % perBeat) * DISPLAY_TICKS_PER_BEAT) / perBeat);
-  return `${bars}.${beats}.${String(rest).padStart(3, "0")}`;
+  return `${bars}.${beats}.${tickText(t % perBeat)}`;
 }
 
 /** 「その場の読み値」と状態行に出す文。出さないときは null。長さは、クリップの始まりの所の拍子で数える。 */

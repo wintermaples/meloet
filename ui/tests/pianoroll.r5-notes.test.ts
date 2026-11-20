@@ -88,18 +88,18 @@ describe("長さをそろえる（C-6 51）", () => {
     expect(input.value).toBe("");
     expect(button.getAttribute("aria-disabled")).toBe("false");
 
-    typeInto(input, "0.240");
+    typeInto(input, "0.0960");
     key(input, "Enter");
-    expect(app.sent).toEqual([{ type: "matchLength", take: take.id, notes: [14, 15, 16], value: 240 }]);
-    expect(input.value).toBe("0.240");
+    expect(app.sent).toEqual([{ type: "matchLength", take: take.id, notes: [14, 15, 16], value: TPQ / 2 }]);
+    expect(input.value).toBe("0.0960");
     app.sent.length = 0;
 
-    // 拍 . ティックのティックは 0〜479。ほかの欄と同じく近いはしにして、状態行で言う。
-    typeInto(input, "1.999");
+    // 拍 . ティックのティックは 0〜1919（4/4）。ほかの欄と同じく近いはしにして、状態行で言う。
+    typeInto(input, "1.9999");
     button.click();
     expect(app.sent).toEqual([
-      { type: "matchLength", take: take.id, notes: [14, 15, 16], value: 959 },
-      { type: "clampValue", field: "tick", value: "1.479", range: "0〜479" },
+      { type: "matchLength", take: take.id, notes: [14, 15, 16], value: 2 * TPQ - 1 },
+      { type: "clampValue", field: "tick", value: "1.1919", range: "0〜1919" },
     ]);
     app.sent.length = 0;
 
@@ -114,13 +114,13 @@ describe("長さをそろえる（C-6 51）", () => {
     inspectorFolds.sameLength = true;
     show(NoteInspector);
     const input = q<HTMLInputElement>('[data-test="inspector-same-length-field"]')!;
-    expect(input.value).toBe("0.360");
+    expect(input.value).toBe("0.1440");
     key(input, "ArrowUp");
     flushSync();
-    expect(input.value).toBe("0.361");
+    expect(input.value).toBe("0.1441");
     key(input, "ArrowDown", { shiftKey: true });
     flushSync();
-    expect(input.value).toBe("0.351");
+    expect(input.value).toBe("0.1431");
     typeInto(input, "9999");
     key(input, "Enter");
     const sent = app.sent[0] as { type: string; value: number };
@@ -141,10 +141,10 @@ describe("長さをそろえる（C-6 51）", () => {
     expect(app.sent).toEqual([]);
   });
 
-  it("状態行「3 ノートの長さを 0.240 にそろえました。」（仕様書 6 章「まとめてそろえた」）", async () => {
+  it("状態行「3 ノートの長さを 0.0960 にそろえました。」（仕様書 6 章「まとめてそろえた」の形）", async () => {
     await scene("lengthMatched");
     show(StatusLine);
-    expect(text(q(".message"))).toBe("3 ノートの長さを 0.240 にそろえました。");
+    expect(text(q(".message"))).toBe("3 ノートの長さを 0.0960 にそろえました。");
   });
 });
 

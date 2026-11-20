@@ -1,7 +1,7 @@
 // 数の見せかた。DOM を知らない純粋な関数。
 import type { ScaleMode } from "../bridge";
 import { t, texts, type TextKey } from "../text/ja";
-import { barBeatTick, DISPLAY_TICKS_PER_BEAT, ticksPerBeat, type Bars, type Meter } from "./time";
+import { barBeatTick, tickText, ticksPerBeat, type Bars, type Meter } from "./time";
 
 /** マイナスは仕様書と同じ「−」（U+2212）。 */
 const MINUS = "−";
@@ -128,16 +128,15 @@ export function rangeText(low: string, high: string): string {
   return `${low}〜${high}`;
 }
 
-/** ノートの一覧の位置（「3.1.000」。モック A-PianoRoll）。曲の中のティック。 */
+/** ノートの一覧の位置（「3.1.0000」。モック A-PianoRoll の形。ティックは 4 けた）。曲の中のティック。 */
 export function notePositionText(tick: number, bars: Bars): string {
   const b = barBeatTick(tick, bars);
-  return `${b.bar}.${b.beat}.${String(b.tick).padStart(3, "0")}`;
+  return `${b.bar}.${b.beat}.${tickText(b.tick)}`;
 }
 
-/** ノートの長さ（「拍 . ティック」。「4.000」「0.360」。モック A-PianoRoll）。 */
+/** ノートの長さ（「拍 . ティック」。「4.0000」「0.1440」。モック A-PianoRoll の形）。 */
 export function noteLengthText(ticks: number, meter: Meter): string {
   const perBeat = ticksPerBeat(meter);
   const whole = Math.max(0, Math.floor(ticks));
-  const rest = Math.floor(((whole % perBeat) * DISPLAY_TICKS_PER_BEAT) / perBeat);
-  return `${Math.floor(whole / perBeat)}.${String(rest).padStart(3, "0")}`;
+  return `${Math.floor(whole / perBeat)}.${tickText(whole % perBeat)}`;
 }

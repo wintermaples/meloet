@@ -34,15 +34,15 @@
 
   const counting = $derived(transport.state === "countIn");
   const recordingNow = $derived(counting || transport.state === "recording");
-  /** カウントイン中の今の拍（全体の中で 1 から）。計器がカウントインを言っていなければ 1 拍目。 */
+  /** カウントイン中の今の鳴る拍（全体の中で 1 から。countInBeats も鳴る拍で数える）。計器がカウントインを言っていなければ 1 つめ。 */
   const countInBeat = $derived.by(() => {
     const p = current.telemetry?.position;
     const left = p?.state === "countIn" ? p.countInBeatsLeft : transport.countInBeats;
     return Math.min(transport.countInBeats, Math.max(1, transport.countInBeats - left + 1));
   });
-  /** 箱は 1 小節ぶん（録りはじめる所の拍子の上の数）で、小節ごとに数えなおす。 */
-  const beatsPerBar = $derived(map.meterAt(transport.recording?.from ?? transport.position).num);
-  const beatInBar = $derived(((countInBeat - 1) % beatsPerBar) + 1);
+  /** 箱は 1 小節ぶん（録りはじめる所の拍子で、メトロノームが鳴る数。6/8 は 2、5/8 は 5。22-2）で、小節ごとに数えなおす。 */
+  const clicksPerBar = $derived(map.clicksPerBarAt(transport.recording?.from ?? transport.position));
+  const beatInBar = $derived(((countInBeat - 1) % clicksPerBar) + 1);
 
   // 横の入れかた: 出ている物と、見えない写し（ruler）の引っこむ物を測り、仕様書 1 章の順に引っこめる。
   const COVER: GlSlot = { kind: "cover" };
@@ -134,7 +134,7 @@
 
   $effect(() => {
     // 中身が変わったら測りなおす（ResizeObserver のない所でも、決まりの通りに出す）。
-    void [counting, beatsPerBar, song.name, fileText, tempoShown, meterShown, transport.countInBars, metrics.scale];
+    void [counting, clicksPerBar, song.name, fileText, tempoShown, meterShown, transport.countInBars, metrics.scale];
     untrack(measure);
   });
 
@@ -300,7 +300,7 @@
 {#snippet countingIn()}
   <span>{t("transport.countIn")}</span>
   <span class="boxes">
-    {#each { length: beatsPerBar }, i (i)}<span class="box" class:done={i < beatInBar}></span>{/each}
+    {#each { length: clicksPerBar }, i (i)}<span class="box" class:done={i < beatInBar}></span>{/each}
   </span>
 {/snippet}
 {#snippet key(i: number)}{#if parts.keys}<span class="m-num m-lbl key" data-test="transport-key">{KEYS[i]}</span>{/if}{/snippet}
@@ -390,7 +390,7 @@
         commit={(r) => commitClamped({ type: "locate", tick: r.value }, r.clamp)}
         reject={rejectPosition}
         label={t("transport.position")}
-        chars={9}
+        chars={10}
         test="transport-position"
       />
     </div>

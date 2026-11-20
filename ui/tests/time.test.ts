@@ -12,7 +12,6 @@ import {
   stepTempo,
   ticksPerBar,
   ticksPerBeat,
-  ticksToSeconds,
 } from "../src/components/time";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
@@ -21,44 +20,46 @@ const bbt = (tick: number, num: number, den: number) => {
   return [b.bar, b.beat, b.tick];
 };
 
-describe("barBeatTick（Rust の bar_beat_tick と同じ例）", () => {
+const BAR = 4 * TPQ;
+
+describe("barBeatTick（Rust の bar_beat_tick と同じ例）。ティックはその拍の中のティックそのまま", () => {
   it("4/4", () => {
     expect(bbt(0, 4, 4)).toEqual([1, 1, 0]);
-    expect(bbt(479, 4, 4)).toEqual([1, 1, 479]);
+    expect(bbt(TPQ - 1, 4, 4)).toEqual([1, 1, TPQ - 1]);
     expect(bbt(TPQ, 4, 4)).toEqual([1, 2, 0]);
-    expect(bbt(1919, 4, 4)).toEqual([1, 4, 479]);
-    expect(bbt(4 * TPQ, 4, 4)).toEqual([2, 1, 0]);
-    expect(bbt(1920 + 960 + 123, 4, 4)).toEqual([2, 3, 123]);
+    expect(bbt(BAR - 1, 4, 4)).toEqual([1, 4, TPQ - 1]);
+    expect(bbt(BAR, 4, 4)).toEqual([2, 1, 0]);
+    expect(bbt(BAR + 2 * TPQ + 123, 4, 4)).toEqual([2, 3, 123]);
   });
 
   it("3/4", () => {
-    expect(bbt(1439, 3, 4)).toEqual([1, 3, 479]);
+    expect(bbt(3 * TPQ - 1, 3, 4)).toEqual([1, 3, TPQ - 1]);
     expect(bbt(3 * TPQ, 3, 4)).toEqual([2, 1, 0]);
-    expect(bbt(1440 * 4 + 500, 3, 4)).toEqual([5, 2, 20]);
+    expect(bbt(3 * TPQ * 4 + TPQ + 20, 3, 4)).toEqual([5, 2, 20]);
   });
 
-  it("6/8 は 8 分音符を数える", () => {
+  it("6/8 は 8 分音符を数える（ティックは 0〜TPQ / 2 − 1）", () => {
     expect(bbt(TPQ / 2, 6, 8)).toEqual([1, 2, 0]);
-    expect(bbt(250, 6, 8)).toEqual([1, 2, 20]);
-    expect(bbt(1439, 6, 8)).toEqual([1, 6, 478]);
+    expect(bbt(TPQ / 2 + 10, 6, 8)).toEqual([1, 2, 10]);
+    expect(bbt(3 * TPQ - 1, 6, 8)).toEqual([1, 6, TPQ / 2 - 1]);
     expect(bbt(3 * TPQ, 6, 8)).toEqual([2, 1, 0]);
   });
 
-  it("2/2 は 2 分音符を数える", () => {
-    expect(bbt(959, 2, 2)).toEqual([1, 1, 479]);
+  it("2/2 は 2 分音符を数える（ティックは 0〜2 TPQ − 1）", () => {
+    expect(bbt(2 * TPQ - 1, 2, 2)).toEqual([1, 1, 2 * TPQ - 1]);
     expect(bbt(2 * TPQ, 2, 2)).toEqual([1, 2, 0]);
-    expect(bbt(961, 2, 2)).toEqual([1, 2, 0]);
-    expect(bbt(4 * TPQ, 2, 2)).toEqual([2, 1, 0]);
+    expect(bbt(2 * TPQ + 1, 2, 2)).toEqual([1, 2, 1]);
+    expect(bbt(BAR, 2, 2)).toEqual([2, 1, 0]);
   });
 
   it("7/16", () => {
-    expect(bbt(125, 7, 16)).toEqual([1, 2, 20]);
-    expect(bbt(839, 7, 16)).toEqual([1, 7, 476]);
+    expect(bbt(TPQ / 4 + 5, 7, 16)).toEqual([1, 2, 5]);
+    expect(bbt((7 * TPQ) / 4 - 1, 7, 16)).toEqual([1, 7, TPQ / 4 - 1]);
     expect(bbt((7 * TPQ) / 4, 7, 16)).toEqual([2, 1, 0]);
   });
 
-  it("小数のティックは切りすて、0 より前は 1. 1. 000", () => {
-    expect(bbt(479.9, 4, 4)).toEqual([1, 1, 479]);
+  it("小数のティックは切りすて、0 より前は 1. 1. 0000", () => {
+    expect(bbt(TPQ - 0.1, 4, 4)).toEqual([1, 1, TPQ - 1]);
     expect(bbt(-(3 * TPQ) / 2, 4, 4)).toEqual([1, 1, 0]);
   });
 
@@ -68,26 +69,20 @@ describe("barBeatTick（Rust の bar_beat_tick と同じ例）", () => {
   });
 });
 
-describe("ticksToSeconds（Rust の ticks_to_seconds と同じ例）", () => {
-  it("96.00 の 4/4 と、120.00 の 6/8", () => {
-    expect(ticksToSeconds(TPQ, 96, { num: 4, den: 4 })).toBeCloseTo(0.625, 12);
-    expect(ticksToSeconds(4 * TPQ, 96, { num: 4, den: 4 })).toBeCloseTo(2.5, 12);
-    expect(ticksToSeconds(TPQ / 2, 120, { num: 6, den: 8 })).toBeCloseTo(0.5, 12);
-    expect(ticksToSeconds(0, 120, { num: 6, den: 8 })).toBe(0);
-  });
-});
-
-describe("見せかた（モックの「5. 1. 000」「00:00:16.562」）", () => {
+describe("見せかた（モックの「5. 1. 000」「00:00:16.562」の形。ティックは 4 けた）", () => {
   const four = { num: 4, den: 4 };
   it("位置", () => {
-    expect(positionText(4 * 4 * TPQ, four)).toBe("5. 1. 000");
-    expect(positionText(6 * 4 * TPQ + 2 * TPQ + TPQ / 2, four)).toBe("7. 3. 240");
-    expect(positionText(0, four)).toBe("1. 1. 000");
+    expect(positionText(4 * 4 * TPQ, four)).toBe("5. 1. 0000");
+    expect(positionText(6 * 4 * TPQ + 2 * TPQ + TPQ / 2, four)).toBe("7. 3. 0960");
+    expect(positionText(0, four)).toBe("1. 1. 0000");
+    expect(positionText(5, four)).toBe("1. 1. 0005");
+    expect(positionText(3 * TPQ - 1, { num: 6, den: 8 })).toBe("1. 6. 0959");
+    expect(positionText(2 * TPQ - 1, { num: 2, den: 2 })).toBe("1. 1. 3839");
   });
 
   it("時間。ミリ秒は切りすて", () => {
-    expect(clockText(ticksToSeconds(4 * 4 * TPQ, 96, four))).toBe("00:00:10.000");
-    expect(clockText(ticksToSeconds(6 * 4 * TPQ + 2 * TPQ + TPQ / 2, 96, four))).toBe("00:00:16.562");
+    expect(clockText(10)).toBe("00:00:10.000");
+    expect(clockText(16.5625)).toBe("00:00:16.562");
     expect(clockText(0)).toBe("00:00:00.000");
     expect(clockText(3 * 3600 + 25 * 60 + 7.0049)).toBe("03:25:07.004");
     expect(clockText(-1)).toBe("00:00:00.000");

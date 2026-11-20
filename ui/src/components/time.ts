@@ -6,8 +6,6 @@ import { TICKS_PER_QUARTER } from "../time/ticks";
 
 export type { Bars } from "../time/bars";
 export { TICKS_PER_QUARTER } from "../time/ticks";
-/** 表示の「ティック」は、1 拍をこの数に分けた目盛り。 */
-export const DISPLAY_TICKS_PER_BEAT = 480;
 
 /** 使えるテンポ（ヤチヨさんの決め）。0.01 きざみ。 */
 export const TEMPO_MIN = 30;
@@ -36,22 +34,20 @@ export interface BarBeatTick {
 }
 
 /**
- * 小節と拍は 1 から、ティックは 0〜479。小数のティックは切りすて、0 より前は 0 として読む。
+ * 小節と拍は 1 から、ティックはその拍の中のティックそのまま（4/4 は 0〜1919）。小数のティックは切りすて、0 より前は 0 として読む。
  * bars は拍子 1 つか、テンポの地図（拍子の変更のある曲）。
  */
 export function barBeatTick(tick: number, bars: Bars): BarBeatTick {
   return barsMap(bars).barBeatTick(tick, { bar: 0, beat: 0, tick: 0 });
 }
 
-/** 曲の頭のテンポと拍子で秒に。 */
-export function ticksToSeconds(tick: number, bpm: number, meter: Meter): number {
-  return ((tick / ticksPerBeat(meter)) * 60) / bpm;
-}
+/** 表示の「ティック」の字。いつも 4 けたに 0 でうめる（「0960」）。 */
+export const tickText = (tick: number) => String(tick).padStart(4, "0");
 
-/** 「7. 3. 240」（モック F-ArrangeRec）。 */
+/** 「7. 3. 0960」（モック F-ArrangeRec の形。ティックは 4 けた）。 */
 export function positionText(tick: number, bars: Bars): string {
   const b = barBeatTick(tick, bars);
-  return `${b.bar}. ${b.beat}. ${String(b.tick).padStart(3, "0")}`;
+  return `${b.bar}. ${b.beat}. ${tickText(b.tick)}`;
 }
 
 /** 「00:00:16.562」（モック F-ArrangeRec）。ミリ秒は切りすて。 */

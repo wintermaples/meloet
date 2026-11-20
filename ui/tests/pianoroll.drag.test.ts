@@ -75,7 +75,7 @@ describe("選ぶ道具", () => {
     sent.length = 0;
     for (let dx = 1; dx <= 13; dx++) drag.move(x((5 * TPQ) / 24) + dx, y(60) - 12, NONE);
     expect(sent).toEqual([]);
-    expect(drag.reading()).toBe("+0.120 ・ +1 半音");
+    expect(drag.reading()).toBe("+0.0480 ・ +1 半音");
     const c = drag.up();
     expect(c).toEqual({ type: "moveNotes", take: 7, notes: [0], ticks: TPQ / 4, keys: 1, copy: false });
     expect(sent).toEqual([c]);
@@ -130,14 +130,14 @@ describe("選ぶ道具", () => {
     expect(drag.cancel()).toBe(false);
   });
 
-  it("右はし 6px は長さ（どの道具でも）。読み値は「長さ 1.000 → 1.240」", () => {
+  it("右はし 6px は長さ（どの道具でも）。読み値は「長さ 1.0000 → 1.0960」", () => {
     for (const t of ["select", "draw", "erase"] as Tool[]) {
       tool = t;
       sent.length = 0;
       expect(drag.hover(x((239 * TPQ) / 240), y(60), NONE).cursor).toBe("ew-resize");
       drag.down(x((239 * TPQ) / 240), y(60), NONE);
       drag.move(x((239 * TPQ) / 240) + 20, y(60), NONE);
-      expect(drag.reading()).toBe("長さ 1.000 → 1.240");
+      expect(drag.reading()).toBe("長さ 1.0000 → 1.0960");
       expect(drag.up()).toEqual({ type: "resizeNotes", take: 7, notes: [0], edge: "end", ticks: TPQ / 2 });
     }
   });
@@ -167,7 +167,7 @@ describe("書く道具", () => {
   it("押した瞬間に Audition、離して音を止めて AddNote（グリッド 1 つぶん）", () => {
     drag.down(x((25 * TPQ) / 8), y(50), NONE);
     expect(sent).toEqual([{ type: "audition", keys: [50], velocity: G.DRAW_VELOCITY }]);
-    expect(drag.reading()).toBe("D3 ・ 1.4.000 ・ 長さ 0.120");
+    expect(drag.reading()).toBe("D3 ・ 1.4.0000 ・ 長さ 0.0480");
     drag.up();
     expect(sent.slice(1)).toEqual([
       STOP,
@@ -178,7 +178,7 @@ describe("書く道具", () => {
   it("押したまま右へ動かすと長さがのびる。Esc では書かずに音を止める", () => {
     drag.down(x((25 * TPQ) / 8), y(50), NONE);
     drag.move(x((25 * TPQ) / 8) + 30, y(50), NONE);
-    expect(drag.reading()).toBe("D3 ・ 1.4.000 ・ 長さ 1.000");
+    expect(drag.reading()).toBe("D3 ・ 1.4.0000 ・ 長さ 1.0000");
     expect(drag.cancel()).toBe(true);
     expect(sent.at(-1)).toEqual(STOP);
     expect(sent.some((c) => c.type === "addNote")).toBe(false);

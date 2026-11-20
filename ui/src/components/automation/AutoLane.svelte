@@ -14,7 +14,7 @@
   import { metrics } from "../metrics.svelte";
   import { builtinOf } from "../params/selected";
   import { onDragCancel } from "../pianoroll/view.svelte";
-  import { DISPLAY_TICKS_PER_BEAT, positionText as placeText, ticksPerBar, ticksPerBeat } from "../time";
+  import { positionText as placeText, ticksPerBar, ticksPerBeat } from "../time";
   import { pickLane } from "../timeline/pick";
   import * as A from "./autoGeom";
   import { playTick, pointsOf } from "./autoState.svelte";
@@ -90,7 +90,7 @@
     const grab = pts[d.grab]!;
     const to = Math.min(1, Math.max(0, grab.value + d.dValue));
     const m = meterAt(grab.tick);
-    const delta = A.deltaText(d.dTick, ticksPerBar(m), ticksPerBeat(m), DISPLAY_TICKS_PER_BEAT);
+    const delta = A.deltaText(d.dTick, ticksPerBar(m), ticksPerBeat(m));
     const from = bareText(lane.name, grab.value);
     const toText = positionText(lane.name, to);
     reading = { text: from !== null && toText !== null ? t("lane.readMove", { delta, from, to: toText }) : delta, x: p.x, y: p.y };

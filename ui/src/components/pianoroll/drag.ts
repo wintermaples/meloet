@@ -426,7 +426,7 @@ export function draggedVelocity(v: number, delta: number): number {
 }
 
 /**
- * ドラムでノートを上下に動かすときの読み値（仕様書 3 章 85）: 「+0.120 ・ 上へ 1 行」「下へ 2 行」。
+ * ドラムでノートを上下に動かすときの読み値（仕様書 3 章 85）: 「+0.0480 ・ 上へ 1 行」「下へ 2 行」。
  * 横に動かしていなければ行だけ、行が変わらなければ横の量だけ。
  */
 export function drumMoveReading(rows: readonly number[], grabKey: number, keys: number, ticks: string, sideways: boolean): string {

@@ -65,11 +65,11 @@ describe("押した所（arrangeDrag.clipHit）", () => {
 });
 
 describe("動かす（arrangeDrag）", () => {
-  it("グリッド（1 小節）に吸いつき、離すと MoveClip を 1 つ。読み値は「6.1.000（+1 小節）」", () => {
+  it("グリッド（1 小節）に吸いつき、離すと MoveClip を 1 つ。読み値は「6.1.0000（+1 小節）」", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [370, 30]);
     expect(d).toMatchObject({ kind: "move", ticks: BAR, toRow: 0, ok: true });
-    expect(CD.clipDragReading(d, METER)).toBe("6.1.000（+1 小節）");
+    expect(CD.clipDragReading(d, METER)).toBe("6.1.0000（+1 小節）");
     expect(CD.clipDragCursor(d)).toBe("move");
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClips", clips: [3], ticks: BAR, tracks: 0, copy: false });
   });
@@ -78,7 +78,7 @@ describe("動かす（arrangeDrag）", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [330, 30], { shift: true, alt: false });
     expect(d).toMatchObject({ ticks: (30 * BAR) / 64 });
-    expect(CD.clipDragReading(d, METER)).toBe("5.2.420（+0.469 小節）");
+    expect(CD.clipDragReading(d, METER)).toBe("5.2.1680（+0.469 小節）");
   });
 
   it("押しただけ（space.1 より動かない）なら何も送らず、読み値も出さない", () => {
@@ -117,11 +117,11 @@ describe("動かす（arrangeDrag）", () => {
     expect(drag(tracks, [300, 30], [300 - 128, 94])).toMatchObject({ toRow: 1, ok: false });
   });
 
-  it("Alt で複製: もとは残り、写しが動く。読み値「複製 ・ 9.1.000」、カーソル copy。もとの場所には置けない", () => {
+  it("Alt で複製: もとは残り、写しが動く。読み値「複製 ・ 9.1.0000」、カーソル copy。もとの場所には置けない", () => {
     const tracks = twoTracks();
     const alt = { shift: false, alt: true };
     const d = drag(tracks, [300, 30], [300 + 256, 30], alt);
-    expect(CD.clipDragReading(d, METER)).toBe("複製 ・ 9.1.000");
+    expect(CD.clipDragReading(d, METER)).toBe("複製 ・ 9.1.0000");
     expect(CD.clipDragCursor(d)).toBe("copy");
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "moveClips", clips: [3], ticks: 4 * BAR, tracks: 0, copy: true });
     const same = drag(tracks, [300, 30], [310, 30], alt);
@@ -131,19 +131,19 @@ describe("動かす（arrangeDrag）", () => {
 });
 
 describe("はしをつめる ・ のばす（arrangeDrag）", () => {
-  it("右のはしを 1 小節つめる。読み値「長さ 3.0.000」、離して TrimClip を 1 つ", () => {
+  it("右のはしを 1 小節つめる。読み値「長さ 3.0.0000」、離して TrimClip を 1 つ", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [509, 30], [445, 30]);
     expect(d).toMatchObject({ kind: "trim", edge: "end", start: 4 * BAR, end: 7 * BAR });
     expect(CD.clipDragCursor(d)).toBe("ew-resize");
-    expect(CD.clipDragReading(d, METER)).toBe("長さ 3.0.000");
+    expect(CD.clipDragReading(d, METER)).toBe("長さ 3.0.0000");
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "trimClip", clip: 3, edge: "end", ticks: -BAR });
   });
 
-  it("Shift で吸いつかない（モック R3-Arrange「長さ 2.2.000」）", () => {
+  it("Shift で吸いつかない（モック R3-Arrange「長さ 2.2.000」の形）", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [509, 30], [509 - 96, 30], { shift: true, alt: false });
-    expect(CD.clipDragReading(d, METER)).toBe("長さ 2.2.000");
+    expect(CD.clipDragReading(d, METER)).toBe("長さ 2.2.0000");
     expect(CD.clipDragCommand(d, tracks)).toEqual({ type: "trimClip", clip: 3, edge: "end", ticks: -1.5 * BAR });
   });
 
@@ -167,9 +167,9 @@ describe("はしをつめる ・ のばす（arrangeDrag）", () => {
   });
 
   it("長さの文は 小節 . 拍 . ティック（どれも 0 から）", () => {
-    expect(CD.clipLengthText(2.5 * BAR, METER)).toBe("2.2.000");
-    expect(CD.clipLengthText(BAR + TPQ / 4, METER)).toBe("1.0.120");
-    expect(CD.clipLengthText(3 * TPQ + TPQ / 2, { num: 3, den: 4 })).toBe("1.0.240");
+    expect(CD.clipLengthText(2.5 * BAR, METER)).toBe("2.2.0000");
+    expect(CD.clipLengthText(BAR + TPQ / 4, METER)).toBe("1.0.0480");
+    expect(CD.clipLengthText(3 * TPQ + TPQ / 2, { num: 3, den: 4 })).toBe("1.0.0960");
   });
 });
 
@@ -311,8 +311,8 @@ describe("Arrange のマウス", () => {
     pointer("pointermove", 340, 30);
     pointer("pointermove", 366, 30);
     expect(moves()).toEqual([]);
-    expect(dragReading.text).toBe("6.1.000（+1 小節）");
-    expect(target.querySelector('[data-test="arrange-reading"]')!.textContent!.trim()).toBe("6.1.000（+1 小節）");
+    expect(dragReading.text).toBe("6.1.0000（+1 小節）");
+    expect(target.querySelector('[data-test="arrange-reading"]')!.textContent!.trim()).toBe("6.1.0000（+1 小節）");
     expect(lanes().style.cursor).toBe("move");
     const box = target.querySelector<HTMLElement>(".rec-host .drag-clip")!;
     // jsdom は「translate(64px, 0px)」を「translate(64px)」に書きかえる
@@ -371,7 +371,7 @@ describe("Arrange のマウス", () => {
     pointer("pointerdown", 300, 30, { altKey: true });
     pointer("pointermove", 556, 30, { altKey: true });
     expect(lanes().style.cursor).toBe("copy");
-    expect(dragReading.text).toBe("複製 ・ 9.1.000");
+    expect(dragReading.text).toBe("複製 ・ 9.1.0000");
     expect(laneRects().some((r) => r.color === "color.gray.7")).toBe(false);
     pointer("pointerup", 556, 30, { altKey: true });
     expect(moves()).toEqual([{ type: "moveClips", clips: [3], ticks: 4 * BAR, tracks: 0, copy: true }]);
@@ -383,7 +383,7 @@ describe("Arrange のマウス", () => {
     expect(lanes().style.cursor).toBe("ew-resize");
     pointer("pointerdown", 509, 30);
     pointer("pointermove", 445, 30);
-    expect(dragReading.text).toBe("長さ 3.0.000");
+    expect(dragReading.text).toBe("長さ 3.0.0000");
     const box = target.querySelector<HTMLElement>(".drag-clip")!;
     expect([box.style.left, box.style.width, box.style.transform]).toEqual(["0px", `${WIDTH}px`, ""]);
     const rects = (slots.get(box) as Extract<GlSlot, { kind: "rects" }>).rects;

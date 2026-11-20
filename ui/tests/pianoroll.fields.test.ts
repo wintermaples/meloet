@@ -20,39 +20,49 @@ const M68 = { num: 6, den: 8 };
 const BAR = 4 * TPQ;
 const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * TPQ + tick;
 
-describe("位置「3.1.000」", () => {
+describe("位置「3.1.0000」", () => {
   it("小節 . 拍 . ティック を曲の中のティックに。拍とティックは省ける", () => {
-    expect(parseNotePosition("3.1.000", M44)).toBe(at(3, 1, 0));
-    expect(parseNotePosition("3.2.240", M44)).toBe(at(3, 2, 240));
+    expect(parseNotePosition("3.1.0000", M44)).toBe(at(3, 1, 0));
+    expect(parseNotePosition("3.2.0960", M44)).toBe(at(3, 2, TPQ / 2));
     expect(parseNotePosition("3.2", M44)).toBe(at(3, 2, 0));
     expect(parseNotePosition("3", M44)).toBe(at(3, 1, 0));
-    expect(parseNotePosition("３.１.０００", M44)).toBe(at(3, 1, 0));
+    expect(parseNotePosition("３.１.００００", M44)).toBe(at(3, 1, 0));
   });
 
-  it("読めない: 拍が拍子の外、ティック 480 以上、ティックが 3 けたでない、0 小節、文字", () => {
-    for (const s of ["3.5.000", "3.1.480", "3.1.24", "0.1.000", "3.0.000", "abc", "", "3.1.000.0", "-1"]) {
+  it("ティックはけた数を見ない（1〜4 けたの数を、そのままティックの数として読む）", () => {
+    expect(parseNotePosition("3.1.0", M44)).toBe(at(3, 1, 0));
+    expect(parseNotePosition("3.1.240", M44)).toBe(at(3, 1, 240));
+    expect(parseNotePosition("3.1.0240", M44)).toBe(at(3, 1, 240));
+    expect(parseNoteLength("1.5", M44)).toBe(TPQ + 5);
+  });
+
+  it("読めない: 拍が拍子の外、ティックが 1 拍以上、ティックが 5 けた以上、0 小節、文字", () => {
+    for (const s of ["3.5.0000", "3.1.1920", "3.1.00000", "0.1.0000", "3.0.0000", "abc", "", "3.1.0000.0", "-1"]) {
       expect(parseNotePosition(s, M44), s).toBeNull();
     }
   });
 
-  it("6/8: 1 拍は 8 分音符（240 ティック）。表示のティックは拍を 480 に分けた目盛り", () => {
-    expect(parseNotePosition("1.2.000", M68)).toBe(240);
-    expect(parseNotePosition("1.1.240", M68)).toBe(120);
-    expect(parseNotePosition("1.6.000", M68)).toBe(1200);
-    expect(parseNotePosition("1.7.000", M68)).toBeNull();
+  it("6/8: 1 拍は 8 分音符（TPQ / 2 ティック）。ティックはその拍の中のティックそのまま", () => {
+    expect(parseNotePosition("1.2.0000", M68)).toBe(TPQ / 2);
+    expect(parseNotePosition("1.1.0480", M68)).toBe(TPQ / 4);
+    expect(parseNotePosition("1.1.0959", M68)).toBe(TPQ / 2 - 1);
+    expect(parseNotePosition("1.1.0960", M68)).toBeNull();
+    expect(parseNotePosition("1.6.0000", M68)).toBe((5 * TPQ) / 2);
+    expect(parseNotePosition("1.7.0000", M68)).toBeNull();
   });
 });
 
-describe("長さ「1.240」", () => {
+describe("長さ「1.0960」", () => {
   it("拍 . ティック をティックに", () => {
-    expect(parseNoteLength("1.240", M44)).toBe(720);
-    expect(parseNoteLength("0.360", M44)).toBe(360);
-    expect(parseNoteLength("2", M44)).toBe(960);
-    expect(parseNoteLength("1.240", M68)).toBe(360);
+    expect(parseNoteLength("1.0960", M44)).toBe((3 * TPQ) / 2);
+    expect(parseNoteLength("0.1440", M44)).toBe((3 * TPQ) / 4);
+    expect(parseNoteLength("2", M44)).toBe(2 * TPQ);
+    expect(parseNoteLength("1.0480", M68)).toBe((3 * TPQ) / 4);
   });
 
-  it("読めない: ティックが 3 けたでない、480 以上、文字", () => {
-    for (const s of ["1.24", "1.480", "x", "", "1.2.000"]) expect(parseNoteLength(s, M44), s).toBeNull();
+  it("読めない: ティックが 5 けた以上、1 拍以上、文字", () => {
+    for (const s of ["1.00000", "1.1920", "x", "", "1.2.0000"]) expect(parseNoteLength(s, M44), s).toBeNull();
+    expect(parseNoteLength("1.0960", M68)).toBeNull();
   });
 });
 
@@ -80,7 +90,7 @@ describe("ベロシティ", () => {
   });
 });
 
-// クリップは 1〜5 小節（0〜4 * BAR）。ノートは 3.1.000 D4 0.360 80 ・ 3.1.360 E4 0.360 83 ・ 3.2.240 F4 0.240 77。
+// クリップは 1〜5 小節（0〜4 * BAR）。ノートは 3.1.0000 D4 0.1440 80 ・ 3.1.1440 E4 0.1440 83 ・ 3.2.0960 F4 0.0960 77。
 const clip = { start: 0, end: 4 * BAR, takeOffset: 0 };
 const notes = take([
   [at(3, 1, 0), (3 * TPQ) / 4, 62, 80],
@@ -91,11 +101,11 @@ const notes = take([
 describe("1 つのノートの欄", () => {
   it("位置: そのノートの長さがクリップに入る所まで。範囲の文は表示の形", () => {
     const s = noteFieldSpec("position", notes, clip, [0], M44)!;
-    expect(s.initial).toBe("3.1.000");
-    expect(s.range).toBe("1.1.000〜4.4.120");
-    expect(parseField(s, "4.4.120")).toBe(at(4, 4, 120));
-    expect(parseField(s, "4.4.121")).toBeNull();
-    expect(parseField(s, "5.1.000")).toBeNull();
+    expect(s.initial).toBe("3.1.0000");
+    expect(s.range).toBe("1.1.0000〜4.4.0480");
+    expect(parseField(s, "4.4.0480")).toBe(at(4, 4, TPQ / 4));
+    expect(parseField(s, "4.4.0481")).toBeNull();
+    expect(parseField(s, "5.1.0000")).toBeNull();
   });
 
   it("音: C-1〜G9", () => {
@@ -106,10 +116,10 @@ describe("1 つのノートの欄", () => {
 
   it("長さ: 表示の 1 ティックから、クリップの終わりまで", () => {
     const s = noteFieldSpec("length", notes, clip, [2], M44)!;
-    expect(s.initial).toBe("0.240");
-    expect(s.range).toBe("0.001〜6.240");
-    expect(parseField(s, "0.000")).toBeNull();
-    expect(parseField(s, "6.241")).toBeNull();
+    expect(s.initial).toBe("0.0960");
+    expect(s.range).toBe("0.0001〜6.0960");
+    expect(parseField(s, "0.0000")).toBeNull();
+    expect(parseField(s, "6.0961")).toBeNull();
   });
 
   it("ベロシティ: 1〜127。範囲の文は画面の文（value.velocityRange）なので null", () => {
@@ -123,8 +133,8 @@ describe("1 つのノートの欄", () => {
 
   it("位置は曲の中（テイクの 0 は、クリップの start + takeOffset）", () => {
     const s = noteFieldSpec("position", notes, { start: BAR, end: 5 * BAR, takeOffset: 0 }, [0], M44)!;
-    expect(s.initial).toBe("4.1.000");
-    expect(s.range).toBe("2.1.000〜5.4.120");
+    expect(s.initial).toBe("4.1.0000");
+    expect(s.range).toBe("2.1.0000〜5.4.0480");
   });
 });
 
@@ -133,8 +143,8 @@ describe("2 つ以上のノートの欄（SetNotesField の意味のとおり）
 
   it("位置: いちばん早い位置。まとまり全体がクリップに入る所まで", () => {
     const s = noteFieldSpec("position", notes, clip, all, M44)!;
-    expect(s.initial).toBe("3.1.000");
-    expect(s.range).toBe("1.1.000〜4.3.000");
+    expect(s.initial).toBe("3.1.0000");
+    expect(s.range).toBe("1.1.0000〜4.3.0000");
   });
 
   it("音: いちばん低い音。いちばん高い音が G9 をこえない所まで", () => {
@@ -145,9 +155,9 @@ describe("2 つ以上のノートの欄（SetNotesField の意味のとおり）
 
   it("長さ: ばらばらなら、いちばん早いノートの長さを入れておく。どの値でも変わる", () => {
     const s = noteFieldSpec("length", notes, clip, all, M44)!;
-    expect(s.initial).toBe("0.360");
+    expect(s.initial).toBe("0.1440");
     expect(s.current).toBeNull();
-    expect(s.range).toBe("0.001〜6.240");
+    expect(s.range).toBe("0.0001〜6.0960");
     expect(commitCommand(s, (3 * TPQ) / 4, 12, all)).toEqual({ type: "setNotesField", take: 12, notes: all, field: "length", value: (3 * TPQ) / 4 });
   });
 
@@ -161,11 +171,11 @@ describe("2 つ以上のノートの欄（SetNotesField の意味のとおり）
 describe("↑ ↓ と送る意図", () => {
   it("位置と長さは表示のいちばん下のけた（1 ティック）ずつ。範囲の外へは出ない", () => {
     const s = noteFieldSpec("position", notes, clip, [0], M44)!;
-    expect(s.format(stepField(s, at(3, 1, 0), 1))).toBe("3.1.001");
-    expect(s.format(stepField(s, at(3, 1, 0), -10))).toBe("2.4.470");
-    expect(s.format(stepField(s, 5, -10))).toBe("1.1.000");
+    expect(s.format(stepField(s, at(3, 1, 0), 1))).toBe("3.1.0001");
+    expect(s.format(stepField(s, at(3, 1, 0), -10))).toBe("2.4.1910");
+    expect(s.format(stepField(s, 5, -10))).toBe("1.1.0000");
     const l = noteFieldSpec("length", notes, clip, [0], M44)!;
-    expect(l.format(stepField(l, 1, -1))).toBe("0.001");
+    expect(l.format(stepField(l, 1, -1))).toBe("0.0001");
   });
 
   it("音は半音、ベロシティは 1 ずつ。127 で止まる", () => {
@@ -185,7 +195,7 @@ describe("↑ ↓ と送る意図", () => {
 
   it("使えない値: 欄、もとの値、範囲の文（ばらばらなら欄に見えていた文字）", () => {
     const p = noteFieldSpec("position", notes, clip, [0], M44)!;
-    expect(rejectCommand(p, "3.1.000")).toEqual({ type: "rejectValue", field: "position", kept: "3.1.000", range: "1.1.000〜4.4.120" });
+    expect(rejectCommand(p, "3.1.0000")).toEqual({ type: "rejectValue", field: "position", kept: "3.1.0000", range: "1.1.0000〜4.4.0480" });
     const v = noteFieldSpec("velocity", notes, clip, [0, 1, 2], M44)!;
     expect(rejectCommand(v, "77 – 83")).toEqual({ type: "rejectValue", field: "velocity", kept: "77 – 83", range: null });
   });

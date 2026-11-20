@@ -218,7 +218,7 @@ describe("マウス（drag.ts）", () => {
     tool = "draw";
     drag.down(85, rowY(KICK) + 5, NONE);
     expect(drag.move(200, rowY(KICK) + 5, NONE)).toBe(false);
-    expect(drag.reading()).toBe("キック ・ 1.3.000 ・ 長さ 0.120");
+    expect(drag.reading()).toBe("キック ・ 1.3.0000 ・ 長さ 0.0480");
     const c = drag.up();
     expect(c).toEqual({ type: "addNote", take: 7, start: 2 * TPQ, length: TPQ / 4, key: KICK, velocity: 100 });
   });

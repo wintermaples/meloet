@@ -1130,3 +1130,38 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
   - ヤチヨさんの決め（C-10）: ミキサーのメーターはいつも 30 Hz。64 本でも大丈夫かを確かめる。(a) の係を呼びもどして頼んだ。
   - merge の後の check-all で、plughost の `a_host_process_crashed_from_outside_stops_its_slots_at_the_second_block` が 1 回落ちた（待った回数が `[2, 2]`。続けて 6 回は通る。時間のぶれ。宿題）。
 - 区切り2 ・ 3 の直し（a ・ b ・ c）が入った後の check-all（7ecf8b6）: Rust 999 ・ ignored 78、画面 2596、fmt ・ clippy ・ 型 ・ ライセンスの見はり。
+
+### 第 6 回の宿題（次の回より後へ残す物）
+
+| 宿題 | なぜ残したか |
+|---|---|
+| `service::tests::telemetry_goes_once_to_a_new_sink_then_stops_until_something_changes` が、たまに落ちる | 鍵の知らせとベンドを計器が読む順のぶれと読んだ。前からある作り |
+| plughost の `a_host_process_crashed_from_outside_stops_its_slots_at_the_second_block` が、たまに落ちる（待った回数が `[2, 2]`） | 時間を見る試験。続けて 6 回は通る |
+| テンポが動く曲で、WebGL の係のコマが 1 秒 86〜99。ドラッグの試験でも `requestAnimationFrame` が 1 秒 100〜180 回（作り物の出来事のせいかもしれない） | busyMs に害は見えない。意図は 1 コマに 1 つまでと数えたが、1 秒に 60 をこえうる |
+| 出口を `pw-record` で録って「こまが合うか」を見る道具（`click-check.py`）で、`pw-record` の ERR がふえた所を外す。抜けの回し（`target/measure/round6-step2-3/k6meas2-scripts/k6meas2-drops.py`）を `tools/measure/` へ | 抜けは `pw-record` 自身の xrun で、meloet の外（確かさ B） |
+| 16 トラックの Surge XT ＋ ZamComp で、たまに xrun とコンプの間に合わないブロック | 第 5 回からの続き。帯のせいとは言えない |
+| 戻り A ・ B とマスターのプラグインは、最後の区切りの頭の位置を聞いている。VST3 の `IProcessContextRequirements` を聞いていない | 区切り0 で読んで見つけた。いまのプラグインで害は見ていない |
+| 最初から入っているエフェクトのパラメータが、帯の線より少し遅れて追う（エフェクトが自分で 30 ms かけて近づく） | 測っていない。気になれば、そのぶん先に読む（21-7） |
+| ← → のノートの移動と、CC の点のドラッグが、拍子の変更をたどらない一様なきざみ | 区切り1 の画面の残り |
+| 押してから撮る絵で、ノートの線が出ない | 撮る道具の前からの問題 |
+| `fake.ts` の `SCENES.paramMany6` が 2 回ある | 偽物の場面だけ |
+| 帯の名前: 一覧を頼んだプラグインが答えないと、その鍵は頼みなおさない。画面がもう取りにいった履歴の行は、名前があとから届いても古いまま。plughost の `Moved` の輪（512）は、33 ms に 1 つのプラグインへそれより多い点が来ると新しい値を落とす | 帯が 100 本をこえる時などの話。次の値で直る |
+| ストリームのない core が帯をエンジンに送らないので、`service.rs` の `EngineOp::Automation` を写す約 10 行は安い試験を通らない | 本物の試験は通る |
+| 帯の点の手ごとに、点の列をいったん `Vec` に写して切りなおす（25000 点で 400 KB の一時的な写し）。`autosync.rs` はエンジンへ送る箱を作るとき、帯の点をぜんぶ写す | 残らない写し。ノートの手と同じ形 |
+| パラメータの欄（`ParamRow`）で帯が値を動かす所の、本物のアプリでのコマの時間 | アプリの中で帯を作るためしで、点が 1 つしか入らなかった |
+| 出口がひらいていて、プラグインのある曲で 500 手とぶ時間 | core の試験では 75 µs と 35〜37 ms。本物のアプリでは測っていない |
+| Surge XT の LV2 のパラメータの字は単位のない数（「0.21」） | プラグインが言う字のまま |
+
+### 次の回への申し送り（第 7 回: 歌と音のファイル）
+
+- 第 7 回の中身（第 6 回の頼みの「この先の回」）: 歌と音のファイル。歌を録る、切る ・ 動かす ・ フェード、wav ・ mp3 ・ flac ・ ogg などの音のファイルを入れる（新しく足した）、2 本に同時に録る、音の設定の奥、書き出し（テンポの変化をたどる）。始める前にデザインへ戻す（ファイルを入れる所の案もいっしょに）。作る側から決めてほしい事は `design-notes.md` の B-93 に書いた。
+- **版**: 約束は 21、曲のファイルは版 5（版 1〜4 も開ける）、プラグイン係とのやりとり（wire）は版 4、帯の点のバイナリ（`lane(laneId)`）は版 1。
+- **テンポの地図**（21-1）: `crates/meloet-model/src/tempo_map.rs` と `ui/src/time/tempoMap.ts`（Rust の答えの表 `tempoMap.table.json` でためす）。いまのテンポの数は「その拍子の拍が 1 分間にいくつ」（6/8 なら 8 分音符）。ティックは 4 分音符 = 480。録った位置は x/4 で 0.68 ms 以内、6/8 では 1 ティックが 2.08 ms あるので 1.21 ms まで（B-92 で聞いている）。
+- **耳に届いていた位置**: エンジンの位置は「錨の秒 ＋ 錨からの整数のこま数」、地図は `Arc<TempoMap>` を輪で送り `map_gen` で見分ける。`TransportClock::heard_at(t_us, map, map_gen)` が、ある時刻に耳に届いていた位置を出す（鍵 21-4、オートメーションの書いた点 21-9 が同じ式）。歌を録るときも、この式に入口の遅れを足し引きする形がそのまま使えるはず。
+- **オートメーション**: 帯の点は `ChunkedVec`（21-5）。core が `TransportClock` で書いた点を置く。パラメータの欄が見せているプラグインには `Watch` を言い、plughost が帯の動かした値を `ParamAutomated` で返す（21-8）。帯の名前は core がプラグインの鍵ごとに覚える。
+- **取り消しの手**: 手の名前のない手があると落ちる試験（`StepName::every_kind()`、Rust と TS）がある。新しい手（切る、フェード、ファイルを入れる …）には名前と「（何を）」を足す。履歴の帯は `History::jump` で N 手を 1 回で。
+- **WebKit の描きなおし**（7 章）: 「11 個 ・ 25 %」のほかに、1 回のレイアウトの四角をためる Region の `gridSize` 256 の決まりがあり、`transform` にも効く。毎コマ変わる物はレイアウトを走らせない。道具は `tools/measure/webkit-damage.sh` と `webkit-layout.sh`。ミキサーのメーターはいつも 30 Hz（C-10）。波形やマイクの計のように 60 Hz で動く物を足すときは、両方の道具で見る。
+- **測る道具**（第 6 回で足した物）: `auto-write.py`（書いた点の位置、10 分書く）、`webkit-layout.sh`、`ui-script.sh` の `hist-make` ・ `hist-open` ・ `hist-scroll` ・ `hist-jump`、`make_song.py` の `--tempo-points` ・ `--head-ramp` ・ `--meter-changes` ・ `--markers` ・ `--lanes` ・ `--lane-points` ・ `--lane-resting`、`long_record_ticks.py`、`tempo_map.py`、`click-check.py`。
+- 出口を `pw-record` で録ると、`pw-record` 自身の xrun で 5 秒おきくらいに 768 か 1024 こま抜ける（meloet なしでも起きる）。出口を録る測りでは `pw-record` の ERR を横で見る。歌の測り（出口から入口へ回す）は、自分用の PipeWire（`crates/meloet-engine/tests/private_pw/`）で。
+- meloet の窓は Wayland の窓なので、`remote.py` の X の作り物の出来事は届かない（プラグインの窓だけ）。ページの中のポインタの出来事は `remote_page.js` の `ptr`。
+- 音のファイルを読む部品はいま symphonia 0.6.1（wav ・ flac ・ pcm だけオン）。

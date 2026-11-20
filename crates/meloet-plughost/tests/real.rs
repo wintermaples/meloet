@@ -660,3 +660,98 @@ fn surge_xt_vst3_runs_its_sequencer_at_the_tempo_of_the_song() {
         }
     }
 }
+
+/// `song` in 6/8: the meter and the bar's start change, the tempo and the position stay in
+/// quarter notes.
+fn in_six_eight(song: Transport) -> Transport {
+    let bar = (song.position_quarters / 3.0).floor();
+    Transport {
+        meter_num: 6,
+        meter_den: 8,
+        bar_start_quarters: bar * 3.0,
+        bar: bar as u64,
+        ..song
+    }
+}
+
+/// In 6/8 the tempo still counts quarter notes for both formats: Surge XT's step sequencers
+/// play their 16 steps in two quarter notes at one tempo and along a ramp, and the LV2 one
+/// follows a ramp in 4/4 as the VST3 one does.
+#[test]
+#[ignore = "needs Surge XT (VST3 and LV2) and its factory patches"]
+fn surge_xt_runs_its_sequencer_by_quarter_notes_in_six_eight() {
+    if !installed(SURGE_VST3) || !installed(SURGE_LV2) || !Path::new(SURGE_SEQUENCE).exists() {
+        eprintln!("Surge XT or {SURGE_SEQUENCE} is not installed; nothing tested");
+        return;
+    }
+    let patch = synced(&std::fs::read(SURGE_SEQUENCE).unwrap()[60..]);
+    for plugin in [SURGE_LV2, SURGE_VST3] {
+        let mut host = Host::start_with(GEOMETRY, &[]);
+        let mut first = load(&mut host, 0, plugin);
+        run(&mut first, 10, &[]);
+        let own = host.state(0);
+        let state = if plugin == SURGE_LV2 {
+            let key = b"StateString> \"";
+            let from = own.windows(key.len()).position(|w| w == key).unwrap() + key.len();
+            let to = from + own[from..].iter().position(|&b| b == b'"').unwrap();
+            [&own[..from], juce_base64(&patch).as_bytes(), &own[to..]].concat()
+        } else {
+            [&own[..4], &(patch.len() as u64).to_le_bytes(), &patch[..]].concat()
+        };
+        let name = plugin.0;
+
+        for bpm in [90.0, 120.0, 150.0] {
+            let half_blocks = 2.0 * 60.0 / bpm * 48_000.0 / 256.0;
+            let song = |frame| in_six_eight(song_at(frame, bpm));
+            let blocks = (half_blocks * 16.0) as usize;
+            let bright = sequence_along(&mut host, 1, plugin, &state, blocks, &song);
+            assert_eq!(host.ask(Request::Unload { slot: 1 }), Reply::Ok);
+            // From below half the length (twice the tempo) to short of twice the length,
+            // where a sequence at the right tempo is like itself again too.
+            let lag = repeats_after(&bright[40..], 30, (half_blocks * 1.6) as usize);
+            println!(
+                "{name} 6/8 {bpm}: repeats after {lag} blocks, 2 quarter notes are {half_blocks:.1}"
+            );
+            assert!(
+                (lag as f64 - half_blocks).abs() < half_blocks * 0.02 + 1.0,
+                "{name} in 6/8 at {bpm} the sequence repeats after {lag} blocks, not {half_blocks:.1}"
+            );
+        }
+
+        for (six_eight, from, to) in [
+            (false, 90.0, 150.0),
+            (false, 150.0, 90.0),
+            (true, 90.0, 150.0),
+            (true, 150.0, 90.0),
+        ] {
+            let quarters = 64.0;
+            let seconds = 60.0 * quarters / (to - from) * f64::ln(to / from);
+            let blocks = (seconds * 48_000.0 / 256.0) as usize;
+            let song = |frame| {
+                let song = ramp_at(frame, from, to, quarters);
+                if six_eight { in_six_eight(song) } else { song }
+            };
+            let bright = sequence_along(&mut host, 1, plugin, &state, blocks, &song);
+            assert_eq!(host.ask(Request::Unload { slot: 1 }), Reply::Ok);
+            let laid = over_quarters(&bright, &|block| {
+                ramp_at(block as u64 * 256, from, to, quarters).position_quarters
+            });
+            let third = laid.len() / 3;
+            let meter = if six_eight { "6/8" } else { "4/4" };
+            for (n, part) in laid[32..].chunks(third).take(3).enumerate() {
+                let lag = repeats_after(part, 26, 115);
+                println!(
+                    "{name} {meter} {from} to {to}, third {}: repeats after {:.3} quarter notes",
+                    n + 1,
+                    lag as f64 / 32.0
+                );
+                assert!(
+                    (62..=66).contains(&lag),
+                    "{name} {meter} {from} to {to}, third {}: repeats after {} quarter notes, not 2",
+                    n + 1,
+                    lag as f64 / 32.0
+                );
+            }
+        }
+    }
+}

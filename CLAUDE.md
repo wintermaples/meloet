@@ -1,6 +1,6 @@
 # meloet — 次に来るきみへ
 
-meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お願いはヤチヨさん（デザインと方向を決める人）から、毎回あたらしい会話で来ます。
+meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お願いはオーナーさん（デザインと方向を決める人）から、毎回あたらしい会話で来ます。お願いの文はヤチヨが書くことがありますが、決める人はオーナーさんです（前の docs の「ヤチヨさん」は、オーナーさんのこと）。
 この書類を最初に読み、次に [`docs/progress.md`](docs/progress.md)（どこまでできたか、宿題、申し送り。いちばん下の「次の回への申し送り」から）、[`docs/architecture.md`](docs/architecture.md)（骨組みと約束と理由）、[`docs/design-notes.md`](docs/design-notes.md)（仕様書とモックの読みかた、デザインに戻した事）を読んでください。
 
 返事は日本語で、やさしい言葉で。
@@ -9,7 +9,7 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 
 - きみは棟梁。設計する、仕事を切り分ける、係に頼む、受けとって確かめる、まとめる。**大きな実装は自分で書かない**。
 - 係は `.claude/agents/` の 3 つ。
-  - `meloet-hard`（Fable 5.2、effort medium。Fable の使用上限のときは、ヤチヨさんに聞いて Opus 5.5 にする: 2026-11-15〜18、2026-11-20（その日のうちにヤチヨさんが Fable 5.2 に戻した））: 音のスレッド、unsafe と FFI、スレッドやプロセスの間のやりとり、WebGL、Rust と画面の約束の核、core のデータの作り、速さとメモリの測定。
+  - `meloet-hard`（Fable 5.2、effort medium。Fable の使用上限のときは、オーナーさんに聞いて Opus 5.5 にする: 2026-11-15〜18、2026-11-20（その日のうちにオーナーさんが Fable 5.2 に戻した））: 音のスレッド、unsafe と FFI、スレッドやプロセスの間のやりとり、WebGL、Rust と画面の約束の核、core のデータの作り、速さとメモリの測定。
   - `meloet-impl`（Opus 5.5、effort medium）: 画面の部品、帯の骨組み、設定、文面、テスト、道具。
   - `meloet-research`（Sonnet 5.5、effort high）: インターネットで調べる。コードは書かない。
   - 難しいか、ふつうか、迷ったら難しいほうへ。
@@ -22,11 +22,11 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 - 係の依頼文には「背景で待つしかけ（`until ! pgrep -f …; do sleep …` のループ）を使わない」と書く。`pgrep -f "<文字>"` は、そのループを走らせている `bash -c` 自身の行にも合うので、いつまでも終わらない。係はそれを待ったまま止まる（2026-11-18、1 時間ほど返ってこなかった。前の回にも残っていた）。係が返ってこないときや、終わったあとは `ps -u meloet-agent -o pid,ppid,etime,args | grep -E "sleep|until"` で見て、残ったループを止める（親の `claude` は止めない）。
 - 何人も同時に動かすと、同じファイルに書きかけがまざる。係ごとにさわってよいファイルを依頼文に書く（「読みなおしてから、足す形で」も）。まざったときは、スクラッチに `git worktree add --detach <dir> HEAD` を作り、その係の分のファイルだけを写して確かめ、そこでコミットしてから `git update-ref refs/heads/foundation <commit>` と `git reset -q`（ほかの係の書きかけのファイルにはさわらない）。`ui/node_modules` は symlink で足りる。
 - 約束が変わる大きな仕事は 2 回に分けて頼む: 1 回目で約束の形と TS の型と偽物の場面だけ作らせてコミット → 2 回目で core と画面を別の係に同時に頼む。
-- プラグインの窓をひらく試験は、ヤチヨさんの画面に窓が出るが、聞かずに進めてよい（ヤチヨさん 2026-11-19）。
-- 速さを測るときは PC を静かにする（ほかの係のビルドやアプリを止める。ヤチヨさんの meloet が動いていないか `ps -u wintermaples`）。にごった数は、その条件を書いて残す。測定はヘッドホンに音が出るが、聞かずに進めてよい（ヤチヨさん 2026-11-18）。メモリの流れ（RSS）は、少しにごっていても見られる。
+- プラグインの窓をひらく試験は、オーナーさんの画面に窓が出るが、聞かずに進めてよい（オーナーさん 2026-11-19）。
+- 速さを測るときは PC を静かにする（ほかの係のビルドやアプリを止める。オーナーさんの meloet が動いていないか `ps -u wintermaples`）。にごった数は、その条件を書いて残す。測定はヘッドホンに音が出るが、聞かずに進めてよい（オーナーさん 2026-11-18）。メモリの流れ（RSS）は、少しにごっていても見られる。
 - 画面だけで動く物（スクロール、拡大、ドラッグ）を本物のアプリで測るときは、`MELOET_UI_SCRIPT`（測るときだけ動く、ページの中の自動の係）と `MELOET_OPEN_SONG`（曲を開いて始める）を使う（`tools/measure/ui-script.sh`）。
-- 係が「止められていた」ときは、新しい係を立てる前にヤチヨさんに聞く。
-- 使える量の上限で係が止まったら、上限が戻ってから `SendMessage`（係の id）で「止めた所から続けて」と呼びもどす。作業ツリーとこれまでの話がそのまま残る。**呼びもどすかもしれない間は、その係の作業ツリーを片づけない**（片づけると呼びもどせない。2026-11-20 に 1 回あった）。ヤチヨさんに頼まれたら、上限が戻る時刻に `CronCreate` の一回きりの予約を入れる（この会話の間だけ動く）。
+- 係が「止められていた」ときは、新しい係を立てる前にオーナーさんに聞く。
+- 使える量の上限で係が止まったら、上限が戻ってから `SendMessage`（係の id）で「止めた所から続けて」と呼びもどす。作業ツリーとこれまでの話がそのまま残る。**呼びもどすかもしれない間は、その係の作業ツリーを片づけない**（片づけると呼びもどせない。2026-11-20 に 1 回あった）。オーナーさんに頼まれたら、上限が戻る時刻に `CronCreate` の一回きりの予約を入れる（この会話の間だけ動く）。
 - 係のスクラッチのファイルは、ほかの係と共用の場所になることがある。依頼文で、ファイルの名前の頭に係ごとの印（`k3core2-` など）をつけさせる（第 5 回に上書きしあった）。
 - 調べ物は meloet-research に。一次情報を先に。出どころと確かさ（A・B・C）をつけて返してもらう。
 - 記憶で書かない。Tauri、Svelte、cpal、pipewire、alsa のような動きの速い部品は、入れた版の文書かソース（`~/.cargo/registry/src/`、`ui/node_modules/`）を読んでから。
@@ -48,10 +48,10 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 - 鍵盤のぬきさしは ALSA シーケンサ。出口と入口の名前は PipeWire の Route。音は cpal。
 - バッファは、本当に動いている数を出す。PC 全体の設定（PipeWire の quantum など）は、meloet も、きみも、変えない。読むだけ。
 - 音のスレッドでは、メモリを取りにいかない、鍵を待たない。テストで機械が見はっている（`crates/meloet-engine`、`crates/meloet-sound`）。値は 20 ms でなめらかに、エフェクトや音源を入れかえるときは 10 ms 重ねる。NaN は和の所で止め、denormal はくり返しの所で小さな値を 0 にする（FTZ ・ DAZ は立てない）。
-- 最初から入っているエフェクトは自分で書く（`crates/meloet-sound/src/effects/`）。音色の素材は CC0、CC BY、MIT だけ（CC BY-SA は使わない）。帰属表示は `NOTICE` と「meloet について」で、`node licenses/check.mjs` が素材まで見はる。素材の作りかたはリポジトリ（`tools/sounds/`）、作った包みは GitHub の Release（上げる前にヤチヨさんに聞く）。
+- 最初から入っているエフェクトは自分で書く（`crates/meloet-sound/src/effects/`）。音色の素材は CC0、CC BY、MIT だけ（CC BY-SA は使わない）。帰属表示は `NOTICE` と「meloet について」で、`node licenses/check.mjs` が素材まで見はる。素材の作りかたはリポジトリ（`tools/sounds/`）、作った包みは GitHub の Release（上げる前にオーナーさんに聞く）。
 - プラグインは別のプロセス（`meloet-plughost`、同じプラグインは 1 つのプロセスにまとめる）。標準出力 ・ 標準エラーをやりとりに使わない。止まったかは時間で見はる（`docs/architecture.md` 20 章）。子のプロセスは `meloet_plugin::launch::spawn` で 1 つずつ起こす（VS Code の LLDB のため）。形式は VST3 と LV2（CLAP は入れていない）。
 - 数値は仕様書の名前（`color.gray.4`、`size.meter.slim`、`space.3` …）のまま、`ui/src/design/tokens.ts` から使う。色、文字の大きさ、すきまを勝手に足さない。
-- 画面の文面は `ui/src/text/ja.ts` の一か所。仕様書の文面は一字も変えない。モックにだけある文は、モックの文のまま（出どころつき）。ヤチヨさんが決めた文は出どころ `user:<日付>`。
+- 画面の文面は `ui/src/text/ja.ts` の一か所。仕様書の文面は一字も変えない。モックにだけある文は、モックの文のまま（出どころつき）。オーナーさんが決めた文は出どころ `user:<日付>`。
 - モックと仕様書が食いちがったら、仕様書が正しい。直した所は一覧にする。
 - まだ中身のない部品は、消さずに「使えない」状態で出す。
 - 曲の中の位置はティック（4 分音符 = 480）。録った鍵は「押した瞬間に耳に届いていた位置」に置く。クオンタイズは直す操作としてだけ（`docs/architecture.md` 11・12 章）。
@@ -132,11 +132,11 @@ ln -sfn ../sounds/dev target/debug/sounds                   # 開発のビルド
 
 ## この PC の事情（本番のユーザーには関係しない）
 
-- エージェントは `meloet-agent` という別ユーザーで動く。画面と音は `source ~/.config/meloet-agent/env.sh` で入る（入口はヤチヨさんにあけてもらう）。
+- エージェントは `meloet-agent` という別ユーザーで動く。画面と音は `source ~/.config/meloet-agent/env.sh` で入る（入口はオーナーさんにあけてもらう）。
 - GTK のアプリは起動で 30 秒止まることがある。`dbus-run-session -- ` をつけて起動する。
 - cpal が PipeWire を見つけないときは `PIPEWIRE_RUNTIME_DIR=/run/user/1000`。
-- ヤチヨさんは同じ作業ツリーを VS Code で開いていて、vite がポート 1420 で動いていることがある。`npm run dev` を 1420 で走らせない。`ui/node_modules/.vite/` を消さない。ヤチヨさんがデバッグ版の meloet を動かしていることもある。
-- PipeWire を落とす試験は、自分用の PipeWire と WirePlumber で（`crates/meloet-engine/tests/private_pw/`）。ヤチヨさんの PipeWire は止めない。ソケットの道は 108 バイトまでなので `/run/user/1001/` の下に置く。
+- オーナーさんは同じ作業ツリーを VS Code で開いていて、vite がポート 1420 で動いていることがある。`npm run dev` を 1420 で走らせない。`ui/node_modules/.vite/` を消さない。オーナーさんがデバッグ版の meloet を動かしていることもある。
+- PipeWire を落とす試験は、自分用の PipeWire と WirePlumber で（`crates/meloet-engine/tests/private_pw/`）。オーナーさんの PipeWire は止めない。ソケットの道は 108 バイトまでなので `/run/user/1001/` の下に置く。
 - 閉じるときの WebKitWebProcess の SIGSEGV（NVIDIA の EGL）は、web プロセスを先に止める形で回避した。apport は、まだ見ていない `.crash` があると同じプログラムの新しい報告を書かないので、「落ちていない」は `/var/crash` では確かめられない（`docs/progress.md` 第 2 回の区切り0）。
 - 「GC のスレッドが何百もできては消える」の正体は、GTK のタイトルバーのアイコンの読みなおし（glycin）。ひびきはない（同じ所）。
 - シェルで `a && b && ( … ) & c` と書くと、`&` が前の列ぜんぶを後ろに回す。変数を決める行と背景で動かす行は分ける。
@@ -147,6 +147,6 @@ ln -sfn ../sounds/dev target/debug/sounds                   # 開発のビルド
 - この PC の WebKitGTK は、合成の層なしでページを CPU で描く（`WEBKIT_FORCE_COMPOSITING_MODE=1` などの変数でも変わらない）。WebKit の debug 情報は `~/.cache/debuginfod_client/` にある（`webkit-damage.sh` が使う）。
 - 音の出口えらびは「出口をまだ決めていない ＋ 鍵盤が 1 つ以上」のときだけ出る。測る道具は、起動の前に仮想の鍵盤（`meloet-vkeys appear`）を出しておく。
 - debug のビルドでも symphonia と `meloet-sound` は opt-level 3（`Cargo.toml`）。外すとグランドピアノの読みこみが 8 秒かかる。
-- `env.sh` には `DISPLAY` がない。X の要る物（プラグインの窓の試験、`--ignored` の本物の試験）は `DISPLAY=:0` を足す（XWayland、窓はヤチヨさんの画面に出る）。
+- `env.sh` には `DISPLAY` がない。X の要る物（プラグインの窓の試験、`--ignored` の本物の試験）は `DISPLAY=:0` を足す（XWayland、窓はオーナーさんの画面に出る）。
 - この PC には Surge XT（VST3 ・ LV2）、LSP、ZamComp、Dragonfly、Calf などのプラグインがある（`/usr/lib/vst3`、`/usr/lib/lv2`）。X の画面がある所で、はじめてのスキャンは約 40 秒（LSP の VST3 が窓の型を聞かれるたびに X につなぐ）、画面がなければ 11〜19 秒。
 - VS Code の「meloet（デバッグ）」は CodeLLDB。子のプロセスを何人も同時に起こすと、lldb-server が meloet を止めたまま回りつづけた（窓が出ない）。子は 1 つずつ起こし、スキャンは画面のあいさつのあとに始める形で直した（2026-11-19）。どちらかを外すと、また起きる。止まった meloet は `ps` の STAT `t` と `/proc/<pid>/status` の TracerPid で見える。

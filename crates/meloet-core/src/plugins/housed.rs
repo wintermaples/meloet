@@ -68,6 +68,10 @@ impl Instrument for HousedInstrument {
     fn latency(&self) -> u32 {
         self.inner.latency()
     }
+
+    fn set_param_at(&mut self, frame: u32, id: u32, value: f32) {
+        self.inner.set_param_at(frame, id, value);
+    }
 }
 
 pub(crate) struct HousedEffect {
@@ -91,6 +95,14 @@ impl Effect for HousedEffect {
 
     fn set_param(&mut self, index: u32, value: f32) {
         self.inner.set_param(index, value);
+    }
+
+    fn takes_points(&self) -> bool {
+        self.inner.takes_points()
+    }
+
+    fn set_param_at(&mut self, frame: u32, index: u32, value: f32) {
+        self.inner.set_param_at(frame, index, value);
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], ctx: &EffectContext) {

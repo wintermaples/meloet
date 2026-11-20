@@ -1002,6 +1002,7 @@ SF2（サウンドフォント）のこと（ヤチヨさんの決め 2026-11-18
 
 | 係 | 動いたモデル |
 |---|---|
+| meloet-hard | Fable 5.2（claude-fable-5-2） |
 | meloet-research | Sonnet 5.5（claude-sonnet-5-5）。3 人とも |
 
 ### 写し（2026-11-20、2fd6c2f）
@@ -1016,3 +1017,22 @@ SF2（サウンドフォント）のこと（ヤチヨさんの決め 2026-11-18
 - [`research/automation-vst3.md`](research/automation-vst3.md): 点は位置の順、点の間はまっすぐ、上限の決まりなし。**JUCE の VST3 は 1 ブロックの最後の点しか使わない**（6.1.6 ・ 8.0.12 ・ master で同じ）。窓のつまみは UI スレッドで `setParamNormalized`。ProcessContext のテンポは、SDK に決まりがなく Ardour はブロックの頭の値。VST3 ではブロックを分けない（Ardour も）。
 - [`research/automation-lv2.md`](research/automation-lv2.md): control ポートは `run` の間 1 つの値。分けるなら `run` を何回か（Ardour は分ける。`coarseBlockLength` の物は分けない）。**Surge XT（JUCE の LV2）は `patch:Set` の時刻を見ず、`time:Position` は毎ブロック要る（`time:beat` を ppq として読む）**。Surge XT の窓は `ui:touch` を出さない。
 - [`research/tempo-and-automation.md`](research/tempo-and-automation.md): **拍にまっすぐのだんだんは Ardour（式は log1p ・ expm1）**。仕様書の 112.00 は拍にまっすぐで合う（時間にまっすぐなら 112.29）。書きかた（touch ・ latch）、休み（Ableton の Re-Enable、Bitwig の Restore）、間引き（Ardour は 30 ms と三角形の面積 20）、線の上の値（Ardour の音量はフェーダーの目盛でまっすぐ）。
+
+### 区切り0: 決める事（2026-11-20、棟梁と meloet-hard）
+
+[`architecture.md`](architecture.md) 21 章（21-1〜21-15）。要点:
+- **テンポの地図**は `meloet-model` の 1 か所（`tempo_map.rs`）。テンポの点（ティック、テンポ、次の点までだんだん）と拍子の旗（小節の番号）から、「テンポの区間 ∩ 拍子の区間」のかけらの列を作る。式は `ln_1p(x)/x` ・ `exp_m1(y)/y` の閉じた形で、しきい値なし（仕様書の 104 → 120 は 8.586 秒、7 小節目 112.00）。エンジンも `meloet-model` を使う。画面の TS は Rust の答えの表でためす。
+- テンポの数は 11 章のまま「その所の拍子の 1 拍の、1 分間の数」。x/8 の拍の頭は 8 分音符。拍子の旗は小節の番号で持ち、ほかはティックのまま。
+- **エンジンの位置**は「錨の秒 ＋ 錨からのこま数（整数）」から式で出す（足しあわせない）。`clock.rs` の区間に地図の上の秒を足し、鍵のティックも地図の式で。区切り（render の中の切れ目）にテンポの点と拍子の旗を足す。
+- **オートメーション**の値は、どれもつまみの位置 0〜1、線はその位置でまっすぐ。インサートは新しい `InsertId` で指す。点は状態に入れず、テイクと同じく `LaneId` で取りにいく。
+- **先に読む量**: ヤチヨさんの計算は合っていた。ただし**ミュートだけは先に読む**（meloet のミュートは音源の入口で効くので、ノートと同じ `L_t`）。
+- **書いた点の置き場所**: ヤチヨさんのおすすめ（エンジンが記録）ではなく、**core が動かした時刻を `TransportClock` と地図で耳に届いていた位置にする**（エンジンの位置は耳より出口の遅れのぶん先で、正しく置くには結局その時刻と時計が要るため。鍵と同じ式）。
+- 15-C は「人の手が来たときだけ」1 手。履歴の N 手とびは `Doc` を 1 回入れかえ、エンジンへの送りとプラグインの状態の戻しは 1 回。ループの範囲は `Doc` へ。曲のファイルは版 5 を第 6 回の中で 1 つ、約束は区切り1 で版 20。
+- VST3 の調べ物の残りの問い: エンジンはループの折り返しで区切りを分けていた（ノート ・ 拍でも分けている）。
+- 仮で決めて B-92 に戻す事 16、ヤチヨさんに聞く事 2（`design-notes.md`）。
+
+読んでいて見つけた宿題（直していない）: (1) 戻り A ・ B とマスターのプラグインは、最後の区切りの頭の位置を聞いている。(2) LV2 の `time:Position` を送っていない（21-3 で足す）。(3) VST3 の `IProcessContextRequirements` を聞いていない。(4) 最初から入っているエフェクトのパラメータが線を追う遅れ。
+
+### 区切り0: 91-3 の Rust 側（b55b42e、meloet-hard）
+
+VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKnobs` に分ける（21-14）。本物の Surge XT（VST3）で 774 ＋ 2080、LV2 で 775 ＋ 0。継ぎ目のコミット 7980bb7 で `meloet-plugin` の試験の期待（`midiCc`）を直し忘れていたのを、係が直した。

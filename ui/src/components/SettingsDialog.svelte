@@ -1,5 +1,9 @@
-<!-- 音の設定（モック F-Settings のおもて、F-SettingsAdvFixed の奥。仕様書 2 章「ダイアログ」）。 -->
+<!-- 音の設定（モック F-Settings のおもて、F7-SettingsAdv の「くわしい設定」。仕様書 2 章「ダイアログ」、3 章 33-A）。
+     くわしい設定は、入口 ・ バッファ ・ サンプルレート ・ 録る形 ・ 遅れの合わせ ・ プラグインの場所。バッファとサンプルレートは「頼む数」で、
+     右に「動いている」数。ちがったら、その下に「頼んだ 128 ではなく、256 で動いています…」。F-SettingsAdv の「音のしくみ」と 64〜1024 のならびは、ない。
+     ▾ の一覧は右クリックの一覧と同じ部品（ContextMenu）。 -->
 <script lang="ts">
+  import { RECORD_FORMATS, type EndpointView, type VocalInput } from "../bridge";
   import { space, type Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
@@ -13,19 +17,13 @@
   import UnusableEndpoints from "./UnusableEndpoints.svelte";
   import { endpointGroups, type EndpointLook } from "./endpoint";
   import { msText } from "./format";
+  import { openContextMenu, type MenuEntry } from "./menu/contextMenu.svelte";
   import PluginPlaces from "./plugins/PluginPlaces.svelte";
 
-  const SYSTEMS = [
-    { name: "PipeWire", key: "settings.systemPipeWire" },
-    { name: "JACK", key: "settings.systemJack" },
-    { name: "ALSA", key: "settings.systemAlsa" },
-  ] as const;
   const FIRST_NOTE = 36;
   const LAST_NOTE = 84;
   const WHITE_KEYS = keyboardLayout(FIRST_NOTE, LAST_NOTE).whiteCount;
-  const RATES = [44100, 48000, 96000];
-  const BUFFERS = [64, 128, 256, 512, 1024];
-  const AROUND = /(約 [\d.]+ ms)/;
+  const CHANNELS: Record<number, VocalInput> = { 1: "mono1", 2: "stereo12" };
 
   const app = $derived(current.state);
   const settings = $derived(app?.workspace.settings ?? null);
@@ -34,51 +32,101 @@
   const meterGap = $derived(space["space.1"][scale === 100 ? 0 : scale === 125 ? 1 : 2]);
 
   const groups = $derived(endpointGroups(app?.outputs.list ?? []));
-  const outputs = $derived(advanced ? groups.usable.filter((o) => o.id === settings?.draftOutput) : groups.usable);
   const notUsed: EndpointLook = { name: t("settings.notUsed"), side: null, link: null };
   const inputGroups = $derived(endpointGroups(app?.inputs.list ?? []));
-  const inputs = $derived.by(() => {
-    if (!app) return [];
-    const rows = [...inputGroups.usable, { id: "", look: notUsed }];
-    if (!advanced) return rows;
-    return rows.filter((r) => r.id === (app.inputs.chosen ?? ""));
-  });
-  const keyboards = $derived.by(() => {
-    if (!app) return [];
-    const list = app.keyboards.list;
-    return advanced ? list.filter((k) => k.id === app.keyboards.active) : list;
-  });
-
-  const withCurrent = (list: number[], value: number | null) =>
-    value === null || list.includes(value) ? list : [...list, value].sort((a, b) => a - b);
-  const rates = $derived(withCurrent(RATES, app?.audio.sampleRate ?? null));
-  const buffers = $derived(withCurrent(BUFFERS, app?.audio.requestedFrames ?? null));
-  const dash = "—";
-
-  const fixed = $derived.by(() => {
-    const m = app?.status.message;
-    if (m?.id !== "bufferFixed") return null;
-    const values = {
-      actual: m.actual,
-      requested: m.requested,
-      latencyMs: msText(m.latencyMs),
-      latencyMsAtRequested: msText(m.latencyMsAtRequested),
-    };
-    // 見出しはモックの文。本文は仕様書 6 章の文で、見出しと同じ 1 文目をのぞき、モックのとおり 3 つに分ける。
-    const sentences = t("msg.bufferFixedDetail", values).match(/[^。]*。/g) ?? [];
-    return {
-      title: t("settings.bufferFixedTitle", { actual: m.actual }),
-      paragraphs: [sentences.slice(1, 4), sentences.slice(4, 6), sentences.slice(6)].map((s) => s.join("")),
-    };
-  });
+  const inputs = $derived([...inputGroups.usable, { id: "", look: notUsed }]);
+  const dash = t("meter.playTargetNone");
 
   function testTone(): void {
     if (settings?.draftOutput) send({ type: "testTone", output: settings.draftOutput });
   }
+
+  // ---- くわしい設定 ----
+
+  /** 「入口 1 ・ 2（USB マイク）」。チャンネルの数がわからない入口は名前だけ。 */
+  function inputName(input: EndpointView): string {
+    const channels = input.channels === null ? undefined : CHANNELS[Math.min(input.channels, 2)];
+    return channels ? t("settings.inputChoice", { channels: t(`vocal.inputShort.${channels}`), name: input.name }) : input.name;
+  }
+  const chosenInput = $derived(app?.inputs.list.find((i) => i.id === app.inputs.chosen) ?? null);
+  const audio = $derived(app?.audio ?? null);
+  /** バッファの「動いている」数と、そのひとかたまりの長さ（モック F7-SettingsAdv の「動いている 256 ・ 5.3 ms」）。 */
+  const running = $derived.by(() => {
+    if (!audio?.running || audio.actualFrames === null) return null;
+    const ms = audio.sampleRate ? msText((audio.actualFrames / audio.sampleRate) * 1000) : null;
+    return ms === null ? t("settings.running", { value: audio.actualFrames }) : t("settings.runningLatency", { frames: audio.actualFrames, ms });
+  });
+  const bufferDiffers = $derived(!!audio?.running && audio.actualFrames !== null && audio.actualFrames !== audio.requestedFrames);
+  const rateDiffers = $derived(!!audio?.running && audio.sampleRate !== null && audio.sampleRate !== audio.requestedSampleRate);
+  const latencyText = $derived.by(() => {
+    const l = audio?.latency;
+    if (!l) return "";
+    const ms = l.usedMs === null ? dash : msText(l.usedMs);
+    if (l.used === "measured") return t("settings.latencyMeasured", { ms });
+    if (l.used === "manual") return t("latency.ms", { ms });
+    return t("settings.latencyReported", { ms });
+  });
+
+  /** ▾ を押したら、その下に一覧（右クリックの一覧と同じ形）。 */
+  function choose(e: MouseEvent, entries: MenuEntry[]): void {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openContextMenu(r.left, r.bottom, entries);
+  }
+  function inputRows(): MenuEntry[] {
+    const usable = inputGroups.usable.flatMap((u) => app!.inputs.list.filter((i) => i.id === u.id));
+    return [
+      ...usable.map(
+        (i): MenuEntry => ({
+          kind: "row",
+          label: "settings.input",
+          text: inputName(i),
+          usable: true,
+          checked: i.id === app!.inputs.chosen,
+          run: () => send({ type: "settingsSelectInput", input: i.id }),
+        }),
+      ),
+      { kind: "row", label: "settings.notUsed", usable: true, checked: app!.inputs.chosen === null, run: () => send({ type: "settingsSelectInput", input: null }) },
+    ];
+  }
+  function bufferRows(): MenuEntry[] {
+    return audio!.bufferChoices.map((frames) => ({
+      kind: "row",
+      label: "settings.buffer",
+      text: String(frames),
+      usable: true,
+      checked: frames === audio!.requestedFrames,
+      run: () => send({ type: "settingsSetBuffer", frames }),
+    }));
+  }
+  function rateRows(): MenuEntry[] {
+    return audio!.sampleRateChoices.map((hz) => ({
+      kind: "row",
+      label: "settings.rateHz",
+      text: t("settings.rateHz", { rate: hz }),
+      usable: true,
+      checked: hz === audio!.requestedSampleRate,
+      run: () => send({ type: "settingsSetSampleRate", hz }),
+    }));
+  }
+  function formatRows(): MenuEntry[] {
+    return RECORD_FORMATS.map((f) => ({
+      kind: "row",
+      label: "settings.bits",
+      text: t("settings.bits", { bits: f.bits }),
+      usable: true,
+      checked: f.format === audio!.recordFormat,
+      run: () => send({ type: "settingsSetRecordFormat", format: f.format }),
+    }));
+  }
+  const bits = $derived(RECORD_FORMATS.find((f) => f.format === audio?.recordFormat)?.bits ?? 24);
 </script>
 
+{#snippet dropdown(label: string, test: string, open: (e: MouseEvent) => void)}
+  <button type="button" class="drop" aria-haspopup="menu" data-test={test} onclick={open}>{label}<span class="label">▾</span></button>
+{/snippet}
+
 {#snippet keyboardRows()}
-  {#each keyboards as k (k.id)}
+  {#each app?.keyboards.list ?? [] as k (k.id)}
     <EndpointRow
       look={{ name: k.name, side: t("friendly.keyboard"), link: "connected" }}
       selected={k.id === app?.keyboards.active}
@@ -92,30 +140,37 @@
 {#if app && settings}
   <div class="place">
     <div class="lead"></div>
-    <div class="dialog" role="dialog" aria-label={t("settings.title")} data-test="settings-dialog" use:movableDialog>
+    <div class="dialog" role="dialog" aria-label={advanced ? t("settings.advTitle") : t("settings.title")} data-test="settings-dialog" use:movableDialog>
       <div class="head" data-dialog-head>
-        <span class="title">{t("settings.title")}</span>
+        <span class="title">{advanced ? t("settings.advTitle") : t("settings.title")}</span>
         <span class="spacer"></span>
         <button type="button" class="close" data-test="settings-close" onclick={() => send({ type: "settingsCancel" })}>
           {t("settings.close")}<span class="mono">{t("key.esc")}</span>
         </button>
       </div>
+      {#if advanced}
+        <!-- 2 段目の見出し（仕様書 2 章「ダイアログの 2 段目へ進む行」の行き先。モック F7-SettingsAdv）。 -->
+        <div class="crumb">
+          <button type="button" class="back" data-test="settings-advanced" onclick={() => send({ type: "settingsToggleAdvanced" })}>{t("settings.advBack")}</button>
+          <span class="title">{t("settings.advanced")}</span>
+        </div>
+      {/if}
 
       <ScrollArea data-gl-scroll data-test="settings-body">
-        <!-- スクロールする中身ぜんたいが 1 つの区画（メーターと鍵盤で 1 枚）。 -->
+        <!-- スクロールする中身ぜんたいが 1 つの区画（メーターと鍵盤で 1 枚）。くわしい設定で slot がなくなっても区画は持つ。 -->
         <div use:glRegion={"settings"}>
-          <section>
-            <span class="label">{t("settings.outputs")}</span>
-            {#each outputs as output (output.id)}
-              <EndpointRow
-                look={output.look}
-                selected={settings.draftOutput === output.id}
-                disabled={false}
-                size="settings"
-                onpick={() => send({ type: "settingsSelectOutput", output: output.id })}
-              />
-            {/each}
-            {#if !advanced}
+          {#if !advanced}
+            <section>
+              <span class="label">{t("settings.outputs")}</span>
+              {#each groups.usable as output (output.id)}
+                <EndpointRow
+                  look={output.look}
+                  selected={settings.draftOutput === output.id}
+                  disabled={false}
+                  size="settings"
+                  onpick={() => send({ type: "settingsSelectOutput", output: output.id })}
+                />
+              {/each}
               <div class="line">
                 <Button test="settings-test-tone" disabled={!settings.draftOutput} onclick={testTone}>
                   {t("endpoint.testTone")}
@@ -128,31 +183,27 @@
                 size="settings"
                 note={t("msg.unusableHeadingSettings")}
               />
-            {/if}
-          </section>
+            </section>
 
-          <section>
-            <span class="label">{t("settings.voiceInput")}</span>
-            {#each inputs as input (input.id)}
-              <EndpointRow look={input.look} selected={input.id === (app.inputs.chosen ?? "")} disabled size="settings" />
-            {/each}
-            {#if !advanced}
+            <section>
+              <span class="label">{t("settings.voiceInput")}</span>
+              {#each inputs as input (input.id)}
+                <EndpointRow look={input.look} selected={input.id === (app.inputs.chosen ?? "")} disabled size="settings" />
+              {/each}
               <div class="line disabled">
                 <span>{t("settings.level")}</span>
                 <div class="level off"></div>
               </div>
               <UnusableEndpoints rows={inputGroups.unusable} heading={t("msg.unusableInputHeading")} size="settings" />
-            {/if}
-          </section>
+            </section>
 
-          <section>
-            <span class="label">{t("settings.keyboard")}</span>
-            {#if keyboards.length > 0}
-              {@render keyboardRows()}
-            {:else}
-              <div class="line"><span class="label">{t("meter.noKeyboard")}</span></div>
-            {/if}
-            {#if !advanced}
+            <section>
+              <span class="label">{t("settings.keyboard")}</span>
+              {#if app.keyboards.list.length > 0}
+                {@render keyboardRows()}
+              {:else}
+                <div class="line"><span class="label">{t("meter.noKeyboard")}</span></div>
+              {/if}
               <div class="line">
                 <span class="label">{t("settings.keysLight")}</span>
                 <div
@@ -161,10 +212,8 @@
                   use:glSlot={{ kind: "keyboard", size: "slim", firstNote: FIRST_NOTE, lastNote: LAST_NOTE }}
                 ></div>
               </div>
-            {/if}
-          </section>
+            </section>
 
-          {#if !advanced}
             <section>
               <span class="label" use:term={"遅れ（レイテンシ）"}>{t("settings.latency")}</span>
               <div class="line">
@@ -199,104 +248,63 @@
               <span class="label">{t("settings.advancedHint")}</span>
             </button>
           {:else}
-            <div class="adv-open">
-              <button
-                type="button"
-                class="adv"
-                data-test="settings-advanced"
-                onclick={() => send({ type: "settingsToggleAdvanced" })}
-              >
-                <span class="strong">▾</span>
-                <span class="strong">{t("settings.advanced")}</span>
-                <span class="spacer"></span>
-                <span class="label">{t("settings.advancedOpenHint")}</span>
-              </button>
-              <div class="adv-body">
-                <div class="line">
-                  <span class="label field">{t("settings.system")}</span>
-                  <div class="seg">
-                    {#each SYSTEMS as s (s.name)}
-                      {#if s.name === app.audio.system}
-                        <Button on>{t(s.key)}</Button>
-                      {:else}
-                        <Button disabled>{t(s.key)}</Button>
-                      {/if}
-                    {/each}
-                  </div>
-                </div>
-                <div class="line">
-                  <span class="label field">{t("settings.outputDevice")}</span>
-                  <span class="mono strong value">{app.audio.outputDevice ?? ""}</span>
-                </div>
-                <div class="line">
-                  <span class="label field" use:term={"MIDI"}>{t("settings.midiInput")}</span>
-                  <span class="mono strong value">{app.audio.midiInput ?? ""}</span>
-                </div>
-                <div class="line">
-                  <span class="label field" use:term={"サンプルレート"}>{t("settings.sampleRate")}</span>
-                  <div class="seg">
-                    {#each rates as r (r)}
-                      {#if r === app.audio.sampleRate}
-                        <Button on>{r}</Button>
-                      {:else}
-                        <Button disabled>{r}</Button>
-                      {/if}
-                    {/each}
-                  </div>
-                  <span class="label">{t("settings.hz")}</span>
-                </div>
-                <div class="line">
-                  <span class="label field" use:term={"バッファ"}>{t("settings.bufferRequested")}</span>
-                  <div class="seg">
-                    {#each buffers as b (b)}
-                      {#if b === app.audio.requestedFrames}
-                        <Button on>{b}</Button>
-                      {:else}
-                        <Button disabled>{b}</Button>
-                      {/if}
-                    {/each}
-                  </div>
-                  <span class="label">{t("settings.samples")}</span>
-                </div>
-                <div class="line">
-                  <span class="label field">{t("settings.bufferActual")}</span>
-                  <span class="mono strong big" data-test="buffer-actual">{app.audio.actualFrames ?? dash}</span>
-                  <span class="label">
-                    {app.audio.actualFrames !== null && app.audio.actualFrames !== app.audio.requestedFrames
-                      ? t("settings.bufferDiffers")
-                      : t("settings.samples")}
-                  </span>
-                </div>
-                {#if fixed}
-                  <div class="fixed" data-test="buffer-fixed">
-                    <span class="strong bold">{fixed.title}</span>
-                    {#each fixed.paragraphs as p, i (i)}
-                      <span class:label={i === 2}>
-                        {#each p.split(AROUND) as piece, j (j)}
-                          {#if AROUND.test(piece)}<span class="mono strong">{piece}</span>{:else}{piece}{/if}
-                        {/each}
-                      </span>
-                    {/each}
-                  </div>
-                {/if}
-                <div class="line">
-                  <span class="label field" use:term={"遅れの補正"}>{t("settings.latencyComp")}</span>
-                  <div class="seg">
-                    <Button disabled>{t("settings.auto")}</Button>
-                    <Button disabled>{t("settings.manual")}</Button>
-                  </div>
-                  <Button disabled>{t("settings.remeasure")}</Button>
-                </div>
-                <PluginPlaces plugins={app.plugins} />
+            <div class="adv-body" data-test="settings-adv">
+              <div class="row">
+                <span class="strong name">{t("settings.input")}</span>
+                {@render dropdown(chosenInput ? inputName(chosenInput) : t("settings.notUsed"), "settings-input", (e) => choose(e, inputRows()))}
               </div>
+              <div class="row" class:joined={bufferDiffers}>
+                <span class="strong name" use:term={"バッファ"}>{t("settings.buffer")}</span>
+                {@render dropdown(String(app.audio.requestedFrames), "settings-buffer", (e) => choose(e, bufferRows()))}
+                {#if running}<span class="label" data-test="buffer-actual">{running}</span>{/if}
+              </div>
+              {#if bufferDiffers}
+                <div class="note" data-test="buffer-differs">
+                  {t("settings.notAsRequested", { requested: app.audio.requestedFrames, actual: app.audio.actualFrames! })}
+                </div>
+              {/if}
+              <div class="row" class:joined={rateDiffers}>
+                <span class="strong name" use:term={"サンプルレート"}>{t("settings.sampleRate")}</span>
+                {@render dropdown(t("settings.rateHz", { rate: app.audio.requestedSampleRate }), "settings-rate", (e) => choose(e, rateRows()))}
+                {#if app.audio.running && app.audio.sampleRate !== null}
+                  <span class="label" data-test="rate-actual">{t("settings.running", { value: app.audio.sampleRate })}</span>
+                {/if}
+              </div>
+              {#if rateDiffers}
+                <div class="note" data-test="rate-differs">
+                  {t("settings.notAsRequested", { requested: app.audio.requestedSampleRate, actual: app.audio.sampleRate! })}
+                </div>
+              {/if}
+              <div class="row">
+                <span class="strong name">{t("settings.recordFormat")}</span>
+                {@render dropdown(t("settings.bits", { bits }), "settings-format", (e) => choose(e, formatRows()))}
+              </div>
+              <div class="row">
+                <span class="strong name" use:term={"遅れの補正"}>{t("settings.latencyAlign")}</span>
+                <span class="mono strong" data-test="latency-used">{latencyText}</span>
+                <Button test="settings-measure" onclick={() => send({ type: "openLatencyMeasure" })}>{t("button.measureLatency")}</Button>
+                <!-- 数を打ちこむ所の形は、仕様書にもモックにもない（使えない）。 -->
+                <Button test="settings-manual" disabled>{t("button.manualLatency")}</Button>
+              </div>
+              <div class="row">
+                <span class="strong name">{t("plugin.places")}</span>
+                <Button test="settings-places" on={app.plugins.placesOpen} onclick={() => send({ type: "togglePluginPlaces" })}>{t("button.openPlaces")}</Button>
+              </div>
+              {#if app.plugins.placesOpen}
+                <PluginPlaces plugins={app.plugins} />
+              {/if}
             </div>
           {/if}
         </div>
       </ScrollArea>
 
       <div class="foot">
-        <Button test="settings-cancel" onclick={() => send({ type: "settingsCancel" })}>{t("button.cancel")}</Button>
-        <Button primary test="settings-apply" onclick={() => send({ type: "settingsApply" })}>{t("settings.ok")}</Button>
+        {#if advanced}
+          <Button primary test="settings-done" onclick={() => send({ type: "settingsCancel" })}>{t("button.close")}</Button>
+        {:else}
+          <Button test="settings-cancel" onclick={() => send({ type: "settingsCancel" })}>{t("button.cancel")}</Button>
+          <Button primary test="settings-apply" onclick={() => send({ type: "settingsApply" })}>{t("settings.ok")}</Button>
+        {/if}
       </div>
     </div>
     <div class="lead"></div>
@@ -394,21 +402,9 @@
   .strong {
     color: var(--color-gray-10);
   }
-  .bold {
-    font-weight: var(--text-s-weight-600);
-  }
   .mono {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-  }
-  .big {
-    font-size: var(--text-m-size);
-    line-height: var(--text-m-line-height);
-  }
-  .value {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .spacer {
     flex: 1;
@@ -442,32 +438,77 @@
     cursor: pointer;
   }
   .adv:focus-visible,
+  .back:focus-visible,
+  .drop:focus-visible,
   .close:focus-visible {
     outline: var(--line-hair) solid var(--color-gray-10);
     outline-offset: var(--line-hair);
   }
-  .adv-open {
+  /* くわしい設定（モック F7-SettingsAdv）: 名前 120 の行が並ぶ。行は高さ 32 から、下に gray.4 の線。 */
+  .crumb {
+    flex-shrink: 0;
+    box-sizing: border-box;
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--part-dialognext-height);
+    padding: 0 var(--space-4);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .back {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-gray-8);
+    font: inherit;
+    cursor: pointer;
+  }
+  .back:hover {
+    color: var(--color-gray-10);
   }
   .adv-body {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-4) var(--space-3);
-    background: var(--color-gray-2);
+    padding: var(--space-1) var(--space-4) var(--space-2);
   }
-  .seg {
+  .row {
+    box-sizing: border-box;
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-height: var(--size-toolbar);
+    padding: var(--space-1) 0;
+    border-bottom: var(--line-hair) solid var(--color-gray-4);
   }
-  .fixed {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    margin: var(--space-1) 0;
-    padding: var(--space-2);
-    border: var(--line-hair) solid var(--color-gray-8);
+  .row.joined {
+    border-bottom: 0;
+  }
+  .name {
+    flex-shrink: 0;
+    width: var(--mock-settings-adv-label);
+  }
+  .drop {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--part-button-height);
+    padding: 0 var(--part-button-pad-x);
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-gray-10);
+    font: inherit;
+    cursor: pointer;
+  }
+  .drop:hover {
+    border-color: var(--color-gray-8);
+  }
+  .note {
+    padding: var(--space-1) 0 var(--space-2) calc(var(--mock-settings-adv-label) + var(--space-2));
+    border-bottom: var(--line-hair) solid var(--color-gray-4);
+    color: var(--color-gray-8);
     white-space: normal;
   }
   .foot {

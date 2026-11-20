@@ -227,16 +227,19 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
   const track: ListEntry[] = [
     act("menu.mute", { kind: "trackMute" }, k.shift(t("key.mute")), { checked: target?.muted ?? false }),
     act("menu.solo", { kind: "trackSolo" }, k.shift(t("key.solo")), { checked: target?.soloed ?? false }),
-    // 録音待機は、いつも選んだトラック（仕様書 3 章）。
-    plain("menu.arm", target !== null && !busy, () => target && deps.send({ type: "selectTrack", track: target.id, fromArm: true }), {
-      checked: target !== null,
-    }),
+    // 録音待機は、いつも選んだトラック（仕様書 3 章）。歌のトラックの ● は、つける ・ 外すの切りかえ（24-C）。
+    target?.kind.kind === "vocal"
+      ? plain("menu.arm", !busy, () => deps.send({ type: "toggleVocalArm", track: target.id }), { checked: target.kind.armed })
+      : plain("menu.arm", target !== null && !busy, () => target && deps.send({ type: "selectTrack", track: target.id, fromArm: true }), {
+          checked: target !== null,
+        }),
     { kind: "separator" },
     act("menu.nextTake", { kind: "stepTake", delta: 1 }, t("key.take"), { usable: canStepTake }),
     act("menu.prevTake", { kind: "stepTake", delta: -1 }, k.shift(t("key.take")), { usable: canStepTake }),
     plain("menu.deleteTake", canStepTake, () => clip && deps.send({ type: "deleteTake", clip: clip.id })),
     { kind: "separator" },
-    plain("menu.addTrack", !busy, () => deps.send(openShelf({ kind: "newTrack" }))),
+    plain("menu.addKeysTrack", !busy, () => deps.send(openShelf({ kind: "newTrack" }))),
+    plain("menu.addVocalTrack", !busy, () => deps.send({ type: "addVocalTrack" })),
     ...listEntries([edits.rename, edits.color, edits.up, edits.down, { kind: "separator" }, edits.remove]),
   ];
 

@@ -7,6 +7,7 @@ import OutputChooser from "../src/components/OutputChooser.svelte";
 import SettingsDialog from "../src/components/SettingsDialog.svelte";
 import SoundHint from "../src/components/SoundHint.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
+import { closeContextMenu, contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import { hideTip, TIP_DELAY_MS, tipView } from "../src/lib/tip.svelte";
 import { t } from "../src/text/ja";
 import * as app from "./fake-app.svelte";
@@ -380,28 +381,59 @@ describe("音の設定", () => {
     ]);
   });
 
-  it("奥: 上の 3 つはえらんだ物だけ。固定の囲みと、頼んだ数とちがう知らせ", () => {
+  it("くわしい設定（F7-SettingsAdv）: 見出しは「音の設定」、2 段目は「◂ 音の設定 くわしい設定」。出口 ・ 鍵盤の行と「音のしくみ」はない", () => {
     show(SettingsDialog, withSettings(true));
-    const rows = qa('[data-test="endpoint-row"]');
-    expect(rows.map((r) => r.textContent?.includes("アナログヘッドフォン") || r.textContent?.includes("使わない") || r.textContent?.includes("Keystation"))).toEqual([true, true, true]);
-    expect(q('[data-test="unusable-head"]')).toBeNull();
-    expect(text('[data-test="buffer-actual"]')).toBe("1024");
-    expect(target.textContent).toContain("サンプル ・ 頼んだ数とちがいます");
-    const fixed = text('[data-test="buffer-fixed"]')!;
-    expect(fixed).toContain("バッファが PC 全体の設定で 1024 に固定されています");
-    expect(fixed).toContain("meloet は 256 を頼んでいますが、1024 で動いています。鍵を押してから音が出るまで 約 53 ms。256 で動けば 約 13.3 ms です。");
-    expect(fixed).toContain("変える場所は PipeWire の設定（quantum の固定）です。");
+    expect(text(".head .title")).toBe("音の設定");
+    expect(text('[data-test="settings-advanced"]')).toBe("◂ 音の設定");
+    expect(qa('[data-test="endpoint-row"]')).toHaveLength(0);
+    expect(target.textContent).not.toContain("音のしくみ");
+    expect(target.textContent).not.toContain("PipeWire");
+    expect(qa(".adv-body .row .name").map((n) => n.textContent!.trim())).toEqual(["入口", "バッファ", "サンプルレート", "録る形", "遅れの合わせ", "プラグインの場所"]);
   });
 
-  it("奥: オンの部品は押しても何も送らず、ほかは使えない", () => {
+  it("くわしい設定: 頼む数の右に動いている数。ちがえば下に「頼んだ 256 ではなく、1024 で動いています…」。固定の囲みは出さない", () => {
     show(SettingsDialog, withSettings(true));
-    const buttons = qa("button.b");
-    const on = buttons.filter((b) => b.classList.contains("on"));
-    expect(on.map((b) => b.textContent?.trim())).toEqual(["PipeWire", "48000", "256"]);
-    for (const b of on) b.click();
-    expect(app.sent).toEqual([]);
-    const off = buttons.filter((b) => ["JACK", "ALSA", "44100", "512", "自動", "測りなおす"].includes(b.textContent!.trim()));
-    expect(off.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    expect(text('[data-test="settings-buffer"]')).toBe("256▾");
+    expect(text('[data-test="buffer-actual"]')).toBe("動いている 1024 ・ 21 ms");
+    expect(text('[data-test="buffer-differs"]')).toBe("頼んだ 256 ではなく、1024 で動いています（PC の設定で決まっています）。meloet は PC 全体の設定は変えません。");
+    expect(text('[data-test="settings-rate"]')).toBe("48000 Hz▾");
+    expect(text('[data-test="rate-actual"]')).toBe("動いている 48000");
+    expect(q('[data-test="rate-differs"]')).toBeNull();
+    expect(text('[data-test="settings-format"]')).toBe("24 ビット▾");
+    expect(q('[data-test="buffer-fixed"]')).toBeNull();
+  });
+
+  it("くわしい設定: ▾ は一覧をひらき、行は意図を送る。遅れを測る… ・ ◂ ・ 閉じる。手で決める… は使えない", () => {
+    show(SettingsDialog, withSettings(true));
+    q<HTMLButtonElement>('[data-test="settings-buffer"]')!.click();
+    const rows = (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
+    expect(rows.map((r) => [r.text, r.checked])).toEqual([
+      ["64", false],
+      ["128", false],
+      ["256", true],
+      ["512", false],
+      ["1024", false],
+    ]);
+    rows[1]!.run();
+    q<HTMLButtonElement>('[data-test="settings-format"]')!.click();
+    const formats = (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
+    expect(formats.map((r) => r.text)).toEqual(["16 ビット", "24 ビット", "32 ビット"]);
+    formats[2]!.run();
+    q<HTMLButtonElement>('[data-test="settings-rate"]')!.click();
+    (contextMenu.open!.entries[0] as MenuRow).run();
+    q<HTMLButtonElement>('[data-test="settings-measure"]')!.click();
+    q<HTMLButtonElement>('[data-test="settings-advanced"]')!.click();
+    q<HTMLButtonElement>('[data-test="settings-done"]')!.click();
+    expect(q<HTMLButtonElement>('[data-test="settings-manual"]')!.disabled).toBe(true);
+    closeContextMenu();
+    expect(app.sent).toEqual([
+      { type: "settingsSetBuffer", frames: 128 },
+      { type: "settingsSetRecordFormat", format: "bits32" },
+      { type: "settingsSetSampleRate", hz: 44100 },
+      { type: "openLatencyMeasure" },
+      { type: "settingsToggleAdvanced" },
+      { type: "settingsCancel" },
+    ]);
   });
 });
 
@@ -421,15 +453,15 @@ describe("音の設定: 中身が長いとき（出口 9 行）", () => {
     const dialog = q('[data-test="settings-dialog"]')!;
     const body = q('[data-test="settings-body"]')!;
     expect(body.hasAttribute("data-gl-scroll")).toBe(true);
-    expect([...dialog.children].map((c) => c.className.split(" ")[0])).toEqual(["head", "area", "foot"]);
-    for (const b of ["settings-cancel", "settings-apply", "settings-close"]) {
+    expect([...dialog.children].map((c) => c.className.split(" ")[0])).toEqual(advanced ? ["head", "crumb", "area", "foot"] : ["head", "area", "foot"]);
+    for (const b of advanced ? ["settings-done", "settings-close"] : ["settings-cancel", "settings-apply", "settings-close"]) {
       const button = q(`[data-test="${b}"]`)!;
       expect(body.contains(button)).toBe(false);
       expect((button as HTMLButtonElement).disabled).toBe(false);
     }
     const rows = qa('[data-test="endpoint-row"]');
     expect(rows.every((r) => body.contains(r))).toBe(true);
-    expect(rows).toHaveLength(advanced ? 3 : 4 + 1 + 1);
+    expect(rows).toHaveLength(advanced ? 0 : 4 + 1 + 1);
     if (!advanced) {
       q<HTMLButtonElement>('[data-test="unusable-head"]')!.click();
       flushSync();

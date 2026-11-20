@@ -41,7 +41,7 @@
     frame: {
       text: string;
       accent?: boolean;
-      run?: () => void;
+      run?: (e: MouseEvent) => void;
       usable?: boolean;
       dim?: boolean;
       tip?: string | null;
@@ -162,7 +162,7 @@
       aria-disabled={!frame.usable || undefined}
       data-test="mixer-frame"
       use:tip={frame.tip}
-      onclick={() => frame.usable && frame.run?.()}
+      onclick={(e) => frame.usable && frame.run?.(e)}
       oncontextmenu={frame.context}
       ><span class="cut">{frame.text}</span>{#if frame.stopped}<span class="stop">{t("mixer.stoppedMark")}</span>{/if}{#if frame.window}<WindowMark
         />{/if}</button

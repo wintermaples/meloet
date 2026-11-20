@@ -222,11 +222,13 @@ describe("音の設定 ▸ くわしい設定 ▸ プラグインの場所（R9-
     expect(words(q('[data-test="plugin-place-add"]'))).toBe("場所を足す…");
   });
 
-  it("たたんでいると、見出し（▸ と数）だけ", () => {
+  it("たたんでいると、「プラグインの場所」の行の「ひらく…」だけ（モック F7-SettingsAdv）。押すと、ひらく", () => {
     show(SettingsDialog, scene("pluginPlacesFolded"));
-    expect(words(q('[data-test="plugin-places-head"]'))).toBe("▸ プラグインの場所 7");
+    expect(q('[data-test="plugin-places-head"]')).toBeNull();
     expect(rows()).toHaveLength(0);
     expect(q('[data-test="plugin-rescan"]')).toBeNull();
+    click(q('[data-test="settings-places"]'));
+    expect(app.sent).toEqual([{ type: "togglePluginPlaces" }]);
   });
 
   it("くわしい設定をひらいていなければ出さない", () => {
@@ -295,6 +297,7 @@ it("どのダイアログも、見出しの行は「動かす」の指で、乗�
   const sources = import.meta.glob<string>(["../src/components/**/*Dialog.svelte"], { query: "?raw", import: "default", eager: true });
   const files = Object.keys(sources).sort();
   expect(files).toEqual([
+    "../src/components/LatencyDialog.svelte",
     "../src/components/SettingsDialog.svelte",
     "../src/components/SongDialog.svelte",
     "../src/components/about/AboutDialog.svelte",

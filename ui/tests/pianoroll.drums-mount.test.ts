@@ -200,7 +200,7 @@ describe("状態行と入力計", () => {
   });
 
   it("鳴る先がドラムでなければ音名", async () => {
-    await drumSong((s) => (s.song.playTarget = s.song.tracks[0]!.id));
+    await drumSong((s) => (s.song.playTarget = s.song.keysTarget = s.song.tracks[0]!.id));
     show(InputMeter);
     app.setTelemetry(app.telemetryWith({ keys: [38, 36] }));
     flushSync();

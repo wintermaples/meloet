@@ -1401,7 +1401,6 @@ export const texts = {
   "arrange.muteShort": e("M", "mock:F-Empty"),
   "arrange.soloShort": e("S", "mock:F-Empty"),
   "arrange.armShort": e("●", "mock:F-Empty"),
-  "arrange.addTrack": e("＋ トラックを追加", "mock:F-Empty"),
   "arrange.addTrackKinds": e("音源 ・ 歌", "mock:F-Empty"),
   // 入れかえのためし弾きの間、トラックの見出しの音源の名前。
   "arrange.instrumentAuditioned": e(
@@ -1642,40 +1641,7 @@ export const texts = {
   ),
   "settings.advancedHint": e("ふだんは開かなくて大丈夫", "mock:F-Settings"),
   "settings.ok": e("これで決まり", "mock:F-Settings"),
-  "settings.advancedOpenHint": e(
-    "ここから下は、機材にくわしい人むけ",
-    "mock:F-SettingsAdvFixed",
-  ),
-  "settings.system": e("音のしくみ", "mock:F-SettingsAdvFixed"),
-  "settings.systemPipeWire": e("PipeWire", "mock:F-SettingsAdvFixed"),
-  "settings.systemJack": e("JACK", "mock:F-SettingsAdvFixed"),
-  "settings.systemAlsa": e("ALSA", "mock:F-SettingsAdvFixed"),
-  "settings.outputDevice": e("出口のデバイス", "mock:F-SettingsAdvFixed"),
-  "settings.midiInput": e("MIDI の入口", "mock:F-SettingsAdvFixed"),
   "settings.sampleRate": e("サンプルレート", "mock:F-SettingsAdvFixed"),
-  "settings.hz": e("Hz", "mock:F-SettingsAdvFixed"),
-  "settings.bufferRequested": e(
-    "バッファ ・ 頼む数",
-    "mock:F-SettingsAdvFixed",
-  ),
-  "settings.samples": e("サンプル", "mock:F-SettingsAdvFixed"),
-  "settings.bufferActual": e(
-    "バッファ ・ 動いている数",
-    "mock:F-SettingsAdvFixed",
-  ),
-  "settings.bufferDiffers": e(
-    "サンプル ・ 頼んだ数とちがいます",
-    "mock:F-SettingsAdvFixed",
-  ),
-  "settings.bufferFixedTitle": e(
-    "バッファが PC 全体の設定で {actual} に固定されています",
-    "mock:F-SettingsAdvFixed",
-    { actual: "1024" },
-  ),
-  "settings.latencyComp": e("遅れの補正", "mock:F-SettingsAdvFixed"),
-  "settings.auto": e("自動", "mock:F-SettingsAdvFixed"),
-  "settings.manual": e("手で決める", "mock:F-SettingsAdvFixed"),
-  "settings.remeasure": e("測りなおす", "mock:F-SettingsAdvFixed"),
 
   // ピアノロールのまわり（第 3 回）: アレンジの横の拡大、ノートの一覧、選んだノート、状態行
   "zoom.out": e("横に縮小", "mock:R3-Arrange"),
@@ -1933,7 +1899,6 @@ export const texts = {
   "menu.nextTake": e("次のテイク", "user:2026-11-18"),
   "menu.prevTake": e("前のテイク", "user:2026-11-18"),
   "menu.deleteTake": e("テイクを消す", "user:2026-11-18"),
-  "menu.addTrack": e("トラックを足す", "user:2026-11-18"),
   "menu.openInPianoRoll": e("ピアノロールでひらく", "user:2026-11-18"),
   // ベロシティ固定（B-66）とベロシティをまとめて変える（B-67）。
   "input.velocityFixed": e("固定", "user:2026-11-18"),
@@ -2186,6 +2151,62 @@ export const texts = {
   }),
   "msg.exportCanceled": s6("書き出しをやめた", "書き出しをやめました。途中までのファイルは消しました。"),
 
+  // [第 7 回 区切り2 ・ 歌のトラックの画面]（仕様書 2 章 ・ 3 章 23-A ・ 24-C ・ 31-C ・ 33-A、モック F7-*）
+  // トラックの一覧の下と、上のメニュー「トラック」。
+  "arrange.addKeysTrack": e("＋ 鍵盤のトラック", "spec:3"),
+  "arrange.addVocalTrack": e("＋ 歌のトラック", "spec:3"),
+  "menu.addKeysTrack": e("鍵盤のトラックを足す…", "spec:3"),
+  "menu.addVocalTrack": e("歌のトラックを足す", "spec:3"),
+  // 歌のトラックの見出しの 2 段目。入口の名前は vocal.input.*。
+  "vocal.inputChoose": e("{input} ▾", "mock:F7-VocalRec", { input: "入口 1 ・ モノ" }),
+  "vocal.noInput": e("入口なし ▾", "spec:3"),
+  "vocal.monitor": e("モニター", "spec:3"),
+  // 状態行の「6 歌（入口 1）」の入口。入口 2 は仕様書にない（入口 1 ・ 入口 1 ・ 2 にならった）。
+  "vocal.inputShort.mono1": e("入口 1", "spec:6"),
+  "vocal.inputShort.mono2": e("入口 2", "builder:2026-11-21"),
+  "vocal.inputShort.stereo12": e("入口 1 ・ 2", "spec:5"),
+  // 録っている歌のクリップの名前（モック F7-VocalRec の「歌 テイク 1」）。
+  "arrange.recordingVocalClip": e("{track} テイク {take}", "mock:F7-VocalRec", { track: "歌", take: "1" }),
+  // 入力計の右（マイクの計）。目盛はモックの字。
+  "meter.monitorOn": e("モニター オン", "mock:F7-VocalRec"),
+  "meter.monitorOff": e("モニター オフ", "mock:F7-VocalTrack"),
+  "meter.micScaleLow": e("−60", "mock:F7-VocalTrack"),
+  "meter.micScaleMid": e("−12", "mock:F7-VocalTrack"),
+  "meter.micScaleTop": e("0", "mock:F7-VocalTrack"),
+  // 弾くと鳴る先がない（鍵盤のトラックが 1 本もない。B-94-1）。
+  "meter.playTargetNone": e("—", "spec:3"),
+  // 音の設定 ▸ くわしい設定（モック F7-SettingsAdv）。
+  "settings.advTitle": e("音の設定", "mock:F7-SettingsAdv"),
+  "settings.advBack": e("◂ 音の設定", "mock:F7-SettingsAdv"),
+  "settings.input": e("入口", "mock:F7-SettingsAdv"),
+  "settings.buffer": e("バッファ", "mock:F7-SettingsAdv"),
+  "settings.runningLatency": e("動いている {frames} ・ {ms} ms", "mock:F7-SettingsAdv", { frames: "256", ms: "5.3" }),
+  "settings.running": e("動いている {value}", "mock:F7-SettingsAdv", { value: "48000" }),
+  "settings.rateHz": e("{rate} Hz", "mock:F7-SettingsAdv", { rate: "48000" }),
+  "settings.recordFormat": e("録る形", "mock:F7-SettingsAdv"),
+  "settings.bits": e("{bits} ビット", "mock:F7-SettingsAdv", { bits: "24" }),
+  "settings.latencyAlign": e("遅れの合わせ", "mock:F7-SettingsAdv"),
+  "settings.latencyReported": e("PC が言う数 ・ {ms} ms", "mock:F7-SettingsAdv", { ms: "8.0" }),
+  // 測った数を使っているとき（仕様書 3 章 33-A の「測った数」に、PC が言う数の形をならった）。
+  "settings.latencyMeasured": e("測った数 ・ {ms} ms", "builder:2026-11-21", { ms: "12.4" }),
+  "settings.inputChoice": e("{channels}（{name}）", "mock:F7-SettingsAdv", { channels: "入口 1 ・ 2", name: "USB マイク" }),
+  "button.measureLatency": e("遅れを測る…", "mock:F7-SettingsAdv"),
+  "button.manualLatency": e("手で決める…", "mock:F7-SettingsAdv"),
+  "button.openPlaces": e("ひらく…", "mock:F7-SettingsAdv"),
+  // 遅れを測る（モック F7-Latency）。
+  "latency.title": e("遅れを測る", "mock:F7-Latency"),
+  "latency.how": e(
+    "ヘッドホンをマイクに近づけるか、出口と入口をケーブルでつなぎます。「測る」を押すと、カチッという音を {count} 回鳴らして、もどってくるまでの時間を測ります。",
+    "mock:F7-Latency",
+    { count: "5" },
+  ),
+  "latency.reported": e("PC が言う数", "mock:F7-Latency"),
+  "latency.measured": e("測った数", "mock:F7-Latency"),
+  "latency.ms": e("{ms} ms", "mock:F7-Latency", { ms: "12.4" }),
+  "latency.partialMean": e("（まだ {count} 回の平均）", "mock:F7-Latency", { count: "3" }),
+  "latency.quietHint": e("音が小さくて測れないときは、ヘッドホンの音量を上げてください。", "mock:F7-Latency"),
+  "button.measure": e("測る", "mock:F7-Latency"),
+
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。
   "key.shift": e("Shift", "spec:4"),
@@ -2218,8 +2239,6 @@ export const texts = {
   "menu.colorNumber": e("色 {number}", "spec:2", { number: "1" }),
   "key.renameTrack": e("F2", "spec:4"),
   "key.favorite": e("F", "spec:4"),
-  // 「＋ トラックを追加」の右の小さな文。第 4 回は歌の行を出さない（仕様書 3 章 Y10）。
-  "arrange.addTrackInstrument": e("音源", "mock:R7-Arrange6"),
 
   // [第 4 回 区切り2 ・ meloet について]（仕様書 3 章、モック R7-About ・ R7-AboutLicense）
   "about.title": e("meloet について", "mock:R7-About"),

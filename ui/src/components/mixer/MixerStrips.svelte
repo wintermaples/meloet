@@ -14,6 +14,7 @@
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import { selectedInsert, windowOf } from "../params/selected";
   import { openShelf } from "../tracks.svelte";
+  import { vocalInputRows } from "../trackMenu";
   import Strip from "./Strip.svelte";
   import { shownPosition } from "../automation/autoState.svelte";
   import { hasLaneRef, laneMoves, laneOf, panAt, type AutoLook, type StripAuto } from "../automation/laneValue";
@@ -93,6 +94,21 @@
    * サイン波で代わりに鳴らしている間は「サイン波で代わり」（gray.8。仕様書 3 章 85）、止まったプラグインは赤い枠と「止」。
    */
   function instrumentFrame(track: TrackView) {
+    // 歌のトラックの音源の枠は入口の名前（仕様書 3 章「歌のトラックの見出し」）。押すと見出しと同じ入口の一覧。
+    const kind = track.kind;
+    if (kind.kind === "vocal") {
+      const inputs = (e: MouseEvent) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openContextMenu(r.left, r.bottom, vocalInputRows(track.id, kind.input, busy, send));
+      };
+      return {
+        text: kind.inputReady ? t(`vocal.input.${kind.input}`) : t("vocal.noInput"),
+        dim: !kind.inputReady,
+        usable: true,
+        run: inputs,
+        context: (e: MouseEvent) => e.preventDefault(),
+      };
+    }
     const trial = shelf.mode.kind === "replace" && shelf.mode.track === track.id ? shelf.selectedSound : null;
     const name = trial ? soundRefName(trial, app.library) : track.standIn ? t("track.standIn") : soundViewName(track.sound);
     const replace = () => send(openShelf({ kind: "replace", track: track.id }));
@@ -186,7 +202,9 @@
           mute={{ on: shownMuted(track), usable: true, run: () => send({ type: "toggleMute", track: track.id }) }}
           {auto}
           solo={{ on: track.soloed, usable: true, run: () => send({ type: "toggleSolo", track: track.id }) }}
-          arm={{ on: song.playTarget === track.id, usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }) }}
+          arm={track.kind.kind === "vocal"
+            ? { on: track.kind.armed, usable: true, run: () => send({ type: "toggleVocalArm", track: track.id }) }
+            : { on: song.keysTarget === track.id, usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }) }}
         />
       {/each}
       {#each BUSES as bus, i (bus)}

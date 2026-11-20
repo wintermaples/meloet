@@ -585,6 +585,7 @@ export class Engine {
   private meterChannel(source: MeterSource): number {
     if (source === "master") return MASTER_CHANNEL;
     if ("ret" in source) return source.ret === "a" ? RETURN_A_CHANNEL : RETURN_B_CHANNEL;
+    if ("mic" in source) return this.levels.micChannel(source.mic);
     const i = this.trackNumbers.indexOf(source.track);
     return i < 0 ? -1 : trackChannel(i);
   }
@@ -613,6 +614,7 @@ export class Engine {
           first < 0 ? SILENT : levels.bar(first, nowMs),
           first < 0 ? SILENT : levels.bar(first + 1, nowMs),
           slot.vertical === true,
+          slot.toZero === true,
         );
         break;
       }

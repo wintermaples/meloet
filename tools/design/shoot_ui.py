@@ -180,6 +180,21 @@ BOARDS = {
     "headTempo": "R11-Answers92",
     "pianoRollMarker": "R11-Answers92",
     "meterFlagMenu": "R11-Answers92",
+    # 第 7 回 区切り2: 歌のトラック、入力計の左右、録る、音の設定の奥、遅れを測る、19-A。
+    "vocalTrack": "F7-VocalTrack",
+    "vocalInputMenu": "F7-VocalTrack",
+    "vocalNoInput": None,
+    "vocalMonitorOn": None,
+    "vocalTooLoud": None,
+    "vocalNoPianoRoll": None,
+    "vocalRec": "F7-VocalRec",
+    "twoRec": "F7-TwoRec",
+    "settingsAdv7": "F7-SettingsAdv",
+    "latency": "F7-Latency",
+    "latencyDone": None,
+    "latencyFailed": None,
+    "vocalFit": "R11-Fit",
+    "paramsSound": "F7-Answers92",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -482,6 +497,7 @@ CLICKS = {
     # 第 7 回 区切り0 の 0-2: 「＋ 帯を足す ▾」の一覧をひらく。9 小節目の拍子の旗を右クリック。
     "answers92": ("laneScale", '[data-test="lane-add"]'),
     "meterFlagMenu": ("tempo", "js:" + CONTEXT_FLAG),
+    "vocalInputMenu": ("vocalTrack", '[data-test="track-input"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -614,6 +630,20 @@ ONLY = {
     "headTempo": [(1280, 800, 100)],
     "pianoRollMarker": [(1280, 800, 100), (1280, 800, 150)],
     "meterFlagMenu": [(1280, 800, 100)],
+    "vocalTrack": [(1280, 800, 100), (1280, 800, 150)],
+    "vocalInputMenu": [(1280, 800, 100)],
+    "vocalNoInput": [(1280, 800, 100)],
+    "vocalMonitorOn": [(1280, 800, 100)],
+    "vocalTooLoud": [(1280, 800, 100)],
+    "vocalNoPianoRoll": [(1280, 800, 100)],
+    "vocalRec": [(1280, 800, 100), (1280, 800, 150)],
+    "twoRec": [(1280, 800, 100), (1280, 800, 150)],
+    "settingsAdv7": [(1280, 800, 100), (1280, 800, 150)],
+    "latency": [(1280, 800, 100), (1280, 800, 150)],
+    "latencyDone": [(1280, 800, 100)],
+    "latencyFailed": [(1280, 800, 100)],
+    "vocalFit": [(853, 448, 100), (1280, 800, 150)],
+    "paramsSound": [(1280, 800, 100), (1280, 800, 150)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

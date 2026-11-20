@@ -25,8 +25,8 @@ export interface GridLine {
   bar: boolean;
 }
 
-/** `ret`: the return strip of send A or B (mixer). */
-export type MeterSource = "master" | { track: number } | { ret: "a" | "b" };
+/** `ret`: the return strip of send A or B (mixer). `mic`: what comes into a vocal track (`TrackView.id`), before its fader. */
+export type MeterSource = "master" | { track: number } | { ret: "a" | "b" } | { mic: number };
 
 /** What a "paint" slot gets besides its box. */
 export interface PaintContext {
@@ -54,9 +54,9 @@ export type GlSlot =
   | { kind: "velocity" }
   /**
    * Two level bars with `gap` CSS px between them: horizontal, left above right; `vertical` (mixer strips),
-   * standing, left beside right.
+   * standing, left beside right. `toZero`: the bar ends at 0 dB, not +6 (the mic meter of the input meter, −60〜0).
    */
-  | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean }
+  | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean; toZero?: boolean }
   /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. `beats` > 1: beat lines too, that many to a bar. */
   | { kind: "arrangeGrid"; barPx: number; firstBarX: number; beats?: number }
   /**

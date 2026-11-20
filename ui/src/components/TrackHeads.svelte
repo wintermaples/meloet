@@ -1,8 +1,11 @@
-<!-- トラックの見出しの列（モック R7-Arrange6・R6-Tracks）と、いちばん下の「＋ トラックを追加」。アレンジの見出しの箱（trackMeters の区画）の中に置く。
+<!-- トラックの見出しの列（モック R7-Arrange6・R6-Tracks ・ F7-VocalTrack）と、いちばん下の「＋ 鍵盤のトラック」「＋ 歌のトラック」。アレンジの見出しの箱（trackMeters の区画）の中に置く。
      押すとトラックを選ぶ（B-70）。名前を 2 回押す ・ F2 ・ 右クリックの「名前を変える」で、名前の場所がその場の入力の枠（仕様書 2 章）。
      見出しを押したまま上下に動かすと並べかえ（仕様書 2 章「トラックを並べかえる印」）: 画面だけが先に動き、離したときに MoveTrack を 1 つ。
      space.1 より動かさなかったら、ふつうに押した（選ぶ）。Esc はキーの順のいちばん前でやめる（pianoroll/view.svelte.ts の cancelDrag）。
-     音源の名前を押すと、棚が「入れかえる」でひらく。入れかえのためし弾き中は、ためし弾きの音源の名前を accent で（モック F4-ShelfReplace）。 -->
+     音源の名前を押すと、その音源をえらぶ（パラメータの欄。19-A）。入れかえは右クリックの「音源を入れかえる…」と欄のボタン。
+     入れかえのためし弾き中は、ためし弾きの音源の名前を accent で（モック F4-ShelfReplace）。
+     歌のトラック（仕様書 2 章「歌のトラックの見出し」）: 2 段目は「入口 1 ・ モノ ▾」と「モニター」。● は選んでいなくても自分でつける。
+     ● がついている間、レベルの棒は入ってくる音（計器の mics）。 -->
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import type { TrackView } from "../bridge";
@@ -14,7 +17,7 @@
   import { openContextMenu } from "./menu/contextMenu.svelte";
   import { metrics } from "./metrics.svelte";
   import { onDragCancel } from "./pianoroll/view.svelte";
-  import { trackContextMenu } from "./trackMenu";
+  import { trackContextMenu, vocalInputRows } from "./trackMenu";
   import { soundRefName, soundViewName, standInTip } from "./sounds";
   import { moveSlotAt, openShelf, trackEdit } from "./tracks.svelte";
   import { arrangeRows, showsAddRow } from "./automation/autoGeom";
@@ -134,7 +137,8 @@
     if (drag) return;
     const select = song.playTarget !== track.id && !busy;
     if (select) send({ type: "selectTrack", track: track.id, fromArm: false });
-    openContextMenu(e.clientX, e.clientY, trackContextMenu(current.state!, track, song.playTarget === track.id || select, send, shiftKey));
+    const armed = track.kind.kind === "keys" && song.keysTarget === track.id;
+    openContextMenu(e.clientX, e.clientY, trackContextMenu(current.state!, track, armed || select, send, shiftKey));
   }
 
   function replaceInstrument(track: TrackView): void {
@@ -147,6 +151,25 @@
   }
   function addTrack(): void {
     if (!busy) send(openShelf({ kind: "newTrack" }));
+  }
+  function addVocalTrack(): void {
+    if (!busy) send({ type: "addVocalTrack" });
+  }
+
+  /** 鍵盤のトラックの ● は弾くと鳴る先（SongView.keysTarget）、歌のトラックの ● は自分でつけた物。 */
+  const armOn = (track: TrackView) => (track.kind.kind === "vocal" ? track.kind.armed : song.keysTarget === track.id);
+  function arm(track: TrackView): void {
+    if (track.kind.kind === "vocal") send({ type: "toggleVocalArm", track: track.id });
+    else send({ type: "selectTrack", track: track.id, fromArm: true });
+  }
+
+  /** 入口の一覧（モック F7-VocalTrack）: 入口 1 ・ モノ ／ 入口 2 ・ モノ ／ 入口 1 ・ 2 ・ ステレオ ／ 音の設定…。ボタンのすぐ下にひらく。 */
+  function openInputs(e: MouseEvent, track: TrackView): void {
+    e.stopPropagation();
+    const kind = track.kind;
+    if (kind.kind !== "vocal") return;
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openContextMenu(r.left, r.bottom, vocalInputRows(track.id, kind.input, busy, send));
   }
 </script>
 
@@ -212,16 +235,34 @@
           >
           <button
             class="tog live arm"
-            class:on={song.playTarget === track.id}
-            aria-pressed={song.playTarget === track.id}
+            class:on={armOn(track)}
+            aria-pressed={armOn(track)}
             aria-label={t("arrange.arm")}
             data-test="track-arm"
             use:term={"録音待機"}
-            onclick={() => send({ type: "selectTrack", track: track.id, fromArm: true })}>{t("arrange.armShort")}</button
+            onclick={() => arm(track)}>{t("arrange.armShort")}</button
           >
         </div>
         <div class="line gap2">
-          {#if auditioned?.track === track.id}
+          {#if track.kind.kind === "vocal"}
+            {@const vocal = track.kind}
+            <button
+              class="m-plain m-lbl instrument"
+              class:no-input={!vocal.inputReady}
+              aria-haspopup="menu"
+              data-test="track-input"
+              onclick={(e) => openInputs(e, track)}
+              >{vocal.inputReady ? t("vocal.inputChoose", { input: t(`vocal.input.${vocal.input}`) }) : t("vocal.noInput")}</button
+            >
+            <button
+              class="monitor"
+              class:on={vocal.monitor}
+              aria-pressed={vocal.monitor}
+              data-test="track-monitor"
+              use:term={"モニター"}
+              onclick={() => send({ type: "toggleMonitor", track: track.id })}>{t("vocal.monitor")}</button
+            >
+          {:else if auditioned?.track === track.id}
             <button class="m-plain instrument auditioned" data-test="track-instrument" onclick={() => replaceInstrument(track)}
               >{t("arrange.instrumentAuditioned", { instrument: auditioned.name })}</button
             >
@@ -249,21 +290,30 @@
                 class="m-plain m-lbl instrument"
                 data-test="track-instrument"
                 use:term={name}
-                onclick={() => replaceInstrument(track)}
+                onclick={() => send({ type: "selectInstrument", track: track.id })}
                 oncontextmenu={(e) => instrumentContext(e, track)}>{name}</button
               >
             {:else}
               <button
                 class="m-plain m-lbl instrument"
                 data-test="track-instrument"
-                onclick={() => replaceInstrument(track)}
+                onclick={() => send({ type: "selectInstrument", track: track.id })}
                 oncontextmenu={(e) => instrumentContext(e, track)}>{name}</button
               >
             {/if}
           {/if}
-          <span class="m-num" use:term={"dB"}>{track.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(track.gainDb) })}</span>
+          {#if track.kind.kind === "keys"}
+            <span class="m-num" use:term={"dB"}>{track.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(track.gainDb) })}</span>
+          {/if}
         </div>
-        <div class="meter" use:glSlot={{ kind: "meter", source: { track: track.number }, gap: metrics.px("line.hair") }}></div>
+        <div
+          class="meter"
+          use:glSlot={{
+            kind: "meter",
+            source: track.kind.kind === "vocal" && track.kind.armed ? { mic: track.id } : { track: track.number },
+            gap: metrics.px("line.hair"),
+          }}
+        ></div>
       </div>
     </div>
     {#each rows.lanes.filter((l) => l.track.id === track.id) as l (JSON.stringify(l.lane.target))}
@@ -275,9 +325,14 @@
     <div class="insert" style:top="{bounds[slot.slot]}px" data-test="track-insert"></div>
   {/if}
 </div>
-<button class="m-plain add" class:usable={!busy} aria-disabled={busy || undefined} data-test="add-track" onclick={addTrack}>
-  {t("arrange.addTrack")}<span class="m-lbl">{t("arrange.addTrackInstrument")}</span>
-</button>
+<div class="adds">
+  <button class="m-plain add keys" class:usable={!busy} aria-disabled={busy || undefined} data-test="add-track" onclick={addTrack}>
+    {t("arrange.addKeysTrack")}
+  </button>
+  <button class="m-plain add" class:usable={!busy} aria-disabled={busy || undefined} data-test="add-vocal-track" onclick={addVocalTrack}>
+    {t("arrange.addVocalTrack")}
+  </button>
+</div>
 
 <style>
   .tracks {
@@ -418,9 +473,45 @@
   .meter {
     height: calc(var(--part-meter-horizontal) * 2 + var(--line-hair));
   }
-  /* 「＋ トラックを追加」（モック R7-Arrange6: 文字 gray.9、右の「音源」は gray.8）。録音中は「使えない」。 */
+  /* 歌のトラックの「入口なし ▾」（仕様書 3 章: gray.8）。 */
+  .instrument.no-input {
+    color: var(--color-gray-8);
+  }
+  /* 「モニター」（モック F7-VocalTrack: 高さ 20。オンは「えらんでいる」の形 = 枠と文字 accent）。 */
+  .monitor {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    height: var(--part-toggle-size);
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid var(--color-gray-6);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-gray-8);
+    font: inherit;
+    cursor: pointer;
+  }
+  .monitor:hover {
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
+  }
+  .monitor:active {
+    background: var(--color-gray-2);
+    border-color: var(--color-gray-8);
+  }
+  .monitor.on {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  /* 「＋ 鍵盤のトラック」「＋ 歌のトラック」（モック F7-VocalTrack: 文字 gray.9、左の箱は幅 120）。録音中は「使えない」。 */
+  .adds {
+    display: flex;
+  }
+  .add.keys {
+    width: var(--mock-arrange-add-keys);
+  }
   .add {
-    width: 100%;
+    flex-shrink: 0;
+    white-space: nowrap;
     height: var(--mock-arrange-add-track);
     display: flex;
     align-items: center;
@@ -435,8 +526,5 @@
   }
   .add.usable:hover {
     color: var(--color-gray-10);
-  }
-  .add:not(.usable) .m-lbl {
-    color: var(--color-gray-7);
   }
 </style>

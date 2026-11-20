@@ -1,7 +1,7 @@
 // トラックを変える行（仕様書 3 章「第 6 版で足した決まり」Y5）。右クリックの一覧（トラックの見出し）と、上のメニューの「トラック」が使う。
 // 録音中とカウントイン中は、core が受けないので「使えない」。
 
-import type { AppState, Command, TrackView } from "../bridge";
+import { VOCAL_INPUTS, type AppState, type Command, type TrackView, type VocalInput } from "../bridge";
 import { songBusy } from "../keys/attach";
 import { t } from "../text/ja";
 import type { MenuEntry, MenuRow } from "./menu/contextMenu.svelte";
@@ -49,7 +49,7 @@ export function trackRows(state: AppState, track: TrackView | null, send: (c: Co
 
 /**
  * トラックの見出しの右クリック（モック R6-Tracks）: ミュート ・ ソロ ・ 録音待機 ／ 名前を変える ・ 色 ▸ ・ 上へ ・ 下へ ／ トラックを消す。
- * selected: 録音待機の印。右クリックはそのトラックを選んでからひらくので、選んだあとの形で渡す。
+ * selected: 録音待機の印（鍵盤のトラックは弾くと鳴る先、歌のトラックは選んだ）。右クリックはそのトラックを選んでからひらくので、選んだあとの形で渡す。
  */
 export function trackContextMenu(
   state: AppState,
@@ -63,7 +63,10 @@ export function trackContextMenu(
   return [
     { kind: "row", label: "menu.mute", usable: true, run: () => send({ type: "toggleMute", track: track.id }), key: shiftKey(t("key.mute")), checked: track.muted },
     { kind: "row", label: "menu.solo", usable: true, run: () => send({ type: "toggleSolo", track: track.id }), key: shiftKey(t("key.solo")), checked: track.soloed },
-    { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }), checked: selected },
+    track.kind.kind === "vocal"
+      ? // 歌のトラックの ● は、選んでいなくても自分でつける ・ 外す（仕様書 3 章 24-C）。選ぶと、つく。
+        { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "toggleVocalArm", track: track.id }), checked: track.kind.armed || selected }
+      : { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }), checked: selected },
     { kind: "separator" },
     rows.rename,
     rows.color,
@@ -71,5 +74,27 @@ export function trackContextMenu(
     rows.down,
     { kind: "separator" },
     rows.remove,
+  ];
+}
+
+/**
+ * 歌のトラックの入口の一覧（仕様書 3 章「歌のトラックの見出し」、モック F7-VocalTrack）: 入口 1 ・ モノ ／ 入口 2 ・ モノ ／ 入口 1 ・ 2 ・ ステレオ ／
+ * 音の設定…。見出しの「入口 1 ・ モノ ▾」とミキサーの音源の枠が使う。入口を変えるのは取り消せる 1 手なので、録音中は「使えない」。
+ */
+export function vocalInputRows(track: number, input: VocalInput, busy: boolean, send: (c: Command) => void): MenuEntry[] {
+  return [
+    ...VOCAL_INPUTS.map(
+      (choice): MenuEntry => ({
+        kind: "row",
+        label: `vocal.input.${choice}`,
+        usable: !busy,
+        checked: choice === input,
+        run: () => {
+          if (choice !== input) send({ type: "setVocalInput", track, input: choice });
+        },
+      }),
+    ),
+    { kind: "separator" },
+    { kind: "row", label: "button.audioSettingsEllipsis", usable: true, run: () => send({ type: "openSettings", advanced: true }) },
   ];
 }

@@ -87,7 +87,7 @@ describe("行と名前（仕様書 3 章）", () => {
     s.shelf.selectedSound = { kind: "builtin", instrument: "grandPiano" };
     expect(keysDrums(s)).toBe(false);
     s.shelf.selectedSound = null;
-    s.song.playTarget = s.song.tracks[0]!.id;
+    s.song.playTarget = s.song.keysTarget = s.song.tracks[0]!.id;
     expect(keysDrums(s)).toBe(false);
     // ピアノロールは見せているクリップのトラックで決まる。
     expect(pianoRollDrums(s)).toBe("builtin");

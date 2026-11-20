@@ -149,7 +149,7 @@ describe("数の見せかた", () => {
 describe("mock.*（モックにしかない寸法）", () => {
   // この画面の骨組みが足した物だけを見る（ほかの部品の mock.* は、その部品のテストで）。
   const mine = Object.entries(mock).filter(([k]) => /^mock\.(transport|arrange|track|overview)\./.test(k));
-  it("見る物がある", () => expect(mine.length).toBe(12));
+  it("見る物がある", () => expect(mine.length).toBe(13));
   it.each(mine)("%s の値はモックに書いてあり、率をかけた値は整数（四捨五入）", (_, tok) => {
     const html = readMock(tok.board);
     expect(html).toContain(`${tok.value}px`);

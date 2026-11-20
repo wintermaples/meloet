@@ -172,6 +172,13 @@
   onDestroy(() => stopBook?.());
 
   const rec = $derived(transport.state === "recording" ? transport.recording : null);
+  /**
+   * 録っている歌のトラック（仕様書 3 章 24-C: 録っている間のクリップは、どれも rec の色。モック F7-VocalRec ・ F7-TwoRec）。
+   * 波形は約束 24 なので、いまは中身のない rec のクリップ。鍵盤と同じく、できた小節は大きな面、のびている先（2 小節まで）は recordingClip。
+   */
+  const recVocals = $derived(transport.state === "recording" ? transport.recordingVocals : []);
+  /** 歌のクリップの、大きな面に移した所まで（小節ごと）。 */
+  let vocalCommit = $state(0);
   /** いま描いている周と、大きな面に移した所まで（小節ごと）。 */
   let recShown = $state.raw<{ lap: number; lapFrom: number; commit: number } | null>(null);
   let lastLap = 0;
@@ -204,6 +211,8 @@
   });
 
   function shapesOf(trackId: number, clip: ClipView): G.NoteShape[] {
+    // 歌のクリップのテイクは音（波形は約束 24）。take_notes にはない。
+    if (clip.vocal) return [];
     const take = takeOf(clip.takeId);
     if (take) return G.takeShapes(clip, take);
     if (fallback?.track !== trackId) return [];
@@ -366,6 +375,12 @@
           { openRight: true, range: G.keyRange(all), until: shown.commit },
         );
       }
+    }
+    for (const v of recVocals) {
+      const row = rowOf(v.track);
+      const commit = Math.max(v.from, vocalCommit);
+      if (row < 0 || commit <= v.from) continue;
+      G.paintClip(out, view, dims, G.clipBox(view, dims, row, v.from, commit), G.CLIP_RECORDING, [], { openRight: true, range: null });
     }
     if (shownLoop) {
       const h = rows.height;
@@ -637,6 +652,84 @@
     tailSlot.update({ kind: "rects", rects });
   }
 
+  /** 録っている歌のクリップの、のびている先と名前（トラックの id ごと）。画面の画素で変わったときだけ書く。 */
+  interface VocalTail {
+    node: HTMLElement;
+    slot: { update(next: GlSlot): void; destroy(): void };
+    label: HTMLElement | null;
+    labelFullPx: number;
+    drawn: string;
+    labelPx: number;
+  }
+  const vocalTails = new Map<number, VocalTail>();
+  function vocalTail(node: HTMLElement, track: number) {
+    const slot = glSlot(node, { kind: "rects", rects: [] });
+    vocalTails.set(track, { node, slot, label: null, labelFullPx: 0, drawn: "", labelPx: NaN });
+    return {
+      destroy() {
+        slot.destroy();
+        vocalTails.delete(track);
+      },
+    };
+  }
+  function vocalLabel(node: HTMLElement, track: number) {
+    const tail = vocalTails.get(track);
+    if (tail) tail.label = node;
+    return {
+      destroy() {
+        const t = vocalTails.get(track);
+        if (t?.label === node) t.label = null;
+      },
+    };
+  }
+
+  function moveVocalTails(now: number, scrollX: number): void {
+    if (recVocals.length === 0) return;
+    const dpr = metrics.dpr;
+    const v: G.View = { pxPerTick, scrollX, width: viewWidth };
+    let commitAll = vocalCommit;
+    for (const r of recVocals) {
+      const tail = vocalTails.get(r.track);
+      const row = rowOf(r.track);
+      if (!tail || row < 0) continue;
+      const at = Math.max(now, r.from);
+      const { commit, tailFrom } = G.recordingSplit(r.from, at, perBar);
+      commitAll = commit;
+      const nowPx = Math.round((at * pxPerTick - scrollX) * dpr);
+      if (tail.label) {
+        if (tail.labelFullPx === 0) {
+          tail.label.style.clipPath = "";
+          tail.labelFullPx = Math.ceil(tail.label.offsetWidth * dpr);
+        }
+        const startPx = Math.round(Math.max(r.from * pxPerTick - scrollX, 0) * dpr);
+        const labelPx = Math.min(Math.max(0, nowPx - startPx - 2), tail.labelFullPx);
+        if (labelPx !== tail.labelPx) {
+          tail.labelPx = labelPx;
+          tail.label.style.clipPath = labelPx >= tail.labelFullPx ? "" : `inset(0 calc(100% - ${labelPx / dpr}px) 0 0)`;
+        }
+      }
+      const key = [nowPx, scrollX, commit, row, pxPerTick, dims.trackH, G.rowTop(dims, row)].join(" ");
+      if (key === tail.drawn) continue;
+      tail.drawn = key;
+      const box = G.clipBox(v, dims, row, tailFrom, at);
+      setStyle(tail.node, "left", box.x0);
+      setStyle(tail.node, "top", box.y0);
+      setStyle(tail.node, "width", 2 * perBar * pxPerTick + dims.hair);
+      setStyle(tail.node, "height", box.y1 - box.y0);
+      const rects: GlRect[] = [];
+      G.paintClip(rects, v, dims, box, G.CLIP_RECORDING, [], { openLeft: tailFrom > r.from, range: null, until: at });
+      for (const q of rects) {
+        q.x -= box.x0;
+        q.y -= box.y0;
+      }
+      tail.slot.update({ kind: "rects", rects });
+    }
+    if (commitAll !== vocalCommit) vocalCommit = commitAll;
+  }
+  $effect(() => {
+    if (recVocals.length === 0) untrack(() => (vocalCommit = 0));
+  });
+
   // 先は毎コマ描くので、周のノートと鍵の範囲は、録っているノートが変わったときだけ作る（docs/architecture.md 7 章）。
   let lapCache: { recording: number; lap: number; version: number; notes: readonly LiveNote[]; range: { low: number; high: number } | null } | null = null;
   function liveOfLap(recording: number, lap: number): { notes: readonly LiveNote[]; range: { low: number; high: number } | null } {
@@ -659,6 +752,7 @@
     }
     placeLines(tick, scrollX);
     moveTail(tick, scrollX);
+    moveVocalTails(tick, scrollX);
     showNow(tick);
   }
 
@@ -1179,6 +1273,9 @@
           {#if rec}
             <div class="rec-tail" use:recordingTail></div>
           {/if}
+          {#each recVocals as v (v.track)}
+            <div class="rec-tail" data-test="vocal-rec-tail" use:vocalTail={v.track}></div>
+          {/each}
           {#if dragPicture}
             {@const at = dragPicture.place}
             <div
@@ -1216,6 +1313,20 @@
               {t("arrange.recordingClip", { take: rec.take })}
             </div>
           {/if}
+          {#each recVocals as v (v.track)}
+            {@const row = rowOf(v.track)}
+            {#if row >= 0}
+              <div
+                class="clip-label recording"
+                data-test="vocal-rec-label"
+                use:vocalLabel={v.track}
+                style:left="{Math.max(G.tickToX(view, v.from), 0) + dims.hair}px"
+                style:top="{G.rowTop(dims, row) + dims.inset + dims.mark}px"
+              >
+                {t("arrange.recordingVocalClip", { track: song.tracks[row]!.name, take: v.take })}
+              </div>
+            {/if}
+          {/each}
           {#each dragPicture?.labels ?? [] as c (c.id)}
             <div class="clip-label" style:left="{c.x}px" style:top="{c.y}px" style:width="{c.w}px" style:transform={dragShift}>
               {#if c.mark === "square"}

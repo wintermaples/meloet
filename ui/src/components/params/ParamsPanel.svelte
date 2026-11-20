@@ -3,7 +3,9 @@
      同じ枠の同じ子のあいだは、一覧の番号（table）が変わっても（取り消し ・ やりなおし）、さがす文字 ・ ひらいたグループ ・ スクロールを残す。
      名前の行: 名前、形式の印（最初から入っている物は「最初から入っている」）、インサートなら「とばす」（とばしている間は「とばしている」で、えらんでいる形）、
      窓をひらける子は「窓をひらく」か「窓を前に出す」。まだ窓をひらけない子 ・ 窓を持たない子は、一覧の上に文。
-     何もえらんでいないときは 2 行（86-5）。 -->
+     何もえらんでいないときは 2 行（86-5）。
+     最初から入っている音色と SF2 の音色（SelectedParams の sound。仕様書 3 章 92-1 ・ 19-A、モック F7-Answers92）: 名前と「最初から入っている」（SF2 は「SF2」の印）、
+     「この音色には、動かせるパラメータがありません。」、gray.8 で「音量とパンはミキサーで、音色を変えるには入れかえます。」、ボタン「音源を入れかえる…」。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { InsertRef, InsertView, SongView } from "../../bridge";
@@ -11,7 +13,8 @@
   import { t } from "../../text/ja";
   import Button from "../Button.svelte";
   import { stripName } from "../mixer/stripName";
-  import { formatName } from "../sounds";
+  import { formatName, soundNameText } from "../sounds";
+  import { openShelf } from "../tracks.svelte";
   import WindowMark from "../WindowMark.svelte";
   import BuiltinList from "./BuiltinList.svelte";
   import { allRows, rowCount } from "./paramRows";
@@ -26,6 +29,8 @@
   const plugin = $derived(pluginOf(app.params));
   const insert = $derived(selectedInsert(app.params));
   const pluginView = $derived(plugin ? pluginAt(app.song, plugin.slot) : null);
+  const sound = $derived(app.params.selected?.kind === "sound" ? app.params.selected : null);
+  const busy = $derived(app.transport.state === "recording" || app.transport.state === "countIn");
 
   function slotView(song: SongView, at: InsertRef): InsertView | null {
     const { strip, slot } = at;
@@ -122,6 +127,29 @@
         <PluginList sel={plugin} plugin={name} usable={pluginView?.state !== "stopped"} />
       {/key}
     {/if}
+  {:else if sound}
+    <div class="who">
+      <div class="line">
+        <span class="m-name name" data-test="params-name">{sound.sound.kind === "sf2" ? sound.sound.name : soundNameText(sound.sound)}</span>
+        {#if sound.sound.kind === "sf2"}
+          <span class="m-num mark" data-test="params-format">{t("shelf.sf2Mark")}</span>
+        {:else}
+          <span class="m-lbl">{t("params.builtin")}</span>
+        {/if}
+      </div>
+      <span class="m-lbl where" data-test="params-where"
+        >{t("params.whereInstrument", { strip: stripName(app.song, { kind: "track", id: sound.track }, app.library) })}</span
+      >
+    </div>
+    <div class="nothing" data-test="params-no-sound-params">
+      <span>{t("params.noSoundParams")}</span>
+      <span class="m-lbl">{t("params.noSoundParamsHint")}</span>
+      <span
+        ><Button test="params-replace-sound" disabled={busy} onclick={() => send(openShelf({ kind: "replace", track: sound.track }))}
+          >{t("button.replaceSound")}</Button
+        ></span
+      >
+    </div>
   {:else}
     <div class="nothing" data-test="params-nothing">
       <span>{t("params.nothingSelected")}</span>
@@ -238,6 +266,9 @@
     flex-direction: column;
     gap: var(--space-2);
     padding: var(--space-3);
+    white-space: normal;
+  }
+  .nothing .m-lbl {
     white-space: normal;
   }
 </style>

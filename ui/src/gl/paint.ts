@@ -4,6 +4,7 @@ import type { Batch } from "./batch";
 import { rgb, type Rgb } from "./color";
 import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
+import { dbToLength } from "./level";
 import type { GlRect, GridLine } from "./slot";
 
 /** A slot's box in device pixels of its canvas (whole numbers; it may reach past the canvas). `hair` is line.hair: always one device pixel. */
@@ -86,11 +87,13 @@ export interface BarLevel {
  * Two bars: left above right, each growing to the right; `vertical`: left beside right, each growing
  * upward. `gap` and `mark` (clipMarkPx) are device pixels.
  */
-export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left: BarLevel, right: BarLevel, vertical = false): void {
+export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left: BarLevel, right: BarLevel, vertical = false, toZero = false): void {
   const { x0, y0, x1, y1 } = box;
   const length = vertical ? y1 - y0 : x1 - x0;
   const thick = Math.max(1, Math.round(((vertical ? x1 - x0 : y1 - y0) - gap) / 2));
-  const hotFrom = Math.round(length * METER_HOT_FROM);
+  // The spec's scale with the part above 0 dB cut off: 0 dB is the end of the bar.
+  const stretch = toZero ? 1 / dbToLength(0) : 1;
+  const hotFrom = Math.round(length * METER_HOT_FROM * stretch);
   // `from`..`to` are measured along the bar from its 0 % end; `at` is the bar's first pixel across.
   const piece = (at: number, from: number, to: number, color: Rgb) => {
     if (vertical) out.rect(at, y1 - to, at + thick, y1 - from, color);
@@ -98,7 +101,7 @@ export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left
   };
   const bar = (at: number, level: BarLevel) => {
     piece(at, 0, length, rgb(METER.ground));
-    const end = Math.round(length * Math.min(Math.max(level.length, 0), 1));
+    const end = Math.round(length * Math.min(Math.max(level.length * stretch, 0), 1));
     piece(at, 0, Math.min(end, hotFrom), rgb(METER.ok));
     piece(at, hotFrom, end, rgb(METER.hot));
     if (level.clipped) piece(at, length - mark, length, rgb(METER.clip));

@@ -1,15 +1,19 @@
 <!-- 入力計（仕様書 3 章の表の入力計の行。モック F-Connect1・2・3、F-Empty、F-MeterLongName、Opt-Meter 1-B）。
-     ベロシティの読み値の右に「固定」の切りかえ（docs/design-notes.md B-66）。どの幅でも消さず、鍵盤がないときも出す。 -->
+     ベロシティの読み値の右に「固定」の切りかえ（docs/design-notes.md B-66）。どの幅でも消さず、鍵盤がないときも出す。
+     ● のついた歌のトラックか、選んだ歌のトラックがあるときは、左右に分けた形（仕様書 2 章「入力計の帯（左右に分けた形）」、3 章 31-C、
+     モック F7-VocalTrack ・ R11-Fit）: 左は鍵盤の計（ペダルなどは引っこめる）、右はマイクの計。せまいときは「弾くと鳴る先」、次に「モニター」の字を引っこめる。
+     マイクの計の棒は inputMeter の区画の中（区画も文脈もふやさない）。いまの dB の字は流れの外の箱で、同じ canvas の下（cover）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { keyIsDown } from "../bridge";
+  import { keyIsDown, type TrackView } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
   import { term, tip } from "../lib/tip.svelte";
   import { current, onEvent, send } from "../state/app.svelte";
   import { findTerm, t } from "../text/ja";
-  import { textParts } from "./format";
+  import { dbNumber, PeakHold, textParts } from "./format";
+  import { CLIP_HOLD_MS } from "../gl/dims";
   import { pad3, signed4, SUSTAIN_ON } from "./meterFormat";
   import { metrics } from "./metrics.svelte";
   import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
@@ -54,9 +58,62 @@
     const rec = app.transport.recording;
     const recTrack = rec && app.song.tracks.find((x) => x.id === rec.track);
     if (rec && recTrack) return { kind: "target" as const, track: recTrack, take: rec.take };
-    const track = app.song.tracks.find((x) => x.id === app.song.playTarget);
-    return track ? { kind: "target" as const, track, take: null } : null;
+    // 弾くと鳴る先は、鍵盤の行き先（歌のトラックを選んでいる間も、最後に選んでいた鍵盤のトラック。B-94-1）。
+    const track = app.song.tracks.find((x) => x.id === app.song.keysTarget);
+    return track ? { kind: "target" as const, track, take: null } : { kind: "none" as const };
   });
+
+  // ---- 左右に分けた形（31-C） ----
+
+  /** マイクの計に出す歌のトラック: 選んだトラックが歌ならそれ、ほかは ● のついた最初の歌のトラック。 */
+  const vocal = $derived.by((): { track: TrackView; input: "mono1" | "mono2" | "stereo12"; monitor: boolean } | null => {
+    if (!app) return null;
+    const of = (x: TrackView | undefined) => (x && x.kind.kind === "vocal" ? { track: x, input: x.kind.input, monitor: x.kind.monitor } : null);
+    return of(app.song.tracks.find((x) => x.id === app.song.playTarget)) ?? of(app.song.tracks.find((x) => x.kind.kind === "vocal" && x.kind.armed));
+  });
+  const split = $derived(vocal !== null);
+
+  /** いまの dB: 直近 1 秒のいちばん大きい値（マスターの dB と同じ。字を毎コマ変えない）。0 dB に届いたら 2 秒 rec。 */
+  let micHold = new PeakHold(1000);
+  let micPeak = $state(0);
+  let micClipUntil = 0;
+  let micClipped = $state(false);
+  let micTrack: number | null = null;
+  $effect(() => {
+    const tel = current.telemetry;
+    const id = vocal?.track.id ?? null;
+    untrack(() => {
+      if (id !== micTrack) {
+        micTrack = id;
+        micHold = new PeakHold(1000);
+        micPeak = 0;
+        micClipUntil = 0;
+      }
+      if (!tel || id === null) return;
+      const mic = tel.mics.find((m) => m.track === id);
+      const now = performance.now();
+      if (mic) {
+        micHold.push(Math.max(mic.peak[0], mic.peak[1]), now);
+        if (mic.clipped) micClipUntil = now + CLIP_HOLD_MS;
+      }
+      micPeak = micHold.max(now);
+      micClipped = now < micClipUntil;
+    });
+  });
+  $effect(() => {
+    if (!split) return;
+    const timer = setInterval(() => {
+      const now = performance.now();
+      micPeak = micHold.max(now);
+      micClipped = now < micClipUntil;
+    }, 250);
+    return () => clearInterval(timer);
+  });
+  /** 整数の dB（モック F7-VocalTrack の「−32 dB」）。−60 より小さいときは −∞。 */
+  const micDb = $derived(micPeak > 0 ? Math.round(20 * Math.log10(micPeak)) : -Infinity);
+  const micText = $derived(micDb < -60 ? t("common.dbSilent") : t("common.db", { value: dbNumber(micDb).replace(/\.0$/, "") }));
+
+  let splitFit = $state({ target: true, monitor: true });
 
   // 押している鍵は計器で受け、鍵の on/off は計器を待たずに当てる。
   let held = $state<number[]>([]);
@@ -159,6 +216,10 @@
 
   function measure(): void {
     if (!row || !ruler) return;
+    if (split) {
+      measureSplit();
+      return;
+    }
     const style = getComputedStyle(row);
     const gap = parseFloat(style.columnGap) || 0;
     const available = row.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
@@ -191,15 +252,28 @@
     });
   }
 
-  onMount(() => {
+  /** 分けた形: 半分ずつの箱に、ちぢめない幅が入るか。入らなければ「弾くと鳴る先」、次に「モニター」の字。 */
+  function measureSplit(): void {
+    const width = (part: string) => ruler!.querySelector<HTMLElement>(`[data-part="${part}"]`)?.offsetWidth ?? 0;
+    const box = (part: string) => row!.querySelector<HTMLElement>(`:scope > [data-part="${part}"]`)?.clientWidth ?? 0;
+    const monitor = width("right") <= box("right");
+    // 引っこめる順は「弾くと鳴る先」が先: モニターの字を引っこめるときは、鳴る先も引っこめる。
+    const next = { target: monitor && width("left") <= box("left"), monitor };
+    if (next.target !== splitFit.target || next.monitor !== splitFit.monitor) splitFit = next;
+  }
+
+  $effect(() => {
+    const r = row;
+    const u = ruler;
+    if (!r || !u) return;
     const observer = new ResizeObserver(() => measure());
-    if (row) observer.observe(row);
-    if (ruler) observer.observe(ruler);
+    observer.observe(r);
+    observer.observe(u);
     return () => observer.disconnect();
   });
   $effect(() => {
     // 状態が変わったら測りなおす（ResizeObserver のない所でも、決まりの通りに出す）。
-    void [slim, scale, name, more, keyboard, right, message];
+    void [slim, scale, name, more, keyboard, right, message, split, vocal];
     measure();
   });
 
@@ -208,8 +282,8 @@
   const nameTip = $derived(others > 0 ? allNames : truncated ? name : null);
 </script>
 
-{#snippet body(measuring: boolean)}
-  <div class="who" style:width={!measuring && !slim ? cssVar(fit.nameWidth) : null}>
+{#snippet who(measuring: boolean, fixedWidth: boolean)}
+  <div class="who" style:width={!measuring && !slim && fixedWidth ? cssVar(fit.nameWidth) : null}>
     {#if !slim}<span class="label">{t("meter.input")}</span>{/if}
     <span
       class="who-name"
@@ -221,6 +295,42 @@
       {#if more}<span class="more" data-test="other-keyboards" use:tip={measuring ? null : nameTip}>{` ${more}`}</span>{/if}
     </span>
   </div>
+{/snippet}
+
+{#snippet reading(measuring: boolean)}
+  {#if fixed.on}
+    {#if measuring}
+      <span class="value">{fixed.value}</span>
+    {:else}
+      <NumberField
+        value={String(fixed.value)}
+        parse={readVelocity}
+        step={stepFixed}
+        commit={commitFixed}
+        reject={rejectFixed}
+        label={t("meter.velocity")}
+        chars={3}
+        test="velocity-fixed-value"
+        small={slim}
+      />
+    {/if}
+  {:else if keyboard}
+    <span class="value" class:live>{velocity}</span>
+  {/if}
+{/snippet}
+
+{#snippet fixedToggle(measuring: boolean)}
+  {#if measuring}
+    <span class="fixed">{t("input.velocityFixed")}</span>
+  {:else}
+    <button class="fixed" class:on={fixed.on} aria-pressed={fixed.on} data-test="velocity-fixed" use:term={"ベロシティ固定"} onclick={toggleFixed}
+      >{t("input.velocityFixed")}</button
+    >
+  {/if}
+{/snippet}
+
+{#snippet body(measuring: boolean)}
+  {@render who(measuring, true)}
 
   {#if measuring}
     <div class="keys"></div>
@@ -248,45 +358,15 @@
     </div>
   {/if}
 
-  {#snippet reading()}
-    {#if fixed.on}
-      {#if measuring}
-        <span class="value">{fixed.value}</span>
-      {:else}
-        <NumberField
-          value={String(fixed.value)}
-          parse={readVelocity}
-          step={stepFixed}
-          commit={commitFixed}
-          reject={rejectFixed}
-          label={t("meter.velocity")}
-          chars={3}
-          test="velocity-fixed-value"
-          small={slim}
-        />
-      {/if}
-    {:else if keyboard}
-      <span class="value" class:live>{velocity}</span>
-    {/if}
-  {/snippet}
-  {#snippet fixedToggle()}
-    {#if measuring}
-      <span class="fixed">{t("input.velocityFixed")}</span>
-    {:else}
-      <button class="fixed" class:on={fixed.on} aria-pressed={fixed.on} data-test="velocity-fixed" use:term={"ベロシティ固定"} onclick={toggleFixed}
-        >{t("input.velocityFixed")}</button
-      >
-    {/if}
-  {/snippet}
   <div class="item velocity" data-test="velocity">
     <span class="label" use:term={"ベロシティ"}>{t("meter.velocity")}</span>
     {#if slim}
-      {@render reading()}
-      {@render fixedToggle()}
+      {@render reading(measuring)}
+      {@render fixedToggle(measuring)}
     {:else}
       <span class="velocity-row">
         <span class="velocity-main" class:wide={keyboard !== null}>
-          {@render reading()}
+          {@render reading(measuring)}
           {#if keyboard}
             {#if measuring}
               <span class="velocity-bar"></span>
@@ -295,7 +375,7 @@
             {/if}
           {/if}
         </span>
-        {@render fixedToggle()}
+        {@render fixedToggle(measuring)}
       </span>
     {/if}
   </div>
@@ -339,6 +419,11 @@
         >{t("meter.auditionTarget", { instrument: right.name })}</span
       >
     </div>
+  {:else if right?.kind === "none"}
+    <div class="item target" data-test="meter-right" data-part="target">
+      {#if measuring || fit.targetLabel}<span class="label" data-part="target-label">{t("meter.playTarget")}</span>{/if}
+      <span class="target-value" data-part="target-value" data-test="meter-target">{t("meter.playTargetNone")}</span>
+    </div>
   {:else if right?.kind === "target"}
     <div class="item target" data-test="meter-right" data-part="target">
       {#if measuring || fit.targetLabel}<span class="label" data-part="target-label">{t("meter.playTarget")}</span>{/if}
@@ -370,21 +455,130 @@
   {/if}
 {/snippet}
 
+{#snippet splitBody(measuring: boolean)}
+  <div class="half" data-part="left" data-test="meter-keys-half">
+    {@render who(measuring, false)}
+    {#if measuring}
+      <div class="keys narrow" class:slim-keys={slim}></div>
+    {:else}
+      <div
+        class="keys narrow"
+        class:slim-keys={slim}
+        use:glSlot={{
+          kind: "keyboard",
+          size: slim ? "slim" : "full",
+          narrow: !slim,
+          firstNote: FIRST_NOTE,
+          lastNote: LAST_NOTE,
+          disabled: keyboard === null,
+        }}
+      ></div>
+    {/if}
+    {#if keyboard}
+      <div class="item">
+        {#if !slim}<span class="label">{t("meter.held")}</span>{/if}
+        <span class="value" class:held={live} class:none={!live} data-test="held">
+          {live ? keysLabel(held, drums) : t("meter.heldNone")}
+        </span>
+      </div>
+    {/if}
+    <div class="item velocity" data-test="velocity">
+      <span class="label" use:term={"ベロシティ"}>{t("meter.velocity")}</span>
+      {#if slim}
+        {@render reading(measuring)}
+        {@render fixedToggle(measuring)}
+      {:else}
+        <span class="velocity-row">
+          {@render reading(measuring)}
+          {@render fixedToggle(measuring)}
+        </span>
+      {/if}
+    </div>
+    <div class="spacer"></div>
+    {#if message}
+      {#if measuring || splitFit.target}
+        <span class="message" data-test="meter-right" data-part="target">
+          <span class={message.first}>{message.parts[0]}</span>
+        </span>
+      {/if}
+    {:else if measuring || splitFit.target}
+      <div class="item target" data-test="meter-right" data-part="target">
+        {#if !slim}<span class="label">{t("meter.playTarget")}</span>{/if}
+        <span class="target-value" class:accent={right?.kind === "audition"} data-test="meter-target">
+          {#if right?.kind === "audition"}
+            {t("meter.auditionTarget", { instrument: right.name })}
+          {:else if right?.kind === "target"}
+            {#each t("track.label", { number: TRACK, name: right.track.name }).split(new RegExp(`(${TRACK})`)) as piece, i (i)}{#if piece === TRACK}<span
+                  class="mono">{right.track.number}</span
+                >{:else}{piece}{/if}{/each}
+          {:else}
+            {t("meter.playTargetNone")}
+          {/if}
+        </span>
+      </div>
+    {/if}
+  </div>
+  <div class="half mic" data-part="right" data-test="meter-mic-half">
+    <div class="item mic-who">
+      <span class="label" data-test="mic-input">{t(`vocal.input.${vocal!.input}`)}</span>
+      <span class="strong" data-test="mic-track"
+        >{#each t("track.label", { number: TRACK, name: vocal!.track.name }).split(new RegExp(`(${TRACK})`)) as piece, i (i)}{#if piece === TRACK}<span
+              class="mono">{vocal!.track.number}</span
+            >{:else}{piece}{/if}{/each}</span
+      >
+    </div>
+    <div class="mic-meter">
+      {#if measuring}
+        <div class="mic-bar"></div>
+      {:else}
+        <div class="mic-bar" data-test="mic-bar" use:glSlot={{ kind: "meter", source: { mic: vocal!.track.id }, gap: 0, toZero: true }}></div>
+      {/if}
+      {#if !slim}
+        <div class="mic-scale">
+          <span>{t("meter.micScaleLow")}</span><span>{t("meter.micScaleMid")}</span><span>{t("meter.micScaleTop")}</span>
+        </div>
+      {/if}
+    </div>
+    {#if measuring}
+      <span class="value mic-db">{t("common.db", { value: t("meter.micScaleLow") })}</span>
+    {:else}
+      <!-- 字が変わるコマは canvas も出す（cover の stamp）。箱の幅は「−60 dB」の字で決め、いまの値は流れの外の箱。 -->
+      <span class="value mic-db" use:glSlot={{ kind: "cover", stamp: (micClipped ? 1000 : 0) + (Number.isFinite(micDb) ? micDb : -999) }}>
+        <span class="hidden-width">{t("common.db", { value: t("meter.micScaleLow") })}</span>
+        <span class="mic-db-in" class:rec={micClipped} data-test="mic-db" use:term={"dB"}>{micText}</span>
+      </span>
+    {/if}
+    <div class="spacer"></div>
+    {#if measuring || splitFit.monitor}
+      <span class="label" data-part="monitor" data-test="mic-monitor">{vocal!.monitor ? t("meter.monitorOn") : t("meter.monitorOff")}</span>
+    {/if}
+  </div>
+{/snippet}
+
 {#if app}
   <div
     class="meter"
     class:slim
+    class:split
     class:empty={keyboard === null}
     style:--white-keys={WHITE_KEYS}
     bind:this={row}
     use:glRegion={"inputMeter"}
   >
-    {@render body(false)}
-    <div class="meter ruler" class:slim aria-hidden="true" bind:this={ruler}>
-      {@render body(true)}
-    </div>
+    {#if split}
+      {@render splitBody(false)}
+      <div class="meter ruler split" class:slim aria-hidden="true" bind:this={ruler}>
+        {@render splitBody(true)}
+      </div>
+    {:else}
+      {@render body(false)}
+      <div class="meter ruler" class:slim aria-hidden="true" bind:this={ruler}>
+        {@render body(true)}
+      </div>
+    {/if}
   </div>
 {/if}
+
 
 <style>
   .meter {
@@ -608,4 +802,75 @@
   .rec {
     color: var(--color-rec);
   }
+  /* 左右に分けた形（モック F7-VocalTrack ・ R11-Fit）: 半分ずつ。右は gray.6 の線で分ける。鍵盤はいつも細い鍵（幅 8）。 */
+  .meter.split {
+    gap: 0;
+    padding: 0;
+  }
+  .half {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
+    overflow: hidden;
+  }
+  /* 分けた形では、名前の欄は 108 まで。入りきらない名前は「…」（仕様書 3 章）。 */
+  .half .who {
+    flex-shrink: 0;
+    max-width: var(--size-meter-name);
+  }
+  .half.mic {
+    border-left: var(--line-hair) solid var(--color-gray-6);
+  }
+  .ruler .half {
+    flex: none;
+    height: auto;
+  }
+  .keys.slim-keys {
+    height: var(--mock-input-meter-keys-slim-h);
+  }
+  .strong {
+    color: var(--color-gray-10);
+  }
+  .mic-who {
+    flex-shrink: 0;
+  }
+  .mic-meter {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: var(--part-meter-mic);
+  }
+  /* 横のメーターの 2 本（左と右。モノは同じ値）。 */
+  .mic-bar {
+    height: calc(var(--part-meter-horizontal) * 2);
+  }
+  .mic-scale {
+    display: flex;
+    justify-content: space-between;
+    color: var(--color-gray-8);
+    font-family: var(--font-mono);
+  }
+  .mic-db {
+    position: relative;
+    flex-shrink: 0;
+    color: var(--color-gray-10);
+  }
+  .hidden-width {
+    visibility: hidden;
+  }
+  .mic-db-in {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+  .mic-db-in.rec {
+    color: var(--color-rec);
+  }
 </style>
+

@@ -11,7 +11,7 @@ import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport, tauriUiScript 
 import type { AppState, Command, HistoryRow } from "./types";
 
 export type * from "./types";
-export { DRUM_ROWS, INSTRUMENT_GROUPS, PROTOCOL_VERSION, STEP_NAME_KINDS } from "./types";
+export { DRUM_ROWS, INSTRUMENT_GROUPS, LATENCY_CLICKS, PROTOCOL_VERSION, RECORD_FORMATS, STEP_NAME_KINDS, VOCAL_INPUTS } from "./types";
 export { keyIsDown, positionAt, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
 export type { LanePoints } from "./lane";

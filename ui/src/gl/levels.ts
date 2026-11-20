@@ -11,8 +11,10 @@ export const RETURN_B_CHANNEL = 4;
 /** Track i (in the order of the telemetry). */
 export const trackChannel = (i: number) => FIXED_CHANNELS + 2 * i;
 
-/** The levels on the screen, by channel. */
+/** The levels on the screen, by channel. The inputs of the vocal tracks (`Telemetry.mics`) follow the tracks. */
 export class Levels {
+  private micTracks: readonly number[] = [];
+  private micFrom = FIXED_CHANNELS;
   private target = new Float64Array(FIXED_CHANNELS).fill(-Infinity);
   private shown = new Float64Array(FIXED_CHANNELS).fill(-Infinity);
   private clipUntil = new Float64Array(FIXED_CHANNELS).fill(-Infinity);
@@ -32,14 +34,31 @@ export class Levels {
 
   onTelemetry(t: Telemetry, nowMs: number): void {
     this.advance(nowMs);
-    this.resize(FIXED_CHANNELS + t.trackPeaks.length);
+    const micFrom = FIXED_CHANNELS + t.trackPeaks.length;
+    const mics = t.mics ?? [];
+    if (mics.length !== this.micTracks.length || mics.some((m, i) => m.track !== this.micTracks[i])) this.micTracks = mics.map((m) => m.track);
+    this.micFrom = micFrom;
+    this.resize(micFrom + 2 * mics.length);
     for (let c = 0; c < this.target.length; c++) {
-      const peak = c < 2 ? t.masterPeak[c]! : c < FIXED_CHANNELS ? t.returnPeaks[c - 2]! : t.trackPeaks[c - FIXED_CHANNELS]!;
+      const mic = c >= micFrom ? mics[(c - micFrom) >> 1]! : null;
+      const peak = mic
+        ? mic.peak[(c - micFrom) & 1]!
+        : c < 2
+          ? t.masterPeak[c]!
+          : c < FIXED_CHANNELS
+            ? t.returnPeaks[c - 2]!
+            : t.trackPeaks[c - FIXED_CHANNELS]!;
       const db = peakToDb(peak);
       this.target[c] = db;
       if (db > this.shown[c]!) this.shown[c] = db;
-      if (peak > 1 || (c < 2 && t.masterClipped)) this.clipUntil[c] = nowMs + CLIP_HOLD_MS;
+      if (peak > 1 || (c < 2 && t.masterClipped) || mic?.clipped) this.clipUntil[c] = nowMs + CLIP_HOLD_MS;
     }
+  }
+
+  /** The left channel of the input of a vocal track (by `TrackView.id`); -1 while it is not metered. */
+  micChannel(track: number): number {
+    const i = this.micTracks.indexOf(track);
+    return i < 0 ? -1 : this.micFrom + 2 * i;
   }
 
   /** Lets the shown levels fall up to `nowMs`. Returns whether any is still falling. */

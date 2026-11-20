@@ -174,6 +174,9 @@ function command(action: KeyAction, state: AppState): Command | null {
       return { type: "toggleMetronome" };
     case "stepTake":
       return { type: "stepTake", delta: action.delta };
+    // どのクリップを切るかは Rust が決める（えらんだクリップで再生の線がかかる物、なければ選んだトラックの線の下の 1 つ。仕様書 4 章）。
+    case "splitClips":
+      return busy ? null : { type: "splitClips" };
     case "deleteSelected":
       return { type: "deleteSelected" };
     // アレンジにキーが向いているとき（B-71）。Mod D はえらんだクリップのすぐうしろに複製。

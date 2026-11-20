@@ -66,6 +66,7 @@ describe("メニューの中身（B-59）", () => {
       "ひらく… Ctrl O",
       "保存 Ctrl S",
       "名前をつけて保存… Ctrl Shift S",
+      "音のファイルを入れる…",
       "書き出し… Ctrl Shift E",
       "音の設定… Ctrl ,",
       "meloet を終わる Ctrl Q",

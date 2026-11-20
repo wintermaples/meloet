@@ -81,6 +81,8 @@ interface Region {
   turn: number;
   /** This frame draws every tile (see `urgent`, `mustDraw`). */
   whole: boolean;
+  /** The canvas has the top and bottom it shares with another region (`alignY` of a slot), not its own. */
+  aligned: boolean;
 }
 
 /**
@@ -246,7 +248,7 @@ export class Engine {
   private open(host: HTMLElement, name: RegionName): Region | null {
     const gl = takeCanvas(REGIONS[name].opaque, name);
     if (!gl) return null;
-    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch(), made: null, lastMs: -Infinity, urgent: true, tiles: [], turn: 0, whole: true };
+    const r: Region = { host, name, gl, slots: [], x0: 0, y0: 0, width: 0, height: 0, dirty: true, mustDraw: true, drawn: new Batch(), made: null, lastMs: -Infinity, urgent: true, tiles: [], turn: 0, whole: true, aligned: false };
     if (gl.fresh && this.profile) {
       const m = gl.renderer.madeMs;
       r.made = { region: name, contextMs: m.context, programMs: m.program, firstDrawMs: null };
@@ -324,7 +326,16 @@ export class Engine {
     this.resolve();
 
     // All the measuring first, then all the writing, so the page is laid out once.
-    const due: [Region, DOMRect][] = [];
+    const due = new Map<Region, DOMRect>();
+    const take = (r: Region) => {
+      r.lastMs = now;
+      r.whole = r.urgent || r.mustDraw;
+      r.urgent = false;
+      r.dirty = false;
+      due.set(r, r.host.getBoundingClientRect());
+      this.clips.clear();
+      for (const s of r.slots) measure(s, dpr, this.clips);
+    };
     let held = false;
     for (const r of this.regions.values()) {
       if (!r.dirty) continue;
@@ -336,14 +347,24 @@ export class Engine {
         held = true;
         continue;
       }
-      r.lastMs = now;
-      r.whole = r.urgent || r.mustDraw;
-      r.urgent = false;
-      r.dirty = false;
-      due.push([r, r.host.getBoundingClientRect()]);
-      this.clips.clear();
-      for (const s of r.slots) measure(s, dpr, this.clips);
+      take(r);
     }
+    // Canvases that share their top and bottom are placed in the same frame: when one is, so is the other.
+    const pairs = due.size > 0 ? this.alignedPairs() : [];
+    for (const [a, b] of pairs) {
+      if (due.has(a) && !due.has(b)) take(b);
+      else if (due.has(b) && !due.has(a)) take(a);
+    }
+    // A canvas that was stretched to another's top and bottom goes back to its own when the other has let go.
+    if (due.size > 0) {
+      for (const r of this.regions.values()) {
+        if (!r.aligned || pairs.some(([a, b]) => a === r || b === r)) continue;
+        r.aligned = false;
+        if (!due.has(r)) take(r);
+      }
+    }
+    for (const [r, host] of due) this.extent(r, host, dpr);
+    for (const [a, b] of pairs) if (due.has(a) && due.has(b)) alignY(a, due.get(a)!, b, due.get(b)!, dpr);
     for (const [r, host] of due) this.place(r, host, dpr);
     if (p) p.measureMs = performance.now() - t;
     const shown = new Set<RegionName>();
@@ -366,11 +387,24 @@ export class Engine {
     if (clipEnd !== null) this.clipTimer = window.setTimeout(() => this.touch("meter"), clipEnd - now + 1);
   };
 
+  /** Each region with a slot that asks for `alignY`, with each region of that name. Regions shown as tiles are left out. */
+  private alignedPairs(): [Region, Region][] {
+    const pairs: [Region, Region][] = [];
+    for (const r of this.regions.values()) {
+      if (r.tiles.length > 0) continue;
+      let name: RegionName | undefined;
+      for (const s of r.slots) if (s.slot.kind === "rects" && s.slot.alignY) name = s.slot.alignY;
+      if (!name || name === r.name) continue;
+      for (const other of this.regions.values()) if (other.name === name && other.tiles.length === 0) pairs.push([r, other]);
+    }
+    return pairs;
+  }
+
   /**
-   * Sizes the canvas to what its slots cover inside the region box and the window. Every edge is
-   * on a device pixel (a box may start between two), so one canvas pixel is one pixel of the screen.
+   * What the region's slots cover inside the region box and the window. Every edge is on a device
+   * pixel (a box may start between two), so one canvas pixel is one pixel of the screen.
    */
-  private place(r: Region, host: DOMRect, dpr: number): void {
+  private extent(r: Region, host: DOMRect, dpr: number): void {
     let x0 = Infinity;
     let y0 = Infinity;
     let x1 = -Infinity;
@@ -393,7 +427,11 @@ export class Engine {
     r.y0 = y0;
     r.width = width;
     r.height = height;
+  }
 
+  /** Sizes the canvas (or the tiles) to the region's extent. */
+  private place(r: Region, host: DOMRect, dpr: number): void {
+    const { x0, y0, width, height } = r;
     const canvas = r.gl.canvas;
     if (r.tiles.length === 0) {
       put(canvas, r.host, host, x0, y0, width, height, dpr);
@@ -628,7 +666,7 @@ export class Engine {
         paintOverview(out, box, Math.max(1, Math.round(((OVERVIEW.inset * this.scale) / 100) * dpr)));
         break;
       case "rects":
-        paintRects(out, box, slot.rects, dpr);
+        paintRects(out, box, slot.rects, dpr, slot.waves);
         break;
       case "paint":
         slot.paint(out, box, { dpr, scale: this.scale, isDown: this.isDown });
@@ -640,6 +678,23 @@ export class Engine {
 const SILENT = { length: 0, clipped: false } as const;
 /** How early a frame may come for a region drawn below 60 Hz (a frame of 60 Hz is 16.7 ms). */
 const SLACK_MS = 4;
+
+/**
+ * Gives two regions the same top and bottom: from the higher top to the lower bottom, each within its own box.
+ * Nothing changes while one of them shows nothing.
+ */
+function alignY(a: Region, hostA: DOMRect, b: Region, hostB: DOMRect, dpr: number): void {
+  if (a.width <= 0 || a.height <= 0 || b.width <= 0 || b.height <= 0) return;
+  const top = Math.min(a.y0, b.y0);
+  const bottom = Math.max(a.y0 + a.height, b.y0 + b.height);
+  for (const [r, host] of [[a, hostA], [b, hostB]] as const) {
+    const y0 = Math.max(top, Math.round(host.top * dpr), 0);
+    const y1 = Math.min(bottom, Math.round(host.bottom * dpr), Math.round(innerHeight * dpr));
+    r.y0 = y0;
+    r.height = y1 - y0;
+    r.aligned = true;
+  }
+}
 
 /** Places a canvas of a region at a rectangle given in device pixels of the window. */
 function put(canvas: HTMLCanvasElement, h: HTMLElement, host: DOMRect, x0: number, y0: number, width: number, height: number, dpr: number): void {

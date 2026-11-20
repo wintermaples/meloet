@@ -357,8 +357,8 @@ fn plugins_are_told_where_the_song_is() {
     );
     assert_eq!(playing.position_frames, (frame_of(6 * Q) + frames) as i64);
 
-    // Six eighths in a bar: the beat is an eighth, and 180 of them a minute are 90 quarters.
-    let map = common::flat_map(18_000, 6, 8);
+    // Six eighths in a bar: the tempo is still quarter notes.
+    let map = common::flat_map(9_000, 6, 8);
     assert!(rig.parts.handle.set_tempo_map(map).is_ok());
     rig.run(1);
     let eighths = told(&rig);

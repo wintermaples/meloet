@@ -3,9 +3,12 @@
 # sequencer (a virtual keyboard of its own name) and PipeWire.
 #
 # usage: tools/measure/record-timing.sh [private] [live OUTPUT_ID] [--beats N] [--quanta 64,128]
+#                                       [--tempos 120,30] [--meter 6/8] [--no-maps]
 #
 #   private          a PipeWire of its own, quantum fixed to 64, 128, 256, 512, 1024 in turn,
-#                    tempos 96.00 and 137.50, each on time and 5 ms late (about 12 minutes)
+#                    tempos 96.00 and 137.50, each on time and 5 ms late (about 12 minutes).
+#                    --tempos and --meter change the tempos and the meter of these runs;
+#                    --no-maps leaves out the runs on the changing timeline.
 #   live OUTPUT_ID   the PipeWire of the person using the PC at its running quantum, 137.50 bpm;
 #                    the metronome sounds. `live list` prints the output ids.
 #
@@ -24,7 +27,10 @@ while [ $# -gt 0 ]; do
     live) live=$2; shift 2 ;;
     --beats) beats=$2; shift 2 ;;
     --quanta) quanta=$2; shift 2 ;;
-    *) echo "usage: $0 [private] [live OUTPUT_ID|list] [--beats N] [--quanta 64,128]" >&2; exit 2 ;;
+    --tempos) export MELOET_TIMING_TEMPOS=$2; shift 2 ;;
+    --meter) export MELOET_TIMING_METER=$2; shift 2 ;;
+    --no-maps) export MELOET_TIMING_MAPS=0; shift ;;
+    *) echo "usage: $0 [private] [live OUTPUT_ID|list] [--beats N] [--quanta 64,128] [--tempos 120,30] [--meter 6/8] [--no-maps]" >&2; exit 2 ;;
   esac
 done
 if [ "$private" = 0 ] && [ -z "$live" ]; then private=1; fi

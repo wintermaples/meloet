@@ -37,7 +37,7 @@ SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
 CHORD = ["60", "64", "67"]
 QUIET = "25"
-TICKS_PER_QUARTER = 480
+TICKS_PER_QUARTER = 1920
 
 
 def q(quarters):

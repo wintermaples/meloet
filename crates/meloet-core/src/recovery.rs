@@ -3,7 +3,7 @@
 //! back. It wraps the song file's shape ([`crate::songfile`]) without changing it:
 //!
 //! ```json
-//! {"format": "meloet-recovery", "version": 1, "writtenMs": 1794750060000, "cause": "pcEnding",
+//! {"format": "meloet-recovery", "version": 2, "writtenMs": 1794750060000, "cause": "pcEnding",
 //!  "path": "/home/…/はじめての曲/はじめての曲.meloet", "song": { …a whole song file… }}
 //! ```
 //!
@@ -24,8 +24,9 @@ use serde::{Deserialize, Serialize};
 use crate::songfile;
 
 pub const FORMAT: &str = "meloet-recovery";
-/// The newest shape this meloet reads and the one it writes.
-pub const VERSION: u32 = 1;
+/// The shape this meloet writes, and the only one it reads. 2: the song inside is a song
+/// file of version 6.
+pub const VERSION: u32 = 2;
 pub const FILE_NAME: &str = "recovery.json";
 
 /// `$MELOET_STATE_DIR`, `$XDG_STATE_HOME/meloet`, or `~/.local/state/meloet`.
@@ -115,7 +116,7 @@ pub fn decode(bytes: &[u8]) -> Result<Recovered, Unread> {
     };
     let head = whole.head;
     let path = head_path(&head);
-    if head.format != FORMAT || head.version > VERSION {
+    if head.format != FORMAT || head.version != VERSION {
         return Err(Unread {
             path: path.filter(|_| head.format == FORMAT),
         });

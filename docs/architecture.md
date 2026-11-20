@@ -989,7 +989,7 @@ impl TempoMap {
     pub fn seconds_at(&self, tick: f64) -> f64;
     pub fn tick_at(&self, seconds: f64) -> f64;
     pub fn tempo_at(&self, tick: f64) -> f64;        // 運びの数字（7 小節目で 112.00）
-    pub fn quarter_bpm_at(&self, tick: f64) -> f64;  // プラグイン、ディレイ
+    pub fn next_click(&self, tick: f64) -> Beat;     // メトロノームの鳴る拍（22-2）。プラグインとディレイは tempo_at を読む
     pub fn meter_at(&self, tick: u64) -> MeterAt;    // 拍子、その小節の頭のティック、小節の番号
     pub fn tick_of_bar(&self, bar: u32) -> u64;
     pub fn bar_beat_tick(&self, tick: u64) -> BarBeatTick;

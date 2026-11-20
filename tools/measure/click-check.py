@@ -96,7 +96,7 @@ def main():
     found = onsets(left)
     if not found:
         sys.exit("click-check.py: no click in the recording")
-    beats = m.beats(int(m.tick_at(len(left) / RATE + 5)) + 1)
+    beats = m.clicks(int(m.tick_at(len(left) / RATE + 5)) + 1)
     frame0 = found[0][0] - m.frame_of(beats[0][0])
     scale = max(v for _, v in found) / BAR_LEVEL
     rows, off, wrong_kind, steps, at, before = [], 0, 0, [], 0, 0

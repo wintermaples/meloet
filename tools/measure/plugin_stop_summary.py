@@ -13,7 +13,7 @@ in this run. Writes summary.json next to RAW_DIR and prints markdown.
 """
 import argparse, array, json, math, os, re, sys, wave
 
-TICKS_PER_QUARTER = 480
+TICKS_PER_QUARTER = 1920
 
 
 def load(path):

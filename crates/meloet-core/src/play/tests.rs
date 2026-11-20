@@ -1018,7 +1018,8 @@ fn tempo_and_meter_in_range_are_steps() {
             ))
         }]
     );
-    assert_eq!(m.view().transport.count_in_beats, 6);
+    // The clicks of the metronome: two dotted quarters to a bar of 6/8.
+    assert_eq!(m.view().transport.count_in_beats, 2);
     assert_eq!(m.view().song.undo_count, 2);
     cmd(m, Command::Undo);
     cmd(m, Command::Undo);

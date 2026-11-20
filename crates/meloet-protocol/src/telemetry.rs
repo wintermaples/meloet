@@ -22,8 +22,8 @@ pub struct TransportReading {
     /// 0 while stopped.
     pub ticks_per_us: f64,
     pub state: TransportState,
-    /// Beats still to come before recording starts, the one sounding included; 0 outside a
-    /// count-in.
+    /// Clicks of the metronome still to come before recording starts, the one sounding
+    /// included; 0 outside a count-in.
     pub count_in_beats_left: u16,
     /// Pass of the loop while recording, 0 for the first.
     pub lap: u32,

@@ -25,6 +25,8 @@ use meloet_plugin::ipc::futex::monotonic_ns;
 
 const FRAMES: usize = 256;
 const BLOCK_NS: u64 = 5_333_333;
+/// `meloet_model::TICKS_PER_QUARTER`; this crate does not depend on the model.
+const QUARTER: u64 = 1920;
 
 fn engine(tracks: usize) -> EngineParts {
     let mut parts = Engine::new(EngineConfig {
@@ -286,17 +288,21 @@ fn measure(name: &str, effect: (&str, &str), engine_fifo: bool, host_rt: &str, s
         assert!(handle.set_effect(MixStrip::Track(track), 0, comp).is_ok());
         // A chord of three keys on every beat, let go half a beat later. `staggered`: each
         // track a few ticks after the one before, as hands would play.
-        let shift = if staggered { track as u64 * 7 } else { 0 };
+        let shift = if staggered {
+            track as u64 * (QUARTER / 64)
+        } else {
+            0
+        };
         let mut events = Vec::new();
         for beat in 0..4u64 {
             for key in [48, 55, 64] {
                 let note = key + (track % 12) as u8;
                 events.push(SequenceEvent {
-                    tick: beat * 480 + shift,
+                    tick: beat * QUARTER + shift,
                     event: InstrumentEvent::NoteOn { note, velocity: 90 },
                 });
                 events.push(SequenceEvent {
-                    tick: beat * 480 + 240 + shift,
+                    tick: beat * QUARTER + QUARTER / 2 + shift,
                     event: InstrumentEvent::NoteOff { note },
                 });
             }
@@ -314,7 +320,7 @@ fn measure(name: &str, effect: (&str, &str), engine_fifo: bool, host_rt: &str, s
     let handle = &mut parts.handle;
     let looped = EngineCommand::SetLoop {
         start: 0,
-        end: 1920,
+        end: 4 * QUARTER,
         on: true,
     };
     assert!(handle.send(looped).is_ok());

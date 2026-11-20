@@ -524,9 +524,9 @@ impl Play {
         TempoMap::new(&self.doc().timeline)
     }
 
-    /// The beats of a bar where a recording from `tick` counts in.
-    fn beats_per_bar_at(&self, tick: u64) -> u32 {
-        u32::from(self.map().meter_at(tick).meter.num())
+    /// The clicks of the metronome in a bar where a recording from `tick` counts in.
+    fn clicks_per_bar_at(&self, tick: u64) -> u32 {
+        self.map().meter_at(tick).meter.clicks_per_bar()
     }
 
     /// Counting in or recording: the song is not to be changed or replaced.
@@ -634,7 +634,7 @@ impl Play {
             (now, 0)
         } else {
             let from = self.loop_on().map_or(self.position, |r| r.start());
-            let beats = u32::from(self.count_in_bars) * self.beats_per_bar_at(from);
+            let beats = u32::from(self.count_in_bars) * self.clicks_per_bar_at(from);
             (from, beats)
         };
         let loop_range = self.loop_on().filter(|r| r.end() > from);
@@ -1581,7 +1581,7 @@ impl Play {
                 Some(r) => r.count_in_beats,
                 None => {
                     let from = self.loop_on().map_or(self.position, |r| r.start());
-                    u32::from(self.count_in_bars) * self.beats_per_bar_at(from)
+                    u32::from(self.count_in_bars) * self.clicks_per_bar_at(from)
                 }
             },
             can_play: open,

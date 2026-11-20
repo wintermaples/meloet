@@ -18,7 +18,7 @@ Prints Markdown.
 import argparse, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tempo_map import TICKS_PER_QUARTER, TempoMap  # noqa: E402
+from tempo_map import TempoMap  # noqa: E402
 
 FRAME_MS = 1000 / 48000
 
@@ -46,11 +46,11 @@ def line(xs, ys):
 
 
 def kind(m, tick):
-    p = max((p for p in m.pieces if p[0] <= tick), key=lambda p: p[0])
-    den = 4 * TICKS_PER_QUARTER // int(p[2])
-    if p[4] == 0:
-        return f"x/{den}, {p[3]:.2f}"
-    return f"x/{den}, ramp {'up' if p[4] > 0 else 'down'}"
+    _, _, tempo, slope = max((p for p in m.pieces if p[0] <= tick), key=lambda p: p[0])
+    den = max((r for r in m.regions if r[0] <= tick), key=lambda r: r[0])[3]
+    if slope == 0:
+        return f"x/{den}, {tempo:.2f}"
+    return f"x/{den}, ramp {'up' if slope > 0 else 'down'}"
 
 
 def main():

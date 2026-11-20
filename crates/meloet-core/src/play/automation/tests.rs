@@ -1192,7 +1192,7 @@ mod file {
     use crate::songfile::{self, ReadError};
 
     fn song(automation: &str) -> Vec<u8> {
-        let head = r#"{"format":"meloet-song","version":5,"app":"t","song":{"name":"x",
+        let head = r#"{"format":"meloet-song","version":6,"app":"t","song":{"name":"x",
             "tempo":9600,"meter":[4,4],"nextId":10,"tracks":[{"id":1,"name":"a","color":1,
             "instrument":{"kind":"builtin","name":"sine"},"gainDb":0,"pan":0,
             "inserts":[{"id":5,"effect":"compressor","params":{}},null,null,null],

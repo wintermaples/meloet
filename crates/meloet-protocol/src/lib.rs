@@ -3,7 +3,8 @@
 //! JSON shapes are camelCase. The TypeScript types in `ui/src/bridge/generated/` are written
 //! from these types by `cargo test -p meloet-protocol`.
 //! All times are CLOCK_MONOTONIC. JSON carries microseconds (`tUs`); the telemetry binary
-//! carries nanoseconds. Song positions are ticks, 480 to a quarter note (docs/architecture.md 11).
+//! carries nanoseconds. Song positions are ticks, 1920 to a quarter note, and a tempo is quarter
+//! notes a minute whatever the meter (docs/architecture.md 11, 22-1, 22-2).
 
 mod added;
 mod automation;
@@ -42,7 +43,7 @@ pub use telemetry::{
 
 pub use timeline::{MarkerView, MeterChangeView, TempoPointView, TimelineRef, TimelineView};
 
-pub const PROTOCOL_VERSION: u32 = 21;
+pub const PROTOCOL_VERSION: u32 = 22;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -103,7 +104,7 @@ pub enum Command {
     Locate {
         tick: u64,
     },
-    /// The tempo typed into the transport. Beats per minute as typed; Rust keeps 0.01 steps.
+    /// The tempo typed into the transport. Quarter notes a minute as typed; Rust keeps 0.01 steps.
     /// It changes the tempo in force where the play line is: the tempo point at or before it
     /// (inside a ramp, the point the ramp starts from), the head's tempo when there is none.
     /// With tempo points in the song the status line says `StatusMessage::TempoPointSet`.
@@ -1866,7 +1867,8 @@ pub struct TransportView {
     pub metronome: bool,
     /// 0, 1 or 2.
     pub count_in_bars: u8,
-    /// Beats of the count-in: of the one running, or else of the next one.
+    /// Clicks of the metronome in the count-in (6/8 has 2 to a bar): of the one running, or
+    /// else of the next one.
     pub count_in_beats: u32,
     /// False while the output is not playing.
     pub can_play: bool,
@@ -2330,8 +2332,8 @@ pub enum StatusMessage {
     },
     /// The keyboard input stopped; meloet is starting it again.
     KeyboardInputStopped,
-    /// `beats` is the whole count-in; how many are left comes from the telemetry
-    /// (`countInBeatsLeft`), in step with the clicks heard.
+    /// `beats` is the whole count-in, in clicks of the metronome; how many are left comes
+    /// from the telemetry (`countInBeatsLeft`), in step with the clicks heard.
     CountingIn {
         beats: u32,
     },

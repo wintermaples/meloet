@@ -361,7 +361,6 @@ pub fn record(
         );
     }
     let map = map_of(&state.timeline);
-    assert_eq!(state.timeline.meter_den, 4);
     assert!(state.transport.metronome);
     assert_eq!(state.transport.count_in_bars, 0);
     let actual_frames = state.audio.actual_frames;

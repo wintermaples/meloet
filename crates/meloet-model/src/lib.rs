@@ -17,6 +17,7 @@ pub mod quantize;
 pub mod record;
 pub mod roll;
 pub mod song;
+pub mod tempo_map;
 pub mod time;
 
 pub use arrange::{ClipEdge, ClipEdited};
@@ -37,6 +38,7 @@ pub use song::{
     Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, OriginIndex, Session, Song,
     Take, TakeId, TakeOrigin, Track,
 };
+pub use tempo_map::{Beat, MeterAt, MeterChange, TempoMap, TempoPoint, Timeline, TimelineError};
 pub use time::{Meter, TICKS_PER_QUARTER, Tempo, TickRange};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

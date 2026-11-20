@@ -191,7 +191,28 @@
       button: null,
     });
     const settings = (advanced: boolean, label: string) => ({ label, command: { type: "openSettings", advanced } as Command });
+    const place = (bar: number, beat: number) => (beat === 1 ? t("timeline.placeBar", { bar }) : t("timeline.placeBeat", { bar, beat }));
+    const placeOrHead = (bar: number, beat: number) => (bar === 1 && beat === 1 ? t("timeline.placeHead") : place(bar, beat));
     switch (m?.id) {
+      case "tempoRampSelected":
+        if (m.toTempoBpm === m.tempoBpm) return plain("msg.tempoPointSelected", { place: place(m.bar, m.beat), tempo: tempoText(m.tempoBpm) });
+        return plain("msg.tempoRampSelected", {
+          place: place(m.bar, m.beat),
+          tempo: tempoText(m.tempoBpm),
+          toPlace: place(m.toBar, m.toBeat),
+          toTempo: tempoText(m.toTempoBpm),
+          direction: t(m.toTempoBpm > m.tempoBpm ? "timeline.rampFaster" : "timeline.rampSlower"),
+        });
+      case "tempoPointSelected":
+        return plain("msg.tempoPointSelected", { place: place(m.bar, m.beat), tempo: tempoText(m.tempoBpm) });
+      case "meterChangeSelected":
+        return plain("msg.meterChangeSelected", { place: place(m.bar, 1), signature: `${m.meterNum}/${m.meterDen}` });
+      case "markerAdded":
+        return plain("msg.markerAdded", { name: m.name });
+      case "tempoPointSet":
+        return plain("msg.tempoPointSet", { place: placeOrHead(m.bar, m.beat), tempo: tempoText(m.tempoBpm) });
+      case "meterChangeSet":
+        return plain("msg.meterChangeSet", { place: placeOrHead(m.bar, 1), signature: `${m.meterNum}/${m.meterDen}` });
       case "searchingKeyboard":
         return plain("status.searchingKeyboard");
       case "keyboardFound":
@@ -271,7 +292,7 @@
       case "velocityMatched":
         return plain("msg.velocityMatched", { count: m.count, value: m.value });
       case "lengthMatched":
-        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, { num: app.song.meterNum, den: app.song.meterDen }) });
+        return plain("msg.lengthMatched", { count: m.count, value: noteLengthText(m.value, { num: app.timeline.meterNum, den: app.timeline.meterDen }) });
       case "clipsNotMoved":
         return plain("msg.clipsNotMoved");
       case "clipsNotPasted":

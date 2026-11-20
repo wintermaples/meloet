@@ -33,7 +33,7 @@ function grab(area: HTMLElement): Grab | null {
   if (!n || !state) return null;
   const g = geom();
   const edge = metrics.px("part.note.resize");
-  const step = G.gridTicks(state.pianoRoll.grid, { num: state.song.meterNum, den: state.song.meterDen });
+  const step = G.gridTicks(state.pianoRoll.grid, { num: state.timeline.meterNum, den: state.timeline.meterDen });
   const stepPx = step * g.ppt;
   const dx = stepPx * Math.max(1, Math.ceil(DRAG_MIN_PX / stepPx));
   const r = area.getBoundingClientRect();

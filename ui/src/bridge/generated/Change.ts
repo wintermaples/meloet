@@ -11,6 +11,7 @@ import type { PluginsView } from "./PluginsView";
 import type { ShelfView } from "./ShelfView";
 import type { SongView } from "./SongView";
 import type { StatusView } from "./StatusView";
+import type { TimelineView } from "./TimelineView";
 import type { TransportView } from "./TransportView";
 import type { WindowsView } from "./WindowsView";
 import type { WorkspaceView } from "./WorkspaceView";
@@ -18,4 +19,4 @@ import type { WorkspaceView } from "./WorkspaceView";
 /**
  * One whole section. `section` is the key of that section in `AppState`.
  */
-export type Change = { "section": "song", "value": SongView } | { "section": "transport", "value": TransportView } | { "section": "arrange", "value": ArrangeView } | { "section": "pianoRoll", "value": PianoRollView } | { "section": "workspace", "value": WorkspaceView } | { "section": "shelf", "value": ShelfView } | { "section": "library", "value": LibraryView } | { "section": "params", "value": ParamsView } | { "section": "plugins", "value": PluginsView } | { "section": "windows", "value": WindowsView } | { "section": "keyboards", "value": KeyboardsView } | { "section": "outputs", "value": OutputsView } | { "section": "inputs", "value": InputsView } | { "section": "audio", "value": AudioView } | { "section": "status", "value": StatusView };
+export type Change = { "section": "song", "value": SongView } | { "section": "timeline", "value": TimelineView } | { "section": "transport", "value": TransportView } | { "section": "arrange", "value": ArrangeView } | { "section": "pianoRoll", "value": PianoRollView } | { "section": "workspace", "value": WorkspaceView } | { "section": "shelf", "value": ShelfView } | { "section": "library", "value": LibraryView } | { "section": "params", "value": ParamsView } | { "section": "plugins", "value": PluginsView } | { "section": "windows", "value": WindowsView } | { "section": "keyboards", "value": KeyboardsView } | { "section": "outputs", "value": OutputsView } | { "section": "inputs", "value": InputsView } | { "section": "audio", "value": AudioView } | { "section": "status", "value": StatusView };

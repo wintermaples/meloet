@@ -60,9 +60,10 @@
 
   const app = $derived(current.state!);
   const song = $derived(app.song);
+  const timeline = $derived(app.timeline);
   const pr = $derived(app.pianoRoll);
   const transport = $derived(app.transport);
-  const meter: Meter = $derived({ num: song.meterNum, den: song.meterDen });
+  const meter: Meter = $derived({ num: timeline.meterNum, den: timeline.meterDen });
   const scale = $derived(metrics.scale);
 
   /** ドラムの行を見せているか（仕様書 3 章「ドラムのピアノロール」）。 */
@@ -172,7 +173,7 @@
     },
   );
   const mayAudition = () => notesMayAudition(app) && !liveMode;
-  const msOf = (ticks: number) => ticksToMs(ticks, song.tempoBpm);
+  const msOf = (ticks: number) => ticksToMs(ticks, timeline.tempoBpm);
   onDestroy(() => audition.stop());
 
   onMount(() =>

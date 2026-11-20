@@ -126,7 +126,7 @@ describe("ピアノロールの目盛（B-61）", () => {
     show(Roll);
     const ruler = q('[data-test="pr-ruler"]')!;
     const ppt = pxPerTick(100);
-    const meter = { num: s.song.meterNum, den: s.song.meterDen };
+    const meter = { num: s.timeline.meterNum, den: s.timeline.meterDen };
     const step = G.gridTicks(s.pianoRoll.grid, meter);
     const x = (step * 2 + step * 0.4) * ppt;
     pointer(ruler, "pointerdown", { clientX: x });
@@ -144,7 +144,7 @@ describe("ピアノロールの目盛（B-61）", () => {
     show(Roll);
     const ruler = q('[data-test="pr-ruler"]')!;
     const bar = 1920 * pxPerTick(100);
-    expect(s.song.meterNum).toBe(4);
+    expect(s.timeline.meterNum).toBe(4);
     pointer(ruler, "pointerdown", { clientX: bar + 2 });
     pointer(ruler, "pointermove", { clientX: 3 * bar - 2 });
     flushSync();

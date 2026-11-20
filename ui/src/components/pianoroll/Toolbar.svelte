@@ -21,7 +21,7 @@
 
   const app = $derived(current.state!);
   const pr = $derived(app.pianoRoll);
-  const meter = $derived({ num: app.song.meterNum, den: app.song.meterDen });
+  const meter = $derived({ num: app.timeline.meterNum, den: app.timeline.meterDen });
   const clip = $derived(shown.clip);
   const track = $derived(shown.track);
   const rec = $derived(

@@ -44,8 +44,8 @@ async function open(scene: string) {
 const SURGE: SoundRef = { kind: "plugin", key: lv2Key("Surge XT") };
 
 describe("約束 17 の形", () => {
-  it("版は 19 に上がった。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
-    expect(PROTOCOL_VERSION).toBe(19);
+  it("版は 20 に上がった。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
+    expect(PROTOCOL_VERSION).toBe(20);
     const s = fakeState();
     expect(s.library).toEqual({ sf2: [], plugins: [], openedSf2: null, packMissing: false });
     expect(s.workspace.fileDrop).toBeNull();

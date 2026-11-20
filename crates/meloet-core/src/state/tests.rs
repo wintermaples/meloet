@@ -156,9 +156,21 @@ fn new_song() -> StatusMessage {
 fn a_new_song() {
     let state = fresh().view();
     let song = &state.song;
+    assert_eq!((song.undo_count, song.note_count), (0, 0));
     assert_eq!(
-        (song.tempo_changes, song.undo_count, song.note_count),
-        (0, 0, 0)
+        state.timeline,
+        TimelineView {
+            tempo_bpm: 96.0,
+            meter_num: 4,
+            meter_den: 4,
+            head_ramp: false,
+            tempo_points: vec![],
+            meter_changes: vec![],
+            markers: vec![],
+            selected: None,
+            renaming: None,
+            open: false,
+        }
     );
     assert_eq!(song.play_target, Some(1));
     assert_eq!(

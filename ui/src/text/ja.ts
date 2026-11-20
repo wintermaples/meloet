@@ -1,10 +1,11 @@
 // 画面の文面はすべてここに置く。
 // 出どころ: spec:<章>（docs/design/spec.html）、mock:<ボード>（docs/design/mock/<ボード>.dc.html）、user:<日付>（ヤチヨさんの決め）、
 // draft:<日付>（仕様書にもモックにもない文の、作る側の案。ヤチヨさんに確かめて user: か mock: にする）。
+// builder:<日付>（仕様書にない所を、作る側が仮に決めた文。docs/design-notes.md の B に戻してある）。
 // {name} はうめこむ値の穴。example は出どころに書いてある例の値で、テストがこれを入れて出どころと照らし合わせる。
 
 export type Source =
-  `spec:${number}` | `mock:${string}` | `user:${string}` | `draft:${string}`;
+  `spec:${number}` | `mock:${string}` | `user:${string}` | `draft:${string}` | `builder:${string}`;
 
 export interface Entry {
   readonly text: string;
@@ -1940,6 +1941,24 @@ export const texts = {
     "位置は「5」「5.2」「5.2.240」の形で打ちます。もとの {kept} のままです。",
     { kept: "1. 1. 000" },
   ),
+
+  // [第 6 回 ・ テンポと拍子の変更、マーカー]（仕様書 3 章 Y17 ・ Y18、6 章。仮の文は design-notes B-92）
+  "msg.tempoRampSelected": s6(
+    "テンポのだんだんをえらんでいる",
+    "{place}の変更をえらんでいます ・ {tempo} から {toPlace}の {toTempo} へ、だんだん{direction}",
+    { place: "5 小節目", tempo: "104.00", toPlace: "9 小節目", toTempo: "120.00", direction: "速く" },
+  ),
+  "msg.markerAdded": s6("マーカーを足した", "{name} を足しました。名前を打って Enter", { name: "マーカー 4" }),
+  "timeline.rampFaster": s6("テンポのだんだんをえらんでいる", "速く", undefined, "part"),
+  "timeline.rampSlower": e("遅く", "builder:2026-11-20"),
+  "timeline.placeBar": s6("テンポのだんだんをえらんでいる", "{bar} 小節目", { bar: "5" }, "part"),
+  "timeline.placeBeat": e("{bar} 小節目の {beat} 拍目", "builder:2026-11-20", { bar: "5", beat: "3" }),
+  "timeline.placeHead": e("曲の頭", "builder:2026-11-20"),
+  "msg.tempoPointSelected": e("{place}の変更をえらんでいます ・ {tempo}", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
+  "msg.meterChangeSelected": e("{place}の変更をえらんでいます ・ {signature}", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
+  "msg.tempoPointSet": e("{place}のテンポを {tempo} にしました。", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
+  "msg.meterChangeSet": e("{place}の拍子を {signature} にしました。", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
+  "marker.newName": e("マーカー {count}", "spec:3", { count: "4" }),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。

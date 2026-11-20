@@ -70,8 +70,6 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
     "オートメーションを書いている",
     "オートメーションを休ませた",
     "オートメーションをもどした",
-    "テンポのだんだんをえらんでいる",
-    "マーカーを足した",
   ];
   const NOT_IN_JA = ["meloet の音の流れだけが止まった", "PC のファイルの窓の題", ...NOT_YET];
   it("6 章の場面は全部 ja.ts に入っている（ja.ts にない物のほか）", () => {
@@ -149,8 +147,8 @@ describe("出どころが mock の文は、そのボードにそのまま書い�
 });
 
 describe("出どころの形", () => {
-  it("どの文も spec:<章>・mock:<ボード>・user:<日付>・draft:<日付> のどれか", () => {
-    for (const [k, e] of entries) expect(e.source, k).toMatch(/^(spec:\d|mock:[\w-]+|(user|draft):\d{4}-\d{2}-\d{2})$/);
+  it("どの文も spec:<章>・mock:<ボード>・user:<日付>・draft:<日付>・builder:<日付> のどれか", () => {
+    for (const [k, e] of entries) expect(e.source, k).toMatch(/^(spec:\d|mock:[\w-]+|(user|draft|builder):\d{4}-\d{2}-\d{2})$/);
   });
 
   it("draft: の文は、音の素材の「手を加えたこと」の案だけ（ヤチヨさんに確かめる前）", () => {

@@ -11,8 +11,9 @@ import type { PluginsView } from "./PluginsView";
 import type { ShelfView } from "./ShelfView";
 import type { SongView } from "./SongView";
 import type { StatusView } from "./StatusView";
+import type { TimelineView } from "./TimelineView";
 import type { TransportView } from "./TransportView";
 import type { WindowsView } from "./WindowsView";
 import type { WorkspaceView } from "./WorkspaceView";
 
-export type AppState = { song: SongView, transport: TransportView, arrange: ArrangeView, pianoRoll: PianoRollView, workspace: WorkspaceView, shelf: ShelfView, library: LibraryView, params: ParamsView, plugins: PluginsView, windows: WindowsView, keyboards: KeyboardsView, outputs: OutputsView, inputs: InputsView, audio: AudioView, status: StatusView, };
+export type AppState = { song: SongView, timeline: TimelineView, transport: TransportView, arrange: ArrangeView, pianoRoll: PianoRollView, workspace: WorkspaceView, shelf: ShelfView, library: LibraryView, params: ParamsView, plugins: PluginsView, windows: WindowsView, keyboards: KeyboardsView, outputs: OutputsView, inputs: InputsView, audio: AudioView, status: StatusView, };

@@ -996,7 +996,7 @@ fn tempo_and_meter_in_range_are_steps() {
             bpm_centi: 12_000
         }]
     );
-    assert_eq!(m.view().song.tempo_bpm, 120.0);
+    assert_eq!(m.view().timeline.tempo_bpm, 120.0);
     assert_eq!(
         ops(&cmd(m, Command::SetMeter { num: 6, den: 8 })),
         [EngineOp::Tempo {
@@ -1009,7 +1009,7 @@ fn tempo_and_meter_in_range_are_steps() {
     assert_eq!(m.view().song.undo_count, 2);
     cmd(m, Command::Undo);
     cmd(m, Command::Undo);
-    assert_eq!(m.view().song.tempo_bpm, 96.0);
+    assert_eq!(m.view().timeline.tempo_bpm, 96.0);
     // The position goes where it is put, not to the head of a bar.
     cmd(m, Command::Redo);
     cmd(m, Command::Redo);

@@ -45,6 +45,7 @@
   let { children }: { children?: Snippet } = $props();
 
   const song = $derived(current.state!.song);
+  const timeline = $derived(current.state!.timeline);
   const transport = $derived(current.state!.transport);
   /** テイクの切りかえの札が向くクリップ（最後に押したクリップ）。 */
   const selected = $derived(current.state!.arrange.selectedClip);
@@ -67,11 +68,11 @@
   const barPx = $derived((metrics.px("mock.arrange.bar") * arrangeView.barPx) / DEFAULT_ARRANGE_BAR);
   /** 小節の番号を何小節おきに出すか。縮小して重なるときは間引く。 */
   const barLabelEvery = $derived(G.labelEvery(barPx, metrics.px("mock.arrange.bar") / 2));
-  const perBar = $derived(ticksPerBar({ num: song.meterNum, den: song.meterDen }));
+  const perBar = $derived(ticksPerBar({ num: timeline.meterNum, den: timeline.meterDen }));
   const pxPerTick = $derived(barPx / perBar);
   /** クリップの場所に描く 1 小節の拍の数。拍に吸いつくほど拡大していなければ 1（小節の線だけ）。 */
   const gridBeats = $derived.by(() => {
-    const perBeat = ticksPerBeat({ num: song.meterNum, den: song.meterDen });
+    const perBeat = ticksPerBeat({ num: timeline.meterNum, den: timeline.meterDen });
     return G.beatsShown(barPx, perBar, perBeat, metrics.px("mock.arrange.bar") / 2) ? Math.round(perBar / perBeat) : 1;
   });
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
@@ -729,7 +730,7 @@
 
   // クリップを押す: えらぶ。押したまま動かす: 動かす（Alt で複製）、左右のはし（part.clip.edge）なら長さ。録音中とカウントイン中はえらぶだけ。
   const busy = $derived(transport.state === "recording" || transport.state === "countIn");
-  const meter = $derived({ num: song.meterNum, den: song.meterDen });
+  const meter = $derived({ num: timeline.meterNum, den: timeline.meterDen });
   let lanesBox = $state<HTMLElement>();
   let laneCursor = $state<CD.ArrangeCursor>("default");
   let readingAt = $state<{ x: number; y: number } | null>(null);
@@ -986,7 +987,7 @@
         <span>▸</span>
         <span>{t("arrange.tempoChanges")}</span>
         <span class="m-spacer"></span>
-        <span class="m-num">{t("arrange.changeCount", { count: song.tempoChanges })}</span>
+        <span class="m-num">{t("arrange.changeCount", { count: timeline.tempoPoints.length + timeline.meterChanges.length })}</span>
       </button>
       <TrackHeads />
     </div>
@@ -1010,7 +1011,7 @@
       <div class="ruler"></div>
       <div class="ruler">
         <span class="m-num m-lbl bar-number" style:left="{-view.scrollX}px">
-          {t("arrange.tempoAndSignature", { tempo: tempoText(song.tempoBpm), signature: `${song.meterNum}/${song.meterDen}` })}
+          {t("arrange.tempoAndSignature", { tempo: tempoText(timeline.tempoBpm), signature: `${timeline.meterNum}/${timeline.meterDen}` })}
         </span>
       </div>
       <div

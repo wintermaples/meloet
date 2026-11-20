@@ -30,7 +30,7 @@ export interface PianoRollKeyContext {
 /** null は「何もしない」。 */
 export function pianoRollCommand(key: PianoRollKey, c: PianoRollKeyContext): Command | null {
   const pr = c.state.pianoRoll;
-  const meter: Meter = { num: c.state.song.meterNum, den: c.state.song.meterDen };
+  const meter: Meter = { num: c.state.timeline.meterNum, den: c.state.timeline.meterDen };
   const step = gridTicks(pr.grid, meter);
   if (key.kind === "paste") {
     if (pr.clipboardNotes === 0) return null;

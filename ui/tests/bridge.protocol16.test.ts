@@ -22,8 +22,8 @@ async function open(scene: string) {
 }
 
 describe("約束 16 の形", () => {
-  it("版は 19 に上がった。新しい曲では、スキャンは動いておらず、止まった物はなく、場所は LV2 と VST3 のふつうの場所だけ", () => {
-    expect(PROTOCOL_VERSION).toBe(19);
+  it("版は 20 に上がった。新しい曲では、スキャンは動いておらず、止まった物はなく、場所は LV2 と VST3 のふつうの場所だけ", () => {
+    expect(PROTOCOL_VERSION).toBe(20);
     const p = fakeState().plugins;
     expect(p.scan).toEqual({ state: "idle" });
     expect(p.stopped).toEqual([]);

@@ -10,7 +10,7 @@ export type SongView = {
  * Goes up each time core puts another song in place (new, open, recovery, "戻さない"),
  * not on undo or redo. Take ids are per song: keep takes by (serial, id).
  */
-serial: number, name: string, tempoBpm: number, meterNum: number, meterDen: number, tempoChanges: number, undoCount: number, redoCount: number, 
+serial: number, name: string, undoCount: number, redoCount: number, 
 /**
  * For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
  */

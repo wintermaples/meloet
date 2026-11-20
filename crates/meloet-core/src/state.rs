@@ -22,8 +22,8 @@ use meloet_protocol::{
     KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
     MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginRole,
     PluginWindowKind, QuantizeSettings, RecoveryCause, ScanView, SettingsDialogView, ShelfMode,
-    ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView, TrackView,
-    Unusable, VelocityFixed, WorkspaceView,
+    ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView, TimelineView,
+    TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -1115,6 +1115,24 @@ impl Model {
             Command::Locate { tick } => self.play.locate(tick, effects),
             Command::SetTempo { bpm } => self.play.set_tempo(bpm, effects),
             Command::SetMeter { num, den } => self.play.set_meter(num, den, effects),
+            // Protocol 20: the song has no tempo points, meter changes or markers yet.
+            Command::SetTimelineOpen { .. }
+            | Command::AddTempoPoint { .. }
+            | Command::MoveTempoPoint { .. }
+            | Command::SetTempoRamp { .. }
+            | Command::AddMeterChange { .. }
+            | Command::MoveMeterChange { .. }
+            | Command::SetMeterChange { .. }
+            | Command::SelectTimeline { .. }
+            | Command::DeleteTimeline { .. }
+            | Command::AddMarker { .. }
+            | Command::OpenMarkerName { .. }
+            | Command::RenameMarker { .. }
+            | Command::CloseMarkerName
+            | Command::MoveMarker { .. }
+            | Command::GoToMarker { .. }
+            | Command::StepMarker { .. }
+            | Command::LoopFromMarker { .. } => {}
             Command::SetCountIn { bars } => {
                 if self.play.set_count_in(bars) {
                     effects.push(Effect::SaveSettings(self.settings()));
@@ -1966,6 +1984,7 @@ impl Model {
         let library = self.library_view();
         AppState {
             song: song_view(&self.play, self.song_file(), &library, &self.catalog),
+            timeline: timeline_view(&self.play.song().doc),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
             piano_roll: self.play.piano_roll_view(),
@@ -2242,6 +2261,21 @@ fn sf2_keys(info: &Sf2Info) -> impl Iterator<Item = Sf2Key> + '_ {
     })
 }
 
+fn timeline_view(doc: &meloet_model::Doc) -> TimelineView {
+    TimelineView {
+        tempo_bpm: doc.tempo.bpm(),
+        meter_num: doc.meter.num(),
+        meter_den: doc.meter.den(),
+        head_ramp: false,
+        tempo_points: Vec::new(),
+        meter_changes: Vec::new(),
+        markers: Vec::new(),
+        selected: None,
+        renaming: None,
+        open: false,
+    }
+}
+
 fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catalog) -> SongView {
     let song = play.song();
     let doc = &song.doc;
@@ -2249,10 +2283,6 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
     SongView {
         serial: play.serial(),
         name: doc.name.clone(),
-        tempo_bpm: doc.tempo.bpm(),
-        meter_num: doc.meter.num(),
-        meter_den: doc.meter.den(),
-        tempo_changes: doc.tempo_changes.len() as u32,
         undo_count: play.undo_count(),
         redo_count: play.redo_count(),
         note_count: play.piano_roll_notes(),

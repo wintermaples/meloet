@@ -1173,16 +1173,16 @@ pub struct Lane {
 - Surge XT（VST3）では、どちらの見分けかたでも同じ 2080 個（`MIDI CC 0|0` 〜 `MIDI CC 15|129`）が見つかり、残りは 774 個。Surge XT の LV2 は 775 個で 0。LSP と ZamComp は 0。聞くのにかかるのは 0.87 ms（debug。一覧を作る残りは 8.2 ms）。
 - 見分けた行は plughost が `ParamInfo::midi_cc` を立て、core が `ParamTable::keyboard_knobs` に分ける（`groups` にも `SelectedPlugin::count` にも入れない）。core の表では、ふつうの行と同じにえらべて動かせる（さがして出した行のため）。
 
-### 21-15. 区切り1 の 1 回目の案（約束の版 20）
+### 21-15. 約束の版 20（区切り1 の 1 回目で決めた形と、区切り2 ・ 3 の案）
 
-区切り1 の 1 回目で決めなおす。
+`timeline` の区画、テンポと拍子とマーカーの意図、その状態行の文は、区切り1 の 1 回目で決めて入れた（`crates/meloet-protocol/src/timeline.rs`、`lib.rs`）。`lanes` ・ `automation` ・ `history` と、その意図は、まだ案（区切り2 ・ 3 で足す。版は 20 のまま足すか、そのとき決める）。
 
 **状態の区画**
 
 | 区画 | 入れる物 |
 |---|---|
-| `song` | トラックに `lanes: [{ target, laneId, points（数）, step, resting }]`、インサートに `id`。ループの範囲は今のまま（手になるだけ）。`tempo_changes`（件数）は消して `timeline` へ |
-| `timeline`（新） | 曲の頭のテンポと拍子、`headRamp`、`tempoPoints`、`meterChanges`、`markers: [{id, tick, name}]`、えらんでいる物（テンポの点 ・ 旗 ・ マーカー）、名前を変えているマーカー。画面の地図（TS）はここから作る |
+| `song` | （案）トラックに `lanes: [{ target, laneId, points（数）, step, resting }]`、インサートに `id`。ループの範囲は今のまま（手になるだけ）。（入れた）`tempoBpm` ・ `meterNum` ・ `meterDen` ・ `tempoChanges` は消して `timeline` へ |
+| `timeline`（入れた） | 曲の頭の `tempoBpm` ・ `meterNum` ・ `meterDen`、`headRamp`、`tempoPoints: [{tick, tempoBpm, ramp}]`（tick の順、1 以上）、`meterChanges: [{bar, meterNum, meterDen}]`（bar は 0 から数える小節の番号、1 以上）、`markers: [{id, tick, name}]`（tick の順、同じ tick は id の順）、`selected`（えらんでいる物。テンポの点 ・ 旗 ・ マーカーを通して 1 つまで: `{kind: "tempoPoint", tick}` ・ `{kind: "meterChange", bar}` ・ `{kind: "marker", id}`）、`renaming`（名前の枠がひらいているマーカーの id）、`open`（アレンジの「テンポ ・ 拍子の変更」の行がひらいているか）。画面の地図（`ui/src/time/tempoMap.ts`）はここから作る |
 | `automation`（新。手でない物） | たたんだ帯、「書く」がオンの帯、書いている最中の帯と書きはじめのティック、仮の休み、えらんだ点（`laneId` と番号の範囲） |
 | `history`（新） | 手の数、やりなおせる数、いまの番号、いちばん新しい手の番号。行は入れない |
 | `transport` | 変えない（テンポと拍子の数字は、画面が `timeline` と計器の位置から出す） |
@@ -1192,11 +1192,19 @@ pub struct Lane {
 
 **意図**
 
-- テンポと拍子: `AddTempoPoint {tick, tempo}`、`MoveTempoPoint {index, tick}`、`SetTempoPoint {index, tempo}`、`SetTempoRamp {index, on}`（`index` なしは曲の頭）、`AddMeterChange {bar, meter}`、`MoveMeterChange {index, bar}`、`SetMeterChange {index, meter}`、`DeleteTimelinePoints {tempo: [..], meter: [..]}`、`SelectTimeline {…}`
-- マーカー: `AddMarker {tick?}`（なしは再生の線）、`RenameMarker {id, name}`、`MoveMarker {id, tick}`、`DeleteMarker {id}`、`GoToMarker {id | next | prev}`、`LoopFromMarker {id}`、`SelectMarker {id?}`
+- テンポと拍子（入れた）: `SetTimelineOpen {open}`、`AddTempoPoint {tick, bpm}`、`MoveTempoPoint {tick, toTick, bpm}`（ドラッグ 1 回で位置と値の両方。値を打ったときは `toTick = tick`）、`SetTempoRamp {tick, on}`、`AddMeterChange {bar, num, den}`、`MoveMeterChange {bar, toBar}`、`SetMeterChange {bar, num, den}`、`SelectTimeline {target?}`、`DeleteTimeline {target}`（`target` は `selected` と同じ形。マーカーもこれでえらぶ ・ 消す）。再生まわりの `SetTempo` ・ `SetMeter` は、再生の線がいる所で効いている点 ・ 旗（だんだんの中なら始めの点、なければ曲の頭）を変える
+- マーカー（入れた）: `AddMarker {name}`（再生の線の所、core がいちばん近い拍の頭へ）、`OpenMarkerName {id}`、`RenameMarker {id, name}`、`CloseMarkerName`、`MoveMarker {id, tick}`、`GoToMarker {id}`（押した: えらんで、そこへ行く）、`StepMarker {forward}`（Alt → ・ ←）、`LoopFromMarker {id}`
+- **テンポの点と旗の指しかた: 番号でも id でもなく、点はティック、旗は小節の番号**。同じ所に点は 1 つ、旗は 1 つなので、それが名前になる。ティック 0 ・ 小節 0 は曲の頭（いつもあり、えらべて値を変えられ、動かせず消せない。`index` なしの形はいらなくなった）。そこに何もなければ、意図は何もしない（16 章の「古い id の意図は何もしない」と同じ考え）。
+  - **理由**: 番号は、取り消しや別の点の出し入れでずれて、直前に送った意図がとなりの点に当たる。id は、`Timeline`（21-1）と曲のファイルの点に id の欄を足すことになり、地図を作る物（エンジン ・ 計器も持つ）に、えらぶためだけの欄が入る。ティックと小節なら、古い意図は「人がねらった所にいま居る点」に当たるか、何もしないかのどちらかで、別の所の点には当たらない。
+  - 点を動かすと名前（ティック）も変わる。core は動かした点をえらびなおし、画面は離したあとの `selected` を読む。
+- **テンポの数は、どこでも f64 の BPM（0.01 のきざみに乗った数）**: 区画（`tempoBpm`）、意図（`bpm`）、状態行（`tempoBpm`）。**理由**: いまの約束（`SetTempo {bpm}`、`NewSong {tempoBpm}`）と答えの表（`tempoMap.table.json`）がこの形で、画面の地図は f64 のまま式に入れる。Rust の `Tempo::bpm()`（0.01 の整数 ÷ 100）と、JSON を読んだ JS の数は、同じ f64 になる。0.01 の整数にするのは core の中（`Tempo::from_bpm`）だけ。
+- **拍に吸いつくのは、画面と core の両方**: 画面はドラッグ中の見た目のために地図（`nextBeat`）で吸いつけてから送り、core は同じ決まり（いちばん近い拍の頭、まん中なら後ろ）でもう一度吸いつける。K のマーカーは位置を送らない（再生中の「耳に届いている位置」は core が持つ）。
+- **マーカーの名前「マーカー 4」は画面が作って送る**（`AddMarker {name}`。文面は `ui/src/text/ja.ts` の `marker.newName`。数は、いまのマーカーの数 + 1）。**理由**: 画面の文面を Rust に置かない（3-2）。
+- **名前の枠は core が持つ**（`renaming`）。足した直後にひらくのは core にしか分からないので、2 回押す ・ F2 ・ 右クリックも同じ道（`OpenMarkerName`）にそろえた。打っている途中の文字は画面だけの物。
 - オートメーション: `AddLane {track, target}`、`DeleteLane {track, target}`、`FoldLane {track, target, folded}`、`AddAutoPoint {lane, tick, value?}`（`value` なしは線の上の値）、`MoveAutoPoints {lane, points, dTick, dValue}`、`DeleteAutoPoints {lane, points}`、`SelectAutoPoints {lane, points}`、`SetLaneWrite {track, target, on}`、`RestoreLane {track, target}`
 - 履歴: `HistoryJump {index, step}`（`step` は手の番号。古ければ何もしない）
 - ループ: 今の意図のまま（手になる）。ミキサーとパラメータの意図は変えない（21-11）
-- 状態行の文: 仕様書 6 章の 9 つ（取り消した ・ やりなおした ・ 履歴で戻した ・ 取り消せる手がない ・ 書いている ・ 休ませた ・ もどした ・ だんだんをえらんでいる ・ マーカーを足した）
+- 状態行の文（入れた）: `TempoRampSelected {bar, beat, tempoBpm, toBar, toBeat, toTempoBpm}` ・ `MarkerAdded {name}`（仕様書 6 章）、`TempoPointSelected {bar, beat, tempoBpm}` ・ `MeterChangeSelected {bar, meterNum, meterDen}` ・ `TempoPointSet {bar, beat, tempoBpm}` ・ `MeterChangeSet {bar, meterNum, meterDen}`（B-92 の仮）。`bar` と `beat` は見せる数（1 から）で、1 小節目の 1 拍目は曲の頭。最後の点の「だんだん」は効かないので、`TempoPointSelected` で言う
+- 状態行の文（案。区切り2 ・ 3）: 仕様書 6 章の残りの 7 つ（取り消した ・ やりなおした ・ 履歴で戻した ・ 取り消せる手がない ・ 書いている ・ 休ませた ・ もどした）
 
 `target` は `{kind: "volume" | "pan" | "send" | "mute" | "instrument" | "insert", bus?, insert?, param?}`。

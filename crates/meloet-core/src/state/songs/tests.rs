@@ -453,7 +453,7 @@ fn a_broken_file_offers_the_copy_before() {
     w.answer(m, SongAnswer::OpenPrevious);
     assert_eq!(dialog(m), None);
     assert_eq!(m.view().song.name, "曲");
-    assert_eq!(m.view().song.tempo_bpm, 96.0, "the copy before");
+    assert_eq!(m.view().timeline.tempo_bpm, 96.0, "the copy before");
     assert_eq!(file(m), SongFile::Changed, "the file still needs writing");
     cmd(m, Command::SetTempo { bpm: 97.0 });
     cmd(m, Command::Undo);
@@ -519,13 +519,13 @@ fn opening_asks_first_and_cancel_keeps_everything() {
     w.answer(m, SongAnswer::Cancel);
     assert_eq!(dialog(m), None);
     assert!(w.windows.is_empty());
-    assert_eq!(m.view().song.tempo_bpm, 100.0);
+    assert_eq!(m.view().timeline.tempo_bpm, 100.0);
 
     // The open window put away: the song stays.
     w.cmd(m, Command::OpenSong);
     w.answer(m, SongAnswer::DontSave);
     assert_eq!(w.windows, ["file"]);
-    assert_eq!(m.view().song.tempo_bpm, 100.0);
+    assert_eq!(m.view().timeline.tempo_bpm, 100.0);
 }
 
 #[test]

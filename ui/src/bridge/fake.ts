@@ -53,9 +53,11 @@ import {
   type ParamValues,
   type StoppedPluginView,
   type StripRef,
+  type TimelineView,
   type TrackRef,
   type TrackView as WireTrack,
 } from "./types";
+import { TempoMap } from "../time/tempoMap";
 
 // The scenes and the commands below keep, next to the contract's fields, fields of their own that
 // name only what comes with meloet (the instrument of a track, the effects in its slots, the row
@@ -463,10 +465,6 @@ export function fakeState(): AppState {
     song: {
       serial: 1,
       name: "はじめての曲",
-      tempoBpm: 96,
-      meterNum: 4,
-      meterDen: 4,
-      tempoChanges: 0,
       undoCount: 0,
       redoCount: 0,
       noteCount: 0,
@@ -496,6 +494,18 @@ export function fakeState(): AppState {
       loopRange: null,
       loopOn: false,
       file: "neverSaved",
+    },
+    timeline: {
+      tempoBpm: 96,
+      meterNum: 4,
+      meterDen: 4,
+      headRamp: false,
+      tempoPoints: [],
+      meterChanges: [],
+      markers: [],
+      selected: null,
+      renaming: null,
+      open: false,
     },
     transport: {
       state: "stopped",
@@ -2228,6 +2238,100 @@ SCENES.windowUndo = {
   meters: QUIET,
 };
 
+// ---- round 6, step 1: tempo and meter changes, markers (protocol 20) ----
+
+const MARKERS: TimelineView["markers"] = [
+  { id: 1, tick: 0, name: "イントロ" },
+  { id: 2, tick: 4 * BAR, name: "Aメロ" },
+  { id: 3, tick: 9 * BAR, name: "サビ" },
+];
+
+/** The band's song with the three markers of R10-Markers (bars 1, 5 and 10), the play line at bar 7. */
+function markerSong(s: AppState): void {
+  bandSong(s);
+  s.timeline.markers = MARKERS.map((m) => ({ ...m }));
+  s.transport.position = 6 * BAR;
+}
+
+// F6-Tempo: the row "テンポ ・ 拍子の変更" is open. 104.00 at bar 5 goes to 120.00 at bar 9 in a ramp, 3/4 from
+// bar 9, 96.00 and 4/4 from bar 13; the point of bar 5 is selected and the play line is at bar 7, where the
+// transport reads 112.00 (the screen's tempo map gives it). The clips keep their bars under the changed meters.
+SCENES.tempo = {
+  setup(s) {
+    surgeSong(s);
+    const threeFour = 8 * BAR;
+    const fourFour = threeFour + 4 * 1440;
+    s.timeline = {
+      ...s.timeline,
+      tempoPoints: [
+        { tick: 4 * BAR, tempoBpm: 104, ramp: true },
+        { tick: threeFour, tempoBpm: 120, ramp: false },
+        { tick: fourFour, tempoBpm: 96, ramp: false },
+      ],
+      meterChanges: [
+        { bar: 8, meterNum: 3, meterDen: 4 },
+        { bar: 12, meterNum: 4, meterDen: 4 },
+      ],
+      markers: [
+        { id: 1, tick: 0, name: "イントロ" },
+        { id: 2, tick: 4 * BAR, name: "Aメロ" },
+        { id: 3, tick: fourFour, name: "サビ" },
+      ],
+      selected: { kind: "tempoPoint", tick: 4 * BAR },
+      open: true,
+    };
+    const map = new TempoMap(s.timeline);
+    for (const track of s.song.tracks) {
+      track.clips = track.clips.map((c) => ({ ...c, start: map.tickOfBar(c.start / BAR), end: map.tickOfBar(c.end / BAR) }));
+    }
+    Object.assign(s.song, { undoCount: 18, file: "changed", loopOn: true });
+    s.transport.position = 6 * BAR;
+    s.status.message = { id: "tempoRampSelected", bar: 5, beat: 1, tempoBpm: 104, toBar: 9, toBeat: 1, toTempoBpm: 120 };
+  },
+  meters: QUIET,
+};
+
+// F6-AutoRec, its row "テンポ ・ 拍子の変更": folded, with one change (120.00 from bar 13).
+SCENES.tempoFolded = {
+  setup(s) {
+    bandSong(s);
+    s.timeline.tempoPoints = [{ tick: 12 * BAR, tempoBpm: 120, ramp: false }];
+  },
+  meters: QUIET,
+};
+
+// R10-Markers, "足した直後": K at bar 7. The marker is selected and its name field is open.
+SCENES.markerAdded = {
+  setup(s) {
+    markerSong(s);
+    const added = { id: 4, tick: 6 * BAR, name: "マーカー 4" };
+    s.timeline.markers = [MARKERS[0]!, MARKERS[1]!, added, MARKERS[2]!].map((m) => ({ ...m }));
+    s.timeline.selected = { kind: "marker", id: added.id };
+    s.timeline.renaming = added.id;
+    s.status.message = { id: "markerAdded", name: added.name };
+  },
+  meters: QUIET,
+};
+
+// R10-Markers, "名前を変えている": the name field of "Aメロ" is open (what is typed in it is the screen's own).
+SCENES.markerRenaming = {
+  setup(s) {
+    markerSong(s);
+    s.timeline.selected = { kind: "marker", id: 2 };
+    s.timeline.renaming = 2;
+  },
+  meters: QUIET,
+};
+
+// R10-Markers, "動かしている": "Aメロ" is selected; the drag to 6. 1. 000 is the screen's own, until it is let go.
+SCENES.markerMoving = {
+  setup(s) {
+    markerSong(s);
+    s.timeline.selected = { kind: "marker", id: 2 };
+  },
+  meters: QUIET,
+};
+
 function sceneFromUrl(): Scene | null {
   if (typeof location === "undefined") return null;
   const q = new URLSearchParams(location.search);
@@ -2579,7 +2683,7 @@ export function reduceClips(
     }
     case "pasteClips": {
       if (clipboard.clips.length === 0) return null;
-      const perBar = (1920 / song.meterDen) * song.meterNum;
+      const perBar = (1920 / state.timeline.meterDen) * state.timeline.meterNum;
       const to = command.to ?? { track: song.playTarget ?? 0, tick: Math.floor(state.transport.position / perBar) * perBar };
       const top = song.tracks.findIndex((t) => t.id === to.track);
       if (top < 0) return null;

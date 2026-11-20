@@ -164,9 +164,9 @@ describe("位置と時間", () => {
     show(
       Transport,
       ready((s) => {
-        s.song.meterNum = 6;
-        s.song.meterDen = 8;
-        s.song.tempoBpm = 120;
+        s.timeline.meterNum = 6;
+        s.timeline.meterDen = 8;
+        s.timeline.tempoBpm = 120;
         s.transport.position = 1440 + 250;
       }),
     );
@@ -256,8 +256,8 @@ describe("カウントイン", () => {
     show(
       Transport,
       ready((s) => {
-        s.song.meterNum = 12;
-        s.song.meterDen = 8;
+        s.timeline.meterNum = 12;
+        s.timeline.meterDen = 8;
         s.transport.state = "countIn";
         s.transport.countInBeats = 12;
         s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };

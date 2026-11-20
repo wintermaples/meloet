@@ -9,6 +9,7 @@ mod added;
 mod params;
 mod take;
 mod telemetry;
+mod timeline;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +33,9 @@ pub use telemetry::{
     TransportReading,
 };
 
-pub const PROTOCOL_VERSION: u32 = 19;
+pub use timeline::{MarkerView, MeterChangeView, TempoPointView, TimelineRef, TimelineView};
+
+pub const PROTOCOL_VERSION: u32 = 20;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -93,13 +96,124 @@ pub enum Command {
     Locate {
         tick: u64,
     },
-    /// Beats per minute as typed; Rust keeps 0.01 steps.
+    /// The tempo typed into the transport. Beats per minute as typed; Rust keeps 0.01 steps.
+    /// It changes the tempo in force where the play line is: the tempo point at or before it
+    /// (inside a ramp, the point the ramp starts from), the head's tempo when there is none.
+    /// With tempo points in the song the status line says `StatusMessage::TempoPointSet`.
     SetTempo {
         bpm: f64,
     },
+    /// The meter typed into the transport: of the meter change in force where the play line
+    /// is, the head's when there is none. With meter changes in the song the status line says
+    /// `StatusMessage::MeterChangeSet`.
     SetMeter {
         num: u8,
         den: u8,
+    },
+    // Tempo points are named by their tick and meter changes by their bar (from 0); 0 is the
+    // song's head (`timeline.rs`). A command that names a place with nothing at it does
+    // nothing. Each command that changes the song is one step.
+    //
+    // The screen snaps what it sends (tempo points and markers to the heads of beats); core
+    // snaps the same way again, to the nearest head of a beat, the later one on a tie.
+    /// ▸ and ▾ of the row "テンポ ・ 拍子の変更" of the arrange view (`TimelineView::open`).
+    /// No step.
+    SetTimelineOpen {
+        open: bool,
+    },
+    /// A double click on the tempo row. `bpm` is the tempo of the line there, which the
+    /// screen reads from its map. A point already at `tick` gets `bpm`; tick 0 is
+    /// the head's tempo. The new point is selected.
+    AddTempoPoint {
+        tick: u64,
+        bpm: f64,
+    },
+    /// A drag of a tempo point, or a value typed on it: where it is and what it says when
+    /// the drag ends; either may be as before. The head (`tick` 0) only takes `bpm`. A point
+    /// that lands on another one takes its place (the other one goes). The point's ramp
+    /// stays. Selected afterwards.
+    MoveTempoPoint {
+        tick: u64,
+        to_tick: u64,
+        bpm: f64,
+    },
+    /// "次の点まで、だんだん" of a tempo point's right-click menu. `tick` 0: from the head.
+    SetTempoRamp {
+        tick: u64,
+        on: bool,
+    },
+    /// A double click on the meter row: a flag at the head of `bar`. A flag already there, and
+    /// bar 0 (the head's meter), get the meter. `num` 1..=12 and `den` 2, 4, 8 or 16; other
+    /// values do nothing. The new flag is selected.
+    AddMeterChange {
+        bar: u32,
+        num: u8,
+        den: u8,
+    },
+    /// A drag of a flag. Bar 0 does not move. A flag that lands on another one takes its place.
+    MoveMeterChange {
+        bar: u32,
+        to_bar: u32,
+    },
+    /// A meter typed on a flag (`bar` 0: the head's).
+    SetMeterChange {
+        bar: u32,
+        num: u8,
+        den: u8,
+    },
+    /// A press on a tempo point, a flag or a marker's name tag in a way that does not go
+    /// there (the right click), and a press on nothing (`None`). A thing that is not there
+    /// selects nothing. For a tempo point and a flag the status line says
+    /// `StatusMessage::TempoRampSelected`, `TempoPointSelected` or `MeterChangeSelected`.
+    SelectTimeline {
+        target: Option<TimelineRef>,
+    },
+    /// Delete on the selected thing, "消す" of the right-click menus. The head does not go.
+    DeleteTimeline {
+        target: TimelineRef,
+    },
+    /// K: a marker where the play line is (where it is heard, while playing), snapped to the
+    /// nearest head of a beat. `name` is "マーカー 4" in the screen's words, the number being
+    /// the song's markers with this one. The marker is selected and its name field is open
+    /// (`TimelineView::renaming`); the status line says `StatusMessage::MarkerAdded`. Markers
+    /// may share a tick.
+    AddMarker {
+        name: String,
+    },
+    /// A double click on a marker, F2 on the selected one, "名前を変える": opens its name
+    /// field (`TimelineView::renaming`) and selects it. No step.
+    OpenMarkerName {
+        id: u32,
+    },
+    /// Enter in the name field. Spaces around the name are left out. An empty name, or one of
+    /// spaces only, or the same name, keeps the old name and is no step. Closes the field
+    /// when it is this marker's.
+    RenameMarker {
+        id: u32,
+        name: String,
+    },
+    /// Esc in the name field, and the field losing the focus. The name stays as it was (for
+    /// a marker just added: the name it was added with).
+    CloseMarkerName,
+    /// A drag of a marker.
+    MoveMarker {
+        id: u32,
+        tick: u64,
+    },
+    /// A press on a marker: selects it and goes to its tick as `Locate` does. No step.
+    GoToMarker {
+        id: u32,
+    },
+    /// Alt → and Alt ←: to the first marker after the play line (`forward`), or the last one
+    /// before it. Nothing when there is none. Selects nothing. No step.
+    StepMarker {
+        forward: bool,
+    },
+    /// "ここから次のマーカーまでをループに": the loop's range becomes this marker's tick to the
+    /// next marker's that is later (the song's end after the last marker, docs/architecture.md
+    /// 21-12), which is one step, and the loop is turned on, which is none.
+    LoopFromMarker {
+        id: u32,
     },
     /// 0, 1 or 2.
     SetCountIn {
@@ -1150,6 +1264,7 @@ pub struct Snapshot {
 #[serde(rename_all = "camelCase")]
 pub struct AppState {
     pub song: SongView,
+    pub timeline: TimelineView,
     pub transport: TransportView,
     pub arrange: ArrangeView,
     pub piano_roll: PianoRollView,
@@ -1172,6 +1287,9 @@ impl AppState {
         let mut out = Vec::new();
         if old.song != new.song {
             out.push(Change::Song(Box::new(new.song.clone())));
+        }
+        if old.timeline != new.timeline {
+            out.push(Change::Timeline(new.timeline.clone()));
         }
         if old.transport != new.transport {
             out.push(Change::Transport(new.transport.clone()));
@@ -1222,6 +1340,7 @@ impl AppState {
     pub fn apply(&mut self, change: Change) {
         match change {
             Change::Song(v) => self.song = *v,
+            Change::Timeline(v) => self.timeline = v,
             Change::Transport(v) => self.transport = v,
             Change::Arrange(v) => self.arrange = v,
             Change::PianoRoll(v) => self.piano_roll = v,
@@ -1248,10 +1367,6 @@ pub struct SongView {
     /// not on undo or redo. Take ids are per song: keep takes by (serial, id).
     pub serial: u32,
     pub name: String,
-    pub tempo_bpm: f64,
-    pub meter_num: u8,
-    pub meter_den: u8,
-    pub tempo_changes: u32,
     pub undo_count: u32,
     pub redo_count: u32,
     /// For the piano roll band label: the notes of the shown take of `ArrangeView::piano_roll_clip`.
@@ -2495,6 +2610,50 @@ pub enum StatusMessage {
     InstrumentPluginRemoved {
         track: TrackRef,
     },
+    // In the six below, `bar` and `beat` are as shown (from 1), and bar 1 beat 1 is the
+    // song's head.
+    /// A tempo point with a ramp to the next point is selected (spec 6): "5 小節目の変更をえら
+    /// んでいます ・ 104.00 から 9 小節目の 120.00 へ、だんだん速く". On the last point, whose
+    /// ramp does nothing, `TempoPointSelected` is said.
+    TempoRampSelected {
+        bar: u32,
+        beat: u32,
+        tempo_bpm: f64,
+        to_bar: u32,
+        to_beat: u32,
+        to_tempo_bpm: f64,
+    },
+    /// A tempo point without a ramp is selected (B-92): "5 小節目の変更をえらんでいます ・
+    /// 120.00".
+    TempoPointSelected {
+        bar: u32,
+        beat: u32,
+        tempo_bpm: f64,
+    },
+    /// A meter change is selected (B-92): "9 小節目の変更をえらんでいます ・ 3/4".
+    MeterChangeSelected {
+        bar: u32,
+        meter_num: u8,
+        meter_den: u8,
+    },
+    /// `AddMarker` (spec 6): "マーカー 4 を足しました。名前を打って Enter".
+    MarkerAdded {
+        name: String,
+    },
+    /// `SetTempo` in a song with tempo points changed this one (B-92): "5 小節目の変更を
+    /// 120.00 にしました。"
+    TempoPointSet {
+        bar: u32,
+        beat: u32,
+        tempo_bpm: f64,
+    },
+    /// `SetMeter` in a song with meter changes changed this one (B-92): "9 小節目の変更を 3/4
+    /// にしました。"
+    MeterChangeSet {
+        bar: u32,
+        meter_num: u8,
+        meter_den: u8,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -2552,6 +2711,7 @@ pub struct Patch {
 pub enum Change {
     /// Boxed: with its strips it is far larger than the other sections.
     Song(Box<SongView>),
+    Timeline(TimelineView),
     Transport(TransportView),
     Arrange(ArrangeView),
     PianoRoll(PianoRollView),

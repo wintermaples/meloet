@@ -301,11 +301,11 @@ pub fn record(
     core.send(Command::GoToStart);
     let state = core.snapshot().state;
     assert!(
-        (state.song.tempo_bpm - run.bpm).abs() < 1e-9,
+        (state.timeline.tempo_bpm - run.bpm).abs() < 1e-9,
         "tempo {}",
-        state.song.tempo_bpm
+        state.timeline.tempo_bpm
     );
-    assert_eq!(state.song.meter_den, 4);
+    assert_eq!(state.timeline.meter_den, 4);
     assert!(state.transport.metronome);
     assert_eq!(state.transport.count_in_bars, 0);
     let actual_frames = state.audio.actual_frames;

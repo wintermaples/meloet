@@ -13,15 +13,53 @@ fn ui_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ui")
 }
 
+/// Mock F6-Tempo, with the marker of R10-Markers just added.
+fn sample_timeline() -> TimelineView {
+    TimelineView {
+        tempo_bpm: 96.0,
+        meter_num: 4,
+        meter_den: 4,
+        head_ramp: false,
+        tempo_points: vec![
+            TempoPointView {
+                tick: 7680,
+                tempo_bpm: 104.0,
+                ramp: true,
+            },
+            TempoPointView {
+                tick: 15360,
+                tempo_bpm: 120.0,
+                ramp: false,
+            },
+        ],
+        meter_changes: vec![MeterChangeView {
+            bar: 8,
+            meter_num: 3,
+            meter_den: 4,
+        }],
+        markers: vec![
+            MarkerView {
+                id: 1,
+                tick: 0,
+                name: "イントロ".into(),
+            },
+            MarkerView {
+                id: 4,
+                tick: 11520,
+                name: "マーカー 4".into(),
+            },
+        ],
+        selected: Some(TimelineRef::Marker { id: 4 }),
+        renaming: Some(4),
+        open: true,
+    }
+}
+
 fn sample_state() -> AppState {
     AppState {
         song: SongView {
             serial: 1,
             name: "はじめての曲".into(),
-            tempo_bpm: 96.0,
-            meter_num: 4,
-            meter_den: 4,
-            tempo_changes: 0,
             undo_count: 2,
             redo_count: 1,
             note_count: 23,
@@ -101,6 +139,7 @@ fn sample_state() -> AppState {
             loop_on: true,
             file: SongFile::Changed,
         },
+        timeline: sample_timeline(),
         transport: TransportView {
             state: TransportState::Recording,
             position: 7680,
@@ -1207,7 +1246,19 @@ fn state_json_is_camel_case_and_round_trips() {
     };
     let v = serde_json::to_value(&snap).unwrap();
     assert_eq!(v["rev"], 7);
-    assert_eq!(v["state"]["song"]["tempoBpm"], 96.0);
+    assert_eq!(v["state"]["song"].get("tempoBpm"), None);
+    assert_eq!(
+        v["state"]["timeline"],
+        json!({"tempoBpm": 96.0, "meterNum": 4, "meterDen": 4, "headRamp": false,
+               "tempoPoints": [{"tick": 7680, "tempoBpm": 104.0, "ramp": true},
+                               {"tick": 15360, "tempoBpm": 120.0, "ramp": false}],
+               "meterChanges": [{"bar": 8, "meterNum": 3, "meterDen": 4}],
+               "markers": [{"id": 1, "tick": 0, "name": "イントロ"},
+                           {"id": 4, "tick": 11520, "name": "マーカー 4"}],
+               "selected": {"kind": "marker", "id": 4},
+               "renaming": 4,
+               "open": true})
+    );
     assert_eq!(v["state"]["song"]["tracks"][0]["id"], 7);
     assert_eq!(v["state"]["song"]["tracks"][0]["number"], 1);
     assert_eq!(v["state"]["song"]["playTarget"], 7);
@@ -2699,11 +2750,175 @@ fn windows_and_plugin_params_json_shape() {
 
 /// The `section` of a change is the key of that section in the state JSON.
 #[test]
+fn timeline_json_shape() {
+    let commands = [
+        (
+            Command::SetTimelineOpen { open: true },
+            json!({"type": "setTimelineOpen", "open": true}),
+        ),
+        (
+            Command::AddTempoPoint {
+                tick: 7680,
+                bpm: 104.0,
+            },
+            json!({"type": "addTempoPoint", "tick": 7680, "bpm": 104.0}),
+        ),
+        (
+            Command::MoveTempoPoint {
+                tick: 7680,
+                to_tick: 8160,
+                bpm: 104.5,
+            },
+            json!({"type": "moveTempoPoint", "tick": 7680, "toTick": 8160, "bpm": 104.5}),
+        ),
+        (
+            Command::SetTempoRamp { tick: 0, on: true },
+            json!({"type": "setTempoRamp", "tick": 0, "on": true}),
+        ),
+        (
+            Command::AddMeterChange {
+                bar: 8,
+                num: 3,
+                den: 4,
+            },
+            json!({"type": "addMeterChange", "bar": 8, "num": 3, "den": 4}),
+        ),
+        (
+            Command::MoveMeterChange { bar: 8, to_bar: 10 },
+            json!({"type": "moveMeterChange", "bar": 8, "toBar": 10}),
+        ),
+        (
+            Command::SetMeterChange {
+                bar: 0,
+                num: 6,
+                den: 8,
+            },
+            json!({"type": "setMeterChange", "bar": 0, "num": 6, "den": 8}),
+        ),
+        (
+            Command::SelectTimeline {
+                target: Some(TimelineRef::TempoPoint { tick: 7680 }),
+            },
+            json!({"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": 7680}}),
+        ),
+        (
+            Command::SelectTimeline { target: None },
+            json!({"type": "selectTimeline", "target": null}),
+        ),
+        (
+            Command::DeleteTimeline {
+                target: TimelineRef::MeterChange { bar: 8 },
+            },
+            json!({"type": "deleteTimeline", "target": {"kind": "meterChange", "bar": 8}}),
+        ),
+        (
+            Command::AddMarker {
+                name: "マーカー 4".into(),
+            },
+            json!({"type": "addMarker", "name": "マーカー 4"}),
+        ),
+        (
+            Command::OpenMarkerName { id: 2 },
+            json!({"type": "openMarkerName", "id": 2}),
+        ),
+        (
+            Command::RenameMarker {
+                id: 2,
+                name: "Aメロ ・ 1 回目".into(),
+            },
+            json!({"type": "renameMarker", "id": 2, "name": "Aメロ ・ 1 回目"}),
+        ),
+        (Command::CloseMarkerName, json!({"type": "closeMarkerName"})),
+        (
+            Command::MoveMarker { id: 2, tick: 9600 },
+            json!({"type": "moveMarker", "id": 2, "tick": 9600}),
+        ),
+        (
+            Command::GoToMarker { id: 2 },
+            json!({"type": "goToMarker", "id": 2}),
+        ),
+        (
+            Command::StepMarker { forward: false },
+            json!({"type": "stepMarker", "forward": false}),
+        ),
+        (
+            Command::LoopFromMarker { id: 2 },
+            json!({"type": "loopFromMarker", "id": 2}),
+        ),
+    ];
+    for (command, want) in commands {
+        assert_eq!(serde_json::to_value(&command).unwrap(), want);
+        assert_eq!(serde_json::from_value::<Command>(want).unwrap(), command);
+    }
+
+    let messages = [
+        (
+            StatusMessage::TempoRampSelected {
+                bar: 5,
+                beat: 1,
+                tempo_bpm: 104.0,
+                to_bar: 9,
+                to_beat: 1,
+                to_tempo_bpm: 120.0,
+            },
+            json!({"id": "tempoRampSelected", "bar": 5, "beat": 1, "tempoBpm": 104.0,
+                   "toBar": 9, "toBeat": 1, "toTempoBpm": 120.0}),
+        ),
+        (
+            StatusMessage::TempoPointSelected {
+                bar: 5,
+                beat: 3,
+                tempo_bpm: 120.0,
+            },
+            json!({"id": "tempoPointSelected", "bar": 5, "beat": 3, "tempoBpm": 120.0}),
+        ),
+        (
+            StatusMessage::MeterChangeSelected {
+                bar: 9,
+                meter_num: 3,
+                meter_den: 4,
+            },
+            json!({"id": "meterChangeSelected", "bar": 9, "meterNum": 3, "meterDen": 4}),
+        ),
+        (
+            StatusMessage::MarkerAdded {
+                name: "マーカー 4".into(),
+            },
+            json!({"id": "markerAdded", "name": "マーカー 4"}),
+        ),
+        (
+            StatusMessage::TempoPointSet {
+                bar: 5,
+                beat: 1,
+                tempo_bpm: 110.0,
+            },
+            json!({"id": "tempoPointSet", "bar": 5, "beat": 1, "tempoBpm": 110.0}),
+        ),
+        (
+            StatusMessage::MeterChangeSet {
+                bar: 1,
+                meter_num: 6,
+                meter_den: 8,
+            },
+            json!({"id": "meterChangeSet", "bar": 1, "meterNum": 6, "meterDen": 8}),
+        ),
+    ];
+    for (message, want) in messages {
+        assert_eq!(serde_json::to_value(&message).unwrap(), want);
+        assert_eq!(
+            serde_json::from_value::<StatusMessage>(want).unwrap(),
+            message
+        );
+    }
+}
+
+#[test]
 fn change_section_names_match_state_keys() {
     let state = sample_state();
     let v = serde_json::to_value(&state).unwrap();
     let all = [
         Change::Song(Box::new(state.song.clone())),
+        Change::Timeline(state.timeline.clone()),
         Change::Transport(state.transport.clone()),
         Change::Arrange(state.arrange.clone()),
         Change::PianoRoll(state.piano_roll.clone()),
@@ -2733,6 +2948,7 @@ fn changes_from_gives_only_changed_sections() {
     assert!(AppState::changes_from(&old, &old).is_empty());
 
     let mut new = old.clone();
+    new.timeline.selected = None;
     new.transport.state = TransportState::Stopped;
     new.piano_roll.selected_notes.clear();
     new.workspace.scale = 125;
@@ -2745,6 +2961,7 @@ fn changes_from_gives_only_changed_sections() {
     assert_eq!(
         changes,
         vec![
+            Change::Timeline(new.timeline.clone()),
             Change::Transport(new.transport.clone()),
             Change::PianoRoll(new.piano_roll.clone()),
             Change::Workspace(new.workspace.clone()),

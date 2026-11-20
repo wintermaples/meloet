@@ -29,7 +29,7 @@
   import { ccList } from "./view.svelte";
 
   const app = $derived(current.state!);
-  const meter = $derived({ num: app.song.meterNum, den: app.song.meterDen });
+  const meter = $derived({ num: app.timeline.meterNum, den: app.timeline.meterDen });
   const take = $derived(shown.take);
   const clip = $derived(shown.clip);
   const count = $derived(take?.controlTicks.length ?? 0);

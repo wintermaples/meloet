@@ -146,6 +146,12 @@ BOARDS = {
     "sf2DropMany": "F5-SF2Drop",
     "sf2AddedMany": None,
     "shelfBuiltinOpen": "F5-PluginLoading",
+    # 第 6 回 区切り1: テンポと拍子の変更、マーカー（約束 20）。
+    "tempo": "F6-Tempo",
+    "tempoFolded": "F6-AutoRec",
+    "markerAdded": "R10-Markers",
+    "markerRenaming": "R10-Markers",
+    "markerMoving": "R10-Markers",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """

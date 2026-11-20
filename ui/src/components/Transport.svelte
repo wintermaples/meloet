@@ -27,8 +27,9 @@
   } from "./time";
 
   const song = $derived(current.state!.song);
+  const timeline = $derived(current.state!.timeline);
   const transport = $derived(current.state!.transport);
-  const meter = $derived<Meter>({ num: song.meterNum, den: song.meterDen });
+  const meter = $derived<Meter>({ num: timeline.meterNum, den: timeline.meterDen });
 
   const counting = $derived(transport.state === "countIn");
   const recordingNow = $derived(counting || transport.state === "recording");
@@ -39,7 +40,7 @@
     return Math.min(transport.countInBeats, Math.max(1, transport.countInBeats - left + 1));
   });
   /** 箱は 1 小節ぶん（拍子の上の数）で、小節ごとに数えなおす。 */
-  const beatsPerBar = $derived(song.meterNum);
+  const beatsPerBar = $derived(timeline.meterNum);
   const beatInBar = $derived(((countInBeat - 1) % beatsPerBar) + 1);
 
   // 横の入れかた: 出ている物と、見えない写し（ruler）の引っこむ物を測り、仕様書 1 章の順に引っこめる。
@@ -121,11 +122,11 @@
     return () => cancelAnimationFrame(raf);
   });
   const position = $derived(positionText(tick, meter));
-  const clock = $derived(clockText(ticksToSeconds(Math.max(0, tick), song.tempoBpm, meter)));
+  const clock = $derived(clockText(ticksToSeconds(Math.max(0, tick), timeline.tempoBpm, meter)));
 
   $effect(() => {
     // 中身が変わったら測りなおす（ResizeObserver のない所でも、決まりの通りに出す）。
-    void [counting, beatsPerBar, song.name, fileText, song.tempoBpm, meter, transport.countInBars, metrics.scale];
+    void [counting, beatsPerBar, song.name, fileText, timeline.tempoBpm, meter, transport.countInBars, metrics.scale];
     untrack(measure);
   });
 
@@ -269,7 +270,7 @@
 
   // 数字として読めない値のまま Enter: 状態行で言うように core へ頼む（仕様書 6 章「使えない値を打った」）。
   function rejectTempo(): void {
-    send({ type: "rejectValue", field: "tempo", kept: tempoText(song.tempoBpm), range: null });
+    send({ type: "rejectValue", field: "tempo", kept: tempoText(timeline.tempoBpm), range: null });
   }
   function rejectMeter(draft: string): void {
     const field = meterFieldOf(draft);
@@ -394,7 +395,7 @@
   <div class="col">
     <span class="m-lbl" use:term={"テンポ"}>{t("transport.tempo")}</span>
     <NumberField
-      value={tempoText(song.tempoBpm)}
+      value={tempoText(timeline.tempoBpm)}
       parse={readTempo}
       step={(r, d) => tempoText(stepTempo(r.value, d))}
       commit={(r) => commitClamped({ type: "setTempo", bpm: r.value }, r.clamp)}

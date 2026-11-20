@@ -1124,3 +1124,4 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 5. **「5 秒おきの抜け」は meloet のせいではない**。`pw-play` ＋ `pw-record`（meloet なし）でも同じ形で抜け、抜けた瞬間に ERR がふえるのは `pw-record` のノードだけ。meloet ・ 出口のノードの ERR はふえない（ヘッドホンの音が落ちていない、の確かさ B）。測る道具は `pw-record` の ERR がふえた所を外す（宿題）。
 6. 10 分書くと履歴の点の写しが 54 MiB。21-5 の決め（重ければ `ChunkedVec`）のとおり、`ChunkedVec` にする（棟梁の決め）。
 - 区切り2 ・ 3 の直し（2026-11-20、3 人が同時に。どれも 216f8d5 から。3 人とも meloet-hard の決まりで Fable 5.2 ・ medium）: (a) 動くフェーダー ・ 値の字で 60 コマ（つまみを `transform`、値の字の形、レイアウトの四角を読む道具、7 章）、(b) プラグインの帯まわり（欄の値の字が動かない、帯の名前が null、core から本物のプラグインまでの試験）、(c) 帯の点を `ChunkedVec` に。
+  - (c) 帯の点を `ChunkedVec` に（5b8f1d3、merge f3ee904）: 点を変える手はどれも `with_points` を通り、前の帯の変わらないかたまりを分けあう。`AutoPoint` の `Eq` は「帯の値は NaN にならない」にたより、`Hash` は値のビット（−0.0 は 0.0 にそろえる）。10 分書いた形（手 282、帯 25098 点）で、履歴が持つ量 56.4 MB → 1.34 MB（`crates/meloet-model/tests/lane_memory.rs`、21-5）。本物のアプリの RSS は第 6 回の終わりの測りで見る。

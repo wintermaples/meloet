@@ -1270,3 +1270,5 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 ## 第 7 回 区切り2: 音の入口と、歌のトラックと、録る（2026-11-21〜）
 
 - 切り分け: 1 回目（meloet-hard 1 人）で約束 23 の形 ・ TS の型 ・ 偽物の場面 ・ model の型（トラックの種類、音の表、歌のテイク。22-10 を区切り3 から前に出した。録った歌をしまうのに要るため）・ エンジンの入口の口を置いてコミット。2 回目で エンジン ・ core ・ 画面 を同時に。
+- 1 回目（dff9b42、meloet-hard ・ Fable 5.2）: 約束 23（`vocal.rs`。意図 14 種、トラックの見方 `kind`、`keysTarget`、`recordingVocals`、音の設定の奥、遅れを測るダイアログ、なおすためのファイルの `vocals`、状態行 8 つ）、計器のバイナリ版 4（マイクの計）、model（`TrackKind`、`ClipTakes`、`AudioSource` ・ `AudioTake` ・ `SourceTempo` ・ `AudioShape`、`Session.armed_vocals` ・ `monitored` ・ `last_keys`、`keys_target()`）、曲のファイル版 6 に `audio` ・ `audioTakes`、エンジンの入口の口（`input.rs`、輪 2 本、メモリ 0）、偽物の場面 14。区切り0 から回した 92 の残り（19-A ・ 92-19 ・ 92-3）は core まで作った。仮の決めは B-94 の 11〜15。cargo 908、vitest 2743。
+- 2 回目: エンジンと core を meloet-hard 1 人（歌のトラックの席 ・ モニター ・ 入口 ・ ディスクに書く係 ・ 録る流れがからみ合うので、分けずに順に）、画面を meloet-impl 1 人で同時に（00c6cb1 から）。ディスクに書く係は core に置く（22-7。棟梁の決め）。測りは merge のあと別の歩で。

@@ -3,8 +3,8 @@
 // The input goes in as DOM events on the note area, so the page's own handlers do the work. Nothing here runs
 // unless Rust hands over a script.
 
-/** rows: count is the row height (ROW_PX_STEPS) to step to before the parts after it. */
-export type PartKind = "scroll" | "zoom" | "drag" | "rows";
+/** rows: count is the row height (ROW_PX_STEPS) to step to before the parts after it. hist*: historyScript.ts. */
+export type PartKind = "scroll" | "zoom" | "drag" | "rows" | "histMake" | "histOpen" | "histScroll" | "histJump";
 
 export interface ScriptPart {
   kind: PartKind;
@@ -13,7 +13,19 @@ export interface ScriptPart {
 
 export const SCRIPT_REPORT = "ui-script.json";
 const DEFAULT_COUNT = 100;
-const KINDS: Record<string, PartKind> = { "pr-scroll": "scroll", "pr-zoom": "zoom", "pr-drag": "drag", "pr-rows": "rows" };
+const KINDS: Record<string, PartKind> = {
+  "pr-scroll": "scroll",
+  "pr-zoom": "zoom",
+  "pr-drag": "drag",
+  "pr-rows": "rows",
+  "hist-make": "histMake",
+  "hist-open": "histOpen",
+  "hist-scroll": "histScroll",
+  "hist-jump": "histJump",
+};
+
+/** The parts of the history band (historyScript.ts); a script runs either these or the piano roll's, not both. */
+export const isHistoryPart = (part: ScriptPart) => part.kind.startsWith("hist");
 
 /** `pr-scroll:100,pr-zoom,pr-drag:1000`. Null when any part is not understood. */
 export function parseUiScript(text: string): ScriptPart[] | null {
@@ -196,6 +208,7 @@ export class UiScript {
         await this.rows(area, part.count, rec);
         return;
       }
+      if (part.kind !== "drag" && part.kind !== "scroll" && part.kind !== "zoom") throw new Error(`${part.kind} is not a piano roll part`);
       let step: Step;
       if (part.kind === "drag") {
         step = await this.drag(area, i % 2 === 0 ? 1 : -1);

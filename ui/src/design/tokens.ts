@@ -310,6 +310,9 @@ export const mock = {
   // スキャン（第 5 回）。棚の下の帯の進みの棒（`height:2px`）、ダイアログ「スキャンで止まったプラグイン」の幅（`width:640px`。仕様書 3 章 Y13 も 640）。
   "mock.scan.progress": m(2, "R9-Scan"),
   "mock.scan-stopped.width": m(640, "F5-ScanStopped"),
+  // 取り消しの履歴の行（第 6 回）。番号の欄（`width:24px`、右よせ）と、文の欄（`width:420px`）。
+  "mock.history.number": m(24, "F-History"),
+  "mock.history.name": m(420, "F-History"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

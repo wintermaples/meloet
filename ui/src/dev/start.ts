@@ -7,8 +7,10 @@ import * as G from "../components/pianoroll/geom";
 import { shown } from "../components/pianoroll/shown.svelte";
 import { shownFor } from "../components/pianoroll/shownNotes";
 import { dragReading, prView, pxPerTick, rowHeight } from "../components/pianoroll/view.svelte";
-import { current } from "../state/app.svelte";
-import { browserClock, parseUiScript, SCRIPT_REPORT, UiScript, type Grab, type Target } from "./script";
+import { historyUi } from "../components/history/historyUi.svelte";
+import { current, send } from "../state/app.svelte";
+import { HistoryScript, type HistoryTarget } from "./historyScript";
+import { browserClock, isHistoryPart, parseUiScript, SCRIPT_REPORT, UiScript, type Grab, type Target } from "./script";
 import { startWatch } from "./watch";
 
 const AREA = ".roll .notes > .area";
@@ -76,6 +78,35 @@ function pianoRoll(): Target {
   };
 }
 
+const HISTORY_LIST = '[data-test="history-list"]';
+
+function historyBand(): HistoryTarget {
+  const rowOf = (index: number) => document.querySelector<HTMLElement>(`${HISTORY_LIST} .row[data-index="${index}"]`);
+  return {
+    ready: () => current.state !== null && current.connected,
+    history: () => current.state?.history ?? null,
+    bandOpen: () => current.state?.workspace.layout.lower.some((l) => l.band === "history") ?? false,
+    toggleBand: () => void send({ type: "toggleBand", band: "history" }),
+    make: async (i) => {
+      await send({ type: "setTempo", bpm: i % 2 === 0 ? 121 : 120 });
+    },
+    viewport: () => document.querySelector<HTMLElement>('[data-test="history-rows"]'),
+    filled: () => {
+      const names = [...document.querySelectorAll(`${HISTORY_LIST} .row .name`)];
+      return names.length > 0 && names.every((n) => n.textContent !== "");
+    },
+    async jumpTo(index) {
+      historyUi.selected = index;
+      historyUi.byKeys = true;
+      for (let i = 0; i < 300 && !rowOf(index)?.querySelector(".name")?.textContent; i++) await browserClock.frame();
+      const list = document.querySelector<HTMLElement>(HISTORY_LIST);
+      list?.focus();
+      list?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    },
+    isNow: (index) => rowOf(index)?.classList.contains("now") ?? false,
+  };
+}
+
 /** Starts the script; returns the function that stops it. A script that does not read is reported and does nothing. */
 export function startUiScript(text: string, report: (name: string, json: string) => Promise<void>): () => void {
   // `watch`: no input; the load and the WebGL contexts are written down (watch.ts).
@@ -85,7 +116,12 @@ export function startUiScript(text: string, report: (name: string, json: string)
     void report(SCRIPT_REPORT, JSON.stringify({ script: text, done: false, error: "the script did not read", parts: [] })).catch(() => {});
     return () => {};
   }
-  const script = new UiScript(text, parts, pianoRoll(), browserClock, report);
+  const history = parts.filter(isHistoryPart).length;
+  if (history > 0 && history < parts.length) {
+    void report(SCRIPT_REPORT, JSON.stringify({ script: text, done: false, error: "hist-* and pr-* parts do not mix", parts: [] })).catch(() => {});
+    return () => {};
+  }
+  const script = history > 0 ? new HistoryScript(text, parts, historyBand(), browserClock, report) : new UiScript(text, parts, pianoRoll(), browserClock, report);
   void script.run();
   return () => script.stop();
 }

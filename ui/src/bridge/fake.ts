@@ -2626,6 +2626,16 @@ SCENES.historyUndone3 = {
     row(16, { kind: "moveNotes" }, { kind: "notes", count: 3 }, PIANO_ROLL),
   ],
 };
+// 5000 steps, none undone: for timing the band (open, scroll, jump 500). The rows after the first ones are made up.
+SCENES.history5000 = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    Object.assign(s.song, { undoCount: 5000, redoCount: 0, file: "changed" });
+  },
+  bands: ["history"],
+  meters: QUIET,
+  history: FIRST_STEPS,
+};
 
 /**
  * Protocol 21, enough for pictures and tests: the lanes' own switches (fold, 「● 書く」, the selection, 「もどす」),

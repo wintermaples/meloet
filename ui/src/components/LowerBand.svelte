@@ -1,10 +1,12 @@
 <!-- ひらいた下の帯（ピアノロール、ミキサー、取り消しの履歴）。ピアノロールは中身まで（pianoroll/PianoRoll.svelte）。
-     ミキサーは、道具の列（音の流れの文、メーターの単位。モック F4-Mixer）とストリップ（mixer/MixerStrips.svelte）。取り消しの履歴は見出しの行だけで、中身は空。見出しの行は A-Mixer・F-History の帯のいちばん上の行。「▾ 名前」を押すと、その帯をたたむ（B-74）。 -->
+     ミキサーは、道具の列（音の流れの文、メーターの単位。モック F4-Mixer）とストリップ（mixer/MixerStrips.svelte）。取り消しの履歴は history/HistoryHead.svelte と history/HistoryList.svelte。見出しの行は A-Mixer・F-History の帯のいちばん上の行。「▾ 名前」を押すと、その帯をたたむ（B-74）。 -->
 <script lang="ts">
   import type { Band } from "../bridge";
   import { term } from "../lib/tip.svelte";
   import { send } from "../state/app.svelte";
   import { t, type TextKey } from "../text/ja";
+  import HistoryHead from "./history/HistoryHead.svelte";
+  import HistoryList from "./history/HistoryList.svelte";
   import { metrics } from "./metrics.svelte";
   import MixerStrips from "./mixer/MixerStrips.svelte";
   import PianoRoll from "./pianoroll/PianoRoll.svelte";
@@ -36,10 +38,12 @@
         <span class="m-lbl">{t("mixer.flow")}</span>
         <span class="m-spacer"></span>
         <span class="m-lbl">{t("mixer.meterUnit")} <span class="m-num" use:term={"dB"}>{t("mixer.db")}</span></span>
+      {:else if band === "history"}
+        <HistoryHead />
       {/if}
     </div>
     <div class="body">
-      {#if band === "mixer"}<MixerStrips />{/if}
+      {#if band === "mixer"}<MixerStrips />{:else if band === "history"}<HistoryList />{/if}
     </div>
   </section>
 {/if}

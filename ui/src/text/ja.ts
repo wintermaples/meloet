@@ -2046,6 +2046,23 @@ export const texts = {
   "history.pluginParam": e("{plugin}のパラメータを変える", "builder:2026-11-20", { plugin: "Surge XT " }),
   // 行の右の「どこで」。ほかは band.arrange ・ band.pianoRoll ・ band.mixer と track.label。
   "history.placePluginWindow": e("{strip} ・ プラグインの窓", "spec:6", { strip: "5 Surge XT" }),
+  // 帯の見出しの行（仕様書 3 章 Y19「帯の見出しの文は今のまま」）。取り消してある手がないとき、ぜんぶ取り消したとき、手がないときの形はモックにない。
+  "history.head": e("{total} 手 ・ いまは {current} 手目。上の {redo} 手は取り消してあり、やりなおせます", "mock:F-History", {
+    total: "14",
+    current: "12",
+    redo: "2",
+  }),
+  "history.headLatest": e("{total} 手 ・ いまは {current} 手目", "builder:2026-11-20", { total: "14", current: "14" }),
+  "history.headAllUndone": e("{total} 手。{redo} 手は取り消してあり、やりなおせます", "builder:2026-11-20", { total: "14", redo: "14" }),
+  "history.headEmpty": e("{total} 手", "builder:2026-11-20", { total: "0" }),
+  "history.undo": e("取り消す", "mock:F-History"),
+  "history.redo": e("やりなおす", "mock:F-History"),
+  // 行の右（仕様書 2 章「履歴の行 ・ 乗った ・ えらんだ」、3 章 Y19）。ボタンの右に key.enter。
+  "history.current": e("いまここ", "mock:F-History"),
+  "history.redoable": e("やりなおせます", "mock:F-History"),
+  "history.jumpHere": e("ここまで戻す", "spec:3"),
+  // 帯のいちばん下の行。見えている行より前の手があるとき。
+  "history.more": e("… {index} 手目より前は、下へスクロール", "mock:F-History", { index: "6" }),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。

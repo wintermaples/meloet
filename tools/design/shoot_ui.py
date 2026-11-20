@@ -166,6 +166,11 @@ BOARDS = {
     "autoBoxDrag": "R10-AutoEdit",
     "historyList": "F-History",
     "historyUndone3": "R10-History",
+    # 第 6 回 区切り3 の 2 回目: 履歴の帯の、乗った行 ・ えらんだ行 ・ キーでえらんだ行（どれも 11 手目）と、5000 手。
+    "historyPointer": "R10-History",
+    "historyPicked": "R10-History",
+    "historyKeys": "R10-History",
+    "history5000": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -371,6 +376,19 @@ await new Promise((r) => setTimeout(r, 300));
 row.previousElementSibling.previousElementSibling.scrollIntoView({ block: "start" });
 """
 
+# Sends a pointer event (pointerenter: on it, pointerdown: pressed) to a row of the history band, by its number.
+HISTORY_ROW = """
+const row = document.querySelector('[data-test="history-list"] .row[data-index="%d"]');
+row.dispatchEvent(new PointerEvent("%s", { bubbles: true, button: 0 }));
+"""
+
+# Puts the keys on the history band and presses these keys.
+HISTORY_KEYS = """
+const list = document.querySelector('[data-test="history-list"]');
+list.focus();
+for (const key of %s) list.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+"""
+
 # Shots that need a click first (a menu is screen-only state): name -> (scene, CSS selector to click).
 # A selector that starts with "js:" is run as a script instead (it may await).
 # Several selectors (a tuple) are clicked one after another.
@@ -440,6 +458,10 @@ CLICKS = {
     "autoMove": ("autoMove", drag_lane(3, 1, "4 + (1 - 0.73) * 39", 1, -4)),
     "autoPress": ("autoMove", drag_lane(5, 3, "4 + (1 - 0.52) * 39")),
     "autoBoxDrag": ("autoMove", drag_lane(2, 3, "4", 14, 40)),
+    # R10-History: 11 手目に乗せる、押してえらぶ、帯にフォーカスを置いて ↓ ↓（いまの 13 手目から 11 手目へ）。
+    "historyPointer": ("historyUndone3", "js:" + HISTORY_ROW % (11, "pointerenter")),
+    "historyPicked": ("historyUndone3", "js:" + HISTORY_ROW % (11, "pointerdown")),
+    "historyKeys": ("historyUndone3", "js:" + HISTORY_KEYS % '["ArrowDown", "ArrowDown"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -560,6 +582,10 @@ ONLY = {
     "autoBoxDrag": [(1280, 800, 100)],
     "historyList": [(1280, 800, 100), (1280, 800, 150)],
     "historyUndone3": [(1280, 800, 100)],
+    "historyPointer": [(1280, 800, 100)],
+    "historyPicked": [(1280, 800, 100)],
+    "historyKeys": [(1280, 800, 100), (1280, 800, 150)],
+    "history5000": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

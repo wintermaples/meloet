@@ -1234,3 +1234,10 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
   - [`stretch-and-pitch.md`](research/stretch-and-pitch.md): **Signalsmith Stretch（MIT、C++ のヘッダ）**をすすめる（声の感じ、ブロックごとの比）。Rubber Band は GPL か商用、SoundTouch は LGPL、aubio ・ Essentia は GPL ・ AGPL。声の良さと CPU の数は見つからない（区切り4 で聞いて測る）。
   - [`drop-and-tempo-x8.md`](research/drop-and-tempo-x8.md): ドラッグは Tauri の標準のまま Wayland でも動くはず（本物の Nautilus の記録はない）。位置は拡大率をかけない論理ピクセル。プラグインへのテンポは VST3 も LV2 も 4 分音符の数（Ardour ・ Surge XT と同じ。LV2 の仕様の文とはずれる）。
 - **0-4 決める事**: `architecture.md` 22 章（149063d）。ティック 1920（直しは 2 歩: 数に名前をつけてから 1920）、テンポは 4 分音符、曲の版 6（版 1〜5 は読めなくする）、曲のフォルダと作業の場所、入口と出口の時刻、録った歌の位置（頭だけ時刻、あとはこまを数える）、録る流れ（自分で書く wav、`0xFFFFFFFF` の長さ）、先読みの係、波形（5 段のピーク、テクスチャ、区画をふやさない）、歌のクリップのデータ、書き出し（2 つめのエンジンと書き出しのプラグイン係、しめきりなしで待つ）、版の上げかた、区切り1 の切り分け。棟梁の決めは 22-14。
+- オーナーさんの答え（2026-11-21、design-notes C-11）: mp3 は出さない。C++ のコンパイラが要るのは OK。前の版の `recovery.json` の案内は OK。マイクとドラッグのためしは OK。
+
+### 区切り1: 時間の土台を作りなおす（1920 と、4 分音符のテンポ）（2026-11-21〜）
+
+- 1 歩め（数に名前をつける。定数は 480 のまま、答えは変えない。22-1）: meloet-impl 2 人が同時に（どちらも Opus 5.5）。イ（`ui/` と `tools/`、673a1d0）: 画面の定数を `ui/src/time/ticks.ts` の 1 つに、試験 44 ファイルと `fake.ts`、Python の道具 6 つ（`make_song.py` の出す物は前と 1 バイトも同じ）。ア（`crates/` の試験、297132c、merge 4d30382）: 41 ファイル。どちらも 1920 にしてためし、数のまま残っていた所をなくした（落ちるのは表示 ・ テンポの意味 ・ 答えの表 ・ 本体の 480 だけ）。check-all（4d30382）: Rust 999 ・ ignored 78、画面 2604。
+  - 見つけた事: 22-1 の表にない 480 の数がもう 1 つ（`crates/meloet-engine/src/clock.rs` の `quarter_bpm_at(tick) * 8.0`）。`engine/tests/automation.rs` は「1 ティック = 50 こま」で答えを整数で作っているので、2 歩めのあとはテンポを `120 × 480 ÷ Q` の式にして 50 こまを保つ（棟梁の決め）。Python の定数は 4 か所（`make_song.py` ・ `tempo_map.py` ・ `plugin_stop_summary.py` ・ `shoot_app.py`。`-I` で動かすので、それぞれが持つ）。
+- 2 歩め（model）: foundation に入れず、作業ツリーのブランチでコミットして、3 歩めの出発点にする（model だけ 1920 にすると、ほかのクレートの試験が 3 歩めまで落ちるため）。

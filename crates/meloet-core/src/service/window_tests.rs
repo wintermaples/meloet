@@ -13,9 +13,9 @@ use meloet_model::StepKind;
 use meloet_plugin::scan::{BundleRecord, BundleStamp, PluginInfo};
 use meloet_plugin::{EditorKind, EffectCategory, InstrumentCategory, PluginFormat, PluginKind};
 use meloet_protocol::{
-    AppState, Band, InsertRef, ParamEnd, ParamKind, ParamRef, ParamValues, PluginSlotRef,
-    PluginState, PluginWindowView, SelectedParams, SelectedPlugin, ServerMessage, ShelfMode,
-    SoundRef, StatusMessage, StripRef,
+    AppState, AutoTarget, Band, EffectRef, InsertEffectView, InsertRef, LaneName, LaneView,
+    ParamEnd, ParamKind, ParamRef, ParamValues, PluginSlotRef, PluginState, PluginWindowView,
+    SelectedParams, SelectedPlugin, ServerMessage, ShelfMode, SoundRef, StatusMessage, StripRef,
 };
 
 use super::plug_tests::{PATIENCE, SURGE_BUNDLE, options, plughost, plugin_of, state_when};
@@ -35,7 +35,20 @@ fn fake_key(name: &str) -> String {
 /// A scan file that knows the fake plugins with windows, which no fake bundle lists. What
 /// it says of their windows is wrong on purpose: the plugin's own word counts once loaded.
 fn know_window_fakes(root: &Path) {
-    let bundle = root.join("lv2/windows.lv2");
+    let synth = PluginKind::Instrument(InstrumentCategory::Synth);
+    let effect = PluginKind::Effect(EffectCategory::Other);
+    let fakes = [
+        ("window", synth),
+        ("knob", synth),
+        ("slowwindow", synth),
+        ("notyet", effect),
+    ];
+    know_fakes(root, "windows", &fakes);
+}
+
+/// A scan file that knows these fake plugins, in a bundle of their own.
+fn know_fakes(root: &Path, stem: &str, fakes: &[(&str, PluginKind)]) {
+    let bundle = root.join(format!("lv2/{stem}.lv2"));
     std::fs::create_dir_all(&bundle).unwrap();
     std::fs::write(bundle.join("plugin.so"), [0u8; 16]).unwrap();
     let info = |name: &str, kind: PluginKind| PluginInfo {
@@ -52,18 +65,12 @@ fn know_window_fakes(root: &Path) {
         },
         audio_outputs: 2,
     };
-    let synth = PluginKind::Instrument(InstrumentCategory::Synth);
     let mut cache = ScanCache::default();
     cache.put(BundleRecord {
         stamp: BundleStamp::read(&bundle).unwrap(),
         path: bundle,
         format: PluginFormat::Lv2,
-        plugins: vec![
-            info("window", synth),
-            info("knob", synth),
-            info("slowwindow", synth),
-            info("notyet", PluginKind::Effect(EffectCategory::Other)),
-        ],
+        plugins: fakes.iter().map(|(name, kind)| info(name, *kind)).collect(),
         stopped: Vec::new(),
     });
     cache.save(&root.join("cache")).unwrap();
@@ -793,4 +800,336 @@ fn surge_xt_a_jump_over_visits_to_its_window_puts_the_state_of_the_row_back() {
     state_when(&core, "no window", |s| s.windows.list.is_empty());
     drop(core);
     let _ = std::fs::remove_dir_all(root);
+}
+
+/// The far end of the lanes of the test, in ticks: two beats, a second at the tempo a song
+/// starts with.
+const LANE_END: u64 = 960;
+/// Frames in a block of [`Core::blocks`].
+const BLOCK: usize = 256;
+
+impl Core {
+    /// The slot of the plugin at `place`.
+    fn plugin_at(&self, place: PluginPlace) -> SlotId {
+        self.peek(move |w| {
+            let tickets = w.model.plugin_tickets();
+            let (_, ticket) = tickets.iter().find(|(p, _)| *p == place).expect("loaded");
+            w.plugins.as_ref().unwrap().ids[ticket].0
+        })
+    }
+
+    /// The plugin's own number for the parameter it calls `name`.
+    fn param_named(&self, id: SlotId, name: &'static str) -> u32 {
+        self.peek(move |w| {
+            let hosts = &w.plugins.as_ref().unwrap().hosts;
+            let params = wait(|done| hosts.params(id, done)).unwrap();
+            let found = params.iter().find(|p| p.name == name);
+            found.map(|p| p.id).unwrap_or_else(|| {
+                let names: Vec<&str> = params.iter().map(|p| p.name.as_str()).take(80).collect();
+                panic!("no parameter {name} in {names:?}")
+            })
+        })
+    }
+
+    /// The value the plugin has for a parameter now; `None` when it does not tell.
+    fn param_now(&self, id: SlotId, param: u32) -> Option<f64> {
+        self.peek(move |w| {
+            let hosts = &w.plugins.as_ref().unwrap().hosts;
+            wait(|done| hosts.param(id, param, done)).ok().map(|p| p.0)
+        })
+    }
+
+    /// What an open stream does with the tempo and the lanes: the engine gets them as the
+    /// rules send them. (Without a stream the core thread keeps them back, as it keeps the
+    /// commands of the transport.)
+    fn lanes_to_engine(&self) {
+        self.peek(|w| {
+            let map = Arc::new(TempoMap::new(&w.model.play().song().doc.timeline));
+            assert!(w.audio.handle.set_tempo_map(map).is_ok());
+            let mut effects = Vec::new();
+            w.model.play_mut().send_automation(true, &mut effects);
+            for effect in effects {
+                let Effect::Engine(EngineOp::Automation { seat, lanes }) = effect else {
+                    continue;
+                };
+                let lanes = (lanes.into_iter())
+                    .map(|lane| meloet_engine::AutoLane {
+                        target: lane.target,
+                        step: lane.step,
+                        points: lane.points,
+                        slot: lane.slot,
+                        effect: lane.effect,
+                    })
+                    .collect();
+                assert!(w.audio.handle.set_automation(seat, lanes).is_ok());
+            }
+        });
+    }
+
+    /// A command of the transport, as an open stream would get it.
+    fn engine(&self, command: EngineCommand) {
+        self.peek(move |w| assert!(w.audio.handle.send(command).is_ok()));
+    }
+
+    fn sample_rate(&self) -> f64 {
+        self.peek(|w| f64::from(w.audio.handle.meters().sample_rate()))
+    }
+
+    /// Runs blocks of the engine as a stream would, each within its real time. A few at a
+    /// time, so that the core thread hears what comes in between.
+    fn blocks(&self, count: usize) {
+        for from in (0..count).step_by(4) {
+            let some = (count - from).min(4);
+            self.peek(move |w| {
+                let mut out = [0.0f32; BLOCK * 2];
+                for _ in 0..some {
+                    let now = monotonic_us();
+                    let timing = meloet_engine::BlockTiming {
+                        callback_us: now,
+                        playback_us: now + 10_000,
+                    };
+                    let engine = w.audio.engine.as_mut().expect("no stream has it");
+                    engine.process(&mut out, timing);
+                    std::thread::sleep(Duration::from_micros(5_333));
+                }
+            });
+        }
+    }
+}
+
+/// A track with the instrument and the effect of `keys`, the effect in its first slot, and
+/// a lane for the parameter each of them calls by the name in `params`. Standing still and
+/// playing, the plugins have the values of the lines (the rules, the engine, the housed
+/// plugin, the plugin process and the plugin itself); the lanes are named whatever the
+/// panel shows; and the panel gets the values of the plugin it shows.
+fn lanes_move_the_plugins(core: &Core, seen: &Seen, keys: [&str; 2], params: [&'static str; 2]) {
+    let track = core.plugin_track(keys[0]);
+    let strip = StripRef::Track { id: track };
+    core.send(Command::OpenShelf {
+        mode: ShelfMode::InsertEffect { strip, slot: 0 },
+    });
+    core.send(Command::ShelfChooseEffect {
+        effect: Some(EffectRef::Plugin {
+            key: keys[1].into(),
+        }),
+    });
+    core.send(Command::ShelfConfirm);
+    let ready = |s: &AppState| {
+        let slot = s.song.tracks.last().and_then(|t| t.slots[0].as_ref());
+        slot.is_some_and(|slot| match &slot.effect {
+            InsertEffectView::Plugin(p) => p.state == PluginState::Ready,
+            InsertEffectView::Builtin { .. } => false,
+        })
+    };
+    let state = state_when(core, "the effect is read", ready);
+    core.send(Command::SelectInsert { insert: None });
+    let index = state.song.tracks.len() - 1;
+    let insert = state.song.tracks[index].slots[0].as_ref().unwrap().id;
+    let of_track = meloet_model::TrackId(track);
+    let places = [
+        PluginPlace::Instrument(of_track),
+        PluginPlace::Insert(meloet_model::StripId::Track(of_track), 0),
+    ];
+    let ids = places.map(|place| core.plugin_at(place));
+    let numbers = [0, 1].map(|n| core.param_named(ids[n], params[n]));
+    let targets = [
+        AutoTarget::Instrument { param: numbers[0] },
+        AutoTarget::Insert {
+            insert,
+            param: numbers[1],
+        },
+    ];
+    let lines = [[0.2f32, 0.8], [0.9, 0.3]];
+    let lanes = |s: &AppState| s.song.tracks[index].lanes.clone();
+    for (target, line) in targets.into_iter().zip(lines) {
+        core.send(Command::AddLane { track, target });
+        for (tick, value) in [(0, line[0]), (LANE_END, line[1])] {
+            let all = lanes(&core.snapshot().state);
+            let lane = all.iter().find(|l| l.target == target).expect("the lane");
+            core.send(Command::AddAutoPoint {
+                lane: lane.lane_id,
+                tick,
+                value: Some(value),
+            });
+        }
+    }
+    let on_line = |n: usize, part: f32| f64::from(lines[n][0] + (lines[n][1] - lines[n][0]) * part);
+
+    // The names of both parameters, though the panel shows neither plugin.
+    let named = |s: &AppState| {
+        let name = |l: &LaneView| match &l.name {
+            LaneName::Plugin { param, .. } => param.clone(),
+            _ => None,
+        };
+        lanes(s).iter().map(name).collect::<Vec<_>>()
+    };
+    let state = state_when(core, "the lanes are named", |s| {
+        named(s).iter().all(Option::is_some)
+    });
+    assert_eq!(named(&state), params.map(|name| Some(name.to_owned())));
+
+    // The song stands still: what sounds is the value of each line at the play line.
+    core.lanes_to_engine();
+    let check = |part: f64, off: f64, when: &str| {
+        for n in 0..2 {
+            let (now, want) = (core.param_now(ids[n], numbers[n]), on_line(n, part as f32));
+            assert!(
+                now.is_some_and(|now| (now - want).abs() < off),
+                "{} {when}, at {part} of the lane: {now:?}, the line says {want}",
+                params[n]
+            );
+        }
+    };
+    for part in [0.0, 0.5, 1.0, 0.25] {
+        let tick = (LANE_END as f64 * part) as u64;
+        core.engine(EngineCommand::Locate { tick });
+        core.blocks(40);
+        check(part, 0.01, "standing still");
+    }
+
+    // It plays: the values go along the lines, and stay at their ends.
+    let tempo = core.snapshot().state.timeline.tempo_bpm;
+    let lane_blocks = LANE_END as f64 / 480.0 * 60.0 / tempo * core.sample_rate() / BLOCK as f64;
+    core.engine(EngineCommand::Play { from: 0 });
+    for (blocks, played) in [(40, 40), (60, 100), (60, 160)] {
+        core.blocks(blocks);
+        check(f64::from(played) / lane_blocks, 0.05, "playing");
+    }
+    core.blocks(lane_blocks as usize - 160 + 20);
+    check(1.0, 0.01, "played to the end");
+    let stop = |core: &Core| {
+        let t_us = monotonic_us();
+        core.engine(EngineCommand::Stop { t_us });
+        core.blocks(10);
+    };
+    stop(core);
+
+    // The panel shows the effect, then the instrument: while the song plays it gets what
+    // the lane gives the plugin it shows, with the plugin's texts, and nothing of the other
+    // plugin.
+    let slots = [
+        Command::SelectInstrument { track },
+        Command::SelectInsert {
+            insert: Some(InsertRef { strip, slot: 0 }),
+        },
+    ];
+    let mut table = None;
+    for n in [1, 0] {
+        core.send(slots[n].clone());
+        let shown = table_when(core, table);
+        table = Some(shown);
+        let panel = selected(&core.snapshot().state).unwrap();
+        assert_eq!(panel.automated, [numbers[n]], "{}", params[n]);
+        std::thread::sleep(QUIET);
+        lock(seen).clear();
+        core.engine(EngineCommand::Play { from: 0 });
+        core.blocks(lane_blocks as usize + 20);
+        stop(core);
+        let end = on_line(n, 1.0);
+        let last = || {
+            let seen = lock(seen);
+            let (_, last) = seen.iter().rfind(|(_, v)| v.table == shown)?;
+            let value = last.values.iter().find(|p| p.id == numbers[n])?;
+            (value.value.is_some_and(|v| (v - end).abs() < 0.01)).then_some(())
+        };
+        wait_for(PATIENCE, last)
+            .unwrap_or_else(|| panic!("{}: the panel was told {:?}", params[n], lock(seen)));
+        let told: Vec<(f64, String)> = (lock(seen).iter())
+            .filter(|(_, v)| v.table == shown)
+            .flat_map(|(_, v)| v.values.clone())
+            .map(|p| {
+                assert_eq!(p.id, numbers[n], "only the lane's parameter moves");
+                (p.value.unwrap(), p.text.expect("the plugin's text"))
+            })
+            .collect();
+        eprintln!("{}: {told:?}", params[n]);
+        // About 30 a second for the second the lane takes.
+        assert!((10..=45).contains(&told.len()), "{} messages", told.len());
+        let (low, high) = (on_line(n, 0.0).min(end), on_line(n, 0.0).max(end));
+        assert!(
+            told.iter()
+                .all(|(v, _)| (low - 0.01..=high + 0.01).contains(v))
+        );
+        let rising = lines[n][1] > lines[n][0];
+        let along = |pair: &[(f64, String)]| (pair[1].0 >= pair[0].0) == rising;
+        assert!(told.windows(2).all(along), "along the line");
+        let texts: std::collections::HashSet<&str> = told.iter().map(|(_, t)| &**t).collect();
+        assert!(texts.len() > 5, "{texts:?}");
+        check_values(&lock(seen), shown);
+    }
+    let rows = core.history_rows(1, 99);
+    let lanes_named = rows.iter().all(|row| match &row.what {
+        meloet_protocol::StepWhat::Lane { target, .. } => {
+            matches!(target, LaneName::Plugin { param: Some(_), .. })
+        }
+        _ => true,
+    });
+    assert!(lanes_named, "{rows:#?}");
+}
+
+#[test]
+fn lanes_move_the_parameters_of_plugins_through_the_core() {
+    let root = plughost::temp_dir("plug-lanes");
+    let effect = PluginKind::Effect(EffectCategory::Other);
+    know_fakes(&root, "gain", &[("gain", effect)]);
+    let core = Core::start(options(&root));
+    let seen = watch_values(&core);
+    state_when(&core, "the scan", |s| s.library.plugins.len() == 3);
+    let keys = [fake_key("sine"), fake_key("gain")];
+    let keys = [keys[0].as_str(), keys[1].as_str()];
+    lanes_move_the_plugins(&core, &seen, keys, ["Level", "Level"]);
+    drop(core);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The real Surge XT with the real ZamComp behind it, both of one format.
+fn real_lanes(format: &str) {
+    let bundles = ["Surge XT", "ZamComp"].map(|name| format!("/usr/lib/{format}/{name}.{format}"));
+    let root = plughost::temp_dir("plug-real-lanes");
+    // A place with nothing but the two: the scan of every plugin of this PC takes a minute.
+    std::fs::create_dir_all(root.join(format)).unwrap();
+    for bundle in &bundles {
+        let bundle = Path::new(bundle);
+        assert!(bundle.is_dir(), "no {bundle:?}");
+        let link = root.join(format).join(bundle.file_name().unwrap());
+        std::os::unix::fs::symlink(bundle, link).unwrap();
+    }
+    let core = Core::start(CoreOptions {
+        config_dir: Some(root.join("config")),
+        songs_dir: Some(root.join("songs")),
+        plugins: Some(PluginOptions {
+            host_exe: plughost::exe(),
+            cache_dir: Some(root.join("cache")),
+            usual_places: vec![root.join(format)],
+            scan_timeout: Duration::from_secs(30),
+            child_env: Vec::new(),
+            wait_for_screen: false,
+        }),
+        ..CoreOptions::offline()
+    });
+    let seen = watch_values(&core);
+    let key = |s: &AppState, name: &str| {
+        let row = s.library.plugins.iter().find(|row| row.name == name)?;
+        Some(row.key.clone()).filter(|key| key.starts_with(format))
+    };
+    let state = state_when(&core, "the scan", |s| {
+        key(s, "Surge XT").is_some() && key(s, "ZamComp").is_some()
+    });
+    let keys = [key(&state, "Surge XT"), key(&state, "ZamComp")].map(Option::unwrap);
+    let keys = [keys[0].as_str(), keys[1].as_str()];
+    lanes_move_the_plugins(&core, &seen, keys, ["A Filter 1 Cutoff", "Threshold"]);
+    drop(core);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+#[ignore = "needs an X display, Surge XT and ZamComp (VST3)"]
+fn surge_xt_and_zamcomp_vst3_follow_their_lanes_through_the_core() {
+    real_lanes("vst3");
+}
+
+#[test]
+#[ignore = "needs an X display, Surge XT and ZamComp (LV2)"]
+fn surge_xt_and_zamcomp_lv2_follow_their_lanes_through_the_core() {
+    real_lanes("lv2");
 }

@@ -1,8 +1,11 @@
 use meloet_model::{PluginPlace, StepKind, TrackId};
-use meloet_protocol::{Band, Command, InsertRef, PluginWindowKind, StripRef};
+use meloet_protocol::{
+    AutoTarget, Band, Command, InsertRef, LaneName, PluginWindowKind, StepName, StepWhat, StripRef,
+};
 
 use super::*;
 use crate::catalog::tests::COMP_VST3;
+use crate::play::automation::NAMES_ASK;
 use crate::play::tests::status;
 use crate::play::windows::tests::{FRESH, KNOB, LEVEL, LOUD, MODE, Rig, state_of};
 use crate::state::Input;
@@ -406,4 +409,163 @@ fn a_value_the_plugin_does_not_tell_has_no_position() {
     r.pass(VALUES_EVERY_US);
     let (_, last) = r.host.values.last().expect("the value came");
     assert_eq!(carried(last), [(LEVEL, Some(0.9), Some("90 %"))]);
+}
+
+fn lane_names(r: &Rig) -> Vec<Option<String>> {
+    (r.m.view().song.tracks[0].lanes.iter())
+        .map(|lane| match &lane.name {
+            LaneName::Plugin { param, .. } => param.clone(),
+            other => panic!("not a plugin's lane: {other:?}"),
+        })
+        .collect()
+}
+
+fn names_asks(effects: &[Effect]) -> Vec<u64> {
+    (effects.iter())
+        .filter_map(|e| match e {
+            Effect::AskPlugin { ticket, ask } if *ask == (PluginAsk::Params { ask: NAMES_ASK }) => {
+                Some(*ticket)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_plugin_the_panel_shows_is_watched_and_its_lanes_are_the_rows_written() {
+    let mut r = Rig::new();
+    let (surge, track, _) = r.surge();
+    let comp = r.effect(track, 0, COMP_VST3);
+    let insert = r.m.view().song.tracks[0].slots[0].as_ref().unwrap().id;
+    r.cmd(Command::SelectInsert { insert: None });
+    r.settle();
+    r.host.watches.clear();
+    let lane = |r: &mut Rig, target| r.cmd(Command::AddLane { track, target });
+
+    // Nothing is watched while the panel shows no plugin, lanes or not.
+    lane(&mut r, AutoTarget::Instrument { param: MODE });
+    r.settle();
+    assert!(r.host.watches.is_empty());
+
+    r.cmd(Command::SelectInstrument { track });
+    assert_eq!(r.host.watches, [(surge, true)]);
+    assert_eq!(r.selected().automated, [] as [u32; 0], "no table yet");
+    r.settle();
+    assert_eq!(r.selected().automated, [MODE]);
+    // In the order of the table, whatever the order of the lanes.
+    lane(&mut r, AutoTarget::Instrument { param: LEVEL });
+    lane(
+        &mut r,
+        AutoTarget::Insert {
+            insert,
+            param: LOUD,
+        },
+    );
+    lane(&mut r, AutoTarget::Volume);
+    assert_eq!(r.selected().automated, [LEVEL, MODE]);
+    assert_eq!(r.host.watches, [(surge, true)], "told once");
+
+    // What a lane gives the plugin goes to the screen as any value of it does.
+    r.host.values.clear();
+    let steps = r.undo_count();
+    let now = ParamNow {
+        id: LEVEL,
+        value: Some(0.25),
+        text: Some("25 %".into()),
+    };
+    r.said(surge, PluginSaid::Param(now));
+    r.pass(VALUES_EVERY_US);
+    let sent: Vec<_> = r.host.values.iter().map(|(_, v)| carried(v)).collect();
+    assert_eq!(sent, [[(LEVEL, Some(0.25), Some("25 %"))]]);
+    assert_eq!(r.undo_count(), steps, "a value a lane gave is no step");
+
+    // Another plugin in the panel: the first is let go.
+    let slot = InsertRef {
+        strip: StripRef::Track { id: track },
+        slot: 0,
+    };
+    r.cmd(Command::SelectInsert { insert: Some(slot) });
+    r.settle();
+    assert_eq!(r.host.watches[1..], [(surge, false), (comp, true)]);
+    assert_eq!(r.selected().automated, [LOUD]);
+    r.cmd(Command::SelectInsert { insert: None });
+    assert_eq!(r.host.watches[3..], [(comp, false)]);
+}
+
+#[test]
+fn the_names_of_the_lanes_parameters_come_whatever_the_panel_shows() {
+    let mut r = Rig::new();
+    let (surge, track, _) = r.surge();
+    r.effect(track, 0, COMP_VST3);
+    let insert = r.m.view().song.tracks[0].slots[0].as_ref().unwrap().id;
+    r.cmd(Command::SelectInsert { insert: None });
+    r.settle();
+    let lane = |r: &mut Rig, target| r.cmd(Command::AddLane { track, target });
+
+    // The panel shows nothing: the plugin is asked for its list, once.
+    let effects = lane(&mut r, AutoTarget::Instrument { param: MODE });
+    assert_eq!(names_asks(&effects), [surge]);
+    assert_eq!(lane_names(&r), [None]);
+    let effects = r.cmd(Command::SelectInsert { insert: None });
+    assert!(names_asks(&effects).is_empty());
+    r.settle();
+    assert_eq!(lane_names(&r), [Some("Mode".to_owned())]);
+    assert_eq!(r.selected_or_none(), None, "the list was not the panel's");
+
+    // The panel shows the compressor: the lane of the instrument is named all the same,
+    // and the lane of the compressor from the table the panel has.
+    let slot = InsertRef {
+        strip: StripRef::Track { id: track },
+        slot: 0,
+    };
+    r.cmd(Command::SelectInsert { insert: Some(slot) });
+    r.settle();
+    let table = r.selected().table;
+    let effects = lane(
+        &mut r,
+        AutoTarget::Insert {
+            insert,
+            param: LOUD,
+        },
+    );
+    assert!(names_asks(&effects).is_empty());
+    let effects = lane(&mut r, AutoTarget::Instrument { param: LEVEL });
+    assert_eq!(names_asks(&effects), [surge]);
+    r.settle();
+    let names = ["Mode", "Loud", "Level"].map(|name| Some(name.to_owned()));
+    assert_eq!(lane_names(&r), names);
+    assert_eq!(r.selected().table, table, "the panel keeps its table");
+
+    // A parameter the plugin does not list has no name, and is not asked for again.
+    let effects = lane(&mut r, AutoTarget::Instrument { param: 77 });
+    assert_eq!(names_asks(&effects), [surge]);
+    r.settle();
+    assert_eq!(lane_names(&r)[3], None);
+    let effects = r.cmd(Command::SelectInsert { insert: None });
+    assert!(names_asks(&effects).is_empty());
+
+    // The rows of the history name the parameter too, also of a lane that is gone.
+    let target = AutoTarget::Instrument { param: MODE };
+    r.cmd(Command::DeleteLane { track, target });
+    let rows = r.m.history_rows(1, 99);
+    let named: Vec<(StepName, Option<String>)> = (rows.into_iter())
+        .filter_map(|row| match row.what {
+            StepWhat::Lane {
+                target: LaneName::Plugin { param, .. },
+                ..
+            } => Some((row.name, param)),
+            _ => None,
+        })
+        .collect();
+    let name = |name: &str| Some(name.to_owned());
+    assert_eq!(
+        named,
+        [
+            (StepName::AddLane, name("Mode")),
+            (StepName::AddLane, name("Loud")),
+            (StepName::AddLane, name("Level")),
+            (StepName::AddLane, None),
+            (StepName::DeleteLane, name("Mode")),
+        ]
+    );
 }

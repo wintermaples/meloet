@@ -771,6 +771,38 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
     }
 }
 
+/// The lane a step is of.
+fn lane_of(kind: &StepKind) -> Option<(TrackId, ModelTarget)> {
+    match *kind {
+        StepKind::AddLane { track, target }
+        | StepKind::DeleteLane { track, target }
+        | StepKind::AddAutoPoint { track, target }
+        | StepKind::MoveAutoPoints { track, target, .. }
+        | StepKind::DeleteAutoPoints { track, target, .. }
+        | StepKind::WriteAutomation { track, target }
+        | StepKind::RestLane { track, target }
+        | StepKind::RestoreLane { track, target } => Some((track, target)),
+        _ => None,
+    }
+}
+
+/// The key of the plugin a lane moves in `doc`, and the plugin's own number for the
+/// parameter.
+fn lane_plugin(doc: &Doc, track: TrackId, target: ModelTarget) -> Option<(&str, u32)> {
+    let t = doc.track(track)?;
+    match target {
+        ModelTarget::Instrument { param } => match &t.instrument {
+            InstrumentRef::Plugin(p) => Some((&p.key, param)),
+            _ => None,
+        },
+        ModelTarget::Insert { insert, param } => {
+            let insert = (t.channel.inserts.iter().flatten()).find(|i| i.id == insert)?;
+            Some((&insert.plugin_ref()?.key, param))
+        }
+        _ => None,
+    }
+}
+
 impl Play {
     pub fn history_view(&self) -> HistoryView {
         let (undone, redo) = (self.history.undo_count(), self.history.redo_count());
@@ -797,9 +829,18 @@ impl Play {
     /// Row `index` of the band, from 1. The status line says of a step what its row says.
     fn history_row(&self, index: usize) -> Option<HistoryRow> {
         let row = self.history.row(self.doc(), index.checked_sub(1)?)?;
-        let (mut name, what, place) = step_text(&row);
+        let (mut name, mut what, place) = step_text(&row);
         if let StepName::SetPluginParam { param, .. } = &mut name {
             *param = self.step_notes.param_names.get(&row.number).cloned();
+        }
+        // The plugin's name for the parameter is in neither `Doc`.
+        if let StepWhat::Lane { target, .. } = &mut what
+            && let LaneName::Plugin { param, .. } = target
+            && let Some((track, target)) = lane_of(&row.kind)
+        {
+            *param = lane_plugin(row.after, track, target)
+                .or_else(|| lane_plugin(row.before, track, target))
+                .and_then(|(key, n)| self.auto.names.get(key, n));
         }
         Some(HistoryRow {
             index: count(index),

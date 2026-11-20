@@ -15,7 +15,7 @@
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed, Ordering::SeqCst};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,9 @@ const TOUCHED: usize = 32;
 /// meloet's own audio thread 88 where the limits allow and the same 20 through rtkit, so this
 /// thread never stands above the one it works for.
 const PRIORITY: u32 = 20;
+/// Values of meloet's points that wait for the main thread, for one watched plugin. It
+/// takes them 30 times a second; when the ring is full the newest are dropped.
+const MOVED: usize = 512;
 const RT_ENV: &str = "MELOET_PLUGHOST_RT";
 
 /// One plugin in one slot, with every buffer its blocks need.
@@ -49,6 +52,29 @@ pub struct SlotRun {
     /// The parameters the person has hold of in the plugin's window: meloet's points for
     /// them are passed over (docs/architecture.md 21-10).
     touched: Vec<u32>,
+    watched: Arc<AtomicBool>,
+    moved: rtrb::Producer<(u32, f64)>,
+}
+
+/// The main thread's end of what meloet's points did to the parameters of one plugin: told
+/// only while the plugin is watched (`Request::Watch`, docs/architecture.md 21-8).
+pub struct Moved {
+    watched: Arc<AtomicBool>,
+    values: rtrb::Consumer<(u32, f64)>,
+}
+
+impl Moved {
+    pub fn watch(&mut self, on: bool) {
+        self.watched.store(on, Relaxed);
+        if !on {
+            while self.values.pop().is_ok() {}
+        }
+    }
+
+    /// The values given since the last call, oldest first.
+    pub fn take(&mut self) -> impl Iterator<Item = (u32, f64)> + '_ {
+        std::iter::from_fn(|| self.values.pop().ok())
+    }
 }
 
 impl SlotRun {
@@ -58,10 +84,16 @@ impl SlotRun {
         end: PluginEnd,
         processor: Box<dyn Processor>,
         latency: u32,
-    ) -> SlotRun {
+    ) -> (SlotRun, Moved) {
         let geometry = map.geometry();
         let buffer = || vec![0.0f32; geometry.max_frames as usize].into_boxed_slice();
-        SlotRun {
+        let watched = Arc::new(AtomicBool::new(false));
+        let (moved, values) = rtrb::RingBuffer::new(MOVED);
+        let main = Moved {
+            watched: watched.clone(),
+            values,
+        };
+        let run = SlotRun {
             end,
             processor,
             inputs: [buffer(), buffer()],
@@ -71,7 +103,10 @@ impl SlotRun {
             sink: EventSink::with_capacity(SINK_EVENTS),
             latency,
             touched: Vec::with_capacity(TOUCHED),
-        }
+            watched,
+            moved,
+        };
+        (run, main)
     }
 
     fn touch(&mut self, id: u32, on: bool) {
@@ -110,9 +145,13 @@ impl SlotRun {
         for (channel, input) in self.inputs.iter_mut().enumerate() {
             self.end.read_input(channel, &mut input[..frames]);
         }
+        let watched = self.watched.load(Relaxed);
         while let Some(event) = self.end.pop_event() {
             let held = matches!(event, ToPlugin::Param { id, .. } if self.touched.contains(&id));
             if !held && self.events.len() < self.events.capacity() {
+                if watched && let ToPlugin::Param { id, value, .. } = event {
+                    let _ = self.moved.push((id, value));
+                }
                 self.events.push(event);
             }
         }
@@ -499,7 +538,8 @@ mod tests {
             .take(8)
             .map(|p| p.id)
             .collect();
-        let mut run = SlotRun::new(&map, end, loaded.processor, loaded.plugin.latency);
+        let (mut run, mut moved) = SlotRun::new(&map, end, loaded.processor, loaded.plugin.latency);
+        moved.watch(true);
         let input: Vec<f32> = (0..256).map(|i| (i as f32 * 0.05).sin() * 0.3).collect();
         let mut out = [0.0f32; 256];
         let mut said = Vec::new();
@@ -595,7 +635,7 @@ mod tests {
         let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
         let end = PluginEnd::new(map.clone(), 0).unwrap();
         let counts: Arc<[std::sync::atomic::AtomicU32; 8]> = Arc::new(Default::default());
-        let mut run = SlotRun::new(&map, end, Box::new(Count(counts.clone())), 0);
+        let (mut run, mut moved) = SlotRun::new(&map, end, Box::new(Count(counts.clone())), 0);
         let mut block = |run: &mut SlotRun, held: Option<u32>| {
             assert!(engine.begin(64));
             for (frame, id) in [(10, 5), (63, 5), (63, 6)] {
@@ -614,10 +654,19 @@ mod tests {
             [counts[5].load(SeqCst), counts[6].load(SeqCst)]
         };
         assert_eq!(block(&mut run, None), [2, 1]);
+        assert_eq!(moved.take().count(), 0, "nobody watches");
+        moved.watch(true);
         run.touch(5, true);
         assert_eq!(block(&mut run, Some(5)), [1, 1]);
+        // Neither the held parameter's points nor the person's own change are meloet's.
+        assert_eq!(moved.take().collect::<Vec<_>>(), [(6, 0.5)]);
         run.touch(5, false);
         assert_eq!(block(&mut run, None), [2, 1]);
+        let told: Vec<_> = moved.take().collect();
+        assert_eq!(told, [(5, 0.5), (5, 0.5), (6, 0.5)]);
+        moved.watch(false);
+        assert_eq!(block(&mut run, None), [2, 1]);
+        assert_eq!(moved.take().count(), 0);
     }
 
     /// What a plugin makes of a jump of a parameter in the middle of a block: the block of
@@ -651,7 +700,7 @@ mod tests {
         );
         let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
         let end = PluginEnd::new(map.clone(), 0).unwrap();
-        let mut run = SlotRun::new(&map, end, loaded.processor, 0);
+        let (mut run, _moved) = SlotRun::new(&map, end, loaded.processor, 0);
         let mut out = [0.0f32; 512];
         let mut block = |events: &[ToPlugin]| {
             assert!(engine.begin(512));

@@ -670,7 +670,7 @@ impl Play {
                         table: table.map(|(number, _)| number),
                         count: table.map_or(0, |(_, count)| count),
                         row: self.mixer.row.filter(|&row| self.has_param(row)),
-                        automated: Vec::new(),
+                        automated: self.automated_rows(*place),
                     }))
                 }
             });

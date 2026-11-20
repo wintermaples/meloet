@@ -42,6 +42,8 @@ pub(crate) struct FakeHost {
     /// How many parameters that only take a keyboard's knobs every plugin lists besides
     /// its three, from id `KNOB`.
     pub knobs: u32,
+    /// Every `PluginAsk::Watch`, in order.
+    pub watches: Vec<(u64, bool)>,
 }
 
 pub(crate) fn state_of(values: [f64; 3]) -> Arc<[u8]> {
@@ -158,6 +160,10 @@ impl FakeHost {
                 ask,
                 state: alive.then(|| state_of(self.plugins[&ticket])),
             },
+            PluginAsk::Watch { on } => {
+                self.watches.push((ticket, on));
+                return None;
+            }
             _ if !alive => return None,
             PluginAsk::OpenWindow { .. } | PluginAsk::CloseWindow => return None,
             PluginAsk::Params { ask } => PluginSaid::Params {
@@ -281,6 +287,10 @@ impl Rig {
 
     pub fn undo_count(&self) -> u32 {
         self.m.view().song.undo_count
+    }
+
+    pub fn selected_or_none(&self) -> Option<SelectedParams> {
+        self.m.view().params.selected
     }
 
     pub fn selected(&self) -> meloet_protocol::SelectedPlugin {

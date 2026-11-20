@@ -289,6 +289,10 @@ pub enum PluginAsk {
     State(StateAsk),
     /// What value the typed text stands for. Answer with [`PluginSaid::TextRead`].
     ReadText { param: u32, text: String },
+    /// The parameters panel shows the plugin now (`on`), or no longer does. While it does,
+    /// a [`PluginSaid::Param`] comes for what the lanes do to its parameters
+    /// (docs/architecture.md 21-8).
+    Watch { on: bool },
 }
 
 /// What a state is asked for.

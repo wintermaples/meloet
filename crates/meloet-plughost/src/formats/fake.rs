@@ -4,6 +4,7 @@
 //! To load (`lv2:` keys; the bundle is not looked at):
 //! - `urn:meloet:fake:sine`: an instrument. A sine at the key held; parameter 0 is its level.
 //! - `urn:meloet:fake:pass`: an effect. The input, untouched.
+//! - `urn:meloet:fake:gain`: an effect. The input, as loud as its parameter 0 says.
 //! - `urn:meloet:fake:segv`: as `pass` until its first note, then it crashes inside `process`.
 //! - `urn:meloet:fake:hang`: as `pass` until its first note, then `process` never returns.
 //! - `urn:meloet:fake:window`: as `sine`, with a window meloet opens (an empty one) and two
@@ -68,6 +69,9 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             phase: 0.0,
         }),
         "pass" | "notyet" => Box::new(Pass { fault: None }),
+        "gain" => Box::new(Gain {
+            level: level.clone(),
+        }),
         "segv" => Box::new(Pass {
             fault: Some(Fault::Crash),
         }),
@@ -92,7 +96,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
         },
         controller: Box::new(FakeController {
             level,
-            has_level: instrument,
+            has_level: instrument || name == "gain",
             window,
             mode: 0.0,
             loud: 0.0,
@@ -144,6 +148,32 @@ impl Processor for Pass {
         }
         for (output, input) in block.outputs.iter_mut().zip(block.inputs) {
             output.copy_from_slice(input);
+        }
+    }
+
+    fn reset(&mut self) {}
+}
+
+/// An effect with one parameter: how loud what goes through it comes out.
+struct Gain {
+    level: Arc<AtomicU64>,
+}
+
+impl Processor for Gain {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+        for event in block.events {
+            if let ToPlugin::Param {
+                id: LEVEL, value, ..
+            } = *event
+            {
+                self.level.store(value.to_bits(), Relaxed);
+            }
+        }
+        let level = f64::from_bits(self.level.load(Relaxed)) as f32;
+        for (output, input) in block.outputs.iter_mut().zip(block.inputs) {
+            for (out, sample) in output.iter_mut().zip(input.iter()) {
+                *out = sample * level;
+            }
         }
     }
 

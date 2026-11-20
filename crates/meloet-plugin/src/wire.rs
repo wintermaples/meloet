@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::PluginKey;
 use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 3;
+pub const WIRE_VERSION: u32 = 4;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -83,6 +83,10 @@ pub enum Request {
     OpenEditor { slot: u32, title: String },
     /// Closes the plugin's window; `Ok` also when there was none. No `EditorClosed` follows.
     CloseEditor { slot: u32 },
+    /// meloet shows this plugin's parameters now (`on`), or no longer does. While it does,
+    /// what meloet's automation does to the plugin's parameters is told with
+    /// `ParamAutomated`. Answered by `Ok`.
+    Watch { slot: u32, on: bool },
     /// Unloads everything and ends the process.
     Quit,
 }
@@ -282,6 +286,16 @@ pub enum Notice {
     },
     /// … and let it go.
     ParamEnd { slot: u32, id: u32, t_us: u64 },
+    /// meloet's automation gave a parameter this value in a block (the last one, when it
+    /// gave several). Only for a plugin under `Watch`, at most 30 a second for one
+    /// parameter, and not for a parameter the person holds in the window. `text` as
+    /// `ParamNow::text`.
+    ParamAutomated {
+        slot: u32,
+        id: u32,
+        value: f64,
+        text: Option<String>,
+    },
     /// The plugin says its delay changed, outside a block (VST3 `kLatencyChanged`).
     LatencyChanged { slot: u32, frames: u32 },
     /// The plugin says that any of its parameters may have another value now (it loaded a
@@ -635,6 +649,7 @@ mod tests {
                 title: "Surge XT".into(),
             },
             Request::CloseEditor { slot: 1 },
+            Request::Watch { slot: 1, on: true },
             Request::Quit,
         ];
         for request in requests {
@@ -687,6 +702,12 @@ mod tests {
                 slot: 1,
                 id: 2,
                 t_us: 3,
+            },
+            Notice::ParamAutomated {
+                slot: 1,
+                id: 2,
+                value: 0.25,
+                text: Some("-12.0 dB".into()),
             },
             Notice::LatencyChanged {
                 slot: 1,

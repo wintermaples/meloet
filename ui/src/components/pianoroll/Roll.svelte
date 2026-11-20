@@ -74,7 +74,7 @@
   const drums = $derived(rollShowsDrums(app, shown.clip, shown.track));
   /** ドラムの行の鍵（上から）。SF2 のキットは、そのキットが音を持つ鍵だけ。 */
   const drumKeys = $derived(
-    drumKeysOf(shown.clip ? shown.track : (song.tracks.find((x) => x.id === song.playTarget) ?? null), drums),
+    drumKeysOf(shown.clip ? shown.track : (song.tracks.find((x) => x.id === song.keysTarget) ?? null), drums),
   );
   $effect(() => {
     prView.drums = !!drums;

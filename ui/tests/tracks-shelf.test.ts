@@ -285,14 +285,17 @@ describe("トラックの見出し（モック R6-Tracks ・ R7-Arrange6）", ()
     ]);
   });
 
-  it("音源の名前を押すと棚が「入れかえる」でひらく。「＋ トラックを追加」は「新しいトラック」。右の文は「音源」", () => {
+  it("音源の名前を押すと、その音源をえらぶ（19-A）。「＋ 鍵盤のトラック」は「新しいトラック」、「＋ 歌のトラック」は歌のトラックを足す", () => {
     show(Arrange, scene("tracks6"));
     qa("[data-test=track-instrument]")[1]!.click();
     q("[data-test=add-track]")!.click();
-    expect(text(q("[data-test=add-track]"))).toBe(`${t("arrange.addTrack")}${t("arrange.addTrackInstrument")}`);
+    q("[data-test=add-vocal-track]")!.click();
+    expect(text(q("[data-test=add-track]"))).toBe(t("arrange.addKeysTrack"));
+    expect(text(q("[data-test=add-vocal-track]"))).toBe(t("arrange.addVocalTrack"));
     expect(app.sent).toEqual([
-      { type: "openShelf", mode: { kind: "replace", track: 12 } },
+      { type: "selectInstrument", track: 12 },
       { type: "openShelf", mode: { kind: "newTrack" } },
+      { type: "addVocalTrack" },
     ]);
   });
 

@@ -35,17 +35,17 @@ export function drumKeysOf(track: Pick<TrackView, "drumKeys"> | null | undefined
 
 /**
  * ピアノロールがドラムの行を見せるか: 見せているクリップのトラックの音源がドラムのキット。クリップのない所では、書くと
- * クリップができる先（選んだトラック）の音源で決める。
+ * クリップができる先（鍵盤の行き先 keysTarget。ふだんは選んだトラック）の音源で決める。
  */
 export function rollShowsDrums(app: Pick<AppState, "song">, clip: ClipView | null, track: TrackView | null): Drums {
   if (clip) return trackDrums(track);
-  return trackDrums(app.song.tracks.find((x) => x.id === app.song.playTarget));
+  return trackDrums(app.song.tracks.find((x) => x.id === app.song.keysTarget));
 }
 
-/** ピアノロールが見せているクリップ（なければ選んだトラック）のトラック。 */
+/** ピアノロールが見せているクリップ（なければ鍵盤の行き先 keysTarget）のトラック。 */
 export function pianoRollTrack(app: Pick<AppState, "song" | "arrange">): TrackView | null {
   const id = app.arrange.pianoRollClip;
-  if (id === null) return app.song.tracks.find((x) => x.id === app.song.playTarget) ?? null;
+  if (id === null) return app.song.tracks.find((x) => x.id === app.song.keysTarget) ?? null;
   return app.song.tracks.find((x) => x.clips.some((c) => c.id === id)) ?? null;
 }
 
@@ -105,7 +105,7 @@ export function keysDrums(app: Pick<AppState, "shelf" | "transport" | "song" | "
     const preset = app.library.sf2.find((f) => f.file === picked.file)?.presets.find((p) => p.bank === picked.bank && p.program === picked.program);
     return preset?.family === "drumKit" ? "sf2" : false;
   }
-  const id = rec ? rec.track : app.song.playTarget;
+  const id = rec ? rec.track : app.song.keysTarget;
   return trackDrums(app.song.tracks.find((x) => x.id === id));
 }
 

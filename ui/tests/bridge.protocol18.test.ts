@@ -165,7 +165,8 @@ describe("偽物の答え（約束 18 の意図）", () => {
     const surge = scene("paramMany");
     const track = surge.song.tracks[0]!.id;
     expect(selectedInstrument(run({ ...surge, params: { selected: null } }, { type: "selectInstrument", track }).params)).toBe(track);
-    expect(run(surge, { type: "selectInstrument", track: surge.song.tracks[1]!.id }).params).toEqual(surge.params);
+    // 最初から入っている音色は、パラメータがないことを欄で言う（19-A）。
+    expect(run(surge, { type: "selectInstrument", track: surge.song.tracks[1]!.id }).params.selected).toMatchObject({ kind: "sound", track: surge.song.tracks[1]!.id });
     expect(pluginOf(run(surge, { type: "selectParam", param: 1012 }).params)?.row).toBe(1012);
   });
 

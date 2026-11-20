@@ -19,6 +19,7 @@
     type StatusMessage,
     type TrackRef,
     type ValueField,
+    type VocalRef,
   } from "../bridge";
   import type { Scale } from "../design/tokens";
   import { everyGlFrame } from "../gl/slot";
@@ -183,6 +184,50 @@
       textParts(n.names.length > 4 ? "status.notesSelectedMore" : "status.notesSelected", values),
       n.quantized ? textParts("status.notesQuantized", {}) : [],
     );
+  }
+
+  /** 帯もいっしょに消えたとき、文の最初の「。」の前に「（そのパラメータの帯 2 本も消えました）」（仕様書 3 章 92-19 ・ 6 章）。 */
+  function withLanes(shown: Shown, lanesRemoved: number): Shown {
+    if (lanesRemoved <= 0) return shown;
+    const gone = textParts("msg.lanesAlsoGone", { count: lanesRemoved });
+    const at = shown.parts.findIndex((p) => p.hole === null && p.text.includes("。"));
+    if (at < 0) return { ...shown, parts: [...shown.parts, ...gone] };
+    const part = shown.parts[at]!;
+    const cut = part.text.indexOf("。");
+    const parts = [
+      ...shown.parts.slice(0, at),
+      { text: part.text.slice(0, cut), hole: null },
+      ...gone,
+      { text: part.text.slice(cut), hole: null },
+      ...shown.parts.slice(at + 1),
+    ].filter((p) => p.text !== "");
+    return { ...shown, parts };
+  }
+
+  /**
+   * 歌を録っている文（仕様書 6 章「歌を録っている」「鍵盤と歌を録っている」）。頭の「● 録音中 ・ 」は左の札が言うので、文からは外す。
+   * モニターがオフなら「モニター オン ・ 」を外す。歌が 2 本以上なら「6 歌（入口 1）、7 歌 2（入口 2）」とならべる（仕様書にない形）。
+   */
+  function recordingVocalsParts(keys: TrackRef | null, vocals: VocalRef[], monitor: boolean): TextPart[] {
+    const short = (v: VocalRef) => t(`vocal.inputShort.${v.input}`);
+    const last = vocals.at(-1);
+    if (!last) return keys ? textParts("msg.recording", { track: track(keys), take: app.transport.recording?.take ?? 1 }) : [];
+    const lead = vocals.slice(0, -1).map((v) => `${track(v.track)}（${short(v)}）`);
+    const vocal = [...lead, track(last.track)].join(LIST_COMMA);
+    const values = { stopKey: t("key.playStop"), input: short(last) };
+    const parts = keys
+      ? textParts("msg.recordingKeysAndVocal", { ...values, keys: track(keys), vocal })
+      : textParts("msg.recordingVocal", { ...values, track: vocal });
+    const badge = `${t("status.recording")}${STATUS_JOIN}`;
+    const monitorOn = `${t("meter.monitorOn")}${STATUS_JOIN}`;
+    return parts
+      .map((p, i) => {
+        if (p.hole !== null) return p;
+        let text = i === 0 && p.text.startsWith(badge) ? p.text.slice(badge.length) : p.text;
+        if (!monitor) text = text.replace(monitorOn, "");
+        return { ...p, text };
+      })
+      .filter((p) => p.text !== "");
   }
 
   function shown(m: StatusMessage | null): Shown | null {
@@ -361,11 +406,14 @@
       case "trackDeleted":
         return plain("msg.trackDeleted", { track: track(m.track), undoKey: modKey(t("key.undo")) });
       case "instrumentReplaced":
-        return plain("msg.instrumentReplaced", {
-          track: track(m.track),
-          instrument: t(`instrument.${m.instrument}`),
-          undoKey: modKey(t("key.undo")),
-        });
+        return withLanes(
+          plain("msg.instrumentReplaced", {
+            track: track(m.track),
+            instrument: t(`instrument.${m.instrument}`),
+            undoKey: modKey(t("key.undo")),
+          }),
+          m.lanesRemoved,
+        );
       case "auditionNewTrack":
         return plain("status.auditionNewTrack", { instrument: t(`instrument.${m.instrument}`), key: t("key.enter") });
       case "auditionReplace":
@@ -391,7 +439,10 @@
       case "samplePlayingSound":
         return plain("msg.samplePlaying", { name: soundNameText(m.sound) });
       case "instrumentReplacedSound":
-        return plain("msg.instrumentReplaced", { track: track(m.track), instrument: soundNameText(m.sound), undoKey: modKey(t("key.undo")) });
+        return withLanes(
+          plain("msg.instrumentReplaced", { track: track(m.track), instrument: soundNameText(m.sound), undoKey: modKey(t("key.undo")) }),
+          m.lanesRemoved,
+        );
       case "soundLoading":
         return plain("msg.auditionLoading", { name: soundNameText(m.sound) });
       case "pluginLoading":
@@ -472,11 +523,17 @@
       case "effectInserted":
         return plain("msg.effectInserted", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect) });
       case "effectRemoved":
-        return plain("msg.effectRemoved", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect), undoKey: modKey(t("key.undo")) });
+        return withLanes(
+          plain("msg.effectRemoved", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect), undoKey: modKey(t("key.undo")) }),
+          m.lanesRemoved,
+        );
       case "insertsReordered":
         return plain("msg.insertsReordered", { strip: stripName(app.song, m.strip, app.library), order: m.order.map(effectName).join(" → ") });
       case "insertReplaced":
-        return plain("msg.insertReplaced", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect), undoKey: modKey(t("key.undo")) });
+        return withLanes(
+          plain("msg.insertReplaced", { strip: insertStrip(m.insert), slot: m.insert.slot + 1, effect: effectName(m.effect), undoKey: modKey(t("key.undo")) }),
+          m.lanesRemoved,
+        );
       case "effectBypassed":
         return plain(m.bypassed ? "msg.effectBypassed" : "msg.effectRestored", { target: insertTarget(m.insert, m.effect) });
       case "pluginWindowOpening":
@@ -517,6 +574,23 @@
         if (m.nothingSelected) return plain("status.noSelection");
         return null;
       }
+      // 第 7 回 区切り2（約束 23）
+      case "noParams":
+        return plain("msg.noSoundParams", { name: soundNameText(m.sound) });
+      case "vocalTrackAdded":
+        return plain("msg.vocalTrackAdded", { track: track(m.track), input: t(`vocal.inputShort.${m.input}`) });
+      case "noInput":
+        return { ...plain("msg.noAudioInput"), button: settings(true, t("button.audioSettingsEllipsis")) };
+      case "monitorFirstOn":
+        return plain("msg.monitorFirstOn", { ms: m.latencyMs === null ? t("meter.playTargetNone") : String(Math.round(m.latencyMs)) });
+      case "micTooLoud":
+        return plain("msg.micTooLoud");
+      case "vocalHasNoPianoRoll":
+        return plain("msg.vocalNoPianoRoll");
+      case "recordingVocals":
+        return { parts: recordingVocalsParts(m.keys, m.vocals, m.monitor), strong: [], button: null };
+      case "latencyMeasureOpen":
+        return plain("status.songDialogOpen", { dialog: t("latency.title") });
       default:
         return null;
     }
@@ -633,7 +707,7 @@
 
   const noClipTrack = $derived.by((): TrackRef | null => {
     if (!pianoRollOpen || app.transport.state !== "stopped" || app.arrange.pianoRollClip !== null) return null;
-    const tr = app.song.tracks.find((x) => x.id === app.song.playTarget);
+    const tr = app.song.tracks.find((x) => x.id === app.song.keysTarget);
     return tr ? { number: tr.number, name: tr.name } : null;
   });
 

@@ -103,7 +103,8 @@ describe("メニューの中身（B-59）", () => {
       "次のテイク T",
       "前のテイク Shift T",
       "テイクを消す",
-      "トラックを足す",
+      "鍵盤のトラックを足す…",
+      "歌のトラックを足す",
       "名前を変える F2",
       "色 ▸",
       "上へ動かす",
@@ -129,12 +130,13 @@ describe("メニューの中身（B-59）", () => {
     for (const i of [0, 1, 2]) expect(menus[i]!.entries.filter((e) => e.kind === "separator")).toHaveLength(2);
   });
 
-  it("まだない物（書き出し）は使えない。トラックを足すは棚を「新しいトラック」でひらく", () => {
+  it("まだない物（書き出し）は使えない。鍵盤のトラックを足すは棚を「新しいトラック」でひらく。歌のトラックを足すは、そのまま足す（23-A）", () => {
     const sent: Command[] = [];
     const menus = topMenus(withClip(), depsOf(withClip(), sent), "other");
     expect(row(menus[0]!.entries, "書き出し…").usable).toBe(false);
-    row(menus[5]!.entries, "トラックを足す").run!();
-    expect(sent).toEqual([{ type: "openShelf", mode: { kind: "newTrack" } }]);
+    row(menus[5]!.entries, "鍵盤のトラックを足す…").run!();
+    row(menus[5]!.entries, "歌のトラックを足す").run!();
+    expect(sent).toEqual([{ type: "openShelf", mode: { kind: "newTrack" } }, { type: "addVocalTrack" }]);
   });
 
   it("トラック 1 本では、上へ ・ 下へ動かすは使えない。名前を変えるは F2 と同じく入力の枠をひらく", () => {

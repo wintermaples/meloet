@@ -10,6 +10,7 @@
   import BandRow from "./components/BandRow.svelte";
   import FileDropNotice from "./components/FileDropNotice.svelte";
   import InputMeter from "./components/InputMeter.svelte";
+  import LatencyDialog from "./components/LatencyDialog.svelte";
   import LowerBand from "./components/LowerBand.svelte";
   import ContextMenu from "./components/menu/ContextMenu.svelte";
   import MenuBar from "./components/menu/MenuBar.svelte";
@@ -83,7 +84,12 @@
       <SongDialog />
     </div>
   {/if}
-  {#if state.workspace.settings}
+  {#if state.workspace.latencyDialog}
+    <!-- 遅れを測るダイアログは、音の設定の上に（モック F7-Latency では音の設定は見えない）。 -->
+    <div class="dialog">
+      <LatencyDialog />
+    </div>
+  {:else if state.workspace.settings}
     <div class="dialog">
       <SettingsDialog />
     </div>

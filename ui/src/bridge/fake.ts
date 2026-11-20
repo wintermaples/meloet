@@ -13,6 +13,7 @@ import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from ".
 import {
   EFFECT_PARAMS,
   INSTRUMENT_GROUPS,
+  LATENCY_CLICKS,
   PROTOCOL_VERSION,
   type AppState as WireState,
   type AutoTarget,
@@ -3057,6 +3058,165 @@ SCENES.paramsSound = {
   meters: QUIET,
 };
 
+/** What the fake remembers between the commands of round 7. */
+export interface FakeVocalMemo {
+  /** "モニター" was turned on once (the status line says how it sounds only the first time). */
+  monitorSaid: boolean;
+}
+
+/**
+ * Protocol 23, enough for pictures and tests: vocal tracks (add, the input, the ●, the monitor, selecting one), E on a
+ * vocal track, the advanced sound settings and the latency dialog (measuring moves only when a scene sets it).
+ * `null`: not one of these commands.
+ */
+export function reduceRound7(state: AppState, command: Command, memo: FakeVocalMemo): Change[] | null {
+  const song = structuredClone(state.song);
+  const ws = structuredClone(state.workspace);
+  const audio = structuredClone(state.audio);
+  const inputs = structuredClone(state.inputs);
+  let message: StatusMessage | null | undefined = undefined;
+  const vocal = (id: number) => {
+    const t = song.tracks.find((x) => x.id === id);
+    return t && t.kind.kind === "vocal" ? { track: t, kind: t.kind } : null;
+  };
+  const busy = state.transport.state === "recording" || state.transport.state === "countIn";
+  const ref = (t: FakeTrack): TrackRef => ({ number: t.number, name: t.name });
+  switch (command.type) {
+    case "addVocalTrack": {
+      if (busy) return [];
+      const names = new Set(song.tracks.map((t) => t.name));
+      let name = "歌";
+      for (let n = 2; names.has(name); n++) name = `歌 ${n}`;
+      const id = Math.max(0, ...song.tracks.map((t) => t.id)) + 1;
+      const place = song.tracks.length;
+      song.tracks.push({
+        id,
+        number: place + 1,
+        name,
+        color: (place % 5) + 1,
+        kind: { kind: "vocal", input: "mono1", inputReady: inputs.chosen !== null, armed: true, monitor: false },
+        sound: builtinSound("sine"),
+        standIn: null,
+        drumKeys: null,
+        gainDb: 0,
+        pan: 0,
+        sends: [null, null],
+        sendDefaults: [null, null],
+        slots: [null, null, null, null],
+        muted: false,
+        soloed: false,
+        lanes: [],
+        clips: [],
+        instrument: "sine",
+        inserts: noInserts(),
+      });
+      song.playTarget = id;
+      song.undoCount += 1;
+      song.redoCount = 0;
+      song.file = "changed";
+      const added = song.tracks.at(-1)!;
+      message = inputs.chosen === null ? { id: "noInput" } : { id: "vocalTrackAdded", track: ref(added), input: "mono1" };
+      break;
+    }
+    case "setVocalInput": {
+      const v = vocal(command.track);
+      if (!v || busy || v.kind.input === command.input) return [];
+      v.kind.input = command.input;
+      song.undoCount += 1;
+      song.redoCount = 0;
+      song.file = "changed";
+      break;
+    }
+    case "toggleVocalArm": {
+      const v = vocal(command.track);
+      if (!v || busy) return [];
+      v.kind.armed = !v.kind.armed;
+      break;
+    }
+    case "toggleMonitor": {
+      const v = vocal(command.track);
+      if (!v) return [];
+      v.kind.monitor = !v.kind.monitor;
+      if (v.kind.monitor && !memo.monitorSaid) {
+        memo.monitorSaid = true;
+        message = { id: "monitorFirstOn", latencyMs: audio.latency.usedMs };
+      }
+      break;
+    }
+    case "selectTrack": {
+      const v = vocal(command.track);
+      if (!v || busy) return null;
+      song.playTarget = command.track;
+      v.kind.armed = true;
+      break;
+    }
+    case "toggleBand": {
+      const selected = song.tracks.find((t) => t.id === song.playTarget);
+      if (command.band !== "pianoRoll" || selected?.kind.kind !== "vocal" || state.workspace.layout.lower.some((b) => b.band === "pianoRoll")) return null;
+      message = { id: "vocalHasNoPianoRoll" };
+      break;
+    }
+    case "settingsSelectInput":
+      inputs.chosen = command.input;
+      break;
+    case "settingsSetBuffer":
+      audio.requestedFrames = command.frames;
+      if (audio.forcedQuantum === null) audio.actualFrames = command.frames;
+      break;
+    case "settingsSetSampleRate":
+      audio.requestedSampleRate = command.hz;
+      break;
+    case "settingsSetRecordFormat":
+      audio.recordFormat = command.format;
+      break;
+    case "settingsSetManualLatency":
+      audio.latency.manualMs = command.ms;
+      break;
+    case "openLatencyMeasure":
+      ws.latencyDialog = { measure: { state: "idle" } };
+      message = { id: "latencyMeasureOpen" };
+      break;
+    // The fake plays no clicks: measuring starts and stays at 0 of 5 until it is stopped.
+    case "startLatencyMeasure":
+      if (!ws.latencyDialog) return [];
+      ws.latencyDialog.measure = { state: "measuring", done: 0, of: LATENCY_CLICKS, meanMs: null };
+      break;
+    case "stopLatencyMeasure":
+      if (!ws.latencyDialog) return [];
+      ws.latencyDialog.measure = { state: "idle" };
+      break;
+    case "useMeasuredLatency": {
+      const m = ws.latencyDialog?.measure;
+      if (m?.state !== "done") return [];
+      audio.latency.measuredMs = m.measuredMs;
+      ws.latencyDialog = null;
+      break;
+    }
+    case "closeLatencyMeasure":
+      ws.latencyDialog = null;
+      break;
+    case "back":
+      if (!ws.latencyDialog) return null;
+      ws.latencyDialog = null;
+      break;
+    default:
+      return null;
+  }
+  const { latency } = audio;
+  latency.used = latency.manualMs !== null ? "manual" : latency.measuredMs !== null ? "measured" : "reported";
+  latency.usedMs = latency.manualMs ?? latency.measuredMs ?? latency.reportedMs;
+  for (const t of song.tracks) if (t.kind.kind === "vocal") t.kind.inputReady = inputs.chosen !== null;
+  inputs.open = inputs.chosen !== null && song.tracks.some((t) => t.kind.kind === "vocal" && (t.kind.armed || t.id === song.playTarget));
+  const changes: Change[] = [];
+  const settled = settleSong(song);
+  if (JSON.stringify(settled) !== JSON.stringify(state.song)) changes.push({ section: "song", value: settled });
+  if (JSON.stringify(ws) !== JSON.stringify(state.workspace)) changes.push({ section: "workspace", value: ws });
+  if (JSON.stringify(audio) !== JSON.stringify(state.audio)) changes.push({ section: "audio", value: audio });
+  if (JSON.stringify(inputs) !== JSON.stringify(state.inputs)) changes.push({ section: "inputs", value: inputs });
+  if (message !== undefined) changes.push({ section: "status", value: { message } });
+  return changes;
+}
+
 // ---- telemetry ----
 
 const STATE_BYTES = { stopped: 0, countIn: 1, playing: 2, recording: 3 } as const;
@@ -3878,7 +4038,18 @@ export function reduceMixer(
     case "selectInstrument": {
       const slot: PluginSlotRef = { kind: "instrument", track: command.track };
       const plugin = pluginAt(slot);
-      if (plugin) selectPlugin(slot, plugin);
+      if (plugin) {
+        selectPlugin(slot, plugin);
+        break;
+      }
+      // 19-A: a sound that comes with meloet or of an SF2 file has no parameters; the panel says so.
+      const t = song.tracks.find((x) => x.id === command.track);
+      if (!t || t.kind.kind !== "keys" || t.standIn) break;
+      if (t.sound.kind === "plugin") break;
+      const sound = soundNameOf(t.sound);
+      params.selected = { kind: "sound", track: t.id, sound };
+      showParams = true;
+      notice = { id: "noParams", sound };
       break;
     }
     case "selectParam": {
@@ -4188,6 +4359,7 @@ export function createFakeTransport(initial?: AppState): Transport {
   if (!scene) bands.side = [...state.workspace.layout.rightOpen];
   const rest = isNotice(state.status.message) || isShelfMessage(state.status.message) ? null : state.status.message;
   const clipboard: FakeClipboard = { clips: [] };
+  const vocalMemo: FakeVocalMemo = { monitorSaid: false };
   const tables = new FakeParamTables();
   let rev = 1;
   let listener: ((message: ServerMessage) => void) | null = null;
@@ -4216,7 +4388,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
+      const changes = reduceRound7(state, command, vocalMemo) ?? reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
       // The counts of the history band follow the song's.
       const song = changes.find((c) => c.section === "song");
       if (song && !changes.some((c) => c.section === "history")) {

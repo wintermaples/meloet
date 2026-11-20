@@ -91,6 +91,7 @@ const three = (selected: number[] = [], clicked: number | null = null) =>
       { ...base, id: 3, number: 3, name: "ドラム", color: 3, soloed: true, clips: [clip(43, "8ビート", 1, 9)] },
     ];
     s.song.playTarget = 2;
+    s.song.keysTarget = 2;
     s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1 };
   });
 

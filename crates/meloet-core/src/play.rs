@@ -242,6 +242,8 @@ struct Sel {
     clicked: Option<ClipId>,
     /// The selected tempo point, meter change or marker.
     timeline: Option<TimelineRef>,
+    /// The selected automation points.
+    points: Option<automation::PointSel>,
 }
 
 /// The clips an edit leaves selected, the one of them clicked (`ArrangeView::selected_clip`),
@@ -415,6 +417,7 @@ pub struct Play {
     wins: Windows,
     panel: Panel,
     tl: timeline::Tl,
+    auto: automation::Auto,
 }
 
 impl Play {
@@ -432,6 +435,7 @@ impl Play {
             wins: Windows::default(),
             panel: Panel::default(),
             tl: timeline::Tl::default(),
+            auto: automation::Auto::default(),
             song,
             history: History::new(),
             state: TransportState::Stopped,
@@ -1072,6 +1076,7 @@ impl Play {
             clips: self.clips_sel.clone(),
             clicked: self.selected,
             timeline: self.tl.selected(),
+            points: self.point_sel(),
         }
     }
 
@@ -1082,6 +1087,7 @@ impl Play {
         self.clips_sel = sel.clips;
         self.selected = sel.clicked;
         self.tl.select(sel.timeline);
+        self.put_point_sel(sel.points);
         self.drop_gone_clips();
     }
 
@@ -1171,6 +1177,7 @@ impl Play {
         self.piano_roll = self.piano_roll.filter(|&c| doc.clip(c).is_some());
         self.tl.drop_gone(doc);
         self.fix_selection();
+        self.drop_gone_lanes();
     }
 
     fn tempo_op(&self) -> EngineOp {
@@ -1502,6 +1509,7 @@ impl Play {
         self.song = song;
         self.saving = None;
         self.forget_mixer();
+        self.forget_automation();
         self.reseat(effects);
         self.changes += 1;
         self.serial += 1;
@@ -2264,6 +2272,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
     out
 }
 
+mod automation;
 mod history;
 mod mix;
 pub(crate) mod mixer;

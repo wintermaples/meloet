@@ -38,6 +38,7 @@ pub(crate) fn three_tracks(m: &mut Model) -> Vec<Effect> {
             sends: [meloet_model::Gain::SILENT; 2],
             muted: false,
             clips: Vec::new(),
+            automation: Vec::new(),
         }));
     }
     cmd(m, Command::OpenSong);

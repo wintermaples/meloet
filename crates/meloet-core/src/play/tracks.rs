@@ -3,7 +3,7 @@
 
 use meloet_model::edit;
 use meloet_model::mixer::{self, Missing};
-use meloet_model::{BuiltinInstrument, InstrumentRef, TrackColor, TrackId};
+use meloet_model::{TrackColor, TrackId};
 use meloet_protocol::{PluginSlotRef, StatusMessage};
 
 use super::Play;
@@ -38,11 +38,10 @@ impl Play {
     ) -> Option<StatusMessage> {
         match slot {
             PluginSlotRef::Instrument { track } => {
-                let sine = InstrumentRef::Builtin(BuiltinInstrument::Sine);
                 if self.busy() {
                     return None;
                 }
-                let e = edit::set_instrument(self.doc(), TrackId(track), sine).ok()?;
+                let e = edit::remove_instrument(self.doc(), TrackId(track)).ok()?;
                 self.apply(e, effects);
                 let track = self.track_ref(TrackId(track))?;
                 Some(StatusMessage::InstrumentPluginRemoved { track })

@@ -44,6 +44,7 @@ fn eight_tracks() -> Doc {
             sends: [meloet_model::Gain::SILENT; 2],
             muted: false,
             clips: Vec::new(),
+            automation: Vec::new(),
         }));
     }
     doc

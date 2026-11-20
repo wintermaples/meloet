@@ -28,6 +28,7 @@ fn big_song() -> Song {
             sends: [meloet_model::Gain::SILENT; 2],
             muted: false,
             clips: Vec::new(),
+            automation: Vec::new(),
         }));
     }
     let take = |origin: u64, notes: usize, step: u64| NewTake {

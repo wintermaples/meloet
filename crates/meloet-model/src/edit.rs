@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use crate::automation::AutoTarget;
 use crate::history::StepKind;
 use crate::mixer::{self, Channel};
 use crate::song::{
@@ -454,6 +455,7 @@ pub fn add_track(
             channel: Channel::default(),
             muted: false,
             clips: Vec::new(),
+            automation: Vec::new(),
         }),
     );
     doc.next_id = ids.0;
@@ -478,15 +480,41 @@ pub fn set_instrument(
         return Err(EditError::Unchanged);
     }
     Ok(Edit {
-        doc: with_track(
-            doc,
-            ti,
-            Track {
-                instrument,
-                ..Track::clone(t)
-            },
-        ),
+        doc: with_track(doc, ti, with_instrument(t, instrument)),
         step: StepKind::SetInstrument { track },
+    })
+}
+
+/// The track with another instrument. The lanes of the old one's parameters go, unless both
+/// are the same plugin.
+fn with_instrument(t: &Track, instrument: InstrumentRef) -> Track {
+    let same_plugin = match (&t.instrument, &instrument) {
+        (InstrumentRef::Plugin(a), InstrumentRef::Plugin(b)) => a.key == b.key,
+        _ => false,
+    };
+    let mut new = Track {
+        instrument,
+        ..Track::clone(t)
+    };
+    if !same_plugin {
+        new.automation
+            .retain(|l| !matches!(l.target, AutoTarget::Instrument { .. }));
+    }
+    new
+}
+
+/// 「外す」 on the stopped plugin that is the track's instrument (spec 3, 89-5): the track
+/// sounds as the sine wave, and the lanes of the plugin's parameters go. `Unchanged` when
+/// its instrument is no plugin.
+pub fn remove_instrument(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    if !matches!(t.instrument, InstrumentRef::Plugin(_)) {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: with_track(doc, ti, with_instrument(t, InstrumentRef::SINE)),
+        step: StepKind::RemoveInstrument { track },
     })
 }
 

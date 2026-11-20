@@ -395,7 +395,7 @@ fn the_history_section_counts_and_the_rows_say_what_each_step_did() {
     assert_eq!(new[1].step, now.newest);
     assert!(rows.iter().all(|r| r.step != new[1].step));
 
-    // The commands of automation and the jump do nothing yet.
+    // The jump does nothing yet; a lane is a step.
     let before = m.view();
     cmd(
         &mut m,
@@ -403,6 +403,10 @@ fn the_history_section_counts_and_the_rows_say_what_each_step_did() {
             index: 1,
             step: new[0].step,
         },
+    );
+    assert_eq!(
+        (&m.view().song, &m.view().history),
+        (&before.song, &before.history)
     );
     cmd(
         &mut m,
@@ -412,10 +416,7 @@ fn the_history_section_counts_and_the_rows_say_what_each_step_did() {
         },
     );
     let after = m.view();
-    assert_eq!(
-        (&after.song, &after.history),
-        (&before.song, &before.history)
-    );
-    assert!(after.song.tracks.iter().all(|t| t.lanes.is_empty()));
+    assert_eq!(after.history.total, before.history.total + 1);
+    assert_eq!(after.song.tracks[0].lanes.len(), 1);
     assert_eq!(after.automation, meloet_protocol::AutomationView::default());
 }

@@ -11,6 +11,8 @@ usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16
                                              [--tempo-points TICK:BPM[:ramp],...] [--head-ramp]
                                              [--meter-changes BAR:NUM/DEN,...]
                                              [--markers TICK:NAME,...]
+                                             [--lanes volume,pan,plugin:PARAM,effect:PARAM]
+                                             [--lane-points 16] [--lane-resting]
 
 --tracks N (1..64): a version 3 song with N tracks, each with one clip and one take of --notes
 notes. The instruments go round BAND (the groups mixed), with the sends a new track of that
@@ -38,6 +40,13 @@ point; --head-ramp: from the song's head to the first point), meter changes at t
 bars (bars count from 0, so 8 is the bar shown as 9), markers at ticks. The notes stay where
 they are in ticks: --bars still counts bars of 4/4. Example, the spec's 104 to 120 over bars
 5 to 9 and 3/4 from bar 9: --tempo-points 7680:104:ramp,15360:120 --meter-changes 8:3/4
+
+--lanes makes the song version 5 too: automation lanes on every track, in the order given.
+"volume" and "pan"; "plugin:PARAM" a parameter of the instrument by the plugin's own number
+(only on the "plugin" tracks); "effect:PARAM" a parameter of the --effect-plugin insert (only
+on the tracks that have it). Each lane has --lane-points points spread evenly over the clip
+from its start, with values (the place of the knob, 0..1) from --seed. --lane-resting: the
+lanes rest (spec 3, 17-A).
 
 Without --tracks the shape is crates/meloet-core/src/songfile.rs, version 1. The clip starts at the song's start
 and is --bars bars of 4/4 long. Notes are spread over the clip in start order, keys 48..84,
@@ -279,6 +288,52 @@ def with_timeline(made, points, head_ramp, changes, marks):
     return made
 
 
+def lane_words(text):
+    words = []
+    for word in text.split(","):
+        kind, sep, param = word.partition(":")
+        if kind in ("volume", "pan") and not sep:
+            words.append((kind, None))
+        elif kind in ("plugin", "effect") and sep and param.isdigit():
+            words.append((kind, int(param)))
+        else:
+            raise ValueError(f"lane {word!r}: volume, pan, plugin:PARAM or effect:PARAM")
+    if len(set(words)) != len(words):
+        raise ValueError("two lanes of one target")
+    return words
+
+
+def with_lanes(made, words, count, resting, seed):
+    """The automation lanes (crates/meloet-core/src/songfile.rs, `LaneFile`). An insert a lane
+    names gets an id of its own, from `nextId`."""
+    doc = made["song"]
+    for i, track in enumerate(doc["tracks"]):
+        rng = random.Random(seed * 7919 + i)
+        length = max((c["end"] for c in track["clips"]), default=TICKS_PER_BAR)
+        lanes = []
+        for kind, param in words:
+            if kind == "volume":
+                target = {"kind": "volume"}
+            elif kind == "pan":
+                target = {"kind": "pan"}
+            elif kind == "plugin":
+                if track["instrument"].get("kind") != "plugin":
+                    continue
+                target = {"kind": "instrument", "param": param}
+            else:
+                held = [s for s in track.get("inserts") or [] if s and "plugin" in s]
+                if not held:
+                    continue
+                if "id" not in held[0]:
+                    held[0]["id"] = doc["nextId"]
+                    doc["nextId"] += 1
+                target = {"kind": "insert", "insert": held[0]["id"], "param": param}
+            points = [[(n * length) // max(count, 1), round(rng.random(), 3)] for n in range(count)]
+            lanes.append({"target": target, "step": False, "resting": resting, "points": points})
+        track["automation"] = lanes
+    return made
+
+
 def main(argv):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("out")
@@ -301,7 +356,12 @@ def main(argv):
     p.add_argument("--head-ramp", action="store_true")
     p.add_argument("--meter-changes")
     p.add_argument("--markers")
+    p.add_argument("--lanes")
+    p.add_argument("--lane-points", type=int, default=16)
+    p.add_argument("--lane-resting", action="store_true")
     a = p.parse_args(argv)
+    if a.lane_points < 0:
+        p.error("lane-points >= 0")
     if a.notes < 0 or a.bars < 1 or a.cc < 0 or not 30 <= a.tempo <= 300:
         p.error("notes >= 0, bars >= 1, cc >= 0, tempo 30..300")
     if a.tracks is not None and not 1 <= a.tracks <= 64:
@@ -328,7 +388,7 @@ def main(argv):
             sf2_preset(a.sf2) if a.sf2 else None,
             scanned_plugin(a.scan, a.effect_plugin, a.effect_format or a.plugin_format, "effect") if a.effect_plugin else None,
             a.stagger, a.hard_pan)
-    if a.tempo_points or a.head_ramp or a.meter_changes or a.markers:
+    if a.tempo_points or a.head_ramp or a.meter_changes or a.markers or a.lanes:
         try:
             made = with_timeline(
                 made,
@@ -336,6 +396,8 @@ def main(argv):
                 a.head_ramp,
                 meter_changes(a.meter_changes) if a.meter_changes else [],
                 a.markers)
+            if a.lanes:
+                made = with_lanes(made, lane_words(a.lanes), a.lane_points, a.lane_resting, a.seed)
         except ValueError as e:
             p.error(str(e))
     data = json.dumps(made, ensure_ascii=False, separators=(",", ":"))

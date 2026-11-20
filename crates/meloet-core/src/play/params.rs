@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use meloet_model::PluginChange;
+use meloet_model::{PluginChange, PluginPlace};
 use meloet_plugin::wire::{ParamInfo, ParamNow, ParamShape, TextValue};
 use meloet_protocol::{
     ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable, ParamValue, ParamValues,
@@ -18,6 +18,7 @@ use meloet_protocol::{
 };
 
 use super::Play;
+use super::automation::LetGo;
 use super::mixer::Picked;
 use crate::state::{Effect, PluginAsk, PluginSaid, StateAsk};
 
@@ -126,8 +127,25 @@ impl Play {
         }
         let ask = PluginAsk::SetParam { param, value };
         effects.push(Effect::AskPlugin { ticket, ask });
-        if commit {
-            self.param_set(ticket, param, effects);
+        let lane = self.ticket_lane(ticket, param);
+        if !commit {
+            if let Some(key) = lane {
+                self.hand_moved(key, value as f32);
+            }
+            return;
+        }
+        let let_go = match lane {
+            Some(key) => self.hand_let_go(key, value as f32, false, effects),
+            None => LetGo::Free,
+        };
+        match let_go {
+            // The lane gives the plugin its values again.
+            LetGo::Written | LetGo::Nothing => {}
+            LetGo::Rest(key) => {
+                self.rest_with_plugin_state(ticket, param, key);
+                self.param_set(ticket, param, effects);
+            }
+            LetGo::Free => self.param_set(ticket, param, effects),
         }
     }
 
@@ -159,6 +177,9 @@ impl Play {
     /// Esc during a drag: the plugin gets back the value it had.
     pub(super) fn cancel_plugin_drags(&mut self, effects: &mut Vec<Effect>) {
         if let Some(drag) = self.panel.dragged.take() {
+            if let Some(key) = self.ticket_lane(drag.ticket, drag.param) {
+                self.drop_grip(key);
+            }
             self.panel.owed.push(drag);
             self.pay_owed(effects);
         }
@@ -253,6 +274,12 @@ impl Play {
         let value = read.value.clamp(0.0, 1.0);
         let ask = PluginAsk::SetParam { param, value };
         effects.push(Effect::AskPlugin { ticket, ask });
+        // A typed value rests the lane, 「● 書く」 or not (docs/architecture.md 21-11).
+        if let Some(key) = self.ticket_lane(ticket, param)
+            && self.lane_at(key).is_some_and(|l| l.moves())
+        {
+            self.rest_with_plugin_state(ticket, param, key);
+        }
         self.param_set(ticket, param, effects);
         clamped
     }
@@ -307,6 +334,14 @@ impl Play {
         if row.is_some_and(|row| !self.has_param(row)) {
             self.select_param(None);
         }
+    }
+
+    /// A row of the table the panel shows, when it is the table of the plugin at `place`.
+    pub(super) fn shown_param(&self, place: PluginPlace, param: u32) -> Option<&ParamInfo> {
+        let table = self.panel.table.as_ref()?;
+        let plug = self.plugs.of(self.panel.ticket?)?;
+        (self.place_of(plug.spot) == Some(place)).then_some(())?;
+        Some(&table.rows[*table.at.get(&param)?])
     }
 
     pub(super) fn has_param(&self, param: u32) -> bool {

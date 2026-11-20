@@ -47,6 +47,9 @@ struct Visit {
     /// The plugin could not say its state as the visit ended (its process stopped), and
     /// has not been seen stopped since.
     unanswered: bool,
+    /// How many times a hand changed the plugin in the window, as the plugin process said
+    /// it; `None` until it does.
+    hands: Option<u32>,
 }
 
 #[derive(Debug, Default)]
@@ -232,6 +235,7 @@ impl Play {
             before: None,
             left: false,
             unanswered: false,
+            hands: None,
         });
         effects.push(Effect::AskPlugin {
             ticket,
@@ -326,8 +330,13 @@ impl Play {
                     return;
                 };
                 let visit = visits.remove(at);
-                if visit.before.is_some_and(|before| before != after) {
+                // With no hand in the window, what differs is what a lane moved.
+                let changed = visit.before.is_some_and(|before| before != after);
+                if changed && visit.hands != Some(0) {
                     self.plugin_changed(ticket, after, PluginChange::Window, effects);
+                } else {
+                    let rests = self.take_window_rests(ticket);
+                    self.apply_resting(None, &rests, true, effects);
                 }
             }
             StateAsk::Base | StateAsk::Param { .. } => {}
@@ -357,6 +366,15 @@ impl Play {
         }
         for ticket in back {
             self.end_visit(ticket, effects);
+        }
+        self.drop_gone_touches();
+    }
+
+    /// The hands of the visit under way, or of the last one that waits for its state.
+    pub(super) fn visit_hands(&mut self, ticket: u64, count: u32) {
+        let visits = &mut self.wins.visits;
+        if let Some(visit) = visits.iter_mut().rev().find(|v| v.ticket == ticket) {
+            visit.hands = Some(visit.hands.unwrap_or(0).saturating_add(count));
         }
     }
 

@@ -151,6 +151,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
                 .unwrap(),
             },
             soloed: BTreeSet::new(),
+            folded_lanes: Vec::new(),
         },
     }
 }
@@ -1037,6 +1038,7 @@ fn added_song() -> Song {
             channel: Channel::default(),
             muted: false,
             clips: Vec::new(),
+            automation: Vec::new(),
         }));
     }
     let mverb = PluginRef::new(MVERB, "MVerb", "DISTRHO", "").with_state([9u8, 8, 7].into());

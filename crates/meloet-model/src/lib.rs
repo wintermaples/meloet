@@ -23,7 +23,7 @@ pub mod time;
 pub mod timeline;
 
 pub use arrange::{ClipEdge, ClipEdited};
-pub use automation::AutoTarget;
+pub use automation::{AutoPoint, AutoTarget, Lane, LaneId};
 pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
 pub use history::{History, StepKind, StepRow};

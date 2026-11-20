@@ -1049,6 +1049,7 @@ impl Controller for Vst3Controller {
                     shape,
                     labels,
                     automatable: info.flags & ParameterFlags_::kCanAutomate != 0,
+                    midi_cc: false,
                     value: Some(value),
                     text: value_text(controller, info.id, value, &unit),
                 });

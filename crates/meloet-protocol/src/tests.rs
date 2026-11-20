@@ -2452,6 +2452,7 @@ fn windows_and_plugin_params_json_shape() {
                 ],
             },
         ],
+        keyboard_knobs: vec![],
     };
     let json = json!({"table": 3, "seq": 0, "groups": [
         {"name": "Macros", "params": [
@@ -2462,7 +2463,7 @@ fn windows_and_plugin_params_json_shape() {
              "kind": {"kind": "steps", "steps": 3, "labels": ["Room", "Hall", "Plate"]},
              "default": 0.0, "value": 0.5, "text": "Hall"},
             {"id": 8, "name": "Freeze", "kind": {"kind": "toggle"}, "default": 0.0,
-             "value": null, "text": null}]}]});
+             "value": null, "text": null}]}], "keyboardKnobs": []});
     assert_eq!(serde_json::to_value(&table).unwrap(), json);
     assert_eq!(serde_json::from_value::<ParamTable>(json).unwrap(), table);
 

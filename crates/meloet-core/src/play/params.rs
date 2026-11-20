@@ -413,6 +413,7 @@ impl Play {
             table,
             seq: shown.seq,
             groups,
+            keyboard_knobs: Vec::new(),
         })
     }
 

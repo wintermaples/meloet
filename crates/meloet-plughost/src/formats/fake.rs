@@ -266,6 +266,7 @@ impl Controller for FakeController {
                 shape,
                 labels: labels.iter().map(|label| label.to_string()).collect(),
                 automatable: true,
+                midi_cc: false,
                 value: now.as_ref().and_then(|now| now.value),
                 text: now.and_then(|now| now.text),
             }

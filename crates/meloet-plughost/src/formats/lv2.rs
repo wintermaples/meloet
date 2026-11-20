@@ -1625,6 +1625,7 @@ impl Controller for Lv2Controller {
                     shape: param.shape,
                     labels: param.labels(),
                     automatable: param.automatable,
+                    midi_cc: false,
                     value: now.value,
                     text: now.text,
                 }

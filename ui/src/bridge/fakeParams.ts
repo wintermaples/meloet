@@ -116,7 +116,7 @@ const GROUPS: Record<number, () => ParamGroup[]> = {
 /** The reply of `plugin_params`. */
 export function fakeParamTable(table: number): ParamTable | null {
   const groups = GROUPS[table];
-  return groups ? { table, seq: 0, groups: groups() } : null;
+  return groups ? { table, seq: 0, groups: groups(), keyboardKnobs: [] } : null;
 }
 
 export const fakeParamCount = (table: number): number => (GROUPS[table]?.() ?? []).reduce((n, g) => n + g.params.length, 0);

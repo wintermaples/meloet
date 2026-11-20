@@ -204,6 +204,10 @@ pub struct ParamInfo {
     pub labels: Vec<String>,
     /// It may be written by automation.
     pub automatable: bool,
+    /// It is there only to take a keyboard's knobs (MIDI CC): a VST3 parameter the plugin
+    /// maps a controller to (`IMidiMapping`), or named so ("MIDI CC 0|0"). Spec 3, 91-3.
+    #[serde(default)]
+    pub midi_cc: bool,
     /// As `ParamNow`.
     pub value: Option<f64>,
     pub text: Option<String>,
@@ -550,6 +554,7 @@ mod tests {
             shape: ParamShape::Stepped { steps: 5 },
             labels: vec!["a".into(), "b".into()],
             automatable: true,
+            midi_cc: false,
             value: None,
             text: None,
         };

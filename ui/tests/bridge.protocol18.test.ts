@@ -11,8 +11,8 @@ const run = (s: FakeState, command: Command) => reduceMixer(s, s.shelf, s.song, 
 const rows = (table: ParamTable) => table.groups.flatMap((g) => g.params);
 
 describe("約束 18 の形", () => {
-  it("版は 18。新しい曲では、窓はなく、何もえらんでいない。古い欄は、もう約束にない", () => {
-    expect(PROTOCOL_VERSION).toBe(18);
+  it("版は 19。新しい曲では、窓はなく、何もえらんでいない。古い欄は、もう約束にない", () => {
+    expect(PROTOCOL_VERSION).toBe(19);
     const s = fakeState();
     expect(s.windows).toEqual({ list: [] });
     expect(s.params).toEqual({ selected: null });
@@ -196,6 +196,7 @@ describe("パラメータの一覧をためる係（ParamTableBook）", () => {
     table: id,
     seq,
     groups: [{ name: null, params: [1, 2].map((n) => ({ id: n, name: `P${n}`, kind: { kind: "smooth" }, default: 0, value: 0, text: "0" })) }],
+    keyboardKnobs: [],
   });
   const values = (id: number, seq: number, value: number, param = 1): ParamValues => ({ table: id, seq, values: [{ id: param, value, text: `${value}` }] });
   const settle = () => new Promise((r) => setTimeout(r, 0));

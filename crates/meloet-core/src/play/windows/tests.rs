@@ -117,6 +117,7 @@ impl FakeHost {
             shape,
             labels: labels.iter().map(|l| l.to_string()).collect(),
             automatable: true,
+            midi_cc: false,
             value: Some(values[id as usize]),
             text: Some(text_of(id, values[id as usize])),
         };

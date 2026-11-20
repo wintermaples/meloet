@@ -94,8 +94,8 @@ pub struct SelectedPlugin {
     /// (the plugin is being read, is not found, or stopped before it was read); the panel
     /// shows its head only.
     pub table: Option<u32>,
-    /// How many parameters the table has ("Surge XT 2855" on the folded panel), 0 with no
-    /// table.
+    /// How many parameters the table has ("Surge XT 774" on the folded panel), not counting
+    /// `ParamTable::keyboard_knobs`; 0 with no table.
     pub count: u32,
     /// The chosen row, by `ParamRow::id` (`Command::SelectParam`).
     pub row: Option<u32>,
@@ -119,7 +119,12 @@ pub struct ParamTable {
     /// The last `ParamValues::seq` already in the rows (0 before any).
     pub seq: u64,
     /// In the plugin's order. A plugin that names no groups has one group, with no name.
+    /// Without the rows of `keyboard_knobs`.
     pub groups: Vec<ParamGroup>,
+    /// Parameters that are there only to take a keyboard's knobs (MIDI CC), in the plugin's
+    /// order: not in `groups`, not counted in `SelectedPlugin::count`. The screen shows them
+    /// only while searching, in a group of their own (spec 3, 91-3).
+    pub keyboard_knobs: Vec<ParamRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

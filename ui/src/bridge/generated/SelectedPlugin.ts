@@ -23,8 +23,8 @@ export type SelectedPlugin = { slot: PluginSlotRef, window: PluginWindowKind,
  */
 table: number | null, 
 /**
- * How many parameters the table has ("Surge XT 2855" on the folded panel), 0 with no
- * table.
+ * How many parameters the table has ("Surge XT 774" on the folded panel), not counting
+ * `ParamTable::keyboard_knobs`; 0 with no table.
  */
 count: number, 
 /**

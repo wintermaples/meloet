@@ -993,3 +993,26 @@ SF2（サウンドフォント）のこと（ヤチヨさんの決め 2026-11-18
 - **測る道具**: `tools/measure/remote.py` と `MELOET_PIPE`（本物のアプリを 1 手ずつ外から動かす、X の作り物の出来事、出口を録る）、`window-rounds.py`、`plugin-stop.sh`、`open-play-save.sh`、`plug_watch.py`、`make_song.py --instruments ・ --plugin ・ --sf2 ・ --effect-plugin ・ --tracks`、`frame_stats.py`、`cpu_watch.py`。
 - X の要る試験は `DISPLAY=:0` を足す（`env.sh` にない）。窓はヤチヨさんの画面に出るが、聞かずに進めてよい。
 - VS Code の「meloet（デバッグ）」（CodeLLDB）: 子のプロセスは 1 つずつ起こし（`launch::spawn`）、スキャンは画面のあいさつのあと。どちらかを外すと LLDB の下で窓が出なくなる。
+
+## 第 6 回: 時間の流れ（テンポと拍子の変更、マーカー、オートメーション、取り消しの履歴の帯）（2026-11-20〜）
+
+ブランチ `foundation`。区切り0（写し、デザインの直し、調べ物、決める事）→ 区切り1（テンポと拍子の変更、マーカー）→ 区切り2（オートメーション）→ 区切り3（取り消しの履歴の帯と、手の名前）。デザインは 2026-11-20 の第 9 版（`docs/design/`、2fd6c2f）。使える量の上限で止まったときの自動の続き: 11:10 JST に 1 回（ヤチヨさんの頼み）。
+
+### 係のモデル（2026-11-20 に呼んで確かめた）
+
+| 係 | 動いたモデル |
+|---|---|
+| meloet-research | Sonnet 5.5（claude-sonnet-5-5）。3 人とも |
+
+### 写し（2026-11-20、2fd6c2f）
+
+- 仕様書は「第 9 版」。7 章に 21 行。2 章に部品 7（オートメーションの点、帯の見出し ・ 書く ・ 休み、オートメーションで動くつまみ、テンポのだんだん、マーカーの名札、ピアノロールの目盛のマーカー、履歴の行）。3 章に「第 9 版で足した決まり」（88〜91 の答えと Y16〜Y19）と、前からの行の書きかえ（Y7 の入口、Y9 のギター ・ 管楽器、SF2 のギターのフレーズ、84、Y13 の CLAP と `/usr/local/lib/vst3`、Y14）。4 章にキー 5、5 章に用語 5 を足して重なりの 2 行を消した、6 章に場面 21。
+- モックは 12 枚ふえて 101 枚（F6-* 6 枚、Opt6-* 3 枚、R10-* 3 枚）。前からの 89 枚は sha256 で 1 バイトも変わっていない（`canvas.json` だけ変わった）。新しい 12 枚は PNG にして全部見た。
+- 写しただけで画面の試験が 3 つ落ちる（5 章の用語 2、6 章の場面 1）。0-2 で直す。
+- design-notes: B-88〜91 を C-9 へ。A-19 に第 9 版の読みかた（ヤチヨさんが見つけた 10 の所）。
+
+### 調べ物（2026-11-20、meloet-research）
+
+- [`research/automation-vst3.md`](research/automation-vst3.md): 点は位置の順、点の間はまっすぐ、上限の決まりなし。**JUCE の VST3 は 1 ブロックの最後の点しか使わない**（6.1.6 ・ 8.0.12 ・ master で同じ）。窓のつまみは UI スレッドで `setParamNormalized`。ProcessContext のテンポは、SDK に決まりがなく Ardour はブロックの頭の値。VST3 ではブロックを分けない（Ardour も）。
+- [`research/automation-lv2.md`](research/automation-lv2.md): control ポートは `run` の間 1 つの値。分けるなら `run` を何回か（Ardour は分ける。`coarseBlockLength` の物は分けない）。**Surge XT（JUCE の LV2）は `patch:Set` の時刻を見ず、`time:Position` は毎ブロック要る（`time:beat` を ppq として読む）**。Surge XT の窓は `ui:touch` を出さない。
+- [`research/tempo-and-automation.md`](research/tempo-and-automation.md): **拍にまっすぐのだんだんは Ardour（式は log1p ・ expm1）**。仕様書の 112.00 は拍にまっすぐで合う（時間にまっすぐなら 112.29）。書きかた（touch ・ latch）、休み（Ableton の Re-Enable、Bitwig の Restore）、間引き（Ardour は 30 ms と三角形の面積 20）、線の上の値（Ardour の音量はフェーダーの目盛でまっすぐ）。

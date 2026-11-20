@@ -139,12 +139,15 @@ export function barAt(map: TempoMap, bar: number): { head: number; num: number; 
   return { head, num: m.num, den: m.den };
 }
 
-/** 「小節 . 拍 . ティック」（どれも範囲の中、ティックは 1 拍を 480 に分けた目盛り）を曲の中のティックに。 */
-export function tickOfPosition(map: TempoMap, bar: number, beat: number, displayTick: number): number {
+/** 「小節 . 拍 . ティック」（どれも範囲の中。ティックはその拍の中のティック）を曲の中のティックに。 */
+export function tickOfPosition(map: TempoMap, bar: number, beat: number, tick: number): number {
   const b = barAt(map, bar);
   const perBeat = perBeatOf(b);
-  return b.head + (beat - 1) * perBeat + Math.min(Math.round((displayTick * perBeat) / 480), perBeat - 1);
+  return b.head + (beat - 1) * perBeat + Math.min(tick, perBeat - 1);
 }
+
+/** 打ちこむ「ティック」の範囲の文（「0〜1919」、6/8 は「0〜0959」）。 */
+export const tickRangeText = (perBeat: number) => `0〜${String(perBeat - 1).padStart(4, "0")}`;
 
 /** 線の種類: 0 小節の頭、1 拍の頭、2 それより細かい線。 */
 export type LineKind = 0 | 1 | 2;

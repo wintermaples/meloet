@@ -56,25 +56,26 @@ describe("ベロシティ", () => {
 });
 
 describe("再生の位置（小節 ・ 拍 ・ ティックを、それぞれ範囲に）", () => {
-  it("「5」「5.2」「5.2.240」。区切りのまわりの空白はあってよい", () => {
+  it("「5」「5.2」「5.2.0960」。区切りのまわりの空白はあってよい", () => {
     expect(readPosition("5", M44)).toEqual({ value: 4 * 4 * TPQ, clamp: null });
     expect(readPosition("5.2", M44)).toEqual({ value: 4 * 4 * TPQ + TPQ, clamp: null });
-    expect(readPosition("5. 2. 240", M44)).toEqual({ value: 4 * 4 * TPQ + (3 * TPQ) / 2, clamp: null });
-    expect(readPosition("1. 1. 000", M44)).toEqual({ value: 0, clamp: null });
+    expect(readPosition("5. 2. 0960", M44)).toEqual({ value: 4 * 4 * TPQ + (3 * TPQ) / 2, clamp: null });
+    expect(readPosition("1. 1. 0000", M44)).toEqual({ value: 0, clamp: null });
   });
 
-  it("拍は 1〜拍子の上、ティックは 0〜479、小節は 1 から。いちばん大きい単位のことだけ言う", () => {
-    expect(readPosition("3.5", M44)?.clamp).toEqual({ field: "beat", value: "3. 4. 000", range: "1〜4" });
-    expect(readPosition("3.2.480", M44)?.clamp).toEqual({ field: "tick", value: "3. 2. 479", range: "0〜479" });
-    expect(readPosition("0", M44)?.clamp).toEqual({ field: "bar", value: "1. 1. 000", range: null });
-    expect(readPosition("-3.9.999", M44)).toEqual({ value: 3 * 480 + 479, clamp: { field: "bar", value: "1. 4. 479", range: null } });
-    expect(readPosition("2.9.999", M44)?.clamp?.field).toBe("beat");
+  it("拍は 1〜拍子の上、ティックは 0〜1919（4/4）、小節は 1 から。いちばん大きい単位のことだけ言う", () => {
+    expect(readPosition("3.5", M44)?.clamp).toEqual({ field: "beat", value: "3. 4. 0000", range: "1〜4" });
+    expect(readPosition("3.2.1920", M44)?.clamp).toEqual({ field: "tick", value: "3. 2. 1919", range: "0〜1919" });
+    expect(readPosition("0", M44)?.clamp).toEqual({ field: "bar", value: "1. 1. 0000", range: null });
+    expect(readPosition("-3.9.9999", M44)).toEqual({ value: 3 * TPQ + TPQ - 1, clamp: { field: "bar", value: "1. 4. 1919", range: null } });
+    expect(readPosition("2.9.9999", M44)?.clamp?.field).toBe("beat");
   });
 
-  it("6/8: 1 拍は 8 分音符。表示のティック 0〜479 を拍の中に割りあてる（はしは次の拍に出ない）", () => {
-    expect(readPosition("2.7", M68)?.clamp).toEqual({ field: "beat", value: "2. 6. 000", range: "1〜6" });
-    expect(readPosition("1.2.240", M68)).toEqual({ value: TPQ / 2 + TPQ / 4, clamp: null });
-    expect(readPosition("1.1.479", M68)).toEqual({ value: 239, clamp: null });
+  it("6/8: 1 拍は 8 分音符。ティックはその拍の中のティックそのまま（0〜0959）", () => {
+    expect(readPosition("2.7", M68)?.clamp).toEqual({ field: "beat", value: "2. 6. 0000", range: "1〜6" });
+    expect(readPosition("1.2.0480", M68)).toEqual({ value: TPQ / 2 + TPQ / 4, clamp: null });
+    expect(readPosition("1.1.0959", M68)).toEqual({ value: TPQ / 2 - 1, clamp: null });
+    expect(readPosition("1.1.0960", M68)?.clamp).toEqual({ field: "tick", value: "1. 1. 0959", range: "0〜0959" });
   });
 
   it("読めない物は null", () => {

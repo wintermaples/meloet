@@ -135,15 +135,15 @@ describe("再生まわりのボタン", () => {
 describe("位置と時間", () => {
   it("計器がなければ transport.position", () => {
     show(Transport, ready((s) => (s.transport.position = 4 * BAR)));
-    expect(text('[data-test="transport-position"]')).toBe("5. 1. 000");
+    expect(text('[data-test="transport-position"]')).toBe("5. 1. 0000");
     expect(text('[data-test="transport-time"]')).toBe("00:00:10.000");
   });
 
-  it("計器があれば、その位置（モック F-ArrangeRec の 7. 3. 240 ・ 00:00:16.562）", () => {
+  it("計器があれば、その位置（モック F-ArrangeRec の 7. 3. 240 ・ 00:00:16.562。ティックは 4 けた）", () => {
     show(Transport, ready((s) => (s.transport.state = "recording")));
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: 6 * BAR + 2 * TPQ + TPQ / 2, state: "recording" }) }));
     flushSync();
-    expect(text('[data-test="transport-position"]')).toBe("7. 3. 240");
+    expect(text('[data-test="transport-position"]')).toBe("7. 3. 0960");
     expect(text('[data-test="transport-time"]')).toBe("00:00:16.562");
   });
 
@@ -158,7 +158,7 @@ describe("位置と時間", () => {
     );
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: 4 * BAR - (3 * TPQ) / 2, state: "countIn", countInBeatsLeft: 2 }) }));
     flushSync();
-    expect(text('[data-test="transport-position"]')).toBe("5. 1. 000");
+    expect(text('[data-test="transport-position"]')).toBe("5. 1. 0000");
   });
 
   it("拍子とテンポで換算する（6/8、120.00）", () => {
@@ -168,12 +168,12 @@ describe("位置と時間", () => {
         s.timeline.meterNum = 6;
         s.timeline.meterDen = 8;
         s.timeline.tempoBpm = 120;
-        s.transport.position = 1440 + 250;
+        s.transport.position = 3 * TPQ + TPQ / 2 + 80;
       }),
     );
-    expect(text('[data-test="transport-position"]')).toBe("2. 2. 020");
-    // 1690 ティック = 7.0416… 拍（1 拍 240）、120 拍/分で 3.5208… 秒
-    expect(text('[data-test="transport-time"]')).toBe("00:00:03.520");
+    expect(text('[data-test="transport-position"]')).toBe("2. 2. 0080");
+    // 3.5416… 拍（4 分音符）、テンポは 4 分音符の数なので 120 で 1.7708… 秒
+    expect(text('[data-test="transport-time"]')).toBe("00:00:01.770");
   });
 });
 
@@ -253,22 +253,28 @@ describe("カウントイン", () => {
     expect(q('[data-test="transport-count-in"]')).toBeNull();
   });
 
-  it("拍子の上が 12 なら四角は 12", () => {
-    show(
-      Transport,
-      ready((s) => {
-        s.timeline.meterNum = 12;
-        s.timeline.meterDen = 8;
-        s.transport.state = "countIn";
-        s.transport.countInBeats = 12;
-        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
-      }),
-    );
-    app.setTelemetry(app.telemetryWith({ position: reading({ tick: -100, state: "countIn", countInBeatsLeft: 1 }) }));
-    flushSync();
-    const boxes = [...q('[data-test="transport-counting"]')!.querySelectorAll(".box")];
-    expect(boxes.map((b) => b.classList.contains("done"))).toEqual(Array(12).fill(true));
-    expect(boxes).toHaveLength(12);
+  it("四角は 1 小節にメトロノームが鳴る数（22-2）: 12/8 は 4、6/8 は 2、5/8 は 5、2/2 は 2", () => {
+    for (const [num, den, n] of [
+      [12, 8, 4],
+      [6, 8, 2],
+      [5, 8, 5],
+      [2, 2, 2],
+    ] as const) {
+      show(
+        Transport,
+        ready((s) => {
+          s.timeline.meterNum = num;
+          s.timeline.meterDen = den;
+          s.transport.state = "countIn";
+          s.transport.countInBeats = n;
+          s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+        }),
+      );
+      app.setTelemetry(app.telemetryWith({ position: reading({ tick: -100, state: "countIn", countInBeatsLeft: 1 }) }));
+      flushSync();
+      const boxes = [...q('[data-test="transport-counting"]')!.querySelectorAll(".box")];
+      expect(boxes.map((b) => b.classList.contains("done")), `${num}/${den}`).toEqual(Array(n).fill(true));
+    }
   });
 
   it("2 小節のカウントインでも箱は 1 小節ぶん。小節ごとに数えなおす", () => {
@@ -593,7 +599,7 @@ describe("テンポと拍子の打ちこみ", () => {
     }
   });
 
-  it("位置「1. 1. 000」も入力の枠（B-61）。「5」「5.2」「5.2.240」で locate、↑ ↓ は使わない、Esc でやめる", async () => {
+  it("位置「1. 1. 0000」も入力の枠（B-61）。「5」「5.2」「5.2.0960」で locate、↑ ↓ は使わない、Esc でやめる", async () => {
     show(Transport, ready());
     const openPos = async () => {
       q<HTMLButtonElement>(`button[data-test="transport-position"]`)!.click();
@@ -602,17 +608,18 @@ describe("テンポと拍子の打ちこみ", () => {
       return q<HTMLInputElement>(`input[data-test="transport-position"]`)!;
     };
     let input = await openPos();
-    expect(input.value).toBe("1. 1. 000");
+    expect(input.value).toBe("1. 1. 0000");
     expect(press(input, "ArrowUp").defaultPrevented).toBe(false);
-    expect(input.value).toBe("1. 1. 000");
+    expect(input.value).toBe("1. 1. 0000");
     press(input, "Escape");
     await tick();
     expect(app.sent).toEqual([]);
     for (const [typed, tick_] of [
       ["5", 4 * BAR],
       ["5.2", 4 * BAR + TPQ],
-      ["5. 2. 240", 4 * BAR + (3 * TPQ) / 2],
-      ["５．２．２４０", 4 * BAR + (3 * TPQ) / 2],
+      ["5. 2. 0960", 4 * BAR + (3 * TPQ) / 2],
+      ["５．２．０９６０", 4 * BAR + (3 * TPQ) / 2],
+      ["5.2.960", 4 * BAR + (3 * TPQ) / 2],
     ] as const) {
       input = await openPos();
       type(input, typed);
@@ -624,16 +631,16 @@ describe("テンポと拍子の打ちこみ", () => {
     type(input, "5.x");
     expect(input.classList.contains("broken")).toBe(true);
     press(input, "Enter");
-    expect(app.sent.at(-1)).toEqual({ type: "rejectValue", field: "playPosition", kept: "1. 1. 000", range: null });
+    expect(app.sent.at(-1)).toEqual({ type: "rejectValue", field: "playPosition", kept: "1. 1. 0000", range: null });
   });
 
   it("位置の範囲の外: 小節 ・ 拍 ・ ティックをそれぞれ丸め、いちばん大きい単位のことだけ言う（B-68）", async () => {
     show(Transport, ready());
     for (const [typed, tick_, said] of [
-      ["3.7", 2 * BAR + 3 * TPQ, { field: "beat", value: "3. 4. 000", range: "1〜4" }],
-      ["3.2.999", 2 * BAR + 480 + 479, { field: "tick", value: "3. 2. 479", range: "0〜479" }],
-      ["0.9.999", 3 * 480 + 479, { field: "bar", value: "1. 4. 479", range: null }],
-      ["2.0", BAR, { field: "beat", value: "2. 1. 000", range: "1〜4" }],
+      ["3.7", 2 * BAR + 3 * TPQ, { field: "beat", value: "3. 4. 0000", range: "1〜4" }],
+      ["3.2.9999", 2 * BAR + TPQ + TPQ - 1, { field: "tick", value: "3. 2. 1919", range: "0〜1919" }],
+      ["0.9.9999", 3 * TPQ + TPQ - 1, { field: "bar", value: "1. 4. 1919", range: null }],
+      ["2.0", BAR, { field: "beat", value: "2. 1. 0000", range: "1〜4" }],
     ] as const) {
       app.sent.length = 0;
       q<HTMLButtonElement>(`button[data-test="transport-position"]`)!.click();

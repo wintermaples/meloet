@@ -59,12 +59,12 @@ describe("小節の線（テンポの地図から）", () => {
     expect(snapToStep(map, THREE_FOUR + (25 * TPQ) / 12, Infinity)).toBe(THREE_FOUR + 3 * TPQ);
   });
 
-  it("位置の打ちこみ「10.2.240」は 3/4 の小節で数え、拍は 1〜3 に入れる", () => {
-    expect(tickOfPosition(map, 10, 2, 240)).toBe(THREE_FOUR + 3 * TPQ + TPQ + TPQ / 2);
-    expect(readPosition("10.2.240", map)).toEqual({ value: THREE_FOUR + 3 * TPQ + (3 * TPQ) / 2, clamp: null });
+  it("位置の打ちこみ「10.2.0960」は 3/4 の小節で数え、拍は 1〜3 に入れる", () => {
+    expect(tickOfPosition(map, 10, 2, TPQ / 2)).toBe(THREE_FOUR + 3 * TPQ + TPQ + TPQ / 2);
+    expect(readPosition("10.2.0960", map)).toEqual({ value: THREE_FOUR + 3 * TPQ + (3 * TPQ) / 2, clamp: null });
     const r = readPosition("10.4", map)!;
     expect(r.value).toBe(THREE_FOUR + 3 * TPQ + 2 * TPQ);
-    expect(r.clamp).toEqual({ field: "beat", value: "10. 3. 000", range: "1〜3" });
+    expect(r.clamp).toEqual({ field: "beat", value: "10. 3. 0000", range: "1〜3" });
   });
 
   it("クリップの小節の札「9–12」", () => {
@@ -112,10 +112,10 @@ describe("ノートの一覧 ・ 選んだノートの位置（地図から）",
 
   it("位置は 3/4 の小節で数え、打ちこみも同じ", () => {
     const spec = noteFieldSpec("position", take, clip, [0], map)!;
-    expect(spec.initial).toBe("10.2.000");
+    expect(spec.initial).toBe("10.2.0000");
     expect(spec.read("10.3")).toBe(THREE_FOUR + 3 * TPQ + 2 * TPQ);
     expect(spec.read("10.4")).toBeNull();
-    expect(selectedSummary(take, clip, [{ start: 0, end: 1 }], map)!.position).toBe("10.2.000");
+    expect(selectedSummary(take, clip, [{ start: 0, end: 1 }], map)!.position).toBe("10.2.0000");
   });
 });
 
@@ -277,7 +277,7 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     const row = q('[data-test="tempo-row"]')!;
     pointer(row, "pointerdown", 512, 12);
     pointer(row, "pointermove", 512 + 17, 6);
-    expect(text(q('[data-test="tempo-reading"]'))).toBe("9. 2. 000");
+    expect(text(q('[data-test="tempo-reading"]'))).toBe("9. 2. 0000");
     expect(app.sent.some((c) => c.type === "moveTempoPoint")).toBe(false);
     pointer(row, "pointerup", 512 + 17, 6);
     expect(app.sent.at(-1)).toEqual({ type: "moveTempoPoint", tick: THREE_FOUR, toTick: THREE_FOUR + TPQ, bpm: 126 });
@@ -343,7 +343,7 @@ describe("マーカーの行（モック R10-Markers）", () => {
     expect(app.sent.at(-1)).toEqual({ type: "goToMarker", id: 2 });
     pointer(tag, "pointerdown", 256);
     pointer(row, "pointermove", 256 + 66);
-    expect(text(q('[data-test="marker-reading"]'))).toBe("6. 1. 000");
+    expect(text(q('[data-test="marker-reading"]'))).toBe("6. 1. 0000");
     expect(q(".from")).not.toBeNull();
     pointer(row, "pointerup", 256 + 66);
     expect(app.sent.at(-1)).toEqual({ type: "moveMarker", id: 2, tick: 5 * BAR });
@@ -391,7 +391,7 @@ describe("再生まわりの値（再生の線がいる所）", () => {
     show(s, Transport);
     expect(text(q('[data-test="transport-meter"]'))).toBe("3/4");
     expect(text(q('[data-test="transport-tempo"]'))).toBe("120.00");
-    expect(text(q('[data-test="transport-position"]'))).toBe("10. 3. 000");
+    expect(text(q('[data-test="transport-position"]'))).toBe("10. 3. 0000");
   });
 });
 

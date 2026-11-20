@@ -5,7 +5,7 @@ import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type Grid, type IndexRange, ty
 import type { ColorName } from "../../design/tokens";
 import { isBlack } from "../../gl/keyboard";
 import { barsMap } from "../../time/bars";
-import { barBeatTick, DISPLAY_TICKS_PER_BEAT, TICKS_PER_QUARTER, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "../time";
+import { barBeatTick, TICKS_PER_QUARTER, tickText, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "../time";
 import { QUARTER_PX_STEPS } from "./view.svelte";
 
 export const KEY_MIN = 0;
@@ -406,24 +406,23 @@ export function movedFrom(take: TakeNotes, origin: TakeNotes, i: number): number
 
 // ---- 文 ----
 
-/** 「3.1.000」（小節 . 拍 . ティック）。 */
+/** 「3.1.0000」（小節 . 拍 . ティック）。 */
 export function positionText(tick: number, bars: Bars): string {
   const b = barBeatTick(tick, bars);
-  return `${b.bar}.${b.beat}.${String(b.tick).padStart(3, "0")}`;
+  return `${b.bar}.${b.beat}.${tickText(b.tick)}`;
 }
 
-/** 「1.240」（拍 . ティック）。 */
+/** 「1.0960」（拍 . ティック）。 */
 export function lengthText(ticks: number, meter: Meter): string {
   const perBeat = ticksPerBeat(meter);
   const t = Math.max(0, Math.round(Math.abs(ticks)));
   const beats = Math.floor(t / perBeat);
-  const rest = Math.floor(((t % perBeat) * DISPLAY_TICKS_PER_BEAT) / perBeat);
-  return `${beats}.${String(rest).padStart(3, "0")}`;
+  return `${beats}.${tickText(t % perBeat)}`;
 }
 
 /** 「+2」「−2」。0 は「+0」。 */
 export const signed = (v: number) => `${v < 0 ? "−" : "+"}${Math.abs(v)}`;
-/** 「+0.240」「−1.000」。 */
+/** 「+0.0960」「−1.0000」。 */
 export const signedLength = (ticks: number, meter: Meter) => `${ticks < 0 ? "−" : "+"}${lengthText(ticks, meter)}`;
 
 /** 「1–4」: クリップの小節（終わりの小節をふくむ）。 */

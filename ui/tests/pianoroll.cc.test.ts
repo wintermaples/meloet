@@ -155,7 +155,7 @@ describe("マウス（LaneMouse）", () => {
     expect(m.drag).toBeNull();
   });
 
-  it("押したまま動かすと、横はグリッドに吸いつき、縦は値。離して MoveControls を 1 つ。読み値は「+0512 ・ 1.3.000」の形", () => {
+  it("押したまま動かすと、横はグリッドに吸いつき、縦は値。離して MoveControls を 1 つ。読み値は「+0512 ・ 1.3.0000」の形", () => {
     selected = [{ start: 1, end: 2 }, { start: 4, end: 5 }];
     const m = make(4 * TPQ);
     // 点 1 は 4 * TPQ + TPQ / 2 ティック → x = 4.5 拍 × 40 px = 180。値 0 は y 24。
@@ -163,7 +163,7 @@ describe("マウス（LaneMouse）", () => {
     expect(sent).toEqual([]);
     const up = valueToY(PB, LANE, 512) - 24;
     expect(m.move(180 + 23, 24 + up, none)).toBe(true); // (23 * TPQ) / 40 ティック → TPQ / 2 に吸いつく
-    expect(m.reading()).toBe("+0512 ・ 2.2.000");
+    expect(m.reading()).toBe("+0512 ・ 2.2.0000");
     expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1, 4], ticks: TPQ / 2, value: 512 });
   });
 

@@ -149,7 +149,6 @@ fn the_example_of_the_spec() {
     let head = 16.0 * 60.0 / 96.0;
     assert!((map.seconds_at(4.0 * BARF) - head).abs() < 1e-12);
     assert!((map.seconds_at(9.0 * BARF) - (head + ramp + 2.0)).abs() < 1e-12);
-    assert_eq!(map.quarter_bpm_at(6.0 * BARF), 112.0);
 }
 
 #[test]
@@ -161,11 +160,9 @@ fn before_the_head_the_head_goes_on_without_a_ramp() {
     };
     let map = TempoMap::new(&timeline);
     assert_eq!(map.tempo_at(-5000.0), 96.0);
-    assert_eq!(map.quarter_bpm_at(-5000.0), 48.0);
     assert!(map.tempo_at(2.0 * QF) > 96.0);
-    // One beat of 6/8 is Q / 2 ticks.
-    assert!((map.seconds_at(-QF / 2.0) + 60.0 / 96.0).abs() < 1e-15);
-    assert!((map.tick_at(-60.0 / 96.0) + QF / 2.0).abs() < 1e-12);
+    assert!((map.seconds_at(-QF) + 60.0 / 96.0).abs() < 1e-15);
+    assert!((map.tick_at(-60.0 / 96.0) + QF).abs() < 1e-12);
     assert_eq!(map.seconds_at(0.0), 0.0);
     assert_eq!(map.tick_at(0.0), 0.0);
     assert_eq!(
@@ -189,19 +186,41 @@ fn before_the_head_the_head_goes_on_without_a_ramp() {
             downbeat: true
         }
     );
+    // The clicks of 6/8 (dotted quarters) go on backwards too.
+    assert_eq!(
+        map.next_click(-QF / 2.0 - 1.0),
+        Beat {
+            tick: 0,
+            downbeat: true
+        }
+    );
+    assert_eq!(
+        map.next_click(-3.0 * QF / 2.0 - 1.0),
+        Beat {
+            tick: -3 * QI / 2,
+            downbeat: false
+        }
+    );
+    assert_eq!(
+        map.next_click(-3.0 * QF),
+        Beat {
+            tick: -3 * QI,
+            downbeat: true
+        }
+    );
 }
 
 /// `Transport::frames_between` of `crates/meloet-engine/src/engine.rs` as it was before the
 /// tempo map: positions are ticks × `scale`, with `scale` = 6000 × sample rate, and one frame
-/// moves the position by `step` = tempo in hundredths × ticks per beat.
+/// moves the position by `step` = tempo in hundredths × ticks per quarter note.
 fn frames_between(from: i128, to: i128, step: i128) -> i128 {
     let gap = to - from;
     if gap <= 0 { 0 } else { (gap + step - 1) / step }
 }
 
-fn integer_frame_of(tick: u64, from_frames: u64, centi: u32, tpb: u64, rate: u32) -> u64 {
+fn integer_frame_of(tick: u64, from_frames: u64, centi: u32, rate: u32) -> u64 {
     let scale = 6000 * i128::from(rate);
-    let step = i128::from(centi) * i128::from(tpb);
+    let step = i128::from(centi) * i128::from(Q);
     frames_between(
         i128::from(from_frames) * step,
         i128::from(tick) * scale,
@@ -219,7 +238,7 @@ struct Sweep {
 
 impl Sweep {
     fn check(&mut self, map: &TempoMap, centi: u32, tpb: u64, rate: u32, tick: u64, from: u64) {
-        let want = integer_frame_of(tick, from, centi, tpb, rate);
+        let want = integer_frame_of(tick, from, centi, rate);
         let from_seconds = from as f64 / f64::from(rate);
         let got = map.frame_of(tick as f64, from_seconds, f64::from(rate));
         assert_eq!(
@@ -319,7 +338,7 @@ fn frame_of_is_the_integer_formula_when_the_tempo_stays() {
 
 #[test]
 fn a_ramp_is_the_sum_of_small_steps() {
-    // (ticks per beat, tempo at the start, at the end, ticks)
+    // (meter, tempo at the start, at the end, ticks)
     for (m, from, to, len) in [
         (Meter::FOUR_FOUR, 10400u32, 12000u32, 4 * BAR),
         (Meter::FOUR_FOUR, 30000, 3000, Q),
@@ -333,7 +352,6 @@ fn a_ramp_is_the_sum_of_small_steps() {
             ..Timeline::new(tempo(9600), m)
         };
         let map = TempoMap::new(&timeline);
-        let tpb = m.ticks_per_beat() as f64;
         let (a, b) = (f64::from(from) / 100.0, f64::from(to) / 100.0);
         // Midpoint rule over a million steps, with a compensated sum.
         let steps = 1_000_000u32;
@@ -343,7 +361,7 @@ fn a_ramp_is_the_sum_of_small_steps() {
         for i in 0..steps {
             let u = (f64::from(i) + 0.5) * h;
             let bpm = a + (b - a) * u / len as f64;
-            let y = 60.0 * h / (tpb * bpm) - lost;
+            let y = 60.0 * h / (QF * bpm) - lost;
             let next = sum + y;
             lost = (next - sum) - y;
             sum = next;
@@ -526,16 +544,19 @@ fn bars_and_beats_over_four_meters() {
         (b.bar, b.beat, b.tick)
     };
     assert_eq!(bbt(0), (1, 1, 0));
-    assert_eq!(bbt(three - 1), (2, 4, 479));
+    assert_eq!(bbt(three - 1), (2, 4, (Q - 1) as u32));
     assert_eq!(bbt(three), (3, 1, 0));
     assert_eq!(bbt(three + 2 * Q + 123), (3, 3, 123));
-    assert_eq!(bbt(six - 1), (4, 3, 479));
+    assert_eq!(bbt(six - 1), (4, 3, (Q - 1) as u32));
     assert_eq!(bbt(six), (5, 1, 0));
-    // A beat of 6/8 is Q / 2 ticks, shown as 480.
-    assert_eq!(bbt(six + Q / 2 + 10), (5, 2, 20));
-    assert_eq!(bbt(seven - 1), (5, 6, 478));
+    // A beat of 6/8 is Q / 2 ticks.
+    assert_eq!(bbt(six + Q / 2 + 10), (5, 2, 10));
+    assert_eq!(bbt(seven - 1), (5, 6, (Q / 2 - 1) as u32));
     assert_eq!(bbt(seven), (6, 1, 0));
-    assert_eq!(bbt(seven + 6 * (Q / 2) + Q / 2 - 1), (6, 7, 478));
+    assert_eq!(
+        bbt(seven + 6 * (Q / 2) + Q / 2 - 1),
+        (6, 7, (Q / 2 - 1) as u32)
+    );
     assert_eq!(bbt(seven + 7 * Q / 2), (7, 1, 0));
 
     let beat = |tick: f64| {
@@ -598,19 +619,24 @@ fn a_change_put_in_front_moves_ticks_and_keeps_bar_numbers() {
 }
 
 #[test]
-fn the_same_tempo_number_keeps_the_length_of_a_beat() {
+fn the_same_tempo_number_keeps_the_length_of_a_quarter_note() {
     let timeline = Timeline {
         meter_changes: vec![change(1, 6, 8)],
         ..Timeline::new(tempo(9600), Meter::FOUR_FOUR)
     };
     let map = TempoMap::new(&timeline);
-    let quarter = map.seconds_at(QF) - map.seconds_at(0.0);
-    let eighth = map.seconds_at(BARF + QF / 2.0) - map.seconds_at(BARF);
-    assert!((quarter - 60.0 / 96.0).abs() < 1e-15);
-    assert!((eighth - quarter).abs() < 1e-15);
-    assert_eq!(map.tempo_at(100.0), map.tempo_at(BARF + 80.0));
-    assert_eq!(map.quarter_bpm_at(100.0), 96.0);
-    assert_eq!(map.quarter_bpm_at(BARF + 80.0), 48.0);
+    let before = map.seconds_at(QF) - map.seconds_at(0.0);
+    let after = map.seconds_at(BARF + QF) - map.seconds_at(BARF);
+    assert!((before - 60.0 / 96.0).abs() < 1e-15);
+    assert!((after - before).abs() < 1e-15);
+    assert_eq!(map.tempo_at(BARF - 1.0), 96.0);
+    assert_eq!(map.tempo_at(BARF), 96.0);
+    assert_eq!(map.tempo_at(BARF + 80.0), 96.0);
+    // The flag of the meter changes nothing in time: the same seconds as with no flag.
+    let plain = TempoMap::new(&Timeline::new(tempo(9600), Meter::FOUR_FOUR));
+    for tick in [BARF - 1.0, BARF, BARF + 1.0, 3.0 * BARF + 7.0, 1.0e7] {
+        assert_eq!(map.seconds_at(tick), plain.seconds_at(tick));
+    }
     // A ramp that runs over the change of meter stays one line over ticks.
     let ramp = TempoMap::new(&Timeline {
         head_ramp: true,
@@ -621,6 +647,134 @@ fn the_same_tempo_number_keeps_the_length_of_a_beat() {
     assert_eq!(ramp.tempo_at(BARF), 144.0);
     assert!((ramp.tempo_at(BARF - 0.001) - 144.0).abs() < 1e-4);
     assert_eq!(ramp.tempo_at(2.0 * BARF), 192.0);
+    // And the time is the time of the same ramp with no flag in it.
+    let unflagged = TempoMap::new(&Timeline {
+        head_ramp: true,
+        tempo_points: vec![point(2 * BAR, 19200, false)],
+        ..Timeline::new(tempo(9600), Meter::FOUR_FOUR)
+    });
+    for tick in [BARF - 1.0, BARF, BARF + 1.0, 2.0 * BARF, 5.0 * BARF] {
+        let (a, b) = (ramp.seconds_at(tick), unflagged.seconds_at(tick));
+        assert!((a - b).abs() < 1e-12, "{tick}: {a} {b}");
+    }
+}
+
+#[test]
+fn a_bar_of_six_eight_at_120_is_a_second_and_a_half() {
+    let map = TempoMap::new(&Timeline::new(tempo(12000), meter(6, 8)));
+    for bar in 0..40u64 {
+        let seconds = map.seconds_at(map.tick_of_bar(bar) as f64);
+        assert!(
+            (seconds - 1.5 * bar as f64).abs() < 1e-12,
+            "{bar}: {seconds}"
+        );
+    }
+    assert_eq!(map.tick_of_bar(1), 3 * Q);
+    assert!((map.tick_at(1.5) - 3.0 * QF).abs() < 1e-9);
+    assert_eq!(map.frame_of(3.0 * QF, 0.0, 48_000.0), 72_000);
+}
+
+/// Every click from `from` to before `until`: (tick, strong).
+fn clicks(map: &TempoMap, from: i64, until: i64) -> Vec<(i64, bool)> {
+    let mut out = Vec::new();
+    let mut tick = from as f64;
+    loop {
+        let c = map.next_click(tick);
+        if c.tick >= until {
+            return out;
+        }
+        out.push((c.tick, c.downbeat));
+        tick = c.tick as f64 + 0.5;
+    }
+}
+
+#[test]
+fn the_clicks_of_each_meter() {
+    // (meter, ticks from click to click, clicks in a bar)
+    for (num, den, step, per_bar) in [
+        (4, 4, Q, 4),
+        (3, 4, Q, 3),
+        (6, 8, 3 * Q / 2, 2),
+        (9, 8, 3 * Q / 2, 3),
+        (12, 8, 3 * Q / 2, 4),
+        (5, 8, Q / 2, 5),
+        (7, 8, Q / 2, 7),
+        (2, 2, 2 * Q, 2),
+        (3, 8, Q / 2, 3),
+    ] {
+        let m = meter(num, den);
+        assert_eq!((m.ticks_per_click(), m.clicks_per_bar()), (step, per_bar));
+        assert_eq!(m.ticks_per_bar(), step * u64::from(per_bar));
+        let map = TempoMap::new(&Timeline::new(tempo(12000), m));
+        let (step, per_bar) = (step as i64, i64::from(per_bar));
+        let want: Vec<(i64, bool)> = (-per_bar..3 * per_bar)
+            .map(|k| (k * step, k.rem_euclid(per_bar) == 0))
+            .collect();
+        assert_eq!(
+            clicks(&map, -per_bar * step, 3 * per_bar * step),
+            want,
+            "{num}/{den}"
+        );
+        // On a click: that click. Just past it: the next one.
+        assert_eq!(map.next_click(step as f64).tick, step, "{num}/{den}");
+        assert_eq!(map.next_click(step as f64 + 0.001).tick, 2 * step);
+        assert_eq!(map.next_click(step as f64 - 0.001).tick, step);
+        // The beats (for snapping and the position) stay the notes of the lower number.
+        assert_eq!(map.next_beat(0.5).tick as u64, m.ticks_per_beat());
+    }
+}
+
+#[test]
+fn clicks_over_changes_of_meter_inside_a_ramp() {
+    // 4/4, 6/8 ×2, 5/8, 12/8, 2/2; the tempo ramps from the head over all of it.
+    let timeline = Timeline {
+        head_ramp: true,
+        tempo_points: vec![point(40 * Q, 18000, false)],
+        meter_changes: vec![
+            change(1, 6, 8),
+            change(3, 5, 8),
+            change(4, 12, 8),
+            change(5, 2, 2),
+        ],
+        ..Timeline::new(tempo(6000), Meter::FOUR_FOUR)
+    };
+    let map = TempoMap::new(&timeline);
+    let (six, five, twelve, two) = (
+        BAR,
+        BAR + 6 * Q,
+        BAR + 6 * Q + 5 * Q / 2,
+        4 * BAR + 5 * Q / 2,
+    );
+    assert_eq!(map.tick_of_bar(1), six);
+    assert_eq!(map.tick_of_bar(3), five);
+    assert_eq!(map.tick_of_bar(4), twelve);
+    assert_eq!(map.tick_of_bar(5), two);
+    let mut want: Vec<(u64, bool)> = (0..4).map(|k| (k * Q, k == 0)).collect();
+    want.extend((0..4).map(|k| (six + k * 3 * Q / 2, k % 2 == 0)));
+    want.extend((0..5).map(|k| (five + k * Q / 2, k == 0)));
+    want.extend((0..4).map(|k| (twelve + k * 3 * Q / 2, k == 0)));
+    want.extend((0..4).map(|k| (two + k * 2 * Q, k % 2 == 0)));
+    let want: Vec<(i64, bool)> = want.into_iter().map(|(t, d)| (t as i64, d)).collect();
+    assert_eq!(clicks(&map, 0, (two + 2 * BAR) as i64), want);
+    // The last click of a meter leads into the first of the next.
+    assert_eq!(map.next_click(five as f64 - 0.1).tick, five as i64);
+    assert_eq!(map.next_click(twelve as f64 - 0.1).tick, twelve as i64);
+    assert!(map.next_click(two as f64 - 0.1).downbeat);
+
+    // The flags do not bend the line: the tempo and the time are those of the bare ramp.
+    let bare = TempoMap::new(&Timeline {
+        meter_changes: Vec::new(),
+        ..timeline
+    });
+    for &(tick, _) in &want {
+        let tick = tick as f64;
+        assert!((map.tempo_at(tick) - bare.tempo_at(tick)).abs() < 1e-12);
+        assert!((map.seconds_at(tick) - bare.seconds_at(tick)).abs() < 1e-12);
+    }
+    assert!((map.tempo_at(20.0 * QF) - 120.0).abs() < 1e-12);
+    // Clicks come closer in time as the tempo rises, also where the step stays the same.
+    let gap = |a: u64, b: u64| map.seconds_at(b as f64) - map.seconds_at(a as f64);
+    assert!(gap(six, six + 3 * Q / 2) > gap(six + 3 * Q / 2, six + 3 * Q));
 }
 
 // ---- The table for the screen's tempo map ----
@@ -673,10 +827,10 @@ fn table_maps() -> Vec<(&'static str, Timeline)> {
             Timeline {
                 head_ramp: false,
                 tempo_points: vec![
-                    point(1000, 12050, false),
-                    point(3000, 8000, true),
-                    point(7000, 16000, true),
-                    point(9001, 6025, true),
+                    point(2 * Q + 40, 12050, false),
+                    point(6 * Q + 120, 8000, true),
+                    point(14 * Q + 280, 16000, true),
+                    point(18 * Q + 361, 6025, true),
                 ],
                 ..four_meters()
             },
@@ -707,8 +861,27 @@ fn table_maps() -> Vec<(&'static str, Timeline)> {
             "a ramp from the head in 12/16, fast to slow",
             Timeline {
                 head_ramp: true,
-                tempo_points: vec![point(777, 3000, false)],
+                tempo_points: vec![point(3 * Q / 2 + 57, 3000, false)],
                 ..Timeline::new(tempo(30000), meter(12, 16))
+            },
+        ),
+        (
+            "6/8, 9/8, 12/8, 5/8, 7/8, 2/2, 3/8, two bars each, under one ramp up and one down",
+            Timeline {
+                head_ramp: true,
+                tempo_points: vec![
+                    point(20 * Q + 77, 21000, true),
+                    point(47 * Q + 1, 4550, false),
+                ],
+                meter_changes: vec![
+                    change(2, 9, 8),
+                    change(4, 12, 8),
+                    change(6, 5, 8),
+                    change(8, 7, 8),
+                    change(10, 2, 2),
+                    change(12, 3, 8),
+                ],
+                ..Timeline::new(tempo(12000), meter(6, 8))
             },
         ),
     ]
@@ -717,7 +890,7 @@ fn table_maps() -> Vec<(&'static str, Timeline)> {
 fn table_json() -> String {
     let mut out = String::from(
         "{\n  \"note\": \"Written by `cargo test -p meloet-model --test tempo_map`. Do not edit this file manually. \
-         tempo: beats of the meter there, per minute. bar in meterChanges counts from 0; barBeatTick is as shown (from 1, a 480th of a beat).\",\n  \"maps\": [\n",
+         tempo: quarter notes per minute, whatever the meter. bar in meterChanges counts from 0; barBeatTick is as shown (bar and beat from 1, the tick as many ticks into the beat). clicks: the first click of the metronome at the tick or after it (next), and whether it is the strong one (downbeat).\",\n  \"maps\": [\n",
     );
     let maps = table_maps();
     for (i, (name, timeline)) in maps.iter().enumerate() {
@@ -793,6 +966,24 @@ fn table_json() -> String {
                 b.beat,
                 b.tick,
                 if j + 1 < whole.len() { "," } else { "" }
+            );
+        }
+        out.push_str("      ],\n      \"clicks\": [\n");
+        let mut click_ticks = ticks.clone();
+        for &cut in &cuts {
+            click_ticks.extend((1..=12).map(|k| (cut + k * Q / 2) as f64 - 0.5));
+        }
+        click_ticks.sort_by(f64::total_cmp);
+        click_ticks.dedup();
+        for (j, &tick) in click_ticks.iter().enumerate() {
+            let c = map.next_click(tick);
+            let _ = writeln!(
+                out,
+                "        {{ \"tick\": {:?}, \"next\": {}, \"downbeat\": {} }}{}",
+                tick,
+                c.tick,
+                c.downbeat,
+                if j + 1 < click_ticks.len() { "," } else { "" }
             );
         }
         let _ = writeln!(

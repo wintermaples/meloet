@@ -5,10 +5,9 @@ import { CONTROL_PITCH_BEND, type ClipView, type Command, type ControlKind, type
 import { t } from "../../text/ja";
 import { notePositionText, rangeText } from "../format";
 import { signed4 } from "../meterFormat";
-import { meterAtOf } from "../../time/bars";
 import type { Bars } from "../time";
 import { isOnOff, MODULATION_CC, settle, SUSTAIN_CC, switchText, valueRange, valueText } from "./cc";
-import { displayTickStep, readNotePositionLoose, type FieldSpec, type LooseValue } from "./noteFields";
+import { readNotePositionLoose, type FieldSpec, type LooseValue } from "./noteFields";
 
 export type CcFieldName = "position" | "value";
 /** 左から右への順（Tab の順）。 */
@@ -140,7 +139,7 @@ export function controlFieldSpec(name: CcFieldName, take: Controls, clip: Placed
       current: tick,
       low,
       high,
-      unit: displayTickStep(meterAtOf(meter, tick)),
+      unit: 1,
       shift: 10,
       range: rangeText(format(low), format(high)),
       format,

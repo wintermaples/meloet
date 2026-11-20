@@ -31,12 +31,13 @@ for case in table["maps"]:
     heads = dict(m.beats(last + 1))
     for row in case["positions"]:
         bar, beat, tick = row["barBeatTick"]
-        # (In 2/2 the tick after a head is still shown as 0, so the other way round says nothing.)
-        if row["tick"] in heads:
-            assert tick == 0 and heads[row["tick"]] == (beat == 1), (case["name"], row)
-            checked += 1
-        else:
-            assert tick != 0 or row["tick"] - 1 in heads, (case["name"], row)
+        assert (tick == 0) == (row["tick"] in heads), (case["name"], row)
+        if tick == 0:
+            assert heads[row["tick"]] == (beat == 1), (case["name"], row)
+        checked += 1
+    for row in case["clicks"]:
+        assert m.next_click(row["tick"]) == (row["next"], row["downbeat"]), (case["name"], row, m.next_click(row["tick"]))
+        checked += 1
 
 points, meters = cycle(3)
 m = TempoMap(96.0, (4, 4), False,
@@ -44,5 +45,5 @@ m = TempoMap(96.0, (4, 4), False,
              [(int(c.split(":")[0]), *map(int, c.split(":")[1].split("/"))) for c in meters.split(",")])
 assert [r[0] for r in m.regions if r[1] % CYCLE_BARS == 0] == [0, CYCLE_TICKS, 2 * CYCLE_TICKS]
 one = m.seconds_at(CYCLE_TICKS)
-assert close(m.seconds_at(2 * CYCLE_TICKS), 2 * one) and abs(one - 37.7156) < 1e-3, one
+assert close(m.seconds_at(2 * CYCLE_TICKS), 2 * one) and abs(one - 31.1510) < 1e-3, one
 print(f"ok: {checked} answers of the table, one round of the cycle is {one:.4f} s")

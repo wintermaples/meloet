@@ -8,6 +8,7 @@ import type { GlRect } from "../../gl/slot";
 import { nearestBeatTick } from "../../time/bars";
 import type { TempoMap } from "../../time/tempoMap";
 import { tickToX, xToTick, type View } from "../arrangeGeom";
+import { tickText } from "../time";
 import { hasLaneRef } from "./laneValue";
 
 // ---- トラックの行と帯の並び ----
@@ -278,11 +279,10 @@ export function indexSet(ranges: readonly { start: number; end: number }[]): Set
   return out;
 }
 
-/** 読み値の位置の差「+0. 1. 000」（小節 . 拍 . ティック。もとの所の拍子で数える）。 */
-export function deltaText(ticks: number, perBar: number, perBeat: number, displayPerBeat: number): string {
+/** 読み値の位置の差「+0. 1. 0000」（小節 . 拍 . ティック。もとの所の拍子で数える）。 */
+export function deltaText(ticks: number, perBar: number, perBeat: number): string {
   const a = Math.abs(Math.round(ticks));
   const bars = Math.floor(a / perBar);
   const beats = Math.floor((a % perBar) / perBeat);
-  const rest = Math.floor(((a % perBeat) * displayPerBeat) / perBeat);
-  return `${ticks < 0 ? "−" : "+"}${bars}. ${beats}. ${String(rest).padStart(3, "0")}`;
+  return `${ticks < 0 ? "−" : "+"}${bars}. ${beats}. ${tickText(a % perBeat)}`;
 }

@@ -25,17 +25,17 @@ async function sceneTake(name = "pianoRoll") {
 
 describe("ノートの一覧の数（モック A-PianoRoll）", () => {
   it("位置は「小節.拍.ティック」、長さは「拍.ティック」", () => {
-    expect(notePositionText(at(3, 1, 0), FOUR)).toBe("3.1.000");
-    expect(notePositionText(at(1, 4, TPQ / 2), FOUR)).toBe("1.4.240");
-    expect(noteLengthText(4 * TPQ, FOUR)).toBe("4.000");
-    expect(noteLengthText((3 * TPQ) / 4, FOUR)).toBe("0.360");
-    expect(noteLengthText((3 * TPQ) / 2, FOUR)).toBe("1.240");
+    expect(notePositionText(at(3, 1, 0), FOUR)).toBe("3.1.0000");
+    expect(notePositionText(at(1, 4, TPQ / 2), FOUR)).toBe("1.4.0960");
+    expect(noteLengthText(4 * TPQ, FOUR)).toBe("4.0000");
+    expect(noteLengthText((3 * TPQ) / 4, FOUR)).toBe("0.1440");
+    expect(noteLengthText((3 * TPQ) / 2, FOUR)).toBe("1.0960");
   });
 
   it("8 分の拍子では、拍は 8 分音符（表示は拍の中を 480 に分ける）", () => {
     const sixEight = { num: 6, den: 8 };
-    expect(notePositionText((TPQ / 2) * 7, sixEight)).toBe("2.2.000");
-    expect(noteLengthText((3 * TPQ) / 4, sixEight)).toBe("1.240");
+    expect(notePositionText((TPQ / 2) * 7, sixEight)).toBe("2.2.0000");
+    expect(noteLengthText((3 * TPQ) / 4, sixEight)).toBe("1.0480");
   });
 
   it("グリッドと音階の名前", () => {
@@ -49,22 +49,22 @@ describe("ノートの一覧の数（モック A-PianoRoll）", () => {
 });
 
 describe("選んだノートのまとめ（モック A-PianoRoll の右の欄）", () => {
-  it("D4 E4 F4: 位置はいちばん早い 3.1.000、長さはばらばら（null）、ベロシティは 77 – 83", async () => {
+  it("D4 E4 F4: 位置はいちばん早い 3.1.0000、長さはばらばら（null）、ベロシティは 77 – 83", async () => {
     const { s, clip, take } = await sceneTake();
     const sum = selectedSummary(take, clip, s.pianoRoll.selectedNotes, FOUR)!;
-    expect(sum).toEqual({ count: 3, position: "3.1.000", keys: "D4 E4 F4", length: null, velocityLow: 77, velocityHigh: 83 });
+    expect(sum).toEqual({ count: 3, position: "3.1.0000", keys: "D4 E4 F4", length: null, velocityLow: 77, velocityHigh: 83 });
   });
 
   it("1 つだけなら長さはその値。何も選んでいなければ null", async () => {
     const { clip, take } = await sceneTake();
-    expect(selectedSummary(take, clip, [{ start: 14, end: 15 }], FOUR)).toMatchObject({ count: 1, length: "0.360", velocityLow: 80, velocityHigh: 80 });
+    expect(selectedSummary(take, clip, [{ start: 14, end: 15 }], FOUR)).toMatchObject({ count: 1, length: "0.1440", velocityLow: 80, velocityHigh: 80 });
     expect(selectedSummary(take, clip, [], FOUR)).toBeNull();
   });
 
   it("位置は曲の中: クリップが 5 小節目から始まれば、そのぶん後ろ", async () => {
     const { clip, take } = await sceneTake();
     const later = { ...clip, start: clip.start + 4 * BAR, end: clip.end + 4 * BAR };
-    expect(selectedSummary(take, later, [{ start: 14, end: 15 }], FOUR)!.position).toBe("7.1.000");
+    expect(selectedSummary(take, later, [{ start: 14, end: 15 }], FOUR)!.position).toBe("7.1.0000");
   });
 
   it("選んだ範囲の中にあるかを二分探索で見る", () => {
@@ -83,7 +83,7 @@ describe("選んだノートのまとめ（モック A-PianoRoll の右の欄）
 });
 
 describe("鳴っている音（モック F-PRPlay「鳴っている音 C3 E3 G3 C4」）", () => {
-  it("4.1.240 で鳴っているのは C3 E3 G3 C4（低い順）", async () => {
+  it("4.1.0960 で鳴っているのは C3 E3 G3 C4（低い順）", async () => {
     const { clip, take } = await sceneTake("pianoRollPlay");
     expect(soundingKeys(take, clip, at(4, 1, TPQ / 2)).map(noteName)).toEqual(["C3", "E3", "G3", "C4"]);
   });

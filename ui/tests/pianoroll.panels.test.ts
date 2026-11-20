@@ -67,7 +67,7 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
     show(NoteListPanel);
     expect(text(q(".head"))).toBe("位置 音 長さ Vel");
     const rows = qa(".row");
-    expect(rows.slice(0, 5).map(text)).toEqual(["1.1.000 C3 4.000 70", "1.1.000 G3 4.000 64", "1.1.000 E4 1.000 87", "1.2.000 G4 1.000 92", "1.3.000 C5 1.240 101"]);
+    expect(rows.slice(0, 5).map(text)).toEqual(["1.1.0000 C3 4.0000 70", "1.1.0000 G3 4.0000 64", "1.1.0000 E4 1.0000 87", "1.2.0000 G4 1.0000 92", "1.3.0000 C5 1.0960 101"]);
   });
 
   it("選んだノート（D4 E4 F4）の行は selected", async () => {
@@ -78,7 +78,7 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
     viewport.dispatchEvent(new Event("scroll"));
     flushSync();
     const picked = qa(".row.selected").map(text);
-    expect(picked).toEqual(["3.1.000 D4 0.360 80", "3.1.360 E4 0.360 83", "3.2.240 F4 0.240 77"]);
+    expect(picked).toEqual(["3.1.0000 D4 0.1440 80", "3.1.1440 E4 0.1440 83", "3.2.0960 F4 0.0960 77"]);
   });
 
   it("行を押すとそのノートを選ぶ（replace）。Shift で足す（add）", async () => {
@@ -126,10 +126,10 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
 });
 
 describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
-  it("位置「3.1.000 〜」、音「D4 E4 F4」、長さ「ばらばら」、ベロシティ「77 – 83」", async () => {
+  it("位置「3.1.0000 〜」、音「D4 E4 F4」、長さ「ばらばら」、ベロシティ「77 – 83」", async () => {
     await scene("pianoRoll");
     show(NoteInspector);
-    expect(text(q('[data-test="inspector-position"]'))).toBe("3.1.000 〜");
+    expect(text(q('[data-test="inspector-position"]'))).toBe("3.1.0000 〜");
     expect(text(q('[data-test="inspector-keys"]'))).toBe("D4 E4 F4");
     expect(text(q('[data-test="inspector-length"]'))).toBe("ばらばら");
     expect(text(q('[data-test="inspector-velocity"]'))).toBe("77 – 83");
@@ -138,8 +138,8 @@ describe("選んだノート（モック A-PianoRoll の右の欄）", () => {
   it("1 つだけなら位置に「〜」をつけず、長さとベロシティは値", async () => {
     await scene("pianoRoll", (s) => (s.pianoRoll.selectedNotes = [{ start: 14, end: 15 }]));
     show(NoteInspector);
-    expect(text(q('[data-test="inspector-position"]'))).toBe("3.1.000");
-    expect(text(q('[data-test="inspector-length"]'))).toBe("0.360");
+    expect(text(q('[data-test="inspector-position"]'))).toBe("3.1.0000");
+    expect(text(q('[data-test="inspector-length"]'))).toBe("0.1440");
     expect(text(q('[data-test="inspector-velocity"]'))).toBe("80");
   });
 
@@ -216,9 +216,9 @@ describe("状態行（ピアノロールのまわり）", () => {
   it("ドラッグしている間は、その場の読み値を左の文の代わりに", async () => {
     await scene("pianoRoll");
     show(StatusLine);
-    dragReading.text = "+0.240 ・ +2 半音";
+    dragReading.text = "+0.0960 ・ +2 半音";
     flushSync();
-    expect(left()).toBe("+0.240 ・ +2 半音");
+    expect(left()).toBe("+0.0960 ・ +2 半音");
     dragReading.text = null;
     flushSync();
     expect(left()).toContain("選択 3 ノート");
@@ -390,22 +390,22 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     show(NoteListPanel);
     double(0, "position");
     flushSync();
-    typeIn("4.2.000");
+    typeIn("4.2.0000");
     key(field()!, "Enter");
     await settle();
     expect(app.sent).toEqual([
       { type: "setNotesField", take: take.id, notes: [0], field: "start", value: at(4, 1, 0) },
-      { type: "clampValue", field: "position", value: "4.1.000", range: "1.1.000〜4.1.000" },
+      { type: "clampValue", field: "position", value: "4.1.0000", range: "1.1.0000〜4.1.0000" },
     ]);
     app.sent.length = 0;
     double(0, "position");
     flushSync();
-    typeIn("2.7.000");
+    typeIn("2.7.0000");
     key(field()!, "Enter");
     await settle();
     expect(app.sent).toEqual([
       { type: "setNotesField", take: take.id, notes: [0], field: "start", value: at(2, 4, 0) },
-      { type: "clampValue", field: "beat", value: "2.4.000", range: "1〜4" },
+      { type: "clampValue", field: "beat", value: "2.4.0000", range: "1〜4" },
     ]);
   });
 
@@ -416,19 +416,19 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     row.focus();
     key(row, "Enter");
     flushSync();
-    expect(field()!.value).toBe("1.1.000");
+    expect(field()!.value).toBe("1.1.0000");
     key(field()!, "Tab");
     flushSync();
     expect(field()!.value).toBe("C3");
     key(field()!, "Tab");
     flushSync();
-    expect(field()!.value).toBe("4.000");
+    expect(field()!.value).toBe("4.0000");
     key(field()!, "Tab");
     flushSync();
     typeIn("71");
     key(field()!, "Tab");
     flushSync();
-    expect(field()!.value).toBe("1.1.000");
+    expect(field()!.value).toBe("1.1.0000");
     expect(field()!.closest(".row")!.getAttribute("data-note")).toBe("1");
     expect(app.sent).toEqual([{ type: "setNotesField", take: take.id, notes: [0], field: "velocity", value: 71 }]);
     key(field()!, "Tab", { shiftKey: true });
@@ -451,7 +451,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     flushSync();
     key(field()!, "ArrowUp", { shiftKey: true });
     flushSync();
-    expect(field()!.value).toBe("1.1.010");
+    expect(field()!.value).toBe("1.1.0010");
   });
 
   it("Esc でやめる（何も送らない）。枠の外を押しても、やめる", async () => {
@@ -459,7 +459,7 @@ describe("ノートの一覧で値を打ちこむ（モック R3-Lanes）", () =
     show(NoteListPanel);
     double(0, "length");
     flushSync();
-    typeIn("2.000");
+    typeIn("2.0000");
     key(field()!, "Escape");
     await settle();
     expect(field()).toBeNull();
@@ -509,13 +509,13 @@ describe("選んだノートの欄を打ちこむ", () => {
     show(NoteInspector);
     q('[data-test="inspector-position"]')!.click();
     flushSync();
-    expect(field()!.value).toBe("3.1.000");
+    expect(field()!.value).toBe("3.1.0000");
     key(field()!, "Tab");
     flushSync();
     expect(field()!.value).toBe("D4");
     key(field()!, "Tab");
     flushSync();
-    expect(field()!.value).toBe("0.360");
+    expect(field()!.value).toBe("0.1440");
     expect(app.sent).toEqual([]);
   });
 
@@ -526,20 +526,20 @@ describe("選んだノートの欄を打ちこむ", () => {
     flushSync();
     typeIn("x");
     key(field()!, "Enter");
-    expect(app.sent).toEqual([{ type: "rejectValue", field: "length", kept: "ばらばら", range: "0.001〜6.240" }]);
+    expect(app.sent).toEqual([{ type: "rejectValue", field: "length", kept: "ばらばら", range: "0.0001〜6.0960" }]);
   });
 
-  it("長さが範囲の外（9.000）なら、いちばん長い 6.240 にして決める", async () => {
+  it("長さが範囲の外（9.0000）なら、いちばん長い 6.0960 にして決める", async () => {
     const { take } = await scene("pianoRoll");
     show(NoteInspector);
     q('[data-test="inspector-length"]')!.click();
     flushSync();
-    typeIn("9.000");
+    typeIn("9.0000");
     key(field()!, "Enter");
     await settle();
     expect(app.sent).toEqual([
-      { type: "setNotesField", take: take.id, notes: [14, 15, 16], field: "length", value: 6 * 480 + 240 },
-      { type: "clampValue", field: "length", value: "6.240", range: "0.001〜6.240" },
+      { type: "setNotesField", take: take.id, notes: [14, 15, 16], field: "length", value: 6 * TPQ + TPQ / 2 },
+      { type: "clampValue", field: "length", value: "6.0960", range: "0.0001〜6.0960" },
     ]);
   });
 });

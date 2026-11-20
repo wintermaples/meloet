@@ -160,8 +160,8 @@ describe("ノートの一覧", () => {
     show(NoteListPanel);
     expect(text(q(".head"))).toBe("位置 音 Vel");
     expect(q(".head")!.classList.contains("drums")).toBe(true);
-    expect(qa(".row").slice(0, 3).map(text)).toEqual(["1.1.000 キック 104", "1.1.000 クローズハイハット 88", "1.1.000 クラッシュ 110"]);
-    expect(qa(".row.selected").map(text)).toEqual(["1.2.000 スネア 96", "2.2.000 スネア 96"]);
+    expect(qa(".row").slice(0, 3).map(text)).toEqual(["1.1.0000 キック 104", "1.1.0000 クローズハイハット 88", "1.1.0000 クラッシュ 110"]);
+    expect(qa(".row.selected").map(text)).toEqual(["1.2.0000 スネア 96", "2.2.0000 スネア 96"]);
   });
 
   it("キットにない鍵のノートは音名で", async () => {
@@ -169,7 +169,7 @@ describe("ノートの一覧", () => {
     const odd = take([[0, TPQ / 4, 60, 90], [0, TPQ / 4, 36, 104]], song.clip.takeId);
     shown.setShown({ clip: song.clip, track: song.track, take: odd });
     show(NoteListPanel);
-    expect(qa(".row").map(text)).toEqual(["1.1.000 C4 90", "1.1.000 キック 104"]);
+    expect(qa(".row").map(text)).toEqual(["1.1.0000 C4 90", "1.1.0000 キック 104"]);
   });
 });
 

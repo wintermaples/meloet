@@ -138,9 +138,9 @@ describe("帯の中の点", () => {
     expect(A.pointsInBox(v, pts, d, 90, 0, 200, 48)).toEqual([1, 2]);
     expect(A.addTick(v, map, 48 * 4 + 25, false)).toBe(4 * BAR + 2 * TPQ);
   });
-  it("読み値の位置の差（モック R10-AutoEdit「+0. 1. 000」）", () => {
-    expect(A.deltaText(TPQ, BAR, TPQ, 480)).toBe("+0. 1. 000");
-    expect(A.deltaText(-(BAR + TPQ / 2), BAR, TPQ, 480)).toBe("−1. 0. 240");
+  it("読み値の位置の差（モック R10-AutoEdit「+0. 1. 000」の形。ティックは 4 けた）", () => {
+    expect(A.deltaText(TPQ, BAR, TPQ)).toBe("+0. 1. 0000");
+    expect(A.deltaText(-(BAR + TPQ / 2), BAR, TPQ)).toBe("−1. 0. 0960");
   });
 });
 

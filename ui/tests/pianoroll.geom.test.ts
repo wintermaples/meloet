@@ -132,13 +132,13 @@ describe("ドラッグの量", () => {
 });
 
 describe("文", () => {
-  it("位置「3.1.000」、長さ「1.240」、符号つき「+0.240」「−2」", () => {
-    expect(G.positionText(8 * TPQ, METER)).toBe("3.1.000");
-    expect(G.positionText(8 * TPQ + TPQ + TPQ / 2, METER)).toBe("3.2.240");
-    expect(G.lengthText((3 * TPQ) / 2, METER)).toBe("1.240");
-    expect(G.lengthText((3 * TPQ) / 4, METER)).toBe("0.360");
-    expect(G.signedLength(TPQ / 2, METER)).toBe("+0.240");
-    expect(G.signedLength(-TPQ, METER)).toBe("−1.000");
+  it("位置「3.1.0000」、長さ「1.0960」、符号つき「+0.0960」「−2」", () => {
+    expect(G.positionText(8 * TPQ, METER)).toBe("3.1.0000");
+    expect(G.positionText(8 * TPQ + TPQ + TPQ / 2, METER)).toBe("3.2.0960");
+    expect(G.lengthText((3 * TPQ) / 2, METER)).toBe("1.0960");
+    expect(G.lengthText((3 * TPQ) / 4, METER)).toBe("0.1440");
+    expect(G.signedLength(TPQ / 2, METER)).toBe("+0.0960");
+    expect(G.signedLength(-TPQ, METER)).toBe("−1.0000");
     expect(G.signed(2)).toBe("+2");
     expect(G.signed(-12)).toBe("−12");
     expect(G.barsText(0, 16 * TPQ, METER)).toBe("1–4");

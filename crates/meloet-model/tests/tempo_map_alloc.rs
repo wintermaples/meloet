@@ -63,8 +63,8 @@ fn no_function_of_the_map_allocates() {
         let seconds = map.seconds_at(black_box(tick));
         sum += seconds;
         sum += map.tick_at(black_box(seconds));
-        sum += map.tempo_at(tick) + map.quarter_bpm_at(tick);
-        sum += map.next_beat(tick).tick as f64;
+        sum += map.tempo_at(tick);
+        sum += map.next_beat(tick).tick as f64 + map.next_click(tick).tick as f64;
         sum += map.frame_of(tick, 0.25, 48_000.0) as f64;
         let whole = tick.max(0.0) as u64;
         sum += map.meter_at(whole).bar_tick as f64;

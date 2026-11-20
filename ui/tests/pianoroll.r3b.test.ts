@@ -157,7 +157,7 @@ describe("ノートの左はし（B-69）", () => {
       drag.down(x(TPQ) + 2, y(62), NONE);
       expect(sent).toEqual([{ type: "selectNotes", take: 7, notes: [1], mode: "replace" }]);
       drag.move(x(TPQ) + 2 + 10, y(62), NONE);
-      expect(drag.reading()).toBe("長さ 1.000 → 0.360");
+      expect(drag.reading()).toBe("長さ 1.0000 → 0.1440");
       expect(noteMarks(3, drag.drag, -1)).toEqual(Uint8Array.from([0, 5, 0]));
       expect(drag.up()).toEqual({ type: "resizeNotes", take: 7, notes: [1], edge: "start", ticks: TPQ / 4 });
     });
@@ -359,40 +359,40 @@ describe("範囲の外の値（B-68）", () => {
 
   it("数字として読めない物は null（「こわれた」のまま）", () => {
     for (const s of ["あ", "", "1.2.3", "abc"]) expect(readField(spec("velocity"), s), s).toBeNull();
-    for (const s of ["あ", "", "3.1.24", "x.1.000"]) expect(readField(spec("position"), s), s).toBeNull();
+    for (const s of ["あ", "", "3.1.00000", "x.1.0000"]) expect(readField(spec("position"), s), s).toBeNull();
     expect(readField(spec("key"), "H4")).toBeNull();
   });
 
-  it("位置: 拍は 1〜拍子の上、ティックは 0〜479、小節は 1 から。それぞれ範囲に入れてから、丸めた所だけ言う", () => {
-    expect(readField(spec("position"), "2.5.000")).toEqual({ value: at(2, 4, 0), clamped: { field: "beat", value: "2.4.000", range: "1〜4" } });
-    expect(readField(spec("position"), "2.0.000")).toEqual({ value: at(2, 1, 0), clamped: { field: "beat", value: "2.1.000", range: "1〜4" } });
-    expect(readField(spec("position"), "2.2.999")).toEqual({ value: at(2, 2, 479), clamped: { field: "tick", value: "2.2.479", range: "0〜479" } });
-    expect(readField(spec("position"), "0.1.000")).toEqual({ value: 0, clamped: { field: "bar", value: "1.1.000", range: null } });
+  it("位置: 拍は 1〜拍子の上、ティックは 0〜1919（4/4）、小節は 1 から。それぞれ範囲に入れてから、丸めた所だけ言う", () => {
+    expect(readField(spec("position"), "2.5.0000")).toEqual({ value: at(2, 4, 0), clamped: { field: "beat", value: "2.4.0000", range: "1〜4" } });
+    expect(readField(spec("position"), "2.0.0000")).toEqual({ value: at(2, 1, 0), clamped: { field: "beat", value: "2.1.0000", range: "1〜4" } });
+    expect(readField(spec("position"), "2.2.9999")).toEqual({ value: at(2, 2, TPQ - 1), clamped: { field: "tick", value: "2.2.1919", range: "0〜1919" } });
+    expect(readField(spec("position"), "0.1.0000")).toEqual({ value: 0, clamped: { field: "bar", value: "1.1.0000", range: null } });
   });
 
   it("2 つ以上丸めたら、いちばん大きい単位だけ（小節 → 拍 → ティック）", () => {
-    expect(readField(spec("position"), "0.9.999")!.clamped).toEqual({ field: "bar", value: "1.4.479", range: null });
-    expect(readField(spec("position"), "2.9.999")!.clamped).toEqual({ field: "beat", value: "2.4.479", range: "1〜4" });
+    expect(readField(spec("position"), "0.9.9999")!.clamped).toEqual({ field: "bar", value: "1.4.1919", range: null });
+    expect(readField(spec("position"), "2.9.9999")!.clamped).toEqual({ field: "beat", value: "2.4.1919", range: "1〜4" });
   });
 
   it("位置がクリップの外なら、クリップの範囲の文（ほかの丸めより先に言う）", () => {
-    expect(readField(spec("position"), "9.1.000")).toEqual({
+    expect(readField(spec("position"), "9.1.0000")).toEqual({
       value: at(4, 4, TPQ / 4),
-      clamped: { field: "position", value: "4.4.120", range: "1.1.000〜4.4.120" },
+      clamped: { field: "position", value: "4.4.0480", range: "1.1.0000〜4.4.0480" },
     });
-    expect(readField(spec("position"), "9.9.000")!.clamped!.field).toBe("position");
+    expect(readField(spec("position"), "9.9.0000")!.clamped!.field).toBe("position");
   });
 
   it("音 ・ 長さ: 近いはし（音は G9 ・ C-1、2 つ以上なら高い音が G9 をこえない所）", () => {
     expect(readField(spec("key"), "C10")).toEqual({ value: 127, clamped: { field: "key", value: "G9", range: "C-1〜G9" } });
     expect(readField(spec("key"), "C-2")).toEqual({ value: 0, clamped: { field: "key", value: "C-1", range: "C-1〜G9" } });
     expect(readField(spec("key", [0, 1]), "G9")).toEqual({ value: 125, clamped: { field: "key", value: "F9", range: "C-1〜F9" } });
-    expect(readField(spec("length"), "0.000")).toEqual({ value: 1, clamped: { field: "length", value: "0.001", range: "0.001〜8.000" } });
-    expect(readField(spec("length"), "1.700")).toEqual({ value: 480 + 479, clamped: { field: "tick", value: "1.479", range: "0〜479" } });
+    expect(readField(spec("length"), "0.0000")).toEqual({ value: 1, clamped: { field: "length", value: "0.0001", range: "0.0001〜8.0000" } });
+    expect(readField(spec("length"), "1.2000")).toEqual({ value: TPQ + TPQ - 1, clamped: { field: "tick", value: "1.1919", range: "0〜1919" } });
   });
 
   it("丸めたことを言わせる意図", () => {
-    expect(clampCommand({ field: "beat", value: "3.4.000", range: "1〜4" })).toEqual({ type: "clampValue", field: "beat", value: "3.4.000", range: "1〜4" });
+    expect(clampCommand({ field: "beat", value: "3.4.0000", range: "1〜4" })).toEqual({ type: "clampValue", field: "beat", value: "3.4.0000", range: "1〜4" });
   });
 });
 

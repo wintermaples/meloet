@@ -17,6 +17,7 @@ import { closeMenu, menuOpened, menuVisible } from "../src/lib/menu";
 import * as app from "./fake-app.svelte";
 import { take } from "./pianoroll-fixture";
 import { trackEdit } from "../src/components/tracks.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
@@ -26,7 +27,7 @@ const settle = async () => {
   flushSync();
 };
 
-const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 7680, take: 1, takes: 2, takeId: 7, takeOffset: 0, noteCount: 2 };
+const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 16 * TPQ, take: 1, takes: 2, takeId: 7, takeOffset: 0, noteCount: 2 };
 
 function withClip(edit: (s: AppState) => void = () => {}): AppState {
   const s = fakeState();
@@ -207,7 +208,7 @@ describe("メニューの中身（B-59）", () => {
       prOpen(s);
       s.pianoRoll.take = 7;
     });
-    const shown = () => shownOf(take([[0, 480, 60]], 7, { origin: 3 }), 0);
+    const shown = () => shownOf(take([[0, TPQ, 60]], 7, { origin: 3 }), 0);
     menus = topMenus(open, depsOf(open, [], { pianoRoll: shown }), "other");
     expect(Object.values(usableOf(menus[4]!.entries)).every((u) => u)).toBe(true);
     expect(usableOf(menus[2]!.entries)).toMatchObject({ 縦に拡大: true, 縦に縮小: true });
@@ -258,7 +259,7 @@ describe("メニューの中身（B-59）", () => {
       s.pianoRoll.take = 7;
       s.pianoRoll.selectedNotes = [{ start: 0, end: 1 }];
     });
-    const shown = () => shownOf(take([[0, 480, 60]], 7), 0);
+    const shown = () => shownOf(take([[0, TPQ, 60]], 7), 0);
     const menus = () => topMenus(s, depsOf(s, sent, { pianoRoll: shown }), "other");
     row(menus()[1]!.entries, "コピー").run!();
     prView.focus = "pianoRoll";
@@ -289,7 +290,7 @@ describe("メニューの中身（B-59）", () => {
       prOpen(s);
       s.pianoRoll.take = 7;
     });
-    const shown = () => shownOf(take([[0, 480, 60]], 7), 0);
+    const shown = () => shownOf(take([[0, TPQ, 60]], 7), 0);
     row(topMenus(s, depsOf(s, sent, { pianoRoll: shown }), "other")[4]!.entries, "クオンタイズ").run!();
     expect(sent).toEqual([{ type: "quantize", take: 7, notes: [] }]);
   });

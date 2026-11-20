@@ -15,11 +15,12 @@ import { pickClips, pickLane } from "../src/components/timeline/pick";
 import { moveSlotAt } from "../src/components/tracks.svelte";
 import { EFFECT_PARAMS } from "../src/bridge/types";
 import { mapOf } from "../src/time/bars";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 const scene = (name: string) => fakeScene(name)!.state;
 const lane = (ticks: number[], values: number[], step = false) => ({ id: 1, step, ticks: Float64Array.from(ticks), values: Float32Array.from(values) });
 
@@ -110,7 +111,7 @@ describe("帯の中の点", () => {
   it("点を動かす: 横は拍の頭、上下は位置。Shift ならティック。いちばん前の点は曲の頭で止まる", () => {
     const start: A.PointDrag = { points: [1], grab: 1, downX: 96, downY: 10, moved: false, dTick: 0, dValue: 0 };
     const moved = A.dragPoints(start, pts, v, d, map, 96 + 13, 10 - 10, 4, false);
-    expect(moved.dTick).toBe(480);
+    expect(moved.dTick).toBe(TPQ);
     expect(moved.dValue).toBeCloseTo(10 / 39);
     expect(A.dragPoints(start, pts, v, d, map, 97, 11, 4, false)).toBe(start);
     const first: A.PointDrag = { ...start, points: [0, 1], grab: 1 };
@@ -135,11 +136,11 @@ describe("帯の中の点", () => {
     expect(A.pointAt(v, pts, d, 96 + 2, A.valueToY(d, 0.8) + 1, 6)).toBe(1);
     expect(A.pointAt(v, pts, d, 50, 20, 6)).toBe(-1);
     expect(A.pointsInBox(v, pts, d, 90, 0, 200, 48)).toEqual([1, 2]);
-    expect(A.addTick(v, map, 48 * 4 + 25, false)).toBe(4 * BAR + 960);
+    expect(A.addTick(v, map, 48 * 4 + 25, false)).toBe(4 * BAR + 2 * TPQ);
   });
   it("読み値の位置の差（モック R10-AutoEdit「+0. 1. 000」）", () => {
-    expect(A.deltaText(480, BAR, 480, 480)).toBe("+0. 1. 000");
-    expect(A.deltaText(-(BAR + 240), BAR, 480, 480)).toBe("−1. 0. 240");
+    expect(A.deltaText(TPQ, BAR, TPQ, 480)).toBe("+0. 1. 000");
+    expect(A.deltaText(-(BAR + TPQ / 2), BAR, TPQ, 480)).toBe("−1. 0. 240");
   });
 });
 

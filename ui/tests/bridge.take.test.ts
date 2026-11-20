@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { encodeTake } from "../src/bridge/fake";
 import { CONTROL_CC, NO_FROM, TakeStore, decodeTake } from "../src/bridge/take";
 // Both files are written by `cargo test -p meloet-protocol` from the Rust encoder.
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import expected from "./fixtures/take-v2.json";
 
 function fixtureBytes(): Uint8Array {
@@ -54,12 +55,12 @@ describe("take binary, version 2", () => {
       { start: 10, length: 20, key: 60, velocity: 90, from: 3 },
       { start: 30, length: 20, key: 62, velocity: 91 },
     ];
-    const t = decodeTake(encodeTake({ id: 9, length: 1920, origin: 4, notes }));
+    const t = decodeTake(encodeTake({ id: 9, length: 4 * TPQ, origin: 4, notes }));
     expect([t.id, t.length, t.origin, t.starts[0], t.lengths[0], t.keys[0], t.velocities[0], t.controlTicks.length]).toEqual([
-      9, 1920, 4, 10, 20, 60, 90, 0,
+      9, 4 * TPQ, 4, 10, 20, 60, 90, 0,
     ]);
     expect(Array.from(t.froms)).toEqual([3, NO_FROM]);
-    expect(decodeTake(encodeTake({ id: 9, length: 1920, notes })).origin).toBe(0);
+    expect(decodeTake(encodeTake({ id: 9, length: 4 * TPQ, notes })).origin).toBe(0);
   });
 });
 
@@ -70,7 +71,7 @@ describe("TakeStore", () => {
     const store = new TakeStore(async (id) => {
       asked.push(id);
       if (fail) throw new Error("not yet");
-      return encodeTake({ id, length: 480, notes: [] });
+      return encodeTake({ id, length: TPQ, notes: [] });
     });
     await expect(store.get(5)).rejects.toThrow("not yet");
     expect(store.peek(5)).toBeUndefined();
@@ -83,7 +84,7 @@ describe("TakeStore", () => {
   });
 
   it("refuses a reply for another take", async () => {
-    const store = new TakeStore(async () => encodeTake({ id: 1, length: 480, notes: [] }));
+    const store = new TakeStore(async () => encodeTake({ id: 1, length: TPQ, notes: [] }));
     await expect(store.get(2)).rejects.toThrow(/asked for take 2, got 1/);
     expect(store.peek(1)).toBeUndefined();
   });

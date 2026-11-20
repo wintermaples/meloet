@@ -35,11 +35,12 @@ tracks all the way left, the others all the way right, no sends and no built-in 
 that a recording of the output tells the two apart (plugin-stop.sh).
 
 --tempo-points, --head-ramp, --meter-changes and --markers make the song version 5 (either
-shape): tempo points at ticks (480 to a quarter note; "ramp": a straight line to the next
+shape): tempo points at ticks (TICKS_PER_QUARTER to a quarter note; "ramp": a straight line to the next
 point; --head-ramp: from the song's head to the first point), meter changes at the heads of
 bars (bars count from 0, so 8 is the bar shown as 9), markers at ticks. The notes stay where
 they are in ticks: --bars still counts bars of 4/4. Example, the spec's 104 to 120 over bars
-5 to 9 and 3/4 from bar 9: --tempo-points 7680:104:ramp,15360:120 --meter-changes 8:3/4
+5 to 9 and 3/4 from bar 9: --tempo-points T5:104:ramp,T9:120 --meter-changes 8:3/4, where T5 is
+16 * TICKS_PER_QUARTER (the head of bar 5) and T9 is 32 * TICKS_PER_QUARTER.
 
 --lanes makes the song version 5 too: automation lanes on every track, in the order given.
 "volume", "pan", "send:a" and "send:b"; "plugin:PARAM" a parameter of the instrument by the
@@ -61,7 +62,7 @@ import argparse, hashlib, json, os, random, sys
 TICKS_PER_QUARTER = 480
 TICKS_PER_BAR = 4 * TICKS_PER_QUARTER
 TRACK, CLIP, TAKE = 1, 2, 3
-LENGTHS = [120, 240, 480, 960]
+LENGTHS = [TICKS_PER_QUARTER // 4, TICKS_PER_QUARTER // 2, TICKS_PER_QUARTER, 2 * TICKS_PER_QUARTER]
 
 
 # name in the file, name on the screen, group, keys, inserts.
@@ -86,7 +87,7 @@ PANS = [0, -20, 0, 30, -40, 20, -10, 40]
 def take_notes(rng, notes, length, keys):
     made = []
     for i in range(notes):
-        start = (i * length) // notes + rng.randrange(0, 60)
+        start = (i * length) // notes + rng.randrange(0, TICKS_PER_QUARTER // 8)
         start = min(start, length - 1)
         note_len = min(rng.choice(LENGTHS), length - start)
         made.append([start, note_len, rng.randrange(*keys), rng.randrange(40, 101)])

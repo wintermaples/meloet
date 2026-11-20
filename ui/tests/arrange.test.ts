@@ -6,11 +6,12 @@ import { arrangeOf } from "../src/bridge/fake";
 import Arrange from "../src/components/Arrange.svelte";
 import { contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import { cancelDrag } from "../src/components/pianoroll/view.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 const WIDTH = 1000;
 
 // jsdom は大きさを測らない。時間の列の幅を 1000 にする。
@@ -107,7 +108,7 @@ describe("クリップの名前と札（仕様書 2 章「テイクの印と切�
   it("幅が 28 より狭いクリップは、6×6 の四角だけ", () => {
     show(
       app.stateWith((s) => {
-        s.song.tracks[0]!.clips = [{ ...clip(1, "サビ", 1, 2, 2, 3), end: 400 }];
+        s.song.tracks[0]!.clips = [{ ...clip(1, "サビ", 1, 2, 2, 3), end: (5 * TPQ) / 6 }];
       }),
     );
     expect(text(q(".clip-label"))).toBe("");
@@ -297,8 +298,8 @@ describe("目盛（ヤチヨさんの決め: ループは目盛のドラッグ�
     pointer(ruler, "pointerdown", 300, 10, { shiftKey: true });
     pointer(ruler, "pointerup", 301, 10, { shiftKey: true });
     expect(app.sent).toEqual([
-      { type: "locate", tick: 9600 },
-      { type: "locate", tick: 9000 },
+      { type: "locate", tick: 5 * BAR },
+      { type: "locate", tick: (300 * BAR) / 64 },
     ]);
     expect(q(".loop-mark")).toBeNull();
   });
@@ -383,7 +384,7 @@ describe("右クリックの一覧（B-60）", () => {
     rows()[0]!.run();
     expect(app.sent).toEqual([
       { type: "pasteClips", to: { track: 2, tick: 9 * BAR } },
-      { type: "pasteClips", to: { track: 2, tick: 18000 } },
+      { type: "pasteClips", to: { track: 2, tick: (600 * BAR) / 64 } },
     ]);
   });
 

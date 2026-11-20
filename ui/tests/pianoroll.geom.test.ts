@@ -1,17 +1,18 @@
 // ピアノロールの形の計算（geom.ts）: グリッド、音階、行の色、ひらいたときの見せかた、ドラッグの量、読み値の文、CC の数。
 import { describe, expect, it } from "vitest";
 import * as G from "../src/components/pianoroll/geom";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { GEOM, take } from "./pianoroll-fixture";
 
 const METER = { num: 4, den: 4 };
 
 describe("グリッドと音階", () => {
   it("グリッド 1 つのティック（1 小節、1/2〜1/32、三連符は 2/3）", () => {
-    expect(G.gridTicks({ division: 0, triplet: false }, METER)).toBe(1920);
-    expect(G.gridTicks({ division: 0, triplet: false }, { num: 3, den: 4 })).toBe(1440);
-    expect(G.gridTicks({ division: 16, triplet: false }, METER)).toBe(120);
-    expect(G.gridTicks({ division: 16, triplet: true }, METER)).toBe(80);
-    expect(G.gridTicks({ division: 32, triplet: true }, METER)).toBe(40);
+    expect(G.gridTicks({ division: 0, triplet: false }, METER)).toBe(4 * TPQ);
+    expect(G.gridTicks({ division: 0, triplet: false }, { num: 3, den: 4 })).toBe(3 * TPQ);
+    expect(G.gridTicks({ division: 16, triplet: false }, METER)).toBe(TPQ / 4);
+    expect(G.gridTicks({ division: 16, triplet: true }, METER)).toBe(TPQ / 6);
+    expect(G.gridTicks({ division: 32, triplet: true }, METER)).toBe(TPQ / 12);
   });
 
   it("音階（メジャー ・ マイナー）と、スケール固定で書けない行", () => {
@@ -56,10 +57,10 @@ describe("ひらいたときの見せかた", () => {
   });
 
   it("横: クリップが入るいちばん大きい段（1280 で 1 拍 40、1920 で 80、150 % も 40）", () => {
-    expect(G.fitQuarterPx(4 * 1920, 696, 100)).toBe(40);
-    expect(G.fitQuarterPx(4 * 1920, 1336, 100)).toBe(80);
-    expect(G.fitQuarterPx(4 * 1920, 1016, 150)).toBe(40);
-    expect(G.fitQuarterPx(400 * 1920, 696, 100)).toBe(10);
+    expect(G.fitQuarterPx(16 * TPQ, 696, 100)).toBe(40);
+    expect(G.fitQuarterPx(16 * TPQ, 1336, 100)).toBe(80);
+    expect(G.fitQuarterPx(16 * TPQ, 1016, 150)).toBe(40);
+    expect(G.fitQuarterPx(1600 * TPQ, 696, 100)).toBe(10);
   });
 
   it("縦の足し算の行の数（窓 448 ・ 720 ・ 768 ・ 800 ・ 1080 で 11 ・ 34 ・ 38 ・ 41 ・ 49）", () => {
@@ -68,11 +69,11 @@ describe("ひらいたときの見せかた", () => {
 });
 
 describe("当たりと囲み", () => {
-  const n = G.shownOf(take([[0, 480, 60], [480, 480, 62], [960, 240, 64]]), 1920);
+  const n = G.shownOf(take([[0, TPQ, 60], [TPQ, TPQ, 62], [2 * TPQ, TPQ / 2, 64]]), 4 * TPQ);
 
   it("ノートの上、右はし 6px（長さ）、空いている所", () => {
     const y60 = (72 - 60) * 12 + 5;
-    // ノート 0 は x 160〜200（曲の 1920 から）。
+    // ノート 0 は x 160〜200（曲の 4 * TPQ から）。
     expect(G.hitNote(n, GEOM, 170, y60, 6)).toEqual({ note: 0, edge: false });
     expect(G.hitNote(n, GEOM, 196, y60, 6)).toEqual({ note: 0, edge: true });
     expect(G.hitNote(n, GEOM, 205, y60, 6)).toBeNull();
@@ -88,32 +89,32 @@ describe("当たりと囲み", () => {
 });
 
 describe("ドラッグの量", () => {
-  const n = G.shownOf(take([[0, 480, 60], [480, 480, 62], [960, 240, 127]]), 0);
+  const n = G.shownOf(take([[0, TPQ, 60], [TPQ, TPQ, 62], [2 * TPQ, TPQ / 2, 127]]), 0);
 
   it("動かす: つかんだノートの始まりがグリッドに吸いつく。Shift（step なし）では吸いつかない", () => {
-    expect(G.moveDelta(n, [0, 1], 1, 130, 2, 120)).toEqual({ ticks: 120, keys: 2 });
-    expect(G.moveDelta(n, [0, 1], 1, 50, 0, 120)).toEqual({ ticks: 0, keys: 0 });
-    expect(G.moveDelta(n, [0, 1], 1, 50, 0, null)).toEqual({ ticks: 50, keys: 0 });
+    expect(G.moveDelta(n, [0, 1], 1, (13 * TPQ) / 48, 2, TPQ / 4)).toEqual({ ticks: TPQ / 4, keys: 2 });
+    expect(G.moveDelta(n, [0, 1], 1, (5 * TPQ) / 48, 0, TPQ / 4)).toEqual({ ticks: 0, keys: 0 });
+    expect(G.moveDelta(n, [0, 1], 1, (5 * TPQ) / 48, 0, null)).toEqual({ ticks: (5 * TPQ) / 48, keys: 0 });
   });
 
   it("動かす: 曲の頭より前と、鍵の外へは出ない", () => {
-    expect(G.moveDelta(n, [0, 1], 1, -2000, -100, 120)).toEqual({ ticks: 0, keys: -60 });
-    expect(G.moveDelta(n, [2], 2, 0, 5, 120)).toEqual({ ticks: 0, keys: 0 });
+    expect(G.moveDelta(n, [0, 1], 1, -4 * TPQ, -100, TPQ / 4)).toEqual({ ticks: 0, keys: -60 });
+    expect(G.moveDelta(n, [2], 2, 0, 5, TPQ / 4)).toEqual({ ticks: 0, keys: 0 });
   });
 
   it("長さ: 終わりがグリッドに吸いつき、1 ティックより短くならない（吸いつくときはグリッド 1 つ）", () => {
-    expect(G.resizeDelta(n, [0], 0, 100, 120)).toBe(120);
-    expect(G.resizeDelta(n, [0], 0, -1000, 120)).toBe(-360);
-    expect(G.resizeDelta(n, [0, 2], 0, -1000, null)).toBe(-239);
+    expect(G.resizeDelta(n, [0], 0, (5 * TPQ) / 24, TPQ / 4)).toBe(TPQ / 4);
+    expect(G.resizeDelta(n, [0], 0, -2 * TPQ, TPQ / 4)).toBe((-3 * TPQ) / 4);
+    expect(G.resizeDelta(n, [0, 2], 0, -2 * TPQ, null)).toBe(-(TPQ / 2 - 1));
     expect(G.resizeDelta(n, [0], 0, 7, null)).toBe(7);
   });
 
   it("書く: 押したグリッドの頭から、いちばん短くてグリッド 1 つ", () => {
-    expect(G.drawStart(250, 120)).toBe(240);
-    expect(G.drawStart(250, null)).toBe(250);
-    expect(G.drawLength(240, 250, 120, true)).toBe(120);
-    expect(G.drawLength(240, 700, 120, true)).toBe(480);
-    expect(G.drawLength(240, 700, 120, false)).toBe(460);
+    expect(G.drawStart((25 * TPQ) / 48, TPQ / 4)).toBe(TPQ / 2);
+    expect(G.drawStart((25 * TPQ) / 48, null)).toBe((25 * TPQ) / 48);
+    expect(G.drawLength(TPQ / 2, (25 * TPQ) / 48, TPQ / 4, true)).toBe(TPQ / 4);
+    expect(G.drawLength(TPQ / 2, (35 * TPQ) / 24, TPQ / 4, true)).toBe(TPQ);
+    expect(G.drawLength(TPQ / 2, (35 * TPQ) / 24, TPQ / 4, false)).toBe((23 * TPQ) / 24);
   });
 
   it("ベロシティ: 上へ動かした px を値に。1〜127 で止まる", () => {
@@ -124,24 +125,24 @@ describe("ドラッグの量", () => {
   });
 
   it("Mod D: 範囲の長さをグリッドに切り上げた分", () => {
-    expect(G.duplicateTicks(n, [0, 1], 120)).toBe(960);
-    expect(G.duplicateTicks(n, [2], 1920)).toBe(1920);
-    expect(G.duplicateTicks(n, [0, 2], 250)).toBe(1250);
+    expect(G.duplicateTicks(n, [0, 1], TPQ / 4)).toBe(2 * TPQ);
+    expect(G.duplicateTicks(n, [2], 4 * TPQ)).toBe(4 * TPQ);
+    expect(G.duplicateTicks(n, [0, 2], (25 * TPQ) / 48)).toBe((125 * TPQ) / 48);
   });
 });
 
 describe("文", () => {
   it("位置「3.1.000」、長さ「1.240」、符号つき「+0.240」「−2」", () => {
-    expect(G.positionText(2 * 1920, METER)).toBe("3.1.000");
-    expect(G.positionText(2 * 1920 + 480 + 240, METER)).toBe("3.2.240");
-    expect(G.lengthText(720, METER)).toBe("1.240");
-    expect(G.lengthText(360, METER)).toBe("0.360");
-    expect(G.signedLength(240, METER)).toBe("+0.240");
-    expect(G.signedLength(-480, METER)).toBe("−1.000");
+    expect(G.positionText(8 * TPQ, METER)).toBe("3.1.000");
+    expect(G.positionText(8 * TPQ + TPQ + TPQ / 2, METER)).toBe("3.2.240");
+    expect(G.lengthText((3 * TPQ) / 2, METER)).toBe("1.240");
+    expect(G.lengthText((3 * TPQ) / 4, METER)).toBe("0.360");
+    expect(G.signedLength(TPQ / 2, METER)).toBe("+0.240");
+    expect(G.signedLength(-TPQ, METER)).toBe("−1.000");
     expect(G.signed(2)).toBe("+2");
     expect(G.signed(-12)).toBe("−12");
-    expect(G.barsText(0, 4 * 1920, METER)).toBe("1–4");
-    expect(G.barsText(4 * 1920, 8 * 1920, METER)).toBe("5–8");
+    expect(G.barsText(0, 16 * TPQ, METER)).toBe("1–4");
+    expect(G.barsText(16 * TPQ, 32 * TPQ, METER)).toBe("5–8");
   });
 });
 

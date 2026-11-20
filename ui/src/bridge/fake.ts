@@ -7,6 +7,7 @@ import type { Transport } from "./session";
 import { LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN, LANE_VERSION } from "./lane";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
+import { TICKS_PER_QUARTER as TPQ } from "../time/ticks";
 import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
 import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
 import {
@@ -716,7 +717,7 @@ function songDialog(kind: SongDialogKind, title = "はじめての曲", previous
 // ---- takes (scenes recording, takes) ----
 
 /** Ticks in a bar of 4/4. */
-const BAR = 1920;
+const BAR = 4 * TPQ;
 
 interface FakeTake {
   id: number;
@@ -738,7 +739,7 @@ function phrase(id: number, bars: number, count: number, seed: number): FakeTake
   const step = Math.floor(length / count);
   const notes = Array.from({ length: count }, (_, i) => {
     const r = (seed * 7919 + i * 104729) % 97;
-    return { start: i * step, length: Math.max(60, step - 40 - (r % 3) * 60), key: 55 + ((r * 5 + i * 3) % 24), velocity: 60 + (r % 50) };
+    return { start: i * step, length: Math.max(TPQ / 8, step - TPQ / 12 - ((r % 3) * TPQ) / 8), key: 55 + ((r * 5 + i * 3) % 24), velocity: 60 + (r % 50) };
   });
   return { id, length, notes };
 }
@@ -805,24 +806,26 @@ const RECORDING_LIVE: LiveNotesSnapshot = {
   notes: [
     ...Array.from({ length: 11 }, (_, i): LiveNote => {
       const r = (i * 37) % 11;
-      return { lap: 0, index: i, key: 57 + ((r * 7) % 19), velocity: 70 + r * 3, start: 4 * BAR + i * 440, length: 200 + r * 20 };
+      return { lap: 0, index: i, key: 57 + ((r * 7) % 19), velocity: 70 + r * 3, start: 4 * BAR + (i * 11 * TPQ) / 12, length: (5 * TPQ) / 12 + (r * TPQ) / 24 };
     }),
-    ...[60, 64, 67].map((key, i): LiveNote => ({ lap: 0, index: 11 + i, key, velocity: 87, start: 6 * BAR + 960, length: null })),
+    ...[60, 64, 67].map((key, i): LiveNote => ({ lap: 0, index: 11 + i, key, velocity: 87, start: 6 * BAR + 2 * TPQ, length: null })),
   ],
 };
 
 // ---- the piano roll (mocks A-PianoRoll, F-PR720, F-PR150, F-WidePR, F-PRPlay, F-PRRec) ----
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+/** The mocks write the tick of a position or a length as 480 to a beat. */
+const MOCK_TICKS_PER_BEAT = 480;
 /** "3.1.360" (bar . beat . tick, 4/4) to ticks from the song's start. */
 const at = (text: string) => {
   const [bar, beat, tick] = text.split(".").map(Number) as [number, number, number];
-  return (bar - 1) * BAR + (beat - 1) * 480 + tick;
+  return (bar - 1) * BAR + (beat - 1) * TPQ + (tick * TPQ) / MOCK_TICKS_PER_BEAT;
 };
 /** "1.240" (beats . ticks) to ticks. */
 const span = (text: string) => {
   const [beats, ticks] = text.split(".").map(Number) as [number, number];
-  return beats * 480 + ticks;
+  return beats * TPQ + (ticks * TPQ) / MOCK_TICKS_PER_BEAT;
 };
 /** "D#4" to the MIDI number (C4 = 60). */
 const key = (text: string) => NOTE_NAMES.indexOf(text.slice(0, -1)) + 12 * (Number(text.slice(-1)) + 1);
@@ -1224,7 +1227,7 @@ export const SCENES: Record<string, SceneDef> = {
       loadPermille: 140,
       master: [dbfs(-6.2), dbfs(-7.0)],
       tracks: [[dbfs(-6.2), dbfs(-7.0)]],
-      position: { tick: 6 * BAR + 960 + 240, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 },
+      position: { tick: 6 * BAR + 2 * TPQ + TPQ / 2, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 },
     },
     live: RECORDING_LIVE,
   },
@@ -1237,7 +1240,7 @@ export const SCENES: Record<string, SceneDef> = {
       s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
       s.status.message = { id: "countingIn", beats: 4 };
     },
-    meters: { ...QUIET, position: { tick: -720, ticksPerUs: 0, state: "countIn", countInBeatsLeft: 2, lap: 0 } },
+    meters: { ...QUIET, position: { tick: -(3 * TPQ) / 2, ticksPerUs: 0, state: "countIn", countInBeatsLeft: 2, lap: 0 } },
   },
   // The mock F-Takes: the clip "Aメロ" has 3 takes, shows the second, and is selected; the piano roll shows it.
   takes: {
@@ -1527,7 +1530,7 @@ export const SCENES: Record<string, SceneDef> = {
   lengthMatched: {
     setup: pianoRollSong,
     bands: ["pianoRoll"],
-    after: (s) => (s.status.message = { id: "lengthMatched", count: 3, value: 240 }),
+    after: (s) => (s.status.message = { id: "lengthMatched", count: 3, value: TPQ / 2 }),
     meters: QUIET,
   },
   // Not from a mock (B-68): a part of a position put in its range.
@@ -1703,7 +1706,7 @@ const MIXER_METERS: FakeMeters = {
     [dbfs(-17), dbfs(-20)],
     [dbfs(-10), dbfs(-12)],
   ],
-  position: { tick: 8 * BAR + 480, ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 },
+  position: { tick: 8 * BAR + TPQ, ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 },
 };
 SCENES.mixer = {
   setup(s) {
@@ -1736,7 +1739,7 @@ SCENES.recordingMoving = {
   ...SCENES.recording!,
   meters: {
     ...SCENES.recording!.meters,
-    position: { tick: 6 * BAR, ticksPerUs: 768e-6, state: "recording", countInBeatsLeft: 0, lap: 0 },
+    position: { tick: 6 * BAR, ticksPerUs: (96 * TPQ) / 60e6, state: "recording", countInBeatsLeft: 0, lap: 0 },
   },
 };
 
@@ -1746,20 +1749,20 @@ const DRUM_TAKE = 80;
 const DRUM_CLIP = 81;
 const GM = { kick: 36, snare: 38, lowTom: 45, midTom: 47, closedHiHat: 42, crash: 49, highTom: 50 } as const;
 const DRUM_NOTES: { start: number; length: number; key: number; velocity: number }[] = (() => {
-  const hit = (start: number, key: number, velocity: number) => ({ start, length: 120, key, velocity });
+  const hit = (start: number, key: number, velocity: number) => ({ start, length: TPQ / 4, key, velocity });
   const out = [hit(0, GM.crash, 110)];
-  for (let eighth = 0; eighth < 30; eighth++) out.push(hit(eighth * 240, GM.closedHiHat, eighth % 2 === 0 ? 88 : 72));
+  for (let eighth = 0; eighth < 30; eighth++) out.push(hit((eighth * TPQ) / 2, GM.closedHiHat, eighth % 2 === 0 ? 88 : 72));
   for (let bar = 0; bar < 4; bar++) {
     const b = bar * BAR;
-    out.push(hit(b, GM.kick, 104), hit(b + 720, GM.kick, 104), hit(b + 480, GM.snare, 96));
-    if (bar < 3) out.push(hit(b + 960, GM.kick, 104), hit(b + 1440, GM.snare, 96));
+    out.push(hit(b, GM.kick, 104), hit(b + (3 * TPQ) / 2, GM.kick, 104), hit(b + TPQ, GM.snare, 96));
+    if (bar < 3) out.push(hit(b + 2 * TPQ, GM.kick, 104), hit(b + 3 * TPQ, GM.snare, 96));
   }
-  const fill = 3 * BAR + 1440;
-  out.push(hit(fill, GM.highTom, 100), hit(fill + 120, GM.highTom, 84), hit(fill + 240, GM.midTom, 100), hit(fill + 360, GM.lowTom, 104));
+  const fill = 3 * BAR + 3 * TPQ;
+  out.push(hit(fill, GM.highTom, 100), hit(fill + TPQ / 4, GM.highTom, 84), hit(fill + TPQ / 2, GM.midTom, 100), hit(fill + (3 * TPQ) / 4, GM.lowTom, 104));
   return out.sort((a, b) => a.start - b.start || a.key - b.key);
 })();
 FAKE_TAKES.set(DRUM_TAKE, { id: DRUM_TAKE, length: 4 * BAR, notes: DRUM_NOTES });
-const DRUM_SELECTED = DRUM_NOTES.flatMap((n, i) => (n.key === GM.snare && (n.start === 480 || n.start === BAR + 480) ? [i] : []));
+const DRUM_SELECTED = DRUM_NOTES.flatMap((n, i) => (n.key === GM.snare && (n.start === TPQ || n.start === BAR + TPQ) ? [i] : []));
 SCENES.drumRoll = {
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 5));
@@ -1809,7 +1812,7 @@ SCENES.pianoRoll10kPlay = {
     s.transport.state = "playing";
     s.transport.position = 0;
   },
-  meters: { ...QUIET, position: { tick: 0, ticksPerUs: 768e-6, state: "playing", countInBeatsLeft: 0, lap: 0 } },
+  meters: { ...QUIET, position: { tick: 0, ticksPerUs: (96 * TPQ) / 60e6, state: "playing", countInBeatsLeft: 0, lap: 0 } },
 };
 
 // ---- round 5, step 2: 「あとから入れたもの」 (protocol 17) ----
@@ -2059,7 +2062,7 @@ SCENES.drumPlay = {
     s.transport.position = 0;
     s.status.message = null;
   },
-  meters: { ...QUIET, loadPermille: 140, master: [dbfs(-8), dbfs(-8.6)], position: { tick: BAR + 480, ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 } },
+  meters: { ...QUIET, loadPermille: 140, master: [dbfs(-8), dbfs(-8.6)], position: { tick: BAR + TPQ, ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 } },
 };
 /** A kit with a sound on every key from 35 to 81, as `meloet_model::drums::gm_kit_rows` orders its rows. */
 const SF2_KIT_ROWS = [
@@ -2314,7 +2317,7 @@ SCENES.tempo = {
   setup(s) {
     surgeSong(s);
     const threeFour = 8 * BAR;
-    const fourFour = threeFour + 4 * 1440;
+    const fourFour = threeFour + 4 * 3 * TPQ;
     s.timeline = {
       ...s.timeline,
       tempoPoints: [
@@ -2393,7 +2396,7 @@ SCENES.pianoRollMarkers = {
     pianoRollSong(s);
     s.timeline.markers = [
       { id: 1, tick: 0, name: "イントロ" },
-      { id: 2, tick: 2 * BAR + 960, name: "Aメロ" },
+      { id: 2, tick: 2 * BAR + 2 * TPQ, name: "Aメロ" },
       { id: 3, tick: 4 * BAR, name: "サビ" },
     ];
   },
@@ -3104,7 +3107,7 @@ export function reduceClips(
     }
     case "pasteClips": {
       if (clipboard.clips.length === 0) return null;
-      const perBar = (1920 / state.timeline.meterDen) * state.timeline.meterNum;
+      const perBar = ((4 * TPQ) / state.timeline.meterDen) * state.timeline.meterNum;
       const to = command.to ?? { track: song.playTarget ?? 0, tick: Math.floor(state.transport.position / perBar) * perBar };
       const top = song.tracks.findIndex((t) => t.id === to.track);
       if (top < 0) return null;

@@ -6,6 +6,7 @@ import { fakeScene } from "../src/bridge/fake";
 import LowerBand from "../src/components/LowerBand.svelte";
 import { ccLanes, prPanels, prView } from "../src/components/pianoroll/view.svelte";
 import * as app from "./fake-app.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { take } from "./pianoroll-fixture";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
@@ -13,8 +14,8 @@ vi.mock("../src/bridge", async (original) => ({
   ...(await original<typeof import("../src/bridge")>()),
   takeNotes: (id: number) =>
     Promise.resolve(
-      take([[0, 480, 60]], id, {
-        controlTicks: Uint32Array.from([0, 10, 20]),
+      take([[0, TPQ, 60]], id, {
+        controlTicks: Uint32Array.from([0, TPQ / 48, TPQ / 24]),
         controlKinds: Uint8Array.from([0, 0, 1]),
         controlNumbers: Uint8Array.from([64, 64, 0]),
         controlValues: Int16Array.from([127, 0, 300]),

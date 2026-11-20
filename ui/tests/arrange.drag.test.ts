@@ -11,12 +11,13 @@ import * as PG from "../src/components/pianoroll/geom";
 import { cancelDrag, dragReading, prView } from "../src/components/pianoroll/view.svelte";
 import { watchSlots, type GlRect, type GlSlot } from "../src/gl/slot";
 import { handleKeydown, type KeyDeps } from "../src/keys/attach";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 import { take as fixtureTake } from "./pianoroll-fixture";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 const WIDTH = 1000;
 const METER = { num: 4, den: 4 };
 
@@ -48,7 +49,7 @@ describe("押した所（arrangeDrag.clipHit）", () => {
     expect(CD.clipHit(view, dims, tracks, 300, 30, 6)).toMatchObject({ edge: null });
     expect(CD.clipHit(view, dims, tracks, 507, 30, 6)).toMatchObject({ edge: "end" });
     expect(CD.clipHit(view, dims, tracks, 300, 1, 6)).toBeNull();
-    const narrow = [track(1, [{ ...clip(1, "x", 1, 2), end: 240 }])];
+    const narrow = [track(1, [{ ...clip(1, "x", 1, 2), end: TPQ / 2 }])];
     // 幅 8 px: はしは 8/3 px
     expect(CD.clipHit(view, dims, narrow, 4, 30, 6)!.edge).toBeNull();
     expect(CD.clipHit(view, dims, narrow, 1, 30, 6)!.edge).toBe("start");
@@ -76,7 +77,7 @@ describe("動かす（arrangeDrag）", () => {
   it("Shift で吸いつかない（読み値は小節の小数）", () => {
     const tracks = twoTracks();
     const d = drag(tracks, [300, 30], [330, 30], { shift: true, alt: false });
-    expect(d).toMatchObject({ ticks: 900 });
+    expect(d).toMatchObject({ ticks: (30 * BAR) / 64 });
     expect(CD.clipDragReading(d, METER)).toBe("5.2.420（+0.469 小節）");
   });
 
@@ -167,27 +168,27 @@ describe("はしをつめる ・ のばす（arrangeDrag）", () => {
 
   it("長さの文は 小節 . 拍 . ティック（どれも 0 から）", () => {
     expect(CD.clipLengthText(2.5 * BAR, METER)).toBe("2.2.000");
-    expect(CD.clipLengthText(BAR + 120, METER)).toBe("1.0.120");
-    expect(CD.clipLengthText(3 * 480 + 240, { num: 3, den: 4 })).toBe("1.0.240");
+    expect(CD.clipLengthText(BAR + TPQ / 4, METER)).toBe("1.0.120");
+    expect(CD.clipLengthText(3 * TPQ + TPQ / 2, { num: 3, den: 4 })).toBe("1.0.240");
   });
 });
 
 describe("つめたクリップの絵", () => {
-  const take = { starts: [0, 960, 1920, 3840], lengths: [480, 1440, 480, 480], keys: [60, 62, 64, 67] };
+  const take = { starts: [0, 2 * TPQ, BAR, 2 * BAR], lengths: [TPQ, 3 * TPQ, TPQ, TPQ], keys: [60, 62, 64, 67] };
 
   it("アレンジ: 始まりがクリップの範囲の中のノートだけ（鳴る物と同じ）。はみ出す終わりは描く所で切る", () => {
-    // 頭を 1 小節つめた: テイクの 0 は曲の 1920 より前（offset −1920）
-    const trimmed = { start: 1920, end: 3840, takeOffset: -1920 };
+    // 頭を 1 小節つめた: テイクの 0 は曲の BAR より前（offset −BAR）
+    const trimmed = { start: BAR, end: 2 * BAR, takeOffset: -BAR };
     expect(G.takeShapes(trimmed, take)).toEqual([
-      { start: 1920, length: 480, key: 64 },
+      { start: BAR, length: TPQ, key: 64 },
     ]);
     // 終わりをつめた: 2 つ目は始まりが中なので描き、終わりは paintClip が右の枠で切る
-    const end = { start: 0, end: 1500, takeOffset: 0 };
+    const end = { start: 0, end: (25 * TPQ) / 8, takeOffset: 0 };
     expect(G.takeShapes(end, take).map((n) => n.key)).toEqual([60, 62]);
     const out: GlRect[] = [];
     G.paintClip(out, view, dims, G.clipBox(view, dims, 0, end.start, end.end), G.CLIP_PLAIN("color.track.1"), G.takeShapes(end, take));
     const notes = out.slice(3);
-    expect(Math.max(...notes.map((r) => r.x + r.w))).toBeLessThanOrEqual(G.tickToX(view, 1500) - dims.hair);
+    expect(Math.max(...notes.map((r) => r.x + r.w))).toBeLessThanOrEqual(G.tickToX(view, end.end) - dims.hair);
   });
 
   it("もとの場所の枠は gray.7 の 1 本線（中は描かない）", () => {
@@ -203,7 +204,7 @@ describe("つめたクリップの絵", () => {
 
   it("ピアノロール: 範囲の外に始まるノートは、描かない ・ 押せない ・ 囲めない ・ 鍵の範囲に入れない", () => {
     const t = fixtureTake(take.starts.map((st, i) => [st, take.lengths[i]!, take.keys[i]!]), 9);
-    const n = PG.shownOf(t, -1920, { from: 0, to: 1920 });
+    const n = PG.shownOf(t, -BAR, { from: 0, to: BAR });
     const seen: number[] = [];
     PG.eachNoteIn(n, -10000, 10000, (i) => seen.push(i));
     expect(seen).toEqual([2]);

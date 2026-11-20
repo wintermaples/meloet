@@ -14,6 +14,7 @@ import {
   ticksPerBeat,
   ticksToSeconds,
 } from "../src/components/time";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const bbt = (tick: number, num: number, den: number) => {
   const b = barBeatTick(tick, { num, den });
@@ -24,54 +25,54 @@ describe("barBeatTick（Rust の bar_beat_tick と同じ例）", () => {
   it("4/4", () => {
     expect(bbt(0, 4, 4)).toEqual([1, 1, 0]);
     expect(bbt(479, 4, 4)).toEqual([1, 1, 479]);
-    expect(bbt(480, 4, 4)).toEqual([1, 2, 0]);
+    expect(bbt(TPQ, 4, 4)).toEqual([1, 2, 0]);
     expect(bbt(1919, 4, 4)).toEqual([1, 4, 479]);
-    expect(bbt(1920, 4, 4)).toEqual([2, 1, 0]);
+    expect(bbt(4 * TPQ, 4, 4)).toEqual([2, 1, 0]);
     expect(bbt(1920 + 960 + 123, 4, 4)).toEqual([2, 3, 123]);
   });
 
   it("3/4", () => {
     expect(bbt(1439, 3, 4)).toEqual([1, 3, 479]);
-    expect(bbt(1440, 3, 4)).toEqual([2, 1, 0]);
+    expect(bbt(3 * TPQ, 3, 4)).toEqual([2, 1, 0]);
     expect(bbt(1440 * 4 + 500, 3, 4)).toEqual([5, 2, 20]);
   });
 
   it("6/8 は 8 分音符を数える", () => {
-    expect(bbt(240, 6, 8)).toEqual([1, 2, 0]);
+    expect(bbt(TPQ / 2, 6, 8)).toEqual([1, 2, 0]);
     expect(bbt(250, 6, 8)).toEqual([1, 2, 20]);
     expect(bbt(1439, 6, 8)).toEqual([1, 6, 478]);
-    expect(bbt(1440, 6, 8)).toEqual([2, 1, 0]);
+    expect(bbt(3 * TPQ, 6, 8)).toEqual([2, 1, 0]);
   });
 
   it("2/2 は 2 分音符を数える", () => {
     expect(bbt(959, 2, 2)).toEqual([1, 1, 479]);
-    expect(bbt(960, 2, 2)).toEqual([1, 2, 0]);
+    expect(bbt(2 * TPQ, 2, 2)).toEqual([1, 2, 0]);
     expect(bbt(961, 2, 2)).toEqual([1, 2, 0]);
-    expect(bbt(1920, 2, 2)).toEqual([2, 1, 0]);
+    expect(bbt(4 * TPQ, 2, 2)).toEqual([2, 1, 0]);
   });
 
   it("7/16", () => {
     expect(bbt(125, 7, 16)).toEqual([1, 2, 20]);
     expect(bbt(839, 7, 16)).toEqual([1, 7, 476]);
-    expect(bbt(840, 7, 16)).toEqual([2, 1, 0]);
+    expect(bbt((7 * TPQ) / 4, 7, 16)).toEqual([2, 1, 0]);
   });
 
   it("小数のティックは切りすて、0 より前は 1. 1. 000", () => {
     expect(bbt(479.9, 4, 4)).toEqual([1, 1, 479]);
-    expect(bbt(-720, 4, 4)).toEqual([1, 1, 0]);
+    expect(bbt(-(3 * TPQ) / 2, 4, 4)).toEqual([1, 1, 0]);
   });
 
   it("1 拍と 1 小節のティック", () => {
-    expect(ticksPerBar({ num: 4, den: 4 })).toBe(1920);
-    expect(ticksPerBeat({ num: 6, den: 8 })).toBe(240);
+    expect(ticksPerBar({ num: 4, den: 4 })).toBe(4 * TPQ);
+    expect(ticksPerBeat({ num: 6, den: 8 })).toBe(TPQ / 2);
   });
 });
 
 describe("ticksToSeconds（Rust の ticks_to_seconds と同じ例）", () => {
   it("96.00 の 4/4 と、120.00 の 6/8", () => {
-    expect(ticksToSeconds(480, 96, { num: 4, den: 4 })).toBeCloseTo(0.625, 12);
-    expect(ticksToSeconds(1920, 96, { num: 4, den: 4 })).toBeCloseTo(2.5, 12);
-    expect(ticksToSeconds(240, 120, { num: 6, den: 8 })).toBeCloseTo(0.5, 12);
+    expect(ticksToSeconds(TPQ, 96, { num: 4, den: 4 })).toBeCloseTo(0.625, 12);
+    expect(ticksToSeconds(4 * TPQ, 96, { num: 4, den: 4 })).toBeCloseTo(2.5, 12);
+    expect(ticksToSeconds(TPQ / 2, 120, { num: 6, den: 8 })).toBeCloseTo(0.5, 12);
     expect(ticksToSeconds(0, 120, { num: 6, den: 8 })).toBe(0);
   });
 });
@@ -79,14 +80,14 @@ describe("ticksToSeconds（Rust の ticks_to_seconds と同じ例）", () => {
 describe("見せかた（モックの「5. 1. 000」「00:00:16.562」）", () => {
   const four = { num: 4, den: 4 };
   it("位置", () => {
-    expect(positionText(4 * 1920, four)).toBe("5. 1. 000");
-    expect(positionText(6 * 1920 + 960 + 240, four)).toBe("7. 3. 240");
+    expect(positionText(4 * 4 * TPQ, four)).toBe("5. 1. 000");
+    expect(positionText(6 * 4 * TPQ + 2 * TPQ + TPQ / 2, four)).toBe("7. 3. 240");
     expect(positionText(0, four)).toBe("1. 1. 000");
   });
 
   it("時間。ミリ秒は切りすて", () => {
-    expect(clockText(ticksToSeconds(4 * 1920, 96, four))).toBe("00:00:10.000");
-    expect(clockText(ticksToSeconds(6 * 1920 + 960 + 240, 96, four))).toBe("00:00:16.562");
+    expect(clockText(ticksToSeconds(4 * 4 * TPQ, 96, four))).toBe("00:00:10.000");
+    expect(clockText(ticksToSeconds(6 * 4 * TPQ + 2 * TPQ + TPQ / 2, 96, four))).toBe("00:00:16.562");
     expect(clockText(0)).toBe("00:00:00.000");
     expect(clockText(3 * 3600 + 25 * 60 + 7.0049)).toBe("03:25:07.004");
     expect(clockText(-1)).toBe("00:00:00.000");
@@ -136,26 +137,26 @@ describe("テンポと拍子の打ちこみ（ヤチヨさんの決め: 30.00〜
 describe("shownTick（再生まわりの数字と再生の位置の線）", () => {
   const transport = (state: TransportView["state"]): TransportView => ({
     state,
-    position: 3840,
+    position: 8 * TPQ,
     metronome: false,
     countInBars: 1,
     countInBeats: 4,
     canPlay: true,
     canRecord: true,
-    recording: state === "countIn" || state === "recording" ? { id: 1, track: 1, from: 1920, take: 1, clip: null, lap: 0 } : null,
+    recording: state === "countIn" || state === "recording" ? { id: 1, track: 1, from: 4 * TPQ, take: 1, clip: null, lap: 0 } : null,
   });
   const tel = (tick: number): Telemetry =>
     ({ sentUs: 1000, position: { tick, ticksPerUs: 0.5, state: "playing", countInBeatsLeft: 0, lap: 0 } }) as Telemetry;
 
   it("止まっているときは計器があっても transport.position", () => {
-    expect(shownTick(transport("stopped"), tel(9999), 2000)).toBe(3840);
+    expect(shownTick(transport("stopped"), tel(9999), 2000)).toBe(8 * TPQ);
   });
   it("カウントイン中は録りはじめる所", () => {
-    expect(shownTick(transport("countIn"), tel(-720), 2000)).toBe(1920);
+    expect(shownTick(transport("countIn"), tel(-(3 * TPQ) / 2), 2000)).toBe(4 * TPQ);
   });
   it("動いているときは計器の位置を今まで進めた所。時計がまだなら計器の位置のまま。計器がなければ transport.position", () => {
     expect(shownTick(transport("playing"), tel(5000), 2000)).toBe(5500);
     expect(shownTick(transport("recording"), tel(5000), null)).toBe(5000);
-    expect(shownTick(transport("playing"), null, 2000)).toBe(3840);
+    expect(shownTick(transport("playing"), null, 2000)).toBe(8 * TPQ);
   });
 });

@@ -7,12 +7,13 @@ import { fakeScene, fakeState } from "../src/bridge/fake";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { t } from "../src/text/ja";
 import { TempoMap } from "../src/time/tempoMap";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
 const scene = (name: string): AppState => fakeScene(name)!.state;
-const BAR = 1920;
+const BAR = 4 * TPQ;
 
 describe("約束 20 の形", () => {
   it("版は 21。新しい曲の timeline は、曲の頭のテンポと拍子だけ。song にテンポと拍子はもうない", () => {
@@ -37,7 +38,7 @@ describe("約束 20 の形", () => {
     const commands: Command[] = [
       { type: "setTimelineOpen", open: true },
       { type: "addTempoPoint", tick: 4 * BAR, bpm: 104 },
-      { type: "moveTempoPoint", tick: 4 * BAR, toTick: 4 * BAR + 480, bpm: 104.5 },
+      { type: "moveTempoPoint", tick: 4 * BAR, toTick: 4 * BAR + TPQ, bpm: 104.5 },
       { type: "setTempoRamp", tick: 0, on: true },
       { type: "addMeterChange", bar: 8, num: 3, den: 4 },
       { type: "moveMeterChange", bar: 8, toBar: 10 },
@@ -65,15 +66,15 @@ describe("偽物の場面", () => {
     const tl = s.timeline;
     expect(tl.open).toBe(true);
     expect(tl.tempoPoints.map((p) => [p.tick, p.tempoBpm, p.ramp])).toEqual([
-      [7680, 104, true],
-      [15360, 120, false],
-      [21120, 96, false],
+      [4 * BAR, 104, true],
+      [8 * BAR, 120, false],
+      [8 * BAR + 4 * 3 * TPQ, 96, false],
     ]);
     expect(tl.meterChanges).toEqual([
       { bar: 8, meterNum: 3, meterDen: 4 },
       { bar: 12, meterNum: 4, meterDen: 4 },
     ]);
-    expect(tl.selected).toEqual({ kind: "tempoPoint", tick: 7680 });
+    expect(tl.selected).toEqual({ kind: "tempoPoint", tick: 4 * BAR });
 
     const map = new TempoMap(tl);
     expect(map.barBeatTick(s.transport.position)).toEqual({ bar: 7, beat: 1, tick: 0 });

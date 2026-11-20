@@ -8,8 +8,8 @@
 // 呼ぶ側の入れ物（out）に書く。
 
 import type { TimelineView } from "../bridge/generated/TimelineView";
+import { TICKS_PER_QUARTER } from "./ticks";
 
-const TICKS_PER_QUARTER = 480;
 const DISPLAY_TICKS_PER_BEAT = 480;
 
 /** 地図を作るのに要る所（`timeline` の区画をそのまま渡せる）。 */

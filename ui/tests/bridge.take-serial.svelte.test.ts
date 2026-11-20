@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
 import { encodeTake, fakeState } from "../src/bridge/fake";
 import { decodeTake, TakeStore } from "../src/bridge/take";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
 const song = vi.hoisted(() => ({ key: 60, asked: [] as number[] }));
@@ -20,7 +21,7 @@ vi.mock("../src/bridge", async (original) => ({
 const { followShownTake, shown } = await import("../src/components/pianoroll/shown.svelte");
 
 function bytes(id: number, key: number): ArrayBuffer {
-  return encodeTake({ id, length: 1920, notes: [{ start: 0, length: 480, key, velocity: 80 }] });
+  return encodeTake({ id, length: 4 * TPQ, notes: [{ start: 0, length: TPQ, key, velocity: 80 }] });
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -33,7 +34,7 @@ function stateWith(serial: number, takeId: number): AppState {
     tracks: [
       {
         ...s.song.tracks[0]!,
-        clips: [{ id: 9, name: "ピアノ", start: 0, end: 1920, take: 1, takes: 1, takeId, takeOffset: 0, noteCount: 1 }],
+        clips: [{ id: 9, name: "ピアノ", start: 0, end: 4 * TPQ, take: 1, takes: 1, takeId, takeOffset: 0, noteCount: 1 }],
       },
     ],
   };

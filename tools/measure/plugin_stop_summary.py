@@ -13,6 +13,8 @@ in this run. Writes summary.json next to RAW_DIR and prints markdown.
 """
 import argparse, array, json, math, os, re, sys, wave
 
+TICKS_PER_QUARTER = 480
+
 
 def load(path):
     try:
@@ -134,7 +136,7 @@ def main(argv):
         line = (f"- the song saved at the end: version {saved['version']}, takes recorded on track 1: "
                 f"{len(refs)}, notes in them: {len(notes)}")
         if notes:
-            span = (max(notes) - min(notes)) / 480 * 60 / tempo
+            span = (max(notes) - min(notes)) / TICKS_PER_QUARTER * 60 / tempo
             out["saved"]["spanS"] = round(span, 1)
             line += f", first to last {span:.1f} s"
         sent_keys = vkeys.get("keys")

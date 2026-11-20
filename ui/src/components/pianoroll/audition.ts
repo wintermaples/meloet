@@ -3,6 +3,7 @@
 // 鳴らしている鍵は、鍵盤の列で光らせる（Rust は audition の鍵を Event::Note で返さないので、画面が自分で光らせる）。
 
 import type { AppState, Command } from "../../bridge";
+import { TICKS_PER_QUARTER } from "../../time/ticks";
 import { DRAW_VELOCITY } from "./geom";
 
 /** 和音で鳴らすのは 16 個まで。 */
@@ -19,9 +20,9 @@ export function fixedOr100(state: Pick<AppState, "keyboards">): number {
 /** ノートを押した ・ 動かした ・ ↑ ↓ で鳴らすか。止まっているときだけ（再生中、録音中、カウントイン中は鳴らさない）。 */
 export const notesMayAudition = (state: Pick<AppState, "transport">) => state.transport.state === "stopped";
 
-/** ticks（4 分音符 = 480）が、テンポ bpm で何 ms か。 */
+/** ticks（4 分音符 = TICKS_PER_QUARTER）が、テンポ bpm で何 ms か。 */
 export function ticksToMs(ticks: number, bpm: number): number {
-  return bpm > 0 ? (ticks / 480) * (60000 / bpm) : 0;
+  return bpm > 0 ? (ticks / TICKS_PER_QUARTER) * (60000 / bpm) : 0;
 }
 
 /** 動かしたノートの和音: 鍵に delta を足し、0〜127 の中の物を、重ならずに低い順で 16 個まで。 */

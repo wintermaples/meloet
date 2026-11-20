@@ -2,8 +2,9 @@
 // DOM も Tauri も知らない。60 Hz では使わない（スクロールや曲が変わったときだけ）。
 
 import { TempoMap, type TimelineShape } from "./tempoMap";
+import { TICKS_PER_QUARTER } from "./ticks";
 
-const WHOLE = 1920;
+const WHOLE = 4 * TICKS_PER_QUARTER;
 
 /** 拍子だけ（曲の頭の拍子、テンポの変更なし）。 */
 export interface MeterShape {

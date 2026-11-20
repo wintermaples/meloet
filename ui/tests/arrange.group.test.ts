@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { ClipView, TrackView } from "../src/bridge";
 import * as CD from "../src/components/arrangeDrag";
 import type * as G from "../src/components/arrangeGeom";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 
 function clip(id: number, fromBar: number, toBar: number): ClipView {
   return { id, name: `c${id}`, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0 };

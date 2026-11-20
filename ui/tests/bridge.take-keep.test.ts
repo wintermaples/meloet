@@ -2,13 +2,14 @@
 import { describe, expect, it } from "vitest";
 import { encodeTake } from "../src/bridge/fake";
 import { KEEP_DROPPED_TAKES, songTakeIds, TakeStore } from "../src/bridge/take";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 function store() {
   const fetched: number[] = [];
   const s = new TakeStore(async (id) => {
     fetched.push(id);
     // id が偶数のテイクは、1 つ前の id をもとのテイク（クオンタイズする前）に持つ。
-    return encodeTake({ id, length: 1920, origin: id % 2 === 0 ? id - 1 : undefined, notes: [{ start: 0, length: 480, key: 60, velocity: 80 }] });
+    return encodeTake({ id, length: 4 * TPQ, origin: id % 2 === 0 ? id - 1 : undefined, notes: [{ start: 0, length: TPQ, key: 60, velocity: 80 }] });
   });
   return { s, fetched };
 }

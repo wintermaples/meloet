@@ -15,17 +15,18 @@ import { barsText } from "../src/components/pianoroll/geom";
 import { eachGridTick, eachLine, gridTick, mapOf, nearestBarTick, nearestBeatTick, snapToStep, tickOfPosition } from "../src/time/bars";
 import { noteFieldSpec } from "../src/components/pianoroll/noteFields";
 import { selectedSummary } from "../src/components/pianoroll/notes";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 const scene = (name: string): AppState => fakeScene(name)!.state;
 
 /** 4/4 で 8 小節、9 小節目から 3/4 を 4 小節、13 小節目から 4/4（モック F6-Tempo の曲）。 */
 const tempoTimeline = (): TimelineView => scene("tempo").timeline;
 const THREE_FOUR = 8 * BAR;
-const FOUR_FOUR = THREE_FOUR + 4 * 1440;
+const FOUR_FOUR = THREE_FOUR + 4 * 3 * TPQ;
 
 describe("小節の線（テンポの地図から）", () => {
   const map = mapOf(tempoTimeline());
@@ -38,31 +39,31 @@ describe("小節の線（テンポの地図から）", () => {
   it("小節の頭は、拍子の変わった所から 3/4 の長さでならぶ", () => {
     const heads: number[] = [];
     eachLine(map, 7 * BAR, FOUR_FOUR + BAR, (_, bar) => bar, (tick, kind) => kind === 0 && heads.push(tick));
-    expect(heads).toEqual([7 * BAR, THREE_FOUR, THREE_FOUR + 1440, THREE_FOUR + 2880, THREE_FOUR + 4320, FOUR_FOUR]);
+    expect(heads).toEqual([7 * BAR, THREE_FOUR, THREE_FOUR + 3 * TPQ, THREE_FOUR + 6 * TPQ, THREE_FOUR + 9 * TPQ, FOUR_FOUR]);
   });
 
   it("拍の線は、その小節の拍子の拍", () => {
     const kinds: string[] = [];
-    eachLine(map, THREE_FOUR, THREE_FOUR + 1440, (beat) => beat, (tick, kind) => kinds.push(`${tick - THREE_FOUR}:${kind}`));
-    expect(kinds).toEqual(["0:0", "480:1", "960:1"]);
+    eachLine(map, THREE_FOUR, THREE_FOUR + 3 * TPQ, (beat) => beat, (tick, kind) => kinds.push(`${tick - THREE_FOUR}:${kind}`));
+    expect(kinds).toEqual(["0:0", `${TPQ}:1`, `${2 * TPQ}:1`]);
   });
 
   it("吸いつき: いちばん近い拍 ・ 小節の頭（まん中なら後ろ）", () => {
-    expect(nearestBeatTick(map, THREE_FOUR + 239)).toBe(THREE_FOUR);
-    expect(nearestBeatTick(map, THREE_FOUR + 240)).toBe(THREE_FOUR + 480);
-    expect(nearestBarTick(map, THREE_FOUR + 700)).toBe(THREE_FOUR);
-    expect(nearestBarTick(map, THREE_FOUR + 720)).toBe(THREE_FOUR + 1440);
+    expect(nearestBeatTick(map, THREE_FOUR + TPQ / 2 - 1)).toBe(THREE_FOUR);
+    expect(nearestBeatTick(map, THREE_FOUR + TPQ / 2)).toBe(THREE_FOUR + TPQ);
+    expect(nearestBarTick(map, THREE_FOUR + (35 * TPQ) / 24)).toBe(THREE_FOUR);
+    expect(nearestBarTick(map, THREE_FOUR + (3 * TPQ) / 2)).toBe(THREE_FOUR + 3 * TPQ);
     expect(nearestBarTick(map, -5)).toBe(0);
     // 1/16 のグリッドは、3/4 の小節でも小節の頭から。1 小節より長いきざみは小節の頭へ。
-    expect(snapToStep(map, THREE_FOUR + 130, 120)).toBe(THREE_FOUR + 120);
-    expect(snapToStep(map, THREE_FOUR + 1000, Infinity)).toBe(THREE_FOUR + 1440);
+    expect(snapToStep(map, THREE_FOUR + (13 * TPQ) / 48, TPQ / 4)).toBe(THREE_FOUR + TPQ / 4);
+    expect(snapToStep(map, THREE_FOUR + (25 * TPQ) / 12, Infinity)).toBe(THREE_FOUR + 3 * TPQ);
   });
 
   it("位置の打ちこみ「10.2.240」は 3/4 の小節で数え、拍は 1〜3 に入れる", () => {
-    expect(tickOfPosition(map, 10, 2, 240)).toBe(THREE_FOUR + 1440 + 480 + 240);
-    expect(readPosition("10.2.240", map)).toEqual({ value: THREE_FOUR + 1440 + 720, clamp: null });
+    expect(tickOfPosition(map, 10, 2, 240)).toBe(THREE_FOUR + 3 * TPQ + TPQ + TPQ / 2);
+    expect(readPosition("10.2.240", map)).toEqual({ value: THREE_FOUR + 3 * TPQ + (3 * TPQ) / 2, clamp: null });
     const r = readPosition("10.4", map)!;
-    expect(r.value).toBe(THREE_FOUR + 1440 + 960);
+    expect(r.value).toBe(THREE_FOUR + 3 * TPQ + 2 * TPQ);
     expect(r.clamp).toEqual({ field: "beat", value: "10. 3. 000", range: "1〜3" });
   });
 
@@ -73,7 +74,7 @@ describe("小節の線（テンポの地図から）", () => {
 });
 
 describe("ノートのグリッド（拍子の区間の頭から数える）", () => {
-  // 4/4 を 1 小節、3/16 を 2 小節（1920〜2640）、そのあと 4/4。
+  // 4/4 を 1 小節、3/16 を 2 小節（BAR〜BAR + 3 * TPQ / 2）、そのあと 4/4。
   const map = mapOf({
     ...tempoTimeline(),
     tempoPoints: [],
@@ -83,35 +84,36 @@ describe("ノートのグリッド（拍子の区間の頭から数える）", (
     ],
   });
 
-  it("1/8 三連符（160）は 1920 から数え、次の旗をこえる段は旗の小節の頭（2640）", () => {
-    expect(gridTick(map, 2100, 160)).toBe(2080);
-    expect(gridTick(map, 2620, 160)).toBe(2640);
-    expect(gridTick(map, 2600, 160, true)).toBe(2560);
-    expect(gridTick(map, 2700, 160)).toBe(2640);
-    expect(gridTick(map, -50, 160)).toBe(0);
+  it("1/8 三連符（TPQ / 3）は BAR から数え、次の旗をこえる段は旗の小節の頭（BAR + 3 * TPQ / 2）", () => {
+    const t3 = TPQ / 3;
+    expect(gridTick(map, BAR + (3 * TPQ) / 8, t3)).toBe(BAR + t3);
+    expect(gridTick(map, BAR + (35 * TPQ) / 24, t3)).toBe(BAR + (3 * TPQ) / 2);
+    expect(gridTick(map, BAR + (17 * TPQ) / 12, t3, true)).toBe(BAR + 4 * t3);
+    expect(gridTick(map, BAR + (13 * TPQ) / 8, t3)).toBe(BAR + (3 * TPQ) / 2);
+    expect(gridTick(map, -50, t3)).toBe(0);
   });
 
   it("1 小節のグリッドは、その所の小節の頭", () => {
-    expect(gridTick(map, 2300, 1920, false, true)).toBe(2280);
-    expect(gridTick(map, 2300, 1920, true, true)).toBe(2280);
+    expect(gridTick(map, BAR + (19 * TPQ) / 24, BAR, false, true)).toBe(BAR + (3 * TPQ) / 4);
+    expect(gridTick(map, BAR + (19 * TPQ) / 24, BAR, true, true)).toBe(BAR + (3 * TPQ) / 4);
   });
 
   it("方眼の線は吸いつきと同じ所", () => {
     const ticks: number[] = [];
-    eachGridTick(map, 1900, 2800, 160, (tick) => ticks.push(tick));
-    expect(ticks).toEqual([1920, 2080, 2240, 2400, 2560, 2640]);
+    eachGridTick(map, BAR - TPQ / 24, BAR + (11 * TPQ) / 6, TPQ / 3, (tick) => ticks.push(tick));
+    expect(ticks).toEqual([BAR, BAR + TPQ / 3, BAR + (2 * TPQ) / 3, BAR + TPQ, BAR + (4 * TPQ) / 3, BAR + (3 * TPQ) / 2]);
   });
 });
 
 describe("ノートの一覧 ・ 選んだノートの位置（地図から）", () => {
   const map = mapOf(tempoTimeline());
-  const take = { starts: [THREE_FOUR + 1440 + 480], lengths: [480], keys: [60], velocities: [90] } as never;
+  const take = { starts: [THREE_FOUR + 3 * TPQ + TPQ], lengths: [TPQ], keys: [60], velocities: [90] } as never;
   const clip = { start: 0, end: 20 * BAR, takeOffset: 0 };
 
   it("位置は 3/4 の小節で数え、打ちこみも同じ", () => {
     const spec = noteFieldSpec("position", take, clip, [0], map)!;
     expect(spec.initial).toBe("10.2.000");
-    expect(spec.read("10.3")).toBe(THREE_FOUR + 1440 + 960);
+    expect(spec.read("10.3")).toBe(THREE_FOUR + 3 * TPQ + 2 * TPQ);
     expect(spec.read("10.4")).toBeNull();
     expect(selectedSummary(take, clip, [{ start: 0, end: 1 }], map)!.position).toBe("10.2.000");
   });
@@ -151,7 +153,7 @@ describe("テンポの帯の形", () => {
     const v = { pxPerTick: 64 / BAR, scrollX: 0, width: 1000 };
     const start: T.PointDrag = { tick: THREE_FOUR, fromBpm: 120, toTick: THREE_FOUR, bpm: 120, downX: 512, downY: 12, moved: false };
     const d = T.dragPoint(start, v, s, map, 512 + 17, 12 - 6, 4, false);
-    expect(d).toMatchObject({ moved: true, toTick: THREE_FOUR + 480, bpm: 126 });
+    expect(d).toMatchObject({ moved: true, toTick: THREE_FOUR + TPQ, bpm: 126 });
     const head = T.dragPoint({ ...start, tick: 0, toTick: 0, fromBpm: 96, bpm: 96 }, v, s, map, 600, 12, 4, false);
     expect(head.toTick).toBe(0);
     const onto = T.draggedPoints(pts, { ...start, moved: true, toTick: FOUR_FOUR, bpm: 110 });
@@ -278,7 +280,7 @@ describe("アレンジの「テンポ ・ 拍子の変更」の行（モック F
     expect(text(q('[data-test="tempo-reading"]'))).toBe("9. 2. 000");
     expect(app.sent.some((c) => c.type === "moveTempoPoint")).toBe(false);
     pointer(row, "pointerup", 512 + 17, 6);
-    expect(app.sent.at(-1)).toEqual({ type: "moveTempoPoint", tick: THREE_FOUR, toTick: THREE_FOUR + 480, bpm: 126 });
+    expect(app.sent.at(-1)).toEqual({ type: "moveTempoPoint", tick: THREE_FOUR, toTick: THREE_FOUR + TPQ, bpm: 126 });
 
     pointer(row, "pointerdown", 512, 12);
     pointer(row, "pointermove", 600, 12);
@@ -385,7 +387,7 @@ describe("再生まわりの値（再生の線がいる所）", () => {
   });
   it("10 小節目では拍子 3/4、位置は 3/4 の小節で数える", () => {
     const s = scene("tempo");
-    s.transport.position = THREE_FOUR + 1440 + 960;
+    s.transport.position = THREE_FOUR + 3 * TPQ + 2 * TPQ;
     show(s, Transport);
     expect(text(q('[data-test="transport-meter"]'))).toBe("3/4");
     expect(text(q('[data-test="transport-tempo"]'))).toBe("120.00");

@@ -6,6 +6,7 @@ import { rgb } from "../src/gl/color";
 import type { Drag } from "../src/components/pianoroll/drag";
 import * as G from "../src/components/pianoroll/geom";
 import { noteMarks, paintRoll, paintRollKeys, paintVelocityLane, type RollPicture } from "../src/components/pianoroll/paint";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { GEOM, take } from "./pianoroll-fixture";
 
 const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
@@ -14,13 +15,13 @@ const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
 const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
 
 function picture(over: Partial<RollPicture> = {}): RollPicture {
-  const n = G.shownOf(take([[0, 480, 60, 60], [480, 360, 62, 80], [960, 240, 64, 100]]), 0);
+  const n = G.shownOf(take([[0, TPQ, 60, 60], [TPQ, (3 * TPQ) / 4, 62, 80], [2 * TPQ, TPQ / 2, 64, 100]]), 0);
   return {
     g: GEOM,
     sizes: SIZES,
     scale: { root: 0, mode: "major", lock: false },
     meter: { num: 4, den: 4 },
-    step: 120,
+    step: TPQ / 4,
     shown: n,
     origin: null,
     selected: Uint8Array.from([0, 1, 0]),
@@ -75,9 +76,9 @@ describe("ノート", () => {
   });
 
   it("クオンタイズしたテイクは、もとと位置がちがうノートだけ、もとの位置に gray.7 の枠。ノートのあとに（上に）描く（B-64）", () => {
-    const played = G.shownOf(take([[36, 480, 60], [480, 360, 62], [960, 240, 64]], 3), 0);
+    const played = G.shownOf(take([[(3 * TPQ) / 40, TPQ, 60], [TPQ, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 3), 0);
     const quantized = G.shownOf(
-      take([[0, 480, 60], [480, 360, 62], [960, 240, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
+      take([[0, TPQ, 60], [TPQ, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
       0,
     );
     const rects = draw(picture({ shown: quantized, origin: played }));
@@ -88,9 +89,9 @@ describe("ノート", () => {
   });
 
   it("そろえる前の位置の枠は、選んでいるノートの分だけ accent（B-64）", () => {
-    const played = G.shownOf(take([[36, 480, 60], [500, 360, 62], [960, 240, 64]], 3), 0);
+    const played = G.shownOf(take([[(3 * TPQ) / 40, TPQ, 60], [(25 * TPQ) / 24, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 3), 0);
     const quantized = G.shownOf(
-      take([[0, 480, 60], [480, 360, 62], [960, 240, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
+      take([[0, TPQ, 60], [TPQ, (3 * TPQ) / 4, 62], [2 * TPQ, TPQ / 2, 64]], 4, { origin: 3, froms: Uint32Array.from([0, 1, 2]) }),
       0,
     );
     const rects = draw(picture({ shown: quantized, origin: played, selected: Uint8Array.from([0, 1, 0]) }));
@@ -99,7 +100,7 @@ describe("ノート", () => {
     expect(Math.min(...gray.map((r) => r[0]!))).toBe(4);
     const accentFrames = rects.slice(-4);
     expect(accentFrames.every((r) => colorOf(r) === is("color.accent"))).toBe(true);
-    expect(Math.min(...accentFrames.map((r) => r[0]!))).toBe(Math.round((500 * 40) / 480) + 1);
+    expect(Math.min(...accentFrames.map((r) => r[0]!))).toBe(Math.round(((25 * TPQ) / 24) * GEOM.ppt) + 1);
   });
 
   it("動かしている間は、もとの位置が accent の枠だけになり、ほかのノートのあとに描く（ノートは動く面が描く。B-64）", () => {
@@ -109,7 +110,7 @@ describe("ノート", () => {
       notes: [0],
       grab: 0,
       copy: false,
-      ticks: 120,
+      ticks: TPQ / 4,
       keys: 0,
       selectOnClick: false,
     };

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { TempoMap, type TimelineShape } from "../src/time/tempoMap";
 import table from "../src/time/tempoMap.table.json";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 interface TableTimeline {
   tempo: number;
@@ -26,6 +27,10 @@ function near(got: number, want: number, what: string): void {
   expect(Math.abs(got - want), `${what}: ${got} / ${want}`).toBeLessThanOrEqual(1e-9 * Math.abs(want));
 }
 
+const BAR = 4 * TPQ;
+/** 9 小節目（3/4）の 2 拍目、表示のティック 160 の所。 */
+const IN_BAR_9 = 8 * BAR + (4 * TPQ) / 3;
+
 // F6-Tempo: 96.00 ・ 4/4、5 小節目 104 から 9 小節目 120 へだんだん、9 小節目 3/4、13 小節目 96 ・ 4/4。
 const F6: TimelineShape = {
   tempoBpm: 96,
@@ -33,9 +38,9 @@ const F6: TimelineShape = {
   meterDen: 4,
   headRamp: false,
   tempoPoints: [
-    { tick: 7680, tempoBpm: 104, ramp: true },
-    { tick: 15360, tempoBpm: 120, ramp: false },
-    { tick: 21120, tempoBpm: 96, ramp: false },
+    { tick: 4 * BAR, tempoBpm: 104, ramp: true },
+    { tick: 8 * BAR, tempoBpm: 120, ramp: false },
+    { tick: 44 * TPQ, tempoBpm: 96, ramp: false },
   ],
   meterChanges: [
     { bar: 8, meterNum: 3, meterDen: 4 },
@@ -78,36 +83,36 @@ describe("テンポの地図", () => {
 
   it("仕様書の例: 7 小節目で 112.00、だんだんの全体は 8.586 秒", () => {
     const map = new TempoMap(F6);
-    expect(map.tempoAt(11520)).toBe(112);
-    expect(map.barBeatTick(11520)).toEqual({ bar: 7, beat: 1, tick: 0 });
-    expect(map.secondsAt(7680)).toBe(10);
-    expect(map.secondsAt(15360) - 10).toBeCloseTo(60 * Math.log(120 / 104), 12);
-    expect(map.secondsAt(15360) - 10).toBeCloseTo(8.586, 3);
+    expect(map.tempoAt(6 * BAR)).toBe(112);
+    expect(map.barBeatTick(6 * BAR)).toEqual({ bar: 7, beat: 1, tick: 0 });
+    expect(map.secondsAt(4 * BAR)).toBe(10);
+    expect(map.secondsAt(8 * BAR) - 10).toBeCloseTo(60 * Math.log(120 / 104), 12);
+    expect(map.secondsAt(8 * BAR) - 10).toBeCloseTo(8.586, 3);
     expect(map.pieceCount).toBe(4);
   });
 
   it("小節の頭と、その所の拍子", () => {
     const map = new TempoMap(F6);
-    expect([0, 1, 8, 9, 12, 13].map((bar) => map.tickOfBar(bar))).toEqual([0, 1920, 15360, 16800, 21120, 23040]);
-    expect(map.meterAt(15359)).toEqual({ num: 4, den: 4, bar: 7, barTick: 13440 });
-    expect(map.meterAt(16000)).toEqual({ num: 3, den: 4, bar: 8, barTick: 15360 });
-    expect(map.meterAt(16800)).toEqual({ num: 3, den: 4, bar: 9, barTick: 16800 });
-    expect(map.meterAt(21120)).toEqual({ num: 4, den: 4, bar: 12, barTick: 21120 });
-    expect(map.barBeatTick(21119)).toEqual({ bar: 12, beat: 3, tick: 479 });
+    expect([0, 1, 8, 9, 12, 13].map((bar) => map.tickOfBar(bar))).toEqual([0, BAR, 8 * BAR, 35 * TPQ, 44 * TPQ, 12 * BAR]);
+    expect(map.meterAt(8 * BAR - 1)).toEqual({ num: 4, den: 4, bar: 7, barTick: 7 * BAR });
+    expect(map.meterAt(IN_BAR_9)).toEqual({ num: 3, den: 4, bar: 8, barTick: 8 * BAR });
+    expect(map.meterAt(35 * TPQ)).toEqual({ num: 3, den: 4, bar: 9, barTick: 35 * TPQ });
+    expect(map.meterAt(44 * TPQ)).toEqual({ num: 4, den: 4, bar: 12, barTick: 44 * TPQ });
+    expect(map.barBeatTick(44 * TPQ - 1)).toEqual({ bar: 12, beat: 3, tick: 479 });
     expect(map.barBeatTick(-5)).toEqual({ bar: 1, beat: 1, tick: 0 });
-    expect(map.barBeatTick(11520.9)).toEqual({ bar: 7, beat: 1, tick: 0 });
+    expect(map.barBeatTick(6 * BAR + 0.9)).toEqual({ bar: 7, beat: 1, tick: 0 });
   });
 
   it("次の拍の頭", () => {
     const map = new TempoMap(F6);
     expect(map.nextBeat(0)).toEqual({ tick: 0, downbeat: true });
-    expect(map.nextBeat(0.5)).toEqual({ tick: 480, downbeat: false });
-    expect(map.nextBeat(15361)).toEqual({ tick: 15840, downbeat: false });
-    expect(map.nextBeat(16320.5)).toEqual({ tick: 16800, downbeat: true });
-    expect(map.nextBeat(21119.5)).toEqual({ tick: 21120, downbeat: true });
+    expect(map.nextBeat(0.5)).toEqual({ tick: TPQ, downbeat: false });
+    expect(map.nextBeat(8 * BAR + 1)).toEqual({ tick: 33 * TPQ, downbeat: false });
+    expect(map.nextBeat(34 * TPQ + 0.5)).toEqual({ tick: 35 * TPQ, downbeat: true });
+    expect(map.nextBeat(44 * TPQ - 0.5)).toEqual({ tick: 44 * TPQ, downbeat: true });
     expect(map.nextBeat(-1)).toEqual({ tick: 0, downbeat: true });
-    expect(map.nextBeat(-481)).toEqual({ tick: -480, downbeat: false });
-    expect(map.nextBeat(-1920)).toEqual({ tick: -1920, downbeat: true });
+    expect(map.nextBeat(-TPQ - 1)).toEqual({ tick: -TPQ, downbeat: false });
+    expect(map.nextBeat(-BAR)).toEqual({ tick: -BAR, downbeat: true });
   });
 
   it("4 分音符の 1 分間の数は、拍子の下の数で変わる", () => {
@@ -122,8 +127,8 @@ describe("テンポの地図", () => {
         { bar: 2, meterNum: 2, meterDen: 2 },
       ],
     });
-    expect([-10, 0, 1919, 1920, 3359, 3360].map((tick) => map.quarterBpmAt(tick))).toEqual([96, 96, 96, 48, 48, 192]);
-    expect(map.tempoAt(3000)).toBe(96);
+    expect([-10, 0, BAR - 1, BAR, BAR + 3 * TPQ - 1, BAR + 3 * TPQ].map((tick) => map.quarterBpmAt(tick))).toEqual([96, 96, 96, 48, 48, 192]);
+    expect(map.tempoAt(BAR + (9 * TPQ) / 4)).toBe(96);
   });
 
   it("入れ物をわたせば、新しい物を作らない", () => {
@@ -131,9 +136,9 @@ describe("テンポの地図", () => {
     const meter = { num: 0, den: 0, bar: 0, barTick: 0 };
     const position = { bar: 0, beat: 0, tick: 0 };
     const beat = { tick: 0, downbeat: false };
-    expect(map.meterAt(16000, meter)).toBe(meter);
-    expect(map.barBeatTick(16000, position)).toBe(position);
-    expect(map.nextBeat(16000, beat)).toBe(beat);
+    expect(map.meterAt(IN_BAR_9, meter)).toBe(meter);
+    expect(map.barBeatTick(IN_BAR_9, position)).toBe(position);
+    expect(map.nextBeat(IN_BAR_9, beat)).toBe(beat);
     expect(position).toEqual({ bar: 9, beat: 2, tick: 160 });
   });
 
@@ -142,7 +147,7 @@ describe("テンポの地図", () => {
     const head = { tempoBpm: 96, meterNum: 4, meterDen: 4, headRamp: false };
     const broken = new TempoMap({
       ...head,
-      tempoPoints: [point(1920, 120), point(0, 200), point(960, 100), point(1920, 110)],
+      tempoPoints: [point(BAR, 120), point(0, 200), point(2 * TPQ, 100), point(BAR, 110)],
       meterChanges: [
         { bar: 2, meterNum: 3, meterDen: 4 },
         { bar: 0, meterNum: 7, meterDen: 8 },
@@ -151,11 +156,11 @@ describe("テンポの地図", () => {
     });
     const fixed = new TempoMap({
       ...head,
-      tempoPoints: [point(960, 100), point(1920, 110)],
+      tempoPoints: [point(2 * TPQ, 100), point(BAR, 110)],
       meterChanges: [{ bar: 2, meterNum: 6, meterDen: 8 }],
     });
     expect(broken.pieceCount).toBe(fixed.pieceCount);
-    for (const tick of [0, 500, 960, 1919, 1920, 3840, 5000, 100_000]) {
+    for (const tick of [0, 500, 2 * TPQ, BAR - 1, BAR, 2 * BAR, 5000, 100_000]) {
       expect(broken.secondsAt(tick)).toBe(fixed.secondsAt(tick));
       expect(broken.tempoAt(tick)).toBe(fixed.tempoAt(tick));
       expect(broken.meterAt(tick)).toEqual(fixed.meterAt(tick));

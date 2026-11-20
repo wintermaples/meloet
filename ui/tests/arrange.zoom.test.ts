@@ -6,11 +6,12 @@ import Arrange from "../src/components/Arrange.svelte";
 import { arrangeView, DEFAULT_ARRANGE_BAR, prView } from "../src/components/pianoroll/view.svelte";
 import { watchSlots, type GlRect, type GlSlot } from "../src/gl/slot";
 import HScrollbar from "../src/lib/HScrollbar.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 const WIDTH = 1000;
 
 const proto = HTMLElement.prototype;

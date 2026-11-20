@@ -6,6 +6,7 @@ import * as G from "../src/components/pianoroll/geom";
 import { onDragCancel, prView } from "../src/components/pianoroll/view.svelte";
 import { handleKeydown, type KeyDeps } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { take } from "./pianoroll-fixture";
 
 const k = (key: string, mods: Partial<KeyInput> = {}): KeyInput => ({ key, ctrl: false, meta: false, alt: false, shift: false, ...mods });
@@ -40,7 +41,7 @@ describe("keyAction（ピアノロールのキー）", () => {
 });
 
 describe("handleKeydown（ピアノロールに向けるキー）", () => {
-  const n = G.shownOf(take([[0, 480, 60], [480, 480, 62], [960, 240, 64]], 7), 1920);
+  const n = G.shownOf(take([[0, TPQ, 60], [TPQ, TPQ, 62], [2 * TPQ, TPQ / 2, 64]], 7), 4 * TPQ);
   let state: AppState;
   let sent: Command[];
   let deps: KeyDeps;
@@ -54,7 +55,7 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     state = fakeState();
     state.workspace.layout = { ...state.workspace.layout, lower: [{ band: "pianoRoll", height: 640 }] };
     state.pianoRoll = { ...state.pianoRoll, take: 7, selectedNotes: [{ start: 0, end: 2 }], grid: { division: 16, triplet: false }, clipboardNotes: 2 };
-    state.transport = { ...state.transport, position: 1000 };
+    state.transport = { ...state.transport, position: 2 * TPQ + TPQ / 12 };
     sent = [];
     deps = { state: () => state, send: (c) => void sent.push(c), nav: { platform: "Linux" }, pianoRoll: () => n };
     prView.focus = "pianoRoll";
@@ -73,12 +74,12 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     expect(sent).toEqual([]);
   });
 
-  it("↑ ↓ ・ ← → で選んだノートを動かす（グリッド 1 つ ＝ 1/16 の 120）", () => {
+  it("↑ ↓ ・ ← → で選んだノートを動かす（グリッド 1 つ ＝ 1/16 の TPQ / 4）", () => {
     press("ArrowUp", { shiftKey: true });
     press("ArrowRight");
     expect(sent).toEqual([
       { type: "moveNotes", take: 7, notes: [0, 1], ticks: 0, keys: 12, copy: false },
-      { type: "moveNotes", take: 7, notes: [0, 1], ticks: 120, keys: 0, copy: false },
+      { type: "moveNotes", take: 7, notes: [0, 1], ticks: TPQ / 4, keys: 0, copy: false },
     ]);
   });
 
@@ -102,12 +103,12 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     press("x", { ctrlKey: true });
     press("v", { ctrlKey: true });
     expect(sent).toEqual([
-      { type: "moveNotes", take: 7, notes: [0, 1], ticks: 960, keys: 0, copy: true },
+      { type: "moveNotes", take: 7, notes: [0, 1], ticks: 2 * TPQ, keys: 0, copy: true },
       { type: "selectAllNotes" },
       { type: "copyNotes", take: 7, notes: [0, 1] },
       { type: "cutNotes", take: 7, notes: [0, 1] },
-      // 再生の位置 1000 をグリッド（120）に合わせて 960
-      { type: "pasteNotes", at: 960 },
+      // 再生の位置 2 * TPQ + TPQ / 12 をグリッド（TPQ / 4）に合わせて 2 * TPQ
+      { type: "pasteNotes", at: 2 * TPQ },
     ]);
   });
 

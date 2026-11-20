@@ -14,6 +14,7 @@ import { drumView, prPanels, prView } from "../src/components/pianoroll/view.sve
 import StatusLine from "../src/components/StatusLine.svelte";
 import * as app from "./fake-app.svelte";
 import * as shown from "./fake-shown.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { take } from "./pianoroll-fixture";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
@@ -118,7 +119,7 @@ describe("鍵の列（モック R7-Drum）", () => {
     const next = structuredClone(s);
     next.arrange = { ...next.arrange, pianoRollClip: clip.id, selectedClip: clip.id, selectedClips: [clip.id] };
     app.setState(next);
-    shown.setShown({ clip, track: piano, take: take([[0, 480, 60]], clip.takeId) });
+    shown.setShown({ clip, track: piano, take: take([[0, TPQ, 60]], clip.takeId) });
     flushSync();
     expect(prView.drums).toBe(false);
     expect(q(".roll")!.classList.contains("drums")).toBe(false);
@@ -165,7 +166,7 @@ describe("ノートの一覧", () => {
 
   it("キットにない鍵のノートは音名で", async () => {
     const song = await drumSong();
-    const odd = take([[0, 120, 60, 90], [0, 120, 36, 104]], song.clip.takeId);
+    const odd = take([[0, TPQ / 4, 60, 90], [0, TPQ / 4, 36, 104]], song.clip.takeId);
     shown.setShown({ clip: song.clip, track: song.track, take: odd });
     show(NoteListPanel);
     expect(qa(".row").map(text)).toEqual(["1.1.000 C4 90", "1.1.000 キック 104"]);

@@ -9,11 +9,13 @@ import Roll from "../src/components/pianoroll/Roll.svelte";
 import { DEFAULT_ROW_PX, prPanels, prView, pxPerTick, rowHeight } from "../src/components/pianoroll/view.svelte";
 import * as app from "./fake-app.svelte";
 import * as shown from "./fake-shown.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { take } from "./pianoroll-fixture";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
 
+const BAR = 4 * TPQ;
 const W = 696;
 const H = 492;
 const proto = HTMLElement.prototype;
@@ -98,7 +100,7 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
     shown.setShown({ clip: null, track, take: null });
     prView.quarterPx = 40;
     prView.rowPx = 16;
-    prView.scrollTick = 3 * 1920;
+    prView.scrollTick = 3 * BAR;
     prView.topKey = 70;
     show();
     const before = viewNow();
@@ -110,8 +112,8 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
     expect(Number.isFinite(c.start)).toBe(true);
 
     // core の答え: 小節の頭から 4 小節のクリップができ、そこに 1 つ。
-    const head = Math.floor(c.start / 1920) * 1920;
-    const made: ClipView = { id: 900, name: track.name, start: head, end: head + 4 * 1920, take: 1, takes: 1, takeId: 901, takeOffset: 0, noteCount: 1 };
+    const head = Math.floor(c.start / BAR) * BAR;
+    const made: ClipView = { id: 900, name: track.name, start: head, end: head + 4 * BAR, take: 1, takes: 1, takeId: 901, takeOffset: 0, noteCount: 1 };
     const next = structuredClone(empty);
     next.song.tracks[0]!.clips = [made];
     next.arrange = { ...next.arrange, selectedClips: [900], selectedClip: 900, pianoRollClip: 900 };
@@ -129,7 +131,7 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
     app.setState(none);
     shown.setShown({ clip: null, track, take: null });
     prView.quarterPx = 320;
-    prView.scrollTick = 20 * 1920;
+    prView.scrollTick = 20 * BAR;
     show();
     arrive(s, clip, track, t);
     expect(prView.scrollTick).toBe(clip.start);
@@ -145,7 +147,7 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
     show();
     prView.rowPx = 20;
     prView.topKey = 90;
-    prView.scrollTick = clip.start + 1920;
+    prView.scrollTick = clip.start + BAR;
     flushSync();
     const before = viewNow();
     const y = 2 * rowHeight(100) + 1;

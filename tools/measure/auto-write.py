@@ -5,7 +5,7 @@ usage: python3 -I tools/measure/auto-write.py OUT [--state recording|playing] [-
                                               [--moves 6] [--song X.meloet]
        python3 -I tools/measure/auto-write.py OUT --long SECONDS [--hold-ms 2000] [--song X.meloet]
 
-Starts the real app (release) with a song of one track at 125 bpm (a tick is 1 ms) whose volume
+Starts the real app (release) with a song of one track at 125 bpm (a tick is 60 / (125 * TICKS_PER_QUARTER) s) whose volume
 lane is one flat line, opens the mixer, turns 「● 書く」 on for the volume and starts. Then the
 page gets made-up pointer events on the track's fader: down, --moves moves about 230 ms apart
 (zigzag, so no point is thinned away), up. The time of every event is the page's `Date.now()`
@@ -37,6 +37,7 @@ import argparse, json, os, sys, time
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, here)
 import remote  # noqa: E402
+from tempo_map import TICKS_PER_QUARTER  # noqa: E402
 
 BPM = 125
 FLAT = 0.5
@@ -225,7 +226,7 @@ def run(a):
     legs = [((c["lo"] - offset) / 1000, (offset - c["hi"]) / 1000) for c in (clock0, clock1)]
     points = [p for p in lane_points(saved) if abs(p[1] - FLAT) > 1e-6]
     events = [e for d in drags for e in d if e["kind"] != "pointerdown"]
-    us_per_tick = 60e6 / BPM / 480
+    us_per_tick = 60e6 / BPM / TICKS_PER_QUARTER
 
     rulers = {}
     notes = recorded(saved)

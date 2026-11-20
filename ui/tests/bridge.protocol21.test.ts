@@ -9,13 +9,14 @@ import { historyRowText, laneNameText, stepNameText, stepPlaceText, stepWhatText
 import { dbToFrac } from "../src/components/mixer/scale";
 import StatusLine from "../src/components/StatusLine.svelte";
 import { fill, stepNames, type Entry } from "../src/text/ja";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { mockScreenText, sectionText, specDocument } from "./design-sources";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
 const scene = (name: string) => fakeScene(name)!;
-const BAR = 1920;
+const BAR = 4 * TPQ;
 const TRACK = 10;
 const volume = (number: number): LaneRef => ({ track: TRACK + number, target: { kind: "volume" } });
 
@@ -38,9 +39,9 @@ describe("約束 21 の形", () => {
       { type: "addLane", track: 11, target: { kind: "insert", insert: 5, param: 0 } },
       { type: "deleteLane", track: 11, target: { kind: "volume" } },
       { type: "foldLane", track: 11, target: { kind: "volume" }, folded: true },
-      { type: "addAutoPoint", lane: 501, tick: 4 * BAR + 960, value: null },
-      { type: "addAutoPoint", lane: 501, tick: 4 * BAR + 960, value: 0.52 },
-      { type: "moveAutoPoints", lane: 501, points: [1, 2], dTick: 480, dValue: -0.05 },
+      { type: "addAutoPoint", lane: 501, tick: 4 * BAR + 2 * TPQ, value: null },
+      { type: "addAutoPoint", lane: 501, tick: 4 * BAR + 2 * TPQ, value: 0.52 },
+      { type: "moveAutoPoints", lane: 501, points: [1, 2], dTick: TPQ, dValue: -0.05 },
       { type: "deleteAutoPoints", lane: 501, points: [1] },
       { type: "selectAutoPoints", lane: 501, points: [1, 2, 3] },
       { type: "setLaneWrite", track: 11, target: { kind: "volume" }, on: true },
@@ -225,7 +226,7 @@ describe("偽物の場面: オートメーション", () => {
     expect(s.automation).toEqual({
       folded: [{ track: TRACK + 1, target: { kind: "pan" } }, { track: TRACK + 1, target: lanesOf(s, 1)[2]!.target }],
       armed: [volume(1)],
-      writing: [{ lane: volume(1), fromTick: 5 * BAR + 960 }],
+      writing: [{ lane: volume(1), fromTick: 5 * BAR + 2 * TPQ }],
       held: [],
       selected: null,
     } satisfies AutomationView);
@@ -251,7 +252,7 @@ describe("偽物の場面: オートメーション", () => {
     const t = createFakeTransport(auto);
     const piano = decodeLane(await t.lane(501));
     const pad = decodeLane(await t.lane(504));
-    expect(auto.transport.position).toBe(8 * BAR + 480);
+    expect(auto.transport.position).toBe(8 * BAR + TPQ);
     expect(piano.values[Array.from(piano.ticks).indexOf(auto.transport.position)]).toBeCloseTo(dbToFrac(-2.4), 6);
     expect(pad.values[1]).toBeCloseTo(dbToFrac(-10.5), 6);
     expect(piano.ticks.length).toBe(lanesOf(auto, 1)[0]!.points);
@@ -268,7 +269,7 @@ describe("偽物の場面: オートメーション", () => {
     expect(add.automation.selected).toEqual({ laneId: 511, points: [{ start: 3, end: 4 }] });
     const added = decodeLane(await createFakeTransport(add).lane(511));
     // 5.3.000 に −8.4 dB（モックの読み値）。
-    expect([added.ticks[3], added.values[3]]).toEqual([4 * BAR + 960, Math.fround(dbToFrac(-8.4))]);
+    expect([added.ticks[3], added.values[3]]).toEqual([4 * BAR + 2 * TPQ, Math.fround(dbToFrac(-8.4))]);
     expect(lanesOf(add, 1)).toHaveLength(1);
     expect(lanesOf(add, 1)[0]!.points).toBe(6);
 

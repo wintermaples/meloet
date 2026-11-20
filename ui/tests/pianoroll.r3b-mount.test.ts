@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, TakeNotes } from "../src/bridge";
 import { createFakeTransport, fakeScene } from "../src/bridge/fake";
 import { decodeTake } from "../src/bridge/take";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { closeContextMenu, contextMenu } from "../src/components/menu/contextMenu.svelte";
 import * as G from "../src/components/pianoroll/geom";
 import NoteInspector from "../src/components/pianoroll/NoteInspector.svelte";
@@ -143,7 +144,7 @@ describe("ピアノロールの目盛（B-61）", () => {
     const { s } = await scene("pianoRoll");
     show(Roll);
     const ruler = q('[data-test="pr-ruler"]')!;
-    const bar = 1920 * pxPerTick(100);
+    const bar = 4 * TPQ * pxPerTick(100);
     expect(s.timeline.meterNum).toBe(4);
     pointer(ruler, "pointerdown", { clientX: bar + 2 });
     pointer(ruler, "pointermove", { clientX: 3 * bar - 2 });

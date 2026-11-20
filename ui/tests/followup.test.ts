@@ -14,13 +14,14 @@ import Transport from "../src/components/Transport.svelte";
 import { tokensAt, type Scale } from "../src/design/tokens";
 import { closeMenu, menuVisible } from "../src/lib/menu";
 import { hideTip, tipView } from "../src/lib/tip.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 import { take } from "./pianoroll-fixture";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 vi.mock("../src/bridge", async (original) => ({
   ...(await original<typeof import("../src/bridge")>()),
-  takeNotes: (id: number) => Promise.resolve(take([[0, 480, 60]], id)),
+  takeNotes: (id: number) => Promise.resolve(take([[0, TPQ, 60]], id)),
 }));
 
 let mounted: Record<string, unknown> | null = null;

@@ -8,10 +8,11 @@ import { clipNoteIndexes, inRanges, selectedSummary } from "../src/components/pi
 import { sameKeys, soundingKeys } from "../src/components/pianoroll/sounding";
 import { ARRANGE_BAR_STEPS, arrangeView, DEFAULT_ARRANGE_BAR, stepFrom, zoomArrangeBy } from "../src/components/pianoroll/view.svelte";
 import { noteName } from "../src/components/meterFormat";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const FOUR = { num: 4, den: 4 };
-const BAR = 1920;
-const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * 480 + tick;
+const BAR = 4 * TPQ;
+const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * TPQ + tick;
 
 /** 偽物の場面 pianoRoll（モック A-PianoRoll）の、見せているテイク。 */
 async function sceneTake(name = "pianoRoll") {
@@ -25,16 +26,16 @@ async function sceneTake(name = "pianoRoll") {
 describe("ノートの一覧の数（モック A-PianoRoll）", () => {
   it("位置は「小節.拍.ティック」、長さは「拍.ティック」", () => {
     expect(notePositionText(at(3, 1, 0), FOUR)).toBe("3.1.000");
-    expect(notePositionText(at(1, 4, 240), FOUR)).toBe("1.4.240");
-    expect(noteLengthText(1920, FOUR)).toBe("4.000");
-    expect(noteLengthText(360, FOUR)).toBe("0.360");
-    expect(noteLengthText(720, FOUR)).toBe("1.240");
+    expect(notePositionText(at(1, 4, TPQ / 2), FOUR)).toBe("1.4.240");
+    expect(noteLengthText(4 * TPQ, FOUR)).toBe("4.000");
+    expect(noteLengthText((3 * TPQ) / 4, FOUR)).toBe("0.360");
+    expect(noteLengthText((3 * TPQ) / 2, FOUR)).toBe("1.240");
   });
 
   it("8 分の拍子では、拍は 8 分音符（表示は拍の中を 480 に分ける）", () => {
     const sixEight = { num: 6, den: 8 };
-    expect(notePositionText(240 * 7, sixEight)).toBe("2.2.000");
-    expect(noteLengthText(360, sixEight)).toBe("1.240");
+    expect(notePositionText((TPQ / 2) * 7, sixEight)).toBe("2.2.000");
+    expect(noteLengthText((3 * TPQ) / 4, sixEight)).toBe("1.240");
   });
 
   it("グリッドと音階の名前", () => {
@@ -84,24 +85,24 @@ describe("選んだノートのまとめ（モック A-PianoRoll の右の欄）
 describe("鳴っている音（モック F-PRPlay「鳴っている音 C3 E3 G3 C4」）", () => {
   it("4.1.240 で鳴っているのは C3 E3 G3 C4（低い順）", async () => {
     const { clip, take } = await sceneTake("pianoRollPlay");
-    expect(soundingKeys(take, clip, at(4, 1, 240)).map(noteName)).toEqual(["C3", "E3", "G3", "C4"]);
+    expect(soundingKeys(take, clip, at(4, 1, TPQ / 2)).map(noteName)).toEqual(["C3", "E3", "G3", "C4"]);
   });
 
   it("ノートの終わりちょうどでは鳴っていない。クリップの外では鳴らない", () => {
-    const take = { id: 7, starts: [0, 0], lengths: [480, 960], keys: [64, 60] };
-    const clip = { start: 0, end: 1920, takeOffset: 0, takeId: 7 };
+    const take = { id: 7, starts: [0, 0], lengths: [TPQ, 2 * TPQ], keys: [64, 60] };
+    const clip = { start: 0, end: BAR, takeOffset: 0, takeId: 7 };
     expect(soundingKeys(take, clip, 0)).toEqual([60, 64]);
-    expect(soundingKeys(take, clip, 480)).toEqual([60]);
+    expect(soundingKeys(take, clip, TPQ)).toEqual([60]);
     expect(soundingKeys(take, { ...clip, end: 400 }, 400)).toEqual([]);
-    expect(soundingKeys(take, { ...clip, start: 1920, end: 3840 }, 1920)).toEqual([60, 64]);
+    expect(soundingKeys(take, { ...clip, start: BAR, end: 2 * BAR }, BAR)).toEqual([60, 64]);
     // クリップがテイクの頭を切っていると、始まりが切られた所にあるノートは鳴らない（Rust の track_events と同じ）。
-    expect(soundingKeys(take, { ...clip, takeOffset: -480 }, 0)).toEqual([]);
-    expect(soundingKeys({ ...take, starts: [0, 480] }, { ...clip, takeOffset: -480 }, 0)).toEqual([60]);
+    expect(soundingKeys(take, { ...clip, takeOffset: -TPQ }, 0)).toEqual([]);
+    expect(soundingKeys({ ...take, starts: [0, TPQ] }, { ...clip, takeOffset: -TPQ }, 0)).toEqual([60]);
   });
 
   it("クリップのテイクを取りにいっている間（前のテイクのまま）や、テイクもクリップもないときは何も鳴らない", () => {
-    const take = { id: 7, starts: [0], lengths: [480], keys: [60] };
-    const clip = { start: 0, end: 1920, takeOffset: 0, takeId: 8 };
+    const take = { id: 7, starts: [0], lengths: [TPQ], keys: [60] };
+    const clip = { start: 0, end: BAR, takeOffset: 0, takeId: 8 };
     expect(soundingKeys(take, clip, 0)).toEqual([]);
     expect(soundingKeys(null, clip, 0)).toEqual([]);
     expect(soundingKeys(take, null, 0)).toEqual([]);

@@ -23,6 +23,7 @@ import { Batch } from "../src/gl/batch";
 import { rgb } from "../src/gl/color";
 import { handleKeydown, type KeyDeps } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { GEOM, take } from "./pianoroll-fixture";
 
 const SUSTAIN: ControlKind = { kind: "cc", number: 64 };
@@ -31,10 +32,10 @@ const MOD: ControlKind = { kind: "cc", number: 1 };
 /** 1 本 48、上下のあき 9（モック R3-Lanes）。 */
 const LANE: LaneBox = { height: 48, pad: 9 };
 
-/** サステイン 127 ・ 0（ティック 0 と 480）、ピッチベンド 0 ・ 4096（240 と 960）、モジュレーション 64（720）。tick の順。 */
+/** サステイン 127 ・ 0（ティック 0 と TPQ）、ピッチベンド 0 ・ 4096（TPQ / 2 と 2 * TPQ）、モジュレーション 64（(3 * TPQ) / 2）。tick の順。 */
 const withControls = (id = 7) =>
-  take([[0, 480, 60]], id, {
-    controlTicks: Uint32Array.from([0, 240, 480, 720, 960]),
+  take([[0, TPQ, 60]], id, {
+    controlTicks: Uint32Array.from([0, TPQ / 2, TPQ, (3 * TPQ) / 2, 2 * TPQ]),
     controlKinds: Uint8Array.from([0, 1, 0, 0, 1]),
     controlNumbers: Uint8Array.from([64, 0, 64, 1, 0]),
     controlValues: Int16Array.from([127, 0, 0, 64, 4096]),
@@ -74,7 +75,7 @@ describe("帯の点", () => {
 
   it("点に乗る（縦も横も 4 以内）。囲むと、かかった点", () => {
     const n = shown();
-    // 1 拍 40 px: 480 は 40 px。
+    // 1 拍 40 px: TPQ は 40 px。
     expect(hitPoint(n, SUSTAIN, GEOM, LANE, 40, 39, 4)).toBe(2);
     expect(hitPoint(n, SUSTAIN, GEOM, LANE, 45, 39, 4)).toBe(-1);
     expect(hitPoint(n, SUSTAIN, GEOM, LANE, 40, 9, 4)).toBe(-1);
@@ -105,7 +106,7 @@ describe("マウス（LaneMouse）", () => {
       control: () => control,
       geom: () => GEOM,
       box: () => LANE,
-      step: () => 120,
+      step: () => TPQ / 4,
       meter: () => ({ num: 4, den: 4 }),
       tool: () => tool,
       selected: () => selected,
@@ -123,10 +124,10 @@ describe("マウス（LaneMouse）", () => {
   it("書く道具で押すと点がふえる。横はグリッドに吸いつき（Shift で吸いつかない）、値は押した高さ", () => {
     tool = "draw";
     const m = make();
-    m.down(33, 24, none); // 396 ティック → 1/16（120）の 360
-    expect(m.up()).toEqual({ type: "addControl", take: 7, tick: 360, control: PB, value: 0 });
+    m.down(33, 24, none); // (33 * TPQ) / 40 ティック → 1/16（TPQ / 4）の (3 * TPQ) / 4
+    expect(m.up()).toEqual({ type: "addControl", take: 7, tick: (3 * TPQ) / 4, control: PB, value: 0 });
     m.down(33, 9, shift);
-    expect(m.up()).toEqual({ type: "addControl", take: 7, tick: 396, control: PB, value: 8191 });
+    expect(m.up()).toEqual({ type: "addControl", take: 7, tick: (33 * TPQ) / 40, control: PB, value: 8191 });
   });
 
   it("オン ・ オフの CC は、書いても 0 か 127", () => {
@@ -156,14 +157,14 @@ describe("マウス（LaneMouse）", () => {
 
   it("押したまま動かすと、横はグリッドに吸いつき、縦は値。離して MoveControls を 1 つ。読み値は「+0512 ・ 1.3.000」の形", () => {
     selected = [{ start: 1, end: 2 }, { start: 4, end: 5 }];
-    const m = make(1920);
-    // 点 1 は 1920 + 240 = 2160 ティック → x = (2160 - 0) / 12 = 180。値 0 は y 24。
+    const m = make(4 * TPQ);
+    // 点 1 は 4 * TPQ + TPQ / 2 ティック → x = 4.5 拍 × 40 px = 180。値 0 は y 24。
     m.down(180, 24, none);
     expect(sent).toEqual([]);
     const up = valueToY(PB, LANE, 512) - 24;
-    expect(m.move(180 + 23, 24 + up, none)).toBe(true); // 276 ティック → 240 に吸いつく
+    expect(m.move(180 + 23, 24 + up, none)).toBe(true); // (23 * TPQ) / 40 ティック → TPQ / 2 に吸いつく
     expect(m.reading()).toBe("+0512 ・ 2.2.000");
-    expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1, 4], ticks: 240, value: 512 });
+    expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1, 4], ticks: TPQ / 2, value: 512 });
   });
 
   it("選んだ点を押して動かさずに離すと、その点だけを選ぶ", () => {
@@ -178,7 +179,7 @@ describe("マウス（LaneMouse）", () => {
     const m = make();
     m.down(20, 24, none);
     m.move(-200, -500, none);
-    expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1, 4], ticks: -240, value: 8191 - 4096 });
+    expect(m.up()).toEqual({ type: "moveControls", take: 7, points: [1, 4], ticks: -TPQ / 2, value: 8191 - 4096 });
   });
 
   it("オン ・ オフの CC は、動かしても 0 か 127 に吸いつく", () => {
@@ -232,7 +233,7 @@ describe("帯の絵（paintLane）", () => {
   const picture = (over: Partial<LanePicture> = {}): LanePicture => ({
     g: GEOM,
     meter: { num: 4, den: 4 },
-    step: 120,
+    step: TPQ / 4,
     control: PB,
     shown: shown(),
     lane: LANE,
@@ -274,7 +275,7 @@ describe("帯の絵（paintLane）", () => {
   });
 
   it("動かしている間は、もとの位置に gray.7 の枠だけ（線と点は動く面）", () => {
-    const drag = { kind: "move" as const, press: { x: 0, y: 0, moved: true }, points: [1], grab: 1, ticks: 120, value: 0, selectOnClick: false };
+    const drag = { kind: "move" as const, press: { x: 0, y: 0, moved: true }, points: [1], grab: 1, ticks: TPQ / 4, value: 0, selectOnClick: false };
     const rects = draw(picture({ drag }));
     expect(rects.some((r) => colorOf(r) === is("color.gray.9"))).toBe(false);
     expect(rects.filter((r) => colorOf(r) === is("color.gray.7"))).toHaveLength(4);

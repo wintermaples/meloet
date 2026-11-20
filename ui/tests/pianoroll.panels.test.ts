@@ -12,12 +12,13 @@ import { attachKeys } from "../src/keys/attach";
 import StatusLine from "../src/components/StatusLine.svelte";
 import * as app from "./fake-app.svelte";
 import * as shown from "./fake-shown.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
 
-const BAR = 1920;
-const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * 480 + tick;
+const BAR = 4 * TPQ;
+const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * TPQ + tick;
 
 // jsdom は大きさを測らない。一覧の見えている高さを 200（行 10 本ぶん）にする。
 const proto = HTMLElement.prototype;
@@ -96,10 +97,10 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
     const n = 10_000;
     const big: TakeNotes = {
       id: 999,
-      length: n * 120,
+      length: (n * TPQ) / 4,
       origin: 0,
-      starts: Uint32Array.from({ length: n }, (_, i) => i * 120),
-      lengths: new Uint32Array(n).fill(120),
+      starts: Uint32Array.from({ length: n }, (_, i) => (i * TPQ) / 4),
+      lengths: new Uint32Array(n).fill(TPQ / 4),
       keys: new Uint8Array(n).fill(60),
       velocities: new Uint8Array(n).fill(64),
       froms: new Uint32Array(n),
@@ -109,7 +110,7 @@ describe("ノートの一覧（モック A-PianoRoll の左の欄）", () => {
       controlValues: new Int16Array(0),
     };
     const s = app.stateWith(() => {});
-    const clip = { ...s.song.tracks[0]!.clips[0]!, id: 1, start: 0, end: n * 120, takeId: 999 };
+    const clip = { ...s.song.tracks[0]!.clips[0]!, id: 1, start: 0, end: (n * TPQ) / 4, takeId: 999 };
     shown.setShown({ clip: { ...clip, take: 1, takes: 1, takeOffset: 0, noteCount: n, name: "x" }, track: s.song.tracks[0]!, take: big });
     app.setState(s);
     show(NoteListPanel);
@@ -224,7 +225,7 @@ describe("状態行（ピアノロールのまわり）", () => {
   });
 
   it("ピアノロールをひらいて再生中: 「1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4」（モック F-PRPlay）", async () => {
-    await scene("pianoRollPlay", (s) => (s.transport.position = at(4, 1, 240)));
+    await scene("pianoRollPlay", (s) => (s.transport.position = at(4, 1, TPQ / 2)));
     show(StatusLine);
     expect(left()).toBe("1 ピアノ ・ Aメロ ・ テイク 2 / 3");
     runFrameCallbacks();

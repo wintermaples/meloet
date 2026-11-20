@@ -14,6 +14,7 @@ import { drumFitRowPx, drumView, prView, zoomRowsBy } from "../src/components/pi
 import { Batch } from "../src/gl/batch";
 import { rgb } from "../src/gl/color";
 import { findTerm, t, texts } from "../src/text/ja";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { sectionText, specDocument } from "./design-sources";
 import { take } from "./pianoroll-fixture";
 
@@ -26,7 +27,7 @@ const SIDE_STICK = 37;
 
 // 1 拍 40 px（1/16 は 10 px）、行 36 px、四角の幅 8（10 − 2）。
 const DRUM: G.DrumGeom = { keys: DRUM_KEYS, top: 0, hitW: 8 };
-const GEOM: G.RollGeom = { scrollTick: 0, ppt: 40 / 480, topKey: 0, rowH: 36, width: 696, height: 440, drum: DRUM };
+const GEOM: G.RollGeom = { scrollTick: 0, ppt: 40 / TPQ, topKey: 0, rowH: 36, width: 696, height: 440, drum: DRUM };
 const rowY = (key: number) => DRUM_KEYS.indexOf(key) * 36;
 
 describe("行と名前（仕様書 3 章）", () => {
@@ -131,10 +132,10 @@ describe("叩いた所の四角（geom.ts）", () => {
   // 0: 1.1 のキック（長さ 1 拍）、1: 1.2 のスネア、2: 1.1 のクローズハイハット、3: 1.1 の C4（キットにない）。
   const n = G.shownOf(
     take([
-      [0, 480, KICK, 104],
-      [0, 120, CLOSED_HH, 88],
-      [0, 120, 60, 80],
-      [480, 120, SNARE, 96],
+      [0, TPQ, KICK, 104],
+      [0, TPQ / 4, CLOSED_HH, 88],
+      [0, TPQ / 4, 60, 80],
+      [TPQ, TPQ / 4, SNARE, 96],
     ]),
     0,
   );
@@ -177,7 +178,7 @@ describe("叩いた所の四角（geom.ts）", () => {
 
 describe("マウス（drag.ts）", () => {
   const NONE: Mods = { shift: false, alt: false, mod: false };
-  const n = G.shownOf(take([[480, 120, SNARE, 96]]), 0);
+  const n = G.shownOf(take([[TPQ, TPQ / 4, SNARE, 96]]), 0);
   let sent: Command[];
   let selected: IndexRange[];
   let drag: RollDrag;
@@ -189,7 +190,7 @@ describe("マウス（drag.ts）", () => {
     drag = new RollDrag({
       shown: () => n,
       geom: () => GEOM,
-      step: () => 120,
+      step: () => TPQ / 4,
       scale: () => ({ root: 0, mode: "major", lock: false }),
       meter: () => ({ num: 4, den: 4 }),
       tool: () => tool,
@@ -219,7 +220,7 @@ describe("マウス（drag.ts）", () => {
     expect(drag.move(200, rowY(KICK) + 5, NONE)).toBe(false);
     expect(drag.reading()).toBe("キック ・ 1.3.000 ・ 長さ 0.120");
     const c = drag.up();
-    expect(c).toEqual({ type: "addNote", take: 7, start: 960, length: 120, key: KICK, velocity: 100 });
+    expect(c).toEqual({ type: "addNote", take: 7, start: 2 * TPQ, length: TPQ / 4, key: KICK, velocity: 100 });
   });
 
   it("書く道具: いちばん下の行より下には書かない", () => {
@@ -243,9 +244,9 @@ describe("絵（paint.ts）", () => {
   const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
   const n = G.shownOf(
     take([
-      [0, 960, KICK, 104],
-      [0, 120, 60, 80],
-      [480, 120, SNARE, 96],
+      [0, 2 * TPQ, KICK, 104],
+      [0, TPQ / 4, 60, 80],
+      [TPQ, TPQ / 4, SNARE, 96],
     ]),
     0,
   );
@@ -254,7 +255,7 @@ describe("絵（paint.ts）", () => {
     sizes: SIZES,
     scale: { root: 0, mode: "major", lock: false },
     meter: { num: 4, den: 4 },
-    step: 120,
+    step: TPQ / 4,
     shown: n,
     origin: null,
     selected: Uint8Array.from([0, 0, 1]),
@@ -318,8 +319,8 @@ describe("ノートの一覧の欄と ↑ ↓", () => {
   });
 
   it("音の欄は楽器の名前で見せ、名前でも音名でも読む", () => {
-    const tk = take([[0, 120, SNARE, 96]]);
-    const clip = { start: 0, end: 4 * 1920, takeOffset: 0 };
+    const tk = take([[0, TPQ / 4, SNARE, 96]]);
+    const clip = { start: 0, end: 16 * TPQ, takeOffset: 0 };
     const spec = noteFieldSpec("key", tk, clip, [0], { num: 4, den: 4 }, true)!;
     expect(spec.initial).toBe("スネア");
     expect(readField(spec, "キック")?.value).toBe(KICK);
@@ -330,14 +331,14 @@ describe("ノートの一覧の欄と ↑ ↓", () => {
   it("↑ ↓ はドラムでは 1 行ずつ。Shift ↑ ↓ は使わない", async () => {
     const s = fakeScene("drumRoll")!.state;
     const clip = s.song.tracks[2]!.clips[0]!;
-    const tk = take([[0, 120, SNARE, 96]], clip.takeId);
+    const tk = take([[0, TPQ / 4, SNARE, 96]], clip.takeId);
     const shownTake = G.shownOf(tk, clip.start + clip.takeOffset);
     s.pianoRoll = { ...s.pianoRoll, take: clip.takeId, selectedNotes: [{ start: 0, end: 1 }] };
     const up = pianoRollCommand({ kind: "nudge", steps: 0, keys: 1 }, { state: s, shown: shownTake, playTick: 0 });
     expect(up).toEqual({ type: "moveNotes", take: clip.takeId, notes: [0], ticks: 0, keys: CLAP - SNARE, copy: false });
     expect(pianoRollCommand({ kind: "nudge", steps: 0, keys: 12 }, { state: s, shown: shownTake, playTick: 0 })).toBeNull();
     const right = pianoRollCommand({ kind: "nudge", steps: 1, keys: 0 }, { state: s, shown: shownTake, playTick: 0 });
-    expect(right).toMatchObject({ type: "moveNotes", ticks: 120, keys: 0 });
+    expect(right).toMatchObject({ type: "moveNotes", ticks: TPQ / 4, keys: 0 });
   });
 });
 

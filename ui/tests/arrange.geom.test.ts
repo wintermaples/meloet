@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { TrackView } from "../src/bridge";
 import * as G from "../src/components/arrangeGeom";
 import type { GlRect } from "../src/gl/slot";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 /** 1 小節 64 px（100 %、mock.arrange.bar）。 */
 const view = (scrollX = 0, width = 1000): G.View => ({
   pxPerTick: 64 / BAR,
@@ -94,9 +95,9 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
   it("ノート: 名前の行の下に、そのテイクの鍵の範囲で。高い鍵が上。長さは横に", () => {
     const out: GlRect[] = [];
     const notes = [
-      { start: 0, length: 480, key: 60 },
-      { start: 960, length: 240, key: 72 },
-      { start: 1440, length: 960, key: 66 },
+      { start: 0, length: TPQ, key: 60 },
+      { start: 2 * TPQ, length: TPQ / 2, key: 72 },
+      { start: 3 * TPQ, length: 2 * TPQ, key: 66 },
     ];
     G.paintClip(out, view(), dims, G.clipBox(view(), dims, 0, 0, BAR), G.CLIP_PLAIN("color.track.1"), notes);
     const drawn = out.slice(3);
@@ -109,7 +110,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
   });
 
   it("ミュートしたトラック: 中の線だけ gray.7。枠、色の帯、地はそのまま（選んでいても）", () => {
-    const notes = [{ start: 0, length: 480, key: 60 }];
+    const notes = [{ start: 0, length: TPQ, key: 60 }];
     for (const colors of [G.CLIP_PLAIN("color.track.1"), G.CLIP_SELECTED]) {
       const plain: GlRect[] = [];
       const muted: GlRect[] = [];
@@ -131,7 +132,7 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
       G.CLIP_PLAIN("color.track.1"),
       [
         { start: 0, length: 100, key: 60 },
-        { start: 4 * BAR, length: 480, key: 60 },
+        { start: 4 * BAR, length: TPQ, key: 60 },
       ],
     );
     expect(out[0]).toEqual({
@@ -153,12 +154,12 @@ describe("クリップの絵（仕様書 2 章「クリップ」、モック Mai
 
   it("テイクのノートは clip.start + takeOffset から。クリップの外は落とす", () => {
     const take = {
-      starts: [0, 960, 4000],
-      lengths: [480, 480, 480],
+      starts: [0, 2 * TPQ, 9 * TPQ],
+      lengths: [TPQ, TPQ, TPQ],
       keys: [60, 62, 64],
     };
-    const shapes = G.takeShapes({ start: 1920, end: 3840, takeOffset: -960 }, take);
-    expect(shapes).toEqual([{ start: 1920, length: 480, key: 62 }]);
+    const shapes = G.takeShapes({ start: BAR, end: 2 * BAR, takeOffset: -2 * TPQ }, take);
+    expect(shapes).toEqual([{ start: BAR, length: TPQ, key: 62 }]);
   });
 
   it("録っているノート: 押している鍵（長さ null）は今の位置まで", () => {
@@ -225,38 +226,38 @@ describe("目盛のドラッグ → 命令（ヤチヨさんの決め: ループ
     });
     expect(G.rulerCommand(d, v, 300, 302, BAR, 4, null)).toEqual({
       type: "locate",
-      tick: 9000,
+      tick: (300 * BAR) / 64,
     });
     expect(G.rulerCommand(d, view(64), 0, 0, BAR, 4, null)).toEqual({
       type: "locate",
-      tick: 1920,
+      tick: BAR,
     });
   });
 
   it("押すだけの locate は、目盛に見えている線に吸いつく（B-61）: 近いほうの小節の頭、拡大すると拍", () => {
     const d = G.startRulerDrag(v, 256, BAR, null, 8);
-    // 300 px = 9000 ティック。小節きざみなら 5 小節目の頭（7680）と 6 小節目の頭（9600）の近いほう。
-    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, BAR)).toEqual({ type: "locate", tick: 9600 });
-    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, 480)).toEqual({ type: "locate", tick: 9120 });
-    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, 2 * BAR)).toEqual({ type: "locate", tick: 7680 });
+    // 300 px は 300 / 64 小節。小節きざみなら 5 小節目の頭（4 * BAR）と 6 小節目の頭（5 * BAR）の近いほう。
+    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, BAR)).toEqual({ type: "locate", tick: 5 * BAR });
+    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, TPQ)).toEqual({ type: "locate", tick: 19 * TPQ });
+    expect(G.rulerCommand(d, v, 300, 300, BAR, 4, 2 * BAR)).toEqual({ type: "locate", tick: 4 * BAR });
   });
 
   it("吸いつくきざみ: ふだんは 1 小節、番号を間引けば番号おき、1 拍が番号の間より広ければ拍", () => {
-    expect(G.rulerStep(64, BAR, 480, 1, 32)).toBe(BAR);
-    expect(G.rulerStep(16, BAR, 480, 2, 32)).toBe(2 * BAR);
-    expect(G.rulerStep(8, BAR, 480, 4, 32)).toBe(4 * BAR);
-    expect(G.rulerStep(127, BAR, 480, 1, 32)).toBe(BAR);
-    expect(G.rulerStep(128, BAR, 480, 1, 32)).toBe(480);
-    // 6/8 は 1 拍が 8 分音符（240）。
-    expect(G.rulerStep(192, 1440, 240, 1, 32)).toBe(240);
+    expect(G.rulerStep(64, BAR, TPQ, 1, 32)).toBe(BAR);
+    expect(G.rulerStep(16, BAR, TPQ, 2, 32)).toBe(2 * BAR);
+    expect(G.rulerStep(8, BAR, TPQ, 4, 32)).toBe(4 * BAR);
+    expect(G.rulerStep(127, BAR, TPQ, 1, 32)).toBe(BAR);
+    expect(G.rulerStep(128, BAR, TPQ, 1, 32)).toBe(TPQ);
+    // 6/8 は 1 拍が 8 分音符（TPQ / 2）。
+    expect(G.rulerStep(192, 3 * TPQ, TPQ / 2, 1, 32)).toBe(TPQ / 2);
   });
 
   it("拍の線を描くのは、目盛が拍に吸いつくときと同じ条件（B-61）", () => {
-    for (const [barPx, perBar, perBeat] of [[127, BAR, 480], [128, BAR, 480], [64, BAR, 480], [191, 1440, 240], [192, 1440, 240]]) {
+    for (const [barPx, perBar, perBeat] of [[127, BAR, TPQ], [128, BAR, TPQ], [64, BAR, TPQ], [191, 3 * TPQ, TPQ / 2], [192, 3 * TPQ, TPQ / 2]]) {
       expect(G.beatsShown(barPx, perBar, perBeat, 32)).toBe(G.rulerStep(barPx, perBar, perBeat, 1, 32) === perBeat);
     }
-    expect(G.beatsShown(127, BAR, 480, 32)).toBe(false);
-    expect(G.beatsShown(128, BAR, 480, 32)).toBe(true);
+    expect(G.beatsShown(127, BAR, TPQ, 32)).toBe(false);
+    expect(G.beatsShown(128, BAR, TPQ, 32)).toBe(true);
   });
 
   it("ループの範囲（ティック）→ 小節の線の番号", () => {
@@ -305,22 +306,22 @@ describe("押した所のクリップ", () => {
 
 describe("再生の位置の線と、録っているクリップ", () => {
   it("周の頭: 最初の周は録りはじめた所、2 周目からはループの頭", () => {
-    expect(G.lapStart(1000, 0, { start: 3840, end: 7680 })).toBe(1000);
-    expect(G.lapStart(1000, 2, { start: 3840, end: 7680 })).toBe(3840);
+    expect(G.lapStart(1000, 0, { start: 2 * BAR, end: 4 * BAR })).toBe(1000);
+    expect(G.lapStart(1000, 2, { start: 2 * BAR, end: 4 * BAR })).toBe(2 * BAR);
   });
 
   it("できた小節は大きな面へ。小さな面は、その 1 小節前から今まで（2 小節より広くならない）", () => {
-    expect(G.recordingSplit(3840, 3840 + 100, BAR)).toEqual({
-      commit: 3840,
-      tailFrom: 3840,
+    expect(G.recordingSplit(2 * BAR, 2 * BAR + 100, BAR)).toEqual({
+      commit: 2 * BAR,
+      tailFrom: 2 * BAR,
     });
-    expect(G.recordingSplit(3840, 3840 + BAR + 5, BAR)).toEqual({
-      commit: 3840 + BAR,
-      tailFrom: 3840,
+    expect(G.recordingSplit(2 * BAR, 2 * BAR + BAR + 5, BAR)).toEqual({
+      commit: 2 * BAR + BAR,
+      tailFrom: 2 * BAR,
     });
-    expect(G.recordingSplit(3840, 3840 + 3 * BAR + 5, BAR)).toEqual({
-      commit: 3840 + 3 * BAR,
-      tailFrom: 3840 + 2 * BAR,
+    expect(G.recordingSplit(2 * BAR, 2 * BAR + 3 * BAR + 5, BAR)).toEqual({
+      commit: 2 * BAR + 3 * BAR,
+      tailFrom: 2 * BAR + 2 * BAR,
     });
   });
 });

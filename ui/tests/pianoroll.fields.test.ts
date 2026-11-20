@@ -12,12 +12,13 @@ import {
   rejectCommand,
   stepField,
 } from "../src/components/pianoroll/noteFields";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { take } from "./pianoroll-fixture";
 
 const M44 = { num: 4, den: 4 };
 const M68 = { num: 6, den: 8 };
-const BAR = 1920;
-const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * 480 + tick;
+const BAR = 4 * TPQ;
+const at = (bar: number, beat: number, tick: number) => (bar - 1) * BAR + (beat - 1) * TPQ + tick;
 
 describe("位置「3.1.000」", () => {
   it("小節 . 拍 . ティック を曲の中のティックに。拍とティックは省ける", () => {
@@ -79,12 +80,12 @@ describe("ベロシティ", () => {
   });
 });
 
-// クリップは 1〜5 小節（0〜7680）。ノートは 3.1.000 D4 0.360 80 ・ 3.1.360 E4 0.360 83 ・ 3.2.240 F4 0.240 77。
+// クリップは 1〜5 小節（0〜4 * BAR）。ノートは 3.1.000 D4 0.360 80 ・ 3.1.360 E4 0.360 83 ・ 3.2.240 F4 0.240 77。
 const clip = { start: 0, end: 4 * BAR, takeOffset: 0 };
 const notes = take([
-  [at(3, 1, 0), 360, 62, 80],
-  [at(3, 1, 360), 360, 64, 83],
-  [at(3, 2, 240), 240, 65, 77],
+  [at(3, 1, 0), (3 * TPQ) / 4, 62, 80],
+  [at(3, 1, (3 * TPQ) / 4), (3 * TPQ) / 4, 64, 83],
+  [at(3, 2, TPQ / 2), TPQ / 2, 65, 77],
 ]);
 
 describe("1 つのノートの欄", () => {
@@ -147,7 +148,7 @@ describe("2 つ以上のノートの欄（SetNotesField の意味のとおり）
     expect(s.initial).toBe("0.360");
     expect(s.current).toBeNull();
     expect(s.range).toBe("0.001〜6.240");
-    expect(commitCommand(s, 360, 12, all)).toEqual({ type: "setNotesField", take: 12, notes: all, field: "length", value: 360 });
+    expect(commitCommand(s, (3 * TPQ) / 4, 12, all)).toEqual({ type: "setNotesField", take: 12, notes: all, field: "length", value: (3 * TPQ) / 4 });
   });
 
   it("ベロシティ: ばらばらなら、いちばん小さい値を入れておく", () => {
@@ -176,7 +177,7 @@ describe("↑ ↓ と送る意図", () => {
 
   it("値が変わらなければ送らない（取り消しの手を作らない）。変われば setNotesField", () => {
     const s = noteFieldSpec("position", notes, clip, [1], M44)!;
-    expect(commitCommand(s, at(3, 1, 360), 12, [1])).toBeNull();
+    expect(commitCommand(s, at(3, 1, (3 * TPQ) / 4), 12, [1])).toBeNull();
     expect(commitCommand(s, at(2, 1, 0), 12, [1])).toEqual({ type: "setNotesField", take: 12, notes: [1], field: "start", value: at(2, 1, 0) });
     const k = noteFieldSpec("key", notes, clip, [1], M44)!;
     expect(commitCommand(k, 63, 12, [1])).toEqual({ type: "setNotesField", take: 12, notes: [1], field: "key", value: 63 });

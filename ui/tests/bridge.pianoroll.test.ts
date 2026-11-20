@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import { createFakeTransport, fakeScene, toRanges } from "../src/bridge/fake";
 import { NO_FROM, decodeTake } from "../src/bridge/take";
 import type { Change, ServerMessage } from "../src/bridge/types";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const keyName = (k: number) => `${NAMES[k % 12]}${Math.floor(k / 12) - 1}`;
-const pos = (t: number) => `${Math.floor(t / 1920) + 1}.${Math.floor((t % 1920) / 480) + 1}.${String(t % 480).padStart(3, "0")}`;
-const len = (t: number) => `${Math.floor(t / 480)}.${String(t % 480).padStart(3, "0")}`;
+/** The mocks write the tick of a position or a length as 480 to a beat. */
+const MOCK_TICKS_PER_BEAT = 480;
+const mockTick = (t: number) => String(((t % TPQ) * MOCK_TICKS_PER_BEAT) / TPQ).padStart(3, "0");
+const pos = (t: number) => `${Math.floor(t / (4 * TPQ)) + 1}.${Math.floor((t % (4 * TPQ)) / TPQ) + 1}.${mockTick(t)}`;
+const len = (t: number) => `${Math.floor(t / TPQ)}.${mockTick(t)}`;
 
 // The note list of F-WidePR, as written there.
 const LIST = `1.1.000 C3 4.000 70|1.1.000 G3 4.000 64|1.1.000 E4 1.000 87|1.2.000 G4 1.000 92|1.3.000 C5 1.240 101|

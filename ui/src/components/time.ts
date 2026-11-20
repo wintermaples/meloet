@@ -2,11 +2,10 @@
 
 import { positionAt, type Telemetry, type TransportView } from "../bridge";
 import { barsMap, type Bars } from "../time/bars";
+import { TICKS_PER_QUARTER } from "../time/ticks";
 
 export type { Bars } from "../time/bars";
-
-/** 4 分音符 1 つのティック。 */
-export const TICKS_PER_QUARTER = 480;
+export { TICKS_PER_QUARTER } from "../time/ticks";
 /** 表示の「ティック」は、1 拍をこの数に分けた目盛り。 */
 export const DISPLAY_TICKS_PER_BEAT = 480;
 

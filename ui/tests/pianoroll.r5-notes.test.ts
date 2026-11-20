@@ -13,6 +13,7 @@ import { ccList, inspectorFolds } from "../src/components/pianoroll/view.svelte"
 import StatusLine from "../src/components/StatusLine.svelte";
 import * as app from "./fake-app.svelte";
 import * as shown from "./fake-shown.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
@@ -192,7 +193,7 @@ describe("音の欄の Shift ↑ ↓ は 12 半音（C-6 58）", () => {
 
 /** CC の点を 4 つ（サステイン踏む ・ サステイン離す ・ ピッチベンド ・ CC 7）にしたテイク。 */
 function withControls(take: TakeNotes): void {
-  take.controlTicks = Uint32Array.from([0, 840, 960, 1200]);
+  take.controlTicks = Uint32Array.from([0, (7 * TPQ) / 4, 2 * TPQ, (5 * TPQ) / 2]);
   take.controlKinds = Uint8Array.from([CONTROL_CC, CONTROL_CC, CONTROL_PITCH_BEND, CONTROL_CC]);
   take.controlNumbers = Uint8Array.from([64, 64, 0, 7]);
   take.controlValues = Int16Array.from([127, 0, 2048, 100]);
@@ -200,7 +201,7 @@ function withControls(take: TakeNotes): void {
 
 /** tick の順で CC 7 ・ モジュレーション ・ ピッチベンド ・ サステイン ・ CC 11 ・ サステイン ・ ピッチベンド。 */
 function mixedControls(take: TakeNotes): void {
-  take.controlTicks = Uint32Array.from([0, 100, 200, 300, 400, 500, 600]);
+  take.controlTicks = Uint32Array.from([0, 1, 2, 3, 4, 5, 6].map((i) => (i * 5 * TPQ) / 24));
   take.controlKinds = Uint8Array.from([CONTROL_CC, CONTROL_CC, CONTROL_PITCH_BEND, CONTROL_CC, CONTROL_CC, CONTROL_CC, CONTROL_PITCH_BEND]);
   take.controlNumbers = Uint8Array.from([7, 1, 0, 64, 11, 64, 0]);
   take.controlValues = Int16Array.from([100, 64, 0, 127, 90, 0, 2048]);
@@ -252,8 +253,8 @@ describe("CC の一覧の行と欄（DOM なし）", () => {
     const cc7 = controlFieldSpec("value", take, clip, 3, METER)!;
     expect(readField(cc7, "200")).toEqual({ value: 127, clamped: { field: "controlValue", value: "127", range: "0〜127" } });
     const pos = controlFieldSpec("position", take, clip, 3, METER)!;
-    const at = clip.start + clip.takeOffset + 1200;
-    expect(commitControl("position", pos, at + 480, take, 3)).toEqual({ type: "moveControls", take: take.id, points: [3], ticks: 480, value: 0 });
+    const at = clip.start + clip.takeOffset + (5 * TPQ) / 2;
+    expect(commitControl("position", pos, at + TPQ, take, 3)).toEqual({ type: "moveControls", take: take.id, points: [3], ticks: TPQ, value: 0 });
   });
 });
 

@@ -1,6 +1,7 @@
 // 範囲の外の値（docs/design-notes.md B-68）: 近いはしにして決め、ClampValue の中身を作る。読めない物は null。
 import { describe, expect, it } from "vitest";
 import { nearestDen, readMeter, readPosition, readScaled, readTempo, readVelocity } from "../src/components/valueClamp";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const M44 = { num: 4, den: 4 };
 const M68 = { num: 6, den: 8 };
@@ -56,9 +57,9 @@ describe("ベロシティ", () => {
 
 describe("再生の位置（小節 ・ 拍 ・ ティックを、それぞれ範囲に）", () => {
   it("「5」「5.2」「5.2.240」。区切りのまわりの空白はあってよい", () => {
-    expect(readPosition("5", M44)).toEqual({ value: 4 * 1920, clamp: null });
-    expect(readPosition("5.2", M44)).toEqual({ value: 4 * 1920 + 480, clamp: null });
-    expect(readPosition("5. 2. 240", M44)).toEqual({ value: 4 * 1920 + 720, clamp: null });
+    expect(readPosition("5", M44)).toEqual({ value: 4 * 4 * TPQ, clamp: null });
+    expect(readPosition("5.2", M44)).toEqual({ value: 4 * 4 * TPQ + TPQ, clamp: null });
+    expect(readPosition("5. 2. 240", M44)).toEqual({ value: 4 * 4 * TPQ + (3 * TPQ) / 2, clamp: null });
     expect(readPosition("1. 1. 000", M44)).toEqual({ value: 0, clamp: null });
   });
 
@@ -72,7 +73,7 @@ describe("再生の位置（小節 ・ 拍 ・ ティックを、それぞれ範
 
   it("6/8: 1 拍は 8 分音符。表示のティック 0〜479 を拍の中に割りあてる（はしは次の拍に出ない）", () => {
     expect(readPosition("2.7", M68)?.clamp).toEqual({ field: "beat", value: "2. 6. 000", range: "1〜6" });
-    expect(readPosition("1.2.240", M68)).toEqual({ value: 240 + 120, clamp: null });
+    expect(readPosition("1.2.240", M68)).toEqual({ value: TPQ / 2 + TPQ / 4, clamp: null });
     expect(readPosition("1.1.479", M68)).toEqual({ value: 239, clamp: null });
   });
 

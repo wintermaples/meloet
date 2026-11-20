@@ -7,18 +7,19 @@ against it), and checked against the answers Rust writes into ui/src/time/tempoM
 
     from tempo_map import TempoMap
     m = TempoMap.of_song(json.load(open("x.meloet")))
-    m.seconds_at(7680.0); m.tick_at(10.0); m.beats(until_tick)   # [(tick, downbeat), ...]
+    m.seconds_at(16.0 * TICKS_PER_QUARTER); m.tick_at(10.0); m.beats(until_tick)   # [(tick, downbeat), ...]
 
 usage: python3 -I tools/measure/tempo_map.py cycle N
   prints the --tempo-points and --meter-changes of make_song.py for N rounds of 16 bars:
   4 bars of 4/4 at 96, 4 bars from 104 in a straight line to 120, 4 bars of 3/4 at 120, 4 bars
   of 6/8 (120, then 150 in a straight line down to 90 over two bars, then 90). One round is
-  26880 ticks and 37.72 s.
+  56 quarter notes (CYCLE_TICKS) and 37.72 s.
 """
 import bisect, math, sys
 
 TICKS_PER_QUARTER = 480
-CYCLE_TICKS = 26880
+# 4 bars of 4/4, 4 of 4/4, 4 of 3/4, 4 of 6/8.
+CYCLE_TICKS = (16 + 16 + 12 + 12) * TICKS_PER_QUARTER
 CYCLE_BARS = 16
 
 
@@ -105,7 +106,8 @@ def cycle(rounds):
         if r:
             points.append(f"{t}:96")
             meters.append(f"{b}:4/4")
-        points += [f"{t + 7680}:104:ramp", f"{t + 15360}:120", f"{t + 22560}:150:ramp", f"{t + 25440}:90"]
+        q = TICKS_PER_QUARTER
+        points += [f"{t + 16 * q}:104:ramp", f"{t + 32 * q}:120", f"{t + 47 * q}:150:ramp", f"{t + 53 * q}:90"]
         meters += [f"{b + 8}:3/4", f"{b + 12}:6/8"]
     return ",".join(points), ",".join(meters)
 

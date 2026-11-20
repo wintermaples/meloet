@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { LiveNotesBook } from "../src/bridge/live";
 import type { LiveNote, LiveNotes, LiveNotesSnapshot } from "../src/bridge/types";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 
 const note = (index: number, length: number | null, lap = 0): LiveNote => ({
   lap,
   index,
   key: 60 + index,
   velocity: 90,
-  start: 480 * index,
+  start: TPQ * index,
   length,
 });
 const msg = (seq: number, recording: number, notes: LiveNote[]): LiveNotes => ({ seq, recording, notes });

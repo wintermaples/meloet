@@ -37,6 +37,12 @@ SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
 CHORD = ["60", "64", "67"]
 QUIET = "25"
+TICKS_PER_QUARTER = 480
+
+
+def q(quarters):
+    """Ticks of that many quarter notes."""
+    return quarters * TICKS_PER_QUARTER
 
 
 def band(name):
@@ -81,7 +87,7 @@ SURGE_CUTOFF, SURGE_PITCH = 1945359057, 643940465
 
 def lanes_song(tracks, points=6):
     """ROUND6_SONG with markers and a volume lane on the tracks at those places."""
-    return ROUND6_SONG + ["--markers", "0:イントロ,7680:Aメロ,23040:サビ", "--lanes", "volume",
+    return ROUND6_SONG + ["--markers", f"0:イントロ,{q(16)}:Aメロ,{q(48)}:サビ", "--lanes", "volume",
                           "--lane-tracks", tracks, "--lane-points", str(points)]
 
 
@@ -241,52 +247,52 @@ STATES = {
     # Round 6: tempo, markers, automation lanes, the history of many steps. The songs are 5 tracks
     # as in the mocks; ROUND6_SONG's 5th is Surge XT. core_js: what needs ids only the state knows.
     "tempoApp": dict(board="F6-Tempo", remembered=True, snap=3500,
-                     song=ROUND6_SONG + ["--tempo-points", "7680:104:ramp,15360:120,21120:96",
+                     song=ROUND6_SONG + ["--tempo-points", f"{q(16)}:104:ramp,{q(32)}:120,{q(44)}:96",
                                          "--meter-changes", "8:3/4,12:4/4",
-                                         "--markers", "0:イントロ,7680:Aメロ,21120:サビ"],
-                     commands=[(1500, {"type": "locate", "tick": 11520}),
+                                         "--markers", f"0:イントロ,{q(16)}:Aメロ,{q(44)}:サビ"],
+                     commands=[(1500, {"type": "locate", "tick": q(24)}),
                                (1700, {"type": "setTimelineOpen", "open": True}),
-                               (1900, {"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": 7680}})]),
+                               (1900, {"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": q(16)}})]),
     "markersApp": dict(board="R10-Markers", remembered=True, snap=3000,
-                       song=ROUND6_SONG + ["--markers", "0:イントロ,7680:Aメロ,17280:サビ"],
-                       commands=[(1500, {"type": "locate", "tick": 11520}),
+                       song=ROUND6_SONG + ["--markers", f"0:イントロ,{q(16)}:Aメロ,{q(36)}:サビ"],
+                       commands=[(1500, {"type": "locate", "tick": q(24)}),
                                  (1800, {"type": "addMarker", "name": "マーカー 4"})]),
     # Played from bar 5; a hand on the fader makes the lane rest (the mock is playing, too).
     "autoRestApp": dict(board="F6-AutoRest", remembered=True, snap=9400, song=lanes_song("1"),
-                        commands=[(1500, {"type": "locate", "tick": 7680}), (1700, {"type": "playStop"}),
+                        commands=[(1500, {"type": "locate", "tick": q(16)}), (1700, {"type": "playStop"}),
                                   (5000, gain(1, -10.0, False)), (5200, gain(1, -12.0, True))]),
     # 「● 書く」 on, played from bar 5, and the fader held and moved from about bar 7.
     "autoRecApp": dict(board="F6-AutoRec", remembered=True, snap=9400, song=lanes_song("1"),
-                       commands=[(1500, {"type": "locate", "tick": 7680}),
+                       commands=[(1500, {"type": "locate", "tick": q(16)}),
                                  (1600, {"type": "setLaneWrite", "track": 1, "target": {"kind": "volume"}, "on": True}),
                                  (1700, {"type": "playStop"})]
                        + [(6400 + 250 * n, gain(1, db, False))
                           for n, db in enumerate([-4.8, -5.5, -6.5, -8.0, -9.5, -10.5, -11.0, -11.5, -12.0, -12.0, -12.0])]),
     "autoEditApp": dict(board="R10-AutoEdit", remembered=True, snap=3000, song=lanes_song("1"),
-                        commands=[(1500, {"type": "locate", "tick": 13440})],
+                        commands=[(1500, {"type": "locate", "tick": q(28)})],
                         evals=[(1800, core_js("await send({type: 'selectAutoPoints', lane: lane(1, 'volume'), "
                                               "points: [1, 2, 3]});"))]),
     # The mixer opened while playing: the status line names the faders lanes move.
     "mixerAutoApp": dict(board="F6-MixerAuto", remembered=True, snap=8000, song=lanes_song("1,4", 8),
-                         commands=[(1500, {"type": "locate", "tick": 11520}),
+                         commands=[(1500, {"type": "locate", "tick": q(24)}),
                                    (1600, {"type": "playStop"}), (1800, {"type": "toggleBand", "band": "mixer"})]),
     "mixerRestApp": dict(board="F6-MixerRest", remembered=True, snap=8000, song=lanes_song("1,4", 8),
-                         commands=[(1500, {"type": "locate", "tick": 11520}),
+                         commands=[(1500, {"type": "locate", "tick": q(24)}),
                                    (1600, {"type": "playStop"}), (1800, {"type": "toggleBand", "band": "mixer"}),
                                    (4500, gain(10, -10.0, False)), (4700, gain(10, -12.0, True))]),
     "paramManyAutoApp": dict(board="F6-ParamMany", remembered=True, snap=4800,
                              song=["--tracks", "5", "--notes", "40", "--instruments", "plugin,builtin",
-                                   "--plugin", "Surge XT", "--markers", "0:イントロ,7680:Aメロ",
+                                   "--plugin", "Surge XT", "--markers", f"0:イントロ,{q(16)}:Aメロ",
                                    "--lanes", f"volume,plugin:{SURGE_CUTOFF},plugin:{SURGE_PITCH}",
                                    "--lane-tracks", "1", "--lane-points", "5"],
-                             commands=[(1500, {"type": "locate", "tick": 7680}),
+                             commands=[(1500, {"type": "locate", "tick": q(16)}),
                                        (1700, {"type": "selectInstrument", "track": 1}),
                                        (2200, {"type": "toggleBand", "band": "params"})],
                              evals=[(3500, "[...document.querySelectorAll('[data-test=\"params-group\"]')]"
                                            ".find((e) => e.innerText.includes('Macros')).click()")]),
     # 16 steps, 3 of them undone (「いまここ」 is 13), and row 11 chosen with ↓ in the band.
     "historyStepsApp": dict(board="R10-History", remembered=True, snap=7500,
-                            song=["--tracks", "5", "--notes", "40", "--markers", "0:イントロ,7680:Aメロ"],
+                            song=["--tracks", "5", "--notes", "40", "--markers", f"0:イントロ,{q(16)}:Aメロ"],
                             commands=[(1500 + 200 * n, c) for n, c in enumerate([
                                 {"type": "renameTrack", "track": 1, "name": "ピアノ"},
                                 {"type": "renameTrack", "track": 4, "name": "ベース"},
@@ -294,8 +300,8 @@ STATES = {
                                 {"type": "renameTrack", "track": 10, "name": "パッド"},
                                 gain(1, -4.8, True), gain(4, -7.5, True), gain(7, -6.0, True), gain(10, -10.5, True),
                                 {"type": "setPan", "strip": {"kind": "track", "id": 10}, "pan": -20, "commit": True},
-                                {"type": "addTempoPoint", "tick": 7680, "bpm": 120},
-                                {"type": "locate", "tick": 23040},
+                                {"type": "addTempoPoint", "tick": q(16), "bpm": 120},
+                                {"type": "locate", "tick": q(48)},
                                 {"type": "addMarker", "name": "サビ"},
                                 {"type": "closeMarkerName"},
                                 {"type": "toggleBypass", "insert": {"strip": {"kind": "track", "id": 10}, "slot": 0}},
@@ -308,9 +314,9 @@ STATES = {
                             evals=[(4500, core_js("await send({type: 'quantize', take: take(1), "
                                                   "notes: [...Array(12).keys()]});")),
                                    (4700, core_js("await send({type: 'resizeNotes', take: take(1), notes: [0, 1], "
-                                                  "edge: 'end', ticks: 120});")),
+                                                  f"edge: 'end', ticks: {q(1) // 4}}});")),
                                    (4900, core_js("await send({type: 'moveNotes', take: take(1), notes: [0, 1, 2], "
-                                                  "ticks: 120, keys: 0, copy: false});")),
+                                                  f"ticks: {q(1) // 4}, keys: 0, copy: false}});")),
                                    (6500, "const l = document.querySelector('[data-test=\"history-list\"]'); l.focus(); "
                                           "for (const n of [0, 1]) l.dispatchEvent(new KeyboardEvent('keydown', "
                                           "{ key: 'ArrowDown', bubbles: true, cancelable: true }));")]),

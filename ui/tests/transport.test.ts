@@ -8,6 +8,7 @@ import StatusLine from "../src/components/StatusLine.svelte";
 import Transport from "../src/components/Transport.svelte";
 import { closeMenu, menuVisible } from "../src/lib/menu";
 import { tipView } from "../src/lib/tip.svelte";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
@@ -61,7 +62,7 @@ const reading = (r: Partial<TransportReading>): TransportReading => ({
   ...r,
 });
 
-const BAR = 1920;
+const BAR = 4 * TPQ;
 
 describe("再生まわりのボタン", () => {
   it("音の出口がまだ: ▶ と ● は使えない見た目で、押しても何も送らない。⏮ ■ ループ メトロノームは使える", () => {
@@ -140,7 +141,7 @@ describe("位置と時間", () => {
 
   it("計器があれば、その位置（モック F-ArrangeRec の 7. 3. 240 ・ 00:00:16.562）", () => {
     show(Transport, ready((s) => (s.transport.state = "recording")));
-    app.setTelemetry(app.telemetryWith({ position: reading({ tick: 6 * BAR + 960 + 240, state: "recording" }) }));
+    app.setTelemetry(app.telemetryWith({ position: reading({ tick: 6 * BAR + 2 * TPQ + TPQ / 2, state: "recording" }) }));
     flushSync();
     expect(text('[data-test="transport-position"]')).toBe("7. 3. 240");
     expect(text('[data-test="transport-time"]')).toBe("00:00:16.562");
@@ -155,7 +156,7 @@ describe("位置と時間", () => {
         s.transport.recording = { id: 1, track: 1, from: 4 * BAR, take: 1, clip: null, lap: 0 };
       }),
     );
-    app.setTelemetry(app.telemetryWith({ position: reading({ tick: 4 * BAR - 720, state: "countIn", countInBeatsLeft: 2 }) }));
+    app.setTelemetry(app.telemetryWith({ position: reading({ tick: 4 * BAR - (3 * TPQ) / 2, state: "countIn", countInBeatsLeft: 2 }) }));
     flushSync();
     expect(text('[data-test="transport-position"]')).toBe("5. 1. 000");
   });
@@ -241,7 +242,7 @@ describe("カウントイン", () => {
         s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
       }),
     );
-    app.setTelemetry(app.telemetryWith({ position: reading({ tick: -720, state: "countIn", countInBeatsLeft: 2 }) }));
+    app.setTelemetry(app.telemetryWith({ position: reading({ tick: -(3 * TPQ) / 2, state: "countIn", countInBeatsLeft: 2 }) }));
     flushSync();
     const counting = q('[data-test="transport-counting"]')!;
     expect(text('[data-test="transport-counting"]')).toBe("カウントイン");
@@ -280,7 +281,7 @@ describe("カウントイン", () => {
         s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
       }),
     );
-    app.setTelemetry(app.telemetryWith({ position: reading({ tick: -1440, state: "countIn", countInBeatsLeft: 3 }) }));
+    app.setTelemetry(app.telemetryWith({ position: reading({ tick: -3 * TPQ, state: "countIn", countInBeatsLeft: 3 }) }));
     flushSync();
     const boxes = [...q('[data-test="transport-counting"]')!.querySelectorAll(".box")];
     expect(boxes.map((b) => b.classList.contains("done"))).toEqual([true, true, false, false]);
@@ -609,9 +610,9 @@ describe("テンポと拍子の打ちこみ", () => {
     expect(app.sent).toEqual([]);
     for (const [typed, tick_] of [
       ["5", 4 * BAR],
-      ["5.2", 4 * BAR + 480],
-      ["5. 2. 240", 4 * BAR + 720],
-      ["５．２．２４０", 4 * BAR + 720],
+      ["5.2", 4 * BAR + TPQ],
+      ["5. 2. 240", 4 * BAR + (3 * TPQ) / 2],
+      ["５．２．２４０", 4 * BAR + (3 * TPQ) / 2],
     ] as const) {
       input = await openPos();
       type(input, typed);
@@ -629,7 +630,7 @@ describe("テンポと拍子の打ちこみ", () => {
   it("位置の範囲の外: 小節 ・ 拍 ・ ティックをそれぞれ丸め、いちばん大きい単位のことだけ言う（B-68）", async () => {
     show(Transport, ready());
     for (const [typed, tick_, said] of [
-      ["3.7", 2 * BAR + 3 * 480, { field: "beat", value: "3. 4. 000", range: "1〜4" }],
+      ["3.7", 2 * BAR + 3 * TPQ, { field: "beat", value: "3. 4. 000", range: "1〜4" }],
       ["3.2.999", 2 * BAR + 480 + 479, { field: "tick", value: "3. 2. 479", range: "0〜479" }],
       ["0.9.999", 3 * 480 + 479, { field: "bar", value: "1. 4. 479", range: null }],
       ["2.0", BAR, { field: "beat", value: "2. 1. 000", range: "1〜4" }],

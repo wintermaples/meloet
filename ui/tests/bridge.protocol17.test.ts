@@ -14,6 +14,7 @@ import {
   type ServerMessage,
   type SoundRef,
 } from "../src/bridge/types";
+import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { mockScreenText as mockText, specDocument } from "./design-sources";
 
 /** モックも仕様書も、部品の境目に空白があったりなかったりするので、空白をぜんぶ取ってくらべる。 */
@@ -303,7 +304,7 @@ describe("約束 17 の偽物の場面", () => {
   it("drumPlay（モック R8-DrumPlay）と drumRollSf2: 再生中の位置、SF2 のキットの行", () => {
     const play = fakeScene("drumPlay")!;
     expect(play.state.transport.state).toBe("playing");
-    expect(play.meters.position).toMatchObject({ tick: 1920 + 480, state: "playing" });
+    expect(play.meters.position).toMatchObject({ tick: 4 * TPQ + TPQ, state: "playing" });
     expect(play.state.arrange.pianoRollClip).not.toBeNull();
     expect(mockScreenText("R8-DrumPlay")).toContain(squash("鳴っている音 クローズハイハット スネア"));
     const kit = state("drumRollSf2").song.tracks[2]!;

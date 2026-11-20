@@ -355,6 +355,8 @@ fn main() {
             measure_report,
             ui_script,
             takes::take_notes,
+            takes::lane,
+            takes::history_rows,
             takes::live_notes,
             takes::plugin_params
         ])

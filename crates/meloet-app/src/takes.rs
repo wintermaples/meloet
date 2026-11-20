@@ -1,9 +1,10 @@
-//! What the screen fetches by name: the notes of takes and of the recording going on, and the
-//! parameters of a plugin (docs/architecture.md 3-1, 3-4).
+//! What the screen fetches by name: the notes of takes and of the recording going on, the points
+//! of automation lanes, the rows of the history band, and the parameters of a plugin
+//! (docs/architecture.md 3-1, 3-4, 21-15).
 
 use std::sync::Arc;
 
-use meloet_protocol::{LiveNotesSnapshot, ParamTable};
+use meloet_protocol::{HistoryRow, LiveNotesSnapshot, ParamTable};
 use tauri::State;
 use tauri::ipc::Response;
 
@@ -16,6 +17,19 @@ pub fn take_notes(id: u32, core: State<'_, Arc<dyn CoreHandle>>) -> Result<Respo
     core.take_notes(id)
         .map(Response::new)
         .ok_or_else(|| format!("no take {id}"))
+}
+
+/// The point binary of a lane. A lane that is not in the song now is an error, as for takes.
+#[tauri::command]
+pub fn lane(lane_id: u32, core: State<'_, Arc<dyn CoreHandle>>) -> Result<Response, String> {
+    core.lane(lane_id)
+        .map(Response::new)
+        .ok_or_else(|| format!("no lane {lane_id}"))
+}
+
+#[tauri::command]
+pub fn history_rows(from: u32, to: u32, core: State<'_, Arc<dyn CoreHandle>>) -> Vec<HistoryRow> {
+    core.history_rows(from, to)
 }
 
 #[tauri::command]

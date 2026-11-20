@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use meloet_core::{MessageSink, ShellSink, TelemetrySink};
-use meloet_protocol::{Command, LiveNotesSnapshot, ParamTable, Snapshot};
+use meloet_protocol::{Command, HistoryRow, LiveNotesSnapshot, ParamTable, Snapshot};
 
 pub trait CoreHandle: Send + Sync + 'static {
     /// The whole state and its rev.
@@ -22,6 +22,12 @@ pub trait CoreHandle: Send + Sync + 'static {
 
     /// The take binary of a take in the song now.
     fn take_notes(&self, id: u32) -> Option<Vec<u8>>;
+
+    /// The point binary of an automation lane in the song now.
+    fn lane(&self, lane_id: u32) -> Option<Vec<u8>>;
+
+    /// Rows `from..to` of the history band.
+    fn history_rows(&self, from: u32, to: u32) -> Vec<HistoryRow>;
 
     /// Every note of the recording going on.
     fn live_notes(&self) -> LiveNotesSnapshot;
@@ -83,6 +89,14 @@ impl CoreHandle for meloet_core::Core {
 
     fn take_notes(&self, id: u32) -> Option<Vec<u8>> {
         meloet_core::Core::take_notes(self, id)
+    }
+
+    fn lane(&self, lane_id: u32) -> Option<Vec<u8>> {
+        meloet_core::Core::lane(self, lane_id)
+    }
+
+    fn history_rows(&self, from: u32, to: u32) -> Vec<HistoryRow> {
+        meloet_core::Core::history_rows(self, from, to)
     }
 
     fn live_notes(&self) -> LiveNotesSnapshot {

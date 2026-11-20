@@ -41,14 +41,19 @@ impl Play {
         self.song.session.soloed.contains(&track)
     }
 
-    /// The seats of the tracks that do not play, in order of seat.
+    /// The seats of the tracks that do not play, in order of seat. A lane of the mute that
+    /// moves it takes the place of the mute put by hand; solo stays.
     fn silent_tracks(&self) -> Vec<usize> {
         let doc = self.doc();
         let soloed = &self.song.session.soloed;
+        let any_solo = doc.tracks.iter().any(|t| soloed.contains(&t.id));
         let mut seats: Vec<usize> = doc
             .tracks
             .iter()
-            .filter(|t| !doc.plays(t, soloed))
+            .filter(|t| {
+                let laned = t.lane(AutoTarget::Mute).is_some_and(|l| l.moves());
+                (t.muted && !laned) || (any_solo && !soloed.contains(&t.id))
+            })
             .filter_map(|t| self.seats.of(t.id))
             .collect();
         seats.sort_unstable();

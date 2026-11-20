@@ -48,8 +48,11 @@ struct Visit {
     /// has not been seen stopped since.
     unanswered: bool,
     /// How many times a hand changed the plugin in the window, as the plugin process said
-    /// it; `None` until it does.
+    /// it; `None` until it does. Only a visit that ends with the person leaving the window
+    /// hears it: with `None` the state's bytes alone say whether the visit is a step.
     hands: Option<u32>,
+    /// The hands of `hands` that wrote into lanes: their steps are made apart.
+    wrote: u32,
 }
 
 #[derive(Debug, Default)]
@@ -236,6 +239,7 @@ impl Play {
             left: false,
             unanswered: false,
             hands: None,
+            wrote: 0,
         });
         effects.push(Effect::AskPlugin {
             ticket,
@@ -332,10 +336,10 @@ impl Play {
                 let visit = visits.remove(at);
                 // With no hand in the window, what differs is what a lane moved.
                 let changed = visit.before.is_some_and(|before| before != after);
-                if changed && visit.hands != Some(0) {
+                if changed && visit.hands.is_none_or(|hands| hands > visit.wrote) {
                     self.plugin_changed(ticket, after, PluginChange::Window, effects);
                 } else {
-                    let rests = self.take_window_rests(ticket);
+                    let rests = self.take_window_rests(ticket, effects);
                     self.apply_resting(None, &rests, true, effects);
                 }
             }
@@ -367,7 +371,7 @@ impl Play {
         for ticket in back {
             self.end_visit(ticket, effects);
         }
-        self.drop_gone_touches();
+        self.drop_gone_touches(effects);
     }
 
     /// The hands of the visit under way, or of the last one that waits for its state.
@@ -375,6 +379,14 @@ impl Play {
         let visits = &mut self.wins.visits;
         if let Some(visit) = visits.iter_mut().rev().find(|v| v.ticket == ticket) {
             visit.hands = Some(visit.hands.unwrap_or(0).saturating_add(count));
+        }
+    }
+
+    /// A hand in the window of the visit under way wrote into a lane.
+    pub(super) fn visit_wrote(&mut self, ticket: u64) {
+        let visits = &mut self.wins.visits;
+        if let Some(visit) = visits.iter_mut().find(|v| v.ticket == ticket && !v.left) {
+            visit.wrote += 1;
         }
     }
 

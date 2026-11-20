@@ -199,7 +199,7 @@ impl Play {
         let lane = self.preview_lane(&value);
         if !commit {
             if let Some((key, place)) = lane {
-                self.hand_moved(key, place);
+                self.hand_moved(key, place, effects);
             }
             match (self.mixer.previews.iter_mut()).find(|p| p.same_control(&value)) {
                 Some(p) => *p = value,
@@ -320,7 +320,7 @@ impl Play {
     /// Esc during a drag: the sound is the song's again.
     pub fn cancel_mix_preview(&mut self, effects: &mut Vec<Effect>) {
         self.mixer.previews.clear();
-        self.cancel_hands();
+        self.cancel_hands(effects);
         self.cancel_plugin_drags(effects);
     }
 

@@ -49,22 +49,19 @@ pub(crate) struct AutoSync {
 }
 
 /// The lanes of a track that play (not resting, with points): target, step, the lane's
-/// number. Model: `Track::automation` (21-5).
+/// number.
 fn heads_of(track: &Track) -> Vec<(AutoTarget, bool, u32)> {
-    // Merge with the model's lanes:
-    // track.automation.iter().filter(|l| !l.resting && !l.points.is_empty())
-    //     .map(|l| (l.target, l.step, l.id.0)).collect()
-    let _ = track;
-    Vec::new()
+    (track.automation.iter())
+        .filter(|l| l.moves())
+        .map(|l| (l.target, l.step, l.id.0))
+        .collect()
 }
 
 /// The points of the lane of `target` of a track: tick and place.
 fn points_of(track: &Track, target: AutoTarget) -> Vec<(u64, f32)> {
-    // Merge with the model's lanes:
-    // track.automation.iter().find(|l| l.target == target)
-    //     .map(|l| l.points.iter().map(|p| (p.tick, p.value)).collect()).unwrap_or_default()
-    let _ = (track, target);
-    Vec::new()
+    (track.lane(target))
+        .map(|l| l.points.iter().map(|p| (p.tick, p.value)).collect())
+        .unwrap_or_default()
 }
 
 /// The heads of the lanes of `track` the engine can play: a lane of an insert whose effect
@@ -90,6 +87,18 @@ fn heads(track: &Track) -> Vec<Head> {
                 slot,
                 effect,
             })
+        })
+        .collect()
+}
+
+fn seat_lanes(track: &Track, heads: &[Head]) -> Vec<SeatLane> {
+    (heads.iter())
+        .map(|h| SeatLane {
+            target: h.target,
+            step: h.step,
+            points: points_of(track, h.target),
+            slot: h.slot,
+            effect: h.effect,
         })
         .collect()
 }
@@ -158,15 +167,7 @@ impl Play {
                     }));
                 }
             }
-            let lanes = (heads.iter())
-                .map(|h| SeatLane {
-                    target: h.target,
-                    step: h.step,
-                    points: points_of(track, h.target),
-                    slot: h.slot,
-                    effect: h.effect,
-                })
-                .collect();
+            let lanes = seat_lanes(track, heads);
             effects.push(Effect::Engine(EngineOp::Automation { seat, lanes }));
             self.autosync.sent.insert(seat, heads.clone());
         }
@@ -181,6 +182,24 @@ impl Play {
                 }
             }
         }
+    }
+
+    /// The lanes of `seat` go to the engine again as they are, which then gives its plugins
+    /// their values anew: after a plugin's state was put back, or it was loaded again
+    /// (docs/architecture.md 21-10). Lanes that changed since they were last told are left
+    /// to [`Play::send_automation`].
+    pub(crate) fn resend_automation(&mut self, seat: usize, effects: &mut Vec<Effect>) {
+        let doc = &self.song.doc;
+        let seats = &self.seats;
+        let Some(track) = doc.tracks.iter().find(|t| seats.of(t.id) == Some(seat)) else {
+            return;
+        };
+        let heads = heads(track);
+        if heads.is_empty() || self.autosync.sent.get(&seat) != Some(&heads) {
+            return;
+        }
+        let lanes = seat_lanes(track, &heads);
+        effects.push(Effect::Engine(EngineOp::Automation { seat, lanes }));
     }
 
     /// A person has hold of what the lane of `target` on `track` moves (`on`), or let go of

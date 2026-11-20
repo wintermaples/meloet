@@ -1408,7 +1408,11 @@ impl PluginSide {
 
     /// News of one plugin, for the rules: which ticket it was loaded under, and what it
     /// said, in order. `None` for a plugin no ticket stands for any more.
-    fn said(&self, news: HostNews) -> Option<(u64, Vec<PluginSaid>)> {
+    fn said(
+        &self,
+        news: HostNews,
+        heard_at: impl Fn(u64) -> Option<Heard>,
+    ) -> Option<(u64, Vec<PluginSaid>)> {
         let (slot, said) = match news {
             HostNews::Stopped { .. } => return None,
             HostNews::WindowOpened {
@@ -1466,7 +1470,7 @@ impl PluginSide {
                     let moved = PluginSaid::ParamMoved {
                         param: id,
                         value,
-                        t_us,
+                        heard: heard_at(t_us),
                     };
                     let said = vec![PluginSaid::Param(now), moved];
                     return self.ticket(slot).map(|ticket| (ticket, said));
@@ -1621,7 +1625,8 @@ impl Worker {
                     }
                 }
                 Ok(Msg::Plugins(news)) => {
-                    let said = self.plugins.as_ref().and_then(|side| side.said(news));
+                    let heard_at = |t_us| self.heard_at(t_us);
+                    let said = (self.plugins.as_ref()).and_then(|side| side.said(news, heard_at));
                     for (ticket, said) in said
                         .into_iter()
                         .flat_map(|(t, all)| all.into_iter().map(move |said| (t, said)))

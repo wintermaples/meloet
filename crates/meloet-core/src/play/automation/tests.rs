@@ -1,11 +1,10 @@
 use meloet_model::automation::LaneId;
-use meloet_model::{Gain, StepKind, TrackId};
+use meloet_model::{StepKind, TrackId};
 use meloet_protocol::{
     AutoTarget, Command, IndexRange, LanePoints, LaneRef, StatusMessage, StripRef, TrackRef,
     TransportState,
 };
 
-use super::place;
 use crate::play::tests::{cmd, hear, ready, status};
 use crate::songfile;
 use crate::state::Model;
@@ -96,21 +95,144 @@ fn piano() -> TrackRef {
     }
 }
 
+/// A lane as the engine is told of it: what it moves, and its points.
+type Told = (meloet_model::AutoTarget, Vec<(u64, f32)>);
+
+/// What the engine is told of the lanes of track 1: the lanes of each set sent.
+fn sent_lanes(effects: &[crate::state::Effect]) -> Vec<Vec<Told>> {
+    use crate::play::EngineOp;
+    (effects.iter())
+        .filter_map(|e| match e {
+            crate::state::Effect::Engine(EngineOp::Automation { lanes, .. }) => {
+                Some(lanes.iter().map(|l| (l.target, l.points.clone())).collect())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn silent(effects: &[crate::state::Effect]) -> Vec<Vec<usize>> {
+    use crate::play::EngineOp;
+    (effects.iter())
+        .filter_map(|e| match e {
+            crate::state::Effect::Engine(EngineOp::SilentTracks { tracks }) => Some(tracks.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn the_knob_places_match_the_screen() {
-    // ui/src/components/mixer/scale.ts: +6 is 1, 0 dB 0.8, −60 is 0, −∞ is 0.
-    assert_eq!(place::of_gain(Gain::from_db(6.0)), 1.0);
-    assert!((place::of_gain(Gain::UNITY) - 0.8).abs() < 1e-6);
-    assert!((place::of_gain(Gain::from_db(-6.0)) - 0.6).abs() < 1e-6);
-    assert_eq!(place::of_gain(Gain::from_db(-60.0)), 0.0);
-    assert_eq!(place::of_gain(Gain::SILENT), 0.0);
-    assert_eq!(place::gain_at(0.0), Gain::SILENT);
-    assert_eq!(place::gain_at(0.8), Gain::UNITY);
-    assert_eq!(place::gain_at(0.6), Gain::from_db(-6.0));
-    use meloet_model::effects::{EffectKind, compressor};
-    let ratio = place::of_param(EffectKind::Compressor, compressor::RATIO, 4.0);
-    let back = place::param_at(EffectKind::Compressor, compressor::RATIO, ratio).unwrap();
-    assert!((back - 4.0).abs() < 1e-3);
+fn the_engine_gets_the_lanes_that_move_and_not_one_at_rest() {
+    use meloet_model::AutoTarget as Target;
+    let m = &mut ready();
+    let effects = cmd(
+        m,
+        Command::AddLane {
+            track: 1,
+            target: VOLUME,
+        },
+    );
+    assert!(
+        sent_lanes(&effects).is_empty(),
+        "a lane with no point moves nothing"
+    );
+    let lane = lane_id(m, VOLUME);
+    let effects = cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(0.5),
+        },
+    );
+    assert_eq!(
+        sent_lanes(&effects),
+        [vec![(Target::Volume, vec![(0, 0.5)])]]
+    );
+    let lane = lane_id(m, VOLUME);
+    let effects = cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: BAR,
+            value: Some(0.25),
+        },
+    );
+    assert_eq!(
+        sent_lanes(&effects),
+        [vec![(Target::Volume, vec![(0, 0.5), (BAR, 0.25)])]]
+    );
+    // A step that leaves its points tells the engine nothing of them.
+    let effects = cmd(m, Command::SetTempo { bpm: 90.0 });
+    assert!(sent_lanes(&effects).is_empty());
+
+    // The fader set by hand rests the lane: the engine plays it no more.
+    cmd(m, gain(-6.0, false));
+    let effects = cmd(m, gain(-6.0, true));
+    assert!(resting(m, VOLUME));
+    assert_eq!(sent_lanes(&effects), [vec![]]);
+    let effects = cmd(m, Command::Undo);
+    assert_eq!(
+        sent_lanes(&effects),
+        [vec![(Target::Volume, vec![(0, 0.5), (BAR, 0.25)])]]
+    );
+    cmd(m, Command::Redo);
+    let effects = cmd(
+        m,
+        Command::RestoreLane {
+            track: 1,
+            target: VOLUME,
+        },
+    );
+    assert_eq!(sent_lanes(&effects).len(), 1);
+}
+
+#[test]
+fn a_mute_lane_takes_the_place_of_the_mute_put_by_hand() {
+    let m = &mut ready();
+    crate::play::mix::tests::three_tracks(m);
+    let seat_of = |m: &Model, id: u32| m.play().seats.of(TrackId(id)).unwrap();
+    let (seat, third) = (seat_of(m, 1), seat_of(m, 3));
+    let effects = cmd(m, Command::ToggleMute { track: 1 });
+    assert_eq!(silent(&effects), [vec![seat]]);
+    let mute = AutoTarget::Mute;
+    let effects = cmd(
+        m,
+        Command::AddLane {
+            track: 1,
+            target: mute,
+        },
+    );
+    assert!(
+        silent(&effects).is_empty(),
+        "a lane with no point moves nothing"
+    );
+    let lane = lane_id(m, mute);
+    let effects = cmd(
+        m,
+        Command::AddAutoPoint {
+            lane,
+            tick: 0,
+            value: Some(0.0),
+        },
+    );
+    assert_eq!(
+        silent(&effects),
+        [Vec::<usize>::new()],
+        "the engine reads the lane now"
+    );
+    // Solo still counts: another track soloed leaves this one out.
+    let effects = cmd(m, Command::ToggleSolo { track: 2 });
+    assert_eq!(silent(&effects), [vec![seat, third]]);
+    cmd(m, Command::ToggleSolo { track: 2 });
+    // At rest, the hand's mute is what counts again.
+    let effects = cmd(m, Command::ToggleMute { track: 1 });
+    assert!(resting(m, mute));
+    assert!(!m.view().song.tracks[0].muted);
+    assert!(silent(&effects).is_empty(), "{effects:?}");
+    cmd(m, Command::Undo);
+    let effects = cmd(m, Command::Undo);
+    assert_eq!(silent(&effects), [vec![seat]], "no point: the hand's mute");
 }
 
 #[test]
@@ -784,9 +906,9 @@ mod plugins {
     use meloet_model::{AutoTarget as Target, PluginPlace, StepKind, TrackId};
     use meloet_protocol::{AutoTarget, Command, LaneRef, LaneView, TransportState};
 
-    use crate::play::Heard;
     use crate::play::windows::tests::{FRESH, LEVEL, MODE, Rig};
-    use crate::state::PluginSaid;
+    use crate::play::{EngineOp, Heard};
+    use crate::state::{Effect, PluginSaid};
 
     fn heard(tick: f64) -> Option<Heard> {
         Some(Heard {
@@ -810,6 +932,47 @@ mod plugins {
             value: Some(0.3),
         });
         (surge, track, slot)
+    }
+
+    fn touch(on: bool) -> PluginSaid {
+        PluginSaid::ParamTouch {
+            param: LEVEL,
+            on,
+            t_us: 0,
+        }
+    }
+
+    fn moved(value: f64, heard: Option<Heard>) -> PluginSaid {
+        PluginSaid::ParamMoved {
+            param: LEVEL,
+            value,
+            heard,
+        }
+    }
+
+    /// The person turns the level in the window: the plugin takes it, and says so.
+    fn turn(r: &mut Rig, surge: u64, value: f64, heard: Option<Heard>) {
+        let turned = r.host.turn(surge, LEVEL, value);
+        r.go(turned);
+        r.said(surge, moved(value, heard));
+    }
+
+    fn holds(effects: &[Effect]) -> Vec<bool> {
+        (effects.iter())
+            .filter_map(|e| match e {
+                Effect::Engine(EngineOp::HoldLane { on, .. }) => Some(*on),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn automation(effects: &[Effect]) -> Vec<Vec<crate::play::SeatLane>> {
+        (effects.iter())
+            .filter_map(|e| match e {
+                Effect::Engine(EngineOp::Automation { lanes, .. }) => Some(lanes.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     fn level_lane(r: &Rig) -> LaneView {
@@ -845,20 +1008,26 @@ mod plugins {
         let steps = r.undo_count();
         r.said(surge, PluginSaid::WindowEntered);
         r.settle();
-        r.m.play_mut()
-            .plugin_touched(surge, LEVEL, true, &mut Vec::new());
+        let effects = r.said(surge, touch(true));
+        assert_eq!(
+            holds(&effects),
+            [true],
+            "the engine lets go of the lane at once"
+        );
         let held = LaneRef {
             track,
             target: AutoTarget::Instrument { param: LEVEL },
         };
         assert_eq!(r.m.view().automation.held, [held]);
-        let turned = r.host.turn(surge, LEVEL, 0.9);
-        r.go(turned);
-        r.m.play_mut()
-            .plugin_touched(surge, LEVEL, false, &mut Vec::new());
-        r.m.play_mut().plugin_hands(surge, 1);
-        r.said(surge, PluginSaid::WindowLeft);
-        r.settle();
+        turn(&mut r, surge, 0.9, None);
+        let effects = r.said(surge, touch(false));
+        assert!(holds(&effects).is_empty(), "held until the visit's step");
+        r.said(surge, PluginSaid::WindowTouches { touches: 1 });
+        let mut effects = r.said(surge, PluginSaid::WindowLeft);
+        while let Some(input) = r.host.answers.pop_front() {
+            effects.extend(r.go(input));
+        }
+        assert_eq!(holds(&effects), [false]);
         assert_eq!(
             r.undo_count(),
             steps + 1,
@@ -884,7 +1053,7 @@ mod plugins {
         // The lane moved the plugin while the person was in the window.
         let moved = r.host.turn(surge, LEVEL, 0.3);
         r.go(moved);
-        r.m.play_mut().plugin_hands(surge, 0);
+        r.said(surge, PluginSaid::WindowTouches { touches: 0 });
         r.said(surge, PluginSaid::WindowLeft);
         r.settle();
         assert_eq!(r.undo_count(), steps);
@@ -904,15 +1073,15 @@ mod plugins {
         let steps = r.undo_count();
         r.said(surge, PluginSaid::WindowEntered);
         r.settle();
-        let play = r.m.play_mut();
-        play.plugin_touched(surge, LEVEL, true, &mut Vec::new());
-        play.plugin_edited(surge, LEVEL, 0.8, heard(960.0));
-        play.plugin_edited(surge, LEVEL, 0.2, heard(1440.0));
+        let effects = r.said(surge, touch(true));
+        assert_eq!(holds(&effects), [true]);
+        turn(&mut r, surge, 0.8, heard(960.0));
+        turn(&mut r, surge, 0.2, heard(1440.0));
         let writing = r.m.view().automation.writing;
         assert_eq!(writing.len(), 1);
         assert_eq!(writing[0].from_tick, 960);
-        r.m.play_mut()
-            .plugin_touched(surge, LEVEL, false, &mut Vec::new());
+        let effects = r.said(surge, touch(false));
+        assert_eq!(holds(&effects), [false]);
         assert_eq!(r.undo_count(), steps + 1);
         let last = r.m.play().steps().last().copied();
         assert_eq!(
@@ -924,7 +1093,55 @@ mod plugins {
         );
         let lane = level_lane(&r);
         assert!(!lane.resting);
-        assert_eq!(lane.points, 5, "0, 959, 960, 1440, 1441");
+        let bytes = r.m.play().lane(lane.lane_id).expect("its points");
+        let points = meloet_protocol::LanePoints::decode(&bytes).unwrap().points;
+        let points: Vec<(u64, f32)> = points.iter().map(|p| (p.tick, p.value)).collect();
+        assert_eq!(
+            points,
+            [(0, 0.3), (959, 0.3), (960, 0.8), (1440, 0.2), (1441, 0.3)],
+            "where they were heard"
+        );
+        // The touch wrote: leaving the window makes no step of it, though the plugin's
+        // state differs from the one it had as the visit started.
+        r.said(surge, PluginSaid::WindowTouches { touches: 1 });
+        r.said(surge, PluginSaid::WindowLeft);
+        r.settle();
+        assert_eq!(r.undo_count(), steps + 1);
+    }
+
+    #[test]
+    fn a_plugins_state_put_back_sends_its_lanes_again() {
+        let mut r = Rig::new();
+        let (surge, ..) = surge_with_lane(&mut r);
+        r.said(surge, PluginSaid::WindowEntered);
+        r.settle();
+        let turned = r.host.turn(surge, MODE, 1.0);
+        r.go(turned);
+        r.said(surge, PluginSaid::WindowTouches { touches: 1 });
+        r.said(surge, PluginSaid::WindowLeft);
+        r.settle();
+        for command in [Command::Undo, Command::Redo] {
+            let effects = r.cmd(command);
+            assert!(
+                (effects.iter()).any(|e| matches!(e, Effect::SetPluginState { .. })),
+                "{effects:?}"
+            );
+            let sent = automation(&effects);
+            assert_eq!(sent.len(), 1, "{effects:?}");
+            assert_eq!(sent[0].len(), 1);
+            assert_eq!(sent[0][0].target, Target::Instrument { param: LEVEL });
+            assert_eq!(sent[0][0].points, [(0, 0.3)]);
+        }
+        // Loaded again after its process stopped.
+        r.host.dead.insert(surge);
+        r.go(crate::state::Input::PluginStopped { ticket: surge });
+        r.settle();
+        let slot = meloet_protocol::PluginSlotRef::Instrument {
+            track: r.m.view().song.tracks[0].id,
+        };
+        r.cmd(Command::ReloadPlugin { slot });
+        let effects = r.go(crate::state::Input::PluginLoaded { ticket: surge });
+        assert_eq!(automation(&effects).len(), 1, "{effects:?}");
     }
 
     #[test]

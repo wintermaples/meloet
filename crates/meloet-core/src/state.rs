@@ -257,12 +257,13 @@ pub enum PluginSaid {
         on: bool,
         t_us: u64,
     },
-    /// What a [`PluginSaid::Param`] moved in the window was, with when the plugin said it:
-    /// for writing it into a lane. Comes right after that `Param`.
+    /// What a [`PluginSaid::Param`] moved in the window was, for writing it into a lane.
+    /// Comes right after that `Param`. `heard`: what the listener heard when the plugin said
+    /// it (its `t_us` on the engine's clock), as for a key (docs/architecture.md 21-9).
     ParamMoved {
         param: u32,
         value: f64,
-        t_us: u64,
+        heard: Option<crate::play::Heard>,
     },
     /// How often the person took hold of a parameter or loaded a program while in the
     /// window (every `ParamTouch` with `on` counts). Comes right before its `WindowLeft`.

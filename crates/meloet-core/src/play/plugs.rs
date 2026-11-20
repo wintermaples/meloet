@@ -223,7 +223,7 @@ impl Play {
         // The lanes that rest with this step (docs/architecture.md 21-10, 21-11).
         let rests = match change {
             PluginChange::Param(param) => self.take_param_rests(ticket, param),
-            PluginChange::Window => self.take_window_rests(ticket),
+            PluginChange::Window => self.take_window_rests(ticket, effects),
         };
         let edit = self.plugin_state_edit(ticket, state, change);
         if let Some(edit) = &edit
@@ -315,6 +315,7 @@ impl Play {
                 effects.push(Effect::SetPluginState { ticket, state });
                 self.table_stale(ticket);
                 self.visit_overtaken(ticket, effects);
+                self.lanes_anew(spot, effects);
                 return Want::Kept;
             }
         }
@@ -473,10 +474,19 @@ impl Play {
             _ => {
                 plug.placed = true;
                 effects.push(Effect::Engine(EngineOp::Plug { ticket, spot }));
+                self.lanes_anew(spot, effects);
             }
         }
         // Loaded again, it may list its parameters another way.
         self.table_stale(ticket);
+    }
+
+    /// The lanes of the track a plugin of the song sits on go to the engine again, which
+    /// gives the plugin their values anew.
+    fn lanes_anew(&mut self, spot: Spot, effects: &mut Vec<Effect>) {
+        if let Spot::Seat(seat) | Spot::Insert(StripSeat::Track(seat), _) = spot {
+            self.resend_automation(seat, effects);
+        }
     }
 
     /// The row that is tried could not be loaded, or stopped: the shelf says so under it and

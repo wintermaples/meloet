@@ -130,7 +130,7 @@ impl Play {
         let lane = self.ticket_lane(ticket, param);
         if !commit {
             if let Some(key) = lane {
-                self.hand_moved(key, value as f32);
+                self.hand_moved(key, value as f32, effects);
             }
             return;
         }
@@ -178,7 +178,7 @@ impl Play {
     pub(super) fn cancel_plugin_drags(&mut self, effects: &mut Vec<Effect>) {
         if let Some(drag) = self.panel.dragged.take() {
             if let Some(key) = self.ticket_lane(drag.ticket, drag.param) {
-                self.drop_grip(key);
+                self.drop_grip(key, effects);
             }
             self.panel.owed.push(drag);
             self.pay_owed(effects);
@@ -483,10 +483,15 @@ impl Play {
             PluginSaid::WindowEntered => self.window_entered(ticket, effects),
             PluginSaid::WindowLeft => self.window_left(ticket, effects),
             PluginSaid::Param(now) => self.param_now(ticket, now),
-            // Taken up by the automation's writing and resting (core, 21-9, 21-10).
-            PluginSaid::ParamTouch { .. }
-            | PluginSaid::ParamMoved { .. }
-            | PluginSaid::WindowTouches { .. } => {}
+            PluginSaid::ParamTouch { param, on, .. } => {
+                self.plugin_touched(ticket, param, on, effects);
+            }
+            PluginSaid::ParamMoved {
+                param,
+                value,
+                heard,
+            } => self.plugin_edited(ticket, param, value, heard, effects),
+            PluginSaid::WindowTouches { touches } => self.plugin_hands(ticket, touches),
             PluginSaid::ParamsChanged => self.table_stale(ticket),
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),

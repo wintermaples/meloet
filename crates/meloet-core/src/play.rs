@@ -1058,7 +1058,7 @@ impl Play {
             }
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_undo.pop() {
-                self.put_sel(sel_before.clone());
+                self.put_sel(sel_before.clone(), effects);
                 self.sel_redo.push((sel_before, sel_after));
             }
         }
@@ -1078,7 +1078,7 @@ impl Play {
             }
             self.after_change(&before, effects);
             if let Some((sel_before, sel_after)) = self.sel_redo.pop() {
-                self.put_sel(sel_after.clone());
+                self.put_sel(sel_after.clone(), effects);
                 self.sel_undo.push((sel_before, sel_after));
             }
         }
@@ -1096,13 +1096,13 @@ impl Play {
 
     /// What was selected before or after a step, as far as it is still there. The piano roll
     /// keeps showing what it shows.
-    fn put_sel(&mut self, sel: Sel) {
+    fn put_sel(&mut self, sel: Sel, effects: &mut Vec<Effect>) {
         self.note_sel = sel.notes;
         self.clips_sel = sel.clips;
         self.selected = sel.clicked;
         self.tl.select(sel.timeline);
         self.put_point_sel(sel.points);
-        self.drop_gone_clips();
+        self.drop_gone_clips(effects);
     }
 
     fn apply(&mut self, e: Edit, effects: &mut Vec<Effect>) {
@@ -1181,10 +1181,10 @@ impl Play {
         if doc.tracks.iter().any(|t| !t.clips.is_empty()) {
             self.had_clip = true;
         }
-        self.drop_gone_clips();
+        self.drop_gone_clips(effects);
     }
 
-    fn drop_gone_clips(&mut self) {
+    fn drop_gone_clips(&mut self, effects: &mut Vec<Effect>) {
         let doc = &self.song.doc;
         self.clips_sel.retain(|&c| doc.clip(c).is_some());
         let sel = &self.clips_sel;
@@ -1192,7 +1192,7 @@ impl Play {
         self.piano_roll = self.piano_roll.filter(|&c| doc.clip(c).is_some());
         self.tl.drop_gone(doc);
         self.fix_selection();
-        self.drop_gone_lanes();
+        self.drop_gone_lanes(effects);
     }
 
     fn tempo_op(&self) -> EngineOp {
@@ -1525,7 +1525,7 @@ impl Play {
         self.song = song;
         self.saving = None;
         self.forget_mixer();
-        self.forget_automation();
+        self.forget_automation(effects);
         self.reseat(effects);
         self.changes += 1;
         self.serial += 1;

@@ -9,7 +9,7 @@
 //! - otherwise puts the lane to rest: the value and the rest are one step.
 //!
 //! While a hand is on it the lane is held, so that the engine does not move what the hand
-//! moves (`Play::hold`, which the engine side fills in).
+//! moves ([`Play::hold_lane`]).
 
 use meloet_model::automation::{self as auto, AutoPoint, AutoTarget as ModelTarget, LaneId};
 use meloet_model::edit::{Edit, EditError};
@@ -158,106 +158,6 @@ fn lane_ref((track, target): LaneKey) -> LaneRef {
     }
 }
 
-/// The place of the knob and the value it stands for (docs/architecture.md 21-5).
-///
-/// These stand in for `Gain::position` ・ `Gain::from_position` and `ParamSpec::position` ・
-/// `ParamSpec::value_at`, which the engine side puts in `meloet-model`; the two are to become
-/// one when they meet. Same rules as `ui/src/components/mixer/scale.ts` and
-/// `ui/src/components/params/paramRows.ts`.
-pub(super) mod place {
-    use meloet_model::Gain;
-    use meloet_model::effects::{EffectKind, ParamShape, Unit};
-
-    /// Spec 2 「メーターとフェーダーの目盛」: dB and the length, 0..=100.
-    const SCALE: [(f64, f64); 7] = [
-        (6.0, 100.0),
-        (0.0, 80.0),
-        (-3.0, 70.0),
-        (-6.0, 60.0),
-        (-12.0, 40.0),
-        (-24.0, 20.0),
-        (-60.0, 0.0),
-    ];
-
-    pub(in super::super) fn of_gain(gain: Gain) -> f32 {
-        let Some(db) = gain.db() else {
-            return 0.0;
-        };
-        for w in SCALE.windows(2) {
-            let ((hi_db, hi_len), (lo_db, lo_len)) = (w[0], w[1]);
-            if db >= lo_db {
-                let len = lo_len + (db - lo_db) / (hi_db - lo_db) * (hi_len - lo_len);
-                return (len / 100.0).clamp(0.0, 1.0) as f32;
-            }
-        }
-        0.0
-    }
-
-    pub(in super::super) fn gain_at(place: f32) -> Gain {
-        if place.is_nan() || place <= 0.0 {
-            return Gain::SILENT;
-        }
-        let len = f64::from(place.min(1.0)) * 100.0;
-        for w in SCALE.windows(2) {
-            let ((hi_db, hi_len), (lo_db, lo_len)) = (w[0], w[1]);
-            if len >= lo_len {
-                return Gain::from_db(lo_db + (len - lo_len) / (hi_len - lo_len) * (hi_db - lo_db));
-            }
-        }
-        Gain::SILENT
-    }
-
-    fn log_scale(kind: EffectKind, param: u32) -> bool {
-        let Some(p) = kind.param(param) else {
-            return false;
-        };
-        p.min > 0.0
-            && match p.unit {
-                Unit::Hz => true,
-                Unit::Ms | Unit::Seconds => p.max / p.min >= 50.0,
-                _ => false,
-            }
-    }
-
-    pub(in super::super) fn of_param(kind: EffectKind, param: u32, value: f32) -> f32 {
-        let Some(p) = kind.param(param) else {
-            return 0.0;
-        };
-        let v = value.clamp(p.min, p.max);
-        let f = match (p.shape, log_scale(kind, param)) {
-            (ParamShape::Continuous, true) => (v / p.min).ln() / (p.max / p.min).ln(),
-            _ => (v - p.min) / (p.max - p.min),
-        };
-        if f.is_finite() {
-            f.clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
-    }
-
-    pub(in super::super) fn param_at(kind: EffectKind, param: u32, place: f32) -> Option<f32> {
-        let p = kind.param(param)?;
-        let f = if place.is_nan() {
-            0.0
-        } else {
-            place.clamp(0.0, 1.0)
-        };
-        let v = match (p.shape, log_scale(kind, param)) {
-            (ParamShape::Continuous, true) => p.min * (p.max / p.min).powf(f),
-            _ => p.min + f * (p.max - p.min),
-        };
-        Some(p.clamp(v))
-    }
-}
-
-fn pan_place(pan: Pan) -> f32 {
-    (f32::from(pan.get()) + 100.0) / 200.0
-}
-
-fn pan_at(place: f32) -> Pan {
-    Pan::new((place * 200.0 - 100.0).round() as i32)
-}
-
 impl Play {
     // ---- what the commands and the hands name ----
 
@@ -290,14 +190,15 @@ impl Play {
             return 0.0;
         };
         match target {
-            ModelTarget::Volume => place::of_gain(t.channel.gain),
-            ModelTarget::Pan => pan_place(t.channel.pan),
-            ModelTarget::Send(bus) => place::of_gain(t.sends[bus.index()]),
+            ModelTarget::Volume => t.channel.gain.position(),
+            ModelTarget::Pan => t.channel.pan.position(),
+            ModelTarget::Send(bus) => t.sends[bus.index()].position(),
             ModelTarget::Mute => f32::from(u8::from(t.muted)),
             ModelTarget::Insert { insert, param } => {
                 let held = t.channel.inserts.iter().flatten().find(|i| i.id == insert);
-                match held.and_then(|i| Some((i.kind()?, i.value(param)?))) {
-                    Some((kind, value)) => place::of_param(kind, param, value),
+                let spec = held.and_then(|i| Some((i.kind()?.param(param)?, i.value(param)?)));
+                match spec {
+                    Some((spec, value)) => spec.position(value),
                     None => self.plugin_place(track, target).unwrap_or(0.5),
                 }
             }
@@ -358,26 +259,26 @@ impl Play {
         };
         let insert = self.doc().insert(strip, slot)?.id;
         let key = (track, ModelTarget::Insert { insert, param });
-        Some((key, place::of_param(kind, param, value)))
+        Some((key, kind.param(param)?.position(value)))
     }
 
     /// Lanes of the fader, pan and sends of a track.
     pub(super) fn gain_lane(strip: StripId, gain: Gain) -> Option<(LaneKey, f32)> {
         match strip {
-            StripId::Track(t) => Some(((t, ModelTarget::Volume), place::of_gain(gain))),
+            StripId::Track(t) => Some(((t, ModelTarget::Volume), gain.position())),
             _ => None,
         }
     }
 
     pub(super) fn pan_lane(strip: StripId, pan: Pan) -> Option<(LaneKey, f32)> {
         match strip {
-            StripId::Track(t) => Some(((t, ModelTarget::Pan), pan_place(pan))),
+            StripId::Track(t) => Some(((t, ModelTarget::Pan), pan.position())),
             _ => None,
         }
     }
 
     pub(super) fn send_lane(track: TrackId, bus: Bus, gain: Gain) -> Option<(LaneKey, f32)> {
-        Some(((track, ModelTarget::Send(bus)), place::of_gain(gain)))
+        Some(((track, ModelTarget::Send(bus)), gain.position()))
     }
 
     /// What a lane moves, as its header and the status line name it.
@@ -439,15 +340,6 @@ impl Play {
     pub fn take_auto_notice(&mut self) -> Option<StatusMessage> {
         self.auto.notice.take()
     }
-
-    // ---- the engine ----
-
-    /// Holds the lane in the engine, or lets it go: while held, the lane does not move its
-    /// target, and the value a hand sounds there (a preview, the plugin's own window) is
-    /// what is heard.
-    //
-    // TODO(merge): `Play::hold_lane(track, target, on)` of `play/autosync.rs`.
-    fn hold(&mut self, _track: TrackId, _target: ModelTarget, _on: bool) {}
 
     // ---- commands ----
 
@@ -647,7 +539,7 @@ impl Play {
 
     /// A control a lane may move was moved, and only the sound changes (`commit: false`).
     /// `place`: where the knob is now.
-    pub(super) fn hand_moved(&mut self, key: LaneKey, place: f32) {
+    pub(super) fn hand_moved(&mut self, key: LaneKey, place: f32, effects: &mut Vec<Effect>) {
         let heard = Self::heard_place(self.heard);
         if let Some(grip) = self.auto.grips.iter_mut().find(|g| g.lane == key) {
             if let (Hand::Write(w), Some((lap, tick))) = (&mut grip.hand, heard) {
@@ -670,7 +562,7 @@ impl Play {
             return;
         };
         self.auto.grips.push(Grip { lane: key, hand });
-        self.hold(key.0, key.1, true);
+        self.hold_lane(key.0, key.1, true, effects);
     }
 
     /// The control is let go, or a value is set with no drag before it (`commit: true`).
@@ -685,7 +577,7 @@ impl Play {
         let heard = Self::heard_place(self.heard);
         if let Some(at) = self.auto.grips.iter().position(|g| g.lane == key) {
             let grip = self.auto.grips.remove(at);
-            self.hold(key.0, key.1, false);
+            self.hold_lane(key.0, key.1, false, effects);
             return match grip.hand {
                 Hand::Rest if self.lane_at(key).is_some_and(|l| !l.resting) => LetGo::Rest(key),
                 Hand::Rest => LetGo::Free,
@@ -719,18 +611,18 @@ impl Play {
 
     /// Esc during a drag: the hands on the mixer and the panel are let go with no step, and
     /// their lanes move again.
-    pub(super) fn cancel_hands(&mut self) {
+    pub(super) fn cancel_hands(&mut self, effects: &mut Vec<Effect>) {
         for grip in std::mem::take(&mut self.auto.grips) {
-            self.hold(grip.lane.0, grip.lane.1, false);
+            self.hold_lane(grip.lane.0, grip.lane.1, false, effects);
         }
     }
 
     /// A hand whose drag was cut short: let go with no step.
-    pub(super) fn drop_grip(&mut self, key: LaneKey) {
+    pub(super) fn drop_grip(&mut self, key: LaneKey, effects: &mut Vec<Effect>) {
         let before = self.auto.grips.len();
         self.auto.grips.retain(|g| g.lane != key);
         if self.auto.grips.len() != before {
-            self.hold(key.0, key.1, false);
+            self.hold_lane(key.0, key.1, false, effects);
         }
     }
 
@@ -816,7 +708,11 @@ impl Play {
     }
 
     /// The lanes held from the plugin's window, which rest with the step of the visit.
-    pub(super) fn take_window_rests(&mut self, ticket: u64) -> Vec<LaneKey> {
+    pub(super) fn take_window_rests(
+        &mut self,
+        ticket: u64,
+        effects: &mut Vec<Effect>,
+    ) -> Vec<LaneKey> {
         let mut rests = Vec::new();
         self.auto.touches.retain(|t| {
             let ours = t.ticket == ticket && matches!(t.hand, Hand::Rest);
@@ -826,7 +722,7 @@ impl Play {
             !ours
         });
         for &(track, target) in &rests {
-            self.hold(track, target, false);
+            self.hold_lane(track, target, false, effects);
         }
         rests
     }
@@ -863,9 +759,6 @@ impl Play {
     /// which is one step at once (`WriteAutomation`), apart from the window's own step.
     /// Otherwise a lane that moves the parameter is held at once and rests with the step
     /// made when the person leaves the window.
-    //
-    // TODO(merge): called for the new arm of `PluginSaid` (the engine side).
-    #[allow(dead_code)]
     pub(super) fn plugin_touched(
         &mut self,
         ticket: u64,
@@ -876,8 +769,11 @@ impl Play {
         let at = (self.auto.touches.iter())
             .position(|t| (t.ticket, t.param) == (ticket, param) && t.down);
         if on {
-            if at.is_none() {
-                self.touch(ticket, param);
+            if at.is_none()
+                && let Some(at) = self.touch(ticket, param, effects)
+                && matches!(self.auto.touches[at].hand, Hand::Write(_))
+            {
+                self.visit_wrote(ticket);
             }
             return;
         }
@@ -890,17 +786,17 @@ impl Play {
             Hand::Write(w) => {
                 let w = w.clone();
                 self.auto.touches.remove(at);
-                self.hold(key.0, key.1, false);
+                self.hold_lane(key.0, key.1, false, effects);
                 self.write_down(key, &w, effects);
             }
             Hand::Spent => {
                 self.auto.touches.remove(at);
-                self.hold(key.0, key.1, false);
+                self.hold_lane(key.0, key.1, false, effects);
             }
         }
     }
 
-    fn touch(&mut self, ticket: u64, param: u32) -> Option<usize> {
+    fn touch(&mut self, ticket: u64, param: u32, effects: &mut Vec<Effect>) -> Option<usize> {
         let key = self.ticket_lane(ticket, param)?;
         let lane = self.lane_at(key).filter(|l| !l.resting)?;
         let hand = if self.armed(key) && self.can_write() {
@@ -921,26 +817,24 @@ impl Play {
             hand,
             down: true,
         });
-        self.hold(key.0, key.1, true);
+        self.hold_lane(key.0, key.1, true, effects);
         Some(self.auto.touches.len() - 1)
     }
 
     /// The plugin process says the hand in the window moved a parameter to `value`
     /// (0..=1), at the time `heard` stands for (as for [`Play::plugin_touched`]). A move
     /// with no touch said before it starts one.
-    //
-    // TODO(merge): called for the new arm of `PluginSaid` (the engine side).
-    #[allow(dead_code)]
     pub(super) fn plugin_edited(
         &mut self,
         ticket: u64,
         param: u32,
         value: f64,
         heard: Option<Heard>,
+        effects: &mut Vec<Effect>,
     ) {
         let found = (self.auto.touches.iter())
             .position(|t| (t.ticket, t.param) == (ticket, param) && t.down);
-        let Some(at) = found.or_else(|| self.touch(ticket, param)) else {
+        let Some(at) = found.or_else(|| self.touch(ticket, param, effects)) else {
             return;
         };
         if let (Hand::Write(w), Some((lap, tick))) =
@@ -950,14 +844,11 @@ impl Play {
         }
     }
 
-    /// The plugin process says how many times a hand changed the plugin in its window
-    /// since the visit started (`performEdit`, a write from the window, a preset read; not
-    /// what was written into a lane). Said as the person leaves the window, before the
-    /// plugin's state for the visit comes back: a visit with no hand is no step, even when
-    /// the state's bytes differ (a lane moved the plugin).
-    //
-    // TODO(merge): called for the new arm of `PluginSaid` (the engine side).
-    #[allow(dead_code)]
+    /// The plugin process says how many times a hand took a parameter or read a preset in
+    /// the plugin's window since the person came into it. Said as the person leaves the
+    /// window, before the plugin's state for the visit comes back: a visit whose hands all
+    /// wrote into lanes is no step, even when the state's bytes differ (a lane moved the
+    /// plugin).
     pub(super) fn plugin_hands(&mut self, ticket: u64, count: u32) {
         self.visit_hands(ticket, count);
     }
@@ -987,7 +878,7 @@ impl Play {
     }
 
     /// The song changed: what names a lane that is gone, or at rest, lets go of it.
-    pub(super) fn drop_gone_lanes(&mut self) {
+    pub(super) fn drop_gone_lanes(&mut self, effects: &mut Vec<Effect>) {
         let doc = &self.song.doc;
         let there = |(track, target): LaneKey| doc.track(track).and_then(|t| t.lane(target));
         let moving = |key: LaneKey| there(key).is_some_and(|l| !l.resting);
@@ -1017,12 +908,12 @@ impl Play {
             keep
         });
         for (track, target) in gone {
-            self.hold(track, target, false);
+            self.hold_lane(track, target, false, effects);
         }
     }
 
     /// The plugins whose window holds lanes went away: those lanes move again.
-    pub(super) fn drop_gone_touches(&mut self) {
+    pub(super) fn drop_gone_touches(&mut self, effects: &mut Vec<Effect>) {
         let plugs = &self.plugs;
         let mut gone = Vec::new();
         self.auto.touches.retain(|t| {
@@ -1036,17 +927,17 @@ impl Play {
             .rest_with_state
             .retain(|(t, ..)| plugs.of(*t).is_some());
         for (track, target) in gone {
-            self.hold(track, target, false);
+            self.hold_lane(track, target, false, effects);
         }
     }
 
     /// Another song: nothing of the lanes of the last one stays.
-    pub(super) fn forget_automation(&mut self) {
+    pub(super) fn forget_automation(&mut self, effects: &mut Vec<Effect>) {
         for key in (self.auto.grips.iter().map(|g| g.lane))
             .chain(self.auto.touches.iter().map(|t| t.lane))
             .collect::<Vec<_>>()
         {
-            self.hold(key.0, key.1, false);
+            self.hold_lane(key.0, key.1, false, effects);
         }
         self.auto = Auto::default();
     }
@@ -1157,9 +1048,9 @@ fn settle(e: &mut Edit, (track, target): LaneKey, place: f32) {
     };
     let t = std::sync::Arc::make_mut(slot);
     match target {
-        ModelTarget::Volume => t.channel.gain = place::gain_at(place),
-        ModelTarget::Pan => t.channel.pan = pan_at(place),
-        ModelTarget::Send(bus) => t.sends[bus.index()] = place::gain_at(place),
+        ModelTarget::Volume => t.channel.gain = Gain::from_position(place),
+        ModelTarget::Pan => t.channel.pan = Pan::new((Pan::unit_at(place) * 100.0).round() as i32),
+        ModelTarget::Send(bus) => t.sends[bus.index()] = Gain::from_position(place),
         ModelTarget::Mute => t.muted = place >= 0.5,
         ModelTarget::Insert { insert, param } => {
             let held = t
@@ -1169,10 +1060,9 @@ fn settle(e: &mut Edit, (track, target): LaneKey, place: f32) {
                 .flatten()
                 .find(|i| i.id == insert);
             if let Some(i) = held
-                && let Some(kind) = i.kind()
-                && let Some(value) = place::param_at(kind, param, place)
+                && let Some(spec) = i.kind().and_then(|kind| kind.param(param))
             {
-                i.set(param, value);
+                i.set(param, spec.value_at(place));
             }
         }
         ModelTarget::Instrument { .. } => {}

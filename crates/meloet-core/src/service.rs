@@ -455,6 +455,9 @@ impl Core {
                 ),
                 model,
                 input: input::InputSide::new(options.state_dir.clone()),
+                audio_store: Arc::new(crate::audiofiles::AudioStore::new(
+                    options.state_dir.clone(),
+                )),
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
                 state_dir: options.state_dir.clone(),
@@ -1455,6 +1458,9 @@ struct Worker {
     audio_retry_at: Option<Instant>,
     plugins: Option<PluginSide>,
     input: input::InputSide,
+    /// Shared with the read-ahead thread (22-8).
+    #[expect(dead_code, reason = "the read-ahead thread comes in round 7 step 3")]
+    audio_store: Arc<crate::audiofiles::AudioStore>,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,

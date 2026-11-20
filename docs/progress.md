@@ -1296,3 +1296,11 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
     - 抜けを埋めた数 ・ 輪があふれた数がどこにも出ない（22-7 は「状態行に知らせる」。文は B-94-14 で待ち）。→ 区切り3 で記録（stderr と `MELOET_MEASURE_DIR`）に出す。状態行は文が決まってから。
   - 宿題: busyMs のふえた分を、同じ音色で歌のあり ・ なしをくらべて分ける。カウントイン中に落ちると頭だけの wav が `work/音/` に残る（区切り3 の片づけ）。2 つめの sink の形で、測ったモニター（3 ブロック）と状態行の足し算（4 ブロック）が 1 ブロックちがう理由を、PipeWire のソースで確かめていない。本物の DAC → 線 → ADC での歌の位置と「1 ブロックの直し」はオーナーさんの測り待ち。
   - オーナーさんの OK（2026-11-21）: 測りのときだけ `clock.force-quantum` を一時的に変えてよい（前の値 256 に戻して伝える。`CLAUDE.md`）。区切り3 の測りで、本物の出口の装置のグラフで quantum 128 ・ 512 の歌の位置（出口のモニターで「いつも 256 こま早い」が quantum で変わらないか）と、小さいバッファでの 16 本の再生を見る。
+
+## 第 7 回 区切り3: 歌のクリップを鳴らす ・ 直す、音のファイルを入れる、曲のフォルダ（2026-11-21〜）
+
+- 1 回目（52473ce、merge 44cfc6e、meloet-hard ・ Fable 5.2）: 約束 24（`ClipView.audio`、進みの区画 `audioWork`、選んだクリップの欄、160 の行 `tallTrack` は core が持つ、意図 7 種、`fileDrag` ・ `fileDrop`〔道は core が持ち、画面は落とした所だけ決める〕、`recordingFaults` の形、状態行 5 つ、手の名前、ピークの答え 型 4 ・ 版 1）。曲のファイルの音の表に `bits`。継ぎ目: フェードの形 `sin(x·π/2)`（model と画面の写しを表で見る）、クリップの区切りの表（`clips.rs`）、先読みの輪（`stream.rs`、メモリ 0 の見はりつき）、`pcm.rs`、ピークのファイル（`peaks.rs`、中身まで）、`audioClipGeom.ts`、`bridge/peaks.ts`。偽物の場面 9 つ。cargo 0 落ち、vitest 2842。
+  - ドラッグの座標: wry 0.57.2 は GTK の `x` ・ `y`（WebView の左上から、論理 px）をそのまま渡し、tauri-runtime-wry は倍率をかけずに `PhysicalPosition` に包む。Linux では「物理」ではなく論理 px ＝ ページの CSS px（ソースで確かさ A。HiDPI と本物の Nautilus は、まだ）。
+  - 仮に決めた形は B-94 の 20〜31。
+  - 棟梁の決め: 先読みの係は core（`readahead.rs`）。A1 と A2 の継ぎ目に `AudioStore`（`audiofiles.rs`、`Worker.audio_store`）を棟梁が置いた（architecture 22-17 の終わり）。
+

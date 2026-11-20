@@ -1771,3 +1771,8 @@ pub struct AudioShape {
 
 - `ui/src/components/arrange/audioClipGeom.ts`: 波形の所（`waveArea`: 名前の行の下〜下の枠の上、まん中の線）、音量の線 ↔ dB（`gainLineY` ・ `gainAtY`。上が +12、下が −60、dB でまっすぐ。仮）、フェードの取っ手と線（`fadeHandleBox` ・ `fadeTicksAt` ・ `fadeLinePoints`）、波形の場所（`fileFrameAt`）、160 の行（`rowHeights`。`arrangeGeom.ts` の `LaneDims.heights` と `rowHeight`）、落とす所（`dropTarget` ・ `dropFrameBox` ・ `dropModeAt`: 窓の左半分が「別々のトラックに」。仮）。
 - 偽物の場面: `audioEdit`（F7-AudioEdit）、`audioTall`（160 の行）、`audioDropOne` ・ `audioDrop` ・ `audioDropRight` ・ `audioDropMixed`（F7-AudioDrop）、`audioMissing`（F7-AudioMissing）、`audioLoading`、`audioKinds`（R11-Audio）。偽物の `peaks` は、それらしい波（`fakeAudio.ts`）。
+
+**棟梁が足した物と決め（2026-11-21、1 回目のあと）**
+
+- **先読みの係は core に置く**（`crates/meloet-core/src/readahead.rs`）。**理由**: エンジンのクレートは clippy で Mutex を禁じていて、ディスクに書く係（22-7）も core にある。エンジンは輪から取るだけ。
+- **音の置き場所の係** `crate::audiofiles::AudioStore`（`PcmStore` を持つ。core の `Worker.audio_store` に 1 つ、先読みの係と分けあう）。曲のフォルダ（`set_song_dir`）は A2 が、ひらく ・ 保存 ・ 名前をつけて保存のときに。音の表（`set_sources`）は A1 が、曲が変わってエンジンへ送るときに。`open` の中身（`音/` ・ 作業の場所 ・ しまっておく所をさがす）は A2。**理由**: 2 人が `service.rs` の同じ所を書かずにすむ。

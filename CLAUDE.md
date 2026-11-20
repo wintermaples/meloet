@@ -71,7 +71,7 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 ```
 crates/
   meloet-model     曲・トラック・クリップ・テイク・ノート（純粋なデータ）、テンポの地図（tempo_map.rs）、取り消しの手（History）、録った出来事をテイクにする決まり（Recorder）、ノートを直す（notes.rs）、クオンタイズ（quantize.rs）、CC の点（controls.rs）、クリップを動かす（arrange.rs）、音色とグループ（instrument.rs）、ドラムのキット（drums.rs）、ミキサーとエフェクトのパラメータ（mixer.rs、effects.rs）
-  meloet-protocol  Rust と画面の約束（版 23）。TS の型は ui/src/bridge/generated/ に書き出す。プラグインの窓とパラメータの形は params.rs、あとから入れた物は added.rs、テンポ ・ 拍子 ・ マーカーは timeline.rs
+  meloet-protocol  Rust と画面の約束（版 24）。TS の型は ui/src/bridge/generated/ に書き出す。プラグインの窓とパラメータの形は params.rs、あとから入れた物は added.rs、テンポ ・ 拍子 ・ マーカーは timeline.rs
   meloet-engine    音の流れ、音源の口（Instrument）、トラックの席、ミキサーの音の道（mixer.rs）、メーター、cpal の出口、再生まわり（transport.rs）、耳に届いている位置（clock.rs）
   meloet-sound     音の部品: サンプルを鳴らす係（sampler/）、SF2 を読む所（sf2/）、エフェクト 6 つ（effects/）、計算で作る音色（synth/）、サンプルの ▶ のフレーズ（phrases.rs）
   meloet-plugin    プラグインの鍵とまとめる鍵、種類、スキャンの記録、共有メモリと futex、プラグイン係とのやりとり（wire.rs）、子を起こす（launch.rs）

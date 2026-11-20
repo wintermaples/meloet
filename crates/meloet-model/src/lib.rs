@@ -1,6 +1,7 @@
 //! Song, tracks and instrument references. Pure data: no I/O, no threads.
 
 pub mod arrange;
+pub mod audio;
 pub mod automation;
 pub mod chunked;
 pub mod controls;
@@ -23,6 +24,10 @@ pub mod time;
 pub mod timeline;
 
 pub use arrange::{ClipEdge, ClipEdited};
+pub use audio::{
+    AudioId, AudioShape, AudioSource, AudioTake, ClipGain, SourceTempo, TrackKind,
+    VOCAL_TRACK_NAME, VocalInput,
+};
 pub use automation::{AutoPoint, AutoTarget, Lane, LaneId};
 pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
@@ -38,8 +43,8 @@ pub use mixer::{
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Marker, MarkerId, Note, OriginIndex,
-    Session, Song, Take, TakeId, TakeOrigin, Track,
+    Clip, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Marker, MarkerId, Note,
+    OriginIndex, Session, Song, Take, TakeId, TakeOrigin, Track,
 };
 pub use tempo_map::{Beat, MeterAt, MeterChange, TempoMap, TempoPoint, Timeline, TimelineError};
 pub use time::{Meter, TICKS_PER_QUARTER, Tempo, TickRange};
@@ -93,6 +98,9 @@ mod tests {
         assert_eq!(t.sends, [Gain::from_db(-15.0), Gain::SILENT]);
         assert!(t.clips.is_empty());
         assert_eq!(song.session.play_target, Some(TrackId(1)));
+        assert_eq!(song.keys_target(), Some(TrackId(1)));
+        assert_eq!(t.kind, TrackKind::Keys);
+        assert!(doc.audio.is_empty());
         assert_eq!(doc.loop_range, None);
         assert!(!song.session.loop_on);
     }

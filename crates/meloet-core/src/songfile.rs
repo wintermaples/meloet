@@ -12,12 +12,13 @@ use std::sync::Arc;
 
 use meloet_model::effects::{EffectKind, ParamShape};
 use meloet_model::{
-    AutoPoint, AutoTarget, BuiltinInstrument, Bus, Channel, Clip, ClipId, ClipTake, ControlPoint,
-    ControlValue, Doc, Gain, Grid, Insert, InsertId, Inserts, InstrumentRef, Kept, Lane, LaneId,
-    MAX_TICK, Marker, MarkerId, Meter, MeterChange, MusicalScale, Note, OriginIndex, Pan,
-    PluginRef, QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session, Sf2Ref,
-    Song, Take, TakeId, TakeOrigin, Tempo, TempoPoint, TickRange, Timeline, Track, TrackColor,
-    TrackId, mixer,
+    AudioId, AudioShape, AudioSource, AudioTake, AutoPoint, AutoTarget, BuiltinInstrument, Bus,
+    Channel, Clip, ClipGain, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Gain,
+    Grid, Insert, InsertId, Inserts, InstrumentRef, Kept, Lane, LaneId, MAX_TICK, Marker, MarkerId,
+    Meter, MeterChange, MusicalScale, Note, OriginIndex, Pan, PluginRef, QuantizeAlign,
+    QuantizeSettings, Return, RollSettings, ScaleMode, Session, Sf2Ref, Song, SourceTempo, Take,
+    TakeId, TakeOrigin, Tempo, TempoPoint, TickRange, Timeline, Track, TrackColor, TrackId,
+    TrackKind, VocalInput, mixer,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -64,6 +65,9 @@ struct SongFile {
     app: String,
     song: DocFile,
     takes: Vec<TakeFile>,
+    /// The takes of the vocal clips. They share their ids with `takes`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    audio_takes: Vec<AudioTakeFile>,
     session: SessionFile,
 }
 
@@ -97,9 +101,62 @@ struct DocFile {
         skip_serializing_if = "Option::is_none"
     )]
     mixer: Option<MixerFile>,
-    /// Voice recordings, later.
+    /// The audio table: every audio file a take of the song plays.
     #[serde(default)]
-    audio: Vec<serde_json::Value>,
+    audio: Vec<AudioFile>,
+}
+
+/// `{"id": 31, "uid": "0f…" (32 hex digits), "file": "歌 テイク 1.wav", "frames": 480000,
+/// "rate": 48000, "channels": 1}`, and `"sha256"` (64 hex digits) for a file brought in.
+/// `file` is a name inside the song's audio folder, never a path.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioFile {
+    id: u32,
+    uid: String,
+    file: String,
+    frames: u64,
+    rate: u32,
+    channels: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+}
+
+/// `audio`: an id of the audio table. `firstFrame`: the frame of the file at the take's
+/// tick 0. `sync`: the tempo the audio was recorded at; left out for audio with no tempo.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioTakeFile {
+    id: u32,
+    audio: u32,
+    first_frame: u64,
+    frames: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sync: Option<SyncFile>,
+}
+
+/// As the song's own tempo: hundredths, and the points in ticks from the take's tick 0.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncFile {
+    tempo: u32,
+    #[serde(default)]
+    head_ramp: bool,
+    #[serde(default)]
+    points: Vec<TempoPointFile>,
+}
+
+/// What only a vocal clip has. The fades are ticks; `gainDb` −60..=12.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShapeFile {
+    fade_in: u64,
+    fade_out: u64,
+    gain_db: f64,
+    follow: bool,
+    semitones: i8,
+    cents: i8,
+    keep_formant: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -135,6 +192,13 @@ struct TrackFile {
     id: u32,
     name: String,
     color: u8,
+    /// "vocal" for a vocal track; left out for a keys track.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
+    /// The input of a vocal track: "mono1", "mono2" or "stereo12".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    input: Option<String>,
+    /// Of a vocal track the sine wave, which nothing reads.
     instrument: InstrumentFile,
     /// The fader; `null` is −∞.
     #[serde(deserialize_with = "db")]
@@ -795,6 +859,9 @@ struct ClipFile {
     /// Index into `takes` of the take shown and played.
     active: usize,
     takes: Vec<ClipTakeFile>,
+    /// On a vocal clip, whose takes are then ids of `audioTakes`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shape: Option<ShapeFile>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -938,6 +1005,7 @@ struct SpanFile {
 pub fn encode(song: &Song) -> Vec<u8> {
     let doc = &song.doc;
     let mut takes: Vec<TakeFile> = Vec::new();
+    let mut audio_takes: Vec<AudioTakeFile> = Vec::new();
     let mut seen = HashSet::new();
     let tracks = doc
         .tracks
@@ -946,6 +1014,8 @@ pub fn encode(song: &Song) -> Vec<u8> {
             id: t.id.0,
             name: t.name.clone(),
             color: t.color.get(),
+            kind: t.kind.is_vocal().then(|| KIND_VOCAL.to_owned()),
+            input: t.kind.input().map(|i| input_name(i).to_owned()),
             instrument: instrument_file(&t.instrument),
             gain_db: t.channel.gain.db(),
             pan: Some(i64::from(t.channel.pan.get())),
@@ -964,24 +1034,46 @@ pub fn encode(song: &Song) -> Vec<u8> {
                     start: c.start,
                     end: c.end,
                     active: c.active,
-                    takes: c
-                        .takes
-                        .iter()
-                        .map(|ct| {
-                            if let Some(o) = &ct.take.origin
-                                && seen.insert(o.take.id)
-                            {
-                                takes.push(take_file(&o.take));
-                            }
-                            if seen.insert(ct.take.id) {
-                                takes.push(take_file(&ct.take));
-                            }
-                            ClipTakeFile {
-                                take: ct.take.id.0,
-                                offset: ct.offset,
-                            }
-                        })
-                        .collect(),
+                    takes: match &c.takes {
+                        ClipTakes::Keys(keys) => keys
+                            .iter()
+                            .map(|ct| {
+                                if let Some(o) = &ct.take.origin
+                                    && seen.insert(o.take.id)
+                                {
+                                    takes.push(take_file(&o.take));
+                                }
+                                if seen.insert(ct.take.id) {
+                                    takes.push(take_file(&ct.take));
+                                }
+                                ClipTakeFile {
+                                    take: ct.take.id.0,
+                                    offset: ct.offset,
+                                }
+                            })
+                            .collect(),
+                        ClipTakes::Vocal { takes: vocal, .. } => vocal
+                            .iter()
+                            .map(|ct| {
+                                if seen.insert(ct.take.id) {
+                                    audio_takes.push(audio_take_file(&ct.take));
+                                }
+                                ClipTakeFile {
+                                    take: ct.take.id.0,
+                                    offset: ct.offset,
+                                }
+                            })
+                            .collect(),
+                    },
+                    shape: c.takes.shape().map(|s| ShapeFile {
+                        fade_in: s.fade_in,
+                        fade_out: s.fade_out,
+                        gain_db: s.gain.db(),
+                        follow: s.follow,
+                        semitones: s.semitones,
+                        cents: s.cents,
+                        keep_formant: s.keep_formant,
+                    }),
                 })
                 .collect(),
             plugins: Vec::new(),
@@ -1036,9 +1128,20 @@ pub fn encode(song: &Song) -> Vec<u8> {
             next_id: doc.next_id,
             tracks,
             mixer: Some(mixer_file(doc)),
-            audio: Vec::new(),
+            audio: (doc.audio.iter())
+                .map(|a| AudioFile {
+                    id: a.id.0,
+                    uid: hex(&a.uid),
+                    file: a.file.clone(),
+                    frames: a.frames,
+                    rate: a.sample_rate,
+                    channels: a.channels,
+                    sha256: a.sha256.as_ref().map(|h| hex(h)),
+                })
+                .collect(),
         },
         takes,
+        audio_takes,
         session: SessionFile {
             play_target: s.play_target.map(|t| t.0),
             loop_on: s.loop_on,
@@ -1130,6 +1233,113 @@ fn roll_settings(s: &SessionFile) -> RollSettings {
     }
 }
 
+const KIND_VOCAL: &str = "vocal";
+const KIND_KEYS: &str = "keys";
+
+fn input_name(input: VocalInput) -> &'static str {
+    match input {
+        VocalInput::Mono1 => "mono1",
+        VocalInput::Mono2 => "mono2",
+        VocalInput::Stereo12 => "stereo12",
+    }
+}
+
+fn input_of(name: &str) -> Option<VocalInput> {
+    VocalInput::ALL.into_iter().find(|&i| input_name(i) == name)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `N` bytes from `2 * N` hex digits, lower case as `hex` writes them or upper.
+fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    let text = text.as_bytes();
+    if text.len() != 2 * N {
+        return None;
+    }
+    let digit = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let mut out = [0; N];
+    for (byte, pair) in out.iter_mut().zip(text.as_chunks::<2>().0) {
+        *byte = digit(pair[0])? << 4 | digit(pair[1])?;
+    }
+    Some(out)
+}
+
+fn audio_take_file(take: &AudioTake) -> AudioTakeFile {
+    AudioTakeFile {
+        id: take.id.0,
+        audio: take.source.id.0,
+        first_frame: take.first_frame,
+        frames: take.frames,
+        sync: take.sync.as_ref().map(|s| SyncFile {
+            tempo: s.tempo.centi(),
+            head_ramp: s.head_ramp,
+            points: (s.points.iter())
+                .map(|p| TempoPointFile {
+                    tick: p.tick,
+                    tempo: p.tempo.centi(),
+                    ramp: p.ramp,
+                })
+                .collect(),
+        }),
+    }
+}
+
+/// `None` for a name that could lead out of the song's audio folder.
+fn audio_source(a: AudioFile) -> Option<AudioSource> {
+    let plain = !a.file.is_empty()
+        && a.file != "."
+        && a.file != ".."
+        && !a.file.contains(['/', '\\', '\0']);
+    (plain && a.rate > 0 && matches!(a.channels, 1 | 2)).then_some(())?;
+    Some(AudioSource {
+        id: AudioId(a.id),
+        uid: unhex(&a.uid)?,
+        file: a.file,
+        frames: a.frames,
+        sample_rate: a.rate,
+        channels: a.channels,
+        sha256: match a.sha256 {
+            Some(h) => Some(unhex(&h)?),
+            None => None,
+        },
+    })
+}
+
+fn audio_take(t: AudioTakeFile, audio: &HashMap<u32, Arc<AudioSource>>) -> Option<AudioTake> {
+    let source = audio.get(&t.audio)?.clone();
+    let end = t.first_frame.checked_add(t.frames)?;
+    (t.frames > 0 && end <= source.frames).then_some(())?;
+    let sync = match t.sync {
+        None => None,
+        Some(s) => {
+            let mut points = Vec::with_capacity(s.points.len());
+            for p in s.points {
+                let after = points.last().is_none_or(|b: &TempoPoint| b.tick < p.tick);
+                (p.tick >= 1 && p.tick <= MAX_TICK && after).then_some(())?;
+                points.push(TempoPoint {
+                    tick: p.tick,
+                    tempo: Tempo::from_centi(p.tempo)?,
+                    ramp: p.ramp,
+                });
+            }
+            Some(SourceTempo {
+                tempo: Tempo::from_centi(s.tempo)?,
+                head_ramp: s.head_ramp,
+                points,
+            })
+        }
+    };
+    Some(AudioTake {
+        id: TakeId(t.id),
+        source,
+        first_frame: t.first_frame,
+        frames: t.frames,
+        sync,
+    })
+}
+
 fn take_file(take: &Take) -> TakeFile {
     TakeFile {
         id: take.id.0,
@@ -1205,7 +1415,31 @@ fn to_song(file: SongFile) -> Option<Song> {
         };
         takes.insert(t.id, Arc::new(to_take(t, origin)?));
     }
-    let d = file.song;
+    let mut d = file.song;
+    // The audio table, then the takes that play it. Their ids are no keys take's.
+    let mut audio = HashMap::new();
+    let mut audio_table = Vec::with_capacity(d.audio.len());
+    for a in std::mem::take(&mut d.audio) {
+        let source = Arc::new(audio_source(a)?);
+        if takes.contains_key(&source.id.0) || audio.insert(source.id.0, source.clone()).is_some() {
+            return None;
+        }
+        audio_table.push(source);
+    }
+    audio_table.sort_by_key(|a| a.id);
+    let mut audio_takes = HashMap::new();
+    for t in file.audio_takes {
+        let id = t.id;
+        if takes.contains_key(&id) || audio.contains_key(&id) {
+            return None;
+        }
+        if audio_takes
+            .insert(id, Arc::new(audio_take(t, &audio)?))
+            .is_some()
+        {
+            return None;
+        }
+    }
     let (returns, master) = d.mixer.map(|m| (m.returns, m.master)).unzip();
     let tracks_n = d.tracks.len();
     if tracks_n > MAX_TRACKS {
@@ -1219,6 +1453,16 @@ fn to_song(file: SongFile) -> Option<Song> {
         if !track_ids.insert(t.id) {
             return None;
         }
+        let kind = match (t.kind.as_deref(), t.input.as_deref()) {
+            (None | Some(KIND_KEYS), None) => TrackKind::Keys,
+            (Some(KIND_VOCAL), input) => TrackKind::Vocal {
+                input: match input {
+                    Some(name) => input_of(name)?,
+                    None => VocalInput::default(),
+                },
+            },
+            _ => return None,
+        };
         let mut clips: Vec<Arc<Clip>> = Vec::with_capacity(t.clips.len());
         for c in t.clips {
             if !clip_ids.insert(c.id) {
@@ -1232,19 +1476,55 @@ fn to_song(file: SongFile) -> Option<Song> {
             {
                 return None;
             }
-            let clip_takes = c
-                .takes
-                .iter()
-                .map(|ct| {
-                    let take = takes.get(&ct.take)?;
-                    let zero = (c.start as i64).checked_add(ct.offset)?;
-                    (zero.unsigned_abs() <= MAX_TICK && take.length <= MAX_TICK).then_some(())?;
-                    Some(ClipTake {
-                        take: take.clone(),
-                        offset: ct.offset,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
+            // A clip holds what its track holds: audio with a shape, or notes without.
+            if c.shape.is_some() != kind.is_vocal() {
+                return None;
+            }
+            let clip_takes = match &c.shape {
+                None => ClipTakes::Keys(
+                    (c.takes.iter())
+                        .map(|ct| {
+                            let take = takes.get(&ct.take)?;
+                            let zero = (c.start as i64).checked_add(ct.offset)?;
+                            (zero.unsigned_abs() <= MAX_TICK && take.length <= MAX_TICK)
+                                .then_some(())?;
+                            Some(ClipTake {
+                                take: take.clone(),
+                                offset: ct.offset,
+                            })
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                ),
+                Some(shape) => {
+                    let shape = AudioShape {
+                        fade_in: shape.fade_in,
+                        fade_out: shape.fade_out,
+                        gain: Some(shape.gain_db)
+                            .filter(|db| (ClipGain::MIN_DB..=ClipGain::MAX_DB).contains(db))
+                            .and_then(ClipGain::from_db)?,
+                        follow: shape.follow,
+                        semitones: shape.semitones,
+                        cents: shape.cents,
+                        keep_formant: shape.keep_formant,
+                    };
+                    let fades = shape.fade_in.checked_add(shape.fade_out)?;
+                    (shape.is_valid() && fades <= c.end - c.start).then_some(())?;
+                    ClipTakes::Vocal {
+                        takes: (c.takes.iter())
+                            .map(|ct| {
+                                let take = audio_takes.get(&ct.take)?;
+                                let zero = (c.start as i64).checked_add(ct.offset)?;
+                                (zero.unsigned_abs() <= MAX_TICK).then_some(())?;
+                                Some(ClipTake {
+                                    take: take.clone(),
+                                    offset: ct.offset,
+                                })
+                            })
+                            .collect::<Option<Vec<_>>>()?,
+                        shape,
+                    }
+                }
+            };
             clips.push(Arc::new(Clip {
                 id: ClipId(c.id),
                 name: c.name,
@@ -1258,6 +1538,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             id: TrackId(t.id),
             name: t.name,
             color: TrackColor::new(t.color)?,
+            kind,
             instrument: instrument_of(t.instrument),
             channel: Channel {
                 gain: gain_of(t.gain_db),
@@ -1274,10 +1555,17 @@ fn to_song(file: SongFile) -> Option<Song> {
     if clip_ids
         .iter()
         .chain(takes.keys())
+        .chain(audio.keys())
+        .chain(audio_takes.keys())
         .any(|&id| id >= d.next_id)
+        || clip_ids
+            .iter()
+            .any(|id| audio.contains_key(id) || audio_takes.contains_key(id))
     {
         return None;
     }
+    // An id of the audio is no clip's, no take's, no marker's and no insert's.
+    let other_id = |id: u32| audio.contains_key(&id) || audio_takes.contains_key(&id);
     let mut timeline = Timeline::new(
         Tempo::from_centi(d.tempo)?,
         Meter::new(d.meter[0], d.meter[1])?,
@@ -1308,6 +1596,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             || m.id >= d.next_id
             || clip_ids.contains(&m.id)
             || takes.contains_key(&m.id)
+            || other_id(m.id)
             || m.tick > MAX_TICK
         {
             return None;
@@ -1341,6 +1630,7 @@ fn to_song(file: SongFile) -> Option<Song> {
             }),
             None => mixer::new_song_master(),
         },
+        audio: Arc::new(audio_table),
         next_id: d.next_id,
     };
     // The returns and the master of a new song come with ids of their own, which this song
@@ -1358,7 +1648,10 @@ fn to_song(file: SongFile) -> Option<Song> {
         }
     }
     give_insert_ids(&mut doc, |id| {
-        clip_ids.contains(&id) || takes.contains_key(&id) || marker_ids.contains(&id)
+        clip_ids.contains(&id)
+            || takes.contains_key(&id)
+            || marker_ids.contains(&id)
+            || other_id(id)
     })?;
     for (slot, files) in doc.tracks.iter_mut().zip(lane_files) {
         let track = Arc::make_mut(slot);
@@ -1372,6 +1665,9 @@ fn to_song(file: SongFile) -> Option<Song> {
             .play_target
             .and_then(known)
             .or(doc.tracks.first().map(|t| t.id)),
+        last_keys: None,
+        armed_vocals: BTreeSet::new(),
+        monitored: BTreeSet::new(),
         loop_on: s.loop_on,
         roll,
         soloed: BTreeSet::new(),
@@ -1565,3 +1861,5 @@ fn sync_dir(_: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vocal_tests;

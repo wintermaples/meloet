@@ -145,3 +145,17 @@ export { EFFECT_KINDS, EFFECT_PARAMS, INSERT_SLOTS, type EffectParam } from "./g
 export { INSTRUMENT_GROUPS } from "./generated/instruments";
 export { PROTOCOL_VERSION } from "./generated/protocolVersion";
 export { STEP_NAME_KINDS } from "./generated/stepNames";
+// Protocol 23: vocal tracks, the input and the latency.
+export type { KeptVocals } from "./generated/KeptVocals";
+export type { LatencyDialogView } from "./generated/LatencyDialogView";
+export type { LatencyFailure } from "./generated/LatencyFailure";
+export type { LatencyMeasure } from "./generated/LatencyMeasure";
+export type { LatencySource } from "./generated/LatencySource";
+export type { LatencyView } from "./generated/LatencyView";
+export type { RecordFormat } from "./generated/RecordFormat";
+export type { SelectedSound } from "./generated/SelectedSound";
+export type { TrackKindView } from "./generated/TrackKindView";
+export type { VocalInput } from "./generated/VocalInput";
+export type { VocalRecordingView } from "./generated/VocalRecordingView";
+export type { VocalRef } from "./generated/VocalRef";
+export { LATENCY_CLICKS, RECORD_FORMATS, VOCAL_INPUTS } from "./generated/vocal";

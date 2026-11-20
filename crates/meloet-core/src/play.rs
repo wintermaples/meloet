@@ -565,6 +565,14 @@ impl Play {
         })
     }
 
+    /// How many automation lanes the song has: what a step took away with an effect or an
+    /// instrument is the difference (spec 6 「帯もいっしょに消えた」).
+    fn lane_count(&self) -> u32 {
+        (self.doc().tracks.iter())
+            .map(|t| t.automation.len() as u32)
+            .sum()
+    }
+
     fn track_index(&self, id: TrackId) -> Option<usize> {
         self.doc().tracks.iter().position(|t| t.id == id)
     }
@@ -1366,7 +1374,7 @@ impl Play {
             .tracks
             .iter()
             .flat_map(|t| &t.clips)
-            .flat_map(|c| &c.takes)
+            .flat_map(|c| c.keys())
             .flat_map(|ct| {
                 std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take))
             })
@@ -1414,19 +1422,17 @@ impl Play {
         self.doc().track(track).map_or_else(Vec::new, |t| {
             t.clips
                 .iter()
-                .map(|c| {
-                    let ct = c.active_take();
-                    ClipView {
-                        id: c.id.0,
-                        name: c.name.clone(),
-                        start: c.start,
-                        end: c.end,
-                        take: c.active as u32 + 1,
-                        takes: c.takes.len() as u32,
-                        take_id: ct.take.id.0,
-                        take_offset: ct.offset,
-                        note_count: c.note_count() as u32,
-                    }
+                .map(|c| ClipView {
+                    id: c.id.0,
+                    name: c.name.clone(),
+                    start: c.start,
+                    end: c.end,
+                    take: c.active as u32 + 1,
+                    takes: c.takes.len() as u32,
+                    take_id: c.active_take_id().0,
+                    take_offset: c.active_zero() - c.start as i64,
+                    note_count: c.note_count() as u32,
+                    vocal: !c.is_keys(),
                 })
                 .collect()
         })
@@ -1594,6 +1600,7 @@ impl Play {
                 clip: r.clip.map(|c| c.0),
                 lap: r.lap,
             }),
+            recording_vocals: Vec::new(),
         }
     }
 
@@ -1720,9 +1727,10 @@ impl Play {
 
     // ---- the piano roll ----
 
-    /// The clip the piano roll shows.
+    /// The clip the piano roll shows. Never a vocal clip, which has no notes to show.
     fn shown(&self) -> Option<&Arc<Clip>> {
-        self.doc().clip(self.piano_roll?).map(|(_, c)| c)
+        let (_, clip) = self.doc().clip(self.piano_roll?)?;
+        clip.is_keys().then_some(clip)
     }
 
     /// The shown clip, when `take` is its shown take.

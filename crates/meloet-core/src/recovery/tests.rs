@@ -35,7 +35,7 @@ pub(crate) fn song_with_notes(name: &str, notes: u64) -> Song {
         name: "ピアノ".into(),
         start: 0,
         end: length,
-        takes: vec![ClipTake { take, offset: 0 }],
+        takes: meloet_model::ClipTakes::Keys(vec![ClipTake { take, offset: 0 }]),
         active: 0,
     })];
     song.doc = Doc {

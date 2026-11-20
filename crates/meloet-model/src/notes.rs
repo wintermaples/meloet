@@ -19,10 +19,10 @@ use std::sync::Arc;
 use crate::TrackId;
 use crate::arrange::ClipEdge;
 use crate::chunked::ChunkedVec;
-use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index, with_track};
+use crate::edit::{Edit, EditError, Ids, MAX_TICK, keys_clip_index, track_index, with_track};
 use crate::history::StepKind;
 use crate::song::{
-    Clip, ClipId, ClipTake, ControlPoint, Doc, Note, Take, TakeId, TakeOrigin, Track,
+    Clip, ClipId, ClipTake, ClipTakes, ControlPoint, Doc, Note, Take, TakeId, TakeOrigin, Track,
 };
 use crate::tempo_map::TempoMap;
 
@@ -114,6 +114,9 @@ pub fn song_controls(clip: &Clip) -> Vec<ControlPoint> {
 
 /// What Mod C keeps: the notes at `indexes`, each start counted from the earliest of them.
 pub fn clipboard(clip: &Clip, indexes: &[usize]) -> Result<Vec<Note>, EditError> {
+    if !clip.is_keys() {
+        return Err(EditError::NotKeys);
+    }
     let notes = song_notes(&lifted(clip).0);
     let picked = pick(indexes, notes.len())?;
     let chosen: Vec<Note> = notes
@@ -152,7 +155,7 @@ pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, Edi
             }
         }
     };
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     if note.start >= MAX_TICK {
         return Err(EditError::OffTheSong);
     }
@@ -185,6 +188,9 @@ pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, Edi
 fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdited, EditError> {
     let ti = track_index(doc, track)?;
     let old = &doc.tracks[ti];
+    if old.kind.is_vocal() {
+        return Err(EditError::NotKeys);
+    }
     let map = TempoMap::new(&doc.timeline);
     let bar = map.meter_at(note.start);
     let head = bar.bar_tick;
@@ -219,10 +225,10 @@ fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdite
         name: old.name.clone(),
         start,
         end,
-        takes: vec![ClipTake {
+        takes: ClipTakes::Keys(vec![ClipTake {
             take: Arc::new(take),
             offset: 0,
-        }],
+        }]),
         active: 0,
     });
     let mut clips = old.clips.clone();
@@ -279,7 +285,7 @@ fn move_or_copy(
     grow: bool,
     step: impl FnOnce(usize) -> StepKind,
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let notes = song_notes(&c);
     let picked = pick(indexes, notes.len())?;
@@ -359,7 +365,7 @@ pub fn resize_notes(
     edge: ClipEdge,
     ticks: i64,
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let l = l as i64;
     let resized = |n: Note| match edge {
@@ -432,7 +438,7 @@ pub fn change_velocity(
     indexes: &[usize],
     delta: i32,
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     change_each(
         doc,
         (ti, ci),
@@ -452,7 +458,7 @@ pub fn delete_notes(
     indexes: &[usize],
     cut: bool,
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let notes = song_notes(&lifted(&doc.tracks[ti].clips[ci]).0);
     let picked = pick(indexes, notes.len())?;
     let count = indexes_count(&picked);
@@ -478,7 +484,7 @@ pub fn paste_notes(
     notes: &[Note],
     at: u64,
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let pasted: Vec<(Note, bool)> = notes
         .iter()
@@ -524,7 +530,7 @@ pub fn set_notes_field(
     field: NoteField,
     value: i64,
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let step = |count| StepKind::SetNotesField { clip, count, field };
     let notes = song_notes(&c);
@@ -782,7 +788,7 @@ fn put_take_reaching(
     // A start moved back leaves every take where it is in the song.
     let back = clip.start as i64 - start as i64;
     let mut takes: Vec<ClipTake> = clip
-        .takes
+        .keys()
         .iter()
         .map(|ct| ClipTake {
             take: ct.take.clone(),
@@ -797,7 +803,7 @@ fn put_take_reaching(
     clips[ci] = Arc::new(Clip {
         start,
         end: clip_end,
-        takes,
+        takes: ClipTakes::Keys(takes),
         ..Clip::clone(clip)
     });
     let mut new = with_track(

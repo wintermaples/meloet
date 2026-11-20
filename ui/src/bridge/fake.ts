@@ -6,7 +6,7 @@
 import type { Transport } from "./session";
 import { LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN, LANE_VERSION } from "./lane";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
-import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
+import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN, TELEMETRY_VERSION, type MicMeter, type TransportReading } from "./telemetry";
 import { TICKS_PER_QUARTER as TPQ } from "../time/ticks";
 import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
 import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
@@ -229,6 +229,7 @@ const HEADPHONES: EndpointView = {
   nodeName: "alsa_output.pci-0000_0c_00.6.analog-stereo",
   device: RYZEN,
   unusable: null,
+  channels: null,
 };
 const USB_AUDIO: EndpointView = {
   id: "out-usb",
@@ -239,6 +240,7 @@ const USB_AUDIO: EndpointView = {
   nodeName: "alsa_output.usb-0d8c_USB_Audio-00.analog-stereo",
   device: "USB Audio Device",
   unusable: null,
+  channels: null,
 };
 const LINE_OUT: EndpointView = {
   id: "out-line",
@@ -249,6 +251,7 @@ const LINE_OUT: EndpointView = {
   nodeName: HEADPHONES.nodeName,
   device: RYZEN,
   unusable: "switchedByPc",
+  channels: null,
 };
 const HDMI: EndpointView = {
   id: "out-hdmi2",
@@ -259,6 +262,7 @@ const HDMI: EndpointView = {
   nodeName: null,
   device: RADEON,
   unusable: "stoppedByPc",
+  channels: null,
 };
 const OUTPUTS = [HEADPHONES, LINE_OUT, HDMI];
 const hdmi = (id: string, name: string, device: string): EndpointView => ({ ...HDMI, id, name, device });
@@ -289,6 +293,7 @@ const MIC: EndpointView = {
   nodeName: "alsa_input.pci-0000_0c_00.6.analog-stereo",
   device: RYZEN,
   unusable: null,
+  channels: null,
 };
 const PC_INPUTS = [
   MIC,
@@ -428,8 +433,11 @@ function giveInsertIds(song: SongView): SongView {
 
 function settleSong(song: SongView): SongView {
   const strip = <T extends { inserts: Inserts; slots: Slots }>(s: T): T => ({ ...s, slots: settleSlots(s.inserts, s.slots) });
+  // The keys go to the selected track, or while a vocal track is selected stay on the keys track they were on (B-94-1).
+  const keys = (id: number | null) => song.tracks.find((t) => t.id === id && t.kind.kind === "keys")?.id ?? null;
   return giveInsertIds({
     ...song,
+    keysTarget: keys(song.playTarget) ?? keys(song.keysTarget),
     tracks: song.tracks.map((t) => {
       const own = t.sound.kind === "builtin" || t.instrument !== "sine";
       return strip({
@@ -502,6 +510,7 @@ export function fakeState(): AppState {
           name: "ピアノ",
           color: 1,
           instrument: "grandPiano",
+          kind: { kind: "keys" },
           sound: builtinSound("grandPiano"),
           standIn: null,
           drumKeys: null,
@@ -519,6 +528,7 @@ export function fakeState(): AppState {
       ],
       ...newSongMixer(),
       playTarget: 1,
+      keysTarget: 1,
       loopRange: null,
       loopOn: false,
       file: "neverSaved",
@@ -546,6 +556,7 @@ export function fakeState(): AppState {
       canPlay: false,
       canRecord: false,
       recording: null,
+      recordingVocals: [],
     },
     arrange: arrangeOf(null),
     pianoRoll: {
@@ -569,6 +580,7 @@ export function fakeState(): AppState {
       songDialog: null,
       recovery: null,
       fileDrop: null,
+      latencyDialog: null,
     },
     shelf: closedShelf(),
     library: emptyLibrary(),
@@ -577,7 +589,7 @@ export function fakeState(): AppState {
     windows: { list: [] },
     keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
-    inputs: { list: [], chosen: null },
+    inputs: { list: [], chosen: null, open: false },
     audio: {
       running: false,
       system: "PipeWire",
@@ -589,6 +601,11 @@ export function fakeState(): AppState {
       latencyMsAtRequested: null,
       outputDevice: null,
       midiInput: null,
+      bufferChoices: [64, 128, 256, 512, 1024],
+      requestedSampleRate: 48000,
+      sampleRateChoices: [44100, 48000, 88200, 96000],
+      recordFormat: "bits24",
+      latency: { reportedMs: null, measuredMs: null, manualMs: null, used: "reported", usedMs: null },
     },
     status: { message: NEW_SONG },
   };
@@ -607,6 +624,8 @@ export interface FakeMeters {
   /** Return A, then return B. */
   returns?: [[number, number], [number, number]];
   tracks?: [number, number][];
+  /** The inputs of the vocal tracks that are metered. */
+  mics?: MicMeter[];
   /** Where the listener is when the scene starts. It moves by `ticksPerUs`; scenes that stand for a mock use 0. */
   position?: TransportReading;
 }
@@ -761,6 +780,7 @@ function fakeClip(id: number, name: string, fromBar: number, toBar: number, take
     takeId,
     takeOffset: 0,
     noteCount: FAKE_TAKES.get(takeId)!.notes.length,
+    vocal: false,
   };
 }
 
@@ -1292,7 +1312,7 @@ export const SCENES: Record<string, SceneDef> = {
       s.song.undoCount = 1;
       s.song.file = "changed";
       s.song.tracks[0]!.clips = [fakeClip(1, "ピアノ", 1, 5, 1, [2]), fakeClip(3, "ピアノ", 5, 7, 1, [4])];
-      s.workspace.recovery = { kind: "recovered", writtenMs: RECOVERY_WRITTEN, cause: "pcEnding", song: null, takes: 2 };
+      s.workspace.recovery = { kind: "recovered", writtenMs: RECOVERY_WRITTEN, cause: "pcEnding", song: null, takes: 2, vocals: null };
       s.status.message = { id: "recovered" };
     },
     meters: QUIET,
@@ -1601,6 +1621,7 @@ function bandSong(s: AppState, tracks = BAND_TRACKS): void {
     name: t.name,
     color: (i % 5) + 1,
     instrument: t.instrument,
+    kind: { kind: "keys" },
     sound: builtinSound(t.instrument),
     standIn: null,
     drumKeys: null,
@@ -2815,6 +2836,227 @@ function sceneFromUrl(): Scene | null {
   return fakeScene(name, scale === null ? undefined : Number(scale), vp);
 }
 
+// ---- round 7, step 2: vocal tracks, the input and the latency (protocol 23) ----
+// The states of the mocks F7-VocalTrack, F7-VocalRec, F7-TwoRec, F7-Latency, F7-SettingsAdv and R11-Fit. The
+// fake answers none of the new commands yet.
+
+const VOCAL_TRACK_ID = BAND_TRACK_ID + 6;
+const VOCAL_REF: TrackRef = { number: 6, name: "歌" };
+const USB_MIC: EndpointView = {
+  id: "in-usb-mic",
+  name: "USB マイク",
+  friendly: null,
+  availability: "yes",
+  link: "plug",
+  nodeName: "alsa_input.usb-USB_Microphone-00.analog-stereo",
+  device: "USB Microphone",
+  unusable: null,
+  channels: 2,
+};
+
+/** What comes in on the vocal track of the scenes: a mono input at `db`. */
+const micAt = (db: number, clipped = false): MicMeter => ({ track: VOCAL_TRACK_ID, peak: [dbfs(db), dbfs(db)], clipped, stereo: false });
+
+/**
+ * The five keys tracks of the band and "6 歌" below them, with a USB microphone of two channels as the input.
+ * The keys stay on "1 ピアノ", the keys track selected last (B-94-1; the mocks say "弾くと鳴る先 6 歌").
+ */
+function vocalSong(s: AppState, vocal: { armed: boolean; monitor: boolean; selected: boolean; inputReady?: boolean }): void {
+  bandSong(s, BAND_TRACKS.slice(0, 5));
+  const keys = s.song.tracks[0]!;
+  s.song.tracks.push({
+    ...keys,
+    id: VOCAL_TRACK_ID,
+    number: 6,
+    name: "歌",
+    color: 1,
+    kind: { kind: "vocal", input: "mono1", inputReady: vocal.inputReady ?? true, armed: vocal.armed, monitor: vocal.monitor },
+    instrument: "sine",
+    sound: builtinSound("sine"),
+    gainDb: 0,
+    sends: [null, null],
+    sendDefaults: [null, null],
+    clips: [],
+  });
+  s.song.playTarget = vocal.selected ? VOCAL_TRACK_ID : keys.id;
+  s.song.keysTarget = keys.id;
+  s.song.file = "changed";
+  const ready = vocal.inputReady ?? true;
+  s.inputs = { list: ready ? [{ ...USB_MIC }, ...PC_INPUTS.map((i) => ({ ...i }))] : [], chosen: ready ? USB_MIC.id : null, open: ready };
+  Object.assign(s.audio, { latency: { reportedMs: 8, measuredMs: null, manualMs: null, used: "reported", usedMs: 8 } });
+}
+
+// F7-VocalTrack: "＋ 歌のトラック" just made "6 歌"; it is selected, so its ● is on. The list under "入口 1 ・ モノ ▾"
+// is the screen's own.
+SCENES.vocalTrack = {
+  setup(s) {
+    vocalSong(s, { armed: true, monitor: false, selected: true });
+    s.song.undoCount = 15;
+  },
+  after: (s) => (s.status.message = { id: "vocalTrackAdded", track: VOCAL_REF, input: "mono1" }),
+  meters: { ...QUIET, mics: [micAt(-32)] },
+};
+
+// The same with no input on the PC: "入口なし ▾", and the status line says what to do.
+SCENES.vocalNoInput = {
+  setup: (s) => vocalSong(s, { armed: true, monitor: false, selected: true, inputReady: false }),
+  after: (s) => (s.status.message = { id: "noInput" }),
+  meters: QUIET,
+};
+
+// The first time "モニター" is turned on.
+SCENES.vocalMonitorOn = {
+  setup: (s) => vocalSong(s, { armed: true, monitor: true, selected: true }),
+  after: (s) => (s.status.message = { id: "monitorFirstOn", latencyMs: 13 }),
+  meters: { ...QUIET, mics: [micAt(-18)] },
+};
+
+// The input reached 0 dB: the right end of the meter and the dB reading are rec.
+SCENES.vocalTooLoud = {
+  setup: (s) => vocalSong(s, { armed: true, monitor: false, selected: true }),
+  after: (s) => (s.status.message = { id: "micTooLoud" }),
+  meters: { ...QUIET, mics: [micAt(0, true)] },
+};
+
+// E with "6 歌" selected.
+SCENES.vocalNoPianoRoll = {
+  setup: (s) => vocalSong(s, { armed: true, monitor: false, selected: true }),
+  after: (s) => (s.status.message = { id: "vocalHasNoPianoRoll" }),
+  meters: { ...QUIET, mics: [micAt(-32)] },
+};
+
+/** Recording from bar 5, the play line at 7. 2. 0000 (the mocks F7-VocalRec and F7-TwoRec). */
+function vocalRecording(s: AppState, keys: boolean): void {
+  s.transport.state = "recording";
+  s.transport.position = 4 * BAR;
+  s.transport.metronome = true;
+  s.transport.recording = keys ? { id: 1, track: s.song.keysTarget!, from: 4 * BAR, take: 2, clip: null, lap: 0 } : null;
+  s.transport.recordingVocals = [{ track: VOCAL_TRACK_ID, from: 4 * BAR, take: 1, clip: null }];
+}
+const VOCAL_REC_AT: TransportReading = { tick: 6 * BAR + TPQ, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 };
+
+// F7-VocalRec: only the voice is recorded ("6 歌" is selected and no keys are played), the monitor is on.
+SCENES.vocalRec = {
+  setup(s) {
+    vocalSong(s, { armed: true, monitor: true, selected: true });
+    vocalRecording(s, false);
+    s.status.message = { id: "recordingVocals", keys: null, vocals: [{ track: VOCAL_REF, input: "mono1" }], monitor: true };
+  },
+  meters: { ...QUIET, loadPermille: 90, mics: [micAt(-12)], position: VOCAL_REC_AT },
+};
+
+// F7-TwoRec: "1 ピアノ" is selected and the ● of "6 歌" is on; R records the keys and the voice at once.
+SCENES.twoRec = {
+  setup(s) {
+    vocalSong(s, { armed: true, monitor: true, selected: false });
+    vocalRecording(s, true);
+    s.status.message = {
+      id: "recordingVocals",
+      keys: { number: 1, name: "ピアノ" },
+      vocals: [{ track: VOCAL_REF, input: "mono1" }],
+      monitor: true,
+    };
+  },
+  meters: { ...QUIET, keys: [60, 64, 67], mics: [micAt(-14)], position: VOCAL_REC_AT },
+  live: {
+    seq: 3,
+    recording: 1,
+    notes: [
+      { lap: 0, index: 0, key: 60, velocity: 83, start: 4 * BAR, length: TPQ },
+      { lap: 0, index: 1, key: 64, velocity: 83, start: 5 * BAR, length: TPQ },
+      { lap: 0, index: 2, key: 67, velocity: 83, start: 6 * BAR, length: null },
+    ],
+  },
+};
+
+/** The four tracks of the mocks F7-Latency and F7-SettingsAdv, with the advanced sound settings open. */
+function settingsAdv7(s: AppState): void {
+  bandSong(s, BAND_TRACKS.slice(0, 4));
+  s.inputs = { list: [{ ...USB_MIC }, ...PC_INPUTS.map((i) => ({ ...i }))], chosen: USB_MIC.id, open: false };
+  s.workspace.settings = { draftOutput: HEADPHONES.id, advancedOpen: true };
+  Object.assign(s.audio, { latency: { reportedMs: 8, measuredMs: null, manualMs: null, used: "reported", usedMs: 8 } });
+  s.status.message = { id: "settingsOpen" };
+}
+
+// F7-SettingsAdv: meloet asks for 128 frames and the PC runs 256.
+SCENES.settingsAdv7 = {
+  setup(s) {
+    settingsAdv7(s);
+    Object.assign(s.audio, { requestedFrames: 128, actualFrames: 256, forcedQuantum: 256 });
+  },
+  meters: QUIET,
+};
+
+// F7-Latency: three of the five clicks came back.
+SCENES.latency = {
+  setup(s) {
+    settingsAdv7(s);
+    s.workspace.latencyDialog = { measure: { state: "measuring", done: 3, of: 5, meanMs: 12.4 } };
+    s.transport.canRecord = false;
+    s.status.message = { id: "latencyMeasureOpen" };
+  },
+  meters: QUIET,
+};
+
+// All five came back: "この数を使う" can be pressed.
+SCENES.latencyDone = {
+  setup(s) {
+    settingsAdv7(s);
+    s.workspace.latencyDialog = { measure: { state: "done", measuredMs: 12.4 } };
+    s.status.message = { id: "latencyMeasureOpen" };
+  },
+  meters: QUIET,
+};
+
+// The clicks were too quiet: "もう一度".
+SCENES.latencyFailed = {
+  setup(s) {
+    settingsAdv7(s);
+    s.workspace.latencyDialog = { measure: { state: "failed", reason: "tooQuiet" } };
+    s.status.message = { id: "latencyMeasureOpen" };
+  },
+  meters: QUIET,
+};
+
+// R11-Fit: the input meter in two halves in the smallest window (853 wide): "弾くと鳴る先" and the word
+// "モニター" give way.
+SCENES.vocalFit = {
+  setup(s) {
+    vocalSong(s, { armed: true, monitor: true, selected: true });
+  },
+  screen: { width: 853, height: 448 },
+  meters: { ...QUIET, keys: [60, 64, 67], mics: [micAt(-18)] },
+};
+
+// A song opened after meloet ended while a voice was being recorded: the hint about the recovery file has a
+// line more.
+SCENES.recoverVocal = {
+  setup(s) {
+    vocalSong(s, { armed: false, monitor: false, selected: false });
+    s.workspace.recovery = {
+      kind: "recovered",
+      writtenMs: RECOVERY_WRITTEN,
+      cause: "sudden",
+      song: "はじめての曲",
+      takes: 14,
+      vocals: { count: 1, until: 8 * BAR + 2 * TPQ },
+    };
+    s.status.message = { id: "recovered" };
+  },
+  meters: QUIET,
+};
+
+// 19-A: the name of a sound that comes with meloet was pressed in a track's header.
+SCENES.paramsSound = {
+  setup(s) {
+    bandSong(s);
+    s.params.selected = { kind: "sound", track: BAND_TRACK_ID + 1, sound: { kind: "builtin", instrument: "grandPiano" } };
+  },
+  bands: ["params"],
+  after: (s) => (s.status.message = { id: "noParams", sound: { kind: "builtin", instrument: "grandPiano" } }),
+  meters: QUIET,
+};
+
 // ---- telemetry ----
 
 const STATE_BYTES = { stopped: 0, countIn: 1, playing: 2, recording: 3 } as const;
@@ -2828,7 +3070,8 @@ export function encodeTelemetry(
   position: TransportReading | null = m.position ?? null,
 ): ArrayBuffer {
   const H = TELEMETRY_HEADER_LEN;
-  const buf = new ArrayBuffer(H + 8 * trackCount);
+  const mics = m.mics ?? [];
+  const buf = new ArrayBuffer(H + 8 * trackCount + TELEMETRY_MIC_LEN * mics.length);
   const v = new DataView(buf);
   v.setUint8(0, TELEMETRY_KIND);
   v.setUint8(1, TELEMETRY_VERSION);
@@ -2854,6 +3097,14 @@ export function encodeTelemetry(
     v.setUint32(68, position.lap, true);
   }
   (m.returns ?? []).flat().forEach((peak, i) => v.setFloat32(72 + 4 * i, peak, true));
+  v.setUint16(88, mics.length, true);
+  mics.forEach((mic, i) => {
+    const p = H + 8 * trackCount + TELEMETRY_MIC_LEN * i;
+    v.setUint32(p, mic.track, true);
+    v.setFloat32(p + 4, mic.peak[0], true);
+    v.setFloat32(p + 8, mic.peak[1], true);
+    v.setUint8(p + 12, (mic.clipped ? 1 : 0) | (mic.stereo ? 2 : 0));
+  });
   for (let i = 0; i < trackCount; i++) {
     const [l, r] = m.tracks?.[i] ?? [0, 0];
     v.setFloat32(H + 8 * i, l, true);
@@ -3240,7 +3491,7 @@ function withoutMissing(song: SongView, gone: Extract<Command, { type: "removeMi
     ...song,
     tracks: song.tracks.map((t) => {
       const uses = t.sound.kind === "plugin" ? is(t.sound) : t.sound.kind === "sf2" && gone.kind === "sf2" && t.sound.file === gone.file;
-      return strip(uses ? { ...t, instrument: "sine", sound: builtinSound("sine"), standIn: null, drumKeys: null } : t);
+      return strip(uses ? { ...t, instrument: "sine", kind: { kind: "keys" }, sound: builtinSound("sine"), standIn: null, drumKeys: null } : t);
     }),
     returns: [strip(song.returns[0]), strip(song.returns[1])],
     master: strip(song.master),
@@ -3419,6 +3670,7 @@ export function reduceTracks(
           name,
           color: (place % 5) + 1,
           instrument: picked,
+          kind: { kind: "keys" },
           sound: builtinSound(picked),
           standIn: null,
           drumKeys: null,
@@ -3441,7 +3693,7 @@ export function reduceTracks(
         if (i < 0) return null;
         if (song.tracks[i]!.instrument !== picked) {
           song.tracks[i]!.instrument = picked;
-          notice = { id: "instrumentReplaced", track: ref(i), instrument: picked };
+          notice = { id: "instrumentReplaced", track: ref(i), instrument: picked, lanesRemoved: 0 };
         }
         shelf.current = picked;
       }
@@ -3613,7 +3865,7 @@ export function reduceMixer(
       if (!strip) break;
       const at: PluginSlotRef = { kind: "insert", insert: command.insert };
       const gone = nameAt(command.insert);
-      if (gone) notice = { id: "effectRemoved", insert: command.insert, effect: gone };
+      if (gone) notice = { id: "effectRemoved", insert: command.insert, effect: gone, lanesRemoved: 0 };
       strip.inserts[command.insert.slot] = null;
       strip.slots[command.insert.slot] = null;
       if (same(own()?.insert, command.insert) || (params.selected?.kind === "plugin" && same(params.selected.slot, at))) params.selected = null;
@@ -3632,7 +3884,7 @@ export function reduceMixer(
     case "selectParam": {
       const sel = params.selected;
       if (sel?.kind === "builtin") sel.row = command.param !== null && EFFECT_PARAMS[sel.effect][command.param] ? command.param : null;
-      else if (sel) sel.row = command.param;
+      else if (sel?.kind === "plugin") sel.row = command.param;
       break;
     }
     case "toggleBypass": {
@@ -3655,7 +3907,7 @@ export function reduceMixer(
       };
       const sel = params.selected;
       if (sel?.kind === "builtin") follow(sel.insert);
-      else if (sel?.slot.kind === "insert") follow(sel.slot.insert);
+      else if (sel?.kind === "plugin" && sel.slot.kind === "insert") follow(sel.slot.insert);
       for (const w of windows.list) if (w.slot?.kind === "insert") follow(w.slot.insert);
       const order = strip.slots.flatMap((_, i) => nameAt({ strip: command.insert.strip, slot: i }) ?? []);
       notice = { id: "insertsReordered", strip: command.insert.strip, order };
@@ -3679,7 +3931,7 @@ export function reduceMixer(
       if (!to || shelf.selectedEffect === null || (to.slots[slot] !== null) !== (kind === "replaceEffect")) break;
       if (same(shelf.currentEffect, builtinEffect(shelf.selectedEffect))) break;
       const effect: EffectName = { kind: "builtin", effect: shelf.selectedEffect };
-      notice = kind === "replaceEffect" ? { id: "insertReplaced", insert: { strip, slot }, effect } : { id: "effectInserted", insert: { strip, slot }, effect };
+      notice = kind === "replaceEffect" ? { id: "insertReplaced", insert: { strip, slot }, effect, lanesRemoved: 0 } : { id: "effectInserted", insert: { strip, slot }, effect };
       to.inserts[slot] = shelf.selectedEffect;
       to.slots[slot] = null;
       windows.list = windows.list.filter((w) => !same(w.slot, { kind: "insert", insert: { strip, slot } }));

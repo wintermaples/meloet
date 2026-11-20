@@ -4,6 +4,7 @@ import type { InsertView } from "./InsertView";
 import type { LaneView } from "./LaneView";
 import type { SoundView } from "./SoundView";
 import type { StandIn } from "./StandIn";
+import type { TrackKindView } from "./TrackKindView";
 
 export type TrackView = { 
 /**
@@ -18,9 +19,10 @@ number: number, name: string,
 /**
  * 1..=5. Belongs to the track, not to its place: moving a track keeps it.
  */
-color: number, 
+color: number, kind: TrackKindView, 
 /**
- * What the track sounds with, as the song has it.
+ * What the track sounds with, as the song has it. Of a vocal track the sine wave, which
+ * nothing shows or plays.
  */
 sound: SoundView, 
 /**

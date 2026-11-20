@@ -18,12 +18,13 @@ export function selectedInsert(params: ParamsView): InsertRef | null {
   const sel = params.selected;
   if (!sel) return null;
   if (sel.kind === "builtin") return sel.insert;
-  return sel.slot.kind === "insert" ? sel.slot.insert : null;
+  return sel.kind === "plugin" && sel.slot.kind === "insert" ? sel.slot.insert : null;
 }
 
 /** The track whose instrument is the selection. */
 export function selectedInstrument(params: ParamsView): number | null {
   const sel = params.selected;
+  if (sel?.kind === "sound") return sel.track;
   return sel?.kind === "plugin" && sel.slot.kind === "instrument" ? sel.slot.track : null;
 }
 

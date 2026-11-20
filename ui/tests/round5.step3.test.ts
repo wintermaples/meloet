@@ -320,7 +320,8 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
   it("値を打ちこむ: えらんだ行で Enter か値を 2 回押すと入力の枠。Enter で TypeParam、Esc でやめる。オン ・ オフは Enter で切りかえ", async () => {
     const s = scene("paramNoWindow");
     const sel = s.params.selected!;
-    if (sel.kind === "plugin") sel.row = 2;
+    if (sel.kind !== "plugin") throw new Error("the scene shows a plugin");
+    sel.row = 2;
     show(s, RightRail);
     await settle(FAKE_TABLES.mossy);
     const list = q("[data-test=params-list] .list")!;
@@ -341,7 +342,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(q("[data-test=param-input]")).toBeNull();
     expect(app.sent).toEqual([]);
     // オン ・ オフ（Freeze）は Enter で切りかえ。段階（Type）は Enter で段の一覧。
-    if (sel.kind === "plugin") sel.row = 1;
+    sel.row = 1;
     app.setState({ ...s, params: { selected: { ...sel } } });
     flushSync();
     key(list, "Enter");
@@ -434,11 +435,11 @@ describe("状態行の新しい文（仕様書 6 章 ・ モック）", () => {
     expect(says({ id: "effectInserted", insert: { strip: bass, slot: 1 }, effect: { kind: "builtin", effect: "reverb" } })).toBe(
       "2 ベース のインサート 2 に リバーブ を入れました。",
     );
-    expect(says({ id: "effectRemoved", insert: { strip: bass, slot: 0 }, effect: comp })).toBe("2 ベース のインサート 1 の コンプレッサー を外しました。取り消せます（Ctrl Z）");
+    expect(says({ id: "effectRemoved", insert: { strip: bass, slot: 0 }, effect: comp, lanesRemoved: 0 })).toBe("2 ベース のインサート 1 の コンプレッサー を外しました。取り消せます（Ctrl Z）");
     expect(says({ id: "insertsReordered", strip: bass, order: [{ kind: "builtin", effect: "eq4" }, comp] })).toBe(
       "2 ベース のインサートを並べかえました（EQ 4 バンド → コンプレッサー）。",
     );
-    expect(says({ id: "insertReplaced", insert: { strip: bass, slot: 0 }, effect: { kind: "builtin", effect: "eq4" } })).toBe(
+    expect(says({ id: "insertReplaced", insert: { strip: bass, slot: 0 }, effect: { kind: "builtin", effect: "eq4" }, lanesRemoved: 0 })).toBe(
       "2 ベース のインサート 1 を EQ 4 バンド に入れかえました。取り消せます（Ctrl Z）",
     );
     expect(

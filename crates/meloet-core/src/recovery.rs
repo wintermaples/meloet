@@ -141,7 +141,7 @@ pub fn decode(bytes: &[u8]) -> Result<Recovered, Unread> {
 /// What the start finds in the recovery folder.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Found {
-    Read(Recovered),
+    Read(Box<Recovered>),
     /// The file did not read. It was renamed to `kept`, so that the next start does not find
     /// it again.
     Unreadable {
@@ -163,7 +163,7 @@ pub fn find(dir: &Path) -> Option<Found> {
         }
     };
     match decode(&bytes) {
-        Ok(recovered) => Some(Found::Read(recovered)),
+        Ok(recovered) => Some(Found::Read(Box::new(recovered))),
         Err(unread) => {
             let kept = keep_unreadable(dir, &file, now_ms()).unwrap_or_else(|e| {
                 eprintln!("meloet: cannot rename {}: {e}", file.display());

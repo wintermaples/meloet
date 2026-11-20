@@ -905,7 +905,7 @@ fn deleting_a_take_is_one_step_and_undo_puts_it_back_in_its_place() {
     let ids = |m: &Model| {
         let c = &m.play().song().doc.tracks[0].clips[0];
         (
-            c.takes.iter().map(|t| t.take.id.0).collect::<Vec<_>>(),
+            c.keys().iter().map(|t| t.take.id.0).collect::<Vec<_>>(),
             c.active,
         )
     };

@@ -93,12 +93,14 @@ fn sample_state() -> AppState {
             newest: 9,
         },
         song: SongView {
+            keys_target: None,
             serial: 1,
             name: "はじめての曲".into(),
             undo_count: 2,
             redo_count: 1,
             note_count: 23,
             tracks: vec![TrackView {
+                kind: TrackKindView::Keys,
                 id: 7,
                 number: 1,
                 name: "ピアノ".into(),
@@ -145,6 +147,7 @@ fn sample_state() -> AppState {
                     },
                 ],
                 clips: vec![ClipView {
+                    vocal: false,
                     id: 4,
                     name: "ピアノ".into(),
                     start: 4 * BAR,
@@ -200,6 +203,7 @@ fn sample_state() -> AppState {
         },
         timeline: sample_timeline(),
         transport: TransportView {
+            recording_vocals: Vec::new(),
             state: TransportState::Recording,
             position: 4 * BAR,
             metronome: true,
@@ -245,6 +249,7 @@ fn sample_state() -> AppState {
             clipboard_notes: 0,
         },
         workspace: WorkspaceView {
+            latency_dialog: None,
             scale: 100,
             viewport_width: 1280.0,
             viewport_height: 800.0,
@@ -271,6 +276,7 @@ fn sample_state() -> AppState {
                 previous: true,
             }),
             recovery: Some(RecoveryView::Recovered {
+                vocals: None,
                 written_ms: 1_794_750_060_000,
                 cause: RecoveryCause::PcEnding,
                 song: None,
@@ -391,6 +397,7 @@ fn sample_state() -> AppState {
         },
         outputs: OutputsView {
             list: vec![EndpointView {
+                channels: None,
                 id: "alsa_card.pci:analog-output-headphones".into(),
                 name: "アナログヘッドフォン".into(),
                 friendly: Some(Friendly::Headphones),
@@ -433,10 +440,22 @@ fn sample_state() -> AppState {
             places_open: false,
         },
         inputs: InputsView {
+            open: false,
             list: vec![],
             chosen: None,
         },
         audio: AudioView {
+            requested_sample_rate: 48_000,
+            sample_rate_choices: vec![44_100, 48_000, 96_000],
+            buffer_choices: vec![64, 128, 256, 512, 1024],
+            latency: LatencyView {
+                reported_ms: None,
+                measured_ms: None,
+                manual_ms: None,
+                used: LatencySource::Reported,
+                used_ms: None,
+            },
+            record_format: RecordFormat::Bits24,
             running: false,
             system: "PipeWire".into(),
             sample_rate: None,
@@ -456,6 +475,20 @@ fn sample_state() -> AppState {
 
 fn sample_telemetry() -> Telemetry {
     Telemetry {
+        mics: vec![
+            MicMeter {
+                track: 6,
+                peak: [0.375, 0.375],
+                clipped: false,
+                stereo: false,
+            },
+            MicMeter {
+                track: 0x0a0b_0c0d,
+                peak: [1.25, 0.03125],
+                clipped: true,
+                stereo: true,
+            },
+        ],
         seq: 0x0102_0304,
         sent_ns: 123_456_789_012_345,
         keys_low: (1 << 0) | (1 << 36) | (1 << 60),
@@ -1418,7 +1451,7 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(
         v["state"]["song"]["tracks"][0]["clips"][0],
         json!({"id": 4, "name": "ピアノ", "start": 4 * BAR, "end": 8 * BAR, "take": 2, "takes": 3,
-               "takeId": 6, "takeOffset": -(Q as i64), "noteCount": 23})
+               "takeId": 6, "takeOffset": -(Q as i64), "noteCount": 23, "vocal": false})
     );
     assert_eq!(
         v["state"]["song"]["loopRange"],
@@ -1722,11 +1755,12 @@ fn status_message_json_shape() {
         ),
         (
             StatusMessage::InstrumentReplaced {
+                lanes_removed: 0,
                 track: piano(),
                 instrument: InstrumentKind::ElectricPiano,
             },
             json!({"id": "instrumentReplaced", "track": {"number": 1, "name": "ピアノ"},
-                   "instrument": "electricPiano"}),
+                   "instrument": "electricPiano", "lanesRemoved": 0}),
         ),
         (
             StatusMessage::AuditionNewTrack {
@@ -1919,6 +1953,7 @@ fn server_message_json_shape() {
 fn recovery_json_shape() {
     assert_eq!(
         serde_json::to_value(RecoveryView::Recovered {
+            vocals: None,
             written_ms: 1_794_750_060_000,
             cause: RecoveryCause::Sudden,
             song: Some("はじめての曲".into()),
@@ -1926,7 +1961,7 @@ fn recovery_json_shape() {
         })
         .unwrap(),
         json!({"kind": "recovered", "writtenMs": 1_794_750_060_000u64, "cause": "sudden",
-               "song": "はじめての曲", "takes": 2})
+               "song": "はじめての曲", "takes": 2, "vocals": null})
     );
     assert_eq!(
         serde_json::to_value(RecoveryView::Unreadable { song: None }).unwrap(),
@@ -2231,11 +2266,12 @@ fn added_things_json_shape() {
         ),
         (
             StatusMessage::InstrumentReplacedSound {
+                lanes_removed: 0,
                 track: track.clone(),
                 sound: surge_name.clone(),
             },
             json!({"id": "instrumentReplacedSound", "track": track_json,
-                   "sound": {"kind": "plugin", "name": "Surge XT"}}),
+                   "sound": {"kind": "plugin", "name": "Surge XT"}, "lanesRemoved": 0}),
         ),
         (
             StatusMessage::SoundLoading {
@@ -2707,12 +2743,13 @@ fn windows_and_plugin_params_json_shape() {
         ),
         (
             StatusMessage::EffectRemoved {
+                lanes_removed: 0,
                 insert,
                 effect: compressor.clone(),
             },
             json!({"id": "effectRemoved",
                    "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
-                   "effect": {"kind": "builtin", "effect": "compressor"}}),
+                   "effect": {"kind": "builtin", "effect": "compressor"}, "lanesRemoved": 0}),
         ),
         (
             StatusMessage::InsertsReordered {
@@ -2730,12 +2767,13 @@ fn windows_and_plugin_params_json_shape() {
         ),
         (
             StatusMessage::InsertReplaced {
+                lanes_removed: 0,
                 insert,
                 effect: compressor.clone(),
             },
             json!({"id": "insertReplaced",
                    "insert": {"strip": {"kind": "track", "id": 8}, "slot": 0},
-                   "effect": {"kind": "builtin", "effect": "compressor"}}),
+                   "effect": {"kind": "builtin", "effect": "compressor"}, "lanesRemoved": 0}),
         ),
         (
             StatusMessage::EffectBypassed {
@@ -3075,10 +3113,10 @@ fn telemetry_layout_matches_the_table() {
     let mut b = vec![0xAA; 3];
     t.encode_into(&mut b);
 
-    assert_eq!(b.len(), 88 + 8 * 2);
+    assert_eq!(b.len(), 92 + 8 * 2 + 16 * 2);
     assert_eq!(b.len(), t.encoded_len());
     assert_eq!(b[0], 1, "kind");
-    assert_eq!(b[1], 3, "version");
+    assert_eq!(b[1], 4, "version");
     assert_eq!(b[2..4], 2u16.to_le_bytes(), "track count");
     assert_eq!(b[4..8], [0x04, 0x03, 0x02, 0x01], "seq, little-endian");
     assert_eq!(b[8..16], 123_456_789_012_345u64.to_le_bytes(), "sent time");
@@ -3104,10 +3142,20 @@ fn telemetry_layout_matches_the_table() {
     assert_eq!(b[76..80], 0.0625f32.to_le_bytes(), "return A right");
     assert_eq!(b[80..84], 0.0f32.to_le_bytes(), "return B left");
     assert_eq!(b[84..88], 2.0f32.to_le_bytes(), "return B right");
-    assert_eq!(b[88..92], 0.25f32.to_le_bytes(), "track 1 left");
-    assert_eq!(b[92..96], 0.75f32.to_le_bytes(), "track 1 right");
-    assert_eq!(b[96..100], 1.5f32.to_le_bytes(), "track 2 left");
-    assert_eq!(b[100..104], 0.0f32.to_le_bytes(), "track 2 right");
+    assert_eq!(b[88..90], 2u16.to_le_bytes(), "mic count");
+    assert_eq!(b[90..92], [0, 0], "spare");
+    assert_eq!(b[92..96], 0.25f32.to_le_bytes(), "track 1 left");
+    assert_eq!(b[96..100], 0.75f32.to_le_bytes(), "track 1 right");
+    assert_eq!(b[100..104], 1.5f32.to_le_bytes(), "track 2 left");
+    assert_eq!(b[104..108], 0.0f32.to_le_bytes(), "track 2 right");
+    assert_eq!(b[108..112], 6u32.to_le_bytes(), "mic 1 track");
+    assert_eq!(b[112..116], 0.375f32.to_le_bytes(), "mic 1 left");
+    assert_eq!(b[116..120], 0.375f32.to_le_bytes(), "mic 1 right");
+    assert_eq!(b[120..124], [0, 0, 0, 0], "mic 1 flags and spare");
+    assert_eq!(b[124..128], [0x0d, 0x0c, 0x0b, 0x0a], "mic 2 track");
+    assert_eq!(b[128..132], 1.25f32.to_le_bytes(), "mic 2 left");
+    assert_eq!(b[132..136], 0.03125f32.to_le_bytes(), "mic 2 right");
+    assert_eq!(b[136..140], [0b11, 0, 0, 0], "mic 2: clipped, stereo");
 
     for (state, byte) in [
         (TransportState::Stopped, 0),
@@ -3133,7 +3181,7 @@ fn telemetry_layout_matches_the_table() {
         ..Telemetry::default()
     };
     only_running.encode_into(&mut b);
-    assert_eq!(b.len(), 88);
+    assert_eq!(b.len(), 92);
     assert_eq!(b[35], 0b001);
     assert!(b[48..72].iter().all(|&x| x == 0), "no position: zeros");
     assert_eq!(Telemetry::decode(&b).unwrap().transport, None);
@@ -3164,24 +3212,34 @@ fn telemetry_decode_rejects_bad_input() {
     sample_telemetry().encode_into(&mut b);
 
     assert_eq!(
-        Telemetry::decode(&b[..87]),
-        Err(TelemetryError::TooShort { len: 87 })
+        Telemetry::decode(&b[..91]),
+        Err(TelemetryError::TooShort { len: 91 })
     );
     assert_eq!(
-        Telemetry::decode(&b[..103]),
+        Telemetry::decode(&b[..139]),
         Err(TelemetryError::WrongLength {
-            len: 103,
-            expected: 104
+            len: 139,
+            expected: 140
+        })
+    );
+    // A mic more in the header than there are bytes for.
+    let mut wrong = b.clone();
+    wrong[88] = 3;
+    assert_eq!(
+        Telemetry::decode(&wrong),
+        Err(TelemetryError::WrongLength {
+            len: 140,
+            expected: 156
         })
     );
     let mut wrong = b.clone();
     wrong[0] = 2;
     assert_eq!(Telemetry::decode(&wrong), Err(TelemetryError::WrongKind(2)));
     let mut wrong = b.clone();
-    wrong[1] = 2;
+    wrong[1] = 3;
     assert_eq!(
         Telemetry::decode(&wrong),
-        Err(TelemetryError::WrongVersion(2))
+        Err(TelemetryError::WrongVersion(3))
     );
     let mut wrong = b.clone();
     wrong[64] = 4;
@@ -3304,7 +3362,7 @@ fn write_fixtures_for_the_ui() {
     let word = |v: u64, hi: bool| if hi { (v >> 32) as u32 } else { v as u32 };
     let tr = t.transport.unwrap();
     write(
-        "telemetry-v3",
+        "telemetry-v4",
         &bytes,
         json!({
             "seq": t.seq,
@@ -3329,6 +3387,10 @@ fn write_fixtures_for_the_ui() {
             },
             "returnPeaks": t.return_peaks.iter().flatten().copied().map(f64::from).collect::<Vec<_>>(),
             "trackPeaks": t.track_peaks.iter().flatten().copied().map(f64::from).collect::<Vec<_>>(),
+            "mics": t.mics.iter().map(|m| json!({
+                "track": m.track, "peak": m.peak.map(f64::from),
+                "clipped": m.clipped, "stereo": m.stereo,
+            })).collect::<Vec<_>>(),
         }),
     );
 
@@ -3813,7 +3875,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 66);
+    assert_eq!(kinds.len(), 67);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");

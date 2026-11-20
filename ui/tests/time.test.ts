@@ -139,6 +139,7 @@ describe("shownTick（再生まわりの数字と再生の位置の線）", () =
     canPlay: true,
     canRecord: true,
     recording: state === "countIn" || state === "recording" ? { id: 1, track: 1, from: 4 * TPQ, take: 1, clip: null, lap: 0 } : null,
+    recordingVocals: [],
   });
   const tel = (tick: number): Telemetry =>
     ({ sentUs: 1000, position: { tick, ticksPerUs: 0.5, state: "playing", countInBeatsLeft: 0, lap: 0 } }) as Telemetry;

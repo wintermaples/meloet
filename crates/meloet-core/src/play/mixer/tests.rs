@@ -2,8 +2,9 @@ use crate::seen::*;
 use meloet_model::effects::{EffectKind as ModelEffect, reverb};
 use meloet_model::{Bus, Gain, Pan, StripId, TrackId};
 use meloet_protocol::{
-    Band, BarSpan, Command, EffectKind, EffectName, EffectRef, InsertRef, NamedInsert, ParamEnd,
-    ParamRef, SendBus, ShelfMode, SongFile, StatusMessage, StripRef, TransportState,
+    AutoTarget, Band, BarSpan, Command, EffectKind, EffectName, EffectRef, InsertRef, NamedInsert,
+    ParamEnd, ParamRef, SelectedParams, SendBus, ShelfMode, SongFile, SoundName, StatusMessage,
+    StripRef, TransportState,
 };
 
 use super::Preview;
@@ -764,6 +765,7 @@ fn an_effect_is_replaced_from_the_shelf_and_undo_brings_the_old_one_back_as_it_w
     assert_eq!(
         status(m),
         Some(StatusMessage::InsertReplaced {
+            lanes_removed: 0,
             insert: reverb,
             effect: builtin(EffectKind::Delay),
         })
@@ -807,6 +809,7 @@ fn an_effect_is_replaced_from_the_shelf_and_undo_brings_the_old_one_back_as_it_w
     assert_eq!(
         status(m),
         Some(StatusMessage::EffectRemoved {
+            lanes_removed: 0,
             insert: reverb,
             effect: builtin(EffectKind::Delay),
         })
@@ -1004,4 +1007,113 @@ fn opening_the_mixer_says_once_what_is_passed_by() {
     assert_ne!(status(m), said);
     cmd(m, mixer);
     assert_eq!(status(m), said);
+}
+
+#[test]
+fn a_sound_with_no_parameters_is_selected_and_the_panel_and_the_status_line_say_so() {
+    let m = &mut ready();
+    cmd(m, Command::SelectInstrument { track: 1 });
+    let Some(SelectedParams::Sound(selected)) = m.view().params.selected else {
+        panic!("the sound is what the panel shows");
+    };
+    assert_eq!(selected.track, 1);
+    assert!(matches!(selected.sound, SoundName::Builtin { .. }));
+    assert!(params_in_front(m));
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::NoParams {
+            sound: selected.sound.clone()
+        })
+    );
+    // A row cannot be chosen: there is none.
+    cmd(m, Command::SelectParam { param: Some(0) });
+    assert_eq!(
+        m.view().params.selected,
+        Some(SelectedParams::Sound(selected.clone()))
+    );
+
+    // An insert selected afterwards takes the panel; a track that is gone changes nothing.
+    put(m, T1, 0, EffectKind::Compressor);
+    cmd(
+        m,
+        Command::SelectInsert {
+            insert: Some(at(T1, 0)),
+        },
+    );
+    assert_eq!(selected_at(m).1, EffectKind::Compressor);
+    cmd(m, Command::SelectInstrument { track: 99 });
+    assert_eq!(selected_at(m).1, EffectKind::Compressor);
+
+    // The track deleted: nothing is selected.
+    cmd(m, Command::SelectInstrument { track: 1 });
+    assert!(matches!(
+        m.view().params.selected,
+        Some(SelectedParams::Sound(_))
+    ));
+    cmd(m, Command::DeleteTrack { track: 1 });
+    assert_eq!(m.view().params.selected, None);
+}
+
+#[test]
+fn an_effect_taken_out_says_how_many_lanes_went_with_it() {
+    let m = &mut ready();
+    put(m, T1, 0, EffectKind::Compressor);
+    let insert = m.view().song.tracks[0].slots[0]
+        .as_ref()
+        .expect("the compressor")
+        .id;
+    for param in [0, 1] {
+        cmd(
+            m,
+            Command::AddLane {
+                track: 1,
+                target: AutoTarget::Insert { insert, param },
+            },
+        );
+    }
+    // A lane of the track's own fader stays.
+    cmd(
+        m,
+        Command::AddLane {
+            track: 1,
+            target: AutoTarget::Volume,
+        },
+    );
+    assert_eq!(m.view().song.tracks[0].lanes.len(), 3);
+
+    cmd(m, Command::RemoveEffect { insert: at(T1, 0) });
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::EffectRemoved {
+            insert: at(T1, 0),
+            effect: builtin(EffectKind::Compressor),
+            lanes_removed: 2,
+        })
+    );
+    assert_eq!(m.view().song.tracks[0].lanes.len(), 1);
+
+    // Replaced from the shelf: the same count in the other sentence.
+    cmd(m, Command::Undo);
+    assert_eq!(m.view().song.tracks[0].lanes.len(), 3);
+    cmd(
+        m,
+        Command::OpenShelf {
+            mode: ShelfMode::ReplaceEffect { strip: T1, slot: 0 },
+        },
+    );
+    cmd(
+        m,
+        Command::ShelfSelectEffect {
+            effect: Some(EffectKind::Delay),
+        },
+    );
+    cmd(m, Command::ShelfConfirm);
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::InsertReplaced {
+            insert: at(T1, 0),
+            effect: builtin(EffectKind::Delay),
+            lanes_removed: 2,
+        })
+    );
 }

@@ -356,6 +356,7 @@ fn the_start_brings_the_song_back_unsaved_with_the_hint() {
     assert_eq!(
         recovery_view(m),
         Some(RecoveryView::Recovered {
+            vocals: None,
             written_ms: 1_794_750_060_000,
             cause: RecoveryCause::PcEnding,
             song: Some("はじめての曲".into()),
@@ -501,6 +502,7 @@ fn a_new_song_never_saved_comes_back_and_dont_restore_empties_it() {
     assert_eq!(
         recovery_view(m),
         Some(RecoveryView::Recovered {
+            vocals: None,
             written_ms: 7,
             cause: RecoveryCause::Sudden,
             song: None,

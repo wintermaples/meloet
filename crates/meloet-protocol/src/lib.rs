@@ -13,6 +13,7 @@ mod params;
 mod take;
 mod telemetry;
 mod timeline;
+mod vocal;
 
 use serde::{Deserialize, Serialize};
 
@@ -37,13 +38,18 @@ pub use take::{
     TakeControl, TakeControlValue, TakeError, TakeNote, TakeNotes,
 };
 pub use telemetry::{
-    TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, Telemetry, TelemetryError,
-    TransportReading,
+    MicMeter, TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN, TELEMETRY_VERSION,
+    Telemetry, TelemetryError, TransportReading,
 };
 
 pub use timeline::{MarkerView, MeterChangeView, TempoPointView, TimelineRef, TimelineView};
+pub use vocal::{
+    KeptVocals, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure, LatencySource,
+    LatencyView, RecordFormat, SelectedSound, TrackKindView, VocalInput, VocalRecordingView,
+    VocalRef,
+};
 
-pub const PROTOCOL_VERSION: u32 = 22;
+pub const PROTOCOL_VERSION: u32 = 23;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +69,8 @@ pub enum Command {
     SetScale {
         percent: u16,
     },
+    /// With `Band::PianoRoll` while a vocal track is selected, the piano roll does not open:
+    /// the status line says `StatusMessage::VocalHasNoPianoRoll`.
     ToggleBand {
         band: Band,
     },
@@ -243,7 +251,9 @@ pub enum Command {
     // that must not land on another track. A command for a track that is gone does nothing.
     /// A click on a track's header (B-70). The track becomes the selected one
     /// (`SongView::play_target`): the keys play it, and R records to it. There is no other
-    /// "armed" track (spec 3, 12-A).
+    /// "armed" keys track (spec 3, 12-A). Selecting a vocal track turns its ● on
+    /// (`TrackKindView::Vocal::armed`), and the keys stay on the keys track selected last
+    /// (`SongView::keys_target`, B-94-1).
     ///
     /// `from_arm`: sent by the ● of a track, the ● of the mixer and "録音待機" of the
     /// right-click menu, which only select the track. On the track already selected it does
@@ -450,8 +460,11 @@ pub enum Command {
     },
     /// A click on the instrument slot of a track whose sound is a plugin: the plugin becomes
     /// the selected one (`SelectedParams::Plugin` with `PluginSlotRef::Instrument`), with
-    /// its window or the panel as for `SelectInsert`. Nothing for a track that is gone or
-    /// whose sound is no plugin (those have no parameters).
+    /// its window or the panel as for `SelectInsert`. A click on the sound's name in a track's
+    /// header sends it too. For a sound that comes with meloet or a preset of an SF2 file the
+    /// panel opens, in front, and says that there are no parameters (`SelectedParams::Sound`),
+    /// and so does the status line (`StatusMessage::NoParams`; spec 3, 19-A). Nothing for a
+    /// track that is gone and for a vocal track.
     SelectInstrument {
         track: u32,
     },
@@ -1028,6 +1041,72 @@ pub enum Command {
         index: u32,
         step: u64,
     },
+    // Vocal tracks, the input and the latency (protocol 23; spec 3, 23-A, 24-C, 25-B, 33-A).
+    /// 「＋ 歌のトラック」 under the tracks and 「歌のトラックを足す」 of the menu: a vocal track
+    /// named 「歌」 (「歌 2」 when there is one) below the last track, with 「入口 1 ・ モノ」,
+    /// selected and with its ● on. One step. The status line says
+    /// `StatusMessage::VocalTrackAdded`, or `StatusMessage::NoInput` when the PC has no input
+    /// (the track is made all the same).
+    AddVocalTrack,
+    /// A row of the list under 「入口 1 ・ モノ ▾」 of a vocal track's header and of its
+    /// instrument slot in the mixer. One step; nothing for a keys track, the input the track
+    /// has already, and while counting in or recording.
+    SetVocalInput {
+        track: u32,
+        input: VocalInput,
+    },
+    /// The ● of a vocal track (header, mixer, 「録音待機」 of the right-click menu): on or
+    /// off, whichever track is selected (spec 3, 24-C). No step. Nothing for a keys track
+    /// (its ● is `SelectTrack` with `from_arm`), and while counting in or recording.
+    ToggleVocalArm {
+        track: u32,
+    },
+    /// 「モニター」 of a vocal track (header, the right half of the input meter). No step, and
+    /// not saved. The first time it is turned on the status line says
+    /// `StatusMessage::MonitorFirstOn`.
+    ToggleMonitor {
+        track: u32,
+    },
+    // The advanced sound settings (mock F7-SettingsAdv). Each takes effect at once and is
+    // kept with the PC's settings, not with the song; none is a step. What runs is in
+    // `AudioView`. Nothing while counting in or recording.
+    /// 「入口」: the PC's input the vocal tracks record from, by `EndpointView::id`. `None`:
+    /// the one the PC uses.
+    SettingsSelectInput {
+        input: Option<String>,
+    },
+    /// 「バッファ」: the frames meloet asks for (one of `AudioView::buffer_choices`).
+    SettingsSetBuffer {
+        frames: u32,
+    },
+    /// 「サンプルレート」: the rate meloet asks for (one of `AudioView::sample_rate_choices`).
+    SettingsSetSampleRate {
+        hz: u32,
+    },
+    /// 「録る形」.
+    SettingsSetRecordFormat {
+        format: RecordFormat,
+    },
+    /// 「手で決める…」: the round trip typed in ms (`LatencyView::manual_ms`), 0.0..=500.0;
+    /// a number outside is put at the nearer end. `None`: no typed number any more.
+    SettingsSetManualLatency {
+        ms: Option<f32>,
+    },
+    /// 「遅れを測る…」: the dialog opens over the sound settings
+    /// (`WorkspaceView::latency_dialog`). Not while playing, counting in or recording.
+    OpenLatencyMeasure,
+    /// 「測る」 and 「もう一度」: plays the clicks and listens for them. The keys stay
+    /// playable; play and record are unusable until it is done.
+    StartLatencyMeasure,
+    /// 「やめる（Esc）」 while measuring: stops, back to `LatencyMeasure::Idle`. The dialog
+    /// stays.
+    StopLatencyMeasure,
+    /// 「この数を使う」: the measured number becomes `LatencyView::measured_ms` for this
+    /// output, input and sample rate, and the dialog closes. Only with
+    /// `LatencyMeasure::Done`.
+    UseMeasuredLatency,
+    /// 「閉じる」 and Esc while not measuring: the dialog closes; a measuring going on stops.
+    CloseLatencyMeasure,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1070,7 +1149,7 @@ pub enum NoteField {
     Velocity,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ControlKind {
@@ -1469,10 +1548,14 @@ pub struct SongView {
     /// Return A, then return B.
     pub returns: [ReturnView; 2],
     pub master: MasterView,
-    /// The selected track, by `TrackView::id` (B-70: its header is gray.4): the one the keys
-    /// play and the one R records to, so also the one whose ● is lit. `SelectTrack`, and a
-    /// click on a clip, change it. `None` only when the song has no tracks.
+    /// The selected track, by `TrackView::id` (B-70: its header is gray.4). `SelectTrack`,
+    /// and a click on a clip, change it. `None` only when the song has no tracks.
     pub play_target: Option<u32>,
+    /// The keys track the keys play and R records the keys to, so the keys track whose ● is
+    /// lit, and 「弾くと鳴る先」: `play_target` when that is a keys track, else the keys track
+    /// that was selected last (B-94-1). `None` when that leaves none: the keys are silent and
+    /// 「弾くと鳴る先」 is 「—」.
+    pub keys_target: Option<u32>,
     /// Kept while the loop is off.
     pub loop_range: Option<TickSpan>,
     pub loop_on: bool,
@@ -1514,7 +1597,9 @@ pub struct TrackView {
     pub name: String,
     /// 1..=5. Belongs to the track, not to its place: moving a track keeps it.
     pub color: u8,
-    /// What the track sounds with, as the song has it.
+    pub kind: TrackKindView,
+    /// What the track sounds with, as the song has it. Of a vocal track the sine wave, which
+    /// nothing shows or plays.
     pub sound: SoundView,
     /// The track sounds as the sine wave for now: its header, the mixer and the input meter
     /// say 「サイン波で代わり」 in place of the sound's name (spec 3, 85). The song keeps
@@ -1618,6 +1703,9 @@ pub struct ClipView {
     /// the clip has been trimmed.
     pub take_offset: i64,
     pub note_count: u32,
+    /// A clip of a vocal track: `take_id` names a take of audio, which `take_notes` does not
+    /// have, and `note_count` is 0. What it draws (the waveform) comes with protocol 24.
+    pub vocal: bool,
 }
 
 /// The sounds that come with meloet (spec 3 「最初から入っている音色をふやす」（84）), in the
@@ -1872,11 +1960,17 @@ pub struct TransportView {
     pub count_in_beats: u32,
     /// False while the output is not playing.
     pub can_play: bool,
-    /// Also false with no selected track (the record button still takes a click then, to say
-    /// why), and while the shelf auditions.
+    /// Also false with nothing to record to: no keys target and no vocal track with its ● on
+    /// (the record button still takes a click then, to say why), while the shelf auditions,
+    /// and while the latency is measured.
     pub can_record: bool,
-    /// From the record command until the take is in the song (also during the count-in).
+    /// The keys of the recording going on, from the record command until the take is in the
+    /// song (also during the count-in). `None` also while only vocal tracks are recorded.
     pub recording: Option<RecordingView>,
+    /// The vocal tracks of the recording going on, in the order of the tracks, for as long
+    /// as `recording` would be there. Each draws a clip in `color.rec` from `from` to the
+    /// play line (mocks F7-VocalRec, F7-TwoRec).
+    pub recording_vocals: Vec<VocalRecordingView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1996,6 +2090,8 @@ pub struct WorkspaceView {
     /// Files are held over the window. `None` again when they are let go, taken out of the
     /// window, or Esc (`Command::CancelFileDrop`).
     pub file_drop: Option<FileDropView>,
+    /// The dialog 「遅れを測る」, over the sound settings.
+    pub latency_dialog: Option<LatencyDialogView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2015,6 +2111,10 @@ pub enum RecoveryView {
         song: Option<String>,
         /// The takes of every clip, all together.
         takes: u32,
+        /// Vocals that were being recorded when meloet ended, kept as far as they were
+        /// written: one line more in the hint. When only they were kept (the song had no
+        /// other unsaved change), the rest is as for a recovery file written then.
+        vocals: Option<KeptVocals>,
     },
     /// The recovery file did not read and was kept: "ファイルの場所をひらく / 閉じる".
     Unreadable {
@@ -2165,7 +2265,13 @@ pub struct OutputsView {
 #[serde(rename_all = "camelCase")]
 pub struct InputsView {
     pub list: Vec<EndpointView>,
+    /// The input the vocal tracks record from, by `EndpointView::id`: the one of
+    /// `Command::SettingsSelectInput`, else the one the PC uses. `None`: the PC has no input
+    /// meloet can use; every vocal track says 「入口なし ▾」.
     pub chosen: Option<String>,
+    /// The input is open: a vocal track is selected or has its ● on, so the mic meter of the
+    /// telemetry runs (and the PC shows that the microphone is in use).
+    pub open: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2183,6 +2289,9 @@ pub struct EndpointView {
     /// `None`: meloet can play through it without changing any PC-wide setting. Others are
     /// listed but cannot be chosen.
     pub unusable: Option<Unusable>,
+    /// Of an input: how many channels it has ("入口 1 ・ 2（USB マイク）" has 2). `None` for
+    /// an output, and for an input whose channels are not known.
+    pub channels: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2245,6 +2354,17 @@ pub struct AudioView {
     pub latency_ms_at_requested: Option<f32>,
     pub output_device: Option<String>,
     pub midi_input: Option<String>,
+    // The advanced sound settings (spec 3, 33-A; mock F7-SettingsAdv). 「頼む数」 are
+    // `requested_frames` and `requested_sample_rate`, 「動いている」 `actual_frames` and
+    // `sample_rate`; where they differ the dialog says "頼んだ 128 ではなく、256 で動いて
+    // います…".
+    /// What 「バッファ ▾」 lists.
+    pub buffer_choices: Vec<u32>,
+    pub requested_sample_rate: u32,
+    /// What 「サンプルレート ▾」 lists.
+    pub sample_rate_choices: Vec<u32>,
+    pub record_format: RecordFormat,
+    pub latency: LatencyView,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2371,9 +2491,14 @@ pub enum StatusMessage {
     },
     /// `ShelfConfirm` in `Replace` mode: "1 ピアノ の音源を エレクトリックピアノ にしました。
     /// 取り消せます（Mod Z）".
+    /// `lanes_removed`: the automation lanes of the old instrument's parameters, which went
+    /// with it; above 0 the sentence ends "（そのパラメータの帯 2 本も消えました）" (spec 6
+    /// 「帯もいっしょに消えた」, 92-19). The same in `InstrumentReplacedSound`, `EffectRemoved`
+    /// and `InsertReplaced`.
     InstrumentReplaced {
         track: TrackRef,
         instrument: InstrumentKind,
+        lanes_removed: u32,
     },
     /// While a row is auditioned in `NewTrack` mode, in place of the summary: "シンセベース ・
     /// まだトラックには入っていません ・ 入れるには Enter" (mock F4-ShelfAudition).
@@ -2473,6 +2598,7 @@ pub enum StatusMessage {
     EffectRemoved {
         insert: InsertRef,
         effect: EffectName,
+        lanes_removed: u32,
     },
     /// `MoveInsert`: "2 ベース のインサートを並べかえました（EQ 4 バンド → コンプレッサー）。"
     /// `order`: the effects of the strip as they are now, top first, empty slots left out.
@@ -2485,6 +2611,7 @@ pub enum StatusMessage {
     InsertReplaced {
         insert: InsertRef,
         effect: EffectName,
+        lanes_removed: u32,
     },
     /// `ToggleBypass`: "2 ベース の コンプレッサー をとばしました。", with `bypassed` false
     /// "…をもどしました。"
@@ -2641,6 +2768,7 @@ pub enum StatusMessage {
     InstrumentReplacedSound {
         track: TrackRef,
         sound: SoundName,
+        lanes_removed: u32,
     },
     /// A key was played on a track whose sound is still being read.
     SoundLoading {
@@ -2803,6 +2931,46 @@ pub enum StatusMessage {
     /// Mod Shift Z with no step to redo (not in spec 6; after `NothingToUndo`):
     /// "やりなおせる手がありません。"
     NothingToRedo,
+    // Protocol 23 (spec 6, the sentences of the tenth edition).
+    /// `SelectInstrument` on a sound with no parameters: "グランドピアノには、動かせる
+    /// パラメータがありません" (spec 6 「動かせるパラメータがない」, 19-A).
+    NoParams {
+        sound: SoundName,
+    },
+    /// `AddVocalTrack`: "6 歌 を足しました ・ 入口 1 から録ります ・ 歌のトラックの ● は、
+    /// 選んでいなくても自分でつけます".
+    VocalTrackAdded {
+        track: TrackRef,
+        input: VocalInput,
+    },
+    /// "音の入口がありません。マイクをつなぐか、音の設定で入口をえらんでください。" with
+    /// 「音の設定…」: a vocal track was added, selected or armed, or R was pressed with one
+    /// armed, and there is no input.
+    NoInput,
+    /// "自分の声が少し遅れて聞こえます（いまは 13 ms）。スピーカーだと…": the first time a
+    /// monitor is turned on. `latency_ms`: how late the voice comes out, `None` while the
+    /// audio is not running (the screen leaves the bracket out).
+    MonitorFirstOn {
+        latency_ms: Option<f32>,
+    },
+    /// "マイクの音が大きすぎます（0 dB に届きました）。…": the input of an armed or selected
+    /// vocal track reached 0 dB.
+    MicTooLoud,
+    /// E, the menu, or `ToggleBand` for the piano roll with a vocal track selected.
+    VocalHasNoPianoRoll,
+    /// Recording with vocal tracks, in place of `Recording` and `LoopRecording`. With `keys`
+    /// "● 録音中 ・ 1 ピアノ（鍵盤）と 6 歌（入口 1）に録っています ・ 止めるには Space",
+    /// without "● 録音中 ・ 6 歌（入口 1）・ モニター オン ・ 止めるには Space". `vocals` is
+    /// never empty, in the order of the tracks. `monitor`: one of them is heard through
+    /// meloet.
+    RecordingVocals {
+        keys: Option<TrackRef>,
+        vocals: Vec<VocalRef>,
+        monitor: bool,
+    },
+    /// While the dialog 「遅れを測る」 is up: "「遅れを測る」のダイアログをひらいています"
+    /// (mock F7-Latency).
+    LatencyMeasureOpen,
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -2976,3 +3144,5 @@ pub struct SendReply {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests23;

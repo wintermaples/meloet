@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::edit::{EditError, clip_index};
+use crate::edit::{EditError, keys_clip_index};
 use crate::history::StepKind;
 use crate::notes::{
     Content, NotesEdited, indexes_count, lifted, pick, put_take, song_controls, song_notes,
@@ -42,7 +42,7 @@ pub fn quantize(
     indexes: &[usize],
     settings: QuantizeSettings,
 ) -> Result<(NotesEdited, usize), EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
     let shown = c.active_take();
     let zero = c.zero(shown) as u64;
@@ -127,7 +127,7 @@ pub fn quantize(
 /// came from the origin take go back to the start and length they have there; key and velocity
 /// stay. When every such note is back, the take is no longer quantized: it loses its origin.
 pub fn unquantize(doc: &Doc, clip: ClipId, indexes: &[usize]) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
     let shown = c.active_take();
     let Some(origin) = shown.take.origin.clone() else {

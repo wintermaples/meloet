@@ -9,7 +9,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BarSpan, EffectKind, EffectName, LaneName, SendBus, SoundName, TrackRef};
+use crate::{
+    BarSpan, ControlKind, EffectKind, EffectName, LaneName, SendBus, SoundName, TrackRef,
+    VocalInput,
+};
 
 /// The section `history`.
 ///
@@ -139,6 +142,8 @@ pub enum StepName {
     SetLoop,
     Recovered,
     DiscardRecovered,
+    /// `Command::SetVocalInput`.
+    SetVocalInput,
 }
 
 impl StepName {
@@ -221,6 +226,7 @@ impl StepName {
             SetLoop,
             Recovered,
             DiscardRecovered,
+            SetVocalInput,
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -290,7 +296,8 @@ impl StepName {
                 | DeleteMarker
                 | SetLoop
                 | Recovered
-                | DiscardRecovered => {}
+                | DiscardRecovered
+                | SetVocalInput => {}
             }
         }
         all
@@ -417,6 +424,47 @@ pub enum StepWhat {
     Missing {
         tracks: u32,
         inserts: u32,
+    },
+    // Protocol 23 (spec 3 「履歴の行の「（何を）」」, 92-3).
+    /// One note: "C4".
+    Note {
+        key: u8,
+    },
+    /// "1/16 ・ 12 ノート": the grid of the quantize, `division` steps to a whole note.
+    Quantized {
+        division: u16,
+        triplet: bool,
+        count: u32,
+    },
+    /// "3 ノート ・ 96 → 110" when every note had `from` before and has `to` now; "3 ノート"
+    /// when they differ (`None`).
+    Velocity {
+        count: u32,
+        from: Option<u8>,
+        to: Option<u8>,
+    },
+    /// "サステイン ・ 4 点": points of one control. `control` is `None` when the step touched
+    /// points of more than one.
+    ControlPoints {
+        control: Option<ControlKind>,
+        count: u32,
+    },
+    /// "4 パッド ・ 色 3".
+    Color {
+        track: TrackRef,
+        color: u8,
+    },
+    /// "1 ピアノ ・ グランドピアノ → オルガン".
+    SoundReplaced {
+        track: TrackRef,
+        from: SoundName,
+        to: SoundName,
+    },
+    /// "6 歌 ・ 入口 1 ・ モノ → 入口 2 ・ モノ" (`StepName::SetVocalInput`).
+    VocalInput {
+        track: TrackRef,
+        from: VocalInput,
+        to: VocalInput,
     },
 }
 

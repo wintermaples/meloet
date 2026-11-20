@@ -19,6 +19,26 @@
     0.5,
     0.10000000149011612
   ],
+  "mics": [
+    {
+      "clipped": false,
+      "peak": [
+        0.375,
+        0.375
+      ],
+      "stereo": false,
+      "track": 6
+    },
+    {
+      "clipped": true,
+      "peak": [
+        1.25,
+        0.03125
+      ],
+      "stereo": true,
+      "track": 168496141
+    }
+  ],
   "modulation": 64,
   "pitchBend": -8192,
   "position": {

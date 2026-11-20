@@ -3,7 +3,7 @@
 //! index in the take's controls (in order of tick; at the same tick, in the order they have).
 //! Points stay inside the clip.
 
-use crate::edit::{EditError, clip_index};
+use crate::edit::{EditError, keys_clip_index};
 use crate::history::StepKind;
 use crate::notes::{
     Content, NotesEdited, indexes_count, lifted, pick, put_take, song_controls, unmarked,
@@ -55,7 +55,7 @@ pub fn add_control(
     if matches!(kind, ControlKind::Cc(n) if n > 127) {
         return Err(EditError::BadControl);
     }
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let c = &doc.tracks[ti].clips[ci];
     if tick < c.start || tick >= c.end {
         return Err(EditError::OutOfClip);
@@ -82,7 +82,7 @@ pub fn move_controls(
     ticks: i64,
     value: i64,
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, _) = lifted(&doc.tracks[ti].clips[ci]);
     let points = song_controls(&c);
     let picked = pick(indexes, points.len())?;
@@ -130,7 +130,7 @@ pub fn delete_controls(
     clip: ClipId,
     indexes: &[usize],
 ) -> Result<NotesEdited, EditError> {
-    let (ti, ci) = clip_index(doc, clip)?;
+    let (ti, ci) = keys_clip_index(doc, clip)?;
     let points = song_controls(&lifted(&doc.tracks[ti].clips[ci]).0);
     let picked = pick(indexes, points.len())?;
     let count = indexes_count(&picked);

@@ -9,6 +9,7 @@ mod automation;
 mod clock;
 mod effect;
 mod engine;
+mod input;
 mod instrument;
 mod mixer;
 mod output;
@@ -23,6 +24,11 @@ pub use effect::{Effect, EffectContext};
 pub use engine::{
     BlockTiming, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
     EngineParts, FADE_S, LatencyRecord, MidiFeed, MidiIn, Recorded, monotonic_us,
+};
+pub use input::{
+    AudioInput, InputBlock, InputEnds, InputError, InputMeters, InputRingReader, InputRingWriter,
+    InputTap, InputTarget, MAX_INPUT_CHANNELS, MONITOR_RING_SECONDS, RECORD_RING_SECONDS,
+    RunningInput, input_ends, input_ring,
 };
 pub use instrument::{Instrument, InstrumentEvent};
 pub use mixer::{INSERT_SLOTS, MixStrip, RAMP_S, pan_gains};

@@ -288,6 +288,7 @@ fn a_track_gets_a_plugin_in_place_of_its_sound_and_cancel_gives_it_back() {
     assert_eq!(
         status(&m),
         Some(StatusMessage::InstrumentReplacedSound {
+            lanes_removed: 0,
             track: TrackRef {
                 number: 1,
                 name: "ピアノ".into()
@@ -629,6 +630,7 @@ fn a_plugin_is_selected_passed_by_moved_and_replaced_as_an_effect_of_meloet_is()
     assert_eq!(
         status(m),
         Some(StatusMessage::InsertReplaced {
+            lanes_removed: 0,
             insert: at(2),
             effect: EffectName::Builtin {
                 effect: EffectKind::Chorus

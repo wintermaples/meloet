@@ -177,6 +177,7 @@ fn a_new_song() {
     assert_eq!(
         song.tracks,
         [TrackView {
+            kind: meloet_protocol::TrackKindView::Keys,
             id: 1,
             number: 1,
             name: "ピアノ".into(),

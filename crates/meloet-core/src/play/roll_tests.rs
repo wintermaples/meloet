@@ -82,6 +82,7 @@ fn controls_from(rng: &mut Rng, count: u64, length: u64) -> Vec<ControlPoint> {
 fn song(rng: &mut Rng) -> Song {
     let mut s = Song::new_default();
     s.doc.tracks.push(Arc::new(Track {
+        kind: meloet_model::TrackKind::Keys,
         id: TrackId(2),
         name: "ベース".into(),
         color: TrackColor::for_index(1),
@@ -136,7 +137,7 @@ impl Given {
             .tracks
             .iter()
             .flat_map(|t| &t.clips)
-            .flat_map(|c| &c.takes)
+            .flat_map(|c| c.keys())
             .flat_map(|ct| {
                 std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take))
             });
@@ -210,7 +211,7 @@ fn check(p: &Play, takes_of: &HashMap<ClipId, usize>, ctx: &str) {
                 shown.notes.iter().filter(|n| c.holds(n.start)).count(),
                 "{ctx}: note count"
             );
-            for ct in &c.takes {
+            for ct in c.keys() {
                 let take = &ct.take;
                 assert!(
                     take.notes.iter().is_sorted_by_key(|n| (n.start, n.key)),
@@ -611,7 +612,7 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                     .tracks
                     .iter()
                     .flat_map(|t| &t.clips)
-                    .flat_map(|c| &c.takes)
+                    .flat_map(|c| c.keys())
                     .filter(|ct| ct.offset < 0)
                     .count();
             }

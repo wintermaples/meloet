@@ -215,6 +215,7 @@ fn three_clips() -> (Play, ClipId, ClipId, ClipId) {
     use meloet_model::{InstrumentRef, TrackColor};
     let mut s = Song::new_default();
     s.doc.tracks.push(Arc::new(Track {
+        kind: meloet_model::TrackKind::Keys,
         id: TrackId(2),
         name: "ベース".into(),
         color: TrackColor::for_index(1),
@@ -444,7 +445,7 @@ fn delete_cut_copy_and_paste_clips() {
     // The copies share the takes, and the song comes back the same from its file.
     let (_, orig) = p.song().doc.clip(a).unwrap();
     let (_, copy) = p.song().doc.clip(ClipId(pasted[0])).unwrap();
-    assert!(Arc::ptr_eq(&orig.takes[0].take, &copy.takes[0].take));
+    assert!(Arc::ptr_eq(&orig.keys()[0].take, &copy.keys()[0].take));
     let back = crate::songfile::decode(&crate::songfile::encode(p.song())).unwrap();
     assert_eq!(&back, p.song());
     // Another song lets go of what was kept.

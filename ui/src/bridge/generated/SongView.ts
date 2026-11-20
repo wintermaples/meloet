@@ -20,11 +20,17 @@ noteCount: number, tracks: Array<TrackView>,
  */
 returns: [ReturnView, ReturnView], master: MasterView, 
 /**
- * The selected track, by `TrackView::id` (B-70: its header is gray.4): the one the keys
- * play and the one R records to, so also the one whose ● is lit. `SelectTrack`, and a
- * click on a clip, change it. `None` only when the song has no tracks.
+ * The selected track, by `TrackView::id` (B-70: its header is gray.4). `SelectTrack`,
+ * and a click on a clip, change it. `None` only when the song has no tracks.
  */
 playTarget: number | null, 
+/**
+ * The keys track the keys play and R records the keys to, so the keys track whose ● is
+ * lit, and 「弾くと鳴る先」: `play_target` when that is a keys track, else the keys track
+ * that was selected last (B-94-1). `None` when that leaves none: the keys are silent and
+ * 「弾くと鳴る先」 is 「—」.
+ */
+keysTarget: number | null, 
 /**
  * Kept while the loop is off.
  */

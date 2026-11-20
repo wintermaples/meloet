@@ -2,6 +2,7 @@
 import type { ChooserView } from "./ChooserView";
 import type { FileDropView } from "./FileDropView";
 import type { Hint } from "./Hint";
+import type { LatencyDialogView } from "./LatencyDialogView";
 import type { LayoutView } from "./LayoutView";
 import type { RecoveryView } from "./RecoveryView";
 import type { SettingsDialogView } from "./SettingsDialogView";
@@ -22,4 +23,8 @@ recovery: RecoveryView | null,
  * Files are held over the window. `None` again when they are let go, taken out of the
  * window, or Esc (`Command::CancelFileDrop`).
  */
-fileDrop: FileDropView | null, };
+fileDrop: FileDropView | null, 
+/**
+ * The dialog 「遅れを測る」, over the sound settings.
+ */
+latencyDialog: LatencyDialogView | null, };

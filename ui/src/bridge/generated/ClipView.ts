@@ -13,4 +13,9 @@ takeId: number,
  * The take's tick 0 is at `start + take_offset` in the song; below 0 when the start of
  * the clip has been trimmed.
  */
-takeOffset: number, noteCount: number, };
+takeOffset: number, noteCount: number, 
+/**
+ * A clip of a vocal track: `take_id` names a take of audio, which `take_notes` does not
+ * have, and `note_count` is 0. What it draws (the waveform) comes with protocol 24.
+ */
+vocal: boolean, };

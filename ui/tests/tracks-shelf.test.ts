@@ -481,7 +481,7 @@ describe("偽物の答え（約束 13）", () => {
     expect(state.status.message).toEqual({ id: "auditionReplace", instrument: "organ", track: { number: 1, name: "ピアノ" }, current: "grandPiano" });
     await transport.send({ type: "shelfConfirm" });
     expect(state.song.tracks[0]!.sound).toEqual({ kind: "builtin", instrument: "organ" });
-    expect(state.status.message).toEqual({ id: "instrumentReplaced", track: { number: 1, name: "ピアノ" }, instrument: "organ" });
+    expect(state.status.message).toEqual({ id: "instrumentReplaced", track: { number: 1, name: "ピアノ" }, instrument: "organ", lanesRemoved: 0 });
     await transport.send({ type: "toggleBand", band: "shelf" });
     expect(state.workspace.layout.rightOpen).toEqual([]);
     expect(state.shelf.mode).toEqual({ kind: "newTrack" });
@@ -567,7 +567,7 @@ describe("状態行と入力計（モック F4-ShelfAudition ・ F4-ShelfReplace
     const track = { number: 3, name: "ドラム" };
     expect(say({ id: "trackAdded", track })).toBe("3 ドラム を足しました。");
     expect(say({ id: "trackDeleted", track })).toBe("3 ドラム を消しました。取り消せます（Ctrl Z）");
-    expect(say({ id: "instrumentReplaced", track, instrument: "electroKit" })).toBe(
+    expect(say({ id: "instrumentReplaced", track, instrument: "electroKit", lanesRemoved: 0 })).toBe(
       "3 ドラム の音源を エレクトロキット にしました。取り消せます（Ctrl Z）",
     );
     expect(say({ id: "samplePlaying", instrument: "grandPiano" })).toBe("サンプルを再生中 ・ グランドピアノ。行をえらぶと、鍵盤でためし弾きできます。");

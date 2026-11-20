@@ -464,7 +464,7 @@ describe("状態行の新しい文（約束 17）", () => {
       "Surge XT ・ 1 ピアノ の音源は、まだグランドピアノです ・ 入れかえるには Enter",
     );
     expect(say({ id: "samplePlayingSound", sound: surge })).toBe("サンプルを再生中 ・ Surge XT。行をえらぶと、鍵盤でためし弾きできます。");
-    expect(say({ id: "instrumentReplacedSound", track, sound: clean })).toBe(
+    expect(say({ id: "instrumentReplacedSound", track, sound: clean, lanesRemoved: 0 })).toBe(
       "1 ピアノ の音源を Clean Guitar ・ FluidR3_GM.sf2 にしました。取り消せます（Ctrl Z）",
     );
     expect(say({ id: "soundLoading", sound: surge })).toBe("Surge XTを読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。");

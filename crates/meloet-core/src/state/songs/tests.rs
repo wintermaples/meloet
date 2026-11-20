@@ -202,7 +202,7 @@ fn a_deleted_take_is_not_saved() {
     let clip = &song(m).doc.tracks[0].clips[0];
     assert_eq!(clip.takes.len(), 2);
     let gone = clip.active_take().take.id;
-    let kept = clip.takes[1 - clip.active].take.id;
+    let kept = clip.keys()[1 - clip.active].take.id;
     cmd(m, Command::DeleteTake { clip: clip.id.0 });
     w.cmd(m, Command::SaveSong);
     let path = m.song_path().unwrap().to_owned();
@@ -214,7 +214,7 @@ fn a_deleted_take_is_not_saved() {
     w.cmd(m, Command::OpenSong);
     assert_eq!(song(m), saved);
     let ids: Vec<_> = song(m).doc.tracks[0].clips[0]
-        .takes
+        .keys()
         .iter()
         .map(|t| t.take.id)
         .collect();

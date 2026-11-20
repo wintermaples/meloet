@@ -38,7 +38,9 @@ pub fn track_events(doc: &Doc, track: TrackId) -> Vec<PlayEvent> {
     };
     let mut out = Vec::new();
     for clip in &track.clips {
-        let ct = clip.active_take();
+        let Some(ct) = clip.keys().get(clip.active) else {
+            continue;
+        };
         let zero = clip.zero(ct);
         let (start, end) = (clip.start as i64, clip.end as i64);
         let at = |tick: u64| zero + tick as i64;

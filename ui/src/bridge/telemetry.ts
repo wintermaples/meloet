@@ -1,11 +1,13 @@
-// Telemetry binary, version 3, little-endian. The layout is fixed in
+// Telemetry binary, version 4, little-endian. The layout is fixed in
 // crates/meloet-protocol/src/telemetry.rs (table: docs/architecture.md 3-3).
 
 import type { TransportState } from "./types";
 
 export const TELEMETRY_KIND = 1;
-export const TELEMETRY_VERSION = 3;
-export const TELEMETRY_HEADER_LEN = 88;
+export const TELEMETRY_VERSION = 4;
+export const TELEMETRY_HEADER_LEN = 92;
+/** One mic meter: the track's id, the peak left and right, the flags and 3 spare bytes. */
+export const TELEMETRY_MIC_LEN = 16;
 const HEADER_LEN = TELEMETRY_HEADER_LEN;
 const STATES: readonly TransportState[] = ["stopped", "countIn", "playing", "recording"];
 
@@ -23,6 +25,18 @@ export interface TransportReading {
   countInBeatsLeft: number;
   /** Pass of the loop while recording, 0 for the first. */
   lap: number;
+}
+
+/** The input of one vocal track: what comes in, before the track's fader (spec 3, 31-C). */
+export interface MicMeter {
+  /** `TrackView.id`. */
+  track: number;
+  /** Left, right, as `masterPeak`. A mono input has the same value in both. */
+  peak: [number, number];
+  /** The input reached 0 dB since the last message. */
+  clipped: boolean;
+  /** The track records two channels (「入口 1 ・ 2 ・ ステレオ」). */
+  stereo: boolean;
 }
 
 export interface Telemetry {
@@ -48,6 +62,8 @@ export interface Telemetry {
   returnPeaks: Float32Array;
   /** Left, right per track: [l1, r1, l2, r2, ...]. */
   trackPeaks: Float32Array;
+  /** The vocal tracks whose input is metered now, in the order of the tracks. Empty while the input is not open. */
+  mics: MicMeter[];
 }
 
 export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry {
@@ -64,7 +80,8 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
     throw new Error(`telemetry version ${view.getUint8(1)}, expected ${TELEMETRY_VERSION}`);
   }
   const tracks = view.getUint16(2, true);
-  const expected = HEADER_LEN + 8 * tracks;
+  const micCount = view.getUint16(88, true);
+  const expected = HEADER_LEN + 8 * tracks + TELEMETRY_MIC_LEN * micCount;
   if (view.byteLength !== expected) {
     throw new Error(`telemetry is ${view.byteLength} bytes, expected ${expected}`);
   }
@@ -76,6 +93,16 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
   const trackPeaks = new Float32Array(2 * tracks);
   for (let i = 0; i < trackPeaks.length; i++) {
     trackPeaks[i] = view.getFloat32(HEADER_LEN + 4 * i, true);
+  }
+  const mics: MicMeter[] = [];
+  for (let i = 0, p = HEADER_LEN + 8 * tracks; i < micCount; i++, p += TELEMETRY_MIC_LEN) {
+    const micFlags = view.getUint8(p + 12);
+    mics.push({
+      track: view.getUint32(p, true),
+      peak: [view.getFloat32(p + 4, true), view.getFloat32(p + 8, true)],
+      clipped: (micFlags & 1) !== 0,
+      stereo: (micFlags & 2) !== 0,
+    });
   }
   const flags = view.getUint8(35);
   const state = STATES[view.getUint8(64)];
@@ -106,6 +133,7 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
           },
     returnPeaks,
     trackPeaks,
+    mics,
   };
 }
 

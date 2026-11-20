@@ -256,6 +256,7 @@ describe("WebGL の面", () => {
       position: null,
       returnPeaks: new Float32Array([0.5, 0, 0, 1.5]),
       trackPeaks: new Float32Array(18),
+      mics: [],
     });
     frame();
 
@@ -332,6 +333,7 @@ describe("WebGL の面", () => {
         position: null,
         returnPeaks: new Float32Array(4),
         trackPeaks: new Float32Array(24).fill(peak),
+        mics: [],
       });
     engine.setTracks(tracks(12));
     frame();
@@ -418,6 +420,7 @@ describe("WebGL の面", () => {
         position: null,
         returnPeaks: new Float32Array(4),
         trackPeaks: new Float32Array(24).fill(peak),
+        mics: [],
       });
     now.mockReturnValue(1016);
     levels(0.5);
@@ -453,6 +456,7 @@ describe("WebGL の面", () => {
       position: null,
       returnPeaks: new Float32Array(4),
       trackPeaks: new Float32Array([track, track]),
+      mics: [],
     });
     engine.onTelemetry(telemetry(0.1));
     frame();

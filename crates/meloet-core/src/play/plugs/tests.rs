@@ -262,7 +262,7 @@ impl Mini {
                 });
                 assert_eq!(rows.unwrap_or(0), plugin.count as usize, "{ctx}");
             }
-            None => {}
+            Some(SelectedParams::Sound(_)) | None => {}
         }
         // Every window is of a plugin that sounds, and no two are of one slot.
         let windows = m.view().windows.list;

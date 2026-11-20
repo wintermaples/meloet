@@ -2437,6 +2437,7 @@ fn telemetry_loop(hub: &Hub, shared: &Shared, meters: &EngineMeters, tx: &Sender
             transport,
             return_peaks: [meters.take_return_peak(0), meters.take_return_peak(1)],
             track_peaks,
+            mics: Vec::new(),
         };
         let fresh = hub.take_telemetry_fresh();
         if fresh || !last.as_ref().is_some_and(|l| l.same_readings(&now)) {

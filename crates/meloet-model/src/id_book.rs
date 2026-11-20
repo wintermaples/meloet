@@ -18,7 +18,7 @@ fn takes(doc: &Doc) -> impl Iterator<Item = &Arc<Take>> {
     doc.tracks
         .iter()
         .flat_map(|t| &t.clips)
-        .flat_map(|c| &c.takes)
+        .flat_map(|c| c.keys())
         .flat_map(|ct| std::iter::once(&ct.take).chain(ct.take.origin.as_ref().map(|o| &o.take)))
 }
 

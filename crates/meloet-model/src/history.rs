@@ -350,6 +350,11 @@ pub enum StepKind {
     /// From a song brought back from the recovery file to the song as last saved. The history
     /// band calls it "戻した変更をすてる（最後に保存した形にする）" (spec 6).
     DiscardRecovered,
+    /// Another row of 「入口 1 ・ モノ ▾」 of a vocal track. Either `Doc` has the track: the
+    /// one before the step the old input.
+    SetVocalInput {
+        track: TrackId,
+    },
 }
 
 #[derive(Debug, Clone)]

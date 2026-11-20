@@ -7,11 +7,11 @@ use crate::automation::AutoTarget;
 use crate::history::StepKind;
 use crate::mixer::{self, Channel};
 use crate::song::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
+    Clip, ClipId, ClipTake, ClipTakes, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
 };
 use crate::time::TickRange;
 pub use crate::timeline::{set_meter, set_tempo};
-use crate::{InstrumentRef, TrackColor, TrackId};
+use crate::{InstrumentRef, TrackColor, TrackId, TrackKind, VOCAL_TRACK_NAME, VocalInput};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
@@ -47,6 +47,10 @@ pub enum EditError {
     SlotTaken,
     /// No tempo point at that tick, no meter change at that bar, or no marker of that id.
     NoSuchPoint,
+    /// Notes for a vocal clip or a vocal track, which hold audio.
+    NotKeys,
+    /// A clip of notes would go on a vocal track, or a clip of audio on a keys track.
+    WrongKind,
 }
 
 /// No clip ends after this, so that every song position of a take fits in an `i64`.
@@ -128,6 +132,9 @@ pub fn add_recording(
     active: usize,
 ) -> Result<(Edit, RecordingAdded), EditError> {
     let ti = track_index(doc, track)?;
+    if doc.tracks[ti].kind.is_vocal() {
+        return Err(EditError::NotKeys);
+    }
     if takes.is_empty() {
         return Err(EditError::NoTakes);
     }
@@ -162,7 +169,7 @@ pub fn add_recording(
     let mut merged: Vec<ClipTake> = hit
         .iter()
         .flat_map(|c| {
-            c.takes.iter().map(|ct| ClipTake {
+            c.keys().iter().map(|ct| ClipTake {
                 take: ct.take.clone(),
                 offset: c.zero(ct) - range.start() as i64,
             })
@@ -188,7 +195,7 @@ pub fn add_recording(
         name,
         start: range.start(),
         end: range.end(),
-        takes: merged,
+        takes: ClipTakes::Keys(merged),
         active: first_new + active,
     });
     let at = clips.partition_point(|c| c.start < clip.start);
@@ -262,8 +269,7 @@ pub fn delete_take(doc: &Doc, clip: ClipId) -> Result<Edit, EditError> {
         return Err(EditError::Unchanged);
     }
     let index = old.active;
-    let mut takes = old.takes.clone();
-    takes.remove(index);
+    let takes = old.takes.without(index);
     let mut clips = track.clips.clone();
     clips[ci] = Arc::new(Clip {
         takes,
@@ -421,6 +427,48 @@ pub fn add_track(
     below: Option<TrackId>,
     instrument: InstrumentRef,
 ) -> Result<(Edit, TrackId), EditError> {
+    let name = instrument.track_name().to_owned();
+    add_track_of(doc, below, TrackKind::Keys, instrument, &name)
+}
+
+/// A vocal track named 「歌」 (then 「歌 2」), with 「入口 1 ・ モノ」 (spec 3, 23-A). Its
+/// sends are off, and it has the color its place gives, as a keys track.
+pub fn add_vocal_track(doc: &Doc, below: Option<TrackId>) -> Result<(Edit, TrackId), EditError> {
+    let kind = TrackKind::Vocal {
+        input: VocalInput::default(),
+    };
+    add_track_of(doc, below, kind, InstrumentRef::SINE, VOCAL_TRACK_NAME)
+}
+
+/// The vocal track records from other channels of the input. `NotKeys` has no opposite:
+/// a keys track gives `NoSuchTrack`, as a track that is not there.
+pub fn set_vocal_input(doc: &Doc, track: TrackId, input: VocalInput) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    match t.kind {
+        TrackKind::Keys => Err(EditError::NoSuchTrack(track)),
+        TrackKind::Vocal { input: old } if old == input => Err(EditError::Unchanged),
+        TrackKind::Vocal { .. } => Ok(Edit {
+            doc: with_track(
+                doc,
+                ti,
+                Track {
+                    kind: TrackKind::Vocal { input },
+                    ..Track::clone(t)
+                },
+            ),
+            step: StepKind::SetVocalInput { track },
+        }),
+    }
+}
+
+fn add_track_of(
+    doc: &Doc,
+    below: Option<TrackId>,
+    kind: TrackKind,
+    instrument: InstrumentRef,
+    base: &str,
+) -> Result<(Edit, TrackId), EditError> {
     let at = match below {
         Some(id) => track_index(doc, id)? + 1,
         None => doc.tracks.len(),
@@ -433,7 +481,6 @@ pub fn add_track(
         None => doc.next_id,
     });
     let id = TrackId(ids.next()?);
-    let base = instrument.track_name();
     let taken = |name: &str| doc.tracks.iter().any(|t| t.name == name);
     let name = if taken(base) {
         (2u32..)
@@ -450,7 +497,11 @@ pub fn add_track(
             id,
             name,
             color: TrackColor::for_index(at),
-            sends: mixer::new_track_sends(&instrument),
+            kind,
+            sends: match kind {
+                TrackKind::Keys => mixer::new_track_sends(&instrument),
+                TrackKind::Vocal { .. } => [mixer::Gain::SILENT; 2],
+            },
             instrument,
             channel: Channel::default(),
             muted: false,
@@ -531,6 +582,16 @@ pub(crate) fn clip_index(doc: &Doc, id: ClipId) -> Result<(usize, usize), EditEr
         .enumerate()
         .find_map(|(ti, t)| t.clips.iter().position(|c| c.id == id).map(|ci| (ti, ci)))
         .ok_or(EditError::NoSuchClip(id))
+}
+
+/// As [`clip_index`], of a clip that holds notes.
+pub(crate) fn keys_clip_index(doc: &Doc, id: ClipId) -> Result<(usize, usize), EditError> {
+    let (ti, ci) = clip_index(doc, id)?;
+    if doc.tracks[ti].clips[ci].is_keys() {
+        Ok((ti, ci))
+    } else {
+        Err(EditError::NotKeys)
+    }
 }
 
 pub(crate) fn with_track(doc: &Doc, index: usize, track: Track) -> Doc {

@@ -1,4 +1,4 @@
-//! Telemetry binary, version 3, little-endian. The layout table is docs/architecture.md 3-3;
+//! Telemetry binary, version 4, little-endian. The layout table is docs/architecture.md 3-3;
 //! this file is the one place that fixes it. `ui/src/bridge/telemetry.ts` reads it.
 
 use std::fmt;
@@ -6,8 +6,13 @@ use std::fmt;
 use crate::TransportState;
 
 pub const TELEMETRY_KIND: u8 = 1;
-pub const TELEMETRY_VERSION: u8 = 3;
-pub const TELEMETRY_HEADER_LEN: usize = 88;
+pub const TELEMETRY_VERSION: u8 = 4;
+pub const TELEMETRY_HEADER_LEN: usize = 92;
+/// One mic meter: the track's id, the peak left and right, the flags and 3 spare bytes.
+pub const TELEMETRY_MIC_LEN: usize = 16;
+
+const MIC_FLAG_CLIPPED: u8 = 1 << 0;
+const MIC_FLAG_STEREO: u8 = 1 << 1;
 
 const FLAG_RUNNING: u8 = 1 << 0;
 const FLAG_MASTER_CLIPPED: u8 = 1 << 1;
@@ -50,6 +55,20 @@ impl TransportState {
     }
 }
 
+/// The input of one vocal track (spec 3, 31-C): what comes in, before the track's fader.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct MicMeter {
+    /// `TrackView::id`.
+    pub track: u32,
+    /// Left, right, as `Telemetry::master_peak`. A mono input has the same value in both.
+    pub peak: [f32; 2],
+    /// The input reached 0 dB since the last send (the right end of the meter and the dB
+    /// reading turn `color.rec`). How long it stays lit is the screen's, as for the master.
+    pub clipped: bool,
+    /// The track records two channels (「入口 1 ・ 2 ・ ステレオ」).
+    pub stereo: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Telemetry {
     pub seq: u32,
@@ -74,6 +93,9 @@ pub struct Telemetry {
     /// Return A, then return B: left, right, as `master_peak`.
     pub return_peaks: [[f32; 2]; 2],
     pub track_peaks: Vec<[f32; 2]>,
+    /// The vocal tracks whose input is metered now (selected, or with the ● on), in the
+    /// order of the tracks. Empty while the input is not open.
+    pub mics: Vec<MicMeter>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +106,7 @@ pub enum TelemetryError {
     WrongKind(u8),
     WrongVersion(u8),
     WrongTransportState(u8),
-    /// The length does not match the track count in the header.
+    /// The length does not match the track and mic counts in the header.
     WrongLength {
         len: usize,
         expected: usize,
@@ -113,7 +135,7 @@ impl std::error::Error for TelemetryError {}
 
 impl Telemetry {
     pub fn encoded_len(&self) -> usize {
-        TELEMETRY_HEADER_LEN + 8 * self.track_peaks.len()
+        TELEMETRY_HEADER_LEN + 8 * self.track_peaks.len() + TELEMETRY_MIC_LEN * self.mics.len()
     }
 
     /// Clears `out` and writes the message into it. The caller keeps one Vec and reuses it.
@@ -122,6 +144,7 @@ impl Telemetry {
     /// When there are more than `u16::MAX` tracks.
     pub fn encode_into(&self, out: &mut Vec<u8>) {
         let n = u16::try_from(self.track_peaks.len()).expect("track count fits in u16");
+        let m = u16::try_from(self.mics.len()).expect("mic count fits in u16");
         out.clear();
         out.reserve(self.encoded_len());
         out.push(TELEMETRY_KIND);
@@ -157,10 +180,31 @@ impl Telemetry {
         out.push(0);
         out.extend_from_slice(&t.count_in_beats_left.to_le_bytes());
         out.extend_from_slice(&t.lap.to_le_bytes());
-        for pair in self.return_peaks.iter().chain(&self.track_peaks) {
+        for pair in &self.return_peaks {
             for v in pair {
                 out.extend_from_slice(&v.to_le_bytes());
             }
+        }
+        out.extend_from_slice(&m.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+        for pair in &self.track_peaks {
+            for v in pair {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        for mic in &self.mics {
+            out.extend_from_slice(&mic.track.to_le_bytes());
+            for v in mic.peak {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            let mut flags = 0;
+            if mic.clipped {
+                flags |= MIC_FLAG_CLIPPED;
+            }
+            if mic.stereo {
+                flags |= MIC_FLAG_STEREO;
+            }
+            out.extend_from_slice(&[flags, 0, 0, 0]);
         }
     }
 
@@ -175,7 +219,8 @@ impl Telemetry {
             return Err(TelemetryError::WrongVersion(bytes[1]));
         }
         let n = usize::from(u16::from_le_bytes(at(bytes, 2)));
-        let expected = TELEMETRY_HEADER_LEN + 8 * n;
+        let m = usize::from(u16::from_le_bytes(at(bytes, 88)));
+        let expected = TELEMETRY_HEADER_LEN + 8 * n + TELEMETRY_MIC_LEN * m;
         if bytes.len() != expected {
             return Err(TelemetryError::WrongLength {
                 len: bytes.len(),
@@ -213,6 +258,18 @@ impl Telemetry {
             }),
             return_peaks: [pair(72), pair(80)],
             track_peaks: (0..n).map(|i| pair(TELEMETRY_HEADER_LEN + 8 * i)).collect(),
+            mics: (0..m)
+                .map(|i| {
+                    let pos = TELEMETRY_HEADER_LEN + 8 * n + TELEMETRY_MIC_LEN * i;
+                    let flags = bytes[pos + 12];
+                    MicMeter {
+                        track: u32::from_le_bytes(at(bytes, pos)),
+                        peak: pair(pos + 4),
+                        clipped: flags & MIC_FLAG_CLIPPED != 0,
+                        stereo: flags & MIC_FLAG_STEREO != 0,
+                    }
+                })
+                .collect(),
         })
     }
 
@@ -232,6 +289,7 @@ impl Telemetry {
             && self.transport == other.transport
             && self.return_peaks == other.return_peaks
             && self.track_peaks == other.track_peaks
+            && self.mics == other.mics
     }
 }
 

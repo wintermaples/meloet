@@ -82,10 +82,10 @@ fn clip(start: u64, end: u64, offset: i64, take: Take) -> Clip {
         name: "ピアノ".to_owned(),
         start,
         end,
-        takes: vec![ClipTake {
+        takes: crate::ClipTakes::Keys(vec![ClipTake {
             take: Arc::new(take),
             offset,
-        }],
+        }]),
         active: 0,
     }
 }

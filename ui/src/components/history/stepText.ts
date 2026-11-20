@@ -4,10 +4,12 @@
 import { EFFECT_PARAMS } from "../../bridge/types";
 import type { EffectName, HistoryRow, LaneName, LibraryView, SongView, StepName, StepPlace, StepWhat, StripName, TrackRef } from "../../bridge";
 import { fill, stepNames, t } from "../../text/ja";
-import { tempoText } from "../format";
+import { gridText, tempoText } from "../format";
+import { noteName } from "../meterFormat";
 import { faderText, panText } from "../mixer/scale";
 import { stripName } from "../mixer/stripName";
 import { paramName, valueNumberText, valueText } from "../params/paramRows";
+import { controlName } from "../pianoroll/ccFields";
 import { soundNameText } from "../sounds";
 
 /** 戻りの名前（「A リバーブ」）は、いまの曲から作る。 */
@@ -133,6 +135,24 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
       return what.points === null ? laneNameText(what.target) : t("history.lanePoints", { target: laneNameText(what.target), count: what.points });
     case "missing":
       return t("history.missing", { tracks: what.tracks, inserts: what.inserts });
+    case "note":
+      return noteName(what.key);
+    case "quantized":
+      return t("history.quantized", { grid: gridText(what.division, what.triplet), count: what.count });
+    case "velocity":
+      return what.from === null || what.to === null
+        ? t("history.notes", { count: what.count })
+        : t("history.velocity", { count: what.count, from: what.from, to: what.to });
+    case "controlPoints":
+      return what.control === null
+        ? t("history.points", { count: what.count })
+        : t("history.controlPoints", { control: controlName(what.control), count: what.count });
+    case "color":
+      return t("history.color", { track: trackLabel(what.track), color: what.color });
+    case "soundReplaced":
+      return t("history.soundReplaced", { track: trackLabel(what.track), from: soundNameText(what.from), to: soundNameText(what.to) });
+    case "vocalInput":
+      return t("history.soundReplaced", { track: trackLabel(what.track), from: t(`vocal.input.${what.from}`), to: t(`vocal.input.${what.to}`) });
   }
 }
 

@@ -99,7 +99,7 @@ fn moving_makes_a_new_take_in_the_same_place() {
         }
     );
     // The other takes and the old one are untouched.
-    assert!(Arc::ptr_eq(&after.takes[1].take, &before.takes[1].take));
+    assert!(Arc::ptr_eq(&after.keys()[1].take, &before.keys()[1].take));
     assert_eq!(notes_of(&doc, clip), [(TAKE, 100, 60), (TAKE + Q, 100, 64)]);
 }
 
@@ -144,7 +144,7 @@ fn moving_back_keeps_the_other_takes_in_the_song() {
     let (doc, clip) = one_clip(vec![note(0, 100, 60)]);
     let zeros = |doc: &Doc| -> Vec<i64> {
         let c = doc.clip(clip).unwrap().1;
-        c.takes.iter().map(|t| c.zero(t)).collect()
+        c.keys().iter().map(|t| c.zero(t)).collect()
     };
     let before = zeros(&doc);
     // From TAKE back 2 * Q + 40: in bar 1, so the clip starts at 0.

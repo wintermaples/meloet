@@ -32,6 +32,7 @@ const clip = (id: number, fromBar: number, toBar: number, takes = 1) => ({
   takeId: 100 + id,
   takeOffset: 0,
   noteCount: 0,
+  vocal: false,
 });
 const track = (number: number, clips: ReturnType<typeof clip>[], color = number): TrackView => ({
   id: number,
@@ -40,6 +41,7 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   color,
   muted: false,
   soloed: false,
+  kind: { kind: "keys" },
   sound: { kind: "builtin", instrument: "sine" },
   standIn: null,
   drumKeys: null,

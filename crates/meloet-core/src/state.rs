@@ -13,17 +13,21 @@ use meloet_devices::{DevicesPicture, Endpoint, sort_for_choice};
 use meloet_midi::Keyboard;
 use meloet_model::drums::gm_kit_rows;
 use meloet_model::mixer::Missing;
-use meloet_model::{BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace, Song, StripId};
+use meloet_model::{
+    BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace, Song, StripId, TrackKind,
+    VocalInput,
+};
 use meloet_plugin::ScanCache;
 use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
     EndpointView, FileDropView, Friendly, Hint, HistoryRow, InputsView, InstrumentKind,
-    KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
-    LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
-    PluginRole, PluginWindowKind, QuantizeSettings, RecoveryCause, ScanView, SettingsDialogView,
-    ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView,
-    TrackView, Unusable, VelocityFixed, WorkspaceView,
+    KeyboardView, KeyboardsView, LatencySource, LatencyView, LayoutView, LibraryView, LinkKind,
+    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, MissingRef, MissingView, OutputsView,
+    ParamTable, ParamValues, PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat,
+    RecoveryCause, ScanView, SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView,
+    SoundRef, StandIn, StatusMessage, StatusView, TrackKindView, TrackView, Unusable,
+    VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -41,6 +45,10 @@ pub use recovery::{QUIET_US, RecoveryStart};
 
 /// The buffer size meloet asks for. What really runs is `AudioView::actual_frames`.
 pub const REQUESTED_FRAMES: u32 = 256;
+/// What 「バッファ ▾」 and 「サンプルレート ▾」 of the advanced sound settings list.
+pub const BUFFER_CHOICES: [u32; 5] = [64, 128, 256, 512, 1024];
+pub const SAMPLE_RATE_CHOICES: [u32; 4] = [44_100, 48_000, 88_200, 96_000];
+pub const REQUESTED_SAMPLE_RATE: u32 = 48_000;
 pub const AUDIO_SYSTEM: &str = "PipeWire";
 /// Key to sound is about this many buffers (docs/architecture.md 4).
 const LATENCY_BUFFERS: f32 = 2.5;
@@ -1292,6 +1300,22 @@ impl Model {
                 let selecting = self.play.select_insert(insert);
                 self.selected(selecting, effects);
             }
+            // Vocal tracks, the input and the latency: accepted, and nothing yet
+            // (docs/architecture.md 22-15).
+            Command::AddVocalTrack
+            | Command::SetVocalInput { .. }
+            | Command::ToggleVocalArm { .. }
+            | Command::ToggleMonitor { .. }
+            | Command::SettingsSelectInput { .. }
+            | Command::SettingsSetBuffer { .. }
+            | Command::SettingsSetSampleRate { .. }
+            | Command::SettingsSetRecordFormat { .. }
+            | Command::SettingsSetManualLatency { .. }
+            | Command::OpenLatencyMeasure
+            | Command::StartLatencyMeasure
+            | Command::StopLatencyMeasure
+            | Command::UseMeasuredLatency
+            | Command::CloseLatencyMeasure => {}
             Command::SelectInstrument { track } => {
                 let selecting = self.play.select_instrument(track);
                 self.selected(selecting, effects);
@@ -2109,6 +2133,7 @@ impl Model {
                 song_dialog: self.song_dialog_view(),
                 recovery,
                 file_drop: self.file_drop.clone(),
+                latency_dialog: None,
             },
             shelf: self.shelf_view(&library),
             library,
@@ -2144,6 +2169,7 @@ impl Model {
                     .map(endpoint_view)
                     .collect(),
                 chosen: None,
+                open: false,
             },
             audio,
             status: StatusView { message: status },
@@ -2167,6 +2193,17 @@ impl Model {
             latency_ms_at_requested: rate.map(|r| estimate_ms(REQUESTED_FRAMES, r)),
             output_device: self.open.as_ref().map(|o| o.node_name.clone()),
             midi_input: self.active_keyboard().map(Keyboard::label),
+            buffer_choices: BUFFER_CHOICES.to_vec(),
+            requested_sample_rate: REQUESTED_SAMPLE_RATE,
+            sample_rate_choices: SAMPLE_RATE_CHOICES.to_vec(),
+            record_format: RecordFormat::default(),
+            latency: LatencyView {
+                reported_ms: None,
+                measured_ms: None,
+                manual_ms: None,
+                used: LatencySource::Reported,
+                used_ms: None,
+            },
         }
     }
 
@@ -2383,6 +2420,15 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
                 number: i as u32 + 1,
                 name: t.name.clone(),
                 color: t.color.get(),
+                kind: match t.kind {
+                    TrackKind::Keys => TrackKindView::Keys,
+                    TrackKind::Vocal { input } => TrackKindView::Vocal {
+                        input: vocal_input_view(input),
+                        input_ready: false,
+                        armed: song.session.armed_vocals.contains(&t.id),
+                        monitor: song.session.monitored.contains(&t.id),
+                    },
+                },
                 sound: added::sound_view(
                     &t.instrument,
                     play.plugin_state(PluginPlace::Instrument(t.id)),
@@ -2411,9 +2457,18 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
         returns: play.returns_view(),
         master: play.master_view(),
         play_target: song.session.play_target.map(|t| t.0),
+        keys_target: song.keys_target().map(|t| t.0),
         loop_range: play.loop_span(),
         loop_on: song.session.loop_on,
         file,
+    }
+}
+
+pub(crate) fn vocal_input_view(input: VocalInput) -> meloet_protocol::VocalInput {
+    match input {
+        VocalInput::Mono1 => meloet_protocol::VocalInput::Mono1,
+        VocalInput::Mono2 => meloet_protocol::VocalInput::Mono2,
+        VocalInput::Stereo12 => meloet_protocol::VocalInput::Stereo12,
     }
 }
 
@@ -2437,6 +2492,7 @@ fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
             d::LinkKind::Jack => LinkKind::Jack,
             d::LinkKind::Plug => LinkKind::Plug,
         },
+        channels: None,
         node_name: endpoint.node_name.clone(),
         device: endpoint.device_description.clone(),
         unusable: endpoint.unusable().map(|u| match u {

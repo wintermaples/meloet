@@ -248,6 +248,7 @@ impl Play {
         {
             let chosen = self.shelf.effect.clone()?;
             let replaces = matches!(self.shelf.mode, Mode::ReplaceEffect(..));
+            let lanes = self.lane_count();
             let went_in = match &chosen {
                 _ if replaces => self.replace_effect(strip, slot, &chosen, effects),
                 Chosen::Builtin(kind) => self.add_effect(strip, slot, *kind, effects),
@@ -266,7 +267,11 @@ impl Play {
             };
             let effect = effect_name(self.doc().insert(strip, slot)?);
             return Some(if replaces {
-                StatusMessage::InsertReplaced { insert, effect }
+                StatusMessage::InsertReplaced {
+                    insert,
+                    effect,
+                    lanes_removed: lanes.saturating_sub(self.lane_count()),
+                }
             } else {
                 StatusMessage::EffectInserted { insert, effect }
             });
@@ -313,13 +318,20 @@ impl Play {
                     self.drop_plug(Spot::Seat(seat), effects);
                     self.move_plug(Spot::Trial(seat), Spot::Seat(seat), effects);
                 }
+                let lanes = self.lane_count();
                 self.apply(e, effects);
+                let lanes_removed = lanes.saturating_sub(self.lane_count());
                 let track = self.track_ref(track)?;
                 Some(match builtin(&instrument) {
-                    Some(instrument) => StatusMessage::InstrumentReplaced { track, instrument },
+                    Some(instrument) => StatusMessage::InstrumentReplaced {
+                        track,
+                        instrument,
+                        lanes_removed,
+                    },
                     None => StatusMessage::InstrumentReplacedSound {
                         track,
                         sound: sound_name(&instrument),
+                        lanes_removed,
                     },
                 })
             }

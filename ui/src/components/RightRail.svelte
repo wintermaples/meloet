@@ -25,6 +25,7 @@
     if (selected.kind === "builtin") {
       return t("params.tabCount", { name: t(`effect.${selected.effect}`), count: rowCount(allRows(selected.effect, selected.values)) });
     }
+    if (selected.kind === "sound") return null;
     const plugin = pluginAt(current.state!.song, selected.slot);
     return plugin ? t("params.tabCount", { name: plugin.name, count: selected.count }) : null;
   });

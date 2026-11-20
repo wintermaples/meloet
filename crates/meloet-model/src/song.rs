@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use crate::audio::{AudioId, AudioShape, AudioSource, AudioTake, TrackKind};
 use crate::automation::{AutoTarget, Lane};
 use crate::chunked::ChunkedVec;
 use crate::mixer::{self, Channel, Return, Sends};
@@ -98,12 +99,117 @@ pub struct TakeOrigin {
     pub settings: QuantizeSettings,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClipTake {
-    pub take: Arc<Take>,
+/// A take in a clip: `ClipTake` of a keys clip, `ClipTake<AudioTake>` of a vocal clip.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ClipTake<T = Take> {
+    pub take: Arc<T>,
     /// The take's tick 0 is at `clip.start + offset` in the song. Below 0 when the head of the
     /// take is trimmed off; the take's tick 0 can then be before the song's.
     pub offset: i64,
+}
+
+impl<T> Clone for ClipTake<T> {
+    fn clone(&self) -> Self {
+        ClipTake {
+            take: self.take.clone(),
+            offset: self.offset,
+        }
+    }
+}
+
+/// The takes of a clip, all of one kind: a clip on a keys track has keys takes, a clip on a
+/// vocal track audio takes and the values only audio has. Never empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClipTakes {
+    Keys(Vec<ClipTake>),
+    Vocal {
+        takes: Vec<ClipTake<AudioTake>>,
+        shape: AudioShape,
+    },
+}
+
+impl ClipTakes {
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        match self {
+            ClipTakes::Keys(takes) => takes.len(),
+            ClipTakes::Vocal { takes, .. } => takes.len(),
+        }
+    }
+
+    /// The keys takes; none for a vocal clip.
+    pub fn keys(&self) -> &[ClipTake] {
+        match self {
+            ClipTakes::Keys(takes) => takes,
+            ClipTakes::Vocal { .. } => &[],
+        }
+    }
+
+    /// The keys takes, to change them; none for a vocal clip.
+    pub fn keys_mut(&mut self) -> Option<&mut Vec<ClipTake>> {
+        match self {
+            ClipTakes::Keys(takes) => Some(takes),
+            ClipTakes::Vocal { .. } => None,
+        }
+    }
+
+    /// The audio takes; none for a keys clip.
+    pub fn vocal(&self) -> &[ClipTake<AudioTake>] {
+        match self {
+            ClipTakes::Keys(_) => &[],
+            ClipTakes::Vocal { takes, .. } => takes,
+        }
+    }
+
+    pub fn shape(&self) -> Option<&AudioShape> {
+        match self {
+            ClipTakes::Keys(_) => None,
+            ClipTakes::Vocal { shape, .. } => Some(shape),
+        }
+    }
+
+    pub fn id(&self, index: usize) -> Option<TakeId> {
+        match self {
+            ClipTakes::Keys(takes) => takes.get(index).map(|t| t.take.id),
+            ClipTakes::Vocal { takes, .. } => takes.get(index).map(|t| t.take.id),
+        }
+    }
+
+    pub fn offset(&self, index: usize) -> Option<i64> {
+        match self {
+            ClipTakes::Keys(takes) => takes.get(index).map(|t| t.offset),
+            ClipTakes::Vocal { takes, .. } => takes.get(index).map(|t| t.offset),
+        }
+    }
+
+    /// The same takes, each with the offset `f` makes of its own.
+    pub fn with_offsets(&self, f: impl Fn(i64) -> i64) -> ClipTakes {
+        fn each<T>(takes: &[ClipTake<T>], f: impl Fn(i64) -> i64) -> Vec<ClipTake<T>> {
+            (takes.iter())
+                .map(|ct| ClipTake {
+                    take: ct.take.clone(),
+                    offset: f(ct.offset),
+                })
+                .collect()
+        }
+        match self {
+            ClipTakes::Keys(takes) => ClipTakes::Keys(each(takes, f)),
+            ClipTakes::Vocal { takes, shape } => ClipTakes::Vocal {
+                takes: each(takes, f),
+                shape: *shape,
+            },
+        }
+    }
+
+    /// The same takes without the one at `index`, which there must be.
+    pub fn without(&self, index: usize) -> ClipTakes {
+        let mut new = self.clone();
+        match &mut new {
+            ClipTakes::Keys(takes) => drop(takes.remove(index)),
+            ClipTakes::Vocal { takes, .. } => drop(takes.remove(index)),
+        }
+        new
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,8 +218,7 @@ pub struct Clip {
     pub name: String,
     pub start: u64,
     pub end: u64,
-    /// Never empty.
-    pub takes: Vec<ClipTake>,
+    pub takes: ClipTakes,
     /// The take shown and played.
     pub active: usize,
 }
@@ -123,25 +228,53 @@ impl Clip {
         TickRange::new(self.start, self.end).expect("a clip is never empty")
     }
 
+    pub fn is_keys(&self) -> bool {
+        matches!(self.takes, ClipTakes::Keys(_))
+    }
+
+    /// The keys takes; none for a vocal clip.
+    pub fn keys(&self) -> &[ClipTake] {
+        self.takes.keys()
+    }
+
+    /// The shown take of a keys clip. Only for a keys clip ([`Clip::is_keys`]): what edits
+    /// notes turns a vocal clip away before it gets here (`EditError::NotKeys`).
     pub fn active_take(&self) -> &ClipTake {
-        &self.takes[self.active]
+        &self.takes.keys()[self.active]
+    }
+
+    /// The shown take of a vocal clip; `None` for a keys clip.
+    pub fn active_audio(&self) -> Option<&ClipTake<AudioTake>> {
+        self.takes.vocal().get(self.active)
+    }
+
+    pub fn active_take_id(&self) -> TakeId {
+        self.takes.id(self.active).expect("a clip is never empty")
     }
 
     /// Where the take's tick 0 is in the song.
-    pub fn zero(&self, take: &ClipTake) -> i64 {
+    pub fn zero<T>(&self, take: &ClipTake<T>) -> i64 {
         self.start as i64 + take.offset
+    }
+
+    /// Where the shown take's tick 0 is in the song.
+    pub fn active_zero(&self) -> i64 {
+        let offset = self.takes.offset(self.active);
+        self.start as i64 + offset.expect("a clip is never empty")
     }
 
     /// Whether tick `tick` of the shown take is inside the clip, [start, end). A note shows,
     /// sounds and counts only when its start is; the others stay in the take, trimmed off.
     pub fn holds(&self, tick: u64) -> bool {
-        let at = i128::from(self.zero(self.active_take())) + i128::from(tick);
+        let at = i128::from(self.active_zero()) + i128::from(tick);
         (i128::from(self.start)..i128::from(self.end)).contains(&at)
     }
 
-    /// The notes of the shown take that start inside the clip.
+    /// The notes of the shown take that start inside the clip; 0 for a vocal clip.
     pub fn note_count(&self) -> usize {
-        let shown = self.active_take();
+        let Some(shown) = self.keys().get(self.active) else {
+            return 0;
+        };
         let zero = i128::from(self.zero(shown));
         let before = |at: u64| {
             let at = i128::from(at) - zero;
@@ -159,6 +292,7 @@ pub struct Track {
     pub id: TrackId,
     pub name: String,
     pub color: TrackColor,
+    pub kind: TrackKind,
     pub instrument: InstrumentRef,
     /// The fader, the pan and the inserts.
     pub channel: Channel,
@@ -197,7 +331,9 @@ pub struct Doc {
     /// Return A and return B.
     pub returns: [Arc<Return>; 2],
     pub master: Arc<Channel>,
-    /// The next clip, take, marker or insert id to give out.
+    /// The audio table: every audio file a take of the song plays, in the order of id.
+    pub audio: Arc<Vec<Arc<AudioSource>>>,
+    /// The next clip, take, marker, insert or audio id to give out.
     pub next_id: u32,
 }
 
@@ -215,6 +351,7 @@ impl Doc {
                 id: TrackId(1),
                 name: "ピアノ".to_owned(),
                 color: TrackColor::for_index(0),
+                kind: TrackKind::Keys,
                 instrument: InstrumentRef::GRAND_PIANO,
                 channel: Channel::default(),
                 sends: mixer::new_track_sends(&InstrumentRef::GRAND_PIANO),
@@ -224,6 +361,7 @@ impl Doc {
             })],
             returns: mixer::new_song_returns(),
             master: mixer::new_song_master(),
+            audio: Arc::default(),
             next_id: mixer::NEW_SONG_NEXT_ID,
         }
     }
@@ -242,6 +380,10 @@ impl Doc {
         self.markers.iter().find(|m| m.id == id)
     }
 
+    pub fn audio(&self, id: AudioId) -> Option<&Arc<AudioSource>> {
+        self.audio.iter().find(|a| a.id == id)
+    }
+
     pub fn clip(&self, id: ClipId) -> Option<(&Arc<Track>, &Arc<Clip>)> {
         self.tracks
             .iter()
@@ -252,9 +394,17 @@ impl Doc {
 /// What undo leaves alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
-    /// The selected track: where the keys sound and where a recording goes. `None` only in
-    /// a song with no tracks.
+    /// The selected track. When it is a keys track, where the keys sound and where their
+    /// recording goes ([`Song::keys_target`]). `None` only in a song with no tracks.
     pub play_target: Option<TrackId>,
+    /// The keys track that was selected last before a vocal track was (B-94-1). Not saved.
+    pub last_keys: Option<TrackId>,
+    /// The vocal tracks whose ● is on (spec 3, 24-C): R records to all of them, and to
+    /// the keys target. Not saved.
+    pub armed_vocals: BTreeSet<TrackId>,
+    /// The vocal tracks whose 「モニター」 is on. It sounds only while the track's ● is on.
+    /// Not saved: a song opens with every monitor off.
+    pub monitored: BTreeSet<TrackId>,
     /// The range is in the `Doc`: changing it is a step.
     pub loop_on: bool,
     pub roll: RollSettings,
@@ -271,11 +421,25 @@ pub struct Song {
 }
 
 impl Song {
+    /// The keys track the keys sound on and R records the keys to: the selected track, or
+    /// while a vocal track is selected the keys track selected last (B-94-1). `None` when
+    /// that leaves none.
+    pub fn keys_target(&self) -> Option<TrackId> {
+        let keys = |id: TrackId| {
+            let track = self.doc.track(id)?;
+            (!track.kind.is_vocal()).then_some(id)
+        };
+        (self.session.play_target.and_then(keys)).or(self.session.last_keys.and_then(keys))
+    }
+
     pub fn new_default() -> Song {
         Song {
             doc: Doc::new_default(),
             session: Session {
                 play_target: Some(TrackId(1)),
+                last_keys: None,
+                armed_vocals: BTreeSet::new(),
+                monitored: BTreeSet::new(),
                 loop_on: false,
                 roll: RollSettings::default(),
                 soloed: BTreeSet::new(),

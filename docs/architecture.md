@@ -110,12 +110,12 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
 
 画面の文面は Rust に置かない。Rust は「文の種類（ID）とうめこむ値」だけを送り、画面が `ui/src/text/` の文に当てる。
 
-### 3-3. 計器のバイナリ（版 3、リトルエンディアン）
+### 3-3. 計器のバイナリ（版 4、リトルエンディアン）
 
 | 位置 | 型 | 中身 |
 |---|---|---|
 | 0 | u8 | 種類 = 1（計器） |
-| 1 | u8 | 版 = 3 |
+| 1 | u8 | 版 = 4 |
 | 2 | u16 | トラックの数 n |
 | 4 | u32 | 通し番号 |
 | 8 | u64 | Rust が送った時刻（CLOCK_MONOTONIC、ns） |
@@ -135,7 +135,10 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
 | 66 | u16 | カウントインの残りの拍（鳴っている拍もふくむ。外では 0） |
 | 68 | u32 | 録音中のループの周（最初が 0） |
 | 72 | f32 × 4 | 戻り A の最大値 左・右、戻り B の最大値 左・右（戻りの出口: インサート、フェーダー、パンの後。第 4 回 区切り3） |
-| 88 | f32 × 2n | トラックごとの最大値 左・右（フェーダーとパンの後） |
+| 88 | u16 | マイクの計の数 m（第 7 回 区切り2。入口をひらいていない間は 0） |
+| 90 | u16 | 0（あき） |
+| 92 | f32 × 2n | トラックごとの最大値 左・右（フェーダーとパンの後） |
+| 92 + 8n | 16 × m | マイクの計（歌のトラックごと、トラックの順）: トラックの id u32、入ってくる音の最大値 左・右 f32 × 2（フェーダーの前。モノは左右同じ）、旗 u8（bit0: 0 dB に届いた、bit1: ステレオ）、0 が 3 つ |
 
 画面の位置 = `tick + (Rust の今 − 送った時刻) × 1 µs あたりのティック`。bit2 が 0 の間（音がまだ動いていない）、48〜71 は 0 で、画面は `transport.position` を使う。止まっているときは、再生まわりの数字も再生の位置の線も `transport.position`（差分ですぐ届く）、動いているときは計器の位置（`ui/src/components/time.ts` の `shownTick`）。
 
@@ -1619,3 +1622,48 @@ pub struct AudioShape {
   - 歌のトラックをえらんでいるとき（頼みの 1）: 鍵盤は、最後にえらんでいた鍵盤のトラックで鳴りつづけ、「弾くと鳴る先」もそのトラックを出す。鍵盤のトラックが 1 本もなければ鳴らない（「弾くと鳴る先」は「—」）。仮の形として B に。
   - 22-6 の「ファイルはカウントインの最後の半拍から書く」は、そのまま仮の形として B に。
 - **第 10 版で確かめる**: 2/2 の表示と位置の枠の幅 ・ テンポの範囲 ・ 3/8 と x/16 のメトロノーム（22-1、22-2）、`音/` の名前 ・ 録った音と入れた音のファイルの名前 ・ 使っていない音の片づけの形 ・ 長い保存の進み（22-4）、入力計がいつ動くか ・ 「遅れを測る」の文と見た目 ・ 「遅れの合わせ」の範囲と向き（22-5）、録る形のはじめの値 ・ 録りかけを戻す案内（22-7）、波形の見た目（22-9）、フェードの形 ・ 音量の範囲 ・ 新しい手の名前 ・ だんだんの中で録った歌の「この音のテンポ」（22-10）、回せないプラグインの意味 ・ 尾のしきい値 ・ トラックごとの中身（22-11）。
+
+### 22-15. 約束 23 の形（区切り2 の 1 回目）
+
+区切り2 の 2 回目で、エンジン ・ core ・ 画面の 3 人が同じ出発点から作るための形（2026-11-21、meloet-hard）。中身があるのは、型、曲のファイル、約束、計器のならび、92 の残り（19-A ・ 92-3 ・ 92-19）の core、入口の輪。入口をひらく所、録る流れ、新しい意図の中身、画面の部品は 2 回目。
+
+**model**（`crates/meloet-model/src/audio.rs`、`song.rs`）
+
+- `Track.kind: TrackKind`（`Keys` か `Vocal { input }`）。入口は `VocalInput`（`Mono1` ・ `Mono2` ・ `Stereo12`）で、曲に入る（変えるのは 1 手 `StepKind::SetVocalInput`）。「入口なし」は PC のようすなので、曲には入れない。
+  - 歌のトラックも `instrument` を持つ（サイン波。だれも読まない）。**理由**: `Track.instrument` を読む所が 200 か所あり、`Option` にすると区切り2 の前に全部を書きかえることになる。歌のトラックは `kind` で見分ける。
+- `Clip.takes: ClipTakes`（`Keys(Vec<ClipTake>)` か `Vocal { takes: Vec<ClipTake<AudioTake>>, shape: AudioShape }`）。1 つのクリップのテイクは、ぜんぶ同じ種類。`active` と `offset` は今のまま。
+  - ノートを直す関数（`notes.rs` ・ `quantize.rs` ・ `controls.rs`）と `add_recording` は、歌のクリップ ・ 歌のトラックに `EditError::NotKeys`。クリップを別の種類のトラックへ動かす ・ 貼ると `EditError::WrongKind`。動かす ・ はしを動かす ・ テイクの切りかえ ・ 消すは、そのまま歌にも効く。
+  - `Clip::active_take()` は鍵盤のクリップ専用（歌のクリップで呼ぶと止まる）。どちらでも使える物は `active_take_id()` ・ `active_zero()` ・ `takes.len()` ・ `keys()`（歌なら空）・ `active_audio()`。core のピアノロールの `shown()` は、歌のクリップを返さない。
+- `Doc.audio`（音の表、`Arc<Vec<Arc<AudioSource>>>`）、`AudioTake`、`SourceTempo`、`AudioShape` は 22-10 のとおり。**クリップの音量だけ `ClipGain`（−60.00〜+12.00 dB、0.01 きざみ）にした**。ミキサーの `Gain` は +6 までで −∞ があり、仕様書の「−60〜+12 dB」と合わないため。切る ・ フェードなどの手は、まだない（区切り3）。
+- `Session`: `armed_vocals`（● のついた歌のトラック）、`monitored`（モニターがオン）、`last_keys`（歌のトラックを選ぶ前に選んでいた鍵盤のトラック）。どれも保存しない。`Song::keys_target()` が「弾くと鳴る先」（B-94-1）: 選んだトラックが鍵盤ならそれ、歌なら `last_keys`、なければ `None`。
+- 足した関数: `edit::add_vocal_track`（名前は「歌」「歌 2」、入口 1 ・ モノ、センドは −∞）、`edit::set_vocal_input`。
+
+**曲のファイル**（版 6 のまま。`songfile.rs`）
+
+- トラックに `"kind": "vocal"` と `"input": "mono1" | "mono2" | "stereo12"`（鍵盤のトラックには書かない）。
+- `song.audio: [{id, uid, file, frames, rate, channels, sha256?}]`（`uid` は 16 進 32 けた、`sha256` は 64 けた。`file` は名前だけで、`/` や `..` があれば読まない）。
+- 歌のテイクは、鍵盤のテイクと別の表 **`audioTakes`**（ファイルのいちばん外。`{id, audio, firstFrame, frames, sync?}`、`sync` は `{tempo, headRamp, points}`）。22-10 は「テイクの表に」と書いたが、形のちがう物を 1 つの表にまぜると読みまちがえやすいので分けた。id は鍵盤のテイク ・ クリップ ・ マーカー ・ インサート ・ 音の表と重ならない。
+- 歌のクリップは `shape: {fadeIn, fadeOut, gainDb, follow, semitones, cents, keepFormant}` を持ち、`takes` は `audioTakes` の id。`shape` のあるクリップが鍵盤のトラックにある、ない歌のクリップがある、範囲の外の数、ファイルの長さをこえるテイクは「読めない物」。
+- なおすためのファイル（版 2）は、中の `song` が同じ形なので変えていない。録りかけの書きつけ（`work/rec.json`、22-7）は 2 回目。
+
+**約束 23**（`crates/meloet-protocol/src/vocal.rs` ほか）
+
+- トラック: `TrackView.kind`（`{kind: "keys"}` か `{kind: "vocal", input, inputReady, armed, monitor}`）。`SongView.keysTarget`（弾くと鳴る先。`playTarget` は「選んだトラック」だけの意味になった）。`ClipView.vocal`（波形は約束 24）。
+- 録音: `TransportView.recording` は今の形のまま「鍵盤の分」（歌だけを録るときは `null`）、歌の分は `recordingVocals: [{track, from, take, clip}]`。**理由**: `recording.track` を読む画面の所が多く、形を変えずに歌を足せる。
+- 意図: `addVocalTrack`、`setVocalInput`（1 手）、`toggleVocalArm`、`toggleMonitor`、`settingsSelectInput`、`settingsSetBuffer`、`settingsSetSampleRate`、`settingsSetRecordFormat`、`settingsSetManualLatency`、`openLatencyMeasure`、`startLatencyMeasure`、`stopLatencyMeasure`、`useMeasuredLatency`、`closeLatencyMeasure`。core は受けとるが、まだ何もしない（`state.rs`）。
+- 入口: `EndpointView.channels`、`InputsView.chosen`（歌が録る入口）と `open`（入口の流れがひらいている）。
+- 音の設定の奥: `AudioView` に `bufferChoices`、`requestedSampleRate`、`sampleRateChoices`、`recordFormat`（`bits16` ・ `bits24` ・ `bits32`）、`latency`（`reportedMs` ・ `measuredMs` ・ `manualMs` ・ `used` ・ `usedMs`）。遅れの数は、どれも「出口から入口へ戻るまでの全体」の ms（F7-Latency の 8.0 と 12.4）。22-5 の `X` は `measuredMs − reportedMs`。
+- 遅れを測る: `WorkspaceView.latencyDialog: {measure}`。`measure` は `idle` ・ `measuring {done, of, meanMs}` ・ `done {measuredMs}` ・ `failed {reason}`（`tooQuiet` ・ `unsteady` ・ `noInput`）。
+- 状態行: `noParams`、`vocalTrackAdded`、`noInput`、`monitorFirstOn`、`micTooLoud`、`vocalHasNoPianoRoll`、`recordingVocals {keys, vocals, monitor}`、`latencyMeasureOpen`。`effectRemoved` ・ `insertReplaced` ・ `instrumentReplaced` ・ `instrumentReplacedSound` に `lanesRemoved`。
+- なおすためのファイルの案内: `RecoveryView::Recovered.vocals: {count, until}`。
+- 92 の残り: `SelectedParams::Sound {track, sound}`（19-A）、`StepWhat` に `note` ・ `quantized` ・ `velocity` ・ `controlPoints` ・ `color` ・ `soundReplaced` ・ `vocalInput`（92-3）。core は、手の前と後の `Doc` をくらべて値を出す（`play/history.rs`。手の種類 `StepKind` は増やしていない）。
+- 手の名前: `setVocalInput`（「歌の入口を変える」、`builder:2026-11-21`）。歌のトラックを足す手は今の `addTrack`。
+
+**計器のバイナリ（版 4）**: 3-3 の表。頭が 92 バイトになり、トラックのあとに、歌のトラックごとの 16 バイト（トラックの id、左右のピーク、旗〔bit0: 0 dB に届いた、bit1: ステレオ〕）。入口をひらいていない間は 0 個。
+
+**エンジンの入口の口**（`crates/meloet-engine/src/input.rs`）
+
+- `input_ends(channels, sample_rate)` が、コールバックの持ち物 `InputTap` と、輪の読み手 2 つ（モニター用 0.5 秒、録る用 4 秒）と、`InputMeters` を作る。`InputTap::block(data, capture_us, callback_us)` がコールバックのすべて（メモリを取らない ・ 待たない。`tests/input.rs` が見はる）。
+- 輪は「こまの輪」と「見出しの輪」の 2 本組み。見出し `InputBlock {first_frame, frames, capture_us, callback_us, dropped}` は 1 回の呼び出しごと。こまの数は毎回ちがってよい（0 も）。輪がいっぱいなら、こまを入れずに `dropped` の見出しだけ入れ、読む側が音なしで埋める。`first_frame` は流れの頭からの通し番号（22-6 の「ファイルのこま ↔ エンジンのこま」に使う）。
+- 輪に入れるかどうかは `InputMeters::set_monitoring` ・ `set_recording` のスイッチ。オフの間は入れず、落とした数にも数えない。
+- `AudioInput::open` は、まだ `InputError::NotYet` を返す。cpal 0.18.2 の `build_input_stream`（`src/traits.rs` 261 行）と `InputStreamTimestamp {callback, capture}`（`src/timestamp.rs` 45 行。PipeWire では `capture = now − delay`、`src/host/pipewire/stream.rs` 329〜348 行）を読んで型を決めた。

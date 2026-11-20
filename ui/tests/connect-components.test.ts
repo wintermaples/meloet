@@ -46,6 +46,7 @@ const endpoint = (e: Partial<EndpointView> & { id: string; name: string }): Endp
   nodeName: "node",
   device: "Ryzen HD Audio Controller",
   unusable: null,
+  channels: null,
   ...e,
 });
 

@@ -56,10 +56,12 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
             name: format!("クリップ {id}"),
             start,
             end,
-            takes: takes
-                .into_iter()
-                .map(|(take, offset)| ClipTake { take, offset })
-                .collect(),
+            takes: meloet_model::ClipTakes::Keys(
+                takes
+                    .into_iter()
+                    .map(|(take, offset)| ClipTake { take, offset })
+                    .collect(),
+            ),
             active,
         })
     };
@@ -144,6 +146,9 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     Song {
         doc,
         session: Session {
+            armed_vocals: std::collections::BTreeSet::new(),
+            last_keys: None,
+            monitored: std::collections::BTreeSet::new(),
             play_target: Some(TrackId(1)),
             loop_on: true,
             roll: RollSettings {
@@ -170,8 +175,8 @@ fn a_song_comes_back_as_it_was_and_shares_its_takes() {
     assert_eq!(back, song);
     let clips = &back.doc.tracks[0].clips;
     assert!(Arc::ptr_eq(
-        &clips[0].takes[0].take,
-        &clips[1].takes[3].take
+        &clips[0].keys()[0].take,
+        &clips[1].keys()[3].take
     ));
 }
 
@@ -572,7 +577,7 @@ fn quantized_song() -> Song {
     let mut track = (*song.doc.tracks[0]).clone();
     let mut clip = (*track.clips[1]).clone();
     let active = clip.active;
-    clip.takes[active].take = quantized;
+    clip.takes.keys_mut().unwrap()[active].take = quantized;
     track.clips[1] = Arc::new(clip);
     song.doc.tracks[0] = Arc::new(track);
     song.doc.next_id = 10;
@@ -751,7 +756,7 @@ fn offsets_below_0_read_and_offsets_out_of_range_do_not() {
     }
     *offset(&mut v) = serde_json::json!(-20_000);
     let song = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
-    assert_eq!(song.doc.tracks[0].clips[1].takes[2].offset, -20_000);
+    assert_eq!(song.doc.tracks[0].clips[1].keys()[2].offset, -20_000);
     for bad in [
         serde_json::json!(i64::MIN),
         serde_json::json!(u64::MAX),
@@ -981,6 +986,7 @@ fn added_song() -> Song {
         (22, "ドラム", InstrumentRef::Sf2(Arc::new(kit))),
     ] {
         doc.tracks.push(Arc::new(Track {
+            kind: meloet_model::TrackKind::Keys,
             id: TrackId(id),
             name: name.into(),
             color: TrackColor::for_index(1),

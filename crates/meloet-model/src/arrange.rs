@@ -12,7 +12,7 @@ use std::sync::Arc;
 use crate::TrackId;
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index};
 use crate::history::StepKind;
-use crate::song::{Clip, ClipId, ClipTake, Doc, Track};
+use crate::song::{Clip, ClipId, Doc, Track};
 use crate::time::TickRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,6 +195,9 @@ fn place(
             .filter(|&e| e <= MAX_TICK)
             .ok_or(EditError::OffTheSong)?;
         let range = TickRange::new(start, end).expect("a clip is never empty");
+        if doc.tracks[to].kind.is_vocal() == c.is_keys() {
+            return Err(EditError::WrongKind);
+        }
         let clips = &mut tracks[to];
         if clips.iter().any(|o| o.range().overlaps(range)) {
             return Err(EditError::Overlap);
@@ -265,14 +268,7 @@ pub fn trim_clip(doc: &Doc, clip: ClipId, edge: ClipEdge, ticks: i64) -> Result<
     clips[ci] = Arc::new(Clip {
         start,
         end,
-        takes: c
-            .takes
-            .iter()
-            .map(|ct| ClipTake {
-                take: ct.take.clone(),
-                offset: ct.offset - shift,
-            })
-            .collect(),
+        takes: c.takes.with_offsets(|offset| offset - shift),
         ..Clip::clone(c)
     });
     let mut new = doc.clone();

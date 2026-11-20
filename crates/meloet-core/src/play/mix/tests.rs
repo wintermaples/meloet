@@ -30,6 +30,7 @@ pub(crate) fn three_tracks(m: &mut Model) -> Vec<Effect> {
     let mut song = Song::new_default();
     for id in [2, 3] {
         song.doc.tracks.push(Arc::new(Track {
+            kind: meloet_model::TrackKind::Keys,
             id: TrackId(id),
             name: format!("トラック {id}"),
             color: TrackColor::for_index(id as usize - 1),

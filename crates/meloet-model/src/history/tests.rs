@@ -160,15 +160,15 @@ fn ids_undone_are_not_given_again() {
     let (e, b) = edit::add_recording(&doc, T1, vec![take(5000, 2 * Q, 62)], 0).unwrap();
     h.apply(&mut doc, e);
     let given = doc.next_id;
-    let b_take = doc.clip(b.clip).unwrap().1.takes[0].take.id;
+    let b_take = doc.clip(b.clip).unwrap().1.keys()[0].take.id;
     h.undo(&mut doc);
     assert_eq!(doc.next_id, given, "undo keeps the ids given out");
     assert!(doc.clip(b.clip).is_none());
     let (e, c) = edit::add_recording(&doc, T1, vec![take(5000, 2 * Q, 64)], 0).unwrap();
     h.apply(&mut doc, e);
     assert!(c.clip.0 >= given);
-    assert!(doc.clip(c.clip).unwrap().1.takes[0].take.id.0 >= given);
-    assert_ne!(doc.clip(c.clip).unwrap().1.takes[0].take.id, b_take);
+    assert!(doc.clip(c.clip).unwrap().1.keys()[0].take.id.0 >= given);
+    assert_ne!(doc.clip(c.clip).unwrap().1.keys()[0].take.id, b_take);
     // All the way back, then a new step: still past every id given out.
     h.undo(&mut doc);
     h.undo(&mut doc);

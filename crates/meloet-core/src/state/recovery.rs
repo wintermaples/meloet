@@ -93,6 +93,7 @@ impl Model {
                     cause,
                     song: path.is_some().then_some(name),
                     takes,
+                    vocals: None,
                 });
                 self.files.path = path;
                 let Song { doc, session } = *song;

@@ -40,6 +40,7 @@ fn eight_tracks() -> Doc {
     let mut doc = Doc::new_default();
     for i in 2..=TRACKS {
         doc.tracks.push(Arc::new(Track {
+            kind: meloet_model::TrackKind::Keys,
             id: TrackId(i),
             name: format!("トラック {i}"),
             color: TrackColor::for_index(i as usize - 1),

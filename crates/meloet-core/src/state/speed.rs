@@ -20,6 +20,7 @@ fn big_song() -> Song {
     let mut song = Song::new_default();
     for i in 2..=TRACKS {
         song.doc.tracks.push(Arc::new(Track {
+            kind: meloet_model::TrackKind::Keys,
             id: TrackId(i),
             name: format!("トラック {i}"),
             color: TrackColor::for_index(i as usize - 1),

@@ -349,6 +349,7 @@ fn replacing_is_one_step_that_keeps_the_name_and_undo_brings_the_instrument_back
     assert_eq!(
         status(m),
         Some(StatusMessage::InstrumentReplaced {
+            lanes_removed: 0,
             track: TrackRef {
                 number: 1,
                 name: "ピアノ".into()

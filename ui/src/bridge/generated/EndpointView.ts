@@ -13,4 +13,9 @@ device: string | null,
  * `None`: meloet can play through it without changing any PC-wide setting. Others are
  * listed but cannot be chosen.
  */
-unusable: Unusable | null, };
+unusable: Unusable | null, 
+/**
+ * Of an input: how many channels it has ("入口 1 ・ 2（USB マイク）" has 2). `None` for
+ * an output, and for an input whose channels are not known.
+ */
+channels: number | null, };

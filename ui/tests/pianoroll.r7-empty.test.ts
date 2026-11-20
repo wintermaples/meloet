@@ -113,7 +113,7 @@ describe("初めてノートを置いても、見ている範囲は変わらな�
 
     // core の答え: 小節の頭から 4 小節のクリップができ、そこに 1 つ。
     const head = Math.floor(c.start / BAR) * BAR;
-    const made: ClipView = { id: 900, name: track.name, start: head, end: head + 4 * BAR, take: 1, takes: 1, takeId: 901, takeOffset: 0, noteCount: 1 };
+    const made: ClipView = { id: 900, name: track.name, start: head, end: head + 4 * BAR, take: 1, takes: 1, takeId: 901, takeOffset: 0, noteCount: 1, vocal: false };
     const next = structuredClone(empty);
     next.song.tracks[0]!.clips = [made];
     next.arrange = { ...next.arrange, selectedClips: [900], selectedClip: 900, pianoRollClip: 900 };

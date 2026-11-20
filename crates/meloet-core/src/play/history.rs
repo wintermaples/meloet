@@ -5,12 +5,12 @@
 use std::collections::HashMap;
 
 use meloet_model::{
-    AutoTarget as ModelTarget, Bus, ClipId, Doc, InstrumentRef, NoteField, PluginPlace, StepKind,
-    StepRow, StripId, TempoMap, TickRange, TrackId,
+    AutoTarget as ModelTarget, Bus, ClipId, ControlValue, Doc, InstrumentRef, NoteField,
+    PluginPlace, StepKind, StepRow, StripId, TempoMap, TickRange, TrackId,
 };
 use meloet_protocol::{
-    BarSpan, EffectName, HistoryRow, HistoryView, LaneName, MeterValue, SendBus, StatusMessage,
-    StepName, StepPlace, StepWhat, StripName, TrackRef,
+    BarSpan, ControlKind, EffectName, HistoryRow, HistoryView, LaneName, MeterValue, SendBus,
+    StatusMessage, StepName, StepPlace, StepWhat, StripName, TrackRef,
 };
 
 use super::Play;
@@ -171,6 +171,109 @@ impl Around<'_> {
         }
     }
 
+    /// The shown keys take of `clip` in `doc`: its notes as (song position, length, key,
+    /// velocity) and its control points as (song position, which control). Empty when the
+    /// clip is not there.
+    fn take_of(doc: &Doc, clip: ClipId) -> (Vec<NoteAt>, Vec<(i64, ControlKind)>) {
+        let Some((_, c)) = doc.clip(clip).filter(|(_, c)| c.is_keys()) else {
+            return Default::default();
+        };
+        let (zero, take) = (c.active_zero(), &c.active_take().take);
+        let notes = (take.notes.iter())
+            .map(|n| (zero + n.start as i64, n.length, n.key, n.velocity))
+            .collect();
+        let controls = (take.controls.iter())
+            .map(|p| {
+                let kind = match p.value {
+                    ControlValue::Cc { number, .. } => ControlKind::Cc { number },
+                    ControlValue::PitchBend(_) => ControlKind::PitchBend,
+                };
+                (zero + p.tick as i64, kind)
+            })
+            .collect();
+        (notes, controls)
+    }
+
+    /// 「（何を）」 of a step on `n` notes of `clip`: the note's name for one note that the
+    /// step put in, took away or changed ("C4"), else how many ("3 ノート"; spec 3, 92-3).
+    fn notes_what(&self, clip: ClipId, n: usize) -> StepWhat {
+        let plain = StepWhat::Notes { count: count(n) };
+        if n != 1 {
+            return plain;
+        }
+        let (before, _) = Self::take_of(self.before, clip);
+        let (after, _) = Self::take_of(self.after, clip);
+        let only = |a: &[NoteAt], b: &[NoteAt]| match only_in(a, b)[..] {
+            [note] => Some(note.2),
+            _ => None,
+        };
+        match only(&after, &before).or_else(|| only(&before, &after)) {
+            Some(key) => StepWhat::Note { key },
+            None => plain,
+        }
+    }
+
+    /// "3 ノート ・ 96 → 110" when the notes that changed all had one velocity and have one
+    /// now; `None` for both when they differ.
+    fn velocity_what(&self, clip: ClipId, n: usize) -> StepWhat {
+        let (before, _) = Self::take_of(self.before, clip);
+        let (after, _) = Self::take_of(self.after, clip);
+        let one = |notes: Vec<NoteAt>| match notes.split_first() {
+            Some((first, rest)) if rest.iter().all(|n| n.3 == first.3) => Some(first.3),
+            _ => None,
+        };
+        let (from, to) = (one(only_in(&before, &after)), one(only_in(&after, &before)));
+        let both = from.is_some() && to.is_some();
+        StepWhat::Velocity {
+            count: count(n),
+            from: from.filter(|_| both),
+            to: to.filter(|_| both),
+        }
+    }
+
+    /// "サステイン ・ 4 点": the control whose points the step put in, took away or moved.
+    fn controls_what(&self, clip: ClipId, n: usize) -> StepWhat {
+        let (_, before) = Self::take_of(self.before, clip);
+        let (_, after) = Self::take_of(self.after, clip);
+        let mut touched = only_in(&after, &before);
+        touched.extend(only_in(&before, &after));
+        let control = match touched.split_first() {
+            Some((first, rest)) if rest.iter().all(|p| p.1 == first.1) => Some(first.1),
+            _ => None,
+        };
+        StepWhat::ControlPoints {
+            control,
+            count: count(n),
+        }
+    }
+
+    /// 「（何を）」 of a step on `n` clips: the clip's name for one clip ("Aメロ"), else how
+    /// many ("3 クリップ").
+    fn clips_what(&self, n: usize) -> StepWhat {
+        let plain = StepWhat::Clips { count: count(n) };
+        if n != 1 {
+            return plain;
+        }
+        // Where each clip is: its track and its range.
+        let placed = |doc: &Doc| -> Vec<(ClipId, TrackId, u64, u64)> {
+            (doc.tracks.iter())
+                .flat_map(|t| t.clips.iter().map(|c| (c.id, t.id, c.start, c.end)))
+                .collect()
+        };
+        let (before, after) = (placed(self.before), placed(self.after));
+        let name = |doc: &Doc, id: ClipId| doc.clip(id).map(|(_, c)| c.name.clone());
+        let touched = match (&only_in(&after, &before)[..], &only_in(&before, &after)[..]) {
+            // Put in or moved: the clip as it is after the step.
+            ([one], _) => name(self.after, one.0),
+            ([], [one]) => name(self.before, one.0),
+            _ => None,
+        };
+        match touched {
+            Some(name) => StepWhat::Name { name },
+            None => plain,
+        }
+    }
+
     fn tempo_at(doc: &Doc, tick: u64) -> Option<f64> {
         let t = &doc.timeline;
         match tick {
@@ -203,6 +306,27 @@ impl Around<'_> {
     }
 }
 
+/// A note of a take: its song position, length, key and velocity.
+type NoteAt = (i64, u64, u8, u8);
+
+/// What `a` has more of than `b`, each as many times as it has it more.
+fn only_in<T: Copy + Eq + std::hash::Hash>(a: &[T], b: &[T]) -> Vec<T> {
+    let mut left: HashMap<T, usize> = HashMap::new();
+    for item in b {
+        *left.entry(*item).or_default() += 1;
+    }
+    (a.iter())
+        .filter(|item| match left.get_mut(item) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        })
+        .copied()
+        .collect()
+}
+
 /// The name, the values and the place of a step. Every kind of step has a name: a kind added
 /// to `StepKind` does not build until it has one here.
 pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>) {
@@ -210,8 +334,8 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
         before: row.before,
         after: row.after,
     };
-    let notes = |n: usize| StepWhat::Notes { count: count(n) };
-    let clips = |n: usize| StepWhat::Clips { count: count(n) };
+    let notes = |clip: ClipId, n: usize| a.notes_what(clip, n);
+    let clips = |n: usize| a.clips_what(n);
     let marker_name = |doc: &Doc, id| doc.marker(id).map(|m| m.name.clone());
     let named = |name: Option<String>| match name {
         Some(name) => StepWhat::Name { name },
@@ -449,8 +573,14 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
         ),
         StepKind::SetTrackColor { track } => (
             StepName::SetTrackColor,
-            StepWhat::Track {
-                track: a.track(track),
+            match a.after.track(track) {
+                Some(t) => StepWhat::Color {
+                    track: a.track(track),
+                    color: t.color.get(),
+                },
+                None => StepWhat::Track {
+                    track: a.track(track),
+                },
             },
             arrange,
         ),
@@ -477,14 +607,34 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
         ),
         StepKind::SetInstrument { track } => (
             StepName::SetInstrument,
-            match a.after.track(track) {
-                Some(t) => StepWhat::Sound {
+            match (a.before.track(track), a.after.track(track)) {
+                (Some(from), Some(to)) => StepWhat::SoundReplaced {
+                    track: a.track(track),
+                    from: sound_name(&from.instrument),
+                    to: sound_name(&to.instrument),
+                },
+                (None, Some(t)) => StepWhat::Sound {
                     sound: sound_name(&t.instrument),
                 },
-                None => StepWhat::None,
+                _ => StepWhat::None,
             },
             on_track(track),
         ),
+        StepKind::SetVocalInput { track } => {
+            let input = |doc: &Doc| doc.track(track).and_then(|t| t.kind.input());
+            (
+                StepName::SetVocalInput,
+                match (input(a.before), input(a.after)) {
+                    (Some(from), Some(to)) => StepWhat::VocalInput {
+                        track: a.track(track),
+                        from: crate::state::vocal_input_view(from),
+                        to: crate::state::vocal_input_view(to),
+                    },
+                    _ => StepWhat::None,
+                },
+                arrange,
+            )
+        }
         StepKind::RemoveInstrument { track } => (
             StepName::RemoveInstrument,
             match a.before.track(track) {
@@ -500,57 +650,86 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             StepWhat::Missing { tracks, inserts },
             None,
         ),
-        StepKind::WriteNote { .. } => (StepName::WriteNote, notes(1), piano_roll),
-        StepKind::MoveNotes { count: n, copy, .. } => (
+        StepKind::WriteNote { clip, .. } => (StepName::WriteNote, notes(clip, 1), piano_roll),
+        StepKind::MoveNotes {
+            clip,
+            count: n,
+            copy,
+        } => (
             if copy {
                 StepName::DuplicateNotes
             } else {
                 StepName::MoveNotes
             },
-            notes(n),
+            notes(clip, n),
             piano_roll,
         ),
-        StepKind::ResizeNotes { count: n, .. } => (StepName::ResizeNotes, notes(n), piano_roll),
-        StepKind::DeleteNotes { count: n, cut, .. } => (
+        StepKind::ResizeNotes { clip, count: n } => {
+            (StepName::ResizeNotes, notes(clip, n), piano_roll)
+        }
+        StepKind::DeleteNotes {
+            clip,
+            count: n,
+            cut,
+        } => (
             if cut {
                 StepName::CutNotes
             } else {
                 StepName::DeleteNotes
             },
-            notes(n),
+            notes(clip, n),
             piano_roll,
         ),
-        StepKind::ChangeVelocity { count: n, .. } => {
-            (StepName::ChangeVelocity, notes(n), piano_roll)
+        StepKind::ChangeVelocity { clip, count: n } => (
+            StepName::ChangeVelocity,
+            a.velocity_what(clip, n),
+            piano_roll,
+        ),
+        StepKind::PasteNotes { clip, count: n } => {
+            (StepName::PasteNotes, notes(clip, n), piano_roll)
         }
-        StepKind::PasteNotes { count: n, .. } => (StepName::PasteNotes, notes(n), piano_roll),
-        StepKind::Quantize { count: n, .. } => (StepName::Quantize, notes(n), piano_roll),
-        StepKind::Unquantize { count: n, .. } => (StepName::Unquantize, notes(n), piano_roll),
+        // "1/16 ・ 12 ノート": the grid is the one the take was quantized with.
+        StepKind::Quantize { clip, count: n } => (
+            StepName::Quantize,
+            match (a.after.clip(clip))
+                .filter(|(_, c)| c.is_keys())
+                .and_then(|(_, c)| c.active_take().take.origin.as_ref())
+            {
+                Some(origin) => StepWhat::Quantized {
+                    division: origin.settings.grid.division(),
+                    triplet: origin.settings.grid.triplet,
+                    count: count(n),
+                },
+                None => StepWhat::Notes { count: count(n) },
+            },
+            piano_roll,
+        ),
+        StepKind::Unquantize { clip, count: n } => {
+            (StepName::Unquantize, notes(clip, n), piano_roll)
+        }
         // A value typed into a field is named as the drag that changes the same thing.
         StepKind::SetNotesField {
-            count: n, field, ..
-        } => (
-            match field {
-                NoteField::Start | NoteField::Key => StepName::MoveNotes,
-                NoteField::Length => StepName::ResizeNotes,
-                NoteField::Velocity => StepName::ChangeVelocity,
-            },
-            notes(n),
-            piano_roll,
-        ),
-        StepKind::AddControl { .. } => (
-            StepName::AddControl,
-            StepWhat::Points { count: 1 },
-            piano_roll,
-        ),
-        StepKind::MoveControls { count: n, .. } => (
-            StepName::MoveControls,
-            StepWhat::Points { count: count(n) },
-            piano_roll,
-        ),
-        StepKind::DeleteControls { count: n, .. } => (
+            clip,
+            count: n,
+            field,
+        } => match field {
+            NoteField::Start | NoteField::Key => (StepName::MoveNotes, notes(clip, n), piano_roll),
+            NoteField::Length => (StepName::ResizeNotes, notes(clip, n), piano_roll),
+            NoteField::Velocity => (
+                StepName::ChangeVelocity,
+                a.velocity_what(clip, n),
+                piano_roll,
+            ),
+        },
+        StepKind::AddControl { clip } => {
+            (StepName::AddControl, a.controls_what(clip, 1), piano_roll)
+        }
+        StepKind::MoveControls { clip, count: n } => {
+            (StepName::MoveControls, a.controls_what(clip, n), piano_roll)
+        }
+        StepKind::DeleteControls { clip, count: n } => (
             StepName::DeleteControls,
-            StepWhat::Points { count: count(n) },
+            a.controls_what(clip, n),
             piano_roll,
         ),
         StepKind::MoveClips { count: n, copy } => (
@@ -976,3 +1155,5 @@ impl Play {
 mod jump_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod what_tests;

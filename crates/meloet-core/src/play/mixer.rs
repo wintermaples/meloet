@@ -10,17 +10,18 @@ use std::sync::Arc;
 
 use meloet_model::effects::EffectKind as ModelEffect;
 use meloet_model::{
-    Bus, Gain, Insert, Inserts, Pan, PluginPlace, PluginRef, StepKind, StripId, TrackId, mixer,
+    Bus, Gain, Insert, Inserts, InstrumentRef, Pan, PluginPlace, PluginRef, StepKind, StripId,
+    TrackId, mixer,
 };
 use meloet_protocol::{
     EffectKind, EffectName, InsertRef, MasterView, NamedInsert, ParamEnd, ParamRef, ParamsView,
     PluginSlotRef, PluginState, PluginWindowKind, ReturnView, SelectedInsert, SelectedParams,
-    SelectedPlugin, SendBus, SlotsView, StatusMessage, StripRef,
+    SelectedPlugin, SelectedSound, SendBus, SlotsView, StatusMessage, StripRef,
 };
 
 use super::Play;
 use super::automation::{LaneKey, LetGo};
-use crate::added::slots_view;
+use crate::added::{slots_view, sound_name};
 use crate::state::Effect;
 
 /// A value that sounds in place of the song's while its control is dragged.
@@ -70,6 +71,9 @@ pub(super) enum Picked {
     Effect(StripId, usize, ModelEffect),
     /// A plugin, by its key: in an insert slot, or the instrument of a track.
     Plugin(PluginPlace, Arc<str>),
+    /// The instrument of a keys track that has no parameters: a sound that comes with meloet
+    /// or a preset of an SF2 file (spec 3, 19-A).
+    Sound(TrackId, InstrumentRef),
 }
 
 impl Picked {
@@ -77,6 +81,7 @@ impl Picked {
         match self {
             Picked::Effect(strip, slot, _) => PluginPlace::Insert(*strip, *slot),
             Picked::Plugin(place, _) => *place,
+            Picked::Sound(track, _) => PluginPlace::Instrument(*track),
         }
     }
 }
@@ -338,10 +343,12 @@ impl Play {
         let (strip, slot) = (strip_id(insert.strip), usize::from(insert.slot));
         let effect = effect_name(self.doc().insert(strip, slot)?);
         let e = mixer::remove_effect(self.doc(), strip, slot).ok()?;
+        let lanes = self.lane_count();
         self.apply(e, effects);
         Some(StatusMessage::EffectRemoved {
             insert: insert_ref(strip, slot),
             effect,
+            lanes_removed: lanes.saturating_sub(self.lane_count()),
         })
     }
 
@@ -504,8 +511,14 @@ impl Play {
         {
             return Some(Picked::Effect(strip, slot, kind));
         }
-        let plugin = self.doc().plugin(place)?;
-        Some(Picked::Plugin(place, plugin.key.clone()))
+        if let Some(plugin) = self.doc().plugin(place) {
+            return Some(Picked::Plugin(place, plugin.key.clone()));
+        }
+        let PluginPlace::Instrument(id) = place else {
+            return None;
+        };
+        let track = self.doc().track(id)?;
+        (!track.kind.is_vocal()).then(|| Picked::Sound(id, track.instrument.clone()))
     }
 
     /// Makes what is at `place` the selected one; nothing is selected when nothing is there.
@@ -523,6 +536,13 @@ impl Play {
             None => Selecting::default(),
             Some(Picked::Effect(..)) => Selecting {
                 panel: true,
+                ..Selecting::default()
+            },
+            Some(Picked::Sound(_, instrument)) => Selecting {
+                panel: true,
+                notice: Some(StatusMessage::NoParams {
+                    sound: sound_name(instrument),
+                }),
                 ..Selecting::default()
             },
             Some(Picked::Plugin(place, key)) => {
@@ -568,6 +588,7 @@ impl Play {
                 }
             }
             Some(Picked::Plugin(place, key)) => Some(Picked::Plugin(follow(place), key)),
+            sound @ Some(Picked::Sound(..)) => sound,
             None => None,
         };
     }
@@ -592,11 +613,12 @@ impl Play {
         self.selecting()
     }
 
-    /// `SelectInstrument`: only a plugin has parameters; for any other sound, what is
-    /// selected stays.
+    /// `SelectInstrument`: a plugin, or a sound with no parameters, which the panel and the
+    /// status line then say (spec 3, 19-A). What is selected stays for a track that is gone
+    /// and for a vocal track.
     pub fn select_instrument(&mut self, track: u32) -> Selecting {
         let place = PluginPlace::Instrument(TrackId(track));
-        if self.doc().plugin(place).is_none() {
+        if self.picked_at(place).is_none() {
             return Selecting::default();
         }
         self.pick(place);
@@ -609,7 +631,7 @@ impl Play {
         self.mixer.row = match &self.mixer.selected {
             Some(Picked::Effect(_, _, kind)) => param.filter(|&p| kind.param(p).is_some()),
             Some(Picked::Plugin(..)) => param.filter(|&p| self.has_param(p)),
-            None => None,
+            Some(Picked::Sound(..)) | None => None,
         };
     }
 
@@ -673,6 +695,10 @@ impl Play {
                         automated: self.automated_rows(*place),
                     }))
                 }
+                Picked::Sound(track, instrument) => Some(SelectedParams::Sound(SelectedSound {
+                    track: track.0,
+                    sound: sound_name(instrument),
+                })),
             });
         ParamsView { selected }
     }
@@ -707,6 +733,7 @@ impl Play {
         }
         let loop_bars = self.loop_on().map(|r| self.bars(r));
         Some(match self.mixer.selected.as_ref()? {
+            Picked::Sound(..) => return None,
             Picked::Effect(strip, slot, kind) => StatusMessage::ParamSelected {
                 loop_bars,
                 insert: insert_ref(*strip, *slot),

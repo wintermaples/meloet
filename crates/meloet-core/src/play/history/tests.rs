@@ -201,6 +201,7 @@ fn every_step_kind() -> Vec<StepKind> {
         RestoreLane { track, target },
         Recovered,
         DiscardRecovered,
+        SetVocalInput { track },
     ];
     for kind in &all {
         match kind {
@@ -272,7 +273,8 @@ fn every_step_kind() -> Vec<StepKind> {
             | RestLane { .. }
             | RestoreLane { .. }
             | Recovered
-            | DiscardRecovered => {}
+            | DiscardRecovered
+            | SetVocalInput { .. } => {}
         }
     }
     all

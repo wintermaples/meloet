@@ -34,7 +34,7 @@ function stateWith(serial: number, takeId: number): AppState {
     tracks: [
       {
         ...s.song.tracks[0]!,
-        clips: [{ id: 9, name: "ピアノ", start: 0, end: 4 * TPQ, take: 1, takes: 1, takeId, takeOffset: 0, noteCount: 1 }],
+        clips: [{ id: 9, name: "ピアノ", start: 0, end: 4 * TPQ, take: 1, takes: 1, takeId, takeOffset: 0, noteCount: 1, vocal: false }],
       },
     ],
   };

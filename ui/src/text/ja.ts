@@ -2061,6 +2061,16 @@ export const texts = {
   "history.lanePoints": e("{target} ・ {count} 点", "spec:3", { target: "音量", count: "3" }),
   "history.muteOn": e("{strip} ・ オン", "spec:3", { strip: "4 パッド" }),
   "history.missing": e("トラック {tracks} ・ インサート {inserts}", "builder:2026-11-20", { tracks: "2", inserts: "1" }),
+  // 約束 23 で出せるようになった（何を）（仕様書 3 章 92-3）。1 ノートは音名だけ（「C4」）。
+  "history.quantized": e("{grid} ・ {count} ノート", "spec:3", { grid: "1/16", count: "12" }),
+  "history.velocity": e("{count} ノート ・ {from} → {to}", "spec:3", { count: "3", from: "96", to: "110" }),
+  "history.controlPoints": e("{control} ・ {count} 点", "spec:3", { control: "サステイン", count: "4" }),
+  "history.color": e("{track} ・ 色 {color}", "spec:3", { track: "4 パッド", color: "3" }),
+  "history.soundReplaced": e("{track} ・ {from} → {to}", "spec:3", { track: "1 ピアノ", from: "グランドピアノ", to: "オルガン" }),
+  // 歌のトラックの入口の一覧（仕様書 3 章「歌のトラックの見出し」）。
+  "vocal.input.mono1": e("入口 1 ・ モノ", "spec:3"),
+  "vocal.input.mono2": e("入口 2 ・ モノ", "spec:3"),
+  "vocal.input.stereo12": e("入口 1 ・ 2 ・ ステレオ", "spec:3"),
   // プラグインがパラメータの名前を言ってこなかった手の名前。
   "history.pluginParam": e("{plugin}のパラメータを変える", "builder:2026-11-20", { plugin: "Surge XT " }),
   // 行の右の「どこで」。ほかは band.arrange ・ band.pianoRoll ・ band.mixer と track.label。
@@ -2356,6 +2366,7 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   setLoop: e("ループの範囲を変える", "spec:3"),
   recovered: e("なおすためのファイルから戻す", "mock:F-Recover2"),
   discardRecovered: e("戻した変更をすてる（最後に保存した形にする）", "spec:6"),
+  setVocalInput: e("歌の入口を変える", "builder:2026-11-21"),
 };
 
 export interface Term {

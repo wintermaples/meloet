@@ -68,5 +68,6 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "deleteMarker",
   "setLoop",
   "recovered",
-  "discardRecovered"
+  "discardRecovered",
+  "setVocalInput"
 ];

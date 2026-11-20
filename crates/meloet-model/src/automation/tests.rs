@@ -20,7 +20,7 @@ fn lane_with(points: Vec<AutoPoint>, step: bool) -> Lane {
         id: LaneId(1),
         target: AutoTarget::Volume,
         step,
-        points,
+        points: points.into(),
         resting: false,
     }
 }
@@ -60,7 +60,7 @@ fn the_line_between_points() {
     assert!((l.value_at(150).unwrap() - 0.4).abs() < 1e-6);
     assert_eq!(l.value_at(200), Some(0.6));
     assert_eq!(l.value_at(1000), Some(0.6), "after the last: the last");
-    let s = lane_with(l.points.clone(), true);
+    let s = lane_with(l.points.to_vec(), true);
     assert_eq!(
         s.value_at(199),
         Some(0.2),
@@ -131,7 +131,7 @@ fn with_volume(points: Vec<AutoPoint>) -> Doc {
     let (e, _) = add_lane(&Doc::new_default(), T1, AutoTarget::Volume, false).unwrap();
     let mut doc = e.doc;
     let t = Arc::make_mut(&mut doc.tracks[0]);
-    Arc::make_mut(&mut t.automation[0]).points = points;
+    Arc::make_mut(&mut t.automation[0]).points = points.into();
     doc
 }
 
@@ -437,7 +437,7 @@ fn random_steps_keep_every_lane_with_its_target() {
     let mut rng = Rng(0x5eed_1a7e);
     let mut doc = Doc::new_default();
     let mut history = History::new();
-    let mut seen: HashMap<LaneId, Vec<AutoPoint>> = HashMap::new();
+    let mut seen: HashMap<LaneId, crate::ChunkedVec<AutoPoint>> = HashMap::new();
     let kinds = [EffectKind::Compressor, EffectKind::Eq4, EffectKind::Delay];
     for round in 0..3000 {
         let target = some_target(&mut rng, &doc);

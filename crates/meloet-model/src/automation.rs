@@ -9,8 +9,10 @@
 //! A lane whose points change gets a new `LaneId` from `Doc::next_id`, as a take does: a
 //! command aimed at the points as they were finds no lane.
 
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use crate::chunked::ChunkedVec;
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, track_index};
 use crate::history::StepKind;
 use crate::mixer::{Bus, InsertId};
@@ -48,14 +50,26 @@ pub struct AutoPoint {
     pub value: f32,
 }
 
+/// A value in a lane is never NaN (`clamp_value`, `Doc::check_lanes`), so a point equals itself.
+impl Eq for AutoPoint {}
+
+impl Hash for AutoPoint {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.tick.hash(state);
+        // 0.0 and -0.0 are equal and must hash alike.
+        (self.value + 0.0).to_bits().hash(state);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lane {
     pub id: LaneId,
     pub target: AutoTarget,
     /// The value stays at the point before (a stepped value, a switch, the mute).
     pub step: bool,
-    /// In the order of tick, each tick once. A jump is two points a tick apart.
-    pub points: Vec<AutoPoint>,
+    /// In the order of tick, each tick once. A jump is two points a tick apart. A lane made
+    /// from another shares the chunks that did not change (docs/architecture.md 16, 21-5).
+    pub points: ChunkedVec<AutoPoint>,
     /// 「休み」 (spec 3, 17-A): the lane moves nothing; the value is where the hand put it.
     pub resting: bool,
 }
@@ -67,7 +81,17 @@ pub const THIN_TOLERANCE: f32 = 0.005;
 impl Lane {
     /// The value of the line at `tick`; `None` with no points.
     pub fn value_at(&self, tick: u64) -> Option<f32> {
-        line_at(&self.points, self.step, tick)
+        let first = self.points.first()?;
+        let i = self.points.partition_point(|p| p.tick <= tick);
+        if i == 0 {
+            return Some(first.value);
+        }
+        Some(between(
+            self.points[i - 1],
+            self.points.get(i).copied(),
+            self.step,
+            tick,
+        ))
     }
 
     /// Whether the lane moves its target: it does not rest and has points.
@@ -82,13 +106,17 @@ fn line_at(points: &[AutoPoint], step: bool, tick: u64) -> Option<f32> {
     if i == 0 {
         return Some(first.value);
     }
-    let a = points[i - 1];
-    match points.get(i) {
+    Some(between(points[i - 1], points.get(i).copied(), step, tick))
+}
+
+/// The line's value at `tick`, at or after the point `a` and before the next one `b`.
+fn between(a: AutoPoint, b: Option<AutoPoint>, step: bool, tick: u64) -> f32 {
+    match b {
         Some(b) if !step && a.tick != tick => {
             let f = (tick - a.tick) as f64 / (b.tick - a.tick) as f64;
-            Some((f64::from(a.value) + f * f64::from(b.value - a.value)) as f32)
+            (f64::from(a.value) + f * f64::from(b.value - a.value)) as f32
         }
-        _ => Some(a.value),
+        _ => a.value,
     }
 }
 
@@ -152,7 +180,8 @@ impl Doc {
                 if l.id.0 >= self.next_id || !ids.insert(l.id) {
                     return Err(format!("lane id {} given twice", l.id.0));
                 }
-                let ordered = l.points.windows(2).all(|w| w[0].tick < w[1].tick);
+                let ordered =
+                    (l.points.iter().zip(l.points.iter().skip(1))).all(|(a, b)| a.tick < b.tick);
                 let values = (l.points.iter()).all(|p| (0.0..=1.0).contains(&p.value));
                 if !ordered || !values || l.points.last().is_some_and(|p| p.tick > MAX_TICK) {
                     return Err(format!("lane {}: points out of order or range", l.id.0));
@@ -176,7 +205,8 @@ fn lane_index(track: &Track, target: AutoTarget) -> Option<usize> {
     track.automation.iter().position(|l| l.target == target)
 }
 
-/// A copy of `doc` whose lane at (`ti`, `li`) has `points` and a new id.
+/// A copy of `doc` whose lane at (`ti`, `li`) has `points` and a new id. The new lane shares
+/// with the old one the chunks of points that are the same in both.
 fn with_points(
     doc: &Doc,
     ti: usize,
@@ -192,7 +222,7 @@ fn with_points(
     if lane.points == points {
         return Err(EditError::Unchanged);
     }
-    lane.points = points;
+    lane.points = ChunkedVec::sharing(&points, &lane.points);
     lane.id = id;
     lanes[li] = Arc::new(lane);
     Ok((new, id))
@@ -241,7 +271,7 @@ pub fn add_lane(
         id,
         target,
         step,
-        points: Vec::new(),
+        points: ChunkedVec::default(),
         resting: false,
     }));
     Ok((
@@ -280,7 +310,7 @@ pub fn add_point(
     let value = (value.and_then(clamp_value))
         .or_else(|| l.value_at(tick))
         .unwrap_or(flat.clamp(0.0, 1.0));
-    let mut points = l.points.clone();
+    let mut points = l.points.to_vec();
     let at = match points.binary_search_by_key(&tick, |p| p.tick) {
         Ok(at) => {
             points[at].value = value;
@@ -303,16 +333,16 @@ pub fn add_point(
     ))
 }
 
-/// The places in `points` of `picked`, in order, each once; `NoSuchPoint` for one that is not
+/// The places of `picked` among `len` points, in order, each once; `NoSuchPoint` for one that is not
 /// there, `Unchanged` for none.
-fn picked_places(points: &[AutoPoint], picked: &[usize]) -> Result<Vec<usize>, EditError> {
+fn picked_places(len: usize, picked: &[usize]) -> Result<Vec<usize>, EditError> {
     let mut picked = picked.to_vec();
     picked.sort_unstable();
     picked.dedup();
     if picked.is_empty() {
         return Err(EditError::Unchanged);
     }
-    if picked.last().is_some_and(|&i| i >= points.len()) {
+    if picked.last().is_some_and(|&i| i >= len) {
         return Err(EditError::NoSuchPoint);
     }
     Ok(picked)
@@ -331,7 +361,7 @@ pub fn move_points(
 ) -> Result<(Edit, LaneId, Vec<usize>), EditError> {
     let (ti, li) = find(doc, lane)?;
     let l = &doc.tracks[ti].automation[li];
-    let picked = picked_places(&l.points, picked)?;
+    let picked = picked_places(l.points.len(), picked)?;
     let moved = || picked.iter().map(|&i| l.points[i]);
     let (first, last) = (
         l.points[picked[0]].tick,
@@ -391,7 +421,7 @@ pub fn delete_points(
 ) -> Result<(Edit, LaneId), EditError> {
     let (ti, li) = find(doc, lane)?;
     let l = &doc.tracks[ti].automation[li];
-    let picked = picked_places(&l.points, picked)?;
+    let picked = picked_places(l.points.len(), picked)?;
     let points = (l.points.iter().enumerate())
         .filter(|(i, _)| picked.binary_search(i).is_err())
         .map(|(_, p)| *p)
@@ -519,7 +549,7 @@ pub fn write(
 ) -> Result<(Edit, LaneId), EditError> {
     let (ti, li) = find_target(doc, track, target)?;
     let l = &doc.tracks[ti].automation[li];
-    let mut points = l.points.clone();
+    let mut points = l.points.to_vec();
     for pass in passes {
         write_pass(&mut points, &written(pass, l.step), l.step, flat);
     }
@@ -548,7 +578,7 @@ pub fn write_press(
         tick: tick.min(MAX_TICK),
         value: clamp_value(value).ok_or(EditError::Unchanged)?,
     };
-    let mut points = l.points.clone();
+    let mut points = l.points.to_vec();
     match points.binary_search_by_key(&point.tick, |p| p.tick) {
         Ok(at) => points[at] = point,
         Err(at) => points.insert(at, point),

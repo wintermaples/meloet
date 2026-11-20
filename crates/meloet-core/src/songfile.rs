@@ -581,7 +581,7 @@ fn lanes_of(
             id,
             target,
             step: steps_of(track, target, file.step),
-            points,
+            points: points.into(),
             resting: file.resting,
         }));
     }

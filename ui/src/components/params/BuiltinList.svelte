@@ -12,6 +12,10 @@
   import ParamRow from "./ParamRow.svelte";
   import { allRows, rowCount, searchRows, stepRow, valueText } from "./paramRows";
   import { paramUi } from "./paramUi.svelte";
+  import { current } from "../../state/app.svelte";
+  import type { AutoTarget } from "../../bridge";
+  import { livePosition } from "../automation/autoState.svelte";
+  import { laneMoves, laneOf, paramAt } from "../automation/laneValue";
 
   let { sel }: { sel: SelectedInsert } = $props();
 
@@ -31,6 +35,34 @@
   const visibleRows = $derived(found.flatMap((g) => (g.group !== null && folded.includes(g.group) ? [] : g.rows)));
 
   let list = $state<HTMLElement>();
+
+  // ---- オートメーション（帯はトラックの下だけ。戻り ・ マスターの印は「使えない」） ----
+
+  const track = $derived.by(() => {
+    const strip = sel.insert.strip;
+    return strip.kind === "track" ? (current.state!.song.tracks.find((tr) => tr.id === strip.id) ?? null) : null;
+  });
+  const insertId = $derived(track?.slots[sel.insert.slot]?.id ?? null);
+  const busy = $derived(current.state!.transport.state === "recording" || current.state!.transport.state === "countIn");
+  const targetOf = (param: number): AutoTarget | null => (insertId === null ? null : { kind: "insert", insert: insertId, param });
+  function markOf(param: number) {
+    const target = targetOf(param);
+    const tr = track;
+    return {
+      on: tr !== null && target !== null && laneOf(tr, target) !== undefined,
+      usable: tr !== null && target !== null && !busy,
+      add: () => tr && target && send({ type: "addLane", track: tr.id, target }),
+    };
+  }
+  /** 帯が動かしている値（パラメータの欄の棒の位置 → 値）。 */
+  function autoValue(param: number): number | null {
+    const target = targetOf(param);
+    const tr = track;
+    if (!tr || !target || !laneMoves(laneOf(tr, target), current.state!.automation.held, tr.id)) return null;
+    const pos = livePosition(tr.id, target);
+    const spec = EFFECT_PARAMS[sel.effect][param];
+    return pos === null || !spec ? null : paramAt(spec, pos);
+  }
 
   function pick(param: number): void {
     if (list && !list.contains(document.activeElement)) list.focus({ preventScroll: true });
@@ -103,6 +135,8 @@
             value={sel.values[r.param] ?? 0}
             selected={sel.row !== null && r.covers.includes(sel.row)}
             onselect={() => pick(r.param)}
+            mark={markOf(r.param)}
+            auto={autoValue(r.param)}
           />
         {/each}
       {/if}

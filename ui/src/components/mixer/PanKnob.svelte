@@ -3,6 +3,7 @@
      キー（仕様書 3 章 86-7）: ← → で 1、Shift で 10、Home で C、Enter で打ちこむ。 -->
 <script lang="ts">
   import type { StripRef } from "../../bridge";
+  import { coverIf } from "../automation/coverIf";
   import { term } from "../../lib/tip.svelte";
   import { t } from "../../text/ja";
   import { metrics } from "../metrics.svelte";
@@ -10,7 +11,8 @@
   import ValueField from "../params/ValueField.svelte";
   import { clampPan, panAngle, panText, parsePan } from "./scale";
 
-  let { strip, pan }: { strip: StripRef; pan: number } = $props();
+  /** auto: オートメーションが動かしている（枠が accent）。毎コマ変わるので、行を mixerMeters の canvas の下に入れる（cover）。 */
+  let { strip, pan, auto = false }: { strip: StripRef; pan: number; auto?: boolean } = $props();
 
   const c = mixControl<number>({
     value: () => pan,
@@ -22,11 +24,12 @@
   });
 </script>
 
-<div class="row">
+<div class="row" use:coverIf={auto}>
   <span class="m-lbl" use:term={"パン"}>{t("mixer.pan")}</span>
   <div
     class="knob"
     class:dragging={c.drag !== null}
+    class:auto
     role="slider"
     tabindex="0"
     aria-label={t("mixer.pan")}
@@ -73,6 +76,9 @@
     background: var(--color-gray-1);
     cursor: ns-resize;
     touch-action: none;
+  }
+  .knob.auto {
+    border-color: var(--color-accent);
   }
   .knob:hover {
     border-color: var(--color-gray-10);

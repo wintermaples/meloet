@@ -3,13 +3,15 @@
      キー（仕様書 3 章 86-7）: ↑ ↓ で 1 dB、Shift で 0.1 dB、Home でトラックを足したときの量（TrackView.sendDefaults）、Enter で打ちこむ。 -->
 <script lang="ts">
   import type { SendBus } from "../../bridge";
+  import { coverIf } from "../automation/coverIf";
   import { t } from "../../text/ja";
   import { mixControl } from "./control.svelte";
   import ValueField from "../params/ValueField.svelte";
   import { stepDb } from "./control.svelte";
   import { dbToFrac, fracToDb, parseDb, sendText } from "./scale";
 
-  let { track, bus, db, home }: { track: number; bus: SendBus; db: number | null; home: number | null } = $props();
+  /** auto: オートメーションが動かしている（棒の枠が accent。毎コマ変わるので、行を mixerMeters の canvas の下に入れる）。 */
+  let { track, bus, db, home, auto = false }: { track: number; bus: SendBus; db: number | null; home: number | null; auto?: boolean } = $props();
 
   const c = mixControl<number | null>({
     value: () => db,
@@ -22,7 +24,7 @@
   const pct = (v: number | null) => `${dbToFrac(v) * 100}%`;
 </script>
 
-<div class="row">
+<div class="row" use:coverIf={auto}>
   <span class="m-lbl bus">{t(bus === "a" ? "mixer.sendA" : "mixer.sendB")}</span>
   <div
     class="hit"
@@ -42,7 +44,7 @@
     onkeyup={c.keyup}
     onblur={c.blur}
   >
-    <div class="bar">
+    <div class="bar" class:auto>
       <div class="fill" style:width={pct(c.shown)}></div>
       {#if c.drag}
         <div class="from" style:width={pct(c.drag.from)} data-test="mixer-send-from"></div>
@@ -81,6 +83,9 @@
     flex: 1;
     height: var(--part-meter-horizontal);
     background: var(--color-gray-0);
+  }
+  .bar.auto {
+    outline: var(--line-hair) solid var(--color-accent);
   }
   .fill {
     height: 100%;

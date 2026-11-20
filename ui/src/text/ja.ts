@@ -2010,6 +2010,21 @@ export const texts = {
   "lane.param": e("{effect}の「{param}」", "builder:2026-11-20", { effect: "コンプレッサー", param: "しきい値" }),
   // プラグインがパラメータの名前を言ってこないとき。
   "lane.pluginParam": e("{plugin}のパラメータ", "builder:2026-11-20", { plugin: "Surge XT " }),
+  // アレンジの帯の見出し（2 段）と、「▸ パン ▸ プラグインのパラメータ」の行、読み値（仕様書 2 章 ・ 3 章 Y16）。
+  "lane.title": e("オートメーション ・ {target}", "mock:F6-AutoRec", { target: "音量" }),
+  "lane.write": e("● 書く", "spec:2"),
+  "lane.writing": e("書いています", "mock:F6-AutoRec"),
+  "lane.restore": e("もどす", "spec:2"),
+  "lane.resting": e("休み ・ {value}", "mock:F6-AutoRest", { value: "−12.0 dB" }),
+  "lane.restingBare": e("休み", "spec:2"),
+  "lane.now": e("いま {value} ・ 点 {count}", "mock:F6-ParamMany", { value: "−4.8 dB", count: "5" }),
+  "lane.count": e("点 {count}", "mock:F6-ParamMany", { count: "5" }),
+  "lane.pluginParams": e("プラグインのパラメータ", "spec:3"),
+  "lane.delete": e("帯を消す", "spec:3"),
+  "lane.readAdd": e("{position} ・ {value}", "mock:R10-AutoEdit", { position: "5. 3. 000", value: "−8.4 dB" }),
+  "lane.readMove": e("{delta} ・ {from} → {to}", "mock:R10-AutoEdit", { delta: "+0. 1. 000", from: "−2.1", to: "−0.6 dB" }),
+  // ミキサーのフェーダーの値の下（仕様書 2 章「オートメーションで動くつまみ」）。休みは lane.restingBare と lane.restore。
+  "mixer.automation": e("オートメーション", "spec:2"),
   // 履歴の行「「（手の名前）」・ （何を）」と、（何を）の形。手の名前は下の stepNames。
   "history.row": e("「{name}」・ {what}", "mock:R10-History", { name: "ノートを動かす", what: "3 ノート" }),
   "history.rowBare": e("「{name}」", "builder:2026-11-20", { name: "ミュート" }),

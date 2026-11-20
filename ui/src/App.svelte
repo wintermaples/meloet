@@ -6,6 +6,7 @@
   import AboutDialog from "./components/about/AboutDialog.svelte";
   import { about } from "./components/about/about.svelte";
   import Arrange from "./components/Arrange.svelte";
+  import AutoClock from "./components/automation/AutoClock.svelte";
   import BandRow from "./components/BandRow.svelte";
   import FileDropNotice from "./components/FileDropNotice.svelte";
   import InputMeter from "./components/InputMeter.svelte";
@@ -76,6 +77,7 @@
     <BandRow />
     <StatusLine />
   </div>
+  <AutoClock />
   {#if state.workspace.songDialog}
     <div class="dialog">
       <SongDialog />

@@ -7,7 +7,8 @@
   import { dbToFrac, SCALE_MARKS } from "./scale";
 
   /** ドラッグは Strip が持つ（下のフェーダーの値の字も、動かしている間の値を出すため）。 */
-  let { control: c }: { control: MixControl<number | null> } = $props();
+  /** auto: オートメーションが動かしている（つまみの枠が accent。仕様書 2 章「オートメーションで動くつまみ」）。 */
+  let { control: c, auto = false }: { control: MixControl<number | null>; auto?: boolean } = $props();
 
   const top = (frac: number) => `${(1 - frac) * 100}%`;
 </script>
@@ -20,6 +21,7 @@
 <div
   class="fader"
   class:dragging={c.drag !== null}
+  class:auto
   role="slider"
   tabindex="0"
   aria-label={t("mixer.db")}
@@ -102,6 +104,9 @@
     background: var(--color-gray-0);
   }
   .fader:hover .knob:not(.from) {
+    border-color: var(--color-accent);
+  }
+  .fader.auto .knob:not(.from) {
     border-color: var(--color-accent);
   }
   .fader.dragging .knob:not(.from) {

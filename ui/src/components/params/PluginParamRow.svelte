@@ -12,6 +12,7 @@
   import { paramUi, stopTyping } from "./paramUi.svelte";
   import { pluginValueText, stepCount, stepOf, valueOfStep } from "./pluginRows";
   import ValueField from "./ValueField.svelte";
+  import AutoMark from "./AutoMark.svelte";
 
   interface Props {
     slot: PluginSlotRef;
@@ -24,8 +25,11 @@
     automated: boolean;
     usable: boolean;
     onselect: () => void;
+    /** 右の印を押せるか（戻り ・ マスターのインサートは帯を作らない）。押すと add。 */
+    markUsable: boolean;
+    add: () => void;
   }
-  let { slot, table, plugin, row, tick, selected, automated, usable, onselect }: Props = $props();
+  let { slot, table, plugin, row, tick, selected, automated, usable, onselect, markUsable, add }: Props = $props();
 
   const now = $derived((void tick, { value: row.value, text: row.text }));
   const kind = $derived(row.kind);
@@ -211,9 +215,7 @@
   {#if !typing}
     <span class="m-num m-hi value" role="presentation" data-test="param-value" ondblclick={startTyping}>{text}</span>
   {/if}
-  <button class="automation" class:on={automated} disabled aria-label={t("params.automation")}
-    ><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 8L3 3l3 4 4-6" /></svg></button
-  >
+  <AutoMark on={automated} usable={markUsable} {add} />
 </div>
 
 <style>
@@ -343,31 +345,5 @@
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: right;
-  }
-  /* オートメーションに書く印（20×20）。まだ書けないので押せない。書いている行は accent（仕様書 2 章）。 */
-  .automation {
-    box-sizing: border-box;
-    width: var(--part-param-automation);
-    height: var(--part-param-automation);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: var(--line-hair) solid var(--color-gray-5);
-    border-radius: var(--radius-1);
-    background: var(--color-gray-1);
-    color: var(--color-gray-7);
-  }
-  .automation.on {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-  }
-  .automation svg {
-    width: var(--part-button-icon);
-    height: var(--part-button-icon);
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1;
   }
 </style>

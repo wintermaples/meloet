@@ -31,6 +31,26 @@ export interface LaneDims {
   pad: number;
   /** ノートの絵の高さ（mock.arrange.note） */
   noteH: number;
+  /** トラックの行の上（下にオートメーションの帯があると、行の間があく。automation/autoGeom.ts）。なければ行の番号 × trackH。 */
+  tops?: readonly number[];
+}
+
+/** トラックの行 row の上。 */
+export const rowTop = (d: LaneDims, row: number) => d.tops?.[row] ?? row * d.trackH;
+
+/** y の下のトラックの行（クリップの所だけ。帯の上や、いちばん下の行より下なら -1）。 */
+export function trackRowAt(d: LaneDims, y: number): number {
+  if (!d.tops) return y >= 0 ? Math.floor(y / d.trackH) : -1;
+  for (let i = 0; i < d.tops.length; i++) if (y >= d.tops[i]! && y < d.tops[i]! + d.trackH) return i;
+  return -1;
+}
+
+/** y がどのトラックのかたまり（行と、その下の帯）にいるか。いちばん上より上は 0、いちばん下より下は最後の行。 */
+export function blockAt(d: LaneDims, y: number): number {
+  if (!d.tops) return Math.floor(y / d.trackH);
+  let row = 0;
+  for (let i = 0; i < d.tops.length; i++) if (y >= d.tops[i]!) row = i;
+  return row;
 }
 
 export interface View {
@@ -63,8 +83,8 @@ export function clipBox(v: View, d: LaneDims, row: number, start: number, end: n
   return {
     x0: tickToX(v, start),
     x1: tickToX(v, end),
-    y0: row * d.trackH + d.inset,
-    y1: (row + 1) * d.trackH - d.hair - d.inset,
+    y0: rowTop(d, row) + d.inset,
+    y1: rowTop(d, row) + d.trackH - d.hair - d.inset,
   };
 }
 
@@ -310,7 +330,7 @@ export function rulerCommand(
 
 /** 押した所のクリップ（なければ null）。 */
 export function clipAt(v: View, d: LaneDims, tracks: readonly TrackView[], x: number, y: number): number | null {
-  const row = Math.floor(y / d.trackH);
+  const row = trackRowAt(d, y);
   const track = tracks[row];
   if (!track) return null;
   for (const c of track.clips) {

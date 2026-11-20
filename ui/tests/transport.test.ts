@@ -29,7 +29,10 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+/** 前に mount した物は先に外す（1 つの試験で何度も show すると、残った物が後の試験の状態を読んで落ちる）。 */
 function show(component: Component<any>, state: AppState): void {
+  if (mounted) unmount(mounted);
+  mounted = null;
   app.setState(state);
   mounted = mount(component, { target });
   flushSync();

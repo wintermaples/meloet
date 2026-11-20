@@ -1163,6 +1163,12 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 
 くわしくは [`measurements/2026-11-20-round6-end.md`](measurements/2026-11-20-round6-end.md)（生の数は `target/measure/round6-end/`）。測りのあとの check-all も通った。
 
+### オーナーさんに聞いていること（第 6 回の終わり、2026-11-21）
+
+- B-92 ・ B-93 には、第 7 回の頼み（デザインの第 10 版、19〜34 の答え）で答えが来た。第 7 回の区切り0 で C へ移す。
+- 前から: **SF2 の聞きくらべ**（`target/listen/round5-sf2/`）と、SF2 の利得を +4 dB にする案。包み 2026.11.1 の Release（「まだ上げない」のまま）。
+- 第 6 回の終わりの測りの間、オーナーさんの Chrome が同じ出口に音を出していた。16 トラックの xrun の宿題を見るときは、Chrome を止めてもらってよいか。
+
 ### 第 6 回の宿題（次の回より後へ残す物）
 
 | 宿題 | なぜ残したか |

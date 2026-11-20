@@ -12,7 +12,7 @@ usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16
                                              [--meter-changes BAR:NUM/DEN,...]
                                              [--markers TICK:NAME,...]
                                              [--lanes volume,pan,send:a,send:b,plugin:PARAM,effect:PARAM,builtin:EFFECT.ID]
-                                             [--lane-points 16] [--lane-resting]
+                                             [--lane-points 16] [--lane-resting] [--lane-tracks 1,4]
 
 --tracks N (1..64): a version 3 song with N tracks, each with one clip and one take of --notes
 notes. The instruments go round BAND (the groups mixed), with the sends a new track of that
@@ -48,7 +48,8 @@ plugin's own number (only on the "plugin" tracks); "effect:PARAM" a parameter of
 that id of the track's built-in effect of that kind, both as in the song file, e.g.
 "builtin:compressor.threshold" (only on the tracks that have that effect). Each lane has --lane-points points spread evenly over the clip
 from its start, with values (the place of the knob, 0..1) from --seed. --lane-resting: the
-lanes rest (spec 3, 17-A).
+lanes rest (spec 3, 17-A). --lane-tracks: only the tracks of these places (from 1, in the
+order of the tracks) get the lanes.
 
 Without --tracks the shape is crates/meloet-core/src/songfile.rs, version 1. The clip starts at the song's start
 and is --bars bars of 4/4 long. Notes are spread over the clip in start order, keys 48..84,
@@ -309,11 +310,23 @@ def lane_words(text):
     return words
 
 
-def with_lanes(made, words, count, resting, seed):
+def lane_tracks(text):
+    try:
+        places = {int(w) for w in text.split(",")}
+    except ValueError:
+        raise ValueError("--lane-tracks: places of tracks from 1, with commas between")
+    if min(places) < 1:
+        raise ValueError("--lane-tracks: places of tracks from 1, with commas between")
+    return places
+
+
+def with_lanes(made, words, count, resting, seed, only=None):
     """The automation lanes (crates/meloet-core/src/songfile.rs, `LaneFile`). An insert a lane
     names gets an id of its own, from `nextId`."""
     doc = made["song"]
     for i, track in enumerate(doc["tracks"]):
+        if only and i + 1 not in only:
+            continue
         rng = random.Random(seed * 7919 + i)
         length = max((c["end"] for c in track["clips"]), default=TICKS_PER_BAR)
         lanes = []
@@ -371,6 +384,7 @@ def main(argv):
     p.add_argument("--lanes")
     p.add_argument("--lane-points", type=int, default=16)
     p.add_argument("--lane-resting", action="store_true")
+    p.add_argument("--lane-tracks")
     a = p.parse_args(argv)
     if a.lane_points < 0:
         p.error("lane-points >= 0")
@@ -409,7 +423,8 @@ def main(argv):
                 meter_changes(a.meter_changes) if a.meter_changes else [],
                 a.markers)
             if a.lanes:
-                made = with_lanes(made, lane_words(a.lanes), a.lane_points, a.lane_resting, a.seed)
+                made = with_lanes(made, lane_words(a.lanes), a.lane_points, a.lane_resting, a.seed,
+                                   lane_tracks(a.lane_tracks) if a.lane_tracks else None)
         except ValueError as e:
             p.error(str(e))
     data = json.dumps(made, ensure_ascii=False, separators=(",", ":"))

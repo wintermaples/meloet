@@ -65,3 +65,39 @@
 - main・takes: 撮るときに vkeys が先に終わるので、入力計と状態行に「meloet-vkeys-shoot-… とのつながりが切れました。…」が出ている。撮る道具のせいで、アプリの不具合ではない。モックの Main の状態行（えらんだクリップのこと）とはくらべられない。
 - takes: クリップの左上に「2/2」の札、上に「◂ テイク 2 / 2 ▸ T」の帯が出る。モックの F-Takes は部品の説明の板（いろいろな幅のクリップを横にならべた物）なので、窓全体ではくらべられない。
 - recording・main・takes: 1 トラックで、曲の中身がない（モックはトラック 5 本）。
+
+## 第 6 回の状態（2026-11-21）
+
+- 版: `5022d22`（release ビルド。製品のコードは `2b80d4a` と同じで、あとのコミットは書類だけ）の上に、作業ツリーの `tools/design/shoot_app.py` と `tools/measure/make_song.py` の変更をのせたもの。
+- 撮りかた: `python3 -I tools/design/shoot_app.py --compare-small tempoApp markersApp autoRestApp autoRecApp autoEditApp mixerAutoApp mixerRestApp paramManyAutoApp historyStepsApp`（`source ~/.config/meloet-agent/env.sh`、`PIPEWIRE_RUNTIME_DIR=/run/user/1000`、`CARGO_TARGET_DIR` は決めない）。
+  - 曲は `make_song.py` で 5 トラック（4 本は最初から入っている音色、5 本目は Surge XT。paramManyAutoApp は 1 本目が Surge XT、historyStepsApp は 5 本とも最初から入っている音色）。帯を 1 本目と 4 本目だけにするため、`make_song.py` に `--lane-tracks` を足した。
+  - 帯の id や、いまのテイクの id のように、状態だけが知る番号が要る意図は、`MELOET_EVAL` の JavaScript で状態を読んでから、画面と同じ道（`send`）で送った（`shoot_app.py` の `core_js`）。
+  - 時刻はページが読めてからの ms。
+- `app/` に 9 状態 × 4 = 36 枚、`compare/` に 9 状態 × 100 % の 2 枚 = 18 枚（合計 約 9.2 MB）。
+- モックは第 9 版の写し（`docs/design/mock/`）とくらべた。第 10 版で F6-AutoRec ・ F6-AutoRest ・ F6-MixerAuto ・ F6-MixerRest ・ F6-ParamMany ・ F6-Tempo が変わったが、まだ写していない。
+
+| 状態 | どうしたか | モック |
+|---|---|---|
+| tempoApp | テンポの点 96 → 5 小節目 104（だんだん）→ 9 小節目 120 → 13 小節目 96、9 小節目から 3/4、13 小節目から 4/4、マーカー 3 つ。1.5 秒で 7 小節目へ `locate`、`setTimelineOpen`、5 小節目のテンポの点を `selectTimeline`。3.5 秒で撮る | F6-Tempo |
+| markersApp | マーカー イントロ ・ Aメロ ・ サビ（10 小節目）。7 小節目へ `locate`、1.8 秒で `addMarker`「マーカー 4」（K と同じ名前）。名前の枠がひらいた所 | R10-Markers |
+| autoRestApp | 1 トラック目に音量の帯（点 6）。5 小節目から `playStop`、5.0 ・ 5.2 秒に `setGain`（−10 を commit: false、−12 を commit: true）で手で動かし、帯が休む。9.4 秒（8 小節目）で撮る。モックも再生中 | F6-AutoRest |
+| autoRecApp | 同じ曲で `setLaneWrite`（● 書く）をオンにして 5 小節目から再生、6.4 秒から 250 ms ごとに `setGain`（commit: false）で −4.8 → −12 dB へ動かしつづけ、9.4 秒で撮る（離していない） | F6-AutoRec |
+| autoEditApp | 同じ曲を止めたまま、8 小節目へ `locate`、`selectAutoPoints` で点 1〜3 をえらぶ | R10-AutoEdit |
+| mixerAutoApp | 1 ・ 4 トラック目に音量の帯（点 8）。7 小節目から `playStop`、そのあとミキサーをひらく（ひらいた時に「… の音量は、オートメーションで動いています」が出る）。8 秒で撮る | F6-MixerAuto |
+| mixerRestApp | 同じに再生してミキサーをひらき、4.5 ・ 4.7 秒に 4 トラック目の `setGain`（−12、離す）。4 トラック目の帯が休む | F6-MixerRest |
+| paramManyAutoApp | 1 トラック目の Surge XT に、音量 ・ A Filter 1 Cutoff ・ A Osc 1 Pitch の帯。`selectInstrument`、パラメータの欄をひらき、Macros をひらく | F6-ParamMany |
+| historyStepsApp | 13 手（名前を変える 4、音量 4、パン、テンポの点を足す、マーカー「サビ」を足す、EQ をとばす、4 パッドの音量 −10.5 → −12.0）、ピアノロールで 3 手（クオンタイズ、長さ、動かす）、`undo` 3 回、帯をひらいて ↓ 2 回で 11 手目をえらぶ | R10-History（帯の形は F-History） |
+
+### 目で見て気づいたモックとのちがい（第 6 回）
+
+- 全部: 曲は `make_song.py` の物で、トラックごとにクリップが 1 つ、曲の頭から 16 小節（モックはクリップが区切られ、名前もイントロ ・ ベース A など）。トラックの名前は音色の名前（モックは「ピアノ」「ベース」…）。曲の名前は「測る曲 5 トラック 40 ノート」。帯の点の値は `--seed` からの物で、モックの線の形とはちがう。
+- 全部: 入力の行は本物の Keystation 49 MK3 と仮想の鍵盤が 1 台ずつ。マスターのメーターや処理の負荷の数は、そのときの本物の値。
+- tempoApp: モックとほとんど同じ（テンポの線、だんだん、3/4 ・ 4/4 の旗、状態行の文）。モックの状態行は「… だんだん速く ・ 値を変えるには 2 回押す」と続くが、アプリは「だんだん速く」で終わる。
+- markersApp: R10-Markers は部品の説明の板なので、窓全体ではくらべられない。名前の枠（白い枠に「マーカー 4」）と状態行「マーカー 4 を足しました。名前を打って Enter」は板の「足した直後」と同じ形。
+- autoRestApp ・ mixerRestApp: 休んだ帯は灰色の線、見出しに「もどす」「休み ・ −12.0 dB」、ミキサーのフェーダーの下に「休み」「もどす」。状態行の文はモックと同じ。
+- autoRecApp: 赤い枠（書いている所）と「● 書く」「書いています」、状態行はモックと同じ。モックは枠の中の線が手の値へ下がっているが、アプリは書いている間、枠の中の線がもとの線のままで、トラックの見出しの音量も −9.0 dB のまま（`setGain` の commit: false で動かしたため。マウスでフェーダーを持ったときに同じかは見ていない）。
+- 再生中の絵（autoRestApp、autoRecApp の 150 %、mixerRestApp ・ mixerAutoApp の上の「アレンジ全体」）で、再生の線が白っぽい灰色に見える物と、accent（橙）の物がある（autoRecApp の 100 % は橙）。モックの再生中の線は橙。撮ったコマのせいか、再生中の描きかたかは見ていない。
+- mixerAutoApp ・ mixerRestApp: 帯の値が乱数なので、1 トラック目のフェーダーは +4 dB 前後（モックは −2.4）。1920×1080 では、ミキサーの上にアレンジが出る（窓が高いため。モックは 1280×800 だけ）。
+- paramManyAutoApp: Surge XT のマクロの名前と値は Surge XT が言うまま（「M1: -」「0.000000」。モックは「Macro 1」「35.00 %」）。アプリはプラグインの帯 2 本もアレンジに見出しつきで出る（「オートメーション ・ Surge XT の…」は 1280×800 で切れる）。モックはアレンジに音量の帯だけで、欄には「オートメーションに書いている 2」が出ている。窓のボタンは「窓をひらく」（モックは窓がひらいていて「窓を前に出す」）。モックの 5 トラック目の歌のトラックはない。
+- historyStepsApp: 行の形（取り消した 3 手が「やりなおせます」、13 手目が「いまここ」、11 手目に白い枠と「ここまで戻す Enter」）は R10-History と同じ。10 手目は「テンポ ・ 拍子の変更を足す」（モックは「テンポを変える」。ここではテンポの点を足したため）、12 手目は EQ 4 バンド（モックは MVerb）。ピアノロールで手を作るためにえらんだクリップの枠が、アレンジで accent になっている。
+- 150 %: 1280×800 では、左上の曲の名前、処理の負荷、出口と入口の名前が引っこむ（前の回と同じ決まり）。

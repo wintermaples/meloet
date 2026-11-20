@@ -9,7 +9,7 @@ use meloet_protocol::{
 };
 
 use super::{Effect, Model, endpoint_view};
-use crate::play::OpenInput;
+use crate::play::{Cut, OpenInput};
 use crate::settings::{
     BUFFER_CHOICES, MANUAL_LATENCY_MAX_US, MeasuredLatency, SAMPLE_RATE_CHOICES,
 };
@@ -57,6 +57,18 @@ fn ms(us: f64) -> f32 {
 }
 
 impl Model {
+    /// The status line of a recording that was stopped because the sound went away, with
+    /// the number of the take it left.
+    pub(super) fn cut_notice(&self, cut: Cut, take: u32) -> StatusMessage {
+        match cut {
+            Cut::AudioSystem => StatusMessage::RecordingStoppedAudioSystem { take },
+            Cut::Output => StatusMessage::RecordingStoppedOutputMissing {
+                output: self.output_name(),
+                take,
+            },
+        }
+    }
+
     /// The monitor of this sink is the input, whatever the PC's inputs are.
     pub fn with_input_stand_in(mut self, sink_node: &str) -> Model {
         self.input.stand_in = Some(Endpoint {

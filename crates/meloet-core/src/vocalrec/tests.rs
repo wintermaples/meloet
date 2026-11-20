@@ -231,7 +231,8 @@ fn the_writer_splits_the_input_into_the_tracks_files_and_places_their_head() {
         cycle(&mut out, &mut tap);
     }
     assert!(!meters.recording());
-    writer.start(job(["a.wav", "b.wav"])).unwrap();
+    let peaks = writer.start(job(["a.wav", "b.wav"])).unwrap();
+    assert_eq!(peaks.len(), 2);
     assert!(meters.recording());
     assert!(dir.join("a.wav").exists() && dir.join("b.wav").exists());
     for _ in 0..20 {
@@ -251,6 +252,8 @@ fn the_writer_splits_the_input_into_the_tracks_files_and_places_their_head() {
         let expected = frame - (15 * BLOCK) as f64;
         assert!((got - expected).abs() < 0.05, "{got} for {expected}");
     }
+    // The wave is there while the recording goes on.
+    assert!(peaks[0].lock().unwrap().frames() > 0);
     let written = writer.stop().expect("a recording");
     assert_eq!(writer.mark(moment(0.0)), None, "nothing is recorded");
     assert!(!meters.recording());
@@ -270,6 +273,19 @@ fn the_writer_splits_the_input_into_the_tracks_files_and_places_their_head() {
     let (_, channels, b) = decode(&dir.join("b.wav"));
     assert_eq!((channels, b.len()), (2, 2 * 85 * BLOCK));
     assert_eq!(b[..], samples[2 * from..2 * (from + 85 * BLOCK)]);
+
+    // The peaks made while writing are the peaks of what the files hold, and they become
+    // a peaks file on the writer's thread.
+    for (peaks, (channels, file)) in peaks.iter().zip([(1, &a), (2, &b)]) {
+        let mut whole = PeakBuilder::new(channels);
+        whole.push(file);
+        assert_eq!(*peaks.lock().unwrap(), whole);
+    }
+    let kept = dir.join("peaks/b.peaks");
+    let answer = writer.write_peaks(peaks[1].clone(), kept.clone());
+    assert!(answer.recv().unwrap().is_ok());
+    let head = crate::peaks::read_peaks_head(&kept).unwrap();
+    assert_eq!((head.channels, head.frames), (2, (85 * BLOCK) as u64));
 
     // The next recording starts from nothing; the files of the last one stay.
     assert!(
@@ -326,6 +342,7 @@ fn a_ring_that_ran_full_leaves_silence_of_the_same_length() {
         "every frame has its place"
     );
     assert_eq!(written.dropped, 3 * u64::from(RATE));
+    assert!(written.dropped_blocks > 0 && written.gap_count == 0);
     assert_eq!(
         (written.gaps, written.full, &written.error),
         (0, false, &None)
@@ -567,6 +584,7 @@ fn cycles_the_input_missed_are_written_as_silence_of_their_length() {
     side.end_job();
     let written = side.job.take().unwrap().said;
     assert_eq!((written.gaps, written.dropped), (3 * 256, 0));
+    assert_eq!((written.gap_count, written.dropped_blocks), (1, 0));
     assert_eq!(written.frames, 23 * 256);
     let (_, _, read) = decode(&dir.join("歌 1.wav"));
     assert_eq!(read[..2_560], samples[..2_560]);

@@ -18,6 +18,10 @@
 //! song rolls and where a lap begins ([`DiskWriter::mark`], from the times of the blocks
 //! around it), and everything between is frames ([`takes_from`]). So that counting holds,
 //! a cycle the input missed is written as silence of its length.
+//!
+//! The peaks of each file are made as it is written ([`SharedPeaks`], 22-9): the screen
+//! draws the wave of a recording from them while it goes on, and they become the file's
+//! peaks file when the recording is in the song ([`DiskWriter::write_peaks`]).
 
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -31,6 +35,8 @@ use meloet_engine::{FrameClock, InputBlock, InputMeters, InputRingReader};
 use meloet_model::{NewAudioTake, TempoMap};
 use meloet_protocol::RecordFormat;
 use serde::{Deserialize, Serialize};
+
+use crate::peaks::{PeakBuilder, SharedPeaks};
 
 /// Under the state directory: where recorded audio is written first.
 pub const WORK_AUDIO: &str = "work/音";
@@ -277,6 +283,9 @@ pub struct Written {
     /// Frames written as silence because the input missed their cycles (an xrun): the
     /// times of the blocks say so.
     pub gaps: u64,
+    /// How many blocks `dropped` is, and how many times the input skipped for `gaps`.
+    pub dropped_blocks: u32,
+    pub gap_count: u32,
     /// The files reached the size a wav file can have.
     pub full: bool,
     pub error: Option<String>,
@@ -310,7 +319,8 @@ impl Captured {
 
 enum Msg {
     Input(Option<(InputRingReader, Arc<InputMeters>)>),
-    Start(RecordJob, Sender<io::Result<()>>),
+    Start(RecordJob, Sender<io::Result<Vec<SharedPeaks>>>),
+    WritePeaks(SharedPeaks, PathBuf, Sender<io::Result<()>>),
     From(f64),
     Stop(Sender<Option<Written>>),
     Mark(f64, Sender<Option<f64>>),
@@ -344,13 +354,21 @@ impl DiskWriter {
     }
 
     /// Makes the files and starts keeping what the input brings. Comes back when the files
-    /// are there.
-    pub fn start(&self, job: RecordJob) -> io::Result<()> {
+    /// are there, with the peaks of each, which grow as it is written.
+    pub fn start(&self, job: RecordJob) -> io::Result<Vec<SharedPeaks>> {
         let (reply, answer) = mpsc::channel();
         let _ = self.tx.send(Msg::Start(job, reply));
         answer
             .recv()
             .unwrap_or_else(|_| Err(io::Error::other("the disk writer is gone")))
+    }
+
+    /// Writes peaks as they are now into a peaks file, on the writer's thread. The answer
+    /// comes when the file is there.
+    pub fn write_peaks(&self, peaks: SharedPeaks, path: PathBuf) -> Receiver<io::Result<()>> {
+        let (reply, answer) = mpsc::channel();
+        let _ = self.tx.send(Msg::WritePeaks(peaks, path, reply));
+        answer
     }
 
     /// The files begin with the first block captured at or after `t_us`; what came before
@@ -411,6 +429,24 @@ struct OpenFile {
     wav: WavFile,
     channels: Vec<u8>,
     scratch: Vec<f32>,
+    peaks: SharedPeaks,
+}
+
+impl OpenFile {
+    /// What was just written, for the wave: `silent` frames of nothing, then `scratch`.
+    fn note_peaks(&self, silent: u64, with_scratch: bool) {
+        let mut peaks = self.peaks.lock().unwrap_or_else(|e| e.into_inner());
+        let zeros = [0.0f32; 512];
+        let mut left = silent as usize * usize::from(peaks.channels());
+        while left > 0 {
+            let n = left.min(zeros.len());
+            peaks.push(&zeros[..n]);
+            left -= n;
+        }
+        if with_scratch {
+            peaks.push(&self.scratch);
+        }
+    }
 }
 
 struct Job {
@@ -481,6 +517,11 @@ impl Side {
                 Some(Msg::Start(job, reply)) => {
                     let _ = reply.send(self.start(job));
                 }
+                Some(Msg::WritePeaks(peaks, path, reply)) => {
+                    // A copy: the screen may read the peaks while the file is written.
+                    let copy = peaks.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    let _ = reply.send(copy.write(&path));
+                }
                 Some(Msg::From(t_us)) => {
                     if let Some(job) = &mut self.job {
                         job.from_us = Some(t_us);
@@ -547,7 +588,7 @@ impl Side {
         *self.status.lock().unwrap_or_else(|e| e.into_inner()) = said;
     }
 
-    fn start(&mut self, job: RecordJob) -> io::Result<()> {
+    fn start(&mut self, job: RecordJob) -> io::Result<Vec<SharedPeaks>> {
         self.end_job();
         let Some((reader, _)) = &mut self.input else {
             return Err(io::Error::other("no input is open"));
@@ -565,8 +606,10 @@ impl Side {
                 wav: WavFile::create(&file.path, sample_rate, channels, job.format)?,
                 channels: file.channels.clone(),
                 scratch: Vec::new(),
+                peaks: Arc::new(Mutex::new(PeakBuilder::new(channels as u8))),
             });
         }
+        let peaks = files.iter().map(|f| f.peaks.clone()).collect();
         if let Some(dir) = job.files.first().and_then(|f| f.path.parent()) {
             File::open(dir)?.sync_all()?;
         }
@@ -586,7 +629,7 @@ impl Side {
         });
         self.say();
         self.switch(true);
-        Ok(())
+        Ok(peaks)
     }
 
     /// Takes everything out of the ring that is there now.
@@ -699,24 +742,27 @@ impl Job {
         };
         self.due_us = Some(ends_us);
         self.said.gaps += missed;
+        self.said.gap_count += u32::from(missed > 0);
         let lost = if block.dropped {
             u64::from(block.frames)
         } else {
             0
         };
         self.said.dropped += lost;
+        self.said.dropped_blocks += u32::from(block.dropped);
         let frames = u64::from(block.frames);
         for (i, file) in self.files.iter_mut().enumerate() {
             if file.wav.room() < missed + frames {
                 self.said.full = true;
                 continue;
             }
-            let wrote = (|| {
+            let wrote: io::Result<()> = (|| {
                 file.wav.write_silence(missed + lost)?;
                 if i == 0 && !block.dropped {
                     self.times.note(file.wav.frames(), at_us);
                 }
                 if block.dropped {
+                    file.note_peaks(missed + lost, false);
                     return Ok(());
                 }
                 file.scratch.clear();
@@ -726,7 +772,9 @@ impl Job {
                             .push(frame.get(usize::from(ch)).copied().unwrap_or(0.0));
                     }
                 }
-                file.wav.write(&file.scratch)
+                file.wav.write(&file.scratch)?;
+                file.note_peaks(missed + lost, true);
+                Ok(())
             })();
             if let Err(e) = wrote {
                 self.said.error.get_or_insert(e.to_string());

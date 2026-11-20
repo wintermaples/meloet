@@ -14,7 +14,7 @@ use meloet_protocol::{
 };
 use sha2::{Digest, Sha256};
 
-use super::{EngineOp, Play, Rec};
+use super::{Cut, EngineOp, Play, Rec};
 use crate::state::{Effect, vocal_input_view};
 use crate::vocalrec::{self, Marks, NoteFile, RecNote, Written};
 
@@ -66,6 +66,9 @@ pub struct VoiceSpec {
 /// A file a recording asks the disk writer for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VocalFileAsk {
+    /// The number the file gets in the song's audio table: what the screen asks its peaks
+    /// by while it is recorded.
+    pub audio: u32,
     /// The file's name, as `vocalrec::file_name` makes it.
     pub name: String,
     /// The channels of the input that go into it.
@@ -101,6 +104,9 @@ pub(super) struct VocalPart {
     pub started: bool,
     /// What the note on the disk says now.
     pub noted: Option<Marks>,
+    /// The stream went away and the recording waits for the disk writer: why it stopped,
+    /// for the status line once the take is in the song.
+    pub cut: Option<Cut>,
 }
 
 impl VocalPart {
@@ -120,6 +126,15 @@ impl VocalPart {
             },
         }
     }
+}
+
+fn faults_of(written: &Written) -> Option<meloet_protocol::RecordingFaults> {
+    (written.gap_count > 0 || written.dropped_blocks > 0).then_some(
+        meloet_protocol::RecordingFaults {
+            gaps: written.gap_count,
+            dropped: written.dropped_blocks,
+        },
+    )
 }
 
 impl Play {
@@ -334,6 +349,7 @@ impl Play {
     pub(super) fn vocal_file_asks(tracks: &[VocalRec]) -> Vec<VocalFileAsk> {
         (tracks.iter())
             .map(|v| VocalFileAsk {
+                audio: v.audio,
                 name: v.file.clone(),
                 channels: v.input.channels().to_vec(),
             })
@@ -354,6 +370,7 @@ impl Play {
             v.file = name;
         }
         rec.vocal.started = true;
+        self.faults = None;
         self.note_vocals(song_file, effects);
     }
 
@@ -365,14 +382,41 @@ impl Play {
     }
 
     /// The disk writer stopped and says what it wrote: a recording that waited for it goes
-    /// into the song now.
-    pub fn vocals_written(&mut self, written: Written, effects: &mut Vec<Effect>) {
-        let Some(rec) = &mut self.rec else {
-            return;
-        };
+    /// into the song now. Returns why the recording stopped and the number of the take it
+    /// left, when the stream went away under it ([`Play::vocals_cut`]).
+    pub fn vocals_written(
+        &mut self,
+        written: Written,
+        effects: &mut Vec<Effect>,
+    ) -> Option<(Cut, u32)> {
+        let rec = self.rec.as_mut()?;
+        self.faults = faults_of(&written);
         rec.vocal.written = Some(written);
-        if let Some((tick, lap)) = rec.stopped {
-            self.finish(tick, lap, effects);
+        let (tick, lap) = rec.stopped?;
+        let cut = rec.vocal.cut;
+        let lap_now = if rec.loop_range.is_some() { lap } else { 0 };
+        let vocal_take = rec.vocal.tracks.first().map(|v| v.take + lap_now);
+        let before = self.changes;
+        let keys_take = self.finish(tick, lap, effects);
+        let landed = self.changes != before;
+        cut.filter(|_| landed).zip(keys_take.or(vocal_take))
+    }
+
+    /// The stream went away while vocals are recorded: the take comes into the song when
+    /// the disk writer has written what it holds, and `cut` is said then.
+    pub fn vocals_cut(&mut self, cut: Cut) {
+        if let Some(rec) = &mut self.rec
+            && !rec.vocal.tracks.is_empty()
+        {
+            rec.vocal.cut = Some(cut);
+        }
+    }
+
+    /// How the disk writer says the recording going on is doing.
+    pub fn vocal_faults(&mut self, gaps: u32, dropped: u32) {
+        if self.recording_vocals() {
+            self.faults = (gaps > 0 || dropped > 0)
+                .then_some(meloet_protocol::RecordingFaults { gaps, dropped });
         }
     }
 
@@ -498,15 +542,25 @@ impl Play {
         let Some(rec) = &self.rec else {
             return Vec::new();
         };
-        // The frame of the files sung at the start of the lap going on.
-        let sung = match rec.vocal.lap_frames.last() {
-            Some((_, frame)) => *frame,
-            None => rec.vocal.roll.and_then(|(_, _, frame)| frame),
+        // The frame of the files sung at the start of the lap going on, and where that
+        // lap starts: the screen draws the wave from `from` with the file's `first_frame`
+        // there, so the two always name the same place. A lap whose mark the disk writer
+        // did not give is counted on from the roll, as `VocalPart::marks` does.
+        let rolled = rec
+            .vocal
+            .roll
+            .and_then(|(frame, _, file)| Some((frame, file?)));
+        let (from, sung) = match (rec.vocal.lap_frames.last(), rec.loop_range) {
+            (Some((frame, file)), Some(range)) => (
+                range.start(),
+                file.or(rolled.map(|(at, sung)| sung + (*frame as f64 - at as f64))),
+            ),
+            _ => (rec.from, rolled.map(|(_, sung)| sung)),
         };
         (rec.vocal.tracks.iter())
             .map(|v| VocalRecordingView {
                 track: v.track.0,
-                from: rec.from,
+                from,
                 take: v.take + rec.lap,
                 clip: v.clip.map(|c| c.0),
                 audio: v.audio,

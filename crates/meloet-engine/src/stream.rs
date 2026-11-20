@@ -17,7 +17,10 @@
 //! the engine makes a new **generation** and says where it is now; the thread starts again
 //! from there and what is left of the old generation in the ring is passed over.
 
+use meloet_model::TempoMap;
 use rtrb::{Consumer, Producer, RingBuffer};
+
+use crate::clips::song_frame_at;
 
 /// How much audio the ring of a track holds.
 pub const STREAM_RING_SECONDS: f64 = 2.0;
@@ -46,6 +49,59 @@ pub struct StreamWant {
     /// as the engine makes it (the end at `frame_of(end)`, then the start exactly).
     pub loop_ticks: Option<(u64, u64)>,
 }
+
+/// How the frames of a generation lie on the song: the one place where the read-ahead
+/// thread works out what the engine will ask for, the turns of the loop already in it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamLayout {
+    /// The song frame of the anchor.
+    base: u64,
+    turn: Option<Turn>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Turn {
+    /// The first frame, from the anchor, at or past the loop's end.
+    first_end: u64,
+    /// The song frame of the loop's start, and how many frames a lap from there has.
+    start: u64,
+    lap: u64,
+}
+
+impl StreamLayout {
+    /// `map`: the one with the want's `map_gen`.
+    pub fn new(want: &StreamWant, map: &TempoMap, sample_rate: f64) -> StreamLayout {
+        let turn = want.loop_ticks.map(|(start, end)| {
+            let start_sec = map.seconds_at(start as f64);
+            Turn {
+                first_end: map.frame_of(end as f64, want.anchor_sec, sample_rate),
+                start: song_frame_at(start_sec, 0, sample_rate),
+                lap: map.frame_of(end as f64, start_sec, sample_rate).max(1),
+            }
+        });
+        StreamLayout {
+            base: song_frame_at(want.anchor_sec, 0, sample_rate),
+            turn,
+        }
+    }
+
+    /// The song frame that sounds at `frame` of the generation, and how many frames from
+    /// there on follow one another in the song (up to where the loop turns).
+    pub fn at(&self, frame: u64) -> (u64, u64) {
+        match self.turn {
+            Some(turn) if frame >= turn.first_end => {
+                let into = (frame - turn.first_end) % turn.lap;
+                (turn.start + into, turn.lap - into)
+            }
+            Some(turn) => (self.base + frame, turn.first_end - frame),
+            None => (self.base + frame, u64::MAX),
+        }
+    }
+}
+
+/// The read-ahead thread's end of the ring of wants ([`want_ring`],
+/// `EngineHandle::take_stream_wants`): `pop()` gives the next one.
+pub type StreamWants = Consumer<StreamWant>;
 
 /// A ring for what the engine wants of every track: the engine writes, the read-ahead
 /// thread reads.
@@ -203,6 +259,35 @@ impl StreamReader {
         }
     }
 
+    /// Lets go of what a `read(generation, frame, …)` would pass over, and takes nothing:
+    /// chunks of other generations and frames before `frame`. While the song stands still
+    /// the engine does this every block, so that what is left of an old generation does not
+    /// keep the ring full. Never waits and never takes memory.
+    pub fn settle(&mut self, generation: u32, frame: u64) {
+        loop {
+            let (chunk, taken) = match self.open {
+                Some(open) => open,
+                None => match self.chunks.pop() {
+                    Ok(chunk) => (chunk, 0),
+                    Err(_) => return,
+                },
+            };
+            let left = chunk.frames - taken;
+            let at = chunk.first_frame + u64::from(taken);
+            if chunk.generation != generation || left == 0 {
+                self.skip(left);
+                self.open = None;
+            } else if at < frame {
+                let old = (frame - at).min(u64::from(left)) as u32;
+                self.skip(old);
+                self.open = Some((chunk, taken + old));
+            } else {
+                self.open = Some((chunk, taken));
+                return;
+            }
+        }
+    }
+
     /// The read-ahead thread let go of its end.
     pub fn is_abandoned(&self) -> bool {
         self.chunks.is_abandoned()
@@ -344,6 +429,23 @@ mod tests {
     }
 
     #[test]
+    fn settling_lets_go_of_the_old_generation_and_keeps_the_new() {
+        let (mut writer, mut reader) = stream_ring(1_000);
+        assert!(push(&mut writer, 1, 0, 2_000));
+        assert_eq!(writer.room_frames(), 0);
+        reader.settle(2, 500);
+        assert_eq!(writer.waiting_frames(), 0);
+        assert!(push(&mut writer, 2, 400, 1_000));
+        reader.settle(2, 500);
+        assert_eq!(writer.waiting_frames(), 900);
+        reader.settle(2, 500);
+        assert_eq!(writer.waiting_frames(), 900);
+        let (left, found) = read(&mut reader, 2, 500, 4);
+        assert_eq!(left, [500.0, 501.0, 502.0, 503.0]);
+        assert_eq!(found.missing, 0);
+    }
+
+    #[test]
     fn a_full_ring_takes_nothing_of_a_run() {
         let (mut writer, mut reader) = stream_ring(1_000);
         assert!(push(&mut writer, 1, 0, 1_500));
@@ -364,6 +466,32 @@ mod tests {
         assert!(!reader.is_abandoned());
         drop(writer);
         assert!(reader.is_abandoned());
+    }
+
+    #[test]
+    fn a_layout_follows_the_turns_of_the_loop() {
+        use meloet_model::{Meter, Tempo, Timeline};
+        // 120 a minute at 48 kHz: a quarter note is 24000 frames.
+        let tempo = Tempo::from_centi(12_000).unwrap();
+        let map = TempoMap::new(&Timeline::new(tempo, Meter::FOUR_FOUR));
+        let mut want = StreamWant {
+            track: 0,
+            generation: 1,
+            map_gen: 1,
+            anchor_sec: 0.25,
+            frame: 0,
+            loop_ticks: None,
+        };
+        let straight = StreamLayout::new(&want, &map, 48_000.0);
+        assert_eq!(straight.at(0), (12_000, u64::MAX));
+        assert_eq!(straight.at(500_000).0, 512_000);
+        want.loop_ticks = Some((1_920, 3_840));
+        let turning = StreamLayout::new(&want, &map, 48_000.0);
+        assert_eq!(turning.at(0), (12_000, 36_000));
+        assert_eq!(turning.at(35_999), (47_999, 1));
+        assert_eq!(turning.at(36_000), (24_000, 24_000));
+        assert_eq!(turning.at(36_000 + 24_000 + 5), (24_005, 23_995));
+        assert_eq!(turning.at(36_000 + 10 * 24_000 - 1), (47_999, 1));
     }
 
     #[test]

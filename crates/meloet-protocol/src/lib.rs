@@ -1021,7 +1021,8 @@ pub enum Command {
     /// 「ここまで戻す」 and Enter on a row of the history band (spec 3, Y19): row `index`
     /// becomes 「いまここ」, by undoing or redoing as many steps as it takes. `step` is the
     /// row's `HistoryRow::step`; when row `index` is another step by now, nothing happens.
-    /// Not while counting in or recording, as undo.
+    /// Nothing either when row `index` is 「いまここ」 already. Not while counting in or
+    /// recording, as undo.
     HistoryJump {
         index: u32,
         step: u64,
@@ -2797,6 +2798,9 @@ pub enum StatusMessage {
     AutomationMoving {
         tracks: Vec<TrackRef>,
     },
+    /// Mod Shift Z with no step to redo (not in spec 6; after `NothingToUndo`):
+    /// "やりなおせる手がありません。"
+    NothingToRedo,
 }
 
 /// The selected notes of the piano roll, for the status line.

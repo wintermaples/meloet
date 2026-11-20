@@ -348,6 +348,12 @@ impl Play {
         (self.panel.table.as_ref()).is_some_and(|t| t.at.contains_key(&param))
     }
 
+    /// The name of a parameter of the plugin `ticket`, when the panel lists that plugin.
+    pub(super) fn panel_param_name(&self, ticket: u64, param: u32) -> Option<String> {
+        let listed = self.panel.ticket == Some(ticket);
+        (self.param_name(param).filter(|_| listed)).map(str::to_owned)
+    }
+
     pub(super) fn param_name(&self, param: u32) -> Option<&str> {
         let table = self.panel.table.as_ref()?;
         Some(&table.rows[*table.at.get(&param)?].name)

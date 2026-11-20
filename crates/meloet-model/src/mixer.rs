@@ -573,6 +573,48 @@ pub fn move_slot<T>(slots: &mut [T], from: usize, to: usize) {
     }
 }
 
+/// The moves ([`move_slot`], in this order) that bring every insert `have` and `want` both
+/// hold, told by its id, to the slot `want` has it in. Empty when each is there already.
+/// One move when one explains it; else moves that leave the inserts already in place where
+/// they are.
+pub fn insert_moves(have: &Inserts, want: &Inserts) -> Vec<(usize, usize)> {
+    type Ids = [Option<InsertId>; INSERT_SLOTS];
+    let ids = |slots: &Inserts| -> Ids {
+        std::array::from_fn(|i| slots[i].as_ref().map(|insert| insert.id))
+    };
+    let (want, mut now) = (ids(want), ids(have));
+    let have = now;
+    let kept = |id: &Option<InsertId>| id.is_some() && want.contains(id) && have.contains(id);
+    let placed = |now: &Ids| (0..INSERT_SLOTS).all(|i| !kept(&want[i]) || now[i] == want[i]);
+    if placed(&now) {
+        return Vec::new();
+    }
+    for from in 0..INSERT_SLOTS {
+        for to in 0..INSERT_SLOTS {
+            let mut tried = now;
+            move_slot(&mut tried, from, to);
+            if placed(&tried) {
+                return vec![(from, to)];
+            }
+        }
+    }
+    let mut moves = Vec::new();
+    for (to, wanted) in want.iter().enumerate() {
+        // The insert that belongs here, or else something that belongs nowhere, so that no
+        // insert that is kept sits in a slot where another thing is put.
+        let from = if kept(wanted) {
+            (to..INSERT_SLOTS).find(|&i| now[i] == *wanted)
+        } else {
+            (to..INSERT_SLOTS).find(|&i| !kept(&now[i]))
+        };
+        if let Some(from) = from.filter(|&from| from != to) {
+            move_slot(&mut now, from, to);
+            moves.push((from, to));
+        }
+    }
+    moves
+}
+
 /// Moves what `from` holds to the slot `to` (past the last slot is the last slot); the slots
 /// between move by one, empty ones too. `NoSuchInsert` for an empty slot, `Unchanged` when it
 /// is there already.

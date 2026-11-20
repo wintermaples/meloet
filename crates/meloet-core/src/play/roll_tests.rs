@@ -437,8 +437,8 @@ fn random_edits_undo_and_redo_come_back_to_the_same_songs() {
                 8 => {
                     p.step_take(rng.signed(2) as i32, e);
                 }
-                9 => p.undo(e),
-                10 => p.redo(e),
+                9 => drop(p.undo(e)),
+                10 => drop(p.redo(e)),
                 11 => {
                     if rng.below(3) == 0 {
                         let division = [0, 2, 4, 8, 16, 32][rng.below(6) as usize];

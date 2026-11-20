@@ -1364,10 +1364,11 @@ impl Model {
             Command::RestoreLane { track, target } => {
                 self.say(|p| p.restore_lane(track, target, effects));
             }
-            // The jump of the history band comes with round 6 step 3.
-            Command::HistoryJump { .. } => {}
-            Command::Undo => self.play.undo(effects),
-            Command::Redo => self.play.redo(effects),
+            Command::HistoryJump { index, step } => {
+                self.notice = self.play.history_jump(index, step, effects);
+            }
+            Command::Undo => self.notice = self.play.undo(effects),
+            Command::Redo => self.notice = self.play.redo(effects),
             Command::NewSong => self.new_song(effects),
             Command::OpenSong => self.open_song(effects),
             Command::SaveSong => self.save_song(effects),

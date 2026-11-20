@@ -60,6 +60,9 @@ type StripValues = (Gain, Pan, Sends, [Option<Insert>; 4], [bool; 4]);
 fn heard(insert: Option<Insert>) -> Option<Insert> {
     let mut insert = insert.filter(|i| i.kind().is_some())?;
     insert.bypassed = false;
+    // The effect of a slot is kept for another insert of its kind (a jump in the history,
+    // another song): what is heard is the kind and the values.
+    insert.id = meloet_model::InsertId(0);
     Some(insert)
 }
 

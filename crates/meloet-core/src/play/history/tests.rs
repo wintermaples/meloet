@@ -395,13 +395,24 @@ fn the_history_section_counts_and_the_rows_say_what_each_step_did() {
     assert_eq!(new[1].step, now.newest);
     assert!(rows.iter().all(|r| r.step != new[1].step));
 
-    // The jump does nothing yet; a lane is a step.
+    // A jump moves 「いまここ」 only, as undo does; a lane is a step.
     let before = m.view();
     cmd(
         &mut m,
         Command::HistoryJump {
             index: 1,
             step: new[0].step,
+        },
+    );
+    let jumped = m.view().history;
+    assert_eq!((jumped.total, jumped.redo, jumped.current), (2, 1, 1));
+    assert_eq!(jumped.newest, now.newest);
+    assert_eq!(m.history_rows(1, 100), new);
+    cmd(
+        &mut m,
+        Command::HistoryJump {
+            index: 2,
+            step: new[1].step,
         },
     );
     assert_eq!(

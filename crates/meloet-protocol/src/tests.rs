@@ -3877,6 +3877,7 @@ fn history_and_automation_status_json_shape() {
             },
             json!({"id": "automationMoving", "tracks": [{"number": 1, "name": "ピアノ"}]}),
         ),
+        (StatusMessage::NothingToRedo, json!({"id": "nothingToRedo"})),
     ];
     for (message, json) in cases {
         assert_eq!(serde_json::to_value(&message).unwrap(), json);

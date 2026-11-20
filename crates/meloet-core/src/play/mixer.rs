@@ -368,7 +368,7 @@ impl Play {
         })
     }
 
-    /// `MoveInsert`. What names a slot of the strip follows in [`Play::insert_moved`].
+    /// `MoveInsert`. What names a slot of the strip follows in [`Play::inserts_follow`].
     pub fn move_insert(
         &mut self,
         insert: InsertRef,

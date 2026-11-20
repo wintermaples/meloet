@@ -2,18 +2,30 @@
 //! (docs/architecture.md 21-12, 21-15). A row's name and values are made from the step and
 //! the `Doc` before and after it, when the row is asked for.
 
+use std::collections::HashMap;
+
 use meloet_model::{
     AutoTarget as ModelTarget, Bus, ClipId, Doc, InstrumentRef, NoteField, PluginPlace, StepKind,
     StepRow, StripId, TempoMap, TickRange, TrackId,
 };
 use meloet_protocol::{
-    BarSpan, EffectName, HistoryRow, HistoryView, LaneName, MeterValue, SendBus, StepName,
-    StepPlace, StepWhat, StripName, TrackRef,
+    BarSpan, EffectName, HistoryRow, HistoryView, LaneName, MeterValue, SendBus, StatusMessage,
+    StepName, StepPlace, StepWhat, StripName, TrackRef,
 };
 
 use super::Play;
 use super::mixer::{effect_kind, effect_name, gain_view};
 use crate::added::sound_name;
+use crate::state::Effect;
+
+/// What a row says that neither the step nor the `Doc`s around it hold, by the number of the
+/// step.
+#[derive(Debug, Default)]
+pub(super) struct StepNotes {
+    /// The name of the parameter of a `StepKind::SetPluginParam`, as the plugin said it
+    /// when the step was made.
+    param_names: HashMap<u64, String>,
+}
 
 fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
@@ -778,20 +790,148 @@ impl Play {
     /// from 1.
     pub fn history_rows(&self, from: u32, to: u32) -> Vec<HistoryRow> {
         (from.max(1)..=to)
-            .map_while(|index| {
-                let row = self.history.row(self.doc(), index as usize - 1)?;
-                let (name, what, place) = step_text(&row);
-                Some(HistoryRow {
-                    index,
-                    step: row.number,
-                    name,
-                    what,
-                    place,
-                })
-            })
+            .map_while(|index| self.history_row(index as usize))
             .collect()
+    }
+
+    /// Row `index` of the band, from 1. The status line says of a step what its row says.
+    fn history_row(&self, index: usize) -> Option<HistoryRow> {
+        let row = self.history.row(self.doc(), index.checked_sub(1)?)?;
+        let (mut name, what, place) = step_text(&row);
+        if let StepName::SetPluginParam { param, .. } = &mut name {
+            *param = self.step_notes.param_names.get(&row.number).cloned();
+        }
+        Some(HistoryRow {
+            index: count(index),
+            step: row.number,
+            name,
+            what,
+            place,
+        })
+    }
+
+    /// The newest step is one of the plugin's parameter `param`, which the plugin calls
+    /// `name`.
+    pub(super) fn note_param_step(&mut self, name: String) {
+        let last = self.history.undo_count().checked_sub(1);
+        let row = last.and_then(|last| self.history.row(self.doc(), last));
+        if let Some(row) = row
+            && matches!(row.kind, StepKind::SetPluginParam { .. })
+        {
+            self.step_notes.param_names.insert(row.number, name);
+        }
+    }
+
+    /// Before a new step: the steps that could be redone go, and what was noted of them.
+    pub(super) fn forget_undone_steps(&mut self) {
+        if self.history.redo_count() > 0 {
+            // A step made later has a higher number than any made before it.
+            let now = self.history.version();
+            self.step_notes.param_names.retain(|&step, _| step <= now);
+        }
+    }
+
+    /// Mod Z. Returns what the status line says.
+    pub fn undo(&mut self, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let done = self.history.undo_count();
+        let Some(row) = self.history_row(done) else {
+            return Some(StatusMessage::NothingToUndo);
+        };
+        self.travel(done - 1, effects);
+        Some(StatusMessage::Undone {
+            name: row.name,
+            what: row.what,
+        })
+    }
+
+    /// Mod Shift Z.
+    pub fn redo(&mut self, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let done = self.history.undo_count();
+        let Some(row) = self.history_row(done + 1) else {
+            return Some(StatusMessage::NothingToRedo);
+        };
+        self.travel(done + 1, effects);
+        Some(StatusMessage::Redone {
+            name: row.name,
+            what: row.what,
+        })
+    }
+
+    /// `Command::HistoryJump`: row `index` becomes the last step done. Nothing when the row
+    /// is not the step `step` any more, or is the last step done already.
+    pub fn history_jump(
+        &mut self,
+        index: u32,
+        step: u64,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let done = self.history.undo_count();
+        let to = index as usize;
+        let row = self.history_row(to).filter(|row| row.step == step)?;
+        if to == done {
+            return None;
+        }
+        let steps = self.travel(to, effects);
+        Some(StatusMessage::HistoryJumped {
+            index,
+            name: row.name,
+            steps: count(steps),
+            forward: to > done,
+        })
+    }
+
+    /// Undoes or redoes until `to` steps are done, and then tells everything else once of
+    /// the song as it is now: the engine, the plugins, what is selected. Returns how many
+    /// steps that were.
+    fn travel(&mut self, to: usize, effects: &mut Vec<Effect>) -> usize {
+        let done = self.history.undo_count();
+        let before = self.doc().clone();
+        self.tl.forget_fresh();
+        let crossed = (self.history.steps())
+            .skip(done.min(to))
+            .take(done.abs_diff(to))
+            .any(|kind| matches!(kind, StepKind::Recovered | StepKind::DiscardRecovered));
+        let steps = self.history.jump(&mut self.song.doc, to);
+        if steps == 0 {
+            return 0;
+        }
+        if crossed {
+            // Over "なおすためのファイルから戻す" or "戻さない": between the recovered song and
+            // the saved one, whose takes may have gone their own ways (a file changed from
+            // outside). The screen lets go of its kept takes then too.
+            self.serial += 1;
+        }
+        self.song.doc.name.clone_from(&before.name);
+        self.after_change(&before, effects);
+        // What was selected before the oldest step undone, or after the newest one redone.
+        let sel = if to < done {
+            let kept = self.sel_undo.len().saturating_sub(steps);
+            let undone = self.sel_undo.drain(kept..).rev();
+            self.sel_redo.extend(undone);
+            self.sel_redo.last().map(|(before, _)| before.clone())
+        } else {
+            let kept = self.sel_redo.len().saturating_sub(steps);
+            let redone = self.sel_redo.drain(kept..).rev();
+            self.sel_undo.extend(redone);
+            self.sel_undo.last().map(|(_, after)| after.clone())
+        };
+        if let Some(sel) = sel {
+            self.put_sel(sel, effects);
+        }
+        steps
     }
 }
 
+#[cfg(test)]
+mod jump_tests;
 #[cfg(test)]
 mod tests;

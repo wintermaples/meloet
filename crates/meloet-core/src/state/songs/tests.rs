@@ -247,6 +247,9 @@ fn undo_and_redo_find_the_saved_place_again() {
         assert_eq!(song(m), saved);
     }
     assert_eq!(m.view().song.undo_count, steps - 2);
+    assert!(matches!(status(m), Some(StatusMessage::Redone { .. })));
+    // The next thing done puts the notice away.
+    cmd(m, Command::ClearNoteSelection);
     assert_eq!(status(m), Some(StatusMessage::UndoPending { count: 2 }));
     cmd(m, Command::Redo);
     cmd(m, Command::Redo);

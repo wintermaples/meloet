@@ -1989,6 +1989,8 @@ export const texts = {
     steps: "2",
   }),
   "msg.nothingToUndo": s6("取り消せる手がない", "取り消せる手がありません。"),
+  // Mod Shift Z で、やりなおせる手がないとき（文は 6 章にない。「取り消せる手がない」にならう）。
+  "msg.nothingToRedo": e("やりなおせる手がありません。", "builder:2026-11-20"),
   "msg.automationWriting": s6("オートメーションを書いている", "{track} ・ {target}を書いています（● 書く ・ 止めるとオフに戻ります）", {
     track: "1 ピアノ",
     target: "音量",

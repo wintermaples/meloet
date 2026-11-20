@@ -189,10 +189,7 @@ fn a_saved_song_opens_as_it_was() {
     assert_eq!(sequences, 1);
     assert!(effects.iter().any(|e| matches!(
         e,
-        Effect::Engine(EngineOp::Tempo {
-            bpm_centi: 12_050,
-            ..
-        })
+        Effect::Engine(EngineOp::Timeline { timeline }) if timeline.tempo.centi() == 12_050
     )));
 }
 

@@ -13,8 +13,8 @@ use meloet_model::quantize;
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{
     Bus, Clip, ClipEdited, ClipId, Doc, Gain, History, Insert, InstrumentGroup, InstrumentRef,
-    Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, TempoMap, TickRange, TrackId, arrange,
-    roll, timeline as timeline_edit,
+    Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, TempoMap, TickRange, Timeline, TrackId,
+    arrange, roll, timeline as timeline_edit,
 };
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
@@ -96,10 +96,9 @@ pub enum EngineOp {
     Locate {
         tick: u64,
     },
-    Tempo {
-        ticks_per_beat: u32,
-        beats_per_bar: u32,
-        bpm_centi: u32,
+    /// The song's tempo and meter, for the engine's tempo map.
+    Timeline {
+        timeline: Arc<Timeline>,
     },
     Loop {
         start: u64,
@@ -1150,9 +1149,7 @@ impl Play {
         if target.is_none_or(|t| doc.track(t).is_none()) {
             *target = doc.tracks.first().map(|t| t.id);
         }
-        if doc.timeline.tempo != before.timeline.tempo
-            || doc.timeline.meter != before.timeline.meter
-        {
+        if doc.timeline != before.timeline {
             effects.push(Effect::Engine(self.tempo_op()));
         }
         if doc.loop_range != before.loop_range {
@@ -1178,10 +1175,8 @@ impl Play {
 
     fn tempo_op(&self) -> EngineOp {
         let doc = self.doc();
-        EngineOp::Tempo {
-            ticks_per_beat: doc.timeline.meter.ticks_per_beat() as u32,
-            beats_per_bar: u32::from(doc.timeline.meter.num()),
-            bpm_centi: doc.timeline.tempo.centi(),
+        EngineOp::Timeline {
+            timeline: Arc::clone(&doc.timeline),
         }
     }
 

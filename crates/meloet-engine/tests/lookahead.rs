@@ -100,11 +100,8 @@ impl Rig {
             frames: 0,
             says: Default::default(),
         };
-        rig.send(EngineCommand::SetTempo {
-            ticks_per_beat: 480,
-            beats_per_bar: 4,
-            bpm_centi: 12_000,
-        });
+        let map = common::flat_map(12_000, 4, 4);
+        assert!(rig.parts.handle.set_tempo_map(map).is_ok());
         rig
     }
 
@@ -353,11 +350,8 @@ fn plugins_are_told_where_the_song_is() {
     );
 
     // Six eighths in a bar: the beat is an eighth, and 180 of them a minute are 90 quarters.
-    rig.send(EngineCommand::SetTempo {
-        ticks_per_beat: 240,
-        beats_per_bar: 6,
-        bpm_centi: 18_000,
-    });
+    let map = common::flat_map(18_000, 6, 8);
+    assert!(rig.parts.handle.set_tempo_map(map).is_ok());
     rig.run(1);
     let eighths = told(&rig);
     assert_eq!((eighths.meter_num, eighths.meter_den), (6, 8));

@@ -13,6 +13,7 @@ rt-check = []
 [dependencies]
 cpal.workspace = true
 libc.workspace = true
+meloet-model.workspace = true
 meloet-plugin.workspace = true
 rtrb.workspace = true
 

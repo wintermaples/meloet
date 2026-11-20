@@ -2228,6 +2228,7 @@ dependencies = [
  "cpal",
  "libc",
  "meloet-engine",
+ "meloet-model",
  "meloet-plugin",
  "rtrb",
 ]

@@ -693,6 +693,13 @@ fn a_fixed_velocity_reaches_the_sound_the_recording_the_meter_and_the_screen() {
         stream: StreamFacts::default(),
         stop: AtomicBool::new(false),
         clock: Mutex::new(Arc::new(TransportClock::default())),
+        tempo_map: Mutex::new((
+            Arc::new(TempoMap::new(&meloet_model::Timeline::new(
+                meloet_model::Tempo::from_centi(12_000).unwrap(),
+                meloet_model::Meter::FOUR_FOUR,
+            ))),
+            0,
+        )),
         shell: Mutex::new(None),
     });
     shared.stream.open.store(true, Relaxed);

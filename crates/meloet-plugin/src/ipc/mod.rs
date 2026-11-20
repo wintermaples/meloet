@@ -400,7 +400,8 @@ impl Drop for Mapping {
 }
 
 /// Where the song is at the first frame of the block, for plugins that follow the tempo.
-/// Positions are in quarter notes.
+/// Positions are in quarter notes. Tempo and meter are those at that frame: in a ramp the
+/// tempo is the one there, not a mean over the block.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Transport {
@@ -414,9 +415,10 @@ pub struct Transport {
     pub bar_start_quarters: f64,
     pub loop_start_quarters: f64,
     pub loop_end_quarters: f64,
-    /// Frames played since the start of the song at the present tempo.
+    /// The frame of the position: its time from the song's head, in frames.
     pub position_frames: i64,
-    pub reserved: u64,
+    /// The number of the bar the position is in, from 0.
+    pub bar: u64,
 }
 const _: () = assert!(std::mem::size_of::<Transport>() == TRANSPORT_LEN);
 

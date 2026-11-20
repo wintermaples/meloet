@@ -378,6 +378,13 @@ impl TempoMap {
         }
     }
 
+    /// The first tick after `tick` where a tempo point or a meter change is (where what a
+    /// listener is told of tempo and meter may jump; inside a ramp there is none).
+    pub fn next_change(&self, tick: f64) -> Option<u64> {
+        let i = self.pieces.partition_point(|p| p.tick0 <= tick);
+        self.pieces.get(i).map(|p| p.tick0 as u64)
+    }
+
     /// Counting frames from `from_seconds`, the first frame at `tick` or past it.
     pub fn frame_of(&self, tick: f64, from_seconds: f64, sample_rate: f64) -> u64 {
         // A position that is exactly on a frame must not come out one frame late for the last

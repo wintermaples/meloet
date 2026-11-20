@@ -8,7 +8,7 @@ use std::path::Path;
 
 use common::{GEOMETRY, Host, block, note_off, note_on, peak};
 use meloet_plugin::PluginKey;
-use meloet_plugin::ipc::{EngineEnd, FromPlugin, ToPlugin};
+use meloet_plugin::ipc::{EngineEnd, FromPlugin, ToPlugin, Transport};
 use meloet_plugin::wire::{Notice, ParamInfo, ParamShape, Reply, Request};
 
 const SURGE_VST3: (&str, &str) = (
@@ -407,4 +407,143 @@ fn lsp_limiter_vst3_says_its_delay() {
 #[ignore = "needs LSP Plugins (LV2)"]
 fn lsp_limiter_lv2_says_its_delay() {
     says_its_delay(LSP_LIMITER_LV2);
+}
+
+/// A block of memory as JUCE writes it into a string: the length, a dot, then six bits to a
+/// character, the low bits first.
+fn juce_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+";
+    let mut text = format!("{}.", bytes.len());
+    for at in 0..(bytes.len() * 8).div_ceil(6) {
+        let bit = |n: usize| {
+            let n = at * 6 + n;
+            usize::from(
+                bytes
+                    .get(n / 8)
+                    .is_some_and(|byte| byte >> (n % 8) & 1 == 1),
+            )
+        };
+        let six = (0..6).fold(0, |six, n| six | bit(n) << n);
+        text.push(TABLE[six] as char);
+    }
+    text
+}
+
+const SURGE_SEQUENCE: &str = "/usr/share/surge-xt/patches_factory/Sequences/Acid Seq 1.fxp";
+
+/// The song at `frame` of a run at one tempo in 4/4, playing.
+fn song_at(frame: u64, bpm: f64) -> Transport {
+    let quarters = frame as f64 / 48_000.0 * bpm / 60.0;
+    Transport {
+        flags: Transport::PLAYING,
+        meter_num: 4,
+        meter_den: 4,
+        tempo_bpm: bpm,
+        position_quarters: quarters,
+        bar_start_quarters: (quarters / 4.0).floor() * 4.0,
+        loop_start_quarters: 0.0,
+        loop_end_quarters: 0.0,
+        position_frames: frame as i64,
+        bar: (quarters / 4.0) as u64,
+    }
+}
+
+/// Holds one key for `blocks` blocks while the song plays at `bpm`, and gives how bright each
+/// block was (how steep the wave is for its level: the sequencer moves the filter).
+fn sequence_at(host: &mut Host, slot: u32, state: &[u8], bpm: f64, blocks: usize) -> Vec<f32> {
+    let mut engine = load(host, slot, SURGE_LV2);
+    assert_eq!(
+        host.ask_with(Request::SetState { slot }, state).0,
+        Reply::Ok
+    );
+    let mut bright = Vec::new();
+    for n in 0..blocks {
+        assert!(engine.begin(256));
+        engine.write_input(0, &[0.0; 256]);
+        engine.write_input(1, &[0.0; 256]);
+        engine.set_transport(&song_at(n as u64 * 256, bpm));
+        if n == 20 {
+            assert!(engine.push_event(note_on(48)));
+        }
+        engine.submit();
+        assert!(engine.wait(meloet_plugin::ipc::futex::monotonic_ns() + common::PATIENT_NS));
+        let mut left = [0.0f32; 256];
+        engine.read_output(0, &mut left);
+        let edges: Vec<f32> = left.windows(2).map(|w| w[1] - w[0]).collect();
+        bright.push(rms(&edges) / rms(&left).max(1e-6));
+    }
+    bright
+}
+
+/// A Surge XT patch (what follows the 60 bytes of header in its file) with every step
+/// sequencer of scene A running with the tempo. The patch is "sub3", the length of its XML
+/// as a little endian u32, 24 more bytes, then the XML.
+fn synced(patch: &[u8]) -> Vec<u8> {
+    let mut out = patch.to_vec();
+    let mut added = 0u32;
+    for lfo in 6..12 {
+        let rate = format!("<a_lfo{lfo}_rate ");
+        let Some(at) = out.windows(rate.len()).position(|w| w == rate.as_bytes()) else {
+            continue;
+        };
+        let end = at + out[at..].iter().position(|&b| b == b'>').unwrap();
+        if out[at..end].windows(9).any(|w| w == b"temposync") {
+            continue;
+        }
+        let mark = b"temposync=\"1\" ";
+        // Before the "/>" that closes the element.
+        out.splice(end - 1..end - 1, mark.iter().copied());
+        added += mark.len() as u32;
+    }
+    let xml = u32::from_le_bytes(out[4..8].try_into().unwrap()) + added;
+    out[4..8].copy_from_slice(&xml.to_le_bytes());
+    out
+}
+
+/// After how many blocks `series` is most like itself again, looking from `least` to `most`.
+fn repeats_after(series: &[f32], least: usize, most: usize) -> usize {
+    let mean = series.iter().sum::<f32>() / series.len() as f32;
+    let alike = |lag: usize| {
+        let pairs = series.iter().zip(&series[lag..]);
+        pairs.map(|(a, b)| (a - mean) * (b - mean)).sum::<f32>() / (series.len() - lag) as f32
+    };
+    (least..=most)
+        .max_by(|&a, &b| alike(a).total_cmp(&alike(b)))
+        .unwrap()
+}
+
+/// The `time:Position` meloet sends reaches a JUCE plugin: a factory patch of Surge XT, its
+/// step sequencers set to run with the tempo, plays its 16 steps in half a bar of the song,
+/// whatever the tempo. Without a position Surge XT runs them at 120 whatever the song does.
+#[test]
+#[ignore = "needs Surge XT (LV2) and its factory patches"]
+fn surge_xt_lv2_runs_its_sequencer_at_the_tempo_of_the_song() {
+    if !installed(SURGE_LV2) || !Path::new(SURGE_SEQUENCE).exists() {
+        eprintln!("{SURGE_SEQUENCE} is not installed; nothing tested");
+        return;
+    }
+    let mut host = Host::start_with(GEOMETRY, &[]);
+    let mut first = load(&mut host, 0, SURGE_LV2);
+    run(&mut first, 10, &[]);
+    // The state of a Surge XT just made, with the patch put in the place of its own: the
+    // patch file is 60 bytes of header and then what Surge XT keeps as its state.
+    let state = host.state(0);
+    let key = b"StateString> \"";
+    let from = state.windows(key.len()).position(|w| w == key).unwrap() + key.len();
+    let to = from + state[from..].iter().position(|&b| b == b'"').unwrap();
+    let patch = synced(&std::fs::read(SURGE_SEQUENCE).unwrap()[60..]);
+    let state = [&state[..from], juce_base64(&patch).as_bytes(), &state[to..]].concat();
+    // Tempos at which neither the bar nor its half comes near the 2 s a bar takes at 120.
+    for bpm in [75.0, 90.0, 100.0, 150.0] {
+        let bar_blocks = 4.0 * 60.0 / bpm * 48_000.0 / 256.0;
+        let bright = sequence_at(&mut host, 1, &state, bpm, (bar_blocks * 8.0) as usize);
+        assert_eq!(host.ask(Request::Unload { slot: 1 }), Reply::Ok);
+        let lag = repeats_after(&bright[40..], 60, (bar_blocks * 0.9) as usize);
+        let half_bar = bar_blocks / 2.0;
+        println!("{bpm}: repeats after {lag} blocks, half a bar is {half_bar:.1}");
+        assert!(
+            (lag as f64 - half_bar).abs() < half_bar * 0.02 + 1.0,
+            "at {bpm} the sequence repeats after {lag} blocks, half a bar is {half_bar:.1}"
+        );
+    }
 }

@@ -38,6 +38,14 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static GLOBAL: Counting = Counting;
 
+/// One tempo and one meter for the whole song.
+pub fn flat_map(bpm_centi: u32, num: u8, den: u8) -> std::sync::Arc<meloet_model::TempoMap> {
+    use meloet_model::{Meter, Tempo, TempoMap, Timeline};
+    let tempo = Tempo::from_centi(bpm_centi).expect("a tempo of 30.00 to 300.00");
+    let meter = Meter::new(num, den).expect("a meter");
+    std::sync::Arc::new(TempoMap::new(&Timeline::new(tempo, meter)))
+}
+
 /// (allocations, frees) seen inside audio blocks, on any thread, since the process started.
 pub fn audio_block_counts() -> (u64, u64) {
     (ALLOCS.load(Relaxed), FREES.load(Relaxed))

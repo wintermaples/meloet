@@ -1,7 +1,10 @@
 use super::*;
+use crate::tempo_map::{TempoMap, Timeline};
 
 fn bbt(tick: u64, num: u8, den: u8) -> (u64, u32, u32) {
-    let b = bar_beat_tick(tick, Meter::new(num, den).unwrap());
+    let head = Tempo::from_centi(9_600).unwrap();
+    let map = TempoMap::new(&Timeline::new(head, Meter::new(num, den).unwrap()));
+    let b = map.bar_beat_tick(tick);
     (b.bar, b.beat, b.tick)
 }
 
@@ -78,12 +81,15 @@ fn tempo_range_and_steps() {
 fn seconds() {
     let four = Meter::FOUR_FOUR;
     let t96 = Tempo::from_centi(9_600).unwrap();
-    assert!((ticks_to_seconds(480, t96, four) - 0.625).abs() < 1e-12);
-    assert!((ticks_to_seconds(1920, t96, four) - 2.5).abs() < 1e-12);
+    let seconds = |tick: u64, tempo, meter| {
+        TempoMap::new(&Timeline::new(tempo, meter)).seconds_at(tick as f64)
+    };
+    assert!((seconds(480, t96, four) - 0.625).abs() < 1e-12);
+    assert!((seconds(1920, t96, four) - 2.5).abs() < 1e-12);
     let t120 = Tempo::from_centi(12_000).unwrap();
     let six_eight = Meter::new(6, 8).unwrap();
-    assert!((ticks_to_seconds(240, t120, six_eight) - 0.5).abs() < 1e-12);
-    assert_eq!(ticks_to_seconds(0, t120, six_eight), 0.0);
+    assert!((seconds(240, t120, six_eight) - 0.5).abs() < 1e-12);
+    assert_eq!(seconds(0, t120, six_eight), 0.0);
 }
 
 #[test]

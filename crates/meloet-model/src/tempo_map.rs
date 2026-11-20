@@ -337,6 +337,33 @@ impl TempoMap {
         }
     }
 
+    /// The head of the beat nearest to `tick`; of two as near, the later one.
+    pub fn nearest_beat(&self, tick: u64) -> u64 {
+        let r = self.region_at_tick(tick);
+        let per_beat = r.meter.ticks_per_beat();
+        // A region is whole bars, so a beat found at its end is the next region's first.
+        let beats = (tick - r.tick0).saturating_add(per_beat / 2) / per_beat;
+        r.tick0.saturating_add(beats.saturating_mul(per_beat))
+    }
+
+    /// The first head of a bar at `tick` or after it.
+    pub fn bar_at_or_after(&self, tick: u64) -> u64 {
+        let at = self.meter_at(tick);
+        if at.bar_tick == tick {
+            tick
+        } else {
+            self.tick_of_bar(at.bar + 1)
+        }
+    }
+
+    /// The stretch of one meter `tick` is in: where it starts, its meter, and where the next
+    /// one starts.
+    pub fn meter_stretch(&self, tick: u64) -> (u64, Meter, Option<u64>) {
+        let i = self.regions.partition_point(|r| r.tick0 <= tick).max(1) - 1;
+        let r = &self.regions[i];
+        (r.tick0, r.meter, self.regions.get(i + 1).map(|n| n.tick0))
+    }
+
     /// The first head of a beat at `tick` or after it. Before the song's head, the beats of
     /// the head's meter go on backwards.
     pub fn next_beat(&self, tick: f64) -> Beat {

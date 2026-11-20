@@ -13,10 +13,10 @@ use std::sync::Arc;
 use meloet_model::effects::{EffectKind, ParamShape};
 use meloet_model::{
     BuiltinInstrument, Bus, Channel, Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Gain,
-    Grid, Insert, Inserts, InstrumentRef, Kept, MAX_TICK, Meter, MusicalScale, Note, OriginIndex,
-    Pan, PluginRef, QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session,
-    Sf2Ref, Song, Take, TakeId, TakeOrigin, Tempo, TempoChange, TickRange, Track, TrackColor,
-    TrackId, mixer,
+    Grid, Insert, Inserts, InstrumentRef, Kept, MAX_TICK, Marker, MarkerId, Meter, MeterChange,
+    MusicalScale, Note, OriginIndex, Pan, PluginRef, QuantizeAlign, QuantizeSettings, Return,
+    RollSettings, ScaleMode, Session, Sf2Ref, Song, Take, TakeId, TakeOrigin, Tempo, TempoMap,
+    TempoPoint, TickRange, Timeline, Track, TrackColor, TrackId, mixer,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -26,8 +26,9 @@ pub const FORMAT: &str = "meloet-song";
 /// origin take and the origin index of each note. 3: instruments by name, a song may have no
 /// tracks, the session has no armed track, and the mixer (pan, sends, inserts, the returns
 /// and the master). 4: plugins and SF2 presets as instruments, plugins in insert slots, and
-/// the mark of an insert that is passed by.
-pub const VERSION: u32 = 4;
+/// the mark of an insert that is passed by. 5: tempo points, meter changes and markers, and
+/// the loop's range in the song (what undo covers) and not in the session.
+pub const VERSION: u32 = 5;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
 const MAX_TRACKS: usize = crate::play::MAX_TRACKS;
@@ -72,7 +73,22 @@ struct DocFile {
     tempo: u32,
     /// `[num, den]`.
     meter: [u8; 2],
+    /// The tempo goes in a straight line from the head to the first tempo point.
     #[serde(default)]
+    head_ramp: bool,
+    /// In the order of `tick`; each tick 1 or more and only once.
+    #[serde(default)]
+    tempo_points: Vec<TempoPointFile>,
+    /// In the order of `bar`; each bar 1 or more and only once.
+    #[serde(default)]
+    meter_changes: Vec<MeterChangeFile>,
+    #[serde(default)]
+    markers: Vec<MarkerFile>,
+    /// The loop's range. Versions 1 to 4 had it in the session.
+    #[serde(default, rename = "loop")]
+    loop_range: Option<SpanFile>,
+    /// A seat versions 1 to 4 kept and never filled. Read from those, never written.
+    #[serde(default, skip_serializing)]
     tempo_changes: Vec<TempoChangeFile>,
     next_id: u32,
     tracks: Vec<TrackFile>,
@@ -89,12 +105,39 @@ struct DocFile {
     audio: Vec<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TempoChangeFile {
     tick: u64,
     tempo: u32,
     meter: [u8; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TempoPointFile {
+    tick: u64,
+    /// Hundredths, as the head's.
+    tempo: u32,
+    /// To the next point in a straight line.
+    ramp: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MeterChangeFile {
+    /// From 0: the bar shown as "9" is 8.
+    bar: u32,
+    /// `[num, den]`.
+    meter: [u8; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkerFile {
+    id: u32,
+    tick: u64,
+    name: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -636,7 +679,8 @@ struct SessionFile {
     /// a recording goes to the selected track.
     #[serde(default)]
     play_target: Option<u32>,
-    #[serde(rename = "loop")]
+    /// Versions 1 to 4. From version 5 the range is in the song.
+    #[serde(default, rename = "loop", skip_serializing)]
     loop_range: Option<SpanFile>,
     loop_on: bool,
     /// The piano roll's settings. Missing or not understood: the default.
@@ -763,23 +807,41 @@ pub fn encode(song: &Song) -> Vec<u8> {
         })
         .collect();
     let s = &song.session;
+    let timeline = &doc.timeline;
     let file = SongFile {
         format: FORMAT.into(),
         version: VERSION,
         app: concat!("meloet ", env!("CARGO_PKG_VERSION")).into(),
         song: DocFile {
             name: doc.name.clone(),
-            tempo: doc.tempo.centi(),
-            meter: [doc.meter.num(), doc.meter.den()],
-            tempo_changes: doc
-                .tempo_changes
-                .iter()
-                .map(|c| TempoChangeFile {
-                    tick: c.tick,
-                    tempo: (c.tempo_bpm * 100.0).round() as u32,
+            tempo: timeline.tempo.centi(),
+            meter: [timeline.meter.num(), timeline.meter.den()],
+            head_ramp: timeline.head_ramp,
+            tempo_points: (timeline.tempo_points.iter())
+                .map(|p| TempoPointFile {
+                    tick: p.tick,
+                    tempo: p.tempo.centi(),
+                    ramp: p.ramp,
+                })
+                .collect(),
+            meter_changes: (timeline.meter_changes.iter())
+                .map(|c| MeterChangeFile {
+                    bar: c.bar,
                     meter: [c.meter.num(), c.meter.den()],
                 })
                 .collect(),
+            markers: (doc.markers.iter())
+                .map(|m| MarkerFile {
+                    id: m.id.0,
+                    tick: m.tick,
+                    name: m.name.clone(),
+                })
+                .collect(),
+            loop_range: doc.loop_range.map(|r| SpanFile {
+                start: r.start(),
+                end: r.end(),
+            }),
+            tempo_changes: Vec::new(),
             next_id: doc.next_id,
             tracks,
             mixer: Some(mixer_file(doc)),
@@ -788,10 +850,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
         takes,
         session: SessionFile {
             play_target: s.play_target.map(|t| t.0),
-            loop_range: s.loop_range.map(|r| SpanFile {
-                start: r.start(),
-                end: r.end(),
-            }),
+            loop_range: None,
             loop_on: s.loop_on,
             grid: Some(grid_file(s.roll.grid)),
             scale: Some(ScaleFile {
@@ -913,11 +972,11 @@ pub fn decode(bytes: &[u8]) -> Result<Song, ReadError> {
         });
     }
     let file: SongFile = serde_json::from_slice(bytes).map_err(|_| ReadError::Broken)?;
-    to_song(file).ok_or(ReadError::Broken)
+    to_song(file, head.version).ok_or(ReadError::Broken)
 }
 
 /// `None` when anything breaks a rule the model keeps.
-fn to_song(file: SongFile) -> Option<Song> {
+fn to_song(file: SongFile, version: u32) -> Option<Song> {
     let mut takes = HashMap::new();
     // Origin takes first: they have no origin themselves.
     let (derived, recorded): (Vec<TakeFile>, Vec<TakeFile>) =
@@ -1014,22 +1073,60 @@ fn to_song(file: SongFile) -> Option<Song> {
     {
         return None;
     }
-    let tempo_changes = d
-        .tempo_changes
-        .into_iter()
-        .map(|c| {
-            Some(TempoChange {
-                tick: c.tick,
-                tempo_bpm: Tempo::from_centi(c.tempo)?.bpm(),
+    let mut timeline = Timeline::new(
+        Tempo::from_centi(d.tempo)?,
+        Meter::new(d.meter[0], d.meter[1])?,
+    );
+    let mut s = file.session;
+    let loop_range = if version >= 5 {
+        timeline.head_ramp = d.head_ramp;
+        for p in d.tempo_points {
+            timeline.tempo_points.push(TempoPoint {
+                tick: Some(p.tick).filter(|&t| t <= MAX_TICK)?,
+                tempo: Tempo::from_centi(p.tempo)?,
+                ramp: p.ramp,
+            });
+        }
+        for c in d.meter_changes {
+            timeline.meter_changes.push(MeterChange {
+                bar: c.bar,
                 meter: Meter::new(c.meter[0], c.meter[1])?,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+            });
+        }
+        // Out of order, two at one place, or one at the head.
+        timeline.check().ok()?;
+        d.loop_range
+    } else {
+        old_tempo_changes(&mut timeline, d.tempo_changes)?;
+        s.loop_range.take()
+    };
+    let mut markers = Vec::with_capacity(d.markers.len());
+    let mut marker_ids = HashSet::new();
+    for m in d.markers.into_iter().filter(|_| version >= 5) {
+        // A marker's id is no clip's, no take's and no other marker's.
+        if !marker_ids.insert(m.id)
+            || m.id >= d.next_id
+            || clip_ids.contains(&m.id)
+            || takes.contains_key(&m.id)
+            || m.tick > MAX_TICK
+        {
+            return None;
+        }
+        markers.push(Marker {
+            id: MarkerId(m.id),
+            tick: m.tick,
+            name: m.name,
+        });
+    }
+    markers.sort_by_key(|m| (m.tick, m.id));
     let doc = Doc {
         name: d.name,
-        tempo: Tempo::from_centi(d.tempo)?,
-        meter: Meter::new(d.meter[0], d.meter[1])?,
-        tempo_changes,
+        timeline: Arc::new(timeline),
+        markers: Arc::new(markers),
+        loop_range: match loop_range {
+            Some(r) => Some(TickRange::new(r.start, r.end)?),
+            None => None,
+        },
         tracks,
         returns: match returns {
             Some(r) => [return_of(r.a), return_of(r.b)],
@@ -1045,7 +1142,6 @@ fn to_song(file: SongFile) -> Option<Song> {
         },
         next_id: d.next_id,
     };
-    let s = file.session;
     let known = |id: u32| track_ids.contains(&id).then_some(TrackId(id));
     let roll = roll_settings(&s);
     let session = Session {
@@ -1054,15 +1150,45 @@ fn to_song(file: SongFile) -> Option<Song> {
             .play_target
             .and_then(known)
             .or(doc.tracks.first().map(|t| t.id)),
-        loop_range: match s.loop_range {
-            Some(r) => Some(TickRange::new(r.start, r.end)?),
-            None => None,
-        },
         loop_on: s.loop_on,
         roll,
         soloed: BTreeSet::new(),
     };
     Some(Song { doc, session })
+}
+
+/// The seat of versions 1 to 4 should be empty. When it is not: each entry's tempo is a tempo
+/// point, and its meter a meter change when the entry is at the head of a bar (of the bars as
+/// the entries before it left them). An entry at tick 0 is left out: the head has its own.
+fn old_tempo_changes(timeline: &mut Timeline, mut changes: Vec<TempoChangeFile>) -> Option<()> {
+    changes.sort_by_key(|c| c.tick);
+    for c in changes {
+        let tempo = Tempo::from_centi(c.tempo)?;
+        let meter = Meter::new(c.meter[0], c.meter[1])?;
+        if c.tick == 0 || c.tick > MAX_TICK {
+            continue;
+        }
+        match timeline.tempo_points.last_mut() {
+            Some(last) if last.tick == c.tick => last.tempo = tempo,
+            _ => timeline.tempo_points.push(TempoPoint {
+                tick: c.tick,
+                tempo,
+                ramp: false,
+            }),
+        }
+        let at = TempoMap::new(timeline).meter_at(c.tick);
+        let Ok(bar) = u32::try_from(at.bar) else {
+            continue;
+        };
+        if at.bar_tick != c.tick || at.meter == meter {
+            continue;
+        }
+        match timeline.meter_changes.last_mut() {
+            Some(last) if last.bar == bar => last.meter = meter,
+            _ => timeline.meter_changes.push(MeterChange { bar, meter }),
+        }
+    }
+    Some(())
 }
 
 fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {

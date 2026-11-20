@@ -302,7 +302,7 @@ fn save_as_makes_a_folder_where_picked_and_takes_its_name() {
     assert_eq!(file(m), SongFile::Saved);
     assert_eq!(songfile::read(&path).unwrap(), song(m));
     assert_eq!(
-        songfile::read(&first).unwrap().doc.tempo.centi(),
+        songfile::read(&first).unwrap().doc.timeline.tempo.centi(),
         10_000,
         "the first file stays as it was"
     );
@@ -310,7 +310,10 @@ fn save_as_makes_a_folder_where_picked_and_takes_its_name() {
     // Mod S from now on: the new file.
     cmd(m, Command::SetTempo { bpm: 120.0 });
     w.cmd(m, Command::SaveSong);
-    assert_eq!(songfile::read(&path).unwrap().doc.tempo.centi(), 12_000);
+    assert_eq!(
+        songfile::read(&path).unwrap().doc.timeline.tempo.centi(),
+        12_000
+    );
     assert!(songfile::previous_path(&path).exists());
 
     // A name that is taken gets " 2", and so does the song; the extension typed is dropped.
@@ -428,7 +431,10 @@ fn write_two_versions(dir: &Path) -> PathBuf {
     let mut song = Song::new_default();
     song.doc.name = "曲".into();
     songfile::save(&path, &song).unwrap();
-    song.doc.tempo = meloet_model::Tempo::from_centi(14_000).unwrap();
+    song.doc =
+        meloet_model::edit::set_tempo(&song.doc, meloet_model::Tempo::from_centi(14_000).unwrap())
+            .unwrap()
+            .doc;
     songfile::save(&path, &song).unwrap();
     path
 }
@@ -461,7 +467,10 @@ fn a_broken_file_offers_the_copy_before() {
 
     w.cmd(m, Command::SaveSong);
     assert_eq!(file(m), SongFile::Saved);
-    assert_eq!(songfile::read(&path).unwrap().doc.tempo.centi(), 9_600);
+    assert_eq!(
+        songfile::read(&path).unwrap().doc.timeline.tempo.centi(),
+        9_600
+    );
 }
 
 #[test]
@@ -540,7 +549,7 @@ fn a_new_song_asks_first() {
     assert_eq!(file(m), SongFile::NeverSaved);
     assert_eq!(m.song_path(), None);
     let saved = songfile::read(&w.songs.join("はじめての曲/はじめての曲.meloet")).unwrap();
-    assert_eq!(saved.doc.tempo.centi(), 10_000);
+    assert_eq!(saved.doc.timeline.tempo.centi(), 10_000);
     assert!(matches!(status(m), Some(StatusMessage::NewSong { .. })));
 }
 

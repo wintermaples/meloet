@@ -24,6 +24,7 @@ use crate::history::StepKind;
 use crate::song::{
     Clip, ClipId, ClipTake, ControlPoint, Doc, Note, Take, TakeId, TakeOrigin, Track,
 };
+use crate::tempo_map::TempoMap;
 
 /// Bars a clip made for a written note gets, when nothing comes before that.
 pub const NEW_CLIP_BARS: u64 = 4;
@@ -184,8 +185,9 @@ pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, Edi
 fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdited, EditError> {
     let ti = track_index(doc, track)?;
     let old = &doc.tracks[ti];
-    let per_bar = doc.meter.ticks_per_bar();
-    let head = note.start / per_bar * per_bar;
+    let map = TempoMap::new(&doc.timeline);
+    let bar = map.meter_at(note.start);
+    let head = bar.bar_tick;
     let start = old
         .clips
         .iter()
@@ -197,7 +199,7 @@ fn write_in_new_clip(doc: &Doc, track: TrackId, note: Note) -> Result<NotesEdite
         .iter()
         .filter(|c| c.start > note.start)
         .map(|c| c.start)
-        .fold(head.saturating_add(NEW_CLIP_BARS * per_bar), u64::min);
+        .fold(map.tick_of_bar(bar.bar + NEW_CLIP_BARS), u64::min);
     let mut ids = Ids(doc.next_id);
     let id = ClipId(ids.next()?);
     let take = Take {
@@ -825,19 +827,17 @@ fn grown(
 ) -> Result<(u64, u64), EditError> {
     let track = &doc.tracks[ti];
     let c = &track.clips[ci];
-    let per_bar = doc.meter.ticks_per_bar();
+    let map = TempoMap::new(&doc.timeline);
     let start = reach
         .start
         .map(|s| s.saturating_sub(l))
         .filter(|&s| s < c.start)
-        .map_or(c.start, |s| s / per_bar * per_bar);
+        .map_or(c.start, |s| map.meter_at(s).bar_tick);
     let end = reach
         .end
         .map(|e| e.saturating_sub(l))
         .filter(|&e| e > c.end)
-        .map_or(c.end, |e| {
-            e.div_ceil(per_bar).saturating_mul(per_bar).min(MAX_TICK)
-        });
+        .map_or(c.end, |e| map.bar_at_or_after(e).min(MAX_TICK));
     let overlaps = track
         .clips
         .iter()

@@ -22,8 +22,8 @@ use meloet_protocol::{
     KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
     MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginRole,
     PluginWindowKind, QuantizeSettings, RecoveryCause, ScanView, SettingsDialogView, ShelfMode,
-    ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView, TimelineView,
-    TrackView, Unusable, VelocityFixed, WorkspaceView,
+    ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView, TrackView,
+    Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -1113,26 +1113,35 @@ impl Model {
             Command::Record => self.notice = self.play.record(can_play, effects),
             Command::GoToStart => self.play.locate(0, effects),
             Command::Locate { tick } => self.play.locate(tick, effects),
-            Command::SetTempo { bpm } => self.play.set_tempo(bpm, effects),
-            Command::SetMeter { num, den } => self.play.set_meter(num, den, effects),
-            // Protocol 20: the song has no tempo points, meter changes or markers yet.
-            Command::SetTimelineOpen { .. }
-            | Command::AddTempoPoint { .. }
-            | Command::MoveTempoPoint { .. }
-            | Command::SetTempoRamp { .. }
-            | Command::AddMeterChange { .. }
-            | Command::MoveMeterChange { .. }
-            | Command::SetMeterChange { .. }
-            | Command::SelectTimeline { .. }
-            | Command::DeleteTimeline { .. }
-            | Command::AddMarker { .. }
-            | Command::OpenMarkerName { .. }
-            | Command::RenameMarker { .. }
-            | Command::CloseMarkerName
-            | Command::MoveMarker { .. }
-            | Command::GoToMarker { .. }
-            | Command::StepMarker { .. }
-            | Command::LoopFromMarker { .. } => {}
+            Command::SetTempo { bpm } => self.say(|p| p.set_tempo(bpm, effects)),
+            Command::SetMeter { num, den } => self.say(|p| p.set_meter(num, den, effects)),
+            Command::SetTimelineOpen { open } => self.play.set_timeline_open(open),
+            Command::AddTempoPoint { tick, bpm } => {
+                self.say(|p| p.add_tempo_point(tick, bpm, effects));
+            }
+            Command::MoveTempoPoint { tick, to_tick, bpm } => {
+                self.say(|p| p.move_tempo_point(tick, to_tick, bpm, effects));
+            }
+            Command::SetTempoRamp { tick, on } => self.play.set_tempo_ramp(tick, on, effects),
+            Command::AddMeterChange { bar, num, den } => {
+                self.say(|p| p.add_meter_change(bar, num, den, effects));
+            }
+            Command::MoveMeterChange { bar, to_bar } => {
+                self.say(|p| p.move_meter_change(bar, to_bar, effects));
+            }
+            Command::SetMeterChange { bar, num, den } => {
+                self.say(|p| p.set_meter_change(bar, num, den, effects));
+            }
+            Command::SelectTimeline { target } => self.say(|p| p.select_timeline(target)),
+            Command::DeleteTimeline { target } => self.play.delete_timeline(target, effects),
+            Command::AddMarker { name } => self.say(|p| p.add_marker(&name, effects)),
+            Command::OpenMarkerName { id } => self.play.open_marker_name(id),
+            Command::RenameMarker { id, name } => self.play.rename_marker(id, &name, effects),
+            Command::CloseMarkerName => self.play.close_marker_name(),
+            Command::MoveMarker { id, tick } => self.play.move_marker(id, tick, effects),
+            Command::GoToMarker { id } => self.play.go_to_marker(id, effects),
+            Command::StepMarker { forward } => self.play.step_marker(forward, effects),
+            Command::LoopFromMarker { id } => self.play.loop_from_marker(id, effects),
             Command::SetCountIn { bars } => {
                 if self.play.set_count_in(bars) {
                     effects.push(Effect::SaveSettings(self.settings()));
@@ -1674,6 +1683,13 @@ impl Model {
     }
 
     /// A song was opened: says so when it uses sounds this PC does not have (spec 6).
+    /// Puts what `play` gives into the status line; `None` leaves the line as it is.
+    fn say(&mut self, play: impl FnOnce(&mut Play) -> Option<StatusMessage>) {
+        if let Some(n) = play(&mut self.play) {
+            self.notice = Some(n);
+        }
+    }
+
     pub(super) fn say_missing(&mut self) {
         let library = self.library_view();
         let sounds = self.play.available_sounds();
@@ -1984,7 +2000,7 @@ impl Model {
         let library = self.library_view();
         AppState {
             song: song_view(&self.play, self.song_file(), &library, &self.catalog),
-            timeline: timeline_view(&self.play.song().doc),
+            timeline: self.play.timeline_view(),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
             piano_roll: self.play.piano_roll_view(),
@@ -2170,9 +2186,9 @@ impl Model {
         if self.new_song_unsaid {
             let song = &self.play.song().doc;
             return Some(StatusMessage::NewSong {
-                tempo_bpm: song.tempo.bpm(),
-                meter_num: song.meter.num(),
-                meter_den: song.meter.den(),
+                tempo_bpm: song.timeline.tempo.bpm(),
+                meter_num: song.timeline.meter.num(),
+                meter_den: song.timeline.meter.den(),
                 track: self.play.record_target(),
             });
         }
@@ -2259,21 +2275,6 @@ fn sf2_keys(info: &Sf2Info) -> impl Iterator<Item = Sf2Key> + '_ {
         bank: p.bank,
         program: p.program,
     })
-}
-
-fn timeline_view(doc: &meloet_model::Doc) -> TimelineView {
-    TimelineView {
-        tempo_bpm: doc.tempo.bpm(),
-        meter_num: doc.meter.num(),
-        meter_den: doc.meter.den(),
-        head_ramp: false,
-        tempo_points: Vec::new(),
-        meter_changes: Vec::new(),
-        markers: Vec::new(),
-        selected: None,
-        renaming: None,
-        open: false,
-    }
 }
 
 fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catalog) -> SongView {

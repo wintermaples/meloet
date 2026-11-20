@@ -2,6 +2,7 @@ use crate::seen::*;
 use meloet_devices::{Availability as Av, ClockSettings, Friendly as Fr, LinkKind as Link};
 use meloet_protocol::{
     EffectKind, InsertView, MasterView, ParamsView, ReturnView, ShelfMode, SoundView, StandIn,
+    TimelineView,
 };
 
 use super::*;

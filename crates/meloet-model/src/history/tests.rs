@@ -124,6 +124,32 @@ fn undo_keeps_untouched_parts_shared() {
 }
 
 #[test]
+fn an_amended_step_stays_one_step() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    let first = doc.clone();
+    assert!(!h.amend(&mut doc, first.clone()), "no step to amend");
+    let (e, id) = crate::timeline::add_marker(&doc, 0, "マーカー 1").unwrap();
+    h.apply(&mut doc, e);
+    h.mark_saved();
+    let renamed = crate::timeline::rename_marker(&doc, id, "サビ")
+        .unwrap()
+        .doc;
+    assert!(h.amend(&mut doc, renamed));
+    assert_eq!(doc.marker(id).unwrap().name, "サビ");
+    assert_eq!((h.undo_count(), h.redo_count()), (1, 0));
+    assert!(h.has_unsaved_changes(), "what was saved had the other name");
+    assert_eq!(h.undo(&mut doc), Some(StepKind::AddMarker { marker: id }));
+    assert_eq!(held(&doc), held(&first));
+    // Not while a step could be redone: the step it would change is not the last one.
+    let now = doc.clone();
+    assert!(!h.amend(&mut doc, now));
+    h.redo(&mut doc);
+    assert_eq!(doc.marker(id).unwrap().name, "サビ");
+    assert!(doc.next_id > id.0);
+}
+
+#[test]
 fn ids_undone_are_not_given_again() {
     let mut h = History::new();
     let mut doc = Doc::new_default();

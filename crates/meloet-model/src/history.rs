@@ -11,8 +11,8 @@ use crate::arrange::ClipEdge;
 use crate::edit::Edit;
 use crate::effects::EffectKind;
 use crate::mixer::{Bus, PluginPlace, StripId};
-use crate::song::{ClipId, Doc};
-use crate::time::{Meter, Tempo};
+use crate::song::{ClipId, Doc, MarkerId};
+use crate::time::{Meter, Tempo, TickRange};
 
 /// What a step did, for the history band.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,13 +39,80 @@ pub enum StepKind {
         count: usize,
         cut: bool,
     },
+    /// The tempo at the song's head.
     Tempo {
         from: Tempo,
         to: Tempo,
     },
+    /// The meter at the song's head.
     Meter {
         from: Meter,
         to: Meter,
+    },
+    /// Band: "テンポ ・ 拍子の変更を足す".
+    AddTempoPoint {
+        tick: u64,
+        tempo: Tempo,
+    },
+    /// A drag of a tempo point: it is at `to` afterwards and says `tempo`. A point that was
+    /// at `to` is gone; the `Doc` before the step has it.
+    MoveTempoPoint {
+        from: u64,
+        to: u64,
+        tempo: Tempo,
+    },
+    /// A value typed on a tempo point, or in the transport while the point is in force.
+    SetTempoPoint {
+        tick: u64,
+        from: Tempo,
+        to: Tempo,
+    },
+    /// "次の点まで、だんだん"; `tick` 0: from the head. `on`: there is a ramp after the step.
+    SetTempoRamp {
+        tick: u64,
+        on: bool,
+    },
+    DeleteTempoPoint {
+        tick: u64,
+    },
+    /// `bar` counts from 0, as in `MeterChange`.
+    AddMeterChange {
+        bar: u32,
+        meter: Meter,
+    },
+    /// A flag that was at `to` is gone; the `Doc` before the step has it.
+    MoveMeterChange {
+        from: u32,
+        to: u32,
+    },
+    SetMeterChange {
+        bar: u32,
+        from: Meter,
+        to: Meter,
+    },
+    DeleteMeterChange {
+        bar: u32,
+    },
+    /// K, and the name typed into the field it opens. The `Doc` after the step has the
+    /// marker, for its name.
+    AddMarker {
+        marker: MarkerId,
+    },
+    /// Either `Doc` has the marker: the one before the step the old name.
+    RenameMarker {
+        marker: MarkerId,
+    },
+    MoveMarker {
+        marker: MarkerId,
+    },
+    /// The `Doc` before the step has the marker.
+    DeleteMarker {
+        marker: MarkerId,
+    },
+    /// A drag on the ruler, L with no range yet, "ここから次のマーカーまでをループに". Band:
+    /// "ループの範囲を変える".
+    SetLoop {
+        range: TickRange,
     },
     /// M; `muted`: the track is muted after the step.
     Mute {
@@ -288,6 +355,21 @@ impl History {
         self.redo.clear();
         self.version = self.next_version;
         self.next_version += 1;
+    }
+
+    /// Puts `new` in `doc` as what the last step made, in place of what it made: the step
+    /// stays one. `false`, and nothing changes, when there is no last step or a step could be
+    /// redone.
+    pub fn amend(&mut self, doc: &mut Doc, new: Doc) -> bool {
+        if self.undo.is_empty() || !self.redo.is_empty() {
+            return false;
+        }
+        self.next_id = self.next_id.max(doc.next_id).max(new.next_id);
+        *doc = new;
+        doc.next_id = self.next_id;
+        self.version = self.next_version;
+        self.next_version += 1;
+        true
     }
 
     /// Takes back the last step and tells which it was.

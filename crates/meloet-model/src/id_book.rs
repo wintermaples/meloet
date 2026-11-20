@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::song::{ClipId, Doc, Take, TakeId};
+use crate::song::{ClipId, Doc, MarkerId, Take, TakeId};
 
 /// The doc with `next_id` left out, for comparing what the songs hold: undo and redo bring the
 /// rest back, but never a lower `next_id`.
@@ -26,6 +26,7 @@ fn takes(doc: &Doc) -> impl Iterator<Item = &Arc<Take>> {
 pub(crate) struct IdBook {
     takes: HashMap<TakeId, Arc<Take>>,
     clips: HashSet<ClipId>,
+    markers: HashSet<MarkerId>,
     next_id: u32,
 }
 
@@ -37,7 +38,8 @@ impl IdBook {
     }
 
     /// Checks `doc`, then keeps its ids. `before`: the doc a new step was made on; a clip not
-    /// there must have an id never given out. Without it (undo, redo) clips may come back.
+    /// or marker not there must have an id never given out. Without it (undo, redo) they may
+    /// come back.
     pub(crate) fn saw(&mut self, doc: &Doc, before: Option<&Doc>) -> Result<(), String> {
         if doc.next_id < self.next_id {
             return Err(format!(
@@ -47,7 +49,10 @@ impl IdBook {
         }
         self.next_id = doc.next_id;
         for t in takes(doc) {
-            if t.id.0 >= doc.next_id || self.clips.contains(&ClipId(t.id.0)) {
+            if t.id.0 >= doc.next_id
+                || self.clips.contains(&ClipId(t.id.0))
+                || self.markers.contains(&MarkerId(t.id.0))
+            {
                 return Err(format!("take id {} not given out as a take", t.id.0));
             }
             match self.takes.get(&t.id) {
@@ -62,11 +67,25 @@ impl IdBook {
             let new = before.is_some_and(|b| b.clip(c.id).is_none());
             if c.id.0 >= doc.next_id
                 || self.takes.contains_key(&TakeId(c.id.0))
+                || self.markers.contains(&MarkerId(c.id.0))
                 || (new && self.clips.contains(&c.id))
             {
                 return Err(format!("clip id {} given twice", c.id.0));
             }
             self.clips.insert(c.id);
+        }
+        let mut here = HashSet::new();
+        for m in doc.markers.iter() {
+            let new = before.is_some_and(|b| b.marker(m.id).is_none());
+            if m.id.0 >= doc.next_id
+                || self.takes.contains_key(&TakeId(m.id.0))
+                || self.clips.contains(&ClipId(m.id.0))
+                || (new && self.markers.contains(&m.id))
+                || !here.insert(m.id)
+            {
+                return Err(format!("marker id {} given twice", m.id.0));
+            }
+            self.markers.insert(m.id);
         }
         Ok(())
     }

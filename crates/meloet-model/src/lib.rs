@@ -19,6 +19,7 @@ pub mod roll;
 pub mod song;
 pub mod tempo_map;
 pub mod time;
+pub mod timeline;
 
 pub use arrange::{ClipEdge, ClipEdited};
 pub use chunked::ChunkedVec;
@@ -35,21 +36,14 @@ pub use mixer::{
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};
 pub use song::{
-    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, OriginIndex, Session, Song,
-    Take, TakeId, TakeOrigin, Track,
+    Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Marker, MarkerId, Note, OriginIndex,
+    Session, Song, Take, TakeId, TakeOrigin, Track,
 };
 pub use tempo_map::{Beat, MeterAt, MeterChange, TempoMap, TempoPoint, Timeline, TimelineError};
 pub use time::{Meter, TICKS_PER_QUARTER, Tempo, TickRange};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TrackId(pub u32);
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TempoChange {
-    pub tick: u64,
-    pub tempo_bpm: f64,
-    pub meter: Meter,
-}
 
 /// One of the five track colors (`color.track.1` to `color.track.5`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -81,10 +75,12 @@ mod tests {
         let song = Song::new_default();
         let doc = &song.doc;
         assert_eq!(doc.name, "はじめての曲");
-        assert_eq!(doc.tempo.centi(), 9600);
-        assert_eq!(doc.tempo.bpm(), 96.0);
-        assert_eq!(doc.meter, Meter::new(4, 4).unwrap());
-        assert!(doc.tempo_changes.is_empty());
+        assert_eq!(doc.timeline.tempo.centi(), 9600);
+        assert_eq!(doc.timeline.tempo.bpm(), 96.0);
+        assert_eq!(doc.timeline.meter, Meter::new(4, 4).unwrap());
+        assert!(doc.timeline.tempo_points.is_empty());
+        assert!(doc.timeline.meter_changes.is_empty());
+        assert!(doc.markers.is_empty());
         assert_eq!(doc.tracks.len(), 1);
         let t = &doc.tracks[0];
         assert_eq!(t.id, TrackId(1));
@@ -95,7 +91,7 @@ mod tests {
         assert_eq!(t.sends, [Gain::from_db(-15.0), Gain::SILENT]);
         assert!(t.clips.is_empty());
         assert_eq!(song.session.play_target, Some(TrackId(1)));
-        assert_eq!(song.session.loop_range, None);
+        assert_eq!(doc.loop_range, None);
         assert!(!song.session.loop_on);
     }
 

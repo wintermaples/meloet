@@ -63,8 +63,36 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     };
     let mut doc = Doc::new_default();
     doc.name = name.into();
-    doc.tempo = Tempo::from_centi(12_345).unwrap();
-    doc.meter = Meter::new(6, 8).unwrap();
+    doc.timeline = Arc::new(Timeline {
+        head_ramp: true,
+        tempo_points: vec![
+            TempoPoint {
+                tick: 2880,
+                tempo: Tempo::from_centi(10_000).unwrap(),
+                ramp: true,
+            },
+            TempoPoint {
+                tick: 5760 + 240,
+                tempo: Tempo::from_centi(12_000).unwrap(),
+                ramp: false,
+            },
+        ],
+        meter_changes: vec![MeterChange {
+            bar: 3,
+            meter: Meter::FOUR_FOUR,
+        }],
+        ..Timeline::new(
+            Tempo::from_centi(12_345).unwrap(),
+            Meter::new(6, 8).unwrap(),
+        )
+    });
+    // 4 is the one id below `next_id` that no clip and no take has.
+    doc.markers = Arc::new(vec![Marker {
+        id: MarkerId(4),
+        tick: 2880,
+        name: "サビ".into(),
+    }]);
+    doc.loop_range = TickRange::new(1920 * 4, 1920 * 8);
     doc.next_id = 8;
     let mut track = (*doc.tracks[0]).clone();
     track.channel.gain = Gain::from_db(-3.5);
@@ -104,7 +132,6 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
         doc,
         session: Session {
             play_target: Some(TrackId(1)),
-            loop_range: TickRange::new(1920 * 4, 1920 * 8),
             loop_on: true,
             roll: RollSettings {
                 grid: Grid::new(8, true).unwrap(),
@@ -138,9 +165,14 @@ fn a_song_comes_back_as_it_was_and_shares_its_takes() {
 fn the_shape_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
     assert_eq!(v["format"], "meloet-song");
-    assert_eq!(v["version"], 4);
+    assert_eq!(v["version"], 5);
     assert_eq!(v["song"]["tempo"], 12_345);
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
+    assert_eq!(
+        v["song"]["loop"],
+        serde_json::json!({"start": 7680, "end": 15360})
+    );
+    assert!(v["song"].get("tempoChanges").is_none());
     assert_eq!(v["song"]["nextId"], 8);
     let track = &v["song"]["tracks"][0];
     assert!(track.get("muted").is_none(), "not muted: not written");
@@ -208,8 +240,7 @@ fn the_shape_on_disk() {
     );
     assert_eq!(
         v["session"],
-        serde_json::json!({"playTarget": 1,
-                           "loop": {"start": 7680, "end": 15360}, "loopOn": true,
+        serde_json::json!({"playTarget": 1, "loopOn": true,
                            "grid": {"division": 8, "triplet": true},
                            "scale": {"root": 2, "mode": "minor", "lock": true},
                            "quantize": {"division": 32, "triplet": true, "strength": 75,
@@ -229,7 +260,7 @@ fn piano_roll_settings_missing_or_not_understood_are_the_defaults() {
     let back = decode(&serde_json::to_vec(&v).unwrap()).unwrap();
     assert_eq!(back.session.roll, RollSettings::default());
     assert_eq!(back.doc, song.doc);
-    assert_eq!(back.session.loop_range, song.session.loop_range);
+    assert_eq!(back.doc.loop_range, song.doc.loop_range);
 
     v["session"]["grid"] = serde_json::json!({"division": 7, "triplet": false});
     v["session"]["scale"] = serde_json::json!({"root": 4, "mode": "dorian", "lock": true});
@@ -283,8 +314,8 @@ fn newer_and_broken_files_do_not_read() {
         decode(&serde_json::to_vec(&v).unwrap())
     };
     assert!(matches!(
-        with(&|v| v["version"] = 5.into()),
-        Err(ReadError::TooNew { version: 5 })
+        with(&|v| v["version"] = 6.into()),
+        Err(ReadError::TooNew { version: 6 })
     ));
     assert!(matches!(
         decode(b"{\"format\": \"meloet-song\", \"vers"),
@@ -616,6 +647,12 @@ fn a_file_of_version_1_reads() {
         "the placeholder sound is the sine"
     );
     assert_eq!(song.session.play_target, Some(TrackId(1)));
+    assert_eq!(song.doc.loop_range, TickRange::new(0, 3840));
+    assert_eq!(
+        *song.doc.timeline,
+        Timeline::new(Tempo::from_centi(9_600).unwrap(), Meter::FOUR_FOUR)
+    );
+    assert!(song.doc.markers.is_empty());
     // Nothing is sent, so it sounds as it did; the returns and the master are a new song's.
     assert_eq!(song.doc.tracks[0].sends, [Gain::SILENT; 2]);
     assert_eq!(song.doc.tracks[0].channel, Channel::default());
@@ -641,7 +678,7 @@ fn a_file_of_version_1_reads() {
     let again = encode(&song);
     assert_eq!(decode(&again).unwrap(), song);
     let v: serde_json::Value = serde_json::from_slice(&again).unwrap();
-    assert_eq!(v["version"], 4);
+    assert_eq!(v["version"], 5);
     assert_eq!(
         v["song"]["tracks"][0]["instrument"],
         serde_json::json!({"kind": "builtin", "name": "sine"})
@@ -1064,7 +1101,7 @@ fn plugins_sf2_presets_and_bypassed_inserts_come_back() {
 #[test]
 fn the_shape_of_version_4_on_disk() {
     let v: serde_json::Value = serde_json::from_slice(&encode(&added_song())).unwrap();
-    assert_eq!(v["version"], 4);
+    assert_eq!(v["version"], 5);
     let tracks = &v["song"]["tracks"];
     let state: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
     assert_eq!(
@@ -1153,7 +1190,7 @@ fn a_song_of_version_3_saved_as_version_4_is_the_same_song() {
 
     let saved = encode(&song);
     let v: serde_json::Value = serde_json::from_slice(&saved).unwrap();
-    assert_eq!(v["version"], 4);
+    assert_eq!(v["version"], 5);
     assert_eq!(decode(&saved).unwrap(), song);
     // What version 3 wrote of the tracks and the mixer is written the same: version 4 only
     // adds to it. (The piano roll's settings, which this file left out, are written now.)
@@ -1312,4 +1349,208 @@ fn a_step_on_a_plugin_and_its_undo_are_saved_as_the_song_is() {
         session: song.session.clone(),
     };
     assert_eq!(encode(&undone), encode(&song));
+}
+
+// ---- version 5: tempo points, meter changes, markers, the loop's range in the song ----
+
+#[test]
+fn the_shape_of_version_5_on_disk() {
+    let song = rich_song("x", 1);
+    let v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert_eq!(v["version"], 5);
+    let s = &v["song"];
+    assert_eq!(s["tempo"], 12_345);
+    assert_eq!(s["meter"], serde_json::json!([6, 8]));
+    assert_eq!(s["headRamp"], true);
+    assert_eq!(
+        s["tempoPoints"],
+        serde_json::json!([{"tick": 2880, "tempo": 10_000, "ramp": true},
+                           {"tick": 6000, "tempo": 12_000, "ramp": false}])
+    );
+    assert_eq!(
+        s["meterChanges"],
+        serde_json::json!([{"bar": 3, "meter": [4, 4]}])
+    );
+    assert_eq!(
+        s["markers"],
+        serde_json::json!([{"id": 4, "tick": 2880, "name": "サビ"}])
+    );
+    assert_eq!(s["loop"], serde_json::json!({"start": 7680, "end": 15360}));
+    assert!(v["session"].get("loop").is_none());
+    assert_eq!(v["session"]["loopOn"], true);
+    assert_eq!(decode(&encode(&song)).unwrap(), song);
+
+    // A song with none of it.
+    let mut plain = Song::new_default();
+    plain.session.loop_on = false;
+    let v: serde_json::Value = serde_json::from_slice(&encode(&plain)).unwrap();
+    assert_eq!(v["song"]["headRamp"], false);
+    for field in ["tempoPoints", "meterChanges", "markers"] {
+        assert_eq!(v["song"][field], serde_json::json!([]), "{field}");
+    }
+    assert!(v["song"]["loop"].is_null());
+    assert_eq!(decode(&encode(&plain)).unwrap(), plain);
+    // The fields missing altogether read as a song with none of it.
+    let mut v = v;
+    for field in ["headRamp", "tempoPoints", "meterChanges", "markers", "loop"] {
+        v["song"].as_object_mut().unwrap().remove(field);
+    }
+    assert_eq!(read_json(&v), plain);
+}
+
+#[test]
+fn versions_1_to_4_have_the_loop_in_the_session_and_no_changes() {
+    for version in 1..=4 {
+        let mut v = rich_json();
+        v["version"] = version.into();
+        let range = v["song"].as_object_mut().unwrap().remove("loop").unwrap();
+        // What an older meloet can not have written is not read from its files.
+        v["song"]["loop"] = serde_json::json!({"start": 0, "end": 480});
+        v["session"]["loop"] = range;
+        let song = read_json(&v);
+        let rich = rich_song("x", 3);
+        assert_eq!(song.doc.loop_range, rich.doc.loop_range, "{version}");
+        assert!(song.session.loop_on);
+        assert!(song.doc.timeline.tempo_points.is_empty(), "{version}");
+        assert!(song.doc.timeline.meter_changes.is_empty(), "{version}");
+        assert!(!song.doc.timeline.head_ramp);
+        assert!(song.doc.markers.is_empty(), "{version}");
+        assert_eq!(song.doc.timeline.tempo, rich.doc.timeline.tempo);
+        assert_eq!(song.doc.tracks, rich.doc.tracks, "{version}");
+        // No loop at all.
+        v["session"]["loop"] = serde_json::Value::Null;
+        assert_eq!(read_json(&v).doc.loop_range, None);
+        // Saved again it is version 5, with the range in the song.
+        let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+        assert_eq!(again["version"], 5);
+        assert_eq!(
+            again["song"]["loop"],
+            serde_json::json!({"start": 7680, "end": 15360})
+        );
+        assert!(again["session"].get("loop").is_none());
+        assert_eq!(read_json(&again), song);
+    }
+}
+
+#[test]
+fn the_seat_for_tempo_changes_of_versions_1_to_4_is_read_when_it_is_not_empty() {
+    let mut v = rich_json();
+    v["version"] = 4.into();
+    v["song"]["meter"] = serde_json::json!([4, 4]);
+    for field in ["headRamp", "tempoPoints", "meterChanges", "loop"] {
+        v["song"].as_object_mut().unwrap().remove(field);
+    }
+    // Not in order, as nothing ever checked them.
+    v["song"]["tempoChanges"] = serde_json::json!([
+        // Not at the head of a bar (bars of 3/4 from 3840 on): the tempo only.
+        {"tick": 5760, "tempo": 9000, "meter": [4, 4]},
+        // The head has its own tempo and meter.
+        {"tick": 0, "tempo": 20000, "meter": [5, 4]},
+        // At the head of bar 2: a tempo point and a meter change.
+        {"tick": 3840, "tempo": 12000, "meter": [3, 4]},
+        // At the head of a bar with the meter already in force: the tempo only.
+        {"tick": 6720, "tempo": 9000, "meter": [3, 4]},
+        // And back to 4/4 at the head of bar 5.
+        {"tick": 8160, "tempo": 9000, "meter": [4, 4]},
+    ]);
+    let song = read_json(&v);
+    let t = &song.doc.timeline;
+    assert_eq!((t.tempo.centi(), t.meter), (12_345, Meter::FOUR_FOUR));
+    assert_eq!(
+        (t.tempo_points.iter())
+            .map(|p| (p.tick, p.tempo.centi(), p.ramp))
+            .collect::<Vec<_>>(),
+        [
+            (3840, 12_000, false),
+            (5760, 9_000, false),
+            (6720, 9_000, false),
+            (8160, 9_000, false)
+        ]
+    );
+    assert_eq!(
+        (t.meter_changes.iter())
+            .map(|c| (c.bar, c.meter.num(), c.meter.den()))
+            .collect::<Vec<_>>(),
+        [(2, 3, 4), (5, 4, 4)]
+    );
+    assert_eq!(t.check(), Ok(()));
+    // Written as version 5 it comes back the same, and the old seat is not written.
+    let again: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
+    assert!(again["song"].get("tempoChanges").is_none());
+    assert_eq!(read_json(&again), song);
+    // A value that is no tempo or no meter is still not a song.
+    v["song"]["tempoChanges"][0]["tempo"] = 1.into();
+    assert!(matches!(
+        decode(&serde_json::to_vec(&v).unwrap()),
+        Err(ReadError::Broken)
+    ));
+    // Version 5 does not look at the seat.
+    v["version"] = 5.into();
+    assert!(read_json(&v).doc.timeline.tempo_points.is_empty());
+}
+
+#[test]
+fn timelines_and_markers_that_cannot_be_do_not_read() {
+    let good = rich_json();
+    let with = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v = good.clone();
+        f(&mut v["song"]);
+        decode(&serde_json::to_vec(&v).unwrap())
+    };
+    let point =
+        |tick: u64, tempo: u32| serde_json::json!({"tick": tick, "tempo": tempo, "ramp": false});
+    let change = |bar: u32, num: u8, den: u8| serde_json::json!({"bar": bar, "meter": [num, den]});
+    let marker = |id: u32, tick: u64| serde_json::json!({"id": id, "tick": tick, "name": "x"});
+    type Change = Box<dyn Fn(&mut serde_json::Value)>;
+    let broken: Vec<Change> = vec![
+        // The head is not a point; points in order, one at a tick; a tempo in range.
+        Box::new(move |s| s["tempoPoints"][0] = point(0, 10_000)),
+        Box::new(move |s| s["tempoPoints"][0] = point(6000, 10_000)),
+        Box::new(move |s| s["tempoPoints"][0] = point(7000, 10_000)),
+        Box::new(move |s| s["tempoPoints"][1] = point(6000, 2_999)),
+        Box::new(move |s| s["tempoPoints"][1] = point(6000, 30_001)),
+        Box::new(move |s| s["tempoPoints"][1] = point(MAX_TICK + 1, 10_000)),
+        Box::new(move |s| s["tempoPoints"][1] = serde_json::json!({"tick": 6000})),
+        // Bar 0 is not a change; changes in order, one at a bar; a meter that is one.
+        Box::new(move |s| s["meterChanges"][0] = change(0, 3, 4)),
+        Box::new(move |s| {
+            s["meterChanges"] = serde_json::json!([change(3, 3, 4), change(3, 4, 4)])
+        }),
+        Box::new(move |s| {
+            s["meterChanges"] = serde_json::json!([change(5, 3, 4), change(3, 4, 4)])
+        }),
+        Box::new(move |s| s["meterChanges"][0] = change(3, 13, 4)),
+        Box::new(move |s| s["meterChanges"][0] = change(3, 4, 3)),
+        // A marker's id is its own: below `nextId`, and no clip's, take's or other marker's.
+        Box::new(move |s| s["markers"][0] = marker(8, 0)),
+        Box::new(move |s| s["markers"][0] = marker(1, 0)),
+        Box::new(move |s| s["markers"][0] = marker(2, 0)),
+        Box::new(move |s| s["markers"] = serde_json::json!([marker(4, 0), marker(4, 480)])),
+        Box::new(move |s| s["markers"][0] = marker(4, MAX_TICK + 1)),
+        // The loop is never empty.
+        Box::new(|s| s["loop"] = serde_json::json!({"start": 480, "end": 480})),
+        Box::new(|s| s["loop"] = serde_json::json!({"start": 960, "end": 480})),
+    ];
+    for (i, f) in broken.iter().enumerate() {
+        assert!(
+            matches!(with(f.as_ref()), Err(ReadError::Broken)),
+            "case {i}"
+        );
+    }
+    // What is not against a rule reads: a point between beats, markers in any order and at
+    // one tick, a marker with no name.
+    let song = with(&|s| {
+        s["tempoPoints"][1] = point(6001, 30_000);
+        s["nextId"] = 20.into();
+        s["markers"] = serde_json::json!([marker(11, 960), marker(4, 960), marker(9, 0)]);
+        s["markers"][2]["name"] = "".into();
+    })
+    .unwrap();
+    assert_eq!(song.doc.timeline.tempo_points[1].tick, 6001);
+    assert_eq!(
+        (song.doc.markers.iter())
+            .map(|m| (m.id.0, m.tick))
+            .collect::<Vec<_>>(),
+        [(9, 0), (4, 960), (11, 960)]
+    );
 }

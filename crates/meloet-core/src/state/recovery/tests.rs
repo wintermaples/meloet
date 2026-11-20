@@ -38,7 +38,7 @@ fn writes(effects: &[Effect]) -> Vec<(f64, RecoveryCause, bool)> {
                 cause,
                 ending,
                 ..
-            } => Some((song.doc.tempo.bpm(), *cause, *ending)),
+            } => Some((song.doc.timeline.tempo.bpm(), *cause, *ending)),
             _ => None,
         })
         .collect()

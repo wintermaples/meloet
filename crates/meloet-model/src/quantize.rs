@@ -12,19 +12,22 @@ use crate::notes::{
 };
 use crate::roll::{QuantizeAlign, QuantizeSettings};
 use crate::song::{ClipId, Doc, Note, OriginIndex, TakeOrigin};
-use crate::time::Meter;
+use crate::tempo_map::TempoMap;
 
-/// Where `tick` goes with `settings`: toward the nearest step of the grid from the song's
-/// tick 0 (odd steps later by the swing), by the strength.
-pub fn quantized_tick(tick: u64, settings: QuantizeSettings, meter: Meter) -> u64 {
+/// Where `tick` goes with `settings`: toward the nearest step of the grid (odd steps later by
+/// the swing), by the strength. The grid counts from the song's tick 0 and starts again at the
+/// head of the bar of each meter change, with the bar of the meter there; a step that would
+/// pass the next meter change is the head of its bar.
+pub fn quantized_tick(tick: u64, settings: QuantizeSettings, map: &TempoMap) -> u64 {
+    let (head, meter, next) = map.meter_stretch(tick);
     let g = settings.grid.ticks(meter);
-    let k = (tick + g / 2) / g;
+    let k = (tick - head + g / 2) / g;
     let swing = if k % 2 == 1 {
         (g * u64::from(settings.swing()) + 150) / 300
     } else {
         0
     };
-    let target = k * g + swing;
+    let target = (head + k * g + swing).min(next.unwrap_or(u64::MAX));
     let d = (i128::from(target) - i128::from(tick)) * i128::from(settings.strength());
     // Half away from 0.
     let moved = (d + 50 * d.signum()) / 100;
@@ -65,8 +68,8 @@ pub fn quantize(
             shown.take.clone()
         }
     };
-    let g = settings.grid.ticks(doc.meter);
-    let q = |tick: u64| quantized_tick(tick.saturating_sub(l), settings, doc.meter) + l;
+    let map = TempoMap::new(&doc.timeline);
+    let q = |tick: u64| quantized_tick(tick.saturating_sub(l), settings, &map) + l;
     let mut moved = false;
     let out = notes
         .into_iter()
@@ -87,7 +90,11 @@ pub fn quantize(
                 QuantizeAlign::StartAndEnd => {
                     let s = q(start).clamp(c.start, c.end - 1);
                     let e = q(start + length);
-                    let length = if e > s { e - s } else { g };
+                    let length = if e > s {
+                        e - s
+                    } else {
+                        (settings.grid).ticks(map.meter_at(s.saturating_sub(l)).meter)
+                    };
                     (s, length.min(c.end - s))
                 }
             };

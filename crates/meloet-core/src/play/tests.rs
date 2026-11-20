@@ -644,7 +644,11 @@ fn a_loop_recording_makes_a_take_per_lap() {
     );
     let c = &m.view().song.tracks[0].clips[0];
     assert_eq!((c.start, c.end, c.take, c.takes), (0, BAR, 2, 2));
-    assert_eq!(m.view().song.undo_count, 1, "one step for all the laps");
+    assert_eq!(
+        m.view().song.undo_count,
+        2,
+        "the loop's range, and one step for all the laps"
+    );
 }
 
 #[test]

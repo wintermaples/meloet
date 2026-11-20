@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::*;
-use crate::{InstrumentRef, TrackColor};
+use crate::{InstrumentRef, Meter, Tempo, TrackColor};
 
 const T1: TrackId = TrackId(1);
 const T2: TrackId = TrackId(2);
@@ -345,20 +345,23 @@ fn tempo_and_meter() {
     let doc = Doc::new_default();
     let t = Tempo::from_centi(12_050).unwrap();
     let edit = set_tempo(&doc, t).unwrap();
-    assert_eq!(edit.doc.tempo, t);
+    assert_eq!(edit.doc.timeline.tempo, t);
     assert_eq!(
         edit.step,
         StepKind::Tempo {
-            from: doc.tempo,
+            from: doc.timeline.tempo,
             to: t
         }
     );
     assert!(Arc::ptr_eq(&doc.tracks[0], &edit.doc.tracks[0]));
-    assert_eq!(set_tempo(&doc, doc.tempo), Err(EditError::Unchanged));
+    assert_eq!(
+        set_tempo(&doc, doc.timeline.tempo),
+        Err(EditError::Unchanged)
+    );
 
     let m = Meter::new(6, 8).unwrap();
     let edit = set_meter(&doc, m).unwrap();
-    assert_eq!(edit.doc.meter, m);
+    assert_eq!(edit.doc.timeline.meter, m);
     assert_eq!(
         edit.step,
         StepKind::Meter {

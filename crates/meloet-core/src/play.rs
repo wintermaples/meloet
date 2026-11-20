@@ -13,15 +13,15 @@ use meloet_model::quantize;
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{
     Bus, Clip, ClipEdited, ClipId, Doc, Gain, History, Insert, InstrumentGroup, InstrumentRef,
-    Meter, Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, Tempo, TickRange, TrackId,
-    arrange, roll,
+    Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, TempoMap, TickRange, TrackId, arrange,
+    roll, timeline as timeline_edit,
 };
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
     LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
     NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode,
     SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan,
-    TrackRef, TransportState, TransportView,
+    TimelineRef, TrackRef, TransportState, TransportView,
 };
 
 use crate::instruments::Sounds;
@@ -241,6 +241,8 @@ struct Sel {
     notes: NoteSel,
     clips: Vec<ClipId>,
     clicked: Option<ClipId>,
+    /// The selected tempo point, meter change or marker.
+    timeline: Option<TimelineRef>,
 }
 
 /// The clips an edit leaves selected, the one of them clicked (`ArrangeView::selected_clip`),
@@ -413,6 +415,7 @@ pub struct Play {
     plugs: Plugs,
     wins: Windows,
     panel: Panel,
+    tl: timeline::Tl,
 }
 
 impl Play {
@@ -429,6 +432,7 @@ impl Play {
             plugs: Plugs::default(),
             wins: Windows::default(),
             panel: Panel::default(),
+            tl: timeline::Tl::default(),
             song,
             history: History::new(),
             state: TransportState::Stopped,
@@ -495,8 +499,14 @@ impl Play {
         &self.song.doc
     }
 
-    fn meter(&self) -> Meter {
-        self.doc().meter
+    /// The tempo map of the song as it is now.
+    fn map(&self) -> TempoMap {
+        TempoMap::new(&self.doc().timeline)
+    }
+
+    /// The beats of a bar where a recording from `tick` counts in.
+    fn beats_per_bar_at(&self, tick: u64) -> u32 {
+        u32::from(self.map().meter_at(tick).meter.num())
     }
 
     /// Counting in or recording: the song is not to be changed or replaced.
@@ -540,23 +550,22 @@ impl Play {
     }
 
     fn bar_head(&self, tick: u64) -> u64 {
-        let per_bar = self.meter().ticks_per_bar();
-        tick / per_bar * per_bar
+        self.map().meter_at(tick).bar_tick
     }
 
+    /// The bars the range touches, as shown (from 1): its first bar, and the bar line at its
+    /// end or after it.
     fn bars(&self, range: TickRange) -> BarSpan {
-        let per_bar = self.meter().ticks_per_bar();
+        let map = self.map();
+        let shown = |bar: u64| u32::try_from(bar + 1).unwrap_or(u32::MAX);
         BarSpan {
-            from: (range.start() / per_bar + 1) as u32,
-            to: (range.end().div_ceil(per_bar) + 1) as u32,
+            from: shown(map.meter_at(range.start()).bar),
+            to: shown(map.meter_at(map.bar_at_or_after(range.end())).bar),
         }
     }
 
     fn loop_on(&self) -> Option<TickRange> {
-        self.song
-            .session
-            .loop_range
-            .filter(|_| self.song.session.loop_on)
+        self.doc().loop_range.filter(|_| self.song.session.loop_on)
     }
 
     // ---- commands ----
@@ -605,7 +614,7 @@ impl Play {
             (now, 0)
         } else {
             let from = self.loop_on().map_or(self.position, |r| r.start());
-            let beats = u32::from(self.count_in_bars) * u32::from(self.meter().num());
+            let beats = u32::from(self.count_in_bars) * self.beats_per_bar_at(from);
             (from, beats)
         };
         let loop_range = self.loop_on().filter(|r| r.end() > from);
@@ -685,28 +694,6 @@ impl Play {
             .unwrap_or(self.position)
     }
 
-    pub fn set_tempo(&mut self, bpm: f64, effects: &mut Vec<Effect>) {
-        if self.busy() {
-            return;
-        }
-        if let Some(tempo) = Tempo::from_bpm(bpm)
-            && let Ok(e) = edit::set_tempo(self.doc(), tempo)
-        {
-            self.apply(e, effects);
-        }
-    }
-
-    pub fn set_meter(&mut self, num: u8, den: u8, effects: &mut Vec<Effect>) {
-        if self.busy() {
-            return;
-        }
-        if let Some(meter) = Meter::new(num, den)
-            && let Ok(e) = edit::set_meter(self.doc(), meter)
-        {
-            self.apply(e, effects);
-        }
-    }
-
     /// Returns whether it changed (the settings are then saved).
     pub fn set_count_in(&mut self, bars: u8) -> bool {
         if !COUNT_IN_BARS.contains(&bars) || bars == self.count_in_bars {
@@ -725,14 +712,26 @@ impl Play {
         if self.busy() {
             return;
         }
-        let session = &self.song.session;
-        if !session.loop_on && session.loop_range.is_none() {
-            let start = self.bar_head(self.position);
-            let end = start + DEFAULT_LOOP_BARS * self.meter().ticks_per_bar();
-            self.song.session.loop_range = TickRange::new(start, end);
-        }
         self.song.session.loop_on = !self.song.session.loop_on;
-        self.send_loop(effects);
+        let range = match self.doc().loop_range {
+            None if self.song.session.loop_on => {
+                let map = self.map();
+                let head = map.meter_at(self.position);
+                TickRange::new(head.bar_tick, map.tick_of_bar(head.bar + DEFAULT_LOOP_BARS))
+            }
+            _ => None,
+        };
+        self.put_loop(range, effects);
+    }
+
+    /// Makes `range` the loop's range, which is one step when it is another range than
+    /// before, and tells the engine the loop as it is now.
+    fn put_loop(&mut self, range: Option<TickRange>, effects: &mut Vec<Effect>) {
+        match range.map(|r| timeline_edit::set_loop(self.doc(), r)) {
+            // The engine hears of the new range with the step.
+            Some(Ok(e)) => self.apply(e, effects),
+            _ => self.send_loop(effects),
+        }
     }
 
     pub fn set_loop(&mut self, from_bar: u32, to_bar: u32, effects: &mut Vec<Effect>) {
@@ -741,20 +740,25 @@ impl Play {
         }
         let (a, b) = (from_bar.min(to_bar).max(1), from_bar.max(to_bar).max(1));
         let b = if a == b { a + 1 } else { b };
-        let per_bar = self.meter().ticks_per_bar();
-        self.song.session.loop_range =
-            TickRange::new(u64::from(a - 1) * per_bar, u64::from(b - 1) * per_bar);
+        let map = self.map();
+        let range = TickRange::new(
+            map.tick_of_bar(u64::from(a - 1)),
+            map.tick_of_bar(u64::from(b - 1)),
+        );
+        if range.is_none() {
+            return;
+        }
         self.song.session.loop_on = true;
-        self.send_loop(effects);
+        self.put_loop(range, effects);
     }
 
     fn send_loop(&self, effects: &mut Vec<Effect>) {
-        let s = &self.song.session;
-        let (start, end) = s.loop_range.map_or((0, 0), |r| (r.start(), r.end()));
+        let range = self.doc().loop_range;
+        let (start, end) = range.map_or((0, 0), |r| (r.start(), r.end()));
         effects.push(Effect::Engine(EngineOp::Loop {
             start,
             end,
-            on: s.loop_on,
+            on: self.song.session.loop_on,
         }));
     }
 
@@ -1028,6 +1032,7 @@ impl Play {
             return;
         }
         let before = self.doc().clone();
+        self.tl.forget_fresh();
         if let Some(kind) = self.history.undo(&mut self.song.doc) {
             self.crossed_songs(&kind);
             self.song.doc.name.clone_from(&before.name);
@@ -1047,6 +1052,7 @@ impl Play {
             return;
         }
         let before = self.doc().clone();
+        self.tl.forget_fresh();
         if let Some(kind) = self.history.redo(&mut self.song.doc) {
             self.crossed_songs(&kind);
             self.song.doc.name.clone_from(&before.name);
@@ -1066,6 +1072,7 @@ impl Play {
             notes: self.note_sel.clone(),
             clips: self.clips_sel.clone(),
             clicked: self.selected,
+            timeline: self.tl.selected(),
         }
     }
 
@@ -1075,6 +1082,7 @@ impl Play {
         self.note_sel = sel.notes;
         self.clips_sel = sel.clips;
         self.selected = sel.clicked;
+        self.tl.select(sel.timeline);
         self.drop_gone_clips();
     }
 
@@ -1095,6 +1103,7 @@ impl Play {
         let sel_before = self.sel();
         let before = self.doc().clone();
         let step = e.step;
+        self.tl.forget_fresh();
         self.history.apply(&mut self.song.doc, e);
         if let StepKind::MoveInsert { strip, from, to } = step {
             self.insert_moved(strip, from, to, effects);
@@ -1141,8 +1150,15 @@ impl Play {
         if target.is_none_or(|t| doc.track(t).is_none()) {
             *target = doc.tracks.first().map(|t| t.id);
         }
-        if doc.tempo != before.tempo || doc.meter != before.meter {
+        if doc.timeline.tempo != before.timeline.tempo
+            || doc.timeline.meter != before.timeline.meter
+        {
             effects.push(Effect::Engine(self.tempo_op()));
+        }
+        if doc.loop_range != before.loop_range {
+            // Undo took the range away: there is nothing to go round.
+            self.song.session.loop_on &= doc.loop_range.is_some();
+            self.send_loop(effects);
         }
         if doc.tracks.iter().any(|t| !t.clips.is_empty()) {
             self.had_clip = true;
@@ -1156,15 +1172,16 @@ impl Play {
         let sel = &self.clips_sel;
         self.selected = self.selected.filter(|c| sel.contains(c));
         self.piano_roll = self.piano_roll.filter(|&c| doc.clip(c).is_some());
+        self.tl.drop_gone(doc);
         self.fix_selection();
     }
 
     fn tempo_op(&self) -> EngineOp {
         let doc = self.doc();
         EngineOp::Tempo {
-            ticks_per_beat: doc.meter.ticks_per_beat() as u32,
-            beats_per_bar: u32::from(doc.meter.num()),
-            bpm_centi: doc.tempo.centi(),
+            ticks_per_beat: doc.timeline.meter.ticks_per_beat() as u32,
+            beats_per_bar: u32::from(doc.timeline.meter.num()),
+            bpm_centi: doc.timeline.tempo.centi(),
         }
     }
 
@@ -1504,6 +1521,7 @@ impl Play {
         self.selected = None;
         self.piano_roll = None;
         self.note_sel = NoteSel::default();
+        self.tl = timeline::Tl::default();
         self.sel_undo.clear();
         self.sel_redo.clear();
         self.rec = None;
@@ -1575,7 +1593,7 @@ impl Play {
     }
 
     pub fn loop_span(&self) -> Option<TickSpan> {
-        self.song.session.loop_range.map(|r| TickSpan {
+        self.doc().loop_range.map(|r| TickSpan {
             start: r.start(),
             end: r.end(),
         })
@@ -1589,7 +1607,10 @@ impl Play {
             count_in_bars: self.count_in_bars,
             count_in_beats: match &self.rec {
                 Some(r) => r.count_in_beats,
-                None => u32::from(self.count_in_bars) * u32::from(self.meter().num()),
+                None => {
+                    let from = self.loop_on().map_or(self.position, |r| r.start());
+                    u32::from(self.count_in_bars) * self.beats_per_bar_at(from)
+                }
             },
             can_play: open,
             can_record: open && self.song.session.play_target.is_some() && !self.auditioning(),
@@ -2256,6 +2277,7 @@ mod plugs;
 mod seats;
 mod shelf;
 mod sounds;
+mod timeline;
 mod tracks;
 mod windows;
 

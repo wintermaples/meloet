@@ -117,22 +117,5 @@ pub struct BarBeatTick {
     pub tick: u32,
 }
 
-/// With one meter for the whole song (meter changes are not used yet).
-pub fn bar_beat_tick(tick: u64, meter: Meter) -> BarBeatTick {
-    let per_beat = meter.ticks_per_beat();
-    let per_bar = meter.ticks_per_bar();
-    let in_bar = tick % per_bar;
-    BarBeatTick {
-        bar: tick / per_bar + 1,
-        beat: (in_bar / per_beat) as u32 + 1,
-        tick: ((in_bar % per_beat) * DISPLAY_TICKS_PER_BEAT / per_beat) as u32,
-    }
-}
-
-/// With the tempo and meter at the head of the song (tempo changes are not used yet).
-pub fn ticks_to_seconds(tick: u64, tempo: Tempo, meter: Meter) -> f64 {
-    tick as f64 / meter.ticks_per_beat() as f64 * 60.0 / tempo.bpm()
-}
-
 #[cfg(test)]
 mod tests;

@@ -8,7 +8,8 @@ use crate::mixer::{self, Channel};
 use crate::song::{
     Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Note, Take, TakeId, Track,
 };
-use crate::time::{Meter, Tempo, TickRange};
+use crate::time::TickRange;
+pub use crate::timeline::{set_meter, set_tempo};
 use crate::{InstrumentRef, TrackColor, TrackId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +44,8 @@ pub enum EditError {
     NoSuchPlugin,
     /// The insert slot holds an effect already.
     SlotTaken,
+    /// No tempo point at that tick, no meter change at that bar, or no marker of that id.
+    NoSuchPoint,
 }
 
 /// No clip ends after this, so that every song position of a take fits in an `i64`.
@@ -315,38 +318,6 @@ pub fn delete_clips(doc: &Doc, ids: &[ClipId], cut: bool) -> Result<Edit, EditEr
             ..doc.clone()
         },
         step: StepKind::DeleteClips { count, cut },
-    })
-}
-
-pub fn set_tempo(doc: &Doc, tempo: Tempo) -> Result<Edit, EditError> {
-    if tempo == doc.tempo {
-        return Err(EditError::Unchanged);
-    }
-    Ok(Edit {
-        doc: Doc {
-            tempo,
-            ..doc.clone()
-        },
-        step: StepKind::Tempo {
-            from: doc.tempo,
-            to: tempo,
-        },
-    })
-}
-
-pub fn set_meter(doc: &Doc, meter: Meter) -> Result<Edit, EditError> {
-    if meter == doc.meter {
-        return Err(EditError::Unchanged);
-    }
-    Ok(Edit {
-        doc: Doc {
-            meter,
-            ..doc.clone()
-        },
-        step: StepKind::Meter {
-            from: doc.meter,
-            to: meter,
-        },
     })
 }
 

@@ -205,7 +205,8 @@ pub enum Command {
         id: u32,
     },
     /// Alt → and Alt ←: to the first marker after the play line (`forward`), or the last one
-    /// before it. Nothing when there is none. Selects nothing. No step.
+    /// before it. Nothing when there is none. Selects the marker it goes to, as a press on it
+    /// does. No step.
     StepMarker {
         forward: bool,
     },

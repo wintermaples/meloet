@@ -8,6 +8,9 @@ usage: python3 -I tools/measure/make_song.py OUT.meloet [--notes 200] [--bars 16
                                              [--sf2 FILE.sf2[:BANK:PROGRAM[:NAME]]] [--effect-plugin NAME]
                                              [--effect-format vst3|lv2]
                                              [--stagger TICKS] [--hard-pan]
+                                             [--tempo-points TICK:BPM[:ramp],...] [--head-ramp]
+                                             [--meter-changes BAR:NUM/DEN,...]
+                                             [--markers TICK:NAME,...]
 
 --tracks N (1..64): a version 3 song with N tracks, each with one clip and one take of --notes
 notes. The instruments go round BAND (the groups mixed), with the sends a new track of that
@@ -28,6 +31,13 @@ starts its notes i * TICKS later (16 plugins that all start a chord in the same 
 case of their own, docs/measurements/2026-11-19-round5-plughost.md). --hard-pan: the "plugin"
 tracks all the way left, the others all the way right, no sends and no built-in inserts, so
 that a recording of the output tells the two apart (plugin-stop.sh).
+
+--tempo-points, --head-ramp, --meter-changes and --markers make the song version 5 (either
+shape): tempo points at ticks (480 to a quarter note; "ramp": a straight line to the next
+point; --head-ramp: from the song's head to the first point), meter changes at the heads of
+bars (bars count from 0, so 8 is the bar shown as 9), markers at ticks. The notes stay where
+they are in ticks: --bars still counts bars of 4/4. Example, the spec's 104 to 120 over bars
+5 to 9 and 3/4 from bar 9: --tempo-points 7680:104:ramp,15360:120 --meter-changes 8:3/4
 
 Without --tracks the shape is crates/meloet-core/src/songfile.rs, version 1. The clip starts at the song's start
 and is --bars bars of 4/4 long. Notes are spread over the clip in start order, keys 48..84,
@@ -212,6 +222,63 @@ def song(notes, bars, tempo, cc, seed):
     }
 
 
+def tempo_points(text):
+    points = []
+    for word in text.split(","):
+        parts = word.split(":")
+        if len(parts) not in (2, 3) or (len(parts) == 3 and parts[2] != "ramp"):
+            raise ValueError(f"tempo point {word!r}: TICK:BPM or TICK:BPM:ramp")
+        tick, tempo = int(parts[0]), round(float(parts[1]) * 100)
+        if tick < 1 or not 3000 <= tempo <= 30000:
+            raise ValueError(f"tempo point {word!r}: tick 1 or more, tempo 30..300")
+        points.append({"tick": tick, "tempo": tempo, "ramp": len(parts) == 3})
+    points.sort(key=lambda p: p["tick"])
+    if any(a["tick"] == b["tick"] for a, b in zip(points, points[1:])):
+        raise ValueError("two tempo points at one tick")
+    return points
+
+
+def meter_changes(text):
+    changes = []
+    for word in text.split(","):
+        bar, _, meter = word.partition(":")
+        num, _, den = meter.partition("/")
+        bar, num, den = int(bar), int(num), int(den)
+        if bar < 1 or not 1 <= num <= 12 or den not in (2, 4, 8, 16):
+            raise ValueError(f"meter change {word!r}: bar 1 or more, NUM 1..12, DEN 2, 4, 8 or 16")
+        changes.append({"bar": bar, "meter": [num, den]})
+    changes.sort(key=lambda c: c["bar"])
+    if any(a["bar"] == b["bar"] for a, b in zip(changes, changes[1:])):
+        raise ValueError("two meter changes at one bar")
+    return changes
+
+
+def markers(text, first_id):
+    made = []
+    for word in text.split(","):
+        tick, sep, name = word.partition(":")
+        if not sep or not name.strip() or int(tick) < 0:
+            raise ValueError(f"marker {word!r}: TICK:NAME")
+        made.append({"tick": int(tick), "name": name.strip()})
+    made.sort(key=lambda m: m["tick"])
+    return [{"id": first_id + i, **m} for i, m in enumerate(made)]
+
+
+def with_timeline(made, points, head_ramp, changes, marks):
+    """The song as version 5 (crates/meloet-core/src/songfile.rs): the loop's range is in the
+    song, and the seat `tempoChanges` of the older versions is gone."""
+    doc, session = made["song"], made["session"]
+    made["version"] = 5
+    del doc["tempoChanges"]
+    doc["headRamp"] = head_ramp
+    doc["tempoPoints"] = points
+    doc["meterChanges"] = changes
+    doc["markers"] = markers(marks, doc["nextId"]) if marks else []
+    doc["nextId"] += len(doc["markers"])
+    doc["loop"] = session.pop("loop")
+    return made
+
+
 def main(argv):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("out")
@@ -230,6 +297,10 @@ def main(argv):
     p.add_argument("--effect-format", choices=["vst3", "lv2"])
     p.add_argument("--stagger", type=int, default=0)
     p.add_argument("--hard-pan", action="store_true")
+    p.add_argument("--tempo-points")
+    p.add_argument("--head-ramp", action="store_true")
+    p.add_argument("--meter-changes")
+    p.add_argument("--markers")
     a = p.parse_args(argv)
     if a.notes < 0 or a.bars < 1 or a.cc < 0 or not 30 <= a.tempo <= 300:
         p.error("notes >= 0, bars >= 1, cc >= 0, tempo 30..300")
@@ -257,6 +328,16 @@ def main(argv):
             sf2_preset(a.sf2) if a.sf2 else None,
             scanned_plugin(a.scan, a.effect_plugin, a.effect_format or a.plugin_format, "effect") if a.effect_plugin else None,
             a.stagger, a.hard_pan)
+    if a.tempo_points or a.head_ramp or a.meter_changes or a.markers:
+        try:
+            made = with_timeline(
+                made,
+                tempo_points(a.tempo_points) if a.tempo_points else [],
+                a.head_ramp,
+                meter_changes(a.meter_changes) if a.meter_changes else [],
+                a.markers)
+        except ValueError as e:
+            p.error(str(e))
     data = json.dumps(made, ensure_ascii=False, separators=(",", ":"))
     tmp = a.out + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:

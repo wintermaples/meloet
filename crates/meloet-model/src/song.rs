@@ -7,8 +7,9 @@ use std::sync::Arc;
 use crate::chunked::ChunkedVec;
 use crate::mixer::{self, Channel, Return, Sends};
 use crate::roll::{QuantizeSettings, RollSettings};
+use crate::tempo_map::Timeline;
 use crate::time::{Meter, Tempo, TickRange};
-use crate::{InstrumentRef, TempoChange, TrackColor, TrackId};
+use crate::{InstrumentRef, TrackColor, TrackId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ClipId(pub u32);
@@ -167,18 +168,33 @@ pub struct Track {
     pub clips: Vec<Arc<Clip>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MarkerId(pub u32);
+
+/// A name at a place of the song. Markers may share a tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marker {
+    pub id: MarkerId,
+    pub tick: u64,
+    pub name: String,
+}
+
 /// What undo covers. Cheap to clone: tracks, clips and takes are shared.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Doc {
     pub name: String,
-    pub tempo: Tempo,
-    pub meter: Meter,
-    pub tempo_changes: Vec<TempoChange>,
+    /// The tempo and meter at the head, and their changes. Always well formed
+    /// (`Timeline::check`).
+    pub timeline: Arc<Timeline>,
+    /// In the order of tick, those at one tick in the order of id.
+    pub markers: Arc<Vec<Marker>>,
+    /// The loop's range; whether the loop is on is in the `Session`.
+    pub loop_range: Option<TickRange>,
     pub tracks: Vec<Arc<Track>>,
     /// Return A and return B.
     pub returns: [Arc<Return>; 2],
     pub master: Arc<Channel>,
-    /// The next clip or take id to give out.
+    /// The next clip, take or marker id to give out.
     pub next_id: u32,
 }
 
@@ -186,9 +202,12 @@ impl Doc {
     pub fn new_default() -> Doc {
         Doc {
             name: "はじめての曲".to_owned(),
-            tempo: Tempo::from_centi(9_600).expect("96.00 is in range"),
-            meter: Meter::FOUR_FOUR,
-            tempo_changes: Vec::new(),
+            timeline: Arc::new(Timeline::new(
+                Tempo::from_centi(9_600).expect("96.00 is in range"),
+                Meter::FOUR_FOUR,
+            )),
+            markers: Arc::new(Vec::new()),
+            loop_range: None,
             tracks: vec![Arc::new(Track {
                 id: TrackId(1),
                 name: "ピアノ".to_owned(),
@@ -215,6 +234,10 @@ impl Doc {
         !track.muted && (!any_solo || soloed.contains(&track.id))
     }
 
+    pub fn marker(&self, id: MarkerId) -> Option<&Marker> {
+        self.markers.iter().find(|m| m.id == id)
+    }
+
     pub fn clip(&self, id: ClipId) -> Option<(&Arc<Track>, &Arc<Clip>)> {
         self.tracks
             .iter()
@@ -228,7 +251,7 @@ pub struct Session {
     /// The selected track: where the keys sound and where a recording goes. `None` only in
     /// a song with no tracks.
     pub play_target: Option<TrackId>,
-    pub loop_range: Option<TickRange>,
+    /// The range is in the `Doc`: changing it is a step.
     pub loop_on: bool,
     pub roll: RollSettings,
     /// While any track of the song is here, only these play (a muted one still does not).
@@ -247,7 +270,6 @@ impl Song {
             doc: Doc::new_default(),
             session: Session {
                 play_target: Some(TrackId(1)),
-                loop_range: None,
                 loop_on: false,
                 roll: RollSettings::default(),
                 soloed: BTreeSet::new(),

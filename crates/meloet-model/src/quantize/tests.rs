@@ -4,6 +4,8 @@ use crate::edit::{NewTake, add_recording, switch_take};
 use crate::notes::{WriteAt, move_notes, write_note};
 use crate::roll::Grid;
 use crate::song::Take;
+use crate::tempo_map::{MeterChange, TempoMap, Timeline};
+use crate::time::{Meter, Tempo};
 
 const T1: TrackId = TrackId(1);
 const BAR: u64 = 1920;
@@ -69,8 +71,9 @@ fn origin_of(doc: &Doc, clip: ClipId) -> Option<Vec<(u64, u64)>> {
 
 #[test]
 fn the_grid_strength_and_swing() {
-    let m = Meter::FOUR_FOUR;
-    let q = |tick, s| quantized_tick(tick, s, m);
+    let map = |meter| TempoMap::new(&Timeline::new(Tempo::from_centi(9_600).unwrap(), meter));
+    let m = map(Meter::FOUR_FOUR);
+    let q = |tick, s| quantized_tick(tick, s, &m);
     // 1/16 is 120 ticks: 130 goes to 120, 170 to 120, 180 (half way) to 240.
     assert_eq!(q(130, settings(16, false, 100, 0)), 120);
     assert_eq!(q(170, settings(16, false, 100, 0)), 120);
@@ -92,14 +95,69 @@ fn the_grid_strength_and_swing() {
     // One bar, as the meter makes it.
     assert_eq!(q(1000, settings(0, false, 100, 0)), 1920);
     assert_eq!(q(900, settings(0, false, 100, 0)), 0);
-    let three = Meter::new(3, 4).unwrap();
+    let three = map(Meter::new(3, 4).unwrap());
     assert_eq!(
-        quantized_tick(2000, settings(0, false, 100, 0), three),
+        quantized_tick(2000, settings(0, false, 100, 0), &three),
         1440
     );
-    assert_eq!(quantized_tick(2000, settings(0, true, 100, 0), three), 1920);
+    assert_eq!(
+        quantized_tick(2000, settings(0, true, 100, 0), &three),
+        1920
+    );
     // A half note.
     assert_eq!(q(1000, settings(2, false, 100, 0)), 960);
+}
+
+#[test]
+fn the_grid_starts_again_at_a_meter_change() {
+    // 4/4 for two bars, 3/4 for two (to 6720), then 7/8.
+    let mut timeline = Timeline::new(Tempo::from_centi(9_600).unwrap(), Meter::FOUR_FOUR);
+    for (bar, num, den) in [(2, 3, 4), (4, 7, 8)] {
+        timeline.meter_changes.push(MeterChange {
+            bar,
+            meter: Meter::new(num, den).unwrap(),
+        });
+    }
+    let map = TempoMap::new(&timeline);
+    let q = |tick, s| quantized_tick(tick, s, &map);
+    let bar = settings(0, false, 100, 0);
+    // Before the change the bar is 1920, after it 1440 from 3840, then 1680 from 6720.
+    assert_eq!(q(1000, bar), 1920);
+    assert_eq!(q(3840 + 700, bar), 3840);
+    assert_eq!(q(3840 + 740, bar), 3840 + 1440);
+    assert_eq!(q(3840 + 1440 + 800, bar), 6720);
+    assert_eq!(q(6720 + 900, bar), 6720 + 1680);
+    assert_eq!(q(6720 + 1680 + 800, bar), 6720 + 1680);
+    // A half note (960) does not fit the 3/4 bars: the steps count from the change, and the
+    // one past the next change is the head of its bar.
+    let half = settings(2, false, 100, 0);
+    assert_eq!(q(3840 + 500, half), 3840 + 960);
+    assert_eq!(q(3840 + 1500, half), 3840 + 1920);
+    assert_eq!(q(3840 + 2700, half), 6720);
+    assert_eq!(q(6720 + 100, half), 6720);
+    // 1/16 lands on the 7/8 bar lines.
+    let sixteenth = settings(16, false, 100, 0);
+    assert_eq!(q(6720 + 1680 + 50, sixteenth), 6720 + 1680);
+    assert_eq!(q(6720 + 1680 + 70, sixteenth), 6720 + 1680 + 120);
+    // The swing counts its odd steps from the change too.
+    let swung = settings(8, false, 100, 100);
+    assert_eq!(q(6720 + 250, swung), 6720 + 240 + 80);
+    assert_eq!(q(6720 + 470, swung), 6720 + 480);
+}
+
+#[test]
+fn quantize_to_the_bar_after_a_meter_change() {
+    // The clip is [BAR, 3 BAR); from its head on the bars are 3/4.
+    let (doc, clip) = one_take(vec![note(800, 100, 60), note(2300, 100, 62)]);
+    let doc = crate::timeline::add_meter_change(&doc, 1, Meter::new(3, 4).unwrap())
+        .unwrap()
+        .doc;
+    let (edited, count) = quantize(&doc, clip, &[], settings(0, false, 100, 0)).unwrap();
+    assert_eq!(count, 2);
+    let starts: Vec<u64> = (notes_of(&edited.edit.doc, clip).iter())
+        .map(|n| n.0)
+        .collect();
+    assert_eq!(starts, [BAR + 1440, BAR + 2880]);
 }
 
 #[test]

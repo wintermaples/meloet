@@ -9,7 +9,7 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 
 - きみは棟梁。設計する、仕事を切り分ける、係に頼む、受けとって確かめる、まとめる。**大きな実装は自分で書かない**。
 - 係は `.claude/agents/` の 3 つ。
-  - `meloet-hard`（Fable 5.2、effort medium。2026-11-15 に Fable の使用上限で Opus 5.5 にし、2026-11-18 にヤチヨさんが Fable 5.2 に戻した）: 音のスレッド、unsafe と FFI、スレッドやプロセスの間のやりとり、WebGL、Rust と画面の約束の核、core のデータの作り、速さとメモリの測定。
+  - `meloet-hard`（いまは Opus 5.5、effort medium。ふだんは Fable 5.2。2026-11-15 に Fable の使用上限で Opus 5.5 にし、2026-11-18 にヤチヨさんが Fable 5.2 に戻した。2026-11-20 にまた Fable の上限（11/24 21:00 JST まで）で、ヤチヨさんの決めで Opus 5.5 にした。上限が戻ったら Fable 5.2 に戻す）: 音のスレッド、unsafe と FFI、スレッドやプロセスの間のやりとり、WebGL、Rust と画面の約束の核、core のデータの作り、速さとメモリの測定。
   - `meloet-impl`（Opus 5.5、effort medium）: 画面の部品、帯の骨組み、設定、文面、テスト、道具。
   - `meloet-research`（Sonnet 5.5、effort high）: インターネットで調べる。コードは書かない。
   - 難しいか、ふつうか、迷ったら難しいほうへ。

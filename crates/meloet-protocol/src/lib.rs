@@ -2295,10 +2295,20 @@ pub enum StatusMessage {
         width: u32,
         height: u32,
     },
-    /// A plugin window came up (user:2026-11-19): "プラグインの窓が 2 つひらいています".
-    /// `count`: the windows open now, this one with them.
+    /// A plugin window came up and is the only one open (spec 6, 91-2): "Surge XT の窓が
+    /// ひらいています". `name` is the plugin's alone.
+    PluginWindowOpen {
+        name: String,
+    },
+    /// A plugin window came up and others are open too (user:2026-11-19): "プラグインの窓が
+    /// 2 つひらいています". `count`: the windows open now, this one with them; 2 or more.
     PluginWindowsOpen {
         count: u32,
+    },
+    /// A window was asked for and the plugin could not put it up (spec 6, 91-1): "Surge XT
+    /// の窓をひらけませんでした。パラメータの欄では動かせます。" `name` is the plugin's alone.
+    PluginWindowFailed {
+        name: String,
     },
     /// The mixer was opened while insert slots are passed by (user:2026-11-19, mock
     /// F5-MixerBypass): "4 パッド の MVerb をとばしています ・ 3 ドラム の Brick EQ は止まって
@@ -2428,12 +2438,27 @@ pub enum StatusMessage {
     /// Files are held over the window (`WorkspaceView::file_drop`): "SF2 のファイルを持って
     /// きています".
     Sf2Dragging,
+    /// Files are held over the window and none of them is an SF2 file (spec 6): "SF2 では
+    /// ないファイルを持ってきています（足せません）".
+    NotSf2Dragging,
     /// "FluidR3_GM.sf2 を足しました。音色 128 ・ ドラムのキット 9": the presets of the file that
-    /// are no drum kits, and its drum kits.
+    /// are no drum kits, and its drum kits. `skipped`: of the files let go of with it, those
+    /// not added (no SF2 file, or one that did not read): "1 つは SF2 ではないので、足して
+    /// いません。" follows when it is not 0 (spec 6 「SF2 をいくつも足した」).
     Sf2Added {
         file: String,
         presets: u32,
         kits: u32,
+        skipped: u32,
+    },
+    /// More than one SF2 file of the files let go of over the window were added, in the order
+    /// they were held (spec 3, 89-10): "SF2 を 2 つ足しました（FluidR3_GM.sf2 ほか 1 つ）。1 つ
+    /// は SF2 ではないので、足していません。" `first`: the first one added. `skipped` as for
+    /// `Sf2Added`.
+    Sf2AddedMany {
+        added: u32,
+        first: String,
+        skipped: u32,
     },
     /// "FluidR3_GM.sf2 は読めませんでした。ファイルがこわれているか、SF2 ではないかもしれません。"
     Sf2Unreadable {
@@ -2450,6 +2475,25 @@ pub enum StatusMessage {
     /// が見つからないので、4 本のトラックをサイン波で鳴らしています。"
     SoundsMissing {
         tracks: u32,
+    },
+    /// A song was opened that uses a plugin this PC does not have as the instrument of
+    /// `tracks` tracks: "曲で使っている Surge XT が見つかりません。1 本のトラックはサイン波で
+    /// 鳴らしています。" The first such plugin.
+    PluginMissing {
+        name: String,
+        tracks: u32,
+    },
+    /// A plugin this PC has did not load as the instrument of `tracks` tracks of the song,
+    /// which sound as the sine wave (spec 3, 89-12): "曲で使っている Surge XT を読みこめません
+    /// でした。1 本のトラックはサイン波で鳴らしています。"
+    PluginUnreadable {
+        name: String,
+        tracks: u32,
+    },
+    /// 「外す」 on the stopped plugin that was a track's instrument (spec 3, 89-5): "5 Surge XT
+    /// の音源を外しました。サイン波で鳴らします。取り消せます（Mod Z）".
+    InstrumentPluginRemoved {
+        track: TrackRef,
     },
 }
 

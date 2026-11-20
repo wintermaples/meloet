@@ -117,7 +117,8 @@ fn a_file_is_copied_in_replaced_by_one_of_its_name_and_a_broken_one_is_not_added
         Some(StatusMessage::Sf2Added {
             file: RICH.into(),
             presets: 1,
-            kits: 1
+            kits: 1,
+            skipped: 0
         })
     );
     assert_eq!(state.library.opened_sf2.as_deref(), Some(RICH));
@@ -151,6 +152,8 @@ fn a_file_is_copied_in_replaced_by_one_of_its_name_and_a_broken_one_is_not_added
     let held = FileDropView {
         name: RICH.into(),
         addable: true,
+        files: 2,
+        sf2: 1,
     };
     assert_eq!(state.workspace.file_drop, Some(held));
     assert_eq!(state.status.message, Some(StatusMessage::Sf2Dragging));
@@ -339,6 +342,7 @@ fn fluidr3_is_added_listed_and_played_when_this_pc_has_it() {
         file,
         presets,
         kits,
+        ..
     }) = state.status.message.clone()
     else {
         panic!("{:?}", state.status.message);

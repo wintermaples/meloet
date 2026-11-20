@@ -14,7 +14,7 @@ use meloet_model::mixer::{moved_slot, set_plugin_state};
 use meloet_model::{
     InstrumentGroup, InstrumentRef, PluginChange, PluginPlace, PluginRef, StripId, TrackId,
 };
-use meloet_protocol::{InsertRef, PluginSlotRef, PluginState, PluginWindowKind};
+use meloet_protocol::{InsertRef, PluginSlotRef, PluginState, PluginWindowKind, StatusMessage};
 
 use super::mixer::{strip_id, strip_ref};
 use super::seats::AUDITION_SEAT;
@@ -471,19 +471,50 @@ impl Play {
         matches!(spot, Spot::Seat(AUDITION_SEAT) | Spot::Trial(_))
     }
 
-    /// The other answer to [`Effect::LoadPlugin`] and [`Effect::ReloadPlugin`].
-    pub fn plugin_unreadable(&mut self, ticket: u64, effects: &mut Vec<Effect>) {
-        let Some(plug) = self.plugs.list.iter_mut().find(|p| p.ticket == ticket) else {
-            return;
-        };
+    /// The other answer to [`Effect::LoadPlugin`] and [`Effect::ReloadPlugin`]. A track's
+    /// instrument that did not load sounds as the sine wave (spec 3, 89-12); returns what the
+    /// status line says of it then.
+    pub fn plugin_unreadable(
+        &mut self,
+        ticket: u64,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let trial_seat = self.trial_seat();
+        let plug = self.plugs.list.iter_mut().find(|p| p.ticket == ticket)?;
         let spot = plug.spot;
         match plug.phase {
             // Still as it was: stopped.
             Phase::Reloading => plug.phase = Phase::Stopped,
             _ if Self::is_trial_spot(spot) => self.trial_failed(effects),
             _ if spot == Spot::Sample => self.stop_sample(effects),
-            _ => plug.phase = Phase::Failed,
+            _ => {
+                plug.phase = Phase::Failed;
+                let Spot::Seat(seat) = spot else {
+                    return None;
+                };
+                let key = plug.plugin.key.clone();
+                let name = plug.plugin.name.to_string();
+                if trial_seat != Some(seat) {
+                    effects.push(Effect::Engine(EngineOp::Instrument {
+                        seat,
+                        instrument: InstrumentRef::SINE,
+                    }));
+                }
+                let tracks = (self.plugs.list.iter())
+                    .filter(|p| matches!(p.spot, Spot::Seat(_)) && p.phase == Phase::Failed)
+                    .filter(|p| p.plugin.key == key)
+                    .count() as u32;
+                return Some(StatusMessage::PluginUnreadable { name, tracks });
+            }
         }
+        None
+    }
+
+    /// The plugin at a place of the song is there and did not load.
+    pub fn plugin_failed(&self, place: PluginPlace) -> bool {
+        let key = self.doc().plugin(place).map(|p| &p.key);
+        (self.spot_of(place).and_then(|spot| self.plugs.at(spot)))
+            .is_some_and(|p| p.phase == Phase::Failed && Some(&p.plugin.key) == key)
     }
 
     /// The process of the plugin answers no more.
@@ -695,6 +726,15 @@ impl Play {
                 let plugin = plug.plugin.clone();
                 self.drop_plug(spot, effects);
                 self.want_plug(spot, &plugin, None, effects);
+                // The seat sounds as the sine wave until now.
+                if let Spot::Seat(seat) = spot
+                    && self.trial_seat() != Some(seat)
+                {
+                    effects.push(Effect::Engine(EngineOp::Instrument {
+                        seat,
+                        instrument: InstrumentRef::Plugin(plugin),
+                    }));
+                }
             }
             Phase::Loading | Phase::Ready | Phase::Reloading => {}
         }

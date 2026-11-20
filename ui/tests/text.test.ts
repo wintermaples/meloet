@@ -21,7 +21,6 @@ describe("仕様書 5 章「用語の説明」", () => {
   });
 
   it("用語と説明が全部、一字も変わらずに入っている", () => {
-    // 第 8 版の表には「テイク」と「スキャン」が 2 行ずつある（説明はちがう）。どちらの行も入っていること。
     for (const [term, desc] of specTerms) {
       expect(terms.filter((x) => x.term === term).map((x) => x.description), term).toContain(desc);
     }
@@ -62,8 +61,20 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
   });
 
   // ja.ts にない場面: ほかの場面の文を出す決まりだけの場面と、殻（crates/meloet-app）が出す PC のファイルの窓の題。
-  const NOT_IN_JA = ["meloet の音の流れだけが止まった", "PC のファイルの窓の題"];
-  it("6 章の場面は全部 ja.ts に入っている（ja.ts にない 2 つのほか）", () => {
+  // それと、まだ作らない物の文（第 9 版 Y16〜Y19: 取り消しの履歴の帯 ・ 取り消し ・ やりなおし、オートメーション、テンポのだんだん、マーカー）。
+  const NOT_YET = [
+    "取り消した",
+    "やりなおした",
+    "履歴で戻した",
+    "取り消せる手がない",
+    "オートメーションを書いている",
+    "オートメーションを休ませた",
+    "オートメーションをもどした",
+    "テンポのだんだんをえらんでいる",
+    "マーカーを足した",
+  ];
+  const NOT_IN_JA = ["meloet の音の流れだけが止まった", "PC のファイルの窓の題", ...NOT_YET];
+  it("6 章の場面は全部 ja.ts に入っている（ja.ts にない物のほか）", () => {
     for (const scene of NOT_IN_JA) expect(byScene.has(scene), scene).toBe(true);
     expect([...new Set(messages.map(([, e]) => e.scene))].sort()).toEqual(
       [...byScene.keys()].filter((k) => !NOT_IN_JA.includes(k)).sort(),

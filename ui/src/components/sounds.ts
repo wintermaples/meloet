@@ -67,9 +67,18 @@ export function soundNameText(sound: SoundName): string {
   return sound.name;
 }
 
-/** 「サイン波で代わり」に乗ったときの文。音の素材のときだけ仕様書に文がある。 */
-export function standInTip(standIn: StandIn): string | null {
-  return standIn === "packMissing" ? t("track.standInPackTip") : null;
+/** 「サイン波で代わり」に乗ったときの文（仕様書 3 章 85 ・ 89-9）。sound はトラックの音源（曲が持っている形のまま）。 */
+export function standInTip(standIn: StandIn, sound: SoundView): string {
+  switch (standIn) {
+    case "packMissing":
+      return t("track.standInPackTip");
+    case "sf2Missing":
+      return sound.kind === "sf2" ? t("track.standInSf2Tip", { file: sound.file }) : t("track.standInPackTip");
+    case "pluginMissing":
+      return t("track.standInPluginTip", { name: soundViewName(sound) });
+    case "pluginUnreadable":
+      return t("track.standInUnreadableTip", { name: soundViewName(sound) });
+  }
 }
 
 export const formatName = (f: PluginFormat) => t(`plugin.format.${f}`);

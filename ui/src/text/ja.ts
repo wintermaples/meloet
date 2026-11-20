@@ -202,6 +202,13 @@ export const texts = {
     "プラグインの窓が {count} つひらいています",
     { count: "2" },
   ),
+  // 窓が 1 つのとき（2 つ以上は msg.windowsOpen）。
+  "msg.windowOpen": s6("プラグインの窓がひらいた", "{name} の窓がひらいています", { name: "Surge XT" }, "part"),
+  "msg.windowFailed": s6(
+    "プラグインの窓を出せない",
+    "{name} の窓をひらけませんでした。パラメータの欄では動かせます。",
+    { name: "Surge XT" },
+  ),
   "msg.windowOpening": s6(
     "窓をひらくのに時間がかかる",
     "{name}の窓をひらいています…",
@@ -541,6 +548,11 @@ export const texts = {
     "テイク {take} を消しました。テイク {active} / {total} にしました。取り消せます（{undoKey}）",
     { take: "2", active: "1", total: "2", undoKey: "Mod Z" },
   ),
+  // 曲のダイアログ（仕様書 3 章 89-6）。見出しは曲の名前のまま、状態行だけ名前で言う。
+  "status.songDialogOpen": s6("曲のダイアログをひらいている", "「{dialog}」のダイアログをひらいています", { dialog: "保存していない変更" }),
+  "songDialog.unsaved": e("保存していない変更", "spec:3"),
+  "songDialog.cannotSave": e("保存できませんでした", "spec:3"),
+  "songDialog.broken": e("ひらけない曲", "spec:3"),
   // 「音の設定をひらいています」は status.settingsOpen。
   "status.dialogOpen": s6(
     "ダイアログをひらいている",
@@ -577,6 +589,18 @@ export const texts = {
     "SF2 ではないファイルを持ってきている",
     "SF2 のファイルではないので、足せません。",
   ),
+  "sf2.notSf2Dragging": s6("SF2 でないファイルを持ってきている", "SF2 ではないファイルを持ってきています（足せません）"),
+  // 窓のまん中の箱の、ファイルの名前の所。SF2 が 1 つもないときは前だけ（design-notes A-19）。
+  "sf2.manyFiles": s6("ファイルをいくつも持ってきている", "{files} つのファイル ・ SF2 は {sf2} つ", { files: "3", sf2: "2" }),
+  "sf2.manyFilesNoSf2": s6("ファイルをいくつも持ってきている", "{files} つのファイル", { files: "3" }, "part"),
+  // 「SF2 をいくつも足した」の 2 文。足した SF2 が 1 つなら、sf2.added のうしろに 2 文目だけ（design-notes A-19）。
+  "sf2.addedMany": s6(
+    "SF2 をいくつも足した",
+    "SF2 を {count} つ足しました（{file} ほか {others} つ）。",
+    { count: "2", file: "FluidR3_GM.sf2", others: "1" },
+    "part",
+  ),
+  "sf2.skipped": s6("SF2 をいくつも足した", "{count} つは SF2 ではないので、足していません。", { count: "1" }, "part"),
   "sf2.added": s6(
     "SF2 を足した",
     "{file} を足しました。音色 {count} ・ ドラムのキット {kits}",
@@ -624,6 +648,9 @@ export const texts = {
   "button.openWindow": e("窓をひらく", "spec:3"),
   "track.standIn": e("サイン波で代わり", "spec:3"),
   "track.standInPackTip": e("音の素材が見つからないので、サイン波で鳴らしています。", "spec:3"),
+  "track.standInSf2Tip": e("{file} が見つからないので、サイン波で鳴らしています。", "spec:3", { file: "FluidR3_GM.sf2" }),
+  "track.standInPluginTip": e("{name} が見つからないので、サイン波で鳴らしています。", "spec:3", { name: "Surge XT" }),
+  "track.standInUnreadableTip": e("{name} を読みこめなかったので、サイン波で鳴らしています。", "spec:3", { name: "Surge XT" }),
   "mixer.stoppedMark": e("止", "spec:3"),
   "shelf.missingRow": e("見つかりません", "mock:A-Mixer"),
   // 棚の下の、止まったプラグインの箱（モック A-Mixer: 見出しと、6 章「プラグインが止まった」の文の残り）。
@@ -639,7 +666,6 @@ export const texts = {
     query: "Dragonfly",
     count: "4",
   }),
-  "status.shelfHeading": e("{name} {count}", "mock:F5-ShelfFx", { name: "リバーブ", count: "23" }),
   // 同じ名前のノートをまとめる（「スネア ×2」）。
   "note.keyCount": e("{name} ×{count}", "spec:3", { name: "スネア", count: "2" }),
   // ドラムでノートを上下に動かすときの読み値（ふつうのピアノロールは pr.readMove）。
@@ -817,15 +843,17 @@ export const texts = {
     "mock:F-ParamSearch",
     { query: "cutoff", count: "24" },
   ),
-  "status.insertBypassedNow": e(
+  "status.insertBypassedNow": s6(
+    "ミキサーをひらいた（とばした ・ 止まった枠がある）",
     "{strip} の {effect} をとばしています",
-    "mock:F5-MixerBypass",
     { strip: "4 パッド", effect: "MVerb" },
+    "part",
   ),
-  "status.pluginStoppedNow": e(
+  "status.pluginStoppedNow": s6(
+    "ミキサーをひらいた（とばした ・ 止まった枠がある）",
     "{strip} の {name} は止まっています（音は、その枠をとばして流しています）",
-    "mock:F5-MixerBypass",
     { strip: "3 ドラム", name: "Brick EQ" },
+    "part",
   ),
   "windows.heading": e("ひらいている窓 ・ 押すと前に出ます", "mock:F-WindowOpen"),
   "windows.raiseAll": e("ぜんぶ前に出す", "mock:F-WindowOpen"),
@@ -841,6 +869,14 @@ export const texts = {
   "params.searchHint": e("さがす枠を空にすると、グループの一覧に戻ります", "mock:F-ParamSearch"),
   "params.more": e("… ほか {count}", "spec:3", { count: "6" }),
   "params.groupOther": e("そのほか", "mock:F-ParamMany"),
+  // 鍵盤のつまみを受けるだけのパラメータ（仕様書 3 章 91-3）。さがしているときだけ、このグループに出す。
+  "params.keyboardKnobs": e("鍵盤のつまみを受ける所", "spec:3"),
+  // 一覧の下。first と last は、最初と最後の名前（last は first と同じ頭を外した所。「MIDI CC 0|0」〜「15|129」）。
+  "params.keyboardKnobsHidden": e(
+    "ほかに、鍵盤のつまみを受けるだけの {count} 個（{first} 〜 {last}）は出していません。さがすと出ます。",
+    "spec:3",
+    { count: "2080", first: "MIDI CC 0|0", last: "15|129" },
+  ),
   "params.automated": e("オートメーションに書いている", "spec:3"),
   "params.unknownValue": e("—", "user:2026-11-19"),
   "params.nothingInstrument": e("音源の枠をえらぶと、音源のパラメータが出ます。", "spec:3"),
@@ -891,6 +927,26 @@ export const texts = {
     "プラグインを読みこめない",
     "{name} を読みこめませんでした。",
     { name: "Surge XT" },
+  ),
+  "plugin.loadFailedShelf": s6(
+    "プラグインを読みこめない（棚）",
+    "{name} を読みこめませんでした。こわれているか、この PC では動かないのかもしれません。",
+    { name: "Surge XT" },
+  ),
+  "plugin.missingSong": s6(
+    "プラグインが見つからない（曲をひらいた）",
+    "曲で使っている {name} が見つかりません。{count} 本のトラックはサイン波で鳴らしています。",
+    { name: "Surge XT", count: "1" },
+  ),
+  "plugin.unreadableSong": s6(
+    "プラグインを読みこめない（曲をひらいた）",
+    "曲で使っている {name} を読みこめませんでした。{count} 本のトラックはサイン波で鳴らしています。",
+    { name: "Surge XT", count: "1" },
+  ),
+  "plugin.instrumentRemoved": s6(
+    "音源のプラグインを外した",
+    "{track} の音源を外しました。サイン波で鳴らします。取り消せます（{undoKey}）",
+    { track: "5 Surge XT", undoKey: "Mod Z" },
   ),
   // 止まった物が 0 のときは、6 章の文の前半だけ（design-notes A-16）。
   "msg.scanDoneNone": s6(
@@ -1505,17 +1561,14 @@ export const texts = {
     { tracks: "4 パッド ・ 5 ベース" },
     "quoted",
   ),
-  // 棚が音源の一覧でひらいていて、いつものまとめを出すとき。groups はひらいている見出し（status.shelfGroupsLast でつなぐ）。
-  "status.shelfOpen": e("音色 {count} ・ {groups}をひらいています", "mock:R8-Shelf84", {
-    count: "31",
-    groups: "ピアノ ・ 鍵盤とギター",
-  }),
-  "status.shelfCount": e("音色 {count}", "mock:R8-Shelf84", { count: "31" }),
-  // 3 つ以上は、前を LIST_COMMA でならべ、最後だけ「と」。
-  "status.shelfGroupsLast": e("{first}と{last}", "mock:R8-Shelf84", {
-    first: "ピアノ ・ 鍵盤",
-    last: "ギター",
-  }),
+  // 棚をひらいた時と、見出しをひらく ・ たたむ時（仕様書 6 章「棚をひらいている（見出し）」）。groups はひらいている見出し。
+  // 2 つ ・ 3 つ（・ 4 つ）は status.shelfGroupsLast（前は LIST_COMMA でならべる）、5 つ以上は status.shelfGroupsMore。
+  "status.shelfOpen": s6("棚をひらいている（見出し）", "音色 {count} ・ {groups} をひらいています", { count: "31", groups: "ピアノ ・ 鍵盤 と ギター" }, "part"),
+  "status.shelfCount": s6("棚をひらいている（見出し）", "音色 {count}", { count: "31" }, "part"),
+  "status.shelfGroupsLast": s6("棚をひらいている（見出し）", "{first} と {last}", { first: "ピアノ ・ 鍵盤、ギター", last: "ベース" }, "part"),
+  "status.shelfGroupsMore": s6("棚をひらいている（見出し）", "{first} ほか {count} つ", { first: "ピアノ ・ 鍵盤", count: "4" }, "part"),
+  // 6 章「棚をひらいている（見出し）」の出る場所の列（エフェクトの一覧）。
+  "status.shelfEffectsOpen": e("エフェクト {count} ・ {groups} をひらいています", "spec:6", { count: "512", groups: "リバーブ" }),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
   "status.outputNone": e("出口: まだ", "spec:3"),
   "status.inputs": e("入口: {inputs}", "mock:Main", {
@@ -2010,17 +2063,23 @@ const st = (term: string, description: string): Term => ({
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
   st(
+    "休み（オートメーション）",
+    "手で動かしたので、オートメーションがそのパラメータを動かすのを休んでいること。「もどす」で線のとおりに戻る。",
+  ),
+  st("だんだん", "テンポを、ある点から次の点まで、少しずつ変えていくこと。"),
+  st("手", "取り消し ・ やりなおしの 1 回分。ドラッグ 1 回、ボタン 1 回が 1 手。"),
+  st("テンポの変更", "曲のとちゅうで、速さを変える所。"),
+  st("拍子の変更", "曲のとちゅうで、1 小節の拍の数を変える所。小節の頭でだけ変えられる。"),
+  st(
     "とばす",
     "エフェクトを外さずに、音がそこを通らないようにする。かける前と後をくらべるのに使う。ほかでは「バイパス」とも呼ぶ。",
   ),
-  st("スキャン", "PC に入っているプラグインを、meloet が調べて棚に入れること。"),
   st("作った人", "プラグインを作った人や会社。プラグインが自分で言ってくる。"),
   st("SF2", "音色がたくさん入った 1 つのファイル。サウンドフォントとも呼ぶ。"),
   st(
     "GM",
     "音色の番号の、世界共通の決まり。1 番がピアノ、ドラムは決まった鍵に決まった楽器。",
   ),
-  st("テイク", "同じ所を何回か録ったときの、1 回分。"),
   st(
     "サイン波",
     "いちばん単純な、まるい音。音の高さを確かめるのにむいている。",
@@ -2226,5 +2285,5 @@ export function t(
 /** 状態行の左の文の、部分どうしのつなぎ（仕様書 6 章「止まっているときの状態行の左」の「 ・ 」でつなぐ）。 */
 export const STATUS_JOIN = " ・ ";
 
-/** 3 つ以上の名前をならべるときの、最後の「と」より前のつなぎ（棟梁の決め 2026-11-19。仕様書にもモックにもない）。 */
+/** 3 つ以上の名前をならべるときの、最後の「と」より前のつなぎ（仕様書 6 章「棚をひらいている（見出し）」の「ピアノ ・ 鍵盤、ギター と ベース」）。 */
 export const LIST_COMMA = "、";

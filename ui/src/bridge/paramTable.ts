@@ -100,6 +100,7 @@ export class ParamTableBook {
         this.held = got;
         this.rows.clear();
         for (const g of got.groups) for (const r of g.params) this.rows.set(r.id, r);
+        for (const r of got.keyboardKnobs) this.rows.set(r.id, r);
         const queued = this.waiting;
         this.waiting = [];
         let gap = false;

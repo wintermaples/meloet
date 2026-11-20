@@ -218,7 +218,8 @@
             >
           {:else if track.standIn}
             <!-- サイン波で代わりに鳴らしている（仕様書 3 章 85: gray.8。乗ると、わけ）。 -->
-            <button class="m-plain m-lbl instrument" data-test="track-instrument" use:tip={standInTip(track.standIn)} onclick={() => replaceInstrument(track)}
+            <button class="m-plain m-lbl instrument" data-test="track-instrument" use:tip={standInTip(track.standIn, track.sound)} onclick={() => replaceInstrument(track)}
+              oncontextmenu={(e) => instrumentContext(e, track)}
               >{t("track.standIn")}</button
             >
           {:else if track.sound.kind === "plugin"}
@@ -235,11 +236,20 @@
             {@const name = soundViewName(track.sound)}
             <!-- 用語の説明がある音色（サイン波）だけ、乗せると説明が出る。 -->
             {#if findTerm(name)}
-              <button class="m-plain m-lbl instrument" data-test="track-instrument" use:term={name} onclick={() => replaceInstrument(track)}
-                >{name}</button
+              <button
+                class="m-plain m-lbl instrument"
+                data-test="track-instrument"
+                use:term={name}
+                onclick={() => replaceInstrument(track)}
+                oncontextmenu={(e) => instrumentContext(e, track)}>{name}</button
               >
             {:else}
-              <button class="m-plain m-lbl instrument" data-test="track-instrument" onclick={() => replaceInstrument(track)}>{name}</button>
+              <button
+                class="m-plain m-lbl instrument"
+                data-test="track-instrument"
+                onclick={() => replaceInstrument(track)}
+                oncontextmenu={(e) => instrumentContext(e, track)}>{name}</button
+              >
             {/if}
           {/if}
           <span class="m-num" use:term={"dB"}>{track.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(track.gainDb) })}</span>

@@ -13,7 +13,19 @@
   import { metrics } from "../metrics.svelte";
   import { paramUi } from "./paramUi.svelte";
   import PluginParamRow from "./PluginParamRow.svelte";
-  import { foldedAtFirst, matchCount, pluginEntries, sameGroups, stepLabels, stepOf, stepPluginRow, tableCount, valueOfStep, type PluginEntry } from "./pluginRows";
+  import {
+    foldedAtFirst,
+    hiddenKnobs,
+    matchCount,
+    pluginEntries,
+    sameGroups,
+    stepLabels,
+    stepOf,
+    stepPluginRow,
+    tableCount,
+    valueOfStep,
+    type PluginEntry,
+  } from "./pluginRows";
 
   let { sel, plugin, usable }: { sel: SelectedPlugin; plugin: string; usable: boolean } = $props();
 
@@ -55,6 +67,7 @@
     paramUi.matches = table ? matchCount(table, paramUi.query) : 0;
   });
   const searching = $derived(paramUi.query.trim() !== "");
+  const knobs = $derived(table ? hiddenKnobs(table) : null);
 
   // ---- 見えている所だけを作る（どの行も高さ 24） ----
 
@@ -200,6 +213,9 @@
     {:else if table && total > 40}
       <div class="hint m-lbl" data-test="params-hint"><span>{t("params.foldedHint")}</span></div>
     {/if}
+    {#if knobs && !searching}
+      <div class="hint knobs m-lbl" data-test="params-knobs"><span>{t("params.keyboardKnobsHidden", knobs)}</span></div>
+    {/if}
   </div>
 </ScrollArea>
 
@@ -234,6 +250,9 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .knobs {
+    white-space: normal;
   }
   .none {
     display: flex;

@@ -355,7 +355,7 @@
               <span data-part="target-instrument"
                 >{#each piece.text.split(new RegExp(`(${INSTRUMENT})`)) as bit, j (j)}{#if bit === INSTRUMENT}{@const standIn = right.track.standIn}{@const name = standIn
                       ? t("track.standIn")
-                      : soundViewName(right.track.sound)}{#if standIn}<span class="stand-in" use:tip={standInTip(standIn)}
+                      : soundViewName(right.track.sound)}{#if standIn}<span class="stand-in" use:tip={standInTip(standIn, right.track.sound)}
                         >{name}</span
                       >{:else if findTerm(name)}<span use:term={name}>{name}</span>{:else}<span>{name}</span>{/if}{:else}{bit}{/if}{/each}</span
               >

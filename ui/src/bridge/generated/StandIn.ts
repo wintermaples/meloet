@@ -4,4 +4,4 @@
  * Why a track sounds as the sine wave in place of its own sound: its header and the mixer
  * say 「サイン波で代わり」 where the name of the sound would be (spec 3, 85).
  */
-export type StandIn = "packMissing" | "sf2Missing" | "pluginMissing";
+export type StandIn = "packMissing" | "sf2Missing" | "pluginMissing" | "pluginUnreadable";

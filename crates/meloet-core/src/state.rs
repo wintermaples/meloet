@@ -20,10 +20,10 @@ use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
     EndpointView, FileDropView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView,
     KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
-    MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginWindowKind,
-    QuantizeSettings, RecoveryCause, SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView,
-    SoundRef, StandIn, StatusMessage, StatusView, TrackView, Unusable, VelocityFixed,
-    WorkspaceView,
+    MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginRole,
+    PluginWindowKind, QuantizeSettings, RecoveryCause, ScanView, SettingsDialogView, ShelfMode,
+    ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView, TrackView,
+    Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -482,6 +482,21 @@ pub struct Model {
     file_drop: Option<FileDropView>,
     /// Esc while files were held over the window: letting go of them adds nothing.
     drop_cancelled: bool,
+    /// Several files were let go of over the window and their SF2 files are being added.
+    sf2_batch: Option<Sf2Batch>,
+}
+
+/// The SF2 files of one drop of several files, said as one once the last is answered.
+#[derive(Debug, Default)]
+struct Sf2Batch {
+    /// Answers still to come.
+    waiting: u32,
+    /// The files added, in the order they were held, with what `Sf2Added` says of each.
+    added: Vec<(String, u32, u32)>,
+    /// The files not added: no SF2 file, or one that did not read.
+    skipped: u32,
+    /// The first file that did not read.
+    unreadable: Option<String>,
 }
 
 struct OpenStream {
@@ -549,6 +564,7 @@ impl Model {
             rows_seen: 0,
             file_drop: None,
             drop_cancelled: false,
+            sf2_batch: None,
         }
     }
 
@@ -743,7 +759,9 @@ impl Model {
             }
             Input::PluginLoaded { ticket } => self.play.plugin_loaded(ticket, &mut effects),
             Input::PluginUnreadable { ticket } => {
-                self.play.plugin_unreadable(ticket, &mut effects);
+                if let Some(n) = self.play.plugin_unreadable(ticket, &mut effects) {
+                    self.notice = Some(n);
+                }
             }
             Input::PluginStopped { ticket } => {
                 self.play.plugin_stopped(ticket, &mut effects);
@@ -755,6 +773,9 @@ impl Model {
             Input::PluginsLost => self.play.plugs_lost(&mut effects),
             Input::PluginSaid { ticket, said } => {
                 if let Some(n) = self.play.plugin_said(ticket, said, &mut effects) {
+                    self.notice = Some(n);
+                }
+                if let Some(n) = self.play.take_window_failed() {
                     self.notice = Some(n);
                 }
             }
@@ -769,16 +790,24 @@ impl Model {
                 }
             }
             Input::Sf2Added(info) => self.sf2_added(*info, &mut effects),
-            Input::Sf2NotAdded { file } => {
-                self.notice = Some(StatusMessage::Sf2Unreadable { file });
-            }
+            Input::Sf2NotAdded { file } => match &mut self.sf2_batch {
+                Some(batch) => {
+                    batch.skipped += 1;
+                    batch.unreadable.get_or_insert(file);
+                    self.sf2_answered();
+                }
+                None => self.notice = Some(StatusMessage::Sf2Unreadable { file }),
+            },
             Input::FilesOver(paths) => {
                 self.drop_cancelled = false;
+                let sf2 = paths.iter().filter(|p| sf2store::looks_like_sf2(p)).count() as u32;
                 self.file_drop = paths.first().map(|path| FileDropView {
                     name: (path.file_name())
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_default(),
-                    addable: sf2store::looks_like_sf2(path),
+                    addable: sf2 > 0,
+                    files: paths.len() as u32,
+                    sf2,
                 });
             }
             Input::FilesLeft => {
@@ -788,12 +817,19 @@ impl Model {
             Input::FilesDropped(paths) => {
                 self.file_drop = None;
                 let cancelled = std::mem::take(&mut self.drop_cancelled);
-                // Of several files the first is taken (design-notes A-16).
-                if let (false, false, Some(first)) =
-                    (cancelled, self.play.busy(), paths.into_iter().next())
-                    && sf2store::looks_like_sf2(&first)
-                {
-                    effects.push(Effect::AddSf2(first));
+                // Every SF2 file, in the order they were held; the others are passed over
+                // (spec 3, 89-10).
+                if !cancelled && !self.play.busy() {
+                    let (sf2, others): (Vec<PathBuf>, Vec<PathBuf>) =
+                        paths.into_iter().partition(|p| sf2store::looks_like_sf2(p));
+                    if sf2.len() + others.len() > 1 && !sf2.is_empty() {
+                        self.sf2_batch = Some(Sf2Batch {
+                            waiting: sf2.len() as u32,
+                            skipped: others.len() as u32,
+                            ..Sf2Batch::default()
+                        });
+                    }
+                    effects.extend(sf2.into_iter().map(Effect::AddSf2));
                 }
             }
         }
@@ -1189,6 +1225,7 @@ impl Model {
             Command::SelectParam { param } => self.play.select_param(param),
             Command::ShelfCancel => {
                 self.play.end_audition(effects);
+                self.play.forget_unreadable();
             }
             Command::PlaySample { instrument } => {
                 if self.bands.side_is_open(SidePanel::Shelf) {
@@ -1412,8 +1449,10 @@ impl Model {
             // The engine hands the plugin back when the step takes it out of the song, and
             // it is let go of then.
             Command::RemovePlugin { slot } => {
-                if self.play.plugin_is_down(slot) {
-                    self.play.remove_plugin(slot, effects);
+                if self.play.plugin_is_down(slot)
+                    && let Some(n) = self.play.remove_plugin(slot, effects)
+                {
+                    self.notice = Some(n);
                 }
             }
             Command::ShelfSelectSound { sound } => match sound {
@@ -1556,11 +1595,21 @@ impl Model {
         let kits = (info.presets.iter())
             .filter(|p| p.family() == GmFamily::DrumKit)
             .count() as u32;
-        self.notice = Some(StatusMessage::Sf2Added {
-            file: info.file.clone(),
-            presets: info.presets.len() as u32 - kits,
-            kits,
-        });
+        let presets = info.presets.len() as u32 - kits;
+        match &mut self.sf2_batch {
+            Some(batch) => {
+                batch.added.push((info.file.clone(), presets, kits));
+                self.sf2_answered();
+            }
+            None => {
+                self.notice = Some(StatusMessage::Sf2Added {
+                    file: info.file.clone(),
+                    presets,
+                    kits,
+                    skipped: 0,
+                });
+            }
+        }
         self.play
             .sf2_added(&info.file, sf2_keys(&info).collect(), effects);
         self.catalog.sf2_added(info);
@@ -1574,6 +1623,38 @@ impl Model {
         }
     }
 
+    /// One file of `sf2_batch` was answered: after the last, the status line says what came
+    /// of them all.
+    fn sf2_answered(&mut self) {
+        let Some(batch) = &mut self.sf2_batch else {
+            return;
+        };
+        batch.waiting = batch.waiting.saturating_sub(1);
+        if batch.waiting > 0 {
+            return;
+        }
+        let Some(batch) = self.sf2_batch.take() else {
+            return;
+        };
+        let skipped = batch.skipped;
+        self.notice = match (batch.added.len(), batch.added.into_iter().next()) {
+            (1, Some((file, presets, kits))) => Some(StatusMessage::Sf2Added {
+                file,
+                presets,
+                kits,
+                skipped,
+            }),
+            (added, Some((first, _, _))) => Some(StatusMessage::Sf2AddedMany {
+                added: added as u32,
+                first,
+                skipped,
+            }),
+            (_, None) => batch
+                .unreadable
+                .map(|file| StatusMessage::Sf2Unreadable { file }),
+        };
+    }
+
     /// A song was opened: says so when it uses sounds this PC does not have (spec 6).
     pub(super) fn say_missing(&mut self) {
         let library = self.library_view();
@@ -1585,10 +1666,25 @@ impl Model {
             })
             .count() as u32;
         let missing = added::missing(doc, &library, self.plugins.home());
+        let scanning = matches!(self.plugins.view().scan, ScanView::Running { .. });
+        let plugin = (missing.iter()).find_map(|m| match m {
+            MissingView::Plugin {
+                key,
+                name,
+                role: PluginRole::Instrument,
+                ..
+            } if !scanning => Some((key.clone(), name.clone())),
+            _ => None,
+        });
         if pack > 0 {
             self.notice = Some(StatusMessage::SoundsMissing { tracks: pack });
         } else if let Some(MissingView::Sf2 { file, tracks }) = missing.into_iter().next() {
             self.notice = Some(StatusMessage::Sf2Missing { file, tracks });
+        } else if let Some((key, name)) = plugin {
+            let tracks = (doc.tracks.iter())
+                .filter(|t| matches!(&t.instrument, InstrumentRef::Plugin(p) if *p.key == *key))
+                .count() as u32;
+            self.notice = Some(StatusMessage::PluginMissing { name, tracks });
         }
     }
 
@@ -2012,8 +2108,11 @@ impl Model {
         {
             return Some(StatusMessage::PluginStopped { name, slot });
         }
-        if self.file_drop.as_ref().is_some_and(|d| d.addable) {
-            return Some(StatusMessage::Sf2Dragging);
+        if let Some(drop) = &self.file_drop {
+            return Some(match drop.addable {
+                true => StatusMessage::Sf2Dragging,
+                false => StatusMessage::NotSf2Dragging,
+            });
         }
         if let Some(m) = self.play.moving_status() {
             return Some(m);
@@ -2170,7 +2269,10 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
                     &t.instrument,
                     play.plugin_state(PluginPlace::Instrument(t.id)),
                 ),
-                stand_in: added::stand_in(&t.instrument, library, &sounds),
+                stand_in: added::stand_in(&t.instrument, library, &sounds).or_else(|| {
+                    (play.plugin_failed(PluginPlace::Instrument(t.id)))
+                        .then_some(StandIn::PluginUnreadable)
+                }),
                 drum_keys: match &t.instrument {
                     InstrumentRef::Sf2(s) if s.family() == GmFamily::DrumKit => catalog
                         .sf2_preset(&s.file, s.bank, s.program)

@@ -5,6 +5,7 @@ import { FAKE_TABLES, SURGE_AUTOMATED, fakeParamTable } from "../src/bridge/fake
 import { ParamTableBook } from "../src/bridge/paramTable";
 import { PROTOCOL_VERSION, type Command, type InsertRef, type ParamTable, type ParamValues, type PluginSlotRef } from "../src/bridge/types";
 import { builtinOf, pluginAt, pluginOf, selectedInsert, selectedInstrument, windowOf } from "../src/components/params/selected";
+import { mockScreenText as mockText } from "./design-sources";
 
 const scene = (name: string) => fakeScene(name)!.state;
 const run = (s: FakeState, command: Command) => reduceMixer(s, s.shelf, s.song, command)!;
@@ -28,7 +29,7 @@ describe("約束 18 の形", () => {
 });
 
 describe("偽物の場面（モックの中身）", () => {
-  it("F-WindowOpen: 窓が 2 つ（1 ピアノの音源の Surge XT、戻り A の Dragonfly Reverb）。たたんだ欄は「Surge XT 2855」", () => {
+  it("F-WindowOpen: 窓が 2 つ（1 ピアノの音源の Surge XT、戻り A の Dragonfly Reverb）。たたんだ欄は「Surge XT 774」（91-3 の読みかえ）", () => {
     const s = scene("windowOpen");
     expect(s.windows.list.map((w) => w.name)).toEqual(["Surge XT", "Dragonfly Reverb"]);
     const surge: PluginSlotRef = { kind: "instrument", track: s.song.tracks[0]!.id };
@@ -36,7 +37,7 @@ describe("偽物の場面（モックの中身）", () => {
     expect(windowOf(s.windows, { kind: "insert", insert: { strip: { kind: "return", bus: "a" }, slot: 0 } })?.name).toBe("Dragonfly Reverb");
     expect(windowOf(s.windows, { kind: "instrument", track: s.song.tracks[1]!.id })).toBeNull();
     expect(pluginAt(s.song, surge)).toMatchObject({ name: "Surge XT", format: "vst3", state: "ready" });
-    expect(pluginOf(s.params)).toMatchObject({ slot: surge, count: 2855, window: "opens" });
+    expect(pluginOf(s.params)).toMatchObject({ slot: surge, count: 774, window: "opens" });
     expect(selectedInstrument(s.params)).toBe(surge.track);
     expect(s.workspace.layout.rightOpen).not.toContain("params");
     expect(s.song.tracks.map((t) => [t.name, t.gainDb, t.pan, t.sends])).toEqual([
@@ -62,13 +63,18 @@ describe("偽物の場面（モックの中身）", () => {
     expect(s.workspace.layout.rightFront).toBe("params");
   });
 
-  it("F-ParamMany ・ F-ParamSearch: Surge XT は 2855 個、6 つのグループ。「cutoff」は Scene A と Scene B に 12 個ずつ", () => {
-    const s = scene("paramMany");
+  it("F6-ParamMany ・ F-ParamSearch: Surge XT は 774 個、6 つのグループと、鍵盤のつまみを受けるだけの 2080 個。「cutoff」は Scene A と Scene B に 12 個ずつ", () => {
+    const s = scene("paramMany6");
     const sel = pluginOf(s.params)!;
     const table = fakeParamTable(sel.table!)!;
-    expect(table.groups.map((g) => [g.name, g.params.length])).toEqual([["Macros", 8], ["Global", 21], ["FX", 400], ["Scene A", 613], ["Scene B", 613], [null, 1200]]);
-    expect(rows(table).length).toBe(2855);
-    expect(new Set(rows(table).map((r) => r.id)).size).toBe(2855);
+    expect(table.groups.map((g) => [g.name, g.params.length])).toEqual([["Macros", 8], ["Global", 21], ["FX", 120], ["Scene A", 300], ["Scene B", 300], [null, 25]]);
+    const squash = (x: string) => x.replace(/\s+/g, "");
+    expect(squash(mockText("F6-ParamMany"))).toContain(squash("Global 21 ▸ FX 120 ▸ Scene A 300 ▸ Scene B 300 ▸ そのほか 25"));
+    expect(rows(table).length).toBe(774);
+    expect(sel.count).toBe(774);
+    expect(table.keyboardKnobs.length).toBe(2080);
+    expect([table.keyboardKnobs[0]!.name, table.keyboardKnobs.at(-1)!.name]).toEqual(["MIDI CC 0|0", "MIDI CC 15|129"]);
+    expect(new Set([...rows(table), ...table.keyboardKnobs].map((r) => r.id)).size).toBe(774 + 2080);
     expect(table.groups.map((g) => g.params.filter((r) => r.name.toLowerCase().includes("cutoff")).length)).toEqual([0, 0, 0, 12, 12, 0]);
     expect(table.groups[0]!.params.map((r) => r.text)).toEqual(["35.00 %", "0.00 %", "62.50 %", "0.00 %", "0.00 %", "100.00 %", "0.00 %", "12.00 %"]);
     expect(sel.automated.map((id) => rows(table).find((r) => r.id === id)!.name)).toEqual(["A Filter 1 Cutoff", "A Osc 1 Pitch"]);

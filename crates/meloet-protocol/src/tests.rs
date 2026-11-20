@@ -181,6 +181,8 @@ fn sample_state() -> AppState {
             file_drop: Some(FileDropView {
                 name: "FluidR3_GM.sf2".into(),
                 addable: true,
+                files: 3,
+                sf2: 2,
             }),
         },
         library: LibraryView {
@@ -1241,7 +1243,7 @@ fn state_json_is_camel_case_and_round_trips() {
     );
     assert_eq!(
         v["state"]["workspace"]["fileDrop"],
-        json!({"name": "FluidR3_GM.sf2", "addable": true})
+        json!({"name": "FluidR3_GM.sf2", "addable": true, "files": 3, "sf2": 2})
     );
     let track = &v["state"]["song"]["tracks"][0];
     assert_eq!(track["gainDb"], -3.0);
@@ -1980,9 +1982,15 @@ fn added_things_json_shape() {
             StandIn::PackMissing,
             StandIn::Sf2Missing,
             StandIn::PluginMissing,
+            StandIn::PluginUnreadable,
         ])
         .unwrap(),
-        json!(["packMissing", "sf2Missing", "pluginMissing"]),
+        json!([
+            "packMissing",
+            "sf2Missing",
+            "pluginMissing",
+            "pluginUnreadable"
+        ]),
     );
     check(
         serde_json::to_value(GmFamily::ALL).unwrap(),
@@ -2114,12 +2122,46 @@ fn added_things_json_shape() {
         ),
         (StatusMessage::Sf2Dragging, json!({"id": "sf2Dragging"})),
         (
+            StatusMessage::NotSf2Dragging,
+            json!({"id": "notSf2Dragging"}),
+        ),
+        (
             StatusMessage::Sf2Added {
                 file: "FluidR3_GM.sf2".into(),
                 presets: 128,
                 kits: 9,
+                skipped: 0,
             },
-            json!({"id": "sf2Added", "file": "FluidR3_GM.sf2", "presets": 128, "kits": 9}),
+            json!({"id": "sf2Added", "file": "FluidR3_GM.sf2", "presets": 128, "kits": 9,
+                   "skipped": 0}),
+        ),
+        (
+            StatusMessage::Sf2AddedMany {
+                added: 2,
+                first: "FluidR3_GM.sf2".into(),
+                skipped: 1,
+            },
+            json!({"id": "sf2AddedMany", "added": 2, "first": "FluidR3_GM.sf2", "skipped": 1}),
+        ),
+        (
+            StatusMessage::PluginMissing {
+                name: "Surge XT".into(),
+                tracks: 1,
+            },
+            json!({"id": "pluginMissing", "name": "Surge XT", "tracks": 1}),
+        ),
+        (
+            StatusMessage::PluginUnreadable {
+                name: "Surge XT".into(),
+                tracks: 1,
+            },
+            json!({"id": "pluginUnreadable", "name": "Surge XT", "tracks": 1}),
+        ),
+        (
+            StatusMessage::InstrumentPluginRemoved {
+                track: track.clone(),
+            },
+            json!({"id": "instrumentPluginRemoved", "track": track_json}),
         ),
         (
             StatusMessage::Sf2Unreadable {
@@ -2594,8 +2636,20 @@ fn windows_and_plugin_params_json_shape() {
                    "slot": {"kind": "instrument", "track": 7}, "width": 1597, "height": 995}),
         ),
         (
+            StatusMessage::PluginWindowOpen {
+                name: "Surge XT".into(),
+            },
+            json!({"id": "pluginWindowOpen", "name": "Surge XT"}),
+        ),
+        (
             StatusMessage::PluginWindowsOpen { count: 2 },
             json!({"id": "pluginWindowsOpen", "count": 2}),
+        ),
+        (
+            StatusMessage::PluginWindowFailed {
+                name: "Surge XT".into(),
+            },
+            json!({"id": "pluginWindowFailed", "name": "Surge XT"}),
         ),
         (
             StatusMessage::MixerPassesBy {

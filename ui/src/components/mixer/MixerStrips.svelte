@@ -68,10 +68,14 @@
       text: t("mixer.instrument", { name }),
       accent: trial !== null,
       dim: trial === null && track.standIn !== null,
-      tip: trial === null && track.standIn ? standInTip(track.standIn) : null,
-      stopped: trial === null && track.sound.kind === "plugin" && track.sound.state === "stopped",
+      tip: trial === null && track.standIn ? standInTip(track.standIn, track.sound) : null,
+      stopped: trial === null && !track.standIn && track.sound.kind === "plugin" && track.sound.state === "stopped",
       usable: !busy,
       run: replace,
+      context: (e: MouseEvent) => {
+        e.preventDefault();
+        openContextMenu(e.clientX, e.clientY, [{ kind: "row", label: "track.replaceSound", usable: !busy, run: replace }]);
+      },
     };
   }
 

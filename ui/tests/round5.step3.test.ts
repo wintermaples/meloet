@@ -89,10 +89,10 @@ describe("プラグインのパラメータの一覧（pluginRows）", () => {
     expect(entries.map((e) => (e.kind === "heading" ? `${e.folded ? "▸" : "▾"} ${e.name} ${e.count}` : e.kind))).toEqual([
       "▸ Macros 8",
       "▸ Global 21",
-      "▸ FX 400",
-      "▸ Scene A 613",
-      "▸ Scene B 613",
-      "▸ そのほか 1200",
+      "▸ FX 120",
+      "▸ Scene A 300",
+      "▸ Scene B 300",
+      "▸ そのほか 25",
     ]);
     // 40 個までの子は、ぜんぶひらいて出す。グループを言わない子は見出しなしの 1 本。
     const few = fakeParamTable(FAKE_TABLES.dragonfly)!;
@@ -141,7 +141,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(app.sent).toEqual([{ type: "openPluginWindow", slot: { kind: "insert", insert: { strip: { kind: "return", bus: "a" }, slot: 0 } } }]);
   });
 
-  it("Surge XT（2855 個）: 見出しはたたんで始め、行は見えている所だけ作る", async () => {
+  it("Surge XT（774 個 ・ F6-ParamMany）: 見出しはたたんで始め、行は見えている所だけ作る", async () => {
     const s = scene("paramMany");
     s.workspace.layout.rightFront = "params";
     show(s, RightRail);
@@ -151,18 +151,44 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
       "▾ オートメーションに書いている 2",
       "▸ Macros 8",
       "▸ Global 21",
-      "▸ FX 400",
-      "▸ Scene A 613",
-      "▸ Scene B 613",
-      "▸ そのほか 1200",
+      "▸ FX 120",
+      "▸ Scene A 300",
+      "▸ Scene B 300",
+      "▸ そのほか 25",
     ]);
     expect(text(q("[data-test=params-hint]"))).toBe("40 個をこえる子は、グループをたたんで始めます");
+    // 鍵盤のつまみを受けるだけの物は出さず、一覧の下で言う（仕様書 3 章 91-3）。
+    expect(text(q("[data-test=params-knobs]"))).toBe(
+      "ほかに、鍵盤のつまみを受けるだけの 2080 個（MIDI CC 0|0 〜 15|129）は出していません。さがすと出ます。",
+    );
+    expect(text(q("[data-test=params-count]"))).toBe("774 / 774");
     // 自動の行は印が accent。
     expect(qa("[data-test=param-row] .automation.on")).toHaveLength(2);
-    // 2855 行をひらいても、作るのは見えている所のまわりだけ。
-    q('[data-group="g:5"]')!.click();
+    // 300 行をひらいても、作るのは見えている所のまわりだけ。
+    q('[data-group="g:3"]')!.click();
     flushSync();
     expect(qa("[data-test=param-row]").length).toBeLessThan(100);
+  });
+
+  it("さがすと、鍵盤のつまみを受けるだけの物が、いちばん下のグループ「鍵盤のつまみを受ける所」に出る（合う物があるときだけ）", async () => {
+    const s = scene("paramMany6");
+    s.workspace.layout.rightFront = "params";
+    show(s, RightRail);
+    await settle(FAKE_TABLES.surge);
+    const input = q("[data-test=params-search]") as HTMLInputElement;
+    const search = (text: string) => {
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      flushSync();
+    };
+    search("cc 1|12");
+    expect(qa("[data-test=params-group]").map(text)).toEqual(["▾ 鍵盤のつまみを受ける所 11"]);
+    expect(qa("[data-test=param-row] .name").map(text).slice(0, 2)).toEqual(["MIDI CC 1|12", "MIDI CC 1|120"]);
+    expect(text(q("[data-test=params-more]"))).toBe("… ほか 5");
+    expect(text(q("[data-test=params-count]"))).toBe("11 / 774");
+    expect(q("[data-test=params-knobs]")).toBeNull();
+    search("cutoff");
+    expect(qa("[data-test=params-group]").map(text)).toEqual(["▾ Scene A 12", "▾ Scene B 12"]);
   });
 
   it("さがす: 合う数 / 全部、「… ほか 6」、合わないときの文と「さがす枠を空にする」。Esc で空に戻す", async () => {
@@ -216,7 +242,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     await settle(78);
     expect(paramUi.query).toBe("cutoff");
     expect(input.value).toBe("cutoff");
-    expect(text(q("[data-test=params-count]"))).toBe("24 / 2855");
+    expect(text(q("[data-test=params-count]"))).toBe("24 / 774");
 
     // ほかの枠の子をえらぶと、さがす文字は空、グループはたたんだ形。
     app.setState({ ...s, params: { selected: { ...sel, slot: { kind: "instrument", track: s.song.tracks[1]!.id }, table: 79 } } });

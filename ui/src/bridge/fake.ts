@@ -1810,7 +1810,7 @@ SCENES.sf2Added = {
     shelfOpen(s, {}, { ...emptyLibrary(), sf2: fullLibrary().sf2, openedSf2: FLUID });
   },
   bands: ["shelf"],
-  after: (s) => (s.status.message = { id: "sf2Added", file: FLUID, presets: 128, kits: 9 }),
+  after: (s) => (s.status.message = { id: "sf2Added", file: FLUID, presets: 128, kits: 9, skipped: 0 }),
   meters: QUIET,
 };
 // Not from a mock (spec 6 「SF2 が読めない」): the file was not added.
@@ -1824,19 +1824,40 @@ SCENES.sf2Unreadable = {
 SCENES.sf2DropAddable = {
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
-    s.workspace.fileDrop = { name: FLUID, addable: true };
+    s.workspace.fileDrop = { name: FLUID, addable: true, files: 1, sf2: 1 };
   },
   bands: ["shelf"],
   after: (s) => (s.status.message = { id: "sf2Dragging" }),
   meters: QUIET,
 };
-// The same with a file that is no SF2 (spec 2: 「足せない」). What the status line says then is not in the spec.
+// The same with a file that is no SF2 (spec 2: 「足せない」, spec 6 「SF2 でないファイルを持ってきている」).
 SCENES.sf2DropNotAddable = {
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
-    s.workspace.fileDrop = { name: "piano-demo.wav", addable: false };
+    s.workspace.fileDrop = { name: "piano-demo.wav", addable: false, files: 1, sf2: 0 };
   },
   bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "notSf2Dragging" }),
+  meters: QUIET,
+};
+// Not from a mock (spec 3 89-10, spec 6 「ファイルをいくつも持ってきている」): three files, two of them SF2 files.
+SCENES.sf2DropMany = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.workspace.fileDrop = { name: FLUID, addable: true, files: 3, sf2: 2 };
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "sf2Dragging" }),
+  meters: QUIET,
+};
+// Not from a mock (spec 6 「SF2 をいくつも足した」): two SF2 files added, one file passed over.
+SCENES.sf2AddedMany = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    shelfOpen(s, {}, { ...emptyLibrary(), sf2: fullLibrary().sf2, openedSf2: FLUID });
+  },
+  bands: ["shelf"],
+  after: (s) => (s.status.message = { id: "sf2AddedMany", added: 2, first: FLUID, skipped: 1 }),
   meters: QUIET,
 };
 
@@ -2122,6 +2143,9 @@ SCENES.paramMany = {
   after: (s) => (s.status.message = { id: "pluginWindowLarge", name: "Surge XT", slot: SURGE_SLOT, width: 1597, height: 995 }),
   meters: QUIET,
 };
+// F6-ParamMany: the same panel. The 2080 parameters that only take a keyboard's knobs are not listed (91-3); the
+// line under the list says so.
+SCENES.paramMany6 = { ...SCENES.paramMany };
 // F-ParamSearch: the same while "cutoff" is in the search field, which is the screen's own, as is what the status
 // line says then (tools/design/shoot_ui.py types it).
 SCENES.paramSearch = {
@@ -2294,6 +2318,7 @@ const NOTICES: StatusMessage["id"][] = [
   "insertsReordered",
   "insertReplaced",
   "effectBypassed",
+  "pluginWindowOpen",
   "pluginWindowsOpen",
   "mixerPassesBy",
 ];
@@ -2922,7 +2947,7 @@ export function reduceMixer(
   const openWindow = (slot: PluginSlotRef, name: string) => {
     if (windows.list.some((w) => same(w.slot, slot))) return;
     windows.list.push({ slot, name, width: 800, height: 600, largerThanScreen: false });
-    notice = { id: "pluginWindowsOpen", count: windows.list.length };
+    notice = windows.list.length === 1 ? { id: "pluginWindowOpen", name } : { id: "pluginWindowsOpen", count: windows.list.length };
   };
   /** The effect in a slot, as the status line names it. */
   const nameAt = (insert: InsertRef): EffectName | null => {

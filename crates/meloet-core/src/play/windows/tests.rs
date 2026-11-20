@@ -329,7 +329,9 @@ fn a_window_is_asked_for_said_when_slow_listed_when_up_and_stays_with_its_plugin
     r.said(surge, opened(912, 569, false));
     assert_eq!(
         status(&r.m),
-        Some(StatusMessage::PluginWindowsOpen { count: 1 })
+        Some(StatusMessage::PluginWindowOpen {
+            name: "Surge XT".into()
+        })
     );
     assert_eq!(
         r.windows(),
@@ -408,15 +410,23 @@ fn a_window_that_fails_one_meloet_does_not_open_and_the_one_of_a_tried_row() {
     let mut r = Rig::new();
     let (surge, track, slot) = r.surge();
 
-    // It could not be made: nothing is said of it any more.
+    // It could not be made: said so, and not said to be opening any more.
     r.cmd(Command::OpenPluginWindow { slot: Some(slot) });
     r.said(surge, PluginSaid::WindowFailed);
+    let failed = StatusMessage::PluginWindowFailed {
+        name: "Surge XT".into(),
+    };
+    assert_eq!(status(&r.m), Some(failed.clone()));
     r.pass(SLOW_US * 2);
     assert!(!matches!(
         status(&r.m),
         Some(StatusMessage::PluginWindowOpening { .. })
     ));
     assert!(r.windows().is_empty());
+    // A window that was not asked for is not said.
+    r.cmd(Command::Back);
+    r.said(surge, PluginSaid::WindowFailed);
+    assert_ne!(status(&r.m), Some(failed));
 
     // What the plugin says of its window when it is loaded counts over what the scan found.
     r.cmd(Command::SelectInstrument { track });

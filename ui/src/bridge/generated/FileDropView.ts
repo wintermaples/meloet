@@ -10,6 +10,12 @@ export type FileDropView = {
  */
 name: string, 
 /**
- * False: "SF2 のファイルではないので、足せません。"
+ * False: "SF2 のファイルではないので、足せません。" True when one of the files is an SF2
+ * file.
  */
-addable: boolean, };
+addable: boolean, 
+/**
+ * How many files are held, and how many of them are SF2 files: with more than one the
+ * box says "3 つのファイル ・ SF2 は 2 つ" in place of the name (spec 3, 89-10).
+ */
+files: number, sf2: number, };

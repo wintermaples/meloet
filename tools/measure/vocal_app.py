@@ -328,7 +328,7 @@ def run_long(a):
         result["statusAfter"] = app.status()
         result["history"] = after.get("history")
         result["tracks"] = [{"name": t["name"], "kind": t["kind"]["kind"],
-                             "clips": [{k: c[k] for k in ("start", "end", "takes", "noteCount", "vocal")}
+                             "clips": [{k: c[k] for k in ("start", "end", "takes", "noteCount", "audio")}
                                        for c in t["clips"]]} for t in after["song"]["tracks"]]
         result["writer"] = watch.writer_lag(rolled + 1, stopping - 0.5)
         result["err"] = watch.errs()
@@ -416,7 +416,7 @@ def run_kill(a):
             "return [...document.querySelectorAll('[role=dialog],[role=alert],[role=status]')]"
             ".map(e=>e.innerText).filter(t=>t&&t.includes('残しました'))")
         result["tracks"] = [{"name": t["name"], "kind": t["kind"]["kind"],
-                             "clips": [{k: c[k] for k in ("start", "end", "takes", "vocal")} for c in t["clips"]]}
+                             "clips": [{k: c[k] for k in ("start", "end", "takes", "audio")} for c in t["clips"]]}
                             for t in state["song"]["tracks"]]
         app.shot(os.path.join(a.out, "after-start.png"))
         result["workAfterStart"] = sorted(os.listdir(work)) if os.path.isdir(work) else None

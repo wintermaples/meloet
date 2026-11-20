@@ -115,6 +115,21 @@ fn ui_script() -> Option<String> {
     devhooks::ui_script()
 }
 
+/// Where a drag over the window is, in px of the page from the top left corner of the
+/// window's inside.
+///
+/// On Linux the numbers are the `x` and `y` of GTK's `drag-motion` and `drag-drop` signals
+/// on the WebView (wry 0.57.2 `src/webkitgtk/drag_drop.rs`): the widget's own coordinates,
+/// which GTK counts in logical px whatever the screen's scale factor. tauri-runtime-wry
+/// 2.12.3 (`src/lib.rs`, `with_drag_drop_handler`) wraps them in a `PhysicalPosition`
+/// without scaling them, so they are not physical px here. meloet zooms with CSS variables
+/// and never the WebView's own zoom, so a logical px of the widget is a px of the page.
+/// The place `Enter` gives is the last motion before the files were known, (0, 0) when
+/// there was none; the next motion comes as an `Over`.
+fn page_px(position: &tauri::PhysicalPosition<f64>) -> (i32, i32) {
+    (position.x.round() as i32, position.y.round() as i32)
+}
+
 /// The inside of the window in logical px. Only on the main thread: a getter waits for it.
 fn content_size(window: &WebviewWindow) -> Option<LogicalSize<f64>> {
     let factor = window.scale_factor().ok()?;
@@ -355,6 +370,7 @@ fn main() {
             measure_report,
             ui_script,
             takes::take_notes,
+            takes::peaks,
             takes::lane,
             takes::history_rows,
             takes::live_notes,
@@ -380,20 +396,30 @@ fn main() {
                         closing.close_requested();
                     }
                 });
-                // Files held over the window and let go of there (an SF2 file to add). The
-                // core decides what they are; the screen only shows what the core says.
+                // Files held over the window and let go of there (an SF2 file to add, audio
+                // files to bring in). The core decides what they are and keeps their paths;
+                // the screen shows what the core says, and for audio files works out from the
+                // pointer's place where in the song they go.
                 let dropping = window_side.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::DragDrop(drag) = event {
                         match drag {
-                            DragDropEvent::Enter { paths, .. } => {
+                            DragDropEvent::Enter { paths, position } => {
                                 dropping.files_over(paths.clone());
+                                let (x, y) = page_px(position);
+                                dropping.files_at(x, y);
                             }
-                            DragDropEvent::Drop { paths, .. } => {
+                            DragDropEvent::Over { position } => {
+                                let (x, y) = page_px(position);
+                                dropping.files_at(x, y);
+                            }
+                            DragDropEvent::Drop { paths, position } => {
+                                let (x, y) = page_px(position);
+                                dropping.files_at(x, y);
                                 dropping.files_dropped(paths.clone());
                             }
                             DragDropEvent::Leave => dropping.files_left(),
-                            // `Over` only moves; the enum may grow.
+                            // The enum may grow.
                             _ => {}
                         }
                     }

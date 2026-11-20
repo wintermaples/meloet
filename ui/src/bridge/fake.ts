@@ -10,6 +10,7 @@ import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN, TELEMETRY_VERS
 import { TICKS_PER_QUARTER as TPQ } from "../time/ticks";
 import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
 import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
+import { fakeAudioClip, fakePeaks, fakeVocalClip, type FakeAudio } from "./fakeAudio";
 import {
   EFFECT_PARAMS,
   INSTRUMENT_GROUPS,
@@ -24,6 +25,7 @@ import {
   type EffectKind,
   type EffectRef,
   type EndpointView,
+  type Event,
   type HistoryRow,
   type HistoryView,
   type IndexRange,
@@ -348,7 +350,7 @@ const STOPPED_PLUGINS: StoppedPluginView[] = [
 
 /** One clip selected (and shown in the piano roll), or none; nothing to paste. */
 export function arrangeOf(clip: number | null): ArrangeView {
-  return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0 };
+  return { selectedClips: clip === null ? [] : [clip], selectedClip: clip, pianoRollClip: clip, clipboardClips: 0, tallTrack: null };
 }
 
 /** Every instrument, in the order of the shelf: the fake has them all, so that the mocks can be drawn. */
@@ -558,6 +560,7 @@ export function fakeState(): AppState {
       canRecord: false,
       recording: null,
       recordingVocals: [],
+      recordingFaults: null,
     },
     arrange: arrangeOf(null),
     pianoRoll: {
@@ -608,6 +611,7 @@ export function fakeState(): AppState {
       recordFormat: "bits24",
       latency: { reportedMs: null, measuredMs: null, manualMs: null, used: "reported", usedMs: null },
     },
+    audioWork: { jobs: [] },
     status: { message: NEW_SONG },
   };
 }
@@ -640,6 +644,8 @@ interface Scene {
   live: LiveNotesSnapshot;
   /** The rows of the history band, oldest first; rows past its end are made up (`fakeHistoryRows`). */
   history: HistoryRow[];
+  /** Sent on the messages Channel once the screen listens (where files are held over the window). */
+  events: Event[];
 }
 
 interface SceneDef {
@@ -657,6 +663,7 @@ interface SceneDef {
   live?: LiveNotesSnapshot;
   /** The rows of the history band, oldest first. */
   history?: HistoryRow[];
+  events?: Event[];
 }
 
 const dbfs = (db: number) => 10 ** (db / 20);
@@ -781,7 +788,7 @@ function fakeClip(id: number, name: string, fromBar: number, toBar: number, take
     takeId,
     takeOffset: 0,
     noteCount: FAKE_TAKES.get(takeId)!.notes.length,
-    vocal: false,
+    audio: null,
   };
 }
 
@@ -1596,7 +1603,7 @@ function arrangeSelect(s: AppState): void {
     { ...track, id: 3, number: 3, name: "ドラム", color: 3, gainDb: -6, soloed: true, clips: [fakeClip(43, "8ビート", 1, 9, 1, [7])] },
   );
   s.song.playTarget = 2;
-  s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1 };
+  s.arrange = { selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, tallTrack: null };
   s.transport.position = 4 * BAR;
   s.status.message = { id: "summary", loopBars: null, nothingSelected: false, notes: null };
 }
@@ -1897,7 +1904,7 @@ SCENES.sf2Unreadable = {
 SCENES.sf2DropAddable = {
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
-    s.workspace.fileDrop = { name: FLUID, addable: true, files: 1, sf2: 1 };
+    s.workspace.fileDrop = { name: FLUID, addable: true, files: 1, sf2: 1, audio: 0 };
   },
   bands: ["shelf"],
   after: (s) => (s.status.message = { id: "sf2Dragging" }),
@@ -1907,7 +1914,7 @@ SCENES.sf2DropAddable = {
 SCENES.sf2DropNotAddable = {
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
-    s.workspace.fileDrop = { name: "piano-demo.wav", addable: false, files: 1, sf2: 0 };
+    s.workspace.fileDrop = { name: "piano-demo.wav", addable: false, files: 1, sf2: 0, audio: 0 };
   },
   bands: ["shelf"],
   after: (s) => (s.status.message = { id: "notSf2Dragging" }),
@@ -1917,7 +1924,7 @@ SCENES.sf2DropNotAddable = {
 SCENES.sf2DropMany = {
   setup(s) {
     bandSong(s, BAND_TRACKS.slice(0, 4));
-    s.workspace.fileDrop = { name: FLUID, addable: true, files: 3, sf2: 2 };
+    s.workspace.fileDrop = { name: FLUID, addable: true, files: 3, sf2: 2, audio: 0 };
   },
   bands: ["shelf"],
   after: (s) => (s.status.message = { id: "sf2Dragging" }),
@@ -2126,7 +2133,7 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   state.song = settleSong(state.song);
   state.shelf = settleShelf(state.shelf);
   state.history = historyOf(state.song);
-  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE, history: def.history ?? [] };
+  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE, history: def.history ?? [], events: def.events ?? [] };
 }
 
 /** The section `history` of the fake: the counts of the song; a row's `step` is its `index`. */
@@ -2932,7 +2939,7 @@ function vocalRecording(s: AppState, keys: boolean): void {
   s.transport.position = 4 * BAR;
   s.transport.metronome = true;
   s.transport.recording = keys ? { id: 1, track: s.song.keysTarget!, from: 4 * BAR, take: 2, clip: null, lap: 0 } : null;
-  s.transport.recordingVocals = [{ track: VOCAL_TRACK_ID, from: 4 * BAR, take: 1, clip: null }];
+  s.transport.recordingVocals = [{ track: VOCAL_TRACK_ID, from: 4 * BAR, take: 1, clip: null, audio: RECORDING_AUDIO.id, sampleRate: 48000, firstFrame: 0 }];
 }
 const VOCAL_REC_AT: TransportReading = { tick: 6 * BAR + TPQ, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 };
 
@@ -3057,6 +3064,186 @@ SCENES.paramsSound = {
   after: (s) => (s.status.message = { id: "noParams", sound: { kind: "builtin", instrument: "grandPiano" } }),
   meters: QUIET,
 };
+
+// ---- Protocol 24: vocal clips, audio files brought in, files that are not found (mocks F7-AudioEdit, F7-AudioDrop,
+// F7-AudioMissing, R11-Audio). The screen's parts come later; these are the states they will show. ----
+
+/** Two bars at 96 a minute are five seconds. */
+const TWO_BARS_FRAMES = 5 * 48000;
+/** The file of the voice being recorded in `vocalRec` and `twoRec`: nine beats of it are written. */
+const RECORDING_AUDIO: FakeAudio = { id: 59, file: "歌 59.wav", sampleRate: 48000, bits: 24, channels: 1, frames: 0, growingTo: 270000 };
+const TAKE_1: FakeAudio = { id: 60, file: "歌 テイク 1.wav", sampleRate: 48000, bits: 24, channels: 1, frames: 2 * TWO_BARS_FRAMES };
+const HARMONY: FakeAudio = { id: 61, file: "ハモり.wav", sampleRate: 48000, bits: 24, channels: 1, frames: TWO_BARS_FRAMES };
+const LONG_MP3: FakeAudio = { id: 62, file: "ドラム.mp3", sampleRate: 44100, bits: null, channels: 2, frames: 180 * 44100, growingTo: 72 * 44100 };
+const DRUMS_WAV: FakeAudio = { id: 63, file: "ドラム.wav", sampleRate: 44100, bits: 16, channels: 2, frames: 5 * 44100 };
+/** What the `peaks` invoke of the fake knows, by the file's number in the audio table. */
+export const FAKE_AUDIO = new Map<number, FakeAudio>(
+  [RECORDING_AUDIO, TAKE_1, HARMONY, LONG_MP3, DRUMS_WAV, { ...TAKE_1, id: 64, missing: true }, { ...HARMONY, id: 65, missing: true }].map((a) => [a.id, a]),
+);
+const LEFT_CLIP = 70;
+const RIGHT_CLIP = 72;
+
+const vocalTrackOf = (s: AppState) => s.song.tracks.find((t) => t.id === VOCAL_TRACK_ID)!;
+
+/** "6 歌" with "歌 テイク 1" cut in two at bar 7 (S): the left half fades out, the right one fades in and is at −3.0 dB. */
+function audioEditSong(s: AppState): void {
+  vocalSong(s, { armed: true, monitor: false, selected: true });
+  vocalTrackOf(s).clips = [
+    fakeVocalClip(LEFT_CLIP, "歌 テイク 1", 4 * BAR, 6 * BAR, fakeAudioClip(TAKE_1, { fadeOut: TPQ })),
+    // The same take: its tick 0 is two bars before this clip's start.
+    fakeVocalClip(RIGHT_CLIP, "歌 テイク 1", 6 * BAR, 8 * BAR, fakeAudioClip(TAKE_1, { fadeIn: TPQ / 4, gainDb: -3 }), -2 * BAR),
+  ];
+  vocalTrackOf(s).clips[1]!.takeId = LEFT_CLIP + 1;
+  s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
+  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null };
+  s.transport.position = 6 * BAR;
+  s.song.undoCount = 22;
+  s.status.message = { id: "clipSplit", name: "歌 テイク 1", tick: 6 * BAR, count: 1 };
+}
+
+// F7-AudioEdit: the cut clips, the fades, the volume line, and the panel 「選んだクリップ」. (The mock's status line is
+// the drag of the volume line, which is the screen's own.)
+SCENES.audioEdit = { setup: audioEditSong, bands: ["params"], meters: QUIET };
+// The same after a double click on a clip: the row of "6 歌" is 160 high.
+SCENES.audioTall = {
+  setup(s) {
+    audioEditSong(s);
+    s.arrange.tallTrack = VOCAL_TRACK_ID;
+    s.status.message = { id: "summary", loopBars: { from: 5, to: 9 }, nothingSelected: false, notes: null };
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+
+/** Files with audio among them are held over the window, the pointer at (`x`, `y`) of the page. */
+const audioDrop = (name: string, files: number, sf2: number, x: number, y: number): SceneDef => ({
+  setup(s) {
+    vocalSong(s, { armed: false, monitor: false, selected: false });
+    s.song.file = "saved";
+    s.workspace.fileDrop = { name, addable: true, files, sf2, audio: files - sf2 };
+  },
+  after: (s) => (s.status.message = { id: "audioDragging", audio: files - sf2, sf2 }),
+  meters: QUIET,
+  events: [{ type: "fileDrag", x, y }],
+});
+// One file over "6 歌": the gray.7 frame is on that track, at the beat under the pointer.
+SCENES.audioDropOne = audioDrop("ドラム.wav", 1, 0, 600, 540);
+// F7-AudioDrop: eight files, the pointer over the left box (「別々のトラックに」) and over a keys track, so the frame is
+// on a new row below the tracks.
+SCENES.audioDrop = audioDrop("ドラム キック.wav", 8, 0, 520, 385);
+// The pointer over the right box (「1 本にならべる」).
+SCENES.audioDropRight = audioDrop("ドラム キック.wav", 8, 0, 760, 385);
+// An SF2 file among them: "SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ".
+SCENES.audioDropMixed = audioDrop("ドラム キック.wav", 4, 1, 520, 385);
+
+// F7-AudioMissing: a song opened on a PC where two of its audio files are not found.
+SCENES.audioMissing = {
+  setup(s) {
+    vocalSong(s, { armed: false, monitor: false, selected: true });
+    s.song.file = "saved";
+    vocalTrackOf(s).clips = [
+      fakeVocalClip(LEFT_CLIP, "歌 テイク 1", 4 * BAR, 6 * BAR, fakeAudioClip(FAKE_AUDIO.get(64)!)),
+      fakeVocalClip(RIGHT_CLIP, "ハモり", 8 * BAR, 10 * BAR, fakeAudioClip(FAKE_AUDIO.get(65)!)),
+    ];
+    s.arrange = { ...arrangeOf(LEFT_CLIP), pianoRollClip: null };
+    s.params.selected = {
+      kind: "clip",
+      track: VOCAL_TRACK_ID,
+      clip: LEFT_CLIP,
+      missing: { audio: 64, file: TAKE_1.file, wasAt: `はじめての曲/音/${TAKE_1.file}` },
+    };
+  },
+  bands: ["params"],
+  after: (s) => (s.status.message = { id: "audioMissing", count: 2 }),
+  meters: QUIET,
+};
+
+// A long mp3 was brought in: the clip is there and silent while the file is read ("読みこんでいます 40 %").
+SCENES.audioLoading = {
+  setup(s) {
+    vocalSong(s, { armed: false, monitor: false, selected: true });
+    const imported = { follow: false, sourceBpm: null, semitones: 0, cents: 0, keepFormant: true };
+    vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, "ドラム", 4 * BAR, 76 * BAR, fakeAudioClip(LONG_MP3, { stretch: imported }))];
+    s.audioWork = { jobs: [{ kind: "loading", audio: LONG_MP3.id, clip: null, percent: 40 }] };
+    s.song.undoCount = 15;
+  },
+  after: (s) => (s.status.message = { id: "audioImported", file: LONG_MP3.file, track: VOCAL_REF, tick: 4 * BAR, count: 1, skipped: 0 }),
+  meters: QUIET,
+};
+
+// R11-Audio: the kinds of vocal clip side by side: plain, with fades and its volume line, with the marks of the
+// stretching and "音を作っています 34 %" (unusable until the stretching is made), and one whose file is not found.
+SCENES.audioKinds = {
+  setup(s) {
+    vocalSong(s, { armed: false, monitor: false, selected: true });
+    const stretched = { follow: true, sourceBpm: 76.8, semitones: 2, cents: 0, keepFormant: true };
+    vocalTrackOf(s).clips = [
+      fakeVocalClip(LEFT_CLIP, "歌 テイク 1", 0, 2 * BAR, fakeAudioClip(TAKE_1)),
+      fakeVocalClip(RIGHT_CLIP, "歌 テイク 1", 2 * BAR, 4 * BAR, fakeAudioClip(TAKE_1, { fadeIn: TPQ, fadeOut: 2 * TPQ, gainDb: -3 }), -2 * BAR),
+      fakeVocalClip(74, "ドラム", 4 * BAR, 6 * BAR, fakeAudioClip(DRUMS_WAV, { stretch: stretched })),
+      fakeVocalClip(76, "歌 テイク 1", 6 * BAR, 8 * BAR, fakeAudioClip(FAKE_AUDIO.get(64)!)),
+    ];
+    s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
+    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null };
+    s.audioWork = { jobs: [{ kind: "rendering", audio: DRUMS_WAV.id, clip: 74, percent: 34 }] };
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+
+/**
+ * Protocol 24, enough for pictures and tests: the 160 row, a value of a vocal clip, and 「曲から外す」 of an audio
+ * file. Cutting, bringing files in and 「さがす…」 are taken and do nothing. `null`: not one of these commands.
+ */
+export function reduceAudio(state: AppState, command: Command): Change[] | null {
+  const vocalClip = (song: SongView, id: number) => song.tracks.flatMap((t) => t.clips).find((c) => c.id === id && c.audio !== null);
+  switch (command.type) {
+    case "setTallTrack": {
+      const track = state.song.tracks.find((t) => t.id === command.track);
+      const tallTrack = track?.kind.kind === "vocal" && state.arrange.tallTrack !== track.id ? track.id : null;
+      return tallTrack === state.arrange.tallTrack ? [] : [{ section: "arrange", value: { ...state.arrange, tallTrack } }];
+    }
+    case "setClipField": {
+      const song = structuredClone(state.song);
+      const clip = vocalClip(song, command.clip);
+      if (!clip?.audio || Number.isNaN(command.value)) return [];
+      const length = clip.end - clip.start;
+      const ticks = Math.max(0, Math.round(command.value));
+      if (command.field === "gainDb") clip.audio.gainDb = Math.min(12, Math.max(-60, Math.round(command.value * 100) / 100));
+      else if (command.field === "fadeIn") clip.audio.fadeIn = Math.min(ticks, length - clip.audio.fadeOut);
+      else if (command.field === "fadeOut") clip.audio.fadeOut = Math.min(ticks, length - clip.audio.fadeIn);
+      else if (command.field === "start") Object.assign(clip, { start: ticks, end: ticks + length });
+      else clip.end = clip.start + Math.max(1, ticks);
+      if (JSON.stringify(song) === JSON.stringify(state.song)) return [];
+      Object.assign(song, { undoCount: song.undoCount + 1, redoCount: 0, file: "changed" });
+      return [{ section: "song", value: song }];
+    }
+    case "removeMissing": {
+      if (command.missing.kind !== "audio") return null;
+      const gone = command.missing.audio;
+      const song = structuredClone(state.song);
+      for (const t of song.tracks) t.clips = t.clips.filter((c) => c.audio?.audio !== gone);
+      if (JSON.stringify(song) === JSON.stringify(state.song)) return [];
+      Object.assign(song, { undoCount: song.undoCount + 1, redoCount: 0, file: "changed" });
+      const left = new Set(song.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+      const changes: Change[] = [{ section: "song", value: song }];
+      const selected = state.arrange.selectedClips.filter((id) => left.has(id));
+      if (selected.length !== state.arrange.selectedClips.length) {
+        changes.push({ section: "arrange", value: { ...state.arrange, selectedClips: selected, selectedClip: null } });
+      }
+      const shown = state.params.selected;
+      if (shown?.kind === "clip" && !left.has(shown.clip)) changes.push({ section: "params", value: { selected: null } });
+      return changes;
+    }
+    case "splitClips":
+    case "importAudio":
+    case "dropAudio":
+    case "findAudio":
+      return [];
+    default:
+      return null;
+  }
+}
 
 /** What the fake remembers between the commands of round 7. */
 export interface FakeVocalMemo {
@@ -4382,13 +4569,14 @@ export function createFakeTransport(initial?: AppState): Transport {
           onTelemetry(encodeTelemetry(scene.meters, ++seq, sent, state.song.tracks.length, position));
           if (scene.scrollToEnd) for (const el of document.querySelectorAll("[data-gl-scroll]")) el.scrollTop = el.scrollHeight;
         }, 1000 / 60);
+        for (const event of scene.events) setTimeout(() => onMessage({ kind: "event", ...event }), 0);
       }
     },
     async snapshot() {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduceRound7(state, command, vocalMemo) ?? reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
+      const changes = reduceAudio(state, command) ?? reduceRound7(state, command, vocalMemo) ?? reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
       // The counts of the history band follow the song's.
       const song = changes.find((c) => c.section === "song");
       if (song && !changes.some((c) => c.section === "history")) {
@@ -4434,6 +4622,11 @@ export function createFakeTransport(initial?: AppState): Transport {
       const lane = FAKE_LANES.get(laneId);
       if (!lane) throw new Error(`fake: no lane ${laneId}`);
       return encodeLane(lane);
+    },
+    async peaks(audio, level, first, count) {
+      const file = FAKE_AUDIO.get(audio);
+      if (!file) throw new Error(`fake: no audio ${audio}`);
+      return fakePeaks(file, level, first, count);
     },
     async historyRows(from, to) {
       return fakeHistoryRows(scene?.history ?? [], state.history.total, from, to);

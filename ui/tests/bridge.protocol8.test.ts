@@ -39,7 +39,7 @@ describe("約束 8 の偽物の場面", () => {
       ["ドラム", false, true],
     ]);
     expect(s.song.playTarget).toBe(2);
-    expect(s.arrange).toEqual({ selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1 });
+    expect(s.arrange).toEqual({ selectedClips: [3, 41], selectedClip: 41, pianoRollClip: 41, clipboardClips: 1, tallTrack: null });
   });
 
   it("ベロシティ固定がオン（100）", () => {

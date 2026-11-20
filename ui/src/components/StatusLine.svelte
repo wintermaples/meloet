@@ -45,7 +45,8 @@
   import { dragReading } from "./pianoroll/view.svelte";
   import { shelfStatus, shelfUi } from "./tracks.svelte";
   import { statusFit, type StatusRightShown } from "./statusFit";
-  import { shownTick } from "./time";
+  import { mapOf } from "../time/bars";
+  import { positionText, shownTick } from "./time";
   import ZoomMenu from "./ZoomMenu.svelte";
 
   const app = $derived(current.state!);
@@ -591,6 +592,18 @@
         return { parts: recordingVocalsParts(m.keys, m.vocals, m.monitor), strong: [], button: null };
       case "latencyMeasureOpen":
         return plain("status.songDialogOpen", { dialog: t("latency.title") });
+      // 第 7 回 区切り3（約束 24）。いくつも切った ・ 入れたとき、1 つだけ持ってきたときの文は仕様書にないので、
+      // 1 つめの名前の文のまま（切った ・ 入れた）と、数だけの文（持ってきている）にしてある。
+      case "audioMissing":
+        return plain("msg.audioFilesMissing", { count: m.count });
+      case "clipSplit":
+        return plain("msg.clipSplit", { clip: m.name, position: positionText(m.tick, mapOf(app.timeline)) });
+      case "audioImported":
+        return plain("msg.audioImported", { file: m.file, track: track(m.track), position: positionText(m.tick, mapOf(app.timeline)) });
+      case "audioUnreadable":
+        return plain("msg.audioUnreadable", { file: m.file });
+      case "audioDragging":
+        return m.audio > 1 ? plain("msg.audioDragging", { count: m.audio }) : plain("msg.audioDraggingOne");
       default:
         return null;
     }

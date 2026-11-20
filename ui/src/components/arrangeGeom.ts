@@ -33,15 +33,20 @@ export interface LaneDims {
   noteH: number;
   /** トラックの行の上（下にオートメーションの帯があると、行の間があく。automation/autoGeom.ts）。なければ行の番号 × trackH。 */
   tops?: readonly number[];
+  /** トラックの行の高さ（歌を直している行は 160。arrange/audioClipGeom.ts の rowHeights）。なければどの行も trackH。あるときは tops も要る。 */
+  heights?: readonly number[];
 }
 
 /** トラックの行 row の上。 */
 export const rowTop = (d: LaneDims, row: number) => d.tops?.[row] ?? row * d.trackH;
 
+/** トラックの行 row の高さ（下の線をふくむ）。 */
+export const rowHeight = (d: LaneDims, row: number) => d.heights?.[row] ?? d.trackH;
+
 /** y の下のトラックの行（クリップの所だけ。帯の上や、いちばん下の行より下なら -1）。 */
 export function trackRowAt(d: LaneDims, y: number): number {
   if (!d.tops) return y >= 0 ? Math.floor(y / d.trackH) : -1;
-  for (let i = 0; i < d.tops.length; i++) if (y >= d.tops[i]! && y < d.tops[i]! + d.trackH) return i;
+  for (let i = 0; i < d.tops.length; i++) if (y >= d.tops[i]! && y < d.tops[i]! + rowHeight(d, i)) return i;
   return -1;
 }
 
@@ -84,7 +89,7 @@ export function clipBox(v: View, d: LaneDims, row: number, start: number, end: n
     x0: tickToX(v, start),
     x1: tickToX(v, end),
     y0: rowTop(d, row) + d.inset,
-    y1: rowTop(d, row) + d.trackH - d.hair - d.inset,
+    y1: rowTop(d, row) + rowHeight(d, row) - d.hair - d.inset,
   };
 }
 

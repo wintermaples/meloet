@@ -3,4 +3,4 @@
 /**
  * Things sent the moment they arrive.
  */
-export type Event = { "type": "note", on: boolean, note: number, velocity: number, tUs: number, } | { "type": "control", controller: number, value: number, tUs: number, } | { "type": "bend", value: number, tUs: number, };
+export type Event = { "type": "note", on: boolean, note: number, velocity: number, tUs: number, } | { "type": "control", controller: number, value: number, tUs: number, } | { "type": "bend", value: number, tUs: number, } | { "type": "fileDrag", x: number, y: number, } | { "type": "fileDrop", drop: number, x: number, y: number, };

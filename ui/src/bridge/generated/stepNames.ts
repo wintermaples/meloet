@@ -69,5 +69,9 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "setLoop",
   "recovered",
   "discardRecovered",
-  "setVocalInput"
+  "setVocalInput",
+  "splitClips",
+  "importAudio",
+  "setClipGain",
+  "setClipFade"
 ];

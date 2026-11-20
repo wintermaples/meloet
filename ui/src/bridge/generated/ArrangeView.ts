@@ -18,4 +18,10 @@ pianoRollClip: number | null,
 /**
  * How many clips `PasteClips` would put in; 0 when there is nothing to paste.
  */
-clipboardClips: number, };
+clipboardClips: number, 
+/**
+ * The vocal track whose row is 160 high (`Command::SetTallTrack`; spec 3 「歌のトラックで
+ * ピアノロールをひらこうとしたとき」), by `TrackView::id`. `None` again when the track is
+ * deleted or another song comes. Not saved, and no step.
+ */
+tallTrack: number | null, };

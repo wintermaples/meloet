@@ -153,6 +153,9 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
       return t("history.soundReplaced", { track: trackLabel(what.track), from: soundNameText(what.from), to: soundNameText(what.to) });
     case "vocalInput":
       return t("history.soundReplaced", { track: trackLabel(what.track), from: t(`vocal.input.${what.from}`), to: t(`vocal.input.${what.to}`) });
+    // 「歌 テイク 1 ・ −3.0 → 0.0 dB」: ミキサーの音量の手と同じ形（仮。仕様書 3 章 92-3 にクリップの音量はない）。
+    case "clipGain":
+      return t("history.gain", { strip: what.name, from: faderText(what.fromDb), to: faderText(what.toDb) });
   }
 }
 

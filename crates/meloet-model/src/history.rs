@@ -8,6 +8,7 @@
 
 use crate::TrackId;
 use crate::arrange::ClipEdge;
+use crate::audio::AudioId;
 use crate::automation::AutoTarget;
 use crate::edit::Edit;
 use crate::effects::EffectKind;
@@ -354,6 +355,30 @@ pub enum StepKind {
     /// one before the step the old input.
     SetVocalInput {
         track: TrackId,
+    },
+    /// S: `count` clips were cut in two at the play line (docs/architecture.md 22-10). The
+    /// `Doc` after the step has both halves of each.
+    SplitClips {
+        count: usize,
+    },
+    /// Audio files brought in, however many at once: `count` clips were made.
+    ImportAudio {
+        count: usize,
+    },
+    /// A drag of the volume line of a vocal clip, a double click on it, or a value typed.
+    /// Either `Doc` has the clip: the one before the step the old volume.
+    SetClipGain {
+        clip: ClipId,
+    },
+    /// A drag of a fade handle of a vocal clip, or a value typed.
+    SetClipFade {
+        clip: ClipId,
+    },
+    /// 「曲から外す」 on the notice of an audio file that is not found: `clips` clips that
+    /// played it are gone. The `Doc` before the step has the file, for its name.
+    RemoveAudio {
+        audio: AudioId,
+        clips: u32,
     },
 }
 

@@ -439,6 +439,7 @@ pub(super) fn keep_vocals(state_dir: &Path, note: &RecNote, doc: &mut Doc) -> Op
                 frames: info.frames,
                 sample_rate: info.sample_rate,
                 channels: info.channels,
+                bits: Some(note.bits),
             },
             takes,
         });

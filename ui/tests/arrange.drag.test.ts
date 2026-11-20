@@ -22,7 +22,7 @@ const WIDTH = 1000;
 const METER = { num: 4, den: 4 };
 
 function clip(id: number, name: string, fromBar: number, toBar: number): ClipView {
-  return { id, name, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0, vocal: false };
+  return { id, name, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0, audio: null };
 }
 function track(number: number, clips: ClipView[]): TrackView {
   return { id: number, number, name: `トラック ${number}`, color: number, instrument: "sine", kind: { kind: "keys" }, sound: { kind: "builtin", instrument: "sine" }, standIn: null, drumKeys: null, gainDb: 0, pan: 0, sends: [null, null], sendDefaults: [null, null], inserts: [null, null, null, null], slots: [null, null, null, null], muted: false, soloed: false, lanes: [], clips };

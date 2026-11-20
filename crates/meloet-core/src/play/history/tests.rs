@@ -202,6 +202,14 @@ fn every_step_kind() -> Vec<StepKind> {
         Recovered,
         DiscardRecovered,
         SetVocalInput { track },
+        SplitClips { count: 2 },
+        ImportAudio { count: 3 },
+        SetClipGain { clip },
+        SetClipFade { clip },
+        RemoveAudio {
+            audio: meloet_model::AudioId(31),
+            clips: 2,
+        },
     ];
     for kind in &all {
         match kind {
@@ -274,7 +282,12 @@ fn every_step_kind() -> Vec<StepKind> {
             | RestoreLane { .. }
             | Recovered
             | DiscardRecovered
-            | SetVocalInput { .. } => {}
+            | SetVocalInput { .. }
+            | SplitClips { .. }
+            | ImportAudio { .. }
+            | SetClipGain { .. }
+            | SetClipFade { .. }
+            | RemoveAudio { .. } => {}
         }
     }
     all

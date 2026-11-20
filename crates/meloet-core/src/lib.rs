@@ -6,12 +6,15 @@
 //! - [`plugins`]: the scan for plugins and the processes they sound in.
 
 mod added;
+pub mod audiofiles;
 mod catalog;
 mod hub;
 mod instruments;
 pub mod layout;
 pub mod measure;
 mod mixbook;
+pub mod pcm;
+pub mod peaks;
 pub mod play;
 pub mod plugins;
 pub mod recovery;

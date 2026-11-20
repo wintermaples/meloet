@@ -1700,3 +1700,74 @@ pub struct AudioShape {
 - 設定（`settings.json`）: `input` ・ `buffer` ・ `sample_rate` ・ `record_bits` ・ `manual_latency_us` ・ `measured_latency`（出口の id ・ 入口の id ・ サンプルレート ・ `x_us` ・ 測った時）。バッファとサンプルレートを変えると、出口と入口をひらきなおす。サンプルレートは、装置が受ける数（cpal の `supported_output_configs`）のときだけ頼み、だめなら装置の数で動く。
 - 開発のための変数 `MELOET_INPUT_SINK_MONITOR=<sink の node.name>`: その sink のモニターを入口にする（線なしで回す測りと試験のため）。
 - **まだの事**（区切り3 へ）: 録った音は作業の場所（`work/音/`）に置いたまま。曲を保存しても `音/` へ移さないので、保存した曲をひらきなおすと音は見つからない。作業の場所の片づけ（22-4）もまだ。歌のクリップは鳴らない（22-8）。
+
+### 22-17. 約束 24 の形（区切り3 の 1 回目、2026-11-21、meloet-hard）
+
+区切り3 の 2 回目で 4 人（A1 エンジンで歌のクリップを鳴らす、A2 core の音のファイル、B 画面の WebGL、C 画面の HTML）が、同じ出発点から、同じファイルをさわらずに作るための形。中身があるのは、型、約束、ピークのファイルとバイナリ、フェードの形、クリップの区切りの表、先読みの輪、持ってきている間の場所の道、160 の行、偽物の場面。新しい意図の中身（切る ・ 入れる ・ クリップの値 ・ さがす ・ 曲から外す）、先読みの係、音のファイルを読む所、画面の部品は 2 回目。
+
+**model**（`crates/meloet-model/src/audio.rs`、`audio/fade.rs`、`history.rs`）
+
+- `AudioSource.bits: Option<u8>`（ファイルのビット。「48000 Hz ・ 24 ビット」のため。mp3 ・ ogg は `None`）。曲のファイル（版 6 のまま）の音の表に `bits`（ない欄は `None`。8 ・ 16 ・ 24 ・ 32 ・ 64 のほかは「読めない物」）。
+- **フェードの形**（`fade_gain(x) = sin(x · π/2)`、出るほうは `fade_gain(1 − x)`。`clip_fade_gain(at, length, fade_in, fade_out)` が 2 つのフェードの掛け算）。**理由**: 仕様書の「曲がった形 1 つ（大きさがへこまない形）」。出るフェードと入るフェードが出会う所で 2 乗の和がいつも 1（パワーが変わらない）。まっすぐな線 2 本だと、まん中で 3 dB へこむ。まっすぐな線よりいつも上にあるので、入りの頭から聞こえる。エンジン（音にかける）、波形、画面の線が、この 1 つの関数を使う。画面の写しは `ui/src/components/arrange/fade.ts`、同じ答えかは `crates/meloet-model/tests/fade.rs` が書く表 `fade.table.json` で見る（テンポの地図と同じやりかた）。
+- 手の種類（`StepKind`）: `SplitClips { count }`、`ImportAudio { count }`、`SetClipGain { clip }`、`SetClipFade { clip }`、`RemoveAudio { audio, clips }`。直す関数（切る ・ 入れる ・ 値を変える ・ 外す）は 2 回目（A2）。
+
+**約束 24**（`crates/meloet-protocol/src/audio.rs` ほか）
+
+- **歌のクリップ**: `ClipView.vocal` をやめて `ClipView.audio: AudioClipView | null`。中身は、音の id（音の表の番号。`peaks` の鍵）、ファイルの名前、サンプルレート、ビット、チャンネル、`resampled`（「（曲に合わせて鳴らします）」）、`firstFrame` ・ `frames`（テイクの 0 ティックに当たるファイルのこまと、そこからの長さ）、`fadeIn` ・ `fadeOut`（ティック）、`gainDb`、`state`（`ready` ・ `loading` ・ `missing`）、`stretch`（ついていく ・ この音のテンポ ・ 半音 ・ セント ・ 声の感じ。区切り4 まで、だれも変えない。欄は「使えない」で出す）。
+  - **波形の場所**: テイクの 0 ティックは曲の `start + takeOffset`。曲のティック `t` で鳴るファイルのこまは `firstFrame + (秒(t) − 秒(0 ティック)) × sampleRate`（音はファイルの速さのまま鳴る。画面の地図で数える。`audioClipGeom.ts` の `fileFrameAt`）。
+- **進み**は `song` と別の区画 **`audioWork`**（`jobs: [{kind: loading | rendering, audio, clip, percent}]`）。**理由**: `song` は丸ごと送る区画なので、% のたびに曲を送りなおさない。core は 1 秒に数回まで。`rendering`（「音を作っています 34 %」）は区切り4 の席。
+- **選んだクリップの欄**: `SelectedParams` に `clip`（`{track, clip, missing}`）。歌のクリップがちょうど 1 つ選ばれているとき。位置 ・ 長さ ・ 音量 ・ フェードは `song` のクリップから読む。見つからない音は `missing: {audio, file, wasAt}`（「前はここにありました: …」）。
+- **160 の行**: `ArrangeView.tallTrack`（歌のトラックの id）。core が持つ（`Command::SetTallTrack`。同じトラックをもう一度か `null` で戻る。手にしない ・ 保存しない）。**理由**: 行の高さはトラックの見出し ・ クリップの面 ・ オートメーションの帯の 3 か所が読み、測りの道具（`remote.py`）と絵を撮る道具が意図で動かせる。ピアノロールをひらく（2 回押す）のも core の意図なので、そろえた。
+- **意図**: `splitClips`（S。どのクリップかは core が決める: 選んだクリップで再生の線がかかる物、なければ選んだトラックの線の下の 1 つ）、`setClipField {clip, field, value}`（`start` ・ `length` ・ `gainDb` ・ `fadeIn` ・ `fadeOut`。ドラッグの終わり、2 回押す〔`gainDb` 0〕、欄に打った値。どれも 1 手で、手の名前は欄で決まる: 動かす ・ 長さを変える ・ クリップの音量 ・ フェード）、`setTallTrack`、`importAudio {track}`（メニューと右クリック。core が PC の窓を出す）、`dropAudio {drop, track, tick, mode}`、`findAudio {audio}`（「さがす…」。手にしない）、`removeMissing` に `{kind: "audio", audio}`（「曲から外す」。1 手）。core は受けとるが、`setTallTrack` のほかはまだ何もしない。
+- **持ってきている間**（下の「ドラッグの約束」）: `FileDropView.audio`（音のファイルの数）、すぐ知らせる事 `fileDrag {x, y}` ・ `fileDrop {drop, x, y}`。
+- **録っている歌**: `VocalRecordingView` に `audio`（書いているファイルが音の表でもらう番号）・ `sampleRate` ・ `firstFrame`。録りながらの波形は、同じ `peaks` を `growing` の間くり返し取る（画面の `moreAudioPeaks`）。**理由**: 録っている音だけの別の道を作らない。波形は鍵のようにすぐ届かなくてよいので、画面が自分の間合い（10 Hz ほど）で取りにいき、描きなおしも減る。
+- **録音中の抜け**: `TransportView.recordingFaults: {gaps, dropped} | null`。形だけ（文は B-94-14 で待ち。何も出さない）。
+- 状態行: `audioMissing {count}`、`clipSplit {name, tick, count}`、`audioImported {file, track, tick, count, skipped}`、`audioUnreadable {file}`、`audioDragging {audio, sf2}`。文は仕様書 6 章（`ja.ts` に 0-2 で入っている）。
+- 手の名前: `splitClips`（「クリップを切る」、spec:3）、`importAudio` ・ `setClipGain` ・ `setClipFade`（仮）。Mod X の `cutClips` は「クリップを切り取る」（B-94-7）。「曲から外す」は今の `removeMissing`。（何を）に `clipGain {name, fromDb, toDb}`。
+- 保存で音を写している進みは、仕様書に文がないので置いていない（22-4 の【第 10 版で確かめる】のまま）。
+
+**ドラッグの約束**（`crates/meloet-app/src/main.rs`、`crates/meloet-core/src/{service.rs,state.rs}`）
+
+- 道は core が持ち、画面には渡さない（今の SF2 と同じ）。画面が決めるのは「落とした所」だけ。
+  1. 殻: `Enter` → `files_over(paths)` と `files_at(x, y)`、`Over` → `files_at`、`Drop` → `files_at` と `files_dropped(paths)`、`Leave` → `files_left`。
+  2. core: 音のファイル（名前の終わりが wav ・ mp3 ・ flac ・ ogg）が 1 つでもあれば、`files_at` のたびに `Event::FileDrag {x, y}` を Channel へ（すぐ知らせる事。差分にしない）。落としたら音のファイルの道を取っておき、通し番号をつけて `Event::FileDrop {drop, x, y}`。SF2 は今までどおりその場で足す。
+  3. 画面: 場所からトラックとティック（拍に吸いつけて）と 30-C の左右を決め、枠を出す。`fileDrop` が来たら `Command::DropAudio {drop, track, tick, mode}` を 1 つ送る。番号のちがう答えは何もしない。答えの来なかった道は、次のファイルが窓に来たとき手ばなす。
+  - **くらべた案**: 画面が乗っている間じゅう「いまの的」を送り、core が落とした瞬間の的を使う。落とした出来事（殻 → core）と最後の的（画面 → core）の順が決まらないので、とらない。
+- **座標**（入れた版のソース）: wry 0.57.2 の `src/webkitgtk/drag_drop.rs` は、GTK の `drag-motion`（94〜101 行）と `drag-drop`（106〜119 行）の `x` ・ `y` をそのまま渡す。これは WebView のウィジェットの左上からの数で、GTK 3 は画面の倍率によらず論理 px で数える（GTK の決まり。HiDPI の画面では、まだ確かめていない。`src/lib.rs` 2298 行のコメントも「relative to the webview top-left corner」）。tauri-runtime-wry 2.12.3 の `src/lib.rs` 4786〜4807 行は、それを倍率をかけずに `PhysicalPosition` に包むだけなので、**Linux では「物理 px」ではなく論理 px**（tauri-runtime 2.12.2 の `src/window.rs` 99〜121 行の型の名前と食いちがう）。meloet の拡大率は CSS の変数で、WebView の zoom は使わないので、**ウィジェットの論理 px ＝ ページの CSS px**。HiDPI でも割り算は要らない（`main.rs` の `page_px`）。
+  - `Enter` の場所は「ファイルが分かる前の最後の motion」（なければ (0, 0)。同 78〜90 行）で、次の motion から `Over` になる。`Over` は `Entered` の間だけ来る（95〜99 行）。
+  - Wayland と XWayland のちがいは、ソースからは出てこない（どちらも GTK の同じ信号）。**本物の Nautilus からのドラッグでは、まだ確かめていない**（オーナーさんに頼む確かめ、22-14 の 3）。
+
+**ピーク**（`crates/meloet-core/src/peaks.rs`、`crates/meloet-protocol/src/audio.rs`、`ui/src/bridge/peaks.ts`）
+
+- 作る係 `PeakBuilder`（`push(こま)` で 5 段を少しずつ。録りながらでも、丸ごと読んでも同じ答え。まだ満ちていない最後のピークも見せる）。ファイルは `$XDG_CACHE_HOME/meloet/peaks/<uid の 16 進>.peaks`（頭 36 バイト: `mlpk`、版 1、チャンネル、音のこま数、5 段の数。あとは段 0 から順に i16 の最小 ・ 最大）。一時ファイル → rename。
+- invoke `peaks(audio, level, first, count)` の答え（リトルエンディアン）:
+
+| 位置 | 型 | 中身 |
+|---|---|---|
+| 0 | u8 | 種類 = 4（ピーク） |
+| 1 | u8 | 版 = 1 |
+| 2 | u8 | 段（0〜4: 1 つが 256 ・ 1024 ・ 4096 ・ 16384 ・ 65536 こま） |
+| 3 | u8 | チャンネルの数 c（1 か 2） |
+| 4 | u8 | 旗（bit0: まだふえる〔録っている ・ 読みこんでいる〕） |
+| 5 | 3 | 0（あき） |
+| 8 | u32 | 音の id |
+| 12 | u32 | 最初のピークの番号 |
+| 16 | u32 | 入っているピークの数 n |
+| 20 | u32 | この段の、いまあるピークの数 |
+| 24 | 4c × n | ピークごと、チャンネルごとに: 最小 i16、最大 i16 |
+
+- 1 回の答えは 65536 個まで。core のスレッドは「どこにあるか」（`PeaksPlace::File` か `Growing`）だけ答え、ファイルは invoke のスレッドが読む（core のスレッドでディスクにさわらない）。
+- 画面は `PeakStore`: （音の id、段）でため、曲の通し番号が変わったら手ばなす。クリップが使っていない音の分は、新しい物から 4 MiB まで（テイクの `keepOnly` と同じ考え）。`levelFor(1 px のこま数)` が描く段。
+
+**エンジンの口**（`crates/meloet-engine/src/{clips.rs,stream.rs}`。`engine.rs` にはまださわっていない）
+
+- **曲のこま**: こま 0 が曲の 0 ティック、ティック `t` は `song_frame(map, t, rate) = round(秒(t) × rate)`。エンジンのいまの位置は `song_frame_at(anchor_sec, frames, rate)`。区切りの表も先読みの係も、音はこの 1 つの関数で置く。**ノートと拍は錨から `frame_of` で置くので、同じティックの音と 1 こままでずれることがある**（区切り2 の測りの「最大 0.98 こま」と同じ大きさ。A1 が測って、足りなければ直す）。
+- **クリップの区切りの表** `ClipTable`（`ClipRegion {start, end, fade_in, fade_out, gain}`。曲のこま、フェードはこま数、音量は倍率）。`ClipRegion::of` がティックと dB から作り、`gain_at(こま)` がフェード × 音量（メモリを取らない）。core が地図 ・ クリップ ・ サンプルレートの変わるたびに作りなおし、`Box` で送る（古い物は輪で返す。コマンドの腕は A1 が足す）。
+- **先読みの輪** `stream_ring(rate)` → `StreamWriter` ・ `StreamReader`（2 秒、いつもステレオ。「こまの輪」と「見出しの輪」の 2 本組み。見出し `StreamChunk {generation, first_frame, frames}`）。`StreamReader::read(generation, frame, out)` が音のスレッドのすべて: 古い世代と過ぎたこまは捨て、係が先へとんだ分とまだない分は音なしで埋めて数える（`tests/stream.rs` がメモリを見はる）。
+- **エンジンが言う事** `StreamWant {track, generation, map_gen, anchor_sec, frame, loop_ticks}`（`want_ring`）。`frame` は錨からのこまで、先に読むトラックの分はもう入っている。
+- **先読みの係と音のファイルの継ぎ目**（`crates/meloet-core/src/pcm.rs`）: `PcmStore::open(uid, rate)` → `PcmFile`（エンジンのサンプルレートの PCM として読む）を A2 が作り、係（A1）はそれだけを見る。`feed_clip(map, rate, clip)` → `FeedClip {start, end, uid, file_frame, file_end}` が「クリップのどこがファイルのどこか」の 1 か所。
+
+**画面の継ぎ目**
+
+- `ui/src/components/arrange/audioClipGeom.ts`: 波形の所（`waveArea`: 名前の行の下〜下の枠の上、まん中の線）、音量の線 ↔ dB（`gainLineY` ・ `gainAtY`。上が +12、下が −60、dB でまっすぐ。仮）、フェードの取っ手と線（`fadeHandleBox` ・ `fadeTicksAt` ・ `fadeLinePoints`）、波形の場所（`fileFrameAt`）、160 の行（`rowHeights`。`arrangeGeom.ts` の `LaneDims.heights` と `rowHeight`）、落とす所（`dropTarget` ・ `dropFrameBox` ・ `dropModeAt`: 窓の左半分が「別々のトラックに」。仮）。
+- 偽物の場面: `audioEdit`（F7-AudioEdit）、`audioTall`（160 の行）、`audioDropOne` ・ `audioDrop` ・ `audioDropRight` ・ `audioDropMixed`（F7-AudioDrop）、`audioMissing`（F7-AudioMissing）、`audioLoading`、`audioKinds`（R11-Audio）。偽物の `peaks` は、それらしい波（`fakeAudio.ts`）。

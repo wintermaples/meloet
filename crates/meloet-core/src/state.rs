@@ -21,16 +21,17 @@ use meloet_model::{
 use meloet_plugin::ScanCache;
 use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
-    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
-    EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind, KeyboardView,
-    KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
-    MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginRole,
-    PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView, SettingsDialogView,
-    ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView,
-    TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    AppState, ArrangeView, AudioView, AudioWorkView, Availability, Band, ChooserView, ChosenState,
+    Command, EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind,
+    KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
+    LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
+    PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView,
+    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
+    StatusView, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
+use crate::audiofiles;
 use crate::catalog::Catalog;
 use crate::instruments;
 use crate::sf2store::{self, Sf2Info, Sf2Key};
@@ -210,6 +211,12 @@ pub enum Input {
     FilesLeft,
     /// From the shell: they were let go of over the window.
     FilesDropped(Vec<PathBuf>),
+    /// From the shell: where the pointer is while files are held over the window, in px of
+    /// the page. Comes after `FilesOver`, with every move, and before `FilesDropped`.
+    FilesAt {
+        x: i32,
+        y: i32,
+    },
     /// An answer to [`Effect::OpenInput`]: the input runs, with this many channels, at the
     /// output's rate.
     InputOpened {
@@ -470,6 +477,9 @@ pub enum Effect {
     DropSf2(Sf2Key),
     /// The PC's open window for an SF2 file. Answer with [`Input::Sf2Picked`].
     PickSf2,
+    /// Where files with audio among them are held or were let go of
+    /// (`Event::FileDrag`, `Event::FileDrop`), for the messages Channel.
+    FileEvent(meloet_protocol::Event),
     /// Read the SF2 file and copy it into meloet's folder, off the core thread. Answer with
     /// [`Input::Sf2Added`] or [`Input::Sf2NotAdded`].
     AddSf2(PathBuf),
@@ -578,6 +588,15 @@ pub struct Model {
     file_drop: Option<FileDropView>,
     /// Esc while files were held over the window: letting go of them adds nothing.
     drop_cancelled: bool,
+    /// Where the pointer was last while files were held over the window.
+    drop_at: (i32, i32),
+    /// Counts the drops with audio files; `Event::FileDrop::drop`.
+    drop_serial: u32,
+    /// Audio files that were let go of over the window and wait for the screen to say where
+    /// that is in the song (`Command::DropAudio`).
+    pending_drop: Option<PendingDrop>,
+    /// `ArrangeView::tall_track`, with the serial of the song the track is in.
+    tall_track: Option<(u32, u32)>,
     /// Several files were let go of over the window and their SF2 files are being added.
     sf2_batch: Option<Sf2Batch>,
     /// The advanced sound settings.
@@ -587,6 +606,15 @@ pub struct Model {
     latency: Option<vocal::LatencyDialog>,
     /// 「モニター」 was turned on once in this run: the status line said how late the voice is.
     monitor_said: bool,
+}
+
+/// Audio files let go of over the window (`Model::pending_drop`).
+#[derive(Debug)]
+struct PendingDrop {
+    id: u32,
+    /// As they were held; nothing reads them yet.
+    #[allow(dead_code)]
+    paths: Vec<PathBuf>,
 }
 
 /// The SF2 files of one drop of several files, said as one once the last is answered.
@@ -672,6 +700,10 @@ impl Model {
             rows_seen: 0,
             file_drop: None,
             drop_cancelled: false,
+            drop_at: (0, 0),
+            drop_serial: 0,
+            pending_drop: None,
+            tall_track: None,
             sf2_batch: None,
             sound: settings.sound,
             input: vocal::InputSide::default(),
@@ -914,15 +946,27 @@ impl Model {
             },
             Input::FilesOver(paths) => {
                 self.drop_cancelled = false;
+                self.pending_drop = None;
                 let sf2 = paths.iter().filter(|p| sf2store::looks_like_sf2(p)).count() as u32;
-                self.file_drop = paths.first().map(|path| FileDropView {
+                let first_audio = paths.iter().find(|p| audiofiles::looks_like_audio(p));
+                let audio = (paths.iter())
+                    .filter(|p| audiofiles::looks_like_audio(p))
+                    .count() as u32;
+                self.file_drop = first_audio.or(paths.first()).map(|path| FileDropView {
                     name: (path.file_name())
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_default(),
-                    addable: sf2 > 0,
+                    addable: sf2 + audio > 0,
                     files: paths.len() as u32,
                     sf2,
+                    audio,
                 });
+            }
+            Input::FilesAt { x, y } => {
+                self.drop_at = (x, y);
+                if self.file_drop.as_ref().is_some_and(|d| d.audio > 0) {
+                    effects.push(Effect::FileEvent(meloet_protocol::Event::FileDrag { x, y }));
+                }
             }
             Input::FilesLeft => {
                 self.file_drop = None;
@@ -934,6 +978,22 @@ impl Model {
                 // Every SF2 file, in the order they were held; the others are passed over
                 // (spec 3, 89-10).
                 if !cancelled && !self.play.busy() {
+                    // The audio files wait for the screen to say where they were let go of.
+                    let (audio, paths): (Vec<PathBuf>, Vec<PathBuf>) =
+                        (paths.into_iter()).partition(|p| audiofiles::looks_like_audio(p));
+                    if !audio.is_empty() {
+                        self.drop_serial = self.drop_serial.wrapping_add(1);
+                        let (x, y) = self.drop_at;
+                        effects.push(Effect::FileEvent(meloet_protocol::Event::FileDrop {
+                            drop: self.drop_serial,
+                            x,
+                            y,
+                        }));
+                        self.pending_drop = Some(PendingDrop {
+                            id: self.drop_serial,
+                            paths: audio,
+                        });
+                    }
                     let (sf2, others): (Vec<PathBuf>, Vec<PathBuf>) =
                         paths.into_iter().partition(|p| sf2store::looks_like_sf2(p));
                     if sf2.len() + others.len() > 1 && !sf2.is_empty() {
@@ -1072,6 +1132,19 @@ impl Model {
 
     pub fn take_notes(&self, id: u32) -> Option<Vec<u8>> {
         self.play.take_notes(id)
+    }
+
+    /// Where the peaks of an audio file of the song are; `None` for an `audio` that is no
+    /// file's. A file that is being recorded or read comes with the second half of round 7
+    /// step 3 (`PeaksPlace::Growing`).
+    pub fn peaks_place(&self, audio: u32) -> Option<crate::peaks::PeaksPlace> {
+        let doc = &self.play.song().doc;
+        let source = doc.audio(meloet_model::AudioId(audio))?;
+        let dir = crate::peaks::peaks_dir()?;
+        Some(crate::peaks::PeaksPlace::File(crate::peaks::peaks_path(
+            &dir,
+            &source.uid,
+        )))
     }
 
     /// The points of a lane of the song as it is now; `None` for a `lane_id` that is no
@@ -1453,6 +1526,28 @@ impl Model {
             | Command::StopLatencyMeasure
             | Command::UseMeasuredLatency
             | Command::CloseLatencyMeasure => {}
+            Command::SetTallTrack { track } => {
+                let serial = self.play.serial();
+                let vocal = |id: u32| {
+                    (self.play.song().doc.track(meloet_model::TrackId(id)))
+                        .is_some_and(|t| t.kind.is_vocal())
+                };
+                self.tall_track = track
+                    .filter(|&id| vocal(id) && self.tall_track != Some((serial, id)))
+                    .map(|id| (serial, id));
+            }
+            Command::DropAudio { drop, .. } => {
+                // Where they go in the song comes with the second half of round 7 step 3.
+                if self.pending_drop.as_ref().is_some_and(|p| p.id == drop) {
+                    self.pending_drop = None;
+                }
+            }
+            // Vocal clips and audio files: accepted, and nothing yet
+            // (docs/architecture.md 22-17).
+            Command::SplitClips
+            | Command::SetClipField { .. }
+            | Command::ImportAudio { .. }
+            | Command::FindAudio { .. } => {}
             Command::SelectInstrument { track } => {
                 let selecting = self.play.select_instrument(track);
                 self.selected(selecting, effects);
@@ -1808,6 +1903,8 @@ impl Model {
                 let missing = match &missing {
                     MissingRef::Sf2 { file } => Missing::Sf2(file),
                     MissingRef::Plugin { key } => Missing::Plugin(key),
+                    // Nothing yet (docs/architecture.md 22-17).
+                    MissingRef::Audio { .. } => return None,
                 };
                 if named {
                     self.play.remove_missing(missing, effects);
@@ -2260,7 +2357,10 @@ impl Model {
                 transport.can_record &= !self.measuring();
                 transport
             },
-            arrange: self.play.arrange_view(),
+            arrange: ArrangeView {
+                tall_track: self.tall_track_view(),
+                ..self.play.arrange_view()
+            },
             piano_roll: self.play.piano_roll_view(),
             workspace: WorkspaceView {
                 scale: self.scale,
@@ -2313,8 +2413,16 @@ impl Model {
             },
             inputs: self.inputs_view(),
             audio,
+            audio_work: AudioWorkView::default(),
             status: StatusView { message: status },
         }
+    }
+
+    /// The row that is 160 high, while its track is still a vocal track of this song.
+    fn tall_track_view(&self) -> Option<u32> {
+        let (serial, id) = self.tall_track?;
+        let track = self.play.song().doc.track(meloet_model::TrackId(id))?;
+        (serial == self.play.serial() && track.kind.is_vocal()).then_some(id)
     }
 
     fn audio_view(&self) -> AudioView {
@@ -2403,9 +2511,15 @@ impl Model {
             return Some(StatusMessage::PluginStopped { name, slot });
         }
         if let Some(drop) = &self.file_drop {
-            return Some(match drop.addable {
-                true => StatusMessage::Sf2Dragging,
-                false => StatusMessage::NotSf2Dragging,
+            return Some(match drop {
+                FileDropView {
+                    audio: 1.., sf2, ..
+                } => StatusMessage::AudioDragging {
+                    audio: drop.audio,
+                    sf2: *sf2,
+                },
+                FileDropView { addable: true, .. } => StatusMessage::Sf2Dragging,
+                _ => StatusMessage::NotSf2Dragging,
             });
         }
         if let Some(m) = self.play.moving_status() {
@@ -2667,6 +2781,8 @@ fn asked_to_see(notice: &StatusMessage) -> bool {
 
 #[cfg(test)]
 pub(crate) mod added_tests;
+#[cfg(test)]
+mod audio_tests;
 #[cfg(test)]
 mod plugin_tests;
 #[cfg(test)]

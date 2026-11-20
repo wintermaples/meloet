@@ -13,7 +13,7 @@ const BAR: u64 = 4 * Q;
 fn vocal_song() -> Song {
     let mut song = Song::new_default();
     let tempo = song.doc.timeline.tempo;
-    let source = |id: u32, file: &str, sha256| {
+    let source = |id: u32, file: &str, sha256: Option<[u8; 32]>| {
         Arc::new(AudioSource {
             id: AudioId(id),
             uid: std::array::from_fn(|i| (id as u8).wrapping_mul(17).wrapping_add(i as u8)),
@@ -21,6 +21,8 @@ fn vocal_song() -> Song {
             frames: 960_000,
             sample_rate: 48_000,
             channels: 1,
+            // A file brought in may be of a kind with no bits (mp3).
+            bits: sha256.is_none().then_some(24),
             sha256,
         })
     };
@@ -151,6 +153,9 @@ fn the_shape_of_a_vocal_track_on_disk() {
                "sha256": "ab".repeat(32)})
     );
     assert_eq!(v["song"]["audio"][0].get("sha256"), None);
+    // The bits of a recorded file; a file of a kind with none leaves them out.
+    assert_eq!(v["song"]["audio"][0]["bits"], 24);
+    assert_eq!(v["song"]["audio"][1].get("bits"), None);
     assert_eq!(
         v["audioTakes"],
         json!([
@@ -184,6 +189,7 @@ fn vocal_tracks_and_audio_that_cannot_be_do_not_read() {
     fn track(v: &mut Value) -> &mut Value {
         &mut v["song"]["tracks"][1]
     }
+    assert!(broken(&|v| v["song"]["audio"][0]["bits"] = json!(12)));
     // The kind and the input.
     assert!(broken(&|v| track(v)["kind"] = json!("drums")));
     assert!(broken(&|v| track(v)["input"] = json!("mono3")));

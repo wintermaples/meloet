@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{EffectKind, InsertRef, PluginSlotRef, SelectedInsert, SelectedSound};
+use crate::{EffectKind, InsertRef, PluginSlotRef, SelectedClip, SelectedInsert, SelectedSound};
 
 /// Whether a plugin has a window of its own, and whether meloet can open it. Known once the
 /// plugin is read.
@@ -73,6 +73,10 @@ pub enum SelectedParams {
     Plugin(SelectedPlugin),
     /// The instrument of a track that has no parameters (spec 3, 19-A).
     Sound(SelectedSound),
+    /// 「選んだクリップ」: the one selected clip, a vocal clip (spec 3, 93-4). Selecting an
+    /// insert or an instrument afterwards takes its place; selecting clips again brings it
+    /// back.
+    Clip(SelectedClip),
 }
 
 /// A plugin in the parameters panel. Its name, format and state (`PluginView`) and whether

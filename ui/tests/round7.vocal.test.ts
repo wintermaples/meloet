@@ -229,6 +229,18 @@ describe("状態行の文（仕様書 6 章）", () => {
   };
   const six = { number: 6, name: "歌" };
 
+  // 約束 24 の文（位置は 4 けたのティック）。1 つだけ持ってきているときの文は仕様書にない（仮）。
+  it.each<[string, StatusMessage, string]>([
+    ["見つからない音", { id: "audioMissing", count: 2 }, "曲で使っている音のファイルが 2 つ見つかりません。そのクリップは鳴りません。"],
+    ["切った", { id: "clipSplit", name: "歌 テイク 1", tick: 6 * 7680, count: 1 }, "歌 テイク 1 を 7. 1. 0000 で切りました。"],
+    ["入れた", { id: "audioImported", file: "ドラム.wav", track: six, tick: 4 * 7680, count: 1, skipped: 0 }, "ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。"],
+    ["読めない", { id: "audioUnreadable", file: "声.aac" }, "「声.aac」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。"],
+    ["持ってきている", { id: "audioDragging", audio: 8, sf2: 0 }, "音のファイルを 8 つ持ってきています ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる"],
+    ["1 つ持ってきている", { id: "audioDragging", audio: 1, sf2: 0 }, "音のファイルを持ってきています"],
+  ])("約束 24 の文: %s", (_, message, line) => {
+    expect(say(message)).toBe(line);
+  });
+
   it("歌を録っている: 頭の「● 録音中 ・ 」は札が言う", () => {
     const line = say({ id: "recordingVocals", keys: null, vocals: [{ track: six, input: "mono1" }], monitor: true }, (s) => (s.transport.state = "recording"));
     expect(line).toBe("6 歌（入口 1）・ モニター オン ・ 止めるには Space");

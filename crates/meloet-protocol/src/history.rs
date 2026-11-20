@@ -144,6 +144,14 @@ pub enum StepName {
     DiscardRecovered,
     /// `Command::SetVocalInput`.
     SetVocalInput,
+    /// S (`Command::SplitClips`).
+    SplitClips,
+    /// Audio files brought in (`Command::ImportAudio`, `Command::DropAudio`).
+    ImportAudio,
+    /// The volume of a vocal clip.
+    SetClipGain,
+    /// A fade of a vocal clip.
+    SetClipFade,
 }
 
 impl StepName {
@@ -227,6 +235,10 @@ impl StepName {
             Recovered,
             DiscardRecovered,
             SetVocalInput,
+            SplitClips,
+            ImportAudio,
+            SetClipGain,
+            SetClipFade,
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -297,7 +309,11 @@ impl StepName {
                 | SetLoop
                 | Recovered
                 | DiscardRecovered
-                | SetVocalInput => {}
+                | SetVocalInput
+                | SplitClips
+                | ImportAudio
+                | SetClipGain
+                | SetClipFade => {}
             }
         }
         all
@@ -465,6 +481,12 @@ pub enum StepWhat {
         track: TrackRef,
         from: VocalInput,
         to: VocalInput,
+    },
+    /// "歌 テイク 1 ・ −3.0 → 0.0 dB" (`StepName::SetClipGain`): the clip's name.
+    ClipGain {
+        name: String,
+        from_db: f32,
+        to_db: f32,
     },
 }
 

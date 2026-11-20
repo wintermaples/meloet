@@ -748,6 +748,36 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
             a.clip_track(clip),
         ),
+        StepKind::SplitClips { count: n } => (StepName::SplitClips, clips(n), arrange),
+        StepKind::ImportAudio { count: n } => (StepName::ImportAudio, clips(n), arrange),
+        StepKind::SetClipGain { clip } => {
+            let gain = |doc: &Doc| {
+                let (_, c) = doc.clip(clip)?;
+                Some((c.name.clone(), c.takes.shape()?.gain.db() as f32))
+            };
+            (
+                StepName::SetClipGain,
+                match (gain(a.before), gain(a.after)) {
+                    (Some((_, from_db)), Some((name, to_db))) => StepWhat::ClipGain {
+                        name,
+                        from_db,
+                        to_db,
+                    },
+                    _ => StepWhat::None,
+                },
+                a.clip_track(clip),
+            )
+        }
+        StepKind::SetClipFade { clip } => (
+            StepName::SetClipFade,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            a.clip_track(clip),
+        ),
+        StepKind::RemoveAudio { audio, .. } => (
+            StepName::RemoveMissing,
+            named(a.before.audio(audio).map(|s| s.file.clone())),
+            arrange,
+        ),
         StepKind::SetGain { strip } => {
             let gain = |doc: &Doc| doc.channel(strip).and_then(|c| gain_view(c.gain));
             (

@@ -6,6 +6,7 @@
 //! boundary goes through `rtrb` rings or atomics.
 
 mod automation;
+mod clips;
 mod clock;
 mod effect;
 mod engine;
@@ -16,10 +17,12 @@ mod output;
 mod plugin;
 mod probe;
 pub mod rt;
+mod stream;
 mod synth;
 mod transport;
 
 pub use automation::{AutoLane, AutoSet, EFFECT_STEP, HOLDS, MIX_STEP, PLUGIN_POINTS, place_at};
+pub use clips::{ClipRegion, ClipTable, song_frame, song_frame_at};
 pub use clock::{HeardPosition, TransportClock, TransportState};
 pub use effect::{Effect, EffectContext};
 pub use engine::{
@@ -40,6 +43,10 @@ pub use plugin::{
 pub use probe::{
     FrameClock, PROBE_LISTEN_S, PROBE_PEAK, ProbeFound, ProbeHeard, ProbeVerdict, find_probe,
     judge_probes, probe_wave,
+};
+pub use stream::{
+    STREAM_CHANNELS, STREAM_REFILL_SECONDS, STREAM_RING_SECONDS, StreamChunk, StreamRead,
+    StreamReader, StreamWant, StreamWriter, stream_ring, want_ring,
 };
 pub use synth::PlaceholderSynth;
 pub use transport::{Sequence, SequenceEvent, TrackSet};

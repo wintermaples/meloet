@@ -211,8 +211,8 @@
   });
 
   function shapesOf(trackId: number, clip: ClipView): G.NoteShape[] {
-    // 歌のクリップのテイクは音（波形は約束 24）。take_notes にはない。
-    if (clip.vocal) return [];
+    // 歌のクリップのテイクは音。take_notes にはない。
+    if (clip.audio !== null) return [];
     const take = takeOf(clip.takeId);
     if (take) return G.takeShapes(clip, take);
     if (fallback?.track !== trackId) return [];

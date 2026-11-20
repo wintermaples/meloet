@@ -65,7 +65,7 @@ function clip(id: number, name: string, fromBar: number, toBar: number, take = 1
     takeId: 100 + id,
     takeOffset: 0,
     noteCount: 0,
-    vocal: false,
+    audio: null,
   };
 }
 
@@ -92,7 +92,7 @@ const three = (selected: number[] = [], clicked: number | null = null) =>
     ];
     s.song.playTarget = 2;
     s.song.keysTarget = 2;
-    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1 };
+    s.arrange = { selectedClips: selected, selectedClip: clicked, pianoRollClip: clicked, clipboardClips: 1, tallTrack: null };
   });
 
 const rows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");

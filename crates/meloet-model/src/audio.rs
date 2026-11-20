@@ -80,6 +80,9 @@ pub struct AudioSource {
     pub sample_rate: u32,
     /// 1 or 2.
     pub channels: u8,
+    /// The bits of a sample as the file has them (16, 24, 32), for 「48000 Hz ・ 24 ビット」.
+    /// `None`: the file's kind has no such number (mp3, ogg).
+    pub bits: Option<u8>,
     /// Of a file brought in, to tell whether a file found later holds the same audio.
     pub sha256: Option<[u8; 32]>,
 }
@@ -173,6 +176,7 @@ impl AudioShape {
     }
 }
 
+pub mod fade;
 pub mod record;
 
 #[cfg(test)]

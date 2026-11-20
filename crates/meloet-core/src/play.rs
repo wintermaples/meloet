@@ -12,9 +12,9 @@ use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::quantize;
 use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
 use meloet_model::{
-    Bus, Clip, ClipEdited, ClipId, Doc, Gain, History, Insert, InstrumentGroup, InstrumentRef,
-    Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, TempoMap, TickRange, Timeline, TrackId,
-    arrange, roll, timeline as timeline_edit,
+    AutoTarget, Bus, Clip, ClipEdited, ClipId, Doc, Gain, History, Insert, InstrumentGroup,
+    InstrumentRef, Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, TempoMap, TickRange,
+    Timeline, TrackId, arrange, roll, timeline as timeline_edit,
 };
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
@@ -214,6 +214,18 @@ pub enum EngineOp {
         instrument: InstrumentRef,
     },
     StopSample,
+    /// For an open stream only, as `Sequence`. The lanes of the track on the seat that play
+    /// from now on, in place of the ones before (`play/autosync.rs`).
+    Automation {
+        seat: usize,
+        lanes: Vec<SeatLane>,
+    },
+    /// A person has hold of what a lane of the track on the seat moves, or let go of it.
+    HoldLane {
+        seat: usize,
+        target: AutoTarget,
+        on: bool,
+    },
 }
 
 /// A strip of the engine's mixer. A track is named by its seat.
@@ -415,6 +427,7 @@ pub struct Play {
     wins: Windows,
     panel: Panel,
     tl: timeline::Tl,
+    auto: autosync::AutoSync,
 }
 
 impl Play {
@@ -430,6 +443,7 @@ impl Play {
             mix_told: MixTold::new(),
             plugs: Plugs::default(),
             wins: Windows::default(),
+            auto: autosync::AutoSync::default(),
             panel: Panel::default(),
             tl: timeline::Tl::default(),
             song,
@@ -1144,6 +1158,7 @@ impl Play {
         self.sync_seats(before, effects);
         self.mixer_changed();
         self.sync_mix(effects);
+        self.sync_automation(false, effects);
         let doc = &self.song.doc;
         let target = &mut self.song.session.play_target;
         if target.is_none_or(|t| doc.track(t).is_none()) {
@@ -1201,6 +1216,7 @@ impl Play {
         }
         self.send_silent(effects);
         self.send_target(effects);
+        self.sync_automation(true, effects);
     }
 
     /// The stream is gone: stops where the listener was. A recording keeps what was played up
@@ -2264,6 +2280,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
     out
 }
 
+mod autosync;
 mod history;
 mod mix;
 pub(crate) mod mixer;
@@ -2277,6 +2294,7 @@ mod timeline;
 mod tracks;
 mod windows;
 
+pub use autosync::SeatLane;
 use mixer::Mixer;
 pub use mixer::{Preview, Selecting};
 use mixsync::MixTold;

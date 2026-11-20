@@ -46,4 +46,15 @@ pub trait Effect: Send {
     fn latency(&self) -> u32 {
         0
     }
+    /// Whether automation reaches the effect as points in the block ([`Effect::set_param_at`])
+    /// rather than as `set_param` at the head of pieces of it: a plugin in another process.
+    fn takes_points(&self) -> bool {
+        false
+    }
+    /// An automation point: `value` (0..=1 for a plugin) at `frame` of the next `process`,
+    /// a straight line from the point before. On the audio thread, as `set_param`.
+    fn set_param_at(&mut self, frame: u32, index: u32, value: f32) {
+        let _ = frame;
+        self.set_param(index, value);
+    }
 }

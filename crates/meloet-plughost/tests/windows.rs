@@ -129,7 +129,12 @@ fn the_keyboard_coming_and_going_and_the_close_button_are_told() {
     host.notices.clear();
 
     let entered = |n: &Notice| *n == Notice::EditorEntered { slot: 1 };
-    let left = |n: &Notice| *n == Notice::EditorLeft { slot: 1 };
+    let left = |n: &Notice| {
+        *n == Notice::EditorLeft {
+            slot: 1,
+            touches: 0,
+        }
+    };
     x.focus(window);
     assert!(host.wait_for(WAIT, entered).is_some());
     x.unfocus();
@@ -146,7 +151,10 @@ fn the_keyboard_coming_and_going_and_the_close_button_are_told() {
     assert_eq!(
         host.notices,
         [
-            Notice::EditorLeft { slot: 1 },
+            Notice::EditorLeft {
+                slot: 1,
+                touches: 0
+            },
             Notice::EditorClosed { slot: 1 }
         ]
     );
@@ -172,7 +180,7 @@ fn a_knob_turned_in_the_window_reaches_the_sound_and_is_told_thirty_times_a_seco
 
     assert_eq!(open(&mut host, 0, "Fake knob"), EditorOpen::Opening);
     let started = Instant::now();
-    let end = |n: &Notice| matches!(n, Notice::ParamEnd { slot: 0, id: 0 });
+    let end = |n: &Notice| matches!(n, Notice::ParamEnd { slot: 0, id: 0, .. });
     assert!(host.wait_for(WAIT, end).is_some());
     let took = started.elapsed();
 
@@ -184,7 +192,22 @@ fn a_knob_turned_in_the_window_reaches_the_sound_and_is_told_thirty_times_a_seco
             )
         })
         .collect();
-    assert_eq!(params[0], &Notice::ParamBegin { slot: 0, id: 0 });
+    assert!(matches!(
+        params[0],
+        Notice::ParamBegin { slot: 0, id: 0, .. }
+    ));
+    // Each with the time the plugin said it, in order, on meloet's clock.
+    let times: Vec<u64> = (params.iter())
+        .map(|n| match n {
+            Notice::ParamBegin { t_us, .. }
+            | Notice::ParamChanged { t_us, .. }
+            | Notice::ParamEnd { t_us, .. } => *t_us,
+            _ => 0,
+        })
+        .collect();
+    let now_us = meloet_plugin::ipc::futex::monotonic_ns() / 1000;
+    assert!(times.windows(2).all(|w| w[0] <= w[1]), "{times:?}");
+    assert!(times[0] + 10_000_000 > now_us && *times.last().unwrap() <= now_us);
     let moves = &params[1..params.len() - 1];
     // Forty moves were made; no more than 30 a second were told, and the first at once.
     let most = (took.as_secs_f64() * 30.0).ceil() as usize + 1;
@@ -201,6 +224,7 @@ fn a_knob_turned_in_the_window_reaches_the_sound_and_is_told_thirty_times_a_seco
             id: 0,
             value,
             text: Some(text),
+            ..
         } = told
         else {
             panic!("{told:?}");

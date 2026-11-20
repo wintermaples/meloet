@@ -295,7 +295,7 @@ fn look(x: &X, plugin: Plugin) {
     x.focus(window);
     let entered = (host.wait_for(WAIT, |n| *n == Notice::EditorEntered { slot: 0 })).is_some();
     x.unfocus();
-    let left = (host.wait_for(WAIT, |n| *n == Notice::EditorLeft { slot: 0 })).is_some();
+    let left = (host.wait_for(WAIT, |n| matches!(n, Notice::EditorLeft { slot: 0, .. }))).is_some();
     let resized: Vec<Notice> = (host.notices.iter())
         .filter(|n| matches!(n, Notice::EditorResized { .. }))
         .cloned()

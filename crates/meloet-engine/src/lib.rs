@@ -5,6 +5,7 @@
 //! The audio thread never allocates, never frees, never locks. Everything crossing the thread
 //! boundary goes through `rtrb` rings or atomics.
 
+mod automation;
 mod clock;
 mod effect;
 mod engine;
@@ -16,6 +17,7 @@ pub mod rt;
 mod synth;
 mod transport;
 
+pub use automation::{AutoLane, AutoSet, EFFECT_STEP, HOLDS, MIX_STEP, PLUGIN_POINTS, place_at};
 pub use clock::{HeardPosition, TransportClock, TransportState};
 pub use effect::{Effect, EffectContext};
 pub use engine::{

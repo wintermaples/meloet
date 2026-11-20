@@ -1249,6 +1249,28 @@ impl Audio {
             EngineOp::SilentTracks { tracks } => EngineCommand::SetSilentTracks {
                 tracks: tracks.into_iter().collect::<TrackSet>(),
             },
+            EngineOp::Automation { seat, lanes } => {
+                if self.stream.is_some() {
+                    let lanes = (lanes.into_iter())
+                        .map(|lane| meloet_engine::AutoLane {
+                            target: lane.target,
+                            step: lane.step,
+                            points: lane.points,
+                            slot: lane.slot,
+                            effect: lane.effect,
+                        })
+                        .collect();
+                    if self.handle.set_automation(seat, lanes).is_err() {
+                        eprintln!("meloet: the engine did not take the lanes of track {seat}");
+                    }
+                }
+                return;
+            }
+            EngineOp::HoldLane { seat, target, on } => EngineCommand::HoldLane {
+                track: seat,
+                target,
+                on,
+            },
             EngineOp::Sequence { track, events } => {
                 if self.stream.is_some() {
                     let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());
@@ -1385,8 +1407,8 @@ impl PluginSide {
     }
 
     /// News of one plugin, for the rules: which ticket it was loaded under, and what it
-    /// said. `None` for a plugin no ticket stands for any more.
-    fn said(&self, news: HostNews) -> Option<(u64, PluginSaid)> {
+    /// said, in order. `None` for a plugin no ticket stands for any more.
+    fn said(&self, news: HostNews) -> Option<(u64, Vec<PluginSaid>)> {
         let (slot, said) = match news {
             HostNews::Stopped { .. } => return None,
             HostNews::WindowOpened {
@@ -1421,27 +1443,54 @@ impl PluginSide {
             }
             HostNews::WindowClosed { slot } => (slot, PluginSaid::WindowClosed),
             HostNews::WindowEntered { slot } => (slot, PluginSaid::WindowEntered),
-            HostNews::WindowLeft { slot } => (slot, PluginSaid::WindowLeft),
+            HostNews::WindowLeft { slot, touches } => {
+                let said = vec![
+                    PluginSaid::WindowTouches { touches },
+                    PluginSaid::WindowLeft,
+                ];
+                return self.ticket(slot).map(|ticket| (ticket, said));
+            }
             HostNews::Notice { slot, notice } => match notice {
                 Notice::ParamChanged {
-                    id, value, text, ..
+                    id,
+                    value,
+                    text,
+                    t_us,
+                    ..
                 } => {
                     let now = ParamNow {
                         id,
                         value: Some(value),
                         text,
                     };
-                    (slot, PluginSaid::Param(now))
+                    let moved = PluginSaid::ParamMoved {
+                        param: id,
+                        value,
+                        t_us,
+                    };
+                    let said = vec![PluginSaid::Param(now), moved];
+                    return self.ticket(slot).map(|ticket| (ticket, said));
+                }
+                Notice::ParamBegin { id, t_us, .. } | Notice::ParamEnd { id, t_us, .. } => {
+                    let on = matches!(notice, Notice::ParamBegin { .. });
+                    let said = PluginSaid::ParamTouch {
+                        param: id,
+                        on,
+                        t_us,
+                    };
+                    (slot, said)
                 }
                 Notice::ParamsChanged { .. } => (slot, PluginSaid::ParamsChanged),
-                // The step is made when the person leaves the window, and the engine counts
-                // the delays by itself.
+                // The engine counts the delays by itself.
                 _ => return None,
             },
         };
+        Some((self.ticket(slot)?, vec![said]))
+    }
+
+    fn ticket(&self, slot: SlotId) -> Option<u64> {
         let mut tickets = self.ids.iter();
-        let ticket = tickets.find_map(|(ticket, (id, _))| (*id == slot).then_some(*ticket));
-        Some((ticket?, said))
+        tickets.find_map(|(ticket, (id, _))| (*id == slot).then_some(*ticket))
     }
 
     /// Lets go of the plugins the engine handed back since the last look.
@@ -1573,7 +1622,10 @@ impl Worker {
                 }
                 Ok(Msg::Plugins(news)) => {
                     let said = self.plugins.as_ref().and_then(|side| side.said(news));
-                    if let Some((ticket, said)) = said {
+                    for (ticket, said) in said
+                        .into_iter()
+                        .flat_map(|(t, all)| all.into_iter().map(move |said| (t, said)))
+                    {
                         self.handle(Input::PluginSaid { ticket, said });
                     }
                 }

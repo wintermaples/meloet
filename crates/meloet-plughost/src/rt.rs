@@ -29,6 +29,8 @@ const IDLE_NS: u64 = 100_000_000;
 const COMMANDS: usize = 256;
 /// Events a processor may send in one block.
 const SINK_EVENTS: usize = 64;
+/// Parameters the person may hold at once in one plugin's window.
+const TOUCHED: usize = 32;
 /// The priority asked for: the most rtkit gives (docs/research/plugin-ipc.md). PipeWire gives
 /// meloet's own audio thread 88 where the limits allow and the same 20 through rtkit, so this
 /// thread never stands above the one it works for.
@@ -44,6 +46,9 @@ pub struct SlotRun {
     events: Vec<ToPlugin>,
     sink: EventSink,
     latency: u32,
+    /// The parameters the person has hold of in the plugin's window: meloet's points for
+    /// them are passed over (docs/architecture.md 21-10).
+    touched: Vec<u32>,
 }
 
 impl SlotRun {
@@ -65,6 +70,18 @@ impl SlotRun {
             events: Vec::with_capacity(geometry.to_plugin_events as usize + COMMANDS),
             sink: EventSink::with_capacity(SINK_EVENTS),
             latency,
+            touched: Vec::with_capacity(TOUCHED),
+        }
+    }
+
+    fn touch(&mut self, id: u32, on: bool) {
+        let at = self.touched.iter().position(|t| *t == id);
+        match (at, on) {
+            (None, true) if self.touched.len() < self.touched.capacity() => self.touched.push(id),
+            (Some(at), false) => {
+                self.touched.swap_remove(at);
+            }
+            _ => {}
         }
     }
 
@@ -94,7 +111,8 @@ impl SlotRun {
             self.end.read_input(channel, &mut input[..frames]);
         }
         while let Some(event) = self.end.pop_event() {
-            if self.events.len() < self.events.capacity() {
+            let held = matches!(event, ToPlugin::Param { id, .. } if self.touched.contains(&id));
+            if !held && self.events.len() < self.events.capacity() {
                 self.events.push(event);
             }
         }
@@ -276,6 +294,14 @@ impl Handle {
             run.queue(id, value);
         }
         self.bell.ring();
+        Ok(())
+    }
+
+    /// The person took hold of a parameter in the window, or let go of it.
+    pub fn touch(&mut self, slot: u32, id: u32, on: bool) -> Result<(), String> {
+        if let Some(run) = self.seat(slot)?.run() {
+            run.touch(id, on);
+        }
         Ok(())
     }
 
@@ -480,7 +506,8 @@ mod tests {
         let mut loudest = 0.0f32;
         let before = rtcheck::count();
         for block in 0..300u32 {
-            assert!(engine.begin(1 + (block as usize * 37) % 256));
+            let frames = 1 + (block as usize * 37) % 256;
+            assert!(engine.begin(frames));
             engine.write_input(0, &input);
             engine.write_input(1, &input);
             let key = 48 + (block / 20 % 12) as u8;
@@ -506,6 +533,12 @@ mod tests {
                     id,
                     value,
                 });
+                // A point inside the block: LV2 runs it in pieces.
+                engine.push_event(ToPlugin::Param {
+                    frame: frames as u32 / 2,
+                    id,
+                    value: 1.0 - value,
+                });
                 run.queue(ids[0], value);
             }
             if block == 200 {
@@ -523,6 +556,174 @@ mod tests {
         let counted = rtcheck::count() - before;
         drop(run);
         (counted, loudest)
+    }
+
+    /// Counts the parameter changes of each block, by id.
+    struct Count(Arc<[std::sync::atomic::AtomicU32; 8]>);
+
+    impl Processor for Count {
+        fn process(&mut self, block: &mut ProcessBlock<'_>) {
+            for cell in self.0.iter() {
+                cell.store(0, SeqCst);
+            }
+            for event in block.events {
+                if let ToPlugin::Param { id, .. } = *event {
+                    self.0[id as usize % 8].fetch_add(1, SeqCst);
+                }
+            }
+            for output in block.outputs.iter_mut() {
+                output.fill(0.0);
+            }
+        }
+        fn reset(&mut self) {}
+    }
+
+    /// While the person holds a parameter in the window, meloet's points for it are passed
+    /// over; the person's own changes and the other parameters' points are not.
+    #[test]
+    fn points_of_a_parameter_held_in_the_window_are_passed_over() {
+        let map = Arc::new(
+            Mapping::create(Geometry {
+                max_frames: 64,
+                channels: 2,
+                slots: 1,
+                to_plugin_events: 64,
+                from_plugin_events: 64,
+            })
+            .unwrap(),
+        );
+        let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
+        let end = PluginEnd::new(map.clone(), 0).unwrap();
+        let counts: Arc<[std::sync::atomic::AtomicU32; 8]> = Arc::new(Default::default());
+        let mut run = SlotRun::new(&map, end, Box::new(Count(counts.clone())), 0);
+        let mut block = |run: &mut SlotRun, held: Option<u32>| {
+            assert!(engine.begin(64));
+            for (frame, id) in [(10, 5), (63, 5), (63, 6)] {
+                engine.push_event(ToPlugin::Param {
+                    frame,
+                    id,
+                    value: 0.5,
+                });
+            }
+            if let Some(id) = held {
+                run.queue(id, 0.25);
+            }
+            engine.submit();
+            assert!(run.serve());
+            assert!(engine.wait(monotonic_ns()));
+            [counts[5].load(SeqCst), counts[6].load(SeqCst)]
+        };
+        assert_eq!(block(&mut run, None), [2, 1]);
+        run.touch(5, true);
+        assert_eq!(block(&mut run, Some(5)), [1, 1]);
+        run.touch(5, false);
+        assert_eq!(block(&mut run, None), [2, 1]);
+    }
+
+    /// What a plugin makes of a jump of a parameter in the middle of a block: the block of
+    /// 512 frames gets the points (255, before) and (256, after) of `name`; the loudness of
+    /// its two halves against a block without the jump. Prints what it found.
+    fn jump_inside_the_block(key: &str, bundle: &str, name: &str) -> Option<(f32, f32)> {
+        if !Path::new(bundle).exists() {
+            eprintln!("{bundle} is not installed; nothing tested");
+            return None;
+        }
+        let activation = Activation {
+            sample_rate: 48_000.0,
+            max_frames: 512,
+        };
+        let key: PluginKey = key.parse().unwrap();
+        let mut loaded = crate::formats::load(&key, Path::new(bundle), activation).unwrap();
+        let params = loaded.controller.params();
+        let param = (params.iter())
+            .find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("no {name}"));
+        let (id, before) = (param.id, 0.9);
+        let map = Arc::new(
+            Mapping::create(Geometry {
+                max_frames: 512,
+                channels: 2,
+                slots: 1,
+                to_plugin_events: 64,
+                from_plugin_events: 64,
+            })
+            .unwrap(),
+        );
+        let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
+        let end = PluginEnd::new(map.clone(), 0).unwrap();
+        let mut run = SlotRun::new(&map, end, loaded.processor, 0);
+        let mut out = [0.0f32; 512];
+        let mut block = |events: &[ToPlugin]| {
+            assert!(engine.begin(512));
+            engine.write_input(0, &[0.0; 512]);
+            engine.write_input(1, &[0.0; 512]);
+            for &event in events {
+                engine.push_event(event);
+            }
+            engine.submit();
+            assert!(run.serve());
+            assert!(engine.wait(monotonic_ns()));
+            engine.read_output(0, &mut out);
+            while engine.pop_event().is_some() {}
+            out
+        };
+        let rms = |x: &[f32]| (x.iter().map(|s| s * s).sum::<f32>() / x.len() as f32).sqrt();
+        let note = ToPlugin::Midi {
+            frame: 0,
+            data: [0x90, 57, 100],
+        };
+        block(&[
+            note,
+            ToPlugin::Param {
+                frame: 0,
+                id,
+                value: before,
+            },
+        ]);
+        for _ in 0..40 {
+            block(&[]);
+        }
+        let steady = block(&[]);
+        let jumped = block(&[
+            ToPlugin::Param {
+                frame: 255,
+                id,
+                value: before,
+            },
+            ToPlugin::Param {
+                frame: 256,
+                id,
+                value: 0.0,
+            },
+        ]);
+        let halves = (
+            rms(&jumped[..256]) / rms(&steady[..256]),
+            rms(&jumped[256..]) / rms(&steady[256..]),
+        );
+        eprintln!("{key:?} {name} ({id}) from {before:.3} to 0 at frame 256: halves {halves:?}");
+        Some(halves)
+    }
+
+    /// `cargo test -p meloet-plughost -- --ignored surge_xt_takes_a_jump --nocapture`
+    #[test]
+    #[ignore = "needs Surge XT"]
+    fn surge_xt_takes_a_jump_inside_the_block() {
+        for (key, bundle) in [
+            (
+                "vst3:ABCDEF019182FAEB566D624153675854",
+                "/usr/lib/vst3/Surge XT.vst3",
+            ),
+            (
+                "lv2:https://surge-synthesizer.github.io/lv2/surge-xt",
+                "/usr/lib/lv2/Surge XT.lv2",
+            ),
+        ] {
+            // JUCE takes the last value of a block for all of it (docs/research/
+            // automation-vst3.md): the first half is not as loud as before either.
+            if let Some((first, second)) = jump_inside_the_block(key, bundle, "Global Volume") {
+                assert!(second < 0.1 && first < 0.9, "{first} {second}");
+            }
+        }
     }
 
     #[test]

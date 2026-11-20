@@ -43,7 +43,55 @@ impl Gain {
     pub fn linear(self) -> f32 {
         self.db().map_or(0.0, |db| 10f64.powf(db / 20.0) as f32)
     }
+
+    /// The length of the fader at this level, 0..=1: the scale of spec 2 「メーターとフェーダーの
+    /// 目盛」 (+6 is 1, 0 dB is 0.8, −60 and −∞ are 0), in straight pieces between its marks.
+    /// What an automation point of a fader or a send holds (docs/architecture.md 21-5); the
+    /// screen's `dbToFrac` gives the same.
+    pub fn position(self) -> f32 {
+        let Some(db) = self.db() else {
+            return 0.0;
+        };
+        if db >= Self::MAX_DB {
+            return 1.0;
+        }
+        for pair in FADER_SCALE.windows(2) {
+            let ((hi_db, hi_len), (lo_db, lo_len)) = (pair[0], pair[1]);
+            if db >= lo_db {
+                return ((lo_len + (db - lo_db) / (hi_db - lo_db) * (hi_len - lo_len)) / 100.0)
+                    as f32;
+            }
+        }
+        0.0
+    }
+
+    /// The level at a length of the fader, as [`Gain::position`] measures it; 0 is −∞.
+    pub fn from_position(position: f32) -> Gain {
+        if position.is_nan() || position <= 0.0 {
+            return Self::SILENT;
+        }
+        let len = f64::from(position.min(1.0)) * 100.0;
+        for pair in FADER_SCALE.windows(2) {
+            let ((hi_db, hi_len), (lo_db, lo_len)) = (pair[0], pair[1]);
+            if len >= lo_len {
+                return Gain::from_db(lo_db + (len - lo_len) / (hi_len - lo_len) * (hi_db - lo_db));
+            }
+        }
+        Self::SILENT
+    }
 }
+
+/// The marks of the fader's scale, top down: dB and the length there in percent
+/// (`meterScale` in ui/src/design/tokens.ts).
+const FADER_SCALE: [(f64, f64); 7] = [
+    (6.0, 100.0),
+    (0.0, 80.0),
+    (-3.0, 70.0),
+    (-6.0, 60.0),
+    (-12.0, 40.0),
+    (-24.0, 20.0),
+    (-60.0, 0.0),
+];
 
 impl Default for Gain {
     fn default() -> Self {
@@ -64,6 +112,20 @@ impl Pan {
 
     pub fn get(self) -> i8 {
         self.0
+    }
+
+    /// `(pan + 100) / 200`: 0 all left, 0.5 the middle, 1 all right (docs/architecture.md 21-5).
+    pub fn position(self) -> f32 {
+        (f32::from(self.0) + 100.0) / 200.0
+    }
+
+    /// The pan at an automation position, not rounded to a whole step: −1.0 all left to 1.0
+    /// all right, as the engine takes it.
+    pub fn unit_at(position: f32) -> f32 {
+        if position.is_nan() {
+            return 0.0;
+        }
+        position.clamp(0.0, 1.0) * 2.0 - 1.0
     }
 }
 

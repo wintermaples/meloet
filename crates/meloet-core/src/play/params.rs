@@ -448,6 +448,10 @@ impl Play {
             PluginSaid::WindowEntered => self.window_entered(ticket, effects),
             PluginSaid::WindowLeft => self.window_left(ticket, effects),
             PluginSaid::Param(now) => self.param_now(ticket, now),
+            // Taken up by the automation's writing and resting (core, 21-9, 21-10).
+            PluginSaid::ParamTouch { .. }
+            | PluginSaid::ParamMoved { .. }
+            | PluginSaid::WindowTouches { .. } => {}
             PluginSaid::ParamsChanged => self.table_stale(ticket),
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),

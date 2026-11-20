@@ -176,8 +176,9 @@ pub enum HostNews {
     WindowEntered { slot: SlotId },
     /// The keyboard went somewhere else. Not told when the window goes away under the
     /// person by [`Hosts::close_window`], [`Hosts::unload`] or `Stopped`: the visit ends
-    /// with the window then.
-    WindowLeft { slot: SlotId },
+    /// with the window then. `touches`: how often the person took hold of a parameter or
+    /// loaded a program in the window meanwhile (docs/architecture.md 21-10).
+    WindowLeft { slot: SlotId, touches: u32 },
     /// The rest of what a plugin does by itself:
     /// - `ParamBegin`, `ParamChanged`, `ParamEnd`: the person takes hold of a parameter in
     ///   the plugin's window, moves it, lets it go. The plugin's sound has the value
@@ -749,7 +750,7 @@ impl Run {
             },
             Notice::EditorClosed { .. } => HostNews::WindowClosed { slot },
             Notice::EditorEntered { .. } => HostNews::WindowEntered { slot },
-            Notice::EditorLeft { .. } => HostNews::WindowLeft { slot },
+            Notice::EditorLeft { touches, .. } => HostNews::WindowLeft { slot, touches },
             notice => {
                 if let (Notice::ParamChanged { id, value, .. }, Some(kept)) =
                     (&notice, self.slots.get_mut(&slot))
@@ -1030,7 +1031,7 @@ fn notice_slot(notice: &Notice) -> u32 {
         | Notice::EditorResized { slot, .. }
         | Notice::EditorClosed { slot }
         | Notice::EditorEntered { slot }
-        | Notice::EditorLeft { slot }
+        | Notice::EditorLeft { slot, .. }
         | Notice::ParamBegin { slot, .. }
         | Notice::ParamChanged { slot, .. }
         | Notice::ParamEnd { slot, .. }

@@ -42,6 +42,10 @@ const SIZE_UNKNOWN: (u32, u32) = (640, 480);
 /// A window the desktop has not put on the screen after this long is told as open anyway
 /// (it may be on another workspace).
 const SHOW_WAIT: Duration = Duration::from_millis(500);
+/// A parameter the plugin changes with no word of the person taking hold of it (no VST3
+/// `beginEdit`, no LV2 `ui:touch`, a `patch` parameter) is let go this long after its last
+/// change (docs/research/automation-lv2.md).
+const LET_GO: Duration = Duration::from_millis(500);
 
 /// A plugin's window on the screen.
 struct Top {
@@ -61,8 +65,15 @@ struct Top {
 /// A parameter being moved in a window, as far as meloet was told.
 struct Told {
     at: Instant,
-    /// The newest value, when it came too soon after the last one told.
-    held: Option<f64>,
+    /// The newest value and its time, when it came too soon after the last one told.
+    held: Option<(f64, u64)>,
+}
+
+/// A parameter the person has hold of in a window.
+struct Hold {
+    /// The plugin said so (`ParamBegin`); else it is let go [`LET_GO`] after `last`.
+    said: bool,
+    last: Instant,
 }
 
 struct Host {
@@ -79,6 +90,11 @@ struct Host {
     asked: VecDeque<(u32, String)>,
     /// By slot and parameter.
     told: HashMap<(u32, u32), Told>,
+    /// By slot and parameter.
+    holds: HashMap<(u32, u32), Hold>,
+    /// By slot: parameters taken hold of and programs loaded since the person came into the
+    /// window.
+    touches: Vec<u32>,
     /// What meloet is told next.
     notices: Vec<Notice>,
     idled: Instant,
@@ -170,7 +186,50 @@ impl Host {
             display.destroy(top.id);
         }
         self.told.retain(|(of, _), _| *of != slot);
+        let held: Vec<(u32, u32)> = (self.holds.keys())
+            .filter(|(of, _)| *of == slot)
+            .copied()
+            .collect();
+        for (slot, id) in held {
+            self.let_go(slot, id, formats::now_us());
+        }
         Some(top)
+    }
+
+    /// The person took hold of a parameter: told once, and its automation is passed over
+    /// from the next block until it is let go.
+    fn take_hold(&mut self, slot: u32, id: u32, t_us: u64, said: bool) {
+        let last = Instant::now();
+        if let Some(hold) = self.holds.get_mut(&(slot, id)) {
+            hold.said |= said;
+            hold.last = last;
+            return;
+        }
+        self.holds.insert((slot, id), Hold { said, last });
+        if let Some(touches) = self.touches.get_mut(slot as usize) {
+            *touches += 1;
+        }
+        let _ = self.audio.touch(slot, id, true);
+        self.notices.push(Notice::ParamBegin { slot, id, t_us });
+    }
+
+    /// The person let go of a parameter: the value held back is told first.
+    fn let_go(&mut self, slot: u32, id: u32, t_us: u64) {
+        if let Some((value, at)) = self.told.remove(&(slot, id)).and_then(|t| t.held) {
+            self.tell_param(slot, id, value, at);
+        }
+        if self.holds.remove(&(slot, id)).is_some() {
+            let _ = self.audio.touch(slot, id, false);
+            self.notices.push(Notice::ParamEnd { slot, id, t_us });
+        }
+    }
+
+    fn left(&mut self, slot: u32) -> Notice {
+        let touches = self
+            .touches
+            .get_mut(slot as usize)
+            .map_or(0, std::mem::take);
+        Notice::EditorLeft { slot, touches }
     }
 
     /// Makes the window asked for and puts the plugin's own into it. meloet is told when the
@@ -264,7 +323,8 @@ impl Host {
     fn closed(&mut self, slot: u32) {
         if let Some(top) = self.close_window(slot) {
             if top.inside {
-                self.notices.push(Notice::EditorLeft { slot });
+                let left = self.left(slot);
+                self.notices.push(left);
             }
             self.notices.push(if top.asked_to_show.is_some() {
                 let message = "closed before it was on the screen".into();
@@ -287,6 +347,7 @@ impl Host {
         }
         let at = display.focus(&ids);
         let mut entered = None;
+        let mut gone = Vec::new();
         for (slot, top) in self.tops.iter_mut().enumerate() {
             let Some(top) = top else {
                 continue;
@@ -305,14 +366,21 @@ impl Host {
             if inside {
                 entered = Some(slot);
             } else {
-                self.notices.push(Notice::EditorLeft { slot });
-                if let Some(controller) = self.slots[slot as usize].as_mut() {
-                    controller.editor_left();
-                }
+                gone.push(slot);
+            }
+        }
+        for slot in gone {
+            let left = self.left(slot);
+            self.notices.push(left);
+            if let Some(controller) = self.slots[slot as usize].as_mut() {
+                controller.editor_left();
             }
         }
         // Leaving one window is told before entering the next.
         if let Some(slot) = entered {
+            if let Some(touches) = self.touches.get_mut(slot as usize) {
+                *touches = 0;
+            }
             self.notices.push(Notice::EditorEntered { slot });
         }
     }
@@ -408,13 +476,14 @@ impl Host {
         }
     }
 
-    fn tell_param(&mut self, slot: u32, id: u32, value: f64) {
+    fn tell_param(&mut self, slot: u32, id: u32, value: f64, t_us: u64) {
         let text = (self.slots[slot as usize].as_mut()).and_then(|c| c.text(id, value));
         self.notices.push(Notice::ParamChanged {
             slot,
             id,
             value,
             text,
+            t_us,
         });
     }
 
@@ -429,15 +498,16 @@ impl Host {
             let slot = slot as u32;
             for &event in said.iter() {
                 match event {
-                    Said::ParamBegin(id) => self.notices.push(Notice::ParamBegin { slot, id }),
-                    Said::ParamChanged(id, value) => {
+                    Said::ParamBegin(id, t_us) => self.take_hold(slot, id, t_us, true),
+                    Said::ParamChanged(id, value, t_us) => {
+                        self.take_hold(slot, id, t_us, false);
                         // What the person did in the plugin's window reaches the plugin's
                         // sound with the next block, however often meloet is told.
                         let _ = self.audio.set_param(slot, id, value);
                         let now = Instant::now();
                         match self.told.get_mut(&(slot, id)) {
                             Some(told) if now.duration_since(told.at) < TELL => {
-                                told.held = Some(value);
+                                told.held = Some((value, t_us));
                             }
                             _ => {
                                 self.told.insert(
@@ -447,15 +517,17 @@ impl Host {
                                         held: None,
                                     },
                                 );
-                                self.tell_param(slot, id, value);
+                                self.tell_param(slot, id, value, t_us);
                             }
                         }
                     }
-                    Said::ParamEnd(id) => {
-                        if let Some(value) = self.told.remove(&(slot, id)).and_then(|t| t.held) {
-                            self.tell_param(slot, id, value);
+                    Said::ParamEnd(id, t_us) => self.let_go(slot, id, t_us),
+                    Said::Preset => {
+                        if let Some(touches) = (self.touches.get_mut(slot as usize))
+                            .filter(|_| self.tops[slot as usize].is_some())
+                        {
+                            *touches += 1;
                         }
-                        self.notices.push(Notice::ParamEnd { slot, id });
                     }
                     Said::Latency(frames) => {
                         self.notices.push(Notice::LatencyChanged { slot, frames });
@@ -474,15 +546,22 @@ impl Host {
         // The values held back, once they have waited long enough; and nothing is kept of a
         // parameter that was let go without a word.
         let now = Instant::now();
-        let due: Vec<(u32, u32, f64)> = (self.told.iter_mut())
+        let due: Vec<(u32, u32, (f64, u64))> = (self.told.iter_mut())
             .filter(|(_, told)| now.duration_since(told.at) >= TELL)
             .filter_map(|(&(slot, id), told)| {
                 told.at = now;
                 Some((slot, id, told.held.take()?))
             })
             .collect();
-        for (slot, id, value) in due {
-            self.tell_param(slot, id, value);
+        for (slot, id, (value, t_us)) in due {
+            self.tell_param(slot, id, value, t_us);
+        }
+        let quiet: Vec<(u32, u32)> = (self.holds.iter())
+            .filter(|(_, hold)| !hold.said && now.duration_since(hold.last) >= LET_GO)
+            .map(|(&key, _)| key)
+            .collect();
+        for (slot, id) in quiet {
+            self.let_go(slot, id, formats::now_us());
         }
         self.told
             .retain(|_, told| told.held.is_some() || now.duration_since(told.at) < TELL * 4);
@@ -647,6 +726,15 @@ impl Host {
         if !self.asked.is_empty() || !self.notices.is_empty() {
             sooner(Duration::ZERO);
         }
+        if let Some(last) = self
+            .holds
+            .values()
+            .filter(|h| !h.said)
+            .map(|h| h.last)
+            .min()
+        {
+            sooner(LET_GO.saturating_sub(last.elapsed()));
+        }
         // Rounded up: a nap cut short by a millisecond would spin until the time has come.
         nap.map_or(-1, |nap| nap.as_micros().div_ceil(1000) as i32)
     }
@@ -745,6 +833,8 @@ pub fn run(control: UnixStream, memory: OwnedFd) -> i32 {
         tops: (0..slots).map(|_| None).collect(),
         asked: VecDeque::new(),
         told: HashMap::new(),
+        holds: HashMap::new(),
+        touches: vec![0; slots as usize],
         notices: Vec::new(),
         idled: Instant::now(),
         focus_looked: Instant::now(),

@@ -72,6 +72,12 @@ const MOST_GROUPS: usize = 16;
 const ATOM_BYTES: usize = 16 * 1024;
 /// `patch:writable` parameters that change in one block; a block with more loses the rest.
 const BLOCK_SETS: usize = 256;
+/// A block whose control inputs have automation points in it is run in pieces cut at the
+/// points, none shorter than this (docs/architecture.md 21-7).
+const SHORTEST_PIECE: usize = 32;
+/// Control inputs that have points in one block, at most; more keep their last value.
+const MOVING_PORTS: usize = 64;
+const BUF_SIZE: &str = "http://lv2plug.in/ns/ext/buf-size#";
 const PATCH_BIT: u32 = 1 << 31;
 /// The largest message a window sends its plugin in one piece; larger ones are dropped.
 const UI_ATOM_BYTES: usize = 2048;
@@ -1136,6 +1142,19 @@ fn instantiate(
         out: vec![0.0; frames * counts.audio_outputs].into_boxed_slice(),
         cv_out: vec![0.0; frames * counts.cv_outputs].into_boxed_slice(),
         sets: Vec::with_capacity(BLOCK_SETS),
+        whole_blocks: [
+            "coarseBlockLength",
+            "fixedBlockLength",
+            "powerOf2BlockLength",
+        ]
+        .iter()
+        .any(|f| {
+            plugin
+                .raw()
+                .has_feature(&world.uri(&format!("{BUF_SIZE}{f}")))
+        }),
+        moving: Vec::with_capacity(MOVING_PORTS),
+        cuts: Vec::with_capacity(activation.max_frames / SHORTEST_PIECE + 2),
         quiet: false,
         atom_in_ports: layout.atom_in_ports,
         atom_out_ports: layout.atom_out_ports,
@@ -1232,6 +1251,13 @@ struct Lv2Processor {
     /// The `patch:writable` parameters of the block being made: the parameter, and the event
     /// of the block that sets it last.
     sets: Vec<(usize, usize)>,
+    /// The plugin wants blocks of its own length (`bufsz:coarseBlockLength` and the like):
+    /// its block is never cut.
+    whole_blocks: bool,
+    /// The parameters of control inputs that have points in the block being made.
+    moving: Vec<usize>,
+    /// Where the pieces of the block being made start.
+    cuts: Vec<usize>,
     /// Send "all sound off" with the next block.
     quiet: bool,
     atom_in_ports: Vec<u32>,
@@ -1475,6 +1501,7 @@ impl Processor for Lv2Processor {
         }
         // Of the changes to one `patch` parameter in this block, only the last is sent.
         self.sets.clear();
+        self.moving.clear();
         for (at, event) in block.events.iter().enumerate() {
             let ToPlugin::Param { id, .. } = *event else {
                 continue;
@@ -1482,36 +1509,51 @@ impl Processor for Lv2Processor {
             let Some(&param) = shared.by_id.get(&id) else {
                 continue;
             };
-            if !matches!(shared.params[param].target, Target::Patch { .. }) {
-                continue;
-            }
-            match self.sets.iter().position(|(p, _)| *p == param) {
-                Some(set) => self.sets[set].1 = at,
-                None if self.sets.len() < self.sets.capacity() => self.sets.push((param, at)),
-                None => {}
-            }
-        }
-        for (at, event) in block.events.iter().enumerate() {
-            match *event {
-                ToPlugin::Midi { frame, data } => self.midi(frame, &data),
-                ToPlugin::Param { frame, id, value } => {
-                    let Some(&param) = shared.by_id.get(&id) else {
-                        continue;
-                    };
-                    let plain = shared.params[param].plain(value);
-                    match shared.params[param].target {
-                        Target::Port(index) => {
-                            instance.set_control_input(index, plain as f32);
-                            shared.set_value(param, value);
-                        }
-                        Target::Patch { urid, range } => {
-                            if self.sets.contains(&(param, at)) {
-                                self.set(frame, urid, range, plain);
-                                shared.set_value(param, value);
-                            }
-                        }
+            match shared.params[param].target {
+                Target::Patch { .. } => match self.sets.iter().position(|(p, _)| *p == param) {
+                    Some(set) => self.sets[set].1 = at,
+                    None if self.sets.len() < self.sets.capacity() => self.sets.push((param, at)),
+                    None => {}
+                },
+                Target::Port(_) => {
+                    if !self.moving.contains(&param) && self.moving.len() < self.moving.capacity() {
+                        self.moving.push(param);
                     }
                 }
+            }
+        }
+        // Cut where a control input's line bends, pieces of `SHORTEST_PIECE` at least. Of
+        // points closer together than that, the last: a jump is a point with the old value
+        // and one with the new a frame later.
+        self.cuts.clear();
+        self.cuts.push(0);
+        if !self.whole_blocks {
+            let moving = &self.moving;
+            let bends = || {
+                (block.events.iter())
+                    .filter_map(|e| match *e {
+                        ToPlugin::Param { frame, id, .. } => Some((frame as usize, id)),
+                        ToPlugin::Midi { .. } => None,
+                    })
+                    .filter(|&(frame, id)| {
+                        frame + SHORTEST_PIECE <= frames
+                            && shared.by_id.get(&id).is_some_and(|p| moving.contains(p))
+                    })
+                    .map(|(frame, _)| frame)
+            };
+            loop {
+                let from = *self.cuts.last().unwrap_or(&0) + SHORTEST_PIECE;
+                let Some(first) = bends().filter(|&f| f >= from).min() else {
+                    break;
+                };
+                let cut = (bends())
+                    .filter(|&f| f >= first && f < first + SHORTEST_PIECE)
+                    .max()
+                    .unwrap_or(first);
+                if self.cuts.len() == self.cuts.capacity() {
+                    break;
+                }
+                self.cuts.push(cut);
             }
         }
 
@@ -1522,33 +1564,101 @@ impl Processor for Lv2Processor {
                 *mono = (l + r) * 0.5;
             }
         }
-        let (mono, silence) = (&self.mono[..frames], &self.silence[..frames]);
-        // Side chains and the inputs past the main two hear silence.
-        let inputs = (0..self.audio_inputs).map(|channel| match main_in {
-            (Some(only), None) if channel == only => mono,
-            (Some(left), Some(_)) if channel == left => in_left,
-            (_, Some(right)) if channel == right => in_right,
-            _ => silence,
-        });
-        let cv_inputs = (0..self.cv_inputs).map(|_| silence);
-        let outputs = self
-            .out
-            .chunks_exact_mut(self.max_frames)
-            .map(|channel| &mut channel[..frames]);
-        let cv_outputs = self
-            .cv_out
-            .chunks_exact_mut(self.max_frames)
-            .map(|channel| &mut channel[..frames]);
-        let ports = EmptyPortConnections::new()
-            .with_audio_inputs(inputs)
-            .with_audio_outputs(outputs)
-            .with_atom_sequence_inputs(self.atom_in.iter())
-            .with_atom_sequence_outputs(self.atom_out.iter_mut())
-            .with_cv_inputs(cv_inputs)
-            .with_cv_outputs(cv_outputs);
-        // SAFETY: every buffer lives until `run` is over and is `frames` long or longer; the
-        // atom buffers were made with this instance's own features.
-        let ran = rtcheck::plugin(|| unsafe { instance.run(frames, ports) }).is_ok();
+        let mut ran = true;
+        for piece in 0..self.cuts.len() {
+            let from = self.cuts[piece];
+            let to = self.cuts.get(piece + 1).copied().unwrap_or(frames);
+            if piece > 0 {
+                for sequence in &mut self.atom_in {
+                    sequence.clear();
+                }
+                let later = later(block.transport, from, shared.sample_rate);
+                self.tell_time(instance, &later);
+            }
+            let inside = |frame: u32| {
+                let frame = frame as usize;
+                frame >= from && (frame < to || to == frames)
+            };
+            for (at, event) in block.events.iter().enumerate() {
+                match *event {
+                    ToPlugin::Midi { frame, data } if inside(frame) => {
+                        self.midi(frame - from as u32, &data);
+                    }
+                    ToPlugin::Param { frame, id, value } if inside(frame) => {
+                        let Some(&param) = shared.by_id.get(&id) else {
+                            continue;
+                        };
+                        if let Target::Patch { urid, range } = shared.params[param].target
+                            && self.sets.contains(&(param, at))
+                        {
+                            let plain = shared.params[param].plain(value);
+                            self.set(frame - from as u32, urid, range, plain);
+                            shared.set_value(param, value);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // A control input with points: the value of its line at the middle of the piece.
+            let middle = (from + to - 1) / 2;
+            for &param in &self.moving {
+                let Target::Port(index) = shared.params[param].target else {
+                    continue;
+                };
+                let value = port_line(
+                    block.events,
+                    shared.params[param].id,
+                    shared.value(param),
+                    middle,
+                );
+                instance.set_control_input(index, shared.params[param].plain(value) as f32);
+            }
+            let (mono, silence) = (&self.mono[from..to], &self.silence[from..to]);
+            let (in_left, in_right) = (&in_left[from..to], &in_right[from..to]);
+            // Side chains and the inputs past the main two hear silence.
+            let inputs = (0..self.audio_inputs).map(|channel| match main_in {
+                (Some(only), None) if channel == only => mono,
+                (Some(left), Some(_)) if channel == left => in_left,
+                (_, Some(right)) if channel == right => in_right,
+                _ => silence,
+            });
+            let cv_inputs = (0..self.cv_inputs).map(|_| silence);
+            let outputs = self
+                .out
+                .chunks_exact_mut(self.max_frames)
+                .map(|channel| &mut channel[from..to]);
+            let cv_outputs = self
+                .cv_out
+                .chunks_exact_mut(self.max_frames)
+                .map(|channel| &mut channel[from..to]);
+            let ports = EmptyPortConnections::new()
+                .with_audio_inputs(inputs)
+                .with_audio_outputs(outputs)
+                .with_atom_sequence_inputs(self.atom_in.iter())
+                .with_atom_sequence_outputs(self.atom_out.iter_mut())
+                .with_cv_inputs(cv_inputs)
+                .with_cv_outputs(cv_outputs);
+            // SAFETY: every buffer lives until `run` is over and is `to - from` long or
+            // longer; the atom buffers were made with this instance's own features.
+            let piece_ran = rtcheck::plugin(|| unsafe { instance.run(to - from, ports) }).is_ok();
+            ran &= piece_ran;
+            if piece_ran {
+                self.hear(block.sink);
+                if shared.ui_open.load(Relaxed) {
+                    self.tell_window(instance);
+                }
+            }
+        }
+        // The control inputs end the block at their last point.
+        for &param in &self.moving {
+            let value = port_line(
+                block.events,
+                shared.params[param].id,
+                shared.value(param),
+                frames,
+            );
+            shared.set_value(param, value);
+        }
 
         let channel = |at: usize| &self.out[at * self.max_frames..][..frames];
         match (ran, self.main_out.first(), self.main_out.get(1)) {
@@ -1562,18 +1672,13 @@ impl Processor for Lv2Processor {
                 }
             }
         }
-        if ran {
-            self.hear(block.sink);
-            if shared.ui_open.load(Relaxed) {
-                self.tell_window(instance);
-            }
-            if let Some(frames) = self.latency_port.and_then(|p| instance.control_output(p))
-                && frames.is_finite()
-                && frames >= 0.0
-            {
-                let frames = (frames.round() as u32).min(MAX_LATENCY_FRAMES);
-                shared.latency.store(frames, Relaxed);
-            }
+        if ran
+            && let Some(frames) = self.latency_port.and_then(|p| instance.control_output(p))
+            && frames.is_finite()
+            && frames >= 0.0
+        {
+            let frames = (frames.round() as u32).min(MAX_LATENCY_FRAMES);
+            shared.latency.store(frames, Relaxed);
         }
         shared.gate.leave();
     }
@@ -1585,6 +1690,46 @@ impl Processor for Lv2Processor {
     fn latency(&self) -> u32 {
         self.shared.latency.load(Relaxed)
     }
+}
+
+/// The value of a control input's line at `frame` of the block: straight from `before` (the
+/// value it had, at frame −1) through the points of `id` in the block, flat after the last.
+fn port_line(events: &[ToPlugin], id: u32, before: f64, frame: usize) -> f64 {
+    let (mut from, mut value) = (-1.0f64, before);
+    for event in events {
+        let ToPlugin::Param {
+            frame: at,
+            id: of,
+            value: to,
+        } = *event
+        else {
+            continue;
+        };
+        if of != id {
+            continue;
+        }
+        let at = f64::from(at);
+        if at >= frame as f64 {
+            if at <= from {
+                return to;
+            }
+            return value + (to - value) * (frame as f64 - from) / (at - from);
+        }
+        (from, value) = (at, to);
+    }
+    value
+}
+
+/// The song `frames` frames after `transport`, for a later piece of a block. The engine cuts
+/// its blocks at every beat, so no beat or bar starts inside one.
+fn later(transport: &Transport, frames: usize, sample_rate: f64) -> Transport {
+    let mut t = *transport;
+    if t.flags & Transport::PLAYING != 0 && sample_rate > 0.0 {
+        let seconds = frames as f64 / sample_rate;
+        t.position_frames += frames as i64;
+        t.position_quarters += seconds * t.tempo_bpm / 60.0;
+    }
+    t
 }
 
 /// What a plugin's window calls back into. It stays where it is for as long as the plugin:
@@ -1617,7 +1762,8 @@ impl Link {
     fn moved(&self, at: usize, normal: f64) {
         self.shared.set_value(at, normal);
         self.shown[at].set(normal.to_bits());
-        (self.said.borrow_mut()).push(Said::ParamChanged(self.shared.params[at].id, normal));
+        let id = self.shared.params[at].id;
+        (self.said.borrow_mut()).push(Said::ParamChanged(id, normal, super::now_us()));
     }
 
     /// The window wrote one atom to a port. A `patch:Set` of a parameter is a parameter
@@ -1712,10 +1858,11 @@ unsafe extern "C" fn ui_touch(handle: *mut c_void, port: u32, grabbed: bool) {
     if let Some((_, param)) = link.port_param(port)
         && !param.hidden
     {
+        let at = super::now_us();
         link.said.borrow_mut().push(if grabbed {
-            Said::ParamBegin(param.id)
+            Said::ParamBegin(param.id, at)
         } else {
-            Said::ParamEnd(param.id)
+            Said::ParamEnd(param.id, at)
         });
     }
 }
@@ -2120,5 +2267,92 @@ mod time_tests {
                 (28, urids.float, Some(180.0), 4),
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod piece_tests {
+    use std::path::Path;
+
+    use super::*;
+    use crate::formats::{EventSink, ProcessBlock};
+
+    fn param(frame: u32, value: f64) -> ToPlugin {
+        ToPlugin::Param {
+            frame,
+            id: 0,
+            value,
+        }
+    }
+
+    #[test]
+    fn a_control_input_follows_its_line_through_the_points() {
+        let other = ToPlugin::Param {
+            frame: 50,
+            id: 7,
+            value: 0.0,
+        };
+        let events = [param(99, 0.5), param(199, 1.0), other];
+        assert_eq!(port_line(&events, 0, 0.0, 0), 0.005);
+        assert_eq!(port_line(&events, 0, 0.0, 99), 0.5);
+        assert_eq!(port_line(&events, 0, 0.0, 149), 0.75);
+        assert_eq!(port_line(&events, 0, 0.0, 255), 1.0);
+        assert_eq!(port_line(&events, 3, 0.25, 10), 0.25);
+        // A jump: two points one frame apart.
+        let jump = [param(127, 0.0), param(128, 1.0)];
+        assert_eq!(port_line(&jump, 0, 0.0, 127), 0.0);
+        assert_eq!(port_line(&jump, 0, 0.0, 128), 1.0);
+    }
+
+    /// `amp-swh` takes its gain at the head of each `run`: a jump inside the block is heard
+    /// at its frame; a point closer than 32 frames to the last cut is not cut at.
+    #[test]
+    fn a_block_with_points_runs_in_pieces() {
+        let bundle = Path::new("/usr/lib/lv2/amp-swh.lv2");
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return;
+        }
+        let key: PluginKey = "lv2:http://plugin.org.uk/swh-plugins/amp".parse().unwrap();
+        let activation = Activation {
+            sample_rate: 48_000.0,
+            max_frames: 256,
+        };
+        let mut loaded = load(&key, bundle, activation).unwrap();
+        // −70 to +70 dB: 0.5 is 0 dB, 0.5 − 20/140 is −20 dB.
+        let quiet = 0.5 - 20.0 / 140.0;
+        let input = [0.5f32; 256];
+        let mut run = |events: &[ToPlugin]| {
+            let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+            let mut sink = EventSink::with_capacity(16);
+            loaded.processor.process(&mut ProcessBlock {
+                inputs: [&input, &input],
+                outputs: [&mut left, &mut right],
+                events,
+                transport: &Transport::default(),
+                sink: &mut sink,
+            });
+            left
+        };
+        run(&[param(0, quiet)]);
+        let out = run(&[param(127, quiet), param(128, 0.5)]);
+        assert!((out[127] - 0.05).abs() < 1e-3, "{}", out[127]);
+        assert!((out[128] - 0.5).abs() < 1e-3, "{}", out[128]);
+        // Points at 128 and 140 are closer than 32 frames: one cut, at the later. Each
+        // piece has the value of the line at its middle frame (69: from 0 dB at frame −1
+        // down to −20 dB at 128; 197: from −20 dB at 140 up to 0 dB at 255).
+        let out = run(&[param(128, quiet), param(140, quiet), param(255, 0.5)]);
+        let db = |out: f32| 20.0 * (out / 0.5).log10();
+        assert!(
+            (db(out[0]) - -20.0 * 70.0 / 129.0).abs() < 0.01,
+            "{}",
+            db(out[0])
+        );
+        assert!(
+            (db(out[140]) - -20.0 * 58.0 / 115.0).abs() < 0.01,
+            "{}",
+            db(out[140])
+        );
+        assert!(out[139] == out[0] && out[255] == out[140]);
     }
 }

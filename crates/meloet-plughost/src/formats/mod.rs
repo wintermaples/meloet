@@ -94,10 +94,14 @@ pub const GATE_WAIT: Duration = Duration::from_secs(2);
 /// ([`Controller::poll`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Said {
-    ParamBegin(u32),
+    /// The last number of these three: when the plugin said it ([`now_us`]).
+    ParamBegin(u32, u64),
     /// Goes to meloet and to the plugin's own processor.
-    ParamChanged(u32, f64),
-    ParamEnd(u32),
+    ParamChanged(u32, f64, u64),
+    ParamEnd(u32, u64),
+    /// The plugin loaded a program or a preset by itself (VST3 `kParamValuesChanged`,
+    /// `kParamTitlesChanged`): a change the person made in its window.
+    Preset,
     Latency(u32),
     /// Any parameter may have another value now.
     ParamsChanged,
@@ -213,6 +217,12 @@ pub trait Controller {
     /// Called on the main thread many times a second and after every request: the plugin's
     /// housekeeping outside its window, and what it did by itself since the last call.
     fn poll(&mut self, said: &mut Vec<Said>);
+}
+
+/// CLOCK_MONOTONIC in microseconds: the clock of meloet's engine, so meloet can place what
+/// the person did in a window in the song (docs/architecture.md 21-9).
+pub fn now_us() -> u64 {
+    meloet_plugin::ipc::futex::monotonic_ns() / 1000
 }
 
 /// A text as a person types it, with the digits, signs and point of the wide Japanese forms

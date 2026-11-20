@@ -207,6 +207,8 @@
         return plain(m.forward ? "msg.historyJumpedForward" : "msg.historyJumped", { index: m.index, name: stepNameText(m.name), steps: m.steps });
       case "nothingToUndo":
         return plain("msg.nothingToUndo");
+      case "nothingToRedo":
+        return plain("msg.nothingToRedo");
       case "automationWriting":
         return plain("msg.automationWriting", { track: track(m.track), target: laneNameText(m.target) });
       case "automationRested":

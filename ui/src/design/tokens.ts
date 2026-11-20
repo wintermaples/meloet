@@ -257,6 +257,10 @@ export const mock = {
   "mock.arrange.clip-inset": m(3, "Main"),
   "mock.arrange.note": m(2, "Main"),
   "mock.arrange.loop": m(3, "Main"),
+  // 歌のクリップの波形: 幅 1 の棒が 3px おき、音のない所でも高さ 2。
+  "mock.wave.pitch": m(3, "F7-AudioEdit"),
+  "mock.wave.bar": m(1, "F7-AudioEdit"),
+  "mock.wave.min": m(2, "F7-AudioEdit"),
   "mock.overview.label": m(104, "A-PianoRoll"),
   // 見えている範囲の枠（`top:1px; height:37px`。帯の高さは 39）の、上下のあき。
   "mock.range-frame.inset": m(1, "A-PianoRoll"),

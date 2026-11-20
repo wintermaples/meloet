@@ -1,13 +1,12 @@
 //! Tempo and meter over the song, and the one place that turns ticks into seconds and back.
 //!
-//! A tempo is beats per minute, where a beat is the lower number of the meter in force there:
-//! ticks per minute = tempo × ticks per beat. A ramp between two tempo points is a straight
-//! line over ticks. Before tick 0 the tempo and meter of the head go on backwards, without a
-//! ramp.
+//! A tempo is quarter notes per minute, whatever the meter: ticks per minute = tempo ×
+//! `TICKS_PER_QUARTER`. A ramp between two tempo points is a straight line over ticks. Before
+//! tick 0 the tempo and meter of the head go on backwards, without a ramp.
 //!
 //! Nothing in [`TempoMap`] allocates after [`TempoMap::new`]; the audio thread uses it.
 
-use crate::time::{BarBeatTick, DISPLAY_TICKS_PER_BEAT, Meter, TICKS_PER_QUARTER, Tempo};
+use crate::time::{BarBeatTick, Meter, TICKS_PER_QUARTER, Tempo};
 
 /// A tempo from `tick` on. With `ramp`, the tempo goes in a straight line to the next point;
 /// on the last point `ramp` does nothing.
@@ -103,8 +102,6 @@ pub struct Beat {
 struct Piece {
     tick0: f64,
     sec0: f64,
-    /// Ticks per beat.
-    tpb: f64,
     /// Tempo at `tick0`.
     a: f64,
     /// Tempo gained per tick; 0 when the tempo stays.
@@ -121,22 +118,24 @@ fn exp_m1_over(y: f64) -> f64 {
     if y == 0.0 { 1.0 } else { y.exp_m1() / y }
 }
 
-fn seconds_of(u: f64, tpb: f64, a: f64, s: f64) -> f64 {
-    u * 60.0 / (tpb * a) * ln_1p_over(s * u / a)
+const QF: f64 = TICKS_PER_QUARTER as f64;
+
+fn seconds_of(u: f64, a: f64, s: f64) -> f64 {
+    u * 60.0 / (QF * a) * ln_1p_over(s * u / a)
 }
 
-fn ticks_of(seconds: f64, tpb: f64, a: f64, s: f64) -> f64 {
+fn ticks_of(seconds: f64, a: f64, s: f64) -> f64 {
     let minutes = seconds / 60.0;
-    a * tpb * minutes * exp_m1_over(s * tpb * minutes)
+    a * QF * minutes * exp_m1_over(s * QF * minutes)
 }
 
 impl Piece {
     fn seconds(&self, u: f64) -> f64 {
-        seconds_of(u, self.tpb, self.a, self.s)
+        seconds_of(u, self.a, self.s)
     }
 
     fn ticks(&self, seconds: f64) -> f64 {
-        ticks_of(seconds, self.tpb, self.a, self.s)
+        ticks_of(seconds, self.a, self.s)
     }
 }
 
@@ -217,14 +216,11 @@ impl TempoMap {
         cuts.dedup();
 
         let mut pieces: Vec<Piece> = Vec::with_capacity(cuts.len());
-        let (mut pi, mut ri) = (0, 0);
+        let mut pi = 0;
         let mut sec0 = 0.0;
         for (i, &cut) in cuts.iter().enumerate() {
             while points.get(pi + 1).is_some_and(|p| p.tick <= cut) {
                 pi += 1;
-            }
-            while regions.get(ri + 1).is_some_and(|r| r.tick0 <= cut) {
-                ri += 1;
             }
             let point = points[pi];
             let s = match points.get(pi + 1) {
@@ -236,7 +232,6 @@ impl TempoMap {
             let piece = Piece {
                 tick0: cut as f64,
                 sec0,
-                tpb: regions[ri].meter.ticks_per_beat() as f64,
                 a: point.tempo.bpm() + s * (cut - point.tick) as f64,
                 s,
             };
@@ -267,7 +262,7 @@ impl TempoMap {
     pub fn seconds_at(&self, tick: f64) -> f64 {
         if tick < 0.0 {
             let head = &self.pieces[0];
-            return seconds_of(tick, head.tpb, head.a, 0.0);
+            return seconds_of(tick, head.a, 0.0);
         }
         let p = self.piece_at_tick(tick);
         p.sec0 + p.seconds(tick - p.tick0)
@@ -277,30 +272,21 @@ impl TempoMap {
     pub fn tick_at(&self, seconds: f64) -> f64 {
         if seconds < 0.0 {
             let head = &self.pieces[0];
-            return ticks_of(seconds, head.tpb, head.a, 0.0);
+            return ticks_of(seconds, head.a, 0.0);
         }
         let i = self.pieces.partition_point(|p| p.sec0 <= seconds);
         let p = &self.pieces[i.max(1) - 1];
         p.tick0 + p.ticks(seconds - p.sec0)
     }
 
-    /// The tempo as the transport shows it: beats of the meter there, per minute.
+    /// Quarter notes per minute: what the transport shows, and what plugins and the delay are
+    /// told.
     pub fn tempo_at(&self, tick: f64) -> f64 {
         if tick < 0.0 {
             return self.pieces[0].a;
         }
         let p = self.piece_at_tick(tick);
         p.a + p.s * (tick - p.tick0)
-    }
-
-    /// Quarter notes per minute, for plugins and the delay.
-    pub fn quarter_bpm_at(&self, tick: f64) -> f64 {
-        let tpb = if tick < 0.0 {
-            self.pieces[0].tpb
-        } else {
-            self.piece_at_tick(tick).tpb
-        };
-        self.tempo_at(tick) * tpb / TICKS_PER_QUARTER as f64
     }
 
     pub fn meter_at(&self, tick: u64) -> MeterAt {
@@ -323,7 +309,7 @@ impl TempoMap {
             .saturating_add(r.tick0)
     }
 
-    /// "bar . beat . tick" as shown: bar and beat from 1, the tick a 480th of a beat.
+    /// "bar . beat . tick" as shown: bar and beat from 1, the tick as many ticks into the beat.
     pub fn bar_beat_tick(&self, tick: u64) -> BarBeatTick {
         let r = self.region_at_tick(tick);
         let per_beat = r.meter.ticks_per_beat();
@@ -333,7 +319,7 @@ impl TempoMap {
         BarBeatTick {
             bar: r.bar0 + from / per_bar + 1,
             beat: (in_bar / per_beat) as u32 + 1,
-            tick: ((in_bar % per_beat) * DISPLAY_TICKS_PER_BEAT / per_beat) as u32,
+            tick: (in_bar % per_beat) as u32,
         }
     }
 
@@ -367,14 +353,26 @@ impl TempoMap {
     /// The first head of a beat at `tick` or after it. Before the song's head, the beats of
     /// the head's meter go on backwards.
     pub fn next_beat(&self, tick: f64) -> Beat {
+        self.next_step(tick, Meter::ticks_per_beat)
+    }
+
+    /// The first click of the metronome at `tick` or after it ([`Meter::ticks_per_click`]);
+    /// `downbeat` is the strong one. Before the song's head as [`TempoMap::next_beat`].
+    pub fn next_click(&self, tick: f64) -> Beat {
+        self.next_step(tick, Meter::ticks_per_click)
+    }
+
+    /// `step` must cut a bar of the meter into whole parts.
+    fn next_step(&self, tick: f64, step: fn(Meter) -> u64) -> Beat {
         let i = self.regions.partition_point(|r| r.tick0 as f64 <= tick);
         let r = &self.regions[i.max(1) - 1];
-        let per_beat = r.meter.ticks_per_beat() as i64;
-        // A region is whole bars, so a beat found past its end is the next region's first.
-        let beats = ((tick - r.tick0 as f64) / per_beat as f64).ceil() as i64;
+        let per_step = step(r.meter) as i64;
+        let per_bar = r.meter.ticks_per_bar() as i64 / per_step;
+        // A region is whole bars, so a step found past its end is the next region's first.
+        let steps = ((tick - r.tick0 as f64) / per_step as f64).ceil() as i64;
         Beat {
-            tick: (r.tick0 as i64).saturating_add(beats.saturating_mul(per_beat)),
-            downbeat: beats.rem_euclid(i64::from(r.meter.num())) == 0,
+            tick: (r.tick0 as i64).saturating_add(steps.saturating_mul(per_step)),
+            downbeat: steps.rem_euclid(per_bar) == 0,
         }
     }
 
@@ -405,7 +403,7 @@ mod tests {
     fn a_slope_near_zero_joins_the_straight_line() {
         let (tpb, a) = (Q as f64, 104.0);
         for u in [1.0, tpb, 16.0 * tpb, 1.0e6] {
-            let flat = seconds_of(u, tpb, a, 0.0);
+            let flat = seconds_of(u, a, 0.0);
             let mut exp = -3;
             while exp >= -300 {
                 for sign in [1.0, -1.0] {
@@ -415,12 +413,12 @@ mod tests {
                         continue;
                     }
                     let want = flat * (1.0 - x / 2.0 + x * x / 3.0 - x * x * x / 4.0);
-                    let got = seconds_of(u, tpb, a, s);
+                    let got = seconds_of(u, a, s);
                     assert!(
                         (got - want).abs() <= flat * (x.powi(4).abs() + 4.0 * f64::EPSILON),
                         "u {u} s {s}: {got} {want}"
                     );
-                    let back = ticks_of(got, tpb, a, s);
+                    let back = ticks_of(got, a, s);
                     assert!(
                         (back - u).abs() <= u * 8.0 * f64::EPSILON,
                         "u {u} s {s}: {back}"
@@ -431,13 +429,13 @@ mod tests {
         }
         // Too small to change the last bit: the very same number as the straight line.
         assert_eq!(
-            seconds_of(16.0 * tpb, tpb, a, 1e-300),
-            seconds_of(16.0 * tpb, tpb, a, 0.0)
+            seconds_of(16.0 * tpb, a, 1e-300),
+            seconds_of(16.0 * tpb, a, 0.0)
         );
-        assert_eq!(ticks_of(8.5, tpb, a, 1e-300), ticks_of(8.5, tpb, a, 0.0));
+        assert_eq!(ticks_of(8.5, a, 1e-300), ticks_of(8.5, a, 0.0));
         assert_eq!(
-            seconds_of(16.0 * tpb, tpb, a, 5e-324),
-            seconds_of(16.0 * tpb, tpb, a, 0.0)
+            seconds_of(16.0 * tpb, a, 5e-324),
+            seconds_of(16.0 * tpb, a, 0.0)
         );
     }
 
@@ -487,7 +485,7 @@ mod tests {
         assert_eq!(fixed.check(), Ok(()));
         let (a, b) = (TempoMap::new(&broken), TempoMap::new(&fixed));
         assert_eq!(a.piece_count(), b.piece_count());
-        for tick in [0, 500, 2 * Q, BAR - 1, BAR, 2 * BAR, 5000, 100_000] {
+        for tick in [0, 500, 2 * Q, BAR - 1, BAR, 2 * BAR, 5 * BAR / 2, 100_000] {
             assert_eq!(a.seconds_at(tick as f64), b.seconds_at(tick as f64));
             assert_eq!(a.tempo_at(tick as f64), b.tempo_at(tick as f64));
             assert_eq!(a.meter_at(tick), b.meter_at(tick));

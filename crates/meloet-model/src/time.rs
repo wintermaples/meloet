@@ -1,10 +1,7 @@
-//! Positions in the song: integer ticks, 480 to a quarter note.
+//! Positions in the song: integer ticks, 1920 to a quarter note.
 
 /// Ticks in one quarter note.
-pub const TICKS_PER_QUARTER: u64 = 480;
-
-/// What the "tick" of "bar . beat . tick" counts: one beat cut into this many.
-pub const DISPLAY_TICKS_PER_BEAT: u64 = 480;
+pub const TICKS_PER_QUARTER: u64 = 1920;
 
 /// Time signature. One beat is a `den`th note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,9 +36,24 @@ impl Meter {
     pub fn ticks_per_bar(self) -> u64 {
         u64::from(self.num) * self.ticks_per_beat()
     }
+
+    /// From one click of the metronome to the next: a dotted quarter in 6/8, 9/8 and 12/8,
+    /// a beat in every other meter.
+    pub fn ticks_per_click(self) -> u64 {
+        if self.den == 8 && matches!(self.num, 6 | 9 | 12) {
+            3 * self.ticks_per_beat()
+        } else {
+            self.ticks_per_beat()
+        }
+    }
+
+    /// How many times the metronome sounds in one bar.
+    pub fn clicks_per_bar(self) -> u32 {
+        (self.ticks_per_bar() / self.ticks_per_click()) as u32
+    }
 }
 
-/// Beats (as the meter counts them) per minute, in steps of 0.01.
+/// Quarter notes per minute, whatever the meter, in steps of 0.01.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Tempo(u32);
 
@@ -51,7 +63,7 @@ impl Tempo {
     /// 300.00
     pub const MAX_CENTI: u32 = 30_000;
 
-    /// Hundredths of a beat per minute: 9600 is 96.00.
+    /// Hundredths of a quarter note per minute: 9600 is 96.00.
     pub fn from_centi(centi: u32) -> Option<Tempo> {
         (Self::MIN_CENTI..=Self::MAX_CENTI)
             .contains(&centi)
@@ -109,7 +121,8 @@ impl TickRange {
     }
 }
 
-/// "bar . beat . tick" as shown. Bar and beat count from 1; tick is 0 to 479.
+/// "bar . beat . tick" as shown. Bar and beat count from 1; tick is the ticks into the beat
+/// (0 to 1919 when the beat is a quarter note).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BarBeatTick {
     pub bar: u64,

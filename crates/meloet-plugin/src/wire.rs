@@ -566,7 +566,7 @@ mod tests {
                 }
             }),
             json!({ "kind": "reply", "id": 6, "reply": { "type": "params", "params": [
-                { "id": 3, "name": "Attack", "group": "Envelope", "default": 0.1, "shape": { "kind": "stepped", "steps": 5 }, "labels": ["a", "b"], "automatable": true, "value": null, "text": null } ] } })
+                { "id": 3, "name": "Attack", "group": "Envelope", "default": 0.1, "shape": { "kind": "stepped", "steps": 5 }, "labels": ["a", "b"], "automatable": true, "midiCc": false, "value": null, "text": null } ] } })
         );
         assert_eq!(
             serde_json::to_value(ScanOutput::Broken {

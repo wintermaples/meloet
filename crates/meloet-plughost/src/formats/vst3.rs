@@ -14,7 +14,7 @@ mod com;
 pub mod runloop;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CString, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -896,6 +896,27 @@ impl Vst3Controller {
         }
     }
 
+    /// The parameters the plugin takes a MIDI controller with (`IMidiMapping`): the first
+    /// event bus, every channel, every controller number.
+    fn mapped_to_midi(controller: &ComPtr<IEditController>) -> HashSet<u32> {
+        let mut mapped = HashSet::new();
+        let Some(mapping) = controller.cast::<IMidiMapping>() else {
+            return mapped;
+        };
+        for channel in 0..16 {
+            for number in 0..ControllerNumbers_::kCountCtrlNumber as i16 {
+                let mut param = 0;
+                // SAFETY: a plain question on the main thread, with a place for the answer.
+                let told =
+                    unsafe { mapping.getMidiControllerAssignment(0, channel, number, &mut param) };
+                if told == kResultOk {
+                    mapped.insert(param);
+                }
+            }
+        }
+        mapped
+    }
+
     fn group_names(controller: &ComPtr<IEditController>) -> HashMap<i32, String> {
         // Each unit's parent and name.
         let mut tree: HashMap<i32, (i32, String)> = HashMap::new();
@@ -1006,6 +1027,7 @@ impl Controller for Vst3Controller {
             return Vec::new();
         };
         let groups = Self::group_names(controller);
+        let mapped = Self::mapped_to_midi(controller);
         let mut units = HashMap::new();
         let mut params = Vec::new();
         // SAFETY: plain questions on the main thread; `info` is filled by the plugin.
@@ -1041,15 +1063,22 @@ impl Controller for Vst3Controller {
                     _ => Vec::new(),
                 };
                 let value = normal(controller.getParamNormalized(info.id));
+                let name = com::read_utf16(&info.title);
+                let automatable = info.flags & ParameterFlags_::kCanAutomate != 0;
+                // A plugin may map a controller to a parameter of its sound (CC 7 to its
+                // volume): that one stays in the list. The ones made only for the knobs are
+                // not for automation.
+                let midi_cc =
+                    (mapped.contains(&info.id) && !automatable) || super::named_midi_cc(&name);
                 params.push(ParamInfo {
                     id: info.id,
-                    name: com::read_utf16(&info.title),
+                    name,
                     group: groups.get(&info.unitId).filter(|n| !n.is_empty()).cloned(),
                     default: normal(info.defaultNormalizedValue),
                     shape,
                     labels,
-                    automatable: info.flags & ParameterFlags_::kCanAutomate != 0,
-                    midi_cc: false,
+                    automatable,
+                    midi_cc,
                     value: Some(value),
                     text: value_text(controller, info.id, value, &unit),
                 });

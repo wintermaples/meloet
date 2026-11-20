@@ -1123,3 +1123,4 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 4. 帯の見出しで、Surge XT のパラメータの名前が null（ZamComp は出る）。
 5. **「5 秒おきの抜け」は meloet のせいではない**。`pw-play` ＋ `pw-record`（meloet なし）でも同じ形で抜け、抜けた瞬間に ERR がふえるのは `pw-record` のノードだけ。meloet ・ 出口のノードの ERR はふえない（ヘッドホンの音が落ちていない、の確かさ B）。測る道具は `pw-record` の ERR がふえた所を外す（宿題）。
 6. 10 分書くと履歴の点の写しが 54 MiB。21-5 の決め（重ければ `ChunkedVec`）のとおり、`ChunkedVec` にする（棟梁の決め）。
+- 区切り2 ・ 3 の直し（2026-11-20、3 人が同時に。どれも 216f8d5 から。3 人とも meloet-hard の決まりで Fable 5.2 ・ medium）: (a) 動くフェーダー ・ 値の字で 60 コマ（つまみを `transform`、値の字の形、レイアウトの四角を読む道具、7 章）、(b) プラグインの帯まわり（欄の値の字が動かない、帯の名前が null、core から本物のプラグインまでの試験）、(c) 帯の点を `ChunkedVec` に。

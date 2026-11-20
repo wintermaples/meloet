@@ -69,8 +69,8 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 
 ```
 crates/
-  meloet-model     曲・トラック・クリップ・テイク・ノート（純粋なデータ）、取り消しの手（History）、録った出来事をテイクにする決まり（Recorder）、ノートを直す（notes.rs）、クオンタイズ（quantize.rs）、CC の点（controls.rs）、クリップを動かす（arrange.rs）、音色とグループ（instrument.rs）、ドラムのキット（drums.rs）、ミキサーとエフェクトのパラメータ（mixer.rs、effects.rs）
-  meloet-protocol  Rust と画面の約束（版 18）。TS の型は ui/src/bridge/generated/ に書き出す。プラグインの窓とパラメータの形は params.rs、あとから入れた物は added.rs
+  meloet-model     曲・トラック・クリップ・テイク・ノート（純粋なデータ）、テンポの地図（tempo_map.rs）、取り消しの手（History）、録った出来事をテイクにする決まり（Recorder）、ノートを直す（notes.rs）、クオンタイズ（quantize.rs）、CC の点（controls.rs）、クリップを動かす（arrange.rs）、音色とグループ（instrument.rs）、ドラムのキット（drums.rs）、ミキサーとエフェクトのパラメータ（mixer.rs、effects.rs）
+  meloet-protocol  Rust と画面の約束（版 20）。TS の型は ui/src/bridge/generated/ に書き出す。プラグインの窓とパラメータの形は params.rs、あとから入れた物は added.rs、テンポ ・ 拍子 ・ マーカーは timeline.rs
   meloet-engine    音の流れ、音源の口（Instrument）、トラックの席、ミキサーの音の道（mixer.rs）、メーター、cpal の出口、再生まわり（transport.rs）、耳に届いている位置（clock.rs）
   meloet-sound     音の部品: サンプルを鳴らす係（sampler/）、SF2 を読む所（sf2/）、エフェクト 6 つ（effects/）、計算で作る音色（synth/）、サンプルの ▶ のフレーズ（phrases.rs）
   meloet-plugin    プラグインの鍵とまとめる鍵、種類、スキャンの記録、共有メモリと futex、プラグイン係とのやりとり（wire.rs）、子を起こす（launch.rs）
@@ -84,6 +84,7 @@ ui/
   src/design/      数値（仕様書の名前のまま）
   src/text/        文面
   src/gl/          WebGL の係（区画、使いまわし、予算）
+  src/time/        画面のテンポの地図（tempoMap.ts。Rust の答えの表 tempoMap.table.json でためす）
   src/components/pianoroll/  ピアノロールの帯（見ている範囲 view.svelte.ts、見せているテイク shown.svelte.ts、ドラッグ drag.ts、CC の帯 cc.ts）
   src/components/mixer/      ミキサーの帯（ストリップ、フェーダー、パン、センド、インサート、ドラッグ mixDrag.ts）
   src/components/params/     右のパラメータの欄（最初から入っているエフェクト BuiltinList、プラグイン PluginList。一覧は bridge/paramTable.ts）

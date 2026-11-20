@@ -17,7 +17,8 @@ use crate::settings::temp_dir;
 use crate::songfile;
 use crate::state::{Effect, Input, Model};
 
-const BAR: u64 = 1920;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn at(m: &mut Model, t_us: u64, input: Input) -> Vec<Effect> {
     m.set_now(t_us, None);

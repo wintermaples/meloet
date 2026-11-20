@@ -12,7 +12,8 @@ use super::*;
 use crate::songfile;
 use crate::state::Model;
 
-const BAR: u64 = 1920;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn tl(m: &Model) -> TimelineView {
     m.view().timeline
@@ -83,7 +84,7 @@ fn a_tempo_point_snaps_is_selected_and_is_one_step() {
     cmd(
         m,
         Command::AddTempoPoint {
-            tick: 4 * BAR + 239,
+            tick: 4 * BAR + Q / 2 - 1,
             bpm: 104.0,
         },
     );
@@ -101,7 +102,7 @@ fn a_tempo_point_snaps_is_selected_and_is_one_step() {
     cmd(
         m,
         Command::AddTempoPoint {
-            tick: 8 * BAR - 240,
+            tick: 8 * BAR - Q / 2,
             bpm: 120.004,
         },
     );
@@ -244,12 +245,12 @@ fn a_tempo_point_moves_takes_a_place_ramps_and_goes() {
         m,
         Command::MoveTempoPoint {
             tick: 4 * BAR,
-            to_tick: 5 * BAR + 500,
+            to_tick: 5 * BAR + Q + 20,
             bpm: 110.0,
         },
     );
-    assert_eq!(points(m)[0], (5 * BAR + 480, 110.0, true));
-    assert_eq!((steps(m), tl(m).selected), (6, point(5 * BAR + 480)));
+    assert_eq!(points(m)[0], (5 * BAR + Q, 110.0, true));
+    assert_eq!((steps(m), tl(m).selected), (6, point(5 * BAR + Q)));
     assert!(matches!(
         status(m),
         Some(StatusMessage::TempoRampSelected {
@@ -262,7 +263,7 @@ fn a_tempo_point_moves_takes_a_place_ramps_and_goes() {
     cmd(
         m,
         Command::MoveTempoPoint {
-            tick: 5 * BAR + 480,
+            tick: 5 * BAR + Q,
             to_tick: 8 * BAR + 10,
             bpm: 110.0,
         },
@@ -294,7 +295,7 @@ fn a_tempo_point_moves_takes_a_place_ramps_and_goes() {
             bpm: 90.0,
         },
     );
-    assert_eq!(points(m)[0], (480, 90.0, false));
+    assert_eq!(points(m)[0], (Q, 90.0, false));
     cmd(
         m,
         Command::MoveTempoPoint {
@@ -310,18 +311,18 @@ fn a_tempo_point_moves_takes_a_place_ramps_and_goes() {
     cmd(
         m,
         Command::MoveTempoPoint {
-            tick: 480,
-            to_tick: 500,
+            tick: Q,
+            to_tick: Q + 20,
             bpm: 90.0,
         },
     );
-    assert_eq!((steps(m), tl(m).selected), (before, point(480)));
+    assert_eq!((steps(m), tl(m).selected), (before, point(Q)));
 
     // Delete; the head does not go.
     cmd(
         m,
         Command::DeleteTimeline {
-            target: TimelineRef::TempoPoint { tick: 480 },
+            target: TimelineRef::TempoPoint { tick: Q },
         },
     );
     assert_eq!(points(m), [(14 * BAR, 110.0, true)]);
@@ -334,7 +335,7 @@ fn a_tempo_point_moves_takes_a_place_ramps_and_goes() {
     );
     assert_eq!(steps(m), before + 1);
     cmd(m, Command::Undo);
-    assert_eq!((points(m).len(), tl(m).selected), (2, point(480)));
+    assert_eq!((points(m).len(), tl(m).selected), (2, point(Q)));
 }
 
 #[test]
@@ -343,7 +344,7 @@ fn a_value_typed_on_a_point_between_beats_leaves_it_there() {
     cmd(
         m,
         Command::AddTempoPoint {
-            tick: 10 * BAR + 480,
+            tick: 10 * BAR + Q,
             bpm: 120.0,
         },
     );
@@ -359,12 +360,12 @@ fn a_value_typed_on_a_point_between_beats_leaves_it_there() {
     cmd(
         m,
         Command::MoveTempoPoint {
-            tick: 10 * BAR + 480,
-            to_tick: 10 * BAR + 480,
+            tick: 10 * BAR + Q,
+            to_tick: 10 * BAR + Q,
             bpm: 126.0,
         },
     );
-    assert_eq!(points(m), [(10 * BAR + 480, 126.0, false)]);
+    assert_eq!(points(m), [(10 * BAR + Q, 126.0, false)]);
     assert_eq!(
         status(m),
         Some(StatusMessage::TempoPointSelected {
@@ -565,7 +566,7 @@ fn a_marker_and_the_name_typed_into_its_field_are_one_step() {
     cmd(
         m,
         Command::Locate {
-            tick: 2 * BAR + 250,
+            tick: 2 * BAR + Q / 2 + 10,
         },
     );
     cmd(
@@ -575,7 +576,7 @@ fn a_marker_and_the_name_typed_into_its_field_are_one_step() {
         },
     );
     let id = tl(m).markers[0].id;
-    assert_eq!(markers(m), [(2 * BAR + 480, "マーカー 1".to_owned())]);
+    assert_eq!(markers(m), [(2 * BAR + Q, "マーカー 1".to_owned())]);
     assert_eq!((tl(m).selected, tl(m).renaming), (marker(id), Some(id)));
     assert_eq!(
         status(m),
@@ -841,11 +842,17 @@ fn markers_move_go_and_step() {
 fn the_marker_at_the_ear_while_playing() {
     let m = &mut ready();
     cmd(m, Command::PlayStop);
-    hear(m, 1, (3 * BAR + 700) as f64, TransportState::Playing, 0);
+    hear(
+        m,
+        1,
+        (3 * BAR + Q + Q / 2 - 20) as f64,
+        TransportState::Playing,
+        0,
+    );
     m.set_now(
         2,
         Some(Heard {
-            tick: (3 * BAR + 730) as f64,
+            tick: (3 * BAR + Q + Q / 2 + 10) as f64,
             state: TransportState::Playing,
             lap: 0,
         }),
@@ -856,7 +863,7 @@ fn the_marker_at_the_ear_while_playing() {
             name: "ここ".into(),
         },
     );
-    assert_eq!(markers(m), [(3 * BAR + 960, "ここ".to_owned())]);
+    assert_eq!(markers(m), [(3 * BAR + 2 * Q, "ここ".to_owned())]);
 }
 
 #[test]
@@ -916,7 +923,7 @@ fn the_loop_range_is_a_step_and_on_and_off_are_not() {
 #[test]
 fn bars_follow_the_meter_where_they_are() {
     let m = &mut ready();
-    // Two bars of 4/4, then 3/4: bar 3 starts at 3840, bar 4 at 5280.
+    // Two bars of 4/4, then 3/4: bar 3 starts at 2 * BAR, bar 4 at 2 * BAR + 3 * Q.
     cmd(
         m,
         Command::AddMeterChange {
@@ -936,7 +943,7 @@ fn bars_follow_the_meter_where_they_are() {
         m.view().song.loop_range,
         Some(TickSpan {
             start: BAR,
-            end: 2 * BAR + 2 * 1440
+            end: 2 * BAR + 2 * 3 * Q
         })
     );
     cmd(m, Command::SelectTimeline { target: None });
@@ -951,15 +958,15 @@ fn bars_follow_the_meter_where_they_are() {
     cmd(
         m,
         Command::Locate {
-            tick: 2 * BAR + 1500,
+            tick: 2 * BAR + 3 * Q + 60,
         },
     );
     cmd(m, Command::ToggleLoop);
     assert_eq!(
         m.view().song.loop_range,
         Some(TickSpan {
-            start: 2 * BAR + 1440,
-            end: 2 * BAR + 5 * 1440
+            start: 2 * BAR + 3 * Q,
+            end: 2 * BAR + 5 * 3 * Q
         })
     );
     // The count-in counts the beats of the bar the recording starts in.
@@ -986,13 +993,13 @@ fn a_paste_lands_on_the_bar_of_the_meter_there() {
     cmd(
         m,
         Command::Locate {
-            tick: 2 * BAR + 1500,
+            tick: 2 * BAR + 3 * Q + 60,
         },
     );
     cmd(m, Command::PasteClips { to: None });
     let clips = m.view().song.tracks[0].clips.clone();
     assert_eq!(clips.len(), 2);
-    assert_eq!(clips[1].start, 2 * BAR + 1440);
+    assert_eq!(clips[1].start, 2 * BAR + 3 * Q);
 }
 
 #[test]
@@ -1002,7 +1009,7 @@ fn loop_from_a_marker_to_the_next_or_to_the_song_end() {
     let a = add_marker_at(m, 2 * BAR, "A");
     let b = add_marker_at(m, 4 * BAR, "B");
     let b2 = add_marker_at(m, 4 * BAR, "B2");
-    let late = add_marker_at(m, 9 * BAR + 480, "おわり");
+    let late = add_marker_at(m, 9 * BAR + Q, "おわり");
     cmd(m, Command::CloseMarkerName);
     let before = steps(m);
     let o = cmd(m, Command::LoopFromMarker { id: a });
@@ -1017,13 +1024,13 @@ fn loop_from_a_marker_to_the_next_or_to_the_song_end() {
     assert_eq!(steps(m), before + 1);
     // Two markers at one tick: to the next later one.
     let o = cmd(m, Command::LoopFromMarker { id: b });
-    assert_eq!(loops(&o), [(4 * BAR, 9 * BAR + 480, true)]);
+    assert_eq!(loops(&o), [(4 * BAR, 9 * BAR + Q, true)]);
     let o = cmd(m, Command::LoopFromMarker { id: b2 });
-    assert_eq!(loops(&o), [(4 * BAR, 9 * BAR + 480, true)]);
+    assert_eq!(loops(&o), [(4 * BAR, 9 * BAR + Q, true)]);
     assert_eq!(steps(m), before + 2);
     // The last marker, after every clip: 4 bars from it.
     let o = cmd(m, Command::LoopFromMarker { id: late });
-    assert_eq!(loops(&o), [(9 * BAR + 480, 13 * BAR + 480, true)]);
+    assert_eq!(loops(&o), [(9 * BAR + Q, 13 * BAR + Q, true)]);
     // The last marker with a clip after it: to the clip's end, up to the head of a bar.
     cmd(
         m,
@@ -1035,7 +1042,7 @@ fn loop_from_a_marker_to_the_next_or_to_the_song_end() {
     assert_eq!(loops(&o), [(4 * BAR, 6 * BAR, true)]);
     // Undo takes the range back and leaves the loop on.
     let o = cmd(m, Command::Undo);
-    assert_eq!(loops(&o), [(9 * BAR + 480, 13 * BAR + 480, true)]);
+    assert_eq!(loops(&o), [(9 * BAR + Q, 13 * BAR + Q, true)]);
 }
 
 #[test]
@@ -1207,7 +1214,7 @@ fn held(doc: &Doc) -> Doc {
 }
 
 fn random_command(rng: &mut Rng, view: &TimelineView) -> Command {
-    let tick = rng.below(24 * 4) * 480 + rng.below(3) * 111;
+    let tick = rng.below(24 * 4) * Q + rng.below(3) * 111;
     let bar = rng.below(20) as u32;
     let bpm = 30.0 + rng.below(27_001) as f64 / 100.0;
     let (num, den) = (

@@ -398,10 +398,13 @@ impl TempoMap {
 mod tests {
     use super::*;
 
+    const Q: u64 = TICKS_PER_QUARTER;
+    const BAR: u64 = 4 * Q;
+
     #[test]
     fn a_slope_near_zero_joins_the_straight_line() {
-        let (tpb, a) = (480.0, 104.0);
-        for u in [1.0, 480.0, 7680.0, 1.0e6] {
+        let (tpb, a) = (Q as f64, 104.0);
+        for u in [1.0, tpb, 16.0 * tpb, 1.0e6] {
             let flat = seconds_of(u, tpb, a, 0.0);
             let mut exp = -3;
             while exp >= -300 {
@@ -428,13 +431,13 @@ mod tests {
         }
         // Too small to change the last bit: the very same number as the straight line.
         assert_eq!(
-            seconds_of(7680.0, tpb, a, 1e-300),
-            seconds_of(7680.0, tpb, a, 0.0)
+            seconds_of(16.0 * tpb, tpb, a, 1e-300),
+            seconds_of(16.0 * tpb, tpb, a, 0.0)
         );
         assert_eq!(ticks_of(8.5, tpb, a, 1e-300), ticks_of(8.5, tpb, a, 0.0));
         assert_eq!(
-            seconds_of(7680.0, tpb, a, 5e-324),
-            seconds_of(7680.0, tpb, a, 0.0)
+            seconds_of(16.0 * tpb, tpb, a, 5e-324),
+            seconds_of(16.0 * tpb, tpb, a, 0.0)
         );
     }
 
@@ -452,10 +455,10 @@ mod tests {
             meter: Meter::FOUR_FOUR,
             head_ramp: false,
             tempo_points: vec![
-                point(1920, 12000),
+                point(BAR, 12000),
                 point(0, 20000),
-                point(960, 10000),
-                point(1920, 11000),
+                point(2 * Q, 10000),
+                point(BAR, 11000),
             ],
             meter_changes: vec![
                 MeterChange {
@@ -474,7 +477,7 @@ mod tests {
         };
         assert_eq!(broken.check(), Err(TimelineError::TempoPointsOrder));
         let fixed = Timeline {
-            tempo_points: vec![point(960, 10000), point(1920, 11000)],
+            tempo_points: vec![point(2 * Q, 10000), point(BAR, 11000)],
             meter_changes: vec![MeterChange {
                 bar: 2,
                 meter: m(6, 8),
@@ -484,7 +487,7 @@ mod tests {
         assert_eq!(fixed.check(), Ok(()));
         let (a, b) = (TempoMap::new(&broken), TempoMap::new(&fixed));
         assert_eq!(a.piece_count(), b.piece_count());
-        for tick in [0u64, 500, 960, 1919, 1920, 3840, 5000, 100_000] {
+        for tick in [0, 500, 2 * Q, BAR - 1, BAR, 2 * BAR, 5000, 100_000] {
             assert_eq!(a.seconds_at(tick as f64), b.seconds_at(tick as f64));
             assert_eq!(a.tempo_at(tick as f64), b.tempo_at(tick as f64));
             assert_eq!(a.meter_at(tick), b.meter_at(tick));

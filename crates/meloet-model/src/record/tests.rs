@@ -1,8 +1,15 @@
 use super::*;
+use crate::time::TICKS_PER_QUARTER;
+
+const Q: u64 = TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
+/// `Q` and `BAR` for the ticks of events, which are signed.
+const QI: i64 = Q as i64;
+const B: i64 = BAR as i64;
 
 /// Bars 2 and 3 in 4/4.
 fn bars_2_3() -> Option<TickRange> {
-    TickRange::new(1920, 3840)
+    TickRange::new(BAR, 2 * BAR)
 }
 
 fn on(tick: i64, lap: u32, key: u8) -> RecEvent {
@@ -79,21 +86,21 @@ fn sustain(value: u8) -> ControlValue {
 #[test]
 fn presses_and_releases_make_notes() {
     let r = run(
-        1920,
+        BAR,
         None,
         &[
-            on(1920, 0, 60),
-            on(2000, 0, 64),
-            off(2100, 0, 64),
-            off(2400, 0, 60),
+            on(B, 0, 60),
+            on(B + 80, 0, 64),
+            off(B + 180, 0, 64),
+            off(B + QI, 0, 60),
         ],
-        (3000, 0),
+        (B + 9 * QI / 4, 0),
     )
     .unwrap();
     assert_eq!(r.active, 0);
     let [t] = &r.takes[..] else { panic!() };
-    assert_eq!((t.origin, t.length), (1920, 1080));
-    assert_eq!(notes(t), [(0, 480, 60), (80, 100, 64)]);
+    assert_eq!((t.origin, t.length), (BAR, 9 * Q / 4));
+    assert_eq!(notes(t), [(0, Q, 60), (80, 100, 64)]);
     assert_eq!(t.notes[0].velocity, 90);
 }
 
@@ -144,9 +151,15 @@ fn keys_down_at_stop_end_at_stop() {
 
 #[test]
 fn a_note_before_the_start_moves_the_take_start() {
-    let r = run(1920, None, &[on(1900, 0, 60), off(2000, 0, 60)], (2400, 0)).unwrap();
+    let r = run(
+        BAR,
+        None,
+        &[on(B - 20, 0, 60), off(B + 80, 0, 60)],
+        (B + QI, 0),
+    )
+    .unwrap();
     let t = &r.takes[0];
-    assert_eq!((t.origin, t.length), (1900, 500));
+    assert_eq!((t.origin, t.length), (BAR - 20, Q + 20));
     assert_eq!(notes(t), [(0, 100, 60)]);
 }
 
@@ -184,7 +197,12 @@ fn no_notes_no_take() {
         None
     );
     assert_eq!(
-        run(1920, bars_2_3(), &[cc(2000, 1, CC_SUSTAIN, 127)], (2000, 2)),
+        run(
+            BAR,
+            bars_2_3(),
+            &[cc(B + 80, 1, CC_SUSTAIN, 127)],
+            (B + 80, 2)
+        ),
         None
     );
 }
@@ -192,17 +210,17 @@ fn no_notes_no_take() {
 #[test]
 fn controls_are_kept_in_take_ticks() {
     let r = run(
-        960,
+        2 * Q,
         None,
         &[
-            cc(900, 0, CC_SUSTAIN, 127),
-            on(1000, 0, 60),
-            cc(1100, 0, 7, 80),
-            bend(1200, 0, -4000),
-            cc(1300, 0, CC_SUSTAIN, 0),
-            off(1400, 0, 60),
+            cc(2 * QI - 60, 0, CC_SUSTAIN, 127),
+            on(2 * QI + 40, 0, 60),
+            cc(2 * QI + 140, 0, 7, 80),
+            bend(2 * QI + 240, 0, -4000),
+            cc(2 * QI + 340, 0, CC_SUSTAIN, 0),
+            off(2 * QI + 440, 0, 60),
         ],
-        (1500, 0),
+        (2 * QI + 540, 0),
     )
     .unwrap();
     assert_eq!(
@@ -230,15 +248,15 @@ fn controls_held_at_start_are_written_at_the_head() {
         modulation: 5,
     };
     let r = run_held(
-        960,
+        2 * Q,
         None,
         held,
-        &[on(900, 0, 60), off(1000, 0, 60)],
-        (1200, 0),
+        &[on(2 * QI - 60, 0, 60), off(2 * QI + 40, 0, 60)],
+        (2 * QI + 240, 0),
     )
     .unwrap();
     let t = &r.takes[0];
-    assert_eq!(t.origin, 900);
+    assert_eq!(t.origin, 2 * Q - 60);
     assert_eq!(
         controls(t),
         [
@@ -258,47 +276,47 @@ fn controls_held_at_start_are_written_at_the_head() {
 #[test]
 fn each_pass_is_its_own_take_and_empty_passes_are_skipped() {
     let r = run(
-        1920,
+        BAR,
         bars_2_3(),
         &[
-            on(2000, 0, 60),
-            off(2100, 0, 60),
-            cc(2000, 1, 7, 1),
-            on(2500, 2, 62),
-            off(2600, 2, 62),
+            on(B + 80, 0, 60),
+            off(B + 180, 0, 60),
+            cc(B + 80, 1, 7, 1),
+            on(B + 580, 2, 62),
+            off(B + 680, 2, 62),
         ],
-        (2700, 2),
+        (B + 780, 2),
     )
     .unwrap();
     assert_eq!(r.takes.len(), 2);
     assert_eq!(r.active, 1);
     let (a, b) = (&r.takes[0], &r.takes[1]);
-    assert_eq!((a.origin, a.length), (1920, 1920));
+    assert_eq!((a.origin, a.length), (BAR, BAR));
     assert_eq!(notes(a), [(80, 100, 60)]);
-    assert_eq!((b.origin, b.length), (1920, 780));
+    assert_eq!((b.origin, b.length), (BAR, 780));
     assert_eq!(notes(b), [(580, 100, 62)]);
 }
 
 #[test]
 fn shown_take_is_the_last_pass_with_notes() {
     let r = run(
-        1920,
+        BAR,
         bars_2_3(),
         &[
-            on(2000, 0, 60),
-            off(2100, 0, 60),
-            on(2000, 1, 62),
-            off(2100, 1, 62),
-            cc(2000, 2, CC_SUSTAIN, 127),
+            on(B + 80, 0, 60),
+            off(B + 180, 0, 60),
+            on(B + 80, 1, 62),
+            off(B + 180, 1, 62),
+            cc(B + 80, 2, CC_SUSTAIN, 127),
         ],
-        (3000, 3),
+        (B + 1080, 3),
     )
     .unwrap();
     assert_eq!(r.takes.len(), 2);
     assert_eq!(r.active, 1);
     assert_eq!(notes(&r.takes[1]), [(80, 100, 62)]);
     assert_eq!(
-        r.takes[1].length, 1920,
+        r.takes[1].length, BAR,
         "a pass that ran to the end is whole"
     );
 }
@@ -306,61 +324,65 @@ fn shown_take_is_the_last_pass_with_notes() {
 #[test]
 fn a_key_held_over_the_loop_end_stays_in_its_pass() {
     let r = run(
-        1920,
+        BAR,
         bars_2_3(),
         &[
-            on(3800, 0, 60),
-            off(2000, 1, 60),
-            on(2100, 1, 62),
-            off(2200, 1, 62),
+            on(2 * B - 40, 0, 60),
+            off(B + 80, 1, 60),
+            on(B + 180, 1, 62),
+            off(B + 280, 1, 62),
         ],
-        (2300, 1),
+        (B + 380, 1),
     )
     .unwrap();
-    assert_eq!(notes(&r.takes[0]), [(1880, 40, 60)]);
+    assert_eq!(notes(&r.takes[0]), [(BAR - 40, 40, 60)]);
     assert_eq!(notes(&r.takes[1]), [(180, 100, 62)]);
 }
 
 #[test]
 fn a_key_held_through_several_passes_and_the_stop() {
-    let r = run(1920, bars_2_3(), &[on(3800, 0, 60)], (2500, 2)).unwrap();
+    let r = run(BAR, bars_2_3(), &[on(2 * B - 40, 0, 60)], (B + 580, 2)).unwrap();
     assert_eq!(r.takes.len(), 1);
-    assert_eq!(notes(&r.takes[0]), [(1880, 40, 60)]);
+    assert_eq!(notes(&r.takes[0]), [(BAR - 40, 40, 60)]);
     assert_eq!(r.active, 0);
 }
 
 #[test]
 fn pressing_again_in_the_next_pass() {
     let r = run(
-        1920,
+        BAR,
         bars_2_3(),
-        &[on(3800, 0, 60), on(2000, 1, 60), off(2100, 1, 60)],
-        (2300, 1),
+        &[
+            on(2 * B - 40, 0, 60),
+            on(B + 80, 1, 60),
+            off(B + 180, 1, 60),
+        ],
+        (B + 380, 1),
     )
     .unwrap();
-    assert_eq!(notes(&r.takes[0]), [(1880, 40, 60)]);
+    assert_eq!(notes(&r.takes[0]), [(BAR - 40, 40, 60)]);
     assert_eq!(notes(&r.takes[1]), [(80, 100, 60)]);
 }
 
 #[test]
 fn pedal_bend_and_modulation_left_on_go_to_the_next_pass_head() {
     let r = run(
-        1920,
+        BAR,
         bars_2_3(),
         &[
-            cc(3000, 0, CC_SUSTAIN, 127),
-            bend(3100, 0, 300),
-            cc(3200, 0, CC_MODULATION, 0),
-            on(3300, 0, 60),
-            off(3400, 0, 60),
+            cc(B + 1080, 0, CC_SUSTAIN, 127),
+            bend(B + 1180, 0, 300),
+            cc(B + 1280, 0, CC_MODULATION, 0),
+            on(B + 1380, 0, 60),
+            off(B + 1480, 0, 60),
             // Pass 1: the pedal comes up; the bend stays.
-            on(2000, 1, 62),
-            cc(2100, 1, CC_SUSTAIN, 0),
-            off(2200, 1, 62),
-            on(2000, 2, 64),
-            off(2100, 2, 64),
+            on(B + 80, 1, 62),
+            cc(B + 180, 1, CC_SUSTAIN, 0),
+            off(B + 280, 1, 62),
+            on(B + 80, 2, 64),
+            off(B + 180, 2, 64),
         ],
-        (2200, 2),
+        (B + 280, 2),
     )
     .unwrap();
     assert_eq!(r.takes.len(), 3);
@@ -378,39 +400,39 @@ fn pedal_bend_and_modulation_left_on_go_to_the_next_pass_head() {
 #[test]
 fn starting_inside_the_loop() {
     let r = run(
-        2880,
+        BAR + 2 * Q,
         bars_2_3(),
         &[
-            on(2870, 0, 59),
-            off(2875, 0, 59),
-            on(2900, 0, 60),
-            off(3000, 0, 60),
-            on(1920, 1, 62),
-            off(2000, 1, 62),
+            on(B + 2 * QI - 10, 0, 59),
+            off(B + 2 * QI - 5, 0, 59),
+            on(B + 2 * QI + 20, 0, 60),
+            off(B + 2 * QI + 120, 0, 60),
+            on(B, 1, 62),
+            off(B + 80, 1, 62),
         ],
-        (2100, 1),
+        (B + 180, 1),
     )
     .unwrap();
     let (a, b) = (&r.takes[0], &r.takes[1]);
     // A press just before the start stays where it was played; the first take reaches back to it.
-    assert_eq!((a.origin, a.length), (2870, 970));
+    assert_eq!((a.origin, a.length), (BAR + 2 * Q - 10, 2 * Q + 10));
     assert_eq!(notes(a), [(0, 5, 59), (30, 100, 60)]);
-    assert_eq!((b.origin, b.length), (1920, 180));
+    assert_eq!((b.origin, b.length), (BAR, 180));
     assert_eq!(notes(b), [(0, 80, 62)]);
 }
 
 #[test]
 fn a_loop_ending_before_the_start_is_not_looked_at() {
     let r = run(
-        4000,
+        2 * BAR + 160,
         bars_2_3(),
         &[
-            on(4000, 0, 60),
-            off(4100, 0, 60),
-            on(4200, 3, 62),
-            off(4300, 3, 62),
+            on(2 * B + 160, 0, 60),
+            off(2 * B + 260, 0, 60),
+            on(2 * B + 360, 3, 62),
+            off(2 * B + 460, 3, 62),
         ],
-        (4400, 3),
+        (2 * B + 560, 3),
     )
     .unwrap();
     assert_eq!(r.takes.len(), 1);
@@ -430,46 +452,46 @@ fn live_notes_of_the_pass_being_recorded() {
         .collect();
     assert_eq!(live, [(100, 100, 60), (300, 150, 62)]);
 
-    let mut r = Recorder::new(1920, bars_2_3(), HeldControls::default());
+    let mut r = Recorder::new(BAR, bars_2_3(), HeldControls::default());
     for e in [
-        on(3800, 0, 60),
-        on(2000, 1, 62),
-        off(2050, 1, 62),
-        on(2100, 1, 64),
+        on(2 * B - 40, 0, 60),
+        on(B + 80, 1, 62),
+        off(B + 130, 1, 62),
+        on(B + 180, 1, 64),
     ] {
         r.push(e);
     }
     let live: Vec<_> = r
-        .live_notes(2200, 1)
+        .live_notes(B + 280, 1)
         .iter()
         .map(|n| (n.start, n.length, n.key))
         .collect();
     assert_eq!(
         live,
-        [(2000, 50, 62), (2100, 100, 64)],
+        [(BAR + 80, 50, 62), (BAR + 180, 100, 64)],
         "the key from pass 0 is not in pass 1"
     );
     let pass0: Vec<_> = r
-        .live_notes(2200, 0)
+        .live_notes(B + 280, 0)
         .iter()
         .map(|n| (n.start, n.length, n.key))
         .collect();
-    assert_eq!(pass0, [(3800, 40, 60)]);
-    assert!(r.live_notes(2200, 2).is_empty());
+    assert_eq!(pass0, [(2 * BAR - 40, 40, 60)]);
+    assert!(r.live_notes(B + 280, 2).is_empty());
 }
 
 #[test]
 fn takes_from_the_recorder_go_into_the_song() {
     let r = run(
-        1920,
+        BAR,
         bars_2_3(),
         &[
-            cc(3000, 0, CC_SUSTAIN, 127),
-            on(3800, 0, 60),
-            on(2000, 1, 62),
-            off(2100, 1, 62),
+            cc(B + 1080, 0, CC_SUSTAIN, 127),
+            on(2 * B - 40, 0, 60),
+            on(B + 80, 1, 62),
+            off(B + 180, 1, 62),
         ],
-        (2500, 1),
+        (B + 580, 1),
     )
     .unwrap();
     let doc = crate::Doc::new_default();
@@ -478,42 +500,42 @@ fn takes_from_the_recorder_go_into_the_song() {
     let (_, clip) = e.doc.clip(added.clip).unwrap();
     assert_eq!(
         (clip.start, clip.end, clip.takes.len(), clip.active),
-        (1920, 3840, 2, 1)
+        (BAR, 2 * BAR, 2, 1)
     );
 }
 
 #[test]
 fn a_key_pressed_just_before_the_loop_start_widens_only_the_first_take() {
     let r = run(
-        1920,
+        BAR,
         bars_2_3(),
         &[
-            on(1880, 0, 60),
-            off(1990, 0, 60),
-            on(3830, 0, 62),
-            on(1950, 1, 64),
-            off(2000, 1, 64),
+            on(B - 40, 0, 60),
+            off(B + 70, 0, 60),
+            on(2 * B - 10, 0, 62),
+            on(B + 30, 1, 64),
+            off(B + 80, 1, 64),
         ],
-        (2100, 1),
+        (B + 180, 1),
     )
     .unwrap();
     let (a, b) = (&r.takes[0], &r.takes[1]);
-    assert_eq!((a.origin, a.length), (1880, 1960));
-    assert_eq!(notes(a), [(0, 110, 60), (1950, 10, 62)]);
-    assert_eq!((b.origin, b.length), (1920, 180));
+    assert_eq!((a.origin, a.length), (BAR - 40, BAR + 40));
+    assert_eq!(notes(a), [(0, 110, 60), (BAR + 30, 10, 62)]);
+    assert_eq!((b.origin, b.length), (BAR, 180));
     assert_eq!(notes(b), [(30, 50, 64)]);
 
-    let mut live = Recorder::new(1920, bars_2_3(), HeldControls::default());
-    live.push(on(1880, 0, 60));
-    let n = live.live_notes(1900, 0);
-    assert_eq!((n[0].start, n[0].length), (1880, 20));
+    let mut live = Recorder::new(BAR, bars_2_3(), HeldControls::default());
+    live.push(on(B - 40, 0, 60));
+    let n = live.live_notes(B - 20, 0);
+    assert_eq!((n[0].start, n[0].length), (BAR - 40, 20));
 }
 
 #[test]
 fn the_first_loop_take_does_not_go_before_zero() {
     let r = run(
         0,
-        TickRange::new(0, 1920),
+        TickRange::new(0, BAR),
         &[on(-40, 0, 60), off(100, 0, 60)],
         (200, 0),
     )

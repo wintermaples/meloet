@@ -5,7 +5,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use meloet_model::edit::{self, NewTake};
-use meloet_model::{Doc, History, InstrumentRef, Note, Tempo, TrackColor, TrackId, song::Track};
+use meloet_model::{
+    Doc, History, InstrumentRef, Note, TICKS_PER_QUARTER, Tempo, TrackColor, TrackId, song::Track,
+};
+
+const BAR: u64 = 4 * TICKS_PER_QUARTER;
 
 struct Counting;
 
@@ -53,7 +57,7 @@ fn eight_tracks() -> Doc {
 fn take(origin: u64, notes: usize) -> NewTake {
     NewTake {
         origin,
-        length: 1920,
+        length: BAR,
         notes: (0..notes)
             .map(|i| Note {
                 from: None,
@@ -86,7 +90,7 @@ fn a_thousand_steps() {
     // 1000 recordings, each a new clip of 20 notes, spread over 8 tracks.
     let record = history_bytes(eight_tracks(), |h, doc, i| {
         let track = TrackId(i as u32 % TRACKS + 1);
-        let origin = (i as u64 / u64::from(TRACKS)) * 1920;
+        let origin = (i as u64 / u64::from(TRACKS)) * BAR;
         let (e, _) = edit::add_recording(doc, track, vec![take(origin, 20)], 0).unwrap();
         h.apply(doc, e);
     });
@@ -95,7 +99,7 @@ fn a_thousand_steps() {
     let mut full = eight_tracks();
     for i in 0..50 * TRACKS as usize {
         let track = TrackId(i as u32 % TRACKS + 1);
-        let origin = (i as u64 / u64::from(TRACKS)) * 1920;
+        let origin = (i as u64 / u64::from(TRACKS)) * BAR;
         full = edit::add_recording(&full, track, vec![take(origin, 20)], 0)
             .unwrap()
             .0

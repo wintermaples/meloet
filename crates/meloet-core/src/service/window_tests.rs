@@ -804,7 +804,7 @@ fn surge_xt_a_jump_over_visits_to_its_window_puts_the_state_of_the_row_back() {
 
 /// The far end of the lanes of the test, in ticks: two beats, a second at the tempo a song
 /// starts with.
-const LANE_END: u64 = 960;
+const LANE_END: u64 = 2 * meloet_model::TICKS_PER_QUARTER;
 /// Frames in a block of [`Core::blocks`].
 const BLOCK: usize = 256;
 
@@ -989,7 +989,9 @@ fn lanes_move_the_plugins(core: &Core, seen: &Seen, keys: [&str; 2], params: [&'
 
     // It plays: the values go along the lines, and stay at their ends.
     let tempo = core.snapshot().state.timeline.tempo_bpm;
-    let lane_blocks = LANE_END as f64 / 480.0 * 60.0 / tempo * core.sample_rate() / BLOCK as f64;
+    let lane_blocks = LANE_END as f64 / meloet_model::TICKS_PER_QUARTER as f64 * 60.0 / tempo
+        * core.sample_rate()
+        / BLOCK as f64;
     core.engine(EngineCommand::Play { from: 0 });
     for (blocks, played) in [(40, 40), (60, 100), (60, 160)] {
         core.blocks(blocks);

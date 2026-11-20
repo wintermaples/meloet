@@ -4,6 +4,7 @@ use meloet_engine::{
     BlockTiming, Effect, Engine, EngineCommand, EngineConfig, EngineParts, Instrument,
     InstrumentEvent, MixStrip, Sequence, SequenceEvent,
 };
+use meloet_model::TICKS_PER_QUARTER as Q;
 use meloet_model::effects::EffectKind;
 use meloet_sound::effects::create;
 use meloet_sound::synth::{ElectroKit, PolySynth, SineSynth};
@@ -30,7 +31,7 @@ fn sequence(track: usize) -> Sequence {
         let keys = [root, root + 4, root + 7];
         for note in keys {
             events.push(SequenceEvent {
-                tick: beat * 480,
+                tick: beat * Q,
                 event: InstrumentEvent::NoteOn {
                     note,
                     velocity: 100,
@@ -39,7 +40,7 @@ fn sequence(track: usize) -> Sequence {
         }
         for note in keys {
             events.push(SequenceEvent {
-                tick: beat * 480 + 400,
+                tick: beat * Q + Q * 5 / 6,
                 event: InstrumentEvent::NoteOff { note },
             });
         }
@@ -92,7 +93,7 @@ impl Song {
         }
         song.send(EngineCommand::SetLoop {
             start: 0,
-            end: BARS * 1920,
+            end: BARS * 4 * Q,
             on: true,
         });
         song.send(EngineCommand::Play { from: 0 });

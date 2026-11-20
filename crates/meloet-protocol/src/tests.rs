@@ -5,6 +5,9 @@ use ts_rs::TS;
 
 use super::*;
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
+
 const SURGE_VST3: &str = "vst3:535247455375726758545379000000AA";
 const SURGE_LV2: &str = "lv2:https://surge-synthesizer.github.io/lv2/surge-xt";
 const MVERB: &str = "lv2:http://distrho.sf.net/plugins/MVerb";
@@ -22,12 +25,12 @@ fn sample_timeline() -> TimelineView {
         head_ramp: false,
         tempo_points: vec![
             TempoPointView {
-                tick: 7680,
+                tick: 4 * BAR,
                 tempo_bpm: 104.0,
                 ramp: true,
             },
             TempoPointView {
-                tick: 15360,
+                tick: 8 * BAR,
                 tempo_bpm: 120.0,
                 ramp: false,
             },
@@ -45,7 +48,7 @@ fn sample_timeline() -> TimelineView {
             },
             MarkerView {
                 id: 4,
-                tick: 11520,
+                tick: 6 * BAR,
                 name: "マーカー 4".into(),
             },
         ],
@@ -75,7 +78,7 @@ fn sample_state() -> AppState {
             armed: vec![volume_lane()],
             writing: vec![WritingLane {
                 lane: volume_lane(),
-                from_tick: 11_520,
+                from_tick: 6 * BAR,
             }],
             held: vec![],
             selected: Some(AutoSelection {
@@ -144,12 +147,12 @@ fn sample_state() -> AppState {
                 clips: vec![ClipView {
                     id: 4,
                     name: "ピアノ".into(),
-                    start: 7680,
-                    end: 15360,
+                    start: 4 * BAR,
+                    end: 8 * BAR,
                     take: 2,
                     takes: 3,
                     take_id: 6,
-                    take_offset: -480,
+                    take_offset: -(Q as i64),
                     note_count: 23,
                 }],
             }],
@@ -189,8 +192,8 @@ fn sample_state() -> AppState {
             },
             play_target: Some(7),
             loop_range: Some(TickSpan {
-                start: 7680,
-                end: 15360,
+                start: 4 * BAR,
+                end: 8 * BAR,
             }),
             loop_on: true,
             file: SongFile::Changed,
@@ -198,7 +201,7 @@ fn sample_state() -> AppState {
         timeline: sample_timeline(),
         transport: TransportView {
             state: TransportState::Recording,
-            position: 7680,
+            position: 4 * BAR,
             metronome: true,
             count_in_bars: 1,
             count_in_beats: 4,
@@ -207,7 +210,7 @@ fn sample_state() -> AppState {
             recording: Some(RecordingView {
                 id: 3,
                 track: 7,
-                from: 7680,
+                from: 4 * BAR,
                 take: 4,
                 clip: Some(4),
                 lap: 1,
@@ -480,12 +483,12 @@ fn sample_telemetry() -> Telemetry {
 fn sample_take() -> TakeNotes {
     TakeNotes {
         id: 0x0102_0304,
-        length: 15_360,
+        length: (8 * BAR) as u32,
         origin: Some(0x0A0B_0C0D),
         notes: vec![
             TakeNote {
                 start: 0,
-                length: 240,
+                length: (Q / 2) as u32,
                 key: 60,
                 velocity: 100,
                 from: Some(0x0E0F_1011),
@@ -507,7 +510,7 @@ fn sample_take() -> TakeNotes {
                 },
             },
             TakeControl {
-                tick: 480,
+                tick: Q as u32,
                 value: TakeControlValue::PitchBend(-8192),
             },
         ],
@@ -857,8 +860,8 @@ fn command_json_shape() {
         (Command::Record, json!({"type": "record"})),
         (Command::GoToStart, json!({"type": "goToStart"})),
         (
-            Command::Locate { tick: 7680 },
-            json!({"type": "locate", "tick": 7680}),
+            Command::Locate { tick: 4 * BAR },
+            json!({"type": "locate", "tick": 4 * BAR}),
         ),
         (
             Command::SetTempo { bpm: 96.5 },
@@ -1022,23 +1025,23 @@ fn piano_roll_command_json_shape() {
         (
             Command::AddNote {
                 take: Some(6),
-                start: 960,
-                length: 120,
+                start: 2 * Q,
+                length: Q / 4,
                 key: 50,
                 velocity: 100,
             },
-            json!({"type": "addNote", "take": 6, "start": 960, "length": 120, "key": 50,
+            json!({"type": "addNote", "take": 6, "start": 2 * Q, "length": Q / 4, "key": 50,
                    "velocity": 100}),
         ),
         (
             Command::MoveNotes {
                 take: 6,
                 notes: vec![14],
-                ticks: -120,
+                ticks: -(Q as i64) / 4,
                 keys: 2,
                 copy: true,
             },
-            json!({"type": "moveNotes", "take": 6, "notes": [14], "ticks": -120, "keys": 2,
+            json!({"type": "moveNotes", "take": 6, "notes": [14], "ticks": -(Q as i64) / 4, "keys": 2,
                    "copy": true}),
         ),
         (
@@ -1046,10 +1049,10 @@ fn piano_roll_command_json_shape() {
                 take: 6,
                 notes: vec![14],
                 edge: ClipEdge::Start,
-                ticks: 240,
+                ticks: Q as i64 / 2,
             },
             json!({"type": "resizeNotes", "take": 6, "notes": [14], "edge": "start",
-                   "ticks": 240}),
+                   "ticks": Q / 2}),
         ),
         (
             Command::DeleteNotes {
@@ -1081,8 +1084,8 @@ fn piano_roll_command_json_shape() {
             json!({"type": "cutNotes", "take": 6, "notes": [14]}),
         ),
         (
-            Command::PasteNotes { at: 3840 },
-            json!({"type": "pasteNotes", "at": 3840}),
+            Command::PasteNotes { at: 2 * BAR },
+            json!({"type": "pasteNotes", "at": 2 * BAR}),
         ),
         (
             Command::SetGrid {
@@ -1153,31 +1156,31 @@ fn piano_roll_command_json_shape() {
         (
             Command::AddControl {
                 take: 6,
-                tick: 960,
+                tick: 2 * Q,
                 control: ControlKind::Cc { number: 64 },
                 value: 127,
             },
-            json!({"type": "addControl", "take": 6, "tick": 960,
+            json!({"type": "addControl", "take": 6, "tick": 2 * Q,
                    "control": {"kind": "cc", "number": 64}, "value": 127}),
         ),
         (
             Command::AddControl {
                 take: 6,
-                tick: 960,
+                tick: 2 * Q,
                 control: ControlKind::PitchBend,
                 value: -8192,
             },
-            json!({"type": "addControl", "take": 6, "tick": 960,
+            json!({"type": "addControl", "take": 6, "tick": 2 * Q,
                    "control": {"kind": "pitchBend"}, "value": -8192}),
         ),
         (
             Command::MoveControls {
                 take: 6,
                 points: vec![1, 2],
-                ticks: 120,
+                ticks: Q as i64 / 4,
                 value: -512,
             },
-            json!({"type": "moveControls", "take": 6, "points": [1, 2], "ticks": 120,
+            json!({"type": "moveControls", "take": 6, "points": [1, 2], "ticks": Q / 4,
                    "value": -512}),
         ),
         (
@@ -1190,11 +1193,11 @@ fn piano_roll_command_json_shape() {
         (
             Command::MoveClips {
                 clips: vec![3, 8],
-                ticks: 1920,
+                ticks: BAR as i64,
                 tracks: -1,
                 copy: false,
             },
-            json!({"type": "moveClips", "clips": [3, 8], "ticks": 1920, "tracks": -1,
+            json!({"type": "moveClips", "clips": [3, 8], "ticks": BAR, "tracks": -1,
                    "copy": false}),
         ),
         (
@@ -1257,9 +1260,9 @@ fn piano_roll_command_json_shape() {
             Command::MatchLength {
                 take: 6,
                 notes: vec![1, 2, 3],
-                value: 360,
+                value: 3 * Q / 4,
             },
-            json!({"type": "matchLength", "take": 6, "notes": [1, 2, 3], "value": 360}),
+            json!({"type": "matchLength", "take": 6, "notes": [1, 2, 3], "value": 3 * Q / 4}),
         ),
         (
             Command::ClampValue {
@@ -1300,9 +1303,9 @@ fn piano_roll_command_json_shape() {
             Command::TrimClip {
                 clip: 3,
                 edge: ClipEdge::Start,
-                ticks: -480,
+                ticks: -(Q as i64),
             },
-            json!({"type": "trimClip", "clip": 3, "edge": "start", "ticks": -480}),
+            json!({"type": "trimClip", "clip": 3, "edge": "start", "ticks": -(Q as i64)}),
         ),
     ] {
         assert_eq!(serde_json::to_value(&command).unwrap(), json);
@@ -1322,11 +1325,11 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(
         v["state"]["timeline"],
         json!({"tempoBpm": 96.0, "meterNum": 4, "meterDen": 4, "headRamp": false,
-               "tempoPoints": [{"tick": 7680, "tempoBpm": 104.0, "ramp": true},
-                               {"tick": 15360, "tempoBpm": 120.0, "ramp": false}],
+               "tempoPoints": [{"tick": 4 * BAR, "tempoBpm": 104.0, "ramp": true},
+                               {"tick": 8 * BAR, "tempoBpm": 120.0, "ramp": false}],
                "meterChanges": [{"bar": 8, "meterNum": 3, "meterDen": 4}],
                "markers": [{"id": 1, "tick": 0, "name": "イントロ"},
-                           {"id": 4, "tick": 11520, "name": "マーカー 4"}],
+                           {"id": 4, "tick": 6 * BAR, "name": "マーカー 4"}],
                "selected": {"kind": "marker", "id": 4},
                "renaming": 4,
                "open": true})
@@ -1414,18 +1417,18 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(v["state"]["params"]["selected"]["row"], 0);
     assert_eq!(
         v["state"]["song"]["tracks"][0]["clips"][0],
-        json!({"id": 4, "name": "ピアノ", "start": 7680, "end": 15360, "take": 2, "takes": 3,
-               "takeId": 6, "takeOffset": -480, "noteCount": 23})
+        json!({"id": 4, "name": "ピアノ", "start": 4 * BAR, "end": 8 * BAR, "take": 2, "takes": 3,
+               "takeId": 6, "takeOffset": -(Q as i64), "noteCount": 23})
     );
     assert_eq!(
         v["state"]["song"]["loopRange"],
-        json!({"start": 7680, "end": 15360})
+        json!({"start": 4 * BAR, "end": 8 * BAR})
     );
     assert_eq!(v["state"]["transport"]["state"], "recording");
     assert_eq!(v["state"]["transport"]["countInBars"], 1);
     assert_eq!(
         v["state"]["transport"]["recording"],
-        json!({"id": 3, "track": 7, "from": 7680, "take": 4, "clip": 4, "lap": 1})
+        json!({"id": 3, "track": 7, "from": 4 * BAR, "take": 4, "clip": 4, "lap": 1})
     );
     assert_eq!(
         v["state"]["arrange"],
@@ -1537,9 +1540,9 @@ fn status_message_json_shape() {
         (
             StatusMessage::LengthMatched {
                 count: 3,
-                value: 360,
+                value: 3 * Q / 4,
             },
-            json!({"id": "lengthMatched", "count": 3, "value": 360}),
+            json!({"id": "lengthMatched", "count": 3, "value": 3 * Q / 4}),
         ),
         (
             StatusMessage::ValueClamped {
@@ -1877,15 +1880,15 @@ fn server_message_json_shape() {
                 index: 0,
                 key: 60,
                 velocity: 90,
-                start: 7680,
-                length: Some(240),
+                start: 4 * BAR,
+                length: Some(Q / 2),
             },
             LiveNote {
                 lap: 0,
                 index: 1,
                 key: 64,
                 velocity: 80,
-                start: 7920,
+                start: 4 * BAR + Q / 2,
                 length: None,
             },
         ],
@@ -1894,8 +1897,9 @@ fn server_message_json_shape() {
     assert_eq!(
         v,
         json!({"kind": "liveNotes", "seq": 12, "recording": 3, "notes": [
-            {"lap": 0, "index": 0, "key": 60, "velocity": 90, "start": 7680, "length": 240},
-            {"lap": 0, "index": 1, "key": 64, "velocity": 80, "start": 7920, "length": null}
+            {"lap": 0, "index": 0, "key": 60, "velocity": 90, "start": 4 * BAR, "length": Q / 2},
+            {"lap": 0, "index": 1, "key": 64, "velocity": 80, "start": 4 * BAR + Q / 2,
+             "length": null}
         ]})
     );
     assert_eq!(serde_json::from_value::<ServerMessage>(v).unwrap(), live);
@@ -2832,18 +2836,19 @@ fn timeline_json_shape() {
         ),
         (
             Command::AddTempoPoint {
-                tick: 7680,
+                tick: 4 * BAR,
                 bpm: 104.0,
             },
-            json!({"type": "addTempoPoint", "tick": 7680, "bpm": 104.0}),
+            json!({"type": "addTempoPoint", "tick": 4 * BAR, "bpm": 104.0}),
         ),
         (
             Command::MoveTempoPoint {
-                tick: 7680,
-                to_tick: 8160,
+                tick: 4 * BAR,
+                to_tick: 4 * BAR + Q,
                 bpm: 104.5,
             },
-            json!({"type": "moveTempoPoint", "tick": 7680, "toTick": 8160, "bpm": 104.5}),
+            json!({"type": "moveTempoPoint", "tick": 4 * BAR, "toTick": 4 * BAR + Q,
+                   "bpm": 104.5}),
         ),
         (
             Command::SetTempoRamp { tick: 0, on: true },
@@ -2871,9 +2876,9 @@ fn timeline_json_shape() {
         ),
         (
             Command::SelectTimeline {
-                target: Some(TimelineRef::TempoPoint { tick: 7680 }),
+                target: Some(TimelineRef::TempoPoint { tick: 4 * BAR }),
             },
-            json!({"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": 7680}}),
+            json!({"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": 4 * BAR}}),
         ),
         (
             Command::SelectTimeline { target: None },
@@ -2904,8 +2909,11 @@ fn timeline_json_shape() {
         ),
         (Command::CloseMarkerName, json!({"type": "closeMarkerName"})),
         (
-            Command::MoveMarker { id: 2, tick: 9600 },
-            json!({"type": "moveMarker", "id": 2, "tick": 9600}),
+            Command::MoveMarker {
+                id: 2,
+                tick: 5 * BAR,
+            },
+            json!({"type": "moveMarker", "id": 2, "tick": 5 * BAR}),
         ),
         (
             Command::GoToMarker { id: 2 },
@@ -3211,12 +3219,12 @@ fn take_layout_matches_the_table() {
     assert_eq!(b[1], 2, "version");
     assert_eq!(b[2..4], [0, 0], "reserved");
     assert_eq!(b[4..8], [0x04, 0x03, 0x02, 0x01], "take id");
-    assert_eq!(b[8..12], 15_360u32.to_le_bytes(), "length");
+    assert_eq!(b[8..12], ((8 * BAR) as u32).to_le_bytes(), "length");
     assert_eq!(b[12..16], 2u32.to_le_bytes(), "note count");
     assert_eq!(b[16..20], 2u32.to_le_bytes(), "control count");
     assert_eq!(b[20..24], [0x0D, 0x0C, 0x0B, 0x0A], "origin take id");
     assert_eq!(b[24..28], 0u32.to_le_bytes(), "note 1 start");
-    assert_eq!(b[28..32], 240u32.to_le_bytes(), "note 1 length");
+    assert_eq!(b[28..32], ((Q / 2) as u32).to_le_bytes(), "note 1 length");
     assert_eq!(b[32..36], [60, 100, 0, 0], "note 1 key, velocity, reserved");
     assert_eq!(b[36..40], [0x11, 0x10, 0x0F, 0x0E], "note 1 from");
     assert_eq!(b[40..44], [0x08, 0x07, 0x06, 0x05], "note 2 start");
@@ -3224,7 +3232,7 @@ fn take_layout_matches_the_table() {
     assert_eq!(b[52..56], [0xFF; 4], "note 2 from: none");
     assert_eq!(b[56..60], 0u32.to_le_bytes(), "control 1 tick");
     assert_eq!(b[60..64], [0, 64, 127, 0], "control 1: CC 64 = 127");
-    assert_eq!(b[64..68], 480u32.to_le_bytes(), "control 2 tick");
+    assert_eq!(b[64..68], (Q as u32).to_le_bytes(), "control 2 tick");
     assert_eq!(b[68], 1, "control 2: pitch bend");
     assert_eq!(b[70..72], (-8192i16).to_le_bytes(), "control 2 value");
 
@@ -3351,7 +3359,7 @@ fn write_fixtures_for_the_ui() {
             })).collect::<Vec<_>>(),
             "controls": [
                 {"tick": 0, "kind": "cc", "number": 64, "value": 127},
-                {"tick": 480, "kind": "pitchBend", "number": 0, "value": -8192},
+                {"tick": Q, "kind": "pitchBend", "number": 0, "value": -8192},
             ],
         }),
     );
@@ -3462,7 +3470,7 @@ fn automation_json_shape() {
         json!({"folded": [{"track": 7, "target": {"kind": "insert", "insert": 12, "param": 0}}],
                "armed": [{"track": 7, "target": {"kind": "volume"}}],
                "writing": [{"lane": {"track": 7, "target": {"kind": "volume"}},
-                            "fromTick": 11520}],
+                            "fromTick": 6 * BAR}],
                "held": [],
                "selected": {"laneId": 31, "points": [{"start": 1, "end": 4}]}})
     );
@@ -3553,27 +3561,27 @@ fn automation_and_history_command_json_shape() {
         (
             Command::AddAutoPoint {
                 lane: 31,
-                tick: 9120,
+                tick: 19 * Q,
                 value: None,
             },
-            json!({"type": "addAutoPoint", "lane": 31, "tick": 9120, "value": null}),
+            json!({"type": "addAutoPoint", "lane": 31, "tick": 19 * Q, "value": null}),
         ),
         (
             Command::AddAutoPoint {
                 lane: 31,
-                tick: 9120,
+                tick: 19 * Q,
                 value: Some(0.5),
             },
-            json!({"type": "addAutoPoint", "lane": 31, "tick": 9120, "value": 0.5}),
+            json!({"type": "addAutoPoint", "lane": 31, "tick": 19 * Q, "value": 0.5}),
         ),
         (
             Command::MoveAutoPoints {
                 lane: 31,
                 points: vec![1, 2, 3],
-                d_tick: -480,
+                d_tick: -(Q as i64),
                 d_value: 0.25,
             },
-            json!({"type": "moveAutoPoints", "lane": 31, "points": [1, 2, 3], "dTick": -480,
+            json!({"type": "moveAutoPoints", "lane": 31, "points": [1, 2, 3], "dTick": -(Q as i64),
                    "dValue": 0.25}),
         ),
         (

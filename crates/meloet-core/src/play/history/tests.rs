@@ -7,6 +7,8 @@ use meloet_protocol::{Command, SendBus as ProtocolBus, StripRef};
 use super::*;
 use crate::play::tests::{cmd, ready};
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+
 /// One of every kind of step. A kind added to `StepKind` and not to the list does not build.
 fn every_step_kind() -> Vec<StepKind> {
     use StepKind::*;
@@ -20,7 +22,7 @@ fn every_step_kind() -> Vec<StepKind> {
     let tempo = meloet_model::Tempo::from_centi(12_000).unwrap();
     let meter = meloet_model::Meter::FOUR_FOUR;
     let kind = EffectKind::Compressor;
-    let range = TickRange::new(0, 1920).unwrap();
+    let range = TickRange::new(0, 4 * Q).unwrap();
     let count = 3;
     let all = vec![
         Record {
@@ -44,26 +46,26 @@ fn every_step_kind() -> Vec<StepKind> {
             from: meter,
             to: meter,
         },
-        AddTempoPoint { tick: 1920, tempo },
+        AddTempoPoint { tick: 4 * Q, tempo },
         MoveTempoPoint {
-            from: 1920,
-            to: 3840,
+            from: 4 * Q,
+            to: 8 * Q,
             tempo,
         },
         SetTempoPoint {
-            tick: 1920,
+            tick: 4 * Q,
             from: tempo,
             to: tempo,
         },
         SetTempoRamp {
-            tick: 1920,
+            tick: 4 * Q,
             on: true,
         },
         SetTempoRamp {
-            tick: 1920,
+            tick: 4 * Q,
             on: false,
         },
-        DeleteTempoPoint { tick: 1920 },
+        DeleteTempoPoint { tick: 4 * Q },
         AddMeterChange { bar: 4, meter },
         MoveMeterChange { from: 4, to: 8 },
         SetMeterChange {

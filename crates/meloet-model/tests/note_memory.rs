@@ -5,7 +5,10 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use meloet_model::edit::{self, NewTake};
-use meloet_model::{Doc, History, Note, TrackId, WriteAt, notes};
+use meloet_model::{Doc, History, Note, TICKS_PER_QUARTER, TrackId, WriteAt, notes};
+
+/// The notes are a 16th apart.
+const STEP: u64 = TICKS_PER_QUARTER / 4;
 
 struct Counting;
 
@@ -36,11 +39,11 @@ const NOTES: usize = 10_000;
 fn a_thousand_moves_on_a_take_of_ten_thousand_notes() {
     let take = NewTake {
         origin: 0,
-        length: NOTES as u64 * 120,
+        length: NOTES as u64 * STEP,
         notes: (0..NOTES)
             .map(|i| Note {
                 from: None,
-                start: i as u64 * 120,
+                start: i as u64 * STEP,
                 length: 100,
                 key: 36 + (i % 48) as u8,
                 velocity: 90,
@@ -79,11 +82,11 @@ fn a_thousand_moves_on_a_take_of_ten_thousand_notes() {
 fn a_thousand_writes_and_deletes_on_a_take_of_ten_thousand_notes() {
     let take = NewTake {
         origin: 0,
-        length: NOTES as u64 * 120,
+        length: NOTES as u64 * STEP,
         notes: (0..NOTES)
             .map(|i| Note {
                 from: None,
-                start: i as u64 * 120,
+                start: i as u64 * STEP,
                 length: 100,
                 key: 36 + (i % 48) as u8,
                 velocity: 90,
@@ -100,7 +103,7 @@ fn a_thousand_writes_and_deletes_on_a_take_of_ten_thousand_notes() {
         let e = if i % 2 == 0 {
             let note = Note {
                 from: None,
-                start: at as u64 * 120 + 30,
+                start: at as u64 * STEP + 30,
                 length: 50,
                 key: 70,
                 velocity: 80,

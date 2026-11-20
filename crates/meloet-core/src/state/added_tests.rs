@@ -17,6 +17,8 @@ use crate::play::tests::{cmd, event, off, on, ready, report, started, status};
 use crate::play::{AUDITION_SEAT, RecordReport, Spot, StripSeat};
 use crate::sf2store::Sf2Preset;
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+
 pub(crate) const TINY: &str = "Tiny.sf2";
 
 fn preset(bank: u16, program: u8, name: &str, keys: &[u8]) -> Sf2Preset {
@@ -700,9 +702,9 @@ fn a_plugin_that_stops_does_not_stop_the_recording() {
     // An instrument is not changed under a recording.
     assert!(cmd(&mut m, Command::RemovePlugin { slot }).is_empty());
 
-    event(&mut m, off(60), 20, 480.0, 0);
+    event(&mut m, off(60), 20, Q as f64, 0);
     let heard = Heard {
-        tick: 960.0,
+        tick: (2 * Q) as f64,
         state: TransportState::Recording,
         lap: 0,
     };
@@ -712,7 +714,7 @@ fn a_plugin_that_stops_does_not_stop_the_recording() {
         &mut m,
         RecordReport::Stopped {
             t_us: 100,
-            tick: 960.0,
+            tick: (2 * Q) as f64,
             lap: 0,
         },
     );

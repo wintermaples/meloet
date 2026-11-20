@@ -10,7 +10,8 @@ use crate::state::{Effect, Input, Model};
 
 const HP: &str = "card:analog-output-headphones";
 const HP_NODE: &str = "alsa_output.card.analog-stereo";
-const BAR: u64 = 1920;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn headphones(availability: Availability) -> Endpoint {
     Endpoint {
@@ -472,7 +473,11 @@ fn record_while_playing_starts_where_the_listener_is() {
 #[test]
 fn a_recording_becomes_a_clip_selected_in_the_piano_roll() {
     let m = &mut ready();
-    let effects = record_once(m, &[(60, 100.4, 600.0), (64, 480.0, 960.0)], 1000.0);
+    let effects = record_once(
+        m,
+        &[(60, 100.4, 600.0), (64, Q as f64, (2 * Q) as f64)],
+        (2 * Q + 40) as f64,
+    );
     let view = m.view();
     let clips = &view.song.tracks[0].clips;
     assert_eq!(clips.len(), 1);
@@ -480,7 +485,7 @@ fn a_recording_becomes_a_clip_selected_in_the_piano_roll() {
     // The take starts where recording started.
     assert_eq!(
         (c.start, c.end, c.take, c.takes, c.note_count),
-        (0, 1000, 1, 1, 2)
+        (0, 2 * Q + 40, 1, 1, 2)
     );
     assert_eq!(c.name, "ピアノ");
     assert_eq!(view.song.undo_count, 1);
@@ -488,7 +493,7 @@ fn a_recording_becomes_a_clip_selected_in_the_piano_roll() {
     assert_eq!(view.arrange.selected_clip, Some(c.id));
     assert_eq!(view.arrange.piano_roll_clip, Some(c.id));
     assert!(view.transport.recording.is_none());
-    assert_eq!(view.transport.position, 1000);
+    assert_eq!(view.transport.position, 2 * Q + 40);
     let seq = ops(&effects);
     assert!(
         matches!(&seq[..], [EngineOp::Sequence { track: 0, events }] if events.len() == 4),
@@ -503,7 +508,7 @@ fn a_recording_becomes_a_clip_selected_in_the_piano_roll() {
             .iter()
             .map(|n| (n.start, n.length, n.key))
             .collect::<Vec<_>>(),
-        [(100, 500, 60), (480, 480, 64)]
+        [(100, 500, 60), (Q as u32, Q as u32, 64)]
     );
     assert!(m.take_notes(9999).is_none());
 
@@ -603,9 +608,9 @@ fn a_loop_recording_makes_a_take_per_lap() {
     event(m, on(60), 10, 100.0, 0);
     event(m, off(60), 11, 200.0, 0);
     // Held over the end of the lap: cut there.
-    event(m, on(62), 12, 1800.0, 0);
+    event(m, on(62), 12, (BAR - Q / 4) as f64, 0);
     let cut = live(&report(m, RecordReport::LapChanged { lap: 1 }));
-    assert_eq!(cut[0].notes[0].length, Some(120));
+    assert_eq!(cut[0].notes[0].length, Some(Q / 4));
     assert_eq!(m.view().transport.recording.unwrap().lap, 1);
     assert_eq!(
         status(m),

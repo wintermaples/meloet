@@ -26,7 +26,7 @@ use meloet_protocol::{
     AppState, Command, TakeNotes, Telemetry, TimelineView, TransportReading, TransportState,
 };
 
-pub const TICKS_PER_BEAT: f64 = 480.0;
+pub const TICKS_PER_BEAT: f64 = meloet_model::TICKS_PER_QUARTER as f64;
 /// The first beat pressed; the beats before it let the recording settle.
 const FIRST_BEAT: u32 = 4;
 const NOTE: u8 = 72;

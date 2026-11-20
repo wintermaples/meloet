@@ -26,6 +26,7 @@ fn env_list(name: &str, default: &[u32]) -> Vec<u32> {
 
 /// The beats pressed on the changing timeline: to the end of its last ramp and six more.
 const MAP_BEATS: u32 = 64;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
 
 /// 4/4 at 96; 104 from bar 5, going in a straight line to 120 at bar 9; 3/4 from bar 9; 6/8
 /// from bar 13 (the beat is an eighth note from there); 150 from bar 14, going down to 90 at
@@ -36,15 +37,15 @@ fn set_changing_timeline(core: &Core) {
     core.send(C::SetTempo { bpm: 96.0 });
     for command in [
         C::AddTempoPoint {
-            tick: 7680,
+            tick: 16 * Q,
             bpm: 104.0,
         },
         C::AddTempoPoint {
-            tick: 15360,
+            tick: 32 * Q,
             bpm: 120.0,
         },
         C::SetTempoRamp {
-            tick: 7680,
+            tick: 16 * Q,
             on: true,
         },
         C::AddMeterChange {
@@ -58,15 +59,15 @@ fn set_changing_timeline(core: &Core) {
             den: 8,
         },
         C::AddTempoPoint {
-            tick: 22560,
+            tick: 47 * Q,
             bpm: 150.0,
         },
         C::AddTempoPoint {
-            tick: 25440,
+            tick: 53 * Q,
             bpm: 90.0,
         },
         C::SetTempoRamp {
-            tick: 22560,
+            tick: 47 * Q,
             on: true,
         },
     ] {
@@ -79,10 +80,10 @@ fn set_changing_timeline(core: &Core) {
     assert_eq!(
         points,
         [
-            (7680, 104.0, true),
-            (15360, 120.0, false),
-            (22560, 150.0, true),
-            (25440, 90.0, false)
+            (16 * Q, 104.0, true),
+            (32 * Q, 120.0, false),
+            (47 * Q, 150.0, true),
+            (53 * Q, 90.0, false)
         ]
     );
     let flags: Vec<(u32, u8, u8)> = (t.meter_changes.iter())

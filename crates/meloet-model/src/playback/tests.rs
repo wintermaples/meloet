@@ -3,8 +3,11 @@ use std::sync::Arc;
 use super::*;
 use crate::edit::{NewTake, add_recording, switch_take};
 use crate::song::{Clip, ClipId, ClipTake, ControlPoint, Note, Take, TakeId};
+use crate::time::TICKS_PER_QUARTER;
 
 const T1: TrackId = TrackId(1);
+const Q: u64 = TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn note(start: u64, length: u64, key: u8) -> Note {
     Note {
@@ -91,9 +94,9 @@ fn clip(start: u64, end: u64, offset: i64, take: Take) -> Clip {
 fn notes_at_song_positions() {
     let doc = Doc::new_default();
     let take = new_take(
-        1920,
-        1080,
-        vec![note(0, 480, 60), note(80, 100, 64)],
+        BAR,
+        9 * Q / 4,
+        vec![note(0, Q, 60), note(80, 100, 64)],
         vec![],
     );
     let (e, _) = add_recording(&doc, T1, vec![take], 0).unwrap();
@@ -101,10 +104,10 @@ fn notes_at_song_positions() {
     assert_eq!(
         short(&events),
         ev(&[
-            (1920, "on 60"),
-            (2000, "on 64"),
-            (2100, "off 64"),
-            (2400, "off 60")
+            (BAR, "on 60"),
+            (BAR + 80, "on 64"),
+            (BAR + 180, "off 64"),
+            (BAR + Q, "off 60")
         ])
     );
     assert_eq!(
@@ -120,8 +123,8 @@ fn notes_at_song_positions() {
 #[test]
 fn the_shown_take_plays() {
     let doc = Doc::new_default();
-    let a = new_take(0, 960, vec![note(0, 10, 60)], vec![]);
-    let b = new_take(0, 960, vec![note(5, 10, 72)], vec![]);
+    let a = new_take(0, 2 * Q, vec![note(0, 10, 60)], vec![]);
+    let b = new_take(0, 2 * Q, vec![note(5, 10, 72)], vec![]);
     let (e, added) = add_recording(&doc, T1, vec![a, b], 1).unwrap();
     assert_eq!(
         short(&track_events(&e.doc, T1)),
@@ -200,7 +203,7 @@ fn nothing_sounds_after_the_clip_end() {
 fn same_tick_order_is_release_controls_press() {
     let take = new_take(
         0,
-        960,
+        2 * Q,
         vec![note(0, 100, 60), note(100, 100, 60)],
         vec![point(100, sustain(127)), point(150, sustain(0))],
     );
@@ -222,7 +225,7 @@ fn same_tick_order_is_release_controls_press() {
 fn controls_left_on_are_put_back_at_the_clip_end() {
     let take = new_take(
         0,
-        960,
+        2 * Q,
         vec![note(0, 10, 60)],
         vec![
             point(0, sustain(127)),
@@ -241,12 +244,12 @@ fn controls_left_on_are_put_back_at_the_clip_end() {
     let events = short(&track_events(&e.doc, T1));
     assert_eq!(
         events[events.len() - 3..],
-        ev(&[(960, "cc64 0"), (960, "bend 0"), (960, "cc1 0")])
+        ev(&[(2 * Q, "cc64 0"), (2 * Q, "bend 0"), (2 * Q, "cc1 0")])
     );
 
     let take = new_take(
         0,
-        960,
+        2 * Q,
         vec![note(0, 10, 60)],
         vec![point(0, sustain(127)), point(500, sustain(0))],
     );
@@ -261,13 +264,13 @@ fn controls_left_on_are_put_back_at_the_clip_end() {
 fn back_to_back_clips() {
     let a = new_take(
         0,
-        1920,
-        vec![note(1800, 120, 60)],
+        BAR,
+        vec![note(BAR - Q / 4, Q / 4, 60)],
         vec![point(100, sustain(127))],
     );
     let b = new_take(
-        1920,
-        960,
+        BAR,
+        2 * Q,
         vec![note(0, 10, 62)],
         vec![point(0, sustain(127))],
     );
@@ -278,10 +281,10 @@ fn back_to_back_clips() {
     assert_eq!(
         events[2..6],
         ev(&[
-            (1920, "off 60"),
-            (1920, "cc64 0"),
-            (1920, "cc64 127"),
-            (1920, "on 62")
+            (BAR, "off 60"),
+            (BAR, "cc64 0"),
+            (BAR, "cc64 127"),
+            (BAR, "on 62")
         ])
     );
 }

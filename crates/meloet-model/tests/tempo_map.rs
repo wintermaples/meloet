@@ -7,7 +7,15 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use meloet_model::{Beat, Meter, MeterChange, Tempo, TempoMap, TempoPoint, Timeline};
+use meloet_model::{
+    Beat, Meter, MeterChange, TICKS_PER_QUARTER, Tempo, TempoMap, TempoPoint, Timeline,
+};
+
+const Q: u64 = TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
+const QI: i64 = Q as i64;
+const QF: f64 = Q as f64;
+const BARF: f64 = BAR as f64;
 
 fn tempo(centi: u32) -> Tempo {
     Tempo::from_centi(centi).unwrap()
@@ -35,7 +43,7 @@ fn change(bar: u32, num: u8, den: u8) -> MeterChange {
 /// Spec 5: 4/4, 96 at the head, 104 at bar 5 with a ramp, 120 at bar 9.
 fn spec_example() -> Timeline {
     Timeline {
-        tempo_points: vec![point(4 * 1920, 10400, true), point(8 * 1920, 12000, false)],
+        tempo_points: vec![point(4 * BAR, 10400, true), point(8 * BAR, 12000, false)],
         ..Timeline::new(tempo(9600), Meter::FOUR_FOUR)
     }
 }
@@ -124,13 +132,13 @@ fn the_example_of_the_spec() {
     let map = TempoMap::new(&spec_example());
     assert_eq!(map.piece_count(), 3);
     assert_eq!(map.tempo_at(0.0), 96.0);
-    assert_eq!(map.tempo_at(4.0 * 1920.0 - 1.0), 96.0);
-    assert_eq!(map.tempo_at(4.0 * 1920.0), 104.0);
-    assert_eq!(map.tempo_at(6.0 * 1920.0), 112.0);
-    assert_eq!(map.tempo_at(8.0 * 1920.0), 120.0);
+    assert_eq!(map.tempo_at(4.0 * BARF - 1.0), 96.0);
+    assert_eq!(map.tempo_at(4.0 * BARF), 104.0);
+    assert_eq!(map.tempo_at(6.0 * BARF), 112.0);
+    assert_eq!(map.tempo_at(8.0 * BARF), 120.0);
     assert_eq!(map.tempo_at(1.0e9), 120.0);
 
-    let ramp = map.seconds_at(8.0 * 1920.0) - map.seconds_at(4.0 * 1920.0);
+    let ramp = map.seconds_at(8.0 * BARF) - map.seconds_at(4.0 * BARF);
     assert!(
         (ramp - 60.0 * (120.0f64 / 104.0).ln()).abs() < 1e-12,
         "{ramp}"
@@ -139,38 +147,38 @@ fn the_example_of_the_spec() {
 
     // 16 beats at 96, the ramp, then 4 beats at 120.
     let head = 16.0 * 60.0 / 96.0;
-    assert!((map.seconds_at(4.0 * 1920.0) - head).abs() < 1e-12);
-    assert!((map.seconds_at(9.0 * 1920.0) - (head + ramp + 2.0)).abs() < 1e-12);
-    assert_eq!(map.quarter_bpm_at(6.0 * 1920.0), 112.0);
+    assert!((map.seconds_at(4.0 * BARF) - head).abs() < 1e-12);
+    assert!((map.seconds_at(9.0 * BARF) - (head + ramp + 2.0)).abs() < 1e-12);
+    assert_eq!(map.quarter_bpm_at(6.0 * BARF), 112.0);
 }
 
 #[test]
 fn before_the_head_the_head_goes_on_without_a_ramp() {
     let timeline = Timeline {
         head_ramp: true,
-        tempo_points: vec![point(1920, 19200, false)],
+        tempo_points: vec![point(BAR, 19200, false)],
         ..Timeline::new(tempo(9600), meter(6, 8))
     };
     let map = TempoMap::new(&timeline);
     assert_eq!(map.tempo_at(-5000.0), 96.0);
     assert_eq!(map.quarter_bpm_at(-5000.0), 48.0);
-    assert!(map.tempo_at(960.0) > 96.0);
-    // One beat of 6/8 is 240 ticks.
-    assert!((map.seconds_at(-240.0) + 60.0 / 96.0).abs() < 1e-15);
-    assert!((map.tick_at(-60.0 / 96.0) + 240.0).abs() < 1e-12);
+    assert!(map.tempo_at(2.0 * QF) > 96.0);
+    // One beat of 6/8 is Q / 2 ticks.
+    assert!((map.seconds_at(-QF / 2.0) + 60.0 / 96.0).abs() < 1e-15);
+    assert!((map.tick_at(-60.0 / 96.0) + QF / 2.0).abs() < 1e-12);
     assert_eq!(map.seconds_at(0.0), 0.0);
     assert_eq!(map.tick_at(0.0), 0.0);
     assert_eq!(
-        map.next_beat(-241.0),
+        map.next_beat(-QF / 2.0 - 1.0),
         Beat {
-            tick: -240,
+            tick: -QI / 2,
             downbeat: false
         }
     );
     assert_eq!(
-        map.next_beat(-1440.0),
+        map.next_beat(-3.0 * QF),
         Beat {
-            tick: -1440,
+            tick: -3 * QI,
             downbeat: true
         }
     );
@@ -313,13 +321,13 @@ fn frame_of_is_the_integer_formula_when_the_tempo_stays() {
 fn a_ramp_is_the_sum_of_small_steps() {
     // (ticks per beat, tempo at the start, at the end, ticks)
     for (m, from, to, len) in [
-        (Meter::FOUR_FOUR, 10400u32, 12000u32, 7680u64),
-        (Meter::FOUR_FOUR, 30000, 3000, 480),
-        (meter(6, 8), 3000, 24000, 240),
+        (Meter::FOUR_FOUR, 10400u32, 12000u32, 4 * BAR),
+        (Meter::FOUR_FOUR, 30000, 3000, Q),
+        (meter(6, 8), 3000, 24000, Q / 2),
         (meter(2, 2), 12000, 12001, 100_000),
         (meter(7, 16), 20000, 6000, 30_000),
     ] {
-        let at = 1920 * 3;
+        let at = BAR * 3;
         let timeline = Timeline {
             tempo_points: vec![point(at, from, true), point(at + len, to, false)],
             ..Timeline::new(tempo(9600), m)
@@ -366,7 +374,7 @@ fn a_ramp_that_hardly_moves_is_close_to_no_ramp() {
         ..Timeline::new(tempo(12000), Meter::FOUR_FOUR)
     });
     let flat = TempoMap::new(&Timeline::new(tempo(12000), Meter::FOUR_FOUR));
-    for tick in [1.0, 480.0, 96_000.0] {
+    for tick in [1.0, QF, 96_000.0] {
         let (r, f) = (ramp.seconds_at(tick), flat.seconds_at(tick));
         // The tempo has moved by 0.01 × tick / len; the time by half of that share.
         let share = 0.01 * tick / len as f64 / 120.0 / 2.0;
@@ -409,7 +417,7 @@ fn every_whole_tick_comes_back() {
             checked += 1;
         }
         // And before the head.
-        for k in [-1.0, -479.0, -10_000.0] {
+        for k in [-1.0, -(QF - 1.0), -10_000.0] {
             assert_eq!(map.tick_at(map.seconds_at(k)).round(), k);
         }
     }
@@ -483,7 +491,17 @@ fn frame_of_is_the_first_frame_at_or_past_the_tick() {
 fn bars_and_beats_over_four_meters() {
     // 4/4 ×2, 3/4 ×2, 6/8 ×1, then 7/8.
     let map = TempoMap::new(&four_meters());
-    let heads = [0u64, 1920, 3840, 5280, 6720, 8160, 9840, 11520];
+    let (three, six, seven) = (2 * BAR, 2 * BAR + 6 * Q, 2 * BAR + 9 * Q);
+    let heads = [
+        0,
+        BAR,
+        three,
+        three + 3 * Q,
+        six,
+        seven,
+        seven + 7 * Q / 2,
+        seven + 7 * Q,
+    ];
     for (bar, &tick) in heads.iter().enumerate() {
         assert_eq!(map.tick_of_bar(bar as u64), tick);
         let at = map.meter_at(tick);
@@ -496,11 +514,11 @@ fn bars_and_beats_over_four_meters() {
             );
         }
     }
-    assert_eq!(map.meter_at(3839).meter, meter(4, 4));
-    assert_eq!(map.meter_at(3840).meter, meter(3, 4));
-    assert_eq!(map.meter_at(6719).meter, meter(3, 4));
-    assert_eq!(map.meter_at(6720).meter, meter(6, 8));
-    assert_eq!(map.meter_at(8160).meter, meter(7, 8));
+    assert_eq!(map.meter_at(three - 1).meter, meter(4, 4));
+    assert_eq!(map.meter_at(three).meter, meter(3, 4));
+    assert_eq!(map.meter_at(six - 1).meter, meter(3, 4));
+    assert_eq!(map.meter_at(six).meter, meter(6, 8));
+    assert_eq!(map.meter_at(seven).meter, meter(7, 8));
     assert_eq!(map.meter_at(1_000_000).meter, meter(7, 8));
 
     let bbt = |tick| {
@@ -508,38 +526,41 @@ fn bars_and_beats_over_four_meters() {
         (b.bar, b.beat, b.tick)
     };
     assert_eq!(bbt(0), (1, 1, 0));
-    assert_eq!(bbt(3839), (2, 4, 479));
-    assert_eq!(bbt(3840), (3, 1, 0));
-    assert_eq!(bbt(3840 + 960 + 123), (3, 3, 123));
-    assert_eq!(bbt(6719), (4, 3, 479));
-    assert_eq!(bbt(6720), (5, 1, 0));
-    // A beat of 6/8 is 240 ticks, shown as 480.
-    assert_eq!(bbt(6720 + 240 + 10), (5, 2, 20));
-    assert_eq!(bbt(8159), (5, 6, 478));
-    assert_eq!(bbt(8160), (6, 1, 0));
-    assert_eq!(bbt(8160 + 6 * 240 + 239), (6, 7, 478));
-    assert_eq!(bbt(9840), (7, 1, 0));
+    assert_eq!(bbt(three - 1), (2, 4, 479));
+    assert_eq!(bbt(three), (3, 1, 0));
+    assert_eq!(bbt(three + 2 * Q + 123), (3, 3, 123));
+    assert_eq!(bbt(six - 1), (4, 3, 479));
+    assert_eq!(bbt(six), (5, 1, 0));
+    // A beat of 6/8 is Q / 2 ticks, shown as 480.
+    assert_eq!(bbt(six + Q / 2 + 10), (5, 2, 20));
+    assert_eq!(bbt(seven - 1), (5, 6, 478));
+    assert_eq!(bbt(seven), (6, 1, 0));
+    assert_eq!(bbt(seven + 6 * (Q / 2) + Q / 2 - 1), (6, 7, 478));
+    assert_eq!(bbt(seven + 7 * Q / 2), (7, 1, 0));
 
     let beat = |tick: f64| {
         let b = map.next_beat(tick);
         (b.tick, b.downbeat)
     };
     assert_eq!(beat(0.0), (0, true));
-    assert_eq!(beat(0.001), (480, false));
-    assert_eq!(beat(1440.5), (1920, true));
-    assert_eq!(beat(3839.5), (3840, true));
-    assert_eq!(beat(3840.5), (4320, false));
+    assert_eq!(beat(0.001), (QI, false));
+    assert_eq!(beat(3.0 * QF + 0.5), (4 * QI, true));
+    assert_eq!(beat(three as f64 - 0.5), (three as i64, true));
+    assert_eq!(beat(three as f64 + 0.5), ((three + Q) as i64, false));
     // The last beat of the 3/4 bars leads into the first of 6/8.
-    assert_eq!(beat(6719.9), (6720, true));
-    assert_eq!(beat(6721.0), (6960, false));
-    assert_eq!(beat(7921.0), (8160, true));
-    assert_eq!(beat(8161.0), (8400, false));
-    assert_eq!(beat(9839.0), (9840, true));
+    assert_eq!(beat(six as f64 - 0.1), (six as i64, true));
+    assert_eq!(beat(six as f64 + 1.0), ((six + Q / 2) as i64, false));
+    assert_eq!(beat((seven - Q / 2 + 1) as f64), (seven as i64, true));
+    assert_eq!(beat(seven as f64 + 1.0), ((seven + Q / 2) as i64, false));
+    assert_eq!(
+        beat((seven + 7 * Q / 2 - 1) as f64),
+        ((seven + 7 * Q / 2) as i64, true)
+    );
 
     // The beats one after another are the heads of the bars exactly where a bar starts.
     let mut tick = 0.0;
     let mut downbeats = Vec::new();
-    while tick < 11_600.0 {
+    while tick < (seven + 7 * Q + 80) as f64 {
         let b = map.next_beat(tick);
         if b.downbeat {
             downbeats.push(b.tick as u64);
@@ -555,9 +576,9 @@ fn a_change_put_in_front_moves_ticks_and_keeps_bar_numbers() {
     let mut after = before.clone();
     after.meter_changes.insert(0, change(1, 5, 4));
     let (old, new) = (TempoMap::new(&before), TempoMap::new(&after));
-    // Bar 1 is now 5/4 (2400 ticks) where it was 4/4 (1920).
+    // Bar 1 is now 5/4 (5 Q ticks) where it was 4/4 (4 Q).
     for bar in 2..12u64 {
-        assert_eq!(new.tick_of_bar(bar), old.tick_of_bar(bar) + 480);
+        assert_eq!(new.tick_of_bar(bar), old.tick_of_bar(bar) + Q);
         assert_eq!(
             new.meter_at(new.tick_of_bar(bar)).meter,
             if bar == 1 {
@@ -571,8 +592,8 @@ fn a_change_put_in_front_moves_ticks_and_keeps_bar_numbers() {
     // A tick in front of the new change is where it was in time.
     assert_eq!(new.seconds_at(1000.0), old.seconds_at(1000.0));
     // The same tick reads as another place.
-    assert_eq!(old.bar_beat_tick(3840).bar, 3);
-    let moved = new.bar_beat_tick(3840);
+    assert_eq!(old.bar_beat_tick(2 * BAR).bar, 3);
+    let moved = new.bar_beat_tick(2 * BAR);
     assert_eq!((moved.bar, moved.beat, moved.tick), (2, 5, 0));
 }
 
@@ -583,23 +604,23 @@ fn the_same_tempo_number_keeps_the_length_of_a_beat() {
         ..Timeline::new(tempo(9600), Meter::FOUR_FOUR)
     };
     let map = TempoMap::new(&timeline);
-    let quarter = map.seconds_at(480.0) - map.seconds_at(0.0);
-    let eighth = map.seconds_at(1920.0 + 240.0) - map.seconds_at(1920.0);
+    let quarter = map.seconds_at(QF) - map.seconds_at(0.0);
+    let eighth = map.seconds_at(BARF + QF / 2.0) - map.seconds_at(BARF);
     assert!((quarter - 60.0 / 96.0).abs() < 1e-15);
     assert!((eighth - quarter).abs() < 1e-15);
-    assert_eq!(map.tempo_at(100.0), map.tempo_at(2000.0));
+    assert_eq!(map.tempo_at(100.0), map.tempo_at(BARF + 80.0));
     assert_eq!(map.quarter_bpm_at(100.0), 96.0);
-    assert_eq!(map.quarter_bpm_at(2000.0), 48.0);
+    assert_eq!(map.quarter_bpm_at(BARF + 80.0), 48.0);
     // A ramp that runs over the change of meter stays one line over ticks.
     let ramp = TempoMap::new(&Timeline {
         head_ramp: true,
-        tempo_points: vec![point(3840, 19200, false)],
+        tempo_points: vec![point(2 * BAR, 19200, false)],
         ..timeline
     });
     assert_eq!(ramp.piece_count(), 3);
-    assert_eq!(ramp.tempo_at(1920.0), 144.0);
-    assert!((ramp.tempo_at(1919.999) - 144.0).abs() < 1e-4);
-    assert_eq!(ramp.tempo_at(3840.0), 192.0);
+    assert_eq!(ramp.tempo_at(BARF), 144.0);
+    assert!((ramp.tempo_at(BARF - 0.001) - 144.0).abs() < 1e-4);
+    assert_eq!(ramp.tempo_at(2.0 * BARF), 192.0);
 }
 
 // ---- The table for the screen's tempo map ----
@@ -666,7 +687,7 @@ fn table_maps() -> Vec<(&'static str, Timeline)> {
                 head_ramp: true,
                 tempo_points: vec![
                     point(50_000_000, 12001, true),
-                    point(50_000_480, 12000, true),
+                    point(50_000_000 + Q, 12000, true),
                 ],
                 ..Timeline::new(tempo(12000), Meter::FOUR_FOUR)
             },
@@ -675,8 +696,8 @@ fn table_maps() -> Vec<(&'static str, Timeline)> {
             "4/4 to 6/8 to 2/2 with one tempo number, then a ramp down from the head of 2/2",
             Timeline {
                 tempo_points: vec![
-                    point(1920 + 1440, 9600, true),
-                    point(1920 + 1440 + 3840, 3000, false),
+                    point(BAR + 3 * Q, 9600, true),
+                    point(BAR + 3 * Q + 2 * BAR, 3000, false),
                 ],
                 meter_changes: vec![change(1, 6, 8), change(2, 2, 2)],
                 ..Timeline::new(tempo(9600), Meter::FOUR_FOUR)
@@ -704,14 +725,27 @@ fn table_json() -> String {
         let map = TempoMap::new(timeline);
         let cuts = cuts(timeline, &map);
         let mut ticks: Vec<f64> = vec![
-            -1920.0, -0.5, 0.0, 0.25, 1.0, 479.0, 480.0, 1919.5, 11520.0, 15359.999, 20000.0,
-            123456.789, 1.0e7, 5.0e7, 3.0e8,
+            -BARF,
+            -0.5,
+            0.0,
+            0.25,
+            1.0,
+            QF - 1.0,
+            QF,
+            BARF - 0.5,
+            6.0 * BARF,
+            8.0 * BARF - 0.001,
+            20000.0,
+            123456.789,
+            1.0e7,
+            5.0e7,
+            3.0e8,
         ];
         for &cut in &cuts {
             let cut = cut as f64;
             ticks.extend([cut - 1.0, cut, cut + 1.0]);
         }
-        ticks.retain(|&t| t >= 0.0 || t == -1920.0 || t == -0.5);
+        ticks.retain(|&t| t >= 0.0 || t == -BARF || t == -0.5);
         ticks.sort_by(f64::total_cmp);
         ticks.dedup();
         let seconds = [
@@ -792,7 +826,7 @@ fn many_pieces(count: u64) -> Timeline {
     Timeline {
         head_ramp: true,
         tempo_points: (1..count)
-            .map(|i| point(i * 480, 6000 + (i as u32 * 977) % 18000, i % 2 == 0))
+            .map(|i| point(i * Q, 6000 + (i as u32 * 977) % 18000, i % 2 == 0))
             .collect(),
         ..Timeline::new(tempo(9600), Meter::FOUR_FOUR)
     }
@@ -808,7 +842,7 @@ fn measure_cost() {
     for count in [1u64, 10, 1000] {
         let map = TempoMap::new(&many_pieces(count));
         assert_eq!(map.piece_count() as u64, count);
-        let span = count * 480 + 2000;
+        let span = count * Q + 2000;
         let end = map.seconds_at(span as f64);
         let mut rng = Rng(count);
         let ticks: Vec<f64> = (0..4096).map(|_| rng.unit() * span as f64).collect();

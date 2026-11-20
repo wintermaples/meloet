@@ -5,8 +5,12 @@ use crate::history::History;
 use crate::id_book::{IdBook, held};
 use crate::song::Note;
 use crate::tempo_map::TempoMap;
+use crate::time::TICKS_PER_QUARTER;
 
-const BAR: u64 = 1920;
+const Q: u64 = TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
+/// A bar of 3/4.
+const BAR34: u64 = 3 * Q;
 
 fn tempo(centi: u32) -> Tempo {
     Tempo::from_centi(centi).unwrap()
@@ -306,15 +310,18 @@ fn the_loop_range_is_a_step_and_the_song_ends_at_a_bar() {
 
     // No clips: 4 bars from the marker, as long as the bars are there.
     assert_eq!(loop_end_from(&doc, 2 * BAR, 4), 6 * BAR);
-    assert_eq!(loop_end_from(&doc, 2 * BAR + 480, 4), 6 * BAR + 480);
+    assert_eq!(loop_end_from(&doc, 2 * BAR + Q, 4), 6 * BAR + Q);
     let three = add_meter_change(&doc, 3, meter(3, 4)).unwrap().doc;
-    assert_eq!(loop_end_from(&three, 2 * BAR, 4), 3 * BAR + 3 * 1440);
+    assert_eq!(loop_end_from(&three, 2 * BAR, 4), 3 * BAR + 3 * BAR34);
     // The last clip's end, up to the head of a bar of the meter there.
     let (e, _) = edit::add_recording(&three, TrackId(1), vec![take(0, 3 * BAR + 100)], 0).unwrap();
-    assert_eq!(loop_end_from(&e.doc, BAR, 4), 3 * BAR + 1440);
-    assert_eq!(loop_end_from(&e.doc, 0, 4), 3 * BAR + 1440);
+    assert_eq!(loop_end_from(&e.doc, BAR, 4), 3 * BAR + BAR34);
+    assert_eq!(loop_end_from(&e.doc, 0, 4), 3 * BAR + BAR34);
     // The marker at the end or after it: 4 bars again.
-    assert_eq!(loop_end_from(&e.doc, 3 * BAR + 1440, 4), 3 * BAR + 5 * 1440);
+    assert_eq!(
+        loop_end_from(&e.doc, 3 * BAR + BAR34, 4),
+        3 * BAR + 5 * BAR34
+    );
     let (whole, _) = edit::add_recording(&doc, TrackId(1), vec![take(0, 2 * BAR)], 0).unwrap();
     assert_eq!(loop_end_from(&whole.doc, 0, 4), 2 * BAR);
 }
@@ -350,7 +357,7 @@ fn meter_changes_before_them_leave_every_tick_and_every_bar_number() {
     let doc = Doc::new_default();
     let (e, _) = edit::add_recording(&doc, TrackId(1), vec![take(8 * BAR + 77, BAR)], 0).unwrap();
     let (e, _) = add_marker(&e.doc, 9 * BAR, "サビ").unwrap();
-    let e = add_tempo_point(&e.doc, 10 * BAR + 480, tempo(12_000)).unwrap();
+    let e = add_tempo_point(&e.doc, 10 * BAR + Q, tempo(12_000)).unwrap();
     let e = set_loop(&e.doc, TickRange::new(8 * BAR, 12 * BAR).unwrap()).unwrap();
     let doc = add_meter_change(&e.doc, 20, meter(3, 4)).unwrap().doc;
     let was = ticks(&doc);
@@ -362,11 +369,11 @@ fn meter_changes_before_them_leave_every_tick_and_every_bar_number() {
     // The later flag is still at the head of bar 20, which is another tick now.
     let (old, new) = (TempoMap::new(&doc.timeline), TempoMap::new(&added.timeline));
     assert_eq!(old.tick_of_bar(20), 20 * BAR);
-    assert_eq!(new.tick_of_bar(20), 2 * BAR + 18 * 2880);
+    assert_eq!(new.tick_of_bar(20), 2 * BAR + 18 * (6 * Q));
     assert_eq!(new.meter_at(new.tick_of_bar(20)).meter, meter(3, 4));
     // The tempo point is in the middle of a beat now, and stays there.
-    assert_eq!(old.nearest_beat(10 * BAR + 480), 10 * BAR + 480);
-    assert_eq!(new.nearest_beat(10 * BAR + 480), 10 * BAR + 960);
+    assert_eq!(old.nearest_beat(10 * BAR + Q), 10 * BAR + Q);
+    assert_eq!(new.nearest_beat(10 * BAR + Q), 10 * BAR + 2 * Q);
 
     let moved = move_meter_change(&added, 2, 5).unwrap().doc;
     assert_eq!(ticks(&moved), was);
@@ -400,7 +407,7 @@ const KINDS: usize = 14;
 
 fn random_edit(rng: &mut Rng, doc: &Doc) -> Option<(usize, Edit)> {
     let t = &doc.timeline;
-    let tick = rng.below(40) * 240;
+    let tick = rng.below(40) * (Q / 2);
     let bar = rng.below(24) as u32;
     let some_tempo = tempo(3_000 + rng.below(27_001) as u32);
     let some_meter = meter(1 + rng.below(12) as u8, Meter::DENS[rng.below(4) as usize]);
@@ -438,7 +445,7 @@ fn random_edit(rng: &mut Rng, doc: &Doc) -> Option<(usize, Edit)> {
         10 => rename_marker(doc, marker(rng), &format!("名前 {}", rng.below(5))),
         11 => move_marker(doc, marker(rng), tick),
         12 => delete_marker(doc, marker(rng)),
-        _ => set_loop(doc, TickRange::new(tick, tick + 1 + rng.below(8) * 480)?),
+        _ => set_loop(doc, TickRange::new(tick, tick + 1 + rng.below(8) * Q)?),
     };
     edit.ok().map(|e| (kind, e))
 }
@@ -510,7 +517,7 @@ fn random_walks_keep_the_timeline_well_formed_and_come_back() {
 #[test]
 fn a_clip_written_or_grown_after_a_meter_change_takes_the_bars_there() {
     use crate::notes::{WriteAt, write_note};
-    // Two bars of 4/4, then 3/4: bars start at 3840, 5280, 6720, …
+    // Two bars of 4/4, then 3/4: bars start at 2 BAR, 2 BAR + 3 Q, 2 BAR + 6 Q, …
     let base = add_meter_change(&Doc::new_default(), 2, meter(3, 4))
         .unwrap()
         .doc;
@@ -526,27 +533,31 @@ fn a_clip_written_or_grown_after_a_meter_change_takes_the_bars_there() {
         (c.start, c.end)
     };
     // No clip there: from the head of the note's bar, 4 bars of the meter there.
-    let doc = write_note(&base, WriteAt::Track(TrackId(1)), note(3840 + 1500))
-        .unwrap()
-        .edit
-        .doc;
-    assert_eq!(range(&doc, 0), (5280, 5280 + 4 * 1440));
+    let doc = write_note(
+        &base,
+        WriteAt::Track(TrackId(1)),
+        note(2 * BAR + BAR34 + 60),
+    )
+    .unwrap()
+    .edit
+    .doc;
+    assert_eq!(range(&doc, 0), (2 * BAR + BAR34, 2 * BAR + 5 * BAR34));
     // Before the change the bars are 4/4, and the 4 bars cross it.
-    let other = write_note(&base, WriteAt::Track(TrackId(1)), note(1920 + 5))
+    let other = write_note(&base, WriteAt::Track(TrackId(1)), note(BAR + 5))
         .unwrap()
         .edit
         .doc;
-    assert_eq!(range(&other, 0), (1920, 3840 + 3 * 1440));
+    assert_eq!(range(&other, 0), (BAR, 2 * BAR + 3 * BAR34));
     // A note written before the clip grows it back to the head of the bar there.
     let clip = doc.tracks[0].clips[0].id;
-    let grown = write_note(&doc, WriteAt::Clip(clip), note(5280 - 100))
+    let grown = write_note(&doc, WriteAt::Clip(clip), note(2 * BAR + BAR34 - 100))
         .unwrap()
         .edit
         .doc;
-    assert_eq!(range(&grown, 0), (3840, 5280 + 4 * 1440));
-    let grown = write_note(&doc, WriteAt::Clip(clip), note(5280 + 4 * 1440 + 10))
+    assert_eq!(range(&grown, 0), (2 * BAR, 2 * BAR + 5 * BAR34));
+    let grown = write_note(&doc, WriteAt::Clip(clip), note(2 * BAR + 5 * BAR34 + 10))
         .unwrap()
         .edit
         .doc;
-    assert_eq!(range(&grown, 0), (5280, 5280 + 5 * 1440));
+    assert_eq!(range(&grown, 0), (2 * BAR + BAR34, 2 * BAR + 6 * BAR34));
 }

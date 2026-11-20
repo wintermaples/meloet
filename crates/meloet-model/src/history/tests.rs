@@ -4,8 +4,10 @@ use super::*;
 use crate::edit::{self, NewTake};
 use crate::id_book::{IdBook, held};
 use crate::song::Note;
+use crate::time::TICKS_PER_QUARTER;
 
 const T1: TrackId = TrackId(1);
+const Q: u64 = TICKS_PER_QUARTER;
 
 fn tempo(centi: u32) -> Tempo {
     Tempo::from_centi(centi).unwrap()
@@ -110,10 +112,10 @@ fn saved_mark() {
 fn undo_keeps_untouched_parts_shared() {
     let mut h = History::new();
     let mut doc = Doc::new_default();
-    let (e, a) = edit::add_recording(&doc, T1, vec![take(0, 960, 60)], 0).unwrap();
+    let (e, a) = edit::add_recording(&doc, T1, vec![take(0, 2 * Q, 60)], 0).unwrap();
     h.apply(&mut doc, e);
     let clip_a = doc.tracks[0].clips[0].clone();
-    let (e, _) = edit::add_recording(&doc, T1, vec![take(5000, 960, 62)], 0).unwrap();
+    let (e, _) = edit::add_recording(&doc, T1, vec![take(5000, 2 * Q, 62)], 0).unwrap();
     h.apply(&mut doc, e);
     assert!(Arc::ptr_eq(&doc.tracks[0].clips[0], &clip_a));
     h.undo(&mut doc);
@@ -153,16 +155,16 @@ fn an_amended_step_stays_one_step() {
 fn ids_undone_are_not_given_again() {
     let mut h = History::new();
     let mut doc = Doc::new_default();
-    let (e, a) = edit::add_recording(&doc, T1, vec![take(0, 960, 60)], 0).unwrap();
+    let (e, a) = edit::add_recording(&doc, T1, vec![take(0, 2 * Q, 60)], 0).unwrap();
     h.apply(&mut doc, e);
-    let (e, b) = edit::add_recording(&doc, T1, vec![take(5000, 960, 62)], 0).unwrap();
+    let (e, b) = edit::add_recording(&doc, T1, vec![take(5000, 2 * Q, 62)], 0).unwrap();
     h.apply(&mut doc, e);
     let given = doc.next_id;
     let b_take = doc.clip(b.clip).unwrap().1.takes[0].take.id;
     h.undo(&mut doc);
     assert_eq!(doc.next_id, given, "undo keeps the ids given out");
     assert!(doc.clip(b.clip).is_none());
-    let (e, c) = edit::add_recording(&doc, T1, vec![take(5000, 960, 64)], 0).unwrap();
+    let (e, c) = edit::add_recording(&doc, T1, vec![take(5000, 2 * Q, 64)], 0).unwrap();
     h.apply(&mut doc, e);
     assert!(c.clip.0 >= given);
     assert!(doc.clip(c.clip).unwrap().1.takes[0].take.id.0 >= given);
@@ -173,7 +175,7 @@ fn ids_undone_are_not_given_again() {
     assert!(doc.clip(a.clip).is_none());
     let past = doc.next_id;
     assert!(past > c.clip.0);
-    let (e, d) = edit::add_recording(&doc, T1, vec![take(0, 960, 65)], 0).unwrap();
+    let (e, d) = edit::add_recording(&doc, T1, vec![take(0, 2 * Q, 65)], 0).unwrap();
     h.apply(&mut doc, e);
     assert!(d.clip.0 >= past);
 }
@@ -206,9 +208,9 @@ fn random_edit(rng: &mut Rng, doc: &Doc) -> Option<edit::Edit> {
         }
         2 => {
             let n = 1 + rng.below(3) as usize;
-            let origin = rng.below(20) * 480;
+            let origin = rng.below(20) * Q;
             let takes = (0..n)
-                .map(|_| take(origin, 480 + rng.below(4) * 480, rng.below(128) as u8))
+                .map(|_| take(origin, Q + rng.below(4) * Q, rng.below(128) as u8))
                 .collect();
             edit::add_recording(doc, T1, takes, rng.below(n as u64) as usize)
                 .ok()

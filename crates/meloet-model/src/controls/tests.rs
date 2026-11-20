@@ -2,8 +2,10 @@ use super::*;
 use crate::TrackId;
 use crate::edit::{NewTake, add_recording};
 use crate::song::Note;
+use crate::time::TICKS_PER_QUARTER;
 
-const BAR: u64 = 1920;
+const Q: u64 = TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn cc(tick: u64, number: u8, value: u8) -> ControlPoint {
     ControlPoint {
@@ -12,7 +14,7 @@ fn cc(tick: u64, number: u8, value: u8) -> ControlPoint {
     }
 }
 
-/// A clip [BAR, 3 BAR) of one take at BAR + 480 (offset 480 in the clip, so the take can grow
+/// A clip [BAR, 3 BAR) of one take at BAR + Q (offset Q in the clip, so the take can grow
 /// earlier): a note and two points.
 fn one_take() -> (Doc, ClipId) {
     let (e, _) = add_recording(
@@ -37,7 +39,7 @@ fn one_take() -> (Doc, ClipId) {
         &e.doc,
         TrackId(1),
         vec![NewTake {
-            origin: BAR + 480,
+            origin: BAR + Q,
             length: BAR,
             notes: vec![Note {
                 start: 0,
@@ -46,7 +48,7 @@ fn one_take() -> (Doc, ClipId) {
                 velocity: 90,
                 from: None,
             }],
-            controls: vec![cc(0, 64, 127), cc(240, 1, 30)],
+            controls: vec![cc(0, 64, 127), cc(Q / 2, 1, 30)],
         }],
         0,
     )
@@ -107,7 +109,7 @@ fn adding_a_point_makes_a_new_take_and_selects_the_point() {
     let (doc, clip) = one_take();
     let old = doc.clip(clip).unwrap().1.clone();
     // At the tick of a point there already: after it.
-    let e = add_control(&doc, clip, BAR + 480, ControlKind::Cc(64), 90).unwrap();
+    let e = add_control(&doc, clip, BAR + Q, ControlKind::Cc(64), 90).unwrap();
     assert!(e.of_controls);
     assert_eq!(e.selected, [1]);
     assert_eq!(e.edit.step, StepKind::AddControl { clip });
@@ -117,9 +119,9 @@ fn adding_a_point_makes_a_new_take_and_selects_the_point() {
     assert_eq!(
         points(&e.edit.doc, clip),
         [
-            cc(BAR + 480, 64, 127),
-            cc(BAR + 480, 64, 127),
-            cc(BAR + 720, 1, 30)
+            cc(BAR + Q, 64, 127),
+            cc(BAR + Q, 64, 127),
+            cc(BAR + 3 * Q / 2, 1, 30)
         ]
     );
     // Before the take: the take grows, the notes stay where they are in the song.
@@ -128,7 +130,7 @@ fn adding_a_point_makes_a_new_take_and_selects_the_point() {
     let doc2 = e.edit.doc;
     let c = doc2.clip(clip).unwrap().1;
     assert_eq!(c.active_take().offset, 0);
-    assert_eq!(crate::notes::song_notes(c)[0].start, BAR + 480);
+    assert_eq!(crate::notes::song_notes(c)[0].start, BAR + Q);
     assert_eq!(
         points(&doc2, clip)[0],
         ControlPoint {
@@ -154,22 +156,22 @@ fn adding_a_point_makes_a_new_take_and_selects_the_point() {
 #[test]
 fn moving_points_stops_at_the_clip_and_the_range() {
     let (doc, clip) = one_take();
-    let e = move_controls(&doc, clip, &[0, 1], -10_000, 50).unwrap();
+    let e = move_controls(&doc, clip, &[0, 1], -(5 * BAR as i64 + 400), 50).unwrap();
     assert_eq!(e.edit.step, StepKind::MoveControls { clip, count: 2 });
     assert_eq!(e.selected, [0, 1]);
     // Together, until the first reaches the start of the clip. The sustain stays on.
     assert_eq!(
         points(&e.edit.doc, clip),
-        [cc(BAR, 64, 127), cc(BAR + 240, 1, 80)]
+        [cc(BAR, 64, 127), cc(BAR + Q / 2, 1, 80)]
     );
-    let e = move_controls(&doc, clip, &[1], 10_000, -100).unwrap();
+    let e = move_controls(&doc, clip, &[1], 5 * BAR as i64 + 400, -100).unwrap();
     assert_eq!(points(&e.edit.doc, clip)[1], cc(3 * BAR - 1, 1, 0));
     // Past the other point: the order follows the ticks, and the selection follows the point.
-    let e = move_controls(&doc, clip, &[0], 300, -64).unwrap();
+    let e = move_controls(&doc, clip, &[0], (Q / 2 + 60) as i64, -64).unwrap();
     assert_eq!(e.selected, [1]);
     assert_eq!(
         points(&e.edit.doc, clip),
-        [cc(BAR + 720, 1, 30), cc(BAR + 780, 64, 0)]
+        [cc(BAR + 3 * Q / 2, 1, 30), cc(BAR + 3 * Q / 2 + 60, 64, 0)]
     );
     assert_eq!(
         move_controls(&doc, clip, &[0], 0, 0).unwrap_err(),
@@ -187,7 +189,7 @@ fn deleting_points() {
     let e = delete_controls(&doc, clip, &[0]).unwrap();
     assert_eq!(e.edit.step, StepKind::DeleteControls { clip, count: 1 });
     assert!(e.selected.is_empty());
-    assert_eq!(points(&e.edit.doc, clip), [cc(BAR + 720, 1, 30)]);
+    assert_eq!(points(&e.edit.doc, clip), [cc(BAR + 3 * Q / 2, 1, 30)]);
     assert_eq!(
         delete_controls(&doc, clip, &[]).unwrap_err(),
         EditError::Unchanged

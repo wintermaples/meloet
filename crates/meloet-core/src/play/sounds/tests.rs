@@ -13,6 +13,7 @@ use InstrumentKind::{
     ElectroKit, GrandPiano, Organ, Sine, StudioKit, SynthBass, SynthLead, WarmPad,
 };
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
 const PIANO: InstrumentRef = InstrumentRef::GRAND_PIANO;
 const ORGAN: InstrumentRef = InstrumentRef::Builtin(B::Organ);
 
@@ -459,7 +460,7 @@ fn the_scale_lock_does_not_hold_on_a_drum_track() {
     let write = |key: u8| Command::AddNote {
         take: None,
         start: 0,
-        length: 120,
+        length: Q / 4,
         key,
         velocity: 100,
     };
@@ -489,8 +490,8 @@ fn the_scale_lock_does_not_hold_on_a_drum_track() {
         e,
         Command::AddNote {
             take: Some(take),
-            start: 240,
-            length: 120,
+            start: Q / 2,
+            length: Q / 4,
             key: 39,
             velocity: 100,
         },

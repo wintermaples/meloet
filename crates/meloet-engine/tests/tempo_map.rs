@@ -15,6 +15,8 @@ use meloet_model::{Meter, MeterChange, Tempo, TempoMap, TempoPoint, Timeline};
 use meloet_plugin::ipc::Transport;
 use rtrb::{Consumer, Producer, RingBuffer};
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 const BAR_LEVEL: f32 = 0.17;
 const BEAT_LEVEL: f32 = 0.13;
 
@@ -275,15 +277,15 @@ fn fixed(block: usize) -> impl Iterator<Item = usize> {
     std::iter::repeat(block)
 }
 
-/// The spec's example first (96, then 104 at bar 5 going up to 120 at bar 9), then some three
-/// million ticks of tempo points at odd places, half of them ramps, and meter changes every
+/// The spec's example first (96, then 104 at bar 5 going up to 120 at bar 9), then some 6 250
+/// quarter notes of tempo points at odd places, half of them ramps, and meter changes every
 /// few bars, with every meter the song may have.
 fn winding() -> Timeline {
     let mut lcg = Lcg(2026);
-    let mut tempo_points = vec![point(7680, 10_400, true), point(15_360, 12_000, false)];
-    let mut tick = 15_360;
-    while tick < 3_000_000 {
-        tick += 700 + lcg.below(9_000);
+    let mut tempo_points = vec![point(4 * BAR, 10_400, true), point(8 * BAR, 12_000, false)];
+    let mut tick = 8 * BAR;
+    while tick < 6_250 * Q {
+        tick += 35 * Q / 24 + lcg.below(75 * Q / 4);
         let centi = 3_000 + lcg.below(27_001) as u32;
         tempo_points.push(point(tick, centi, lcg.below(2) == 0));
     }
@@ -396,17 +398,22 @@ fn ten_minutes_on_a_winding_map_every_note_and_click_is_on_the_frame_of_the_form
     assert_eq!(common::audio_block_counts(), (0, 0));
 }
 
-/// A loop over a ramp, a tempo point and a meter change: 150 going up from tick 1500 to 260
-/// at 2100, 200 from there; 7/8 from bar 2 (tick 1920).
+/// Where [`loop_map`]'s ramp starts, and where it ends.
+const LOOP_RAMP: (u64, u64) = (25 * Q / 8, 35 * Q / 8);
+/// The loop on [`loop_map`]: from inside the ramp, over the meter change, past the ramp's end.
+const LOOP: (u64, u64) = (85 * Q / 24, 115 * Q / 24);
+
+/// A loop over a ramp, a tempo point and a meter change: 150 going up from `LOOP_RAMP.0` to
+/// 260 at `LOOP_RAMP.1`, 200 from there; 7/8 from bar 2 (`BAR`).
 fn loop_map() -> Arc<TempoMap> {
     let timeline = Timeline {
         tempo: tempo(12_000),
         meter: Meter::FOUR_FOUR,
         head_ramp: false,
         tempo_points: vec![
-            point(1500, 15_000, true),
-            point(2100, 26_000, false),
-            point(2101, 20_000, false),
+            point(LOOP_RAMP.0, 15_000, true),
+            point(LOOP_RAMP.1, 26_000, false),
+            point(LOOP_RAMP.1 + 1, 20_000, false),
         ],
         meter_changes: vec![flag(1, 7, 8)],
     };
@@ -418,10 +425,23 @@ fn loop_map() -> Arc<TempoMap> {
 fn a_thousand_laps_of_a_loop_stay_on_the_frames_of_the_formula() {
     const LAPS: u64 = 1000;
     const AHEAD: u32 = 300;
-    let (start, end) = (1700u64, 2300u64);
+    let (start, end) = LOOP;
     let rate = 48_000.0;
     let map = loop_map();
-    let notes: Vec<u64> = vec![3, 500, 1700, 1701, 1919, 1920, 1921, 2099, 2100, 2101, 2299];
+    let point = LOOP_RAMP.1;
+    let notes: Vec<u64> = vec![
+        3,
+        Q + 20,
+        start,
+        start + 1,
+        BAR - 1,
+        BAR,
+        BAR + 1,
+        point - 1,
+        point,
+        point + 1,
+        end - 1,
+    ];
     for mut sizes in [
         Box::new(fixed(256)) as Box<dyn Iterator<Item = usize>>,
         Box::new(ragged()),
@@ -494,8 +514,9 @@ fn a_map_put_in_while_playing_keeps_the_tick_and_loses_no_note_or_click() {
     let a = common::flat_map(12_000, 4, 4);
     let b = Arc::new(TempoMap::new(&winding()));
     let c = loop_map();
-    let notes: Vec<u64> = (0..40_000).step_by(32).collect();
-    // 250-frame blocks: at 120.00 tick 480, a beat and a note, is the first frame of block 96.
+    let notes: Vec<u64> = (0..250 * Q / 3).step_by((Q / 15) as usize).collect();
+    // 250-frame blocks: at 120.00 the second beat (tick `Q`), a beat and a note, is the first
+    // frame of block 96.
     let mut rig = Rig::new(48_000, 5_000);
     let mut tape = rig.tape(0, 0);
     rig.map(&a);
@@ -570,7 +591,7 @@ fn a_map_put_in_while_playing_keeps_the_tick_and_loses_no_note_or_click() {
     }
     let got: Vec<u64> = pressed(&mut tape).collect();
     assert_eq!(legs[1].1, 24_000);
-    assert_eq!(legs[1].2, 480.0);
+    assert_eq!(legs[1].2, Q as f64);
     assert!(got.contains(&24_000) && rig.clicks.contains(&(24_000, false)));
     assert_eq!(got, want);
     assert_eq!(rig.clicks, want_clicks);
@@ -584,7 +605,7 @@ fn a_beat_and_a_note_a_part_of_a_frame_before_the_change_of_map_still_sound() {
     let mut rig = Rig::new(48_000, 0);
     let mut tape = rig.tape(0, 0);
     rig.map(&common::flat_map(9_701, 4, 4));
-    rig.sequence(0, &[480, 2000]);
+    rig.sequence(0, &[Q, BAR + 80]);
     rig.send(EngineCommand::SetMetronome { on: true });
     rig.send(EngineCommand::Play { from: 0 });
     rig.run(29_688, &mut fixed(1237));
@@ -596,18 +617,25 @@ fn a_beat_and_a_note_a_part_of_a_frame_before_the_change_of_map_still_sound() {
     assert_eq!(rig.clicks[..2], [(0, true), (29_688, false)]);
 }
 
-/// 96 in 4/4; 192 from tick 960 (frame 60 000 at 48 kHz, in the middle of a block); from tick
-/// 3000 down in a ramp to 40 at 5000; 6/8 from bar 4 (tick 5760); 300 from 7000.
+/// [`keys_map`]: the point to 192, the ramp down to 40, the change to 6/8, the point to 300.
+const KEYS_POINT: u64 = 2 * Q;
+const KEYS_RAMP: (u64, u64) = (25 * Q / 4, 125 * Q / 12);
+const KEYS_FLAG: u64 = 3 * BAR;
+const KEYS_LAST: u64 = 175 * Q / 12;
+
+/// 96 in 4/4; 192 from `KEYS_POINT` (frame 60 000 at 48 kHz, in the middle of a block); from
+/// `KEYS_RAMP.0` down in a ramp to 40 at `KEYS_RAMP.1`; 6/8 from bar 4 (`KEYS_FLAG`); 300 from
+/// `KEYS_LAST`.
 fn keys_map() -> Arc<TempoMap> {
     let timeline = Timeline {
         tempo: tempo(9_600),
         meter: Meter::FOUR_FOUR,
         head_ramp: false,
         tempo_points: vec![
-            point(960, 19_200, false),
-            point(3000, 19_200, true),
-            point(5000, 4_000, false),
-            point(7000, 30_000, false),
+            point(KEYS_POINT, 19_200, false),
+            point(KEYS_RAMP.0, 19_200, true),
+            point(KEYS_RAMP.1, 4_000, false),
+            point(KEYS_LAST, 30_000, false),
         ],
         meter_changes: vec![flag(3, 6, 8)],
     };
@@ -638,12 +666,12 @@ fn keys_get_the_tick_of_the_formula_around_points_ramps_and_meter_changes() {
             muted: TrackSet::default(),
         });
         let t0 = rig.dac_us(0);
-        // Seconds into the song: around the point at 960 (1.25 s), in the ramp, around its
+        // Seconds into the song: around the first point (1.25 s), in the ramp, around its
         // end, around the meter change and the point after it, and in the tenth minute.
-        let ramp_from = map.seconds_at(3000.0);
-        let ramp_to = map.seconds_at(5000.0);
-        let flag_at = map.seconds_at(5760.0);
-        let last_point = map.seconds_at(7000.0);
+        let ramp_from = map.seconds_at(KEYS_RAMP.0 as f64);
+        let ramp_to = map.seconds_at(KEYS_RAMP.1 as f64);
+        let flag_at = map.seconds_at(KEYS_FLAG as f64);
+        let last_point = map.seconds_at(KEYS_LAST as f64);
         let mut at: Vec<f64> = vec![0.000_3, 0.7, 1.249_9, 1.250_0, 1.250_1, 1.26, 2.0];
         for edge in [ramp_from, ramp_to, flag_at, last_point] {
             at.extend([edge - 0.000_2, edge + 0.000_2, edge + 0.005]);
@@ -661,7 +689,9 @@ fn keys_get_the_tick_of_the_formula_around_points_ramps_and_meter_changes() {
             let h = rig.parts.handle.heard_at(t_us).unwrap();
             let want = map.tick_at(rig.frame_at(t_us) / 48_000.0);
             assert!((h.tick - want).abs() < 1e-6);
-            assert!((h.ticks_per_us - map.quarter_bpm_at(want) * 8.0 / 1e6).abs() < 1e-12);
+            assert!(
+                (h.ticks_per_us - map.quarter_bpm_at(want) * Q as f64 / 60.0 / 1e6).abs() < 1e-12
+            );
         }
         let got = events(&rig.recorded());
         assert_eq!(got.len(), keys.len(), "block {block}");
@@ -683,7 +713,7 @@ fn keys_get_the_tick_of_the_formula_around_points_ramps_and_meter_changes() {
 #[test]
 fn keys_around_the_turn_of_a_loop_get_the_tick_of_the_formula() {
     let map = loop_map();
-    let (start, end) = (1700u64, 2300u64);
+    let (start, end) = LOOP;
     let rate = 48_000.0;
     let mut worst = 0.0f64;
     for (block, delay_us) in [(64usize, 3_000u64), (1024, 40_000)] {
@@ -751,10 +781,10 @@ fn the_count_in_keeps_the_tempo_and_meter_of_where_the_recording_starts() {
     let rate = 48_000.0;
     // In the ramp (192 going down to 40), on a beat of 4/4. And in the 6/8 part, at 40: the
     // beats are eighths, and the bar's first one is the loud click.
-    for (from, count_in) in [(4320u64, 4u32), (5760 + 3 * 240, 6)] {
+    for (from, count_in) in [(9 * Q, 4u32), (KEYS_FLAG + 3 * (Q / 2), 6)] {
         let at = map.meter_at(from);
         let beat = at.meter.ticks_per_beat();
-        let ticks_per_s = map.quarter_bpm_at(from as f64) * 8.0;
+        let ticks_per_s = map.quarter_bpm_at(from as f64) * Q as f64 / 60.0;
         let frames_per_beat = beat as f64 / ticks_per_s * rate;
         let switch = (f64::from(count_in) * frames_per_beat - 1e-6).ceil() as u64;
 
@@ -854,18 +884,23 @@ fn plugins_and_effects_hear_the_tempo_and_meter_from_the_very_frame_of_a_change(
         // Every head: what the formula says at that frame.
         for &(frame, t) in &told {
             let tick = map.tick_at(frame as f64 / rate);
-            assert!((t.position_quarters - tick / 480.0).abs() < 1e-6, "{frame}");
+            assert!(
+                (t.position_quarters - tick / Q as f64).abs() < 1e-6,
+                "{frame}"
+            );
             assert_eq!(t.position_frames, frame as i64);
-            assert!((t.tempo_bpm - map.quarter_bpm_at(t.position_quarters * 480.0)).abs() < 1e-9);
+            let tick = t.position_quarters * Q as f64;
+            assert!((t.tempo_bpm - map.quarter_bpm_at(tick)).abs() < 1e-9);
             assert_eq!(t.flags, Transport::PLAYING);
         }
         // A stretch begins on the frame of every change, and is told what holds from there.
         for (tick, bpm, meter, bar_start) in [
-            (960.0, 192.0, (4, 4), 0.0),
-            (5000.0, 40.0, (4, 4), 8.0),
-            (5760.0, 20.0, (6, 8), 12.0),
-            (7000.0, 150.0, (6, 8), 12.0),
+            (KEYS_POINT, 192.0, (4, 4), 0.0),
+            (KEYS_RAMP.1, 40.0, (4, 4), 8.0),
+            (KEYS_FLAG, 20.0, (6, 8), 12.0),
+            (KEYS_LAST, 150.0, (6, 8), 12.0),
         ] {
+            let tick = tick as f64;
             let frame = map.frame_of(tick, 0.0, rate);
             let (_, t) = told
                 .iter()
@@ -874,11 +909,13 @@ fn plugins_and_effects_hear_the_tempo_and_meter_from_the_very_frame_of_a_change(
             assert_eq!(t.tempo_bpm, bpm, "at {tick}");
             assert_eq!((t.meter_num, t.meter_den), meter, "at {tick}");
             assert_eq!(t.bar_start_quarters, bar_start, "at {tick}");
-            assert!(t.position_quarters >= tick / 480.0);
+            assert!(t.position_quarters >= tick / Q as f64);
         }
         // Inside the ramp no stretch is cut for the tempo, and the tempo told moves with it.
-        let in_ramp =
-            |f: u64| f > map.frame_of(3000.0, 0.0, rate) && f < map.frame_of(5000.0, 0.0, rate);
+        let in_ramp = |f: u64| {
+            f > map.frame_of(KEYS_RAMP.0 as f64, 0.0, rate)
+                && f < map.frame_of(KEYS_RAMP.1 as f64, 0.0, rate)
+        };
         let ramp: Vec<f64> = told
             .iter()
             .filter(|(f, _)| in_ramp(*f))
@@ -889,10 +926,13 @@ fn plugins_and_effects_hear_the_tempo_and_meter_from_the_very_frame_of_a_change(
         // The effect on the track: the tempo at the head of each stretch, the same numbers.
         let heard: Vec<(u64, f32)> = std::iter::from_fn(|| heard.pop().ok()).collect();
         assert_eq!(heard[0], (0, 96.0));
-        assert_eq!(heard[1], (map.frame_of(960.0, 0.0, rate), 192.0));
-        for (tick, bpm) in [(5000.0, 40.0), (5760.0, 20.0), (7000.0, 150.0)] {
+        assert_eq!(
+            heard[1],
+            (map.frame_of(KEYS_POINT as f64, 0.0, rate), 192.0)
+        );
+        for (tick, bpm) in [(KEYS_RAMP.1, 40.0), (KEYS_FLAG, 20.0), (KEYS_LAST, 150.0)] {
             assert!(
-                heard.contains(&(map.frame_of(tick, 0.0, rate), bpm)),
+                heard.contains(&(map.frame_of(tick as f64, 0.0, rate), bpm)),
                 "at {tick}"
             );
         }

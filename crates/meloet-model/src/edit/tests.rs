@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use super::*;
-use crate::{InstrumentRef, Meter, Tempo, TrackColor};
+use crate::{InstrumentRef, Meter, TICKS_PER_QUARTER, Tempo, TrackColor};
 
 const T1: TrackId = TrackId(1);
 const T2: TrackId = TrackId(2);
+const Q: u64 = TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn note(start: u64, length: u64, key: u8) -> Note {
     Note {
@@ -72,7 +74,7 @@ fn rename(doc: &Doc, clip: ClipId, name: &str) -> Doc {
 #[test]
 fn first_recording_makes_a_clip_named_after_the_track() {
     let doc = Doc::new_default();
-    let (edit, added) = add_recording(&doc, T1, vec![take(1920, 960)], 0).unwrap();
+    let (edit, added) = add_recording(&doc, T1, vec![take(BAR, 2 * Q)], 0).unwrap();
     assert_eq!(
         edit.step,
         StepKind::Record {
@@ -85,7 +87,7 @@ fn first_recording_makes_a_clip_named_after_the_track() {
     let clip = &doc.track(T1).unwrap().clips[0];
     assert_eq!(clip.id, ClipId(4));
     assert_eq!(clip.name, "ピアノ");
-    assert_eq!((clip.start, clip.end), (1920, 2880));
+    assert_eq!((clip.start, clip.end), (BAR, BAR + 2 * Q));
     assert_eq!(clip.takes[0].offset, 0);
     assert_eq!(clip.takes[0].take.id, TakeId(5));
     assert_eq!(clip.takes[0].take.notes, [note(0, 1, 60)]);
@@ -102,36 +104,39 @@ fn first_recording_makes_a_clip_named_after_the_track() {
 
 #[test]
 fn recording_away_from_clips_makes_another_clip_in_order() {
-    let (doc, a) = record(&Doc::new_default(), T1, vec![take(3840, 960)], 0);
-    let (doc, b) = record(&doc, T1, vec![take(0, 960)], 0);
+    let (doc, a) = record(&Doc::new_default(), T1, vec![take(2 * BAR, 2 * Q)], 0);
+    let (doc, b) = record(&doc, T1, vec![take(0, 2 * Q)], 0);
     assert_ne!(a.clip, b.clip);
-    assert_eq!(clips(&doc, T1), [(0, 960, 1), (3840, 4800, 1)]);
+    assert_eq!(
+        clips(&doc, T1),
+        [(0, 2 * Q, 1), (2 * BAR, 2 * BAR + 2 * Q, 1)]
+    );
 }
 
 #[test]
 fn touching_ends_do_not_merge() {
-    let (doc, _) = record(&Doc::new_default(), T1, vec![take(0, 1920)], 0);
-    let (doc, _) = record(&doc, T1, vec![take(1920, 1920)], 0);
-    let (doc, _) = record(&doc, T1, vec![take(0, 1920)], 0);
+    let (doc, _) = record(&Doc::new_default(), T1, vec![take(0, BAR)], 0);
+    let (doc, _) = record(&doc, T1, vec![take(BAR, BAR)], 0);
+    let (doc, _) = record(&doc, T1, vec![take(0, BAR)], 0);
     // The third overlaps only the first.
-    assert_eq!(clips(&doc, T1), [(0, 1920, 2), (1920, 3840, 1)]);
+    assert_eq!(clips(&doc, T1), [(0, BAR, 2), (BAR, 2 * BAR, 1)]);
 }
 
 #[test]
 fn overlapping_one_clip_adds_a_take_to_it() {
-    let (doc, first) = record(&Doc::new_default(), T1, vec![take(0, 1920)], 0);
+    let (doc, first) = record(&Doc::new_default(), T1, vec![take(0, BAR)], 0);
     let doc = rename(&doc, first.clip, "Aメロ");
     let old_take = doc.track(T1).unwrap().clips[0].takes[0].take.clone();
-    let (doc, added) = record(&doc, T1, vec![take(960, 1920)], 0);
+    let (doc, added) = record(&doc, T1, vec![take(2 * Q, BAR)], 0);
     let clip = &doc.track(T1).unwrap().clips[0];
     assert_eq!(doc.track(T1).unwrap().clips.len(), 1);
     assert_eq!(clip.id, first.clip);
     assert_eq!(clip.name, "Aメロ");
-    assert_eq!((clip.start, clip.end), (0, 2880));
+    assert_eq!((clip.start, clip.end), (0, BAR + 2 * Q));
     assert!(Arc::ptr_eq(&clip.takes[0].take, &old_take));
     assert_eq!(
         clip.takes.iter().map(|t| t.offset).collect::<Vec<_>>(),
-        [0, 960]
+        [0, 2 * Q as i64]
     );
     assert_eq!(clip.active, 1);
     assert_eq!(
@@ -192,9 +197,9 @@ fn spanning_two_clips_merges_them_with_the_first_ones_name() {
 
 #[test]
 fn loop_passes_go_into_one_clip_with_the_chosen_take_shown() {
-    let passes = vec![take(1920, 1920), take(1920, 1920), take(1920, 960)];
+    let passes = vec![take(BAR, BAR), take(BAR, BAR), take(BAR, 2 * Q)];
     let (doc, added) = record(&Doc::new_default(), T1, passes, 1);
-    assert_eq!(clips(&doc, T1), [(1920, 3840, 3)]);
+    assert_eq!(clips(&doc, T1), [(BAR, 2 * BAR, 3)]);
     assert_eq!(added.active, 1);
     let ids: Vec<u32> = doc.track(T1).unwrap().clips[0]
         .takes
@@ -204,9 +209,8 @@ fn loop_passes_go_into_one_clip_with_the_chosen_take_shown() {
     assert_eq!(ids, [5, 6, 7]);
 
     // Looping over the same bars again adds after the takes already there.
-    let (edit, added) =
-        add_recording(&doc, T1, vec![take(1920, 1920), take(1920, 1920)], 1).unwrap();
-    assert_eq!(clips(&edit.doc, T1), [(1920, 3840, 5)]);
+    let (edit, added) = add_recording(&doc, T1, vec![take(BAR, BAR), take(BAR, BAR)], 1).unwrap();
+    assert_eq!(clips(&edit.doc, T1), [(BAR, 2 * BAR, 5)]);
     assert_eq!(added.active, 4);
     assert_eq!(
         edit.step,
@@ -220,9 +224,9 @@ fn loop_passes_go_into_one_clip_with_the_chosen_take_shown() {
 
 #[test]
 fn other_tracks_and_clips_stay_shared() {
-    let (doc, _) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
-    let (doc, _) = record(&doc, T1, vec![take(0, 960)], 0);
-    let (new, _) = record(&doc, T1, vec![take(4000, 960)], 0);
+    let (doc, _) = record(&two_tracks(), T2, vec![take(0, 2 * Q)], 0);
+    let (doc, _) = record(&doc, T1, vec![take(0, 2 * Q)], 0);
+    let (new, _) = record(&doc, T1, vec![take(2 * BAR + 160, 2 * Q)], 0);
     assert!(Arc::ptr_eq(&doc.tracks[1], &new.tracks[1]));
     assert!(!Arc::ptr_eq(&doc.tracks[0], &new.tracks[0]));
     assert!(Arc::ptr_eq(
@@ -246,22 +250,22 @@ fn bad_recordings() {
     let bad: [fn(&mut NewTake); 7] = [
         |t| t.length = 0,
         |t| t.notes = vec![note(0, 0, 60)],
-        |t| t.notes = vec![note(900, 100, 60)],
+        |t| t.notes = vec![note(2 * Q - 60, 100, 60)],
         |t| t.notes[0].velocity = 0,
         |t| t.notes[0].key = 128,
         |t| t.notes = vec![note(10, 1, 60), note(5, 1, 60)],
         |t| {
             t.controls = vec![ControlPoint {
-                tick: 960,
+                tick: 2 * Q,
                 value: ControlValue::PitchBend(0),
             }]
         },
     ];
     for (i, change) in bad.iter().enumerate() {
-        let mut t = take(0, 960);
+        let mut t = take(0, 2 * Q);
         change(&mut t);
         assert_eq!(
-            add_recording(&doc, T1, vec![take(0, 960), t], 0),
+            add_recording(&doc, T1, vec![take(0, 2 * Q), t], 0),
             Err(EditError::BadTake(1)),
             "case {i}"
         );
@@ -273,10 +277,10 @@ fn switching_takes() {
     let (doc, added) = record(
         &two_tracks(),
         T1,
-        vec![take(0, 960), take(0, 960), take(0, 960)],
+        vec![take(0, 2 * Q), take(0, 2 * Q), take(0, 2 * Q)],
         2,
     );
-    let (doc, _) = record(&doc, T2, vec![take(0, 960)], 0);
+    let (doc, _) = record(&doc, T2, vec![take(0, 2 * Q)], 0);
     let edit = switch_take(&doc, added.clip, 0).unwrap();
     assert_eq!(
         edit.step,
@@ -306,9 +310,9 @@ fn switching_takes() {
 
 #[test]
 fn deleting_clips() {
-    let (doc, a) = record(&two_tracks(), T1, vec![take(0, 960)], 0);
-    let (doc, b) = record(&doc, T1, vec![take(2000, 960)], 0);
-    let (doc, c) = record(&doc, T2, vec![take(0, 960)], 0);
+    let (doc, a) = record(&two_tracks(), T1, vec![take(0, 2 * Q)], 0);
+    let (doc, b) = record(&doc, T1, vec![take(BAR + 80, 2 * Q)], 0);
+    let (doc, c) = record(&doc, T2, vec![take(0, 2 * Q)], 0);
     let edit = delete_clips(&doc, &[a.clip, c.clip], false).unwrap();
     assert_eq!(
         edit.step,
@@ -317,7 +321,7 @@ fn deleting_clips() {
             cut: false
         }
     );
-    assert_eq!(clips(&edit.doc, T1), [(2000, 2960, 1)]);
+    assert_eq!(clips(&edit.doc, T1), [(BAR + 80, BAR + 80 + 2 * Q, 1)]);
     assert!(clips(&edit.doc, T2).is_empty());
     assert!(Arc::ptr_eq(
         &doc.track(T1).unwrap().clips[1],
@@ -433,7 +437,7 @@ fn coloring_a_track() {
 
 #[test]
 fn deleting_a_track_takes_its_clips_and_may_leave_none() {
-    let (doc, added) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
+    let (doc, added) = record(&two_tracks(), T2, vec![take(0, 2 * Q)], 0);
     let e = delete_track(&doc, T2).unwrap();
     assert_eq!(e.step, StepKind::DeleteTrack { track: T2 });
     assert_eq!(e.doc.tracks.len(), 1);
@@ -501,7 +505,7 @@ fn which_tracks_play() {
 
 #[test]
 fn deleting_a_take_shows_the_one_before_or_the_next_and_keeps_the_others() {
-    let takes = vec![take(0, 960), take(0, 960), take(0, 960)];
+    let takes = vec![take(0, 2 * Q), take(0, 2 * Q), take(0, 2 * Q)];
     let (doc, added) = record(&Doc::new_default(), T1, takes, 1);
     let ids = |doc: &Doc| {
         let c = doc.clip(added.clip).unwrap().1;
@@ -536,7 +540,7 @@ fn deleting_a_take_shows_the_one_before_or_the_next_and_keeps_the_others() {
 fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
     use crate::BuiltinInstrument as B;
     let bass = InstrumentRef::Builtin(B::SynthBass);
-    let (doc, _) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
+    let (doc, _) = record(&two_tracks(), T2, vec![take(0, 2 * Q)], 0);
     assert_eq!(
         doc.next_id, 6,
         "the three inserts of a new song, a clip and a take"
@@ -651,7 +655,7 @@ fn a_new_track_is_named_by_its_instrument() {
 
 #[test]
 fn replacing_an_instrument_keeps_the_name_and_the_clips() {
-    let (doc, added) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
+    let (doc, added) = record(&two_tracks(), T2, vec![take(0, 2 * Q)], 0);
     let organ = InstrumentRef::Builtin(crate::BuiltinInstrument::Organ);
     let e = set_instrument(&doc, T2, organ.clone()).unwrap();
     assert_eq!(e.step, StepKind::SetInstrument { track: T2 });

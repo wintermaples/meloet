@@ -18,6 +18,8 @@ use crate::play::{EngineOp, Preview, StripSeat};
 use crate::songfile;
 use crate::state::{Effect, Input, Model};
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+
 /// An instrument as the engine holds it: which one it is (every one made gets the next
 /// number) and its kind.
 type Made = (u32, InstrumentRef);
@@ -672,7 +674,7 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
                     // A recording on the selected track; the shelf lets go first.
                     go(Command::ShelfCancel);
                     if !ids.is_empty() {
-                        let at = 1920.0 * rng.below(8) as f64;
+                        let at = (4 * Q) as f64 * rng.below(8) as f64;
                         go(Command::Locate { tick: at as u64 });
                         record_at = Some(at);
                     }
@@ -792,7 +794,7 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
             }
             if let Some(at) = record_at {
                 let notes = [(60, at + 10.0, at + 200.0), (64, at + 300.0, at + 700.0)];
-                engine.take(&record_once(m, &notes, at + 960.0));
+                engine.take(&record_once(m, &notes, at + (2 * Q) as f64));
             }
             engine.check(m, &ctx);
             if m.view().shelf.selected().is_some() {

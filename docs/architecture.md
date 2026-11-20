@@ -417,7 +417,7 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
 - **形**: UTF-8 の JSON を 1 行につめ、最後に改行。形を決めるのは `crates/meloet-core/src/songfile.rs`（model に serde を入れない）。
 
 ```json
-{"format": "meloet-song", "version": 2, "app": "meloet 0.1.0",
+{"format": "meloet-song", "version": 6, "app": "meloet 0.1.0",
  "song": {"name": "はじめての曲", "tempo": 9600, "meter": [4, 4], "tempoChanges": [], "nextId": 8,
    "tracks": [{"id": 1, "name": "ピアノ", "color": 1, "instrument": {"kind": "placeholder"}, "gainDb": 0.0,
      "clips": [{"id": 3, "name": "ピアノ", "start": 7680, "end": 15360, "active": 1,
@@ -466,7 +466,7 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
   - PC が終わるとき: SIGTERM・SIGINT・SIGHUP（殻の `webprocess.rs` が別のスレッドで core に書かせ、書き終わるのを 3 秒まで待ってから終わる）と、logind の `PrepareForShutdown(true)`（殻の `logind.rs`。起動したときに delay ロック `Inhibit("shutdown", "meloet", …, "delay")` を取り、知らせで書いてから放す。`false` で取りなおす。logind がない PC では、なしで動く）。
   - ふだん: 曲が変わってから 2 秒、手が止まったら（`state/recovery.rs` の `QUIET_US`）。録音中・カウントイン中は書かず、録った物が曲に入ってから。中身が前に書いた物と同じなら書かない。
   - **理由**: この PC（Ubuntu 26.04、GNOME 50）では、アプリの scope は SIGTERM から 5 秒で SIGKILL。GTK3 の Wayland はコンポジタが先に消えると `_exit(1)` するので、SIGTERM が届かないこともありうる（推論）。電源の長押しと停電では何も届かない。ほかのアプリ（GNOME Text Editor の 3 秒、Ardour、LibreOffice、Inkscape）も、みな、ふだんから書いている（meloet-research、2026-11-15）。
-- **置き場所と形**: `$MELOET_STATE_DIR`（試験用）→ `$XDG_STATE_HOME/meloet` → `~/.local/state/meloet` の `recovery.json`。`{"format":"meloet-recovery","version":1,"writtenMs":…,"cause":"pcEnding|sudden","path":<もとの曲のファイル>|null,"song":<曲のファイルの形そのまま>}`。曲を最後に置くので、曲が読めなくても頭は読める。書きかたは 14 章と同じ（一時ファイル → sync_all → rename → フォルダの sync_all）。書くのは core の外のスレッド（`recovery::Writer`。Doc を写してわたすだけなので core は止まらない）。
+- **置き場所と形**: `$MELOET_STATE_DIR`（試験用）→ `$XDG_STATE_HOME/meloet` → `~/.local/state/meloet` の `recovery.json`。`{"format":"meloet-recovery","version":2,"writtenMs":…,"cause":"pcEnding|sudden","path":<もとの曲のファイル>|null,"song":<曲のファイルの形そのまま>}`。曲を最後に置くので、曲が読めなくても頭は読める。書きかたは 14 章と同じ（一時ファイル → sync_all → rename → フォルダの sync_all）。書くのは core の外のスレッド（`recovery::Writer`。Doc を写してわたすだけなので core は止まらない）。
 - **消すとき**: 保存できたとき、ふつうに閉じたとき（閉じるダイアログの「保存しない」もふくむ。人が捨てるとえらんだため）、新しい曲・ひらいた曲に入れかわったとき。PC が終わるときは消さない。
 - **戻すとき**: もとの曲（保存したことのない曲ならからっぽの新しい曲）を手の前の Doc にし、戻した Doc を取り消しの 1 手目（「なおすためのファイルから戻す」）として入れる。保存の印は手の前（ファイルと同じ形）なので、戻した直後は「変更あり」、帯札 1 / 1（モック F-Recover1・F-Recover2 の読み）。「戻さない」は 2 手目で、そのあとは「保存済み」の扱い（保存の印は 1 つなので、2 つ目の印を持つ）。手の前の Doc の `next_id` は戻した曲と大きいほうにそろえる（画面がテイクを id でためているため）。案内は、保存するか、戻さない・閉じるを押すまで出す。出口えらび（流れ 2）が出ているあいだは待つ（同じ場所に重なるため。棟梁の決め）。
 - **読めないとき**: 最後に保存した曲（なければ新しい曲）でひらき、ファイルは `recovery-unreadable-<日時>.json` に名前をかえて残す（次の起動でまた出ないように）。「ファイルの場所をひらく」は `org.freedesktop.FileManager1.ShowItems`、だめなら `xdg-open`（殻の `pcwindow.rs`）。
@@ -1031,9 +1031,9 @@ impl TempoMap {
   - **理由**: 区間はブロックごとで、テンポの点では切れない。96 → 192 の点をまたぐ 256 こまの区間をまっすぐで読むと、4 ティック（3 ms）ずれる。だんだんの中でも、1024 こまのブロックで 0.8 ティックまでずれる（30 → 240 を 1 拍で、のような強い例）。
   - 計器のスレッドも地図を持つ（core が入れかえのたびに `Arc<TempoMap>` をわたす。音のスレッドではないので鍵でよい）。計器の「位置」と「1 µs あたりのティック」は、送る時刻の正しい値。画面は今までどおり 1 コマぶんだけまっすぐのばす（16 ms なので誤差は見えない）。計器のバイナリは変えない。
 - **区切り（1 回の render の中の切れ目）にテンポの点と拍子の旗を足す**（だんだんの中は切らない）。まれな出来事なので重さはなく、プラグインとディレイが、点の所でちょうど新しいテンポを聞ける。
-- **プラグインへ**（`PluginTransport`。形は変えない）: 区切りの頭の値。`tempo_bpm = quarter_bpm_at`、`position_quarters = tick / 480`、`bar_start_quarters = その小節の頭 / 480`、拍子は上と下をそのまま（6/8 は 6 と 8）、`position_frames = round(seconds_at(tick) × サンプルレート)`（調べ物: 本当のこまの位置。いまのコメント「いまのテンポでの」は直す）。だんだんの中でも平均はとらない（調べ物: Ardour と同じ、Surge XT は頭の値から自分で進む）。
+- **プラグインへ**（`PluginTransport`。形は変えない）: 区切りの頭の値。`tempo_bpm = tempo_at`、`position_quarters = tick / TICKS_PER_QUARTER`、`bar_start_quarters = その小節の頭 / TICKS_PER_QUARTER`（第 7 回の 22-2 で 1920 と 4 分音符のテンポに。前は `quarter_bpm_at` と 480）、拍子は上と下をそのまま（6/8 は 6 と 8）、`position_frames = round(seconds_at(tick) × サンプルレート)`（調べ物: 本当のこまの位置。いまのコメント「いまのテンポでの」は直す）。だんだんの中でも平均はとらない（調べ物: Ardour と同じ、Surge XT は頭の値から自分で進む）。
 - **LV2 の `time:Position`**（いまは送っていない。第 6 回で足す）: 受ける口（`atom:supports time:Position`）のあるプラグインに、**毎ブロック、時刻 0 に 1 つ**（JUCE の LV2 の包みは毎ブロックの頭で位置を忘れ、そのブロックに来た物だけを使う）。欄は `frame`、`speed`、`bar`、`barBeat`、`beat`、`beatUnit`、`beatsPerBar`、`beatsPerMinute` を全部。区切りで分けて呼ぶときは、区切りの頭ごとに 1 つ。拍は **LV2 の仕様どおり `beatUnit` の音符で数える**（テンポの数の意味と同じ）。JUCE の LV2 の包みは `time:beat` と `beatsPerMinute` を 4 分音符の数として読むので、下の数が 4 でない拍子では、JUCE の LV2 のプラグイン（Surge XT の LV2 など）のテンポ合わせが 2 倍 ・ 半分にずれる（VST3 は 4 分音符で渡すので起きない）。**理由**: 仕様に合わせておけば、仕様どおりのプラグインは正しい。JUCE に合わせると、ほかのプラグインがずれる（**第 7 回の 22-2 で取り消した**: 4 分音符の数で送る）。control ポートの `lv2:designation time:beatsPerMinute` ・ `time:speed` には毎ブロック値を入れる（jalv ・ Ardour と同じ）。
-- **最初から入っているディレイ**: `EffectContext::tempo_bpm` に区切りの頭の `quarter_bpm_at`。形は変えない。戻りとマスターは区切りで分けていないので、1 回の render（多くて 1024 こま）の頭の値。
+- **最初から入っているディレイ**: `EffectContext::tempo_bpm` に区切りの頭の `tempo_at`（第 7 回から。前は `quarter_bpm_at`）。形は変えない。戻りとマスターは区切りで分けていないので、1 回の render（多くて 1024 こま）の頭の値。
 - **試験**（`crates/meloet-engine/tests/`）: だんだんと拍子の変更のある地図で 10 分回し、ノートとメトロノームの鳴ったこまを `frame_of` の答えと 1 つずつくらべる（ブロックの大きさを 64 ・ 256 ・ 1024 ・ ばらばらに変えても同じこま）。ループ 1000 周。再生中に地図を入れかえてもティックがとばない。音のスレッドでメモリを取らない見はりに、地図の入れかえを足す。
 
 - **入れた形（区切り1 の 2 回目、エンジンの係）**:

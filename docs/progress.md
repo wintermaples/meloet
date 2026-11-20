@@ -1196,6 +1196,7 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 | 64 本 ・ 帯 4 本ずつのアレンジを送りつづけると 47〜48 コマ（再生中 39〜40）。64 本 ・ 帯 4 本ずつのミキサーは 57〜59 コマ | 送ったコマは行の場所ぜんぶを描きなおす（CPU で描く WebKit）。作り物のいちばん重い送りかたの数 |
 | WebKit がスタイルの計算のたびに文書ぜんたいをたどる（`processSpeculationRules`、部品 9506 個で主スレッドの 7〜9 %） | WebKit の設定で切れるかもしれない（Rust の側）。調べていない |
 | 見出しの列とレーンが 1 px ずれている（テンポの行の高さが 25 と 24） | 前からの作り |
+| 帯のある曲は、読む → 書く → 読むで同じ曲にならない（`make_song.py --lanes` の曲。帯の id を読むたびに `nextId` から配るためと見ている） | 第 7 回の区切り1 で見つけた。確かめていない |
 | 本物のアプリの絵（`docs/screenshots/`、第 6 回の状態）で: 書いている間、赤い枠の中の線が手の値を追わない（モック F6-AutoRec は追う。core は離したときに点を入れる作り、21 章）。再生中の帯の線が白っぽい灰色に見えるコマがある（橙のコマもある）。テンポの点をえらんだ状態行に、モックの「・ 値を変えるには 2 回押す」がない | 撮った絵で見つけた。原因は見ていない。第 10 版で F6-AutoRec ・ F6-Tempo が変わったので、写してから見る |
 
 ### 次の回への申し送り（第 7 回: 歌と音のファイル）
@@ -1241,3 +1242,10 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
 - 1 歩め（数に名前をつける。定数は 480 のまま、答えは変えない。22-1）: meloet-impl 2 人が同時に（どちらも Opus 5.5）。イ（`ui/` と `tools/`、673a1d0）: 画面の定数を `ui/src/time/ticks.ts` の 1 つに、試験 44 ファイルと `fake.ts`、Python の道具 6 つ（`make_song.py` の出す物は前と 1 バイトも同じ）。ア（`crates/` の試験、297132c、merge 4d30382）: 41 ファイル。どちらも 1920 にしてためし、数のまま残っていた所をなくした（落ちるのは表示 ・ テンポの意味 ・ 答えの表 ・ 本体の 480 だけ）。check-all（4d30382）: Rust 999 ・ ignored 78、画面 2604。
   - 見つけた事: 22-1 の表にない 480 の数がもう 1 つ（`crates/meloet-engine/src/clock.rs` の `quarter_bpm_at(tick) * 8.0`）。`engine/tests/automation.rs` は「1 ティック = 50 こま」で答えを整数で作っているので、2 歩めのあとはテンポを `120 × 480 ÷ Q` の式にして 50 こまを保つ（棟梁の決め）。Python の定数は 4 か所（`make_song.py` ・ `tempo_map.py` ・ `plugin_stop_summary.py` ・ `shoot_app.py`。`-I` で動かすので、それぞれが持つ）。
 - 2 歩め（model）: foundation に入れず、作業ツリーのブランチでコミットして、3 歩めの出発点にする（model だけ 1920 にすると、ほかのクレートの試験が 3 歩めまで落ちるため）。
+- 2 歩め（model、2d46d8a、meloet-hard ・ Fable 5.2）: `TICKS_PER_QUARTER` = 1920、`DISPLAY_TICKS_PER_BEAT` と `quarter_bpm_at` を消した、地図の時間の式は定数 `Q`、`Meter::ticks_per_click` ・ `clicks_per_bar`、`TempoMap::next_click`。答えの表は地図 6 つと `clicks` の欄。Python の写し `tempo_map.py` も（`cycle` の 1 回りは 37.72 → 31.15 秒。6/8 の所が 4 分音符のテンポで半分になるため）。27001 のテンポで `frame_of` と整数の式が全部同じ。
+- 3 歩め（同時に 2 人、どちらも 2d46d8a から。merge be2f1d8）:
+  - エ（画面、853200b、meloet-impl ・ Opus 5.5）: 地図の式、`nextClick` ・ `clicksPerBar`、表示のティックはいつも 4 けた（`tickText`）、範囲の文「0〜1919」「0〜0959」、位置の欄を 9 字 → 10 字（tokens は変えず）、カウントインの四角は 1 小節の鳴る数。`bars.ts` の `tickOfPosition` に 480 がかくれていた。打ちこむティックは、けた数を見ずに 1〜4 けたの数をそのまま読む（棟梁の決め。「3.1.0」が読めるように）。`ticksToSeconds` は消した。vitest 2616。
+  - ウ（エンジン ・ plughost ・ core ・ 約束 ・ 道具、fc2a212、meloet-hard ・ Fable 5.2）: エンジンのメトロノームは `next_click`、カウントインは鳴る拍で数える（6/8 の 1 小節は 2）、`clock.rs` の `* 8.0` も定数から。LV2 の `time:Position` は 4 分音符（`beat` ・ `beatsPerMinute`）、`barBeat` ・ `beatUnit` は本当の拍子。曲のファイル版 6（版 1〜5 は `ReadError::TooOld` で読めない物の道）、なおすためのファイル版 2、約束 22。`make_song.py` はいつも版 6、`click-check.py` は鳴る拍で見る、`record-timing.sh` に `--meter` ・ `--tempos` ・ `--no-maps`。
+  - 本物の音で 6/8 の録った位置（`record-timing.sh private --meter 6/8`、release）: テンポ 120 は最大 0.141〜0.156 ms（まるめの幅 ± 0.13 ms）、テンポ 30 は 0.528〜0.541 ms（± 0.52 ms に送りのゆれ 0.02 ティック）。**B-92 の「x/8 で 1 ms をこえるまるめ」は消えた**。1 回目は PC が静かでなく（load 2.8）2 本乱れ、静かなときに取りなおして通った。きちんとした測りは 4 歩め。
+  - `CLAUDE.md` の「4 分音符 = 480」「版 4」「約束 版 20」と、architecture の 21-3 ・ 14 章 ・ 15 章の古い数を直した（棟梁）。
+  - 第 10 版を待つ物: `ja.ts` の 1920 で正しくなくなった文（「ティックは 1 拍を 480 に分けた細かい目盛り。」、「5.2.240」の例、テンポの説明の「1 分間の拍の数」、読み上げの例の 3 けたの値）。仕様書の文のまま変えていない。

@@ -6,10 +6,11 @@ use crate::history::History;
 use crate::id_book::held;
 use crate::instrument::PluginRef;
 use crate::mixer::{self, Missing, StripId};
-use crate::{BuiltinInstrument, edit};
+use crate::{BuiltinInstrument, TICKS_PER_QUARTER, edit};
 
 const T1: TrackId = TrackId(1);
 const S1: StripId = StripId::Track(T1);
+const Q: u64 = TICKS_PER_QUARTER;
 
 fn p(tick: u64, value: f32) -> AutoPoint {
     AutoPoint { tick, value }
@@ -158,9 +159,9 @@ fn points_are_added_on_the_line() {
     // An empty lane: the hand's value.
     let empty = with_volume(Vec::new());
     let id = lane(&empty, AutoTarget::Volume).id;
-    let (e, _, _) = add_point(&empty, id, 480, None, 0.8).unwrap();
-    assert_eq!(ticks_values(lane(&e.doc, AutoTarget::Volume)), [(480, 0.8)]);
-    let (e, _, _) = add_point(&empty, id, 480, Some(7.0), 0.8).unwrap();
+    let (e, _, _) = add_point(&empty, id, Q, None, 0.8).unwrap();
+    assert_eq!(ticks_values(lane(&e.doc, AutoTarget::Volume)), [(Q, 0.8)]);
+    let (e, _, _) = add_point(&empty, id, Q, Some(7.0), 0.8).unwrap();
     assert_eq!(lane(&e.doc, AutoTarget::Volume).points[0].value, 1.0);
 }
 
@@ -287,10 +288,10 @@ fn thinning_stays_within_the_tolerance() {
 #[test]
 fn a_press_writes_one_point() {
     let (e, _) = add_lane(&Doc::new_default(), T1, AutoTarget::Mute, true).unwrap();
-    let (e, _) = write_press(&e.doc, T1, AutoTarget::Mute, 960, 1.0).unwrap();
-    assert_eq!(ticks_values(lane(&e.doc, AutoTarget::Mute)), [(960, 1.0)]);
+    let (e, _) = write_press(&e.doc, T1, AutoTarget::Mute, 2 * Q, 1.0).unwrap();
+    assert_eq!(ticks_values(lane(&e.doc, AutoTarget::Mute)), [(2 * Q, 1.0)]);
     assert_eq!(
-        write_press(&e.doc, T1, AutoTarget::Mute, 960, 1.0).unwrap_err(),
+        write_press(&e.doc, T1, AutoTarget::Mute, 2 * Q, 1.0).unwrap_err(),
         EditError::Unchanged
     );
 }
@@ -443,7 +444,7 @@ fn random_steps_keep_every_lane_with_its_target() {
         let target = some_target(&mut rng, &doc);
         let lanes: Vec<Arc<Lane>> = doc.tracks[0].automation.clone();
         let some_lane = lanes.get(rng.below(lanes.len() as u64 + 1) as usize);
-        let tick = rng.below(20) * 120;
+        let tick = rng.below(20) * (Q / 4);
         let value = rng.below(101) as f32 / 100.0;
         let slot = rng.below(4) as usize;
         let edit = match rng.below(16) {
@@ -456,7 +457,7 @@ fn random_steps_keep_every_lane_with_its_target() {
             5 => match some_lane {
                 Some(l) => {
                     let picked = [rng.below(4) as usize, rng.below(4) as usize];
-                    let d_tick = rng.below(9) as i64 * 120 - 480;
+                    let d_tick = rng.below(9) as i64 * (Q / 4) as i64 - Q as i64;
                     move_points(&doc, l.id, &picked, d_tick, value - 0.5).map(|(e, ..)| e)
                 }
                 None => continue,

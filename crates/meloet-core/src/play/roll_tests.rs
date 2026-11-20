@@ -16,7 +16,8 @@ use super::*;
 use crate::songfile;
 use crate::state::Effect;
 
-const BAR: u64 = 1920;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 struct Rng(u64);
 
@@ -102,7 +103,7 @@ fn song(rng: &mut Rng) -> Song {
     };
     let doc = add(&s.doc, 1, vec![take(rng, BAR, 4 * BAR)]);
     let doc = add(&doc, 1, vec![take(rng, 2 * BAR, BAR)]);
-    let doc = add(&doc, 1, vec![take(rng, BAR + 480, 2 * BAR)]);
+    let doc = add(&doc, 1, vec![take(rng, BAR + Q, 2 * BAR)]);
     let doc = add(&doc, 1, vec![take(rng, 7 * BAR, BAR)]);
     let doc = add(&doc, 2, vec![take(rng, 0, 2 * BAR)]);
     s.doc = doc;
@@ -657,7 +658,7 @@ fn two_notes() -> Play {
             },
             Note {
                 from: None,
-                start: 480,
+                start: Q,
                 length: 100,
                 key: 64,
                 velocity: 90,
@@ -681,7 +682,7 @@ fn the_edited_notes_are_selected_and_undo_brings_the_selection_back() {
     let e = &mut Vec::new();
     let t0 = shown_id(&p);
     p.select_notes(t0, vec![0], SelectMode::Replace);
-    p.move_notes(t0, &[1], 960, 0, false, e);
+    p.move_notes(t0, &[1], 2 * Q as i64, 0, false, e);
     let t1 = shown_id(&p);
     assert_ne!(t1, t0);
     assert_eq!(p.note_sel.notes, [1]);
@@ -702,7 +703,7 @@ fn the_edited_notes_are_selected_and_undo_brings_the_selection_back() {
     assert_eq!((shown_id(&p), &p.note_sel.notes[..]), (t1, &[1][..]));
 
     // A note command at the old take does nothing.
-    p.move_notes(t0, &[0], 480, 0, false, e);
+    p.move_notes(t0, &[0], Q as i64, 0, false, e);
     p.delete_notes(t2, &[0], e);
     assert_eq!(p.undo_count(), 1);
     assert_eq!(shown_id(&p), t1);
@@ -792,8 +793,12 @@ fn the_screen_sees_new_takes_selections_and_the_summary() {
     let m = &mut ready();
     record_once(
         m,
-        &[(60, 0.0, 100.0), (64, 480.0, 600.0), (67, 960.0, 1000.0)],
-        1200.0,
+        &[
+            (60, 0.0, 100.0),
+            (64, Q as f64, (Q + 120) as f64),
+            (67, (2 * Q) as f64, (2 * Q + 40) as f64),
+        ],
+        (5 * Q / 2) as f64,
     );
     let c = clip_view(m);
     assert_eq!(m.view().song.note_count, 3);
@@ -1106,7 +1111,7 @@ fn writing_with_no_clip_makes_one_in_one_step() {
         Command::AddNote {
             take: Some(5),
             start: BAR + 100,
-            length: 240,
+            length: Q / 2,
             key: 60,
             velocity: 100,
         },
@@ -1117,7 +1122,7 @@ fn writing_with_no_clip_makes_one_in_one_step() {
         Command::AddNote {
             take: None,
             start: BAR + 100,
-            length: 240,
+            length: Q / 2,
             key: 60,
             velocity: 0,
         },
@@ -1142,7 +1147,7 @@ fn writing_with_no_clip_makes_one_in_one_step() {
         Command::AddNote {
             take: None,
             start: 9 * BAR,
-            length: 240,
+            length: Q / 2,
             key: 60,
             velocity: 100,
         },
@@ -1247,7 +1252,7 @@ fn settings_are_kept_and_out_of_range_ones_dropped() {
 fn edited_takes_and_settings_come_back_from_the_file() {
     let mut p = two_notes();
     let e = &mut Vec::new();
-    p.move_notes(shown_id(&p), &[0], -480, 3, false, e);
+    p.move_notes(shown_id(&p), &[0], -(Q as i64), 3, false, e);
     p.add_note(
         Some(shown_id(&p)),
         Note {
@@ -1286,7 +1291,11 @@ fn edited_takes_and_settings_come_back_from_the_file() {
 #[test]
 fn quantize_and_back_through_the_commands() {
     let m = &mut ready();
-    record_once(m, &[(60, 10.0, 100.0), (64, 500.0, 600.0)], 1200.0);
+    record_once(
+        m,
+        &[(60, 10.0, 100.0), (64, (Q + 20) as f64, (Q + 120) as f64)],
+        (5 * Q / 2) as f64,
+    );
     let recorded = clip_view(m).take_id;
     let before = TakeNotes::decode(&m.take_notes(recorded).unwrap()).unwrap();
     cmd(
@@ -1329,7 +1338,7 @@ fn quantize_and_back_through_the_commands() {
             .iter()
             .map(|n| u64::from(n.start) + c.start + c.take_offset as u64)
             .collect::<Vec<_>>(),
-        [0, 480]
+        [0, Q]
     );
     // The recorded take is in no clip, but the screen still gets it by id.
     assert_eq!(
@@ -1483,7 +1492,7 @@ fn trimmed_clip() -> (Play, u32) {
         notes: (0..4)
             .map(|i| Note {
                 from: None,
-                start: 10 + 480 * i,
+                start: 10 + Q * i,
                 length: 100,
                 key: 60 + i as u8,
                 velocity: 90,
@@ -1503,10 +1512,10 @@ fn trimmed_clip() -> (Play, u32) {
 
 fn trim_both(p: &mut Play, clip: u32) {
     let e = &mut Vec::new();
-    p.trim_clip(clip, ClipEdge::Start, 480, e);
-    p.trim_clip(clip, ClipEdge::End, -480, e);
+    p.trim_clip(clip, ClipEdge::Start, Q as i64, e);
+    p.trim_clip(clip, ClipEdge::End, -(Q as i64), e);
     let c = &p.clips_of(TrackId(1))[0];
-    assert_eq!((c.start, c.end), (BAR + 480, 2 * BAR - 480));
+    assert_eq!((c.start, c.end), (BAR + Q, 2 * BAR - Q));
 }
 
 #[test]
@@ -1538,7 +1547,7 @@ fn a_trimmed_clip_counts_and_selects_only_the_notes_inside() {
     assert_eq!(p.note_sel.notes, [1]);
 
     // The head back: its note counts again, and the selection stays as it was.
-    p.trim_clip(clip, ClipEdge::Start, -480, &mut Vec::new());
+    p.trim_clip(clip, ClipEdge::Start, -(Q as i64), &mut Vec::new());
     assert_eq!(p.clips_of(TrackId(1))[0].note_count, 3);
     assert_eq!(p.note_sel.notes, [1]);
 }
@@ -1563,11 +1572,11 @@ fn quantizing_all_of_a_trimmed_clip_moves_only_the_notes_inside() {
         matches!(notice, Some(StatusMessage::Quantized { count: 2, .. })),
         "{notice:?}"
     );
-    assert_eq!(starts(&p), [10, 480, 960, 1450]);
+    assert_eq!(starts(&p), [10, Q, 2 * Q, 3 * Q + 10]);
 
     let t = shown_id(&p);
     p.unquantize(t, &[], e);
-    assert_eq!(starts(&p), [10, 490, 970, 1450]);
+    assert_eq!(starts(&p), [10, Q + 10, 2 * Q + 10, 3 * Q + 10]);
     assert_eq!(
         p.steps().last(),
         Some(&StepKind::Unquantize {
@@ -1580,7 +1589,11 @@ fn quantizing_all_of_a_trimmed_clip_moves_only_the_notes_inside() {
 #[test]
 fn the_start_edge_and_matching_velocities_through_the_commands() {
     let m = &mut ready();
-    record_once(m, &[(60, 10.0, 100.0), (64, 500.0, 600.0)], 1200.0);
+    record_once(
+        m,
+        &[(60, 10.0, 100.0), (64, (Q + 20) as f64, (Q + 120) as f64)],
+        (5 * Q / 2) as f64,
+    );
     let take = clip_view(m).take_id;
     let before = TakeNotes::decode(&m.take_notes(take).unwrap()).unwrap();
     let steps = m.view().song.undo_count;
@@ -1650,7 +1663,11 @@ fn the_start_edge_and_matching_velocities_through_the_commands() {
 #[test]
 fn matching_lengths_is_one_step_and_undoes() {
     let m = &mut ready();
-    record_once(m, &[(60, 10.0, 100.0), (64, 500.0, 600.0)], 1200.0);
+    record_once(
+        m,
+        &[(60, 10.0, 100.0), (64, (Q + 20) as f64, (Q + 120) as f64)],
+        (5 * Q / 2) as f64,
+    );
     let take = clip_view(m).take_id;
     let before = TakeNotes::decode(&m.take_notes(take).unwrap()).unwrap();
     let steps = m.view().song.undo_count;
@@ -1659,20 +1676,20 @@ fn matching_lengths_is_one_step_and_undoes() {
         Command::MatchLength {
             take,
             notes: vec![1, 0, 1],
-            value: 240,
+            value: Q / 2,
         },
     );
     assert_eq!(
         status(m),
         Some(StatusMessage::LengthMatched {
             count: 2,
-            value: 240
+            value: Q / 2
         })
     );
     assert_eq!(m.view().song.undo_count, steps + 1);
     let matched = clip_view(m).take_id;
     let after = TakeNotes::decode(&m.take_notes(matched).unwrap()).unwrap();
-    assert!(after.notes.iter().all(|n| n.length == 240));
+    assert!(after.notes.iter().all(|n| u64::from(n.length) == Q / 2));
     for (a, b) in after.notes.iter().zip(&before.notes) {
         assert_eq!(a.start, b.start, "the starts stay");
     }
@@ -1689,14 +1706,14 @@ fn matching_lengths_is_one_step_and_undoes() {
         Command::MatchLength {
             take,
             notes: vec![0],
-            value: 240,
+            value: Q / 2,
         },
     );
     assert_eq!(
         status(m),
         Some(StatusMessage::LengthMatched {
             count: 1,
-            value: 240
+            value: Q / 2
         })
     );
     assert_eq!(m.view().song.undo_count, steps + 1);
@@ -1705,7 +1722,7 @@ fn matching_lengths_is_one_step_and_undoes() {
         Command::MatchLength {
             take: take + 1000,
             notes: vec![0],
-            value: 120,
+            value: Q / 4,
         },
     );
     assert_eq!(m.view().song.undo_count, steps + 1);
@@ -1754,7 +1771,7 @@ fn notes_out_of_the_clip_grow_it_in_one_step() {
     let note = Note {
         from: None,
         start: 2 * BAR + 100,
-        length: 240,
+        length: Q / 2,
         key: 67,
         velocity: 90,
     };

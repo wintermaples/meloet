@@ -19,13 +19,14 @@ use meloet_protocol::{Command, TakeControlValue, TakeNotes, TransportState};
 use record_timing::{Reading, reading, wait_until};
 
 const BPM: f64 = 120.0;
-const BAR: i64 = 1920;
-/// Bars 2 to 4: [1920, 5760).
+const Q: i64 = meloet_model::TICKS_PER_QUARTER as i64;
+const BAR: i64 = 4 * Q;
+/// Bars 2 to 4: [BAR, 3 * BAR).
 const LOOP_START: i64 = BAR;
 const LOOP_LEN: i64 = 2 * BAR;
 const VELOCITY: u8 = 25;
 /// Ticks per millisecond.
-const TPMS: f64 = 480.0 * BPM / 60_000.0;
+const TPMS: f64 = Q as f64 * BPM / 60_000.0;
 /// Allowed difference between where a key should land and where it did, in ticks.
 const SLACK: i64 = 3;
 
@@ -117,19 +118,19 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
         (LOOP_START - ms(50), Act::On(60)),
         (LOOP_START + ms(100), Act::Off(60)),
         // Lap 0.
-        (lap_tick(0, 2880), Act::On(62)),
-        (lap_tick(0, 2880) + ms(120), Act::Off(62)),
-        (lap_tick(0, 3840), Act::Pedal(127)),
+        (lap_tick(0, 6 * Q), Act::On(62)),
+        (lap_tick(0, 6 * Q) + ms(120), Act::Off(62)),
+        (lap_tick(0, 8 * Q), Act::Pedal(127)),
         // Held across the boundary: from 25 ms before the end of lap 0 to 200 ms into lap 1.
         (end - ms(25), Act::On(64)),
         (end + ms(200), Act::Off(64)),
         // Lap 1: 25 ms after its start.
         (lap_tick(1, LOOP_START) + ms(25), Act::On(65)),
         (lap_tick(1, LOOP_START) + ms(25) + ms(100), Act::Off(65)),
-        (lap_tick(1, 4320), Act::Pedal(0)),
+        (lap_tick(1, 9 * Q), Act::Pedal(0)),
         // Lap 2: nothing. Lap 3: one key.
-        (lap_tick(3, 2880), Act::On(67)),
-        (lap_tick(3, 2880) + ms(120), Act::Off(67)),
+        (lap_tick(3, 6 * Q), Act::On(67)),
+        (lap_tick(3, 6 * Q) + ms(120), Act::Off(67)),
     ];
 
     script.sort_by_key(|(c, _)| *c);
@@ -165,7 +166,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
         keys.send(event).expect("send");
         sent.push((*c, event));
     }
-    at(&latest, lap_tick(3, 3840));
+    at(&latest, lap_tick(3, 8 * Q));
     core.send(Command::Record);
     record_timing::wait_for(&core, "the takes are in", Duration::from_secs(3), |s| {
         s.transport.state == TransportState::Stopped && s.transport.recording.is_none()
@@ -235,7 +236,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
         early.is_some(),
         "the key before the start widens lap 0: {lap0:?}"
     );
-    assert!(has(lap0, 62, 2880).is_some(), "{lap0:?}");
+    assert!(has(lap0, 62, 6 * Q).is_some(), "{lap0:?}");
     let held = has(lap0, 64, end - ms(25)).expect("the held key is in the lap it was pressed in");
     assert!(
         near(held.1 + held.2, end),
@@ -243,7 +244,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
     );
     assert_eq!(lap0.len(), 3, "{lap0:?}");
     assert!(
-        lap0_controls.iter().any(|(t, v)| near(*t, 3840)
+        lap0_controls.iter().any(|(t, v)| near(*t, 8 * Q)
             && *v
                 == TakeControlValue::Cc {
                     number: 64,
@@ -269,7 +270,7 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
         "the held pedal is written at the head of lap 1: {lap1_controls:?}"
     );
     assert!(
-        lap1_controls.iter().any(|(t, v)| near(*t, 4320)
+        lap1_controls.iter().any(|(t, v)| near(*t, 9 * Q)
             && *v
                 == TakeControlValue::Cc {
                     number: 64,
@@ -280,5 +281,5 @@ fn loop_recording_makes_one_take_per_lap_with_notes() {
 
     let (_, lap3, _) = &takes[2];
     assert_eq!(lap3.len(), 1, "{lap3:?}");
-    assert!(has(lap3, 67, 2880).is_some(), "{lap3:?}");
+    assert!(has(lap3, 67, 6 * Q).is_some(), "{lap3:?}");
 }

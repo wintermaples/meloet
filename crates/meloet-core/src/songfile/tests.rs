@@ -7,6 +7,8 @@ use meloet_model::effects;
 use super::*;
 use crate::settings::temp_dir;
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+
 /// A song with two clips, a clip of three takes (one shared with the other clip), CC and bend
 /// at the same tick and a loop.
 fn rich_song(name: &str, notes_per_take: u64) -> Song {
@@ -14,7 +16,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
         Arc::new(Take {
             origin: None,
             id: TakeId(id),
-            length: 1920 * 4,
+            length: 16 * Q,
             notes: (0..notes_per_take)
                 .map(|i| Note {
                     from: None,
@@ -33,11 +35,11 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
                     },
                 },
                 ControlPoint {
-                    tick: 240,
+                    tick: Q / 2,
                     value: ControlValue::PitchBend(-8192),
                 },
                 ControlPoint {
-                    tick: 240,
+                    tick: Q / 2,
                     value: ControlValue::Cc {
                         number: 1,
                         value: 12,
@@ -67,12 +69,12 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
         head_ramp: true,
         tempo_points: vec![
             TempoPoint {
-                tick: 2880,
+                tick: 6 * Q,
                 tempo: Tempo::from_centi(10_000).unwrap(),
                 ramp: true,
             },
             TempoPoint {
-                tick: 5760 + 240,
+                tick: 12 * Q + Q / 2,
                 tempo: Tempo::from_centi(12_000).unwrap(),
                 ramp: false,
             },
@@ -89,10 +91,10 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     // 4 is the one id below 8 that no clip and no take has; the inserts have 8 and up.
     doc.markers = Arc::new(vec![Marker {
         id: MarkerId(4),
-        tick: 2880,
+        tick: 6 * Q,
         name: "サビ".into(),
     }]);
-    doc.loop_range = TickRange::new(1920 * 4, 1920 * 8);
+    doc.loop_range = TickRange::new(16 * Q, 32 * Q);
     doc.next_id = 8;
     let mut track = (*doc.tracks[0]).clone();
     track.channel.gain = Gain::from_db(-3.5);
@@ -123,12 +125,17 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     (master.inserts[0].as_mut().unwrap()).set(effects::limiter::CEILING, -1.0);
     master.inserts[1] = Some(Insert::new(NO_INSERT_ID, EffectKind::Eq4));
     track.clips = vec![
-        clip(1, 0, 1920 * 4, vec![(t2.clone(), 0)], 0),
+        clip(1, 0, 16 * Q, vec![(t2.clone(), 0)], 0),
         clip(
             3,
-            1920 * 4,
-            1920 * 8,
-            vec![(t5, 0), (t6, 480), (t7, -480), (t2, 960)],
+            16 * Q,
+            32 * Q,
+            vec![
+                (t5, 0),
+                (t6, Q as i64),
+                (t7, -(Q as i64)),
+                (t2, 2 * Q as i64),
+            ],
             1,
         ),
     ];
@@ -177,7 +184,7 @@ fn the_shape_on_disk() {
     assert_eq!(v["song"]["meter"], serde_json::json!([6, 8]));
     assert_eq!(
         v["song"]["loop"],
-        serde_json::json!({"start": 7680, "end": 15360})
+        serde_json::json!({"start": 16 * Q, "end": 32 * Q})
     );
     assert!(v["song"].get("tempoChanges").is_none());
     assert_eq!(v["song"]["nextId"], 14, "8 and the six inserts");
@@ -233,17 +240,17 @@ fn the_shape_on_disk() {
     assert!(text.contains(r#""decay":2.4,"#) && text.contains(r#""rate":0.8,"#));
     assert_eq!(
         track["clips"][1]["takes"][1],
-        serde_json::json!({"take": 6, "offset": 480})
+        serde_json::json!({"take": 6, "offset": Q})
     );
     assert_eq!(
         track["clips"][1]["takes"][2],
-        serde_json::json!({"take": 7, "offset": -480})
+        serde_json::json!({"take": 7, "offset": -(Q as i64)})
     );
     let take = &v["takes"][0];
     assert_eq!(take["notes"][0], serde_json::json!([0, 30, 40, 1]));
     assert_eq!(
         take["controls"],
-        serde_json::json!([[0, 64, 127], [240, "bend", -8192], [240, 1, 12]])
+        serde_json::json!([[0, 64, 127], [Q / 2, "bend", -8192], [Q / 2, 1, 12]])
     );
     assert_eq!(
         v["session"],
@@ -510,7 +517,7 @@ fn quantized_song() -> Song {
     let mut song = rich_song("q", 3);
     let origin = Arc::new(Take {
         id: TakeId(8),
-        length: 1920,
+        length: 4 * Q,
         notes: (0..3)
             .map(|i| Note {
                 start: 10 + i * 100,
@@ -525,7 +532,7 @@ fn quantized_song() -> Song {
     });
     let quantized = Arc::new(Take {
         id: TakeId(9),
-        length: 1920,
+        length: 4 * Q,
         notes: vec![
             Note {
                 start: 0,
@@ -535,7 +542,7 @@ fn quantized_song() -> Song {
                 from: OriginIndex::new(1),
             },
             Note {
-                start: 480,
+                start: Q,
                 length: 50,
                 key: 62,
                 velocity: 90,
@@ -589,7 +596,7 @@ fn a_quantized_take_comes_back_with_its_origin() {
     );
     assert_eq!(
         take(9)["notes"],
-        serde_json::json!([[0, 50, 60, 90, 1], [480, 50, 62, 90]])
+        serde_json::json!([[0, 50, 60, 90, 1], [Q, 50, 62, 90]])
     );
     assert!(take(8).get("origin").is_none());
     assert_eq!(take(8)["notes"][0], serde_json::json!([10, 50, 60, 90]));
@@ -1386,8 +1393,8 @@ fn the_shape_of_version_5_on_disk() {
     assert_eq!(s["headRamp"], true);
     assert_eq!(
         s["tempoPoints"],
-        serde_json::json!([{"tick": 2880, "tempo": 10_000, "ramp": true},
-                           {"tick": 6000, "tempo": 12_000, "ramp": false}])
+        serde_json::json!([{"tick": 6 * Q, "tempo": 10_000, "ramp": true},
+                           {"tick": 12 * Q + Q / 2, "tempo": 12_000, "ramp": false}])
     );
     assert_eq!(
         s["meterChanges"],
@@ -1395,9 +1402,12 @@ fn the_shape_of_version_5_on_disk() {
     );
     assert_eq!(
         s["markers"],
-        serde_json::json!([{"id": 4, "tick": 2880, "name": "サビ"}])
+        serde_json::json!([{"id": 4, "tick": 6 * Q, "name": "サビ"}])
     );
-    assert_eq!(s["loop"], serde_json::json!({"start": 7680, "end": 15360}));
+    assert_eq!(
+        s["loop"],
+        serde_json::json!({"start": 16 * Q, "end": 32 * Q})
+    );
     assert!(v["session"].get("loop").is_none());
     assert_eq!(v["session"]["loopOn"], true);
     assert_eq!(decode(&encode(&song)).unwrap(), song);
@@ -1427,7 +1437,7 @@ fn versions_1_to_4_have_the_loop_in_the_session_and_no_changes() {
         v["version"] = version.into();
         let range = v["song"].as_object_mut().unwrap().remove("loop").unwrap();
         // What an older meloet can not have written is not read from its files.
-        v["song"]["loop"] = serde_json::json!({"start": 0, "end": 480});
+        v["song"]["loop"] = serde_json::json!({"start": 0, "end": Q});
         v["session"]["loop"] = range;
         let song = read_json(&v);
         let rich = rich_song("x", 3);
@@ -1447,7 +1457,7 @@ fn versions_1_to_4_have_the_loop_in_the_session_and_no_changes() {
         assert_eq!(again["version"], 5);
         assert_eq!(
             again["song"]["loop"],
-            serde_json::json!({"start": 7680, "end": 15360})
+            serde_json::json!({"start": 16 * Q, "end": 32 * Q})
         );
         assert!(again["session"].get("loop").is_none());
         assert_eq!(read_json(&again), song);
@@ -1464,16 +1474,16 @@ fn the_seat_for_tempo_changes_of_versions_1_to_4_is_read_when_it_is_not_empty() 
     }
     // Not in order, as nothing ever checked them.
     v["song"]["tempoChanges"] = serde_json::json!([
-        // Not at the head of a bar (bars of 3/4 from 3840 on): the tempo only.
-        {"tick": 5760, "tempo": 9000, "meter": [4, 4]},
+        // Not at the head of a bar (bars of 3/4 from 8 * Q on): the tempo only.
+        {"tick": 12 * Q, "tempo": 9000, "meter": [4, 4]},
         // The head has its own tempo and meter.
         {"tick": 0, "tempo": 20000, "meter": [5, 4]},
         // At the head of bar 2: a tempo point and a meter change.
-        {"tick": 3840, "tempo": 12000, "meter": [3, 4]},
+        {"tick": 8 * Q, "tempo": 12000, "meter": [3, 4]},
         // At the head of a bar with the meter already in force: the tempo only.
-        {"tick": 6720, "tempo": 9000, "meter": [3, 4]},
+        {"tick": 14 * Q, "tempo": 9000, "meter": [3, 4]},
         // And back to 4/4 at the head of bar 5.
-        {"tick": 8160, "tempo": 9000, "meter": [4, 4]},
+        {"tick": 17 * Q, "tempo": 9000, "meter": [4, 4]},
     ]);
     let song = read_json(&v);
     let t = &song.doc.timeline;
@@ -1483,10 +1493,10 @@ fn the_seat_for_tempo_changes_of_versions_1_to_4_is_read_when_it_is_not_empty() 
             .map(|p| (p.tick, p.tempo.centi(), p.ramp))
             .collect::<Vec<_>>(),
         [
-            (3840, 12_000, false),
-            (5760, 9_000, false),
-            (6720, 9_000, false),
-            (8160, 9_000, false)
+            (8 * Q, 12_000, false),
+            (12 * Q, 9_000, false),
+            (14 * Q, 9_000, false),
+            (17 * Q, 9_000, false)
         ]
     );
     assert_eq!(
@@ -1527,12 +1537,12 @@ fn timelines_and_markers_that_cannot_be_do_not_read() {
     let broken: Vec<Change> = vec![
         // The head is not a point; points in order, one at a tick; a tempo in range.
         Box::new(move |s| s["tempoPoints"][0] = point(0, 10_000)),
-        Box::new(move |s| s["tempoPoints"][0] = point(6000, 10_000)),
-        Box::new(move |s| s["tempoPoints"][0] = point(7000, 10_000)),
-        Box::new(move |s| s["tempoPoints"][1] = point(6000, 2_999)),
-        Box::new(move |s| s["tempoPoints"][1] = point(6000, 30_001)),
+        Box::new(move |s| s["tempoPoints"][0] = point(12 * Q + Q / 2, 10_000)),
+        Box::new(move |s| s["tempoPoints"][0] = point(12 * Q + Q / 2 + 1000, 10_000)),
+        Box::new(move |s| s["tempoPoints"][1] = point(12 * Q + Q / 2, 2_999)),
+        Box::new(move |s| s["tempoPoints"][1] = point(12 * Q + Q / 2, 30_001)),
         Box::new(move |s| s["tempoPoints"][1] = point(MAX_TICK + 1, 10_000)),
-        Box::new(move |s| s["tempoPoints"][1] = serde_json::json!({"tick": 6000})),
+        Box::new(move |s| s["tempoPoints"][1] = serde_json::json!({"tick": 12 * Q + Q / 2})),
         // Bar 0 is not a change; changes in order, one at a bar; a meter that is one.
         Box::new(move |s| s["meterChanges"][0] = change(0, 3, 4)),
         Box::new(move |s| {
@@ -1547,11 +1557,11 @@ fn timelines_and_markers_that_cannot_be_do_not_read() {
         Box::new(move |s| s["markers"][0] = marker(8, 0)),
         Box::new(move |s| s["markers"][0] = marker(1, 0)),
         Box::new(move |s| s["markers"][0] = marker(2, 0)),
-        Box::new(move |s| s["markers"] = serde_json::json!([marker(4, 0), marker(4, 480)])),
+        Box::new(move |s| s["markers"] = serde_json::json!([marker(4, 0), marker(4, Q)])),
         Box::new(move |s| s["markers"][0] = marker(4, MAX_TICK + 1)),
         // The loop is never empty.
-        Box::new(|s| s["loop"] = serde_json::json!({"start": 480, "end": 480})),
-        Box::new(|s| s["loop"] = serde_json::json!({"start": 960, "end": 480})),
+        Box::new(|s| s["loop"] = serde_json::json!({"start": Q, "end": Q})),
+        Box::new(|s| s["loop"] = serde_json::json!({"start": 2 * Q, "end": Q})),
     ];
     for (i, f) in broken.iter().enumerate() {
         assert!(
@@ -1562,18 +1572,18 @@ fn timelines_and_markers_that_cannot_be_do_not_read() {
     // What is not against a rule reads: a point between beats, markers in any order and at
     // one tick, a marker with no name.
     let song = with(&|s| {
-        s["tempoPoints"][1] = point(6001, 30_000);
+        s["tempoPoints"][1] = point(12 * Q + Q / 2 + 1, 30_000);
         s["nextId"] = 20.into();
-        s["markers"] = serde_json::json!([marker(15, 960), marker(4, 960), marker(14, 0)]);
+        s["markers"] = serde_json::json!([marker(15, 2 * Q), marker(4, 2 * Q), marker(14, 0)]);
         s["markers"][2]["name"] = "".into();
     })
     .unwrap();
-    assert_eq!(song.doc.timeline.tempo_points[1].tick, 6001);
+    assert_eq!(song.doc.timeline.tempo_points[1].tick, 12 * Q + Q / 2 + 1);
     assert_eq!(
         (song.doc.markers.iter())
             .map(|m| (m.id.0, m.tick))
             .collect::<Vec<_>>(),
-        [(14, 0), (4, 960), (15, 960)]
+        [(14, 0), (4, 2 * Q), (15, 2 * Q)]
     );
 }
 

@@ -6,7 +6,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use meloet_model::automation::{self, AutoPoint, AutoTarget};
-use meloet_model::{ChunkedVec, Doc, History, TrackId};
+use meloet_model::{ChunkedVec, Doc, History, TICKS_PER_QUARTER, TrackId};
 
 struct Counting;
 
@@ -34,7 +34,7 @@ fn live() -> isize {
 const TRACK: TrackId = TrackId(1);
 const VOLUME: AutoTarget = AutoTarget::Volume;
 /// A point every 22 ticks: about 44 a second at 120 beats a minute.
-const GAP: u64 = 22;
+const GAP: u64 = 11 * TICKS_PER_QUARTER / 240;
 
 /// `count` points from `tick` on, far enough from a straight line that thinning keeps them all.
 fn pass(tick: u64, count: usize) -> Vec<AutoPoint> {
@@ -114,9 +114,15 @@ fn ten_minutes_of_writing() {
     let start = live();
     let (mut fresh, mut copies) = (0, 0);
     for step in 0..282u64 {
-        let e = automation::write(&doc, TRACK, VOLUME, &[pass(1 + step * 1920, 87)], 0.5)
-            .unwrap()
-            .0;
+        let e = automation::write(
+            &doc,
+            TRACK,
+            VOLUME,
+            &[pass(1 + step * 4 * TICKS_PER_QUARTER, 87)],
+            0.5,
+        )
+        .unwrap()
+        .0;
         fresh += points(&e.doc).bytes_not_in(points(&doc));
         copies += points(&doc).len() * 16;
         h.apply(&mut doc, e);

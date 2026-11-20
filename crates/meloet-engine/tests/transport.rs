@@ -11,7 +11,9 @@ use meloet_engine::{
 use rtrb::{Consumer, Producer, RingBuffer};
 
 const RATE: u64 = 48_000;
-const TPB: u64 = 480;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+/// A bar of 4/4.
+const BAR: u64 = 4 * Q;
 /// Ticks × this = the engine's exact position unit.
 const SCALE: i128 = 6000 * RATE as i128;
 
@@ -156,7 +158,7 @@ fn bend(value: i16) -> InstrumentEvent {
 /// The first frame whose position is at or past `tick`, for a run that starts at `from` on
 /// frame 0 (exact: the position moves by bpm_centi × ticks_per_beat / SCALE ticks a frame).
 fn frame_of(tick: u64, from: i128, bpm_centi: u32) -> u64 {
-    let step = i128::from(bpm_centi) * TPB as i128;
+    let step = i128::from(bpm_centi) * Q as i128;
     let gap = (tick as i128 - from) * SCALE;
     if gap <= 0 {
         0
@@ -166,7 +168,7 @@ fn frame_of(tick: u64, from: i128, bpm_centi: u32) -> u64 {
 }
 
 fn ticks_per_us(bpm_centi: u32) -> f64 {
-    f64::from(bpm_centi) / 100.0 / 60.0 * TPB as f64 / 1e6
+    f64::from(bpm_centi) / 100.0 / 60.0 * Q as f64 / 1e6
 }
 
 /// Starts of clicks: a sound after at least 200 silent frames.
@@ -191,7 +193,20 @@ const TEMPOS: [u32; 4] = [3_000, 9_600, 13_750, 30_000];
 
 #[test]
 fn sequence_events_land_on_their_frame() {
-    let ticks = [0u64, 1, 7, 240, 479, 480, 1000, 1919, 1920, 4801, 9999];
+    let end = 20 * Q + 400;
+    let ticks = [
+        0u64,
+        1,
+        7,
+        Q / 2,
+        Q - 1,
+        Q,
+        2 * Q + 40,
+        BAR - 1,
+        BAR,
+        10 * Q + 1,
+        end - 1,
+    ];
     for block in BLOCKS {
         for bpm in TEMPOS {
             for from in [0u64, 100] {
@@ -208,7 +223,7 @@ fn sequence_events_land_on_their_frame() {
                 assert!(drain(&mut tape).is_empty());
                 let start = rig.frames;
                 rig.send(EngineCommand::Play { from });
-                rig.run(frame_of(10_000, from as i128, bpm) + 1);
+                rig.run(frame_of(end, from as i128, bpm) + 1);
                 let got = drain(&mut tape);
                 let want: Vec<_> = events
                     .iter()
@@ -221,7 +236,7 @@ fn sequence_events_land_on_their_frame() {
                         unreachable!()
                     };
                     let tick = ticks[usize::from(note - 40)];
-                    let seconds = (tick - from) as f64 / (f64::from(bpm) / 100.0 / 60.0 * 480.0);
+                    let seconds = (tick - from) as f64 / (f64::from(bpm) / 100.0 / 60.0 * Q as f64);
                     let ideal = seconds * RATE as f64;
                     let at = (frame - start) as f64;
                     assert!(at >= ideal - 1e-6 && at < ideal + 1.0, "{at} vs {ideal}");
@@ -237,12 +252,7 @@ fn same_tick_releases_then_controls_then_presses() {
     let mut tape = rig.tape(0);
     rig.sequence(
         0,
-        &[
-            (0, on(60)),
-            (480, on(62)),
-            (480, cc(64, 127)),
-            (480, off(60)),
-        ],
+        &[(0, on(60)), (Q, on(62)), (Q, cc(64, 127)), (Q, off(60))],
     );
     rig.send(EngineCommand::Play { from: 0 });
     rig.run(48_000);
@@ -262,7 +272,7 @@ fn recorded_keys_get_the_position_that_was_heard() {
                 let start = rig.frames;
                 // From bar 2 with a one-bar count-in: the run starts at tick 0 on `start`.
                 rig.send(EngineCommand::Record {
-                    from: 1920,
+                    from: BAR,
                     count_in_beats: 4,
                     muted: TrackSet::default(),
                 });
@@ -270,25 +280,26 @@ fn recorded_keys_get_the_position_that_was_heard() {
                 // On every recorded beat, 5 ms late on one, two in the count-in (one too early
                 // to keep, one just inside the last half beat).
                 let late_us = 5_000.0;
-                let beats = [1920u64, 2400, 2880, 3360, 3840];
-                for tick in beats {
+                let beats: Vec<u64> = (4..=8).map(|b| b * Q).collect();
+                for &tick in &beats {
                     let t = dac(&rig, tick).round() as u64;
                     rig.key(t, on(60));
                 }
-                let t_late = (dac(&rig, 4320) + late_us).round() as u64;
+                let t_late = (dac(&rig, 9 * Q) + late_us).round() as u64;
                 rig.key(t_late, on(61));
-                let t_early = dac(&rig, 1440).round() as u64;
+                let t_early = dac(&rig, 3 * Q).round() as u64;
                 rig.key(t_early, on(62));
-                let t_inside = dac(&rig, 1720).round() as u64;
+                let inside = 7 * Q / 2 + 40;
+                let t_inside = dac(&rig, inside).round() as u64;
                 rig.key(t_inside, on(63));
-                rig.run(frame_of(4800, 0, bpm) + RATE / 5);
+                rig.run(frame_of(10 * Q, 0, bpm) + RATE / 5);
 
                 let label = format!("block {block}, delay {delay_ms} ms, tempo {bpm}");
                 let got = rig.recorded();
                 assert_eq!(
                     got[0],
                     Recorded::Started {
-                        from: 1920,
+                        from: BAR,
                         count_in_beats: 4
                     },
                     "{label}"
@@ -307,7 +318,10 @@ fn recorded_keys_get_the_position_that_was_heard() {
                     .collect();
                 assert_eq!(events.len(), 7, "{label}: {events:?}");
                 assert_eq!(events[0].0, 63, "{label}: the early key is dropped");
-                assert!((events[0].1 - 1720.0).abs() <= 0.5, "{label}: {events:?}");
+                assert!(
+                    (events[0].1 - inside as f64).abs() <= 0.5,
+                    "{label}: {events:?}"
+                );
                 for (i, tick) in beats.iter().enumerate() {
                     let (note, got_tick, lap) = events[i + 1];
                     assert_eq!((note, lap), (60, 0));
@@ -318,7 +332,7 @@ fn recorded_keys_get_the_position_that_was_heard() {
                 }
                 let (note, tick, _) = events[6];
                 assert_eq!(note, 61);
-                let want = 4320.0 + late_us * ticks_per_us(bpm);
+                let want = (9 * Q) as f64 + late_us * ticks_per_us(bpm);
                 assert!(
                     (tick - want).abs() <= 0.5,
                     "{label}: late key at {tick}, want {want}"
@@ -338,10 +352,10 @@ fn clicks_reach_the_dac_on_the_beat() {
             rig.tempo(bpm);
             rig.send(EngineCommand::SetMetronome { on: true });
             rig.send(EngineCommand::Play { from: 0 });
-            let sound = rig.run(frame_of(7 * 480, 0, bpm) + 100);
+            let sound = rig.run(frame_of(7 * Q, 0, bpm) + 100);
             let got = onsets(&sound);
             let want: Vec<_> = (0..8)
-                .map(|beat| frame_of(beat * 480, 0, bpm) as usize)
+                .map(|beat| frame_of(beat * Q, 0, bpm) as usize)
                 .collect();
             let frames: Vec<_> = got.iter().map(|o| o.0).collect();
             assert_eq!(frames, want, "block {block}, tempo {bpm}");
@@ -378,20 +392,20 @@ fn count_in_clicks_then_records_without_a_gap() {
             let mut rig = Rig::new(block, 0);
             let mut tape = rig.tape(0);
             rig.send(EngineCommand::SetMetronome { on: metronome });
-            rig.sequence(0, &[(1919, on(50)), (1920, on(60)), (2400, on(62))]);
+            rig.sequence(0, &[(BAR - 1, on(50)), (BAR, on(60)), (5 * Q, on(62))]);
             rig.run(block as u64);
             let start = rig.frames as usize;
             rig.send(EngineCommand::Record {
-                from: 1920,
+                from: BAR,
                 count_in_beats: 3,
                 muted: TrackSet::default(),
             });
             let sound = rig.run(RATE * 2 + 1000);
-            let from = 1920 - 3 * 480;
+            let from = (BAR - 3 * Q) as i128;
             let mut want: Vec<_> = (0..3)
-                .map(|b| start + frame_of(from as u64 + b * 480, from, bpm) as usize)
+                .map(|b| start + frame_of(from as u64 + b * Q, from, bpm) as usize)
                 .collect();
-            let switch = start + frame_of(1920, from, bpm) as usize;
+            let switch = start + frame_of(BAR, from, bpm) as usize;
             if metronome {
                 want.extend([switch, switch + 24_000]);
             }
@@ -415,7 +429,7 @@ fn count_in_clicks_then_records_without_a_gap() {
             assert_eq!(at(start + 1).count_in_beats_left, 3);
             let after = at(switch);
             assert_eq!(after.state, TransportState::Recording);
-            assert!((after.tick - 1920.0).abs() < 0.05, "{after:?}");
+            assert!((after.tick - BAR as f64).abs() < 0.05, "{after:?}");
             assert_eq!(after.count_in_beats_left, 0);
         }
     }
@@ -426,7 +440,7 @@ fn zero_count_in_records_at_once() {
     let mut rig = Rig::new(256, 10_000);
     rig.run(256);
     rig.send(EngineCommand::Record {
-        from: 960,
+        from: 2 * Q,
         count_in_beats: 0,
         muted: TrackSet::default(),
     });
@@ -438,7 +452,7 @@ fn zero_count_in_records_at_once() {
         .heard_at(rig.dac_us(first).round() as u64)
         .unwrap();
     assert_eq!(heard.state, TransportState::Recording);
-    assert!((heard.tick - 960.0).abs() < 0.05);
+    assert!((heard.tick - (2 * Q) as f64).abs() < 0.05);
     assert!(
         onsets(&rig.run(RATE)).is_empty(),
         "no count-in, metronome off"
@@ -459,21 +473,21 @@ fn loop_lets_go_resets_and_chases() {
                 (0, cc(1, 64)),
                 (0, bend(4000)),
                 (100, on(60)),
-                (1500, on(64)),
-                (1700, off(64)),
-                (1800, cc(1, 90)),
+                (3 * Q + 60, on(64)),
+                (3 * Q + 260, off(64)),
+                (15 * Q / 4, cc(1, 90)),
             ],
         );
         rig.send(EngineCommand::SetLoop {
-            start: 960,
-            end: 1920,
+            start: 2 * Q,
+            end: BAR,
             on: true,
         });
         rig.run(block as u64);
         let start = rig.frames;
         rig.send(EngineCommand::Play { from: 0 });
-        let wrap = start + frame_of(1920, 0, bpm);
-        let lap = frame_of(1920, 960, bpm);
+        let wrap = start + frame_of(BAR, 0, bpm);
+        let lap = frame_of(BAR, 2 * Q as i128, bpm);
         rig.run(wrap - start + 2 * lap + 10);
         let got = drain(&mut tape);
         let at_wrap: Vec<_> = got.iter().filter(|e| e.0 == wrap).map(|e| e.1).collect();
@@ -498,9 +512,9 @@ fn loop_lets_go_resets_and_chases() {
         assert_eq!(
             second_lap,
             vec![
-                (wrap + frame_of(1500, 960, bpm), on(64)),
-                (wrap + frame_of(1700, 960, bpm), off(64)),
-                (wrap + frame_of(1800, 960, bpm), cc(1, 90)),
+                (wrap + frame_of(3 * Q + 60, 2 * Q as i128, bpm), on(64)),
+                (wrap + frame_of(3 * Q + 260, 2 * Q as i128, bpm), off(64)),
+                (wrap + frame_of(15 * Q / 4, 2 * Q as i128, bpm), cc(1, 90)),
             ]
         );
         let at_second_wrap: Vec<_> = got
@@ -531,18 +545,18 @@ fn keys_at_the_loop_seam_go_to_the_right_lap() {
             let mut rig = Rig::new(block, delay_ms * 1000);
             rig.tempo(bpm);
             rig.send(EngineCommand::SetLoop {
-                start: 960,
-                end: 1920,
+                start: 2 * Q,
+                end: BAR,
                 on: true,
             });
             rig.run(block as u64);
             let start = rig.frames;
             rig.send(EngineCommand::Record {
-                from: 960,
+                from: 2 * Q,
                 count_in_beats: 0,
                 muted: TrackSet::default(),
             });
-            let lap = frame_of(1920, 960, bpm);
+            let lap = frame_of(BAR, 2 * Q as i128, bpm);
             let wrap = start + lap;
             let just_before = rig.dac_us(wrap - 1).round() as u64;
             let just_after = rig.dac_us(wrap).ceil() as u64;
@@ -562,12 +576,12 @@ fn keys_at_the_loop_seam_go_to_the_right_lap() {
             assert_eq!(events.len(), 3, "{label}: {got:?}");
             assert_eq!(events[0].1, 0, "{label}");
             assert!(
-                events[0].0 > 1919.0 && events[0].0 < 1920.0,
+                events[0].0 > (BAR - 1) as f64 && events[0].0 < BAR as f64,
                 "{label}: {events:?}"
             );
             assert_eq!(events[1].1, 1, "{label}");
             assert!(
-                events[1].0 >= 960.0 && events[1].0 < 961.0,
+                events[1].0 >= (2 * Q) as f64 && events[1].0 < (2 * Q + 1) as f64,
                 "{label}: {events:?}"
             );
             assert_eq!(events[2].1, 2, "{label}");
@@ -590,13 +604,13 @@ fn keys_at_the_loop_seam_go_to_the_right_lap() {
 fn play_after_the_loop_end_does_not_go_round() {
     let mut rig = Rig::new(256, 0);
     let mut tape = rig.tape(0);
-    rig.sequence(0, &[(960, on(60)), (2500, on(61))]);
+    rig.sequence(0, &[(2 * Q, on(60)), (5 * Q + 100, on(61))]);
     rig.send(EngineCommand::SetLoop {
         start: 0,
-        end: 1920,
+        end: BAR,
         on: true,
     });
-    rig.send(EngineCommand::Play { from: 2000 });
+    rig.send(EngineCommand::Play { from: BAR + 80 });
     rig.run(RATE * 2);
     let got: Vec<_> = drain(&mut tape).into_iter().map(|e| e.1).collect();
     assert_eq!(got, vec![on(61)]);
@@ -620,8 +634,8 @@ fn stop_with_the_pedal_down_leaves_nothing_sounding_but_the_keyboard() {
             (0, cc(64, 127)),
             (0, on(60)),
             (0, on(64)),
-            (240, off(60)),
-            (240, bend(3000)),
+            (Q / 2, off(60)),
+            (Q / 2, bend(3000)),
         ],
     );
     rig.send(EngineCommand::Play { from: 0 });
@@ -723,12 +737,12 @@ fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
             let every = |step: u64, note: u8| -> Vec<(u64, InstrumentEvent)> {
                 (0..80).map(|i| (i * step, on(note))).collect()
             };
-            rig.sequence(0, &every(240, 50));
-            rig.sequence(1, &every(120, 60));
+            rig.sequence(0, &every(Q / 2, 50));
+            rig.sequence(1, &every(Q / 4, 60));
             rig.run(block as u64);
             let start = rig.frames;
             rig.send(EngineCommand::Play { from: 0 });
-            rig.run(frame_of(2000, 0, bpm));
+            rig.run(frame_of(BAR + 80, 0, bpm));
 
             // The command is taken at the next callback; the listener is then behind the
             // frames already rendered by the delay.
@@ -741,11 +755,11 @@ fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
             // One key still in the stretch that was rendered while playing, one later.
             let at = |rig: &Rig, tick: f64| (rig.dac_us(start) + tick / tpu).round() as u64;
             let soon = heard.floor() + 5.0;
-            let later = heard.floor() + 3000.0;
+            let later = heard.floor() + (25 * Q / 4) as f64;
             let (t_soon, t_later) = (at(&rig, soon), at(&rig, later));
             rig.key(t_soon, on(70));
             rig.key(t_later, on(71));
-            rig.run(frame_of(later as u64 + 480, 0, bpm) - (switch - start));
+            rig.run(frame_of(later as u64 + Q, 0, bpm) - (switch - start));
 
             let got = rig.recorded();
             let Recorded::Started {
@@ -781,7 +795,7 @@ fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
 
             // The other track goes on frame for frame: nothing jumped.
             let played = drain(&mut other);
-            let want: Vec<_> = every(120, 60)
+            let want: Vec<_> = every(Q / 4, 60)
                 .into_iter()
                 .map(|(t, e)| (start + frame_of(t, 0, bpm), e))
                 .filter(|(f, _)| *f < rig.frames)
@@ -815,7 +829,7 @@ fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
 #[test]
 fn recording_here_when_not_playing_ends_at_once() {
     let mut rig = Rig::new(256, 0);
-    rig.send(EngineCommand::Locate { tick: 960 });
+    rig.send(EngineCommand::Locate { tick: 2 * Q });
     rig.send(EngineCommand::RecordHere {
         muted: TrackSet::default(),
     });
@@ -825,12 +839,12 @@ fn recording_here_when_not_playing_ends_at_once() {
         got,
         [
             Recorded::Started {
-                from: 960,
+                from: 2 * Q,
                 count_in_beats: 0
             },
             Recorded::Stopped {
                 t_us: rig.base_us,
-                tick: 960.0,
+                tick: (2 * Q) as f64,
                 lap: 0
             }
         ]
@@ -867,7 +881,7 @@ fn silent_tracks_do_not_play_their_sequence_but_keys_still_sound() {
         );
     }
     let song: Vec<_> = (0..16u64)
-        .flat_map(|i| [(i * 480, on(60)), (i * 480 + 400, off(60))])
+        .flat_map(|i| [(i * Q, on(60)), (i * Q + 5 * Q / 6, off(60))])
         .collect();
     rig.sequence(0, &song);
     rig.sequence(1, &song);
@@ -903,8 +917,8 @@ fn going_silent_lets_go_and_coming_back_picks_up() {
         &[
             (0, cc(64, 127)),
             (0, on(60)),
-            (2000, on(62)),
-            (9600, off(60)),
+            (BAR + 80, on(62)),
+            (20 * Q, off(60)),
         ],
     );
     rig.send(EngineCommand::Play { from: 0 });
@@ -914,8 +928,8 @@ fn going_silent_lets_go_and_coming_back_picks_up() {
     rig.send(EngineCommand::SetSilentTracks {
         tracks: [0].into_iter().collect(),
     });
-    // Past tick 2000: the silent track's key there is not played.
-    rig.run(frame_of(2400, 0, 12_000) - at);
+    // Past the silent track's key: it is not played.
+    rig.run(frame_of(5 * Q, 0, 12_000) - at);
     assert_eq!(
         drain(&mut tape),
         vec![(at, off(60)), (at, cc(64, 0))],
@@ -953,13 +967,13 @@ fn swapping_the_sequence_while_playing_lets_go_and_returns_the_old_one() {
             (0, cc(64, 127)),
             (0, on(60)),
             (0, bend(-100)),
-            (9600, off(60)),
+            (20 * Q, off(60)),
         ],
     );
     rig.send(EngineCommand::Play { from: 0 });
     rig.run(4096);
     drain(&mut tape);
-    rig.sequence(0, &[(0, cc(64, 127)), (4000, on(70))]);
+    rig.sequence(0, &[(0, cc(64, 127)), (2 * BAR + 160, on(70))]);
     rig.run(256);
     let got: Vec<_> = drain(&mut tape).into_iter().map(|e| e.1).collect();
     assert_eq!(
@@ -983,12 +997,12 @@ fn swapping_the_sequence_while_playing_lets_go_and_returns_the_old_one() {
 fn locate_while_playing_moves_and_chases() {
     let mut rig = Rig::new(256, 0);
     let mut tape = rig.tape(0);
-    rig.sequence(0, &[(0, on(60)), (500, cc(1, 30)), (2000, on(62))]);
+    rig.sequence(0, &[(0, on(60)), (Q + 20, cc(1, 30)), (BAR + 80, on(62))]);
     rig.send(EngineCommand::Play { from: 0 });
     rig.run(1024);
     drain(&mut tape);
     let at = rig.frames;
-    rig.send(EngineCommand::Locate { tick: 1500 });
+    rig.send(EngineCommand::Locate { tick: 3 * Q + 60 });
     rig.run(RATE);
     let got = drain(&mut tape);
     assert_eq!(
@@ -996,7 +1010,10 @@ fn locate_while_playing_moves_and_chases() {
         vec![
             (at, off(60)),
             (at, cc(1, 30)),
-            (at + frame_of(2000, 1500, 12_000), on(62))
+            (
+                at + frame_of(BAR + 80, (3 * Q + 60) as i128, 12_000),
+                on(62)
+            )
         ]
     );
 }
@@ -1007,22 +1024,22 @@ fn the_heard_position_follows_the_loop_and_the_count_in() {
     // 512 blocks of 512 frames: the clock still remembers the start of the count-in at the end.
     let mut rig = Rig::new(512, 53_000);
     rig.send(EngineCommand::SetLoop {
-        start: 1920,
-        end: 3840,
+        start: BAR,
+        end: 2 * BAR,
         on: true,
     });
     rig.run(512);
     let start = rig.frames;
     rig.send(EngineCommand::Record {
-        from: 1920,
+        from: BAR,
         count_in_beats: 4,
         muted: TrackSet::default(),
     });
     rig.run(RATE * 5);
     let clock = &rig.parts.handle;
     let heard = |n: u64| -> HeardPosition { clock.heard_at(rig.dac_us(n).ceil() as u64).unwrap() };
-    let switch = start + frame_of(1920, 0, bpm);
-    let wrap = switch + frame_of(3840, 1920, bpm);
+    let switch = start + frame_of(BAR, 0, bpm);
+    let wrap = switch + frame_of(2 * BAR, BAR as i128, bpm);
     let rate = ticks_per_us(bpm);
 
     let h = heard(start);
@@ -1039,13 +1056,16 @@ fn the_heard_position_follows_the_loop_and_the_count_in() {
     );
     let h = heard(switch);
     assert_eq!((h.state, h.lap), (TransportState::Recording, 0));
-    assert!((h.tick - 1920.0).abs() < 0.05);
+    assert!((h.tick - BAR as f64).abs() < 0.05);
     let h = heard(wrap - 1);
     assert_eq!(h.lap, 0);
-    assert!(h.tick > 3839.9 && h.tick < 3840.0, "{h:?}");
+    assert!(
+        h.tick > (2 * BAR) as f64 - 0.1 && h.tick < (2 * BAR) as f64,
+        "{h:?}"
+    );
     let h = heard(wrap);
     assert_eq!(h.lap, 1, "{h:?}");
-    assert!((h.tick - 1920.0).abs() < 0.05, "{h:?}");
+    assert!((h.tick - BAR as f64).abs() < 0.05, "{h:?}");
     let h = heard(start - 10);
     assert_eq!(h.state, TransportState::Stopped);
     assert_eq!(h.ticks_per_us, 0.0);
@@ -1070,9 +1090,9 @@ fn another_thread_reads_the_position_while_the_engine_runs() {
             let mut t = base;
             while !done.load(Relaxed) {
                 if let Some(h) = clock.heard_at(t, &map, map_gen) {
-                    // Playing from 0 at 120 bpm: 960 ticks a second, from the base time on.
+                    // Playing from 0 at 120 bpm: two quarter notes a second, from the base time on.
                     if h.state == TransportState::Playing {
-                        let want = (t - base) as f64 * 960.0 / 1e6;
+                        let want = (t - base) as f64 * (2 * Q) as f64 / 1e6;
                         assert!((h.tick - want).abs() < 0.1, "torn read: {h:?} at {t}");
                         reads += 1;
                     }
@@ -1106,9 +1126,9 @@ fn every_transport_path_stays_off_the_allocator() {
     let song: Vec<_> = (0..64u64)
         .flat_map(|i| {
             [
-                (i * 120, on(48 + (i % 24) as u8)),
-                (i * 120 + 90, off(48 + (i % 24) as u8)),
-                (i * 240, cc(64, if i % 2 == 0 { 127 } else { 0 })),
+                (i * Q / 4, on(48 + (i % 24) as u8)),
+                (i * Q / 4 + 90, off(48 + (i % 24) as u8)),
+                (i * Q / 2, cc(64, if i % 2 == 0 { 127 } else { 0 })),
                 (i * 200, bend((i as i16 % 9) * 900 - 4000)),
                 (i * 300, cc(1, (i * 3 % 128) as u8)),
             ]
@@ -1119,8 +1139,8 @@ fn every_transport_path_stays_off_the_allocator() {
     }
     rig.send(EngineCommand::SetMetronome { on: true });
     rig.send(EngineCommand::SetLoop {
-        start: 480,
-        end: 2400,
+        start: Q,
+        end: 5 * Q,
         on: true,
     });
     let mut out_blocks = [64usize, 333, 1024, 2048, 32].into_iter().cycle();
@@ -1130,7 +1150,7 @@ fn every_transport_path_stays_off_the_allocator() {
         match round % 8 {
             0 => rig.send(EngineCommand::Play { from: round * 10 }),
             1 => rig.send(EngineCommand::Record {
-                from: 960,
+                from: 2 * Q,
                 count_in_beats: (round % 5) as u32,
                 muted: [1].into_iter().collect(),
             }),
@@ -1167,7 +1187,7 @@ fn every_transport_path_stays_off_the_allocator() {
             }),
             6 => rig.send(EngineCommand::SetLoop {
                 start: 0,
-                end: 960 + round * 7,
+                end: 2 * Q + round * 7,
                 on: round % 3 != 0,
             }),
             _ if round % 16 == 15 => rig.send(EngineCommand::RecordHere {

@@ -8,10 +8,12 @@ use meloet_model::{Clip, ClipId, ClipTake, Doc, Note, Take, TakeId};
 use super::*;
 use crate::settings::temp_dir;
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+
 /// A song named `name` with one clip of one take of `notes` notes.
 pub(crate) fn song_with_notes(name: &str, notes: u64) -> Song {
     let mut song = Song::new_default();
-    let length = (notes * 120).max(1920);
+    let length = (notes * (Q / 4)).max(4 * Q);
     let take = Arc::new(Take {
         origin: None,
         id: TakeId(1),
@@ -19,7 +21,7 @@ pub(crate) fn song_with_notes(name: &str, notes: u64) -> Song {
         notes: (0..notes)
             .map(|i| Note {
                 from: None,
-                start: i * 120,
+                start: i * (Q / 4),
                 length: 100,
                 key: 36 + (i % 60) as u8,
                 velocity: 1 + (i % 127) as u8,

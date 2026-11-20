@@ -3,11 +3,12 @@ use crate::edit::{NewTake, add_recording};
 use crate::notes::{WriteAt, move_notes, write_note};
 use crate::playback::{PlayKind, track_events};
 use crate::song::{CC_SUSTAIN, ControlPoint, ControlValue, Note};
-use crate::{InstrumentRef, TrackColor};
+use crate::{InstrumentRef, TICKS_PER_QUARTER, TrackColor};
 
 const T1: TrackId = TrackId(1);
 const T2: TrackId = TrackId(2);
-const BAR: u64 = 1920;
+const Q: u64 = TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn note(start: u64, length: u64, key: u8) -> Note {
     Note {
@@ -55,7 +56,7 @@ fn song() -> (Doc, ClipId, ClipId) {
     let (doc, a) = record(
         &two_tracks(),
         T1,
-        take(BAR, BAR, vec![note(0, 240, 60), note(960, 240, 64)]),
+        take(BAR, BAR, vec![note(0, Q / 2, 60), note(2 * Q, Q / 2, 64)]),
     );
     let (doc, b) = record(&doc, T1, take(4 * BAR, BAR, vec![note(0, 100, 67)]));
     (doc, a, b)
@@ -112,7 +113,7 @@ fn a_move_keeps_the_id_and_the_takes() {
     assert!(Arc::ptr_eq(&before.takes[0].take, &after.takes[0].take));
     assert_eq!(
         ons(&e.edit.doc, T1),
-        [(2 * BAR, 60), (2 * BAR + 960, 64), (4 * BAR, 67)]
+        [(2 * BAR, 60), (2 * BAR + 2 * Q, 64), (4 * BAR, 67)]
     );
     assert_eq!(e.edit.doc.next_id, doc.next_id);
 }
@@ -168,7 +169,7 @@ fn a_move_to_another_track() {
     );
     assert_eq!(spans(&e.edit.doc, T1), [(b, 4 * BAR, 5 * BAR)]);
     assert_eq!(spans(&e.edit.doc, T2), [(a, BAR, 2 * BAR)]);
-    assert_eq!(ons(&e.edit.doc, T2), [(BAR, 60), (BAR + 960, 64)]);
+    assert_eq!(ons(&e.edit.doc, T2), [(BAR, 60), (BAR + 2 * Q, 64)]);
     // Back onto track 1 where it would overlap the other clip.
     let doc = e.edit.doc;
     assert_eq!(
@@ -313,7 +314,7 @@ fn a_group_copied_overlaps_its_own_originals() {
     );
     // Half a bar later, each copy overlaps its own original.
     assert_eq!(
-        move_clips(&doc, &[a, c], 960, 0, true),
+        move_clips(&doc, &[a, c], 2 * Q as i64, 0, true),
         Err(EditError::Overlap)
     );
 }
@@ -413,7 +414,7 @@ fn pasted_takes_never_share_an_id_with_another_take() {
 fn trimming_the_start_keeps_the_notes_where_they_are() {
     let (doc, a, _) = song();
     let before = positions(&doc, a);
-    let e = trim_clip(&doc, a, ClipEdge::Start, 480).unwrap();
+    let e = trim_clip(&doc, a, ClipEdge::Start, Q as i64).unwrap();
     assert_eq!(
         e.step,
         StepKind::TrimClip {
@@ -424,28 +425,31 @@ fn trimming_the_start_keeps_the_notes_where_they_are() {
     let (_, c) = e.doc.clip(a).unwrap();
     assert_eq!(
         (c.start, c.end, c.takes[0].offset),
-        (BAR + 480, 2 * BAR, -480)
+        (BAR + Q, 2 * BAR, -(Q as i64))
     );
     assert_eq!(positions(&e.doc, a), before);
     // The note at the start is trimmed off: it does not sound, but it is still in the take.
-    assert_eq!(ons(&e.doc, T1)[0], (BAR + 960, 64));
+    assert_eq!(ons(&e.doc, T1)[0], (BAR + 2 * Q, 64));
     assert_eq!(c.takes[0].take.notes.len(), 2);
     // Pulled out again, it comes back.
-    let back = trim_clip(&e.doc, a, ClipEdge::Start, -480).unwrap();
+    let back = trim_clip(&e.doc, a, ClipEdge::Start, -(Q as i64)).unwrap();
     assert_eq!(back.doc, doc);
     // Pulled out further than the take: room with nothing in it.
-    let wide = trim_clip(&e.doc, a, ClipEdge::Start, -1000).unwrap();
+    let wide = trim_clip(&e.doc, a, ClipEdge::Start, -(2 * Q as i64 + 40)).unwrap();
     let (_, c) = wide.doc.clip(a).unwrap();
-    assert_eq!((c.start, c.takes[0].offset), (BAR - 520, 520));
+    assert_eq!((c.start, c.takes[0].offset), (BAR - Q - 40, Q as i64 + 40));
     assert_eq!(positions(&wide.doc, a), before);
 }
 
 #[test]
 fn trimming_the_end_keeps_the_notes_and_takes() {
     let (doc, a, _) = song();
-    let e = trim_clip(&doc, a, ClipEdge::End, -1000).unwrap();
+    let e = trim_clip(&doc, a, ClipEdge::End, -(2 * Q as i64 + 40)).unwrap();
     let (_, c) = e.doc.clip(a).unwrap();
-    assert_eq!((c.start, c.end, c.takes[0].offset), (BAR, BAR + 920, 0));
+    assert_eq!(
+        (c.start, c.end, c.takes[0].offset),
+        (BAR, BAR + 2 * Q - 40, 0)
+    );
     assert_eq!(ons(&e.doc, T1), [(BAR, 60), (4 * BAR, 67)]);
     assert_eq!(positions(&e.doc, a), positions(&doc, a));
     // Past the end of the take.
@@ -488,45 +492,54 @@ fn trims_stop_short_of_the_neighbours_and_keep_a_tick() {
 #[test]
 fn a_trimmed_clip_moved_to_the_song_start_keeps_its_hidden_head() {
     let (doc, a, _) = song();
-    let doc = trim_clip(&doc, a, ClipEdge::Start, 960).unwrap().doc;
+    let doc = trim_clip(&doc, a, ClipEdge::Start, 2 * Q as i64)
+        .unwrap()
+        .doc;
     let doc = move_clips(&doc, &[a], -10 * BAR as i64, 0, false)
         .unwrap()
         .edit
         .doc;
     let (_, c) = doc.clip(a).unwrap();
     // The take's tick 0 is before the song's.
-    assert_eq!((c.start, c.zero(&c.takes[0])), (0, -960));
-    assert_eq!(positions(&doc, a), [(-960, 60), (0, 64)]);
+    assert_eq!((c.start, c.zero(&c.takes[0])), (0, -(2 * Q as i64)));
+    assert_eq!(positions(&doc, a), [(-(2 * Q as i64), 60), (0, 64)]);
     assert_eq!(ons(&doc, T1)[0], (0, 64));
     // Edits of the notes keep the hidden one where it is.
     let e = move_notes(&doc, a, &[1], 100, 2, false).unwrap();
-    assert_eq!(positions(&e.edit.doc, a), [(-960, 60), (100, 66)]);
+    assert_eq!(
+        positions(&e.edit.doc, a),
+        [(-(2 * Q as i64), 60), (100, 66)]
+    );
     let e = write_note(&e.edit.doc, WriteAt::Clip(a), note(500, 50, 70)).unwrap();
     assert_eq!(
         positions(&e.edit.doc, a),
-        [(-960, 60), (100, 66), (500, 70)]
+        [(-(2 * Q as i64), 60), (100, 66), (500, 70)]
     );
     // Pulled back out, the hidden note comes back where it was.
     let doc = move_clips(&e.edit.doc, &[a], 3 * BAR as i64, 0, false)
         .unwrap()
         .edit
         .doc;
-    let doc = trim_clip(&doc, a, ClipEdge::Start, -960).unwrap().doc;
-    assert_eq!(ons(&doc, T1)[0], (3 * BAR - 960, 60));
+    let doc = trim_clip(&doc, a, ClipEdge::Start, -(2 * Q as i64))
+        .unwrap()
+        .doc;
+    assert_eq!(ons(&doc, T1)[0], (3 * BAR - 2 * Q, 60));
 }
 
 #[test]
 fn recording_over_a_trimmed_clip_keeps_every_note_in_place() {
     let (doc, a, _) = song();
-    let doc = trim_clip(&doc, a, ClipEdge::Start, 960).unwrap().doc;
-    let doc = trim_clip(&doc, a, ClipEdge::End, -480).unwrap().doc;
+    let doc = trim_clip(&doc, a, ClipEdge::Start, 2 * Q as i64)
+        .unwrap()
+        .doc;
+    let doc = trim_clip(&doc, a, ClipEdge::End, -(Q as i64)).unwrap().doc;
     let before = positions(&doc, a);
-    // A take over the end of the clip: the clips merge into [BAR + 960, BAR + 1600).
-    let (doc, merged) = record(&doc, T1, take(BAR + 1400, 200, vec![note(0, 50, 72)]));
+    // A take over the end of the clip: the clips merge into [BAR + 2 Q, BAR + 3 Q + 160).
+    let (doc, merged) = record(&doc, T1, take(BAR + 3 * Q - 40, 200, vec![note(0, 50, 72)]));
     assert_eq!(merged, a);
     let (_, c) = doc.clip(a).unwrap();
-    assert_eq!((c.start, c.end), (BAR + 960, BAR + 1600));
-    assert_eq!(c.takes[0].offset, -960);
+    assert_eq!((c.start, c.end), (BAR + 2 * Q, BAR + 3 * Q + 160));
+    assert_eq!(c.takes[0].offset, -(2 * Q as i64));
     let first = &c.takes[0];
     let at: Vec<(i64, u8)> = first
         .take
@@ -535,15 +548,15 @@ fn recording_over_a_trimmed_clip_keeps_every_note_in_place() {
         .map(|n| (c.zero(first) + n.start as i64, n.key))
         .collect();
     assert_eq!(at, before);
-    assert_eq!(positions(&doc, a), [(BAR as i64 + 1400, 72)]);
+    assert_eq!(positions(&doc, a), [((BAR + 3 * Q - 40) as i64, 72)]);
     // A take before the start that overlaps it: the hidden head shows again.
-    let (doc, _) = record(&doc, T1, take(BAR, 1000, vec![note(10, 50, 50)]));
+    let (doc, _) = record(&doc, T1, take(BAR, 2 * Q + 40, vec![note(10, 50, 50)]));
     let (_, c) = doc.clip(a).unwrap();
     assert_eq!(c.start, BAR);
     assert_eq!(c.takes[0].offset, 0);
     let doc = crate::edit::switch_take(&doc, a, 0).unwrap().doc;
     assert_eq!(positions(&doc, a), before);
-    assert_eq!(ons(&doc, T1)[..2], [(BAR, 60), (BAR + 960, 64)]);
+    assert_eq!(ons(&doc, T1)[..2], [(BAR, 60), (BAR + 2 * Q, 64)]);
 }
 
 #[test]
@@ -555,7 +568,11 @@ fn a_trimmed_head_plays_only_inside_the_clip() {
         NewTake {
             origin: BAR,
             length: BAR,
-            notes: vec![note(0, 960, 60), note(480, 100, 62), note(1000, 100, 64)],
+            notes: vec![
+                note(0, 2 * Q, 60),
+                note(Q, 100, 62),
+                note(2 * Q + 40, 100, 64),
+            ],
             controls: vec![
                 ControlPoint {
                     tick: 100,
@@ -573,7 +590,7 @@ fn a_trimmed_head_plays_only_inside_the_clip() {
                     value: ControlValue::PitchBend(0),
                 },
                 ControlPoint {
-                    tick: 1200,
+                    tick: 5 * Q / 2,
                     value: ControlValue::Cc {
                         number: CC_SUSTAIN,
                         value: 0,
@@ -582,7 +599,9 @@ fn a_trimmed_head_plays_only_inside_the_clip() {
             ],
         },
     );
-    let doc = trim_clip(&doc, a, ClipEdge::Start, 600).unwrap().doc;
+    let doc = trim_clip(&doc, a, ClipEdge::Start, 5 * Q as i64 / 4)
+        .unwrap()
+        .doc;
     let short: Vec<(u64, String)> = track_events(&doc, T1)
         .into_iter()
         .map(|e| {
@@ -600,10 +619,10 @@ fn a_trimmed_head_plays_only_inside_the_clip() {
     // The note held over the start (from 0) and the one before it do not sound; the pedal
     // still down at the start is put there; the bend already back at 0 is not.
     let want: Vec<(u64, String)> = [
-        (BAR + 600, "cc64 127"),
-        (BAR + 1000, "on 64"),
-        (BAR + 1100, "off 64"),
-        (BAR + 1200, "cc64 0"),
+        (BAR + 5 * Q / 4, "cc64 127"),
+        (BAR + 2 * Q + 40, "on 64"),
+        (BAR + 2 * Q + 140, "off 64"),
+        (BAR + 5 * Q / 2, "cc64 0"),
     ]
     .iter()
     .map(|&(t, s)| (t, s.to_owned()))

@@ -10,7 +10,8 @@ use crate::songfile;
 use crate::state::Model;
 
 const T1: StripRef = StripRef::Track { id: 1 };
-const BAR: u64 = 1920;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 const VOLUME: AutoTarget = AutoTarget::Volume;
 
 fn volume_ref() -> LaneRef {
@@ -271,16 +272,16 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
     assert!(m.view().automation.folded.is_empty());
     assert_eq!(steps(m).len(), before + 1);
 
-    // A point on the grid (1/16 = 120 ticks), the line's value without one: the hand's.
+    // A point on the grid (1/16 = Q / 4 ticks), the line's value without one: the hand's.
     cmd(
         m,
         Command::AddAutoPoint {
             lane: first_id,
-            tick: 130,
+            tick: Q / 4 + 10,
             value: None,
         },
     );
-    assert_eq!(points(m, VOLUME), [(120, 0.8)]);
+    assert_eq!(points(m, VOLUME), [(Q / 4, 0.8)]);
     let second_id = lane_id(m, VOLUME);
     assert_ne!(second_id, first_id);
     let selected = m.view().automation.selected.unwrap();
@@ -291,7 +292,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
         m,
         Command::AddAutoPoint {
             lane: first_id,
-            tick: 960,
+            tick: 2 * Q,
             value: Some(0.1),
         },
     );
@@ -302,7 +303,7 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
         m,
         Command::AddAutoPoint {
             lane: second_id,
-            tick: 960,
+            tick: 2 * Q,
             value: Some(0.2),
         },
     );
@@ -312,12 +313,12 @@ fn lanes_and_points_are_steps_and_the_selection_comes_back_with_undo() {
         Command::MoveAutoPoints {
             lane: third_id,
             points: vec![1],
-            d_tick: 240,
+            d_tick: (Q / 2) as i64,
             d_value: 0.1,
         },
     );
     let got = points(m, VOLUME);
-    assert_eq!(got[1].0, 1200);
+    assert_eq!(got[1].0, 2 * Q + Q / 2);
     assert!((got[1].1 - 0.3).abs() < 1e-6);
     assert_eq!(
         last_step(m),
@@ -473,7 +474,7 @@ fn a_typed_value_rests_the_lane_while_writing_too() {
         },
     );
     cmd(m, Command::PlayStop);
-    play_at(m, 1_000, 960.0);
+    play_at(m, 1_000, (2 * Q) as f64);
     cmd(m, gain(-6.0, true));
     assert!(resting(m, VOLUME));
     assert_eq!(track_gain(m), Some(-6.0));
@@ -497,7 +498,7 @@ fn writing_puts_what_was_heard_where_it_was_heard_and_is_one_step() {
     );
     assert_eq!(m.view().automation.armed, [volume_ref()]);
     cmd(m, Command::PlayStop);
-    play_at(m, 1_000, 960.0);
+    play_at(m, 1_000, (2 * Q) as f64);
     assert!(matches!(
         status(m),
         Some(StatusMessage::AutomationWriting { .. })
@@ -506,12 +507,12 @@ fn writing_puts_what_was_heard_where_it_was_heard_and_is_one_step() {
     cmd(m, gain(-6.0, false));
     let view = m.view().automation;
     assert_eq!(view.writing.len(), 1);
-    assert_eq!(view.writing[0].from_tick, 960);
-    play_at(m, 2_000, 1080.0);
+    assert_eq!(view.writing[0].from_tick, 2 * Q);
+    play_at(m, 2_000, (2 * Q + Q / 4) as f64);
     cmd(m, gain(-6.0, false));
-    play_at(m, 3_000, 1200.0);
+    play_at(m, 3_000, (2 * Q + Q / 2) as f64);
     cmd(m, gain(0.0, false));
-    play_at(m, 4_000, 1320.0);
+    play_at(m, 4_000, (2 * Q + 3 * Q / 4) as f64);
     cmd(m, gain(0.0, true));
     assert_eq!(steps(m).len(), before + 1);
     assert_eq!(
@@ -526,12 +527,12 @@ fn writing_puts_what_was_heard_where_it_was_heard_and_is_one_step() {
     let near = |a: f32, b: f32| (a - b).abs() < 1e-6;
     let want = [
         (0, 0.5),
-        (959, 0.5),
-        (960, 0.6),
-        (1080, 0.6),
-        (1200, 0.8),
-        (1320, 0.8),
-        (1321, 0.5),
+        (2 * Q - 1, 0.5),
+        (2 * Q, 0.6),
+        (2 * Q + Q / 4, 0.6),
+        (2 * Q + Q / 2, 0.8),
+        (2 * Q + 3 * Q / 4, 0.8),
+        (2 * Q + 3 * Q / 4 + 1, 0.5),
         (8 * BAR, 0.5),
     ];
     assert_eq!(got.len(), want.len(), "{got:?}");
@@ -558,10 +559,10 @@ fn stopping_ends_the_writing_and_the_rest_of_the_drag_goes_nowhere() {
         },
     );
     cmd(m, Command::PlayStop);
-    play_at(m, 1_000, 960.0);
+    play_at(m, 1_000, (2 * Q) as f64);
     let before = steps(m).len();
     cmd(m, gain(-6.0, false));
-    play_at(m, 2_000, 1080.0);
+    play_at(m, 2_000, (2 * Q + Q / 4) as f64);
     cmd(m, gain(-6.0, false));
     cmd(m, Command::PlayStop);
     assert_eq!(
@@ -720,6 +721,8 @@ mod random {
     use crate::songfile;
     use crate::state::{Input, Model};
 
+    use super::Q;
+
     struct Rng(u64);
 
     impl Rng {
@@ -799,13 +802,13 @@ mod random {
                 2 => Command::DeleteLane { track: 1, target },
                 3..=5 => Command::AddAutoPoint {
                     lane: lane_id,
-                    tick: rng.below(64) * 120,
+                    tick: rng.below(64) * (Q / 4),
                     value: Some(value),
                 },
                 6 => Command::MoveAutoPoints {
                     lane: lane_id,
                     points: vec![rng.below(n) as u32, rng.below(n) as u32],
-                    d_tick: rng.below(9) as i64 * 120 - 480,
+                    d_tick: (rng.below(9) * (Q / 4)) as i64 - Q as i64,
                     d_value: value - 0.5,
                 },
                 7 => Command::DeleteAutoPoints {
@@ -909,6 +912,8 @@ mod plugins {
     use crate::play::windows::tests::{FRESH, LEVEL, MODE, Rig};
     use crate::play::{EngineOp, Heard};
     use crate::state::{Effect, PluginSaid};
+
+    use super::Q;
 
     fn heard(tick: f64) -> Option<Heard> {
         Some(Heard {
@@ -1075,11 +1080,11 @@ mod plugins {
         r.settle();
         let effects = r.said(surge, touch(true));
         assert_eq!(holds(&effects), [true]);
-        turn(&mut r, surge, 0.8, heard(960.0));
-        turn(&mut r, surge, 0.2, heard(1440.0));
+        turn(&mut r, surge, 0.8, heard((2 * Q) as f64));
+        turn(&mut r, surge, 0.2, heard((3 * Q) as f64));
         let writing = r.m.view().automation.writing;
         assert_eq!(writing.len(), 1);
-        assert_eq!(writing[0].from_tick, 960);
+        assert_eq!(writing[0].from_tick, 2 * Q);
         let effects = r.said(surge, touch(false));
         assert_eq!(holds(&effects), [false]);
         assert_eq!(r.undo_count(), steps + 1);
@@ -1098,7 +1103,13 @@ mod plugins {
         let points: Vec<(u64, f32)> = points.iter().map(|p| (p.tick, p.value)).collect();
         assert_eq!(
             points,
-            [(0, 0.3), (959, 0.3), (960, 0.8), (1440, 0.2), (1441, 0.3)],
+            [
+                (0, 0.3),
+                (2 * Q - 1, 0.3),
+                (2 * Q, 0.8),
+                (3 * Q, 0.2),
+                (3 * Q + 1, 0.3)
+            ],
             "where they were heard"
         );
         // The touch wrote: leaving the window makes no step of it, though the plugin's

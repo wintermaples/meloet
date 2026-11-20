@@ -1,5 +1,5 @@
 //! Automation on the audio thread (docs/architecture.md 21-5 to 21-7), frame by frame, with
-//! instruments and effects that are arithmetic. At 120 beats a minute one tick is 50 frames.
+//! instruments and effects that are arithmetic, at 120 beats a minute.
 
 mod common;
 
@@ -16,7 +16,9 @@ use meloet_model::{AutoTarget, Bus, Gain, InsertId};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 const RATE: usize = 48_000;
-const PER_TICK: usize = 50;
+const Q: usize = meloet_model::TICKS_PER_QUARTER as usize;
+/// Frames in a tick at 120 beats a minute.
+const PER_TICK: usize = RATE * 60 / (120 * Q);
 const BLOCK: usize = 256;
 const RAMP: usize = (RAMP_S * RATE as f32) as usize;
 

@@ -4,7 +4,8 @@ use super::tests::{cmd, ready, record_once, report, started, status};
 use super::*;
 use crate::state::{Effect, Model};
 
-const BAR: u64 = 1920;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 fn clips(m: &Model) -> Vec<ClipView> {
     m.view().song.tracks[0].clips.clone()
@@ -115,13 +116,13 @@ fn a_trim_keeps_the_notes_in_place_and_tells_the_screen_the_offset() {
         Command::TrimClip {
             clip: c.id,
             edge: ClipEdge::Start,
-            ticks: 480,
+            ticks: Q as i64,
         },
     );
     assert_eq!(sequences(&effects), 1);
     let t = clips(m)[0].clone();
-    assert_eq!((t.start, t.end), (c.start + 480, c.end));
-    assert_eq!(t.take_offset, c.take_offset - 480);
+    assert_eq!((t.start, t.end), (c.start + Q, c.end));
+    assert_eq!(t.take_offset, c.take_offset - Q as i64);
     assert_eq!(t.take_id, c.take_id, "the take does not change");
     assert_eq!(
         t.start as i64 + t.take_offset,
@@ -137,7 +138,7 @@ fn a_trim_keeps_the_notes_in_place_and_tells_the_screen_the_offset() {
         Command::TrimClip {
             clip: c.id,
             edge: ClipEdge::Start,
-            ticks: -480,
+            ticks: -(Q as i64),
         },
     );
     assert_eq!(clips(m)[0], c);

@@ -22,6 +22,8 @@ use crate::play::windows::tests::Rig;
 use crate::state::added_tests::{plugin, rigged};
 use crate::state::{Effect, Input, Model, PluginSaid};
 
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+
 /// A model with the fake engine and the fake plugins behind it, and what the engine was
 /// told last of the things the fake engine does not keep.
 struct World {
@@ -233,8 +235,8 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
     match rng.below(44) {
         0..=3 => commands.push(Command::AddNote {
             take,
-            start: rng.below(32) * 240,
-            length: 240,
+            start: rng.below(32) * (Q / 2),
+            length: Q / 2,
             key: 48 + rng.below(24) as u8,
             velocity: 90,
         }),
@@ -243,7 +245,7 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
                 commands.push(Command::MoveNotes {
                     take,
                     notes: vec![0],
-                    ticks: (rng.below(5) as i64 - 2) * 120,
+                    ticks: (rng.below(5) as i64 - 2) * (Q / 4) as i64,
                     keys: rng.below(5) as i32 - 2,
                     copy: rng.below(4) == 0,
                 });
@@ -261,7 +263,7 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
             if !clips.is_empty() {
                 commands.push(Command::MoveClips {
                     clips: vec![rng.of(&clips)],
-                    ticks: (rng.below(9) as i64 - 4) * 1920,
+                    ticks: (rng.below(9) as i64 - 4) * (4 * Q) as i64,
                     tracks: 0,
                     copy: rng.below(3) == 0,
                 });
@@ -278,12 +280,12 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
             bpm: (60 + rng.below(120)) as f64,
         }),
         11 => commands.push(Command::AddTempoPoint {
-            tick: (1 + rng.below(16)) * 1920,
+            tick: (1 + rng.below(16)) * (4 * Q),
             bpm: (60 + rng.below(120)) as f64,
         }),
         12 => {
             commands.push(Command::Locate {
-                tick: rng.below(32) * 480,
+                tick: rng.below(32) * Q,
             });
             commands.push(Command::AddMarker {
                 name: format!("m{round}"),
@@ -294,7 +296,7 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
             if !view.timeline.markers.is_empty() {
                 commands.push(Command::MoveMarker {
                     id: rng.of(&view.timeline.markers).id,
-                    tick: rng.below(64) * 480,
+                    tick: rng.below(64) * Q,
                 });
             }
         }
@@ -429,7 +431,7 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
             if !lanes.is_empty() {
                 commands.push(Command::AddAutoPoint {
                     lane: rng.of(&lanes),
-                    tick: rng.below(32) * 480,
+                    tick: rng.below(32) * Q,
                     value: Some(rng.below(11) as f32 / 10.0),
                 });
             }
@@ -872,8 +874,8 @@ fn five_thousand_steps_rows_and_a_jump_over_500() {
             &mut m,
             Command::AddNote {
                 take,
-                start: (n % 64) * 120,
-                length: 120,
+                start: (n % 64) * (Q / 4),
+                length: Q / 4,
                 key: 36 + (n % 48) as u8,
                 velocity: 90,
             },
@@ -909,12 +911,7 @@ fn five_thousand_steps_rows_and_a_jump_over_500() {
                 },
             ),
             _ => {
-                cmd(
-                    &mut m,
-                    Command::Locate {
-                        tick: (n % 64) * 480,
-                    },
-                );
+                cmd(&mut m, Command::Locate { tick: (n % 64) * Q });
                 cmd(
                     &mut m,
                     Command::AddMarker {

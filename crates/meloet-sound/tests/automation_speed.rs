@@ -6,7 +6,7 @@
 //! `mixer_speed`; with lanes, every track has four: volume, pan, a parameter of its
 //! instrument (as a plugin's would be: the engine works out the points, the computed
 //! instrument passes them over) and the compressor's threshold. Each lane bends every
-//! 120 ticks, over the four bars the song goes round.
+//! sixteenth note, over the four bars the song goes round.
 
 mod support;
 
@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use meloet_engine::AutoLane;
 use meloet_model::effects::{EffectKind, compressor};
-use meloet_model::{AutoTarget, InsertId};
+use meloet_model::{AutoTarget, InsertId, TICKS_PER_QUARTER};
 use support::mix::{Song, TRACKS};
 use support::{BLOCK, SR};
 
@@ -25,7 +25,7 @@ fn lanes(track: usize) -> Vec<AutoLane> {
         (0..=64u64)
             .map(|i| {
                 let v = ((i * 37 + shift + track as u64 * 11) % 100) as f32 / 100.0;
-                (i * 120, 0.3 + v * 0.5)
+                (i * (TICKS_PER_QUARTER / 4), 0.3 + v * 0.5)
             })
             .collect()
     };

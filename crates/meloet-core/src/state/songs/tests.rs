@@ -15,7 +15,8 @@ use crate::settings::temp_dir;
 use crate::songfile;
 use crate::state::{Effect, Input, Model};
 
-const BAR: u64 = 1920;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
 
 /// The disk, and the shell's answers.
 struct World {

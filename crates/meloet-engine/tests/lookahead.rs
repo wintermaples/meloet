@@ -14,8 +14,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 const RATE: u64 = 48_000;
-/// At 120 beats a minute one tick is 50 frames.
-const FRAMES_PER_TICK: u64 = 50;
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+/// At 120 beats a minute: two quarter notes a second.
+const TICKS_PER_S: u64 = 2 * Q;
 const BLOCK: usize = 256;
 const LEVEL: f32 = 0.25;
 
@@ -166,6 +167,11 @@ impl Rig {
     }
 }
 
+/// The frame of `tick` at 120 (a whole one for every tick used here).
+fn frame_of(tick: u64) -> u64 {
+    tick * RATE / TICKS_PER_S
+}
+
 fn on(note: u8) -> InstrumentEvent {
     InstrumentEvent::NoteOn {
         note,
@@ -192,9 +198,14 @@ fn drain(tape: &mut Consumer<(u64, InstrumentEvent)>) -> Vec<(u64, InstrumentEve
 #[test]
 fn a_track_that_delays_starts_its_notes_with_the_others() {
     const DELAY: usize = 300;
-    let notes = [(0, on(60)), (480, on(62)), (960, on(64)), (1000, on(65))];
+    let notes = [
+        (0, on(60)),
+        (Q, on(62)),
+        (2 * Q, on(64)),
+        (2 * Q + 40, on(65)),
+    ];
 
-    let at = |tick: u64| (tick * FRAMES_PER_TICK) as usize;
+    let at = |tick: u64| frame_of(tick) as usize;
     let play = |ahead: u32| {
         let mut rig = Rig::new();
         rig.late(0, 0);
@@ -208,7 +219,7 @@ fn a_track_that_delays_starts_its_notes_with_the_others() {
     };
 
     // A plugin that does not say its delay is late by it.
-    let apart: Vec<(usize, f32)> = [0, 480, 960, 1000]
+    let apart: Vec<(usize, f32)> = [0, Q, 2 * Q, 2 * Q + 40]
         .iter()
         .flat_map(|&tick| [(at(tick), LEVEL), (at(tick) + DELAY, LEVEL)])
         .collect();
@@ -221,9 +232,9 @@ fn a_track_that_delays_starts_its_notes_with_the_others() {
         [
             (at(0), LEVEL),
             (at(0) + DELAY, LEVEL),
-            (at(480), 2.0 * LEVEL),
-            (at(960), 2.0 * LEVEL),
-            (at(1000), 2.0 * LEVEL),
+            (at(Q), 2.0 * LEVEL),
+            (at(2 * Q), 2.0 * LEVEL),
+            (at(2 * Q + 40), 2.0 * LEVEL),
         ]
     );
     assert_eq!(common::audio_block_counts(), (0, 0));
@@ -233,18 +244,18 @@ fn a_track_that_delays_starts_its_notes_with_the_others() {
 fn every_event_of_the_sequence_goes_out_early_by_the_lookahead_also_round_a_loop() {
     const AHEAD: u64 = 1000;
     let song = [
-        (480, on(60)),
+        (Q, on(60)),
         (
-            600,
+            5 * Q / 4,
             InstrumentEvent::Control {
                 controller: 64,
                 value: 127,
             },
         ),
-        (700, off(60)),
+        (35 * Q / 24, off(60)),
         // Held over the loop's end: let go where the loop goes round.
-        (900, on(72)),
-        (2000, off(72)),
+        (15 * Q / 8, on(72)),
+        (25 * Q / 6, off(72)),
     ];
     let play = |ahead: u64| {
         let mut rig = Rig::new();
@@ -252,11 +263,11 @@ fn every_event_of_the_sequence_goes_out_early_by_the_lookahead_also_round_a_loop
         rig.sequence(0, &song);
         rig.lookahead(0, ahead as u32);
         rig.send(EngineCommand::SetLoop {
-            start: 480,
-            end: 960,
+            start: Q,
+            end: 2 * Q,
             on: true,
         });
-        rig.send(EngineCommand::Play { from: 240 });
+        rig.send(EngineCommand::Play { from: Q / 2 });
         rig.run(600);
         drain(&mut tape)
     };
@@ -294,7 +305,7 @@ fn keys_played_by_hand_are_not_sent_early() {
 
 #[test]
 fn a_lookahead_that_changes_while_playing_loses_and_doubles_nothing() {
-    let notes: Vec<(u64, InstrumentEvent)> = (0..200).map(|n| (n * 60, on(60))).collect();
+    let notes: Vec<(u64, InstrumentEvent)> = (0..200).map(|n| (n * Q / 8, on(60))).collect();
     let mut rig = Rig::new();
     let mut tape = rig.tape(0);
     rig.sequence(0, &notes);
@@ -305,8 +316,8 @@ fn a_lookahead_that_changes_while_playing_loses_and_doubles_nothing() {
         rig.run(40);
         heard.extend(drain(&mut tape));
     }
-    // 240 blocks are 1228 ticks, and the last lookahead does not reach the next note: the 21
-    // notes up to there are out, each once.
+    // 240 blocks are 2.56 quarter notes, and the last lookahead does not reach the next note:
+    // the 21 notes up to there are out, each once.
     let (first, last) = (heard[0], heard[heard.len() - 1]);
     assert_eq!(first, (0, on(60)));
     assert_eq!(heard.len(), 21);
@@ -327,27 +338,24 @@ fn plugins_are_told_where_the_song_is() {
     assert_eq!(stopped.position_quarters, 0.0);
 
     rig.send(EngineCommand::SetLoop {
-        start: 1920,
-        end: 3840,
+        start: 4 * Q,
+        end: 8 * Q,
         on: true,
     });
-    rig.send(EngineCommand::Play { from: 1920 + 960 });
+    rig.send(EngineCommand::Play { from: 6 * Q });
     rig.run(10);
     // The last stretch rendered began at the start of the tenth block.
     let playing = told(&rig);
     assert_eq!(playing.flags, Transport::PLAYING | Transport::LOOPING);
     let frames = 9 * BLOCK as u64;
-    let quarters = 6.0 + frames as f64 / (FRAMES_PER_TICK * 480) as f64;
+    let quarters = 6.0 + frames as f64 / (RATE / 2) as f64;
     assert!((playing.position_quarters - quarters).abs() < 1e-9);
     assert_eq!(playing.bar_start_quarters, 4.0);
     assert_eq!(
         (playing.loop_start_quarters, playing.loop_end_quarters),
         (4.0, 8.0)
     );
-    assert_eq!(
-        playing.position_frames,
-        ((1920 + 960) * FRAMES_PER_TICK + frames) as i64
-    );
+    assert_eq!(playing.position_frames, (frame_of(6 * Q) + frames) as i64);
 
     // Six eighths in a bar: the beat is an eighth, and 180 of them a minute are 90 quarters.
     let map = common::flat_map(18_000, 6, 8);

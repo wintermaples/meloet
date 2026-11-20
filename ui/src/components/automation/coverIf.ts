@@ -2,7 +2,7 @@
 // （docs/architecture.md 7 章「CPU で描く WebKit」「レイアウトでためる Region」）。
 
 import { glSlot } from "../../gl/slot";
-import { gateTrack, showTrack } from "./autoState.svelte";
+import { gateTrack, showTrack, type StripPart } from "./autoState.svelte";
 
 /** 背景の絵のない箱では、どちらも見た目は同じ。 */
 const SAME = ["0% 0%", "100% 0%"] as const;
@@ -16,32 +16,25 @@ export function askWhole(node: HTMLElement): void {
   node.style.backgroundPosition = node.style.backgroundPosition === SAME[0] ? SAME[1] : SAME[0];
 }
 
-/** on のあいだだけ、その箱を区画の canvas の下に入れ（glSlot の cover）、positions が変わるたびに箱まるごとの四角を頼めるようにする。 */
-export function coverWhen(node: HTMLElement, on: boolean) {
-  let slot: ReturnType<typeof glSlot> | null = null;
-  function set(next: boolean): void {
-    if (next === (slot !== null)) return;
-    slot?.destroy();
-    slot = next ? glSlot(node, { kind: "cover" }) : null;
-    if (!next) node.style.backgroundPosition = "";
-  }
-  set(on);
-  return {
-    update: set,
-    destroy() {
-      set(false);
-    },
-  };
+/** node いっぱいに置く空の箱（askWhole に渡す）。node は position が static でない箱。左右に出したいときは、node に CSS の変数
+ * --ask-left ・ --ask-right、上に出したいときは --ask-top（負の長さ）を決める。 */
+function wholeBox(node: HTMLElement): HTMLElement {
+  const whole = document.createElement("span");
+  whole.setAttribute("aria-hidden", "true");
+  whole.dataset.test = "ask-whole";
+  Object.assign(whole.style, { position: "absolute", inset: "var(--ask-top, 0) var(--ask-right, 0) 0 var(--ask-left, 0)", pointerEvents: "none" });
+  node.prepend(whole);
+  return whole;
 }
 
 /**
- * track が数のあいだだけ、その箱を区画の canvas の下に入れる（動かない時に canvas を広げない）。
+ * track が数のあいだだけ、その箱を区画の canvas の下に入れる（動かない時に canvas を広げない）。フェーダーと値の箱に使う。
+ * - canvas の下に入れるのも、四角を頼むのも、node いっぱいに置く空の箱（同じ箱なので、頼む四角は canvas とぴったり重なる。node そのものに
+ *   頼ませると、中の字のはみ出しまで入った四角になり、canvas の外へ出る）。
  * - 何も描かないが、WebGL の係がこの箱の上の canvas を描くとき（左右に分けて出す区画では、この箱のある半分の番のとき）に呼ばれるので、
  *   そこでそのトラックの位置を見せる（autoState の showTrack）。つまみと字は、上の canvas と同じコマで変わる。
- * - 位置を見せるたびに、箱まるごとの四角を頼む（askWhole）。頼むのは、箱いっぱいに置いた空の箱: node そのものに頼ませると、中の物の
- *   はみ出し（字の上下など）まで入った四角になり、canvas の外へ出る。node は position が static でない箱にする。
- *   空の箱を左右に出したいときは、node に CSS の変数 --ask-left ・ --ask-right（負の長さ）を決める。
- * track: この箱の中で帯が動かしている物のトラック。動かしていなければ null。
+ * - フェーダーか値の位置を見せるたびに、箱まるごとの四角を頼む（askWhole）。
+ * track: 帯が何かを動かしているトラック。動かしていなければ null。
  */
 export function coverIf(node: HTMLElement, track: number | null) {
   let on: { slot: ReturnType<typeof glSlot>; open: () => void; whole: HTMLElement } | null = null;
@@ -54,14 +47,37 @@ export function coverIf(node: HTMLElement, track: number | null) {
     on?.whole.remove();
     on = null;
     if (next === null) return;
-    const whole = document.createElement("span");
-    whole.setAttribute("aria-hidden", "true");
-    whole.dataset.test = "ask-whole";
-    Object.assign(whole.style, { position: "absolute", inset: "0 var(--ask-right, 0) 0 var(--ask-left, 0)", pointerEvents: "none" });
-    node.prepend(whole);
-    on = { slot: glSlot(node, { kind: "paint", paint: () => showTrack(next) }), open: gateTrack(next, () => askWhole(whole)), whole };
+    const whole = wholeBox(node);
+    on = { slot: glSlot(whole, { kind: "paint", paint: () => showTrack(next) }), open: gateTrack(next, "gain", () => askWhole(whole)), whole };
   }
   set(track);
+  return {
+    update: set,
+    destroy() {
+      set(null);
+    },
+  };
+}
+
+/**
+ * canvas の下に入れない箱（パンの行、センドの行）: そのトラックのその組の位置を見せるたびに、箱まるごとの四角を頼む。
+ * いつ見せるかは、同じトラックの coverIf の箱が決める。
+ */
+export function askIf(node: HTMLElement, what: { track: number; part: StripPart } | null) {
+  let on: { open: () => void; whole: HTMLElement } | null = null;
+  let now: string | null = null;
+  function set(next: { track: number; part: StripPart } | null): void {
+    const key = next ? `${next.track}/${next.part}` : null;
+    if (key === now) return;
+    now = key;
+    on?.open();
+    on?.whole.remove();
+    on = null;
+    if (!next) return;
+    const whole = wholeBox(node);
+    on = { open: gateTrack(next.track, next.part, () => askWhole(whole)), whole };
+  }
+  set(what);
   return {
     update: set,
     destroy() {

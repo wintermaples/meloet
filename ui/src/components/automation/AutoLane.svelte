@@ -252,6 +252,8 @@
 <style>
   /* ひらいた帯（size.lane、地 gray.2。モック R10-AutoEdit）。 */
   .auto-lane {
+    /* 縦に送った外の帯は、中を描かない ・ レイアウトしない（64 本の曲。高さは決まっている）。 */
+    content-visibility: auto;
     position: relative;
     height: var(--size-lane);
     background: var(--color-gray-2);

@@ -731,13 +731,12 @@ describe("キー B（とばす）", () => {
 });
 
 // 30 Hz の出しかた（左と右を 1 コマずつ）は gl.surface.test.ts。
-describe("ミキサーのメーターは、トラックが 10 本をこえると 30 Hz（仕様書 3 章 第 8 版）", () => {
+describe("ミキサーのメーターは、トラックの数によらず、いつも 30 Hz（user:2026-11-20）", () => {
   it("mixerMeters だけ。ほかの区画（鍵 ・ 再生の線 ・ マスター）は 60 Hz のまま", () => {
-    expect(regionHz("mixerMeters", 10)).toBe(60);
-    expect(regionHz("mixerMeters", 11)).toBe(30);
-    expect(regionHz("masterMeter", 11)).toBe(60);
-    expect(regionHz("pianoRollKeys", 40)).toBe(60);
-    expect(regionHz("trackMeters", 40)).toBe(60);
+    expect(regionHz("mixerMeters")).toBe(30);
+    expect(regionHz("masterMeter")).toBe(60);
+    expect(regionHz("pianoRollKeys")).toBe(60);
+    expect(regionHz("trackMeters")).toBe(60);
   });
 });
 

@@ -628,6 +628,7 @@ fn surge_xt_a_visit_to_its_window_is_one_step_and_undo_puts_it_back() {
     x.focus(window);
     core.visit_when(true);
     core.turn(id, octave, 1.0);
+    core.hand(track);
     x.unfocus();
     core.steps_when(steps + 1, "the visit is a step");
     assert!(matches!(

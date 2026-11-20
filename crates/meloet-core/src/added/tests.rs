@@ -262,6 +262,7 @@ fn the_song_s_sounds_and_slots_as_the_screen_names_them() {
         slots,
         [
             Some(InsertView {
+                id: master.inserts[0].as_ref().unwrap().id.0,
                 effect: InsertEffectView::Builtin {
                     effect: EffectKind::Limiter
                 },
@@ -269,6 +270,7 @@ fn the_song_s_sounds_and_slots_as_the_screen_names_them() {
             }),
             None,
             Some(InsertView {
+                id: master.inserts[2].as_ref().unwrap().id.0,
                 effect: InsertEffectView::Plugin(PluginView {
                     key: MVERB.into(),
                     name: "MVerb".into(),

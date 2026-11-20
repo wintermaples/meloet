@@ -82,21 +82,21 @@ fn first_recording_makes_a_clip_named_after_the_track() {
     );
     let doc = edit.doc;
     let clip = &doc.track(T1).unwrap().clips[0];
-    assert_eq!(clip.id, ClipId(1));
+    assert_eq!(clip.id, ClipId(4));
     assert_eq!(clip.name, "ピアノ");
     assert_eq!((clip.start, clip.end), (1920, 2880));
     assert_eq!(clip.takes[0].offset, 0);
-    assert_eq!(clip.takes[0].take.id, TakeId(2));
+    assert_eq!(clip.takes[0].take.id, TakeId(5));
     assert_eq!(clip.takes[0].take.notes, [note(0, 1, 60)]);
     assert_eq!(clip.active, 0);
     assert_eq!(
         added,
         RecordingAdded {
-            clip: ClipId(1),
+            clip: ClipId(4),
             active: 0
         }
     );
-    assert_eq!(doc.next_id, 3);
+    assert_eq!(doc.next_id, 6);
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn loop_passes_go_into_one_clip_with_the_chosen_take_shown() {
         .iter()
         .map(|t| t.take.id.0)
         .collect();
-    assert_eq!(ids, [2, 3, 4]);
+    assert_eq!(ids, [5, 6, 7]);
 
     // Looping over the same bars again adds after the takes already there.
     let (edit, added) =
@@ -536,12 +536,15 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
     use crate::BuiltinInstrument as B;
     let bass = InstrumentRef::Builtin(B::SynthBass);
     let (doc, _) = record(&two_tracks(), T2, vec![take(0, 960)], 0);
-    assert_eq!(doc.next_id, 3, "a clip and a take");
+    assert_eq!(
+        doc.next_id, 6,
+        "the three inserts of a new song, a clip and a take"
+    );
 
     let (e, id) = add_track(&doc, Some(T1), bass.clone()).unwrap();
-    assert_eq!(id, TrackId(3), "past every track, clip and take id");
+    assert_eq!(id, TrackId(6), "past every track, clip and take id");
     assert_eq!(e.step, StepKind::AddTrack { track: id });
-    assert_eq!(e.doc.next_id, 4);
+    assert_eq!(e.doc.next_id, 7);
     let rows = |doc: &Doc| -> Vec<(u32, String, u8)> {
         doc.tracks
             .iter()
@@ -552,7 +555,7 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
         rows(&e.doc),
         [
             (1, "ピアノ".to_owned(), 1),
-            (3, "ベース 2".to_owned(), 2),
+            (6, "ベース 2".to_owned(), 2),
             (2, "ベース".to_owned(), 2)
         ],
         "right below the first track, with the color of its place"
@@ -564,9 +567,9 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
 
     // The smallest free number from 2, and at the end without a track to go below.
     let (e2, id2) = add_track(&e.doc, None, InstrumentRef::Builtin(B::FingerBass)).unwrap();
-    assert_eq!(id2, TrackId(4));
-    assert_eq!(rows(&e2.doc)[3], (4, "ベース 3".to_owned(), 4));
-    let renamed = rename_track(&e2.doc, TrackId(3), "低い音").unwrap().doc;
+    assert_eq!(id2, TrackId(7));
+    assert_eq!(rows(&e2.doc)[3], (7, "ベース 3".to_owned(), 4));
+    let renamed = rename_track(&e2.doc, TrackId(6), "低い音").unwrap().doc;
     let (e3, _) = add_track(&renamed, None, bass.clone()).unwrap();
     assert_eq!(e3.doc.tracks[4].name, "ベース 2");
     assert_eq!(e3.doc.tracks[4].color.get(), 5);
@@ -578,8 +581,11 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
         "the sixth is color 1 again"
     );
 
-    // A track id above `next_id` (the first track of a new song is 1 while `next_id` is 1).
-    let fresh = Doc::new_default();
+    // A track id above `next_id` (the tracks of a song from a file are not counted in it).
+    let fresh = Doc {
+        next_id: 1,
+        ..Doc::new_default()
+    };
     let (e, id) = add_track(&fresh, Some(T1), InstrumentRef::SINE).unwrap();
     assert_eq!((id, e.doc.next_id), (TrackId(2), 3));
     assert_eq!(e.doc.tracks[1].name, "シンセ");
@@ -589,7 +595,11 @@ fn adding_a_track_below_another_with_a_name_a_color_and_a_fresh_id() {
     assert_eq!(none.next_id, 2);
     let (e, id) = add_track(&none, None, InstrumentRef::GRAND_PIANO).unwrap();
     assert_eq!((id, e.doc.tracks.len()), (TrackId(2), 1));
-    let less = delete_track(&two_tracks(), T2).unwrap().doc;
+    let two = Doc {
+        next_id: 1,
+        ..two_tracks()
+    };
+    let less = delete_track(&two, T2).unwrap().doc;
     let (_, id) = add_track(&less, None, InstrumentRef::SINE).unwrap();
     assert_eq!(id, TrackId(3), "not the id the deleted track had");
     assert_eq!(

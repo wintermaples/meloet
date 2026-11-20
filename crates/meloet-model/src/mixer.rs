@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use crate::edit::{Edit, EditError, track_index};
+use crate::edit::{Edit, EditError, Ids, track_index};
 use crate::effects::{EffectKind, delay, reverb};
 use crate::history::StepKind;
 use crate::instrument::{InstrumentGroup, PluginRef};
@@ -70,10 +70,17 @@ impl Pan {
 /// The mix, in percent, a reverb or a delay starts with on a track or on the master.
 pub const INSERT_MIX: f32 = 30.0;
 
+/// Names what was put into an insert slot, from `Doc::next_id`. It stays with the effect when
+/// the slots of its strip are put in another order; what replaces it has another one.
+/// Automation names the insert by it (docs/architecture.md 21-5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct InsertId(pub u32);
+
 /// What sits in an insert slot: an effect that comes with meloet, with one value for every
 /// parameter of its table, each inside its range, or a plugin with its state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Insert {
+    pub id: InsertId,
     effect: InsertEffect,
     /// 「とばす」 (spec 3, 13-A): the sound passes the slot by. The values stay.
     pub bypassed: bool,
@@ -87,8 +94,9 @@ enum InsertEffect {
 
 impl Insert {
     /// With the defaults of the table.
-    pub fn new(kind: EffectKind) -> Insert {
+    pub fn new(id: InsertId, kind: EffectKind) -> Insert {
         Insert {
+            id,
             effect: InsertEffect::Builtin {
                 kind,
                 values: kind.params().iter().map(|p| p.default).collect(),
@@ -97,8 +105,9 @@ impl Insert {
         }
     }
 
-    pub fn plugin(plugin: Arc<PluginRef>) -> Insert {
+    pub fn plugin(id: InsertId, plugin: Arc<PluginRef>) -> Insert {
         Insert {
+            id,
             effect: InsertEffect::Plugin(plugin),
             bypassed: false,
         }
@@ -108,8 +117,8 @@ impl Insert {
     /// master, where the sound itself goes through it, starts with its mix at
     /// [`INSERT_MIX`]; on a return, which carries only what was sent, it is all effect, as
     /// its table says.
-    pub fn new_on(kind: EffectKind, strip: StripId) -> Insert {
-        let mut insert = Insert::new(kind);
+    pub fn new_on(id: InsertId, kind: EffectKind, strip: StripId) -> Insert {
+        let mut insert = Insert::new(id, kind);
         let mix = match kind {
             EffectKind::Reverb => Some(reverb::MIX),
             EffectKind::Delay => Some(delay::MIX),
@@ -193,9 +202,9 @@ pub struct Channel {
 }
 
 impl Channel {
-    fn with_first(kind: EffectKind) -> Channel {
+    fn with_first(id: InsertId, kind: EffectKind) -> Channel {
         let mut channel = Channel::default();
-        channel.inserts[0] = Some(Insert::new(kind));
+        channel.inserts[0] = Some(Insert::new(id, kind));
         channel
     }
 }
@@ -249,11 +258,15 @@ pub fn new_track_sends(instrument: &InstrumentRef) -> Sends {
     [a, Gain::SILENT]
 }
 
+/// The `next_id` of a new song: its three inserts ([`new_song_returns`], [`new_song_master`])
+/// have the ids 1, 2 and 3.
+pub const NEW_SONG_NEXT_ID: u32 = 4;
+
 /// The returns of a new song: a reverb on A and a delay on B.
 pub fn new_song_returns() -> [Arc<Return>; 2] {
-    [EffectKind::Reverb, EffectKind::Delay].map(|kind| {
+    [(1, EffectKind::Reverb), (2, EffectKind::Delay)].map(|(id, kind)| {
         Arc::new(Return {
-            channel: Channel::with_first(kind),
+            channel: Channel::with_first(InsertId(id), kind),
             muted: false,
         })
     })
@@ -261,7 +274,13 @@ pub fn new_song_returns() -> [Arc<Return>; 2] {
 
 /// The master of a new song: a limiter, whose default ceiling is −0.3 dB.
 pub fn new_song_master() -> Arc<Channel> {
-    Arc::new(Channel::with_first(EffectKind::Limiter))
+    Arc::new(Channel::with_first(InsertId(3), EffectKind::Limiter))
+}
+
+/// The id of an insert put in now, and the `next_id` after it.
+fn new_insert_id(doc: &Doc) -> Result<(InsertId, u32), EditError> {
+    let mut ids = Ids(doc.next_id);
+    Ok((InsertId(ids.next()?), ids.0))
 }
 
 impl Doc {
@@ -382,14 +401,16 @@ pub fn add_effect(
     slot: usize,
     kind: EffectKind,
 ) -> Result<Edit, EditError> {
-    let new = with_channel(doc, strip, |c| {
+    let (id, next_id) = new_insert_id(doc)?;
+    let mut new = with_channel(doc, strip, |c| {
         let place = c.inserts.get_mut(slot).ok_or(EditError::NoSuchInsert)?;
         if place.is_some() {
             return Err(EditError::SlotTaken);
         }
-        *place = Some(Insert::new_on(kind, strip));
+        *place = Some(Insert::new_on(id, kind, strip));
         Ok(())
     })?;
+    new.next_id = next_id;
     Ok(Edit {
         doc: new,
         step: StepKind::AddEffect { strip, slot, kind },
@@ -403,14 +424,16 @@ pub fn add_plugin_effect(
     slot: usize,
     plugin: Arc<PluginRef>,
 ) -> Result<Edit, EditError> {
-    let new = with_channel(doc, strip, |c| {
+    let (id, next_id) = new_insert_id(doc)?;
+    let mut new = with_channel(doc, strip, |c| {
         let place = c.inserts.get_mut(slot).ok_or(EditError::NoSuchInsert)?;
         if place.is_some() {
             return Err(EditError::SlotTaken);
         }
-        *place = Some(Insert::plugin(plugin));
+        *place = Some(Insert::plugin(id, plugin));
         Ok(())
     })?;
+    new.next_id = next_id;
     Ok(Edit {
         doc: new,
         step: StepKind::AddPlugin {
@@ -506,8 +529,17 @@ pub fn move_insert(doc: &Doc, strip: StripId, from: usize, to: usize) -> Result<
     })
 }
 
-fn replace(doc: &Doc, strip: StripId, slot: usize, with: Insert) -> Result<Edit, EditError> {
-    let new = with_channel(doc, strip, |c| {
+/// `with`: what goes in, given its id; a new one, so that automation of what was there does
+/// not move what replaces it.
+fn replace(
+    doc: &Doc,
+    strip: StripId,
+    slot: usize,
+    with: impl FnOnce(InsertId) -> Insert,
+) -> Result<Edit, EditError> {
+    let (id, next_id) = new_insert_id(doc)?;
+    let with = with(id);
+    let mut new = with_channel(doc, strip, |c| {
         let place =
             (c.inserts.get_mut(slot).and_then(Option::as_mut)).ok_or(EditError::NoSuchInsert)?;
         let same_plugin = match (place.plugin_ref(), with.plugin_ref()) {
@@ -520,6 +552,7 @@ fn replace(doc: &Doc, strip: StripId, slot: usize, with: Insert) -> Result<Edit,
         *place = with;
         Ok(())
     })?;
+    new.next_id = next_id;
     Ok(Edit {
         doc: new,
         step: StepKind::ReplaceEffect { strip, slot },
@@ -535,7 +568,7 @@ pub fn replace_effect(
     slot: usize,
     kind: EffectKind,
 ) -> Result<Edit, EditError> {
-    replace(doc, strip, slot, Insert::new_on(kind, strip))
+    replace(doc, strip, slot, |id| Insert::new_on(id, kind, strip))
 }
 
 /// Puts a plugin, as it is given, in place of what `slot` holds, and heard. `NoSuchInsert`
@@ -546,7 +579,7 @@ pub fn replace_plugin_effect(
     slot: usize,
     plugin: Arc<PluginRef>,
 ) -> Result<Edit, EditError> {
-    replace(doc, strip, slot, Insert::plugin(plugin))
+    replace(doc, strip, slot, |id| Insert::plugin(id, plugin))
 }
 
 /// What 「曲から外す」 names: every preset of an SF2 file, or a plugin by its exact key.

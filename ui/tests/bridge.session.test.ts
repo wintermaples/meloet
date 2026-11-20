@@ -75,6 +75,12 @@ function scripted(version = PROTOCOL_VERSION) {
     async takeNotes() {
       return new ArrayBuffer(0);
     },
+    async lane() {
+      return new ArrayBuffer(0);
+    },
+    async historyRows() {
+      return [];
+    },
     async pluginParams() {
       return null;
     },

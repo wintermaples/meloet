@@ -86,7 +86,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
             Meter::new(6, 8).unwrap(),
         )
     });
-    // 4 is the one id below `next_id` that no clip and no take has.
+    // 4 is the one id below 8 that no clip and no take has; the inserts have 8 and up.
     doc.markers = Arc::new(vec![Marker {
         id: MarkerId(4),
         tick: 2880,
@@ -98,9 +98,9 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     track.channel.gain = Gain::from_db(-3.5);
     track.channel.pan = Pan::new(-20);
     track.sends = [Gain::from_db(-15.0), Gain::from_db(-18.0)];
-    let mut compressor = Insert::new(EffectKind::Compressor);
+    let mut compressor = Insert::new(NO_INSERT_ID, EffectKind::Compressor);
     compressor.set(effects::compressor::THRESHOLD, -24.5);
-    let mut delay = Insert::new(EffectKind::Delay);
+    let mut delay = Insert::new(NO_INSERT_ID, EffectKind::Delay);
     delay.set(effects::delay::INTERVAL_STEP, 1.0);
     delay.set(effects::delay::SYNC, 0.0);
     delay.set(effects::delay::PING_PONG, 1.0);
@@ -111,12 +111,17 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
     a.channel.gain = Gain::from_db(-6.0);
     a.channel.pan = Pan::new(30);
     let b = Arc::make_mut(&mut doc.returns[1]);
-    b.channel.inserts = [None, None, Some(Insert::new(EffectKind::Chorus)), None];
+    b.channel.inserts = [
+        None,
+        None,
+        Some(Insert::new(NO_INSERT_ID, EffectKind::Chorus)),
+        None,
+    ];
     let master = Arc::make_mut(&mut doc.master);
     master.gain = Gain::SILENT;
     master.pan = Pan::new(-30);
     (master.inserts[0].as_mut().unwrap()).set(effects::limiter::CEILING, -1.0);
-    master.inserts[1] = Some(Insert::new(EffectKind::Eq4));
+    master.inserts[1] = Some(Insert::new(NO_INSERT_ID, EffectKind::Eq4));
     track.clips = vec![
         clip(1, 0, 1920 * 4, vec![(t2.clone(), 0)], 0),
         clip(
@@ -128,6 +133,7 @@ fn rich_song(name: &str, notes_per_take: u64) -> Song {
         ),
     ];
     doc.tracks = vec![Arc::new(track)];
+    number_inserts(&mut doc);
     Song {
         doc,
         session: Session {
@@ -173,7 +179,7 @@ fn the_shape_on_disk() {
         serde_json::json!({"start": 7680, "end": 15360})
     );
     assert!(v["song"].get("tempoChanges").is_none());
-    assert_eq!(v["song"]["nextId"], 8);
+    assert_eq!(v["song"]["nextId"], 14, "8 and the six inserts");
     let track = &v["song"]["tracks"][0];
     assert!(track.get("muted").is_none(), "not muted: not written");
     assert_eq!(
@@ -190,11 +196,11 @@ fn the_shape_on_disk() {
         track["inserts"],
         serde_json::json!([
             null,
-            {"effect": "compressor",
+            {"id": 8, "effect": "compressor",
              "params": {"threshold": -24.5, "ratio": 4.0, "attack": 10.0, "release": 100.0,
                         "makeup": 0.0}},
             null,
-            {"effect": "delay",
+            {"id": 9, "effect": "delay",
              "params": {"intervalStep": "eighthDotted", "intervalMs": 250.0, "sync": false,
                         "feedback": 62.5, "highCut": 5000.0, "lowCut": 200.0, "pingPong": true,
                         "mix": 100.0}}
@@ -555,6 +561,7 @@ fn quantized_song() -> Song {
     track.clips[1] = Arc::new(clip);
     song.doc.tracks[0] = Arc::new(track);
     song.doc.next_id = 10;
+    renumber_inserts(&mut song.doc);
     song
 }
 
@@ -656,8 +663,10 @@ fn a_file_of_version_1_reads() {
     // Nothing is sent, so it sounds as it did; the returns and the master are a new song's.
     assert_eq!(song.doc.tracks[0].sends, [Gain::SILENT; 2]);
     assert_eq!(song.doc.tracks[0].channel, Channel::default());
-    assert_eq!(song.doc.returns, mixer::new_song_returns());
-    assert_eq!(song.doc.master, mixer::new_song_master());
+    assert_eq!(
+        mixer_without_ids(&song.doc),
+        mixer_without_ids(&Doc::new_default())
+    );
     // Version 2 as written before mute came: the same.
     let v2 = v1.replace(r#""version": 1"#, r#""version": 2"#);
     assert_eq!(decode(v2.as_bytes()).unwrap(), song);
@@ -705,6 +714,7 @@ fn every_builtin_instrument_comes_back() {
             })
         })
         .collect();
+    number_inserts(&mut song.doc);
     let bytes = encode(&song);
     assert_eq!(decode(&bytes).unwrap(), song);
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -826,8 +836,10 @@ fn a_file_of_version_3_from_before_the_mixer_reads() {
     assert_eq!(t.channel.pan, Pan::CENTER);
     assert_eq!(t.channel.inserts, Inserts::default());
     assert_eq!(t.sends, [Gain::SILENT; 2]);
-    assert_eq!(song.doc.returns, mixer::new_song_returns());
-    assert_eq!(song.doc.master, mixer::new_song_master());
+    assert_eq!(
+        mixer_without_ids(&song.doc),
+        mixer_without_ids(&Doc::new_default())
+    );
     assert_eq!(t.clips, rich_song("x", 3).doc.tracks[0].clips);
     // A track with no fader at all is still not a song.
     v["song"]["tracks"][0]
@@ -891,7 +903,8 @@ fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
     let mut v = rich_json();
     v["song"]["mixer"]["returns"]["b"]["inserts"] = serde_json::json!([{"effect": "reverb"}]);
     let b = &read_json(&v).doc.returns[1].channel.inserts;
-    assert_eq!(b[0], Some(Insert::new(EffectKind::Reverb)));
+    let id = b[0].as_ref().unwrap().id;
+    assert_eq!(b[0], Some(Insert::new(id, EffectKind::Reverb)));
     assert!(
         b[1..].iter().all(Option::is_none),
         "fewer slots: the rest is empty"
@@ -924,8 +937,10 @@ fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
     let mut v = rich_json();
     v["song"]["mixer"] = serde_json::json!({"returns": 3});
     let song = read_json(&v);
-    assert_eq!(song.doc.returns, mixer::new_song_returns());
-    assert_eq!(song.doc.master, mixer::new_song_master());
+    assert_eq!(
+        mixer_without_ids(&song.doc),
+        mixer_without_ids(&Doc::new_default())
+    );
     assert_eq!(song.doc.tracks, want.doc.tracks);
 }
 
@@ -1025,19 +1040,20 @@ fn added_song() -> Song {
         }));
     }
     let mverb = PluginRef::new(MVERB, "MVerb", "DISTRHO", "").with_state([9u8, 8, 7].into());
-    let mut passed = Insert::plugin(Arc::new(mverb));
+    let mut passed = Insert::plugin(NO_INSERT_ID, Arc::new(mverb));
     passed.bypassed = true;
     let mut first = Track::clone(&doc.tracks[0]);
     first.channel.inserts[3] = Some(passed);
     doc.tracks[0] = Arc::new(first);
     let mut a = Return::clone(&doc.returns[0]);
-    let mut compressor = Insert::new(EffectKind::Compressor);
+    let mut compressor = Insert::new(NO_INSERT_ID, EffectKind::Compressor);
     compressor.bypassed = true;
     a.channel.inserts[1] = Some(compressor);
     doc.returns[0] = Arc::new(a);
     let mut master = Channel::clone(&doc.master);
-    master.inserts[2] = Some(Insert::plugin(surge(&[])));
+    master.inserts[2] = Some(Insert::plugin(NO_INSERT_ID, surge(&[])));
     doc.master = Arc::new(master);
+    number_inserts(doc);
     song
 }
 
@@ -1119,7 +1135,8 @@ fn the_shape_of_version_4_on_disk() {
     assert_eq!(tracks[3]["instrument"]["bank"], 128);
     assert_eq!(
         tracks[0]["inserts"][3],
-        serde_json::json!({"plugin": {"key": MVERB, "name": "MVerb", "vendor": "DISTRHO",
+        serde_json::json!({"id": 9,
+                           "plugin": {"key": MVERB, "name": "MVerb", "vendor": "DISTRHO",
                                       "state": "CQgH"},
                            "bypassed": true}),
         "no path: not written"
@@ -1130,7 +1147,7 @@ fn the_shape_of_version_4_on_disk() {
     assert!(a[0].get("bypassed").is_none(), "not passed by: not written");
     assert_eq!(
         v["song"]["mixer"]["master"]["inserts"][2],
-        serde_json::json!({"plugin": {"key": SURGE, "name": "Surge XT",
+        serde_json::json!({"id": 15, "plugin": {"key": SURGE, "name": "Surge XT",
             "vendor": "Surge Synth Team", "path": "/usr/lib/vst3/Surge XT.vst3"}}),
         "no state: not written"
     );
@@ -1240,7 +1257,10 @@ fn fields_and_formats_that_are_not_known_are_kept_and_written_back() {
     let again: serde_json::Value = serde_json::from_slice(&saved).unwrap();
     assert_eq!(again["song"]["tracks"][1]["instrument"], clap);
     assert_eq!(again["song"]["tracks"][2]["instrument"], preset);
-    assert_eq!(again["song"]["tracks"][0]["inserts"][3], slot);
+    // The insert was given an id when the song was read.
+    let mut saved_slot = again["song"]["tracks"][0]["inserts"][3].clone();
+    assert!(saved_slot.as_object_mut().unwrap().remove("id").is_some());
+    assert_eq!(saved_slot, slot);
     assert_eq!(decode(&saved).unwrap(), song);
 
     // A step that gives the plugin another state keeps what was kept.
@@ -1542,7 +1562,7 @@ fn timelines_and_markers_that_cannot_be_do_not_read() {
     let song = with(&|s| {
         s["tempoPoints"][1] = point(6001, 30_000);
         s["nextId"] = 20.into();
-        s["markers"] = serde_json::json!([marker(11, 960), marker(4, 960), marker(9, 0)]);
+        s["markers"] = serde_json::json!([marker(15, 960), marker(4, 960), marker(14, 0)]);
         s["markers"][2]["name"] = "".into();
     })
     .unwrap();
@@ -1551,6 +1571,85 @@ fn timelines_and_markers_that_cannot_be_do_not_read() {
         (song.doc.markers.iter())
             .map(|m| (m.id.0, m.tick))
             .collect::<Vec<_>>(),
-        [(9, 0), (4, 960), (11, 960)]
+        [(14, 0), (4, 960), (15, 960)]
     );
+}
+
+/// Gives the inserts the ids a file that has none is read with: from 8, the `next_id` of
+/// the songs of these tests before their inserts, in the order of the strips.
+fn number_inserts(doc: &mut Doc) {
+    doc.next_id = 8;
+    renumber_inserts(doc);
+}
+
+/// The returns and the master, leaving out which ids their inserts have.
+fn mixer_without_ids(doc: &Doc) -> ([Arc<Return>; 2], Arc<Channel>) {
+    let mut doc = Doc {
+        tracks: Vec::new(),
+        ..doc.clone()
+    };
+    for insert in inserts_mut(&mut doc) {
+        insert.id = NO_INSERT_ID;
+    }
+    (doc.returns, doc.master)
+}
+
+#[test]
+fn inserts_keep_their_ids_and_get_one_when_the_file_has_none() {
+    const PLACES: [&str; 6] = [
+        "/tracks/0/inserts/1",
+        "/tracks/0/inserts/3",
+        "/mixer/returns/a/inserts/0",
+        "/mixer/returns/b/inserts/2",
+        "/mixer/master/inserts/0",
+        "/mixer/master/inserts/1",
+    ];
+    let good: serde_json::Value = serde_json::from_slice(&encode(&rich_song("x", 1))).unwrap();
+    let read = |f: &dyn Fn(&mut serde_json::Value)| {
+        let mut v = good.clone();
+        f(&mut v["song"]);
+        decode(&serde_json::to_vec(&v).unwrap())
+    };
+    let ids =
+        |song: &Song| -> Vec<u32> { inserts_mut(&mut song.doc.clone()).map(|i| i.id.0).collect() };
+    let set = |s: &mut serde_json::Value, place: &str, id: u32| {
+        s.pointer_mut(place).unwrap()["id"] = id.into();
+    };
+    let forget = |s: &mut serde_json::Value, place: &str| {
+        let insert = s.pointer_mut(place).unwrap().as_object_mut().unwrap();
+        assert!(insert.remove("id").is_some(), "{place} had an id");
+    };
+
+    let as_written = read(&|_| {}).unwrap();
+    assert_eq!(ids(&as_written), [8, 9, 10, 11, 12, 13]);
+    assert_eq!(as_written.doc.next_id, 14);
+
+    // A file from before inserts had ids: given from `nextId`, in the order of the strips.
+    let none = read(&|s| {
+        s["nextId"] = 8.into();
+        PLACES.iter().for_each(|place| forget(s, place));
+    })
+    .unwrap();
+    assert_eq!(none, as_written);
+    // Only the ones without an id get one; the others keep theirs.
+    let some = read(&|s| {
+        forget(s, PLACES[1]);
+        forget(s, PLACES[4]);
+    })
+    .unwrap();
+    assert_eq!(ids(&some), [8, 14, 10, 11, 15, 13]);
+    assert_eq!(some.doc.next_id, 16);
+
+    let broken: [&dyn Fn(&mut serde_json::Value); 4] = [
+        // Two inserts with one id.
+        &|s| set(s, PLACES[3], 8),
+        // Not below `nextId`.
+        &|s| set(s, PLACES[0], 14),
+        // A clip's id, a marker's id.
+        &|s| set(s, PLACES[2], 1),
+        &|s| set(s, PLACES[5], 4),
+    ];
+    for (i, f) in broken.iter().enumerate() {
+        assert!(matches!(read(*f), Err(ReadError::Broken)), "case {i}");
+    }
 }

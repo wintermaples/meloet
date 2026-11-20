@@ -29,6 +29,7 @@
   import { LIST_COMMA, STATUS_JOIN, t, type TextKey } from "../text/ja";
   import { about } from "./about/about.svelte";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
+  import { laneNameText, stepNameText, stepWhatText } from "./history/stepText";
   import { stripName } from "./mixer/stripName";
   import { paramName, valueText } from "./params/paramRows";
   import { paramUi } from "./params/paramUi.svelte";
@@ -194,6 +195,29 @@
     const place = (bar: number, beat: number) => (beat === 1 ? t("timeline.placeBar", { bar }) : t("timeline.placeBeat", { bar, beat }));
     const placeOrHead = (bar: number, beat: number) => (bar === 1 && beat === 1 ? t("timeline.placeHead") : place(bar, beat));
     switch (m?.id) {
+      case "undone":
+      case "redone": {
+        const name = stepNameText(m.name);
+        const what = stepWhatText(m.name, m.what, app);
+        const redoKey = modKey(`${t("key.shift")} ${t("key.undo")}`);
+        if (m.id === "undone") return what === null ? plain("msg.undoneBare", { name, redoKey }) : plain("msg.undone", { name, what, redoKey });
+        return what === null ? plain("msg.redoneBare", { name }) : plain("msg.redone", { name, what });
+      }
+      case "historyJumped":
+        return plain(m.forward ? "msg.historyJumpedForward" : "msg.historyJumped", { index: m.index, name: stepNameText(m.name), steps: m.steps });
+      case "nothingToUndo":
+        return plain("msg.nothingToUndo");
+      case "automationWriting":
+        return plain("msg.automationWriting", { track: track(m.track), target: laneNameText(m.target) });
+      case "automationRested":
+        return plain("msg.automationRested", { track: track(m.track), target: laneNameText(m.target) });
+      case "automationRestored":
+        return plain("msg.automationRestored", { track: track(m.track), target: laneNameText(m.target) });
+      case "automationMoving": {
+        const names = m.tracks.map(track);
+        const tracks = names.length < 2 ? (names[0] ?? "") : t("status.shelfGroupsLast", { first: names.slice(0, -1).join(LIST_COMMA), last: names.at(-1)! });
+        return plain("msg.automationMoving", { tracks });
+      }
       case "tempoRampSelected":
         if (m.toTempoBpm === m.tempoBpm) return plain("msg.tempoPointSelected", { place: place(m.bar, m.beat), tempo: tempoText(m.tempoBpm) });
         return plain("msg.tempoRampSelected", {

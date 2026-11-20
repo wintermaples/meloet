@@ -2,7 +2,7 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Transport } from "./session";
-import type { HelloReply, LiveNotesSnapshot, ParamTable, SendReply, ServerMessage, Snapshot } from "./types";
+import type { HelloReply, HistoryRow, LiveNotesSnapshot, ParamTable, SendReply, ServerMessage, Snapshot } from "./types";
 
 export const tauriTransport: Transport = {
   hello: (protocolVersion) => invoke<HelloReply>("hello", { protocolVersion }),
@@ -16,6 +16,8 @@ export const tauriTransport: Transport = {
   clock: () => invoke<number>("clock"),
   // A raw reply (tauri::ipc::Response) arrives as an ArrayBuffer.
   takeNotes: (id) => invoke<ArrayBuffer>("take_notes", { id }),
+  lane: (laneId) => invoke<ArrayBuffer>("lane", { laneId }),
+  historyRows: (from, to) => invoke<HistoryRow[]>("history_rows", { from, to }),
   liveNotes: () => invoke<LiveNotesSnapshot>("live_notes"),
   pluginParams: (table) => invoke<ParamTable | null>("plugin_params", { table }),
 };

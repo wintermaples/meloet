@@ -8,9 +8,11 @@
 
 use crate::TrackId;
 use crate::arrange::ClipEdge;
+use crate::automation::AutoTarget;
 use crate::edit::Edit;
 use crate::effects::EffectKind;
 use crate::mixer::{Bus, PluginPlace, StripId};
+use crate::notes::NoteField;
 use crate::song::{ClipId, Doc, MarkerId};
 use crate::time::{Meter, Tempo, TickRange};
 
@@ -190,6 +192,7 @@ pub enum StepKind {
     SetNotesField {
         clip: ClipId,
         count: usize,
+        field: NoteField,
     },
     AddControl {
         clip: ClipId,
@@ -294,6 +297,53 @@ pub enum StepKind {
         bus: Bus,
         muted: bool,
     },
+    /// 「外す」 on the stopped plugin that was the track's instrument (spec 3, 89-5): the track
+    /// sounds as the sine wave. The `Doc` before the step has the plugin.
+    RemoveInstrument {
+        track: TrackId,
+    },
+    /// A lane made from the track's header or from a row of the parameters panel.
+    AddLane {
+        track: TrackId,
+        target: AutoTarget,
+    },
+    /// 「帯を消す」: the lane goes with its points.
+    DeleteLane {
+        track: TrackId,
+        target: AutoTarget,
+    },
+    /// A point put on the lane by hand.
+    AddAutoPoint {
+        track: TrackId,
+        target: AutoTarget,
+    },
+    /// One drag of points.
+    MoveAutoPoints {
+        track: TrackId,
+        target: AutoTarget,
+        count: usize,
+    },
+    DeleteAutoPoints {
+        track: TrackId,
+        target: AutoTarget,
+        count: usize,
+    },
+    /// 「● 書く」: what was written from one press to its release (spec 3, 16-B).
+    WriteAutomation {
+        track: TrackId,
+        target: AutoTarget,
+    },
+    /// The lane rests without a value being set with it (spec 3, 17-A): the parameter was
+    /// moved in the plugin's own window.
+    RestLane {
+        track: TrackId,
+        target: AutoTarget,
+    },
+    /// 「もどす」.
+    RestoreLane {
+        track: TrackId,
+        target: AutoTarget,
+    },
     /// From the song as last saved to the song brought back from the recovery file, at the
     /// start. The history band calls it "なおすためのファイルから戻す" (mock F-Recover2).
     Recovered,
@@ -308,6 +358,19 @@ struct Step {
     /// On the undo list the `Doc` before the step, on the redo list the one after.
     doc: Doc,
     version: u64,
+}
+
+/// A step as the history band lists it.
+#[derive(Debug, Clone, Copy)]
+pub struct StepRow<'a> {
+    pub kind: StepKind,
+    /// Names the step for as long as the history holds it as it is: no other step of this
+    /// history has had the number, and a step that was changed afterwards
+    /// ([`History::amend`]) has a new one.
+    pub number: u64,
+    /// The `Doc` before the step and the one after it, for the names of what it touched.
+    pub before: &'a Doc,
+    pub after: &'a Doc,
 }
 
 #[derive(Debug, Clone)]
@@ -415,6 +478,34 @@ impl History {
             .iter()
             .chain(self.redo.iter().rev())
             .map(|s| &s.kind)
+    }
+
+    /// The step at `index` of [`History::steps`]. `doc`: the `Doc` as it is now.
+    pub fn row<'a>(&'a self, doc: &'a Doc, index: usize) -> Option<StepRow<'a>> {
+        let undone = self.undo.len();
+        // The redo list holds, last first, the `Doc` and the version after each step.
+        let redo = |i: usize| self.redo.len().checked_sub(1 + i).map(|at| &self.redo[at]);
+        if index < undone {
+            let after = self.undo.get(index + 1);
+            Some(StepRow {
+                kind: self.undo[index].kind,
+                number: after.map_or(self.version, |s| s.version),
+                before: &self.undo[index].doc,
+                after: after.map_or(doc, |s| &s.doc),
+            })
+        } else {
+            let i = index - undone;
+            let step = redo(i)?;
+            Some(StepRow {
+                kind: step.kind,
+                number: step.version,
+                before: match i {
+                    0 => doc,
+                    _ => &redo(i - 1)?.doc,
+                },
+                after: &step.doc,
+            })
+        }
     }
 
     /// The number of the `Doc` as it is now. Undo and redo bring back the number it had.

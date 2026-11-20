@@ -42,6 +42,7 @@ pub(crate) fn song_with_notes(name: &str, notes: u64) -> Song {
         next_id: 3,
         ..song.doc
     };
+    crate::songfile::renumber_inserts(&mut song.doc);
     song
 }
 

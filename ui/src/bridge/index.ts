@@ -1,17 +1,19 @@
 // The only door between the screen and Rust. Everything outside ui/src/bridge imports from here.
 
 import { createFakeTransport, fakeMeasureEnabled, fakeMeasureReport, fakeUiScript } from "./fake";
+import { LaneStore, songLaneIds, type LanePoints } from "./lane";
 import { LiveNotesBook } from "./live";
 import { ParamTableBook } from "./paramTable";
 import { connectWith, type Connection, type Handlers, type Transport } from "./session";
 import { songTakeIds, TakeStore, type TakeNotes } from "./take";
 import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport, tauriUiScript } from "./tauri";
-import type { AppState, Command } from "./types";
+import type { AppState, Command, HistoryRow } from "./types";
 
 export type * from "./types";
-export { DRUM_ROWS, INSTRUMENT_GROUPS, PROTOCOL_VERSION } from "./types";
+export { DRUM_ROWS, INSTRUMENT_GROUPS, PROTOCOL_VERSION, STEP_NAME_KINDS } from "./types";
 export { keyIsDown, positionAt, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
+export type { LanePoints } from "./lane";
 export type { LiveNotesBook } from "./live";
 export type { ParamTableBook, ParamTableListener } from "./paramTable";
 export { ProtocolVersionError, type Connection, type Handlers } from "./session";
@@ -23,6 +25,7 @@ function pickTransport(): Transport {
 }
 
 const takes = new TakeStore((id) => connected().takeNotes(id));
+const lanes = new LaneStore((id) => connected().lane(id));
 let book: LiveNotesBook | null = null;
 let params: ParamTableBook | null = null;
 
@@ -51,8 +54,10 @@ export async function connect(handlers: Handlers): Promise<Connection> {
         if (song.serial !== serial) {
           serial = song.serial;
           takes.clear();
+          lanes.clear();
         }
         takes.keepOnly(songTakeIds(song));
+        lanes.keepOnly(songLaneIds(song));
       }
       const shown = state.params.selected;
       table.show(shown?.kind === "plugin" ? shown.table : null);
@@ -81,6 +86,24 @@ export function takeNotes(id: number): Promise<TakeNotes> {
 /** The notes of a take if they are here already. */
 export function peekTakeNotes(id: number): TakeNotes | undefined {
   return takes.peek(id);
+}
+
+/** The points of an automation lane (`LaneView.laneId`), fetched once and kept by id. */
+export function lanePoints(laneId: number): Promise<LanePoints> {
+  return lanes.get(laneId);
+}
+
+/** The points of a lane if they are here already. */
+export function peekLanePoints(laneId: number): LanePoints | undefined {
+  return lanes.peek(laneId);
+}
+
+/**
+ * The rows `from`..`to` of the history band that there are, oldest first; rows count from 1. Not kept here:
+ * `HistoryView` says which rows the screen may keep.
+ */
+export function historyRows(from: number, to: number): Promise<HistoryRow[]> {
+  return connected().historyRows(from, to);
 }
 
 /** The notes of the recording going on. */

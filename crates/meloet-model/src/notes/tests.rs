@@ -492,7 +492,14 @@ fn the_fields_of_the_note_list() {
     ]);
     let set = |field, value| set_notes_field(&doc, clip, &[0, 2], field, value).unwrap();
     let e = set(NoteField::Length, 240);
-    assert_eq!(e.edit.step, StepKind::SetNotesField { clip, count: 2 });
+    assert_eq!(
+        e.edit.step,
+        StepKind::SetNotesField {
+            clip,
+            count: 2,
+            field: NoteField::Length
+        }
+    );
     assert_eq!(e.selected, [0, 2]);
     assert_eq!(
         notes_of(&e.edit.doc, clip),

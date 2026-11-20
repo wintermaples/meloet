@@ -8,6 +8,7 @@ import {
   type Command,
   type Event,
   type HelloReply,
+  type HistoryRow,
   type LiveNotes,
   type LiveNotesSnapshot,
   type ParamTable,
@@ -31,6 +32,10 @@ export interface Transport {
   clock(): Promise<number>;
   /** The take binary (docs/architecture.md 3-4). */
   takeNotes(id: number): Promise<ArrayBuffer>;
+  /** The points of a lane (`LaneView.laneId`), binary. Rejects when `laneId` is no lane's. */
+  lane(laneId: number): Promise<ArrayBuffer>;
+  /** The rows `from`..`to` of the history band that there are, oldest first; rows count from 1. */
+  historyRows(from: number, to: number): Promise<HistoryRow[]>;
   liveNotes(): Promise<LiveNotesSnapshot>;
   /** The parameters of the plugin in the parameters panel; null when `table` names them no more. */
   pluginParams(table: number): Promise<ParamTable | null>;
@@ -57,6 +62,8 @@ export interface Connection {
   clockOffsetUs(rounds?: number): Promise<number>;
   rev(): number;
   takeNotes(id: number): Promise<ArrayBuffer>;
+  lane(laneId: number): Promise<ArrayBuffer>;
+  historyRows(from: number, to: number): Promise<HistoryRow[]>;
   liveNotes(): Promise<LiveNotesSnapshot>;
   pluginParams(table: number): Promise<ParamTable | null>;
 }
@@ -189,6 +196,8 @@ export async function connectWith(
     },
     rev: () => current?.rev ?? 0,
     takeNotes: (id) => transport.takeNotes(id),
+    lane: (laneId) => transport.lane(laneId),
+    historyRows: (from, to) => transport.historyRows(from, to),
     liveNotes: () => transport.liveNotes(),
     pluginParams: (table) => transport.pluginParams(table),
   };

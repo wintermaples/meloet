@@ -194,6 +194,7 @@ fn a_new_song() {
             slots: [const { None }; 4],
             muted: false,
             soloed: false,
+            lanes: vec![],
             clips: vec![],
         }]
     );
@@ -206,14 +207,14 @@ fn a_new_song() {
         }
     );
     assert_eq!(state.workspace.file_drop, None);
-    let first_slot = |kind| [Some(InsertView::builtin(kind)), None, None, None];
+    let first_slot = |id, kind| [Some(InsertView::builtin(id, kind)), None, None, None];
     assert_eq!(
         song.returns,
-        [EffectKind::Reverb, EffectKind::Delay].map(|kind| ReturnView {
+        [(1, EffectKind::Reverb), (2, EffectKind::Delay)].map(|(id, kind)| ReturnView {
             gain_db: Some(0.0),
             pan: 0,
             muted: false,
-            slots: first_slot(kind),
+            slots: first_slot(id, kind),
         })
     );
     assert_eq!(
@@ -221,7 +222,7 @@ fn a_new_song() {
         MasterView {
             gain_db: Some(0.0),
             pan: 0,
-            slots: first_slot(EffectKind::Limiter),
+            slots: first_slot(3, EffectKind::Limiter),
         }
     );
     assert_eq!(state.params, ParamsView::default());

@@ -194,7 +194,7 @@ pub struct Doc {
     /// Return A and return B.
     pub returns: [Arc<Return>; 2],
     pub master: Arc<Channel>,
-    /// The next clip, take or marker id to give out.
+    /// The next clip, take, marker or insert id to give out.
     pub next_id: u32,
 }
 
@@ -220,7 +220,7 @@ impl Doc {
             })],
             returns: mixer::new_song_returns(),
             master: mixer::new_song_master(),
-            next_id: 1,
+            next_id: mixer::NEW_SONG_NEXT_ID,
         }
     }
 

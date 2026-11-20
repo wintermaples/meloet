@@ -213,7 +213,11 @@ fn effects_go_into_empty_slots_and_come_out() {
         }
     );
     let c = e.doc.channel(T1).unwrap();
-    assert_eq!(c.inserts[2], Some(Insert::new(EffectKind::Compressor)));
+    assert_eq!(
+        c.inserts[2],
+        Some(Insert::new(InsertId(doc.next_id), EffectKind::Compressor))
+    );
+    assert_eq!(e.doc.next_id, doc.next_id + 1);
     assert!(c.inserts[0].is_none() && c.inserts[1].is_none() && c.inserts[3].is_none());
     assert_eq!(
         add_effect(&e.doc, T1, 2, EffectKind::Eq4),
@@ -236,7 +240,7 @@ fn effects_go_into_empty_slots_and_come_out() {
             assert_eq!(insert.value(mix), Some(percent), "{kind:?} on {strip:?}");
             let mut rest = insert.clone();
             rest.set(mix, 100.0);
-            assert_eq!(rest, Insert::new(kind), "only the mix differs");
+            assert_eq!(rest, Insert::new(insert.id, kind), "only the mix differs");
         }
     }
     assert_eq!(doc.insert(A, 0).unwrap().value(reverb::MIX), Some(100.0));
@@ -244,7 +248,7 @@ fn effects_go_into_empty_slots_and_come_out() {
     let chorus = add_effect(&doc, T1, 3, EffectKind::Chorus).unwrap();
     assert_eq!(
         chorus.doc.insert(T1, 3),
-        Some(&Insert::new(EffectKind::Chorus))
+        Some(&Insert::new(InsertId(doc.next_id), EffectKind::Chorus))
     );
 
     let out = remove_effect(&e.doc, T1, 2).unwrap();
@@ -354,8 +358,10 @@ fn passing_by_moving_and_replacing_are_steps_that_undo_takes_back() {
     // Another effect in its place, as a new one on that strip and heard.
     let e = replace_effect(&doc, T1, 0, Reverb).unwrap();
     assert_eq!(e.step, StepKind::ReplaceEffect { strip: T1, slot: 0 });
+    let (was, new) = (doc.insert(T1, 0).unwrap().id, InsertId(doc.next_id));
     h.apply(&mut doc, e);
-    assert_eq!(doc.insert(T1, 0), Some(&Insert::new_on(Reverb, T1)));
+    assert_ne!(was, new, "what replaces an insert is another insert");
+    assert_eq!(doc.insert(T1, 0), Some(&Insert::new_on(new, Reverb, T1)));
     assert_eq!(
         replace_effect(&doc, T1, 0, Reverb).unwrap_err(),
         EditError::Unchanged
@@ -390,7 +396,8 @@ fn passing_by_moving_and_replacing_are_steps_that_undo_takes_back() {
     for _ in 0..8 {
         h.redo(&mut doc);
     }
-    assert_eq!(doc.insert(T1, 0), Some(&Insert::new_on(Eq4, T1)));
+    let id = doc.insert(T1, 0).unwrap().id;
+    assert_eq!(doc.insert(T1, 0), Some(&Insert::new_on(id, Eq4, T1)));
 }
 
 #[test]
@@ -487,7 +494,7 @@ fn a_plugin_goes_into_a_slot_and_out_again() {
     );
     let gone = remove_effect(&e.doc, T1, 1).unwrap();
     assert_eq!(gone.step, StepKind::RemovePlugin { place });
-    assert_eq!(gone.doc, doc);
+    assert_eq!(held(&gone.doc), held(&doc));
     // An effect that comes with meloet still says which it was.
     let limiter = remove_effect(&doc, StripId::Master, 0).unwrap();
     assert_eq!(
@@ -592,4 +599,66 @@ fn a_track_of_a_plugin_or_an_sf2_preset_sends_as_its_group() {
     assert_eq!(e.doc.track(second).unwrap().name, "Surge XT 2");
     let (e, guitar) = edit::add_track(&e.doc, None, preset(0, 27)).unwrap();
     assert_eq!(e.doc.track(guitar).unwrap().name, "ギター");
+}
+
+/// Every insert of the song, with the strip it is on.
+fn insert_ids(doc: &Doc) -> Vec<InsertId> {
+    let of = |c: &Channel| c.inserts.iter().flatten().map(|i| i.id).collect::<Vec<_>>();
+    let mut ids: Vec<InsertId> = doc.tracks.iter().flat_map(|t| of(&t.channel)).collect();
+    ids.extend(doc.returns.iter().flat_map(|r| of(&r.channel)));
+    ids.extend(of(&doc.master));
+    ids
+}
+
+#[test]
+fn an_insert_keeps_its_id_and_no_id_is_given_twice() {
+    use EffectKind::*;
+    let mut doc = Doc::new_default();
+    let mut h = History::new();
+    assert_eq!(insert_ids(&doc), [InsertId(1), InsertId(2), InsertId(3)]);
+    assert_eq!(doc.next_id, NEW_SONG_NEXT_ID);
+    let mut seen: std::collections::HashSet<InsertId> = insert_ids(&doc).into_iter().collect();
+    let mut step = |doc: &mut Doc, h: &mut History, e: Edit| {
+        let before = insert_ids(doc);
+        h.apply(doc, e);
+        for id in insert_ids(doc) {
+            assert!(id.0 < doc.next_id, "{id:?} is below next_id");
+            assert!(
+                before.contains(&id) || seen.insert(id),
+                "{id:?} given twice"
+            );
+        }
+    };
+
+    let e = add_effect(&doc, T1, 0, Compressor).unwrap();
+    step(&mut doc, &mut h, e);
+    let e = add_effect(&doc, T1, 1, Eq4).unwrap();
+    step(&mut doc, &mut h, e);
+    let (comp, eq) = (doc.insert(T1, 0).unwrap().id, doc.insert(T1, 1).unwrap().id);
+    assert_ne!(comp, eq);
+
+    // Another order: the ids go with the effects.
+    let e = move_insert(&doc, T1, 0, 3).unwrap();
+    step(&mut doc, &mut h, e);
+    assert_eq!(doc.insert(T1, 0).unwrap().id, eq);
+    assert_eq!(doc.insert(T1, 3).unwrap().id, comp);
+    let e = toggle_bypass(&doc, T1, 3).unwrap();
+    step(&mut doc, &mut h, e);
+    let e = set_param(&doc, T1, 3, Compressor, 0, -30.0).unwrap();
+    step(&mut doc, &mut h, e);
+    assert_eq!(doc.insert(T1, 3).unwrap().id, comp);
+
+    // Replaced, taken out and put in again: new ids each time, also after an undo.
+    let e = replace_effect(&doc, T1, 3, Chorus).unwrap();
+    step(&mut doc, &mut h, e);
+    let chorus = doc.insert(T1, 3).unwrap().id;
+    assert_ne!(chorus, comp);
+    h.undo(&mut doc);
+    assert_eq!(doc.insert(T1, 3).unwrap().id, comp);
+    let e = remove_effect(&doc, T1, 3).unwrap();
+    step(&mut doc, &mut h, e);
+    let e = add_effect(&doc, T1, 3, Compressor).unwrap();
+    step(&mut doc, &mut h, e);
+    let again = doc.insert(T1, 3).unwrap().id;
+    assert!(again != comp && again != chorus);
 }

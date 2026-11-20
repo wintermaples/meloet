@@ -313,6 +313,10 @@ pub enum StandIn {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct InsertView {
+    /// Stays with what sits in the slot when the slots of its strip are put in another
+    /// order, and is never given to another insert: what replaces it has another id.
+    /// `AutoTarget::Insert` names the insert by it.
+    pub id: u32,
     pub effect: InsertEffectView,
     /// 「とばす」 (spec 3, 13-A): the mark at the left of the slot is empty and the name
     /// gray.7. Saved with the song.
@@ -446,8 +450,9 @@ pub struct KeyCount {
 
 impl InsertView {
     /// An effect that comes with meloet, not passed by.
-    pub fn builtin(effect: EffectKind) -> InsertView {
+    pub fn builtin(id: u32, effect: EffectKind) -> InsertView {
         InsertView {
+            id,
             effect: InsertEffectView::Builtin { effect },
             bypassed: false,
         }

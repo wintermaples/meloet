@@ -29,12 +29,12 @@ describe("ストリップの名前（B-86）", () => {
     expect(stripName(song([null, null, null, null]), { kind: "return", bus: "b" }, library)).toBe("B ディレイ");
     // プラグインは名前のまま（新しい欄 slots だけを読む）。
     const s = song([null, null, null, null]);
-    s.returns[0].slots[1] = { effect: { kind: "plugin", key: "lv2:x", name: "MVerb", format: "lv2", state: "ready" }, bypassed: false };
+    s.returns[0].slots[1] = { id: 8, effect: { kind: "plugin", key: "lv2:x", name: "MVerb", format: "lv2", state: "ready" }, bypassed: false };
     expect(stripName(s, { kind: "return", bus: "a" }, library)).toBe("A MVerb");
   });
   it("戻りのいちばん上がプラグインなら 14-A の種類の名前。種類が「そのほか」のときだけプラグインの名前（user:2026-11-19）", () => {
     const s = song([null, null, null, null]);
-    s.returns[0].slots[0] = { effect: { kind: "plugin", key: "lv2:dragonfly", name: "Dragonfly Reverb", format: "lv2", state: "ready" }, bypassed: false };
+    s.returns[0].slots[0] = { id: 8, effect: { kind: "plugin", key: "lv2:dragonfly", name: "Dragonfly Reverb", format: "lv2", state: "ready" }, bypassed: false };
     const withRows = (category: string) => ({ ...library, plugins: [row("lv2:dragonfly", "Dragonfly Reverb", category)] }) as LibraryView;
     expect(stripName(s, { kind: "return", bus: "a" }, withRows("reverb"))).toBe("A リバーブ");
     expect(stripName(s, { kind: "return", bus: "a" }, withRows("other"))).toBe("A Dragonfly Reverb");

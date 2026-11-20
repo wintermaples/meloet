@@ -8,11 +8,14 @@
 # --script: MELOET_UI_SCRIPT, e.g. pr-scroll:100, pr-zoom:100, pr-drag:1000, or several joined
 #   with "," (ui/src/dev/script.ts). Shift + wheel, Mod + wheel, and drag-and-let-go of a note,
 #   sent as DOM events to the note area.
+#   Or the history band's parts (ui/src/dev/historyScript.ts), not mixed with the pr-* ones:
+#   hist-make:5000 (makes 5000 steps by changing the tempo), hist-open:20, hist-scroll:200,
+#   hist-jump:20 (500 steps back, then forward). The piano roll is not opened for them.
 # --song: the song to open (MELOET_OPEN_SONG). Without it, one is made with make_song.py
 #   (--notes, default 10000, over --bars, default 100).
 #
 # Starts meloet with a fresh settings and state directory, opens the song, selects its clip
-# (id 2, as make_song.py writes it), opens the piano roll band, waits until the script reports
+# (id 2, as make_song.py writes it), opens the piano roll band (not for hist-*), waits until the script reports
 # that it is done, and stops meloet with SIGTERM. Writes DIR/summary.md and the raw files in
 # DIR/raw/. Changes nothing on the PC.
 set -euo pipefail
@@ -67,8 +70,11 @@ launcher=()
 if command -v dbus-run-session >/dev/null; then launcher=(dbus-run-session --); fi
 
 cmd() { printf '{"afterMs":%d,"command":%s}' "$1" "$2"; }
-commands="[$(cmd 1000 '{"type":"chooserConfirm"}'),$(cmd 1500 '{"type":"selectClip","clip":2}'),\
-$(cmd 1700 '{"type":"toggleBand","band":"pianoRoll"}')]"
+case "$script" in
+  hist-*) commands="[$(cmd 1000 '{"type":"chooserConfirm"}')]" ;;
+  *) commands="[$(cmd 1000 '{"type":"chooserConfirm"}'),$(cmd 1500 '{"type":"selectClip","clip":2}'),\
+$(cmd 1700 '{"type":"toggleBand","band":"pianoRoll"}')]" ;;
+esac
 
 MELOET_CONFIG_DIR="$work/config" \
 MELOET_STATE_DIR="$work/state" \

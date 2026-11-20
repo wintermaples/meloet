@@ -2,8 +2,11 @@
 
 export type Platform = "mac" | "other";
 
-/** 出口えらび（流れ 2）の中にいるときだけ、↑ ↓ Enter をここで受ける。棚にキーが向いているときは、↑ ↓ Enter Space F を棚に。 */
-export type KeyContext = "main" | "outputChooser" | "shelf";
+/**
+ * 出口えらび（流れ 2）の中にいるときだけ、↑ ↓ Enter をここで受ける。棚にキーが向いているときは、↑ ↓ Enter Space F を棚に。
+ * 取り消しの履歴の帯にフォーカスがあるときは、↑ ↓ Home Enter を帯に。
+ */
+export type KeyContext = "main" | "outputChooser" | "shelf" | "history";
 
 export interface KeyInput {
   /** KeyboardEvent.key */
@@ -68,7 +71,11 @@ export type KeyAction =
   | { kind: "shelfSample" }
   | { kind: "shelfFavorite" }
   /** B: えらんでいるインサートをとばす ・ もどす（仕様書 3 章 86-1）。 */
-  | { kind: "bypass" };
+  | { kind: "bypass" }
+  // 取り消しの履歴の帯（仕様書 4 章）。↑ は新しい手（上の行）へ、↓ は古い手へ。Home でいまの手へ、Enter でここまで戻す。
+  | { kind: "historyStep"; delta: 1 | -1 }
+  | { kind: "historyHome" }
+  | { kind: "historyConfirm" };
 
 const TOOL_DIGITS: Record<string, "select" | "draw" | "erase"> = { "1": "select", "2": "draw", "3": "erase" };
 const NUDGES: Record<string, { steps: number; keys: number }> = {
@@ -170,6 +177,12 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (k.key === "Enter") return { kind: "shelfConfirm" };
   }
   if (k.key === "F2") return k.shift ? null : { kind: "renameTrack" };
+  if (!k.shift && !typing && context === "history") {
+    if (k.key === "ArrowUp") return { kind: "historyStep", delta: 1 };
+    if (k.key === "ArrowDown") return { kind: "historyStep", delta: -1 };
+    if (k.key === "Home") return { kind: "historyHome" };
+    if (k.key === "Enter") return { kind: "historyConfirm" };
+  }
 
   // 仕様書 4 章: Home は文字を打っている最中も効く。Space は効かず、空白として入る。Delete も効かず、枠の中の文字を消す。
   if (k.key === "Home") return k.shift ? null : { kind: "toStart" };

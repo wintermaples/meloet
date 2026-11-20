@@ -1,6 +1,7 @@
 // The only door between the screen and Rust. Everything outside ui/src/bridge imports from here.
 
 import { createFakeTransport, fakeMeasureEnabled, fakeMeasureReport, fakeUiScript } from "./fake";
+import { HistoryRowStore } from "./historyRows";
 import { LaneStore, songLaneIds, type LanePoints } from "./lane";
 import { LiveNotesBook } from "./live";
 import { ParamTableBook } from "./paramTable";
@@ -14,6 +15,7 @@ export { DRUM_ROWS, INSTRUMENT_GROUPS, PROTOCOL_VERSION, STEP_NAME_KINDS } from 
 export { keyIsDown, positionAt, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
 export type { LanePoints } from "./lane";
+export type { HistoryRowStore } from "./historyRows";
 export type { LiveNotesBook } from "./live";
 export type { ParamTableBook, ParamTableListener } from "./paramTable";
 export { ProtocolVersionError, type Connection, type Handlers } from "./session";
@@ -26,6 +28,7 @@ function pickTransport(): Transport {
 
 const takes = new TakeStore((id) => connected().takeNotes(id));
 const lanes = new LaneStore((id) => connected().lane(id));
+const historyBook = new HistoryRowStore(async (from, to) => connected().historyRows(from, to));
 let book: LiveNotesBook | null = null;
 let params: ParamTableBook | null = null;
 
@@ -45,9 +48,15 @@ export async function connect(handlers: Handlers): Promise<Connection> {
   params = table;
   let song: AppState["song"] | null = null;
   let serial: number | null = null;
+  let history: AppState["history"] | null = null;
+  let lastRev: number | null = null;
   connection = await connectWith(pickTransport(), {
     ...handlers,
     onState(state, rev) {
+      // A patch is always the rev after the last; any other rev is a snapshot, which may have skipped history rows.
+      const snapshot = lastRev === null || rev !== lastRev + 1;
+      lastRev = rev;
+      let newSong = false;
       // The song section is replaced whole when it changes; that is when takes may stop being used.
       if (state.song !== song) {
         song = state.song;
@@ -55,10 +64,14 @@ export async function connect(handlers: Handlers): Promise<Connection> {
           serial = song.serial;
           takes.clear();
           lanes.clear();
+          newSong = true;
         }
         takes.keepOnly(songTakeIds(song));
         lanes.keepOnly(songLaneIds(song));
       }
+      if (snapshot || newSong) historyBook.clear(state.history);
+      else if (state.history !== history) historyBook.follow(state.history);
+      history = state.history;
       const shown = state.params.selected;
       table.show(shown?.kind === "plugin" ? shown.table : null);
       handlers.onState(state, rev);
@@ -99,11 +112,16 @@ export function peekLanePoints(laneId: number): LanePoints | undefined {
 }
 
 /**
- * The rows `from`..`to` of the history band that there are, oldest first; rows count from 1. Not kept here:
- * `HistoryView` says which rows the screen may keep.
+ * The rows `from`..`to` of the history band that there are, oldest first; rows count from 1. Not kept: the band
+ * keeps them through `historyRowBook`, which follows what `HistoryView` says may be kept.
  */
 export function historyRows(from: number, to: number): Promise<HistoryRow[]> {
   return connected().historyRows(from, to);
+}
+
+/** The rows of the history band that were fetched, and what fetches the rest (`want`). */
+export function historyRowBook(): HistoryRowStore {
+  return historyBook;
 }
 
 /** The notes of the recording going on. */

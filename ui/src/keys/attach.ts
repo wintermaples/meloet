@@ -32,6 +32,7 @@ import {
 } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
 import { laneDeleteCommand } from "../components/automation/laneKeys";
+import { historyFocused, historyHome, historyJumpCommand, historyStep } from "../components/history/historyUi.svelte";
 import { timelineKeyCommand } from "../components/timeline/keys";
 import { pickTimeline } from "../components/timeline/pick";
 import { closeMenu, menuVisible } from "../lib/menu";
@@ -222,6 +223,8 @@ function command(action: KeyAction, state: AppState): Command | null {
     case "shelfFavorite":
       return shelfFavoriteCommand(state);
     // えらんでいるインサートがあり、ミキサーかパラメータの欄が見えているとき（仕様書 4 章「効かない（一文字 ・ ミキサー）」）。
+    case "historyConfirm":
+      return historyJumpCommand(state);
     case "bypass": {
       const insert = selectedInsert(state.params);
       const seen = state.workspace.layout.lower.some((l) => l.band === "mixer") || state.workspace.layout.rightFront === "params";
@@ -249,7 +252,9 @@ function screenOnly(action: KeyAction): boolean {
     action.kind === "zoom" ||
     action.kind === "tool" ||
     action.kind === "menuBar" ||
-    action.kind === "renameTrack"
+    action.kind === "renameTrack" ||
+    action.kind === "historyStep" ||
+    action.kind === "historyHome"
   );
 }
 
@@ -302,6 +307,10 @@ export function runKeyAction(
       if (track !== null) startRename(track);
       return track !== null;
     }
+    case "historyStep":
+      return historyStep(state, action.delta);
+    case "historyHome":
+      return historyHome(state);
   }
   const c = keyCommand(action, state, deps, toPianoRoll);
   if (c) deps.send(c);
@@ -342,6 +351,18 @@ function auditionToCancel(state: AppState): boolean {
   );
 }
 
+/** 取り消しの履歴の帯にフォーカスがあり、ダイアログがないとき、↑ ↓ Home Enter Esc は帯のもの（仕様書 4 章）。 */
+function historyKeys(state: AppState, doc: Document): boolean {
+  const ws = state.workspace;
+  return (
+    ws.songDialog === null &&
+    ws.settings === null &&
+    !state.plugins.stoppedOpen &&
+    ws.layout.lower.some((l) => l.band === "history") &&
+    historyFocused(doc)
+  );
+}
+
 /** Esc の 3 つめの番（用語の説明やメニュー）。上のメニュー、右クリックの一覧、状態行などの一覧のどれかをとじたら true。 */
 function closeMenus(): boolean {
   if (tipVisible()) {
@@ -371,7 +392,9 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     ? "outputChooser"
     : shelfHasKeys(state)
       ? "shelf"
-      : "main";
+      : historyKeys(state, doc)
+        ? "history"
+        : "main";
 
   // テンポ ・ 拍子の変更とマーカーのキー（K、Alt ← →、マーカーをえらんでいるときの F2、えらんだ物の Delete）。Esc はここを通さない。
   if (context === "main" && ev.key !== "Escape") {
@@ -447,7 +470,11 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
     else if (!closeMenus() && !aboutBack())
       deps.send(
-        auditionToCancel(state) ? { type: "shelfCancel" } : { type: "back" },
+        context === "history"
+          ? { type: "toggleBand", band: "history" }
+          : auditionToCancel(state)
+            ? { type: "shelfCancel" }
+            : { type: "back" },
       );
     return;
   }

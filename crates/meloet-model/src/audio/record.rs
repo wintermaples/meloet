@@ -19,6 +19,7 @@ pub struct NewAudio {
     pub frames: u64,
     pub sample_rate: u32,
     pub channels: u8,
+    pub bits: Option<u8>,
 }
 
 /// One lap of a recording: `length` ticks from `origin`, which sound the file from
@@ -129,6 +130,7 @@ pub fn add_vocal_recordings(
             frames: recording.audio.frames,
             sample_rate: recording.audio.sample_rate,
             channels: recording.audio.channels,
+            bits: recording.audio.bits,
             sha256: None,
         }));
     }
@@ -231,6 +233,7 @@ mod tests {
             frames,
             sample_rate: 48_000,
             channels: 1,
+            bits: Some(24),
         }
     }
 

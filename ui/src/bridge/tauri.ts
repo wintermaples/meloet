@@ -17,6 +17,7 @@ export const tauriTransport: Transport = {
   // A raw reply (tauri::ipc::Response) arrives as an ArrayBuffer.
   takeNotes: (id) => invoke<ArrayBuffer>("take_notes", { id }),
   lane: (laneId) => invoke<ArrayBuffer>("lane", { laneId }),
+  peaks: (audio, level, first, count) => invoke<ArrayBuffer>("peaks", { audio, level, first, count }),
   historyRows: (from, to) => invoke<HistoryRow[]>("history_rows", { from, to }),
   liveNotes: () => invoke<LiveNotesSnapshot>("live_notes"),
   pluginParams: (table) => invoke<ParamTable | null>("plugin_params", { table }),

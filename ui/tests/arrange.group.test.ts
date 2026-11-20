@@ -8,7 +8,7 @@ import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 const BAR = 4 * TPQ;
 
 function clip(id: number, fromBar: number, toBar: number): ClipView {
-  return { id, name: `c${id}`, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0, vocal: false };
+  return { id, name: `c${id}`, start: (fromBar - 1) * BAR, end: (toBar - 1) * BAR, take: 1, takes: 1, takeId: 100 + id, takeOffset: 0, noteCount: 0, audio: null };
 }
 function track(number: number, clips: ClipView[]): TrackView {
   return { id: number, number, name: `t${number}`, color: number, kind: { kind: "keys" }, sound: { kind: "builtin", instrument: "sine" }, standIn: null, drumKeys: null, gainDb: 0, pan: 0, sends: [null, null], sendDefaults: [null, null], slots: [null, null, null, null], muted: false, soloed: false, lanes: [], clips };

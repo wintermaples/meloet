@@ -65,6 +65,15 @@ pub struct VocalRecordingView {
     pub take: u32,
     /// The clip the takes go into, when the recording overlaps one already.
     pub clip: Option<u32>,
+    /// The number the file being written gets in the song's audio table when the recording
+    /// ends: `peaks` answers for it already, with `Peaks::growing`, so the clip in
+    /// `color.rec` can draw the waveform as it comes.
+    pub audio: u32,
+    /// The rate the file is written at.
+    pub sample_rate: u32,
+    /// The frame of the file that was sung at `from`; `None` until the song rolls (during
+    /// the count-in). In a loop: of the lap going on.
+    pub first_frame: Option<u64>,
 }
 
 /// 「録る形」 of the advanced sound settings: the samples of the files a recording writes.

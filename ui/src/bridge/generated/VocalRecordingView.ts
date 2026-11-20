@@ -19,4 +19,19 @@ take: number,
 /**
  * The clip the takes go into, when the recording overlaps one already.
  */
-clip: number | null, };
+clip: number | null, 
+/**
+ * The number the file being written gets in the song's audio table when the recording
+ * ends: `peaks` answers for it already, with `Peaks::growing`, so the clip in
+ * `color.rec` can draw the waveform as it comes.
+ */
+audio: number, 
+/**
+ * The rate the file is written at.
+ */
+sampleRate: number, 
+/**
+ * The frame of the file that was sung at `from`; `None` until the song rolls (during
+ * the count-in). In a loop: of the lap going on.
+ */
+firstFrame: number | null, };

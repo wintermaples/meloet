@@ -3,4 +3,4 @@
 /**
  * What `Command::RemoveMissing` names.
  */
-export type MissingRef = { "kind": "sf2", file: string, } | { "kind": "plugin", key: string, };
+export type MissingRef = { "kind": "sf2", file: string, } | { "kind": "plugin", key: string, } | { "kind": "audio", audio: number, };

@@ -154,6 +154,7 @@ fn a_file_is_copied_in_replaced_by_one_of_its_name_and_a_broken_one_is_not_added
         addable: true,
         files: 2,
         sf2: 1,
+        audio: 0,
     };
     assert_eq!(state.workspace.file_drop, Some(held));
     assert_eq!(state.status.message, Some(StatusMessage::Sf2Dragging));

@@ -380,8 +380,17 @@ pub enum MissingView {
     rename_all_fields = "camelCase"
 )]
 pub enum MissingRef {
-    Sf2 { file: String },
-    Plugin { key: String },
+    Sf2 {
+        file: String,
+    },
+    Plugin {
+        key: String,
+    },
+    /// An audio file, by its number in the song's audio table (`MissingAudioView::audio`):
+    /// every clip that plays it is deleted. One step.
+    Audio {
+        audio: u32,
+    },
 }
 
 /// A sample of the shelf (`Command::PlaySampleOf`).
@@ -431,12 +440,18 @@ pub struct FileDropView {
     /// The name of the file, without its folder; of the first one when there are more.
     pub name: String,
     /// False: "SF2 のファイルではないので、足せません。" True when one of the files is an SF2
-    /// file.
+    /// file or an audio file.
     pub addable: bool,
     /// How many files are held, and how many of them are SF2 files: with more than one the
     /// box says "3 つのファイル ・ SF2 は 2 つ" in place of the name (spec 3, 89-10).
     pub files: u32,
     pub sf2: u32,
+    /// How many of them are audio files (by their ending: wav, mp3, flac, ogg). Above 0 the
+    /// pointer's place comes as `Event::FileDrag`, the screen draws the gray.7 frame where
+    /// they would go, and `name` is the first audio file ("ドラム キック.wav ほか 7"). 2 or
+    /// more: the box is the two halves of 30-C. With `sf2` above 0 as well the box says
+    /// "SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ" (spec 3 「読めるファイル」).
+    pub audio: u32,
 }
 
 /// One name of the selected notes and how many of them have it ("スネア ×2").

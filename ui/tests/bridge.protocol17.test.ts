@@ -46,7 +46,7 @@ const SURGE: SoundRef = { kind: "plugin", key: lv2Key("Surge XT") };
 
 describe("約束 17 の形", () => {
   it("版は 23（22 より後）。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
-    expect(PROTOCOL_VERSION).toBe(23);
+    expect(PROTOCOL_VERSION).toBe(24);
     const s = fakeState();
     expect(s.library).toEqual({ sf2: [], plugins: [], openedSf2: null, packMissing: false });
     expect(s.workspace.fileDrop).toBeNull();
@@ -184,7 +184,7 @@ describe("約束 17 の偽物の場面", () => {
 
   it("sf2DropAddable ・ sf2DropNotAddable（モック F5-SF2Drop）: 足せる ・ 足せない。Esc でやめる", async () => {
     const s = state("sf2DropAddable");
-    expect(s.workspace.fileDrop).toEqual({ name: FLUID, addable: true, files: 1, sf2: 1 });
+    expect(s.workspace.fileDrop).toEqual({ name: FLUID, addable: true, files: 1, sf2: 1, audio: 0 });
     expect(s.status.message).toEqual({ id: "sf2Dragging" });
     expect(s.library.sf2).toEqual([]);
     const mock = mockScreenText("F5-SF2Drop");
@@ -192,7 +192,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(mock).toContain(squash("FluidR3_GM.sf2 ここに落とすと、棚に SF2 を足します。"));
     expect(state("sf2DropNotAddable").workspace.fileDrop?.addable).toBe(false);
     expect(state("sf2DropNotAddable").status.message).toEqual({ id: "notSf2Dragging" });
-    expect(state("sf2DropMany").workspace.fileDrop).toEqual({ name: FLUID, addable: true, files: 3, sf2: 2 });
+    expect(state("sf2DropMany").workspace.fileDrop).toEqual({ name: FLUID, addable: true, files: 3, sf2: 2, audio: 0 });
     expect(specText()).toContain(squash("SF2 のファイルではないので、足せません。"));
     const { held, send } = await open("sf2DropAddable");
     await send({ type: "cancelFileDrop" });

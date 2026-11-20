@@ -7,6 +7,7 @@
 //! notes a minute whatever the meter (docs/architecture.md 11, 22-1, 22-2).
 
 mod added;
+mod audio;
 mod automation;
 mod history;
 mod params;
@@ -22,6 +23,12 @@ pub use added::{
     MissingRef, MissingView, PluginEffectCategory, PluginFormatView, PluginInstrumentCategory,
     PluginKindView, PluginRole, PluginRowView, PluginState, PluginView, SamplePlaying, Sf2FileView,
     Sf2PresetView, SoundName, SoundRef, SoundSampleView, SoundView, StandIn,
+};
+pub use audio::{
+    AUDIO_EXTENSIONS, AudioClipState, AudioClipView, AudioJob, AudioJobKind, AudioWorkView,
+    CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, ClipField, DropMode, MissingAudioView, PEAK_LEVELS,
+    PEAKS_HEADER_LEN, PEAKS_KIND, PEAKS_MAX_COUNT, PEAKS_VERSION, Peaks, PeaksError,
+    RecordingFaults, SelectedClip, StretchView,
 };
 pub use automation::{
     AutoSelection, AutoTarget, AutomationView, LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN,
@@ -49,7 +56,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 23;
+pub const PROTOCOL_VERSION: u32 = 24;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1107,6 +1114,69 @@ pub enum Command {
     UseMeasuredLatency,
     /// 「閉じる」 and Esc while not measuring: the dialog closes; a measuring going on stops.
     CloseLatencyMeasure,
+    // Vocal clips and audio files (protocol 24; spec 3, 26-A, 27-A, 29-A, 30-C;
+    // docs/architecture.md 22-17).
+    /// S: cuts clips in two at the play line, as one step however many
+    /// (`StatusMessage::ClipSplit`): the selected clips the line is inside of, or with no
+    /// clip selected the clip of the selected track under the line. Keys clips too (a note
+    /// over the cut ends at it in the left clip). A vocal clip keeps its fade-in on the left
+    /// half and its fade-out on the right one. Afterwards the right halves are selected.
+    /// Nothing happens when the line is inside no such clip (on an edge is not inside).
+    /// While playing the line is where it is heard when Rust takes the command. Not while
+    /// counting in or recording.
+    SplitClips,
+    /// A value of a vocal clip, as one step: the end of a drag of the volume line or of a
+    /// fade handle, a double click on the volume line (`GainDb` 0), and a value typed into
+    /// the panel 「選んだクリップ」. `value` is ticks, or dB for `GainDb`. Rust puts it into
+    /// its range (the volume `CLIP_GAIN_MIN_DB..=CLIP_GAIN_MAX_DB`; a fade no longer than the
+    /// clip less the other fade; a length of at least a tick). `Start` and `Length` also work
+    /// on a keys clip; a `Start` or `Length` that would overlap another clip does nothing
+    /// (`StatusMessage::ClipsNotMoved`). Nothing happens for a `clip` that is no clip's id,
+    /// or a value that is not a number.
+    SetClipField {
+        clip: u32,
+        field: ClipField,
+        value: f64,
+    },
+    /// A double click on a vocal clip: the row of its track is 160 high and shows the
+    /// waveform large (`ArrangeView::tall_track`). `None`, or the track that is tall
+    /// already: every row is 64 again. Not a step, not saved.
+    SetTallTrack {
+        track: Option<u32>,
+    },
+    /// 「音のファイルを入れる…」 of the menu 「ファイル」 (`track: None`) and of the right click
+    /// on a vocal track (its id): Rust shows the PC's window for choosing files (wav, mp3,
+    /// flac, ogg; more than one may be chosen). They go in at the play line: on `track`, or
+    /// for `None` on the selected track when that is a vocal track, else on a new vocal
+    /// track. More than one go one after the other in the order of their names
+    /// (`DropMode::InRow`). One step for all of them (`StatusMessage::AudioImported`); a
+    /// file that does not read is left out (`StatusMessage::AudioUnreadable`). A file that
+    /// would overlap a clip of the track goes to a new vocal track. Not while counting in
+    /// or recording.
+    ImportAudio {
+        track: Option<u32>,
+    },
+    /// The screen's answer to `Event::FileDrop`: where the audio files that were let go of
+    /// go. `drop` is that event's; an answer to another drop does nothing. `track`: the
+    /// vocal track they were let go of over, `None` over a keys track or below the tracks
+    /// (a new vocal track). `tick`: where, already on the beat. `mode` for two or more
+    /// files (spec 3, 30-C): `Separate` makes a new vocal track for each of them, whatever
+    /// `track` is; `InRow` puts them on `track`. One file alone goes on `track`. Otherwise
+    /// as `ImportAudio`.
+    DropAudio {
+        drop: u32,
+        track: Option<u32>,
+        tick: u64,
+        mode: DropMode,
+    },
+    /// 「さがす…」 on the notice of an audio file that is not found
+    /// (`SelectedClip::missing`): Rust shows the PC's window for choosing a file. The chosen
+    /// file is copied to where the song looks for its audio, under the missing file's name,
+    /// and every clip that plays it sounds again. Not a step: the song does not change.
+    /// 「曲から外す」 is `RemoveMissing` with `MissingRef::Audio`.
+    FindAudio {
+        audio: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1443,6 +1513,7 @@ pub struct AppState {
     pub outputs: OutputsView,
     pub inputs: InputsView,
     pub audio: AudioView,
+    pub audio_work: AudioWorkView,
     pub status: StatusView,
 }
 
@@ -1501,6 +1572,9 @@ impl AppState {
         if old.audio != new.audio {
             out.push(Change::Audio(new.audio.clone()));
         }
+        if old.audio_work != new.audio_work {
+            out.push(Change::AudioWork(new.audio_work.clone()));
+        }
         if old.status != new.status {
             out.push(Change::Status(new.status.clone()));
         }
@@ -1527,6 +1601,7 @@ impl AppState {
             Change::Outputs(v) => self.outputs = v,
             Change::Inputs(v) => self.inputs = v,
             Change::Audio(v) => self.audio = v,
+            Change::AudioWork(v) => self.audio_work = v,
             Change::Status(v) => self.status = v,
         }
     }
@@ -1686,7 +1761,7 @@ pub struct SelectedInsert {
     pub row: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ClipView {
@@ -1704,8 +1779,8 @@ pub struct ClipView {
     pub take_offset: i64,
     pub note_count: u32,
     /// A clip of a vocal track: `take_id` names a take of audio, which `take_notes` does not
-    /// have, and `note_count` is 0. What it draws (the waveform) comes with protocol 24.
-    pub vocal: bool,
+    /// have, and `note_count` is 0. `None` for a clip of notes.
+    pub audio: Option<AudioClipView>,
 }
 
 /// The sounds that come with meloet (spec 3 「最初から入っている音色をふやす」（84）), in the
@@ -1971,6 +2046,9 @@ pub struct TransportView {
     /// as `recording` would be there. Each draws a clip in `color.rec` from `from` to the
     /// play line (mocks F7-VocalRec, F7-TwoRec).
     pub recording_vocals: Vec<VocalRecordingView>,
+    /// `None`: every block of the vocal recording going on, or of the last one, is what
+    /// came in.
+    pub recording_faults: Option<RecordingFaults>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2006,6 +2084,10 @@ pub struct ArrangeView {
     pub piano_roll_clip: Option<u32>,
     /// How many clips `PasteClips` would put in; 0 when there is nothing to paste.
     pub clipboard_clips: u32,
+    /// The vocal track whose row is 160 high (`Command::SetTallTrack`; spec 3 「歌のトラックで
+    /// ピアノロールをひらこうとしたとき」), by `TrackView::id`. `None` again when the track is
+    /// deleted or another song comes. Not saved, and no step.
+    pub tall_track: Option<u32>,
 }
 
 /// The piano roll's own state, kept apart from `song` so that a new selection does not send
@@ -2971,6 +3053,40 @@ pub enum StatusMessage {
     /// While the dialog 「遅れを測る」 is up: "「遅れを測る」のダイアログをひらいています"
     /// (mock F7-Latency).
     LatencyMeasureOpen,
+    /// A song was opened and `count` of its audio files are not found: "曲で使っている音の
+    /// ファイルが 2 つ見つかりません。そのクリップは鳴りません。" (spec 6).
+    AudioMissing {
+        count: u32,
+    },
+    /// `Command::SplitClips`: "歌 テイク 1 を 7. 1. 0000 で切りました。" `name`: the clip, the
+    /// first in the order of the tracks when `count` clips were cut.
+    ClipSplit {
+        name: String,
+        tick: u64,
+        count: u32,
+    },
+    /// Audio files were brought in: "ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。" `file`,
+    /// `track` and `tick`: the first of the `count` clips made. `skipped`: files that were
+    /// with them and are not audio that reads.
+    AudioImported {
+        file: String,
+        track: TrackRef,
+        tick: u64,
+        count: u32,
+        skipped: u32,
+    },
+    /// "「声.aac」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。": nothing was brought in.
+    /// `file`: the first that did not read.
+    AudioUnreadable {
+        file: String,
+    },
+    /// Files with audio among them are held over the window: "音のファイルを 8 つ持ってきて
+    /// います ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる" (spec 6); the second
+    /// half only for two or more. `sf2`: SF2 files among them, which go to the shelf.
+    AudioDragging {
+        audio: u32,
+        sf2: u32,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -3044,6 +3160,7 @@ pub enum Change {
     Outputs(OutputsView),
     Inputs(InputsView),
     Audio(AudioView),
+    AudioWork(AudioWorkView),
     Status(StatusView),
 }
 
@@ -3070,6 +3187,24 @@ pub enum Event {
     Bend {
         value: i16,
         t_us: u64,
+    },
+    /// Files with audio among them are held over the window (`WorkspaceView::file_drop`
+    /// with `audio` above 0) and the pointer came in or moved: where it is, in px of the
+    /// page from the top left corner of the window's inside. The screen works out the track
+    /// and the tick under it and draws the gray.7 frame there. Not sent for files with no
+    /// audio among them.
+    FileDrag {
+        x: i32,
+        y: i32,
+    },
+    /// The files of `FileDrag` were let go of at (`x`, `y`). Rust keeps their paths and
+    /// waits for `Command::DropAudio` with this `drop`, which says where that is in the
+    /// song; SF2 files among them are added at once, as before. A drop that gets no answer
+    /// is let go when the next files come over the window.
+    FileDrop {
+        drop: u32,
+        x: i32,
+        y: i32,
     },
 }
 
@@ -3146,3 +3281,5 @@ pub struct SendReply {
 mod tests;
 #[cfg(test)]
 mod tests23;
+#[cfg(test)]
+mod tests24;

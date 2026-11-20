@@ -22,8 +22,8 @@ const kindOf = (s: AppState) => {
 };
 
 describe("約束 23 の形", () => {
-  it("版は 23。新しい曲は鍵盤のトラック 1 本で、鍵はそこで鳴る。入口はひらいていない", () => {
-    expect(PROTOCOL_VERSION).toBe(23);
+  it("版は 24。新しい曲は鍵盤のトラック 1 本で、鍵はそこで鳴る。入口はひらいていない", () => {
+    expect(PROTOCOL_VERSION).toBe(24);
     const s = fakeState();
     expect(s.song.tracks.map((tr) => tr.kind)).toEqual([{ kind: "keys" }]);
     expect([s.song.playTarget, s.song.keysTarget]).toEqual([1, 1]);
@@ -183,7 +183,7 @@ describe("偽物の場面（F7-VocalTrack ・ F7-VocalRec ・ F7-TwoRec ・ F7-L
     const { state: s, meters } = scene("vocalRec");
     expect(s.transport.state).toBe("recording");
     expect(s.transport.recording).toBeNull();
-    expect(s.transport.recordingVocals).toEqual([{ track: VOCAL, from: 4 * BAR, take: 1, clip: null }]);
+    expect(s.transport.recordingVocals).toEqual([{ track: VOCAL, from: 4 * BAR, take: 1, clip: null, audio: 59, sampleRate: 48000, firstFrame: 0 }]);
     expect(s.status.message).toEqual({ id: "recordingVocals", keys: null, vocals: [{ track: { number: 6, name: "歌" }, input: "mono1" }], monitor: true });
     expect(meters.position).toMatchObject({ tick: 6 * BAR + TPQ, state: "recording" });
   });

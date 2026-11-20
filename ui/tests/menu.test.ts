@@ -27,12 +27,12 @@ const settle = async () => {
   flushSync();
 };
 
-const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 16 * TPQ, take: 1, takes: 2, takeId: 7, takeOffset: 0, noteCount: 2, vocal: false };
+const CLIP: ClipView = { id: 5, name: "Aメロ", start: 0, end: 16 * TPQ, take: 1, takes: 2, takeId: 7, takeOffset: 0, noteCount: 2, audio: null };
 
 function withClip(edit: (s: AppState) => void = () => {}): AppState {
   const s = fakeState();
   s.song.tracks[0]!.clips = [CLIP];
-  s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0 };
+  s.arrange = { selectedClips: [5], selectedClip: 5, pianoRollClip: 5, clipboardClips: 0, tallTrack: null };
   s.song.undoCount = 2;
   s.transport.canPlay = true;
   edit(s);
@@ -189,7 +189,7 @@ describe("メニューの中身（B-59）", () => {
     expect(sent).toEqual([{ type: "deleteTake", clip: 5 }]);
     const one = withClip((s) => (s.song.tracks[0]!.clips = [{ ...CLIP, takes: 1 }]));
     expect(row(topMenus(one, depsOf(one, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
-    const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0 }));
+    const none = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
     expect(row(topMenus(none, depsOf(none, []), "other")[5]!.entries, "テイクを消す").usable).toBe(false);
   });
 
@@ -351,7 +351,7 @@ describe("新しいキー（4 章と B-59 ・ 70 ・ 71）", () => {
 
   it("貼りつける物がない ・ 選んだクリップがないときは送らない", () => {
     const sent: Command[] = [];
-    const s = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0 }));
+    const s = withClip((s) => (s.arrange = { selectedClips: [], selectedClip: null, pianoRollClip: null, clipboardClips: 0, tallTrack: null }));
     const deps = depsOf(s, sent);
     for (const l of ["c", "x", "v", "d"]) press(deps, l, { ctrlKey: true });
     expect(sent).toEqual([]);

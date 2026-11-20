@@ -159,3 +159,16 @@ export type { VocalInput } from "./generated/VocalInput";
 export type { VocalRecordingView } from "./generated/VocalRecordingView";
 export type { VocalRef } from "./generated/VocalRef";
 export { LATENCY_CLICKS, RECORD_FORMATS, VOCAL_INPUTS } from "./generated/vocal";
+// Protocol 24: vocal clips, audio files, the peaks.
+export type { AudioClipState } from "./generated/AudioClipState";
+export type { AudioClipView } from "./generated/AudioClipView";
+export type { AudioJob } from "./generated/AudioJob";
+export type { AudioJobKind } from "./generated/AudioJobKind";
+export type { AudioWorkView } from "./generated/AudioWorkView";
+export type { ClipField } from "./generated/ClipField";
+export type { DropMode } from "./generated/DropMode";
+export type { MissingAudioView } from "./generated/MissingAudioView";
+export type { RecordingFaults } from "./generated/RecordingFaults";
+export type { SelectedClip } from "./generated/SelectedClip";
+export type { StretchView } from "./generated/StretchView";
+export { AUDIO_EXTENSIONS, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, PEAK_LEVELS, PEAKS_MAX_COUNT } from "./generated/audio";

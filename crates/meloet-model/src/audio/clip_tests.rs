@@ -21,6 +21,7 @@ fn song() -> Song {
         frames: 480_000,
         sample_rate: 48_000,
         channels: 1,
+        bits: Some(24),
         sha256: None,
     });
     let tempo = song.doc.timeline.tempo;

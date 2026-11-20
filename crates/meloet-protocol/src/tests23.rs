@@ -168,8 +168,12 @@ fn track_kind_and_recording_json_shape() {
             from: 30_720,
             take: 1,
             clip: None,
+            audio: 31,
+            sample_rate: 48_000,
+            first_frame: Some(12_000),
         },
-        json!({"track": 6, "from": 30_720, "take": 1, "clip": null}),
+        json!({"track": 6, "from": 30_720, "take": 1, "clip": null, "audio": 31,
+               "sampleRate": 48_000, "firstFrame": 12_000}),
     );
     both_ways(
         RecoveryView::Recovered {

@@ -107,7 +107,8 @@ struct DocFile {
 }
 
 /// `{"id": 31, "uid": "0f…" (32 hex digits), "file": "歌 テイク 1.wav", "frames": 480000,
-/// "rate": 48000, "channels": 1}`, and `"sha256"` (64 hex digits) for a file brought in.
+/// "rate": 48000, "channels": 1, "bits": 24}`, and `"sha256"` (64 hex digits) for a file brought
+/// in. `bits` is left out for a file whose kind has none (mp3, ogg).
 /// `file` is a name inside the song's audio folder, never a path.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,6 +119,8 @@ struct AudioFile {
     frames: u64,
     rate: u32,
     channels: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bits: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sha256: Option<String>,
 }
@@ -1136,6 +1139,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
                     frames: a.frames,
                     rate: a.sample_rate,
                     channels: a.channels,
+                    bits: a.bits,
                     sha256: a.sha256.as_ref().map(|h| hex(h)),
                 })
                 .collect(),
@@ -1292,7 +1296,8 @@ fn audio_source(a: AudioFile) -> Option<AudioSource> {
         && a.file != "."
         && a.file != ".."
         && !a.file.contains(['/', '\\', '\0']);
-    (plain && a.rate > 0 && matches!(a.channels, 1 | 2)).then_some(())?;
+    let bits = matches!(a.bits, None | Some(8 | 16 | 24 | 32 | 64));
+    (plain && bits && a.rate > 0 && matches!(a.channels, 1 | 2)).then_some(())?;
     Some(AudioSource {
         id: AudioId(a.id),
         uid: unhex(&a.uid)?,
@@ -1300,6 +1305,7 @@ fn audio_source(a: AudioFile) -> Option<AudioSource> {
         frames: a.frames,
         sample_rate: a.rate,
         channels: a.channels,
+        bits: a.bits,
         sha256: match a.sha256 {
             Some(h) => Some(unhex(&h)?),
             None => None,

@@ -1252,6 +1252,7 @@ fn an_sf2_file_is_added_from_the_window_or_by_dropping_it() {
             addable: sf2 > 0,
             files,
             sf2,
+            audio: 0,
         })
     };
     assert_eq!(m.view().workspace.file_drop, held("FluidR3_GM.sf2", 2, 1));

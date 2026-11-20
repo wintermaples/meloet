@@ -4,15 +4,49 @@
 
 use std::path::Path;
 
+use meloet_model::song::Clip;
 use meloet_model::{
     ClipId, NewAudio, TempoMap, TrackId, TrackKind, VocalInput, VocalRecording, edit,
 };
-use meloet_protocol::{RecordFormat, StatusMessage, VocalRecordingView, VocalRef};
+use meloet_protocol::{
+    AudioClipState, AudioClipView, RecordFormat, StatusMessage, StretchView, VocalRecordingView,
+    VocalRef,
+};
 use sha2::{Digest, Sha256};
 
 use super::{EngineOp, Play, Rec};
 use crate::state::{Effect, vocal_input_view};
 use crate::vocalrec::{self, Marks, NoteFile, RecNote, Written};
+
+/// `ClipView::audio`: what a vocal clip has, from its shown take; `None` for a keys clip.
+///
+/// The file is taken to be there and at the rate the audio runs at: finding it, reading it
+/// and bringing it to that rate come with the second half of round 7 step 3.
+pub(super) fn audio_clip_view(clip: &Clip) -> Option<AudioClipView> {
+    let take = &clip.active_audio()?.take;
+    let shape = clip.takes.shape()?;
+    Some(AudioClipView {
+        audio: take.source.id.0,
+        file: take.source.file.clone(),
+        sample_rate: take.source.sample_rate,
+        bits: take.source.bits,
+        channels: take.source.channels,
+        resampled: false,
+        first_frame: take.first_frame,
+        frames: take.frames,
+        fade_in: shape.fade_in,
+        fade_out: shape.fade_out,
+        gain_db: shape.gain.db() as f32,
+        state: AudioClipState::Ready,
+        stretch: StretchView {
+            follow: shape.follow,
+            source_bpm: take.sync.as_ref().map(|s| s.tempo.bpm()),
+            semitones: shape.semitones,
+            cents: shape.cents,
+            keep_formant: shape.keep_formant,
+        },
+    })
+}
 
 /// The PC's input as the rules see it: open, with this many channels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +78,8 @@ pub(super) struct VocalRec {
     pub track: TrackId,
     pub input: VocalInput,
     pub file: String,
+    /// The number the file gets in the song's audio table.
+    pub audio: u32,
     pub take: u32,
     pub clip: Option<ClipId>,
 }
@@ -278,12 +314,14 @@ impl Play {
                 let t = doc.track(*id)?;
                 let span = loop_range.or_else(|| meloet_model::TickRange::new(from, from + 1))?;
                 let clip = (t.clips.iter()).find(|c| c.range().overlaps(span));
-                let file = vocalrec::file_name(&t.name, next_id);
+                let audio = next_id;
+                let file = vocalrec::file_name(&t.name, audio);
                 next_id = next_id.saturating_add(1);
                 Some(VocalRec {
                     track: *id,
                     input: *kind,
                     file,
+                    audio,
                     take: clip.map_or(1, |c| c.takes.len() as u32 + 1),
                     clip: clip.map(|c| c.id),
                 })
@@ -430,6 +468,7 @@ impl Play {
                     frames: written.frames,
                     sample_rate: written.sample_rate,
                     channels: v.input.channels().len() as u8,
+                    bits: Some(part.format.bits()),
                 },
                 takes: takes.clone(),
             })
@@ -459,12 +498,20 @@ impl Play {
         let Some(rec) = &self.rec else {
             return Vec::new();
         };
+        // The frame of the files sung at the start of the lap going on.
+        let sung = match rec.vocal.lap_frames.last() {
+            Some((_, frame)) => *frame,
+            None => rec.vocal.roll.and_then(|(_, _, frame)| frame),
+        };
         (rec.vocal.tracks.iter())
             .map(|v| VocalRecordingView {
                 track: v.track.0,
                 from: rec.from,
                 take: v.take + rec.lap,
                 clip: v.clip.map(|c| c.0),
+                audio: v.audio,
+                sample_rate: rec.vocal.sample_rate,
+                first_frame: sung.map(|f| f.max(0.0).round() as u64),
             })
             .collect()
     }
@@ -487,5 +534,95 @@ impl Play {
                 .any(|v| monitored.contains(&v.track)),
             vocals,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use meloet_model::song::{ClipTake, ClipTakes, TakeId};
+    use meloet_model::{AudioId, AudioShape, AudioSource, AudioTake, ClipGain, SourceTempo, Tempo};
+
+    use super::*;
+
+    #[test]
+    fn a_vocal_clip_shows_its_file_its_fades_and_its_volume() {
+        let source = Arc::new(AudioSource {
+            id: AudioId(31),
+            uid: [3; 16],
+            file: "ドラム.mp3".to_owned(),
+            frames: 441_000,
+            sample_rate: 44_100,
+            channels: 2,
+            bits: None,
+            sha256: Some([1; 32]),
+        });
+        let take = |sync| ClipTake {
+            take: Arc::new(AudioTake {
+                id: TakeId(40),
+                source: source.clone(),
+                first_frame: 12_000,
+                frames: 400_000,
+                sync,
+            }),
+            offset: -1_920,
+        };
+        let clip = |takes, shape| Clip {
+            id: ClipId(9),
+            name: "ドラム".to_owned(),
+            start: 7_680,
+            end: 15_360,
+            takes: ClipTakes::Vocal { takes, shape },
+            active: 0,
+        };
+        let shape = AudioShape {
+            fade_in: 240,
+            fade_out: 960,
+            gain: ClipGain::from_db(-3.0).unwrap(),
+            follow: false,
+            semitones: 2,
+            cents: -30,
+            ..AudioShape::RECORDED
+        };
+        let view = audio_clip_view(&clip(vec![take(None)], shape)).unwrap();
+        assert_eq!(
+            view,
+            AudioClipView {
+                audio: 31,
+                file: "ドラム.mp3".to_owned(),
+                sample_rate: 44_100,
+                bits: None,
+                channels: 2,
+                resampled: false,
+                first_frame: 12_000,
+                frames: 400_000,
+                fade_in: 240,
+                fade_out: 960,
+                gain_db: -3.0,
+                state: AudioClipState::Ready,
+                stretch: StretchView {
+                    follow: false,
+                    source_bpm: None,
+                    semitones: 2,
+                    cents: -30,
+                    keep_formant: true,
+                },
+            }
+        );
+        let sync = Some(SourceTempo {
+            tempo: Tempo::from_centi(12_000).unwrap(),
+            head_ramp: false,
+            points: Vec::new(),
+        });
+        let recorded = audio_clip_view(&clip(vec![take(sync)], AudioShape::RECORDED)).unwrap();
+        assert_eq!(recorded.stretch.source_bpm, Some(120.0));
+        assert!(recorded.stretch.follow);
+
+        let keys = Clip {
+            takes: ClipTakes::Keys(Vec::new()),
+            ..clip(Vec::new(), shape)
+        };
+        assert_eq!(audio_clip_view(&keys), None);
     }
 }

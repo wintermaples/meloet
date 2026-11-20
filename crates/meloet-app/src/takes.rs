@@ -27,6 +27,21 @@ pub fn lane(lane_id: u32, core: State<'_, Arc<dyn CoreHandle>>) -> Result<Respon
         .ok_or_else(|| format!("no lane {lane_id}"))
 }
 
+/// The peaks binary of an audio file (docs/architecture.md 22-17). A file that is not in
+/// the song now, or whose peaks are not made yet, is an error; the screen asks again later.
+#[tauri::command]
+pub fn peaks(
+    audio: u32,
+    level: u8,
+    first: u32,
+    count: u32,
+    core: State<'_, Arc<dyn CoreHandle>>,
+) -> Result<Response, String> {
+    core.peaks(audio, level, first, count)
+        .map(Response::new)
+        .ok_or_else(|| format!("no peaks of audio {audio}"))
+}
+
 #[tauri::command]
 pub fn history_rows(from: u32, to: u32, core: State<'_, Arc<dyn CoreHandle>>) -> Vec<HistoryRow> {
     core.history_rows(from, to)

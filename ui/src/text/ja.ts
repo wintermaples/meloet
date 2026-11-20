@@ -2121,6 +2121,8 @@ export const texts = {
     "音のファイルを {count} つ持ってきています ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる",
     { count: "8" },
   ),
+  // 音のファイルを 1 つだけ持ってきている間（仕様書の文は 2 つ以上のときの形。「SF2 のファイルを持ってきています」にならった）。
+  "msg.audioDraggingOne": e("音のファイルを持ってきています", "builder:2026-11-21"),
   "drop.mixed": s6("SF2 と音のファイルをまぜて持ってきた", "SF2 は {sf2} つ棚へ ・ 音のファイル {audio} つはアレンジへ", {
     sf2: "1",
     audio: "3",
@@ -2315,7 +2317,8 @@ export type TextKey = keyof typeof texts;
 /**
  * 取り消しの履歴の「手の名前」（仕様書 3 章 Y19）。約束の手の名前の種類（StepName の kind）ごとに 1 つ。
  * spec:3 は 3 章「手の名前」の一覧の言いかた（「CC の点を書く ・ 動かす ・ 消す」は「CC の点を動かす」のように開く。
- * 一覧の「録音（テイク）」は「録音」、「クリップを … 切る」は切り取り（Mod X）と読んだ）。
+ * 一覧の「録音（テイク）」は「録音」。「クリップを … 切る」は S（再生の線で切る。3 章「モックの直し」）で、
+ * 切り取り（Mod X）は仮に「クリップを切り取る」（design-notes B-94-7））。
  * 第 11 版で一覧に入った仮の名前（92-7）も spec:3。一覧にない名前は builder:（design-notes B-92）。
  */
 export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
@@ -2337,7 +2340,7 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   deleteTake: e("テイクを消す", "spec:3"),
   moveClips: e("クリップを動かす", "spec:3"),
   duplicateClips: e("クリップを複製する", "spec:3"),
-  cutClips: e("クリップを切る", "spec:3"),
+  cutClips: e("クリップを切り取る", "builder:2026-11-21"),
   pasteClips: e("クリップを貼りつける", "spec:3"),
   trimClip: e("クリップの長さを変える", "spec:3"),
   deleteClips: e("クリップを消す", "spec:3"),
@@ -2386,6 +2389,10 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   recovered: e("なおすためのファイルから戻す", "mock:F-Recover2"),
   discardRecovered: e("戻した変更をすてる（最後に保存した形にする）", "spec:6"),
   setVocalInput: e("歌の入口を変える", "builder:2026-11-21"),
+  splitClips: e("クリップを切る", "spec:3"),
+  importAudio: e("音のファイルを入れる", "builder:2026-11-21"),
+  setClipGain: e("クリップの音量を変える", "builder:2026-11-21"),
+  setClipFade: e("フェードを変える", "builder:2026-11-21"),
 };
 
 export interface Term {

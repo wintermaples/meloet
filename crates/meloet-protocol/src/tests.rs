@@ -147,7 +147,7 @@ fn sample_state() -> AppState {
                     },
                 ],
                 clips: vec![ClipView {
-                    vocal: false,
+                    audio: None,
                     id: 4,
                     name: "ピアノ".into(),
                     start: 4 * BAR,
@@ -204,6 +204,7 @@ fn sample_state() -> AppState {
         timeline: sample_timeline(),
         transport: TransportView {
             recording_vocals: Vec::new(),
+            recording_faults: None,
             state: TransportState::Recording,
             position: 4 * BAR,
             metronome: true,
@@ -225,6 +226,7 @@ fn sample_state() -> AppState {
             selected_clip: None,
             piano_roll_clip: Some(4),
             clipboard_clips: 2,
+            tall_track: None,
         },
         piano_roll: PianoRollView {
             take: Some(6),
@@ -287,6 +289,7 @@ fn sample_state() -> AppState {
                 addable: true,
                 files: 3,
                 sf2: 2,
+                audio: 0,
             }),
         },
         library: LibraryView {
@@ -467,6 +470,7 @@ fn sample_state() -> AppState {
             output_device: None,
             midi_input: None,
         },
+        audio_work: AudioWorkView::default(),
         status: StatusView {
             message: Some(StatusMessage::SearchingKeyboard),
         },
@@ -1402,7 +1406,7 @@ fn state_json_is_camel_case_and_round_trips() {
     );
     assert_eq!(
         v["state"]["workspace"]["fileDrop"],
-        json!({"name": "FluidR3_GM.sf2", "addable": true, "files": 3, "sf2": 2})
+        json!({"name": "FluidR3_GM.sf2", "addable": true, "files": 3, "sf2": 2, "audio": 0})
     );
     let track = &v["state"]["song"]["tracks"][0];
     assert_eq!(track["gainDb"], -3.0);
@@ -1451,7 +1455,7 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(
         v["state"]["song"]["tracks"][0]["clips"][0],
         json!({"id": 4, "name": "ピアノ", "start": 4 * BAR, "end": 8 * BAR, "take": 2, "takes": 3,
-               "takeId": 6, "takeOffset": -(Q as i64), "noteCount": 23, "vocal": false})
+               "takeId": 6, "takeOffset": -(Q as i64), "noteCount": 23, "audio": null})
     );
     assert_eq!(
         v["state"]["song"]["loopRange"],
@@ -1466,7 +1470,7 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(
         v["state"]["arrange"],
         json!({"selectedClips": [4, 9], "selectedClip": null, "pianoRollClip": 4,
-               "clipboardClips": 2})
+               "clipboardClips": 2, "tallTrack": null})
     );
     assert_eq!(v["state"]["song"]["tracks"][0]["muted"], true);
     assert_eq!(v["state"]["song"]["tracks"][0]["soloed"], false);
@@ -3054,6 +3058,7 @@ fn change_section_names_match_state_keys() {
         Change::Outputs(state.outputs.clone()),
         Change::Inputs(state.inputs.clone()),
         Change::Audio(state.audio.clone()),
+        Change::AudioWork(state.audio_work.clone()),
         Change::Status(state.status.clone()),
     ];
     assert_eq!(all.len(), v.as_object().unwrap().len());
@@ -3875,7 +3880,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 67);
+    assert_eq!(kinds.len(), 71);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");

@@ -1563,7 +1563,7 @@ impl Play {
                     take_id: c.active_take_id().0,
                     take_offset: c.active_zero() - c.start as i64,
                     note_count: c.note_count() as u32,
-                    vocal: !c.is_keys(),
+                    audio: vocal::audio_clip_view(c),
                 })
                 .collect()
         })
@@ -1737,6 +1737,7 @@ impl Play {
                 })
             }),
             recording_vocals: self.recording_vocals_view(),
+            recording_faults: None,
         }
     }
 
@@ -1783,6 +1784,8 @@ impl Play {
             selected_clip: self.selected.map(|c| c.0),
             piano_roll_clip: self.piano_roll.map(|c| c.0),
             clipboard_clips: self.clip_board.len() as u32,
+            // The rules above the song have it (`state.rs`).
+            tall_track: None,
         }
     }
 

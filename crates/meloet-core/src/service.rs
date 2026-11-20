@@ -190,6 +190,7 @@ enum Msg {
     LiveNotes(Sender<LiveNotesSnapshot>),
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
     Lane(u32, Sender<Option<Vec<u8>>>),
+    PeaksPlace(u32, Sender<Option<crate::peaks::PeaksPlace>>),
     HistoryRows(u32, u32, Sender<Vec<HistoryRow>>),
     PluginParams(u32, Sender<Option<ParamTable>>),
     /// Told once the recovery file holds the song, or there was nothing to write.
@@ -556,6 +557,13 @@ impl Core {
         let _ = self.tx.send(Msg::Input(Input::FilesDropped(paths), None));
     }
 
+    /// Where the pointer is while files are held over the window, in px of the page from
+    /// the top left corner of the window's inside: after `files_over`, with every move, and
+    /// before `files_dropped`. Does not wait.
+    pub fn files_at(&self, x: i32, y: i32) {
+        let _ = self.tx.send(Msg::Input(Input::FilesAt { x, y }, None));
+    }
+
     /// The answer to [`ShellRequest::PickSaveAs`]: the folder and the name typed, as one path.
     /// Does not wait.
     pub fn save_as_picked(&self, path: Option<PathBuf>) {
@@ -618,6 +626,16 @@ impl Core {
         let (reply, answer) = mpsc::channel();
         self.tx.send(Msg::TakeNotes(id, reply)).ok()?;
         answer.recv().ok().flatten()
+    }
+
+    /// The peaks binary (`meloet_protocol::Peaks`) of an audio file of the song as it is
+    /// now: the peaks `first .. first + count` of `level` that there are. `None` for an
+    /// `audio` that is no file's, and while its peaks are not made. The core thread only
+    /// says where the peaks are; they are read on the caller's thread.
+    pub fn peaks(&self, audio: u32, level: u8, first: u32, count: u32) -> Option<Vec<u8>> {
+        let (reply, answer) = mpsc::channel();
+        self.tx.send(Msg::PeaksPlace(audio, reply)).ok()?;
+        answer.recv().ok()??.reply(audio, level, first, count)
     }
 
     /// The points of a lane (`meloet_protocol::LanePoints`) of the song as it is now; `None`
@@ -1661,6 +1679,9 @@ impl Worker {
                 Ok(Msg::Lane(id, reply)) => {
                     let _ = reply.send(self.model.lane(id));
                 }
+                Ok(Msg::PeaksPlace(audio, reply)) => {
+                    let _ = reply.send(self.model.peaks_place(audio));
+                }
                 Ok(Msg::HistoryRows(from, to, reply)) => {
                     let _ = reply.send(self.model.history_rows(from, to));
                 }
@@ -2083,6 +2104,7 @@ impl Worker {
                         }
                     }
                     Effect::ParamValues(values) => self.hub.param_values(values),
+                    Effect::FileEvent(event) => self.hub.event(event),
                     Effect::LoadSf2(key) => {
                         let rate = self.audio.handle.meters().sample_rate();
                         self.audio.sf2.load(key, rate);

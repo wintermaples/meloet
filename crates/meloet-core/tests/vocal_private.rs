@@ -303,7 +303,7 @@ fn the_voice_lies_where_it_was_heard_and_survives_the_end_of_meloet() {
     assert_eq!(vocal_clips(&view), 1);
     let clip = (view.song.tracks.iter())
         .flat_map(|t| &t.clips)
-        .find(|c| c.vocal)
+        .find(|c| c.audio.is_some())
         .unwrap();
     assert_eq!((clip.start, clip.end), (0, kept.until));
     // Two seconds were recorded when the copy was taken: about four beats.

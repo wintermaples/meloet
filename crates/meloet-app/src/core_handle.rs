@@ -26,6 +26,9 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// The point binary of an automation lane in the song now.
     fn lane(&self, lane_id: u32) -> Option<Vec<u8>>;
 
+    /// The peaks binary of an audio file of the song now.
+    fn peaks(&self, audio: u32, level: u8, first: u32, count: u32) -> Option<Vec<u8>>;
+
     /// Rows `from..to` of the history band.
     fn history_rows(&self, from: u32, to: u32) -> Vec<HistoryRow>;
 
@@ -65,6 +68,10 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// The files held over the window were let go of there. Does not wait.
     fn files_dropped(&self, paths: Vec<PathBuf>);
 
+    /// Where the pointer is while files are held over the window, in px of the page. Does
+    /// not wait.
+    fn files_at(&self, x: i32, y: i32);
+
     /// The PC is ending: waits up to `timeout` for the recovery file. Returns whether it was
     /// written in time (or there was nothing to write).
     fn pc_ending(&self, timeout: Duration) -> bool;
@@ -93,6 +100,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn lane(&self, lane_id: u32) -> Option<Vec<u8>> {
         meloet_core::Core::lane(self, lane_id)
+    }
+
+    fn peaks(&self, audio: u32, level: u8, first: u32, count: u32) -> Option<Vec<u8>> {
+        meloet_core::Core::peaks(self, audio, level, first, count)
     }
 
     fn history_rows(&self, from: u32, to: u32) -> Vec<HistoryRow> {
@@ -145,6 +156,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn files_dropped(&self, paths: Vec<PathBuf>) {
         meloet_core::Core::files_dropped(self, paths);
+    }
+
+    fn files_at(&self, x: i32, y: i32) {
+        meloet_core::Core::files_at(self, x, y);
     }
 
     fn pc_ending(&self, timeout: Duration) -> bool {

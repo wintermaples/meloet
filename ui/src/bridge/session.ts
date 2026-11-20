@@ -34,6 +34,11 @@ export interface Transport {
   takeNotes(id: number): Promise<ArrayBuffer>;
   /** The points of a lane (`LaneView.laneId`), binary. Rejects when `laneId` is no lane's. */
   lane(laneId: number): Promise<ArrayBuffer>;
+  /**
+   * The peaks binary (docs/architecture.md 22-17): the peaks `first .. first + count` of `level` of an audio
+   * file that there are. Rejects when `audio` is no file's, and while its peaks are not made.
+   */
+  peaks(audio: number, level: number, first: number, count: number): Promise<ArrayBuffer>;
   /** The rows `from`..`to` of the history band that there are, oldest first; rows count from 1. */
   historyRows(from: number, to: number): Promise<HistoryRow[]>;
   liveNotes(): Promise<LiveNotesSnapshot>;
@@ -63,6 +68,7 @@ export interface Connection {
   rev(): number;
   takeNotes(id: number): Promise<ArrayBuffer>;
   lane(laneId: number): Promise<ArrayBuffer>;
+  peaks(audio: number, level: number, first: number, count: number): Promise<ArrayBuffer>;
   historyRows(from: number, to: number): Promise<HistoryRow[]>;
   liveNotes(): Promise<LiveNotesSnapshot>;
   pluginParams(table: number): Promise<ParamTable | null>;
@@ -197,6 +203,7 @@ export async function connectWith(
     rev: () => current?.rev ?? 0,
     takeNotes: (id) => transport.takeNotes(id),
     lane: (laneId) => transport.lane(laneId),
+    peaks: (audio, level, first, count) => transport.peaks(audio, level, first, count),
     historyRows: (from, to) => transport.historyRows(from, to),
     liveNotes: () => transport.liveNotes(),
     pluginParams: (table) => transport.pluginParams(table),

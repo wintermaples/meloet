@@ -5,6 +5,7 @@ import { HistoryRowStore } from "./historyRows";
 import { LaneStore, songLaneIds, type LanePoints } from "./lane";
 import { LiveNotesBook } from "./live";
 import { ParamTableBook } from "./paramTable";
+import { PeakStore, songAudioIds, type LevelPeaks } from "./peaks";
 import { connectWith, type Connection, type Handlers, type Transport } from "./session";
 import { songTakeIds, TakeStore, type TakeNotes } from "./take";
 import { tauriMeasureEnabled, tauriMeasureReport, tauriTransport, tauriUiScript } from "./tauri";
@@ -12,6 +13,8 @@ import type { AppState, Command, HistoryRow } from "./types";
 
 export type * from "./types";
 export { DRUM_ROWS, INSTRUMENT_GROUPS, LATENCY_CLICKS, PROTOCOL_VERSION, RECORD_FORMATS, STEP_NAME_KINDS, VOCAL_INPUTS } from "./types";
+export { AUDIO_EXTENSIONS, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, PEAK_LEVELS } from "./types";
+export { levelFor, type LevelPeaks } from "./peaks";
 export { keyIsDown, positionAt, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";
 export type { LanePoints } from "./lane";
@@ -28,6 +31,7 @@ function pickTransport(): Transport {
 
 const takes = new TakeStore((id) => connected().takeNotes(id));
 const lanes = new LaneStore((id) => connected().lane(id));
+const peakStore = new PeakStore((audio, level, first, count) => connected().peaks(audio, level, first, count));
 const historyBook = new HistoryRowStore(async (from, to) => connected().historyRows(from, to));
 let book: LiveNotesBook | null = null;
 let params: ParamTableBook | null = null;
@@ -64,10 +68,12 @@ export async function connect(handlers: Handlers): Promise<Connection> {
           serial = song.serial;
           takes.clear();
           lanes.clear();
+          peakStore.clear();
           newSong = true;
         }
         takes.keepOnly(songTakeIds(song));
         lanes.keepOnly(songLaneIds(song));
+        peakStore.keepOnly(songAudioIds(song, state.transport.recordingVocals));
       }
       if (snapshot || newSong) historyBook.clear(state.history);
       else if (state.history !== history) historyBook.follow(state.history);
@@ -109,6 +115,24 @@ export function lanePoints(laneId: number): Promise<LanePoints> {
 /** The points of a lane if they are here already. */
 export function peekLanePoints(laneId: number): LanePoints | undefined {
   return lanes.peek(laneId);
+}
+
+/**
+ * Every peak of one level (`levelFor`) of an audio file (`AudioClipView.audio`, `VocalRecordingView.audio`), fetched
+ * once and kept. Rejects while the peaks are not made yet; ask again when the clip's state or the job changes.
+ */
+export function audioPeaks(audio: number, level: number): Promise<LevelPeaks> {
+  return peakStore.get(audio, level);
+}
+
+/** The peaks if they are here already. */
+export function peekAudioPeaks(audio: number, level: number): LevelPeaks | undefined {
+  return peakStore.peek(audio, level);
+}
+
+/** For peaks that are `growing` (a recording going on, a file being read): what came since. */
+export function moreAudioPeaks(audio: number, level: number): Promise<LevelPeaks> {
+  return peakStore.more(audio, level);
 }
 
 /**

@@ -1304,3 +1304,4 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
   - 仮に決めた形は B-94 の 20〜31。
   - 棟梁の決め: 先読みの係は core（`readahead.rs`）。A1 と A2 の継ぎ目に `AudioStore`（`audiofiles.rs`、`Worker.audio_store`）を棟梁が置いた（architecture 22-17 の終わり）。
 
+- 2 回目（4d8c537 から、4 人が同時に。作業ツリー）: A1 エンジンで鳴らす（先読みの係、区切りの表、録りながらのピーク、抜けの数、区切り2 で見つけた事 1 と宿題、meloet-hard）、A2 core の音のファイル（入れる ・ ほどく ・ rubato ・ しまっておく所 ・ `AudioStore::open` ・ 切る ・ クリップの値 ・ 曲のフォルダ ・ 見つからない音、meloet-hard）、B 画面の WebGL（波形、録っているクリップの波形、録音中の描きなおしを減らす〔見つけた事 3〕、meloet-hard）、C 画面の HTML（160 の行、取っ手と音量の線、選んだクリップの欄、ドラッグの枠と 30-C、メニュー、S、状態行、落ちたあとの歌の行〔見つけた事 2〕、meloet-impl）。

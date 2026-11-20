@@ -448,6 +448,7 @@ impl Shared {
             description: props.get("node.description").map(str::to_owned),
             device_id: number("device.id"),
             profile_device: number("card.profile.device"),
+            channels: number("audio.channels").map(|n| n.min(255) as u8),
         });
         {
             let mut state = self.state.borrow_mut();

@@ -12,7 +12,9 @@ use meloet_model::{TICKS_PER_QUARTER, TempoMap};
 use crate::engine::monotonic_us;
 
 const SLOTS: usize = 512;
-const WORDS: usize = 9;
+const WORDS: usize = 10;
+/// How many of the newest stretches the frame of a moment is read from.
+const FRAME_VOTES: usize = 33;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TransportState {
@@ -59,6 +61,8 @@ impl TransportState {
 pub(crate) struct Segment {
     /// When the first frame reaches the DAC, [`monotonic_us`] clock, with the fraction kept.
     pub start_us: f64,
+    /// The first frame, counting every frame the engine rendered since it was made.
+    pub frame0: u64,
     pub frames: u32,
     pub sample_rate: u32,
     /// Song position of the first frame, in ticks. Negative during a count-in from near 0.
@@ -109,6 +113,7 @@ impl Segment {
             u64::from(self.ticks_per_beat) | u64::from(self.session) << 32,
             self.sec0.to_bits(),
             u64::from(self.map_gen),
+            self.frame0,
         ]
     }
 
@@ -126,6 +131,7 @@ impl Segment {
             session: (w[6] >> 32) as u32,
             sec0: f64::from_bits(w[7]),
             map_gen: w[8] as u32,
+            frame0: w[9],
         }
     }
 }
@@ -213,6 +219,74 @@ impl TransportClock {
             .find(|segment| segment.start_us <= t_us)
     }
 
+    /// Which frame of the engine's stream (counted as [`crate::Recorded::Rolling::frame`]
+    /// is) reaches the DAC at `t_us`, with the fraction. `None` before the engine has
+    /// rendered anything.
+    ///
+    /// The time of one block has the jitter of the moment its cycle woke (tens of
+    /// microseconds, more than a frame). The frames themselves have none, so the answer is
+    /// the middle one of what the stretches around the moment say, each counting frames
+    /// from its own time. A stretch that says something else by half a block or more is
+    /// from the other side of a cycle the stream missed, and has no say.
+    pub fn frame_at(&self, t_us: f64) -> Option<f64> {
+        let mut votes = [0.0f64; FRAME_VOTES];
+        let n = self.votes(
+            &mut votes,
+            |s| s.start_us <= t_us,
+            |s| s.frame0 as f64 + (t_us - s.start_us) * f64::from(s.sample_rate) / 1e6,
+            |s| f64::from(s.frames) / 2.0,
+        );
+        middle(&mut votes[..n])
+    }
+
+    /// When `frame` of the engine's stream reaches the DAC: [`TransportClock::frame_at`] the
+    /// other way round.
+    pub fn time_of_frame(&self, frame: f64) -> Option<f64> {
+        let mut votes = [0.0f64; FRAME_VOTES];
+        let n = self.votes(
+            &mut votes,
+            |s| s.frame0 as f64 <= frame,
+            |s| s.start_us + (frame - s.frame0 as f64) * 1e6 / f64::from(s.sample_rate.max(1)),
+            |s| f64::from(s.frames) * 1e6 / f64::from(s.sample_rate.max(1)) / 2.0,
+        );
+        middle(&mut votes[..n])
+    }
+
+    /// What the stretches around a moment say of it. `holds`: the stretch is at or before
+    /// the moment (the newest such is the one the moment is in, or the last before it).
+    /// `near`: how far from that stretch's word another may be and still have a say.
+    fn votes(
+        &self,
+        into: &mut [f64; FRAME_VOTES],
+        holds: impl Fn(&Segment) -> bool,
+        say: impl Fn(&Segment) -> f64,
+        near: impl Fn(&Segment) -> f64,
+    ) -> usize {
+        let written = self.written.load(Ordering::Acquire);
+        let oldest = written.saturating_sub(SLOTS as u64);
+        let home = (oldest..written)
+            .rev()
+            .filter_map(|s| self.read(s).map(|segment| (s, segment)))
+            .find(|(_, segment)| holds(segment))
+            .or_else(|| self.read(oldest).map(|segment| (oldest, segment)));
+        let Some((at, home)) = home else {
+            return 0;
+        };
+        let (word, near) = (say(&home), near(&home));
+        let half = (FRAME_VOTES / 2) as u64;
+        let from = at.saturating_sub(half).max(oldest);
+        let mut n = 0;
+        for segment in (from..written.min(at + half + 1)).filter_map(|s| self.read(s)) {
+            // Stretches of a stream at another rate are from before the stream was opened anew.
+            let said = say(&segment);
+            if segment.sample_rate == home.sample_rate && (said - word).abs() < near {
+                into[n] = said;
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// Where the listener was in the song at `t_us` ([`monotonic_us`] clock). `None` before the
     /// engine has rendered anything, or for a moment older than the ring remembers (about 512
     /// blocks).
@@ -230,6 +304,11 @@ impl TransportClock {
     pub fn heard_now(&self, map: &TempoMap, map_gen: u32) -> Option<HeardPosition> {
         self.heard_at(monotonic_us(), map, map_gen)
     }
+}
+
+fn middle(votes: &mut [f64]) -> Option<f64> {
+    votes.sort_unstable_by(f64::total_cmp);
+    votes.get(votes.len() / 2).copied()
 }
 
 /// `map`: the map `segment` was rendered on, if the reader has it.

@@ -131,6 +131,7 @@ fn picture_from_fixture() -> DevicesPicture {
                 description: text("node.description"),
                 device_id: number("device.id"),
                 profile_device: number("card.profile.device"),
+                channels: number("audio.channels").map(|n| n as u8),
             }),
             "PipeWire:Interface:Metadata" => {
                 for entry in object["metadata"].as_array().unwrap() {
@@ -176,6 +177,7 @@ fn analog_card_gives_two_outputs_on_one_sink() {
             node_name: sink.clone(),
             device_name: Some(ANALOG.into()),
             device_description: Some(RYZEN.into()),
+            channels: Some(2),
         }
     );
     assert_eq!(
@@ -190,6 +192,7 @@ fn analog_card_gives_two_outputs_on_one_sink() {
             node_name: sink,
             device_name: Some(ANALOG.into()),
             device_description: Some(RYZEN.into()),
+            channels: Some(2),
         }
     );
 }
@@ -210,6 +213,7 @@ fn hdmi_routes_without_a_sink_are_listed_as_unplugged() {
             node_name: None,
             device_name: Some(radeon.into()),
             device_description: Some("Radeon High Definition Audio Controller".into()),
+            channels: None,
         }
     );
 

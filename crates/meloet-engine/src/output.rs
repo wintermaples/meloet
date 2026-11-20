@@ -115,6 +115,18 @@ impl AudioOutput {
     pub fn open(
         target: &OutputTarget,
         request_frames: u32,
+        engine: Engine,
+    ) -> Result<RunningOutput, OpenError> {
+        AudioOutput::open_at(target, request_frames, None, engine)
+    }
+
+    /// As [`AudioOutput::open`], asking for `request_rate` too. The device's own rate runs
+    /// when it does not take the one asked for; what runs is
+    /// [`RunningOutput::sample_rate`].
+    pub fn open_at(
+        target: &OutputTarget,
+        request_frames: u32,
+        request_rate: Option<u32>,
         mut engine: Engine,
     ) -> Result<RunningOutput, OpenError> {
         // A fresh host each time: cpal's device list (and the object serial it connects to) is a
@@ -138,6 +150,12 @@ impl AudioOutput {
             Ok(config) => config.sample_rate(),
             Err(e) => return Err(OpenError::new(e, Some(engine))),
         };
+        let takes = |rate: &u32| {
+            device.supported_output_configs().is_ok_and(|mut configs| {
+                configs.any(|c| (c.min_sample_rate()..=c.max_sample_rate()).contains(rate))
+            })
+        };
+        let sample_rate = request_rate.filter(takes).unwrap_or(sample_rate);
 
         engine.prepare(sample_rate);
         let meters = engine.meters().clone();

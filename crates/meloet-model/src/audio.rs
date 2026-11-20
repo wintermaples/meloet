@@ -173,6 +173,8 @@ impl AudioShape {
     }
 }
 
+pub mod record;
+
 #[cfg(test)]
 mod clip_tests;
 

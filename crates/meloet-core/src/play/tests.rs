@@ -24,6 +24,7 @@ fn headphones(availability: Availability) -> Endpoint {
         node_name: Some(HP_NODE.into()),
         device_name: None,
         device_description: Some("card device".into()),
+        channels: None,
     }
 }
 
@@ -609,7 +610,14 @@ fn a_loop_recording_makes_a_take_per_lap() {
     event(m, off(60), 11, 200.0, 0);
     // Held over the end of the lap: cut there.
     event(m, on(62), 12, (BAR - Q / 4) as f64, 0);
-    let cut = live(&report(m, RecordReport::LapChanged { lap: 1 }));
+    let cut = live(&report(
+        m,
+        RecordReport::LapChanged {
+            lap: 1,
+            frame: 0,
+            file_frame: None,
+        },
+    ));
     assert_eq!(cut[0].notes[0].length, Some(Q / 4));
     assert_eq!(m.view().transport.recording.unwrap().lap, 1);
     assert_eq!(
@@ -631,9 +639,23 @@ fn a_loop_recording_makes_a_take_per_lap() {
     event(m, off(62), 14, 320.0, 1);
     event(m, off(64), 15, 500.0, 1);
     // Lap 2 gets take 3; it has no notes, so lap 3 gets take 3 too.
-    report(m, RecordReport::LapChanged { lap: 2 });
+    report(
+        m,
+        RecordReport::LapChanged {
+            lap: 2,
+            frame: 0,
+            file_frame: None,
+        },
+    );
     assert_eq!(m.view().transport.recording.unwrap().take, 3);
-    report(m, RecordReport::LapChanged { lap: 3 });
+    report(
+        m,
+        RecordReport::LapChanged {
+            lap: 3,
+            frame: 0,
+            file_frame: None,
+        },
+    );
     assert_eq!(
         m.view().transport.recording.unwrap().take,
         3,

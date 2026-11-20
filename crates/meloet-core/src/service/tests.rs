@@ -167,6 +167,7 @@ fn the_chosen_output_is_saved_and_read_at_the_next_start() {
             node_name: Some("alsa_output.card.analog-stereo".into()),
             device_name: Some("card".into()),
             device_description: Some("Card".into()),
+            channels: None,
         }],
         ..DevicesPicture::default()
     };
@@ -701,6 +702,7 @@ fn a_fixed_velocity_reaches_the_sound_the_recording_the_meter_and_the_screen() {
             0,
         )),
         shell: Mutex::new(None),
+        mics: Mutex::new(None),
     });
     shared.stream.open.store(true, Relaxed);
     let (tx, _rx) = mpsc::channel();
@@ -824,6 +826,7 @@ impl SeatRig {
                 Library::open(None, Box::new(|_, _| {})),
                 Sf2Store::open(None, Box::new(|_| {})),
                 model.engine_seats(),
+                (256, 48_000),
             ),
             model,
             midi: parts.midi_in,
@@ -1075,6 +1078,7 @@ impl SoundRig {
             library,
             Sf2Store::open(None, Box::new(|_| {})),
             model.engine_seats(),
+            (256, 48_000),
         );
         let seats = SeatRig {
             audio,

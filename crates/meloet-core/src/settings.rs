@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use meloet_model::BuiltinInstrument;
 use meloet_model::effects::EffectKind as ModelEffect;
-use meloet_protocol::{DEFAULT_FIXED_VELOCITY, EffectKind, EffectRef, SoundRef};
+use meloet_protocol::{DEFAULT_FIXED_VELOCITY, EffectKind, EffectRef, RecordFormat, SoundRef};
 use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "settings.json";
@@ -33,6 +33,72 @@ pub struct Settings {
     /// The places the person added to look for plugins in, in the order they were added.
     pub plugin_places: Vec<PathBuf>,
     pub shelf: ShelfSettings,
+    pub sound: SoundSettings,
+}
+
+/// The advanced sound settings (spec 3, 33-A). They belong to the PC, not to a song.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoundSettings {
+    /// The id of the input the vocal tracks record from. `None`: the one the PC uses.
+    pub input: Option<String>,
+    /// The frames and the rate meloet asks for; what runs is the PC's to decide.
+    pub buffer: u32,
+    pub sample_rate: u32,
+    pub record_format: RecordFormat,
+    /// 「手で決める…」: the round trip typed, in microseconds.
+    pub manual_latency_us: Option<u32>,
+    /// 「測った数」, one for each output, input and sample rate measured.
+    pub measured: Vec<MeasuredLatency>,
+}
+
+/// What 「遅れを測る」 found: `x_us` is what the round trip takes more than the PC says
+/// (docs/architecture.md 22-5, `X`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeasuredLatency {
+    /// The ids of the output and the input, as the settings name them.
+    pub output: String,
+    pub input: String,
+    pub sample_rate: u32,
+    pub x_us: i32,
+    /// When it was measured, Unix ms.
+    pub at_ms: u64,
+}
+
+pub const BUFFER_CHOICES: [u32; 5] = [64, 128, 256, 512, 1024];
+pub const SAMPLE_RATE_CHOICES: [u32; 4] = [44_100, 48_000, 88_200, 96_000];
+pub const DEFAULT_BUFFER: u32 = 256;
+pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
+/// 「手で決める…」 takes 0 to 500 ms.
+pub const MANUAL_LATENCY_MAX_US: u32 = 500_000;
+
+impl Default for SoundSettings {
+    fn default() -> Self {
+        SoundSettings {
+            input: None,
+            buffer: DEFAULT_BUFFER,
+            sample_rate: DEFAULT_SAMPLE_RATE,
+            record_format: RecordFormat::default(),
+            manual_latency_us: None,
+            measured: Vec::new(),
+        }
+    }
+}
+
+impl SoundSettings {
+    pub fn measured_for(&self, output: &str, input: &str, sample_rate: u32) -> Option<i32> {
+        (self.measured.iter())
+            .find(|m| m.output == output && m.input == input && m.sample_rate == sample_rate)
+            .map(|m| m.x_us)
+    }
+
+    /// Keeps `new` in place of what was measured for the same three before.
+    pub fn keep_measured(&mut self, new: MeasuredLatency) {
+        self.measured.retain(|m| {
+            (m.output.as_str(), m.input.as_str(), m.sample_rate)
+                != (new.output.as_str(), new.input.as_str(), new.sample_rate)
+        });
+        self.measured.push(new);
+    }
 }
 
 /// What the shelf keeps of 「あとから入れたもの」 and of its effects.
@@ -80,6 +146,7 @@ impl Default for Settings {
             favorites: DEFAULT_FAVORITES.to_vec(),
             plugin_places: Vec::new(),
             shelf: ShelfSettings::default(),
+            sound: SoundSettings::default(),
         }
     }
 }
@@ -115,6 +182,36 @@ struct OnDisk {
     favorite_plugin_effects: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     plugin_formats: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    input: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    buffer: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sample_rate: Option<u32>,
+    /// 16, 24 or 32.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_bits: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    manual_latency_us: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    measured_latency: Vec<MeasuredLatency>,
+}
+
+fn sound_from_disk(disk: &mut OnDisk) -> SoundSettings {
+    let default = SoundSettings::default();
+    SoundSettings {
+        input: disk.input.take(),
+        buffer: (disk.buffer.filter(|b| BUFFER_CHOICES.contains(b))).unwrap_or(default.buffer),
+        sample_rate: (disk.sample_rate.filter(|r| SAMPLE_RATE_CHOICES.contains(r)))
+            .unwrap_or(default.sample_rate),
+        record_format: (RecordFormat::ALL.into_iter())
+            .find(|f| Some(f.bits()) == disk.record_bits)
+            .unwrap_or_default(),
+        manual_latency_us: disk
+            .manual_latency_us
+            .map(|us| us.min(MANUAL_LATENCY_MAX_US)),
+        measured: std::mem::take(&mut disk.measured_latency),
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -191,6 +288,7 @@ pub fn load(dir: &Path) -> Settings {
     match serde_json::from_str::<OnDisk>(&text) {
         Ok(mut disk) if disk.version == VERSION => Settings {
             shelf: shelf_from_disk(&mut disk),
+            sound: sound_from_disk(&mut disk),
             output_name: disk.output_name.filter(|_| disk.output.is_some()),
             output: disk.output,
             scale: if SCALES.contains(&disk.scale) {
@@ -294,6 +392,12 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
             })
             .collect(),
         plugin_formats: shelf.plugin_formats.clone(),
+        input: settings.sound.input.clone(),
+        buffer: Some(settings.sound.buffer),
+        sample_rate: Some(settings.sound.sample_rate),
+        record_bits: Some(settings.sound.record_format.bits()),
+        manual_latency_us: settings.sound.manual_latency_us,
+        measured_latency: settings.sound.measured.clone(),
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -358,7 +462,37 @@ mod tests {
                 ],
                 plugin_formats: vec!["lv2:urn:x:synth".into()],
             },
+            sound: SoundSettings {
+                input: Some("alsa_card.usb-mic:analog-input-mic".into()),
+                buffer: 128,
+                sample_rate: 44_100,
+                record_format: RecordFormat::Bits32,
+                manual_latency_us: Some(12_400),
+                measured: vec![MeasuredLatency {
+                    output: "card:analog-output-headphones".into(),
+                    input: "alsa_card.usb-mic:analog-input-mic".into(),
+                    sample_rate: 48_000,
+                    x_us: 4_417,
+                    at_ms: 1_794_750_060_000,
+                }],
+            },
         };
+        let mut again = settings.sound.clone();
+        again.keep_measured(MeasuredLatency {
+            x_us: -20,
+            ..settings.sound.measured[0].clone()
+        });
+        assert_eq!(
+            again.measured.len(),
+            1,
+            "one number for one output, input and rate"
+        );
+        let (output, input) = (
+            "card:analog-output-headphones",
+            "alsa_card.usb-mic:analog-input-mic",
+        );
+        assert_eq!(again.measured_for(output, input, 48_000), Some(-20));
+        assert_eq!(again.measured_for(output, input, 44_100), None);
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
         assert!(!dir.join("settings.json.tmp").exists());
@@ -405,6 +539,7 @@ mod tests {
                 favorites: vec![BuiltinInstrument::GrandPiano, BuiltinInstrument::StudioKit],
                 plugin_places: vec![],
                 shelf: ShelfSettings::default(),
+                sound: SoundSettings::default(),
             }
         );
     }

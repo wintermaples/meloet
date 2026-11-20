@@ -3,6 +3,7 @@
 
 mod recovery;
 mod songs;
+mod vocal;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -21,13 +22,12 @@ use meloet_plugin::ScanCache;
 use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
     AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
-    EndpointView, FileDropView, Friendly, Hint, HistoryRow, InputsView, InstrumentKind,
-    KeyboardView, KeyboardsView, LatencySource, LatencyView, LayoutView, LibraryView, LinkKind,
-    LiveNotes, LiveNotesSnapshot, LowerBandView, MeterSize, MissingRef, MissingView, OutputsView,
-    ParamTable, ParamValues, PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat,
-    RecoveryCause, ScanView, SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView,
-    SoundRef, StandIn, StatusMessage, StatusView, TrackKindView, TrackView, Unusable,
-    VelocityFixed, WorkspaceView,
+    EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind, KeyboardView,
+    KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
+    MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginRole,
+    PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView, SettingsDialogView,
+    ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView,
+    TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -37,18 +37,18 @@ use crate::sf2store::{self, Sf2Info, Sf2Key};
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::mixer::gain_view;
-use crate::play::{Cut, EngineOp, Heard, Play, PlugState, RecordReport};
+use crate::play::{Cut, EngineOp, Heard, OpenInput, Play, PlugState, RecordReport, VocalFileAsk};
 use crate::plugins::{Plugins, ScanJob, ScanNews};
-use crate::settings::{SCALES, Settings};
+use crate::settings::{SCALES, Settings, SoundSettings};
+use crate::vocalrec::{RecNote, Written};
 
 pub use recovery::{QUIET_US, RecoveryStart};
 
 /// The buffer size meloet asks for. What really runs is `AudioView::actual_frames`.
-pub const REQUESTED_FRAMES: u32 = 256;
+pub const REQUESTED_FRAMES: u32 = crate::settings::DEFAULT_BUFFER;
 /// What 「バッファ ▾」 and 「サンプルレート ▾」 of the advanced sound settings list.
-pub const BUFFER_CHOICES: [u32; 5] = [64, 128, 256, 512, 1024];
-pub const SAMPLE_RATE_CHOICES: [u32; 4] = [44_100, 48_000, 88_200, 96_000];
-pub const REQUESTED_SAMPLE_RATE: u32 = 48_000;
+pub use crate::settings::{BUFFER_CHOICES, SAMPLE_RATE_CHOICES};
+pub use vocal::Delays;
 pub const AUDIO_SYSTEM: &str = "PipeWire";
 /// Key to sound is about this many buffers (docs/architecture.md 4).
 const LATENCY_BUFFERS: f32 = 2.5;
@@ -210,6 +210,40 @@ pub enum Input {
     FilesLeft,
     /// From the shell: they were let go of over the window.
     FilesDropped(Vec<PathBuf>),
+    /// An answer to [`Effect::OpenInput`]: the input runs, with this many channels, at the
+    /// output's rate.
+    InputOpened {
+        node_name: String,
+        channels: u16,
+        sample_rate: u32,
+    },
+    /// The other answer to [`Effect::OpenInput`].
+    InputOpenFailed {
+        node_name: String,
+    },
+    /// The open input ended on its own (the microphone was pulled out).
+    InputLost,
+    /// What the PC says of its delays now; `None` while the input is not open.
+    AudioDelays(Option<Delays>),
+    /// The input of a metered vocal track reached 0 dB.
+    MicClipped,
+    /// An answer to [`Effect::StartVocalRecording`]: the files are there, under these names
+    /// (in the order asked; another name where one was taken).
+    VocalsStarted {
+        names: Vec<String>,
+    },
+    /// The other answer to [`Effect::StartVocalRecording`]: no file could be made.
+    VocalsNotStarted,
+    /// The answer to [`Effect::StopVocalRecording`]: what the disk writer wrote.
+    VocalsWritten(Box<Written>),
+    /// The files reached the size a wav file can have, or the disk refused: the recording
+    /// is to stop.
+    VocalsCannotGoOn,
+    /// The answer to [`Effect::LatencyClick`]: what the round trip of the click took more
+    /// than the PC says, in microseconds; `None`: it did not come back.
+    LatencyAnswer {
+        x_us: Option<f64>,
+    },
 }
 
 /// What a loaded plugin tells: its window, its parameters, its state.
@@ -439,6 +473,34 @@ pub enum Effect {
     /// Read the SF2 file and copy it into meloet's folder, off the core thread. Answer with
     /// [`Input::Sf2Added`] or [`Input::Sf2NotAdded`].
     AddSf2(PathBuf),
+    /// Open the PC's input on this node, at the rate of the open output (closing the one
+    /// that is open). `sink_monitor`: the node is a sink, and its monitor is the input.
+    /// Answer with [`Input::InputOpened`] or [`Input::InputOpenFailed`].
+    OpenInput {
+        node_name: String,
+        sink_monitor: bool,
+    },
+    CloseInput,
+    /// Make the files of a recording in the work folder and start writing the input into
+    /// them, before the engine is told to record. Answer with [`Input::VocalsStarted`] or
+    /// [`Input::VocalsNotStarted`]. `x_us`: what the round trip takes more than the PC says.
+    StartVocalRecording {
+        files: Vec<VocalFileAsk>,
+        format: RecordFormat,
+        x_us: i64,
+    },
+    /// Write what is still on its way and close the files. Answer with
+    /// [`Input::VocalsWritten`].
+    StopVocalRecording,
+    /// Write the note about the recording going on (`work/rec.json`).
+    WriteRecNote(Box<RecNote>),
+    RemoveRecNote,
+    /// Files of a recording that holds nothing to keep: take them out of the work folder.
+    DropVocalFiles(Vec<String>),
+    /// Start or stop keeping what the input hears, for the latency measurement.
+    LatencyListen(bool),
+    /// Play one click and listen for it. Answer with [`Input::LatencyAnswer`].
+    LatencyClick,
 }
 
 pub struct Model {
@@ -518,6 +580,13 @@ pub struct Model {
     drop_cancelled: bool,
     /// Several files were let go of over the window and their SF2 files are being added.
     sf2_batch: Option<Sf2Batch>,
+    /// The advanced sound settings.
+    sound: SoundSettings,
+    input: vocal::InputSide,
+    delays: Option<Delays>,
+    latency: Option<vocal::LatencyDialog>,
+    /// 「モニター」 was turned on once in this run: the status line said how late the voice is.
+    monitor_said: bool,
 }
 
 /// The SF2 files of one drop of several files, said as one once the last is answered.
@@ -604,6 +673,11 @@ impl Model {
             file_drop: None,
             drop_cancelled: false,
             sf2_batch: None,
+            sound: settings.sound,
+            input: vocal::InputSide::default(),
+            delays: None,
+            latency: None,
+            monitor_said: false,
         }
     }
 
@@ -666,6 +740,7 @@ impl Model {
             Input::Devices(mut picture) => {
                 sort_for_choice(&mut picture.outputs);
                 self.devices = Some(picture);
+                self.devices_changed_for_input();
                 self.failed = None;
                 self.audio_retries = 0;
                 self.audio_gave_up = false;
@@ -871,12 +946,56 @@ impl Model {
                     effects.extend(sf2.into_iter().map(Effect::AddSf2));
                 }
             }
+            Input::InputOpened {
+                node_name,
+                channels,
+                sample_rate,
+            } => {
+                let open = OpenInput {
+                    channels,
+                    sample_rate,
+                };
+                self.input_opened(&node_name, open);
+            }
+            Input::InputOpenFailed { node_name } => {
+                self.input_gone(Some(&node_name), &mut effects);
+            }
+            Input::InputLost => {
+                self.input_gone(None, &mut effects);
+                if self.play.recording_vocals() {
+                    self.play.stop_recording(&mut effects);
+                }
+            }
+            Input::AudioDelays(delays) => self.delays = delays,
+            Input::MicClipped => {
+                if !self.play.busy() {
+                    self.notice = Some(StatusMessage::MicTooLoud);
+                }
+            }
+            Input::VocalsStarted { names } => {
+                let path = self.files.path.clone();
+                self.play
+                    .vocals_started(names, path.as_deref(), &mut effects);
+            }
+            Input::VocalsNotStarted => self.play.vocals_not_started(),
+            Input::VocalsWritten(written) => self.play.vocals_written(*written, &mut effects),
+            Input::VocalsCannotGoOn => {
+                if self.play.recording_vocals() {
+                    self.play.stop_recording(&mut effects);
+                }
+            }
+            Input::LatencyAnswer { x_us } => self.latency_answer(x_us, &mut effects),
         }
         self.refresh_catalog();
         if !self.bands.side_is_open(SidePanel::Shelf) {
             self.play.shelf_closed(&mut effects);
         }
         self.settle(&mut effects);
+        self.settle_input(&mut effects);
+        let input = self.open_input();
+        self.play.sync_voices(input, &mut effects);
+        let path = self.files.path.clone();
+        self.play.note_vocals(path.as_deref(), &mut effects);
         if self.open.is_none() {
             let cut = if self.audio_system_down {
                 Cut::AudioSystem
@@ -918,6 +1037,15 @@ impl Model {
             effects.push(Effect::TestTone);
         }
         effects
+    }
+
+    /// The vocal tracks whose input is metered now, in the order of the song.
+    pub fn metered_vocals(&self) -> Vec<(meloet_model::TrackId, VocalInput)> {
+        self.play.metered_vocals()
+    }
+
+    pub fn set_uid_seed(&mut self, seed: u64) {
+        self.play.set_uid_seed(seed);
     }
 
     /// Xruns of the open stream since it was opened.
@@ -1003,7 +1131,8 @@ impl Model {
             self.notice = None;
             self.new_song_unsaid = false;
         }
-        let can_play = self.open.is_some();
+        let can_play = self.open.is_some() && !self.measuring();
+        let command = self.vocal_command(command, effects)?;
         match command {
             Command::SetViewport { width, height } => {
                 if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
@@ -1165,7 +1294,11 @@ impl Model {
                 }
             }
             Command::PlayStop => self.play.play_stop(can_play, effects),
-            Command::Record => self.notice = self.play.record(can_play, effects),
+            Command::Record => {
+                let input = self.open_input();
+                let setup = input.map(|i| (i, self.sound.record_format, self.latency_x_us()));
+                self.notice = self.play.record(can_play, setup, effects);
+            }
             Command::GoToStart => self.play.locate(0, effects),
             Command::Locate { tick } => self.play.locate(tick, effects),
             Command::SetTempo { bpm } => self.say(|p| p.set_tempo(bpm, effects)),
@@ -1212,6 +1345,9 @@ impl Model {
             Command::SelectTrack { track, from_arm } => {
                 if let Some(n) = self.play.select_track(track, from_arm) {
                     self.notice = Some(n);
+                }
+                if self.play.selected_vocal().is_some() && !self.has_input() {
+                    self.notice = Some(StatusMessage::NoInput);
                 }
             }
             Command::DeleteTrack { track } => {
@@ -1302,6 +1438,7 @@ impl Model {
             }
             // Vocal tracks, the input and the latency: accepted, and nothing yet
             // (docs/architecture.md 22-15).
+            // Taken by `vocal_command` above.
             Command::AddVocalTrack
             | Command::SetVocalInput { .. }
             | Command::ToggleVocalArm { .. }
@@ -1936,6 +2073,7 @@ impl Model {
             self.actual_frames = None;
             self.latencies.clear();
             self.xruns = 0;
+            self.input_reset(effects);
         }
     }
 
@@ -1952,13 +2090,14 @@ impl Model {
             return;
         };
         let forced = self.devices.as_ref().and_then(|d| d.clock.force_quantum);
-        let fixed = (actual != REQUESTED_FRAMES && forced == Some(actual)).then_some(actual);
+        let requested = self.sound.buffer;
+        let fixed = (actual != requested && forced == Some(actual)).then_some(actual);
         if fixed.is_some() && (self.buffer_unsaid || fixed != self.buffer_fixed_seen) {
             self.notice = Some(StatusMessage::BufferFixed {
                 actual,
-                requested: REQUESTED_FRAMES,
+                requested,
                 latency_ms: estimate_ms(actual, rate),
-                latency_ms_at_requested: estimate_ms(REQUESTED_FRAMES, rate),
+                latency_ms_at_requested: estimate_ms(requested, rate),
             });
         }
         self.buffer_unsaid = false;
@@ -1977,6 +2116,7 @@ impl Model {
             favorites: self.favorites.clone(),
             plugin_places: self.plugins.added_places().to_vec(),
             shelf: self.catalog.settings().clone(),
+            sound: self.sound.clone(),
         }
     }
 
@@ -2105,11 +2245,21 @@ impl Model {
         let recovery = self.recovery_view().filter(|_| !self.chooser_shown());
         let library = self.library_view();
         AppState {
-            song: song_view(&self.play, self.song_file(), &library, &self.catalog),
+            song: song_view(
+                &self.play,
+                self.song_file(),
+                &library,
+                &self.catalog,
+                self.input_channels(),
+            ),
             timeline: self.play.timeline_view(),
             automation: self.play.automation_view(),
             history: self.play.history_view(),
-            transport: self.play.transport_view(self.open.is_some()),
+            transport: {
+                let mut transport = self.play.transport_view(self.open.is_some());
+                transport.can_record &= !self.measuring();
+                transport
+            },
             arrange: self.play.arrange_view(),
             piano_roll: self.play.piano_roll_view(),
             workspace: WorkspaceView {
@@ -2133,7 +2283,7 @@ impl Model {
                 song_dialog: self.song_dialog_view(),
                 recovery,
                 file_drop: self.file_drop.clone(),
-                latency_dialog: None,
+                latency_dialog: self.latency_dialog_view(),
             },
             shelf: self.shelf_view(&library),
             library,
@@ -2161,16 +2311,7 @@ impl Model {
                 chosen: self.chosen.clone(),
                 chosen_state,
             },
-            inputs: InputsView {
-                list: self
-                    .devices
-                    .iter()
-                    .flat_map(|d| &d.inputs)
-                    .map(endpoint_view)
-                    .collect(),
-                chosen: None,
-                open: false,
-            },
+            inputs: self.inputs_view(),
             audio,
             status: StatusView { message: status },
         }
@@ -2186,24 +2327,18 @@ impl Model {
             running: self.open.is_some(),
             system: AUDIO_SYSTEM.into(),
             sample_rate: rate,
-            requested_frames: REQUESTED_FRAMES,
+            requested_frames: self.sound.buffer,
             actual_frames: self.actual_frames,
             forced_quantum: self.devices.as_ref().and_then(|d| d.clock.force_quantum),
             latency_ms: measured.or_else(|| Some(estimate_ms(self.actual_frames?, rate?))),
-            latency_ms_at_requested: rate.map(|r| estimate_ms(REQUESTED_FRAMES, r)),
+            latency_ms_at_requested: rate.map(|r| estimate_ms(self.sound.buffer, r)),
             output_device: self.open.as_ref().map(|o| o.node_name.clone()),
             midi_input: self.active_keyboard().map(Keyboard::label),
             buffer_choices: BUFFER_CHOICES.to_vec(),
-            requested_sample_rate: REQUESTED_SAMPLE_RATE,
+            requested_sample_rate: self.sound.sample_rate,
             sample_rate_choices: SAMPLE_RATE_CHOICES.to_vec(),
-            record_format: RecordFormat::default(),
-            latency: LatencyView {
-                reported_ms: None,
-                measured_ms: None,
-                manual_ms: None,
-                used: LatencySource::Reported,
-                used_ms: None,
-            },
+            record_format: self.sound.record_format,
+            latency: self.latency_view(),
         }
     }
 
@@ -2211,6 +2346,9 @@ impl Model {
     /// user to do something about a device, and before the rest.
     fn status(&self, chosen_state: Option<ChosenState>) -> Option<StatusMessage> {
         let output = || self.output_name();
+        if self.latency.is_some() {
+            return Some(StatusMessage::LatencyMeasureOpen);
+        }
         if self.dialog.is_some() {
             return Some(StatusMessage::SettingsOpen);
         }
@@ -2401,7 +2539,13 @@ fn sf2_keys(info: &Sf2Info) -> impl Iterator<Item = Sf2Key> + '_ {
     })
 }
 
-fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catalog) -> SongView {
+fn song_view(
+    play: &Play,
+    file: SongFile,
+    library: &LibraryView,
+    catalog: &Catalog,
+    input_channels: Option<u16>,
+) -> SongView {
     let song = play.song();
     let doc = &song.doc;
     let sounds = play.available_sounds();
@@ -2424,7 +2568,7 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
                     TrackKind::Keys => TrackKindView::Keys,
                     TrackKind::Vocal { input } => TrackKindView::Vocal {
                         input: vocal_input_view(input),
-                        input_ready: false,
+                        input_ready: input_channels.is_some_and(|n| input.fits(n)),
                         armed: song.session.armed_vocals.contains(&t.id),
                         monitor: song.session.monitored.contains(&t.id),
                     },
@@ -2464,6 +2608,14 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
     }
 }
 
+pub(crate) fn model_vocal_input(input: meloet_protocol::VocalInput) -> VocalInput {
+    match input {
+        meloet_protocol::VocalInput::Mono1 => VocalInput::Mono1,
+        meloet_protocol::VocalInput::Mono2 => VocalInput::Mono2,
+        meloet_protocol::VocalInput::Stereo12 => VocalInput::Stereo12,
+    }
+}
+
 pub(crate) fn vocal_input_view(input: VocalInput) -> meloet_protocol::VocalInput {
     match input {
         VocalInput::Mono1 => meloet_protocol::VocalInput::Mono1,
@@ -2492,7 +2644,7 @@ fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
             d::LinkKind::Jack => LinkKind::Jack,
             d::LinkKind::Plug => LinkKind::Plug,
         },
-        channels: None,
+        channels: endpoint.channels.map(u16::from),
         node_name: endpoint.node_name.clone(),
         device: endpoint.device_description.clone(),
         unusable: endpoint.unusable().map(|u| match u {
@@ -2521,3 +2673,5 @@ mod plugin_tests;
 mod speed;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vocal_tests;

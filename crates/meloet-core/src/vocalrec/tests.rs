@@ -1,0 +1,576 @@
+#![allow(
+    clippy::disallowed_methods,
+    reason = "the test thread is the control side; it may sleep"
+)]
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+
+use meloet_engine::{BlockTiming, Engine, EngineConfig, EngineParts, InputEnds, input_ends};
+use meloet_model::{Meter, Tempo, Timeline};
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::formats::TrackType;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::io::MediaSourceStream;
+
+use super::*;
+
+const RATE: u32 = 48_000;
+
+fn scratch(name: &str) -> PathBuf {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "meloet-vocalrec-{}-{}-{name}",
+        std::process::id(),
+        NEXT.fetch_add(1, Relaxed)
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// The file as symphonia 0.6.1 reads it: (rate, channels, interleaved samples).
+fn decode(path: &Path) -> (u32, usize, Vec<f32>) {
+    let stream = MediaSourceStream::new(Box::new(File::open(path).unwrap()), Default::default());
+    let mut hint = Hint::new();
+    hint.with_extension("wav");
+    let mut format = symphonia::default::get_probe()
+        .probe(&hint, stream, Default::default(), Default::default())
+        .expect("a wav file");
+    let track = format.default_track(TrackType::Audio).expect("a track");
+    let id = track.id;
+    let params = track.codec_params.as_ref().and_then(|p| p.audio()).unwrap();
+    let mut decoder = symphonia::default::get_codecs()
+        .make_audio_decoder(params, &AudioDecoderOptions::default())
+        .unwrap();
+    let (mut rate, mut channels, mut data) = (0, 0, Vec::<f32>::new());
+    while let Ok(Some(packet)) = format.next_packet() {
+        if packet.track_id != id {
+            continue;
+        }
+        let buffer = decoder.decode(&packet).unwrap();
+        rate = buffer.spec().rate();
+        channels = buffer.spec().channels().count();
+        let at = data.len();
+        data.resize(at + buffer.samples_interleaved(), 0.0);
+        buffer.copy_to_slice_interleaved(&mut data[at..]);
+    }
+    (rate, channels, data)
+}
+
+fn wave(frames: usize, channels: usize) -> Vec<f32> {
+    (0..frames * channels)
+        .map(|i| ((i / channels) as f32 * 0.01 + i as f32 * 0.5).sin() * 0.8)
+        .collect()
+}
+
+#[test]
+fn every_format_reads_back_before_and_after_the_lengths_are_put_in() {
+    let dir = scratch("formats");
+    let samples = wave(4_800, 2);
+    for (format, step) in [
+        (RecordFormat::Bits16, 2.5 / 32_767.0),
+        (RecordFormat::Bits24, 1.0 / 8_388_607.0),
+        (RecordFormat::Bits32, 0.0),
+    ] {
+        let path = dir.join(format!("{}.wav", format.bits()));
+        let mut wav = WavFile::create(&path, RATE, 2, format).unwrap();
+        wav.write(&samples[..4_000]).unwrap();
+        wav.write_silence(100).unwrap();
+        wav.write(&samples[4_000..]).unwrap();
+        wav.sync().unwrap();
+        assert_eq!(wav.frames(), 4_900);
+
+        let check = |what: &str| {
+            let (rate, channels, read) = decode(&path);
+            assert_eq!((rate, channels, read.len()), (RATE, 2, 9_800), "{what}");
+            let expected = [&samples[..4_000], &[0.0; 200], &samples[4_000..]].concat();
+            let worst = (read.iter().zip(&expected))
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            assert!(worst <= step, "{what} {format:?}: off by {worst}");
+            worst
+        };
+        // While it is written: the head says "to the end of the file".
+        let head = fs::read(&path).unwrap();
+        assert_eq!(head[4..8], [0xFF; 4]);
+        assert_eq!(head[40..44], [0xFF; 4]);
+        let worst = check("unfinished");
+        if format == RecordFormat::Bits16 {
+            assert!(worst > 0.2 / 32_767.0, "16 bits are dithered");
+        }
+        assert_eq!(wav.finish().unwrap(), 4_900);
+        let head = fs::read(&path).unwrap();
+        let data = 4_900 * 2 * u32::from(format.bits() / 8);
+        assert_eq!(head[40..44], data.to_le_bytes());
+        assert_eq!(head[4..8], (data + 36).to_le_bytes());
+        check("finished");
+    }
+    assert!(WavFile::create(&dir.join("16.wav"), RATE, 2, RecordFormat::Bits16).is_err());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_file_left_half_written_is_mended() {
+    let dir = scratch("mend");
+    let path = dir.join("歌 7.wav");
+    let samples = wave(1_000, 1);
+    let mut wav = WavFile::create(&path, 44_100, 1, RecordFormat::Bits24).unwrap();
+    wav.write(&samples).unwrap();
+    drop(wav);
+    // meloet ended in the middle of a frame.
+    let mut bytes = fs::read(&path).unwrap();
+    bytes.extend_from_slice(&[1, 2]);
+    fs::write(&path, &bytes).unwrap();
+
+    let info = mend_wav(&path).unwrap();
+    assert_eq!(
+        info,
+        WavInfo {
+            frames: 1_000,
+            sample_rate: 44_100,
+            channels: 1
+        }
+    );
+    let mended = fs::read(&path).unwrap();
+    assert_eq!(mended.len(), 44 + 3_000);
+    assert_eq!(mended[40..44], 3_000u32.to_le_bytes());
+    assert_eq!(decode(&path).2.len(), 1_000);
+
+    fs::write(dir.join("other.wav"), b"RIFFxxxxWAVEnope").unwrap();
+    assert!(mend_wav(&dir.join("other.wav")).is_err());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_file_name_is_the_track_and_the_id() {
+    assert_eq!(file_name("歌", 12), "歌 12.wav");
+    assert_eq!(file_name(" コーラス/上 ", 3), "コーラス上 3.wav");
+    assert_eq!(file_name("..", 4), "歌 4.wav");
+}
+
+/// An engine with no stream, to fill a clock: block `n` reaches the DAC at `dac_us(n)`.
+struct Out {
+    parts: EngineParts,
+    frames: u64,
+}
+
+const BLOCK: usize = 256;
+const OUT_DELAY_US: u64 = 4_000;
+
+impl Out {
+    fn new() -> Out {
+        Out {
+            parts: Engine::new(EngineConfig::default()),
+            frames: 0,
+        }
+    }
+
+    fn block(&mut self) {
+        let callback_us = 1_000_000 + self.frames * 1_000_000 / u64::from(RATE);
+        let timing = BlockTiming {
+            callback_us,
+            playback_us: callback_us + OUT_DELAY_US,
+        };
+        self.parts.engine.process(&mut [0.0; BLOCK * 2], timing);
+        self.frames += BLOCK as u64;
+    }
+}
+
+fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+    let until = Instant::now() + Duration::from_secs(5);
+    while !done() {
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn the_writer_splits_the_input_into_the_tracks_files_and_places_their_head() {
+    let dir = scratch("writer");
+    let mut out = Out::new();
+    let InputEnds {
+        mut tap,
+        record,
+        meters,
+        ..
+    } = input_ends(2, RATE);
+    let writer = DiskWriter::spawn();
+    assert!(writer.stop().is_none());
+    let job = |names: [&str; 2]| RecordJob {
+        files: vec![
+            RecordFile {
+                path: dir.join(names[0]),
+                channels: vec![1],
+            },
+            RecordFile {
+                path: dir.join(names[1]),
+                channels: vec![0, 1],
+            },
+        ],
+        format: RecordFormat::Bits32,
+    };
+    assert!(writer.start(job(["a.wav", "b.wav"])).is_err(), "no input");
+    writer.set_input(Some((record, meters.clone())));
+
+    // Input frame n is captured at 1 s + n / RATE, 10 ms after it was sung... as the PC
+    // says: the time a block comes with is one block after its first frame.
+    let samples = wave(BLOCK * 400, 2);
+    let mut given = 0usize;
+    let mut cycle = |out: &mut Out, tap: &mut meloet_engine::InputTap| {
+        out.block();
+        let capture_us = 1_000_000 + ((given + BLOCK) as u64) * 1_000_000 / u64::from(RATE);
+        tap.block(
+            &samples[2 * given..2 * (given + BLOCK)],
+            capture_us,
+            capture_us + 500,
+        );
+        given += BLOCK;
+    };
+    for _ in 0..10 {
+        cycle(&mut out, &mut tap);
+    }
+    assert!(!meters.recording());
+    writer.start(job(["a.wav", "b.wav"])).unwrap();
+    assert!(meters.recording());
+    assert!(dir.join("a.wav").exists() && dir.join("b.wav").exists());
+    for _ in 0..20 {
+        cycle(&mut out, &mut tap);
+    }
+    // The files begin with the first block that ends after this moment: the 16th block.
+    let from_frame = 15 * BLOCK + 100;
+    writer.from(1_000_000.0 + from_frame as f64 * 1e6 / f64::from(RATE));
+    for _ in 0..70 {
+        cycle(&mut out, &mut tap);
+    }
+    // Input frame n was captured at 1 s + n / RATE, and the files begin with frame
+    // 15 * BLOCK: a moment is where counting from there puts it, also before the files.
+    let moment = |frame: f64| 1_000_000.0 + frame * 1e6 / f64::from(RATE);
+    for frame in [15.0 * BLOCK as f64, 20_000.25, 3_000.5] {
+        let got = writer.mark(moment(frame)).expect("the files have blocks");
+        let expected = frame - (15 * BLOCK) as f64;
+        assert!((got - expected).abs() < 0.05, "{got} for {expected}");
+    }
+    let written = writer.stop().expect("a recording");
+    assert_eq!(writer.mark(moment(0.0)), None, "nothing is recorded");
+    assert!(!meters.recording());
+    assert_eq!(written.error, None);
+    assert_eq!((written.dropped, written.gaps, written.full), (0, 0, false));
+    assert_eq!(written.frames, (85 * BLOCK) as u64);
+    assert_eq!(written.sample_rate, RATE);
+
+    let (rate, channels, a) = decode(&dir.join("a.wav"));
+    assert_eq!((rate, channels, a.len()), (RATE, 1, 85 * BLOCK));
+    let from = 15 * BLOCK;
+    assert!(
+        a.iter()
+            .enumerate()
+            .all(|(i, s)| *s == samples[2 * (from + i) + 1])
+    );
+    let (_, channels, b) = decode(&dir.join("b.wav"));
+    assert_eq!((channels, b.len()), (2, 2 * 85 * BLOCK));
+    assert_eq!(b[..], samples[2 * from..2 * (from + 85 * BLOCK)]);
+
+    // The next recording starts from nothing; the files of the last one stay.
+    assert!(
+        writer.start(job(["a.wav", "c.wav"])).is_err(),
+        "a.wav is there"
+    );
+    drop(writer);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_ring_that_ran_full_leaves_silence_of_the_same_length() {
+    let dir = scratch("full");
+    let InputEnds {
+        mut tap,
+        record,
+        meters,
+        ..
+    } = input_ends(1, RATE);
+    let second = wave(RATE as usize, 1);
+    let mut t_us = 5_000_000u64;
+    let mut give = |tap: &mut meloet_engine::InputTap, seconds: usize| {
+        for _ in 0..seconds {
+            for chunk in second.chunks(4_800) {
+                t_us += 100_000;
+                tap.block(chunk, t_us, t_us);
+            }
+        }
+    };
+    // The writer's side, driven by hand here so that the disk "stalls" when the test says.
+    let mut side = Side::new(Arc::new(Mutex::new(Written::default())));
+    side.input = Some((record, meters.clone()));
+    side.into = vec![0.0; RATE as usize];
+    let job = RecordJob {
+        files: vec![RecordFile {
+            path: dir.join("歌 1.wav"),
+            channels: vec![0],
+        }],
+        format: RecordFormat::Bits16,
+    };
+    side.start(job).unwrap();
+    side.job.as_mut().unwrap().from_us = Some(0.0);
+    // Seven seconds come and nobody reads: the ring holds four.
+    give(&mut tap, 7);
+    assert_eq!(meters.record_dropped(), 3 * u64::from(RATE));
+    side.drain();
+    give(&mut tap, 1);
+    side.drain();
+    side.end_job();
+    let written = side.job.take().unwrap().said;
+    assert_eq!(
+        written.frames,
+        8 * u64::from(RATE),
+        "every frame has its place"
+    );
+    assert_eq!(written.dropped, 3 * u64::from(RATE));
+    assert_eq!(
+        (written.gaps, written.full, &written.error),
+        (0, false, &None)
+    );
+
+    let (_, _, read) = decode(&dir.join("歌 1.wav"));
+    assert_eq!(read.len(), 8 * RATE as usize);
+    let near = |got: &[f32], want: &[f32]| {
+        (got.iter().zip(want)).all(|(a, b)| (a - b).abs() < 3.0 / 32_767.0)
+    };
+    let rate = RATE as usize;
+    for n in [0, 1, 2, 3, 7] {
+        assert!(near(&read[n * rate..(n + 1) * rate], &second), "second {n}");
+    }
+    assert!(
+        read[4 * rate..7 * rate]
+            .iter()
+            .all(|s| s.abs() < 3.0 / 32_767.0)
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn what_the_latency_measurement_hears_is_kept_in_memory() {
+    let InputEnds {
+        mut tap,
+        record,
+        meters,
+        ..
+    } = input_ends(2, RATE);
+    let writer = DiskWriter::spawn();
+    writer.set_input(Some((record, meters.clone())));
+    assert!(writer.captured().blocks.is_empty());
+    writer.capture(true);
+    wait_for("the switch", || meters.recording());
+    let samples = wave(512, 2);
+    tap.block(&samples[..512], 1_000, 1_100);
+    tap.block(&samples[512..], 2_000, 2_100);
+    let kept = writer.captured();
+    assert_eq!(
+        (kept.blocks.len(), kept.channels, kept.sample_rate),
+        (2, 2, RATE)
+    );
+    assert_eq!(kept.first_frame(), 0);
+    assert_eq!(kept.samples, samples);
+    assert_eq!(
+        kept.channel(1),
+        samples
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .copied()
+            .collect::<Vec<_>>()
+    );
+    writer.capture(false);
+    wait_for("the switch", || !meters.recording());
+    assert!(writer.captured().blocks.is_empty());
+}
+
+fn flat(bpm_centi: u32) -> TempoMap {
+    TempoMap::new(&Timeline::new(
+        Tempo::from_centi(bpm_centi).unwrap(),
+        Meter::FOUR_FOUR,
+    ))
+}
+
+#[test]
+fn takes_are_counted_from_the_frame_the_song_rolled_at() {
+    // 120: a quarter (1920 ticks) is 24000 frames; a tick is 12.5 frames.
+    let map = flat(12_000);
+    let marks = Marks {
+        from: 7_680,
+        loop_range: None,
+        // The file began half a beat (12000 frames) before the song rolled at 7680.
+        roll: Some((12_000.4, 7_680.0)),
+        laps: vec![],
+    };
+    // Stopped two beats and a bit in.
+    let takes = takes_from(&marks, &map, RATE, 80_000, Some((11_520.3, 0)));
+    assert_eq!(
+        takes,
+        [NewAudioTake {
+            origin: 7_680,
+            length: 3_841,
+            first_frame: 12_000,
+            frames: 48_013,
+        }]
+    );
+    // The file is shorter than the stop says (the last block never came): the take ends
+    // where the file does.
+    let short = takes_from(&marks, &map, RATE, 36_000, Some((11_520.3, 0)));
+    assert_eq!((short[0].length, short[0].frames), (1_919, 23_988));
+    // meloet ended while recording: the file to its end.
+    let ended = takes_from(&marks, &map, RATE, 80_000, None);
+    assert_eq!((ended[0].first_frame, ended[0].frames), (12_000, 67_988));
+    assert_eq!(ended[0].length, 5_439);
+    // The head was never placed: the file's first frame counts as sung at `from`.
+    let unplaced = Marks {
+        roll: None,
+        ..marks.clone()
+    };
+    let takes = takes_from(&unplaced, &map, RATE, 48_000, None);
+    assert_eq!(
+        takes[0],
+        NewAudioTake {
+            origin: 7_680,
+            length: 3_840,
+            first_frame: 0,
+            frames: 48_000
+        }
+    );
+    // A file that begins after the recording's start (it was started while playing).
+    let late = Marks {
+        roll: Some((-250.0, 7_680.0)),
+        ..marks.clone()
+    };
+    let takes = takes_from(&late, &map, RATE, 48_000, None);
+    assert_eq!((takes[0].origin, takes[0].first_frame), (7_700, 0));
+    // Nothing recorded at all.
+    assert!(takes_from(&marks, &map, RATE, 12_000, None).is_empty());
+    assert!(takes_from(&marks, &map, RATE, 80_000, Some((7_680.0, 0))).is_empty());
+}
+
+#[test]
+fn every_lap_of_a_loop_is_a_take_of_the_same_file() {
+    let map = flat(12_000);
+    // The loop is bar 2 (7680 to 15360: 96000 frames); the file began 12000 frames early.
+    let marks = Marks {
+        from: 7_680,
+        loop_range: Some((7_680, 15_360)),
+        roll: Some((12_000.0, 7_680.0)),
+        laps: vec![108_000.0, 204_000.0, 300_000.0],
+    };
+    // Stopped a beat into the third lap; a fourth lap's mark came after the stop was asked.
+    let takes = takes_from(&marks, &map, RATE, 400_000, Some((9_600.0, 2)));
+    let lap = |first_frame, length, frames| NewAudioTake {
+        origin: 7_680,
+        length,
+        first_frame,
+        frames,
+    };
+    assert_eq!(
+        takes,
+        [
+            lap(12_000, 7_680, 96_000),
+            lap(108_000, 7_680, 96_000),
+            lap(204_000, 1_920, 24_000),
+        ]
+    );
+    // meloet ended in the fourth lap.
+    let ended = takes_from(&marks, &map, RATE, 310_000, None);
+    assert_eq!(ended.len(), 4);
+    assert_eq!(ended[3], lap(300_000, 800, 10_000));
+}
+
+#[test]
+fn the_note_is_written_whole_read_back_and_removed() {
+    let dir = scratch("note");
+    assert_eq!(read_note(&dir), None);
+    let note = RecNote::new(
+        Some(Path::new("/home/x/曲/曲.meloet")),
+        RATE,
+        RecordFormat::Bits24,
+        vec![NoteFile {
+            file: "歌 12.wav".into(),
+            track: 6,
+            track_name: "歌".into(),
+            channels: 1,
+        }],
+        Marks {
+            from: 7_680,
+            loop_range: Some((7_680, 15_360)),
+            roll: Some((12_000.25, 7_680.0)),
+            laps: vec![108_000.25],
+        },
+    );
+    write_note(&dir, &note).unwrap();
+    assert!(dir.join("work/rec.json").exists());
+    assert!(!dir.join("work/.rec.json.new").exists());
+    assert_eq!(read_note(&dir), Some(note));
+    remove_note(&dir);
+    assert_eq!(read_note(&dir), None);
+
+    fs::write(dir.join("work/rec.json"), b"{\"version\": 99}").unwrap();
+    assert_eq!(read_note(&dir), None);
+    assert!(!dir.join("work/rec.json").exists(), "put away");
+    assert_eq!(work_audio_dir(&dir), dir.join("work/音"));
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cycles_the_input_missed_are_written_as_silence_of_their_length() {
+    let dir = scratch("gaps");
+    let InputEnds {
+        mut tap,
+        record,
+        meters,
+        ..
+    } = input_ends(1, RATE);
+    let mut side = Side::new(Arc::new(Mutex::new(Written::default())));
+    side.input = Some((record, meters.clone()));
+    side.into = vec![0.0; RATE as usize];
+    side.start(RecordJob {
+        files: vec![RecordFile {
+            path: dir.join("歌 1.wav"),
+            channels: vec![0],
+        }],
+        format: RecordFormat::Bits32,
+    })
+    .unwrap();
+    side.job.as_mut().unwrap().from_us = Some(0.0);
+
+    // Blocks of 256 frames (5333 µs). The time of a block is its cycle's, a block after its
+    // first frame; some wake a little late, which is no gap.
+    let samples = wave(256 * 40, 1);
+    let block_us = 256.0 * 1e6 / f64::from(RATE);
+    let give = |tap: &mut meloet_engine::InputTap, n: usize, cycle: f64, late_us: f64| {
+        let t_us = (1_000_000.0 + cycle * block_us + late_us) as u64;
+        tap.block(&samples[256 * n..256 * (n + 1)], t_us, t_us);
+    };
+    for n in 0..10 {
+        give(
+            &mut tap,
+            n,
+            (n + 1) as f64,
+            if n == 4 { 900.0 } else { 0.0 },
+        );
+    }
+    // Three cycles never come.
+    for n in 10..20 {
+        give(&mut tap, n, (n + 4) as f64, 0.0);
+    }
+    side.drain();
+    // A moment after the gap is where its frames are now.
+    let job = side.job.as_mut().unwrap();
+    let at = job.times.frame_at(1_000_000.0 + 15.0 * block_us).unwrap();
+    // That moment is the first frame of the third block after the gap.
+    assert!((at - (12 * 256 + 3 * 256) as f64).abs() < 0.05, "{at}");
+    side.end_job();
+    let written = side.job.take().unwrap().said;
+    assert_eq!((written.gaps, written.dropped), (3 * 256, 0));
+    assert_eq!(written.frames, 23 * 256);
+    let (_, _, read) = decode(&dir.join("歌 1.wav"));
+    assert_eq!(read[..2_560], samples[..2_560]);
+    assert!(read[2_560..2_560 + 768].iter().all(|s| *s == 0.0));
+    assert_eq!(read[2_560 + 768..], samples[2_560..5_120]);
+    let _ = fs::remove_dir_all(dir);
+}

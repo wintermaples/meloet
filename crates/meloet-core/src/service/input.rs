@@ -1,0 +1,460 @@
+//! The PC's input on the core thread: the stream, its feed into the engine, the disk writer
+//! and the clicks of the latency measurement (docs/architecture.md 22-5 to 22-7).
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::Ordering::Relaxed;
+use std::time::{Duration, Instant};
+
+use meloet_engine::{
+    AudioInput, EngineCommand, InputFeed, InputMeters, InputTarget, ProbeHeard, Recorded,
+    RunningInput, probe_wave,
+};
+use meloet_model::{
+    Doc, NewAudio, TempoMap, TrackId, VocalInput, VocalRecording, add_vocal_recordings, edit,
+};
+use meloet_protocol::{KeptVocals, RecordFormat};
+use sha2::{Digest, Sha256};
+
+use super::{Audio, Shared, Worker, lock};
+use crate::play::VocalFileAsk;
+use crate::state::{Delays, Input};
+use crate::vocalrec::{self, DiskWriter, RecNote, RecordFile, RecordJob, Written};
+
+/// How long after a click is asked for its answer is looked for.
+const CLICK_WAIT: Duration = Duration::from_millis(300);
+/// How often the core thread looks while a click is out.
+pub(super) const CLICK_TICK: Duration = Duration::from_millis(20);
+
+/// What the telemetry thread reads the mic meters from.
+pub(super) struct MicFacts {
+    pub meters: Arc<InputMeters>,
+    pub channels: u16,
+    /// The metered vocal tracks, in the order of the song.
+    pub tracks: Vec<(TrackId, VocalInput)>,
+}
+
+/// A recording of the input going on.
+struct Job {
+    x_us: f64,
+    /// The disk writer was told where the files begin.
+    from_said: bool,
+    trouble_said: bool,
+}
+
+pub(super) struct InputSide {
+    stream: Option<RunningInput>,
+    meters: Option<Arc<InputMeters>>,
+    writer: DiskWriter,
+    state_dir: Option<PathBuf>,
+    job: Option<Job>,
+    /// A click of the latency measurement is out since then.
+    click: Option<Instant>,
+    delays_said: Option<Delays>,
+}
+
+impl InputSide {
+    pub(super) fn new(state_dir: Option<PathBuf>) -> InputSide {
+        InputSide {
+            stream: None,
+            meters: None,
+            writer: DiskWriter::spawn(),
+            state_dir,
+            job: None,
+            click: None,
+            delays_said: None,
+        }
+    }
+
+    pub(super) fn click_out(&self) -> bool {
+        self.click.is_some()
+    }
+}
+
+impl Worker {
+    /// `Effect::OpenInput`.
+    pub(super) fn open_input(&mut self, node_name: String, sink_monitor: bool) -> Input {
+        self.close_input();
+        let Some(sample_rate) = self.audio.stream.as_ref().map(|s| s.sample_rate()) else {
+            return Input::InputOpenFailed { node_name };
+        };
+        let target = InputTarget {
+            node_name: node_name.clone(),
+            sink_monitor,
+        };
+        let mut stream = match AudioInput::open(&target, sample_rate, self.audio.wish_frames) {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("meloet: cannot open the input {node_name}: {e}");
+                return Input::InputOpenFailed { node_name };
+            }
+        };
+        let meters = stream.meters().clone();
+        if let Some(monitor) = stream.take_monitor() {
+            let feed = Box::new(InputFeed::new(monitor, meters.clone()));
+            self.audio
+                .push(EngineCommand::SetInput { feed: Some(feed) });
+        }
+        if let Some(record) = stream.take_record() {
+            self.input.writer.set_input(Some((record, meters.clone())));
+        }
+        let channels = stream.channels();
+        *lock(&self.shared.mics) = Some(MicFacts {
+            meters: meters.clone(),
+            channels,
+            tracks: self.model.metered_vocals(),
+        });
+        self.input.meters = Some(meters);
+        self.input.stream = Some(stream);
+        Input::InputOpened {
+            node_name,
+            channels,
+            sample_rate,
+        }
+    }
+
+    /// `Effect::CloseInput`, and before the output is opened anew or closed. A recording
+    /// going on ends with what it has; the rules ask for it with `StopVocalRecording`.
+    pub(super) fn close_input(&mut self) {
+        let Some(stream) = self.input.stream.take() else {
+            return;
+        };
+        *lock(&self.shared.mics) = None;
+        self.input.writer.set_input(None);
+        self.audio.unplug_input();
+        stream.close();
+        self.input.meters = None;
+        self.input.click = None;
+        self.input.delays_said = None;
+    }
+
+    /// `Effect::StartVocalRecording`.
+    pub(super) fn start_vocals(
+        &mut self,
+        files: Vec<VocalFileAsk>,
+        format: RecordFormat,
+        x_us: i64,
+    ) -> Input {
+        let Some(dir) = self
+            .input
+            .state_dir
+            .as_deref()
+            .map(vocalrec::work_audio_dir)
+        else {
+            return Input::VocalsNotStarted;
+        };
+        // A name that is taken (a recording that was undone keeps its file) gets a number.
+        let mut names: Vec<String> = Vec::new();
+        for ask in &files {
+            let stem = ask.name.strip_suffix(".wav").unwrap_or(&ask.name);
+            let free = (1u32..)
+                .map(|n| match n {
+                    1 => ask.name.clone(),
+                    n => format!("{stem} ({n}).wav"),
+                })
+                .find(|name| !names.contains(name) && !dir.join(name).exists());
+            names.extend(free);
+        }
+        let job = RecordJob {
+            files: (files.iter().zip(&names))
+                .map(|(ask, name)| RecordFile {
+                    path: dir.join(name),
+                    channels: ask.channels.clone(),
+                })
+                .collect(),
+            format,
+        };
+        match self.input.writer.start(job) {
+            Ok(()) => {
+                self.input.job = Some(Job {
+                    x_us: x_us as f64,
+                    from_said: false,
+                    trouble_said: false,
+                });
+                Input::VocalsStarted { names }
+            }
+            Err(e) => {
+                eprintln!("meloet: cannot record into {}: {e}", dir.display());
+                for name in &names {
+                    let _ = std::fs::remove_file(dir.join(name));
+                }
+                Input::VocalsNotStarted
+            }
+        }
+    }
+
+    /// `Effect::StopVocalRecording`.
+    pub(super) fn stop_vocals(&mut self) -> Input {
+        self.input.job = None;
+        let written = self.input.writer.stop().unwrap_or_default();
+        if let Some(e) = &written.error {
+            eprintln!("meloet: the recording was not written whole: {e}");
+        }
+        Input::VocalsWritten(Box::new(written))
+    }
+
+    /// `Effect::DropVocalFiles`.
+    pub(super) fn drop_vocal_files(&self, names: &[String]) {
+        let Some(dir) = self
+            .input
+            .state_dir
+            .as_deref()
+            .map(vocalrec::work_audio_dir)
+        else {
+            return;
+        };
+        for name in names {
+            // Only a plain name: never a way out of the work folder.
+            if !name.contains(['/', '\\']) && name != ".." {
+                let _ = std::fs::remove_file(dir.join(name));
+            }
+        }
+    }
+
+    /// Where the engine says the song rolls or a lap begins: the frame of the files that was
+    /// sung when that frame of the engine was heard (docs/architecture.md 22-6). At the roll
+    /// the disk writer is told where the files begin, too. `None`: no files are written, or
+    /// it is not a mark.
+    pub(super) fn vocal_mark(&mut self, recorded: &Recorded) -> Option<f64> {
+        let (frame, rolling) = match *recorded {
+            Recorded::Rolling { frame, tick } => (frame, Some(tick)),
+            Recorded::LapChanged { frame, .. } => (frame, None),
+            _ => return None,
+        };
+        let job = self.input.job.as_mut()?;
+        let handle = &self.audio.handle;
+        let heard_us = handle.clock().time_of_frame(frame as f64);
+        if let Some(tick) = rolling.filter(|_| !job.from_said) {
+            job.from_said = true;
+            // Half a beat before the song rolls, as the keys keep.
+            let (map, _) = handle.tempo_map();
+            let half_beat_us = 30e6 / map.tempo_at(tick).max(1.0);
+            let from_us = heard_us.map_or(f64::NEG_INFINITY, |t| t - half_beat_us + job.x_us);
+            self.input.writer.from(from_us);
+        }
+        self.input.writer.mark(heard_us? + job.x_us)
+    }
+
+    /// Looks at the input: the head of a recording, a disk that cannot go on, a stream that
+    /// ended, the click that is out, and what the PC says of its delays.
+    pub(super) fn poll_input(&mut self) {
+        let mut inputs = Vec::new();
+        if let Some(job) = &mut self.input.job {
+            let status: Written = self.input.writer.status();
+            if !job.trouble_said && (status.full || status.error.is_some()) {
+                job.trouble_said = true;
+                inputs.push(Input::VocalsCannotGoOn);
+            }
+        }
+        if self.input.meters.as_ref().is_some_and(|m| m.stream_lost()) {
+            eprintln!("meloet: the input stream ended by itself");
+            self.close_input();
+            inputs.push(Input::InputLost);
+        }
+        if self
+            .input
+            .click
+            .is_some_and(|at| at.elapsed() >= CLICK_WAIT)
+        {
+            self.input.click = None;
+            inputs.push(Input::LatencyAnswer {
+                x_us: self.click_answer(),
+            });
+        }
+        let delays = self.delays();
+        if delays != self.input.delays_said {
+            self.input.delays_said = delays;
+            inputs.push(Input::AudioDelays(delays));
+        }
+        for input in inputs {
+            self.handle(input);
+        }
+    }
+
+    fn delays(&self) -> Option<Delays> {
+        let meters = self.input.meters.as_ref()?;
+        let rate = self.input.stream.as_ref()?.sample_rate().max(1);
+        let block_us = u64::from(meters.last_frames()) * 1_000_000 / u64::from(rate);
+        if block_us == 0 || !self.shared.stream.open.load(Relaxed) {
+            return None;
+        }
+        let out_us = u64::from(self.audio.handle.meters().out_delay_us());
+        // To a tenth of a millisecond: the PC's numbers move a little from block to block.
+        let round = |us: u64| ((us + 50) / 100 * 100) as u32;
+        let round_us = out_us + u64::from(meters.delay_us()) + block_us;
+        Some(Delays {
+            round_us: round(round_us),
+            monitor_us: round(round_us + block_us),
+        })
+    }
+
+    /// `Effect::LatencyClick`.
+    pub(super) fn latency_click(&mut self) {
+        // From nothing: what is kept then holds this click only.
+        self.input.writer.capture(true);
+        while self.audio.handle.pop_probe().is_some() {}
+        self.audio.command(EngineCommand::Probe);
+        self.input.click = Some(Instant::now());
+    }
+
+    pub(super) fn latency_listen(&mut self, on: bool) {
+        self.input.writer.capture(on);
+        if !on {
+            self.input.click = None;
+        }
+    }
+
+    /// What the round trip of the click took more than the PC says, in microseconds: from
+    /// the channel that heard it best.
+    fn click_answer(&mut self) -> Option<f64> {
+        let mut sent = None;
+        while let Some(probe) = self.audio.handle.pop_probe() {
+            sent = Some(probe);
+        }
+        let left_us = self
+            .audio
+            .handle
+            .clock()
+            .time_of_frame(sent?.frame as f64)?;
+        let kept = self.input.writer.captured();
+        let wave = probe_wave(kept.sample_rate);
+        (0..usize::from(kept.channels))
+            .filter_map(|channel| {
+                let heard = kept.channel(channel);
+                let all = ProbeHeard {
+                    blocks: &kept.blocks,
+                    first_frame: kept.first_frame(),
+                    heard: &heard,
+                    sample_rate: kept.sample_rate,
+                };
+                all.way_round(&wave, left_us)
+            })
+            .max_by(|a, b| a.1.clear.total_cmp(&b.1.clear))
+            .map(|(x_us, _)| x_us)
+    }
+
+    /// The metered vocal tracks changed, perhaps.
+    pub(super) fn sync_mics(&self) {
+        if let Some(mics) = lock(&self.shared.mics).as_mut() {
+            let tracks = self.model.metered_vocals();
+            if mics.tracks != tracks {
+                mics.tracks = tracks;
+            }
+        }
+    }
+}
+
+impl Audio {
+    /// The engine lets go of the input's feed.
+    fn unplug_input(&mut self) {
+        if self.stream.is_some() || self.engine.is_some() {
+            self.push(EngineCommand::SetInput { feed: None });
+            self.settle();
+        }
+        self.handle.drop_retired();
+    }
+}
+
+/// The mic meters for one telemetry message: every channel is read once, and each metered
+/// track gets what its channels read.
+pub(super) fn mic_meters(shared: &Shared) -> (Vec<meloet_protocol::MicMeter>, bool) {
+    let guard = lock(&shared.mics);
+    let Some(mics) = guard.as_ref() else {
+        return (Vec::new(), false);
+    };
+    let channels = usize::from(mics.channels).min(meloet_engine::MAX_INPUT_CHANNELS);
+    let mut read = [(0.0f32, false); meloet_engine::MAX_INPUT_CHANNELS];
+    for (channel, slot) in read.iter_mut().enumerate().take(channels) {
+        *slot = mics.meters.take_peak(channel);
+    }
+    let mut clipped = false;
+    let meters = (mics.tracks.iter())
+        .filter(|(_, input)| input.fits(mics.channels))
+        .map(|(track, input)| {
+            let of = input.channels();
+            let (left, right) = (
+                read[usize::from(of[0])],
+                read[usize::from(of[of.len() - 1])],
+            );
+            clipped |= left.1 || right.1;
+            meloet_protocol::MicMeter {
+                track: track.0,
+                peak: [left.0, right.0],
+                clipped: left.1 || right.1,
+                stereo: of.len() == 2,
+            }
+        })
+        .collect();
+    (meters, clipped)
+}
+
+/// Puts the files a recording left when meloet ended into `doc`, each as a clip on its vocal
+/// track, as far as it was written. Returns how many were kept and where the last ends.
+pub(super) fn keep_vocals(state_dir: &Path, note: &RecNote, doc: &mut Doc) -> Option<KeptVocals> {
+    let dir = vocalrec::work_audio_dir(state_dir);
+    let map = TempoMap::new(&doc.timeline);
+    let mut until = 0u64;
+    let mut recordings = Vec::new();
+    for file in &note.files {
+        let info = match vocalrec::mend_wav(&dir.join(&file.file)) {
+            Ok(info) if info.frames > 0 => info,
+            Ok(_) => continue,
+            Err(e) => {
+                eprintln!("meloet: {} was not kept: {e}", file.file);
+                continue;
+            }
+        };
+        let takes = vocalrec::takes_from(&note.marks, &map, info.sample_rate, info.frames, None);
+        let Some(end) = takes.iter().map(|t| t.origin + t.length).max() else {
+            continue;
+        };
+        // The track is gone from the song as it was kept (it was added just before the
+        // recording): a vocal track is made for the file.
+        let on_song = doc
+            .track(TrackId(file.track))
+            .is_some_and(|t| t.kind.is_vocal());
+        let track = match on_song {
+            true => TrackId(file.track),
+            false => match edit::add_vocal_track(doc, None) {
+                Ok((e, id)) => {
+                    *doc = e.doc;
+                    id
+                }
+                Err(_) => continue,
+            },
+        };
+        let mut hash = Sha256::new();
+        hash.update(b"meloet kept audio");
+        hash.update(file.file.as_bytes());
+        hash.update(info.frames.to_le_bytes());
+        hash.update(crate::recovery::now_ms().to_le_bytes());
+        let mut uid = [0u8; 16];
+        uid.copy_from_slice(&hash.finalize()[..16]);
+        until = until.max(end);
+        recordings.push(VocalRecording {
+            track,
+            audio: NewAudio {
+                uid,
+                file: file.file.clone(),
+                frames: info.frames,
+                sample_rate: info.sample_rate,
+                channels: info.channels,
+            },
+            takes,
+        });
+    }
+    let count = recordings.len() as u32;
+    if count == 0 {
+        return None;
+    }
+    match add_vocal_recordings(doc, recordings, None) {
+        Ok((e, _)) => {
+            *doc = e.doc;
+            Some(KeptVocals { count, until })
+        }
+        Err(e) => {
+            eprintln!("meloet: the recording was not kept: {e:?}");
+            None
+        }
+    }
+}

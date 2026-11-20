@@ -531,6 +531,7 @@
   "info": {
    "props": {
     "media.class": "Audio/Sink",
+    "audio.channels": 2,
     "node.name": "alsa_output.pci-0000_0c_00.6.analog-stereo",
     "node.description": "Ryzen HD Audio Controller アナログステレオ",
     "device.id": 50,
@@ -544,6 +545,7 @@
   "info": {
    "props": {
     "media.class": "Audio/Source",
+    "audio.channels": 2,
     "node.name": "alsa_input.pci-0000_0c_00.6.analog-stereo",
     "node.description": "Ryzen HD Audio Controller アナログステレオ",
     "device.id": 50,

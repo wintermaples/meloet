@@ -202,3 +202,80 @@ fn unknown_output_gives_the_engine_back() {
     };
     assert!(error.engine.is_some(), "{error}");
 }
+
+/// The PC's own input: the monitor of the real sink, and every real source cpal lists.
+/// Nothing is played and nothing is kept; the PC shows for a moment that the microphone is
+/// in use. No PC-wide setting is touched.
+#[test]
+#[ignore = "needs a PipeWire output"]
+fn real_inputs_open_run_and_close_without_touching_the_allocator() {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    use meloet_engine::{AudioInput, InputTarget};
+
+    let target = target();
+    let parts = Engine::new(EngineConfig::default());
+    let meters = parts.handle.meters().clone();
+    let running = AudioOutput::open(&target, 256, parts.engine).expect("output opens");
+    let rate = running.sample_rate();
+
+    let host = cpal::host_from_id(cpal::HostId::PipeWire).expect("the PipeWire host");
+    let sources: Vec<String> = host
+        .devices()
+        .expect("the devices")
+        .filter(|d| {
+            d.description()
+                .is_ok_and(|about| about.direction() == cpal::DeviceDirection::Input)
+        })
+        .filter_map(|d| d.id().ok().map(|id| id.id().to_owned()))
+        .collect();
+    eprintln!("sources: {sources:?}");
+    let mut inputs: Vec<InputTarget> = vec![InputTarget {
+        node_name: target.node_name.clone(),
+        sink_monitor: true,
+    }];
+    inputs.extend(sources.into_iter().map(|node_name| InputTarget {
+        node_name,
+        sink_monitor: false,
+    }));
+
+    for input in inputs {
+        let opened = AudioInput::open(&input, rate, 256);
+        let mut stream = match opened {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("{input:?}: does not open: {e}");
+                assert!(!input.sink_monitor, "the sink's monitor must open");
+                continue;
+            }
+        };
+        let in_meters = stream.meters().clone();
+        let mut record = stream.take_record().expect("the record ring");
+        in_meters.set_recording(true);
+        sleep(Duration::from_millis(1_500));
+        let mut into = vec![0.0f32; 8 * 8_192];
+        let (mut blocks, mut frames, mut dropped) = (0u32, 0u64, 0u32);
+        while let Some(block) = record.pop(&mut into) {
+            blocks += 1;
+            frames += u64::from(block.frames);
+            dropped += u32::from(block.dropped);
+        }
+        eprintln!(
+            "{input:?}: {} channels at {} Hz, {} frames a block (asked 256; the output runs {}), \
+             the PC says in {} us and out {} us, {blocks} blocks of {frames} frames in 1.5 s, \
+             {dropped} dropped, {} xruns",
+            stream.channels(),
+            stream.sample_rate(),
+            in_meters.last_frames(),
+            meters.last_frames(),
+            in_meters.delay_us(),
+            meters.out_delay_us(),
+            in_meters.xruns(),
+        );
+        assert!(frames > u64::from(rate), "the input ran");
+        assert_eq!(dropped, 0);
+        assert!(!in_meters.stream_lost());
+        stream.close();
+    }
+    drop(running);
+    assert_eq!(common::audio_block_counts(), (0, 0));
+}

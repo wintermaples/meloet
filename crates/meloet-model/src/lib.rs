@@ -24,6 +24,7 @@ pub mod time;
 pub mod timeline;
 
 pub use arrange::{ClipEdge, ClipEdited};
+pub use audio::record::{NewAudio, NewAudioTake, VocalRecording, add_vocal_recordings};
 pub use audio::{
     AudioId, AudioShape, AudioSource, AudioTake, ClipGain, SourceTempo, TrackKind,
     VOCAL_TRACK_NAME, VocalInput,

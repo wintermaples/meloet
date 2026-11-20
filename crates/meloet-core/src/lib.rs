@@ -23,6 +23,7 @@ pub mod sf2store;
 pub mod songfile;
 mod sounds;
 pub mod state;
+pub mod vocalrec;
 
 pub use hub::{MessageSink, TelemetrySink};
 pub use service::{Core, CoreOptions, ShellRequest, ShellSink};

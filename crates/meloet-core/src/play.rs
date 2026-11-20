@@ -19,9 +19,9 @@ use meloet_model::{
 use meloet_protocol::{
     ArrangeView, BarSpan, ClipEdge, ClipSpot, ClipView, ControlKind, Grid, IndexRange, KeyCount,
     LiveNote, LiveNotes, LiveNotesSnapshot, MusicalScale, NOTE_SELECTION_KEYS, NoteField,
-    NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, RecordingView, ScaleMode,
-    SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes, TickSpan,
-    TimelineRef, TrackRef, TransportState, TransportView,
+    NoteSelection, PianoRollView, QuantizeAlign, QuantizeSettings, RecordFormat, RecordingView,
+    ScaleMode, SelectMode, StatusMessage, TakeControl, TakeControlValue, TakeNote, TakeNotes,
+    TickSpan, TimelineRef, TrackRef, TransportState, TransportView,
 };
 
 use crate::instruments::Sounds;
@@ -63,8 +63,19 @@ pub enum RecordReport {
         tick: f64,
         lap: u32,
     },
+    /// The song is at `tick` at the engine's frame `frame`, and is recorded from there.
+    /// `file_frame`: the frame of the files of the input that was sung when it was heard
+    /// (`DiskWriter::mark`); `None` when no files are written.
+    Rolling {
+        frame: u64,
+        tick: f64,
+        file_frame: Option<f64>,
+    },
+    /// `frame`: the engine's frame the lap begins with; `file_frame` as for `Rolling`.
     LapChanged {
         lap: u32,
+        frame: u64,
+        file_frame: Option<f64>,
     },
     Stopped {
         t_us: u64,
@@ -226,6 +237,12 @@ pub enum EngineOp {
         target: AutoTarget,
         on: bool,
     },
+    /// For the engine at any time, as `Instrument`: the track on the seat is a vocal track
+    /// and sounds the input (`None`: it is not one any more).
+    Voice {
+        seat: usize,
+        voice: Option<VoiceSpec>,
+    },
 }
 
 /// A strip of the engine's mixer. A track is named by its seat.
@@ -294,7 +311,9 @@ pub enum Cut {
 
 struct Rec {
     id: u32,
-    track: TrackId,
+    /// The keys track; `None` when only vocal tracks are recorded.
+    track: Option<TrackId>,
+    vocal: vocal::VocalPart,
     from: u64,
     /// The number the take of the current lap gets: laps with no notes make no take.
     take: u32,
@@ -304,6 +323,9 @@ struct Rec {
     lap: u32,
     /// Made when the engine says it started.
     recorder: Option<Recorder>,
+    /// The recording ended at this tick and lap, and waits for the disk writer to say what
+    /// it wrote.
+    stopped: Option<(f64, u32)>,
     /// When stop was asked; keys after it are not recorded.
     stop_us: Option<u64>,
     live: Vec<LiveNote>,
@@ -433,6 +455,9 @@ pub struct Play {
     tl: timeline::Tl,
     auto: automation::Auto,
     autosync: autosync::AutoSync,
+    /// What the engine was last told by `EngineOp::Voice`, in the order of the seats.
+    voices_sent: Vec<(usize, VoiceSpec)>,
+    uid_seed: u64,
 }
 
 impl Play {
@@ -484,6 +509,8 @@ impl Play {
             saved_too: None,
             silent_sent: Vec::new(),
             saving: None,
+            voices_sent: Vec::new(),
+            uid_seed: 0,
         };
         // As with the play target: the engine gets the mixer of the first song with
         // `engine_seats`, so it counts as told.
@@ -551,9 +578,10 @@ impl Play {
         }
     }
 
-    /// The track a recording goes to: the selected one.
+    /// The track the keys of a recording go to: the selected one, or with a vocal track
+    /// selected the keys track selected before it.
     pub fn record_target(&self) -> Option<TrackRef> {
-        self.track_ref(self.song.session.play_target?)
+        self.track_ref(self.song.keys_target()?)
     }
 
     /// The track as the screen names it now: its number is its place, from 1.
@@ -619,8 +647,15 @@ impl Play {
         }
     }
 
-    /// R and the record button. Returns the notice to show.
-    pub fn record(&mut self, can_play: bool, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
+    /// R and the record button: to the keys track and to every vocal track with its ● on,
+    /// with one count-in (spec 3, 24-C). `input`: the PC's input, when it is open; `format`
+    /// and `x_us`: how the files are written and placed. Returns the notice to show.
+    pub fn record(
+        &mut self,
+        can_play: bool,
+        input: Option<(OpenInput, RecordFormat, i64)>,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
         match self.state {
             TransportState::CountIn | TransportState::Recording => {
                 self.stop(effects);
@@ -629,10 +664,16 @@ impl Play {
             _ if self.rec.is_some() || !can_play || self.auditioning() => return None,
             _ => {}
         }
-        let Some(track) = self.song.session.play_target else {
+        let track = self.song.keys_target();
+        let any_armed = !self.song.session.armed_vocals.is_empty();
+        if track.is_none() && !any_armed {
             return Some(StatusMessage::NoArmedTrack);
+        }
+        let index = match track {
+            Some(track) => self.seats.of(track)?,
+            // No sequence plays on the audition seat: nothing is muted.
+            None => AUDITION_SEAT,
         };
-        let index = self.seats.of(track)?;
         let playing = self.state == TransportState::Playing;
         let (from, count_in_beats) = if playing {
             let now = self
@@ -646,7 +687,13 @@ impl Play {
             (from, beats)
         };
         let loop_range = self.loop_on().filter(|r| r.end() > from);
-        let clip = self.doc().track(track).and_then(|t| {
+        let (vocals, no_input) =
+            self.vocals_to_record(input.map(|(open, ..)| open), from, loop_range);
+        let notice = no_input.then_some(StatusMessage::NoInput);
+        if track.is_none() && vocals.is_empty() {
+            return notice;
+        }
+        let clip = track.and_then(|t| self.doc().track(t)).and_then(|t| {
             let span = loop_range.unwrap_or_else(|| TickRange::new(from, from + 1).expect("1"));
             t.clips
                 .iter()
@@ -655,9 +702,24 @@ impl Play {
         });
         let id = self.next_recording;
         self.next_recording = self.next_recording.wrapping_add(1);
+        let setup = input.filter(|_| !vocals.is_empty());
+        if let Some((_, format, x_us)) = setup {
+            // Before the engine is told: the files are there when the first block comes.
+            effects.push(Effect::StartVocalRecording {
+                files: Play::vocal_file_asks(&vocals),
+                format,
+                x_us,
+            });
+        }
         self.rec = Some(Rec {
             id,
             track,
+            vocal: vocal::VocalPart {
+                tracks: vocals,
+                sample_rate: setup.map_or(0, |(open, ..)| open.sample_rate),
+                format: setup.map_or(RecordFormat::default(), |(_, format, _)| format),
+                ..vocal::VocalPart::default()
+            },
             from,
             take: clip.map_or(1, |(_, n)| n + 1),
             clip: clip.map(|(c, _)| c),
@@ -665,6 +727,7 @@ impl Play {
             loop_range,
             lap: 0,
             recorder: None,
+            stopped: None,
             stop_us: None,
             live: Vec::new(),
             held: [None; 128],
@@ -687,7 +750,7 @@ impl Play {
                 muted: index,
             }
         }));
-        None
+        notice
     }
 
     fn stop(&mut self, effects: &mut Vec<Effect>) {
@@ -799,7 +862,8 @@ impl Play {
             return None;
         }
         let said = self.track_ref(id)?;
-        self.song.session.play_target = Some(id);
+        let before = self.song.session.play_target.replace(id);
+        self.selected_track_changed(before);
         from_arm.then_some(StatusMessage::ArmMoved { track: said })
     }
 
@@ -1139,6 +1203,8 @@ impl Play {
         if target.is_none_or(|t| doc.track(t).is_none()) {
             *target = doc.tracks.first().map(|t| t.id);
         }
+        self.drop_gone_vocals();
+        let doc = &self.song.doc;
         if doc.timeline != before.timeline {
             effects.push(Effect::Engine(self.tempo_op()));
         }
@@ -1256,6 +1322,8 @@ impl Play {
                     rec.from = from;
                     rec.loop_range = rec.loop_range.filter(|r| r.end() > from);
                     rec.recorder = Some(Recorder::new(from, rec.loop_range, held));
+                    rec.vocal.roll = None;
+                    rec.vocal.lap_frames.clear();
                     if self.state != TransportState::Stopped {
                         self.position = from;
                     }
@@ -1267,21 +1335,43 @@ impl Play {
                 tick,
                 lap,
             } => self.record_event(kind, t_us, tick, lap, effects),
-            RecordReport::LapChanged { lap } => {
+            RecordReport::Rolling {
+                frame,
+                tick,
+                file_frame,
+            } => {
+                if let Some(rec) = &mut self.rec
+                    && rec.vocal.roll.is_none()
+                {
+                    rec.vocal.roll = Some((frame, tick, file_frame));
+                }
+            }
+            RecordReport::LapChanged {
+                lap,
+                frame,
+                file_frame,
+            } => {
                 let mut changed = Vec::new();
                 if let Some(rec) = &mut self.rec
                     && rec.loop_range.is_some()
                 {
                     rec.lap = lap;
                     rec.enter_lap(lap, &mut changed);
+                    if rec.vocal.lap_frames.len() + 1 == lap as usize {
+                        rec.vocal.lap_frames.push((frame, file_frame));
+                    }
                 }
                 self.send_live(changed, effects);
             }
             RecordReport::Stopped { tick, lap, .. } => {
                 if self.rec.as_ref().is_some_and(|r| r.recorder.is_some()) {
                     self.finish(tick, lap, effects);
-                } else {
-                    self.rec = None;
+                } else if let Some(rec) = self.rec.take()
+                    && !rec.vocal.tracks.is_empty()
+                {
+                    effects.push(Effect::RemoveRecNote);
+                    let files = rec.vocal.tracks.into_iter().map(|v| v.file).collect();
+                    effects.push(Effect::DropVocalFiles(files));
                 }
                 if self.state != TransportState::Stopped {
                     self.state = TransportState::Stopped;
@@ -1342,14 +1432,55 @@ impl Play {
         }));
     }
 
-    /// Puts what was recorded in the song as one step. Returns the number of the shown take.
+    /// Puts what was recorded in the song as one step, the keys and the vocals together.
+    /// Returns the number of the shown take of the keys.
     fn finish(&mut self, tick: f64, lap: u32, effects: &mut Vec<Effect>) -> Option<u32> {
-        let rec = self.rec.take()?;
-        let recorded = rec.recorder?.finish(tick.round() as i64, lap)?;
-        let (e, added) =
-            edit::add_recording(self.doc(), rec.track, recorded.takes, recorded.active).ok()?;
-        self.apply_selecting(e, None, Some(ClipPick::one(added.clip)), effects);
-        Some(added.active as u32 + 1)
+        let mut rec = self.rec.take()?;
+        if !rec.vocal.tracks.is_empty() {
+            if rec.vocal.written.is_none() {
+                // The frames still on their way to the disk belong to the recording.
+                if rec.stopped.replace((tick, lap)).is_none() {
+                    effects.push(Effect::StopVocalRecording);
+                }
+                self.rec = Some(rec);
+                return None;
+            }
+            effects.push(Effect::RemoveRecNote);
+        }
+        let (vocals, unused) = self.vocal_recordings(&rec, tick, lap);
+        let recorded = rec
+            .recorder
+            .take()
+            .and_then(|r| r.finish(tick.round() as i64, lap));
+        // The files' ids were counted from the `Doc` as it was: the vocals go in first, and
+        // the keys on top of them. The step is the keys' when there are keys.
+        let mut unused = unused;
+        let (mut edit, mut pick, mut shown) = (None, None, None);
+        if !vocals.is_empty() {
+            let files: Vec<String> = vocals.iter().map(|v| v.audio.file.clone()).collect();
+            match meloet_model::add_vocal_recordings(self.doc(), vocals, None) {
+                Ok((e, added)) => {
+                    pick = added.first().map(|a| a.clip);
+                    edit = Some(e);
+                }
+                Err(_) => unused.extend(files),
+            }
+        }
+        if !unused.is_empty() {
+            effects.push(Effect::DropVocalFiles(unused));
+        }
+        if let Some((track, recorded)) = rec.track.zip(recorded) {
+            let base = edit.as_ref().map_or(self.doc(), |e| &e.doc);
+            let added = edit::add_recording(base, track, recorded.takes, recorded.active);
+            if let Ok((e, added)) = added {
+                pick = Some(added.clip);
+                shown = Some(added.active as u32 + 1);
+                edit = Some(e);
+            }
+        }
+        let (e, pick) = edit.zip(pick)?;
+        self.apply_selecting(e, None, Some(ClipPick::one(pick)), effects);
+        shown
     }
 
     // ---- what the screen reads ----
@@ -1591,16 +1722,21 @@ impl Play {
                 }
             },
             can_play: open,
-            can_record: open && self.song.session.play_target.is_some() && !self.auditioning(),
-            recording: self.rec.as_ref().map(|r| RecordingView {
-                id: r.id,
-                track: r.track.0,
-                from: r.from,
-                take: r.take,
-                clip: r.clip.map(|c| c.0),
-                lap: r.lap,
+            can_record: open
+                && (self.song.keys_target().is_some()
+                    || !self.song.session.armed_vocals.is_empty())
+                && !self.auditioning(),
+            recording: self.rec.as_ref().and_then(|r| {
+                Some(RecordingView {
+                    id: r.id,
+                    track: r.track?.0,
+                    from: r.from,
+                    take: r.take,
+                    clip: r.clip.map(|c| c.0),
+                    lap: r.lap,
+                })
             }),
-            recording_vocals: Vec::new(),
+            recording_vocals: self.recording_vocals_view(),
         }
     }
 
@@ -1658,7 +1794,10 @@ impl Play {
                 beats: rec.count_in_beats,
             });
         }
-        let track = self.track_ref(rec.track)?;
+        if let Some(said) = self.vocal_recording_status(rec) {
+            return Some(said);
+        }
+        let track = self.track_ref(rec.track?)?;
         Some(match rec.loop_range {
             Some(r) => {
                 let bars = self.bars(r);
@@ -2262,6 +2401,7 @@ mod shelf;
 mod sounds;
 mod timeline;
 mod tracks;
+pub(crate) mod vocal;
 mod windows;
 
 pub use autosync::SeatLane;
@@ -2274,6 +2414,7 @@ pub use plugs::{PlugState, Spot};
 use seats::Seats;
 pub use seats::{AUDITION_SEAT, MAX_TRACKS};
 use shelf::Shelf;
+pub use vocal::{OpenInput, VocalFileAsk, VoiceSpec};
 use windows::Windows;
 
 #[cfg(test)]

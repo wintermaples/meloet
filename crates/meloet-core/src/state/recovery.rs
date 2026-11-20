@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use meloet_model::{Doc, Song};
-use meloet_protocol::{RecoveryCause, RecoveryView, StatusMessage};
+use meloet_protocol::{KeptVocals, RecoveryCause, RecoveryView, StatusMessage};
 
 use super::{Effect, Model};
 
@@ -24,6 +24,9 @@ pub enum RecoveryStart {
         /// The song as its file has it now; `None` when never saved, or when the file does not
         /// read.
         saved: Option<Box<Song>>,
+        /// Vocals that were being recorded when meloet ended: they are clips of `song` now,
+        /// which the recovery file does not hold yet.
+        vocals: Option<KeptVocals>,
     },
     Unreadable {
         /// Where the file that did not read was kept.
@@ -69,6 +72,7 @@ impl Model {
                 cause,
                 written_ms,
                 saved,
+                vocals,
             } => {
                 let takes = song
                     .doc
@@ -93,16 +97,20 @@ impl Model {
                     cause,
                     song: path.is_some().then_some(name),
                     takes,
-                    vocals: None,
+                    vocals,
                 });
                 self.files.path = path;
                 let Song { doc, session } = *song;
                 self.replace_song(Song { doc: base, session }, false, effects);
                 self.play.recovered(doc, effects);
                 self.notice = Some(StatusMessage::Recovered);
-                // The file holds this song already.
+                // The file holds this song already; with vocals kept, it is written anew.
                 self.recovery.seen = self.play.changes();
                 self.recovery.written = Some((self.recovery.seen, cause));
+                if vocals.is_some() {
+                    self.recovery.written = None;
+                    self.recovery.changed_at_us = Some(self.now_us);
+                }
             }
             RecoveryStart::Unreadable { kept, saved } => {
                 let song = saved.map(|(path, song)| {

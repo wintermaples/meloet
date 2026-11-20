@@ -127,7 +127,14 @@ impl Rig {
         left
     }
 
+    /// Without the `Rolling` items: [`Rig::recorded_all`] has them.
     fn recorded(&mut self) -> Vec<Recorded> {
+        let mut all = self.recorded_all();
+        all.retain(|r| !matches!(r, Recorded::Rolling { .. }));
+        all
+    }
+
+    fn recorded_all(&mut self) -> Vec<Recorded> {
         std::iter::from_fn(|| self.parts.handle.pop_recorded()).collect()
     }
 }
@@ -296,12 +303,15 @@ fn recorded_keys_get_the_position_that_was_heard() {
 
                 let label = format!("block {block}, delay {delay_ms} ms, tempo {bpm}");
                 let got = rig.recorded();
-                assert_eq!(
-                    got[0],
-                    Recorded::Started {
-                        from: BAR,
-                        count_in_beats: 4
-                    },
+                assert!(
+                    matches!(
+                        got[0],
+                        Recorded::Started {
+                            from: BAR,
+                            count_in_beats: 4,
+                            ..
+                        }
+                    ),
                     "{label}"
                 );
                 let events: Vec<_> = got[1..]
@@ -588,7 +598,7 @@ fn keys_at_the_loop_seam_go_to_the_right_lap() {
             let laps: Vec<_> = got
                 .iter()
                 .filter_map(|r| match *r {
-                    Recorded::LapChanged { lap, t_us } => Some((lap, t_us)),
+                    Recorded::LapChanged { lap, t_us, .. } => Some((lap, t_us)),
                     _ => None,
                 })
                 .collect();
@@ -685,7 +695,9 @@ fn stop_cuts_the_recording_at_its_time() {
     let stopped = got
         .iter()
         .find_map(|r| match *r {
-            Recorded::Stopped { t_us, tick, lap } => Some((t_us, tick, lap)),
+            Recorded::Stopped {
+                t_us, tick, lap, ..
+            } => Some((t_us, tick, lap)),
             _ => None,
         })
         .expect("a stop mark");
@@ -765,6 +777,7 @@ fn recording_while_playing_keeps_the_position_and_the_heard_ticks() {
             let Recorded::Started {
                 from,
                 count_in_beats: 0,
+                ..
             } = got[0]
             else {
                 panic!("{label}: {got:?}");
@@ -840,12 +853,14 @@ fn recording_here_when_not_playing_ends_at_once() {
         [
             Recorded::Started {
                 from: 2 * Q,
-                count_in_beats: 0
+                count_in_beats: 0,
+                frame: 0
             },
             Recorded::Stopped {
                 t_us: rig.base_us,
                 tick: (2 * Q) as f64,
-                lap: 0
+                lap: 0,
+                frame: 0
             }
         ]
     );
@@ -1219,4 +1234,144 @@ fn every_transport_path_stays_off_the_allocator() {
         (0, 0),
         "(allocations, frees) inside audio blocks"
     );
+}
+
+/// The frames a recording of the input is placed by (docs/architecture.md 22-6): where the
+/// song starts rolling after the count-in, where each lap begins, and that the clock says
+/// which frame reaches the DAC when.
+#[test]
+fn a_recording_says_the_stream_frames_it_rolls_and_goes_round_at() {
+    for block in [64usize, 256, 1024] {
+        let mut rig = Rig::new(block, 5_000);
+        rig.tempo(12_000);
+        // Something before, so that the stream's frames and the song's are not the same count.
+        rig.run(10 * block as u64);
+        let before = rig.frames;
+        rig.send(EngineCommand::SetLoop {
+            start: BAR,
+            end: 2 * BAR,
+            on: true,
+        });
+        rig.send(EngineCommand::Record {
+            from: BAR,
+            count_in_beats: 4,
+            muted: TrackSet::default(),
+        });
+        // The count-in (2 s), the bar (2 s), and into the second lap.
+        rig.run(5 * RATE);
+        let stop_frame = rig.frames;
+        let stop_us = rig.dac_us(stop_frame) as u64;
+        rig.send(EngineCommand::Stop { t_us: stop_us });
+        rig.run(block as u64);
+
+        let got = rig.recorded_all();
+        let label = format!("block {block}: {got:?}");
+        assert_eq!(
+            got[0],
+            Recorded::Started {
+                from: BAR,
+                count_in_beats: 4,
+                frame: before
+            },
+            "{label}"
+        );
+        // A beat at 120 is 24000 frames: the count-in ends 96000 frames on, whatever the block.
+        assert_eq!(
+            got[1],
+            Recorded::Rolling {
+                frame: before + 4 * 24_000,
+                tick: BAR as f64
+            },
+            "{label}"
+        );
+        let Recorded::LapChanged { lap: 1, frame, .. } = got[2] else {
+            panic!("{label}");
+        };
+        assert_eq!(frame, before + 8 * 24_000, "{label}");
+        let Recorded::Stopped { frame, .. } = got[3] else {
+            panic!("{label}");
+        };
+        assert_eq!(frame, stop_frame, "{label}");
+
+        // The clock: frame n reaches the DAC at dac_us(n), and the other way round.
+        let clock = rig.parts.handle.clock().clone();
+        for n in [stop_frame - 3 * block as u64, stop_frame - 7] {
+            let at = clock.frame_at(rig.dac_us(n)).expect("rendered");
+            assert!((at - n as f64).abs() < 0.1, "{label}: {at} for {n}");
+            let t_us = clock.time_of_frame(n as f64).expect("rendered");
+            assert!((t_us - rig.dac_us(n)).abs() < 2.0, "{label}");
+        }
+    }
+}
+
+#[test]
+fn recording_at_once_and_from_where_it_plays_roll_in_the_block_that_took_them() {
+    let mut rig = Rig::new(256, 5_000);
+    rig.tempo(12_000);
+    rig.run(512);
+    rig.send(EngineCommand::Record {
+        from: 2 * Q,
+        count_in_beats: 0,
+        muted: TrackSet::default(),
+    });
+    rig.run(256);
+    let got = rig.recorded_all();
+    assert_eq!(
+        got[..2],
+        [
+            Recorded::Started {
+                from: 2 * Q,
+                count_in_beats: 0,
+                frame: 512
+            },
+            Recorded::Rolling {
+                frame: 512,
+                tick: (2 * Q) as f64
+            }
+        ]
+    );
+
+    let mut rig = Rig::new(256, 5_000);
+    rig.tempo(12_000);
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.run(48_000 + 128);
+    rig.send(EngineCommand::RecordHere {
+        muted: TrackSet::default(),
+    });
+    rig.run(256);
+    let got = rig.recorded_all();
+    let frames = 48_000 + 128;
+    let (Recorded::Started { frame: started, .. }, Recorded::Rolling { frame, tick }) =
+        (got[0], got[1])
+    else {
+        panic!("{got:?}");
+    };
+    assert_eq!((started, frame), (frames, frames));
+    // The song's own position at that frame (ahead of what is heard): 2 beats a second.
+    let expected = frames as f64 / 24_000.0 * Q as f64;
+    assert!((tick - expected).abs() < 1e-6, "{tick} vs {expected}");
+}
+
+/// A cycle the stream missed: the frames go on counting, the time has jumped. The clock
+/// answers for each side of the gap from that side's own blocks.
+#[test]
+fn the_clock_keeps_frames_and_times_apart_on_each_side_of_a_missed_cycle() {
+    let mut rig = Rig::new(256, 5_000);
+    rig.run(40 * 256);
+    let before = rig.frames - 3 * 256;
+    let before_us = rig.dac_us(before);
+    // Three cycles never came.
+    rig.base_us += 3 * 256 * 1_000_000 / RATE;
+    rig.run(10 * 256);
+    let after = rig.frames - 2 * 256 + 17;
+    let clock = rig.parts.handle.clock().clone();
+
+    let said = clock.time_of_frame(before as f64).expect("rendered");
+    assert!((said - before_us).abs() < 2.0, "{said} for {before_us}");
+    let said = clock.time_of_frame(after as f64).expect("rendered");
+    assert!((said - rig.dac_us(after)).abs() < 2.0);
+    let said = clock.frame_at(rig.dac_us(after)).expect("rendered");
+    assert!((said - after as f64).abs() < 0.1, "{said} for {after}");
+    let said = clock.frame_at(before_us).expect("rendered");
+    assert!((said - before as f64).abs() < 0.1, "{said} for {before}");
 }

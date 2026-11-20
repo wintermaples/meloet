@@ -63,6 +63,8 @@ pub struct NodeFacts {
     pub device_id: Option<u32>,
     /// `card.profile.device`
     pub profile_device: Option<u32>,
+    /// `audio.channels`
+    pub channels: Option<u8>,
 }
 
 /// The friendly wording, only when the type is certain.
@@ -159,6 +161,7 @@ fn endpoints(devices: &[DeviceFacts], nodes: &[NodeFacts], direction: Direction)
                 node_name: node.map(|n| n.name.clone()),
                 device_name: Some(dev.name.clone()),
                 device_description: dev.description.clone(),
+                channels: node.and_then(|n| n.channels),
             };
 
             let mut matched = false;
@@ -195,6 +198,7 @@ fn endpoints(devices: &[DeviceFacts], nodes: &[NodeFacts], direction: Direction)
             node_name: Some(node.name.clone()),
             device_name: dev.map(|d| d.name.clone()),
             device_description: dev.and_then(|d| d.description.clone()),
+            channels: node.channels,
         });
     }
     out
@@ -274,6 +278,7 @@ mod tests {
             description: Some(format!("{name} (desc)")),
             device_id,
             profile_device: None,
+            channels: Some(2),
         }
     }
 
@@ -306,6 +311,7 @@ mod tests {
                 node_name: Some("bluez_output.00_11.1".into()),
                 device_name: Some("bluez_card.00_11".into()),
                 device_description: Some("Some Headset".into()),
+                channels: Some(2),
             }
         );
         assert_eq!(p.outputs[1].id, "null-sink");

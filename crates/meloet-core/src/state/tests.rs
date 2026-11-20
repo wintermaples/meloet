@@ -25,6 +25,7 @@ fn ep(id: &str, name: &str, av: Av, active: bool, node: Option<&str>) -> Endpoin
         node_name: node.map(str::to_owned),
         device_name: None,
         device_description: Some(format!("{} device", id.split(':').next().unwrap())),
+        channels: None,
     }
 }
 

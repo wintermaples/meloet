@@ -1959,6 +1959,15 @@ export const texts = {
   "msg.tempoPointSet": e("{place}のテンポを {tempo} にしました。", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
   "msg.meterChangeSet": e("{place}の拍子を {signature} にしました。", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
   "marker.newName": e("マーカー {count}", "spec:3", { count: "4" }),
+  // 帯の見出し（ひらいたとき。変更が 0 件なら「ほか」をつけない）、だんだんの線の上の文字、右クリックの行。
+  "timeline.tempoSummary": e("テンポ {tempo} ほか {count}", "spec:3", { tempo: "96.00", count: "3" }),
+  "timeline.tempoOnly": e("テンポ {tempo}", "spec:3", { tempo: "96.00" }),
+  "timeline.meterSummary": e("拍子 {signature} ほか {count}", "spec:3", { signature: "4/4", count: "2" }),
+  "timeline.meterOnly": e("拍子 {signature}", "spec:3", { signature: "4/4" }),
+  "timeline.ramp": e("だんだん", "spec:2"),
+  "menu.tempoRamp": e("次の点まで、だんだん", "spec:3"),
+  "menu.loopFromMarker": e("ここから次のマーカーまでをループに", "spec:3"),
+  "menu.renameMarker": e("名前を変える", "spec:3"),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。

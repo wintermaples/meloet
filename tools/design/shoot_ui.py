@@ -152,6 +152,8 @@ BOARDS = {
     "markerAdded": "R10-Markers",
     "markerRenaming": "R10-Markers",
     "markerMoving": "R10-Markers",
+    "tempoDrag": "F6-Tempo",
+    "pianoRollMarkers": "R10-Markers",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -286,6 +288,43 @@ def drag_clip(x0, x1, opts="{}"):
     return "js:" + DRAG_CLIP % (x0, opts, x0, x1, opts, x1, opts)
 
 
+# Types into the open name field of a marker (R10-Markers: "Aメロ ・ 1 回目").
+TYPE_MARKER = """
+// The arrange canvas of a scene with many clips is not done when the page first settles; wait for it.
+await new Promise((r) => setTimeout(r, 2000));
+const input = document.querySelector('[data-test="marker-name-field"]');
+input.value = "%s";
+input.dispatchEvent(new Event("input", { bubbles: true }));
+"""
+
+# Presses the marker tag with the given name and drags it dx CSS px without letting go (R10-Markers: "6. 1. 000").
+DRAG_MARKER = """
+await new Promise((r) => setTimeout(r, 2000));
+const tag = [...document.querySelectorAll('[data-test="marker-tag"]')].find((t) => t.textContent === "%s");
+const row = document.querySelector('[data-test="marker-row"]');
+const r = tag.getBoundingClientRect();
+const ev = (el, type, x) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: x, clientY: r.top + 6 }));
+ev(tag, "pointerdown", r.left + 6);
+ev(row, "pointermove", r.left + 6 + %d / 2);
+ev(row, "pointermove", r.left + 6 + %d);
+"""
+
+# Presses the tempo point at a bar line (x CSS px from the left of the lanes) and drags it by (dx, dy) without letting go.
+DRAG_TEMPO = """
+const lane = document.querySelector('[data-test="tempo-row"]');
+const r = lane.getBoundingClientRect();
+const y0 = %f;
+const ev = (type, x, y) => lane.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + x, clientY: r.top + y }));
+ev("pointerdown", %d, y0);
+ev("pointermove", %d + %d / 2, y0 + %d / 2);
+ev("pointermove", %d + %d, y0 + %d);
+"""
+
+
+def drag_tempo(x, y, dx, dy):
+    return "js:" + DRAG_TEMPO % (y, x, x, dx, dy, x, dx, dy)
+
+
 # Opens the second row under the first licence heading of the about dialog and scrolls it to the top.
 OPEN_PART = """
 const row = document.querySelectorAll('[data-test="about-group"] ~ [data-test="about-part"]')[1];
@@ -353,6 +392,11 @@ CLICKS = {
     "shelfBuiltinOpen": ("shelfPlugins", ('[data-group="builtin:sounds"]', '[data-group="guitar"]')),
     "windowOpen": ("windowOpen", '[data-test="status-windows"]'),
     "paramFew": ("paramFew", "js:" + DRAG_PARAM % ("Decay", 0.1, 0.12)),
+    # 第 6 回 区切り1: マーカーの名前を打っている途中、マーカーを 1 小節ぶん動かしている途中（R10-Markers）。
+    "markerRenaming": ("markerRenaming", "js:" + TYPE_MARKER % "Aメロ ・ 1 回目"),
+    "markerMoving": ("markerMoving", "js:" + DRAG_MARKER % ("Aメロ", 64, 64)),
+    # 9 小節目の点（120.00）を 1 拍右、少し上へ動かしている途中（もとの所に accent の枠、読み値は位置）。
+    "tempoDrag": ("tempo", drag_tempo(512, 12, 16, -6)),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -455,6 +499,13 @@ ONLY = {
     "settingsAdv": [(1280, 800, 100)],
     "settingsMoved": [(1280, 800, 100)],
     "scanStoppedMoved": [(1280, 800, 100)],
+    "tempo": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
+    "tempoFolded": [(1280, 800, 100)],
+    "tempoDrag": [(1280, 800, 100)],
+    "markerAdded": [(1280, 800, 100), (1280, 800, 150)],
+    "markerRenaming": [(1280, 800, 100)],
+    "markerMoving": [(1280, 800, 100)],
+    "pianoRollMarkers": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

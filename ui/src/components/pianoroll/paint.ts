@@ -9,7 +9,9 @@ import type { Batch } from "../../gl/batch";
 import { rgb } from "../../gl/color";
 import { isBlack } from "../../gl/keyboard";
 import { HAIR, type Box } from "../../gl/paint";
-import { ticksPerBar, ticksPerBeat, type Meter } from "../time";
+import { barsMap, eachGridTick, eachLine } from "../../time/bars";
+import type { TempoMap } from "../../time/tempoMap";
+import type { Meter } from "../time";
 import { draggedPoint, firstPointFrom, isOnOff, lanePoints, pointTick, valueToY, type LaneBox, type LaneDrag } from "./cc";
 import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
@@ -35,6 +37,10 @@ export interface RollPicture {
   scale: MusicalScale;
   meter: Meter;
   step: number;
+  /** 拍子の変更のある曲の小節の線（なければ meter の小節がならぶ）。 */
+  map?: TempoMap;
+  /** グリッドが 1 小節（その小節の長さ。拍子の変更で変わる）。 */
+  barStep?: boolean;
   /** 見せているテイク。録音中で、録っている物を見せるときは null。 */
   shown: Shown | null;
   /** クオンタイズしたテイクのもとのテイク（同じ base で読む）。 */
@@ -52,12 +58,24 @@ const FRAME: ColorName = "color.gray.7";
 /** 線の間がこれより狭くなったら、ひとつ粗い線にする（CSS px）。 */
 const LINE_MIN_PX = 4;
 
-function lineStep(step: number, meter: Meter, ppt: number): number {
-  const perBeat = ticksPerBeat(meter);
-  const perBar = ticksPerBar(meter);
+function lineStep(step: number, perBeat: number, perBar: number, ppt: number): number {
   if (step * ppt >= LINE_MIN_PX) return step;
   if (perBeat * ppt >= LINE_MIN_PX) return perBeat;
   return perBar * Math.max(1, Math.ceil(LINE_MIN_PX / (perBar * ppt)));
+}
+
+/** 方眼の線を、小節の頭から数えなおして（拍子の変更のある曲でも、小節の頭が線になる）。kind は 0 小節、1 拍、2 ほか。 */
+function eachGridLine(
+  p: { meter: Meter; step: number; map?: TempoMap; barStep?: boolean },
+  ppt: number,
+  from: number,
+  to: number,
+  each: (tick: number, kind: 0 | 1 | 2) => void,
+): void {
+  const map = p.map ?? barsMap(p.meter);
+  // グリッドの線が見えるほど広ければ、ノートの吸いつき（拍子の区間の頭から数える）と同じ線。ほかは拍か小節の線。
+  if (!p.barStep && p.step * ppt >= LINE_MIN_PX) eachGridTick(map, from, to, p.step, each);
+  else eachLine(map, from, to, (perBeat, perBar) => lineStep(p.barStep ? perBar : p.step, perBeat, perBar, ppt), each);
 }
 
 /**
@@ -186,14 +204,11 @@ function gridLines(out: Batch, box: Box, p: RollPicture, X: (tick: number) => nu
   const { g } = p;
   const from = g.scrollTick;
   const to = g.scrollTick + g.width / g.ppt;
-  const s = lineStep(p.step, p.meter, g.ppt);
-  const perBar = ticksPerBar(p.meter);
-  const perBeat = ticksPerBeat(p.meter);
-  for (let tick = Math.ceil(from / s) * s; tick < to; tick += s) {
+  eachGridLine(p, g.ppt, from, to, (tick, kind) => {
     const x = Math.round(X(tick));
-    const color = tick % perBar === 0 ? "color.gray.6" : tick % perBeat === 0 ? "color.gray.4" : "color.gray.3";
+    const color = kind === 0 ? "color.gray.6" : kind === 1 ? "color.gray.4" : "color.gray.3";
     out.rect(x, box.y0, x + HAIR, bottom, rgb(color));
-  }
+  });
 }
 
 /** ノートの場所: 行の地、方眼の線、ノート、そろえる前の位置の枠、ドラッグのもとの位置の枠。 */
@@ -409,6 +424,8 @@ export interface LanePicture {
   g: RollGeom;
   meter: Meter;
   step: number;
+  map?: TempoMap;
+  barStep?: boolean;
   /** null は「そのほかの CC」の番号をまだえらんでいない帯。 */
   control: ControlKind | null;
   shown: Shown | null;
@@ -478,13 +495,11 @@ function laneSquare(out: Batch, cx: number, cy: number, size: number, color: Col
 function laneGround(out: Batch, box: Box, p: LanePicture, dpr: number): void {
   const { g } = p;
   out.rect(box.x0, box.y0, box.x1, box.y1, rgb("color.gray.1"));
-  const s = lineStep(p.step, p.meter, g.ppt);
-  const perBar = ticksPerBar(p.meter);
   const to = g.scrollTick + g.width / g.ppt;
-  for (let tick = Math.ceil(g.scrollTick / s) * s; tick < to; tick += s) {
+  eachGridLine(p, g.ppt, g.scrollTick, to, (tick, kind) => {
     const x = Math.round(box.x0 + (tick - g.scrollTick) * g.ppt * dpr);
-    out.rect(x, box.y0, x + HAIR, box.y1, rgb(tick % perBar === 0 ? "color.gray.4" : "color.gray.2"));
-  }
+    out.rect(x, box.y0, x + HAIR, box.y1, rgb(kind === 0 ? "color.gray.4" : "color.gray.2"));
+  });
   if (p.control?.kind === "pitchBend") {
     const y = Math.round(box.y0 + valueToY(p.control, p.lane, 0) * dpr);
     out.rect(box.x0, y, box.x1, y + HAIR, rgb("color.gray.5"));

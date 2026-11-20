@@ -9,6 +9,7 @@ import {
   blackKeyPx,
   clipMarkPx,
   paintArrangeGrid,
+  paintGridLines,
   paintKeyboard,
   paintMeter,
   paintOverview,
@@ -600,6 +601,9 @@ export class Engine {
       }
       case "arrangeGrid":
         paintArrangeGrid(out, box, slot.firstBarX * dpr, slot.barPx * dpr, slot.beats ?? 1);
+        break;
+      case "gridLines":
+        paintGridLines(out, box, slot.lines, slot.beats, dpr);
         break;
       case "overview":
         paintOverview(out, box, Math.max(1, Math.round(((OVERVIEW.inset * this.scale) / 100) * dpr)));

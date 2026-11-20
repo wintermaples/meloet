@@ -2296,6 +2296,7 @@ SCENES.tempoFolded = {
   setup(s) {
     bandSong(s);
     s.timeline.tempoPoints = [{ tick: 12 * BAR, tempoBpm: 120, ramp: false }];
+    s.timeline.markers = MARKERS.map((m) => ({ ...m }));
   },
   meters: QUIET,
 };
@@ -2329,6 +2330,20 @@ SCENES.markerMoving = {
     markerSong(s);
     s.timeline.selected = { kind: "marker", id: 2 };
   },
+  meters: QUIET,
+};
+
+// R10-Markers, "ピアノロールの目盛": the piano roll of A-PianoRoll with markers in its ruler (names only, not pressable).
+SCENES.pianoRollMarkers = {
+  setup(s) {
+    pianoRollSong(s);
+    s.timeline.markers = [
+      { id: 1, tick: 0, name: "イントロ" },
+      { id: 2, tick: 2 * BAR + 960, name: "Aメロ" },
+      { id: 3, tick: 4 * BAR, name: "サビ" },
+    ];
+  },
+  bands: ["pianoRoll"],
   meters: QUIET,
 };
 

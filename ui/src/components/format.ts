@@ -1,7 +1,7 @@
 // 数の見せかた。DOM を知らない純粋な関数。
 import type { ScaleMode } from "../bridge";
 import { t, texts, type TextKey } from "../text/ja";
-import { barBeatTick, DISPLAY_TICKS_PER_BEAT, ticksPerBeat, type Meter } from "./time";
+import { barBeatTick, DISPLAY_TICKS_PER_BEAT, ticksPerBeat, type Bars, type Meter } from "./time";
 
 /** マイナスは仕様書と同じ「−」（U+2212）。 */
 const MINUS = "−";
@@ -129,8 +129,8 @@ export function rangeText(low: string, high: string): string {
 }
 
 /** ノートの一覧の位置（「3.1.000」。モック A-PianoRoll）。曲の中のティック。 */
-export function notePositionText(tick: number, meter: Meter): string {
-  const b = barBeatTick(tick, meter);
+export function notePositionText(tick: number, bars: Bars): string {
+  const b = barBeatTick(tick, bars);
   return `${b.bar}.${b.beat}.${String(b.tick).padStart(3, "0")}`;
 }
 

@@ -17,6 +17,12 @@ export interface GlRect {
   color: ColorName;
 }
 
+/** A line of a "gridLines" slot: the head of a bar, or else of a beat. */
+export interface GridLine {
+  x: number;
+  bar: boolean;
+}
+
 /** `ret`: the return strip of send A or B (mixer). */
 export type MeterSource = "master" | { track: number } | { ret: "a" | "b" };
 
@@ -50,6 +56,11 @@ export type GlSlot =
   | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean }
   /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. `beats` > 1: beat lines too, that many to a bar. */
   | { kind: "arrangeGrid"; barPx: number; firstBarX: number; beats?: number }
+  /**
+   * Bar lines (and beat lines when `beats`) of the arrange area at the places given, for a song whose bars are not
+   * all as long (meter changes). `x` is CSS px from the left of the slot's box.
+   */
+  | { kind: "gridLines"; lines: readonly GridLine[]; beats: boolean }
   /** The 40 px arrange overview (clip lines, visible range, play position). */
   | { kind: "overview" }
   /** Any rectangles (clips, the notes in them). Later ones on top; slots later in the page on top of earlier ones. */

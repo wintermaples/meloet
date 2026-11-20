@@ -3,7 +3,8 @@
 
 import type { ValueField } from "../bridge";
 import { tempoText } from "./format";
-import { DISPLAY_TICKS_PER_BEAT, METER_DENS, METER_NUM_MAX, positionText, TEMPO_MAX, TEMPO_MIN, ticksPerBar, ticksPerBeat, type Meter } from "./time";
+import { barAt, barsMap, tickOfPosition } from "../time/bars";
+import { DISPLAY_TICKS_PER_BEAT, METER_DENS, METER_NUM_MAX, positionText, TEMPO_MAX, TEMPO_MIN, type Bars, type Meter } from "./time";
 
 export interface ClampNote {
   field: ValueField;
@@ -82,24 +83,24 @@ export function readVelocity(s: string): Read<number> | null {
  * 再生の位置（「5」「5.2」「5.2.240」。区切りの前後の空白はあってよい）を曲の中のティックに。
  * 小節は 1 から、拍は 1〜拍子の上、ティックは 0〜479 に、それぞれ入れる。2 つ以上丸めたときは、いちばん大きい単位のことだけ言う。
  */
-export function readPosition(s: string, meter: Meter): Read<number> | null {
+export function readPosition(s: string, bars: Bars): Read<number> | null {
   const parts = tidy(s).split(/\s*\.\s*/);
   if (parts.length > 3) return null;
   const nums = parts.map((p) => (/^-?\d+$/.test(p) ? Number(p) : null));
   if (nums.some((n) => n === null)) return null;
   const [barRaw, beatRaw = 1, tickRaw = 0] = nums as number[];
+  const map = barsMap(bars);
   const bar = Math.max(1, barRaw!);
-  const beat = clampTo(beatRaw, 1, meter.num);
+  const num = barAt(map, bar).num;
+  const beat = clampTo(beatRaw, 1, num);
   const tick = clampTo(tickRaw, 0, DISPLAY_TICKS_PER_BEAT - 1);
-  const perBeat = ticksPerBeat(meter);
-  const inBeat = Math.min(Math.round((tick * perBeat) / DISPLAY_TICKS_PER_BEAT), perBeat - 1);
-  const value = (bar - 1) * ticksPerBar(meter) + (beat - 1) * perBeat + inBeat;
-  const shown = positionText(value, meter);
+  const value = tickOfPosition(map, bar, beat, tick);
+  const shown = positionText(value, map);
   const clamp: ClampNote | null =
     bar !== barRaw
       ? { field: "bar", value: shown, range: null }
       : beat !== beatRaw
-        ? { field: "beat", value: shown, range: `1〜${meter.num}` }
+        ? { field: "beat", value: shown, range: `1〜${num}` }
         : tick !== tickRaw
           ? { field: "tick", value: shown, range: `0〜${DISPLAY_TICKS_PER_BEAT - 1}` }
           : null;

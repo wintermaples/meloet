@@ -39,8 +39,13 @@
     visibleTicks,
     zoomArrangeBy,
   } from "./pianoroll/view.svelte";
-  import { snapTick } from "./pianoroll/geom";
   import { shownTick, ticksPerBar, ticksPerBeat } from "./time";
+  import { barLineTick, eachLine, mapOf, nearestBarTick, snapToStep } from "../time/bars";
+  import type { GridLine } from "../gl/slot";
+  import MarkerRow from "./timeline/MarkerRow.svelte";
+  import TempoBand from "./timeline/TempoBand.svelte";
+  import { changeCount, summaries } from "./timeline/tempoGeom";
+  import { pickClips } from "./timeline/pick";
 
   let { children }: { children?: Snippet } = $props();
 
@@ -68,13 +73,13 @@
   const barPx = $derived((metrics.px("mock.arrange.bar") * arrangeView.barPx) / DEFAULT_ARRANGE_BAR);
   /** 小節の番号を何小節おきに出すか。縮小して重なるときは間引く。 */
   const barLabelEvery = $derived(G.labelEvery(barPx, metrics.px("mock.arrange.bar") / 2));
+  /** テンポと拍子の地図。小節の線、目盛の数字、吸いつき、ループの範囲は、ここから（拍子の変更で小節の長さが変わる）。 */
+  const map = $derived(mapOf(timeline));
+  /** 曲の頭の拍子の 1 小節。横の拡大の段（barPx）は、この長さの小節の px。 */
   const perBar = $derived(ticksPerBar({ num: timeline.meterNum, den: timeline.meterDen }));
   const pxPerTick = $derived(barPx / perBar);
-  /** クリップの場所に描く 1 小節の拍の数。拍に吸いつくほど拡大していなければ 1（小節の線だけ）。 */
-  const gridBeats = $derived.by(() => {
-    const perBeat = ticksPerBeat({ num: timeline.meterNum, den: timeline.meterDen });
-    return G.beatsShown(barPx, perBar, perBeat, metrics.px("mock.arrange.bar") / 2) ? Math.round(perBar / perBeat) : 1;
-  });
+  /** クリップの場所に拍の線も描くか。拍に吸いつくほど拡大していなければ、小節の線だけ。 */
+  const gridBeats = $derived(G.beatsShown(barPx, perBar, ticksPerBeat({ num: timeline.meterNum, den: timeline.meterDen }), metrics.px("mock.arrange.bar") / 2));
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
   const view: G.View = $derived({ pxPerTick, scrollX: scrollTick * pxPerTick, width: viewWidth });
   const dims: G.LaneDims = $derived({
@@ -89,11 +94,22 @@
   const tagMin = $derived(metrics.px("part.take.tag-min-width"));
   const switchH = $derived(metrics.px("part.take.switch-height"));
 
-  const firstBar = $derived(Math.max(1, Math.floor(view.scrollX / barPx) + 1));
-  const lastBar = $derived(Math.max(firstBar, Math.ceil((view.scrollX + viewWidth) / barPx)));
-  const barNumbers = $derived(
-    Array.from({ length: lastBar - firstBar + 1 }, (_, i) => firstBar + i).filter((n) => (n - 1) % barLabelEvery === 0),
-  );
+  /** 目盛の数字（小節の番号と、その線の x）。 */
+  const barNumbers = $derived.by(() => {
+    const out: { n: number; x: number }[] = [];
+    eachLine(map, map.meterAt(G.xToTick(view, 0)).barTick, G.xToTick(view, viewWidth), (_, bar) => bar * barLabelEvery, (tick, _, bar) =>
+      out.push({ n: bar + 1, x: G.tickToX(view, tick) }),
+    );
+    return out;
+  });
+  /** クリップの場所の小節の線（と拍の線）。 */
+  const gridLines = $derived.by(() => {
+    const out: GridLine[] = [];
+    eachLine(map, G.xToTick(view, 0), G.xToTick(view, viewWidth), (beat, bar) => (gridBeats ? beat : bar), (tick, kind) =>
+      out.push({ x: G.tickToX(view, tick), bar: kind === 0 }),
+    );
+    return out;
+  });
   /** トラックの id から、並びの中の行。 */
   const rowOf = (track: number) => song.tracks.findIndex((tr) => tr.id === track);
 
@@ -183,7 +199,7 @@
 
   // ---- ループ ----
 
-  const songLoop = $derived(song.loopOn ? G.loopBars(song.loopRange, perBar) : null);
+  const songLoop = $derived(song.loopOn ? G.loopBars(song.loopRange, map) : null);
   /** ドラッグ中の見た目。Rust の答え（次の差分）が来たら消す。 */
   let preview = $state<G.BarRange | null>(null);
   const shownLoop = $derived(preview ?? songLoop);
@@ -193,7 +209,7 @@
       if (!drag) preview = null;
     });
   });
-  const loopX = (bar: number) => G.tickToX(view, (bar - 1) * perBar);
+  const loopX = (bar: number) => G.tickToX(view, barLineTick(map, bar));
 
   // ---- クリップのドラッグ（動かす、Alt で複製、はしをつめる。arrangeDrag.ts） ----
 
@@ -628,7 +644,25 @@
     }
     placeLines(tick, scrollX);
     moveTail(tick, scrollX);
+    showNow(tick);
   }
+
+  // ---- たたんだ「テンポ ・ 拍子の変更」の行の、再生の線がいる所のテンポと拍子（動いている間は毎コマ。文字が変わったときだけ書く） ----
+
+  function nowText(tick: number): string {
+    const at = Math.max(0, tick);
+    const m = map.meterAt(at);
+    return t("arrange.tempoAndSignature", { tempo: tempoText(Math.round(map.tempoAt(at) * 100) / 100), signature: `${m.num}/${m.den}` });
+  }
+  let now = $state("");
+  function showNow(tick: number): void {
+    if (timeline.open) return;
+    const text = nowText(tick);
+    if (text !== now) now = text;
+  }
+  $effect(() => {
+    if (transport.state === "stopped") now = nowText(transport.position);
+  });
 
   let lastState = "stopped";
   $effect(() => {
@@ -699,18 +733,28 @@
     if (e.button !== 0) return;
     const left = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
     const x = e.clientX - left;
-    drag = { d: G.startRulerDrag(view, x, perBar, songLoop, metrics.px("space.2")), downX: x, left };
+    drag = { d: G.startRulerDrag(view, x, map, songLoop, metrics.px("space.2")), downX: x, left };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   }
   function rulerMove(e: PointerEvent): void {
     if (!drag) return;
     const x = e.clientX - drag.left;
-    if (Math.abs(x - drag.downX) >= still()) preview = G.dragRange(drag.d, view, x, perBar);
+    if (Math.abs(x - drag.downX) >= still()) preview = G.dragRange(drag.d, view, x, map);
   }
   function rulerUp(e: PointerEvent): void {
     if (!drag) return;
-    const step = e.shiftKey ? null : G.rulerStep(barPx, perBar, ticksPerBeat(meter), barLabelEvery, metrics.px("mock.arrange.bar") / 2);
-    const command = G.rulerCommand(drag.d, view, drag.downX, e.clientX - drag.left, perBar, still(), step);
+    // 目盛に見えている線に吸いつく（B-61）: 拍の線が見えていれば拍、ふだんは小節、間引いていれば番号のある小節。
+    const every = barLabelEvery;
+    const step = e.shiftKey
+      ? null
+      : gridBeats
+        ? (at: number) => snapToStep(map, at, 0)
+        : (at: number) => {
+            const m = map.meterAt(Math.max(0, at));
+            const line = Math.round((m.bar + (Math.max(0, at) - m.barTick) / ticksPerBar(m)) / every) * every;
+            return map.tickOfBar(line);
+          };
+    const command = G.rulerCommand(drag.d, view, drag.downX, e.clientX - drag.left, map, still(), step);
     drag = null;
     if (command.type === "locate") preview = null;
     const before = current.rev;
@@ -730,7 +774,6 @@
 
   // クリップを押す: えらぶ。押したまま動かす: 動かす（Alt で複製）、左右のはし（part.clip.edge）なら長さ。録音中とカウントイン中はえらぶだけ。
   const busy = $derived(transport.state === "recording" || transport.state === "countIn");
-  const meter = $derived({ num: timeline.meterNum, den: timeline.meterDen });
   let lanesBox = $state<HTMLElement>();
   let laneCursor = $state<CD.ArrangeCursor>("default");
   let readingAt = $state<{ x: number; y: number } | null>(null);
@@ -747,6 +790,7 @@
     dims,
     tracks: song.tracks,
     step: shift ? null : perBar,
+    snap: (tick: number) => nearestBarTick(map, tick),
     stillPx: still(),
   });
 
@@ -765,6 +809,7 @@
     const p = lanePoint(e);
     const hit = hitAt(p);
     clickedOnly = null;
+    pickClips();
     const lanes = e.currentTarget as HTMLElement;
     if (!hit) {
       boxSel = { x0: p.x, y0: p.y, x: p.x, y: p.y, moved: false, add: e.shiftKey };
@@ -810,7 +855,7 @@
     const next = CD.dragClipTo(d, dragInput(e.shiftKey), p.x, p.y, { shift: e.shiftKey, alt: e.altKey });
     if (next !== d) {
       clipDrag = next;
-      dragReading.text = CD.clipDragReading(next, meter);
+      dragReading.text = CD.clipDragReading(next, map);
       laneCursor = CD.clipDragCursor(next);
     }
     const r = timeBox!.getBoundingClientRect();
@@ -894,6 +939,7 @@
     const p = lanePoint(e);
     const hit = hitAt(p);
     if (hit) {
+      pickClips();
       if (!selectedSet.has(hit.clip.id)) send({ type: "selectClip", clip: hit.clip.id });
       openContextMenu(e.clientX, e.clientY, clipMenu(hit.clip));
       return;
@@ -901,7 +947,7 @@
     // 押した所を、クリップを動かすときと同じグリッド（ふだん 1 小節）に寄せる。Shift なら寄せない。
     const track = song.tracks[Math.floor(p.y / dims.trackH)];
     const at = G.xToTick(view, p.x);
-    const tick = Math.max(0, e.shiftKey ? Math.round(at) : snapTick(at, perBar));
+    const tick = Math.max(0, e.shiftKey ? Math.round(at) : nearestBarTick(map, at));
     const paste = () => {
       if (track) send({ type: "pasteClips", to: { track: track.id, tick } });
     };
@@ -983,12 +1029,26 @@
           {/if}
         </span>
       </div>
-      <button class="m-plain row tempo-head" aria-disabled="true" tabindex="-1">
-        <span>▸</span>
-        <span>{t("arrange.tempoChanges")}</span>
-        <span class="m-spacer"></span>
-        <span class="m-num">{t("arrange.changeCount", { count: timeline.tempoPoints.length + timeline.meterChanges.length })}</span>
-      </button>
+      <div class="tempo-head" class:open={timeline.open}>
+        <button
+          class="m-plain row tempo-toggle"
+          aria-expanded={timeline.open}
+          data-test="tempo-toggle"
+          onclick={() => send({ type: "setTimelineOpen", open: !timeline.open })}
+        >
+          <span class:m-lbl={!timeline.open}>{timeline.open ? "▾" : "▸"}</span>
+          <span class:m-lbl={!timeline.open} use:term={"テンポの変更"}>{t("arrange.tempoChanges")}</span>
+          <span class="m-spacer"></span>
+          <span class="m-num m-lbl">{t("arrange.changeCount", { count: changeCount(timeline, map) })}</span>
+        </button>
+        {#if timeline.open}
+          {@const sum = summaries(timeline)}
+          <div class="tempo-sums">
+            <span class="m-lbl" data-test="tempo-summary">{sum.tempo}</span>
+            <span class="m-lbl" data-test="meter-summary">{sum.meter}</span>
+          </div>
+        {/if}
+      </div>
       <TrackHeads />
     </div>
 
@@ -1001,24 +1061,21 @@
         onpointerup={rulerUp}
         onpointercancel={rulerCancel}
       >
-        {#each barNumbers as n (n)}
-          <span class="m-num m-lbl bar-number" style:left="{(n - 1) * barPx - view.scrollX}px">{n}</span>
+        {#each barNumbers as b (b.n)}
+          <span class="m-num m-lbl bar-number" style:left="{b.x}px">{b.n}</span>
         {/each}
         {#if shownLoop}
           <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
         {/if}
       </div>
-      <div class="ruler"></div>
-      <div class="ruler">
-        <span class="m-num m-lbl bar-number" style:left="{-view.scrollX}px">
-          {t("arrange.tempoAndSignature", { tempo: tempoText(timeline.tempoBpm), signature: `${timeline.meterNum}/${timeline.meterDen}` })}
-        </span>
-      </div>
+      <MarkerRow {view} {map} {timeline} {busy} />
+      <!-- テンポの帯の線と点も、クリップと同じ arrangeLanes の 1 枚に描く（区画をふやさない）。区画の箱は、帯とクリップの場所を囲む。 -->
+      <div class="lanes-wrap" use:glRegion={"arrangeLanes"}>
+      <TempoBand {view} {map} {timeline} {now} {busy} />
       <div
         class="lanes"
         role="presentation"
-        use:glRegion={"arrangeLanes"}
-        use:glSlot={{ kind: "arrangeGrid", barPx, firstBarX: -view.scrollX, beats: gridBeats }}
+        use:glSlot={{ kind: "gridLines", lines: gridLines, beats: gridBeats }}
         bind:this={lanesBox}
         style:cursor={laneCursor}
         onpointerdown={lanesDown}
@@ -1108,6 +1165,7 @@
           </div>
         {/if}
         <HScrollbar total={Math.max(scrollRight, view.scrollX) + viewWidth} visible={viewWidth} offset={view.scrollX} onscroll={barScroll} />
+      </div>
       </div>
       {#if readingBox}
         <div
@@ -1209,9 +1267,26 @@
     padding: 0;
   }
   .tempo-head {
-    width: 100%;
     background: var(--color-gray-4);
-    color: var(--color-gray-7);
+    border-bottom: var(--line-hair) solid var(--color-gray-5);
+  }
+  .tempo-toggle {
+    width: 100%;
+    border-bottom: 0;
+  }
+  /* ひらいた行（モック F6-Tempo）: 地 gray.2、高さは時間の側と同じ size.row ＋ size.lane。 */
+  .tempo-head.open {
+    background: var(--color-gray-2);
+    height: calc(var(--size-row) + var(--size-lane));
+  }
+  .tempo-head.open .tempo-toggle {
+    border-bottom: 0;
+  }
+  .tempo-sums {
+    display: flex;
+    flex-direction: column;
+    padding: 0 var(--space-2) 0 var(--space-6);
+    white-space: nowrap;
   }
 
   .time {
@@ -1247,6 +1322,13 @@
     top: 0;
     height: var(--mock-arrange-loop);
     background: var(--color-accent);
+  }
+  .lanes-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
   }
   .lanes {
     flex: 1;

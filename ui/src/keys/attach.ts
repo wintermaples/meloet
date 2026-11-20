@@ -31,6 +31,8 @@ import {
   startRename,
 } from "../components/tracks.svelte";
 import { shownTick } from "../components/time";
+import { timelineKeyCommand } from "../components/timeline/keys";
+import { pickTimeline } from "../components/timeline/pick";
 import { closeMenu, menuVisible } from "../lib/menu";
 import { hideTip, tipVisible } from "../lib/tip.svelte";
 import { current } from "../state/app.svelte";
@@ -369,6 +371,26 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
     : shelfHasKeys(state)
       ? "shelf"
       : "main";
+
+  // テンポ ・ 拍子の変更とマーカーのキー（K、Alt ← →、マーカーをえらんでいるときの F2、えらんだ物の Delete）。Esc はここを通さない。
+  if (context === "main" && ev.key !== "Escape") {
+    const tl = timelineKeyCommand(
+      keyInputOf(ev),
+      {
+        typing,
+        busy: songBusy(state),
+        toArrange: prView.focus === "arrange" || !pianoRollOpen(state),
+      },
+      state.timeline,
+    );
+    if (tl) {
+      ev.preventDefault();
+      deps.send(tl);
+      if (tl.type === "addMarker" || tl.type === "stepMarker") pickTimeline();
+      return;
+    }
+  }
+
   const action = keyAction(
     keyInputOf(ev),
     typing,

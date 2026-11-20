@@ -22,14 +22,15 @@
     shownTick,
     stepMeter,
     stepTempo,
-    ticksToSeconds,
     type Meter,
   } from "./time";
+  import { mapOf } from "../time/bars";
 
   const song = $derived(current.state!.song);
   const timeline = $derived(current.state!.timeline);
   const transport = $derived(current.state!.transport);
-  const meter = $derived<Meter>({ num: timeline.meterNum, den: timeline.meterDen });
+  /** テンポと拍子の地図（拍子の変更のある曲でも、位置 ・ 時間 ・ テンポ ・ 拍子は、ここから）。 */
+  const map = $derived(mapOf(timeline));
 
   const counting = $derived(transport.state === "countIn");
   const recordingNow = $derived(counting || transport.state === "recording");
@@ -39,8 +40,8 @@
     const left = p?.state === "countIn" ? p.countInBeatsLeft : transport.countInBeats;
     return Math.min(transport.countInBeats, Math.max(1, transport.countInBeats - left + 1));
   });
-  /** 箱は 1 小節ぶん（拍子の上の数）で、小節ごとに数えなおす。 */
-  const beatsPerBar = $derived(timeline.meterNum);
+  /** 箱は 1 小節ぶん（録りはじめる所の拍子の上の数）で、小節ごとに数えなおす。 */
+  const beatsPerBar = $derived(map.meterAt(transport.recording?.from ?? transport.position).num);
   const beatInBar = $derived(((countInBeat - 1) % beatsPerBar) + 1);
 
   // 横の入れかた: 出ている物と、見えない写し（ruler）の引っこむ物を測り、仕様書 1 章の順に引っこめる。
@@ -121,12 +122,19 @@
     });
     return () => cancelAnimationFrame(raf);
   });
-  const position = $derived(positionText(tick, meter));
-  const clock = $derived(clockText(ticksToSeconds(Math.max(0, tick), timeline.tempoBpm, meter)));
+  const position = $derived(positionText(tick, map));
+  const clock = $derived(clockText(map.secondsAt(Math.max(0, tick))));
+  // テンポと拍子は、再生の線がいる所の値（仕様書 3 章 Y17。だんだんの中は、その瞬間の値）。
+  const tempoShown = $derived(tempoText(Math.round(map.tempoAt(Math.max(0, tick)) * 100) / 100));
+  const meter = $derived.by<Meter>(() => {
+    const m = map.meterAt(Math.max(0, tick));
+    return { num: m.num, den: m.den };
+  });
+  const meterShown = $derived(meterText(meter));
 
   $effect(() => {
     // 中身が変わったら測りなおす（ResizeObserver のない所でも、決まりの通りに出す）。
-    void [counting, beatsPerBar, song.name, fileText, timeline.tempoBpm, meter, transport.countInBars, metrics.scale];
+    void [counting, beatsPerBar, song.name, fileText, tempoShown, meterShown, transport.countInBars, metrics.scale];
     untrack(measure);
   });
 
@@ -270,7 +278,7 @@
 
   // 数字として読めない値のまま Enter: 状態行で言うように core へ頼む（仕様書 6 章「使えない値を打った」）。
   function rejectTempo(): void {
-    send({ type: "rejectValue", field: "tempo", kept: tempoText(timeline.tempoBpm), range: null });
+    send({ type: "rejectValue", field: "tempo", kept: tempoShown, range: null });
   }
   function rejectMeter(draft: string): void {
     const field = meterFieldOf(draft);
@@ -378,7 +386,7 @@
       {#if parts.positionLabels}<span class="m-lbl" use:term={"小節 . 拍 . ティック"}>{t("transport.position")}</span>{/if}
       <NumberField
         value={position}
-        parse={(s) => readPosition(s, meter)}
+        parse={(s) => readPosition(s, map)}
         commit={(r) => commitClamped({ type: "locate", tick: r.value }, r.clamp)}
         reject={rejectPosition}
         label={t("transport.position")}
@@ -392,10 +400,10 @@
     </div>
   </div>
 
-  <div class="col">
+  <div class="col" use:glSlot={COVER}>
     <span class="m-lbl" use:term={"テンポ"}>{t("transport.tempo")}</span>
     <NumberField
-      value={tempoText(timeline.tempoBpm)}
+      value={tempoShown}
       parse={readTempo}
       step={(r, d) => tempoText(stepTempo(r.value, d))}
       commit={(r) => commitClamped({ type: "setTempo", bpm: r.value }, r.clamp)}
@@ -405,10 +413,10 @@
       test="transport-tempo"
     />
   </div>
-  <div class="col">
+  <div class="col" use:glSlot={COVER}>
     <span class="m-lbl" use:term={"拍子"}>{t("transport.timeSignature")}</span>
     <NumberField
-      value={meterText(meter)}
+      value={meterShown}
       parse={readMeter}
       step={(r, d) => meterText(stepMeter(r.value, d))}
       commit={(r) => commitClamped({ type: "setMeter", num: r.value.num, den: r.value.den }, r.clamp)}

@@ -5,7 +5,8 @@
 import type { ClipView, Command, NoteField, TakeNotes, ValueField } from "../../bridge";
 import { noteLengthText, notePositionText, rangeText } from "../format";
 import { noteName } from "../meterFormat";
-import { DISPLAY_TICKS_PER_BEAT, ticksPerBar, ticksPerBeat, type Meter } from "../time";
+import { barAt, barsMap, meterAtOf, tickOfPosition } from "../../time/bars";
+import { DISPLAY_TICKS_PER_BEAT, ticksPerBeat, type Bars, type Meter } from "../time";
 import { drumKeyOf, keyLabel, type Drums } from "./drums";
 
 const kitOf = (d: Drums | boolean): Drums => (d === true ? "builtin" : d);
@@ -33,14 +34,15 @@ export function displayTickStep(meter: Meter): number {
 const inBeat = (displayTick: number, meter: Meter) => Math.round((displayTick * ticksPerBeat(meter)) / DISPLAY_TICKS_PER_BEAT);
 
 /** 位置「3.1.000」（「3.1」「3」も）を曲の中のティックに。読めなければ null。範囲は見ない。 */
-export function parseNotePosition(s: string, meter: Meter): number | null {
+export function parseNotePosition(s: string, bars: Bars): number | null {
   const m = tidy(s).match(/^(\d{1,4})(?:\.(\d{1,2})(?:\.(\d{3}))?)?$/);
   if (!m) return null;
   const bar = Number(m[1]);
   const beat = m[2] === undefined ? 1 : Number(m[2]);
   const tick = m[3] === undefined ? 0 : Number(m[3]);
-  if (bar < 1 || beat < 1 || beat > meter.num || tick >= DISPLAY_TICKS_PER_BEAT) return null;
-  return (bar - 1) * ticksPerBar(meter) + (beat - 1) * ticksPerBeat(meter) + inBeat(tick, meter);
+  const map = barsMap(bars);
+  if (bar < 1 || beat < 1 || beat > barAt(map, bar).num || tick >= DISPLAY_TICKS_PER_BEAT) return null;
+  return tickOfPosition(map, bar, beat, tick);
 }
 
 /** 長さ「1.240」（拍 . ティック。「2」も）をティックに。読めなければ null。範囲は見ない。 */
@@ -81,20 +83,22 @@ const tidyMinus = (s: string) => tidy(s).replaceAll("\u2212", "-");
 const clampTo = (v: number, low: number, high: number) => Math.min(high, Math.max(low, v));
 
 /** 位置「3.5.000」「0.1.000」「3.1.999」も読み、小節は 1 から、拍は 1〜拍子の上、ティックは 0〜479 にそれぞれ入れる。 */
-export function readNotePositionLoose(s: string, meter: Meter): LooseValue | null {
+export function readNotePositionLoose(s: string, bars: Bars): LooseValue | null {
   const m = tidyMinus(s).match(/^(-?\d{1,4})(?:\.(\d{1,2})(?:\.(\d{3}))?)?$/);
   if (!m) return null;
   const rawBar = Number(m[1]);
   const rawBeat = m[2] === undefined ? 1 : Number(m[2]);
   const rawTick = m[3] === undefined ? 0 : Number(m[3]);
   const bar = Math.max(1, rawBar);
-  const beat = clampTo(rawBeat, 1, meter.num);
+  const map = barsMap(bars);
+  const num = barAt(map, bar).num;
+  const beat = clampTo(rawBeat, 1, num);
   const tick = clampTo(rawTick, 0, DISPLAY_TICKS_PER_BEAT - 1);
   let unit: ClampedUnit | null = null;
   if (bar !== rawBar) unit = { field: "bar", range: null };
-  else if (beat !== rawBeat) unit = { field: "beat", range: rangeText("1", String(meter.num)) };
+  else if (beat !== rawBeat) unit = { field: "beat", range: rangeText("1", String(num)) };
   else if (tick !== rawTick) unit = { field: "tick", range: rangeText("0", String(DISPLAY_TICKS_PER_BEAT - 1)) };
-  return { value: (bar - 1) * ticksPerBar(meter) + (beat - 1) * ticksPerBeat(meter) + inBeat(tick, meter), unit };
+  return { value: tickOfPosition(map, bar, beat, tick), unit };
 }
 
 /** 長さ「1.999」も読み、ティックを 0〜479 に入れる。 */
@@ -203,7 +207,7 @@ export function noteFieldSpec(
   take: Notes,
   clip: Placed,
   notes: readonly number[],
-  meter: Meter,
+  bars: Bars,
   drums: Drums | boolean = false,
 ): NoteFieldSpec | null {
   const picked = notes.filter((i) => i < take.starts.length);
@@ -211,6 +215,8 @@ export function noteFieldSpec(
   const at = clip.start + clip.takeOffset;
   const starts = picked.map((i) => at + take.starts[i]!);
   const first = picked[starts.indexOf(Math.min(...starts))]!;
+  // 長さとティックの目盛りは、いちばん早いノートの所の拍子で数える。
+  const meter = meterAtOf(bars, Math.min(...starts));
   const unit = displayTickStep(meter);
   switch (name) {
     case "position": {
@@ -218,7 +224,7 @@ export function noteFieldSpec(
       const lastEnd = Math.max(...picked.map((i) => at + take.starts[i]! + take.lengths[i]!));
       const low = clip.start;
       const high = Math.max(low, clip.end - (lastEnd - firstStart));
-      const format = (v: number) => notePositionText(v, meter);
+      const format = (v: number) => notePositionText(v, bars);
       return {
         name,
         field: VALUE_FIELDS[name],
@@ -231,8 +237,8 @@ export function noteFieldSpec(
         unit,
         range: rangeText(format(low), format(high)),
         format,
-        read: (s) => parseNotePosition(s, meter),
-        loose: (s) => readNotePositionLoose(s, meter),
+        read: (s) => parseNotePosition(s, bars),
+        loose: (s) => readNotePositionLoose(s, bars),
       };
     }
     case "key": {

@@ -19,6 +19,7 @@ use meloet_protocol::{
 };
 
 use super::Play;
+use super::automation::{LaneKey, LetGo};
 use crate::added::slots_view;
 use crate::state::Effect;
 
@@ -185,15 +186,21 @@ impl Play {
     }
 
     /// Takes the control of `value` as previewed (`commit` false) or as part of the song.
-    /// `edit`: the step that puts the value in the song.
+    /// `edit`: the step that puts the value in the song. `typed`: the value was typed. A
+    /// lane that moves the control rests or is written into (docs/architecture.md 21-11).
     fn mix(
         &mut self,
         value: Preview,
         commit: bool,
+        typed: bool,
         edit: impl FnOnce(&Self) -> Result<meloet_model::Edit, meloet_model::EditError>,
         effects: &mut Vec<Effect>,
     ) {
+        let lane = self.preview_lane(&value);
         if !commit {
+            if let Some((key, place)) = lane {
+                self.hand_moved(key, place);
+            }
             match (self.mixer.previews.iter_mut()).find(|p| p.same_control(&value)) {
                 Some(p) => *p = value,
                 None => self.mixer.previews.push(value),
@@ -201,8 +208,37 @@ impl Play {
             return;
         }
         self.mixer.previews.retain(|p| !p.same_control(&value));
-        if let Ok(e) = edit(self) {
-            self.apply(e, effects);
+        let let_go = match lane {
+            Some((key, place)) => self.hand_let_go(key, place, typed, effects),
+            None => LetGo::Free,
+        };
+        match let_go {
+            LetGo::Free => {
+                if let Ok(e) = edit(self) {
+                    self.apply(e, effects);
+                }
+            }
+            LetGo::Rest(key) => {
+                let e = edit(self);
+                self.rest_with(key, e, effects);
+            }
+            LetGo::Written | LetGo::Nothing => {}
+        }
+    }
+
+    /// The lane that would move the control of `value`, and the place of its knob.
+    fn preview_lane(&self, value: &Preview) -> Option<(LaneKey, f32)> {
+        match *value {
+            Preview::Gain(strip, gain) => Self::gain_lane(strip, gain),
+            Preview::Pan(strip, pan) => Self::pan_lane(strip, pan),
+            Preview::Send(track, bus, gain) => Self::send_lane(track, bus, gain),
+            Preview::Param {
+                strip,
+                slot,
+                kind,
+                param,
+                value,
+            } => self.param_lane(strip, slot, kind, param, value),
         }
     }
 
@@ -218,7 +254,7 @@ impl Play {
             return;
         }
         let edit = |p: &Play| mixer::set_gain(p.doc(), strip, gain);
-        self.mix(Preview::Gain(strip, gain), commit, edit, effects);
+        self.mix(Preview::Gain(strip, gain), commit, false, edit, effects);
     }
 
     pub fn set_pan(&mut self, strip: StripRef, pan: i32, commit: bool, effects: &mut Vec<Effect>) {
@@ -227,7 +263,7 @@ impl Play {
             return;
         }
         let edit = |p: &Play| mixer::set_pan(p.doc(), strip, pan);
-        self.mix(Preview::Pan(strip, pan), commit, edit, effects);
+        self.mix(Preview::Pan(strip, pan), commit, false, edit, effects);
     }
 
     pub fn set_send(
@@ -243,7 +279,13 @@ impl Play {
             return;
         }
         let edit = |p: &Play| mixer::set_send(p.doc(), track, bus, gain);
-        self.mix(Preview::Send(track, bus, gain), commit, edit, effects);
+        self.mix(
+            Preview::Send(track, bus, gain),
+            commit,
+            false,
+            edit,
+            effects,
+        );
     }
 
     pub fn set_param(
@@ -272,12 +314,13 @@ impl Play {
             value,
         };
         let edit = |p: &Play| mixer::set_param(p.doc(), strip, slot, kind, param, value);
-        self.mix(preview, commit, edit, effects);
+        self.mix(preview, commit, false, edit, effects);
     }
 
     /// Esc during a drag: the sound is the song's again.
     pub fn cancel_mix_preview(&mut self, effects: &mut Vec<Effect>) {
         self.mixer.previews.clear();
+        self.cancel_hands();
         self.cancel_plugin_drags(effects);
     }
 
@@ -387,7 +430,7 @@ impl Play {
             value,
         };
         let edit = |p: &Play| mixer::set_param(p.doc(), strip, slot, kind, param, value);
-        self.mix(preview, true, edit, effects);
+        self.mix(preview, true, true, edit, effects);
         (typed < spec.min || typed > spec.max).then_some(StatusMessage::ParamClamped {
             to: ParamEnd::Builtin {
                 effect,

@@ -791,12 +791,6 @@ impl Play {
             })
             .collect()
     }
-
-    /// The points of a lane, binary (`meloet_protocol::LanePoints`). There are no lanes yet:
-    /// they come with round 6 step 2.
-    pub fn lane(&self, _lane_id: u32) -> Option<Vec<u8>> {
-        None
-    }
 }
 
 #[cfg(test)]

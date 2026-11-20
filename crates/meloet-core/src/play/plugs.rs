@@ -220,23 +220,42 @@ impl Play {
         change: PluginChange,
         effects: &mut Vec<Effect>,
     ) {
-        let Some(plug) = self.plugs.of(ticket) else {
-            return;
+        // The lanes that rest with this step (docs/architecture.md 21-10, 21-11).
+        let rests = match change {
+            PluginChange::Param(param) => self.take_param_rests(ticket, param),
+            PluginChange::Window => self.take_window_rests(ticket),
         };
+        let edit = self.plugin_state_edit(ticket, state, change);
+        if let Some(edit) = &edit
+            && let (Some(place), Some(plug)) = (self.plugin_place_of(ticket), self.plugs.of(ticket))
+            && let Some(now) = edit.doc.plugin(place).filter(|p| p.key == plug.plugin.key)
+        {
+            let now = now.clone();
+            if let Some(plug) = self.plugs.of_mut(ticket) {
+                plug.plugin = now;
+            }
+        }
+        self.apply_resting(edit, &rests, true, effects);
+    }
+
+    fn plugin_place_of(&self, ticket: u64) -> Option<PluginPlace> {
+        self.place_of(self.plugs.of(ticket)?.spot)
+    }
+
+    /// The step that gives the song the plugin's state, if it is another.
+    fn plugin_state_edit(
+        &self,
+        ticket: u64,
+        state: Arc<[u8]>,
+        change: PluginChange,
+    ) -> Option<meloet_model::Edit> {
+        let plug = self.plugs.of(ticket)?;
         // The state it started with, said again: the song has that as "as it starts".
         if plug.plugin.state.is_empty() && plug.base.as_ref() == Some(&state) {
-            return;
+            return None;
         }
-        let (Some(place), key) = (self.place_of(plug.spot), plug.plugin.key.clone()) else {
-            return;
-        };
-        let Ok(edit) = set_plugin_state(self.doc(), place, &key, state, change) else {
-            return;
-        };
-        if let (Some(now), Some(plug)) = (edit.doc.plugin(place), self.plugs.of_mut(ticket)) {
-            plug.plugin = now.clone();
-        }
-        self.apply_own(edit, effects);
+        let place = self.place_of(plug.spot)?;
+        set_plugin_state(self.doc(), place, &plug.plugin.key, state, change).ok()
     }
 
     pub(super) fn has_plugin(&self, key: &str) -> bool {

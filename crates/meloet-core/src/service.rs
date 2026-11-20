@@ -1678,10 +1678,16 @@ impl Worker {
     }
 
     fn heard(&self) -> Option<Heard> {
+        self.heard_at(monotonic_us())
+    }
+
+    /// What was heard at `t_us` (`monotonic_us`): for a value moved in a plugin's own window
+    /// at the time the plugin process gave it (docs/architecture.md 21-9).
+    fn heard_at(&self, t_us: u64) -> Option<Heard> {
         if !self.shared.stream.open.load(Relaxed) {
             return None;
         }
-        self.audio.handle.heard_now().map(|h| Heard {
+        self.audio.handle.heard_at(t_us).map(|h| Heard {
             tick: h.tick,
             state: transport_state(h.state),
             lap: h.lap,

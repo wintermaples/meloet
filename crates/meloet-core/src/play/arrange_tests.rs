@@ -222,6 +222,7 @@ fn three_clips() -> (Play, ClipId, ClipId, ClipId) {
         sends: [meloet_model::Gain::SILENT; 2],
         muted: false,
         clips: Vec::new(),
+        automation: Vec::new(),
     }));
     let mut ids = Vec::new();
     for (track, origin, key) in [(1, 0, 60), (1, 4 * BAR, 62), (2, 2 * BAR, 40)] {

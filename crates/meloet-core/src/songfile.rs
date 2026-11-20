@@ -12,11 +12,12 @@ use std::sync::Arc;
 
 use meloet_model::effects::{EffectKind, ParamShape};
 use meloet_model::{
-    BuiltinInstrument, Bus, Channel, Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Gain,
-    Grid, Insert, InsertId, Inserts, InstrumentRef, Kept, MAX_TICK, Marker, MarkerId, Meter,
-    MeterChange, MusicalScale, Note, OriginIndex, Pan, PluginRef, QuantizeAlign, QuantizeSettings,
-    Return, RollSettings, ScaleMode, Session, Sf2Ref, Song, Take, TakeId, TakeOrigin, Tempo,
-    TempoMap, TempoPoint, TickRange, Timeline, Track, TrackColor, TrackId, mixer,
+    AutoPoint, AutoTarget, BuiltinInstrument, Bus, Channel, Clip, ClipId, ClipTake, ControlPoint,
+    ControlValue, Doc, Gain, Grid, Insert, InsertId, Inserts, InstrumentRef, Kept, Lane, LaneId,
+    MAX_TICK, Marker, MarkerId, Meter, MeterChange, MusicalScale, Note, OriginIndex, Pan,
+    PluginRef, QuantizeAlign, QuantizeSettings, Return, RollSettings, ScaleMode, Session, Sf2Ref,
+    Song, Take, TakeId, TakeOrigin, Tempo, TempoMap, TempoPoint, TickRange, Timeline, Track,
+    TrackColor, TrackId, mixer,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -26,8 +27,9 @@ pub const FORMAT: &str = "meloet-song";
 /// origin take and the origin index of each note. 3: instruments by name, a song may have no
 /// tracks, the session has no armed track, and the mixer (pan, sends, inserts, the returns
 /// and the master). 4: plugins and SF2 presets as instruments, plugins in insert slots, and
-/// the mark of an insert that is passed by. 5: tempo points, meter changes and markers, and
-/// the loop's range in the song (what undo covers) and not in the session.
+/// the mark of an insert that is passed by. 5: tempo points, meter changes and markers, the
+/// loop's range in the song (what undo covers) and not in the session, the ids of the inserts,
+/// the automation lanes of a track, and the folded lanes in the session.
 pub const VERSION: u32 = 5;
 pub const EXTENSION: &str = "meloet";
 /// Tracks the engine has room for.
@@ -167,8 +169,34 @@ struct TrackFile {
     clips: Vec<ClipFile>,
     #[serde(default)]
     plugins: Vec<serde_json::Value>,
+    /// Version 5: the lanes (`LaneFile`), in the order they were added. Read in `lanes_of`
+    /// once the inserts have their ids.
     #[serde(default)]
     automation: Vec<serde_json::Value>,
+}
+
+/// `{"target": {"kind": "volume"}, "step": false, "resting": false, "points": [[0, 0.8],
+/// [1920, 0.5]]}`. `target` is one of `{"kind": "volume" | "pan" | "mute"}`,
+/// `{"kind": "send", "bus": "a" | "b"}`, `{"kind": "instrument", "param": 12}` (the plugin's
+/// own number) and `{"kind": "insert", "insert": 7, "param": "threshold" | 12}` (the insert's
+/// id; the parameter's name for an effect of meloet, the plugin's own number for a plugin).
+/// The points are `[tick, value]`, the value the place of the knob, 0..=1. A lane's id is
+/// not written: it is given when the song is read.
+#[derive(Serialize, Deserialize)]
+struct LaneFile {
+    target: serde_json::Value,
+    #[serde(default)]
+    step: bool,
+    #[serde(default)]
+    resting: bool,
+    points: Vec<(u64, f32)>,
+}
+
+/// `{"track": 1, "target": {…}}`, the target as in `LaneFile`.
+#[derive(Serialize, Deserialize)]
+struct LaneRefFile {
+    track: u32,
+    target: serde_json::Value,
 }
 
 /// The fields of an entry that is kept as it was read: the ones this meloet knows are taken
@@ -437,6 +465,127 @@ pub(crate) fn renumber_inserts(doc: &mut Doc) {
         insert.id = NO_INSERT_ID;
     }
     give_insert_ids(doc, |_| false).expect("ids are left");
+}
+
+fn target_json(track: &Track, target: AutoTarget) -> serde_json::Value {
+    use serde_json::json;
+    match target {
+        AutoTarget::Volume => json!({"kind": "volume"}),
+        AutoTarget::Pan => json!({"kind": "pan"}),
+        AutoTarget::Mute => json!({"kind": "mute"}),
+        AutoTarget::Send(bus) => json!({"kind": "send", "bus": bus_name(bus)}),
+        AutoTarget::Instrument { param } => json!({"kind": "instrument", "param": param}),
+        AutoTarget::Insert { insert, param } => {
+            let kind = (track.channel.inserts.iter().flatten())
+                .find(|i| i.id == insert)
+                .and_then(Insert::kind);
+            match kind.and_then(|k| k.param(param)) {
+                Some(spec) => json!({"kind": "insert", "insert": insert.0, "param": spec.name}),
+                None => json!({"kind": "insert", "insert": insert.0, "param": param}),
+            }
+        }
+    }
+}
+
+fn bus_name(bus: Bus) -> &'static str {
+    match bus {
+        Bus::A => "a",
+        Bus::B => "b",
+    }
+}
+
+/// What a target of the file names on `track`; `None` when it is not understood or the track
+/// does not have it (an effect this meloet does not know left its slot empty).
+fn target_of(track: &Track, value: &serde_json::Value) -> Option<AutoTarget> {
+    let number = |name: &str| u32::try_from(value.get(name)?.as_u64()?).ok();
+    let target = match value.get("kind")?.as_str()? {
+        "volume" => AutoTarget::Volume,
+        "pan" => AutoTarget::Pan,
+        "mute" => AutoTarget::Mute,
+        "send" => AutoTarget::Send(match value.get("bus")?.as_str()? {
+            "a" => Bus::A,
+            "b" => Bus::B,
+            _ => return None,
+        }),
+        "instrument" => AutoTarget::Instrument {
+            param: number("param")?,
+        },
+        "insert" => {
+            let insert = InsertId(number("insert")?);
+            let held = (track.channel.inserts.iter().flatten()).find(|i| i.id == insert)?;
+            let param = match (held.kind(), value.get("param")?) {
+                (Some(kind), serde_json::Value::String(name)) => kind.param_index(name)?,
+                (None, _) => number("param")?,
+                (Some(_), _) => return None,
+            };
+            AutoTarget::Insert { insert, param }
+        }
+        _ => return None,
+    };
+    track.has_target(target).then_some(target)
+}
+
+/// Whether a lane of `target` holds steps: what the target itself says, and for a plugin's
+/// parameter what the file says.
+fn steps_of(track: &Track, target: AutoTarget, file: bool) -> bool {
+    match target {
+        AutoTarget::Volume | AutoTarget::Pan | AutoTarget::Send(_) => false,
+        AutoTarget::Mute => true,
+        AutoTarget::Instrument { .. } => file,
+        AutoTarget::Insert { insert, param } => {
+            let held = track
+                .channel
+                .inserts
+                .iter()
+                .flatten()
+                .find(|i| i.id == insert);
+            match held.and_then(Insert::kind).and_then(|k| k.param(param)) {
+                Some(spec) => !matches!(spec.shape, ParamShape::Continuous),
+                None => file,
+            }
+        }
+    }
+}
+
+/// The lanes of a track, each with an id from `next_id`. A lane whose target is not
+/// understood, or that the track does not have, is skipped. `None` for two lanes of one
+/// target, and for points out of order, on one tick, past the end of the song, or with a
+/// value outside 0..=1.
+fn lanes_of(
+    track: &Track,
+    files: Vec<serde_json::Value>,
+    next_id: &mut u32,
+) -> Option<Vec<Arc<Lane>>> {
+    let mut lanes: Vec<Arc<Lane>> = Vec::with_capacity(files.len());
+    for value in files {
+        let Ok(file) = serde_json::from_value::<LaneFile>(value) else {
+            continue;
+        };
+        let Some(target) = target_of(track, &file.target) else {
+            continue;
+        };
+        if lanes.iter().any(|l| l.target == target) {
+            return None;
+        }
+        let points: Vec<AutoPoint> = (file.points.into_iter())
+            .map(|(tick, value)| AutoPoint { tick, value })
+            .collect();
+        let ordered = points.windows(2).all(|w| w[0].tick < w[1].tick);
+        let inside = (points.iter()).all(|p| p.tick <= MAX_TICK && (0.0..=1.0).contains(&p.value));
+        if !ordered || !inside {
+            return None;
+        }
+        let id = LaneId(*next_id);
+        *next_id = next_id.checked_add(1)?;
+        lanes.push(Arc::new(Lane {
+            id,
+            target,
+            step: steps_of(track, target, file.step),
+            points,
+            resting: file.resting,
+        }));
+    }
+    Some(lanes)
 }
 
 fn mixer_file(doc: &Doc) -> MixerFile {
@@ -739,6 +888,9 @@ struct SessionFile {
     scale: Option<ScaleFile>,
     #[serde(default, deserialize_with = "or_default")]
     quantize: Option<QuantizeFile>,
+    /// Version 5: the folded lanes. One that is not understood, or names no lane, is skipped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    folded_lanes: Vec<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -852,7 +1004,17 @@ pub fn encode(song: &Song) -> Vec<u8> {
                 })
                 .collect(),
             plugins: Vec::new(),
-            automation: Vec::new(),
+            automation: (t.automation.iter())
+                .map(|l| {
+                    let file = LaneFile {
+                        target: target_json(t, l.target),
+                        step: l.step,
+                        resting: l.resting,
+                        points: l.points.iter().map(|p| (p.tick, p.value)).collect(),
+                    };
+                    serde_json::to_value(file).expect("a lane always serializes")
+                })
+                .collect(),
         })
         .collect();
     let s = &song.session;
@@ -920,6 +1082,16 @@ pub fn encode(song: &Song) -> Vec<u8> {
                     align: align_file(q.align),
                 }
             }),
+            folded_lanes: (s.folded_lanes.iter())
+                .filter_map(|&(track, target)| {
+                    let t = doc.track(track)?;
+                    let file = LaneRefFile {
+                        track: track.0,
+                        target: target_json(t, target),
+                    };
+                    Some(serde_json::to_value(file).expect("a lane always serializes"))
+                })
+                .collect(),
         },
     };
     let mut bytes = serde_json::to_vec(&file).expect("a song always serializes");
@@ -1061,6 +1233,7 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
     let mut track_ids = HashSet::new();
     let mut clip_ids = HashSet::new();
     let mut tracks = Vec::with_capacity(tracks_n);
+    let mut lane_files = Vec::with_capacity(tracks_n);
     for t in d.tracks {
         if !track_ids.insert(t.id) {
             return None;
@@ -1113,7 +1286,9 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
             sends: (t.sends).map_or([Gain::SILENT; 2], |s| [gain_of(s.a), gain_of(s.b)]),
             muted: t.muted,
             clips,
+            automation: Vec::new(),
         }));
+        lane_files.push(t.automation);
     }
     if clip_ids
         .iter()
@@ -1209,6 +1384,12 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
     give_insert_ids(&mut doc, |id| {
         clip_ids.contains(&id) || takes.contains_key(&id) || marker_ids.contains(&id)
     })?;
+    if version >= 5 {
+        for (slot, files) in doc.tracks.iter_mut().zip(lane_files) {
+            let track = Arc::make_mut(slot);
+            track.automation = lanes_of(track, files, &mut doc.next_id)?;
+        }
+    }
     let known = |id: u32| track_ids.contains(&id).then_some(TrackId(id));
     let roll = roll_settings(&s);
     let session = Session {
@@ -1220,6 +1401,14 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
         loop_on: s.loop_on,
         roll,
         soloed: BTreeSet::new(),
+        folded_lanes: (s.folded_lanes.into_iter())
+            .filter_map(|v| {
+                let file: LaneRefFile = serde_json::from_value(v).ok()?;
+                let t = doc.track(TrackId(file.track))?;
+                let target = target_of(t, &file.target)?;
+                t.lane(target).map(|_| (t.id, target))
+            })
+            .collect(),
     };
     Some(Song { doc, session })
 }

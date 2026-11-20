@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use crate::automation::{AutoTarget, Lane};
 use crate::chunked::ChunkedVec;
 use crate::mixer::{self, Channel, Return, Sends};
 use crate::roll::{QuantizeSettings, RollSettings};
@@ -166,6 +167,8 @@ pub struct Track {
     pub muted: bool,
     /// In order of start, never overlapping.
     pub clips: Vec<Arc<Clip>>,
+    /// The automation lanes, in the order they were added; one for a target at most.
+    pub automation: Vec<Arc<Lane>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -217,6 +220,7 @@ impl Doc {
                 sends: mixer::new_track_sends(&InstrumentRef::GRAND_PIANO),
                 muted: false,
                 clips: Vec::new(),
+                automation: Vec::new(),
             })],
             returns: mixer::new_song_returns(),
             master: mixer::new_song_master(),
@@ -256,6 +260,8 @@ pub struct Session {
     pub roll: RollSettings,
     /// While any track of the song is here, only these play (a muted one still does not).
     pub soloed: BTreeSet<TrackId>,
+    /// The folded automation lanes (▸ of a lane's header). Saved with the song.
+    pub folded_lanes: Vec<(TrackId, AutoTarget)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -273,6 +279,7 @@ impl Song {
                 loop_on: false,
                 roll: RollSettings::default(),
                 soloed: BTreeSet::new(),
+                folded_lanes: Vec::new(),
             },
         }
     }

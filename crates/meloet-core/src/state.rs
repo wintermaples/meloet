@@ -17,8 +17,8 @@ use meloet_model::{BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace
 use meloet_plugin::ScanCache;
 use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
-    AppState, AudioView, AutomationView, Availability, Band, ChooserView, ChosenState, Command,
-    EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InputsView, InstrumentKind,
+    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
+    EndpointView, FileDropView, Friendly, Hint, HistoryRow, InputsView, InstrumentKind,
     KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
     LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
     PluginRole, PluginWindowKind, QuantizeSettings, RecoveryCause, ScanView, SettingsDialogView,
@@ -510,6 +510,11 @@ impl Model {
         &self.play
     }
 
+    #[cfg(test)]
+    pub(crate) fn play_mut(&mut self) -> &mut Play {
+        &mut self.play
+    }
+
     pub fn new(settings: Settings) -> Model {
         let scale = if SCALES.contains(&settings.scale) {
             settings.scale
@@ -866,6 +871,10 @@ impl Model {
         self.play.sync_panel(&mut effects);
         self.play.sync_sample(&mut effects);
         self.play.sync_sounds(&mut effects);
+        self.play.sync_automation(&mut effects);
+        if let Some(n) = self.play.take_auto_notice() {
+            self.notice = Some(n);
+        }
         if self.loading_said != self.play.target_loading() {
             self.loading_said = None;
         }
@@ -1003,7 +1012,8 @@ impl Model {
                 let fold = self.bands.toggle(band_of(band));
                 // Said once as the mixer opens; a band folded for it is said instead.
                 if !mixer_was_open && self.mixer_is_open() {
-                    self.notice = self.play.mixer_passes_by();
+                    self.notice =
+                        (self.play.mixer_passes_by()).or_else(|| self.play.automation_moving());
                 }
                 if let Some(fold) = fold {
                     let folded = bottom_band(fold.band);
@@ -1300,17 +1310,40 @@ impl Model {
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::DeleteTake { clip } => self.play.delete_take(clip, effects),
-            // Automation and the jump of the history band come with round 6 steps 2 and 3.
-            Command::AddLane { .. }
-            | Command::DeleteLane { .. }
-            | Command::FoldLane { .. }
-            | Command::AddAutoPoint { .. }
-            | Command::MoveAutoPoints { .. }
-            | Command::DeleteAutoPoints { .. }
-            | Command::SelectAutoPoints { .. }
-            | Command::SetLaneWrite { .. }
-            | Command::RestoreLane { .. }
-            | Command::HistoryJump { .. } => {}
+            Command::AddLane { track, target } => self.play.add_lane(track, target, effects),
+            Command::DeleteLane { track, target } => {
+                self.play.delete_lane(track, target, effects);
+            }
+            Command::FoldLane {
+                track,
+                target,
+                folded,
+            } => self.play.fold_lane(track, target, folded),
+            Command::AddAutoPoint { lane, tick, value } => {
+                self.play.add_auto_point(lane, tick, value, effects);
+            }
+            Command::MoveAutoPoints {
+                lane,
+                points,
+                d_tick,
+                d_value,
+            } => self
+                .play
+                .move_auto_points(lane, &points, d_tick, d_value, effects),
+            Command::DeleteAutoPoints { lane, points } => {
+                self.play.delete_auto_points(lane, &points, effects);
+            }
+            Command::SelectAutoPoints { lane, points } => {
+                self.play.select_auto_points(lane, points);
+            }
+            Command::SetLaneWrite { track, target, on } => {
+                self.play.set_lane_write(track, target, on);
+            }
+            Command::RestoreLane { track, target } => {
+                self.say(|p| p.restore_lane(track, target, effects));
+            }
+            // The jump of the history band comes with round 6 step 3.
+            Command::HistoryJump { .. } => {}
             Command::Undo => self.play.undo(effects),
             Command::Redo => self.play.redo(effects),
             Command::NewSong => self.new_song(effects),
@@ -2023,8 +2056,7 @@ impl Model {
         AppState {
             song: song_view(&self.play, self.song_file(), &library, &self.catalog),
             timeline: self.play.timeline_view(),
-            // The lanes come with round 6 step 2.
-            automation: AutomationView::default(),
+            automation: self.play.automation_view(),
             history: self.play.history_view(),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
@@ -2175,6 +2207,9 @@ impl Model {
             });
         }
         if let Some(m) = self.play.moving_status() {
+            return Some(m);
+        }
+        if let Some(m) = self.play.writing_status() {
             return Some(m);
         }
         // Before a notice: it answers the key just played, and no command puts it away.
@@ -2342,7 +2377,7 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
                 slots: play.slots_of(StripId::Track(t.id), &t.channel.inserts),
                 muted: t.muted,
                 soloed: play.is_soloed(t.id),
-                lanes: Vec::new(),
+                lanes: play.lanes_of(t.id),
                 clips: play.clips_of(t.id),
             })
             .collect(),

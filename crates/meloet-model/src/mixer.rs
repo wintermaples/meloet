@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use crate::automation::drop_orphan_lanes;
 use crate::edit::{Edit, EditError, Ids, track_index};
 use crate::effects::{EffectKind, delay, reverb};
 use crate::history::StepKind;
@@ -309,6 +310,8 @@ fn with_channel(
             let ti = track_index(doc, id)?;
             let mut track = Track::clone(&doc.tracks[ti]);
             change(&mut track.channel)?;
+            // What went out of a slot takes the lanes of its parameters along.
+            drop_orphan_lanes(&mut track);
             new.tracks[ti] = Arc::new(track);
         }
         StripId::Return(bus) => {
@@ -620,6 +623,7 @@ pub fn remove_missing(doc: &Doc, missing: Missing) -> Result<Edit, EditError> {
             tracks += 1;
         }
         empty(&mut track.channel);
+        drop_orphan_lanes(&mut track);
         *slot = Arc::new(track);
     }
     for slot in &mut new.returns {

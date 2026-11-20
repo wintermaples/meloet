@@ -1,16 +1,27 @@
 //! Mute and solo: which tracks the song plays. Mute is part of the song (a step); solo is only
 //! for listening, kept in the session.
 
-use meloet_model::TrackId;
 use meloet_model::edit;
+use meloet_model::{AutoTarget, TrackId};
 
 use super::{EngineOp, Play};
 use crate::state::Effect;
 
 impl Play {
     /// Also while counting in or recording: it does not move where the take is recorded.
+    /// A lane of the mute takes the press as the mixer's controls do (docs/architecture.md
+    /// 21-11): with 「● 書く」 on while the song plays, a point where it was pressed; else,
+    /// when it moves the mute, the mute and its rest as one step.
     pub fn toggle_mute(&mut self, track: u32, effects: &mut Vec<Effect>) {
-        if let Ok(e) = edit::toggle_mute(self.doc(), TrackId(track)) {
+        let track = TrackId(track);
+        if self.mute_pressed(track, effects) {
+            return;
+        }
+        let edit = edit::toggle_mute(self.doc(), track);
+        let key = (track, AutoTarget::Mute);
+        if self.lane_at(key).is_some_and(|l| l.moves()) {
+            self.rest_with(key, edit, effects);
+        } else if let Ok(e) = edit {
             self.apply(e, effects);
         }
     }

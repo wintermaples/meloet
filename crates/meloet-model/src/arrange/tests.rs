@@ -45,6 +45,7 @@ fn two_tracks() -> Doc {
         sends: [crate::Gain::SILENT; 2],
         muted: false,
         clips: Vec::new(),
+        automation: Vec::new(),
     }));
     doc
 }

@@ -89,6 +89,7 @@ fn song(rng: &mut Rng) -> Song {
         sends: [meloet_model::Gain::SILENT; 2],
         muted: false,
         clips: Vec::new(),
+        automation: Vec::new(),
     }));
     let take = |rng: &mut Rng, origin: u64, length: u64| NewTake {
         origin,

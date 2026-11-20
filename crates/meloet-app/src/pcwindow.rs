@@ -28,10 +28,24 @@ pub enum Pick {
     /// The open window again, for an SF2 file to add to the shelf (spec 6 has one title for
     /// opening: 「ひらく」).
     Sf2,
+    /// The open window again, for audio files to bring into the song or to take for one
+    /// that is missing (the same title). `many`: more than one may be chosen.
+    Audio {
+        many: bool,
+    },
 }
 
 /// The ending of the files the SF2 window offers.
 const SF2_EXTENSION: &str = "sf2";
+
+/// The patterns of a filter that takes files with these endings, in small and in capital
+/// letters.
+#[cfg(target_os = "linux")]
+fn patterns(endings: &[&str]) -> Vec<String> {
+    (endings.iter())
+        .flat_map(|e| [format!("*.{e}"), format!("*.{}", e.to_uppercase())])
+        .collect()
+}
 
 #[cfg(target_os = "linux")]
 mod imp {
@@ -41,22 +55,25 @@ mod imp {
     use gtk::prelude::*;
     use tauri::WebviewWindow;
 
-    use super::{FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE, SF2_EXTENSION};
+    use super::{FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE, SF2_EXTENSION, patterns};
 
     thread_local! {
         // A native dialog is not a widget: nothing else keeps it alive until it answers.
         static SHOWN: RefCell<Option<gtk::FileChooserNative>> = const { RefCell::new(None) };
     }
 
-    /// Main thread only. `answer` gets the path, or `None` when the window was put away.
+    /// Main thread only. `answer` gets the paths chosen (one, but for `Pick::Audio` with
+    /// `many`), or none when the window was put away.
     pub fn pick(
         window: &WebviewWindow,
         pick: Pick,
         folder: Option<PathBuf>,
-        answer: impl FnOnce(Option<PathBuf>) + 'static,
+        answer: impl FnOnce(Vec<PathBuf>) + 'static,
     ) {
         let (title, action) = match pick {
-            Pick::SongFile | Pick::Sf2 => (OPEN_TITLE, gtk::FileChooserAction::Open),
+            Pick::SongFile | Pick::Sf2 | Pick::Audio { .. } => {
+                (OPEN_TITLE, gtk::FileChooserAction::Open)
+            }
             Pick::Folder | Pick::PluginPlace => {
                 (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder)
             }
@@ -83,19 +100,31 @@ mod imp {
         if pick == Pick::Sf2 {
             // Only SF2 files can be chosen, whatever case their ending is written in.
             let filter = gtk::FileFilter::new();
-            let lower = format!("*.{SF2_EXTENSION}");
-            filter.add_pattern(&lower);
-            filter.add_pattern(&lower.to_uppercase());
-            filter.set_name(Some(&lower));
+            for pattern in patterns(&[SF2_EXTENSION]) {
+                filter.add_pattern(&pattern);
+            }
+            filter.set_name(Some(&format!("*.{SF2_EXTENSION}")));
             dialog.add_filter(filter);
+        }
+        if let Pick::Audio { many } = pick {
+            // The files that read as audio (spec 3 「読めるファイル」).
+            let endings = meloet_protocol::AUDIO_EXTENSIONS;
+            let filter = gtk::FileFilter::new();
+            for pattern in patterns(&endings) {
+                filter.add_pattern(&pattern);
+            }
+            filter.set_name(Some(&endings.map(|e| format!("*.{e}")).join(" ")));
+            dialog.add_filter(filter);
+            dialog.set_select_multiple(many);
         }
         let answer = RefCell::new(Some(answer));
         dialog.connect_response(move |dialog, response| {
-            let path = (response == gtk::ResponseType::Accept)
-                .then(|| dialog.filename())
-                .flatten();
+            let paths = match response {
+                gtk::ResponseType::Accept => dialog.filenames(),
+                _ => Vec::new(),
+            };
             if let Some(answer) = answer.borrow_mut().take() {
-                answer(path);
+                answer(paths);
             }
             SHOWN.with(|s| s.borrow_mut().take());
         });
@@ -118,9 +147,9 @@ mod imp {
         _: &WebviewWindow,
         _: Pick,
         _: Option<PathBuf>,
-        answer: impl FnOnce(Option<PathBuf>) + 'static,
+        answer: impl FnOnce(Vec<PathBuf>) + 'static,
     ) {
-        answer(None);
+        answer(Vec::new());
     }
 }
 
@@ -167,12 +196,13 @@ fn show_items(path: &std::path::Path) -> Result<(), dbus::Error> {
 #[cfg(not(target_os = "linux"))]
 pub fn show_file(_: PathBuf) {}
 
-/// Main thread only. `answer` gets the path, or `None` when the window was put away.
+/// Main thread only. `answer` gets the paths chosen (more than one only for `Pick::Audio`
+/// with `many`), or none when the window was put away.
 pub fn pick(
     window: &WebviewWindow,
     pick: Pick,
     folder: Option<PathBuf>,
-    answer: impl FnOnce(Option<PathBuf>) + 'static,
+    answer: impl FnOnce(Vec<PathBuf>) + 'static,
 ) {
     imp::pick(window, pick, folder, answer);
 }

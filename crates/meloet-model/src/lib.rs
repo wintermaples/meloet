@@ -23,7 +23,11 @@ pub mod tempo_map;
 pub mod time;
 pub mod timeline;
 
-pub use arrange::{ClipEdge, ClipEdited};
+pub use arrange::{ClipEdge, ClipEdited, ClipsSplit};
+pub use audio::clips::{
+    FadeEnd, ImportPlan, ImportedAudio, ImportedClip, fit_fades, import_audio, remove_audio,
+    set_clip_fade, set_clip_gain,
+};
 pub use audio::fade::{clip_fade_gain, fade_gain};
 pub use audio::record::{NewAudio, NewAudioTake, VocalRecording, add_vocal_recordings};
 pub use audio::{

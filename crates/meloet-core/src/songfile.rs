@@ -1799,6 +1799,16 @@ pub fn save(path: &Path, song: &Song) -> io::Result<()> {
 /// (another song, or anything), the name gets " 2", " 3", … and so does the song. Returns the
 /// path and the name the song has now.
 pub fn save_new(base: &Path, song: &Song) -> io::Result<(PathBuf, String)> {
+    save_new_with(base, song, |_| Ok(()))
+}
+
+/// As [`save_new`]. `before` is called with the new folder before the song's file is
+/// written into it: the song's audio is put there first (docs/architecture.md 22-4).
+pub fn save_new_with(
+    base: &Path,
+    song: &Song,
+    before: impl Fn(&Path) -> io::Result<()>,
+) -> io::Result<(PathBuf, String)> {
     fs::create_dir_all(base)?;
     let stem = folder_name(&song.doc.name);
     for n in 1u32.. {
@@ -1816,9 +1826,10 @@ pub fn save_new(base: &Path, song: &Song) -> io::Result<(PathBuf, String)> {
         let path = dir.join(format!("{name}.{EXTENSION}"));
         let mut named = song.clone();
         named.doc.name = name.clone();
-        return match save(&path, &named) {
+        return match before(&dir).and_then(|()| save(&path, &named)) {
             Ok(()) => Ok((path, name)),
             Err(e) => {
+                // Only when it is empty: audio that was moved in stays where it is found.
                 let _ = fs::remove_dir(&dir);
                 Err(e)
             }

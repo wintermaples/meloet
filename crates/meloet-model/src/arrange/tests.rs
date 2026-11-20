@@ -630,3 +630,71 @@ fn a_trimmed_head_plays_only_inside_the_clip() {
     .collect();
     assert_eq!(short, want);
 }
+
+#[test]
+fn a_keys_clip_cut_in_two_ends_the_notes_over_the_cut_in_the_left_half() {
+    // Bar 2: a note over the cut (at the half bar), one before it and one after it.
+    let (doc, a) = record(
+        &two_tracks(),
+        T1,
+        take(
+            BAR,
+            BAR,
+            vec![note(0, Q, 60), note(Q, 2 * Q, 62), note(3 * Q, Q, 64)],
+        ),
+    );
+    let (_, old) = doc.clip(a).unwrap();
+    let old_take = old.active_take().take.clone();
+    let cut = split_clips(&doc, &[a], BAR + 2 * Q).unwrap();
+    assert_eq!(cut.edit.step, StepKind::SplitClips { count: 1 });
+    let new = &cut.edit.doc;
+    let (_, left) = new.clip(a).unwrap();
+    let (_, right) = new.clip(cut.right[0]).unwrap();
+    assert_eq!(
+        spans(new, T1),
+        [(a, BAR, BAR + 2 * Q), (cut.right[0], BAR + 2 * Q, 2 * BAR)]
+    );
+    // The left half has a take with a new id, the right half the take as it was.
+    assert!(Arc::ptr_eq(&right.active_take().take, &old_take));
+    let left_take = &left.active_take().take;
+    assert_ne!(left_take.id, old_take.id);
+    assert!(left_take.id.0 >= doc.next_id);
+    assert_eq!(
+        left_take
+            .notes
+            .iter()
+            .map(|n| (n.start, n.length))
+            .collect::<Vec<_>>(),
+        [(0, Q), (Q, Q), (3 * Q, Q)]
+    );
+    assert_eq!(left.note_count(), 2);
+    assert_eq!(right.note_count(), 1);
+    // What sounds: every note once, the one over the cut ending at it.
+    assert_eq!(ons(new, T1), [(BAR, 60), (BAR + Q, 62), (BAR + 3 * Q, 64)]);
+    assert_eq!(positions(new, cut.right[0]), positions(&doc, a));
+
+    // A cut that no note is over makes no take.
+    let cut = split_clips(&doc, &[a], BAR + Q).unwrap();
+    let (_, left) = cut.edit.doc.clip(a).unwrap();
+    assert!(Arc::ptr_eq(&left.active_take().take, &old_take));
+}
+
+#[test]
+fn clips_of_several_tracks_are_cut_as_one_step() {
+    let (doc, a, _) = song();
+    let (doc, c) = record(&doc, T2, take(BAR, 2 * BAR, vec![note(0, 100, 40)]));
+    let cut = split_clips(&doc, &[a, c, ClipId(999)], BAR + Q).unwrap();
+    assert_eq!(cut.edit.step, StepKind::SplitClips { count: 2 });
+    assert_eq!(cut.left, [a, c]);
+    assert_eq!(spans(&cut.edit.doc, T1).len(), 3);
+    assert_eq!(spans(&cut.edit.doc, T2).len(), 2);
+    let mut now = doc.clone();
+    let mut history = crate::History::new();
+    history.apply(&mut now, cut.edit);
+    assert_eq!(history.undo_count(), 1);
+    history.undo(&mut now);
+    // Ids are never given twice: the count stays where the step left it.
+    assert!(now.next_id > doc.next_id);
+    now.next_id = doc.next_id;
+    assert!(now == doc);
+}

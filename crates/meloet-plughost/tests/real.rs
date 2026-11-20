@@ -451,7 +451,21 @@ fn song_at(frame: u64, bpm: f64) -> Transport {
 /// Holds one key for `blocks` blocks while the song plays at `bpm`, and gives how bright each
 /// block was (how steep the wave is for its level: the sequencer moves the filter).
 fn sequence_at(host: &mut Host, slot: u32, state: &[u8], bpm: f64, blocks: usize) -> Vec<f32> {
-    let mut engine = load(host, slot, SURGE_LV2);
+    sequence_along(host, slot, SURGE_LV2, state, blocks, &|frame| {
+        song_at(frame, bpm)
+    })
+}
+
+/// As `sequence_at`, with the song `song` gives for the first frame of each block.
+fn sequence_along(
+    host: &mut Host,
+    slot: u32,
+    plugin: (&str, &str),
+    state: &[u8],
+    blocks: usize,
+    song: &dyn Fn(u64) -> Transport,
+) -> Vec<f32> {
+    let mut engine = load(host, slot, plugin);
     assert_eq!(
         host.ask_with(Request::SetState { slot }, state).0,
         Reply::Ok
@@ -461,7 +475,7 @@ fn sequence_at(host: &mut Host, slot: u32, state: &[u8], bpm: f64, blocks: usize
         assert!(engine.begin(256));
         engine.write_input(0, &[0.0; 256]);
         engine.write_input(1, &[0.0; 256]);
-        engine.set_transport(&song_at(n as u64 * 256, bpm));
+        engine.set_transport(&song(n as u64 * 256));
         if n == 20 {
             assert!(engine.push_event(note_on(48)));
         }
@@ -545,5 +559,104 @@ fn surge_xt_lv2_runs_its_sequencer_at_the_tempo_of_the_song() {
             (lag as f64 - half_bar).abs() < half_bar * 0.02 + 1.0,
             "at {bpm} the sequence repeats after {lag} blocks, half a bar is {half_bar:.1}"
         );
+    }
+}
+
+/// The song at `frame` of a run in 4/4 whose tempo goes in a straight line over the beats
+/// from `from` to `to` in `quarters` quarter notes (docs/architecture.md 21-1), playing. As
+/// the engine does it, the tempo is the one at the frame, not a mean over the block.
+fn ramp_at(frame: u64, from: f64, to: f64, quarters: f64) -> Transport {
+    let slope = (to - from) / quarters;
+    let minutes = frame as f64 / 48_000.0 / 60.0;
+    let at = from / slope * (slope * minutes).exp_m1();
+    Transport {
+        tempo_bpm: from + slope * at,
+        position_quarters: at,
+        bar_start_quarters: (at / 4.0).floor() * 4.0,
+        bar: (at / 4.0) as u64,
+        ..song_at(frame, from)
+    }
+}
+
+/// `series` (one value a block) laid out again over the song: 32 values to a quarter note.
+fn over_quarters(series: &[f32], quarters_at: &dyn Fn(usize) -> f64) -> Vec<f32> {
+    let mut out = Vec::new();
+    let mut block = 0;
+    while block + 1 < series.len() {
+        let want = out.len() as f64 / 32.0;
+        let (a, b) = (quarters_at(block), quarters_at(block + 1));
+        if want > b {
+            block += 1;
+            continue;
+        }
+        let part = ((want - a) / (b - a)).clamp(0.0, 1.0) as f32;
+        out.push(series[block] + (series[block + 1] - series[block]) * part);
+    }
+    out
+}
+
+/// The tempo meloet puts into the `ProcessContext` reaches a VST3 plugin, also while it
+/// changes: Surge XT's step sequencers, set to run with the tempo, play their 16 steps in
+/// half a bar of the song at four tempos, and all along a ramp from 90 to 150.
+#[test]
+#[ignore = "needs Surge XT (VST3) and its factory patches"]
+fn surge_xt_vst3_runs_its_sequencer_at_the_tempo_of_the_song() {
+    if !installed(SURGE_VST3) || !Path::new(SURGE_SEQUENCE).exists() {
+        eprintln!("{SURGE_SEQUENCE} is not installed; nothing tested");
+        return;
+    }
+    let mut host = Host::start_with(GEOMETRY, &[]);
+    let mut first = load(&mut host, 0, SURGE_VST3);
+    run(&mut first, 10, &[]);
+    // meloet's VST3 state is 4 bytes of its own, the length of the component's part, and that
+    // part: for a JUCE plugin, what the plugin keeps as its state (JUCE's own data after it
+    // may be left out). The patch file is 60 bytes of header and then that state.
+    let own = host.state(0);
+    let patch = synced(&std::fs::read(SURGE_SEQUENCE).unwrap()[60..]);
+    let state = [&own[..4], &(patch.len() as u64).to_le_bytes(), &patch[..]].concat();
+
+    for bpm in [75.0, 90.0, 100.0, 150.0] {
+        let bar_blocks = 4.0 * 60.0 / bpm * 48_000.0 / 256.0;
+        let song = |frame| song_at(frame, bpm);
+        let blocks = (bar_blocks * 8.0) as usize;
+        let bright = sequence_along(&mut host, 1, SURGE_VST3, &state, blocks, &song);
+        assert_eq!(host.ask(Request::Unload { slot: 1 }), Reply::Ok);
+        let lag = repeats_after(&bright[40..], 60, (bar_blocks * 0.9) as usize);
+        let half_bar = bar_blocks / 2.0;
+        println!("{bpm}: repeats after {lag} blocks, half a bar is {half_bar:.1}");
+        assert!(
+            (lag as f64 - half_bar).abs() < half_bar * 0.02 + 1.0,
+            "at {bpm} the sequence repeats after {lag} blocks, half a bar is {half_bar:.1}"
+        );
+    }
+
+    // 16 bars from 90 to 150, and 16 bars back down.
+    for (from, to) in [(90.0, 150.0), (150.0, 90.0)] {
+        let quarters = 64.0;
+        let seconds = 60.0 * quarters / (to - from) * f64::ln(to / from);
+        let blocks = (seconds * 48_000.0 / 256.0) as usize;
+        let song = |frame| ramp_at(frame, from, to, quarters);
+        let bright = sequence_along(&mut host, 1, SURGE_VST3, &state, blocks, &song);
+        assert_eq!(host.ask(Request::Unload { slot: 1 }), Reply::Ok);
+        let laid = over_quarters(&bright, &|block| {
+            ramp_at(block as u64 * 256, from, to, quarters).position_quarters
+        });
+        // Half a bar is 64 values. Each third of the ramp by itself: a plugin that kept the
+        // first tempo would repeat ever later (or earlier) along the song.
+        let third = laid.len() / 3;
+        for (n, part) in laid[32..].chunks(third).take(3).enumerate() {
+            let lag = repeats_after(part, 26, 115);
+            println!(
+                "{from} to {to}, third {}: repeats after {:.3} quarter notes",
+                n + 1,
+                lag as f64 / 32.0
+            );
+            assert!(
+                (62..=66).contains(&lag),
+                "{from} to {to}, third {}: the sequence repeats after {} quarter notes, not 2",
+                n + 1,
+                lag as f64 / 32.0
+            );
+        }
     }
 }

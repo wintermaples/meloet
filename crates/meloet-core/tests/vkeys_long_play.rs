@@ -4,7 +4,8 @@
 //!
 //! `MELOET_LONGPLAY_NAME` (client name, required), `MELOET_LONGPLAY_SECONDS` (600),
 //! `MELOET_LONGPLAY_LEAD_MS` (1000: from the port appearing to the first key),
-//! `MELOET_LONGPLAY_LOG` (JSON with what was sent). Run with `-- --ignored --nocapture`.
+//! `MELOET_LONGPLAY_LOG` (JSON with what was sent; `noteOns` is every pressed key as
+//! [CLOCK_MONOTONIC µs just before the send, note]). Run with `-- --ignored --nocapture`.
 
 use std::time::{Duration, Instant};
 
@@ -99,22 +100,28 @@ fn play_for_minutes() {
     let start = Instant::now();
     let (mut notes, mut pedals, mut bends) = (0u32, 0u32, 0u32);
     let mut late_max_us = 0u128;
+    let mut note_ons = String::new();
     for (at, event) in &plan {
         let when = start + Duration::from_millis(*at);
         std::thread::sleep(when.saturating_duration_since(Instant::now()));
         late_max_us = late_max_us.max(Instant::now().duration_since(when).as_micros());
-        keys.send(*event).expect("send");
+        let sent = keys.send(*event).expect("send");
         match event {
-            MidiEvent::NoteOn { .. } => notes += 1,
+            MidiEvent::NoteOn { note, .. } => {
+                if notes > 0 {
+                    note_ons.push(',');
+                }
+                note_ons.push_str(&format!("[{sent},{note}]"));
+                notes += 1;
+            }
             MidiEvent::Control { .. } => pedals += 1,
             MidiEvent::PitchBend { .. } => bends += 1,
             MidiEvent::NoteOff { .. } => {}
         }
     }
     let log = format!(
-        "{{\"client\":\"{name}\",\"seconds\":{seconds},\"notes\":{notes},\"pedalEvents\":{pedals},\"bendEvents\":{bends},\"sendLateMaxUs\":{late_max_us}}}\n"
+        "{{\"client\":\"{name}\",\"seconds\":{seconds},\"notes\":{notes},\"pedalEvents\":{pedals},\"bendEvents\":{bends},\"sendLateMaxUs\":{late_max_us},\"noteOns\":[{note_ons}]}}\n"
     );
-    eprint!("{log}");
     if let Ok(path) = std::env::var("MELOET_LONGPLAY_LOG") {
         std::fs::write(path, log).expect("write the log");
     }

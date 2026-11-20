@@ -10,8 +10,11 @@
 # --piano-roll: open the piano roll band before recording and keep it open (it shows the take
 #   being recorded, then the take).
 # --mixer: open the mixer band before recording and keep it open.
-# --song: open that song (MELOET_OPEN_SONG) before recording; the recording goes to its
-#   selected track while the other tracks play.
+# --song: open a copy of that song (MELOET_OPEN_SONG) before recording; the recording goes to
+#   its selected track while the other tracks play. The copy is saved after the playback (before
+#   the shot, which ends the app) and
+#   kept as DIR/saved.meloet; long_record_ticks.py then compares where the keys were recorded
+#   with when they were sent, through the song's tempo map (DIR/ticks.md).
 #
 # Watches (tools/measure/long_record_watch.py): PipeWire's error count (xruns) of the meloet
 # stream and its driver, the RSS of meloet and its WebKitWebProcess every 10 s, and the GC helper
@@ -59,7 +62,7 @@ case "$player" in /*) ;; *) player=$root/$player ;; esac
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/config" "$work/state" "$out"
-rm -f "$out"/*.json "$out"/*.png "$out"/*.wav "$out"/*.md "$out"/*.stderr
+rm -f "$out"/*.json "$out"/*.png "$out"/*.wav "$out"/*.md "$out"/*.stderr "$out"/*.meloet
 
 # This PC only: the agent user reaches the screen and the sound through this file.
 if [ -f "$HOME/.config/meloet-agent/env.sh" ]; then
@@ -86,9 +89,13 @@ $(cmd $((stop_ms + 500)) '{"type":"toggleMetronome"}'),$(cmd $((stop_ms + 1000))
 $(cmd $play_ms '{"type":"playStop"}'),$(cmd $((play_ms + play_for_ms)) '{"type":"playStop"}'),\
 $(cmd $band_at '{"type":"toggleBand","band":"pianoRoll"}')"
 [ "$mixer" = 1 ] && commands="$commands,$(cmd 2200 '{"type":"toggleBand","band":"mixer"}')"
-commands="$commands]"
 open_song=()
-[ -n "$song" ] && open_song=(MELOET_OPEN_SONG="$song")
+if [ -n "$song" ]; then
+  cp "$song" "$work/song.meloet"
+  open_song=(MELOET_OPEN_SONG="$work/song.meloet")
+  commands="$commands,$(cmd $((play_ms + play_for_ms + 500)) '{"type":"saveSong"}')"
+fi
+commands="$commands]"
 
 # The keyboard is there before the app starts: the output chooser comes up only with one.
 MELOET_LONGPLAY_NAME="$vkeys_name" MELOET_LONGPLAY_SECONDS="$seconds" MELOET_LONGPLAY_LEAD_MS=10000 \
@@ -134,3 +141,7 @@ kill "$recorder" 2>/dev/null || true
 wait "$launched" || true
 wait "$watch" || true
 python3 -I "$root/tools/measure/long_record_summary.py" "$out" | tee "$out/summary.md"
+if [ -n "$song" ]; then
+  cp "$work/song.meloet" "$out/saved.meloet"
+  python3 -I "$root/tools/measure/long_record_ticks.py" "$out" --before "$song" | tee "$out/ticks.md"
+fi

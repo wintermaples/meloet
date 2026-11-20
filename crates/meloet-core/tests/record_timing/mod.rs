@@ -8,6 +8,10 @@
 //! below that, every press is moved by a known part of a tick (`dither`, −0.5 to +0.5, spread
 //! evenly), and the error is taken against `beat + dither`: the mean then shows a bias well
 //! below one tick.
+//!
+//! Times and ticks go through the song's tempo map (`meloet_model::TempoMap`), so a run may
+//! cross tempo points, ramps and meter changes: the keys are then pressed on the heads of the
+//! beats the map has, and an error in ms is the map's time between the two ticks.
 #![allow(dead_code)]
 
 use std::path::PathBuf;
@@ -17,7 +21,10 @@ use std::time::{Duration, Instant};
 use meloet_core::Core;
 use meloet_midi::vkeys::VirtualKeyboard;
 use meloet_midi::{MidiEvent, MidiOptions, monotonic_us};
-use meloet_protocol::{AppState, Command, TakeNotes, Telemetry, TransportReading, TransportState};
+use meloet_model::{Meter, MeterChange, Tempo, TempoMap, TempoPoint, Timeline};
+use meloet_protocol::{
+    AppState, Command, TakeNotes, Telemetry, TimelineView, TransportReading, TransportState,
+};
 
 pub const TICKS_PER_BEAT: f64 = 480.0;
 /// The first beat pressed; the beats before it let the recording settle.
@@ -103,10 +110,34 @@ pub fn listen(core: &Core) -> Arc<Mutex<Option<Reading>>> {
     latest
 }
 
+/// The tempo map the core has, made again from what the screen is told.
+pub fn map_of(view: &TimelineView) -> TempoMap {
+    TempoMap::new(&Timeline {
+        tempo: Tempo::from_bpm(view.tempo_bpm).expect("a tempo"),
+        meter: Meter::new(view.meter_num, view.meter_den).expect("a meter"),
+        head_ramp: view.head_ramp,
+        tempo_points: (view.tempo_points.iter())
+            .map(|p| TempoPoint {
+                tick: p.tick,
+                tempo: Tempo::from_bpm(p.tempo_bpm).expect("a tempo"),
+                ramp: p.ramp,
+            })
+            .collect(),
+        meter_changes: (view.meter_changes.iter())
+            .map(|c| MeterChange {
+                bar: c.bar,
+                meter: Meter::new(c.meter_num, c.meter_den).expect("a meter"),
+            })
+            .collect(),
+    })
+}
+
 #[derive(Clone, Debug)]
 pub struct Run {
     pub label: String,
-    pub bpm: f64,
+    /// One tempo for the whole song, set before recording. `None`: the tempo points and meter
+    /// changes the song has are left as they are.
+    pub bpm: Option<f64>,
     pub beats: u32,
     /// Pressed this much after the beat on purpose.
     pub late_ms: f64,
@@ -114,9 +145,20 @@ pub struct Run {
 
 #[derive(Clone, Debug)]
 pub struct Press {
-    pub beat: u32,
+    /// The tick of the head of the beat.
+    pub beat: u64,
     /// The tick the key should land on: the beat, the dither and `late_ms`.
     pub expected_tick: f64,
+    /// The map's seconds of `beat`, of `expected_tick`, of `heard_at_send` and of
+    /// `recorded_tick`.
+    pub beat_s: f64,
+    pub expected_s: f64,
+    pub heard_s: f64,
+    pub recorded_s: Option<f64>,
+    /// Ticks in one millisecond at `expected_tick`.
+    pub ticks_per_ms: f64,
+    /// Where the plan said the listener would be when the key was really sent.
+    pub planned_at_send: f64,
     pub target_us: f64,
     /// When the virtual keyboard sent it, minus `target_us`.
     pub send_late_us: f64,
@@ -129,8 +171,8 @@ pub struct Press {
 
 impl Press {
     /// The map moved by more than a quarter tick between the plan and the press.
-    pub fn map_moved(&self, ticks_per_us: f64) -> bool {
-        (self.heard_at_send - (self.expected_tick + self.send_late_us * ticks_per_us)).abs() > 0.25
+    pub fn map_moved(&self) -> bool {
+        (self.heard_at_send - self.planned_at_send).abs() > 0.25
     }
 }
 
@@ -165,10 +207,6 @@ pub fn stats(values: &[f64]) -> Stats {
 }
 
 impl Outcome {
-    pub fn ticks_per_ms(&self) -> f64 {
-        TICKS_PER_BEAT * self.run.bpm / 60_000.0
-    }
-
     /// Recorded minus expected, in ticks.
     pub fn errors_ticks(&self) -> Vec<f64> {
         self.presses
@@ -177,27 +215,31 @@ impl Outcome {
             .collect()
     }
 
-    /// Recorded minus where the listener was at the send, in ticks.
-    pub fn errors_heard_ticks(&self) -> Vec<f64> {
+    /// Recorded minus expected, in ms.
+    pub fn errors_ms(&self) -> Vec<f64> {
         self.presses
             .iter()
-            .filter_map(|p| p.recorded_tick.map(|t| t as f64 - p.heard_at_send))
+            .filter_map(|p| p.recorded_s.map(|s| (s - p.expected_s) * 1000.0))
+            .collect()
+    }
+
+    /// Recorded minus where the listener was at the send, in ms.
+    pub fn errors_heard_ms(&self) -> Vec<f64> {
+        self.presses
+            .iter()
+            .filter_map(|p| p.recorded_s.map(|s| (s - p.heard_s) * 1000.0))
             .collect()
     }
 
     pub fn moved(&self) -> usize {
-        let tpu = self.ticks_per_ms() / 1000.0;
-        self.presses.iter().filter(|p| p.map_moved(tpu)).count()
+        self.presses.iter().filter(|p| p.map_moved()).count()
     }
 
     /// Recorded minus the beat, in ms: where the note sits against the beat line.
     pub fn offsets_from_beat_ms(&self) -> Vec<f64> {
         self.presses
             .iter()
-            .filter_map(|p| {
-                p.recorded_tick
-                    .map(|t| (t as f64 - f64::from(p.beat) * TICKS_PER_BEAT) / self.ticks_per_ms())
-            })
+            .filter_map(|p| p.recorded_s.map(|s| (s - p.beat_s) * 1000.0))
             .collect()
     }
 
@@ -211,11 +253,16 @@ impl Outcome {
             .iter()
             .map(|p| {
                 format!(
-                    r#"{{"beat":{},"expectedTick":{:.4},"recordedTick":{},"targetUs":{:.1},"sendLateUs":{:.1},"heardAtSend":{:.4}}}"#,
+                    r#"{{"beat":{},"expectedTick":{:.4},"recordedTick":{},"errorMs":{},"ticksPerMs":{:.5},"targetUs":{:.1},"sendLateUs":{:.1},"heardAtSend":{:.4}}}"#,
                     p.beat,
                     p.expected_tick,
                     p.recorded_tick
                         .map_or_else(|| "null".to_string(), |t| t.to_string()),
+                    p.recorded_s.map_or_else(
+                        || "null".to_string(),
+                        |s| format!("{:.5}", (s - p.expected_s) * 1000.0)
+                    ),
+                    p.ticks_per_ms,
                     p.target_us,
                     p.send_late_us,
                     p.heard_at_send
@@ -225,7 +272,9 @@ impl Outcome {
         format!(
             r#"{{"label":"{}","bpm":{},"beats":{},"lateMs":{},"actualFrames":{},"latencyMs":{},"notesInTake":{},"presses":[{}]}}"#,
             self.run.label,
-            self.run.bpm,
+            self.run
+                .bpm
+                .map_or_else(|| "null".into(), |b| b.to_string()),
             self.run.beats,
             self.run.late_ms,
             self.actual_frames
@@ -239,28 +288,30 @@ impl Outcome {
 
     pub fn table_row(&self) -> String {
         let e = stats(&self.errors_ticks());
-        let tpm = self.ticks_per_ms();
+        let ms = stats(&self.errors_ms());
         let b = stats(&self.offsets_from_beat_ms());
         let s = stats(&self.send_late_us());
-        let h = stats(&self.errors_heard_ticks());
+        let h = stats(&self.errors_heard_ms());
         format!(
-            "| {} | {} | {:.2} | {:.1} | {} | {:+.3} ms / {:+.3} t | {:.3} ms / {:.3} t | {:.3} ms / {:.3} t | {:+.3} ms | {:.0} µs | {} | {:+.3} ms / {:.3} ms |",
+            "| {} | {} | {} | {:.1} | {} | {:+.3} ms / {:+.3} t | {:.3} ms / {:.3} t | {:.3} ms / {:.3} t | {:+.3} ms | {:.0} µs | {} | {:+.3} ms / {:.3} ms |",
             self.run.label,
             self.actual_frames.map_or("?".into(), |f| f.to_string()),
-            self.run.bpm,
+            self.run
+                .bpm
+                .map_or_else(|| "map".into(), |b| format!("{b:.2}")),
             self.run.late_ms,
             self.notes_in_take,
-            e.mean / tpm,
+            ms.mean,
             e.mean,
-            e.p95_abs / tpm,
+            ms.p95_abs,
             e.p95_abs,
-            e.max_abs / tpm,
+            ms.max_abs,
             e.max_abs,
             b.mean,
             s.max_abs,
             self.moved(),
-            h.mean / tpm,
-            h.max_abs / tpm,
+            h.mean,
+            h.max_abs,
         )
     }
 }
@@ -297,14 +348,19 @@ pub fn record(
     keys: &VirtualKeyboard,
     run: Run,
 ) -> Outcome {
-    core.send(Command::SetTempo { bpm: run.bpm });
     core.send(Command::GoToStart);
+    if let Some(bpm) = run.bpm {
+        core.send(Command::SetTempo { bpm });
+    }
     let state = core.snapshot().state;
-    assert!(
-        (state.timeline.tempo_bpm - run.bpm).abs() < 1e-9,
-        "tempo {}",
-        state.timeline.tempo_bpm
-    );
+    if let Some(bpm) = run.bpm {
+        assert!(
+            (state.timeline.tempo_bpm - bpm).abs() < 1e-9 && state.timeline.tempo_points.is_empty(),
+            "tempo {:?}",
+            state.timeline
+        );
+    }
+    let map = map_of(&state.timeline);
     assert_eq!(state.timeline.meter_den, 4);
     assert!(state.transport.metronome);
     assert_eq!(state.transport.count_in_bars, 0);
@@ -325,20 +381,27 @@ pub fn record(
         std::thread::sleep(Duration::from_millis(2));
     }
 
-    let ticks_per_ms = TICKS_PER_BEAT * run.bpm / 60_000.0;
-    let beat_ms = 60_000.0 / run.bpm;
+    let mut heads = Vec::with_capacity(run.beats as usize + 1);
+    let mut next = map.next_beat(0.0).tick;
+    while heads.len() <= (FIRST_BEAT + run.beats) as usize {
+        heads.push(next as u64);
+        next = map.next_beat(next as f64 + 1.0).tick;
+    }
     let mut presses = Vec::with_capacity(run.beats as usize);
     for i in 0..run.beats {
-        let beat = FIRST_BEAT + i;
+        let at = (FIRST_BEAT + i) as usize;
+        let beat = heads[at];
+        let beat_s = map.seconds_at(beat as f64);
+        let beat_len_s = map.seconds_at(heads[at + 1] as f64) - beat_s;
         let r = reading(latest).expect("a reading");
         assert_eq!(r.transport.state, TransportState::Recording);
         assert!(r.transport.ticks_per_us > 0.0);
-        let expected_tick =
-            f64::from(beat) * TICKS_PER_BEAT + dither(i) + run.late_ms * ticks_per_ms;
-        let target_us = r.sent_us + (expected_tick - r.transport.tick) / r.transport.ticks_per_us;
+        let expected_s = map.seconds_at(beat as f64 + dither(i)) + run.late_ms / 1000.0;
+        let expected_tick = map.tick_at(expected_s);
+        let target_us = r.sent_us + (expected_s - map.seconds_at(r.transport.tick)) * 1e6;
         assert!(
             target_us > monotonic_us() as f64 + 1_000.0,
-            "{}: beat {beat} is already past: the reading is {} µs old, at tick {}, {:?}",
+            "{}: the beat at {beat} is already past: the reading is {} µs old, at tick {}, {:?}",
             run.label,
             monotonic_us() as f64 - r.sent_us,
             r.transport.tick,
@@ -351,7 +414,7 @@ pub fn record(
                 velocity: VELOCITY,
             })
             .expect("send the key");
-        std::thread::sleep(Duration::from_secs_f64(beat_ms * 0.4 / 1000.0));
+        std::thread::sleep(Duration::from_secs_f64(beat_len_s * 0.4));
         keys.send(MidiEvent::NoteOff {
             note: NOTE,
             velocity: 0,
@@ -359,20 +422,26 @@ pub fn record(
         .expect("send the release");
         let after = reading(latest).expect("a reading");
         assert!(after.sent_us > sent as f64, "no reading since the key");
-        let heard_at_send =
-            after.transport.tick + (sent as f64 - after.sent_us) * after.transport.ticks_per_us;
+        let heard_s = map.seconds_at(after.transport.tick) + (sent as f64 - after.sent_us) / 1e6;
+        let send_late_us = sent as f64 - target_us;
         presses.push(Press {
             beat,
             expected_tick,
+            beat_s,
+            expected_s,
+            heard_s,
+            recorded_s: None,
+            ticks_per_ms: (map.tick_at(expected_s + 0.0005) - map.tick_at(expected_s - 0.0005)),
+            planned_at_send: map.tick_at(expected_s + send_late_us / 1e6),
             target_us,
-            send_late_us: sent as f64 - target_us,
-            heard_at_send,
+            send_late_us,
+            heard_at_send: map.tick_at(heard_s),
             recorded_tick: None,
         });
         // Wait into the next beat's half before reading again, so that the next target is ahead.
-        std::thread::sleep(Duration::from_secs_f64(beat_ms * 0.2 / 1000.0));
+        std::thread::sleep(Duration::from_secs_f64(beat_len_s * 0.2));
     }
-    std::thread::sleep(Duration::from_secs_f64(beat_ms * 0.5 / 1000.0));
+    std::thread::sleep(Duration::from_secs_f64(0.3));
     core.send(Command::Record);
     wait_for(
         core,
@@ -403,7 +472,9 @@ pub fn record(
     let notes_in_take = take.notes.len();
     if notes_in_take == presses.len() {
         for (press, note) in presses.iter_mut().zip(&take.notes) {
-            press.recorded_tick = Some(base + u64::from(note.start));
+            let tick = base + u64::from(note.start);
+            press.recorded_tick = Some(tick);
+            press.recorded_s = Some(map.seconds_at(tick as f64));
         }
     } else {
         eprintln!(
@@ -445,19 +516,24 @@ pub fn check(o: &Outcome) {
     );
     // Against where the listener was at the send: a press whose plan went stale (the map moved,
     // as after an xrun) is still judged by what was heard then.
-    let e = stats(&o.errors_heard_ticks());
-    let tpm = o.ticks_per_ms();
+    let e = stats(&o.errors_heard_ms());
     assert!(
-        e.mean.abs() / tpm < 0.5,
+        e.mean.abs() < 0.5,
         "{}: mean error {} ms",
         o.run.label,
-        e.mean / tpm
+        e.mean
     );
-    // Half a tick from the rounding to whole ticks, plus one millisecond.
-    assert!(
-        e.max_abs < 0.5 + tpm,
-        "{}: worst error {} ticks",
-        o.run.label,
-        e.max_abs
-    );
+    for p in &o.presses {
+        let Some(tick) = p.recorded_tick else {
+            continue;
+        };
+        // Half a tick from the rounding to whole ticks, plus one millisecond.
+        assert!(
+            (tick as f64 - p.heard_at_send).abs() < 0.5 + p.ticks_per_ms,
+            "{}: the key of the beat at {} is {} ticks off",
+            o.run.label,
+            p.beat,
+            tick as f64 - p.heard_at_send
+        );
+    }
 }

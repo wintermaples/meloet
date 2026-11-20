@@ -1,7 +1,9 @@
 //! Where recorded keys land, on a PipeWire of the test's own with the quantum forced to 64, 128,
 //! 256, 512 and 1024 frames in turn (the PipeWire of the person using the PC is never touched).
 //! Run with `-- --ignored --nocapture`; needs `pipewire`, `wireplumber`, `pw-link` and the ALSA
-//! sequencer. `MELOET_TIMING_QUANTA=64,256` and `MELOET_TIMING_BEATS=64` narrow it.
+//! sequencer. `MELOET_TIMING_QUANTA=64,256`, `MELOET_TIMING_BEATS=64` and `MELOET_TIMING_MAPS=0`
+//! narrow it. After the runs at one tempo, each quantum records twice on a timeline with tempo
+//! points, two ramps and two meter changes.
 //! See `tools/measure/record-timing.sh`.
 
 #[path = "../../meloet-engine/tests/private_pw/mod.rs"]
@@ -20,6 +22,74 @@ fn env_list(name: &str, default: &[u32]) -> Vec<u32> {
         |_| default.to_vec(),
         |v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect(),
     )
+}
+
+/// The beats pressed on the changing timeline: to the end of its last ramp and six more.
+const MAP_BEATS: u32 = 64;
+
+/// 4/4 at 96; 104 from bar 5, going in a straight line to 120 at bar 9; 3/4 from bar 9; 6/8
+/// from bar 13 (the beat is an eighth note from there); 150 from bar 14, going down to 90 at
+/// bar 16. Bars as shown, from 1.
+fn set_changing_timeline(core: &Core) {
+    use meloet_protocol::Command as C;
+    core.send(C::GoToStart);
+    core.send(C::SetTempo { bpm: 96.0 });
+    for command in [
+        C::AddTempoPoint {
+            tick: 7680,
+            bpm: 104.0,
+        },
+        C::AddTempoPoint {
+            tick: 15360,
+            bpm: 120.0,
+        },
+        C::SetTempoRamp {
+            tick: 7680,
+            on: true,
+        },
+        C::AddMeterChange {
+            bar: 8,
+            num: 3,
+            den: 4,
+        },
+        C::AddMeterChange {
+            bar: 12,
+            num: 6,
+            den: 8,
+        },
+        C::AddTempoPoint {
+            tick: 22560,
+            bpm: 150.0,
+        },
+        C::AddTempoPoint {
+            tick: 25440,
+            bpm: 90.0,
+        },
+        C::SetTempoRamp {
+            tick: 22560,
+            on: true,
+        },
+    ] {
+        core.send(command);
+    }
+    let t = core.snapshot().state.timeline;
+    let points: Vec<(u64, f64, bool)> = (t.tempo_points.iter())
+        .map(|p| (p.tick, p.tempo_bpm, p.ramp))
+        .collect();
+    assert_eq!(
+        points,
+        [
+            (7680, 104.0, true),
+            (15360, 120.0, false),
+            (22560, 150.0, true),
+            (25440, 90.0, false)
+        ]
+    );
+    let flags: Vec<(u32, u8, u8)> = (t.meter_changes.iter())
+        .map(|c| (c.bar, c.meter_num, c.meter_den))
+        .collect();
+    assert_eq!(flags, [(8, 3, 4), (12, 6, 8)]);
+    assert_eq!((t.tempo_bpm, t.meter_num, t.meter_den), (96.0, 4, 4));
 }
 
 fn force_quantum(pw: &private_pw::PrivatePipeWire, quantum: u32) {
@@ -58,6 +128,8 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
     };
     let quanta = env_list("MELOET_TIMING_QUANTA", &[64, 128, 256, 512, 1024]);
     let beats = env_list("MELOET_TIMING_BEATS", &[64])[0];
+    // `MELOET_TIMING_MAPS=0`: only the runs at one tempo.
+    let maps = env_list("MELOET_TIMING_MAPS", &[1])[0] != 0;
     let config = pw.dir().join("config-meloet");
     record_timing::write_settings(&config, private_pw::SINK);
 
@@ -102,8 +174,27 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
                     &keys,
                     Run {
                         label,
-                        bpm,
+                        bpm: Some(bpm),
                         beats,
+                        late_ms,
+                    },
+                );
+                eprintln!("{}", o.table_row());
+                outcomes.push(o);
+            }
+        }
+        if maps {
+            set_changing_timeline(&core);
+            for late_ms in [0.0, 5.0] {
+                let label = format!("private q{quantum} map +{late_ms}ms");
+                let o = record_timing::record(
+                    &core,
+                    &latest,
+                    &keys,
+                    Run {
+                        label,
+                        bpm: None,
+                        beats: MAP_BEATS,
                         late_ms,
                     },
                 );
@@ -127,6 +218,7 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
     // The late runs sit 5 ms behind the runs on time with the same quantum and tempo.
     for pair in outcomes.chunks(2) {
         let [on_time, late] = pair else { continue };
+        assert_eq!((on_time.run.late_ms, late.run.late_ms), (0.0, 5.0));
         let shift =
             stats(&late.offsets_from_beat_ms()).mean - stats(&on_time.offsets_from_beat_ms()).mean;
         assert!(

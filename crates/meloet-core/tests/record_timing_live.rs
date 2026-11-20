@@ -83,7 +83,7 @@ fn recorded_keys_land_where_they_were_heard_on_the_real_output() {
         &keys,
         Run {
             label: format!("live {bpm} +0ms"),
-            bpm,
+            bpm: Some(bpm),
             beats,
             late_ms: 0.0,
         },

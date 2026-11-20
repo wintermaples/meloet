@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>取り消しの履歴の帯 ・ 3 手取り消した所 ・ 行を押す ・ キー（Y19）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{color:#9A9A9A;white-space:nowrap}
+.w{color:#F2F2F2}.a{color:#FFB000}.r{color:#FF3B30}
+.s6{font-weight:600}.t16{font-size:16px;line-height:20px}.t20{font-size:20px;line-height:24px}
+.f{display:flex}.fc{display:flex;flex-direction:column}.ac{align-items:center}.x1{flex:1;min-width:0;min-height:0}.nw{white-space:nowrap}
+.g4{gap:4px}.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}
+.rel{position:relative}.abs{position:absolute}.oh{overflow:hidden}
+.b{height:24px;min-width:28px;padding:0 8px;border:1px solid #3A3A3A;background:#222222;color:#D6D6D6;border-radius:1px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.b.on{color:#FFB000;border-color:#FFB000}
+.b.hi{color:#F2F2F2;border-color:#9A9A9A}
+.q{width:20px;height:20px;border:1px solid #3A3A3A;background:#121212;color:#9A9A9A;border-radius:1px;text-align:center;line-height:18px}
+.hd{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px;background:#222222;white-space:nowrap;flex-shrink:0}
+.rw{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px 0 28px;border-bottom:1px solid #222222;white-space:nowrap;flex-shrink:0}
+.tip{position:absolute;z-index:9;width:248px;padding:8px;background:#F2F2F2;color:#0A0A0A;border-radius:1px;white-space:normal}
+.fm{padding:0 4px;border:1px solid #5E5E5E;color:#9A9A9A;border-radius:1px}
+.vt{writing-mode:vertical-rl;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1280px;height:720px;display:flex;flex-direction:column;background:#121212;color:#D6D6D6;font-family:'IBM Plex Sans JP','Noto Sans JP',sans-serif;font-size:12px;line-height:16px;overflow:hidden"><div class="fc g16" style="padding:24px 32px;height:720px;line-height:18px"><div class="f g16" style="align-items:baseline"><span class="t20 s6 w">取り消しの履歴</span><span class="l">ひらいた帯の形は F-History（今のまま）。ここは、さわったときの決まり</span></div><div class="fc g8" style="width:880px"><span class="t16 s6 w">3 手取り消した所。11 手目に乗っている（↑ ↓ でえらんでも同じ形）</span><div class="fc" style="width:880px;border:1px solid #3A3A3A;background:#121212"><div class="f ac g12" style="height:24px;padding:0 12px;border-bottom:1px solid #222222;white-space:nowrap;border-left:2px solid #121212;background:#121212;color:#9A9A9A;"><span class="m l" style="width:24px;text-align:right">16</span><span style="width:360px">「ノートを動かす」・ 3 ノート</span><span class="l">ピアノロール</span><div class="x1"></div><span class="l">やりなおせます</span></div><div class="f ac g12" style="height:24px;padding:0 12px;border-bottom:1px solid #222222;white-space:nowrap;border-left:2px solid #121212;background:#121212;color:#9A9A9A;"><span class="m l" style="width:24px;text-align:right">15</span><span style="width:360px">「ノートの長さを変える」・ 2 ノート</span><span class="l">ピアノロール</span><div class="x1"></div><span class="l">やりなおせます</span></div><div class="f ac g12" style="height:24px;padding:0 12px;border-bottom:1px solid #222222;white-space:nowrap;border-left:2px solid #121212;background:#121212;color:#9A9A9A;"><span class="m l" style="width:24px;text-align:right">14</span><span style="width:360px">「クオンタイズ」・ 1/16 ・ 12 ノート</span><span class="l">ピアノロール</span><div class="x1"></div><span class="l">やりなおせます</span></div><div class="f ac g12" style="height:24px;padding:0 12px;border-bottom:1px solid #222222;white-space:nowrap;border-left:2px solid #FFB000;background:#222222;color:#D6D6D6;"><span class="m l" style="width:24px;text-align:right">13</span><span class="w" style="width:360px">「音量を変える」・ 4 パッド −10.5 → −12.0 dB</span><span class="l">ミキサー</span><div class="x1"></div><span class="a">いまここ</span></div><div class="f ac g12" style="height:24px;padding:0 12px;border-bottom:1px solid #222222;white-space:nowrap;border-left:2px solid #121212;background:#121212;color:#D6D6D6;"><span class="m l" style="width:24px;text-align:right">12</span><span style="width:360px">「エフェクトをとばす」・ MVerb</span><span class="l">4 パッド</span><div class="x1"></div></div><div class="f ac g12" style="height:24px;padding:0 12px;border-bottom:1px solid #222222;white-space:nowrap;border-left:2px solid #121212;background:#222222;color:#D6D6D6;outline:1px solid #F2F2F2;outline-offset:-1px"><span class="m l" style="width:24px;text-align:right">11</span><span style="width:360px">「マーカーを足す」・ サビ</span><span class="l">アレンジ</span><div class="x1"></div><button class="b">ここまで戻す <span class="m l">Enter</span></button></div><div class="f ac g12" style="height:24px;padding:0 12px;border-bottom:1px solid #222222;white-space:nowrap;border-left:2px solid #121212;background:#121212;color:#D6D6D6;"><span class="m l" style="width:24px;text-align:right">10</span><span style="width:360px">「テンポを変える」・ 5 小節目 96 → 120</span><span class="l">アレンジ</span><div class="x1"></div></div></div><span class="l" style="white-space:normal;">取り消した手（16〜14）は gray.8 と「やりなおせます」。いまの手は accent の印と「いまここ」。乗っている行とえらんでいる行に「ここまで戻す」。押すと、その手が「いまここ」になる（上の手はやりなおせる形で残る）。いまより上の行を押すと、そこまでやりなおす</span></div><div class="f" style="gap:32px;align-items:flex-start"><div class="fc g8" style="width:560px"><span class="t16 s6 w">状態行の文</span><div class="f g8" style="min-height:24px;padding:3px 12px;background:#0A0A0A;border:1px solid #2C2C2C"><span style="white-space:nowrap">■ 停止中</span><span class="l" style="white-space:normal">「ノートを動かす」を取り消しました（3 ノート）。やりなおすには <span class="m">Mod Shift Z</span></span></div><div class="f g8" style="min-height:24px;padding:3px 12px;background:#0A0A0A;border:1px solid #2C2C2C"><span style="white-space:nowrap">■ 停止中</span><span class="l" style="white-space:normal">「ノートを動かす」をやりなおしました（3 ノート）。</span></div><div class="f g8" style="min-height:24px;padding:3px 12px;background:#0A0A0A;border:1px solid #2C2C2C"><span style="white-space:nowrap">■ 停止中</span><span class="l" style="white-space:normal">11 手目「マーカーを足す」まで戻しました（5 手）。</span></div><div class="f g8" style="min-height:24px;padding:3px 12px;background:#0A0A0A;border:1px solid #2C2C2C"><span style="white-space:nowrap">■ 停止中</span><span class="l" style="white-space:normal">取り消せる手がありません。</span></div></div><div class="fc g8" style="width:300px"><span class="t16 s6 w">キー（帯にフォーカスがあるとき）</span><div class="fc" style="width:300px;border:1px solid #2C2C2C"><div class="f ac g8" style="height:24px;padding:0 12px;border-bottom:1px solid #222222"><span class="w" style="width:160px">行をえらぶ</span><span class="m l">↑ ↓</span></div><div class="f ac g8" style="height:24px;padding:0 12px;border-bottom:1px solid #222222"><span class="w" style="width:160px">いまの手へ</span><span class="m l">Home</span></div><div class="f ac g8" style="height:24px;padding:0 12px;border-bottom:1px solid #222222"><span class="w" style="width:160px">ここまで戻す</span><span class="m l">Enter</span></div><div class="f ac g8" style="height:24px;padding:0 12px;border-bottom:1px solid #222222"><span class="w" style="width:160px">帯をたたむ</span><span class="m l">Esc</span></div></div></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

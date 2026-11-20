@@ -47,6 +47,7 @@ const track = (number: number, clips: ReturnType<typeof clip>[], color = number)
   sends: [null, null],
   sendDefaults: [null, null],
   slots: [null, null, null, null],
+  lanes: [],
   clips,
 });
 

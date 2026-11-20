@@ -1,5 +1,5 @@
 use meloet_model::effects::{EffectKind as ModelEffect, delay, limiter, reverb};
-use meloet_model::{Bus, Gain, Insert, Pan, Song, StripId, TrackId};
+use meloet_model::{Bus, Gain, Insert, InsertId, Pan, Song, StripId, TrackId};
 use meloet_protocol::{
     Command, EffectKind, InsertRef, InstrumentKind, SendBus, ShelfMode, SongAnswer, StripRef,
     TransportState,
@@ -91,10 +91,10 @@ fn db(db: f64) -> Gain {
 fn the_engine_starts_with_the_mixer_of_the_new_song() {
     let m = &mut Model::new(Default::default());
     let ops = m.engine_seats();
-    let insert = |strip, kind| EngineOp::Insert {
+    let insert = |strip, id, kind| EngineOp::Insert {
         strip,
         slot: 0,
-        insert: Some(Insert::new(kind)),
+        insert: Some(Insert::new(InsertId(id), kind)),
     };
     assert_eq!(
         ops[2..],
@@ -103,12 +103,12 @@ fn the_engine_starts_with_the_mixer_of_the_new_song() {
                 seat: 0,
                 sends: [db(-15.0), Gain::SILENT]
             },
-            insert(StripSeat::Return(Bus::A), ModelEffect::Reverb),
-            insert(StripSeat::Return(Bus::B), ModelEffect::Delay),
-            insert(StripSeat::Master, ModelEffect::Limiter),
+            insert(StripSeat::Return(Bus::A), 1, ModelEffect::Reverb),
+            insert(StripSeat::Return(Bus::B), 2, ModelEffect::Delay),
+            insert(StripSeat::Master, 3, ModelEffect::Limiter),
         ]
     );
-    let limiter = Insert::new(ModelEffect::Limiter);
+    let limiter = Insert::new(InsertId(3), ModelEffect::Limiter);
     assert_eq!(limiter.value(limiter::CEILING), Some(-0.3));
     // After that, an input that changes nothing in the mixer sends nothing.
     assert!(m.handle(Input::Tick).is_empty());
@@ -218,7 +218,8 @@ fn an_effect_is_made_only_when_its_slot_gets_another_kind() {
     // An effect goes in, with the mix a reverb starts with on a track; the others stay.
     add(m, e, T1, 2, EffectKind::Reverb);
     let ops = go(m, e, Command::ShelfConfirm);
-    let mut on_a_track = Insert::new(ModelEffect::Reverb);
+    let id = e.strip(m, S1).inserts[2].as_ref().unwrap().1.id;
+    let mut on_a_track = Insert::new(id, ModelEffect::Reverb);
     on_a_track.set(reverb::MIX, 30.0);
     assert_eq!(
         ops,
@@ -235,7 +236,7 @@ fn an_effect_is_made_only_when_its_slot_gets_another_kind() {
     add(m, e, A, 1, EffectKind::Delay);
     go(m, e, Command::ShelfConfirm);
     let on_return = e.strip(m, SA).inserts[1].clone().unwrap().1;
-    assert_eq!(on_return, Insert::new(ModelEffect::Delay));
+    assert_eq!(on_return, Insert::new(on_return.id, ModelEffect::Delay));
     assert_eq!(e.effects_made, made + 3);
 
     // Out, back with undo (a new one), out again with redo.
@@ -456,7 +457,8 @@ fn passing_by_and_moving_tell_the_engine_and_make_no_effect() {
     let effect = Some(EffectKind::Reverb);
     go(m, e, Command::ShelfSelectEffect { effect });
     let ops = go(m, e, Command::ShelfConfirm);
-    let mut reverb = Insert::new(ModelEffect::Reverb);
+    let id = e.strip(m, S1).inserts[2].as_ref().unwrap().1.id;
+    let mut reverb = Insert::new(id, ModelEffect::Reverb);
     reverb.set(reverb::MIX, 30.0);
     assert_eq!(ops.len(), 2, "{ops:?}");
     assert!(ops.contains(&bypass(2, false)));

@@ -892,7 +892,7 @@ fn keys_sound_on_the_selected_track_and_on_what_the_shelf_auditions_without_a_st
     assert_eq!(rig.sounding(), [0]);
     // Trying another instrument on track 2: the keys go there, and come back.
     rig.send(Command::OpenShelf {
-        mode: ShelfMode::Replace { track: 2 },
+        mode: ShelfMode::Replace { track: 4 },
     });
     rig.send(Command::ShelfSelect {
         instrument: Some(InstrumentKind::Sine),
@@ -905,7 +905,7 @@ fn keys_sound_on_the_selected_track_and_on_what_the_shelf_auditions_without_a_st
     rig.send(Command::DeleteTrack { track: 1 });
     assert_eq!(rig.model.track_seats(), [Some(1)]);
     assert_eq!(rig.sounding(), [1]);
-    rig.send(Command::DeleteTrack { track: 2 });
+    rig.send(Command::DeleteTrack { track: 4 });
     assert_eq!(rig.sounding(), [] as [usize; 0]);
     rig.send(Command::Undo);
     assert_eq!(rig.sounding(), [0], "back on the first free seat");

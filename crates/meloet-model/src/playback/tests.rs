@@ -155,7 +155,7 @@ fn takes_are_offset_inside_their_clip() {
         short(&track_events(&e.doc, T1)),
         ev(&[(500, "on 61"), (510, "off 61")])
     );
-    let (_, clip) = e.doc.clip(ClipId(1)).unwrap();
+    let clip = &e.doc.track(T1).unwrap().clips[0];
     let e = switch_take(&e.doc, clip.id, 0).unwrap();
     assert_eq!(
         short(&track_events(&e.doc, T1)),

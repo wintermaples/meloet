@@ -6,6 +6,8 @@
 //! carries nanoseconds. Song positions are ticks, 480 to a quarter note (docs/architecture.md 11).
 
 mod added;
+mod automation;
+mod history;
 mod params;
 mod take;
 mod telemetry;
@@ -19,6 +21,11 @@ pub use added::{
     PluginKindView, PluginRole, PluginRowView, PluginState, PluginView, SamplePlaying, Sf2FileView,
     Sf2PresetView, SoundName, SoundRef, SoundSampleView, SoundView, StandIn,
 };
+pub use automation::{
+    AutoSelection, AutoTarget, AutomationView, LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN,
+    LANE_VERSION, LaneError, LaneName, LanePoint, LanePoints, LaneRef, LaneView, WritingLane,
+};
+pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use params::{
     EffectName, NamedInsert, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable,
     ParamValue, ParamValues, PluginWindowKind, PluginWindowView, SelectedParams, SelectedPlugin,
@@ -35,7 +42,7 @@ pub use telemetry::{
 
 pub use timeline::{MarkerView, MeterChangeView, TempoPointView, TimelineRef, TimelineView};
 
-pub const PROTOCOL_VERSION: u32 = 20;
+pub const PROTOCOL_VERSION: u32 = 21;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -945,6 +952,80 @@ pub enum Command {
     RemoveMissing {
         missing: MissingRef,
     },
+    // Automation (round 6; spec 3 Y16, docs/architecture.md 21-5 to 21-11). A lane is named
+    // by its track and target; points by `LaneView::lane_id` and their places in the lane,
+    // and a command with a `lane` that is no lane's id now does nothing. Moving a fader or a
+    // parameter by hand stays what it was (`SetGain`, `SetParam`, …): Rust makes it rest the
+    // lane, or write into it while 「● 書く」 is on and the song plays.
+    /// 「▸ パン」 of the row under the track's header, and the mark at the right of a row of
+    /// the parameters panel: makes the lane, empty and unfolded, as one step. When the track
+    /// has the lane already it is unfolded, which is no step. Nothing for a target the track
+    /// does not have (no such insert, an instrument that is no plugin).
+    AddLane {
+        track: u32,
+        target: AutoTarget,
+    },
+    /// 「帯を消す」: the lane goes with its points, as one step.
+    DeleteLane {
+        track: u32,
+        target: AutoTarget,
+    },
+    /// ▾ and ▸ of a lane's header. No step.
+    FoldLane {
+        track: u32,
+        target: AutoTarget,
+        folded: bool,
+    },
+    /// A press on an empty place of the lane. Rust brings `tick` to the grid. `value`:
+    /// 0.0..=1.0; without it the value of the line at `tick`. A point that is at that tick
+    /// already gets the value. One step; the new point is selected.
+    AddAutoPoint {
+        lane: u32,
+        tick: u64,
+        value: Option<f32>,
+    },
+    /// One drag of points, as one step: each goes `d_tick` ticks along and `d_value` up, the
+    /// group stopping together at the song's start and at 0 and 1. A point that was not
+    /// dragged and has the tick of a dragged one afterwards is gone. The moved points are
+    /// selected.
+    MoveAutoPoints {
+        lane: u32,
+        points: Vec<u32>,
+        d_tick: i64,
+        d_value: f32,
+    },
+    /// Two presses on a point, or Delete with points selected. One step.
+    DeleteAutoPoints {
+        lane: u32,
+        points: Vec<u32>,
+    },
+    /// A press on a point, a drag from an empty place around points; empty: nothing is
+    /// selected. No step.
+    SelectAutoPoints {
+        lane: u32,
+        points: Vec<u32>,
+    },
+    /// 「● 書く」 of a lane's header (spec 3, 16-B). No step, not saved; nothing for a lane
+    /// that rests.
+    SetLaneWrite {
+        track: u32,
+        target: AutoTarget,
+        on: bool,
+    },
+    /// 「もどす」 of a resting lane, in its header and under the fader: the lane moves its
+    /// target again. One step.
+    RestoreLane {
+        track: u32,
+        target: AutoTarget,
+    },
+    /// 「ここまで戻す」 and Enter on a row of the history band (spec 3, Y19): row `index`
+    /// becomes 「いまここ」, by undoing or redoing as many steps as it takes. `step` is the
+    /// row's `HistoryRow::step`; when row `index` is another step by now, nothing happens.
+    /// Not while counting in or recording, as undo.
+    HistoryJump {
+        index: u32,
+        step: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1266,6 +1347,8 @@ pub struct Snapshot {
 pub struct AppState {
     pub song: SongView,
     pub timeline: TimelineView,
+    pub automation: AutomationView,
+    pub history: HistoryView,
     pub transport: TransportView,
     pub arrange: ArrangeView,
     pub piano_roll: PianoRollView,
@@ -1291,6 +1374,12 @@ impl AppState {
         }
         if old.timeline != new.timeline {
             out.push(Change::Timeline(new.timeline.clone()));
+        }
+        if old.automation != new.automation {
+            out.push(Change::Automation(new.automation.clone()));
+        }
+        if old.history != new.history {
+            out.push(Change::History(new.history));
         }
         if old.transport != new.transport {
             out.push(Change::Transport(new.transport.clone()));
@@ -1342,6 +1431,8 @@ impl AppState {
         match change {
             Change::Song(v) => self.song = *v,
             Change::Timeline(v) => self.timeline = v,
+            Change::Automation(v) => self.automation = v,
+            Change::History(v) => self.history = v,
             Change::Transport(v) => self.transport = v,
             Change::Arrange(v) => self.arrange = v,
             Change::PianoRoll(v) => self.piano_roll = v,
@@ -1446,6 +1537,12 @@ pub struct TrackView {
     pub muted: bool,
     /// Not saved (`ToggleSolo`).
     pub soloed: bool,
+    /// The automation lanes, in the order they were added. The points are not in here
+    /// (`LaneView::lane_id`). The fader, the pan, the sends, the mute and the values of the
+    /// inserts above are where the hand put them: what sounds while a lane with points
+    /// does not rest is the lane's value at the play line, which the screen works out from
+    /// the points (docs/architecture.md 21-8).
+    pub lanes: Vec<LaneView>,
     /// In order of start, never overlapping.
     pub clips: Vec<ClipView>,
 }
@@ -2655,6 +2752,51 @@ pub enum StatusMessage {
         meter_num: u8,
         meter_den: u8,
     },
+    /// Mod Z (spec 6): "「ノートを動かす」を取り消しました（3 ノート）。やりなおすには Mod
+    /// Shift Z". With `StepWhat::None` the brackets are left out.
+    Undone {
+        name: StepName,
+        what: StepWhat,
+    },
+    /// Mod Shift Z (spec 6): "「ノートを動かす」をやりなおしました（3 ノート）。"
+    Redone {
+        name: StepName,
+        what: StepWhat,
+    },
+    /// `HistoryJump` (spec 6): "11 手目「マーカーを足す」まで戻しました（5 手）。" `index` and
+    /// `name`: the row that is 「いまここ」 now; `steps`: how many steps were undone, or
+    /// with `forward` redone.
+    HistoryJumped {
+        index: u32,
+        name: StepName,
+        steps: u32,
+        forward: bool,
+    },
+    /// Mod Z with no step to undo (spec 6): "取り消せる手がありません。"
+    NothingToUndo,
+    /// 「● 書く」 is on and the song plays (spec 6): "1 ピアノ ・ 音量を書いています（● 書く ・
+    /// 止めるとオフに戻ります）".
+    AutomationWriting {
+        track: TrackRef,
+        target: LaneName,
+    },
+    /// A hand moved what a lane moves (spec 6): "4 パッド の音量を手で動かしたので、オート
+    /// メーションを休ませました。「もどす」で線のとおりに戻ります".
+    AutomationRested {
+        track: TrackRef,
+        target: LaneName,
+    },
+    /// 「もどす」 (spec 6): "4 パッド の音量を、オートメーションのとおりに戻しました。"
+    AutomationRestored {
+        track: TrackRef,
+        target: LaneName,
+    },
+    /// The mixer was opened and the faders of these tracks are moved by lanes that do not
+    /// rest (mock F6-MixerAuto): "1 ピアノ と 4 パッド の音量は、オートメーションで動いて
+    /// います". Not said when `MixerPassesBy` is.
+    AutomationMoving {
+        tracks: Vec<TrackRef>,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -2713,6 +2855,8 @@ pub enum Change {
     /// Boxed: with its strips it is far larger than the other sections.
     Song(Box<SongView>),
     Timeline(TimelineView),
+    Automation(AutomationView),
+    History(HistoryView),
     Transport(TransportView),
     Arrange(ArrangeView),
     PianoRoll(PianoRollView),

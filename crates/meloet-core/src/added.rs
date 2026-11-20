@@ -136,6 +136,7 @@ fn insert_view(insert: &Insert, plugin: PluginState) -> InsertView {
         (None, None) => unreachable!("an insert is an effect of meloet or a plugin"),
     };
     InsertView {
+        id: insert.id.0,
         effect,
         bypassed: insert.bypassed,
     }

@@ -44,8 +44,8 @@ async function open(scene: string) {
 const SURGE: SoundRef = { kind: "plugin", key: lv2Key("Surge XT") };
 
 describe("約束 17 の形", () => {
-  it("版は 20 に上がった。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
-    expect(PROTOCOL_VERSION).toBe(20);
+  it("版は 21 に上がった。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
+    expect(PROTOCOL_VERSION).toBe(21);
     const s = fakeState();
     expect(s.library).toEqual({ sf2: [], plugins: [], openedSf2: null, packMissing: false });
     expect(s.workspace.fileDrop).toBeNull();
@@ -58,7 +58,7 @@ describe("約束 17 の形", () => {
     const t = s.song.tracks[0]!;
     expect([t.sound, t.standIn, t.drumKeys]).toEqual([{ kind: "builtin", instrument: "grandPiano" }, null, null]);
     expect(t.slots).toEqual([null, null, null, null]);
-    expect(s.song.master.slots[0]).toEqual({ effect: { kind: "builtin", effect: "limiter" }, bypassed: false });
+    expect(s.song.master.slots[0]).toEqual({ id: 3, effect: { kind: "builtin", effect: "limiter" }, bypassed: false });
   });
 
   it("見出しの並びは仕様書 3 章のとおり（SF2 の 16 の仲間 ＋ ドラムのキット、14-A の種類）", () => {
@@ -296,7 +296,7 @@ describe("約束 17 の偽物の場面", () => {
     const b = await open("missingPlugin");
     await b.send({ type: "removeMissing", missing: { kind: "plugin", key: lv2Key("MVerb") } });
     expect(b.held.s.shelf.missing).toHaveLength(1);
-    expect(b.held.s.song.tracks[3]!.slots).toEqual([null, { effect: { kind: "builtin", effect: "eq4" }, bypassed: false }, null, null]);
+    expect(b.held.s.song.tracks[3]!.slots).toEqual([null, expect.objectContaining({ effect: { kind: "builtin", effect: "eq4" }, bypassed: false }), null, null]);
     expect(b.held.s.song.tracks[4]!.standIn).toBe("pluginMissing");
   });
 

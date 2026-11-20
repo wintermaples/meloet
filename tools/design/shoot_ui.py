@@ -154,6 +154,16 @@ BOARDS = {
     "markerMoving": "R10-Markers",
     "tempoDrag": "F6-Tempo",
     "pianoRollMarkers": "R10-Markers",
+    # 第 6 回 区切り2 ・ 3: オートメーション、取り消しの履歴の帯（約束 21）。paramMany6（F6-ParamMany）は上にある。
+    "autoRec": "F6-AutoRec",
+    "autoRest": "F6-AutoRest",
+    "mixerAuto": "F6-MixerAuto",
+    "mixerRest": "F6-MixerRest",
+    "autoAdd": "R10-AutoEdit",
+    "autoMove": "R10-AutoEdit",
+    "autoBox": "R10-AutoEdit",
+    "historyList": "F-History",
+    "historyUndone3": "R10-History",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -506,6 +516,15 @@ ONLY = {
     "markerRenaming": [(1280, 800, 100)],
     "markerMoving": [(1280, 800, 100)],
     "pianoRollMarkers": [(1280, 800, 100)],
+    "autoRec": [(1280, 800, 100), (1280, 800, 150)],
+    "autoRest": [(1280, 800, 100)],
+    "mixerAuto": [(1280, 800, 100)],
+    "mixerRest": [(1280, 800, 100)],
+    "autoAdd": [(1280, 800, 100)],
+    "autoMove": [(1280, 800, 100)],
+    "autoBox": [(1280, 800, 100)],
+    "historyList": [(1280, 800, 100), (1280, 800, 150)],
+    "historyUndone3": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

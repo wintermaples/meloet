@@ -559,7 +559,7 @@ fn a_key_on_a_track_whose_samples_are_not_read_says_so_until_they_are() {
         m,
         e,
         Command::SelectTrack {
-            track: 2,
+            track: 4,
             from_arm: false,
         },
     );

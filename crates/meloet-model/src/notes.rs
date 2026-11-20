@@ -526,7 +526,7 @@ pub fn set_notes_field(
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = clip_index(doc, clip)?;
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
-    let step = |count| StepKind::SetNotesField { clip, count };
+    let step = |count| StepKind::SetNotesField { clip, count, field };
     let notes = song_notes(&c);
     let picked = pick(indexes, notes.len())?;
     let chosen = || {

@@ -17,13 +17,13 @@ use meloet_model::{BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace
 use meloet_plugin::ScanCache;
 use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
-    AppState, AudioView, Availability, Band, ChooserView, ChosenState, Command, EffectRef,
-    EndpointView, FileDropView, Friendly, Hint, InputsView, InstrumentKind, KeyboardView,
-    KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot, LowerBandView,
-    MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues, PluginRole,
-    PluginWindowKind, QuantizeSettings, RecoveryCause, ScanView, SettingsDialogView, ShelfMode,
-    ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView, TrackView,
-    Unusable, VelocityFixed, WorkspaceView,
+    AppState, AudioView, AutomationView, Availability, Band, ChooserView, ChosenState, Command,
+    EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InputsView, InstrumentKind,
+    KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
+    LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
+    PluginRole, PluginWindowKind, QuantizeSettings, RecoveryCause, ScanView, SettingsDialogView,
+    ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage, StatusView,
+    TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -903,6 +903,17 @@ impl Model {
         self.play.take_notes(id)
     }
 
+    /// The points of a lane of the song as it is now; `None` for a `lane_id` that is no
+    /// lane's.
+    pub fn lane(&self, lane_id: u32) -> Option<Vec<u8>> {
+        self.play.lane(lane_id)
+    }
+
+    /// The rows `from ..= to` of the history band that there are (rows count from 1).
+    pub fn history_rows(&self, from: u32, to: u32) -> Vec<HistoryRow> {
+        self.play.history_rows(from, to)
+    }
+
     fn output_name(&self) -> String {
         self.chosen_name
             .clone()
@@ -1289,6 +1300,17 @@ impl Model {
             Command::DeleteSelected => self.play.delete_selected(effects),
             Command::StepTake { delta } => self.notice = self.play.step_take(delta, effects),
             Command::DeleteTake { clip } => self.play.delete_take(clip, effects),
+            // Automation and the jump of the history band come with round 6 steps 2 and 3.
+            Command::AddLane { .. }
+            | Command::DeleteLane { .. }
+            | Command::FoldLane { .. }
+            | Command::AddAutoPoint { .. }
+            | Command::MoveAutoPoints { .. }
+            | Command::DeleteAutoPoints { .. }
+            | Command::SelectAutoPoints { .. }
+            | Command::SetLaneWrite { .. }
+            | Command::RestoreLane { .. }
+            | Command::HistoryJump { .. } => {}
             Command::Undo => self.play.undo(effects),
             Command::Redo => self.play.redo(effects),
             Command::NewSong => self.new_song(effects),
@@ -2001,6 +2023,9 @@ impl Model {
         AppState {
             song: song_view(&self.play, self.song_file(), &library, &self.catalog),
             timeline: self.play.timeline_view(),
+            // The lanes come with round 6 step 2.
+            automation: AutomationView::default(),
+            history: self.play.history_view(),
             transport: self.play.transport_view(self.open.is_some()),
             arrange: self.play.arrange_view(),
             piano_roll: self.play.piano_roll_view(),
@@ -2317,6 +2342,7 @@ fn song_view(play: &Play, file: SongFile, library: &LibraryView, catalog: &Catal
                 slots: play.slots_of(StripId::Track(t.id), &t.channel.inserts),
                 muted: t.muted,
                 soloed: play.is_soloed(t.id),
+                lanes: Vec::new(),
                 clips: play.clips_of(t.id),
             })
             .collect(),

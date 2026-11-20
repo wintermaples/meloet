@@ -2264,6 +2264,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
     out
 }
 
+mod history;
 mod mix;
 pub(crate) mod mixer;
 mod mixsync;

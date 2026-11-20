@@ -4,6 +4,8 @@
 // builder:<日付>（仕様書にない所を、作る側が仮に決めた文。docs/design-notes.md の B に戻してある）。
 // {name} はうめこむ値の穴。example は出どころに書いてある例の値で、テストがこれを入れて出どころと照らし合わせる。
 
+import type { StepName } from "../bridge/generated/StepName";
+
 export type Source =
   `spec:${number}` | `mock:${string}` | `user:${string}` | `draft:${string}` | `builder:${string}`;
 
@@ -1969,6 +1971,67 @@ export const texts = {
   "menu.loopFromMarker": e("ここから次のマーカーまでをループに", "spec:3"),
   "menu.renameMarker": e("名前を変える", "spec:3"),
 
+  // [第 6 回 ・ オートメーション、取り消しの履歴]（仕様書 3 章 Y16 ・ Y19、6 章。仮の文は design-notes B-92）
+  // 状態行。（何を）がない手は、かっこごと出さない（Bare）。
+  "msg.undone": s6("取り消した", "「{name}」を取り消しました（{what}）。やりなおすには {redoKey}", {
+    name: "ノートを動かす",
+    what: "3 ノート",
+    redoKey: "Mod Shift Z",
+  }),
+  "msg.undoneBare": e("「{name}」を取り消しました。やりなおすには {redoKey}", "builder:2026-11-20", { name: "ミュート", redoKey: "Mod Shift Z" }),
+  "msg.redone": s6("やりなおした", "「{name}」をやりなおしました（{what}）。", { name: "ノートを動かす", what: "3 ノート" }),
+  "msg.redoneBare": e("「{name}」をやりなおしました。", "builder:2026-11-20", { name: "ミュート" }),
+  "msg.historyJumped": s6("履歴で戻した", "{index} 手目「{name}」まで戻しました（{steps} 手）。", { index: "11", name: "マーカーを足す", steps: "5" }),
+  // いまより上の行へとんだとき（仕様書 3 章 Y19「そこまでやりなおす」。文は 6 章にない）。
+  "msg.historyJumpedForward": e("{index} 手目「{name}」までやりなおしました（{steps} 手）。", "builder:2026-11-20", {
+    index: "14",
+    name: "クオンタイズ",
+    steps: "2",
+  }),
+  "msg.nothingToUndo": s6("取り消せる手がない", "取り消せる手がありません。"),
+  "msg.automationWriting": s6("オートメーションを書いている", "{track} ・ {target}を書いています（● 書く ・ 止めるとオフに戻ります）", {
+    track: "1 ピアノ",
+    target: "音量",
+  }),
+  "msg.automationRested": s6(
+    "オートメーションを休ませた",
+    "{track} の{target}を手で動かしたので、オートメーションを休ませました。「もどす」で線のとおりに戻ります",
+    { track: "4 パッド", target: "音量" },
+  ),
+  "msg.automationRestored": s6("オートメーションをもどした", "{track} の{target}を、オートメーションのとおりに戻しました。", {
+    track: "4 パッド",
+    target: "音量",
+  }),
+  "msg.automationMoving": e("{tracks} の音量は、オートメーションで動いています", "mock:F6-MixerAuto", { tracks: "1 ピアノ と 4 パッド" }),
+  // 帯が動かす物の名前（帯の見出し「オートメーション ・ （何を）」、状態行、履歴の行）。パンは mixer.pan。
+  "lane.volume": s6("オートメーションを書いている", "音量", undefined, "part"),
+  "lane.mute": e("ミュート", "spec:3"),
+  "lane.send": e("センド {bus}", "builder:2026-11-20", { bus: "A" }),
+  "lane.param": e("{effect}の「{param}」", "builder:2026-11-20", { effect: "コンプレッサー", param: "しきい値" }),
+  // プラグインがパラメータの名前を言ってこないとき。
+  "lane.pluginParam": e("{plugin}のパラメータ", "builder:2026-11-20", { plugin: "Surge XT " }),
+  // 履歴の行「「（手の名前）」・ （何を）」と、（何を）の形。手の名前は下の stepNames。
+  "history.row": e("「{name}」・ {what}", "mock:R10-History", { name: "ノートを動かす", what: "3 ノート" }),
+  "history.rowBare": e("「{name}」", "builder:2026-11-20", { name: "ミュート" }),
+  "history.notes": s6("取り消した", "{count} ノート", { count: "3" }, "part"),
+  "history.points": e("{count} 点", "builder:2026-11-20", { count: "3" }),
+  "history.clips": e("{count} クリップ", "builder:2026-11-20", { count: "2" }),
+  "history.take": e("テイク {number}", "mock:F-History", { number: "1" }),
+  "history.takeSwitch": e("テイク {from} → {to}", "builder:2026-11-20", { from: "1", to: "2" }),
+  "history.change": e("{from} → {to}", "builder:2026-11-20", { from: "ピアノ", to: "エレピ" }),
+  "history.changeAt": e("{place} {from} → {to}", "mock:R10-History", { place: "5 小節目", from: "96", to: "120" }),
+  "history.valueAt": e("{place} {value}", "builder:2026-11-20", { place: "5 小節目", value: "120" }),
+  "history.bars": e("{from}–{to}", "mock:F-History", { from: "5", to: "9" }),
+  "history.gain": e("{strip} {from} → {to} dB", "mock:R10-History", { strip: "4 パッド", from: "−10.5", to: "−12.0" }),
+  "history.pan": e("{strip} {from} → {to}", "builder:2026-11-20", { strip: "4 パッド", from: "C", to: "L 20" }),
+  "history.send": e("{strip} センド {bus} {from} → {to} dB", "builder:2026-11-20", { strip: "4 パッド", bus: "A", from: "−15.0", to: "−12.0" }),
+  "history.lanePoints": e("{target} ・ {count} 点", "builder:2026-11-20", { target: "音量", count: "3" }),
+  "history.missing": e("トラック {tracks} ・ インサート {inserts}", "builder:2026-11-20", { tracks: "2", inserts: "1" }),
+  // プラグインがパラメータの名前を言ってこなかった手の名前。
+  "history.pluginParam": e("{plugin}のパラメータを変える", "builder:2026-11-20", { plugin: "Surge XT " }),
+  // 行の右の「どこで」。ほかは band.arrange ・ band.pianoRoll ・ band.mixer と track.label。
+  "history.placePluginWindow": e("{strip} ・ プラグインの窓", "spec:6", { strip: "5 Surge XT" }),
+
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。
   "key.shift": e("Shift", "spec:4"),
@@ -2075,6 +2138,81 @@ export const texts = {
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;
+
+/**
+ * 取り消しの履歴の「手の名前」（仕様書 3 章 Y19）。約束の手の名前の種類（StepName の kind）ごとに 1 つ。
+ * spec:3 は 3 章「手の名前」の一覧の言いかた（「CC の点を書く ・ 動かす ・ 消す」は「CC の点を動かす」のように開く。
+ * 一覧の「録音（テイク）」は「録音」、「クリップを … 切る」は切り取り（Mod X）と読んだ）。
+ * 一覧にない名前は builder:（design-notes B-92。仕様書の次の版で足してもらう）。
+ */
+export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
+  writeNote: e("ノートを書く", "spec:3"),
+  deleteNotes: e("ノートを消す", "spec:3"),
+  cutNotes: e("ノートを切り取る", "builder:2026-11-20"),
+  moveNotes: e("ノートを動かす", "spec:3"),
+  duplicateNotes: e("ノートを複製する", "spec:3"),
+  resizeNotes: e("ノートの長さを変える", "spec:3"),
+  changeVelocity: e("ベロシティを変える", "spec:3"),
+  pasteNotes: e("ノートを貼りつける", "builder:2026-11-20"),
+  quantize: e("クオンタイズ", "spec:3"),
+  unquantize: e("もとの位置へ戻す", "builder:2026-11-20"),
+  addControl: e("CC の点を書く", "spec:3"),
+  moveControls: e("CC の点を動かす", "spec:3"),
+  deleteControls: e("CC の点を消す", "spec:3"),
+  record: e("録音", "spec:3"),
+  switchTake: e("テイクを切りかえる", "builder:2026-11-20"),
+  deleteTake: e("テイクを消す", "spec:3"),
+  moveClips: e("クリップを動かす", "spec:3"),
+  duplicateClips: e("クリップを複製する", "spec:3"),
+  cutClips: e("クリップを切る", "spec:3"),
+  pasteClips: e("クリップを貼りつける", "builder:2026-11-20"),
+  trimClip: e("クリップの長さを変える", "spec:3"),
+  deleteClips: e("クリップを消す", "spec:3"),
+  addTrack: e("トラックを足す", "spec:3"),
+  deleteTrack: e("トラックを消す", "spec:3"),
+  renameTrack: e("トラックの名前を変える", "spec:3"),
+  moveTrack: e("トラックを並べかえる", "spec:3"),
+  setTrackColor: e("トラックの色を変える", "spec:3"),
+  setInstrument: e("音源を入れかえる", "spec:3"),
+  removeInstrument: e("音源を外す", "builder:2026-11-20"),
+  removeMissing: e("見つからない物を曲から外す", "builder:2026-11-20"),
+  addEffect: e("エフェクトを入れる", "spec:3"),
+  removeEffect: e("エフェクトを外す", "spec:3"),
+  moveInsert: e("エフェクトを並べかえる", "spec:3"),
+  replaceEffect: e("エフェクトを入れかえる", "spec:3"),
+  bypassEffect: e("エフェクトをとばす", "spec:3"),
+  restoreEffect: e("エフェクトをもどす", "spec:3"),
+  setParam: e("{effect}の「{param}」を変える", "spec:3", { effect: "コンプレッサー", param: "しきい値" }),
+  setPluginParam: e("{effect}の「{param}」を変える", "spec:3", { effect: "コンプレッサー", param: "しきい値" }),
+  setGain: e("音量を変える", "spec:3"),
+  setPan: e("パンを変える", "spec:3"),
+  setSend: e("センドを変える", "spec:3"),
+  mute: e("ミュート", "spec:3"),
+  unmute: e("ミュートを外す", "builder:2026-11-20"),
+  pluginWindow: texts["plugin.windowStep"],
+  addLane: e("帯を足す", "builder:2026-11-20"),
+  deleteLane: e("帯を消す", "spec:3"),
+  addAutoPoint: e("オートメーションの点を書く", "spec:3"),
+  moveAutoPoints: e("オートメーションの点を動かす", "spec:3"),
+  deleteAutoPoints: e("オートメーションの点を消す", "spec:3"),
+  writeAutomation: e("オートメーションを書く", "builder:2026-11-20"),
+  restLane: e("オートメーションを休ませる", "builder:2026-11-20"),
+  restoreLane: e("オートメーションをもどす", "builder:2026-11-20"),
+  setTempo: e("テンポを変える", "spec:3"),
+  setMeter: e("拍子を変える", "spec:3"),
+  addTimelineChange: e("テンポ ・ 拍子の変更を足す", "spec:3"),
+  moveTimelineChange: e("テンポ ・ 拍子の変更を動かす", "builder:2026-11-20"),
+  deleteTimelineChange: e("テンポ ・ 拍子の変更を消す", "spec:3"),
+  setTempoRamp: e("だんだんにする", "builder:2026-11-20"),
+  clearTempoRamp: e("だんだんをやめる", "builder:2026-11-20"),
+  addMarker: e("マーカーを足す", "spec:3"),
+  renameMarker: e("マーカーの名前を変える", "spec:3"),
+  moveMarker: e("マーカーを動かす", "spec:3"),
+  deleteMarker: e("マーカーを消す", "spec:3"),
+  setLoop: e("ループの範囲を変える", "spec:3"),
+  recovered: e("なおすためのファイルから戻す", "mock:F-Recover2"),
+  discardRecovered: e("戻した変更をすてる（最後に保存した形にする）", "spec:6"),
+};
 
 export interface Term {
   readonly term: string;

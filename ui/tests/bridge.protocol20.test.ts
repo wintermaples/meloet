@@ -15,8 +15,8 @@ const scene = (name: string): AppState => fakeScene(name)!.state;
 const BAR = 1920;
 
 describe("約束 20 の形", () => {
-  it("版は 20。新しい曲の timeline は、曲の頭のテンポと拍子だけ。song にテンポと拍子はもうない", () => {
-    expect(PROTOCOL_VERSION).toBe(20);
+  it("版は 21。新しい曲の timeline は、曲の頭のテンポと拍子だけ。song にテンポと拍子はもうない", () => {
+    expect(PROTOCOL_VERSION).toBe(21);
     const s = fakeState();
     expect(s.timeline).toEqual({
       tempoBpm: 96,

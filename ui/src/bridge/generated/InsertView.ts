@@ -4,7 +4,13 @@ import type { InsertEffectView } from "./InsertEffectView";
 /**
  * What sits in an insert slot.
  */
-export type InsertView = { effect: InsertEffectView, 
+export type InsertView = { 
+/**
+ * Stays with what sits in the slot when the slots of its strip are put in another
+ * order, and is never given to another insert: what replaces it has another id.
+ * `AutoTarget::Insert` names the insert by it.
+ */
+id: number, effect: InsertEffectView, 
 /**
  * 「とばす」 (spec 3, 13-A): the mark at the left of the slot is empty and the name
  * gray.7. Saved with the song.

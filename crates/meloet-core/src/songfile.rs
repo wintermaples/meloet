@@ -13,10 +13,10 @@ use std::sync::Arc;
 use meloet_model::effects::{EffectKind, ParamShape};
 use meloet_model::{
     BuiltinInstrument, Bus, Channel, Clip, ClipId, ClipTake, ControlPoint, ControlValue, Doc, Gain,
-    Grid, Insert, Inserts, InstrumentRef, Kept, MAX_TICK, Marker, MarkerId, Meter, MeterChange,
-    MusicalScale, Note, OriginIndex, Pan, PluginRef, QuantizeAlign, QuantizeSettings, Return,
-    RollSettings, ScaleMode, Session, Sf2Ref, Song, Take, TakeId, TakeOrigin, Tempo, TempoMap,
-    TempoPoint, TickRange, Timeline, Track, TrackColor, TrackId, mixer,
+    Grid, Insert, InsertId, Inserts, InstrumentRef, Kept, MAX_TICK, Marker, MarkerId, Meter,
+    MeterChange, MusicalScale, Note, OriginIndex, Pan, PluginRef, QuantizeAlign, QuantizeSettings,
+    Return, RollSettings, ScaleMode, Session, Sf2Ref, Song, Take, TakeId, TakeOrigin, Tempo,
+    TempoMap, TempoPoint, TickRange, Timeline, Track, TrackColor, TrackId, mixer,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -210,6 +210,9 @@ enum SlotFile {
 /// their tables (`meloet_model::effects`), so that a table can grow or change its order.
 #[derive(Serialize, Deserialize)]
 struct InsertFile {
+    /// `Insert::id`. Missing in files written before inserts had ids: given when read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<u32>,
     effect: String,
     #[serde(default)]
     params: BTreeMap<String, ParamFile>,
@@ -226,6 +229,9 @@ struct InsertFile {
 /// with the fields of a plugin instrument.
 #[derive(Serialize, Deserialize)]
 struct PluginSlotFile {
+    /// As `InsertFile::id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<u32>,
     plugin: Fields,
     #[serde(
         default,
@@ -316,6 +322,7 @@ fn slots_file(inserts: &Inserts) -> Vec<SlotFile> {
             (None, _) => SlotFile::Other(serde_json::Value::Null),
             (Some(insert), None) => match insert.plugin_ref() {
                 Some(plugin) => SlotFile::Plugin(PluginSlotFile {
+                    id: Some(insert.id.0),
                     plugin: plugin_fields(plugin),
                     bypassed: insert.bypassed,
                 }),
@@ -324,6 +331,7 @@ fn slots_file(inserts: &Inserts) -> Vec<SlotFile> {
             (Some(insert), Some(kind)) => {
                 let params = kind.params().iter().zip(insert.values());
                 SlotFile::Insert(InsertFile {
+                    id: Some(insert.id.0),
                     effect: kind.name().into(),
                     bypassed: insert.bypassed,
                     params: params
@@ -347,15 +355,17 @@ fn slots_file(inserts: &Inserts) -> Vec<SlotFile> {
 /// An effect this meloet does not know leaves its slot empty; a parameter it does not know
 /// is skipped, one that is missing or of another shape has its default, and a value out of
 /// range is brought into range. A plugin stays in its slot whether or not this PC has it.
-/// Slots past the last one are dropped.
+/// Slots past the last one are dropped. An insert the file gives no id has `NO_INSERT_ID`
+/// until `give_insert_ids`.
 fn inserts_of(slots: Vec<SlotFile>) -> Inserts {
+    let id = |id: Option<u32>| InsertId(id.unwrap_or(NO_INSERT_ID.0));
     let mut inserts = Inserts::default();
     for (place, slot) in inserts.iter_mut().zip(slots) {
         let file = match slot {
             SlotFile::Insert(file) => file,
             SlotFile::Plugin(file) => {
                 *place = plugin_of(file.plugin).map(|plugin| {
-                    let mut insert = Insert::plugin(Arc::new(plugin));
+                    let mut insert = Insert::plugin(id(file.id), Arc::new(plugin));
                     insert.bypassed = file.bypassed;
                     insert
                 });
@@ -366,7 +376,7 @@ fn inserts_of(slots: Vec<SlotFile>) -> Inserts {
         let Some(kind) = EffectKind::from_name(&file.effect) else {
             continue;
         };
-        let mut insert = Insert::new(kind);
+        let mut insert = Insert::new(id(file.id), kind);
         insert.bypassed = file.bypassed;
         for (name, value) in file.params {
             let Some(index) = kind.param_index(&name) else {
@@ -388,6 +398,45 @@ fn inserts_of(slots: Vec<SlotFile>) -> Inserts {
         *place = Some(insert);
     }
     inserts
+}
+
+/// Stands for "the file gives no id" while a song is read. Ids start at 1.
+const NO_INSERT_ID: InsertId = InsertId(0);
+
+fn inserts_mut(doc: &mut Doc) -> impl Iterator<Item = &mut Insert> {
+    let tracks = (doc.tracks.iter_mut()).map(|t| &mut Arc::make_mut(t).channel);
+    let returns = (doc.returns.iter_mut()).map(|r| &mut Arc::make_mut(r).channel);
+    tracks
+        .chain(returns)
+        .chain(std::iter::once(Arc::make_mut(&mut doc.master)))
+        .flat_map(|c| c.inserts.iter_mut().flatten())
+}
+
+/// Checks the ids the file gave its inserts (below `next_id`, each once, none `taken` by a
+/// clip, a take or a marker), and gives the inserts without one theirs from `next_id`.
+fn give_insert_ids(doc: &mut Doc, taken: impl Fn(u32) -> bool) -> Option<()> {
+    let mut next_id = doc.next_id;
+    let mut seen = HashSet::new();
+    for insert in inserts_mut(doc) {
+        if insert.id == NO_INSERT_ID {
+            insert.id = InsertId(next_id);
+            next_id = next_id.checked_add(1)?;
+        } else if insert.id.0 >= next_id || taken(insert.id.0) || !seen.insert(insert.id) {
+            return None;
+        }
+    }
+    doc.next_id = next_id;
+    Some(())
+}
+
+/// Test help: gives every insert of `doc` an id from `doc.next_id`, as a file that has none is
+/// read. For songs put together by hand around a new song, whose inserts have the ids 1 to 3.
+#[cfg(test)]
+pub(crate) fn renumber_inserts(doc: &mut Doc) {
+    for insert in inserts_mut(doc) {
+        insert.id = NO_INSERT_ID;
+    }
+    give_insert_ids(doc, |_| false).expect("ids are left");
 }
 
 fn mixer_file(doc: &Doc) -> MixerFile {
@@ -1119,7 +1168,8 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
         });
     }
     markers.sort_by_key(|m| (m.tick, m.id));
-    let doc = Doc {
+    let (own_returns, own_master) = (returns.is_some(), master.is_some());
+    let mut doc = Doc {
         name: d.name,
         timeline: Arc::new(timeline),
         markers: Arc::new(markers),
@@ -1142,6 +1192,23 @@ fn to_song(file: SongFile, version: u32) -> Option<Song> {
         },
         next_id: d.next_id,
     };
+    // The returns and the master of a new song come with ids of their own, which this song
+    // may have given to something else.
+    if !own_returns {
+        for r in &mut doc.returns {
+            for insert in Arc::make_mut(r).channel.inserts.iter_mut().flatten() {
+                insert.id = NO_INSERT_ID;
+            }
+        }
+    }
+    if !own_master {
+        for insert in Arc::make_mut(&mut doc.master).inserts.iter_mut().flatten() {
+            insert.id = NO_INSERT_ID;
+        }
+    }
+    give_insert_ids(&mut doc, |id| {
+        clip_ids.contains(&id) || takes.contains_key(&id) || marker_ids.contains(&id)
+    })?;
     let known = |id: u32| track_ids.contains(&id).then_some(TrackId(id));
     let roll = roll_settings(&s);
     let session = Session {

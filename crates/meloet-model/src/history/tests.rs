@@ -296,3 +296,55 @@ fn kind_index(kind: &StepKind) -> usize {
         other => unreachable!("random_edit does not make {other:?}"),
     }
 }
+
+#[test]
+fn rows_have_the_docs_around_each_step_and_numbers_of_their_own() {
+    let mut h = History::new();
+    let mut doc = Doc::new_default();
+    let mut docs = vec![doc.clone()];
+    for centi in [10_000, 11_000, 12_000, 13_000] {
+        set_tempo(&mut h, &mut doc, centi);
+        docs.push(doc.clone());
+    }
+    let mut numbers = Vec::new();
+    // However many steps are taken back, the rows are the same.
+    for undone in 0..=4 {
+        let rows: Vec<StepRow> = (0..4).map(|i| h.row(&doc, i).unwrap()).collect();
+        assert!(h.row(&doc, 4).is_none());
+        for (i, row) in rows.iter().enumerate() {
+            assert_eq!(Some(&row.kind), h.steps().nth(i));
+            assert_eq!(
+                held(row.before),
+                held(&docs[i]),
+                "before step {i}, {undone} undone"
+            );
+            assert_eq!(
+                held(row.after),
+                held(&docs[i + 1]),
+                "after step {i}, {undone} undone"
+            );
+        }
+        let now: Vec<u64> = rows.iter().map(|r| r.number).collect();
+        assert!(now.windows(2).all(|w| w[0] < w[1]));
+        numbers.push(now);
+        h.undo(&mut doc);
+    }
+    assert!(numbers.windows(2).all(|w| w[0] == w[1]));
+
+    // A new step after two undone ones: the rows before it stay, it has a new number.
+    h.redo(&mut doc);
+    h.redo(&mut doc);
+    set_tempo(&mut h, &mut doc, 9_000);
+    let now: Vec<u64> = (0..3).map(|i| h.row(&doc, i).unwrap().number).collect();
+    assert_eq!(now[..2], numbers[0][..2]);
+    assert!(!numbers[0].contains(&now[2]));
+    assert!(h.row(&doc, 3).is_none());
+
+    // A step that is changed afterwards is another row.
+    let mut other = doc.clone();
+    other.name = "べつの名前".to_owned();
+    assert!(h.amend(&mut doc, other));
+    let amended = h.row(&doc, 2).unwrap();
+    assert_ne!(amended.number, now[2]);
+    assert_eq!(amended.after.name, "べつの名前");
+}

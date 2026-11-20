@@ -1,6 +1,7 @@
 //! Song, tracks and instrument references. Pure data: no I/O, no threads.
 
 pub mod arrange;
+pub mod automation;
 pub mod chunked;
 pub mod controls;
 pub mod drums;
@@ -22,16 +23,17 @@ pub mod time;
 pub mod timeline;
 
 pub use arrange::{ClipEdge, ClipEdited};
+pub use automation::AutoTarget;
 pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
-pub use history::{History, StepKind};
+pub use history::{History, StepKind, StepRow};
 pub use instrument::{
     BuiltinInstrument, GmFamily, InstrumentGroup, InstrumentRef, Kept, PluginRef, SF2_DRUM_BANK,
     Sf2Ref,
 };
 pub use mixer::{
-    Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginChange, PluginPlace, Return,
-    Sends, StripId,
+    Bus, Channel, Gain, INSERT_SLOTS, Insert, InsertId, Inserts, Pan, PluginChange, PluginPlace,
+    Return, Sends, StripId,
 };
 pub use notes::{NoteField, NotesEdited, WriteAt};
 pub use roll::{Grid, MusicalScale, QuantizeAlign, QuantizeSettings, RollSettings, ScaleMode};

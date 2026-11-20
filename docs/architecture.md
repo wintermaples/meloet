@@ -1197,22 +1197,27 @@ pub struct Lane {
 - Surge XT（VST3）では、どちらの見分けかたでも同じ 2080 個（`MIDI CC 0|0` 〜 `MIDI CC 15|129`）が見つかり、残りは 774 個。Surge XT の LV2 は 775 個で 0。LSP と ZamComp は 0。聞くのにかかるのは 0.87 ms（debug。一覧を作る残りは 8.2 ms）。
 - 見分けた行は plughost が `ParamInfo::midi_cc` を立て、core が `ParamTable::keyboard_knobs` に分ける（`groups` にも `SelectedPlugin::count` にも入れない）。core の表では、ふつうの行と同じにえらべて動かせる（さがして出した行のため）。
 
-### 21-15. 約束の版 20（区切り1 の 1 回目で決めた形と、区切り2 ・ 3 の案）
+### 21-15. 約束の版 20 と 21（区切り1 の 1 回目で決めた形と、区切り2 ・ 3 の 1 回目で決めた形）
 
-`timeline` の区画、テンポと拍子とマーカーの意図、その状態行の文は、区切り1 の 1 回目で決めて入れた（`crates/meloet-protocol/src/timeline.rs`、`lib.rs`）。`lanes` ・ `automation` ・ `history` と、その意図は、まだ案（区切り2 ・ 3 で足す。版は 20 のまま足すか、そのとき決める）。
+`timeline` の区画、テンポと拍子とマーカーの意図、その状態行の文は、区切り1 の 1 回目で決めて入れた（`crates/meloet-protocol/src/timeline.rs`、`lib.rs`）。`lanes` ・ `automation` ・ `history` と、その意図 ・ 文は、区切り2 ・ 3 の 1 回目で**約束 版 21** として入れた（`crates/meloet-protocol/src/{automation.rs,history.rs,lib.rs}`）。core は区画を出すだけ（帯は空、履歴は数と行が正しい）で、意図は何もしない腕。
 
 **状態の区画**
 
 | 区画 | 入れる物 |
 |---|---|
-| `song` | （案）トラックに `lanes: [{ target, laneId, points（数）, step, resting }]`、インサートに `id`。ループの範囲は今のまま（手になるだけ）。（入れた）`tempoBpm` ・ `meterNum` ・ `meterDen` ・ `tempoChanges` は消して `timeline` へ |
+| `song` | （版 21）トラックに `lanes: [{ target, name, laneId, points（数）, step, resting }]`（足した順。`name` は帯の見出し ・ 文の「何を」: `volume` ・ `pan` ・ `send {bus}` ・ `mute` ・ `builtin {effect, param}` ・ `plugin {plugin, param?}`）、インサートに `id`（`InsertId`）。ループの範囲は今のまま（手になるだけ）。（入れた）`tempoBpm` ・ `meterNum` ・ `meterDen` ・ `tempoChanges` は消して `timeline` へ |
 | `timeline`（入れた） | 曲の頭の `tempoBpm` ・ `meterNum` ・ `meterDen`、`headRamp`、`tempoPoints: [{tick, tempoBpm, ramp}]`（tick の順、1 以上）、`meterChanges: [{bar, meterNum, meterDen}]`（bar は 0 から数える小節の番号、1 以上）、`markers: [{id, tick, name}]`（tick の順、同じ tick は id の順）、`selected`（えらんでいる物。テンポの点 ・ 旗 ・ マーカーを通して 1 つまで: `{kind: "tempoPoint", tick}` ・ `{kind: "meterChange", bar}` ・ `{kind: "marker", id}`）、`renaming`（名前の枠がひらいているマーカーの id）、`open`（アレンジの「テンポ ・ 拍子の変更」の行がひらいているか）。画面の地図（`ui/src/time/tempoMap.ts`）はここから作る |
-| `automation`（新。手でない物） | たたんだ帯、「書く」がオンの帯、書いている最中の帯と書きはじめのティック、仮の休み、えらんだ点（`laneId` と番号の範囲） |
-| `history`（新） | 手の数、やりなおせる数、いまの番号、いちばん新しい手の番号。行は入れない |
+| `automation`（版 21。手でない物） | `folded: LaneRef[]`（たたんだ帯）、`armed: LaneRef[]`（「● 書く」がオン）、`writing: [{lane, fromTick}]`（書いている最中と書きはじめ）、`held: LaneRef[]`（仮の休み。プラグインの窓で動かしている間、21-10）、`selected: {laneId, points: IndexRange[]} \| null`（えらんだ点、1 つの帯だけ）。`LaneRef` は `{track, target}`。どの列にもない帯は、ひらいていて、書かず、書いていない |
+| `history`（版 21） | `total`（手の数）、`redo`（やりなおせる数）、`current`（いまここの行、`total − redo`。手がないか全部取り消すと 0）、`newest`（行 `total` の手の番号、なければ 0）。行は入れない。画面がためた行は `index` と `step` で決まり、`newest` が変われば最後の行だけ、`total` より後ろは消える |
 | `transport` | 変えない（テンポと拍子の数字は、画面が `timeline` と計器の位置から出す） |
-| `params` | プラグインの「オートメーションに書いている行」（版 18 からある空の席）を使う |
+| `params` | プラグインの「オートメーションに書いている行」（版 18 からある空の席 `automated`）を使う。席は変えない |
 
-**取りにいく物**（invoke。差分ではない）: `lane(laneId)` → 点のバイナリ（先頭に型と版、リトルエンディアン、`u32` 点の数、点ごとに `u64` ティック ＋ `f32` 値）。`history_rows(from, to)` → 行（番号、手の番号、文の種類、うめこむ値）。
+**取りにいく物**（invoke。差分ではない）:
+
+- `lane(laneId)` → 点のバイナリ、版 1、リトルエンディアン（`LanePoints`、読むのは `ui/src/bridge/lane.ts`。Rust で書いた `ui/tests/fixtures/lane-v1.bin` を TS で読む試験）。頭 16 バイト: `u8` 型 = 3、`u8` 版 = 1、`u8` 旗（1 = 階段）、`u8` 0、`u32` laneId、`u32` 点の数、4 バイト 0。点ごとに 16 バイト: `u64` ティック、`f32` 値（0〜1）、4 バイト 0。長さが数と合わなければ読まない。今の `laneId` でなければ答えなし。画面はテイクと同じに、いま曲にある帯と新しい 16 個だけためる（`LaneStore.keepOnly`）。
+  - **案から変えた所**: 頭に `laneId` と階段の旗を入れ、点を 16 バイトにそろえた。**理由**: 答えだけで、どの帯の、どの線の形の点かが分かる（取りにいく間に帯が変わっても取りちがえない）。点の頭を 8 バイトの区切りにそろえた（`u64` の位置がそろう）。
+- `history_rows(from, to)` → 行 `from..=to`（あるだけ、古い順）: `{index（1 から）, step（手の番号、0 でない）, name: StepName, what: StepWhat, place: StepPlace | null}`。`name` は手の名前の種類（仕様書 3 章「手の名前」と B-92 の仮。`SetParam {effect, param}`、`SetPluginParam {plugin, param?}`、`PluginWindow {plugin}` だけ値を持つ）、`what` は「何を」のうめこむ値（ノートの数、クリップの数、テイク、トラック、ストリップ、場所、名前、テンポ ・ 拍子の前と後、ループの小節、dB の前と後、パン、センド、エフェクト、音色、帯と点の数、外した数）、`place` は右の列（アレンジ ・ ピアノロール ・ ミキサー ・ トラック ・ プラグインの窓）。文は画面（`ui/src/components/history/stepText.ts`、`ja.ts`）。
+  - 手の名前は `StepName::every_kind()` の 1 か所。Rust は「どの `StepKind` も `StepName` になる」、TS は「どの `StepName` にも `ja.ts` の名前がある」を見はり、1 つでもなければ落ちる。
 
 **意図**
 
@@ -1226,9 +1231,11 @@ pub struct Lane {
 - **マーカーの名前「マーカー 4」は画面が作って送る**（`AddMarker {name}`。文面は `ui/src/text/ja.ts` の `marker.newName`。数は、いまのマーカーの数 + 1）。**理由**: 画面の文面を Rust に置かない（3-2）。
 - **名前の枠は core が持つ**（`renaming`）。足した直後にひらくのは core にしか分からないので、2 回押す ・ F2 ・ 右クリックも同じ道（`OpenMarkerName`）にそろえた。打っている途中の文字は画面だけの物。
 - オートメーション: `AddLane {track, target}`、`DeleteLane {track, target}`、`FoldLane {track, target, folded}`、`AddAutoPoint {lane, tick, value?}`（`value` なしは線の上の値）、`MoveAutoPoints {lane, points, dTick, dValue}`、`DeleteAutoPoints {lane, points}`、`SelectAutoPoints {lane, points}`、`SetLaneWrite {track, target, on}`、`RestoreLane {track, target}`
-- 履歴: `HistoryJump {index, step}`（`step` は手の番号。古ければ何もしない）
+- 履歴: `HistoryJump {index, step}`（`step` は手の番号。古ければ何もしない。カウントイン ・ 録音中は取り消しと同じに何もしない）
 - ループ: 今の意図のまま（手になる）。ミキサーとパラメータの意図は変えない（21-11）
 - 状態行の文（入れた）: `TempoRampSelected {bar, beat, tempoBpm, toBar, toBeat, toTempoBpm}` ・ `MarkerAdded {name}`（仕様書 6 章）、`TempoPointSelected {bar, beat, tempoBpm}` ・ `MeterChangeSelected {bar, meterNum, meterDen}` ・ `TempoPointSet {bar, beat, tempoBpm}` ・ `MeterChangeSet {bar, meterNum, meterDen}`（B-92 の仮）。`bar` と `beat` は見せる数（1 から）で、1 小節目の 1 拍目は曲の頭。最後の点の「だんだん」は効かないので、`TempoPointSelected` で言う
-- 状態行の文（案。区切り2 ・ 3）: 仕様書 6 章の残りの 7 つ（取り消した ・ やりなおした ・ 履歴で戻した ・ 取り消せる手がない ・ 書いている ・ 休ませた ・ もどした）
+- 状態行の文（版 21）: `Undone {name, what}` ・ `Redone {name, what}`（Mod Z ・ Mod Shift Z も手の名前を言う。`what` が `none` ならかっこなし）、`HistoryJumped {index, name, steps, forward}`（`forward` は「やりなおしました」、B-92 の仮）、`NothingToUndo`、`AutomationWriting {track, target}`、`AutomationRested {track, target}`、`AutomationRestored {track, target}`（仕様書 6 章）、`AutomationMoving {tracks}`（モック F6-MixerAuto の文。`MixerPassesBy` のときは言わない）。`target` は `LaneName`
 
-`target` は `{kind: "volume" | "pan" | "send" | "mute" | "instrument" | "insert", bus?, insert?, param?}`。
+`target` は `{kind: "volume" | "pan" | "send" | "mute" | "instrument" | "insert", bus?, insert?, param?}`（`insert` は `InsertView.id`、`param` は最初から入っている物は表の番号、プラグインは `ParamRow.id`）。点の意図の `points` は帯の中の番号（ティックの順、0 から）の列、えらんだ点は番号の範囲。
+
+**model の手（版 21 で足した物）**: 21-5 の 8 つに加えて `RemoveInstrument {track}`（止まったプラグインの音源を「外す」。名前の種類だけ置いた。いまの core は `SetInstrument` の手で入れている〔`play/tracks.rs`〕ので、2 回目で切りかえる）。`SetNotesField` に `field`（始め ・ 鍵 ・ 長さ ・ ベロシティ。手の名前を分けるため）。

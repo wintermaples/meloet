@@ -30,8 +30,8 @@ use meloet_model::{
 use meloet_plugin::wire::Notice;
 use meloet_plugin::{PluginKey, ScanCache};
 use meloet_protocol::{
-    Command, Event, LiveNotesSnapshot, ParamTable, PluginWindowKind, Snapshot, Telemetry,
-    TransportReading, TransportState,
+    Command, Event, HistoryRow, LiveNotesSnapshot, ParamTable, PluginWindowKind, Snapshot,
+    Telemetry, TransportReading, TransportState,
 };
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
@@ -186,6 +186,8 @@ enum Msg {
     DevicesLost,
     LiveNotes(Sender<LiveNotesSnapshot>),
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
+    Lane(u32, Sender<Option<Vec<u8>>>),
+    HistoryRows(u32, u32, Sender<Vec<HistoryRow>>),
     PluginParams(u32, Sender<Option<ParamTable>>),
     /// Told once the recovery file holds the song, or there was nothing to write.
     PcEnding(Sender<()>),
@@ -597,6 +599,23 @@ impl Core {
         let (reply, answer) = mpsc::channel();
         self.tx.send(Msg::TakeNotes(id, reply)).ok()?;
         answer.recv().ok().flatten()
+    }
+
+    /// The points of a lane (`meloet_protocol::LanePoints`) of the song as it is now; `None`
+    /// for a `lane_id` that is no lane's.
+    pub fn lane(&self, lane_id: u32) -> Option<Vec<u8>> {
+        let (reply, answer) = mpsc::channel();
+        self.tx.send(Msg::Lane(lane_id, reply)).ok()?;
+        answer.recv().ok().flatten()
+    }
+
+    /// The rows `from ..= to` of the history band that there are (rows count from 1).
+    pub fn history_rows(&self, from: u32, to: u32) -> Vec<HistoryRow> {
+        let (reply, answer) = mpsc::channel();
+        if self.tx.send(Msg::HistoryRows(from, to, reply)).is_err() {
+            return Vec::new();
+        }
+        answer.recv().unwrap_or_default()
     }
 
     /// The parameters of the plugin the parameters panel shows, when `table` is still
@@ -1503,6 +1522,12 @@ impl Worker {
                 }
                 Ok(Msg::TakeNotes(id, reply)) => {
                     let _ = reply.send(self.model.take_notes(id));
+                }
+                Ok(Msg::Lane(id, reply)) => {
+                    let _ = reply.send(self.model.lane(id));
+                }
+                Ok(Msg::HistoryRows(from, to, reply)) => {
+                    let _ = reply.send(self.model.history_rows(from, to));
                 }
                 Ok(Msg::PluginParams(table, reply)) => {
                     let _ = reply.send(self.model.plugin_params(table));

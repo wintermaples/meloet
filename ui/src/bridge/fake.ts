@@ -4,6 +4,7 @@
 // numbers as crates/meloet-core/src/layout.rs, but meloet-core stays the rule book.
 
 import type { Transport } from "./session";
+import { LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN, LANE_VERSION } from "./lane";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
 import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_VERSION, type TransportReading } from "./telemetry";
 import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
@@ -13,6 +14,7 @@ import {
   INSTRUMENT_GROUPS,
   PROTOCOL_VERSION,
   type AppState as WireState,
+  type AutoTarget,
   type Band,
   type Change,
   type ClipView,
@@ -20,11 +22,16 @@ import {
   type EffectKind,
   type EffectRef,
   type EndpointView,
+  type HistoryRow,
+  type HistoryView,
   type IndexRange,
   type InsertRef,
   type InsertView,
   type InstrumentKind,
   type KeyCount,
+  type LaneName,
+  type LaneRef,
+  type LaneView,
   type LayoutView,
   type LibraryView,
   type LiveNote,
@@ -375,9 +382,18 @@ function builtinEffect(effect: EffectKind): EffectRef {
   return { kind: "builtin", effect };
 }
 
-/** The slots of a strip that holds only effects that come with meloet, none passed by. */
-export function builtinSlots(inserts: Inserts): Slots {
-  return inserts.map((effect): InsertView | null => (effect === null ? null : { effect: { kind: "builtin", effect }, bypassed: false })) as Slots;
+/** An insert that has no id yet: `settleSong` gives it one. */
+const NO_INSERT_ID = 0;
+
+/**
+ * The slots of a strip that holds only effects that come with meloet, none passed by. The inserts get the ids
+ * `firstId`, `firstId` + 1, …; without it they get theirs when the song is settled.
+ */
+export function builtinSlots(inserts: Inserts, firstId = NO_INSERT_ID): Slots {
+  let id = firstId;
+  return inserts.map((effect): InsertView | null =>
+    effect === null ? null : { id: firstId === NO_INSERT_ID ? NO_INSERT_ID : id++, effect: { kind: "builtin", effect }, bypassed: false },
+  ) as Slots;
 }
 
 /** The counts of `NoteSelection.names`: each key once, lowest first, five at most. */
@@ -395,13 +411,23 @@ function settleSlots(inserts: Inserts, slots: Slots): Slots {
   return inserts.map((effect, i): InsertView | null => {
     const had = slots[i] ?? null;
     if (effect === null) return had?.effect.kind === "plugin" ? had : null;
-    return had?.effect.kind === "builtin" && had.effect.effect === effect ? had : { effect: { kind: "builtin", effect }, bypassed: false };
+    return had?.effect.kind === "builtin" && had.effect.effect === effect ? had : { id: NO_INSERT_ID, effect: { kind: "builtin", effect }, bypassed: false };
   }) as Slots;
+}
+
+/** Gives the inserts that have no id one above every id of the song, in the order of the strips. */
+function giveInsertIds(song: SongView): SongView {
+  const strips = [...song.tracks, ...song.returns, song.master];
+  let next = Math.max(0, ...strips.flatMap((s) => s.slots.map((i) => i?.id ?? 0))) + 1;
+  const give = <T extends { slots: Slots }>(s: T): T =>
+    s.slots.some((i) => i?.id === NO_INSERT_ID) ? { ...s, slots: s.slots.map((i) => (i?.id === NO_INSERT_ID ? { ...i, id: next++ } : i)) as Slots } : s;
+  const tracks = song.tracks.map(give);
+  return { ...song, tracks, returns: [give(song.returns[0]), give(song.returns[1])], master: give(song.master) };
 }
 
 function settleSong(song: SongView): SongView {
   const strip = <T extends { inserts: Inserts; slots: Slots }>(s: T): T => ({ ...s, slots: settleSlots(s.inserts, s.slots) });
-  return {
+  return giveInsertIds({
     ...song,
     tracks: song.tracks.map((t) => {
       const own = t.sound.kind === "builtin" || t.instrument !== "sine";
@@ -414,7 +440,7 @@ function settleSong(song: SongView): SongView {
     }),
     returns: [strip(song.returns[0]), strip(song.returns[1])],
     master: strip(song.master),
-  };
+  });
 }
 
 function settleShelf(shelf: ShelfView): ShelfView {
@@ -452,10 +478,10 @@ const newTrackSends = (instrument: InstrumentKind): TrackView["sends"] => {
 function newSongMixer(): Pick<SongView, "returns" | "master"> {
   return {
     returns: [
-      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("reverb"), slots: builtinSlots(firstInsert("reverb")) },
-      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("delay"), slots: builtinSlots(firstInsert("delay")) },
+      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("reverb"), slots: builtinSlots(firstInsert("reverb"), 1) },
+      { gainDb: 0, pan: 0, muted: false, inserts: firstInsert("delay"), slots: builtinSlots(firstInsert("delay"), 2) },
     ],
-    master: { gainDb: 0, pan: 0, inserts: firstInsert("limiter"), slots: builtinSlots(firstInsert("limiter")) },
+    master: { gainDb: 0, pan: 0, inserts: firstInsert("limiter"), slots: builtinSlots(firstInsert("limiter"), 3) },
   };
 }
 
@@ -486,6 +512,7 @@ export function fakeState(): AppState {
           slots: builtinSlots(noInserts()),
           muted: false,
           soloed: false,
+          lanes: [],
           clips: [],
         },
       ],
@@ -507,6 +534,8 @@ export function fakeState(): AppState {
       renaming: null,
       open: false,
     },
+    automation: { folded: [], armed: [], writing: [], held: [], selected: null },
+    history: { total: 0, redo: 0, current: 0, newest: 0 },
     transport: {
       state: "stopped",
       position: 0,
@@ -588,6 +617,8 @@ interface Scene {
   /** Keep every scrolling box (`data-gl-scroll`) scrolled to its end. */
   scrollToEnd?: boolean;
   live: LiveNotesSnapshot;
+  /** The rows of the history band, oldest first; rows past its end are made up (`fakeHistoryRows`). */
+  history: HistoryRow[];
 }
 
 interface SceneDef {
@@ -603,6 +634,8 @@ interface SceneDef {
   after?(s: AppState): void;
   /** The notes of the recording going on. */
   live?: LiveNotesSnapshot;
+  /** The rows of the history band, oldest first. */
+  history?: HistoryRow[];
 }
 
 const dbfs = (db: number) => 10 ** (db / 20);
@@ -1576,6 +1609,7 @@ function bandSong(s: AppState, tracks = BAND_TRACKS): void {
     slots: builtinSlots(noInserts()),
     muted: false,
     soloed: false,
+    lanes: [],
     clips: t.clips.map(([name, from, to]) => {
       const take = phrase(++id, to - from, 4 * (to - from), id);
       FAKE_TAKES.set(take.id, take);
@@ -1786,7 +1820,11 @@ const CLEAN_GUITAR: Extract<SoundRef, { kind: "sf2" }> = { kind: "sf2", file: FL
 const playingKeys: Partial<FakeMeters> = { keys: [60, 64, 67], velocity: 87, sustain: 127, modulation: 12 };
 
 const pluginView = (name: string, state: PluginState = "ready"): PluginView => ({ key: lv2Key(name), name, format: "lv2", state });
-const pluginSlot = (name: string, state: PluginState = "ready", bypassed = false): InsertView => ({ effect: { kind: "plugin", ...pluginView(name, state) }, bypassed });
+const pluginSlot = (name: string, state: PluginState = "ready", bypassed = false): InsertView => ({
+  id: NO_INSERT_ID,
+  effect: { kind: "plugin", ...pluginView(name, state) },
+  bypassed,
+});
 
 /** The song of the mocks F5-Plugin*: the four tracks of the band and "5 Surge XT", a track of the plugin. */
 function surgeSong(s: AppState, state: PluginState = "ready"): void {
@@ -2062,7 +2100,23 @@ export function fakeScene(name: string, scale?: number, viewport = { width: 1280
   def.after?.(state);
   state.song = settleSong(state.song);
   state.shelf = settleShelf(state.shelf);
-  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE };
+  state.history = historyOf(state.song);
+  return { state, bands, meters: def.meters, scrollToEnd: def.scrollToEnd, live: def.live ?? NO_LIVE, history: def.history ?? [] };
+}
+
+/** The section `history` of the fake: the counts of the song; a row's `step` is its `index`. */
+function historyOf(song: SongView): HistoryView {
+  const total = song.undoCount + song.redoCount;
+  return { total, redo: song.redoCount, current: song.undoCount, newest: total };
+}
+
+/** The rows `from`..`to` of `total`: those of the scene, and made-up ones past its list. */
+export function fakeHistoryRows(rows: readonly HistoryRow[], total: number, from: number, to: number): HistoryRow[] {
+  const out: HistoryRow[] = [];
+  for (let index = Math.max(1, from); index <= Math.min(to, total); index++) {
+    out.push(rows[index - 1] ?? { index, step: index, name: { kind: "moveNotes" }, what: { kind: "notes", count: 1 + (index % 4) }, place: { kind: "pianoRoll" } });
+  }
+  return out;
 }
 
 // ---- round 5, step 3: plugin windows, a plugin in the parameters panel, what is left of 86 (protocol 18) ----
@@ -2346,6 +2400,348 @@ SCENES.pianoRollMarkers = {
   bands: ["pianoRoll"],
   meters: QUIET,
 };
+
+// ---- round 6, steps 2 and 3: automation and the history band (protocol 21) ----
+
+/** The points of a lane: `[tick, value]`, the value the place of the knob (0..1). */
+interface FakeLane {
+  id: number;
+  step: boolean;
+  points: [number, number][];
+}
+
+/** Writes the lane binary (docs/architecture.md 21-15). */
+export function encodeLane(l: FakeLane): ArrayBuffer {
+  const out = new ArrayBuffer(LANE_HEADER_LEN + LANE_POINT_LEN * l.points.length);
+  const view = new DataView(out);
+  view.setUint8(0, LANE_KIND);
+  view.setUint8(1, LANE_VERSION);
+  view.setUint8(2, l.step ? 1 : 0);
+  view.setUint32(4, l.id, true);
+  view.setUint32(8, l.points.length, true);
+  l.points.forEach(([tick, value], i) => {
+    const p = LANE_HEADER_LEN + LANE_POINT_LEN * i;
+    view.setUint32(p, tick % 2 ** 32, true);
+    view.setUint32(p + 4, Math.floor(tick / 2 ** 32), true);
+    view.setFloat32(p + 8, value, true);
+  });
+  return out;
+}
+
+const FAKE_LANES = new Map<number, FakeLane>();
+const fakeLane = (id: number, points: [string, number][], step = false): FakeLane => {
+  const lane: FakeLane = { id, step, points: points.map(([place, value]) => [at(place), value]) };
+  FAKE_LANES.set(id, lane);
+  return lane;
+};
+const laneView = (target: AutoTarget, name: LaneName, lane: FakeLane, resting = false): LaneView => ({
+  target,
+  name,
+  laneId: lane.id,
+  points: lane.points.length,
+  step: lane.step,
+  resting,
+});
+
+// The fader's places are those of spec 2 「メーターとフェーダーの目盛」: 0.80 is 0 dB, 0.72 −2.4, 0.64 −4.8,
+// 0.52 −8.4, 0.45 −10.5, 0.40 −12.
+/** "1 ピアノ" の音量: −4.8 dB at bar 8 (F6-AutoRec, R10-AutoEdit 「いま −4.8 dB」), −2.4 dB at 9.2.000 (F6-MixerAuto). 5 points (F6-ParamMany 「点 5」). */
+const PIANO_VOLUME = fakeLane(501, [["1.1.000", 0.8], ["5.1.000", 0.64], ["8.1.000", 0.64], ["9.2.000", 0.72], ["13.1.000", 0.6]]);
+const PIANO_PAN = fakeLane(502, [["1.1.000", 0.5], ["9.1.000", 0.4]]);
+const PIANO_THRESHOLD = fakeLane(503, [["1.1.000", 0.6], ["9.1.000", 0.45], ["13.1.000", 0.6]]);
+/** "4 パッド" の音量: −10.5 dB at 9.2.000, where the hand of F6-MixerRest takes it to −12. */
+const PAD_VOLUME = fakeLane(504, [["1.1.000", 0.4], ["9.1.000", 0.45], ["13.1.000", 0.45]]);
+const SURGE_CUTOFF = fakeLane(505, [["1.1.000", 0.6], ["5.1.000", 0.75], ["9.1.000", 0.5]]);
+const SURGE_PITCH = fakeLane(506, [["1.1.000", 0.5], ["13.1.000", 0.5]]);
+/** R10-AutoEdit: the line of the board over bars 1 to 8, and the same after a press at 5.3.000 put a point at −8.4 dB. */
+const EDIT_VOLUME = fakeLane(510, [["1.1.000", 0.64], ["3.1.000", 0.73], ["4.1.000", 0.6], ["6.1.000", 0.45], ["7.3.000", 0.64]]);
+const EDIT_VOLUME_ADDED = fakeLane(511, [["1.1.000", 0.64], ["3.1.000", 0.73], ["4.1.000", 0.6], ["5.3.000", 0.52], ["6.1.000", 0.45], ["7.3.000", 0.64]]);
+
+const VOLUME: AutoTarget = { kind: "volume" };
+const laneOf = (number: number, target: AutoTarget): LaneRef => ({ track: BAND_TRACK_ID + number, target });
+const PIANO_REF: TrackRef = { number: 1, name: "ピアノ" };
+const PAD_REF: TrackRef = { number: 4, name: "パッド" };
+
+/**
+ * The song of the mocks F6-Auto* and F6-Mixer*: the strips of F5-ShelfFx (EQ and compressor on "1 ピアノ", MVerb on
+ * "4 パッド"), playing. "1 ピアノ" has three lanes: the volume, and folded the pan and the compressor's threshold
+ * (the mock's 「▸ パン ▸ プラグインのパラメータ 1」).
+ */
+function autoSong(s: AppState, position: string): void {
+  surgeMixer(s);
+  s.song = settleSong(s.song);
+  const piano = s.song.tracks[0]!;
+  const threshold: AutoTarget = { kind: "insert", insert: piano.slots[1]!.id, param: 0 };
+  piano.lanes = [
+    laneView(VOLUME, { kind: "volume" }, PIANO_VOLUME),
+    laneView({ kind: "pan" }, { kind: "pan" }, PIANO_PAN),
+    laneView(threshold, { kind: "builtin", effect: "compressor", param: 0 }, PIANO_THRESHOLD),
+  ];
+  s.automation.folded = [laneOf(1, { kind: "pan" }), laneOf(1, threshold)];
+  s.timeline.tempoPoints = [{ tick: 12 * BAR, tempoBpm: 120, ramp: false }];
+  s.timeline.markers = MARKERS.map((m) => ({ ...m }));
+  s.song.loopOn = true;
+  s.transport.state = "playing";
+  s.transport.position = at(position);
+}
+const autoMeters = (position: string): FakeMeters => ({ ...QUIET, loadPermille: 140, master: [dbfs(-6.2), dbfs(-7)], position: playingAt(position) });
+
+// F6-AutoRec: 「● 書く」 of the volume lane of "1 ピアノ" is on, the song plays and the fader is held: what is
+// written since 6.3.000 is in the rec frame, up to the play line at bar 8.
+SCENES.autoRec = {
+  setup(s) {
+    autoSong(s, "8.1.000");
+    Object.assign(s.song, { undoCount: 16, file: "changed" });
+    s.automation.armed = [laneOf(1, VOLUME)];
+    s.automation.writing = [{ lane: laneOf(1, VOLUME), fromTick: at("6.3.000") }];
+  },
+  after: (s) => (s.status.message = { id: "automationWriting", track: PIANO_REF, target: { kind: "volume" } }),
+  meters: autoMeters("8.1.000"),
+};
+// F6-AutoRest: the fader of "1 ピアノ" was moved by hand to −12 dB: its lane rests (17-A).
+SCENES.autoRest = {
+  setup(s) {
+    autoSong(s, "8.1.000");
+    Object.assign(s.song, { undoCount: 17, file: "changed" });
+    const piano = s.song.tracks[0]!;
+    piano.gainDb = -12;
+    piano.lanes[0]!.resting = true;
+  },
+  after: (s) => (s.status.message = { id: "automationRested", track: PIANO_REF, target: { kind: "volume" } }),
+  meters: autoMeters("8.1.000"),
+};
+// F6-MixerAuto: the mixer while the lanes move the faders of "1 ピアノ" (−2.4 dB at the play line) and "4 パッド".
+SCENES.mixerAuto = {
+  setup(s) {
+    autoSong(s, "9.2.000");
+    Object.assign(s.song, { undoCount: 16, file: "saved" });
+    s.song.tracks[3]!.lanes = [laneView(VOLUME, { kind: "volume" }, PAD_VOLUME)];
+  },
+  bands: ["mixer"],
+  after: (s) => (s.status.message = { id: "automationMoving", tracks: [PIANO_REF, PAD_REF] }),
+  meters: autoMeters("9.2.000"),
+};
+// F6-MixerRest: the fader of "4 パッド" was taken to −12 dB by hand; under it 「休み」 and 「もどす」.
+SCENES.mixerRest = {
+  setup(s) {
+    autoSong(s, "9.2.000");
+    Object.assign(s.song, { undoCount: 16, file: "saved" });
+    const pad = s.song.tracks[3]!;
+    pad.gainDb = -12;
+    pad.lanes = [laneView(VOLUME, { kind: "volume" }, PAD_VOLUME, true)];
+  },
+  bands: ["mixer"],
+  after: (s) => (s.status.message = { id: "automationRested", track: PAD_REF, target: { kind: "volume" } }),
+  meters: autoMeters("9.2.000"),
+};
+
+/** R10-AutoEdit: the band's song with the volume lane of "1 ピアノ" open, the play line at bar 8. */
+function autoEditSong(s: AppState, lane: FakeLane, selected: IndexRange[]): void {
+  bandSong(s);
+  s.song.tracks[0]!.lanes = [laneView(VOLUME, { kind: "volume" }, lane)];
+  s.automation.selected = selected.length > 0 ? { laneId: lane.id, points: selected } : null;
+  s.transport.position = 7 * BAR;
+  Object.assign(s.song, { undoCount: 15, file: "changed" });
+}
+// R10-AutoEdit, 「書いている」: a press on the line at 5.3.000 put a point there (−8.4 dB); it is selected.
+SCENES.autoAdd = { setup: (s) => autoEditSong(s, EDIT_VOLUME_ADDED, [{ start: 3, end: 4 }]), meters: QUIET };
+// R10-AutoEdit, 「動かしている」: the point of bar 3 is selected; the drag itself is the screen's own
+// (tools/design/shoot_ui.py drags it), with the reading 「+0. 1. 000 ・ −2.1 → −0.6 dB」.
+SCENES.autoMove = { setup: (s) => autoEditSong(s, EDIT_VOLUME, [{ start: 1, end: 2 }]), meters: QUIET };
+// R10-AutoEdit, 「囲んでえらんだ」: three points are selected.
+SCENES.autoBox = { setup: (s) => autoEditSong(s, EDIT_VOLUME, [{ start: 1, end: 4 }]), meters: QUIET };
+
+// F6-ParamMany: Surge XT is the sound of "1 ピアノ"; the lanes of its two parameters are folded under the volume
+// lane (「▸ プラグインのパラメータ 2」), and the panel lists them first, under 「オートメーションに書いている」.
+SCENES.paramMany6 = {
+  ...SCENES.paramMany!,
+  setup(s) {
+    SCENES.paramMany!.setup(s);
+    const [cutoff, pitch] = SURGE_AUTOMATED.map((param): AutoTarget => ({ kind: "instrument", param })) as [AutoTarget, AutoTarget];
+    s.song.tracks[0]!.lanes = [
+      laneView(VOLUME, { kind: "volume" }, PIANO_VOLUME),
+      laneView(cutoff, { kind: "plugin", plugin: "Surge XT", param: "A Filter 1 Cutoff" }, SURGE_CUTOFF),
+      laneView(pitch, { kind: "plugin", plugin: "Surge XT", param: "A Osc 1 Pitch" }, SURGE_PITCH),
+    ];
+    s.automation.folded = [laneOf(1, cutoff), laneOf(1, pitch)];
+    s.transport.position = 7 * BAR;
+  },
+};
+
+const row = (index: number, name: HistoryRow["name"], what: HistoryRow["what"], place: HistoryRow["place"]): HistoryRow => ({ index, step: index, name, what, place });
+const trackRef = (number: number): TrackRef => ({ number, name: BAND_TRACKS[number - 1]!.name });
+const ARRANGE: HistoryRow["place"] = { kind: "arrange" };
+const PIANO_ROLL: HistoryRow["place"] = { kind: "pianoRoll" };
+const PAD_GAIN: HistoryRow["what"] = { kind: "gain", strip: { kind: "track", track: PAD_REF }, fromDb: -10.5, toDb: -12 };
+/** The first steps of the band's song; the mocks list only what comes after them. */
+const FIRST_STEPS: HistoryRow[] = [
+  row(1, { kind: "addTrack" }, { kind: "track", track: trackRef(2) }, ARRANGE),
+  row(2, { kind: "addTrack" }, { kind: "track", track: trackRef(3) }, ARRANGE),
+  row(3, { kind: "addTrack" }, { kind: "track", track: trackRef(4) }, ARRANGE),
+  row(4, { kind: "record" }, { kind: "take", number: 1 }, { kind: "track", track: trackRef(3) }),
+  row(5, { kind: "record" }, { kind: "take", number: 1 }, { kind: "track", track: trackRef(2) }),
+  row(6, { kind: "moveNotes" }, { kind: "notes", count: 4 }, PIANO_ROLL),
+  row(7, { kind: "quantize" }, { kind: "notes", count: 32 }, PIANO_ROLL),
+  row(8, { kind: "duplicateClips" }, { kind: "clips", count: 1 }, ARRANGE),
+];
+// F-History: 14 steps, the last 2 undone. The rows 7 to 14 are the mock's, in the wording of Y19.
+SCENES.historyList = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    Object.assign(s.song, { undoCount: 12, redoCount: 2, file: "changed" });
+    s.song.loopOn = false;
+  },
+  bands: ["history"],
+  after: (s) => (s.status.message = { id: "undoPending", count: 2 }),
+  meters: QUIET,
+  history: [
+    ...FIRST_STEPS,
+    row(9, { kind: "addMarker" }, { kind: "name", name: "サビ" }, ARRANGE),
+    row(10, { kind: "setLoop" }, { kind: "bars", span: { from: 5, to: 9 } }, ARRANGE),
+    row(11, { kind: "record" }, { kind: "take", number: 1 }, { kind: "track", track: PIANO_REF }),
+    row(12, { kind: "record" }, { kind: "take", number: 2 }, { kind: "track", track: PIANO_REF }),
+    row(13, { kind: "quantize" }, { kind: "notes", count: 3 }, PIANO_ROLL),
+    row(14, { kind: "setGain" }, PAD_GAIN, { kind: "mixer" }),
+  ],
+};
+// R10-History: 16 steps, the last 3 undone (「いまここ」 is 13). The rows 10 to 16 are the board's; which row the
+// pointer or the keys are on (the board: 11) is the screen's own.
+SCENES.historyUndone3 = {
+  setup(s) {
+    surgeMixer(s);
+    Object.assign(s.song, { undoCount: 13, redoCount: 3, file: "changed" });
+  },
+  bands: ["history"],
+  after: (s) => (s.status.message = { id: "undoPending", count: 3 }),
+  meters: QUIET,
+  history: [
+    ...FIRST_STEPS,
+    row(9, { kind: "setLoop" }, { kind: "bars", span: { from: 5, to: 9 } }, ARRANGE),
+    row(10, { kind: "setTempo" }, { kind: "tempo", bar: 5, beat: 1, fromBpm: 96, toBpm: 120 }, ARRANGE),
+    row(11, { kind: "addMarker" }, { kind: "name", name: "サビ" }, ARRANGE),
+    row(12, { kind: "bypassEffect" }, { kind: "effect", effect: { kind: "plugin", name: "MVerb" } }, { kind: "track", track: PAD_REF }),
+    row(13, { kind: "setGain" }, PAD_GAIN, { kind: "mixer" }),
+    row(14, { kind: "quantize" }, { kind: "notes", count: 12 }, PIANO_ROLL),
+    row(15, { kind: "resizeNotes" }, { kind: "notes", count: 2 }, PIANO_ROLL),
+    row(16, { kind: "moveNotes" }, { kind: "notes", count: 3 }, PIANO_ROLL),
+  ],
+};
+
+/**
+ * Protocol 21, enough for pictures and tests: the lanes' own switches (fold, 「● 書く」, the selection, 「もどす」),
+ * lanes added and deleted, and the jump of the history band. Points are not added, moved or deleted here, and no
+ * step is listed. `null`: not one of these commands.
+ */
+function reduceRound6(state: AppState, command: Command, rows: readonly HistoryRow[]): Change[] | null {
+  const same = (a: LaneRef, b: LaneRef) => a.track === b.track && JSON.stringify(a.target) === JSON.stringify(b.target);
+  const without = (list: LaneRef[], lane: LaneRef) => list.filter((l) => !same(l, lane));
+  const automation = structuredClone(state.automation);
+  const song = structuredClone(state.song);
+  let message: StatusMessage | null = null;
+  const found = (lane: LaneRef) => {
+    const track = song.tracks.find((t) => t.id === lane.track);
+    const index = track ? track.lanes.findIndex((l) => JSON.stringify(l.target) === JSON.stringify(lane.target)) : -1;
+    return track && index >= 0 ? { track, index, view: track.lanes[index]! } : null;
+  };
+  switch (command.type) {
+    case "foldLane": {
+      const lane: LaneRef = { track: command.track, target: command.target };
+      if (!found(lane)) return [];
+      automation.folded = command.folded ? [...without(automation.folded, lane), lane] : without(automation.folded, lane);
+      break;
+    }
+    case "setLaneWrite": {
+      const lane: LaneRef = { track: command.track, target: command.target };
+      const had = found(lane);
+      if (!had || had.view.resting) return [];
+      automation.armed = command.on ? [...without(automation.armed, lane), lane] : without(automation.armed, lane);
+      break;
+    }
+    case "selectAutoPoints":
+      if (!song.tracks.some((t) => t.lanes.some((l) => l.laneId === command.lane))) return [];
+      automation.selected = command.points.length > 0 ? { laneId: command.lane, points: toRanges(command.points) } : null;
+      break;
+    case "restoreLane": {
+      const had = found({ track: command.track, target: command.target });
+      if (!had?.view.resting) return [];
+      had.view.resting = false;
+      song.undoCount += 1;
+      song.redoCount = 0;
+      message = { id: "automationRestored", track: { number: had.track.number, name: had.track.name }, target: had.view.name };
+      break;
+    }
+    case "deleteLane": {
+      const lane: LaneRef = { track: command.track, target: command.target };
+      const had = found(lane);
+      if (!had) return [];
+      had.track.lanes.splice(had.index, 1);
+      song.undoCount += 1;
+      song.redoCount = 0;
+      automation.folded = without(automation.folded, lane);
+      automation.armed = without(automation.armed, lane);
+      if (automation.selected?.laneId === had.view.laneId) automation.selected = null;
+      break;
+    }
+    case "addLane": {
+      const lane: LaneRef = { track: command.track, target: command.target };
+      const track = song.tracks.find((t) => t.id === lane.track);
+      if (!track) return [];
+      automation.folded = without(automation.folded, lane);
+      if (found(lane)) break;
+      const name = fakeLaneName(track, lane.target);
+      if (!name) return [];
+      const id = Math.max(600, ...FAKE_LANES.keys()) + 1;
+      const made: FakeLane = { id, step: lane.target.kind === "mute", points: [] };
+      FAKE_LANES.set(id, made);
+      track.lanes.push(laneView(lane.target, name, made));
+      song.undoCount += 1;
+      song.redoCount = 0;
+      break;
+    }
+    case "historyJump": {
+      const { total, current } = state.history;
+      const to = fakeHistoryRows(rows, total, command.index, command.index)[0];
+      if (!to || to.step !== command.step || command.index === current) return [];
+      song.undoCount = command.index;
+      song.redoCount = total - command.index;
+      message = { id: "historyJumped", index: command.index, name: to.name, steps: Math.abs(command.index - current), forward: command.index > current };
+      break;
+    }
+    case "addAutoPoint":
+    case "moveAutoPoints":
+    case "deleteAutoPoints":
+      return [];
+    default:
+      return null;
+  }
+  const changes: Change[] = [];
+  if (JSON.stringify(song) !== JSON.stringify(state.song)) {
+    changes.push({ section: "song", value: song });
+    changes.push({ section: "history", value: { ...historyOf(song), newest: state.history.newest } });
+  }
+  if (JSON.stringify(automation) !== JSON.stringify(state.automation)) changes.push({ section: "automation", value: automation });
+  if (message) changes.push({ section: "status", value: { message } });
+  return changes;
+}
+
+/** What a new lane of the fake is called; `null` for a target the track does not have. */
+function fakeLaneName(track: TrackView, target: AutoTarget): LaneName | null {
+  switch (target.kind) {
+    case "volume":
+    case "pan":
+    case "mute":
+      return { kind: target.kind };
+    case "send":
+      return { kind: "send", bus: target.bus };
+    case "instrument":
+      return track.sound.kind === "plugin" ? { kind: "plugin", plugin: track.sound.name, param: null } : null;
+    case "insert": {
+      const effect = track.slots.find((i) => i?.id === target.insert)?.effect;
+      if (!effect) return null;
+      return effect.kind === "builtin" ? { kind: "builtin", effect: effect.effect, param: target.param } : { kind: "plugin", plugin: effect.name, param: null };
+    }
+  }
+}
 
 function sceneFromUrl(): Scene | null {
   if (typeof location === "undefined") return null;
@@ -2972,6 +3368,7 @@ export function reduceTracks(
           slots: builtinSlots(noInserts()),
           muted: false,
           soloed: false,
+          lanes: [],
           clips: [],
         });
         renumber();
@@ -3505,7 +3902,13 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduce(state, bands, rest, command, clipboard, nowUs());
+      const changes = reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
+      // The counts of the history band follow the song's.
+      const song = changes.find((c) => c.section === "song");
+      if (song && !changes.some((c) => c.section === "history")) {
+        const history = historyOf(song.value as SongView);
+        if (JSON.stringify(history) !== JSON.stringify(state.history)) changes.push({ section: "history", value: history });
+      }
       // The fake plugins' parameters: the value and its text come back on the messages Channel; a typed one may be put at an end.
       let values: ParamValues | null = null;
       if (command.type === "setPluginParam") values = tables.set(command.table, command.param, command.value);
@@ -3540,6 +3943,14 @@ export function createFakeTransport(initial?: AppState): Transport {
       const take = FAKE_TAKES.get(id);
       if (!take) throw new Error(`fake: no take ${id}`);
       return encodeTake(take);
+    },
+    async lane(laneId) {
+      const lane = FAKE_LANES.get(laneId);
+      if (!lane) throw new Error(`fake: no lane ${laneId}`);
+      return encodeLane(lane);
+    },
+    async historyRows(from, to) {
+      return fakeHistoryRows(scene?.history ?? [], state.history.total, from, to);
     },
     async liveNotes() {
       return scene?.live ?? NO_LIVE;

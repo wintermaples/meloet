@@ -25,7 +25,7 @@ use meloet_plugin::wire::{
 };
 
 use crate::formats::{self, Activation, Controller, Said, half_width, past_the_end, runloop};
-use crate::rt::{self, SlotRun};
+use crate::rt::{self, Moved, SlotRun};
 use crate::window::{Display, FocusAt, WindowEvent};
 
 /// How long the thread sleeps at most while a plugin is loaded.
@@ -95,6 +95,11 @@ struct Host {
     /// By slot: parameters taken hold of and programs loaded since the person came into the
     /// window.
     touches: Vec<u32>,
+    /// By slot: what meloet's automation did, for the plugins meloet watches.
+    moved: Vec<Option<Moved>>,
+    /// The slots meloet watches, and when it was last told of them.
+    watched: Vec<u32>,
+    watch_told: Instant,
     /// What meloet is told next.
     notices: Vec<Notice>,
     idled: Instant,
@@ -157,10 +162,11 @@ impl Host {
             Ok(end) => end,
             Err(e) => return error(e.to_string()),
         };
-        let run = SlotRun::new(&self.map, end, loaded.processor, loaded.plugin.latency);
+        let (run, moved) = SlotRun::new(&self.map, end, loaded.processor, loaded.plugin.latency);
         if let Err(message) = self.audio.install(run) {
             return error(message);
         }
+        self.moved[slot as usize] = Some(moved);
         self.slots[slot as usize] = Some(loaded.controller);
         (
             Reply::Loaded {
@@ -565,6 +571,39 @@ impl Host {
         }
         self.told
             .retain(|_, told| told.held.is_some() || now.duration_since(told.at) < TELL * 4);
+        self.tell_automated();
+    }
+
+    /// What meloet's automation gave the watched plugins since the last time: the newest
+    /// value of each parameter.
+    fn tell_automated(&mut self) {
+        if self.watched.is_empty() || self.watch_told.elapsed() < TELL {
+            return;
+        }
+        self.watch_told = Instant::now();
+        let mut newest: Vec<(u32, f64)> = Vec::new();
+        for at in 0..self.watched.len() {
+            let slot = self.watched[at];
+            let Some(moved) = self.moved[slot as usize].as_mut() else {
+                continue;
+            };
+            newest.clear();
+            for (id, value) in moved.take() {
+                match newest.iter_mut().find(|(known, _)| *known == id) {
+                    Some(known) => known.1 = value,
+                    None => newest.push((id, value)),
+                }
+            }
+            for &(id, value) in &newest {
+                let text = (self.slots[slot as usize].as_mut()).and_then(|c| c.text(id, value));
+                self.notices.push(Notice::ParamAutomated {
+                    slot,
+                    id,
+                    value,
+                    text,
+                });
+            }
+        }
     }
 
     fn handle(&mut self, request: Request, blob: Vec<u8>) -> Answer {
@@ -584,6 +623,10 @@ impl Host {
             Request::Load { slot, .. } => self.load(slot, &request),
             Request::Unload { slot } => {
                 self.close_window(slot);
+                self.watched.retain(|watched| *watched != slot);
+                if let Some(moved) = self.moved.get_mut(slot as usize) {
+                    *moved = None;
+                }
                 let Some(controller) = self.slots.get_mut(slot as usize).and_then(Option::take)
                 else {
                     return error(format!("no plugin in slot {slot}"));
@@ -707,6 +750,19 @@ impl Host {
                     return answer;
                 }
                 self.close_window(slot);
+                ok()
+            }
+            Request::Watch { slot, on } => {
+                if let Err(answer) = self.controller(slot) {
+                    return answer;
+                }
+                self.watched.retain(|watched| *watched != slot);
+                if on {
+                    self.watched.push(slot);
+                }
+                if let Some(moved) = self.moved[slot as usize].as_mut() {
+                    moved.watch(on);
+                }
                 ok()
             }
             Request::Quit => ok(),
@@ -835,6 +891,9 @@ pub fn run(control: UnixStream, memory: OwnedFd) -> i32 {
         told: HashMap::new(),
         holds: HashMap::new(),
         touches: vec![0; slots as usize],
+        moved: (0..slots).map(|_| None).collect(),
+        watched: Vec::new(),
+        watch_told: Instant::now(),
         notices: Vec::new(),
         idled: Instant::now(),
         focus_looked: Instant::now(),

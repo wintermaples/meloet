@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use meloet_model::{PluginChange, PluginPlace};
+use meloet_model::{PluginChange, PluginPlace, StripId};
 use meloet_plugin::wire::{ParamInfo, ParamNow, ParamShape, TextValue};
 use meloet_protocol::{
     ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable, ParamValue, ParamValues,
@@ -18,7 +18,7 @@ use meloet_protocol::{
 };
 
 use super::Play;
-use super::automation::LetGo;
+use super::automation::{LetGo, NAMES_ASK};
 use super::mixer::Picked;
 use crate::state::{Effect, PluginAsk, PluginSaid, StateAsk};
 
@@ -53,6 +53,8 @@ struct Dragged {
 pub(super) struct Panel {
     /// The plugin that is selected, by the ticket of its load.
     ticket: Option<u64>,
+    /// The plugin whose process was told that the panel shows it (`PluginAsk::Watch`).
+    watched: Option<u64>,
     table: Option<Table>,
     /// The list is to be asked for (again).
     stale: bool,
@@ -348,6 +350,33 @@ impl Play {
         (self.panel.table.as_ref()).is_some_and(|t| t.at.contains_key(&param))
     }
 
+    /// The key of the plugin whose table the panel shows.
+    pub(super) fn shown_table_key(&self) -> Option<&Arc<str>> {
+        self.panel.table.as_ref()?;
+        Some(&self.plugs.of(self.panel.ticket?)?.plugin.key)
+    }
+
+    /// The parameters of the selected plugin at `place` that have a lane, in the order of
+    /// the table.
+    pub(super) fn automated_rows(&self, place: PluginPlace) -> Vec<u32> {
+        let (
+            Some(table),
+            PluginPlace::Instrument(track) | PluginPlace::Insert(StripId::Track(track), _),
+        ) = (self.panel.table.as_ref(), place)
+        else {
+            return Vec::new();
+        };
+        let lanes = self.doc().track(track).map(|t| &t.automation[..]);
+        let mut rows: Vec<usize> = (lanes.unwrap_or_default().iter())
+            .filter_map(|lane| match self.plugin_of_lane(track, lane.target)? {
+                (at, param) if at == place => table.at.get(&param).copied(),
+                _ => None,
+            })
+            .collect();
+        rows.sort_unstable();
+        rows.into_iter().map(|at| table.rows[at].id).collect()
+    }
+
     /// The name of a parameter of the plugin `ticket`, when the panel lists that plugin.
     pub(super) fn panel_param_name(&self, ticket: u64, param: u32) -> Option<String> {
         let listed = self.panel.ticket == Some(ticket);
@@ -389,6 +418,17 @@ impl Play {
             panel.ticket = ticket;
             panel.table = None;
             panel.stale = ticket.is_some();
+        }
+        // Only the plugin the panel shows tells what the lanes do to its parameters.
+        let watched = ticket.filter(|_| sounds);
+        if watched != panel.watched {
+            let watch = |ticket, on| Effect::AskPlugin {
+                ticket,
+                ask: PluginAsk::Watch { on },
+            };
+            effects.extend(panel.watched.map(|ticket| watch(ticket, false)));
+            effects.extend(watched.map(|ticket| watch(ticket, true)));
+            panel.watched = watched;
         }
         if let (Some(ticket), true, true) = (ticket, panel.stale, sounds) {
             panel.stale = false;
@@ -499,6 +539,10 @@ impl Play {
             } => self.plugin_edited(ticket, param, value, heard, effects),
             PluginSaid::WindowTouches { touches } => self.plugin_hands(ticket, touches),
             PluginSaid::ParamsChanged => self.table_stale(ticket),
+            PluginSaid::Params {
+                ask: NAMES_ASK,
+                params,
+            } => self.lane_names_listed(ticket, &params),
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),
             PluginSaid::TextRead { param, read } => {

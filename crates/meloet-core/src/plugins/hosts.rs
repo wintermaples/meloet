@@ -226,6 +226,7 @@ enum Ask {
     ReadText(SlotId, u32, String, Done<Option<TextValue>>),
     OpenWindow(SlotId, String, Done<EditorOpen>),
     CloseWindow(SlotId, Done<()>),
+    Watch(SlotId, bool),
     Processes(Done<Vec<ProcessInfo>>),
 }
 
@@ -394,6 +395,14 @@ impl Hosts {
         self.ask(Ask::CloseWindow(id, done));
     }
 
+    /// The parameters panel shows this plugin now (`on`), or no longer does. While it does,
+    /// the values meloet's automation gives the plugin's parameters come as
+    /// `Notice::ParamAutomated`, the newest of each parameter at most 30 times a second
+    /// (docs/architecture.md 21-8). Remembered over `reload`; a stopped plugin tells nothing.
+    pub fn watch(&self, id: SlotId, on: bool) {
+        self.ask(Ask::Watch(id, on));
+    }
+
     /// The processes that run now.
     pub fn processes(&self) -> Vec<ProcessInfo> {
         wait(|done| self.ask(Ask::Processes(done))).unwrap_or_default()
@@ -437,6 +446,8 @@ struct Slot {
     state: Option<Vec<u8>>,
     /// The parameters set since then.
     params: BTreeMap<u32, f64>,
+    /// `Hosts::watch`.
+    watched: bool,
 }
 
 struct Run {
@@ -491,6 +502,7 @@ impl Run {
                                 watch: watch.clone(),
                                 state,
                                 params,
+                                watched: false,
                             },
                         );
                         self.seat(home, Some(id));
@@ -607,6 +619,12 @@ impl Run {
                 self.ask_slot(id, |slot| Request::CloseEditor { slot }, &[])
                     .and_then(ok),
             ),
+            Ask::Watch(id, on) => {
+                if let Some(slot) = self.slots.get_mut(&id) {
+                    slot.watched = on;
+                    let _ = self.ask_slot(id, |slot| Request::Watch { slot, on }, &[]);
+                }
+            }
             Ask::Processes(done) => done(Ok(self
                 .procs
                 .iter()
@@ -916,11 +934,16 @@ impl Run {
         let (spec, state, params) = (slot.spec.clone(), slot.state.clone(), slot.params.clone());
         let (home, engine_slot, watch, plugin) =
             self.place(&spec, state.as_deref(), &params, block)?;
+        let mut watched = false;
         if let Some(slot) = self.slots.get_mut(&id) {
             slot.home = Some(home);
             slot.watch = watch.clone();
+            watched = slot.watched;
         }
         self.seat(home, Some(id));
+        if watched {
+            let _ = self.ask_slot(id, |slot| Request::Watch { slot, on: true }, &[]);
+        }
         Ok(Loaded {
             id,
             slot: engine_slot,
@@ -1035,6 +1058,7 @@ fn notice_slot(notice: &Notice) -> u32 {
         | Notice::ParamBegin { slot, .. }
         | Notice::ParamChanged { slot, .. }
         | Notice::ParamEnd { slot, .. }
+        | Notice::ParamAutomated { slot, .. }
         | Notice::ParamsChanged { slot }
         | Notice::LatencyChanged { slot, .. } => slot,
     }

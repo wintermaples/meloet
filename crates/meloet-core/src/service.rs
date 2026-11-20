@@ -1485,6 +1485,16 @@ impl PluginSide {
                     (slot, said)
                 }
                 Notice::ParamsChanged { .. } => (slot, PluginSaid::ParamsChanged),
+                Notice::ParamAutomated {
+                    id, value, text, ..
+                } => {
+                    let now = ParamNow {
+                        id,
+                        value: Some(value),
+                        text,
+                    };
+                    (slot, PluginSaid::Param(now))
+                }
                 // The engine counts the delays by itself.
                 _ => return None,
             },
@@ -2073,6 +2083,7 @@ impl Worker {
                 };
                 hosts.read_text(id, param, text, Box::new(done));
             }
+            PluginAsk::Watch { on } => hosts.watch(id, on),
         }
         None
     }

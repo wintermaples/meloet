@@ -11,6 +11,9 @@
 //! While a hand is on it the lane is held, so that the engine does not move what the hand
 //! moves ([`Play::hold_lane`]).
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use meloet_model::automation::{self as auto, AutoPoint, AutoTarget as ModelTarget, LaneId};
 use meloet_model::edit::{Edit, EditError};
 use meloet_model::effects::{EffectKind as ModelEffect, ParamShape};
@@ -22,7 +25,38 @@ use meloet_protocol::{
 
 use super::mixer::effect_kind;
 use super::{Heard, Play, index_ranges};
-use crate::state::Effect;
+use crate::state::{Effect, PluginAsk};
+
+/// The `ask` of a list of parameters that is asked for the names of the lanes' parameters,
+/// not for the parameters panel (whose asks count up from 1).
+pub(super) const NAMES_ASK: u64 = u64::MAX;
+
+/// What the plugins call the parameters that lanes move. Only those are kept (Surge XT
+/// lists 2854), by the plugin's key: every plugin of one kind calls them the same. The
+/// names come from the table of the parameters panel when it shows a plugin of that kind,
+/// else one plugin of the kind is asked for its list, once. They are kept for the rows of
+/// the history that tell of lanes that are gone, and from song to song.
+#[derive(Debug, Default)]
+pub(super) struct LaneNames {
+    /// By key, then by the plugin's own number. `None`: the plugin lists no such parameter.
+    known: HashMap<Arc<str>, HashMap<u32, Option<String>>>,
+    /// The plugins asked for their lists, by ticket, until they answer or stop.
+    asked: Vec<u64>,
+}
+
+impl LaneNames {
+    fn knows(&self, key: &str, param: u32) -> bool {
+        (self.known.get(key)).is_some_and(|names| names.contains_key(&param))
+    }
+
+    pub(super) fn get(&self, key: &str, param: u32) -> Option<String> {
+        self.known.get(key)?.get(&param)?.clone()
+    }
+
+    fn learn(&mut self, key: &Arc<str>, param: u32, name: Option<String>) {
+        (self.known.entry(key.clone()).or_default()).insert(param, name);
+    }
+}
 
 /// A lane as core names it: its track and what it moves.
 pub(super) type LaneKey = (TrackId, ModelTarget);
@@ -100,6 +134,7 @@ pub(super) struct Auto {
     /// The song played or recorded at the last look.
     was_moving: bool,
     notice: Option<StatusMessage>,
+    pub(super) names: LaneNames,
 }
 
 /// What a hand let go of its control does with the song.
@@ -212,7 +247,11 @@ impl Play {
     }
 
     /// Where the plugin a lane moves sits, and its own number for the parameter.
-    fn plugin_of_lane(&self, track: TrackId, target: ModelTarget) -> Option<(PluginPlace, u32)> {
+    pub(super) fn plugin_of_lane(
+        &self,
+        track: TrackId,
+        target: ModelTarget,
+    ) -> Option<(PluginPlace, u32)> {
         match target {
             ModelTarget::Instrument { param } => Some((PluginPlace::Instrument(track), param)),
             ModelTarget::Insert { insert, param } => {
@@ -326,8 +365,84 @@ impl Play {
         })
     }
 
+    /// The name of a parameter a lane moves. The names are gathered at the end of an input;
+    /// for a lane made within it, the table of the panel is looked at.
     fn plugin_param_name(&self, place: PluginPlace, param: u32) -> Option<String> {
-        self.shown_param(place, param).map(|row| row.name.clone())
+        let known = (self.doc().plugin(place)).and_then(|p| self.auto.names.get(&p.key, param));
+        known.or_else(|| self.shown_param(place, param).map(|row| row.name.clone()))
+    }
+
+    /// The lanes of the song that move a parameter of a plugin: the plugin's key and its
+    /// own number for the parameter.
+    fn plugin_lanes(&self) -> impl Iterator<Item = (&Arc<str>, u32)> {
+        self.doc().tracks.iter().flat_map(move |t| {
+            t.automation.iter().filter_map(move |l| {
+                let (place, param) = self.plugin_of_lane(t.id, l.target)?;
+                Some((&self.doc().plugin(place)?.key, param))
+            })
+        })
+    }
+
+    /// Gathers the names of the parameters that have lanes and no name yet.
+    fn sync_lane_names(&mut self, effects: &mut Vec<Effect>) {
+        let plugs = &self.plugs;
+        (self.auto.names.asked).retain(|&t| plugs.of(t).is_some_and(|plug| plug.sounds()));
+        let names = &self.auto.names;
+        let mut wanted = (self.plugin_lanes())
+            .filter(|(key, param)| !names.knows(key, *param))
+            .peekable();
+        if wanted.peek().is_none() {
+            return;
+        }
+        let shown = self.shown_table_key();
+        let mut learned = Vec::new();
+        let mut ask: Vec<u64> = Vec::new();
+        for (key, param) in wanted {
+            let listed = (shown.filter(|shown| *shown == key)).and_then(|_| self.param_name(param));
+            if let Some(name) = listed {
+                learned.push((key.clone(), param, name.to_owned()));
+                continue;
+            }
+            let of_kind = |t: &u64| plugs.of(*t).is_some_and(|plug| plug.plugin.key == *key);
+            if names.asked.iter().chain(&ask).any(of_kind) {
+                continue;
+            }
+            let sounding = (plugs.list.iter()).find(|p| p.plugin.key == *key && p.sounds());
+            ask.extend(sounding.map(|plug| plug.ticket));
+        }
+        for (key, param, name) in learned {
+            self.auto.names.learn(&key, param, Some(name));
+        }
+        for ticket in ask {
+            self.auto.names.asked.push(ticket);
+            effects.push(Effect::AskPlugin {
+                ticket,
+                ask: PluginAsk::Params { ask: NAMES_ASK },
+            });
+        }
+    }
+
+    /// A plugin listed its parameters for the names of the lanes' parameters.
+    pub(super) fn lane_names_listed(
+        &mut self,
+        ticket: u64,
+        params: &[meloet_plugin::wire::ParamInfo],
+    ) {
+        self.auto.names.asked.retain(|&asked| asked != ticket);
+        let Some(of) = self.plugs.of(ticket).map(|plug| plug.plugin.key.clone()) else {
+            return;
+        };
+        let wanted: Vec<u32> = (self.plugin_lanes())
+            .filter(|(key, param)| **key == of && !self.auto.names.knows(key, *param))
+            .map(|(_, param)| param)
+            .collect();
+        for param in wanted {
+            let name = params
+                .iter()
+                .find(|p| p.id == param)
+                .map(|p| p.name.clone());
+            self.auto.names.learn(&of, param, name);
+        }
     }
 
     fn rested_notice(&mut self, key: LaneKey) {
@@ -858,6 +973,7 @@ impl Play {
     /// After every input: 「● 書く」 goes off when the song stops, and what a hand wrote
     /// until then is a step; the rest of its moves goes nowhere (design-notes B-92).
     pub fn sync_automation(&mut self, effects: &mut Vec<Effect>) {
+        self.sync_lane_names(effects);
         let moving = self.can_write();
         if self.auto.was_moving && !moving {
             self.auto.armed.clear();
@@ -939,7 +1055,10 @@ impl Play {
         {
             self.hold_lane(key.0, key.1, false, effects);
         }
-        self.auto = Auto::default();
+        self.auto = Auto {
+            names: std::mem::take(&mut self.auto.names),
+            ..Auto::default()
+        };
     }
 
     // ---- views ----

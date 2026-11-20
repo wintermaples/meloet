@@ -48,6 +48,9 @@
   import { pickClips } from "./timeline/pick";
   import { arrangeRows, showsAddRow } from "./automation/autoGeom";
   import AutoLane from "./automation/AutoLane.svelte";
+  import { positionsVersion } from "./automation/autoState.svelte";
+  import { askWhole, coverWhen } from "./automation/coverIf";
+  import { MIXER_FULL_RATE_TRACKS } from "../gl/budget";
 
   let { children }: { children?: Snippet } = $props();
 
@@ -668,6 +671,25 @@
     return t("arrange.tempoAndSignature", { tempo: tempoText(Math.round(map.tempoAt(at) * 100) / 100), signature: `${m.num}/${m.den}` });
   }
   let now = $state("");
+
+  // 帯の見出しの「いま」の値が変わるコマは、見出しの列まるごとの四角を先に頼む（縦にならんだ小さな四角を 7 つほどためると、
+  // WebKit は上の帯の数字まで入れた囲む四角にまとめる。docs/architecture.md 7 章「レイアウトでためる Region」）。
+  // その四角が 1 枚の canvas の下におさまるように、動いている間は列まるごとを trackMeters の canvas の下に入れる。
+  // 列が低くて見出しが少ししか見えないとき（ミキサーをひらいた時）は、しない: 見出しごとの四角で足り、列まるごとの広さで、1 コマに
+  // 描きなおす広さが 25 % の決まりをこえる（8 本のミキサーでパンも動く時）。トラックが 10 本をこえると、ミキサーの canvas は半分ずつ
+  // 出て広さにゆとりができるので、列まるごとにする（見出しごとの四角は再生の線の四角を切って、四角が 11 個に近づく）。
+  let headBox = $state<HTMLElement>();
+  let headHeight = $state(0);
+  const MANY_HEADS = 6;
+  const headsMove = $derived(
+    transport.state !== "stopped" &&
+      (headHeight > MANY_HEADS * metrics.px("size.lane") || song.tracks.length > MIXER_FULL_RATE_TRACKS) &&
+      song.tracks.some((tr) => tr.lanes.length > 0),
+  );
+  $effect(() => {
+    void positionsVersion();
+    if (headBox && headsMove) askWhole(headBox);
+  });
   /** 動いている間は 1 秒に 10 回まで書く（毎コマ書くと、再生の線の四角を切って、描きなおしの四角がふえる。2026-11-20-round6-step1.md の 5）。 */
   const NOW_EVERY_MS = 100;
   let nowAt = -Infinity;
@@ -1029,7 +1051,7 @@
   </section>
 {:else}
   <section class="arrange" style:height="{height}px" onpointerdowncapture={focusArrange}>
-    <div class="head" use:glRegion={"trackMeters"}>
+    <div class="head" bind:this={headBox} bind:clientHeight={headHeight} use:glRegion={"trackMeters"} use:coverWhen={headsMove}>
       <div class="row title-row">
         <span class="m-name" use:term={"アレンジ"}>{t("arrange.title")}</span>
         <span class="zoom">

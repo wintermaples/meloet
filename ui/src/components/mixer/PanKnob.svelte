@@ -3,7 +3,6 @@
      キー（仕様書 3 章 86-7）: ← → で 1、Shift で 10、Home で C、Enter で打ちこむ。 -->
 <script lang="ts">
   import type { StripRef } from "../../bridge";
-  import { coverIf } from "../automation/coverIf";
   import { term } from "../../lib/tip.svelte";
   import { t } from "../../text/ja";
   import { metrics } from "../metrics.svelte";
@@ -11,7 +10,7 @@
   import ValueField from "../params/ValueField.svelte";
   import { clampPan, panAngle, panText, parsePan } from "./scale";
 
-  /** auto: オートメーションが動かしている（枠が accent）。毎コマ変わるので、行を mixerMeters の canvas の下に入れる（cover）。 */
+  /** auto: オートメーションが動かしている（枠が accent）。 */
   let { strip, pan, auto = false }: { strip: StripRef; pan: number; auto?: boolean } = $props();
 
   const c = mixControl<number>({
@@ -24,7 +23,7 @@
   });
 </script>
 
-<div class="row" use:coverIf={auto}>
+<div class="row">
   <span class="m-lbl" use:term={"パン"}>{t("mixer.pan")}</span>
   <div
     class="knob"
@@ -55,7 +54,7 @@
   {#if c.typing}
     <ValueField initial={panText(c.shown)} label={t("mixer.pan")} onsubmit={(text) => c.submit(text)} oncancel={c.stopTyping} />
   {:else}
-    <span class="m-num" data-test="mixer-pan-text">{panText(c.shown)}</span>
+    <span class="m-num live"><span class="in" data-test="mixer-pan-text">{panText(c.shown)}</span></span>
   {/if}
 </div>
 
@@ -76,6 +75,21 @@
     background: var(--color-gray-1);
     cursor: ns-resize;
     touch-action: none;
+  }
+  /* 毎コマ変わるかもしれない字は、流れの外の箱に入れる（Strip.svelte の .live と同じ）。 */
+  .live {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  .live::before {
+    content: "\200b";
+  }
+  .live > .in {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
   .knob.auto {
     border-color: var(--color-accent);

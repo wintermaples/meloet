@@ -67,8 +67,10 @@
         data-test="lane-restore"
         onclick={() => usable && send({ type: "restoreLane", track: track.id, target: lane.target })}>{t("lane.restore")}</button
       >
-      <span class="m-lbl" data-test="lane-state" use:glSlot={{ kind: "cover" }}
-        >{#if value === null}{t("lane.restingBare")}{:else}{@render parts(textParts("lane.resting", { value }))}{/if}</span
+      <span class="m-lbl live" use:glSlot={{ kind: "cover" }}
+        ><span class="in" data-test="lane-state"
+          >{#if value === null}{t("lane.restingBare")}{:else}{@render parts(textParts("lane.resting", { value }))}{/if}</span
+        ></span
       >
     {:else}
       <button
@@ -79,10 +81,12 @@
         data-test="lane-write"
         onclick={() => !busy && send({ type: "setLaneWrite", track: track.id, target: lane.target, on: !armed })}>{t("lane.write")}</button
       >
-      <span class="m-lbl" data-test="lane-state" use:glSlot={{ kind: "cover" }}
-        >{#if writing}{t("lane.writing")}{:else if value !== null}{@render parts(textParts("lane.now", { value, count: lane.points }))}{:else}{@render parts(
-            textParts("lane.count", { count: lane.points }),
-          )}{/if}</span
+      <span class="m-lbl live" use:glSlot={{ kind: "cover" }}
+        ><span class="in" data-test="lane-state"
+          >{#if writing}{t("lane.writing")}{:else if value !== null}{@render parts(textParts("lane.now", { value, count: lane.points }))}{:else}{@render parts(
+              textParts("lane.count", { count: lane.points }),
+            )}{/if}</span
+        ></span
       >
     {/if}
   </div>
@@ -114,9 +118,21 @@
     gap: var(--space-2);
     min-width: 0;
   }
-  .line > .m-lbl {
+  /* いまの値の字は、流れの外の箱に入れる: 字が変わっても、見出しのならびはレイアウトしなおされない
+     （docs/architecture.md 7 章「CPU で描く WebKit」）。外の箱は、字と同じ高さとベースラインを幅のない字で保つ。 */
+  .live {
+    position: relative;
+    flex: 1;
     min-width: 0;
+  }
+  .live::before {
+    content: "\200b";
+  }
+  .live > .in {
+    position: absolute;
+    inset: 0;
     overflow: hidden;
+    white-space: nowrap;
     text-overflow: ellipsis;
   }
   .small {

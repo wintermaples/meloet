@@ -4,6 +4,7 @@
 <script lang="ts">
   import type { MixControl } from "./control.svelte";
   import { t } from "../../text/ja";
+  import { metrics } from "../metrics.svelte";
   import { dbToFrac, SCALE_MARKS } from "./scale";
 
   /** ドラッグは Strip が持つ（下のフェーダーの値の字も、動かしている間の値を出すため）。 */
@@ -11,6 +12,14 @@
   let { control: c, auto = false }: { control: MixControl<number | null>; auto?: boolean } = $props();
 
   const top = (frac: number) => `${(1 - frac) * 100}%`;
+
+  /** つまみは transform で動かす（top を変えると、ストリップがまるごとレイアウトしなおされる。docs/architecture.md 7 章「CPU で描く WebKit」）。 */
+  let height = $state(0);
+  /** つまみの上のはしを、top のときと同じく画面の画素に合わせる（合わせないと、ふちがにじむ）。 */
+  const at = (frac: number) => {
+    const y = (1 - frac) * height - metrics.px("part.fader.knob-h") / 2;
+    return `translate(-50%, ${Math.round(y * metrics.dpr) / metrics.dpr}px)`;
+  };
 </script>
 
 <div class="marks m-num m-lbl" aria-hidden="true">
@@ -28,6 +37,7 @@
   aria-valuenow={c.shown ?? undefined}
   data-test="mixer-fader"
   data-db={c.shown ?? "-inf"}
+  bind:clientHeight={height}
   onpointerdown={c.down}
   onpointermove={c.move}
   onpointerup={c.up}
@@ -39,9 +49,9 @@
   <div class="groove"></div>
   <div class="zero" style:top={top(dbToFrac(0))}></div>
   {#if c.drag}
-    <div class="knob from" style:top={top(dbToFrac(c.drag.from))} data-test="mixer-fader-from"></div>
+    <div class="knob from" style:transform={at(dbToFrac(c.drag.from))} data-test="mixer-fader-from"></div>
   {/if}
-  <div class="knob" style:top={top(dbToFrac(c.shown))}><div class="line"></div></div>
+  <div class="knob" style:transform={at(dbToFrac(c.shown))} data-test="mixer-fader-knob"><div class="line"></div></div>
 </div>
 
 <style>
@@ -88,6 +98,7 @@
   .knob {
     position: absolute;
     left: 50%;
+    top: 0;
     width: var(--part-fader-knob-w);
     height: var(--part-fader-knob-h);
     transform: translate(-50%, -50%);

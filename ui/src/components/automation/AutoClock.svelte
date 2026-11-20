@@ -20,7 +20,7 @@
     if (!moving) return;
     return everyGlFrame(() => {
       const s = current.state;
-      if (s) refreshPositions(s, playTick());
+      if (s) refreshPositions(s, playTick(), true);
     });
   });
 </script>

@@ -5,7 +5,7 @@
 #                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
 #                                 [--pattern spaced|mixed] [--piano-roll [--song FILE]]
 #                                 [--velocity-fixed V] [--mixer] [--cache-home DIR]
-#                                 [--plugin-window]
+#                                 [--plugin-window] [--vocal]
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
@@ -26,6 +26,10 @@
 #   the scanning children to DIR/raw/scan-watch.json.
 # --plugin-window: open the window of the plugin that is the instrument of track 1 (a --song
 #   with a plugin track, and DISPLAY for the plugin host) before the keys, and keep it open.
+# --vocal: add a vocal track before the keys (it is selected and its ● is on, so the input is
+#   open, and --state recording records the voice with the keys). The keys still sound on the
+#   keys track. MELOET_INPUT_SINK_MONITOR=<sink> in the environment makes that sink's monitor
+#   the input.
 # --velocity-fixed: turn "ベロシティ固定" on at V (1..127) right after the chooser.
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
@@ -48,6 +52,7 @@ song=
 velocity_fixed=
 cache_home=
 plugin_window=0
+vocal=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
@@ -64,6 +69,7 @@ while [ $# -gt 0 ]; do
     --velocity-fixed) velocity_fixed=$2; shift 2 ;;
     --cache-home) cache_home=$2; shift 2 ;;
     --plugin-window) plugin_window=1; shift ;;
+    --vocal) vocal=1; shift ;;
     *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll] [--song FILE] [--mixer] [--velocity-fixed V] [--cache-home DIR]" >&2; exit 2 ;;
   esac
 done
@@ -142,6 +148,10 @@ fi
 if [ "$plugin_window" = 1 ]; then
   view="$view,{\"afterMs\":$((confirm_ms + 400)),\"command\":{\"type\":\"openPluginWindow\",\"slot\":{\"kind\":\"instrument\",\"track\":1}}}"
   label_view="$label_view, plugin window open"
+fi
+if [ "$vocal" = 1 ]; then
+  view="$view,{\"afterMs\":$((confirm_ms + 300)),\"command\":{\"type\":\"addVocalTrack\"}}"
+  label_view="$label_view, vocal track selected (input ${MELOET_INPUT_SINK_MONITOR:+the monitor of }${MELOET_INPUT_SINK_MONITOR:-of the PC})"
 fi
 if [ -n "$velocity_fixed" ]; then
   view="$view,{\"afterMs\":$((confirm_ms + 200)),\"command\":{\"type\":\"setVelocityFixed\",\"on\":true,\"value\":$velocity_fixed}}"

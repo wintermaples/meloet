@@ -194,9 +194,14 @@
   function flagMenu(e: MouseEvent, f: T.Flag): void {
     e.preventDefault();
     e.stopPropagation();
+    if (flagDrag) return;
     const target: TimelineRef = { kind: "meterChange", bar: f.bar };
     pickTimeline();
     if (!isSelected(target)) send({ type: "selectTimeline", target });
+    // 仕様書 3 章 92-17。曲の頭の旗には「消す」がない（92-2）。
+    const entries: MenuEntry[] = [{ kind: "row", label: "menu.typeMeter", usable: !busy, run: () => (editing = { kind: "meter", bar: f.bar }) }];
+    if (f.bar !== 0) entries.push({ kind: "separator" }, { kind: "row", label: "menu.delete", key: t("key.delete"), usable: !busy, run: () => send({ type: "deleteTimeline", target }) });
+    openContextMenu(e.clientX, e.clientY, entries);
   }
 
   /** 旗を描く所: ドラッグ中は動いた旗をその小節の頭に、もとの所に gray.7 の枠。 */

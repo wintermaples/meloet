@@ -1,5 +1,5 @@
 // アレンジのオートメーションの帯の形（仕様書 2 章「オートメーションの点」、3 章 Y16、モック R10-AutoEdit ・ F6-AutoRec）。DOM を知らない。
-// トラックの行のすぐ下に、ひらいた帯（1 本 size.lane）と「▸ パン ▸ プラグインのパラメータ」の行（size.row）が入る。
+// トラックの行のすぐ下に、ひらいた帯（1 本 size.lane）と「＋ 帯を足す ▾」の行（size.row）が入る。
 // 帯の中の座標は、帯の左上からの CSS px。x は arrangeGeom と同じ「曲の頭からの px − 横のスクロール」。
 
 import type { LanePoints, LaneRef, LaneView, TrackView } from "../../bridge";
@@ -18,7 +18,7 @@ export interface RowDims {
   trackH: number;
   /** size.lane: ひらいた帯 1 本 */
   laneH: number;
-  /** size.row: 「▸ パン ▸ プラグインのパラメータ」の行 */
+  /** size.row: 「＋ 帯を足す ▾」の行 */
   rowH: number;
 }
 
@@ -44,12 +44,12 @@ export interface ArrangeRows {
 }
 
 /**
- * 「▸ パン ▸ プラグインのパラメータ」の行を出すトラック: 帯のあるトラックだけ（モック F6-AutoRec の 2〜5 には行がない）。
+ * 「＋ 帯を足す ▾」の行を出すトラック: 帯のあるトラックだけ（モック F7-Answers92 ・ F6-AutoRec の 2〜5 には行がない）。
  * 帯がまだないトラックの音量 ・ パンの帯を足す所は、仕様書にもモックにもない（design-notes B に戻す）。
  */
 export const showsAddRow = (track: TrackView) => track.lanes.length > 0;
 
-/** 帯は足した順。たたんだ帯は、行の中の「▸ （何を）」になる。 */
+/** 帯は足した順。たたんだ帯は出さない（「＋ 帯を足す ▾」の一覧から、ひらきなおす）。 */
 export function arrangeRows(tracks: readonly TrackView[], folded: readonly LaneRef[], d: RowDims): ArrangeRows {
   const out: ArrangeRows = { tops: [], bottoms: [], lanes: [], rows: [], height: 0 };
   let y = 0;
@@ -82,15 +82,60 @@ export interface LaneDims {
   hair: number;
   /** 点の大きさ（part.cc.point、6×6） */
   point: number;
+  /** 帯の下から上が見せる位置の範囲（laneRange）。なければ 0〜1。 */
+  range?: LaneRange;
+}
+
+/** 帯の縦が見せる位置（0〜1）の範囲。lo が下のはし、hi が上のはし。 */
+export interface LaneRange {
+  lo: number;
+  hi: number;
+}
+
+export const FULL_RANGE: LaneRange = { lo: 0, hi: 1 };
+
+/**
+ * 帯の縦（仕様書 3 章 92-6 ・ 21-B）: 点のいちばん下からいちばん上まで、上下に 1 割のゆとり。点が 1 つか、どれも同じ値なら、
+ * その値のまわりにパラメータの幅の 1 割。オン ・ オフとミュート（階段の帯）は、いつも下〜上。点がないときも下〜上。
+ * 0〜1 からはみ出す分は、反対の側へずらす。
+ */
+export function laneRange(pts: readonly Pt[], step: boolean): LaneRange {
+  if (step || pts.length === 0) return FULL_RANGE;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const p of pts) {
+    min = Math.min(min, p.value);
+    max = Math.max(max, p.value);
+  }
+  const room = max > min ? (max - min) * 0.1 : 0.05;
+  const width = Math.min(1, max - min + 2 * room);
+  const lo = Math.min(1 - width, Math.max(0, min - room));
+  return { lo, hi: lo + width };
+}
+
+/** 範囲の上と下の字にする位置（「上 −3.0 dB」「下 −9.0 dB」、モック Opt7-LaneScale）: 点のいちばん上と下。点が 1 つか同じ値なら、範囲のはし。 */
+export function rangeEnds(pts: readonly Pt[], range: LaneRange): LaneRange {
+  const values = pts.map((p) => p.value);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  return hi > lo ? { lo, hi } : range;
 }
 
 const span = (d: LaneDims) => Math.max(1, d.h - 2 * d.pad - d.hair);
-/** 位置（0〜1）→ y。1 が上。 */
-export const valueToY = (d: LaneDims, value: number) => Math.round((d.pad + (1 - Math.min(1, Math.max(0, value))) * span(d)) / d.hair) * d.hair;
+const widthOf = (d: LaneDims) => {
+  const r = d.range ?? FULL_RANGE;
+  return Math.max(1e-9, r.hi - r.lo);
+};
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+/** 位置（0〜1）→ y。範囲の上が帯の上。範囲の外は帯のはしで止める。 */
+export const valueToY = (d: LaneDims, value: number) => {
+  const t = clamp01((clamp01(value) - (d.range?.lo ?? 0)) / widthOf(d));
+  return Math.round((d.pad + (1 - t) * span(d)) / d.hair) * d.hair;
+};
 /** y → 位置（0〜1 に入れる）。 */
-export const yToValue = (d: LaneDims, y: number) => Math.min(1, Math.max(0, 1 - (y - d.pad) / span(d)));
+export const yToValue = (d: LaneDims, y: number) => clamp01((d.range?.lo ?? 0) + (1 - (y - d.pad) / span(d)) * widthOf(d));
 /** 上下に dy px 動かしたときの位置の差。 */
-export const dyToValue = (d: LaneDims, dy: number) => -dy / span(d);
+export const dyToValue = (d: LaneDims, dy: number) => (-dy / span(d)) * widthOf(d);
 
 export interface Pt {
   tick: number;

@@ -69,9 +69,14 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
   /** 3 章の一覧を名前にひらく: 「CC の点を書く ・ 動かす ・ 消す」→「CC の点を書く」「CC の点を動かす」「CC の点を消す」、「…名前を変える」→「…の名前を変える」。 */
   function specNames(): string[] {
     const text = sectionText(specDocument(), "s3");
-    const list = /手の名前は、(.+?)。ここにない手の名前は/.exec(text)![1]!;
+    const list = /手の名前は、(.+?)。欄に打ちこんだ手は/.exec(text)![1]!;
     const out: string[] = [];
     for (const item of list.split("、")) {
+      // 「だんだんにする ・ だんだんをやめる」は、2 つとも名前のまま。
+      if (item === "だんだんにする ・ だんだんをやめる") {
+        out.push(...item.split(" ・ "));
+        continue;
+      }
       const quoted = /（「(.+)」）$/.exec(item);
       if (quoted) out.push(quoted[1]!);
       const plain = item.startsWith("（") ? item : item.replace(/（[^）]*）$/, "");
@@ -93,10 +98,11 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
     expect(spec).toContain("テンポ ・ 拍子の変更を消す");
     expect(spec).toContain("コンプレッサーの「しきい値」を変える");
     for (const [kind, e] of names.filter(([, x]) => x.source === "spec:3")) expect(spec, kind).toContain(filled(e));
-    // 一覧にあって、手にない名前: 「クリップを書く」（クリップだけを書く手はない）、「ソロ」（手にしない。A-19）、
+    // 一覧にあって、手にない名前: 「クリップを書く」（クリップだけを書く手はない）、
     // 「パラメータを変える」（「コンプレッサーの「しきい値」を変える」の形で出す）、プラグインの窓（6 章の文で出す）。
-    const used = new Set(names.map(([, e]) => filled(e)));
-    expect(spec.filter((name) => !used.has(name))).toEqual(["クリップを書く", "パラメータを変える", "ソロ", "（プラグイン）の窓で変えた所"]);
+    // 「戻した変更をすてる」は 6 章の「戻した変更をすてる（最後に保存した形にする）」。
+    const used = new Set(names.map(([, e]) => filled(e).replace(/（[^）]*）$/, "")));
+    expect(spec.filter((name) => !used.has(name))).toEqual(["クリップを書く", "パラメータを変える", "（プラグイン）の窓で変えた所"]);
   });
 
   it("出どころが spec:6 ・ mock の名前は、そこにそのまま書いてある", () => {
@@ -105,23 +111,10 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
     expect(mockScreenText("F-Recover2")).toContain(filled(stepNames.recovered));
   });
 
-  it("一覧にない手の仮の名前（builder。design-notes B-92 に戻してある物）", () => {
+  it("一覧にない手の仮の名前（builder。design-notes B-92 に戻してある物）。ほかの仮の名前は第 11 版で 3 章の一覧に入った（92-7）", () => {
     expect(Object.fromEntries(names.filter(([, e]) => e.source.startsWith("builder:")).map(([kind, e]) => [kind, e.text]))).toEqual({
       cutNotes: "ノートを切り取る",
-      pasteNotes: "ノートを貼りつける",
-      unquantize: "もとの位置へ戻す",
-      switchTake: "テイクを切りかえる",
-      pasteClips: "クリップを貼りつける",
-      removeInstrument: "音源を外す",
-      removeMissing: "見つからない物を曲から外す",
       unmute: "ミュートを外す",
-      addLane: "帯を足す",
-      writeAutomation: "オートメーションを書く",
-      restLane: "オートメーションを休ませる",
-      restoreLane: "オートメーションをもどす",
-      moveTimelineChange: "テンポ ・ 拍子の変更を動かす",
-      setTempoRamp: "だんだんにする",
-      clearTempoRamp: "だんだんをやめる",
     });
   });
 
@@ -149,14 +142,15 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
       [16, "「ノートを動かす」・ 3 ノート", "ピアノロール"],
       [15, "「ノートの長さを変える」・ 2 ノート", "ピアノロール"],
       [14, "「クオンタイズ」・ 12 ノート", "ピアノロール"],
-      [13, "「音量を変える」・ 4 パッド −10.5 → −12.0 dB", "ミキサー"],
+      [13, "「音量を変える」・ 4 パッド ・ −10.5 → −12.0 dB", "ミキサー"],
       [12, "「エフェクトをとばす」・ MVerb", "4 パッド"],
       [11, "「マーカーを足す」・ サビ", "アレンジ"],
-      [10, "「テンポを変える」・ 5 小節目 96 → 120", "アレンジ"],
+      [10, "「テンポを変える」・ 5 小節目 96.00 → 120.00", "アレンジ"],
     ]);
     const board = mockScreenText("R10-History");
+    // 仕様書 3 章 92-3 で、音量は「4 パッド ・ −10.5 → −12.0 dB」、テンポは「5 小節目 96.00 → 120.00」になった（モックより新しい）。
     // モックの 14 手目は「1/16 ・ 12 ノート」（グリッドは、まだ手が持っていない）。ほかの行はモックの文のまま。
-    for (const [index, row] of s.history.slice(9).map(text)) if (index !== 14) expect(board, String(index)).toContain(row as string);
+    for (const [index, row] of s.history.slice(9).map(text)) if (![14, 13, 10].includes(index as number)) expect(board, String(index)).toContain(row as string);
   });
 
   it("historyList（F-History）: 14 手、上の 2 手はやりなおせる", () => {
@@ -164,11 +158,11 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
     expect(s.state.history).toEqual({ total: 14, redo: 2, current: 12, newest: 14 });
     expect(s.state.status.message).toEqual({ id: "undoPending", count: 2 });
     expect(s.history.slice(8).reverse().map(text)).toEqual([
-      [14, "「音量を変える」・ 4 パッド −10.5 → −12.0 dB", "ミキサー"],
+      [14, "「音量を変える」・ 4 パッド ・ −10.5 → −12.0 dB", "ミキサー"],
       [13, "「クオンタイズ」・ 3 ノート", "ピアノロール"],
       [12, "「録音」・ テイク 2", "1 ピアノ"],
       [11, "「録音」・ テイク 1", "1 ピアノ"],
-      [10, "「ループの範囲を変える」・ 5–9", "アレンジ"],
+      [10, "「ループの範囲を変える」・ 5〜9 小節", "アレンジ"],
       [9, "「マーカーを足す」・ サビ", "アレンジ"],
     ]);
   });
@@ -179,17 +173,17 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
     expect(what({ kind: "mute" }, { kind: "none" })).toBeNull();
     expect(historyRowText({ index: 1, step: 1, name: { kind: "recovered" }, what: { kind: "none" }, place: null }, ctx)).toBe("「なおすためのファイルから戻す」");
     expect(stepPlaceText(null, ctx)).toBeNull();
-    expect(what({ kind: "setTempo" }, { kind: "tempo", bar: 1, beat: 1, fromBpm: 96, toBpm: 104.5 })).toBe("曲の頭 96 → 104.50");
-    expect(what({ kind: "addTimelineChange" }, { kind: "tempo", bar: 5, beat: 3, fromBpm: null, toBpm: 120 })).toBe("5 小節目の 3 拍目 120");
+    expect(what({ kind: "setTempo" }, { kind: "tempo", bar: 1, beat: 1, fromBpm: 96, toBpm: 104.5 })).toBe("曲の頭 96.00 → 104.50");
+    expect(what({ kind: "addTimelineChange" }, { kind: "tempo", bar: 5, beat: 3, fromBpm: null, toBpm: 120 })).toBe("5 小節目の 3 拍目 120.00");
     expect(what({ kind: "setMeter" }, { kind: "meter", bar: 9, from: { num: 4, den: 4 }, to: { num: 3, den: 4 } })).toBe("9 小節目 4/4 → 3/4");
     expect(what({ kind: "moveTimelineChange" }, { kind: "moved", bar: 5, beat: 1, toBar: 6, toBeat: 2 })).toBe("5 小節目 → 6 小節目の 2 拍目");
     expect(what({ kind: "setTempoRamp" }, { kind: "place", bar: 5, beat: 1 })).toBe("5 小節目");
-    expect(what({ kind: "setGain" }, { kind: "gain", strip: { kind: "master" }, fromDb: 0, toDb: null })).toBe("マスター 0.0 → −∞ dB");
-    expect(what({ kind: "setPan" }, { kind: "pan", strip: { kind: "track", track: pad }, from: 0, to: -20 })).toBe("4 パッド C → L 20");
-    expect(what({ kind: "setSend" }, { kind: "send", track: pad, bus: "a", fromDb: -15, toDb: -12 })).toBe("4 パッド センド A −15.0 → −12.0 dB");
+    expect(what({ kind: "setGain" }, { kind: "gain", strip: { kind: "master" }, fromDb: 0, toDb: null })).toBe("マスター ・ 0.0 → −∞ dB");
+    expect(what({ kind: "setPan" }, { kind: "pan", strip: { kind: "track", track: pad }, from: 0, to: -20 })).toBe("4 パッド ・ C → L 20");
+    expect(what({ kind: "setSend" }, { kind: "send", track: pad, bus: "a", fromDb: -15, toDb: -12 })).toBe("4 パッド ・ センド A −15.0 → −12.0 dB");
     expect(what({ kind: "setParam", effect: "compressor", param: 0 }, { kind: "param", from: -18, to: -24 })).toMatch(/^−18.* → −24/);
     expect(what({ kind: "replaceEffect" }, { kind: "replaced", from: { kind: "builtin", effect: "compressor" }, to: { kind: "builtin", effect: "eq4" } })).toBe("コンプレッサー → EQ 4 バンド");
-    expect(what({ kind: "mute" }, { kind: "strip", strip: { kind: "return", bus: "a" } })).toBe("A リバーブ");
+    expect(what({ kind: "mute" }, { kind: "strip", strip: { kind: "return", bus: "a" } })).toBe("A リバーブ ・ オン");
     expect(what({ kind: "moveAutoPoints" }, { kind: "lane", target: { kind: "volume" }, points: 3 })).toBe("音量 ・ 3 点");
     expect(what({ kind: "deleteLane" }, { kind: "lane", target: { kind: "builtin", effect: "compressor", param: 0 }, points: null })).toBe("コンプレッサーの「おさえはじめ」");
     expect(what({ kind: "switchTake" }, { kind: "takeSwitch", from: 1, to: 2 })).toBe("テイク 1 → 2");

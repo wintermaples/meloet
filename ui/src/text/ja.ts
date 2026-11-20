@@ -180,7 +180,7 @@ export const texts = {
   ),
   "msg.micTooLoud": s6(
     "マイクの音が大きすぎる",
-    "入ってくる音が大きすぎて割れています。マイクから少し離れるか、マイクがわの音量を下げてください。",
+    "マイクの音が大きすぎます（0 dB に届きました）。マイクを少しはなすか、PC の入口の音量を下げてください。",
   ),
   "msg.scanning": s6(
     "スキャン中",
@@ -775,6 +775,8 @@ export const texts = {
     "{strip} のインサート {slot} の {effect} を外しました。取り消せます（{undoKey}）",
     { strip: "2 ベース", slot: "1", effect: "コンプレッサー", undoKey: "Mod Z" },
   ),
+  // 外す ・ 入れかえる ・ 音源を入れかえるのといっしょに帯が消えたとき、状態行の文の終わりの「。」の前に足す（仕様書 3 章 92-19）。
+  "msg.lanesAlsoGone": s6("帯もいっしょに消えた", "（そのパラメータの帯 {count} 本も消えました）", { count: "2" }, "part"),
   "msg.insertsReordered": s6(
     "インサートを並べかえた",
     "{strip} のインサートを並べかえました（{order}）。",
@@ -1332,6 +1334,11 @@ export const texts = {
 
   // パラメータの欄（最初から入っているエフェクト）
   "params.builtin": e("最初から入っている", "mock:F4-Mixer"),
+  // 最初から入っている音色と SF2 の音色を左で押したとき（仕様書 3 章 92-1 ・ 19-A）。
+  "params.noSoundParams": e("この音色には、動かせるパラメータがありません。", "spec:3"),
+  "params.noSoundParamsHint": e("音量とパンはミキサーで、音色を変えるには入れかえます。", "spec:3"),
+  "msg.noSoundParams": s6("動かせるパラメータがない", "{name}には、動かせるパラメータがありません", { name: "グランドピアノ" }),
+  "button.replaceSound": e("音源を入れかえる…", "spec:6"),
   "params.where": e("{strip} ・ インサート {slot}", "mock:F4-Mixer", {
     strip: "A リバーブ",
     slot: "1",
@@ -1958,6 +1965,9 @@ export const texts = {
   "timeline.placeHead": e("曲の頭", "builder:2026-11-20"),
   "msg.tempoPointSelected": e("{place}の変更をえらんでいます ・ {tempo}", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
   "msg.meterChangeSelected": e("{place}の変更をえらんでいます ・ {signature}", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
+  // 曲の頭の点と旗は「変更」と呼ばない（仕様書 3 章 92-2）。
+  "msg.headTempoSelected": s6("曲の頭のテンポをえらんでいる", "曲の頭のテンポをえらんでいます ・ {tempo}", { tempo: "96.00" }, "part"),
+  "msg.headMeterSelected": s6("曲の頭のテンポをえらんでいる", "曲の頭の拍子をえらんでいます ・ {signature}", { signature: "4/4" }, "quoted"),
   "msg.tempoPointSet": e("{place}のテンポを {tempo} にしました。", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
   "msg.meterChangeSet": e("{place}の拍子を {signature} にしました。", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
   "marker.newName": e("マーカー {count}", "spec:3", { count: "4" }),
@@ -1970,6 +1980,8 @@ export const texts = {
   "menu.tempoRamp": e("次の点まで、だんだん", "spec:3"),
   "menu.loopFromMarker": e("ここから次のマーカーまでをループに", "spec:3"),
   "menu.renameMarker": e("名前を変える", "spec:3"),
+  // 拍子の旗の右クリック（仕様書 3 章 92-17）。
+  "menu.typeMeter": e("拍子を打ちこむ…", "spec:3"),
 
   // [第 6 回 ・ オートメーション、取り消しの履歴]（仕様書 3 章 Y16 ・ Y19、6 章。仮の文は design-notes B-92）
   // 状態行。（何を）がない手は、かっこごと出さない（Bare）。
@@ -1989,8 +2001,7 @@ export const texts = {
     steps: "2",
   }),
   "msg.nothingToUndo": s6("取り消せる手がない", "取り消せる手がありません。"),
-  // Mod Shift Z で、やりなおせる手がないとき（文は 6 章にない。「取り消せる手がない」にならう）。
-  "msg.nothingToRedo": e("やりなおせる手がありません。", "builder:2026-11-20"),
+  "msg.nothingToRedo": s6("やりなおせる手がない", "やりなおせる手がありません。"),
   "msg.automationWriting": s6("オートメーションを書いている", "{track} ・ {target}を書いています（● 書く ・ 止めるとオフに戻ります）", {
     track: "1 ピアノ",
     target: "音量",
@@ -2012,17 +2023,22 @@ export const texts = {
   "lane.param": e("{effect}の「{param}」", "builder:2026-11-20", { effect: "コンプレッサー", param: "しきい値" }),
   // プラグインがパラメータの名前を言ってこないとき。
   "lane.pluginParam": e("{plugin}のパラメータ", "builder:2026-11-20", { plugin: "Surge XT " }),
-  // アレンジの帯の見出し（2 段）と、「▸ パン ▸ プラグインのパラメータ」の行、読み値（仕様書 2 章 ・ 3 章 Y16）。
+  // アレンジの帯の見出し（2 段）と、読み値（仕様書 2 章 ・ 3 章 Y16）。
   "lane.title": e("オートメーション ・ {target}", "mock:F6-AutoRec", { target: "音量" }),
   "lane.write": e("● 書く", "spec:2"),
   "lane.writing": e("書いています", "mock:F6-AutoRec"),
   "lane.restore": e("もどす", "spec:2"),
   "lane.resting": e("休み ・ {value}", "mock:F6-AutoRest", { value: "−12.0 dB" }),
   "lane.restingBare": e("休み", "spec:2"),
-  "lane.now": e("いま {value} ・ 点 {count}", "mock:F6-ParamMany", { value: "−4.8 dB", count: "5" }),
-  "lane.count": e("点 {count}", "mock:F6-ParamMany", { count: "5" }),
-  "lane.pluginParams": e("プラグインのパラメータ", "spec:3"),
+  "lane.now": e("いま {value} ・ 点 {count}", "mock:F6-ParamMany", { value: "523.25 Hz", count: "4" }),
+  "lane.count": e("点 {count}", "mock:F6-ParamMany", { count: "4" }),
+  // 見出しの下の行と、押すとひらく一覧の最後の行（仕様書 3 章 92-5 ・ 20-A）。
+  "lane.add": e("＋ 帯を足す ▾", "spec:3"),
+  "lane.addEffectParams": e("エフェクトのパラメータ…", "spec:3"),
   "lane.delete": e("帯を消す", "spec:3"),
+  // 帯の右上と右下（仕様書 3 章 92-6 ・ 21-B）。
+  "lane.rangeTop": e("上 {value}", "spec:3", { value: "−3.0 dB" }),
+  "lane.rangeBottom": e("下 {value}", "spec:3", { value: "−9.0 dB" }),
   "lane.readAdd": e("{position} ・ {value}", "mock:R10-AutoEdit", { position: "5. 3. 000", value: "−8.4 dB" }),
   "lane.readMove": e("{delta} ・ {from} → {to}", "mock:R10-AutoEdit", { delta: "+0. 1. 000", from: "−2.1", to: "−0.6 dB" }),
   // ミキサーのフェーダーの値の下（仕様書 2 章「オートメーションで動くつまみ」）。休みは lane.restingBare と lane.restore。
@@ -2032,31 +2048,38 @@ export const texts = {
   "history.rowBare": e("「{name}」", "builder:2026-11-20", { name: "ミュート" }),
   "history.notes": s6("取り消した", "{count} ノート", { count: "3" }, "part"),
   "history.points": e("{count} 点", "builder:2026-11-20", { count: "3" }),
-  "history.clips": e("{count} クリップ", "builder:2026-11-20", { count: "2" }),
+  "history.clips": e("{count} クリップ", "spec:3", { count: "3" }),
   "history.take": e("テイク {number}", "mock:F-History", { number: "1" }),
   "history.takeSwitch": e("テイク {from} → {to}", "builder:2026-11-20", { from: "1", to: "2" }),
-  "history.change": e("{from} → {to}", "builder:2026-11-20", { from: "ピアノ", to: "エレピ" }),
-  "history.changeAt": e("{place} {from} → {to}", "mock:R10-History", { place: "5 小節目", from: "96", to: "120" }),
+  "history.change": e("{from} → {to}", "spec:3", { from: "ベース", to: "ベース 2" }),
+  "history.changeAt": e("{place} {from} → {to}", "spec:3", { place: "5 小節目", from: "96.00", to: "120.00" }),
   "history.valueAt": e("{place} {value}", "builder:2026-11-20", { place: "5 小節目", value: "120" }),
-  "history.bars": e("{from}–{to}", "mock:F-History", { from: "5", to: "9" }),
-  "history.gain": e("{strip} {from} → {to} dB", "mock:R10-History", { strip: "4 パッド", from: "−10.5", to: "−12.0" }),
-  "history.pan": e("{strip} {from} → {to}", "builder:2026-11-20", { strip: "4 パッド", from: "C", to: "L 20" }),
-  "history.send": e("{strip} センド {bus} {from} → {to} dB", "builder:2026-11-20", { strip: "4 パッド", bus: "A", from: "−15.0", to: "−12.0" }),
-  "history.lanePoints": e("{target} ・ {count} 点", "builder:2026-11-20", { target: "音量", count: "3" }),
+  "history.bars": e("{from}〜{to} 小節", "spec:3", { from: "5", to: "9" }),
+  "history.gain": e("{strip} ・ {from} → {to} dB", "spec:3", { strip: "4 パッド", from: "−10.5", to: "−12.0" }),
+  "history.pan": e("{strip} ・ {from} → {to}", "spec:3", { strip: "4 パッド", from: "C", to: "L 20" }),
+  "history.send": e("{strip} ・ センド {bus} {from} → {to} dB", "spec:3", { strip: "4 パッド", bus: "A", from: "−15.0", to: "−12.0" }),
+  "history.lanePoints": e("{target} ・ {count} 点", "spec:3", { target: "音量", count: "3" }),
+  "history.muteOn": e("{strip} ・ オン", "spec:3", { strip: "4 パッド" }),
   "history.missing": e("トラック {tracks} ・ インサート {inserts}", "builder:2026-11-20", { tracks: "2", inserts: "1" }),
   // プラグインがパラメータの名前を言ってこなかった手の名前。
   "history.pluginParam": e("{plugin}のパラメータを変える", "builder:2026-11-20", { plugin: "Surge XT " }),
   // 行の右の「どこで」。ほかは band.arrange ・ band.pianoRoll ・ band.mixer と track.label。
   "history.placePluginWindow": e("{strip} ・ プラグインの窓", "spec:6", { strip: "5 Surge XT" }),
-  // 帯の見出しの行（仕様書 3 章 Y19「帯の見出しの文は今のまま」）。取り消してある手がないとき、ぜんぶ取り消したとき、手がないときの形はモックにない。
+  // 帯の見出しの行（仕様書 3 章 Y19 ・ 92-9、6 章）。
   "history.head": e("{total} 手 ・ いまは {current} 手目。上の {redo} 手は取り消してあり、やりなおせます", "mock:F-History", {
     total: "14",
     current: "12",
     redo: "2",
   }),
-  "history.headLatest": e("{total} 手 ・ いまは {current} 手目", "builder:2026-11-20", { total: "14", current: "14" }),
-  "history.headAllUndone": e("{total} 手。{redo} 手は取り消してあり、やりなおせます", "builder:2026-11-20", { total: "14", redo: "14" }),
-  "history.headEmpty": e("{total} 手", "builder:2026-11-20", { total: "0" }),
+  "history.headLatest": s6("履歴の見出し ・ 取り消した手がない", "{total} 手 ・ いまは {current} 手目（いちばん新しい手）", {
+    total: "14",
+    current: "14",
+  }),
+  "history.headAllUndone": s6("履歴の見出し ・ ぜんぶ取り消した", "{total} 手 ・ ぜんぶ取り消してあります ・ やりなおすには {redoKey}", {
+    total: "14",
+    redoKey: "Mod Shift Z",
+  }),
+  "history.headEmpty": s6("履歴の見出し ・ 手がない", "まだ手がありません ・ 何かすると、ここに 1 手ずつならびます"),
   "history.undo": e("取り消す", "mock:F-History"),
   "history.redo": e("やりなおす", "mock:F-History"),
   // 行の右（仕様書 2 章「履歴の行 ・ 乗った ・ えらんだ」、3 章 Y19）。ボタンの右に key.enter。
@@ -2065,6 +2088,93 @@ export const texts = {
   "history.jumpHere": e("ここまで戻す", "spec:3"),
   // 帯のいちばん下の行。見えている行より前の手があるとき。
   "history.more": e("… {index} 手目より前は、下へスクロール", "mock:F-History", { index: "6" }),
+
+  // [第 7 回 ・ 歌のトラック、音のファイル、遅れ、書き出し]（仕様書 3 章 93 ・ 6 章）。区切り2〜5 で使う。
+  "msg.vocalTrackAdded": s6(
+    "歌のトラックを足した",
+    "{track} を足しました ・ {input} から録ります ・ 歌のトラックの ● は、選んでいなくても自分でつけます",
+    { track: "6 歌", input: "入口 1" },
+  ),
+  "msg.noAudioInput": s6("入口がない", "音の入口がありません。マイクをつなぐか、音の設定で入口をえらんでください。"),
+  "msg.monitorFirstOn": s6(
+    "はじめてモニターをオンにした",
+    "自分の声が少し遅れて聞こえます（いまは {ms} ms）。スピーカーだと音がまわって「キーン」となるので、ヘッドホンで聞いてください。",
+    { ms: "13" },
+  ),
+  "msg.vocalNoPianoRoll": s6("歌のトラックにピアノロールはない", "歌のトラックにはピアノロールがありません。波形はアレンジで直します。"),
+  "msg.recordingVocal": s6("歌を録っている", "● 録音中 ・ {track}（{input}）・ モニター オン ・ 止めるには {stopKey}", {
+    track: "6 歌",
+    input: "入口 1",
+    stopKey: "Space",
+  }),
+  "msg.recordingKeysAndVocal": s6(
+    "鍵盤と歌を録っている",
+    "● 録音中 ・ {keys}（鍵盤）と {vocal}（{input}）に録っています ・ 止めるには {stopKey}",
+    { keys: "1 ピアノ", vocal: "6 歌", input: "入口 1", stopKey: "Space" },
+  ),
+  "recovery.vocalKept": s6("録っていた歌を残した", "録っていた歌 {count} つを、止まる直前（{position} ごろ）まで残しました。", {
+    count: "1",
+    position: "9. 3. 0000",
+  }),
+  "msg.audioFilesMissing": s6("音のファイルが見つからない", "曲で使っている音のファイルが {count} つ見つかりません。そのクリップは鳴りません。", {
+    count: "2",
+  }),
+  "params.audioFileMissing": s6("音のファイルが見つからない（欄）", "{file} が見つかりません。前はここにありました: {path}", {
+    file: "歌 テイク 1.wav",
+    path: "はじめての曲/音/歌 テイク 1.wav",
+  }),
+  "button.findFile": e("さがす…", "spec:6"),
+  "msg.clipGainDragging": s6(
+    "クリップの音量を動かしている",
+    "{clip} のクリップの音量 {value}（ドラッグ中）・ 離すと決まります ・ やめるには {cancelKey}",
+    { clip: "歌 テイク 1", value: "−3.0 dB", cancelKey: "Esc" },
+  ),
+  "msg.clipSplit": s6("切った", "{clip} を {position} で切りました。", { clip: "歌 テイク 1", position: "7. 1. 0000" }),
+  "msg.audioRendering": s6("音を作っている", "{clip} の音を作っています {percent} % ・ できるまでは、もとの音で鳴らします", {
+    clip: "歌 テイク 1",
+    percent: "34",
+  }),
+  "msg.audioImported": s6("音のファイルを入れた", "{file} を入れました（{track} ・ {position}）。", {
+    file: "ドラム.wav",
+    track: "6 歌",
+    position: "5. 1. 0000",
+  }),
+  "clip.loading": s6("音のファイルを読みこんでいる", "読みこんでいます {percent} %", { percent: "40" }),
+  "msg.audioUnreadable": s6("読めないファイル", "「{file}」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。", { file: "声.aac" }),
+  "msg.audioDragging": s6(
+    "音のファイルを持ってきている",
+    "音のファイルを {count} つ持ってきています ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる",
+    { count: "8" },
+  ),
+  "drop.mixed": s6("SF2 と音のファイルをまぜて持ってきた", "SF2 は {sf2} つ棚へ ・ 音のファイル {audio} つはアレンジへ", {
+    sf2: "1",
+    audio: "3",
+  }),
+  "latency.measuring": s6("遅れを測っている", "測っています {done} / {total}", { done: "3", total: "5" }),
+  "latency.failed": s6("遅れを測れない", "音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。"),
+  "button.useThisValue": e("この数を使う", "spec:6"),
+  "button.again": e("もう一度", "spec:6"),
+  "button.audioSettingsEllipsis": e("音の設定…", "spec:6"),
+  "settings.notAsRequested": s6(
+    "頼んだ数で動いていない",
+    "頼んだ {requested} ではなく、{actual} で動いています（PC の設定で決まっています）。meloet は PC 全体の設定は変えません。",
+    { requested: "128", actual: "256" },
+  ),
+  "msg.exporting": s6("書き出している", "書き出しています {percent} % ・ {file} ・ 残り 約 {left} ・ 弾けます（書き出しの音は聞こえません）", {
+    percent: "46",
+    file: "はじめての曲.wav",
+    left: "40 秒",
+  }),
+  "msg.exportingRealtime": s6("実時間で書き出している", "速く書き出せないプラグインがあるので、実時間で書き出します（{length}）。", {
+    length: "3:02",
+  }),
+  "msg.exportedFile": s6("書き出した", "{file} を書き出しました（{length} ・ {rate} Hz ・ {bits} ビット）。", {
+    file: "はじめての曲.wav",
+    length: "3:02",
+    rate: "48000",
+    bits: "24",
+  }),
+  "msg.exportCanceled": s6("書き出しをやめた", "書き出しをやめました。途中までのファイルは消しました。"),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。
@@ -2177,7 +2287,7 @@ export type TextKey = keyof typeof texts;
  * 取り消しの履歴の「手の名前」（仕様書 3 章 Y19）。約束の手の名前の種類（StepName の kind）ごとに 1 つ。
  * spec:3 は 3 章「手の名前」の一覧の言いかた（「CC の点を書く ・ 動かす ・ 消す」は「CC の点を動かす」のように開く。
  * 一覧の「録音（テイク）」は「録音」、「クリップを … 切る」は切り取り（Mod X）と読んだ）。
- * 一覧にない名前は builder:（design-notes B-92。仕様書の次の版で足してもらう）。
+ * 第 11 版で一覧に入った仮の名前（92-7）も spec:3。一覧にない名前は builder:（design-notes B-92）。
  */
 export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   writeNote: e("ノートを書く", "spec:3"),
@@ -2187,19 +2297,19 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   duplicateNotes: e("ノートを複製する", "spec:3"),
   resizeNotes: e("ノートの長さを変える", "spec:3"),
   changeVelocity: e("ベロシティを変える", "spec:3"),
-  pasteNotes: e("ノートを貼りつける", "builder:2026-11-20"),
+  pasteNotes: e("ノートを貼りつける", "spec:3"),
   quantize: e("クオンタイズ", "spec:3"),
-  unquantize: e("もとの位置へ戻す", "builder:2026-11-20"),
+  unquantize: e("もとの位置へ戻す", "spec:3"),
   addControl: e("CC の点を書く", "spec:3"),
   moveControls: e("CC の点を動かす", "spec:3"),
   deleteControls: e("CC の点を消す", "spec:3"),
   record: e("録音", "spec:3"),
-  switchTake: e("テイクを切りかえる", "builder:2026-11-20"),
+  switchTake: e("テイクを切りかえる", "spec:3"),
   deleteTake: e("テイクを消す", "spec:3"),
   moveClips: e("クリップを動かす", "spec:3"),
   duplicateClips: e("クリップを複製する", "spec:3"),
   cutClips: e("クリップを切る", "spec:3"),
-  pasteClips: e("クリップを貼りつける", "builder:2026-11-20"),
+  pasteClips: e("クリップを貼りつける", "spec:3"),
   trimClip: e("クリップの長さを変える", "spec:3"),
   deleteClips: e("クリップを消す", "spec:3"),
   addTrack: e("トラックを足す", "spec:3"),
@@ -2208,8 +2318,8 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   moveTrack: e("トラックを並べかえる", "spec:3"),
   setTrackColor: e("トラックの色を変える", "spec:3"),
   setInstrument: e("音源を入れかえる", "spec:3"),
-  removeInstrument: e("音源を外す", "builder:2026-11-20"),
-  removeMissing: e("見つからない物を曲から外す", "builder:2026-11-20"),
+  removeInstrument: e("音源を外す", "spec:3"),
+  removeMissing: e("見つからない物を曲から外す", "spec:3"),
   addEffect: e("エフェクトを入れる", "spec:3"),
   removeEffect: e("エフェクトを外す", "spec:3"),
   moveInsert: e("エフェクトを並べかえる", "spec:3"),
@@ -2224,21 +2334,21 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   mute: e("ミュート", "spec:3"),
   unmute: e("ミュートを外す", "builder:2026-11-20"),
   pluginWindow: texts["plugin.windowStep"],
-  addLane: e("帯を足す", "builder:2026-11-20"),
+  addLane: e("帯を足す", "spec:3"),
   deleteLane: e("帯を消す", "spec:3"),
   addAutoPoint: e("オートメーションの点を書く", "spec:3"),
   moveAutoPoints: e("オートメーションの点を動かす", "spec:3"),
   deleteAutoPoints: e("オートメーションの点を消す", "spec:3"),
-  writeAutomation: e("オートメーションを書く", "builder:2026-11-20"),
-  restLane: e("オートメーションを休ませる", "builder:2026-11-20"),
-  restoreLane: e("オートメーションをもどす", "builder:2026-11-20"),
+  writeAutomation: e("オートメーションを書く", "spec:3"),
+  restLane: e("オートメーションを休ませる", "spec:3"),
+  restoreLane: e("オートメーションをもどす", "spec:3"),
   setTempo: e("テンポを変える", "spec:3"),
   setMeter: e("拍子を変える", "spec:3"),
   addTimelineChange: e("テンポ ・ 拍子の変更を足す", "spec:3"),
-  moveTimelineChange: e("テンポ ・ 拍子の変更を動かす", "builder:2026-11-20"),
+  moveTimelineChange: e("テンポ ・ 拍子の変更を動かす", "spec:3"),
   deleteTimelineChange: e("テンポ ・ 拍子の変更を消す", "spec:3"),
-  setTempoRamp: e("だんだんにする", "builder:2026-11-20"),
-  clearTempoRamp: e("だんだんをやめる", "builder:2026-11-20"),
+  setTempoRamp: e("だんだんにする", "spec:3"),
+  clearTempoRamp: e("だんだんをやめる", "spec:3"),
   addMarker: e("マーカーを足す", "spec:3"),
   renameMarker: e("マーカーの名前を変える", "spec:3"),
   moveMarker: e("マーカーを動かす", "spec:3"),
@@ -2262,6 +2372,14 @@ const st = (term: string, description: string): Term => ({
 
 /** 仕様書 5 章「用語の説明」。形は「用語 — 説明」。 */
 export const terms: readonly Term[] = [
+  st("モニター", "入ってくる自分の声を、meloet を通してヘッドホンで聞くこと。少し遅れて聞こえる。"),
+  st("波形", "音の大きさを、時間にそってならべた形。"),
+  st("入口のチャンネル", "音の入口の番号。マイクが 1 本ならモノ（入口 1）、2 本ならステレオ（入口 1 ・ 2）。"),
+  st("のび縮み", "音の高さを変えずに、音を長く ・ 短くすること。タイムストレッチとも呼ぶ。"),
+  st("セント", "半音を 100 に分けた、音の高さの細かい目盛り。"),
+  st("声の感じを保つ", "音の高さを変えても、声が子どものように ・ 低い声のようにならないようにする。フォルマントとも呼ぶ。"),
+  st("この音のテンポ", "その音のファイルを作ったときのテンポ。曲のテンポとくらべて、のび縮みの量を決める。"),
+  st("しっぽ", "音を止めたあとに残る響き。書き出しでは、これが消えるまで書く。"),
   st(
     "休み（オートメーション）",
     "手で動かしたので、オートメーションがそのパラメータを動かすのを休んでいること。「もどす」で線のとおりに戻る。",
@@ -2378,11 +2496,14 @@ export const terms: readonly Term[] = [
   st("サステイン", "足のペダル（CC 64）。踏んでいる間、音がのびる。"),
   st("ピッチベンド", "音の高さをなめらかに上下させるホイール。"),
   st("モジュレーション", "音にゆれを足すホイール（CC 1）。"),
-  st("テンポ", "曲の速さ。1 分間の拍の数（BPM）。"),
+  st(
+    "テンポ",
+    "曲の速さ。4 分音符が 1 分間に何回か（BPM）。拍子が 6/8 でも 4 分音符で数えるので、拍子を変えてもテンポの数は変わらない。6/8 の 1 拍（付点 4 分音符）は、テンポ 120 なら 1 分間に 80 回。",
+  ),
   st("拍子", "1 小節に拍がいくつ入るか。4/4 は 4 拍。"),
   st(
     "小節 . 拍 . ティック",
-    "曲の中の位置。ティックは 1 拍を 480 に分けた細かい目盛り。",
+    "曲の中の位置。ティックは、4 分音符を 1920 に分けた細かい目盛り（4 けた）。",
   ),
   st("メトロノーム", "拍に合わせて鳴るクリック音。"),
   st("カウントイン", "録音が始まる前に鳴る合図の拍。"),

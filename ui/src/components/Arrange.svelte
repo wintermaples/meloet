@@ -18,6 +18,7 @@
     type TakeNotes,
   } from "../bridge";
   import { everyGlFrame, glRegion, glSlot, type GlRect, type GlSlot } from "../gl/slot";
+  import WriteLine from "./automation/WriteLine.svelte";
   import { platformOf } from "../keys/keys";
   import HScrollbar from "../lib/HScrollbar.svelte";
   import TrackHeads from "./TrackHeads.svelte";
@@ -1172,6 +1173,9 @@
         {/each}
         <div class="fill" use:glSlot={{ kind: "rects", rects: laneRects }}></div>
         <div class="rec-host" use:glRegion={"recordingClip"}>
+          {#each rows.lanes as l (l.track.id + JSON.stringify(l.lane.target))}
+            <WriteLine track={l.track} lane={l.lane} top={l.top} {view} />
+          {/each}
           {#if rec}
             <div class="rec-tail" use:recordingTail></div>
           {/if}

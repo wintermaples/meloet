@@ -32,16 +32,27 @@
 
   const automation = $derived(current.state!.automation);
   const transport = $derived(current.state!.transport);
+  const still = () => metrics.px("space.1");
+
+  const points = $derived(pointsOf(lane.laneId));
+  const pts = $derived(points && points.id === lane.laneId ? A.pointList(points) : []);
+  /** 帯の縦（仕様書 3 章 92-6 ・ 21-B）。届いた点から決めるので、点を外へ動かすと、離して答えが来たときに広げなおす。 */
+  const range = $derived(A.laneRange(pts, lane.step));
   const dims: A.LaneDims = $derived({
     h: metrics.px("size.lane"),
     pad: metrics.px("space.1"),
     hair: metrics.px("line.hair"),
     point: metrics.px("part.cc.point"),
+    range,
   });
-  const still = () => metrics.px("space.1");
-
-  const points = $derived(pointsOf(lane.laneId));
-  const pts = $derived(points && points.id === lane.laneId ? A.pointList(points) : []);
+  /** 右上と右下の「上 −3.0 dB」「下 −9.0 dB」。下〜上のぜんぶを見せている帯と、値の字を画面で出せない帯（プラグイン）は出さない。 */
+  const ends = $derived.by(() => {
+    if (range === A.FULL_RANGE) return null;
+    const e = A.rangeEnds(pts, range);
+    const hi = positionText(lane.name, e.hi);
+    const lo = positionText(lane.name, e.lo);
+    return hi === null || lo === null ? null : { hi, lo };
+  });
   const resting = $derived(lane.resting || hasLaneRef(automation.held, track.id, lane.target));
   const armed = $derived(hasLaneRef(automation.armed, track.id, lane.target));
   const selected = $derived(automation.selected?.laneId === lane.laneId ? A.indexSet(automation.selected.points) : new Set<number>());
@@ -236,6 +247,10 @@
   oncontextmenu={context}
   data-test="auto-lane"
 >
+  {#if ends}
+    <span class="m-num m-lbl end top" data-test="auto-range-top">{t("lane.rangeTop", { value: ends.hi })}</span>
+    <span class="m-num m-lbl end bottom" data-test="auto-range-bottom">{t("lane.rangeBottom", { value: ends.lo })}</span>
+  {/if}
   {#if writing}
     <div class="rec-frame" bind:this={recFrame} style:left="{Math.max(0, tickToX(view, writing.fromTick))}px" data-test="auto-writing"></div>
   {/if}
@@ -267,6 +282,18 @@
     bottom: 0;
     border: var(--line-hair) solid var(--color-rec);
     pointer-events: none;
+  }
+  .end {
+    position: absolute;
+    right: var(--space-2);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .end.top {
+    top: 0;
+  }
+  .end.bottom {
+    bottom: 0;
   }
   .box-frame {
     position: absolute;

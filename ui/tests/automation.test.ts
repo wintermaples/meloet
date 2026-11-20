@@ -17,6 +17,7 @@ import { EFFECT_PARAMS } from "../src/bridge/types";
 import { mapOf } from "../src/time/bars";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
+import { t } from "../src/text/ja";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
 
@@ -183,22 +184,35 @@ const qa = (sel: string) => [...target.querySelectorAll<HTMLElement>(sel)];
 const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
 
 describe("アレンジの帯（モック F6-AutoRec ・ F6-AutoRest）", () => {
-  it("見出しは 2 段。書いている間は「● 書く」がオンで「書いています」。下に「▸ パン ▸ プラグインのパラメータ」とたたんだ数", () => {
+  it("見出しは 2 段。書いている間は「● 書く」がオンで「書いています」。下に「＋ 帯を足す ▾」とたたんだ数", () => {
     show(Arrange, scene("autoRec"));
     expect(qa("[data-test=lane-head]")).toHaveLength(1);
     expect(text(q("[data-test=lane-fold]"))).toBe("▾ オートメーション ・ 音量");
     expect(q("[data-test=lane-write]")!.getAttribute("aria-pressed")).toBe("true");
     expect(text(q("[data-test=lane-state]"))).toBe("書いています");
-    expect(text(q("[data-test=lane-add-row]"))).toBe("▸ パン ▸ プラグインのパラメータ 1");
+    expect(text(q("[data-test=lane-add-row]"))).toBe("＋ 帯を足す ▾ 1");
     expect(qa("[data-test=auto-lane]")).toHaveLength(1);
     expect(q("[data-test=auto-writing]")).not.toBeNull();
   });
-  it("休みは「もどす」と「休み ・ （いまの値）」。押すと RestoreLane。▾ でたたむ、▸ パンで帯を足す", () => {
+  it("休みは「もどす」と「休み ・ （いまの値）」。押すと RestoreLane。▾ でたたむ、「＋ 帯を足す ▾」の一覧のパンで帯を足す", () => {
     show(Arrange, scene("autoRest"));
     expect(text(q("[data-test=lane-state]"))).toBe("休み ・ −12.0 dB");
     q("[data-test=lane-restore]")!.click();
     q("[data-test=lane-fold]")!.click();
-    q("[data-test=lane-add-pan]")!.click();
+    q("[data-test=lane-add]")!.click();
+    const menu = contextMenu.open!.entries;
+    // 仕様書 3 章 92-5: 音量 ・ パン ・ ミュート ・ センド A ・ センド B ／ エフェクトのパラメータ…。足してある帯（音量）に選ぶ印。
+    expect(menu.map((e) => (e.kind === "row" ? [e.text ?? t(e.label), e.checked ?? false] : "—"))).toEqual([
+      ["音量", true],
+      ["パン", true],
+      ["ミュート", false],
+      ["センド A", false],
+      ["センド B", false],
+      "—",
+      ["エフェクトのパラメータ…", false],
+    ]);
+    (menu[1] as { run: () => void }).run();
+    closeContextMenu();
     const track = scene("autoRest").song.tracks[0]!.id;
     expect(app.sent).toEqual([
       { type: "restoreLane", track, target: { kind: "volume" } },

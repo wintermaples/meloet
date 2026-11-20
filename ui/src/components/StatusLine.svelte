@@ -193,6 +193,11 @@
     });
     const settings = (advanced: boolean, label: string) => ({ label, command: { type: "openSettings", advanced } as Command });
     const place = (bar: number, beat: number) => (beat === 1 ? t("timeline.placeBar", { bar }) : t("timeline.placeBeat", { bar, beat }));
+    // 曲の頭の点は「変更」と呼ばない（仕様書 3 章 92-2）。
+    const tempoSelected = (bar: number, beat: number, bpm: number) =>
+      bar === 1 && beat === 1
+        ? plain("msg.headTempoSelected", { tempo: tempoText(bpm) })
+        : plain("msg.tempoPointSelected", { place: place(bar, beat), tempo: tempoText(bpm) });
     const placeOrHead = (bar: number, beat: number) => (bar === 1 && beat === 1 ? t("timeline.placeHead") : place(bar, beat));
     switch (m?.id) {
       case "undone":
@@ -221,7 +226,7 @@
         return plain("msg.automationMoving", { tracks });
       }
       case "tempoRampSelected":
-        if (m.toTempoBpm === m.tempoBpm) return plain("msg.tempoPointSelected", { place: place(m.bar, m.beat), tempo: tempoText(m.tempoBpm) });
+        if (m.toTempoBpm === m.tempoBpm) return tempoSelected(m.bar, m.beat, m.tempoBpm);
         return plain("msg.tempoRampSelected", {
           place: place(m.bar, m.beat),
           tempo: tempoText(m.tempoBpm),
@@ -230,9 +235,11 @@
           direction: t(m.toTempoBpm > m.tempoBpm ? "timeline.rampFaster" : "timeline.rampSlower"),
         });
       case "tempoPointSelected":
-        return plain("msg.tempoPointSelected", { place: place(m.bar, m.beat), tempo: tempoText(m.tempoBpm) });
-      case "meterChangeSelected":
-        return plain("msg.meterChangeSelected", { place: place(m.bar, 1), signature: `${m.meterNum}/${m.meterDen}` });
+        return tempoSelected(m.bar, m.beat, m.tempoBpm);
+      case "meterChangeSelected": {
+        const signature = `${m.meterNum}/${m.meterDen}`;
+        return m.bar === 1 ? plain("msg.headMeterSelected", { signature }) : plain("msg.meterChangeSelected", { place: place(m.bar, 1), signature });
+      }
       case "markerAdded":
         return plain("msg.markerAdded", { name: m.name });
       case "tempoPointSet":

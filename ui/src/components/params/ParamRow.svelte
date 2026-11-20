@@ -6,7 +6,9 @@
      右の印はオートメーションに書く（AutoMark）。帯が動かしているあいだは、値は線の上の値（auto。画面が出す。docs/architecture.md 21-8）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import type { Command } from "../../bridge";
   import { EFFECT_PARAMS, type EffectKind, type InsertRef } from "../../bridge/types";
+  import { forgetHand, noteHand } from "../automation/handValue";
   import { term } from "../../lib/tip.svelte";
   import { send } from "../../state/app.svelte";
   import { findTerm, t } from "../../text/ja";
@@ -53,7 +55,10 @@
   });
 
   function set(v: number, commit: boolean): void {
-    send({ type: "setParam", insert, effect: kind, param, value: v, commit });
+    const c: Command = { type: "setParam", insert, effect: kind, param, value: v, commit };
+    if (commit) forgetHand(c);
+    else noteHand(c);
+    send(c);
   }
 
   function at(ev: PointerEvent): number {
@@ -114,6 +119,7 @@
     stopFrame();
     dragging = false;
     held = null;
+    forgetHand({ type: "setParam", insert, effect: kind, param, value: 0, commit: false });
     send({ type: "cancelMixPreview" });
     return true;
   }

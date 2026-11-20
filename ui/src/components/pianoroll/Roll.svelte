@@ -11,6 +11,7 @@
      ベロシティの帯は「▾ ベロシティ」でたたむ（仕様書 3 章の帯の表。ひらくのは CC の札の行の「▸ ベロシティ」）。たたんだ分はノートの場所へ。
      たたんでも区画（pianoRoll）の箱はそのままなので、WebGL の文脈は作りなおさない。 -->
 <script lang="ts">
+  import { labelsBesideMarkers } from "./rulerMarks";
   import { onDestroy, onMount, untrack } from "svelte";
   import { clockOffsetUs, liveNotes, type Command, type LiveNote, type LiveNotesBook } from "../../bridge";
   import type { ColorName } from "../../design/tokens";
@@ -753,6 +754,10 @@
       .map((m) => ({ id: m.id, name: m.name, x: (m.tick - prView.scrollTick) * ppt }))
       .filter((m) => m.x > -areaW && m.x < areaW);
   });
+  /** 名前の幅と拍の数字の幅（CSS px）。名前がかかる拍の数字は出さない（仕様書 3 章、モック R11-Answers92）。 */
+  const markerW: Record<number, number> = $state({});
+  const labelW: Record<number, number> = $state({});
+  const shownLabels = $derived(labelsBesideMarkers(rulerLabels, rulerMarkers, labelW, markerW));
   /** ドラムの行の名前。このクリップで叩いている行は gray.10、ほかは gray.9（モック R7-Drum。使っていない行も暗くしない）。 */
   const usedKeys = $derived.by(() => {
     const used = new Set<number>();
@@ -931,11 +936,11 @@
       {#if shownLoop}
         <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
       {/if}
-      {#each rulerLabels as l (l.tick)}
-        <span class="m-num mark" class:bar={l.bar} style:left="{l.x}px">{l.text}</span>
+      {#each shownLabels as l (l.tick)}
+        <span class="m-num mark" class:bar={l.bar} style:left="{l.x}px" bind:offsetWidth={labelW[l.tick]}>{l.text}</span>
       {/each}
       {#each rulerMarkers as m (m.id)}
-        <span class="ruler-marker m-lbl" style:left="{m.x}px" data-test="pr-ruler-marker">{m.name}</span>
+        <span class="ruler-marker m-lbl" style:left="{m.x}px" bind:offsetWidth={markerW[m.id]} data-test="pr-ruler-marker">{m.name}</span>
       {/each}
     </div>
   </div>
@@ -1118,14 +1123,15 @@
     background: var(--color-accent);
     pointer-events: none;
   }
-  /* 目盛のマーカー（仕様書 2 章: 名前を gray.8 で、左に gray.8 の line.hair。押せない）。 */
+  /* 目盛のマーカー（仕様書 2 章: 名前を gray.8 で、左に gray.8 の line.hair。押せない）。名前は地 gray.3 で拍の数字の上に重ねる（3 章、R11-Answers92）。 */
   .ruler-marker {
     position: absolute;
     top: 0;
     bottom: 0;
     display: flex;
     align-items: center;
-    padding-left: var(--space-1);
+    padding: 0 var(--space-1);
+    background: var(--color-gray-3);
     border-left: var(--line-hair) solid var(--color-gray-8);
     white-space: nowrap;
     pointer-events: none;

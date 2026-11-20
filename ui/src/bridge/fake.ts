@@ -2640,6 +2640,55 @@ SCENES.history5000 = {
   history: FIRST_STEPS,
 };
 
+// ---- round 7, step 0-2: the answers to 92 (spec 11th edition, F7-Answers92 ・ R11-Answers92) ----
+
+/** F7-Answers92 ・ Opt7-LaneScale: the volume of "1 ピアノ" moves only between −9.0 and −3.0 dB (5 points, −4.8 dB at bar 5). */
+const ANSWERS_VOLUME = fakeLane(520, [["1.1.000", 0.64], ["5.1.000", 0.64], ["6.1.000", 0.7], ["7.3.000", 0.66], ["9.1.000", 0.5]]);
+// F7-Answers92: the band's song, "1 ピアノ" (グランドピアノ) has its volume lane open; the lane shows the points'
+// range (21-B, 「上 −3.0 dB」「下 −9.0 dB」) and 「＋ 帯を足す ▾」 under it (20-A; tools/design/shoot_ui.py opens the list).
+SCENES.laneScale = {
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    s.song.tracks[0]!.lanes = [laneView(VOLUME, { kind: "volume" }, ANSWERS_VOLUME)];
+    s.timeline.markers = MARKERS.map((m) => ({ ...m }));
+    s.song.loopOn = true;
+    s.transport.position = 4 * BAR;
+    Object.assign(s.song, { undoCount: 14, file: "saved" });
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+// R11-Answers92, 「履歴の帯の見出し」: no step undone, every step undone, no step at all (6 章).
+const historyHead = (undo: number, redo: number): SceneDef => ({
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    Object.assign(s.song, { undoCount: undo, redoCount: redo, file: undo + redo > 0 ? "changed" : "saved" });
+  },
+  bands: ["history"],
+  meters: QUIET,
+  history: undo + redo > 0 ? SCENES.historyList!.history : [],
+});
+SCENES.historyLatest = historyHead(14, 0);
+SCENES.historyAllUndone = historyHead(0, 14);
+SCENES.historyEmpty = historyHead(0, 0);
+// R11-Answers92, 「曲の頭」: the tempo point at the head of the song is selected (92-2).
+SCENES.headTempo = {
+  ...SCENES.tempo!,
+  after: (s) => {
+    s.timeline.selected = { kind: "tempoPoint", tick: 0 };
+    s.status.message = { id: "tempoPointSelected", bar: 1, beat: 1, tempoBpm: 96 };
+  },
+};
+// R11-Answers92, 「ピアノロールの目盛のマーカー」: a marker at bar 2 in the piano roll's ruler, over the beat numbers.
+SCENES.pianoRollMarker = {
+  setup(s) {
+    pianoRollSong(s);
+    s.timeline.markers = [{ id: 1, tick: BAR, name: "サビ" }];
+  },
+  bands: ["pianoRoll"],
+  meters: QUIET,
+};
+
 /**
  * Protocol 21, enough for pictures and tests: the lanes' own switches (fold, 「● 書く」, the selection, 「もどす」),
  * lanes added and deleted, and the jump of the history band. Points are not added, moved or deleted here, and no

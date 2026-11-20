@@ -171,6 +171,15 @@ BOARDS = {
     "historyPicked": "R10-History",
     "historyKeys": "R10-History",
     "history5000": None,
+    # 第 7 回 区切り0 の 0-2: 92 の答え（F7-Answers92 ・ R11-Answers92）。
+    "laneScale": "F7-Answers92",
+    "answers92": "F7-Answers92",
+    "historyLatest": "R11-Answers92",
+    "historyAllUndone": "R11-Answers92",
+    "historyEmpty": "R11-Answers92",
+    "headTempo": "R11-Answers92",
+    "pianoRollMarker": "R11-Answers92",
+    "meterFlagMenu": "R11-Answers92",
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -376,6 +385,13 @@ await new Promise((r) => setTimeout(r, 300));
 row.previousElementSibling.previousElementSibling.scrollIntoView({ block: "start" });
 """
 
+# Right-clicks the second meter flag (bar 9 of the scene "tempo").
+CONTEXT_FLAG = """
+const flag = document.querySelectorAll('[data-test="meter-flag"]')[1];
+const r = flag.getBoundingClientRect();
+flag.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 4, clientY: r.bottom }));
+"""
+
 # Sends a pointer event (pointerenter: on it, pointerdown: pressed) to a row of the history band, by its number.
 HISTORY_ROW = """
 const row = document.querySelector('[data-test="history-list"] .row[data-index="%d"]');
@@ -454,14 +470,18 @@ CLICKS = {
     # 9 小節目の点（120.00）を 1 拍右、少し上へ動かしている途中（もとの所に accent の枠、読み値は位置）。
     "tempoDrag": ("tempo", drag_tempo(512, 12, 16, -6)),
     # 第 6 回 区切り2: R10-AutoEdit の 3 つ。3 小節目の点（−2.1 dB）を 1 拍右、上へ（−0.6 dB）。5. 3. 000 の空いた所を押したまま。
-    # 2 小節目の後ろから 6 小節目まで囲む。点の高さは帯の中の位置（4 + (1 − 位置) × 39）。
-    "autoMove": ("autoMove", drag_lane(3, 1, "4 + (1 - 0.73) * 39", 1, -4)),
-    "autoPress": ("autoMove", drag_lane(5, 3, "4 + (1 - 0.52) * 39")),
+    # 2 小節目の後ろから 6 小節目まで囲む。点の高さは帯の中の位置。帯の縦は点の 0.45〜0.73 に上下 1 割のゆとり（0.422〜0.758、
+    # 仕様書 3 章 21-B）なので 4 + (1 − (位置 − 0.422) / 0.336) × 39。
+    "autoMove": ("autoMove", drag_lane(3, 1, "4 + (1 - (0.73 - 0.422) / 0.336) * 39", 1, -4)),
+    "autoPress": ("autoMove", drag_lane(5, 3, "4 + (1 - (0.52 - 0.422) / 0.336) * 39")),
     "autoBoxDrag": ("autoMove", drag_lane(2, 3, "4", 14, 40)),
     # R10-History: 11 手目に乗せる、押してえらぶ、帯にフォーカスを置いて ↓ ↓（いまの 13 手目から 11 手目へ）。
     "historyPointer": ("historyUndone3", "js:" + HISTORY_ROW % (11, "pointerenter")),
     "historyPicked": ("historyUndone3", "js:" + HISTORY_ROW % (11, "pointerdown")),
     "historyKeys": ("historyUndone3", "js:" + HISTORY_KEYS % '["ArrowDown", "ArrowDown"]'),
+    # 第 7 回 区切り0 の 0-2: 「＋ 帯を足す ▾」の一覧をひらく。9 小節目の拍子の旗を右クリック。
+    "answers92": ("laneScale", '[data-test="lane-add"]'),
+    "meterFlagMenu": ("tempo", "js:" + CONTEXT_FLAG),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -586,6 +606,14 @@ ONLY = {
     "historyPicked": [(1280, 800, 100)],
     "historyKeys": [(1280, 800, 100), (1280, 800, 150)],
     "history5000": [(1280, 800, 100)],
+    "laneScale": [(1280, 800, 100), (1280, 800, 150)],
+    "answers92": [(1280, 800, 100), (1280, 800, 150)],
+    "historyLatest": [(1280, 800, 100)],
+    "historyAllUndone": [(1280, 800, 100)],
+    "historyEmpty": [(1280, 800, 100)],
+    "headTempo": [(1280, 800, 100)],
+    "pianoRollMarker": [(1280, 800, 100), (1280, 800, 150)],
+    "meterFlagMenu": [(1280, 800, 100)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

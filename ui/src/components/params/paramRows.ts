@@ -46,14 +46,20 @@ export function valueText(
       p.steps[Math.max(0, Math.min(p.steps.length - 1, Math.round(value)))];
     return id === undefined ? "" : t(`param.${effect}.step.${id}` as TextKey);
   }
+  const s = valueNumberText(effect, p, value);
+  return p.unit === "none" || p.shape !== "continuous"
+    ? s
+    : t(`param.value.${p.unit}` as TextKey, { value: s });
+}
+
+/** 値の数の所だけ（単位なし）。オン ・ オフと段階は、valueText と同じ文。 */
+export function valueNumberText(effect: EffectKind, p: EffectParam, value: number): string {
+  if (p.shape !== "continuous") return valueText(effect, p, value);
   let s = roundTo(p, value).toFixed(decimals(p));
   if (/^-0(\.0*)?$/.test(s)) s = s.slice(1);
   // 「−18.0〜+18.0 dB」のように、マイナスもある範囲だけ、プラスに「+」をつける。
   if (p.min < 0 && Number(s) > 0) s = `+${s}`;
-  s = s.replace("-", MINUS);
-  return p.unit === "none"
-    ? s
-    : t(`param.value.${p.unit}` as TextKey, { value: s });
+  return s.replace("-", MINUS);
 }
 
 /** 打ちこむ枠にはじめに入れる数（単位なし、マイナスは打てる「-」）。 */

@@ -7,7 +7,7 @@ import { fill, stepNames, t } from "../../text/ja";
 import { tempoText } from "../format";
 import { faderText, panText } from "../mixer/scale";
 import { stripName } from "../mixer/stripName";
-import { paramName, valueText } from "../params/paramRows";
+import { paramName, valueNumberText, valueText } from "../params/paramRows";
 import { soundNameText } from "../sounds";
 
 /** 戻りの名前（「A リバーブ」）は、いまの曲から作る。 */
@@ -21,8 +21,6 @@ const spaced = (name: string) => `${name} `;
 const trackLabel = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
 const effectText = (e: EffectName) => (e.kind === "builtin" ? t(`effect.${e.effect}`) : e.name);
 const busText = (bus: "a" | "b") => t(bus === "a" ? "mixer.sendA" : "mixer.sendB");
-/** 行の中のテンポ: モック R10-History の「96 → 120」。小数があるテンポは「96.50」。 */
-const tempoShort = (bpm: number) => (Number.isInteger(bpm) ? String(bpm) : tempoText(bpm));
 const placeText = (bar: number, beat: number) =>
   bar === 1 && beat === 1 ? t("timeline.placeHead") : beat === 1 ? t("timeline.placeBar", { bar }) : t("timeline.placeBeat", { bar, beat });
 
@@ -76,7 +74,7 @@ function atPlace(place: string, from: string | null, to: string | null): string 
   return value === null ? place : t("history.valueAt", { place, value });
 }
 
-/** 「（何を）」（「3 ノート」「4 パッド −10.5 → −12.0 dB」）。何もない手は null。 */
+/** 「（何を）」（「3 ノート」「4 パッド ・ −10.5 → −12.0 dB」）。何もない手は null。 */
 export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): string | null {
   switch (what.kind) {
     case "none":
@@ -94,7 +92,7 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
     case "track":
       return trackLabel(what.track);
     case "strip":
-      return stripText(what.strip, ctx);
+      return name.kind === "mute" ? t("history.muteOn", { strip: stripText(what.strip, ctx) }) : stripText(what.strip, ctx);
     case "place":
       return placeText(what.bar, what.beat);
     case "name":
@@ -102,7 +100,7 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
     case "renamed":
       return t("history.change", { from: what.from, to: what.to });
     case "tempo": {
-      const text = (bpm: number | null) => (bpm === null ? null : tempoShort(bpm));
+      const text = (bpm: number | null) => (bpm === null ? null : tempoText(bpm));
       return atPlace(placeText(what.bar, what.beat), text(what.fromBpm), text(what.toBpm));
     }
     case "meter": {
@@ -120,9 +118,10 @@ export function stepWhatText(name: StepName, what: StepWhat, ctx: StepContext): 
     case "send":
       return t("history.send", { strip: trackLabel(what.track), bus: busText(what.bus), from: faderText(what.fromDb), to: faderText(what.toDb) });
     case "param": {
+      // 「−24.0 → −18.0 dB」: 単位は右だけ（仕様書 3 章 92-3）。
       const spec = name.kind === "setParam" ? EFFECT_PARAMS[name.effect][name.param] : undefined;
-      const text = (v: number) => (spec && name.kind === "setParam" ? valueText(name.effect, spec, v) : String(v));
-      return t("history.change", { from: text(what.from), to: text(what.to) });
+      if (!spec || name.kind !== "setParam") return t("history.change", { from: String(what.from), to: String(what.to) });
+      return t("history.change", { from: valueNumberText(name.effect, spec, what.from), to: valueText(name.effect, spec, what.to) });
     }
     case "effect":
       return effectText(what.effect);

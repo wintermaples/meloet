@@ -3,11 +3,14 @@
 // Esc（cancelDrag）でやめたら CancelMixPreview。動かさずに離したときは何も送らない。
 
 import type { Command } from "../../bridge";
+import { forgetHand, noteHand } from "../automation/handValue";
 
 export class MixPreview<V> {
   private pending: { value: V } | null = null;
   private frame = 0;
   private moved = false;
+  /** 最後に送った「音だけ変える」意図（書いている帯の線のために、手の位置を覚えておく。automation/handValue.ts）。 */
+  private last: Command | null = null;
 
   constructor(
     private readonly make: (value: V, commit: boolean) => Command,
@@ -37,10 +40,16 @@ export class MixPreview<V> {
     this.frame = 0;
     const p = this.pending;
     this.pending = null;
-    if (p) this.send(this.make(p.value, false));
+    if (!p) return;
+    const c = this.make(p.value, false);
+    this.last = c;
+    noteHand(c);
+    this.send(c);
   }
 
   private stop(): void {
+    if (this.last) forgetHand(this.last);
+    this.last = null;
     if (this.frame !== 0) cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.pending = null;

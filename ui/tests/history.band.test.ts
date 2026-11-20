@@ -168,7 +168,7 @@ describe("R10-History: 16 手、3 手取り消してある", () => {
     expect(rows().map((r) => Number(r.dataset.index))).toEqual([16, 15, 14, 13, 12, 11, 10, 9, 8]);
     expect(text(rowOf(16))).toBe("16 「ノートを動かす」・ 3 ノート ピアノロール やりなおせます");
     expect(rowOf(16)!.classList.contains("undone")).toBe(true);
-    expect(text(rowOf(13))).toBe("13 「音量を変える」・ 4 パッド −10.5 → −12.0 dB ミキサー いまここ");
+    expect(text(rowOf(13))).toBe("13 「音量を変える」・ 4 パッド ・ −10.5 → −12.0 dB ミキサー いまここ");
     expect(rowOf(13)!.classList.contains("now")).toBe(true);
     expect(text(rowOf(12))).toBe("12 「エフェクトをとばす」・ MVerb 4 パッド");
     expect(text(document.querySelector("[data-test=history-more]"))).toBe("… 8 手目より前は、下へスクロール");

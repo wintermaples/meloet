@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>えらぶ 24 ・ 鍵盤と歌を同時に録る（Y21）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{color:#9A9A9A;white-space:nowrap}
+.w{color:#F2F2F2}.a{color:#FFB000}.r{color:#FF3B30}
+.s6{font-weight:600}.t16{font-size:16px;line-height:20px}.t20{font-size:20px;line-height:24px}
+.f{display:flex}.fc{display:flex;flex-direction:column}.ac{align-items:center}.x1{flex:1;min-width:0;min-height:0}.nw{white-space:nowrap}
+.g4{gap:4px}.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}
+.rel{position:relative}.abs{position:absolute}.oh{overflow:hidden}
+.b{height:24px;min-width:28px;padding:0 8px;border:1px solid #3A3A3A;background:#222222;color:#D6D6D6;border-radius:1px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.b.on{color:#FFB000;border-color:#FFB000}
+.b.hi{color:#F2F2F2;border-color:#9A9A9A}
+.q{width:20px;height:20px;border:1px solid #3A3A3A;background:#121212;color:#9A9A9A;border-radius:1px;text-align:center;line-height:18px}
+.hd{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px;background:#222222;white-space:nowrap;flex-shrink:0}
+.rw{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px 0 28px;border-bottom:1px solid #222222;white-space:nowrap;flex-shrink:0}
+.tip{position:absolute;z-index:9;width:248px;padding:8px;background:#F2F2F2;color:#0A0A0A;border-radius:1px;white-space:normal}
+.fm{padding:0 4px;border:1px solid #5E5E5E;color:#9A9A9A;border-radius:1px}
+.vt{writing-mode:vertical-rl;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1280px;height:720px;display:flex;flex-direction:column;background:#121212;color:#D6D6D6;font-family:'IBM Plex Sans JP','Noto Sans JP',sans-serif;font-size:12px;line-height:16px;overflow:hidden"><div class="fc g16" style="padding:24px 32px;height:720px;line-height:18px"><div class="f g16" style="align-items:baseline"><span class="t20 s6 w">えらぶ 24 ・ 鍵盤と歌を同時に録る（Y21）</span><span class="l"></span></div><div class="fc g16 x1"><span class="l" style="white-space:normal">どの案も: 鍵盤のトラックは 12-A のまま（選んだトラックについて行く）。カウントインは 1 回。録っている間のクリップは、どちらも rec の色。</span><div class="f x1" style="gap:24px"><div class="fc g8 x1"><span class="t16 s6 w">24-A Shift ＋ ● で足す</span><span class="l" style="white-space:normal">ふだんは 1 本。Shift を押しながら ● を押すと、そのトラックも録音待機にできる（何本でも）。足した ● は、もう一度押すまで残る。</span><div class="fc"><div class="f" style="width:220px;height:48px;flex-shrink:0;border:1px solid #2C2C2C;background:#222222"><div style="width:4px;flex-shrink:0;background:#69E4E4"></div><div class="fc g4 x1" style="padding:6px 8px 0"><div class="f ac g4"><span class="m l" style="width:16px">1</span><span class="s6 w x1" style="overflow:hidden;text-overflow:ellipsis">ピアノ</span><button class="q" aria-label="ミュート">M</button><button class="q" aria-label="ソロ">S</button><button class="q" style="color:#FF3B30;border-color:#FF3B30" aria-label="録音待機">●</button></div><div class="f ac g8"><span class="l" style="flex:1;overflow:hidden;text-overflow:ellipsis">グランドピアノ</span></div></div></div><div class="f" style="width:220px;height:48px;flex-shrink:0;border:1px solid #2C2C2C;background:#1A1A1A"><div style="width:4px;flex-shrink:0;background:#69E4E4"></div><div class="fc g4 x1" style="padding:6px 8px 0"><div class="f ac g4"><span class="m l" style="width:16px">6</span><span class="s6 w x1" style="overflow:hidden;text-overflow:ellipsis">歌</span><button class="q" aria-label="ミュート">M</button><button class="q" aria-label="ソロ">S</button><button class="q" style="color:#FF3B30;border-color:#FF3B30" aria-label="録音待機">●</button></div><div class="f ac g8"><span class="l" style="flex:1;overflow:hidden;text-overflow:ellipsis">入口 1 ・ モノ</span></div></div></div></div><span style="white-space:normal"><span class="w">いいところ: </span>鍵盤 2 台、歌 2 本にも広げられる。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>Shift を知らないと見つからない。鍵盤のトラックにも足せると、12-A がこわれる。</span></div><div class="fc g8 x1"><span class="t16 s6 w">24-B 「弾き語り」のスイッチ</span><span class="l" style="white-space:normal">運びの録音の横に「弾き語り」。オンにすると、選んだ鍵盤のトラックと、決めておいた歌のトラックを同時に録る。</span><div class="fc g8"><div class="f g8"><button class="b on">弾き語り</button><span class="l">鍵盤 → 選んだトラック ・ 歌 → 6 歌</span></div><div class="f" style="width:220px;height:48px;flex-shrink:0;border:1px solid #2C2C2C;background:#222222"><div style="width:4px;flex-shrink:0;background:#69E4E4"></div><div class="fc g4 x1" style="padding:6px 8px 0"><div class="f ac g4"><span class="m l" style="width:16px">1</span><span class="s6 w x1" style="overflow:hidden;text-overflow:ellipsis">ピアノ</span><button class="q" aria-label="ミュート">M</button><button class="q" aria-label="ソロ">S</button><button class="q" style="color:#FF3B30;border-color:#FF3B30" aria-label="録音待機">●</button></div><div class="f ac g8"><span class="l" style="flex:1;overflow:hidden;text-overflow:ellipsis">グランドピアノ</span></div></div></div></div><span style="white-space:normal"><span class="w">いいところ: </span>何が起きるかが名前でわかる。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>スイッチが 1 つふえる。歌 2 本は録れない。どの歌のトラックかを、べつに決める所がいる。</span></div><div class="fc g8 x1"><span class="t16 s6 w">24-C 歌のトラックの ● は手でつける（おすすめ）</span><span class="l" style="white-space:normal">鍵盤は選んだトラックへ（12-A のまま）。歌のトラックの ● は、選んでいなくても、自分で押してつける（何本でも）。R で、選んだ鍵盤のトラックと、● をつけた歌のトラックを同時に録る。</span><div class="fc g8"><div class="fc"><div class="f" style="width:220px;height:48px;flex-shrink:0;border:1px solid #2C2C2C;background:#222222"><div style="width:4px;flex-shrink:0;background:#69E4E4"></div><div class="fc g4 x1" style="padding:6px 8px 0"><div class="f ac g4"><span class="m l" style="width:16px">1</span><span class="s6 w x1" style="overflow:hidden;text-overflow:ellipsis">ピアノ</span><button class="q" aria-label="ミュート">M</button><button class="q" aria-label="ソロ">S</button><button class="q" style="color:#FF3B30;border-color:#FF3B30" aria-label="録音待機">●</button></div><div class="f ac g8"><span class="l" style="flex:1;overflow:hidden;text-overflow:ellipsis">グランドピアノ</span></div></div></div><div class="f" style="width:220px;height:48px;flex-shrink:0;border:1px solid #2C2C2C;background:#1A1A1A"><div style="width:4px;flex-shrink:0;background:#69E4E4"></div><div class="fc g4 x1" style="padding:6px 8px 0"><div class="f ac g4"><span class="m l" style="width:16px">6</span><span class="s6 w x1" style="overflow:hidden;text-overflow:ellipsis">歌</span><button class="q" aria-label="ミュート">M</button><button class="q" aria-label="ソロ">S</button><button class="q" style="color:#FF3B30;border-color:#FF3B30" aria-label="録音待機">●</button></div><div class="f ac g8"><span class="l" style="flex:1;overflow:hidden;text-overflow:ellipsis">入口 1 ・ モノ</span></div></div></div></div><div style="padding:8px;background:#0A0A0A;border:1px solid #2C2C2C;white-space:normal"><span class="l">R を押すと</span> 1 ピアノ（鍵盤）と 6 歌（入口 1）に録ります</div></div><span style="white-space:normal"><span class="w">いいところ: </span>鍵盤の決まりはこわさない。入口がちがうので、まざらない。歌 2 本（入口 1 と 2）も同じ形。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>鍵盤の ● と歌の ● で、つきかたがちがう（歌の ● は選んでいなくても赤い）。</span><span style="white-space:normal"><span class="w">おすすめのわけ: </span>12-A を変えずに、歌の分だけ足せる。「鍵盤は選んだ所、マイクは ● の所」と一言で言える。</span></div></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>えらぶ 22 ・ テンポの数の意味と x/8 の拍子（Y20 ・ デザインの係が決める）</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+body{margin:0;background:#121212}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit}
+.m{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.l{color:#9A9A9A;white-space:nowrap}
+.w{color:#F2F2F2}.a{color:#FFB000}.r{color:#FF3B30}
+.s6{font-weight:600}.t16{font-size:16px;line-height:20px}.t20{font-size:20px;line-height:24px}
+.f{display:flex}.fc{display:flex;flex-direction:column}.ac{align-items:center}.x1{flex:1;min-width:0;min-height:0}.nw{white-space:nowrap}
+.g4{gap:4px}.g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}
+.rel{position:relative}.abs{position:absolute}.oh{overflow:hidden}
+.b{height:24px;min-width:28px;padding:0 8px;border:1px solid #3A3A3A;background:#222222;color:#D6D6D6;border-radius:1px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.b.on{color:#FFB000;border-color:#FFB000}
+.b.hi{color:#F2F2F2;border-color:#9A9A9A}
+.q{width:20px;height:20px;border:1px solid #3A3A3A;background:#121212;color:#9A9A9A;border-radius:1px;text-align:center;line-height:18px}
+.hd{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px;background:#222222;white-space:nowrap;flex-shrink:0}
+.rw{display:flex;align-items:center;gap:8px;height:24px;padding:0 12px 0 28px;border-bottom:1px solid #222222;white-space:nowrap;flex-shrink:0}
+.tip{position:absolute;z-index:9;width:248px;padding:8px;background:#F2F2F2;color:#0A0A0A;border-radius:1px;white-space:normal}
+.fm{padding:0 4px;border:1px solid #5E5E5E;color:#9A9A9A;border-radius:1px}
+.vt{writing-mode:vertical-rl;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1280px;height:720px;display:flex;flex-direction:column;background:#121212;color:#D6D6D6;font-family:'IBM Plex Sans JP','Noto Sans JP',sans-serif;font-size:12px;line-height:16px;overflow:hidden"><div class="fc g16" style="padding:24px 32px;height:720px;line-height:18px"><div class="f g16" style="align-items:baseline"><span class="t20 s6 w">えらぶ 22 ・ テンポの数の意味と x/8 の拍子（Y20 ・ デザインの係が決める）</span><span class="l"></span></div><div class="fc g16 x1"><span class="l" style="white-space:normal">絵は、4/4 の テンポ 120 から 6/8 に変えた所。4 分音符で見た速さは同じ。</span><div class="f x1" style="gap:24px"><div class="fc g8 x1"><span class="t16 s6 w">22-A 下の数の音符を 1 分間に何回（いまの 5 章）</span><span class="l" style="white-space:normal">6/8 では 8 分音符の数。4/4 → 6/8 で 4 分音符の速さを変えないなら、テンポは 240 になる。メトロノームは 8 分ごと。</span><div class="fc g8"><div class="f ac g8" style="height:32px;padding:0 12px;background:#1A1A1A;border:1px solid #2C2C2C;white-space:nowrap"><span class="l">テンポ</span><span class="m t16 w">240.00</span><span class="l">（8 分音符）</span><span class="l">拍子</span><span class="m t16 w">6/8</span></div><div class="fc g4"><div class="f"><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#FFB000">●</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#F2F2F2">•</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#F2F2F2">•</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#F2F2F2">•</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#F2F2F2">•</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#F2F2F2">•</span></div></div><span class="l">1 小節（6/8）の 8 分音符 6 つ。● は強い音</span></div></div><span style="white-space:normal"><span class="w">いいところ: </span>テンポの数と、メトロノームの 1 回 1 回が同じ。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>拍子を変えただけでテンポの数が倍になる。ほかの DAW の説明や、プラグインに渡す数と合わない。</span></div><div class="fc g8 x1"><span class="t16 s6 w">22-B いつも 4 分音符の数（おすすめ）</span><span class="l" style="white-space:normal">テンポは、どの拍子でも 4 分音符が 1 分間に何回か。6/8 でもテンポは 120 のまま。メトロノームは付点 4 分ごと（6/8 なら 1 小節に 2 回、1 回目が強い）。5/8 ・ 7/8 のように 3 で割れない拍子は 8 分ごと。</span><div class="fc g8"><div class="f ac g8" style="height:32px;padding:0 12px;background:#1A1A1A;border:1px solid #2C2C2C;white-space:nowrap"><span class="l">テンポ</span><span class="m t16 w">120.00</span><span class="l">（4 分音符）</span><span class="l">拍子</span><span class="m t16 w">6/8</span></div><div class="fc g4"><div class="f"><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#FFB000">●</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#F2F2F2">•</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div></div><span class="l">1 小節（6/8）の 8 分音符 6 つ。● は強い音</span></div></div><span style="white-space:normal"><span class="w">いいところ: </span>拍子を変えてもテンポの数が変わらない。ほかの DAW の説明、楽譜の「♩= 120」、VST3 がプラグインに渡す数とそろう。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>6/8 の 1 拍（付点 4 分）の速さは、テンポの数とちがう（120 なら 1 分間に 80 回）。用語の説明で言う。</span><span style="white-space:normal"><span class="w">おすすめのわけ: </span>「テンポを変えていないのに、数が変わった」がなくなる。meloet の外で学んだことが、そのまま使える。6/8 の聞こえかたは、メトロノームを付点 4 分で鳴らすことで守る。</span></div><div class="fc g8 x1"><span class="t16 s6 w">22-C 感じる拍の数（6/8 は付点 4 分）</span><span class="l" style="white-space:normal">3 で割れる x/8 は付点 4 分、ほかは下の数の音符の数。6/8 にすると、テンポの数は 80。メトロノームは付点 4 分ごと。</span><div class="fc g8"><div class="f ac g8" style="height:32px;padding:0 12px;background:#1A1A1A;border:1px solid #2C2C2C;white-space:nowrap"><span class="l">テンポ</span><span class="m t16 w">80.00</span><span class="l">（付点 4 分音符）</span><span class="l">拍子</span><span class="m t16 w">6/8</span></div><div class="fc g4"><div class="f"><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#FFB000">●</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"><span style="color:#F2F2F2">•</span></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div><div class="f ac" style="width:32px;height:24px;justify-content:center;border:1px solid #2C2C2C;background:#161616"></div></div><span class="l">1 小節（6/8）の 8 分音符 6 つ。● は強い音</span></div></div><span style="white-space:normal"><span class="w">いいところ: </span>数え歌のように、感じる拍とテンポの数が同じ。</span><span style="white-space:normal"><span class="w">あきらめるもの: </span>拍子で数の意味が変わる。プラグインに渡すときに数を直す。ほかの DAW とそろわない。</span></div></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

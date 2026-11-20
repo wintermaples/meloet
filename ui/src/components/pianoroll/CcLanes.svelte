@@ -12,6 +12,7 @@
   import { t } from "../../text/ja";
   import { metrics } from "../metrics.svelte";
   import type { Meter } from "../time";
+  import { mapOf } from "../../time/bars";
   import { fitLanes, LANE_ORDER, LaneMouse, laneControl, type LaneBox, type LaneDrag } from "./cc";
   import { cursorCss } from "./cursor";
   import type { CursorKind, Mods } from "./drag";
@@ -242,6 +243,8 @@
       g,
       meter,
       step,
+      map: mapOf(current.state!.timeline),
+      barStep: pr.grid.division === 0,
       control: laneControl(tag, ccLanes.other),
       shown: take,
       lane: boxOf(tag),

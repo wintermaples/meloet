@@ -1,6 +1,9 @@
 // 曲の中の時間（docs/architecture.md 11 章）。crates/meloet-model/src/time.rs と同じ答えを出す。DOM を知らない純粋な関数。
 
 import { positionAt, type Telemetry, type TransportView } from "../bridge";
+import { barsMap, type Bars } from "../time/bars";
+
+export type { Bars } from "../time/bars";
 
 /** 4 分音符 1 つのティック。 */
 export const TICKS_PER_QUARTER = 480;
@@ -33,17 +36,12 @@ export interface BarBeatTick {
   tick: number;
 }
 
-/** 小節と拍は 1 から、ティックは 0〜479。小数のティックは切りすて、0 より前は 0 として読む。 */
-export function barBeatTick(tick: number, meter: Meter): BarBeatTick {
-  const t = Math.max(0, Math.floor(tick));
-  const perBeat = ticksPerBeat(meter);
-  const perBar = ticksPerBar(meter);
-  const inBar = t % perBar;
-  return {
-    bar: Math.floor(t / perBar) + 1,
-    beat: Math.floor(inBar / perBeat) + 1,
-    tick: Math.floor(((inBar % perBeat) * DISPLAY_TICKS_PER_BEAT) / perBeat),
-  };
+/**
+ * 小節と拍は 1 から、ティックは 0〜479。小数のティックは切りすて、0 より前は 0 として読む。
+ * bars は拍子 1 つか、テンポの地図（拍子の変更のある曲）。
+ */
+export function barBeatTick(tick: number, bars: Bars): BarBeatTick {
+  return barsMap(bars).barBeatTick(tick, { bar: 0, beat: 0, tick: 0 });
 }
 
 /** 曲の頭のテンポと拍子で秒に。 */
@@ -52,8 +50,8 @@ export function ticksToSeconds(tick: number, bpm: number, meter: Meter): number 
 }
 
 /** 「7. 3. 240」（モック F-ArrangeRec）。 */
-export function positionText(tick: number, meter: Meter): string {
-  const b = barBeatTick(tick, meter);
+export function positionText(tick: number, bars: Bars): string {
+  const b = barBeatTick(tick, bars);
   return `${b.bar}. ${b.beat}. ${String(b.tick).padStart(3, "0")}`;
 }
 

@@ -5,7 +5,8 @@ import { CONTROL_PITCH_BEND, type ClipView, type Command, type ControlKind, type
 import { t } from "../../text/ja";
 import { notePositionText, rangeText } from "../format";
 import { signed4 } from "../meterFormat";
-import type { Meter } from "../time";
+import { meterAtOf } from "../../time/bars";
+import type { Bars } from "../time";
 import { isOnOff, MODULATION_CC, settle, SUSTAIN_CC, switchText, valueRange, valueText } from "./cc";
 import { displayTickStep, readNotePositionLoose, type FieldSpec, type LooseValue } from "./noteFields";
 
@@ -40,7 +41,7 @@ export interface CcRow {
   value: string;
 }
 
-export function ccRow(take: Controls, clip: Placed, i: number, meter: Meter): CcRow {
+export function ccRow(take: Controls, clip: Placed, i: number, meter: Bars): CcRow {
   const c = controlOf(take, i);
   return {
     index: i,
@@ -125,7 +126,7 @@ export function readControlValueLoose(s: string): LooseValue | null {
  * 点 i の欄 name の打ちこみの決まり。位置はクリップの中（もう外にある点は、その位置より外へは出さない。Rust の MoveControls と同じ）。
  * 値は CC 0〜127、ピッチベンド −8192〜+8191。オン ・ オフの CC は、決めるときに 0 か 127 に吸いつける（`commitControl`）。
  */
-export function controlFieldSpec(name: CcFieldName, take: Controls, clip: Placed, i: number, meter: Meter): FieldSpec | null {
+export function controlFieldSpec(name: CcFieldName, take: Controls, clip: Placed, i: number, meter: Bars): FieldSpec | null {
   if (i < 0 || i >= take.controlTicks.length) return null;
   if (name === "position") {
     const tick = clip.start + clip.takeOffset + take.controlTicks[i]!;
@@ -139,7 +140,7 @@ export function controlFieldSpec(name: CcFieldName, take: Controls, clip: Placed
       current: tick,
       low,
       high,
-      unit: displayTickStep(meter),
+      unit: displayTickStep(meterAtOf(meter, tick)),
       shift: 10,
       range: rangeText(format(low), format(high)),
       format,

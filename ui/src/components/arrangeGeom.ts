@@ -4,6 +4,16 @@
 import type { ClipView, Command, LiveNote, TickSpan, TrackView } from "../bridge";
 import type { ColorName } from "../design/tokens";
 import type { GlRect } from "../gl/slot";
+import { barLineTick, nearestBarLine } from "../time/bars";
+import { TempoMap } from "../time/tempoMap";
+
+/** 小節の線の置き場所: 1 小節のティック（拍子が 1 つだけの曲）か、テンポの地図（拍子の変更のある曲）。 */
+export type BarGrid = number | TempoMap;
+
+/** 小節の線の番号（1 から）のティック。 */
+export const lineTick = (g: BarGrid, line: number) => (g instanceof TempoMap ? barLineTick(g, line) : (line - 1) * g);
+/** いちばん近い小節の線の番号（1 から）。 */
+const lineNear = (g: BarGrid, tick: number) => (g instanceof TempoMap ? nearestBarLine(g, tick) : Math.max(1, Math.round(tick / g) + 1));
 
 /** その率での寸法（CSS px）。 */
 export interface LaneDims {
@@ -220,8 +230,8 @@ export function followScroll(x: number, scrollX: number, width: number): number 
 }
 
 /** 小節の線の番号（1 から）。「5–9」の 5 と 9。 */
-export function barLineAt(v: View, x: number, perBar: number): number {
-  return Math.max(1, Math.round(xToTick(v, x) / perBar) + 1);
+export function barLineAt(v: View, x: number, perBar: BarGrid): number {
+  return lineNear(perBar, xToTick(v, x));
 }
 
 export interface BarRange {
@@ -230,11 +240,11 @@ export interface BarRange {
 }
 
 /** ループの範囲（ティック）を小節の線の番号に。 */
-export function loopBars(range: TickSpan | null, perBar: number): BarRange | null {
+export function loopBars(range: TickSpan | null, perBar: BarGrid): BarRange | null {
   if (!range) return null;
   return {
-    from: Math.round(range.start / perBar) + 1,
-    to: Math.round(range.end / perBar) + 1,
+    from: lineNear(perBar, range.start),
+    to: lineNear(perBar, range.end),
   };
 }
 
@@ -242,9 +252,9 @@ export function loopBars(range: TickSpan | null, perBar: number): BarRange | nul
 export type RulerDrag = { kind: "range"; anchor: number } | { kind: "edge"; fixed: number };
 
 /** 押した所が範囲のはしから `grab` px 以内なら、そのはしをつかむ。 */
-export function startRulerDrag(v: View, x: number, perBar: number, loop: BarRange | null, grab: number): RulerDrag {
+export function startRulerDrag(v: View, x: number, perBar: BarGrid, loop: BarRange | null, grab: number): RulerDrag {
   if (loop) {
-    const lineX = (bar: number) => tickToX(v, (bar - 1) * perBar);
+    const lineX = (bar: number) => tickToX(v, lineTick(perBar, bar));
     const dFrom = Math.abs(x - lineX(loop.from));
     const dTo = Math.abs(x - lineX(loop.to));
     if (Math.min(dFrom, dTo) <= grab) return { kind: "edge", fixed: dFrom <= dTo ? loop.to : loop.from };
@@ -253,11 +263,11 @@ export function startRulerDrag(v: View, x: number, perBar: number, loop: BarRang
 }
 
 /** ドラッグ中の範囲。いちばん短くて 1 小節。 */
-export function dragRange(drag: RulerDrag, v: View, x: number, perBar: number): BarRange {
+export function dragRange(drag: RulerDrag, v: View, x: number, perBar: BarGrid): BarRange {
   const fixed = drag.kind === "range" ? drag.anchor : drag.fixed;
   const at = barLineAt(v, x, perBar);
   if (at === fixed)
-    return at > 1 && x < tickToX(v, (fixed - 1) * perBar)
+    return at > 1 && x < tickToX(v, lineTick(perBar, fixed))
       ? { from: at - 1, to: fixed }
       : { from: fixed, to: fixed + 1 };
   return { from: Math.min(at, fixed), to: Math.max(at, fixed) };
@@ -276,19 +286,23 @@ export function beatsShown(barPx: number, perBar: number, perBeat: number, minGa
   return (barPx * perBeat) / perBar >= minGap;
 }
 
-/** 目盛を離したときの命令。動かしていなければ、押した所へ（step のきざみの近い線に吸いつく。Shift のときは step が null で吸いつかない）。 */
+/**
+ * 目盛を離したときの命令。動かしていなければ、押した所へ（step のきざみの近い線に吸いつく。step が関数なら、それで吸いつける。
+ * Shift のときは step が null で吸いつかない）。
+ */
 export function rulerCommand(
   drag: RulerDrag,
   v: View,
   downX: number,
   upX: number,
-  perBar: number,
+  perBar: BarGrid,
   still: number,
-  step: number | null,
+  step: number | ((tick: number) => number) | null,
 ): Command {
   if (Math.abs(upX - downX) < still) {
     const at = xToTick(v, downX);
-    return { type: "locate", tick: Math.max(0, step ? Math.round(at / step) * step : Math.round(at)) };
+    const snapped = typeof step === "function" ? step(at) : step ? Math.round(at / step) * step : Math.round(at);
+    return { type: "locate", tick: Math.max(0, snapped) };
   }
   const r = dragRange(drag, v, upX, perBar);
   return { type: "setLoop", fromBar: r.from, toBar: r.to };

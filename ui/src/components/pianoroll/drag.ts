@@ -4,6 +4,7 @@
 
 import type { Command, MusicalScale } from "../../bridge";
 import type { Meter } from "../time";
+import type { Snapper } from "./geom";
 import { chordOf } from "./audition";
 import {
   clampVelocity,
@@ -68,6 +69,8 @@ export interface RollInput {
   geom(): RollGeom;
   /** グリッド 1 つのティック */
   step(): number;
+  /** 拍子の区間の頭から数えるグリッドに吸いつける（なければ 0 から step ずつ）。 */
+  grid?(): Snapper;
   scale(): MusicalScale;
   meter(): Meter;
   tool(): Tool;
@@ -185,7 +188,7 @@ export class RollDrag {
       // ドラムの行より下には書かない。
       if (key < 0) return;
       const step = i.step();
-      const start = drawStart(xToTick(g, x), mods.shift ? null : step);
+      const start = drawStart(xToTick(g, x), mods.shift ? null : step, i.grid?.());
       const velocity = i.drawVelocity();
       if (!writable(key, i.scale())) {
         // 書かない。Rust が状態行で言う（仕様書 6 章「音階の外に書こうとした」）。
@@ -255,7 +258,7 @@ export class RollDrag {
         const dKeys = g.drum
           ? drumMoveKeys(g.drum, n.take.keys, d.notes, d.grab, Math.floor(y / g.rowH) - Math.floor(d.press.y / g.rowH))
           : yToKey(g, y) - yToKey(g, d.press.y);
-        const { ticks, keys } = moveDelta(n, d.notes, d.grab, (x - d.press.x) / g.ppt, dKeys, step);
+        const { ticks, keys } = moveDelta(n, d.notes, d.grab, (x - d.press.x) / g.ppt, dKeys, step, i.grid?.());
         const copy = mods.alt;
         if (ticks === d.ticks && keys === d.keys && copy === d.copy) return false;
         // 高さが変わるたびに、動かしているノートを和音で。
@@ -274,7 +277,7 @@ export class RollDrag {
       case "resize": {
         if (!n) return false;
         const dx = (x - d.press.x) / g.ppt;
-        const ticks = d.edge === "start" ? resizeStartDelta(n, d.notes, d.grab, dx, step) : resizeDelta(n, d.notes, d.grab, dx, step);
+        const ticks = d.edge === "start" ? resizeStartDelta(n, d.notes, d.grab, dx, step, i.grid?.()) : resizeDelta(n, d.notes, d.grab, dx, step, i.grid?.());
         if (ticks === d.ticks) return false;
         d.ticks = ticks;
         return true;
@@ -282,7 +285,7 @@ export class RollDrag {
       case "draw": {
         // ドラムは長さを見せないので、書くノートはいつもグリッドの 1 マス（仕様書 3 章）。
         if (g.drum) return false;
-        const length = drawLength(d.start, xToTick(g, x), i.step(), step !== null);
+        const length = drawLength(d.start, xToTick(g, x), i.step(), step !== null, i.grid?.());
         if (length === d.length) return false;
         d.length = length;
         return true;

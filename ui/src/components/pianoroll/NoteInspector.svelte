@@ -7,6 +7,7 @@
      欄の数は、範囲の外なら近いはしにして決める（B-68）。
      ドラムのトラックでは、音は楽器の名前、スケールは音階「—」・固定「使えない」（仕様書 3 章、モック R7-Drum）。 -->
 <script lang="ts">
+  import { mapOf, meterAtOf } from "../../time/bars";
   import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
   import ScrollArea from "../../lib/ScrollArea.svelte";
@@ -37,7 +38,8 @@
 
   const app = $derived(current.state!);
   const pr = $derived(app.pianoRoll);
-  const meter = $derived({ num: app.timeline.meterNum, den: app.timeline.meterDen });
+  /** 位置は拍子の変更をたどって数える（長さは、その所の拍子の拍で）。 */
+  const meter = $derived(mapOf(app.timeline));
   const take = $derived(shown.take);
   /** 見せているテイクが Rust の pianoRoll のテイクと同じ（意図を送ってよい）。 */
   const live = $derived(take !== null && shown.clip !== null && pr.take === take.id);

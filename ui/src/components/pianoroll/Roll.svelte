@@ -24,7 +24,8 @@
   import { closeContextMenu, openContextMenu } from "../menu/contextMenu.svelte";
   import * as AG from "../arrangeGeom";
   import { metrics } from "../metrics.svelte";
-  import { shownTick, ticksPerBar, ticksPerBeat, type Meter } from "../time";
+  import { shownTick, type Meter } from "../time";
+  import { eachLine, gridTick, mapOf } from "../../time/bars";
   import CcLanes from "./CcLanes.svelte";
   import { cursorCss } from "./cursor";
   import { Auditioner, chordOf, fixedOr100, NUDGE_MS, notesMayAudition, onNudgeKeys, ticksToMs } from "./audition";
@@ -64,6 +65,8 @@
   const pr = $derived(app.pianoRoll);
   const transport = $derived(app.transport);
   const meter: Meter = $derived({ num: timeline.meterNum, den: timeline.meterDen });
+  /** テンポと拍子の地図（目盛、方眼、目盛を押したときの吸いつき、ループの範囲）。 */
+  const map = $derived(mapOf(timeline));
   const scale = $derived(metrics.scale);
 
   /** ドラムの行を見せているか（仕様書 3 章「ドラムのピアノロール」）。 */
@@ -225,6 +228,7 @@
     shown: () => (liveMode ? null : n),
     geom: () => g,
     step: () => step,
+    grid: () => (tick: number, floor: boolean) => gridTick(map, tick, step, floor, pr.grid.division === 0),
     scale: () => rollScale,
     meter: () => meter,
     tool: () => prView.tool,
@@ -529,6 +533,8 @@
       scale: pr.scale,
       meter,
       step,
+      map,
+      barStep: pr.grid.division === 0,
       shown: notes,
       origin: liveMode ? null : origin,
       selected: selFlags,
@@ -728,18 +734,24 @@
 
   const LABEL_MIN_PX = 40;
   const rulerLabels = $derived.by(() => {
-    const perBeat = ticksPerBeat(meter);
-    const perBar = ticksPerBar(meter);
-    const every = perBeat * ppt >= LABEL_MIN_PX ? perBeat : perBar * Math.max(1, Math.ceil(LABEL_MIN_PX / (perBar * ppt)));
     const out: { tick: number; x: number; text: string; bar: boolean }[] = [];
     if (!(areaW > 0)) return out;
     const end = prView.scrollTick + areaW / ppt;
-    for (let tick = Math.ceil(prView.scrollTick / every) * every; tick < end; tick += every) {
-      const bar = Math.floor(tick / perBar) + 1;
-      const beat = Math.floor((tick % perBar) / perBeat) + 1;
-      out.push({ tick, x: (tick - prView.scrollTick) * ppt, text: `${bar}.${beat}`, bar: tick % perBar === 0 });
-    }
+    const every = (perBeat: number, perBar: number) =>
+      perBeat * ppt >= LABEL_MIN_PX ? perBeat : perBar * Math.max(1, Math.ceil(LABEL_MIN_PX / (perBar * ppt)));
+    const at = { bar: 0, beat: 0, tick: 0 };
+    eachLine(map, prView.scrollTick, end, every, (tick, kind) => {
+      map.barBeatTick(tick, at);
+      out.push({ tick, x: (tick - prView.scrollTick) * ppt, text: `${at.bar}.${at.beat}`, bar: kind === 0 });
+    });
     return out;
+  });
+  /** 目盛のマーカーの名前（仕様書 2 章「ピアノロールの目盛のマーカー」。押せない）。 */
+  const rulerMarkers = $derived.by(() => {
+    if (!(areaW > 0)) return [];
+    return timeline.markers
+      .map((m) => ({ id: m.id, name: m.name, x: (m.tick - prView.scrollTick) * ppt }))
+      .filter((m) => m.x > -areaW && m.x < areaW);
   });
   /** ドラムの行の名前。このクリップで叩いている行は gray.10、ほかは gray.9（モック R7-Drum。使っていない行も暗くしない）。 */
   const usedKeys = $derived.by(() => {
@@ -774,9 +786,8 @@
 
   // ---- 目盛: 押すと再生の位置（グリッドに寄せる。Shift で寄せない）、ドラッグでループの範囲（小節の単位。アレンジの目盛と同じ） ----
 
-  const perBar = $derived(ticksPerBar(meter));
   const rulerView = $derived<AG.View>({ pxPerTick: ppt, scrollX: prView.scrollTick * ppt, width: areaW });
-  const songLoop = $derived(song.loopOn ? AG.loopBars(song.loopRange, perBar) : null);
+  const songLoop = $derived(song.loopOn ? AG.loopBars(song.loopRange, map) : null);
   /** ドラッグ中の見た目。Rust の答え（次の差分）が来たら消す。 */
   let loopPreview = $state<AG.BarRange | null>(null);
   const shownLoop = $derived(loopPreview ?? songLoop);
@@ -787,19 +798,19 @@
       if (!rulerDrag) loopPreview = null;
     });
   });
-  const loopX = (bar: number) => AG.tickToX(rulerView, (bar - 1) * perBar);
+  const loopX = (bar: number) => AG.tickToX(rulerView, AG.lineTick(map, bar));
 
   function rulerDown(e: PointerEvent): void {
     if (e.button !== 0) return;
     const left = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
     const x = e.clientX - left;
-    rulerDrag = { d: AG.startRulerDrag(rulerView, x, perBar, songLoop, metrics.px("space.2")), downX: x, left };
+    rulerDrag = { d: AG.startRulerDrag(rulerView, x, map, songLoop, metrics.px("space.2")), downX: x, left };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   }
   function rulerMove(e: PointerEvent): void {
     if (!rulerDrag) return;
     const x = e.clientX - rulerDrag.left;
-    if (Math.abs(x - rulerDrag.downX) >= metrics.px("space.1")) loopPreview = AG.dragRange(rulerDrag.d, rulerView, x, perBar);
+    if (Math.abs(x - rulerDrag.downX) >= metrics.px("space.1")) loopPreview = AG.dragRange(rulerDrag.d, rulerView, x, map);
   }
   function rulerUp(e: PointerEvent): void {
     if (!rulerDrag) return;
@@ -810,9 +821,9 @@
     if (Math.abs(x - r.downX) < metrics.px("space.1")) {
       loopPreview = null;
       const tick = AG.xToTick(rulerView, r.downX);
-      command = { type: "locate", tick: Math.max(0, e.shiftKey ? Math.round(tick) : G.snapTick(tick, step)) };
+      command = { type: "locate", tick: Math.max(0, e.shiftKey ? Math.round(tick) : gridTick(map, tick, step, false, pr.grid.division === 0)) };
     } else {
-      const range = AG.dragRange(r.d, rulerView, x, perBar);
+      const range = AG.dragRange(r.d, rulerView, x, map);
       command = { type: "setLoop", fromBar: range.from, toBar: range.to };
     }
     const before = current.rev;
@@ -922,6 +933,9 @@
       {/if}
       {#each rulerLabels as l (l.tick)}
         <span class="m-num mark" class:bar={l.bar} style:left="{l.x}px">{l.text}</span>
+      {/each}
+      {#each rulerMarkers as m (m.id)}
+        <span class="ruler-marker m-lbl" style:left="{m.x}px" data-test="pr-ruler-marker">{m.name}</span>
       {/each}
     </div>
   </div>
@@ -1102,6 +1116,18 @@
     top: 0;
     height: var(--mock-arrange-loop);
     background: var(--color-accent);
+    pointer-events: none;
+  }
+  /* 目盛のマーカー（仕様書 2 章: 名前を gray.8 で、左に gray.8 の line.hair。押せない）。 */
+  .ruler-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    padding-left: var(--space-1);
+    border-left: var(--line-hair) solid var(--color-gray-8);
+    white-space: nowrap;
     pointer-events: none;
   }
   .mark {

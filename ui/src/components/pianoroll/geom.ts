@@ -4,7 +4,8 @@
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type Grid, type IndexRange, type MusicalScale, type TakeNotes } from "../../bridge";
 import type { ColorName } from "../../design/tokens";
 import { isBlack } from "../../gl/keyboard";
-import { barBeatTick, DISPLAY_TICKS_PER_BEAT, TICKS_PER_QUARTER, ticksPerBar, ticksPerBeat, type Meter } from "../time";
+import { barsMap } from "../../time/bars";
+import { barBeatTick, DISPLAY_TICKS_PER_BEAT, TICKS_PER_QUARTER, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "../time";
 import { QUARTER_PX_STEPS } from "./view.svelte";
 
 export const KEY_MIN = 0;
@@ -208,6 +209,13 @@ export function gridTicks(grid: Grid, meter: Meter): number {
 }
 
 export const snapTick = (tick: number, step: number) => Math.round(tick / step) * step;
+
+/**
+ * グリッドに吸いつける係（拍子の変更のある曲で、拍子の区間の頭から数える。time/bars.ts の gridTick）。
+ * floor なら押した所のグリッドの頭。なければ 0 から step ずつの一様なグリッド。
+ */
+export type Snapper = (tick: number, floor: boolean) => number;
+const snapWith = (grid: Snapper | undefined, tick: number, step: number) => (grid ? grid(tick, false) : snapTick(tick, step));
 export const floorTick = (tick: number, step: number) => Math.floor(tick / step) * step;
 
 /** グリッドの一覧（ヤチヨさんの決め 2026-11-15）。0 は 1 小節。 */
@@ -289,10 +297,11 @@ export function moveDelta(
   dxTicks: number,
   dKeys: number,
   step: number | null,
+  grid?: Snapper,
 ): { ticks: number; keys: number } {
   const start = noteStart(n, grab);
   const target = start + dxTicks;
-  let ticks = (step ? snapTick(target, step) : Math.round(target)) - start;
+  let ticks = (step ? snapWith(grid, target, step) : Math.round(target)) - start;
   let low = KEY_MAX;
   let high = KEY_MIN;
   let first = Infinity;
@@ -324,10 +333,10 @@ export function drumMoveKeys(d: Pick<DrumGeom, "keys">, keys: ArrayLike<number>,
 }
 
 /** つかんだノートの終わりがグリッドに吸いつくように、長さを変える量。どのノートも 1 ティックより短くならない（吸いつくときは、つかんだノートはグリッド 1 つより短くならない）。 */
-export function resizeDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null): number {
+export function resizeDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null, grid?: Snapper): number {
   const end = noteEnd(n, grab);
   const target = end + dxTicks;
-  let ticks = (step ? snapTick(target, step) : Math.round(target)) - end;
+  let ticks = (step ? snapWith(grid, target, step) : Math.round(target)) - end;
   const grabLength = n.take.lengths[grab]!;
   if (step) ticks = Math.max(ticks, Math.min(step, grabLength) - grabLength);
   let shortest = Infinity;
@@ -340,10 +349,10 @@ export function resizeDelta(n: Shown, notes: readonly number[], grab: number, dx
  * つかんだノートの始まりがグリッドに吸いつくように、始まりを動かす量（終わりは動かさない。+ で短くなる。design-notes B-69）。
  * どのノートも 1 ティックより短くならず（吸いつくときは、つかんだノートはグリッド 1 つより短くならない）、曲の頭より前へは出ない。
  */
-export function resizeStartDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null): number {
+export function resizeStartDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null, grid?: Snapper): number {
   const start = noteStart(n, grab);
   const target = start + dxTicks;
-  let ticks = (step ? snapTick(target, step) : Math.round(target)) - start;
+  let ticks = (step ? snapWith(grid, target, step) : Math.round(target)) - start;
   const grabLength = n.take.lengths[grab]!;
   if (step) ticks = Math.min(ticks, grabLength - Math.min(step, grabLength));
   let shortest = Infinity;
@@ -358,13 +367,13 @@ export function resizeStartDelta(n: Shown, notes: readonly number[], grab: numbe
 }
 
 /** 書く道具で押した所のノートの始まり。吸いつくときは、押したグリッドの頭。 */
-export function drawStart(tick: number, step: number | null): number {
-  return Math.max(0, step ? floorTick(tick, step) : Math.round(tick));
+export function drawStart(tick: number, step: number | null, grid?: Snapper): number {
+  return Math.max(0, step ? (grid ? grid(tick, true) : floorTick(tick, step)) : Math.round(tick));
 }
 
 /** 書く道具で押したまま右へ動かしたときの長さ。いちばん短くてグリッド 1 つ（吸いつかないときは 1 ティック）。 */
-export function drawLength(start: number, tick: number, step: number, snap: boolean): number {
-  return snap ? Math.max(step, snapTick(tick, step) - start) : Math.max(1, Math.round(tick) - start);
+export function drawLength(start: number, tick: number, step: number, snap: boolean, grid?: Snapper): number {
+  return snap ? Math.max(step, snapWith(grid, tick, step) - start) : Math.max(1, Math.round(tick) - start);
 }
 
 /** ベロシティの帯で、上へ動かした量（CSS px）を値の差に。full は 127 の棒の高さ（CSS px）。 */
@@ -398,8 +407,8 @@ export function movedFrom(take: TakeNotes, origin: TakeNotes, i: number): number
 // ---- 文 ----
 
 /** 「3.1.000」（小節 . 拍 . ティック）。 */
-export function positionText(tick: number, meter: Meter): string {
-  const b = barBeatTick(tick, meter);
+export function positionText(tick: number, bars: Bars): string {
+  const b = barBeatTick(tick, bars);
   return `${b.bar}.${b.beat}.${String(b.tick).padStart(3, "0")}`;
 }
 
@@ -418,10 +427,11 @@ export const signed = (v: number) => `${v < 0 ? "−" : "+"}${Math.abs(v)}`;
 export const signedLength = (ticks: number, meter: Meter) => `${ticks < 0 ? "−" : "+"}${lengthText(ticks, meter)}`;
 
 /** 「1–4」: クリップの小節（終わりの小節をふくむ）。 */
-export function barsText(start: number, end: number, meter: Meter): string {
-  const perBar = ticksPerBar(meter);
-  const first = Math.floor(start / perBar) + 1;
-  const last = Math.max(first, Math.ceil(end / perBar));
+export function barsText(start: number, end: number, bars: Bars): string {
+  const map = barsMap(bars);
+  const first = map.meterAt(start).bar + 1;
+  const e = map.meterAt(end);
+  const last = Math.max(first, e.barTick === Math.max(0, Math.floor(end)) ? e.bar : e.bar + 1);
   return `${first}–${last}`;
 }
 

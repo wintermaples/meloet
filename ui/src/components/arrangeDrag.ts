@@ -7,7 +7,8 @@ import type { ClipEdge, ClipView, Command, TrackView } from "../bridge";
 import { t } from "../text/ja";
 import { clipBox, type LaneDims, type View } from "./arrangeGeom";
 import { positionText, signed, snapTick } from "./pianoroll/geom";
-import { DISPLAY_TICKS_PER_BEAT, ticksPerBar, ticksPerBeat, type Meter } from "./time";
+import { barFloat, barsMap } from "../time/bars";
+import { DISPLAY_TICKS_PER_BEAT, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "./time";
 
 export interface ClipHit {
   clip: ClipView;
@@ -59,6 +60,8 @@ export interface DragInput {
   tracks: readonly TrackView[];
   /** グリッド 1 つのティック（アレンジはふだん 1 小節）。Shift のときは null。 */
   step: number | null;
+  /** グリッドに吸いつける（拍子の変更で小節の長さが変わる曲。なければ step のきざみ）。 */
+  snap?: (tick: number) => number;
   /** 押しただけとみなす動き（space.1） */
   stillPx: number;
 }
@@ -148,7 +151,7 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
     press = { ...press, moved: true };
   }
   const dx = (x - press.x) / i.view.pxPerTick;
-  const snap = (tick: number) => (i.step ? snapTick(tick, i.step) : Math.round(tick));
+  const snap = (tick: number) => (i.step ? (i.snap ? i.snap(tick) : snapTick(tick, i.step)) : Math.round(tick));
   const c = d.clip;
   if (d.kind === "move") {
     // つかんだクリップをグリッドに吸いつけ、ほかは同じ間をあけてついてくる。いちばん前のクリップが曲の頭で止まる。
@@ -224,11 +227,13 @@ export function clipLengthText(ticks: number, meter: Meter): string {
   return `${bars}.${beats}.${String(rest).padStart(3, "0")}`;
 }
 
-/** 「その場の読み値」と状態行に出す文。出さないときは null。 */
-export function clipDragReading(d: ClipDrag, meter: Meter): string | null {
+/** 「その場の読み値」と状態行に出す文。出さないときは null。長さは、クリップの始まりの所の拍子で数える。 */
+export function clipDragReading(d: ClipDrag, bars: Bars): string | null {
   if (!d.press.moved) return null;
-  if (d.kind === "trim") return t("arrange.readTrim", { length: clipLengthText(d.end - d.start, meter) });
-  const position = positionText(d.clip.start + d.ticks, meter);
+  const map = barsMap(bars);
+  if (d.kind === "trim") return t("arrange.readTrim", { length: clipLengthText(d.end - d.start, map.meterAt(d.start)) });
+  const position = positionText(d.clip.start + d.ticks, map);
   if (d.copy) return t("arrange.readCopy", { position });
-  return t("arrange.readMove", { position, delta: barsDeltaText(d.ticks, ticksPerBar(meter)) });
+  const bars1 = barFloat(map, d.clip.start + d.ticks) - barFloat(map, d.clip.start);
+  return t("arrange.readMove", { position, delta: barsDeltaText(bars1, 1) });
 }

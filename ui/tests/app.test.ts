@@ -35,7 +35,7 @@ describe("画面の骨組み（?scene=bufferFixed）", () => {
   it("上から、再生まわり・アレンジ・帯札・状態行がある", () => {
     // jsdom では幅が 0 なので、曲の名前などは引っこんでいる。
     expect(text(".transport")).toContain("96.00");
-    expect(document.querySelector("[data-gl-slot=arrangeGrid]")).not.toBeNull();
+    expect(document.querySelector("[data-gl-slot=gridLines]")).not.toBeNull();
     expect(document.querySelectorAll("[data-gl-slot=meter]")).toHaveLength(2);
     expect(text("nav.row")).toContain("アレンジ A");
   });

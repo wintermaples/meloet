@@ -7,6 +7,7 @@
      ドラムのトラックでは「長さ」の列を出さず、位置 68 ・ 音（楽器の名前、のこり全部。入りきらなければ「…」、乗せると全部）・ Vel 40（仕様書 3 章）。
      キットにない鍵のノートは音名で。 -->
 <script lang="ts">
+  import { mapOf, meterAtOf } from "../../time/bars";
   import { tick, untrack } from "svelte";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { tipWhenCut } from "../../lib/tip.svelte";
@@ -31,7 +32,8 @@
   import { shown } from "./shown.svelte";
 
   const app = $derived(current.state!);
-  const meter = $derived({ num: app.timeline.meterNum, den: app.timeline.meterDen });
+  /** 位置は拍子の変更をたどって数える（長さは、その所の拍子の拍で）。 */
+  const meter = $derived(mapOf(app.timeline));
   const take = $derived(shown.take);
   const clip = $derived(shown.clip);
   /** 一覧に出すノートの、テイクの中の番号（はじまりの順）。 */
@@ -90,7 +92,7 @@
         position: notePositionText(at + take.starts[i]!, meter),
         key: keyLabel(take.keys[i]!, drums),
         named: !!drums && drumName(take.keys[i]!, drums) !== null,
-        length: noteLengthText(take.lengths[i]!, meter),
+        length: noteLengthText(take.lengths[i]!, meterAtOf(meter, at + take.starts[i]!)),
         velocity: take.velocities[i]!,
         selected: inRanges(selected, i),
       });

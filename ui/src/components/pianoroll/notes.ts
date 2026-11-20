@@ -4,7 +4,8 @@
 import type { ClipView, IndexRange, TakeNotes } from "../../bridge";
 import { noteLengthText, notePositionText } from "../format";
 import { noteName } from "../meterFormat";
-import type { Meter } from "../time";
+import { meterAtOf } from "../../time/bars";
+import type { Bars } from "../time";
 
 type Notes = Pick<TakeNotes, "starts" | "lengths" | "keys" | "velocities">;
 type Placed = Pick<ClipView, "start" | "end" | "takeOffset">;
@@ -57,7 +58,7 @@ export function selectedSummary(
   take: Notes,
   clip: Placed,
   ranges: readonly IndexRange[],
-  meter: Meter,
+  meter: Bars,
   maxKeys = 64,
   label: (key: number) => string = noteName,
 ): SelectedSummary | null {
@@ -84,7 +85,7 @@ export function selectedSummary(
     count,
     position: notePositionText(clip.start + clip.takeOffset + first, meter),
     keys: names.join(" "),
-    length: length === null || length === undefined ? null : noteLengthText(length, meter),
+    length: length === null || length === undefined ? null : noteLengthText(length, meterAtOf(meter, clip.start + clip.takeOffset + first)),
     velocityLow: low,
     velocityHigh: high,
   };

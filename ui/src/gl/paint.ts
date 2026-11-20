@@ -4,7 +4,7 @@ import type { Batch } from "./batch";
 import { rgb, type Rgb } from "./color";
 import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
-import type { GlRect } from "./slot";
+import type { GlRect, GridLine } from "./slot";
 
 /** A slot's box in device pixels of its canvas (whole numbers; it may reach past the canvas). `hair` is line.hair: always one device pixel. */
 export interface Box {
@@ -120,6 +120,18 @@ export function paintArrangeGrid(out: Batch, box: Box, firstBarX: number, barPx:
     const x = x0 + Math.round(firstBarX + k * step);
     if (x >= x1) break;
     out.rect(x, y0, x + HAIR, y1, k % n === 0 ? bar : beat);
+  }
+}
+
+/** Lines at the given places (CSS px from the box's left; `dpr` turns them into device pixels). Colours as paintArrangeGrid. */
+export function paintGridLines(out: Batch, box: Box, lines: readonly GridLine[], beats: boolean, dpr: number): void {
+  const { x0, y0, x1, y1 } = box;
+  const bar = rgb(beats ? ARRANGE_GRID.bar : ARRANGE_GRID.line);
+  const beat = rgb(ARRANGE_GRID.beat);
+  for (const l of lines) {
+    const x = x0 + Math.round(l.x * dpr);
+    if (x < x0 || x >= x1) continue;
+    out.rect(x, y0, x + HAIR, y1, l.bar ? bar : beat);
   }
 }
 

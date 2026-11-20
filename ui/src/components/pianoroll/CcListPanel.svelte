@@ -4,6 +4,7 @@
      行を押すとその点を選ぶ（Shift で足す。selectControls）。欄を 2 回押すか、行で Enter を押すと、その欄が「入力の枠」（ノートの一覧と同じ打ちこみ）。
      打ちこめるのは位置と値だけ。決めると moveControls を 1 つ。 -->
 <script lang="ts">
+  import { mapOf, meterAtOf } from "../../time/bars";
   import { tick, untrack } from "svelte";
   import ScrollArea from "../../lib/ScrollArea.svelte";
   import { current, send } from "../../state/app.svelte";
@@ -29,7 +30,8 @@
   import { ccList } from "./view.svelte";
 
   const app = $derived(current.state!);
-  const meter = $derived({ num: app.timeline.meterNum, den: app.timeline.meterDen });
+  /** 位置は拍子の変更をたどって数える（長さは、その所の拍子の拍で）。 */
+  const meter = $derived(mapOf(app.timeline));
   const take = $derived(shown.take);
   const clip = $derived(shown.clip);
   const count = $derived(take?.controlTicks.length ?? 0);

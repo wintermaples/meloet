@@ -19,6 +19,7 @@ default-members = [
     "crates/meloet-midi",
     "crates/meloet-devices",
     "crates/meloet-sound",
+    "crates/meloet-stretch",
     "crates/meloet-plugin",
     "crates/meloet-plughost",
     "crates/meloet-core",
@@ -72,6 +73,9 @@ opt-level = 3
 [profile.dev.package.symphonia-bundle-flac]
 opt-level = 3
 [profile.dev.package.meloet-sound]
+opt-level = 3
+# The C++ of the stretcher is built with -O3 by its build.rs; this is for the copying around it.
+[profile.dev.package.meloet-stretch]
 opt-level = 3
 # The same for audio files brought into a song: the decoders, the resampler and the hash.
 [profile.dev.package.symphonia-bundle-mp3]

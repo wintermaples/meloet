@@ -2478,7 +2478,10 @@ pub(crate) fn save_song(
     to: SaveTo,
     store: &crate::audiofiles::AudioStore,
 ) -> Input {
-    let names: Vec<String> = song.doc.audio.iter().map(|a| a.file.clone()).collect();
+    // Only what a clip plays: the audio of deleted clips stays in the work place.
+    let names: Vec<String> = (songfile::used_audio(&song.doc).iter())
+        .map(|a| a.file.clone())
+        .collect();
     let saved = match to {
         SaveTo::File(path) => {
             let dir = path.parent().filter(|d| !d.as_os_str().is_empty());

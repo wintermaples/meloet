@@ -1131,7 +1131,7 @@ pub fn encode(song: &Song) -> Vec<u8> {
             next_id: doc.next_id,
             tracks,
             mixer: Some(mixer_file(doc)),
-            audio: (doc.audio.iter())
+            audio: (used_audio(doc).iter())
                 .map(|a| AudioFile {
                     id: a.id.0,
                     uid: hex(&a.uid),
@@ -1268,6 +1268,21 @@ fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
         *byte = digit(pair[0])? << 4 | digit(pair[1])?;
     }
     Some(out)
+}
+
+/// The audio files of the table that a take of a clip plays, shown or not, in the order of
+/// the table: what a song file names, and what a save puts into the song's folder
+/// (docs/architecture.md 22-4, 22-18 A2). The table of an open song may hold more: files of
+/// clips that were deleted, which an undo brings back.
+pub fn used_audio(doc: &Doc) -> Vec<Arc<AudioSource>> {
+    let used: HashSet<u32> = (doc.tracks.iter())
+        .flat_map(|t| t.clips.iter())
+        .flat_map(|c| c.takes.vocal().iter().map(|ct| ct.take.source.id.0))
+        .collect();
+    (doc.audio.iter())
+        .filter(|a| used.contains(&a.id.0))
+        .cloned()
+        .collect()
 }
 
 fn audio_take_file(take: &AudioTake) -> AudioTakeFile {

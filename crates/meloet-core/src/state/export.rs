@@ -25,6 +25,12 @@ impl Model {
         }
     }
 
+    /// The plugins this PC has, as the rules of a song are told them: an export tells
+    /// its own copy of the rules the same.
+    pub(crate) fn known_plugins(&self) -> crate::export::told::KnownPlugins {
+        self.catalog.bundles()
+    }
+
     pub(super) fn export_view(&self) -> ExportView {
         self.export.view(&self.export_scene())
     }

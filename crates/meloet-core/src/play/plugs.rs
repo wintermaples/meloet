@@ -717,7 +717,7 @@ impl Play {
         }
     }
 
-    pub(super) fn slot_place(slot: PluginSlotRef) -> PluginPlace {
+    pub(crate) fn slot_place(slot: PluginSlotRef) -> PluginPlace {
         match slot {
             PluginSlotRef::Instrument { track } => PluginPlace::Instrument(TrackId(track)),
             PluginSlotRef::Insert { insert } => {

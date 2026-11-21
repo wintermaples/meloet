@@ -98,7 +98,7 @@ meloet-stretch (Rust): Signalsmith Linear 0.6.4 (C++ headers stft.h and fft.h, k
   source: https://github.com/Signalsmith-Audio/linear
   license: MIT; the text is in licenses/rust/meloet-stretch/SIGNALSMITH-LINEAR-LICENSE.txt
 
-== Parts (219: 216 Rust crates, 3 npm packages)
+== Parts (226: 223 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
 aho-corasick 1.1.5 (Rust): Unlicense OR MIT
@@ -121,6 +121,7 @@ block-buffer 0.10.4 (Rust): MIT OR Apache-2.0
 brotli 9.1.1 (Rust): BSD-3-Clause AND MIT
 brotli-decompressor 6.3.1 (Rust): BSD-3-Clause OR MIT
 bytemuck 1.25.2 (Rust): Zlib OR Apache-2.0 OR MIT
+byteorder 1.5.0 (Rust): Unlicense OR MIT
 bytes 1.12.1 (Rust): MIT
 cairo-rs 0.18.5 (Rust): MIT
 cairo-sys-rs 0.18.2 (Rust): MIT
@@ -132,6 +133,8 @@ cookie 0.18.2 (Rust): MIT OR Apache-2.0
 cookie-factory 0.3.3 (Rust): MIT
 cpal 0.18.2 (Rust): Apache-2.0
 cpufeatures 0.2.17 (Rust): MIT OR Apache-2.0
+crc 3.4.0 (Rust): MIT OR Apache-2.0
+crc-catalog 2.5.0 (Rust): MIT OR Apache-2.0
 crossbeam-channel 0.5.17 (Rust): MIT OR Apache-2.0
 crossbeam-utils 0.8.23 (Rust): MIT OR Apache-2.0
 crypto-common 0.1.7 (Rust): MIT OR Apache-2.0
@@ -149,6 +152,7 @@ equivalent 1.0.3 (Rust): Apache-2.0 OR MIT
 erased-serde 0.4.11 (Rust): MIT OR Apache-2.0
 extended 0.1.0 (Rust): MIT
 field-offset 0.3.6 (Rust): MIT OR Apache-2.0
+flacenc 0.5.1 (Rust): Apache-2.0
 fnv 1.0.7 (Rust): Apache-2.0 OR MIT
 form_urlencoded 1.2.2 (Rust): MIT OR Apache-2.0
 futures-channel 0.3.34 (Rust): MIT OR Apache-2.0
@@ -175,7 +179,9 @@ glob 0.3.4 (Rust): MIT OR Apache-2.0
 gobject-sys 0.18.0 (Rust): MIT
 gtk 0.18.2 (Rust): MIT
 gtk-sys 0.18.2 (Rust): MIT
+hash32 0.3.1 (Rust): MIT OR Apache-2.0
 hashbrown 0.17.1 (Rust): MIT OR Apache-2.0
+heapless 0.8.0 (Rust): MIT OR Apache-2.0
 heck 0.5.0 (Rust): MIT OR Apache-2.0
 http 1.5.0 (Rust): MIT OR Apache-2.0
 icu_collections 2.4.0 (Rust): Unicode-3.0
@@ -210,6 +216,7 @@ lock_api 0.5.0 (Rust): MIT OR Apache-2.0
 log 0.4.35 (Rust): MIT OR Apache-2.0
 lv2_raw 0.3.2 (Rust): ISC OR MIT OR Apache-2.0
 lv2-sys 2.0.0 (Rust): MIT OR Apache-2.0
+md-5 0.10.6 (Rust): MIT OR Apache-2.0
 memchr 2.8.3 (Rust): Unlicense OR MIT
 memoffset 0.9.1 (Rust): MIT
 mime 0.3.18 (Rust): MIT OR Apache-2.0

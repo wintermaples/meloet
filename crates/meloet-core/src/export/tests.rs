@@ -492,7 +492,7 @@ fn an_empty_song_has_nothing_to_export() {
 }
 
 #[test]
-fn the_sink_is_not_written_yet() {
+fn a_sink_is_not_made_where_nothing_can_be_written() {
     let spec = super::sink::SinkSpec {
         format: ExportFormat::Wav,
         sample_rate: 48_000,
@@ -502,6 +502,6 @@ fn the_sink_is_not_written_yet() {
     let made = super::sink::create(&PathBuf::from("/nowhere/a.wav"), spec);
     assert_eq!(
         made.err().map(|e| e.kind()),
-        Some(std::io::ErrorKind::Unsupported)
+        Some(std::io::ErrorKind::NotFound)
     );
 }

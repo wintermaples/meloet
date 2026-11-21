@@ -94,12 +94,13 @@ pub struct ReadAhead {
     tx: Sender<Msg>,
     thread: Option<JoinHandle<()>>,
     stats: Arc<ReadStats>,
+    /// Without a thread ([`ReadAhead::inline`]): the same work, done in [`ReadAhead::pump`].
+    side: Option<Side>,
 }
 
 impl ReadAhead {
-    pub fn spawn(store: Arc<dyn PcmStore>) -> ReadAhead {
+    fn side(store: Arc<dyn PcmStore>) -> (Sender<Msg>, Side) {
         let (tx, rx) = mpsc::channel();
-        let stats = Arc::new(ReadStats::default());
         let side = Side {
             rx,
             store,
@@ -111,8 +112,14 @@ impl ReadAhead {
                 old: vec![0.0; CHUNK * STREAM_CHANNELS],
                 raw: vec![0.0; CHUNK * STREAM_CHANNELS],
             },
-            stats: stats.clone(),
+            stats: Arc::new(ReadStats::default()),
         };
+        (tx, side)
+    }
+
+    pub fn spawn(store: Arc<dyn PcmStore>) -> ReadAhead {
+        let (tx, side) = ReadAhead::side(store);
+        let stats = side.stats.clone();
         let thread = std::thread::Builder::new()
             .name("meloet-readahead".into())
             .spawn(move || side.run())
@@ -120,7 +127,53 @@ impl ReadAhead {
         if thread.is_none() {
             eprintln!("meloet: the read-ahead thread did not start; vocal clips are silent");
         }
-        ReadAhead { tx, thread, stats }
+        ReadAhead {
+            tx,
+            thread,
+            stats,
+            side: None,
+        }
+    }
+
+    /// The same reading without a thread, for an engine that is not run by a stream (an
+    /// export, docs/architecture.md 22-11): the caller runs the engine's blocks itself and
+    /// calls [`ReadAhead::pump`] between them, so the engine never finds a ring short.
+    pub fn inline(store: Arc<dyn PcmStore>) -> ReadAhead {
+        let (tx, side) = ReadAhead::side(store);
+        ReadAhead {
+            tx,
+            thread: None,
+            stats: side.stats.clone(),
+            side: Some(side),
+        }
+    }
+
+    /// For [`ReadAhead::inline`]: takes in what was sent and what the engine said, and
+    /// fills every ring that is due. Reads the disk, so not for an audio thread.
+    pub fn pump(&mut self) {
+        if let Some(side) = &mut self.side {
+            while side.pass() == Some(true) {}
+        }
+    }
+
+    /// For [`ReadAhead::inline`]: opens the file of every clip now, so that what happens to
+    /// the files later (the cache is emptied, another song comes) does not reach the
+    /// reading. Returns how many clips have no file.
+    pub fn open_all(&mut self) -> usize {
+        let Some(side) = &mut self.side else {
+            return 0;
+        };
+        side.pass();
+        let mut unopened = 0;
+        for track in side.tracks.iter_mut() {
+            for at in 0..track.clips.len() {
+                let key = key_of(&track.clips[at]);
+                if track.file(key, &*side.store, &side.stats).is_none() {
+                    unopened += 1;
+                }
+            }
+        }
+        unopened
     }
 
     pub fn stats(&self) -> &Arc<ReadStats> {
@@ -464,45 +517,53 @@ struct Side {
 }
 
 impl Side {
+    /// One round: what was said and sent is taken in, and every ring that is due gets a
+    /// chunk. Returns whether a ring got one; `None`: the thread is to end.
+    fn pass(&mut self) -> Option<bool> {
+        // What the engine said first, then what the core sent: the core sends the
+        // clips of a new generation before it tells the engine to start one, so they
+        // are here by the time its want is.
+        let mut said = Vec::new();
+        if let Some(wants) = self.wants.as_mut() {
+            while let Ok(want) = wants.pop() {
+                said.push(want);
+            }
+        }
+        loop {
+            match self.rx.try_recv() {
+                Ok(Msg::Quit) | Err(mpsc::TryRecvError::Disconnected) => return None,
+                Ok(msg) => self.take(msg),
+                Err(mpsc::TryRecvError::Empty) => break,
+            }
+        }
+        for want in said {
+            if let Some(track) = self.tracks.iter_mut().find(|t| t.seat == want.track) {
+                track.take(want, &self.stats);
+            }
+        }
+        let mut busy = false;
+        for track in self.tracks.iter_mut() {
+            if track.layout.is_none()
+                && let (Some(want), Some((map, map_gen))) = (&track.want, &self.map)
+                && want.map_gen == *map_gen
+            {
+                let rate = f64::from(track.sample_rate);
+                track.layout = Some(StreamLayout::new(want, map, rate));
+            }
+            if track.due() {
+                track.fill(&*self.store, &mut self.bufs, &self.stats);
+                busy = true;
+            }
+        }
+        Some(busy)
+    }
+
     fn run(mut self) {
         loop {
-            // What the engine said first, then what the core sent: the core sends the
-            // clips of a new generation before it tells the engine to start one, so they
-            // are here by the time its want is.
-            let mut said = Vec::new();
-            if let Some(wants) = self.wants.as_mut() {
-                while let Ok(want) = wants.pop() {
-                    said.push(want);
-                }
-            }
-            loop {
-                match self.rx.try_recv() {
-                    Ok(Msg::Quit) | Err(mpsc::TryRecvError::Disconnected) => return,
-                    Ok(msg) => self.take(msg),
-                    Err(mpsc::TryRecvError::Empty) => break,
-                }
-            }
-            for want in said {
-                if let Some(track) = self.tracks.iter_mut().find(|t| t.seat == want.track) {
-                    track.take(want, &self.stats);
-                }
-            }
-            let mut busy = false;
-            for track in self.tracks.iter_mut() {
-                if track.layout.is_none()
-                    && let (Some(want), Some((map, map_gen))) = (&track.want, &self.map)
-                    && want.map_gen == *map_gen
-                {
-                    let rate = f64::from(track.sample_rate);
-                    track.layout = Some(StreamLayout::new(want, map, rate));
-                }
-                if track.due() {
-                    track.fill(&*self.store, &mut self.bufs, &self.stats);
-                    busy = true;
-                }
-            }
-            if busy {
-                continue;
+            match self.pass() {
+                None => return,
+                Some(true) => continue,
+                Some(false) => {}
             }
             let wait = if self.tracks.is_empty() { IDLE } else { POLL };
             match self.rx.recv_timeout(wait) {

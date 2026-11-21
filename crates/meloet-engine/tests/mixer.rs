@@ -709,3 +709,46 @@ fn every_mixer_command_on_every_strip_never_touches_the_allocator() {
     }
     rig.check_rules();
 }
+
+/// Passes the sound on and says it delays it.
+struct Late(u32);
+
+impl Effect for Late {
+    fn prepare(&mut self, _sample_rate: f32, _max_frames: usize) {}
+    fn set_param(&mut self, _index: u32, _value: f32) {}
+    fn process(&mut self, _left: &mut [f32], _right: &mut [f32], _ctx: &EffectContext) {}
+    fn reset(&mut self) {}
+    fn latency(&self) -> u32 {
+        self.0
+    }
+}
+
+#[test]
+fn the_engine_says_how_much_the_masters_inserts_delay() {
+    let mut parts = Engine::new(EngineConfig::default());
+    assert_eq!(parts.engine.master_latency(), 0);
+    let master = MixStrip::Master;
+    for (slot, frames) in [(0, 64), (2, 1_000)] {
+        let late: Box<dyn Effect> = Box::new(Late(frames));
+        assert!(parts.handle.set_effect(master, slot, Some(late)).is_ok());
+    }
+    // What delays a track is not the master's.
+    let late: Box<dyn Effect> = Box::new(Late(7));
+    assert!(
+        parts
+            .handle
+            .set_effect(MixStrip::Track(0), 0, Some(late))
+            .is_ok()
+    );
+    parts.engine.settle();
+    assert_eq!(parts.engine.master_latency(), 1_064);
+    // A slot that is passed by delays nothing.
+    let pass = EngineCommand::SetBypass {
+        strip: master,
+        slot: 2,
+        bypassed: true,
+    };
+    assert!(parts.handle.send(pass).is_ok());
+    parts.engine.settle();
+    assert_eq!(parts.engine.master_latency(), 64);
+}

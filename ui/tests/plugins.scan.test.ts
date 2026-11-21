@@ -301,6 +301,7 @@ it("どのダイアログも、見出しの行は「動かす」の指で、乗�
     "../src/components/SettingsDialog.svelte",
     "../src/components/SongDialog.svelte",
     "../src/components/about/AboutDialog.svelte",
+    "../src/components/export/ExportDialog.svelte",
     "../src/components/plugins/ScanStoppedDialog.svelte",
   ]);
   for (const f of files) {

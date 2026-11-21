@@ -8,6 +8,7 @@
   import Arrange from "./components/Arrange.svelte";
   import AutoClock from "./components/automation/AutoClock.svelte";
   import BandRow from "./components/BandRow.svelte";
+  import ExportDialog from "./components/export/ExportDialog.svelte";
   import FileDropNotice from "./components/FileDropNotice.svelte";
   import InputMeter from "./components/InputMeter.svelte";
   import LatencyDialog from "./components/LatencyDialog.svelte";
@@ -92,6 +93,11 @@
   {:else if state.workspace.settings}
     <div class="dialog">
       <SettingsDialog />
+    </div>
+  {/if}
+  {#if state.export.dialog}
+    <div class="dialog">
+      <ExportDialog />
     </div>
   {/if}
   {#if about.open}

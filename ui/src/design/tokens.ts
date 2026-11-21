@@ -211,6 +211,8 @@ export const part = {
   "part.drum.hit-gap": p(8, "s2", "ドラムの叩いた所の四角", "行の高さ − 8"),
   "part.drum.list-position": p(68, "s3", null, "位置 68"),
   "part.drum.list-velocity": p(40, "s3", null, "Vel 40"),
+  // 書き出し（第 7 回）。状態行の左の進みの棒の長さ。
+  "part.exporting.bar": p(160, "s2", "書き出しの進み", "160 の棒"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 
@@ -324,6 +326,9 @@ export const mock = {
   // 取り消しの履歴の行（第 6 回）。番号の欄（`width:24px`、右よせ）と、文の欄（`width:420px`）。
   "mock.history.number": m(24, "F-History"),
   "mock.history.name": m(420, "F-History"),
+  // 書き出しの進み（第 7 回）。状態行の棒の太さ（`height:4px`）と「やめる」の高さ（`height:20px`）。
+  "mock.exporting.bar": m(4, "F7-Exporting"),
+  "mock.exporting.stop": m(20, "F7-Exporting"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

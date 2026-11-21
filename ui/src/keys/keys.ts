@@ -43,6 +43,8 @@ export type KeyAction =
   | { kind: "openSong" }
   | { kind: "saveSong" }
   | { kind: "saveSongAs" }
+  /** Mod Shift E: 書き出しのダイアログをひらく（仕様書 4 章）。 */
+  | { kind: "export" }
   | { kind: "quit" }
   /** Shift M ・ Shift S: 選んだトラック（song.playTarget）のミュート ・ ソロ。 */
   | { kind: "trackMute" }
@@ -145,7 +147,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     const zoom = k.alt ? null : zoomKey(k);
     if (zoom) return { kind: "zoom", delta: zoom };
     const l = k.alt ? null : letter(k);
-    if (k.shift) return l === "z" ? { kind: "redo" } : l === "s" ? { kind: "saveSongAs" } : null;
+    if (k.shift) return l === "z" ? { kind: "redo" } : l === "s" ? { kind: "saveSongAs" } : l === "e" ? { kind: "export" } : null;
     if (l === "n") return { kind: "newSong" };
     if (l === "o") return { kind: "openSong" };
     if (l === "s") return { kind: "saveSong" };

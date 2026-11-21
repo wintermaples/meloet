@@ -14,7 +14,7 @@ meloet-model = { workspace = true }
 meloet-plugin = { workspace = true }
 meloet-protocol = { workspace = true }
 meloet-sound = { workspace = true }
-meloet-stretch = { path = "../meloet-stretch" }
+meloet-stretch = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

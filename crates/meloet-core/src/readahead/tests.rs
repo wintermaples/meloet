@@ -60,6 +60,8 @@ struct Store {
     gone_from: Mutex<u8>,
     opened: AtomicU64,
     stereo: AtomicBool,
+    /// The made files are not there.
+    made_gone: AtomicBool,
 }
 
 impl Store {
@@ -83,6 +85,19 @@ impl PcmStore for Store {
             }) as Box<dyn PcmFile>
         })
     }
+
+    /// What was made under a key is a file of numbers too: number `key[0]`.
+    fn open_made(&self, key: &[u8; 32], sample_rate: u32) -> Option<Box<dyn PcmFile>> {
+        assert_eq!(sample_rate, RATE);
+        (!self.made_gone.load(Relaxed)).then(|| {
+            Box::new(Numbers {
+                n: key[0],
+                frames: 1_000_000,
+                stereo: false,
+                slow: self.slow.clone(),
+            }) as Box<dyn PcmFile>
+        })
+    }
 }
 
 fn map() -> Arc<TempoMap> {
@@ -96,6 +111,7 @@ fn clip(start: u64, end: u64, n: u8, file_frame: i64) -> FeedClip {
         start,
         end,
         uid: uid(n),
+        made: None,
         file_frame,
         file_end: 1_000_000,
     }
@@ -405,4 +421,102 @@ fn other_clips_come_with_the_next_generation_and_a_track_can_go() {
     rig.wait("the thread lets go of the ring", |rig| {
         rig.reader.is_abandoned()
     });
+}
+
+/// The clip playing what was made for it under key `n`, from that file's first frame.
+fn made(start: u64, end: u64, n: u8) -> FeedClip {
+    FeedClip {
+        made: Some([n; 32]),
+        ..clip(start, end, 1, 0)
+    }
+}
+
+#[test]
+fn other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends() {
+    let store = Store::new();
+    let plain = vec![clip(1_000, 900_000, 1, 500)];
+    let mut rig = Rig::new(store.clone(), plain.clone());
+    rig.jump(0.0, 0, None);
+    rig.wait_full(96_000);
+    // What was made for the clip is ready. The two seconds in the ring stay as they are.
+    rig.ahead.splice_clips(SEAT, vec![made(1_000, 900_000, 50)]);
+    std::thread::sleep(Duration::from_millis(30));
+    assert_eq!(rig.fed(), 96_000);
+    let (out, missing) = rig.read(0, 50_000);
+    assert_eq!(missing, 0);
+    assert_eq!(out[1_000][0], sample(1, 500));
+    assert_eq!(out[49_999][0], sample(1, 500 + 48_999));
+    rig.wait("the ring fills again", |rig| rig.fed() == 146_000);
+    let (out, missing) = rig.read(50_000, 50_000);
+    assert_eq!(missing, 0);
+    let (old, new) = (
+        |f: u64| sample(1, 500 + f - 1_000),
+        |f: u64| sample(50, f - 1_000),
+    );
+    for (i, frame) in out.iter().enumerate() {
+        let f = 50_000 + i as u64;
+        let want = match f {
+            ..96_000 => old(f),
+            // 10 ms: the old goes as the new comes, in a straight line.
+            96_000..96_480 => {
+                let weight = (f - 96_000 + 1) as f32 / 481.0;
+                old(f) + (new(f) - old(f)) * weight
+            }
+            _ => new(f),
+        };
+        assert!(
+            (frame[0] - want).abs() <= want.abs() * 1e-6,
+            "frame {f}: {} {want}",
+            frame[0]
+        );
+        assert_eq!(frame[0], frame[1]);
+    }
+    assert_eq!(rig.ahead.stats().splices.load(Relaxed), 1);
+    assert_eq!(rig.ahead.stats().generations.load(Relaxed), 1);
+
+    // Back to the file (the value was changed again), and before that is in the ring
+    // other made audio is ready: it comes in over what the ring holds, the made audio
+    // from before.
+    rig.wait("the ring fills again", |rig| rig.fed() == 196_000);
+    rig.ahead.splice_clips(SEAT, plain.clone());
+    rig.ahead.splice_clips(SEAT, vec![made(1_000, 900_000, 60)]);
+    let (_, missing) = rig.read(100_000, 50_000);
+    assert_eq!(missing, 0);
+    rig.wait("the ring fills again", |rig| rig.fed() == 246_000);
+    let (out, missing) = rig.read(150_000, 96_000);
+    assert_eq!(missing, 0);
+    let at = |f: u64| out[(f - 150_000) as usize][0];
+    assert_eq!(at(195_999), sample(50, 194_999));
+    let half = sample(50, 195_239) + (sample(60, 195_239) - sample(50, 195_239)) * (240.0 / 481.0);
+    assert!((at(196_239) - half).abs() <= half * 1e-6);
+    assert_eq!(at(196_480), sample(60, 195_480));
+
+    // A new place takes the new audio from its first frame, with nothing laid over.
+    rig.ahead.splice_clips(SEAT, plain);
+    rig.jump(0.0, 0, None);
+    let fed = rig.fed();
+    rig.wait("the new generation is fed", |rig| rig.fed() >= fed + 96_000);
+    let (out, missing) = rig.read(0, 2_000);
+    assert_eq!(missing, 0);
+    assert_eq!(out[1_000][0], sample(1, 500));
+    assert_eq!(out[1_999][0], sample(1, 1_499));
+    assert_eq!(rig.ahead.stats().splices.load(Relaxed), 2);
+    assert!(!rig.ahead.stats().made_lost.load(Relaxed));
+}
+
+#[test]
+fn made_audio_that_is_gone_is_silence_and_is_told() {
+    let store = Store::new();
+    store.made_gone.store(true, Relaxed);
+    let mut rig = Rig::new(
+        store,
+        vec![made(0, 900_000, 50), clip(900_000, 990_000, 2, 0)],
+    );
+    rig.jump(0.0, 0, None);
+    rig.wait_full(96_000);
+    let (out, missing) = rig.read(0, 96_000);
+    assert_eq!(missing, 0);
+    assert!(out.iter().all(|f| *f == [0.0; 2]));
+    assert!(rig.ahead.stats().made_lost.load(Relaxed));
+    assert_ne!(rig.ahead.stats().unopened.load(Relaxed), 0);
 }

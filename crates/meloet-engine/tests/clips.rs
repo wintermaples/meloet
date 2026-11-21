@@ -614,3 +614,52 @@ fn a_track_that_records_does_not_play_its_clips_and_the_other_tracks_do() {
     assert_eq!(rig.missing(), 0);
     no_memory_was_taken();
 }
+
+#[test]
+fn other_audio_for_the_same_clips_keeps_the_ring_while_it_sounds() {
+    let map = common::flat_map(12_000, 4, 4);
+    let mut rig = Rig::new(map, vec![region(0, 5_000_000, 1.0)]);
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.blocks(10);
+    // The thread lays the new audio over the old in the ring; the engine plays on.
+    rig.send(EngineCommand::SpliceClips { track: TRACK });
+    let out = rig.blocks(20);
+    for (k, &got) in out.iter().enumerate() {
+        assert_eq!(got, sample(2_560 + k as u64), "{k}");
+    }
+    assert_eq!(rig.feeder.made.len(), 1);
+    assert_eq!(rig.missing(), 0);
+
+    // A muted track is not heard: its ring is filled anew.
+    let muted: TrackSet = [TRACK].into_iter().collect();
+    rig.send(EngineCommand::SetSilentTracks { tracks: muted });
+    rig.blocks(4);
+    rig.send(EngineCommand::SpliceClips { track: TRACK });
+    rig.blocks(4);
+    assert_eq!(rig.feeder.made.len(), 2);
+    rig.send(EngineCommand::SetSilentTracks {
+        tracks: TrackSet::default(),
+    });
+    rig.blocks(8);
+
+    // Stopped: the two seconds that wait are read again, and a play starts on its first
+    // frame with them.
+    rig.send(EngineCommand::Stop {
+        t_us: monotonic_us(),
+    });
+    rig.blocks(4);
+    let told = rig.feeder.made.len();
+    rig.send(EngineCommand::SpliceClips { track: TRACK });
+    let silent = rig.blocks(4);
+    assert!(silent.iter().all(|&s| s == 0.0));
+    assert_eq!(rig.feeder.made.len(), told + 1);
+    rig.send(EngineCommand::Locate { tick: 1_920 });
+    rig.blocks(4);
+    rig.send(EngineCommand::Play { from: 1_920 });
+    let out = rig.blocks(4);
+    for (k, &got) in out.iter().enumerate() {
+        assert_eq!(got, sample(24_000 + k as u64), "{k}");
+    }
+    assert_eq!(rig.missing(), 0);
+    no_memory_was_taken();
+}

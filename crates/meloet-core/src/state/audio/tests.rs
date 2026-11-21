@@ -697,3 +697,174 @@ fn another_song_is_watched_anew_and_its_missing_files_are_said() {
         }
     )));
 }
+
+fn stretch(m: &mut Model, clip: u32, change: meloet_protocol::StretchChange) -> Vec<Effect> {
+    cmd(m, Command::SetClipStretch { clip, change })
+}
+
+#[test]
+fn the_rows_of_stretching_and_pitch_are_steps_and_the_tempo_is_found() {
+    use meloet_protocol::StretchChange as Row;
+    // Five seconds: two bars of four at 96.
+    let (mut m, clip, _) = one_clip(48_000);
+    let id = clip.id;
+    let view = |m: &Model| clips(m)[0].1.clone();
+    let rows = |m: &Model| view(m).audio.unwrap().stretch;
+    assert_eq!(
+        (rows(&m).follow, rows(&m).source_bpm, rows(&m).ratio),
+        (false, None, None)
+    );
+    let steps = undo_count(&m);
+
+    cmd(&mut m, Command::FindSourceTempo { clip: id });
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::SourceTempoFound {
+            name: view(&m).name,
+            bpm: 96.0,
+            bars: 2
+        })
+    );
+    assert_eq!(rows(&m).source_bpm, Some(96.0));
+    assert_eq!(undo_count(&m), steps + 1);
+    let newest = |m: &Model| m.history_rows(undo_count(m), undo_count(m))[0].name.clone();
+    assert_eq!(newest(&m), StepName::SetSourceTempo);
+    // A new take in the same place; following stays off.
+    assert_ne!(view(&m).take_id, clip.take_id);
+    assert_eq!((rows(&m).follow, rows(&m).ratio), (false, None));
+    assert!(view(&m).audio.unwrap().source_tempo.is_none());
+    // Found again: said again, and no step.
+    cmd(&mut m, Command::FindSourceTempo { clip: id });
+    assert!(matches!(
+        status(&m),
+        Some(StatusMessage::SourceTempoFound { bars: 2, .. })
+    ));
+    assert_eq!(undo_count(&m), steps + 1);
+
+    // Following: the song is at 96 as the audio.
+    let effects = stretch(&mut m, id, Row::Follow { on: true });
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::Engine(crate::state::EngineOp::Clips { .. })))
+    );
+    assert_eq!((rows(&m).follow, rows(&m).ratio), (true, Some(1.0)));
+    assert_eq!(
+        view(&m).audio.unwrap().source_tempo.unwrap().tempo_bpm,
+        96.0
+    );
+    assert_eq!(newest(&m), StepName::SetClipFollow);
+    // The mark goes with the song's tempo, and with the tempo that is typed.
+    cmd(&mut m, Command::SetTempo { bpm: 120.0 });
+    assert_eq!(rows(&m).ratio, Some(1.25));
+    stretch(&mut m, id, Row::SourceBpm { bpm: 48.004 });
+    assert_eq!(
+        (rows(&m).source_bpm, rows(&m).ratio),
+        (Some(48.0), Some(2.5))
+    );
+    stretch(&mut m, id, Row::SourceBpm { bpm: 1_000.0 });
+    assert_eq!(rows(&m).source_bpm, Some(300.0));
+    stretch(&mut m, id, Row::SourceBpm { bpm: 0.0 });
+    assert_eq!(rows(&m).source_bpm, Some(30.0));
+
+    // The pitch: the nearest whole number inside its range.
+    let steps = undo_count(&m);
+    stretch(&mut m, id, Row::Semitones { semitones: 2.4 });
+    stretch(&mut m, id, Row::Cents { cents: -80.0 });
+    stretch(&mut m, id, Row::KeepFormant { on: false });
+    let now = rows(&m);
+    assert_eq!(
+        (now.semitones, now.cents, now.keep_formant),
+        (2, -50, false)
+    );
+    assert_eq!(undo_count(&m), steps + 3);
+    assert_eq!(newest(&m), StepName::SetClipPitch);
+    // The same value, what is not a number, and a clip that is not there: nothing.
+    stretch(&mut m, id, Row::Semitones { semitones: 2.0 });
+    stretch(
+        &mut m,
+        id,
+        Row::Semitones {
+            semitones: f64::NAN,
+        },
+    );
+    stretch(&mut m, id, Row::Cents { cents: f64::NAN });
+    stretch(&mut m, id, Row::SourceBpm { bpm: f64::NAN });
+    stretch(&mut m, id + 1_000, Row::Follow { on: false });
+    cmd(&mut m, Command::FindSourceTempo { clip: id + 1_000 });
+    assert_eq!(undo_count(&m), steps + 3);
+    stretch(&mut m, id, Row::Semitones { semitones: -99.0 });
+    assert_eq!(rows(&m).semitones, -12);
+    // Each of them comes back with undo.
+    cmd(&mut m, Command::Undo);
+    cmd(&mut m, Command::Undo);
+    assert!(rows(&m).keep_formant);
+    assert_eq!((rows(&m).semitones, rows(&m).cents), (2, -50));
+
+    // While a recording counts in or runs, nothing changes.
+    cmd(&mut m, Command::Record);
+    assert_ne!(
+        m.view().transport.state,
+        meloet_protocol::TransportState::Stopped
+    );
+    let before = rows(&m);
+    stretch(&mut m, id, Row::Follow { on: false });
+    stretch(&mut m, id, Row::Semitones { semitones: 5.0 });
+    cmd(&mut m, Command::FindSourceTempo { clip: id });
+    assert_eq!(rows(&m), before);
+}
+
+#[test]
+fn audio_of_no_whole_bars_has_no_tempo_to_find() {
+    let mut m = model();
+    let vocal = vocal_track(&mut m);
+    // 100 seconds: more than eight bars at 60.
+    drop_files(
+        &mut m,
+        &["長い.wav"],
+        Some(vocal),
+        0,
+        DropMode::Separate,
+        vec![brought("長い.wav", 100, 48_000)],
+    );
+    let clip = clips(&m)[0].1.clone();
+    let steps = undo_count(&m);
+    cmd(&mut m, Command::FindSourceTempo { clip: clip.id });
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::SourceTempoNotFound { name: clip.name })
+    );
+    assert_eq!(undo_count(&m), steps);
+    assert_eq!(
+        clips(&m)[0].1.audio.as_ref().unwrap().stretch.source_bpm,
+        None
+    );
+}
+
+#[test]
+fn the_clips_whose_audio_is_being_made_are_shown_with_their_percent() {
+    use crate::maker::MakerJob;
+    let (mut m, clip, _) = one_clip(48_000);
+    let audio = clip.audio.as_ref().unwrap().audio;
+    let job = |clip: u32, percent| MakerJob {
+        clip,
+        audio,
+        percent,
+    };
+    // A clip that is gone since the maker said so is left out.
+    m.handle(Input::AudioMaking(vec![
+        job(clip.id, 34),
+        job(clip.id + 500, 0),
+    ]));
+    assert_eq!(
+        m.view().audio_work.jobs,
+        [AudioJob {
+            kind: AudioJobKind::Rendering,
+            audio,
+            clip: Some(clip.id),
+            percent: 34
+        }]
+    );
+    m.handle(Input::AudioMaking(Vec::new()));
+    assert_eq!(m.view().audio_work, AudioWorkView::default());
+}

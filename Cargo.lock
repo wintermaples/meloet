@@ -2239,6 +2239,7 @@ dependencies = [
  "meloet-plugin",
  "meloet-protocol",
  "meloet-sound",
+ "meloet-stretch",
  "rubato",
  "serde",
  "serde_json",

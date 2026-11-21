@@ -158,6 +158,16 @@ impl ClipPlayer {
         }
     }
 
+    /// The thread lays other audio over what the ring holds, by itself. Only when nothing
+    /// sounds is the ring filled anew: nobody hears that, and a song that stands still
+    /// would start with two seconds of the old audio.
+    pub fn splice(&mut self) {
+        let sounding = self.gate > 0.0 && self.tail.is_none() && !self.stale;
+        if !sounding {
+            self.jump(true);
+        }
+    }
+
     /// Everything that has to be freed comes out. Needs room for two tables.
     pub fn clear(&mut self, retired: &mut Producer<Box<ClipTable>>) -> Option<Box<StreamReader>> {
         for table in [self.table.take(), self.before.take()]

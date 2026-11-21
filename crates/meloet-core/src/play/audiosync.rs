@@ -33,7 +33,17 @@ pub fn clip_tables(
     sample_rate: u32,
     clips: &[Arc<Clip>],
 ) -> (ClipTable, Vec<FeedClip>) {
-    let mut both: Vec<(ClipRegion, FeedClip)> = (clips.iter())
+    let (table, feeds, _) = clip_tables_of(map, sample_rate, clips);
+    (table, feeds)
+}
+
+/// As [`clip_tables`], with the clip each of the thread's clips was made of.
+pub fn clip_tables_of(
+    map: &TempoMap,
+    sample_rate: u32,
+    clips: &[Arc<Clip>],
+) -> (ClipTable, Vec<FeedClip>, Vec<Arc<Clip>>) {
+    let mut both: Vec<(ClipRegion, (FeedClip, Arc<Clip>))> = (clips.iter())
         .filter_map(|clip| {
             let feed = feed_clip(map, sample_rate, clip)?;
             let shape = clip.takes.shape()?;
@@ -46,7 +56,7 @@ pub fn clip_tables(
                 shape.fade_out,
                 shape.gain.db(),
             );
-            Some((region, feed))
+            Some((region, (feed, Arc::clone(clip))))
         })
         .collect();
     both.sort_by_key(|(region, _)| region.start);
@@ -58,8 +68,9 @@ pub fn clip_tables(
         }
         fits
     });
-    let (regions, feeds): (Vec<ClipRegion>, Vec<FeedClip>) = both.into_iter().unzip();
-    (ClipTable::new(regions).unwrap_or_default(), feeds)
+    let (regions, fed): (Vec<ClipRegion>, Vec<(FeedClip, Arc<Clip>)>) = both.into_iter().unzip();
+    let (feeds, kept) = fed.into_iter().unzip();
+    (ClipTable::new(regions).unwrap_or_default(), feeds, kept)
 }
 
 impl Play {

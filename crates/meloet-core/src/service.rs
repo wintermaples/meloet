@@ -4,7 +4,7 @@
 //! telemetry thread send it what they learn over one channel. The core thread owns the MIDI
 //! input and the device watcher, and starts them again when they stop by themselves.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -40,12 +40,13 @@ use crate::audiofiles::AudioStore;
 use crate::audiofiles::keeper::AudioNews;
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
+use crate::made::{MadeKey, MadePlan, only_audio_differs, seat_audio};
+use crate::maker::{MadeNews, Maker};
 use crate::measure::{self, KeyToSound, PluginLog};
 use crate::mixbook::{self, MixBook};
 use crate::pcm::{FeedClip, PcmStore};
 use crate::play::{
     AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot, VoiceSpec,
-    clip_tables,
 };
 use crate::plugins::hosts::{
     DEFAULT_GEOMETRY, EditorKind, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded,
@@ -205,6 +206,7 @@ enum Msg {
     LiveNotes(Sender<LiveNotesSnapshot>),
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
     Lane(u32, Sender<Option<Vec<u8>>>),
+    MadeCounts(Sender<MadeCounts>),
     PeaksPlace(u32, Sender<Option<crate::peaks::PeaksPlace>>),
     PcmStore(Arc<dyn PcmStore>),
     HistoryRows(u32, u32, Sender<Vec<HistoryRow>>),
@@ -216,6 +218,8 @@ enum Msg {
         instrument: BuiltinInstrument,
         read: Result<Arc<SampleBank>, LoadError>,
     },
+    /// From the thread that makes the audio of stretched clips.
+    Made(MadeNews),
     /// From the scanner's threads.
     Scan(ScanNews),
     /// The screen subscribed: its page is up.
@@ -335,6 +339,18 @@ struct Running {
     telemetry: JoinHandle<()>,
 }
 
+/// [`Core::made_counts`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MadeCounts {
+    /// Audio that clips need and that is not made yet (`Maker::waiting`).
+    pub waiting: usize,
+    /// Made audio that clips of the song play now.
+    pub playing: usize,
+    /// Times made audio came in, or went, over what a track was sounding
+    /// (`ReadStats::splices`).
+    pub splices: u64,
+}
+
 pub struct Core {
     hub: Arc<Hub>,
     tx: Sender<Msg>,
@@ -381,6 +397,15 @@ impl Core {
             };
             crate::audiofiles::keeper::Keeper::spawn(audio_store.clone(), tell)
                 .inspect_err(|e| eprintln!("meloet: no thread for the audio files: {e}"))
+                .ok()
+        };
+        let maker = {
+            let tx = tx.clone();
+            let tell = move |news| {
+                let _ = tx.send(Msg::Made(news));
+            };
+            Maker::spawn(audio_store.clone(), tell)
+                .inspect_err(|e| eprintln!("meloet: no thread to make audio for clips: {e}"))
                 .ok()
         };
         // For the measurements that need a loop with no cable: the monitor of this sink is
@@ -483,7 +508,8 @@ impl Core {
                     model.engine_seats(),
                     wishes,
                 )
-                .with_store(audio_store.clone()),
+                .with_store(audio_store.clone())
+                .with_maker(maker),
                 model,
                 input: {
                     let mut input = input::InputSide::new(options.state_dir.clone());
@@ -686,6 +712,13 @@ impl Core {
     /// clips through `store` from now on, not through the song's own places.
     pub fn set_pcm_store(&self, store: Arc<dyn PcmStore>) {
         let _ = self.tx.send(Msg::PcmStore(store));
+    }
+
+    /// For tests and an export that waits: what the making of audio for clips is at.
+    pub fn made_counts(&self) -> MadeCounts {
+        let (reply, answer) = mpsc::channel();
+        let _ = self.tx.send(Msg::MadeCounts(reply));
+        answer.recv().unwrap_or_default()
     }
 
     /// The points of a lane (`meloet_protocol::LanePoints`) of the song as it is now; `None`
@@ -983,12 +1016,24 @@ struct Audio {
     missing_logged: u64,
     /// `AudioStore::generation` as last looked at.
     store_seen: u64,
+    /// The song's tempo as last told: what the engine's map was made of.
+    timeline: Option<Arc<meloet_model::Timeline>>,
+    /// The thread that makes the audio of stretched and pitched clips (22-19 pass 2).
+    maker: Option<Maker>,
+    /// The audio it said is in the cache, of what the clips need now.
+    made: HashSet<MadeKey>,
+    /// What it was last asked for: the key and the clip of every plan, and the song's audio.
+    wanted: (Vec<(MadeKey, u32)>, Vec<[u8; 16]>),
+    /// The plans may be other ones than `wanted`.
+    plans_changed: bool,
 }
 
 /// The vocal clips of a seat.
 struct SeatClips {
     seat: usize,
     clips: Vec<Arc<meloet_model::song::Clip>>,
+    /// What is to be made for them, for the stream that runs.
+    plans: Vec<MadePlan>,
     /// What the read-ahead thread has of them, while `live`.
     feeds: Vec<FeedClip>,
     /// The engine of the stream that runs has a ring for the seat.
@@ -1110,6 +1155,11 @@ impl Audio {
             store,
             missing_logged: 0,
             store_seen: 0,
+            timeline: None,
+            maker: None,
+            made: HashSet::new(),
+            wanted: Default::default(),
+            plans_changed: false,
         };
         if let Some(wants) = audio.handle.take_stream_wants() {
             audio.readahead.set_wants(wants);
@@ -1128,6 +1178,63 @@ impl Audio {
         self
     }
 
+    fn with_maker(mut self, maker: Option<Maker>) -> Audio {
+        self.maker = maker;
+        self
+    }
+
+    /// Asks the maker for what the clips need now, when that is another list than it was
+    /// last asked for. What is no longer in it is given up there.
+    fn want_made(&mut self) {
+        if !std::mem::take(&mut self.plans_changed) {
+            return;
+        }
+        let plans: Vec<MadePlan> = (self.clips.iter())
+            .flat_map(|c| c.plans.iter().cloned())
+            .collect();
+        let uids: Vec<[u8; 16]> = self.sources.iter().map(|s| s.uid).collect();
+        let wanted = (plans.iter().map(|p| (p.key, p.clip)).collect(), uids);
+        if wanted == self.wanted {
+            return;
+        }
+        // Only what is wanted counts as made: the maker says again what the cache has.
+        self.made.retain(|key| plans.iter().any(|p| p.key == *key));
+        if let Some(maker) = &self.maker {
+            maker.want(plans, wanted.1.clone());
+        }
+        self.wanted = wanted;
+    }
+
+    /// Audio the clips wait for is in the cache: the seats that play it get it, laid over
+    /// what sounds.
+    fn made_ready(&mut self, keys: Vec<MadeKey>) {
+        let wanted = |key: &MadeKey| self.wanted.0.iter().any(|(k, _)| k == key);
+        let new: Vec<MadeKey> = (keys.into_iter())
+            .filter(|key| wanted(key) && !self.made.contains(key))
+            .collect();
+        self.made.extend(new.iter().copied());
+        let seats: Vec<usize> = (self.clips.iter())
+            .filter(|c| c.plans.iter().any(|p| new.contains(&p.key)))
+            .map(|c| c.seat)
+            .collect();
+        for seat in seats {
+            self.send_clips(seat, false);
+        }
+    }
+
+    /// Made audio that a clip plays was not in the cache any more (somebody emptied it):
+    /// the clips play their files again, and the maker looks at what is there.
+    fn follow_made(&mut self) {
+        let stats = self.readahead.stats();
+        if stats.made_lost.swap(false, Relaxed) {
+            self.made.clear();
+            self.resend_clips();
+            if let Some(maker) = &self.maker {
+                maker.retry();
+            }
+        }
+    }
+
     /// The vocal clips of a seat as the song has them now.
     fn clips_op(&mut self, seat: usize, clips: Vec<Arc<meloet_model::song::Clip>>) {
         match self.clips.iter_mut().find(|c| c.seat == seat) {
@@ -1135,6 +1242,7 @@ impl Audio {
             None => self.clips.push(SeatClips {
                 seat,
                 clips,
+                plans: Vec::new(),
                 feeds: Vec::new(),
                 live: false,
             }),
@@ -1155,7 +1263,11 @@ impl Audio {
         };
         let map = self.handle.tempo_map().0.clone();
         let entry = &mut self.clips[at];
-        let (table, feeds) = clip_tables(&map, rate, &entry.clips);
+        let timeline = self.timeline.as_deref();
+        let seat_audio = seat_audio(timeline, &map, rate, &entry.clips, &self.made);
+        let (table, feeds) = (seat_audio.table, seat_audio.feeds);
+        entry.plans = seat_audio.plans;
+        self.plans_changed = true;
         if feeds.is_empty() {
             let was_live = std::mem::take(&mut entry.live);
             entry.feeds.clear();
@@ -1176,7 +1288,9 @@ impl Audio {
             }
             return;
         }
-        let refeed = anew || !entry.live || feeds != entry.feeds;
+        // Other audio for the same clips comes in over what sounds, by the thread alone.
+        let splice = !anew && entry.live && only_audio_differs(&entry.feeds, &feeds);
+        let refeed = !splice && (anew || !entry.live || feeds != entry.feeds);
         let mut reader = None;
         if !entry.live {
             let (writer, engine_end) = stream_ring(rate);
@@ -1184,6 +1298,8 @@ impl Audio {
                 .set_track(seat, Some((writer, rate)), feeds.clone());
             reader = Some(Box::new(engine_end));
             entry.live = true;
+        } else if splice {
+            self.readahead.splice_clips(seat, feeds.clone());
         } else if refeed {
             self.readahead.set_clips(seat, feeds.clone());
         }
@@ -1199,6 +1315,9 @@ impl Audio {
             table: Some(Box::new(table)),
             refeed,
         });
+        if splice {
+            self.push(EngineCommand::SpliceClips { track: seat });
+        }
     }
 
     /// Every seat's clips again, from their start: after another map, and when files may
@@ -1217,6 +1336,7 @@ impl Audio {
         {
             self.readahead.set_track(seat, None, Vec::new());
         }
+        self.plans_changed = true;
     }
 
     /// The store may have files now that it did not have (one was decoded or found, the
@@ -1228,6 +1348,10 @@ impl Audio {
             return;
         }
         self.store_seen = now;
+        // A file that was not there to make audio from may be there now.
+        if let Some(maker) = &self.maker {
+            maker.retry();
+        }
         let unopened = self
             .readahead
             .stats()
@@ -1443,6 +1567,11 @@ impl Audio {
 
     fn close(&mut self, facts: &StreamFacts) {
         if let Some(stream) = self.stream.take() {
+            // Nothing is made for a stream that is gone: the next one may run at another rate.
+            for entry in self.clips.iter_mut() {
+                entry.plans.clear();
+            }
+            self.plans_changed = true;
             facts.open.store(false, Relaxed);
             facts.epoch.fetch_add(1, Relaxed);
             self.engine = stream.close();
@@ -1490,6 +1619,7 @@ impl Audio {
             EngineOp::Timeline { timeline } => {
                 // Made here, off the audio thread; the engine only swaps it in.
                 let map = Arc::new(TempoMap::new(&timeline));
+                self.timeline = Some(timeline);
                 if self.stream.is_some() {
                     if self.handle.set_tempo_map(map).is_err() {
                         eprintln!("meloet: the engine did not take the tempo map");
@@ -1542,6 +1672,7 @@ impl Audio {
             EngineOp::AudioSources { sources } => {
                 self.store.set_sources(source_names(&sources));
                 self.sources = sources;
+                self.plans_changed = true;
                 return;
             }
             EngineOp::StopSample => EngineCommand::StopSample,
@@ -1943,6 +2074,14 @@ impl Worker {
                 Ok(Msg::Lane(id, reply)) => {
                     let _ = reply.send(self.model.lane(id));
                 }
+                Ok(Msg::MadeCounts(reply)) => {
+                    let audio = &self.audio;
+                    let _ = reply.send(MadeCounts {
+                        waiting: audio.maker.as_ref().map_or(0, |m| m.waiting()),
+                        playing: audio.made.len(),
+                        splices: audio.readahead.stats().splices.load(Relaxed),
+                    });
+                }
                 Ok(Msg::PeaksPlace(audio, reply)) => {
                     let growing = self.input.growing_peaks(audio);
                     let _ = reply.send(growing.or_else(|| self.model.peaks_place(audio)));
@@ -2031,6 +2170,13 @@ impl Worker {
                         }
                     };
                     self.handle(input);
+                }
+                Ok(Msg::Made(MadeNews::Ready(keys))) => {
+                    self.audio.made_ready(keys);
+                    self.audio.want_made();
+                }
+                Ok(Msg::Made(MadeNews::Work(jobs))) => {
+                    self.handle(Input::AudioMaking(jobs));
                 }
                 Ok(Msg::Sf2(done)) => {
                     let input = match done {
@@ -2454,6 +2600,7 @@ impl Worker {
                 side.unload_gone();
             }
         }
+        self.audio.want_made();
         self.shared
             .stream
             .wants_sound
@@ -2849,6 +2996,11 @@ impl Worker {
         self.audio.handle.drop_retired();
         self.audio.log_missing();
         self.audio.follow_store();
+        self.audio.follow_made();
+        if let (Some(maker), Some(heard)) = (&self.audio.maker, self.audio.handle.heard_now()) {
+            maker.set_near(heard.tick.max(0.0) as u64);
+        }
+        self.audio.want_made();
         if let Some(side) = &mut self.plugins {
             side.unload_gone();
         }

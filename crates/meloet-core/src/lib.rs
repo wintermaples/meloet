@@ -11,6 +11,8 @@ mod catalog;
 mod hub;
 mod instruments;
 pub mod layout;
+pub mod made;
+pub mod maker;
 pub mod measure;
 mod mixbook;
 pub mod pcm;
@@ -30,4 +32,4 @@ pub mod state;
 pub mod vocalrec;
 
 pub use hub::{MessageSink, TelemetrySink};
-pub use service::{Core, CoreOptions, ShellRequest, ShellSink};
+pub use service::{Core, CoreOptions, MadeCounts, ShellRequest, ShellSink};

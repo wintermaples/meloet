@@ -264,6 +264,9 @@ pub enum Input {
     /// From the thread that reads audio files in: the answers to [`Effect::BringAudio`],
     /// [`Effect::WatchAudio`] and [`Effect::FindAudio`].
     Audio(AudioNews),
+    /// From the thread that makes the audio of stretched and pitched clips: every clip
+    /// whose audio is being made or waits to be, for 「音を作っています」.
+    AudioMaking(Vec<crate::maker::MakerJob>),
 }
 
 /// What a loaded plugin tells: its window, its parameters, its state.
@@ -1094,6 +1097,7 @@ impl Model {
             Input::LatencyAnswer { x_us } => self.latency_answer(x_us, &mut effects),
             Input::AudioPicked(paths) => self.audio_picked(paths, &mut effects),
             Input::Audio(news) => self.audio_news(news),
+            Input::AudioMaking(jobs) => self.play.set_audio_making(jobs),
         }
         self.refresh_catalog();
         if !self.bands.side_is_open(SidePanel::Shelf) {
@@ -1590,8 +1594,14 @@ impl Model {
             }
             Command::ImportAudio { track } => self.import_audio(track, effects),
             Command::FindAudio { audio } => self.find_audio(audio, effects),
-            // Protocol 25: taken, and nothing done until the stretching is made.
-            Command::SetClipStretch { .. } | Command::FindSourceTempo { .. } => {}
+            Command::SetClipStretch { clip, change } => {
+                self.play.set_clip_stretch(clip, change, effects);
+            }
+            Command::FindSourceTempo { clip } => {
+                if let Some(n) = self.play.find_source_tempo(clip, effects) {
+                    self.notice = Some(n);
+                }
+            }
             Command::SelectInstrument { track } => {
                 let selecting = self.play.select_instrument(track);
                 self.selected(selecting, effects);

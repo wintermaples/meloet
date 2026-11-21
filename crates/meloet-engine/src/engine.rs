@@ -226,6 +226,15 @@ pub enum EngineCommand {
         table: Option<Box<ClipTable>>,
         refeed: bool,
     },
+    /// The read-ahead thread has other audio for the clips of the track, in the same places
+    /// (audio that was made for a clip is ready, 22-19 pass 2), and lays it over what it had, from
+    /// where it is in the ring on: the ring stays, and what sounds goes on without a gap.
+    /// When nothing of the track sounds (the song stands still, the track is muted, the
+    /// place just jumped) a new generation starts instead, so that the seconds that wait
+    /// in the ring are the new audio.
+    SpliceClips {
+        track: usize,
+    },
     /// One click of the latency measurement, from the first frame of the next block, after
     /// the master. Which frame that was comes back as a [`ProbeSent`].
     Probe,
@@ -1936,6 +1945,11 @@ impl Engine {
                         }
                     }
                 },
+                EngineCommand::SpliceClips { track } => {
+                    if let Some(slot) = self.tracks.get_mut(track) {
+                        slot.clips.splice();
+                    }
+                }
                 EngineCommand::Probe => self.probe.asked = true,
                 EngineCommand::SetLoop { start, end, on } => {
                     let t = &mut self.transport;
@@ -3019,6 +3033,11 @@ impl EngineHandle {
             table: table.map(Box::new),
             refeed,
         })
+    }
+
+    /// [`EngineCommand::SpliceClips`].
+    pub fn splice_clips(&mut self, track: usize) -> Result<(), EngineCommand> {
+        self.send(EngineCommand::SpliceClips { track })
     }
 
     /// What the engine tells the read-ahead thread: there is one ring for the life of the

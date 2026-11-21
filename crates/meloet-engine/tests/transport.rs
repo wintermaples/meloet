@@ -394,6 +394,45 @@ fn metronome_off_is_silent_while_playing() {
     assert!(onsets(&rig.run(RATE * 2)).is_empty());
 }
 
+/// The metronome is a switch and not a level that glides: turned off while the song stands
+/// still, it is off at the first frame the song rolls again.
+#[test]
+fn a_metronome_turned_off_while_stopped_is_silent_from_the_first_frame() {
+    for block in [64usize, 256, 1024] {
+        let mut rig = Rig::new(block, 0);
+        rig.send(EngineCommand::SetMetronome { on: true });
+        rig.send(EngineCommand::Play { from: 0 });
+        assert!(!onsets(&rig.run(RATE)).is_empty(), "it clicks while on");
+        rig.send(EngineCommand::Stop { t_us: 0 });
+        // What still sounds of the last click ends.
+        rig.run(RATE / 4);
+        rig.send(EngineCommand::SetMetronome { on: false });
+        rig.run(RATE / 4);
+        rig.send(EngineCommand::Play { from: 0 });
+        let sound = rig.run(RATE);
+        assert!(sound.iter().all(|s| *s == 0.0), "block {block}: play");
+        rig.send(EngineCommand::Stop { t_us: 0 });
+        rig.run(block as u64);
+        // On, and off again in the block the recording starts in.
+        rig.send(EngineCommand::SetMetronome { on: true });
+        rig.run(block as u64);
+        rig.send(EngineCommand::SetMetronome { on: false });
+        rig.send(EngineCommand::Record {
+            from: 0,
+            count_in_beats: 0,
+            muted: TrackSet::default(),
+        });
+        let sound = rig.run(RATE);
+        assert!(sound.iter().all(|s| *s == 0.0), "block {block}: record");
+        rig.recorded_all();
+    }
+    assert_eq!(
+        common::audio_block_counts(),
+        (0, 0),
+        "(allocations, frees) inside audio blocks"
+    );
+}
+
 #[test]
 fn count_in_clicks_then_records_without_a_gap() {
     for metronome in [false, true] {

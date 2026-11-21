@@ -7,8 +7,14 @@
 //! blocks after it are on the line again. Run with `-- --ignored --nocapture`, with
 //! something else keeping the PC busy.
 //!
+//! It also says how the output kept up: which frame of the engine reached the DAC when each
+//! block of the input was captured, less the count of the input's frames. That number
+//! stays while both go on, grows when the input alone misses cycles, falls when the output
+//! alone does, and stays when both miss the same ones (a recording counts the input's
+//! frames from its head, so where the number has moved, the song and the file are apart).
+//!
 //! `MELOET_GAPS_QUANTUM` (64), `MELOET_GAPS_SECONDS` (20), `MELOET_GAPS_OUT` (a JSON file
-//! with every block).
+//! with every block), `MELOET_GAPS_ENGINE_OUT` (the same with the engine's frame of each).
 #![allow(
     clippy::disallowed_methods,
     reason = "the test thread is the control side; it may sleep"
@@ -48,6 +54,7 @@ fn late_blocks_of_the_input_are_holes_or_only_late() {
     let seconds = env_number("MELOET_GAPS_SECONDS", 20);
     let parts = Engine::new(EngineConfig::default());
     let meters = parts.handle.meters().clone();
+    let clock = parts.handle.clock().clone();
     let output = AudioOutput::open(
         &OutputTarget {
             node_name: private_pw::SINK.into(),
@@ -78,10 +85,17 @@ fn late_blocks_of_the_input_are_holes_or_only_late() {
     in_meters.set_recording(true);
     let (out_blocks, began) = (meters.callbacks(), Instant::now());
     let mut blocks: Vec<InputBlock> = Vec::new();
+    // Of each block: the engine's frame at the DAC when its first frame was captured.
+    let mut engine_frames: Vec<f64> = Vec::new();
     let mut into = vec![0.0f32; 2 * 8_192];
     let until = Instant::now() + Duration::from_secs(u64::from(seconds));
     while Instant::now() < until {
         while let Some(block) = record.pop(&mut into) {
+            engine_frames.push(
+                clock
+                    .frame_at(block.first_frame_us(rate))
+                    .unwrap_or(f64::NAN),
+            );
             blocks.push(block);
         }
         sleep(Duration::from_millis(2));
@@ -154,6 +168,50 @@ fn late_blocks_of_the_input_are_holes_or_only_late() {
         "the output made {out_blocks} blocks where the clock has {out_due:.0}: {:.0} less",
         out_due - out_blocks as f64
     );
+    // The engine's frame less the input's count, against the same of the blocks before.
+    let apart: Vec<f64> = (blocks.iter().zip(&engine_frames))
+        .map(|(b, e)| e - b.first_frame as f64)
+        .collect();
+    let half = f64::from(quantum) / 2.0;
+    // The middle of five: a time that alone is off for a block or two is not a move.
+    let calm: Vec<f64> = apart.windows(5).map(middle).collect();
+    let (mut input_alone, mut output_alone, mut shown) = ((0u32, 0.0f64), (0u32, 0.0f64), 0);
+    for (i, pair) in calm.windows(2).enumerate() {
+        let step = pair[1] - pair[0];
+        // NaN: the engine's clock had nothing for the block.
+        if step.abs() <= half || step.is_nan() {
+            continue;
+        }
+        let side = if step > 0.0 {
+            &mut input_alone
+        } else {
+            &mut output_alone
+        };
+        *side = (side.0 + 1, side.1 + step.abs());
+        if shown < 12 {
+            shown += 1;
+            eprintln!(
+                "block {}: the engine's frame less the input's count moves by {step:.0}",
+                i + 3
+            );
+        }
+    }
+    eprintln!(
+        "the engine's frame at the DAC less the input's count: {:.0} more at the end than at \
+         the start; the input alone missed {:.0} frames in {} places, the output alone {:.0} \
+         in {}",
+        apart.last().unwrap_or(&0.0) - apart.first().unwrap_or(&0.0),
+        input_alone.1,
+        input_alone.0,
+        output_alone.1,
+        output_alone.0
+    );
+    if let Ok(path) = std::env::var("MELOET_GAPS_ENGINE_OUT") {
+        let rows: Vec<String> = (blocks.iter().zip(&engine_frames))
+            .map(|(b, e)| format!("[{},{},{},{e:.1}]", b.first_frame, b.frames, b.capture_us))
+            .collect();
+        std::fs::write(path, format!("[{}]", rows.join(","))).expect("the blocks are written");
+    }
     if let Ok(path) = std::env::var("MELOET_GAPS_OUT") {
         let rows: Vec<String> = (blocks.iter())
             .map(|b| {

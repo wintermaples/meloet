@@ -5,7 +5,7 @@
 #                                 [--no-build] [--state stopped|playing|recording] [--jitter-ms N]
 #                                 [--pattern spaced|mixed] [--piano-roll [--song FILE]]
 #                                 [--velocity-fixed V] [--mixer] [--cache-home DIR]
-#                                 [--plugin-window] [--vocal]
+#                                 [--plugin-window] [--vocal] [--commands 'JSON entries']
 #
 # --keep-ui: do not build ui/; the app takes whatever ui/dist holds (to measure an older screen).
 # --no-build: build nothing; take the release binaries and ui/dist as they are (build first, so
@@ -30,6 +30,9 @@
 #   open, and --state recording records the voice with the keys). The keys still sound on the
 #   keys track. MELOET_INPUT_SINK_MONITOR=<sink> in the environment makes that sink's monitor
 #   the input.
+# --commands: more entries for MELOET_COMMANDS, without the brackets (afterMs counts from the
+#   page's load; the first key is about 8.5 s after the start), e.g. the export's dialog:
+#   '{"afterMs":5000,"command":{"type":"openExport"}}'.
 # --velocity-fixed: turn "ベロシティ固定" on at V (1..127) right after the chooser.
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
@@ -53,6 +56,7 @@ velocity_fixed=
 cache_home=
 plugin_window=0
 vocal=0
+more_commands=
 while [ $# -gt 0 ]; do
   case "$1" in
     --window) window=$2; shift 2 ;;
@@ -70,6 +74,7 @@ while [ $# -gt 0 ]; do
     --cache-home) cache_home=$2; shift 2 ;;
     --plugin-window) plugin_window=1; shift ;;
     --vocal) vocal=1; shift ;;
+    --commands) more_commands=$2; shift 2 ;;
     *) echo "usage: $0 [--window WxH] [--count N] [--out DIR] [--keep-ui] [--no-build] [--state stopped|playing|recording] [--jitter-ms N] [--pattern spaced|mixed] [--piano-roll] [--song FILE] [--mixer] [--velocity-fixed V] [--cache-home DIR]" >&2; exit 2 ;;
   esac
 done
@@ -193,7 +198,7 @@ MELOET_MEASURE_DIR="$work/measure" \
 MELOET_ACCEPT_VIRTUAL=1 \
 MELOET_VKEYS_NAME="$vkeys_name" \
 MELOET_WINDOW="$window" \
-MELOET_COMMANDS="[{\"afterMs\":$confirm_ms,\"command\":{\"type\":\"chooserConfirm\"}}$view$transport]" \
+MELOET_COMMANDS="[{\"afterMs\":$confirm_ms,\"command\":{\"type\":\"chooserConfirm\"}}$view$transport${more_commands:+,$more_commands}]" \
 MELOET_EXIT_AFTER_MS="$exit_ms" \
   "${launcher[@]}" "$target/release/meloet" 2>"$out/raw/meloet.stderr" &
 app=$!
@@ -227,4 +232,4 @@ fi
 cp "$work/vkeys.json" "$out/raw/" 2>/dev/null || true
 cp "$work/measure/"*.json "$out/raw/" 2>/dev/null || true
 python3 -I "$root/tools/measure/summarize.py" "$out/raw" --vkeys "$out/raw/vkeys.json" \
-  --out "$out" --label "release, window $window, $state, $count keys, $pattern, jitter $jitter_ms ms$label_view"
+  --out "$out" --label "release, window $window, $state, $count keys, $pattern, jitter $jitter_ms ms$label_view${more_commands:+, more commands}"

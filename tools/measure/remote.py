@@ -554,14 +554,15 @@ class Recorder:
     four blocks every 5 s (the kernel's writeback). So it writes into memory (the runtime
     folder), and `stop` moves the file to `wav`."""
 
-    def __init__(self, wav, env=None):
+    def __init__(self, wav, env=None, fmt="s16"):
+        """fmt "f32": the samples as the output got them (read with stretch_app.read_f32)."""
         env = env or agent_env()
         self.wav = wav
         runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
         self.memory = tempfile.mkdtemp(prefix="meloet-rec-", dir=runtime) if os.access(runtime, os.W_OK) else None
         self.into = os.path.join(self.memory, "rec.wav") if self.memory else wav
         self.started_ms = now_ms()
-        self.p = subprocess.Popen(["pw-record", "-P", "stream.capture.sink=true", "--format", "s16", "--rate", "48000",
+        self.p = subprocess.Popen(["pw-record", "-P", "stream.capture.sink=true", "--format", fmt, "--rate", "48000",
                                    "--channels", "2", self.into], env=env,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

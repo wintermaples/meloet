@@ -6,11 +6,11 @@ use std::path::Path;
 
 use meloet_model::song::Clip;
 use meloet_model::{
-    ClipId, NewAudio, TempoMap, TrackId, TrackKind, VocalInput, VocalRecording, edit,
+    ClipId, FileClock, NewAudio, TempoMap, TrackId, TrackKind, VocalInput, VocalRecording, edit,
 };
 use meloet_protocol::{
-    AudioClipState, AudioClipView, RecordFormat, StatusMessage, StretchView, VocalRecordingView,
-    VocalRef,
+    AudioClipState, AudioClipView, RecordFormat, SourceTempoView, StatusMessage, StretchView,
+    TempoPointView, VocalRecordingView, VocalRef,
 };
 use sha2::{Digest, Sha256};
 
@@ -21,14 +21,27 @@ use crate::vocalrec::{self, Marks, NoteFile, RecNote, Written};
 /// `ClipView::audio`: what a vocal clip has, from its shown take; `None` for a keys clip.
 ///
 /// `state`: whether the file of the shown take is there (`Play::audio_state`). `resampled`:
-/// its rate is not the one the audio runs at.
+/// its rate is not the one the audio runs at. `map`: the song's tempo, for the mark "×1.25".
 pub(super) fn audio_clip_view(
     clip: &Clip,
+    map: &TempoMap,
     state: AudioClipState,
     resampled: bool,
 ) -> Option<AudioClipView> {
     let take = &clip.active_audio()?.take;
     let shape = clip.takes.shape()?;
+    let clock = FileClock::of_clip(clip)?;
+    let source_tempo = (take.sync.as_ref().filter(|_| clock.follows())).map(|s| SourceTempoView {
+        tempo_bpm: s.tempo.bpm(),
+        head_ramp: s.head_ramp,
+        tempo_points: (s.points.iter())
+            .map(|p| TempoPointView {
+                tick: p.tick,
+                tempo_bpm: p.tempo.bpm(),
+                ramp: p.ramp,
+            })
+            .collect(),
+    });
     Some(AudioClipView {
         audio: take.source.id.0,
         file: take.source.file.clone(),
@@ -45,10 +58,12 @@ pub(super) fn audio_clip_view(
         stretch: StretchView {
             follow: shape.follow,
             source_bpm: take.sync.as_ref().map(|s| s.tempo.bpm()),
+            ratio: clock.ratio_at(map, clip.start as f64),
             semitones: shape.semitones,
             cents: shape.cents,
             keep_formant: shape.keep_formant,
         },
+        source_tempo,
     })
 }
 
@@ -600,7 +615,9 @@ mod tests {
     use std::sync::Arc;
 
     use meloet_model::song::{ClipTake, ClipTakes, TakeId};
-    use meloet_model::{AudioId, AudioShape, AudioSource, AudioTake, ClipGain, SourceTempo, Tempo};
+    use meloet_model::{
+        AudioId, AudioShape, AudioSource, AudioTake, ClipGain, Meter, SourceTempo, Tempo, Timeline,
+    };
 
     use super::*;
 
@@ -644,7 +661,12 @@ mod tests {
             ..AudioShape::RECORDED
         };
         let ready = AudioClipState::Ready;
-        let view = audio_clip_view(&clip(vec![take(None)], shape), ready, false).unwrap();
+        // The song at 96.
+        let map = TempoMap::new(&Timeline::new(
+            Tempo::from_centi(9_600).unwrap(),
+            Meter::FOUR_FOUR,
+        ));
+        let view = audio_clip_view(&clip(vec![take(None)], shape), &map, ready, false).unwrap();
         assert_eq!(
             view,
             AudioClipView {
@@ -663,10 +685,12 @@ mod tests {
                 stretch: StretchView {
                     follow: false,
                     source_bpm: None,
+                    ratio: None,
                     semitones: 2,
                     cents: -30,
                     keep_formant: true,
                 },
+                source_tempo: None,
             }
         );
         let sync = Some(SourceTempo {
@@ -674,10 +698,29 @@ mod tests {
             head_ramp: false,
             points: Vec::new(),
         });
-        let recorded = clip(vec![take(sync)], AudioShape::RECORDED);
-        let recorded = audio_clip_view(&recorded, AudioClipState::Missing, true).unwrap();
+        let recorded = clip(vec![take(sync.clone())], AudioShape::RECORDED);
+        let recorded = audio_clip_view(&recorded, &map, AudioClipState::Missing, true).unwrap();
         assert_eq!(recorded.stretch.source_bpm, Some(120.0));
         assert!(recorded.stretch.follow);
+        // Sung at 120 and following a song at 96: "×0.80", and the tempo to place the
+        // waveform by.
+        assert_eq!(recorded.stretch.ratio, Some(0.8));
+        assert_eq!(
+            recorded.source_tempo,
+            Some(SourceTempoView {
+                tempo_bpm: 120.0,
+                head_ramp: false,
+                tempo_points: Vec::new(),
+            })
+        );
+        // With a tempo and not following: the number stays, the mark and the points go.
+        let free = AudioShape {
+            follow: false,
+            ..AudioShape::RECORDED
+        };
+        let free = audio_clip_view(&clip(vec![take(sync)], free), &map, ready, false).unwrap();
+        assert_eq!(free.stretch.source_bpm, Some(120.0));
+        assert_eq!((free.stretch.ratio, free.source_tempo), (None, None));
         assert_eq!(
             (recorded.state, recorded.resampled),
             (AudioClipState::Missing, true)
@@ -687,6 +730,6 @@ mod tests {
             takes: ClipTakes::Keys(Vec::new()),
             ..clip(Vec::new(), shape)
         };
-        assert_eq!(audio_clip_view(&keys, ready, false), None);
+        assert_eq!(audio_clip_view(&keys, &map, ready, false), None);
     }
 }

@@ -206,6 +206,9 @@ fn every_step_kind() -> Vec<StepKind> {
         ImportAudio { count: 3 },
         SetClipGain { clip },
         SetClipFade { clip },
+        SetClipFollow { clip },
+        SetSourceTempo { clip },
+        SetClipPitch { clip },
         RemoveAudio {
             audio: meloet_model::AudioId(31),
             clips: 2,
@@ -287,6 +290,9 @@ fn every_step_kind() -> Vec<StepKind> {
             | ImportAudio { .. }
             | SetClipGain { .. }
             | SetClipFade { .. }
+            | SetClipFollow { .. }
+            | SetSourceTempo { .. }
+            | SetClipPitch { .. }
             | RemoveAudio { .. } => {}
         }
     }

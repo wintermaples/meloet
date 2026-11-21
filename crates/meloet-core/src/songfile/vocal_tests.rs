@@ -285,3 +285,66 @@ fn a_vocal_track_without_its_input_records_from_the_first_one() {
     assert_eq!(song.session.last_keys, None);
     assert_eq!(song.keys_target(), Some(TrackId(1)));
 }
+
+#[test]
+fn the_stretching_and_the_pitch_of_a_clip_come_back() {
+    let mut song = vocal_song();
+    // Clip 42 shows take 52, as clip 41 has it too.
+    let clip = ClipId(42);
+    let edits: [&dyn Fn(&Doc) -> meloet_model::Edit; 5] = [
+        &|doc| meloet_model::set_clip_follow(doc, clip, true).unwrap(),
+        &|doc| meloet_model::set_clip_semitones(doc, clip, 2).unwrap(),
+        &|doc| meloet_model::set_clip_cents(doc, clip, -30).unwrap(),
+        &|doc| meloet_model::set_clip_keep_formant(doc, clip, true).unwrap(),
+        &|doc| {
+            let tempo = Tempo::from_centi(12_050).unwrap();
+            meloet_model::set_source_tempo(doc, clip, tempo).unwrap().0
+        },
+    ];
+    for edit in edits {
+        song.doc = edit(&song.doc).doc;
+    }
+
+    let bytes = encode(&song);
+    let back = decode(&bytes).unwrap();
+    assert_eq!(back, song);
+    let clips = &back.doc.tracks[1].clips;
+    let shape = clips[1].takes.shape().unwrap();
+    assert!(shape.follow && shape.keep_formant);
+    assert_eq!((shape.semitones, shape.cents), (2, -30));
+    // The new take is the clip's alone, with the one tempo; the other clip keeps the old.
+    let new = &clips[1].takes.vocal()[0].take;
+    assert_eq!(new.id, TakeId(60));
+    assert_eq!(
+        new.sync,
+        Some(SourceTempo {
+            tempo: Tempo::from_centi(12_050).unwrap(),
+            head_ramp: false,
+            points: Vec::new(),
+        })
+    );
+    assert_eq!((new.first_frame, new.frames), (1_234, 240_000));
+    let old = &clips[0].takes.vocal()[0].take;
+    assert_eq!(old.id, TakeId(52));
+    assert_eq!(old.sync.as_ref().unwrap().tempo, song.doc.timeline.tempo);
+    assert!(Arc::ptr_eq(&new.source, &old.source));
+    assert_eq!(back.doc.next_id, 61);
+
+    let v: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(v["version"], 6);
+    assert_eq!(
+        v["song"]["tracks"][1]["clips"][1]["shape"],
+        json!({"fadeIn": 240, "fadeOut": Q, "gainDb": -3.0, "follow": true,
+               "semitones": 2, "cents": -30, "keepFormant": true})
+    );
+    assert_eq!(
+        v["song"]["tracks"][1]["clips"][1]["takes"],
+        json!([{"take": 60, "offset": -(4 * BAR as i64)}])
+    );
+    let takes = v["audioTakes"].as_array().unwrap();
+    assert_eq!(takes.len(), 4);
+    assert!(takes.contains(
+        &json!({"id": 60, "audio": 50, "firstFrame": 1_234, "frames": 240_000,
+                "sync": {"tempo": 12_050, "headRamp": false, "points": []}})
+    ));
+}

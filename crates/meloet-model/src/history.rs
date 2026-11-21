@@ -374,6 +374,19 @@ pub enum StepKind {
     SetClipFade {
         clip: ClipId,
     },
+    /// 「曲のテンポについていく」 of a vocal clip, on or off.
+    SetClipFollow {
+        clip: ClipId,
+    },
+    /// 「この音のテンポ」 of a vocal clip, typed or found: the clip shows a new take with the
+    /// same audio. The `Doc` before the step has the old take.
+    SetSourceTempo {
+        clip: ClipId,
+    },
+    /// The semitones or the cents of a vocal clip, or 「声の感じを保つ」.
+    SetClipPitch {
+        clip: ClipId,
+    },
     /// 「曲から外す」 on the notice of an audio file that is not found: `clips` clips that
     /// played it are gone. The `Doc` before the step has the file, for its name.
     RemoveAudio {

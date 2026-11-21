@@ -26,9 +26,10 @@ pub use added::{
 };
 pub use audio::{
     AUDIO_EXTENSIONS, AudioClipState, AudioClipView, AudioJob, AudioJobKind, AudioWorkView,
-    CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, ClipField, DropMode, MissingAudioView, PEAK_LEVELS,
-    PEAKS_HEADER_LEN, PEAKS_KIND, PEAKS_MAX_COUNT, PEAKS_VERSION, Peaks, PeaksError,
-    RecordingFaults, SelectedClip, StretchView,
+    CLIP_CENTS_MAX, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, CLIP_SEMITONES_MAX, ClipField, DropMode,
+    MissingAudioView, PEAK_LEVELS, PEAKS_HEADER_LEN, PEAKS_KIND, PEAKS_MAX_COUNT, PEAKS_VERSION,
+    Peaks, PeaksError, RecordingFaults, SOURCE_BPM_MAX, SOURCE_BPM_MIN, SelectedClip,
+    SourceTempoView, StretchChange, StretchView,
 };
 pub use automation::{
     AutoSelection, AutoTarget, AutomationView, LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN,
@@ -56,7 +57,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 24;
+pub const PROTOCOL_VERSION: u32 = 25;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1176,6 +1177,30 @@ pub enum Command {
     /// 「曲から外す」 is `RemoveMissing` with `MissingRef::Audio`.
     FindAudio {
         audio: u32,
+    },
+    // Stretching and pitch (protocol 25; spec 3, 28-A and Y22; docs/architecture.md 22-19).
+    /// A row of the group 「のび縮み ・ 音の高さ」 of the panel 「選んだクリップ」, as one step:
+    /// a switch that was pressed, or a number that was typed (`StretchChange`). The clip's
+    /// place and its length in ticks stay whatever changes; what changes is which audio of
+    /// the file sounds where, and how. When the audio no longer comes out as the file is, it
+    /// is made anew (`AudioJobKind::Rendering`), and until that is done the clip sounds
+    /// unstretched and unpitched. Nothing happens for a `clip` that is no vocal clip's id, a
+    /// value the clip has already, a number that is not one, or while counting in or
+    /// recording.
+    SetClipStretch {
+        clip: u32,
+        change: StretchChange,
+    },
+    /// 「さがす」 beside 「この音のテンポ」: Rust takes the length of the clip's audio as 1, 2,
+    /// 4 or 8 bars of the meter at the clip's start; of the tempos that makes, those from 60
+    /// to 180; of those, the one nearest to the song's tempo at the clip's start (as a
+    /// ratio; of two as near, the slower). It becomes the tempo of the audio, as
+    /// `StretchChange::SourceBpm` (one step, a new take;
+    /// `StatusMessage::SourceTempoFound`). Following stays as it is: the person turns it on.
+    /// When no tempo fits, nothing changes (`StatusMessage::SourceTempoNotFound`). Nothing
+    /// happens for a `clip` that is no vocal clip's id, or while counting in or recording.
+    FindSourceTempo {
+        clip: u32,
     },
 }
 
@@ -3087,6 +3112,19 @@ pub enum StatusMessage {
         audio: u32,
         sf2: u32,
     },
+    /// `Command::FindSourceTempo` found a tempo and set it. `name`: the clip. `bars`: how
+    /// many bars the audio was taken to be (1, 2, 4 or 8). Also when the audio had that
+    /// tempo already. The sentence is not in the spec yet.
+    SourceTempoFound {
+        name: String,
+        bpm: f64,
+        bars: u8,
+    },
+    /// `Command::FindSourceTempo` found none: the audio is no 1, 2, 4 or 8 bars at a tempo
+    /// from 60 to 180. The sentence is not in the spec yet.
+    SourceTempoNotFound {
+        name: String,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -3283,3 +3321,5 @@ mod tests;
 mod tests23;
 #[cfg(test)]
 mod tests24;
+#[cfg(test)]
+mod tests25;

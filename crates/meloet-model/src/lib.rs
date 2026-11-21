@@ -29,7 +29,12 @@ pub use audio::clips::{
     set_clip_fade, set_clip_gain,
 };
 pub use audio::fade::{clip_fade_gain, fade_gain};
+pub use audio::follow::FileClock;
 pub use audio::record::{NewAudio, NewAudioTake, VocalRecording, add_vocal_recordings};
+pub use audio::stretch::{
+    TempoGuess, guess_source_tempo, pick_guess, set_clip_cents, set_clip_follow,
+    set_clip_keep_formant, set_clip_semitones, set_source_tempo, source_tempo_guesses,
+};
 pub use audio::{
     AudioId, AudioShape, AudioSource, AudioTake, ClipGain, SourceTempo, TrackKind,
     VOCAL_TRACK_NAME, VocalInput,

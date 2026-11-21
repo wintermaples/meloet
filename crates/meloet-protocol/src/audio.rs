@@ -1,13 +1,23 @@
-//! Vocal clips, audio files and their waveforms (round 7, protocol 24; docs/architecture.md
-//! 22-4, 22-8 to 22-10 and 22-17, spec 3 26-A, 27-A, 29-A, 30-C).
+//! Vocal clips, audio files and their waveforms (round 7, protocols 24 and 25;
+//! docs/architecture.md 22-4, 22-8 to 22-10, 22-17 and 22-19, spec 3 26-A, 27-A, 28-A, 29-A,
+//! 30-C).
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::timeline::TempoPointView;
+
 /// The range of a vocal clip's volume in dB (spec 3 「クリップの音量」): there is no −∞.
 pub const CLIP_GAIN_MIN_DB: f32 = -60.0;
 pub const CLIP_GAIN_MAX_DB: f32 = 12.0;
+
+/// The ranges of 「音の高さ」 (spec 3, Y22): −12..=12 semitones and −50..=50 cents.
+pub const CLIP_SEMITONES_MAX: i8 = 12;
+pub const CLIP_CENTS_MAX: i8 = 50;
+/// The range of a typed 「この音のテンポ」, in steps of 0.01: that of a tempo of the song.
+pub const SOURCE_BPM_MIN: f64 = 30.0;
+pub const SOURCE_BPM_MAX: f64 = 300.0;
 
 /// The endings of the files that read as audio (spec 3 「読めるファイル」), as the status line
 /// lists them: "読めるのは wav ・ mp3 ・ flac ・ ogg".
@@ -16,10 +26,22 @@ pub const AUDIO_EXTENSIONS: [&str; 4] = ["wav", "mp3", "flac", "ogg"];
 /// What a clip of a vocal track has besides `ClipView` (`ClipView::audio`).
 ///
 /// Where the waveform goes: the take's tick 0 is at `ClipView::start + take_offset` in the
-/// song, and there the file is at `first_frame`. The audio plays at the file's own speed
-/// (stretching comes later), so the frame of the file at a song tick `t` is
-/// `first_frame + (seconds(t) − seconds(tick 0 of the take)) × sample_rate`, with the
-/// screen's tempo map. Frames before 0 and from `frames` on are silence.
+/// song, and there the file is at `first_frame`. From there on (`meloet_model::FileClock`;
+/// the screen's copy is `ui/src/components/arrange/follow.ts`):
+///
+/// - `source_tempo` is `None`: the audio plays at the file's own speed. The frame of the
+///   file at a song tick `t` is `first_frame + (seconds(t) − seconds(tick 0 of the take)) ×
+///   sample_rate`, with the screen's tempo map of the song.
+/// - `source_tempo` is `Some`: the clip follows the song's tempo, its audio stuck to the
+///   song's ticks. The frame is `first_frame + source_seconds(t − tick 0 of the take) ×
+///   sample_rate`, where `source_seconds` is of a tempo map made from `source_tempo` alone
+///   (ticks of the take from its tick 0; before it the head's tempo goes on backwards). The
+///   song's tempo is not in it.
+///
+/// Frames before 0 and from `frames` on are silence. The waveform is always that of the
+/// file, put where the audio is heard; while the stretched audio is being made
+/// (`AudioJobKind::Rendering`) the clip still sounds unstretched, and the waveform is where
+/// it will sound.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +73,26 @@ pub struct AudioClipView {
     pub gain_db: f32,
     pub state: AudioClipState,
     pub stretch: StretchView,
+    /// `Some` exactly when the clip follows the song's tempo: `stretch.follow` is on and
+    /// the take has a tempo. The tempo the audio was played at, as tempo points from the
+    /// take's tick 0, for placing the waveform.
+    pub source_tempo: Option<SourceTempoView>,
+}
+
+/// The tempo the audio of a take was played or sung at: `meloet_model::SourceTempo`. The
+/// fields are named as those of `TimelineView`, so that the screen makes a tempo map of it
+/// as it does of the song (with any meter and no meter changes).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTempoView {
+    /// At the take's tick 0.
+    pub tempo_bpm: f64,
+    /// The tempo goes in a straight line from tick 0 to the first point.
+    pub head_ramp: bool,
+    /// Ticks from the take's tick 0, in order, each 1 or more. None for a file brought in
+    /// whose tempo was typed or found; recorded audio has the song's points as they were.
+    pub tempo_points: Vec<TempoPointView>,
 }
 
 /// Whether the clip sounds.
@@ -68,17 +110,24 @@ pub enum AudioClipState {
     Missing,
 }
 
-/// The group 「のび縮み ・ 音の高さ」 of the panel 「選んだクリップ」, as the song has it. Nothing
-/// changes it yet and nothing sounds by it: the rows are shown unusable until the stretching
-/// is made (spec 3, 28-A and Y22).
+/// The group 「のび縮み ・ 音の高さ」 of the panel 「選んだクリップ」, as the song has it (spec
+/// 3, 28-A and Y22), and the marks beside the clip's name. `Command::SetClipStretch` and
+/// `Command::FindSourceTempo` change it.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct StretchView {
-    /// 「曲のテンポについていく」: on for recorded audio, off for a file brought in.
+    /// 「曲のテンポについていく」: on for recorded audio, off for a file brought in. On with
+    /// no `source_bpm` the clip plays at the file's speed all the same.
     pub follow: bool,
-    /// 「この音のテンポ」 at the head of the take; `None`: 「—」.
+    /// 「この音のテンポ」 at the head of the take; `None`: 「—」, with 「さがす」.
     pub source_bpm: Option<f64>,
+    /// The mark "×1.25": the song's tempo over the tempo of the audio, both at the clip's
+    /// start (inside a ramp of either it is another number further on). `None` for a clip
+    /// that does not follow. Not rounded: the screen shows two places and no mark for what
+    /// shows as 1.00. Rust sends the song again when a change of the song's tempo or of the
+    /// clip's place makes it another number.
+    pub ratio: Option<f64>,
     /// −12..=12.
     pub semitones: i8,
     /// −50..=50.
@@ -136,7 +185,9 @@ pub struct AudioJob {
     pub kind: AudioJobKind,
     /// The file's number in the song's audio table: every clip that plays it shows the job.
     pub audio: u32,
-    /// `Rendering`: the one clip the audio is made for. `None` for `Loading`.
+    /// `Rendering`: the one clip the audio is made for; only that clip shows the job (under
+    /// it, as the bar on top of the panel 「選んだクリップ」 when it is the selected one, and
+    /// in the status line, spec 6 「音を作っている」). `None` for `Loading`.
     pub clip: Option<u32>,
     /// 0..=99.
     pub percent: u8,
@@ -148,8 +199,9 @@ pub struct AudioJob {
 pub enum AudioJobKind {
     /// "読みこんでいます 40 %" (spec 6 「音のファイルを読みこんでいる」).
     Loading,
-    /// "音を作っています 34 %" (spec 6 「音を作っている」): the stretching, which nothing
-    /// starts yet.
+    /// "音を作っています 34 %" (spec 6 「音を作っている」): the stretched or pitched audio of
+    /// one clip. Until it is done the clip sounds as the file is; a clip whose audio would
+    /// come out as the file is has no such job.
     Rendering,
 }
 
@@ -167,6 +219,37 @@ pub enum ClipField {
     /// The fade at the clip's start (「前」) and at its end (「後」), in ticks.
     FadeIn,
     FadeOut,
+}
+
+/// What `Command::SetClipStretch` changes: one row of the group 「のび縮み ・ 音の高さ」. A
+/// number outside its range is put into it; one that is not a number does nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum StretchChange {
+    /// 「曲のテンポについていく」. With it on, the audio is stuck to the song's ticks and
+    /// stretches with every change of the song's tempo, ramps too. A clip whose audio has
+    /// no tempo (`StretchView::source_bpm` is `None`) keeps the switch and plays at the
+    /// file's speed until it gets one.
+    Follow { on: bool },
+    /// 「この音のテンポ」, typed: quarter notes a minute, to the nearest 0.01 inside
+    /// `SOURCE_BPM_MIN..=SOURCE_BPM_MAX`. The audio then has that one tempo all along. A
+    /// take is never changed, so the clip shows a new take (a new `ClipView::take_id`) of
+    /// the same audio in the same place; the count of takes stays, and another clip cut
+    /// from the same one keeps the old take. Whether the clip follows stays as it is.
+    SourceBpm { bpm: f64 },
+    /// 「音の高さ」, the semitones: to the nearest whole number inside
+    /// `−CLIP_SEMITONES_MAX..=CLIP_SEMITONES_MAX`.
+    Semitones { semitones: f64 },
+    /// 「音の高さ」, the cents: to the nearest whole number inside
+    /// `−CLIP_CENTS_MAX..=CLIP_CENTS_MAX`.
+    Cents { cents: f64 },
+    /// 「声の感じを保つ」.
+    KeepFormant { on: bool },
 }
 
 /// Where files let go of over the window go when two or more of them are audio (spec 3,

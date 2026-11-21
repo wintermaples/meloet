@@ -152,6 +152,13 @@ pub enum StepName {
     SetClipGain,
     /// A fade of a vocal clip.
     SetClipFade,
+    /// 「曲のテンポについていく」 of a vocal clip (`StretchChange::Follow`).
+    SetClipFollow,
+    /// 「この音のテンポ」 of a vocal clip, typed (`StretchChange::SourceBpm`) or found
+    /// (`Command::FindSourceTempo`).
+    SetSourceTempo,
+    /// 「音の高さ」 of a vocal clip: semitones, cents, 「声の感じを保つ」.
+    SetClipPitch,
 }
 
 impl StepName {
@@ -239,6 +246,9 @@ impl StepName {
             ImportAudio,
             SetClipGain,
             SetClipFade,
+            SetClipFollow,
+            SetSourceTempo,
+            SetClipPitch,
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -313,7 +323,10 @@ impl StepName {
                 | SplitClips
                 | ImportAudio
                 | SetClipGain
-                | SetClipFade => {}
+                | SetClipFade
+                | SetClipFollow
+                | SetSourceTempo
+                | SetClipPitch => {}
             }
         }
         all

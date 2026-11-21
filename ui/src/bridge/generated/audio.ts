@@ -4,6 +4,13 @@
 export const CLIP_GAIN_MIN_DB = -60;
 export const CLIP_GAIN_MAX_DB = 12;
 
+/** 「音の高さ」: −max..=max semitones and cents. */
+export const CLIP_SEMITONES_MAX = 12;
+export const CLIP_CENTS_MAX = 50;
+/** The range of a typed 「この音のテンポ」, in steps of 0.01. */
+export const SOURCE_BPM_MIN = 30;
+export const SOURCE_BPM_MAX = 300;
+
 /** The endings of the files that read as audio, as the status line lists them. */
 export const AUDIO_EXTENSIONS: readonly string[] = ["wav","mp3","flac","ogg"];
 

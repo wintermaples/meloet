@@ -773,6 +773,21 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
             a.clip_track(clip),
         ),
+        StepKind::SetClipFollow { clip } => (
+            StepName::SetClipFollow,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            a.clip_track(clip),
+        ),
+        StepKind::SetSourceTempo { clip } => (
+            StepName::SetSourceTempo,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            a.clip_track(clip),
+        ),
+        StepKind::SetClipPitch { clip } => (
+            StepName::SetClipPitch,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            a.clip_track(clip),
+        ),
         StepKind::RemoveAudio { audio, .. } => (
             StepName::RemoveMissing,
             named(a.before.audio(audio).map(|s| s.file.clone())),

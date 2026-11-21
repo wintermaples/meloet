@@ -7,6 +7,7 @@
   import Button from "../Button.svelte";
   import { about, closeAbout, showFirstStage, showLicenses, toggleGroup, togglePart, toggleSection } from "./about.svelte";
   import {
+    allParts,
     fontsMatching,
     fullText,
     licenseList,
@@ -24,7 +25,8 @@
   const searching = $derived(about.query.trim() !== "");
   const sounds = $derived(soundsMatching(list.sounds, about.query));
   const fonts = $derived(fontsMatching(list.fonts, about.query));
-  const groups = $derived(partGroups(list.parts, about.query));
+  const parts = $derived(allParts(list));
+  const groups = $derived(partGroups(parts, about.query));
 
   let fullTexts = $state<TextsFile | null>(null);
   $effect(() => {
@@ -109,7 +111,7 @@
           </div>
           <button type="button" class="next" onclick={showLicenses} data-test="about-licenses">
             <span class="strong grow">{t("about.openSource")}</span>
-            <span class="label" data-test="about-summary">{t("about.openSourceSummary", { count: list.parts.length })}</span>
+            <span class="label" data-test="about-summary">{t("about.openSourceSummary", { count: parts.length })}</span>
             <span class="label">▸</span>
           </button>
         </ScrollArea>

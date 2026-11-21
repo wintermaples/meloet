@@ -8,6 +8,7 @@ import type { TempoMap } from "../../time/tempoMap";
 import { clipBox, rowHeight, rowTop, tickToX, trackRowAt, xToTick, type Box, type LaneDims, type View } from "../arrangeGeom";
 import type { GlRect } from "../../gl/slot";
 import { fadeGain } from "./fade";
+import { cachedSourceMap, clipFrameAt, followClipOf } from "./follow";
 
 /** 歌のクリップの形のうち、幾何に要る物（`ClipView` と `AudioClipView` から）。 */
 export interface AudioClipShape {
@@ -123,13 +124,11 @@ export function fadeLinePoints(v: View, area: WaveArea, clip: AudioClipShape, ed
 
 /**
  * 曲のティック `tick` で鳴る、ファイルのこま（小数）。テイクの 0 ティック（`clip.start + clip.takeOffset`）が
- * `firstFrame`。音はファイルの速さのまま鳴るので、間は秒で数える（約束 24 の `AudioClipView` の決まり）。
+ * `firstFrame`。`sourceTempo` があれば曲のテンポについていく式、なければファイルの速さのまま（follow.ts の `clipFrameAt`）。
  */
 export function fileFrameAt(map: TempoMap, clip: ClipView, tick: number): number {
-  const audio = clip.audio;
-  if (audio === null) return 0;
-  const zero = clip.start + clip.takeOffset;
-  return audio.firstFrame + (map.secondsAt(tick) - map.secondsAt(zero)) * audio.sampleRate;
+  const follow = followClipOf(clip);
+  return follow === null ? 0 : clipFrameAt(map, cachedSourceMap(clip.audio!.sourceTempo), follow, tick);
 }
 
 // ---- 歌を直すときの行（160） ----

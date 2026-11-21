@@ -63,7 +63,7 @@ function pointer(el: Element, type: string, clientX: number, clientY: number): v
 }
 
 describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-AudioEdit）", () => {
-  it("名前と「選んだクリップ」、ファイルの行、クリップの 4 行、のび縮みの 4 行は「使えない」", () => {
+  it("名前と「選んだクリップ」、ファイルの行、クリップの 4 行、のび縮みの 4 行", () => {
     show(ParamsPanel, scene("audioEdit"), { onfold: () => {} });
     expect(text(q('[data-test="params-name"]'))).toBe("歌 テイク 1");
     expect(text(q('[data-test="clip-params"]'))).toContain("選んだクリップ");
@@ -73,9 +73,9 @@ describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-Audi
     expect(text(q('[data-test="clip-value-gainDb"]'))).toBe("−3.0 dB");
     // モックの「前 0.120 ・ 後 0.000」を 4 けたのティックで（B-94-28）。
     expect(text(q('[data-test="clip-value-fade"]'))).toBe("前 0.0480 ・ 後 0.0000");
-    const stretch = qa(".row.unusable");
-    expect(stretch.map((r) => [...r.children].map(text).join(" "))).toEqual(["曲のテンポについていく オン", "この音のテンポ 96.00", "音の高さ +0 半音 0 セント", "声の感じを保つ オン"]);
-    expect(stretch.every((r) => r.getAttribute("aria-disabled") === "true")).toBe(true);
+    const stretch = ["follow", "source-tempo", "pitch", "keepFormant"].map((k) => text(q(`[data-test="clip-${k}"]`)));
+    expect(stretch).toEqual(["曲のテンポについていく オン", "この音のテンポ 96.00", "音の高さ +0 半音 0 セント", "声の感じを保つ オン"]);
+    expect(qa(".row.unusable")).toEqual([]);
   });
 
   it("サンプルレートがちがうファイルは「44100 Hz（曲に合わせて鳴らします）」、ビットのない形は出さない", () => {
@@ -83,7 +83,7 @@ describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-Audi
     s.params.selected = { kind: "clip", track: vocalRow(s).vocal.id, clip: 70, missing: null };
     show(ParamsPanel, s, { onfold: () => {} });
     expect(text(q('[data-test="clip-file"]'))).toBe("6 歌 ・ ドラム.mp3 ・ 44100 Hz（曲に合わせて鳴らします）");
-    expect([...qa(".row.unusable")[1]!.children].map(text)).toEqual(["この音のテンポ", "—"]);
+    expect(text(q('[data-test="clip-source-tempo"]'))).toBe("この音のテンポ さがす —");
   });
 
   it("値を 2 回押して打つと SetClipField を 1 つ。読めない位置は RejectValue", () => {

@@ -92,6 +92,16 @@ export function upstreamParts(root = ROOT) {
   return JSON.parse(readFileSync(path, "utf8")).upstream;
 }
 
+/**
+ * The name and version of copied source files (`vendored`), read from the title ("Signalsmith Stretch 1.4.0 (...)"):
+ * the about dialog shows them as a part of their own, and its full text is keyed by `name@version`.
+ */
+export function vendoredPart(u) {
+  const m = /^(.+?) v?(\d+(?:\.\d+)+) \(/.exec(u.title);
+  if (!m) throw new Error(`upstream.json: no name and version at the head of the title "${u.title}"`);
+  return { name: m[1], version: m[2] };
+}
+
 /** Crates linked into the shipped binaries: [{ name, version, license, repository, dir }]. Details from cargo metadata. */
 export function rustParts(root = ROOT) {
   const target = hostTarget();
@@ -237,7 +247,9 @@ export async function makeList(root = ROOT) {
     sounds: soundParts(root),
     fonts,
     // `vendored`: files of others kept inside one of our own crates (no cargo part stands for them).
-    upstream: upstreamParts(root).filter((u) => u.vendored || rust.some((p) => p.name === u.crate)),
+    upstream: upstreamParts(root)
+      .filter((u) => u.vendored || rust.some((p) => p.name === u.crate))
+      .map((u) => (u.vendored ? { ...u, ...vendoredPart(u) } : u)),
     parts: [
       ...rust.map((p) => ({ kind: "crate", ...strip(p) })),
       ...npm.filter((p) => !FONT_PACKAGE.test(p.name)).map((p) => ({ kind: "npm", ...strip(p) })),
@@ -361,6 +373,10 @@ export async function makeTexts(root = ROOT) {
     }
     if (!found.length) missing.push(`${p.name}@${p.version}`);
     parts[`${p.name}@${p.version}`] = found.map((f) => ({ file: f.file, text: keep(f.text) }));
+  }
+  for (const u of upstream.filter((u) => u.vendored)) {
+    const { name, version } = vendoredPart(u);
+    parts[`${name}@${version}`] = [{ file: `${u.text} (${u.title})`, text: keep(readFileSync(join(root, u.text), "utf8")) }];
   }
   return { texts, parts, missing };
 }

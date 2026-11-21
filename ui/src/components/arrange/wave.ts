@@ -12,16 +12,18 @@ import type { TempoMap } from "../../time/tempoMap";
 import { tickToX, xToTick, type View } from "../arrangeGeom";
 import { gainFactor, type WaveArea } from "./audioClipGeom";
 import type { AudioDragValue } from "./audioDrag.svelte";
+import { cachedSourceMap, clipFrameAt, type FollowClip } from "./follow";
 
-/** 曲のティックと、ファイルのこまの合わせ: `zeroTick` で鳴るこまが `firstFrame`。音はファイルの速さのまま鳴る。 */
-export interface WaveTiming {
-  zeroTick: number;
-  firstFrame: number;
-  sampleRate: number;
+/**
+ * 曲のティックと、ファイルのこまの合わせ（follow.ts の `FollowClip`）。`source` は、ついていくクリップの「この音のテンポ」の地図
+ * （`cachedSourceMap`）、ついていかなければ（録っている歌も）null。
+ */
+export interface WaveTiming extends FollowClip {
+  source: TempoMap | null;
 }
 
 /** 曲のティック `tick` で鳴る、ファイルのこま（小数）。クリップでは `audioClipGeom.ts` の `fileFrameAt` と同じ答え。 */
-export const frameAtTick = (map: TempoMap, t: WaveTiming, tick: number) => t.firstFrame + (map.secondsAt(tick) - map.secondsAt(t.zeroTick)) * t.sampleRate;
+export const frameAtTick = (map: TempoMap, t: WaveTiming, tick: number) => clipFrameAt(map, t.source, t, tick);
 
 /** 波形を描くクリップ（か、録っている歌）の、形に要る物。 */
 export interface WaveClip {
@@ -44,7 +46,7 @@ export function waveClipOf(clip: ClipView, drag: AudioDragValue | null = null): 
   if (a === null) return null;
   const d = drag?.clip === clip.id ? drag : null;
   return {
-    timing: { zeroTick: clip.start + clip.takeOffset, firstFrame: a.firstFrame, sampleRate: a.sampleRate },
+    timing: { start: clip.start, takeOffset: clip.takeOffset, firstFrame: a.firstFrame, sampleRate: a.sampleRate, source: cachedSourceMap(a.sourceTempo) },
     start: clip.start,
     end: clip.end,
     fadeIn: d?.fadeIn ?? a.fadeIn,

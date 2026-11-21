@@ -1,6 +1,7 @@
 <!-- 歌のクリップの中の文（HTML。地の色と波形は WebGL の側）。
      見つからない音: 名前の行の下に gray.8 で「音のファイルが見つかりません」（仕様書 3 章、モック F7-AudioMissing ・ R11-Audio）。
-     読みこんでいる途中: クリップの下に「読みこんでいます 40 %」（仕様書 2 章「歌のクリップ」、3 章「読めるファイル」。箱はモック R11-Audio の進みの形）。 -->
+     読みこんでいる途中: クリップの下に「読みこんでいます 40 %」（仕様書 2 章「歌のクリップ」、3 章「読めるファイル」。箱はモック R11-Audio の進みの形）。
+     音を作っている間: 同じ所と形で「音を作っています 34 %」（仕様書 2 章、3 章「音を作っている間」、モック F7-Stretch）。 -->
 <script lang="ts">
   import type { TrackView } from "../../bridge";
   import { current } from "../../state/app.svelte";
@@ -13,13 +14,14 @@
   const jobs = $derived(current.state!.audioWork.jobs);
 
   const notes = $derived.by(() => {
-    const out: { id: number; x: number; top: number; bottom: number; w: number; kind: "missing" | "loading"; text: string }[] = [];
+    const out: { id: number; x: number; top: number; bottom: number; w: number; kind: "missing" | "loading" | "rendering"; text: string }[] = [];
     tracks.forEach((track, row) => {
       for (const clip of track.clips) {
         const audio = clip.audio;
         if (audio === null) continue;
-        const job = jobs.find((j) => j.kind === "loading" && j.audio === audio.audio);
-        const kind = audio.state === "missing" ? "missing" : job ? "loading" : null;
+        const job =
+          jobs.find((j) => j.kind === "loading" && j.audio === audio.audio) ?? jobs.find((j) => j.kind === "rendering" && j.clip === clip.id);
+        const kind = audio.state === "missing" ? "missing" : (job?.kind ?? null);
         if (kind === null) continue;
         const box = clipBox(view, dims, row, clip.start, clip.end);
         if (box.x1 < 0 || box.x0 > view.width) continue;
@@ -32,7 +34,7 @@
           bottom: area.bottom,
           w: area.x1 - x,
           kind,
-          text: kind === "missing" ? t("clip.missing") : t("clip.loading", { percent: job!.percent }),
+          text: kind === "missing" ? t("clip.missing") : t(kind === "loading" ? "clip.loading" : "clip.rendering", { percent: job!.percent }),
         });
       }
     });
@@ -42,7 +44,7 @@
 
 {#each notes as n (n.id)}
   <div
-    class="note {n.kind}"
+    class="note {n.kind === 'missing' ? 'missing' : 'loading'}"
     data-test="audio-clip-{n.kind}"
     style:left="{n.x}px"
     style:width="{n.w}px"

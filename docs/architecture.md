@@ -2089,3 +2089,38 @@ pub struct AudioShape {
 - core: 意図の中身（上の model の関数を呼ぶだけ）、作る係、区切りの表を「ついていく式」で作る事、できた音への入れかえ、`rendering` の進み、比が変わったときの `song` の送りなおし。
 - **だんだんの中で録りはじめた歌**は、`SourceTempo::from_timeline` が頭のテンポを 0.01 にまるめるので、「ついていく式」と「ファイルの速さのまま」が、ごくわずかにずれる（まるめが 0.005 で 100 のとき、10 秒で 24 こまほど）。22-8 の「何もしなくてよいクリップは作らない」を、式の差が小さい（たとえば 1 こまより小さい）で決めるのか、`sync` が曲の地図から作った物と同じかで決めるのかは、2 回目で決める。
 - 画面: `fileFrameAt` ・ `frameAtTick` を `follow.ts` の写しに変える。欄、印、進みの棒、右クリックの一覧。
+
+### 22-19 区切り4 の 2 回目（画面、2026-11-21、meloet-impl）
+
+**選んだクリップの欄の「のび縮み ・ 音の高さ」**（`params/ClipPanel.svelte`、字は `params/clipFields.ts`、ドラッグする数は `params/StretchNumber.svelte`）
+
+- オン ・ オフ（ついていく ・ 声の感じ）は、パラメータの行と同じ 12×12 の四角の印を値の字の左に置き、押すと `setClipStretch` を 1 つ。**理由**: 仕様書 2 章「パラメータの行」のオン ・ オフの形がこれで、欄の中で押せる物の形をそろえる。モック F7-Stretch は字だけ（印がない）。
+- 「この音のテンポ」は、ほかの値と同じく 2 回押して打ちこむ（`ValueField`）。読めない字は `rejectValue`（`tempo`。範囲が同じ 30.00〜300.00 なので、テンポの文を使う）。範囲の外とまるめは Rust。**「さがす」は「—」のときだけ**出す（仕様書 3 章が「—」と「さがす」を組で書いている。数があれば、打ちなおせば足りる。B-94-52 のとおり、さがしても「ついていく」は変えない）。
+- 「音の高さ」は「+2 半音 0 セント」の 2 つの数を別々に、上下のドラッグ（上がプラス、`space.2` の px ごとに 1。範囲のはしで止まる）か 2 回押して打ちこむ。ドラッグの間は字だけが先に動き、離したときに 1 手。Esc（`onDragCancel`）でやめると戻す。読めない字は何もしない（範囲の文の欄がない。B-94-39 と同じ）。範囲の外は送り、Rust が中に入れる（B-94-29 と同じ）。
+- 音を作っている間は、名前とファイルの行の下に進みの行（モック F7-Stretch: 高さ 24、「音を作っています」、地 gray.4 の棒に accent、「34 %」）。`audioWork.jobs` の `rendering` で `clip` がこのクリップの物だけ。棒の太さは F7-Latency の棒の名前（`mock.latency.progress`、同じ 4）を使った。
+- 録音中 ・ カウントイン中は、どれも押せない（送らない）。
+
+**クリップの印と、下の進み**（`Arrange.svelte` の名前の札、`arrange/AudioClipNotes.svelte`）
+
+- 印「×1.25」「+2」「−1 ・ 30」は、**名前の札（`.clip-label`）の中の span**。札の数はクリップの数のまま。印のないクリップ（だいたいのクリップ）は、同じ空の配列（`NO_MARKS`）なので、`{#each}` は何も作らない。**理由**: 区切り3 の直しで、クリップごとの HTML の数と、1 つずつの `left` ・ `width` の書きかえが重さだったので、新しい位置の箱を作らない。モック F7-Stretch のとおり、印はクリップの右はしに寄せる（`margin-left: auto`）。せまいクリップでは名前が先に「…」になる。
+- 印の字: 比は `StretchView.ratio` を小数 2 けた（`toFixed(2)`）、「1.00」になる物は出さない。音の高さは半音だけなら「+2」、セントがあれば「半音 ・ セント」（B-94-59 の仮の読み: セントは符号つき、+ は書かない）。半音もセントも 0 なら出さない。
+- クリップの下の「音を作っています 34 %」は、「読みこんでいます 40 %」と同じ所と形。同じファイルの読みこみがあれば、読みこみを先に出す。
+
+**状態行**（`StatusLine.svelte`）
+
+- 「… の音を作っています 34 % ・ できるまでは、もとの音で鳴らします」は、画面が `audioWork` から作る。**出すのは、core の知らせがいつものまとめ（なし ・ summary）のときだけ**で、ほかの知らせ（さがした答え、録音、ドラッグの読み値、ダイアログ、窓の一覧、パラメータをさがしている）があれば、そちらが先。**理由**: 進みは欄とクリップの下にも出ているので、人が今した事の答えを消さない。いくつも作っているときは、いちばん先に始めた物。
+- `sourceTempoFound` ・ `sourceTempoNotFound` は `msg.sourceTempoFound` ・ `msg.sourceTempoNotFound`（テンポは `tempoText` の「120.00」）。
+
+**右クリックの一覧**: 歌のクリップだけ、いちばん下に区切りと「逆にする」「ノーマライズ」（使えない。仕様書 3 章「あとの回の席」）。
+
+**ついていくクリップの波形の場所**（`arrange/wave.ts`、`arrange/audioClipGeom.ts`、`arrange/follow.ts`）
+
+- `WaveTiming` は `follow.ts` の `FollowClip`（`start` ・ `takeOffset` ・ `firstFrame` ・ `sampleRate`）に `source`（この音のテンポの地図か null）を足した形。`frameAtTick` と `fileFrameAt` は、どちらも `clipFrameAt` を通す。録っている歌は `source: null`（ファイルの速さのまま）。
+- この音のテンポの地図は `cachedSourceMap`: `SourceTempoView` を鍵にした WeakMap で、同じ物には 1 回だけ作る。曲の区画が届くまで同じ `SourceTempoView` が来るので、毎コマは作らない。曲の区画が来たら作りなおす（クリップの数だけ。古い物は GC）。
+- ついていくクリップは、曲のテンポが変わる所でも、こまがティックにまっすぐなので、波形の四角は 1 つのまま（この音のテンポにだんだんがあれば、そこで分かれる）。
+- ドラッグ中の絵（`livePicture`）、動かす ・ つめる絵（`dragPicture`）は `waveClipOf(clip)` から作るので、そのまま同じ式。
+
+**「meloet について」の写したソース**（`tools/licenses/inventory.mjs`、`about/licenses.ts`）
+
+- `licenses/upstream.json` の `vendored` の物（Signalsmith Stretch 1.4.0、Signalsmith Linear 0.6.4）は、Rust の部品ではないので `parts` には入れず、`upstream` に名前と版（`title` の頭から読む。`vendoredPart`）を足して書き出す。About は `allParts` で `parts` と合わせ、部品の行（ライセンスの見出し MIT の中、名前と版）にする。全文は `makeTexts` が `名前@版` の鍵で入れる（licenses/ の写し）。NOTICE は前から「Parts made from the work of others」に出ているので変わらない。部品の数（「… 個の部品」）には 2 つふえる。
+- **理由**: About の 2 段目は「部品（ライセンスごと）」の 1 つの並びで、写した C++ も meloet といっしょに配る部品。別の見出しを作ると、仕様書にない文が要る。

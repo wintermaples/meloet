@@ -2164,6 +2164,17 @@ export const texts = {
   "clipParams.pitch": e("音の高さ", "spec:3"),
   "clipParams.pitchValue": e("{semitones} 半音 {cents} セント", "mock:F7-AudioEdit", { semitones: "+0", cents: "0" }),
   "clipParams.keepFormant": e("声の感じを保つ", "spec:3"),
+  "clipParams.findTempo": e("さがす", "spec:3"),
+  // 音を作っている間の、欄の上の進みの棒の行（仕様書 2 章「選んだクリップ」、モック F7-Stretch）。
+  "clipParams.rendering": e("音を作っています", "mock:F7-Stretch"),
+  "clipParams.renderingPercent": e("{percent} %", "mock:F7-Stretch", { percent: "34" }),
+  // 歌のクリップの、名前の右の印と、下の進み（仕様書 2 章「歌のクリップ」）。
+  "clip.ratioMark": e("×{ratio}", "spec:2", { ratio: "1.25" }),
+  "clip.pitchMarkCents": e("{semitones} ・ {cents}", "spec:3", { semitones: "−1", cents: "30" }),
+  "clip.rendering": e("音を作っています {percent} %", "spec:2", { percent: "34" }),
+  // 歌のクリップの右クリックの一覧の下の、あとの回の席（仕様書 3 章「音を作っている間」）。
+  "menu.reverse": e("逆にする", "spec:3"),
+  "menu.normalize": e("ノーマライズ", "spec:3"),
   "latency.measuring": s6("遅れを測っている", "測っています {done} / {total}", { done: "3", total: "5" }),
   "latency.failed": s6("遅れを測れない", "音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。"),
   "button.useThisValue": e("この数を使う", "spec:6"),

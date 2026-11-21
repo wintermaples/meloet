@@ -5,10 +5,11 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView } from "../src/bridge";
 import { FAKE_AUDIO, fakeScene, type FakeState } from "../src/bridge/fake";
-import { fakeAudioClip, fakePeaks, fakeVocalClip, type FakeAudio } from "../src/bridge/fakeAudio";
+import { fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "../src/bridge/fakeAudio";
 import { PEAK_LEVELS } from "../src/bridge/generated/audio";
 import { PeakStore, type LevelPeaks } from "../src/bridge/peaks";
 import Arrange from "../src/components/Arrange.svelte";
+import { contextMenu } from "../src/components/menu/contextMenu.svelte";
 import { fileFrameAt, gainFactor, waveArea } from "../src/components/arrange/audioClipGeom";
 import { audioDrag } from "../src/components/arrange/audioDrag.svelte";
 import { clipFadeGain } from "../src/components/arrange/fade";
@@ -46,7 +47,9 @@ const look = W.waveLook(sizes, "color.gray.8", false);
 
 const TAKE: FakeAudio = { id: 7, file: "歌.wav", sampleRate: 48000, bits: 24, channels: 1, frames: 8 * 48000 };
 const sourceOf = (count: number, growing = false): WaveSource => ({ id: 1, stamp: 0, peaks: { channels: 1, count, growing, values: new Int16Array(count * 2) } });
-const vocal = (start: number, end: number, more: Parameters<typeof fakeAudioClip>[1] = {}, takeOffset = 0): ClipView => fakeVocalClip(1, "歌", start, end, fakeAudioClip(TAKE, more), takeOffset);
+/** ファイルの速さのまま鳴るクリップ（「この音のテンポ」が「—」）。ついていく物は `more` に `fakeStretch` で。 */
+const vocal = (start: number, end: number, more: Parameters<typeof fakeAudioClip>[1] = {}, takeOffset = 0): ClipView =>
+  fakeVocalClip(1, "歌", start, end, fakeAudioClip(TAKE, { ...fakeStretch(null, 120), ...more }), takeOffset);
 
 // docs/ は ui/ の外なので、screen.test.ts と同じく Node の fs で読む。
 const fs = (globalThis as unknown as { process: { getBuiltinModule(id: "node:fs"): { readFileSync(p: URL, e: "utf8"): string } } }).process.getBuiltinModule("node:fs");
@@ -139,6 +142,26 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
     expect(out.at(-1)!.peaksPerPx).toBeCloseTo(2 * out[0]!.peaksPerPx, 6);
   });
 
+  it("曲のテンポについていくクリップは「この音のテンポ」の地図で置く（曲のテンポが変わっても、同じティックに同じこま）", () => {
+    // 96.00 で歌った歌。曲が 120 でも、3 小節目から 60 でも、1 小節（4 拍）は 2.5 秒 = 120000 こま。
+    const clip = vocal(0, 6 * BAR, fakeStretch(steadyTempo(96), 120));
+    const shape = W.waveClipOf(clip)!;
+    expect(shape.timing.source).not.toBeNull();
+    // 同じ SourceTempoView からは、同じ地図（クリップごとに 1 回だけ作る）。
+    expect(W.waveClipOf(clip)!.timing.source).toBe(shape.timing.source);
+    for (const map of [steady, slower]) {
+      for (const tick of [0, BAR, 2.5 * BAR, 5 * BAR]) {
+        expect(W.frameAtTick(map, shape.timing, tick)).toBeCloseTo((tick / BAR) * 120000, 6);
+        expect(fileFrameAt(map, clip, tick)).toBeCloseTo((tick / BAR) * 120000, 6);
+      }
+    }
+    // 曲のテンポが変わる所でも、ついていくクリップは分けない（こまはティックにまっすぐ）。
+    const out: GlWave[] = [];
+    W.clipWaves(out, 0, slower, view, waveArea(dims, G.clipBox(view, dims, 0, clip.start, clip.end)), shape, sourceOf(4000), 256, look);
+    expect(out.length).toBe(1);
+    expect(out[0]!.peaksPerPx).toBeCloseTo(120000 / 64 / 256, 9);
+  });
+
   it("straightParts: まっすぐなら分けない。だんだん変わる所は半分ずつ、64 個まで", () => {
     expect(W.straightParts((t) => 3 * t + 1, 0, 100, 0.01)).toEqual([0, 100]);
     const bent = W.straightParts((t) => t * t, 0, 100, 1);
@@ -152,7 +175,7 @@ describe("波形の場所（どの x が、ファイルのどこか）", () => {
   it("録っているクリップ: [from, to] の中だけ。こま 0 は録りはじめ、長さはまだ決まっていない", () => {
     const out: GlWave[] = [];
     const box = G.clipBox(view, dims, 0, 5 * BAR, 6.5 * BAR);
-    const shape: W.WaveClip = { timing: { zeroTick: 4 * BAR, firstFrame: 0, sampleRate: 48000 }, start: 4 * BAR, end: 6.5 * BAR, fadeIn: 0, fadeOut: 0, gain: 1, endFrame: Infinity };
+    const shape: W.WaveClip = { timing: { start: 4 * BAR, takeOffset: 0, firstFrame: 0, sampleRate: 48000, source: null }, start: 4 * BAR, end: 6.5 * BAR, fadeIn: 0, fadeOut: 0, gain: 1, endFrame: Infinity };
     W.clipWaves(out, 0, steady, view, { ...waveArea(dims, box), x0: box.x0, x1: box.x1 }, shape, sourceOf(1000, true), 256, W.waveLook(sizes, "color.rec", false), { from: 5 * BAR, to: 6.5 * BAR });
     expect(out).toHaveLength(1);
     expect([out[0]!.x, out[0]!.w]).toEqual([320, 96]);
@@ -465,6 +488,38 @@ describe("Arrange の歌のクリップ", () => {
     const handles = rects.slice(-4);
     expect(handles.map((r) => [r.w, r.h, r.color])).toEqual(Array(4).fill([6, 6, "color.gray.10"]));
     expect(rects.length - 4).toBeGreaterThanOrEqual(right.after);
+  });
+
+  it("のび縮みの印（×1.25 ・ +2 ・ −1 ・ 30）は名前の札の中: 札の数はクリップの数のまま。音を作っている間は下に「音を作っています 34 %」", async () => {
+    const labels = () => [...target.querySelectorAll<HTMLElement>(".labels > .clip-label")];
+    const marks = () => labels().map((l) => [...l.querySelectorAll(".clip-mark")].map((m) => m.textContent));
+    const clipCount = (s: AppState) => s.song.tracks.reduce((n, t) => n + t.clips.length, 0);
+    const s = scene("stretchRendering");
+    await show(s);
+    expect(labels()).toHaveLength(clipCount(s));
+    expect(marks().filter((m) => m.length > 0)).toEqual([["×1.25", "+2"]]);
+    expect([...target.querySelectorAll('[data-test="audio-clip-rendering"]')].map((n) => n.textContent?.trim())).toEqual(["音を作っています 34 %"]);
+    unmount(mounted!);
+    mounted = null;
+    await show(scene("stretchPitch"));
+    expect(marks().filter((m) => m.length > 0)).toEqual([["−1 ・ 30"]]);
+    unmount(mounted!);
+    mounted = null;
+    // だんだんの中: 地図ごと録った物は比 1（印なし）、96.00 で歌った物は頭で ×1.13。
+    await show(scene("stretchRamp"));
+    expect(marks().filter((m) => m.length > 0)).toEqual([["×1.13"]]);
+  });
+
+  it("歌のクリップの右クリックの一覧の下に「逆にする」「ノーマライズ」（あとの回の席、使えない）", async () => {
+    await show(scene("stretch"));
+    const label = [...target.querySelectorAll<HTMLElement>(".labels > .clip-label")].find((l) => l.textContent?.includes("歌 テイク 1"))!;
+    const x = parseFloat(label.style.left) + 4;
+    const y = parseFloat(label.style.top) + 4;
+    target.querySelector(".lanes")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }));
+    flushSync();
+    const entries = contextMenu.open!.entries;
+    expect(entries.slice(-3).map((e) => (e.kind === "row" ? [e.label, e.usable] : "-"))).toEqual(["-", ["menu.reverse", false], ["menu.normalize", false]]);
+    contextMenu.open = null;
   });
 
   it("audioTall: 160 の行のトラックは、まん中に gray.5 の線", async () => {

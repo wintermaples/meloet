@@ -6,7 +6,8 @@ import { t } from "../../text/ja";
 import generated from "./generated/licenses.json";
 
 export interface Part {
-  kind: "crate" | "npm";
+  /** `vendored`: ほかの人のソースを、そのまま写して meloet のクレートの中に置いた物（C++ のヘッダなど）。 */
+  kind: "crate" | "npm" | "vendored";
   name: string;
   version: string;
   license: string;
@@ -27,14 +28,31 @@ export interface SoundCredit {
   also: string | null;
   changes: string;
 }
+/** クレートの中にある、ほかの人の物（licenses/upstream.json）。写したソースには名前と版がつく。 */
+export interface Upstream {
+  crate: string;
+  license: string;
+  name?: string;
+  version?: string;
+  vendored?: unknown;
+}
 export interface LicenseList {
   meloet: { version: string; license: string };
   sounds: SoundCredit[];
   fonts: Font[];
+  upstream?: Upstream[];
   parts: Part[];
 }
 
 export const licenseList = generated as LicenseList;
+
+/** 部品の行ぜんぶ: cargo と npm の部品と、写したソース（Signalsmith Stretch など）。 */
+export function allParts(list: LicenseList): Part[] {
+  const vendored: Part[] = (list.upstream ?? []).flatMap((u) =>
+    u.vendored && u.name && u.version ? [{ kind: "vendored" as const, name: u.name, version: u.version, license: u.license }] : [],
+  );
+  return [...list.parts, ...vendored];
+}
 
 /** 行と全文をむすぶ名前。 */
 export const partKey = (p: { name: string; version: string }): string => `${p.name}@${p.version}`;

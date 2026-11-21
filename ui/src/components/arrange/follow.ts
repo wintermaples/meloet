@@ -15,6 +15,22 @@ export function sourceMapOf(source: SourceTempoView): TempoMap {
   return new TempoMap({ tempoBpm: source.tempoBpm, headRamp: source.headRamp, tempoPoints: source.tempoPoints, meterNum: 4, meterDen: 4, meterChanges: [] });
 }
 
+const sourceMaps = new WeakMap<SourceTempoView, TempoMap>();
+
+/**
+ * `sourceMapOf` を、同じ `SourceTempoView` には 1 回だけ作る。曲の区画が届くまで同じ物が来るので、毎コマは作らない。
+ * null（ついていかない）は null。
+ */
+export function cachedSourceMap(source: SourceTempoView | null): TempoMap | null {
+  if (source === null) return null;
+  let map = sourceMaps.get(source);
+  if (!map) {
+    map = sourceMapOf(source);
+    sourceMaps.set(source, map);
+  }
+  return map;
+}
+
 /** 式に要る所だけ（`ClipView` と、その `audio` から）。 */
 export interface FollowClip {
   start: number;

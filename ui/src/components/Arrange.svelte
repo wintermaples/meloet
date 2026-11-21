@@ -22,6 +22,7 @@
   import { WAVE } from "../gl/dims";
   import { everyGlFrame, glRegion, glSlot, type GlRect, type GlSlot, type GlWave } from "../gl/slot";
   import { handleRects, waveArea } from "./arrange/audioClipGeom";
+  import { clipMarks, NO_MARKS } from "./params/clipFields";
   import { audioDrag, type AudioDragValue } from "./arrange/audioDrag.svelte";
   import * as W from "./arrange/wave";
   import { WaveBook } from "./arrange/wavePeaks.svelte";
@@ -203,7 +204,7 @@
   /** 録っている歌のピーク（ふえていく。先は毎コマ読むので、ふえても描きなおしは頼まない）。カウントインの間はまだない。 */
   function recSource(r: VocalRecordingView, v: G.View, from: number, to: number) {
     if (r.firstFrame === null) return null;
-    const timing: W.WaveTiming = { zeroTick: r.from, firstFrame: r.firstFrame, sampleRate: r.sampleRate };
+    const timing: W.WaveTiming = { start: r.from, takeOffset: 0, firstFrame: r.firstFrame, sampleRate: r.sampleRate, source: null };
     const found = waveBook.sourceFor(song.serial, r.audio, W.waveLevel(W.framesPerPx(map, v, timing, from, to), waveSizes.pitch), true);
     return found ? { ...found, timing } : null;
   }
@@ -364,6 +365,7 @@
       take: clip.take,
       takes: clip.takes,
       selected: true,
+      marks: clip.audio ? clipMarks(clip.audio.stretch) : NO_MARKS,
     });
     let place: { left: number; top: number; width: number; height: number };
     if (d.kind === "move") {
@@ -533,6 +535,8 @@
     take: number;
     takes: number;
     selected: boolean;
+    /** 歌のクリップの印（「×1.25」「+2」。clipFields.ts の clipMarks）。 */
+    marks: readonly string[];
   }
   const labels = $derived.by(() => {
     const out: Label[] = [];
@@ -557,6 +561,7 @@
           take: clip.take,
           takes: clip.takes,
           selected: selectedSet.has(clip.id) && !dragIds.has(clip.id),
+          marks: clip.audio ? clipMarks(clip.audio.stretch) : NO_MARKS,
         });
       }
     });
@@ -1230,6 +1235,10 @@
     const open = () => {
       if (!pianoRollOpen) send({ type: "toggleBand", band: "pianoRoll" });
     };
+    // 歌のクリップの「逆にする」「ノーマライズ」は、あとの回の席（仕様書 3 章「音を作っている間」）。
+    const later: MenuEntry[] = clip.audio
+      ? [{ kind: "separator" }, menuRow("menu.reverse", false, () => {}), menuRow("menu.normalize", false, () => {})]
+      : [];
     return [
       menuRow("menu.openInPianoRoll", true, open, t("key.pianoRoll")),
       menuRow("menu.cut", change, () => send({ type: "cutClips", clips: chosen() }), modKey(t("key.cut"))),
@@ -1241,6 +1250,7 @@
       menuRow("menu.nextTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: 1 }), t("key.take")),
       menuRow("menu.prevTake", change && clip.takes > 1, () => send({ type: "stepTake", delta: -1 }), shiftKey(t("key.take"))),
       menuRow("menu.deleteTake", change && clip.takes > 1, () => send({ type: "deleteTake", clip: clip.id })),
+      ...later,
     ];
   }
 
@@ -1461,6 +1471,7 @@
                   <span class="m-num take-tag" class:selected={c.selected}>{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
                 {/if}
                 <span class="clip-name">{c.name}</span>
+                {#each c.marks as mark, i (i)}<span class="m-num clip-mark" class:first={i === 0}>{mark}</span>{/each}
               {/if}
             </div>
           {/each}
@@ -1498,6 +1509,7 @@
                   <span class="m-num take-tag selected">{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
                 {/if}
                 <span class="clip-name">{c.name}</span>
+                {#each c.marks as mark, i (i)}<span class="m-num clip-mark" class:first={i === 0}>{mark}</span>{/each}
               {/if}
             </div>
           {/each}
@@ -1790,6 +1802,18 @@
     border: var(--line-hair) solid var(--color-gray-8);
     line-height: calc(var(--text-s-line-height) - 2 * var(--line-hair));
     color: var(--color-gray-10);
+  }
+  /* 歌のクリップの印（仕様書 2 章: 地 gray.0 ・ 枠 gray.7。モック F7-Stretch: クリップの右はしに寄せる）。札と同じ要素の中なので、要素の数はクリップの数のまま。 */
+  .clip-mark {
+    flex-shrink: 0;
+    padding: 0 var(--space-1);
+    background: var(--color-gray-0);
+    border: var(--line-hair) solid var(--color-gray-7);
+    line-height: calc(var(--text-s-line-height) - 2 * var(--line-hair));
+    color: var(--color-gray-10);
+  }
+  .clip-mark.first {
+    margin-left: auto;
   }
   .take-tag.selected {
     border-color: var(--color-accent);

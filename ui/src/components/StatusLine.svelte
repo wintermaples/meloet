@@ -604,6 +604,10 @@
         return plain("msg.audioUnreadable", { file: m.file });
       case "audioDragging":
         return m.audio > 1 ? plain("msg.audioDragging", { count: m.audio }) : plain("msg.audioDraggingOne");
+      case "sourceTempoFound":
+        return plain("msg.sourceTempoFound", { name: m.name, bpm: tempoText(m.bpm), bars: m.bars });
+      case "sourceTempoNotFound":
+        return plain("msg.sourceTempoNotFound", { name: m.name });
       default:
         return null;
     }
@@ -724,6 +728,14 @@
     return tr ? { number: tr.number, name: tr.name } : null;
   });
 
+  /** いちばん先に始めた「音を作っている」の、クリップの名前と %。 */
+  const rendering = $derived.by((): { clip: string; percent: number } | null => {
+    const job = app.audioWork.jobs.find((j) => j.kind === "rendering" && j.clip !== null);
+    if (!job) return null;
+    const clip = app.song.tracks.flatMap((x) => x.clips).find((c) => c.id === job.clip);
+    return clip ? { clip: clip.name, percent: job.percent } : null;
+  });
+
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
@@ -745,6 +757,8 @@
     }
     // パラメータをさがしている間（さがすのは画面。モック F-ParamSearch）。
     if (searching && usual) return { parts: textParts("status.paramSearching", { query: paramUi.query.trim(), count: paramUi.matches }), strong: [], button: null };
+    // 音を作っている間（仕様書 6 章「音を作っている」、モック F7-Stretch）。進みは audioWork なので画面が作る。いつものまとめの代わりで、ほかの知らせより後ろ。
+    if (rendering && usual) return { parts: textParts("msg.audioRendering", rendering), strong: [], button: null };
     if (playingInPianoRoll && (m === null || m.id === "summary")) {
       const parts = playingParts();
       if (parts) return { parts, strong: [], button: null };

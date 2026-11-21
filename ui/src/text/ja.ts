@@ -2238,6 +2238,32 @@ export const texts = {
     file: "はじめての曲.wav",
     left: "40 秒",
   }),
+  // 仕様書 ・ モックにない所の仮の文（B-94-69〜）。
+  "export.checkWaiting": e("たしかめの用意をしています", "builder:2026-11-21"),
+  "export.checkCounting": e("数えています {percent} % ・ ここまでのいちばん大きい所 {peak} dB", "builder:2026-11-21", {
+    percent: "38",
+    peak: "−3.5",
+  }),
+  "export.checkFailedPlugin": e("{plugin} を書き出し用に読みこめませんでした", "builder:2026-11-21", { plugin: "Surge XT" }),
+  "export.checkFailedWrite": e("作業の場所に書けませんでした", "builder:2026-11-21"),
+  "export.spanSongNoTail": e("曲ぜんぶ ・ {start} 〜 {end}", "builder:2026-11-21", { start: "1. 1. 0000", end: "17. 1. 0000" }),
+  "export.spanLoop": e("ループ ・ {start} 〜 {end} と、音が消えるまで", "builder:2026-11-21", { start: "5. 1. 0000", end: "9. 1. 0000" }),
+  "export.spanLoopNoTail": e("ループ ・ {start} 〜 {end}", "builder:2026-11-21", { start: "5. 1. 0000", end: "9. 1. 0000" }),
+  "export.spanTracks": e("トラックごと ・ {count} つのファイル", "builder:2026-11-21", { count: "4" }),
+  "export.sampleRate": e("サンプルレート", "builder:2026-11-21"),
+  "export.bits": e("ビット", "builder:2026-11-21"),
+  "export.tail": e("しっぽ", "builder:2026-11-21"),
+  "export.realtime": e("実時間で書き出す", "builder:2026-11-21"),
+  "export.tailUntilSilent": e("音が消えるまで（最大 {seconds} 秒）", "builder:2026-11-21", { seconds: "10" }),
+  "export.tailOff": e("なし", "builder:2026-11-21"),
+  "export.detailsSummaryNoTail": e("{rate} Hz ・ {bits} ビット ・ しっぽなし", "builder:2026-11-21", { rate: "48000", bits: "24" }),
+  "export.detailsRealtime": e("・ 実時間", "builder:2026-11-21"),
+  "export.leftSeconds": e("{seconds} 秒", "builder:2026-11-21", { seconds: "40" }),
+  "export.leftMinutes": e("{minutes} 分", "builder:2026-11-21", { minutes: "2" }),
+  "msg.exportFailedPlugin": e("書き出せませんでした。{plugin} が止まりました。途中までのファイルは消しました。", "builder:2026-11-21", {
+    plugin: "Surge XT",
+  }),
+  "msg.exportFailedWrite": e("書き出せませんでした。保存する所に書けません。", "builder:2026-11-21"),
 
   // [第 7 回 区切り2 ・ 歌のトラックの画面]（仕様書 2 章 ・ 3 章 23-A ・ 24-C ・ 31-C ・ 33-A、モック F7-*）
   // トラックの一覧の下と、上のメニュー「トラック」。

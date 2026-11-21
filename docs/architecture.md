@@ -2251,7 +2251,7 @@ pub struct AudioShape {
   6. 「ループ」「曲ぜんぶ」のファイルの名前はどちらも曲の名前。
 - **偽物の場面**: `exportDialog`（F7-Export）・ `exportWaiting` ・ `exportCounting` ・ `exportClips` ・ `exportStopped`（F-Export の止まっているプラグイン）・ `exportAdvanced` ・ `exportCheckFailed` ・ `exportFit`（R11-Fit）・ `exporting`（F7-Exporting）・ `exportingRealtime` ・ `exportDone` ・ `exportCancelled` ・ `exportFailed`。偽物は意図を受けて、ダイアログと進みを変える（たしかめはすぐ「できた」、% は動かない）。
 
-### 22-19. 区切り3 ・ 4 の残りの直し（core とエンジン、2026-11-21、meloet-hard）
+### 22-21. 区切り3 ・ 4 の残りの直し（core とエンジン、2026-11-21、meloet-hard）
 
 測り（`docs/measurements/2026-11-21-round7-step3-fix.md` の「気になった事」1 ・ 2、`2026-11-21-round7-step4.md` の「見つけた事」4 と「道具の弱い所」）のあとの 5 つ。約束と文面は変えていない。
 

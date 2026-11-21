@@ -27,6 +27,7 @@
   import { menuOpened } from "../lib/menu";
   import { term } from "../lib/tip.svelte";
   import { current, onEvent, send } from "../state/app.svelte";
+  import { shownWork } from "../state/audioWork.svelte";
   import { LIST_COMMA, STATUS_JOIN, t, type TextKey } from "../text/ja";
   import { about } from "./about/about.svelte";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
@@ -728,9 +729,9 @@
     return tr ? { number: tr.number, name: tr.name } : null;
   });
 
-  /** いちばん先に始めた「音を作っている」の、クリップの名前と %。 */
+  /** いちばん先に始めた「音を作っている」の、クリップの名前と %（% はクリップの下 ・ 欄と同じコマで変わる）。 */
   const rendering = $derived.by((): { clip: string; percent: number } | null => {
-    const job = app.audioWork.jobs.find((j) => j.kind === "rendering" && j.clip !== null);
+    const job = shownWork.current.firstRendering;
     if (!job) return null;
     const clip = app.song.tracks.flatMap((x) => x.clips).find((c) => c.id === job.clip);
     return clip ? { clip: clip.name, percent: job.percent } : null;

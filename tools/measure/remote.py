@@ -144,7 +144,7 @@ class RemoteError(Exception):
 
 class App:
     def __init__(self, out, song=None, window="1920x1080", env=None, keyboard=True, confirm=True,
-                 sf2=False, settle_s=1.0):
+                 sf2=False, settle_s=1.0, song_in_place=False):
         self.out = out
         self.raw = os.path.join(out, "raw")
         os.makedirs(self.raw, exist_ok=True)
@@ -155,7 +155,10 @@ class App:
             os.makedirs(os.path.join(self.work, d))
         os.mkfifo(self.fifo)
         self.song = None
-        if song:
+        if song and song_in_place:
+            # A song with audio is its folder: opened where it is, and a save changes it there.
+            self.song = os.path.abspath(song)
+        elif song:
             self.song = os.path.join(self.work, "song", os.path.basename(song))
             shutil.copy(song, self.song)
         self.vkeys_name = f"meloet-vkeys-remote-{os.getpid()}"

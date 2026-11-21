@@ -474,6 +474,7 @@ fn a_track_whose_plugins_delay_the_sound_reads_its_clips_ahead() {
         assert_eq!(got, sample(n as u64 % 24_000), "frame {n}");
     }
     assert_eq!(rig.missing(), 0);
+    no_memory_was_taken();
 }
 
 #[test]

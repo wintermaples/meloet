@@ -25,7 +25,7 @@ pub type MadeKey = [u8; 32];
 /// Goes into every key: another number when meloet makes the audio another way.
 const RECIPE: u32 = 1;
 /// How the part that stretches is set up. Each is part of the key by its name here.
-const PRESET: (Preset, &str) = (Preset::Default, "default");
+const PRESET: (Preset, &str) = (Preset::Cheaper, "cheaper");
 /// The fundamental the formant step is told (`Stretcher::set_formant_base`), as a
 /// frequency in Hz; `None`: the part looks for it block by block.
 const FORMANT_BASE_HZ: Option<f32> = None;

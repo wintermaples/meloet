@@ -1491,7 +1491,7 @@ pub struct Lane {
 - **C の口**（`shim.cpp`）: どの関数も `noexcept` で、中で全部の例外をつかまえる（失敗は −1）。部品は**決まった種（seed）で作る**（そのままだと `std::random_device` で、2 倍をこえてのばすときの位相が毎回かわる。しまっておく音は、同じ入力で同じ出力にしたい）。split computation はいつも切る（音のスレッドのために計算をならす形で、遅れが 1 間隔ふえるだけなので）。
 - **Rust の口**（`src/lib.rs`）
   - `Stretcher`（`Send`、`!Sync`）: `new(channels, sample_rate, Preset)`、`configure`、`channels`、`block_samples`、`interval_samples`、`input_latency`、`output_latency`、`seek_length`、`latency`、`set_transpose_semitones(半音, tonality limit)`、`set_formant_factor(倍率, compensate_pitch)`、`set_formant_base`、`reset`、`seek`、`output_seek`、`process(入口, 出口)`（長さがちがってよい）、`flush`。
-  - `Preset`: `Default`（区切り 0.12 秒、間隔 0.03 秒）、`Cheaper`（0.1 秒、0.04 秒）、`Blocks { block, interval }`。**はじめは `Default`**。1.4.0 の README には、声に向く preset の勧めはなかった（「声には短い区切り」は調べ物の C の話だけ）。聞きくらべに短い区切り（0.08 秒、0.02 秒）も入れた。
+  - `Preset`: `Default`（区切り 0.12 秒、間隔 0.03 秒）、`Cheaper`（0.1 秒、0.04 秒）、`Blocks { block, interval }`。**`Cheaper` を使う**（オーナーさんの聞きくらべの答え 2026-11-22。はじめは `Default` だった）。1.4.0 の README には、声に向く preset の勧めはなかった（「声には短い区切り」は調べ物の C の話だけ）。聞きくらべに短い区切り（0.08 秒、0.02 秒）も入れた。
   - `STRETCH_VERSION`（"1.4.0"）は、しまっておく音の鍵に入れる。
   - メモリ（ソースの読み）: `new` と `configure` が取る。`process`・`seek`・`output_seek`・`flush`・`reset` は、`configure` が決めた大きさの中で `resize`・`assign` するだけで、取らない。**機械では見はっていない**（このクレートは音のスレッドで使わない）。
 - **ついていく形**（`src/follow.rs` の `Follower`。数だけ、FFI なし）

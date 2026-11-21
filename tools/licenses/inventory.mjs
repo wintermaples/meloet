@@ -236,7 +236,8 @@ export async function makeList(root = ROOT) {
     meloet: appInfo(root),
     sounds: soundParts(root),
     fonts,
-    upstream: upstreamParts(root).filter((u) => rust.some((p) => p.name === u.crate)),
+    // `vendored`: files of others kept inside one of our own crates (no cargo part stands for them).
+    upstream: upstreamParts(root).filter((u) => u.vendored || rust.some((p) => p.name === u.crate)),
     parts: [
       ...rust.map((p) => ({ kind: "crate", ...strip(p) })),
       ...npm.filter((p) => !FONT_PACKAGE.test(p.name)).map((p) => ({ kind: "npm", ...strip(p) })),

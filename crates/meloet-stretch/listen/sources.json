@@ -1,0 +1,82 @@
+{
+  "note": "Voices for the listening set of meloet-stretch. Only CC0, public domain or CC BY (never CC BY-SA). The files are not kept in the repository. License and credit were read on 2026-11-21 (Wikimedia Commons: the imageinfo API, LicenseShortName, and the sha1 there for the whole files; archive.org: the metadata API and librivox.org/pages/public-domain). bytes = only the first bytes are taken, and sha256 is of that part.",
+  "sources": [
+    {
+      "id": "1-speech-male",
+      "kind": "話し声、男（英語の朗読）",
+      "title": "The Adventures of Tom Sawyer, chapters 7-8 (LibriVox)",
+      "credit": "Read by John Greenman for LibriVox. Text by Mark Twain.",
+      "page": "https://archive.org/details/tom_sawyer_librivox",
+      "url": "https://archive.org/download/tom_sawyer_librivox/TSawyer_07-08_twain.mp3",
+      "file": "tom-sawyer-07-08-128.mp3",
+      "sha256": "826d9a25ebe42486a5f2e205899c00fef9a5a42d8ff1cdba59ae395281caf113",
+      "license": "Public domain (LibriVox)",
+      "license_uri": "https://librivox.org/pages/public-domain/",
+      "start": 30,
+      "seconds": 12,
+      "note": "MP3（128 kbps、44.1 kHz）。もとから圧縮の音です。"
+    },
+    {
+      "id": "2-speech-female",
+      "kind": "話し声、女（英語の朗読）",
+      "title": "The Secret Garden, chapter 3 (LibriVox)",
+      "credit": "Read by Kara Shallenberg for LibriVox. Text by Frances Hodgson Burnett.",
+      "page": "https://archive.org/details/secret_garden_librivox",
+      "url": "https://archive.org/download/secret_garden_librivox/secretgarden_03_burnett.mp3",
+      "file": "secret-garden-03.mp3",
+      "sha256": "580e895c82a5bab385832fe90ca0f0be620c81b95f5ff9248b2efd06f7e7cd24",
+      "license": "Public domain (LibriVox)",
+      "license_uri": "https://librivox.org/pages/public-domain/",
+      "start": 20,
+      "seconds": 12,
+      "note": "MP3（128 kbps、44.1 kHz、モノラル）。もとから圧縮の音です。"
+    },
+    {
+      "id": "3-singing-male",
+      "kind": "歌声、男（無伴奏）",
+      "title": "Singin' in the Rain",
+      "credit": "Vocals by Cary Bass-Deschenes (lyrics by Arthur Freed, music by Nacio Herb Brown, 1929). CC BY 4.0. Changes: a part cut out, made mono and 48 kHz, stretched and transposed.",
+      "page": "https://commons.wikimedia.org/wiki/File:Singin%27_in_the_Rain.mp3",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/4d/Singin%27_in_the_Rain.mp3",
+      "file": "singin-in-the-rain.mp3",
+      "sha256": "d8cf0f6b6a948539c0508b238783be8e25684a6c0394915508798353bfd53613",
+      "license": "CC BY 4.0",
+      "license_uri": "https://creativecommons.org/licenses/by/4.0/",
+      "start": 1,
+      "seconds": 12,
+      "note": "MP3（44.1 kHz）。いまの録音。"
+    },
+    {
+      "id": "4-singing-male-old",
+      "kind": "歌声、男（無伴奏、1956 年のテープ）",
+      "title": "Luntilua (SMV, SVA BB 5354 06)",
+      "credit": "Sung by Patrik Lindby. Recorded by Matts Arnberg for Sveriges Radio, 1956. Statens musikverk (Swedish Performing Arts Agency).",
+      "page": "https://commons.wikimedia.org/wiki/File:Luntilua_-_SMV_-_SVA_BB_5354_06.wav",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/87/Luntilua_-_SMV_-_SVA_BB_5354_06.wav",
+      "file": "luntilua.head.wav",
+      "bytes": 4500000,
+      "sha256": "27c1565071107965e7b30dbfd7bfafdd2bcc87ecb4f9efbf105d4a90cc10ac18",
+      "license": "CC0 1.0",
+      "license_uri": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "start": 6,
+      "seconds": 12,
+      "note": "WAV（44.1 kHz、16 ビット）。古いテープなので、もとから雑音があります。男の声かは名前からの見こみです。"
+    },
+    {
+      "id": "5-singing-female-old",
+      "kind": "歌声、女（無伴奏、1960 年のテープ）",
+      "title": "Lazarusvisan (SMV, SVA BB 5294 39)",
+      "credit": "Sung by Kerstin Göransson. Recorded by Matts Arnberg for Sveriges Radio, 1960. Statens musikverk (Swedish Performing Arts Agency).",
+      "page": "https://commons.wikimedia.org/wiki/File:Lazarusvisan_-_SMV_-_SVA_BB_5294_39.wav",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/ef/Lazarusvisan_-_SMV_-_SVA_BB_5294_39.wav",
+      "file": "lazarusvisan.head.wav",
+      "bytes": 4500000,
+      "sha256": "6f76a8dc0efff0f402d8542830f72d5bf68aa974abb0c8354f16015573291294",
+      "license": "CC0 1.0",
+      "license_uri": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "start": 5,
+      "seconds": 12,
+      "note": "WAV（44.1 kHz、16 ビット）。古いテープなので、もとから雑音があります。女の声かは名前からの見こみです。"
+    }
+  ]
+}

@@ -88,6 +88,16 @@ vst3 (Rust): bindings generated from the header files of the VST 3 SDK 3.8.0 (pl
   source: https://github.com/steinbergmedia/vst3_pluginterfaces
   license: MIT; the text is in licenses/rust/vst3/VST3-SDK-LICENSE.txt
 
+meloet-stretch (Rust): Signalsmith Stretch 1.4.0 (C++ headers, kept without change in crates/meloet-stretch/vendor/signalsmith-stretch)
+  Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.
+  source: https://github.com/Signalsmith-Audio/signalsmith-stretch
+  license: MIT; the text is in licenses/rust/meloet-stretch/SIGNALSMITH-STRETCH-LICENSE.txt
+
+meloet-stretch (Rust): Signalsmith Linear 0.6.4 (C++ headers stft.h and fft.h, kept without change in crates/meloet-stretch/vendor/signalsmith-linear)
+  Copyright (c) 2025 Signalsmith Audio
+  source: https://github.com/Signalsmith-Audio/linear
+  license: MIT; the text is in licenses/rust/meloet-stretch/SIGNALSMITH-LINEAR-LICENSE.txt
+
 == Parts (219: 216 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT

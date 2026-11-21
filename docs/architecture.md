@@ -1479,6 +1479,46 @@ pub struct Lane {
   - しまっておく所の大きさの上限と、古い物から消す決まりは、区切り4 で測って決める。
   - 「この音のテンポ」をさがす: 区切り4 で決める。向きは、まずファイルの長さから「1 ・ 2 ・ 4 ・ 8 小節でテンポ 60〜180 に入る数」を出し、人が直せる形にする（歌には拍がないので、部品でさがしても当たらない。調べ物）。`stratum-dsp`（MIT OR Apache-2.0）は、足りなければ。
 
+#### 区切り4 の 1 回目: meloet-stretch（2026-11-21、meloet-hard）
+
+のび縮みの部品を包む新しいクレート `crates/meloet-stretch`。C++ と unsafe は、ここにだけある。ほかのクレートには、まだつないでいない（core の作る係は 2 回目）。
+
+- **写した物**（`vendor/`、書きかえない。くわしくは `vendor/VENDOR.md`）
+  - Signalsmith Stretch **版札 1.4.0**（コミット `a670068`、2026-09-25。いちばん新しい版札）。`signalsmith-stretch.h` と `LICENSE.txt`。main は 1 コミット先だが、変わったのは `CMakeLists.txt` だけ。
+  - Signalsmith Linear **版札 0.6.4**（コミット `de55e6a`。Stretch 1.4.0 の `CMakeLists.txt` が指す版）。`stft.h`、`fft.h`、`include/signalsmith-linear/stft.h`、`LICENSE.txt`。`#include` をたどると、要るのはこれだけ（`linear.h`・`approx.h`・`platform/` は、`SIGNALSMITH_USE_*` を決めないかぎり読まれない。FFT は組みこみの物）。
+  - どちらも MIT。ヘッダの中にライセンスの行はなく、ほかのライセンスの名前も出てこない（自分で読んだ）。
+- **ビルド**: `build.rs` が `cc`（1.11.2）で `src/shim.cpp` を作る。C++17、いつも `-O3`（debug でも）、`-ffast-math` なし。bindgen なし（口は `src/ffi.rs` に手で書いた）。はじめからのビルドは数秒。
+- **C の口**（`shim.cpp`）: どの関数も `noexcept` で、中で全部の例外をつかまえる（失敗は −1）。部品は**決まった種（seed）で作る**（そのままだと `std::random_device` で、2 倍をこえてのばすときの位相が毎回かわる。しまっておく音は、同じ入力で同じ出力にしたい）。split computation はいつも切る（音のスレッドのために計算をならす形で、遅れが 1 間隔ふえるだけなので）。
+- **Rust の口**（`src/lib.rs`）
+  - `Stretcher`（`Send`、`!Sync`）: `new(channels, sample_rate, Preset)`、`configure`、`channels`、`block_samples`、`interval_samples`、`input_latency`、`output_latency`、`seek_length`、`latency`、`set_transpose_semitones(半音, tonality limit)`、`set_formant_factor(倍率, compensate_pitch)`、`set_formant_base`、`reset`、`seek`、`output_seek`、`process(入口, 出口)`（長さがちがってよい）、`flush`。
+  - `Preset`: `Default`（区切り 0.12 秒、間隔 0.03 秒）、`Cheaper`（0.1 秒、0.04 秒）、`Blocks { block, interval }`。**はじめは `Default`**。1.4.0 の README には、声に向く preset の勧めはなかった（「声には短い区切り」は調べ物の C の話だけ）。聞きくらべに短い区切り（0.08 秒、0.02 秒）も入れた。
+  - `STRETCH_VERSION`（"1.4.0"）は、しまっておく音の鍵に入れる。
+  - メモリ（ソースの読み）: `new` と `configure` が取る。`process`・`seek`・`output_seek`・`flush`・`reset` は、`configure` が決めた大きさの中で `resize`・`assign` するだけで、取らない。**機械では見はっていない**（このクレートは音のスレッドで使わない）。
+- **ついていく形**（`src/follow.rs` の `Follower`。数だけ、FFI なし）
+  - 部品は、区切りの**まん中**を「いま」として動く。入口は「いま」より `input_latency` こま先まで入っていて、出口は「いま」より `output_latency` こま遅れて出る（`Default` の 48 kHz で、どちらも 2880 こま = 60 ms）。
+  - だから、ファイルのこま `p(j)` を出るこま `j` に出すには、**出るこま `j` を読む前に、入口を `round(p(j + output_latency)) + input_latency` まで入れておく**。この数は、毎回 `p` から出す（まるめた長さを足していかない）。
+  - **頭**: クリップの頭より `block + output_latency` こま前から回しはじめ、その分の出口は捨てる。クリップの頭にかかる区切りが、全部そろってから音が出る（頭がだんだん大きくなる、がない）。その間のファイルは、クリップより前の所を本当に読む（ファイルの頭より前は無音）。**尻**も同じで、クリップの終わりより先のファイルを `output_latency + input_latency` こま分読む。切ったクリップの継ぎ目に、前後の本当の音がうつる。
+    - 部品の `outputSeek`（無音から始めたことにして、頭を折りかえして直す）と `flush` は、`render` では使わない。理由は、まん中で切ったクリップの頭を「無音から」にしたくないから。口には残してある。
+  - `p` はクリップの中（`0..=out_frames`）でしか呼ばない。外は、その端のかたむきで、まっすぐのばす。
+- **1 つ分を作る**（`src/render.rs`）: `render(stretcher, out_frames, p, read, write, progress, cancel)`。
+  - `read(start, channels)`: ファイルのこまを読む口。`start` は負にも、ファイルの終わりより先にもなる（そこは 0 でうめる）。前へ進むだけで、とばない。
+  - `write(channels)`: クリップのこまが順に来る。1 回に `RENDER_STEP`（256 こま）まで。
+  - `progress(0〜100)`、`cancel`（`AtomicBool`。1 ステップごとに見る）。
+  - **中のステップは 256 こまに決めてある**。ステップの大きさを変えると、区切りの位置が 1 こまずれて、出る音が変わる（位置は式どおりだが、波形は同じにならない）。だから呼ぶ側に選ばせない。同じ入力なら、何度作っても 1 ビットも変わらない。
+- **測った数**（`cargo test -p meloet-stretch -- --nocapture`。48 kHz）
+  - のび縮みだけ（0.75 ・ 0.8 ・ 1.25 ・ 1.5 倍）: 440 Hz のサインは 440.00 Hz のまま、大きさも 0.1 % 以内。出る長さは `out_frames` ちょうど。
+  - **位置**: 短いクリックが、式の位置から**いちばん悪くて 40.5 こま（0.84 ms）**。ほとんどは 5 こま以内。比を変えても、高さを変えても、だんだん（0.8 → 1.25）でも。試験の決めた数は 1 ms。
+  - 比 1 ・ 高さ 0 は、もとの音と −127 dB まで同じ（ずれがない事のしるし。meloet は、この形のクリップを作らない）。
+  - **高さの正しさ**: 高さを変えたサインは、ねらいの周波数から少しずれる。`Default` でいちばん悪くて 1.35 Hz（220 Hz を −3 半音で +10.8 セント）、`Cheaper` で 3.3 Hz（220 Hz を −12 で −23.8 セント）。部品が山ごとにずらす数を、ならしたエネルギーからさがすため、と読んだ（推測）。1000 Hz では 0〜3 セント。**±50 セントの細かい直しには、このずれがひびくかもしれない**。聞いて確かめる。
+  - 声の感じを保つ: 150 Hz の倍音に 1 kHz の山をつけた音を +7 半音。1 kHz と 1.5 kHz のエネルギーの比は、切 0.07、入（基音を部品がさがす）2.0、入（基音 150 Hz を教える）4779。**基音を教えると、山がずっとよく残る**。声でどうかは聞きくらべ（`keep` と `keep200`）。入のとき、音が 4〜5 dB 小さくなる事がある（歌声 +12 で見た）。
+  - NaN ・ Inf は出ない（比 0.1〜4、±24 半音、雑音）。無音は無音（1e-6 より小さい）。ステレオの左右はまざらない。
+  - **速さ**（release、ステレオ 60 秒、PC はほかの係が動いていて少しにごっている）: `Default` で実時間の 108 倍（のび縮みだけ）、82 倍（＋高さ＋声の感じ）。`Cheaper` で 167 倍、127 倍。debug でも C++ は `-O3`、クレートは opt-level 3。
+- **気をつける事**
+  - 2 倍より速くする（`p` のかたむきが 2 より大きい）と、部品の中の位相の計算で比が 2 に止められる（位置は式どおりのまま）。無音が区切り 2 つ分つづくと、部品は入口をそのまま出口に流す道に入る（速くしすぎていると、前の音の尻が残る事がある、とソースから読める）。0.75〜1.5 倍の中で使う。
+  - Linux の g++ 15 で確かめた。作者は「Mac の Clang と Windows の MSVC でおもに試した」と書く。Windows は第 9 回で。
+- **ライセンスの表示**: `licenses/upstream.json` に 2 つ（`vendored` の欄に、写したファイルと sha256）。`licenses/check.mjs` が、ライセンス、写しの文、**写したファイルが 1 バイトも変わっていない事**を見はる。`NOTICE` は `tools/licenses/inventory.mjs` が作る（`vendored` のある物は、いつも入れる）。文の写しは `licenses/rust/meloet-stretch/`。「meloet について」は、まだこの 2 つを出さない（一覧は Rust の部品と npm の部品だけを見せるので）。2 回目に足す。
+- **聞きくらべ**: `python3 -I crates/meloet-stretch/listen/fetch.py`（素材を `~/.cache/meloet/listen-src` に取り、使う所を切る。出どころは `listen/sources.json`）→ `cargo run -p meloet-stretch --release --example listen -- ~/.cache/meloet/listen-src/wav target/listen/round7-stretch`。声 5 つ × 41 ファイル。
+
 ### 22-9. 波形
 
 - **ピーク**: チャンネルごとの最小と最大（i16 ずつ）。**5 段**: 256 ・ 1024 ・ 4096 ・ 16384 ・ 65536 こまに 1 つ（4 倍ずつ）。48 kHz ・ ステレオの 10 分で、いちばん細かい段が 0.9 MB、5 段で 1.2 MB。

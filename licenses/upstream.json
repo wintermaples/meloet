@@ -1,5 +1,5 @@
 {
-  "note": "The work of others inside a Rust crate that the crate's own license files do not name. tools/licenses/inventory.mjs puts each entry into NOTICE and beside the crate's own texts in the about dialog. text = a copy kept under licenses/. checked = date read.",
+  "note": "The work of others inside a Rust crate that the crate's own license files do not name. tools/licenses/inventory.mjs puts each entry into NOTICE and beside the crate's own texts in the about dialog. text = a copy kept under licenses/. checked = date read. vendored = source files of others kept inside one of our own crates, never changed: licenses/check.mjs compares every file under dir with the sha256 here.",
   "upstream": [
     {
       "crate": "vst3",
@@ -10,6 +10,44 @@
       "text": "licenses/rust/vst3/VST3-SDK-LICENSE.txt",
       "read": "https://raw.githubusercontent.com/steinbergmedia/vst3_pluginterfaces/master/LICENSE.txt on 2026-11-19 (sha256 e86d79e19e4a33ebc442d2e0d083887dfc75a2a8de9fe17eeddedb84810ad74e; the text of the master branch, whose copyright line says 2026)",
       "checked": "2026-11-19"
+    },
+    {
+      "crate": "meloet-stretch",
+      "title": "Signalsmith Stretch 1.4.0 (C++ headers, kept without change in crates/meloet-stretch/vendor/signalsmith-stretch)",
+      "copyright": "Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd.",
+      "license": "MIT",
+      "source": "https://github.com/Signalsmith-Audio/signalsmith-stretch",
+      "text": "licenses/rust/meloet-stretch/SIGNALSMITH-STRETCH-LICENSE.txt",
+      "read": "LICENSE.txt at tag 1.4.0 (commit a670068d9aeb64913331d5cc29337b19a457a7df) on 2026-11-21; the header has no license line of its own",
+      "checked": "2026-11-21",
+      "vendored": {
+        "dir": "crates/meloet-stretch/vendor/signalsmith-stretch",
+        "license_file": "LICENSE.txt",
+        "files": {
+          "LICENSE.txt": "ee2ef82481ffb445ecdd4b3a4c1f82c0cddb2da8fe39d8e8dc384fffb3e7f06f",
+          "signalsmith-stretch.h": "1188667959ac19dd40c0a6abbce694e44705615ec4f0e8db8af0f1cfb4c5dea7"
+        }
+      }
+    },
+    {
+      "crate": "meloet-stretch",
+      "title": "Signalsmith Linear 0.6.4 (C++ headers stft.h and fft.h, kept without change in crates/meloet-stretch/vendor/signalsmith-linear)",
+      "copyright": "Copyright (c) 2025 Signalsmith Audio",
+      "license": "MIT",
+      "source": "https://github.com/Signalsmith-Audio/linear",
+      "text": "licenses/rust/meloet-stretch/SIGNALSMITH-LINEAR-LICENSE.txt",
+      "read": "LICENSE.txt at tag 0.6.4 (commit de55e6a50ffcf6f8f43f649692d94691c7025151) on 2026-11-21; the headers have no license line of their own",
+      "checked": "2026-11-21",
+      "vendored": {
+        "dir": "crates/meloet-stretch/vendor/signalsmith-linear",
+        "license_file": "LICENSE.txt",
+        "files": {
+          "LICENSE.txt": "072b5e9eb5b22880bdf6256324654cf3ce53dba828edb911921121e1be09d9c3",
+          "fft.h": "fb55f69ac14cdbac66b9c76053069ff63bc36d18af20d8c028b9acc0aad6516a",
+          "include/signalsmith-linear/stft.h": "a323656e5ed80b271262106ea782d6150ef2f1c8b2f3c5896552b90b2ad6c17e",
+          "stft.h": "7422ff5ddc2a017dc0587dcce99ce5ba30a2414bc2996081f6b00d56905d9b8c"
+        }
+      }
     }
   ]
 }

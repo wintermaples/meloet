@@ -102,6 +102,35 @@ if (existsSync(soundsPath)) {
   console.log(`OK  sound sources checked: ${sounds.length}`);
 }
 
+// 4b. the work of others inside crates (licenses/upstream.json): license allowed, text kept, vendored files untouched
+{
+  const { createHash } = await import("node:crypto");
+  const { statSync } = await import("node:fs");
+  const up = JSON.parse(readFileSync(join(here, "upstream.json"), "utf8")).upstream;
+  const sha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
+  const filesUnder = (dir, rel = "") => readdirSync(join(dir, rel)).flatMap((f) => (statSync(join(dir, rel, f)).isDirectory() ? filesUnder(dir, join(rel, f)) : [join(rel, f)]));
+  let vendored = 0;
+  for (const u of up) {
+    const name = `upstream ${u.crate}: ${u.title}`;
+    if (!spdxOk(u.license)) fail(`${name}: ${u.license}`);
+    if (!u.text || !existsSync(join(root, u.text))) { fail(`${name}: no license text at ${u.text}`); continue; }
+    const v = u.vendored;
+    if (!v) continue;
+    const dir = join(root, v.dir);
+    if (!existsSync(dir)) { fail(`${name}: ${v.dir} is missing`); continue; }
+    const there = filesUnder(dir).map((f) => f.split("\\").join("/")).sort();
+    for (const f of there) {
+      if (!(f in v.files)) fail(`${name}: ${v.dir}/${f} is not listed in upstream.json`);
+      else if (sha(join(dir, f)) !== v.files[f]) fail(`${name}: ${v.dir}/${f} was changed (sha256 differs)`);
+      else vendored++;
+    }
+    for (const f of Object.keys(v.files)) if (!there.includes(f)) fail(`${name}: ${v.dir}/${f} is missing`);
+    if (existsSync(join(dir, v.license_file)) && sha(join(dir, v.license_file)) !== sha(join(root, u.text))) fail(`${name}: ${u.text} is not the license file that came with it`);
+    if (there.some((f) => /\bL?A?GPL\b|General Public License/.test(readFileSync(join(dir, f), "utf8")))) fail(`${name}: a file under ${v.dir} names the GPL`);
+  }
+  console.log(`OK  parts inside crates checked: ${up.length} (${vendored} vendored files match their sha256)`);
+}
+
 // 5. NOTICE and the about dialog's list (tools/licenses/inventory.mjs) still match what ships
 {
   const { stale } = await import("../tools/licenses/inventory.mjs");

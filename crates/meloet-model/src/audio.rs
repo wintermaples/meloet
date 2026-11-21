@@ -160,6 +160,9 @@ pub struct AudioShape {
 }
 
 impl AudioShape {
+    pub const SEMITONES_MAX: i8 = 12;
+    pub const CENTS_MAX: i8 = 50;
+
     /// Of a clip just recorded.
     pub const RECORDED: AudioShape = AudioShape {
         fade_in: 0,
@@ -172,13 +175,15 @@ impl AudioShape {
     };
 
     pub fn is_valid(&self) -> bool {
-        (-12..=12).contains(&self.semitones) && (-50..=50).contains(&self.cents)
+        self.semitones.abs() <= Self::SEMITONES_MAX && self.cents.abs() <= Self::CENTS_MAX
     }
 }
 
 pub mod clips;
 pub mod fade;
+pub mod follow;
 pub mod record;
+pub mod stretch;
 
 #[cfg(test)]
 mod clip_tests;

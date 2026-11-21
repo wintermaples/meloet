@@ -7,7 +7,9 @@ export type AudioJob = { kind: AudioJobKind,
  */
 audio: number, 
 /**
- * `Rendering`: the one clip the audio is made for. `None` for `Loading`.
+ * `Rendering`: the one clip the audio is made for; only that clip shows the job (under
+ * it, as the bar on top of the panel 「選んだクリップ」 when it is the selected one, and
+ * in the status line, spec 6 「音を作っている」). `None` for `Loading`.
  */
 clip: number | null, 
 /**

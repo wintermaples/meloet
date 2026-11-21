@@ -23,7 +23,7 @@ pub fn fit_fades(shape: AudioShape, length: u64) -> AudioShape {
     }
 }
 
-fn with_shape(
+pub(super) fn with_shape(
     doc: &Doc,
     clip: ClipId,
     change: impl FnOnce(&AudioShape, u64) -> AudioShape,

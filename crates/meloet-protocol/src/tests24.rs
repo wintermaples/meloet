@@ -37,6 +37,12 @@ fn export_audio_lists() {
              /** The range of a vocal clip's volume in dB. */\n\
              export const CLIP_GAIN_MIN_DB = {CLIP_GAIN_MIN_DB};\n\
              export const CLIP_GAIN_MAX_DB = {CLIP_GAIN_MAX_DB};\n\n\
+             /** 「音の高さ」: −max..=max semitones and cents. */\n\
+             export const CLIP_SEMITONES_MAX = {CLIP_SEMITONES_MAX};\n\
+             export const CLIP_CENTS_MAX = {CLIP_CENTS_MAX};\n\
+             /** The range of a typed 「この音のテンポ」, in steps of 0.01. */\n\
+             export const SOURCE_BPM_MIN = {SOURCE_BPM_MIN};\n\
+             export const SOURCE_BPM_MAX = {SOURCE_BPM_MAX};\n\n\
              /** The endings of the files that read as audio, as the status line lists them. */\n\
              export const AUDIO_EXTENSIONS: readonly string[] = {};\n\n\
              /** The peaks binary (docs/architecture.md 22-17). */\n\
@@ -56,7 +62,6 @@ fn export_audio_lists() {
 
 #[test]
 fn the_numbers_are_the_models() {
-    assert_eq!(PROTOCOL_VERSION, 24);
     assert_eq!(f64::from(CLIP_GAIN_MIN_DB), meloet_model::ClipGain::MIN_DB);
     assert_eq!(f64::from(CLIP_GAIN_MAX_DB), meloet_model::ClipGain::MAX_DB);
     assert_eq!(PEAK_LEVELS[0], 256);
@@ -84,10 +89,16 @@ fn sample_audio_clip() -> AudioClipView {
         stretch: StretchView {
             follow: true,
             source_bpm: Some(120.0),
+            ratio: Some(1.0),
             semitones: 0,
             cents: 0,
             keep_formant: true,
         },
+        source_tempo: Some(SourceTempoView {
+            tempo_bpm: 120.0,
+            head_ramp: false,
+            tempo_points: Vec::new(),
+        }),
     }
 }
 
@@ -98,8 +109,9 @@ fn audio_clip_json_shape() {
         json!({"audio": 31, "file": "歌 テイク 1.wav", "sampleRate": 44_100, "bits": 24,
                "channels": 1, "resampled": true, "firstFrame": 12_000, "frames": 441_000,
                "fadeIn": 240, "fadeOut": 0, "gainDb": -3.0, "state": "ready",
-               "stretch": {"follow": true, "sourceBpm": 120.0, "semitones": 0, "cents": 0,
-                           "keepFormant": true}}),
+               "stretch": {"follow": true, "sourceBpm": 120.0, "ratio": 1.0, "semitones": 0,
+                           "cents": 0, "keepFormant": true},
+               "sourceTempo": {"tempoBpm": 120.0, "headRamp": false, "tempoPoints": []}}),
     );
     assert_eq!(
         json!([
@@ -124,10 +136,12 @@ fn audio_clip_json_shape() {
             stretch: StretchView {
                 follow: false,
                 source_bpm: None,
+                ratio: None,
                 semitones: 2,
                 cents: -30,
                 keep_formant: false,
             },
+            source_tempo: None,
             ..sample_audio_clip()
         }),
     };
@@ -135,9 +149,10 @@ fn audio_clip_json_shape() {
     assert_eq!(v["audio"]["bits"], Value::Null);
     assert_eq!(
         v["audio"]["stretch"],
-        json!({"follow": false, "sourceBpm": null, "semitones": 2, "cents": -30,
-               "keepFormant": false})
+        json!({"follow": false, "sourceBpm": null, "ratio": null, "semitones": 2,
+               "cents": -30, "keepFormant": false})
     );
+    assert_eq!(v["audio"]["sourceTempo"], Value::Null);
     assert_eq!(serde_json::from_value::<ClipView>(v).unwrap(), clip);
 }
 

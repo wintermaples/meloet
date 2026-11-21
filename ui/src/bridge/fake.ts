@@ -10,14 +10,20 @@ import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN, TELEMETRY_VERS
 import { TICKS_PER_QUARTER as TPQ } from "../time/ticks";
 import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
 import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
-import { fakeAudioClip, fakePeaks, fakeVocalClip, type FakeAudio } from "./fakeAudio";
+import { FAKE_SONG_BPM, fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "./fakeAudio";
 import {
+  CLIP_CENTS_MAX,
+  CLIP_SEMITONES_MAX,
   EFFECT_PARAMS,
   INSTRUMENT_GROUPS,
   LATENCY_CLICKS,
   PROTOCOL_VERSION,
+  SOURCE_BPM_MAX,
+  SOURCE_BPM_MIN,
   type AppState as WireState,
+  type AudioClipView,
   type AutoTarget,
+  type SourceTempoView,
   type Band,
   type Change,
   type ClipView,
@@ -3162,8 +3168,7 @@ SCENES.audioMissing = {
 SCENES.audioLoading = {
   setup(s) {
     vocalSong(s, { armed: false, monitor: false, selected: true });
-    const imported = { follow: false, sourceBpm: null, semitones: 0, cents: 0, keepFormant: true };
-    vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, "ドラム", 4 * BAR, 76 * BAR, fakeAudioClip(LONG_MP3, { stretch: imported }))];
+    vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, "ドラム", 4 * BAR, 76 * BAR, fakeAudioClip(LONG_MP3, fakeStretch(null, FAKE_SONG_BPM)))];
     s.audioWork = { jobs: [{ kind: "loading", audio: LONG_MP3.id, clip: null, percent: 40 }] };
     s.song.undoCount = 15;
   },
@@ -3172,15 +3177,15 @@ SCENES.audioLoading = {
 };
 
 // R11-Audio: the kinds of vocal clip side by side: plain, with fades and its volume line, with the marks of the
-// stretching and "音を作っています 34 %" (unusable until the stretching is made), and one whose file is not found.
+// stretching and "音を作っています 34 %", and one whose file is not found.
 SCENES.audioKinds = {
   setup(s) {
     vocalSong(s, { armed: false, monitor: false, selected: true });
-    const stretched = { follow: true, sourceBpm: 76.8, semitones: 2, cents: 0, keepFormant: true };
+    const stretched = fakeStretch(steadyTempo(76.8), FAKE_SONG_BPM, { semitones: 2 });
     vocalTrackOf(s).clips = [
       fakeVocalClip(LEFT_CLIP, "歌 テイク 1", 0, 2 * BAR, fakeAudioClip(TAKE_1)),
       fakeVocalClip(RIGHT_CLIP, "歌 テイク 1", 2 * BAR, 4 * BAR, fakeAudioClip(TAKE_1, { fadeIn: TPQ, fadeOut: 2 * TPQ, gainDb: -3 }), -2 * BAR),
-      fakeVocalClip(74, "ドラム", 4 * BAR, 6 * BAR, fakeAudioClip(DRUMS_WAV, { stretch: stretched })),
+      fakeVocalClip(74, "ドラム", 4 * BAR, 6 * BAR, fakeAudioClip(DRUMS_WAV, stretched)),
       fakeVocalClip(76, "歌 テイク 1", 6 * BAR, 8 * BAR, fakeAudioClip(FAKE_AUDIO.get(64)!)),
     ];
     s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
@@ -3191,12 +3196,109 @@ SCENES.audioKinds = {
   meters: QUIET,
 };
 
+// ---- Protocol 25: following the song's tempo, the tempo of the audio, the pitch (mock F7-Stretch; spec 3, 28-A and
+// Y22). The screen's parts come later; these are the states they will show. ----
+
+/** "6 歌" with one clip over bars 5 and 6, selected, the panel 「選んだクリップ」 open. */
+function stretchSong(s: AppState, name: string, audio: AudioClipView): void {
+  vocalSong(s, { armed: true, monitor: false, selected: true });
+  vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, name, 4 * BAR, 6 * BAR, audio)];
+  s.arrange = { ...arrangeOf(LEFT_CLIP), pianoRollClip: null };
+  s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: LEFT_CLIP, missing: null };
+  s.transport.position = 4 * BAR;
+  s.song.undoCount = 14;
+}
+/** Sung at 76.80, in a song at 96.00: "×1.25". Two semitones up: "+2". */
+const STRETCHED = () => fakeAudioClip(TAKE_1, { fadeIn: TPQ / 4, ...fakeStretch(steadyTempo(76.8), FAKE_SONG_BPM, { semitones: 2 }) });
+
+// A stretched clip whose audio is made: the marks "×1.25" and "+2".
+SCENES.stretch = { setup: (s) => stretchSong(s, "歌 テイク 1", STRETCHED()), bands: ["params"], meters: QUIET };
+// F7-Stretch: the same while its audio is being made: "音を作っています 34 %" under the clip, the bar on top of the
+// panel, and the status line (which the screen makes from `audioWork`).
+SCENES.stretchRendering = {
+  setup(s) {
+    stretchSong(s, "歌 テイク 1", STRETCHED());
+    s.audioWork = { jobs: [{ kind: "rendering", audio: TAKE_1.id, clip: LEFT_CLIP, percent: 34 }] };
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+// Only the pitch: recorded in this song, a semitone down and 30 cents up, the voice not kept ("−1 ・ 30", no "×").
+SCENES.stretchPitch = {
+  setup: (s) => stretchSong(s, "歌 テイク 1", fakeAudioClip(TAKE_1, fakeStretch(steadyTempo(FAKE_SONG_BPM), FAKE_SONG_BPM, { semitones: -1, cents: 30, keepFormant: false }))),
+  bands: ["params"],
+  meters: QUIET,
+};
+// A file brought in: it does not follow, 「この音のテンポ」 is 「—」 with 「さがす」.
+SCENES.stretchNoTempo = {
+  setup: (s) => stretchSong(s, "ドラム", fakeAudioClip(DRUMS_WAV, fakeStretch(null, FAKE_SONG_BPM))),
+  bands: ["params"],
+  meters: QUIET,
+};
+// Following through a ramp: 96.00, from bar 5 (104.00) to bar 9 (120.00) in a ramp. The first clip was recorded in
+// this very map from bar 3 (its tempo points are the song's, so nothing is stretched); the second was sung at 96.00
+// and starts at bar 6, where the song is at 108.00 ("×1.13" there, more further on).
+SCENES.stretchRamp = {
+  setup(s) {
+    stretchSong(s, "歌 テイク 1", fakeAudioClip(TAKE_1));
+    s.timeline = {
+      ...s.timeline,
+      tempoPoints: [
+        { tick: 4 * BAR, tempoBpm: 104, ramp: true },
+        { tick: 8 * BAR, tempoBpm: 120, ramp: false },
+      ],
+      open: true,
+    };
+    const recorded: SourceTempoView = {
+      tempoBpm: FAKE_SONG_BPM,
+      headRamp: false,
+      tempoPoints: [
+        { tick: 2 * BAR, tempoBpm: 104, ramp: true },
+        { tick: 6 * BAR, tempoBpm: 120, ramp: false },
+      ],
+    };
+    vocalTrackOf(s).clips = [
+      fakeVocalClip(LEFT_CLIP, "歌 テイク 1", 2 * BAR, 5 * BAR, fakeAudioClip(TAKE_1, fakeStretch(recorded, FAKE_SONG_BPM))),
+      fakeVocalClip(RIGHT_CLIP, "歌 テイク 2", 5 * BAR, 9 * BAR, fakeAudioClip(HARMONY, fakeStretch(steadyTempo(FAKE_SONG_BPM), 108))),
+    ];
+    s.arrange = { ...arrangeOf(RIGHT_CLIP), pianoRollClip: null };
+    s.params.selected = { kind: "clip", track: VOCAL_TRACK_ID, clip: RIGHT_CLIP, missing: null };
+  },
+  bands: ["params"],
+  meters: QUIET,
+};
+
+/** 「さがす」 as Rust does it, in 4/4: the audio as 1, 2, 4 or 8 bars, the tempos from 60 to 180, the one nearest to `songBpm`. */
+function fakeFoundTempo(frames: number, sampleRate: number, songBpm: number): { bpm: number; bars: number } | null {
+  const far = (bpm: number) => Math.abs(Math.log(bpm / songBpm));
+  let best: { bpm: number; bars: number } | null = null;
+  for (const bars of [1, 2, 4, 8]) {
+    const bpm = Math.round(((bars * 4 * 60 * sampleRate) / frames) * 100) / 100;
+    if (bpm >= 60 && bpm <= 180 && (best === null || far(bpm) < far(best.bpm))) best = { bpm, bars };
+  }
+  return best;
+}
+
 /**
- * Protocol 24, enough for pictures and tests: the 160 row, a value of a vocal clip, and 「曲から外す」 of an audio
- * file. Cutting, bringing files in and 「さがす…」 are taken and do nothing. `null`: not one of these commands.
+ * Protocol 24 and 25, enough for pictures and tests: the 160 row, a value of a vocal clip, a row of its stretching
+ * and pitch, 「さがす」 of the tempo of its audio, and 「曲から外す」 of an audio file. The fake's ratio is with the tempo of the song's head.
+ * Cutting, bringing files in and 「さがす…」 are taken and do nothing. `null`: not one of these commands.
  */
 export function reduceAudio(state: AppState, command: Command): Change[] | null {
   const vocalClip = (song: SongView, id: number) => song.tracks.flatMap((t) => t.clips).find((c) => c.id === id && c.audio !== null);
+  /** The changed song as one step; nothing when it is as it was. */
+  const stepped = (song: SongView): Change[] => {
+    if (JSON.stringify(song) === JSON.stringify(state.song)) return [];
+    Object.assign(song, { undoCount: song.undoCount + 1, redoCount: 0, file: "changed" });
+    return [{ section: "song", value: song }];
+  };
+  /** One tempo for the clip's audio: a new take in the same place, as Rust makes one. */
+  const setSourceBpm = (clip: ClipView, bpm: number) => {
+    const audio = clip.audio!;
+    if (audio.stretch.sourceBpm === bpm && (audio.sourceTempo?.tempoPoints.length ?? 0) === 0) return;
+    Object.assign(audio, fakeStretch(steadyTempo(bpm), state.timeline.tempoBpm, audio.stretch));
+    clip.takeId = Math.max(...state.song.tracks.flatMap((t) => t.clips.flatMap((c) => [c.id, c.takeId]))) + 1;
+  };
   switch (command.type) {
     case "setTallTrack": {
       const track = state.song.tracks.find((t) => t.id === command.track);
@@ -3214,9 +3316,34 @@ export function reduceAudio(state: AppState, command: Command): Change[] | null 
       else if (command.field === "fadeOut") clip.audio.fadeOut = Math.min(ticks, length - clip.audio.fadeIn);
       else if (command.field === "start") Object.assign(clip, { start: ticks, end: ticks + length });
       else clip.end = clip.start + Math.max(1, ticks);
-      if (JSON.stringify(song) === JSON.stringify(state.song)) return [];
-      Object.assign(song, { undoCount: song.undoCount + 1, redoCount: 0, file: "changed" });
-      return [{ section: "song", value: song }];
+      return stepped(song);
+    }
+    case "setClipStretch": {
+      const song = structuredClone(state.song);
+      const clip = vocalClip(song, command.clip);
+      if (!clip?.audio) return [];
+      const { stretch } = clip.audio;
+      const change = command.change;
+      const whole = (value: number, most: number) => Math.min(most, Math.max(-most, Math.round(value)));
+      if (change.kind === "keepFormant") stretch.keepFormant = change.on;
+      else if (change.kind === "follow") {
+        const source = stretch.sourceBpm === null ? null : (clip.audio.sourceTempo ?? steadyTempo(stretch.sourceBpm));
+        Object.assign(clip.audio, fakeStretch(source, state.timeline.tempoBpm, { ...stretch, follow: change.on }));
+      } else if (change.kind === "sourceBpm") {
+        if (!Number.isNaN(change.bpm)) setSourceBpm(clip, Math.min(SOURCE_BPM_MAX, Math.max(SOURCE_BPM_MIN, Math.round(change.bpm * 100) / 100)));
+      } else if (change.kind === "semitones") {
+        if (!Number.isNaN(change.semitones)) stretch.semitones = whole(change.semitones, CLIP_SEMITONES_MAX);
+      } else if (!Number.isNaN(change.cents)) stretch.cents = whole(change.cents, CLIP_CENTS_MAX);
+      return stepped(song);
+    }
+    case "findSourceTempo": {
+      const song = structuredClone(state.song);
+      const clip = vocalClip(song, command.clip);
+      if (!clip?.audio) return [];
+      const found = fakeFoundTempo(clip.audio.frames, clip.audio.sampleRate, state.timeline.tempoBpm);
+      const message: StatusMessage = found ? { id: "sourceTempoFound", name: clip.name, bpm: found.bpm, bars: found.bars } : { id: "sourceTempoNotFound", name: clip.name };
+      if (found) setSourceBpm(clip, found.bpm);
+      return [...stepped(song), { section: "status", value: { message } }];
     }
     case "removeMissing": {
       if (command.missing.kind !== "audio") return null;

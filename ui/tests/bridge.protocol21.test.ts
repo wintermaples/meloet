@@ -22,7 +22,7 @@ const volume = (number: number): LaneRef => ({ track: TRACK + number, target: { 
 
 describe("約束 21 の形", () => {
   it("版は 23（22 より後）。新しい曲に帯はなく、履歴は 0 手。インサートは id を持つ（新しい曲は 1 ・ 2 ・ 3）", () => {
-    expect(PROTOCOL_VERSION).toBe(24);
+    expect(PROTOCOL_VERSION).toBe(25);
     const s = fakeState();
     expect(s.automation).toEqual({ folded: [], armed: [], writing: [], held: [], selected: null } satisfies AutomationView);
     expect(s.history).toEqual({ total: 0, redo: 0, current: 0, newest: 0 } satisfies HistoryView);
@@ -57,7 +57,7 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
   const filled = (e: Entry) => fill(e.text, e.example ?? {});
 
   it("約束のどの種類にも名前があり、約束にない名前はない（名前のない手が 1 つでもあると落ちる）", () => {
-    expect(STEP_NAME_KINDS.length).toBe(71);
+    expect(STEP_NAME_KINDS.length).toBe(74);
     expect(names.map(([kind]) => kind).sort()).toEqual([...STEP_NAME_KINDS].sort());
     for (const [kind, e] of names) {
       expect(e.text.trim(), kind).not.toBe("");
@@ -117,7 +117,10 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
       cutNotes: "ノートを切り取る",
       importAudio: "音のファイルを入れる",
       setClipFade: "フェードを変える",
+      setClipFollow: "のび縮みを変える",
       setClipGain: "クリップの音量を変える",
+      setClipPitch: "音の高さを変える",
+      setSourceTempo: "この音のテンポを決める",
       setVocalInput: "歌の入口を変える",
       unmute: "ミュートを外す",
     });

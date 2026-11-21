@@ -74,7 +74,7 @@ describe("選んだクリップの欄（仕様書 3 章 93-4、モック F7-Audi
     // モックの「前 0.120 ・ 後 0.000」を 4 けたのティックで（B-94-28）。
     expect(text(q('[data-test="clip-value-fade"]'))).toBe("前 0.0480 ・ 後 0.0000");
     const stretch = qa(".row.unusable");
-    expect(stretch.map((r) => [...r.children].map(text).join(" "))).toEqual(["曲のテンポについていく オン", "この音のテンポ 120.00", "音の高さ +0 半音 0 セント", "声の感じを保つ オン"]);
+    expect(stretch.map((r) => [...r.children].map(text).join(" "))).toEqual(["曲のテンポについていく オン", "この音のテンポ 96.00", "音の高さ +0 半音 0 セント", "声の感じを保つ オン"]);
     expect(stretch.every((r) => r.getAttribute("aria-disabled") === "true")).toBe(true);
   });
 

@@ -2036,3 +2036,56 @@ pub struct AudioShape {
 
 - この道具の「拡大」は、目あて（最大 16.7 ms の中）に届いていない。この道具は 2 コマに 1 回しか描かせないので、1 つの busyMs に出来事 2 つぶんの JS とスタイルが入り、上の「知らせが後ろへ回る」も重なる。取っ手の分（1 コマ 4 ms）は、札の文字と決まった重さにかくれる。
 - 録音中の描きなおしの四角は 7 個のまま（`webkit-damage.sh`、130 回のうち 107 回。囲む四角まるごとは 3 回）。
+
+### 22-19. 区切り4 の 1 回目: 約束 25（のび縮みと音の高さ、2026-11-21、meloet-hard）
+
+区切り4 の 2 回目で、core（作る係、意図の中身）と画面（欄、印、進みの棒、波形）が、同じ出発点から別々に作るための形。中身があるのは、model の直す関数と式、約束の型、答えの表と画面の写し、偽物の場面。**core は新しい意図を受けとるが、まだ何もしない**。画面の部品は今のまま（欄は「使えない」）。
+
+**ついていくときの式**（`crates/meloet-model/src/audio/follow.rs` の `FileClock`）
+
+- テイクの 0 ティックは曲の `clip.start + offset`（`Clip::active_zero`）。そこがファイルの `first_frame`。そこから先は 2 通り。
+  - ついていかない: `first_frame + (曲の秒(t) − 曲の秒(0 ティック)) × サンプルレート`（今までの式）。
+  - **ついていく: `first_frame + この音の秒(t − 0 ティック) × サンプルレート`**。「この音の秒」は、テイクの `sync`（`SourceTempo`）だけで作った地図（`SourceTempo::map`。テイクの 0 ティックからのティック → 秒。0 より前は頭のテンポがそのまま前へ続く）。**曲のテンポは式に出てこない**。だから、曲のテンポをどう変えても、同じティックに同じこまが来る（音が曲のティックに貼りつく）。クリップの長さ（ティック）は変わらない。
+- **ついていくのは「`AudioShape::follow` がオン」かつ「テイクに `sync` がある」とき**。「—」のままついていくをオンにしても、ファイルの速さのまま（比べるテンポがないので）。スイッチは覚えておき、テンポが入ったら、ついていく。
+- 22-8 の `p(j)` は、`frame_at(曲の地図, 曲の地図.tick_at(出るこま j の秒))`。作る係がエンジンのサンプルレートの写し（しまっておく所の PCM）で数えるときは、`FileClock::new` に、その写しのこまとサンプルレートをわたす。
+- 印の比は `ratio_at(曲の地図, t)` = 曲のテンポ(t) ÷ この音のテンポ(t − 0 ティック)。
+- **置き場所を model にした理由**: 数だけの式で、作る係（core）、エンジンに送る区切りの表（core）、波形（画面の写し）の 3 か所が同じ答えを出さなければならない。テンポの地図（`tempo_map.rs`）と同じ扱い。
+- **画面の写し**は `ui/src/components/arrange/follow.ts`（`sourceMapOf` ・ `clipFrameAt` ・ `stretchRatioAt`）。同じ答えかは、`crates/meloet-model/tests/follow.rs` が書く表 `follow.table.json`（6 場面、324 行。だんだんが曲とこの音の両方にある場面、テイクの 0 ティックが曲の頭より前の場面も）を `ui/tests/arrange.follow.test.ts` が読んで見る（こまは 1000 分の 1 こままで、比は 1e-12 まで）。「この音のテンポ」の地図は、画面の `TempoMap` に `SourceTempoView` をそのまま（拍子 4/4、旗なしで）わたせば作れる。**`wave.ts` ・ `audioClipGeom.ts` の `fileFrameAt` を、この写しに変えるのは 2 回目**。
+
+**model の直す関数**（`crates/meloet-model/src/audio/stretch.rs`。どれも 1 手、歌のクリップでなければ `WrongKind`、同じ値なら `Unchanged`）
+
+- `set_clip_follow(doc, clip, on)` → 手 `SetClipFollow`。
+- `set_clip_semitones(doc, clip, i32)`（±12 にまるめる）、`set_clip_cents(doc, clip, i32)`（±50）、`set_clip_keep_formant(doc, clip, on)` → 手 `SetClipPitch`。
+- `set_source_tempo(doc, clip, tempo)` → 手 `SetSourceTempo`。**見せているテイクだけを、新しい id の、同じ音 ・ 同じ範囲 ・ 同じ offset のテイクに入れかえる**（`sync` は点のない 1 つのテンポ、`SourceTempo::steady`）。テイクの数は変わらない。S で同じテイクを指していたもう片方のクリップは、古いテイクのまま。だんだんの中で録った歌に数を打つと、点の列は消える（取り消せば戻る）。
+- さがす: `source_tempo_guesses(こま数, サンプルレート, 拍子)`（1 ・ 2 ・ 4 ・ 8 小節と見たテンポのうち 60.00〜180.00 に入る物。0.01 にまるめてから範囲を見る。小節の数が倍になるとテンポも倍なので、多くて 2 つ）、`pick_guess(候補, 曲のテンポ)`（比でいちばん近い物。同じ近さなら遅いほう）、`guess_source_tempo(doc, clip)`（見せているテイクの長さ、クリップの頭の拍子とテンポで）。見つけた数は `set_source_tempo` で入れる。
+  - **比で近さを見る理由**: 候補は倍 ・ 半分の関係なので、差（60 と 120 のまん中が 90）より比（まん中が 84.85）のほうが「倍か半分か」をまっすぐ分ける。
+
+**約束 25**（`crates/meloet-protocol/src/audio.rs` ・ `lib.rs` ・ `history.rs`）
+
+- **意図**
+  - `setClipStretch {clip, change}`。`change` は `{kind: "follow", on}` ・ `{kind: "sourceBpm", bpm}` ・ `{kind: "semitones", semitones}` ・ `{kind: "cents", cents}` ・ `{kind: "keepFormant", on}`。1 つが 1 手。数は Rust がまるめる（半音 ・ セントはいちばん近い整数で範囲の中、テンポは 0.01 きざみで 30〜300）。数でない値、同じ値、歌のクリップでない id、カウントイン中 ・ 録音中は何もしない。
+    - **`SetClipField` に足さず、別の意図にした理由**: オン ・ オフを 0 と 1 で送らずにすむ（`on` は bool）。欄の 2 つのグループ（「クリップ」と「のび縮み ・ 音の高さ」）が、そのまま 2 つの意図になる。今の `ClipPanel.svelte` は `Record<ClipField, …>` を持っているので、`ClipField` を増やすと、さわらない約束の部品が型で落ちる。
+  - `findSourceTempo {clip}`（「さがす」）。見つけたら「この音のテンポ」に入れる（1 手、新しいテイク）。**ついていくは変えない**（仮。決めるのは人）。見つからなければ何も変えない。
+- **見る物**
+  - `StretchView.ratio: number | null`: **クリップの頭の**「曲のテンポ ÷ この音のテンポ」。ついていかないクリップは null。まるめずに送る（画面が小数 2 けたで出し、1.00 になる物は印を出さない）。だんだんの中では先で数が変わるが、印は頭の数 1 つ。**曲のテンポやクリップの場所が変わって比が変わったら、core は `song` の区画を送りなおす**（2 回目）。
+  - `AudioClipView.sourceTempo: {tempoBpm, headRamp, tempoPoints} | null`: **ついていくクリップにだけ**入る（`follow` がオンで、テイクにテンポがある）。波形を置くための、この音のテンポの点の列。欄の名前は `timeline` の区画と同じにしてある。画面は「`sourceTempo` が null なら今までの式、あれば ついていく式」と読む。
+    - `StretchView` でなく `AudioClipView` に置いた理由: `StretchView` は欄の 4 行の値（`Copy` のまま）、波形の場所は `firstFrame` ・ `frames` のとなり。
+  - 音を作っている進みは、約束 24 の `audioWork.jobs` の `{kind: "rendering", audio, clip, percent}` で足りる（クリップの下、欄の上の棒、状態行の 3 か所とも、`clip` から読める）。足した物はない。**状態行の「… の音を作っています 34 % ・ …」は、画面が `audioWork` から作る**（Rust の状態行の文にすると、% のたびに `status` を送ることになる）。
+  - 状態行: `sourceTempoFound {name, bpm, bars}`、`sourceTempoNotFound {name}`。文はまだない（画面は何も出さない）。
+- **手の名前**: `setClipFollow` ・ `setSourceTempo` ・ `setClipPitch`。（何を）は、どれもクリップの名前（今の `name` の形。フェードと同じ）。
+- 範囲の数は `ui/src/bridge/generated/audio.ts` に出る（`CLIP_SEMITONES_MAX` ・ `CLIP_CENTS_MAX` ・ `SOURCE_BPM_MIN` ・ `SOURCE_BPM_MAX`）。
+
+**core**（最小の直しだけ）
+
+- `play/vocal.rs` の `audio_clip_view` が `ratio` と `sourceTempo` を本当の数で入れる（曲の地図を引数にもらう）。
+- `Command::SetClipStretch` ・ `FindSourceTempo` は受けとって何もしない（`state.rs`）。手の名前の腕は入れてある（`play/history.rs`）。
+
+**曲のファイル**: 版 6 のまま、形は足していない。半音 ・ セント ・ ついていく ・ 声の感じは `shape`、この音のテンポはテイクの `sync`（新しい id のテイクとして `audioTakes` に 1 つふえる）。保存 → ひらく の試験は `songfile/vocal_tests.rs`。
+
+**偽物の場面**（`ui/src/bridge/fake.ts`、`fakeAudio.ts` の `fakeStretch`）: `stretch`（×1.25 ・ +2）、`stretchRendering`（F7-Stretch。34 %）、`stretchPitch`（−1 ・ 30、比 1）、`stretchNoTempo`（入れたファイル、「—」）、`stretchRamp`（だんだんの中の 2 つ: 地図ごと録った物〔比 1〕と、96.00 で歌った物〔頭で 1.125〕）。偽物の録った歌は、曲と同じ 96.00（前は 120 で、今の決まりでは ×0.80 がつくので直した）。偽物の意図（`setClipStretch` ・ `findSourceTempo`）は絵と試験に足りるだけ動く。
+
+**2 回目へ**
+
+- core: 意図の中身（上の model の関数を呼ぶだけ）、作る係、区切りの表を「ついていく式」で作る事、できた音への入れかえ、`rendering` の進み、比が変わったときの `song` の送りなおし。
+- **だんだんの中で録りはじめた歌**は、`SourceTempo::from_timeline` が頭のテンポを 0.01 にまるめるので、「ついていく式」と「ファイルの速さのまま」が、ごくわずかにずれる（まるめが 0.005 で 100 のとき、10 秒で 24 こまほど）。22-8 の「何もしなくてよいクリップは作らない」を、式の差が小さい（たとえば 1 こまより小さい）で決めるのか、`sync` が曲の地図から作った物と同じかで決めるのかは、2 回目で決める。
+- 画面: `fileFrameAt` ・ `frameAtTick` を `follow.ts` の写しに変える。欄、印、進みの棒、右クリックの一覧。

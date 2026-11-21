@@ -73,5 +73,8 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "splitClips",
   "importAudio",
   "setClipGain",
-  "setClipFade"
+  "setClipFade",
+  "setClipFollow",
+  "setSourceTempo",
+  "setClipPitch"
 ];

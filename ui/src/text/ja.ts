@@ -2123,6 +2123,15 @@ export const texts = {
   ),
   // 音のファイルを 1 つだけ持ってきている間（仕様書の文は 2 つ以上のときの形。「SF2 のファイルを持ってきています」にならった）。
   "msg.audioDraggingOne": e("音のファイルを持ってきています", "builder:2026-11-21"),
+  // 「さがす」（「この音のテンポ」、B-94-52 ・ 53）の答え。
+  "msg.sourceTempoFound": e("{name} のテンポを {bpm} にしました（{bars} 小節と見ました）・ ちがうときは「この音のテンポ」に数を入れてください", "builder:2026-11-21", {
+    name: "ドラム ループ",
+    bpm: "120.00",
+    bars: "2",
+  }),
+  "msg.sourceTempoNotFound": e("{name} のテンポは見つかりませんでした ・ 「この音のテンポ」に数を入れてください", "builder:2026-11-21", {
+    name: "ドラム ループ",
+  }),
   "drop.mixed": s6("SF2 と音のファイルをまぜて持ってきた", "SF2 は {sf2} つ棚へ ・ 音のファイル {audio} つはアレンジへ", {
     sf2: "1",
     audio: "3",
@@ -2422,6 +2431,9 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   importAudio: e("音のファイルを入れる", "builder:2026-11-21"),
   setClipGain: e("クリップの音量を変える", "builder:2026-11-21"),
   setClipFade: e("フェードを変える", "builder:2026-11-21"),
+  setClipFollow: e("のび縮みを変える", "builder:2026-11-21"),
+  setSourceTempo: e("この音のテンポを決める", "builder:2026-11-21"),
+  setClipPitch: e("音の高さを変える", "builder:2026-11-21"),
 };
 
 export interface Term {

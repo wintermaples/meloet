@@ -1590,6 +1590,8 @@ impl Model {
             }
             Command::ImportAudio { track } => self.import_audio(track, effects),
             Command::FindAudio { audio } => self.find_audio(audio, effects),
+            // Protocol 25: taken, and nothing done until the stretching is made.
+            Command::SetClipStretch { .. } | Command::FindSourceTempo { .. } => {}
             Command::SelectInstrument { track } => {
                 let selecting = self.play.select_instrument(track);
                 self.selected(selecting, effects);

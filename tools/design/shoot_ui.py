@@ -205,6 +205,12 @@ BOARDS = {
     "audioMissing": "F7-AudioMissing",
     "audioLoading": None,
     "audioKinds": "R11-Audio",
+    # 第 7 回 区切り4: のび縮みと音の高さ（約束 25）。
+    "stretch": "F7-Stretch",
+    "stretchRendering": "F7-Stretch",
+    "stretchPitch": None,
+    "stretchNoTempo": None,
+    "stretchRamp": None,
     "recoverVocal": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").

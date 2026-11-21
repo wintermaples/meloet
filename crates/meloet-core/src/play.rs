@@ -1574,6 +1574,7 @@ impl Play {
     }
 
     pub fn clips_of(&self, track: TrackId) -> Vec<ClipView> {
+        let map = self.map();
         self.doc().track(track).map_or_else(Vec::new, |t| {
             t.clips
                 .iter()
@@ -1591,7 +1592,7 @@ impl Play {
                         let source = &take.take.source;
                         let (state, resampled) =
                             (self.audio_state(source), self.audio_resampled(source));
-                        vocal::audio_clip_view(c, state, resampled)
+                        vocal::audio_clip_view(c, &map, state, resampled)
                     }),
                 })
                 .collect()

@@ -1490,7 +1490,7 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 書体: `@fontsource` の切れはしのまま `@font-face` の数をへらす道（再生中の busyMs が 2 ms 軽くなる見こみ。画素を変えない形で。`refs/archive/k7f3-font-trial` と `docs/measurements/2026-11-21-round7-step3-fix.md`）。
 - 歌のクリップ 192 個を作っている間、状態が届くたびに 11 ms のコマ（何の時間か分かっていない）。再生中に欄をひらいて選んだクリップを作っていると、0.5 秒に 1 回まるごと描く。
 - 「いちばん大きい所」はエンジンのサンプルレートの数（44100 で書くと少し変わる）。
-- 時間で見る試験が混んだ PC で落ちることがある（`readahead::tests::the_ring_holds_the_clips_in_the_order_they_sound_with_silence_between`、plughost の `a_host_process_crashed_from_outside_stops_its_slots_at_the_second_block`）。`--ignored` の `windows_open_are_listed_and_a_visit_is_one_step_through_the_core` が落ちると言われた（土台で落ちるか見ていない）。`/tmp` に試験の `meloet-core-test-*` が 3000 ほど残っている。wav の頭の 44 バイトを書く所が 3 か所。
+- 時間で見る試験が混んだ PC で落ちることがある（`readahead::tests::the_ring_holds_the_clips_in_the_order_they_sound_with_silence_between`、plughost の `a_host_process_crashed_from_outside_stops_its_slots_at_the_second_block`）。`--ignored` の `windows_open_are_listed_and_a_visit_is_one_step_through_the_core` は foundation（0907599）でも落ちる（棟梁が 2 回確かめた。「the visit is a step」で 60 秒待って切れる。試験は Surge XT の窓のつまみを回す 1 回を 1 手と待つが、同じファイルのコメントは `turn` を手に数えない。どちらが今の決まりか見て、試験か製品を直す）。`/tmp` に試験の `meloet-core-test-*` が 3000 ほど残っている。wav の頭の 44 バイトを書く所が 3 か所。
 - 画面の小さな事（終わりの絵で見つけた物、B-94 の 88〜92）。
 - 前からの宿題で、第 7 回でさわらなかった物は、第 6 回の宿題の一覧のまま。
 

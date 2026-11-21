@@ -13,7 +13,9 @@ use meloet_engine::{Effect, Instrument, PluginBlock, PluginWatch};
 use meloet_model::PluginPlace;
 use meloet_plugin::PluginKey;
 
-use super::hosts::HostOptions;
+use meloet_engine::{PluginEffect, PluginInstrument};
+
+use super::hosts::{HostError, HostOptions, Hosts, LoadSpec, StartState, wait};
 
 /// One plugin of the song, as the export is to load it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +36,9 @@ pub struct ExportWant {
     pub plugins: Vec<ExportPlugin>,
     /// The rate of the export's engine, which is the rate the playing engine runs at.
     pub sample_rate: u32,
-    /// The export's engine never asks for a longer block.
+    /// The export's engine never asks for a longer block. The plugins are made ready for
+    /// `HostOptions::geometry.max_frames`, as the playing ones are; a longer block than that
+    /// goes to a plugin in pieces.
     pub max_frames: u32,
 }
 
@@ -49,6 +53,8 @@ pub struct ExportSeats {
     pub realtime: bool,
     /// What tells that a plugin answered no more.
     pub watches: Vec<(PluginPlace, Arc<PluginWatch>)>,
+    /// The processes. Last, so that the seats still here go first.
+    hosts: Option<Hosts>,
 }
 
 impl ExportSeats {
@@ -59,7 +65,14 @@ impl ExportSeats {
             effects: Vec::new(),
             realtime: false,
             watches: Vec::new(),
+            hosts: None,
         }
+    }
+
+    /// The process ids of the export's plugin processes that run now.
+    pub fn pids(&self) -> Vec<u32> {
+        let processes = self.hosts.as_ref().map(Hosts::processes);
+        (processes.iter().flatten().map(|p| p.pid)).collect()
     }
 
     /// A plugin that answered no more. The export's thread looks after every block; with
@@ -81,7 +94,7 @@ impl std::fmt::Debug for ExportSeats {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportPluginError {
-    /// Songs with plugins cannot be exported yet.
+    /// Not given any more: it was the answer while songs with plugins could not be exported.
     NotYet,
     /// A process could not be started. The message is for the log.
     Start(String),
@@ -111,12 +124,50 @@ pub fn export_seats(
     want: ExportWant,
     block: Arc<PluginBlock>,
 ) -> Result<ExportSeats, ExportPluginError> {
-    let _ = (options, block);
+    let mut seats = ExportSeats::none();
     if want.plugins.is_empty() {
-        Ok(ExportSeats::none())
-    } else {
-        Err(ExportPluginError::NotYet)
+        return Ok(seats);
     }
+    // What stops is read from the watches; the export's thread has no use for news.
+    let hosts = Hosts::start_offline(options.clone(), |_| {});
+    for plugin in want.plugins {
+        let ExportPlugin {
+            place,
+            name,
+            key,
+            bundle,
+            state,
+        } = plugin;
+        let spec = LoadSpec {
+            key,
+            bundle,
+            sample_rate: want.sample_rate,
+        };
+        let state = if state.is_empty() {
+            StartState::Fresh
+        } else {
+            StartState::Bytes(state)
+        };
+        let loaded = wait(|done| hosts.load_with(spec, state, block.clone(), done)).map_err(
+            |e| match e {
+                HostError::Start(why) => ExportPluginError::Start(why),
+                _ => ExportPluginError::Load { place, name },
+            },
+        )?;
+        seats.realtime |= loaded.plugin.live;
+        seats.watches.push((place, loaded.watch));
+        match place {
+            PluginPlace::Instrument(_) => {
+                let instrument = Box::new(PluginInstrument(loaded.slot));
+                seats.instruments.push((place, instrument));
+            }
+            PluginPlace::Insert(..) => {
+                (seats.effects).push((place, Box::new(PluginEffect(loaded.slot))));
+            }
+        }
+    }
+    seats.hosts = Some(hosts);
+    Ok(seats)
 }
 
 #[cfg(test)]
@@ -158,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn a_song_with_a_plugin_is_not_exported_yet() {
+    fn a_process_that_does_not_start_is_told() {
         let plugin = ExportPlugin {
             place: PluginPlace::Instrument(TrackId(5)),
             name: "Surge XT".into(),
@@ -169,9 +220,9 @@ mod tests {
             state: Vec::new(),
         };
         let block = Arc::new(PluginBlock::default());
-        assert_eq!(
+        assert!(matches!(
             export_seats(&options(), want(vec![plugin]), block).unwrap_err(),
-            ExportPluginError::NotYet
-        );
+            ExportPluginError::Start(_)
+        ));
     }
 }

@@ -110,14 +110,22 @@ fn wav_and_flac_hold_the_same_whole_numbers() {
         if bits == RecordFormat::Bits24 {
             // 24 bits: the nearest step, nothing added.
             for (i, (a, w)) in audio.iter().zip(&w).enumerate() {
-                let a = if a.is_finite() { a.clamp(-1.0, 1.0) } else { 0.0 };
+                let a = if a.is_finite() {
+                    a.clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                };
                 let want = (f64::from(a) * 8_388_607.0).round() as i32;
                 assert_eq!(whole(*w), want, "sample {i}");
             }
         } else {
             // 16 bits: within the dither (one step each way) and the rounding.
             for (i, (a, w)) in audio.iter().zip(&w).enumerate() {
-                let a = if a.is_finite() { a.clamp(-1.0, 1.0) } else { 0.0 };
+                let a = if a.is_finite() {
+                    a.clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                };
                 let off = (whole(*w) as f32 - a * 32_767.0).abs();
                 assert!(off <= 1.5, "sample {i} is {off} steps off");
             }
@@ -132,8 +140,18 @@ fn the_dither_of_16_bits_is_the_same_every_time_and_is_there() {
     // A level between two steps: without dither every sample would be the same number.
     let audio = vec![0.25 / 32_767.0; 2 * 4_800];
     let (a, b) = (dir.join("a.wav"), dir.join("b.wav"));
-    write(&a, spec(ExportFormat::Wav, RecordFormat::Bits16), &audio, 480);
-    write(&b, spec(ExportFormat::Wav, RecordFormat::Bits16), &audio, 77);
+    write(
+        &a,
+        spec(ExportFormat::Wav, RecordFormat::Bits16),
+        &audio,
+        480,
+    );
+    write(
+        &b,
+        spec(ExportFormat::Wav, RecordFormat::Bits16),
+        &audio,
+        77,
+    );
     let (bytes_a, bytes_b) = (std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
     assert_eq!(bytes_a, bytes_b);
     let back = read_wav(&a);
@@ -144,7 +162,12 @@ fn the_dither_of_16_bits_is_the_same_every_time_and_is_there() {
     let mean = steps.iter().sum::<i32>() as f32 / steps.len() as f32;
     assert!((mean - 0.25).abs() < 0.05, "mean {mean}");
     // 24 bits get no dither.
-    write(&a, spec(ExportFormat::Wav, RecordFormat::Bits24), &audio, 480);
+    write(
+        &a,
+        spec(ExportFormat::Wav, RecordFormat::Bits24),
+        &audio,
+        480,
+    );
     let back = read_wav(&a);
     assert!(back.iter().all(|v| *v == back[0]));
     let _ = std::fs::remove_dir_all(dir);

@@ -17,7 +17,12 @@ fn frames_of(doc: &Doc, start: u64, end: u64) -> usize {
     map.frame_of(end as f64, map.seconds_at(start as f64), f64::from(RATE)) as usize
 }
 
-fn target(path: PathBuf, format: ExportFormat, sample_rate: u32, bits: RecordFormat) -> ExportTarget {
+fn target(
+    path: PathBuf,
+    format: ExportFormat,
+    sample_rate: u32,
+    bits: RecordFormat,
+) -> ExportTarget {
     ExportTarget {
         path,
         format,
@@ -40,7 +45,9 @@ fn failed(run: &Run) -> ExportFailure {
     let seen = run.until("failed", |n| {
         matches!(
             n,
-            ExportNews::Finished { .. } | ExportNews::Failed { .. } | ExportNews::Counted { done: true, .. }
+            ExportNews::Finished { .. }
+                | ExportNews::Failed { .. }
+                | ExportNews::Counted { done: true, .. }
         )
     });
     match seen.into_iter().last() {
@@ -109,7 +116,13 @@ fn the_head_is_cut_and_the_tail_ends_when_it_is_quiet_or_after_ten_seconds() {
     // The sound is gone 5000 frames after the range: the file ends with the last block
     // that was not quiet, and the half second that was waited is not in it.
     let quiet_from = 300 + range + 5_000;
-    let fading = |frame: u64| if frame < quiet_from { loud(frame) } else { 1e-5 };
+    let fading = |frame: u64| {
+        if frame < quiet_from {
+            loud(frame)
+        } else {
+            1e-5
+        }
+    };
     let mut t = taker(&path, 300, range, ExportTail::UntilSilent);
     let fed = feed(&mut t, fading);
     let last_loud_block = (quiet_from - 1) / BLOCK as u64;
@@ -131,7 +144,10 @@ fn the_head_is_cut_and_the_tail_ends_when_it_is_quiet_or_after_ten_seconds() {
     assert!((range + 30_000..range + 30_000 + BLOCK as u64).contains(&frames));
     let back = read_wav(&path);
     assert_eq!(back[2 * (range as usize + 10_000)], 0.0);
-    assert_eq!(back[2 * (range as usize + 25_000)], loud(300 + range + 25_000));
+    assert_eq!(
+        back[2 * (range as usize + 25_000)],
+        loud(300 + range + 25_000)
+    );
 
     // A sound that never ends: ten seconds of it.
     let mut t = taker(&path, 0, range, ExportTail::UntilSilent);
@@ -170,7 +186,10 @@ fn the_tail_of_the_song_rings_on_and_without_one_the_file_ends_with_the_range() 
     assert!(more > RATE as usize / 2, "{more} frames of tail");
     assert!(more < 10 * RATE as usize, "{more} frames of tail");
     // Up to the range's end the two are the same file.
-    assert!(whole[..2 * range] == cut[..], "the range differs with a tail");
+    assert!(
+        whole[..2 * range] == cut[..],
+        "the range differs with a tail"
+    );
     // The song has stopped there: only what rings is left, and it dies away.
     let last = &whole[whole.len() - 2 * BLOCK..];
     assert!(last.iter().all(|s| s.abs() < 1e-3));
@@ -183,7 +202,9 @@ fn each_track_gets_a_file_and_together_they_are_the_song() {
     // Nothing on the master that makes the sum of the tracks another sound than the song.
     let doc = mixer::remove_effect(&doc, StripId::Master, 0).unwrap().doc;
     let doc = (edit::rename_track(&doc, parts.drums, "ドラム/キック?").unwrap()).doc;
-    let doc = edit::rename_track(&doc, parts.vocals, "リード").unwrap().doc;
+    let doc = edit::rename_track(&doc, parts.vocals, "リード")
+        .unwrap()
+        .doc;
     let doc = edit::rename_track(&doc, parts.lead, "リード").unwrap().doc;
     place.files_of(&doc);
     let span = (0, 2 * BAR);
@@ -245,7 +266,7 @@ fn the_file_has_the_form_asked_for() {
         let floats = run.pass(0);
         let path = out.join(name);
         run.handle.finish(target(path.clone(), format, rate, bits));
-        assert_eq!(finished(&run), [path.clone()]);
+        assert_eq!(finished(&run), std::slice::from_ref(&path));
         // The work place is empty again.
         let work = run.work.clone();
         run.handle.join();
@@ -255,7 +276,10 @@ fn the_file_has_the_form_asked_for() {
 
     let (floats, path) = export("f.wav", ExportFormat::Wav, RATE, RecordFormat::Bits32);
     assert_eq!(floats.len(), 2 * range);
-    assert!(read_wav(&path) == floats, "32 bits are the floats as they are");
+    assert!(
+        read_wav(&path) == floats,
+        "32 bits are the floats as they are"
+    );
 
     // Every run of the same song is the same audio.
     let (again, path) = export("w24.wav", ExportFormat::Wav, RATE, RecordFormat::Bits24);
@@ -277,7 +301,9 @@ fn the_file_has_the_form_asked_for() {
     let (_, b) = export("b16.wav", ExportFormat::Wav, RATE, RecordFormat::Bits16);
     assert!(std::fs::read(&a).unwrap() == std::fs::read(&b).unwrap());
     let (_, path) = export("f16.flac", ExportFormat::Flac, RATE, RecordFormat::Bits16);
-    let wav16: Vec<i32> = (read_wav(&a).iter()).map(|v| (v * 32_768.0) as i32).collect();
+    let wav16: Vec<i32> = (read_wav(&a).iter())
+        .map(|v| (v * 32_768.0) as i32)
+        .collect();
     let flac16: Vec<i32> = (read_flac(&path).1.iter())
         .map(|v| (v * 32_768.0) as i32)
         .collect();
@@ -350,7 +376,11 @@ fn a_job_given_up_leaves_nothing_and_one_that_cannot_write_says_so() {
     let work = run.work.clone();
     run.handle.join();
     assert!(!work.exists());
-    assert!(run.news.try_iter().all(|n| matches!(n, ExportNews::Counted { done: false, .. })));
+    assert!(
+        run.news
+            .try_iter()
+            .all(|n| matches!(n, ExportNews::Counted { done: false, .. }))
+    );
 
     // Given up when it is rendered and waits for 「書き出す」.
     let run = place.start(place.setup(place.job(2, &doc, span, ExportTail::Off)));
@@ -404,7 +434,10 @@ fn a_job_given_up_leaves_nothing_and_one_that_cannot_write_says_so() {
         .map(|e| e.unwrap().file_name())
         .collect();
     assert_eq!(names, ["a.wav"]);
-    assert_eq!(read_wav(&out.join("a.wav")).len(), 2 * frames_of(&doc, 0, BAR));
+    assert_eq!(
+        read_wav(&out.join("a.wav")).len(),
+        2 * frames_of(&doc, 0, BAR)
+    );
 }
 
 #[test]

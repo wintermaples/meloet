@@ -5,14 +5,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use meloet_model::effects::EffectKind;
 use meloet_model::song::{ClipId, Doc, Note};
 use meloet_model::{
-    AutoTarget, BuiltinInstrument, Bus, ClipGain, FadeEnd, Gain, InstrumentRef,
-    NewAudio, NewAudioTake, NewTake, StripId, Tempo, TickRange, TrackId, VocalRecording,
+    AutoTarget, BuiltinInstrument, Bus, ClipGain, FadeEnd, Gain, InstrumentRef, NewAudio,
+    NewAudioTake, NewTake, StripId, Tempo, TickRange, TrackId, VocalRecording,
     add_vocal_recordings, automation, edit, mixer, set_clip_fade, set_clip_gain,
     set_clip_semitones, timeline,
 };
-use meloet_model::effects::EffectKind;
 use meloet_protocol::ExportTail;
 
 use super::job::{self, JobHandle, Setup};
@@ -122,7 +122,8 @@ impl Run {
         let mut seen = Vec::new();
         loop {
             let left = until.saturating_duration_since(Instant::now());
-            let news = (self.news.recv_timeout(left)).unwrap_or_else(|_| panic!("{what}: {seen:?}"));
+            let news =
+                (self.news.recv_timeout(left)).unwrap_or_else(|_| panic!("{what}: {seen:?}"));
             seen.push(news);
             if done(seen.last().unwrap()) {
                 return seen;
@@ -209,12 +210,6 @@ pub struct Parts {
     pub lead: TrackId,
     pub drums: TrackId,
     pub vocals: TrackId,
-    /// Plays its file as it is, with fades and a volume.
-    pub plain: ClipId,
-    /// Three semitones up.
-    pub pitched: ClipId,
-    /// The tempo under it is another one than it was sung to.
-    pub stretched: ClipId,
 }
 
 /// Six bars: 96 a minute, from bar 3 a ramp to 120 at bar 5, and another tempo in the
@@ -232,22 +227,32 @@ pub fn song() -> (Doc, Parts) {
     let lead = InstrumentRef::Builtin(BuiltinInstrument::SynthLead);
     let doc = edit::set_instrument(&doc, first, lead).map_or(doc, |e| e.doc);
     let lead = first;
-    let melody = [60, 64, 67, 72, 71, 67, 64, 62, 60, 65, 69, 72, 74, 72, 69, 65];
+    let melody = [
+        60, 64, 67, 72, 71, 67, 64, 62, 60, 65, 69, 72, 74, 72, 69, 65,
+    ];
     let take = notes(&melody, 6 * BAR / 16, 2_000);
-    let doc = edit::add_recording(&doc, lead, vec![take], 0).unwrap().0.doc;
+    let doc = edit::add_recording(&doc, lead, vec![take], 0)
+        .unwrap()
+        .0
+        .doc;
     let (e, lane) = automation::add_lane(&doc, lead, AutoTarget::Volume, false).unwrap();
     let (e, lane, _) = automation::add_point(&e.doc, lane, 0, Some(0.8), 0.8).unwrap();
     let (e, lane, _) = automation::add_point(&e.doc, lane, 2 * BAR + 300, Some(0.35), 0.8).unwrap();
     let (e, _, _) = automation::add_point(&e.doc, lane, 4 * BAR, Some(0.9), 0.8).unwrap();
     let strip = StripId::Track(lead);
-    let doc = mixer::add_effect(&e.doc, strip, 0, EffectKind::Delay).unwrap().doc;
+    let doc = mixer::add_effect(&e.doc, strip, 0, EffectKind::Delay)
+        .unwrap()
+        .doc;
     let doc = (mixer::set_send(&doc, lead, Bus::A, Gain::from_db(-9.0)).unwrap()).doc;
 
     let kit = InstrumentRef::Builtin(BuiltinInstrument::ElectroKit);
     let (e, drums) = edit::add_track(&doc, None, kit).unwrap();
     let hits: Vec<u8> = (0..48).map(|i| [36, 42, 38, 42][i % 4]).collect();
     let take = notes(&hits, BAR / 8, 400);
-    let doc = edit::add_recording(&e.doc, drums, vec![take], 0).unwrap().0.doc;
+    let doc = edit::add_recording(&e.doc, drums, vec![take], 0)
+        .unwrap()
+        .0
+        .doc;
     let doc = (mixer::set_pan(&doc, StripId::Track(drums), meloet_model::Pan::new(-30)))
         .map_or(doc.clone(), |e| e.doc);
 
@@ -258,15 +263,12 @@ pub fn song() -> (Doc, Parts) {
     let doc = (set_clip_gain(&doc, plain, ClipGain::from_db(-4.0).unwrap()).unwrap()).doc;
     let (doc, pitched) = recorded(&doc, vocals, 2, 4 * BAR, BAR);
     let doc = set_clip_semitones(&doc, pitched, 3).unwrap().doc;
-    let (doc, stretched) = recorded(&doc, vocals, 3, 5 * BAR, BAR);
+    let (doc, _) = recorded(&doc, vocals, 3, 5 * BAR, BAR);
     let doc = (timeline::add_tempo_point(&doc, 5 * BAR + BAR / 2, tempo(10_400)).unwrap()).doc;
     let parts = Parts {
         lead,
         drums,
         vocals,
-        plain,
-        pitched,
-        stretched,
     };
     (doc, parts)
 }

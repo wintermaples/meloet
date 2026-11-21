@@ -467,12 +467,9 @@ impl Core {
                 env: plugin_options.child_env.clone(),
                 geometry: DEFAULT_GEOMETRY,
             };
-            let hosts = Hosts::start(
-                host_options.clone(),
-                move |news| {
-                    let _ = host_tx.send(Msg::Plugins(news));
-                },
-            );
+            let hosts = Hosts::start(host_options.clone(), move |news| {
+                let _ = host_tx.send(Msg::Plugins(news));
+            });
             let dir = plugin_options.cache_dir.as_deref();
             let (gone_tx, gone_rx) = mpsc::channel();
             PluginSide {
@@ -1730,10 +1727,10 @@ impl Audio {
                 tracks: tracks.into_iter().collect::<TrackSet>(),
             },
             EngineOp::Automation { seat, lanes } => {
-                if self.running().is_some() {
-                    if self.handle.set_automation(seat, auto_lanes(lanes)).is_err() {
-                        eprintln!("meloet: the engine did not take the lanes of track {seat}");
-                    }
+                if self.running().is_some()
+                    && self.handle.set_automation(seat, auto_lanes(lanes)).is_err()
+                {
+                    eprintln!("meloet: the engine did not take the lanes of track {seat}");
                 }
                 return;
             }
@@ -3245,6 +3242,8 @@ fn steady_load(open: bool, permille: u32, last: Option<&Telemetry>) -> u16 {
 }
 
 mod export;
+#[cfg(test)]
+mod export_tests;
 mod input;
 #[cfg(test)]
 mod plug_tests;

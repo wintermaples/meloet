@@ -63,6 +63,10 @@ impl Told {
             doc: doc.clone(),
             session,
         };
+        // As meloet starts: the engine gets the song the rules begin with, and then the
+        // song is opened. What the two songs share (the returns and the master of a new
+        // song) is told only the first time.
+        let mut ops = play.engine_seats();
         let mut effects = Vec::new();
         play.replace_song(song, false, &mut effects);
         // As the rules do after every input.
@@ -72,7 +76,6 @@ impl Told {
         play.sync_plugs(&mut effects);
         play.sync_automation(&mut effects);
 
-        let mut ops = Vec::new();
         let mut loads = Vec::new();
         for effect in effects {
             match effect {

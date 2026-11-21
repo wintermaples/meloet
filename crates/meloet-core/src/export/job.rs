@@ -20,9 +20,9 @@ use super::render::{ExportEngine, Plugs};
 use super::sink::{self, SinkSpec};
 use super::told::{KnownPlugins, Told};
 use super::{ExportJob, ExportNews, ExportTarget};
-use crate::audiofiles::AudioStore;
 use crate::audiofiles::resample::Resample;
 use crate::audiofiles::wav::{CacheWav, WavPcm};
+use crate::audiofiles::{AudioStore, Playable};
 use crate::instruments::Samples;
 use crate::made::MadeKey;
 use crate::maker::make_now;
@@ -41,6 +41,8 @@ const QUIET: f32 = 3.162_277_7e-5;
 const QUIET_S: f64 = 0.5;
 /// How long the playing plugins are waited for to say their state, as a save waits.
 const STATE_WAIT: Duration = Duration::from_secs(3);
+/// How long audio files that are being read in are waited for.
+const FILES_WAIT: Duration = Duration::from_secs(300);
 /// Frames brought into the file's form in one go.
 const CHUNK: usize = 4_096;
 
@@ -104,17 +106,16 @@ impl Drop for JobHandle {
 }
 
 /// Starts the thread of a job. `tell` is called on it.
-pub fn spawn(
-    setup: Setup,
-    tell: impl Fn(ExportNews) + Send + 'static,
-) -> io::Result<JobHandle> {
+pub fn spawn(setup: Setup, tell: impl Fn(ExportNews) + Send + 'static) -> io::Result<JobHandle> {
     let id = setup.job.id;
     let (target, targets) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
-    let thread = std::thread::Builder::new().name("meloet-export".into()).spawn({
-        let stop = stop.clone();
-        move || run(setup, &targets, &stop, &tell)
-    })?;
+    let thread = std::thread::Builder::new()
+        .name("meloet-export".into())
+        .spawn({
+            let stop = stop.clone();
+            move || run(setup, &targets, &stop, &tell)
+        })?;
     Ok(JobHandle {
         id,
         target,
@@ -259,6 +260,7 @@ fn render(
     for op in told.ops.iter().cloned() {
         engine.tell(op, &mut plugs);
     }
+    wait_files(setup, stop)?;
     wait_made(&mut engine, setup, stop)?;
     // The seats end the plugin processes when they are let go of, which is after the
     // engine that holds their plugins.
@@ -549,6 +551,27 @@ fn render_pass(
             Err(e)
         }
     }
+}
+
+/// The audio files that are still being read in (decoded, brought to the rate the audio
+/// runs at) are waited for: their clips are silent until then. One that is not found is
+/// not waited for, and one that takes longer than [`FILES_WAIT`] is given up.
+fn wait_files(setup: &Setup, stop: &AtomicBool) -> Result<(), Ended> {
+    let job = &setup.job;
+    let until = Instant::now() + FILES_WAIT;
+    let coming = || {
+        (job.doc.audio.iter()).any(|source| {
+            let playable = (setup.store).playable(&source.uid, &source.file, job.sample_rate);
+            matches!(playable, Playable::NeedsCache(_))
+        })
+    };
+    while coming() && Instant::now() < until {
+        if stop.load(Relaxed) {
+            return Err(Ended::Dropped);
+        }
+        std::thread::sleep(POLL);
+    }
+    Ok(())
 }
 
 /// The audio that is made for stretched and pitched clips is in the cache before the

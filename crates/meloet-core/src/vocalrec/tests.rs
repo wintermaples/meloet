@@ -592,3 +592,150 @@ fn cycles_the_input_missed_are_written_as_silence_of_their_length() {
     assert_eq!(read[2_560 + 768..], samples[2_560..5_120]);
     let _ = fs::remove_dir_all(dir);
 }
+
+/// The pieces of `tests/fixtures/input-blocks.txt`: the blocks as cpal gave them.
+fn measured_blocks() -> Vec<(&'static str, Vec<InputBlock>)> {
+    let mut pieces: Vec<(&str, Vec<InputBlock>)> = Vec::new();
+    for line in include_str!("../../tests/fixtures/input-blocks.txt").lines() {
+        if line.starts_with("##") {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix("# ") {
+            pieces.push((name, Vec::new()));
+            continue;
+        }
+        let (frames, capture_us) = line.split_once(' ').expect("two numbers");
+        let blocks = &mut pieces.last_mut().expect("a piece").1;
+        let frames: u32 = frames.parse().unwrap();
+        blocks.push(InputBlock {
+            first_frame: (blocks.last()).map_or(0, |b| b.first_frame + u64::from(b.frames)),
+            frames,
+            capture_us: capture_us.parse().unwrap(),
+            callback_us: 0,
+            dropped: false,
+        });
+    }
+    pieces
+}
+
+/// (frames filled, places) by the rule, and by the clock: how many frames the times of the
+/// first and the last block say there are more than came.
+fn filled(blocks: &[InputBlock]) -> ((u64, u32), f64) {
+    let mut gaps = Gaps::default();
+    let (mut frames, mut places, mut next) = (0u64, 0u32, 0u64);
+    let mut write = |missed: u64, block: InputBlock, samples: &[f32]| {
+        assert_eq!(block.first_frame, next, "in the order they came");
+        assert_eq!(samples.len(), block.frames as usize);
+        next += u64::from(block.frames);
+        frames += missed;
+        places += u32::from(missed > 0);
+    };
+    let samples = [0.0f32; 1_024];
+    for block in blocks {
+        gaps.take(*block, &samples[..block.frames as usize], RATE, &mut write);
+    }
+    gaps.settle(RATE, &mut write);
+    let (first, last) = (blocks[0], blocks[blocks.len() - 1]);
+    assert_eq!(
+        next,
+        last.first_frame + u64::from(last.frames),
+        "every block"
+    );
+    let by_clock = (last.first_frame_us(RATE) - first.first_frame_us(RATE)) * f64::from(RATE) / 1e6
+        - last.first_frame as f64;
+    ((frames, places), by_clock)
+}
+
+#[test]
+fn measured_holes_are_filled_and_a_block_whose_time_alone_is_late_is_not() {
+    let pieces = measured_blocks();
+    let piece = |name: &str| {
+        let blocks = &pieces
+            .iter()
+            .find(|(n, _)| *n == name)
+            .expect("the piece")
+            .1;
+        let (by_rule, by_clock) = filled(blocks);
+        // What is filled is what the clock says is missing.
+        assert!(
+            (by_rule.0 as f64 - by_clock).abs() < 1.0,
+            "{name}: {by_rule:?} {by_clock}"
+        );
+        by_rule
+    };
+    // A quiet PC, and a busy one at 256 frames: nothing.
+    assert_eq!(piece("quiet-64"), (0, 0));
+    assert_eq!(piece("busy-256"), (0, 0));
+    // A busy PC at 64 frames: holes of one to three cycles, some one after the other.
+    assert_eq!(piece("busy-64-holes-a"), (448, 5));
+    assert_eq!(piece("busy-64-holes-b"), (512, 4));
+    assert_eq!(piece("busy-64-holes-c"), (640, 9));
+    // One block's time is a cycle late, the next is back on the line.
+    assert_eq!(piece("busy-64-only-late"), (0, 0));
+}
+
+#[test]
+fn late_times_of_one_or_two_blocks_fill_nothing_and_a_hole_at_the_end_is_filled() {
+    let block_us = 64.0 * 1e6 / f64::from(RATE);
+    let blocks = |cycles: &[f64]| -> Vec<InputBlock> {
+        (cycles.iter().enumerate())
+            .map(|(n, cycle)| InputBlock {
+                first_frame: n as u64 * 64,
+                frames: 64,
+                capture_us: (1e6 + (cycle + 1.0) * block_us).round() as u64,
+                callback_us: 0,
+                dropped: false,
+            })
+            .collect()
+    };
+    let rule = |cycles: &[f64]| filled(&blocks(cycles)).0;
+    assert_eq!(rule(&[0.0, 1.0, 3.0, 3.0, 4.0, 5.0]), (0, 0));
+    assert_eq!(rule(&[0.0, 1.0, 3.0, 4.0, 4.0, 5.0]), (0, 0));
+    // Late for longer than is waited: a hole.
+    assert_eq!(rule(&[0.0, 1.0, 3.0, 4.0, 5.0, 6.0]), (64, 1));
+    // Two holes, one block between them.
+    assert_eq!(rule(&[0.0, 1.0, 3.0, 4.0, 7.0, 8.0, 9.0]), (64 + 128, 2));
+    // The recording ends on a late block: taken as it says.
+    assert_eq!(rule(&[0.0, 1.0, 4.0]), (128, 1));
+    assert_eq!(rule(&[0.0, 1.0, 4.0, 5.0]), (128, 1));
+}
+
+#[test]
+fn a_block_whose_time_alone_is_late_is_written_where_the_count_says() {
+    let dir = scratch("only-late");
+    let InputEnds {
+        mut tap,
+        record,
+        meters,
+        ..
+    } = input_ends(1, RATE);
+    let mut side = Side::new(Arc::new(Mutex::new(Written::default())));
+    side.input = Some((record, meters.clone()));
+    side.into = vec![0.0; RATE as usize];
+    side.start(RecordJob {
+        files: vec![RecordFile {
+            path: dir.join("歌 1.wav"),
+            channels: vec![0],
+        }],
+        format: RecordFormat::Bits32,
+    })
+    .unwrap();
+    side.job.as_mut().unwrap().from_us = Some(0.0);
+
+    let samples = wave(64 * 12, 1);
+    let block_us = 64.0 * 1e6 / f64::from(RATE);
+    // Block 5 says it came a cycle late; block 6 is where the count says.
+    for n in 0..12 {
+        let cycle = if n == 5 { n + 2 } else { n + 1 };
+        let t_us = (1e6 + cycle as f64 * block_us) as u64;
+        tap.block(&samples[64 * n..64 * (n + 1)], t_us, t_us);
+        side.drain();
+    }
+    side.end_job();
+    let written = side.job.take().unwrap().said;
+    assert_eq!((written.gaps, written.gap_count), (0, 0));
+    assert_eq!(written.frames, 64 * 12);
+    let (_, _, read) = decode(&dir.join("歌 1.wav"));
+    assert_eq!(read, samples);
+    let _ = fs::remove_dir_all(dir);
+}

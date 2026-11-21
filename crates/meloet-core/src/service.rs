@@ -206,6 +206,7 @@ enum Msg {
     LiveNotes(Sender<LiveNotesSnapshot>),
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
     Lane(u32, Sender<Option<Vec<u8>>>),
+    MadeCounts(Sender<MadeCounts>),
     PeaksPlace(u32, Sender<Option<crate::peaks::PeaksPlace>>),
     PcmStore(Arc<dyn PcmStore>),
     HistoryRows(u32, u32, Sender<Vec<HistoryRow>>),
@@ -336,6 +337,18 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 struct Running {
     core: JoinHandle<()>,
     telemetry: JoinHandle<()>,
+}
+
+/// [`Core::made_counts`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MadeCounts {
+    /// Audio that clips need and that is not made yet (`Maker::waiting`).
+    pub waiting: usize,
+    /// Made audio that clips of the song play now.
+    pub playing: usize,
+    /// Times made audio came in, or went, over what a track was sounding
+    /// (`ReadStats::splices`).
+    pub splices: u64,
 }
 
 pub struct Core {
@@ -699,6 +712,13 @@ impl Core {
     /// clips through `store` from now on, not through the song's own places.
     pub fn set_pcm_store(&self, store: Arc<dyn PcmStore>) {
         let _ = self.tx.send(Msg::PcmStore(store));
+    }
+
+    /// For tests and an export that waits: what the making of audio for clips is at.
+    pub fn made_counts(&self) -> MadeCounts {
+        let (reply, answer) = mpsc::channel();
+        let _ = self.tx.send(Msg::MadeCounts(reply));
+        answer.recv().unwrap_or_default()
     }
 
     /// The points of a lane (`meloet_protocol::LanePoints`) of the song as it is now; `None`
@@ -2053,6 +2073,14 @@ impl Worker {
                 }
                 Ok(Msg::Lane(id, reply)) => {
                     let _ = reply.send(self.model.lane(id));
+                }
+                Ok(Msg::MadeCounts(reply)) => {
+                    let audio = &self.audio;
+                    let _ = reply.send(MadeCounts {
+                        waiting: audio.maker.as_ref().map_or(0, |m| m.waiting()),
+                        playing: audio.made.len(),
+                        splices: audio.readahead.stats().splices.load(Relaxed),
+                    });
                 }
                 Ok(Msg::PeaksPlace(audio, reply)) => {
                     let growing = self.input.growing_peaks(audio);

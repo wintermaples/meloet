@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use meloet_core::{Core, CoreOptions};
-use meloet_protocol::{AppState, AudioJobKind, Command, TrackKindView, TransportState};
+use meloet_protocol::{
+    AppState, AudioJobKind, Command, StretchChange, TrackKindView, TransportState,
+};
 use record_timing::wait_for;
 
 fn settings(dir: &Path, buffer: u32) {
@@ -282,6 +284,45 @@ fn follow_the_tempo(root: &Path, buffer: u32, attempt: u32) -> Option<(Vec<f64>,
     assert_eq!(after, both);
     let written = std::fs::metadata(&made[0]).unwrap().len();
     assert!(written > 44 + 4 * 150_000, "{written} bytes");
+
+    // While the song plays: another pitch for the first clip. What is made for it comes in
+    // over what sounds, and with the undo what was there before does, without the track's
+    // ring being filled anew.
+    let clip = (now.song.tracks.iter())
+        .flat_map(|t| &t.clips)
+        .find(|c| c.audio.is_some())
+        .map(|c| c.id)
+        .unwrap();
+    let counts = core.made_counts();
+    assert_eq!((counts.waiting, counts.playing), (0, 1));
+    core.send(Command::GoToStart);
+    core.send(Command::PlayStop);
+    wait_for(&core, "it plays", Duration::from_secs(5), |s| {
+        s.transport.state == TransportState::Playing
+    });
+    let laid_over = |more: u64, what: &str| {
+        let until = Instant::now() + Duration::from_secs(8);
+        loop {
+            let now = core.made_counts();
+            if now.splices >= counts.splices + more && now.waiting == 0 && now.playing == 1 {
+                break;
+            }
+            assert!(Instant::now() < until, "{what}: {now:?}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let change = StretchChange::Semitones { semitones: 2.0 };
+    core.send(Command::SetClipStretch { clip, change });
+    laid_over(1, "the pitched audio comes in");
+    assert_eq!(made_files(&cache).len(), 3);
+    core.send(Command::Undo);
+    laid_over(2, "the audio from before comes back");
+    assert_eq!(made_files(&cache).len(), 3);
+    assert_eq!(
+        core.snapshot().state.transport.state,
+        TransportState::Playing
+    );
+    core.send(Command::PlayStop);
     drop(core);
     if let Some(faults) = faults {
         eprintln!("buffer {buffer}: the input skipped ({faults:?}); once more");

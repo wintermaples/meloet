@@ -44,6 +44,9 @@ fn main() {
         Some("host") => match (handed.input, handed.output) {
             (Some(control), Some(memory)) if launch::is_socket(control.as_fd()) => {
                 let offline = args.iter().any(|a| a == launch::OFFLINE);
+                if offline {
+                    launch::low_priority();
+                }
                 control::run(UnixStream::from(control), memory, offline)
             }
             _ => 2,

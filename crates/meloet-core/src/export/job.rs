@@ -114,7 +114,11 @@ pub fn spawn(setup: Setup, tell: impl Fn(ExportNews) + Send + 'static) -> io::Re
         .name("meloet-export".into())
         .spawn({
             let stop = stop.clone();
-            move || run(setup, &targets, &stop, &tell)
+            move || {
+                // The threads this one starts (the export's `Hosts`) are at the same priority.
+                meloet_plugin::launch::low_priority();
+                run(setup, &targets, &stop, &tell)
+            }
         })?;
     Ok(JobHandle {
         id,

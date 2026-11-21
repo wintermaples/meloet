@@ -5,6 +5,7 @@
 //! the scanner's news and answers with scans to run. [`scanner`] runs them, one child process
 //! for each bundle. [`hosts`] keeps the processes plugins sound in.
 
+pub mod export;
 pub mod hosts;
 pub(crate) mod housed;
 pub mod scanner;

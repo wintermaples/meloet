@@ -2215,3 +2215,38 @@ pub struct AudioShape {
 - 書き出し（区切り5）: 「作りかけならできるまで待つ」は `Maker::waiting()`（いまの表のうち、まだ無い音の数。開けなかった音は数えない。外からは `Core::made_counts().waiting`）が 0 になるのを待てばよい。書き出しがエンジンと別のサンプルレートで回すなら、鍵にサンプルレートが入っているので、そのサンプルレートの表（`made::seat_audio`）を作って係に頼む形になる。出口の流れがないときに書き出す道も、同じ所を通す。
 - 「作っている間は、前に作った音で鳴らす」（高さを +2 から +3 にしたとき、+3 ができるまで +2 のまま）は、していない。いまは、いったんもとの音に戻る（22-8 の「作っている間は、もとの音」のとおり）。
 - 「meloet について」に Signalsmith の 2 つを出す（1 回目の申し送りのまま。画面の側）。
+
+### 22-20. 区切り5 の 1 回目: 約束 26 と継ぎ目（書き出し、2026-11-21、meloet-hard）
+
+形だけを置いた回。書き出しの中身（2 つめのエンジン、ファイルを書く、プラグインを速く回す）と画面の部品は 2 回目。
+
+- **約束 26**（`crates/meloet-protocol/src/export.rs`）
+  - 区画を 1 つ足した: `AppState::export`（`Change::Export`）= `{ dialog, run }`。**理由**: たしかめの数と進みの % は 1 秒に数回変わる。`workspace` に入れると、そのたびに帯の配置まで送りなおすことになる。`audioWork` と同じ考えで、小さな区画にした。
+  - `dialog`（`ExportDialogView`）: 範囲（`song` ・ `loop` ・ `tracks`）、ループの範囲（なければ選べない）、トラックの数、書く範囲のティック、形と形の一覧（`wav` ・ `flac`。mp3 は一覧にない）、保存する所（見せる文字だけ。道は core）、たしかめ（`ExportCheck`: `waiting` ・ `counting { percent, peakDb, clips }` ・ `done { peakDb, clips }` ・ `failed { reason }`）、止まっているプラグイン、「くわしく」（ひらいているか、サンプルレートと選べる数、ビットと選べる数、しっぽ、実時間）、`canExport`。
+  - `run`（`ExportRunView`）: `running { percent, file, remainingS, realtime, lengthS }` ・ `done { file, files, place, lengthS, sampleRate, bits }` ・ `cancelled` ・ `failed { reason }`。**終わった形も `run` に置いた**（状態行の知らせにしなかった）。理由: 仕様書 2 章の「書き出しの進み」は、書き出している ・ 実時間 ・ 終わった を 1 つの部品の状態として書いている。終わった形は、人が次に何かするまで残る（知らせと同じ決まり。「フォルダをひらく」では消えない）。
+  - 意図（どれも手ではない）: `openExport` ・ `closeExport` ・ `setExport { change }`（`range` ・ `format` ・ `advancedOpen` ・ `sampleRate` ・ `bits` ・ `tail` ・ `realtime`）・ `chooseExportPlace` ・ `startExport` ・ `cancelExport` ・ `showExported`。`setExport` は `setClipStretch` と同じ形（変える物を 1 つの enum に）。
+  - 状態行の知らせ: `exportDialogOpen`（モック F7-Export の「「書き出し」のダイアログをひらいています」）だけ。
+  - ビットは録る形と同じ `RecordFormat`（16 ・ 24 ・ 32。32 は浮動小数で wav だけ）。`clips` は core が決める: いちばん大きい所が 0 dB をこえ、**かつ** 32 ビットでないとき（浮動小数は割れない）。
+  - 書き出す TS: 型 10 個と `generated/export.ts`（`EXPORT_FORMATS`、`EXPORT_TAIL_MAX_S`）。
+- **core の決まり**（`crates/meloet-core/src/export.rs` の `Exporting`。`state` と同じく純粋）
+  - 入るもの: 意図と `ExportNews`（`Input::Export`）。出るもの: `ExportAsk`（`Effect::Export`）。`Model` とのつなぎは `state/export.rs`（曲のようすを `Scene` にして渡すだけ）。
+  - **仕事 1 つ = 範囲 1 回ぶんの音**（`ExportJob`: `Doc` の写し、範囲、トラックごとか、しっぽ、実時間か、とばすプラグイン、エンジンのサンプルレート）。ダイアログをひらくと `Render`、範囲 ・ しっぽ ・ 実時間を変えると `Drop` して新しい `Render`、形 ・ サンプルレート ・ ビットを変えても仕事はそのまま（22-14）。「書き出す」は `Finish { job, target }` で、その仕事を使う。とじる ・ やめるは `Drop`。
+  - `ExportNews`: `Counted { job, percent, peak_db, length_s, remaining_s, done }` ・ `MustBeRealtime { job }` ・ `Finished { job, files }` ・ `Failed { job, reason }` ・ `PlacePicked(path)`。古い仕事の知らせは聞かない。
+  - 選んだ事（範囲、形、くわしく、保存する所）は、meloet が動いている間おぼえている（設定には書かない）。
+  - いまは `service.rs` が `Effect::Export` を受けて何もしない。だから本物のアプリでは、たしかめが `waiting` のまま（2 回目に受け手を作る）。
+- **プラグインの継ぎ目**（`crates/meloet-core/src/plugins/export.rs`）
+  - `export_seats(&HostOptions, ExportWant, Arc<PluginBlock>) -> Result<ExportSeats, ExportPluginError>`。`ExportWant` は鳴るプラグインの一覧（場所、名前、鍵、束、状態）とサンプルレートといちばん長いブロック。`ExportSeats` は音源とエフェクトの席（`Box<dyn Instrument>` ・ `Box<dyn Effect>`、曲の中の場所 `PluginPlace` つき）、`realtime`（`lv2:isLive`）、止まったかを見る `watches` と `stopped()`。
+  - 口の決まり（doc コメントにも）: 書き出しのスレッドで、最初のブロックの前に呼ぶ（待つので、core のスレッドでも音のスレッドでもない）。`block` は書き出しのエンジンの物。席はブロックごとに答えを待ち、しめきりは使わない（見はりは `HANG_MS` だけ。こえたら `stopped()` が言い、書き出しはまるごと「できなかった」）。状態は、呼ぶ側が core のスレッドで先に集める（弾くほうのプラグインに `Hosts::state`、答えない物は `Doc` の `PluginRef::state`）。
+  - いまの中身: プラグインのない曲は空の席、あれば `ExportPluginError::NotYet`。
+  - **席を場所（`PluginPlace`）で返す理由**: 書き出しのエンジンの席の番号は、エンジンを作る側（`Seats::for_song`）が決める。プラグインの側は番号を知らなくてよい。
+- **ファイルを書く口**（`crates/meloet-core/src/export/sink.rs`）
+  - `trait AudioSink { write(&[f32]) / finish() -> フレーム数 / abandon() }` と `create(path, SinkSpec { format, sample_rate, channels, bits })`。`CacheWav` と同じ 3 つの動き。**trait にした理由**: 書き出しのスレッドは形を知らずに同じ道で書ける。浮動小数で受けて、整数への変換（16 ビットのディザー）は口の中の同じ 1 か所にするので、wav と flac の中身のサンプルが同じになる。
+  - いまの中身: `create` は `Unsupported` を返す。`flacenc` は 2 回目に入れる（ライセンスの見はりも）。
+- **仮に決めた事**（仕様書にない。design-notes B-94 へ）
+  1. 保存する所のはじめ: 保存した曲は曲のフォルダ（6 章の例「~/ミュージック/はじめての曲/はじめての曲.wav」）、まだ保存していない曲は PC の音楽のフォルダ。名前は曲の名前。
+  2. 「トラックごと」の保存する所はフォルダで、「えらぶ…」はフォルダの窓。
+  3. たしかめを数えている途中でも「書き出す」は押せる（数が 1 つでも来たら）。まだ何も来ていない間 ・ できないとき ・ 空の曲では押せない。
+  4. しっぽは「音が消えるまで」と「なし」の 2 つ。「実時間で書き出す」は「くわしく」の中の切りかえ（22-11 の「人がえらぶ所」）。
+  5. ダイアログは、カウントイン中と録音中はひらかない。再生中はひらける。書き出している間はひらかない。
+  6. 「ループ」「曲ぜんぶ」のファイルの名前はどちらも曲の名前。
+- **偽物の場面**: `exportDialog`（F7-Export）・ `exportWaiting` ・ `exportCounting` ・ `exportClips` ・ `exportStopped`（F-Export の止まっているプラグイン）・ `exportAdvanced` ・ `exportCheckFailed` ・ `exportFit`（R11-Fit）・ `exporting`（F7-Exporting）・ `exportingRealtime` ・ `exportDone` ・ `exportCancelled` ・ `exportFailed`。偽物は意図を受けて、ダイアログと進みを変える（たしかめはすぐ「できた」、% は動かない）。

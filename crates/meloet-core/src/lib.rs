@@ -8,6 +8,7 @@
 mod added;
 pub mod audiofiles;
 mod catalog;
+pub mod export;
 mod hub;
 mod instruments;
 pub mod layout;

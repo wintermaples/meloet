@@ -176,3 +176,15 @@ export { AUDIO_EXTENSIONS, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, PEAK_LEVELS, PEAK
 export type { SourceTempoView } from "./generated/SourceTempoView";
 export type { StretchChange } from "./generated/StretchChange";
 export { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, SOURCE_BPM_MAX, SOURCE_BPM_MIN } from "./generated/audio";
+// Protocol 26: writing the song out as an audio file.
+export type { ExportChange } from "./generated/ExportChange";
+export type { ExportCheck } from "./generated/ExportCheck";
+export type { ExportDialogView } from "./generated/ExportDialogView";
+export type { ExportFailure } from "./generated/ExportFailure";
+export type { ExportFormat } from "./generated/ExportFormat";
+export type { ExportRange } from "./generated/ExportRange";
+export type { ExportRunView } from "./generated/ExportRunView";
+export type { ExportStoppedPlugin } from "./generated/ExportStoppedPlugin";
+export type { ExportTail } from "./generated/ExportTail";
+export type { ExportView } from "./generated/ExportView";
+export { EXPORT_FORMATS, EXPORT_TAIL_MAX_S } from "./generated/export";

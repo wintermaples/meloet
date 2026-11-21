@@ -1482,11 +1482,9 @@ impl Audio {
             } => EngineCommand::Record {
                 from,
                 count_in_beats,
-                muted: [muted].into_iter().collect(),
+                muted,
             },
-            EngineOp::RecordHere { muted } => EngineCommand::RecordHere {
-                muted: [muted].into_iter().collect(),
-            },
+            EngineOp::RecordHere { muted } => EngineCommand::RecordHere { muted },
             EngineOp::Stop { t_us } => EngineCommand::Stop { t_us },
             EngineOp::Locate { tick } => EngineCommand::Locate { tick },
             EngineOp::Timeline { timeline } => {

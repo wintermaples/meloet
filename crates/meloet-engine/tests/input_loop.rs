@@ -111,11 +111,13 @@ fn way_round(quantum: u32) -> (ProbeVerdict, Vec<Option<f64>>, u32) {
         heard: &heard,
         sample_rate: RATE,
     };
+    let out_delay_us = f64::from(meters.out_delay_us());
     let answers: Vec<Option<f64>> = sent
         .iter()
         .map(|probe| {
             let left_us = clock.time_of_frame(probe.frame as f64).expect("the clock");
-            all.way_round(&wave, left_us).map(|(us, _)| us)
+            all.way_round(&wave, left_us, out_delay_us)
+                .map(|(us, _)| us)
         })
         .collect();
 

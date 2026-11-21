@@ -79,6 +79,10 @@ pub(crate) fn cmd(m: &mut Model, command: Command) -> Vec<Effect> {
     m.handle(Input::Command(command))
 }
 
+fn seats<const N: usize>(seats: [usize; N]) -> TrackSet {
+    seats.into_iter().collect()
+}
+
 fn ops(effects: &[Effect]) -> Vec<EngineOp> {
     effects
         .iter()
@@ -357,7 +361,7 @@ fn record_counts_in_then_records() {
         [EngineOp::Record {
             from: 0,
             count_in_beats: 4,
-            muted: 0
+            muted: seats([0])
         }]
     );
     let t = m.view().transport;
@@ -403,7 +407,7 @@ fn record_starts_at_the_loop_when_it_is_on() {
         [EngineOp::Record {
             from: 7 * BAR,
             count_in_beats: 8,
-            muted: 0
+            muted: seats([0])
         }],
         "the loop is off: from the position"
     );
@@ -423,7 +427,7 @@ fn record_starts_at_the_loop_when_it_is_on() {
         [EngineOp::Record {
             from: 2 * BAR,
             count_in_beats: 8,
-            muted: 0
+            muted: seats([0])
         }]
     );
     assert_eq!(m.view().transport.position, 2 * BAR);
@@ -436,7 +440,7 @@ fn record_while_playing_starts_where_the_listener_is() {
     hear(m, 1, 3000.9, TransportState::Playing, 0);
     assert_eq!(
         ops(&cmd(m, Command::Record)),
-        [EngineOp::RecordHere { muted: 0 }]
+        [EngineOp::RecordHere { muted: seats([0]) }]
     );
     let t = m.view().transport;
     assert_eq!(t.state, TransportState::Recording);

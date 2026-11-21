@@ -182,7 +182,7 @@ impl FrameClock {
     }
 }
 
-/// How long after a click left the engine it is looked for in what the input heard.
+/// How long after a click reaches the DAC it is still looked for in what the input heard.
 pub const PROBE_LISTEN_S: f64 = 0.2;
 
 /// What the input heard around one click: the blocks as their headers say, and one channel
@@ -198,16 +198,27 @@ impl ProbeHeard<'_> {
     /// The way round of a click that reaches the DAC at `left_us`
     /// ([`crate::TransportClock::time_of_frame`]), in microseconds: `c − p` of
     /// docs/architecture.md 22-5. `None`: it did not come back.
-    pub fn way_round(&self, wave: &[f32], left_us: f64) -> Option<(f64, ProbeFound)> {
+    ///
+    /// `out_delay_us`: what the PC says lies between the engine writing a frame and the DAC
+    /// ([`crate::Meters::out_delay_us`]). When the PC says more than there is (a monitor of
+    /// the output, some Bluetooth outputs), the click is back before `left_us` and the
+    /// answer is negative; it cannot be back before the engine wrote it.
+    pub fn way_round(
+        &self,
+        wave: &[f32],
+        left_us: f64,
+        out_delay_us: f64,
+    ) -> Option<(f64, ProbeFound)> {
         let mut clock = FrameClock::new(self.sample_rate, self.blocks.len().max(1));
         for block in self.blocks {
             clock.note(block.first_frame, block.first_frame_us(self.sample_rate));
         }
         let rate = f64::from(self.sample_rate.max(1));
         let zero_us = clock.time_of(self.first_frame as f64)?;
-        // A click cannot come back before it left; a little room for the times' jitter.
-        let from = (((left_us - 2_000.0 - zero_us) * rate / 1e6).max(0.0)) as usize;
-        let to = (from + (PROBE_LISTEN_S * rate) as usize).min(self.heard.len());
+        let frames = |us: f64| (us * rate / 1e6).max(0.0) as usize;
+        // A little room for the times' jitter.
+        let from = frames(left_us - out_delay_us.max(0.0) - 2_000.0 - zero_us);
+        let to = frames(left_us - zero_us + PROBE_LISTEN_S * 1e6).min(self.heard.len());
         let found = find_probe(self.heard.get(from..to)?, wave)?;
         let back_us = clock.time_of(self.first_frame as f64 + from as f64 + found.at)?;
         Some((back_us - left_us, found))
@@ -298,6 +309,64 @@ mod tests {
             ProbeVerdict::Measured(4_000.0)
         );
         assert_eq!(judge_probes(&[], 48_000), ProbeVerdict::TooQuiet);
+    }
+
+    /// What an input of `quantum` frames a block hears of a click that is in it at frame
+    /// `back_at`; the stream's frame 0 was captured at 1 s.
+    fn way_round_of(quantum: u32, back_at: f64, left_us: f64, out_delay_us: f64) -> Option<f64> {
+        let wave = probe_wave(48_000);
+        let heard = heard_with(&wave, back_at, 0.5, 24_000);
+        let block_us = f64::from(quantum) * 1e6 / 48_000.0;
+        let blocks: Vec<crate::InputBlock> = (0..24_000 / u64::from(quantum))
+            .map(|n| crate::InputBlock {
+                first_frame: n * u64::from(quantum),
+                frames: quantum,
+                capture_us: (1e6 + (n + 1) as f64 * block_us).round() as u64,
+                callback_us: 0,
+                dropped: false,
+            })
+            .collect();
+        let all = ProbeHeard {
+            blocks: &blocks,
+            first_frame: 0,
+            heard: &heard,
+            sample_rate: 48_000,
+        };
+        all.way_round(&wave, left_us, out_delay_us)
+            .map(|(us, _)| us)
+    }
+
+    #[test]
+    fn a_click_back_before_the_pc_says_it_left_is_measured() {
+        let frame_us = 1e6 / 48_000.0;
+        for quantum in [64u32, 256, 1024] {
+            // The PC says three blocks from the engine to the DAC; the click is at the DAC,
+            // it says, at frame 9600 of the input.
+            let out_delay_us = 3.0 * f64::from(quantum) * frame_us;
+            let left_us = 1e6 + 9_600.0 * frame_us;
+            // One block early: a monitor of the output.
+            let early = 9_600.0 - f64::from(quantum);
+            let x = way_round_of(quantum, early, left_us, out_delay_us).expect("found");
+            assert!(
+                (x + f64::from(quantum) * frame_us).abs() < 0.2 * frame_us,
+                "{quantum}: {x}"
+            );
+            // On time and late, as before.
+            for late in [0.0, 212.5] {
+                let x =
+                    way_round_of(quantum, 9_600.0 + late, left_us, out_delay_us).expect("found");
+                assert!(
+                    (x - late * frame_us).abs() < 0.2 * frame_us,
+                    "{quantum}: {x}"
+                );
+            }
+            // Before the engine wrote it: not this click.
+            let before = 9_600.0 - 3.0 * f64::from(quantum) - 400.0;
+            assert_eq!(way_round_of(quantum, before, left_us, out_delay_us), None);
+            // Later than is listened for.
+            let after = 9_600.0 + PROBE_LISTEN_S * 48_000.0 + 10.0;
+            assert_eq!(way_round_of(quantum, after, left_us, out_delay_us), None);
+        }
     }
 
     #[test]

@@ -57,6 +57,8 @@ const SYNC_EVERY: Duration = Duration::from_secs(1);
 const POLL: Duration = Duration::from_millis(3);
 /// The longest stretch kept in memory for the latency measurement.
 const CAPTURE_S: usize = 4;
+/// How many late blocks wait for the blocks after them to say whether frames are missing.
+const HELD_BLOCKS: usize = 2;
 
 pub fn work_audio_dir(state_dir: &Path) -> PathBuf {
     state_dir.join(WORK_AUDIO)
@@ -456,8 +458,7 @@ struct Job {
     pending: Vec<(InputBlock, Vec<f32>)>,
     /// When the files' newest blocks were captured, by the files' frames.
     times: FrameClock,
-    /// When the frame after the last block written is due.
-    due_us: Option<f64>,
+    gaps: Gaps,
     /// Marks asked for before the files had a block.
     marks: Vec<(f64, Sender<Option<f64>>, Instant)>,
     synced: Instant,
@@ -618,7 +619,7 @@ impl Side {
             from_us: None,
             pending: Vec::new(),
             times: FrameClock::new(sample_rate, MARK_BLOCKS),
-            due_us: None,
+            gaps: Gaps::default(),
             marks: Vec::new(),
             synced: Instant::now(),
             said: Written {
@@ -704,6 +705,9 @@ impl Side {
                 }
             }
         }
+        if let Some((reader, _)) = &self.input {
+            job.settle(usize::from(reader.channels()), reader.sample_rate());
+        }
         job.answer_marks();
         for (_, reply, _) in job.marks.drain(..) {
             let _ = reply.send(None);
@@ -718,29 +722,122 @@ impl Side {
     }
 }
 
+/// Tells the frames the input never got from a block whose time alone is late.
+///
+/// A block's time is the time of the cycle it came in. When the input misses cycles, every
+/// block after is later than the count of frames says, by the frames that never came. When
+/// only a block's time is late (a busy PC, small buffers: measured at 64 frames,
+/// docs/measurements/2026-11-21-round7-step3.md 6), the blocks after it are back where the
+/// count says. So a late block waits for the next ones: frames are missing before it only
+/// if they are late too.
+#[derive(Default)]
+struct Gaps {
+    /// When the frame after the last block let through is due.
+    due_us: Option<f64>,
+    held: Vec<(InputBlock, Vec<f32>)>,
+}
+
+impl Gaps {
+    /// `write(missed, block, samples)` for every block that is settled now, in the order
+    /// they came: `missed` frames never came before it.
+    fn take(
+        &mut self,
+        block: InputBlock,
+        samples: &[f32],
+        rate: u32,
+        write: &mut impl FnMut(u64, InputBlock, &[f32]),
+    ) {
+        let frame_us = 1e6 / f64::from(rate.max(1));
+        let len_us = |b: &InputBlock| f64::from(b.frames) * frame_us;
+        let at_us = block.first_frame_us(rate);
+        loop {
+            // Where the block is due if nothing is missing before those that wait.
+            let line_us = (self.due_us)
+                .map(|due| due + self.held.iter().map(|(b, _)| len_us(b)).sum::<f64>());
+            // Half a block of room: the time of a block is the time its cycle woke, which
+            // is not exact.
+            if at_us - line_us.unwrap_or(at_us) <= len_us(&block) / 2.0 {
+                for (held, samples) in self.held.drain(..) {
+                    write(0, held, &samples);
+                }
+                self.due_us = Some(at_us + len_us(&block));
+                write(0, block, samples);
+                return;
+            }
+            if self.held.len() < HELD_BLOCKS {
+                self.held.push((block, samples.to_vec()));
+                return;
+            }
+            self.settle_first(rate, write);
+        }
+    }
+
+    /// The first block that waits comes after a hole; the others are looked at again from
+    /// where it ends.
+    fn settle_first(&mut self, rate: u32, write: &mut impl FnMut(u64, InputBlock, &[f32])) {
+        if self.held.is_empty() {
+            return;
+        }
+        let frame_us = 1e6 / f64::from(rate.max(1));
+        let mut rest = std::mem::take(&mut self.held);
+        let (first, samples) = rest.remove(0);
+        let at_us = first.first_frame_us(rate);
+        let late_us = at_us - self.due_us.unwrap_or(at_us);
+        self.due_us = Some(at_us + f64::from(first.frames) * frame_us);
+        write(
+            (late_us / frame_us).round().max(0.0) as u64,
+            first,
+            &samples,
+        );
+        for (block, samples) in rest {
+            self.take(block, &samples, rate, write);
+        }
+    }
+
+    /// No block comes after: what waits is taken as it says.
+    fn settle(&mut self, rate: u32, write: &mut impl FnMut(u64, InputBlock, &[f32])) {
+        while !self.held.is_empty() {
+            self.settle_first(rate, write);
+        }
+    }
+}
+
 impl Job {
     fn take(&mut self, block: InputBlock, samples: &[f32], channels: usize, rate: u32) {
         if block.frames == 0 {
             return;
         }
-        let frame_us = 1e6 / f64::from(rate.max(1));
-        let at_us = block.first_frame_us(rate);
-        let ends_us = at_us + f64::from(block.frames) * frame_us;
-        if self.due_us.is_none() && ends_us <= self.from_us.unwrap_or(f64::NEG_INFINITY) {
+        let ends_us =
+            block.first_frame_us(rate) + f64::from(block.frames) * 1e6 / f64::from(rate.max(1));
+        if self.gaps.due_us.is_none() && ends_us <= self.from_us.unwrap_or(f64::NEG_INFINITY) {
             return;
         }
-        // The block comes later than the frames before it end: the input missed cycles
-        // there (or the ring had no room even for a header), and frames that never came
-        // are silence. Half a block of room: the time of a block is the time its cycle
-        // woke, which is not exact.
-        let late_us = at_us - self.due_us.unwrap_or(at_us);
-        let half_block_us = f64::from(block.frames) * frame_us / 2.0;
-        let missed = if late_us > half_block_us {
-            (late_us / frame_us).round() as u64
-        } else {
-            0
-        };
-        self.due_us = Some(ends_us);
+        let mut gaps = std::mem::take(&mut self.gaps);
+        gaps.take(block, samples, rate, &mut |missed, block, samples| {
+            self.write(missed, block, samples, channels, rate)
+        });
+        self.gaps = gaps;
+    }
+
+    fn settle(&mut self, channels: usize, rate: u32) {
+        let mut gaps = std::mem::take(&mut self.gaps);
+        gaps.settle(rate, &mut |missed, block, samples| {
+            self.write(missed, block, samples, channels, rate)
+        });
+        self.gaps = gaps;
+    }
+
+    /// Writes a block after `missed` frames that never came (the input missed cycles, or
+    /// the ring had no room even for a header): those are silence.
+    fn write(
+        &mut self,
+        missed: u64,
+        block: InputBlock,
+        samples: &[f32],
+        channels: usize,
+        rate: u32,
+    ) {
+        let at_us = block.first_frame_us(rate);
         self.said.gaps += missed;
         self.said.gap_count += u32::from(missed > 0);
         let lost = if block.dropped {

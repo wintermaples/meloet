@@ -13,7 +13,7 @@ import type { AppState, Command, HistoryRow } from "./types";
 
 export type * from "./types";
 export { DRUM_ROWS, INSTRUMENT_GROUPS, LATENCY_CLICKS, PROTOCOL_VERSION, RECORD_FORMATS, STEP_NAME_KINDS, VOCAL_INPUTS } from "./types";
-export { AUDIO_EXTENSIONS, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, PEAK_LEVELS } from "./types";
+export { AUDIO_EXTENSIONS, CLIP_CENTS_MAX, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, CLIP_SEMITONES_MAX, PEAK_LEVELS, SOURCE_BPM_MAX, SOURCE_BPM_MIN } from "./types";
 export { levelFor, type LevelPeaks } from "./peaks";
 export { keyIsDown, positionAt, type MicMeter, type Telemetry, type TransportReading } from "./telemetry";
 export { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, type TakeNotes } from "./take";

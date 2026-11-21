@@ -172,3 +172,7 @@ export type { RecordingFaults } from "./generated/RecordingFaults";
 export type { SelectedClip } from "./generated/SelectedClip";
 export type { StretchView } from "./generated/StretchView";
 export { AUDIO_EXTENSIONS, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, PEAK_LEVELS, PEAKS_MAX_COUNT } from "./generated/audio";
+// Protocol 25: following the song's tempo, the tempo of the audio, the pitch of a vocal clip.
+export type { SourceTempoView } from "./generated/SourceTempoView";
+export type { StretchChange } from "./generated/StretchChange";
+export { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, SOURCE_BPM_MAX, SOURCE_BPM_MIN } from "./generated/audio";

@@ -13,7 +13,7 @@ const rows = (table: ParamTable) => table.groups.flatMap((g) => g.params);
 
 describe("約束 18 の形", () => {
   it("版は 23（22 より後）。新しい曲では、窓はなく、何もえらんでいない。古い欄は、もう約束にない", () => {
-    expect(PROTOCOL_VERSION).toBe(24);
+    expect(PROTOCOL_VERSION).toBe(25);
     const s = fakeState();
     expect(s.windows).toEqual({ list: [] });
     expect(s.params).toEqual({ selected: null });

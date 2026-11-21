@@ -4,7 +4,7 @@
 
 import { PEAK_LEVELS, PEAKS_MAX_COUNT } from "./generated/audio";
 import { encodePeaks } from "./peaks";
-import type { AudioClipView, ClipView } from "./types";
+import type { AudioClipView, ClipView, SourceTempoView, StretchView } from "./types";
 
 export interface FakeAudio {
   id: number;
@@ -89,7 +89,30 @@ export function fakePeaks(a: FakeAudio, level: number, first: number, count: num
   });
 }
 
-/** `ClipView.audio` of a clip that plays `a` from its first frame, as recorded (it follows the tempo, 120 a minute). */
+/** The tempo of the fake's songs, which its recorded audio was sung at. */
+export const FAKE_SONG_BPM = 96;
+
+/** One tempo all along: of recorded audio where the song has no tempo points, and of a tempo typed or found. */
+export const steadyTempo = (tempoBpm: number): SourceTempoView => ({ tempoBpm, headRamp: false, tempoPoints: [] });
+
+/**
+ * `stretch` and `sourceTempo` of a clip whose audio has the tempo `source` (null: 「—」), in a song that is at
+ * `songBpm` at the clip's start. As Rust sends them: the ratio and the tempo points only while the clip follows.
+ */
+export function fakeStretch(
+  source: SourceTempoView | null,
+  songBpm: number,
+  more: Partial<Pick<StretchView, "follow" | "semitones" | "cents" | "keepFormant">> = {},
+): Pick<AudioClipView, "stretch" | "sourceTempo"> {
+  const shape = { follow: source !== null, semitones: 0, cents: 0, keepFormant: true, ...more };
+  const follows = shape.follow && source !== null;
+  return {
+    stretch: { ...shape, sourceBpm: source?.tempoBpm ?? null, ratio: follows ? songBpm / source.tempoBpm : null },
+    sourceTempo: follows ? source : null,
+  };
+}
+
+/** `ClipView.audio` of a clip that plays `a` from its first frame, as recorded (it follows the tempo it was sung at, 96 a minute). */
 export function fakeAudioClip(a: FakeAudio, more: Partial<AudioClipView> = {}): AudioClipView {
   return {
     audio: a.id,
@@ -104,7 +127,7 @@ export function fakeAudioClip(a: FakeAudio, more: Partial<AudioClipView> = {}): 
     fadeOut: 0,
     gainDb: 0,
     state: a.missing ? "missing" : a.growingTo !== undefined ? "loading" : "ready",
-    stretch: { follow: true, sourceBpm: 120, semitones: 0, cents: 0, keepFormant: true },
+    ...fakeStretch(steadyTempo(FAKE_SONG_BPM), FAKE_SONG_BPM),
     ...more,
   };
 }

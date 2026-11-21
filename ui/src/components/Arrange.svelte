@@ -1471,7 +1471,7 @@
                   <span class="m-num take-tag" class:selected={c.selected}>{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
                 {/if}
                 <span class="clip-name">{c.name}</span>
-                {#each c.marks as mark, i (i)}<span class="m-num clip-mark" class:first={i === 0}>{mark}</span>{/each}
+                {#each c.marks as mark, i (i)}<span class="m-num clip-mark">{mark}</span>{/each}
               {/if}
             </div>
           {/each}
@@ -1509,7 +1509,7 @@
                   <span class="m-num take-tag selected">{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
                 {/if}
                 <span class="clip-name">{c.name}</span>
-                {#each c.marks as mark, i (i)}<span class="m-num clip-mark" class:first={i === 0}>{mark}</span>{/each}
+                {#each c.marks as mark, i (i)}<span class="m-num clip-mark">{mark}</span>{/each}
               {/if}
             </div>
           {/each}
@@ -1803,7 +1803,7 @@
     line-height: calc(var(--text-s-line-height) - 2 * var(--line-hair));
     color: var(--color-gray-10);
   }
-  /* 歌のクリップの印（仕様書 2 章: 地 gray.0 ・ 枠 gray.7。モック F7-Stretch: クリップの右はしに寄せる）。札と同じ要素の中なので、要素の数はクリップの数のまま。 */
+  /* 歌のクリップの印（仕様書 2 章: 名前の右に、地 gray.0 ・ 枠 gray.7）。札と同じ要素の中なので、要素の数はクリップの数のまま。 */
   .clip-mark {
     flex-shrink: 0;
     padding: 0 var(--space-1);
@@ -1811,9 +1811,6 @@
     border: var(--line-hair) solid var(--color-gray-7);
     line-height: calc(var(--text-s-line-height) - 2 * var(--line-hair));
     color: var(--color-gray-10);
-  }
-  .clip-mark.first {
-    margin-left: auto;
   }
   .take-tag.selected {
     border-color: var(--color-accent);

@@ -739,3 +739,35 @@ fn a_block_whose_time_alone_is_late_is_written_where_the_count_says() {
     assert_eq!(read, samples);
     let _ = fs::remove_dir_all(dir);
 }
+
+/// A measuring tool: the rule on every block of a run of
+/// `meloet-engine/tests/input_gaps_private.rs` (`MELOET_GAPS_OUT`), named by
+/// `MELOET_GAPS_BLOCKS`. Run with `-- --ignored --nocapture`.
+#[test]
+#[ignore = "reads a file of measured blocks"]
+fn the_rule_fills_what_the_clock_says_is_missing_in_a_measured_run() {
+    let path = std::env::var("MELOET_GAPS_BLOCKS").expect("MELOET_GAPS_BLOCKS names the file");
+    let rows: Vec<[u64; 4]> = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let blocks: Vec<InputBlock> = (rows.iter())
+        .map(
+            |&[first_frame, frames, capture_us, callback_us]| InputBlock {
+                first_frame: first_frame - rows[0][0],
+                frames: frames as u32,
+                capture_us,
+                callback_us,
+                dropped: false,
+            },
+        )
+        .collect();
+    let ((frames, places), by_clock) = filled(&blocks);
+    eprintln!(
+        "{path}: {} blocks, the rule fills {frames} frames in {places} places, \
+         the clock says {by_clock:.1} are missing",
+        blocks.len()
+    );
+    let block = f64::from(blocks.iter().map(|b| b.frames).max().unwrap_or(0));
+    assert!(
+        (frames as f64 - by_clock).abs() < block,
+        "more or less than is missing"
+    );
+}

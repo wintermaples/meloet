@@ -496,6 +496,43 @@ fn the_maker_keeps_the_cache_under_its_limit() {
     assert!(WavPcm::open(&rig.store.made_path(&second.key).unwrap()).is_ok());
 }
 
+#[test]
+fn what_left_the_table_since_the_cache_was_looked_through_is_not_the_oldest() {
+    let mut rig = Rig::new("left");
+    let uid = rig.file(1, &clicks(4).0);
+    let now = SystemTime::now();
+    let day = Duration::from_secs(86_400);
+    let first = plan(uid, 1, &steady(12_000), None, (0, BAR / 4), 1.0);
+    let second = plan(uid, 2, &steady(12_000), None, (0, BAR / 4), 2.0);
+    let first_name = format!("{}.wav", hex(&first.key));
+    // Made on another day for the value the song has when it is opened; and what a
+    // song that is not open left yesterday.
+    put(
+        &rig.cache.join(CACHE_MADE).join(&first_name),
+        50_000,
+        day * 3,
+        now,
+    );
+    put(
+        &rig.cache.join(CACHE_MADE).join("other.wav"),
+        50_000,
+        day,
+        now,
+    );
+    // The cache is looked through at the first table, and then not for a while.
+    rig.want(&[]);
+    rig.want(&[&first]);
+    rig.until_ready(first.key);
+    rig.maker.set_cache_limit(150_000);
+    // Another value at once. Its file (96 kB) puts the cache over the limit.
+    rig.want(&[&second]);
+    rig.until_ready(second.key);
+    rig.until("no work", |n| *n == MadeNews::Work(vec![]));
+    let mut stay = [first_name, format!("{}.wav", hex(&second.key))];
+    stay.sort();
+    assert_eq!(rig.files(CACHE_MADE), stay);
+}
+
 /// A measuring tool: `cargo test -p meloet-core --release --lib -- how_fast --ignored --nocapture`.
 #[test]
 #[ignore = "a measuring tool"]

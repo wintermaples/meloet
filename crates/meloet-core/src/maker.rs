@@ -231,8 +231,9 @@ impl Work {
                 }
                 Ask::Want { plans, uids } => {
                     let before = self.pending();
-                    self.plans = plans;
-                    self.uids = uids;
+                    let plans = std::mem::replace(&mut self.plans, plans);
+                    let uids = std::mem::replace(&mut self.uids, uids);
+                    self.mark_changed(&plans, &uids);
                     self.look(before, true);
                 }
             }
@@ -416,6 +417,39 @@ impl Work {
         }
     }
 
+    /// What came into the table or left it is in use at this moment: the cache is looked
+    /// through only now and then, and would take a file that was used in between for as
+    /// old as it was before. `plans`, `uids`: the table until now.
+    fn mark_changed(&self, plans: &[MadePlan], uids: &[[u8; 16]]) {
+        let Some(dir) = self.store.cache_dir() else {
+            return;
+        };
+        let now = SystemTime::now();
+        let old: HashSet<MadeKey> = plans.iter().map(|p| p.key).collect();
+        let new: HashSet<MadeKey> = self.plans.iter().map(|p| p.key).collect();
+        for key in old.symmetric_difference(&new) {
+            if let Some(path) = self.store.made_path(key) {
+                set_used(&path, now);
+            }
+        }
+        let changed: Vec<String> = (uids.iter().filter(|u| !self.uids.contains(u)))
+            .chain(self.uids.iter().filter(|u| !uids.contains(u)))
+            .map(|u| hex(u))
+            .collect();
+        if changed.is_empty() {
+            return;
+        }
+        for folder in [CACHE_AUDIO, CACHE_PEAKS] {
+            for (path, _) in files_of(&dir.join(folder)) {
+                let name = path.file_name().map(|n| n.to_string_lossy());
+                let used = |name: &str| changed.iter().any(|u| name.starts_with(u.as_str()));
+                if !is_part(&path) && name.is_some_and(|name| used(&name)) {
+                    set_used(&path, now);
+                }
+            }
+        }
+    }
+
     /// Takes the oldest files out of the cache while it is over its limit. What the song
     /// uses now stays, and counts as used now.
     fn trim(&mut self) {
@@ -491,6 +525,13 @@ pub fn remove_left_parts(cache: &Path, now: SystemTime) {
     }
 }
 
+/// The time a file was last used is the time it has on the disk.
+fn set_used(path: &Path, now: SystemTime) {
+    if let Ok(file) = fs::File::options().append(true).open(path) {
+        let _ = file.set_modified(now);
+    }
+}
+
 /// While the files of the cache are more than `limit` bytes together, removes the one that
 /// was used longest ago. `used(folder, file name)`: the song uses the file now; it stays,
 /// and its time is set to `now`. Returns how many bytes went.
@@ -510,10 +551,7 @@ pub fn trim_cache(
             }
             let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
             if name.is_some_and(|name| used(folder, &name)) {
-                // The time a file was last used is the time it has on the disk.
-                if let Ok(file) = fs::File::options().append(true).open(&path) {
-                    let _ = file.set_modified(now);
-                }
+                set_used(&path, now);
             } else {
                 let at = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
                 loose.push((at, meta.len(), path));

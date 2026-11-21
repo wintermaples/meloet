@@ -730,6 +730,11 @@ impl Side {
 /// docs/measurements/2026-11-21-round7-step3.md 6), the blocks after it are back where the
 /// count says. So a late block waits for the next ones: frames are missing before it only
 /// if they are late too.
+///
+/// Both come together as well (measured under a heavier load, three places in 80 s): a
+/// cycle is missed, and the next cycle hands over two blocks with one time, the first a
+/// cycle late by it. A time is late or right, never early: the hole is as long as the
+/// least any of the blocks that wait is late.
 #[derive(Default)]
 struct Gaps {
     /// When the frame after the last block let through is due.
@@ -754,9 +759,10 @@ impl Gaps {
             // Where the block is due if nothing is missing before those that wait.
             let line_us = (self.due_us)
                 .map(|due| due + self.held.iter().map(|(b, _)| len_us(b)).sum::<f64>());
+            let late_us = at_us - line_us.unwrap_or(at_us);
             // Half a block of room: the time of a block is the time its cycle woke, which
             // is not exact.
-            if at_us - line_us.unwrap_or(at_us) <= len_us(&block) / 2.0 {
+            if late_us <= len_us(&block) / 2.0 {
                 for (held, samples) in self.held.drain(..) {
                     write(0, held, &samples);
                 }
@@ -768,22 +774,34 @@ impl Gaps {
                 self.held.push((block, samples.to_vec()));
                 return;
             }
-            self.settle_first(rate, write);
+            self.settle_first(late_us, rate, write);
         }
     }
 
     /// The first block that waits comes after a hole; the others are looked at again from
-    /// where it ends.
-    fn settle_first(&mut self, rate: u32, write: &mut impl FnMut(u64, InputBlock, &[f32])) {
+    /// where it ends. `next_late_us`: how late the block after those that wait is.
+    fn settle_first(
+        &mut self,
+        next_late_us: f64,
+        rate: u32,
+        write: &mut impl FnMut(u64, InputBlock, &[f32]),
+    ) {
         if self.held.is_empty() {
             return;
         }
         let frame_us = 1e6 / f64::from(rate.max(1));
         let mut rest = std::mem::take(&mut self.held);
+        let mut line_us = self
+            .due_us
+            .unwrap_or_else(|| rest[0].0.first_frame_us(rate));
+        let due_us = line_us;
+        let mut late_us = next_late_us;
+        for (block, _) in &rest {
+            late_us = late_us.min(block.first_frame_us(rate) - line_us);
+            line_us += f64::from(block.frames) * frame_us;
+        }
         let (first, samples) = rest.remove(0);
-        let at_us = first.first_frame_us(rate);
-        let late_us = at_us - self.due_us.unwrap_or(at_us);
-        self.due_us = Some(at_us + f64::from(first.frames) * frame_us);
+        self.due_us = Some(due_us + late_us + f64::from(first.frames) * frame_us);
         write(
             (late_us / frame_us).round().max(0.0) as u64,
             first,
@@ -797,7 +815,7 @@ impl Gaps {
     /// No block comes after: what waits is taken as it says.
     fn settle(&mut self, rate: u32, write: &mut impl FnMut(u64, InputBlock, &[f32])) {
         while !self.held.is_empty() {
-            self.settle_first(rate, write);
+            self.settle_first(f64::INFINITY, rate, write);
         }
     }
 }

@@ -14,7 +14,8 @@
 //! and measurements: `off` asks for nothing, `rtkit` asks rtkit even where the limits allow.
 //!
 //! In a process for an export the threads ask for no priority: the export waits for every
-//! answer, and its work must not stand ahead of anything a person plays.
+//! answer, and its work must not stand ahead of anything a person plays. The whole process
+//! is at a low one (`main`).
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;

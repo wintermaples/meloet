@@ -12,6 +12,7 @@
   import Button from "../Button.svelte";
   import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";
   import { stripName } from "../mixer/stripName";
+  import { cutHead } from "./cutHead";
   import { bitsOf, checkLines, clips, detailsSummary, rangeLabel, spanText, tailText } from "./exportText";
 
   const RANGES: ExportRange[] = ["song", "loop", "tracks"];
@@ -115,7 +116,9 @@
         <section>
           <span class="label">{t("export.place")}</span>
           <div class="line">
-            <span class="field mono strong" data-test="export-place">{dialog.place}</span>
+            <span class="field mono strong" data-test="export-place" use:cutHead>
+              <span class="path"><span class="path-text" data-cut-text>{dialog.place}</span></span>
+            </span>
             <Button test="export-choose" onclick={() => send({ type: "chooseExportPlace" })}>{t("export.choosePlace")}</Button>
           </div>
         </section>
@@ -278,11 +281,28 @@
   .field {
     flex: 1;
     min-width: 0;
+    display: flex;
     overflow: hidden;
-    text-overflow: ellipsis;
     padding: var(--space-1) var(--space-2);
     background: var(--color-gray-0);
     border: var(--line-hair) solid var(--color-gray-6);
+  }
+  /* 入りきらない道は、頭を「…」で省いて終わり（ファイルの名前）を見せる（cutHead が data-cut をつける）。 */
+  .field:global([data-cut])::before {
+    content: "…";
+    flex-shrink: 0;
+  }
+  .path {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    overflow: hidden;
+  }
+  .field:global([data-cut]) .path {
+    justify-content: flex-end;
+  }
+  .path-text {
+    flex-shrink: 0;
   }
   .label {
     color: var(--color-gray-8);

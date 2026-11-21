@@ -747,7 +747,7 @@ fn a_host_for_an_export_says_so_and_makes_its_plugins_ready_as_offline() {
 }
 
 #[test]
-fn a_host_for_an_export_asks_for_no_priority() {
+fn a_host_for_an_export_asks_for_no_priority_and_gives_way() {
     let log = std::env::temp_dir().join(format!(
         "meloet-plughost-test-{}-offline.log",
         std::process::id()
@@ -772,19 +772,24 @@ fn a_host_for_an_export_asks_for_no_priority() {
         .unwrap();
     // Long enough for the audio thread to have asked, if it did.
     std::thread::sleep(Duration::from_millis(300));
-    let policies: Vec<String> = std::fs::read_dir(format!("/proc/{}/task", child.0.id()))
+    let threads: Vec<(String, String)> = std::fs::read_dir(format!("/proc/{}/task", child.0.id()))
         .unwrap()
         .flatten()
         .filter_map(|task| std::fs::read_to_string(task.path().join("stat")).ok())
         .filter_map(|stat| {
-            // The scheduling policy: the 41st field, the 39th after the name's bracket.
-            let rest = stat.rsplit_once(')')?.1;
-            Some(rest.split_whitespace().nth(38)?.to_string())
+            // After the name's bracket: the nice value is the 19th field of the line,
+            // the 17th from here; the scheduling policy the 41st, the 39th from here.
+            let rest: Vec<&str> = stat.rsplit_once(')')?.1.split_whitespace().collect();
+            Some((rest.get(38)?.to_string(), rest.get(16)?.to_string()))
         })
         .collect();
+    // Every thread is an ordinary one at nice 19.
     assert!(
-        policies.len() >= 2 && policies.iter().all(|p| p == "0"),
-        "{policies:?}"
+        threads.len() >= 2
+            && threads
+                .iter()
+                .all(|(policy, nice)| policy == "0" && nice == "19"),
+        "{threads:?}"
     );
     let quit = ToHost {
         id: 1,

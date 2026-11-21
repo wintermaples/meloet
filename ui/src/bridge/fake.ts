@@ -3357,9 +3357,9 @@ const exportingScene = (run: ExportRunView): SceneDef => ({
 const EXPORTED_FILE = "はじめての曲.wav";
 
 // F7-Exporting: "書き出しています 46 % ・ はじめての曲.wav ・ 残り 約 40 秒 ・ 弾けます（書き出しの音は聞こえません）".
-SCENES.exporting = exportingScene({ state: "running", percent: 46, file: EXPORTED_FILE, remainingS: 40, realtime: false, lengthS: 182 });
+SCENES.exporting = exportingScene({ state: "running", percent: 46, file: EXPORTED_FILE, remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 });
 // Spec 6 「実時間で書き出している」: "速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。"
-SCENES.exportingRealtime = exportingScene({ state: "running", percent: 12, file: EXPORTED_FILE, remainingS: 160, realtime: true, lengthS: 182 });
+SCENES.exportingRealtime = exportingScene({ state: "running", percent: 12, file: EXPORTED_FILE, remainingS: 160, realtime: true, realtimeForced: true, lengthS: 182 });
 // Spec 6 「書き出した」 and 「書き出しが終わった」, with "フォルダをひらく".
 SCENES.exportDone = exportingScene({
   state: "done",
@@ -3423,7 +3423,7 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
       const d = view.dialog;
       if (!d?.canExport) return [];
       const percent = d.check.state === "counting" ? d.check.percent : 99;
-      view.run = { state: "running", percent, file: d.place.slice(d.place.lastIndexOf("/") + 1), remainingS: null, realtime: d.realtime, lengthS: 0 };
+      view.run = { state: "running", percent, file: d.place.slice(d.place.lastIndexOf("/") + 1), remainingS: null, realtime: d.realtime, realtimeForced: d.realtimeForced, lengthS: 0 };
       view.dialog = null;
       message = null;
       break;

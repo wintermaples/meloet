@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command, ExportDialogView, ExportView } from "../src/bridge";
 import { fakeScene, type FakeState } from "../src/bridge/fake";
 import ExportDialog from "../src/components/export/ExportDialog.svelte";
+import { isCut } from "../src/components/export/cutHead";
 import { detailsSummary, leftText, lengthText, peakNumber, spanText } from "../src/components/export/exportText";
 import { closeContextMenu, contextMenu, type MenuRow } from "../src/components/menu/contextMenu.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
@@ -239,6 +240,77 @@ describe("キー（仕様書 4 章、3 章の Esc の順）", () => {
   });
 });
 
+describe("保存する所の欄: 入りきらない道は、頭を省いて終わり（ファイルの名前）を見せる", () => {
+  const LONG = "~/ミュージック/とても長い名前のフォルダ/もっと長い名前のフォルダ/k7m5-song16.wav";
+  const BOX = 300;
+  const CHAR = 8;
+  const proto = HTMLElement.prototype;
+  const hadOffset = Object.getOwnPropertyDescriptor(proto, "offsetWidth");
+  let observed: { fire: () => void; nodes: Element[] }[] = [];
+  beforeEach(() => {
+    // jsdom はレイアウトをしない: 字は 1 字 8、欄は 300 とする。
+    Object.defineProperty(proto, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute("data-cut-text") ? [...(this.textContent ?? "")].length * CHAR : 0;
+      },
+    });
+    Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => BOX });
+    observed = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        nodes: Element[] = [];
+        constructor(fire: () => void) {
+          observed.push({ fire, nodes: this.nodes });
+        }
+        observe(node: Element): void {
+          this.nodes.push(node);
+        }
+        disconnect(): void {}
+      },
+    );
+  });
+  afterEach(() => {
+    if (hadOffset) Object.defineProperty(proto, "offsetWidth", hadOffset);
+    delete (proto as { clientWidth?: number }).clientWidth;
+    vi.unstubAllGlobals();
+  });
+
+  it("幅は内がわのすきまを引いてくらべる", () => {
+    expect([isCut(284, 300, 8, 8), isCut(285, 300, 8, 8), isCut(300, 300, 0, 0)]).toEqual([false, true, false]);
+  });
+
+  it("入りきる道には印がない。入りきらない道は data-cut がつき、字はまるごと「終わりをそろえる箱」の中にある", () => {
+    show(ExportDialog, scene("exportDialog"));
+    const short = q('[data-test="export-place"]')!;
+    expect(short.hasAttribute("data-cut")).toBe(false);
+    unmount(mounted!);
+
+    show(ExportDialog, withDialog("exportDialog", { place: LONG }));
+    const field = q('[data-test="export-place"]')!;
+    expect(field.hasAttribute("data-cut")).toBe(true);
+    // 字は切らずに置く（終わりのファイルの名前まで）。頭を隠すのは CSS（data-cut の欄の「…」と、箱の終わりそろえ）。
+    const inner = field.querySelector(".path > [data-cut-text]")!;
+    expect(inner.textContent).toBe(LONG);
+    expect(inner.textContent!.endsWith("k7m5-song16.wav")).toBe(true);
+    expect(text(field)).toBe(LONG);
+  });
+
+  it("道や幅が変わると測りなおす（欄と字の大きさを見はる）", () => {
+    const s = withDialog("exportDialog", { place: LONG });
+    show(ExportDialog, s);
+    const field = q('[data-test="export-place"]')!;
+    const watch = observed.find((o) => o.nodes.includes(field))!;
+    expect(watch.nodes).toContain(field.querySelector("[data-cut-text]"));
+    app.setState({ ...s, export: { ...s.export, dialog: { ...s.export.dialog!, place: "~/音楽/はじめての曲.wav" } } });
+    flushSync();
+    watch.fire();
+    expect(field.hasAttribute("data-cut")).toBe(false);
+    expect(text(field)).toBe("~/音楽/はじめての曲.wav");
+  });
+});
+
 describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モック F7-Export ・ F7-Exporting）", () => {
   it("ダイアログをひらいている間は「「書き出し」のダイアログをひらいています」", () => {
     show(StatusLine, scene("exportDialog"));
@@ -260,6 +332,13 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
   it("実時間で書き出している: 仕様書 6 章の文", () => {
     show(StatusLine, scene("exportingRealtime"));
     expect(text(q('.status [data-test="export-rest"]'))).toBe("速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。");
+  });
+
+  it("人が「実時間で書き出す」を選んだだけのときは、プラグインのせいにしない", () => {
+    const s = scene("exportingRealtime");
+    s.export.run = { state: "running", percent: 12, file: "はじめての曲.wav", remainingS: 160, realtime: true, realtimeForced: false, lengthS: 182 };
+    show(StatusLine, s);
+    expect(text(q('.status [data-test="export-rest"]'))).toBe("実時間で書き出しています（3:02）。");
   });
 
   it("終わった: 1 つのファイルは「書き出した」の文と「フォルダをひらく」（showExported）。トラックごとはフォルダ", () => {

@@ -357,13 +357,14 @@ fn an_export_runs_in_the_status_line_and_ends() {
             },
         }]
     );
-    let running = |percent: u8, remaining_s: Option<u32>, realtime: bool| ExportView {
+    let running = |percent: u8, remaining_s: Option<u32>, forced: bool| ExportView {
         dialog: None,
         run: Some(ExportRunView::Running {
             percent,
             file: format!("{name}.wav"),
             remaining_s,
-            realtime,
+            realtime: forced,
+            realtime_forced: forced,
             length_s: 10,
         }),
     };
@@ -408,6 +409,30 @@ fn an_export_runs_in_the_status_line_and_ends() {
     m.handle(Input::Command(Command::ToggleMetronome));
     assert_eq!(export(&m), ExportView::default());
     assert!(m.handle(Input::Command(Command::ShowExported)).is_empty());
+}
+
+#[test]
+fn a_chosen_real_time_export_is_not_said_to_be_a_plugins() {
+    let mut m = song();
+    cmd(&mut m, Command::OpenExport);
+    let asked = set(&mut m, ExportChange::Realtime { on: true });
+    let [ExportAsk::Drop { .. }, ExportAsk::Render(job)] = &asked[..] else {
+        panic!("{asked:?}");
+    };
+    let job = job.id;
+    news(&mut m, counted(job, 100, Some(-6.0), true));
+    cmd(&mut m, Command::StartExport);
+    let said = |m: &Model| match export(m).run {
+        Some(ExportRunView::Running {
+            realtime,
+            realtime_forced,
+            ..
+        }) => (realtime, realtime_forced),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(said(&m), (true, false));
+    news(&mut m, ExportNews::MustBeRealtime { job });
+    assert_eq!(said(&m), (true, true));
 }
 
 #[test]

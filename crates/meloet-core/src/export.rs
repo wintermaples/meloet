@@ -636,6 +636,7 @@ impl Exporting {
                 },
                 remaining_s: job.remaining_s,
                 realtime: job.asked.realtime || job.must_be_realtime,
+                realtime_forced: job.must_be_realtime,
                 length_s: job.length_s,
             },
             Run::Ended(view, _) => view.clone(),

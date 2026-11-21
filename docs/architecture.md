@@ -2442,3 +2442,31 @@ pub struct AudioShape {
 - **キー**: Mod Shift E は `openExport`（録音中 ・ カウントイン中 ・ 書き出している間 ・ もうひらいているときは送らない。メニューの「書き出し…」も同じ道）。Esc は core の `back` ではなく `closeExport`（core の `Back` は書き出しのダイアログを閉じないため）。Enter は `canExport` のときだけ `startExport`。ダイアログがある間は、棚のためし弾きと取り消しの履歴の帯より、ダイアログが先。
 - **ダイアログの形**: 窓の上下のまん中（仕様書 3 章「ひらくたびに、いまの窓のまん中から」。モック F7-Export は上から 72）。中身は `ScrollArea`、見出しと下の列はその外（R11-Fit）。ひらいた「くわしく」は音の設定のくわしい設定と同じ行（名前 120、▾ の一覧）、実時間は「選ぶ印」（`realtimeForced` なら使えない形でオン）。
 - **足した数**: `part.exporting.bar`（160。仕様書 2 章「書き出しの進み」）、`mock.exporting.bar`（4）・ `mock.exporting.stop`（20）（F7-Exporting）。
+
+### 22-24 区切り5 の直し（優先度、実時間の文、保存する所の欄、2026-11-21、meloet-hard）
+
+測り（`docs/measurements/2026-11-21-round7-step5.md` の「見つけた事」1 ・ 3 ・ 5）の直し。約束は版 26 のまま（まだ配っていない）。
+
+- **書き出しは、ゆずる優先度（nice 19）で回る**
+  - 書き出しのプラグイン係（`meloet-plughost host --offline`）は、`main` のいちばん初め（スレッドを 1 本も作る前）に `launch::low_priority()` を呼ぶ。core のスレッド `meloet-export` も、始まってすぐ同じ物を呼ぶ。スキャンの子と同じ関数（`setpriority(PRIO_PROCESS, 0, 19)`）。
+  - Linux の nice は**スレッドごと**の値で、新しいスレッドとプロセスは、作った側の値を受けつぐ（setpriority(2) の BUGS、sched(7)）。だから、`meloet-export` で呼べば、meloet のほかのスレッド（画面、core、音）は変わらず、`meloet-export` が作る物（書き出しの `Hosts` のスレッド、書き出しのスレッドが自分で作るのび縮みの音 `make_now`）だけが同じ 19 になる。子は、自分で呼ぶので、プラグインが作るスレッド（JUCE など）も 19。試験: `launch.rs` の `a_low_priority_is_the_calling_threads_and_of_what_it_starts`、`meloet-plughost/tests/host.rs` の `a_host_for_an_export_asks_for_no_priority_and_gives_way`（どのスレッドも、ふつうの方式で nice 19）。本物のアプリでも `ps -L -o ni,cls` で見た（書き出しの側は 19、弾くほうの `plughost-audio-*` は FF 20 のまま）。
+  - **nice 19 にした理由**: (1) スキャンの子と同じ 1 つの関数ですむ。(2) `SCHED_IDLE` は使わない: 止まったかの見はり（`HANG_MS` = 5 秒）は壁の時計なので、PC がいそがしい時に 1 度も回してもらえないと、止まったプラグインと見まちがえる。nice 19 は、少なくても必ず順番が来る。(3) `SCHED_BATCH` は足さなかった: 起きた時に割りこまないだけの小さなちがいで、nice と別に要る理由が、測りで見えなかった。
+  - 弾くほうのリアルタイムのスレッド（meloet の音のスレッド、弾くほうの係の `plughost-audio-*`）と、作る係（`meloet-render`。弾くほうの曲のための物）にはさわっていない。
+  - nice は、同じ cgroup（同じアプリの scope）の中のふつうのスレッドどうしで効く。リアルタイムのスレッドは、もとから書き出しより先。だから、この直しが効くのは「画面 ・ core ・ リアルタイムを取れなかった弾くほうの係」に対して。となりの論理コア（SMT）やキャッシュの取りあいは、nice では変わらない。
+  - **測り**（`k7m5-surge16`、再生しながら鍵 120、48 秒、quantum 256、load 1.9〜3.7 = ほかの係が動いていた）。答えのない回（Surge XT の係 ・ ZamComp の係）:
+
+    | | 書き出しなし | 21 秒ごとに書き出しなおす |
+    |---|---|---|
+    | 直す前 | 6 ・ 6、5 ・ 6、16 ・ 20、8 ・ 11 | 6 ・ 6、0 ・ 0、6 ・ 5、6 ・ 13、2 ・ 7 |
+    | 直した後 | 0 ・ 0、10 ・ 22、7 ・ 9、0 ・ 5 | 4 ・ 4、7 ・ 7、6 ・ 6、6 ・ 7 |
+
+    **今日は、直す前でも「書き出し中のほうが多い」が出なかった**（ZamComp: なし 6〜20、あり 0〜13）。回ごとのばらつき（0〜22）のほうが大きく、この数では、直しが効いたとも効かないとも言えない。直した後の書き出し中は 4〜7 で、いちばんそろっている。出口の ERR はどの回も 0。
+  - 書き出しの速さ（同じ曲、180 秒、ひらいてから数え終わるまで、2 回ずつ）: 18.54 ・ 18.56 秒 → 18.61 ・ 18.69 秒。PC があいていれば、変わらない。
+- **人が選んだ実時間は、プラグインのせいにしない**
+  - `ExportRunView::Running` に `realtimeForced` を足した（ダイアログの `realtime` ・ `realtimeForced` と同じ組）。`realtime` は「実時間で回っている」（人が選んだか、プラグインのせい）、`realtimeForced` は「速く書き出せないプラグインがある」（`ExportNews::MustBeRealtime` が来た）。
+  - 画面（`exportText.ts` の `runShown`）: `realtimeForced` なら仕様書 6 章の文（`msg.exportingRealtime`）、`realtime` だけなら `msg.exportingRealtimeChosen`「実時間で書き出しています（{length}）。」（仮の文、`builder:2026-11-21`）。両方のときは、プラグインの文（わけを言うほう）。
+- **保存する所の欄は、頭を省いて終わりを見せる**
+  - `ui/src/components/export/cutHead.ts`（`use:cutHead`）: 字の幅と欄の内がわの幅をくらべ、入りきらない間、欄に `data-cut` をつける。見はるのは `ResizeObserver`（欄と字。道が変わる ・ 書体が届く ・ 幅が変わる、のどれでも来る）。毎コマは測らない。
+  - CSS: `data-cut` の欄は、前に「…」（`::before`）を置き、字の箱を終わりそろえ（`justify-content: flex-end`）にする。字は切らずに DOM に置いたまま（頭は箱の外に出て隠れる）。
+  - **`direction: rtl` と `text-overflow: ellipsis` の手を使わなかった理由**: 道の中の「/」や「~」の並びが双方向の決まりで動くことがあり、WebKit で終わりが残るかも確かめが要る。測って印をつける形は、試験（jsdom）でも印で見られる。本物のアプリ（WebKitGTK）で、長い道の終わりのファイルの名前が見えるのを絵で確かめた。
+  - 色 ・ 大きさ ・ すきまは足していない。「…」は CSS の `content`（`text-overflow` の「…」と同じ扱いで、`ja.ts` の文面にしていない）。

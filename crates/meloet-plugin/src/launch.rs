@@ -17,6 +17,8 @@
 //! also the ones the audio thread writes to. What had to happen in between is done by the
 //! child itself: [`die_with_parent`], [`low_priority`].
 //!
+//! A `scan` and a `host --offline` run at a low priority ([`low_priority`]).
+//!
 //! `host` answers [`crate::wire`] requests on the control socket and runs plugins in the
 //! slots of the shared memory until the socket closes. `scan` writes frames of
 //! [`crate::wire::ScanOutput`], one plugin after another and passing over the ids `--skip`
@@ -110,11 +112,17 @@ pub fn spawn(command: &mut Command) -> std::io::Result<Child> {
     command.spawn()
 }
 
-/// In a scanning child: be the least urgent of the ordinary processes (nice 19). A scan must
-/// not take the processor from the screen while a person plays. Not `SCHED_IDLE`: a scan's
-/// time limit is wall-clock time, and on a busy PC an idle-class child may get no time at all
-/// and be taken for a plugin that hangs. meloet's audio thread is real-time and is ahead of
-/// any ordinary process either way.
+/// In a scanning child, in a host process for an export, and on meloet's thread of an
+/// export: be the least urgent of the ordinary ones (nice 19). A scan or an export must not
+/// take the processor from the screen, or from a playing host process that got no real-time
+/// priority, while a person plays. Not `SCHED_IDLE`: a scan's time limit and an export's
+/// watch for a plugin that hangs are wall-clock time, and on a busy PC an idle-class thread
+/// may get no time at all and be taken for a plugin that hangs. meloet's audio thread is
+/// real-time and is ahead of any ordinary process either way.
+///
+/// On Linux the nice value is a thread's (setpriority(2), BUGS): this is for the calling
+/// thread, and for the threads and processes it starts from now on. A process calls it before
+/// it starts a thread.
 pub fn low_priority() {
     // SAFETY: a plain system call.
     unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, 19) };
@@ -230,5 +238,21 @@ pub fn die_with_parent(parent: Option<u32>) {
         if parent.is_some_and(|pid| libc::getppid() as u32 != pid) {
             libc::_exit(0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_low_priority_is_the_calling_threads_and_of_what_it_starts() {
+        // SAFETY: a plain system call.
+        let nice = || unsafe { libc::getpriority(libc::PRIO_PROCESS, 0) };
+        let before = nice();
+        let lowered = std::thread::spawn(move || {
+            super::low_priority();
+            (nice(), std::thread::spawn(nice).join().unwrap())
+        });
+        assert_eq!(lowered.join().unwrap(), (19, 19));
+        assert_eq!(nice(), before);
     }
 }

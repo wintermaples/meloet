@@ -12,6 +12,9 @@
 //! PC's limits allow it (`RLIMIT_RTPRIO`), through rtkit otherwise. Without one it still runs,
 //! late whenever the PC is busy, and the log says so. `MELOET_PLUGHOST_RT` chooses for tests
 //! and measurements: `off` asks for nothing, `rtkit` asks rtkit even where the limits allow.
+//!
+//! In a process for an export the threads ask for no priority: the export waits for every
+//! answer, and its work must not stand ahead of anything a person plays.
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
@@ -222,6 +225,7 @@ struct Shared {
     map: Arc<Mapping>,
     seats: Box<[Seat]>,
     quit: AtomicBool,
+    offline: bool,
     /// The first audio thread got a real-time priority.
     first_is_realtime: AtomicBool,
 }
@@ -243,7 +247,7 @@ const ANSWER: Duration = Duration::from_secs(2);
 /// plugin-ipc.md).
 const MOST_THREADS: usize = 4;
 
-pub fn start(map: Arc<Mapping>) -> std::io::Result<Handle> {
+pub fn start(map: Arc<Mapping>, offline: bool) -> std::io::Result<Handle> {
     let seats = (0..map.geometry().slots)
         .map(|_| Seat {
             busy: AtomicBool::new(false),
@@ -257,6 +261,7 @@ pub fn start(map: Arc<Mapping>) -> std::io::Result<Handle> {
             map,
             seats,
             quit: AtomicBool::new(false),
+            offline,
             first_is_realtime: AtomicBool::new(false),
         }),
         threads: Vec::new(),
@@ -466,7 +471,7 @@ fn realtime() -> bool {
 /// One audio thread. All of them do the same: sleep on the bell, and run whatever block is
 /// asked for at a seat no other thread is at.
 fn run(shared: Arc<Shared>, first: bool) {
-    let realtime = realtime();
+    let realtime = !shared.offline && realtime();
     if first {
         shared.first_is_realtime.store(realtime, SeqCst);
     } else if !realtime && shared.first_is_realtime.load(SeqCst) {
@@ -516,6 +521,7 @@ mod tests {
     const ACTIVATION: Activation = Activation {
         sample_rate: 48_000.0,
         max_frames: 256,
+        offline: false,
     };
 
     /// 300 blocks with keys, parameters from meloet's ring and from the main thread, and a
@@ -680,6 +686,7 @@ mod tests {
         let activation = Activation {
             sample_rate: 48_000.0,
             max_frames: 512,
+            offline: false,
         };
         let key: PluginKey = key.parse().unwrap();
         let mut loaded = crate::formats::load(&key, Path::new(bundle), activation).unwrap();

@@ -26,6 +26,10 @@
 //! is answered as soon as the process has heard it, and the window itself is told later with
 //! [`HostNews::WindowOpened`]. What the person does in a window comes as news. Parameter
 //! values are 0..=1 everywhere here, whatever the plugin's own range.
+//!
+//! An export has `Hosts` of its own ([`Hosts::start_offline`], docs/architecture.md 22-11):
+//! other processes, started the same way and told that they are for an export, and slots
+//! that wait for every answer.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
@@ -247,12 +251,29 @@ pub fn wait<T: Send + 'static>(ask: impl FnOnce(Done<T>)) -> Result<T, HostError
 
 impl Hosts {
     pub fn start(options: HostOptions, news: impl Fn(HostNews) + Send + 'static) -> Hosts {
+        Hosts::start_as(options, false, news)
+    }
+
+    /// For an export: processes of their own, which run their plugins as offline and take no
+    /// real-time priority. The `PluginSlot` of every `Loaded` waits for each answer until it
+    /// is there (`PluginSlot::for_export`); the engine it goes into is not on an audio
+    /// thread.
+    pub fn start_offline(options: HostOptions, news: impl Fn(HostNews) + Send + 'static) -> Hosts {
+        Hosts::start_as(options, true, news)
+    }
+
+    fn start_as(
+        options: HostOptions,
+        offline: bool,
+        news: impl Fn(HostNews) + Send + 'static,
+    ) -> Hosts {
         let (tx, rx) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("meloet-plugins".into())
             .spawn(move || {
                 let mut run = Run {
                     options,
+                    offline,
                     news: Box::new(news),
                     procs: Vec::new(),
                     slots: HashMap::new(),
@@ -452,6 +473,8 @@ struct Slot {
 
 struct Run {
     options: HostOptions,
+    /// These are the processes of an export.
+    offline: bool,
     news: Box<dyn Fn(HostNews) + Send>,
     procs: Vec<Proc>,
     slots: HashMap<SlotId, Slot>,
@@ -818,8 +841,14 @@ impl Run {
         let start = |e: &dyn std::fmt::Display| HostError::Start(e.to_string());
         let map = Arc::new(Mapping::create(self.options.geometry).map_err(|e| start(&e))?);
         let (ours, theirs) = UnixStream::pair().map_err(|e| start(&e))?;
-        let mut command = launch::host_command(&self.options.exe, theirs.as_fd(), map.fd(), None)
-            .map_err(|e| start(&e))?;
+        let mut command = launch::host_command(
+            &self.options.exe,
+            theirs.as_fd(),
+            map.fd(),
+            None,
+            self.offline,
+        )
+        .map_err(|e| start(&e))?;
         command.envs(self.options.env.iter().map(|(name, value)| (name, value)));
         let mut child = launch::spawn(&mut command).map_err(|e| start(&e))?;
         drop((command, theirs));
@@ -849,7 +878,11 @@ impl Run {
             version: WIRE_VERSION,
         };
         match self.request(at, hello, &[], ANSWER_WAIT) {
-            Ok((Reply::Hello { version }, _)) if version == WIRE_VERSION => Ok(at),
+            Ok((Reply::Hello { version, offline }, _))
+                if version == WIRE_VERSION && offline == self.offline =>
+            {
+                Ok(at)
+            }
             answer => {
                 self.bury(at);
                 Err(match answer {
@@ -910,7 +943,11 @@ impl Run {
             });
         match loaded {
             Ok((end, plugin)) => {
-                let (slot, watch) = PluginSlot::new(end, block.clone(), plugin.latency);
+                let (slot, watch) = if self.offline {
+                    PluginSlot::for_export(end, block.clone(), plugin.latency)
+                } else {
+                    PluginSlot::new(end, block.clone(), plugin.latency)
+                };
                 Ok(((home, place), slot, watch, plugin))
             }
             Err(e) => {

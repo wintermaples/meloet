@@ -13,6 +13,10 @@
 //!   soon as it is open, turns it up to 90 % in forty moves and lets it go.
 //! - `urn:meloet:fake:slowwindow`: as `window`; its window takes 0.4 s to open.
 //! - `urn:meloet:fake:notyet`: as `pass`, with a window of a kind meloet does not open.
+//! - `urn:meloet:fake:slow`: as `pass`; every block takes it 30 ms, longer than the block is.
+//! - `urn:meloet:fake:mode`: an effect. 1 in every sample when it was made ready for an
+//!   export (`Activation::offline`), 0 when not.
+//! - `urn:meloet:fake:live`: as `pass`; it says it cannot run faster than it plays.
 //!
 //! To scan (by the bundle's file name without its ending):
 //! - `found`: two plugins. `empty`: none. `broken`: a bundle that cannot be read.
@@ -68,7 +72,11 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             key: None,
             phase: 0.0,
         }),
-        "pass" | "notyet" => Box::new(Pass { fault: None }),
+        "pass" | "notyet" | "live" => Box::new(Pass { fault: None }),
+        "slow" => Box::new(Pass {
+            fault: Some(Fault::Slow),
+        }),
+        "mode" => Box::new(Mode(activation.offline)),
         "gain" => Box::new(Gain {
             level: level.clone(),
         }),
@@ -93,6 +101,7 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             audio_inputs: if instrument { 0 } else { 2 },
             audio_outputs: 2,
             editor,
+            live: name == "live",
         },
         controller: Box::new(FakeController {
             level,
@@ -121,7 +130,7 @@ fn fail(fault: Fault) -> ! {
             }
             std::process::abort()
         }
-        Fault::Hang => loop {
+        Fault::Hang | Fault::Slow => loop {
             std::thread::sleep(std::time::Duration::from_secs(1));
         },
     }
@@ -131,6 +140,22 @@ fn fail(fault: Fault) -> ! {
 enum Fault {
     Crash,
     Hang,
+    Slow,
+}
+
+/// How long `slow` takes for a block.
+const SLOW: std::time::Duration = std::time::Duration::from_millis(30);
+
+struct Mode(bool);
+
+impl Processor for Mode {
+    fn process(&mut self, block: &mut ProcessBlock<'_>) {
+        for output in &mut block.outputs {
+            output.fill(if self.0 { 1.0 } else { 0.0 });
+        }
+    }
+
+    fn reset(&mut self) {}
 }
 
 struct Pass {
@@ -141,10 +166,10 @@ impl Processor for Pass {
     fn process(&mut self, block: &mut ProcessBlock<'_>) {
         let note =
             |e: &ToPlugin| matches!(e, ToPlugin::Midi { data, .. } if data[0] & 0xf0 == 0x90);
-        if let Some(fault) = self.fault
-            && block.events.iter().any(note)
-        {
-            fail(fault);
+        match self.fault {
+            Some(Fault::Slow) => std::thread::sleep(SLOW),
+            Some(fault) if block.events.iter().any(note) => fail(fault),
+            _ => {}
         }
         for (output, input) in block.outputs.iter_mut().zip(block.inputs) {
             output.copy_from_slice(input);

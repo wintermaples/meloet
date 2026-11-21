@@ -33,7 +33,8 @@ fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
             latency: 0,
             audio_inputs: 0,
             audio_outputs: 2,
-            editor: EditorKind::None
+            editor: EditorKind::None,
+            live: false,
         }
     );
     let silence = [0.0f32; 256];
@@ -352,7 +353,7 @@ fn requests_that_cannot_be_done_are_answered_with_an_error() {
 fn nothing_is_done_before_hello_and_a_closed_socket_ends_the_process() {
     let map = Mapping::create(GEOMETRY).unwrap();
     let (mut ours, theirs) = UnixStream::pair().unwrap();
-    let child = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None)
+    let child = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None, false)
         .unwrap()
         .env(FAKE, "1")
         .spawn()
@@ -682,13 +683,18 @@ fn the_log_says_which_priority_the_audio_thread_got() {
         let file = std::fs::File::create(&log).unwrap();
         let map = Mapping::create(GEOMETRY).unwrap();
         let (mut ours, theirs) = UnixStream::pair().unwrap();
-        let child =
-            launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), Some(file.as_fd()))
-                .unwrap()
-                .env(FAKE, "1")
-                .env("MELOET_PLUGHOST_RT", choice)
-                .spawn()
-                .unwrap();
+        let child = launch::host_command(
+            Path::new(EXE),
+            theirs.as_fd(),
+            map.fd(),
+            Some(file.as_fd()),
+            false,
+        )
+        .unwrap()
+        .env(FAKE, "1")
+        .env("MELOET_PLUGHOST_RT", choice)
+        .spawn()
+        .unwrap();
         let mut child = Killed(child);
         drop(theirs);
         ours.set_read_timeout(Some(Duration::from_secs(10)))
@@ -713,4 +719,84 @@ fn the_log_says_which_priority_the_audio_thread_got() {
             assert!(not, "{text}");
         }
     }
+}
+
+#[test]
+fn a_host_for_an_export_says_so_and_makes_its_plugins_ready_as_offline() {
+    // `Host::start_as` reads the `offline` of the host's hello.
+    let mut playing = Host::start();
+    let mut export = Host::start_as(GEOMETRY, &[(FAKE, "1")], true);
+    for (host, offline) in [(&mut playing, false), (&mut export, true)] {
+        let (mut mode, plugin) = host.load(0, "mode");
+        assert!(!plugin.live);
+        let (left, right) = block(&mut mode, &[0.5; 64], &[]);
+        let all = if offline { 1.0 } else { 0.0 };
+        assert!(left.iter().chain(&right).all(|x| *x == all), "{offline}");
+        // A plugin that cannot run faster than it plays says so either way.
+        assert!(host.load(1, "live").1.live);
+        // A block many times longer than it lasts is waited for.
+        let (mut slow, _) = host.load(2, "slow");
+        assert!(slow.begin(64));
+        slow.write_input(0, &[0.25; 64]);
+        slow.submit();
+        assert!(slow.wait_through());
+        let mut out = [0.0f32; 64];
+        slow.read_output(0, &mut out);
+        assert_eq!(out, [0.25; 64]);
+    }
+}
+
+#[test]
+fn a_host_for_an_export_asks_for_no_priority() {
+    let log = std::env::temp_dir().join(format!(
+        "meloet-plughost-test-{}-offline.log",
+        std::process::id()
+    ));
+    let file = std::fs::File::create(&log).unwrap();
+    let map = Mapping::create(GEOMETRY).unwrap();
+    let (mut ours, theirs) = UnixStream::pair().unwrap();
+    let child = launch::host_command(
+        Path::new(EXE),
+        theirs.as_fd(),
+        map.fd(),
+        Some(file.as_fd()),
+        true,
+    )
+    .unwrap()
+    .env(FAKE, "1")
+    .spawn()
+    .unwrap();
+    let mut child = Killed(child);
+    drop(theirs);
+    ours.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    // Long enough for the audio thread to have asked, if it did.
+    std::thread::sleep(Duration::from_millis(300));
+    let policies: Vec<String> = std::fs::read_dir(format!("/proc/{}/task", child.0.id()))
+        .unwrap()
+        .flatten()
+        .filter_map(|task| std::fs::read_to_string(task.path().join("stat")).ok())
+        .filter_map(|stat| {
+            // The scheduling policy: the 41st field, the 39th after the name's bracket.
+            let rest = stat.rsplit_once(')')?.1;
+            Some(rest.split_whitespace().nth(38)?.to_string())
+        })
+        .collect();
+    assert!(
+        policies.len() >= 2 && policies.iter().all(|p| p == "0"),
+        "{policies:?}"
+    );
+    let quit = ToHost {
+        id: 1,
+        request: Request::Quit,
+    };
+    write_frame(&mut ours, &quit, &[]).unwrap();
+    read_frame::<FromHost>(&mut ours).unwrap();
+    assert_eq!(
+        child.wait_for_exit(Duration::from_secs(5)).unwrap().code(),
+        Some(0)
+    );
+    let text = std::fs::read_to_string(&log).unwrap();
+    let _ = std::fs::remove_file(&log);
+    assert!(!text.contains("priority"), "{text}");
 }

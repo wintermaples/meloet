@@ -2,6 +2,9 @@
 //! plugin's end of the shared memory on a thread of this process. The audio thread's side
 //! allocates nothing, also while a slot stops.
 
+// The plugin's end of the tests sleeps (a slow plugin); the engine's side never does.
+#![allow(clippy::disallowed_methods)]
+
 mod common;
 
 use std::sync::Arc;
@@ -32,6 +35,8 @@ struct FakeHost {
     /// The notes held, as the plugin's end heard them.
     held: Arc<AtomicU32>,
     resets: Arc<AtomicU32>,
+    /// How long every block takes the plugins, in milliseconds.
+    slow_ms: Arc<AtomicU32>,
     map: Arc<Mapping>,
     thread: Option<JoinHandle<()>>,
 }
@@ -44,10 +49,16 @@ impl FakeHost {
         let quit = Arc::new(AtomicBool::new(false));
         let held = Arc::new(AtomicU32::new(0));
         let resets = Arc::new(AtomicU32::new(0));
+        let slow_ms = Arc::new(AtomicU32::new(0));
         let thread = {
             let (map, quit, held, resets) =
                 (map.clone(), quit.clone(), held.clone(), resets.clone());
+            let slow_ms = slow_ms.clone();
             std::thread::spawn(move || {
+                let work = || {
+                    let ms = u64::from(slow_ms.load(Relaxed));
+                    std::thread::sleep(std::time::Duration::from_millis(ms));
+                };
                 let bell = Bell::new(map.clone());
                 let mut instrument = PluginEnd::new(map.clone(), 0).unwrap();
                 let mut effect = PluginEnd::new(map, 1).unwrap();
@@ -83,6 +94,7 @@ impl FakeHost {
                         if std::mem::take(&mut first[0]) {
                             instrument.push_event(FromPlugin::Latency { frames: 32 });
                         }
+                        work();
                         instrument.finish();
                     }
                     if let Some(block) = effect.take_request() {
@@ -101,6 +113,7 @@ impl FakeHost {
                         if std::mem::take(&mut first[1]) {
                             effect.push_event(FromPlugin::Latency { frames: 32 });
                         }
+                        work();
                         effect.finish();
                     }
                     if !worked {
@@ -113,6 +126,7 @@ impl FakeHost {
             quit,
             held,
             resets,
+            slow_ms,
             map: map.clone(),
             thread: Some(thread),
         }
@@ -320,5 +334,75 @@ fn a_stopped_effect_lets_the_sound_through_and_a_reset_reaches_the_plugin() {
     }
     assert!(watch.stopped());
     assert_eq!(watch.unanswered(), 2);
+    assert_eq!(common::audio_block_counts(), (0, 0));
+}
+
+#[test]
+fn an_export_slot_waits_for_a_slow_plugin_and_stops_when_no_answer_can_come() {
+    let map = Arc::new(Mapping::create(GEOMETRY).unwrap());
+    // The block's deadline is long past: an export's slot does not look at it.
+    let block = Arc::new(PluginBlock::default());
+    let export =
+        |at| PluginSlot::for_export(EngineEnd::new(map.clone(), at).unwrap(), block.clone(), 0);
+    let ((instrument, instrument_watch), (effect, effect_watch)) = (export(0), export(1));
+    let (mut instrument, mut effect) = (PluginInstrument(instrument), PluginEffect(effect));
+    let mut host = FakeHost::start(&map);
+    // Every block takes the plugins eight times the 5 ms a block of 256 frames lasts.
+    host.slow_ms.store(40, Relaxed);
+    let ctx = EffectContext { tempo_bpm: 120.0 };
+    let (mut left, mut right) = (vec![0.0f32; 600], vec![0.0f32; 600]);
+
+    {
+        let _audio = meloet_engine::rt::enter();
+        instrument.event(InstrumentEvent::NoteOn {
+            note: 60,
+            velocity: 100,
+        });
+        for round in 0..3 {
+            // Asked ahead, as the engine does, and not.
+            if round == 1 {
+                instrument.ask(256);
+            }
+            let began = monotonic_ns();
+            instrument.render(&mut left, &mut right);
+            effect.process(&mut left, &mut right, &ctx);
+            // Three pieces each.
+            assert!(monotonic_ns() - began >= 200_000_000, "round {round}");
+            assert!(
+                left.iter().all(|x| *x == 0.05) && right.iter().all(|x| *x == 0.1),
+                "round {round}"
+            );
+        }
+    }
+    assert!(!instrument_watch.stopped() && !effect_watch.stopped());
+    assert_eq!(
+        (instrument_watch.unanswered(), effect_watch.unanswered()),
+        (0, 0)
+    );
+
+    // The host process ends, and the control side sees that a little later.
+    host.stop();
+    let marker = {
+        let map = map.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            map.mark_stopped();
+        })
+    };
+    {
+        let _audio = meloet_engine::rt::enter();
+        left.fill(0.7);
+        right.fill(-0.7);
+        effect.process(&mut left, &mut right, &ctx);
+        assert!(left.iter().all(|x| *x == 0.7) && right.iter().all(|x| *x == -0.7));
+        assert!(effect_watch.stopped());
+        // The other slot of the process stops without a wait of its own.
+        let began = monotonic_ns();
+        instrument.render(&mut left, &mut right);
+        assert!(monotonic_ns() - began < 50_000_000);
+        assert!(left.iter().all(|x| *x == 0.0));
+        assert!(instrument_watch.stopped());
+    }
+    marker.join().unwrap();
     assert_eq!(common::audio_block_counts(), (0, 0));
 }

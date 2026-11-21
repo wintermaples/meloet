@@ -1,7 +1,7 @@
 //! Starting `meloet-plughost`, and what that process does first.
 //!
 //! ```text
-//! meloet-plughost host --parent <pid> [--log]
+//! meloet-plughost host [--offline] --parent <pid> [--log]
 //! meloet-plughost scan <vst3|lv2> <bundle> [--skip <id>]... --parent <pid> [--log]
 //! ```
 //!
@@ -29,6 +29,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::key::PluginFormat;
+
+/// The argument of `host` that makes the process one for an export.
+pub const OFFLINE: &str = "--offline";
 
 fn base(exe: &Path, mode: &str) -> Command {
     let mut command = Command::new(exe);
@@ -60,13 +63,21 @@ fn finish(mut command: Command, log: Option<BorrowedFd<'_>>) -> std::io::Result<
 ///
 /// `log`: where the process's standard output and standard error go (what plugins print);
 /// `None` is `/dev/null`.
+///
+/// `offline`: the process is for an export (docs/architecture.md 22-11). It is said here and
+/// not over the socket, because the process's audio thread starts, and asks for its
+/// priority, before the first message.
 pub fn host_command(
     exe: &Path,
     control: BorrowedFd<'_>,
     memory: BorrowedFd<'_>,
     log: Option<BorrowedFd<'_>>,
+    offline: bool,
 ) -> std::io::Result<Command> {
     let mut command = base(exe, "host");
+    if offline {
+        command.arg(OFFLINE);
+    }
     command.stdin(hand(control)?).stdout(hand(memory)?);
     finish(command, log)
 }

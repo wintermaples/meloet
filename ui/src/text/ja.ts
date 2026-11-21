@@ -2260,6 +2260,8 @@ export const texts = {
   "export.detailsRealtime": e("・ 実時間", "builder:2026-11-21"),
   "export.leftSeconds": e("{seconds} 秒", "builder:2026-11-21", { seconds: "40" }),
   "export.leftMinutes": e("{minutes} 分", "builder:2026-11-21", { minutes: "2" }),
+  // 残りの時間がまだ分からない間（はじめの数ブロック）は、「残り 約 …」を外す（B-94-81）。
+  "export.runningRestUnknown": e("{file} ・ 弾けます（書き出しの音は聞こえません）", "builder:2026-11-21", { file: "はじめての曲.wav" }),
   "msg.exportFailedPlugin": e("書き出せませんでした。{plugin} が止まりました。途中までのファイルは消しました。", "builder:2026-11-21", {
     plugin: "Surge XT",
   }),

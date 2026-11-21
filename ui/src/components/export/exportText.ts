@@ -95,7 +95,9 @@ export function runShown(run: ExportRunView): RunShown {
     case "running": {
       const rest = run.realtime
         ? textParts("msg.exportingRealtime", { length: lengthText(run.lengthS) })
-        : textParts("export.runningRest", { file: run.file, left: leftText(run.remainingS) });
+        : run.remainingS === null
+          ? textParts("export.runningRestUnknown", { file: run.file })
+          : textParts("export.runningRest", { file: run.file, left: leftText(run.remainingS) });
       return { kind: "running", percent: run.percent, rest };
     }
     case "done":

@@ -1422,3 +1422,6 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
   - **速さ: 歌 16 本 ・ 5 分の曲を 2.85 秒（実時間の約 105 倍）**。
   - 気になる事: リードとパッドは音を出すたびに乱数で波の始まりを決める（`synth/poly.rs` の `random_phase`）ので、2 回めの再生は 1 回めとちがう音（書き出しは「曲をひらいて最初の再生」と同じ）。いまのソロは「曲ぜんぶ」の書き出しに入らない（ミュートは入る）。トラックごとのフォルダは同じ名前のファイルを聞かずに上書きする。PC の保存の窓の題は仮（「名前をつけて保存」「場所をえらぶ」の使いまわし）。→ B-94 と宿題へ。
   - merge のあとの確かめ: core ・ エンジン ・ plugin ・ plughost ・ app の試験 780（ignored 92）。時間で見る試験が 2 つ、混んだ PC で落ちることがある（`readahead::tests::the_ring_holds_the_clips_in_the_order_they_sound_with_silence_between` は 5 秒の待ち、plughost の `a_host_process_crashed_from_outside_stops_its_slots_at_the_second_block`）。後者は何もしない輪 24 個で、プラグインの直しの前の版 26/28 回 ・ 後の版 25/28 回通る（前からの性質で、直しのせいではない）。→ 宿題。
+- 区切り5 の 2 回目 画面（c41c40d ・ f7e54cb、merge 99e462e、meloet-impl ・ Opus 5.5）: 書き出しのダイアログ（`ui/src/components/export/ExportDialog.svelte`。範囲 ・ 形 ・ 保存する所 ・ たしかめの 4 つの状態と音割れ ・ 止まっているプラグイン〔F-Export の形〕・「くわしく」・ やめる ・ 書き出す。R11-Fit では中身がスクロールし、見出しと下のボタンが残る）、状態行の進み（「書き出しています」・ 160 の棒 ・ % ・ 残り ・ やめる、実時間の形、終わった形と「フォルダをひらく」、やめた ・ できなかった）、% と残りは 500 ms に 1 回まで（`ui/src/state/exportShown.svelte.ts`）、Mod Shift E とメニューの「書き出し…」、Esc ・ Enter。数値の名前 3 つを足した。vitest 3064。仮の形は B-94 の 81〜85。
+  - 棟梁: 残りの時間がまだ分からない間は「残り 約 —」ではなく、残りを外した仮の文にした（`export.runningRestUnknown`）。
+  - 偽物の場面の絵は係の作業ツリーにあり、片づけで消えた。回の終わりの絵で撮りなおす。

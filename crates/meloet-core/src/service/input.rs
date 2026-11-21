@@ -474,6 +474,7 @@ impl Worker {
             .handle
             .clock()
             .time_of_frame(sent?.frame as f64)?;
+        let out_delay_us = f64::from(self.audio.handle.meters().out_delay_us());
         let kept = self.input.writer.captured();
         let wave = probe_wave(kept.sample_rate);
         (0..usize::from(kept.channels))
@@ -485,7 +486,7 @@ impl Worker {
                     heard: &heard,
                     sample_rate: kept.sample_rate,
                 };
-                all.way_round(&wave, left_us)
+                all.way_round(&wave, left_us, out_delay_us)
             })
             .max_by(|a, b| a.1.clear.total_cmp(&b.1.clear))
             .map(|(x_us, _)| x_us)

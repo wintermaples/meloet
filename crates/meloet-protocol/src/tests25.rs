@@ -20,7 +20,6 @@ where
 
 #[test]
 fn the_numbers_are_the_models() {
-    assert_eq!(PROTOCOL_VERSION, 25);
     assert_eq!(CLIP_SEMITONES_MAX, meloet_model::AudioShape::SEMITONES_MAX);
     assert_eq!(CLIP_CENTS_MAX, meloet_model::AudioShape::CENTS_MAX);
     let centi = |bpm: f64| (bpm * 100.0) as u32;

@@ -65,7 +65,7 @@ fn volume_lane() -> LaneRef {
     }
 }
 
-fn sample_state() -> AppState {
+pub(super) fn sample_state() -> AppState {
     AppState {
         automation: AutomationView {
             folded: vec![LaneRef {
@@ -471,6 +471,7 @@ fn sample_state() -> AppState {
             midi_input: None,
         },
         audio_work: AudioWorkView::default(),
+        export: ExportView::default(),
         status: StatusView {
             message: Some(StatusMessage::SearchingKeyboard),
         },
@@ -3059,6 +3060,7 @@ fn change_section_names_match_state_keys() {
         Change::Inputs(state.inputs.clone()),
         Change::Audio(state.audio.clone()),
         Change::AudioWork(state.audio_work.clone()),
+        Change::Export(state.export.clone()),
         Change::Status(state.status.clone()),
     ];
     assert_eq!(all.len(), v.as_object().unwrap().len());

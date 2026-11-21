@@ -2,6 +2,7 @@
 //! Nothing here touches a device, a file or a thread.
 
 mod audio;
+mod export;
 mod recovery;
 mod songs;
 mod vocal;
@@ -267,6 +268,8 @@ pub enum Input {
     /// From the thread that makes the audio of stretched and pitched clips: every clip
     /// whose audio is being made or waits to be, for 「音を作っています」.
     AudioMaking(Vec<crate::maker::MakerJob>),
+    /// From the export's worker and from the shell: the answers to [`Effect::Export`].
+    Export(crate::export::ExportNews),
 }
 
 /// What a loaded plugin tells: its window, its parameters, its state.
@@ -554,6 +557,8 @@ pub enum Effect {
     },
     /// The song is let go of: empty the work place of audio (docs/architecture.md 22-4).
     ClearWorkAudio,
+    /// For the export's worker and its window for a place. Answer with [`Input::Export`].
+    Export(crate::export::ExportAsk),
 }
 
 pub struct Model {
@@ -650,6 +655,7 @@ pub struct Model {
     /// 「モニター」 was turned on once in this run: the status line said how late the voice is.
     monitor_said: bool,
     audio: audio::AudioSide,
+    export: crate::export::Exporting,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
@@ -754,6 +760,7 @@ impl Model {
             latency: None,
             monitor_said: false,
             audio: audio::AudioSide::default(),
+            export: crate::export::Exporting::default(),
         }
     }
 
@@ -1098,7 +1105,9 @@ impl Model {
             Input::AudioPicked(paths) => self.audio_picked(paths, &mut effects),
             Input::Audio(news) => self.audio_news(news),
             Input::AudioMaking(jobs) => self.play.set_audio_making(jobs),
+            Input::Export(news) => self.export_news(news),
         }
+        self.settle_export(&mut effects);
         self.refresh_catalog();
         if !self.bands.side_is_open(SidePanel::Shelf) {
             self.play.shelf_closed(&mut effects);
@@ -1248,6 +1257,7 @@ impl Model {
             self.new_song_unsaid = false;
         }
         self.audio_saw_command(&command);
+        self.export.saw_command(&command);
         let can_play = self.open.is_some() && !self.measuring();
         let command = self.vocal_command(command, effects)?;
         match command {
@@ -1592,6 +1602,13 @@ impl Model {
                     self.notice = Some(n);
                 }
             }
+            Command::OpenExport
+            | Command::CloseExport
+            | Command::SetExport { .. }
+            | Command::ChooseExportPlace
+            | Command::StartExport
+            | Command::CancelExport
+            | Command::ShowExported => self.export_command(&command, effects),
             Command::ImportAudio { track } => self.import_audio(track, effects),
             Command::FindAudio { audio } => self.find_audio(audio, effects),
             Command::SetClipStretch { clip, change } => {
@@ -2470,6 +2487,7 @@ impl Model {
             inputs: self.inputs_view(),
             audio,
             audio_work: self.play.audio_work_view(),
+            export: self.export_view(),
             status: StatusView { message: status },
         }
     }
@@ -2515,6 +2533,9 @@ impl Model {
         }
         if self.dialog.is_some() {
             return Some(StatusMessage::SettingsOpen);
+        }
+        if self.export.dialog_open() {
+            return Some(StatusMessage::ExportDialogOpen);
         }
         if self.plugins.stopped_open() {
             // What "もう一度ためす" came to is said over the open dialog.

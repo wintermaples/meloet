@@ -726,6 +726,18 @@ impl Play {
         }
     }
 
+    /// Every plugin of the song that has stopped and was not loaded again or removed since,
+    /// in the order they stopped, with its name.
+    pub fn stopped_plugins(&self) -> Vec<(PluginSlotRef, String)> {
+        (self.plugs.stopped.iter())
+            .filter_map(|ticket| {
+                let plug = self.plugs.list.iter().find(|p| p.ticket == *ticket)?;
+                let place = self.place_of(plug.spot)?;
+                Some((Self::slot_ref(place), plug.plugin.name.to_string()))
+            })
+            .collect()
+    }
+
     /// The plugin of the song that stopped last and was not loaded again or removed since,
     /// with its name.
     pub fn stopped_plugin(&self) -> Option<(PluginSlotRef, String)> {

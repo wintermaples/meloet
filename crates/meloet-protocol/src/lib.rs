@@ -9,6 +9,7 @@
 mod added;
 mod audio;
 mod automation;
+mod export;
 mod history;
 mod params;
 mod take;
@@ -35,6 +36,10 @@ pub use automation::{
     AutoSelection, AutoTarget, AutomationView, LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN,
     LANE_VERSION, LaneError, LaneName, LanePoint, LanePoints, LaneRef, LaneView, WritingLane,
 };
+pub use export::{
+    EXPORT_TAIL_MAX_S, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
+    ExportRange, ExportRunView, ExportStoppedPlugin, ExportTail, ExportView,
+};
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use params::{
     EffectName, NamedInsert, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable,
@@ -57,7 +62,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 25;
+pub const PROTOCOL_VERSION: u32 = 26;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1202,6 +1207,33 @@ pub enum Command {
     FindSourceTempo {
         clip: u32,
     },
+    // Writing the song out (protocol 26; spec 3, 34-B; docs/architecture.md 22-20). None of
+    // these is a step: the song does not change.
+    /// 「書き出し…」 of the menu 「ファイル」 and Mod Shift E: the dialog opens
+    /// (`ExportView::dialog`) with what was chosen last in this run, and Rust starts on
+    /// 「書き出す前のたしかめ」. Not while counting in or recording, and not while an export
+    /// runs.
+    OpenExport,
+    /// 「閉じる」, 「やめる」 and Esc in the dialog: it closes, and what the check wrote so
+    /// far is thrown away.
+    CloseExport,
+    /// A choice of the dialog.
+    SetExport {
+        change: ExportChange,
+    },
+    /// 「えらぶ…」: Rust shows the PC's window for saving a file (for 「トラックごと」 the one
+    /// for choosing a folder). `ExportDialogView::place` follows.
+    ChooseExportPlace,
+    /// 「書き出す」, 「このまま書き出す」 and Enter in the dialog: it closes and the export
+    /// runs (`ExportView::run`); what the check wrote already is kept and used. Only with
+    /// `ExportDialogView::can_export`.
+    StartExport,
+    /// 「やめる」 of the status line: the export stops and what it wrote is taken away
+    /// (`ExportRunView::Cancelled`).
+    CancelExport,
+    /// 「フォルダをひらく」: the PC's file manager shows what the last export wrote. Only
+    /// with `ExportRunView::Done`.
+    ShowExported,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1539,6 +1571,7 @@ pub struct AppState {
     pub inputs: InputsView,
     pub audio: AudioView,
     pub audio_work: AudioWorkView,
+    pub export: ExportView,
     pub status: StatusView,
 }
 
@@ -1600,6 +1633,9 @@ impl AppState {
         if old.audio_work != new.audio_work {
             out.push(Change::AudioWork(new.audio_work.clone()));
         }
+        if old.export != new.export {
+            out.push(Change::Export(new.export.clone()));
+        }
         if old.status != new.status {
             out.push(Change::Status(new.status.clone()));
         }
@@ -1627,6 +1663,7 @@ impl AppState {
             Change::Inputs(v) => self.inputs = v,
             Change::Audio(v) => self.audio = v,
             Change::AudioWork(v) => self.audio_work = v,
+            Change::Export(v) => self.export = v,
             Change::Status(v) => self.status = v,
         }
     }
@@ -3125,6 +3162,8 @@ pub enum StatusMessage {
     SourceTempoNotFound {
         name: String,
     },
+    /// The dialog is up (mock F7-Export): "「書き出し」のダイアログをひらいています".
+    ExportDialogOpen,
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -3199,6 +3238,7 @@ pub enum Change {
     Inputs(InputsView),
     Audio(AudioView),
     AudioWork(AudioWorkView),
+    Export(ExportView),
     Status(StatusView),
 }
 
@@ -3323,3 +3363,5 @@ mod tests23;
 mod tests24;
 #[cfg(test)]
 mod tests25;
+#[cfg(test)]
+mod tests26;

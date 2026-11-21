@@ -385,7 +385,11 @@ impl Core {
         let mut model = Model::new(settings)
             .with_sounds(library.installed())
             .with_sf2(sf2.files().to_vec())
-            .with_cache_dir(options.cache_dir.clone());
+            .with_cache_dir(options.cache_dir.clone())
+            .with_export_dirs(crate::export::ExportDirs {
+                home: dirs::home_dir(),
+                usual: dirs::audio_dir(),
+            });
         let audio_store = Arc::new(
             crate::audiofiles::AudioStore::new(options.state_dir.clone())
                 .with_cache(options.cache_dir.clone()),
@@ -2594,6 +2598,8 @@ impl Worker {
                     }
                     // Here and now: meloet may end right after.
                     Effect::ClearWorkAudio => self.audio_store.clear_work(),
+                    // Nobody takes the export's asks yet.
+                    Effect::Export(_) => {}
                 }
             }
             if let Some(side) = &mut self.plugins {

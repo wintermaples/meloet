@@ -334,6 +334,13 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
     expect(text(q('.status [data-test="export-rest"]'))).toBe("速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。");
   });
 
+  it("人が「実時間で書き出す」を選んだだけのときは、プラグインのせいにしない", () => {
+    const s = scene("exportingRealtime");
+    s.export.run = { state: "running", percent: 12, file: "はじめての曲.wav", remainingS: 160, realtime: true, realtimeForced: false, lengthS: 182 };
+    show(StatusLine, s);
+    expect(text(q('.status [data-test="export-rest"]'))).toBe("実時間で書き出しています（3:02）。");
+  });
+
   it("終わった: 1 つのファイルは「書き出した」の文と「フォルダをひらく」（showExported）。トラックごとはフォルダ", () => {
     show(StatusLine, scene("exportDone"));
     expect(text(q('.status [data-test="status-badge"]'))).toBe("■ 停止中");

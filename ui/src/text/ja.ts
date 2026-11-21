@@ -2266,6 +2266,7 @@ export const texts = {
     plugin: "Surge XT",
   }),
   "msg.exportFailedWrite": e("書き出せませんでした。保存する所に書けません。", "builder:2026-11-21"),
+  "msg.exportingRealtimeChosen": e("実時間で書き出しています（{length}）。", "builder:2026-11-21", { length: "3:02" }),
 
   // [第 7 回 区切り2 ・ 歌のトラックの画面]（仕様書 2 章 ・ 3 章 23-A ・ 24-C ・ 31-C ・ 33-A、モック F7-*）
   // トラックの一覧の下と、上のメニュー「トラック」。

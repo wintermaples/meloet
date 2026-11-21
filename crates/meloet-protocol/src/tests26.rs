@@ -168,10 +168,12 @@ fn the_run_json_shape() {
             file: "はじめての曲.wav".to_owned(),
             remaining_s: Some(40),
             realtime: false,
+            realtime_forced: false,
             length_s: 182,
         },
         json!({"state": "running", "percent": 46, "file": "はじめての曲.wav",
-               "remainingS": 40, "realtime": false, "lengthS": 182}),
+               "remainingS": 40, "realtime": false, "realtimeForced": false,
+               "lengthS": 182}),
     );
     both_ways(
         ExportRunView::Running {
@@ -179,10 +181,12 @@ fn the_run_json_shape() {
             file: "はじめての曲.wav".to_owned(),
             remaining_s: None,
             realtime: true,
+            realtime_forced: true,
             length_s: 182,
         },
         json!({"state": "running", "percent": 0, "file": "はじめての曲.wav",
-               "remainingS": null, "realtime": true, "lengthS": 182}),
+               "remainingS": null, "realtime": true, "realtimeForced": true,
+               "lengthS": 182}),
     );
     both_ways(
         ExportRunView::Done {

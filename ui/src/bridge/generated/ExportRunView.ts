@@ -19,9 +19,14 @@ file: string,
  */
 remainingS: number | null, 
 /**
- * "速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。"
+ * Written as fast as it plays: "実時間で書き出しています（3:02）。"
  */
 realtime: boolean, 
+/**
+ * A plugin cannot be run faster than it plays (then `realtime` is true whatever was
+ * chosen): "速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。"
+ */
+realtimeForced: boolean, 
 /**
  * How long the audio being written is, the tail not counted: "3:02".
  */

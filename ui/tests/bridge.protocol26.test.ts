@@ -80,7 +80,7 @@ describe("約束 26 の形", () => {
     ];
     expect(checks.map((c) => c.state)).toEqual(["waiting", "counting", "done", "failed"]);
     const runs: ExportRunView[] = [
-      { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, lengthS: 182 },
+      { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 },
       { state: "done", file: "はじめての曲.wav", files: 1, place: "~/音楽/はじめての曲.wav", lengthS: 182, sampleRate: 48000, bits: "bits24" },
       { state: "cancelled" },
       { state: "failed", reason: { kind: "cannotWrite" } },
@@ -146,7 +146,7 @@ describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）"
 
   it("exporting（F7-Exporting）: 6 本の曲を書き出している 46 %、残り 40 秒。ダイアログは閉じている", () => {
     const s = scene("exporting");
-    expect(s.export).toEqual({ dialog: null, run: { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, lengthS: 182 } });
+    expect(s.export).toEqual({ dialog: null, run: { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 } });
     expect(s.song.tracks.map((tr) => `${tr.number} ${tr.name}`)).toEqual(["1 ピアノ", "2 ベース", "3 ドラム", "4 パッド", "5 Surge XT", "6 歌"]);
     expect(s.song.tracks[5]!.clips.map((c) => [c.name, c.start, c.end])).toEqual([["歌 テイク 1", 4 * BAR, 6 * BAR]]);
     expect([s.song.file, s.song.keysTarget, s.song.playTarget]).toEqual(["saved", s.song.tracks[0]!.id, s.song.tracks[0]!.id]);
@@ -154,7 +154,7 @@ describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）"
   });
 
   it("実時間で書き出している ・ 終わった ・ やめた ・ できなかった", () => {
-    expect(scene("exportingRealtime").export.run).toMatchObject({ state: "running", realtime: true, lengthS: 182 });
+    expect(scene("exportingRealtime").export.run).toMatchObject({ state: "running", realtime: true, realtimeForced: true, lengthS: 182 });
     expect(scene("exportDone").export.run).toEqual({
       state: "done",
       file: "はじめての曲.wav",
@@ -196,7 +196,7 @@ describe("偽物の意図", () => {
 
     const running = after(looped, { type: "startExport" });
     expect(running.export.dialog).toBeNull();
-    expect(running.export.run).toMatchObject({ state: "running", realtime: true });
+    expect(running.export.run).toMatchObject({ state: "running", realtime: true, realtimeForced: false });
     expect(running.status.message).toBeNull();
     // 書き出している間は、ダイアログをひらけない。
     expect(reduceExport(running, { type: "openExport" })).toEqual([]);

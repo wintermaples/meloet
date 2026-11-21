@@ -93,11 +93,13 @@ export type RunShown =
 export function runShown(run: ExportRunView): RunShown {
   switch (run.state) {
     case "running": {
-      const rest = run.realtime
+      const rest = run.realtimeForced
         ? textParts("msg.exportingRealtime", { length: lengthText(run.lengthS) })
-        : run.remainingS === null
-          ? textParts("export.runningRestUnknown", { file: run.file })
-          : textParts("export.runningRest", { file: run.file, left: leftText(run.remainingS) });
+        : run.realtime
+          ? textParts("msg.exportingRealtimeChosen", { length: lengthText(run.lengthS) })
+          : run.remainingS === null
+            ? textParts("export.runningRestUnknown", { file: run.file })
+            : textParts("export.runningRest", { file: run.file, left: leftText(run.remainingS) });
       return { kind: "running", percent: run.percent, rest };
     }
     case "done":

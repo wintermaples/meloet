@@ -672,6 +672,11 @@ fn measured_holes_are_filled_and_a_block_whose_time_alone_is_late_is_not() {
     assert_eq!(piece("busy-64-holes-c"), (640, 9));
     // One block's time is a cycle late, the next is back on the line.
     assert_eq!(piece("busy-64-only-late"), (0, 0));
+    // A cycle is missed and the first block after it is a cycle late by its time as well:
+    // one cycle is filled there, not two. (b has three holes more.)
+    assert_eq!(piece("load-64-hole-and-late-a"), (64, 1));
+    assert_eq!(piece("load-64-hole-and-late-b"), (192 + 64 + 128 + 256, 4));
+    assert_eq!(piece("load-64-hole-and-late-c"), (128 + 64, 2));
 }
 
 #[test]
@@ -695,6 +700,11 @@ fn late_times_of_one_or_two_blocks_fill_nothing_and_a_hole_at_the_end_is_filled(
     assert_eq!(rule(&[0.0, 1.0, 3.0, 4.0, 5.0, 6.0]), (64, 1));
     // Two holes, one block between them.
     assert_eq!(rule(&[0.0, 1.0, 3.0, 4.0, 7.0, 8.0, 9.0]), (64 + 128, 2));
+    // A hole of one cycle, and the block after it says two.
+    assert_eq!(rule(&[0.0, 1.0, 4.0, 4.0, 5.0, 6.0]), (64, 1));
+    assert_eq!(rule(&[0.0, 1.0, 4.0, 4.0]), (64, 1));
+    // A hole, and another one right after its first block.
+    assert_eq!(rule(&[0.0, 1.0, 3.0, 5.0, 6.0, 7.0]), (64 + 64, 2));
     // The recording ends on a late block: taken as it says.
     assert_eq!(rule(&[0.0, 1.0, 4.0]), (128, 1));
     assert_eq!(rule(&[0.0, 1.0, 4.0, 5.0]), (128, 1));

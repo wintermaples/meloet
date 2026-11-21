@@ -1336,3 +1336,9 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
     5. 2 本めの歌のトラックを足すと 1 本めの ● も残り、R で 2 本とも録る → 仕様書 24-C（「歌のトラックの ● は自分で押してつける ・ 外す。何本でも」「選ぶとそのトラックの ● もつく」）のとおり。直さない。
   - 足した道具: `tools/measure/audio_app.py`（`play` ・ `load` ・ `same` ・ `record-save` ・ `position` ・ `arrange`）、`remote.py` の `song_in_place`、試験 `meloet-core/tests/audio_measure.rs` と `meloet-engine/tests/input_gaps_private.rs`（どちらも `--ignored`）。
   - 手順の (c) 3 の「箱」は、持ってきている間の窓の左右の半分（30-C、B-94-21）なので、棟梁が書きなおした。
+- 測りのあとの直し（音の側、fead63b ・ 7ff3b34 ・ 57d975c ・ f66a83e、merge 03592c2、meloet-hard ・ Fable 5.2）:
+  - B-94-50: 録っている間は、その録音で本当に録るトラックぜんぶ（鍵盤の行き先と、● ・ 入口 ・ チャンネルのそろった歌のトラック）が、もとからあるクリップを鳴らさない。core の `EngineOp::Record` ・ `RecordHere` の `muted` を `TrackSet` にしただけで、エンジンの `lane_plays` はもう歌のクリップにも効いていた。● がついていても録れないトラックは鳴らす（係の決め。棟梁も取った。何も録らないのに前の歌だけ消えると、録れていると思わせる）。
+  - 見つけた事 2: 遅れたブロックはすぐ埋めずに 2 つまで待たせ、あとのブロックが線に戻れば「時刻だけ遅れた」として埋めない（`vocalrec.rs` の `Gaps`）。案 (b)。払う物は、抜けのあとだけ書くのが 2 ブロック遅れる事。測った 1 回ぶん（14947 ブロック）で、埋めた数 3584 こま（前 3648、時計の言う数 3583.7）。混んだ PC での確かめは、まだ（回しかたは architecture 22-18 D）。
+  - 見つけた事 3: 「遅れを測る」は「エンジンが書いた時刻（出た時刻 − PC が言う出口の遅れ）− 2 ms」からさがす。出口のモニターで 3 回とも測れて 10.7 ms（PC が言う 16 ms − 1 quantum）、その数を使った録音はクリック 16 個とも 0.0 こま（前は −256）。
+  - `vocal_private` ・ `vocal_play_private` は 64 ・ 256 ・ 1024 で 0.0 こま。core ・ エンジンの試験 634 通る。
+  - 棟梁: `tools/measure/audio_app.py position` の 2 回めの録音は、1 本めの ● を外してから録る形にした（B-94-50 で、1 本めのクリップが鳴らなくなったため）。

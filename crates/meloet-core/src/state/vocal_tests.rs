@@ -1088,3 +1088,64 @@ fn a_voice_recorded_when_the_output_goes_away_says_the_take_it_left() {
         })
     );
 }
+
+#[test]
+fn every_track_that_records_is_told_to_the_engine_as_not_playing() {
+    let muted = |effects: &[Effect]| {
+        (effects.iter())
+            .find_map(|e| match e {
+                Effect::Engine(EngineOp::Record { muted, .. })
+                | Effect::Engine(EngineOp::RecordHere { muted }) => Some(*muted),
+                _ => None,
+            })
+            .expect("the engine is told to record")
+    };
+    let set = |seats: &[Option<usize>]| -> meloet_engine::TrackSet {
+        seats.iter().map(|s| s.expect("a seat")).collect()
+    };
+    // The piano, and three vocal tracks: the ● of the second is off.
+    let (mut m, _) = with_vocal(2);
+    cmd(&mut m, Command::AddVocalTrack);
+    cmd(&mut m, Command::AddVocalTrack);
+    let off = m.view().song.tracks[2].id;
+    if matches!(vocal(&m, off), TrackKindView::Vocal { armed: true, .. }) {
+        cmd(&mut m, Command::ToggleVocalArm { track: off });
+    }
+    let armed: Vec<bool> = (m.view().song.tracks.iter())
+        .map(|t| matches!(t.kind, TrackKindView::Vocal { armed: true, .. }))
+        .collect();
+    assert_eq!(armed, [false, true, false, true]);
+    let seats = m.play.track_seats();
+
+    // R from a stop: the keys track and the two vocal tracks with their ● on.
+    let effects = cmd(&mut m, Command::Record);
+    assert_eq!(muted(&effects), set(&[seats[0], seats[1], seats[3]]));
+    assert_eq!(m.view().transport.recording_vocals.len(), 2);
+    cmd(&mut m, Command::Record);
+    m.handle(Input::Record(RecordReport::Stopped {
+        t_us: 0,
+        tick: 0.0,
+        lap: 0,
+    }));
+    m.handle(written(0));
+    assert!(m.view().transport.recording.is_none());
+
+    // R while the song plays: the same.
+    cmd(&mut m, Command::PlayStop);
+    let effects = cmd(&mut m, Command::Record);
+    assert!(
+        matches!(
+            effects.iter().find(|e| matches!(e, Effect::Engine(_))),
+            Some(Effect::Engine(EngineOp::RecordHere { .. }))
+        ),
+        "{effects:?}"
+    );
+    assert_eq!(muted(&effects), set(&[seats[0], seats[1], seats[3]]));
+
+    // No input: only the keys track records, and the vocal tracks play on.
+    let mut m = running(vec![endpoint(MIC, MIC_NODE, Availability::No, Some(2))]);
+    cmd(&mut m, Command::AddVocalTrack);
+    let seats = m.play.track_seats();
+    let effects = cmd(&mut m, Command::Record);
+    assert_eq!(muted(&effects), set(&[seats[0]]));
+}

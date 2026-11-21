@@ -528,3 +528,89 @@ fn audio_and_notes_of_one_tick_are_at_most_a_frame_apart() {
     }
     assert!(same > 0 && apart > 0, "{same} {apart}");
 }
+
+#[test]
+fn a_track_that_records_does_not_play_its_clips_and_the_other_tracks_do() {
+    // One beat at 120 is 24000 frames; the loop is beats 2 and 3.
+    let map = common::flat_map(12_000, 4, 4);
+    let mut rig = Rig::new(map, vec![region(0, 5_000_000, 1.0)]);
+    let stop_at = |rig: &mut Rig, tick: u64| {
+        rig.send(EngineCommand::Stop {
+            t_us: monotonic_us(),
+        });
+        rig.blocks(4);
+        rig.send(EngineCommand::Locate { tick });
+        assert!(rig.blocks(4).iter().all(|&s| s == 0.0));
+    };
+
+    // Another track records: this one plays, from the first frame.
+    rig.send(EngineCommand::Record {
+        from: 0,
+        count_in_beats: 0,
+        muted: [0, TRACK + 1].into_iter().collect(),
+    });
+    for (n, &got) in rig.blocks(8).iter().enumerate() {
+        assert_eq!(got, sample(n as u64), "frame {n}");
+    }
+
+    // This track records, with others: silent from the first frame, over the loop's turn
+    // too.
+    stop_at(&mut rig, 1_920);
+    rig.send(EngineCommand::SetLoop {
+        start: 1_920,
+        end: 5_760,
+        on: true,
+    });
+    rig.blocks(2);
+    let told = rig.feeder.made.len();
+    rig.send(EngineCommand::Record {
+        from: 1_920,
+        count_in_beats: 0,
+        muted: [0, TRACK, TRACK + 1].into_iter().collect(),
+    });
+    assert!(rig.blocks(300).iter().all(|&s| s == 0.0));
+    // The ring was read all the while: nothing new was asked for.
+    assert_eq!(rig.feeder.made.len(), told);
+    assert_eq!(rig.missing(), 0);
+
+    // Stopped, it plays again.
+    stop_at(&mut rig, 1_920);
+    rig.send(EngineCommand::SetLoop {
+        start: 1_920,
+        end: 5_760,
+        on: false,
+    });
+    rig.blocks(2);
+    rig.send(EngineCommand::Play { from: 1_920 });
+    for (k, &got) in rig.blocks(4).iter().enumerate() {
+        assert_eq!(got, sample(24_000 + k as u64), "{k}");
+    }
+
+    // Recording from where the song plays (R): the clip that sounds goes out over 10 ms.
+    rig.send(EngineCommand::RecordHere {
+        muted: [TRACK].into_iter().collect(),
+    });
+    let out = rig.blocks(8);
+    for k in 0..FADE {
+        let want = sample(24_000 + 1_024 + k as u64) * (1.0 - (k + 1) as f32 / FADE as f32);
+        assert!((out[k] - want).abs() < 1e-4, "{k}");
+    }
+    assert!(out[FADE - 1..].iter().all(|&s| s.abs() < 1e-4));
+    assert!(out[FADE..].iter().all(|&s| s == 0.0));
+
+    // And back in time when the recording ends by playing on.
+    let told = rig.feeder.made.len();
+    rig.send(EngineCommand::Stop {
+        t_us: monotonic_us(),
+    });
+    rig.blocks(4);
+    rig.send(EngineCommand::Locate { tick: 0 });
+    rig.blocks(4);
+    rig.send(EngineCommand::Play { from: 0 });
+    for (n, &got) in rig.blocks(8).iter().enumerate() {
+        assert_eq!(got, sample(n as u64), "frame {n}");
+    }
+    assert!(rig.feeder.made.len() > told);
+    assert_eq!(rig.missing(), 0);
+    no_memory_was_taken();
+}

@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use meloet_engine::TrackSet;
 use meloet_model::arrange::KeptClip;
 use meloet_model::controls::{self, ControlKind as ModelControlKind};
 use meloet_model::edit::{self, Edit, EditError};
@@ -94,12 +95,13 @@ pub enum EngineOp {
     Record {
         from: u64,
         count_in_beats: u32,
-        /// The seat that does not play its sequence while recording.
-        muted: usize,
+        /// The seats that are recorded to: they do not play their sequence and their
+        /// clips while recording.
+        muted: TrackSet,
     },
     /// While playing: record from where the engine is, without a jump.
     RecordHere {
-        muted: usize,
+        muted: TrackSet,
     },
     Stop {
         t_us: u64,
@@ -688,10 +690,9 @@ impl Play {
         if track.is_none() && !any_armed {
             return Some(StatusMessage::NoArmedTrack);
         }
-        let index = match track {
-            Some(track) => self.seats.of(track)?,
-            // No sequence plays on the audition seat: nothing is muted.
-            None => AUDITION_SEAT,
+        let keys_seat = match track {
+            Some(track) => Some(self.seats.of(track)?),
+            None => None,
         };
         let playing = self.state == TransportState::Playing;
         let (from, count_in_beats) = if playing {
@@ -719,6 +720,10 @@ impl Play {
                 .find(|c| c.range().overlaps(span))
                 .map(|c| (c.id, c.takes.len() as u32))
         });
+        // What a track recorded before is not heard while it records again.
+        let muted: TrackSet = (vocals.iter().filter_map(|v| self.seats.of(v.track)))
+            .chain(keys_seat)
+            .collect();
         let id = self.next_recording;
         self.next_recording = self.next_recording.wrapping_add(1);
         let setup = input.filter(|_| !vocals.is_empty());
@@ -761,12 +766,12 @@ impl Play {
         };
         self.last_heard = None;
         effects.push(Effect::Engine(if playing {
-            EngineOp::RecordHere { muted: index }
+            EngineOp::RecordHere { muted }
         } else {
             EngineOp::Record {
                 from,
                 count_in_beats,
-                muted: index,
+                muted,
             }
         }));
         notice

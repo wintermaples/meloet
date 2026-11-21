@@ -1514,7 +1514,7 @@
             </div>
           {/each}
         </div>
-        <AudioClipNotes {view} {dims} tracks={song.tracks} />
+        <AudioClipNotes {view} {dims} tracks={song.tracks} askHost={timeBox} />
         <AudioClipHandles {view} {dims} tracks={song.tracks} selected={selectedSet} {busy} />
         <DropFrame {view} {dims} tracks={song.tracks} {map} {perBar} />
         {#if boxFrame}

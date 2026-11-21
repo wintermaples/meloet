@@ -8,6 +8,8 @@
 <script lang="ts">
   import { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, type ClipField, type ClipView, type SelectedClip, type StretchChange, type ValueField as ValueFieldName } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
+  import { shownWork } from "../../state/audioWork.svelte";
+  import { askWhole } from "../automation/coverIf";
   import { STATUS_JOIN, t } from "../../text/ja";
   import { mapOf } from "../../time/bars";
   import Button from "../Button.svelte";
@@ -107,8 +109,19 @@
     if (field === "cents" && v !== s.cents) setStretch({ kind: "cents", cents: v });
   }
 
-  /** このクリップの音を作っている進み（約束 24 の audioWork。clip がこのクリップの物）。 */
-  const rendering = $derived(current.state!.audioWork.jobs.find((j) => j.kind === "rendering" && j.clip === sel.clip) ?? null);
+  /** このクリップの音を作っている進み（約束 24 の audioWork。clip がこのクリップの物。% はクリップの下 ・ 状態行と同じコマで変わる）。 */
+  const rendering = $derived(shownWork.current.rendering.get(sel.clip) ?? null);
+
+  /** % が変わったら、進みの行まるごとの四角を先に 1 つ頼む（棒と字と % の四角が、上下の端のちがう 3 つにならない）。 */
+  function askRow(node: HTMLElement, percent: number) {
+    let now = percent;
+    return {
+      update(next: number) {
+        if (next !== now) askWhole(node);
+        now = next;
+      },
+    };
+  }
 </script>
 
 {#snippet value(field: ClipField, shown: string, label: string)}
@@ -147,10 +160,13 @@
     <span class="m-lbl file" data-test="clip-file">{fileLine}</span>
   </div>
   {#if rendering && !sel.missing}
-    <div class="rendering" data-test="clip-rendering">
+    <div class="rendering" data-test="clip-rendering" use:askRow={rendering.percent}>
       <span class="m-lbl">{t("clipParams.rendering")}</span>
       <div class="bar"><div class="fill" style:transform="scaleX({rendering.percent / 100})"></div></div>
-      <span class="m-num m-hi">{t("clipParams.renderingPercent", { percent: rendering.percent })}</span>
+      <!-- % の字は流れの外の箱: 字の幅が変わっても、行と欄はレイアウトしなおされない。幅は「99 %」の字で決める。 -->
+      <span class="m-num m-hi percent" data-size={t("clipParams.renderingPercent", { percent: 99 })}
+        ><span class="in">{t("clipParams.renderingPercent", { percent: rendering.percent })}</span></span
+      >
     </div>
   {/if}
   {#if sel.missing}
@@ -383,5 +399,19 @@
     height: 100%;
     background: var(--color-accent);
     transform-origin: left;
+  }
+  .percent {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .percent::before {
+    content: attr(data-size);
+    visibility: hidden;
+  }
+  .percent > .in {
+    position: absolute;
+    top: 0;
+    right: 0;
+    white-space: nowrap;
   }
 </style>

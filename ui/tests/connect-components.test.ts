@@ -381,6 +381,20 @@ describe("音の設定", () => {
     ]);
   });
 
+  it("ささっている入口を PC がえらんでいない（ほかの入口もささっている）ときは、「さすと…」ではなく PC の設定でえらぶ文", () => {
+    const state = withSettings(false);
+    state.inputs.list = [
+      endpoint({ id: "front", name: "フロントマイクロフォン" }),
+      endpoint({ id: "rear", name: "リアマイクロフォン", friendly: "rearMic", availability: "yes", unusable: "switchedByPc" }),
+    ];
+    show(SettingsDialog, state);
+    qa('[data-test="unusable-head"]')[1]!.click();
+    flushSync();
+    expect(qa('[data-test="unusable-row"]').map((r) => r.textContent!.replace(/\s+/g, " ").trim())).toEqual([
+      "リアマイクロフォン Ryzen HD Audio Controller ささっています ・ PC の設定でほかの入口をえらんでいます（設定 ▸ サウンド ▸ 入力 で変えられます）",
+    ]);
+  });
+
   it("くわしい設定（F7-SettingsAdv）: 見出しは「音の設定」、2 段目は「◂ 音の設定 くわしい設定」。出口 ・ 鍵盤の行と「音のしくみ」はない", () => {
     show(SettingsDialog, withSettings(true));
     expect(text(".head .title")).toBe("音の設定");

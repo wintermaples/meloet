@@ -51,13 +51,19 @@ export interface EndpointGroups {
   stoppedByPc: number;
 }
 
+/** 使えないわけの文。ささっている入口を PC がえらんでいないとき（ほかの入口もささっている）は、「さすと…」ではなく、PC の設定でえらぶ事を言う。 */
+function reasonOf(o: EndpointView, kind: "output" | "input"): string {
+  if (kind === "input" && o.unusable === "switchedByPc" && o.availability === "yes") return t("msg.inputPluggedNotChosen");
+  return t(REASON[o.unusable!]);
+}
+
 /** 出口か入口を、えらべる物と「いまは使えない出口（入口）」に分ける。ならびは Rust が決めた順のまま。 */
-export function endpointGroups(list: readonly EndpointView[]): EndpointGroups {
+export function endpointGroups(list: readonly EndpointView[], kind: "output" | "input" = "output"): EndpointGroups {
   const usable = list.filter((o) => o.unusable === null);
   const count = new Map<string, number>();
   for (const o of usable) count.set(o.name, (count.get(o.name) ?? 0) + 1);
   const unusable = list.flatMap((o) =>
-    o.unusable === null ? [] : [{ id: o.id, name: o.name, device: o.device, reason: t(REASON[o.unusable]) }],
+    o.unusable === null ? [] : [{ id: o.id, name: o.name, device: o.device, reason: reasonOf(o, kind) }],
   );
   return {
     usable: usable.map((o) => ({ id: o.id, look: endpointLook(o, count.get(o.name)! > 1) })),

@@ -33,7 +33,7 @@
 
   const groups = $derived(endpointGroups(app?.outputs.list ?? []));
   const notUsed: EndpointLook = { name: t("settings.notUsed"), side: null, link: null };
-  const inputGroups = $derived(endpointGroups(app?.inputs.list ?? []));
+  const inputGroups = $derived(endpointGroups(app?.inputs.list ?? [], "input"));
   const inputs = $derived([...inputGroups.usable, { id: "", look: notUsed }]);
   const dash = t("meter.playTargetNone");
 

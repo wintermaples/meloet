@@ -1503,3 +1503,8 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - **測る道具**（第 7 回で足した物）: `tools/measure/audio_app.py`（`play` ・ `load` ・ `same` ・ `record-save` ・ `position` ・ `arrange`）、`stretch_app.py`（`position` ・ `prepare` ・ `load` ・ `kept` ・ `splice`）、`export_app.py`（`same` ・ `speed` ・ `flow`）、`vocal_app.py`、`arrange_parts.py`（アレンジのコマを部品ごとに、`--how task` で毎コマ描く）、`webkit-stacks.sh`（WebKit の主スレッドのスタック）、`font_start.py`、試験 `audio_measure.rs` ・ `input_gaps_private.rs` ・ `vocal_private.rs` ・ `vocal_play_private.rs` ・ `stretch_play_private.rs`（`--ignored`）。`remote.py` の `Recorder` はメモリに録って止めたら移す（ディスクに録ると 5 秒ごとに落ちた）。**しまっておく所（`XDG_CACHE_HOME`）は絶対の道でわたす**（相対だと `~/.cache/meloet/` に書く）。
 - **quantum**: 測りや試験のときだけ、棟梁が `clock.force-quantum` を一時的に変えてよい（`CLAUDE.md`。前の値 256 に戻して伝える）。
 - 出口のモニターを入口にした測りでは、歌の位置はいつも 1 quantum 早い（モニターが通らない 1 quantum）。本物の DAC → 線 → ADC は、オーナーさんの手順 (b) 待ち。
+
+## 第 7 回のあと: 歌の入口の文（2026-11-22）
+
+- オーナーさんの PC で、ライン（大きな音）を後ろのマイクの穴（リアマイク）にさしたが、歌の入口が使えなかった。読んだ所（何も変えていない）: 前のマイクの穴もささっていて（`Front Mic Jack` on）、PC は前のマイクの Route を使っていた。meloet はリアマイクを「いまは使えない入口」にして、出口のための文「さすと、PC がこちらに切りかえます」を出していた（もうささっているので、うそ）。青いラインインの穴は `Line Jack` off で「何もささっていません」。前のマイクは増幅 +30 dB ＋ 取りこみ +30 dB で、割れていた。
+- 直した事（棟梁）: 入口が `switchedByPc` で `availability` が `yes` のときだけ、オーナーさんの文「ささっています ・ PC の設定でほかの入口をえらんでいます（設定 ▸ サウンド ▸ 入力 で変えられます）」（B-94-93）。`endpointGroups` に出口か入口かの引数。PC の入口の切りかえは、オーナーさんが自分でする（meloet は変えない決まりのまま）。vitest 3069。

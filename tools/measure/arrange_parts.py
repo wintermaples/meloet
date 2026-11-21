@@ -3,7 +3,7 @@
 
 usage:
     python3 -I tools/measure/arrange_parts.py OUT --song FILE [--splits N] [--how frame|task]
-                                              [--hide SELECTOR] [--tall]
+                                              [--hide SELECTOR] [--tall] [--cache DIR] [--wait-made]
 
 Opens the song in the real app (remote.py), cuts every clip --splits times (S, not saved), and
 sends wheel events from inside the page, one a frame (sideways; zooming out and in, twice; zooming
@@ -31,7 +31,7 @@ import argparse, json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from remote import App
-from audio_app import BAR, audio_clips, vocal_tracks, wait_ready, finish
+from audio_app import BAR, audio_clips, vocal_tracks, wait_ready, finish, cache_env, wait_no_jobs
 
 WHEEL = """
 const el = document.querySelector('.lanes-view'), r = el.getBoundingClientRect();
@@ -124,17 +124,20 @@ def main():
     p.add_argument("--zooms", type=int, default=0, help="at the end, zoom in and out this many times more (for webkit-stacks.sh)")
     p.add_argument("--js-before", help="a file of JavaScript (the body of an async function) run in the page before the wheel events")
     p.add_argument("--js-after", help="the same, run after them; what it returns goes into the summary as `jsAfter`")
+    p.add_argument("--cache", help="XDG_CACHE_HOME for the app")
+    p.add_argument("--wait-made", action="store_true", help="after the cuts, wait until no audio is in the making")
     a = p.parse_args()
     result = {"song": a.song, "splits": a.splits, "how": a.how, "hide": a.hide, "tall": a.tall}
     events = {}
     cpu = {}
-    with App(a.out, song=a.song, song_in_place=True) as app:
+    with App(a.out, song=a.song, song_in_place=True, env=cache_env(a)) as app:
         state = wait_ready(app) if audio_clips(app.snapshot()) else app.snapshot()
         for i in range(a.splits):
             app.send({"type": "locate", "tick": (i + 1) * (110 // max(1, a.splits)) * BAR})
             app.send({"type": "selectAllClips"})
             app.send({"type": "splitClips"})
             time.sleep(0.15)
+        result["jobsAfterTheCuts"] = wait_no_jobs(app, 0.5 if not a.wait_made else 900)
         app.send({"type": "selectClip", "clip": None})
         app.send({"type": "goToStart"})
         if a.tall:
@@ -163,6 +166,7 @@ def main():
             if name == "out":
                 result["nodesOut"] = app.js(COUNT)
             time.sleep(0.5)
+        result["jobsAtTheEnd"] = len(app.snapshot().get("audioWork", {}).get("jobs", []))
         if a.js_after:
             result["jsAfter"] = app.js(open(a.js_after, encoding="utf-8").read())
         time.sleep(2.5)

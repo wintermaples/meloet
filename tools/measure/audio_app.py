@@ -8,7 +8,7 @@ the same sound after a save, and where a played voice lies.
     python3 -I tools/measure/audio_app.py same OUT --song FILE [--song FILE ...] [--seconds 15]
     python3 -I tools/measure/audio_app.py position OUT [--seconds 8] [--latency] [--sink NAME]
     python3 -I tools/measure/audio_app.py record-save OUT --song FILE [--seconds 15] [--sink NAME]
-    python3 -I tools/measure/audio_app.py arrange OUT --song FILE [--splits N]
+    python3 -I tools/measure/audio_app.py arrange OUT --song FILE [--splits N] [--cache DIR] [--wait-made]
 
 play: opens the song where it is, waits for its audio, and plays: from the head, around a
   loop (bars 3..5), through ten jumps while playing, five starts from other places, and
@@ -589,7 +589,7 @@ return [t0, performance.now()];
 def run_arrange(a):
     """Frames of the arrange view with many vocal clips: sideways, zooming, a 160 row, playing."""
     result = {"song": a.song[0], "splits": a.splits, "spans": {}}
-    with App(a.out, song=a.song[0], song_in_place=True) as app:
+    with App(a.out, song=a.song[0], song_in_place=True, env=cache_env(a)) as app:
         # A song with no vocal clip is measured too, to compare.
         state = wait_ready(app) if audio_clips(app.snapshot()) else app.snapshot()
         for i in range(a.splits):
@@ -597,6 +597,7 @@ def run_arrange(a):
             app.send({"type": "selectAllClips"})
             app.send({"type": "splitClips"})
             time.sleep(0.15)
+        result["jobsAfterTheCuts"] = wait_no_jobs(app, 0.5 if not a.wait_made else 900)
         app.send({"type": "selectClip", "clip": None})
         app.send({"type": "goToStart"})
         time.sleep(1.5)
@@ -640,6 +641,7 @@ def run_arrange(a):
         time.sleep(1)
         result["memoryAfter"] = app.memory()
         result["tallTrack"] = app.snapshot().get("arrange", {}).get("tallTrack")
+        result["jobsAtTheEnd"] = len(app.snapshot().get("audioWork", {}).get("jobs", []))
     result["frames"] = {}
     for name, (start, end) in result["spans"].items():
         out = subprocess.run([sys.executable, "-I", os.path.join(root, "tools", "measure", "frame_stats.py"),
@@ -647,6 +649,23 @@ def run_arrange(a):
                              capture_output=True, text=True).stdout
         result["frames"][name] = json.loads(out) if out.strip() else None
     finish(a.out, result)
+
+
+def cache_env(a):
+    """--cache: a kept folder (XDG_CACHE_HOME) other than remote.py's."""
+    return {"XDG_CACHE_HOME": os.path.abspath(a.cache)} if getattr(a, "cache", None) else None
+
+
+def wait_no_jobs(app, seconds):
+    """Waits up to `seconds` for no audio to be in the making (stretched clips after a cut are
+    made again). Returns [jobs at first, jobs at last, seconds waited]."""
+    start = time.monotonic()
+    time.sleep(0.4)
+    first = jobs = len(app.snapshot().get("audioWork", {}).get("jobs", []))
+    while jobs and time.monotonic() - start < seconds:
+        time.sleep(0.5)
+        jobs = len(app.snapshot().get("audioWork", {}).get("jobs", []))
+    return [first, jobs, round(time.monotonic() - start, 1)]
 
 
 def finish(out, result):
@@ -670,6 +689,9 @@ def main():
     p.add_argument("--latency", action="store_true")
     p.add_argument("--sink")
     p.add_argument("--splits", type=int, default=0)
+    p.add_argument("--cache", help="arrange: XDG_CACHE_HOME for the app")
+    p.add_argument("--wait-made", action="store_true",
+                   help="arrange: after the cuts, wait until no audio is in the making")
     a = p.parse_args()
     if a.what != "position" and not a.song:
         p.error("--song is needed")

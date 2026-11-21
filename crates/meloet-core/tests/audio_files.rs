@@ -385,3 +385,104 @@ fn audio_in_the_work_place_is_there_again_after_meloet_ended_without_a_word() {
     core.stop();
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Selects the clip that plays `file` and deletes it.
+fn delete_clip_of(core: &Core, file: &str) -> AppState {
+    let state = core.snapshot().state;
+    let before = clips(&state).len();
+    let clip = (clips(&state).into_iter())
+        .find(|c| c.audio.as_ref().is_some_and(|a| a.file == file))
+        .expect("a clip plays the file");
+    core.send(Command::SelectClips {
+        clips: vec![clip.id],
+        mode: SelectMode::Replace,
+    });
+    core.send(Command::DeleteSelected);
+    state_when(core, "the clip is deleted", |s| {
+        clips(s).len() == before - 1
+    })
+}
+
+/// The names of the audio table the song's file has.
+fn table_of(song: &Path) -> Vec<String> {
+    let file: serde_json::Value = serde_json::from_slice(&std::fs::read(song).unwrap()).unwrap();
+    (file["song"]["audio"].as_array().unwrap().iter())
+        .map(|a| a["file"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn the_audio_of_a_deleted_clip_stays_out_of_the_song_folder() {
+    let root = temp_dir("audio-unused");
+    let work = root.join("state/work").join(AUDIO);
+    let (core, pick) = start(&root);
+    import(
+        &core,
+        &pick,
+        vec![fixture("click.mp3"), fixture("click.ogg")],
+        2,
+    );
+    delete_clip_of(&core, "click.ogg");
+
+    // Saved: only what a clip plays is named by the song's file and moved into its folder.
+    save(&core);
+    let song_dir = root.join("songs/はじめての曲");
+    let song = song_dir.join("はじめての曲.meloet");
+    assert_eq!(names(&song_dir.join(AUDIO)), ["click.mp3"]);
+    assert_eq!(names(&work), ["click.ogg"]);
+    assert_eq!(table_of(&song), ["click.mp3"]);
+
+    // Undone after the save: the clip is back, and its file is found in the work place.
+    core.send(Command::Undo);
+    let state = state_when(&core, "the clip is back", |s| clips(s).len() == 2);
+    assert_eq!(
+        states(&state),
+        [
+            ("click.mp3".to_owned(), AudioClipState::Ready),
+            ("click.ogg".to_owned(), AudioClipState::Ready)
+        ]
+    );
+    // The next save moves it.
+    save(&core);
+    assert_eq!(names(&song_dir.join(AUDIO)), ["click.mp3", "click.ogg"]);
+    assert!(names(&work).is_empty());
+    assert_eq!(table_of(&song), ["click.mp3", "click.ogg"]);
+
+    // Deleted again and saved: the file's table lets go of it; the folder keeps the file.
+    delete_clip_of(&core, "click.ogg");
+    save(&core);
+    assert_eq!(table_of(&song), ["click.mp3"]);
+    assert_eq!(names(&song_dir.join(AUDIO)), ["click.mp3", "click.ogg"]);
+    // And an undo still finds it there.
+    core.send(Command::Undo);
+    let state = state_when(&core, "the clip is back again", |s| clips(s).len() == 2);
+    assert!(
+        states(&state)
+            .iter()
+            .all(|(_, state)| *state == AudioClipState::Ready)
+    );
+    core.send(Command::Redo);
+    state_when(&core, "the clip is deleted again", |s| clips(s).len() == 1);
+
+    // A file that was never in the folder, its clip deleted, the song saved and let go of:
+    // the work place is emptied, and the folder is as it was.
+    import(&core, &pick, vec![fixture("click.flac")], 1);
+    delete_clip_of(&core, "click.flac");
+    save(&core);
+    assert_eq!(names(&work), ["click.flac"]);
+    assert_eq!(names(&song_dir.join(AUDIO)), ["click.mp3", "click.ogg"]);
+    core.send(Command::NewSong);
+    state_when(&core, "the new song is there", |s| s.song.tracks.len() == 1);
+    wait_for(PATIENCE, || names(&work).is_empty().then_some(()))
+        .expect("the work place is emptied");
+    assert_eq!(names(&song_dir.join(AUDIO)), ["click.mp3", "click.ogg"]);
+
+    // Opened again: one clip, nothing missing.
+    let state = open(&core, &pick, &song);
+    assert_eq!(
+        states(&state),
+        [("click.mp3".to_owned(), AudioClipState::Ready)]
+    );
+    core.stop();
+    let _ = std::fs::remove_dir_all(&root);
+}

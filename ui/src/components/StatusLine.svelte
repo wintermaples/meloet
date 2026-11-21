@@ -28,8 +28,10 @@
   import { term } from "../lib/tip.svelte";
   import { current, onEvent, send } from "../state/app.svelte";
   import { shownWork } from "../state/audioWork.svelte";
+  import { exportShown } from "../state/exportShown.svelte";
   import { LIST_COMMA, STATUS_JOIN, t, type TextKey } from "../text/ja";
   import { about } from "./about/about.svelte";
+  import { runShown } from "./export/exportText";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { laneNameText, stepNameText, stepWhatText } from "./history/stepText";
   import { stripName } from "./mixer/stripName";
@@ -593,6 +595,8 @@
         return { parts: recordingVocalsParts(m.keys, m.vocals, m.monitor), strong: [], button: null };
       case "latencyMeasureOpen":
         return plain("status.songDialogOpen", { dialog: t("latency.title") });
+      case "exportDialogOpen":
+        return plain("status.songDialogOpen", { dialog: t("export.title") });
       // 第 7 回 区切り3（約束 24）。いくつも切った ・ 入れたとき、1 つだけ持ってきたときの文は仕様書にないので、
       // 1 つめの名前の文のまま（切った ・ 入れた）と、数だけの文（持ってきている）にしてある。
       case "audioMissing":
@@ -737,6 +741,16 @@
     return clip ? { clip: clip.name, percent: job.percent } : null;
   });
 
+  /**
+   * 書き出しのようす（仕様書 2 章「書き出しの進み」）。書き出している間は、札と文の代わりに進みを出す（ほかの知らせより先）。
+   * 終わった ・ やめた ・ できなかったは、画面だけのダイアログやドラッグの次、core の知らせより先の文。% は exportShown が 1 秒に 2 回まで。
+   */
+  const run = $derived.by(() => {
+    const r = exportShown.current?.run ?? null;
+    return r ? runShown(r) : null;
+  });
+  const exporting = $derived(run?.kind === "running" ? run : null);
+
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
@@ -747,6 +761,8 @@
     if (songDialog) return { parts: textParts("status.songDialogOpen", { dialog: t(SONG_DIALOG_NAMES[songDialog.kind]) }), strong: [], button: null };
     // 欄の行をドラッグしている間（ドラッグ中の値は core に戻らない。モック F-ParamFew）。
     if (paramUi.moving) return { parts: textParts("status.paramMoving", paramUi.moving), strong: [], button: null };
+    if (run?.kind === "message")
+      return { parts: run.parts, strong: [], button: run.folder ? { label: t("button.openFolder"), command: { type: "showExported" } } : null };
     const m = app.status.message;
     const usual = m === null || m.id === "summary";
     // 「窓」の一覧をひらいている間は、いつものまとめに代えて（user:2026-11-19、モック F-WindowOpen）。
@@ -929,14 +945,29 @@
     return () => observer.disconnect();
   });
   $effect(() => {
-    void [badge, message, outputName, keyboardName, actual, requested, scale, windows.length];
+    void [badge, message, exporting, outputName, keyboardName, actual, requested, scale, windows.length];
     measure();
   });
 </script>
 
 {#snippet left()}
-  <span class:rec={badge.rec} class:accent={badge.accent} data-test="status-badge">{badge.text}</span>
-  {#if message}
+  {#if exporting}
+    <span class="exporting" data-test="export-run">
+      <span class="accent">{t("export.running")}</span>
+      <span class="bar"><span class="fill" style:transform="scaleX({exporting.percent / 100})"></span></span>
+      <span class="percent m-num m-hi"><span class="size">{t("export.runningPercent", { percent: 99 })}</span><span class="in" data-test="export-percent"
+          >{t("export.runningPercent", { percent: exporting.percent })}</span
+        ></span>
+      <span class="m-lbl message" data-test="export-rest">
+        {#each exporting.rest as part, i (i)}{#if part.hole === "left" || part.hole === "length"}<span class="m-num">{part.text}</span
+            >{:else}{part.text}{/if}{/each}
+      </span>
+      <button class="m-btn stop" data-test="export-cancel" onclick={() => send({ type: "cancelExport" })}>{t("button.cancel")}</button>
+    </span>
+  {:else}
+    <span class:rec={badge.rec} class:accent={badge.accent} data-test="status-badge">{badge.text}</span>
+  {/if}
+  {#if message && !exporting}
     <span class="m-lbl message">
       {#each message.parts as part, i (i)}
         {#if part.hole !== null}
@@ -1064,8 +1095,47 @@
     flex-shrink: 0;
     text-decoration: underline;
   }
-  .status > :not(.message):not(.m-spacer) {
+  .status > :not(.message):not(.m-spacer):not(.exporting) {
     flex-shrink: 0;
+  }
+
+  /* 書き出しの進み（仕様書 2 章、モック F7-Exporting）: 「書き出しています」（accent）、160 の棒（地 gray.4、accent）、%、文、「やめる」。 */
+  .exporting {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    overflow: hidden;
+  }
+  .exporting > :not(.message) {
+    flex-shrink: 0;
+  }
+  .bar {
+    width: var(--part-exporting-bar);
+    height: var(--mock-exporting-bar);
+    background: var(--color-gray-4);
+  }
+  .fill {
+    display: block;
+    height: 100%;
+    background: var(--color-accent);
+    transform-origin: left;
+  }
+  /* % の字は流れの外（字の幅が変わっても、行をレイアウトしなおさない。22-22 と同じ）。幅は「99 %」の見えない字で決める。 */
+  .percent {
+    position: relative;
+    display: inline-block;
+  }
+  .percent .size {
+    visibility: hidden;
+  }
+  .percent .in {
+    position: absolute;
+    right: 0;
+    top: 0;
+  }
+  .stop {
+    height: var(--mock-exporting-stop);
   }
 
   /* 拡大率: ふつう（地も枠も内がわもなし。モック Main）/ 乗った（文字 gray.10）/ ひらいている（地 gray.4、枠 gray.8。モック F-Zoom）。 */

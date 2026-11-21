@@ -106,7 +106,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     { kind: "separator" },
     // 選んだ歌のトラックの再生の線の所、なければ新しい歌のトラック（仕様書 3 章 29-A。決めるのは Rust）。
     plain("menu.importAudio", !busy, () => deps.send({ type: "importAudio", track: vocalTarget(state) })),
-    plain("menu.export", false, undefined, { key: k.modShift(t("key.export")) }),
+    act("menu.export", { kind: "export" }, k.modShift(t("key.export"))),
     act("menu.audioSettings", { kind: "audioSettings" }, k.mod(t("key.audioSettings"))),
     { kind: "separator" },
     act("menu.quit", { kind: "quit" }, k.mod(t("key.quit"))),

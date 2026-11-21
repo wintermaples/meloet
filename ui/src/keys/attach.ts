@@ -206,6 +206,9 @@ function command(action: KeyAction, state: AppState): Command | null {
       return busy ? null : { type: "saveSong" };
     case "saveSongAs":
       return busy ? null : { type: "saveSongAs" };
+    // カウントイン中 ・ 録音中 ・ 書き出している間はひらかない（B-94-74）。
+    case "export":
+      return busy || state.export.dialog !== null || state.export.run?.state === "running" ? null : { type: "openExport" };
     case "quit":
       return { type: "quit" };
     case "undo":
@@ -328,6 +331,7 @@ const WITH_MOD = new Set<KeyAction["kind"]>([
   "openSong",
   "saveSong",
   "saveSongAs",
+  "export",
   "quit",
   "undo",
   "redo",
@@ -348,6 +352,7 @@ function auditionToCancel(state: AppState): boolean {
   return (
     ws.songDialog === null &&
     ws.settings === null &&
+    state.export.dialog === null &&
     !state.plugins.stoppedOpen &&
     ws.layout.rightOpen.includes("shelf") &&
     shelfHasPick(state)
@@ -360,6 +365,7 @@ function historyKeys(state: AppState, doc: Document): boolean {
   return (
     ws.songDialog === null &&
     ws.settings === null &&
+    state.export.dialog === null &&
     !state.plugins.stoppedOpen &&
     ws.layout.lower.some((l) => l.band === "history") &&
     historyFocused(doc)
@@ -454,6 +460,10 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
         dialog: d.id,
         answer: songDialogEnter(d),
       });
+    } else if (plainEnter && state.export.dialog) {
+      // 右はしの明るいボタン「書き出す」（押せないときは何もしない）。
+      ev.preventDefault();
+      if (state.export.dialog.canExport) deps.send({ type: "startExport" });
     } else if (plainEnter && state.workspace.settings) {
       ev.preventDefault();
       deps.send({ type: "settingsApply" });
@@ -475,9 +485,11 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       deps.send(
         context === "history"
           ? { type: "toggleBand", band: "history" }
-          : auditionToCancel(state)
-            ? { type: "shelfCancel" }
-            : { type: "back" },
+          : state.export.dialog
+            ? { type: "closeExport" }
+            : auditionToCancel(state)
+              ? { type: "shelfCancel" }
+              : { type: "back" },
       );
     return;
   }

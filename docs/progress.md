@@ -1348,3 +1348,12 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
   - もとの道具（`audio_app.py arrange`）の「拡大」の数は、ほぼ変わらない（23 / 54 ms）。この道具は rAF の中で出来事を送るので 2 コマに 1 回しか描かせず、busyMs に 2 つぶんが入る。「横に送ると 2 コマに 1 回」も道具のせい（コマのあとのタスクで送ると毎コマ描く。`arrange_parts.py --how task`）。
   - ためしただけ（コミットしていない）: 書体を `japanese-{400,500,600}.css`（太さごとに切っていない woff2 が 1 つ）にすると、歌 192 個が見える所 18.1 → 13.7 ms、**再生中 7.1 → 4.6 ms**。→ 棟梁の決め: 入れる方向で、見た目が 1 画素も変わらないか ・ 起動の時間 ・ メモリを確かめてから（@fontsource のファイルは手を加えずに使う決まりのまま）。
   - 足した道具: `tools/measure/arrange_parts.py`（アレンジのコマを部品ごとに）、`tools/measure/webkit-stacks.sh`（WebKit の主スレッドのスタックを gdb で）。
+
+## 第 7 回 区切り4: のび縮みと音の高さ（2026-11-21〜）
+
+- 1 回目 meloet-stretch（1e54927 〜 64a089b、merge 30b2c7a、meloet-hard ・ Fable 5.2）: 新しいクレート `crates/meloet-stretch`。
+  - Signalsmith Stretch 版札 1.4.0（`a670068`）と Signalsmith Linear 0.6.4（`de55e6a`）を `vendor/` に書きかえずに写した（どちらも MIT。`vendor/VENDOR.md` に sha256 と取りなおす手順）。C の口（`shim.cpp`、`cc`、C++17、`-O3`、`-ffast-math` なし）と安全な `Stretcher`（`Send`）。決まった seed で作る（同じ入力で同じ出力）。
+  - ついていく手伝い `Follower`（`p(j)` を関数で受けとり、入る量は毎回 `round(p(j + 出口の遅れ)) + 入口の遅れ` から出す。まるめた長さを足さない）と `render`（クリップの前後のファイルも本当に読み、頭と尻を合わせる。`outputSeek` ・ `flush` は使わない）。
+  - 数: クリックの位置のずれは最大 0.84 ms（多くは 5 こま以内）。のび縮みだけなら 440 Hz のまま、長さはこままで式どおり。**高さを変えると数セントずれる**（`Default` で最大 10.8 セント〔440 Hz、+0.5 半音〕、1000 Hz では 0〜3 セント）。「声の感じを保つ」は、基音を教える（`set_formant_base`）と山がずっとよく残る。作る速さは release ・ ステレオで実時間の 82〜108 倍（`Default`）。試験 15。
+  - ライセンス: `NOTICE`、`licenses/upstream.json` の `vendored`、`check.mjs` の段 4b（写したファイルが 1 バイトも変わっていないか）。`tools/licenses/inventory.mjs` を 2 行変えた（さわってよい一覧の外。NOTICE は道具が作るので要った。棟梁が見て取った）。「meloet について」にはまだ出ない（2 回目で core につなぐ時に、`makeTexts` と About の部品）。
+  - 聞きくらべ: `target/listen/round7-stretch/`（声 5 つ × 41 ファイル、`聞いてほしい所.md`）。素材は LibriVox（パブリックドメイン）と Wikimedia Commons（CC0 ・ CC BY 4.0）。係は音を聞けていない。→ オーナーさんに聞いてもらう。

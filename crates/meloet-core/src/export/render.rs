@@ -47,7 +47,6 @@ struct SeatClips {
 }
 
 pub struct ExportEngine {
-    // Before `handle`: the engine lets go of what it holds first.
     engine: Engine,
     handle: EngineHandle,
     _midi: MidiFeed,

@@ -302,3 +302,98 @@ fn a_song_is_checked_written_out_and_shown_and_a_run_is_given_up() {
     no_memory_was_taken();
     let _ = std::fs::remove_dir_all(root);
 }
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap().flatten() {
+        let (source, target) = (entry.path(), to.join(entry.file_name()));
+        if source.is_dir() {
+            copy_dir(&source, &target);
+        } else {
+            std::fs::copy(&source, &target).unwrap();
+        }
+    }
+}
+
+/// How fast a song is rendered. `MELOET_EXPORT_SONG` names the song's file; its folder is
+/// copied and the copy is opened.
+/// `MELOET_EXPORT_SONG=<song>.meloet cargo test -p meloet-core --release --test export_whole -- how_fast --ignored --nocapture`
+#[test]
+#[ignore = "a measurement: needs MELOET_EXPORT_SONG"]
+fn how_fast_a_song_is_exported() {
+    let song = PathBuf::from(std::env::var_os("MELOET_EXPORT_SONG").expect("the song's file"));
+    let root = temp_dir("export-speed");
+    let folder = root.join("song");
+    copy_dir(song.parent().unwrap(), &folder);
+    let copy = folder.join(song.file_name().unwrap());
+
+    let core = Arc::new(Core::start(CoreOptions {
+        config_dir: Some(root.join("config")),
+        songs_dir: Some(root.join("songs")),
+        state_dir: Some(root.join("state")),
+        cache_dir: Some(root.join("cache")),
+        ..CoreOptions::offline()
+    }));
+    let weak = Arc::downgrade(&core);
+    core.set_shell(Box::new(move |request| {
+        if let (ShellRequest::PickSongFile { .. }, Some(core)) = (request, weak.upgrade()) {
+            core.song_file_picked(Some(copy.clone()));
+        }
+    }));
+    let serial = core.snapshot().state.song.serial;
+    core.send(Command::OpenSong);
+    let state = state_when(&core, "the song is open and its audio is read", |s| {
+        s.song.serial != serial
+            && s.audio_work.jobs.is_empty()
+            && (s.song.tracks.iter().flat_map(|t| &t.clips))
+                .filter_map(|c| c.audio.as_ref())
+                .all(|a| a.state == meloet_protocol::AudioClipState::Ready)
+    });
+    let tracks = state.song.tracks.len();
+    let clips = state
+        .song
+        .tracks
+        .iter()
+        .map(|t| t.clips.len())
+        .sum::<usize>();
+
+    for tail in [ExportTail::Off, ExportTail::UntilSilent] {
+        core.send(Command::OpenExport);
+        set(&core, ExportChange::Tail { tail });
+        let began = std::time::Instant::now();
+        // The job for this tail: the one before it (the tail the dialog had) is dropped.
+        std::thread::sleep(Duration::from_millis(50));
+        let state = state_when(&core, "the check is done", |s| {
+            s.export.dialog.as_ref().is_some_and(|d| d.tail == tail) && check_done(s).is_some()
+        });
+        let took = began.elapsed().as_secs_f64();
+        let span = state.export.dialog.as_ref().unwrap().span;
+        eprintln!(
+            "export speed: {tracks} tracks, {clips} clips, ticks {}..{}, tail {tail:?}: \
+             rendered in {took:.2} s, peak {:?} dB",
+            span.start,
+            span.end,
+            check_done(&state).unwrap()
+        );
+        let files: Vec<_> = std::fs::read_dir(root.join("state/export"))
+            .unwrap()
+            .flatten()
+            .flat_map(|d| std::fs::read_dir(d.path()).unwrap().flatten())
+            .collect();
+        for file in files {
+            let wav = WavPcm::open(&file.path()).unwrap();
+            let seconds = wav.frames() as f64 / f64::from(wav.sample_rate());
+            eprintln!(
+                "export speed: {:.2} s of audio at {} Hz, {:.1} times as fast as it plays",
+                seconds,
+                wav.sample_rate(),
+                seconds / took
+            );
+        }
+        core.send(Command::CloseExport);
+        state_when(&core, "the dialog is closed", |s| s.export.dialog.is_none());
+    }
+    core.stop();
+    no_memory_was_taken();
+    let _ = std::fs::remove_dir_all(root);
+}

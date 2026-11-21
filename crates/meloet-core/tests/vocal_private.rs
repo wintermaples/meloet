@@ -53,6 +53,7 @@ fn start(config: &Path, state: &Path, audio: bool) -> Core {
         sounds_dir: None,
         plugins: None,
         sf2_dir: None,
+        cache_dir: None,
     })
 }
 
@@ -242,11 +243,7 @@ fn the_voice_lies_where_it_was_heard_and_survives_the_end_of_meloet() {
         return;
     };
     // SAFETY: no core runs yet, so no other thread reads the environment.
-    unsafe {
-        std::env::set_var("MELOET_INPUT_SINK_MONITOR", private_pw::SINK);
-        // The peaks of the recordings go beside the test, not into the person's cache.
-        std::env::set_var("XDG_CACHE_HOME", pw.dir().join("cache"));
-    }
+    unsafe { std::env::set_var("MELOET_INPUT_SINK_MONITOR", private_pw::SINK) };
     let root = pw.dir().join("vocal");
     let mut killed = None;
     for (buffer, bits) in [(64, 16), (256, 24), (1024, 32)] {

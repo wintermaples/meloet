@@ -87,7 +87,8 @@ fn save(m: &mut Model, songs: &Path) -> Vec<Effect> {
         let Effect::SaveSong { song, to } = effects.remove(i) else {
             unreachable!()
         };
-        let answer = save_song(Some(songs), &song, to);
+        let store = crate::audiofiles::AudioStore::new(None);
+        let answer = save_song(Some(songs), &song, to, &store);
         let more = m.handle(answer);
         after.extend(more.iter().cloned());
         effects.extend(more);

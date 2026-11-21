@@ -319,17 +319,24 @@ fn shell_request(
         ShellRequest::PickPluginPlace { folder } => (pcwindow::Pick::PluginPlace, folder),
         ShellRequest::PickSaveAs { folder, name } => (pcwindow::Pick::SaveAs { name }, folder),
         ShellRequest::PickSf2 { folder } => (pcwindow::Pick::Sf2, folder),
+        ShellRequest::PickAudio { folder, many } => (pcwindow::Pick::Audio { many }, folder),
     };
     let answer = {
         let (core, pick) = (core.clone(), pick.clone());
-        move |path| {
+        move |paths: Vec<std::path::PathBuf>| {
             if let Some(core) = core.upgrade() {
+                if let pcwindow::Pick::Audio { .. } = pick {
+                    core.audio_picked(paths);
+                    return;
+                }
+                let path = paths.into_iter().next();
                 match pick {
                     pcwindow::Pick::SongFile => core.song_file_picked(path),
                     pcwindow::Pick::Folder => core.folder_picked(path),
                     pcwindow::Pick::PluginPlace => core.plugin_place_picked(path),
                     pcwindow::Pick::SaveAs { .. } => core.save_as_picked(path),
                     pcwindow::Pick::Sf2 => core.sf2_picked(path),
+                    pcwindow::Pick::Audio { .. } => {}
                 }
             }
         }
@@ -345,7 +352,7 @@ fn shell_request(
     if let Err(e) = asked {
         eprintln!("meloet: cannot show the PC's window: {e}");
         if let Some(answer) = fallback.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            answer(None);
+            answer(Vec::new());
         }
     }
 }

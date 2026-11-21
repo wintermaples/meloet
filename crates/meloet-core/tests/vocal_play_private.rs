@@ -201,6 +201,7 @@ fn play_what_was_recorded(
         audio: true,
         songs_dir: None,
         state_dir: Some(state.clone()),
+        cache_dir: Some(root.join("cache")),
         sounds_dir: None,
         plugins: None,
         sf2_dir: None,
@@ -250,7 +251,11 @@ fn play_what_was_recorded(
     assert!(level > 0.1, "the metronome was recorded: {level}");
 
     // That clip, without the metronome, onto a second vocal track.
-    core.set_pcm_store(Arc::new(OneWav(first_file)));
+    // At one buffer size the core's own store opens the file (from the work place); at the
+    // others the store of the test does.
+    if buffer != 256 {
+        core.set_pcm_store(Arc::new(OneWav(first_file)));
+    }
     let first = vocal_tracks(&core.snapshot().state)[0].0;
     core.send(Command::ToggleMetronome);
     core.send(Command::AddVocalTrack);
@@ -285,11 +290,7 @@ fn a_vocal_clip_sounds_on_the_frames_it_was_recorded_on() {
         return;
     };
     // SAFETY: no core runs yet, so no other thread reads the environment.
-    unsafe {
-        std::env::set_var("MELOET_INPUT_SINK_MONITOR", private_pw::SINK);
-        // The peaks of the recordings go beside the test, not into the person's cache.
-        std::env::set_var("XDG_CACHE_HOME", pw.dir().join("cache"));
-    }
+    unsafe { std::env::set_var("MELOET_INPUT_SINK_MONITOR", private_pw::SINK) };
     let root = pw.dir().join("vocal-play");
     for (buffer, bits) in [(64, 32), (256, 24), (1024, 16)] {
         let (recorded, played) = (0..5)
@@ -315,7 +316,7 @@ fn a_vocal_clip_sounds_on_the_frames_it_was_recorded_on() {
             );
         }
         // The peaks of both recordings became peaks files.
-        let peaks = pw.dir().join("cache/meloet/peaks");
+        let peaks = root.join("cache/peaks");
         let files = std::fs::read_dir(&peaks).map_or(0, |d| d.flatten().count());
         assert!(files >= 2, "{files} peaks files in {}", peaks.display());
     }

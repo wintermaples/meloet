@@ -473,6 +473,8 @@ pub struct Play {
     /// Blocks of the vocal recording going on, or of the last one, that are not what came
     /// in.
     faults: Option<meloet_protocol::RecordingFaults>,
+    /// What is known of the song's audio files (found, being read, missing).
+    audio: audio::AudioBook,
 }
 
 impl Play {
@@ -527,6 +529,7 @@ impl Play {
             voices_sent: Vec::new(),
             uid_seed: 0,
             faults: None,
+            audio: audio::AudioBook::default(),
         };
         // As with the play target: the engine gets the mixer of the first song with
         // `engine_seats`, so it counts as told.
@@ -1579,7 +1582,12 @@ impl Play {
                     take_id: c.active_take_id().0,
                     take_offset: c.active_zero() - c.start as i64,
                     note_count: c.note_count() as u32,
-                    audio: vocal::audio_clip_view(c),
+                    audio: c.active_audio().and_then(|take| {
+                        let source = &take.take.source;
+                        let (state, resampled) =
+                            (self.audio_state(source), self.audio_resampled(source));
+                        vocal::audio_clip_view(c, state, resampled)
+                    }),
                 })
                 .collect()
         })
@@ -2407,6 +2415,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
     out
 }
 
+mod audio;
 mod audiosync;
 mod automation;
 mod autosync;

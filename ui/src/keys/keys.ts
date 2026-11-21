@@ -37,6 +37,7 @@ export type KeyAction =
   | { kind: "metronome" }
   /** えらんだクリップの次のテイク（1）、前のテイク（-1）。 */
   | { kind: "stepTake"; delta: 1 | -1 }
+  | { kind: "splitClips" }
   | { kind: "deleteSelected" }
   | { kind: "newSong" }
   | { kind: "openSong" }
@@ -114,6 +115,7 @@ const BAND_KEYS: Record<string, KeyAction> = {
   c: { kind: "metronome" },
   t: { kind: "stepTake", delta: 1 },
   b: { kind: "bypass" },
+  s: { kind: "splitClips" },
 };
 
 /** 英字 1 つ（小文字）。key が英字でなければ（かな入力の配列など）code の KeyA… から読む。 */

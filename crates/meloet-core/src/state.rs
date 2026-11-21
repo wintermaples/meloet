@@ -1,6 +1,7 @@
 //! The pure rules: an input comes in, the state changes, and a list of things to do comes back.
 //! Nothing here touches a device, a file or a thread.
 
+mod audio;
 mod recovery;
 mod songs;
 mod vocal;
@@ -15,14 +16,14 @@ use meloet_midi::Keyboard;
 use meloet_model::drums::gm_kit_rows;
 use meloet_model::mixer::Missing;
 use meloet_model::{
-    BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace, Song, StripId, TrackKind,
-    VocalInput,
+    AudioSource, BuiltinInstrument, GmFamily, InstrumentRef, Note, PluginPlace, Song, StripId,
+    TrackKind, VocalInput,
 };
 use meloet_plugin::ScanCache;
 use meloet_plugin::wire::{ParamInfo, ParamNow, TextValue};
 use meloet_protocol::{
-    AppState, ArrangeView, AudioView, AudioWorkView, Availability, Band, ChooserView, ChosenState,
-    Command, EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind,
+    AppState, ArrangeView, AudioView, Availability, Band, ChooserView, ChosenState, Command,
+    EffectRef, EndpointView, FileDropView, Friendly, Hint, HistoryRow, InstrumentKind,
     KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
     LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
     PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView,
@@ -32,6 +33,7 @@ use meloet_protocol::{
 
 use crate::added;
 use crate::audiofiles;
+use crate::audiofiles::keeper::AudioNews;
 use crate::catalog::Catalog;
 use crate::instruments;
 use crate::sf2store::{self, Sf2Info, Sf2Key};
@@ -257,6 +259,11 @@ pub enum Input {
     LatencyAnswer {
         x_us: Option<f64>,
     },
+    /// The answer to [`Effect::PickAudio`]; empty when the window was put away.
+    AudioPicked(Vec<PathBuf>),
+    /// From the thread that reads audio files in: the answers to [`Effect::BringAudio`],
+    /// [`Effect::WatchAudio`] and [`Effect::FindAudio`].
+    Audio(AudioNews),
 }
 
 /// What a loaded plugin tells: its window, its parameters, its state.
@@ -517,6 +524,33 @@ pub enum Effect {
     LatencyListen(bool),
     /// Play one click and listen for it. Answer with [`Input::LatencyAnswer`].
     LatencyClick,
+    /// The PC's open window for audio files (`many`: more than one may be chosen). Answer
+    /// with [`Input::AudioPicked`].
+    PickAudio {
+        many: bool,
+    },
+    /// Copy the files into the work place and find out what they are, off the core
+    /// thread. `taken`: names a new file must not get. Answer with `AudioNews::Brought`.
+    BringAudio {
+        ticket: u64,
+        paths: Vec<PathBuf>,
+        taken: Vec<String>,
+    },
+    /// The audio table of the song with this serial, and the rate of the open stream: say
+    /// which files are there (`AudioNews::States`), and make ready what is not.
+    WatchAudio {
+        serial: u32,
+        sources: Vec<Arc<AudioSource>>,
+        sample_rate: Option<u32>,
+    },
+    /// 「さがす…」: take the file at `path` for the missing `source`. Answer with
+    /// `AudioNews::Found`.
+    FindAudio {
+        source: Arc<AudioSource>,
+        path: PathBuf,
+    },
+    /// The song is let go of: empty the work place of audio (docs/architecture.md 22-4).
+    ClearWorkAudio,
 }
 
 pub struct Model {
@@ -612,14 +646,14 @@ pub struct Model {
     latency: Option<vocal::LatencyDialog>,
     /// 「モニター」 was turned on once in this run: the status line said how late the voice is.
     monitor_said: bool,
+    audio: audio::AudioSide,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
 #[derive(Debug)]
 struct PendingDrop {
     id: u32,
-    /// As they were held; nothing reads them yet.
-    #[allow(dead_code)]
+    /// As they were held.
     paths: Vec<PathBuf>,
 }
 
@@ -716,6 +750,7 @@ impl Model {
             delays: None,
             latency: None,
             monitor_said: false,
+            audio: audio::AudioSide::default(),
         }
     }
 
@@ -1057,6 +1092,8 @@ impl Model {
                 }
             }
             Input::LatencyAnswer { x_us } => self.latency_answer(x_us, &mut effects),
+            Input::AudioPicked(paths) => self.audio_picked(paths, &mut effects),
+            Input::Audio(news) => self.audio_news(news),
         }
         self.refresh_catalog();
         if !self.bands.side_is_open(SidePanel::Shelf) {
@@ -1099,6 +1136,7 @@ impl Model {
         if self.loading_said != self.play.target_loading() {
             self.loading_said = None;
         }
+        self.audio_follow(&mut effects);
         self.close_when_recorded(&mut effects);
         self.recovery_tick(&mut effects);
         if tone_on.is_some() && tone_on == self.wanted {
@@ -1143,16 +1181,9 @@ impl Model {
     }
 
     /// Where the peaks of an audio file of the song are; `None` for an `audio` that is no
-    /// file's. A file that is being recorded or read comes with the second half of round 7
-    /// step 3 (`PeaksPlace::Growing`).
+    /// file's. A file that is being read has them in memory (`PeaksPlace::Growing`).
     pub fn peaks_place(&self, audio: u32) -> Option<crate::peaks::PeaksPlace> {
-        let doc = &self.play.song().doc;
-        let source = doc.audio(meloet_model::AudioId(audio))?;
-        let dir = crate::peaks::peaks_dir()?;
-        Some(crate::peaks::PeaksPlace::File(crate::peaks::peaks_path(
-            &dir,
-            &source.uid,
-        )))
+        self.play.peaks_place(audio)
     }
 
     /// The points of a lane of the song as it is now; `None` for a `lane_id` that is no
@@ -1212,6 +1243,7 @@ impl Model {
             self.notice = None;
             self.new_song_unsaid = false;
         }
+        self.audio_saw_command(&command);
         let can_play = self.open.is_some() && !self.measuring();
         let command = self.vocal_command(command, effects)?;
         match command {
@@ -1544,18 +1576,20 @@ impl Model {
                     .filter(|&id| vocal(id) && self.tall_track != Some((serial, id)))
                     .map(|id| (serial, id));
             }
-            Command::DropAudio { drop, .. } => {
-                // Where they go in the song comes with the second half of round 7 step 3.
-                if self.pending_drop.as_ref().is_some_and(|p| p.id == drop) {
-                    self.pending_drop = None;
+            Command::DropAudio {
+                drop,
+                track,
+                tick,
+                mode,
+            } => self.drop_audio(drop, track, tick, mode, effects),
+            Command::SplitClips => self.split_clips(effects),
+            Command::SetClipField { clip, field, value } => {
+                if let Some(n) = self.play.set_clip_field(clip, field, value, effects) {
+                    self.notice = Some(n);
                 }
             }
-            // Vocal clips and audio files: accepted, and nothing yet
-            // (docs/architecture.md 22-17).
-            Command::SplitClips
-            | Command::SetClipField { .. }
-            | Command::ImportAudio { .. }
-            | Command::FindAudio { .. } => {}
+            Command::ImportAudio { track } => self.import_audio(track, effects),
+            Command::FindAudio { audio } => self.find_audio(audio, effects),
             Command::SelectInstrument { track } => {
                 let selecting = self.play.select_instrument(track);
                 self.selected(selecting, effects);
@@ -1911,8 +1945,10 @@ impl Model {
                 let missing = match &missing {
                     MissingRef::Sf2 { file } => Missing::Sf2(file),
                     MissingRef::Plugin { key } => Missing::Plugin(key),
-                    // Nothing yet (docs/architecture.md 22-17).
-                    MissingRef::Audio { .. } => return None,
+                    MissingRef::Audio { audio } => {
+                        self.remove_missing_audio(*audio, effects);
+                        return None;
+                    }
                 };
                 if named {
                     self.play.remove_missing(missing, effects);
@@ -2395,7 +2431,7 @@ impl Model {
             },
             shelf: self.shelf_view(&library),
             library,
-            params: self.play.params_view(),
+            params: self.params_view(),
             plugins: self.plugins.view(),
             windows: self.play.windows_view(),
             keyboards: KeyboardsView {
@@ -2421,7 +2457,7 @@ impl Model {
             },
             inputs: self.inputs_view(),
             audio,
-            audio_work: AudioWorkView::default(),
+            audio_work: self.play.audio_work_view(),
             status: StatusView { message: status },
         }
     }

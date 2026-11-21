@@ -59,6 +59,12 @@ export function keyNames(platform: Platform) {
   };
 }
 
+/** 選んだトラックが歌のトラックなら、その id。 */
+function vocalTarget(state: AppState): number | null {
+  const track = state.song.tracks.find((x) => x.id === state.song.playTarget);
+  return track?.kind.kind === "vocal" ? track.id : null;
+}
+
 /** メニューを組み立てる。deps.send に送る。scale ・ unfit は拡大率の子の一覧のため。 */
 export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): TopMenu[] {
   const k = keyNames(platform);
@@ -98,6 +104,8 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.save", { kind: "saveSong" }, k.mod(t("key.saveSong"))),
     act("menu.saveAs", { kind: "saveSongAs" }, k.modShift(t("key.saveSong"))),
     { kind: "separator" },
+    // 選んだ歌のトラックの再生の線の所、なければ新しい歌のトラック（仕様書 3 章 29-A。決めるのは Rust）。
+    plain("menu.importAudio", !busy, () => deps.send({ type: "importAudio", track: vocalTarget(state) })),
     plain("menu.export", false, undefined, { key: k.modShift(t("key.export")) }),
     act("menu.audioSettings", { kind: "audioSettings" }, k.mod(t("key.audioSettings"))),
     { kind: "separator" },

@@ -370,14 +370,19 @@ fn a_file_that_is_not_there_is_silence_until_the_store_has_it() {
     assert_eq!(missing, 0);
     assert_eq!(out[999][0], sample(1, 999));
     assert!(out[1_000..].iter().all(|f| *f == [0.0; 2]));
-    // Asked once for each file, not at every chunk.
+    // Asked once for each file, not at every chunk; and the seat is marked as one to
+    // feed again when the store has more.
     assert_eq!(store.opened.load(Relaxed), 2);
+    assert_eq!(rig.ahead.stats().unopened.load(Relaxed), 1 << SEAT);
 
     *store.gone_from.lock().unwrap() = u8::MAX;
     rig.ahead.store_changed();
     rig.jump(0.0, 0, None);
     rig.wait("the new generation is fed", |rig| rig.fed() > 96_000);
     let (out, _) = rig.read(0, 2_000);
+    assert_eq!(rig.ahead.stats().unopened.load(Relaxed), 0);
+    // Only the file that was not there was asked for again.
+    assert_eq!(store.opened.load(Relaxed), 3);
     assert_eq!(out[1_000][0], sample(2, 0));
     assert_eq!(out[1_999][0], sample(2, 999));
 }

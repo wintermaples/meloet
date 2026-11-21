@@ -316,19 +316,19 @@ describe("ためし弾きの箱（モック F5-PluginLoading ・ F5-PluginAuditi
 
 describe("ファイルを持ってきている間の知らせ（仕様書 2 章、モック F5-SF2Drop）", () => {
   it("足せる: ファイルの名前、落とすと何が起きるか、やめかた。足せない: 「SF2 のファイルではないので、足せません。」と gray.8", () => {
-    show(FileDropNotice, scene("sf2DropAddable"), { drop: { name: FLUID, addable: true, files: 1, sf2: 1 } });
+    show(FileDropNotice, scene("sf2DropAddable"), { drop: { name: FLUID, addable: true, files: 1, sf2: 1, audio: 0 } });
     expect(text(q("[data-test=file-drop]"))).toBe(`${FLUID} ${t("sf2.dropHere")} ${t("sf2.dropCancel")}`);
     expect(q(".box")!.classList.contains("no")).toBe(false);
     unmount(mounted!);
-    show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "piano-demo.wav", addable: false, files: 1, sf2: 0 } });
+    show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "piano-demo.wav", addable: false, files: 1, sf2: 0, audio: 0 } });
     expect(text(q("[data-test=file-drop]"))).toBe(`piano-demo.wav SF2 のファイルではないので、足せません。 ${t("sf2.dropCancel")}`);
     expect(q(".box")!.classList.contains("no")).toBe(true);
     // いくつも持ってきたときは「3 つのファイル ・ SF2 は 2 つ」（仕様書 3 章 89-10）。
     unmount(mounted!);
-    show(FileDropNotice, scene("sf2DropMany"), { drop: { name: FLUID, addable: true, files: 3, sf2: 2 } });
+    show(FileDropNotice, scene("sf2DropMany"), { drop: { name: FLUID, addable: true, files: 3, sf2: 2, audio: 0 } });
     expect(text(q("[data-test=file-drop-name]"))).toBe("3 つのファイル ・ SF2 は 2 つ");
     unmount(mounted!);
-    show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "a.wav", addable: false, files: 2, sf2: 0 } });
+    show(FileDropNotice, scene("sf2DropNotAddable"), { drop: { name: "a.wav", addable: false, files: 2, sf2: 0, audio: 0 } });
     expect(text(q("[data-test=file-drop]"))).toBe(`2 つのファイル SF2 のファイルではないので、足せません。 ${t("sf2.dropCancel")}`);
   });
 

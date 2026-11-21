@@ -149,6 +149,7 @@ export const part = {
   "part.shelfrow.group": p(24, "s2", "音源の行（棚）", "グループの見出しは高さ 24"),
   "part.shelfrow.vendor": p(96, "s2", "棚のプラグインの行", "作った人は最大 96"),
   "part.filedrop.width": p(400, "s2", "ファイルを持ってきている間の知らせ", "幅 400"),
+  "part.filedrop.half": p(240, "s2", "持ってきている間の、分かれた箱", "240 ずつ"),
   "part.colorlist.swatch-w": p(24, "s2", "色の一覧の行", "24×12 の色の見本"),
   "part.colorlist.swatch-h": p(12, "s2", "色の一覧の行", "24×12 の色の見本"),
   "part.endpoint.name": p(168, "s2", "出口 ・ 入口の行", "本物の名前（168）"),
@@ -188,6 +189,7 @@ export const part = {
   "part.meter.name.long": p(148, "s1", "size.meter.name", "長い名前は 148"),
   "part.meter.name.slim-narrow": p(128, "s1", "size.meter.name.slim", "せまい窓は 128"),
   "part.track.vocal": p(160, "s1", "size.track", "歌を直すときは 160"),
+  "part.audioclip.handle": p(6, "s2", "歌のクリップ", "6×6"),
   "part.strip.master": p(124, "s1", "size.strip", "マスターは 124"),
   "part.take.mark": p(6, "s2", "テイクの印と切りかえ", "6×6 の gray.10 の四角"),
   "part.take.tag-min-width": p(28, "s2", "テイクの印と切りかえ", "クリップの幅が 28 より狭い"),
@@ -255,6 +257,10 @@ export const mock = {
   "mock.arrange.clip-inset": m(3, "Main"),
   "mock.arrange.note": m(2, "Main"),
   "mock.arrange.loop": m(3, "Main"),
+  // 歌のクリップの波形: 幅 1 の棒が 3px おき、音のない所でも高さ 2。
+  "mock.wave.pitch": m(3, "F7-AudioEdit"),
+  "mock.wave.bar": m(1, "F7-AudioEdit"),
+  "mock.wave.min": m(2, "F7-AudioEdit"),
   "mock.overview.label": m(104, "A-PianoRoll"),
   // 見えている範囲の枠（`top:1px; height:37px`。帯の高さは 39）の、上下のあき。
   "mock.range-frame.inset": m(1, "A-PianoRoll"),

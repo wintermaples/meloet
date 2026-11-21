@@ -5,7 +5,7 @@ import { rgb, type Rgb } from "./color";
 import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
 import { dbToLength } from "./level";
-import type { GlRect, GridLine } from "./slot";
+import type { GlRect, GlWave, GridLine } from "./slot";
 
 /** A slot's box in device pixels of its canvas (whole numbers; it may reach past the canvas). `hair` is line.hair: always one device pixel. */
 export interface Box {
@@ -139,10 +139,53 @@ export function paintGridLines(out: Batch, box: Box, lines: readonly GridLine[],
 }
 
 /** `rects` are CSS px from the box's top left; `dpr` turns them into device pixels. */
-export function paintRects(out: Batch, box: Box, rects: readonly GlRect[], dpr: number): void {
-  for (const r of rects) {
+export function paintRects(out: Batch, box: Box, rects: readonly GlRect[], dpr: number, waves: readonly GlWave[] = []): void {
+  let next = 0;
+  for (let i = 0; i < rects.length; i++) {
+    while (next < waves.length && waves[next]!.after <= i) paintWave(out, box, waves[next++]!, dpr);
+    const r = rects[i]!;
     out.rect(box.x0 + r.x * dpr, box.y0 + r.y * dpr, box.x0 + (r.x + r.w) * dpr, box.y0 + (r.y + r.h) * dpr, rgb(r.color));
   }
+  while (next < waves.length) paintWave(out, box, waves[next++]!, dpr);
+}
+
+/** A wave in device pixels. The bars start on whole pixels and are whole pixels wide, so none is smeared. */
+export function paintWave(out: Batch, box: Box, w: GlWave, dpr: number): void {
+  const x = (css: number) => box.x0 + css * dpr;
+  const whole = (css: number) => Math.max(1, Math.round(css * dpr));
+  const base = Math.floor(w.peak);
+  const pitch = whole(w.pitch);
+  // The bars are counted from the clip's start; the shader counts from the bar just left of the wave, so that a clip
+  // that starts far to the left keeps whole numbers small.
+  const start = Math.round(x(w.clipX0));
+  const barsX = start + Math.floor((Math.round(x(w.x)) - start) / pitch) * pitch;
+  out.wave({
+    x0: x(w.x),
+    y0: box.y0 + w.y * dpr,
+    x1: x(w.x + w.w),
+    y1: box.y0 + (w.y + w.h) * dpr,
+    source: w.source,
+    mapX: x(w.x),
+    base,
+    frac: w.peak - base,
+    step: w.peaksPerPx / dpr,
+    first: w.first,
+    end: w.end,
+    top: Math.round(box.y0 + w.y * dpr),
+    bottom: Math.round(box.y0 + (w.y + w.h) * dpr),
+    gain: w.gain,
+    fadeX0: x(w.clipX0),
+    fadeIn: w.fadeIn * dpr,
+    fadeX1: x(w.clipX1),
+    fadeOut: w.fadeOut * dpr,
+    barsX,
+    pitch,
+    bar: whole(w.bar),
+    minH: whole(w.minH),
+    color: rgb(w.color),
+    mid: w.mid ? rgb(w.mid) : null,
+    line: w.line ? rgb(w.line) : null,
+  });
 }
 
 /** The frame of the visible range. `inset` is OVERVIEW.inset in device pixels. */

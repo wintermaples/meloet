@@ -144,6 +144,8 @@ export interface ClipPaintOptions {
   range?: { low: number; high: number } | null;
   /** ノートをこのティックまでで切る（押している鍵） */
   until?: number;
+  /** 面の色。なければ gray.4（音のファイルが見つからない歌のクリップは gray.2） */
+  ground?: ColorName;
 }
 
 /**
@@ -172,7 +174,7 @@ export function paintClip(
     y: y0 + d.mark,
     w: x1 - x0 - left - right,
     h: y1 - y0 - d.mark - d.hair,
-    color: "color.gray.4",
+    color: o.ground ?? "color.gray.4",
   });
 
   const range = o.range === undefined ? keyRange(notes) : o.range;

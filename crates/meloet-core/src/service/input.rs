@@ -279,6 +279,21 @@ impl Worker {
         }
     }
 
+    /// The peaks of the recordings that are in the song by now are written into their
+    /// peaks files, and this waits for them (they are small).
+    pub(super) fn keep_recorded_peaks(&mut self) {
+        self.settle_peaks();
+        self.input.peaks.retain_mut(|entry| {
+            let Some(answer) = entry.writing.take() else {
+                return true;
+            };
+            if let Ok(Err(e)) = answer.recv() {
+                eprintln!("meloet: the peaks of a recording were not written: {e}");
+            }
+            false
+        });
+    }
+
     /// The peaks of the recordings that stopped: once a file is in the song (its peaks
     /// file has a name then) they are written there, and the screen is answered from the
     /// ones in memory until that file is there.

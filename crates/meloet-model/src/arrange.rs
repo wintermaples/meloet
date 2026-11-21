@@ -10,9 +10,11 @@
 use std::sync::Arc;
 
 use crate::TrackId;
+use crate::audio::AudioShape;
+use crate::audio::clips::fit_fades;
 use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index};
 use crate::history::StepKind;
-use crate::song::{Clip, ClipId, Doc, Track};
+use crate::song::{Clip, ClipId, ClipTake, ClipTakes, Doc, Note, Take, TakeId, Track};
 use crate::time::TickRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -263,12 +265,23 @@ pub fn trim_clip(doc: &Doc, clip: ClipId, edge: ClipEdge, ticks: i64) -> Result<
     if (start, end) == (c.start, c.end) {
         return Err(EditError::Unchanged);
     }
+    Ok(Edit {
+        doc: with_edges(doc, (ti, ci), start, end),
+        step: StepKind::TrimClip { clip, edge },
+    })
+}
+
+/// The clip with other edges; what it holds stays where it is in the song. The fades of a
+/// vocal clip give way to a shorter clip.
+fn with_edges(doc: &Doc, (ti, ci): (usize, usize), start: u64, end: u64) -> Doc {
+    let track = &doc.tracks[ti];
+    let c = &track.clips[ci];
     let shift = start as i64 - c.start as i64;
     let mut clips = track.clips.clone();
     clips[ci] = Arc::new(Clip {
         start,
         end,
-        takes: c.takes.with_offsets(|offset| offset - shift),
+        takes: fitted(c.takes.with_offsets(|offset| offset - shift), end - start),
         ..Clip::clone(c)
     });
     let mut new = doc.clone();
@@ -276,10 +289,173 @@ pub fn trim_clip(doc: &Doc, clip: ClipId, edge: ClipEdge, ticks: i64) -> Result<
         clips,
         ..Track::clone(track)
     });
+    new
+}
+
+fn fitted(takes: ClipTakes, length: u64) -> ClipTakes {
+    match takes {
+        ClipTakes::Vocal { takes, shape } => ClipTakes::Vocal {
+            takes,
+            shape: fit_fades(shape, length),
+        },
+        keys => keys,
+    }
+}
+
+/// 「位置」 typed: the clip starts at `start`, as it is. `Overlap` when another clip of its
+/// track is in the way.
+pub fn set_clip_start(doc: &Doc, clip: ClipId, start: u64) -> Result<ClipEdited, EditError> {
+    let (ti, ci) = clip_index(doc, clip)?;
+    let from = doc.tracks[ti].clips[ci].start;
+    let ticks = i64::try_from(start).map_err(|_| EditError::OffTheSong)? - from as i64;
+    move_clips(doc, &[clip], ticks, 0, false)
+}
+
+/// 「長さ」 typed: the clip's end moves so that it is `length` ticks long (1 at least).
+/// `Overlap` when the next clip of its track is in the way.
+pub fn set_clip_length(doc: &Doc, clip: ClipId, length: u64) -> Result<Edit, EditError> {
+    let (ti, ci) = clip_index(doc, clip)?;
+    let track = &doc.tracks[ti];
+    let c = &track.clips[ci];
+    let end = c.start.saturating_add(length.max(1)).min(MAX_TICK);
+    if end == c.end {
+        return Err(EditError::Unchanged);
+    }
+    if track.clips.get(ci + 1).is_some_and(|next| next.start < end) {
+        return Err(EditError::Overlap);
+    }
     Ok(Edit {
-        doc: new,
-        step: StepKind::TrimClip { clip, edge },
+        doc: with_edges(doc, (ti, ci), c.start, end),
+        step: StepKind::TrimClip {
+            clip,
+            edge: ClipEdge::End,
+        },
     })
+}
+
+/// What [`split_clips`] made: for each clip cut, in the order of the tracks, the left half
+/// (the clip's id) and the right half (a new id).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipsSplit {
+    pub edit: Edit,
+    pub left: Vec<ClipId>,
+    pub right: Vec<ClipId>,
+}
+
+/// S: cuts each of the clips that `at` is inside of in two there, as one step. Clips that
+/// are not there, or that `at` is not inside of (on an edge is not inside), are left as
+/// they are; `Unchanged` when that is all of them.
+///
+/// Both halves of a vocal clip play the same takes (the same `Arc`s); the fade-in stays on
+/// the left half and the fade-out on the right one. Of a keys clip the right half keeps
+/// the takes too, and the left half gets a take with a new id for every take that has a
+/// note over the cut: there the note ends at the cut.
+pub fn split_clips(doc: &Doc, clips: &[ClipId], at: u64) -> Result<ClipsSplit, EditError> {
+    let mut new = doc.clone();
+    let mut ids = Ids(doc.next_id);
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    for (ti, track) in doc.tracks.iter().enumerate() {
+        if !(track.clips.iter()).any(|c| clips.contains(&c.id) && c.start < at && at < c.end) {
+            continue;
+        }
+        let mut halves = Vec::with_capacity(track.clips.len() + 1);
+        for c in &track.clips {
+            if !(clips.contains(&c.id) && c.start < at && at < c.end) {
+                halves.push(c.clone());
+                continue;
+            }
+            let moved = (at - c.start) as i64;
+            let (left_takes, right_takes) = match &c.takes {
+                ClipTakes::Vocal { takes, shape } => (
+                    ClipTakes::Vocal {
+                        takes: takes.clone(),
+                        shape: fit_fades(
+                            AudioShape {
+                                fade_out: 0,
+                                ..*shape
+                            },
+                            at - c.start,
+                        ),
+                    },
+                    ClipTakes::Vocal {
+                        takes: takes.clone(),
+                        shape: fit_fades(
+                            AudioShape {
+                                fade_in: 0,
+                                ..*shape
+                            },
+                            c.end - at,
+                        ),
+                    },
+                ),
+                ClipTakes::Keys(takes) => {
+                    let mut ended = Vec::with_capacity(takes.len());
+                    for ct in takes {
+                        ended.push(ClipTake {
+                            take: ended_at(
+                                &ct.take,
+                                i128::from(at) - i128::from(c.zero(ct)),
+                                &mut ids,
+                            )?,
+                            offset: ct.offset,
+                        });
+                    }
+                    (ClipTakes::Keys(ended), ClipTakes::Keys(takes.clone()))
+                }
+            };
+            let id = ClipId(ids.next()?);
+            left.push(c.id);
+            right.push(id);
+            halves.push(Arc::new(Clip {
+                end: at,
+                takes: left_takes,
+                ..Clip::clone(c)
+            }));
+            halves.push(Arc::new(Clip {
+                id,
+                start: at,
+                takes: right_takes.with_offsets(|offset| offset - moved),
+                ..Clip::clone(c)
+            }));
+        }
+        new.tracks[ti] = Arc::new(Track {
+            clips: halves,
+            ..Track::clone(track)
+        });
+    }
+    if left.is_empty() {
+        return Err(EditError::Unchanged);
+    }
+    new.next_id = ids.0;
+    let step = StepKind::SplitClips { count: left.len() };
+    Ok(ClipsSplit {
+        edit: Edit { doc: new, step },
+        left,
+        right,
+    })
+}
+
+/// The take with every note that sounds over `cut` (a tick of the take) ended there: the
+/// take itself when it has none, else one with a new id.
+fn ended_at(take: &Arc<Take>, cut: i128, ids: &mut Ids) -> Result<Arc<Take>, EditError> {
+    let over = |n: &Note| i128::from(n.start) < cut && i128::from(n.end()) > cut;
+    if !take.notes.iter().any(over) {
+        return Ok(take.clone());
+    }
+    let notes: Vec<Note> = (take.notes.iter())
+        .map(|n| match over(n) {
+            true => Note {
+                length: (cut - i128::from(n.start)) as u64,
+                ..*n
+            },
+            false => *n,
+        })
+        .collect();
+    Ok(Arc::new(Take {
+        id: TakeId(ids.next()?),
+        notes: crate::ChunkedVec::sharing(&notes, &take.notes),
+        ..Take::clone(take)
+    }))
 }
 
 #[cfg(test)]

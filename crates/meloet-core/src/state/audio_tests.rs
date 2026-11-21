@@ -1,7 +1,7 @@
-//! What protocol 24 added to the rules so far: audio files held over the window, the 160
-//! row, and the intents that are accepted and do nothing yet (docs/architecture.md 22-17).
+//! What protocol 24 added to the rules first: audio files held over the window and the 160
+//! row (docs/architecture.md 22-17). The intents of vocal clips are in `audio/tests.rs`.
 
-use meloet_protocol::{ClipField, DropMode, Event};
+use meloet_protocol::{DropMode, Event};
 
 use super::*;
 
@@ -151,35 +151,4 @@ fn only_a_vocal_track_gets_the_tall_row() {
     cmd(&mut m, Command::SetTallTrack { track: Some(vocal) });
     cmd(&mut m, Command::DeleteTrack { track: vocal });
     assert_eq!(tall(&m), None);
-}
-
-#[test]
-fn the_intents_of_vocal_clips_are_taken_and_do_nothing_yet() {
-    let mut m = Model::new(Settings::default());
-    let before = m.view();
-    for command in [
-        Command::SplitClips,
-        Command::SetClipField {
-            clip: 1,
-            field: ClipField::GainDb,
-            value: -3.0,
-        },
-        Command::ImportAudio { track: None },
-        Command::FindAudio { audio: 31 },
-        Command::RemoveMissing {
-            missing: MissingRef::Audio { audio: 31 },
-        },
-        Command::DropAudio {
-            drop: 1,
-            track: None,
-            tick: 0,
-            mode: DropMode::Separate,
-        },
-    ] {
-        assert!(cmd(&mut m, command.clone()).is_empty(), "{command:?}");
-        assert_eq!(m.view(), before, "{command:?}");
-    }
-    assert_eq!(before.audio_work, AudioWorkView::default());
-    assert_eq!(before.transport.recording_faults, None);
-    assert_eq!(m.peaks_place(31).map(|_| ()), None);
 }

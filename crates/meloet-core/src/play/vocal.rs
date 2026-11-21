@@ -20,9 +20,13 @@ use crate::vocalrec::{self, Marks, NoteFile, RecNote, Written};
 
 /// `ClipView::audio`: what a vocal clip has, from its shown take; `None` for a keys clip.
 ///
-/// The file is taken to be there and at the rate the audio runs at: finding it, reading it
-/// and bringing it to that rate come with the second half of round 7 step 3.
-pub(super) fn audio_clip_view(clip: &Clip) -> Option<AudioClipView> {
+/// `state`: whether the file of the shown take is there (`Play::audio_state`). `resampled`:
+/// its rate is not the one the audio runs at.
+pub(super) fn audio_clip_view(
+    clip: &Clip,
+    state: AudioClipState,
+    resampled: bool,
+) -> Option<AudioClipView> {
     let take = &clip.active_audio()?.take;
     let shape = clip.takes.shape()?;
     Some(AudioClipView {
@@ -31,13 +35,13 @@ pub(super) fn audio_clip_view(clip: &Clip) -> Option<AudioClipView> {
         sample_rate: take.source.sample_rate,
         bits: take.source.bits,
         channels: take.source.channels,
-        resampled: false,
+        resampled,
         first_frame: take.first_frame,
         frames: take.frames,
         fade_in: shape.fade_in,
         fade_out: shape.fade_out,
         gain_db: shape.gain.db() as f32,
-        state: AudioClipState::Ready,
+        state,
         stretch: StretchView {
             follow: shape.follow,
             source_bpm: take.sync.as_ref().map(|s| s.tempo.bpm()),
@@ -639,7 +643,8 @@ mod tests {
             cents: -30,
             ..AudioShape::RECORDED
         };
-        let view = audio_clip_view(&clip(vec![take(None)], shape)).unwrap();
+        let ready = AudioClipState::Ready;
+        let view = audio_clip_view(&clip(vec![take(None)], shape), ready, false).unwrap();
         assert_eq!(
             view,
             AudioClipView {
@@ -669,14 +674,19 @@ mod tests {
             head_ramp: false,
             points: Vec::new(),
         });
-        let recorded = audio_clip_view(&clip(vec![take(sync)], AudioShape::RECORDED)).unwrap();
+        let recorded = clip(vec![take(sync)], AudioShape::RECORDED);
+        let recorded = audio_clip_view(&recorded, AudioClipState::Missing, true).unwrap();
         assert_eq!(recorded.stretch.source_bpm, Some(120.0));
         assert!(recorded.stretch.follow);
+        assert_eq!(
+            (recorded.state, recorded.resampled),
+            (AudioClipState::Missing, true)
+        );
 
         let keys = Clip {
             takes: ClipTakes::Keys(Vec::new()),
             ..clip(Vec::new(), shape)
         };
-        assert_eq!(audio_clip_view(&keys), None);
+        assert_eq!(audio_clip_view(&keys, ready, false), None);
     }
 }

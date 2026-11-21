@@ -48,7 +48,7 @@ export function trackRows(state: AppState, track: TrackView | null, send: (c: Co
 }
 
 /**
- * トラックの見出しの右クリック（モック R6-Tracks）: ミュート ・ ソロ ・ 録音待機 ／ 名前を変える ・ 色 ▸ ・ 上へ ・ 下へ ／ トラックを消す。
+ * トラックの見出しの右クリック（モック R6-Tracks）: ミュート ・ ソロ ・ 録音待機 ／（歌のトラックは「音のファイルを入れる…」／）名前を変える ・ 色 ▸ ・ 上へ ・ 下へ ／ トラックを消す。
  * selected: 録音待機の印（鍵盤のトラックは弾くと鳴る先、歌のトラックは選んだ）。右クリックはそのトラックを選んでからひらくので、選んだあとの形で渡す。
  */
 export function trackContextMenu(
@@ -68,6 +68,13 @@ export function trackContextMenu(
         { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "toggleVocalArm", track: track.id }), checked: track.kind.armed || selected }
       : { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }), checked: selected },
     { kind: "separator" },
+    // 歌のトラックだけ: そのトラックの再生の線の所へ音のファイルを入れる（仕様書 3 章 29-A）。
+    ...(track.kind.kind === "vocal"
+      ? ([
+          { kind: "row", label: "menu.importAudio", usable: !songBusy(state), run: () => send({ type: "importAudio", track: track.id }) },
+          { kind: "separator" },
+        ] satisfies MenuEntry[])
+      : []),
     rows.rename,
     rows.color,
     rows.up,

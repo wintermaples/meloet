@@ -7,11 +7,20 @@
   import { t } from "../text/ja";
   import Button from "./Button.svelte";
   import { dayAndTime, termParts } from "./format";
+  import { mapOf } from "../time/bars";
+  import { positionText } from "./time";
 
   const TERM = "なおすためのファイル";
   const recovery = $derived(current.state?.workspace.recovery ?? null);
   const platform = platformOf(navigator);
   const saveKey = `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${t("key.saveSong")}`;
+
+  // 録っていた歌を残したとき（仕様書 3 章「録っている途中で PC が終わったとき」）の 1 行。
+  const vocalLine = $derived.by((): string | null => {
+    const timeline = current.state?.timeline;
+    if (recovery?.kind !== "recovered" || !recovery.vocals || !timeline) return null;
+    return t("recovery.vocalKept", { count: recovery.vocals.count, position: positionText(recovery.vocals.until, mapOf(timeline)) });
+  });
 
   const lines = $derived.by((): { strong: string; dim: string } | null => {
     if (!recovery) return null;
@@ -37,6 +46,7 @@
           >{:else}{part.text}{/if}{/each}</span
     >
     <span class="dim">{lines.dim}</span>
+    {#if vocalLine}<span data-test="recovery-vocals">{vocalLine}</span>{/if}
     <div class="buttons">
       {#if recovery.kind === "recovered"}
         <Button primary test="recovery-save" onclick={() => send({ type: "saveSong" })}

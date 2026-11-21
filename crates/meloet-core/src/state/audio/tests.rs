@@ -1,0 +1,699 @@
+use meloet_model::{ImportedAudio, NewAudio};
+use meloet_protocol::{
+    AudioJob, AudioJobKind, AudioWorkView, ClipField, ClipView, MissingRef, SelectMode, StepName,
+    TrackRef,
+};
+
+use std::path::Path;
+
+use super::*;
+use crate::audiofiles::keeper::{Growing, SourceState};
+use crate::peaks::{PeakBuilder, PeaksPlace};
+use crate::state::Input;
+
+const Q: u64 = meloet_model::TICKS_PER_QUARTER;
+const BAR: u64 = 4 * Q;
+
+fn cmd(m: &mut Model, command: Command) -> Vec<Effect> {
+    m.handle(Input::Command(command))
+}
+
+fn status(m: &Model) -> Option<StatusMessage> {
+    m.view().status.message
+}
+
+/// A model with a stream open at 48 kHz.
+fn model() -> Model {
+    let mut m = crate::play::tests::ready().with_cache_dir(Some("/cache/meloet".into()));
+    cmd(&mut m, Command::SetCountIn { bars: 0 });
+    m
+}
+
+/// A file as the audio thread says it is in the work place: `seconds` long, stereo.
+fn brought(name: &str, seconds: u64, rate: u32) -> Brought {
+    Brought::In(ImportedAudio {
+        audio: NewAudio {
+            uid: [name.len() as u8; 16],
+            file: name.to_owned(),
+            frames: seconds * u64::from(rate),
+            sample_rate: rate,
+            channels: 2,
+            bits: None,
+        },
+        sha256: [name.len() as u8; 32],
+        name: name
+            .rsplit_once('.')
+            .map_or(name, |(stem, _)| stem)
+            .to_owned(),
+    })
+}
+
+/// The ticket and the paths the audio thread was asked to bring in.
+fn asked(effects: &[Effect]) -> (u64, Vec<String>) {
+    (effects.iter())
+        .find_map(|e| match e {
+            Effect::BringAudio { ticket, paths, .. } => Some((
+                *ticket,
+                (paths.iter())
+                    .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+                    .collect(),
+            )),
+            _ => None,
+        })
+        .expect("files are brought in")
+}
+
+/// Lets go of the files over the window and says where; then the audio thread's answer.
+fn drop_files(
+    m: &mut Model,
+    names: &[&str],
+    track: Option<u32>,
+    tick: u64,
+    mode: DropMode,
+    answer: Vec<Brought>,
+) -> Vec<Effect> {
+    let paths: Vec<PathBuf> = names.iter().map(|n| PathBuf::from("/in").join(n)).collect();
+    m.handle(Input::FilesOver(paths.clone()));
+    let effects = m.handle(Input::FilesDropped(paths));
+    let drop = (effects.iter())
+        .find_map(|e| match e {
+            Effect::FileEvent(meloet_protocol::Event::FileDrop { drop, .. }) => Some(*drop),
+            _ => None,
+        })
+        .expect("the drop is told");
+    let effects = cmd(
+        m,
+        Command::DropAudio {
+            drop,
+            track,
+            tick,
+            mode,
+        },
+    );
+    let (ticket, _) = asked(&effects);
+    m.handle(Input::Audio(AudioNews::Brought {
+        ticket,
+        files: answer,
+    }))
+}
+
+fn clips(m: &Model) -> Vec<(u32, ClipView)> {
+    (m.view().song.tracks.into_iter())
+        .flat_map(|t| t.clips.into_iter().map(move |c| (t.id, c)))
+        .collect()
+}
+
+fn vocal_track(m: &mut Model) -> u32 {
+    cmd(m, Command::AddVocalTrack);
+    m.view().song.tracks.last().unwrap().id
+}
+
+fn undo_count(m: &Model) -> u32 {
+    m.view().history.current
+}
+
+#[test]
+fn one_file_let_go_of_over_a_vocal_track_goes_there_as_one_step() {
+    let mut m = model();
+    let vocal = vocal_track(&mut m);
+    let steps = undo_count(&m);
+    drop_files(
+        &mut m,
+        &["ドラム.wav"],
+        Some(vocal),
+        4 * BAR,
+        DropMode::Separate,
+        vec![brought("ドラム.wav", 2, 48_000)],
+    );
+    let all = clips(&m);
+    assert_eq!(all.len(), 1);
+    let (track, clip) = &all[0];
+    assert_eq!(*track, vocal);
+    // 2 seconds at 96 a minute: 3.2 quarter notes.
+    assert_eq!((clip.start, clip.end), (4 * BAR, 4 * BAR + 6_144));
+    assert_eq!(clip.name, "ドラム");
+    let audio = clip.audio.as_ref().unwrap();
+    assert_eq!(
+        (audio.file.as_str(), audio.frames, audio.resampled),
+        ("ドラム.wav", 96_000, false)
+    );
+    assert!(!audio.stretch.follow);
+    assert_eq!(undo_count(&m), steps + 1);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::AudioImported {
+            file: "ドラム.wav".into(),
+            track: TrackRef {
+                number: 2,
+                name: "歌".into()
+            },
+            tick: 4 * BAR,
+            count: 1,
+            skipped: 0,
+        })
+    );
+    // The clip is selected: the parameters panel shows it.
+    assert_eq!(m.view().arrange.selected_clips, [clip.id]);
+    assert_eq!(
+        m.view().params.selected,
+        Some(SelectedParams::Clip(SelectedClip {
+            track: vocal,
+            clip: clip.id,
+            missing: None
+        }))
+    );
+    let rows = m.history_rows(steps + 1, steps + 1);
+    assert_eq!(rows[0].name, StepName::ImportAudio);
+    cmd(&mut m, Command::Undo);
+    assert!(clips(&m).is_empty());
+    assert!(m.view().song.tracks.iter().any(|t| t.id == vocal));
+}
+
+#[test]
+fn several_files_go_apart_or_in_a_row_as_one_step() {
+    let files = || {
+        vec![
+            brought("a.mp3", 2, 44_100),
+            Brought::Unreadable("b.mp3".into()),
+            brought("c.ogg", 1, 44_100),
+        ]
+    };
+    // Apart: a new vocal track for each, whatever they were let go of over.
+    let mut m = model();
+    let vocal = vocal_track(&mut m);
+    let steps = undo_count(&m);
+    let names = ["c.ogg", "b.mp3", "a.mp3"];
+    let paths: Vec<PathBuf> = names.iter().map(|n| PathBuf::from("/in").join(n)).collect();
+    m.handle(Input::FilesOver(paths.clone()));
+    let told = m.handle(Input::FilesDropped(paths));
+    let drop = (told.iter())
+        .find_map(|e| match e {
+            Effect::FileEvent(meloet_protocol::Event::FileDrop { drop, .. }) => Some(*drop),
+            _ => None,
+        })
+        .unwrap();
+    let effects = cmd(
+        &mut m,
+        Command::DropAudio {
+            drop,
+            track: Some(vocal),
+            tick: BAR,
+            mode: DropMode::Separate,
+        },
+    );
+    // In the order of their names.
+    let (ticket, order) = asked(&effects);
+    assert_eq!(order, ["a.mp3", "b.mp3", "c.ogg"]);
+    // An answer to the same drop a second time does nothing.
+    assert!(
+        cmd(
+            &mut m,
+            Command::DropAudio {
+                drop,
+                track: None,
+                tick: 0,
+                mode: DropMode::InRow
+            }
+        )
+        .iter()
+        .all(|e| !matches!(e, Effect::BringAudio { .. }))
+    );
+    m.handle(Input::Audio(AudioNews::Brought {
+        ticket,
+        files: files(),
+    }));
+    let all = clips(&m);
+    assert_eq!(all.len(), 2);
+    assert!(
+        all.iter()
+            .all(|(track, c)| *track != vocal && c.start == BAR)
+    );
+    assert_ne!(all[0].0, all[1].0);
+    assert_eq!(m.view().song.tracks.len(), 4);
+    assert_eq!(undo_count(&m), steps + 1);
+    assert!(matches!(
+        status(&m),
+        Some(StatusMessage::AudioImported {
+            count: 2,
+            skipped: 1,
+            ..
+        })
+    ));
+    assert!(all.iter().all(|(_, c)| c.audio.as_ref().unwrap().resampled));
+    cmd(&mut m, Command::Undo);
+    assert_eq!((clips(&m).len(), m.view().song.tracks.len()), (0, 2));
+
+    // In a row: on the track, one after the other.
+    let mut m = model();
+    let vocal = vocal_track(&mut m);
+    drop_files(&mut m, &names, Some(vocal), BAR, DropMode::InRow, files());
+    let all = clips(&m);
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().all(|(track, _)| *track == vocal));
+    assert_eq!(all[0].1.start, BAR);
+    assert_eq!(all[1].1.start, all[0].1.end);
+    assert_eq!(m.view().song.tracks.len(), 2);
+}
+
+#[test]
+fn files_that_do_not_read_bring_nothing_in() {
+    let mut m = model();
+    let steps = undo_count(&m);
+    drop_files(
+        &mut m,
+        &["声.wav"],
+        None,
+        0,
+        DropMode::Separate,
+        vec![Brought::Unreadable("声.wav".into())],
+    );
+    assert!(clips(&m).is_empty());
+    assert_eq!(undo_count(&m), steps);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::AudioUnreadable {
+            file: "声.wav".into()
+        })
+    );
+}
+
+#[test]
+fn the_menu_asks_the_pc_for_files_and_puts_them_at_the_play_line() {
+    let mut m = model();
+    let vocal = vocal_track(&mut m);
+    cmd(&mut m, Command::Locate { tick: 2 * BAR });
+    let effects = cmd(&mut m, Command::ImportAudio { track: None });
+    assert!(effects.contains(&Effect::PickAudio { many: true }));
+    // Put away: nothing.
+    assert!(
+        m.handle(Input::AudioPicked(Vec::new()))
+            .iter()
+            .all(|e| !matches!(e, Effect::BringAudio { .. }))
+    );
+    cmd(&mut m, Command::ImportAudio { track: None });
+    let effects = m.handle(Input::AudioPicked(vec![
+        "/in/b.wav".into(),
+        "/in/a.wav".into(),
+    ]));
+    let (ticket, order) = asked(&effects);
+    assert_eq!(order, ["a.wav", "b.wav"]);
+    m.handle(Input::Audio(AudioNews::Brought {
+        ticket,
+        files: vec![brought("a.wav", 1, 48_000), brought("b.wav", 1, 48_000)],
+    }));
+    // The selected track is the vocal track: in a row from the play line.
+    let all = clips(&m);
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().all(|(track, _)| *track == vocal));
+    assert_eq!((all[0].1.start, all[1].1.start), (2 * BAR, all[0].1.end));
+
+    // With a keys track selected: a new vocal track.
+    let keys = m.view().song.tracks[0].id;
+    cmd(
+        &mut m,
+        Command::SelectTrack {
+            track: keys,
+            from_arm: false,
+        },
+    );
+    cmd(&mut m, Command::ImportAudio { track: None });
+    let effects = m.handle(Input::AudioPicked(vec!["/in/c.wav".into()]));
+    let (ticket, _) = asked(&effects);
+    m.handle(Input::Audio(AudioNews::Brought {
+        ticket,
+        files: vec![brought("c.wav", 1, 48_000)],
+    }));
+    assert_eq!(m.view().song.tracks.len(), 3);
+    assert_eq!(clips(&m).last().unwrap().0, m.view().song.tracks[2].id);
+}
+
+#[test]
+fn a_clip_is_cut_at_the_play_line_and_its_values_are_steps() {
+    let mut m = model();
+    let vocal = vocal_track(&mut m);
+    drop_files(
+        &mut m,
+        &["歌.wav"],
+        Some(vocal),
+        0,
+        DropMode::Separate,
+        vec![brought("歌.wav", 5, 48_000)],
+    );
+    let clip = clips(&m)[0].1.clone();
+    assert_eq!((clip.start, clip.end), (0, 2 * BAR));
+    let steps = undo_count(&m);
+    let field = |m: &mut Model, field, value| {
+        cmd(
+            m,
+            Command::SetClipField {
+                clip: clip.id,
+                field,
+                value,
+            },
+        )
+    };
+    field(&mut m, ClipField::FadeIn, Q as f64);
+    field(&mut m, ClipField::FadeOut, 100.0 * BAR as f64);
+    field(&mut m, ClipField::GainDb, -80.0);
+    field(&mut m, ClipField::GainDb, f64::NAN);
+    let audio = clips(&m)[0].1.audio.clone().unwrap();
+    // Outside the range: put into it without a word.
+    assert_eq!(
+        (audio.fade_in, audio.fade_out, audio.gain_db),
+        (Q, 2 * BAR - Q, -60.0)
+    );
+    assert_eq!(status(&m), None);
+    assert_eq!(undo_count(&m), steps + 3);
+    let names: Vec<StepName> = (m.history_rows(steps + 1, steps + 3).into_iter())
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            StepName::SetClipFade,
+            StepName::SetClipFade,
+            StepName::SetClipGain
+        ]
+    );
+
+    // S with the clip selected and the line inside it.
+    cmd(&mut m, Command::Locate { tick: BAR });
+    cmd(&mut m, Command::SplitClips);
+    let all = clips(&m);
+    assert_eq!(all.len(), 2);
+    let (left, right) = (&all[0].1, &all[1].1);
+    assert_eq!(
+        (left.id, left.end, right.start, right.end),
+        (clip.id, BAR, BAR, 2 * BAR)
+    );
+    assert_eq!(left.take_id, right.take_id);
+    let (l, r) = (left.audio.as_ref().unwrap(), right.audio.as_ref().unwrap());
+    assert_eq!(
+        (l.fade_in, l.fade_out, r.fade_in, r.fade_out),
+        (Q, 0, 0, BAR)
+    );
+    assert_eq!((l.first_frame, r.first_frame), (0, 0));
+    assert_eq!((left.take_offset, right.take_offset), (0, -(BAR as i64)));
+    assert_eq!(m.view().arrange.selected_clips, [right.id]);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::ClipSplit {
+            name: "歌".into(),
+            tick: BAR,
+            count: 1
+        })
+    );
+    assert_eq!(undo_count(&m), steps + 4);
+    // The line on an edge of the selected clip: nothing.
+    cmd(&mut m, Command::SplitClips);
+    assert_eq!(
+        (clips(&m).len(), undo_count(&m), status(&m)),
+        (2, steps + 4, None)
+    );
+    // Nothing selected: the clip of the selected track under the line.
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: Vec::new(),
+            mode: SelectMode::Replace,
+        },
+    );
+    cmd(&mut m, Command::Locate { tick: Q });
+    cmd(&mut m, Command::SplitClips);
+    assert_eq!(clips(&m).len(), 3);
+
+    // A typed position that would overlap is said; a typed length is taken.
+    let right = clips(&m)[2].1.id;
+    cmd(
+        &mut m,
+        Command::SetClipField {
+            clip: right,
+            field: ClipField::Start,
+            value: 0.0,
+        },
+    );
+    assert_eq!(status(&m), Some(StatusMessage::ClipsNotMoved));
+    cmd(
+        &mut m,
+        Command::SetClipField {
+            clip: right,
+            field: ClipField::Start,
+            value: 3.0 * BAR as f64,
+        },
+    );
+    cmd(
+        &mut m,
+        Command::SetClipField {
+            clip: right,
+            field: ClipField::Length,
+            value: Q as f64,
+        },
+    );
+    let moved = clips(&m)[2].1.clone();
+    assert_eq!((moved.start, moved.end), (3 * BAR, 3 * BAR + Q));
+    assert_eq!(moved.audio.unwrap().fade_out, Q);
+}
+
+/// A model with one file in a clip, and what the audio thread was asked to watch.
+fn one_clip(rate: u32) -> (Model, ClipView, [u8; 16]) {
+    let mut m = model();
+    let vocal = vocal_track(&mut m);
+    let effects = drop_files(
+        &mut m,
+        &["歌.mp3"],
+        Some(vocal),
+        0,
+        DropMode::Separate,
+        vec![brought("歌.mp3", 5, rate)],
+    );
+    let watched = (effects.iter())
+        .find_map(|e| match e {
+            Effect::WatchAudio {
+                sources,
+                sample_rate,
+                ..
+            } => Some((sources.clone(), *sample_rate)),
+            _ => None,
+        })
+        .expect("the new table is watched");
+    assert_eq!(watched.1, Some(48_000));
+    assert_eq!(watched.0.len(), 1);
+    let clip = clips(&m)[0].1.clone();
+    (m, clip, watched.0[0].uid)
+}
+
+fn states(m: &mut Model, uid: [u8; 16], state: SourceState) {
+    let serial = m.song_serial();
+    m.handle(Input::Audio(AudioNews::States {
+        serial,
+        states: vec![(uid, state)],
+    }));
+}
+
+#[test]
+fn a_file_that_is_being_read_shows_how_far_it_is() {
+    let (mut m, clip, uid) = one_clip(44_100);
+    let audio = clip.audio.unwrap().audio;
+    assert_eq!(m.view().audio_work, AudioWorkView::default());
+    states(&mut m, uid, SourceState::Loading);
+    let state = |m: &Model| clips(m)[0].1.audio.as_ref().unwrap().state;
+    assert_eq!(state(&m), AudioClipState::Loading);
+    let job = |percent| AudioJob {
+        kind: AudioJobKind::Loading,
+        audio,
+        clip: None,
+        percent,
+    };
+    assert_eq!(m.view().audio_work.jobs, [job(0)]);
+    // Its peaks are read from memory while they are made.
+    let peaks = Growing(Arc::new(std::sync::Mutex::new(PeakBuilder::new(2))));
+    m.handle(Input::Audio(AudioNews::Peaks { uid, peaks }));
+    assert!(matches!(m.peaks_place(audio), Some(PeaksPlace::Growing(_))));
+    m.handle(Input::Audio(AudioNews::Progress { uid, percent: 40 }));
+    assert_eq!(m.view().audio_work.jobs, [job(40)]);
+    m.handle(Input::Audio(AudioNews::Done { uid, ok: true }));
+    assert_eq!(state(&m), AudioClipState::Ready);
+    assert_eq!(m.view().audio_work, AudioWorkView::default());
+    match m.peaks_place(audio) {
+        Some(PeaksPlace::File(path)) => {
+            assert!(
+                path.starts_with("/cache/meloet/peaks"),
+                "{}",
+                path.display()
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(m.peaks_place(audio + 100).is_none());
+    // A file that did not decode is as good as not there.
+    states(&mut m, uid, SourceState::Loading);
+    m.handle(Input::Audio(AudioNews::Done { uid, ok: false }));
+    assert_eq!(state(&m), AudioClipState::Missing);
+}
+
+#[test]
+fn a_missing_file_is_said_looked_for_and_taken_out() {
+    let (mut m, clip, uid) = one_clip(48_000);
+    let audio = clip.audio.as_ref().unwrap().audio;
+    states(&mut m, uid, SourceState::Missing);
+    assert_eq!(
+        clips(&m)[0].1.audio.as_ref().unwrap().state,
+        AudioClipState::Missing
+    );
+    assert_eq!(
+        m.view().params.selected,
+        Some(SelectedParams::Clip(SelectedClip {
+            track: clips(&m)[0].0,
+            clip: clip.id,
+            missing: Some(MissingAudioView {
+                audio,
+                file: "歌.mp3".into(),
+                was_at: None,
+            }),
+        }))
+    );
+    // 「さがす…」: the PC's window, then the audio thread; the song does not change.
+    let steps = undo_count(&m);
+    let effects = cmd(&mut m, Command::FindAudio { audio });
+    assert!(effects.contains(&Effect::PickAudio { many: false }));
+    let effects = m.handle(Input::AudioPicked(vec!["/else/歌.mp3".into()]));
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        Effect::FindAudio { source, path } if source.id.0 == audio && path == Path::new("/else/歌.mp3")
+    )));
+    // Not the audio that is missing: said, and still missing.
+    m.handle(Input::Audio(AudioNews::Found {
+        audio,
+        file: "歌.mp3".into(),
+        ok: false,
+    }));
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::AudioUnreadable {
+            file: "歌.mp3".into()
+        })
+    );
+    // Found: the files are looked at again.
+    let effects = m.handle(Input::Audio(AudioNews::Found {
+        audio,
+        file: "歌.mp3".into(),
+        ok: true,
+    }));
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::WatchAudio { .. }))
+    );
+    assert_eq!(undo_count(&m), steps);
+    states(&mut m, uid, SourceState::Ready);
+    assert_eq!(
+        clips(&m)[0].1.audio.as_ref().unwrap().state,
+        AudioClipState::Ready
+    );
+    // A file that is there cannot be looked for, or taken out by the notice.
+    assert!(
+        !cmd(&mut m, Command::FindAudio { audio }).contains(&Effect::PickAudio { many: false })
+    );
+    cmd(
+        &mut m,
+        Command::RemoveMissing {
+            missing: MissingRef::Audio { audio },
+        },
+    );
+    assert_eq!(clips(&m).len(), 1);
+
+    // 「曲から外す」: one step, and undo brings the clip back.
+    states(&mut m, uid, SourceState::Missing);
+    cmd(
+        &mut m,
+        Command::RemoveMissing {
+            missing: MissingRef::Audio { audio },
+        },
+    );
+    assert!(clips(&m).is_empty());
+    assert_eq!(undo_count(&m), steps + 1);
+    assert_eq!(
+        m.history_rows(steps + 1, steps + 1)[0].name,
+        StepName::RemoveMissing
+    );
+    cmd(&mut m, Command::Undo);
+    assert_eq!(clips(&m).len(), 1);
+}
+
+#[test]
+fn the_panel_shows_the_clip_until_an_instrument_is_selected() {
+    let (mut m, clip, _) = one_clip(48_000);
+    let is_clip = |m: &Model| matches!(m.view().params.selected, Some(SelectedParams::Clip(_)));
+    assert!(is_clip(&m));
+    let keys = m.view().song.tracks[0].id;
+    cmd(&mut m, Command::SelectInstrument { track: keys });
+    assert!(!is_clip(&m));
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: vec![clip.id],
+            mode: SelectMode::Replace,
+        },
+    );
+    assert!(is_clip(&m));
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: Vec::new(),
+            mode: SelectMode::Replace,
+        },
+    );
+    assert!(!is_clip(&m));
+}
+
+#[test]
+fn another_song_is_watched_anew_and_its_missing_files_are_said() {
+    let (mut m, _, uid) = one_clip(48_000);
+    let song = m.play.song().clone();
+    let effects = m.handle(Input::SongOpened);
+    assert!(
+        effects
+            .iter()
+            .all(|e| !matches!(e, Effect::WatchAudio { .. }))
+    );
+    // The song is put in place again, as an opened song is.
+    let mut effects = Vec::new();
+    m.replace_song(song, false, &mut effects);
+    // (A command, as opening a song is: what was said before is gone.)
+    let effects = cmd(&mut m, Command::Locate { tick: 0 });
+    let serial = (effects.iter())
+        .find_map(|e| match e {
+            Effect::WatchAudio {
+                serial, sources, ..
+            } if sources.len() == 1 => Some(*serial),
+            _ => None,
+        })
+        .expect("the song's files are watched");
+    assert_eq!(serial, m.song_serial());
+    // An answer for the song before is not this song's.
+    m.handle(Input::Audio(AudioNews::States {
+        serial: serial - 1,
+        states: vec![(uid, SourceState::Missing)],
+    }));
+    assert!(!matches!(
+        status(&m),
+        Some(StatusMessage::AudioMissing { .. })
+    ));
+    m.handle(Input::Audio(AudioNews::States {
+        serial,
+        states: vec![(uid, SourceState::Missing)],
+    }));
+    assert_eq!(status(&m), Some(StatusMessage::AudioMissing { count: 1 }));
+    // The rate of the stream changes: asked again.
+    let effects = m.handle(Input::AudioOpened {
+        node_name: m.wanted.clone().expect("a stream is open"),
+        sample_rate: 44_100,
+    });
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        Effect::WatchAudio {
+            sample_rate: Some(44_100),
+            ..
+        }
+    )));
+}

@@ -9,6 +9,7 @@ import type { ColorName } from "../design/tokens";
 import type { Batch } from "./batch";
 import type { RegionName } from "./budget";
 import type { Box } from "./paint";
+import type { WaveSource } from "./wave";
 
 /** A rectangle of a "rects" slot, in CSS px from the top left of the slot's box. */
 export interface GlRect {
@@ -17,6 +18,43 @@ export interface GlRect {
   w: number;
   h: number;
   color: ColorName;
+}
+
+/**
+ * A wave of a "rects" slot: the peaks of an audio file, drawn by the wave shader from a texture (one rectangle for a
+ * clip, or for each part of it with a tempo of its own). Places are CSS px from the top left of the slot's box.
+ */
+export interface GlWave {
+  /** Drawn after this many of the slot's rectangles, before the rest. */
+  after: number;
+  /** The part to paint. From top to bottom it is the whole place of the wave: full scale reaches from `y` to `y + h`. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  source: WaveSource;
+  /** The peak, with its fraction, that sounds at `x`; and peaks to a px. */
+  peak: number;
+  peaksPerPx: number;
+  /** Only the peaks `first .. end` are drawn (the part of the file the take has). */
+  first: number;
+  end: number;
+  /** The clip's volume as a factor. */
+  gain: number;
+  /** The two ends of the clip and how long its fades are. The bars are counted from `clipX0`. */
+  clipX0: number;
+  clipX1: number;
+  fadeIn: number;
+  fadeOut: number;
+  /** A bar `bar` wide every `pitch`, never lower than `minH`. */
+  pitch: number;
+  bar: number;
+  minH: number;
+  color: ColorName;
+  /** The line of silence (a tall row). */
+  mid: ColorName | null;
+  /** The lines of the fades. */
+  line: ColorName | null;
 }
 
 /** A line of a "gridLines" slot: the head of a bar, or else of a beat. */
@@ -67,7 +105,14 @@ export type GlSlot =
   /** The 40 px arrange overview (clip lines, visible range, play position). */
   | { kind: "overview" }
   /** Any rectangles (clips, the notes in them). Later ones on top; slots later in the page on top of earlier ones. */
-  | { kind: "rects"; rects: readonly GlRect[] }
+  /**
+   * `waves`: in the order of their `after`.
+   * `alignY`: while this slot is there, the canvas of its region and the canvas of that region have the same top and
+   * bottom on the screen (the two together). For a slot drawn every frame beside another region that is: where WebKit
+   * paints the page on the CPU, rectangles that start and end at different heights cut each other and the play line
+   * into many (docs/architecture.md, chapter 7, "CPU で描く WebKit").
+   */
+  | { kind: "rects"; rects: readonly GlRect[]; waves?: readonly GlWave[]; alignY?: RegionName }
   /**
    * Painted by its component (the piano roll) from what it holds; the component calls the slot's `update`
    * when that changes. `keys`: paint again when the held keys change.

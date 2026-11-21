@@ -89,10 +89,15 @@
   const trackH = $derived(metrics.px("size.track"));
   /** トラックの行と、その下のオートメーションの帯（時間の側と同じ並び。automation/autoGeom.ts）。 */
   const rows = $derived(
-    arrangeRows(song.tracks, current.state!.automation.folded, { trackH, laneH: metrics.px("size.lane"), rowH: metrics.px("size.row") }),
+    arrangeRows(song.tracks, current.state!.automation.folded, {
+      trackH,
+      laneH: metrics.px("size.lane"),
+      rowH: metrics.px("size.row"),
+      tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
+    }),
   );
   const bounds = $derived([...rows.tops, rows.height]);
-  const dropAt = (d: { from: number; dy: number }) => moveSlotAt(d.from, bounds, rows.tops[d.from]! + trackH / 2 + d.dy);
+  const dropAt = (d: { from: number; dy: number }) => moveSlotAt(d.from, bounds, rows.tops[d.from]! + rows.heights[d.from]! / 2 + d.dy);
   const slot = $derived(drag ? dropAt(drag) : null);
 
   function headDown(e: PointerEvent, track: TrackView, at: number): void {
@@ -181,6 +186,7 @@
       class:selected={song.playTarget === track.id}
       class:lifted
       style:transform={lifted ? `translateY(${drag!.dy}px)` : null}
+      style:height={rows.heights[at] !== trackH ? `${rows.heights[at]}px` : null}
       role="presentation"
       data-test="track-head"
       onpointerdown={(e) => headDown(e, track, at)}

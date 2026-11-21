@@ -70,5 +70,18 @@ export const METER = {
 /** Bar lines alone are gray.4 (Main). With beat lines (B-61), as in the piano roll: bars gray.6, beats gray.4. */
 export const ARRANGE_GRID = { line: "color.gray.4", bar: "color.gray.6", beat: "color.gray.4" } as const;
 
+/**
+ * The wave of a vocal clip (spec 2 「歌のクリップ」, spec 3 「波形」, F7-AudioEdit): bars of gray.8, the line of
+ * silence gray.5 in a tall row, the lines of the fades gray.10. A clip whose file is not found: ground gray.2,
+ * top line gray.7, no wave.
+ */
+export const WAVE = {
+  bar: "color.gray.8",
+  mid: "color.gray.5",
+  fade: "color.gray.10",
+  missingGround: "color.gray.2",
+  missingTop: "color.gray.7",
+} as const satisfies Record<string, ColorName>;
+
 /** A-PianoRoll, the frame of the visible range. */
 export const OVERVIEW = { frame: "color.accent", inset: mock["mock.range-frame.inset"].value } as const;

@@ -48,6 +48,13 @@ pub struct ReadStats {
     pub read_errors: AtomicU64,
     /// Generations started.
     pub generations: AtomicU64,
+    /// The seats (one bit each, below 64) with a clip whose file the store did not have:
+    /// the ones to feed again when the store has more (`AudioStore::generation`).
+    pub unopened: AtomicU64,
+}
+
+fn seat_bit(seat: u32) -> u64 {
+    1u64.checked_shl(seat).unwrap_or(0)
 }
 
 enum Msg {
@@ -139,8 +146,9 @@ impl ReadAhead {
         let _ = self.tx.send(Msg::NoTracks);
     }
 
-    /// The store may open now what it could not before: every file is opened again with
-    /// the next generation.
+    /// The store may open now what it could not before: the files it did not have are
+    /// asked for again. Tell the engine to start the seats of [`ReadStats::unopened`] anew
+    /// after this, so that what was fed as silence is read again.
     pub fn store_changed(&self) {
         let _ = self.tx.send(Msg::StoreChanged);
     }
@@ -202,19 +210,33 @@ impl Fed {
         }
     }
 
-    fn set_clips(&mut self, clips: Vec<FeedClip>) {
+    fn set_clips(&mut self, clips: Vec<FeedClip>, stats: &ReadStats) {
         self.clips = clips;
         self.clips.sort_by_key(|c| c.start);
-        let clips = &self.clips;
-        // A file the store did not have is asked for again.
-        (self.files).retain(|(uid, file)| file.is_some() && clips.iter().any(|c| c.uid == *uid));
+        self.ask_again(stats);
     }
 
-    fn file(&mut self, uid: [u8; 16], store: &dyn PcmStore) -> Option<&mut Box<dyn PcmFile>> {
+    /// A file the store did not have is asked for again, and one no clip uses is let go.
+    fn ask_again(&mut self, stats: &ReadStats) {
+        let clips = &self.clips;
+        (self.files).retain(|(uid, file)| file.is_some() && clips.iter().any(|c| c.uid == *uid));
+        stats.unopened.fetch_and(!seat_bit(self.seat), Relaxed);
+    }
+
+    fn file(
+        &mut self,
+        uid: [u8; 16],
+        store: &dyn PcmStore,
+        stats: &ReadStats,
+    ) -> Option<&mut Box<dyn PcmFile>> {
         let at = match self.files.iter().position(|(u, _)| *u == uid) {
             Some(at) => at,
             None => {
-                self.files.push((uid, store.open(&uid, self.sample_rate)));
+                let file = store.open(&uid, self.sample_rate);
+                if file.is_none() {
+                    stats.unopened.fetch_or(seat_bit(self.seat), Relaxed);
+                }
+                self.files.push((uid, file));
                 self.files.len() - 1
             }
         };
@@ -276,7 +298,7 @@ impl Fed {
             if count <= 0 {
                 continue;
             }
-            let Some(file) = self.file(clip.uid, store) else {
+            let Some(file) = self.file(clip.uid, store, stats) else {
                 continue;
             };
             let channels = usize::from(file.channels().clamp(1, 2));
@@ -383,6 +405,7 @@ impl Side {
             Msg::Map(map, map_gen) => self.map = Some((map, map_gen)),
             Msg::Track { seat, ring, clips } => {
                 self.tracks.retain(|t| t.seat != seat);
+                self.stats.unopened.fetch_and(!seat_bit(seat), Relaxed);
                 if let Some((writer, sample_rate)) = ring {
                     let mut track = Fed {
                         seat,
@@ -395,23 +418,27 @@ impl Side {
                         next: 0,
                         filling: false,
                     };
-                    track.set_clips(clips);
+                    track.set_clips(clips, &self.stats);
                     self.tracks.push(track);
                 }
             }
             Msg::Clips { seat, clips } => {
                 if let Some(track) = self.tracks.iter_mut().find(|t| t.seat == seat) {
-                    track.set_clips(clips);
+                    track.set_clips(clips, &self.stats);
                 }
             }
-            Msg::NoTracks => self.tracks.clear(),
+            Msg::NoTracks => {
+                self.tracks.clear();
+                self.stats.unopened.store(0, Relaxed);
+            }
             Msg::StoreChanged => {
                 for track in self.tracks.iter_mut() {
-                    track.files.clear();
+                    track.ask_again(&self.stats);
                 }
             }
             Msg::Store(store) => {
                 self.store = store;
+                self.stats.unopened.store(0, Relaxed);
                 for track in self.tracks.iter_mut() {
                     track.files.clear();
                 }

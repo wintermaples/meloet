@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::key::PluginKey;
 use crate::scan::{EditorKind, PluginInfo};
 
-pub const WIRE_VERSION: u32 = 4;
+pub const WIRE_VERSION: u32 = 5;
 
 /// No message's text is longer than this.
 pub const MAX_TEXT_LEN: usize = 16 << 20;
@@ -112,6 +112,9 @@ pub enum FromHost {
 pub enum Reply {
     Hello {
         version: u32,
+        /// The process runs for an export (`launch::host_command`): its plugins are made
+        /// ready and run as offline, and its audio threads take no real-time priority.
+        offline: bool,
     },
     Ok,
     /// The request could not be done. `message` is for the log, not for the screen.
@@ -190,6 +193,8 @@ pub struct LoadedPlugin {
     pub audio_outputs: u32,
     /// Whether it has a window, and whether meloet can open it.
     pub editor: EditorKind,
+    /// It says it cannot run faster than it plays (LV2 `lv2:isLive`).
+    pub live: bool,
 }
 
 /// One parameter (spec 3: 「パラメータの行」). Values are 0..=1 at this boundary.
@@ -538,11 +543,12 @@ mod tests {
                         latency: 64,
                         audio_inputs: 0,
                         audio_outputs: 2,
-                        editor: EditorKind::X11
+                        editor: EditorKind::X11,
+                        live: false,
                     }
                 }
             }),
-            json!({ "kind": "reply", "id": 4, "reply": { "type": "loaded", "plugin": { "latency": 64, "audioInputs": 0, "audioOutputs": 2, "editor": "x11" } } })
+            json!({ "kind": "reply", "id": 4, "reply": { "type": "loaded", "plugin": { "latency": 64, "audioInputs": 0, "audioOutputs": 2, "editor": "x11", "live": false } } })
         );
         assert_eq!(
             from(FromHost::Reply {
@@ -723,6 +729,7 @@ mod tests {
         let replies = [
             Reply::Hello {
                 version: WIRE_VERSION,
+                offline: true,
             },
             Reply::Error {
                 message: "x".into(),

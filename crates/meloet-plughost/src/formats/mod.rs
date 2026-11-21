@@ -34,6 +34,9 @@ pub struct Activation {
     pub sample_rate: f64,
     /// No block is longer than this.
     pub max_frames: usize,
+    /// For an export: the blocks come as fast as the plugin answers them, not as time
+    /// passes (VST3 `kOffline`, LV2 `lv2:freeWheeling`).
+    pub offline: bool,
 }
 
 /// Keeps the audio thread and the main thread out of a plugin at the same time, for the calls

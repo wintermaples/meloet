@@ -74,6 +74,9 @@ fn read_channel(map: &Mapping, base: usize, area: usize, channel: usize, dst: &m
 /// wavetable in 112 ms on a fast PC), and a plugin taken for dead is killed with its process.
 pub const HANG_MS: u32 = 5_000;
 
+/// How often a wait without a time limit looks at the host process.
+const LOOK_MS: u32 = 50;
+
 /// The engine's end of a slot. Made on the control side before the plugin is loaded into the
 /// slot; everything else here is for the audio thread and neither allocates nor locks. The one
 /// call that sleeps is [`EngineEnd::wait`], on a futex, up to the deadline it is given.
@@ -307,6 +310,49 @@ impl EngineEnd {
             (self.seen_deadline_ns, self.seen_progress) = (deadline_ns, self.signs().1);
         }
         answered
+    }
+
+    /// As [`EngineEnd::wait`], without a time limit: for an export, where a late answer is
+    /// waited for and never passed over (docs/architecture.md 22-11). Sleeps until the block
+    /// is answered, however long the host process takes, and looks every [`LOOK_MS`] whether
+    /// the answer can still come. It cannot when a thread of the host has held the request
+    /// for [`HANG_MS`], when nobody took it while the host did nothing at all for that long,
+    /// or when the mapping was marked as stopped (the process ended). Then this is false,
+    /// and the slot is stopped with every other slot of the mapping.
+    pub fn wait_through(&mut self) -> bool {
+        if self.stopped() || !self.pending {
+            return false;
+        }
+        let words = self.map.slot_words(self.base);
+        let seq = self.seq;
+        let mut still = (self.signs().1, futex::monotonic_ns());
+        loop {
+            let now = futex::monotonic_ns();
+            let look = now + u64::from(LOOK_MS) * 1_000_000;
+            if futex::wait_until(&words.done, &words.engine_waiting, look, |done| done == seq) {
+                self.pending = false;
+                return true;
+            }
+            if self.map.is_stopped() {
+                self.stopped = true;
+                return false;
+            }
+            let (held, progress) = self.signs();
+            let dead = match held {
+                Some(held_ms) => held_ms >= HANG_MS,
+                None => {
+                    if progress != still.0 {
+                        still = (progress, now);
+                    }
+                    now.saturating_sub(still.1) >= u64::from(HANG_MS) * 1_000_000
+                }
+            };
+            if dead {
+                self.stopped = true;
+                self.map.mark_stopped();
+                return false;
+            }
+        }
     }
 
     /// A block was asked for and its answer has not been taken with `wait`.
@@ -710,6 +756,92 @@ mod tests {
         taken.store(taken.load(SeqCst).wrapping_sub(HANG_MS), SeqCst);
         assert!(!waiting.await_overdue(began + 60_000_000));
         assert!(waiting.stopped() && other.stopped());
+    }
+
+    #[test]
+    fn a_wait_without_a_limit_takes_a_slow_answer() {
+        let map = Arc::new(Mapping::create(geometry()).unwrap());
+        let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
+        let mut plugin = PluginEnd::new(map, 0).unwrap();
+        let slow = std::thread::spawn(move || {
+            for _ in 0..2 {
+                let block = loop {
+                    match plugin.take_request() {
+                        Some(block) => break block,
+                        None => std::thread::sleep(Duration::from_millis(1)),
+                    }
+                };
+                // Many blocks long.
+                std::thread::sleep(Duration::from_millis(300));
+                let mut buffer = [0.0f32; 8];
+                plugin.read_input(0, &mut buffer[..block.frames]);
+                plugin.write_output(0, &buffer.map(|x| x * 2.0)[..block.frames]);
+                plugin.finish();
+            }
+        });
+        for round in 1..=2 {
+            assert!(engine.begin(8));
+            engine.write_input(0, &[round as f32; 8]);
+            engine.submit();
+            let began = futex::monotonic_ns();
+            assert!(engine.wait_through());
+            assert!(futex::monotonic_ns() - began >= 290_000_000);
+            let mut out = [0.0f32; 8];
+            engine.read_output(0, &mut out);
+            assert_eq!(out, [round as f32 * 2.0; 8]);
+        }
+        assert!(!engine.stopped() && !engine.overdue());
+        slow.join().unwrap();
+    }
+
+    #[test]
+    fn a_wait_without_a_limit_ends_at_a_plugin_that_hangs() {
+        let map = Arc::new(Mapping::create(geometry()).unwrap());
+        let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
+        let other = EngineEnd::new(map.clone(), 1).unwrap();
+        let mut plugin = PluginEnd::new(map.clone(), 0).unwrap();
+        assert!(engine.begin(8));
+        engine.submit();
+        assert!(plugin.take_request().is_some());
+        // As if the thread had held the request for all of `HANG_MS` but 0.2 s.
+        let taken = &map.slot_words(engine.base).taken_ms;
+        taken.store(taken.load(SeqCst).wrapping_sub(HANG_MS - 200), SeqCst);
+        let began = futex::monotonic_ns();
+        assert!(!engine.wait_through());
+        let waited_ms = (futex::monotonic_ns() - began) / 1_000_000;
+        assert!((190..1_000).contains(&waited_ms), "{waited_ms} ms");
+        assert!(engine.stopped() && other.stopped());
+        assert!(!engine.begin(8) && !engine.wait_through());
+    }
+
+    #[test]
+    fn a_wait_without_a_limit_ends_when_the_process_is_gone() {
+        let map = Arc::new(Mapping::create(geometry()).unwrap());
+        let mut engine = EngineEnd::new(map.clone(), 0).unwrap();
+        assert!(engine.begin(8));
+        engine.submit();
+        // What the control side does when the process has ended.
+        let marker = map.clone();
+        let mark = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            marker.mark_stopped();
+        });
+        let began = futex::monotonic_ns();
+        assert!(!engine.wait_through());
+        assert!(futex::monotonic_ns() - began < 1_000_000_000);
+        assert!(engine.stopped());
+        mark.join().unwrap();
+
+        // Nobody says so: a request no thread takes, in a host that does nothing at all.
+        let map = Arc::new(Mapping::create(geometry()).unwrap());
+        let mut engine = EngineEnd::new(map, 0).unwrap();
+        assert!(engine.begin(8));
+        engine.submit();
+        let began = futex::monotonic_ns();
+        assert!(!engine.wait_through());
+        let waited_ms = (futex::monotonic_ns() - began) / 1_000_000;
+        assert!(waited_ms >= u64::from(HANG_MS) && waited_ms < u64::from(HANG_MS) + 1_000);
+        assert!(engine.stopped());
     }
 
     #[test]

@@ -71,10 +71,15 @@ impl Host {
 
     /// A host process with real plugins only. `env` is added to the test's own environment.
     pub fn start_with(geometry: Geometry, env: &[(&str, &str)]) -> Host {
+        Host::start_as(geometry, env, false)
+    }
+
+    /// As `start_with`; `offline`: a host process for an export.
+    pub fn start_as(geometry: Geometry, env: &[(&str, &str)], offline: bool) -> Host {
         let map = Arc::new(Mapping::create(geometry).unwrap());
         let (ours, theirs) = UnixStream::pair().unwrap();
         let mut command =
-            launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None).unwrap();
+            launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None, offline).unwrap();
         command.env_remove(FAKE);
         for (name, value) in env {
             command.env(name, value);
@@ -95,7 +100,8 @@ impl Host {
                 version: WIRE_VERSION
             }),
             Reply::Hello {
-                version: WIRE_VERSION
+                version: WIRE_VERSION,
+                offline,
             }
         );
         host

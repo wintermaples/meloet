@@ -33,7 +33,8 @@ fn a_fake_instrument_sounds_and_takes_parameters_and_state() {
             latency: 0,
             audio_inputs: 0,
             audio_outputs: 2,
-            editor: EditorKind::None
+            editor: EditorKind::None,
+            live: false,
         }
     );
     let silence = [0.0f32; 256];
@@ -352,7 +353,7 @@ fn requests_that_cannot_be_done_are_answered_with_an_error() {
 fn nothing_is_done_before_hello_and_a_closed_socket_ends_the_process() {
     let map = Mapping::create(GEOMETRY).unwrap();
     let (mut ours, theirs) = UnixStream::pair().unwrap();
-    let child = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None)
+    let child = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None, false)
         .unwrap()
         .env(FAKE, "1")
         .spawn()
@@ -682,13 +683,18 @@ fn the_log_says_which_priority_the_audio_thread_got() {
         let file = std::fs::File::create(&log).unwrap();
         let map = Mapping::create(GEOMETRY).unwrap();
         let (mut ours, theirs) = UnixStream::pair().unwrap();
-        let child =
-            launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), Some(file.as_fd()))
-                .unwrap()
-                .env(FAKE, "1")
-                .env("MELOET_PLUGHOST_RT", choice)
-                .spawn()
-                .unwrap();
+        let child = launch::host_command(
+            Path::new(EXE),
+            theirs.as_fd(),
+            map.fd(),
+            Some(file.as_fd()),
+            false,
+        )
+        .unwrap()
+        .env(FAKE, "1")
+        .env("MELOET_PLUGHOST_RT", choice)
+        .spawn()
+        .unwrap();
         let mut child = Killed(child);
         drop(theirs);
         ours.set_read_timeout(Some(Duration::from_secs(10)))

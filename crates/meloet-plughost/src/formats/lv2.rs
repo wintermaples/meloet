@@ -412,6 +412,9 @@ struct Layout {
     /// time:beatsPerMinute`) and with whether the song moves (`time:speed`).
     tempo_ports: Vec<PortIndex>,
     speed_ports: Vec<PortIndex>,
+    /// The control inputs that are the host's to say with that the blocks come faster than
+    /// time passes (`lv2:designation lv2:freeWheeling`).
+    freewheel_ports: Vec<PortIndex>,
     atom_in_bytes: Vec<usize>,
     atom_out_bytes: Vec<usize>,
     latency_port: Option<PortIndex>,
@@ -471,6 +474,7 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
     let mut params = Vec::new();
     let mut groups = HashMap::new();
     let (mut tempo_ports, mut speed_ports) = (Vec::new(), Vec::new());
+    let mut freewheel_ports = Vec::new();
     for port in plugin.ports_with_type(PortType::ControlInput) {
         let Some(lilv_port) = raw.port_by_index(port.index.0) else {
             continue;
@@ -508,10 +512,11 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
         if speed {
             speed_ports.push(port.index);
         }
-        let hosts_own = designated(&lilv_port, "enabled")
-            || designated(&lilv_port, "freeWheeling")
-            || tempo
-            || speed;
+        let freewheel = designated(&lilv_port, "freeWheeling");
+        if freewheel {
+            freewheel_ports.push(port.index);
+        }
+        let hosts_own = designated(&lilv_port, "enabled") || freewheel || tempo || speed;
         params.push(Param {
             id: port.index.0 as u32,
             target: Target::Port(port.index),
@@ -640,6 +645,7 @@ fn layout(world: &World, plugin: &livi::Plugin, features: &Features) -> Layout {
         time_in,
         tempo_ports,
         speed_ports,
+        freewheel_ports,
         atom_in_bytes,
         atom_out_bytes,
         latency_port: raw.latency_port_index().map(PortIndex),
@@ -785,6 +791,7 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
     let activation = Activation {
         sample_rate: 48_000.0,
         max_frames: 256,
+        offline: false,
     };
     let (_shared, mut processor, _link) = instantiate(&lv2_world, &plugin, activation)?;
     info.audio_inputs = processor.main_in.len() as u32;
@@ -1132,6 +1139,8 @@ fn instantiate(
         time_in: layout.time_in,
         tempo_ports: layout.tempo_ports,
         speed_ports: layout.speed_ports,
+        freewheel_ports: layout.freewheel_ports,
+        offline: activation.offline,
         latency_port: layout.latency_port,
         main_in: layout.main_in,
         main_out: layout.main_out,
@@ -1168,6 +1177,12 @@ fn instantiate(
 
 pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Loaded, String> {
     load_as(key, bundle, activation, false)
+}
+
+/// The plugin's description names `lv2:isLive`, as a feature it wants or one it can use:
+/// its sound depends on time passing as it plays.
+fn says_live(world: &World, plugin: &lilv::plugin::Plugin) -> bool {
+    plugin.has_feature(&world.uri(&format!("{LV2}isLive")))
 }
 
 /// As [`load`], and as if the plugin's window were open and had just sent the plugin a few
@@ -1211,6 +1226,7 @@ fn load_as(
         audio_inputs: processor.main_in.len() as u32,
         audio_outputs: processor.main_out.len() as u32,
         editor,
+        live: says_live(&lv2_world, plugin.raw()),
     };
     Ok(Loaded {
         plugin,
@@ -1237,6 +1253,10 @@ struct Lv2Processor {
     time_in: Option<usize>,
     tempo_ports: Vec<PortIndex>,
     speed_ports: Vec<PortIndex>,
+    freewheel_ports: Vec<PortIndex>,
+    /// For an export: `freewheel_ports` are held at 1, and what the plugin gives its worker
+    /// is done before the next piece of sound is asked for.
+    offline: bool,
     latency_port: Option<PortIndex>,
     main_in: Vec<usize>,
     main_out: Vec<usize>,
@@ -1491,6 +1511,11 @@ impl Processor for Lv2Processor {
             sequence.clear();
         }
         self.tell_time(instance, block.transport);
+        if self.offline {
+            for &port in &self.freewheel_ports {
+                instance.set_control_input(port, 1.0);
+            }
+        }
         if shared.ask_all.swap(false, Relaxed) {
             self.ask_all();
         }
@@ -1642,6 +1667,12 @@ impl Processor for Lv2Processor {
             // SAFETY: every buffer lives until `run` is over and is `to - from` long or
             // longer; the atom buffers were made with this instance's own features.
             let piece_ran = rtcheck::plugin(|| unsafe { instance.run(to - from, ports) }).is_ok();
+            if self.offline {
+                // The worker's own thread looks for work ten times a second: by the clock,
+                // so the same export would not give the same sound twice. Here the work is
+                // done at once, and the plugin has the answer with its next piece.
+                rtcheck::plugin(|| shared.features.worker_manager().run_workers());
+            }
             ran &= piece_ran;
             if piece_ran {
                 self.hear(block.sink);
@@ -2318,6 +2349,7 @@ mod piece_tests {
         let activation = Activation {
             sample_rate: 48_000.0,
             max_frames: 256,
+            offline: false,
         };
         let mut loaded = load(&key, bundle, activation).unwrap();
         // −70 to +70 dB: 0.5 is 0 dB, 0.5 − 20/140 is −20 dB.

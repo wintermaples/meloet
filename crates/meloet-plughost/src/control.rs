@@ -82,6 +82,8 @@ struct Host {
     /// The controller of the plugin in each slot.
     slots: Vec<Option<Box<dyn Controller>>>,
     greeted: bool,
+    /// The process is for an export.
+    offline: bool,
     /// Made with the first window.
     display: Option<Display>,
     /// By slot.
@@ -153,6 +155,7 @@ impl Host {
         let activation = Activation {
             sample_rate: f64::from(*sample_rate),
             max_frames: *max_frames as usize,
+            offline: self.offline,
         };
         let loaded = match formats::load(key, bundle, activation) {
             Ok(loaded) => loaded,
@@ -616,6 +619,7 @@ impl Host {
                 (
                     Reply::Hello {
                         version: WIRE_VERSION,
+                        offline: self.offline,
                     },
                     Vec::new(),
                 )
@@ -864,7 +868,7 @@ fn tell(host: &mut Host, writer: &mut UnixStream) -> Result<(), WireError> {
 }
 
 /// Runs until meloet says `Quit` or the socket closes. The process's exit code.
-pub fn run(control: UnixStream, memory: OwnedFd) -> i32 {
+pub fn run(control: UnixStream, memory: OwnedFd, offline: bool) -> i32 {
     let map = match Mapping::attach(memory) {
         Ok(map) => Arc::new(map),
         Err(e) => {
@@ -872,7 +876,7 @@ pub fn run(control: UnixStream, memory: OwnedFd) -> i32 {
             return 2;
         }
     };
-    let audio = match rt::start(map.clone()) {
+    let audio = match rt::start(map.clone(), offline) {
         Ok(audio) => audio,
         Err(e) => {
             eprintln!("meloet-plughost: audio thread: {e}");
@@ -885,6 +889,7 @@ pub fn run(control: UnixStream, memory: OwnedFd) -> i32 {
         map,
         audio,
         greeted: false,
+        offline,
         display: None,
         tops: (0..slots).map(|_| None).collect(),
         asked: VecDeque::new(),

@@ -438,6 +438,16 @@ pub fn probe(bundle: &Path, id: &str) -> Result<PluginInfo, String> {
     Ok(info)
 }
 
+/// What the plugin is told of how its blocks come, when it is made ready and again with
+/// every block: both, because plugins read it in either place (JUCE's wrapper in both).
+fn process_mode(offline: bool) -> i32 {
+    if offline {
+        ProcessModes_::kOffline as i32
+    } else {
+        ProcessModes_::kRealtime as i32
+    }
+}
+
 pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Loaded, String> {
     let module = module(bundle)?;
     let class = find(&module, key.id())?;
@@ -488,7 +498,7 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
             instance.component.activateBus(event, input, 0, 1);
         }
         let mut setup = ProcessSetup {
-            processMode: ProcessModes_::kRealtime as i32,
+            processMode: process_mode(activation.offline),
             symbolicSampleSize: SymbolicSampleSizes_::kSample32 as i32,
             maxSamplesPerBlock: activation.max_frames as i32,
             sampleRate: activation.sample_rate,
@@ -530,6 +540,8 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
         audio_inputs: in_channels as u32,
         audio_outputs: out_channels as u32,
         editor: instance.editor(),
+        // VST3 has no word for it.
+        live: false,
     };
     let processor = Vst3Processor {
         instance: instance.clone(),
@@ -552,6 +564,7 @@ pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Lo
         to_controller,
         told: Vec::with_capacity(BLOCK_PARAMS),
         sample_rate: activation.sample_rate,
+        mode: process_mode(activation.offline),
         frames_run: 0,
     };
     let controller = Vst3Controller {
@@ -590,6 +603,8 @@ struct Vst3Processor {
     /// The parameters whose value the window was told in this block.
     told: Vec<u32>,
     sample_rate: f64,
+    /// `ProcessData::processMode` of every block.
+    mode: i32,
     frames_run: i64,
 }
 
@@ -789,7 +804,7 @@ impl Processor for Vst3Processor {
         let mut context = context(block.transport, self.sample_rate, self.frames_run);
         self.frames_run = self.frames_run.wrapping_add(frames as i64);
         let mut data = ProcessData {
-            processMode: ProcessModes_::kRealtime as i32,
+            processMode: self.mode,
             symbolicSampleSize: SymbolicSampleSizes_::kSample32 as i32,
             numSamples: frames as i32,
             numInputs: self.in_buses.len() as i32,

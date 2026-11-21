@@ -43,7 +43,8 @@ fn main() {
     let code = match args.get(1).map(String::as_str) {
         Some("host") => match (handed.input, handed.output) {
             (Some(control), Some(memory)) if launch::is_socket(control.as_fd()) => {
-                control::run(UnixStream::from(control), memory)
+                let offline = args.iter().any(|a| a == launch::OFFLINE);
+                control::run(UnixStream::from(control), memory, offline)
             }
             _ => 2,
         },

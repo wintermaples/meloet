@@ -139,6 +139,14 @@ pub enum ShellRequest {
     /// The PC's open window for audio files (wav, mp3, flac, ogg), starting in `folder`.
     /// `many`: more than one may be chosen. Answer with [`Core::audio_picked`].
     PickAudio { folder: Option<PathBuf>, many: bool },
+    /// Where an export goes: the PC's save window, starting in `folder` with `name` filled
+    /// in (what is there is written over, so the window asks), or with `folder_only` the
+    /// folder window. Answer with [`Core::export_place_picked`].
+    PickExportPlace {
+        folder: Option<PathBuf>,
+        name: String,
+        folder_only: bool,
+    },
 }
 
 /// Called on the core thread; must not wait for the main thread.
@@ -454,12 +462,13 @@ impl Core {
                 let _ = lock(&scan_tx).send(Msg::Scan(news));
             });
             let host_tx = tx.clone();
+            let host_options = HostOptions {
+                exe: plugin_options.host_exe.clone(),
+                env: plugin_options.child_env.clone(),
+                geometry: DEFAULT_GEOMETRY,
+            };
             let hosts = Hosts::start(
-                HostOptions {
-                    exe: plugin_options.host_exe.clone(),
-                    env: plugin_options.child_env.clone(),
-                    geometry: DEFAULT_GEOMETRY,
-                },
+                host_options.clone(),
                 move |news| {
                     let _ = host_tx.send(Msg::Plugins(news));
                 },
@@ -469,6 +478,7 @@ impl Core {
             PluginSide {
                 scanner,
                 hosts,
+                options: host_options,
                 start: Some(Input::PluginsStart {
                     cache: Box::new(dir.map_or_else(ScanCache::default, ScanCache::load)),
                     first: !dir.is_some_and(ScanCache::is_saved),
@@ -523,6 +533,7 @@ impl Core {
                 audio_store,
                 keeper,
                 song_told: None,
+                exports: export::Exports::new(options.state_dir.as_deref()),
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
                 state_dir: options.state_dir.clone(),
@@ -642,6 +653,12 @@ impl Core {
     /// Does not wait.
     pub fn save_as_picked(&self, path: Option<PathBuf>) {
         let _ = self.tx.send(Msg::Input(Input::SaveAsPicked(path), None));
+    }
+
+    /// The answer to [`ShellRequest::PickExportPlace`]. Does not wait.
+    pub fn export_place_picked(&self, path: Option<PathBuf>) {
+        let news = crate::export::ExportNews::PlacePicked(path);
+        let _ = self.tx.send(Msg::Input(Input::Export(news), None));
     }
 
     /// From this call on, every patch reaches `messages` in rev order: a snapshot taken after
@@ -1030,6 +1047,10 @@ struct Audio {
     wanted: (Vec<(MadeKey, u32)>, Vec<[u8; 16]>),
     /// The plans may be other ones than `wanted`.
     plans_changed: bool,
+    /// A test runs the engine's blocks itself, as a stream of this rate would
+    /// (`Audio::open_by_hand`).
+    #[cfg(test)]
+    by_hand: Option<u32>,
 }
 
 /// The vocal clips of a seat.
@@ -1164,6 +1185,8 @@ impl Audio {
             made: HashSet::new(),
             wanted: Default::default(),
             plans_changed: false,
+            #[cfg(test)]
+            by_hand: None,
         };
         if let Some(wants) = audio.handle.take_stream_wants() {
             audio.readahead.set_wants(wants);
@@ -1172,6 +1195,29 @@ impl Audio {
             audio.op(op);
         }
         audio
+    }
+
+    /// The rate of the stream that runs the engine; `None`: none does.
+    fn running(&self) -> Option<u32> {
+        #[cfg(test)]
+        if self.by_hand.is_some() {
+            return self.by_hand;
+        }
+        self.stream.as_ref().map(|s| s.sample_rate())
+    }
+
+    /// For a test that is the stream: from now on the engine is told everything a running
+    /// one is, and the test calls its blocks (`self.engine`).
+    #[cfg(test)]
+    pub(crate) fn open_by_hand(&mut self, rate: u32) {
+        if let Some(engine) = &mut self.engine {
+            engine.prepare(rate);
+        }
+        self.readahead.clear();
+        for entry in self.clips.iter_mut() {
+            entry.live = false;
+        }
+        self.by_hand = Some(rate);
     }
 
     /// The place the audio files are opened from, shared with the rest of the core.
@@ -1259,7 +1305,7 @@ impl Audio {
     /// engine asks for them. `anew`: the thread starts again whatever the clips are (another
     /// map, files that can be opened now).
     fn send_clips(&mut self, seat: usize, anew: bool) {
-        let Some(rate) = self.stream.as_ref().map(|s| s.sample_rate()) else {
+        let Some(rate) = self.running() else {
             return;
         };
         let Some(at) = self.clips.iter().position(|c| c.seat == seat) else {
@@ -1585,7 +1631,7 @@ impl Audio {
 
     fn command(&mut self, command: EngineCommand) {
         // Without a stream the command would wait in the ring and act when one opens.
-        if self.stream.is_some() && self.handle.send(command).is_err() {
+        if self.running().is_some() && self.handle.send(command).is_err() {
             eprintln!("meloet: the engine's command ring is full");
         }
     }
@@ -1624,7 +1670,7 @@ impl Audio {
                 // Made here, off the audio thread; the engine only swaps it in.
                 let map = Arc::new(TempoMap::new(&timeline));
                 self.timeline = Some(timeline);
-                if self.stream.is_some() {
+                if self.running().is_some() {
                     if self.handle.set_tempo_map(map).is_err() {
                         eprintln!("meloet: the engine did not take the tempo map");
                     } else {
@@ -1649,7 +1695,7 @@ impl Audio {
             },
             EngineOp::AuditionOff => EngineCommand::AuditionOff,
             EngineOp::PlaySample { instrument } => {
-                if self.stream.is_some() {
+                if self.running().is_some() {
                     let phrase = phrases::for_group(instrument.group());
                     let player = PhrasePlayer::new(self.make(&instrument), phrase);
                     if self.handle.play_sample(Box::new(player)).is_err() {
@@ -1684,17 +1730,8 @@ impl Audio {
                 tracks: tracks.into_iter().collect::<TrackSet>(),
             },
             EngineOp::Automation { seat, lanes } => {
-                if self.stream.is_some() {
-                    let lanes = (lanes.into_iter())
-                        .map(|lane| meloet_engine::AutoLane {
-                            target: lane.target,
-                            step: lane.step,
-                            points: lane.points,
-                            slot: lane.slot,
-                            effect: lane.effect,
-                        })
-                        .collect();
-                    if self.handle.set_automation(seat, lanes).is_err() {
+                if self.running().is_some() {
+                    if self.handle.set_automation(seat, auto_lanes(lanes)).is_err() {
                         eprintln!("meloet: the engine did not take the lanes of track {seat}");
                     }
                 }
@@ -1706,7 +1743,7 @@ impl Audio {
                 on,
             },
             EngineOp::Sequence { track, events } => {
-                if self.stream.is_some() {
+                if self.running().is_some() {
                     let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());
                     if self.handle.swap_sequence(track, sequence).is_err() {
                         eprintln!("meloet: the engine did not take the sequence of track {track}");
@@ -1738,7 +1775,20 @@ fn voice_command(seat: usize, voice: Option<VoiceSpec>) -> EngineCommand {
     }
 }
 
-fn sequence_event(e: PlayEvent) -> SequenceEvent {
+/// The lanes of a track as the engine takes them.
+pub(crate) fn auto_lanes(lanes: Vec<crate::play::SeatLane>) -> Vec<meloet_engine::AutoLane> {
+    (lanes.into_iter())
+        .map(|lane| meloet_engine::AutoLane {
+            target: lane.target,
+            step: lane.step,
+            points: lane.points,
+            slot: lane.slot,
+            effect: lane.effect,
+        })
+        .collect()
+}
+
+pub(crate) fn sequence_event(e: PlayEvent) -> SequenceEvent {
     SequenceEvent {
         tick: e.tick,
         event: match e.kind {
@@ -1841,6 +1891,8 @@ struct Worker {
     keeper: Option<crate::audiofiles::keeper::Keeper>,
     /// The song and the folder of its file that `audio_store` was last told.
     song_told: Option<(u32, Option<PathBuf>)>,
+    /// The jobs of the export, each on its thread.
+    exports: export::Exports,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
@@ -1848,6 +1900,8 @@ struct Worker {
 struct PluginSide {
     scanner: Scanner,
     hosts: Hosts,
+    /// What `hosts` was started with: an export starts processes of its own the same way.
+    options: HostOptions,
     /// Given to the rules when the core thread starts.
     start: Option<Input>,
     /// `Some` until the screen is up (`PluginOptions::wait_for_screen`): the scans asked for
@@ -2245,6 +2299,7 @@ impl Worker {
         drop(self.midi.take());
         drop(self.devices.take());
         self.audio.close(&self.shared.stream);
+        self.exports.end();
         drop(self.plugins.take());
     }
 
@@ -2598,8 +2653,7 @@ impl Worker {
                     }
                     // Here and now: meloet may end right after.
                     Effect::ClearWorkAudio => self.audio_store.clear_work(),
-                    // Nobody takes the export's asks yet.
-                    Effect::Export(_) => {}
+                    Effect::Export(ask) => inputs.extend(self.export_ask(ask)),
                 }
             }
             if let Some(side) = &mut self.plugins {
@@ -3010,6 +3064,9 @@ impl Worker {
         if let Some(side) = &mut self.plugins {
             side.unload_gone();
         }
+        if let Some(input) = self.export_tick() {
+            self.handle(input);
+        }
         let mut samples = Vec::new();
         while let Some(record) = self.audio.handle.pop_latency() {
             if let Some(ms) = key_to_sound_ms(record) {
@@ -3187,6 +3244,7 @@ fn steady_load(open: bool, permille: u32, last: Option<&Telemetry>) -> u16 {
     }
 }
 
+mod export;
 mod input;
 #[cfg(test)]
 mod plug_tests;

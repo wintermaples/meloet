@@ -1443,6 +1443,13 @@ impl Engine {
         &self.meters
     }
 
+    /// How many frames the master's inserts delay everything by. The tracks are already
+    /// lined up with one another (their look-ahead); this is what is left at the head of
+    /// what comes out, and what an export cuts off there.
+    pub fn master_latency(&self) -> u32 {
+        self.master_strip.latency()
+    }
+
     /// Get ready for a (new) stream. Call outside the audio thread, while no stream is running
     /// this engine. Every instrument and effect is prepared again, so all notes and tails stop,
     /// and the transport stops where it was (without a [`Recorded::Stopped`]: the caller knows the stream ended).

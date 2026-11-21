@@ -138,6 +138,11 @@ impl Maker {
     pub fn waiting(&self) -> usize {
         self.waiting.load(Relaxed)
     }
+
+    /// [`Maker::waiting`] for another thread to look at.
+    pub fn waiting_count(&self) -> Arc<AtomicUsize> {
+        self.waiting.clone()
+    }
 }
 
 impl Drop for Maker {
@@ -326,21 +331,12 @@ impl Work {
         let Some(path) = self.store.made_path(&plan.key) else {
             return Ok(Outcome::Failed);
         };
-        // Not there yet (it is being decoded, or missing): tried again when the store
-        // has other files.
-        let Some(mut file) = self.store.open(&plan.uid, plan.sample_rate) else {
-            return Ok(Outcome::Failed);
-        };
-        let channels = usize::from(file.channels().clamp(1, 2));
-        let mut stretcher = plan.stretcher(channels)?;
-        let mut out = CacheWav::create(&path, plan.sample_rate, channels as u8)?;
-        let end = (file.frames().min(i64::MAX as u64) as i64).min(plan.file_end);
         let cancel = AtomicBool::new(false);
         let mut quit = false;
-        let (mut raw, mut interleaved) = (Vec::new(), Vec::new());
         let mut percent = 0u8;
         let mut told_at = Instant::now();
         let Work {
+            store,
             rx,
             later,
             plans,
@@ -350,15 +346,7 @@ impl Work {
             tell,
             ..
         } = self;
-        let read = |start: i64, into: &mut [&mut [f32]]| -> io::Result<()> {
-            read_frames(&mut *file, start, end, into, &mut raw)
-        };
-        let mut write = |frames: &[&[f32]]| -> io::Result<()> {
-            interleaved.clear();
-            for i in 0..frames[0].len() {
-                interleaved.extend(frames.iter().map(|c| c[i]));
-            }
-            out.write(&interleaved)?;
+        let mut wrote = || {
             while let Ok(ask) = rx.try_recv() {
                 match &ask {
                     Ask::Quit => {
@@ -372,9 +360,8 @@ impl Work {
                 }
                 later.push_back(ask);
             }
-            Ok(())
         };
-        let progress = |now: u8| {
+        let mut progress = |now: u8| {
             percent = now.min(99);
             // While asks wait, the list of what is wanted is about to be another one.
             if told_at.elapsed() >= PROGRESS_EVERY || told.is_empty() {
@@ -387,34 +374,15 @@ impl Work {
                 }
             }
         };
-        let p = |j: u64| plan.file_frame_at(j);
-        let made = render(
-            &mut stretcher,
-            plan.frames,
-            p,
-            read,
-            &mut write,
-            progress,
-            &cancel,
-        );
-        match made {
-            Ok(()) => {
-                out.finish()?;
-                Ok(Outcome::Made)
-            }
-            Err(RenderError::Cancelled) => {
-                out.abandon();
-                Ok(if quit {
-                    Outcome::Quit
-                } else {
-                    Outcome::GivenUp
-                })
-            }
-            Err(e) => {
-                out.abandon();
-                Err(e.to_string().into())
-            }
-        }
+        let made = render_plan(store, plan, &path, &mut wrote, &mut progress, &cancel)?;
+        Ok(match made {
+            Rendered::Made => Outcome::Made,
+            // Not there yet (it is being decoded, or missing): tried again when the store
+            // has other files.
+            Rendered::NoSource => Outcome::Failed,
+            Rendered::Cancelled if quit => Outcome::Quit,
+            Rendered::Cancelled => Outcome::GivenUp,
+        })
     }
 
     /// What came into the table or left it is in use at this moment: the cache is looked
@@ -464,6 +432,92 @@ impl Work {
             _ => uids.iter().any(|u| name.starts_with(u.as_str())),
         };
         trim_cache(&dir, self.limit.load(Relaxed), &used, SystemTime::now());
+    }
+}
+
+enum Rendered {
+    Made,
+    Cancelled,
+    /// The store does not have the audio the plan is made from.
+    NoSource,
+}
+
+/// Makes the audio of `plan` into the file at `path`, which gets its name only when it is
+/// whole. `wrote` is called after every piece that went out; with `cancel` set the making
+/// ends and nothing is left.
+fn render_plan(
+    store: &AudioStore,
+    plan: &MadePlan,
+    path: &Path,
+    wrote: &mut dyn FnMut(),
+    progress: &mut dyn FnMut(u8),
+    cancel: &AtomicBool,
+) -> Result<Rendered, Box<dyn std::error::Error>> {
+    let Some(mut file) = store.open(&plan.uid, plan.sample_rate) else {
+        return Ok(Rendered::NoSource);
+    };
+    let channels = usize::from(file.channels().clamp(1, 2));
+    let mut stretcher = plan.stretcher(channels)?;
+    let mut out = CacheWav::create(path, plan.sample_rate, channels as u8)?;
+    let end = (file.frames().min(i64::MAX as u64) as i64).min(plan.file_end);
+    let (mut raw, mut interleaved) = (Vec::new(), Vec::new());
+    let read = |start: i64, into: &mut [&mut [f32]]| -> io::Result<()> {
+        read_frames(&mut *file, start, end, into, &mut raw)
+    };
+    let mut write = |frames: &[&[f32]]| -> io::Result<()> {
+        interleaved.clear();
+        for i in 0..frames[0].len() {
+            interleaved.extend(frames.iter().map(|c| c[i]));
+        }
+        out.write(&interleaved)?;
+        wrote();
+        Ok(())
+    };
+    let p = |j: u64| plan.file_frame_at(j);
+    let made = render(
+        &mut stretcher,
+        plan.frames,
+        p,
+        read,
+        &mut write,
+        progress,
+        cancel,
+    );
+    match made {
+        Ok(()) => {
+            out.finish()?;
+            Ok(Rendered::Made)
+        }
+        Err(RenderError::Cancelled) => {
+            out.abandon();
+            Ok(Rendered::Cancelled)
+        }
+        Err(e) => {
+            out.abandon();
+            Err(e.to_string().into())
+        }
+    }
+}
+
+/// Makes the audio of `plan` on the calling thread, for an export whose song the maker's
+/// thread is not asked for (22-11). It is written beside the cache's file under a name of
+/// its own and given the cache's name when it is whole, so it never meets a file the
+/// thread is writing; the two files would hold the same audio. Returns whether it is in
+/// the cache now: not when `stop` was set, nor when the store does not have the audio the
+/// plan is made from.
+pub fn make_now(store: &AudioStore, plan: &MadePlan, stop: &AtomicBool) -> io::Result<bool> {
+    let Some(path) = store.made_path(&plan.key) else {
+        return Ok(false);
+    };
+    let own = path.with_extension(format!("export-{}.wav", std::process::id()));
+    let made = render_plan(store, plan, &own, &mut || {}, &mut |_| {}, stop)
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    match made {
+        Rendered::Made => {
+            fs::rename(&own, &path)?;
+            Ok(true)
+        }
+        Rendered::Cancelled | Rendered::NoSource => Ok(false),
     }
 }
 

@@ -33,6 +33,13 @@ pub enum Pick {
     Audio {
         many: bool,
     },
+    /// The save window again, for the file an export is written to (the same title, as
+    /// the open window has one). The file is written over, so the window asks.
+    ExportFile {
+        name: String,
+    },
+    /// The folder window again, for where the files of 「トラックごと」 go.
+    ExportFolder,
 }
 
 /// The ending of the files the SF2 window offers.
@@ -74,10 +81,12 @@ mod imp {
             Pick::SongFile | Pick::Sf2 | Pick::Audio { .. } => {
                 (OPEN_TITLE, gtk::FileChooserAction::Open)
             }
-            Pick::Folder | Pick::PluginPlace => {
+            Pick::Folder | Pick::PluginPlace | Pick::ExportFolder => {
                 (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder)
             }
-            Pick::SaveAs { .. } => (SAVE_AS_TITLE, gtk::FileChooserAction::Save),
+            Pick::SaveAs { .. } | Pick::ExportFile { .. } => {
+                (SAVE_AS_TITLE, gtk::FileChooserAction::Save)
+            }
         };
         let parent = window.gtk_window().ok();
         let dialog = gtk::FileChooserNative::new(Some(title), parent.as_ref(), action, None, None);
@@ -89,6 +98,10 @@ mod imp {
             dialog.set_current_name(name);
             // Nothing is written over: the song gets a new folder, " 2" when the name is taken.
             dialog.set_do_overwrite_confirmation(false);
+        }
+        if let Pick::ExportFile { name } = &pick {
+            dialog.set_current_name(name);
+            dialog.set_do_overwrite_confirmation(true);
         }
         if pick == Pick::SongFile {
             let filter = gtk::FileFilter::new();

@@ -73,6 +73,7 @@ impl Sounds {
 }
 
 /// The samples of an instrument, as far as they are there when it is made.
+#[derive(Clone)]
 pub(crate) enum Samples {
     Ready(Arc<SampleBank>),
     /// The pack has them, and they are not in memory (yet).

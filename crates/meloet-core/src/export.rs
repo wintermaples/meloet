@@ -13,7 +13,12 @@
 //! starts another; the format, the sample rate and the bits belong to the last step and
 //! leave it running.
 
+#[cfg(test)]
+pub(crate) mod fixture;
+pub(crate) mod job;
+pub(crate) mod render;
 pub mod sink;
+pub(crate) mod told;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

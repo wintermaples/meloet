@@ -320,6 +320,14 @@ fn shell_request(
         ShellRequest::PickSaveAs { folder, name } => (pcwindow::Pick::SaveAs { name }, folder),
         ShellRequest::PickSf2 { folder } => (pcwindow::Pick::Sf2, folder),
         ShellRequest::PickAudio { folder, many } => (pcwindow::Pick::Audio { many }, folder),
+        ShellRequest::PickExportPlace {
+            folder,
+            folder_only: true,
+            ..
+        } => (pcwindow::Pick::ExportFolder, folder),
+        ShellRequest::PickExportPlace { folder, name, .. } => {
+            (pcwindow::Pick::ExportFile { name }, folder)
+        }
     };
     let answer = {
         let (core, pick) = (core.clone(), pick.clone());
@@ -336,6 +344,9 @@ fn shell_request(
                     pcwindow::Pick::PluginPlace => core.plugin_place_picked(path),
                     pcwindow::Pick::SaveAs { .. } => core.save_as_picked(path),
                     pcwindow::Pick::Sf2 => core.sf2_picked(path),
+                    pcwindow::Pick::ExportFile { .. } | pcwindow::Pick::ExportFolder => {
+                        core.export_place_picked(path);
+                    }
                     pcwindow::Pick::Audio { .. } => {}
                 }
             }

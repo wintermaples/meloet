@@ -59,6 +59,9 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// The answer of the PC's open window for an SF2 file. Does not wait.
     fn sf2_picked(&self, path: Option<PathBuf>);
 
+    /// The answer of the PC's window for where an export goes. Does not wait.
+    fn export_place_picked(&self, path: Option<PathBuf>);
+
     /// The answer of the PC's open window for audio files: none when it was put away. Does
     /// not wait.
     fn audio_picked(&self, paths: Vec<PathBuf>);
@@ -148,6 +151,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn sf2_picked(&self, path: Option<PathBuf>) {
         meloet_core::Core::sf2_picked(self, path);
+    }
+
+    fn export_place_picked(&self, path: Option<PathBuf>) {
+        meloet_core::Core::export_place_picked(self, path);
     }
 
     fn audio_picked(&self, paths: Vec<PathBuf>) {

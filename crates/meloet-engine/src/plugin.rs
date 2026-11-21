@@ -22,6 +22,12 @@
 //!
 //! The control side (meloet-core) makes the slot before it asks the host process to load the
 //! plugin, and keeps the [`PluginWatch`].
+//!
+//! A slot of an export ([`PluginSlot::for_export`], docs/architecture.md 22-11) is not on an
+//! audio thread and has no deadline: it sleeps until the answer is there, however late, so
+//! no block of an export is ever left without its plugin's sound. It gives up only when the
+//! host process cannot answer any more (`meloet_plugin::ipc::HANG_MS`); the slot is stopped
+//! then, and the export has failed.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering::Relaxed};
@@ -116,9 +122,9 @@ pub struct PluginWatch {
 }
 
 impl PluginWatch {
-    /// Two blocks in a row went without an answer. The slot plays silence (an instrument) or
-    /// lets the sound through (an effect) from then on, until the control side puts another
-    /// one in its place.
+    /// Two blocks in a row went without an answer (in an export: one answer could not come
+    /// any more). The slot plays silence (an instrument) or lets the sound through (an
+    /// effect) from then on, until the control side puts another one in its place.
     pub fn stopped(&self) -> bool {
         self.stopped.load(Relaxed)
     }
@@ -151,6 +157,8 @@ pub struct PluginSlot {
     asked: Option<usize>,
     /// The deadline of the engine's block in which an answer was last missed.
     missed_at: u64,
+    /// Every answer is waited for without a deadline.
+    export: bool,
 }
 
 impl PluginSlot {
@@ -171,7 +179,20 @@ impl PluginSlot {
             reset: false,
             asked: None,
             missed_at: 0,
+            export: false,
         };
+        (slot, watch)
+    }
+
+    /// As [`PluginSlot::new`], for the engine of an export: `block` is that engine's, and
+    /// its deadline is not looked at.
+    pub fn for_export(
+        end: EngineEnd,
+        block: Arc<PluginBlock>,
+        latency: u32,
+    ) -> (PluginSlot, Arc<PluginWatch>) {
+        let (mut slot, watch) = PluginSlot::new(end, block, latency);
+        slot.export = true;
         (slot, watch)
     }
 
@@ -215,8 +236,10 @@ impl PluginSlot {
             // once more. If it comes, its sound is too late to use, and the slot goes on.
             // "Once more" is in the engine's next block, not in a later stretch of the block
             // the answer was missed in: that one has the same deadline, already past.
+            // (An export leaves no answer behind: its slot is stopped instead.)
             if !self.end.begin(left.len())
                 && !(self.end.overdue()
+                    && !self.export
                     && deadline != self.missed_at
                     && self.sleep(|end| end.await_overdue(deadline))
                     && self.end.begin(left.len()))
@@ -232,7 +255,17 @@ impl PluginSlot {
             }
             self.submit();
         }
-        let answered = self.sleep(|end| end.wait(deadline));
+        let export = self.export;
+        let answered = self.sleep(|end| {
+            if export {
+                end.wait_through()
+            } else {
+                end.wait(deadline)
+            }
+        });
+        if export && !answered {
+            self.watch.stopped.store(true, Relaxed);
+        }
         if answered {
             self.end.read_output(0, left);
             self.end.read_output(1, right);

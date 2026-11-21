@@ -21,7 +21,7 @@
   } from "../bridge";
   import { WAVE } from "../gl/dims";
   import { everyGlFrame, glRegion, glSlot, type GlRect, type GlSlot, type GlWave } from "../gl/slot";
-  import { waveArea } from "./arrange/audioClipGeom";
+  import { handleRects, waveArea } from "./arrange/audioClipGeom";
   import { audioDrag, type AudioDragValue } from "./arrange/audioDrag.svelte";
   import * as W from "./arrange/wave";
   import { WaveBook } from "./arrange/wavePeaks.svelte";
@@ -176,12 +176,14 @@
     minH: metrics.px("mock.wave.min"),
   });
   const tallTrack = $derived(current.state!.arrange.tallTrack);
+  const handleSize = $derived(metrics.px("part.audioclip.handle"));
 
   /**
    * 歌のクリップ 1 つ: 枠と面、その上に波形とフェードの線。`drag` は、音量の線や取っ手をドラッグしている間の値。
    * 音のファイルが見つからないクリップは、地 gray.2、上の線 gray.7、波形なし（仕様書 3 章 93-3）。
+   * フェードの取っ手（左右の角の gray.10）は `handles` に足す: 呼んだ側が、どのクリップよりも上に描く（重なったクリップの下にかくれないように）。
    */
-  function paintAudioClip(rects: GlRect[], waves: GlWave[], v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): void {
+  function paintAudioClip(rects: GlRect[], waves: GlWave[], handles: GlRect[], v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): void {
     const a = clip.audio!;
     if (a.state === "missing") {
       const missing = colors === G.CLIP_SELECTED ? colors : { ...colors, top: WAVE.missingTop };
@@ -191,6 +193,7 @@
     const shown = G.clipColorsFor(colors, track.muted);
     G.paintClip(rects, v, dims, box, shown, [], { range: null });
     const shape = W.waveClipOf(clip, drag)!;
+    handleRects(handles, v, dims, box, shape, handleSize);
     const level = W.waveLevel(W.framesPerPx(map, v, shape.timing, clip.start, clip.end), waveSizes.pitch);
     const found = waveBook.sourceFor(song.serial, a.audio, level);
     if (!found) return;
@@ -344,6 +347,7 @@
     if (!d) return null;
     const rects: GlRect[] = [];
     const waves: GlWave[] = [];
+    const handles: GlRect[] = [];
     const labels: Label[] = [];
     void waveBook.version;
     const notesOf = (row: number, clip: ClipView) => {
@@ -373,10 +377,11 @@
         const inner = G.clipBox(local, dims, row, clip.start, clip.end);
         const colors = G.clipColorsFor(G.CLIP_SELECTED, song.tracks[row]?.muted ?? false);
         const moved = { ...inner, y0: inner.y0 - top, y1: inner.y1 - top };
-        if (clip.audio && song.tracks[row]) paintAudioClip(rects, waves, local, moved, song.tracks[row], clip, G.CLIP_SELECTED, null);
+        if (clip.audio && song.tracks[row]) paintAudioClip(rects, waves, handles, local, moved, song.tracks[row], clip, G.CLIP_SELECTED, null);
         else G.paintClip(rects, local, dims, moved, colors, notesOf(row, clip));
         labels.push(labelOf(clip, G.clipBox(view, dims, row, clip.start, clip.end)));
       }
+      for (const h of handles) rects.push(h);
       place = { left: G.tickToX(view, first), top, width: (last - first) * pxPerTick, height: bottom - top };
     } else {
       // つめているクリップは行の幅いっぱいの箱に。テイクの 0 は動かさない（ノートは曲の中の同じ所に残る）。
@@ -385,8 +390,9 @@
       const box = G.clipBox(view, dims, d.row, d.start, d.end);
       const notes = take ? G.takeShapes(clip, take) : notesOf(d.row, d.clip).filter((n) => n.start >= d.start && n.start < d.end);
       const track = song.tracks[d.row];
-      if (d.clip.audio && track) paintAudioClip(rects, waves, view, box, track, { ...d.clip, ...clip }, G.CLIP_SELECTED, null);
+      if (d.clip.audio && track) paintAudioClip(rects, waves, handles, view, box, track, { ...d.clip, ...clip }, G.CLIP_SELECTED, null);
       else G.paintClip(rects, view, dims, box, G.clipColorsFor(G.CLIP_SELECTED, track?.muted ?? false), notes);
+      for (const h of handles) rects.push(h);
       for (const q of rects) q.y -= box.y0;
       W.shiftWaves(waves, 0, -box.y0);
       place = { left: 0, top: box.y0, width: view.width, height: box.y1 - box.y0 };
@@ -421,6 +427,7 @@
     void waveBook.version;
     const out: GlRect[] = [];
     const waves: GlWave[] = [];
+    const handles: GlRect[] = [];
     song.tracks.forEach((track, row) => {
       for (const clip of track.clips) {
         const box = G.clipBox(view, dims, row, clip.start, clip.end);
@@ -431,7 +438,7 @@
           continue;
         }
         const colors = selectedSet.has(clip.id) && !dragged ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track));
-        if (clip.audio) paintAudioClip(out, waves, view, box, track, clip, colors, null);
+        if (clip.audio) paintAudioClip(out, waves, handles, view, box, track, clip, colors, null);
         else G.paintClip(out, view, dims, box, G.clipColorsFor(colors, track.muted), shapesOf(track.id, clip));
       }
     });
@@ -467,6 +474,7 @@
         if (x >= 0 && x < view.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.7" });
       }
     }
+    for (const h of handles) out.push(h);
     return { rects: out, waves };
   });
 
@@ -502,7 +510,7 @@
       if (right <= left) return null;
       const rects: GlRect[] = [];
       const waves: GlWave[] = [];
-      paintAudioClip(rects, waves, view, box, track, clip, selectedSet.has(clip.id) ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track)), d);
+      paintAudioClip(rects, waves, rects, view, box, track, clip, selectedSet.has(clip.id) ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track)), d);
       for (const q of rects) {
         q.x -= left;
         q.y -= box.y0;
@@ -1508,7 +1516,7 @@
           ></div>
         {/if}
         {#if switcher}
-          <div class="switcher" role="presentation" onpointerdown={(e) => e.stopPropagation()} style:left="{switcher.x}px" style:top="{switcher.y}px" style:height="{switchH}px">
+          <div class="switcher" role="presentation" data-over-clips onpointerdown={(e) => e.stopPropagation()} style:left="{switcher.x}px" style:top="{switcher.y}px" style:height="{switchH}px">
             <button class="tog step" aria-label={t("arrange.takePrev")} onclick={() => send({ type: "stepTake", delta: -1 })}>◂</button>
             <span class="m-hi">
               {#each textParts("arrange.takeSwitch", { take: switcher.take, takes: switcher.takes }) as part, i (i)}

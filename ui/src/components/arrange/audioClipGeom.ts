@@ -6,6 +6,7 @@ import type { ClipView, DropMode, TrackView } from "../../bridge";
 import { CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB } from "../../bridge/types";
 import type { TempoMap } from "../../time/tempoMap";
 import { clipBox, rowHeight, rowTop, tickToX, trackRowAt, xToTick, type Box, type LaneDims, type View } from "../arrangeGeom";
+import type { GlRect } from "../../gl/slot";
 import { fadeGain } from "./fade";
 
 /** 歌のクリップの形のうち、幾何に要る物（`ClipView` と `AudioClipView` から）。 */
@@ -76,6 +77,14 @@ export function fadeHandleBox(v: View, d: LaneDims, box: Box, clip: AudioClipSha
   const x0 = Math.min(Math.max(center - size / 2, area.x0), Math.max(area.x0, area.x1 - size));
   const y0 = area.top - size / 3;
   return { x0, x1: x0 + size, y0, y1: y0 + size };
+}
+
+/** 左右の取っ手の四角（gray.10）を `out` に足す。WebGL の側が描く。 */
+export function handleRects(out: GlRect[], v: View, d: LaneDims, box: Box, clip: AudioClipShape, size: number): void {
+  for (const edge of ["fadeIn", "fadeOut"] as const) {
+    const b = fadeHandleBox(v, d, box, clip, edge, size);
+    out.push({ x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0, color: "color.gray.10" });
+  }
 }
 
 /** 取っ手を x までひっぱったときのフェードの長さ（ティック）。0 から「クリップの長さ − もう片方のフェード」まで。 */

@@ -8,8 +8,9 @@ import { audioDrag } from "../src/components/arrange/audioDrag.svelte";
 import AudioClipHandles from "../src/components/arrange/AudioClipHandles.svelte";
 import AudioClipNotes from "../src/components/arrange/AudioClipNotes.svelte";
 import { fileDrag, heardFileEvent, setDropResolver } from "../src/components/arrange/fileDrag.svelte";
-import { waveArea, gainLineY } from "../src/components/arrange/audioClipGeom";
+import { audioShapeOf, fadeHandleBox, handleRects, waveArea, gainLineY } from "../src/components/arrange/audioClipGeom";
 import { clipBox, type LaneDims, type View } from "../src/components/arrangeGeom";
+import type { GlRect } from "../src/gl/slot";
 import { arrangeRows } from "../src/components/automation/autoGeom";
 import FileDropNotice from "../src/components/FileDropNotice.svelte";
 import { topMenus } from "../src/components/menu/menus";
@@ -148,13 +149,40 @@ function vocalRow(s: AppState) {
 }
 
 describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「クリップの音量」）", () => {
-  it("どの歌のクリップにも左右の取っ手。音量の線は選んだクリップだけ", () => {
+  it("どの歌のクリップにも左右の取っ手（絵は WebGL の四角）。音量の線は選んだクリップだけ。クリップごとの HTML は置かない", () => {
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set([72]), busy: false });
-    expect(qa('[data-test="clip-fade-fadeIn"]')).toHaveLength(2);
-    expect(qa('[data-test="clip-fade-fadeOut"]')).toHaveLength(2);
     expect(qa('[data-test="clip-gain-line"]')).toHaveLength(1);
+    expect(qa('[data-test="clip-fade-grip"]')).toHaveLength(0);
+    const rects: GlRect[] = [];
+    for (const clip of tracks[0]!.clips) handleRects(rects, view, dims, clipBox(view, dims, 0, clip.start, clip.end), audioShapeOf(clip)!, 6);
+    expect(rects.map((r) => [r.w, r.h, r.color])).toEqual(Array(4).fill([6, 6, "color.gray.10"]));
+    // フェードがある側の取っ手は、フェードの切れ目がまん中。ない側は、クリップの角。
+    const right = tracks[0]!.clips[1]!;
+    const box = clipBox(view, dims, 0, right.start, right.end);
+    expect(rects[2]!.x + 3).toBeCloseTo((right.start + right.audio!.fadeIn) * view.pxPerTick);
+    expect(rects[3]!.x + 6).toBeCloseTo(waveArea(dims, box).x1);
+  });
+
+  it("ポインタが取っ手の上に来たら、その 1 つだけ HTML（カーソルの形）。はなれたら消える。録音中は出ない", () => {
+    const s = scene("audioEdit");
+    const { tracks } = vocalRow(s);
+    show(AudioClipHandles, s, { view, dims, tracks, selected: new Set(), busy: false });
+    const clip = tracks[0]!.clips[1]!;
+    const b = fadeHandleBox(view, dims, clipBox(view, dims, 0, clip.start, clip.end), audioShapeOf(clip)!, "fadeOut", 6);
+    pointer(target, "pointermove", b.x0 + 3, b.y0 + 3);
+    const grip = q('[data-test="clip-fade-grip"]')!;
+    expect([parseFloat(grip.style.left), parseFloat(grip.style.top), parseFloat(grip.style.width)]).toEqual([b.x0, b.y0, 6]);
+    pointer(target, "pointermove", b.x0 - 20, b.y0 + 3);
+    expect(q('[data-test="clip-fade-grip"]')).toBeNull();
+    unmount(mounted!);
+    show(AudioClipHandles, s, { view, dims, tracks, selected: new Set(), busy: true });
+    pointer(target, "pointermove", b.x0 + 3, b.y0 + 3);
+    expect(q('[data-test="clip-fade-grip"]')).toBeNull();
+    pointer(target, "pointerdown", b.x0 + 3, b.y0 + 3);
+    pointer(target, "pointermove", b.x0 - 20, b.y0 + 3);
+    expect(audioDrag.now).toBeNull();
   });
 
   it("線を上下にドラッグ: 画面だけが先に動き（audioDrag.now）、離して SetClipField を 1 つ。状態行は「… −3.0 dB（ドラッグ中）…」", () => {
@@ -196,14 +224,25 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     const s = scene("audioEdit");
     const { tracks } = vocalRow(s);
     show(AudioClipHandles, s, { view, dims, tracks, selected: new Set(), busy: false });
-    const handle = qa('[data-test="clip-fade-fadeIn"]')[1]!;
-    const x0 = parseFloat(handle.style.left) + 3;
-    pointer(handle, "pointerdown", x0, 10);
-    pointer(handle, "pointermove", x0 + 16, 10);
+    const clip = tracks[0]!.clips[1]!;
+    const b = fadeHandleBox(view, dims, clipBox(view, dims, 0, clip.start, clip.end), audioShapeOf(clip)!, "fadeIn", 6);
+    const x0 = b.x0 + 3;
+    const y = b.y0 + 3;
+    // 押した出来事は、クリップの面（親）のほかの係には届かない。
+    const reached: string[] = [];
+    target.addEventListener("pointerdown", () => reached.push("down"));
+    pointer(target, "pointerdown", x0, y);
+    expect(reached).toEqual([]);
+    pointer(target, "pointermove", x0 + 16, y);
     expect(audioDrag.now).toEqual({ clip: 72, fadeIn: TPQ / 4 + TPQ });
     expect(q(".origin-handle")).not.toBeNull();
-    pointer(handle, "pointerup", x0 + 16, 10);
+    // ひっぱっている間、HTML の取っ手は値についていく。
+    expect(parseFloat(q('[data-test="clip-fade-grip"]')!.style.left)).toBeCloseTo(b.x0 + 16);
+    pointer(target, "pointerup", x0 + 16, y);
     expect(app.sent).toEqual([{ type: "setClipField", clip: 72, field: "fadeIn", value: TPQ / 4 + TPQ }]);
+    // 取っ手のない所を押しても、何もしない（クリップの面の係に届く）。
+    pointer(target, "pointerdown", x0 + 100, y + 20);
+    expect(reached).toEqual(["down"]);
   });
 
   it("録音中は取っ手も線も押せない", () => {

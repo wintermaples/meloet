@@ -1,5 +1,7 @@
 <!-- 歌のクリップのフェードの取っ手と音量の線（仕様書 2 章「歌のクリップ」、3 章 27-A 「切る ・ フェード ・ 重なり」と「クリップの音量」、モック F7-AudioEdit ・ R11-Audio）。
      取っ手: 上の左右の角に part.audioclip.handle（6×6）の gray.10。横にひっぱるとフェードの長さ。
+     取っ手の絵は WebGL の側（Arrange の paintAudioClip が audioClipGeom.ts の handleRects で描く）。ここは、押した所がどの取っ手かを
+     形から数える（クリップごとの HTML を置かない: 横に送る ・ 拡大するコマが、クリップの数だけ重くなる）。HTML は、ポインタの下の取っ手 1 つだけ（カーソルの形のため）。
      音量の線: えらんだ歌のクリップの中に accent の line.hair の横線。上下にドラッグして −60〜+12 dB、2 回押すと 0.0 dB。
      ドラッグの間は画面だけが先に動き、値を audioDrag.now に書く（波形を描く WebGL の側が、同じコマで読む）。離したら SetClipField を 1 つ（ドラッグ 1 回が 1 手）。
      もとの位置は gray.7 の枠（線）。Esc はキーの順のいちばん前でやめる（pianoroll/view.svelte.ts の cancelDrag）。
@@ -9,7 +11,7 @@
   import type { ClipView, TrackView } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
-  import { clipBox, type Box, type LaneDims, type View } from "../arrangeGeom";
+  import { clipBox, rowHeight, rowTop, type Box, type LaneDims, type View } from "../arrangeGeom";
   import { dbNumber } from "../format";
   import { metrics } from "../metrics.svelte";
   import { dragReading, onDragCancel } from "../pianoroll/view.svelte";
@@ -24,6 +26,7 @@
     clip: ClipView;
     row: number;
     pointer: number;
+    /** ポインタをつかまえている物: 音量の線、ポインタの下の取っ手、どちらもなければクリップの面。 */
     el: HTMLElement;
     /** 押した所と、線（取っ手のまん中）とのずれ。 */
     grab: number;
@@ -80,17 +83,53 @@
     return { clip, row, box, handles, line };
   }
 
-  const parts = $derived.by(() => {
+  /** 音量の線が出るクリップ（えらんだ歌のクリップ）。 */
+  const lines = $derived.by(() => {
     const now = audioDrag.now;
     const out: Part[] = [];
     tracks.forEach((track, row) => {
       for (const clip of track.clips) {
-        if (clip.audio === null || clip.audio.state === "missing") continue;
+        if (!selected.has(clip.id) || clip.audio === null || clip.audio.state === "missing") continue;
         const p = partOf(clip, row, now);
-        if (p) out.push(p);
+        if (p?.line) out.push(p);
       }
     });
     return out;
+  });
+
+  /** (x, y) の下の取っ手。重なっていれば、上に描かれている物（あとのトラック、あとのクリップ、フェードアウト）。 */
+  function handleAt(p: { x: number; y: number }): { part: Part; edge: FadeEdge } | null {
+    const now = audioDrag.now;
+    for (let row = tracks.length - 1; row >= 0; row--) {
+      const top = rowTop(dims, row);
+      if (p.y < top || p.y >= top + rowHeight(dims, row)) continue;
+      const clips = tracks[row]!.clips;
+      for (let i = clips.length - 1; i >= 0; i--) {
+        const clip = clips[i]!;
+        if (clip.audio === null || clip.audio.state === "missing") continue;
+        const part = partOf(clip, row, now);
+        if (!part) continue;
+        for (let h = part.handles.length - 1; h >= 0; h--) {
+          const b = part.handles[h]!.box;
+          if (p.x >= b.x0 && p.x < b.x1 && p.y >= b.y0 && p.y < b.y1) return { part, edge: part.handles[h]!.edge };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** ポインタの下の取っ手（ドラッグの間は、ひっぱっている取っ手）。HTML はこの 1 つだけ。 */
+  let hover = $state.raw<{ clip: number; edge: FadeEdge } | null>(null);
+  let grip = $state<HTMLElement>();
+  const gripBox = $derived.by(() => {
+    const h = drag && drag.field !== "gainDb" ? { clip: drag.clip.id, edge: drag.field } : hover;
+    if (!h) return null;
+    for (let row = 0; row < tracks.length; row++) {
+      const clip = tracks[row]!.clips.find((c) => c.id === h.clip);
+      if (!clip || clip.audio === null) continue;
+      return partOf(clip, row, audioDrag.now)?.handles.find((x) => x.edge === h.edge)?.box ?? null;
+    }
+    return null;
   });
 
   /** ドラッグを始めた所（もとの位置の gray.7）。 */
@@ -108,7 +147,7 @@
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
-  function down(e: PointerEvent, part: Part, field: Field): void {
+  function down(e: PointerEvent, part: Part, field: Field, el: HTMLElement): void {
     if (e.button !== 0 || busy || !root) return;
     e.stopPropagation();
     e.preventDefault();
@@ -121,7 +160,6 @@
       const xs = fadeXs(view, audioShapeOf(part.clip)!);
       grab = p.x - (field === "fadeIn" ? xs.inX : xs.outX);
     }
-    const el = e.currentTarget as HTMLElement;
     el.setPointerCapture?.(e.pointerId);
     drag = { field, clip: part.clip, row: part.row, pointer: e.pointerId, el, grab, downX: p.x, downY: p.y, from, value: from, moved: false };
   }
@@ -178,6 +216,61 @@
   onMount(() => onDragCancel(cancel));
   onDestroy(cancel);
 
+  // ---- 取っ手: クリップの面（この部品の親）に来た出来事を、先に見る ----
+
+  /** 取っ手をひっぱっている間の出来事か。 */
+  const handleDrag = (e: PointerEvent) => drag !== null && drag.field !== "gainDb" && e.pointerId === drag.pointer;
+  /** 取っ手より上にある物（テイクの切りかえの札）の上では、取っ手を押した事にしない。 */
+  const over = (e: Event) => e.target instanceof Element && e.target.closest("[data-over-clips]") !== null;
+
+  function lanesDown(e: PointerEvent): void {
+    if (e.button !== 0 || busy || drag || over(e)) return;
+    const hit = handleAt(point(e));
+    if (!hit) return;
+    hover = { clip: hit.part.clip.id, edge: hit.edge };
+    down(e, hit.part, hit.edge, e.target === grip && grip ? grip : (e.currentTarget as HTMLElement));
+  }
+  function lanesMove(e: PointerEvent): void {
+    if (handleDrag(e)) {
+      e.stopPropagation();
+      move(e);
+      return;
+    }
+    if (drag || e.buttons !== 0) return;
+    const hit = busy || over(e) ? null : handleAt(point(e));
+    if (hit?.part.clip.id !== hover?.clip || hit?.edge !== hover?.edge) hover = hit ? { clip: hit.part.clip.id, edge: hit.edge } : null;
+  }
+  function lanesUp(e: PointerEvent): void {
+    if (!handleDrag(e)) return;
+    e.stopPropagation();
+    up(e);
+  }
+  function lanesCancel(e: PointerEvent): void {
+    if (!handleDrag(e)) return;
+    e.stopPropagation();
+    cancel();
+  }
+  function lanesDouble(e: MouseEvent): void {
+    if (!over(e) && handleAt(point(e))) e.stopPropagation();
+  }
+  onMount(() => {
+    const lanes = root!.parentElement!;
+    const leave = () => {
+      if (!drag) hover = null;
+    };
+    const on = <K extends keyof HTMLElementEventMap>(type: K, f: (e: HTMLElementEventMap[K]) => void) => {
+      lanes.addEventListener(type, f, { capture: true });
+      return () => lanes.removeEventListener(type, f, { capture: true });
+    };
+    const off = [on("pointerdown", lanesDown), on("pointermove", lanesMove), on("pointerup", lanesUp), on("pointercancel", lanesCancel), on("dblclick", lanesDouble)];
+    // クリップの面から出たときだけ（中の部品から出たときの知らせは見ない）。
+    lanes.addEventListener("pointerleave", leave);
+    return () => {
+      off.forEach((f) => f());
+      lanes.removeEventListener("pointerleave", leave);
+    };
+  });
+
   /** 2 回押すと 0.0 dB（仕様書 3 章「クリップの音量」）。 */
   function double(e: MouseEvent, part: Part): void {
     e.stopPropagation();
@@ -205,7 +298,7 @@
       style:height="{origin.box.y1 - origin.box.y0}px"
     ></div>
   {/if}
-  {#each parts as part (part.clip.id)}
+  {#each lines as part (part.clip.id)}
     {#if part.line}
       {@const line = part.line}
       <div
@@ -221,7 +314,7 @@
         style:width="{Math.max(0, line.x1 - line.x0)}px"
         style:top="{line.y - handle / 2}px"
         style:height="{handle}px"
-        onpointerdown={(e) => down(e, part, "gainDb")}
+        onpointerdown={(e) => down(e, part, "gainDb", e.currentTarget)}
         onpointermove={move}
         onpointerup={up}
         onpointercancel={cancel}
@@ -230,23 +323,18 @@
         <div class="gain-line" style:top="{handle / 2}px"></div>
       </div>
     {/if}
-    {#each part.handles as h (h.edge)}
-      <div
-        class="handle"
-        role="presentation"
-        data-test="clip-fade-{h.edge}"
-        style:left="{h.box.x0}px"
-        style:top="{h.box.y0}px"
-        style:width="{h.box.x1 - h.box.x0}px"
-        style:height="{h.box.y1 - h.box.y0}px"
-        onpointerdown={(e) => down(e, part, h.edge)}
-        onpointermove={move}
-        onpointerup={up}
-        onpointercancel={cancel}
-        ondblclick={(e) => e.stopPropagation()}
-      ></div>
-    {/each}
   {/each}
+  {#if gripBox}
+    <div
+      class="grip"
+      data-test="clip-fade-grip"
+      bind:this={grip}
+      style:left="{gripBox.x0}px"
+      style:top="{gripBox.y0}px"
+      style:width="{gripBox.x1 - gripBox.x0}px"
+      style:height="{gripBox.y1 - gripBox.y0}px"
+    ></div>
+  {/if}
   {#if reading}
     <div
       class="m-num reading"
@@ -268,17 +356,16 @@
     z-index: 4;
     pointer-events: none;
   }
-  .handle,
+  .grip,
   .gain-hit {
     position: absolute;
     pointer-events: auto;
   }
-  .host.busy .handle,
+  .host.busy .grip,
   .host.busy .gain-hit {
     pointer-events: none;
   }
-  .handle {
-    background: var(--color-gray-10);
+  .grip {
     cursor: ew-resize;
   }
   .gain-hit {

@@ -461,6 +461,10 @@ describe("Arrange の歌のクリップ", () => {
     expect(rects[left.after - 1]!.color).toBe("color.gray.4");
     expect(left.after).toBeLessThan(right.after);
     expect(right.after).toBeLessThanOrEqual(rects.length);
+    // フェードの取っ手（クリップ 1 つに 2 つ）は、どのクリップと波形よりも上: 絵の最後の四角。
+    const handles = rects.slice(-4);
+    expect(handles.map((r) => [r.w, r.h, r.color])).toEqual(Array(4).fill([6, 6, "color.gray.10"]));
+    expect(rects.length - 4).toBeGreaterThanOrEqual(right.after);
   });
 
   it("audioTall: 160 の行のトラックは、まん中に gray.5 の線", async () => {

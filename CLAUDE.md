@@ -126,6 +126,10 @@ python3 -I tools/measure/remote.py ...                      # 本物のアプリ
 tools/measure/plugin-stop.sh / open-play-save.sh            # プラグインを止める試験、保存してひらく試験
 python3 -I tools/measure/window-rounds.py ...               # プラグインの窓を何十回、15-C を何百回
 python3 -I tools/measure/make_song.py ... [--tracks N] [--instruments plugin,sf2,builtin --plugin 名前 --sf2 ファイル --effect-plugin 名前]  # 試験用の曲
+python3 -I tools/measure/audio_app.py play|load|same|record-save|position|arrange ...  # 歌のクリップ（16 本鳴らす、入れる速さ、保存して同じ音か、録った位置、アレンジのコマ）
+python3 -I tools/measure/stretch_app.py position|prepare|load|kept|splice ...          # のび縮み（位置、作る間の負荷、作りなおさないか、入れかえ）
+python3 -I tools/measure/export_app.py same|speed|flow ...                              # 書き出し（出口の音と同じか、速さ、たしかめの流れ）
+python3 -I tools/measure/arrange_parts.py ...                                           # アレンジのコマを部品ごとに（--how task で毎コマ描く）
 python3 -I tools/sounds/build.py --out target/sounds/dev    # 音の素材の包みを作る（素材は ~/.cache/meloet/sounds-src、出どころは sources.json）
 ln -sfn ../sounds/dev target/debug/sounds                   # 開発のビルドが包みを見つける（release も同じ）
 ```

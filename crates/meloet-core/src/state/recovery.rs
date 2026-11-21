@@ -51,6 +51,8 @@ pub(super) struct Recovery {
     kept: Option<PathBuf>,
     /// The PC is ending: write once the song is free (a recording stopped and in the song).
     ending: bool,
+    /// `Play::busy` as last seen.
+    was_busy: bool,
 }
 
 impl Model {
@@ -104,12 +106,16 @@ impl Model {
                 self.replace_song(Song { doc: base, session }, false, effects);
                 self.play.recovered(doc, effects);
                 self.notice = Some(StatusMessage::Recovered);
-                // The file holds this song already; with vocals kept, it is written anew.
+                // The file holds this song already. With vocals kept it does not: it is
+                // written at once, since only the note of the recording knows where the
+                // clips belong until it is (the note goes when the file is written).
                 self.recovery.seen = self.play.changes();
                 self.recovery.written = Some((self.recovery.seen, cause));
                 if vocals.is_some() {
                     self.recovery.written = None;
-                    self.recovery.changed_at_us = Some(self.now_us);
+                    if !self.write_recovery(RecoveryCause::Sudden, effects) {
+                        self.recovery.changed_at_us = Some(self.now_us);
+                    }
                 }
             }
             RecoveryStart::Unreadable { kept, saved } => {
@@ -199,7 +205,15 @@ impl Model {
             self.recovery.seen = changes;
             self.recovery.changed_at_us = Some(self.now_us);
         }
-        if self.play.busy() {
+        let busy = self.play.busy();
+        let started = busy && !std::mem::replace(&mut self.recovery.was_busy, busy);
+        if busy {
+            // A recording starts over a change that still waits: the song is written now.
+            // The voice recorded from here on is placed on this song, and a start after
+            // meloet ended in the middle must find it, not the song before the change.
+            if started && self.recovery.changed_at_us.take().is_some() && !self.files.exiting() {
+                self.write_recovery(RecoveryCause::Sudden, effects);
+            }
             return;
         }
         if self.recovery.ending {

@@ -17,6 +17,7 @@ pub mod pcm;
 pub mod peaks;
 pub mod play;
 pub mod plugins;
+pub mod readahead;
 pub mod recovery;
 #[cfg(test)]
 mod seen;

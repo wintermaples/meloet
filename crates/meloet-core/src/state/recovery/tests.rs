@@ -138,7 +138,10 @@ fn nothing_is_written_while_recording_and_the_take_is_written_after() {
         Input::Command(Command::SetTempo { bpm: 100.0 }),
     );
     cmd(m, Command::SetCountIn { bars: 0 });
-    at(m, 1_500_000, Input::Command(Command::Record));
+    // The change still waits when the recording starts: it is written at once, so that a
+    // start after meloet ended in the middle finds the song the voice was recorded over.
+    let record = at(m, 1_500_000, Input::Command(Command::Record));
+    assert_eq!(writes(&record), [(100.0, RecoveryCause::Sudden, false)]);
     started(m);
     event(m, on(60), 10, 100.0, 0);
     assert!(m.play.busy());
@@ -620,5 +623,129 @@ fn the_recovery_hint_waits_behind_the_output_chooser() {
     )));
     assert!(m.view().workspace.chooser.is_some());
     assert_eq!(m.view().workspace.recovery, None);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_recording_over_a_song_that_is_written_already_writes_nothing_more() {
+    let m = &mut ready();
+    cmd(m, Command::SetCountIn { bars: 0 });
+    // Nothing changed: nothing to write.
+    let record = at(m, 1_000_000, Input::Command(Command::Record));
+    assert!(writes(&record).is_empty());
+    started(m);
+    m.set_now(1_100_000, None);
+    cmd(m, Command::Record);
+    report(
+        m,
+        RecordReport::Stopped {
+            t_us: 1_100_000,
+            tick: 400.0,
+            lap: 0,
+        },
+    );
+    // A change that was written when the hands rested.
+    at(
+        m,
+        2_000_000,
+        Input::Command(Command::SetTempo { bpm: 100.0 }),
+    );
+    assert_eq!(writes(&tick(m, 2_000_000 + QUIET_US)).len(), 1);
+    let record = at(m, 9_000_000, Input::Command(Command::Record));
+    assert!(writes(&record).is_empty(), "the file holds the song");
+}
+
+/// A recording that was going on when meloet ended: its note and its file in `dir`.
+fn left_recording(dir: &Path, frames: usize) {
+    use crate::vocalrec::{Marks, NoteFile, RecNote, WavFile, work_audio_dir, write_note};
+    use meloet_protocol::RecordFormat;
+    let audio = work_audio_dir(dir);
+    fs::create_dir_all(&audio).unwrap();
+    let mut wav =
+        WavFile::create(&audio.join("歌 9.wav"), 48_000, 1, RecordFormat::Bits24).unwrap();
+    wav.write(&vec![0.25; frames]).unwrap();
+    wav.sync().unwrap();
+    // No `finish`: the lengths in the head are the ones of a file still being written.
+    drop(wav);
+    let note = RecNote::new(
+        None,
+        48_000,
+        RecordFormat::Bits24,
+        vec![NoteFile {
+            file: "歌 9.wav".into(),
+            track: 77,
+            track_name: "歌".into(),
+            channels: 1,
+        }],
+        Marks {
+            from: 0,
+            loop_range: None,
+            roll: Some((0.0, 0.0)),
+            laps: Vec::new(),
+        },
+    );
+    write_note(dir, &note).unwrap();
+}
+
+#[test]
+fn a_kept_recording_is_written_at_once_and_its_note_stays_until_then() {
+    let dir = temp_dir("recovery-kept-voice");
+    left_recording(&dir, 48_000);
+    let note = dir.join(crate::vocalrec::REC_NOTE);
+    let (m, effects) = start_from(&dir);
+    assert!(matches!(
+        recovery_view(&m),
+        Some(RecoveryView::Recovered {
+            vocals: Some(meloet_protocol::KeptVocals { count: 1, .. }),
+            ..
+        })
+    ));
+    // Not two seconds later: until the file holds the clip, only the note knows where it
+    // belongs.
+    let Some(Effect::WriteRecovery { song, path, .. }) = effects
+        .iter()
+        .find(|e| matches!(e, Effect::WriteRecovery { .. }))
+    else {
+        panic!("written at the start: {effects:?}");
+    };
+    assert_eq!(song.doc.audio.len(), 1);
+    assert_eq!(song.doc.audio[0].file, "歌 9.wav");
+    assert!(note.exists(), "the note waits for the recovery file");
+
+    // meloet ends again before the note is gone, the recovery file written or not: the
+    // voice comes back once, not twice.
+    let (again, _) = start_from(&dir);
+    assert_eq!(again.play.song().doc.audio.len(), 1);
+    recovery::write(
+        &dir,
+        &recovery::encode(song, path.as_deref(), RecoveryCause::Sudden, 1),
+    )
+    .unwrap();
+    assert!(note.exists());
+    let (again, effects) = start_from(&dir);
+    assert_eq!(again.play.song().doc.audio.len(), 1);
+    assert_eq!(again.play.song().doc.tracks.len(), song.doc.tracks.len());
+    assert!(matches!(
+        recovery_view(&again),
+        Some(RecoveryView::Recovered { vocals: None, .. })
+    ));
+    assert!(writes(&effects).is_empty());
+    assert!(!note.exists(), "nothing of it was left to keep");
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_file_with_only_its_head_is_not_left_behind() {
+    // meloet ended while counting in: the file was made, and nothing was written into it.
+    let dir = temp_dir("recovery-head-only");
+    left_recording(&dir, 0);
+    let file = crate::vocalrec::work_audio_dir(&dir).join("歌 9.wav");
+    assert_eq!(fs::metadata(&file).unwrap().len(), 44);
+    assert!(recovery_start(&dir).is_some_and(|start| matches!(
+        start,
+        crate::state::RecoveryStart::Read { vocals: None, .. }
+    )));
+    assert!(!file.exists());
+    assert!(!dir.join(crate::vocalrec::REC_NOTE).exists());
     let _ = fs::remove_dir_all(dir);
 }

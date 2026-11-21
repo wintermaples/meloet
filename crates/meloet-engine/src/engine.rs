@@ -10,6 +10,8 @@ use std::time::Instant;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::automation::{AutoClock, AutoSet, HOLDS, MIX_STEP};
+use crate::clipplay::{ClipPlayer, StreamCtx, StreamNow, StreamPlace};
+use crate::clips::ClipTable;
 use crate::clock::{HeardPosition, Segment, TransportClock, TransportState, heard};
 use crate::effect::{Effect, EffectContext};
 use crate::input::{InputFeed, MAX_INPUT_CHANNELS};
@@ -18,6 +20,7 @@ use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, SlotAuto, Strip};
 use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::probe::probe_wave;
 use crate::rt;
+use crate::stream::{STREAM_CHANNELS, StreamReader, StreamWant, want_ring};
 use crate::transport::{Click, Lane, Sequence, TrackSet};
 use meloet_model::{AutoTarget, Beat, Meter, TICKS_PER_QUARTER, Tempo, TempoMap, Timeline};
 use meloet_plugin::ipc::Transport as PluginTransport;
@@ -29,6 +32,8 @@ const RECORDED_RING: usize = 4096;
 const MAP_RING: usize = 16;
 const INPUT_RING: usize = 4;
 const PROBE_RING: usize = 16;
+/// Wants of every track at once, a few times over.
+const WANTS_PER_TRACK: usize = 4;
 /// Ticks per second for one quarter note per minute.
 const TICKS_PER_S_PER_BPM: f64 = TICKS_PER_QUARTER as f64 / 60.0;
 
@@ -201,6 +206,25 @@ pub enum EngineCommand {
     SetVoice {
         track: usize,
         voice: Option<Voice>,
+    },
+    /// Use [`EngineHandle::set_stream`]. The ring the read-ahead thread fills with the
+    /// audio of the track's vocal clips, in place of the one before (`None`: the track has
+    /// none); the old reader comes back on a retired ring. The thread is told where to read
+    /// from with a [`StreamWant`] of a new generation.
+    SetStream {
+        track: usize,
+        reader: Option<Box<StreamReader>>,
+    },
+    /// Use [`EngineHandle::set_clips`]. Where the track's vocal clips are, their fades and
+    /// their volumes, in place of the table before, which comes back on a retired ring.
+    /// `refeed`: the clips are other audio or at other places now, so the thread starts
+    /// again (a new generation; the track fades out over [`FADE_S`] and comes back when the
+    /// audio does). Without it only volumes and fades changed: what the old table said goes
+    /// over to what the new one says in [`RAMP_S`], and the ring stays as it is.
+    SetClips {
+        track: usize,
+        table: Option<Box<ClipTable>>,
+        refeed: bool,
     },
     /// One click of the latency measurement, from the first frame of the next block, after
     /// the master. Which frame that was comes back as a [`ProbeSent`].
@@ -391,6 +415,7 @@ pub struct EngineMeters {
     streams_lost: AtomicU64,
     other_errors: AtomicU64,
     record_overflows: AtomicU64,
+    stream_missing: AtomicU64,
     sample_rate: AtomicU32,
     out_delay_us: AtomicU32,
 }
@@ -424,6 +449,7 @@ impl EngineMeters {
             streams_lost: AtomicU64::new(0),
             other_errors: AtomicU64::new(0),
             record_overflows: AtomicU64::new(0),
+            stream_missing: AtomicU64::new(0),
             sample_rate: AtomicU32::new(config.sample_rate),
             out_delay_us: AtomicU32::new(0),
         }
@@ -509,6 +535,13 @@ impl EngineMeters {
         self.record_overflows.load(Relaxed)
     }
 
+    /// Frames of vocal clips that were not in their ring when the song came to them (the
+    /// read-ahead thread was late), over every track. They were silence. The silence a
+    /// track starts with after a jump while the song plays is not counted.
+    pub fn stream_missing(&self) -> u64 {
+        self.stream_missing.load(Relaxed)
+    }
+
     pub(crate) fn count_xrun(&self) {
         self.xruns.fetch_add(1, Relaxed);
     }
@@ -557,6 +590,8 @@ struct Track {
     mute_due: u64,
     /// A vocal track: the input is heard here, and the instrument is not.
     voice: Option<VoiceState>,
+    /// The vocal clips of the track.
+    clips: ClipPlayer,
 }
 
 struct VoiceState {
@@ -703,6 +738,7 @@ impl Track {
             sends_steered: [false; 2],
             mute_due: u64::MAX,
             voice: None,
+            clips: ClipPlayer::new(),
         }
     }
 
@@ -766,6 +802,7 @@ impl Track {
             && self.fading.is_none()
             && self.aside.is_none()
             && self.voice.is_none()
+            && !self.clips.is_active()
     }
 
     /// Ends the fades without rendering them. Not on the audio thread while a stream runs.
@@ -1034,6 +1071,47 @@ impl Transport {
         }
     }
 
+    /// The loop as the read-ahead thread is to lay it out for a play from the place of
+    /// [`Transport::stream_place`].
+    fn stream_loop(&self) -> Option<(u64, u64)> {
+        let before_end = match self.state {
+            TransportState::CountIn => self.record_from < self.loop_end,
+            _ => self.before_loop_end,
+        };
+        (self.looping && self.loop_end > self.loop_start && before_end)
+            .then_some((self.loop_start, self.loop_end))
+    }
+
+    /// Where the vocal clips are read from next. While counting in, that is where the
+    /// recording will start: the rings are full when the count-in ends.
+    fn stream_place(&self) -> StreamPlace {
+        let (anchor_sec, frame) = match self.state {
+            TransportState::CountIn => (self.map.seconds_at(self.record_from as f64), 0),
+            _ => (self.anchor_sec, self.frames),
+        };
+        StreamPlace {
+            map_gen: self.map_gen,
+            anchor_sec,
+            frame,
+            loop_ticks: self.stream_loop(),
+        }
+    }
+
+    /// The song's place for a track that reads `lookahead` frames ahead; `None` while the
+    /// song does not move.
+    fn stream_now(&self, lookahead: u32) -> Option<StreamNow> {
+        matches!(
+            self.state,
+            TransportState::Playing | TransportState::Recording
+        )
+        .then(|| StreamNow {
+            at: self.frames + u64::from(lookahead),
+            anchor_sec: self.anchor_sec,
+            sample_rate: self.sample_rate,
+            wrap: (self.loop_active()).then_some((self.loop_end_frame, self.loop_start_sec)),
+        })
+    }
+
     fn click_audible(&self) -> bool {
         match self.state {
             TransportState::CountIn => true,
@@ -1182,6 +1260,12 @@ pub struct Engine {
     retired_maps: Producer<Arc<TempoMap>>,
     retired_autos: Producer<Box<AutoSet>>,
     retired_inputs: Producer<Box<InputFeed>>,
+    retired_clips: Producer<Box<ClipTable>>,
+    retired_streams: Producer<Box<StreamReader>>,
+    /// What the read-ahead thread is told.
+    wants: Producer<StreamWant>,
+    /// The frames of a track's ring over the stretch being rendered, interleaved.
+    stream_buf: Box<[f32]>,
     /// The PC's input, while one is open.
     input: Option<Box<InputFeed>>,
     /// The input's channels over the piece being rendered.
@@ -1253,6 +1337,10 @@ impl Engine {
         let (maps_tx, maps_rx) = RingBuffer::new(MAP_RING);
         let (autos_tx, autos_rx) = RingBuffer::new(config.max_tracks.max(16));
         let (inputs_tx, inputs_rx) = RingBuffer::new(INPUT_RING);
+        // Every command retires at most two tables, and commands wait while fewer fit.
+        let (clips_tx, clips_rx) = RingBuffer::new(config.max_tracks.max(16) * 2);
+        let (streams_tx, streams_rx) = RingBuffer::new(config.max_tracks.max(16));
+        let (wants_tx, wants_rx) = want_ring((config.max_tracks + 1) * WANTS_PER_TRACK);
         let (probes_tx, probes_rx) = RingBuffer::new(PROBE_RING);
         let (recorded_tx, recorded_rx) = RingBuffer::new(RECORDED_RING);
         let clock = Arc::new(TransportClock::default());
@@ -1272,6 +1360,10 @@ impl Engine {
             retired_maps: maps_tx,
             retired_autos: autos_tx,
             retired_inputs: inputs_tx,
+            retired_clips: clips_tx,
+            retired_streams: streams_tx,
+            wants: wants_tx,
+            stream_buf: vec![0.0f32; config.max_frames * STREAM_CHANNELS].into_boxed_slice(),
             input: None,
             input_bus: std::array::from_fn(|_| buffer()),
             input_live: false,
@@ -1309,6 +1401,9 @@ impl Engine {
             retired_maps: maps_rx,
             retired_autos: autos_rx,
             retired_inputs: inputs_rx,
+            retired_clips: clips_rx,
+            retired_streams: streams_rx,
+            wants: Some(wants_rx),
             probes: probes_rx,
             map,
             map_gen: 0,
@@ -1355,6 +1450,7 @@ impl Engine {
             if let Some(set) = track.auto.as_deref_mut() {
                 set.forget();
             }
+            track.clips.rest();
         }
         self.sample.fade_left = 0;
         // What is still here when the ring is full is dropped, which is allowed on this thread.
@@ -1401,6 +1497,22 @@ impl Engine {
             .chain([&mut self.master_strip])
         {
             strip.end_fades(&mut self.retired_effects);
+        }
+        self.aim_streams();
+    }
+
+    /// The vocal clips of every track fade out, and the read-ahead thread starts again
+    /// from the place the song is at when the next block begins.
+    fn streams_jump(&mut self) {
+        for track in self.tracks.iter_mut() {
+            track.clips.jump(false);
+        }
+    }
+
+    fn aim_streams(&mut self) {
+        let place = self.transport.stream_place();
+        for (i, track) in self.tracks.iter_mut().enumerate() {
+            track.clips.aim(i, track.lookahead, place, &mut self.wants);
         }
     }
 
@@ -1458,6 +1570,7 @@ impl Engine {
             let instrument = track.instrument.as_ref().map_or(0, |i| i.latency());
             track.lookahead = instrument.saturating_add(track.strip.latency());
         }
+        self.aim_streams();
         self.read_midi(timing, u64::MAX);
         self.open_segment(0, timing);
         let mut offset = 0;
@@ -1487,6 +1600,8 @@ impl Engine {
             && !self.retired_maps.is_full()
             && !self.retired_autos.is_full()
             && !self.retired_inputs.is_full()
+            && self.retired_clips.slots() >= 2
+            && !self.retired_streams.is_full()
         {
             let Ok(command) = self.commands.pop() else {
                 break;
@@ -1699,6 +1814,9 @@ impl Engine {
                     slot.sends_steered = [false; 2];
                     slot.mute_due = u64::MAX;
                     slot.voice = None;
+                    if let Some(old) = slot.clips.clear(&mut self.retired_clips) {
+                        let _ = self.retired_streams.push(old);
+                    }
                     self.transport.auto_silent.remove(track);
                     if let Some(old) = slot.auto.take() {
                         let _ = self.retired_autos.push(old);
@@ -1765,6 +1883,9 @@ impl Engine {
                     let old = std::mem::replace(&mut t.map, map);
                     t.map_gen = map_gen;
                     t.set_pos(tick);
+                    for track in self.tracks.iter_mut() {
+                        track.clips.jump(false);
+                    }
                     if let Some(beat) = due
                         && t.next_click.tick != beat.tick
                         && t.click_audible()
@@ -1791,15 +1912,43 @@ impl Engine {
                         });
                     }
                 }
+                EngineCommand::SetStream { track, reader } => {
+                    let old = match self.tracks.get_mut(track) {
+                        Some(slot) => slot.clips.set_reader(reader),
+                        None => reader,
+                    };
+                    if let Some(old) = old {
+                        // Cannot fail: checked above, and this is the only producer.
+                        let _ = self.retired_streams.push(old);
+                    }
+                }
+                EngineCommand::SetClips {
+                    track,
+                    table,
+                    refeed,
+                } => match self.tracks.get_mut(track) {
+                    Some(slot) => {
+                        (slot.clips).set_table(table, refeed, ramp, &mut self.retired_clips);
+                    }
+                    None => {
+                        if let Some(table) = table {
+                            let _ = self.retired_clips.push(table);
+                        }
+                    }
+                },
                 EngineCommand::Probe => self.probe.asked = true,
                 EngineCommand::SetLoop { start, end, on } => {
                     let t = &mut self.transport;
+                    let turned = t.stream_loop();
                     t.looping = on;
                     t.loop_start = start;
                     t.loop_end = end;
                     t.aim_loop();
                     t.before_loop_end = t.loop_end_frame > t.frames
                         || (t.frames == 0 && t.anchor_tick < end as f64);
+                    if t.stream_loop() != turned {
+                        self.streams_jump();
+                    }
                     // A lane that went round the old loop ahead of the song is put back.
                     for track in 0..self.tracks.len() {
                         if self.tracks[track].ahead_wrapped {
@@ -1816,6 +1965,7 @@ impl Engine {
                     self.transport.state = TransportState::Playing;
                     self.transport.run_from = from;
                     self.transport.set_pos(from as f64);
+                    self.streams_jump();
                     self.seek_lanes();
                 }
                 EngineCommand::Record {
@@ -1850,6 +2000,7 @@ impl Engine {
                         let click = t.map.meter_at(from).meter.ticks_per_click();
                         t.set_pos(from as f64 - (u64::from(count_in_beats) * click) as f64);
                     }
+                    self.streams_jump();
                 }
                 EngineCommand::RecordHere { muted } => self.record_here(muted, timing),
                 EngineCommand::Stop { t_us } => self.stop(t_us, timing),
@@ -1858,7 +2009,9 @@ impl Engine {
                     let t = &mut self.transport;
                     t.run_from = tick;
                     t.set_pos(tick as f64);
-                    if t.state.is_moving() {
+                    let moving = t.state.is_moving();
+                    self.streams_jump();
+                    if moving {
                         self.silence_lanes();
                         self.seek_lanes();
                     }
@@ -1943,6 +2096,7 @@ impl Engine {
         self.silence_lanes();
         self.transport.state = TransportState::Stopped;
         self.transport.set_pos(to);
+        self.streams_jump();
     }
 
     fn record_here(&mut self, muted: TrackSet, timing: BlockTiming) {
@@ -2342,15 +2496,26 @@ impl Engine {
                 input: &self.input_bus,
                 input_from: from,
                 input_live: self.input_live && self.input.is_some(),
+                stream: StreamCtx {
+                    buf: &mut self.stream_buf,
+                    retired: &mut self.retired_clips,
+                    wants: &mut self.wants,
+                    now: None,
+                    fade,
+                    ramp: ramp_frames(self.sample_rate),
+                },
+                missing: &self.meters.stream_missing,
                 ctx,
                 master_l: &mut master_l[from..to],
                 master_r: &mut master_r[from..to],
                 returns: [[a_l, a_r], [b_l, b_r]],
             };
-            for (track, meter) in self.tracks.iter_mut().zip(self.meters.tracks.iter()) {
-                mix.add(track, Some(meter));
+            for (i, (track, meter)) in
+                (self.tracks.iter_mut().zip(self.meters.tracks.iter())).enumerate()
+            {
+                mix.add(track, Some(meter), i);
             }
-            mix.add(&mut self.sample, None);
+            mix.add(&mut self.sample, None, usize::MAX);
             self.click.add(&mut self.click_sum[from..to]);
             if self.transport.state.is_moving() {
                 self.transport.frames += (to - from) as u64;
@@ -2451,6 +2616,8 @@ struct Mix<'a> {
     input: &'a [Box<[f32]>; MAX_INPUT_CHANNELS],
     input_from: usize,
     input_live: bool,
+    stream: StreamCtx<'a>,
+    missing: &'a AtomicU64,
     ctx: EffectContext,
     master_l: &'a mut [f32],
     master_r: &'a mut [f32],
@@ -2461,7 +2628,8 @@ struct Mix<'a> {
 impl Mix<'_> {
     /// Renders `track` over the stretch, with what fades out on it, takes it through its
     /// strip, and adds it to the master and to the returns it sends to.
-    fn add(&mut self, track: &mut Track, meter: Option<&[AtomicU32; 2]>) {
+    /// `index`: the track's number, for what its sequence and clips may do now.
+    fn add(&mut self, track: &mut Track, meter: Option<&[AtomicU32; 2]>, index: usize) {
         let frames = self.master_l.len();
         let [left, right, old_l, old_r, dry_l, dry_r] = &mut *self.scratch;
         let (left, right) = (&mut left[..frames], &mut right[..frames]);
@@ -2477,7 +2645,7 @@ impl Mix<'_> {
                 self.ramp_frames,
             ),
             (None, Some(instrument)) => instrument.render(left, right),
-            (None, None) if fading => {
+            (None, None) if fading || track.clips.is_active() => {
                 left.fill(0.0);
                 right.fill(0.0);
             }
@@ -2511,6 +2679,14 @@ impl Mix<'_> {
             }
         }
         retire_faded(track, self.retired);
+        if track.clips.is_active() {
+            self.stream.now = self.clock.stream_now(track.lookahead);
+            let plays = self.clock.lane_plays(index);
+            let missing = track.clips.render(left, right, plays, &mut self.stream);
+            if missing > 0 {
+                self.missing.fetch_add(u64::from(missing), Relaxed);
+            }
+        }
 
         let mut io = Io {
             left,
@@ -2640,6 +2816,9 @@ pub struct EngineHandle {
     retired_maps: Consumer<Arc<TempoMap>>,
     retired_autos: Consumer<Box<AutoSet>>,
     retired_inputs: Consumer<Box<InputFeed>>,
+    retired_clips: Consumer<Box<ClipTable>>,
+    retired_streams: Consumer<Box<StreamReader>>,
+    wants: Option<Consumer<StreamWant>>,
     probes: Consumer<ProbeSent>,
     /// The map last sent to the engine, and its number.
     map: Arc<TempoMap>,
@@ -2806,7 +2985,46 @@ impl EngineHandle {
         while self.retired_inputs.pop().is_ok() {
             count += 1;
         }
+        while self.retired_clips.pop().is_ok() {
+            count += 1;
+        }
+        while self.retired_streams.pop().is_ok() {
+            count += 1;
+        }
         count
+    }
+
+    /// The ring of a vocal track that the read-ahead thread fills ([`crate::stream_ring`]),
+    /// or none ([`EngineCommand::SetStream`]).
+    pub fn set_stream(
+        &mut self,
+        track: usize,
+        reader: Option<StreamReader>,
+    ) -> Result<(), EngineCommand> {
+        self.send(EngineCommand::SetStream {
+            track,
+            reader: reader.map(Box::new),
+        })
+    }
+
+    /// The clips of a vocal track ([`EngineCommand::SetClips`]); `None`: it has none.
+    pub fn set_clips(
+        &mut self,
+        track: usize,
+        table: Option<ClipTable>,
+        refeed: bool,
+    ) -> Result<(), EngineCommand> {
+        self.send(EngineCommand::SetClips {
+            track,
+            table: table.map(Box::new),
+            refeed,
+        })
+    }
+
+    /// What the engine tells the read-ahead thread: there is one ring for the life of the
+    /// engine, so this gives it once, and once more after [`EngineHandle::rebuild`].
+    pub fn take_stream_wants(&mut self) -> Option<Consumer<StreamWant>> {
+        self.wants.take()
     }
 
     /// The PC's input for the voices of the vocal tracks, or none. The feed before comes

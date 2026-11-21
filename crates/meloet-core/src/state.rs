@@ -245,6 +245,12 @@ pub enum Input {
     VocalsNotStarted,
     /// The answer to [`Effect::StopVocalRecording`]: what the disk writer wrote.
     VocalsWritten(Box<Written>),
+    /// While vocals are recorded: how many times the input skipped, and how many blocks
+    /// the ring to the disk had no room for, so far.
+    VocalFaults {
+        gaps: u32,
+        dropped: u32,
+    },
     /// The files reached the size a wav file can have, or the disk refused: the recording
     /// is to stop.
     VocalsCannotGoOn,
@@ -1073,7 +1079,13 @@ impl Model {
                     .vocals_started(names, path.as_deref(), &mut effects);
             }
             Input::VocalsNotStarted => self.play.vocals_not_started(),
-            Input::VocalsWritten(written) => self.play.vocals_written(*written, &mut effects),
+            Input::VocalsWritten(written) => {
+                // A recording the stream went away under says so now that its take is in.
+                if let Some((cut, take)) = self.play.vocals_written(*written, &mut effects) {
+                    self.notice = Some(self.cut_notice(cut, take));
+                }
+            }
+            Input::VocalFaults { gaps, dropped } => self.play.vocal_faults(gaps, dropped),
             Input::VocalsCannotGoOn => {
                 if self.play.recording_vocals() {
                     self.play.stop_recording(&mut effects);
@@ -1102,14 +1114,10 @@ impl Model {
             self.play.stop_sample(&mut effects);
             let was_recording = self.play.is_recording();
             let take = self.play.stream_gone(&mut effects);
-            if let (true, Some(take)) = (was_recording, take) {
-                self.notice = Some(match cut {
-                    Cut::AudioSystem => StatusMessage::RecordingStoppedAudioSystem { take },
-                    Cut::Output => StatusMessage::RecordingStoppedOutputMissing {
-                        output: self.output_name(),
-                        take,
-                    },
-                });
+            match take {
+                Some(take) if was_recording => self.notice = Some(self.cut_notice(cut, take)),
+                // Vocals wait for the disk writer: said when their take is in the song.
+                _ => self.play.vocals_cut(cut),
             }
         }
         self.watch_buffer();

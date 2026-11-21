@@ -309,7 +309,18 @@ fn the_voice_lies_where_it_was_heard_and_survives_the_end_of_meloet() {
     assert_eq!((clip.start, clip.end), (0, kept.until));
     // Two seconds were recorded when the copy was taken: about four beats.
     assert!((3 * Q..=5 * Q).contains(&kept.until), "{}", kept.until);
-    assert!(!state.join("work/rec.json").exists());
+    // The note goes once the recovery file holds the clip, which is written at once.
+    let until = Instant::now() + Duration::from_secs(5);
+    while state.join("work/rec.json").exists() {
+        assert!(Instant::now() < until, "the note is still there");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let kept_file = std::fs::read(state.join("recovery.json")).unwrap();
+    let kept_file: serde_json::Value = serde_json::from_slice(&kept_file).unwrap();
+    assert_eq!(
+        kept_file["song"]["audioTakes"].as_array().map(Vec::len),
+        Some(1)
+    );
     let mended = std::fs::read(&wav).unwrap();
     assert_eq!(
         mended[40..44],

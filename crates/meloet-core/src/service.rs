@@ -16,7 +16,7 @@ use meloet_devices::{DeviceWatcher, DevicesError, DevicesEvent};
 use meloet_engine::{
     AudioOutput, Chord, Engine, EngineCommand, EngineConfig, EngineHandle, EngineMeters,
     Instrument, InstrumentEvent, LatencyRecord, MidiFeed, MidiIn, OutputTarget, Recorded,
-    RunningOutput, Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us,
+    RunningOutput, Sequence, SequenceEvent, TrackSet, TransportClock, monotonic_us, stream_ring,
 };
 use meloet_midi::{MidiEvent, MidiInput, MidiMessage, MidiOptions, MidiSink};
 use meloet_model::TempoMap;
@@ -36,13 +36,16 @@ use meloet_protocol::{
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
+use crate::audiofiles::AudioStore;
 use crate::audiofiles::keeper::AudioNews;
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::measure::{self, KeyToSound, PluginLog};
 use crate::mixbook::{self, MixBook};
+use crate::pcm::{FeedClip, PcmStore};
 use crate::play::{
     AUDITION_SEAT, EngineOp, Heard, MAX_TRACKS, PlugState, RecordReport, Spot, VoiceSpec,
+    clip_tables,
 };
 use crate::plugins::hosts::{
     DEFAULT_GEOMETRY, EditorKind, HostError, HostNews, HostOptions, Hosts, LoadSpec, Loaded,
@@ -51,6 +54,7 @@ use crate::plugins::hosts::{
 use crate::plugins::housed::{HousedEffect, HousedInstrument, Which};
 use crate::plugins::scanner::Scanner;
 use crate::plugins::{PluginOptions, ScanJob, ScanNews};
+use crate::readahead::ReadAhead;
 use crate::recovery;
 use crate::settings::{self, Settings};
 use crate::sf2store::{self, Sf2Done, Sf2Store};
@@ -202,6 +206,7 @@ enum Msg {
     TakeNotes(u32, Sender<Option<Vec<u8>>>),
     Lane(u32, Sender<Option<Vec<u8>>>),
     PeaksPlace(u32, Sender<Option<crate::peaks::PeaksPlace>>),
+    PcmStore(Arc<dyn PcmStore>),
     HistoryRows(u32, u32, Sender<Vec<HistoryRow>>),
     PluginParams(u32, Sender<Option<ParamTable>>),
     /// Told once the recovery file holds the song, or there was nothing to write.
@@ -477,9 +482,14 @@ impl Core {
                     sf2,
                     model.engine_seats(),
                     wishes,
-                ),
+                )
+                .with_store(audio_store.clone()),
                 model,
-                input: input::InputSide::new(options.state_dir.clone()),
+                input: {
+                    let mut input = input::InputSide::new(options.state_dir.clone());
+                    input.measure_dir = options.measure_dir.clone();
+                    input
+                },
                 audio_store,
                 keeper,
                 song_told: None,
@@ -670,6 +680,12 @@ impl Core {
         let (reply, answer) = mpsc::channel();
         self.tx.send(Msg::PeaksPlace(audio, reply)).ok()?;
         answer.recv().ok()??.reply(audio, level, first, count)
+    }
+
+    /// For a test that brings its own audio files: the read-ahead thread opens the vocal
+    /// clips through `store` from now on, not through the song's own places.
+    pub fn set_pcm_store(&self, store: Arc<dyn PcmStore>) {
+        let _ = self.tx.send(Msg::PcmStore(store));
     }
 
     /// The points of a lane (`meloet_protocol::LanePoints`) of the song as it is now; `None`
@@ -957,6 +973,26 @@ struct Audio {
     wish_rate: u32,
     /// The seats that sound the input, for the same as `seats`.
     voices: Vec<(usize, VoiceSpec)>,
+    /// The vocal clips of the seats, for every stream that opens and every map that comes.
+    clips: Vec<SeatClips>,
+    /// The song's audio table as last told.
+    sources: Arc<Vec<Arc<meloet_model::AudioSource>>>,
+    store: Arc<AudioStore>,
+    readahead: ReadAhead,
+    /// `EngineMeters::stream_missing` as last written to the log.
+    missing_logged: u64,
+    /// `AudioStore::generation` as last looked at.
+    store_seen: u64,
+}
+
+/// The vocal clips of a seat.
+struct SeatClips {
+    seat: usize,
+    clips: Vec<Arc<meloet_model::song::Clip>>,
+    /// What the read-ahead thread has of them, while `live`.
+    feeds: Vec<FeedClip>,
+    /// The engine of the stream that runs has a ring for the seat.
+    live: bool,
 }
 
 /// What the engine was given: the instrument of each of its tracks (the audition track is the
@@ -1053,6 +1089,8 @@ impl Audio {
         seats: Vec<EngineOp>,
         (wish_frames, wish_rate): (u32, u32),
     ) -> Audio {
+        // Until `with_store` gives the core's own: a store that has no file.
+        let store = Arc::new(AudioStore::new(None));
         let mut audio = Audio {
             handle,
             engine: Some(engine),
@@ -1066,11 +1104,153 @@ impl Audio {
             wish_frames,
             wish_rate,
             voices: Vec::new(),
+            clips: Vec::new(),
+            sources: Arc::default(),
+            readahead: ReadAhead::spawn(store.clone()),
+            store,
+            missing_logged: 0,
+            store_seen: 0,
         };
+        if let Some(wants) = audio.handle.take_stream_wants() {
+            audio.readahead.set_wants(wants);
+        }
         for op in seats {
             audio.op(op);
         }
         audio
+    }
+
+    /// The place the audio files are opened from, shared with the rest of the core.
+    fn with_store(mut self, store: Arc<AudioStore>) -> Audio {
+        store.set_sources(source_names(&self.sources));
+        self.readahead.set_store(store.clone());
+        self.store = store;
+        self
+    }
+
+    /// The vocal clips of a seat as the song has them now.
+    fn clips_op(&mut self, seat: usize, clips: Vec<Arc<meloet_model::song::Clip>>) {
+        match self.clips.iter_mut().find(|c| c.seat == seat) {
+            Some(entry) => entry.clips = clips,
+            None => self.clips.push(SeatClips {
+                seat,
+                clips,
+                feeds: Vec::new(),
+                live: false,
+            }),
+        }
+        self.send_clips(seat, false);
+    }
+
+    /// Makes the engine's table and the read-ahead thread's clips of a seat for the stream
+    /// that runs, and sends both: the thread first, so that it has the clips when the
+    /// engine asks for them. `anew`: the thread starts again whatever the clips are (another
+    /// map, files that can be opened now).
+    fn send_clips(&mut self, seat: usize, anew: bool) {
+        let Some(rate) = self.stream.as_ref().map(|s| s.sample_rate()) else {
+            return;
+        };
+        let Some(at) = self.clips.iter().position(|c| c.seat == seat) else {
+            return;
+        };
+        let map = self.handle.tempo_map().0.clone();
+        let entry = &mut self.clips[at];
+        let (table, feeds) = clip_tables(&map, rate, &entry.clips);
+        if feeds.is_empty() {
+            let was_live = std::mem::take(&mut entry.live);
+            entry.feeds.clear();
+            if entry.clips.is_empty() {
+                self.clips.remove(at);
+            }
+            if was_live {
+                self.readahead.set_track(seat, None, Vec::new());
+                self.push(EngineCommand::SetClips {
+                    track: seat,
+                    table: None,
+                    refeed: true,
+                });
+                self.push(EngineCommand::SetStream {
+                    track: seat,
+                    reader: None,
+                });
+            }
+            return;
+        }
+        let refeed = anew || !entry.live || feeds != entry.feeds;
+        let mut reader = None;
+        if !entry.live {
+            let (writer, engine_end) = stream_ring(rate);
+            self.readahead
+                .set_track(seat, Some((writer, rate)), feeds.clone());
+            reader = Some(Box::new(engine_end));
+            entry.live = true;
+        } else if refeed {
+            self.readahead.set_clips(seat, feeds.clone());
+        }
+        entry.feeds = feeds;
+        if reader.is_some() {
+            self.push(EngineCommand::SetStream {
+                track: seat,
+                reader,
+            });
+        }
+        self.push(EngineCommand::SetClips {
+            track: seat,
+            table: Some(Box::new(table)),
+            refeed,
+        });
+    }
+
+    /// Every seat's clips again, from their start: after another map, and when files may
+    /// be opened that could not be before.
+    fn resend_clips(&mut self) {
+        let seats: Vec<usize> = self.clips.iter().map(|c| c.seat).collect();
+        for seat in seats {
+            self.send_clips(seat, true);
+        }
+    }
+
+    /// The seat was emptied, its ring with it.
+    fn clips_gone(&mut self, seat: usize) {
+        if let Some(at) = self.clips.iter().position(|c| c.seat == seat)
+            && self.clips.remove(at).live
+        {
+            self.readahead.set_track(seat, None, Vec::new());
+        }
+    }
+
+    /// The store may have files now that it did not have (one was decoded or found, the
+    /// song's folder is another one): the seats that were fed silence for a file that was
+    /// not there are read again from where the song is. The others go on as they are.
+    fn follow_store(&mut self) {
+        let now = self.store.generation();
+        if now == self.store_seen {
+            return;
+        }
+        self.store_seen = now;
+        let unopened = self
+            .readahead
+            .stats()
+            .unopened
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if unopened == 0 {
+            return;
+        }
+        self.readahead.store_changed();
+        for seat in (0..64).filter(|seat| unopened & (1u64 << seat) != 0) {
+            self.send_clips(seat, true);
+        }
+    }
+
+    /// Writes down the frames of vocal clips that were not read in time, when there are
+    /// more than at the last look.
+    fn log_missing(&mut self) {
+        let missing = self.handle.meters().stream_missing();
+        if missing > self.missing_logged {
+            let more = missing - self.missing_logged;
+            eprintln!("meloet: {more} frames of vocal clips were not read in time ({missing})");
+            self.missing_logged = missing;
+        }
     }
 
     /// While the engine is here: lets it take in the commands that wait, so that the
@@ -1091,6 +1271,9 @@ impl Audio {
     fn seat_op(&mut self, op: EngineOp) {
         self.seats.note(&op);
         self.mix.note(&op);
+        if let EngineOp::ClearSeat { seat } = &op {
+            self.clips_gone(*seat);
+        }
         if self.stream.is_none() && self.engine.is_none() {
             // The engine is lost; the one made in its place gets what the book says.
             return;
@@ -1216,6 +1399,9 @@ impl Audio {
             let (engine, feed) = self.handle.rebuild();
             self.rebuilt = Some(feed);
             self.engine = Some(engine);
+            if let Some(wants) = self.handle.take_stream_wants() {
+                self.readahead.set_wants(wants);
+            }
             for op in self.mix.ops().into_iter().chain(self.seats.ops()) {
                 self.send_seat_op(op);
                 self.settle();
@@ -1239,6 +1425,12 @@ impl Audio {
                 facts.epoch.fetch_add(1, Relaxed);
                 facts.open.store(true, Relaxed);
                 self.stream = Some(stream);
+                // The rings of the stream before are for its sample rate. The new ones are
+                // made with the tempo map that the rules send next.
+                self.readahead.clear();
+                for entry in self.clips.iter_mut() {
+                    entry.live = false;
+                }
                 Some(sample_rate)
             }
             Err(e) => {
@@ -1300,8 +1492,15 @@ impl Audio {
             EngineOp::Timeline { timeline } => {
                 // Made here, off the audio thread; the engine only swaps it in.
                 let map = Arc::new(TempoMap::new(&timeline));
-                if self.stream.is_some() && self.handle.set_tempo_map(map).is_err() {
-                    eprintln!("meloet: the engine did not take the tempo map");
+                if self.stream.is_some() {
+                    if self.handle.set_tempo_map(map).is_err() {
+                        eprintln!("meloet: the engine did not take the tempo map");
+                    } else {
+                        // The clips are at other frames now.
+                        let (map, map_gen) = self.handle.tempo_map();
+                        self.readahead.set_map(map.clone(), map_gen);
+                        self.resend_clips();
+                    }
                 }
                 return;
             }
@@ -1336,6 +1535,15 @@ impl Audio {
                     self.push(voice_command(seat, voice));
                     self.settle();
                 }
+                return;
+            }
+            EngineOp::Clips { seat, clips } => {
+                self.clips_op(seat, clips);
+                return;
+            }
+            EngineOp::AudioSources { sources } => {
+                self.store.set_sources(source_names(&sources));
+                self.sources = sources;
                 return;
             }
             EngineOp::StopSample => EngineCommand::StopSample,
@@ -1376,6 +1584,11 @@ impl Audio {
         };
         self.command(command);
     }
+}
+
+/// The audio table as the place that opens the files takes it.
+fn source_names(sources: &[Arc<meloet_model::AudioSource>]) -> Vec<([u8; 16], String)> {
+    sources.iter().map(|s| (s.uid, s.file.clone())).collect()
 }
 
 fn voice_command(seat: usize, voice: Option<VoiceSpec>) -> EngineCommand {
@@ -1490,7 +1703,7 @@ struct Worker {
     plugins: Option<PluginSide>,
     input: input::InputSide,
     /// Shared with the read-ahead thread (22-8) and with the thread of the audio files.
-    audio_store: Arc<crate::audiofiles::AudioStore>,
+    audio_store: Arc<AudioStore>,
     /// The thread that reads audio files in.
     keeper: Option<crate::audiofiles::keeper::Keeper>,
     /// The song and the folder of its file that `audio_store` was last told.
@@ -1649,6 +1862,15 @@ impl Worker {
     fn run(mut self, rx: Receiver<Msg>) {
         match self.state_dir.as_deref().and_then(recovery_start) {
             Some(start) => {
+                if matches!(
+                    &start,
+                    RecoveryStart::Read {
+                        vocals: Some(_),
+                        ..
+                    }
+                ) {
+                    self.input.kept_note = input::KeptNote::Waiting;
+                }
                 self.handle(Input::RecoveryFound(Box::new(start)));
             }
             // Nothing names what the work place holds (docs/architecture.md 22-4).
@@ -1724,7 +1946,12 @@ impl Worker {
                     let _ = reply.send(self.model.lane(id));
                 }
                 Ok(Msg::PeaksPlace(audio, reply)) => {
-                    let _ = reply.send(self.model.peaks_place(audio));
+                    let growing = self.input.growing_peaks(audio);
+                    let _ = reply.send(growing.or_else(|| self.model.peaks_place(audio)));
+                }
+                Ok(Msg::PcmStore(store)) => {
+                    self.audio.readahead.set_store(store);
+                    self.audio_files_changed();
                 }
                 Ok(Msg::HistoryRows(from, to, reply)) => {
                     let _ = reply.send(self.model.history_rows(from, to));
@@ -1979,6 +2206,8 @@ impl Worker {
                     } => inputs.push_back(self.start_vocals(files, format, x_us)),
                     Effect::StopVocalRecording => inputs.push_back(self.stop_vocals()),
                     Effect::WriteRecNote(note) => {
+                        // The note on the disk is another recording's from here on.
+                        self.input.kept_note = input::KeptNote::None;
                         if let Some(dir) = &self.state_dir
                             && let Err(e) = crate::vocalrec::write_note(dir, &note)
                         {
@@ -1986,6 +2215,7 @@ impl Worker {
                         }
                     }
                     Effect::RemoveRecNote => {
+                        self.input.kept_note = input::KeptNote::None;
                         if let Some(dir) = &self.state_dir {
                             crate::vocalrec::remove_note(dir);
                         }
@@ -2057,11 +2287,16 @@ impl Worker {
                         cause,
                         ending,
                     } => {
-                        let done = if ending {
+                        let mut done = if ending {
                             std::mem::take(&mut self.ending)
                         } else {
                             Vec::new()
                         };
+                        if matches!(self.input.kept_note, input::KeptNote::Waiting) {
+                            let (tx, written) = mpsc::channel();
+                            done.push(tx);
+                            self.input.kept_note = input::KeptNote::Writing(written);
+                        }
                         match &self.recovery {
                             Some(writer) => writer.write(song, path, cause, done),
                             None => {
@@ -2074,6 +2309,13 @@ impl Worker {
                     Effect::RemoveRecovery => {
                         if let Some(writer) = &self.recovery {
                             writer.remove();
+                        }
+                        // The song brought back was let go of, the kept recording with it.
+                        if !matches!(self.input.kept_note, input::KeptNote::None) {
+                            self.input.kept_note = input::KeptNote::None;
+                            if let Some(dir) = &self.state_dir {
+                                crate::vocalrec::remove_note(dir);
+                            }
                         }
                     }
                     Effect::EndingReady => {
@@ -2194,6 +2436,9 @@ impl Worker {
                         sources,
                         sample_rate,
                     } => {
+                        // First the peaks a recording made while it was written: the thread
+                        // of the audio files then finds them and does not make them again.
+                        self.keep_recorded_peaks();
                         if let Some(keeper) = &self.keeper {
                             keeper.watch(serial, sources, sample_rate);
                         }
@@ -2559,9 +2804,13 @@ pub(crate) fn recovery_start(dir: &Path) -> Option<RecoveryStart> {
     Some(match found {
         recovery::Found::Read(r) => {
             let mut song = r.song;
+            // The note stays while it is the only place that knows where the clips belong:
+            // until the recovery file holds them (`input::KeptNote`).
             let vocals = note.and_then(|note| {
                 let kept = input::keep_vocals(dir, &note, &mut song.doc);
-                crate::vocalrec::remove_note(dir);
+                if kept.is_none() {
+                    crate::vocalrec::remove_note(dir);
+                }
                 kept
             });
             RecoveryStart::Read {
@@ -2589,9 +2838,19 @@ pub(crate) fn recovery_start(dir: &Path) -> Option<RecoveryStart> {
 }
 
 impl Worker {
+    /// The place the audio files are opened from has other files now (a file was brought
+    /// in or made ready, the song's folder is another one): the vocal clips are read
+    /// again from where the song is.
+    fn audio_files_changed(&mut self) {
+        self.audio.readahead.store_changed();
+        self.audio.resend_clips();
+    }
+
     fn housekeeping(&mut self, last: bool) {
         self.poll_engine();
         self.audio.handle.drop_retired();
+        self.audio.log_missing();
+        self.audio.follow_store();
         if let Some(side) = &mut self.plugins {
             side.unload_gone();
         }

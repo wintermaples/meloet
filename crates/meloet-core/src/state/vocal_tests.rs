@@ -460,6 +460,7 @@ fn the_keys_and_the_voice_are_recorded_together_as_one_step() {
         effects[start.unwrap()],
         Effect::StartVocalRecording {
             files: vec![VocalFileAsk {
+                audio: next_id,
                 name: name.clone(),
                 channels: vec![0]
             }],
@@ -610,6 +611,9 @@ fn only_the_voice_is_recorded_when_there_is_no_keys_track_and_a_loop_makes_takes
         }));
     }
     assert_eq!(m.view().transport.recording_vocals[0].take, 3);
+    // The wave of the lap going on: from the loop's start, with the file's frame there.
+    let rec = m.view().transport.recording_vocals[0].clone();
+    assert_eq!((rec.from, rec.first_frame), (0, Some(252_000)));
     cmd(&mut m, Command::PlayStop);
     m.handle(Input::Record(RecordReport::Stopped {
         t_us: 1,
@@ -987,5 +991,100 @@ fn the_monitor_of_a_sink_can_stand_in_for_the_input() {
         effects
             .iter()
             .any(|e| matches!(e, Effect::OpenInput { .. }))
+    );
+}
+
+#[test]
+fn what_a_recording_skipped_is_told_while_it_goes_on_and_after() {
+    let (mut m, _) = with_vocal(1);
+    record_vocals(&mut m);
+    let view = m.view();
+    assert_eq!(view.transport.recording_faults, None);
+    // The file's number, its rate and the frame sung where the clip starts: what the
+    // screen draws the growing wave with.
+    let next_id = m.play.song().doc.next_id;
+    let rec = &view.transport.recording_vocals[0];
+    assert_eq!(
+        (rec.audio, rec.sample_rate, rec.first_frame),
+        (next_id, 48_000, Some(12_000))
+    );
+
+    m.handle(Input::VocalFaults {
+        gaps: 2,
+        dropped: 0,
+    });
+    let faults = |m: &Model| m.view().transport.recording_faults;
+    assert_eq!(
+        faults(&m),
+        Some(meloet_protocol::RecordingFaults {
+            gaps: 2,
+            dropped: 0
+        })
+    );
+    cmd(&mut m, Command::PlayStop);
+    m.handle(Input::Record(RecordReport::Stopped {
+        t_us: 12,
+        tick: 4.0 * Q as f64,
+        lap: 0,
+    }));
+    m.handle(Input::VocalsWritten(Box::new(Written {
+        frames: 140_000,
+        sample_rate: 48_000,
+        gaps: 700,
+        gap_count: 3,
+        dropped: 256,
+        dropped_blocks: 1,
+        ..Written::default()
+    })));
+    // Of the last recording, until the next one starts.
+    assert_eq!(
+        faults(&m),
+        Some(meloet_protocol::RecordingFaults {
+            gaps: 3,
+            dropped: 1
+        })
+    );
+    m.handle(Input::VocalFaults {
+        gaps: 9,
+        dropped: 9,
+    });
+    assert_eq!(faults(&m).map(|f| f.gaps), Some(3), "nothing is recorded");
+    record_vocals(&mut m);
+    assert_eq!(faults(&m), None);
+}
+
+#[test]
+fn a_voice_recorded_when_the_output_goes_away_says_the_take_it_left() {
+    let (mut m, id) = with_vocal(1);
+    cmd(&mut m, Command::DeleteTrack { track: 1 });
+    record_vocals(&mut m);
+    m.set_now(
+        2_000_000,
+        Some(crate::play::Heard {
+            tick: 2.0 * Q as f64,
+            state: meloet_protocol::TransportState::Recording,
+            lap: 0,
+        }),
+    );
+    // The output is pulled out.
+    let effects = m.handle(Input::AudioLost);
+    assert!(effects.contains(&Effect::StopVocalRecording), "{effects:?}");
+    assert!(
+        !matches!(
+            status(&m),
+            Some(StatusMessage::RecordingStoppedOutputMissing { .. })
+        ),
+        "the take is not in the song yet"
+    );
+    // The disk writer has written what it held: the take is in, and it is said.
+    m.handle(written(100_000));
+    let doc = &m.play.song().doc;
+    assert_eq!(doc.track(TrackId(id)).unwrap().clips.len(), 1);
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::RecordingStoppedOutputMissing {
+            output: OUT.into(),
+            take: 1
+        })
     );
 }

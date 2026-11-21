@@ -109,6 +109,7 @@ impl Play {
         let mut mixer = Vec::new();
         self.mix_told = MixTold::new();
         self.sync_mix(&mut mixer);
+        self.send_audio(true, &mut mixer);
         ops.extend(mixer.into_iter().filter_map(|e| match e {
             Effect::Engine(op) => Some(op),
             _ => None,
@@ -142,6 +143,7 @@ impl Play {
     /// tracks are compared with, to send the notes of the changed ones only.
     pub(super) fn sync_seats(&mut self, before: &Doc, effects: &mut Vec<Effect>) {
         self.end_stale_audition(effects);
+        self.sync_audio_sources(before, effects);
         let doc = self.song.doc.clone();
         let gone: Vec<usize> = self
             .seats
@@ -183,6 +185,7 @@ impl Play {
                 track: seat,
                 events: track_events(&doc, t.id),
             }));
+            self.sync_seat_audio(seat, t, before.track(t.id), effects);
         }
     }
 
@@ -203,6 +206,7 @@ impl Play {
                 self.clear_seat(seat, effects);
             }
         }
+        self.send_audio(false, effects);
     }
 }
 

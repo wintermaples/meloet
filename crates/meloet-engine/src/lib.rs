@@ -6,6 +6,7 @@
 //! boundary goes through `rtrb` rings or atomics.
 
 mod automation;
+mod clipplay;
 mod clips;
 mod clock;
 mod effect;
@@ -45,8 +46,8 @@ pub use probe::{
     judge_probes, probe_wave,
 };
 pub use stream::{
-    STREAM_CHANNELS, STREAM_REFILL_SECONDS, STREAM_RING_SECONDS, StreamChunk, StreamRead,
-    StreamReader, StreamWant, StreamWriter, stream_ring, want_ring,
+    STREAM_CHANNELS, STREAM_REFILL_SECONDS, STREAM_RING_SECONDS, StreamChunk, StreamLayout,
+    StreamRead, StreamReader, StreamWant, StreamWants, StreamWriter, stream_ring, want_ring,
 };
 pub use synth::PlaceholderSynth;
 pub use transport::{Sequence, SequenceEvent, TrackSet};

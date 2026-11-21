@@ -243,6 +243,18 @@ pub enum EngineOp {
         seat: usize,
         voice: Option<VoiceSpec>,
     },
+    /// The vocal clips of the track on the seat, as the song has them (none: it has none).
+    /// Kept by the core's audio side, which makes the engine's table and the read-ahead
+    /// thread's clips of them for the stream that runs (`play/audiosync.rs`).
+    Clips {
+        seat: usize,
+        clips: Vec<Arc<meloet_model::song::Clip>>,
+    },
+    /// The song's audio table, for the place that opens the files
+    /// (`audiofiles::AudioStore::set_sources`). Comes before the `Clips` that use it.
+    AudioSources {
+        sources: Arc<Vec<Arc<meloet_model::AudioSource>>>,
+    },
 }
 
 /// A strip of the engine's mixer. A track is named by its seat.
@@ -458,6 +470,9 @@ pub struct Play {
     /// What the engine was last told by `EngineOp::Voice`, in the order of the seats.
     voices_sent: Vec<(usize, VoiceSpec)>,
     uid_seed: u64,
+    /// Blocks of the vocal recording going on, or of the last one, that are not what came
+    /// in.
+    faults: Option<meloet_protocol::RecordingFaults>,
     /// What is known of the song's audio files (found, being read, missing).
     audio: audio::AudioBook,
 }
@@ -513,6 +528,7 @@ impl Play {
             saving: None,
             voices_sent: Vec::new(),
             uid_seed: 0,
+            faults: None,
             audio: audio::AudioBook::default(),
         };
         // As with the play target: the engine gets the mixer of the first song with
@@ -1745,7 +1761,7 @@ impl Play {
                 })
             }),
             recording_vocals: self.recording_vocals_view(),
-            recording_faults: None,
+            recording_faults: self.faults,
         }
     }
 
@@ -2400,6 +2416,7 @@ fn index_ranges(sorted: &[u32]) -> Vec<IndexRange> {
 }
 
 mod audio;
+mod audiosync;
 mod automation;
 mod autosync;
 mod history;
@@ -2416,6 +2433,7 @@ mod tracks;
 pub(crate) mod vocal;
 mod windows;
 
+pub use audiosync::clip_tables;
 pub use autosync::SeatLane;
 use mixer::Mixer;
 pub use mixer::{Preview, Selecting};

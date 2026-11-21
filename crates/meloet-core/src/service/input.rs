@@ -1,9 +1,11 @@
 //! The PC's input on the core thread: the stream, its feed into the engine, the disk writer
 //! and the clicks of the latency measurement (docs/architecture.md 22-5 to 22-7).
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use meloet_engine::{
@@ -17,9 +19,13 @@ use meloet_protocol::{KeptVocals, RecordFormat};
 use sha2::{Digest, Sha256};
 
 use super::{Audio, Shared, Worker, lock};
+use crate::peaks::{PeaksPlace, SharedPeaks};
 use crate::play::VocalFileAsk;
 use crate::state::{Delays, Input};
 use crate::vocalrec::{self, DiskWriter, RecNote, RecordFile, RecordJob, Written};
+
+/// How long the peaks of a recording that stopped wait for it to come into the song.
+const PEAKS_WAIT: Duration = Duration::from_secs(10);
 
 /// How long after a click is asked for its answer is looked for.
 const CLICK_WAIT: Duration = Duration::from_millis(300);
@@ -40,6 +46,31 @@ struct Job {
     /// The disk writer was told where the files begin.
     from_said: bool,
     trouble_said: bool,
+    /// (times the input skipped, blocks with no room) as last told to the rules.
+    faults_said: (u32, u32),
+}
+
+/// The peaks of a file that is recorded, or was until a moment ago.
+struct RecPeaks {
+    /// The file's number in the song's audio table.
+    audio: u32,
+    peaks: SharedPeaks,
+    /// When the recording stopped; `None` while it goes on.
+    stopped: Option<Instant>,
+    /// The peaks file is being written.
+    writing: Option<Receiver<std::io::Result<()>>>,
+}
+
+/// The note of a recording that a start brought back (docs/architecture.md 22-18 A1): it
+/// stays on the disk until the recovery file holds the clips made from it.
+#[derive(Default)]
+pub(super) enum KeptNote {
+    #[default]
+    None,
+    /// The recovery file has not been asked for yet.
+    Waiting,
+    /// Told when the recovery file is written.
+    Writing(Receiver<()>),
 }
 
 pub(super) struct InputSide {
@@ -51,6 +82,10 @@ pub(super) struct InputSide {
     /// A click of the latency measurement is out since then.
     click: Option<Instant>,
     delays_said: Option<Delays>,
+    peaks: Vec<RecPeaks>,
+    pub(super) kept_note: KeptNote,
+    /// `MELOET_MEASURE_DIR`: what a recording skipped is written there too.
+    pub(super) measure_dir: Option<PathBuf>,
 }
 
 impl InputSide {
@@ -63,7 +98,17 @@ impl InputSide {
             job: None,
             click: None,
             delays_said: None,
+            peaks: Vec::new(),
+            kept_note: KeptNote::None,
+            measure_dir: None,
         }
+    }
+
+    /// The peaks of `audio` while its file is recorded, and until its peaks file is there.
+    pub(super) fn growing_peaks(&self, audio: u32) -> Option<PeaksPlace> {
+        (self.peaks.iter().rev())
+            .find(|p| p.audio == audio)
+            .map(|p| PeaksPlace::Growing(p.peaks.clone()))
     }
 
     pub(super) fn click_out(&self) -> bool {
@@ -165,12 +210,22 @@ impl Worker {
             format,
         };
         match self.input.writer.start(job) {
-            Ok(()) => {
+            Ok(peaks) => {
                 self.input.job = Some(Job {
                     x_us: x_us as f64,
                     from_said: false,
                     trouble_said: false,
+                    faults_said: (0, 0),
                 });
+                for (ask, peaks) in files.iter().zip(peaks) {
+                    self.input.peaks.retain(|p| p.audio != ask.audio);
+                    self.input.peaks.push(RecPeaks {
+                        audio: ask.audio,
+                        peaks,
+                        stopped: None,
+                        writing: None,
+                    });
+                }
                 Input::VocalsStarted { names }
             }
             Err(e) => {
@@ -190,7 +245,100 @@ impl Worker {
         if let Some(e) = &written.error {
             eprintln!("meloet: the recording was not written whole: {e}");
         }
+        for peaks in self.input.peaks.iter_mut() {
+            peaks.stopped.get_or_insert_with(Instant::now);
+        }
+        self.log_faults(&written);
         Input::VocalsWritten(Box::new(written))
+    }
+
+    /// Writes down what a recording skipped: on stderr, and in the folder of the
+    /// measurements when there is one.
+    fn log_faults(&self, written: &Written) {
+        if written.gaps == 0 && written.dropped == 0 {
+            return;
+        }
+        let line = format!(
+            "the recording has silence where the input did not come: {} frames in {} skips \
+             of the input, {} frames in {} blocks the disk was too slow for (of {} frames)",
+            written.gaps,
+            written.gap_count,
+            written.dropped,
+            written.dropped_blocks,
+            written.frames
+        );
+        eprintln!("meloet: {line}");
+        if let Some(dir) = &self.input.measure_dir {
+            let file = std::fs::File::options()
+                .create(true)
+                .append(true)
+                .open(dir.join("vocal-faults.log"));
+            if let Ok(mut file) = file {
+                let _ = writeln!(file, "{} {line}", crate::recovery::now_ms());
+            }
+        }
+    }
+
+    /// The peaks of the recordings that are in the song by now are written into their
+    /// peaks files, and this waits for them (they are small).
+    pub(super) fn keep_recorded_peaks(&mut self) {
+        self.settle_peaks();
+        self.input.peaks.retain_mut(|entry| {
+            let Some(answer) = entry.writing.take() else {
+                return true;
+            };
+            if let Ok(Err(e)) = answer.recv() {
+                eprintln!("meloet: the peaks of a recording were not written: {e}");
+            }
+            false
+        });
+    }
+
+    /// The peaks of the recordings that stopped: once a file is in the song (its peaks
+    /// file has a name then) they are written there, and the screen is answered from the
+    /// ones in memory until that file is there.
+    fn settle_peaks(&mut self) {
+        let mut at = 0;
+        while at < self.input.peaks.len() {
+            let entry = &mut self.input.peaks[at];
+            let done = match (&entry.writing, entry.stopped) {
+                (Some(answer), _) => match answer.try_recv() {
+                    Ok(Err(e)) => {
+                        eprintln!("meloet: the peaks of a recording were not written: {e}");
+                        true
+                    }
+                    Ok(Ok(())) | Err(TryRecvError::Disconnected) => true,
+                    Err(TryRecvError::Empty) => false,
+                },
+                (None, Some(stopped)) => match self.model.peaks_place(entry.audio) {
+                    Some(PeaksPlace::File(path)) => {
+                        let answer = self.input.writer.write_peaks(entry.peaks.clone(), path);
+                        entry.writing = Some(answer);
+                        false
+                    }
+                    // Not in the song (yet): a recording that left nothing never is.
+                    _ => stopped.elapsed() > PEAKS_WAIT,
+                },
+                (None, None) => false,
+            };
+            if done {
+                self.input.peaks.remove(at);
+            } else {
+                at += 1;
+            }
+        }
+    }
+
+    /// The note a start brought back goes once the recovery file holds its clips.
+    fn settle_kept_note(&mut self) {
+        if let KeptNote::Writing(done) = &self.input.kept_note
+            && !matches!(done.try_recv(), Err(TryRecvError::Empty))
+        {
+            self.input.kept_note = KeptNote::None;
+            if let Some(dir) = &self.input.state_dir {
+                vocalrec::remove_note(dir);
+            }
+        }
     }
 
     /// `Effect::DropVocalFiles`.
@@ -238,12 +386,22 @@ impl Worker {
     /// Looks at the input: the head of a recording, a disk that cannot go on, a stream that
     /// ended, the click that is out, and what the PC says of its delays.
     pub(super) fn poll_input(&mut self) {
+        self.settle_peaks();
+        self.settle_kept_note();
         let mut inputs = Vec::new();
         if let Some(job) = &mut self.input.job {
             let status: Written = self.input.writer.status();
             if !job.trouble_said && (status.full || status.error.is_some()) {
                 job.trouble_said = true;
                 inputs.push(Input::VocalsCannotGoOn);
+            }
+            let faults = (status.gap_count, status.dropped_blocks);
+            if faults != job.faults_said {
+                job.faults_said = faults;
+                inputs.push(Input::VocalFaults {
+                    gaps: faults.0,
+                    dropped: faults.1,
+                });
             }
         }
         if self.input.meters.as_ref().is_some_and(|m| m.stream_lost()) {
@@ -396,9 +554,17 @@ pub(super) fn keep_vocals(state_dir: &Path, note: &RecNote, doc: &mut Doc) -> Op
     let mut until = 0u64;
     let mut recordings = Vec::new();
     for file in &note.files {
+        // A start that ended before the recovery file was written reads the note again.
+        if doc.audio.iter().any(|a| a.file == file.file) {
+            continue;
+        }
         let info = match vocalrec::mend_wav(&dir.join(&file.file)) {
             Ok(info) if info.frames > 0 => info,
-            Ok(_) => continue,
+            Ok(_) => {
+                // Only the head: meloet ended while counting in. Nothing to keep.
+                let _ = std::fs::remove_file(dir.join(&file.file));
+                continue;
+            }
             Err(e) => {
                 eprintln!("meloet: {} was not kept: {e}", file.file);
                 continue;

@@ -2388,4 +2388,76 @@ mod piece_tests {
         );
         assert!(out[139] == out[0] && out[255] == out[140]);
     }
+    /// A bundle of descriptions only; nothing of it is ever loaded.
+    #[test]
+    fn a_plugin_that_names_is_live_is_told_as_live() {
+        let bundle = std::env::temp_dir().join(format!("meloet-live-{}.lv2", std::process::id()));
+        std::fs::create_dir_all(&bundle).unwrap();
+        let manifest = "\
+            @prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n\
+            @prefix doap: <http://usefulinc.com/ns/doap#> .\n\
+            <urn:meloet:test:can> a lv2:Plugin ; doap:name \"Can\" ; lv2:binary <x.so> ;\n\
+                lv2:optionalFeature lv2:isLive .\n\
+            <urn:meloet:test:must> a lv2:Plugin ; doap:name \"Must\" ; lv2:binary <x.so> ;\n\
+                lv2:requiredFeature lv2:isLive .\n\
+            <urn:meloet:test:not> a lv2:Plugin ; doap:name \"Not\" ; lv2:binary <x.so> ;\n\
+                lv2:optionalFeature lv2:hardRTCapable .\n";
+        std::fs::write(bundle.join("manifest.ttl"), manifest).unwrap();
+        let lv2_world = world(&bundle).unwrap();
+        let mut said = Vec::new();
+        for plugin in lv2_world.world.raw().plugins().iter() {
+            let uri = plugin.uri().as_uri().unwrap_or_default().to_string();
+            said.push((uri, says_live(&lv2_world, &plugin)));
+        }
+        said.sort();
+        let _ = std::fs::remove_dir_all(&bundle);
+        assert_eq!(
+            said,
+            [
+                ("urn:meloet:test:can".to_string(), true),
+                ("urn:meloet:test:must".to_string(), true),
+                ("urn:meloet:test:not".to_string(), false),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "needs Surge XT (LV2)"]
+    fn the_free_wheeling_port_is_held_at_one_for_an_export_only() {
+        let bundle = Path::new("/usr/lib/lv2/Surge XT.lv2");
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return;
+        }
+        let lv2_world = world(bundle).unwrap();
+        let plugin = (lv2_world.world)
+            .plugin_by_uri("https://surge-synthesizer.github.io/lv2/surge-xt")
+            .unwrap();
+        for offline in [false, true] {
+            let activation = Activation {
+                sample_rate: 48_000.0,
+                max_frames: 256,
+                offline,
+            };
+            let (shared, mut processor, _link) =
+                instantiate(&lv2_world, &plugin, activation).unwrap();
+            assert_eq!(processor.freewheel_ports.len(), 1);
+            let silence = [0.0f32; 256];
+            let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+            let mut sink = EventSink::with_capacity(16);
+            for _ in 0..3 {
+                processor.process(&mut ProcessBlock {
+                    inputs: [&silence, &silence],
+                    outputs: [&mut left, &mut right],
+                    events: &[],
+                    transport: &Transport::default(),
+                    sink: &mut sink,
+                });
+            }
+            // SAFETY: nothing else has the instance; the processor is not running.
+            let instance = unsafe { &*shared.instance.get() };
+            let port = instance.control_input(processor.freewheel_ports[0]);
+            assert_eq!(port, Some(if offline { 1.0 } else { 0.0 }), "{offline}");
+        }
+    }
 }

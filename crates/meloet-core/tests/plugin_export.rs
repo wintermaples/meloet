@@ -54,13 +54,20 @@ fn plugin(place: PluginPlace, fake: &str, state: Vec<u8>) -> ExportPlugin {
 }
 
 fn seats(plugins: Vec<ExportPlugin>) -> Result<ExportSeats, ExportPluginError> {
+    seats_with(&options(), plugins)
+}
+
+fn seats_with(
+    options: &HostOptions,
+    plugins: Vec<ExportPlugin>,
+) -> Result<ExportSeats, ExportPluginError> {
     let want = ExportWant {
         plugins,
         sample_rate: RATE,
         max_frames: FRAMES as u32,
     };
     // A block whose deadline is long past, as an export's engine never sets one.
-    export_seats(&options(), want, Arc::new(PluginBlock::default()))
+    export_seats(options, want, Arc::new(PluginBlock::default()))
 }
 
 fn gone(pids: &[u32]) -> bool {
@@ -366,4 +373,185 @@ fn marked(marker: &std::path::Path) -> Vec<u32> {
         }
     }
     found
+}
+
+const SURGE_VST3: (&str, &str) = (
+    "vst3:ABCDEF019182FAEB566D624153675854",
+    "/usr/lib/vst3/Surge XT.vst3",
+);
+const SURGE_LV2: (&str, &str) = (
+    "lv2:https://surge-synthesizer.github.io/lv2/surge-xt",
+    "/usr/lib/lv2/Surge XT.lv2",
+);
+const DRAGONFLY_LV2: (&str, &str) = (
+    "lv2:https://github.com/michaelwillis/dragonfly-reverb",
+    "/usr/lib/lv2/DragonflyHallReverb.lv2",
+);
+
+fn real(place: PluginPlace, plugin: (&str, &str), state: Vec<u8>) -> ExportPlugin {
+    ExportPlugin {
+        place,
+        name: plugin.0.into(),
+        key: plugin.0.parse().unwrap(),
+        bundle: plugin.1.into(),
+        state,
+    }
+}
+
+fn rms(samples: &[f32]) -> f32 {
+    (samples.iter().map(|x| x * x).sum::<f32>() / samples.len().max(1) as f32).sqrt()
+}
+
+/// Surge XT plays on the clock while an export runs two more of it and a reverb as fast
+/// as they answer: the playing one misses no block, the export has the playing one's state,
+/// and its processes are gone after it.
+#[test]
+#[ignore = "needs Surge XT (VST3 and LV2) and Dragonfly Reverb (LV2)"]
+fn real_plugins_export_fast_while_the_playing_one_sounds() {
+    if [SURGE_VST3, SURGE_LV2, DRAGONFLY_LV2]
+        .iter()
+        .any(|p| !std::path::Path::new(p.1).exists())
+    {
+        eprintln!("the plugins are not installed; nothing tested");
+        return;
+    }
+    let options = HostOptions {
+        env: Vec::new(),
+        ..options()
+    };
+    let playing = Hosts::start(options.clone(), |_| {});
+    let block = Arc::new(PluginBlock::default());
+    let spec = LoadSpec {
+        key: SURGE_VST3.0.parse().unwrap(),
+        bundle: SURGE_VST3.1.into(),
+        sample_rate: RATE,
+    };
+    let surge = wait(|done| playing.load(spec, block.clone(), done)).unwrap();
+    // A state of its own: much quieter than a Surge XT just made.
+    let params = wait(|done| playing.params(surge.id, done)).unwrap();
+    let volume = params.iter().find(|p| p.name == "Global Volume").unwrap();
+    wait(|done| playing.set_param(surge.id, volume.id, 0.3, done)).unwrap();
+    let state = wait(|done| playing.state(surge.id, done)).unwrap();
+    let playing_pids: Vec<u32> = playing.processes().iter().map(|p| p.pid).collect();
+    let watch = surge.watch.clone();
+
+    // The playing side: blocks of 1024 frames on the clock, each with the engine's deadline.
+    let quit = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let player = {
+        let (quit, block) = (quit.clone(), block.clone());
+        let mut surge = PluginInstrument(surge.slot);
+        std::thread::spawn(move || {
+            let step = Duration::from_secs_f64(1024.0 / f64::from(RATE));
+            let (mut left, mut right) = ([0.0f32; 1024], [0.0f32; 1024]);
+            let mut heard = Vec::new();
+            surge.event(InstrumentEvent::NoteOn {
+                note: 60,
+                velocity: 100,
+            });
+            let mut next = Instant::now();
+            while !quit.load(std::sync::atomic::Ordering::Relaxed) {
+                let wait_us = (step.as_micros() as f64 * 0.9) as u64;
+                block.set_deadline((monotonic_us() + wait_us) * 1000);
+                surge.render(&mut left, &mut right);
+                heard.extend_from_slice(&left);
+                next += step;
+                std::thread::sleep(next.saturating_duration_since(Instant::now()));
+            }
+            heard
+        })
+    };
+    std::thread::sleep(Duration::from_secs(2));
+    let alone = watch.unanswered();
+
+    let run = |seconds: usize| {
+        let began = Instant::now();
+        let mut seats = seats_with(
+            &options,
+            vec![
+                real(TRACK, SURGE_VST3, state.clone()),
+                real(insert(0), DRAGONFLY_LV2, Vec::new()),
+                real(PluginPlace::Instrument(TrackId(2)), SURGE_LV2, Vec::new()),
+            ],
+        )
+        .unwrap();
+        let loaded = began.elapsed();
+        let pids = seats.pids();
+        assert_eq!(pids.len(), 3);
+        assert!(pids.iter().all(|pid| !playing_pids.contains(pid)));
+        let mut first = take(&mut seats.instruments, TRACK);
+        let mut second = take(&mut seats.instruments, PluginPlace::Instrument(TrackId(2)));
+        let mut reverb = take(&mut seats.effects, insert(0));
+        let (mut left, mut right) = ([0.0f32; FRAMES], [0.0f32; FRAMES]);
+        let (mut l2, mut r2) = ([0.0f32; FRAMES], [0.0f32; FRAMES]);
+        let (mut quiet, mut fresh, mut wet) = (Vec::new(), Vec::new(), Vec::new());
+        for instrument in [&mut first, &mut second] {
+            instrument.event(InstrumentEvent::NoteOn {
+                note: 60,
+                velocity: 100,
+            });
+        }
+        let began = Instant::now();
+        let blocks = seconds * RATE as usize / FRAMES;
+        for _ in 0..blocks {
+            first.ask(FRAMES);
+            second.ask(FRAMES);
+            first.render(&mut left, &mut right);
+            second.render(&mut l2, &mut r2);
+            quiet.extend_from_slice(&left);
+            fresh.extend_from_slice(&l2);
+            reverb.process(&mut l2, &mut r2, &CTX);
+            wet.extend_from_slice(&l2);
+        }
+        let took = began.elapsed();
+        assert_eq!(seats.stopped(), None);
+        for (_, watch) in &seats.watches {
+            assert_eq!(watch.unanswered(), 0);
+        }
+        drop((first, second, reverb));
+        drop(seats);
+        assert!(gone(&pids), "an export's process is still there");
+        println!(
+            "export: loaded in {loaded:?}, {seconds} s of sound in {took:?} ({:.1} times as fast as it plays)",
+            seconds as f64 / took.as_secs_f64()
+        );
+        (quiet, fresh, wet)
+    };
+    let (quiet, fresh, wet) = run(120);
+    let (quiet_again, _, _) = run(20);
+    std::thread::sleep(Duration::from_secs(1));
+    let with_export = watch.unanswered();
+    quit.store(true, std::sync::atomic::Ordering::Relaxed);
+    let heard = player.join().unwrap();
+
+    println!(
+        "playing: {alone} blocks unanswered alone, {with_export} with the exports; waited {} ms in all",
+        watch.waited_ns() / 1_000_000
+    );
+    assert_eq!((alone, with_export), (0, 0));
+    assert!(!watch.stopped());
+    // Past the first second (the patch is read in the first block, the note swells).
+    let (from, to) = (RATE as usize, 3 * RATE as usize);
+    let (playing_level, export_level) = (rms(&heard[from..to]), rms(&quiet[from..to]));
+    let apart: Vec<f32> = (fresh[from..to].iter().zip(&wet[from..to]))
+        .map(|(dry, wet)| wet - dry)
+        .collect();
+    let apart = rms(&apart);
+    println!(
+        "playing {playing_level}, export with its state {export_level} (again {}), a Surge XT just made {}, through the reverb {} apart from it",
+        rms(&quiet_again[from..to]),
+        rms(&fresh[from..to]),
+        apart
+    );
+    assert!(playing_level > 0.001);
+    assert!((export_level - playing_level).abs() < 0.1 * playing_level);
+    assert!((rms(&quiet_again[from..to]) - export_level).abs() < 0.1 * export_level);
+    assert!(rms(&fresh[from..to]) > 2.0 * export_level);
+    assert!(
+        apart > 0.05 * rms(&fresh[from..to]),
+        "the reverb did nothing"
+    );
+
+    assert!(playing_pids.iter().all(|&pid| alive(pid)));
+    drop(playing);
+    assert!(gone(&playing_pids));
 }

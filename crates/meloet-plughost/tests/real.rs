@@ -755,3 +755,118 @@ fn surge_xt_runs_its_sequencer_by_quarter_notes_in_six_eight() {
         }
     }
 }
+
+/// The same keys and the same input through a host for an export or a playing one, each a
+/// process of its own; left and right in a row.
+fn one_run(plugin: (&str, &str), instrument: bool, offline: bool) -> Vec<f32> {
+    let mut host = Host::start_as(GEOMETRY, &[], offline);
+    let mut engine = load(&mut host, 0, plugin);
+    let mut out = Vec::new();
+    for n in 0..120 {
+        // Loud and quiet in turn, so that a compressor has something to do.
+        let level = if instrument { 0.0 } else { 0.6 } * (0.2 + (n % 30) as f32 / 30.0);
+        let input: Vec<f32> = (0..256)
+            .map(|i| {
+                let t = (n * 256 + i) as f32 / 48_000.0;
+                level * (t * 220.0 * std::f32::consts::TAU).sin()
+            })
+            .collect();
+        let events = match (instrument, n) {
+            (true, 2) => vec![note_on(60)],
+            (true, 60) => vec![note_off(60), note_on(67)],
+            _ => Vec::new(),
+        };
+        let (left, right) = block(&mut engine, &input, &events);
+        assert!(left.iter().chain(&right).all(|x| x.is_finite()));
+        out.extend(left);
+        out.extend(right);
+    }
+    assert_eq!(host.ask(Request::Unload { slot: 0 }), Reply::Ok);
+    assert_eq!(host.ask(Request::Quit), Reply::Ok);
+    out
+}
+
+/// How far two runs are apart, against how loud they are.
+fn apart(a: &[f32], b: &[f32]) -> f32 {
+    let diff: Vec<f32> = a.iter().zip(b).map(|(a, b)| a - b).collect();
+    rms(&diff) / rms(a).max(1e-9)
+}
+
+/// An effect gives the same samples in two exports, and the samples it gives when it plays.
+fn export_like_playing(plugin: (&str, &str)) {
+    if !installed(plugin) {
+        return;
+    }
+    let [first, second, playing] =
+        [true, true, false].map(|offline| one_run(plugin, false, offline));
+    assert!(rms(&first) > 0.01, "{}", rms(&first));
+    assert!(first == second, "two exports are not the same sound");
+    assert!(first == playing, "the export is not the playing sound");
+}
+
+/// How loud each tenth of a second of a run is.
+fn loudness(run: &[f32]) -> Vec<f32> {
+    run.chunks(9600).map(rms).collect()
+}
+
+/// Surge XT starts its oscillators where it likes: no two runs of it give the same samples,
+/// playing or not. What an export must keep is the notes and how loud they are.
+fn surge_export_like_playing(plugin: (&str, &str)) {
+    if !installed(plugin) {
+        return;
+    }
+    let [first, second, playing, again] =
+        [true, true, false, false].map(|offline| one_run(plugin, true, offline));
+    println!(
+        "{}: two exports {} apart, export and playing {}, two playing {}",
+        plugin.0,
+        apart(&first, &second),
+        apart(&first, &playing),
+        apart(&playing, &again)
+    );
+    println!("export  {:?}", loudness(&first));
+    println!("playing {:?}", loudness(&playing));
+    assert!(rms(&first) > 0.01, "{}", rms(&first));
+    for other in [&second, &playing, &again] {
+        for (at, (a, b)) in loudness(&first).iter().zip(loudness(other)).enumerate() {
+            assert!((a - b).abs() <= 0.1 * a.max(b) + 1e-3, "{at}: {a} {b}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs LSP Plugins (VST3)"]
+fn lsp_compressor_vst3_exports_the_same_sound_twice_and_as_it_plays() {
+    export_like_playing(LSP_COMP_VST3);
+}
+
+#[test]
+#[ignore = "needs LSP Plugins (LV2)"]
+fn lsp_compressor_lv2_exports_the_same_sound_twice_and_as_it_plays() {
+    export_like_playing(LSP_COMP_LV2);
+}
+
+#[test]
+#[ignore = "needs Zam plugins (VST3 and LV2)"]
+fn zamcomp_exports_the_same_sound_twice_and_as_it_plays() {
+    export_like_playing(ZAMCOMP_VST3);
+    export_like_playing(ZAMCOMP_LV2);
+}
+
+#[test]
+#[ignore = "needs Dragonfly Reverb (LV2)"]
+fn dragonfly_hall_lv2_exports_the_same_sound_twice_and_as_it_plays() {
+    export_like_playing(DRAGONFLY_LV2);
+}
+
+#[test]
+#[ignore = "needs Surge XT (VST3)"]
+fn surge_xt_vst3_exports_its_notes_as_loud_as_it_plays_them() {
+    surge_export_like_playing(SURGE_VST3);
+}
+
+#[test]
+#[ignore = "needs Surge XT (LV2)"]
+fn surge_xt_lv2_exports_its_notes_as_loud_as_it_plays_them() {
+    surge_export_like_playing(SURGE_LV2);
+}

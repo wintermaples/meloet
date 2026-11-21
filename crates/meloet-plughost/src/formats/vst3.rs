@@ -1365,3 +1365,57 @@ impl Drop for Vst3Controller {
 
 const STATE_MAGIC: &[u8; 4] = b"MV3S";
 const STATE_HEAD: usize = 12;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_export_is_told_as_offline() {
+        assert_eq!(process_mode(true), ProcessModes_::kOffline as i32);
+        assert_eq!(process_mode(false), ProcessModes_::kRealtime as i32);
+    }
+
+    /// Surge XT takes being made ready as offline, and sounds in blocks told as offline.
+    #[test]
+    #[ignore = "needs Surge XT (VST3)"]
+    fn surge_xt_is_made_ready_and_run_as_offline_for_an_export() {
+        let bundle = Path::new("/usr/lib/vst3/Surge XT.vst3");
+        if !bundle.exists() {
+            eprintln!("{bundle:?} is not installed; nothing tested");
+            return;
+        }
+        let key: PluginKey = "vst3:ABCDEF019182FAEB566D624153675854".parse().unwrap();
+        for offline in [false, true] {
+            let activation = Activation {
+                sample_rate: 48_000.0,
+                max_frames: 256,
+                offline,
+            };
+            let mut loaded = load(&key, bundle, activation).unwrap();
+            let silence = [0.0f32; 256];
+            let (mut left, mut right) = ([0.0f32; 256], [0.0f32; 256]);
+            let mut sink = super::super::EventSink::with_capacity(16);
+            let note = ToPlugin::Midi {
+                frame: 0,
+                data: [0x90, 60, 100],
+            };
+            let mut loudest = 0.0f32;
+            for block in 0..40 {
+                loaded.processor.process(&mut ProcessBlock {
+                    inputs: [&silence, &silence],
+                    outputs: [&mut left, &mut right],
+                    events: if block == 0 {
+                        std::slice::from_ref(&note)
+                    } else {
+                        &[]
+                    },
+                    transport: &Transport::default(),
+                    sink: &mut sink,
+                });
+                loudest = left.iter().fold(loudest, |m, x| m.max(x.abs()));
+            }
+            assert!(loudest > 0.01, "offline {offline}: {loudest}");
+        }
+    }
+}

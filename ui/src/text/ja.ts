@@ -2201,6 +2201,44 @@ export const texts = {
   }),
   "msg.exportCanceled": s6("書き出しをやめた", "書き出しをやめました。途中までのファイルは消しました。"),
 
+  // [第 7 回 区切り5 ・ 書き出し]（仕様書 3 章 34-B、モック F7-Export ・ F7-Exporting ・ F-Export）
+  "export.title": e("書き出し", "mock:F7-Export"),
+  "export.range": e("範囲", "mock:F7-Export"),
+  "export.rangeSong": e("曲ぜんぶ", "mock:F7-Export"),
+  "export.rangeLoop": e("ループ {from}〜{to}", "mock:F7-Export", { from: "5", to: "9" }),
+  "export.rangeTracks": e("トラックごと", "mock:F7-Export"),
+  "export.spanSong": e("曲ぜんぶ ・ {start} 〜 {end} と、音が消えるまで", "mock:F7-Export", {
+    start: "1. 1. 0000",
+    end: "17. 1. 0000",
+  }),
+  "export.format": e("形", "mock:F7-Export"),
+  "export.formatWav": e("wav", "mock:F7-Export"),
+  "export.formatFlac": e("flac", "mock:F7-Export"),
+  "export.place": e("保存する所", "mock:F7-Export"),
+  "export.choosePlace": e("えらぶ…", "mock:F7-Export"),
+  "export.check": e("書き出す前のたしかめ", "mock:F7-Export"),
+  "export.peak": e("いちばん大きい所", "mock:F7-Export"),
+  "export.peakDb": e("{peak} dB", "mock:F7-Export", { peak: "−0.6" }),
+  "export.noClipping": e("・ 音割れなし", "mock:F7-Export"),
+  "export.noStoppedPlugins": e("止まっているプラグインはありません", "mock:F7-Export"),
+  "export.detailsSummary": e("{rate} Hz ・ {bits} ビット ・ しっぽは音が消えるまで（最大 {seconds} 秒）", "mock:F7-Export", {
+    rate: "48000",
+    bits: "24",
+    seconds: "10",
+  }),
+  "export.start": e("書き出す", "mock:F7-Export"),
+  // 止まっているプラグインがあるとき（仕様書 3 章「F-Export のまま残す」）。
+  "export.stoppedPlugins": e("止まっているプラグイン", "mock:F-Export"),
+  "export.stoppedPlugin": e("{plugin} ・ {strip}", "mock:F-Export", { plugin: "Brick EQ", strip: "3 ドラム" }),
+  "export.stoppedSkipped": e("この枠をとばした音で書き出します", "mock:F-Export"),
+  // 状態行の左の進み（仕様書 2 章「書き出しの進み」）。
+  "export.running": e("書き出しています", "mock:F7-Exporting"),
+  "export.runningPercent": e("{percent} %", "mock:F7-Exporting", { percent: "46" }),
+  "export.runningRest": e("{file} ・ 残り 約 {left} ・ 弾けます（書き出しの音は聞こえません）", "mock:F7-Exporting", {
+    file: "はじめての曲.wav",
+    left: "40 秒",
+  }),
+
   // [第 7 回 区切り2 ・ 歌のトラックの画面]（仕様書 2 章 ・ 3 章 23-A ・ 24-C ・ 31-C ・ 33-A、モック F7-*）
   // トラックの一覧の下と、上のメニュー「トラック」。
   "arrange.addKeysTrack": e("＋ 鍵盤のトラック", "spec:3"),

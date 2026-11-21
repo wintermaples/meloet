@@ -15,6 +15,7 @@ import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
   EFFECT_PARAMS,
+  EXPORT_FORMATS,
   INSTRUMENT_GROUPS,
   LATENCY_CLICKS,
   PROTOCOL_VERSION,
@@ -32,6 +33,8 @@ import {
   type EffectRef,
   type EndpointView,
   type Event,
+  type ExportDialogView,
+  type ExportRunView,
   type HistoryRow,
   type HistoryView,
   type IndexRange,
@@ -618,6 +621,7 @@ export function fakeState(): AppState {
       latency: { reportedMs: null, measuredMs: null, manualMs: null, used: "reported", usedMs: null },
     },
     audioWork: { jobs: [] },
+    export: { dialog: null, run: null },
     status: { message: NEW_SONG },
   };
 }
@@ -3268,6 +3272,175 @@ SCENES.stretchRamp = {
   meters: QUIET,
 };
 
+// ---- round 7, step 5: writing the song out (protocol 26) ----
+// The states of the mocks F7-Export, F7-Exporting and of the export of R11-Fit. The numbers of a check or of a run
+// move only when a scene sets them.
+
+/** The dialog of F7-Export for the song of the band: the check is done, nothing clips, no plugin has stopped. */
+function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}): ExportDialogView {
+  const end = Math.max(0, ...song.tracks.flatMap((t) => t.clips.map((c) => c.end)));
+  return {
+    range: "song",
+    loopRange: song.loopRange,
+    tracks: song.tracks.length,
+    span: { start: 0, end },
+    format: "wav",
+    formats: EXPORT_FORMATS.map((f) => f.format),
+    place: `~/音楽/${song.name}.wav`,
+    check: { state: "done", peakDb: -0.6, clips: false },
+    stoppedPlugins: [],
+    advancedOpen: false,
+    sampleRate: 48000,
+    sampleRateChoices: [44100, 48000, 88200, 96000],
+    bits: "bits24",
+    bitsChoices: [...EXPORT_FORMATS[0]!.bits],
+    tail: "untilSilent",
+    realtime: false,
+    realtimeForced: false,
+    canExport: true,
+    ...over,
+  };
+}
+
+const exportDialogScene = (over: Partial<ExportDialogView> = {}, screen?: SceneDef["screen"]): SceneDef => ({
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.song.name = "はじめての曲";
+    s.export.dialog = fakeExportDialog(s.song, over);
+  },
+  after: (s) => (s.status.message = { id: "exportDialogOpen" }),
+  screen,
+  meters: QUIET,
+});
+
+// F7-Export: "いちばん大きい所 −0.6 dB ・ 音割れなし", "止まっているプラグインはありません".
+SCENES.exportDialog = exportDialogScene();
+// The dialog just opened: nothing of the range is written yet.
+SCENES.exportWaiting = exportDialogScene({ check: { state: "waiting" }, canExport: false });
+// The check is on its way: the numbers of what is written so far.
+SCENES.exportCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false } });
+// Spec 6 「書き出しで音が割れる」: the button is "このまま書き出す".
+SCENES.exportClips = exportDialogScene({ check: { state: "done", peakDb: 1.4, clips: true } });
+// Mock F-Export: "Brick EQ ・ 3 ドラム" has stopped and is passed by.
+SCENES.exportStopped = exportDialogScene({
+  stoppedPlugins: [{ name: "Brick EQ", slot: { kind: "insert", insert: { strip: { kind: "track", id: BAND_TRACK_ID + 3 }, slot: 0 } } }],
+});
+// 「くわしく」 unfolded, the loop as a flac file.
+SCENES.exportAdvanced = exportDialogScene({
+  range: "loop",
+  span: { start: 4 * BAR, end: 8 * BAR },
+  format: "flac",
+  place: "~/音楽/はじめての曲.flac",
+  bitsChoices: [...EXPORT_FORMATS[1]!.bits],
+  advancedOpen: true,
+});
+// The check could not run: a plugin did not load for the export.
+SCENES.exportCheckFailed = exportDialogScene({ check: { state: "failed", reason: { kind: "plugin", name: "Surge XT" } }, canExport: false });
+// R11-Fit: in the smallest window the dialog scrolls inside, its heading and its buttons stay.
+SCENES.exportFit = exportDialogScene({}, { width: 853, height: 448 });
+
+/** The song of F7-Exporting: the band, "5 Surge XT" and "6 歌" with one clip; saved, the keys on "1 ピアノ". */
+function exportingSong(s: AppState, run: ExportRunView): void {
+  vocalSong(s, { armed: false, monitor: false, selected: false });
+  const surge = s.song.tracks[4]!;
+  Object.assign(surge, { name: "Surge XT", instrument: "sine", sound: { kind: "plugin", ...pluginView("Surge XT", "ready") } satisfies SoundView });
+  vocalTrackOf(s).clips = [fakeVocalClip(LEFT_CLIP, "歌 テイク 1", 4 * BAR, 6 * BAR, fakeAudioClip(TAKE_1))];
+  s.song.name = "はじめての曲";
+  s.song.file = "saved";
+  s.export.run = run;
+}
+const exportingScene = (run: ExportRunView): SceneDef => ({
+  setup: (s) => exportingSong(s, run),
+  after: (s) => (s.status.message = null),
+  meters: QUIET,
+});
+const EXPORTED_FILE = "はじめての曲.wav";
+
+// F7-Exporting: "書き出しています 46 % ・ はじめての曲.wav ・ 残り 約 40 秒 ・ 弾けます（書き出しの音は聞こえません）".
+SCENES.exporting = exportingScene({ state: "running", percent: 46, file: EXPORTED_FILE, remainingS: 40, realtime: false, lengthS: 182 });
+// Spec 6 「実時間で書き出している」: "速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。"
+SCENES.exportingRealtime = exportingScene({ state: "running", percent: 12, file: EXPORTED_FILE, remainingS: 160, realtime: true, lengthS: 182 });
+// Spec 6 「書き出した」 and 「書き出しが終わった」, with "フォルダをひらく".
+SCENES.exportDone = exportingScene({
+  state: "done",
+  file: EXPORTED_FILE,
+  files: 1,
+  place: `~/ミュージック/はじめての曲/${EXPORTED_FILE}`,
+  lengthS: 182,
+  sampleRate: 48000,
+  bits: "bits24",
+});
+// Spec 6 「書き出しをやめた」.
+SCENES.exportCancelled = exportingScene({ state: "cancelled" });
+SCENES.exportFailed = exportingScene({ state: "failed", reason: { kind: "cannotWrite" } });
+
+/**
+ * Protocol 26, enough for pictures and tests: the dialog opens, takes its choices and closes; 「書き出す」 starts a run
+ * that stays at the percent of the check; 「やめる」 ends it. The fake's check is done at once, and 「えらぶ…」 and
+ * 「フォルダをひらく」 are taken and do nothing. `null`: not one of these commands.
+ */
+export function reduceExport(state: AppState, command: Command): Change[] | null {
+  const view = structuredClone(state.export);
+  const busy = state.transport.state === "recording" || state.transport.state === "countIn";
+  let message: StatusMessage | null | undefined = undefined;
+  switch (command.type) {
+    case "openExport":
+      if (view.dialog || view.run?.state === "running" || busy) return [];
+      view.dialog = fakeExportDialog(state.song, { canExport: state.song.tracks.some((t) => t.clips.length > 0) });
+      view.run = null;
+      message = { id: "exportDialogOpen" };
+      break;
+    case "closeExport":
+      if (!view.dialog) return [];
+      view.dialog = null;
+      message = null;
+      break;
+    case "setExport": {
+      const d = view.dialog;
+      const c = command.change;
+      if (!d) return [];
+      if (c.kind === "range") {
+        if ((c.range === "loop" && !d.loopRange) || (c.range === "tracks" && d.tracks === 0)) return [];
+        d.range = c.range;
+        d.span = c.range === "loop" ? d.loopRange! : fakeExportDialog(state.song).span;
+      } else if (c.kind === "format") {
+        d.format = c.format;
+        d.bitsChoices = [...EXPORT_FORMATS.find((f) => f.format === c.format)!.bits];
+        if (!d.bitsChoices.includes(d.bits)) d.bits = "bits24";
+      } else if (c.kind === "advancedOpen") d.advancedOpen = c.open;
+      else if (c.kind === "sampleRate") d.sampleRate = d.sampleRateChoices.includes(c.hz) ? c.hz : d.sampleRate;
+      else if (c.kind === "bits") d.bits = d.bitsChoices.includes(c.bits) ? c.bits : d.bits;
+      else if (c.kind === "tail") d.tail = c.tail;
+      else if (!d.realtimeForced) d.realtime = c.on;
+      const folder = d.place.slice(0, d.place.lastIndexOf("/") + 1);
+      d.place = d.range === "tracks" ? folder : `${folder}${state.song.name}.${d.format}`;
+      break;
+    }
+    case "chooseExportPlace":
+    case "showExported":
+      return [];
+    case "startExport": {
+      const d = view.dialog;
+      if (!d?.canExport) return [];
+      const percent = d.check.state === "counting" ? d.check.percent : 99;
+      view.run = { state: "running", percent, file: d.place.slice(d.place.lastIndexOf("/") + 1), remainingS: null, realtime: d.realtime, lengthS: 0 };
+      view.dialog = null;
+      message = null;
+      break;
+    }
+    case "cancelExport":
+      if (view.run?.state !== "running") return [];
+      view.run = { state: "cancelled" };
+      break;
+    default:
+      return null;
+  }
+  const changes: Change[] = [];
+  if (JSON.stringify(view) !== JSON.stringify(state.export)) changes.push({ section: "export", value: view });
+  if (message !== undefined) changes.push({ section: "status", value: { message } });
+  return changes;
+}
+
 /** 「さがす」 as Rust does it, in 4/4: the audio as 1, 2, 4 or 8 bars, the tempos from 60 to 180, the one nearest to `songBpm`. */
 function fakeFoundTempo(frames: number, sampleRate: number, songBpm: number): { bpm: number; bars: number } | null {
   const far = (bpm: number) => Math.abs(Math.log(bpm / songBpm));
@@ -4703,7 +4876,7 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduceAudio(state, command) ?? reduceRound7(state, command, vocalMemo) ?? reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
+      const changes = reduceExport(state, command) ?? reduceAudio(state, command) ?? reduceRound7(state, command, vocalMemo) ?? reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
       // The counts of the history band follow the song's.
       const song = changes.find((c) => c.section === "song");
       if (song && !changes.some((c) => c.section === "history")) {

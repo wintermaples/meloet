@@ -22,7 +22,7 @@ const volume = (number: number): LaneRef => ({ track: TRACK + number, target: { 
 
 describe("約束 21 の形", () => {
   it("版は 23（22 より後）。新しい曲に帯はなく、履歴は 0 手。インサートは id を持つ（新しい曲は 1 ・ 2 ・ 3）", () => {
-    expect(PROTOCOL_VERSION).toBe(25);
+    expect(PROTOCOL_VERSION).toBe(26);
     const s = fakeState();
     expect(s.automation).toEqual({ folded: [], armed: [], writing: [], held: [], selected: null } satisfies AutomationView);
     expect(s.history).toEqual({ total: 0, redo: 0, current: 0, newest: 0 } satisfies HistoryView);

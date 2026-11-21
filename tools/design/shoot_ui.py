@@ -212,6 +212,20 @@ BOARDS = {
     "stretchNoTempo": None,
     "stretchRamp": None,
     "recoverVocal": None,
+    # 第 7 回 区切り5: 書き出し（約束 26）。
+    "exportDialog": "F7-Export",
+    "exportWaiting": None,
+    "exportCounting": None,
+    "exportClips": None,
+    "exportStopped": "F-Export",
+    "exportAdvanced": None,
+    "exportCheckFailed": None,
+    "exportFit": "R11-Fit",
+    "exporting": "F7-Exporting",
+    "exportingRealtime": "F7-Exporting",
+    "exportDone": "F7-Exporting",
+    "exportCancelled": None,
+    "exportFailed": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -661,6 +675,9 @@ ONLY = {
     "latencyFailed": [(1280, 800, 100)],
     "vocalFit": [(853, 448, 100), (1280, 800, 150)],
     "paramsSound": [(1280, 800, 100), (1280, 800, 150)],
+    "exportDialog": [(1280, 800, 100), (1280, 800, 150)],
+    "exportFit": [(853, 448, 100), (1280, 800, 150)],
+    "exporting": [(1280, 800, 100), (1280, 800, 150)],
 }
 scenes = sys.argv[2:] or list(BOARDS)
 

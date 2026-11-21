@@ -14,8 +14,8 @@ const vocalOf = (s: AppState): TrackView => s.song.tracks.find((tr) => tr.kind.k
 const audioOf = (s: AppState, clip = CLIP): AudioClipView => vocalOf(s).clips.find((c) => c.id === clip)!.audio!;
 
 describe("約束 25 の形", () => {
-  it("版は 25。範囲は半音 ±12、セント ±50、打ちこむテンポ 30〜300", () => {
-    expect(PROTOCOL_VERSION).toBe(25);
+  it("範囲は半音 ±12、セント ±50、打ちこむテンポ 30〜300", () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(25);
     expect([CLIP_SEMITONES_MAX, CLIP_CENTS_MAX, SOURCE_BPM_MIN, SOURCE_BPM_MAX]).toEqual([12, 50, 30, 300]);
   });
 

@@ -46,7 +46,7 @@ const SURGE: SoundRef = { kind: "plugin", key: lv2Key("Surge XT") };
 
 describe("約束 17 の形", () => {
   it("版は 23（22 より後）。新しい曲では、あとから入れたものは空で、見つからない物もない", () => {
-    expect(PROTOCOL_VERSION).toBe(25);
+    expect(PROTOCOL_VERSION).toBe(26);
     const s = fakeState();
     expect(s.library).toEqual({ sf2: [], plugins: [], openedSf2: null, packMissing: false });
     expect(s.workspace.fileDrop).toBeNull();

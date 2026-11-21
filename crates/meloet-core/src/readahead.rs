@@ -14,9 +14,14 @@
 //! slow), so it goes on from there and the place stays right.
 //!
 //! The fades and the volumes of the clips are not its business; the engine does those.
+//!
+//! When audio that was made for a clip is ready (22-20) the clips come again with other
+//! files in the same places ([`ReadAhead::splice_clips`]). The thread then lays the new
+//! audio over the old for 10 ms from where it is in the ring: what sounds goes on without
+//! a gap, and the engine does nothing.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -51,6 +56,11 @@ pub struct ReadStats {
     /// The seats (one bit each, below 64) with a clip whose file the store did not have:
     /// the ones to feed again when the store has more (`AudioStore::generation`).
     pub unopened: AtomicU64,
+    /// Audio made for a clip was asked for and was not in the store (somebody emptied the
+    /// cache): the core makes it again.
+    pub made_lost: AtomicBool,
+    /// Times other audio was laid over what the ring held.
+    pub splices: AtomicU64,
 }
 
 fn seat_bit(seat: u32) -> u64 {
@@ -66,6 +76,10 @@ enum Msg {
         clips: Vec<FeedClip>,
     },
     Clips {
+        seat: u32,
+        clips: Vec<FeedClip>,
+    },
+    Splice {
         seat: u32,
         clips: Vec<FeedClip>,
     },
@@ -92,8 +106,11 @@ impl ReadAhead {
             wants: None,
             map: None,
             tracks: Vec::new(),
-            buf: vec![0.0; CHUNK * STREAM_CHANNELS],
-            raw: vec![0.0; CHUNK * STREAM_CHANNELS],
+            bufs: Bufs {
+                buf: vec![0.0; CHUNK * STREAM_CHANNELS],
+                old: vec![0.0; CHUNK * STREAM_CHANNELS],
+                raw: vec![0.0; CHUNK * STREAM_CHANNELS],
+            },
             stats: stats.clone(),
         };
         let thread = std::thread::Builder::new()
@@ -141,6 +158,16 @@ impl ReadAhead {
         });
     }
 
+    /// The clips of the track on `seat` in the same places, with other audio (what was made
+    /// for a clip is ready, or is no longer what the clip plays). Send it before
+    /// `EngineCommand::SpliceClips`.
+    pub fn splice_clips(&self, seat: usize, clips: Vec<FeedClip>) {
+        let _ = self.tx.send(Msg::Splice {
+            seat: seat as u32,
+            clips,
+        });
+    }
+
     /// Every ring is let go of (another stream is about to open).
     pub fn clear(&self) {
         let _ = self.tx.send(Msg::NoTracks);
@@ -168,8 +195,26 @@ impl Drop for ReadAhead {
     }
 }
 
-/// The file of an audio's uid as the store gave it.
-type Opened = ([u8; 16], Option<Box<dyn PcmFile>>);
+/// The file a clip plays: the audio of a uid, or what was made for the clip.
+type FileKey = ([u8; 16], Option<[u8; 32]>);
+/// A file as the store gave it.
+type Opened = (FileKey, Option<Box<dyn PcmFile>>);
+
+fn key_of(clip: &FeedClip) -> FileKey {
+    (clip.uid, clip.made)
+}
+
+/// How long other audio for the same clips takes to come in over the old: 10 ms.
+fn splice_frames(sample_rate: u32) -> u64 {
+    u64::from(sample_rate / 100).max(1)
+}
+
+/// The clips as they were, while other audio for them comes in.
+struct Splice {
+    /// The frame of the generation the new audio starts to come in at.
+    from: u64,
+    clips: Vec<FeedClip>,
+}
 
 struct Fed {
     seat: u32,
@@ -187,6 +232,7 @@ struct Fed {
     next: u64,
     /// The ring is being filled up: from a new generation, or from under a second left.
     filling: bool,
+    splice: Option<Splice>,
 }
 
 impl Fed {
@@ -201,6 +247,7 @@ impl Fed {
             }
             _ => {
                 self.want = Some(want);
+                self.splice = None;
                 self.layout = None;
                 self.next = want.frame;
                 // At once, behind what is left of the old generation.
@@ -213,30 +260,59 @@ impl Fed {
     fn set_clips(&mut self, clips: Vec<FeedClip>, stats: &ReadStats) {
         self.clips = clips;
         self.clips.sort_by_key(|c| c.start);
+        self.splice = None;
+        self.ask_again(stats);
+    }
+
+    /// Other audio for the same clips: it comes in over the old from the next frame that
+    /// goes into the ring.
+    fn splice_clips(&mut self, mut clips: Vec<FeedClip>, stats: &ReadStats) {
+        clips.sort_by_key(|c| c.start);
+        let before = std::mem::replace(&mut self.clips, clips);
+        // A splice that has not begun is still from what the ring holds.
+        let old = match self.splice.take() {
+            Some(splice) if splice.from == self.next => splice.clips,
+            _ => before,
+        };
+        if self.want.is_some() {
+            self.splice = Some(Splice {
+                from: self.next,
+                clips: old,
+            });
+        }
         self.ask_again(stats);
     }
 
     /// A file the store did not have is asked for again, and one no clip uses is let go.
     fn ask_again(&mut self, stats: &ReadStats) {
         let clips = &self.clips;
-        (self.files).retain(|(uid, file)| file.is_some() && clips.iter().any(|c| c.uid == *uid));
+        let old = self.splice.as_ref().map_or(&[][..], |s| &s.clips[..]);
+        (self.files).retain(|(key, file)| {
+            file.is_some() && clips.iter().chain(old).any(|c| key_of(c) == *key)
+        });
         stats.unopened.fetch_and(!seat_bit(self.seat), Relaxed);
     }
 
     fn file(
         &mut self,
-        uid: [u8; 16],
+        key: FileKey,
         store: &dyn PcmStore,
         stats: &ReadStats,
     ) -> Option<&mut Box<dyn PcmFile>> {
-        let at = match self.files.iter().position(|(u, _)| *u == uid) {
+        let at = match self.files.iter().position(|(k, _)| *k == key) {
             Some(at) => at,
             None => {
-                let file = store.open(&uid, self.sample_rate);
+                let file = match &key.1 {
+                    Some(made) => store.open_made(made, self.sample_rate),
+                    None => store.open(&key.0, self.sample_rate),
+                };
                 if file.is_none() {
                     stats.unopened.fetch_or(seat_bit(self.seat), Relaxed);
+                    if key.1.is_some() {
+                        stats.made_lost.store(true, Relaxed);
+                    }
                 }
-                self.files.push((uid, file));
+                self.files.push((key, file));
                 self.files.len() - 1
             }
         };
@@ -259,7 +335,7 @@ impl Fed {
     }
 
     /// Puts the next frames into the ring, at most [`CHUNK`].
-    fn fill(&mut self, store: &dyn PcmStore, buf: &mut [f32], raw: &mut [f32], stats: &ReadStats) {
+    fn fill(&mut self, store: &dyn PcmStore, bufs: &mut Bufs, stats: &ReadStats) {
         let (Some(layout), Some(want)) = (self.layout, self.want) else {
             return;
         };
@@ -274,12 +350,61 @@ impl Fed {
         if frames == 0 {
             return;
         }
-        let out = &mut buf[..frames * STREAM_CHANNELS];
+        let out = &mut bufs.buf[..frames * STREAM_CHANNELS];
+        let clips = std::mem::take(&mut self.clips);
+        self.lay(&clips, song, out, &mut bufs.raw, store, stats);
+        self.clips = clips;
+        let mut spliced_to = None;
+        if let Some(splice) = self.splice.take() {
+            let end = splice.from + splice_frames(self.sample_rate);
+            let mixed = (end.saturating_sub(self.next) as usize).min(frames);
+            let old = &mut bufs.old[..mixed * STREAM_CHANNELS];
+            self.lay(&splice.clips, song, old, &mut bufs.raw, store, stats);
+            let steps = (end - splice.from + 1) as f32;
+            for (i, (new, old)) in (out.as_chunks_mut::<2>().0.iter_mut())
+                .zip(old.as_chunks::<2>().0)
+                .enumerate()
+            {
+                let weight = (self.next + i as u64 + 1).saturating_sub(splice.from) as f32 / steps;
+                for (new, old) in new.iter_mut().zip(old) {
+                    *new = old + (*new - old) * weight;
+                }
+            }
+            spliced_to = Some(end);
+            self.splice = Some(splice);
+        }
+        let chunk = StreamChunk {
+            generation: want.generation,
+            first_frame: self.next,
+            frames: frames as u32,
+        };
+        if self.writer.push(chunk, out) {
+            self.next += frames as u64;
+            stats.frames.fetch_add(frames as u64, Relaxed);
+            if spliced_to.is_some_and(|end| self.next >= end) {
+                self.splice = None;
+                stats.splices.fetch_add(1, Relaxed);
+                let clips = &self.clips;
+                (self.files).retain(|(key, _)| clips.iter().any(|c| key_of(c) == *key));
+            }
+        }
+    }
+
+    /// The audio of `clips` for the song frames from `song` on, as many as `out` holds;
+    /// silence where no clip is.
+    fn lay(
+        &mut self,
+        clips: &[FeedClip],
+        song: u64,
+        out: &mut [f32],
+        raw: &mut [f32],
+        store: &dyn PcmStore,
+        stats: &ReadStats,
+    ) {
         out.fill(0.0);
-        let (from, to) = (song, song + frames as u64);
-        let first = self.clips.partition_point(|c| c.end <= from);
-        for index in first..self.clips.len() {
-            let clip = self.clips[index];
+        let (from, to) = (song, song + (out.len() / STREAM_CHANNELS) as u64);
+        let first = clips.partition_point(|c| c.end <= from);
+        for clip in &clips[first..] {
             if clip.start >= to {
                 break;
             }
@@ -298,7 +423,7 @@ impl Fed {
             if count <= 0 {
                 continue;
             }
-            let Some(file) = self.file(clip.uid, store, stats) else {
+            let Some(file) = self.file(key_of(clip), store, stats) else {
                 continue;
             };
             let channels = usize::from(file.channels().clamp(1, 2));
@@ -317,16 +442,15 @@ impl Fed {
                 }
             }
         }
-        let chunk = StreamChunk {
-            generation: want.generation,
-            first_frame: self.next,
-            frames: frames as u32,
-        };
-        if self.writer.push(chunk, out) {
-            self.next += frames as u64;
-            stats.frames.fetch_add(frames as u64, Relaxed);
-        }
     }
+}
+
+/// A chunk as it goes into a ring, the same of the clips as they were before a splice, and
+/// a chunk as it comes out of a file.
+struct Bufs {
+    buf: Vec<f32>,
+    old: Vec<f32>,
+    raw: Vec<f32>,
 }
 
 struct Side {
@@ -335,9 +459,7 @@ struct Side {
     wants: Option<StreamWants>,
     map: Option<(Arc<TempoMap>, u32)>,
     tracks: Vec<Fed>,
-    /// A chunk as it goes into a ring, and as it comes out of a file.
-    buf: Vec<f32>,
-    raw: Vec<f32>,
+    bufs: Bufs,
     stats: Arc<ReadStats>,
 }
 
@@ -375,7 +497,7 @@ impl Side {
                     track.layout = Some(StreamLayout::new(want, map, rate));
                 }
                 if track.due() {
-                    track.fill(&*self.store, &mut self.buf, &mut self.raw, &self.stats);
+                    track.fill(&*self.store, &mut self.bufs, &self.stats);
                     busy = true;
                 }
             }
@@ -417,6 +539,7 @@ impl Side {
                         layout: None,
                         next: 0,
                         filling: false,
+                        splice: None,
                     };
                     track.set_clips(clips, &self.stats);
                     self.tracks.push(track);
@@ -425,6 +548,11 @@ impl Side {
             Msg::Clips { seat, clips } => {
                 if let Some(track) = self.tracks.iter_mut().find(|t| t.seat == seat) {
                     track.set_clips(clips, &self.stats);
+                }
+            }
+            Msg::Splice { seat, clips } => {
+                if let Some(track) = self.tracks.iter_mut().find(|t| t.seat == seat) {
+                    track.splice_clips(clips, &self.stats);
                 }
             }
             Msg::NoTracks => {

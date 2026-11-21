@@ -2439,7 +2439,7 @@ mod tracks;
 pub(crate) mod vocal;
 mod windows;
 
-pub use audiosync::clip_tables;
+pub use audiosync::{clip_tables, clip_tables_of};
 pub use autosync::SeatLane;
 use mixer::Mixer;
 pub use mixer::{Preview, Selecting};

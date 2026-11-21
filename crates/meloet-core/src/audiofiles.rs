@@ -6,6 +6,8 @@
 //! - A file that is not a plain wav at the rate the engine runs at is decoded and
 //!   resampled once into the cache (`<cache>/audio/<uid>-<rate>.wav`, 32-bit float), and
 //!   played from there.
+//! - Audio that is made for a clip (stretched, at another pitch) is kept in the cache too
+//!   (`<cache>/stretch/<key>.wav`, 22-20).
 //! - [`AudioStore`] knows the places. [`keeper::Keeper`] is the thread that copies,
 //!   decodes and makes peaks.
 
@@ -81,7 +83,12 @@ impl Places {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+/// The folders of the cache: decoded audio, audio made for clips, peaks.
+pub const CACHE_AUDIO: &str = "audio";
+pub const CACHE_MADE: &str = "stretch";
+pub const CACHE_PEAKS: &str = "peaks";
+
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -172,15 +179,26 @@ impl AudioStore {
     pub fn cache_path(&self, uid: &[u8; 16], sample_rate: u32) -> Option<PathBuf> {
         let dir = self.lock().cache_dir.clone()?;
         Some(
-            dir.join("audio")
+            dir.join(CACHE_AUDIO)
                 .join(format!("{}-{sample_rate}.wav", hex(uid))),
         )
+    }
+
+    /// `CoreOptions::cache_dir`.
+    pub fn cache_dir(&self) -> Option<PathBuf> {
+        self.lock().cache_dir.clone()
+    }
+
+    /// Where the audio made for a clip is kept under `key` (`made::MadeKey`).
+    pub fn made_path(&self, key: &[u8; 32]) -> Option<PathBuf> {
+        let dir = self.lock().cache_dir.clone()?;
+        Some(dir.join(CACHE_MADE).join(format!("{}.wav", hex(key))))
     }
 
     /// Where the peaks of the audio with this `uid` are kept.
     pub fn peaks_path(&self, uid: &[u8; 16]) -> Option<PathBuf> {
         let dir = self.lock().cache_dir.clone()?;
-        Some(crate::peaks::peaks_path(&dir.join("peaks"), uid))
+        Some(crate::peaks::peaks_path(&dir.join(CACHE_PEAKS), uid))
     }
 
     fn cached(&self, uid: &[u8; 16], sample_rate: u32) -> Option<wav::WavPcm> {
@@ -343,6 +361,11 @@ impl PcmStore for AudioStore {
             Ok(wav) if wav.sample_rate() == sample_rate => Some(Box::new(wav)),
             _ => Some(Box::new(self.cached(uid, sample_rate)?)),
         }
+    }
+
+    fn open_made(&self, key: &[u8; 32], sample_rate: u32) -> Option<Box<dyn PcmFile>> {
+        let wav = wav::WavPcm::open(&self.made_path(key)?).ok()?;
+        (wav.sample_rate() == sample_rate).then(|| Box::new(wav) as Box<dyn PcmFile>)
     }
 }
 

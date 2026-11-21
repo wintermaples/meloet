@@ -13,11 +13,13 @@ use meloet_model::{
     ImportedClip, MAX_TICK, TrackId,
 };
 use meloet_protocol::{
-    AudioClipState, AudioJob, AudioJobKind, AudioWorkView, ClipField, StatusMessage,
+    AudioClipState, AudioJob, AudioJobKind, AudioWorkView, ClipField, SOURCE_BPM_MAX,
+    SOURCE_BPM_MIN, StatusMessage, StretchChange,
 };
 
 use super::{ClipPick, Play};
 use crate::audiofiles::keeper::{AudioNews, Growing, SourceState};
+use crate::maker::MakerJob;
 use crate::peaks::PeaksPlace;
 use crate::state::Effect;
 
@@ -30,6 +32,8 @@ pub(super) struct AudioBook {
     /// The files that are `Loading`, in the order they were started, with how far they are.
     loading: Vec<([u8; 16], u8)>,
     growing: HashMap<[u8; 16], Growing>,
+    /// The clips whose audio is being made or waits to be (22-20), as the maker said.
+    making: Vec<MakerJob>,
     /// The rate the engine runs at; `None` without a stream.
     rate: Option<u32>,
     /// `<cache>/peaks`.
@@ -51,6 +55,12 @@ impl Play {
         self.audio.states.clear();
         self.audio.loading.clear();
         self.audio.growing.clear();
+        self.audio.making.clear();
+    }
+
+    /// What the thread that makes audio for clips is at.
+    pub fn set_audio_making(&mut self, jobs: Vec<MakerJob>) {
+        self.audio.making = jobs;
     }
 
     /// Returns whether the clips look different now.
@@ -127,17 +137,29 @@ impl Play {
     /// The section `audioWork`.
     pub fn audio_work_view(&self) -> AudioWorkView {
         let doc = self.doc();
+        let loading = (self.audio.loading.iter()).flat_map(|&(uid, percent)| {
+            (doc.audio.iter().filter(move |s| s.uid == uid)).map(move |s| AudioJob {
+                kind: AudioJobKind::Loading,
+                audio: s.id.0,
+                clip: None,
+                percent,
+            })
+        });
+        // A clip that is gone since the maker said so is not shown.
+        let making = (self.audio.making.iter())
+            .filter(|job| {
+                (doc.clip(ClipId(job.clip)))
+                    .and_then(|(_, c)| c.active_audio())
+                    .is_some_and(|shown| shown.take.source.id.0 == job.audio)
+            })
+            .map(|job| AudioJob {
+                kind: AudioJobKind::Rendering,
+                audio: job.audio,
+                clip: Some(job.clip),
+                percent: job.percent,
+            });
         AudioWorkView {
-            jobs: (self.audio.loading.iter())
-                .flat_map(|&(uid, percent)| {
-                    (doc.audio.iter().filter(move |s| s.uid == uid)).map(move |s| AudioJob {
-                        kind: AudioJobKind::Loading,
-                        audio: s.id.0,
-                        clip: None,
-                        percent,
-                    })
-                })
-                .collect(),
+            jobs: loading.chain(making).collect(),
         }
     }
 
@@ -232,6 +254,74 @@ impl Play {
             Err(EditError::Overlap) => Some(StatusMessage::ClipsNotMoved),
             Err(_) => None,
         }
+    }
+
+    /// `Command::SetClipStretch`: one row of 「のび縮み ・ 音の高さ」, one step.
+    pub fn set_clip_stretch(
+        &mut self,
+        clip: u32,
+        change: StretchChange,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.busy() {
+            return;
+        }
+        let id = ClipId(clip);
+        let doc = self.doc();
+        // The nearest whole number; the model puts it into its range.
+        let whole = |v: f64| (!v.is_nan()).then(|| v.round().clamp(-1e6, 1e6) as i32);
+        let edited = match change {
+            StretchChange::Follow { on } => meloet_model::set_clip_follow(doc, id, on),
+            StretchChange::KeepFormant { on } => meloet_model::set_clip_keep_formant(doc, id, on),
+            StretchChange::Semitones { semitones } => match whole(semitones) {
+                Some(n) => meloet_model::set_clip_semitones(doc, id, n),
+                None => return,
+            },
+            StretchChange::Cents { cents } => match whole(cents) {
+                Some(n) => meloet_model::set_clip_cents(doc, id, n),
+                None => return,
+            },
+            StretchChange::SourceBpm { bpm } => {
+                let tempo = (!bpm.is_nan())
+                    .then(|| bpm.clamp(SOURCE_BPM_MIN, SOURCE_BPM_MAX))
+                    .and_then(meloet_model::Tempo::from_bpm);
+                match tempo {
+                    Some(tempo) => meloet_model::set_source_tempo(doc, id, tempo).map(|(e, _)| e),
+                    None => return,
+                }
+            }
+        };
+        if let Ok(e) = edited {
+            self.apply(e, effects);
+        }
+    }
+
+    /// `Command::FindSourceTempo`. Returns the notice to show.
+    pub fn find_source_tempo(
+        &mut self,
+        clip: u32,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let id = ClipId(clip);
+        let doc = self.doc();
+        let guess = meloet_model::guess_source_tempo(doc, id).ok()?;
+        let name = doc.clip(id)?.1.name.clone();
+        let Some(guess) = guess else {
+            return Some(StatusMessage::SourceTempoNotFound { name });
+        };
+        match meloet_model::set_source_tempo(doc, id, guess.tempo) {
+            Ok((e, _)) => self.apply(e, effects),
+            Err(EditError::Unchanged) => {}
+            Err(_) => return None,
+        }
+        Some(StatusMessage::SourceTempoFound {
+            name,
+            bpm: guess.tempo.bpm(),
+            bars: guess.bars,
+        })
     }
 
     /// Where the play line is: where files brought in from the menu go.

@@ -29,6 +29,12 @@ pub trait PcmStore: Send + Sync {
     /// not found or not made yet (`AudioClipState::Missing`, `Loading`): its clips are
     /// silence, and the thread asks again when it is told the store changed.
     fn open(&self, uid: &[u8; 16], sample_rate: u32) -> Option<Box<dyn PcmFile>>;
+
+    /// The audio that was made for a clip and kept under `key` (`made::MadeKey`), at
+    /// `sample_rate`. `None` when it is not there.
+    fn open_made(&self, _key: &[u8; 32], _sample_rate: u32) -> Option<Box<dyn PcmFile>> {
+        None
+    }
 }
 
 /// One clip as the read-ahead thread plays it: `[start, end)` in song frames, as the
@@ -39,6 +45,9 @@ pub struct FeedClip {
     pub start: u64,
     pub end: u64,
     pub uid: [u8; 16],
+    /// `Some`: the clip plays the audio made for it (stretched, at another pitch), which
+    /// the store keeps under this key, and not the file of `uid`.
+    pub made: Option<[u8; 32]>,
     /// The frame of the `PcmFile` that sounds at `start`. Below 0, or from the file's end
     /// on, there is silence.
     pub file_frame: i64,
@@ -63,6 +72,7 @@ pub fn feed_clip(map: &TempoMap, sample_rate: u32, clip: &Clip) -> Option<FeedCl
         start,
         end: song_frame(map, clip.end as f64, rate),
         uid: take.source.uid,
+        made: None,
         file_frame: first + (start as i64 - zero),
         file_end: first + to_engine(take.frames),
     })

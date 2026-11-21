@@ -535,6 +535,9 @@ def run_position(a):
         app.send({"type": "addVocalTrack"})
         app.wait(lambda s: len(vocal_tracks(s)) == 2 and vocal_tracks(s)[1]["kind"]["armed"]
                  and vocal_tracks(s)[1]["kind"]["inputReady"], 15, "the second vocal track")
+        # A track that records does not play its clips (B-94-50): the first one is let go.
+        app.send({"type": "toggleVocalArm", "track": vocal_tracks(app.snapshot())[0]["id"]})
+        app.wait(lambda s: not vocal_tracks(s)[0]["kind"]["armed"], 15, "the first vocal track to be let go")
         result["armed"] = [t["kind"]["armed"] for t in vocal_tracks(app.snapshot())]
         time.sleep(1.5)
         one_take(app, a.seconds)

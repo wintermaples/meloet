@@ -2298,3 +2298,46 @@ pub struct AudioShape {
 **5. 測る道具の `Recorder`（`tools/measure/remote.py`）: メモリに録って、止めた時に写す**
 
 - `pw-record` の録る先を、`$XDG_RUNTIME_DIR`（なければ `/run/user/<uid>`）の下の一時フォルダにし、`stop()` が頼まれた所へ移してフォルダを消す（`stretch_app.py splice` と同じ形）。呼ぶ側（`audio_app.py`、`stretch_app.py`、`click-check.py`）は変えていない（`stop()` のあとに頼んだ道を読むので）。書けるフォルダがなければ、今までどおりじかに録る。
+
+### 22-20 区切り5 の 2 回目（プラグインを書き出しで回す、2026-11-21、meloet-hard）
+
+22-11 の「プラグイン」の段を、そのまま作った回。書き出しのエンジンと core は、同じ時に別の係が作っている。
+
+- **`export_seats` の中身**（`crates/meloet-core/src/plugins/export.rs`）
+  - 中で、書き出しだけの `Hosts`（`Hosts::start_offline`）を 1 つ立てる。弾くほうの `Hosts` と同じコード ・ 同じスレッドの作り（子は `launch::spawn` で 1 つずつ、同じ鍵のプラグインは 1 つのプロセス、16 個をこえたら次のプロセス、pidfd で見はる）で、ちがうのは「書き出しの印」と「席の待ちかた」の 2 つだけ。**理由**: 起こす ・ 読ませる ・ 状態を入れる ・ 止まったら片づける、を 2 通り書かない。
+  - 渡された `ExportPlugin` を順に読ませる（`StartState::Bytes(state)`、空なら `Fresh`）。音源の場所（`PluginPlace::Instrument`）は `PluginInstrument`、インサートは `PluginEffect` にして、場所つきで返す。
+  - `ExportSeats` に、外から見えない欄 `hosts` を足した（いちばん最後の欄。席が先に落ちる）。落とすと、書き出しの `Hosts` のスレッドが終わり、子に `Quit` を送り、0.3 秒で終わらなければ止める。取り出した席は、その前に落とす（doc コメントのとおり）。あとで落としても、こわれはしない（共有メモリは `Arc`。席は「止まった」になるだけ）。
+  - `ExportSeats::pids()` を足した（試験と記録のため）。`ExportPluginError::NotYet` は、もう返さない（書き出しのエンジンの係が使っていなければ、消してよい）。
+  - 読みこめないとき: プロセスが起きなければ `Start`、プラグインが読めない ・ 状態を受けとらない ・ 読みこみ中に落ちた、は `Load { place, name }`。途中まで起こした子は、そこで全部終わらせる。
+  - `ExportWant::max_frames` は、いまは使っていない。プラグインは、弾くほうと同じ `HostOptions::geometry.max_frames`（1024）で用意する（VST3 の `maxSamplesPerBlock`）。それより長いブロックは、席が切って渡す（弾くほうと同じ）。
+- **`WIRE_VERSION` 5**（`crates/meloet-plugin/src/wire.rs`、`launch.rs`）
+  - 書き出しの印は、**コマンドラインの `--offline`**（`launch::host_command(.., offline)`）。あいさつの答え `Reply::Hello { version, offline }` で、子が「書き出しの子です」と言い、meloet の側が合っているか見る（合わなければ、その子は使わない）。
+  - **あいさつで送らなかった理由**: 子の音のスレッドは、あいさつの前に始まり、そこでリアルタイムの優先度を頼む。印は、プロセスが始まった時に分かっていないといけない。
+  - `LoadedPlugin::live` を足した（LV2 の `lv2:isLive`。VST3 はいつも false）。
+- **書き出しの子**（`crates/meloet-plughost`）
+  - 音のスレッドは、リアルタイムの優先度を頼まない（rtkit にも聞かない。ログにも何も書かない）。スレッドの数の決まり（プラグインの数、CPU の半分、4 本まで）は同じ。
+  - VST3: `setupProcessing` の `processMode` と、毎ブロックの `ProcessData::processMode` が `kOffline`（`formats/vst3.rs` の `process_mode`。2 か所とも同じ関数から）。最初から `kOffline` で用意するので、途中の切りかえはない。
+  - LV2: `lv2:designation lv2:freeWheeling` の control の入口に、毎ブロック 1（弾くほうでは、さわらない。前と同じ）。
+  - LV2 の worker: livi 0.9 は、worker の仕事を自分のスレッドが 0.1 秒ごとに見にいく（`features/mod.rs` の 100 ms の sleep）。時計で動くので、書き出しではそのままだと回すたびに結果が変わる。書き出しの子は、`run` のすぐあとに、その場で `WorkerManager::run_workers()` を呼ぶ。仕事は次の `run` の前に終わり、答えは次の `run` で届く。**仕様の「schedule_work の中ですぐ」とは 1 つずれる**（livi の `schedule_work` はさしかえられない）が、毎回同じブロックに届く。Guitarix のキャビネットで確かめた（型を変えた音が、いつも次のブロックから。弾くほうの子を休まず回すと、0.1 秒たつまで届かない）。
+  - `lv2:isLive` は、`lilv_plugin_has_feature`（required と optional の両方）で見る。
+- **しめきりなしで待つ**（`crates/meloet-plugin/src/ipc/ends.rs` の `EngineEnd::wait_through`、`crates/meloet-engine/src/plugin.rs` の `PluginSlot::for_export`）
+  - 書き出しの席は、答えが来るまで futex で眠る。`PluginBlock` のしめきりは見ない。0.05 秒ごとに起きて、まだ来うるかだけ見る。
+  - あきらめるのは 3 つだけ: 子のスレッドがそのブロックを `HANG_MS`（5 秒）持ったまま ・ だれも取らないまま、子が `HANG_MS` の間なにも進めなかった ・ 共有メモリに「止まった」の印がついた（子のプロセスが終わったのを、`Hosts` のスレッドが 10 ms のうちに見つけてつける）。あきらめたら、その席と同じプロセスの席をぜんぶ止め、`PluginWatch::stopped` が立つ（`ExportSeats::stopped()` が場所を言う）。
+  - 弾くほうの形（`PluginSlot::new`）は変えていない。先に頼む形（`Instrument::ask`）は、書き出しでも使える。
+  - 書き出しの席でも、メモリは取らない（エンジンの試験で見はっている）。書き出しのスレッドは音のスレッドではないが、同じ見はりで回せる。
+- **状態の写し**: 足した口はない。弾くほうの `Hosts::state(id)`（保存のときと同じ道。`Model::plugin_tickets()` → `Hosts::state`）で集めた物を、`ExportPlugin::state` に入れる。答えない物は `Doc` の `PluginRef::state`。
+- **確かめた事**（この PC、debug のビルド）
+  - エフェクト（LSP コンプレッサー VST3 ・ LV2、ZamComp VST3 ・ LV2、Dragonfly Hall LV2）: 書き出しの子で 2 回回した音は 1 サンプルもちがわず、弾くほうの子で同じブロックの大きさで回した音とも同じ。
+  - **Surge XT は同じにならない**（VST3 も LV2 も）。弾くほうの子で 2 回回しても、同じだけちがう（オシレーターが好きな所から始まる。Surge XT の中の乱数）。音の大きさ（0.1 秒ごとの RMS）は 2 % のうちで合う。書き出したファイルと出口の音を 1 サンプルずつくらべる試験には、Surge XT を使えない。
+  - 弾くほうで Surge XT を時計どおりに鳴らしながら、書き出しで Surge XT 2 つ ＋ Dragonfly を回した: 120 秒ぶんを 2.6 秒（46 倍）。弾くほうの答えのない回は 0。書き出しは、弾くほうの状態（音量を下げた物）で鳴った。
+  - 子が遅い（1 ブロックに 30 ms）: 待って、どのブロックにも音が入り、2 回とも同じ。子が止まった: 5.0 秒で `stopped()`、プロセスは残らない。子が落ちた: 1 秒のうちに `stopped()`。
+- **書き出しのエンジンの係へ**
+  - 席は `ExportSeats::instruments` ・ `effects` から取り出して、弾くほうと同じ口（`swap_instrument` ・ `set_effect`）で入れる。`block` は書き出しのエンジンの `plugin_block()`。しめきり（`set_deadline`）は決めなくてよい。
+  - 毎ブロックのあとに `ExportSeats::stopped()` を見る。止まった席は、音源なら音なし、エフェクトなら素通しを返すので、見ないと気づかずに書きつづける。
+  - 落とす順: エンジン（と、エンジンから戻ってきた席）→ `ExportSeats`。
+  - `realtime` が true なら、時計に合わせて回す。
+  - worker を使う LV2（LSP、Dragonfly、Guitarix など）は、弾くほうでは仕事の届く時が時計しだい（0.1 秒まで）。読みこんですぐの最初の数ブロックは、書き出しと弾くほうで合わないことがある。
+- **残した事**
+  - VST3 の `processMode` を、プラグインの側から見る試験はない（作り物の VST3 がない）。渡す値は 1 つの関数から来ていて、その関数と、Surge XT が `kOffline` で鳴る事は試験にある。
+  - `lv2:isLive` を **required** にしているプラグインは、livi が読みこむ前にはじくかもしれない（この PC に 0 件で、確かめられない）。
+  - 書き出しの子の優先度は、ふつうのまま（nice も変えていない）。弾くほうの子がリアルタイムの優先度を取れていれば、とぎれない（上の測り）。画面のスレッドとは取りあう。

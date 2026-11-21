@@ -870,3 +870,63 @@ fn surge_xt_vst3_exports_its_notes_as_loud_as_it_plays_them() {
 fn surge_xt_lv2_exports_its_notes_as_loud_as_it_plays_them() {
     surge_export_like_playing(SURGE_LV2);
 }
+
+const GX_CABINET_LV2: (&str, &str) = (
+    "lv2:http://guitarix.sourceforge.net/plugins/gx_cabinet#CABINET",
+    "/usr/lib/lv2/gx_cabinet.lv2",
+);
+
+/// A sine through the cabinet for 80 blocks; with `change`, another cabinet is chosen in
+/// block 20, which the plugin works out in its worker. The left output, block by block.
+fn cabinet_run(offline: bool, change: bool) -> Vec<Vec<f32>> {
+    let mut host = Host::start_as(GEOMETRY, &[], offline);
+    let mut engine = load(&mut host, 0, GX_CABINET_LV2);
+    let model = params(&mut host, 0)
+        .into_iter()
+        .find(|p| p.name == "Cab Model")
+        .expect("the cabinet has a model");
+    let mut blocks = Vec::new();
+    for n in 0..80 {
+        let input: Vec<f32> = (0..256)
+            .map(|i| {
+                let t = (n * 256 + i) as f32 / 48_000.0;
+                0.3 * (t * 220.0 * std::f32::consts::TAU).sin()
+            })
+            .collect();
+        let events = match (change, n) {
+            (true, 20) => vec![ToPlugin::Param {
+                frame: 0,
+                id: model.id,
+                value: 0.5,
+            }],
+            _ => Vec::new(),
+        };
+        blocks.push(block(&mut engine, &input, &events).0);
+    }
+    assert_eq!(host.ask(Request::Quit), Reply::Ok);
+    blocks
+}
+
+/// In an export the worker's work is done before the next piece of sound: what a plugin
+/// works out there lands in the same block every time, and soon. (When it plays, the work
+/// is looked for ten times a second.)
+#[test]
+#[ignore = "needs Guitarix (LV2)"]
+fn guitarix_cabinet_lv2_takes_its_workers_answer_in_the_same_block_of_every_export() {
+    if !installed(GX_CABINET_LV2) {
+        return;
+    }
+    let same = cabinet_run(true, false);
+    let first = cabinet_run(true, true);
+    let second = cabinet_run(true, true);
+    assert!(rms(&same.concat()) > 0.01);
+    let differs =
+        |run: &[Vec<f32>], same: &[Vec<f32>]| (20..80).find(|&block| run[block] != same[block]);
+    let landed = differs(&first, &same).expect("another cabinet sounds the same");
+    println!(
+        "the other cabinet lands in block {landed} of an export, {:?} when it plays",
+        differs(&cabinet_run(false, true), &cabinet_run(false, false))
+    );
+    assert!((20..=22).contains(&landed), "block {landed}");
+    assert!(first == second, "two exports are not the same sound");
+}

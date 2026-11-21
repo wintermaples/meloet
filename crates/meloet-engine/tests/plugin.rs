@@ -2,6 +2,9 @@
 //! plugin's end of the shared memory on a thread of this process. The audio thread's side
 //! allocates nothing, also while a slot stops.
 
+// The plugin's end of the tests sleeps (a slow plugin); the engine's side never does.
+#![allow(clippy::disallowed_methods)]
+
 mod common;
 
 use std::sync::Arc;

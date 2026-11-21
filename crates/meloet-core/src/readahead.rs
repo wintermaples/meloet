@@ -15,7 +15,7 @@
 //!
 //! The fades and the volumes of the clips are not its business; the engine does those.
 //!
-//! When audio that was made for a clip is ready (22-20) the clips come again with other
+//! When audio that was made for a clip is ready (22-19 pass 2) the clips come again with other
 //! files in the same places ([`ReadAhead::splice_clips`]). The thread then lays the new
 //! audio over the old for 10 ms from where it is in the ring: what sounds goes on without
 //! a gap, and the engine does nothing.

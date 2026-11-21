@@ -227,7 +227,7 @@ pub enum EngineCommand {
         refeed: bool,
     },
     /// The read-ahead thread has other audio for the clips of the track, in the same places
-    /// (audio that was made for a clip is ready, 22-20), and lays it over what it had, from
+    /// (audio that was made for a clip is ready, 22-19 pass 2), and lays it over what it had, from
     /// where it is in the ring on: the ring stays, and what sounds goes on without a gap.
     /// When nothing of the track sounds (the song stands still, the track is muted, the
     /// place just jumped) a new generation starts instead, so that the seconds that wait

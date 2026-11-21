@@ -1,5 +1,5 @@
 //! Which vocal clips need audio made for them, and the name that audio is kept under
-//! (docs/architecture.md 22-8, 22-20).
+//! (docs/architecture.md 22-8, 22-19 pass 2).
 //!
 //! A clip plays its file as it is unless it is stretched (it follows the song's tempo and
 //! the song's tempo under it is not the one its audio was played to) or its pitch is

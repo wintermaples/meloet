@@ -485,13 +485,54 @@ fn the_maker_keeps_the_cache_under_its_limit() {
     rig.until("no work", |n| *n == MadeNews::Work(vec![]));
     // The made file is 96 kB by itself: everything that is not this song's went.
     assert_eq!(rig.files(CACHE_MADE), [format!("{}.wav", hex(&first.key))]);
-    assert_eq!(rig.files(CACHE_AUDIO), [own.clone()]);
+    assert_eq!(rig.files(CACHE_AUDIO), [own.as_str()]);
     // Another value: what was made for the first is not used any more, and goes.
     let second = plan(uid, 2, &steady(12_000), None, (0, BAR / 4), 2.0);
     rig.want(&[&second]);
     rig.until_ready(second.key);
     rig.until("no work", |n| *n == MadeNews::Work(vec![]));
     assert_eq!(rig.files(CACHE_MADE), [format!("{}.wav", hex(&second.key))]);
-    assert_eq!(rig.files(CACHE_AUDIO), [own]);
+    assert_eq!(rig.files(CACHE_AUDIO), [own.as_str()]);
     assert!(WavPcm::open(&rig.store.made_path(&second.key).unwrap()).is_ok());
+}
+
+/// A measuring tool: `cargo test -p meloet-core --release --lib -- how_fast --ignored --nocapture`.
+#[test]
+#[ignore = "a measuring tool"]
+fn how_fast_a_minute_of_stereo_is_made() {
+    let mut rig = Rig::new("speed");
+    let frames = 60 * RATE as usize;
+    // Something like a voice: a few partials that move, not the same on both sides.
+    let voice = |i: usize, side: usize| {
+        let t = i as f64 / f64::from(RATE);
+        let f = 180.0 + 40.0 * (t * 0.7).sin() + 7.0 * side as f64;
+        let wave = 0.2 * (TAU * f * t).sin() + 0.1 * (TAU * 2.0 * f * t).sin();
+        (wave + 0.05 * (TAU * 3.0 * f * t).sin()) as f32
+    };
+    let samples: Vec<f32> = (0..frames)
+        .flat_map(|i| [voice(i, 0), voice(i, 1)])
+        .collect();
+    let work = rig.store.work_dir().unwrap();
+    let mut wav = CacheWav::create(&work.join("v.wav"), RATE, 2).unwrap();
+    wav.write(&samples).unwrap();
+    wav.finish().unwrap();
+    rig.sources.push(([5; 16], "v.wav".to_owned()));
+    rig.store.set_sources(rig.sources.clone());
+    let song = steady(12_000);
+    for (key, sync, semitones, what) in [
+        (1, Some(9_600), 0.0, "stretched x1.25"),
+        (2, None, 3.0, "+3 semitones, the voice kept"),
+        (3, Some(9_600), 3.0, "both"),
+    ] {
+        let made = plan([5; 16], key, &song, sync, (0, 24 * BAR), semitones);
+        let asked = Instant::now();
+        rig.want(&[&made]);
+        rig.until_ready(made.key);
+        let took = asked.elapsed().saturating_sub(SETTLE).as_secs_f64();
+        let seconds = made.frames as f64 / f64::from(RATE);
+        eprintln!(
+            "{what}: {seconds:.0} s of stereo made in {took:.2} s ({:.0} times as fast as it plays)",
+            seconds / took
+        );
+    }
 }

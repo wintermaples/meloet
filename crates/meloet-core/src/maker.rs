@@ -1,5 +1,5 @@
 //! The thread that makes the audio of stretched and pitched clips (`meloet-render`;
-//! docs/architecture.md 22-8, 22-20), and keeps the cache under its limit.
+//! docs/architecture.md 22-8, 22-19 pass 2), and keeps the cache under its limit.
 //!
 //! It is told which audio the song needs now ([`Maker::want`], a [`MadePlan`] for every
 //! clip that does not play its file as it is). What is in the cache already is said at

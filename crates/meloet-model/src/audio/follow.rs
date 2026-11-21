@@ -91,7 +91,7 @@ impl SourceTempo {
     ///
     /// Asked of the take a recording made (`from_timeline` at the tick it started from)
     /// in a song whose map is as it was, the answer is always yes: both sides come out of
-    /// the same function, the rounding inside a ramp too (docs/architecture.md 22-20).
+    /// the same function, the rounding inside a ramp too (docs/architecture.md 22-19 pass 2).
     pub fn is_the_songs(&self, timeline: &Timeline, zero: i64, end: u64) -> bool {
         let songs = match u64::try_from(zero) {
             Ok(origin) => SourceTempo::from_timeline(timeline, origin),

@@ -7,7 +7,7 @@
 //!   resampled once into the cache (`<cache>/audio/<uid>-<rate>.wav`, 32-bit float), and
 //!   played from there.
 //! - Audio that is made for a clip (stretched, at another pitch) is kept in the cache too
-//!   (`<cache>/stretch/<key>.wav`, 22-20).
+//!   (`<cache>/stretch/<key>.wav`, 22-19 pass 2).
 //! - [`AudioStore`] knows the places. [`keeper::Keeper`] is the thread that copies,
 //!   decodes and makes peaks.
 

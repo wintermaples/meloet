@@ -32,7 +32,7 @@ pub(super) struct AudioBook {
     /// The files that are `Loading`, in the order they were started, with how far they are.
     loading: Vec<([u8; 16], u8)>,
     growing: HashMap<[u8; 16], Growing>,
-    /// The clips whose audio is being made or waits to be (22-20), as the maker said.
+    /// The clips whose audio is being made or waits to be (22-19 pass 2), as the maker said.
     making: Vec<MakerJob>,
     /// The rate the engine runs at; `None` without a stream.
     rate: Option<u32>,

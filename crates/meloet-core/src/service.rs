@@ -998,7 +998,7 @@ struct Audio {
     store_seen: u64,
     /// The song's tempo as last told: what the engine's map was made of.
     timeline: Option<Arc<meloet_model::Timeline>>,
-    /// The thread that makes the audio of stretched and pitched clips (22-20).
+    /// The thread that makes the audio of stretched and pitched clips (22-19 pass 2).
     maker: Option<Maker>,
     /// The audio it said is in the cache, of what the clips need now.
     made: HashSet<MadeKey>,

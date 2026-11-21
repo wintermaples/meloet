@@ -97,7 +97,7 @@ def read(raw, events):
         if i < len(kept) and kept[i]["atMs"] < until and kept[i]["busyMs"] is not None:
             f = kept[i]
             busy.append(f["busyMs"])
-            each.append([n, js_ms, layout_ms, f["busyMs"], f["glMs"]])
+            each.append([n, js_ms, layout_ms, f["busyMs"], f["glMs"], round(f["atMs"])])
             for k in parts:
                 parts[k].append(f[k])
             rest.append(f["busyMs"] - f["callbacksMs"] - f["measureMs"] - f["paintMs"] - f["glMs"])
@@ -121,6 +121,9 @@ def main():
     p.add_argument("--tall", action="store_true")
     p.add_argument("--css", default="")
     p.add_argument("--hold", type=int, default=60, help="how many times to go right and left when zoomed all the way out")
+    p.add_argument("--zooms", type=int, default=0, help="at the end, zoom in and out this many times more (for webkit-stacks.sh)")
+    p.add_argument("--js-before", help="a file of JavaScript (the body of an async function) run in the page before the wheel events")
+    p.add_argument("--js-after", help="the same, run after them; what it returns goes into the summary as `jsAfter`")
     a = p.parse_args()
     result = {"song": a.song, "splits": a.splits, "how": a.how, "hide": a.hide, "tall": a.tall}
     events = {}
@@ -144,19 +147,24 @@ def main():
             app.js("for (const e of document.querySelectorAll(%s)) e.style.display = 'none';" % json.dumps(selector))
         if a.css:
             app.js("const s = document.createElement('style'); s.textContent = %s; document.head.appendChild(s);" % json.dumps(a.css))
+        if a.js_before:
+            app.js(open(a.js_before, encoding="utf-8").read())
         result["nodes"] = app.js(COUNT)
         task = "true" if a.how == "task" else "false"
         for name, steps in (("sideways", [[120, {"shiftKey": True}, 120], [-120, {"shiftKey": True}, 120]]),
                             ("zoom", [[-100, {"ctrlKey": True}, 40], [100, {"ctrlKey": True}, 40]]),
                             ("zoom2", [[-100, {"ctrlKey": True}, 40], [100, {"ctrlKey": True}, 40]]),
                             ("out", [[100, {"ctrlKey": True}, 40]]),
-                            ("sidewaysOut", [[40, {"shiftKey": True}, 1], [-40, {"shiftKey": True}, 1]] * a.hold)):
+                            ("sidewaysOut", [[40, {"shiftKey": True}, 1], [-40, {"shiftKey": True}, 1]] * a.hold),
+                            ("zoomMore", [[-100, {"ctrlKey": True}, 10], [100, {"ctrlKey": True}, 10]] * a.zooms)):
             before = cpu_ms(app.web_pid())
-            events[name] = app.js(WHEEL % (task, json.dumps(steps)), timeout=120 + a.hold)
+            events[name] = app.js(WHEEL % (task, json.dumps(steps)), timeout=120 + a.hold + a.zooms)
             cpu[name] = [round(b - a, 1) for a, b in zip(before, cpu_ms(app.web_pid()))]
             if name == "out":
                 result["nodesOut"] = app.js(COUNT)
             time.sleep(0.5)
+        if a.js_after:
+            result["jsAfter"] = app.js(open(a.js_after, encoding="utf-8").read())
         time.sleep(2.5)
     for name, ev in events.items():
         result[name] = read(os.path.join(a.out, "raw"), ev)

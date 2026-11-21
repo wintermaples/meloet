@@ -1357,3 +1357,11 @@ VST3 の `IMidiMapping` と名前の形で見分けて、`ParamTable.keyboardKno
   - 数: クリックの位置のずれは最大 0.84 ms（多くは 5 こま以内）。のび縮みだけなら 440 Hz のまま、長さはこままで式どおり。**高さを変えると数セントずれる**（`Default` で最大 10.8 セント〔440 Hz、+0.5 半音〕、1000 Hz では 0〜3 セント）。「声の感じを保つ」は、基音を教える（`set_formant_base`）と山がずっとよく残る。作る速さは release ・ ステレオで実時間の 82〜108 倍（`Default`）。試験 15。
   - ライセンス: `NOTICE`、`licenses/upstream.json` の `vendored`、`check.mjs` の段 4b（写したファイルが 1 バイトも変わっていないか）。`tools/licenses/inventory.mjs` を 2 行変えた（さわってよい一覧の外。NOTICE は道具が作るので要った。棟梁が見て取った）。「meloet について」にはまだ出ない（2 回目で core につなぐ時に、`makeTexts` と About の部品）。
   - 聞きくらべ: `target/listen/round7-stretch/`（声 5 つ × 41 ファイル、`聞いてほしい所.md`）。素材は LibriVox（パブリックドメイン）と Wikimedia Commons（CC0 ・ CC BY 4.0）。係は音を聞けていない。→ オーナーさんに聞いてもらう。
+- 1 回目 約束 25（53d1ee7 ・ 46d9bfc ・ c7ceeb7、merge、meloet-hard ・ Fable 5.2）:
+  - 意図 `setClipStretch {clip, change}`（`follow` ・ `keepFormant` ・ `sourceBpm` ・ `semitones` ・ `cents`、1 つが 1 手。`SetClipField` に足さず別にした: オン ・ オフを bool で送れる）と `findSourceTempo {clip}`。見る物は `StretchView.ratio`（クリップの頭の比、ついていかなければ null）と `AudioClipView.sourceTempo`（ついていくクリップにだけ、この音のテンポの点の列）。進みは約束 24 の `audioWork` の `rendering` で足りた。状態行 `sourceTempoFound` ・ `sourceTempoNotFound`。手の名前 3 つ。
+  - ついていく式は model の `FileClock`（`crates/meloet-model/src/audio/follow.rs`。ついていく: `first_frame + この音の秒(t − 0 ティック) × rate`、曲のテンポは式に出てこない）。答えの表 `ui/src/components/arrange/follow.table.json` と画面の写し `follow.ts`（こまは 1000 分の 1 まで合う）。
+  - 「この音のテンポ」を変えると、見せているテイクだけが新しい id のテイクになる（S で分けたもう片方は古いまま）。曲のファイルは版 6 のまま、欄は足さずに足りた。
+  - 偽物の場面 5 つ（`stretch` ・ `stretchRendering` ・ `stretchPitch` ・ `stretchNoTempo` ・ `stretchRamp`）。偽物の録った歌を 120 → 96.00 に（偽物の曲が 96 なので、120 のままだと ×0.80 がつく）。
+  - 棟梁: 手の名前 3 つと「さがす」の仮の文 2 つを `ja.ts` に足した（係は `ja.ts` をさわれないので、枝の頭で型の検査が 1 つ落ちていた）。仮の形は B-94 の 52〜60。
+  - 気になる事（2 回目の core へ）: だんだんの中で録りはじめた歌は、`SourceTempo::from_timeline` が頭のテンポを 0.01 にまるめるので、地図を変えていなくても「ついていく式」と「ファイルの速さ」がわずかにずれる（100 のあたりで 10 秒に 24 こまほど、係の見つもり）。22-8 の「録った歌は、地図を変えないかぎり 1 ビットも変わらない」を守る形を 2 回目で決める。
+  - 数: protocol 51、model 214 ＋ 2、core 501（ignored 23）、vitest 2960。

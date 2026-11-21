@@ -21,7 +21,11 @@ sha2 = { workspace = true }
 # Audio files brought into a song: decoded here, and brought to the rate the audio runs at.
 symphonia = { version = "=0.6.1", default-features = false, features = ["flac", "wav", "pcm", "mp3", "ogg", "vorbis"] }
 rubato = { version = "=5.1.0", default-features = false, features = ["fft_resampler"] }
+# The flac files of an export. Without its threads: the export has a thread of its own.
+flacenc = { version = "=0.5.1", default-features = false }
 
 [dev-dependencies]
+# The export's engine is watched for memory taken in its blocks, as the playing one is.
+meloet-engine = { workspace = true, features = ["rt-check"] }
 # The tests look at the plugin windows as a person's desktop has them.
 x11rb = { version = "=0.14.0", features = ["allow-unsafe-code"] }

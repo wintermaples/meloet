@@ -101,3 +101,6 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
+# The flac files of an export.
+[profile.dev.package.flacenc]
+opt-level = 3

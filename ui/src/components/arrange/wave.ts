@@ -10,7 +10,7 @@ import type { GlWave } from "../../gl/slot";
 import type { WaveSource } from "../../gl/wave";
 import type { TempoMap } from "../../time/tempoMap";
 import { tickToX, xToTick, type View } from "../arrangeGeom";
-import { gainFactor, type WaveArea } from "./audioClipGeom";
+import { clampGain, gainFactor, type WaveArea } from "./audioClipGeom";
 import type { AudioDragValue } from "./audioDrag.svelte";
 import { cachedSourceMap, clipFrameAt, type FollowClip } from "./follow";
 
@@ -40,18 +40,19 @@ export interface WaveClip {
   endFrame: number;
 }
 
-/** クリップと、ドラッグしている間の値（`audioDrag.now`。そのクリップの物だけ効く）から。歌のクリップでなければ null。 */
+/** クリップと、ドラッグしている間の値（`audioDrag.now`。そのクリップの物と、いっしょにずらすクリップの音量だけ効く）から。歌のクリップでなければ null。 */
 export function waveClipOf(clip: ClipView, drag: AudioDragValue | null = null): WaveClip | null {
   const a = clip.audio;
   if (a === null) return null;
   const d = drag?.clip === clip.id ? drag : null;
+  const shifted = d === null && drag?.shift?.clips.includes(clip.id) ? clampGain(a.gainDb + drag.shift.byDb) : null;
   return {
     timing: { start: clip.start, takeOffset: clip.takeOffset, firstFrame: a.firstFrame, sampleRate: a.sampleRate, source: cachedSourceMap(a.sourceTempo) },
     start: clip.start,
     end: clip.end,
     fadeIn: d?.fadeIn ?? a.fadeIn,
     fadeOut: d?.fadeOut ?? a.fadeOut,
-    gain: gainFactor(d?.gainDb ?? a.gainDb),
+    gain: gainFactor(d?.gainDb ?? shifted ?? a.gainDb),
     endFrame: a.firstFrame + a.frames,
   };
 }

@@ -216,6 +216,10 @@ describe("音量の倍率とフェード", () => {
     expect(W.waveClipOf(clip, { clip: 2, gainDb: 6 })!.gain).toBeCloseTo(gainFactor(-6), 12);
     // 範囲の外は −60〜+12 に入れる。
     expect(W.waveClipOf(clip, { clip: 1, gainDb: 40 })!.gain).toBeCloseTo(gainFactor(12), 12);
+    // いくつもの線をいっしょに動かしている間（39-B）: ずらすクリップは、自分の音量 ＋ byDb（−60〜+12 で止まる）。
+    expect(W.waveClipOf(clip, { clip: 2, gainDb: 0, shift: { clips: [1], byDb: 3 } })!.gain).toBeCloseTo(gainFactor(-3), 12);
+    expect(W.waveClipOf(clip, { clip: 2, gainDb: 0, shift: { clips: [1], byDb: -80 } })!.gain).toBeCloseTo(gainFactor(-60), 12);
+    expect(W.waveClipOf(clip, { clip: 2, gainDb: 0, shift: { clips: [3], byDb: 3 } })!.gain).toBeCloseTo(gainFactor(-6), 12);
   });
 
   it("フェードは px で渡し、線（gray.10）はフェードのあるクリップにだけ。ドラッグ中の長さも", () => {
@@ -578,6 +582,25 @@ describe("Arrange の歌のクリップ", () => {
     const faded = slots.get(target.querySelector<HTMLElement>('[data-test="audio-live"]')!) as Rects;
     expect(faded.waves![0]!.fadeIn).toBe(16);
     expect(faded.waves![0]!.gain).toBeCloseTo(gainFactor(-3), 12);
+    expect(lane()).toBe(big);
+  });
+
+  it("いくつもの線をいっしょに動かしている間（39-B）: ずらすクリップも、囲む 1 つの区画に、ずらした音量で描く。大きな面はそのまま", async () => {
+    const s = scene("multiClip");
+    await show(s);
+    const big = lane();
+    const ids = s.params.clips!.clips;
+    const all = s.song.tracks.flatMap((t) => t.clips);
+    const [grabbed, ...others] = ids.map((id) => all.find((c) => c.id === id)!);
+    audioDrag.now = { clip: grabbed!.id, gainDb: grabbed!.audio!.gainDb + 2, shift: { clips: others.map((c) => c.id), byDb: 2 } };
+    flushSync();
+    const nodes = [...target.querySelectorAll<HTMLElement>('[data-test="audio-live"]')];
+    expect(nodes).toHaveLength(1);
+    const live = slots.get(nodes[0]!) as Rects;
+    expect(live.waves!.map((w) => w.gain).sort()).toEqual([grabbed!, ...others].map((c) => gainFactor(c.audio!.gainDb + 2)).sort());
+    // 区画は 3 つのクリップを囲む箱（2 本の行にまたがる）。
+    const rowH = 64;
+    expect(parseFloat(nodes[0]!.style.height)).toBeGreaterThan(rowH);
     expect(lane()).toBe(big);
   });
 

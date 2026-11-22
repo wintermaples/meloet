@@ -1,13 +1,15 @@
 // 書き出しのダイアログと状態行の進みの文（仕様書 3 章 34-B、6 章、モック F7-Export ・ F7-Exporting ・ F-Export、design-notes B-94-69〜75）。
 // DOM を知らない純粋な関数。
-import { EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportRunView, type RecordFormat } from "../../bridge";
+import { EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
 import { t, type TextKey } from "../../text/ja";
 import { dbNumber, SILENT_DB, textParts, type TextPart } from "../format";
 import { barBeatTick, positionText, type Bars } from "../time";
 
-/** いちばん大きい所の数（「−0.6」）。音がない（null）か小さすぎれば「−∞」（マスターの計と同じ字。B-94-75）。 */
+/** いちばん大きい所の数（「−0.6」、0 dB をこえたら「+1.2」。仕様書 3 章 41-A）。音がない（null）か小さすぎれば「−∞」（マスターの計と同じ字。B-94-75）。 */
 export function peakNumber(db: number | null): string {
-  return db === null || db < SILENT_DB ? t("common.dbSilentBare") : dbNumber(db);
+  if (db === null || db < SILENT_DB) return t("common.dbSilentBare");
+  const text = dbNumber(db);
+  return db > 0 && text !== "0.0" ? `+${text}` : text;
 }
 
 /** 長さの「3:02」（仕様書 6 章「書き出した」）。秒は切りすて。 */
@@ -52,32 +54,54 @@ export function detailsSummary(d: ExportDialogView): string {
 export const tailText = (tail: ExportDialogView["tail"]): string =>
   tail === "untilSilent" ? t("export.tailUntilSilent", { seconds: EXPORT_TAIL_MAX_S }) : t("export.tailOff");
 
-export interface CheckLine {
-  parts: TextPart[];
-  /** 長い文（音割れ）は折りかえす。 */
-  wrap: boolean;
-}
+/**
+ * 「書き出す前のたしかめ」の 1 行。`counting` は「たしかめています ・ 160 の棒 ・ 38 %」。
+ * 字の行の色: `plain` は gray.8 で穴（数）だけ gray.10 の等幅、`over` は穴が rec、`rec` は行ぜんぶ rec、`hint` は gray.8 で折りかえす。
+ */
+export type CheckLine = { kind: "counting"; percent: number } | { kind: "text"; parts: TextPart[]; tone: "plain" | "over" | "rec" | "hint" };
 
-const CLIPPING: CheckLine = { parts: textParts("msg.exportClipping", {}), wrap: true };
+const textLine = (key: TextKey, values: Record<string, string | number>, tone: "plain" | "over" | "rec" | "hint" = "plain"): CheckLine => ({
+  kind: "text",
+  parts: textParts(key, values),
+  tone,
+});
 
-/** 「書き出す前のたしかめ」のいちばん大きい所の行（B-94-71・75）。数えている途中で 0 dB をこえたら、音割れの文も足す。 */
+/** 0 dB をこえた所の 2 行（仕様書 3 章 41-A: rec の文と gray.8 の文）。 */
+const overLines = (over: number, peakDb: number | null): CheckLine[] => [
+  textLine("export.checkOver", { count: over, peak: peakNumber(peakDb) }, "rec"),
+  textLine("export.checkOverHint", {}, "hint"),
+];
+
+/**
+ * 「書き出す前のたしかめ」のいちばん大きい所の行（仕様書 3 章 41-A、6 章「書き出しの前」）。音割れの文は、いまの形で割れるとき（`clips`）だけ。
+ * こえた所の数は `over`（数えかたは design-notes B-95-2）。
+ */
 export function checkLines(check: ExportCheck): CheckLine[] {
   switch (check.state) {
     case "waiting":
-      return [{ parts: textParts("export.checkWaiting", {}), wrap: false }];
+      return [textLine("export.checkPreparing", {})];
     case "counting": {
-      const line = { parts: textParts("export.checkCounting", { percent: check.percent, peak: peakNumber(check.peakDb) }), wrap: false };
-      return check.clips ? [line, CLIPPING] : [line];
+      const peak = textLine("export.checkPeakSoFar", { peak: t("export.peakDb", { peak: peakNumber(check.peakDb) }) }, check.clips ? "over" : "plain");
+      return [{ kind: "counting", percent: check.percent }, peak, ...(check.clips ? overLines(check.over, check.peakDb) : [])];
     }
     case "done":
-      return [check.clips ? CLIPPING : { parts: textParts("msg.exportPeak", { peak: peakNumber(check.peakDb) }), wrap: false }];
+      if (!check.clips) return [textLine("msg.exportPeak", { peak: peakNumber(check.peakDb) })];
+      return [
+        { kind: "text", parts: [{ text: t("export.peak"), hole: null }, { text: t("export.peakDb", { peak: peakNumber(check.peakDb) }), hole: "peak" }], tone: "over" },
+        ...overLines(check.over, check.peakDb),
+      ];
     case "failed":
       return [
-        check.reason.kind === "plugin"
-          ? { parts: textParts("export.checkFailedPlugin", { plugin: check.reason.name }), wrap: false }
-          : { parts: textParts("export.checkFailedWrite", {}), wrap: false },
+        check.reason.kind === "plugin" ? textLine("export.checkFailedPlugin", { plugin: check.reason.name }) : textLine("export.checkFailedWrite", {}),
       ];
   }
+}
+
+/** たしかめの行のソロの文（仕様書 3 章 42-C）。ソロのトラックがなければ null。 */
+export function soloText(solo: ExportSolo | null): string | null {
+  if (!solo) return null;
+  const first = t("track.label", { number: solo.first.number, name: solo.first.name });
+  return t("export.solo", { track: solo.others > 0 ? t("export.soloMore", { track: first, count: solo.others }) : first });
 }
 
 /** 音割れのときは「このまま書き出す」（仕様書 6 章「書き出しで音が割れる」）。 */

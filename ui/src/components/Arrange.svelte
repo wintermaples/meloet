@@ -480,7 +480,7 @@
     return { rects: out, waves };
   });
 
-  // ---- 音量の線 ・ フェードの取っ手のドラッグ（audioDrag。大きな面は描きなおさず、そのクリップだけを小さな区画に重ねて描く） ----
+  // ---- 音量の線 ・ フェードの取っ手のドラッグ（audioDrag。大きな面は描きなおさず、動いているクリップだけを小さな区画に重ねて描く） ----
 
   /** 離したあと、答えの状態が届くまで（やめたときは、この間だけ）ドラッグの値の絵を残す。 */
   const LIVE_HOLD_MS = 100;
@@ -498,29 +498,44 @@
   });
   onDestroy(() => clearTimeout(liveTimer));
 
+  /**
+   * ドラッグしているクリップと、いっしょに音量をずらしているクリップ（d.shift）を、それらを囲む 1 つの区画に描く。
+   * 区画は 1 つなので、WebKit のよごれた四角は 1 コマに 1 つ（docs/architecture.md 7 章「CPU で描く WebKit」）。間の透けた所は下の大きな面が見える。
+   */
   const livePicture = $derived.by(() => {
     const d = liveDrag;
     if (!d) return null;
     void waveBook.version;
-    for (let row = 0; row < song.tracks.length; row++) {
-      const track = song.tracks[row]!;
-      const clip = track.clips.find((c) => c.id === d.clip);
-      if (!clip?.audio) continue;
-      const box = G.clipBox(view, dims, row, clip.start, clip.end);
-      const left = Math.max(box.x0, 0);
-      const right = Math.min(box.x1, view.width);
-      if (right <= left) return null;
-      const rects: GlRect[] = [];
-      const waves: GlWave[] = [];
-      paintAudioClip(rects, waves, rects, view, box, track, clip, selectedSet.has(clip.id) ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track)), d);
-      for (const q of rects) {
-        q.x -= left;
-        q.y -= box.y0;
+    const ids = new Set([d.clip, ...(d.shift?.clips ?? [])]);
+    const rects: GlRect[] = [];
+    const waves: GlWave[] = [];
+    const handles: GlRect[] = [];
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    song.tracks.forEach((track, row) => {
+      for (const clip of track.clips) {
+        if (!clip.audio || !ids.has(clip.id)) continue;
+        const box = G.clipBox(view, dims, row, clip.start, clip.end);
+        const x0 = Math.max(box.x0, 0);
+        const x1 = Math.min(box.x1, view.width);
+        if (x1 <= x0) continue;
+        paintAudioClip(rects, waves, handles, view, box, track, clip, selectedSet.has(clip.id) ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track)), d);
+        left = Math.min(left, x0);
+        right = Math.max(right, x1);
+        top = Math.min(top, box.y0);
+        bottom = Math.max(bottom, box.y1);
       }
-      W.shiftWaves(waves, -left, -box.y0);
-      return { place: { left, top: box.y0, width: right - left, height: box.y1 - box.y0 }, rects, waves };
+    });
+    if (right <= left) return null;
+    rects.push(...handles);
+    for (const q of rects) {
+      q.x -= left;
+      q.y -= top;
     }
-    return null;
+    W.shiftWaves(waves, -left, -top);
+    return { place: { left, top, width: right - left, height: bottom - top }, rects, waves };
   });
 
   // ---- 名前と札（HTML） ----

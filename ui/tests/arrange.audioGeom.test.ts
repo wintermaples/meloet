@@ -42,14 +42,20 @@ describe("歌のクリップの幾何（モック R11-Audio ・ F7-AudioEdit）"
     expect(area).toEqual({ x0: 385, x1: 511, top: box.y0 + 18, bottom: box.y1 - 1, mid: box.y0 + 18 + 19 });
   });
 
-  it("音量の線: 上のはしが +12 dB、下のはしが −60 dB、dB でまっすぐ。y から dB は 0.1 きざみで、範囲の外には出ない", () => {
+  it("音量の線: フェーダーと同じ目盛（3 章 39-B）。上のはし +12、上から 2 割が 0 dB、下のはし −60（−∞ の位置）。y から dB は 0.1 きざみで、範囲の外には出ない", () => {
     const area = waveArea(D, clipBox(V, D, 0, 0, BAR));
+    const h = area.bottom - area.top;
     expect([gainLineY(area, 12), gainLineY(area, -60)]).toEqual([area.top, area.bottom]);
-    expect(gainLineY(area, -24)).toBe((area.top + area.bottom) / 2);
-    expect(gainLineY(area, 40)).toBe(area.top);
+    expect(gainLineY(area, 0)).toBeCloseTo(area.top + 0.2 * h, 9);
+    expect(gainLineY(area, 6)).toBeCloseTo(area.top + 0.1 * h, 9);
+    // 表: −3 は 70 %、−6 は 60 %、−12 は 40 %、−24 は 20 %。
+    for (const [db, len] of [[-3, 0.7], [-6, 0.6], [-12, 0.4], [-24, 0.2]] as const) expect(gainLineY(area, db)).toBeCloseTo(area.bottom - len * h, 9);
+    expect([gainLineY(area, 40), gainLineY(area, -200)]).toEqual([area.top, area.bottom]);
     expect([gainAtY(area, area.top), gainAtY(area, area.bottom), gainAtY(area, -100), gainAtY(area, 1000)]).toEqual([12, -60, 12, -60]);
-    for (const db of [-60, -24, -3, 0, 6, 12]) expect(gainAtY(area, gainLineY(area, db))).toBeCloseTo(db, 9);
-    expect(gainAtY(area, area.top + 7)).toBe(Math.round((12 - (7 / (area.bottom - area.top)) * 72) * 10) / 10);
+    for (const db of [-60, -24, -12, -6, -3, 0, 6, 12, -1.5, -40]) expect(gainAtY(area, gainLineY(area, db))).toBeCloseTo(db, 9);
+    // 仕様書の例: 名前の帯の下の 40 が目盛なら、0 dB は 8 下、−3.0 dB は 12 下（クリップの高さ 58 で y 24 ・ y 28）。
+    const forty = { x0: 0, x1: 100, top: 16, bottom: 56, mid: 36 };
+    expect([gainLineY(forty, 0), gainLineY(forty, -3)]).toEqual([24, 28]);
     expect([gainFactor(0), gainFactor(-60)]).toEqual([1, 0.001]);
     expect(gainFactor(6)).toBeCloseTo(1.9953, 4);
   });

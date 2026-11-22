@@ -3440,6 +3440,7 @@ SCENES.multiClip = {
     s.song.file = "changed";
   },
   after: (s) => (s.status.message = null),
+  bands: ["params"],
   meters: QUIET,
 };
 

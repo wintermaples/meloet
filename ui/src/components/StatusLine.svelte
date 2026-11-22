@@ -600,8 +600,13 @@
         return { parts: recordingVocalsParts(m.keys, m.vocals, m.monitor), strong: [], button: null };
       case "latencyMeasureOpen":
         return plain("status.songDialogOpen", { dialog: t("latency.title") });
-      case "exportDialogOpen":
-        return plain("status.songDialogOpen", { dialog: t("export.title") });
+      case "exportDialogOpen": {
+        // たしかめの進みと、0 dB をこえた所があること（モック F8-ExportCheck ・ F8-ExportClip）。
+        const check = exportShown.current?.dialog?.check;
+        const counting = check?.state === "counting" ? textParts("status.exportChecking", { percent: check.percent }) : [];
+        const over = (check?.state === "counting" || check?.state === "done") && check.clips ? textParts("status.exportOver", {}) : [];
+        return { parts: joined(textParts("status.songDialogOpen", { dialog: t("export.title") }), counting, over), strong: [], button: null };
+      }
       // 第 7 回 区切り3（約束 24）。いくつも切った ・ 入れたとき、1 つだけ持ってきたときの文は仕様書にないので、
       // 1 つめの名前の文のまま（切った ・ 入れた）と、数だけの文（持ってきている）にしてある。
       case "audioMissing":
@@ -866,7 +871,12 @@
       );
       base = { parts, strong: [], button: null };
     } else if ((m === null || m.id === "summary") && shelfParts) base = { parts: shelfParts, strong: [], button: null };
-    else base = shown(m);
+    else if (app.params.clips && (m === null || (m.id === "summary" && m.notes === null))) {
+      // 歌のクリップを 2 つ以上えらんでいる（モック F8-MultiClip）。
+      const loop = m?.id === "summary" ? m.loopBars : null;
+      const count = app.params.clips.clips.length;
+      base = { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], textParts("status.clipsSelected", { count })), strong: [], button: null };
+    } else base = shown(m);
     if (stoppedSummary) {
       const muted = mutedParts();
       const keys = held.length > 0 ? textParts("status.held", { keys: keysLabel(held, heldDrums) }) : [];

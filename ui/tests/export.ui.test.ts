@@ -52,8 +52,8 @@ const withDialog = (name: string, over: Partial<ExportDialogView>): FakeState =>
 };
 
 describe("文の部品（B-94-75）", () => {
-  it("いちばん大きい所: 小数 1 けた、音がなければ −∞", () => {
-    expect([peakNumber(-0.6), peakNumber(1.44), peakNumber(null), peakNumber(-200)]).toEqual(["−0.6", "1.4", "−∞", "−∞"]);
+  it("いちばん大きい所: 小数 1 けた、0 dB をこえたら +、音がなければ −∞", () => {
+    expect([peakNumber(-0.6), peakNumber(1.44), peakNumber(0.01), peakNumber(null), peakNumber(-200)]).toEqual(["−0.6", "+1.4", "0.0", "−∞", "−∞"]);
   });
   it("長さは 3:02、残りは 1 分まで秒、ほかは分。まだわからなければ —", () => {
     expect([lengthText(182), lengthText(59.9), lengthText(3600)]).toEqual(["3:02", "0:59", "60:00"]);
@@ -114,27 +114,37 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     expect(q<HTMLButtonElement>('[data-test="export-range-tracks"]')!.disabled).toBe(true);
   });
 
-  it("たしかめの用意: 仮の文で、書き出すは押せない", () => {
+  it("たしかめの用意: 「用意をしています」で、書き出すは押せない（仕様書 3 章 41-A）", () => {
     show(ExportDialog, scene("exportWaiting"));
-    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["たしかめの用意をしています"]);
+    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["用意をしています"]);
     expect(q<HTMLButtonElement>('[data-test="export-start"]')!.disabled).toBe(true);
   });
 
-  it("数えている途中: % とここまでのいちばん大きい所。書き出すは押せる（B-94-72）", () => {
+  it("数えている途中: 「たしかめています ・ 棒 ・ 38 %」と「ここまでのいちばん大きい所」の 2 行。書き出すは押せる（3 章 41-A）", () => {
     show(ExportDialog, scene("exportCounting"));
-    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["数えています 38 % ・ ここまでのいちばん大きい所 −3.5 dB"]);
+    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["たしかめています 38 %", "ここまでのいちばん大きい所 −3.5 dB"]);
+    expect(q<HTMLElement>('[data-test="export-check-line"] .fill')!.style.transform).toBe("scaleX(0.38)");
     expect(q<HTMLButtonElement>('[data-test="export-start"]')!.disabled).toBe(false);
   });
 
-  it("音が割れる: 仕様書 6 章の文と「このまま書き出す」。数えている途中でも", () => {
+  it("音が割れる: 3 章 41-A の rec の文と gray.8 の文、「このまま書き出す」。数えている途中でも", () => {
     show(ExportDialog, scene("exportClips"));
-    const clipping = "いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。";
-    expect(qa('[data-test="export-check-line"]').map(text)).toEqual([clipping]);
+    const over = (count: number, peak: string) => `0 dB をこえる所が ${count} か所あります（いちばん大きい所 ${peak} dB）。音が割れます。`;
+    const hint = "マスターのフェーダーを下げるか、リミッターの上限を見てください。";
+    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["いちばん大きい所+1.4 dB", over(1, "+1.4"), hint]);
+    const lines = qa('[data-test="export-check-line"]');
+    expect(lines[0]!.querySelector(".rec")?.textContent).toBe("+1.4 dB");
+    expect([lines[1]!.classList.contains("rec"), lines[2]!.classList.contains("label")]).toEqual([true, true]);
     expect(text(q('[data-test="export-start"]'))).toBe("このまま書き出すEnter");
     unmount(mounted!);
-    show(ExportDialog, withDialog("exportDialog", { check: { state: "counting", percent: 50, peakDb: 0.4, clips: true, over: 1 } }));
-    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["数えています 50 % ・ ここまでのいちばん大きい所 0.4 dB", clipping]);
+    show(ExportDialog, withDialog("exportDialog", { check: { state: "counting", percent: 50, peakDb: 0.4, clips: true, over: 2 } }));
+    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["たしかめています 50 %", "ここまでのいちばん大きい所 +0.4 dB", over(2, "+0.4"), hint]);
     expect(text(q('[data-test="export-start"]'))).toBe("このまま書き出すEnter");
+    unmount(mounted!);
+    // 32 ビットの wav: こえた所があっても割れない（clips は false）。音割れの文は出さない。
+    show(ExportDialog, withDialog("exportDialog", { check: { state: "done", peakDb: 0.4, clips: false, over: 2 } }));
+    expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["いちばん大きい所 +0.4 dB ・ 音割れはありません"]);
+    expect(text(q('[data-test="export-start"]'))).toBe("書き出すEnter");
   });
 
   it("止まっているプラグイン（F-Export）: 名前と居場所は rec、とばした音で書き出す", () => {

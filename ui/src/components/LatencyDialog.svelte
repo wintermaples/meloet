@@ -1,4 +1,4 @@
-<!-- 遅れを測る（仕様書 3 章 25-B ・ 33-A、6 章「遅れを測っている」「遅れを測れない」、モック F7-Latency ・ R11-Fit）。
+<!-- 遅れを測る（仕様書 3 章 25-B ・ 33-A、6 章「遅れを測っている」「遅れを測れない」（ばらつき ・ 入口がない）、モック F7-Latency ・ R11-Fit）。
      音の設定 ▸ くわしい設定の「遅れを測る…」からひらく（WorkspaceView.latencyDialog）。カチッという音を 5 回鳴らして平均を出し、
      「この数を使う」で、その PC の設定にする（曲ではなく PC につく）。PC が言う数は AudioView.latency。 -->
 <script lang="ts">
@@ -32,13 +32,18 @@
       fraction: measure.of > 0 ? Math.min(1, measure.done / measure.of) : 0,
     };
   });
-  /** 測れなかったわけ。ぐらつく（unsteady）ときの文は、仕様書にもモックにもない。 */
+  /** 測れなかったわけ（仕様書 6 章「遅れを測れない」「… ・ ばらつき」「… ・ 入口がない」）。 */
   const failure = $derived.by(() => {
     if (measure?.state !== "failed") return null;
     if (measure.reason === "tooQuiet") return t("latency.failed");
-    if (measure.reason === "noInput") return t("msg.noAudioInput");
-    return null;
+    if (measure.reason === "unsteady") return t("latency.failedUnsteady");
+    return t("latency.failedNoInput");
   });
+  /** 入口がないときのボタン「音の設定…」: このダイアログを閉じて、下の音の設定（くわしい設定）に戻る。 */
+  function toSettings(): void {
+    void send({ type: "closeLatencyMeasure" });
+    void send({ type: "openSettings", advanced: true });
+  }
 
   const close = () => send({ type: "closeLatencyMeasure" });
   /** やめる（Esc）: 測っている間は測るのをやめ、ほかはダイアログを閉じる。 */
@@ -86,6 +91,8 @@
         <Button test="latency-cancel" onclick={cancel}>{t("button.cancel")}<span class="mono label">{t("key.esc")}</span></Button>
         {#if measure.state === "idle"}
           <Button primary test="latency-start" onclick={() => send({ type: "startLatencyMeasure" })}>{t("button.measure")}</Button>
+        {:else if measure.state === "failed" && measure.reason === "noInput"}
+          <Button primary test="latency-settings" onclick={toSettings}>{t("button.audioSettingsEllipsis")}</Button>
         {:else if measure.state === "failed"}
           <Button primary test="latency-again" onclick={() => send({ type: "startLatencyMeasure" })}>{t("button.again")}</Button>
         {:else}

@@ -34,33 +34,33 @@ const s6 = (
 export const texts = {
   // 仕様書 6 章 「エラーと案内の文面」
   "msg.keyboardMissing": s6(
-    "鍵盤がない",
+    "Keyboard missing",
     "鍵盤を USB でつなぐと、ここに出ます。つながなくても、マウスで音を書けます。",
   ),
   "msg.keyboardFound": s6(
-    "鍵盤が見つかった",
+    "Keyboard found",
     "{keyboard} が見つかりました。鍵は届いています。音の出口をえらぶと鳴ります。",
     { keyboard: "鍵盤 49" },
   ),
   "msg.noOutputMeter": s6(
-    "音の出口がまだ",
+    "No output yet",
     "音の出口がまだです。下でえらんでください",
     undefined,
     "quoted",
   ),
   "msg.noOutputArrange": s6(
-    "音の出口がまだ",
+    "No output yet",
     "音をどこから鳴らしますか",
     undefined,
     "quoted",
   ),
   "msg.outputNotPlugged": s6(
-    "えらんだ出口に何もささっていない",
+    "Nothing plugged into the chosen output",
     "{output}には、いま何もささっていません。ささると、ここから鳴ります。",
     { output: "（出口の名前）" },
   ),
   "msg.bufferFixedStatus": s6(
-    "バッファが固定されている（状態行）",
+    "Buffer is fixed (status line)",
     "バッファが PC 全体の設定で {actual} に固定されています ・ 音が出るまで 約 {latencyMs} ms（{requested} なら 約 {latencyMsAtRequested} ms）",
     {
       actual: "1024",
@@ -70,7 +70,7 @@ export const texts = {
     },
   ),
   "msg.bufferFixedDetail": s6(
-    "バッファが固定されている（音の設定の奥）",
+    "Buffer is fixed (deep in the sound settings)",
     "バッファが PC 全体の設定で {actual} に固定されています。meloet は {requested} を頼んでいますが、{actual} で動いています。鍵を押してから音が出るまで 約 {latencyMs} ms。{requested} で動けば 約 {latencyMsAtRequested} ms です。速いフレーズでは、音が指より遅れて聞こえます。録った音の位置は、遅れの補正で正しく置かれます。meloet は PC 全体の設定を変えません。変える場所は PipeWire の設定（quantum の固定）です。",
     {
       actual: "1024",
@@ -79,170 +79,170 @@ export const texts = {
       latencyMsAtRequested: "13.5",
     },
   ),
-  "msg.soundCameOut": s6("音が出た", "音が出ました。", undefined, "quoted"),
+  "msg.soundCameOut": s6("Sound came out", "音が出ました。", undefined, "quoted"),
   // 2 文目は、録音ボタンが使えるときだけ出す。
   "msg.soundCameOutRecord": s6(
-    "音が出た",
+    "Sound came out",
     "赤い丸の録音ボタンを押すと、カウントインのあとに録りはじめます。",
     undefined,
     "quoted",
   ),
   "msg.unusableSwitchedByPc": s6(
-    "えらべない出口 ・ PC が切りかえる",
+    "Unusable output: the PC switches to it",
     "さすと、PC がこちらに切りかえます",
   ),
   // ささっている入口を、ほかの入口もささっているので PC がえらんでいないとき（オーナーさんの決めの文が 6 章に入った）。
   "msg.inputPluggedNotChosen": s6(
-    "ささっているのに使われていない入口",
+    "Input plugged in but not used",
     "ささっています ・ PC の設定でほかの入口をえらんでいます（設定 ▸ サウンド ▸ 入力 で変えられます）",
   ),
   "msg.unusableStoppedByPc": s6(
-    "えらべない出口 ・ PC の設定で止まっている",
+    "Unusable output: stopped by the PC settings",
     "PC の設定で、いまは使えません",
   ),
   "msg.unusableHeading": s6(
-    "えらべない出口の見出し",
+    "Heading of unusable outputs",
     "いまは使えない出口",
     undefined,
     "part",
   ),
   "msg.unusableHeadingChooser": s6(
-    "えらべない出口の見出し",
+    "Heading of unusable outputs",
     "PC が切りかえる物 {switched} ・ PC の設定で止まっている物 {stopped}",
     { switched: "1", stopped: "7" },
     "part",
   ),
   "msg.unusableHeadingSettings": s6(
-    "えらべない出口の見出し",
+    "Heading of unusable outputs",
     "meloet は、PC 全体の設定を変えません",
     undefined,
     "quoted",
   ),
   "msg.unusableInputHeading": s6(
-    "えらべない入口の見出し",
+    "Heading of unusable inputs",
     "いまは使えない入口",
     undefined,
     "part",
   ),
   "msg.countingIn": s6(
-    "カウントイン中",
+    "Counting in",
     "カウントイン中 ・ あと {beats} 拍で録音が始まります。止めるには Space",
     { beats: "2" },
   ),
   // 状態行の左の札「● カウントイン中」（status.countingIn）のうしろに出す部分。札と合わせて上の文になる。
   "msg.countingInRest": s6(
-    "カウントイン中",
+    "Counting in",
     "あと {beats} 拍で録音が始まります。止めるには Space",
     { beats: "2" },
     "part",
   ),
   "msg.recording": s6(
-    "録音中",
+    "Recording",
     "{track} へ録音 ・ 止めると テイク {take} として残ります",
     { track: "1 ピアノ", take: "2" },
   ),
   "msg.loopRecording": s6(
-    "ループ中の録音",
+    "Recording in a loop",
     "{track} へ録音 ・ ループ {from}–{to} の {lap} 周目 ・ 周ごとにテイクを分けています",
     { track: "1 ピアノ", from: "5", to: "9", lap: "2" },
   ),
   "msg.takeSwitched": s6(
-    "テイクを切りかえた",
+    "Take switched",
     "{track} ・ {clip} をテイク {take} / {takes} に切りかえました",
     { track: "1 ピアノ", clip: "Aメロ", take: "2", takes: "3" },
   ),
   "msg.noArmedTrack": s6(
-    "録音待機のトラックがない",
+    "No armed track",
     "録るトラックが決まっていません。トラックの ● を押すと、そこに録ります。",
   ),
   "msg.keyboardLost": s6(
-    "鍵盤が抜けた",
+    "Keyboard unplugged",
     "{keyboard} とのつながりが切れました。曲はそのままです。さしなおすと、自動で戻ります。",
     { keyboard: "鍵盤 49" },
   ),
   "msg.outputLost": s6(
-    "音の出口が消えた",
+    "Output gone",
     "{output}が見つからなくなりました。再生を止めています。",
     { output: "ヘッドホン" },
   ),
   "msg.audioSystemStopped": s6(
-    "PC の音のしくみが止まった",
+    "PC sound system stopped",
     "PC の音のしくみ（PipeWire）が止まりました。曲はそのままです。動きだしたら、自動でつなぎなおします。",
   ),
   "msg.recordingStoppedAudioSystem": s6(
-    "録音中に PC の音のしくみが止まった",
+    "PC sound system stopped while recording",
     "PC の音のしくみ（PipeWire）が止まったので、録音を止めました。そこまでの演奏は テイク {take} に残っています。",
     { take: "2" },
   ),
   "msg.recordingStoppedOutputMissing": s6(
-    "録音中に出口が消えた",
+    "Output gone while recording",
     "{output}が見つからなくなったので、録音を止めました。そこまでの演奏は テイク {take} に残っています。",
     { output: "ヘッドホン", take: "2" },
   ),
   "msg.keyboardInputStopped": s6(
-    "鍵盤からの入力が止まった",
+    "Input from the keyboard stopped",
     "鍵盤からの入力が止まりました。曲はそのままです。いま、つなぎなおしています。",
   ),
   "msg.micTooLoud": s6(
-    "マイクの音が大きすぎる",
+    "Mic too loud",
     "マイクの音が大きすぎます（0 dB に届きました）。マイクを少しはなすか、PC の入口の音量を下げてください。",
   ),
   "msg.scanning": s6(
-    "スキャン中",
+    "Scanning",
     "スキャン中 {done} / {total} ・ 調べ終えた分から、もう使えます",
     { done: "37", total: "112" },
   ),
   "msg.scanDone": s6(
-    "スキャンが終わった",
+    "Scan finished",
     "スキャンが終わりました ・ {added} 個を棚に入れました。{stopped} 個は調べている途中で止まったので、入れていません。meloet と曲は無事です。",
     { added: "667", stopped: "4" },
   ),
   "msg.windowNotYet": s6(
-    "まだ窓をひらけない子",
+    "Plugin whose window cannot be opened yet",
     "この子の窓は、まだひらけません。パラメータはここで動かせます。meloet が、この型の窓にまだ対応していないためです。音は、いつもどおり鳴ります。",
   ),
   "msg.noWindow": s6(
-    "窓を持たない子",
+    "Plugin that has no window",
     "この子は窓を持ちません。パラメータはここで動かせます。",
   ),
   "msg.windowsOpen": s6(
-    "窓がひらいている",
+    "Windows are open",
     "プラグインの窓が {count} つひらいています",
     { count: "2" },
   ),
   // 窓が 1 つのとき（2 つ以上は msg.windowsOpen）。
-  "msg.windowOpen": s6("プラグインの窓がひらいた", "{name} の窓がひらいています", { name: "Surge XT" }, "part"),
+  "msg.windowOpen": s6("Plugin window opened", "{name} の窓がひらいています", { name: "Surge XT" }, "part"),
   "msg.windowFailed": s6(
-    "プラグインの窓を出せない",
+    "Plugin window cannot be shown",
     "{name} の窓をひらけませんでした。パラメータの欄では動かせます。",
     { name: "Surge XT" },
   ),
   "msg.windowOpening": s6(
-    "窓をひらくのに時間がかかる",
+    "Window takes time to open",
     "{name}の窓をひらいています…",
     { name: "（名前）" },
   ),
   "msg.windowTooLarge": s6(
-    "窓が画面より大きい",
+    "Window larger than the screen",
     "{name}の窓がひらいています（{width}×{height} ・ この画面より大きい窓です）。パラメータは右でも動かせます。",
     { name: "（名前）", width: "1597", height: "995" },
   ),
   "msg.searchNoMatch": s6(
-    "さがしても見つからない",
+    "Search finds nothing",
     "「{query}」に合うパラメータはありません。",
     { query: "（ことば）" },
   ),
   "msg.formatSwitch": s6(
-    "形式を入れかえる前",
+    "Before switching the format",
     "この曲では {current} 版を使っています。{next} 版に入れかえると、いまのパラメータの値は引きつがれないことがあります。",
     { current: "VST3", next: "LV2" },
   ),
   "msg.audition": s6(
-    "ためし弾き中",
+    "Auditioning",
     "鍵盤を弾くと、この音色で鳴ります。まだトラックには入っていません。",
   ),
   "msg.samplePlaying": s6(
-    "サンプル再生中",
+    "Sample playing",
     "サンプルを再生中 ・ {name}。行をえらぶと、鍵盤でためし弾きできます。",
     { name: "（名前）" },
   ),
@@ -256,7 +256,7 @@ export const texts = {
     },
   ),
   "msg.auditionReplace": s6(
-    "ためし弾き中 ・ 入れかえ",
+    "Auditioning to replace",
     "鍵盤を弾くと、この音色で鳴ります。再生すると、録ってあるノートもこの音色で鳴ります。まだ入れかえていません。",
   ),
   // 仕様書 6 章の表の「出る場所」の列にある文。
@@ -271,7 +271,7 @@ export const texts = {
     },
   ),
   "msg.instrumentReplaced": s6(
-    "音源を入れかえた",
+    "Instrument replaced",
     "{track} の音源を {instrument} にしました。取り消せます（{undoKey}）",
     {
       track: "1 ピアノ",
@@ -279,84 +279,84 @@ export const texts = {
       undoKey: "Mod Z",
     },
   ),
-  "msg.trackAdded": s6("トラックを足した", "{track} を足しました。", {
+  "msg.trackAdded": s6("Track added", "{track} を足しました。", {
     track: "5 シンセ",
   }),
   "msg.trackDeleted": s6(
-    "トラックを消した",
+    "Track deleted",
     "{track} を消しました。取り消せます（{undoKey}）",
     { track: "3 ドラム", undoKey: "Mod Z" },
   ),
   "msg.drumsNoScaleLock": s6(
-    "ドラムとスケール固定",
+    "Drums and 「スケール固定」",
     "ドラムには音階がないので、スケール固定は使えません。",
   ),
   "msg.auditionLoading": s6(
-    "ためし弾きしたい音源がまだ読めない",
+    "Instrument to audition is not loaded yet",
     "{name}を読みこんでいます… 少しだけ待つと、鍵盤で鳴らせます。",
     { name: "（名前）" },
   ),
   "msg.pluginMissing": s6(
-    "プラグインが見つからない",
+    "Plugin not found",
     "前はここにありました: {path}。曲の中の設定は残しています。",
     { path: "（場所）" },
   ),
   "msg.pluginStopped": s6(
-    "プラグインが止まった",
+    "Plugin stopped",
     "{name}が止まりました ・ {track}。曲のほかの部分は動いています。音はこの枠をとばして流しています。パラメータの値は残っています。",
     { name: "（名前）", track: "（トラック）" },
   ),
   "msg.pluginScanFailed": s6(
-    "プラグインがスキャンでこけた",
+    "Plugin failed in the scan",
     "{name}は調べている途中で止まったので、棚には入れていません。ほかのプラグインは使えます。",
     { name: "（名前）" },
   ),
   "msg.undoPending": s6(
-    "取り消してある手がある",
+    "There are undone steps",
     "{count} 手ぶん取り消してあります。新しく何かすると、その {count} 手はやりなおせなくなります。",
     { count: "2" },
   ),
   "msg.quantized": s6(
-    "クオンタイズをかけた",
+    "Quantize applied",
     "クオンタイズ {grid}（{strength} %）を {count} ノートに。うすい枠が、そろえる前の位置。",
     { grid: "1/16", strength: "75", count: "3" },
   ),
   "msg.unsaved": s6(
-    "保存していない",
+    "Not saved",
     "「{song}」に、まだ保存していない変更があります。",
     { song: "はじめての曲" },
   ),
   "msg.cannotSave": s6(
-    "保存できない",
+    "Cannot save",
     "ここには保存できませんでした（書きこむ権利がないか、空きが足りません）。べつの場所をえらんでください。曲は開いたままです。",
   ),
   "msg.songBroken": s6(
-    "曲のファイルがこわれている",
+    "Song file is broken",
     "このファイルは読めませんでした。自動で残してある 1 つ前の状態からなら開けます。",
   ),
   // 1 つ前の状態がないときは、上の文の 1 文目だけ。
   "msg.songBrokenFirst": s6(
-    "曲のファイルがこわれている",
+    "Song file is broken",
     "このファイルは読めませんでした。",
     undefined,
     "part",
   ),
   // なおすためのファイル（仕様書 3 章）。PC が終わるときに書いた物は仕様書の文、ふだん書いた物はヤチヨさんの文。
   "msg.recoveredPcEnding": s6(
-    "なおすためのファイルから戻した",
+    "Restored from the recovery file",
     "PC が終わる前の演奏を戻しました。まだ保存していません。",
     undefined,
     "quoted",
   ),
   // 2 文目は「…です。」と「テイク N つ。」に分けて持つ。テイクが 0 のときはうしろを出さない（棟梁の決め 2026-11-15、デザインに戻す）。
   "msg.recoveredPcEndingDetail": s6(
-    "なおすためのファイルから戻した",
+    "Restored from the recovery file",
     "{month} 月 {day} 日 {time} に PC が終わったときの「{song}」です。",
     { month: "11", day: "15", time: "22:41", song: "新しい曲" },
     "part",
   ),
   "msg.recoveredTakes": s6(
-    "なおすためのファイルから戻した",
+    "Restored from the recovery file",
     "テイク {takes} つ。",
     { takes: "2" },
     "part",
@@ -381,24 +381,24 @@ export const texts = {
     "spec:6",
   ),
   "msg.recoveryDiscarded": s6(
-    "戻さないを押した",
+    "「戻さない」 pressed",
     "戻した変更をすてて、最後に保存した形にしました。取り消せます（{undoKey}）",
     { undoKey: "Mod Z" },
   ),
   "msg.recoveryUnreadable": s6(
-    "なおすためのファイルが読めない",
+    "Recovery file cannot be read",
     "前に保存していない変更がありましたが、なおすためのファイルが読めませんでした。",
     undefined,
     "quoted",
   ),
   "msg.recoveryUnreadableSaved": s6(
-    "なおすためのファイルが読めない",
+    "Recovery file cannot be read",
     "最後に保存した「{song}」をひらいています。ファイルは消さずに残してあります。",
     { song: "はじめての曲" },
     "quoted",
   ),
   "msg.recoveryUnreadableNew": s6(
-    "なおすためのファイルが読めない",
+    "Recovery file cannot be read",
     "新しい曲をひらいています。ファイルは消さずに残してあります。",
     undefined,
     "quoted",
@@ -414,179 +414,179 @@ export const texts = {
     "mock:F-Recover3",
   ),
   "status.recoveryOpenedNew": s6(
-    "なおすためのファイルが読めない",
+    "Recovery file cannot be read",
     "新しい曲をひらいています",
     undefined,
     "part",
   ),
   "msg.cpuOverload": s6(
-    "処理が追いつかない",
+    "Processing cannot keep up",
     "PC の処理が追いつかず、音がとぎれました。音の設定でバッファを大きくすると、とぎれにくくなります。",
   ),
   "msg.exportPeak": s6(
-    "書き出しの前",
+    "Before export",
     "いちばん大きい所 {peak} dB ・ 音割れはありません",
     { peak: "−6.2" },
   ),
   "msg.exportClipping": s6(
-    "書き出しで音が割れる",
+    "Export would clip",
     "いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。",
   ),
-  "msg.exported": s6("書き出しが終わった", "書き出しました: {path}", {
+  "msg.exported": s6("Export finished", "書き出しました: {path}", {
     path: "~/ミュージック/はじめての曲/はじめての曲.wav",
   }),
-  "msg.scaleDoesNotFit": s6("画面に入らない拡大率", "この画面には入りません"),
+  "msg.scaleDoesNotFit": s6("Scale that does not fit the screen", "この画面には入りません"),
   "msg.scaleKept": s6(
-    "入らない拡大率をキーでえらんだ",
+    "Scale that does not fit, chosen with a key",
     "{requested} % は、この画面には入りません。{kept} % のままです。",
     { requested: "150", kept: "125" },
   ),
   "msg.scaleWindowGrown": s6(
-    "拡大率を変えて、窓が大きくなった",
+    "Scale changed and the window made larger",
     "拡大率を {scale} % にしました。窓を、いちばん小さい大きさまで広げました。",
     { scale: "125" },
   ),
   "msg.scaleLowered": s6(
-    "画面が小さくなった",
+    "Screen became smaller",
     "画面が小さくなったので、拡大率を {from} % から {to} % にしました。",
     { from: "150", to: "125" },
   ),
   "msg.bandFoldedWindowLow": s6(
-    "帯が自動でたたまれた",
+    "Band folded automatically",
     "窓が低くなったので、{band}をたたみました。帯札を押すと、またひらきます。",
     { band: "ミキサー" },
   ),
   "msg.bandFoldedToOpen": s6(
-    "入りきらない帯をひらいた",
+    "Opened a band that does not fit",
     "{opened}をひらくために、{folded}をたたみました。窓を高くすると、両方ひらけます。",
     { opened: "ピアノロール", folded: "ミキサー" },
   ),
   "msg.bandFoldedThird": s6(
-    "3 つめの帯をひらいた",
+    "Opened a third band",
     "{opened}をひらいたので、いちばん前にひらいた{folded}をたたみました。下の帯は、2 つまでひらけます。",
     { opened: "取り消しの履歴", folded: "ミキサー" },
   ),
   "msg.bandFoldedScale": s6(
-    "拡大率を上げて帯がたたまれた",
+    "Band folded after raising the scale",
     "拡大率を {scale} % にしたので、{band}をたたみました。帯札を押すと、またひらきます。",
     { scale: "150", band: "ミキサー" },
   ),
   // 数字の欄に、数字として読めない物を打った。欄は value.* か note.*。
   "msg.valueRejected": s6(
-    "数字として読めない",
+    "Not readable as a number",
     "{field}は数字で打ちます。もとの {kept} のままです。",
     { field: "ベロシティ", kept: "77" },
     "part",
   ),
   // 音の欄（音名で打つ）に読めない物を打った。
   "msg.keyRejected": s6(
-    "音の欄で読めない",
+    "Not readable in the note field",
     "{field}は {range} です。もとの {kept} のままです。",
     { field: "音", range: "C-1〜G9", kept: "C4" },
   ),
   "msg.backToArrange": s6(
-    "アレンジへ帰る道",
+    "Way back to the arrange",
     "Esc ・ ひとつ戻る。何度か押すとアレンジへ",
   ),
   // 範囲の外の値は近いはしにして決める。欄と範囲は value.*。
   "msg.valueClamped": s6(
-    "範囲の外の値を打った",
+    "Typed a value out of range",
     "{field}は {range} なので、{value} にしました。",
     { field: "ベロシティ", range: "1〜127", value: "127" },
     "quoted",
   ),
   // ベロシティをまとめて変える、長さをそろえる。
   "msg.velocityMatched": s6(
-    "まとめてそろえた",
+    "Set together",
     "{count} ノートのベロシティを {value} にそろえました。",
     { count: "3", value: "100" },
     "part",
   ),
   "msg.lengthMatched": s6(
-    "まとめてそろえた",
+    "Set together",
     "{count} ノートの長さを {value} にそろえました。",
     { count: "3", value: "0.240" },
     "part",
   ),
   // 位置の小節を丸めたとき。小節だけ「1 から」のあとに空白がない。拍とティックは msg.valueClamped。
   "msg.valueClampedBar": s6(
-    "位置を丸めた",
+    "Position rounded",
     "小節は 1 からなので、{value} にしました。",
     { value: "1. 1. 000" },
     "quoted",
   ),
   // ほかのクリップと重なって置けなかった。
   "msg.clipsNotMoved": s6(
-    "クリップが重なる",
+    "Clips overlap",
     "ほかのクリップと重なるので、動かしませんでした。",
     undefined,
     "quoted",
   ),
   "msg.clipsNotPasted": s6(
-    "クリップが重なる",
+    "Clips overlap",
     "ほかのクリップと重なるので、貼りつけませんでした。",
     undefined,
     "quoted",
   ),
   "msg.clipsNotDuplicated": s6(
-    "クリップが重なる",
+    "Clips overlap",
     "ほかのクリップと重なるので、複製できませんでした。",
     undefined,
     "quoted",
   ),
   // ピアノロールでクリップの外に書こうとして、クリップをのばせなかった（B-82）。
   "msg.notesNotWritten": s6(
-    "クリップの外に書けない",
+    "Cannot write outside the clip",
     "ほかのクリップと重なるので、書けませんでした。",
   ),
   "msg.notesNotResized": s6(
-    "長さを変えられない",
+    "Cannot change the length",
     "ほかのクリップと重なるので、長さを変えられませんでした。",
   ),
   "msg.notesNotMoved": s6(
-    "クリップの外へ動かせない",
+    "Cannot move outside the clip",
     "ほかのクリップと重なるので、動かしませんでした。",
   ),
   "msg.notesNotDuplicated": s6(
-    "クリップの外へ写せない",
+    "Cannot copy outside the clip",
     "ほかのクリップと重なるので、複製できませんでした。",
   ),
   "msg.takeDeleted": s6(
-    "テイクを消した",
+    "Take deleted",
     "テイク {take} を消しました。テイク {active} / {total} にしました。取り消せます（{undoKey}）",
     { take: "2", active: "1", total: "2", undoKey: "Mod Z" },
   ),
   // 曲のダイアログ（仕様書 3 章 89-6）。見出しは曲の名前のまま、状態行だけ名前で言う。
-  "status.songDialogOpen": s6("曲のダイアログをひらいている", "「{dialog}」のダイアログをひらいています", { dialog: "保存していない変更" }),
+  "status.songDialogOpen": s6("Song dialog is open", "「{dialog}」のダイアログをひらいています", { dialog: "保存していない変更" }),
   "songDialog.unsaved": e("保存していない変更", "spec:3"),
   "songDialog.cannotSave": e("保存できませんでした", "spec:3"),
   "songDialog.broken": e("ひらけない曲", "spec:3"),
   // 「音の設定をひらいています」は status.settingsOpen。
   "status.dialogOpen": s6(
-    "ダイアログをひらいている",
+    "Dialog is open",
     "{dialog} をひらいています",
     { dialog: "meloet について" },
     "part",
   ),
   "msg.soundsMissingSong": s6(
-    "音の素材が見つからない（曲をひらいた）",
+    "Sound pack not found (song opened)",
     "音の素材が見つからないので、{count} 本のトラックをサイン波で鳴らしています。",
     { count: "4" },
   ),
   "shelf.soundsMissing": s6(
-    "音の素材が見つからない（棚）",
+    "Sound pack not found (shelf)",
     "音の素材が見つかりません。いまはサイン波だけ使えます。meloet を入れなおすと、もとに戻ります。",
   ),
 
   // [第 5 回 ・ SF2]（仕様書 6 章）
   "sf2.dropHere": s6(
-    "SF2 を持ってきている",
+    "Dragging in an SF2",
     "ここに落とすと、棚に SF2 を足します。ファイルは meloet の中にうつします。",
     undefined,
     "part",
   ),
   "sf2.dropCancel": s6(
-    "SF2 を持ってきている",
+    "Dragging in an SF2",
     "やめるには、窓の外で離すか Esc",
     undefined,
     "quoted",
@@ -594,33 +594,33 @@ export const texts = {
   // 6 章「SF2 を持ってきている」の出る場所の列。
   "sf2.dragging": e("SF2 のファイルを持ってきています", "spec:6"),
   "sf2.notSf2": s6(
-    "SF2 ではないファイルを持ってきている",
+    "Dragging in a file that is not SF2",
     "SF2 のファイルではないので、足せません。",
   ),
-  "sf2.notSf2Dragging": s6("SF2 でないファイルを持ってきている", "SF2 ではないファイルを持ってきています（足せません）"),
+  "sf2.notSf2Dragging": s6("Dragging in a non-SF2 file", "SF2 ではないファイルを持ってきています（足せません）"),
   // 窓のまん中の箱の、ファイルの名前の所。SF2 が 1 つもないときは前だけ（design-notes A-19）。
-  "sf2.manyFiles": s6("ファイルをいくつも持ってきている", "{files} つのファイル ・ SF2 は {sf2} つ", { files: "3", sf2: "2" }),
-  "sf2.manyFilesNoSf2": s6("ファイルをいくつも持ってきている", "{files} つのファイル", { files: "3" }, "part"),
+  "sf2.manyFiles": s6("Dragging in many files", "{files} つのファイル ・ SF2 は {sf2} つ", { files: "3", sf2: "2" }),
+  "sf2.manyFilesNoSf2": s6("Dragging in many files", "{files} つのファイル", { files: "3" }, "part"),
   // 「SF2 をいくつも足した」の 2 文。足した SF2 が 1 つなら、sf2.added のうしろに 2 文目だけ（design-notes A-19）。
   "sf2.addedMany": s6(
-    "SF2 をいくつも足した",
+    "Many SF2 files added",
     "SF2 を {count} つ足しました（{file} ほか {others} つ）。",
     { count: "2", file: "FluidR3_GM.sf2", others: "1" },
     "part",
   ),
-  "sf2.skipped": s6("SF2 をいくつも足した", "{count} つは SF2 ではないので、足していません。", { count: "1" }, "part"),
+  "sf2.skipped": s6("Many SF2 files added", "{count} つは SF2 ではないので、足していません。", { count: "1" }, "part"),
   "sf2.added": s6(
-    "SF2 を足した",
+    "SF2 added",
     "{file} を足しました。音色 {count} ・ ドラムのキット {kits}",
     { file: "FluidR3_GM.sf2", count: "128", kits: "9" },
   ),
   "sf2.unreadable": s6(
-    "SF2 が読めない",
+    "SF2 cannot be read",
     "{file} は読めませんでした。ファイルがこわれているか、SF2 ではないかもしれません。",
     { file: "FluidR3_GM.sf2" },
   ),
   "sf2.missing": s6(
-    "SF2 が見つからない",
+    "SF2 not found",
     "曲で使っている {file} が見つかりません。{count} 本のトラックはサイン波で鳴らしています。",
     { file: "FluidR3_GM.sf2", count: "2" },
   ),
@@ -664,7 +664,7 @@ export const texts = {
   // 棚の下の、止まったプラグインの箱（モック A-Mixer: 見出しと、6 章「プラグインが止まった」の文の残り）。
   "plugin.stoppedHead": e("{name} が止まりました ・ {track}", "mock:A-Mixer", { name: "Brick EQ", track: "3 ドラム" }),
   "plugin.stoppedBody": s6(
-    "プラグインが止まった",
+    "Plugin stopped",
     "曲のほかの部分は動いています。音はこの枠をとばして流しています。パラメータの値は残っています。",
     undefined,
     "part",
@@ -766,67 +766,67 @@ export const texts = {
 
   // [第 5 回 ・ インサート]（仕様書 6 章）
   "shelf.insertInto": s6(
-    "インサートに入れる",
+    "Putting into an insert",
     "{strip} のインサート {slot} に入れます。",
     { strip: "2 ベース", slot: "2" },
   ),
   "msg.effectInserted": s6(
-    "エフェクトを入れた",
+    "Effect put in",
     "{strip} のインサート {slot} に {effect} を入れました。",
     { strip: "2 ベース", slot: "2", effect: "リバーブ" },
   ),
   "msg.effectRemoved": s6(
-    "エフェクトを外した",
+    "Effect removed",
     "{strip} のインサート {slot} の {effect} を外しました。取り消せます（{undoKey}）",
     { strip: "2 ベース", slot: "1", effect: "コンプレッサー", undoKey: "Mod Z" },
   ),
   // 外す ・ 入れかえる ・ 音源を入れかえるのといっしょに帯が消えたとき、状態行の文の終わりの「。」の前に足す（仕様書 3 章 92-19）。
-  "msg.lanesAlsoGone": s6("帯もいっしょに消えた", "（そのパラメータの帯 {count} 本も消えました）", { count: "2" }, "part"),
+  "msg.lanesAlsoGone": s6("Bands went away too", "（そのパラメータの帯 {count} 本も消えました）", { count: "2" }, "part"),
   "msg.insertsReordered": s6(
-    "インサートを並べかえた",
+    "Inserts reordered",
     "{strip} のインサートを並べかえました（{order}）。",
     { strip: "2 ベース", order: "EQ 4 バンド → コンプレッサー" },
   ),
   "shelf.insertReplace": s6(
-    "インサートを入れかえる",
+    "Replacing an insert",
     "{strip} のインサート {slot} の {current} を、{effect} に入れかえます。いまの設定は残りません（取り消せます）。",
     { strip: "2 ベース", slot: "1", current: "コンプレッサー", effect: "EQ 4 バンド" },
   ),
   "msg.insertReplaced": s6(
-    "インサートを入れかえた",
+    "Insert replaced",
     "{strip} のインサート {slot} を {effect} に入れかえました。取り消せます（{undoKey}）",
     { strip: "2 ベース", slot: "1", effect: "EQ 4 バンド", undoKey: "Mod Z" },
   ),
   // {target} は「{ストリップ} の {エフェクト} 」（うしろに空白）。仕様書のもどしたときの例は「…をもどしました。」。
   "msg.effectBypassed": s6(
-    "エフェクトをとばした ・ もどした",
+    "Effect bypassed or brought back",
     "{target}をとばしました。",
     { target: "2 ベース の コンプレッサー " },
     "part",
   ),
   "msg.effectRestored": s6(
-    "エフェクトをとばした ・ もどした",
+    "Effect bypassed or brought back",
     "{target}をもどしました。",
     { target: "…" },
     "quoted",
   ),
   "status.paramSelectedInsert": s6(
-    "パラメータをえらんでいる（トラック ・ マスター）",
+    "Parameter chosen (track, master)",
     "{strip} ・ {effect}の「{param}」をえらんでいます",
     { strip: "2 ベース", effect: "コンプレッサー", param: "しきい値" },
   ),
   "params.valueClamped": s6(
-    "打ちこんだ値がはみ出した",
+    "Typed value goes over the range",
     "{param}は {range} なので、{value} にしました。",
     { param: "レシオ", range: "1〜20", value: "20 : 1" },
   ),
   "params.nothingSelected": s6(
-    "何もえらんでいないパラメータの欄",
+    "Params panel with nothing chosen",
     "ミキサーでインサートの枠をえらぶと、ここにパラメータが出ます。",
   ),
-  "mixer.noOutput": s6("出口がない", "出口なし ▸", undefined, "part"),
+  "mixer.noOutput": s6("No output", "出口なし ▸", undefined, "part"),
   "mixer.noOutputTip": s6(
-    "出口がない",
+    "No output",
     "音の出口がありません。押すと音の設定をひらきます。",
     undefined,
     "quoted",
@@ -854,13 +854,13 @@ export const texts = {
     { query: "cutoff", count: "24" },
   ),
   "status.insertBypassedNow": s6(
-    "ミキサーをひらいた（とばした ・ 止まった枠がある）",
+    "Mixer opened (with bypassed or stopped slots)",
     "{strip} の {effect} をとばしています",
     { strip: "4 パッド", effect: "MVerb" },
     "part",
   ),
   "status.pluginStoppedNow": s6(
-    "ミキサーをひらいた（とばした ・ 止まった枠がある）",
+    "Mixer opened (with bypassed or stopped slots)",
     "{strip} の {name} は止まっています（音は、その枠をとばして流しています）",
     { strip: "3 ドラム", name: "Brick EQ" },
     "part",
@@ -904,63 +904,63 @@ export const texts = {
 
   // [第 5 回 ・ プラグイン]（仕様書 6 章）
   "plugin.newFound": s6(
-    "新しいプラグインがあった",
+    "New plugins found",
     "新しいプラグインが {count} 個見つかりました。棚の「あとから入れたもの」に入れました。",
     { count: "3" },
   ),
   "plugin.stoppedList": s6(
-    "スキャンで止まった物の一覧",
+    "List of plugins that stopped in the scan",
     "この {count} 個は、調べている途中で止まったので、棚に入れていません。meloet と曲は無事です。次のスキャンからは、とばします。",
     { count: "4" },
   ),
   "plugin.retryOk": s6(
-    "もう一度ためして入った",
+    "Tried again and it got in",
     "{name} を、もう一度ためしました。今度は入りました。",
     { name: "Granular Fog" },
   ),
   "plugin.retryStopped": s6(
-    "もう一度ためしても止まった",
+    "Tried again and it stopped again",
     "{name} は、また止まりました。棚には入れません。",
     { name: "Granular Fog" },
   ),
   "plugin.windowStep": s6(
-    "プラグインの窓で変えた（履歴）",
+    "Changed in a plugin window (history)",
     "{name} の窓で変えた所",
     { name: "Surge XT" },
   ),
   "plugin.loading": s6(
-    "プラグインを読みこんでいる",
+    "Loading a plugin",
     "{name} を読みこんでいます…",
     { name: "Surge XT" },
   ),
   "plugin.loadFailed": s6(
-    "プラグインを読みこめない",
+    "Plugin cannot be loaded",
     "{name} を読みこめませんでした。",
     { name: "Surge XT" },
   ),
   "plugin.loadFailedShelf": s6(
-    "プラグインを読みこめない（棚）",
+    "Plugin cannot be loaded (shelf)",
     "{name} を読みこめませんでした。こわれているか、この PC では動かないのかもしれません。",
     { name: "Surge XT" },
   ),
   "plugin.missingSong": s6(
-    "プラグインが見つからない（曲をひらいた）",
+    "Plugin not found (song opened)",
     "曲で使っている {name} が見つかりません。{count} 本のトラックはサイン波で鳴らしています。",
     { name: "Surge XT", count: "1" },
   ),
   "plugin.unreadableSong": s6(
-    "プラグインを読みこめない（曲をひらいた）",
+    "Plugin cannot be loaded (song opened)",
     "曲で使っている {name} を読みこめませんでした。{count} 本のトラックはサイン波で鳴らしています。",
     { name: "Surge XT", count: "1" },
   ),
   "plugin.instrumentRemoved": s6(
-    "音源のプラグインを外した",
+    "Instrument plugin removed",
     "{track} の音源を外しました。サイン波で鳴らします。取り消せます（{undoKey}）",
     { track: "5 Surge XT", undoKey: "Mod Z" },
   ),
   // 止まった物が 0 のときは、6 章の文の前半だけ（design-notes A-16）。
   "msg.scanDoneNone": s6(
-    "スキャンが終わった",
+    "Scan finished",
     "スキャンが終わりました ・ {added} 個を棚に入れました。",
     { added: "667" },
     "part",
@@ -980,24 +980,24 @@ export const texts = {
   // 数字の欄の名前と範囲（仕様書 6 章「範囲の外の値を打った」、3 章のテンポと拍子の枠）。
   "value.tempo": e("テンポ", "spec:6"),
   "value.tempoRange": s6(
-    "範囲の外の値を打った",
+    "Typed a value out of range",
     "30.00〜300.00",
     undefined,
     "part",
   ),
   "value.meterNum": e("拍子の上", "spec:6"),
-  "value.meterNumRange": s6("範囲の外の値を打った", "1〜12", undefined, "part"),
+  "value.meterNumRange": s6("Typed a value out of range", "1〜12", undefined, "part"),
   // 6 章の文は「下は」。欄の名前だけで読めるように「拍子の下」にした（棟梁の決め 2026-11-15）。
   "value.meterDen": e("拍子の下", "user:2026-11-18"),
   "value.meterDenRange": s6(
-    "範囲の外の値を打った",
+    "Typed a value out of range",
     "2 ・ 4 ・ 8 ・ 16",
     undefined,
     "part",
   ),
   "value.velocity": e("ベロシティ", "spec:6"),
   "value.velocityRange": s6(
-    "範囲の外の値を打った",
+    "Typed a value out of range",
     "1〜127",
     undefined,
     "part",
@@ -1091,9 +1091,9 @@ export const texts = {
     { undo: "12", total: "14" },
   ),
   // 左上の曲の名前を押すとひらく一覧の行。
-  "song.new": s6("曲の名前の一覧", "新しい曲", undefined, "quoted"),
-  "song.open": s6("曲の名前の一覧", "ひらく…", undefined, "quoted"),
-  "song.save": s6("曲の名前の一覧", "保存", undefined, "quoted"),
+  "song.new": s6("Song name list", "新しい曲", undefined, "quoted"),
+  "song.open": s6("Song name list", "ひらく…", undefined, "quoted"),
+  "song.save": s6("Song name list", "保存", undefined, "quoted"),
   // 曲の名前が引っこんだ所の ▾（仕様書 2 章「曲の ▾」）。aria-label はモックの形。
   "transport.songMenu": e("曲（{name}）", "mock:F-Menus", {
     name: "はじめての曲",
@@ -1113,14 +1113,14 @@ export const texts = {
   "transport.metronome": e("メトロノーム", "mock:Main"),
   "transport.countIn": e("カウントイン", "mock:Main"),
   "transport.countInBars": s6(
-    "カウントインの小節の数",
+    "Number of count-in bars",
     "{bars} 小節",
     { bars: "1" },
     "quoted",
   ),
   // カウントインが「なし」のときのボタンの値と、一覧の行。
   "transport.countInNone": s6(
-    "カウントインの小節の数",
+    "Number of count-in bars",
     "なし",
     undefined,
     "quoted",
@@ -1342,7 +1342,7 @@ export const texts = {
   // 最初から入っている音色と SF2 の音色を左で押したとき（仕様書 3 章 92-1 ・ 19-A）。
   "params.noSoundParams": e("この音色には、動かせるパラメータがありません。", "spec:3"),
   "params.noSoundParamsHint": e("音量とパンはミキサーで、音色を変えるには入れかえます。", "spec:3"),
-  "msg.noSoundParams": s6("動かせるパラメータがない", "{name}には、動かせるパラメータがありません", { name: "グランドピアノ" }),
+  "msg.noSoundParams": s6("No parameters to move", "{name}には、動かせるパラメータがありません", { name: "グランドピアノ" }),
   "button.replaceSound": e("音源を入れかえる…", "spec:6"),
   "params.where": e("{strip} ・ インサート {slot}", "mock:F4-Mixer", {
     strip: "A リバーブ",
@@ -1475,43 +1475,43 @@ export const texts = {
   ),
   "endpoint.testTone": e("テスト音を鳴らす", "mock:F-Connect2"),
   "endpoint.plugged": s6(
-    "出口 ・ 入口の行の文",
+    "Text on the output and input rows",
     "ささっています",
     undefined,
     "quoted",
   ),
   "endpoint.connected": s6(
-    "出口 ・ 入口の行の文",
+    "Text on the output and input rows",
     "つながっています",
     undefined,
     "quoted",
   ),
   "endpoint.nothingPlugged": s6(
-    "出口 ・ 入口の行の文",
+    "Text on the output and input rows",
     "何もささっていません",
     undefined,
     "quoted",
   ),
   "friendly.headphones": s6(
-    "出口 ・ 入口の行の文",
+    "Text on the output and input rows",
     "ヘッドホンの穴",
     undefined,
     "quoted",
   ),
   "friendly.hdmi": s6(
-    "出口 ・ 入口の行の文",
+    "Text on the output and input rows",
     "画面のスピーカー",
     undefined,
     "quoted",
   ),
   "friendly.lineOut": s6(
-    "出口 ・ 入口の行の文",
+    "Text on the output and input rows",
     "うしろのスピーカーの穴",
     undefined,
     "quoted",
   ),
   "friendly.rearMic": s6(
-    "出口 ・ 入口の行の文",
+    "Text on the output and input rows",
     "うしろのマイクの穴",
     undefined,
     "quoted",
@@ -1540,11 +1540,11 @@ export const texts = {
   "band.params": e("パラメータ", "mock:F-ShelfArrange"),
 
   // 状態行
-  "status.stopped": s6("状態行の札", "■ 停止中", undefined, "quoted"),
-  "status.playing": s6("状態行の札", "▶ 再生中", undefined, "quoted"),
-  "status.recording": s6("状態行の札", "● 録音中", undefined, "quoted"),
+  "status.stopped": s6("Status line labels", "■ 停止中", undefined, "quoted"),
+  "status.playing": s6("Status line labels", "▶ 再生中", undefined, "quoted"),
+  "status.recording": s6("Status line labels", "● 録音中", undefined, "quoted"),
   "status.countingIn": s6(
-    "状態行の札",
+    "Status line labels",
     "● カウントイン中",
     undefined,
     "quoted",
@@ -1558,7 +1558,7 @@ export const texts = {
   ),
   // 止まっているときの左の文。ある物だけを「 ・ 」でつなぐ。両方あるときは status.loopNoSelection。
   "status.loopNoSelection": s6(
-    "止まっているときの状態行の左",
+    "Left of the status line while stopped",
     "ループ {from}–{to} ・ 選択なし",
     { from: "5", to: "9" },
     "quoted",
@@ -1567,23 +1567,23 @@ export const texts = {
   "status.noSelection": e("選択なし", "mock:Main"),
   // ミュートしたトラック。2 本以上は名前を「 ・ 」でならべる。
   "status.muted": s6(
-    "ミュート",
+    "Muted",
     "{tracks} はミュート",
     { tracks: "4 パッド" },
     "part",
   ),
   "status.mutedMany": s6(
-    "ミュート",
+    "Muted",
     "{tracks} はミュート",
     { tracks: "4 パッド ・ 5 ベース" },
     "quoted",
   ),
   // 棚をひらいた時と、見出しをひらく ・ たたむ時（仕様書 6 章「棚をひらいている（見出し）」）。groups はひらいている見出し。
   // 2 つ ・ 3 つ（・ 4 つ）は status.shelfGroupsLast（前は LIST_COMMA でならべる）、5 つ以上は status.shelfGroupsMore。
-  "status.shelfOpen": s6("棚をひらいている（見出し）", "音色 {count} ・ {groups} をひらいています", { count: "31", groups: "ピアノ ・ 鍵盤 と ギター" }, "part"),
-  "status.shelfCount": s6("棚をひらいている（見出し）", "音色 {count}", { count: "31" }, "part"),
-  "status.shelfGroupsLast": s6("棚をひらいている（見出し）", "{first} と {last}", { first: "ピアノ ・ 鍵盤、ギター", last: "ベース" }, "part"),
-  "status.shelfGroupsMore": s6("棚をひらいている（見出し）", "{first} ほか {count} つ", { first: "ピアノ ・ 鍵盤", count: "4" }, "part"),
+  "status.shelfOpen": s6("Shelf open (headings)", "音色 {count} ・ {groups} をひらいています", { count: "31", groups: "ピアノ ・ 鍵盤 と ギター" }, "part"),
+  "status.shelfCount": s6("Shelf open (headings)", "音色 {count}", { count: "31" }, "part"),
+  "status.shelfGroupsLast": s6("Shelf open (headings)", "{first} と {last}", { first: "ピアノ ・ 鍵盤、ギター", last: "ベース" }, "part"),
+  "status.shelfGroupsMore": s6("Shelf open (headings)", "{first} ほか {count} つ", { first: "ピアノ ・ 鍵盤", count: "4" }, "part"),
   // 6 章「棚をひらいている（見出し）」の出る場所の列（エフェクトの一覧）。
   "status.shelfEffectsOpen": e("エフェクト {count} ・ {groups} をひらいています", "spec:6", { count: "512", groups: "リバーブ" }),
   "status.output": e("出口: {output}", "mock:Main", { output: "ヘッドホン" }),
@@ -1664,19 +1664,19 @@ export const texts = {
   "note.length": e("長さ", "mock:A-PianoRoll"),
   "noteList.velocity": e("Vel", "mock:A-PianoRoll"),
   "inspector.from": s6(
-    "選んだノートの読み値",
+    "Reading of the selected notes",
     "{position} 〜",
     { position: "3.1.000" },
     "quoted",
   ),
   "inspector.mixed": s6(
-    "選んだノートの読み値",
+    "Reading of the selected notes",
     "ばらばら",
     undefined,
     "quoted",
   ),
   "inspector.range": s6(
-    "選んだノートの読み値",
+    "Reading of the selected notes",
     "{low} – {high}",
     { low: "77", high: "83" },
     "quoted",
@@ -1696,7 +1696,7 @@ export const texts = {
   "inspector.musicalScale": e("音階", "mock:A-PianoRoll"),
   "inspector.lock": e("固定", "mock:A-PianoRoll"),
   "inspector.on": e("オン", "mock:A-PianoRoll"),
-  "inspector.off": s6("音階の外の音（読み値）", "オフ", undefined, "quoted"),
+  "inspector.off": s6("Note outside the scale (reading)", "オフ", undefined, "quoted"),
   "inspector.sameLength": e("長さをそろえる", "mock:A-PianoRoll"),
   "inspector.velocityAll": e("ベロシティをまとめて変える", "mock:A-PianoRoll"),
   "scale.name": e("{root} {mode}", "mock:A-PianoRoll", {
@@ -1709,13 +1709,13 @@ export const texts = {
   "scale.root": e("主音", "user:2026-11-15"),
   // 状態行。選んだノートは、数と最初の 4 つの音名（5 つ以上は「…」をそえる）。クオンタイズしたテイクなら、うしろに「 ・ クオンタイズ済み…」。
   "status.notesSelected": s6(
-    "ノートを選んでいる",
+    "Notes selected",
     "選択 {count} ノート ・ {keys}",
     { count: "3", keys: "D4 E4 F4" },
     "part",
   ),
   "status.notesSelectedMore": s6(
-    "ノートを選んでいる",
+    "Notes selected",
     "選択 {count} ノート ・ {keys} …",
     { count: "7", keys: "C3 E3 G3 C4" },
     "quoted",
@@ -1726,26 +1726,26 @@ export const texts = {
   ),
   // ピアノロールをひらいて再生しているとき。テイクは arrange.takeSwitch。鳴っている音がなければ、その部分を出さない。
   "status.pianoRollClip": s6(
-    "再生中 ・ ピアノロール",
+    "Playing, piano roll",
     "{track} ・ {clip}",
     { track: "1 ピアノ", clip: "Aメロ" },
     "part",
   ),
   "status.sounding": s6(
-    "再生中 ・ ピアノロール",
+    "Playing, piano roll",
     "鳴っている音 {keys}",
     { keys: "C3 E3 G3 C4" },
     "part",
   ),
   // ピアノロールをひらいて録音しているとき。押している鍵がなければ「 ・ 押している音 …」を出さない。
   "msg.recordingPianoRoll": s6(
-    "録音中 ・ ピアノロール",
+    "Recording, piano roll",
     "{track} へ録音 ・ テイク {take}",
     { track: "1 ピアノ", take: "3" },
     "part",
   ),
   "status.held": s6(
-    "録音中 ・ ピアノロール",
+    "Recording, piano roll",
     "押している音 {keys}",
     { keys: "C3 E3 G3 C4" },
     "part",
@@ -1755,7 +1755,7 @@ export const texts = {
     track: "1 ピアノ",
   }),
   "msg.outOfScale": s6(
-    "音階の外に書こうとした",
+    "Tried to write outside the scale",
     "{key} は {scale}の外の音です（スケール固定 ・ オン）",
     { key: "D#", scale: "C メジャー" },
   ),
@@ -1789,13 +1789,13 @@ export const texts = {
   }),
   // クリップがない所の案内（ノートの場所の左上）。{key} は書く道具のキー（key.toolDraw）。
   "pr.emptyTitle": s6(
-    "クリップがない所のピアノロール",
+    "Piano roll where there is no clip",
     "ここにはクリップがありません。",
     undefined,
     "quoted",
   ),
   "pr.emptyBody": s6(
-    "クリップがない所のピアノロール",
+    "Piano roll where there is no clip",
     "書く道具（{key}）で押すと、そこから 4 小節のクリップを作って書きます。鍵盤で弾いて録っても作られます。",
     { key: "2" },
     "quoted",
@@ -1847,12 +1847,12 @@ export const texts = {
     position: "1.3.000",
   }),
   "pr.readSwitch": s6(
-    "オン ・ オフの CC の読み値",
+    "Reading of an on/off CC",
     "{state}（{value}）",
     { state: "踏む", value: "127" },
     "quoted",
   ),
-  "pr.switchOn": s6("オン ・ オフの CC の読み値", "踏む", undefined, "part"),
+  "pr.switchOn": s6("Reading of an on/off CC", "踏む", undefined, "part"),
   // 「そのほかの CC」の一覧の行と、えらんだ番号の帯の名前。
   "pr.ccNumber": e("CC {number}", "user:2026-11-15", { number: "7" }),
   // 上のメニューの行と右クリックの一覧（ヤチヨさんの決め 2026-11-18。design-notes B-59 ・ 60）。右クリックの一覧も同じ行の名前を使う。
@@ -1919,28 +1919,28 @@ export const texts = {
   // [アレンジ ・ 再生まわり ・ 入力計]
   // 再生の位置の欄に読めない物を打った（デザインに戻した事 61）。再生の位置には上のはしがないので、範囲の文の形を使わない。
   "msg.playPositionRejected": s6(
-    "位置として読めない",
+    "Not readable as a position",
     "位置は「5」「5.2」「5.2.240」の形で打ちます。もとの {kept} のままです。",
     { kept: "1. 1. 000" },
   ),
 
   // [第 6 回 ・ テンポと拍子の変更、マーカー]（仕様書 3 章 Y17 ・ Y18、6 章。仮の文は design-notes B-92）
   "msg.tempoRampSelected": s6(
-    "テンポのだんだんをえらんでいる",
+    "Tempo ramp chosen",
     "{place}の変更をえらんでいます ・ {tempo} から {toPlace}の {toTempo} へ、だんだん{direction}",
     { place: "5 小節目", tempo: "104.00", toPlace: "9 小節目", toTempo: "120.00", direction: "速く" },
   ),
-  "msg.markerAdded": s6("マーカーを足した", "{name} を足しました。名前を打って Enter", { name: "マーカー 4" }),
-  "timeline.rampFaster": s6("テンポのだんだんをえらんでいる", "速く", undefined, "part"),
+  "msg.markerAdded": s6("Marker added", "{name} を足しました。名前を打って Enter", { name: "マーカー 4" }),
+  "timeline.rampFaster": s6("Tempo ramp chosen", "速く", undefined, "part"),
   "timeline.rampSlower": e("遅く", "builder:2026-11-20"),
-  "timeline.placeBar": s6("テンポのだんだんをえらんでいる", "{bar} 小節目", { bar: "5" }, "part"),
+  "timeline.placeBar": s6("Tempo ramp chosen", "{bar} 小節目", { bar: "5" }, "part"),
   "timeline.placeBeat": e("{bar} 小節目の {beat} 拍目", "builder:2026-11-20", { bar: "5", beat: "3" }),
   "timeline.placeHead": e("曲の頭", "builder:2026-11-20"),
   "msg.tempoPointSelected": e("{place}の変更をえらんでいます ・ {tempo}", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
   "msg.meterChangeSelected": e("{place}の変更をえらんでいます ・ {signature}", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
   // 曲の頭の点と旗は「変更」と呼ばない（仕様書 3 章 92-2）。
-  "msg.headTempoSelected": s6("曲の頭のテンポをえらんでいる", "曲の頭のテンポをえらんでいます ・ {tempo}", { tempo: "96.00" }, "part"),
-  "msg.headMeterSelected": s6("曲の頭のテンポをえらんでいる", "曲の頭の拍子をえらんでいます ・ {signature}", { signature: "4/4" }, "quoted"),
+  "msg.headTempoSelected": s6("Tempo at the song start chosen", "曲の頭のテンポをえらんでいます ・ {tempo}", { tempo: "96.00" }, "part"),
+  "msg.headMeterSelected": s6("Tempo at the song start chosen", "曲の頭の拍子をえらんでいます ・ {signature}", { signature: "4/4" }, "quoted"),
   "msg.tempoPointSet": e("{place}のテンポを {tempo} にしました。", "builder:2026-11-20", { place: "5 小節目", tempo: "120.00" }),
   "msg.meterChangeSet": e("{place}の拍子を {signature} にしました。", "builder:2026-11-20", { place: "9 小節目", signature: "3/4" }),
   "marker.newName": e("マーカー {count}", "spec:3", { count: "4" }),
@@ -1958,39 +1958,39 @@ export const texts = {
 
   // [第 6 回 ・ オートメーション、取り消しの履歴]（仕様書 3 章 Y16 ・ Y19、6 章。仮の文は design-notes B-92）
   // 状態行。（何を）がない手は、かっこごと出さない（Bare）。
-  "msg.undone": s6("取り消した", "「{name}」を取り消しました（{what}）。やりなおすには {redoKey}", {
+  "msg.undone": s6("Undone", "「{name}」を取り消しました（{what}）。やりなおすには {redoKey}", {
     name: "ノートを動かす",
     what: "3 ノート",
     redoKey: "Mod Shift Z",
   }),
   "msg.undoneBare": e("「{name}」を取り消しました。やりなおすには {redoKey}", "builder:2026-11-20", { name: "ミュート", redoKey: "Mod Shift Z" }),
-  "msg.redone": s6("やりなおした", "「{name}」をやりなおしました（{what}）。", { name: "ノートを動かす", what: "3 ノート" }),
+  "msg.redone": s6("Redone", "「{name}」をやりなおしました（{what}）。", { name: "ノートを動かす", what: "3 ノート" }),
   "msg.redoneBare": e("「{name}」をやりなおしました。", "builder:2026-11-20", { name: "ミュート" }),
-  "msg.historyJumped": s6("履歴で戻した", "{index} 手目「{name}」まで戻しました（{steps} 手）。", { index: "11", name: "マーカーを足す", steps: "5" }),
+  "msg.historyJumped": s6("Went back in the history", "{index} 手目「{name}」まで戻しました（{steps} 手）。", { index: "11", name: "マーカーを足す", steps: "5" }),
   // いまより上の行へとんだとき（仕様書 3 章 Y19「そこまでやりなおす」。文は 6 章にない）。
   "msg.historyJumpedForward": e("{index} 手目「{name}」までやりなおしました（{steps} 手）。", "builder:2026-11-20", {
     index: "14",
     name: "クオンタイズ",
     steps: "2",
   }),
-  "msg.nothingToUndo": s6("取り消せる手がない", "取り消せる手がありません。"),
-  "msg.nothingToRedo": s6("やりなおせる手がない", "やりなおせる手がありません。"),
-  "msg.automationWriting": s6("オートメーションを書いている", "{track} ・ {target}を書いています（● 書く ・ 止めるとオフに戻ります）", {
+  "msg.nothingToUndo": s6("No step to undo", "取り消せる手がありません。"),
+  "msg.nothingToRedo": s6("No step to redo", "やりなおせる手がありません。"),
+  "msg.automationWriting": s6("Writing automation", "{track} ・ {target}を書いています（● 書く ・ 止めるとオフに戻ります）", {
     track: "1 ピアノ",
     target: "音量",
   }),
   "msg.automationRested": s6(
-    "オートメーションを休ませた",
+    "Automation put to rest",
     "{track} の{target}を手で動かしたので、オートメーションを休ませました。「もどす」で線のとおりに戻ります",
     { track: "4 パッド", target: "音量" },
   ),
-  "msg.automationRestored": s6("オートメーションをもどした", "{track} の{target}を、オートメーションのとおりに戻しました。", {
+  "msg.automationRestored": s6("Automation brought back", "{track} の{target}を、オートメーションのとおりに戻しました。", {
     track: "4 パッド",
     target: "音量",
   }),
   "msg.automationMoving": e("{tracks} の音量は、オートメーションで動いています", "mock:F6-MixerAuto", { tracks: "1 ピアノ と 4 パッド" }),
   // 帯が動かす物の名前（帯の見出し「オートメーション ・ （何を）」、状態行、履歴の行）。パンは mixer.pan。
-  "lane.volume": s6("オートメーションを書いている", "音量", undefined, "part"),
+  "lane.volume": s6("Writing automation", "音量", undefined, "part"),
   "lane.mute": e("ミュート", "spec:3"),
   "lane.send": e("センド {bus}", "builder:2026-11-20", { bus: "A" }),
   "lane.param": e("{effect}の「{param}」", "builder:2026-11-20", { effect: "コンプレッサー", param: "しきい値" }),
@@ -2019,7 +2019,7 @@ export const texts = {
   // 履歴の行「「（手の名前）」・ （何を）」と、（何を）の形。手の名前は下の stepNames。
   "history.row": e("「{name}」・ {what}", "mock:R10-History", { name: "ノートを動かす", what: "3 ノート" }),
   "history.rowBare": e("「{name}」", "builder:2026-11-20", { name: "ミュート" }),
-  "history.notes": s6("取り消した", "{count} ノート", { count: "3" }, "part"),
+  "history.notes": s6("Undone", "{count} ノート", { count: "3" }, "part"),
   "history.points": e("{count} 点", "builder:2026-11-20", { count: "3" }),
   "history.clips": e("{count} クリップ", "spec:3", { count: "3" }),
   "history.take": e("テイク {number}", "mock:F-History", { number: "1" }),
@@ -2056,15 +2056,15 @@ export const texts = {
     current: "12",
     redo: "2",
   }),
-  "history.headLatest": s6("履歴の見出し ・ 取り消した手がない", "{total} 手 ・ いまは {current} 手目（いちばん新しい手）", {
+  "history.headLatest": s6("History heading: no undone step", "{total} 手 ・ いまは {current} 手目（いちばん新しい手）", {
     total: "14",
     current: "14",
   }),
-  "history.headAllUndone": s6("履歴の見出し ・ ぜんぶ取り消した", "{total} 手 ・ ぜんぶ取り消してあります ・ やりなおすには {redoKey}", {
+  "history.headAllUndone": s6("History heading: everything undone", "{total} 手 ・ ぜんぶ取り消してあります ・ やりなおすには {redoKey}", {
     total: "14",
     redoKey: "Mod Shift Z",
   }),
-  "history.headEmpty": s6("履歴の見出し ・ 手がない", "まだ手がありません ・ 何かすると、ここに 1 手ずつならびます"),
+  "history.headEmpty": s6("History heading: no steps", "まだ手がありません ・ 何かすると、ここに 1 手ずつならびます"),
   "history.undo": e("取り消す", "mock:F-History"),
   "history.redo": e("やりなおす", "mock:F-History"),
   // 行の右（仕様書 2 章「履歴の行 ・ 乗った ・ えらんだ」、3 章 Y19）。ボタンの右に key.enter。
@@ -2076,69 +2076,69 @@ export const texts = {
 
   // [第 7 回 ・ 歌のトラック、音のファイル、遅れ、書き出し]（仕様書 3 章 93 ・ 6 章）。区切り2〜5 で使う。
   "msg.vocalTrackAdded": s6(
-    "歌のトラックを足した",
+    "Vocal track added",
     "{track} を足しました ・ {input} から録ります ・ 歌のトラックの ● は、選んでいなくても自分でつけます",
     { track: "6 歌", input: "入口 1" },
   ),
-  "msg.noAudioInput": s6("入口がない", "音の入口がありません。マイクをつなぐか、音の設定で入口をえらんでください。"),
+  "msg.noAudioInput": s6("No input", "音の入口がありません。マイクをつなぐか、音の設定で入口をえらんでください。"),
   "msg.monitorFirstOn": s6(
-    "はじめてモニターをオンにした",
+    "Monitor turned on for the first time",
     "自分の声が少し遅れて聞こえます（いまは {ms} ms）。スピーカーだと音がまわって「キーン」となるので、ヘッドホンで聞いてください。",
     { ms: "13" },
   ),
-  "msg.vocalNoPianoRoll": s6("歌のトラックにピアノロールはない", "歌のトラックにはピアノロールがありません。波形はアレンジで直します。"),
-  "msg.recordingVocal": s6("歌を録っている", "● 録音中 ・ {track}（{input}）・ モニター オン ・ 止めるには {stopKey}", {
+  "msg.vocalNoPianoRoll": s6("Vocal tracks have no piano roll", "歌のトラックにはピアノロールがありません。波形はアレンジで直します。"),
+  "msg.recordingVocal": s6("Recording vocals", "● 録音中 ・ {track}（{input}）・ モニター オン ・ 止めるには {stopKey}", {
     track: "6 歌",
     input: "入口 1",
     stopKey: "Space",
   }),
   "msg.recordingKeysAndVocal": s6(
-    "鍵盤と歌を録っている",
+    "Recording keyboard and vocals",
     "● 録音中 ・ {keys}（鍵盤）と {vocal}（{input}）に録っています ・ 止めるには {stopKey}",
     { keys: "1 ピアノ", vocal: "6 歌", input: "入口 1", stopKey: "Space" },
   ),
-  "recovery.vocalKept": s6("録っていた歌を残した", "録っていた歌 {count} つを、止まる直前（{position} ごろ）まで残しました。", {
+  "recovery.vocalKept": s6("Vocals being recorded were kept", "録っていた歌 {count} つを、止まる直前（{position} ごろ）まで残しました。", {
     count: "1",
     position: "9. 3. 0000",
   }),
-  "msg.audioFilesMissing": s6("音のファイルが見つからない", "曲で使っている音のファイルが {count} つ見つかりません。そのクリップは鳴りません。", {
+  "msg.audioFilesMissing": s6("Audio files not found", "曲で使っている音のファイルが {count} つ見つかりません。そのクリップは鳴りません。", {
     count: "2",
   }),
-  "params.audioFileMissing": s6("音のファイルが見つからない（欄）", "{file} が見つかりません。前はここにありました: {path}", {
+  "params.audioFileMissing": s6("Audio file not found (panel)", "{file} が見つかりません。前はここにありました: {path}", {
     file: "歌 テイク 1.wav",
     path: "はじめての曲/音/歌 テイク 1.wav",
   }),
   "button.findFile": e("さがす…", "spec:6"),
   "msg.clipGainDragging": s6(
-    "クリップの音量を動かしている",
+    "Moving the clip gain",
     "{clip} のクリップの音量 {value}（ドラッグ中）・ 離すと決まります ・ やめるには {cancelKey}",
     { clip: "歌 テイク 1", value: "−3.0 dB", cancelKey: "Esc" },
   ),
-  "msg.clipSplit": s6("切った", "{clip} を {position} で切りました。", { clip: "歌 テイク 1", position: "7. 1. 0000" }),
-  "msg.audioRendering": s6("音を作っている", "{clip} の音を作っています {percent} % ・ できるまでは、もとの音で鳴らします", {
+  "msg.clipSplit": s6("Cut", "{clip} を {position} で切りました。", { clip: "歌 テイク 1", position: "7. 1. 0000" }),
+  "msg.audioRendering": s6("Making the sound", "{clip} の音を作っています {percent} % ・ できるまでは、もとの音で鳴らします", {
     clip: "歌 テイク 1",
     percent: "34",
   }),
-  "msg.audioImported": s6("音のファイルを入れた", "{file} を入れました（{track} ・ {position}）。", {
+  "msg.audioImported": s6("Audio file brought in", "{file} を入れました（{track} ・ {position}）。", {
     file: "ドラム.wav",
     track: "6 歌",
     position: "5. 1. 0000",
   }),
-  "clip.loading": s6("音のファイルを読みこんでいる", "読みこんでいます {percent} %", { percent: "40" }),
-  "msg.audioUnreadable": s6("読めないファイル", "「{file}」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。", { file: "声.aac" }),
+  "clip.loading": s6("Loading an audio file", "読みこんでいます {percent} %", { percent: "40" }),
+  "msg.audioUnreadable": s6("File that cannot be read", "「{file}」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。", { file: "声.aac" }),
   "msg.audioDragging": s6(
-    "音のファイルを持ってきている",
+    "Dragging in audio files",
     "音のファイルを {count} つ持ってきています ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる",
     { count: "8" },
   ),
   // 音のファイルを 1 つだけ持ってきている間（6 章「音のファイルを 1 つ持ってきている」の出る所の列にある状態行の文）。
   "msg.audioDraggingOne": e("音のファイルを持ってきています ・ 落とすと、枠の所に入れます", "spec:6"),
   // 「さがす」（「この音のテンポ」）の答え。見つけた文は「…くらいです」に、入れたか同じかの終わりをつなぐ。
-  "msg.sourceTempoFound": s6("この音のテンポをさがした", "この音のテンポは {bpm} くらいです", { bpm: "120.00" }, "part"),
-  "msg.sourceTempoSet": s6("この音のテンポをさがした", "（さがした数を入れました）。", undefined, "part"),
-  "msg.sourceTempoSame": s6("この音のテンポをさがした", "（いまの数と同じです）。", undefined, "part"),
-  "msg.sourceTempoNotFound": s6("この音のテンポをさがした", "この音のテンポは見つかりませんでした。数を打ちこんでください。", undefined, "quoted"),
-  "drop.mixed": s6("SF2 と音のファイルをまぜて持ってきた", "SF2 は {sf2} つ棚へ ・ 音のファイル {audio} つはアレンジへ", {
+  "msg.sourceTempoFound": s6("Searched for the tempo of this sound", "この音のテンポは {bpm} くらいです", { bpm: "120.00" }, "part"),
+  "msg.sourceTempoSet": s6("Searched for the tempo of this sound", "（さがした数を入れました）。", undefined, "part"),
+  "msg.sourceTempoSame": s6("Searched for the tempo of this sound", "（いまの数と同じです）。", undefined, "part"),
+  "msg.sourceTempoNotFound": s6("Searched for the tempo of this sound", "この音のテンポは見つかりませんでした。数を打ちこんでください。", undefined, "quoted"),
+  "drop.mixed": s6("Dragging in SF2 and audio files together", "SF2 は {sf2} つ棚へ ・ 音のファイル {audio} つはアレンジへ", {
     sf2: "1",
     audio: "3",
   }),
@@ -2181,31 +2181,31 @@ export const texts = {
   // 歌のクリップの右クリックの一覧の下の、あとの回の席（仕様書 3 章「音を作っている間」）。
   "menu.reverse": e("逆にする", "spec:3"),
   "menu.normalize": e("ノーマライズ", "spec:3"),
-  "latency.measuring": s6("遅れを測っている", "測っています {done} / {total}", { done: "3", total: "5" }),
-  "latency.failed": s6("遅れを測れない", "音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。"),
+  "latency.measuring": s6("Measuring the latency", "測っています {done} / {total}", { done: "3", total: "5" }),
+  "latency.failed": s6("Latency cannot be measured", "音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。"),
   "button.useThisValue": e("この数を使う", "spec:6"),
   "button.again": e("もう一度", "spec:6"),
   "button.audioSettingsEllipsis": e("音の設定…", "spec:6"),
   "settings.notAsRequested": s6(
-    "頼んだ数で動いていない",
+    "Not running at the asked size",
     "頼んだ {requested} ではなく、{actual} で動いています（PC の設定で決まっています）。meloet は PC 全体の設定は変えません。",
     { requested: "128", actual: "256" },
   ),
-  "msg.exporting": s6("書き出している", "書き出しています {percent} % ・ {file} ・ 残り 約 {left} ・ 弾けます（書き出しの音は聞こえません）", {
+  "msg.exporting": s6("Exporting", "書き出しています {percent} % ・ {file} ・ 残り 約 {left} ・ 弾けます（書き出しの音は聞こえません）", {
     percent: "46",
     file: "はじめての曲.wav",
     left: "40 秒",
   }),
-  "msg.exportingRealtime": s6("実時間で書き出している", "速く書き出せないプラグインがあるので、実時間で書き出します（{length}）。", {
+  "msg.exportingRealtime": s6("Exporting in real time", "速く書き出せないプラグインがあるので、実時間で書き出します（{length}）。", {
     length: "3:02",
   }),
-  "msg.exportedFile": s6("書き出した", "{file} を書き出しました（{length} ・ {rate} Hz ・ {bits} ビット）。", {
+  "msg.exportedFile": s6("Exported", "{file} を書き出しました（{length} ・ {rate} Hz ・ {bits} ビット）。", {
     file: "はじめての曲.wav",
     length: "3:02",
     rate: "48000",
     bits: "24",
   }),
-  "msg.exportCanceled": s6("書き出しをやめた", "書き出しをやめました。途中までのファイルは消しました。"),
+  "msg.exportCanceled": s6("Export stopped", "書き出しをやめました。途中までのファイルは消しました。"),
 
   // [第 7 回 区切り5 ・ 書き出し]（仕様書 3 章 34-B、モック F7-Export ・ F7-Exporting ・ F-Export）
   "export.title": e("書き出し", "mock:F7-Export"),
@@ -2328,54 +2328,54 @@ export const texts = {
 
   // [第 8 回 ・ core から出す知らせと音の素材]（仕様書 6 章 第 12 版、モック F8-*）。約束の係（k8p）がこの下に足す。
   "latency.failedUnsteady": s6(
-    "遅れを測れない ・ ばらつき",
+    "Latency cannot be measured: spread",
     "測るたびに数が大きくちがったので、決められませんでした。まわりの音を小さくして、もう一度測ってください。",
   ),
-  "latency.failedNoInput": s6("遅れを測れない ・ 入口がない", "音の入口がないので測れません。マイクをつなぐか、入口をえらんでください。"),
-  "msg.inputLost": s6("入口が抜けた", "{input}（{device}）が抜けました。録音を止めました。録れた所までは残しています。", {
+  "latency.failedNoInput": s6("Latency cannot be measured: no input", "音の入口がないので測れません。マイクをつなぐか、入口をえらんでください。"),
+  "msg.inputLost": s6("Input unplugged", "{input}（{device}）が抜けました。録音を止めました。録れた所までは残しています。", {
     input: "入口 1",
     device: "USB マイク",
   }),
   "msg.recordingGaps": s6(
-    "録っている間に音がとぎれた",
+    "Sound broke up while recording",
     "録っている間に音が {count} 回とぎれました（PC がいそがしかったため）。とぎれた所は無音で残しています。バッファを大きくすると、とぎれにくくなります。",
     { count: "3" },
   ),
-  "msg.audioFound": s6("さがして見つけた", "{file} を見つけました。{clips} つのクリップがまた鳴ります。", {
+  "msg.audioFound": s6("Found by searching", "{file} を見つけました。{clips} つのクリップがまた鳴ります。", {
     file: "歌 テイク 1.wav",
     clips: "2",
   }),
-  "msg.audioFoundMismatch": s6("さがしたファイルが合わない", "えらんだファイルは使えません（サンプルレートかチャンネルの数がちがいます）。"),
-  "msg.audioBroken": s6("こわれたファイル ・ 3 チャンネル以上", "「{file}」はこわれているので読めません。", { file: "声.wav" }, "part"),
+  "msg.audioFoundMismatch": s6("Searched file does not match", "えらんだファイルは使えません（サンプルレートかチャンネルの数がちがいます）。"),
+  "msg.audioBroken": s6("Broken file, 3 or more channels", "「{file}」はこわれているので読めません。", { file: "声.wav" }, "part"),
   "msg.audioTooManyChannels": s6(
-    "こわれたファイル ・ 3 チャンネル以上",
+    "Broken file, 3 or more channels",
     "「{file}」は 3 チャンネル以上なので読めません（読めるのはモノとステレオ）。",
     { file: "8ch.wav" },
     "part",
   ),
-  "msg.savingAudio": s6("保存で音を写している", "保存しています ・ 音のファイルを写しています {done} / {total}（{doneMb} / {totalMb} MB）", {
+  "msg.savingAudio": s6("Copying the audio while saving", "保存しています ・ 音のファイルを写しています {done} / {total}（{doneMb} / {totalMb} MB）", {
     done: "3",
     total: "12",
     doneMb: "80",
     totalMb: "240",
   }),
-  "msg.diskTooSlow": s6("ディスクが間に合わない", "音のファイルを読むのが間に合わず、歌が少し切れました（ディスクがいそがしかったため）。"),
+  "msg.diskTooSlow": s6("Disk too slow", "音のファイルを読むのが間に合わず、歌が少し切れました（ディスクがいそがしかったため）。"),
   // 音の素材（仕様書 2 章 ・ 3 章 43-B ・ 44-A ・ 45-A ・ 6 章、モック F8-Pack*）。案内の帯の 2 行は 6 章の文を分けた物。
-  "pack.fetching": s6("音の素材を取りにいっている", "音の素材を取りにいっています", undefined, "part"),
-  "pack.fetchingBytes": s6("音の素材を取りにいっている", "{percent} % ・ {done} / {total} MB", { percent: "38", done: "92", total: "240" }, "part"),
-  "pack.fetchingLeft": s6("音の素材を取りにいっている", "のこり 約 {minutes} 分", { minutes: "2" }, "part"),
-  "pack.fetched": s6("音の素材が取れた", "音の素材をぜんぶ取りました。{count} の音色が鳴ります。", { count: "31" }),
+  "pack.fetching": s6("Fetching the sound pack", "音の素材を取りにいっています", undefined, "part"),
+  "pack.fetchingBytes": s6("Fetching the sound pack", "{percent} % ・ {done} / {total} MB", { percent: "38", done: "92", total: "240" }, "part"),
+  "pack.fetchingLeft": s6("Fetching the sound pack", "のこり 約 {minutes} 分", { minutes: "2" }, "part"),
+  "pack.fetched": s6("Sound pack fetched", "音の素材をぜんぶ取りました。{count} の音色が鳴ります。", { count: "31" }),
   "pack.offline": s6(
-    "音の素材 ・ つながっていない",
+    "Sound pack: not connected",
     "音の素材を取りにいけませんでした（インターネットにつながっていません）。つながったら「もう一度」を押してください。",
   ),
-  "pack.cutOff": s6("音の素材 ・ とちゅうで切れた", "とちゅうで切れました。{done} / {total} MB まで取ってあります。続きから取ります。", {
+  "pack.cutOff": s6("Sound pack: cut off on the way", "とちゅうで切れました。{done} / {total} MB まで取ってあります。続きから取ります。", {
     done: "92",
     total: "240",
   }),
-  "pack.diskFull": s6("音の素材 ・ ディスクがいっぱい", "ディスクがいっぱいで、音の素材を置けません（あと {mb} MB 要ります）。", { mb: "150" }),
-  "pack.corrupt": s6("音の素材 ・ こわれていた", "取った音の素材がこわれていました。取りなおしても直りませんでした。"),
-  "pack.newPack": s6("音の素材 ・ 新しい包み", "音の素材の新しい包みがあります（{mb} MB）。", { mb: "12" }),
+  "pack.diskFull": s6("Sound pack: disk full", "ディスクがいっぱいで、音の素材を置けません（あと {mb} MB 要ります）。", { mb: "150" }),
+  "pack.corrupt": s6("Sound pack: broken", "取った音の素材がこわれていました。取りなおしても直りませんでした。"),
+  "pack.newPack": s6("Sound pack: new pack", "音の素材の新しい包みがあります（{mb} MB）。", { mb: "12" }),
   "button.fetchPack": e("取りにいく", "spec:6"),
   "button.resumeFetch": e("続きから", "spec:6"),
   "button.packLater": e("あとで", "spec:3"),
@@ -2518,34 +2518,34 @@ export const texts = {
   "status.exportOver": e("0 dB をこえる所があります", "mock:F8-ExportClip"),
   // 曲の頭のテンポの点がだんだんの始まりのとき（仕様書 3 章 94-10）。
   "msg.headTempoRampSelected": s6(
-    "曲の頭のテンポ（だんだんの始まり）をえらんでいる",
+    "Tempo at the song start (start of a ramp) chosen",
     "曲の頭のテンポをえらんでいます ・ {tempo} から {toPlace}の {toTempo} へ、だんだん{direction}",
     { tempo: "96.00", toPlace: "5 小節目", toTempo: "120.00", direction: "速く" },
   ),
   // 歌 2 本以上を録っている。モニターがオフなら「モニター オン ・ 」を外す（同じ場面の文の続き）。
   "msg.recordingVocals": s6(
-    "歌 2 本以上を録っている",
+    "Recording 2 or more vocal tracks",
     "● 録音中 ・ {vocals}・ モニター オン ・ 止めるには {stopKey}",
     { vocals: "6 歌（入口 1）、7 歌 2（入口 2）", stopKey: "Space" },
     "part",
   ),
   // 音のファイルを 1 つ持ってきている間の、まん中の箱の名前の下の文。
-  "drop.audioOneSay": s6("音のファイルを 1 つ持ってきている", "ここに落とすと、そのトラックの落とした位置に入れます。", undefined, "part"),
-  "drop.audioOneNewTrack": s6("音のファイルを 1 つ持ってきている", "新しい歌のトラックに入れます。", undefined, "quoted"),
+  "drop.audioOneSay": s6("Dragging in one audio file", "ここに落とすと、そのトラックの落とした位置に入れます。", undefined, "part"),
+  "drop.audioOneNewTrack": s6("Dragging in one audio file", "新しい歌のトラックに入れます。", undefined, "quoted"),
   // フェードの取っ手をドラッグしている間（状態行。その場の読み値は {value} だけ）。{edge} は clip.fadeEdgeIn ・ clip.fadeEdgeOut。
   "msg.fadeDragging": s6(
-    "フェードを動かしている",
+    "Moving a fade",
     "{clip} の{edge}のフェード {value}（ドラッグ中）・ 離すと決まります ・ やめるには {cancelKey}",
     { clip: "歌 テイク 1", edge: "前", value: "0. 1. 0480", cancelKey: "Esc" },
   ),
   "clip.fadeEdgeIn": e("前", "spec:6"),
   "clip.fadeEdgeOut": e("後", "mock:F7-AudioEdit"),
   // 音の高さ（半音 ・ セント）をドラッグしている間の状態行。その場の読み値は clip.pitchMarkCents の形（「+2 ・ +30」）。
-  "msg.pitchDragging": s6("音の高さを動かしている", "音の高さ {semitones} 半音 {cents} セント（ドラッグ中）", { semitones: "+2", cents: "+30" }),
+  "msg.pitchDragging": s6("Moving the pitch", "音の高さ {semitones} 半音 {cents} セント（ドラッグ中）", { semitones: "+2", cents: "+30" }),
   // 「手で決める…」の枠のうしろの単位（仕様書 3 章 94-19「「8.0」と「ms」」）。
   "settings.latencyUnit": e("ms", "spec:3"),
   // 書き出し中に録音しているとき、状態行の左の終わりに短く（仕様書 3 章 94-84）。
-  "status.exportShort": s6("書き出し中に録音", "書き出し {percent} %", { percent: "46" }, "part"),
+  "status.exportShort": s6("Recording while exporting", "書き出し {percent} %", { percent: "46" }, "part"),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;

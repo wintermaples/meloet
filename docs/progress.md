@@ -1786,7 +1786,7 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 3. **`foundation` を `main` へ**: 配る前（区切り4 の終わり）に入れる、と決まっていた。いつ入れて push するか。ネットの目録（`main` の `tools/sounds/catalog.json`）は、入れたあとに効く。
 4. **後片づけ**: `/var/crash/_usr_lib_x86_64-linux-gnu_webkit2gtk-4.1_WebKitWebProcess.1001.crash`（係が gdb で落とした 1 回。残っていると apport が次の報告を書かない）を消してほしい。docker のグループは、deb を作り終えたら外してほしい（`sudo gpasswd -d meloet-agent docker`。棟梁が作ったイメージ `meloet-deb-build` は先に消す）。
 5. **配る deb を Release に上げるか**: 音の素材とは別に、アプリの Release（たとえば `v0.1.0`）を作って deb を上げるか、いつか。
-6. （よければ）**サンプルのしっぽを切る聞きくらべ**: グランドピアノを −50 dB で切ると −50 MB、−40 dB で −90 MB（`docs/measurements/2026-11-22-round8-memory.md`）。音が変わるので耳で。
+6. （よければ）**サンプルのしっぽを切る聞きくらべ**: グランドピアノを −50 dB で切ると約 −26 MB、−40 dB で約 −86 MB（グランドピアノの曲の meloet RSS 571 MB から。`docs/measurements/2026-11-22-round8-memory.md`。聞く音は下の「第 8 回のあと」）。音が変わるので耳で。
 7. VS Code の「meloet（デバッグ）」は `--no-default-features` で、開発の仕込み（`MELOET_*`）が効かない。デバッグで使うなら `--features dev-hooks` を足す。
 
 ### 第 8 回の宿題（次の回より後へ残す物）

@@ -1,5 +1,7 @@
 # meloet
 
+つかう人向けの案内（入れかた、鍵盤、音の素材、消しかた）は [`docs/user/README.ja.md`](docs/user/README.ja.md) です。
+
 MIDI 鍵盤を買ったばかりの人のための DAW です。いまは第 3 回（ピアノロール）までができています。
 どこまでできたかは [`docs/progress.md`](docs/progress.md)、作りは [`docs/architecture.md`](docs/architecture.md) を見てください。
 
@@ -9,7 +11,8 @@ MIDI 鍵盤を買ったばかりの人のための DAW です。いまは第 3 �
 
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev \
-  libasound2-dev libpipewire-0.3-dev libspa-0.2-dev clang libclang-dev libudev-dev
+  libasound2-dev libpipewire-0.3-dev libspa-0.2-dev clang libclang-dev libudev-dev \
+  liblilv-dev libdbus-1-dev
 # Rust（rustup、1.100）と Node.js（26）を PATH に
 cargo install cargo-deny          # ライセンスの見はりに使う
 (cd ui && npm ci)
@@ -60,6 +63,16 @@ tools/measure/real-keys.sh stopped      # 本物の鍵盤で鍵 → 画面、鍵
 tools/measure/record-timing.sh private  # 録った位置のずれ（自分用の PipeWire、quantum 64〜1024。約 12 分）
 tools/measure/long-record.sh            # 10 分録りつづける（xrun、メモリ）
 ```
+
+## 配る deb を作る
+
+```bash
+scripts/build-deb.sh              # Ubuntu 24.04 のコンテナ（packaging/Dockerfile）で作り、target/deb/ に置く。docker が要る
+```
+
+- 作るのは git が知っているファイル（コミットした物、変えた物、ignore されていない新しい物）を `target/deb-work/src` に写した物。`-p meloet-app` と `-p meloet-plughost` だけを、既定の feature で作る。
+- tauri-cli は `ui` の devDependencies の `@tauri-apps/cli`。`meloet-plughost` は、作るときだけ `bundle.externalBin` を足して deb の `/usr/bin/` に入れる（`tauri.conf.json` には書かない。書くと、ふだんの `cargo build` が `target/*/meloet-plughost` を古い写しで上書きするため）。
+- 本物の PC で確かめる手順は [`docs/install-check.md`](docs/install-check.md)。
 
 ## 開発用の環境変数（なければ何もしない）
 

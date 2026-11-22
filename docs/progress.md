@@ -1682,3 +1682,18 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 
 - 係: 音のスレッドをリアルタイムに（k8rt、meloet-hard ・ Opus 5.5）、開発の仕込みを release から外す（k8dh、meloet-hard ・ Opus 5.5）、deb とユーザー向けの README（k8deb、meloet-impl。docker は `sg docker`）、からっぽの HOME で本物の Release から「はじめての 5 分」（k8f5、meloet-impl）。
 - このあと: メモリ（どこが持っているか分けて見て減らす）、アレンジの送りの 20 ms（CPU の道）、Surge XT の係が再生の頭で落ちる件、第 8 回の終わりの数と絵。
+
+### 区切り3 の締め: はじめての 5 分（k8f5、meloet-impl ・ Opus 5.5、`docs/measurements/2026-11-22-round8-first5.md`）
+
+- からっぽの HOME（XDG の場所をぜんぶ新しく）で、本物の Release（sounds-2026.11.2）から a〜g を通した。こわれた所はなし。「取りにいく」からグランドピアノが鳴るまで 4.9〜11.5 秒（4 回）、240 MB は約 49 秒（回線は速め）。やめる → 次の起動で続きから。入れかわりの前後 ±600 ms に 1 ms の無音 0、プチッの目安にも届かない（押したままの入れかわりは録れていない）。取っている間の鍵 → DAC は 13.27 ms（取らない時 13.28）、鍵 → 画面は p95 22.49 ms ・ 2 コマ以内 94 %（取らない時 100 %。load 13 でにごっている。取りはじめとピアノを読みこむころにかたまる → 静かな PC で見なおす宿題）。
+- 見つけて直した事（棟梁、0472f63）: **テイクを 1 つ録るまで聞かれなかった**（「音が出ました」「空のアレンジ」を待っていた。アレンジの中の案内なので待たないに。B-95-12 を直した）、取っている間に棚の 85 の知らせが出ていた（出さない）、大きさが 239 MB と出た（包みぜんぶは 10 MB にまるめる。B-95-14）。
+- 残した事: 置き場所のフォルダの名前はモックの「音の素材」ではなく `sounds`（23-1）、取っている間の棚の「お気に入り」が 0、「やめる」のあとは状態行で何も言わない。
+
+### 区切り4: deb とユーザー向けの書類（k8deb、meloet-impl ・ Opus 5.5、merge 済み）
+
+- `packaging/Dockerfile`（ubuntu:24.04）と `scripts/build-deb.sh`（git が知っているファイルを写して、コンテナの中で `npm ci` ・ `npm run build` ・ plughost ・ `tauri build --bundles deb`。`MELOET_DOCKER_SG=1` で docker の呼び出しだけを `sg docker` に）。tauri-cli は `@tauri-apps/cli` 2.12.6（Apache-2.0 OR MIT、`ui` の devDependencies）。externalBin は作るときだけ `--config` で足す（tauri-build が、ふだんの `cargo build` でも写すため）。配る実行ファイルは記号を外す（`CARGO_PROFILE_RELEASE_STRIP=symbols`、棟梁が足した）。
+- `Depends: libc6 (>= 2.39), libasound2t64 | libasound2, libpipewire-0.3-0t64 | libpipewire-0.3-0, liblilv-0-0, libdbus-1-3, libxcb1, libstdc++6, libwebkit2gtk-4.1-0, libgtk-3-0`（`dpkg-shlibdeps` と `readelf -d` から。最後の 2 つは bundler が自分で足した。調べ物の「足さない」と食いちがい、本物を取る）、`Recommends: pipewire, wireplumber`。`liblilv-dev` が README の用意から抜けていた（足した）。
+- deb は 18,847,858 バイト（記号を外す前）。`/usr/bin/meloet`、`/usr/bin/meloet-plughost`（`plugins.rs` の `current_exe()` のとなりで見つかる）、`.desktop`（AudioVideo ・ Audio ・ Music）、仮のアイコン、`/usr/share/doc/meloet/` に LICENSE 2 つと NOTICE。
+- きれいな ubuntu:24.04 と 26.04 のコンテナで: 入れる（依存 301 ・ 304 個）、`ldd` の not found 0、`xvfb-run meloet` で 20 秒動く、`apt-get remove` で消える。画面と音はオーナーさんの手順（`docs/install-check.md`）。ユーザー向けの書類 `docs/user/README.ja.md`。
+- 棟梁の決め: deb の説明は「meloet について」の文（mock:R7-About「MIDI 鍵盤ではじめる、音楽づくりのアプリ」）、識別子 `dev.meloet.app` の macOS の警告は今はそのまま（Mac の回への申し送り）。
+- オーナーさんに聞く: deb の Maintainer（いまは bundler の既定の「meloet」）。

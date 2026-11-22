@@ -41,7 +41,9 @@ use crate::sf2store::{self, Sf2Info, Sf2Key};
 
 use crate::layout::{self, Bands, BottomBand, FoldWhy, SidePanel, WindowSize};
 use crate::play::mixer::gain_view;
-use crate::play::{Cut, EngineOp, Heard, OpenInput, Play, PlugState, RecordReport, VocalFileAsk};
+use crate::play::{
+    ClipGains, Cut, EngineOp, Heard, OpenInput, Play, PlugState, RecordReport, VocalFileAsk,
+};
 use crate::plugins::{Plugins, ScanJob, ScanNews};
 use crate::settings::{SCALES, Settings, SoundSettings};
 use crate::vocalrec::{RecNote, Written};
@@ -233,6 +235,16 @@ pub enum Input {
     },
     /// The open input ended on its own (the microphone was pulled out).
     InputLost,
+    /// Frames of vocal clips were not read from the disk in time, and were silence.
+    DiskTooSlow,
+    /// How far a save that puts audio files into the song's folder is: `done` of `total`
+    /// files, `done_bytes` of `total_bytes`. At most 4 times a second, while it goes on.
+    SavingAudio {
+        done: u32,
+        total: u32,
+        done_bytes: u64,
+        total_bytes: u64,
+    },
     /// What the PC says of its delays now; `None` while the input is not open.
     AudioDelays(Option<Delays>),
     /// The input of a metered vocal track reached 0 dB.
@@ -574,6 +586,10 @@ pub struct Model {
     bands: Bands,
     /// Something that just happened, for the status line. Gone at the next thing the user does.
     notice: Option<StatusMessage>,
+    /// `StatusMessage::DiskTooSlow` was said since the song started to move.
+    disk_slow_said: bool,
+    /// `StatusMessage::SavingAudio`, while the save that said it goes on.
+    saving_audio: Option<StatusMessage>,
     /// A key was played on the track with this instrument while it was being read: the
     /// status line says so until it is read or the keys play something else.
     loading_said: Option<InstrumentRef>,
@@ -710,6 +726,8 @@ impl Model {
             screen: None,
             bands: Bands::new(window(START_VIEWPORT, scale)),
             notice: None,
+            disk_slow_said: false,
+            saving_audio: None,
             loading_said: None,
             dialog: None,
             highlighted: None,
@@ -1072,12 +1090,37 @@ impl Model {
                 self.input_gone(Some(&node_name), &mut effects);
             }
             Input::InputLost => {
+                let lost = self.input_lost_notice();
                 self.input_gone(None, &mut effects);
                 if self.play.recording_vocals() {
                     self.play.stop_recording(&mut effects);
+                    if lost.is_some() {
+                        self.notice = lost;
+                    }
                 }
             }
             Input::AudioDelays(delays) => self.delays = delays,
+            Input::DiskTooSlow => {
+                if self.play.is_moving() && !self.disk_slow_said {
+                    self.disk_slow_said = true;
+                    self.notice = Some(StatusMessage::DiskTooSlow);
+                }
+            }
+            Input::SavingAudio {
+                done,
+                total,
+                done_bytes,
+                total_bytes,
+            } => {
+                if self.saving() {
+                    self.saving_audio = Some(StatusMessage::SavingAudio {
+                        done,
+                        total,
+                        done_bytes,
+                        total_bytes,
+                    });
+                }
+            }
             Input::MicClipped => {
                 if !self.play.busy() {
                     self.notice = Some(StatusMessage::MicTooLoud);
@@ -1090,9 +1133,16 @@ impl Model {
             }
             Input::VocalsNotStarted => self.play.vocals_not_started(),
             Input::VocalsWritten(written) => {
+                let ours = self.play.recording_vocals();
+                let skipped = written.gap_count.saturating_add(written.dropped_blocks);
                 // A recording the stream went away under says so now that its take is in.
                 if let Some((cut, take)) = self.play.vocals_written(*written, &mut effects) {
                     self.notice = Some(self.cut_notice(cut, take));
+                } else if ours
+                    && skipped > 0
+                    && !matches!(self.notice, Some(StatusMessage::InputLost { .. }))
+                {
+                    self.notice = Some(StatusMessage::RecordingGaps { count: skipped });
                 }
             }
             Input::VocalFaults { gaps, dropped } => self.play.vocal_faults(gaps, dropped),
@@ -1108,6 +1158,12 @@ impl Model {
             Input::Export(news) => self.export_news(news),
         }
         self.settle_export(&mut effects);
+        if !self.play.is_moving() {
+            self.disk_slow_said = false;
+        }
+        if !self.saving() {
+            self.saving_audio = None;
+        }
         self.refresh_catalog();
         if !self.bands.side_is_open(SidePanel::Shelf) {
             self.play.shelf_closed(&mut effects);
@@ -1609,13 +1665,17 @@ impl Model {
             | Command::StartExport
             | Command::CancelExport
             | Command::ShowExported => self.export_command(&command, effects),
+            Command::ShiftClipGains { clips, by_db } => {
+                (self.play).set_clip_gains(&clips, ClipGains::By(by_db), effects);
+            }
+            Command::SetClipGains { clips, db } => {
+                (self.play).set_clip_gains(&clips, ClipGains::To(db), effects);
+            }
+            Command::SetClipsStretch { clips, change } => {
+                self.play.set_clips_stretch(&clips, change, effects);
+            }
             // Protocol 27: accepted, and nothing yet (docs/architecture.md 23-7).
-            Command::ShiftClipGains { .. }
-            | Command::SetClipGains { .. }
-            | Command::SetClipsStretch { .. }
-            | Command::FetchPack
-            | Command::PackLater
-            | Command::StopPackFetch => {}
+            Command::FetchPack | Command::PackLater | Command::StopPackFetch => {}
             Command::ImportAudio { track } => self.import_audio(track, effects),
             Command::FindAudio { audio } => self.find_audio(audio, effects),
             Command::SetClipStretch { clip, change } => {
@@ -2614,6 +2674,9 @@ impl Model {
         }
         if let Some(m) = self.play.writing_status() {
             return Some(m);
+        }
+        if let Some(m) = &self.saving_audio {
+            return Some(m.clone());
         }
         // Before a notice: it answers the key just played, and no command puts it away.
         if let Some(instrument) = &self.loading_said {

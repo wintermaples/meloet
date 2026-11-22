@@ -62,6 +62,11 @@ impl Files {
 }
 
 impl Model {
+    /// A save was asked for and has not answered yet.
+    pub(super) fn saving(&self) -> bool {
+        matches!(self.files.waiting, Some(Waiting::Save(_)))
+    }
+
     /// The song's file, once it has one.
     pub fn song_path(&self) -> Option<&std::path::Path> {
         self.files.path.as_deref()

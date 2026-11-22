@@ -1044,6 +1044,8 @@ fn what_a_recording_skipped_is_told_while_it_goes_on_and_after() {
             dropped: 1
         })
     );
+    // Said as the recording stops (spec 6 「録っている間に音がとぎれた」).
+    assert_eq!(status(&m), Some(StatusMessage::RecordingGaps { count: 4 }));
     m.handle(Input::VocalFaults {
         gaps: 9,
         dropped: 9,
@@ -1148,4 +1150,42 @@ fn every_track_that_records_is_told_to_the_engine_as_not_playing() {
     let seats = m.play.track_seats();
     let effects = cmd(&mut m, Command::Record);
     assert_eq!(muted(&effects), set(&[seats[0]]));
+}
+
+#[test]
+fn an_input_that_goes_away_stops_the_recording_and_says_so() {
+    let (mut m, id) = with_vocal(1);
+    record_vocals(&mut m);
+    let TrackKindView::Vocal { input, .. } = vocal(&m, id) else {
+        panic!("a vocal track");
+    };
+    let effects = m.handle(Input::InputLost);
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::Engine(EngineOp::Stop { .. }))),
+        "{effects:?}"
+    );
+    let lost = Some(StatusMessage::InputLost {
+        input,
+        device: MIC.into(),
+    });
+    m.handle(Input::Record(RecordReport::Stopped {
+        t_us: 12,
+        tick: 4.0 * Q as f64,
+        lap: 0,
+    }));
+    // Said once the take is in; the gaps of the recording do not take its place.
+    m.handle(Input::VocalsWritten(Box::new(Written {
+        frames: 140_000,
+        sample_rate: 48_000,
+        gap_count: 2,
+        ..Written::default()
+    })));
+    assert_eq!(status(&m), lost);
+
+    // Not recording: nothing to say.
+    let (mut m, _) = with_vocal(1);
+    m.handle(Input::InputLost);
+    assert!(!matches!(status(&m), Some(StatusMessage::InputLost { .. })));
 }

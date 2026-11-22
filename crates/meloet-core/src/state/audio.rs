@@ -13,7 +13,8 @@ use meloet_protocol::{
 
 use super::{Effect, Model};
 use crate::audiofiles::SONG_AUDIO;
-use crate::audiofiles::keeper::{AudioNews, Brought};
+use crate::audiofiles::decode::Unread;
+use crate::audiofiles::keeper::{AudioNews, Brought, Finding};
 
 /// Where files that are being brought in go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,13 +192,16 @@ impl Model {
                 let bringing = self.audio.bringing.remove(at);
                 self.audio.brought.push((bringing, files));
             }
-            AudioNews::Found { file, ok, .. } => {
-                if ok {
-                    // Looked at again: the clips sound.
-                    self.audio.watched = None;
-                } else {
-                    self.notice = Some(StatusMessage::AudioUnreadable { file });
-                }
+            AudioNews::Found { audio, file, found } => {
+                self.notice = match found {
+                    Finding::Taken => {
+                        // Looked at again: the clips sound.
+                        self.audio.watched = None;
+                        self.play.audio_found(audio)
+                    }
+                    Finding::Mismatch => Some(StatusMessage::AudioFoundMismatch),
+                    Finding::Unreadable => Some(StatusMessage::AudioUnreadable { file }),
+                };
             }
             AudioNews::States { serial, .. } => {
                 if serial != self.play.serial() {
@@ -229,12 +233,16 @@ impl Model {
         for file in files {
             match file {
                 Brought::In(file) => read.push(file),
-                Brought::Unreadable(name) => unreadable.push(name),
+                Brought::Unreadable(name, why) => unreadable.push((name, why)),
             }
         }
         if read.is_empty() {
-            if let Some(file) = unreadable.into_iter().next() {
-                self.notice = Some(StatusMessage::AudioUnreadable { file });
+            if let Some((file, why)) = unreadable.into_iter().next() {
+                self.notice = Some(match why {
+                    Unread::NotAudio => StatusMessage::AudioUnreadable { file },
+                    Unread::Broken => StatusMessage::AudioBroken { file },
+                    Unread::TooManyChannels => StatusMessage::AudioTooManyChannels { file },
+                });
             }
             return;
         }
@@ -300,9 +308,19 @@ impl Model {
     }
 
     /// The section `params`: 「選んだクリップ」 when exactly one clip is selected, it is a
-    /// vocal clip, and no insert or instrument was selected after it.
+    /// vocal clip, and no insert or instrument was selected after it; 「まとめて変える」 the
+    /// same for two or more that are all vocal clips.
     pub(super) fn params_view(&self) -> ParamsView {
         let view = self.play.params_view();
+        if let Some(clips) = self.play.selected_vocal_clips() {
+            if !self.audio.clip_panel && view.selected.is_some() {
+                return view;
+            }
+            return ParamsView {
+                selected: None,
+                clips: Some(clips),
+            };
+        }
         let Some((track, clip, source)) = self.play.selected_vocal_clip() else {
             return view;
         };

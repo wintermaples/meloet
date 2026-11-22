@@ -768,6 +768,9 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
                 a.clip_track(clip),
             )
         }
+        StepKind::SetClipsGain { count: n } => (StepName::SetClipGain, clips(n), arrange),
+        StepKind::SetClipsFollow { count: n } => (StepName::SetClipFollow, clips(n), arrange),
+        StepKind::SetClipsPitch { count: n } => (StepName::SetClipPitch, clips(n), arrange),
         StepKind::SetClipFade { clip } => (
             StepName::SetClipFade,
             named(a.after.clip(clip).map(|(_, c)| c.name.clone())),

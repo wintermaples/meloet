@@ -2620,3 +2620,34 @@ pub struct AudioShape {
 - 偽物の場面（`?scene=`）: `packAsk`（F8-PackAsk）・ `packGet`（F8-PackGet、棚をひらく）・ `packFailOffline`（F8-PackFail）・ `packFailCutOff` ・ `packFailDiskFull` ・ `packFailCorrupt`（6 章）・ `packSettings`（F8-PackSettings、まだ 12 / 31）・ `packNew`（6 章「新しい包み」）・ `multiClip`（F8-MultiClip）・ `exportCheck`（F8-ExportCheck、2 ベース がソロ）・ `exportClip`（F8-ExportClip、3 か所 +1.2 dB）。
 - 試験: `crates/meloet-protocol/src/tests27.rs`、`ui/tests/bridge.protocol27.test.ts`（形、場面、偽物の意図、状態行の 18 の文）。
 
+
+### 23-8 約束 27 の core（区切り2 の 2 回目、2026-11-22、meloet-hard）
+
+約束の形は 23-7 のまま（変えていない）。音の素材（`SoundsView`、`FetchPack` など）はここではさわっていない。
+
+**1. 歌のクリップを 2 つ以上**
+
+- model: `meloet_model::set_clips_shape(doc, clips, change, step)`（`crates/meloet-model/src/audio/clips.rs`）。選んだ歌のクリップの形（`AudioShape`）を 1 つの `Edit` で変える。鍵盤のクリップ、ない id、形が変わらないクリップは飛ばす。1 つも変わらなければ `Unchanged`（手にならない）。
+- 手の種類: `StepKind::SetClipsGain { count }` ・ `SetClipsFollow { count }` ・ `SetClipsPitch { count }`（`count` は本当に変わったクリップの数）。履歴の行は `StepName::SetClipGain` ・ `SetClipFollow` ・ `SetClipPitch`、（何を）は `StepWhat::Clips { count }`、場所は `StepPlace::Arrange`（トラックがいくつにもまたがるので、1 つのクリップの手のようにトラックの名前にしない）。
+- core: `Play::set_clip_gains`（`ClipGains::By` は線のドラッグ、`To` は打った値。どちらも `ClipGain::from_db` で −60〜+12 に止まる）・ `Play::set_clips_stretch`（半音 ±12、セント ±50 に止める。`SourceBpm` は何もしない）（`crates/meloet-core/src/play/audio.rs`）。録音中 ・ カウント中は何もしない。
+- 欄: `Play::selected_vocal_clips` が `SelectedClips` を作り、`state/audio.rs` の `params_view` が 1 つのクリップと同じ決まり（あとでインサートか音源をえらんだら欄をゆずる）で `ParamsView::clips` に入れる。そのとき `selected` は `None`。
+
+**2. 書き出す前のたしかめ**
+
+- 数えかた（B-95-2）: `export/job.rs` の `OverPlaces`。ファイルに入るこま（頭の遅れの分は入らない、しっぽは入る）を順に見て、左右のどちらかが 1.0 をこえたこまが 0 dB をこえたこま（ちょうど 1.0 はこえない）。前にこえたこまから、こえないこまが 4800 こま（48 kHz で 100 ms）以上つづいたあとなら新しい 1 か所。
+- トラックごとの書き出しは、ファイルごとの数を足す。`ExportNews::Counted` に `over` を足し、`ExportCheck` の `over` はそれ。`clips` は `over > 0` で 32 ビットでないとき（前の「いちばん大きい所が 0 dB をこえた」と同じ）。
+- 「用意をしています」（`Waiting`）と % は前のまま（1 回目の数が来るまで `Waiting`）。
+- ソロ: `export::Scene::soloed`（トラックの順の `TrackRef`）から `ExportDialogView::solo`。ソロは `Asked` に入れないので、ソロを変えても書き出しの仕事は作りなおさない。
+
+**3. core から出す知らせ**
+
+| 知らせ | 出すところ |
+|---|---|
+| `InputLost` | `Input::InputLost` で歌を録っていたとき（`state.rs`）。`input` は録っていた最初の歌のトラックの入口、`device` はひらいたときに覚えた入口の名前（`EndpointView::name`。一覧から消えていても言える。`state/vocal.rs` の `wanted_name`）。 |
+| `RecordingGaps` | `Input::VocalsWritten`（止めて、ディスクの係が書き終えたとき）で、`gap_count + dropped_blocks` が 1 以上。音の出口が消えて止まった知らせと `InputLost` のほうが先。録る係の中身（`vocalrec.rs`）はさわっていない。 |
+| `AudioFound` ・ `AudioFoundMismatch` | `AudioNews::Found` の `found: Finding`（`Taken` ・ `Mismatch` ・ `Unreadable`）。`Mismatch` は読めたがサンプルレートかチャンネルの数がちがう（3 チャンネル以上も）。`AudioFound` の `file` は曲が探している名前、`clips` はいま見せているテイクがその音のクリップの数。 |
+| `AudioBroken` ・ `AudioTooManyChannels` | `Brought::Unreadable(name, Unread)`。`audiofiles/decode.rs` の `ReadError { why: Unread }`: 3 チャンネル以上は `TooManyChannels`、ほかは名前の終わりが wav ・ mp3 ・ flac ・ ogg（`AUDIO_EXTENSIONS`）なら `Broken`、ちがえば `NotAudio`（前の `AudioUnreadable`）。 |
+| `SavingAudio` | 保存が音のファイルを曲のフォルダへ入れる間（`AudioStore::settle` の `Settling`）。はじめの 250 ms は言わず、そのあと 250 ms に 1 回まで。移す（rename）ファイルは入れ終わったときにその大きさを足す。保存が終わったら消える。 |
+| `DiskTooSlow` | 歌の先読みが間に合わなかったこまがふえたとき（`EngineMeters::stream_missing`、`service.rs` の `log_missing`）、`Input::DiskTooSlow`。動いている間に 1 回だけ、止まったらまた言える。 |
+
+- **保存のしかたを 1 つ変えた**: 使っている音がある曲は、プラグインがなくても保存を自分のスレッドで書く（`service.rs` の `save_song`）。前は core のスレッドで書いていたので、写している間に `SavingAudio` を送れなかった。答えは前のプラグインのある曲と同じく、あとから `Msg::Input` で来る。

@@ -174,7 +174,7 @@ fn several_files_go_apart_or_in_a_row_as_one_step() {
     let files = || {
         vec![
             brought("a.mp3", 2, 44_100),
-            Brought::Unreadable("b.mp3".into()),
+            Brought::Unreadable("b.mp3".into(), Unread::Broken),
             brought("c.ogg", 1, 44_100),
         ]
     };
@@ -259,22 +259,42 @@ fn several_files_go_apart_or_in_a_row_as_one_step() {
 fn files_that_do_not_read_bring_nothing_in() {
     let mut m = model();
     let steps = undo_count(&m);
-    drop_files(
-        &mut m,
-        &["声.wav"],
-        None,
-        0,
-        DropMode::Separate,
-        vec![Brought::Unreadable("声.wav".into())],
-    );
-    assert!(clips(&m).is_empty());
-    assert_eq!(undo_count(&m), steps);
-    assert_eq!(
-        status(&m),
-        Some(StatusMessage::AudioUnreadable {
-            file: "声.wav".into()
-        })
-    );
+    // Each says why: not a kind meloet reads, broken, three channels or more (spec 6).
+    for (name, why, said) in [
+        (
+            "声.mp3",
+            Unread::NotAudio,
+            StatusMessage::AudioUnreadable {
+                file: "声.mp3".into(),
+            },
+        ),
+        (
+            "声.wav",
+            Unread::Broken,
+            StatusMessage::AudioBroken {
+                file: "声.wav".into(),
+            },
+        ),
+        (
+            "8ch.wav",
+            Unread::TooManyChannels,
+            StatusMessage::AudioTooManyChannels {
+                file: "8ch.wav".into(),
+            },
+        ),
+    ] {
+        drop_files(
+            &mut m,
+            &[name],
+            None,
+            0,
+            DropMode::Separate,
+            vec![Brought::Unreadable(name.into(), why)],
+        );
+        assert!(clips(&m).is_empty());
+        assert_eq!(undo_count(&m), steps);
+        assert_eq!(status(&m), Some(said));
+    }
 }
 
 #[test]
@@ -561,28 +581,42 @@ fn a_missing_file_is_said_looked_for_and_taken_out() {
         e,
         Effect::FindAudio { source, path } if source.id.0 == audio && path == Path::new("/else/歌.mp3")
     )));
-    // Not the audio that is missing: said, and still missing.
+    // Not audio that reads: said, and still missing.
     m.handle(Input::Audio(AudioNews::Found {
         audio,
-        file: "歌.mp3".into(),
-        ok: false,
+        file: "別.mp3".into(),
+        found: Finding::Unreadable,
     }));
     assert_eq!(
         status(&m),
         Some(StatusMessage::AudioUnreadable {
-            file: "歌.mp3".into()
+            file: "別.mp3".into()
         })
     );
-    // Found: the files are looked at again.
+    // Another rate or other channels: not copied (spec 6 「さがしたファイルが合わない」).
+    m.handle(Input::Audio(AudioNews::Found {
+        audio,
+        file: "別.mp3".into(),
+        found: Finding::Mismatch,
+    }));
+    assert_eq!(status(&m), Some(StatusMessage::AudioFoundMismatch));
+    // Found: the files are looked at again, and the clips that play it are counted.
     let effects = m.handle(Input::Audio(AudioNews::Found {
         audio,
-        file: "歌.mp3".into(),
-        ok: true,
+        file: "別.mp3".into(),
+        found: Finding::Taken,
     }));
     assert!(
         effects
             .iter()
             .any(|e| matches!(e, Effect::WatchAudio { .. }))
+    );
+    assert_eq!(
+        status(&m),
+        Some(StatusMessage::AudioFound {
+            file: "歌.mp3".into(),
+            clips: 1
+        })
     );
     assert_eq!(undo_count(&m), steps);
     states(&mut m, uid, SourceState::Ready);
@@ -872,4 +906,236 @@ fn the_clips_whose_audio_is_being_made_are_shown_with_their_percent() {
     );
     m.handle(Input::AudioMaking(Vec::new()));
     assert_eq!(m.view().audio_work, AudioWorkView::default());
+}
+
+#[test]
+fn two_or_more_vocal_clips_change_together_as_one_step() {
+    use meloet_protocol::{SelectedClips, StretchChange as Row};
+    let mut m = model();
+    cmd(
+        &mut m,
+        Command::AddNote {
+            take: None,
+            start: 0,
+            length: 480,
+            key: 60,
+            velocity: 100,
+        },
+    );
+    let keys_clip = clips(&m)[0].1.id;
+    let vocal = vocal_track(&mut m);
+    drop_files(
+        &mut m,
+        &["a.wav", "b.wav"],
+        Some(vocal),
+        0,
+        DropMode::Separate,
+        vec![brought("a.wav", 2, 48_000), brought("b.wav", 2, 48_000)],
+    );
+    let all = clips(&m);
+    let (a, b) = (all[1].1.id, all[2].1.id);
+    let tracks = vec![all[1].0, all[2].0];
+    // Brought in together: both are selected, and the panel is 「まとめて変える」.
+    assert_eq!(m.view().arrange.selected_clips, [a, b]);
+    let panel = |m: &Model| m.view().params.clips;
+    assert_eq!(m.view().params.selected, None);
+    assert_eq!(
+        panel(&m),
+        Some(SelectedClips {
+            clips: vec![a, b],
+            tracks: tracks.clone(),
+            gain_db: Some(0.0),
+            follow: Some(false),
+            semitones: Some(0),
+            cents: Some(0),
+            keep_formant: Some(true),
+        })
+    );
+    let gain = |m: &Model, clip: u32| {
+        let all = clips(m);
+        let c = all.iter().find(|(_, c)| c.id == clip).unwrap();
+        c.1.audio.as_ref().unwrap().gain_db
+    };
+    // One clip's own volume: the panel says 「—」.
+    cmd(
+        &mut m,
+        Command::SetClipField {
+            clip: b,
+            field: ClipField::GainDb,
+            value: 10.0,
+        },
+    );
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: vec![a, b],
+            mode: SelectMode::Replace,
+        },
+    );
+    assert_eq!(panel(&m).unwrap().gain_db, None);
+    let steps = undo_count(&m);
+
+    // The line dragged by +3 dB: both move, each stops at +12.
+    cmd(
+        &mut m,
+        Command::ShiftClipGains {
+            clips: vec![a, b],
+            by_db: 3.0,
+        },
+    );
+    assert_eq!((gain(&m, a), gain(&m, b)), (3.0, 12.0));
+    assert_eq!(undo_count(&m), steps + 1);
+    let row = m.history_rows(steps + 1, steps + 1)[0].clone();
+    assert_eq!(row.name, StepName::SetClipGain);
+    assert_eq!(row.what, meloet_protocol::StepWhat::Clips { count: 2 });
+    cmd(&mut m, Command::Undo);
+    assert_eq!((gain(&m, a), gain(&m, b)), (0.0, 10.0));
+    // The selection is back with the undo.
+    assert_eq!(m.view().arrange.selected_clips, [a, b]);
+
+    // 0, a value that is not a number and ids of no clip do nothing.
+    for (clips, by_db) in [(vec![a, b], 0.0), (vec![a, b], f64::NAN), (vec![999], 2.0)] {
+        cmd(&mut m, Command::ShiftClipGains { clips, by_db });
+        assert_eq!(undo_count(&m), steps);
+    }
+    // Far down: each stops at −60.
+    cmd(
+        &mut m,
+        Command::ShiftClipGains {
+            clips: vec![a, b, 999],
+            by_db: -100.0,
+        },
+    );
+    assert_eq!((gain(&m, a), gain(&m, b)), (-60.0, -60.0));
+    assert_eq!(panel(&m).unwrap().gain_db, Some(-60.0));
+    cmd(&mut m, Command::Undo);
+
+    // A value typed: both get it, as one step; typed again it is no step.
+    cmd(
+        &mut m,
+        Command::SetClipGains {
+            clips: vec![a, b],
+            db: -3.5,
+        },
+    );
+    assert_eq!((gain(&m, a), gain(&m, b)), (-3.5, -3.5));
+    assert_eq!(panel(&m).unwrap().gain_db, Some(-3.5));
+    assert_eq!(undo_count(&m), steps + 1);
+    cmd(
+        &mut m,
+        Command::SetClipGains {
+            clips: vec![a, b],
+            db: -3.5,
+        },
+    );
+    assert_eq!(undo_count(&m), steps + 1);
+
+    // The rows of stretching and pitch.
+    let rows = |m: &Model, clip: u32| {
+        let all = clips(m);
+        let c = all.iter().find(|(_, c)| c.id == clip).unwrap();
+        c.1.audio.as_ref().unwrap().stretch
+    };
+    stretch(&mut m, a, Row::Semitones { semitones: 2.0 });
+    assert_eq!(panel(&m).unwrap().semitones, None);
+    let steps = undo_count(&m);
+    let many = |m: &mut Model, change| {
+        cmd(
+            m,
+            Command::SetClipsStretch {
+                clips: vec![a, b],
+                change,
+            },
+        )
+    };
+    many(&mut m, Row::Semitones { semitones: 20.0 });
+    assert_eq!((rows(&m, a).semitones, rows(&m, b).semitones), (12, 12));
+    many(&mut m, Row::Cents { cents: -30.4 });
+    many(&mut m, Row::Follow { on: true });
+    many(&mut m, Row::KeepFormant { on: false });
+    let p = panel(&m).unwrap();
+    assert_eq!(
+        (p.semitones, p.cents, p.follow, p.keep_formant),
+        (Some(12), Some(-30), Some(true), Some(false))
+    );
+    assert_eq!(undo_count(&m), steps + 4);
+    let names: Vec<StepName> = (m.history_rows(steps + 1, steps + 4).into_iter())
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            StepName::SetClipPitch,
+            StepName::SetClipPitch,
+            StepName::SetClipFollow,
+            StepName::SetClipPitch
+        ]
+    );
+    // What every clip has already, and the tempo of the audio, are no step.
+    many(&mut m, Row::Follow { on: true });
+    many(&mut m, Row::SourceBpm { bpm: 100.0 });
+    assert_eq!(undo_count(&m), steps + 4);
+
+    // An instrument selected afterwards takes the panel; the clips selected again bring it
+    // back.
+    let keys = m.view().song.tracks[0].id;
+    cmd(&mut m, Command::SelectInstrument { track: keys });
+    assert_eq!(panel(&m), None);
+    assert!(m.view().params.selected.is_some());
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: vec![a, b],
+            mode: SelectMode::Replace,
+        },
+    );
+    assert!(panel(&m).is_some());
+    // A keys clip among them: not this panel (B-95-8); one clip: the panel of one clip.
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: vec![a, b, keys_clip],
+            mode: SelectMode::Replace,
+        },
+    );
+    assert_eq!(panel(&m), None);
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: vec![a],
+            mode: SelectMode::Replace,
+        },
+    );
+    assert_eq!(panel(&m), None);
+    assert!(matches!(
+        m.view().params.selected,
+        Some(SelectedParams::Clip(_))
+    ));
+}
+
+#[test]
+fn audio_the_disk_did_not_give_in_time_is_said_once_until_the_song_stops() {
+    let mut m = model();
+    // Stopped: nothing to say.
+    m.handle(Input::DiskTooSlow);
+    assert_ne!(status(&m), Some(StatusMessage::DiskTooSlow));
+    cmd(&mut m, Command::PlayStop);
+    assert!(m.view().transport.state != meloet_protocol::TransportState::Stopped);
+    m.handle(Input::DiskTooSlow);
+    assert_eq!(status(&m), Some(StatusMessage::DiskTooSlow));
+    // Put away by the next thing the person does, and not said again while it plays.
+    cmd(
+        &mut m,
+        Command::SelectClips {
+            clips: Vec::new(),
+            mode: SelectMode::Replace,
+        },
+    );
+    m.handle(Input::DiskTooSlow);
+    assert_ne!(status(&m), Some(StatusMessage::DiskTooSlow));
+    // Stopped and played again: said again.
+    cmd(&mut m, Command::PlayStop);
+    cmd(&mut m, Command::PlayStop);
+    m.handle(Input::DiskTooSlow);
+    assert_eq!(status(&m), Some(StatusMessage::DiskTooSlow));
 }

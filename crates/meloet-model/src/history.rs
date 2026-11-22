@@ -387,6 +387,19 @@ pub enum StepKind {
     SetClipPitch {
         clip: ClipId,
     },
+    /// The volume of `count` selected vocal clips at once: a drag of the volume line of one
+    /// of them, or 「音量」 of 「まとめて変える」 (spec 3, 39-B and 40-A).
+    SetClipsGain {
+        count: usize,
+    },
+    /// 「曲のテンポについていく」 of 「まとめて変える」, for `count` clips.
+    SetClipsFollow {
+        count: usize,
+    },
+    /// The semitones, the cents or 「声の感じを保つ」 of 「まとめて変える」, for `count` clips.
+    SetClipsPitch {
+        count: usize,
+    },
     /// 「曲から外す」 on the notice of an audio file that is not found: `clips` clips that
     /// played it are gone. The `Doc` before the step has the file, for its name.
     RemoveAudio {

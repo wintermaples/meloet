@@ -70,6 +70,56 @@ pub fn set_clip_gain(doc: &Doc, clip: ClipId, gain: ClipGain) -> Result<Edit, Ed
     )
 }
 
+/// One change to the shapes of several vocal clips (spec 3, 39-B and 40-A), as one step:
+/// `step` is given how many clips changed. Ids that are no vocal clip's are passed by, and
+/// so is a clip `change` leaves as it is. `Unchanged` when no clip changes.
+pub fn set_clips_shape(
+    doc: &Doc,
+    clips: &[ClipId],
+    change: impl Fn(&AudioShape) -> AudioShape,
+    step: impl FnOnce(usize) -> StepKind,
+) -> Result<Edit, EditError> {
+    let mut new = doc.clone();
+    let mut count = 0;
+    for (ti, track) in doc.tracks.iter().enumerate() {
+        let mut changed = None;
+        for (ci, c) in track.clips.iter().enumerate() {
+            let ClipTakes::Vocal { takes, shape } = &c.takes else {
+                continue;
+            };
+            if !clips.contains(&c.id) {
+                continue;
+            }
+            let shape = change(shape);
+            if c.takes.shape() == Some(&shape) {
+                continue;
+            }
+            let list = changed.get_or_insert_with(|| track.clips.clone());
+            list[ci] = Arc::new(Clip {
+                takes: ClipTakes::Vocal {
+                    takes: takes.clone(),
+                    shape,
+                },
+                ..Clip::clone(c)
+            });
+            count += 1;
+        }
+        if let Some(clips) = changed {
+            new.tracks[ti] = Arc::new(Track {
+                clips,
+                ..Track::clone(track)
+            });
+        }
+    }
+    if count == 0 {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: new,
+        step: step(count),
+    })
+}
+
 /// Which fade of a vocal clip.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FadeEnd {

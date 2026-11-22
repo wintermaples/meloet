@@ -77,6 +77,7 @@ fn taker(path: &Path, head: u64, range: u64, tail: ExportTail) -> Taker {
         quiet_for: 0,
         rate: RATE,
         peak: 0.0,
+        places: OverPlaces::new(RATE),
         written: 0,
         over: false,
     }
@@ -159,6 +160,55 @@ fn the_head_is_cut_and_the_tail_ends_when_it_is_quiet_or_after_ten_seconds() {
     let mut t = taker(&path, 0, range, ExportTail::UntilSilent);
     feed(&mut t, only);
     assert_eq!((t.peak, t.out.finish().unwrap()), (loud(999), range));
+}
+
+#[test]
+fn the_places_over_0_db_are_runs_apart_by_100_ms() {
+    let gap = u64::from(RATE) / 10;
+    let count = |frames: &[(u64, f32)]| {
+        let mut places = OverPlaces::new(RATE);
+        let last = frames.iter().map(|(at, _)| *at).max().unwrap_or(0);
+        let mut block = Vec::new();
+        for frame in 0..=last + 10 {
+            let level = (frames.iter().find(|(at, _)| *at == frame)).map_or(0.5, |(_, l)| *l);
+            block.extend_from_slice(&[0.25, level]);
+            if block.len() == 2 * BLOCK {
+                places.feed(&block);
+                block.clear();
+            }
+        }
+        places.feed(&block);
+        places.count
+    };
+    assert_eq!(count(&[]), 0);
+    // Exactly 0 dB is not over.
+    assert_eq!(count(&[(10, 1.0), (20, -1.0)]), 0);
+    // A run of frames over is one place, and so are runs closer than 100 ms.
+    let run: Vec<(u64, f32)> = (100..400).map(|f| (f, 1.2)).collect();
+    assert_eq!(count(&run), 1);
+    assert_eq!(count(&[(100, 1.1), (100 + gap - 1, -1.3)]), 1);
+    // 100 ms not over between them: two places.
+    assert_eq!(count(&[(100, 1.1), (100 + gap + 1, -1.3)]), 2);
+    assert_eq!(
+        count(&[(100, 1.1), (100 + gap + 1, 1.3), (100 + 3 * gap, 2.0)]),
+        3
+    );
+    // Either channel.
+    let mut places = OverPlaces::new(RATE);
+    places.feed(&[1.5, 0.0, 0.0, 0.0]);
+    assert_eq!(places.count, 1);
+
+    // The taker counts only what goes into the file: not the head the master delays by.
+    let place = Place::new("export-over");
+    let path = place.root.join("o.wav");
+    let mut t = taker(&path, 300, 10_000, ExportTail::Off);
+    feed(&mut t, |frame| match frame {
+        0..300 => 1.5,
+        1_000 | 1_001 | 7_000 => 1.25,
+        _ => 0.5,
+    });
+    assert_eq!(t.places.count, 2);
+    t.out.abandon();
 }
 
 #[test]

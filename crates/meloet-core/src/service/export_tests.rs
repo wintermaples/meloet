@@ -130,6 +130,24 @@ impl Playing {
         assert_eq!(self.audio.handle.meters().stream_missing(), 0);
         heard
     }
+
+    /// Stops and waits until the tails of the instruments and the effects are gone: two
+    /// seconds of nothing at all.
+    fn quiet(&mut self) {
+        self.audio.op(EngineOp::Stop { t_us: 0 });
+        let mut out = [0.0f32; 2 * BLOCK];
+        let (mut silent, mut blocks) = (0, 0);
+        while silent < 2 * RATE as usize {
+            self.block(&mut out);
+            silent = if out.iter().all(|&s| s == 0.0) {
+                silent + BLOCK
+            } else {
+                0
+            };
+            blocks += 1;
+            assert!(blocks * BLOCK < 120 * RATE as usize, "the tails do not end");
+        }
+    }
 }
 
 fn frames_of(doc: &Doc, start: u64, end: u64) -> usize {
@@ -148,13 +166,22 @@ fn what_is_exported_is_what_plays_sample_for_sample() {
     let place = Place::new("export-same");
     let (doc, _) = song();
     place.files_of(&doc);
-    // The song is opened anew for every run: the lead starts each note at a phase its own
-    // random numbers give, so a second playing of the same engine is another sound, and
-    // the export is the first.
-    let opened = || {
-        let mut playing = Playing::new(&place);
-        playing.open(&doc, 2);
-        playing
+    // One engine plays each range twice; the second time is what is compared. The lead
+    // starts its waves and the kit its noise where the place of each note says, not where
+    // the last playing left off (docs/architecture.md 22-25).
+    let mut playing = Playing::new(&place);
+    playing.open(&doc, 2);
+    let mut twice = |span: (u64, u64), frames: usize| {
+        let first = playing.play(span.0, frames);
+        playing.quiet();
+        let second = playing.play(span.0, frames);
+        assert_eq!(
+            first_difference(&first, &second),
+            None,
+            "{span:?}: played twice"
+        );
+        playing.quiet();
+        second
     };
 
     // The whole song; from the middle of a note, a clip and the ramp; the stretched clip.
@@ -165,7 +192,7 @@ fn what_is_exported_is_what_plays_sample_for_sample() {
     ];
     for (id, span) in spans.into_iter().enumerate() {
         let frames = frames_of(&doc, span.0, span.1);
-        let heard = opened().play(span.0, frames);
+        let heard = twice(span, frames);
         assert!(heard.iter().any(|s| s.abs() > 0.05), "the song sounds");
         let job = place.job(id as u64 + 1, &doc, span, ExportTail::Off);
         let run = place.start(place.setup(job));
@@ -182,7 +209,7 @@ fn what_is_exported_is_what_plays_sample_for_sample() {
     // With a tail the range is still the same audio.
     let span = (0, 2 * BAR);
     let frames = frames_of(&doc, span.0, span.1);
-    let heard = opened().play(span.0, frames);
+    let heard = twice(span, frames);
     let job = place.job(9, &doc, span, ExportTail::UntilSilent);
     let run = place.start(place.setup(job));
     run.rendered();

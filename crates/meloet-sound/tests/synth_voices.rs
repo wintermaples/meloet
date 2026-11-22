@@ -5,7 +5,7 @@
 #[path = "../../meloet-engine/tests/common/mod.rs"]
 mod common;
 
-use meloet_engine::{Instrument, InstrumentEvent};
+use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 use meloet_model::drums::DrumPiece;
 use meloet_sound::synth::{ElectroKit, PolySynth, SineSynth};
 
@@ -121,6 +121,15 @@ fn nothing_is_allocated_or_freed_on_the_audio_thread() {
         {
             let _block = meloet_engine::rt::enter();
             hammer(inst.as_mut(), 3000, |_, _| {});
+            let mut out = ([0.0_f32; BLOCK], [0.0_f32; BLOCK]);
+            for i in 0..200_u32 {
+                let note = [36, 38, 42, 46, 49, 51, 60, 64][i as usize % 8];
+                inst.song_note_on(note, 1 + (i % 127) as u8, SongPlace::new(i * 7919, &[]));
+                if i % 9 == 0 {
+                    inst.event(off(note));
+                }
+                inst.render(&mut out.0, &mut out.1);
+            }
         }
         assert_eq!(common::audio_block_counts(), before, "{name}");
     }

@@ -5,8 +5,13 @@
 mod common;
 mod support;
 
-use meloet_engine::Instrument;
+use meloet_engine::{Instrument, SongPlace};
 use support::pack::{Storm, everything};
+
+const EARLIER: [u8; 37] = [
+    5, 127, 64, 90, 1, 33, 100, 100, 7, 64, 65, 120, 2, 80, 80, 80, 3, 99, 127, 50, 60, 70, 8, 9,
+    110, 4, 64, 63, 62, 61, 12, 127, 126, 1, 40, 41, 42,
+];
 
 #[test]
 fn playing_does_not_allocate() {
@@ -22,6 +27,12 @@ fn playing_does_not_allocate() {
         for block in 0..6000_usize {
             for _ in 0..block % 4 {
                 sampler.event(storm.next());
+            }
+            if block % 3 == 0 {
+                // A press of the song on the keys whose samples take turns.
+                let earlier = &EARLIER[..block % EARLIER.len()];
+                let place = SongPlace::new(block as u32, earlier);
+                sampler.song_note_on(96 + (block % 2) as u8, 1 + (block % 127) as u8, place);
             }
             if block % 1500 == 1499 {
                 sampler.reset();

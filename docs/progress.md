@@ -1596,3 +1596,16 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 棟梁が足した: 5 章の用語 2 つ（「ソロ（書き出し）」「音の素材の包み」。表のいちばん上、931fdef）。
 - 確かめ（棟梁、係の作業ツリー）: `npm run check` 0 errors、vitest 3097 通る ・ 落ちる 3（5 章の 2 つは 931fdef で直した。6 章の場面は約束の係の 17 場面を待つ）、core 527。150 % の音の設定の絵をモックとならべて見た。
 - 残した事: `arrange.gl.test.ts` の「recording」が、ぜんぶ回した時だけ 1 回落ちた（ひとりでは 6/6。時間で落ちる試験と見ている）。「手で決める…」の範囲の外は、いまは Rust がだまってはしに入れる（3 章「数字の欄」は状態行で言う決まり。区切り2 の 2 回目でそろえる）。
+
+### 区切り2 ・ 3 の 1 回目: 約束 27（k8p、meloet-hard ・ Opus 5.5、merge bd9ed36）
+
+- 約束 26 → 27（architecture 23-7）: `SoundsView`（聞いた答え、取っている進み、うまくいかなかったわけ、新しい包み、置き場所）、棚の `not_yet`、`ParamsView::clips`（`SelectedClips`）、`ExportCheck` の `over`、`ExportDialogView::solo`、6 章の知らせ 8 と音の素材の知らせ 5、意図 `ShiftClipGains` ・ `SetClipGains` ・ `SetClipsStretch`（1 手）と `FetchPack` ・ `PackLater` ・ `StopPackFetch`。core は今の動きのまま埋めただけ。偽物の場面 11（`packAsk` ・ `packGet` ・ `packFail*` 4 ・ `packSettings` ・ `packNew` ・ `multiClip` ・ `exportCheck` ・ `exportClip`、`ui/src/bridge/fakeRound8.ts`）。ja.ts に 6 章の 17 場面。
+- 取りこみ: ja.ts の 1 か所がぶつかった（k8ua の「1 つ持ってきている」と k8p の「さがした」がとなり）。両方の正しい行を残した。取りこんだあとの確かめ（棟梁）: `npm run check` 0 errors、vitest 3199 ぜんぶ通る（6 章の場面の試験も）、protocol 63 ・ core 527、fmt ・ clippy。
+- 棟梁の決め: 「まだ 12 / 31」は「ある数 / ぜんぶ」で計算で作る 5 つも「ある」（B-95-7）、鍵盤のクリップがまざった選択は「まとめて変える」を出さない（B-95-8）、2 つ以上の欄は `SelectedParams` の腕ではなく `ParamsView::clips` のまま（部品の型をこわさないため）、取る前の音色の乗ったときの文は今の「音の素材が見つからないので…」のまま（仕様書 89-9「音の素材は今のまま」）。
+
+### 区切り2 ・ 3 の 2 回目（2026-11-22〜）
+
+- core（k8c、meloet-hard ・ Opus 5.5）: クリップをまとめて変える 1 手、書き出しの `over`（B-95-2）・ 進み ・ ソロ、6 章の知らせを出す時。
+- 音の素材の core と道具（k8s、meloet-hard ・ Opus 5.5）: 音色ごとの tar と目録、置き場所、取りにいく係（ureq ＋ rustls）、取れた音色からすぐ鳴る、24 時間に 1 回、ローカルの置き場所での試験。Release には上げない。
+- 画面（k8u2、meloet-impl）: クリップの音量の線と 2 つ以上の欄、書き出しのたしかめとソロ、遅れを測れない文。
+- 音の素材の画面は、入力計の係（k8ub）が返ってから。

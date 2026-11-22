@@ -75,6 +75,16 @@
   "license": "Apache-2.0 OR MIT"
  },
  {
+  "name": "@tauri-apps/cli",
+  "version": "2.12.6",
+  "license": "Apache-2.0 OR MIT"
+ },
+ {
+  "name": "@tauri-apps/cli-linux-x64-gnu",
+  "version": "2.12.6",
+  "license": "Apache-2.0 OR MIT"
+ },
+ {
   "name": "@types/chai",
   "version": "5.2.3",
   "license": "MIT"

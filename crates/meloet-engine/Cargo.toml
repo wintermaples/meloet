@@ -12,6 +12,8 @@ rt-check = []
 
 [dependencies]
 cpal.workspace = true
+# libdbus, already linked by meloet-app: asks rtkit for a real-time priority.
+dbus.workspace = true
 libc.workspace = true
 meloet-model.workspace = true
 meloet-plugin.workspace = true

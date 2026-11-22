@@ -2340,6 +2340,7 @@ name = "meloet-engine"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "dbus",
  "libc",
  "meloet-engine",
  "meloet-model",

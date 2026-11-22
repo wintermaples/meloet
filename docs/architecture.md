@@ -778,7 +778,7 @@ flowchart LR
   - リアルタイムの優先度: rtkit のはじめの値は 1 ユーザーでプロセス 15 ・ スレッド 25 まで（`plugin-ipc.md`）。子は親のリアルタイムを受けつがない。リアルタイムを取れない子は、PC が重いとブロックをこえる（測って、子 1 つで最大 3〜13.5 ms）。まとめれば、プロセスの数は「使っているプラグインの種類の数」になり、15 に入りやすい。
   - LV2 は、lilv で包みを読むだけで重い物がある（LSP の包みで 1 秒、約 119 MB）。1 つのプロセスで world を使いまわす。
   - 止まったときにまきこむのは、同じプラグインの全部。仕様書の「（名前）が止まりました…」は名前ごとの文なので、そのまま合う。
-- この PC は `audio` グループの limits で、親も子も SCHED_FIFO が取れた。`audio` グループでない PC（rtkit だけ）は測っていない。
+- この PC は `audio` グループの limits で、親も子も SCHED_FIFO が取れた。`audio` グループでない PC（rtkit だけ）は測っていない。ただし meloet 本体の音のスレッド（cpal の `pw_out`）は、第 8 回 区切り4 まで上げていなかった（ふつうの優先度で回っていた。いまの形は 23-10）。
 - あとで足せる形: 落ちたことのあるプラグインや人が決めたプラグインを「1 つずつ」のプロセスへ移す（Bitwig の「Individually」）。いまは作らない。
 
 ### 20-2. 音のやりとり（区切り0）
@@ -849,7 +849,7 @@ flowchart LR
 
 ### 20-10. スキャンの係とプラグイン係のプロセスの係（区切り1、`crates/meloet-core/src/plugins/`）
 
-- **スキャンの係**（`plugins/scanner.rs`、後ろのスレッド）: 包みごとに子 1 つ（`meloet-plughost scan`）。同時に走らせる子は CPU の数の半分、多くて 4（半分は画面とほかの仕事に残す。大きな包みはディスクから読むので、増やしても速くならない）。子は nice 19 で起こす。SCHED_IDLE にしなかったのは、30 秒は壁時計の時間なので、PC がいそがしいと遅いだけのプラグインを「30 秒たっても…」とまちがえるため。meloet の音のスレッドはリアルタイムなので、どちらでも前に出ない。
+- **スキャンの係**（`plugins/scanner.rs`、後ろのスレッド）: 包みごとに子 1 つ（`meloet-plughost scan`）。同時に走らせる子は CPU の数の半分、多くて 4（半分は画面とほかの仕事に残す。大きな包みはディスクから読むので、増やしても速くならない）。子は nice 19 で起こす。SCHED_IDLE にしなかったのは、30 秒は壁時計の時間なので、PC がいそがしいと遅いだけのプラグインを「30 秒たっても…」とまちがえるため。meloet の音のスレッドはリアルタイム（PC が許せば。23-10）なので、どちらでも前に出ない。
   - 時間切れは「最後の `Probing` から 30 秒」（最初の `Probing` までは起こした時から）。`Probing` のあと落ちた ・ だまったら、そのプラグインだけ止まった物にして、`--skip`（もう見つけた物も入れる）で同じ包みの続きを調べる。だまった子は kill して wait する。
   - 記録（`$XDG_CACHE_HOME/meloet/plugins/scan.json`）は、スキャン中 2 秒ごとと終わったときに書く。記録のファイルがなければ「はじめて」（全部を調べ、帯を出す）。あれば、変わった包みだけを帯なしで調べ、新しいプラグインがあったときだけ状態行。はじめてのスキャンの途中で終わると、次の起動は「2 回目」になる（残りは帯なしで調べる）。
   - **スキャンは、画面が core にあいさつしてきた（`subscribe`）あとで始める**（来なければ 10 秒で始める。`PluginOptions::wait_for_screen`）。前のスキャンの記録はすぐ読む。**子のプロセスは meloet 全体で 1 つずつ起こす**（`meloet_plugin::launch::spawn`。1 つ約 1 ms）。**理由**: VS Code の CodeLLDB 1.12.3 の下で、4 つのスレッドが同時に子を起こすと lldb-server が meloet を止めたまま回りつづけ、窓が出なかった。1 つずつにしたあとも、WebKit がライブラリを読みこむ時と子の終わりが重なると、LLDB が内部の止め所（`_dl_debug_state`）を一時停止として見せた（ヤチヨさんが見つけた、2026-11-19。gdb とデバッガなしでは起きない）。窓が先に出るので、はじめての起動にもよい。
@@ -2456,7 +2456,7 @@ pub struct AudioShape {
   - 書き出しのプラグイン係（`meloet-plughost host --offline`）は、`main` のいちばん初め（スレッドを 1 本も作る前）に `launch::low_priority()` を呼ぶ。core のスレッド `meloet-export` も、始まってすぐ同じ物を呼ぶ。スキャンの子と同じ関数（`setpriority(PRIO_PROCESS, 0, 19)`）。
   - Linux の nice は**スレッドごと**の値で、新しいスレッドとプロセスは、作った側の値を受けつぐ（setpriority(2) の BUGS、sched(7)）。だから、`meloet-export` で呼べば、meloet のほかのスレッド（画面、core、音）は変わらず、`meloet-export` が作る物（書き出しの `Hosts` のスレッド、書き出しのスレッドが自分で作るのび縮みの音 `make_now`）だけが同じ 19 になる。子は、自分で呼ぶので、プラグインが作るスレッド（JUCE など）も 19。試験: `launch.rs` の `a_low_priority_is_the_calling_threads_and_of_what_it_starts`、`meloet-plughost/tests/host.rs` の `a_host_for_an_export_asks_for_no_priority_and_gives_way`（どのスレッドも、ふつうの方式で nice 19）。本物のアプリでも `ps -L -o ni,cls` で見た（書き出しの側は 19、弾くほうの `plughost-audio-*` は FF 20 のまま）。
   - **nice 19 にした理由**: (1) スキャンの子と同じ 1 つの関数ですむ。(2) `SCHED_IDLE` は使わない: 止まったかの見はり（`HANG_MS` = 5 秒）は壁の時計なので、PC がいそがしい時に 1 度も回してもらえないと、止まったプラグインと見まちがえる。nice 19 は、少なくても必ず順番が来る。(3) `SCHED_BATCH` は足さなかった: 起きた時に割りこまないだけの小さなちがいで、nice と別に要る理由が、測りで見えなかった。
-  - 弾くほうのリアルタイムのスレッド（meloet の音のスレッド、弾くほうの係の `plughost-audio-*`）と、作る係（`meloet-render`。弾くほうの曲のための物）にはさわっていない。
+  - 弾くほうのリアルタイムのスレッド（meloet の音のスレッド、弾くほうの係の `plughost-audio-*`。meloet の音のスレッドは、このときはまだふつうの優先度だった。23-10）と、作る係（`meloet-render`。弾くほうの曲のための物）にはさわっていない。
   - nice は、同じ cgroup（同じアプリの scope）の中のふつうのスレッドどうしで効く。リアルタイムのスレッドは、もとから書き出しより先。だから、この直しが効くのは「画面 ・ core ・ リアルタイムを取れなかった弾くほうの係」に対して。となりの論理コア（SMT）やキャッシュの取りあいは、nice では変わらない。
   - **測り**（`k7m5-surge16`、再生しながら鍵 120、48 秒、quantum 256、load 1.9〜3.7 = ほかの係が動いていた）。答えのない回（Surge XT の係 ・ ZamComp の係）:
 
@@ -2731,3 +2731,13 @@ pub struct AudioShape {
 **試験**: `sounds/fetch_tests.rs`（この PC の中の小さな HTTP サーバ。Range ・ 302 ・ 403 ・ 404 ・ 416 を返す。ネットの本物にはつながない）で、ふつう（302 をたどる、順、User-Agent、Cookie なし）、遅いつながり、とちゅうで切れる（だまって続き ・ 3 回切れて `CutOff` ・ 次の回は `Range`）、こわれたファイル（1 回だまって ・ 2 回で `Corrupt`、`.part` を残さない）、403（たどりなおし ・ ずっと 403 で `CutOff`）、404 ・ 500（`CutOff`）、ディスクがいっぱい（はじめの空き ・ 書く所の `StorageFull`）、ネットがない（だれも聞いていない港）、やめる（`.part` を残し次は続き）、ネットの目録（取っていない人は見ない ・ 新しい包み ・ 24 時間 ・ 次の起動で古い版を消す ・ 404 はだまる）、決まりの外の URL の目録（`catalog.rs` と、残した目録を使わない）。`state/pack_tests.rs` で core の決まり。`sounds/untar.rs` でほどく所。
 
 **本物のアプリ**（2026-11-22、debug）: 空の `XDG_DATA_HOME`（`target/k8s-home/data`）、`MELOET_PACK_ORIGIN` でこの PC の中の置き場所（Range つき、20 MB/秒にしぼった Python のサーバ）。`fetchPack` → 3 秒で `stopPackFetch` → 2 秒で `fetchPack`: グランドピアノは `Range: bytes=58785792-` で続きから、26 音色 ＋ 共通がそろい、グランドピアノは取れたあと読まれた（`read the sound of grandPiano`）。`settings.json` の `pack_fetch` は最後に消えた。取っている間に仮想の鍵盤で 30 鍵: 鍵 → DAC 11.4 〜 15.4 ms（平均 13.4、256 こま）。
+
+### 23-10 音のスレッドの優先度（第 8 回 区切り4）
+
+- **形**: エンジンが自分で上げる（`crates/meloet-engine/src/priority.rs`）。出口と入口のコールバックは、はじめの 1 回だけ自分のスレッドの id（`gettid`）を原子変数に書く。ストリームごとの手伝いのスレッド `meloet-rt-ask`（ストリームをひらく時に起こす）が 10 ms ごとにそれを見て、見つけたら上げ、記録に 1 行書いて終わる。コールバックは、待つかもしれない呼び出し（D-Bus、rlimit）をしない。ストリームが最初のコールバックの前に閉じたら、手伝いもだまって終わる（コールバックが持つ `Arc` の数で見る）。
+- **上げかた**: プラグイン係（20 章）と同じ順。`RLIMIT_RTPRIO` が 1 以上なら、手伝いが `sched_setscheduler(tid, SCHED_FIFO | SCHED_RESET_ON_FORK, 20)`（上限が 20 より低ければ上限）。だめなら rtkit の `MakeThreadRealtime(tid, 20)`（その前に、rtkit の `RTTimeUSecMax` を `RLIMIT_RTTIME` にする。rtkit がないと断るため）。どちらもだめなら、ふつうの優先度のまま動く。記録の文: `meloet: the audio output thread runs at real-time priority 20 (limit)` ・ `… (rtkit)` ・ `meloet: no real-time priority for the audio output thread: <わけ>`（入口は `audio input`）。画面の約束は変えていない。
+- **優先度 20 の理由**: 弾くほうのプラグイン係の音のスレッドと同じ。エンジンはその答えを待つので、下に置かない（下だと、答えが来ても起きる順番を待つ）。上にしても、待っている間は眠っているので、得る物がない。rtkit が出す最大も 20。PipeWire の自分のスレッド（limits のとき 88）より下。
+- **cpal の `realtime` の機能をとらなかった理由**（cpal 0.18.2 の `Cargo.toml`、`src/host/pipewire/stream.rs` 237〜257 ・ 320〜370 行、`rt_promote.rs`、audio_thread_priority 0.35.1 の `src/lib.rs` ・ `src/rt_linux.rs` を読んだ）: (1) `realtime` だけでは Linux で何もしない（audio_thread_priority は `dbus` の機能のときだけ `rt_linux` を使い、ないと空の実装）。`realtime-dbus` が要り、dbus 0.6（meloet は 0.9.12）がもう 1 つ入る。(2) rtkit だけで、`RLIMIT_RTPRIO` の道がない。優先度は 10 に決まっている（`RT_PRIO_DEFAULT`）。(3) audio_thread_priority は MPL-2.0（書きかえなければ使えるが、部品が増える）。(4) 上げられない時、cpal のエラーの口に来るので、meloet の xrun などの数え（`stream_error_counter` の「ほか」）にまざる。自分で上げれば、部品は増えず（dbus 0.9.12 と libc はもうある）、プラグイン係と同じ決まりで、記録の文も 1 つですむ。
+- **ふつうの Ubuntu で上げられるか**: Ubuntu の `pipewire-bin` の包みは `/etc/security/limits.d/25-pw-rlimits.conf`（`@pipewire - rtprio 95`）を置くが、この PC でも `pipewire` グループにはだれも入っていない。この PC の `audio` グループ（オーナーさんと meloet-agent）の rtprio 95 は、包みのない `30-ubuntustudio-audio.conf` から（ふつうの Ubuntu にあるかは確かめていない。確かさ C）。その PC では rtkit の道になる。rtkit の polkit の決まり（`org.freedesktop.RealtimeKit1.acquire-real-time`）は、席のある active ・ inactive のセッションで yes、ほか（`allow_any`）は no。画面の前で動かす meloet は通る、と読んだ（確かさ C）。この PC の meloet-agent（席のないセッション）は rtkit に断られるので、**rtkit の道で上がる所は確かめていない**。
+- **試験の口**: `MELOET_ENGINE_RT`（`off` で頼まない、`rtkit` で limits があっても rtkit に聞く。プラグイン係の `MELOET_PLUGHOST_RT` と同じ形）。試験: `priority.rs` の 2 つ（上がる ・ 最初のコールバックの前に閉じたら手伝いが終わる）。`tests/device.rs`（`--ignored`）の、コールバックでメモリを取らない見はりは、この形でも通る。
+- **測り**（`docs/measurements/2026-11-22-round8-rt.md`）: 本物のアプリで `pw_out` は FF 20、試験で `pw_in` も FF 20。Surge XT 16 ＋ コンプ 170 秒、静かな PC で xrun はなし 0 ・ 0 ・ 1、あり 0 ・ 0 ・ 0、負荷の最大 71〜77 % と 53〜59 %。ほかの係が動いていた PC では、なしでプラグインの答えを待ちきれなかったブロックが 1458 回、ありで 0〜20。鍵 → DAC は変わらない（p95 15.88 ms）。

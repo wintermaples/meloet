@@ -486,10 +486,12 @@ impl AudioInput {
             buffer_size: cpal::BufferSize::Fixed(request_frames),
         };
         let closing = Arc::new(AtomicBool::new(false));
+        let mut thread = crate::priority::ask_for("audio input");
         let stream = device
             .build_input_stream(
                 config,
                 move |data: &[f32], info: &cpal::InputCallbackInfo| {
+                    thread.note();
                     let stamp = info.timestamp();
                     tap.block(
                         data,

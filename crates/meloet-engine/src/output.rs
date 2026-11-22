@@ -171,9 +171,11 @@ impl AudioOutput {
         };
         let error_meters = meters.clone();
         let closing = Arc::new(AtomicBool::new(false));
+        let mut thread = crate::priority::ask_for("audio output");
         let built = device.build_output_stream(
             config,
             move |out: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                thread.note();
                 let stamp = info.timestamp();
                 let timing = BlockTiming {
                     callback_us: (stamp.callback.as_nanos() / 1_000) as u64,

@@ -16,6 +16,7 @@ mod instrument;
 mod mixer;
 mod output;
 mod plugin;
+mod priority;
 mod probe;
 pub mod rt;
 mod stream;

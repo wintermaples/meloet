@@ -1621,3 +1621,12 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - **core（k8c、meloet-hard ・ Opus 5.5、merge 済み。architecture 23-8）**: model に `set_clips_shape`（歌のクリップの音量 ・ ついていく ・ 音の高さを 1 手で。手の種類 `SetClipsGain` ・ `SetClipsFollow` ・ `SetClipsPitch`、履歴の場所はアレンジ）、`ShiftClipGains`（−60〜+12 で止まる）・ `SetClipGains` ・ `SetClipsStretch`、`ParamsView::clips`。書き出しの `over` を B-95-2 のとおり数える（`export/job.rs` の `OverPlaces`。ちょうど 0 dB はこえない、頭の遅れは数えない）、ソロ。6 章の知らせ（`InputLost`、`RecordingGaps`、`AudioFound` ・ `AudioFoundMismatch`〔「さがす」の答えを `Finding` に〕、`AudioBroken` ・ `AudioTooManyChannels`、`SavingAudio`〔はじめの 250 ms は言わず 1 秒に 4 回まで〕、`DiskTooSlow`）。**使っている音がある曲の保存は、プラグインのある曲と同じく保存のスレッドで書く**（写している間に知らせを出すため。答えはあとから）。
   - 取りこんだあとの確かめ（棟梁）: fmt ・ clippy、model ・ protocol ・ engine ・ core の試験ぜんぶ通る（core 535）、画面 3199。
 - **画面（k8u2、meloet-impl ・ Opus 5.5）**: 音量の線はフェーダーと同じ目盛、いくつも選べば同じ dB だけ動く（`ShiftClipGains` 1 つ）、`ClipsPanel.svelte`（2 つ以上の欄、「—」）、書き出しのたしかめ（数えながら押せる、こえた所の数、ソロの行、状態行のモックの文）、遅れを測れない文。仮の形は B-95-9 ・ 10。続きで、ドラッグ中はほかのクリップの波形も同じ dB で描く（動いているクリップをぜんぶ囲む 1 つの区画。大きな面は描きなおさない。`webkit-damage.sh` ではまだ測っていない）、`shoot_ui.py` に 3 つの場面、`multiClip` の場面はパラメータの帯をひらく。merge 9c2744a、取りこんだあとの `npm run check` 0 errors ・ vitest 3230。絵は `target/shots-round8/`。
+
+### 区切り2: 見出しの「帯」と入力計、WebKit の `.2`（k8ub、meloet-hard ・ Opus 5.5、merge 済み）
+
+- **WebKitGTK `2.52.6-0ubuntu0.26.04.2`（2026-11-21 に上がった）で、この PC も合成の層の道で描くようになった**（`docs/measurements/2026-11-22-round8-webkit-2.52.6-2.md`）。再生中に `display()` ・ `drawRect` は 1 回も呼ばれず、ThreadedCompositor と SkiaGPUWorker が 1 コマに 1 回、よごれた物をぜんぶ囲む四角 1 つを描く。ミキサーをひらいた 8 帯の曲では、ほぼ毎コマ窓の高さほどの四角。`WEBKIT_DISABLE_COMPOSITING_MODE=1` で前の CPU の道にもどる。busyMs（にごった数、load 4〜17）: 何もない画面は合成 1.0 ms ・ CPU 2.8 ms、ミキサーをひらいた形はどちらも 12〜15 ms、帯がぜんぶ動く曲は 12.8〜25.6 ms でゆれて決められない。dbgsym は ddebs.ubuntu.com から取って `~/.cache/debuginfod_client/` に置いた（`webkit-damage.sh` は `.2` ではこの変数をつけた時だけ使える）。**どちらの道にするかは静かな PC で測ってから決める**（宿題）。architecture 7 章と CLAUDE.md に注意を書いた（決まりは書きかえていない）。
+- 36-B: どの見出しにも M の左に「帯」（一覧の作りは `automation/laneAdd.svelte.ts` に移して共用、ひらいている間は accent、状態行に F8-FirstLane の文、録音中は使えない）。853×448 と 150 % でくずれない。
+- 37-A: 左右に分けた入力計の引っこめる順を「弾くと鳴る先」→「モニター」→「鍵盤の絵（名前は 88 で「…」）」に（`tokens.ts` に `part.meter.name.split-narrow` 88 を 1 行）。853 で R12-Meters と同じ形。
+- 38-B: マイクの計は −60〜−12 を左半分、−12〜0 を右半分、地は gray.4、白い線は 1 秒のピーク（dB の字と同じ数）。
+- 92 の残り: フェーダーの値の字を毎コマ（`mixerLivePosition`）。**パンとセンドの字は 1 秒 15 回のまま**（CPU の道で、毎コマにすると囲む四角が 126/126 回出たため）。「ミキサーの値の字」にパンとセンドが入るなら仕様書とちがう → 道を決めたあとで直す（宿題）。
+- 取りこんだあとの確かめ（棟梁）: `npm run check` 0 errors、vitest 3247。絵は `target/shots-round8/k8ub/`。

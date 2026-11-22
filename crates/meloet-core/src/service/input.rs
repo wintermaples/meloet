@@ -31,6 +31,11 @@ const PEAKS_WAIT: Duration = Duration::from_secs(10);
 const CLICK_WAIT: Duration = Duration::from_millis(300);
 /// How often the core thread looks while a click is out.
 pub(super) const CLICK_TICK: Duration = Duration::from_millis(20);
+/// The first click of a measurement waits until the input has sent frames for this long: an
+/// input that has only just opened is often silent for its first moments.
+const CLICK_SETTLE: Duration = Duration::from_secs(1);
+/// It goes out after this even if the input sends nothing (its answer then says so).
+const CLICK_SETTLE_MOST: Duration = Duration::from_secs(3);
 
 /// What the telemetry thread reads the mic meters from.
 pub(super) struct MicFacts {
@@ -48,6 +53,15 @@ struct Job {
     trouble_said: bool,
     /// (times the input skipped, blocks with no room) as last told to the rules.
     faults_said: (u32, u32),
+}
+
+/// The first click of a measurement, waiting for the input.
+struct FirstClick {
+    asked: Instant,
+    /// What the input had sent when the click was asked for.
+    frames: u64,
+    /// When the input was first seen sending frames after that.
+    flowing: Option<Instant>,
 }
 
 /// The peaks of a file that is recorded, or was until a moment ago.
@@ -81,6 +95,9 @@ pub(super) struct InputSide {
     job: Option<Job>,
     /// A click of the latency measurement is out since then.
     click: Option<Instant>,
+    /// The next click asked for is the first of a measurement.
+    click_first: bool,
+    click_waits: Option<FirstClick>,
     delays_said: Option<Delays>,
     peaks: Vec<RecPeaks>,
     pub(super) kept_note: KeptNote,
@@ -97,6 +114,8 @@ impl InputSide {
             state_dir,
             job: None,
             click: None,
+            click_first: false,
+            click_waits: None,
             delays_said: None,
             peaks: Vec::new(),
             kept_note: KeptNote::None,
@@ -112,7 +131,7 @@ impl InputSide {
     }
 
     pub(super) fn click_out(&self) -> bool {
-        self.click.is_some()
+        self.click.is_some() || self.click_waits.is_some()
     }
 }
 
@@ -409,6 +428,18 @@ impl Worker {
             self.close_input();
             inputs.push(Input::InputLost);
         }
+        if let Some(first) = &mut self.input.click_waits {
+            let frames = self.input.meters.as_ref().map_or(0, |m| m.frames());
+            if first.flowing.is_none() && frames > first.frames {
+                first.flowing = Some(Instant::now());
+            }
+            if first.flowing.is_some_and(|at| at.elapsed() >= CLICK_SETTLE)
+                || first.asked.elapsed() >= CLICK_SETTLE_MOST
+            {
+                self.input.click_waits = None;
+                self.send_click();
+            }
+        }
         if self
             .input
             .click
@@ -448,6 +479,18 @@ impl Worker {
 
     /// `Effect::LatencyClick`.
     pub(super) fn latency_click(&mut self) {
+        if std::mem::take(&mut self.input.click_first) {
+            self.input.click_waits = Some(FirstClick {
+                asked: Instant::now(),
+                frames: self.input.meters.as_ref().map_or(0, |m| m.frames()),
+                flowing: None,
+            });
+        } else {
+            self.send_click();
+        }
+    }
+
+    fn send_click(&mut self) {
         // From nothing: what is kept then holds this click only.
         self.input.writer.capture(true);
         while self.audio.handle.pop_probe().is_some() {}
@@ -457,8 +500,10 @@ impl Worker {
 
     pub(super) fn latency_listen(&mut self, on: bool) {
         self.input.writer.capture(on);
+        self.input.click_first = on;
         if !on {
             self.input.click = None;
+            self.input.click_waits = None;
         }
     }
 

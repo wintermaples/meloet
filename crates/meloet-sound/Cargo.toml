@@ -7,6 +7,8 @@ publish.workspace = true
 
 [dependencies]
 meloet-engine.workspace = true
+# malloc_trim: the memory of samples let go goes back to the PC (src/memory.rs).
+libc.workspace = true
 meloet-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true

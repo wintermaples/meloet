@@ -43,7 +43,7 @@ use crate::instruments;
 use crate::made::{MadeKey, MadePlan, only_audio_differs, seat_audio};
 use crate::maker::{MadeNews, Maker};
 #[cfg(feature = "dev-hooks")]
-use crate::measure::{self, KeyToSound, PluginLog};
+use crate::measure::{self, KeyToSound, MemoryLog, PluginLog};
 use crate::mixbook::{self, MixBook};
 use crate::pcm::{FeedClip, PcmStore};
 use crate::play::{
@@ -626,6 +626,8 @@ impl Core {
                 key_to_sound: options.measure_dir.clone().map(KeyToSound::new),
                 #[cfg(feature = "dev-hooks")]
                 plugin_log: options.measure_dir.clone().map(PluginLog::new),
+                #[cfg(feature = "dev-hooks")]
+                memory_log: options.measure_dir.clone().map(MemoryLog::new),
                 links,
                 midi,
                 devices,
@@ -1968,6 +1970,8 @@ struct Worker {
     key_to_sound: Option<KeyToSound>,
     #[cfg(feature = "dev-hooks")]
     plugin_log: Option<PluginLog>,
+    #[cfg(feature = "dev-hooks")]
+    memory_log: Option<MemoryLog>,
     links: Links,
     midi: Option<Midi>,
     devices: Option<DevicesState>,
@@ -3190,6 +3194,7 @@ impl Worker {
     fn housekeeping(&mut self, last: bool) {
         self.poll_engine();
         self.audio.handle.drop_retired();
+        self.audio.sounds.give_back_freed();
         if self.audio.log_missing() {
             self.handle(Input::DiskTooSlow);
         }
@@ -3231,6 +3236,27 @@ impl Worker {
         #[cfg(feature = "dev-hooks")]
         if let (Some(log), Some(side)) = (&mut self.plugin_log, &self.plugins) {
             log.look(last, || side.hosts.processes());
+        }
+        #[cfg(feature = "dev-hooks")]
+        if let Some(log) = &mut self.memory_log {
+            let (model, audio) = (&self.model, &self.audio);
+            log.look(last, || {
+                let bank = |name: String, bytes: usize, holders: usize| {
+                    serde_json::json!({"name": name, "mb": bytes as f64 / 1048576.0, "holders": holders})
+                };
+                let sounds = audio.sounds.held().into_iter();
+                let sf2 = audio.sf2.held().into_iter();
+                serde_json::json!({
+                    "sounds": sounds.map(|(i, b, h)| bank(i.name().to_owned(), b, h)).collect::<Vec<_>>(),
+                    "sf2": sf2.map(|(k, b, h)| bank(k, b, h)).collect::<Vec<_>>(),
+                    "model": model.memory_counts(),
+                    "malloc": meloet_sound::memory::malloc_counts().map(|m| serde_json::json!({
+                        "inUseMb": m.in_use as f64 / 1048576.0,
+                        "freeMb": m.free as f64 / 1048576.0,
+                        "mappedMb": m.mapped as f64 / 1048576.0,
+                    })),
+                })
+            });
         }
     }
 }

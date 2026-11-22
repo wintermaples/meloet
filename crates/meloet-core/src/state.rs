@@ -720,6 +720,11 @@ impl Model {
         &mut self.play
     }
 
+    #[cfg(feature = "dev-hooks")]
+    pub(crate) fn memory_counts(&self) -> serde_json::Value {
+        self.play.memory_counts()
+    }
+
     pub fn new(settings: Settings) -> Model {
         let scale = if SCALES.contains(&settings.scale) {
             settings.scale

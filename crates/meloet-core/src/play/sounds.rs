@@ -161,6 +161,16 @@ impl Play {
         );
     }
 
+    /// What `tools/measure/memory.py` waits on and counts.
+    #[cfg(feature = "dev-hooks")]
+    pub(crate) fn memory_counts(&self) -> serde_json::Value {
+        serde_json::json!({
+            "loading": self.sounds.loading.len() + self.sounds.sf2_loading.len(),
+            "tracks": self.doc().tracks.len(),
+            "historySteps": self.history.steps().count(),
+        })
+    }
+
     /// The instruments whose samples are to be in memory: the ones of the song's tracks, the
     /// row that is auditioned and the one before it, and the sample that plays.
     fn wanted_instruments(&self) -> impl Iterator<Item = &InstrumentRef> {

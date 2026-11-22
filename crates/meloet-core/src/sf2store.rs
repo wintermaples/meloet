@@ -310,6 +310,17 @@ impl Sf2Store {
         }
     }
 
+    /// As [`crate::sounds::Library::held`].
+    #[cfg(feature = "dev-hooks")]
+    pub fn held(&self) -> Vec<(String, usize, usize)> {
+        (self.banks.iter())
+            .map(|(k, bank)| {
+                let name = format!("{}:{}:{}", k.file, k.bank, k.program);
+                (name, bank.sample_bytes(), Arc::strong_count(bank))
+            })
+            .collect()
+    }
+
     pub fn let_go(&mut self, key: &Sf2Key) {
         self.banks.retain(|(k, _)| k != key);
     }

@@ -2776,3 +2776,16 @@ pub struct AudioShape {
 - **ふつうの Ubuntu で上げられるか**: Ubuntu の `pipewire-bin` の包みは `/etc/security/limits.d/25-pw-rlimits.conf`（`@pipewire - rtprio 95`）を置くが、この PC でも `pipewire` グループにはだれも入っていない。この PC の `audio` グループ（オーナーさんと meloet-agent）の rtprio 95 は、包みのない `30-ubuntustudio-audio.conf` から（ふつうの Ubuntu にあるかは確かめていない。確かさ C）。その PC では rtkit の道になる。rtkit の polkit の決まり（`org.freedesktop.RealtimeKit1.acquire-real-time`）は、席のある active ・ inactive のセッションで yes、ほか（`allow_any`）は no。画面の前で動かす meloet は通る、と読んだ（確かさ C）。この PC の meloet-agent（席のないセッション）は rtkit に断られるので、**rtkit の道で上がる所は確かめていない**。
 - **試験の口**: `MELOET_ENGINE_RT`（`meloet-engine` の feature `dev-hooks` のときだけ。`meloet-core/dev-hooks` から流す。棟梁が取りこむときに入れた。`off` で頼まない、`rtkit` で limits があっても rtkit に聞く。プラグイン係の `MELOET_PLUGHOST_RT` と同じ形）。試験: `priority.rs` の 2 つ（上がる ・ 最初のコールバックの前に閉じたら手伝いが終わる）。`tests/device.rs`（`--ignored`）の、コールバックでメモリを取らない見はりは、この形でも通る。
 - **測り**（`docs/measurements/2026-11-22-round8-rt.md`）: 本物のアプリで `pw_out` は FF 20、試験で `pw_in` も FF 20。Surge XT 16 ＋ コンプ 170 秒、静かな PC で xrun はなし 0 ・ 0 ・ 1、あり 0 ・ 0 ・ 0、負荷の最大 71〜77 % と 53〜59 %。ほかの係が動いていた PC では、なしでプラグインの答えを待ちきれなかったブロックが 1458 回、ありで 0〜20。鍵 → DAC は変わらない（p95 15.88 ms）。
+
+### 23-12 メモリ（第 8 回 区切り4）
+
+測った数は `docs/measurements/2026-11-22-round8-memory.md`、道具は `tools/measure/memory.py`（2026-11-22、meloet-hard の印 k8mem。Fable の上限のため Opus 5.5）。
+
+- **meloet のメモリは、ほぼサンプル**。サンプルなしの起動で RSS 238 MB（PSS 99 MB。共有のライブラリ 148 MB と NVIDIA の写し 37 MB は RSS に数えられるが、ほかと分けあう）。グランドピアノ 1 本で ＋ 333 MB（サンプル 340 MiB）、8 トラック（いろいろな音色）で 908 MB（サンプル 674 MiB）。Surge XT 16 本の重さはプラグイン係（290 MB、Surge の物）、歌 16 本は ＋ 18 MB（先読みの輪）。
+- **手放したサンプルのメモリを PC に返す**（直した）。サンプルを読む係のスレッドは glibc の malloc の「スレッドごとの場所」（arena）にサンプルを置く。そこで手放したメモリは、malloc が次のために持ったままで、RSS が減らない（8 トラックの曲を閉じても 1051 MB のまま、サンプルは 340 MiB）。
+  - 形: `SampleBank` の `Drop` が手放したバイト数を数える（`meloet_sound::memory`）。core の 100 ms ごとの片づけ（`housekeeping`）が、4 MiB 以上たまっていたら、別のスレッド `meloet-give-back` で `malloc_trim(0)`（glibc。全部の arena の、まん中の空いたページも返す）を 1 回呼ぶ。同時に 2 つは走らせない。
+  - **理由**: 手放す所（曲を閉じる、音色を入れかえる、トラックを消す、棚のためし弾きをやめる、SF2 を入れなおす、新しい版の音色が来る）はいくつもあり、最後の `Arc` がどこで落ちるか（core、エンジンから戻った音源、棚）も決まっていない。`Drop` で数えれば、どの道でも同じに働く。`malloc_trim` は 1 回 0.2〜25 ms（334 MiB で 24.8 ms）で、arena の鍵を順に持つので、core のスレッドではなく別のスレッドで呼ぶ。音のスレッドはメモリを取らないので、鍵を待たない。
+  - いつ持ち、いつ手放すか（取り消しで戻せる間も持たない、棚の「1 つ前」はひらいている間だけ、など）の決まりは今のまま（`play/sounds.rs` の `sync_sounds`）。変えたのは「手放したあと、RSS が下がる」ことだけ。
+  - くらべた案: (1) `mallopt(M_MMAP_THRESHOLD)` を決めて、大きなサンプルをいつも malloc の外（mmap）に置く。プロセス全体の malloc の動きを変え、決める場所が meloet-app の起動になるのでとらない。(2) サンプルを自分で mmap した入れ物に置く。meloet-sound に unsafe の入れ物がふえるのでとらない。(3) arena の数をしぼる（`M_ARENA_MAX`）。返すかどうかは変わらないのでとらない。
+- **10 分録ると meloet が 102 → 232 MB にふえる、はふえていない**。102 MB は起動してすぐ（画面が出る前）の 0 秒の数で、30 秒から 600 秒までは 231.7 → 232.4 MB（第 7 回の生の数）、今回も 571.5 → 573.6 MB（グランドピアノつき）。
+- **WebKitWebProcess は、CPU の道（`meloet-app` が決める `WEBKIT_DISABLE_COMPOSITING_MODE=1`、`2026-11-22-round8-quiet.md`）で、止まっていてもふえる**（10 分録って ＋130 MB。第 7 回の合成の道は ＋30 MB）。JS のヒープは平ら（Full の GC のあとで 28 MB）で、ふえるのは JS の外の無名のメモリ。くわしくは測りの書類の 3 章。直していない（道を変えるかは棟梁が決める。測りの書類の 5 章）。

@@ -10,6 +10,7 @@ use crate::plugins::hosts::ProcessInfo;
 
 const FILE_NAME: &str = "key-to-sound.json";
 const PLUGINS_FILE_NAME: &str = "plugins.json";
+const MEMORY_FILE_NAME: &str = "memory.json";
 const WRITE_EVERY: Duration = Duration::from_secs(2);
 const MAX_RECORDS: usize = 100_000;
 
@@ -76,6 +77,32 @@ impl PluginLog {
             })).collect::<Vec<_>>(),
         });
         if let Err(e) = write_whole(&self.dir, PLUGINS_FILE_NAME, &format!("{report:#}\n")) {
+            eprintln!("meloet: MELOET_MEASURE_DIR: {e}");
+        }
+    }
+}
+
+/// Writes what the core counts of its memory to `memory.json` (tools/measure/memory.py).
+pub(crate) struct MemoryLog {
+    dir: PathBuf,
+    written_at: Option<Instant>,
+}
+
+impl MemoryLog {
+    pub fn new(dir: PathBuf) -> MemoryLog {
+        MemoryLog {
+            dir,
+            written_at: None,
+        }
+    }
+
+    /// Writes when the last write is old enough (or `now` is set).
+    pub fn look(&mut self, now: bool, report: impl FnOnce() -> serde_json::Value) {
+        if !now && self.written_at.is_some_and(|at| at.elapsed() < WRITE_EVERY) {
+            return;
+        }
+        self.written_at = Some(Instant::now());
+        if let Err(e) = write_whole(&self.dir, MEMORY_FILE_NAME, &format!("{:#}\n", report())) {
             eprintln!("meloet: MELOET_MEASURE_DIR: {e}");
         }
     }

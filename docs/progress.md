@@ -1481,6 +1481,8 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 5. 書き出しにいまのソロを入れるか（B-94-80）。スタジオキット ・ リード ・ パッドが 2 回めの再生で 1 回めとちがう音になる（サンプルの順ぐりと波の始まりの乱数が続きから）のを、頭から再生するたびにそろえるか。
 6. ほかの仮の形は `design-notes.md` の B-94（1〜92）。
 
+**閉じた（2026-11-22、第 8 回のはじめ）**: 1 は「第 7 回のあと: 聞きくらべの答え」（`cheaper`、±12 半音、はじめオン）。2 は「オーナーさんの本物の手順 (a)(b)(c)」。(a) ・ (c) は問題なし。**(b) は数がちがった**（PC が言う数が本物の装置で 1 ブロック多い）ので、第 8 回の宿題のいちばん上に置いた（区切り1）。3 ・ 4 ・ 6 はデザイン係へ回し、第 12 版で答えが来た（4 は 35-A、文は 6 章。読みは design-notes の C-13）。5 のソロは 42-C（入れずにたしかめの行で言う）、2 回めの再生の音は案 C で直した（「曲のノートは、いつも同じ音」）。
+
 ### 第 7 回の宿題（次の回より後へ残す物）
 
 - **混んだ PC で出口のコールバックだけが呼ばれないと、そのあとの歌が 1 ブロック後ろに置かれる**（22-21。案 a: 録る係がブロックごとにエンジンの `clock.frame_at` とくらべ、出口だけが落とした分は入口のこまを捨てる。22-6 を変える大きさ）。「耳に届いていた位置に置く」の決まりなので、第 8 回のはじめに。
@@ -1561,3 +1563,25 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
   - `audiofiles::tests::a_long_file_says_how_far_it_is_and_work_for_a_song_that_is_gone_is_given_up` は release で落ちる（「done before it said how far it is」）。foundation（79dd557）でも 2 回とも落ちたので前から。debug では通る（`check-all.sh` は debug）。宿題。
 - **ペダルの音と離したときの音も曲の場所で**（meloet-hard ・ Opus 5.5、5dfdf1e、architecture 22-25）: 曲の列の CC64 は `Instrument::song_pedal(value, SongPlace)` で届き、ペダルの音の順ぐりは「前に同じ向きに動いた回数」（64 をまたいだ時だけ数える）で選ぶ。離したときの音は、押した鍵の場所から持たせた数で選ぶ（ペダルで待って離した時も同じ）。人の鍵盤 ・ ペダルは続きから。**途中から再生して追いかけたペダルは、踏んだ状態にするだけで音を鳴らさない**（頭から通すと、踏む音はその前に鳴りおわっている。前は追いかけで踏む音が鳴っていた）。足した試験 5（頭から 2 回、踏んだままの所 ・ 途中から、1 こまもちがわない。確保 0）。棟梁の確かめ: 係の作業ツリーで sound ＋ engine ＋ core 803 通り、merge のあとの `check-all.sh` で Rust 1309（ignored 104）、画面 3069。
   - 残した事: 止めたとき ・ ループで頭に戻るときに `Lane::silence` が送る「ペダルを離す」は、続きから進む数で離す音を鳴らす。ループの頭から終わりまで踏んだままだと、ループの境目で離す音が鳴る（頭から通したときには鳴らない音）。→ オーナーさんの決め（2026-11-22）: 鳴らさない。棟梁が直した（`Lane::silence_at_loop`、ループの 2 か所。止めたときは鳴らす。試験 1 つ、sound ＋ engine ＋ core 804 通り）。グランドピアノの包みで、本物のアプリでは聞いていない。
+
+## 第 8 回: 仕上げと配る形（2026-11-22〜）
+
+頼みはオーナーさんから（文はヤチヨ。棟梁の手もとの写しは `target/round-8-prompt.md`）。「正しい」「こわれない」「はじめての 5 分でつまずかない」を仕上げ、知らない人の PC に配れる形にする回。はじめの foundation は 9dfcdd4（頼みの文の 48f0202 のあとに、第 7 回のあとの直しがコミット済みだった）。
+
+### 係のモデル（2026-11-22 に呼んで確かめた）
+
+| 係 | 動いたモデル | 何を頼んだか |
+|---|---|---|
+| meloet-research | Sonnet 5.5（claude-sonnet-5-5）、4 人 | 0-2 の調べ物 |
+| meloet-hard | Fable 5.2 は 1 回めで使用上限（11-24 21:00 にもどる）。**オーナーさんの許しで Opus 5.5**（名前で呼び `model: opus` で上書き） | 区切り1 の前半（録った位置） |
+| meloet-impl | Opus 5.5（claude-opus-5-5） | 第 12 版の読みを design-notes へ |
+
+### 区切り0（2026-11-22）
+
+- **0-1 写し**（003f7a2）: 仕様書は第 12 版。モックは 21 枚ふえて 153 枚（F8-* 8、Opt8-* 11、R12-* 2）、変わったのは F7-AudioEdit ・ F7-Stretch ・ F7-VocalRec ・ F7-VocalTrack ・ R11-Audio と `canvas.json`。ほかの 127 枚は 1 バイトも同じ。新しい板の PNG は `target/mock-png/`。
+- **0-2 調べ物**（`docs/research/`、meloet-research ・ Sonnet 5.5）:
+  - [`distribution-formats.md`](research/distribution-formats.md): **deb を主力**（24.04 の上で作る。ホストの WebKitGTK ・ Mesa ・ NVIDIA をそのまま使う）。AppImage は WebKit の補助プロセスと Wayland などを袋に入れ、ホストの Mesa とずれて EGL で落ちる事故が 2026 年に何度も（tauri-cli 2.12 で直したが残りあり）。Flatpak はホストの `/usr/lib/vst3` を実用の形で読めない（Flatpak の人も「ホストのコードを中に入れるのは目標でない」、Bitwig の公式も「`/usr/lib` は見えない」）ので選ばない。deb の `Depends` は bundler が足さないので自分で書く（文書とソースが食いちがい、ソースを取る）。24.04 も 26.04 も `libasound2t64` ・ `libpipewire-0.3-0t64`。plughost は `externalBin` で `/usr/bin` に入り、`current_exe()` のとなりで見つかる。
+  - [`webkitgtk-2404-2604.md`](research/webkitgtk-2404-2604.md): **24.04 にも 2.52.6 が更新で届いている**ので、描きなおしの決まり（10 個 ・ 0.75、`DrawingAreaCoordinatedGraphics.cpp`）、`JSC_useGenerationalGC`、WebGL の 16 は同じ（A）。**この PC の WebKitGTK は 2026-11-21 23:41 に `2.52.6-0ubuntu0.26.04.1` → `.2` に上がっていた**（`/var/log/dpkg.log`）。`.2` は NVIDIA でも SHM の運びかたを足す直しで、CPU で描く道から合成の層の道に変わったかもしれない（推論 C）。これまでの「CPU で描く WebKit」の数は `.1` の上で取った物。→ 区切り2 の前に、この PC で見る（下の宿題）。
+  - [`sound-pack-download.md`](research/sound-pack-download.md): HTTP は `ureq` 3.x（MIT OR Apache-2.0、blocking、プロキシの変数を読む）＋ rustls ＋ ring、証明書は PC の物（`rustls-platform-verifier`）を先に。GitHub の Release の添付は別ホストの期限つき URL に 302、Range ・ ETag ・ 期限は公式の文書になく（C）、本物に `curl` をかけて確かめる。置き場所は `XDG_DATA_HOME`（`~/.cache` は掃除の道具が消す前提）。目録に minisign の署名（`minisign-verify`、MIT、依存なし）は安い。見にいくのは 1 日 1 回（Sparkle の既定）。
+  - [`dev-hooks-release.md`](research/dev-hooks-release.md): Rust は自分の feature `dev-hooks` に `#[cfg(feature)]`（`cfg(debug_assertions)` は release で測れなくなる、`cfg!` は文字が残る）。`meloet-app` は `default = ["custom-protocol"]` なので `cargo build --release` でも本番の動き。Tauri は `ui/dist` を brotli で入れるので、画面は `ui/dist` を grep（か試験で `generate_context!().assets()` を戻して見る）。Vite 8 の `define` の `if` の中の動的 import の塊が消えるかは文書になく、作って見る。
+

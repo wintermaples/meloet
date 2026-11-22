@@ -1820,6 +1820,6 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 
 ### 第 8 回のあと（オーナーさん 2026-11-23）
 
-- **deb の説明は英語だけ**（user:2026-11-23。Ubuntu のアプリセンターが日本語を「?」で出すため）: `tauri.conf.json` の `shortDescription` を「Music-making app to start with a MIDI keyboard」に（.desktop の Comment にもなる）、なかった `longDescription` を英語で足した（それまで control の長い説明は `(none)`）。手元の `tauri bundle --bundles deb` で、control と .desktop が ASCII だけなのを確かめた（確かめただけの deb は消した）。`target/deb/` の deb は古い説明のまま。作りなおすには 24.04 の入れ物（docker のグループ）が要る。
+- **deb の説明は英語だけ**（user:2026-11-23。Ubuntu のアプリセンターが日本語を「?」で出すため）: `tauri.conf.json` の `shortDescription` を「Music-making app to start with a MIDI keyboard」に（.desktop の Comment にもなる）、なかった `longDescription` を英語で足した（それまで control の長い説明は `(none)`）。手元の `tauri bundle --bundles deb` で、control と .desktop が ASCII だけなのを確かめた（確かめただけの deb は消した）。配る deb を作りなおした（`MELOET_DOCKER_SG=1 scripts/build-deb.sh`、9933c55 の上）: `target/deb/meloet_0.1.0_amd64.deb`、17,781,848 バイト、sha256 `1cd9eb6dcb950179c16e4265ac006142d8ed97eb357827a2c61e7c6c7f759228`。control と .desktop は ASCII だけ、実行ファイルに仕込みの名前 0 件、GLIBC は 2.39 まで。docker のイメージは消した。docker のグループはオーナーさんに外してもらう。
 - **`foundation` を `main` へ**（早送り）。
 - **グランドピアノのしっぽの聞きくらべ**: `target/listen/piano-tails/` の `1-original.wav`・`2-cut-50dB.wav`・`3-cut-40dB.wav`（どの音が何秒目で、どこで切れるかは `notes.txt`、作りかたは `make.py`）。キーとペダルを押したまま、サンプルを最後まで鳴らす形。切った所の手前 20 ms をしぼる。同じ決まりで数えなおすと、減るのは −50 dB で 26 MiB、−40 dB で 84 MiB（k8mem は 27.7 / 88.5 MiB）。

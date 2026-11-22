@@ -779,7 +779,7 @@ impl Track {
         if self.lookahead > 0 && !self.ahead_wrapped && t.loop_active() && at >= t.loop_end_frame {
             self.lane
                 .fire_before(t.loop_end, self.instrument.as_deref_mut());
-            self.lane.silence(self.instrument.as_deref_mut());
+            self.lane.silence_at_loop(self.instrument.as_deref_mut());
             let start = t.loop_start;
             self.lane
                 .seek(|tick| tick < start, self.instrument.as_deref_mut());
@@ -2336,7 +2336,7 @@ impl Engine {
                 .map(|(i, _)| i)
                 .collect();
             for track in self.tracks.iter_mut().filter(|t| !t.ahead_wrapped) {
-                track.lane.silence(track.instrument.as_deref_mut());
+                track.lane.silence_at_loop(track.instrument.as_deref_mut());
             }
             let t = &mut self.transport;
             t.set_pos(t.loop_start as f64);

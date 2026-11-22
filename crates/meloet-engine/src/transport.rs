@@ -241,7 +241,21 @@ impl Lane {
 
     /// Releases the notes the sequence holds and puts back to 0 the pedal, wheel and bend it
     /// moved. Keyboard notes on the same instrument are left alone.
-    pub fn silence(&mut self, mut instrument: Option<&mut (dyn Instrument + 'static)>) {
+    pub fn silence(&mut self, instrument: Option<&mut (dyn Instrument + 'static)>) {
+        self.silence_with(instrument, true);
+    }
+
+    /// The same at the loop's end, going back to its start: a pedal the song holds is let go
+    /// with no sound of a pedal let go (playing on, the pedal would not move there).
+    pub fn silence_at_loop(&mut self, instrument: Option<&mut (dyn Instrument + 'static)>) {
+        self.silence_with(instrument, false);
+    }
+
+    fn silence_with(
+        &mut self,
+        mut instrument: Option<&mut (dyn Instrument + 'static)>,
+        pedal_sound: bool,
+    ) {
         for (half, bits) in self.sounding.iter_mut().enumerate() {
             while *bits != 0 {
                 let low = bits.trailing_zeros();
@@ -255,10 +269,14 @@ impl Lane {
         }
         if let Some(i) = instrument {
             if self.moved & MOVED_SUSTAIN != 0 {
-                i.event(InstrumentEvent::Control {
-                    controller: CC_SUSTAIN,
-                    value: 0,
-                });
+                if pedal_sound {
+                    i.event(InstrumentEvent::Control {
+                        controller: CC_SUSTAIN,
+                        value: 0,
+                    });
+                } else {
+                    i.song_pedal(0, SongPlace::pedal(0, 0, true));
+                }
             }
             if self.moved & MOVED_MODULATION != 0 {
                 i.event(InstrumentEvent::Control {
@@ -603,5 +621,54 @@ mod tests {
         let after = seed_of(vec![on(0, 60, 90), on(960, 62, 50), on(1920, 60, 90)], 1920);
         assert_eq!(alone, after);
         assert_ne!(alone, seed_of(vec![on(1921, 60, 90)], 1921));
+    }
+
+    /// What reaches an instrument of the pedal, both ways.
+    #[derive(Default)]
+    struct PedalWays {
+        events: Vec<u8>,
+        song: Vec<(u8, bool)>,
+    }
+
+    impl Instrument for PedalWays {
+        fn prepare(&mut self, _: f32, _: usize) {}
+        fn event(&mut self, e: InstrumentEvent) {
+            if let InstrumentEvent::Control {
+                controller: CC_SUSTAIN,
+                value,
+            } = e
+            {
+                self.events.push(value);
+            }
+        }
+        fn song_pedal(&mut self, value: u8, place: SongPlace<'_>) {
+            self.song.push((value, place.chased()));
+        }
+        fn render(&mut self, _: &mut [f32], _: &mut [f32]) {}
+        fn reset(&mut self) {}
+    }
+
+    /// A pedal the song holds over the loop's end is let go there with no sound (as chased),
+    /// and when playing stops with a pedal let go as before.
+    #[test]
+    fn the_loop_lets_go_of_the_pedal_quietly_and_a_stop_as_before() {
+        let events = vec![pedal(0, 127), on(10, 60, 100)];
+        for at_loop in [true, false] {
+            let mut lane = Lane::default();
+            lane.replace_sequence(Some(Box::new(Sequence::new(events.clone()))));
+            let mut heard = PedalWays::default();
+            lane.seek(|_| false, Some(&mut heard));
+            lane.fire_before(u64::MAX, Some(&mut heard));
+            assert_eq!(heard.song, [(127, false)]);
+            if at_loop {
+                lane.silence_at_loop(Some(&mut heard));
+                assert_eq!(heard.song, [(127, false), (0, true)]);
+                assert!(heard.events.is_empty());
+            } else {
+                lane.silence(Some(&mut heard));
+                assert_eq!(heard.song, [(127, false)]);
+                assert_eq!(heard.events, [0]);
+            }
+        }
     }
 }

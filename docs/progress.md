@@ -1752,3 +1752,35 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - **棟梁の決め: CPU の道のまま、何も足さない**（鍵 → 描いた p50 0.4〜0.7 ms を残す）。メモリの目あての「10 分録ると WebKit +40 MB 以内」は今の数（+27）で届く。
 - WebKitWebProcess が消えた件: 約 4 時間で再現しなかった。係が gdb で落とした 1 回の `/var/crash/_usr_lib_x86_64-linux-gnu_webkit2gtk-4.1_WebKitWebProcess.1001.crash` が残った（係は権限の決まりで消せず、棟梁も消さない。オーナーさんに消してもらうよう頼んだ）。
 - 宿題: CPU の道は、窓が見えない ・ 画面が消えた時も再生中は毎秒 60 コマ以上描きつづける（合成の道はやめる）。見えない間は描くのを止めるか。2 時間をこえる再生でのメモリ。
+
+### オーナーさんに聞いていること（第 8 回の終わり、2026-11-22）
+
+1. **本物の PC で入れてためす**（`docs/install-check.md`）: Ubuntu 24.04 と 26.04 の本物の PC か VM で、`target/deb/meloet_0.1.0_amd64.deb` を入れる → ひらく → 鍵盤 → 音の素材を取る → グランドピアノが鳴る → プラグインの棚 → 保存してひらく → 消す。端末から起こしたときの「音のスレッドの優先度」の 1 行（`(limit)` か `(rtkit)` か、上げられなかったか）も。この PC のエージェントは席のないセッションで rtkit を確かめられない。
+2. **「遅れを測る」の測りなおし**: 第 8 回で式を直した（本物の入口で 1 ブロック多かった）ので、前に「この数を使う」を押していたら、その数は読まれない（`measured_latency_2`）。もう一度測ってほしい。
+3. **`foundation` を `main` へ**: 配る前（区切り4 の終わり）に入れる、と決まっていた。いつ入れて push するか。ネットの目録（`main` の `tools/sounds/catalog.json`）は、入れたあとに効く。
+4. **後片づけ**: `/var/crash/_usr_lib_x86_64-linux-gnu_webkit2gtk-4.1_WebKitWebProcess.1001.crash`（係が gdb で落とした 1 回。残っていると apport が次の報告を書かない）を消してほしい。docker のグループは、deb を作り終えたら外してほしい（`sudo gpasswd -d meloet-agent docker`。棟梁が作ったイメージ `meloet-deb-build` は先に消す）。
+5. **配る deb を Release に上げるか**: 音の素材とは別に、アプリの Release（たとえば `v0.1.0`）を作って deb を上げるか、いつか。
+6. （よければ）**サンプルのしっぽを切る聞きくらべ**: グランドピアノを −50 dB で切ると −50 MB、−40 dB で −90 MB（`docs/measurements/2026-11-22-round8-memory.md`）。音が変わるので耳で。
+7. VS Code の「meloet（デバッグ）」は `--no-default-features` で、開発の仕込み（`MELOET_*`）が効かない。デバッグで使うなら `--features dev-hooks` を足す。
+
+### 第 8 回の宿題（次の回より後へ残す物）
+
+- **時間で落ちる試験**: `readahead::tests::other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends`（混んだ時だけ入れかえの回数が 3、待つのは 2）、`meloet-midi` の `plugging_and_unplugging_after_start_is_reported_with_the_same_id`（ポートの名前が `…:portet`）。
+- **鍵 → DAC が「ちょうど 1 quantum」と読める回**（第 7 回の 10.4 ms）: 再現しない。測る道具が印を出す（`summarize.py`）。見当は cpal が `pw_stream_get_time_n` から答えをもらえない時（C）。
+- **取っている間の鍵 → 画面**: p95 22.49 ms ・ 2 コマ以内 94 %（load 13 でにごった数）。取りはじめとピアノを読みこむころにかたまる。静かな PC で見なおす。
+- **CPU の道**: アレンジの拡大の busyMs 19〜20 ms（コマの間は 60 Hz の中。WebGL の canvas の読みもどしは WebKit の中で決めうち）。パンとセンドの値の字は 1 秒 15 回のまま（仕様書の「ミキサーの値の字は毎コマ」と合わないかもしれない。毎コマにすると囲む四角が出る）。窓が見えない ・ 画面が消えた時も再生中は毎秒 60 コマ以上描く。2 時間をこえる WebKit のメモリ。
+- **Surge XT**: 頭の和音が、最初の音を作る間 1 本あたり 80〜120 ms 欠ける（読みこみの直後に音のない音を通す案）。quiet の 2 回が「止まった係のまちがい」だったかは確かめていない。rtkit の道の PC で係の `RLIMIT_RTTIME` 200 ms が長いブロックで効くか。
+- **音の素材**: 取っている間の棚の「お気に入り」が 0、「やめる」のあとは状態行で何も言わない、置き場所のフォルダの名前（モックは「音の素材」、作りは `sounds`）、押したまま入れかわる瞬間の音（10 ms 重ねる）を録っていない。
+- **「手で決める…」の範囲の外**: Rust がだまってはしに入れる（3 章「数字の欄」は状態行で言う）。
+- **deb**: bundler が `128x128@2x.png` を `hicolor/256x256@2` に置く（ふつうの名前ではない。512 ・ 128 はふつう）。識別子 `dev.meloet.app` に macOS の警告。自動の更新はない。
+- **整理（オーナーさんがする）**: リアルタイムに上げる関数がプラグイン係（`rt.rs`）とエンジン（`priority.rs`）に 2 つ。
+- 前の回からの宿題で、第 8 回でさわらなかった物（書体の `@font-face`、歌のクリップ 192 個の 11 ms のコマ、64 本 ・ 帯 4 本ずつ など）は、第 7 回の宿題の一覧のまま。
+
+### 次の回への申し送り（第 9 回: Windows と Mac。気づいた分だけ）
+
+- **版**: 約束は 27、曲のファイルは版 6、なおすためのファイルは版 2、wire は版 5、音の素材の目録は `meloet-sounds-catalog` 版 1（包み 2026.11.2）。アプリは 0.1.0。
+- **Linux だけの物**（連れていくときに替える）: 鍵盤は ALSA シーケンサ（`meloet-midi`）、出口 ・ 入口の名前は PipeWire の Route（`meloet-devices`）、プラグイン係とのやりとりの futex と共有メモリ（`meloet-plugin`）、プラグインの窓は X11（`meloet-plughost/src/window.rs`）、音のスレッドの優先度は `sched_setscheduler` と rtkit（D-Bus。Windows は MMCSS、Mac はスレッドの time constraint）、メモリを返す `malloc_trim`（glibc）、空きの `statvfs`、置き場所の XDG（`dirs` で替える）、logind の delay ロック、web プロセスの見はり（`webprocess.rs`）、`pidfd`。
+- **画面**: 7 章の描きなおしの決まり（11 個 ・ 25 %、`cover`）と `WEBKIT_DISABLE_COMPOSITING_MODE` ・ `JSC_useGenerationalGC` は WebKitGTK の物。WebView2（Windows）と WKWebView（Mac）では測りなおす。WebGL の文脈の数の上限もちがう。
+- **配る形**: アイコンは `icon.ico` ・ `icon.icns` を作ってある。識別子 `dev.meloet.app` は macOS で「.app で終わる」と警告が出る（替える）。Mac では上のメニューを画面のいちばん上へ（仕様書 Y11）。署名 ・ 公証（Mac）、インストーラ（Windows）。のび縮みの C++（Signalsmith）は MSVC ・ clang で。
+- **音の素材**: 取りにいく係は ureq ＋ rustls ＋ ring（どこでも動く）。証明書は `rustls-platform-verifier`（Windows ・ Mac は OS の物を読む）。
+- **開発の仕込み**: `tools/measure/build-dev.sh`、`scripts/check-release.sh`。測る道具の多くは PipeWire ・ gdb ・ X に頼っている。

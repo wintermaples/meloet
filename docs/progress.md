@@ -1719,3 +1719,10 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - `MELOET_DOCKER_SG=1 scripts/build-deb.sh` で `target/deb/meloet_0.1.0_amd64.deb`（17,752,566 バイト。記号を外して `meloet` 28,471,496 バイト、`meloet-plughost` 1,369,968 バイト）。Maintainer `wintermaples <wintermaples@yahoo.co.jp>`、Description「MIDI 鍵盤ではじめる、音楽づくりのアプリ」、Depends は上のとおり。
 - 中の 2 つの実行ファイルに仕込みの名前（`MELOET_` ・ `devhooks` ・ `measure_report` ・ `ui_script` ・ `urn:meloet:fake`）は 0 件、`WEBKIT_DISABLE_COMPOSITING_MODE` はある。
 - きれいな ubuntu:24.04 と 26.04 のコンテナで: 入れる 0、`/usr/bin` の 2 つと `/usr/share/doc/meloet` の 3 つ、`ldd` の not found 0、`apt-get remove` 0 で消える。画面と音はオーナーさんの手順（`docs/install-check.md`）。
+
+### 区切り4: Surge XT の係が再生の頭で止まる件（k8sx、meloet-hard ・ Opus 5.5、merge 済み。architecture 23-14、`docs/measurements/2026-11-22-round8-surge.md`）
+
+- 本物のアプリでは再現しなかった（直す前 0/59、load 3〜4.6）。試験の場（1 つの係に読みこんだばかりの Surge XT 1.3.4 を 16、頭で和音）で、128 フレーム ・ ずれ 0 のとき 8/8 で止まった。**Surge XT は落ちていなかった**: 最初の音のブロックが 1 個 4〜5 ms かかり、16 個が同じブロックで鳴ると係の音のスレッド 4 本がそろってプラグインの中にいて、エンジンの見はり（`EngineEnd::await_overdue`）が「だれも受けとらず進みが止まった」を「止まった係」とまちがえて止めていた。quiet の 2 回がこの形だったかは記録がなく言えない（C）。
+- 直した（`crates/meloet-plugin/src/ipc/`）: 死んだとみなす条件に「どのスロットでも、スレッドがプラグインの中にいて `HANG_MS` たっていない、ことがない」を足した（締め切りをこえた時だけ原子変数を最大 16 個読む）。直した後 0/8（4 つの形）、本物のアプリ 0/20。試験 3（偽物のプラグインで、どこでも走る物 ・ Surge XT 16 の `--ignored` ・ 単体）。凍った係のうち、ちょうどプラグインの中にいた物は 2 ブロックではなく 5 秒で見つかる。
+- `dev-hooks` のときだけ: 係が致命的なシグナルでスタックを書く（`crashlog.rs`）、`MELOET_PLUGHOST_LOG_DIR` で係の標準エラーを残す。いつも: 係の終わりかたが core の SIGKILL でなければ記録に 1 行。
+- 人に見える事: 前はまれにその係の 16 本が「止まった」で無音。後は止まらない。ただし頭の和音は Surge XT が最初の音を作る間、1 本あたり 80〜120 ms 欠ける（前から）。→ 宿題（読みこみの直後に音のない音を 1 度通す案。確かめていない）。rtkit の道の PC では係の `RLIMIT_RTTIME` が 200 ms なので、長いブロックで SIGKILL になるかもしれない（この PC は limits の道で確かめていない）。

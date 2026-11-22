@@ -77,7 +77,7 @@ BOARDS = {
     "arrangeMoveDrag": "R3-Arrange",
     "arrangeCopyDrag": "R3-Arrange",
     "arrangeTrimDrag": "R3-Arrange",
-    # 第 4 回: トラックと棚。
+    # Tracks and the shelf.
     "tracks6": "R7-Arrange6",
     "shelfNewTrack": "F4-ShelfSample",
     "shelfSample": "F4-ShelfSample",
@@ -87,16 +87,16 @@ BOARDS = {
     "trackDrag": "R6-Tracks",
     "trackColorMenu": "R6-Tracks",
     "drumRoll": "R7-Drum",
-    # 第 4 回 区切り2: meloet について。
+    # About meloet.
     "about": "R7-About",
     "aboutLicenses": "R7-AboutLicense",
     "aboutPart": "R7-AboutLicense",
-    # 第 4 回 区切り3: パラメータの欄と棚のエフェクト。
+    # The parameters panel and the effects in the shelf.
     "paramsDelay": "R6-Delay",
     "shelfEffects": None,
-    # 第 5 回の前段: 最初から入っている音色を 31 に（84）。
+    # The 31 built-in sounds (84).
     "shelf84": "R8-Shelf84",
-    # 第 5 回 区切り1: スキャンの画面とダイアログを動かす。
+    # The scan screens, and moving dialogs.
     "scanStoppedRetrying": "F5-ScanStopped",
     "scanStoppedMany": "F5-ScanStopped",
     "scanRetryAdded": "R9-Scan",
@@ -109,7 +109,7 @@ BOARDS = {
     "settingsAdv": "F-SettingsAdv",
     "settingsMoved": "R8-Clip",
     "scanStoppedMoved": "R8-Clip",
-    # 第 5 回 区切り2: 棚の「あとから入れたもの」（SF2 とプラグイン）、見つからない物、ドラムの再生中。
+    # The shelf's 「あとから入れたもの」 (SF2 and plugins), missing things, drums while playing.
     "sf2Shelf": "F5-SF2Shelf",
     "sf2Added": "F5-SF2Shelf",
     "sf2Unreadable": None,
@@ -127,7 +127,7 @@ BOARDS = {
     "missingPlugin": None,
     "drumPlay": "R8-DrumPlay",
     "drumRollSf2": "R7-Drum",
-    # 第 5 回 区切り3: プラグインの窓、パラメータの欄のプラグイン、ミキサーの 86 の残り。
+    # Plugin windows, plugins in the parameters panel, the rest of 86 in the mixer.
     "windowOpen": "F-WindowOpen",
     "paramFew": "F-ParamFew",
     "paramMany": "F-ParamMany",
@@ -140,13 +140,13 @@ BOARDS = {
     "noOutput": "R9-Params",
     "paramClamped": "R9-Params",
     "windowUndo": "Opt5-Undo",
-    # デザインの第 9 版の 88〜91（第 6 回 区切り0）。
+    # 88 to 91 of the design's 9th edition.
     "paramMany6": "F6-ParamMany",
     "paramKnobsSearch": None,
     "sf2DropMany": "F5-SF2Drop",
     "sf2AddedMany": None,
     "shelfBuiltinOpen": "F5-PluginLoading",
-    # 第 6 回 区切り1: テンポと拍子の変更、マーカー（約束 20）。
+    # Tempo and meter changes, markers.
     "tempo": "F6-Tempo",
     "tempoFolded": "F6-AutoRec",
     "markerAdded": "R10-Markers",
@@ -154,7 +154,7 @@ BOARDS = {
     "markerMoving": "R10-Markers",
     "tempoDrag": "F6-Tempo",
     "pianoRollMarkers": "R10-Markers",
-    # 第 6 回 区切り2 ・ 3: オートメーション、取り消しの履歴の帯（約束 21）。paramMany6（F6-ParamMany）は上にある。
+    # Automation, the history band. paramMany6 (F6-ParamMany) is above.
     "autoRec": "F6-AutoRec",
     "autoRest": "F6-AutoRest",
     "mixerAuto": "F6-MixerAuto",
@@ -166,12 +166,12 @@ BOARDS = {
     "autoBoxDrag": "R10-AutoEdit",
     "historyList": "F-History",
     "historyUndone3": "R10-History",
-    # 第 6 回 区切り3 の 2 回目: 履歴の帯の、乗った行 ・ えらんだ行 ・ キーでえらんだ行（どれも 11 手目）と、5000 手。
+    # The history band: the row under the pointer, the picked row, the row picked with keys (all step 11), and 5000 steps.
     "historyPointer": "R10-History",
     "historyPicked": "R10-History",
     "historyKeys": "R10-History",
     "history5000": None,
-    # 第 7 回 区切り0 の 0-2: 92 の答え（F7-Answers92 ・ R11-Answers92）。
+    # The answers to 92 (F7-Answers92, R11-Answers92).
     "laneScale": "F7-Answers92",
     "answers92": "F7-Answers92",
     "historyLatest": "R11-Answers92",
@@ -180,7 +180,7 @@ BOARDS = {
     "headTempo": "R11-Answers92",
     "pianoRollMarker": "R11-Answers92",
     "meterFlagMenu": "R11-Answers92",
-    # 第 7 回 区切り2: 歌のトラック、入力計の左右、録る、音の設定の奥、遅れを測る、19-A。
+    # Vocal tracks, the two sides of the input meter, recording, the advanced sound settings, measuring the latency, 19-A.
     "vocalTrack": "F7-VocalTrack",
     "vocalInputMenu": "F7-VocalTrack",
     "vocalNoInput": None,
@@ -195,7 +195,7 @@ BOARDS = {
     "latencyFailed": None,
     "vocalFit": "R11-Fit",
     "paramsSound": "F7-Answers92",
-    # 第 7 回 区切り3: 歌のクリップ、音のファイルを入れる、見つからない音（約束 24）。
+    # Audio clips, bringing in audio files, missing audio.
     "audioEdit": "F7-AudioEdit",
     "audioTall": "F7-AudioEdit",
     "audioDropOne": "F7-AudioDrop",
@@ -205,14 +205,14 @@ BOARDS = {
     "audioMissing": "F7-AudioMissing",
     "audioLoading": None,
     "audioKinds": "R11-Audio",
-    # 第 7 回 区切り4: のび縮みと音の高さ（約束 25）。
+    # Stretch and pitch.
     "stretch": "F7-Stretch",
     "stretchRendering": "F7-Stretch",
     "stretchPitch": None,
     "stretchNoTempo": None,
     "stretchRamp": None,
     "recoverVocal": None,
-    # 第 7 回 区切り5: 書き出し（約束 26）。
+    # Export.
     "exportDialog": "F7-Export",
     "exportWaiting": None,
     "exportCounting": None,
@@ -220,12 +220,12 @@ BOARDS = {
     "exportStopped": "F-Export",
     "exportAdvanced": None,
     "exportCheckFailed": None,
-    # 第 8 回 区切り2: 2 つ以上のクリップ、書き出す前のたしかめ（約束 27）。
+    # Two or more clips, the check before export.
     "multiClip": "F8-MultiClip",
     "exportCheck": "F8-ExportCheck",
     "exportClip": "F8-ExportClip",
     "exportFit": "R11-Fit",
-    # 第 8 回 区切り3: 音の素材（約束 27）。
+    # The sound pack.
     "packAsk": "F8-PackAsk",
     "packGet": "F8-PackGet",
     "packFailOffline": "F8-PackFail",
@@ -475,13 +475,13 @@ CLICKS = {
     "ccLanes": ("pianoRollCc", ('[data-test="pr-cc-sustain"]', '[data-test="pr-cc-pitchBend"]', '[data-test="pr-cc-other"]',
                                 '[data-test="pr-cc-other-menu"] [data-row="0"]')),
     "ccOtherMenu": ("pianoRollCc", '[data-test="pr-cc-other"]'),
-    # 「長さをそろえる」と「ベロシティをまとめて変える」をひらく（まとめて変える行）。
+    # Opens 「長さをそろえる」 and 「ベロシティをまとめて変える」 (the rows that change many notes at once).
     "inspectorBulk": ("pianoRoll", ('[data-test="inspector-same-length"]', '[data-test="inspector-velocity-all"]')),
-    # ひらいた「CC の一覧」（R5-Lists）。
+    # 「CC の一覧」 opened (R5-Lists).
     "ccList": ("pianoRollCc", '[data-test="pr-cc-list"]'),
-    # サステインの見出しを押してたたむ。
+    # Folds the sustain heading with a click.
     "ccListFolded": ("pianoRollCc", ('[data-test="pr-cc-list"]', '[data-group="cc64"]')),
-    # 細い形のマスターの値に乗せる（「マスター ・ −∞ dB」）。
+    # The pointer over the master value of the slim form (「マスター ・ −∞ dB」).
     "masterTip150": ("pianoRoll150", "js:" + HOVER % '[data-test="transport-master-db"]'),
     "arrangeMoveDrag": ("arrangeTrimmed", drag_clip(300, 364)),
     "arrangeCopyDrag": ("arrangeTrimmed", drag_clip(300, 556, "{ altKey: true }")),
@@ -489,16 +489,16 @@ CLICKS = {
     "menuFile": ("saved", '[data-menu="0"]'),
     "menuZoom": ("muted", ('[data-menu="2"]', '[data-test="menubar-list"] [data-row="10"]')),
     "menuClip": ("muted", "js:" + CONTEXT_CLIP),
-    # ノートをぜんぶ消したクリップで、横に 1 小節ぶん送る（送った先でも目盛と方眼が出る）。
+    # A clip with every note deleted, scrolled 1 bar sideways (the ruler and the grid show there too).
     "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
-    # F4-ShelfSample: グランドピアノの ▶ を押した所。
+    # F4-ShelfSample: the ▶ of the grand piano pressed.
     "shelfSample": ("shelfNewTrack", '[data-row="grandPiano"] [data-test="shelf-sample"]'),
-    # R8-Shelf84: 「ピアノ ・ 鍵盤」と「ギター」のほかの見出しをたたむ。
+    # R8-Shelf84: folds every heading but 「ピアノ ・ 鍵盤」 and 「ギター」.
     "shelf84": ("shelf84", "js:" + FOLD_SHELF % '["bass", "drums", "padStrings", "wind", "synth"]'),
     "trackRename": ("tracks6", "js:" + RENAME_TRACK),
     "trackDrag": ("tracks6", "js:" + DRAG_TRACK),
     "trackColorMenu": ("tracks6", "js:" + TRACK_COLORS),
-    # ヘルプ ▸ meloet について、オープンソースのライセンス ▸、いちばん多いライセンスの見出しと、その 2 つめの行。
+    # Help ▸ About meloet, the open source licenses ▸, the heading of the most common license and its second row.
     "about": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]')),
     "aboutLicenses": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]')),
     "aboutPart": ("tracks6", ('[data-menu="6"]', '[data-test="menubar-list"] [data-row="0"]', '[data-test="about-licenses"]',
@@ -506,7 +506,7 @@ CLICKS = {
     "settingsAdv": ("settings", '[data-test="settings-advanced"]'),
     "settingsMoved": ("settings", drag_dialog('[data-test="settings-dialog"]', -200, -40)),
     "scanStoppedMoved": ("scanStopped", drag_dialog('[data-test="scan-stopped-dialog"]', 260, 120)),
-    # 第 5 回 区切り2: 棚の見出しをモックのとおりにひらく（はじめはどれもたたむ。仕様書 3 章 Y12）。
+    # Opens the shelf's headings as in the mock (all are folded at first; spec 3 Y12).
     "sf2Shelf": ("sf2Shelf", '[data-group="ff:guitar:FluidR3_GM.sf2"]'),
     "shelfFx": ("shelfFx", '[data-group="c:effect:reverb"]'),
     "shelfSearch": ("shelfSearch", "js:" + TYPE_SEARCH % "Dragonfly"),
@@ -519,22 +519,23 @@ CLICKS = {
     "shelfBuiltinOpen": ("shelfPlugins", ('[data-group="builtin:sounds"]', '[data-group="guitar"]')),
     "windowOpen": ("windowOpen", '[data-test="status-windows"]'),
     "paramFew": ("paramFew", "js:" + DRAG_PARAM % ("Decay", 0.1, 0.12)),
-    # 第 6 回 区切り1: マーカーの名前を打っている途中、マーカーを 1 小節ぶん動かしている途中（R10-Markers）。
+    # Typing a marker's name, and a marker being moved by 1 bar (R10-Markers).
     "markerRenaming": ("markerRenaming", "js:" + TYPE_MARKER % "Aメロ ・ 1 回目"),
     "markerMoving": ("markerMoving", "js:" + DRAG_MARKER % ("Aメロ", 64, 64)),
-    # 9 小節目の点（120.00）を 1 拍右、少し上へ動かしている途中（もとの所に accent の枠、読み値は位置）。
+    # The point of bar 9 (120.00) being moved 1 beat right and a little up (an accent frame where it was; the readout is the position).
     "tempoDrag": ("tempo", drag_tempo(512, 12, 16, -6)),
-    # 第 6 回 区切り2: R10-AutoEdit の 3 つ。3 小節目の点（−2.1 dB）を 1 拍右、上へ（−0.6 dB）。5. 3. 000 の空いた所を押したまま。
-    # 2 小節目の後ろから 6 小節目まで囲む。点の高さは帯の中の位置。帯の縦は点の 0.45〜0.73 に上下 1 割のゆとり（0.422〜0.758、
-    # 仕様書 3 章 21-B）なので 4 + (1 − (位置 − 0.422) / 0.336) × 39。
+    # The three of R10-AutoEdit: the point of bar 3 (−2.1 dB) moved 1 beat right and up (−0.6 dB); the empty place at
+    # 5. 3. 000 held down; a box from the end of bar 2 to bar 6. A point's height is its position in the lane. The lane's
+    # height is the points' 0.45 to 0.73 with a tenth more above and below (0.422 to 0.758, spec 3 21-B), so
+    # 4 + (1 − (position − 0.422) / 0.336) × 39.
     "autoMove": ("autoMove", drag_lane(3, 1, "4 + (1 - (0.73 - 0.422) / 0.336) * 39", 1, -4)),
     "autoPress": ("autoMove", drag_lane(5, 3, "4 + (1 - (0.52 - 0.422) / 0.336) * 39")),
     "autoBoxDrag": ("autoMove", drag_lane(2, 3, "4", 14, 40)),
-    # R10-History: 11 手目に乗せる、押してえらぶ、帯にフォーカスを置いて ↓ ↓（いまの 13 手目から 11 手目へ）。
+    # R10-History: the pointer over step 11, a click on it, and ↓ ↓ with the focus in the band (from step 13, the current one, to 11).
     "historyPointer": ("historyUndone3", "js:" + HISTORY_ROW % (11, "pointerenter")),
     "historyPicked": ("historyUndone3", "js:" + HISTORY_ROW % (11, "pointerdown")),
     "historyKeys": ("historyUndone3", "js:" + HISTORY_KEYS % '["ArrowDown", "ArrowDown"]'),
-    # 第 7 回 区切り0 の 0-2: 「＋ 帯を足す ▾」の一覧をひらく。9 小節目の拍子の旗を右クリック。
+    # Opens the list of 「＋ 帯を足す ▾」. Right-clicks the meter flag of bar 9.
     "answers92": ("laneScale", '[data-test="lane-add"]'),
     "meterFlagMenu": ("tempo", "js:" + CONTEXT_FLAG),
     "vocalInputMenu": ("vocalTrack", '[data-test="track-input"]'),
@@ -618,12 +619,12 @@ ONLY = {
     "about": [(1280, 800, 100), (1280, 800, 150)],
     "aboutLicenses": [(1280, 800, 100), (1280, 800, 150)],
     "aboutPart": [(1280, 800, 100), (1920, 1080, 150)],
-    # 第 4 回 区切り3: ミキサー（F4-Mixer は 1280x800 の 100 %）。150 % は形が入るかを見るため。
+    # The mixer (F4-Mixer is 1280x800 at 100 %). 150 % is to see that it fits.
     "mixer": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
     "paramsDelay": [(1280, 800, 100), (1280, 800, 150)],
     "shelfEffects": [(1280, 800, 100), (1920, 1080, 150)],
     "shelf84": [(1280, 800, 100), (1280, 800, 150), (1920, 1080, 100)],
-    # 第 5 回 区切り1: スキャン。R9-Scan と F5-ScanStopped は 1280x720 ・ 1280x800 の 100 %。150 % は入るかを見るため。
+    # The scan. R9-Scan and F5-ScanStopped are 1280x720 and 1280x800 at 100 %. 150 % is to see that it fits.
     "scanning": [(1280, 800, 100), (1280, 800, 150)],
     "scanFinished": [(1280, 800, 100)],
     "scanFinishedNone": [(1280, 800, 100)],

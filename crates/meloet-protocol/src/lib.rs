@@ -321,7 +321,7 @@ pub enum Command {
         track: u32,
         color: u8,
     },
-    // The shelf (round 4). Closing it stays `ToggleBand` and `Back`; closing it while it
+    // The shelf. Closing it stays `ToggleBand` and `Back`; closing it while it
     // auditions is `ShelfCancel` first.
     /// Opens the shelf (the right panel `Band::Shelf`, brought to the front) in `mode`.
     /// `NewTrack`: "＋ トラックを追加", "トラックを足す" of the menus, P. `Replace`: a click
@@ -389,7 +389,7 @@ pub enum Command {
         instrument: InstrumentKind,
     },
     StopSample,
-    // The mixer (round 4). A strip is named by `StripRef`, an insert slot by `InsertRef`.
+    // The mixer. A strip is named by `StripRef`, an insert slot by `InsertRef`.
     //
     // Fader, pan, send and parameter each come with `commit`, because a drag must be heard
     // while it goes on and still be one step:
@@ -591,7 +591,7 @@ pub enum Command {
         dialog: u32,
         answer: SongAnswer,
     },
-    // The piano roll and the clips (round 3). A note is named by `take`, the id of the take the
+    // The piano roll and the clips. A note is named by `take`, the id of the take the
     // piano roll shows (`PianoRollView::take`), and its index in that take's notes (in order of
     // start, from 0). A command whose `take` is not the take shown now is dropped: it was aimed
     // at notes that have moved since. Fields named `start`, `at` or `tick` are song positions;
@@ -892,7 +892,7 @@ pub enum Command {
     RemovePlugin {
         slot: PluginSlotRef,
     },
-    // 「あとから入れたもの」 (round 5): SF2 presets and plugins in the shelf. The four below
+    // 「あとから入れたもの」: SF2 presets and plugins in the shelf. The four below
     // do for any sound or effect what `ShelfSelect`, `PlaySample`, `ToggleFavorite` and
     // `ShelfSelectEffect` do for the ones that come with meloet; with a `Builtin` they are
     // the same command.
@@ -981,7 +981,7 @@ pub enum Command {
     RemoveMissing {
         missing: MissingRef,
     },
-    // Automation (round 6; spec 3 Y16, docs/architecture.md 21-5 to 21-11). A lane is named
+    // Automation (spec 3 Y16, docs/architecture.md 21-5 to 21-11). A lane is named
     // by its track and target; points by `LaneView::lane_id` and their places in the lane,
     // and a command with a `lane` that is no lane's id now does nothing. Moving a fader or a
     // parameter by hand stays what it was (`SetGain`, `SetParam`, …): Rust makes it rest the
@@ -1236,7 +1236,7 @@ pub enum Command {
     /// 「フォルダをひらく」: the PC's file manager shows what the last export wrote. Only
     /// with `ExportRunView::Done`.
     ShowExported,
-    // Protocol 27 (round 8; spec 3, 39-B, 40-A, Y26, 43-B, 44-A, 45-A; docs/architecture.md
+    // Protocol 27 (spec 3, 39-B, 40-A, Y26, 43-B, 44-A, 45-A; docs/architecture.md
     // 23-7).
     /// The end of a drag of the volume line of one of two or more selected vocal clips
     /// (39-B): every clip of `clips` moves by the same `by_db`, each put into
@@ -1350,7 +1350,7 @@ pub enum ValueField {
     MeterNum,
     MeterDen,
     Velocity,
-    /// The note list and the "選んだノート" panel (round 3): where a note starts, its key, its length.
+    /// The note list and the "選んだノート" panel: where a note starts, its key, its length.
     Position,
     Key,
     Length,
@@ -2945,7 +2945,7 @@ pub enum StatusMessage {
         name: String,
         slot: PluginSlotRef,
     },
-    // 「あとから入れたもの」 (round 5). The five below say for an SF2 preset or a plugin what
+    // 「あとから入れたもの」. The five below say for an SF2 preset or a plugin what
     // `AuditionNewTrack`, `AuditionReplace`, `SamplePlaying`, `InstrumentReplaced` and
     // `InstrumentLoading` say for a sound that comes with meloet; with `SoundName::Builtin`
     // they are the same sentence.

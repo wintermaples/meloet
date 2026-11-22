@@ -1,4 +1,4 @@
-//! Tempo, meter and markers along the song (round 6; docs/architecture.md 21-1, 21-15).
+//! Tempo, meter and markers along the song (docs/architecture.md 21-1, 21-15).
 //!
 //! A tempo is beats per minute as an `f64` that is a whole number of 0.01 steps, the beat
 //! being the lower number of the meter in force there (`meloet_model::Tempo::bpm`).

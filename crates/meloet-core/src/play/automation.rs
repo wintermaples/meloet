@@ -866,7 +866,7 @@ impl Play {
     // ---- the plugin's own window (docs/architecture.md 21-10) ----
 
     /// The plugin process says a hand took (`on`) or let go a parameter in the plugin's own
-    /// window: VST3 `beginEdit` ・ `endEdit`, LV2 `ui:touch`, or the time it gives a write
+    /// window: VST3 `beginEdit` and `endEdit`, LV2 `ui:touch`, or the time it gives a write
     /// with no touch. Its time is not needed: what is written is placed by the times of the
     /// values (`plugin_edited`).
     ///

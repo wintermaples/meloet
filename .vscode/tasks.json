@@ -2,13 +2,13 @@
   "version": "2.0.0",
   "tasks": [
     {
-      // nvm などで入れた npm は、~/.bashrc を読むシェルでないと見つからない。npm を使うタスクは bash -ic で動かす。
-      "label": "画面: vite（開発サーバ）",
+      // npm installed with nvm and the like is found only by a shell that reads ~/.bashrc, so npm tasks run with bash -ic.
+      "label": "UI: vite (dev server)",
       "type": "shell",
       "command": "npm run dev",
       "options": { "cwd": "${workspaceFolder}/ui", "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
       "isBackground": true,
-      // vite は問題を出さない。下の background は「立ちあがった」を知るためだけ。
+      // vite reports no problems; the background part below only tells when it is up.
       "problemMatcher": {
         "owner": "vite",
         "pattern": { "regexp": "^__never__$" },
@@ -20,17 +20,17 @@
       }
     },
     {
-      "label": "画面: ビルド（ui/dist）",
+      "label": "UI: build (ui/dist)",
       "type": "shell",
       "command": "npm run build",
       "options": { "cwd": "${workspaceFolder}/ui", "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
       "problemMatcher": []
     },
     {
-      "label": "meloet: release で動かす",
+      "label": "meloet: run release",
       "type": "shell",
       "command": "cargo run --release -p meloet-app",
-      // launch.json の「meloet（デバッグ）」と同じ理由で、VS Code の snap 版が変えた環境変数を元に戻す。
+      // Puts back the variables the snap build of VS Code changed, for the same reason as "meloet (debug)" in launch.json.
       "options": {
         "env": {
           "XDG_DATA_DIRS": "${env:XDG_DATA_DIRS_VSCODE_SNAP_ORIG}",
@@ -45,17 +45,17 @@
           "LOCPATH": "${env:LOCPATH_VSCODE_SNAP_ORIG}"
         }
       },
-      "dependsOn": "画面: ビルド（ui/dist）",
+      "dependsOn": "UI: build (ui/dist)",
       "problemMatcher": ["$rustc"]
     },
     {
-      "label": "約束の型を書き出す（Rust → TS）",
+      "label": "Write the protocol types (Rust → TS)",
       "type": "shell",
       "command": "cargo test -p meloet-protocol",
       "problemMatcher": ["$rustc"]
     },
     {
-      "label": "検査: 全部",
+      "label": "Check: all",
       "type": "shell",
       "command": "scripts/check-all.sh",
       "options": { "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
@@ -63,7 +63,7 @@
       "problemMatcher": ["$rustc"]
     },
     {
-      "label": "検査: 全部（鍵盤と PipeWire のテストも）",
+      "label": "Check: all (with keyboard and PipeWire tests)",
       "type": "shell",
       "command": "scripts/check-all.sh --devices",
       "options": { "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
@@ -71,7 +71,7 @@
       "problemMatcher": ["$rustc"]
     },
     {
-      "label": "テスト: 画面（vitest）",
+      "label": "Test: UI (vitest)",
       "type": "shell",
       "command": "npm test",
       "options": { "cwd": "${workspaceFolder}/ui", "shell": { "executable": "/usr/bin/bash", "args": ["-ic"] } },
@@ -79,7 +79,7 @@
       "problemMatcher": []
     },
     {
-      "label": "テスト: Rust",
+      "label": "Test: Rust",
       "type": "shell",
       "command": "cargo test",
       "group": "test",

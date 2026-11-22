@@ -271,7 +271,7 @@ fn the_shape_on_disk() {
 fn piano_roll_settings_missing_or_not_understood_are_the_defaults() {
     let song = rich_song("x", 3);
     let mut v: serde_json::Value = serde_json::from_slice(&encode(&song)).unwrap();
-    // As round 2 wrote it.
+    // A file without the piano roll's settings.
     let session = v["session"].as_object_mut().unwrap();
     session.remove("grid");
     session.remove("scale");

@@ -1,4 +1,4 @@
-//! Vocal tracks, the audio input and the latency (round 7, protocol 23; docs/architecture.md
+//! Vocal tracks, the audio input and the latency (protocol 23; docs/architecture.md
 //! 22-5 to 22-7 and 22-15, spec 3 「オーナーさんがえらんだ形」 23-A, 24-C, 25-B, 31-C, 33-A).
 
 use serde::{Deserialize, Serialize};

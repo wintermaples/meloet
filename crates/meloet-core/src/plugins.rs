@@ -43,7 +43,7 @@ pub struct PluginOptions {
     /// Scanning waits until the screen first subscribes (its page is up), at most
     /// `SCAN_WAITS_FOR_SCREEN` in `service.rs`, so the window comes up before hundreds of
     /// children start and end. Under LLDB (VS Code), children started while WebKit loaded its
-    /// libraries made LLDB show its own stop in the dynamic loader as a pause (2026-11-19).
+    /// libraries made LLDB show its own stop in the dynamic loader as a pause.
     pub wait_for_screen: bool,
 }
 

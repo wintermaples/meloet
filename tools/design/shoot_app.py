@@ -108,7 +108,7 @@ def core_js(body):
             + body + " })()")
 
 
-# Round 7. With no microphone, the monitor of this PC's output is the input (the vocal track hears
+# With no microphone, the monitor of this PC's output is the input (the vocal track hears
 # the metronome). No state turns 「モニター」 on: the input would be played back into itself.
 SINK_MONITOR = {"MELOET_INPUT_SINK_MONITOR": "alsa_output.pci-0000_0c_00.6.analog-stereo"}
 SONG7 = ROUND6_SONG + ["--markers", f"0:イントロ,{q(16)}:Aメロ,{q(48)}:サビ"]
@@ -206,7 +206,7 @@ ONE_CLIP = [vclip("歌 テイク 1", q(16), q(24), TAKE1, 5.0)]
 # board: mock to compare with. remembered: start with the output already chosen.
 # only_virtual / accept_virtual: MELOET_ONLY_VIRTUAL / MELOET_ACCEPT_VIRTUAL.
 # keys: meloet-vkeys runs started together with the app. snap: MELOET_SNAPSHOT_AFTER_MS.
-# Round 7 (with song):
+# With song:
 # loop: (from bar, to bar), the song's loop, on. The song is then 「はじめての曲」 in a folder of its own.
 # vocal: vclip()s of a vocal track 「歌」 added to the song (dress_song); its files are made in the
 #   song's 音/ (none for missing=True), the song is opened where it is, and the start gets an
@@ -229,7 +229,7 @@ STATES = {
     "history": dict(board="F-History", remembered=True, commands=band("history")),
     "shelf": dict(board="F-ShelfArrange", remembered=True, commands=band("shelf")),
     "params": dict(board="F-ParamFew", remembered=True, commands=band("params")),
-    # Round 2. Times of commands and of the snapshot count from the page load (about 1.3 s after
+    # Times of commands and of the snapshot count from the page load (about 1.3 s after
     # the start); --lead-ms counts from the start.
     "flow4": dict(board="F-Connect4", remembered=True,
                   commands=[(200, {"type": "toggleMetronome"}), (400, {"type": "record"})], snap=1800),
@@ -243,12 +243,12 @@ STATES = {
                             (7000, {"type": "goToStart"}), (7500, {"type": "record"}),
                             (14500, {"type": "record"})],
                   keys=[played(4500, 8), played(12000, 8, 230)], snap=16000),
-    # Round 3. song: notes of the one clip of a song made by tools/measure/make_song.py, opened
+    # song: notes of the one clip of a song made by tools/measure/make_song.py, opened
     # with MELOET_OPEN_SONG; its clip (id 2) is selected and shown in the piano roll.
     "pianoRollSong": dict(board="A-PianoRoll", remembered=True, song=200,
                           commands=[(600, {"type": "selectClip", "clip": 2}),
                                     (800, {"type": "toggleBand", "band": "pianoRoll"})], snap=2500),
-    # Round 4: two tracks added through the shelf, one renamed, one recolored and moved to the top.
+    # Two tracks added through the shelf, one renamed, one recolored and moved to the top.
     "tracks": dict(board="R7-Arrange6", remembered=True, snap=3600, commands=[
         (400, {"type": "openShelf", "mode": {"kind": "newTrack"}}),
         (700, {"type": "shelfSelect", "instrument": "sine"}),
@@ -260,7 +260,7 @@ STATES = {
         (2500, {"type": "moveTrack", "track": 3, "to": 0}),
         (2800, {"type": "back"}),
     ]),
-    # Round 5: the plugin scan of the real app, over the plugins of this PC. scan="first": no
+    # The plugin scan of the real app, over the plugins of this PC. scan="first": no
     # record yet. The others start with the record of a whole scan. scanAppDone waits for the
     # scan to end (19 s on the agent PC).
     "scanApp": dict(board="R9-Scan", remembered=True, scan="first", commands=band("shelf"), snap=3000),
@@ -270,7 +270,7 @@ STATES = {
     "scanAppStopped": dict(board="F5-ScanStopped", remembered=True,
                            commands=[(400, {"type": "toggleBand", "band": "shelf"}),
                                      (700, {"type": "openScanStopped"})]),
-    # Round 5 step 2: the shelf's 「あとから入れたもの」, plugin and SF2 tracks, a plugin host
+    # The shelf's 「あとから入れたもの」, plugin and SF2 tracks, a plugin host
     # stopped from outside, and what a song names that is not there. click / typed: what only
     # the screen knows (MELOET_EVAL). song: arguments for make_song.py. stop_host: (seconds
     # after the start, signal) for the first plugin host. gone: the song's plugin is renamed to
@@ -315,7 +315,7 @@ STATES = {
     "missingStatusApp": dict(remembered=True, snap=3500, gone=True,
                              song=["--tracks", "3", "--notes", "60", "--bars", "8", "--instruments", "plugin,sf2,builtin",
                                    "--plugin", "Surge XT", "--effect-plugin", "ZamComp", "--sf2", "{sf2}:0:4:Rhodes EP"]),
-    # Round 5 step 3: plugin windows, the parameters panel, the mixer's inserts. The windows of
+    # Plugin windows, the parameters panel, the mixer's inserts. The windows of
     # Surge XT and Dragonfly open on the X screen for real (they are not in the shot).
     "windowOpenApp": dict(board="F-WindowOpen", remembered=True, snap=4800, song=WINDOWS_SONG,
                        commands=[(1500, {"type": "toggleBand", "band": "mixer"}),
@@ -347,7 +347,7 @@ STATES = {
     # No keyboard and no output chosen: the master's frame says 「出口なし ▸」.
     "noOutputApp": dict(board="R9-Params", only_virtual=True, snap=2500,
                      commands=[(800, {"type": "toggleBand", "band": "mixer"})]),
-    # Round 6: tempo, markers, automation lanes, the history of many steps. The songs are 5 tracks
+    # Tempo, markers, automation lanes, the history of many steps. The songs are 5 tracks
     # as in the mocks; ROUND6_SONG's 5th is Surge XT. core_js: what needs ids only the state knows.
     "tempoApp": dict(board="F6-Tempo", remembered=True, snap=3500,
                      song=ROUND6_SONG + ["--tempo-points", f"{q(16)}:104:ramp,{q(32)}:120,{q(44)}:96",
@@ -423,7 +423,7 @@ STATES = {
                                    (6500, "const l = document.querySelector('[data-test=\"history-list\"]'); l.focus(); "
                                           "for (const n of [0, 1]) l.dispatchEvent(new KeyboardEvent('keydown', "
                                           "{ key: 'ArrowDown', bubbles: true, cancelable: true }));")]),
-    # Round 7: vocal tracks, vocal clips, the latency, writing the song out. The songs are SONG7
+    # Vocal tracks, vocal clips, the latency, writing the song out. The songs are SONG7
     # (5 keys tracks, the 5th Surge XT) with 「歌」 added by a command or by dress_song.
     "vocalTrackApp": dict(board="F7-VocalTrack", remembered=True, snap=3200, song=SONG7, loop=(5, 9),
                           env=SINK_MONITOR, commands=[(1500, {"type": "addVocalTrack"})],
@@ -513,7 +513,7 @@ STATES = {
                                       (1800, {"type": "toggleBand", "band": "history"}),
                                       (2000, {"type": "setTimelineOpen", "open": True}),
                                       (2200, {"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": 0}})]),
-    # Round 8. shots: the (size, scale) pairs taken instead of every SIZES x SCALES; SMALLEST is the
+    # shots: the (size, scale) pairs taken instead of every SIZES x SCALES; SMALLEST is the
     # smallest window (853x448 at 150 %).
     "firstLaneApp": dict(board="F8-FirstLane", remembered=True, snap=3000, song=SONG7, loop=(5, 9), shots=[BIG],
                          evals=[(2300, "document.querySelectorAll('[data-test=\"track-lanes\"]')[1].click()")]),

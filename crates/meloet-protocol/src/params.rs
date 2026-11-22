@@ -1,5 +1,5 @@
 //! Plugin windows, the parameters of a plugin in the parameters panel, and the names the
-//! status line gives effects and parameters (round 5, protocol 18).
+//! status line gives effects and parameters (protocol 18).
 
 use serde::{Deserialize, Serialize};
 

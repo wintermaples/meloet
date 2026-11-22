@@ -1,4 +1,4 @@
-//! The history band (round 6, protocol 21; docs/architecture.md 21-12, 21-15).
+//! The history band (protocol 21; docs/architecture.md 21-12, 21-15).
 //!
 //! The section `history` has the counts only. The rows are the reply of the `history_rows`
 //! invoke, fetched for what the band shows: a song may have thousands of steps, and a held

@@ -1,4 +1,4 @@
-//! Automation (round 6, protocol 21; docs/architecture.md 21-5, 21-8, 21-15).
+//! Automation (protocol 21; docs/architecture.md 21-5, 21-8, 21-15).
 //!
 //! A lane belongs to a track and moves one thing of it. `song` has each lane's header only;
 //! the points are the reply of the `lane` invoke, binary, kept by the screen by `lane_id` as

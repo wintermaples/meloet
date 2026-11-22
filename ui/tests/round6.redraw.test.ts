@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, LanePoints } from "../src/bridge";
 import { fakeScene } from "../src/bridge/fake";
 import { MAX_WAIT_FRAMES, gateTrack, livePosition, refreshPositions, showTrack, shownPosition } from "../src/components/automation/autoState.svelte";
-import { askWhole, coverIf } from "../src/components/automation/coverIf";
+import { askIf, askLive, askWhole, coverIf } from "../src/components/automation/coverIf";
+import { faderText, fracToDb } from "../src/components/mixer/scale";
 import MixerStrips from "../src/components/mixer/MixerStrips.svelte";
 import { watchSlots, type GlSlot } from "../src/gl/slot";
 import * as app from "./fake-app.svelte";
@@ -174,12 +175,16 @@ describe("canvas の下に入れる箱（coverIf）", () => {
     POINTS.clear();
   });
 
-  it("askWhole は、見た目の同じ 2 つの値を入れかえる", () => {
+  it("askWhole は、見た目の同じ 2 つの値を入れかえる。同じコマ（同じ仕事の中）に何回呼んでも 1 回だけ", async () => {
     const node = document.createElement("div");
     askWhole(node);
     const first = node.style.backgroundPosition;
     askWhole(node);
+    expect(node.style.backgroundPosition).toBe(first);
+    await Promise.resolve();
+    askWhole(node);
     const second = node.style.backgroundPosition;
+    await Promise.resolve();
     askWhole(node);
     expect(first).not.toBe("");
     expect(second).not.toBe(first);
@@ -257,17 +262,115 @@ describe("ミキサーの動く物は、レイアウトを走らせない", () =
     }
   });
 
-  it("帯が動かしているストリップだけ: フェーダーと値の箱が canvas の下に入り、動くパンの行は canvas の外で四角を頼む", () => {
+  it("帯が動かしているストリップだけ: フェーダーと値の箱が canvas の下に入り、動くパンの行は canvas の外で四角を頼む。値の字の行も四角を頼む", () => {
     const wholes = qa("[data-test=ask-whole]");
     expect(wholes.map((w) => [w.parentElement!.classList[0], w.dataset.glSlot ?? null])).toEqual([
       ["pan-box", null],
       ["gain-box", "paint"],
+      ["value", null],
     ]);
     for (const whole of wholes) expect(whole.closest("[data-test=mixer-strip]")).toBe(qa("[data-test=mixer-strip]")[0]);
+    expect(wholes[2]!.parentElement!.querySelector("[data-test=mixer-gain]")).not.toBeNull();
     const [panBox, gainBox] = wholes.map((w) => w.parentElement!);
     expect(panBox!.querySelector("[data-test=mixer-pan]")).not.toBeNull();
     for (const part of ["mixer-fader", "mixer-gain"]) expect(gainBox!.querySelector(`[data-test=${part}]`), part).not.toBeNull();
     // センドの 2 行は 1 つの箱（動いていないので、頼む箱はない）。
     expect(qa(".sends-box").every((b) => b.querySelectorAll("[data-test=mixer-send]").length === 2 || b.querySelectorAll(".empty-row").length === 2)).toBe(true);
+  });
+});
+
+describe("値の字は毎コマ（仕様書 3 章「オートメーションで動くつまみ」: つまみは 1 秒 30 回 ・ 15 回、値の字は間引かない）", () => {
+  beforeEach(() => {
+    POINTS.set(11, ramp(11));
+    POINTS.set(12, ramp(12));
+    refreshPositions(twoTracks, 0);
+  });
+  afterEach(() => {
+    POINTS.clear();
+    refreshPositions(twoTracks, 0);
+  });
+  const nextTask = () => Promise.resolve();
+
+  it("askLive の箱は、待つトラックでも、いちばん新しい位置が変わるコマごとに四角を頼む", async () => {
+    const open = gateTrack(1, "gain", () => {});
+    const node = document.createElement("div");
+    const action = askLive(node, 1);
+    const whole = node.querySelector<HTMLElement>("[data-test=ask-whole]")!;
+    const seen = new Set<string>();
+    for (let frame = 1; frame <= 4; frame++) {
+      await nextTask();
+      const before = whole.style.backgroundPosition;
+      refreshPositions(twoTracks, 100 * frame, true);
+      // 帯の見出しを書いたあとの、次の小さな仕事で。
+      expect(whole.style.backgroundPosition).toBe(before);
+      await nextTask();
+      expect(whole.style.backgroundPosition, `frame ${frame}`).not.toBe(before);
+      seen.add(whole.style.backgroundPosition);
+    }
+    // つまみ（見せる位置）は、まだ待っている。
+    expect(shown()[0]).toBe(0);
+    expect(live()[0]).toBe(Math.round(0.4 * 4096) / 4096);
+    expect(seen.size).toBe(2);
+    action.destroy();
+    open();
+  });
+
+  it("値の字の箱（askLive）とパンの行（askIf）は、同じコマにそれぞれ四角を頼む", async () => {
+    const open = gateTrack(1, "gain", () => {});
+    const node = document.createElement("div");
+    const live = askLive(node, 1);
+    const gate = askIf(node, { track: 1, part: "gain" });
+    const wholes = [...node.querySelectorAll<HTMLElement>("[data-test=ask-whole]")];
+    expect(wholes).toHaveLength(2);
+    await nextTask();
+    refreshPositions(twoTracks, 500, true);
+    showTrack(1);
+    await nextTask();
+    for (const whole of wholes) expect(whole.style.backgroundPosition).not.toBe("");
+    live.destroy();
+    gate.destroy();
+    open();
+  });
+});
+
+describe("ミキサーの値の字は、つまみを待たない", () => {
+  let mounted: Record<string, unknown> | null = null;
+  let target: HTMLElement;
+  afterEach(() => {
+    if (mounted) unmount(mounted);
+    target.remove();
+    POINTS.clear();
+  });
+
+  it("帯が音量を動かしているトラック: 字はいちばん新しい位置、フェーダーのつまみは canvas を描くコマまで前の位置", async () => {
+    app.reset();
+    const state = fakeScene("mixerRest")!.state;
+    const track = state.song.tracks.find((x) => x.lanes.some((l) => l.target.kind === "volume" && !l.resting))!;
+    const lane = track.lanes.find((l) => l.target.kind === "volume")!;
+    POINTS.set(lane.laneId, ramp(lane.laneId));
+    target = document.createElement("div");
+    document.body.append(target);
+    app.setState(state);
+    refreshPositions(state, 0);
+    mounted = mount(MixerStrips, { target });
+    flushSync();
+    const strip = target.querySelector<HTMLElement>(`[data-strip=track-${track.id}]`)!;
+    const knob = () => strip.querySelector<HTMLElement>("[data-test=mixer-fader]")!.dataset.db;
+    const gain = () => strip.querySelector<HTMLElement>("[data-test=mixer-gain]")!.textContent;
+    const knobBefore = knob();
+    refreshPositions(state, 500, true);
+    flushSync();
+    expect(gain()).toBe(faderText(fracToDb(0)));
+    await Promise.resolve();
+    flushSync();
+    expect(livePosition(track.id, VOLUME)).toBe(0.5);
+    expect(shownPosition(track.id, VOLUME)).toBe(0);
+    expect(gain()).toBe(faderText(fracToDb(0.5)));
+    expect(knob()).toBe(knobBefore);
+    showTrack(track.id);
+    flushSync();
+    expect(knob()).not.toBe(knobBefore);
+    expect(gain()).toBe(faderText(fracToDb(0.5)));
+    refreshPositions(state, 0);
   });
 });

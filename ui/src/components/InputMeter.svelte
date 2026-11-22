@@ -1,8 +1,10 @@
 <!-- 入力計（仕様書 3 章の表の入力計の行。モック F-Connect1・2・3、F-Empty、F-MeterLongName、Opt-Meter 1-B）。
      ベロシティの読み値の右に「固定」の切りかえ（docs/design-notes.md B-66）。どの幅でも消さず、鍵盤がないときも出す。
      ● のついた歌のトラックか、選んだ歌のトラックがあるときは、左右に分けた形（仕様書 2 章「入力計の帯（左右に分けた形）」、3 章 31-C、
-     モック F7-VocalTrack ・ R11-Fit）: 左は鍵盤の計（ペダルなどは引っこめる）、右はマイクの計。せまいときは「弾くと鳴る先」、次に「モニター」の字を引っこめる。
-     マイクの計の棒は inputMeter の区画の中（区画も文脈もふやさない）。いまの dB の字は流れの外の箱で、同じ canvas の下（cover）。 -->
+     モック F7-VocalTrack ・ R11-Fit ・ R12-Meters）: 左は鍵盤の計（ペダルなどは引っこめる）、右はマイクの計。せまいときは「弾くと鳴る先」、
+     次に「モニター」の字、次に鍵盤の絵を引っこめ、鍵盤の名前を 88 で「…」（3 章 94-16 ・ 37-A）。「固定」と押している音は残す。
+     マイクの計の棒は inputMeter の区画の中（区画も文脈もふやさない）。目盛は −60〜−12 が左半分、−12〜0 が右半分、地は gray.4、
+     白い縦の線は 1 秒のピーク（dB の字と同じ数。3 章 94-17 ・ 38-B）。いまの dB の字は流れの外の箱で、同じ canvas の下（cover）。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { keyIsDown, type TrackView } from "../bridge";
@@ -113,7 +115,7 @@
   const micDb = $derived(micPeak > 0 ? Math.round(20 * Math.log10(micPeak)) : -Infinity);
   const micText = $derived(micDb < -60 ? t("common.dbSilent") : t("common.db", { value: dbNumber(micDb).replace(/\.0$/, "") }));
 
-  let splitFit = $state({ target: true, monitor: true });
+  let splitFit = $state({ target: true, monitor: true, keys: true });
 
   // 押している鍵は計器で受け、鍵の on/off は計器を待たずに当てる。
   let held = $state<number[]>([]);
@@ -252,14 +254,25 @@
     });
   }
 
-  /** 分けた形: 半分ずつの箱に、ちぢめない幅が入るか。入らなければ「弾くと鳴る先」、次に「モニター」の字。 */
+  /**
+   * 分けた形: 半分ずつの箱に、ちぢめない幅が入るか。入らなければ「弾くと鳴る先」、次に「モニター」の字、次に鍵盤の絵
+   * （鍵盤の名前は 88 まで）の順に引っこめ、両方の半分が入る所で止める。
+   */
   function measureSplit(): void {
     const width = (part: string) => ruler!.querySelector<HTMLElement>(`[data-part="${part}"]`)?.offsetWidth ?? 0;
     const box = (part: string) => row!.querySelector<HTMLElement>(`:scope > [data-part="${part}"]`)?.clientWidth ?? 0;
-    const monitor = width("right") <= box("right");
-    // 引っこめる順は「弾くと鳴る先」が先: モニターの字を引っこめるときは、鳴る先も引っこめる。
-    const next = { target: monitor && width("left") <= box("left"), monitor };
-    if (next.target !== splitFit.target || next.monitor !== splitFit.monitor) splitFit = next;
+    const half = ruler!.querySelector<HTMLElement>('[data-part="left"]');
+    const gap = half ? parseFloat(getComputedStyle(half).columnGap) || 0 : 0;
+    const left = [width("left")];
+    left.push(left[0]! - (width("target") > 0 ? width("target") + gap : 0));
+    left.push(left[1]!);
+    left.push(left[2]! - width("keys") - gap - Math.max(0, width("who") - metrics.px("part.meter.name.split-narrow")));
+    const right = [width("right"), width("right"), width("right") - width("monitor") - gap, width("right") - width("monitor") - gap];
+    const [boxL, boxR] = [box("left"), box("right")];
+    let stage = 0;
+    while (stage < 3 && (left[stage]! > boxL || right[stage]! > boxR)) stage++;
+    const next = { target: stage < 1, monitor: stage < 2, keys: stage < 3 };
+    if (next.target !== splitFit.target || next.monitor !== splitFit.monitor || next.keys !== splitFit.keys) splitFit = next;
   }
 
   $effect(() => {
@@ -283,7 +296,12 @@
 </script>
 
 {#snippet who(measuring: boolean, fixedWidth: boolean)}
-  <div class="who" style:width={!measuring && !slim && fixedWidth ? cssVar(fit.nameWidth) : null}>
+  <div
+    class="who"
+    data-part={fixedWidth ? null : "who"}
+    style:width={!measuring && !slim && fixedWidth ? cssVar(fit.nameWidth) : null}
+    style:max-width={!measuring && !fixedWidth && !splitFit.keys ? "var(--part-meter-name-split-narrow)" : null}
+  >
     {#if !slim}<span class="label">{t("meter.input")}</span>{/if}
     <span
       class="who-name"
@@ -459,8 +477,8 @@
   <div class="half" data-part="left" data-test="meter-keys-half">
     {@render who(measuring, false)}
     {#if measuring}
-      <div class="keys narrow" class:slim-keys={slim}></div>
-    {:else}
+      <div class="keys narrow" class:slim-keys={slim} data-part="keys"></div>
+    {:else if splitFit.keys}
       <div
         class="keys narrow"
         class:slim-keys={slim}
@@ -531,7 +549,7 @@
       {#if measuring}
         <div class="mic-bar"></div>
       {:else}
-        <div class="mic-bar" data-test="mic-bar" use:glSlot={{ kind: "meter", source: { mic: vocal!.track.id }, gap: 0, toZero: true }}></div>
+        <div class="mic-bar" data-test="mic-bar" use:glSlot={{ kind: "meter", source: { mic: vocal!.track.id }, gap: 0, mic: { peakDb: micDb } }}></div>
       {/if}
       {#if !slim}
         <div class="mic-scale">
@@ -850,11 +868,15 @@
   .mic-bar {
     height: calc(var(--part-meter-horizontal) * 2);
   }
+  /* −12 は計のまん中（38-B）。 */
   .mic-scale {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     color: var(--color-gray-8);
     font-family: var(--font-mono);
+  }
+  .mic-scale > :last-child {
+    text-align: right;
   }
   .mic-db {
     position: relative;

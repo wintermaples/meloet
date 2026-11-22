@@ -74,9 +74,10 @@ export class Levels {
     return falling;
   }
 
-  bar(channel: number, nowMs: number): BarLevel {
+  /** `toLength`: the scale (the mic meter has its own). */
+  bar(channel: number, nowMs: number, toLength: (db: number) => number = dbToLength): BarLevel {
     if (channel >= this.shown.length) return { length: 0, clipped: false };
-    return { length: dbToLength(this.shown[channel]!), clipped: nowMs < this.clipUntil[channel]! };
+    return { length: toLength(this.shown[channel]!), clipped: nowMs < this.clipUntil[channel]! };
   }
 
   /** When the next clip mark goes out, or null when none is lit. */

@@ -188,6 +188,7 @@ export const part = {
   "part.unusable.height": p(24, "s2", "えらべない出口の行", "高さ 24"),
   "part.meter.name.long": p(148, "s1", "size.meter.name", "長い名前は 148"),
   "part.meter.name.slim-narrow": p(128, "s1", "size.meter.name.slim", "せまい窓は 128"),
+  "part.meter.name.split-narrow": p(88, "s3", null, "鍵盤の名前（88 で「…」）"),
   "part.track.vocal": p(160, "s1", "size.track", "歌を直すときは 160"),
   "part.audioclip.handle": p(6, "s2", "歌のクリップ", "6×6"),
   "part.strip.master": p(124, "s1", "size.strip", "マスターは 124"),

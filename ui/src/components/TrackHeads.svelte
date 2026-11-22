@@ -5,7 +5,9 @@
      音源の名前を押すと、その音源をえらぶ（パラメータの欄。19-A）。入れかえは右クリックの「音源を入れかえる…」と欄のボタン。
      入れかえのためし弾き中は、ためし弾きの音源の名前を accent で（モック F4-ShelfReplace）。
      歌のトラック（仕様書 2 章「歌のトラックの見出し」）: 2 段目は「入口 1 ・ モノ ▾」と「モニター」。● は選んでいなくても自分でつける。
-     ● がついている間、レベルの棒は入ってくる音（計器の mics）。 -->
+     ● がついている間、レベルの棒は入ってくる音（計器の mics）。
+     1 段目の M の左に「帯」（仕様書 2 章「見出しの「帯」のボタン」、3 章 94-9 ・ 36-B、モック F8-FirstLane）: 押すと帯を足す一覧。
+     ひらいている間は accent。名前の場所はその分（24）せまくなり、入りきらない名前は「…」。 -->
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import type { TrackView } from "../bridge";
@@ -23,6 +25,7 @@
   import { arrangeRows, showsAddRow } from "./automation/autoGeom";
   import LaneAddRow from "./automation/LaneAddRow.svelte";
   import LaneHead from "./automation/LaneHead.svelte";
+  import { laneAddOpenFor, openLaneAdd } from "./automation/laneAdd.svelte";
   import { windowOf } from "./params/selected";
   import WindowMark from "./WindowMark.svelte";
 
@@ -221,6 +224,16 @@
               ondblclick={() => !busy && (trackEdit.renaming = track.id)}>{track.name}</span
             >
           {/if}
+          <button
+            class="tog"
+            class:live={!busy}
+            class:on={laneAddOpenFor() === track.id}
+            aria-haspopup="menu"
+            aria-disabled={busy || undefined}
+            aria-label={t("lane.add")}
+            data-test="track-lanes"
+            onclick={(e) => !busy && openLaneAdd(e.currentTarget, track, busy, true)}>{t("arrange.laneShort")}</button
+          >
           <!-- 録音中 ・ カウントイン中も使える（A-14）。 -->
           <button
             class="tog live"

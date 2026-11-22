@@ -2,9 +2,9 @@
 
 import type { Batch } from "./batch";
 import { rgb, type Rgb } from "./color";
-import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
+import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, MIC_METER, OVERVIEW, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
-import { dbToLength } from "./level";
+import { lengthToDb, micDbToLength } from "./level";
 import type { GlRect, GlWave, GridLine } from "./slot";
 
 /** A slot's box in device pixels of its canvas (whole numbers; it may reach past the canvas). `hair` is line.hair: always one device pixel. */
@@ -83,31 +83,48 @@ export interface BarLevel {
   clipped: boolean;
 }
 
+/** Where meter.ok turns into meter.hot on the mic meter: the same dB as on the spec's scale (−3 dB). */
+const MIC_HOT_FROM = micDbToLength(lengthToDb(METER_HOT_FROM));
+
 /**
  * Two bars: left above right, each growing to the right; `vertical`: left beside right, each growing
  * upward. `gap` and `mark` (clipMarkPx) are device pixels.
+ * `mic`: the mic meter. The lengths are on its own scale (micDbToLength), the ground is gray.4, and a white line of
+ * one device pixel across both bars stands at `mic.peak` (0..1; none at 0).
  */
-export function paintMeter(out: Batch, box: Box, gap: number, mark: number, left: BarLevel, right: BarLevel, vertical = false, toZero = false): void {
+export function paintMeter(
+  out: Batch,
+  box: Box,
+  gap: number,
+  mark: number,
+  left: BarLevel,
+  right: BarLevel,
+  vertical = false,
+  mic: { peak: number } | null = null,
+): void {
   const { x0, y0, x1, y1 } = box;
   const length = vertical ? y1 - y0 : x1 - x0;
   const thick = Math.max(1, Math.round(((vertical ? x1 - x0 : y1 - y0) - gap) / 2));
-  // The spec's scale with the part above 0 dB cut off: 0 dB is the end of the bar.
-  const stretch = toZero ? 1 / dbToLength(0) : 1;
-  const hotFrom = Math.round(length * METER_HOT_FROM * stretch);
+  const hotFrom = Math.round(length * (mic ? MIC_HOT_FROM : METER_HOT_FROM));
+  const ground = rgb(mic ? MIC_METER.ground : METER.ground);
   // `from`..`to` are measured along the bar from its 0 % end; `at` is the bar's first pixel across.
   const piece = (at: number, from: number, to: number, color: Rgb) => {
     if (vertical) out.rect(at, y1 - to, at + thick, y1 - from, color);
     else out.rect(x0 + from, at, x0 + to, at + thick, color);
   };
   const bar = (at: number, level: BarLevel) => {
-    piece(at, 0, length, rgb(METER.ground));
-    const end = Math.round(length * Math.min(Math.max(level.length * stretch, 0), 1));
+    piece(at, 0, length, ground);
+    const end = Math.round(length * Math.min(Math.max(level.length, 0), 1));
     piece(at, 0, Math.min(end, hotFrom), rgb(METER.ok));
     piece(at, hotFrom, end, rgb(METER.hot));
     if (level.clipped) piece(at, length - mark, length, rgb(METER.clip));
   };
   bar(vertical ? x0 : y0, left);
   bar((vertical ? x1 : y1) - thick, right);
+  if (mic && mic.peak > 0 && !vertical) {
+    const at = x0 + Math.min(Math.round(length * Math.min(mic.peak, 1)), length - HAIR);
+    out.rect(at, y0, at + HAIR, y1, rgb(MIC_METER.peak));
+  }
 }
 
 /** Bar lines, and `beats` lines to a bar when it is more than 1. `firstBarX` and `barPx` are device pixels and may have a fraction. */

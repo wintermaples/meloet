@@ -1406,6 +1406,9 @@ export const texts = {
   "arrange.muteShort": e("M", "mock:F-Empty"),
   "arrange.soloShort": e("S", "mock:F-Empty"),
   "arrange.armShort": e("●", "mock:F-Empty"),
+  // 見出しの「帯」のボタン（仕様書 2 章）と、その一覧をひらいている間の状態行（モック F8-FirstLane）。
+  "arrange.laneShort": e("帯", "spec:2"),
+  "status.laneAddOpen": e("{track} にオートメーションの帯を足します ・ えらぶと、帯がひらきます", "mock:F8-FirstLane", { track: "2 ベース" }),
   "arrange.addTrackKinds": e("音源 ・ 歌", "mock:F-Empty"),
   // 入れかえのためし弾きの間、トラックの見出しの音源の名前。
   "arrange.instrumentAuditioned": e(

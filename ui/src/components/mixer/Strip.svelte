@@ -20,7 +20,7 @@
   import { faderControl } from "./control.svelte";
   import { FADER_MIN, faderText } from "./scale";
   import SendBar from "./SendBar.svelte";
-  import { askIf, coverIf } from "../automation/coverIf";
+  import { askIf, askLive, coverIf } from "../automation/coverIf";
   import type { StripAuto } from "../automation/laneValue";
 
   interface Toggle {
@@ -62,8 +62,11 @@
     solo: Toggle;
     arm: Toggle;
     auto?: StripAuto | null;
+    /** 帯が音量を動かしているときの、いちばん新しい値（フェーダーの値の字だけ。毎コマ変える）。動かしていなければ undefined。 */
+    live?: { gainDb?: number | null };
   }
-  let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null }: Props = $props();
+  let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null, live = {} }: Props =
+    $props();
   const moving = $derived(auto?.gain === "moving");
   // 帯が動かしている物（docs/architecture.md 7 章「レイアウトでためる Region」）。
   // - フェーダーと値の箱（.gain-box）は、帯がこのストリップの何かを動かしている間、mixerMeters の canvas の下に入れる（coverIf）。
@@ -81,6 +84,8 @@
     () => gainDb,
   );
   const meterGap = $derived(metrics.px("space.1") / 2);
+  /** 値の字: 帯が動かしている間は、つまみ（1 秒 30 回）を待たずに毎コマ（仕様書 3 章「オートメーションで動くつまみ」）。手で動かしている間は手の値。 */
+  const gainShown = $derived(live.gainDb !== undefined && fader.shown === gainDb ? live.gainDb : fader.shown);
 
   // ---- インサートの並べかえ ----
 
@@ -204,11 +209,11 @@
       <Fader control={fader} auto={moving} />
       <div class="meter" use:glSlot={{ kind: "meter", vertical: true, source: meter, gap: meterGap }}></div>
     </div>
-    <div class="value">
+    <div class="value" use:askLive={moving ? trackId : null}>
       {#if fader.typing}
         <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
       {:else}
-        <span class="m-num m-hi db live"><span class="in" data-test="mixer-gain">{faderText(fader.shown)}</span></span>
+        <span class="m-num m-hi db live"><span class="in" data-test="mixer-gain">{faderText(gainShown)}</span></span>
       {/if}
       <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
     </div>
@@ -347,7 +352,8 @@
      となりのストリップの箱とつながって、WebKit のためる四角が 1 つになる（docs/architecture.md 7 章「レイアウトでためる Region」）。 */
   .sends-box,
   .pan-box,
-  .gain-box {
+  .gain-box,
+  .value {
     position: relative;
     --ask-left: calc(-1 * var(--space-1));
     --ask-right: calc(-1 * var(--space-1) - var(--line-hair));

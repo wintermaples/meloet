@@ -227,11 +227,14 @@ impl EngineEnd {
         }
         let (held, progress) = self.signs();
         // Held by a thread for longer than any plugin may take for one block: the plugin
-        // hangs. Taken by none while the host did nothing at all: the process is gone or
-        // frozen.
+        // hangs. Taken by none while the host did nothing at all, not even work inside
+        // another plugin: the process is gone or frozen.
         let dead = match held {
             Some(held_ms) => held_ms >= HANG_MS,
-            None => progress == self.seen_progress,
+            None => {
+                let now_ms = (futex::monotonic_ns() / 1_000_000) as u32;
+                progress == self.seen_progress && !self.map.inside_a_plugin(now_ms, HANG_MS)
+            }
         };
         (self.seen_deadline_ns, self.seen_progress) = (deadline_ns, progress);
         if dead {
@@ -755,6 +758,33 @@ mod tests {
         let taken = &map.slot_words(waiting.base).taken_ms;
         taken.store(taken.load(SeqCst).wrapping_sub(HANG_MS), SeqCst);
         assert!(!waiting.await_overdue(began + 60_000_000));
+        assert!(waiting.stopped() && other.stopped());
+    }
+
+    #[test]
+    fn a_host_inside_another_slots_plugin_is_busy_until_that_plugin_hangs() {
+        let map = Arc::new(Mapping::create(geometry()).unwrap());
+        let mut waiting = EngineEnd::new(map.clone(), 0).unwrap();
+        let mut other = EngineEnd::new(map.clone(), 1).unwrap();
+        let mut busy = PluginEnd::new(map.clone(), 1).unwrap();
+        let soon = || futex::monotonic_ns() + 3_000_000;
+        // Every thread of the host is inside the other slot's plugin: nothing is taken or
+        // answered for many blocks, and this slot's request waits its turn.
+        assert!(other.begin(8));
+        other.submit();
+        assert!(busy.take_request().is_some());
+        assert!(waiting.begin(8));
+        waiting.submit();
+        assert!(!waiting.wait(soon()));
+        for _ in 0..4 {
+            assert!(!waiting.await_overdue(soon()));
+            assert!(waiting.overdue() && !waiting.stopped());
+        }
+        // Once that plugin has held its request for longer than any block may take, the
+        // process is no longer at work: frozen, or its plugin hangs.
+        let taken = &map.slot_words(busy.base).taken_ms;
+        taken.store(taken.load(SeqCst).wrapping_sub(HANG_MS), SeqCst);
+        assert!(!waiting.await_overdue(soon()));
         assert!(waiting.stopped() && other.stopped());
     }
 

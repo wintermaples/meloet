@@ -35,6 +35,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Arc;
@@ -841,14 +842,16 @@ impl Run {
         let start = |e: &dyn std::fmt::Display| HostError::Start(e.to_string());
         let map = Arc::new(Mapping::create(self.options.geometry).map_err(|e| start(&e))?);
         let (ours, theirs) = UnixStream::pair().map_err(|e| start(&e))?;
+        let log = host_log(self.next);
         let mut command = launch::host_command(
             &self.options.exe,
             theirs.as_fd(),
             map.fd(),
-            None,
+            log.as_ref().map(AsFd::as_fd),
             self.offline,
         )
         .map_err(|e| start(&e))?;
+        drop(log);
         command.envs(self.options.env.iter().map(|(name, value)| (name, value)));
         let mut child = launch::spawn(&mut command).map_err(|e| start(&e))?;
         drop((command, theirs));
@@ -1019,8 +1022,17 @@ impl Run {
         // The engine reads this at its next block and does not wait for an answer that
         // cannot come.
         proc.map.mark_stopped();
+        let ended = proc.pidfd.exited(Duration::ZERO);
         let _ = proc.pidfd.kill();
-        let _ = proc.child.wait();
+        let status = proc.child.wait();
+        // What the process died of, unless that was the SIGKILL just sent. A crash that
+        // writes a core file is still going when the engine gives up on it.
+        const SIGKILL: i32 = 9;
+        if let Ok(status) = status
+            && (ended || ExitStatusExt::signal(&status) != Some(SIGKILL))
+        {
+            eprintln!("meloet: the process of {} ended: {status}", proc.key);
+        }
         let slots: Vec<SlotId> = proc.places.iter().flatten().copied().collect();
         for id in &slots {
             if let Some(slot) = self.slots.get_mut(id) {
@@ -1048,6 +1060,20 @@ impl Run {
             quit(proc);
         }
     }
+}
+
+/// Development only: with `MELOET_PLUGHOST_LOG_DIR`, what a host process and its plugins print
+/// goes to `<dir>/plughost-<meloet's pid>-<n>.log` instead of `/dev/null`.
+#[cfg(feature = "dev-hooks")]
+fn host_log(n: u64) -> Option<std::fs::File> {
+    let dir = std::env::var_os("MELOET_PLUGHOST_LOG_DIR").filter(|v| !v.is_empty())?;
+    let path = PathBuf::from(dir).join(format!("plughost-{}-{n}.log", std::process::id()));
+    std::fs::File::create(path).ok()
+}
+
+#[cfg(not(feature = "dev-hooks"))]
+fn host_log(_: u64) -> Option<std::fs::File> {
+    None
 }
 
 /// Tells the process to end, and kills it when it takes too long.

@@ -282,6 +282,49 @@ fn a_host_process_crashed_from_outside_stops_its_slots_at_the_second_block() {
 fn a_host_process_frozen_from_outside_stops_its_slots_at_the_second_block() {
     a_host_process_stopped_from_outside(libc::SIGSTOP);
 }
+/// Every audio thread of a host process inside a plugin for longer than a block (four `slow`
+/// fakes, 30 ms a block each; a process has four threads at most): the requests of its other
+/// plugins wait their turn, and no thread takes or answers anything for many blocks. That
+/// process is busy, not frozen: its slots are late and none is stopped. (Surge XT on 16
+/// tracks of one process does this for a moment at the head of the song, when every
+/// instance plays its first notes; docs/architecture.md 23-14.)
+#[test]
+fn a_host_process_with_every_audio_thread_inside_a_plugin_is_late_not_stopped() {
+    let geometry = Geometry {
+        slots: 6,
+        ..GEOMETRY
+    };
+    let mut host = Host::start_with(geometry, &[(FAKE, "1")]);
+    let mut parts = engine(6);
+    let fake = |name: &str| format!("lv2:urn:meloet:fake:{name}");
+    let mut watches = Vec::new();
+    for track in 0..6 {
+        let name = if track < 4 { "slow" } else { "sine" };
+        let (plugin, watch) = slot(
+            &mut host,
+            &parts,
+            track as u32,
+            &fake(name),
+            "/nowhere/fake.lv2",
+        );
+        let instrument = Box::new(PluginInstrument(plugin));
+        assert!(parts.handle.swap_instrument(track, instrument).is_ok());
+        watches.push(watch);
+    }
+    let mut out = [0.0f32; FRAMES * 2];
+    let mut at = monotonic_ns();
+    for _ in 0..60 {
+        block(&mut parts, &mut out, &mut at);
+        at = at.max(monotonic_ns());
+    }
+    let unanswered: Vec<u64> = watches.iter().map(|w| w.unanswered()).collect();
+    assert!(
+        unanswered[4] > 2 && unanswered[5] > 2,
+        "never had to wait: {unanswered:?}"
+    );
+    assert!(watches.iter().all(|w| !w.stopped()), "{unanswered:?}");
+    drop(parts);
+}
 
 const SURGE: (&str, &str) = (
     "vst3:ABCDEF019182FAEB566D624153675854",
@@ -454,5 +497,79 @@ fn measure_sixteen_tracks_of_surge_xt_with_a_compressor_each() {
                 measure(&name, effect, engine_fifo, host_rt, staggered);
             }
         }
+    }
+}
+
+/// 16 Surge XT in one host process, freshly loaded, play their first chords on the same
+/// block: each instance takes some milliseconds for its first notes (about 10 blocks of 128
+/// frames go without an answer), while every audio thread of the process is inside one of
+/// them. Before docs/architecture.md 23-14 the engine took that process for a frozen one and
+/// stopped all 16 at the head of the song, in every round. Ignored: needs
+/// Surge XT.
+#[test]
+#[ignore = "needs Surge XT"]
+fn sixteen_fresh_surge_xt_playing_their_first_chord_together_are_not_stopped() {
+    const TRACKS: usize = 16;
+    const SMALL: usize = 128;
+    let geometry = Geometry {
+        max_frames: FRAMES as u32,
+        channels: 2,
+        slots: TRACKS as u32,
+        to_plugin_events: 256,
+        from_plugin_events: 64,
+    };
+    for round in 0..4 {
+        let mut synths = Host::start_with(geometry, &[]);
+        let mut parts = engine(TRACKS);
+        let mut watches = Vec::new();
+        for track in 0..TRACKS {
+            let (synth, watch) = slot(&mut synths, &parts, track as u32, SURGE.0, SURGE.1);
+            let handle = &mut parts.handle;
+            assert!(
+                handle
+                    .swap_instrument(track, Box::new(PluginInstrument(synth)))
+                    .is_ok()
+            );
+            let chord = [48, 55, 64].into_iter().flat_map(|key| {
+                let note = key + (track % 12) as u8;
+                [
+                    SequenceEvent {
+                        tick: 0,
+                        event: InstrumentEvent::NoteOn { note, velocity: 90 },
+                    },
+                    SequenceEvent {
+                        tick: QUARTER / 2,
+                        event: InstrumentEvent::NoteOff { note },
+                    },
+                ]
+            });
+            assert!(
+                handle
+                    .swap_sequence(track, Sequence::new(chord.collect()))
+                    .is_ok()
+            );
+            watches.push(watch);
+            let mut out = [0.0f32; FRAMES * 2];
+            parts.engine.process(&mut out, BlockTiming::default());
+            while parts.handle.take_retired().is_some() {}
+        }
+        let mut out = [0.0f32; SMALL * 2];
+        let block_ns = SMALL as u64 * 1_000_000_000 / 48_000;
+        let mut at = monotonic_ns();
+        for n in 0..600 {
+            if n == 100 {
+                assert!(parts.handle.send(EngineCommand::Play { from: 0 }).is_ok());
+            }
+            sleep_until(at);
+            at = (at + block_ns).max(monotonic_ns());
+            parts.engine.process(&mut out, BlockTiming::default());
+        }
+        let unanswered: Vec<u64> = watches.iter().map(|w| w.unanswered()).collect();
+        println!("round {round}: unanswered {unanswered:?}");
+        assert!(
+            watches.iter().all(|w| !w.stopped()),
+            "round {round}: {unanswered:?}"
+        );
+        drop(parts);
     }
 }

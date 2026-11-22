@@ -35,7 +35,10 @@
 //! `progress`. A request that a thread has held for [`HANG_MS`] is a plugin that hangs;
 //! one held for less is a plugin with slow work in its block, and once that has lasted a block
 //! and a half the engine no longer sleeps for the answer. A request nobody took
-//! while `progress` stood still over two time limits is a process that is gone or frozen. Either stops the slot and raises `stopped` in the header,
+//! while `progress` stood still over two time limits, and while no thread was inside a plugin
+//! with another slot's request for less than [`HANG_MS`], is a process that is gone or
+//! frozen. (Every thread inside a plugin at once is a busy process: 16 Surge XT playing their
+//! first notes together.) Either stops the slot and raises `stopped` in the header,
 //! which stops every other slot of the mapping with it: they are plugins of the same process.
 //! A request that waits its turn while the process works on others is only late, however
 //! long: a process with more work than fits a block must not be taken for a dead one.
@@ -54,7 +57,7 @@ pub mod futex;
 mod ring;
 
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU32, Ordering::Acquire, Ordering::Relaxed};
 
 pub use ends::{Bell, Block, EngineEnd, HANG_MS, PluginEnd};
 pub use ring::{RAW_EVENT_LEN, RawEvent};
@@ -376,6 +379,17 @@ impl Mapping {
             return Err(IpcError::NoSuchSlot(slot));
         }
         Ok(HEADER_LEN + slot as usize * self.geometry.slot_stride())
+    }
+
+    /// Whether a thread of the host process is inside a plugin now with a request of any slot,
+    /// and has been for less than `limit_ms`.
+    fn inside_a_plugin(&self, now_ms: u32, limit_ms: u32) -> bool {
+        (0..self.geometry.slots).any(|slot| {
+            let words = self.slot_words(HEADER_LEN + slot as usize * self.geometry.slot_stride());
+            let taken = words.taken.load(Acquire);
+            taken != words.done.load(Acquire)
+                && now_ms.wrapping_sub(words.taken_ms.load(Acquire)) < limit_ms
+        })
     }
 
     /// `base` comes from [`Mapping::slot_base`].

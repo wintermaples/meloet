@@ -43,7 +43,8 @@
   const effectsView = $derived(shelfUi.view === "effects");
   const counts = $derived(shelfCounts(shelf, library));
   const favorites = $derived(favoriteCount(shelfUi.view, shelf, library));
-  const model = $derived(shelfModel(shelfUi.view, shelf, library, shelfUi));
+  const fetchingNow = $derived(app.sounds.fetch.state === "fetching" ? app.sounds.fetch.instrument : null);
+  const model = $derived(shelfModel(shelfUi.view, shelf, library, shelfUi, fetchingNow));
   const picks = $derived(shelfPicks(app));
   const picked = $derived(pickedRow(app, model.rows));
   /** 箱を出すか: えらんでいる音源（ためし弾き ・ 読みこみ ・ 読みこめなかった）がある。エフェクトを入れる棚では、いつも（えらぶまで「入れる」は使えない）。 */
@@ -260,6 +261,16 @@
   {/if}
 {/snippet}
 
+<!-- まだ取っていない音色の行（仕様書 2 章、3 章 45-A、モック F8-PackGet）: 名前 gray.8、右に「取ってきています」か「まだ」。
+     星と ▶ は出さず、えらべない。名前は ▶ の位置から。 -->
+{#snippet notYetRow(r: ShelfRow)}
+  <div class="row look not-yet" class:added={r.added} data-row={r.sound?.kind === "builtin" ? r.sound.instrument : r.id} data-test="shelf-not-yet">
+    <span class="star-hit"></span>
+    <span class="name gone">{r.name}</span>
+    <span class="m-lbl" data-test="shelf-not-yet-state">{t(r.notYet === "fetching" ? "shelf.packFetching" : "shelf.packNotYet")}</span>
+  </div>
+{/snippet}
+
 {#snippet row(r: ShelfRow)}
   {@const selected = picked?.id === r.id && boxShown}
   {@const look = !picks}
@@ -397,7 +408,14 @@
 
 {#snippet notice(m: MissingView | null)}
   {#if m === null}
-    <div class="notice" data-test="shelf-notice-pack"><span class="say">{t("shelf.soundsMissing")}</span></div>
+    <div class="notice" data-test="shelf-notice-pack">
+      <span class="say">{t("shelf.soundsMissing")}</span>
+      <div class="buttons">
+        <Button primary disabled={app.sounds.fetch.state === "fetching"} onclick={() => send({ type: "fetchPack" })} test="shelf-fetch-pack"
+          >{t("button.fetchPack")}</Button
+        >
+      </div>
+    </div>
   {:else if m.kind === "sf2"}
     <div class="notice" data-test="shelf-notice-sf2">
       <span class="say">{t("sf2.missing", { file: m.file, count: m.tracks })}</span>
@@ -474,7 +492,9 @@
   <ScrollArea bind:viewport data-test="shelf-list">
     <div style:height="{offsets[range.from]}px"></div>
     {#each visible as e (e.id)}
-      {#if e.kind === "row"}
+      {#if e.kind === "row" && e.notYet}
+        {@render notYetRow(e)}
+      {:else if e.kind === "row"}
         {@render row(e)}
       {:else if e.kind === "heading"}
         <button

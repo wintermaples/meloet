@@ -2498,6 +2498,8 @@ export const texts = {
     "user:2026-11-19",
   ),
   // [第 8 回 ・ 画面だけで出す文]（仕様書 3 章 ・ 6 章 第 12 版、モック F8-*）。画面の係（k8ua ・ k8ub）がこの下に足す。
+  // 音の素材を取っている間、流れの案内が出たときの状態行の進み（3 章 44-A の「44-B の形」、モック Opt8-PackShow）。
+  "pack.fetchingPercent": e("{percent} %", "mock:Opt8-PackShow", { percent: "38" }),
   // 歌のクリップを 2 つ以上えらんだときのパラメータの欄（仕様書 3 章 40-A）と、そのときの状態行（モック F8-MultiClip）。
   "clips.selected": e("{count} クリップを選んでいます", "spec:3", { count: "3" }),
   "clips.groupAll": e("まとめて変える", "spec:3"),

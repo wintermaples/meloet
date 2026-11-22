@@ -343,8 +343,11 @@ describe("ファイルを持ってきている間の知らせ（仕様書 2 章�
 describe("見つからない物の知らせ（仕様書 2 章 ・ 3 章 83 ・ 85、モック R8-Missing）", () => {
   it("音の素材がない: 一覧の上に知らせ、行はサイン波だけ", () => {
     show(RightRail, scene("missingPack"));
-    expect(text(q("[data-test=shelf-notice-pack]"))).toBe(t("shelf.soundsMissing"));
+    expect(text(q("[data-test=shelf-notice-pack]"))).toBe(`${t("shelf.soundsMissing")} ${t("button.fetchPack")}`);
     expect(qa("[data-test=shelf-row]").map((r) => r.dataset.row)).toEqual(["sine"]);
+    // 仕様書 3 章「音の素材をあとから取る所」: 棚の見つからない物の知らせにも「取りにいく」。
+    q("[data-test=shelf-fetch-pack]")!.click();
+    expect(app.sent.at(-1)).toEqual({ type: "fetchPack" });
   });
 
   it("SF2 がない: 「曲で使っている FluidR3_GM.sf2 が見つかりません。…」と「SF2 を足す…」「曲から外す」", () => {

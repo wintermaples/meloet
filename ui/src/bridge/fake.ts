@@ -4892,8 +4892,8 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
   reduceAdded(command, shelf, library, ws);
   // A closed shelf has no mode, audition or sample (protocol 13, ShelfView). Its stars and what is missing stay.
   if (!ws.layout.rightOpen.includes("shelf")) {
-    const { available, favorites, favoriteSounds, favoriteEffects, missing } = shelf;
-    shelf = { ...closedShelf(), available, favorites, favoriteSounds, favoriteEffects, missing };
+    const { available, notYet, favorites, favoriteSounds, favoriteEffects, missing } = shelf;
+    shelf = { ...closedShelf(), available, notYet, favorites, favoriteSounds, favoriteEffects, missing };
   }
   shelf = settleShelf(shelf);
   if (JSON.stringify(shelf.selectedSound) !== JSON.stringify(state.shelf.selectedSound)) {

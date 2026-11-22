@@ -6,6 +6,7 @@ import { EFFECT_KINDS, GM_FAMILIES, PLUGIN_EFFECT_CATEGORIES, PLUGIN_INSTRUMENT_
 import {
   INSTRUMENT_GROUPS,
   type EffectRef,
+  type InstrumentKind,
   type InstrumentGroup,
   type LibraryView,
   type MissingView,
@@ -45,6 +46,11 @@ export interface ShelfRow {
   plugin: PluginRowView | null;
   /** あとから入れた物の行（左を space.6 あける）。 */
   added: boolean;
+  /**
+   * まだ取っていない音色（仕様書 2 章「棚の「まだの音色」の行」、3 章 45-A）: いま取ってきている物か、まだの物。
+   * 星 ・ ▶ ・ ためし弾きなし。えらべない（↑ ↓ でも止まらない）。
+   */
+  notYet?: "fetching" | "waiting";
 }
 
 export interface ShelfHeading {
@@ -101,7 +107,8 @@ const pluginId = (r: PluginRowView) => `p:${r.name}\u0000${r.vendor}`;
 export function shelfCounts(shelf: ShelfView, library: LibraryView): { instruments: number; effects: number } {
   const plugins = (role: PluginRole) => library.plugins.filter((r) => r.kind.role === role).length;
   const sf2 = library.sf2.reduce((n, f) => n + f.presets.length, 0);
-  return { instruments: shelf.available.length + sf2 + plugins("instrument"), effects: EFFECT_KINDS.length + plugins("effect") };
+  const builtin = shelf.available.length + shelf.notYet.length;
+  return { instruments: builtin + sf2 + plugins("instrument"), effects: EFFECT_KINDS.length + plugins("effect") };
 }
 
 /** お気に入りの数（棚に出る物だけ）。 */
@@ -147,8 +154,14 @@ export function rowIs(row: ShelfRow, sound: SoundRef | null | undefined, effect?
   return false;
 }
 
-/** 棚の一覧。 */
-export function shelfModel(list: ShelfList, shelf: ShelfView, library: LibraryView, look: ShelfLook): ShelfModel {
+/** 棚の一覧。fetching: いま取ってきている音色（「取ってきています」の行）。 */
+export function shelfModel(
+  list: ShelfList,
+  shelf: ShelfView,
+  library: LibraryView,
+  look: ShelfLook,
+  fetching: InstrumentKind | null = null,
+): ShelfModel {
   const q = look.query.trim().toLowerCase();
   const searching = q !== "";
   const hit = (text: string) => text.toLowerCase().includes(q);
@@ -176,7 +189,7 @@ export function shelfModel(list: ShelfList, shelf: ShelfView, library: LibraryVi
     if (leaf) open.push({ label: h.label, count: items.length });
     for (const r of items) {
       entries.push(r);
-      rows.push(r);
+      if (!r.notYet) rows.push(r);
     }
   };
 
@@ -193,12 +206,17 @@ export function shelfModel(list: ShelfList, shelf: ShelfView, library: LibraryVi
     for (const { group: g, instruments } of INSTRUMENT_GROUPS) {
       const groupName = t(`instrumentGroup.${g as InstrumentGroup}`);
       const groupHit = !searching || hit(groupName);
-      const all = instruments.filter((i) => shelf.available.includes(i));
+      const all = instruments.filter((i) => shelf.available.includes(i) || shelf.notYet.includes(i));
       const items = all
-        .filter((i) => (!look.favoritesOnly || favSound({ kind: "builtin", instrument: i })) && (groupHit || hit(t(`instrument.${i}`))))
+        .filter((i) => {
+          const waiting = !shelf.available.includes(i);
+          return (!look.favoritesOnly || (!waiting && favSound({ kind: "builtin", instrument: i }))) && (groupHit || hit(t(`instrument.${i}`)));
+        })
         .map((i): ShelfRow => {
           const sound: SoundRef = { kind: "builtin", instrument: i };
-          return { kind: "row", id: soundId(sound), sound, effect: null, name: t(`instrument.${i}`), builtin: true, number: null, plugin: null, added: false };
+          const row: ShelfRow = { kind: "row", id: soundId(sound), sound, effect: null, name: t(`instrument.${i}`), builtin: true, number: null, plugin: null, added: false };
+          if (!shelf.available.includes(i)) row.notYet = i === fetching ? "fetching" : "waiting";
+          return row;
         });
       builtin.push({ heading: { id: g, label: groupName, depth: 0, sf2: false }, items, total: all.length });
     }

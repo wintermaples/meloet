@@ -214,6 +214,8 @@ export const part = {
   "part.drum.list-velocity": p(40, "s3", null, "Vel 40"),
   // 書き出し（第 7 回）。状態行の左の進みの棒の長さ。
   "part.exporting.bar": p(160, "s2", "書き出しの進み", "160 の棒"),
+  // 音の素材を取っている間の、入力計の帯の棒（第 8 回）。
+  "part.packband.bar": p(160, "s2", "案内の帯（音の素材）", "160 の棒"),
 } as const satisfies Record<string, PartToken>;
 export type PartName = keyof typeof part;
 
@@ -330,6 +332,7 @@ export const mock = {
   // 書き出しの進み（第 7 回）。状態行の棒の太さ（`height:4px`）と「やめる」の高さ（`height:20px`）。
   "mock.exporting.bar": m(4, "F7-Exporting"),
   "mock.exporting.stop": m(20, "F7-Exporting"),
+  "mock.packband.bar": m(4, "F8-PackGet"),
 } as const satisfies Record<string, MockToken>;
 export type MockName = keyof typeof mock;
 

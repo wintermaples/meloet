@@ -26,8 +26,8 @@ use std::sync::Arc;
 use meloet_model::{Doc, TickRange};
 use meloet_protocol::{
     Command, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat, ExportRange,
-    ExportRunView, ExportStoppedPlugin, ExportTail, ExportView, PluginSlotRef, RecordFormat,
-    TickSpan,
+    ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView, PluginSlotRef,
+    RecordFormat, TickSpan, TrackRef,
 };
 
 use crate::plugins::shown_path;
@@ -95,6 +95,8 @@ pub enum ExportNews {
         percent: u8,
         /// The largest sample so far, in dBFS; `None`: silence.
         peak_db: Option<f32>,
+        /// The places over 0 dB so far, of every file (design-notes B-95-2).
+        over: u32,
         /// How long the audio is, the tail counted once `done`.
         length_s: u32,
         /// How long the rest takes, when there is something to guess from.
@@ -130,6 +132,8 @@ pub struct Scene<'a> {
     /// Counting in or recording.
     pub busy: bool,
     pub stopped_plugins: Vec<ExportStoppedPlugin>,
+    /// The soloed tracks, in the order of the tracks (spec 3, 42-C). Not in what is written.
+    pub soloed: Vec<TrackRef>,
 }
 
 impl Scene<'_> {
@@ -180,6 +184,7 @@ struct Job {
     /// The last [`ExportNews::Counted`].
     percent: u8,
     peak_db: Option<f32>,
+    over: u32,
     length_s: u32,
     remaining_s: Option<u32>,
     counted: bool,
@@ -421,6 +426,7 @@ impl Exporting {
             asked,
             percent: 0,
             peak_db: None,
+            over: 0,
             length_s: 0,
             remaining_s: None,
             counted: false,
@@ -451,6 +457,7 @@ impl Exporting {
                 job,
                 percent,
                 peak_db,
+                over,
                 length_s,
                 remaining_s,
                 done,
@@ -458,6 +465,7 @@ impl Exporting {
                 if let Some(job) = self.job_mut(job) {
                     job.percent = percent.min(100);
                     job.peak_db = peak_db.filter(|db| !db.is_nan());
+                    job.over = over;
                     job.length_s = length_s;
                     job.remaining_s = remaining_s;
                     job.counted = true;
@@ -572,10 +580,9 @@ impl Exporting {
         let Some(job) = job else {
             return ExportCheck::Waiting;
         };
+        let over = job.over;
         // 32 bits are floats: a sample over 0 dB is written as it is.
-        // Until the places are counted (B-95-2), a peak over 0 dB is one place.
-        let over = u32::from(job.peak_db.is_some_and(|db| db > 0.0));
-        let clips = job.peak_db.is_some_and(|db| db > 0.0) && self.bits != RecordFormat::Bits32;
+        let clips = over > 0 && self.bits != RecordFormat::Bits32;
         match &job.failed {
             Some(reason) => ExportCheck::Failed {
                 reason: reason.clone(),
@@ -619,7 +626,10 @@ impl Exporting {
                 formats: ExportFormat::ALL.to_vec(),
                 place,
                 check: self.check(job),
-                solo: None,
+                solo: (scene.soloed.split_first()).map(|(first, others)| ExportSolo {
+                    first: first.clone(),
+                    others: others.len() as u32,
+                }),
                 stopped_plugins: scene.stopped_plugins.clone(),
                 advanced_open: self.advanced_open,
                 sample_rate: self.sample_rate(scene),

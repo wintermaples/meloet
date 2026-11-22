@@ -51,7 +51,7 @@ impl World {
             let input = match effect {
                 Effect::SaveSong { song, to } => {
                     let store = crate::audiofiles::AudioStore::new(None);
-                    save_song(Some(&self.songs), &song, to, &store)
+                    save_song(Some(&self.songs), &song, to, &store, &mut |_| {})
                 }
                 Effect::ReadSong { path, previous } => read_song(path, previous),
                 Effect::PickSongFile => {
@@ -719,4 +719,37 @@ fn the_serial_goes_up_with_each_song_put_in_and_not_with_undo() {
     assert_eq!(serial(m), first + 2, "a broken file puts nothing in");
     w.answer(m, SongAnswer::OpenPrevious);
     assert_eq!(serial(m), first + 3);
+}
+
+#[test]
+fn a_save_that_puts_audio_in_place_says_how_far_it_is_until_it_is_over() {
+    let m = &mut ready();
+    busy_song(m);
+    let effects = cmd(m, Command::SaveSong);
+    assert!(effects.iter().any(|e| matches!(e, Effect::SaveSong { .. })));
+    let saving = |done, done_bytes| Input::SavingAudio {
+        done,
+        total: 12,
+        done_bytes,
+        total_bytes: 240_000_000,
+    };
+    m.handle(saving(3, 80_000_000));
+    assert_eq!(
+        status(m),
+        Some(StatusMessage::SavingAudio {
+            done: 3,
+            total: 12,
+            done_bytes: 80_000_000,
+            total_bytes: 240_000_000,
+        })
+    );
+    let said = |m: &Model| matches!(status(m), Some(StatusMessage::SavingAudio { .. }));
+    m.handle(Input::SongSaved {
+        path: PathBuf::from("/songs/曲/曲.meloet"),
+        name: "曲".into(),
+    });
+    assert!(!said(m));
+    // A word that comes when no save goes on is not said.
+    m.handle(saving(12, 240_000_000));
+    assert!(!said(m));
 }

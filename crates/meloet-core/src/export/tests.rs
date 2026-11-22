@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use meloet_protocol::{
     Command, ExportChange, ExportCheck, ExportFailure, ExportFormat, ExportRange, ExportRunView,
-    ExportTail, ExportView, RecordFormat, StatusMessage, TickSpan,
+    ExportSolo, ExportTail, ExportView, RecordFormat, StatusMessage, TickSpan, TrackRef,
 };
 
 use super::{ExportAsk, ExportDirs, ExportJob, ExportNews, ExportTarget};
@@ -67,6 +67,8 @@ fn counted(job: u64, percent: u8, peak_db: Option<f32>, done: bool) -> ExportNew
         job,
         percent,
         peak_db,
+        // One place for a peak over 0 dB; the counting itself is tried in `job/tests.rs`.
+        over: u32::from(peak_db.is_some_and(|db| db > 0.0)),
         length_s: 10,
         remaining_s: (!done).then_some(4),
         done,
@@ -533,4 +535,69 @@ fn a_sink_is_not_made_where_nothing_can_be_written() {
         made.err().map(|e| e.kind()),
         Some(std::io::ErrorKind::NotFound)
     );
+}
+
+#[test]
+fn the_check_names_the_soloed_tracks_and_the_job_stays() {
+    let mut m = song();
+    cmd(&mut m, Command::AddVocalTrack);
+    cmd(&mut m, Command::AddVocalTrack);
+    let tracks = m.view().song.tracks.clone();
+    assert_eq!(tracks.len(), 3);
+    cmd(&mut m, Command::OpenExport);
+    assert_eq!(export(&m).dialog.unwrap().solo, None);
+
+    // Soloing is not in what is written: no new job.
+    assert!(
+        cmd(
+            &mut m,
+            Command::ToggleSolo {
+                track: tracks[2].id
+            }
+        )
+        .is_empty()
+    );
+    let solo = |m: &Model| export(m).dialog.unwrap().solo;
+    assert_eq!(
+        solo(&m),
+        Some(ExportSolo {
+            first: TrackRef {
+                number: 3,
+                name: tracks[2].name.clone()
+            },
+            others: 0
+        })
+    );
+    assert!(
+        cmd(
+            &mut m,
+            Command::ToggleSolo {
+                track: tracks[1].id
+            }
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        solo(&m),
+        Some(ExportSolo {
+            first: TrackRef {
+                number: 2,
+                name: tracks[1].name.clone()
+            },
+            others: 1
+        })
+    );
+    cmd(
+        &mut m,
+        Command::ToggleSolo {
+            track: tracks[1].id,
+        },
+    );
+    cmd(
+        &mut m,
+        Command::ToggleSolo {
+            track: tracks[2].id,
+        },
+    );
+    assert_eq!(solo(&m), None);
 }

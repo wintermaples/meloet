@@ -3,6 +3,7 @@
 
 use meloet_devices::Endpoint;
 use meloet_engine::{ProbeVerdict, judge_probes};
+use meloet_model::TrackId;
 use meloet_protocol::{
     Command, InputsView, LATENCY_CLICKS, LatencyDialogView, LatencyFailure, LatencyMeasure,
     LatencySource, LatencyView, StatusMessage,
@@ -19,6 +20,8 @@ use crate::settings::{
 pub(super) struct InputSide {
     /// The node the last `OpenInput` asked for and no `CloseInput` took back.
     wanted: Option<String>,
+    /// The PC's name of that input, for when it is gone from the list.
+    wanted_name: Option<String>,
     /// A node that failed to open or went away. Not tried again until the devices change.
     failed: Option<String>,
     open: Option<OpenInput>,
@@ -159,12 +162,13 @@ impl Model {
             return;
         }
         let wants = self.open.is_some() && (self.play.wants_input() || self.latency.is_some());
-        let target = (self.chosen_input().filter(|_| wants))
-            .and_then(|e| e.node_name.clone())
+        let chosen = self.chosen_input().filter(|_| wants);
+        let target = (chosen.and_then(|e| e.node_name.clone()))
             .filter(|node| self.input.failed.as_ref() != Some(node));
         if target == self.input.wanted {
             return;
         }
+        self.input.wanted_name = chosen.filter(|_| target.is_some()).map(|e| e.name.clone());
         if self.input.wanted.is_some() {
             effects.push(Effect::CloseInput);
             self.end_measuring(effects);
@@ -184,6 +188,21 @@ impl Model {
         if self.input.wanted.as_deref() == Some(node_name) {
             self.input.open = Some(open);
         }
+    }
+
+    /// The input that was open went away (spec 6 「入口が抜けた」): what a recording it
+    /// stopped says. `input`: the channels of the first vocal track that was recording.
+    pub(super) fn input_lost_notice(&self) -> Option<StatusMessage> {
+        let recording = self.play.transport_view(true).recording_vocals;
+        let track = TrackId(recording.first()?.track);
+        let input = self.play.song().doc.track(track)?.kind.input()?;
+        let device = (self.input.wanted_name.clone())
+            .or_else(|| self.input.wanted.clone())
+            .unwrap_or_default();
+        Some(StatusMessage::InputLost {
+            input: super::vocal_input_view(input),
+            device,
+        })
     }
 
     pub(super) fn input_gone(&mut self, node_name: Option<&str>, effects: &mut Vec<Effect>) {

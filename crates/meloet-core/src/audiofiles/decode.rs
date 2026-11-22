@@ -23,6 +23,61 @@ pub struct Facts {
     pub bits: Option<u8>,
 }
 
+/// Why a file does not read, as the status line tells it (spec 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unread {
+    /// Not a kind meloet reads (`StatusMessage::AudioUnreadable`).
+    NotAudio,
+    /// A kind meloet reads, and it does not read (`StatusMessage::AudioBroken`).
+    Broken,
+    /// Three channels or more (`StatusMessage::AudioTooManyChannels`).
+    TooManyChannels,
+}
+
+/// What [`facts`] says of a file that does not read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadError {
+    pub why: Unread,
+    pub detail: String,
+}
+
+impl ReadError {
+    /// `Broken` for a file whose ending is of a kind meloet reads, else `NotAudio`.
+    fn of(path: &Path, detail: impl Into<String>) -> ReadError {
+        let ending = path.extension().and_then(|e| e.to_str());
+        let known = ending.is_some_and(|e| {
+            (meloet_protocol::AUDIO_EXTENSIONS.iter()).any(|k| e.eq_ignore_ascii_case(k))
+        });
+        ReadError {
+            why: if known {
+                Unread::Broken
+            } else {
+                Unread::NotAudio
+            },
+            detail: detail.into(),
+        }
+    }
+
+    fn channels(channels: usize) -> ReadError {
+        ReadError {
+            why: Unread::TooManyChannels,
+            detail: format!("{channels} channels; meloet reads mono and stereo"),
+        }
+    }
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+impl From<ReadError> for String {
+    fn from(e: ReadError) -> String {
+        e.detail
+    }
+}
+
 /// A file being decoded.
 pub struct Decoder {
     format: Box<dyn FormatReader>,
@@ -38,8 +93,9 @@ pub struct Decoder {
 
 impl Decoder {
     /// Opens the file; an error says why it is not audio that reads.
-    pub fn open(path: &Path) -> Result<Decoder, String> {
-        let file = File::open(path).map_err(|e| e.to_string())?;
+    pub fn open(path: &Path) -> Result<Decoder, ReadError> {
+        let failed = |detail: String| ReadError::of(path, detail);
+        let file = File::open(path).map_err(|e| failed(e.to_string()))?;
         let stream = MediaSourceStream::new(Box::new(file), Default::default());
         let mut hint = Hint::new();
         if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
@@ -47,29 +103,29 @@ impl Decoder {
         }
         let format = symphonia::default::get_probe()
             .probe(&hint, stream, Default::default(), Default::default())
-            .map_err(|e| format!("not a sound file this meloet reads: {e}"))?;
+            .map_err(|e| failed(format!("not a sound file this meloet reads: {e}")))?;
         let track = format
             .default_track(TrackType::Audio)
-            .ok_or("no sound in the file")?;
+            .ok_or_else(|| failed("no sound in the file".into()))?;
         let params = (track.codec_params.as_ref())
             .and_then(|p| p.audio())
-            .ok_or("no sound in the file")?;
-        let sample_rate = params.sample_rate.ok_or("no sample rate")?;
+            .ok_or_else(|| failed("no sound in the file".into()))?;
+        let sample_rate = params.sample_rate.unwrap_or(0);
         let channels = params.channels.as_ref().map_or(0, |c| c.count());
         if sample_rate == 0 {
-            return Err("no sample rate".into());
+            return Err(failed("no sample rate".into()));
         }
         // The number of channels of an mp3 is known with its first packet; 0 here is
         // looked at again then.
         if channels > 2 {
-            return Err(format!("{channels} channels; meloet reads mono and stereo"));
+            return Err(ReadError::channels(channels));
         }
         let bits = (params.bits_per_sample)
             .and_then(|b| u8::try_from(b).ok())
             .filter(|b| matches!(b, 8 | 16 | 24 | 32 | 64));
         let decoder = symphonia::default::get_codecs()
             .make_audio_decoder(params, &AudioDecoderOptions::default())
-            .map_err(|e| format!("no decoder: {e}"))?;
+            .map_err(|e| failed(format!("no decoder: {e}")))?;
         // A wav whose head says "as long as the file" has a number here too; one that
         // ended early has more than is there, so the count is not taken from the head
         // alone (`facts`).
@@ -101,8 +157,13 @@ impl Decoder {
 
     /// The next frames, interleaved, with how many channels they have (the same for every
     /// block of a file); `None` at the end. A packet that does not decode is passed over,
-    /// as a player does.
-    pub fn next_block(&mut self) -> Result<Option<(u8, &[f32])>, String> {
+    /// as a player does. A file that opened is of a kind meloet reads: what goes wrong
+    /// here is `Broken`.
+    pub fn next_block(&mut self) -> Result<Option<(u8, &[f32])>, ReadError> {
+        let broken = |detail: String| ReadError {
+            why: Unread::Broken,
+            detail,
+        };
         loop {
             let packet = match self.format.next_packet() {
                 Ok(Some(packet)) => packet,
@@ -111,7 +172,7 @@ impl Decoder {
                 Err(Error::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     return Ok(None);
                 }
-                Err(e) => return Err(format!("read: {e}")),
+                Err(e) => return Err(broken(format!("read: {e}"))),
             };
             if packet.track_id != self.track {
                 continue;
@@ -119,16 +180,21 @@ impl Decoder {
             let buffer = match self.decoder.decode(&packet) {
                 Ok(buffer) => buffer,
                 Err(Error::DecodeError(_)) => continue,
-                Err(e) => return Err(format!("decode: {e}")),
+                Err(e) => return Err(broken(format!("decode: {e}"))),
             };
             let channels = buffer.spec().channels().count();
-            if !(1..=2).contains(&channels) {
-                return Err(format!("{channels} channels; meloet reads mono and stereo"));
+            if channels > 2 {
+                return Err(ReadError::channels(channels));
+            }
+            if channels == 0 {
+                return Err(broken("no channels".into()));
             }
             if self.channels == 0 {
                 self.channels = channels as u8;
             } else if usize::from(self.channels) != channels {
-                return Err("the number of channels changes inside the file".into());
+                return Err(broken(
+                    "the number of channels changes inside the file".into(),
+                ));
             }
             if buffer.frames() == 0 {
                 continue;
@@ -143,11 +209,12 @@ impl Decoder {
 /// What the file at `path` is. A plain wav and a flac say how long they are in their
 /// heads; the others are decoded once and counted (an mp3 without a tag only guesses its
 /// length), the samples thrown away as they come.
-pub fn facts(path: &Path) -> Result<Facts, String> {
+pub fn facts(path: &Path) -> Result<Facts, ReadError> {
+    let empty = || ReadError::of(path, "the file has no sound in it");
     if let Ok(wav) = super::wav::WavPcm::open(path) {
         use crate::pcm::PcmFile;
         if wav.frames() == 0 {
-            return Err("the file has no sound in it".into());
+            return Err(empty());
         }
         return Ok(Facts {
             frames: wav.frames(),
@@ -171,7 +238,7 @@ pub fn facts(path: &Path) -> Result<Facts, String> {
         }
     };
     if frames == 0 || decoder.channels() == 0 {
-        return Err("the file has no sound in it".into());
+        return Err(empty());
     }
     Ok(Facts {
         frames,

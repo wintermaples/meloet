@@ -45,6 +45,8 @@ const STATE_WAIT: Duration = Duration::from_secs(3);
 const FILES_WAIT: Duration = Duration::from_secs(300);
 /// Frames brought into the file's form in one go.
 const CHUNK: usize = 4_096;
+/// Samples over 0 dB this far apart or more are two places (design-notes B-95-2).
+const OVER_GAP_S: f64 = 0.1;
 
 /// What a plugin that plays says its state is now.
 pub type LiveState = (PluginPlace, Result<Vec<u8>, HostError>);
@@ -305,6 +307,8 @@ fn render(
         started: Instant::now(),
         told_at: None,
         peak: 0.0,
+        over_before: 0,
+        over: 0,
         longest: 0,
     };
     let realtime = job.realtime || seats.realtime;
@@ -317,7 +321,7 @@ fn render(
             }
             watch.pass = i as u64;
             let path = setup.work.join(format!("pass-{i}.wav"));
-            let mut each = |written: u64, peak: f32| -> Result<(), Ended> {
+            let mut each = |written: u64, peak: f32, over: u32| -> Result<(), Ended> {
                 if stop.load(Relaxed) {
                     return Err(Ended::Dropped);
                 }
@@ -330,10 +334,11 @@ fn render(
                 if let Ok(wanted) = targets.try_recv() {
                     *target = Some(wanted);
                 }
-                watch.saw(written, peak, tell);
+                watch.saw(written, peak, over, tell);
                 Ok(())
             };
             let frames = render_pass(&mut engine, job, &path, i > 0, realtime, &mut each)?;
+            watch.over_before = watch.over;
             watch.longest = watch.longest.max(frames);
             rendered.push(Rendered {
                 path,
@@ -374,6 +379,9 @@ struct Watch {
     told_at: Option<Instant>,
     /// The largest sample of every file so far.
     peak: f32,
+    /// The places over 0 dB of the files before this pass, and of every file so far.
+    over_before: u32,
+    over: u32,
     /// The frames of the longest file so far.
     longest: u64,
 }
@@ -388,8 +396,9 @@ impl Watch {
     }
 
     /// `written`: frames of the range that are in the file of this pass.
-    fn saw(&mut self, written: u64, peak: f32, tell: &dyn Fn(ExportNews)) {
+    fn saw(&mut self, written: u64, peak: f32, over: u32, tell: &dyn Fn(ExportNews)) {
         self.peak = self.peak.max(peak);
+        self.over = self.over_before.saturating_add(over);
         if self.told_at.is_some_and(|at| at.elapsed() < TELL_EVERY) {
             return;
         }
@@ -404,6 +413,7 @@ impl Watch {
             job: self.job,
             percent: (done * 100 / all) as u8,
             peak_db: self.peak_db(),
+            over: self.over,
             length_s: self.seconds(self.range),
             remaining_s: remaining,
             done: false,
@@ -415,6 +425,7 @@ impl Watch {
             job: self.job,
             percent: 100,
             peak_db: self.peak_db(),
+            over: self.over,
             length_s: self.seconds(self.longest),
             remaining_s: Some(0),
             done: true,
@@ -438,6 +449,7 @@ struct Taker {
     quiet_for: u64,
     rate: u32,
     peak: f32,
+    places: OverPlaces,
     written: u64,
     over: bool,
 }
@@ -446,12 +458,54 @@ fn peak_of(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
 }
 
+/// Counts the places of a file that go over 0 dB (design-notes B-95-2): a run of frames
+/// with a sample over 0 dB is one place, and frames not over for [`OVER_GAP_S`] end it.
+/// A sample of exactly 0 dB is not over.
+#[derive(Debug)]
+struct OverPlaces {
+    gap: u64,
+    /// Frames not over since the last frame that was; `None` before the first.
+    since: Option<u64>,
+    count: u32,
+}
+
+impl OverPlaces {
+    fn new(rate: u32) -> OverPlaces {
+        OverPlaces {
+            gap: ((OVER_GAP_S * f64::from(rate)).round() as u64).max(1),
+            since: None,
+            count: 0,
+        }
+    }
+
+    /// Interleaved stereo, in the order of the file.
+    fn feed(&mut self, samples: &[f32]) {
+        if peak_of(samples) <= 1.0 {
+            if let Some(since) = &mut self.since {
+                *since += (samples.len() / 2) as u64;
+            }
+            return;
+        }
+        for frame in samples.as_chunks::<2>().0 {
+            if frame[0].abs() > 1.0 || frame[1].abs() > 1.0 {
+                if self.since.is_none_or(|since| since >= self.gap) {
+                    self.count = self.count.saturating_add(1);
+                }
+                self.since = Some(0);
+            } else if let Some(since) = &mut self.since {
+                *since += 1;
+            }
+        }
+    }
+}
+
 impl Taker {
     fn write(&mut self, samples: &[f32]) -> io::Result<()> {
         if samples.is_empty() {
             return Ok(());
         }
         self.peak = self.peak.max(peak_of(samples));
+        self.places.feed(samples);
         self.written += (samples.len() / 2) as u64;
         self.out.write(samples)
     }
@@ -493,15 +547,15 @@ impl Taker {
 }
 
 /// Plays the range once and writes it to `path`. `each` is called after every block with
-/// the frames of the range written so far and the largest sample. Returns the frames of
-/// the file.
+/// the frames of the range written so far, the largest sample and the places over 0 dB.
+/// Returns the frames of the file.
 fn render_pass(
     engine: &mut ExportEngine,
     job: &ExportJob,
     path: &Path,
     anew: bool,
     realtime: bool,
-    each: &mut dyn FnMut(u64, f32) -> Result<(), Ended>,
+    each: &mut dyn FnMut(u64, f32, u32) -> Result<(), Ended>,
 ) -> Result<u64, Ended> {
     let range = range_frames(engine, job.span);
     engine.play_from(job.span.start(), anew);
@@ -516,6 +570,7 @@ fn render_pass(
         quiet_for: 0,
         rate: job.sample_rate,
         peak: 0.0,
+        places: OverPlaces::new(job.sample_rate),
         written: 0,
         over: false,
     };
@@ -537,7 +592,7 @@ fn render_pass(
         if played == range {
             engine.stop();
         }
-        if let Err(e) = each(taker.written.min(range), taker.peak) {
+        if let Err(e) = each(taker.written.min(range), taker.peak, taker.places.count) {
             break Err(e);
         }
         if taker.over {

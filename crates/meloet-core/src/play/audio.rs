@@ -8,13 +8,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use meloet_model::arrange::{self, ClipsSplit};
+use meloet_model::history::StepKind;
 use meloet_model::{
-    AudioId, AudioSource, ClipGain, ClipId, EditError, FadeEnd, ImportPlan, ImportedAudio,
-    ImportedClip, MAX_TICK, TrackId,
+    AudioId, AudioShape, AudioSource, ClipGain, ClipId, EditError, FadeEnd, ImportPlan,
+    ImportedAudio, ImportedClip, MAX_TICK, TrackId,
 };
 use meloet_protocol::{
     AudioClipState, AudioJob, AudioJobKind, AudioWorkView, ClipField, SOURCE_BPM_MAX,
-    SOURCE_BPM_MIN, StatusMessage, StretchChange,
+    SOURCE_BPM_MIN, SelectedClips, StatusMessage, StretchChange,
 };
 
 use super::{ClipPick, Play};
@@ -22,6 +23,13 @@ use crate::audiofiles::keeper::{AudioNews, Growing, SourceState};
 use crate::maker::MakerJob;
 use crate::peaks::PeaksPlace;
 use crate::state::Effect;
+
+/// The volume of `Command::ShiftClipGains` and `Command::SetClipGains`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ClipGains {
+    By(f64),
+    To(f64),
+}
 
 /// What the thread that reads audio files in said of the files of the song.
 #[derive(Debug, Default)]
@@ -163,6 +171,17 @@ impl Play {
         }
     }
 
+    /// 「さがす…」 took a file for `audio`: "歌 テイク 1.wav を見つけました。2 つのクリップが
+    /// また鳴ります。" (spec 6), with the clips whose shown take plays it.
+    pub fn audio_found(&self, audio: u32) -> Option<StatusMessage> {
+        let doc = self.doc();
+        let file = doc.audio(AudioId(audio))?.file.clone();
+        let clips = (doc.tracks.iter().flat_map(|t| &t.clips))
+            .filter(|c| (c.active_audio()).is_some_and(|a| a.take.source.id.0 == audio))
+            .count() as u32;
+        Some(StatusMessage::AudioFound { file, clips })
+    }
+
     /// Where the peaks of the file are: being made, or in their file.
     pub fn peaks_place(&self, audio: u32) -> Option<PeaksPlace> {
         let source = self.doc().audio(AudioId(audio))?;
@@ -292,6 +311,151 @@ impl Play {
             }
         };
         if let Ok(e) = edited {
+            self.apply(e, effects);
+        }
+    }
+
+    /// 「まとめて変える」 (spec 3, 40-A): two or more clips are selected and every one is a
+    /// vocal clip. A value is `None` when the clips do not all have the same one.
+    pub fn selected_vocal_clips(&self) -> Option<SelectedClips> {
+        if self.clips_sel.len() < 2 {
+            return None;
+        }
+        let mut clips = Vec::new();
+        let mut tracks = Vec::new();
+        let mut shapes: Vec<AudioShape> = Vec::new();
+        for track in &self.doc().tracks {
+            for clip in track
+                .clips
+                .iter()
+                .filter(|c| self.clips_sel.contains(&c.id))
+            {
+                // A keys clip among them (B-95-8).
+                shapes.push(*clip.takes.shape()?);
+                clips.push(clip.id.0);
+                if tracks.last() != Some(&track.id.0) {
+                    tracks.push(track.id.0);
+                }
+            }
+        }
+        if clips.len() < 2 {
+            return None;
+        }
+        fn same<T: PartialEq>(shapes: &[AudioShape], of: impl Fn(&AudioShape) -> T) -> Option<T> {
+            let first = of(&shapes[0]);
+            shapes[1..].iter().all(|s| of(s) == first).then_some(first)
+        }
+        Some(SelectedClips {
+            clips,
+            tracks,
+            gain_db: same(&shapes, |s| s.gain).map(|g| g.db() as f32),
+            follow: same(&shapes, |s| s.follow),
+            semitones: same(&shapes, |s| s.semitones),
+            cents: same(&shapes, |s| s.cents),
+            keep_formant: same(&shapes, |s| s.keep_formant),
+        })
+    }
+
+    /// `Command::ShiftClipGains` (39-B) and `Command::SetClipGains` (40-A): the volume of
+    /// every vocal clip of `clips`, moved by `by_db` or set to `db`, as one step. Each stops
+    /// at the ends of its range.
+    pub fn set_clip_gains(&mut self, clips: &[u32], gain: ClipGains, effects: &mut Vec<Effect>) {
+        let usable = match gain {
+            ClipGains::By(db) => db != 0.0 && !db.is_nan(),
+            ClipGains::To(db) => !db.is_nan(),
+        };
+        if self.busy() || !usable {
+            return;
+        }
+        let change = |s: &AudioShape| {
+            let db = match gain {
+                ClipGains::By(by) => s.gain.db() + by,
+                ClipGains::To(to) => to,
+            };
+            AudioShape {
+                gain: ClipGain::from_db(db).unwrap_or(s.gain),
+                ..*s
+            }
+        };
+        self.set_clips_shape(
+            clips,
+            change,
+            |count| StepKind::SetClipsGain { count },
+            effects,
+        );
+    }
+
+    /// `Command::SetClipsStretch`: one row of 「まとめて変える」 for every vocal clip of
+    /// `clips`, as one step. 「この音のテンポ」 is for one clip only: nothing.
+    pub fn set_clips_stretch(
+        &mut self,
+        clips: &[u32],
+        change: StretchChange,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.busy() {
+            return;
+        }
+        let whole = |v: f64| (!v.is_nan()).then(|| v.round().clamp(-1e6, 1e6) as i32);
+        let semis = i32::from(AudioShape::SEMITONES_MAX);
+        let cents = i32::from(AudioShape::CENTS_MAX);
+        match change {
+            StretchChange::Follow { on } => self.set_clips_shape(
+                clips,
+                |s| AudioShape { follow: on, ..*s },
+                |count| StepKind::SetClipsFollow { count },
+                effects,
+            ),
+            StretchChange::KeepFormant { on } => self.set_clips_shape(
+                clips,
+                |s| AudioShape {
+                    keep_formant: on,
+                    ..*s
+                },
+                |count| StepKind::SetClipsPitch { count },
+                effects,
+            ),
+            StretchChange::Semitones { semitones } => {
+                let Some(n) = whole(semitones) else {
+                    return;
+                };
+                self.set_clips_shape(
+                    clips,
+                    |s| AudioShape {
+                        semitones: n.clamp(-semis, semis) as i8,
+                        ..*s
+                    },
+                    |count| StepKind::SetClipsPitch { count },
+                    effects,
+                );
+            }
+            StretchChange::Cents { cents: c } => {
+                let Some(n) = whole(c) else {
+                    return;
+                };
+                self.set_clips_shape(
+                    clips,
+                    |s| AudioShape {
+                        cents: n.clamp(-cents, cents) as i8,
+                        ..*s
+                    },
+                    |count| StepKind::SetClipsPitch { count },
+                    effects,
+                );
+            }
+            StretchChange::SourceBpm { .. } => {}
+        }
+    }
+
+    fn set_clips_shape(
+        &mut self,
+        clips: &[u32],
+        change: impl Fn(&AudioShape) -> AudioShape,
+        step: impl FnOnce(usize) -> StepKind,
+        effects: &mut Vec<Effect>,
+    ) {
+        let ids: Vec<ClipId> = clips.iter().map(|&c| ClipId(c)).collect();
+        if let Ok(e) = meloet_model::set_clips_shape(self.doc(), &ids, change, step) {
             self.apply(e, effects);
         }
     }

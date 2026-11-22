@@ -1822,7 +1822,7 @@ pub fn save_new(base: &Path, song: &Song) -> io::Result<(PathBuf, String)> {
 pub fn save_new_with(
     base: &Path,
     song: &Song,
-    before: impl Fn(&Path) -> io::Result<()>,
+    mut before: impl FnMut(&Path) -> io::Result<()>,
 ) -> io::Result<(PathBuf, String)> {
     fs::create_dir_all(base)?;
     let stem = folder_name(&song.doc.name);

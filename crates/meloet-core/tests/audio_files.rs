@@ -320,11 +320,9 @@ fn audio_goes_from_the_work_place_into_the_song_folder_and_comes_back() {
     // 「さがす…」 with a file that is not that audio, then with the one that is.
     pick.lock().unwrap().audio = vec![wav.clone()];
     core.send(Command::FindAudio { audio });
-    state_when(
-        &core,
-        "the wrong file is said",
-        |s| matches!(&s.status.message, Some(StatusMessage::AudioUnreadable { file }) if file == "ドラム.wav"),
-    );
+    state_when(&core, "the wrong file is said", |s| {
+        matches!(&s.status.message, Some(StatusMessage::AudioFoundMismatch))
+    });
     pick.lock().unwrap().audio = vec![copy_dir.join(AUDIO).join("click.mp3")];
     core.send(Command::FindAudio { audio });
     let state = state_when(&core, "the file is found", |s| {
@@ -332,6 +330,13 @@ fn audio_goes_from_the_work_place_into_the_song_folder_and_comes_back() {
             .iter()
             .all(|(_, state)| *state == AudioClipState::Ready)
     });
+    assert_eq!(
+        state.status.message,
+        Some(StatusMessage::AudioFound {
+            file: "click.mp3".into(),
+            clips: 1
+        })
+    );
     // Not a step, and the song is as its file has it; the file waits in the work place
     // for the next save.
     assert_eq!((state.history.total, state.song.file), (0, SongFile::Saved));

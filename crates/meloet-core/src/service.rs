@@ -36,8 +36,8 @@ use meloet_protocol::{
 use meloet_sound::phrases::{self, PhrasePlayer};
 use meloet_sound::sampler::{LoadError, SampleBank};
 
-use crate::audiofiles::AudioStore;
 use crate::audiofiles::keeper::AudioNews;
+use crate::audiofiles::{AudioStore, Settling};
 use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::made::{MadeKey, MadePlan, only_audio_differs, seat_audio};
@@ -1414,14 +1414,16 @@ impl Audio {
     }
 
     /// Writes down the frames of vocal clips that were not read in time, when there are
-    /// more than at the last look.
-    fn log_missing(&mut self) {
+    /// more than at the last look. Returns whether there were.
+    fn log_missing(&mut self) -> bool {
         let missing = self.handle.meters().stream_missing();
-        if missing > self.missing_logged {
-            let more = missing - self.missing_logged;
-            eprintln!("meloet: {more} frames of vocal clips were not read in time ({missing})");
-            self.missing_logged = missing;
+        if missing <= self.missing_logged {
+            return false;
         }
+        let more = missing - self.missing_logged;
+        eprintln!("meloet: {more} frames of vocal clips were not read in time ({missing})");
+        self.missing_logged = missing;
+        true
     }
 
     /// While the engine is here: lets it take in the commands that wait, so that the
@@ -2832,8 +2834,10 @@ impl Worker {
 
     /// [`Effect::SaveSong`]. With plugins in the song their states are asked for first, all
     /// at once, and the song is written on a thread of its own once they have answered or
-    /// [`STATE_WAIT`] is over: the answer then comes later, as a message. Without plugins
-    /// the song is written here and the answer is returned.
+    /// [`STATE_WAIT`] is over: the answer then comes later, as a message. A song with audio
+    /// is written on that thread too, saying how far the files are put in place
+    /// (`Input::SavingAudio`). Without either the song is written here and the answer is
+    /// returned.
     fn save_song(&mut self, song: Box<Song>, to: SaveTo) -> Option<Input> {
         let songs_dir = self.songs_dir.clone();
         let asked: Vec<(PluginPlace, SlotId)> = match &self.plugins {
@@ -2843,16 +2847,25 @@ impl Worker {
             None => Vec::new(),
         };
         let store = self.audio_store.clone();
-        let Some(side) = self.plugins.as_ref().filter(|_| !asked.is_empty()) else {
-            return Some(save_song(songs_dir.as_deref(), &song, to, &store));
-        };
+        let side = self.plugins.as_ref().filter(|_| !asked.is_empty());
+        if side.is_none() && songfile::used_audio(&song.doc).is_empty() {
+            return Some(save_song(
+                songs_dir.as_deref(),
+                &song,
+                to,
+                &store,
+                &mut |_| {},
+            ));
+        }
         let (states, answers) = mpsc::channel();
-        for &(place, id) in &asked {
-            let states = states.clone();
-            let done = move |state| {
-                let _ = states.send((place, state));
-            };
-            side.hosts.state(id, Box::new(done));
+        if let Some(side) = side {
+            for &(place, id) in &asked {
+                let states = states.clone();
+                let done = move |state| {
+                    let _ = states.send((place, state));
+                };
+                side.hosts.state(id, Box::new(done));
+            }
         }
         drop(states);
         let tx = self.links.tx.clone();
@@ -2869,7 +2882,16 @@ impl Worker {
                         with_plugin_state(&mut song, place, state);
                     }
                 }
-                let saved = save_song(songs_dir.as_deref(), &song, to, &store);
+                let mut tell = |p: Settling| {
+                    let input = Input::SavingAudio {
+                        done: p.done,
+                        total: p.total,
+                        done_bytes: p.done_bytes,
+                        total_bytes: p.total_bytes,
+                    };
+                    let _ = tx.send(Msg::Input(input, None));
+                };
+                let saved = save_song(songs_dir.as_deref(), &song, to, &store, &mut tell);
                 let _ = tx.send(Msg::Input(saved, None));
             });
         match saver {
@@ -2919,11 +2941,13 @@ fn with_plugin_state(song: &mut Song, place: PluginPlace, state: Vec<u8>) {
 
 /// Does [`Effect::SaveSong`] and gives its answer. The audio the song names is put into
 /// the song's folder first, then the song's file is written (docs/architecture.md 22-4).
+/// `tell` hears how far that is ([`AudioStore::settle`](crate::audiofiles::AudioStore)).
 pub(crate) fn save_song(
     songs_dir: Option<&Path>,
     song: &meloet_model::Song,
     to: SaveTo,
     store: &crate::audiofiles::AudioStore,
+    tell: &mut dyn FnMut(Settling),
 ) -> Input {
     // Only what a clip plays: the audio of deleted clips stays in the work place.
     let names: Vec<String> = (songfile::used_audio(&song.doc).iter())
@@ -2933,12 +2957,14 @@ pub(crate) fn save_song(
         SaveTo::File(path) => {
             let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
             store
-                .settle(dir.unwrap_or(Path::new(".")), &names)
+                .settle(dir.unwrap_or(Path::new(".")), &names, tell)
                 .and_then(|()| songfile::save(&path, song))
                 .map(|()| (path, song.doc.name.clone()))
         }
         SaveTo::NewFolder(folder) => match folder.as_deref().or(songs_dir) {
-            Some(folder) => songfile::save_new_with(folder, song, |dir| store.settle(dir, &names)),
+            Some(folder) => {
+                songfile::save_new_with(folder, song, |dir| store.settle(dir, &names, tell))
+            }
             None => Err(std::io::Error::other("no songs folder")),
         },
     };
@@ -3051,7 +3077,9 @@ impl Worker {
     fn housekeeping(&mut self, last: bool) {
         self.poll_engine();
         self.audio.handle.drop_retired();
-        self.audio.log_missing();
+        if self.audio.log_missing() {
+            self.handle(Input::DiskTooSlow);
+        }
         self.audio.follow_store();
         self.audio.follow_made();
         if let (Some(maker), Some(heard)) = (&self.audio.maker, self.audio.handle.heard_now()) {

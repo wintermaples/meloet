@@ -22,6 +22,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::time::{Duration, Instant};
 
 use meloet_protocol::AUDIO_EXTENSIONS;
 use sha2::{Digest, Sha256};
@@ -31,6 +32,45 @@ use crate::vocalrec::work_audio_dir;
 
 /// The folder of a song's audio, beside the song's file.
 pub const SONG_AUDIO: &str = "音";
+
+/// [`AudioStore::settle`] says how far it is this often at most, and not before.
+const SETTLING_EVERY: Duration = Duration::from_millis(250);
+
+/// How far [`AudioStore::settle`] is: `done` of `total` files, `done_bytes` of
+/// `total_bytes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Settling {
+    pub done: u32,
+    pub total: u32,
+    pub done_bytes: u64,
+    pub total_bytes: u64,
+}
+
+/// Tells a [`Settling`] at most every [`SETTLING_EVERY`]: what takes less is not said.
+struct SettlingTeller<'a> {
+    tell: &'a mut dyn FnMut(Settling),
+    now: Settling,
+    told: Instant,
+}
+
+impl SettlingTeller<'_> {
+    fn bytes(&mut self, n: u64) {
+        self.now.done_bytes = (self.now.done_bytes + n).min(self.now.total_bytes);
+        self.maybe();
+    }
+
+    fn file_done(&mut self, size: u64, counted: u64) {
+        self.now.done += 1;
+        self.bytes(size.saturating_sub(counted));
+    }
+
+    fn maybe(&mut self) {
+        if self.told.elapsed() >= SETTLING_EVERY {
+            self.told = Instant::now();
+            (self.tell)(self.now);
+        }
+    }
+}
 
 /// Where the read-ahead thread finds the song's audio at the engine's rate (22-4, 22-8):
 /// the song's `音/`, the work place, and the cache of decoded and resampled files. One for
@@ -242,7 +282,7 @@ impl AudioStore {
             std::process::id(),
             SERIAL.fetch_add(1, Relaxed)
         ));
-        let sha = copy_synced(from, &temp).inspect_err(|_| {
+        let sha = copy_synced(from, &temp, &mut |_| {}).inspect_err(|_| {
             let _ = fs::remove_file(&temp);
         })?;
         let (stem, ending) = match original.rfind('.').filter(|&dot| dot > 0) {
@@ -281,13 +321,26 @@ impl AudioStore {
     /// it is. A file that is found nowhere is passed over: its clips stay silent.
     ///
     /// At any moment a file of `names` is whole in one of the places the song looks in.
-    pub fn settle(&self, song_dir: &Path, names: &[String]) -> io::Result<()> {
-        self.settle_until(song_dir, names, usize::MAX)
+    /// `tell` hears how far it is, at most 4 times a second and not in the first quarter
+    /// of a second (spec 6 「保存で音を写している」).
+    pub fn settle(
+        &self,
+        song_dir: &Path,
+        names: &[String],
+        tell: &mut dyn FnMut(Settling),
+    ) -> io::Result<()> {
+        self.settle_until(song_dir, names, usize::MAX, tell)
     }
 
     /// As [`AudioStore::settle`], giving up with an error before file number `stop` (from
     /// 0) is put in place: what a save that is cut short leaves behind.
-    fn settle_until(&self, song_dir: &Path, names: &[String], stop: usize) -> io::Result<()> {
+    fn settle_until(
+        &self,
+        song_dir: &Path,
+        names: &[String],
+        stop: usize,
+        tell: &mut dyn FnMut(Settling),
+    ) -> io::Result<()> {
         let dest = song_dir.join(SONG_AUDIO);
         let (folders, work) = {
             let mut places = self.lock();
@@ -300,7 +353,7 @@ impl AudioStore {
             (folders, places.work())
         };
         let mut seen = HashSet::new();
-        let mut put = 0usize;
+        let mut puts = Vec::new();
         for name in names {
             if !plain_name(name) || !seen.insert(name.as_str()) {
                 continue;
@@ -311,18 +364,38 @@ impl AudioStore {
             }
             let kept = folders.iter().map(|d| d.join(name)).find(|p| p.is_file());
             let fresh = work.as_ref().map(|d| d.join(name)).filter(|p| p.is_file());
-            let Some((from, moving)) = kept.map(|p| (p, false)).or(fresh.map(|p| (p, true))) else {
-                continue;
-            };
+            if let Some((from, moving)) = kept.map(|p| (p, false)).or(fresh.map(|p| (p, true))) {
+                let size = fs::metadata(&from).map_or(0, |m| m.len());
+                puts.push((from, to, moving, size));
+            }
+        }
+        let mut teller = SettlingTeller {
+            tell,
+            now: Settling {
+                done: 0,
+                total: puts.len() as u32,
+                done_bytes: 0,
+                total_bytes: puts.iter().map(|p| p.3).sum(),
+            },
+            told: Instant::now(),
+        };
+        let mut put = 0usize;
+        for (from, to, moving, size) in puts {
             if put == stop {
                 return Err(io::Error::other("stopped"));
             }
             fs::create_dir_all(&dest)?;
+            let mut counted = 0u64;
+            let mut copied = |n: usize| {
+                counted += n as u64;
+                teller.bytes(n as u64);
+            };
             if moving {
-                move_file(&from, &to, false)?;
+                move_file(&from, &to, false, &mut copied)?;
             } else {
-                copy_into(&from, &to)?;
+                copy_into(&from, &to, &mut copied)?;
             }
+            teller.file_done(size, counted);
             put += 1;
         }
         if put > 0 {
@@ -382,8 +455,9 @@ fn sha256_of(path: &Path) -> io::Result<[u8; 32]> {
     }
 }
 
-/// Copies `from` to `to` and syncs it. Returns the SHA-256 of what was copied.
-fn copy_synced(from: &Path, to: &Path) -> io::Result<[u8; 32]> {
+/// Copies `from` to `to` and syncs it. Returns the SHA-256 of what was copied. `copied`
+/// hears every block that is written.
+fn copy_synced(from: &Path, to: &Path, copied: &mut dyn FnMut(usize)) -> io::Result<[u8; 32]> {
     let mut source = File::open(from)?;
     let mut out = File::create(to)?;
     let mut hash = Sha256::new();
@@ -395,6 +469,7 @@ fn copy_synced(from: &Path, to: &Path) -> io::Result<[u8; 32]> {
         }
         hash.update(&block[..n]);
         out.write_all(&block[..n])?;
+        copied(n);
     }
     out.sync_all()?;
     Ok(hash.finalize().into())
@@ -402,11 +477,11 @@ fn copy_synced(from: &Path, to: &Path) -> io::Result<[u8; 32]> {
 
 /// `from` appears at `to` whole or not at all: copied under a temporary name beside `to`,
 /// synced, then renamed.
-fn copy_into(from: &Path, to: &Path) -> io::Result<()> {
+fn copy_into(from: &Path, to: &Path, each: &mut dyn FnMut(usize)) -> io::Result<()> {
     let mut temp = to.as_os_str().to_owned();
     temp.push(".part");
     let temp = PathBuf::from(temp);
-    let copied = copy_synced(from, &temp).and_then(|_| fs::rename(&temp, to));
+    let copied = copy_synced(from, &temp, each).and_then(|_| fs::rename(&temp, to));
     if copied.is_err() {
         let _ = fs::remove_file(&temp);
     }
@@ -415,7 +490,7 @@ fn copy_into(from: &Path, to: &Path) -> io::Result<()> {
 
 /// Moves a file. Across file systems (`copy`, or the rename says so): a synced copy that
 /// is renamed into place, and only then the original is removed.
-fn move_file(from: &Path, to: &Path, copy: bool) -> io::Result<()> {
+fn move_file(from: &Path, to: &Path, copy: bool, each: &mut dyn FnMut(usize)) -> io::Result<()> {
     if !copy {
         match fs::rename(from, to) {
             Ok(()) => return Ok(()),
@@ -423,7 +498,7 @@ fn move_file(from: &Path, to: &Path, copy: bool) -> io::Result<()> {
             Err(e) => return Err(e),
         }
     }
-    copy_into(from, to)?;
+    copy_into(from, to, each)?;
     if let Some(dir) = to.parent() {
         sync_dir(dir)?;
     }

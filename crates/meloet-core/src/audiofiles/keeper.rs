@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use meloet_model::{AudioSource, ImportedAudio, NewAudio};
 use sha2::{Digest, Sha256};
 
-use super::decode::{self, Decoder};
+use super::decode::{self, Decoder, Unread};
 use super::resample::Resample;
 use super::wav::CacheWav;
 use super::{AudioStore, Playable};
@@ -47,8 +47,19 @@ pub enum SourceState {
 pub enum Brought {
     /// It is in the work place.
     In(ImportedAudio),
-    /// It is not audio that reads; the name it has on the disk.
-    Unreadable(String),
+    /// It does not read, and why; the name it has on the disk.
+    Unreadable(String, Unread),
+}
+
+/// What [`Keeper::find`] made of the file it was given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Finding {
+    /// It is where the song looks for it now.
+    Taken,
+    /// It reads, at another rate or with other channels than the song's audio.
+    Mismatch,
+    /// It does not read, or could not be copied.
+    Unreadable,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,9 +77,12 @@ pub enum AudioNews {
     Progress { uid: [u8; 16], percent: u8 },
     /// The file is ready (`ok`), or it did not decode. Its peaks are in their file.
     Done { uid: [u8; 16], ok: bool },
-    /// The answer to [`Keeper::find`]: the file is where the song looks for it, or it is
-    /// not the audio that is missing.
-    Found { audio: u32, file: String, ok: bool },
+    /// The answer to [`Keeper::find`]. `file`: the name of the file that was given.
+    Found {
+        audio: u32,
+        file: String,
+        found: Finding,
+    },
 }
 
 enum Ask {
@@ -229,9 +243,9 @@ impl Work {
                             taken.push(file.audio.file.clone());
                             Brought::In(file)
                         }
-                        Err(why) => {
+                        Err((why, unread)) => {
                             eprintln!("meloet: {} was not brought in: {why}", path.display());
-                            Brought::Unreadable(name_of(path))
+                            Brought::Unreadable(name_of(path), unread)
                         }
                     })
                     .collect();
@@ -243,19 +257,20 @@ impl Work {
                 sample_rate,
             } => self.watch(serial, &sources, sample_rate),
             Ask::Find { source, path } => {
-                let ok = self.found(&source, &path);
+                let found = self.found(&source, &path);
                 (self.tell)(AudioNews::Found {
                     audio: source.id.0,
                     file: name_of(&path),
-                    ok,
+                    found,
                 });
             }
         }
     }
 
-    fn bring(&self, path: &Path, taken: &[String]) -> Result<ImportedAudio, String> {
-        let facts = decode::facts(path)?;
-        let (file, sha256) = (self.store.bring_in(path, taken)).map_err(|e| e.to_string())?;
+    fn bring(&self, path: &Path, taken: &[String]) -> Result<ImportedAudio, (String, Unread)> {
+        let facts = decode::facts(path).map_err(|e| (e.detail, e.why))?;
+        let (file, sha256) =
+            (self.store.bring_in(path, taken)).map_err(|e| (e.to_string(), Unread::NotAudio))?;
         let name = (path.file_stem())
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| file.clone());
@@ -276,28 +291,33 @@ impl Work {
     /// Takes the file at `path` for `source` when it has as many channels at the same
     /// rate: a file that another program wrote again is still the take, so the SHA-256 is
     /// not asked to match.
-    fn found(&self, source: &AudioSource, path: &Path) -> bool {
+    fn found(&self, source: &AudioSource, path: &Path) -> Finding {
         if self.store.find(&source.file).is_some() {
-            return true;
+            return Finding::Taken;
         }
         let Some(work) = self.store.work_dir() else {
-            return false;
+            return Finding::Unreadable;
         };
-        let fits = decode::facts(path)
-            .is_ok_and(|f| f.sample_rate == source.sample_rate && f.channels == source.channels);
-        if !fits {
-            return false;
+        match decode::facts(path) {
+            Ok(f) if f.sample_rate == source.sample_rate && f.channels == source.channels => {}
+            Ok(_)
+            | Err(decode::ReadError {
+                why: Unread::TooManyChannels,
+                ..
+            }) => return Finding::Mismatch,
+            Err(_) => return Finding::Unreadable,
         }
         let to = work.join(&source.file);
-        let copied = std::fs::create_dir_all(&work).and_then(|()| super::copy_into(path, &to));
+        let copied =
+            std::fs::create_dir_all(&work).and_then(|()| super::copy_into(path, &to, &mut |_| {}));
         match copied {
             Ok(()) => {
                 self.store.file_arrived();
-                true
+                Finding::Taken
             }
             Err(e) => {
                 eprintln!("meloet: {} was not copied: {e}", path.display());
-                false
+                Finding::Unreadable
             }
         }
     }

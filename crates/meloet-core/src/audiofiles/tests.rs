@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use meloet_model::{AudioId, AudioSource};
 
-use super::decode::{Decoder, Facts, facts};
-use super::keeper::{AudioNews, Brought, Keeper, SourceState};
+use super::decode::{self, Decoder, Facts, Unread, facts};
+use super::keeper::{AudioNews, Brought, Finding, Keeper, SourceState};
 use super::wav::WavPcm;
 use super::*;
 use crate::peaks::read_peaks_head;
@@ -171,14 +171,22 @@ fn what_is_not_audio_does_not_read() {
     let dir = temp_dir("audio-not");
     let text = dir.join("声.wav");
     std::fs::write(&text, "これは音ではありません").unwrap();
-    assert!(facts(&text).is_err());
+    let why = |path: &Path| facts(path).unwrap_err().why;
+    // A kind meloet reads by its ending is broken; another kind is not audio it reads.
+    assert_eq!(why(&text), Unread::Broken);
+    let other = dir.join("声.aac");
+    std::fs::write(&other, "これは音ではありません").unwrap();
+    assert_eq!(why(&other), Unread::NotAudio);
     let empty = dir.join("空.wav");
     write_wav(&empty, 48_000, 1, 16, 0, |_, _| 0.0);
-    assert!(facts(&empty).is_err());
+    assert_eq!(why(&empty), Unread::Broken);
     let many = dir.join("5.1.wav");
     write_wav(&many, 48_000, 6, 16, 100, |_, _| 0.0);
-    assert!(facts(&many).is_err());
-    assert!(facts(&dir.join("ない.mp3")).is_err());
+    assert_eq!(why(&many), Unread::TooManyChannels);
+    let three = dir.join("3.wav");
+    write_wav(&three, 48_000, 3, 24, 100, |_, _| 0.0);
+    assert_eq!(why(&three), Unread::TooManyChannels);
+    assert_eq!(why(&dir.join("ない.mp3")), Unread::Broken);
 }
 
 #[test]
@@ -320,15 +328,15 @@ fn a_save_moves_the_audio_into_the_folder_and_a_save_cut_short_loses_nothing() {
 
     // Cut short before the first file, and after the first: wherever it stops, every file
     // is whole in one of the two places.
-    assert!(store.settle_until(&song, &names, 0).is_err());
+    assert!(store.settle_until(&song, &names, 0, &mut |_| {}).is_err());
     all_found(&store, &names, &bytes);
-    assert!(store.settle_until(&song, &names, 1).is_err());
+    assert!(store.settle_until(&song, &names, 1, &mut |_| {}).is_err());
     assert_eq!(super::tests::names(&audio), ["歌 5.wav"]);
     all_found(&store, &names, &bytes);
     // A name listed twice, a name that is no plain name and one that is found nowhere.
     let mut asked = names.clone();
     asked.extend(["歌 5.wav", "../x.wav", "ない.wav"].map(String::from));
-    store.settle(&song, &asked).unwrap();
+    store.settle(&song, &asked, &mut |_| {}).unwrap();
     assert_eq!(
         super::tests::names(&audio),
         ["ドラム.mp3", "ベース.ogg", "歌 5.wav"]
@@ -342,7 +350,7 @@ fn a_save_moves_the_audio_into_the_folder_and_a_save_cut_short_loses_nothing() {
         Some(work.join("取り消した歌 9.wav"))
     );
     // Again: nothing to do.
-    store.settle(&song, &names).unwrap();
+    store.settle(&song, &names, &mut |_| {}).unwrap();
 
     // A save under another name copies; the folder before is left as it is, and stays a
     // place to look in for what only the history names.
@@ -352,7 +360,7 @@ fn a_save_moves_the_audio_into_the_folder_and_a_save_cut_short_loses_nothing() {
     std::fs::write(work.join("新しい歌 11.wav"), b"new").unwrap();
     let mut saved = names.clone();
     saved.push("新しい歌 11.wav".into());
-    store.settle(&copy, &saved).unwrap();
+    store.settle(&copy, &saved, &mut |_| {}).unwrap();
     assert_eq!(
         super::tests::names(&copy.join(SONG_AUDIO)),
         ["ドラム.mp3", "ベース.ogg", "新しい歌 11.wav", "歌 5.wav"]
@@ -369,7 +377,7 @@ fn a_save_moves_the_audio_into_the_folder_and_a_save_cut_short_loses_nothing() {
     assert_eq!(store.find("前の歌 2.wav"), Some(audio.join("前の歌 2.wav")));
     // Undone and saved again: the file comes over from the folder before.
     saved.push("前の歌 2.wav".into());
-    store.settle(&copy, &saved).unwrap();
+    store.settle(&copy, &saved, &mut |_| {}).unwrap();
     assert!(copy.join(SONG_AUDIO).join("前の歌 2.wav").is_file());
     assert!(audio.join("前の歌 2.wav").is_file());
 
@@ -384,17 +392,61 @@ fn a_save_moves_the_audio_into_the_folder_and_a_save_cut_short_loses_nothing() {
 }
 
 #[test]
+fn a_save_says_how_far_it_is_at_most_four_times_a_second() {
+    let mut said = Vec::new();
+    let mut tell = |s: Settling| said.push(s);
+    let mut teller = SettlingTeller {
+        tell: &mut tell,
+        now: Settling {
+            done: 0,
+            total: 2,
+            done_bytes: 0,
+            total_bytes: 300,
+        },
+        // A quarter of a second has gone by.
+        told: Instant::now() - SETTLING_EVERY,
+    };
+    teller.bytes(100);
+    // Not again so soon.
+    teller.bytes(50);
+    // A file moved by a rename counts all of its bytes when it is in place.
+    teller.file_done(200, 150);
+    teller.told = Instant::now() - SETTLING_EVERY;
+    teller.file_done(100, 0);
+    let at = |done, done_bytes| Settling {
+        done,
+        total: 2,
+        done_bytes,
+        total_bytes: 300,
+    };
+    assert_eq!(said, [at(0, 100), at(2, 300)]);
+
+    // Quick work says nothing.
+    let root = temp_dir("audio-settling");
+    let store = store(&root);
+    let work = store.work_dir().unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(work.join("歌 1.wav"), b"a").unwrap();
+    let mut said = 0;
+    let song = root.join("曲");
+    std::fs::create_dir_all(&song).unwrap();
+    (store.settle(&song, &["歌 1.wav".to_owned()], &mut |_| said += 1)).unwrap();
+    assert_eq!(said, 0);
+    assert!(song.join(SONG_AUDIO).join("歌 1.wav").is_file());
+}
+
+#[test]
 fn a_move_across_file_systems_is_a_copy_that_is_whole_before_the_original_goes() {
     let root = temp_dir("audio-move");
     let (from, to) = (root.join("a.wav"), root.join("b.wav"));
     std::fs::write(&from, vec![7u8; 100_000]).unwrap();
-    move_file(&from, &to, true).unwrap();
+    move_file(&from, &to, true, &mut |_| {}).unwrap();
     assert!(!from.exists());
     assert_eq!(std::fs::read(&to).unwrap(), vec![7u8; 100_000]);
     assert_eq!(names(&root), ["b.wav"]);
     // The copy cannot be made: the original stays.
     let nowhere = root.join("no/such/folder/c.wav");
-    assert!(move_file(&to, &nowhere, true).is_err());
+    assert!(move_file(&to, &nowhere, true, &mut |_| {}).is_err());
     assert!(to.is_file());
 }
 
@@ -455,11 +507,14 @@ fn files_are_brought_in_made_ready_and_played_at_the_rate_of_the_engine() {
         panic!("not the answer to the bring");
     };
     assert_eq!(files.len(), 6);
-    assert_eq!(files[4], Brought::Unreadable("声.wav".into()));
+    assert_eq!(
+        files[4],
+        Brought::Unreadable("声.wav".into(), decode::Unread::Broken)
+    );
     let read: Vec<ImportedFile> = (files.into_iter())
         .filter_map(|f| match f {
             Brought::In(file) => Some(file),
-            Brought::Unreadable(_) => None,
+            Brought::Unreadable(..) => None,
         })
         .collect();
     assert_eq!(
@@ -589,7 +644,7 @@ fn files_are_brought_in_made_ready_and_played_at_the_rate_of_the_engine() {
         AudioNews::Found {
             audio: 13,
             file: "48k.wav".into(),
-            ok: false
+            found: Finding::Mismatch
         }
     );
     keeper.find(sources[3].clone(), fixture("click.ogg"));
@@ -598,7 +653,7 @@ fn files_are_brought_in_made_ready_and_played_at_the_rate_of_the_engine() {
         AudioNews::Found {
             audio: 13,
             file: "click.ogg".into(),
-            ok: true
+            found: Finding::Taken
         }
     );
     assert!(store.open(&sources[3].uid, 48_000).is_some());

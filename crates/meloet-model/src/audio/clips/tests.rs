@@ -233,6 +233,65 @@ fn the_volume_and_the_fades_are_steps_of_their_own() {
 }
 
 #[test]
+fn several_clips_change_as_one_step_and_the_others_are_passed_by() {
+    let doc = doc();
+    // A second clip on the vocal track, at +10 dB, and a keys clip.
+    let second = ClipId(30);
+    let mut d = doc.clone();
+    let vocal = Track::clone(&d.tracks[1]);
+    let mut c = Clip::clone(&vocal.clips[0]);
+    c.id = second;
+    c.start = 3 * BAR;
+    c.end = 4 * BAR;
+    if let ClipTakes::Vocal { shape, .. } = &mut c.takes {
+        shape.gain = ClipGain::from_db(10.0).unwrap();
+    }
+    let mut clips = vocal.clips.clone();
+    clips.push(Arc::new(c));
+    d.tracks[1] = Arc::new(Track { clips, ..vocal });
+    let (keys, made) = crate::edit::add_recording(
+        &d,
+        TrackId(1),
+        vec![crate::NewTake {
+            origin: 0,
+            length: BAR,
+            notes: Vec::new(),
+            controls: Vec::new(),
+        }],
+        0,
+    )
+    .unwrap();
+    let d = keys.doc;
+    let all = [CLIP, second, made.clip, ClipId(999)];
+    let up = |s: &AudioShape| AudioShape {
+        gain: ClipGain::from_db(s.gain.db() + 3.0).unwrap(),
+        ..*s
+    };
+    let e = set_clips_shape(&d, &all, up, |count| StepKind::SetClipsGain { count }).unwrap();
+    assert_eq!(e.step, StepKind::SetClipsGain { count: 2 });
+    assert_eq!(shape(&e.doc, CLIP).gain.db(), 3.0);
+    // Stopped at the end of the range.
+    assert_eq!(shape(&e.doc, second).gain.db(), 12.0);
+    assert_eq!(e.doc.clip(made.clip), d.clip(made.clip));
+    // One that is at the end already is left out of the count.
+    let e = set_clips_shape(&e.doc, &all, up, |count| StepKind::SetClipsGain { count }).unwrap();
+    assert_eq!(e.step, StepKind::SetClipsGain { count: 1 });
+    assert_eq!(shape(&e.doc, CLIP).gain.db(), 6.0);
+    let same = |s: &AudioShape| *s;
+    assert_eq!(
+        set_clips_shape(&d, &all, same, |count| StepKind::SetClipsGain { count }).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        set_clips_shape(&d, &[made.clip], up, |count| StepKind::SetClipsGain {
+            count
+        })
+        .unwrap_err(),
+        EditError::Unchanged
+    );
+}
+
+#[test]
 fn files_in_a_row_go_one_after_the_other_and_around_what_is_there() {
     let doc = doc();
     // At 120 a minute a second is half a bar. From the song's head: the first ends where

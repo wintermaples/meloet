@@ -1,7 +1,7 @@
 //! The export as the rest of the rules see it: what [`crate::export::Exporting`] is told of
 //! the song, and where its asks go.
 
-use meloet_protocol::{Command, ExportStoppedPlugin, ExportView};
+use meloet_protocol::{Command, ExportStoppedPlugin, ExportView, TrackRef};
 
 use super::{Effect, Model};
 use crate::export::{ExportDirs, ExportNews, Scene};
@@ -13,14 +13,23 @@ impl Model {
     }
 
     fn export_scene(&self) -> Scene<'_> {
+        let doc = &self.play.song().doc;
+        let soloed = &self.play.song().session.soloed;
         Scene {
-            doc: &self.play.song().doc,
+            doc,
             serial: self.play.serial(),
             song_path: self.files.path.as_deref(),
             sample_rate: (self.open.as_ref()).map_or(self.sound.sample_rate, |o| o.sample_rate),
             busy: self.play.busy(),
             stopped_plugins: (self.play.stopped_plugins().into_iter())
                 .map(|(slot, name)| ExportStoppedPlugin { name, slot })
+                .collect(),
+            soloed: (doc.tracks.iter().enumerate())
+                .filter(|(_, t)| soloed.contains(&t.id))
+                .map(|(i, t)| TrackRef {
+                    number: i as u32 + 1,
+                    name: t.name.clone(),
+                })
                 .collect(),
         }
     }

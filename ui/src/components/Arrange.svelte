@@ -1518,6 +1518,7 @@
       <div
         class="lanes"
         role="presentation"
+        data-tip-through-root
         bind:this={lanesBox}
         style:cursor={laneCursor}
         onpointerdown={lanesDown}
@@ -1579,7 +1580,7 @@
                 {#if c.mark === "tag"}
                   <span class="m-num take-tag" class:selected={c.selected}>{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
                 {/if}
-                <span class="clip-name">{c.name}</span>
+                <span class="clip-name" data-tip-through>{c.name}</span>
                 {#each c.marks as mark, i (i)}<span class="m-num clip-mark">{mark}</span>{/each}
               {/if}
             </div>
@@ -1617,7 +1618,7 @@
                 {#if c.mark === "tag"}
                   <span class="m-num take-tag selected">{t("arrange.takeTag", { take: c.take, takes: c.takes })}</span>
                 {/if}
-                <span class="clip-name">{c.name}</span>
+                <span class="clip-name" data-tip-through>{c.name}</span>
                 {#each c.marks as mark, i (i)}<span class="m-num clip-mark">{mark}</span>{/each}
               {/if}
             </div>

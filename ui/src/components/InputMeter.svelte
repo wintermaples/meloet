@@ -12,7 +12,7 @@
   import type { Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
-  import { term, tip } from "../lib/tip.svelte";
+  import { term, tip, tipOf } from "../lib/tip.svelte";
   import { current, onEvent, send } from "../state/app.svelte";
   import { findTerm, t } from "../text/ja";
   import { dbNumber, PeakHold, textParts } from "./format";
@@ -297,6 +297,9 @@
 
   const cssVar = (w: NameWidth) => `var(--${w.replaceAll(".", "-")})`;
   const truncated = $derived(nameNatural > 0 && nameNatural > nameWidthPx(fit.nameWidth, scale));
+  // meterFit may have left sentences out before the CSS "…", so the tip gives the whole message, not the text shown.
+  const messageTip = (el: HTMLElement): string | null =>
+    message && el.scrollWidth > el.clientWidth ? message.parts.join("") : null;
   const nameTip = $derived(others > 0 ? allNames : truncated ? name : null);
 </script>
 
@@ -439,7 +442,7 @@
   <div class="spacer"></div>
 
   {#if message}
-    <span class="message" data-test="meter-right" data-part="msg">
+    <span class="message" data-test="meter-right" data-part="msg" use:tipOf={measuring ? () => null : messageTip}>
       {#each message.parts as part, i (i)}
         {#if measuring || i < fit.sentences}<span class={i === 0 ? message.first : message.rest} data-part="msg-{i}">{part}</span>{/if}
       {/each}

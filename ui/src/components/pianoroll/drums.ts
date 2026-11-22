@@ -118,9 +118,19 @@ export function keyCountsText(names: readonly KeyCount[], drums: Drums | boolean
 
 /** 選んだノートの鍵から「キック ×4 スネア ×2」。名前が 5 つ以上なら、4 つのあとに「…」（右の欄の「音」）。 */
 export function selectedKeysText(keys: Iterable<number>, drums: Drums | boolean): string {
-  const counts = new Map<number, number>();
-  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
-  const names = [...counts].sort((a, b) => a[0] - b[0]).map(([key, count]) => ({ key, count }));
+  const names = countKeys(keys);
   const text = keyCountsText(names.slice(0, 4), drums);
   return names.length > 4 ? `${text} …` : text;
+}
+
+/** Every name that selectedKeysText left out behind its "…", for the tip; null when nothing was left out. */
+export function selectedKeysFull(keys: Iterable<number>, drums: Drums | boolean): string | null {
+  const names = countKeys(keys);
+  return names.length > 4 ? keyCountsText(names, drums) : null;
+}
+
+function countKeys(keys: Iterable<number>): KeyCount[] {
+  const counts = new Map<number, number>();
+  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
+  return [...counts].sort((a, b) => a[0] - b[0]).map(([key, count]) => ({ key, count }));
 }

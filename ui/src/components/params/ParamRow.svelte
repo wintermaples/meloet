@@ -177,7 +177,7 @@
   {#if findTerm(name)}
     <span class="name" use:term={name}>{name}</span>
   {:else}
-    <span class="name" title={name}>{name}</span>
+    <span class="name">{name}</span>
   {/if}
   {#if typing}
     <ValueField initial={typedText(spec, shown)} label={name} unit={unitText(spec)} onsubmit={submit} oncancel={stopTyping} />

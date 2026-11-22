@@ -11,12 +11,12 @@
   import type { Command, QuantizeAlign, QuantizeSettings, ScaleMode } from "../../bridge";
   import { menuOpened } from "../../lib/menu";
   import ScrollArea from "../../lib/ScrollArea.svelte";
-  import { term } from "../../lib/tip.svelte";
+  import { term, tip } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
   import ChoiceMenu from "../ChoiceMenu.svelte";
   import { gridText, scaleName } from "../format";
-  import { keyLabel, rollShowsDrums, selectedKeysText } from "./drums";
+  import { keyLabel, rollShowsDrums, selectedKeysFull, selectedKeysText } from "./drums";
   import { GRID_DIVISIONS, indexesOf } from "./geom";
   import NoteFieldInput from "./NoteFieldInput.svelte";
   import {
@@ -67,6 +67,7 @@
     length: summary ? (summary.length ?? t("inspector.mixed")) : "",
     velocity,
   });
+  const keysFull = $derived(summary ? selectedKeysFull(selectedKeys, drums) : null);
 
   function setScale(root: number, mode: ScaleMode, lock: boolean): void {
     send({ type: "setMusicalScale", root, mode, lock });
@@ -312,6 +313,7 @@
         aria-label={LABELS[name]}
         data-test={TESTS[name]}
         bind:this={fieldButtons[name]}
+        use:tip={name === "key" ? keysFull : null}
         onclick={() => openField(name)}>{fieldText[name]}</button
       >
     {/if}

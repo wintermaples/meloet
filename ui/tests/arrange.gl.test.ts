@@ -45,6 +45,7 @@ describe("場面ごとの WebGL の文脈の数", () => {
     document.body.innerHTML = "";
   });
 
+  // 最初の場面は App のモジュールをはじめて読む。ほかのファイルといっしょに回す混んだ PC では、既定の 5 秒をこえることがある。
   it.each([
     ["recording", ["arrangeLanes", "inputMeter", "masterMeter", "recordingClip", "trackMeters"]],
     ["takes", ["inputMeter", "masterMeter", "overview", "pianoRoll", "pianoRollKeys", "pianoRollLive"]],
@@ -66,5 +67,5 @@ describe("場面ごとの WebGL の文脈の数", () => {
     expect(contextsMade()).toBe(expected.length);
     expect(contextsMade()).toBeLessThanOrEqual(CONTEXT_BUDGET);
     unmount(app);
-  });
+  }, 60_000);
 });

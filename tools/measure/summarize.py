@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Key -> screen and key -> sound from one measured run, next to the numbers of the first study.
 
-usage: python3 -I tools/measure/summarize.py DIR [--vkeys FILE] [--out DIR] [--label TEXT]
+usage: python3 -I tools/measure/summarize.py DIR [--vkeys FILE] [--out DIR] [--label TEXT] [--measured-at TIME]
 
 DIR is what MELOET_MEASURE_DIR was: it holds key-to-sound.json (written by the core) and
 key-to-screen.json (written by the screen). Writes summary.md and summary.json to --out
@@ -17,8 +17,13 @@ received them, so a real keyboard's run reads the same way): "spaced" keys came 
 of a chord, very fast playing). Spec 3 (4th edition): a key is lit within 2 frames; the 2nd
 and later keys of a chord may be one frame later. So the line is 2 frames for spaced keys and
 3 frames for keys soon after.
+
+Callback -> DAC is what meloet read from the output for each key. When it is exactly one buffer
+(one quantum), the summary marks it: in round 7 two runs read one quantum for every key where the
+others read two (docs/measurements/2026-11-22-round8-step1-timing.md 3), and whether the sound
+was early or only the number was is not known yet.
 """
-import argparse, json, math, os, sys
+import argparse, json, math, os, sys, time
 
 # docs/report.md 5-2, row "本物の鍵 117 回", and 5-3, row "本物の鍵、quantum 256".
 STUDY = {
@@ -28,6 +33,8 @@ STUDY = {
     "keyToDacMs": {"mean": 13.5, "p95": 15.8, "max": 16.0},
 }
 FRAME_MS = 1000 / 60
+# Both times are whole microseconds.
+ONE_QUANTUM_SLACK_US = 2
 WAITED_MS = 2.0
 GAP_BINS = [
     (0.0, FRAME_MS, "0–16.7"),
@@ -122,6 +129,33 @@ def sound_times(sound):
     return to_callback, to_dac
 
 
+def one_quantum(sound):
+    """The keys (1 = the first) whose callback -> DAC is exactly one buffer; None when the buffer
+    is not known."""
+    frames, rate = sound.get("actualFrames"), sound.get("sampleRate")
+    records = sound.get("records", [])
+    if not frames or not rate or not records:
+        return None
+    quantum_us = frames * 1_000_000 / rate
+    keys = [
+        n
+        for n, r in enumerate(records, 1)
+        if abs(r["playbackUs"] - r["callbackUs"] - quantum_us) <= ONE_QUANTUM_SLACK_US
+    ]
+    return {"quantumMs": quantum_us / 1000, "keys": keys, "count": len(keys), "of": len(records)}
+
+
+def runs(numbers):
+    """1, 2, 3, 7 -> "1–3, 7"."""
+    out = []
+    for n in numbers:
+        if out and out[-1][1] == n - 1:
+            out[-1][1] = n
+        else:
+            out.append([n, n])
+    return ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in out)
+
+
 def sent_to_received(vkeys, screen):
     """vkeys' send time -> Rust's receive time, when both saw the same keys in the same order."""
     sent = vkeys.get("notes", [])
@@ -131,13 +165,16 @@ def sent_to_received(vkeys, screen):
     return [(g["tUs"] - s["on_t_us"]) / 1000 for s, g in zip(sent, got)]
 
 
-def summarize(sound, screen, vkeys, label=""):
+def summarize(sound, screen, vkeys, label="", measured_at=None):
     to_js, to_draw, undrawn = screen_times(screen or {})
     to_callback, to_dac = sound_times(sound or {})
+    records = (sound or {}).get("records", [])
+    callback_to_dac = [(r["playbackUs"] - r["callbackUs"]) / 1000 for r in records]
     shown = [x + FRAME_MS for x in to_draw]
     groups, bins = by_gap(draw_by_gap(screen or {}))
     return {
         "label": label,
+        "measuredAt": measured_at,
         "sampleRate": (sound or {}).get("sampleRate"),
         "requestedFrames": (sound or {}).get("requestedFrames"),
         "actualFrames": (sound or {}).get("actualFrames"),
@@ -153,6 +190,8 @@ def summarize(sound, screen, vkeys, label=""):
         "keyToDrawByGapBins": bins,
         "keyToCallbackMs": stats(to_callback),
         "keyToDacMs": stats(to_dac),
+        "callbackToDacMs": stats(callback_to_dac),
+        "callbackToDacOneQuantum": one_quantum(sound or {}),
         "sentToRustMs": stats(sent_to_received(vkeys or {}, screen or {})),
         "study": STUDY,
     }
@@ -185,9 +224,20 @@ def markdown(r):
     count = lambda s: str(s["count"]) if s else "0"
     frames = r["actualFrames"] if r["actualFrames"] is not None else "?"
     rate = r["sampleRate"] or "?"
+    once = r.get("callbackToDacOneQuantum")
+    flag = []
+    if once and once["count"]:
+        flag = [
+            f"**Callback -> DAC was exactly one quantum ({once['quantumMs']:.3f} ms) for "
+            f"{once['count']} of {once['of']} keys (keys {runs(once['keys'])}), in the run of "
+            f"{r.get('measuredAt') or '?'}.** See docs/measurements/2026-11-22-round8-step1-timing.md 3.",
+            "",
+        ]
     out = [
         f"# Key latency{' — ' + r['label'] if r['label'] else ''}",
         "",
+        *flag,
+        f"- measured: {r.get('measuredAt') or '?'}",
         f"- buffer: {frames} frames running (asked for {r['requestedFrames'] or '?'}), {rate} Hz",
         f"- keys sent by meloet-vkeys: {r['keysSent'] if r['keysSent'] is not None else '?'}",
         "",
@@ -227,6 +277,15 @@ def markdown(r):
         f"| study (real keys, quantum 256) | {cells(STUDY['keyToCallbackMs'], ['mean', 'p95', 'max'])} "
         f"| {cells(STUDY['keyToDacMs'], ['mean', 'p95', 'max'])} | — |",
         "",
+        "Callback -> DAC as meloet read it, min / max: "
+        + cells(r.get("callbackToDacMs"), ["min", "max"])
+        + " ms"
+        + (
+            f"; exactly one quantum: {once['count']} of {once['of']} keys"
+            if once is not None
+            else "; the buffer is not known, so one quantum is not looked for"
+        ),
+        "",
     ]
     notes = []
     if r["shownWithinTwoFramesPercent"] is not None:
@@ -264,12 +323,19 @@ def main():
     p.add_argument("--vkeys", help="the --log file of meloet-vkeys play")
     p.add_argument("--out", help="where summary.md and summary.json go (default: DIR)")
     p.add_argument("--label", default="", help="a name for the run, shown in the title")
+    p.add_argument("--measured-at", help="when the run started (default: when key-to-sound.json was written)")
     a = p.parse_args()
 
     sound = read_json(os.path.join(a.dir, "key-to-sound.json"), "key -> sound")
     screen = read_json(os.path.join(a.dir, "key-to-screen.json"), "key -> screen")
     vkeys = read_json(a.vkeys, "vkeys log") if a.vkeys else None
-    result = summarize(sound, screen, vkeys, a.label)
+    measured_at = a.measured_at
+    try:
+        written = os.path.getmtime(os.path.join(a.dir, "key-to-sound.json"))
+        measured_at = measured_at or time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(written))
+    except OSError:
+        pass
+    result = summarize(sound, screen, vkeys, a.label, measured_at)
 
     out = a.out or a.dir
     os.makedirs(out, exist_ok=True)

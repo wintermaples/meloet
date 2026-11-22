@@ -393,12 +393,13 @@ fn windows_open_are_listed_and_a_visit_is_one_step_through_the_core() {
     std::thread::sleep(QUIET);
     assert_eq!(core.undo_count(), steps);
 
-    // In, two things changed, out: one step. Undo and redo put the plugin back and forth,
-    // and the window stays.
+    // In, two things changed by a hand, out: one step (a change with no hand is no step,
+    // 21-10). Undo and redo put the plugin back and forth, and the window stays.
     x.focus(window);
     core.visit_when(true);
     core.turn(id, LEVEL, 0.3);
     core.turn(id, LEVEL, 0.2);
+    core.hand(track);
     assert_eq!(core.undo_count(), steps, "not before the person is back");
     x.unfocus();
     core.steps_when(steps + 1, "the visit is a step");
@@ -421,6 +422,7 @@ fn windows_open_are_listed_and_a_visit_is_one_step_through_the_core() {
     x.focus(window);
     core.visit_when(true);
     core.turn(id, LEVEL, 0.6);
+    core.hand(track);
     core.send(Command::SetPluginParam {
         slot,
         table,

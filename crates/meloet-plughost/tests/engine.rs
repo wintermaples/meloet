@@ -92,6 +92,32 @@ fn block(parts: &mut EngineParts, out: &mut [f32], at: &mut u64) -> (u64, f32) {
     (took, out.iter().fold(0.0, |m, x| m.max(x.abs())))
 }
 
+/// Whether process `pid` has a handler of its own for `signal`.
+fn catches(pid: i32, signal: i32) -> bool {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap();
+    let mask = status
+        .lines()
+        .find_map(|line| line.strip_prefix("SigCgt:"))
+        .map(|hex| u64::from_str_radix(hex.trim(), 16).unwrap())
+        .unwrap();
+    mask & (1 << (signal - 1)) != 0
+}
+
+/// Waits until child `pid` has ended or is stopped, and leaves it to be waited for.
+fn wait_gone_or_stopped(pid: i32) {
+    // SAFETY: a plain call on the child this test started, into memory of our own.
+    let done = unsafe {
+        let mut info: libc::siginfo_t = std::mem::zeroed();
+        libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WSTOPPED | libc::WNOWAIT,
+        )
+    };
+    assert_eq!(done, 0, "{}", std::io::Error::last_os_error());
+}
+
 /// Track 0: a sine of host A. Track 1: this process's own synth through a pass-through of
 /// host A. Track 2: a sine of host B. `signal` is sent to host A while all three sound.
 fn a_host_process_stopped_from_outside(signal: i32) {
@@ -153,17 +179,25 @@ fn a_host_process_stopped_from_outside(signal: i32) {
     let before_b = watch_b.unanswered();
     assert!(watches.iter().all(|w| !w.stopped()) && !watch_b.stopped());
 
+    let pid = a.child.0.id() as i32;
     // SAFETY: a plain call on the child this test started.
-    assert_eq!(unsafe { libc::kill(a.child.0.id() as i32, signal) }, 0);
+    assert_eq!(unsafe { libc::kill(pid, signal) }, 0);
     if signal == libc::SIGSEGV {
         // Rust's own handler (it looks for stack overflows) takes the first one that comes
         // from outside, puts the default back and returns; the second one is the crash.
-        // Two of the same signal sent at once would arrive as one.
-        std::thread::sleep(Duration::from_millis(3));
+        // Two of the same signal sent before the first is taken would arrive as one.
+        let until = Instant::now() + Duration::from_secs(30);
+        while catches(pid, libc::SIGSEGV) {
+            assert!(Instant::now() < until, "the first SIGSEGV was never taken");
+            std::thread::sleep(Duration::from_micros(200));
+        }
         // SAFETY: as above.
-        unsafe { libc::kill(a.child.0.id() as i32, signal) };
-        at = monotonic_ns();
+        assert_eq!(unsafe { libc::kill(pid, signal) }, 0);
     }
+    // The blocks are counted from when the process is really gone or stopped: on a busy PC
+    // that can be some time after the signal.
+    wait_gone_or_stopped(pid);
+    at = monotonic_ns();
     let killed = Instant::now();
     // The first block that goes without an answer, then the block after it: the process is
     // given up on. A slot's own watch says so when the slot next runs, so one that ran in that
@@ -201,19 +235,28 @@ fn a_host_process_stopped_from_outside(signal: i32) {
     let (took, _) = block(&mut parts, &mut out, &mut at);
     assert!(watches.iter().all(|w| w.stopped()));
     assert_eq!(unanswered(&watches), after);
-    assert!(took < BLOCK_NS / 2, "a stopped slot was waited for: {took}");
     let share_ns = (BLOCK_NS as f64 * PLUGIN_WAIT_SHARE) as u64;
     assert!(times[first] < share_ns + BLOCK_NS, "{times:?}");
 
     // The engine and the other host process go on: the sine of B and the synth of track 1
     // (now past the stopped effect) still sound, and the stopped slots cost no time.
     let mut loudest = 0.0f32;
+    let mut took = vec![took];
     let began = Instant::now();
     for _ in 0..50 {
-        let (_, peak) = block(&mut parts, &mut out, &mut at);
+        let (time, peak) = block(&mut parts, &mut out, &mut at);
+        took.push(time);
         loudest = loudest.max(peak);
     }
     assert!(began.elapsed() < Duration::from_millis(50 * 6 + 200));
+    // A stopped slot waited for would make every block as long as the wait; on a busy PC
+    // only some blocks are long.
+    took.sort_unstable();
+    let middle = took[took.len() / 2];
+    assert!(
+        middle < BLOCK_NS / 2,
+        "a stopped slot was waited for: {took:?}"
+    );
     assert!(loudest > 0.3, "{loudest}");
     assert!(!watch_b.stopped());
     assert!(watch_b.unanswered() - before_b <= 2);

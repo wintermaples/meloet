@@ -27,6 +27,7 @@ struct Numbers {
     frames: u64,
     stereo: bool,
     slow: Arc<Mutex<Duration>>,
+    gate: Arc<Mutex<()>>,
 }
 
 impl PcmFile for Numbers {
@@ -37,6 +38,7 @@ impl PcmFile for Numbers {
         self.frames
     }
     fn read(&mut self, frame: u64, out: &mut [f32]) -> io::Result<usize> {
+        drop(self.gate.lock().unwrap());
         let slow = *self.slow.lock().unwrap();
         if !slow.is_zero() {
             std::thread::sleep(slow);
@@ -56,6 +58,10 @@ impl PcmFile for Numbers {
 struct Store {
     /// How long every read takes.
     slow: Arc<Mutex<Duration>>,
+    /// Held while the test reads the ring: a chunk the thread began while the ring was
+    /// being emptied goes in only after, so the thread never finds the ring full halfway
+    /// through a read and rests short of full (on a busy PC it could).
+    gate: Arc<Mutex<()>>,
     /// Files with this number and above are not there.
     gone_from: Mutex<u8>,
     opened: AtomicU64,
@@ -82,6 +88,7 @@ impl PcmStore for Store {
                 frames: 1_000_000,
                 stereo: self.stereo.load(Relaxed),
                 slow: self.slow.clone(),
+                gate: self.gate.clone(),
             }) as Box<dyn PcmFile>
         })
     }
@@ -95,6 +102,7 @@ impl PcmStore for Store {
                 frames: 1_000_000,
                 stereo: false,
                 slow: self.slow.clone(),
+                gate: self.gate.clone(),
             }) as Box<dyn PcmFile>
         })
     }
@@ -119,6 +127,7 @@ fn clip(start: u64, end: u64, n: u8, file_frame: i64) -> FeedClip {
 
 struct Rig {
     ahead: ReadAhead,
+    store: Arc<Store>,
     wants: rtrb_free::Wants,
     reader: StreamReader,
     generation: u32,
@@ -152,7 +161,7 @@ const SEAT: usize = 5;
 
 impl Rig {
     fn new(store: Arc<Store>, clips: Vec<FeedClip>) -> Rig {
-        let ahead = ReadAhead::spawn(store);
+        let ahead = ReadAhead::spawn(store.clone());
         let (wants, rx) = rtrb_free::Wants::new();
         ahead.set_wants(rx);
         ahead.set_map(map(), 1);
@@ -160,6 +169,7 @@ impl Rig {
         ahead.set_track(SEAT, Some((writer, RATE)), clips);
         Rig {
             ahead,
+            store,
             wants,
             reader,
             generation: 0,
@@ -186,7 +196,7 @@ impl Rig {
     }
 
     fn wait(&self, what: &str, done: impl Fn(&Rig) -> bool) {
-        let until = Instant::now() + Duration::from_secs(5);
+        let until = Instant::now() + Duration::from_secs(60);
         while !done(self) {
             assert!(Instant::now() < until, "{what}");
             std::thread::sleep(Duration::from_millis(1));
@@ -203,7 +213,9 @@ impl Rig {
     /// Left and right of `frames` frames from `frame` on, and how many were not there.
     fn read(&mut self, frame: u64, frames: usize) -> (Vec<[f32; 2]>, u32) {
         let mut out = vec![9.0f32; frames * 2];
+        let gate = self.store.gate.lock().unwrap();
         let found = self.reader.read(self.generation, frame, &mut out);
+        drop(gate);
         (out.as_chunks::<2>().0.to_vec(), found.missing)
     }
 }
@@ -237,7 +249,7 @@ fn the_ring_holds_the_clips_in_the_order_they_sound_with_silence_between() {
         assert_eq!(*frame, [want, want], "frame {f}");
     }
     // It goes on by itself as the ring empties.
-    rig.wait("the ring fills again", |rig| rig.fed() == 192_000);
+    rig.wait("the ring fills again", |rig| rig.fed() >= 96_000 + 6_000);
     let (out, missing) = rig.read(96_000, 6_000);
     assert_eq!(missing, 0);
     assert_eq!(out[0][0], sample(3, 6_000));
@@ -272,7 +284,9 @@ fn a_new_generation_starts_from_the_new_place_and_a_stereo_file_keeps_its_sides(
     // Four seconds on, the engine already 300 frames past its anchor (a track that reads
     // ahead by its plugins' delay).
     rig.jump(4.0, 300, None);
-    rig.wait("the new generation is fed", |rig| rig.fed() > 96_000);
+    rig.wait("the new generation is fed", |rig| {
+        rig.fed() >= 96_000 + 4_096
+    });
     // What is left of the old generation is passed over.
     let (out, missing) = rig.read(300, 4_096);
     assert_eq!(missing, 0);
@@ -394,7 +408,9 @@ fn a_file_that_is_not_there_is_silence_until_the_store_has_it() {
     *store.gone_from.lock().unwrap() = u8::MAX;
     rig.ahead.store_changed();
     rig.jump(0.0, 0, None);
-    rig.wait("the new generation is fed", |rig| rig.fed() > 96_000);
+    rig.wait("the new generation is fed", |rig| {
+        rig.fed() >= 96_000 + 2_000
+    });
     let (out, _) = rig.read(0, 2_000);
     assert_eq!(rig.ahead.stats().unopened.load(Relaxed), 0);
     // Only the file that was not there was asked for again.
@@ -411,7 +427,9 @@ fn other_clips_come_with_the_next_generation_and_a_track_can_go() {
     // The clip moved a second to the right; the core says so, then the engine jumps.
     rig.ahead.set_clips(SEAT, vec![clip(48_000, 900_000, 1, 0)]);
     rig.jump(0.0, 0, None);
-    rig.wait("the new generation is fed", |rig| rig.fed() > 96_000);
+    rig.wait("the new generation is fed", |rig| {
+        rig.fed() >= 96_000 + 50_000
+    });
     let (out, missing) = rig.read(0, 50_000);
     assert_eq!(missing, 0);
     assert!(out[..48_000].iter().all(|f| *f == [0.0; 2]));

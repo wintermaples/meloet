@@ -71,6 +71,25 @@ def main():
     r = summarize.summarize(None, {"keys": screen()["keys"]}, None)
     assert r["keyToDrawByGap"]["spaced"]["lineMet"] is None
     summarize.markdown(r)
+
+    # Callback -> DAC exactly one quantum (256 frames at 48 kHz: 5333.3 us) is marked, with
+    # the keys it was; two quanta are not.
+    records = []
+    for n, gap in enumerate([10_667, 5_333, 5_334, 10_666, 5_333, 5_340]):
+        callback = 2_000_000 + n * 257_000
+        records.append({"keyUs": callback - 3_000, "callbackUs": callback, "playbackUs": callback + gap})
+    sound = {"sampleRate": 48_000, "actualFrames": 256, "records": records}
+    r = summarize.summarize(sound, None, None, measured_at="2026-11-22 18:21:05")
+    once = r["callbackToDacOneQuantum"]
+    assert once["keys"] == [2, 3, 5] and once["of"] == 6, once
+    text = summarize.markdown(r)
+    assert "for 3 of 6 keys (keys 2–3, 5), in the run of 2026-11-22 18:21:05" in text, text
+    # Not marked when no key was, nor when the buffer is not known.
+    sound["records"] = [records[0], records[3]]
+    assert summarize.summarize(sound, None, None)["callbackToDacOneQuantum"]["count"] == 0
+    assert "exactly one quantum (" not in summarize.markdown(summarize.summarize(sound, None, None))
+    del sound["actualFrames"]
+    assert summarize.summarize(sound, None, None)["callbackToDacOneQuantum"] is None
     print("summarize: ok")
 
 

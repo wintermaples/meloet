@@ -2499,3 +2499,61 @@ pub struct AudioShape {
   - `song_places.rs` の `pedal_sounds_of_the_song_take_turns_by_their_place`（グランドピアノのようにペダルの踏む音 2 つ ・ 離す音 2 つが順ぐり、5 小節踏んで離す）: 踏む音どうし ・ 離す音どうしのとなりはちがい、1 つおきに戻る。頭から 2 回、3 小節めの 2 拍め（踏んだまま）と 4 小節めから 2 回ずつ、1 こまもちがわない。確保 (0, 0)。`release_sounds_of_the_song_take_turns_by_their_place`（離したときの音が強弱 2 段 × 順ぐり 3、2 小節めと 4 小節めはペダルで待つ）: 同じ段のとなりはちがい、頭から 2 回と途中から（ペダルを踏んだままの所も）1 こまもちがわない。確保 (0, 0)。`a_pedal_played_now_goes_round_its_sounds`: 人のペダルは続きから回る。
   - `service/export_tests.rs` の `what_is_exported_is_what_plays_sample_for_sample`: 曲を 1 回ひらき、範囲ごとに同じエンジンで 2 回再生（間に、しっぽが消えて 2 秒しずかになるまで待つ）、1 回めと 2 回め、2 回めと書き出しが 1 こまもちがわない。
 - **ループの境目のペダル**（オーナーさんの決め 2026-11-22）: ループの終わりで頭に戻るとき、曲が踏んでいるペダルは `Lane::silence_at_loop` が音なしで離す（`song_pedal(0, 追いかけた印)`。そのまま弾きつづけたら、そこでペダルは動かないため）。待っていた鍵の離したときの音は鳴る。止めたときの `Lane::silence` は、いままでどおり離す音を鳴らす。
+
+---
+
+## 23. 第 8 回で決めたこと（仕上げと配る形）
+
+調べ物は `docs/research/` の `distribution-formats.md`、`webkitgtk-2404-2604.md`、`sound-pack-download.md`、`dev-hooks-release.md`（2026-11-22）。デザインは第 12 版（43-B ・ 44-A ・ 45-A）。
+
+### 23-1. 音の素材の包みの形（19-1 ・ 19-8 を変える）
+
+- **音色ごとのファイル**にする（45-A「取れた音色から鳴る」と、新しい包みで変わった音色だけ取りなおすため）。1 つの音色 = 1 つの tar（`<音色>-<音色の版>.tar`。中は今の `grand-piano/instrument.json` と `samples/*.flac`。FLAC はもう縮んでいるので tar は縮めない）。帰属表示とライセンスの文（`credits.json`、`licenses/`）は小さな共通の tar `common-<版>.tar` に。
+- **目録** `catalog.json`（版つきの JSON、`"format": "meloet-sounds-catalog", "version": 1`）: 包みの版（`2026.12.0` など）、音色ごとに `{id, version, file, url, bytes, sha256, credits}`、共通の tar の同じ欄。音色の版は、その音色の中身（instrument.json とサンプル）の sha256 から作る（中身が同じなら版も同じ。包みを作りなおしても、変わらない音色は取りなおさない）。
+- **署名**: 目録に minisign の署名（`catalog.json.minisig`）をつけ、公開鍵は実行ファイルに入れる。meloet は署名の合わない目録を使わない（`minisign-verify`、MIT、依存なし）。**理由**: 目録とファイルは同じ Release から来るので、sha256 だけでは Release やアカウントを書きかえられた時に守れない。取った FLAC は外から来た物としてデコーダに入るので、入口を鍵の持ち主に絞る。秘密鍵はリポジトリに入れない（だれが持つかはオーナーさんに聞く。0-4）。
+- **置き場所**: `$XDG_DATA_HOME/meloet/sounds/<音色>/<音色の版>/`（ないときは `~/.local/share`）。目録の写しは `$XDG_DATA_HOME/meloet/sounds/catalog.json`。**理由**: 取りなおせるが 240 MB で重く、ネットがない所では取れない。`~/.cache` は掃除の道具が消す前提（調べ物 A）。歌のファイルの写し（`audiofiles/`）は「消えても作りなおせる」ので `XDG_CACHE_HOME` のまま。
+- さがす順（19-1 を変える）: `MELOET_SOUNDS_DIR`（開発と試験だけ。23-4）→ 開発のビルドの `target/*/sounds` → `$XDG_DATA_HOME/meloet/sounds/`。音色ごとに、目録の版のフォルダがあれば使う。前の形（`~/.cache/meloet/sounds/<包みの版>/`）は、この PC の開発のための物なので読まない。
+- **作りかた**: `tools/sounds/build.py` は今のまま 1 つのフォルダを作り、新しい `tools/sounds/split.py`（仮の名前）が音色ごとの tar と目録を作り、署名する。Release は 1 つの包みの版ごとに 1 つ（タグ `sounds-<包みの版>`、immutable にする）。前の Release に同じ版の音色があれば、その URL を目録に書き、同じファイルを上げなおさない。上げる前にオーナーさんに聞く（いつもの決まり）。
+- **はじめの目録**は、ビルドのときに実行ファイルに入れる（今の `tools/sounds/pack.json` と同じ役目）。はじめての取りにいくのに、ネットの目録を待たない。
+
+### 23-2. 取りにいく係（43-B ・ 44-A ・ 45-A）
+
+- core の中の 1 本のスレッド（`meloet-core/src/sounds/fetch.rs` など）。音のスレッドから遠い。HTTP は `ureq` 3（MIT OR Apache-2.0、blocking）、TLS は rustls ＋ ring、証明書は PC の物（`rustls-platform-verifier`）、読めなければ `webpki-roots`。`https_only`、リダイレクトは 10 回まで、User-Agent は `meloet/<版>` だけ（OS も名前も送らない）。プロキシは環境変数（`HTTPS_PROXY` ・ `NO_PROXY`）。
+- **答えるまでは取らない**（43-B）。答えは設定（PC につく）に残す。「あとで」は、次の起動でまた聞く（文と形は第 12 版のとおり）。
+- **順**: 45-A のとおりグランドピアノ、スタジオキットが先。そのあとは design-notes の B-95-1（Y2 の急ぐ順のうち包みにある物、そのあと棚の並び）。1 つずつ取る（並べて取らない。グランドピアノが早く届くため）。
+- **続きから**: `<file>.part` に書き、とちゅうで切れたら `Range` で続きを頼む。206 なら足す、200 ならはじめから。403 ・ 410（期限つきの URL が切れた）は、目録の URL からたどりなおす。**仕上げにかならず大きさと sha256 をたしかめ**、合わなければ消して 1 回だけだまって取りなおす。2 回めも合わなければ「こわれていた」（6 章の文）。`If-Range` には頼らない。
+- **置く**: たしかめたら、同じファイルシステムの中の作業のフォルダにほどき、`rename` で `<音色>/<版>/` に入れる（こわれない書きかた。14 章と同じ考え）。
+- **空き**: 取りはじめる前に、残りの大きさ ＋ 64 MB を `statvfs`（`rustix`、もう Cargo.lock にある）の `f_bavail × f_frsize` とくらべる。足りなければ取らずに「ディスクがいっぱい」。書いている間に `ENOSPC` が来ても同じ。
+- **取れた音色から鳴る**: 置いたら core が読みこみ（今の `play/sounds.rs` の「読めたら、その音色の席をぜんぶ作りなおす」流れ）、席を入れかえる。エンジンの入れかえは 10 ms 重ねる決まりのまま。**取る前の席は「サイン波で代わり」**（3 章「取れるまで鳴らす音」。新しい曲の 1 本目は、取る前からグランドピアノの名前で、音はサイン波）。曲のファイルには本当の音色の名前を書く。
+- **やめる**: いま取っているファイルは `.part` のまま残し、次は続きから。
+- **ネットにつなぐ所はここだけ**。画面（WebView）は CSP の `connect-src` で外に出られない（今のまま）。区切り4 で、起動から終わりまで、ほかの所から外に出ていかないことを見る。
+
+### 23-3. 起動のときの確かめ
+
+- 新しい包みがあるかは、**起動を止めずに**（画面のあいさつのあと、取りにいく係のスレッドで）、**目録を 1 つ取るだけ**（`GET` 1 回 ＋ 署名 1 回。名前も何も送らない。User-Agent は `meloet/<版>`）。
+- **回数は 24 時間に 1 回まで**。見にいった時刻を状態の場所（`MELOET_STATE_DIR` のふだんの場所）に書き、24 時間たつまで見にいかない。**理由**: 包みは月に 1 回も変わらない。多く見にいくと、GitHub に IP が残る回数がふえるだけ。Sparkle（macOS の更新のしくみ）の既定も 1 日（調べ物 A）。
+- **ネットがなければ、だまっている**（知らせも、記録の文も出さない。次の起動でまた 24 時間の決まりで）。
+- 音の素材を 1 つも取っていない人（「あとで」の人）には見にいかない（取りにいくかの問いが先）。
+- 目録の置き場所（ネットの物）は、Release とは別の、変わらない URL がいる（Release は版ごとに immutable なので）。仮に `https://raw.githubusercontent.com/wintermaples/meloet/main/sounds/catalog.json`（と `.minisig`）。`main` に置くので、配る前に `foundation` を `main` へ入れる時期とつながる（0-4 で聞く）。
+
+### 23-4. release と開発のビルドのちがい
+
+- Rust: feature **`dev-hooks`**（`meloet-app` の feature。`meloet-core/dev-hooks` などへ流す。`default` に入れない）。`#[cfg(feature = "dev-hooks")]` の属性で、モジュールごと、命令ごと（`generate_handler!` の項目にも）外す。`cfg!(…)` のマクロは使わない（文字が残る）。`cfg(debug_assertions)` も使わない（release で測れなくなる）。外す物: `devhooks.rs` のぜんぶ（`MELOET_PIPE` ・ `MELOET_OPEN_SONG` ・ `MELOET_UI_SCRIPT` など）、`measure_*` ・ `ui_script` の命令、`MELOET_DEBUG_SCREEN`、`MELOET_MEASURE_DIR`、試験用の鍵盤の設定（`MELOET_ACCEPT_VIRTUAL` など）、plughost の試験の仕込み（`MELOET_PLUGHOST_FAKE` など）、置き場所の差しかえ（`MELOET_STATE_DIR` ・ `MELOET_SOUNDS_DIR` など）。試験は crate の中の試験（`cfg(test)`）か、`--features dev-hooks` で回す。
+- 画面: `define` の `__DEV_HOOKS__`（`MELOET_DEV_HOOKS=1` のときだけ true）の `if` の中でだけ `ui/src/dev/` の入口を読む。塊が落ちなければ、本番では `resolve.alias` で空の入口に差しかえる（作って `ui/dist` で見て決める）。
+- 測る道具（`tools/measure/`）は `--features dev-hooks` と `MELOET_DEV_HOOKS=1` で作る。
+- **見はりの試験**（`scripts/check-release.sh`、区切り4 で作る）: feature なしの `cargo build --release -p meloet-app` の実行ファイルに `strings` をかけ、仕込みの名前の一覧が 1 つも出ないこと。画面は本番の `ui/dist` を grep。実行ファイルに入った画面は `generate_context!().assets()` を戻して見る。逆に、feature ありでは名前が出ること（試験が空ぶりしていない印）。配るビルドは `-p meloet-app` を 1 つだけ指す（`--workspace` だと feature が和になって入る）。
+
+### 23-5. 配る形と版の名前
+
+- **形**: deb を主力にする案（オーナーさんに聞く。0-4）。Ubuntu 24.04 の上（コンテナ）で作り、24.04 と 26.04 の両方に入る `Depends` を自分で書く（`libwebkit2gtk-4.1-0, libasound2t64 | libasound2, libpipewire-0.3-0t64 | libpipewire-0.3-0, libstdc++6`、`Recommends: pipewire, wireplumber`）。`meloet-plughost` は `/usr/bin/` の本体のとなり（`bundle.externalBin`）。見つけかたは `current_exe()` のとなり（`launch::spawn` のまま）。`LICENSE-MIT` ・ `LICENSE-APACHE` ・ `NOTICE` は `/usr/share/doc/meloet/`。AppImage は作らない（ホストの Mesa ・ NVIDIA とずれて落ちる事故。調べ物 A）。Flatpak は作らない（ホストのプラグインが見えない）。
+- **版の名前**: はじめて配る版は `0.1.0`（いまの `Cargo.toml` のまま）。「meloet について」はその数（いまも `0.1.0` が出る。出どころはライセンスの一覧を作る道具。区切り4 で `Cargo.toml` の版とそろうことを試験で見る）。曲のファイルの版 ・ 約束の版とは別の数。包みの版（`2026.12.0` など）は日付の形のまま、別の数。
+- **WebKitGTK**: 24.04 にも 2.52.6 が届いているので、頼っている決まり（描きなおし、GC、WebGL の 16）はソースの上では同じ（調べ物 A）。ただし、この PC の WebKitGTK は 2026-11-21 に `.1` → `.2` に上がり、NVIDIA で描く道が変わったかもしれない（推論）。区切り2 の前に、この PC で見なおす（`webkit-damage.sh`）。
+
+### 23-6. 棟梁が決めた所（理由つき、まとめ）
+
+- 署名をつける: 上の 23-1。手間は Release を作るときの 1 行。
+- 24 時間に 1 回: 上の 23-3。
+- 置き場所を DATA に: 上の 23-1。
+- ureq: tokio を持ちこまない。1 本のスレッドで足りる。reqwest は 0.13 の既定が aws-lc（C の部品が多い）。
+- 1 つずつ取る: 45-A（グランドピアノを先に鳴らす）を守るいちばん単純な形。並べても回線の太さは同じ。
+

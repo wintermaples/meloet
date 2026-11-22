@@ -330,7 +330,7 @@ describe("四角の並び", () => {
 
     const doc = specDocument();
     const s3 = sectionText(doc, "s3");
-    expect(s3).toContain(`細い入力計の鍵盤にも黒鍵を描く（幅 ${s.black.w}、高さ ${s.black.h}）。押した黒鍵は accent で光る。`);
+    expect(s3).toContain(`The keyboard in the slim input meter also draws black keys (width ${s.black.w}, height ${s.black.h}). A pressed black key lights up in accent.`);
     expect(cellText(doc.body)).toContain(`the keyboard picture to thin keys (width ${n.white.w})`);
   });
   it("細い鍵（太い入力計がせまいとき）: 白鍵 8、黒鍵は幅 5、高さ 19", () => {

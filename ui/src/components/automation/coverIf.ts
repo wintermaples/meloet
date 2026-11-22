@@ -116,3 +116,28 @@ export function askLive(node: HTMLElement, track: number | null) {
     },
   };
 }
+
+/**
+ * node が見えているか（横に送った外でないか）を tell で知らせる。IntersectionObserver のない所（テスト）では、いつも見えているとする。
+ * 毎コマ変わる字は、見えている箱にだけ書く: ミキサーのストリップは content-visibility: auto なので、外のストリップの中の字を変えると、
+ * WebKit は中を飛ばしていた箱をレイアウトしなおし、ミキサーの行ぜんぶの flex を伸ばしなおす（64 本で 1 コマ 200 ms 余り）。
+ */
+export function whenSeen(node: HTMLElement, tell: (seen: boolean) => void) {
+  if (typeof IntersectionObserver === "undefined") return;
+  seenBy ??= new IntersectionObserver((entries) => {
+    for (const e of entries) seenTell.get(e.target)?.(e.isIntersecting);
+  });
+  seenTell.set(node, tell);
+  seenBy.observe(node);
+  return {
+    update(next: (seen: boolean) => void) {
+      seenTell.set(node, next);
+    },
+    destroy() {
+      seenTell.delete(node);
+      seenBy?.unobserve(node);
+    },
+  };
+}
+let seenBy: IntersectionObserver | null = null;
+const seenTell = new Map<Element, (seen: boolean) => void>();

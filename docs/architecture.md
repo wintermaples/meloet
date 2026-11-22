@@ -2557,3 +2557,66 @@ pub struct AudioShape {
 - ureq: tokio を持ちこまない。1 本のスレッドで足りる。reqwest は 0.13 の既定が aws-lc（C の部品が多い）。
 - 1 つずつ取る: 45-A（グランドピアノを先に鳴らす）を守るいちばん単純な形。並べても回線の太さは同じ。
 
+### 23-7 約束 27 の形（区切り2 ・ 3 の 1 回目、2026-11-22、meloet-hard）
+
+形と TS の型と偽物の場面だけを置いた回。core はいまの動きのまま新しい形を埋めただけ（音の素材は「ぜんぶある」、新しい意図は受けて何もしない）。2 回目で core と画面を作る。
+
+**1. 歌のクリップを 2 つ以上えらんだとき（39-B ・ 40-A）**
+
+- 見方: `ParamsView::clips: Option<SelectedClips>`（`crates/meloet-protocol/src/audio.rs`）。`Some` は、選んだクリップが 2 つ以上で、**ぜんぶ**歌のクリップのとき（鍵盤のクリップがまざれば `None`）。そのとき `selected` は `None`。インサートや音源をえらぶと、`selected` と同じく欄をゆずり、クリップをえらびなおすと戻る。
+  - `SelectedClips { clips, tracks, gain_db, follow, semitones, cents, keep_formant }`。`clips` は `ArrangeView::selected_clips` の順、`tracks` はそのトラックの id（1 回ずつ、トラックの順。「6 歌 ・ 7 歌 2」）。値は、ぜんぶ同じならその値、ちがえば `None`（欄は「—」）。
+  - **`SelectedParams` の腕にしなかった理由**: 腕をふやすと、いまの画面の部品（`RightRail.svelte` の `selected.kind` の分かれ）が型で落ちる。1 回目は画面の部品をさわらない決まりなので、となりの欄にした。
+- 意図（どれも 1 手。`StepName` はいまの `SetClipGain` ・ `SetClipFollow` ・ `SetClipPitch`、`StepWhat::Clips { count }`）:
+  - `ShiftClipGains { clips, by_db }`: 音量の線のドラッグを離したとき。ぜんぶが同じ dB だけ動き、それぞれ −60〜+12 で止まる。0 ・ 数でない値 ・ 歌のクリップが 1 つもないときは何もしない。
+  - `SetClipGains { clips, db }`: 「まとめて変える」の「音量」に打った値を、ぜんぶに。
+  - `SetClipsStretch { clips, change: StretchChange }`: 「ついていく」「音の高さ」（半音とセントは別々）「声の感じを保つ」。`SourceBpm` は何もしない。もうその値のクリップはそのまま、ぜんぶそうなら手にならない。
+  - ドラッグ中は画面だけが動き、離して 1 つ送る（いつもの決まり）。1 つだけのクリップは、いままでどおり `SetClipField` ・ `SetClipStretch`。
+- モックの状態行「選択 3 クリップ ・ 欄の「音量」に打つと、3 つともその音量になります」（F8-MultiClip）は、画面が `params.clips` から作る（約束に知らせを足していない）。
+
+**2. 書き出す前のたしかめ（41-A ・ 42-C）**
+
+- `ExportCheck::Counting` と `Done` に `over: u32`: いままでに書いた所で 0 dB をこえた所の数（数えかたは design-notes B-95-2: こえたこまの並びが 1 か所、こえない所が 100 ms つづいたら次）。こえた所のいちばん大きい所は `peak_db`（こえた所があれば、いちばん大きい所はその中にある）。`over` はビットによらず数える。`clips`（いまの形で割れるか）は前のまま: 32 ビットでは `over` が 1 以上でも `false`。
+  - 「用意をしています」は前からの `Waiting`。「たしかめています 38 %」と「ここまでのいちばん大きい所」は `Counting`。
+  - いまの core は数えていない: `over` は「いちばん大きい所が 0 dB をこえたら 1」（`crates/meloet-core/src/export.rs` の `check`）。2 回目で書き出しのエンジンが数える。
+- `ExportDialogView::solo: Option<ExportSolo { first: TrackRef, others }>`: いまソロのトラック（トラックの順で最初の 1 本と、ほかの本数）。「いま 2 ベース をソロにしています。…」「2 ベース ほか 1 本」。ソロは書き出しに入れない（いままでどおり）。いまの core は `None`（2 回目で `Scene` から埋める）。
+- 状態行の「 ・ たしかめています 38 %」「 ・ 0 dB をこえる所があります」（F8-ExportCheck ・ F8-ExportClip）は、画面が `ExportDialogOpen` と `export.dialog.check` から作る。
+
+**3. core から出す知らせ（6 章 第 12 版）**（`StatusMessage`。文は `ui/src/text/ja.ts` の「[第 8 回 ・ core から出す知らせと音の素材]」の下、文にするのは `StatusLine.svelte` の `message`）
+
+| 意図の名前 | 6 章の場面 | 出すとき（2 回目の core） |
+|---|---|---|
+| `InputLost { input, device }` | 入口が抜けた | 歌を録っている間に入口が消え、録音を止めたとき。`input` は録っていた最初の歌のトラックのチャンネル |
+| `RecordingGaps { count }` | 録っている間に音がとぎれた | 録音を止めたとき、`RecordingFaults` の `gaps + dropped` が 1 以上 |
+| `AudioFound { file, clips }` | さがして見つけた | `FindAudio` で写せたとき |
+| `AudioFoundMismatch` | さがしたファイルが合わない | `FindAudio` でサンプルレートかチャンネルの数がちがうとき（写さない） |
+| `AudioBroken { file }` ・ `AudioTooManyChannels { file }` | こわれたファイル ・ 3 チャンネル以上 | 入れたファイルが、その理由で読めないとき（`AudioUnreadable` のかわり） |
+| `SavingAudio { done, total, done_bytes, total_bytes }` | 保存で音を写している | 保存が音のファイルを曲のフォルダへ写している間。1 秒に 4 回まで |
+| `DiskTooSlow` | ディスクが間に合わない | 歌の先読みが間に合わず音が切れたとき。止めるまで 1 回だけ |
+| `SourceTempoFound { …, same }` ・ `SourceTempoNotFound` | この音のテンポをさがした | 前のまま。`same`: もうその数だった（いまの core は `EditError::Unchanged` で埋めた） |
+
+- 「遅れを測れない ・ ばらつき」「… ・ 入口がない」はダイアログの文で、約束は前からの `LatencyFailure::Unsteady` ・ `NoInput`。文は `latency.failedUnsteady` ・ `latency.failedNoInput`（ボタンは `button.again` と `button.audioSettingsEllipsis`）。`LatencyDialog.svelte` はまだ前の文（`NoInput` に「入口がない」の状態行の文）を出している。画面の係が直す。
+- この節の文は `msg.sourceTempoFound`（「この音のテンポは 120.00 くらいです」）に `msg.sourceTempoSet` か `msg.sourceTempoSame` をつなぐ形にした（6 章の「同じ数なら「…くらいです（いまの数と同じです）。」」が、はじめの半分を「…」で書いているため）。
+
+**4. 音の素材（43-B ・ 44-A ・ 45-A、23-1〜23-3）**（`crates/meloet-protocol/src/pack.rs`）
+
+- 区画を 1 つ足した: `AppState::sounds`（`Change::Sounds`）= `SoundsView`。**理由**: 取っている間の数は 1 秒に何回も変わる。`shelf` や `workspace` に入れると、そのたびに棚や帯を送りなおすことになる（`audioWork` ・ `export` と同じ考え）。core は 1 秒に 4 回まで送る。
+- `SoundsView`:
+  - `ask`: 帯が「音の素材（約 240 MB）を取りにいきます」と聞く。なにか足りなくて、まだ答えていない（はじめての起動と、「あとで」のあとの起動ごと）。答えたら `false`。**流れ 1〜4 の案内**（鍵盤がない、出口がまだ、音が出た、など）が出ている間は、画面が待たせる（画面は `keyboards` ・ `outputs` ・ `workspace.chooser` ・ `workspace.hint` でもう決められるので、約束には足していない）。
+  - `fetch: PackFetchView` = `Idle` ・ `Fetching { instrument, done_bytes, total_bytes, remaining_s }` ・ `Failed { failure, done_bytes, total_bytes }`。% は `done_bytes / total_bytes`。`instrument` はいま取っている音色（棚の「取ってきています」の行。共通の小さなファイルのときは `None`）。`done_bytes` は前の回に取った分と `.part` を入れた、ディスクにある分。`remaining_s` は見こみが立つまで `None`（「のこり 約 2 分」を出さない）。帯（44-A）は `Idle` でなければ出す。流れの案内が出ている間は状態行（44-B の形）に移る（画面が決める）。
+  - `PackFailure` = `Offline` ・ `CutOff` ・ `DiskFull { needed_bytes, free_bytes }`（「あと」は差）・ `Corrupt`（1 回だまって取りなおしたあと）。
+  - `have` / `total`: 自分の音で鳴る棚の音色の数（計算で作る 5 つも数える）と、ぜんぶ（31）。くわしい設定の行「ぜんぶあります ・ 240 MB」（`have == total`）か「まだ 12 / 31」。
+  - `pack_bytes`（「約 240 MB」）、`new_pack_bytes`（起動のときの確かめで見つけた新しい包みの、取る大きさ。取ったら `None`）、`place`（置き場所を見せる字。くわしい設定の行と「meloet について」の「音の素材」の見出し）。
+- `ShelfView::not_yet: Vec<InstrumentKind>`: まだ取っていない音色（棚の順）。`available` には入れない。棚は両方を棚の順にならべ、`not_yet` の行は名前 gray.8 と「まだ」（`fetch.instrument` なら「取ってきています」）、星 ・ ▶ ・ ためし弾きなし。包みがそろえば空。
+- トラックが「サイン波で代わり」で鳴っていることは、前からの `StandIn::PackMissing`。まだ取っていないのか、こわれているのかは `sounds` で分かる（`StandIn` に腕を足さなかったのは、`sounds.ts` の `standInTip` の `switch` が型で落ちるため。乗ったときの文を分けるかは画面の係と棟梁が決める）。
+- 意図（どれも手ではない）: `FetchPack`（「取りにいく」「もう一度」「続きから」、新しい包みの「取りにいく」、くわしい設定と棚の知らせの「取りにいく」。答えを設定に残す。取っている間 ・ 取る物がないときは何もしない）・ `PackLater`（帯の「あとで」。聞いているときと、うまくいかなかったあと。`ask` を `false`、`fetch` を `Idle`。次の起動でまた聞く）・ `StopPackFetch`（「やめる」。来た分は残し、次の `FetchPack` は続きから）。
+- 知らせ（`StatusMessage`）: `PackAsking`（モック F8-PackAsk「音の素材がまだありません ・ いまはサイン波で鳴ります」。`ask` の間）・ `SoundReady { instrument }`（3 章 45-A「グランドピアノ が鳴るようになりました ・ のこりの音色を取っています」。まだ残りがあるとき）・ `PackFetched { count }`（最後のファイルが来たとき）・ `PackFailed { failure, done_bytes, total_bytes }`（`fetch` が `Failed` になったとき。ボタンは「もう一度」、`CutOff` は「続きから」。どちらも `FetchPack`）・ `NewPack { bytes }`（起動の確かめで見つけたとき 1 回。「取りにいく」）。
+- 画面のための文（ja.ts の同じ所）: 案内の帯の 2 行は 6 章の文を分けた `pack.fetching` ・ `pack.fetchingBytes` ・ `pack.fetchingLeft`、聞く帯 `pack.ask` ・ `pack.askDetail`（853 の窓 `pack.askDetailShort`）、うまくいかなかった帯 `pack.failedTitle` ・ `pack.failedOfflineDetail`（モックはつながっていない形だけ）、棚 `shelf.packFetching` ・ `shelf.packNotYet`、くわしい設定 `settings.packRow` ・ `settings.packAll` ・ `settings.packNotYet`、ボタン `button.fetchPack` ・ `button.resumeFetch` ・ `button.packLater`（「もう一度」「やめる」は前からの `button.again` ・ `button.cancel`）。MB は 1000 × 1000 バイト（状態行の `mb`）。
+- いまの core: `sounds_view()`（`crates/meloet-core/src/state.rs`）が「ぜんぶある」（`have == total == 31`、ほかは空）を返し、`not_yet` は空、3 つの意図は受けて何もしない。
+
+**5. TS と偽物**
+
+- 型は `cargo test -p meloet-protocol` が書き出す（新しい物: `SoundsView` ・ `PackFetchView` ・ `PackFailure` ・ `SelectedClips` ・ `ExportSolo`。`ui/src/bridge/types.ts` から出す）。新しい意図は、いまの `send(command)` で送る（`Command` の型に入った。包む関数は足していない）。
+- 偽物は `ui/src/bridge/fakeRound8.ts`: `reducePack`（3 つの意図）、`advancePack`（取っている間、1 秒に 2 MB ずつ進め、取れた音色を棚と曲に戻し `SoundReady`、最後に `PackFetched`）、`reduceClips27`（3 つの意図、1 手）、`fakeClipsPanel`（選んだクリップから `params.clips` を作る。偽物の `send` は意図のたびにこれを当てなおす）、`fakeSolo`。偽物の `send` は、取っている間だけ 250 ms ごとに `advancePack` を流す。場面の取りにいきは止まったまま（絵がずれないように）で、「取りにいく」を送ると動く。
+- 偽物の場面（`?scene=`）: `packAsk`（F8-PackAsk）・ `packGet`（F8-PackGet、棚をひらく）・ `packFailOffline`（F8-PackFail）・ `packFailCutOff` ・ `packFailDiskFull` ・ `packFailCorrupt`（6 章）・ `packSettings`（F8-PackSettings、まだ 12 / 31）・ `packNew`（6 章「新しい包み」）・ `multiClip`（F8-MultiClip）・ `exportCheck`（F8-ExportCheck、2 ベース がソロ）・ `exportClip`（F8-ExportClip、3 か所 +1.2 dB）。
+- 試験: `crates/meloet-protocol/src/tests27.rs`、`ui/tests/bridge.protocol27.test.ts`（形、場面、偽物の意図、状態行の 18 の文）。
+

@@ -573,6 +573,8 @@ impl Exporting {
             return ExportCheck::Waiting;
         };
         // 32 bits are floats: a sample over 0 dB is written as it is.
+        // Until the places are counted (B-95-2), a peak over 0 dB is one place.
+        let over = u32::from(job.peak_db.is_some_and(|db| db > 0.0));
         let clips = job.peak_db.is_some_and(|db| db > 0.0) && self.bits != RecordFormat::Bits32;
         match &job.failed {
             Some(reason) => ExportCheck::Failed {
@@ -582,11 +584,13 @@ impl Exporting {
             None if job.done => ExportCheck::Done {
                 peak_db: job.peak_db,
                 clips,
+                over,
             },
             None => ExportCheck::Counting {
                 percent: job.percent.min(99),
                 peak_db: job.peak_db,
                 clips,
+                over,
             },
         }
     }
@@ -615,6 +619,7 @@ impl Exporting {
                 formats: ExportFormat::ALL.to_vec(),
                 place,
                 check: self.check(job),
+                solo: None,
                 stopped_plugins: scene.stopped_plugins.clone(),
                 advanced_open: self.advanced_open,
                 sample_rate: self.sample_rate(scene),

@@ -28,8 +28,8 @@ use meloet_protocol::{
     KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
     LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
     PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView,
-    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
-    StatusView, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, SoundsView, StandIn,
+    StatusMessage, StatusView, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -1609,6 +1609,13 @@ impl Model {
             | Command::StartExport
             | Command::CancelExport
             | Command::ShowExported => self.export_command(&command, effects),
+            // Protocol 27: accepted, and nothing yet (docs/architecture.md 23-7).
+            Command::ShiftClipGains { .. }
+            | Command::SetClipGains { .. }
+            | Command::SetClipsStretch { .. }
+            | Command::FetchPack
+            | Command::PackLater
+            | Command::StopPackFetch => {}
             Command::ImportAudio { track } => self.import_audio(track, effects),
             Command::FindAudio { audio } => self.find_audio(audio, effects),
             Command::SetClipStretch { clip, change } => {
@@ -2490,6 +2497,7 @@ impl Model {
             audio,
             audio_work: self.play.audio_work_view(),
             export: self.export_view(),
+            sounds: sounds_view(),
             status: StatusView { message: status },
         }
     }
@@ -2814,6 +2822,16 @@ pub(crate) fn vocal_input_view(input: VocalInput) -> meloet_protocol::VocalInput
         VocalInput::Mono1 => meloet_protocol::VocalInput::Mono1,
         VocalInput::Mono2 => meloet_protocol::VocalInput::Mono2,
         VocalInput::Stereo12 => meloet_protocol::VocalInput::Stereo12,
+    }
+}
+
+/// Protocol 27 before the fetch is made: the pack is taken to be all there.
+fn sounds_view() -> SoundsView {
+    let total = InstrumentKind::ALL.len() as u32;
+    SoundsView {
+        have: total,
+        total,
+        ..SoundsView::default()
     }
 }
 

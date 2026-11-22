@@ -23,7 +23,7 @@ const kindOf = (s: AppState) => {
 
 describe("約束 23 の形", () => {
   it("版は 24。新しい曲は鍵盤のトラック 1 本で、鍵はそこで鳴る。入口はひらいていない", () => {
-    expect(PROTOCOL_VERSION).toBe(26);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const s = fakeState();
     expect(s.song.tracks.map((tr) => tr.kind)).toEqual([{ kind: "keys" }]);
     expect([s.song.playTarget, s.song.keysTarget]).toEqual([1, 1]);

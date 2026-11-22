@@ -2130,15 +2130,11 @@ export const texts = {
   ),
   // 音のファイルを 1 つだけ持ってきている間（6 章「音のファイルを 1 つ持ってきている」の出る所の列にある状態行の文）。
   "msg.audioDraggingOne": e("音のファイルを持ってきています ・ 落とすと、枠の所に入れます", "spec:6"),
-  // 「さがす」（「この音のテンポ」、B-94-52 ・ 53）の答え。
-  "msg.sourceTempoFound": e("{name} のテンポを {bpm} にしました（{bars} 小節と見ました）・ ちがうときは「この音のテンポ」に数を入れてください", "builder:2026-11-21", {
-    name: "ドラム ループ",
-    bpm: "120.00",
-    bars: "2",
-  }),
-  "msg.sourceTempoNotFound": e("{name} のテンポは見つかりませんでした ・ 「この音のテンポ」に数を入れてください", "builder:2026-11-21", {
-    name: "ドラム ループ",
-  }),
+  // 「さがす」（「この音のテンポ」）の答え。見つけた文は「…くらいです」に、入れたか同じかの終わりをつなぐ。
+  "msg.sourceTempoFound": s6("この音のテンポをさがした", "この音のテンポは {bpm} くらいです", { bpm: "120.00" }, "part"),
+  "msg.sourceTempoSet": s6("この音のテンポをさがした", "（さがした数を入れました）。", undefined, "part"),
+  "msg.sourceTempoSame": s6("この音のテンポをさがした", "（いまの数と同じです）。", undefined, "part"),
+  "msg.sourceTempoNotFound": s6("この音のテンポをさがした", "この音のテンポは見つかりませんでした。数を打ちこんでください。", undefined, "quoted"),
   "drop.mixed": s6("SF2 と音のファイルをまぜて持ってきた", "SF2 は {sf2} つ棚へ ・ 音のファイル {audio} つはアレンジへ", {
     sf2: "1",
     audio: "3",
@@ -2333,6 +2329,74 @@ export const texts = {
   "button.measure": e("測る", "mock:F7-Latency"),
 
   // [第 8 回 ・ core から出す知らせと音の素材]（仕様書 6 章 第 12 版、モック F8-*）。約束の係（k8p）がこの下に足す。
+  "latency.failedUnsteady": s6(
+    "遅れを測れない ・ ばらつき",
+    "測るたびに数が大きくちがったので、決められませんでした。まわりの音を小さくして、もう一度測ってください。",
+  ),
+  "latency.failedNoInput": s6("遅れを測れない ・ 入口がない", "音の入口がないので測れません。マイクをつなぐか、入口をえらんでください。"),
+  "msg.inputLost": s6("入口が抜けた", "{input}（{device}）が抜けました。録音を止めました。録れた所までは残しています。", {
+    input: "入口 1",
+    device: "USB マイク",
+  }),
+  "msg.recordingGaps": s6(
+    "録っている間に音がとぎれた",
+    "録っている間に音が {count} 回とぎれました（PC がいそがしかったため）。とぎれた所は無音で残しています。バッファを大きくすると、とぎれにくくなります。",
+    { count: "3" },
+  ),
+  "msg.audioFound": s6("さがして見つけた", "{file} を見つけました。{clips} つのクリップがまた鳴ります。", {
+    file: "歌 テイク 1.wav",
+    clips: "2",
+  }),
+  "msg.audioFoundMismatch": s6("さがしたファイルが合わない", "えらんだファイルは使えません（サンプルレートかチャンネルの数がちがいます）。"),
+  "msg.audioBroken": s6("こわれたファイル ・ 3 チャンネル以上", "「{file}」はこわれているので読めません。", { file: "声.wav" }, "part"),
+  "msg.audioTooManyChannels": s6(
+    "こわれたファイル ・ 3 チャンネル以上",
+    "「{file}」は 3 チャンネル以上なので読めません（読めるのはモノとステレオ）。",
+    { file: "8ch.wav" },
+    "part",
+  ),
+  "msg.savingAudio": s6("保存で音を写している", "保存しています ・ 音のファイルを写しています {done} / {total}（{doneMb} / {totalMb} MB）", {
+    done: "3",
+    total: "12",
+    doneMb: "80",
+    totalMb: "240",
+  }),
+  "msg.diskTooSlow": s6("ディスクが間に合わない", "音のファイルを読むのが間に合わず、歌が少し切れました（ディスクがいそがしかったため）。"),
+  // 音の素材（仕様書 2 章 ・ 3 章 43-B ・ 44-A ・ 45-A ・ 6 章、モック F8-Pack*）。案内の帯の 2 行は 6 章の文を分けた物。
+  "pack.fetching": s6("音の素材を取りにいっている", "音の素材を取りにいっています", undefined, "part"),
+  "pack.fetchingBytes": s6("音の素材を取りにいっている", "{percent} % ・ {done} / {total} MB", { percent: "38", done: "92", total: "240" }, "part"),
+  "pack.fetchingLeft": s6("音の素材を取りにいっている", "のこり 約 {minutes} 分", { minutes: "2" }, "part"),
+  "pack.fetched": s6("音の素材が取れた", "音の素材をぜんぶ取りました。{count} の音色が鳴ります。", { count: "31" }),
+  "pack.offline": s6(
+    "音の素材 ・ つながっていない",
+    "音の素材を取りにいけませんでした（インターネットにつながっていません）。つながったら「もう一度」を押してください。",
+  ),
+  "pack.cutOff": s6("音の素材 ・ とちゅうで切れた", "とちゅうで切れました。{done} / {total} MB まで取ってあります。続きから取ります。", {
+    done: "92",
+    total: "240",
+  }),
+  "pack.diskFull": s6("音の素材 ・ ディスクがいっぱい", "ディスクがいっぱいで、音の素材を置けません（あと {mb} MB 要ります）。", { mb: "150" }),
+  "pack.corrupt": s6("音の素材 ・ こわれていた", "取った音の素材がこわれていました。取りなおしても直りませんでした。"),
+  "pack.newPack": s6("音の素材 ・ 新しい包み", "音の素材の新しい包みがあります（{mb} MB）。", { mb: "12" }),
+  "button.fetchPack": e("取りにいく", "spec:6"),
+  "button.resumeFetch": e("続きから", "spec:6"),
+  "button.packLater": e("あとで", "spec:3"),
+  "pack.ask": e("音の素材（約 {mb} MB）を取りにいきます", "spec:3", { mb: "240" }),
+  "pack.askDetail": e("グランドピアノなど {count} の音色 ・ 取っている間も弾けます", "spec:3", { count: "31" }),
+  // 幅 853 の窓で、聞く帯の小さい字が入りきらないとき。
+  "pack.askDetailShort": e("取っている間も弾けます", "mock:R12-Fit"),
+  "pack.soundReady": e("{instrument} が鳴るようになりました ・ のこりの音色を取っています", "spec:3", { instrument: "グランドピアノ" }),
+  "pack.askingStatus": e("音の素材がまだありません ・ いまはサイン波で鳴ります", "mock:F8-PackAsk"),
+  "pack.failedTitle": e("音の素材を取りにいけませんでした", "mock:F8-PackFail"),
+  "pack.failedOfflineDetail": e("インターネットにつながっていません ・ {done} / {total} MB まで取ってあります", "mock:F8-PackFail", {
+    done: "92",
+    total: "240",
+  }),
+  "shelf.packFetching": e("取ってきています", "spec:2"),
+  "shelf.packNotYet": e("まだ", "spec:2"),
+  "settings.packRow": e("音の素材", "spec:3"),
+  "settings.packAll": e("ぜんぶあります ・ {mb} MB", "spec:3", { mb: "240" }),
+  "settings.packNotYet": e("まだ {have} / {total}", "spec:3", { have: "12", total: "31" }),
 
   // [メニュー ・ キー]
   // メニューの行の右に書くキーの名前（仕様書 4 章の表）。Mod は key.ctrl か key.cmd に読みかえる。

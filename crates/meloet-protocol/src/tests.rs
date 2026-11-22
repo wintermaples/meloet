@@ -367,6 +367,7 @@ pub(super) fn sample_state() -> AppState {
                 file: "Old Keys.sf2".into(),
                 tracks: 2,
             }],
+            not_yet: Vec::new(),
         },
         params: ParamsView {
             selected: Some(SelectedParams::Builtin(SelectedInsert {
@@ -378,6 +379,7 @@ pub(super) fn sample_state() -> AppState {
                 values: vec![2.4, 60.0, 20.0, 6000.0, 120.0, 100.0, 100.0],
                 row: Some(0),
             })),
+            clips: None,
         },
         windows: WindowsView {
             list: vec![PluginWindowView {
@@ -472,6 +474,7 @@ pub(super) fn sample_state() -> AppState {
         },
         audio_work: AudioWorkView::default(),
         export: ExportView::default(),
+        sounds: SoundsView::default(),
         status: StatusView {
             message: Some(StatusMessage::SearchingKeyboard),
         },
@@ -1391,7 +1394,8 @@ fn state_json_is_camel_case_and_round_trips() {
                "favoriteSounds": [{"kind": "builtin", "instrument": "grandPiano"}],
                "favoriteEffects": [{"kind": "builtin", "effect": "reverb"},
                                    {"kind": "builtin", "effect": "delay"}],
-               "missing": [{"kind": "sf2", "file": "Old Keys.sf2", "tracks": 2}]})
+               "missing": [{"kind": "sf2", "file": "Old Keys.sf2", "tracks": 2}],
+               "notYet": []})
     );
     assert_eq!(
         v["state"]["library"],
@@ -3061,6 +3065,7 @@ fn change_section_names_match_state_keys() {
         Change::Audio(state.audio.clone()),
         Change::AudioWork(state.audio_work.clone()),
         Change::Export(state.export.clone()),
+        Change::Sounds(state.sounds.clone()),
         Change::Status(state.status.clone()),
     ];
     assert_eq!(all.len(), v.as_object().unwrap().len());

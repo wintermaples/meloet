@@ -1737,6 +1737,7 @@ fn the_shelf_starts_closed_with_the_two_favorites_and_a_star_is_a_setting() {
                 .map(|effect| EffectRef::Builtin { effect })
                 .to_vec(),
             missing: vec![],
+            not_yet: vec![],
         }
     );
     let star = |m: &mut Model, instrument| {

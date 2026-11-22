@@ -700,7 +700,10 @@ impl Play {
                     sound: sound_name(instrument),
                 })),
             });
-        ParamsView { selected }
+        ParamsView {
+            selected,
+            clips: None,
+        }
     }
 
     pub fn returns_view(&self) -> [ReturnView; 2] {

@@ -223,7 +223,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
 
     const sel = s.params.selected!;
     if (sel.kind !== "plugin") throw new Error("the scene selects a plugin");
-    const renumbered = (table: number): AppState => ({ ...s, params: { selected: { ...sel, table } } });
+    const renumbered = (table: number): AppState => ({ ...s, params: { selected: { ...sel, table }, clips: null } });
     app.setState(renumbered(77));
     book.current.show(77);
     flushSync();
@@ -245,7 +245,7 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(text(q("[data-test=params-count]"))).toBe("24 / 774");
 
     // ほかの枠の子をえらぶと、さがす文字は空、グループはたたんだ形。
-    app.setState({ ...s, params: { selected: { ...sel, slot: { kind: "instrument", track: s.song.tracks[1]!.id }, table: 79 } } });
+    app.setState({ ...s, params: { selected: { ...sel, slot: { kind: "instrument", track: s.song.tracks[1]!.id }, table: 79 }, clips: null } });
     await settle(79);
     expect(paramUi.query).toBe("");
     expect(groups()[2]).toBe("▸ Global 21");
@@ -343,11 +343,11 @@ describe("パラメータの欄のプラグイン（モック F-ParamFew ・ F-P
     expect(app.sent).toEqual([]);
     // オン ・ オフ（Freeze）は Enter で切りかえ。段階（Type）は Enter で段の一覧。
     sel.row = 1;
-    app.setState({ ...s, params: { selected: { ...sel } } });
+    app.setState({ ...s, params: { selected: { ...sel }, clips: null } });
     flushSync();
     key(list, "Enter");
     expect(app.sent.at(-1)).toMatchObject({ type: "setPluginParam", param: 1, value: 1, commit: true });
-    app.setState({ ...s, params: { selected: { ...sel, row: 0 } } });
+    app.setState({ ...s, params: { selected: { ...sel, row: 0 }, clips: null } });
     flushSync();
     key(list, "Enter");
     const rows = contextMenu.open!.entries.filter((e): e is MenuRow => e.kind === "row");

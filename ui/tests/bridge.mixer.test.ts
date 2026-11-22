@@ -53,7 +53,7 @@ describe("約束 14: 偽物の場面（ミキサー）", () => {
     expect(s.song.returns.map((r) => r.inserts[0])).toEqual(["reverb", "delay"]);
     expect(s.song.master.inserts[0]).toBe("limiter");
     expect(s.song.tracks[0]!.sends).toEqual([-15, null]);
-    expect(s.params).toEqual({ selected: null });
+    expect(s.params).toEqual({ selected: null, clips: null });
     expect(effectDefaults("limiter")).toEqual([-0.3, 0, 100]);
   });
 });

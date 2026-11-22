@@ -189,13 +189,13 @@ describe("状態行", () => {
   });
   it("ほかの知らせ（さがした答え）は、音を作っている間でも先に出す", () => {
     const s = scene("stretchRendering");
-    s.status.message = { id: "sourceTempoFound", name: "ドラム ループ", bpm: 120, bars: 2 } satisfies StatusMessage;
-    expect(line(s)).toBe("ドラム ループ のテンポを 120.00 にしました（2 小節と見ました）・ ちがうときは「この音のテンポ」に数を入れてください");
+    s.status.message = { id: "sourceTempoFound", name: "ドラム ループ", bpm: 120, bars: 2, same: false } satisfies StatusMessage;
+    expect(line(s)).toBe("この音のテンポは 120.00 くらいです（さがした数を入れました）。");
   });
   it("見つからなかったとき", () => {
     const s = scene("stretchNoTempo");
     s.status.message = { id: "sourceTempoNotFound", name: "ドラム" };
-    expect(line(s)).toBe("ドラム のテンポは見つかりませんでした ・ 「この音のテンポ」に数を入れてください");
+    expect(line(s)).toBe("この音のテンポは見つかりませんでした。数を打ちこんでください。");
   });
 });
 

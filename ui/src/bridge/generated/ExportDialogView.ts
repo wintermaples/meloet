@@ -2,6 +2,7 @@
 import type { ExportCheck } from "./ExportCheck";
 import type { ExportFormat } from "./ExportFormat";
 import type { ExportRange } from "./ExportRange";
+import type { ExportSolo } from "./ExportSolo";
 import type { ExportStoppedPlugin } from "./ExportStoppedPlugin";
 import type { ExportTail } from "./ExportTail";
 import type { RecordFormat } from "./RecordFormat";
@@ -30,6 +31,12 @@ formats: Array<ExportFormat>,
  * folder the files go into. Rust keeps the path itself.
  */
 place: string, check: ExportCheck, 
+/**
+ * Tracks are soloed now (spec 3, 42-C): the line of the check says "いま 2 ベース を
+ * ソロにしています。書き出しには入れません（曲ぜんぶを書き出します）。" The solo is not in
+ * what is written. `None`: no track is soloed.
+ */
+solo: ExportSolo | null, 
 /**
  * 「止まっているプラグイン」: they are passed by in the written audio. Empty:
  * 「止まっているプラグインはありません」.

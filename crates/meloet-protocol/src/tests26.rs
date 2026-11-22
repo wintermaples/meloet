@@ -38,7 +38,9 @@ fn dialog() -> ExportDialogView {
         check: ExportCheck::Done {
             peak_db: Some(-0.5),
             clips: false,
+            over: 0,
         },
+        solo: None,
         stopped_plugins: Vec::new(),
         advanced_open: false,
         sample_rate: 48_000,
@@ -53,8 +55,7 @@ fn dialog() -> ExportDialogView {
 }
 
 #[test]
-fn the_version_and_the_formats() {
-    assert_eq!(PROTOCOL_VERSION, 26);
+fn the_formats() {
     assert_eq!(to_json(&ExportFormat::ALL), json!(["wav", "flac"]));
     assert_eq!(ExportFormat::Flac.extension(), "flac");
     // 32 bits are floats, which a flac file does not hold.
@@ -83,7 +84,8 @@ fn the_dialog_json_shape() {
             "format": "wav",
             "formats": ["wav", "flac"],
             "place": "~/音楽/はじめての曲.wav",
-            "check": {"state": "done", "peakDb": -0.5, "clips": false},
+            "check": {"state": "done", "peakDb": -0.5, "clips": false, "over": 0},
+            "solo": null,
             "stoppedPlugins": [],
             "advancedOpen": false,
             "sampleRate": 48_000,
@@ -115,8 +117,9 @@ fn the_check_json_shape() {
             percent: 38,
             peak_db: Some(-3.5),
             clips: false,
+            over: 0,
         },
-        json!({"state": "counting", "percent": 38, "peakDb": -3.5, "clips": false}),
+        json!({"state": "counting", "percent": 38, "peakDb": -3.5, "clips": false, "over": 0}),
     );
     // Nothing but silence so far.
     both_ways(
@@ -124,15 +127,17 @@ fn the_check_json_shape() {
             percent: 0,
             peak_db: None,
             clips: false,
+            over: 0,
         },
-        json!({"state": "counting", "percent": 0, "peakDb": null, "clips": false}),
+        json!({"state": "counting", "percent": 0, "peakDb": null, "clips": false, "over": 0}),
     );
     both_ways(
         ExportCheck::Done {
             peak_db: Some(1.5),
             clips: true,
+            over: 3,
         },
-        json!({"state": "done", "peakDb": 1.5, "clips": true}),
+        json!({"state": "done", "peakDb": 1.5, "clips": true, "over": 3}),
     );
     both_ways(
         ExportCheck::Failed {

@@ -132,7 +132,7 @@ describe("書き出しのダイアログ（モック F7-Export、仕様書 3 章
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual([clipping]);
     expect(text(q('[data-test="export-start"]'))).toBe("このまま書き出すEnter");
     unmount(mounted!);
-    show(ExportDialog, withDialog("exportDialog", { check: { state: "counting", percent: 50, peakDb: 0.4, clips: true } }));
+    show(ExportDialog, withDialog("exportDialog", { check: { state: "counting", percent: 50, peakDb: 0.4, clips: true, over: 1 } }));
     expect(qa('[data-test="export-check-line"]').map(text)).toEqual(["数えています 50 % ・ ここまでのいちばん大きい所 0.4 dB", clipping]);
     expect(text(q('[data-test="export-start"]'))).toBe("このまま書き出すEnter");
   });
@@ -416,7 +416,7 @@ describe("ExportShown（見せる数）", () => {
     vi.advanceTimersByTime(ms);
   };
   const counting = (percent: number, over: Partial<ExportDialogView> = {}): ExportView => ({
-    dialog: { ...scene("exportCounting").export.dialog!, check: { state: "counting", percent, peakDb: -3, clips: false }, ...over },
+    dialog: { ...scene("exportCounting").export.dialog!, check: { state: "counting", percent, peakDb: -3, clips: false, over: 0 }, ...over },
     run: null,
   });
 

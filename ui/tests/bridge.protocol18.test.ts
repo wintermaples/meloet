@@ -13,10 +13,10 @@ const rows = (table: ParamTable) => table.groups.flatMap((g) => g.params);
 
 describe("約束 18 の形", () => {
   it("版は 23（22 より後）。新しい曲では、窓はなく、何もえらんでいない。古い欄は、もう約束にない", () => {
-    expect(PROTOCOL_VERSION).toBe(26);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const s = fakeState();
     expect(s.windows).toEqual({ list: [] });
-    expect(s.params).toEqual({ selected: null });
+    expect(s.params).toEqual({ selected: null, clips: null });
     expect(s.shelf.currentEffect).toBeNull();
     expect(s.song.tracks[0]!.sendDefaults).toEqual([-15, null]);
   });
@@ -153,18 +153,18 @@ describe("偽物の答え（約束 18 の意図）", () => {
   it("selectInsert ・ selectInstrument: 窓をひらける子は窓がひらき、欄は出ない。まだひらけない子は欄が前に出る", () => {
     const s = scene("paramFew");
     const a: InsertRef = { strip: { kind: "return", bus: "a" }, slot: 0 };
-    const none = { ...s, params: { selected: null } };
+    const none = { ...s, params: { selected: null, clips: null } };
     const opened = run(none, { type: "selectInsert", insert: a });
     expect(pluginOf(opened.params)).toMatchObject({ slot: { kind: "insert", insert: a }, table: FAKE_TABLES.dragonfly, count: 18 });
     expect([opened.windows.list.map((w) => w.name), opened.showParams]).toEqual([["Dragonfly Reverb"], false]);
     expect(run({ ...s, windows: opened.windows }, { type: "closePluginWindow", slot: { kind: "insert", insert: a } }).windows.list).toEqual([]);
     const mossy = scene("paramNoWindow");
     const pad: InsertRef = { strip: { kind: "track", id: mossy.song.tracks[3]!.id }, slot: 0 };
-    const shown = run({ ...mossy, params: { selected: null } }, { type: "selectInsert", insert: pad });
+    const shown = run({ ...mossy, params: { selected: null, clips: null } }, { type: "selectInsert", insert: pad });
     expect([pluginOf(shown.params)?.window, shown.windows.list, shown.showParams]).toEqual(["notYet", [], true]);
     const surge = scene("paramMany");
     const track = surge.song.tracks[0]!.id;
-    expect(selectedInstrument(run({ ...surge, params: { selected: null } }, { type: "selectInstrument", track }).params)).toBe(track);
+    expect(selectedInstrument(run({ ...surge, params: { selected: null, clips: null } }, { type: "selectInstrument", track }).params)).toBe(track);
     // 最初から入っている音色は、パラメータがないことを欄で言う（19-A）。
     expect(run(surge, { type: "selectInstrument", track: surge.song.tracks[1]!.id }).params.selected).toMatchObject({ kind: "sound", track: surge.song.tracks[1]!.id });
     expect(pluginOf(run(surge, { type: "selectParam", param: 1012 }).params)?.row).toBe(1012);

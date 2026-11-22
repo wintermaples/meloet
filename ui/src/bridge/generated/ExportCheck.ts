@@ -6,4 +6,4 @@ import type { ExportFailure } from "./ExportFailure";
  * what it has seen so far; a change of the range, the tail or `realtime` starts it anew, one
  * of the format, the sample rate or the bits does not.
  */
-export type ExportCheck = { "state": "waiting" } | { "state": "counting", percent: number, peakDb: number | null, clips: boolean, } | { "state": "done", peakDb: number | null, clips: boolean, } | { "state": "failed", reason: ExportFailure, };
+export type ExportCheck = { "state": "waiting" } | { "state": "counting", percent: number, peakDb: number | null, clips: boolean, over: number, } | { "state": "done", peakDb: number | null, clips: boolean, over: number, } | { "state": "failed", reason: ExportFailure, };

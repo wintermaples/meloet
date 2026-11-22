@@ -127,7 +127,8 @@ fn opening_the_dialog_starts_the_check_and_closing_it_throws_the_job_away() {
         ExportCheck::Counting {
             percent: 38,
             peak_db: Some(-3.5),
-            clips: false
+            clips: false,
+            over: 0,
         }
     );
     assert!(dialog.can_export);
@@ -153,7 +154,8 @@ fn only_what_changes_the_audio_starts_the_check_anew() {
         check(&m),
         ExportCheck::Done {
             peak_db: Some(0.5),
-            clips: true
+            clips: true,
+            over: 1,
         }
     );
 
@@ -171,7 +173,8 @@ fn only_what_changes_the_audio_starts_the_check_anew() {
         check(&m),
         ExportCheck::Done {
             peak_db: Some(0.5),
-            clips: false
+            clips: false,
+            over: 1,
         }
     );
     // A flac file holds no floats: back to 24 bits, and the name follows the format.
@@ -444,7 +447,8 @@ fn an_export_is_cancelled_or_fails() {
         export(&m).dialog.unwrap().check,
         ExportCheck::Done {
             peak_db: None,
-            clips: false
+            clips: false,
+            over: 0,
         }
     );
     cmd(&mut m, Command::StartExport);

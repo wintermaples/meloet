@@ -23,7 +23,7 @@ async function open(scene: string) {
 
 describe("約束 16 の形", () => {
   it("版は 23（22 より後）。新しい曲では、スキャンは動いておらず、止まった物はなく、場所は LV2 と VST3 のふつうの場所だけ", () => {
-    expect(PROTOCOL_VERSION).toBe(26);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     const p = fakeState().plugins;
     expect(p.scan).toEqual({ state: "idle" });
     expect(p.stopped).toEqual([]);

@@ -120,6 +120,7 @@
   const spaced = (name: string) => `${name} `;
   const MINUS = "−";
   const plainNumber = (n: number) => String(n).replace("-", MINUS);
+  const mb = (bytes: number) => Math.round(bytes / 1_000_000);
 
   /** 打ちこんだ値の文に出すパラメータの名前（最初から入っている物は表から、プラグインは見せている表から）。 */
   function typedParamName(p: ParamRef): string {
@@ -614,9 +615,46 @@
       case "audioDragging":
         return m.audio > 1 ? plain("msg.audioDragging", { count: m.audio }) : plain("msg.audioDraggingOne");
       case "sourceTempoFound":
-        return plain("msg.sourceTempoFound", { name: m.name, bpm: tempoText(m.bpm), bars: m.bars });
+        return {
+          parts: [...textParts("msg.sourceTempoFound", { bpm: tempoText(m.bpm) }), ...textParts(m.same ? "msg.sourceTempoSame" : "msg.sourceTempoSet", {})],
+          strong: [],
+          button: null,
+        };
       case "sourceTempoNotFound":
-        return plain("msg.sourceTempoNotFound", { name: m.name });
+        return plain("msg.sourceTempoNotFound");
+      // 第 8 回（約束 27）。MB は 1000 × 1000 バイト。
+      case "inputLost":
+        return plain("msg.inputLost", { input: t(`vocal.inputShort.${m.input}`), device: m.device });
+      case "recordingGaps":
+        return plain("msg.recordingGaps", { count: m.count });
+      case "audioFound":
+        return plain("msg.audioFound", { file: m.file, clips: m.clips });
+      case "audioFoundMismatch":
+        return plain("msg.audioFoundMismatch");
+      case "audioBroken":
+        return plain("msg.audioBroken", { file: m.file });
+      case "audioTooManyChannels":
+        return plain("msg.audioTooManyChannels", { file: m.file });
+      case "savingAudio":
+        return plain("msg.savingAudio", { done: m.done, total: m.total, doneMb: mb(m.doneBytes), totalMb: mb(m.totalBytes) });
+      case "diskTooSlow":
+        return plain("msg.diskTooSlow");
+      case "packAsking":
+        return plain("pack.askingStatus");
+      case "soundReady":
+        return plain("pack.soundReady", { instrument: t(`instrument.${m.instrument}`) });
+      case "packFetched":
+        return plain("pack.fetched", { count: m.count });
+      case "packFailed": {
+        const f = m.failure;
+        const again = { label: t(f.kind === "cutOff" ? "button.resumeFetch" : "button.again"), command: { type: "fetchPack" } as Command };
+        if (f.kind === "offline") return { ...plain("pack.offline"), button: again };
+        if (f.kind === "cutOff") return { ...plain("pack.cutOff", { done: mb(m.doneBytes), total: mb(m.totalBytes) }), button: again };
+        if (f.kind === "diskFull") return { ...plain("pack.diskFull", { mb: mb(Math.max(0, f.neededBytes - f.freeBytes)) }), button: again };
+        return { ...plain("pack.corrupt"), button: again };
+      }
+      case "newPack":
+        return { ...plain("pack.newPack", { mb: mb(m.bytes) }), button: { label: t("button.fetchPack"), command: { type: "fetchPack" } } };
       default:
         return null;
     }

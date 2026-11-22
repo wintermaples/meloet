@@ -11,6 +11,7 @@ mod audio;
 mod automation;
 mod export;
 mod history;
+mod pack;
 mod params;
 mod take;
 mod telemetry;
@@ -30,7 +31,7 @@ pub use audio::{
     CLIP_CENTS_MAX, CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB, CLIP_SEMITONES_MAX, ClipField, DropMode,
     MissingAudioView, PEAK_LEVELS, PEAKS_HEADER_LEN, PEAKS_KIND, PEAKS_MAX_COUNT, PEAKS_VERSION,
     Peaks, PeaksError, RecordingFaults, SOURCE_BPM_MAX, SOURCE_BPM_MIN, SelectedClip,
-    SourceTempoView, StretchChange, StretchView,
+    SelectedClips, SourceTempoView, StretchChange, StretchView,
 };
 pub use automation::{
     AutoSelection, AutoTarget, AutomationView, LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN,
@@ -38,9 +39,10 @@ pub use automation::{
 };
 pub use export::{
     EXPORT_TAIL_MAX_S, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
-    ExportRange, ExportRunView, ExportStoppedPlugin, ExportTail, ExportView,
+    ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
 };
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
+pub use pack::{PackFailure, PackFetchView, SoundsView};
 pub use params::{
     EffectName, NamedInsert, ParamEnd, ParamGroup, ParamKind, ParamRef, ParamRow, ParamTable,
     ParamValue, ParamValues, PluginWindowKind, PluginWindowView, SelectedParams, SelectedPlugin,
@@ -62,7 +64,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 26;
+pub const PROTOCOL_VERSION: u32 = 27;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1234,6 +1236,43 @@ pub enum Command {
     /// 「フォルダをひらく」: the PC's file manager shows what the last export wrote. Only
     /// with `ExportRunView::Done`.
     ShowExported,
+    // Protocol 27 (round 8; spec 3, 39-B, 40-A, Y26, 43-B, 44-A, 45-A; docs/architecture.md
+    // 23-7).
+    /// The end of a drag of the volume line of one of two or more selected vocal clips
+    /// (39-B): every clip of `clips` moves by the same `by_db`, each put into
+    /// `CLIP_GAIN_MIN_DB..=CLIP_GAIN_MAX_DB` on its own. One step (`StepName::SetClipGain`,
+    /// `StepWhat::Clips`). Ids that are no vocal clip's are passed by; nothing happens when
+    /// none is left, for 0, or a value that is not a number.
+    ShiftClipGains {
+        clips: Vec<u32>,
+        by_db: f64,
+    },
+    /// 「音量」 typed into 「まとめて変える」 (40-A): every clip of `clips` gets `db`, put into
+    /// its range. One step, as `ShiftClipGains`.
+    SetClipGains {
+        clips: Vec<u32>,
+        db: f64,
+    },
+    /// 「曲のテンポについていく」, 「音の高さ」 or 「声の感じを保つ」 of 「まとめて変える」: the
+    /// change of `SetClipStretch` for every clip of `clips`, as one step. `SourceBpm` does
+    /// nothing here (it is only in the panel of one clip). Clips that have the value
+    /// already are left as they are; nothing happens when every one has it.
+    SetClipsStretch {
+        clips: Vec<u32>,
+        change: StretchChange,
+    },
+    /// 「取りにいく」 (the band's question, the row 「音の素材」 of the advanced settings, the
+    /// shelf's notice, `StatusMessage::NewPack`), 「もう一度」 and 「続きから」: the answer is
+    /// kept in the settings, and what of the pack is missing or newer is fetched, going on
+    /// from what is on the disk (`SoundsView::fetch`). Nothing while fetching or with
+    /// nothing to fetch. Not a step.
+    FetchPack,
+    /// 「あとで」 of the band, asking or after a failure: the band goes (`ask` false, `fetch`
+    /// `Idle`) and nothing is fetched; the next start asks again. Not a step.
+    PackLater,
+    /// 「やめる」 while fetching: the fetch stops (`Idle`); what came is kept and the next
+    /// `FetchPack` goes on from there. Not a step.
+    StopPackFetch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1572,6 +1611,7 @@ pub struct AppState {
     pub audio: AudioView,
     pub audio_work: AudioWorkView,
     pub export: ExportView,
+    pub sounds: SoundsView,
     pub status: StatusView,
 }
 
@@ -1636,6 +1676,9 @@ impl AppState {
         if old.export != new.export {
             out.push(Change::Export(new.export.clone()));
         }
+        if old.sounds != new.sounds {
+            out.push(Change::Sounds(new.sounds.clone()));
+        }
         if old.status != new.status {
             out.push(Change::Status(new.status.clone()));
         }
@@ -1664,6 +1707,7 @@ impl AppState {
             Change::Audio(v) => self.audio = v,
             Change::AudioWork(v) => self.audio_work = v,
             Change::Export(v) => self.export = v,
+            Change::Sounds(v) => self.sounds = v,
             Change::Status(v) => self.status = v,
         }
     }
@@ -1808,6 +1852,10 @@ pub struct ParamsView {
     /// パラメータが出ます。" (spec 3, 86-5), which needs nothing from Rust. The selection stays
     /// with its effect when inserts are moved (`Command::MoveInsert`).
     pub selected: Option<SelectedParams>,
+    /// 「まとめて変える」 (spec 3, 40-A): two or more clips are selected and every one is a
+    /// vocal clip. `selected` is `None` then. An insert or an instrument selected afterwards
+    /// takes its place in the panel as `selected` does; selecting clips again brings it back.
+    pub clips: Option<SelectedClips>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2045,6 +2093,12 @@ pub struct ShelfView {
     /// What the song uses and this PC does not have, SF2 files first, each once. Also while
     /// the shelf is closed.
     pub missing: Vec<MissingView>,
+    /// Instruments that come with meloet whose sound is not fetched yet (spec 3, 45-A), in
+    /// the order of the shelf: a row with the name in gray.8 and 「まだ」, or
+    /// 「取ってきています」 for `PackFetchView::Fetching::instrument`; no star, no ▶, no
+    /// audition. They are not in `available`; the shelf shows both in its order. Empty when
+    /// the pack is all there.
+    pub not_yet: Vec<InstrumentKind>,
 }
 
 /// What Enter does in the shelf.
@@ -3149,21 +3203,100 @@ pub enum StatusMessage {
         audio: u32,
         sf2: u32,
     },
-    /// `Command::FindSourceTempo` found a tempo and set it. `name`: the clip. `bars`: how
-    /// many bars the audio was taken to be (1, 2, 4 or 8). Also when the audio had that
-    /// tempo already. The sentence is not in the spec yet.
+    /// `Command::FindSourceTempo` found a tempo and set it (spec 6 「この音のテンポを
+    /// さがした」): "この音のテンポは 120.00 くらいです（さがした数を入れました）。", with
+    /// `same` "…くらいです（いまの数と同じです）。": the audio had that tempo already. `name`:
+    /// the clip. `bars`: how many bars the audio was taken to be (1, 2, 4 or 8).
     SourceTempoFound {
         name: String,
         bpm: f64,
         bars: u8,
+        same: bool,
     },
     /// `Command::FindSourceTempo` found none: the audio is no 1, 2, 4 or 8 bars at a tempo
-    /// from 60 to 180. The sentence is not in the spec yet.
+    /// from 60 to 180. "この音のテンポは見つかりませんでした。数を打ちこんでください。"
     SourceTempoNotFound {
         name: String,
     },
     /// The dialog is up (mock F7-Export): "「書き出し」のダイアログをひらいています".
     ExportDialogOpen,
+    // Protocol 27 (spec 6, the sentences of the twelfth edition).
+    /// The input of the vocal recording went away (spec 6 「入口が抜けた」): "入口 1（USB マイク）
+    /// が抜けました。録音を止めました。録れた所までは残しています。" `input`: the channels the
+    /// first vocal track that was recording took; `device`: the PC's name of the input.
+    InputLost {
+        input: VocalInput,
+        device: String,
+    },
+    /// Said as the recording stops, when the input skipped (spec 6 「録っている間に音が
+    /// とぎれた」): "録っている間に音が 3 回とぎれました（PC がいそがしかったため）。…"
+    /// `count`: `RecordingFaults::gaps` + `dropped` of the recording.
+    RecordingGaps {
+        count: u32,
+    },
+    /// `Command::FindAudio` took the chosen file (spec 6 「さがして見つけた」): "歌 テイク
+    /// 1.wav を見つけました。2 つのクリップがまた鳴ります。" `file`: the name the song looks
+    /// for; `clips`: the clips that play it.
+    AudioFound {
+        file: String,
+        clips: u32,
+    },
+    /// `Command::FindAudio` and the chosen file has another sample rate or count of channels
+    /// (spec 6 「さがしたファイルが合わない」): "えらんだファイルは使えません（サンプルレートか
+    /// チャンネルの数がちがいます）。" Nothing was copied.
+    AudioFoundMismatch,
+    /// A file brought in is audio of a kind meloet reads and does not read (spec 6 「こわれた
+    /// ファイル ・ 3 チャンネル以上」): "「声.wav」はこわれているので読めません。" In place of
+    /// `AudioUnreadable` for such a file.
+    AudioBroken {
+        file: String,
+    },
+    /// The same for a file of three channels or more: "「8ch.wav」は 3 チャンネル以上なので
+    /// 読めません（読めるのはモノとステレオ）。"
+    AudioTooManyChannels {
+        file: String,
+    },
+    /// While saving copies audio files into the song's folder (spec 6 「保存で音を写して
+    /// いる」): "保存しています ・ 音のファイルを写しています 3 / 12（80 / 240 MB）". `done` of
+    /// `total` files, `done_bytes` of `total_bytes`. Sent at most 4 times a second; the next
+    /// message takes its place when the save is over.
+    SavingAudio {
+        done: u32,
+        total: u32,
+        done_bytes: u64,
+        total_bytes: u64,
+    },
+    /// Audio of a vocal clip did not come from the disk in time and was not heard (spec 6
+    /// 「ディスクが間に合わない」): "音のファイルを読むのが間に合わず、歌が少し切れました
+    /// （ディスクがいそがしかったため）。" Said once as it happens, then not again until the song
+    /// has stopped.
+    DiskTooSlow,
+    /// The band asks for the pack (mock F8-PackAsk): "音の素材がまだありません ・ いまはサイン波
+    /// で鳴ります". While `SoundsView::ask`.
+    PackAsking,
+    /// An instrument's sound came and sounds now, and more are coming (spec 3, 45-A):
+    /// "グランドピアノ が鳴るようになりました ・ のこりの音色を取っています".
+    SoundReady {
+        instrument: InstrumentKind,
+    },
+    /// The last file came (spec 6 「音の素材が取れた」): "音の素材をぜんぶ取りました。31 の
+    /// 音色が鳴ります。" `count`: `SoundsView::have`.
+    PackFetched {
+        count: u32,
+    },
+    /// The fetch stopped (spec 6 「音の素材 ・ つながっていない」 「… ・ とちゅうで切れた」
+    /// 「… ・ ディスクがいっぱい」 「… ・ こわれていた」), with the button of the row (「もう一度」
+    /// or 「続きから」, `Command::FetchPack`). The numbers of `PackFetchView::Failed`.
+    PackFailed {
+        failure: PackFailure,
+        done_bytes: u64,
+        total_bytes: u64,
+    },
+    /// Once, at the start that found it (spec 6 「音の素材 ・ 新しい包み」): "音の素材の新しい
+    /// 包みがあります（12 MB）。" with 「取りにいく」 (`Command::FetchPack`).
+    NewPack {
+        bytes: u64,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -3239,6 +3372,7 @@ pub enum Change {
     Audio(AudioView),
     AudioWork(AudioWorkView),
     Export(ExportView),
+    Sounds(SoundsView),
     Status(StatusView),
 }
 
@@ -3365,3 +3499,5 @@ mod tests24;
 mod tests25;
 #[cfg(test)]
 mod tests26;
+#[cfg(test)]
+mod tests27;

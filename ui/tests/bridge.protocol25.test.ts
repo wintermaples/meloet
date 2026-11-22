@@ -36,7 +36,7 @@ describe("約束 25 の形", () => {
     for (const name of names) expect(STEP_NAME_KINDS).toContain(name.kind);
     expect(STEP_NAME_KINDS.length).toBe(74);
     const messages: StatusMessage[] = [
-      { id: "sourceTempoFound", name: "ドラム", bpm: 137.14, bars: 4 },
+      { id: "sourceTempoFound", name: "ドラム", bpm: 137.14, bars: 4, same: false },
       { id: "sourceTempoNotFound", name: "ドラム" },
     ];
     expect(messages.map((m) => m.id)).toEqual(["sourceTempoFound", "sourceTempoNotFound"]);
@@ -191,7 +191,7 @@ describe("偽物の意図（絵と試験に足りるだけ）", () => {
     const after = songOf(found, s);
     expect(audioOf(after).stretch).toMatchObject({ follow: false, sourceBpm: 96, ratio: null });
     expect(after.song.undoCount).toBe(s.song.undoCount + 1);
-    expect(found.find((c) => c.section === "status")!.value).toEqual({ message: { id: "sourceTempoFound", name: "ドラム", bpm: 96, bars: 2 } });
+    expect(found.find((c) => c.section === "status")!.value).toEqual({ message: { id: "sourceTempoFound", name: "ドラム", bpm: 96, bars: 2, same: false } });
     // 見つからないとき: 何も変わらず、状態行だけ。
     const long = scene("audioLoading").state;
     const none = reduceAudio(long, { type: "findSourceTempo", clip: CLIP })!;

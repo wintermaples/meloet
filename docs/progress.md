@@ -1618,3 +1618,6 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - quantum: 14:05:14 に 256 → 512、14:05:17 に 256 へ戻した（k8t）。
 - 取りこみ: architecture.md だけぶつかった（22-26 を 23 章の前へ）。取りこんだあとの確かめ（棟梁）: fmt ・ clippy、protocol ・ engine ・ core の試験ぜんぶ通る（core 528）、画面 3199。
 - 気をつける事: 負荷の測りの間、ほかの係のビルドと測りが動いていた（数はにごっているかもしれない。直した形は試験で見はっている）。
+- **core（k8c、meloet-hard ・ Opus 5.5、merge 済み。architecture 23-8）**: model に `set_clips_shape`（歌のクリップの音量 ・ ついていく ・ 音の高さを 1 手で。手の種類 `SetClipsGain` ・ `SetClipsFollow` ・ `SetClipsPitch`、履歴の場所はアレンジ）、`ShiftClipGains`（−60〜+12 で止まる）・ `SetClipGains` ・ `SetClipsStretch`、`ParamsView::clips`。書き出しの `over` を B-95-2 のとおり数える（`export/job.rs` の `OverPlaces`。ちょうど 0 dB はこえない、頭の遅れは数えない）、ソロ。6 章の知らせ（`InputLost`、`RecordingGaps`、`AudioFound` ・ `AudioFoundMismatch`〔「さがす」の答えを `Finding` に〕、`AudioBroken` ・ `AudioTooManyChannels`、`SavingAudio`〔はじめの 250 ms は言わず 1 秒に 4 回まで〕、`DiskTooSlow`）。**使っている音がある曲の保存は、プラグインのある曲と同じく保存のスレッドで書く**（写している間に知らせを出すため。答えはあとから）。
+  - 取りこんだあとの確かめ（棟梁）: fmt ・ clippy、model ・ protocol ・ engine ・ core の試験ぜんぶ通る（core 535）、画面 3199。
+- **画面（k8u2、meloet-impl ・ Opus 5.5）**: 音量の線はフェーダーと同じ目盛、いくつも選べば同じ dB だけ動く（`ShiftClipGains` 1 つ）、`ClipsPanel.svelte`（2 つ以上の欄、「—」）、書き出しのたしかめ（数えながら押せる、こえた所の数、ソロの行、状態行のモックの文）、遅れを測れない文。仮の形は B-95-9 ・ 10。ドラッグ中にほかのクリップの波形も大きさを変える直しを続けて頼んでいる。

@@ -2813,3 +2813,13 @@ pub struct AudioShape {
 - **busyMs の読みかた**: CPU の道では、コマは前のコマを描き終えしだい来る（画面が 144 Hz なら 16.7 ms を待たない）。busyMs は「そのコマの絵を描き終えるまで」で、次のコマの描く所のあとに回ると 2 つぶんになる。60 Hz を保っているかは、`arrange_parts.py` の `frameGapMs`（平均と p95 を足した）で読む。
 - **結果**（`arr16`、交互に 3 回ずつ）: 横に送る busyMs 平均 20 → 13 ms、コマの間 p95 15〜16 → 12〜13 ms。いちばん縮めて送る 24 → 14〜16 ms。拡大は 20〜21 → 19〜20 ms で、**16.7 ms の中に入っていない**（コマの間は平均 11 ms）。歌の 192 個の曲は変わらない（札の文字の重さ。22-18 の書体の宿題）。再生中の鍵 → 画面は変わらない。
 - **のこり**: 拡大と、歌の多い曲の送りは、canvas を描く所と文字を描く所が残る。canvas の読みもどしを 1 回にできるかもしれない形（`webkit2gtk` の `set_enable_accelerated_2d_canvas(false)`、`crates/meloet-app`）は、ためしていない。
+
+### 23-15 CPU の道の WebKit のメモリ（第 8 回 区切り4）
+
+測った数は `docs/measurements/2026-11-22-round8-webkit-memory.md`、道具は `tools/measure/webkit_memory.py`（2026-11-22、meloet-hard の印 k8wk。Fable の上限のため Opus 5.5）。
+
+- **CPU の道（`WEBKIT_DISABLE_COMPOSITING_MODE=1`）のまま、何も足さない、を係はすすめる（決めるのは棟梁）**。23-12 の「CPU の道で止まっていてもふえる、10 分録って ＋130 MB」は、今の版では出なかった。CPU の道と合成の道は、同じ場面で同じくらいふえ（再生 25 分で ＋18 と ＋16 MB、録る 13 分で ＋20 と ＋17 MB）、20〜25 分で平らになる。止まっていると、どちらも平ら。CPU の道の再生は 60 分で ＋38 MB（段になってふえる）。RSS の高さは CPU の道のほうが 40〜170 MB 低い。
+- ふえるのは WebKitWebProcess の libpas（`fastMalloc` と JavaScriptCore）の「使用中」で、手放したのに返さない形ではない。共有メモリ（1 コマごとの `ShareableBitmap` の `memfd`）はたまらない。meloet（画面のプロセス）はふえない。
+- **入れなかった形**: glibc の malloc の決まり（`GLIBC_TUNABLES` の `trim_threshold` ・ `arena_max` ・ `mmap_threshold`）、`Malloc=1`（bmalloc を使わない。悪くなった）、設定で CPU の道（`set_hardware_acceleration_policy(Never)`。環境の変数と同じ描く道で、ふえかたも時間も同じ。WebView を作ったあとに変えるので `Core: Scrolling` のスレッドが残る）、`enable-2d-canvas-acceleration` を false（2.52.6 の WebGL の canvas は、CPU の道で描くたびに GPU の ImageBuffer を決めうちで作りなおす `createImageBufferForWebGLContextReads` を通り、この設定を見ない。数も時間も同じ）。`webkit2gtk` 2.0.2 の `set_enable_accelerated_2d_canvas` は 2.52.6 では何もしない。
+- WebKitWebProcess が約 280 秒で消えた件は、約 4 時間の CPU の道の回で再現しなかった。
+- 気をつける事: CPU の道は、窓が見えない時や画面が消えた時も、再生中は毎秒 60 コマ以上描きつづける（合成の道は止まる）。測る人は、合成の道を測る間に画面が消えていないかを、ページのコマの数（`frame-profile.json` の `frames`）で確かめる。

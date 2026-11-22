@@ -1705,3 +1705,11 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 棟梁の決め: 実行ファイルのそばの `sounds/` は残す（開発のビルドが包みを見つける所。配る形では何もしない）。VS Code のデバッグの設定（`--no-default-features`）は変えない（`MELOET_*` は効かない。オーナーさんに伝えた）。
 - 取りこんだあとの確かめ（棟梁、本物の作業ツリー）: `check-all.sh` 通る（Rust 1357 ・ 落ち 0 ・ ignored 105、画面 3277）、`check-release.sh` 通る（meloet 36,367,536 バイト、plughost 1,920,496 バイト、記号つき）。
 - 宿題: `meloet-midi` の `plugging_and_unplugging_after_start_is_reported_with_the_same_id` がたまに落ちる（ポートの名前が `…:portet`。係の 1 回目）。
+
+### 区切り4: 音のスレッドをリアルタイムに（k8rt、meloet-hard ・ Opus 5.5、merge a83b8d6。architecture 23-10、`docs/measurements/2026-11-22-round8-rt.md`、生の数は `target/measure/round8-rt/`）
+
+- 出口の `pw_out` と入口の `pw_in` は、PC が許せば SCHED_FIFO 20（プラグイン係と同じ。rtkit の上限も 20）。最初のコールバックが tid を原子変数に書き、手伝いのスレッド `meloet-rt-ask` が `RLIMIT_RTPRIO` → rtkit の順に頼む（コールバックの中は書きこみと `gettid` だけ）。上げられなければ、ふつうの優先度のまま記録に 1 行。cpal の `realtime` は使わない（Linux では `realtime-dbus` が要り dbus 0.6 がもう 1 つ入る、rtkit の道だけ、優先度は 10 に決まり、MPL-2.0 の部品がふえる）。新しい部品なし（`dbus` 0.9.12 を engine の依存に）。
+- xrun（Surge XT 16 本 ＋ ZamComp、170 秒 × 3、上げない形と交互）: 静かな PC で、上げない形 0 ・ 0 ・ 1、上げる形 0 ・ 0 ・ 0。エンジンの負荷の最大は 71〜77 % → 53〜59 %。混んだ PC（load 3.9〜14.6）では、ZamComp の答えを待ちきれなかったブロックが 1458 ・ 1452 回 → 0〜20 回。鍵 → DAC は平均 13.37 ms ・ p95 15.88 ms（変わらない）。
+- 取りこむとき棟梁が直した: 試験の口 `MELOET_ENGINE_RT` を、`meloet-engine` の feature `dev-hooks`（`meloet-core/dev-hooks` から流す）の下に入れ、`check-release.sh` の逆の試験の名前に足した（係の土台が、仕込みを外す仕事より前だったため）。
+- 確かめ（棟梁、本物の作業ツリー）: `check-all.sh --release` で core の `readahead::tests::other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends` が 1 回落ちた（入れかえの回数が 3、待つのは 2。混んでいる時だけ）。ひとりで 8 回回して 8 回通った → 時間で落ちる試験の宿題。そのほか Rust ・ 画面 3277 ・ ライセンス ・ `check-release.sh`（meloet 36,390,024 バイト）は通った。
+- オーナーさんに頼む: rtkit の道で上がるか（この PC のエージェントは席のないセッションで polkit に断られる）。`docs/install-check.md` の 2-1 に足した。棟梁の決め: rtkit で上げるときに meloet のプロセスの `RLIMIT_RTTIME` を 200 ms にするのは、プラグイン係 ・ PipeWire の module-rt と同じでよい。上げる関数がプラグイン係とエンジンに 2 つある件は、オーナーさんの整理の時に（申し送り）。

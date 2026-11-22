@@ -9,6 +9,8 @@ publish.workspace = true
 # Test builds only: marks the audio block on a thread-local flag so a counting allocator can
 # see allocations made inside it. Off in the product build, where the marker is a no-op.
 rt-check = []
+# MELOET_ENGINE_RT, for tests and measurements. Not in the build that is handed out (23-11).
+dev-hooks = []
 
 [dependencies]
 cpal.workspace = true

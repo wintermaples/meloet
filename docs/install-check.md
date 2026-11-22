@@ -27,6 +27,13 @@ sudo apt install ./meloet_0.1.0_amd64.deb
 - [ ] アレンジ、入力計、メーターが動く（WebGL の面が描かれている）。
 - [ ] 「音の素材（約 240 MB）を取りにいきます」が出る。
 
+### 2-1. 音のスレッドの優先度（端末から起こしたとき）
+
+端末から `meloet` で起こすと、はじめの数秒に次のどちらかの 1 行が出ます。どちらが出たかを返してください。
+
+- `meloet: the audio output thread runs at real-time priority 20 (limit)` か `(rtkit)`: 音のスレッドがリアルタイムで回っています。
+- `meloet: no real-time priority for the audio output thread: …`: 上げられませんでした（音は出ますが、混んだ PC でとぎれやすくなります）。
+
 ## 3. 鍵盤をつなぐ
 
 - [ ] 鍵盤をつなぐ前は、入力計に「鍵盤を USB でつなぐと、ここに出ます。つながなくても、マウスで音を書けます。」。

@@ -5,8 +5,8 @@
 //! and the helper asks for the priority the way the plugin host's audio threads do: with
 //! `sched_setscheduler` where `RLIMIT_RTPRIO` allows it, through rtkit otherwise. The callback
 //! makes no call that may wait. Without a priority the stream runs all the same, and the log
-//! says so once. `MELOET_ENGINE_RT` chooses for tests and measurements: `off` asks for
-//! nothing, `rtkit` asks rtkit even where the limits allow.
+//! says so once. With the `dev-hooks` feature, `MELOET_ENGINE_RT` chooses for tests and
+//! measurements: `off` asks for nothing, `rtkit` asks rtkit even where the limits allow.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -16,6 +16,7 @@ use std::time::Duration;
 /// never stands below the threads it waits for. PipeWire's own threads stay above (88 by
 /// limit, 20 through rtkit for its clients).
 pub(crate) const PRIORITY: u32 = 20;
+#[cfg(feature = "dev-hooks")]
 const RT_ENV: &str = "MELOET_ENGINE_RT";
 /// How often the helper looks for the first callback.
 const LOOK: Duration = Duration::from_millis(10);
@@ -81,16 +82,17 @@ fn report(what: &str, got: Result<(u32, &'static str), String>) {
 
 /// Asks for [`PRIORITY`] for thread `id` of this process, as `MELOET_ENGINE_RT` says.
 pub(crate) fn raise(id: libc::pid_t) -> Result<(u32, &'static str), String> {
-    let choice = std::env::var(RT_ENV).unwrap_or_default();
-    match choice.as_str() {
-        "off" => Err("switched off".into()),
-        "rtkit" => by_rtkit(id).map(|p| (p, "rtkit")),
-        _ => by_limit(id).map(|p| (p, "limit")).or_else(|limit| {
-            by_rtkit(id)
-                .map(|p| (p, "rtkit"))
-                .map_err(|rtkit| format!("{limit}; {rtkit}"))
-        }),
+    #[cfg(feature = "dev-hooks")]
+    match std::env::var(RT_ENV).unwrap_or_default().as_str() {
+        "off" => return Err("switched off".into()),
+        "rtkit" => return by_rtkit(id).map(|p| (p, "rtkit")),
+        _ => {}
     }
+    by_limit(id).map(|p| (p, "limit")).or_else(|limit| {
+        by_rtkit(id)
+            .map(|p| (p, "rtkit"))
+            .map_err(|rtkit| format!("{limit}; {rtkit}"))
+    })
 }
 
 fn by_limit(id: libc::pid_t) -> Result<u32, String> {

@@ -9,7 +9,7 @@ publish.workspace = true
 # The development and measuring hooks: the MELOET_* places, the measurements, the test keyboards,
 # the test server of the sound pack. Not in the build that is handed out
 # (docs/architecture.md 23-11).
-dev-hooks = ["meloet-midi/dev-hooks"]
+dev-hooks = ["meloet-midi/dev-hooks", "meloet-engine/dev-hooks"]
 
 [dependencies]
 dirs = { workspace = true }

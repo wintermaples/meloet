@@ -162,6 +162,26 @@ export function findCutText(start: Element | null): { el: HTMLElement; text: str
 }
 
 /**
+ * Text that lets the pointer through (`pointer-events: none`, like the clip names over the arrange's WebGL) is never
+ * the pointer's target, so it is found by place instead: inside the nearest `[data-tip-through-root]` around `start`,
+ * the last `[data-tip-through]` (the one drawn on top) whose box holds (x, y), if its text is cut.
+ * Only that container is searched. Reads layout, so call it only once the pointer has rested.
+ */
+export function findCutThrough(start: Element | null, x: number, y: number): { el: HTMLElement; text: string } | null {
+  const root = start?.closest("[data-tip-through-root]");
+  if (!root) return null;
+  const marks = root.querySelectorAll<HTMLElement>("[data-tip-through]");
+  for (let i = marks.length - 1; i >= 0; i--) {
+    const el = marks[i]!;
+    const r = el.getBoundingClientRect();
+    if (x < r.left || x >= r.right || y < r.top || y >= r.bottom) continue;
+    const text = el.textContent?.trim();
+    return text && el.scrollWidth > el.clientWidth ? { el, text } : null;
+  }
+  return null;
+}
+
+/**
  * One pointer listener for the whole page: rest on any text cut with "…" for TIP_DELAY_MS and its whole text shows,
  * in the same box as the term tips. A tip of the element's own (use:term, use:tip …) wins: its timer was set earlier
  * in the same pointer event, so it has already shown when this one fires. Nothing shows while a button is held.
@@ -170,6 +190,10 @@ export function findCutText(start: Element | null): { el: HTMLElement; text: str
 export function watchCutText(root: Document = document): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let target: Element | null = null;
+  let x = 0;
+  let y = 0;
+  // The box of a shown text found through the pointer (it is never the target, so leaving it is told by place).
+  let throughBox: DOMRect | null = null;
   const clear = () => {
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
@@ -178,22 +202,33 @@ export function watchCutText(root: Document = document): () => void {
     clear();
     if (cutShown()) hideTip();
     cutOwner = null;
+    throughBox = null;
   };
   const show = () => {
     timer = undefined;
     if (tipView.value !== null || !target?.isConnected) return;
-    const found = findCutText(target);
-    if (!found) return;
-    const r = found.el.getBoundingClientRect();
+    let found = findCutText(target);
+    let r: DOMRect | null = null;
+    if (!found) {
+      found = findCutThrough(target, x, y);
+      if (!found) return;
+      r = throughBox = found.el.getBoundingClientRect();
+    }
+    r ??= found.el.getBoundingClientRect();
     owner = cutOwner = found.el;
     tipView.value = { term: null, body: found.text, left: r.left, top: r.top, bottom: r.bottom };
   };
   const move = (e: PointerEvent) => {
     if (e.buttons !== 0) return drop();
     const at = e.target instanceof Element ? e.target : null;
-    if (cutShown() && at && cutOwner!.contains(at)) return;
+    if (cutShown()) {
+      const b = throughBox;
+      if (b ? e.clientX >= b.left && e.clientX < b.right && e.clientY >= b.top && e.clientY < b.bottom : at && cutOwner!.contains(at)) return;
+    }
     drop();
     target = at;
+    x = e.clientX;
+    y = e.clientY;
     timer = setTimeout(show, TIP_DELAY_MS);
   };
   const out = (e: PointerEvent) => {

@@ -2,7 +2,7 @@
 // jsdom has no layout, so the tests set scrollWidth / clientWidth and the text-overflow by hand.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { selectedKeysFull, selectedKeysText } from "../src/components/pianoroll/drums";
-import { TIP_DELAY_MS, findCutText, hideTip, term, tip, tipView, tipVisible, watchCutText } from "../src/lib/tip.svelte";
+import { TIP_DELAY_MS, findCutText, findCutThrough, hideTip, term, tip, tipView, tipVisible, watchCutText } from "../src/lib/tip.svelte";
 
 const LONG = "Arturia KeyLab Essential 61 mk3 MIDI 1";
 
@@ -151,6 +151,117 @@ describe("「…」で切れた文の全部（ページに 1 つの耳）", () =
     field.innerHTML = '<span class="path"><span data-cut-text>/home/me/songs/very/long/path/song.wav</span></span>';
     document.body.append(field);
     expect(findCutText(field.querySelector("[data-cut-text]"))?.text).toBe("/home/me/songs/very/long/path/song.wav");
+  });
+});
+
+describe("下を通す文（pointer-events: none のクリップの名前）", () => {
+  let off: () => void;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    off = watchCutText();
+  });
+  afterEach(() => {
+    off();
+    hideTip();
+    document.body.innerHTML = "";
+    vi.useRealTimers();
+  });
+
+  const rect = (left: number, top: number, w: number, h: number) =>
+    ({ left, top, right: left + w, bottom: top + h, width: w, height: h, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+
+  /** A lanes box (the root) with the clip names as marked children; the pointer's target is the box itself. */
+  function lanes(names: { text: string; at: DOMRect; cut: boolean }[]): { root: HTMLElement; reads: ReturnType<typeof vi.fn>[] } {
+    const root = document.createElement("div");
+    root.setAttribute("data-tip-through-root", "");
+    const reads = names.map((n) => {
+      const el = document.createElement("span");
+      el.setAttribute("data-tip-through", "");
+      el.textContent = n.text;
+      const read = vi.fn(() => n.at);
+      el.getBoundingClientRect = read;
+      Object.defineProperty(el, "clientWidth", { configurable: true, get: () => 40 });
+      Object.defineProperty(el, "scrollWidth", { configurable: true, get: () => (n.cut ? 90 : 40) });
+      root.append(el);
+      return read;
+    });
+    document.body.append(root);
+    return { root, reads };
+  }
+  const moveAt = (el: Element, x: number, y: number, buttons = 0) =>
+    el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: x, clientY: y, buttons }));
+
+  it("印のある切れた文の上に止まると、全部の文が出る。外へ出たら消える", () => {
+    const { root } = lanes([
+      { text: "Aメロ（ピアノのとても長い名前）", at: rect(10, 10, 40, 16), cut: true },
+      { text: "Bメロ", at: rect(100, 10, 40, 16), cut: false },
+    ]);
+    moveAt(root, 20, 15);
+    vi.advanceTimersByTime(TIP_DELAY_MS);
+    expect(tipView.value).toMatchObject({ term: null, body: "Aメロ（ピアノのとても長い名前）", left: 10, top: 10, bottom: 26 });
+    moveAt(root, 30, 20);
+    expect(tipVisible()).toBe(true);
+    moveAt(root, 70, 20);
+    expect(tipVisible()).toBe(false);
+  });
+
+  it("切れていなければ出ない。上の印が切れていなければ、下の印は見ない", () => {
+    const { root } = lanes([
+      { text: "下の長い名前", at: rect(10, 10, 40, 16), cut: true },
+      { text: "上", at: rect(10, 10, 40, 16), cut: false },
+    ]);
+    moveAt(root, 20, 15);
+    vi.advanceTimersByTime(TIP_DELAY_MS);
+    expect(tipVisible()).toBe(false);
+  });
+
+  it("どの印の上でもなければ出ない", () => {
+    const { root } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
+    moveAt(root, 200, 200);
+    vi.advanceTimersByTime(TIP_DELAY_MS);
+    expect(tipVisible()).toBe(false);
+  });
+
+  it("入れ物の外の印の物は調べない", () => {
+    const { root } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
+    const outside = document.createElement("span");
+    outside.setAttribute("data-tip-through", "");
+    outside.textContent = "外の長い名前";
+    const outsideRead = vi.fn(() => rect(10, 10, 40, 16));
+    outside.getBoundingClientRect = outsideRead;
+    document.body.append(outside);
+    moveAt(root, 20, 15);
+    vi.advanceTimersByTime(TIP_DELAY_MS);
+    expect(tipView.value?.body).toBe("長い名前");
+    expect(outsideRead).not.toHaveBeenCalled();
+    // No root around the start: nothing is searched.
+    expect(findCutThrough(outside, 20, 15)).toBeNull();
+    expect(outsideRead).not.toHaveBeenCalled();
+  });
+
+  it("move ではレイアウトを読まない（止まって 0.6 秒で 1 回）", () => {
+    const { root, reads } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
+    for (let i = 0; i < 10; i++) {
+      moveAt(root, 20 + i, 15);
+      vi.advanceTimersByTime(16);
+    }
+    expect(reads[0]).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(TIP_DELAY_MS);
+    expect(tipVisible()).toBe(true);
+    const n = reads[0]!.mock.calls.length;
+    // Moving on inside the shown name compares with the box kept at show time.
+    moveAt(root, 25, 18);
+    moveAt(root, 26, 18);
+    expect(tipVisible()).toBe(true);
+    expect(reads[0]!.mock.calls.length).toBe(n);
+  });
+
+  it("押している間（クリップや再生の線のドラッグ）は出ない", () => {
+    const { root } = lanes([{ text: "長い名前", at: rect(10, 10, 40, 16), cut: true }]);
+    root.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, buttons: 1, clientX: 20, clientY: 15 }));
+    moveAt(root, 20, 15, 1);
+    vi.advanceTimersByTime(TIP_DELAY_MS);
+    expect(tipVisible()).toBe(false);
   });
 });
 

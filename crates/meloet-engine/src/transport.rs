@@ -3,7 +3,7 @@
 
 use std::f32::consts::TAU;
 
-use crate::instrument::{Instrument, InstrumentEvent};
+use crate::instrument::{Instrument, InstrumentEvent, SongPlace};
 
 const CC_MODULATION: u8 = 1;
 const CC_SUSTAIN: u8 = 64;
@@ -27,10 +27,22 @@ fn rank(event: InstrumentEvent) -> u8 {
     }
 }
 
+/// The presses of a key between two tallies.
+const TALLY_EVERY: usize = 64;
+
 /// One track's events in song order. Built outside the audio thread.
 #[derive(Debug, Default)]
 pub struct Sequence {
     events: Box<[SequenceEvent]>,
+    /// For each event; for a press, its seed and its number among the presses of its key.
+    presses: Box<[(u32, u32)]>,
+    /// The velocities of the presses, key after key, each key's in song order.
+    velocities: Box<[u8]>,
+    /// For each key, from its [`TALLY_EVERY`]th press on and every [`TALLY_EVERY`] presses
+    /// after: the cumulative counts by velocity of its presses before that one.
+    tallies: Box<[[u32; 128]]>,
+    /// For each key: where its velocities and its tallies start (empty: no press at all).
+    keys: Box<[(u32, u32)]>,
 }
 
 impl Sequence {
@@ -39,14 +51,90 @@ impl Sequence {
     pub fn new(mut events: Vec<SequenceEvent>) -> Sequence {
         events.retain(|e| e.event != InstrumentEvent::AllNotesOff);
         events.sort_by_key(|e| (e.tick, rank(e.event)));
+        let press = |e: &SequenceEvent| match e.event {
+            InstrumentEvent::NoteOn { note, velocity } if velocity > 0 => {
+                Some((usize::from(note & 127), velocity.min(127)))
+            }
+            _ => None,
+        };
+
+        let mut count = [0usize; 128];
+        for (key, _) in events.iter().filter_map(press) {
+            count[key] += 1;
+        }
+        let mut keys = vec![(0u32, 0u32); 128];
+        let (mut velocity_at, mut tally_at) = (0usize, 0usize);
+        for (key, n) in count.iter().enumerate() {
+            keys[key] = (velocity_at as u32, tally_at as u32);
+            velocity_at += n;
+            tally_at += n.saturating_sub(1) / TALLY_EVERY;
+        }
+
+        let mut velocities = vec![0u8; velocity_at];
+        let mut tallies = vec![[0u32; 128]; tally_at];
+        let mut presses = vec![(0u32, 0u32); events.len()];
+        let mut seen = [0usize; 128];
+        let mut by_velocity = vec![[0u32; 128]; 128];
+        let mut same_tick = [(u64::MAX, 0u32); 128];
+        for (i, e) in events.iter().enumerate() {
+            let Some((key, velocity)) = press(e) else {
+                continue;
+            };
+            let ordinal = seen[key];
+            seen[key] += 1;
+            let (first_velocity, first_tally) = keys[key];
+            if ordinal > 0 && ordinal % TALLY_EVERY == 0 {
+                let tally = &mut tallies[first_tally as usize + ordinal / TALLY_EVERY - 1];
+                let mut sum = 0;
+                for (t, n) in tally.iter_mut().zip(by_velocity[key]) {
+                    sum += n;
+                    *t = sum;
+                }
+            }
+            by_velocity[key][usize::from(velocity)] += 1;
+            velocities[first_velocity as usize + ordinal] = velocity;
+            let (tick, n) = &mut same_tick[key];
+            if *tick == e.tick {
+                *n += 1;
+            } else {
+                (*tick, *n) = (e.tick, 0);
+            }
+            presses[i] = (seed(e.tick, key as u8, *n), ordinal as u32);
+        }
         Sequence {
             events: events.into_boxed_slice(),
+            presses: presses.into_boxed_slice(),
+            velocities: velocities.into_boxed_slice(),
+            tallies: tallies.into_boxed_slice(),
+            keys: keys.into_boxed_slice(),
         }
     }
 
     pub fn events(&self) -> &[SequenceEvent] {
         &self.events
     }
+
+    /// The place of the event at `index`, a press of `note`.
+    fn place(&self, index: usize, note: u8) -> SongPlace<'_> {
+        let (seed, ordinal) = self.presses[index];
+        let (first_velocity, first_tally) = self.keys[usize::from(note & 127)];
+        let (first_velocity, ordinal) = (first_velocity as usize, ordinal as usize);
+        let block = ordinal / TALLY_EVERY;
+        let tally = (block > 0).then(|| &self.tallies[first_tally as usize + block - 1]);
+        let earlier =
+            &self.velocities[first_velocity + block * TALLY_EVERY..first_velocity + ordinal];
+        SongPlace::tallied(seed, tally, earlier)
+    }
+}
+
+/// The same for the same tick, key and order there; far apart for neighbours.
+fn seed(tick: u64, key: u8, order: u32) -> u32 {
+    let mut x = tick
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(u64::from(key) << 32 | u64::from(order));
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    (x ^ (x >> 31)) as u32
 }
 
 /// A set of track indexes (the tracks that do not play their sequence).
@@ -220,16 +308,24 @@ impl Lane {
         }
     }
 
-    /// Sends the next event not yet sent.
+    /// Sends the next event not yet sent. A press goes with its place in the song.
     pub fn fire_next(&mut self, instrument: Option<&mut (dyn Instrument + 'static)>) {
-        let next = self
-            .sequence
-            .as_deref()
-            .and_then(|s| s.events().get(self.cursor));
-        if let Some(&e) = next {
-            self.send(e.event, instrument);
-            self.cursor += 1;
+        let Some(sequence) = self.sequence.as_deref() else {
+            return;
+        };
+        let Some(&e) = sequence.events().get(self.cursor) else {
+            return;
+        };
+        match e.event {
+            InstrumentEvent::NoteOn { note, velocity } if velocity > 0 => {
+                self.sounding[usize::from(note >> 6) & 1] |= 1 << (note & 63);
+                if let Some(instrument) = instrument {
+                    instrument.song_note_on(note, velocity, sequence.place(self.cursor, note));
+                }
+            }
+            event => self.send(event, instrument),
         }
+        self.cursor += 1;
     }
 
     /// Sends every event before `tick` that has not been sent yet.
@@ -322,5 +418,100 @@ impl Click {
             self.level *= self.decay;
             self.frame += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn on(tick: u64, note: u8, velocity: u8) -> SequenceEvent {
+        SequenceEvent {
+            tick,
+            event: InstrumentEvent::NoteOn { note, velocity },
+        }
+    }
+
+    /// Two keys, hundreds of presses each at velocities that wander, some at the same tick,
+    /// with releases and a pedal in between: every press is told the count a walk from the
+    /// head gives, for any range of velocities.
+    #[test]
+    fn a_press_knows_the_earlier_presses_of_its_key_by_velocity() {
+        let mut state = 12_345_u32;
+        let mut next = |below: u32| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (state >> 8) % below
+        };
+        let mut events = Vec::new();
+        for i in 0..700_u64 {
+            let note = if next(3) == 0 { 38 } else { 42 };
+            let tick = i / 2 * 240;
+            events.push(on(tick, note, 1 + next(127) as u8));
+            events.push(SequenceEvent {
+                tick: tick + 100,
+                event: InstrumentEvent::NoteOff { note },
+            });
+            if i % 50 == 0 {
+                events.push(on(tick + 120, note, 0));
+                events.push(SequenceEvent {
+                    tick,
+                    event: InstrumentEvent::Control {
+                        controller: CC_SUSTAIN,
+                        value: 127,
+                    },
+                });
+            }
+        }
+        let sequence = Sequence::new(events);
+        let ranges = [
+            (1, 127),
+            (1, 63),
+            (64, 127),
+            (30, 30),
+            (100, 90),
+            (0, 0),
+            (126, 127),
+        ];
+        let mut heard: Vec<(u8, u8, u64)> = Vec::new();
+        let mut seeds = std::collections::HashSet::new();
+        for (index, e) in sequence.events().iter().enumerate() {
+            let InstrumentEvent::NoteOn { note, velocity } = e.event else {
+                continue;
+            };
+            if velocity == 0 {
+                continue;
+            }
+            let place = sequence.place(index, note);
+            for (lo, hi) in ranges {
+                let walked = (heard.iter())
+                    .filter(|&&(n, v, _)| n == note && lo.max(1) <= v && v <= hi)
+                    .count() as u32;
+                assert_eq!(place.earlier(lo, hi), walked, "press {index}, {lo}..={hi}");
+            }
+            let order = heard
+                .iter()
+                .filter(|h| h.0 == note && h.2 == e.tick)
+                .count();
+            assert_eq!(place.seed(), seed(e.tick, note, order as u32));
+            assert!(seeds.insert(place.seed()), "press {index}: the seed is new");
+            heard.push((note, velocity, e.tick));
+        }
+        assert_eq!(heard.len(), 700);
+    }
+
+    /// The seed is the note's own: other notes before it, or none, do not change it.
+    #[test]
+    fn a_press_keeps_its_seed_when_other_notes_come_and_go() {
+        let seed_of = |events: Vec<SequenceEvent>, tick: u64| {
+            let sequence = Sequence::new(events);
+            let index = (sequence.events().iter())
+                .position(|e| e.tick == tick && matches!(e.event, InstrumentEvent::NoteOn { .. }))
+                .unwrap();
+            sequence.place(index, 60).seed()
+        };
+        let alone = seed_of(vec![on(1920, 60, 90)], 1920);
+        let after = seed_of(vec![on(0, 60, 90), on(960, 62, 50), on(1920, 60, 90)], 1920);
+        assert_eq!(alone, after);
+        assert_ne!(alone, seed_of(vec![on(1921, 60, 90)], 1921));
     }
 }

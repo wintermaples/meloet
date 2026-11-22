@@ -5,7 +5,7 @@
 
 use std::f32::consts::TAU;
 
-use meloet_engine::{Instrument, InstrumentEvent};
+use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 use meloet_model::drums::DrumPiece;
 
 use super::dsp::{Rng, Svf, decay_coef, pulse, svf_g};
@@ -58,8 +58,8 @@ struct Voice {
     fade: f32,
     /// 0 while the voice is not fading out.
     fade_step: f32,
-    /// The velocity of the hit that waits for this voice to finish fading.
-    pending: Option<u8>,
+    /// The velocity of the hit that waits for this voice to finish fading, and its seed.
+    pending: Option<(u8, Option<u32>)>,
     phase: [f32; 6],
     inc: [f32; 6],
     env: [f32; 3],
@@ -90,7 +90,14 @@ impl Voice {
         rng: Rng::new(1),
     };
 
-    fn start(&mut self, piece: DrumPiece, velocity: u8, order: u64, sample_rate: f32) {
+    /// `seed`: a hit of the song, whose noise and metal start from it.
+    fn start(
+        &mut self,
+        piece: DrumPiece,
+        (velocity, seed): (u8, Option<u32>),
+        order: u64,
+        sample_rate: f32,
+    ) {
         let v = f32::from(velocity.min(127)) / 127.0;
         let hz = |f: f32| f / sample_rate;
         let dc = |tau_s: f32| decay_coef(tau_s, sample_rate);
@@ -101,7 +108,7 @@ impl Voice {
             order,
             gain: [amp * (1.0 - pan).sqrt(), amp * (1.0 + pan).sqrt()],
             env: [1.0; 3],
-            rng: self.rng,
+            rng: seed.map_or(self.rng, Rng::new),
             ..Voice::IDLE
         };
 
@@ -324,7 +331,7 @@ impl ElectroKit {
         &mut self.voices[first..first + SLOTS]
     }
 
-    fn hit(&mut self, piece: DrumPiece, velocity: u8) {
+    fn hit(&mut self, piece: DrumPiece, velocity: u8, seed: Option<u32>) {
         let sample_rate = self.sample_rate;
         if piece.stops_open_hi_hat() {
             for v in self.slots(DrumPiece::OpenHiHat) {
@@ -345,7 +352,7 @@ impl ElectroKit {
             }
         }
         if let Some(v) = slots.iter_mut().find(|v| !v.active) {
-            v.start(piece, velocity, order, sample_rate);
+            v.start(piece, (velocity, seed), order, sample_rate);
             return;
         }
         // Both voices are busy: the hit waits a moment for the one that is already fading, or
@@ -355,7 +362,7 @@ impl ElectroKit {
             .min_by_key(|v| (v.fade_step == 0.0, v.order))
         {
             v.fade_out(STEAL_S, sample_rate);
-            v.pending = Some(velocity);
+            v.pending = Some((velocity, seed));
             v.order = order;
         }
     }
@@ -372,7 +379,15 @@ impl Instrument for ElectroKit {
             && velocity > 0
             && let Some(piece) = DrumPiece::from_note(note)
         {
-            self.hit(piece, velocity);
+            self.hit(piece, velocity, None);
+        }
+    }
+
+    fn song_note_on(&mut self, note: u8, velocity: u8, place: SongPlace<'_>) {
+        if velocity > 0
+            && let Some(piece) = DrumPiece::from_note(note)
+        {
+            self.hit(piece, velocity, Some(place.seed()));
         }
     }
 
@@ -391,11 +406,11 @@ impl Instrument for ElectroKit {
                 if v.fade_step > 0.0 {
                     v.fade -= v.fade_step;
                     if v.fade <= 0.0 {
-                        let Some(velocity) = v.pending else {
+                        let Some(pending) = v.pending else {
                             v.active = false;
                             break;
                         };
-                        v.start(piece, velocity, v.order, sample_rate);
+                        v.start(piece, pending, v.order, sample_rate);
                     }
                 }
                 let s = v.tick() * v.fade;
@@ -403,8 +418,8 @@ impl Instrument for ElectroKit {
                 *out_r += s * v.gain[1];
                 if v.env[0] + v.env[1] < SILENT {
                     v.active = v.pending.is_some();
-                    if let Some(velocity) = v.pending {
-                        v.start(piece, velocity, v.order, sample_rate);
+                    if let Some(pending) = v.pending {
+                        v.start(piece, pending, v.order, sample_rate);
                     } else {
                         break;
                     }

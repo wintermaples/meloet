@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use meloet_engine::{Instrument, InstrumentEvent};
+use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 
 use super::bank::{Region, SampleBank, SampleData, Trigger};
 use super::shape::Shaped;
@@ -319,8 +319,17 @@ impl State {
         self.volume_target = share * share;
     }
 
-    /// `held_s`: how long the key was down, for a release sound.
-    fn trigger(&mut self, bank: &SampleBank, trigger: Trigger, key: u8, velocity: u8, held_s: f32) {
+    /// `held_s`: how long the key was down, for a release sound. A press of the song takes the
+    /// turn its place gives: the earlier presses of its key in the region's velocities.
+    fn trigger(
+        &mut self,
+        bank: &SampleBank,
+        trigger: Trigger,
+        key: u8,
+        velocity: u8,
+        held_s: f32,
+        place: Option<SongPlace<'_>>,
+    ) {
         self.events += 1;
         let by_key = matches!(trigger, Trigger::Attack | Trigger::Release);
         let candidates = bank.candidates(trigger, key);
@@ -330,10 +339,13 @@ impl State {
             if !fits(region) {
                 continue;
             }
-            let its_turn = region
-                .round_robin
-                .as_ref()
-                .is_none_or(|rr| self.turns[rr.group as usize] % rr.count == rr.index);
+            let its_turn = region.round_robin.as_ref().is_none_or(|rr| {
+                let turn = match place {
+                    Some(place) => place.earlier(region.vel_lo, region.vel_hi),
+                    None => self.turns[rr.group as usize],
+                };
+                turn % rr.count == rr.index
+            });
             if its_turn {
                 // A pedal sound has no key: it plays as recorded.
                 let (key, velocity) = if by_key {
@@ -465,12 +477,12 @@ impl State {
         }
     }
 
-    fn note_on(&mut self, bank: &SampleBank, key: u8, velocity: u8) {
+    fn note_on(&mut self, bank: &SampleBank, key: u8, velocity: u8, place: Option<SongPlace<'_>>) {
         let k = usize::from(key);
         self.key_down[k] = true;
         self.key_velocity[k] = velocity;
         self.key_on_frame[k] = self.frame;
-        self.trigger(bank, Trigger::Attack, key, velocity, 0.0);
+        self.trigger(bank, Trigger::Attack, key, velocity, 0.0, place);
     }
 
     fn note_off(&mut self, bank: &SampleBank, key: u8) {
@@ -500,7 +512,14 @@ impl State {
     fn release_sound(&mut self, bank: &SampleBank, key: u8) {
         let k = usize::from(key);
         let held_s = (self.frame - self.key_on_frame[k]) as f32 / self.sample_rate;
-        self.trigger(bank, Trigger::Release, key, self.key_velocity[k], held_s);
+        self.trigger(
+            bank,
+            Trigger::Release,
+            key,
+            self.key_velocity[k],
+            held_s,
+            None,
+        );
     }
 
     fn set_pedal(&mut self, bank: &SampleBank, down: bool) {
@@ -509,7 +528,7 @@ impl State {
         }
         self.pedal = down;
         if down {
-            self.trigger(bank, Trigger::PedalDown, 0, 127, 0.0);
+            self.trigger(bank, Trigger::PedalDown, 0, 127, 0.0, None);
             return;
         }
         for v in self.voices.iter_mut().filter(|v| v.active) {
@@ -526,7 +545,7 @@ impl State {
                 }
             }
         }
-        self.trigger(bank, Trigger::PedalUp, 0, 127, 0.0);
+        self.trigger(bank, Trigger::PedalUp, 0, 127, 0.0, None);
     }
 
     fn release_all(&mut self) {
@@ -707,7 +726,7 @@ impl Instrument for Sampler {
         match ev {
             InstrumentEvent::NoteOn { note, velocity: 0 } => state.note_off(bank, note & 127),
             InstrumentEvent::NoteOn { note, velocity } => {
-                state.note_on(bank, note & 127, velocity.min(127));
+                state.note_on(bank, note & 127, velocity.min(127), None);
             }
             InstrumentEvent::NoteOff { note } => state.note_off(bank, note & 127),
             InstrumentEvent::Control {
@@ -729,6 +748,13 @@ impl Instrument for Sampler {
                 state.bend_target = value / 8192.0 * BEND_SEMITONES;
             }
             InstrumentEvent::AllNotesOff => state.release_all(),
+        }
+    }
+
+    fn song_note_on(&mut self, note: u8, velocity: u8, place: SongPlace<'_>) {
+        let velocity = velocity.min(127);
+        if velocity > 0 {
+            (self.state).note_on(&self.bank, note & 127, velocity, Some(place));
         }
     }
 

@@ -35,7 +35,7 @@ pub use input::{
     InputRingWriter, InputTap, InputTarget, MAX_INPUT_CHANNELS, MONITOR_RING_SECONDS,
     RECORD_RING_SECONDS, RunningInput, input_ends, input_ring,
 };
-pub use instrument::{Instrument, InstrumentEvent};
+pub use instrument::{Instrument, InstrumentEvent, SongPlace};
 pub use mixer::{INSERT_SLOTS, MixStrip, RAMP_S, pan_gains};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};
 pub use plugin::{

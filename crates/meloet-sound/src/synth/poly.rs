@@ -4,7 +4,7 @@
 
 use std::f32::consts::TAU;
 
-use meloet_engine::{Instrument, InstrumentEvent};
+use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 
 use super::dsp::{Rng, Svf, decay_coef, pulse, saw, svf_g};
 
@@ -204,6 +204,8 @@ struct Pending {
     velocity: u8,
     held: bool,
     started: u64,
+    /// Where the waves start, for a press of the song.
+    seed: Option<u32>,
 }
 
 /// What a voice needs from the synth to start a note.
@@ -265,6 +267,8 @@ impl Voice {
 
     fn start(&mut self, p: Pending, ctx: &StartCtx, rng: &mut Rng) {
         let patch = ctx.patch;
+        let mut own = p.seed.map(Rng::new);
+        let rng = own.as_mut().unwrap_or(rng);
         let v = f32::from(p.velocity.min(127)) / 127.0;
         let key = f32::from(p.note);
         let freq = 440.0 * ((key - 69.0) / 12.0).exp2();
@@ -397,7 +401,7 @@ impl PolySynth {
         }
     }
 
-    fn note_on(&mut self, note: u8, velocity: u8) {
+    fn note_on(&mut self, note: u8, velocity: u8, seed: Option<u32>) {
         let ctx = self.start_ctx();
         let voices = &mut self.voices[..self.patch.voices];
         for v in voices.iter_mut().filter(|v| v.sounding() && v.note == note) {
@@ -410,6 +414,7 @@ impl PolySynth {
             velocity,
             held: true,
             started: self.note_counter,
+            seed,
         };
         if let Some(v) = voices.iter_mut().find(|v| v.stage == Stage::Idle) {
             v.start(pending, &ctx, &mut self.rng);
@@ -577,7 +582,7 @@ impl Instrument for PolySynth {
     fn event(&mut self, ev: InstrumentEvent) {
         match ev {
             InstrumentEvent::NoteOn { note, velocity: 0 } => self.note_off(note),
-            InstrumentEvent::NoteOn { note, velocity } => self.note_on(note, velocity),
+            InstrumentEvent::NoteOn { note, velocity } => self.note_on(note, velocity, None),
             InstrumentEvent::NoteOff { note } => self.note_off(note),
             InstrumentEvent::Control {
                 controller: CC_SUSTAIN,
@@ -600,6 +605,12 @@ impl Instrument for PolySynth {
                 self.bend_target = (norm * BEND_SEMITONES / 12.0).exp2();
             }
             InstrumentEvent::AllNotesOff => self.release_all(),
+        }
+    }
+
+    fn song_note_on(&mut self, note: u8, velocity: u8, place: SongPlace<'_>) {
+        if velocity > 0 {
+            self.note_on(note, velocity, Some(place.seed()));
         }
     }
 

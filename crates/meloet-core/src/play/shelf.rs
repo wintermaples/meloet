@@ -481,6 +481,7 @@ impl Play {
                 .collect(),
             favorite_effects,
             missing: missing(self.doc(), library, home),
+            not_yet: Vec::new(),
             mode: match self.shelf.mode {
                 Mode::NewTrack => ShelfMode::NewTrack,
                 Mode::Replace(track) => ShelfMode::Replace { track: track.0 },

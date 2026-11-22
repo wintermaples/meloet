@@ -312,15 +312,17 @@ impl Play {
         let Some(guess) = guess else {
             return Some(StatusMessage::SourceTempoNotFound { name });
         };
+        let mut same = false;
         match meloet_model::set_source_tempo(doc, id, guess.tempo) {
             Ok((e, _)) => self.apply(e, effects),
-            Err(EditError::Unchanged) => {}
+            Err(EditError::Unchanged) => same = true,
             Err(_) => return None,
         }
         Some(StatusMessage::SourceTempoFound {
             name,
             bpm: guess.tempo.bpm(),
             bars: guess.bars,
+            same,
         })
     }
 

@@ -146,8 +146,9 @@ fn status_and_steps_25_json_shape() {
             name: "ドラム".to_owned(),
             bpm: 137.14,
             bars: 4,
+            same: false,
         },
-        json!({"id": "sourceTempoFound", "name": "ドラム", "bpm": 137.14, "bars": 4}),
+        json!({"id": "sourceTempoFound", "name": "ドラム", "bpm": 137.14, "bars": 4, "same": false}),
     );
     both_ways(
         StatusMessage::SourceTempoNotFound {

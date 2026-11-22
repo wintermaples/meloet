@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{PluginSlotRef, RecordFormat, TickSpan};
+use crate::{PluginSlotRef, RecordFormat, TickSpan, TrackRef};
 
 /// 「しっぽ」 is written until the sound is gone, and at most this long after the range ends.
 pub const EXPORT_TAIL_MAX_S: u32 = 10;
@@ -41,6 +41,10 @@ pub struct ExportDialogView {
     /// folder the files go into. Rust keeps the path itself.
     pub place: String,
     pub check: ExportCheck,
+    /// Tracks are soloed now (spec 3, 42-C): the line of the check says "いま 2 ベース を
+    /// ソロにしています。書き出しには入れません（曲ぜんぶを書き出します）。" The solo is not in
+    /// what is written. `None`: no track is soloed.
+    pub solo: Option<ExportSolo>,
     /// 「止まっているプラグイン」: they are passed by in the written audio. Empty:
     /// 「止まっているプラグインはありません」.
     pub stopped_plugins: Vec<ExportStoppedPlugin>,
@@ -132,13 +136,34 @@ pub enum ExportCheck {
         percent: u8,
         peak_db: Option<f32>,
         clips: bool,
+        over: u32,
     },
     /// 「いちばん大きい所 −0.6 dB ・ 音割れなし」. `peak_db`: `None` for silence. `clips`: the
     /// file as it would be written with `bits` clips (spec 6 「書き出しで音が割れる」; the
-    /// button is then 「このまま書き出す」).
-    Done { peak_db: Option<f32>, clips: bool },
+    /// button is then 「このまま書き出す」). `over` (here and in `Counting`, protocol 27, spec
+    /// 3 41-A): how many places of what was written go over 0 dB, counted as design-notes
+    /// B-95-2 says (a run of samples over 0 dB is one place; 100 ms not over ends it):
+    /// "0 dB をこえる所が 3 か所あります（いちばん大きい所 +1.2 dB）。音が割れます。" The
+    /// highest of those places is `peak_db`. Counted whatever `bits` is; at 32 bits `clips`
+    /// stays false.
+    Done {
+        peak_db: Option<f32>,
+        clips: bool,
+        over: u32,
+    },
     /// The range cannot be written: `can_export` is false.
     Failed { reason: ExportFailure },
+}
+
+/// The soloed tracks, for the line of the check: "2 ベース", "2 ベース ほか 1 本".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSolo {
+    /// The first soloed track, in the order of the tracks.
+    pub first: TrackRef,
+    /// How many more are soloed.
+    pub others: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

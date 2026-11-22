@@ -32,7 +32,7 @@ const set = (change: ExportChange): Command => ({ type: "setExport", change });
 
 describe("約束 26 の形", () => {
   it("版は 26。形は wav と flac（mp3 は出さない）。32 ビットは wav だけ。しっぽは最大 10 秒", () => {
-    expect(PROTOCOL_VERSION).toBe(26);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(26);
     expect(EXPORT_FORMATS).toEqual([
       { format: "wav", bits: ["bits16", "bits24", "bits32"] },
       { format: "flac", bits: ["bits16", "bits24"] },
@@ -74,8 +74,8 @@ describe("約束 26 の形", () => {
   it("たしかめは、まだ ・ 数えている ・ できた ・ できない。進みは、書き出している ・ 終わった ・ やめた ・ できなかった", () => {
     const checks: ExportCheck[] = [
       { state: "waiting" },
-      { state: "counting", percent: 38, peakDb: -3.5, clips: false },
-      { state: "done", peakDb: null, clips: false },
+      { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 },
+      { state: "done", peakDb: null, clips: false, over: 0 },
       { state: "failed", reason: { kind: "plugin", name: "Surge XT" } },
     ];
     expect(checks.map((c) => c.state)).toEqual(["waiting", "counting", "done", "failed"]);
@@ -103,7 +103,8 @@ describe("偽物の場面（モック F7-Export ・ F7-Exporting ・ R11-Fit）"
       format: "wav",
       formats: ["wav", "flac"],
       place: "~/音楽/はじめての曲.wav",
-      check: { state: "done", peakDb: -0.6, clips: false },
+      check: { state: "done", peakDb: -0.6, clips: false, over: 0 },
+      solo: null,
       stoppedPlugins: [],
       advancedOpen: false,
       sampleRate: 48000,

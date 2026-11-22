@@ -14,6 +14,7 @@ import type { PianoRollView } from "./PianoRollView";
 import type { PluginsView } from "./PluginsView";
 import type { ShelfView } from "./ShelfView";
 import type { SongView } from "./SongView";
+import type { SoundsView } from "./SoundsView";
 import type { StatusView } from "./StatusView";
 import type { TimelineView } from "./TimelineView";
 import type { TransportView } from "./TransportView";
@@ -23,4 +24,4 @@ import type { WorkspaceView } from "./WorkspaceView";
 /**
  * One whole section. `section` is the key of that section in `AppState`.
  */
-export type Change = { "section": "song", "value": SongView } | { "section": "timeline", "value": TimelineView } | { "section": "automation", "value": AutomationView } | { "section": "history", "value": HistoryView } | { "section": "transport", "value": TransportView } | { "section": "arrange", "value": ArrangeView } | { "section": "pianoRoll", "value": PianoRollView } | { "section": "workspace", "value": WorkspaceView } | { "section": "shelf", "value": ShelfView } | { "section": "library", "value": LibraryView } | { "section": "params", "value": ParamsView } | { "section": "plugins", "value": PluginsView } | { "section": "windows", "value": WindowsView } | { "section": "keyboards", "value": KeyboardsView } | { "section": "outputs", "value": OutputsView } | { "section": "inputs", "value": InputsView } | { "section": "audio", "value": AudioView } | { "section": "audioWork", "value": AudioWorkView } | { "section": "export", "value": ExportView } | { "section": "status", "value": StatusView };
+export type Change = { "section": "song", "value": SongView } | { "section": "timeline", "value": TimelineView } | { "section": "automation", "value": AutomationView } | { "section": "history", "value": HistoryView } | { "section": "transport", "value": TransportView } | { "section": "arrange", "value": ArrangeView } | { "section": "pianoRoll", "value": PianoRollView } | { "section": "workspace", "value": WorkspaceView } | { "section": "shelf", "value": ShelfView } | { "section": "library", "value": LibraryView } | { "section": "params", "value": ParamsView } | { "section": "plugins", "value": PluginsView } | { "section": "windows", "value": WindowsView } | { "section": "keyboards", "value": KeyboardsView } | { "section": "outputs", "value": OutputsView } | { "section": "inputs", "value": InputsView } | { "section": "audio", "value": AudioView } | { "section": "audioWork", "value": AudioWorkView } | { "section": "export", "value": ExportView } | { "section": "sounds", "value": SoundsView } | { "section": "status", "value": StatusView };

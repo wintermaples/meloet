@@ -153,6 +153,30 @@ pub struct SelectedClip {
     pub missing: Option<MissingAudioView>,
 }
 
+/// The panel 「選んだクリップ」 for two or more vocal clips (spec 3, 40-A; `ParamsView::clips`):
+/// "3 クリップを選んでいます", the names of their tracks, and the group 「まとめて変える」.
+/// A value is `None` when the clips do not all have the same one: the field shows 「—」.
+/// Typing into it gives every clip the value (`Command::SetClipGains`,
+/// `Command::SetClipsStretch`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedClips {
+    /// `ClipView::id`, in the order of `ArrangeView::selected_clips`; 2 or more.
+    pub clips: Vec<u32>,
+    /// `TrackView::id` of their tracks, each once, in the order of the tracks: "6 歌 ・ 7 歌 2".
+    pub tracks: Vec<u32>,
+    /// 「音量」, `AudioClipView::gain_db`.
+    pub gain_db: Option<f32>,
+    /// 「曲のテンポについていく」, `StretchView::follow`.
+    pub follow: Option<bool>,
+    /// 「音の高さ」, `StretchView::semitones` and `cents`, each on its own.
+    pub semitones: Option<i8>,
+    pub cents: Option<i8>,
+    /// 「声の感じを保つ」, `StretchView::keep_formant`.
+    pub keep_formant: Option<bool>,
+}
+
 /// "歌 テイク 1.wav が見つかりません。前はここにありました: はじめての曲/音/歌 テイク 1.wav"
 /// (spec 6 「音のファイルが見つからない（欄）」).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

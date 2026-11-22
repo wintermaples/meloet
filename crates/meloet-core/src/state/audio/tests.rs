@@ -722,7 +722,8 @@ fn the_rows_of_stretching_and_pitch_are_steps_and_the_tempo_is_found() {
         Some(StatusMessage::SourceTempoFound {
             name: view(&m).name,
             bpm: 96.0,
-            bars: 2
+            bars: 2,
+            same: false,
         })
     );
     assert_eq!(rows(&m).source_bpm, Some(96.0));
@@ -737,7 +738,11 @@ fn the_rows_of_stretching_and_pitch_are_steps_and_the_tempo_is_found() {
     cmd(&mut m, Command::FindSourceTempo { clip: id });
     assert!(matches!(
         status(&m),
-        Some(StatusMessage::SourceTempoFound { bars: 2, .. })
+        Some(StatusMessage::SourceTempoFound {
+            bars: 2,
+            same: true,
+            ..
+        })
     ));
     assert_eq!(undo_count(&m), steps + 1);
 

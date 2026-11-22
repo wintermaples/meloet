@@ -11,6 +11,7 @@ import { TICKS_PER_QUARTER as TPQ } from "../time/ticks";
 import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
 import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
 import { FAKE_SONG_BPM, fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "./fakeAudio";
+import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFailed, packFetching, reduceClips27, reducePack, withPack } from "./fakeRound8";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -35,6 +36,7 @@ import {
   type Event,
   type ExportDialogView,
   type ExportRunView,
+  type PackFailure,
   type HistoryRow,
   type HistoryView,
   type IndexRange,
@@ -386,6 +388,7 @@ function closedShelf(): ShelfView {
     favoriteSounds: [builtinSound("grandPiano"), builtinSound("studioKit")],
     favoriteEffects: [builtinEffect("reverb"), builtinEffect("delay")],
     missing: [],
+    notYet: [],
   };
 }
 
@@ -597,7 +600,7 @@ export function fakeState(): AppState {
     },
     shelf: closedShelf(),
     library: emptyLibrary(),
-    params: { selected: null },
+    params: { selected: null, clips: null },
     plugins: fakePlugins(),
     windows: { list: [] },
     keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
@@ -622,6 +625,7 @@ export function fakeState(): AppState {
     },
     audioWork: { jobs: [] },
     export: { dialog: null, run: null },
+    sounds: fakeSounds(),
     status: { message: NEW_SONG },
   };
 }
@@ -1728,7 +1732,7 @@ const MIXER_STRIPS: Pick<TrackView, "gainDb" | "pan" | "sends" | "inserts">[] = 
 function mixerSong(s: AppState, selected: InsertRef, effect: EffectKind, row: number | null): void {
   bandSong(s, BAND_TRACKS.slice(0, 5));
   s.song.tracks = s.song.tracks.map((t, i) => ({ ...t, ...structuredClone(MIXER_STRIPS[i]!) }));
-  s.params = { selected: { kind: "builtin", insert: selected, effect, values: effectDefaults(effect), row } };
+  s.params = { selected: { kind: "builtin", insert: selected, effect, values: effectDefaults(effect), row }, clips: null };
 }
 const MIXER_METERS: FakeMeters = {
   velocity: 83,
@@ -2167,6 +2171,7 @@ const SURGE_VST3: PluginView = { key: vst3Key("Surge XT"), name: "Surge XT", for
 const trackStrip = (number: number): StripRef => ({ kind: "track", id: BAND_TRACK_ID + number });
 const pluginSelected = (slot: PluginSlotRef, table: number, more: Partial<SelectedPlugin> = {}): AppState["params"] => ({
   selected: { kind: "plugin", slot, window: "opens", table, count: fakeParamCount(table), row: null, automated: [], ...more },
+  clips: null,
 });
 const playingAt = (text: string): FakeMeters["position"] => ({ tick: at(text), ticksPerUs: 0, state: "playing", countInBeatsLeft: 0, lap: 0 });
 
@@ -2275,7 +2280,7 @@ SCENES.mixerBypass = {
 SCENES.insertReplace = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
-    s.params = { selected: null };
+    s.params = { selected: null, clips: null };
     s.shelf = { ...closedShelf(), mode: { kind: "replaceEffect", strip: trackStrip(2), slot: 0 }, selectedEffect: "eq4", currentEffect: builtinEffect("compressor") };
   },
   bands: ["mixer", "shelf"],
@@ -2285,7 +2290,7 @@ SCENES.insertReplace = {
 SCENES.mixerFx = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
-    s.params = { selected: null };
+    s.params = { selected: null, clips: null };
     s.shelf = { ...closedShelf(), mode: { kind: "insertEffect", strip: trackStrip(2), slot: 1 }, selectedEffect: "reverb" };
   },
   bands: ["mixer", "shelf"],
@@ -2295,7 +2300,7 @@ SCENES.mixerFx = {
 SCENES.paramsNone = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
-    s.params = { selected: null };
+    s.params = { selected: null, clips: null };
   },
   bands: ["mixer", "params"],
   meters: QUIET,
@@ -2304,7 +2309,7 @@ SCENES.paramsNone = {
 SCENES.noOutput = {
   setup(s) {
     mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
-    s.params = { selected: null };
+    s.params = { selected: null, clips: null };
     s.outputs = { ...s.outputs, chosen: null, chosenState: null };
     Object.assign(s.audio, { running: false, outputDevice: null });
     Object.assign(s.transport, { canPlay: false, canRecord: false });
@@ -3287,7 +3292,8 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     format: "wav",
     formats: EXPORT_FORMATS.map((f) => f.format),
     place: `~/音楽/${song.name}.wav`,
-    check: { state: "done", peakDb: -0.6, clips: false },
+    check: { state: "done", peakDb: -0.6, clips: false, over: 0 },
+    solo: fakeSolo({ song }),
     stoppedPlugins: [],
     advancedOpen: false,
     sampleRate: 48000,
@@ -3318,9 +3324,9 @@ SCENES.exportDialog = exportDialogScene();
 // The dialog just opened: nothing of the range is written yet.
 SCENES.exportWaiting = exportDialogScene({ check: { state: "waiting" }, canExport: false });
 // The check is on its way: the numbers of what is written so far.
-SCENES.exportCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false } });
+SCENES.exportCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 } });
 // Spec 6 「書き出しで音が割れる」: the button is "このまま書き出す".
-SCENES.exportClips = exportDialogScene({ check: { state: "done", peakDb: 1.4, clips: true } });
+SCENES.exportClips = exportDialogScene({ check: { state: "done", peakDb: 1.4, clips: true, over: 1 } });
 // Mock F-Export: "Brick EQ ・ 3 ドラム" has stopped and is passed by.
 SCENES.exportStopped = exportDialogScene({
   stoppedPlugins: [{ name: "Brick EQ", slot: { kind: "insert", insert: { strip: { kind: "track", id: BAND_TRACK_ID + 3 }, slot: 0 } } }],
@@ -3373,6 +3379,85 @@ SCENES.exportDone = exportingScene({
 // Spec 6 「書き出しをやめた」.
 SCENES.exportCancelled = exportingScene({ state: "cancelled" });
 SCENES.exportFailed = exportingScene({ state: "failed", reason: { kind: "cannotWrite" } });
+
+// ---- round 8 (protocol 27): the sound pack, several vocal clips, the check and the solo of the export ----
+// The states of the mocks F8-PackAsk, F8-PackGet, F8-PackFail, F8-PackSettings, F8-MultiClip, F8-ExportCheck and
+// F8-ExportClip. A scene's fetch stands still; 「取りにいく」 starts one that moves.
+
+const MB = 1_000_000;
+const packScene = (setup: (s: AppState) => void, message: StatusMessage | null, bands?: Band[]): SceneDef => ({
+  setup(s) {
+    ready(s);
+    setup(s);
+  },
+  after: (s) => (s.status.message = message),
+  bands,
+  meters: QUIET,
+});
+
+// F8-PackAsk: the first start; the band asks, "1 ピアノ" sounds as the sine wave.
+SCENES.packAsk = packScene(packAsking, { id: "packAsking" });
+// F8-PackGet: the grand piano and the studio kit sound; the electric piano is coming. The shelf shows the rest as 「まだ」.
+SCENES.packGet = packScene(
+  (s) => packFetching(s, ["grandPiano", "studioKit", "fingerBass", "strings"], "electricPiano", 92 * MB, 120),
+  { id: "soundReady", instrument: "grandPiano" },
+  ["shelf"],
+);
+// F8-PackFail and the other three failures of spec 6, with the grand piano there.
+const failedScene = (failure: PackFailure) =>
+  packScene((s) => packFailed(s, ["grandPiano"], failure, 92 * MB), { id: "packFailed", failure, doneBytes: 92 * MB, totalBytes: 240 * MB });
+SCENES.packFailOffline = failedScene({ kind: "offline" });
+SCENES.packFailCutOff = failedScene({ kind: "cutOff" });
+SCENES.packFailDiskFull = failedScene({ kind: "diskFull", neededBytes: 160 * MB, freeBytes: 10 * MB });
+SCENES.packFailCorrupt = failedScene({ kind: "corrupt" });
+// F8-PackSettings: 「音の素材」 in the advanced sound settings, "まだ 12 / 31".
+SCENES.packSettings = {
+  setup(s) {
+    settingsAdv7(s);
+    withPack(s, ["grandPiano", "studioKit", "fingerBass", "strings", "electricPiano", "organ", "organDrawbar"]);
+  },
+  meters: QUIET,
+};
+// Spec 6 「音の素材 ・ 新しい包み」: said once at a start.
+SCENES.packNew = packScene((s) => (s.sounds.newPackBytes = 12 * MB), { id: "newPack", bytes: 12 * MB });
+
+// F8-MultiClip: the two clips of "6 歌" and one of "7 歌 2" selected; their volumes differ.
+SCENES.multiClip = {
+  setup(s) {
+    audioEditSong(s);
+    const sung = vocalTrackOf(s);
+    s.song.tracks.push({
+      ...sung,
+      id: VOCAL_TRACK_ID + 1,
+      number: 7,
+      name: "歌 2",
+      color: 2,
+      clips: [fakeVocalClip(LEFT_CLIP + 10, "ハモり", 6 * BAR, 8 * BAR, fakeAudioClip(HARMONY))],
+    });
+    s.arrange = { ...arrangeOf(null), selectedClips: [LEFT_CLIP, RIGHT_CLIP, LEFT_CLIP + 10] };
+    s.params = { selected: null, clips: fakeClipsPanel(s) };
+    s.song.undoCount = 30;
+    s.song.file = "changed";
+  },
+  after: (s) => (s.status.message = null),
+  meters: QUIET,
+};
+
+/** The dialog of F8-ExportCheck and F8-ExportClip; in F8-ExportCheck "2 ベース" is soloed. */
+const checkScene = (check: ExportDialogView["check"], soloed: boolean): SceneDef => ({
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 4));
+    s.song.name = "はじめての曲";
+    s.song.tracks[1]!.soloed = soloed;
+    s.export.dialog = fakeExportDialog(s.song, { check, place: `~/ミュージック/${s.song.name}.wav` });
+  },
+  after: (s) => (s.status.message = { id: "exportDialogOpen" }),
+  meters: QUIET,
+});
+// F8-ExportCheck: counting, "いま 2 ベース をソロにしています。…"
+SCENES.exportCheck = checkScene({ state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0 }, true);
+// F8-ExportClip: "0 dB をこえる所が 3 か所あります（いちばん大きい所 +1.2 dB）。音が割れます。"
+SCENES.exportClip = checkScene({ state: "done", peakDb: 1.2, clips: true, over: 3 }, false);
 
 /**
  * Protocol 26, enough for pictures and tests: the dialog opens, takes its choices and closes; 「書き出す」 starts a run
@@ -3514,7 +3599,7 @@ export function reduceAudio(state: AppState, command: Command): Change[] | null 
       const clip = vocalClip(song, command.clip);
       if (!clip?.audio) return [];
       const found = fakeFoundTempo(clip.audio.frames, clip.audio.sampleRate, state.timeline.tempoBpm);
-      const message: StatusMessage = found ? { id: "sourceTempoFound", name: clip.name, bpm: found.bpm, bars: found.bars } : { id: "sourceTempoNotFound", name: clip.name };
+      const message: StatusMessage = found ? { id: "sourceTempoFound", name: clip.name, bpm: found.bpm, bars: found.bars, same: clip.audio.stretch.sourceBpm === found.bpm } : { id: "sourceTempoNotFound", name: clip.name };
       if (found) setSourceBpm(clip, found.bpm);
       return [...stepped(song), { section: "status", value: { message } }];
     }
@@ -3532,7 +3617,7 @@ export function reduceAudio(state: AppState, command: Command): Change[] | null 
         changes.push({ section: "arrange", value: { ...state.arrange, selectedClips: selected, selectedClip: null } });
       }
       const shown = state.params.selected;
-      if (shown?.kind === "clip" && !left.has(shown.clip)) changes.push({ section: "params", value: { selected: null } });
+      if (shown?.kind === "clip" && !left.has(shown.clip)) changes.push({ section: "params", value: { selected: null, clips: null } });
       return changes;
     }
     case "splitClips":
@@ -4838,6 +4923,9 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
 }
 
 /** With no `initial`, the scene comes from the URL (`?scene=`), or else the plain fakeState(). */
+/** How often the fake's fetch of the sound pack moves (a scene's fetch stands still until 「取りにいく」 is sent). */
+const FETCH_TICK_MS = 250;
+
 export function createFakeTransport(initial?: AppState): Transport {
   const scene = initial ? null : sceneFromUrl();
   let state = initial ?? scene?.state ?? fakeState();
@@ -4852,6 +4940,22 @@ export function createFakeTransport(initial?: AppState): Transport {
   let listener: ((message: ServerMessage) => void) | null = null;
   const start = performance.now();
   const nowUs = () => Math.round((performance.now() - start) * 1000);
+  const land = (changes: Change[]) => {
+    if (changes.length === 0) return;
+    rev += 1;
+    state = { ...state };
+    for (const c of changes) (state as Record<string, unknown>)[c.section] = c.value;
+    listener?.({ kind: "patch", rev, changes });
+  };
+  // The fetch of the sound pack moves by itself, as Rust's does, a few times a second until it ends or stops.
+  let fetchTimer: ReturnType<typeof setInterval> | null = null;
+  const fetchTick = () => {
+    land(advancePack(state, FETCH_TICK_MS / 1000));
+    if (state.sounds.fetch.state !== "fetching" && fetchTimer !== null) {
+      clearInterval(fetchTimer);
+      fetchTimer = null;
+    }
+  };
 
   return {
     async hello(protocolVersion) {
@@ -4876,7 +4980,25 @@ export function createFakeTransport(initial?: AppState): Transport {
       return { rev, state };
     },
     async send(command) {
-      const changes = reduceExport(state, command) ?? reduceAudio(state, command) ?? reduceRound7(state, command, vocalMemo) ?? reduceRound6(state, command, scene?.history ?? []) ?? reduce(state, bands, rest, command, clipboard, nowUs());
+      const changes =
+        reducePack(state, command) ??
+        reduceClips27(state, command) ??
+        reduceExport(state, command) ??
+        reduceAudio(state, command) ??
+        reduceRound7(state, command, vocalMemo) ??
+        reduceRound6(state, command, scene?.history ?? []) ??
+        reduce(state, bands, rest, command, clipboard, nowUs());
+      // Two or more vocal clips selected: the panel 「まとめて変える」 in place of the one clip's.
+      const arranged = (changes.find((c) => c.section === "arrange")?.value ?? state.arrange) as ArrangeView;
+      const songNow = (changes.find((c) => c.section === "song")?.value ?? state.song) as SongView;
+      const paramsNow = (changes.find((c) => c.section === "params")?.value ?? state.params) as AppState["params"];
+      const clips = fakeClipsPanel({ ...state, arrange: arranged, song: songNow });
+      if (JSON.stringify(clips) !== JSON.stringify(paramsNow.clips ?? null)) {
+        const params = { selected: clips ? null : paramsNow.selected, clips };
+        const at = changes.findIndex((c) => c.section === "params");
+        if (at >= 0) changes.splice(at, 1);
+        changes.push({ section: "params", value: params });
+      }
       // The counts of the history band follow the song's.
       const song = changes.find((c) => c.section === "song");
       if (song && !changes.some((c) => c.section === "history")) {
@@ -4901,12 +5023,8 @@ export function createFakeTransport(initial?: AppState): Transport {
           changes.push({ section: "status", value: { message: said } });
         }
       }
-      if (changes.length > 0) {
-        rev += 1;
-        state = { ...state };
-        for (const c of changes) (state as Record<string, unknown>)[c.section] = c.value;
-        listener?.({ kind: "patch", rev, changes });
-      }
+      land(changes);
+      if (state.sounds.fetch.state === "fetching") fetchTimer ??= setInterval(fetchTick, FETCH_TICK_MS);
       if (values) listener?.({ kind: "paramValues", ...values });
       return { rev };
     },

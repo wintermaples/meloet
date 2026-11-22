@@ -324,6 +324,7 @@ impl Model {
                 clip: clip.0,
                 missing,
             })),
+            clips: None,
         }
     }
 

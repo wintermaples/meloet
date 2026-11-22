@@ -188,3 +188,9 @@ export type { ExportStoppedPlugin } from "./generated/ExportStoppedPlugin";
 export type { ExportTail } from "./generated/ExportTail";
 export type { ExportView } from "./generated/ExportView";
 export { EXPORT_FORMATS, EXPORT_TAIL_MAX_S } from "./generated/export";
+// Protocol 27: several vocal clips, the check before an export, the sound pack.
+export type { ExportSolo } from "./generated/ExportSolo";
+export type { PackFailure } from "./generated/PackFailure";
+export type { PackFetchView } from "./generated/PackFetchView";
+export type { SelectedClips } from "./generated/SelectedClips";
+export type { SoundsView } from "./generated/SoundsView";

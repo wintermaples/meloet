@@ -75,4 +75,12 @@ favoriteEffects: Array<EffectRef>,
  * What the song uses and this PC does not have, SF2 files first, each once. Also while
  * the shelf is closed.
  */
-missing: Array<MissingView>, };
+missing: Array<MissingView>, 
+/**
+ * Instruments that come with meloet whose sound is not fetched yet (spec 3, 45-A), in
+ * the order of the shelf: a row with the name in gray.8 and 「まだ」, or
+ * 「取ってきています」 for `PackFetchView::Fetching::instrument`; no star, no ▶, no
+ * audition. They are not in `available`; the shelf shows both in its order. Empty when
+ * the pack is all there.
+ */
+notYet: Array<InstrumentKind>, };

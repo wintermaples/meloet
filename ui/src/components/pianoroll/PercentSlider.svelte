@@ -7,6 +7,8 @@
   import { onMount, untrack } from "svelte";
   import { t } from "../../text/ja";
   import { onDragCancel } from "./view.svelte";
+  import ValueField from "../params/ValueField.svelte";
+  import { readScaled } from "../valueClamp";
 
   interface Props {
     value: number;
@@ -76,6 +78,18 @@
     onchange(v);
   }
 
+  let typing = $state(false);
+  /** Typed text: a whole number, "%" may follow. Out of range goes to the nearest end. Text that cannot be read keeps the field open. */
+  function submit(text: string): void {
+    const raw = readScaled(text.replace(/\s*[%％]\s*$/, ""), 0);
+    if (raw === null) return;
+    typing = false;
+    const v = Math.min(100, Math.max(0, raw));
+    if (v === value) return;
+    held = v;
+    onchange(v);
+  }
+
   function onup(ev: PointerEvent): void {
     if (!dragging) return;
     dragging = false;
@@ -109,7 +123,13 @@
   <div class="fill" style:width="{shown}%"></div>
   <div class="knob" style:left="{shown}%"></div>
 </div>
-<span class="m-num m-hi value" data-test="{test}-value">{t("inspector.percent", { value: shown })}</span>
+{#if typing}
+  <span class="value"><ValueField initial={String(shown)} {label} onsubmit={submit} oncancel={() => (typing = false)} /></span>
+{:else}
+  <span class="m-num m-hi value" role="presentation" data-test="{test}-value" ondblclick={() => (typing = !dragging)}
+    >{t("inspector.percent", { value: shown })}</span
+  >
+{/if}
 
 <style>
   /* 値の欄の幅はモック A-PianoRoll（40、右そろえ）。 */

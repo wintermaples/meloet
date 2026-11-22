@@ -2,14 +2,19 @@
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";
-import { fakeScene } from "../src/bridge/fake";
+import { createFakeTransport, fakeScene } from "../src/bridge/fake";
+import { decodeTake } from "../src/bridge/take";
 import Arrange from "../src/components/Arrange.svelte";
 import MixerStrips from "../src/components/mixer/MixerStrips.svelte";
+import NoteInspector from "../src/components/pianoroll/NoteInspector.svelte";
 import SettingsDialog from "../src/components/SettingsDialog.svelte";
+import TrackHeads from "../src/components/TrackHeads.svelte";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import * as app from "./fake-app.svelte";
+import * as shown from "./fake-shown.svelte";
 
 vi.mock("../src/state/app.svelte", () => import("./fake-app.svelte"));
+vi.mock("../src/components/pianoroll/shown.svelte", () => import("./fake-shown.svelte"));
 
 const scene = (name: string): AppState => fakeScene(name)!.state;
 
@@ -171,5 +176,103 @@ describe("Tempo band: a double click on a point's number opens the point's value
     type(q('[data-test="tempo-point-field"]') as HTMLInputElement, "130", "Escape");
     expect(q('[data-test="tempo-point-field"]')).toBeNull();
     expect(app.sent.slice(before)).toEqual([]);
+  });
+});
+
+describe("Track head: a double click on the dB opens a field that sends the mixer fader's intent", () => {
+  const keysTracks = (s: AppState) => s.song.tracks.filter((tr) => tr.kind.kind === "keys");
+  const gainOf = (id: number) => {
+    const i = app.current.state!.song.tracks.findIndex((tr) => tr.id === id);
+    return [...target.querySelectorAll<HTMLElement>('[data-test="track-head"]')][i]!.querySelector<HTMLElement>('[data-test="track-gain"]')!;
+  };
+
+  it("the selected track: the presses send nothing, Enter sends one setGain commit: true", () => {
+    const s = scene("mixer");
+    const tr = keysTracks(s)[0]!;
+    s.song.playTarget = tr.id;
+    show(s, TrackHeads);
+    doubleClick(gainOf(tr.id));
+    expect(app.sent).toEqual([]);
+    const input = field()!;
+    expect(document.activeElement).toBe(input);
+    type(input, "-4.5", "Enter");
+    expect(app.sent).toEqual([{ type: "setGain", strip: { kind: "track", id: tr.id }, db: -4.5, commit: true }]);
+    expect(field()).toBeNull();
+  });
+
+  it("another track: the presses only select it (as a click on the head always does; the fake state does not follow, so twice)", () => {
+    const s = scene("mixer");
+    const tr = keysTracks(s).find((x) => x.id !== s.song.playTarget)!;
+    show(s, TrackHeads);
+    doubleClick(gainOf(tr.id));
+    expect(app.sent.length).toBeGreaterThan(0);
+    expect(app.sent.every((c) => c.type === "selectTrack" && c.track === tr.id)).toBe(true);
+    type(field()!, "-∞", "Enter");
+    expect(app.sent.at(-1)).toEqual({ type: "setGain", strip: { kind: "track", id: tr.id }, db: null, commit: true });
+  });
+
+  it("Esc sends nothing; text that cannot be read keeps the field open", () => {
+    const s = scene("mixer");
+    const tr = keysTracks(s)[0]!;
+    s.song.playTarget = tr.id;
+    show(s, TrackHeads);
+    doubleClick(gainOf(tr.id));
+    type(field()!, "abc", "Enter");
+    expect(field()).not.toBeNull();
+    type(field()!, "-3", "Escape");
+    expect(field()).toBeNull();
+    expect(app.sent).toEqual([]);
+  });
+
+  it("a vocal track's head has no dB", () => {
+    show(scene("audioTall"), TrackHeads);
+    const tracks = app.current.state!.song.tracks;
+    const heads = [...target.querySelectorAll<HTMLElement>('[data-test="track-head"]')];
+    const vocal = tracks.findIndex((tr) => tr.kind.kind === "vocal");
+    expect(vocal).toBeGreaterThanOrEqual(0);
+    expect(heads[vocal]!.querySelector('[data-test="track-gain"]')).toBeNull();
+  });
+});
+
+describe("Piano roll quantize strength and swing: a double click on 「75 %」 opens a field", () => {
+  async function inspector(): Promise<void> {
+    const s = fakeScene("pianoRoll")!.state;
+    const track = s.song.tracks[0]!;
+    const clip = track.clips.find((c) => c.id === s.arrange.pianoRollClip)!;
+    const take = decodeTake(await createFakeTransport(s).takeNotes(clip.takeId));
+    shown.setShown({ clip, track, take });
+    show(s, NoteInspector);
+  }
+  const quantize = (change: object) => ({ type: "setQuantize", division: 16, triplet: false, strength: 75, swing: 0, align: "start", ...change });
+
+  it("strength: the presses send nothing, Enter sends one setQuantize (the same as a drag)", async () => {
+    await inspector();
+    doubleClick(q('[data-test="quantize-strength-value"]')!);
+    expect(app.sent).toEqual([]);
+    const input = field()!;
+    expect(input.value).toBe("75");
+    type(input, "40 %", "Enter");
+    expect(app.sent).toEqual([quantize({ strength: 40 })]);
+    expect(field()).toBeNull();
+  });
+
+  it("swing: out of range goes to the nearest end", async () => {
+    await inspector();
+    doubleClick(q('[data-test="quantize-swing-value"]')!);
+    type(field()!, "250", "Enter");
+    expect(app.sent).toEqual([quantize({ swing: 100 })]);
+  });
+
+  it("Esc sends nothing; the same value sends nothing; text that cannot be read keeps the field open", async () => {
+    await inspector();
+    doubleClick(q('[data-test="quantize-strength-value"]')!);
+    type(field()!, "60", "Escape");
+    expect(field()).toBeNull();
+    doubleClick(q('[data-test="quantize-strength-value"]')!);
+    type(field()!, "abc", "Enter");
+    expect(field()).not.toBeNull();
+    type(field()!, "75", "Enter");
+    expect(field()).toBeNull();
+    expect(app.sent).toEqual([]);
   });
 });

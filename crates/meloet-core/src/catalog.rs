@@ -199,7 +199,7 @@ impl Catalog {
                 entries.sort_by(|a, b| (place(a.format), &a.key).cmp(&(place(b.format), &b.key)));
                 let first = &entries[0];
                 // Of the kinds the formats say, the first that says something
-                // (design-notes A-16).
+                // (docs/history/design-notes.ja.md A-16).
                 let kind = (entries.iter().map(|e| e.kind))
                     .find(|k| !is_other(*k))
                     .unwrap_or(first.kind);

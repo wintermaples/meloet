@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the spec in docs/spec/ (Markdown, one file per chapter).
 
-Default: compare the text of every chapter with the old docs/design/spec.html.
+Default: compare the text of every chapter with the old docs/spec/.
 Tags and Markdown marks are taken out and spaces are joined, so only the words
 are compared. Also checks that every table row has as many cells as its
 header, and that docs/spec/samples.css is the page style of spec.html.

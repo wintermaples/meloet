@@ -142,7 +142,7 @@ pub fn wait_readable(fd: BorrowedFd<'_>, timeout: Duration) -> bool {
 }
 
 /// A handle on a child process that stays the same process whatever happens to its pid
-/// (docs/research/plugin-ipc.md). Open it before the child is waited for.
+/// (docs/history/research/plugin-ipc.md). Open it before the child is waited for.
 pub struct PidFd(OwnedFd);
 
 impl PidFd {

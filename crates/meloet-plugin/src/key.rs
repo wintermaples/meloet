@@ -233,7 +233,7 @@ mod tests {
         }
     }
 
-    // The names and vendors of docs/research/plugin-formats.md 6, as installed on the PC they
+    // The names and vendors of docs/history/research/plugin-formats.md 6, as installed on the PC they
     // were read from.
     #[test]
     fn the_same_plugin_in_two_formats_merges() {

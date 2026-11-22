@@ -1,7 +1,7 @@
 // 画面の文面はすべてここに置く。
 // 出どころ: spec:<章>（docs/spec/<章>-*.md）、mock:<ボード>（docs/design/mock/<ボード>.dc.html）、user:<日付>（ヤチヨさんの決め）、
 // draft:<日付>（仕様書にもモックにもない文の、作る側の案。ヤチヨさんに確かめて user: か mock: にする）。
-// builder:<日付>（仕様書にない所を、作る側が仮に決めた文。docs/design-notes.md の B に戻してある）。
+// builder:<日付>（仕様書にない所を、作る側が仮に決めた文。docs/history/design-notes.ja.md の B に戻してある）。
 // {name} はうめこむ値の穴。example は出どころに書いてある例の値で、テストがこれを入れて出どころと照らし合わせる。
 
 import type { StepName } from "../bridge/generated/StepName";
@@ -598,10 +598,10 @@ export const texts = {
     "SF2 のファイルではないので、足せません。",
   ),
   "sf2.notSf2Dragging": s6("Dragging in a non-SF2 file", "SF2 ではないファイルを持ってきています（足せません）"),
-  // 窓のまん中の箱の、ファイルの名前の所。SF2 が 1 つもないときは前だけ（design-notes A-19）。
+  // 窓のまん中の箱の、ファイルの名前の所。SF2 が 1 つもないときは前だけ（docs/history/design-notes.ja.md A-19）。
   "sf2.manyFiles": s6("Dragging in many files", "{files} つのファイル ・ SF2 は {sf2} つ", { files: "3", sf2: "2" }),
   "sf2.manyFilesNoSf2": s6("Dragging in many files", "{files} つのファイル", { files: "3" }, "part"),
-  // 「SF2 をいくつも足した」の 2 文。足した SF2 が 1 つなら、sf2.added のうしろに 2 文目だけ（design-notes A-19）。
+  // 「SF2 をいくつも足した」の 2 文。足した SF2 が 1 つなら、sf2.added のうしろに 2 文目だけ（docs/history/design-notes.ja.md A-19）。
   "sf2.addedMany": s6(
     "Many SF2 files added",
     "SF2 を {count} つ足しました（{file} ほか {others} つ）。",
@@ -833,7 +833,7 @@ export const texts = {
   ),
 
   // [第 5 回 区切り3 ・ 窓とパラメータ] モックにだけある文。
-  // 6 章の窓の文の「（名前）」は、居場所とプラグインの名前（うしろに空白。design-notes A-17）。
+  // 6 章の窓の文の「（名前）」は、居場所とプラグインの名前（うしろに空白。docs/history/design-notes.ja.md A-17）。
   "status.windowPlace": e("{strip} ・ {name}", "mock:F-ParamMany", {
     strip: "1 ピアノ",
     name: "Surge XT",
@@ -958,7 +958,7 @@ export const texts = {
     "{track} の音源を外しました。サイン波で鳴らします。取り消せます（{undoKey}）",
     { track: "5 Surge XT", undoKey: "Mod Z" },
   ),
-  // 止まった物が 0 のときは、6 章の文の前半だけ（design-notes A-16）。
+  // 止まった物が 0 のときは、6 章の文の前半だけ（docs/history/design-notes.ja.md A-16）。
   "msg.scanDoneNone": s6(
     "Scan finished",
     "スキャンが終わりました ・ {added} 個を棚に入れました。",
@@ -1067,7 +1067,7 @@ export const texts = {
   "key.openSong": e("O", "spec:4"),
   "key.saveSong": e("S", "spec:4"),
   "key.undo": e("Z", "spec:4"),
-  // 拡大率のキーの書きかた（docs/design-notes.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
+  // 拡大率のキーの書きかた（docs/history/design-notes.ja.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」）
   "key.ctrl": e("Ctrl", "spec:4"),
   "key.cmd": e("Cmd", "spec:4"),
   "key.alt": e("Alt", "spec:4"),
@@ -1855,7 +1855,7 @@ export const texts = {
   "pr.switchOn": s6("Reading of an on/off CC", "踏む", undefined, "part"),
   // 「そのほかの CC」の一覧の行と、えらんだ番号の帯の名前。
   "pr.ccNumber": e("CC {number}", "user:2026-11-15", { number: "7" }),
-  // 上のメニューの行と右クリックの一覧（ヤチヨさんの決め 2026-11-18。design-notes B-59 ・ 60）。右クリックの一覧も同じ行の名前を使う。
+  // 上のメニューの行と右クリックの一覧（ヤチヨさんの決め 2026-11-18。docs/history/design-notes.ja.md B-59 ・ 60）。右クリックの一覧も同じ行の名前を使う。
   "menu.file": e("ファイル", "user:2026-11-18"),
   "menu.edit": e("編集", "user:2026-11-18"),
   "menu.view": e("表示", "user:2026-11-18"),
@@ -1924,7 +1924,7 @@ export const texts = {
     { kept: "1. 1. 000" },
   ),
 
-  // [第 6 回 ・ テンポと拍子の変更、マーカー]（仕様書 3 章 Y17 ・ Y18、6 章。仮の文は design-notes B-92）
+  // [第 6 回 ・ テンポと拍子の変更、マーカー]（仕様書 3 章 Y17 ・ Y18、6 章。仮の文は docs/history/design-notes.ja.md B-92）
   "msg.tempoRampSelected": s6(
     "Tempo ramp chosen",
     "{place}の変更をえらんでいます ・ {tempo} から {toPlace}の {toTempo} へ、だんだん{direction}",
@@ -1956,7 +1956,7 @@ export const texts = {
   // 拍子の旗の右クリック（仕様書 3 章 92-17）。
   "menu.typeMeter": e("拍子を打ちこむ…", "spec:3"),
 
-  // [第 6 回 ・ オートメーション、取り消しの履歴]（仕様書 3 章 Y16 ・ Y19、6 章。仮の文は design-notes B-92）
+  // [第 6 回 ・ オートメーション、取り消しの履歴]（仕様書 3 章 Y16 ・ Y19、6 章。仮の文は docs/history/design-notes.ja.md B-92）
   // 状態行。（何を）がない手は、かっこごと出さない（Bare）。
   "msg.undone": s6("Undone", "「{name}」を取り消しました（{what}）。やりなおすには {redoKey}", {
     name: "ノートを動かす",
@@ -2047,7 +2047,7 @@ export const texts = {
   // プラグインがパラメータの名前を言ってこなかった手の名前。
   "history.pluginParam": e("{plugin}のパラメータを変える", "builder:2026-11-20", { plugin: "Surge XT " }),
   // 行の右の「どこで」。ほかは band.arrange ・ band.pianoRoll ・ band.mixer と track.label。
-  // 窓の手の「（何を）」（仕様書 3 章 94-6）。右の欄は history.placePluginWindow のまま（design-notes B-95-3）。
+  // 窓の手の「（何を）」（仕様書 3 章 94-6）。右の欄は history.placePluginWindow のまま（docs/history/design-notes.ja.md B-95-3）。
   "history.pluginWindowWhat": e("プラグインの窓", "spec:3"),
   "history.placePluginWindow": e("{strip} ・ プラグインの窓", "spec:6", { strip: "5 Surge XT" }),
   // 帯の見出しの行（仕様書 3 章 Y19 ・ 92-9、6 章）。
@@ -2412,7 +2412,7 @@ export const texts = {
   "key.take": e("T", "spec:4"),
   "key.mute": e("M", "spec:4"),
   "key.solo": e("S", "spec:4"),
-  // meloet を終わる Mod Q（4 章の表にはない。design-notes B-59）。
+  // meloet を終わる Mod Q（4 章の表にはない。docs/history/design-notes.ja.md B-59）。
   "key.quit": e("Q", "user:2026-11-18"),
 
   // [第 4 回 区切り1 ・ トラックの見出しと棚の画面]
@@ -2554,8 +2554,8 @@ export type TextKey = keyof typeof texts;
  * 取り消しの履歴の「手の名前」（仕様書 3 章 Y19）。約束の手の名前の種類（StepName の kind）ごとに 1 つ。
  * spec:3 は 3 章「手の名前」の一覧の言いかた（「CC の点を書く ・ 動かす ・ 消す」は「CC の点を動かす」のように開く。
  * 一覧の「録音（テイク）」は「録音」。「クリップを … 切る」は S（再生の線で切る。3 章「モックの直し」）で、
- * 切り取り（Mod X）は仮に「クリップを切り取る」（design-notes B-94-7））。
- * 第 11 版で一覧に入った仮の名前（92-7）も spec:3。一覧にない名前は builder:（design-notes B-92）。
+ * 切り取り（Mod X）は仮に「クリップを切り取る」（docs/history/design-notes.ja.md B-94-7））。
+ * 第 11 版で一覧に入った仮の名前（92-7）も spec:3。一覧にない名前は builder:（docs/history/design-notes.ja.md B-92）。
  */
 export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   writeNote: e("ノートを書く", "spec:3"),

@@ -301,7 +301,7 @@ export function dragRange(drag: RulerDrag, v: View, x: number, perBar: BarGrid):
 }
 
 /**
- * 目盛を押したときに吸いつく線のきざみ（docs/design-notes.md B-61「目盛に見えている線」）。縮小して番号を間引いているときは
+ * 目盛を押したときに吸いつく線のきざみ（docs/history/design-notes.ja.md B-61「目盛に見えている線」）。縮小して番号を間引いているときは
  * 番号のある小節おき、ふだんは 1 小節。拡大して 1 拍が minGap px（番号どうしの間と同じ）以上になれば拍。
  */
 export function rulerStep(barPx: number, perBar: number, perBeat: number, labelEvery: number, minGap: number): number {

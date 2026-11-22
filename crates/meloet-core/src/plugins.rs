@@ -186,7 +186,7 @@ impl Plugins {
             next_job: 1,
             finished: None,
             stopped_open: false,
-            // Mock R9-Scan shows it unfolded (design-notes A-16).
+            // Mock R9-Scan shows it unfolded (docs/history/design-notes.ja.md A-16).
             // Spec 3 (94-89): the list starts closed; it is seldom touched.
             places_open: false,
             saved_us: 0,

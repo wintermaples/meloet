@@ -1,5 +1,5 @@
 //! Measures how long audio files take to come into a song, and makes songs of vocal tracks
-//! for the measuring tools (docs/measurements/2026-11-21-round7-step3.md). `#[ignore]`: it
+//! for the measuring tools (docs/history/measurements/2026-11-21-round7-step3.md). `#[ignore]`: it
 //! runs only when asked, with the files named in the environment. No device.
 //!
 //! - `MELOET_AMEASURE_FILES`: the files, `;` between them. Each goes on a vocal track of its

@@ -172,7 +172,7 @@
 
   const automated = $derived(new Set(sel.automated));
 
-  // 帯はトラックの下だけ（戻り ・ マスターのインサートの印は「使えない」。design-notes A-19 の 7）。
+  // 帯はトラックの下だけ（戻り ・ マスターのインサートの印は「使えない」。docs/history/design-notes.ja.md A-19 の 7）。
   const markTrack = $derived.by((): number | null => {
     const s = sel.slot;
     if (s.kind === "instrument") return s.track;

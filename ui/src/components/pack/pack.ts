@@ -31,7 +31,7 @@ export function lastingHintUp(app: AppState): boolean {
 
 /**
  * 待てば終わる案内（出口えらびと出口がまだ）。出口えらびは鍵盤があるときだけ出るので、鍵盤がなくて出口がまだのときは数えない。
- * 「音が出ました」「空のアレンジ」はアレンジの中に出て、クリップができるまで消えないので待たない（design-notes B-95-12）。
+ * 「音が出ました」「空のアレンジ」はアレンジの中に出て、クリップができるまで消えないので待たない（docs/history/design-notes.ja.md B-95-12）。
  */
 function passingHintUp(app: AppState): boolean {
   if (app.workspace.chooser !== null) return true;

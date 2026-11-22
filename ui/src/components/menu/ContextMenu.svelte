@@ -1,4 +1,4 @@
-<!-- 右クリックの一覧（design-notes B-60）。App にひとつだけ置く。右クリックされた部品が openContextMenu を呼び、ここが描く。
+<!-- 右クリックの一覧（docs/history/design-notes.ja.md B-60）。App にひとつだけ置く。右クリックされた部品が openContextMenu を呼び、ここが描く。
      押した所に 2 章の「一覧」の形でひらく（窓からはみ出すなら内がわへずらす）。行を押すと、とじてから行う。外を押す ・ Esc でとじる。
      WebKit の一覧は、どこでも出さない。文字の枠（input ・ textarea）の右クリックは、切り取り ・ コピー ・ 貼りつけ ・ ぜんぶ選ぶ。 -->
 <script lang="ts">

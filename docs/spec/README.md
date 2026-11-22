@@ -11,8 +11,7 @@ The mocks in [`docs/design/mock/`](../design/mock/) are sample pictures of the s
 3. [3 Rules of the bands](3-bands.md)
 4. [4 List of keys](4-keys.md)
 5. [5 Term tips](5-terms.md)
-6. [6 Wording of errors and hints](6-messages.md)
-7. [7 この版で変えた所](7-changes.md)
+6. [6 Error and hint wording](6-messages.md)
 
 Other files:
 

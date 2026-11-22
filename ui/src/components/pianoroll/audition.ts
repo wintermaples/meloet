@@ -1,4 +1,4 @@
-// ピアノロールで音を鳴らす（docs/design-notes.md B-62）。DOM を知らない。
+// ピアノロールで音を鳴らす（docs/history/design-notes.ja.md B-62）。DOM を知らない。
 // 鳴らすのは Rust（audition）。どれだけ鳴らすかは画面がはかって、止めるときに空の audition を送る。
 // 鳴らしている鍵は、鍵盤の列で光らせる（Rust は audition の鍵を Event::Note で返さないので、画面が自分で光らせる）。
 

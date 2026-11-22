@@ -26,7 +26,7 @@
       term: "ピアノロール",
       countTerm: "ノート",
     },
-    // マスターのフェーダーの値。今回は 0.0 dB のまま（docs/progress.md）。
+    // マスターのフェーダーの値。今回は 0.0 dB のまま（docs/history/progress.ja.md）。
     {
       band: "mixer",
       name: t("band.mixer"),

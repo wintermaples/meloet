@@ -192,7 +192,7 @@
     white-space: nowrap;
     flex-shrink: 0;
   }
-  /* 乗った ・ 押した ・ 子をひらいている（docs/design-notes.md A-6 の一覧の行と同じ）。 */
+  /* 乗った ・ 押した ・ 子をひらいている（docs/history/design-notes.ja.md A-6 の一覧の行と同じ）。 */
   .row:hover:not(:disabled),
   .row.expanded {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);

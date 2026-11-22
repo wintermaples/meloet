@@ -1,7 +1,7 @@
 # meloet — 次に来るきみへ
 
 meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お願いはオーナーさん（デザインと方向を決める人）から、毎回あたらしい会話で来ます。お願いの文はヤチヨが書くことがありますが、決める人はオーナーさんです（前の docs の「ヤチヨさん」は、オーナーさんのこと）。
-この書類を最初に読み、次に [`docs/progress.md`](docs/progress.md)（どこまでできたか、宿題、申し送り。いちばん下の「次の回への申し送り」から）、[`docs/architecture.md`](docs/architecture.md)（骨組みと約束と理由）、[`docs/design-notes.md`](docs/design-notes.md)（仕様書とモックの読みかた、デザインに戻した事）を読んでください。
+この書類を最初に読み、次に [`docs/history/progress.ja.md`](docs/history/progress.ja.md)（どこまでできたか、宿題、申し送り。いちばん下の「次の回への申し送り」から）、[`docs/architecture.md`](docs/architecture.md)（骨組みと約束と理由）、[`docs/history/design-notes.ja.md`](docs/history/design-notes.ja.md)（仕様書とモックの読みかた、デザインに戻した事）を読んでください。
 
 返事は日本語で、やさしい言葉で。
 
@@ -34,7 +34,7 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 ## 止まって聞く事、自分で決めていい事
 
 - 聞く: 仕様書にもモックにもない見た目や文面。決まりを破らないと進めない所。sudo。範囲を広げたくなったとき。
-- 決めてよい: 中の作り、名前、テストの書きかた、係への切り分け。決めたら理由を一行のこす（`docs/architecture.md` の 10 章か `docs/progress.md`）。
+- 決めてよい: 中の作り、名前、テストの書きかた、係への切り分け。決めたら理由を一行のこす（`docs/architecture.md` の 10 章か `docs/history/progress.ja.md`）。
 
 ## 決まり
 
@@ -96,7 +96,7 @@ docs/
   design/          仕様書（spec.html）とモック（mock/）の写し
   architecture.md  骨組みと理由
   progress.md      進みぐあい・宿題・申し送り
-  design-notes.md  仕様書とモックの読みかた、デザインに戻した事
+  docs/history/design-notes.ja.md  仕様書とモックの読みかた、デザインに戻した事
   measurements/    測った数
   screenshots/     本物のアプリの絵とモックのならべ
   research/        調べ物の書類（出どころと確かさつき）
@@ -150,13 +150,13 @@ python3 -I tools/sounds/split.py target/sounds/dev --out <dir> --pack <版> [--p
 - cpal が PipeWire を見つけないときは `PIPEWIRE_RUNTIME_DIR=/run/user/1000`。
 - オーナーさんは同じ作業ツリーを VS Code で開いていて、vite がポート 1420 で動いていることがある。`npm run dev` を 1420 で走らせない。`ui/node_modules/.vite/` を消さない。オーナーさんがデバッグ版の meloet を動かしていることもある。
 - PipeWire を落とす試験は、自分用の PipeWire と WirePlumber で（`crates/meloet-engine/tests/private_pw/`）。オーナーさんの PipeWire は止めない。ソケットの道は 108 バイトまでなので `/run/user/1001/` の下に置く。
-- 閉じるときの WebKitWebProcess の SIGSEGV（NVIDIA の EGL）は、web プロセスを先に止める形で回避した。apport は、まだ見ていない `.crash` があると同じプログラムの新しい報告を書かないので、「落ちていない」は `/var/crash` では確かめられない（`docs/progress.md` 第 2 回の区切り0）。
+- 閉じるときの WebKitWebProcess の SIGSEGV（NVIDIA の EGL）は、web プロセスを先に止める形で回避した。apport は、まだ見ていない `.crash` があると同じプログラムの新しい報告を書かないので、「落ちていない」は `/var/crash` では確かめられない（`docs/history/progress.ja.md` 第 2 回の区切り0）。
 - 「GC のスレッドが何百もできては消える」の正体は、GTK のタイトルバーのアイコンの読みなおし（glycin）。ひびきはない（同じ所）。
 - シェルで `a && b && ( … ) & c` と書くと、`&` が前の列ぜんぶを後ろに回す。変数を決める行と背景で動かす行は分ける。
 - オプションなしの `cargo fmt` は `spikes/` まで書きかえる。`-p` でクレートをならべる（`scripts/check-all.sh` と同じ）。`cargo clippy --workspace` も spikes で落ちる。
 - 係の作業ツリーは `.claude/worktrees/` にできる（`.git/info/exclude` で外してある）。`meloet-app` の clippy は `ui/dist` が要るので、作業ツリーでは空の `ui/dist` を一時的に作る。
 - PC が終わるとき、アプリの scope は SIGTERM から 5 秒で SIGKILL（Ubuntu 26.04、GNOME 50 は Wayland だけ）。電源オフの前には logind の PrepareForShutdown が来る（delay ロックを持てば）。
-- WebKitGTK 2.52 の JavaScriptCore は、ひまな時に Eden の GC しか回さず、Full の GC がめったに来ない。60 Hz で動くページでは、WebKitWebProcess のメモリがふえつづける。meloet は起動のいちばん初めに `JSC_useGenerationalGC=0` を決め、毎回 Full にしている（`crates/meloet-app/src/main.rs`、`docs/measurements/2026-11-15-round3-fix-memory.md` の g）。外から同じ変数を決めればそちらが勝つ。GC のようすは `JSC_logGC=1` で見られる（ログを書く重さで、止まりが少し長く出る）。
+- WebKitGTK 2.52 の JavaScriptCore は、ひまな時に Eden の GC しか回さず、Full の GC がめったに来ない。60 Hz で動くページでは、WebKitWebProcess のメモリがふえつづける。meloet は起動のいちばん初めに `JSC_useGenerationalGC=0` を決め、毎回 Full にしている（`crates/meloet-app/src/main.rs`、`docs/history/measurements/2026-11-15-round3-fix-memory.md` の g）。外から同じ変数を決めればそちらが勝つ。GC のようすは `JSC_logGC=1` で見られる（ログを書く重さで、止まりが少し長く出る）。
 - この PC の WebKitGTK は、合成の層なしでページを CPU で描く（`WEBKIT_FORCE_COMPOSITING_MODE=1` などの変数でも変わらない）。WebKit の debug 情報は `~/.cache/debuginfod_client/` にある（`webkit-damage.sh` が使う）。
 - 音の出口えらびは「出口をまだ決めていない ＋ 鍵盤が 1 つ以上」のときだけ出る。測る道具は、起動の前に仮想の鍵盤（`meloet-vkeys appear`）を出しておく。
 - debug のビルドでも symphonia と `meloet-sound` は opt-level 3（`Cargo.toml`）。外すとグランドピアノの読みこみが 8 秒かかる。

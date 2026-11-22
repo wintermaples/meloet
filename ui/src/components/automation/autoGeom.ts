@@ -49,7 +49,7 @@ export interface ArrangeRows {
 
 /**
  * 「＋ 帯を足す ▾」の行を出すトラック: 帯のあるトラックだけ（モック F7-Answers92 ・ F6-AutoRec の 2〜5 には行がない）。
- * 帯がまだないトラックの音量 ・ パンの帯を足す所は、仕様書にもモックにもない（design-notes B に戻す）。
+ * 帯がまだないトラックの音量 ・ パンの帯を足す所は、仕様書にもモックにもない（docs/history/design-notes.ja.md B に戻す）。
  */
 export const showsAddRow = (track: TrackView) => track.lanes.length > 0;
 

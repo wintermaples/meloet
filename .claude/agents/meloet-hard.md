@@ -12,14 +12,14 @@ effort: medium
 ## 最初に読む物
 
 - リポジトリの `CLAUDE.md`（あれば）と、依頼文で名前の出たファイル。
-- 骨組みの理由は `docs/architecture.md`、検証の結果は `docs/report.md`。
+- 骨組みの理由は `docs/architecture.md`、検証の結果は `docs/history/report.md`。
 
 ## 守る決まり
 
 - 言語と部品: Rust、Tauri 2、Svelte 5 と TypeScript。
 - ライセンス: コードは MIT と Apache-2.0 の二本立て。GPL と AGPL の部品は入れない。依存を足したら `node licenses/check.mjs` を通す。MPL-2.0 の部品は、そのファイルを書きかえない。
-- クレートの分けかたは `docs/report.md` の 7-1 のとおり。`meloet-model` に入出力やスレッドを入れない。`meloet-engine` に画面やプラグインの形式を入れない。
-- Rust と画面の約束は `docs/report.md` の 7-3 のとおり。あいさつ → 聞く準備をしてから丸ごと取りにいく（snapshot）→ rev つきの差分。rev が飛んだら丸ごと取りなおす。画面は意図だけ送る。差分と計器とすぐ知らせることは Channel。計器はバイナリ（リトルエンディアン、先頭に型と版）。鍵の on/off や鍵盤のぬきさしは、届いた瞬間に送る。
+- クレートの分けかたは `docs/history/report.md` の 7-1 のとおり。`meloet-model` に入出力やスレッドを入れない。`meloet-engine` に画面やプラグインの形式を入れない。
+- Rust と画面の約束は `docs/history/report.md` の 7-3 のとおり。あいさつ → 聞く準備をしてから丸ごと取りにいく（snapshot）→ rev つきの差分。rev が飛んだら丸ごと取りなおす。画面は意図だけ送る。差分と計器とすぐ知らせることは Channel。計器はバイナリ（リトルエンディアン、先頭に型と版）。鍵の on/off や鍵盤のぬきさしは、届いた瞬間に送る。
 - Tauri を知ってよいのは `ui/src/bridge/` と `crates/meloet-app` だけ。
 - 鍵盤のぬきさしは ALSA シーケンサ（System:Announce の購読）。出口と入口の人の言葉の名前は PipeWire の Route。音は cpal。
 - バッファは、頼んだ数ではなく、本当に動いている数を出す。PC 全体の設定（`pw-metadata` の `clock.force-quantum` など）は、meloet も、あなたも、変えない。読むだけはよい。

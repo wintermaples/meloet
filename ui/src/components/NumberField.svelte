@@ -1,6 +1,6 @@
 <!-- 数字を押すと「入力の枠」（仕様書 2 章）になる読み値。Enter で決める、Esc でやめる、↑ ↓ で 1 ずつ（Shift で 10。step がある欄だけ）。
      数字として読めない値は「こわれた」の枠で、決めさせない（仕様書 3 章）。そのまま Enter を押したら reject に知らせる（状態行で言う。6 章）。
-     範囲の外の数は parse が読み、commit が近いはしにして決める（docs/design-notes.md B-68）。
+     範囲の外の数は parse が読み、commit が近いはしにして決める（docs/history/design-notes.ja.md B-68）。
      枠の外を押したときは、やめる。 -->
 <script lang="ts" generics="T">
   import { tick } from "svelte";

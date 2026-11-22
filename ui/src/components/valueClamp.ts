@@ -1,4 +1,4 @@
-// 数字の欄の、範囲の外の値（docs/design-notes.md B-68）。数字として読めれば近いはしにして決め、読めなければ null（「こわれた」の枠）。
+// 数字の欄の、範囲の外の値（docs/history/design-notes.ja.md B-68）。数字として読めれば近いはしにして決め、読めなければ null（「こわれた」の枠）。
 // 丸めたときは、送る ClampValue の中身（field ・ value ・ range）もいっしょに返す。DOM を知らない純粋な関数。
 
 import type { ValueField } from "../bridge";

@@ -3,7 +3,7 @@
 つかう人向けの案内（入れかた、鍵盤、音の素材、消しかた）は [`docs/user/README.ja.md`](docs/user/README.ja.md) です。
 
 MIDI 鍵盤を買ったばかりの人のための DAW です。いまは第 3 回（ピアノロール）までができています。
-どこまでできたかは [`docs/progress.md`](docs/progress.md)、作りは [`docs/architecture.md`](docs/architecture.md) を見てください。
+どこまでできたかは [`docs/history/progress.ja.md`](docs/history/progress.ja.md)、作りは [`docs/architecture.md`](docs/architecture.md) を見てください。
 
 ライセンス: MIT OR Apache-2.0。部品のライセンスは `licenses/check.mjs` が見はっています。
 
@@ -113,4 +113,4 @@ scripts/build-deb.sh              # Ubuntu 24.04 のコンテナ（packaging/Doc
 
 ## 検証の試作
 
-`spikes/` には、本番の前に土台の賭けを確かめた試作があります。報告は [`docs/report.md`](docs/report.md)。消さずに残していますが、本番のコードには写していません。
+`spikes/` には、本番の前に土台の賭けを確かめた試作があります。報告は [`docs/history/report.md`](docs/history/report.md)。消さずに残していますが、本番のコードには写していません。

@@ -40,7 +40,7 @@ export function waveArea(d: LaneDims, box: Box): WaveArea {
 
 // ---- 音量の線（accent の 1px。上下にドラッグして −60〜+12 dB） ----
 // 目盛はミキサーのフェーダーと同じ（仕様書 2 章「メーターとフェーダーの目盛」、3 章 39-B）: 下のはしから上へ 0 dB までは表のとおり、
-// 0 dB（上から 2 割）から上のはしの +12 までは dB でまっすぐ。下のはしは −∞ の位置だが、値は −60 より下へ行かない（design-notes A-24 の 12）。
+// 0 dB（上から 2 割）から上のはしの +12 までは dB でまっすぐ。下のはしは −∞ の位置だが、値は −60 より下へ行かない（docs/history/design-notes.ja.md A-24 の 12）。
 
 const ZERO_FRAC = dbToFrac(0);
 

@@ -1,4 +1,4 @@
-// Key → screen timing for development (docs/report.md 5-2). Off unless Rust says so.
+// Key → screen timing for development (docs/history/report.md 5-2). Off unless Rust says so.
 
 export interface KeyRecord {
   note: number;

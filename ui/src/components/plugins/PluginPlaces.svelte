@@ -1,6 +1,6 @@
 <!-- 音の設定 ▸ くわしい設定 ▸ プラグインの場所（仕様書 2 章「プラグインの場所の行」、3 章 Y13、モック R9-Scan）。
      見出し（▾ ▸ と数）でたたむ。ふつうの場所は gray.8 で「ふつうの場所」、足した場所は gray.10 で「外す」。
-     CLAP の場所は約束が送ってこない（design-notes A-16）。 -->
+     CLAP の場所は約束が送ってこない（docs/history/design-notes.ja.md A-16）。 -->
 <script lang="ts">
   import type { PluginsView } from "../../bridge";
   import { send } from "../../state/app.svelte";

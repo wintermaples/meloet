@@ -270,7 +270,7 @@
     if (menu === "metronome" && parts.countIn) closeMenu();
   });
 
-  /** 決める命令。範囲の外を丸めたときは、そのあとに状態行で言うように頼む（docs/design-notes.md B-68）。 */
+  /** 決める命令。範囲の外を丸めたときは、そのあとに状態行で言うように頼む（docs/history/design-notes.ja.md B-68）。 */
   function commitClamped(command: Command, clamp: ClampNote | null): void {
     send(command);
     if (clamp) send({ type: "clampValue", ...clamp });

@@ -1,4 +1,4 @@
-// 上のメニューの行の中身（design-notes B-59）。DOM を知らない。キーのある行は、キーと同じ道（keys/attach.ts の runKeyAction）を通す。
+// 上のメニューの行の中身（docs/history/design-notes.ja.md B-59）。DOM を知らない。キーのある行は、キーと同じ道（keys/attach.ts の runKeyAction）を通す。
 
 import type { AppState, Band, Command } from "../../bridge";
 import { SCALES } from "../../design/tokens";
@@ -47,7 +47,7 @@ export interface TopMenu {
 
 export const TOP_MENUS: readonly TextKey[] = ["menu.file", "menu.edit", "menu.view", "menu.play", "menu.notes", "menu.track", "menu.help"];
 
-/** キーの書きかた（「Ctrl Shift S」「Cmd ,」「Shift M」）。Mac は Cmd と Option（design-notes A-2）。 */
+/** キーの書きかた（「Ctrl Shift S」「Cmd ,」「Shift M」）。Mac は Cmd と Option（docs/history/design-notes.ja.md A-2）。 */
 export function keyNames(platform: Platform) {
   const mod = platform === "mac" ? t("key.cmd") : t("key.ctrl");
   const alt = platform === "mac" ? t("key.option") : t("key.alt");

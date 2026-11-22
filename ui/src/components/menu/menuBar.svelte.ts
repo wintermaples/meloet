@@ -1,4 +1,4 @@
-// 上のメニューの行（design-notes B-59）の、ひらいているメニュー。画面だけが持つ。キーの係（F10）と MenuBar.svelte が読む。
+// 上のメニューの行（docs/history/design-notes.ja.md B-59）の、ひらいているメニュー。画面だけが持つ。キーの係（F10）と MenuBar.svelte が読む。
 
 export const menuBar = $state({
   /** ひらいているメニューの番号（ファイル 0 〜 トラック 5）。null はとじている。 */

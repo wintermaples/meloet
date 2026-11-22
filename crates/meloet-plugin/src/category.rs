@@ -267,7 +267,7 @@ mod tests {
         assert!(I::ALL.windows(2).all(|w| w[0] < w[1]));
     }
 
-    // docs/research/plugin-formats.md 7: Surge XT and ZamComp as installed.
+    // docs/history/research/plugin-formats.md 7: Surge XT and ZamComp as installed.
     #[test]
     fn real_plugins() {
         assert_eq!(

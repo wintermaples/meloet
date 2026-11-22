@@ -141,7 +141,7 @@ pub enum ExportCheck {
     /// 「いちばん大きい所 −0.6 dB ・ 音割れなし」. `peak_db`: `None` for silence. `clips`: the
     /// file as it would be written with `bits` clips (spec 6 「書き出しで音が割れる」; the
     /// button is then 「このまま書き出す」). `over` (here and in `Counting`, protocol 27, spec
-    /// 3 41-A): how many places of what was written go over 0 dB, counted as design-notes
+    /// 3 41-A): how many places of what was written go over 0 dB, counted as docs/history/design-notes.ja.md
     /// B-95-2 says (a run of samples over 0 dB is one place; 100 ms not over ends it):
     /// "0 dB をこえる所が 3 か所あります（いちばん大きい所 +1.2 dB）。音が割れます。" The
     /// highest of those places is `peak_db`. Counted whatever `bits` is; at 32 bits `clips`

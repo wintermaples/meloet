@@ -45,7 +45,7 @@ const STATE_WAIT: Duration = Duration::from_secs(3);
 const FILES_WAIT: Duration = Duration::from_secs(300);
 /// Frames brought into the file's form in one go.
 const CHUNK: usize = 4_096;
-/// Samples over 0 dB this far apart or more are two places (design-notes B-95-2).
+/// Samples over 0 dB this far apart or more are two places (docs/history/design-notes.ja.md B-95-2).
 const OVER_GAP_S: f64 = 0.1;
 
 /// What a plugin that plays says its state is now.
@@ -458,7 +458,7 @@ fn peak_of(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0f32, |m, s| m.max(s.abs()))
 }
 
-/// Counts the places of a file that go over 0 dB (design-notes B-95-2): a run of frames
+/// Counts the places of a file that go over 0 dB (docs/history/design-notes.ja.md B-95-2): a run of frames
 /// with a sample over 0 dB is one place, and frames not over for [`OVER_GAP_S`] end it.
 /// A sample of exactly 0 dB is not over.
 #[derive(Debug)]

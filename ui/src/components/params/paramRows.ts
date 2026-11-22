@@ -138,7 +138,7 @@ export function paramName(effect: EffectKind, param: number): string {
 }
 
 /**
- * 欄に出す行。ディレイの「間隔」は 1 行で、「テンポに合わせる」がオンなら段階、オフなら ms（design-notes A-14）。
+ * 欄に出す行。ディレイの「間隔」は 1 行で、「テンポに合わせる」がオンなら段階、オフなら ms（docs/history/design-notes.ja.md A-14）。
  * 見出しのある物はグループにまとめる（EFFECT_PARAMS の順のまま）。
  */
 export function allRows(

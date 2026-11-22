@@ -107,7 +107,7 @@ fn two_seconds_on_a_lane_of_twenty_five_thousand_points() {
 }
 
 /// A fader written for 10 minutes and let go every 2 seconds, as measured in the app
-/// (docs/measurements/2026-11-20-round6-step2-3.md 4): 282 steps, the lane grows to 25 000.
+/// (docs/history/measurements/2026-11-20-round6-step2-3.md 4): 282 steps, the lane grows to 25 000.
 fn ten_minutes_of_writing() {
     let mut doc = with_lane();
     let mut h = History::new();

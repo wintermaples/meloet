@@ -120,7 +120,7 @@ export interface Hit {
   note: number;
   /** はしの 6px（長さを変える所）。 */
   edge: boolean;
-  /** 左はし（始まりを動かす所。design-notes B-69）。hitNote を startEdge つきで呼んだときだけ。 */
+  /** 左はし（始まりを動かす所。docs/history/design-notes.ja.md B-69）。hitNote を startEdge つきで呼んだときだけ。 */
   start?: true;
 }
 
@@ -346,7 +346,7 @@ export function resizeDelta(n: Shown, notes: readonly number[], grab: number, dx
 }
 
 /**
- * つかんだノートの始まりがグリッドに吸いつくように、始まりを動かす量（終わりは動かさない。+ で短くなる。design-notes B-69）。
+ * つかんだノートの始まりがグリッドに吸いつくように、始まりを動かす量（終わりは動かさない。+ で短くなる。docs/history/design-notes.ja.md B-69）。
  * どのノートも 1 ティックより短くならず（吸いつくときは、つかんだノートはグリッド 1 つより短くならない）、曲の頭より前へは出ない。
  */
 export function resizeStartDelta(n: Shown, notes: readonly number[], grab: number, dxTicks: number, step: number | null, grid?: Snapper): number {

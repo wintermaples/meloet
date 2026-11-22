@@ -30,7 +30,7 @@ the song gets the key, name, vendor and path found there and no state. --effect-
 (--effect-format: its format when it is not --plugin-format)
 effect in the first free insert slot of every "plugin" and "sf2" track. --stagger: track i
 starts its notes i * TICKS later (16 plugins that all start a chord in the same block are a
-case of their own, docs/measurements/2026-11-19-round5-plughost.md). --hard-pan: the "plugin"
+case of their own, docs/history/measurements/2026-11-19-round5-plughost.md). --hard-pan: the "plugin"
 tracks all the way left, the others all the way right, no sends and no built-in inserts, so
 that a recording of the output tells the two apart (plugin-stop.sh).
 

@@ -44,7 +44,7 @@ use crate::instrument::{Instrument, InstrumentEvent};
 /// Nearly the whole block: a plugin that is only slow must not be taken for one that is gone
 /// (two blocks in a row without an answer stop a slot for good), and one that is gone costs
 /// this wait once. Measured with 16 tracks of Surge XT and a compressor on each
-/// (docs/measurements/2026-11-19-round5-plughost.md): the engine's block took up to 88 % of
+/// (docs/history/measurements/2026-11-19-round5-plughost.md): the engine's block took up to 88 % of
 /// its length; at 0.5 slots went unanswered and were stopped, at 0.9 none.
 pub const PLUGIN_WAIT_SHARE: f64 = 0.9;
 

@@ -1,6 +1,6 @@
 // ノートの一覧と「選んだノート」の欄の打ちこみ（仕様書 3 章「ノートの一覧」）。DOM を知らない純粋な関数。
 // 欄の文字の読み書き、使える範囲、↑ ↓ の 1 きざみ、送る意図（SetNotesField ・ RejectValue ・ ClampValue）。
-// 数字として読めて範囲の外なら、近いはしに丸めて決める（design-notes B-68）。読めない物だけが「こわれた」。
+// 数字として読めて範囲の外なら、近いはしに丸めて決める（docs/history/design-notes.ja.md B-68）。読めない物だけが「こわれた」。
 
 import type { ClipView, Command, NoteField, TakeNotes, ValueField } from "../../bridge";
 import { noteLengthText, notePositionText, rangeText } from "../format";

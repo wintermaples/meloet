@@ -1444,7 +1444,7 @@ export const SCENES: Record<string, SceneDef> = {
     },
     meters: QUIET,
   },
-  // Spec 6 「スキャンが終わった」 with nothing stopped: only the first half of the sentence (design-notes A-16).
+  // Spec 6 「スキャンが終わった」 with nothing stopped: only the first half of the sentence (docs/history/design-notes.ja.md A-16).
   scanFinishedNone: {
     setup(s) {
       ready(s);
@@ -4475,7 +4475,7 @@ const clampDb = (db: number | null) => (db === null || db < -60 ? null : Math.mi
  * Protocol 14: the mixer, enough for pictures and tests (no history, no undo count, no previews: a command with
  * `commit: false` changes nothing here, as the state never shows a preview). Returns what changed, or null when
  * the command is none of these. The values of the effects are kept only for the selected insert. Taken while
- * recording and counting in too (design-notes A-14).
+ * recording and counting in too (docs/history/design-notes.ja.md A-14).
  */
 export function reduceMixer(
   state: AppState,

@@ -17,7 +17,7 @@
 
   let list = $state<HTMLElement>();
 
-  // design-notes A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」。
+  // docs/history/design-notes.ja.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」。
   const keyLabel = (n: number) =>
     platform === "mac" ? `${t("key.cmd")} ${t("key.option")} ${n}` : `${t("key.ctrl")} ${t("key.alt")} ${n}`;
 
@@ -102,7 +102,7 @@
     border-bottom: 0;
   }
   /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は行の内がわに描き、
-     「選んだ行」（地 gray.4 ・ 左 line.mark の accent）とまざらないようにする（docs/design-notes.md A-6）。 */
+     「選んだ行」（地 gray.4 ・ 左 line.mark の accent）とまざらないようにする（docs/history/design-notes.ja.md A-6）。 */
   .row:hover:not(:disabled) {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }

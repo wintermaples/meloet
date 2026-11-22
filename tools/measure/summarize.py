@@ -20,12 +20,12 @@ and later keys of a chord may be one frame later. So the line is 2 frames for sp
 
 Callback -> DAC is what meloet read from the output for each key. When it is exactly one buffer
 (one quantum), the summary marks it: in round 7 two runs read one quantum for every key where the
-others read two (docs/measurements/2026-11-22-round8-step1-timing.md 3), and whether the sound
+others read two (docs/history/measurements/2026-11-22-round8-step1-timing.md 3), and whether the sound
 was early or only the number was is not known yet.
 """
 import argparse, json, math, os, sys, time
 
-# docs/report.md 5-2, row "本物の鍵 117 回", and 5-3, row "本物の鍵、quantum 256".
+# docs/history/report.md 5-2, row "本物の鍵 117 回", and 5-3, row "本物の鍵、quantum 256".
 STUDY = {
     "keyToJsMs": {"p50": 0.02, "p95": 0.41, "max": None, "count": 117},
     "keyToDrawMs": {"p50": 0.28, "p95": 0.84, "max": 5.2, "count": 117},
@@ -230,7 +230,7 @@ def markdown(r):
         flag = [
             f"**Callback -> DAC was exactly one quantum ({once['quantumMs']:.3f} ms) for "
             f"{once['count']} of {once['of']} keys (keys {runs(once['keys'])}), in the run of "
-            f"{r.get('measuredAt') or '?'}.** See docs/measurements/2026-11-22-round8-step1-timing.md 3.",
+            f"{r.get('measuredAt') or '?'}.** See docs/history/measurements/2026-11-22-round8-step1-timing.md 3.",
             "",
         ]
     out = [

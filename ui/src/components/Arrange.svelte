@@ -3,7 +3,7 @@
      動いている間は、WebGL の係のコマごとに（everyGlFrame）線と録っているクリップの先を動かす。
      クリップのドラッグ（モック R3-Arrange）は、もとの場所を大きな面に gray.7 の枠で残し、動いているクリップを小さな区画（recordingClip。
      録音中はドラッグしないので、録っているクリップの先と同じ時に使わない）で描く。動かすだけなら箱を transform で動かす。
-     選んであるクリップは何個でも、いっしょに動かす（docs/design-notes.md B-71）。右クリックの一覧は B-60。 -->
+     選んであるクリップは何個でも、いっしょに動かす（docs/history/design-notes.ja.md B-71）。右クリックの一覧は B-60。 -->
 <script lang="ts">
   import { onDestroy, onMount, untrack, type Snippet } from "svelte";
   import {

@@ -14,7 +14,7 @@ click (tick 0) lines the recording up with the map; every later one is compared 
 --wav: only look at a recording made before.
 
 On this PC the recording itself now and then loses three or four blocks about every 5 s (the
-clicks after it come early by 768 or 1024 frames; docs/measurements/2026-11-20-round6-step1.md).
+clicks after it come early by 768 or 1024 frames; docs/history/measurements/2026-11-20-round6-step1.md).
 The summary lists where the distance between two clicks is not the map's, and compares where
 the song stopped with the PC's clock, which tells a short recording from a song running fast.
 

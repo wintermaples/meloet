@@ -38,7 +38,7 @@ export function flags(t: Pick<TimelineView, "meterNum" | "meterDen" | "meterChan
   ];
 }
 
-/** 変更の件数: 変わる所（ティック）の数。同じ所のテンポの点と拍子の旗は 1 件（docs/design-notes.md B-92）。 */
+/** 変更の件数: 変わる所（ティック）の数。同じ所のテンポの点と拍子の旗は 1 件（docs/history/design-notes.ja.md B-92）。 */
 export function changeCount(t: Pick<TimelineView, "tempoPoints" | "meterChanges">, map: TempoMap): number {
   const at = new Set<number>(t.tempoPoints.map((p) => p.tick));
   for (const c of t.meterChanges) at.add(map.tickOfBar(c.bar));

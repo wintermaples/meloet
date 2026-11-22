@@ -447,7 +447,7 @@ pub enum Command {
     CancelMixPreview,
     /// The M of a return strip: the return is silent, or sounds again. Part of the song (one
     /// step, saved), as the mute of a track is. The S and ● of a return, and M, S and ● of
-    /// the master, do nothing and have no command (design-notes A-11).
+    /// the master, do nothing and have no command (docs/history/design-notes.ja.md A-11).
     ToggleReturnMute {
         bus: SendBus,
     },
@@ -819,7 +819,7 @@ pub enum Command {
         notes: Vec<u32>,
         value: u8,
     },
-    /// "そろえる" of the length panel, and Enter in its field (design-notes C-6 51): every note
+    /// "そろえる" of the length panel, and Enter in its field (docs/history/design-notes.ja.md C-6 51): every note
     /// to `value` ticks, as one step, each kept inside its clip as `SetNotesField` does. The
     /// status line says "3 ノートの長さを 0.240 にそろえました。" (`StatusMessage::LengthMatched`).
     /// A clamped value: `ClampValue` after this one, as for `MatchVelocity`.
@@ -1366,7 +1366,7 @@ pub enum ValueField {
     Bar,
     Beat,
     Tick,
-    /// The value of a point in the CC list (design-notes C-6 50), with its `range`
+    /// The value of a point in the CC list (docs/history/design-notes.ja.md C-6 50), with its `range`
     /// ("0〜127", "−8192〜+8191").
     ControlValue,
 }

@@ -44,7 +44,7 @@ const SIZE_UNKNOWN: (u32, u32) = (640, 480);
 const SHOW_WAIT: Duration = Duration::from_millis(500);
 /// A parameter the plugin changes with no word of the person taking hold of it (no VST3
 /// `beginEdit`, no LV2 `ui:touch`, a `patch` parameter) is let go this long after its last
-/// change (docs/research/automation-lv2.md).
+/// change (docs/history/research/automation-lv2.md).
 const LET_GO: Duration = Duration::from_millis(500);
 
 /// A plugin's window on the screen.

@@ -738,7 +738,7 @@ impl Side {
 /// of the cycle it came in. When the input misses cycles, every block after is later than
 /// the count of frames says, by the frames that never came. When only a block's time is
 /// late (a busy PC, small buffers: measured at 64 frames,
-/// docs/measurements/2026-11-21-round7-step3.md 6), the blocks after it are back where the
+/// docs/history/measurements/2026-11-21-round7-step3.md 6), the blocks after it are back where the
 /// count says. So a late block waits for the next ones: frames are missing before it only
 /// if they are late too.
 ///

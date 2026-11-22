@@ -4,7 +4,7 @@
      ドラッグ中のノートと、録音中にのびるノートは、それだけを囲む小さな 1 枚（pianoRollLive）。動かすだけなら transform で動かす。
      pianoRollLive の箱は、ノートの場所の左上から CC の帯の下はしまで（CC の帯のドラッグも同じ 1 枚に入れる）。
      再生の線、囲む枠、文字は HTML。
-     行の高さは縦の拡大の段（prView.rowPx、design-notes B-63）。ノートの高さは行 − 1。縦の − ＋ は目盛の左の角。
+     行の高さは縦の拡大の段（prView.rowPx、docs/history/design-notes.ja.md B-63）。ノートの高さは行 − 1。縦の − ＋ は目盛の左の角。
      左の鍵盤の列を押すと、押している間だけ鳴らす（B-62。audition.ts）。目盛を押すと再生の位置、ドラッグでループの範囲（B-61）。
      右クリックは一覧（B-60。描くのは App の ContextMenu）。
      ドラムのトラックでは、行はキットの 12 の音だけ（鍵の列は楽器の名前、幅 part.drum.keys）、ノートは叩いた所の四角（drums.ts、geom.ts の drum）。

@@ -17,7 +17,7 @@ export type Tool = "select" | "draw" | "erase";
 export const QUARTER_PX_STEPS = [10, 14, 20, 28, 40, 57, 80, 113, 160, 226, 320] as const;
 export const DEFAULT_QUARTER_PX = 80;
 
-/** 縦の拡大の段（拡大率 100 % で、1 行＝半音ひとつの px。design-notes B-63）。はじめは仕様書の size.note の 12。 */
+/** 縦の拡大の段（拡大率 100 % で、1 行＝半音ひとつの px。docs/history/design-notes.ja.md B-63）。はじめは仕様書の size.note の 12。 */
 export const ROW_PX_STEPS = [8, 12, 16, 20, 24] as const;
 export const DEFAULT_ROW_PX = 12;
 

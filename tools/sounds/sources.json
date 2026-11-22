@@ -5,7 +5,7 @@
     "use: which files we take (paths relative to the source root; '*' and '**' are glob patterns), or, for Naked Drums whose file names do not say which drum they are, an SFZ selection that tools/sounds/sfz_select.py resolves.",
     "attribution: what a credit needs (CC BY 3.0 4(b) / CC BY 4.0 3(a)): creator, title, source URI, license URI. CC0 entries keep a credit too, because the authors ask for one (not required).",
     "license_copies: the license and readme texts that came with the source, copied without change.",
-    "Checked on 2026-11-18. Findings: docs/measurements/2026-11-18-round4-sources.md."
+    "Checked on 2026-11-18. Findings: docs/history/measurements/2026-11-18-round4-sources.md."
   ],
   "sources": [
     {
@@ -256,7 +256,7 @@
         "note": "The same bytes as /usr/share/sounds/sf2/FluidR3_GM.sf2 of Ubuntu's fluid-soundfont-gm (sha256 checked 2026-11-18). README and COPYING are fetched from the same folder."
       },
       "license": "MIT",
-      "license_note": "README: 'I hereby release Fluid under the MIT license, as described in COPYING.' COPYING: the MIT text, Copyright (c) 2000-2002, 2008 Frank Wen. The INFO chunk of the file says 'Licensed under the MIT License.' Where each recording came from is not listed per instrument (docs/research/fluidr3-gm.md).",
+      "license_note": "README: 'I hereby release Fluid under the MIT license, as described in COPYING.' COPYING: the MIT text, Copyright (c) 2000-2002, 2008 Frank Wen. The INFO chunk of the file says 'Licensed under the MIT License.' Where each recording came from is not listed per instrument (docs/history/research/fluidr3-gm.md).",
       "attribution": {
         "creator": "Frank Wen",
         "title": "Fluid (R3) SoundFont",

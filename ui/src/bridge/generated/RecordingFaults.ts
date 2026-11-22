@@ -3,7 +3,7 @@
 /**
  * Blocks of a vocal recording that are not what came in (docs/architecture.md 22-7): of
  * the recording going on, or of the last one. Nothing shows it yet (the sentence is asked
- * for in design-notes B-94-14).
+ * for in docs/history/design-notes.ja.md B-94-14).
  */
 export type RecordingFaults = { 
 /**

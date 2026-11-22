@@ -5,7 +5,7 @@ import { line, space, text } from "../design/tokens";
 
 /**
  * 引っこめる順（仕様書 1 章 (1)）。ボタンの右はしのキー（4 章「キーは、帯札やボタンの右はしに小さく書いて見せる」）は、
- * それより前に引っこめる（docs/design-notes.md B-73）。
+ * それより前に引っこめる（docs/history/design-notes.ja.md B-73）。
  */
 const TRANSPORT_ORDER = ["keys", "songName", "load", "countIn", "positionLabels"] as const;
 export type TransportPart = (typeof TRANSPORT_ORDER)[number];

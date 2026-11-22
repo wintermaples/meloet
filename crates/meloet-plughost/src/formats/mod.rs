@@ -1,5 +1,5 @@
 //! The boundary every plugin format sits behind, in two halves by thread
-//! (docs/report.md 4-5):
+//! (docs/history/report.md 4-5):
 //!
 //! - [`Processor`] lives on the audio thread of this process (`crate::rt`).
 //! - [`Controller`] lives on the main thread (`crate::control`), with the plugin's window.

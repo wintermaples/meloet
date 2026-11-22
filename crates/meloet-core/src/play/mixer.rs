@@ -752,7 +752,7 @@ impl Play {
         })
     }
 
-    /// What the mixer says once as it opens (design-notes A-17): the slots that are passed
+    /// What the mixer says once as it opens (docs/history/design-notes.ja.md A-17): the slots that are passed
     /// by and the ones whose plugin stopped, each in the mixer's order. `None` when there
     /// are none. A slot that is both counts as stopped.
     pub fn mixer_passes_by(&self) -> Option<StatusMessage> {

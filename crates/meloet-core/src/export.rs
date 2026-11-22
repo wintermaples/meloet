@@ -95,7 +95,7 @@ pub enum ExportNews {
         percent: u8,
         /// The largest sample so far, in dBFS; `None`: silence.
         peak_db: Option<f32>,
-        /// The places over 0 dB so far, of every file (design-notes B-95-2).
+        /// The places over 0 dB so far, of every file (docs/history/design-notes.ja.md B-95-2).
         over: u32,
         /// How long the audio is, the tail counted once `done`.
         length_s: u32,

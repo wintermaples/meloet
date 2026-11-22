@@ -116,7 +116,7 @@
   const insertStrip = (i: InsertRef) => stripName(app.song, i.strip, app.library);
   /** 「2 ベース の コンプレッサー 」（うしろに空白）。 */
   const insertTarget = (i: InsertRef, e: EffectName) => t("status.insertTarget", { strip: insertStrip(i), effect: effectName(e) });
-  /** 6 章の窓の文の「（名前）」: 居場所とプラグインの名前、うしろに空白。棚でためし弾き中の子は名前だけ（design-notes A-17）。 */
+  /** 6 章の窓の文の「（名前）」: 居場所とプラグインの名前、うしろに空白。棚でためし弾き中の子は名前だけ（docs/history/design-notes.ja.md A-17）。 */
   const windowName = (name: string, slot: PluginSlotRef | null) => `${slot ? t("status.windowPlace", { strip: slotName(slot), name }) : name} `;
   /** プラグインが言ってきた名前は、うしろの「は」「の」との間に空白を置く（「Surge XT の」）。 */
   const spaced = (name: string) => `${name} `;
@@ -462,7 +462,7 @@
         return plain("sf2.dragging");
       case "notSf2Dragging":
         return plain("sf2.notSf2Dragging");
-      // 「音色 128 ・ ドラムのキット 9」は「。」で終わらないので、足さなかった物の文とは「 ・ 」でつなぐ（design-notes A-19）。
+      // 「音色 128 ・ ドラムのキット 9」は「。」で終わらないので、足さなかった物の文とは「 ・ 」でつなぐ（docs/history/design-notes.ja.md A-19）。
       case "sf2Added":
         return { parts: joined(textParts("sf2.added", { file: m.file, count: m.presets, kits: m.kits }), skippedParts(m.skipped)), strong: [], button: null };
       case "sf2AddedMany":

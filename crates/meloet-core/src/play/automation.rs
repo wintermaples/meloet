@@ -502,7 +502,7 @@ impl Play {
     }
 
     /// `DeleteLane`. A lane that moved its target leaves it at the value of the line at the
-    /// play line, so that the sound does not jump (design-notes B-92). A plugin keeps what
+    /// play line, so that the sound does not jump (docs/history/design-notes.ja.md B-92). A plugin keeps what
     /// the lane last gave it.
     pub fn delete_lane(&mut self, track: u32, target: AutoTarget, effects: &mut Vec<Effect>) {
         let key = (TrackId(track), model_target(target));
@@ -971,7 +971,7 @@ impl Play {
     // ---- keeping up ----
 
     /// After every input: 「● 書く」 goes off when the song stops, and what a hand wrote
-    /// until then is a step; the rest of its moves goes nowhere (design-notes B-92).
+    /// until then is a step; the rest of its moves goes nowhere (docs/history/design-notes.ja.md B-92).
     pub fn sync_automation(&mut self, effects: &mut Vec<Effect>) {
         self.sync_lane_names(effects);
         let moving = self.can_write();
@@ -1149,7 +1149,7 @@ impl Play {
         })
     }
 
-    /// Said once as the mixer opens (mock F6-MixerAuto, design-notes A-19 #4): the tracks
+    /// Said once as the mixer opens (mock F6-MixerAuto, docs/history/design-notes.ja.md A-19 #4): the tracks
     /// whose fader a lane moves.
     pub fn automation_moving(&self) -> Option<StatusMessage> {
         let tracks: Vec<_> = (self.doc().tracks.iter())

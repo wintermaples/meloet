@@ -35,7 +35,7 @@ const COMMANDS: usize = 256;
 const SINK_EVENTS: usize = 64;
 /// Parameters the person may hold at once in one plugin's window.
 const TOUCHED: usize = 32;
-/// The priority asked for: the most rtkit gives (docs/research/plugin-ipc.md). PipeWire gives
+/// The priority asked for: the most rtkit gives (docs/history/research/plugin-ipc.md). PipeWire gives
 /// meloet's own audio thread 88 where the limits allow and the same 20 through rtkit, so this
 /// thread never stands above the one it works for.
 const PRIORITY: u32 = 20;
@@ -245,7 +245,7 @@ pub struct Handle {
 /// that hangs; then meloet has already seen the slot stop.
 const ANSWER: Duration = Duration::from_secs(2);
 /// No more audio threads than this, however many plugins and CPUs there are: the threads of
-/// all host processes together must fit what rtkit gives one user (25, docs/research/
+/// all host processes together must fit what rtkit gives one user (25, docs/history/research/
 /// plugin-ipc.md).
 const MOST_THREADS: usize = 4;
 
@@ -779,7 +779,7 @@ mod tests {
                 "/usr/lib/lv2/Surge XT.lv2",
             ),
         ] {
-            // JUCE takes the last value of a block for all of it (docs/research/
+            // JUCE takes the last value of a block for all of it (docs/history/research/
             // automation-vst3.md): the first half is not as loud as before either.
             if let Some((first, second)) = jump_inside_the_block(key, bundle, "Global Volume") {
                 assert!(second < 0.1 && first < 0.9, "{first} {second}");

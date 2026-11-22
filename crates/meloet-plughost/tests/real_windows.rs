@@ -1,7 +1,7 @@
 //! The windows and the parameter lists of real plugins of this PC (Surge XT, Zam, LSP,
 //! Dragonfly, abGate, swh). Ignored by default: they need an X display (on Wayland:
 //! Xwayland) and put windows on the screen. A test whose plugin is not installed says so and
-//! passes. The numbers they print are in docs/measurements/2026-11-19-round5-windows.md:
+//! passes. The numbers they print are in docs/history/measurements/2026-11-19-round5-windows.md:
 //!
 //! ```text
 //! cargo test -p meloet-plughost --test real_windows -- --ignored --nocapture --test-threads=1

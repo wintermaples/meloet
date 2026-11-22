@@ -29,7 +29,7 @@
   const selected = $derived(selectedInsert(app.params));
   const shelf = $derived(app.shelf);
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
-  /** 出口がない: えらんでいないか、えらんだ出口がなくなった（design-notes A-17）。 */
+  /** 出口がない: えらんでいないか、えらんだ出口がなくなった（docs/history/design-notes.ja.md A-17）。 */
   const noOutput = $derived(app.outputs.chosen === null || app.outputs.chosenState === "missing" || outputName === null);
   const masterFrame = $derived(
     noOutput

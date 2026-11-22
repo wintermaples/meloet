@@ -1,6 +1,6 @@
 // アレンジのクリップのマウス（仕様書 3 章「第 3 回のための決まり」の「アレンジのクリップ」、4 章、モック R3-Arrange）。DOM を知らない。
 // 押す → 動かす → 離す。動かしている間は見た目だけを変え、離したときに MoveClips か TrimClip を 1 つだけ送る（docs/architecture.md 17 章）。
-// 動かすときは、選んであるクリップぜんぶをいっしょに（docs/design-notes.md B-71）。はしをつめる ・ のばすのは、つかんだ 1 つだけ。
+// 動かすときは、選んであるクリップぜんぶをいっしょに（docs/history/design-notes.ja.md B-71）。はしをつめる ・ のばすのは、つかんだ 1 つだけ。
 // 座標は arrangeGeom.ts と同じ（x は見えている所の左はしから、y はトラックの行の並びの上から、CSS px）。
 
 import type { ClipEdge, ClipView, Command, TrackView } from "../bridge";

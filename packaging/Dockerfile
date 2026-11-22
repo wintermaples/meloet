@@ -1,5 +1,5 @@
 # The place where the deb is made (scripts/build-deb.sh). Ubuntu 24.04, so that the programs
-# ask for no newer glibc than 24.04 has (docs/research/distribution-formats.md 2-1).
+# ask for no newer glibc than 24.04 has (docs/history/research/distribution-formats.md 2-1).
 FROM ubuntu:24.04
 
 ARG RUST_VERSION=1.100.0

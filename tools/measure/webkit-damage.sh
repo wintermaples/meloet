@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shows which rectangles of the page WebKitGTK repaints each frame, and when it gives up and
-# repaints one rectangle around all of them (docs/measurements/2026-11-19-round4-mixer.md, section 6).
+# repaints one rectangle around all of them (docs/history/measurements/2026-11-19-round4-mixer.md, section 6).
 # Only tells something where the page is painted without accelerated compositing (NVIDIA with
 # Ubuntu's WebKitGTK).
 #

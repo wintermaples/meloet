@@ -1,4 +1,4 @@
-// 書き出しのダイアログと状態行の進みの文（仕様書 3 章 34-B、6 章、モック F7-Export ・ F7-Exporting ・ F-Export、design-notes B-94-69〜75）。
+// 書き出しのダイアログと状態行の進みの文（仕様書 3 章 34-B、6 章、モック F7-Export ・ F7-Exporting ・ F-Export、docs/history/design-notes.ja.md B-94-69〜75）。
 // DOM を知らない純粋な関数。
 import { EXPORT_TAIL_MAX_S, RECORD_FORMATS, type ExportCheck, type ExportDialogView, type ExportFailure, type ExportRunView, type ExportSolo, type RecordFormat } from "../../bridge";
 import { t, type TextKey } from "../../text/ja";
@@ -74,7 +74,7 @@ const overLines = (over: number, peakDb: number | null): CheckLine[] => [
 
 /**
  * 「書き出す前のたしかめ」のいちばん大きい所の行（仕様書 3 章 41-A、6 章「書き出しの前」）。音割れの文は、いまの形で割れるとき（`clips`）だけ。
- * こえた所の数は `over`（数えかたは design-notes B-95-2）。
+ * こえた所の数は `over`（数えかたは docs/history/design-notes.ja.md B-95-2）。
  */
 export function checkLines(check: ExportCheck): CheckLine[] {
   switch (check.state) {

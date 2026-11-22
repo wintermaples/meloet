@@ -156,7 +156,7 @@ impl Disk {
         }
     }
 
-    /// What a fetch takes, in its order: the common part, then design-notes B-95-1 (the urgent
+    /// What a fetch takes, in its order: the common part, then docs/history/design-notes.ja.md B-95-1 (the urgent
     /// instruments of Y2 the pack has, then the order of the shelf).
     pub fn to_fetch<'a>(&self, catalog: &'a Catalog) -> Vec<&'a Part> {
         use BuiltinInstrument as B;

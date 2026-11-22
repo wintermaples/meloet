@@ -1,7 +1,7 @@
 // ピアノロールの WebGL の絵（四角の並び）。DOM を知らない。座標は区画の canvas の画面の画素（box は slot の箱）。
 // ノートは仕様書 2 章「ノート」: 高さ 11、左はしに gray.10 の 2px、面はベロシティで gray.8 / 9 / 10、選んだら accent、
 // そろえる前の位置は gray.7 の枠だけ（選んでいるノートの分は accent）、書けない行は gray.0。行の地と線の色はモック A-PianoRoll。
-// ドラッグ中のもとの位置は accent の枠。どちらの枠も、ノートに隠れないよう、ノートを描いたあとに描く（docs/design-notes.md B-64）。
+// ドラッグ中のもとの位置は accent の枠。どちらの枠も、ノートに隠れないよう、ノートを描いたあとに描く（docs/history/design-notes.ja.md B-64）。
 
 import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
 import type { ColorName } from "../../design/tokens";

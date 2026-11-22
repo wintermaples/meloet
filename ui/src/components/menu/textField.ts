@@ -1,4 +1,4 @@
-// 文字の枠の右クリックの一覧（design-notes B-60）: 切り取り ・ コピー ・ 貼りつけ ・ ぜんぶ選ぶ。
+// 文字の枠の右クリックの一覧（docs/history/design-notes.ja.md B-60）: 切り取り ・ コピー ・ 貼りつけ ・ ぜんぶ選ぶ。
 // 貼りつけは「使えない」。WebKitGTK 2.52 は、殻（Tauri の enable_clipboard_access）が許していないと execCommand("paste") が
 // 何もせず false を返す。queryCommandEnabled("paste") はそれでも true を返すので、それでは見分けられない。枠の中の Mod V は効く。
 

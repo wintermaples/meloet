@@ -1,4 +1,4 @@
-//! A measuring tool (docs/measurements/2026-11-21-round7-step3.md, chapter 6): are the blocks
+//! A measuring tool (docs/history/measurements/2026-11-21-round7-step3.md, chapter 6): are the blocks
 //! of the input that come late blocks after a hole, or only late? On a PipeWire daemon of the
 //! test's own, the sink's monitor is the input. Every block's time and frame count is kept
 //! for some seconds, and the rule the disk writer fills holes by (a block that starts more

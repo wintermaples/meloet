@@ -11,7 +11,7 @@ use tauri::WebviewWindow;
 // ui/src/text/ja.ts. The words are spec 6 「PC のファイルの窓の題」 (ui/tests/text.test.ts reads them here).
 pub const OPEN_TITLE: &str = "ひらく";
 pub const FOLDER_TITLE: &str = "場所をえらぶ";
-// docs/design-notes.md B-59 (the user's decision of 2026-11-18); not in spec 6 yet.
+// docs/history/design-notes.ja.md B-59 (the user's decision of 2026-11-18); not in spec 6 yet.
 pub const SAVE_AS_TITLE: &str = "名前をつけて保存";
 // Spec 3 「PC の保存の窓の題（94-79）」.
 pub const EXPORT_TITLE: &str = "書き出す";
@@ -21,7 +21,7 @@ pub const EXPORT_FOLDER_TITLE: &str = "書き出すフォルダをえらぶ";
 pub enum Pick {
     SongFile,
     Folder,
-    /// The folder window again, for a place to look for plugins in (design-notes A-16: the
+    /// The folder window again, for a place to look for plugins in (docs/history/design-notes.ja.md A-16: the
     /// same title).
     PluginPlace,
     /// The save window, with the song's name filled in.

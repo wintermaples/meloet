@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use meloet_engine::{FrameClock, InputBlock, InputMeters, InputRingReader};
+use meloet_engine::{FrameClock, InputBlock, InputMeters, InputRingReader, TransportClock};
 use meloet_model::{NewAudioTake, TempoMap};
 use meloet_protocol::RecordFormat;
 use serde::{Deserialize, Serialize};
@@ -272,6 +272,15 @@ pub struct RecordFile {
 pub struct RecordJob {
     pub files: Vec<RecordFile>,
     pub format: RecordFormat,
+    /// What the song was heard at: `None` places the frames by the input's own times only.
+    pub heard: Option<HeardLine>,
+}
+
+/// The engine's clock, and `X` (docs/architecture.md 22-5): a frame captured at `t` was sung
+/// when the engine's frame `clock.kept_frame_at(t − x_us)` was heard.
+pub struct HeardLine {
+    pub clock: Arc<TransportClock>,
+    pub x_us: f64,
 }
 
 /// What a recording wrote.
@@ -288,6 +297,10 @@ pub struct Written {
     /// How many blocks `dropped` is, and how many times the input skipped for `gaps`.
     pub dropped_blocks: u32,
     pub gap_count: u32,
+    /// Frames of the input left out because the output missed cycles the input did not
+    /// (the song was heard that much later from then on), and how many times.
+    pub cut: u64,
+    pub cut_count: u32,
     /// The files reached the size a wav file can have.
     pub full: bool,
     pub error: Option<String>,
@@ -459,6 +472,13 @@ struct Job {
     /// When the files' newest blocks were captured, by the files' frames.
     times: FrameClock,
     gaps: Gaps,
+    heard: Option<HeardLine>,
+    /// Which engine's frame was heard when the files' newest blocks were sung, by the
+    /// files' frames: a [`FrameClock`] that counts the engine's frames where the other
+    /// counts microseconds.
+    heard_frames: FrameClock,
+    /// The last block written was cut.
+    cutting: bool,
     /// Marks asked for before the files had a block.
     marks: Vec<(f64, Sender<Option<f64>>, Instant)>,
     synced: Instant,
@@ -620,6 +640,9 @@ impl Side {
             pending: Vec::new(),
             times: FrameClock::new(sample_rate, MARK_BLOCKS),
             gaps: Gaps::default(),
+            heard: job.heard,
+            heard_frames: FrameClock::new(HEARD_FRAMES_A_SECOND, MARK_BLOCKS),
+            cutting: false,
             marks: Vec::new(),
             synced: Instant::now(),
             said: Written {
@@ -722,11 +745,20 @@ impl Side {
     }
 }
 
-/// Tells the frames the input never got from a block whose time alone is late.
+/// Keeps the frames of the files where the song was heard when they were sung.
 ///
-/// A block's time is the time of the cycle it came in. When the input misses cycles, every
-/// block after is later than the count of frames says, by the frames that never came. When
-/// only a block's time is late (a busy PC, small buffers: measured at 64 frames,
+/// Where the engine's clock remembers the moment a block was captured, the line is the
+/// engine's frame heard then (docs/architecture.md 22-26): when the input misses cycles the
+/// output did not, the block comes later on that line by the frames that never came, and
+/// silence of that length is written; when the output misses cycles the input did not, the
+/// song was heard later from then on, the block comes early, and that many of its frames
+/// are left out; when both miss the same cycles, nothing is done.
+///
+/// Where the clock does not remember it (before the engine has rendered anything, or for a
+/// block older than its ring), the line is the block's own time. A block's time is the time
+/// of the cycle it came in. When the input misses cycles, every block after is later than
+/// the count of frames says, by the frames that never came. When only a block's time is
+/// late (a busy PC, small buffers: measured at 64 frames,
 /// docs/measurements/2026-11-21-round7-step3.md 6), the blocks after it are back where the
 /// count says. So a late block waits for the next ones: frames are missing before it only
 /// if they are late too.
@@ -739,81 +771,148 @@ impl Side {
 struct Gaps {
     /// When the frame after the last block let through is due.
     due_us: Option<f64>,
-    held: Vec<(InputBlock, Vec<f32>)>,
+    /// The engine's frame heard when that frame was sung.
+    due_heard: Option<f64>,
+    held: Vec<Held>,
+}
+
+struct Held {
+    block: InputBlock,
+    heard: Option<f64>,
+    samples: Vec<f32>,
+}
+
+/// How far a block is after where it is due, in frames.
+#[derive(Clone, Copy)]
+struct Late {
+    frames: f64,
+    /// By the engine's frame heard, not by the block's own time.
+    heard: bool,
+}
+
+/// `write(missed, cut, block, heard, samples)`: `missed` frames never came before the block,
+/// and its first `cut` frames are left out.
+type WriteBlock<'a> = dyn FnMut(u64, u32, InputBlock, Option<f64>, &[f32]) + 'a;
+
+/// A move of whole cycles is that many cycles: what the times say beside it is jitter.
+fn snap(frames: f64, block: u32) -> u64 {
+    let cycle = f64::from(block.max(1));
+    let whole = (frames / cycle).round() * cycle;
+    let snapped = if (frames - whole).abs() <= cycle / 8.0 {
+        whole
+    } else {
+        frames.round()
+    };
+    snapped.max(0.0) as u64
 }
 
 impl Gaps {
-    /// `write(missed, block, samples)` for every block that is settled now, in the order
-    /// they came: `missed` frames never came before it.
+    /// How late `block` is when the `before` frames of the blocks that wait come first.
+    fn late(&self, block: &InputBlock, heard: Option<f64>, before: u64, rate: u32) -> Late {
+        if let (Some(heard), Some(due)) = (heard, self.due_heard) {
+            return Late {
+                frames: heard - due - before as f64,
+                heard: true,
+            };
+        }
+        let frames = (self.due_us).map_or(0.0, |due| {
+            (block.first_frame_us(rate) - due) * f64::from(rate) / 1e6 - before as f64
+        });
+        Late {
+            frames,
+            heard: false,
+        }
+    }
+
+    fn held_frames(&self) -> u64 {
+        self.held.iter().map(|h| u64::from(h.block.frames)).sum()
+    }
+
+    /// Every block that is settled now, in the order they came, goes to `write`. `heard`:
+    /// the engine's frame heard when the block's first frame was sung, if the clock knows.
     fn take(
         &mut self,
         block: InputBlock,
+        heard: Option<f64>,
         samples: &[f32],
         rate: u32,
-        write: &mut impl FnMut(u64, InputBlock, &[f32]),
+        write: &mut WriteBlock,
     ) {
         let frame_us = 1e6 / f64::from(rate.max(1));
-        let len_us = |b: &InputBlock| f64::from(b.frames) * frame_us;
-        let at_us = block.first_frame_us(rate);
+        // Half a block of room: the time of a block is the time its cycle woke, which is
+        // not exact.
+        let room = f64::from(block.frames) / 2.0;
         loop {
-            // Where the block is due if nothing is missing before those that wait.
-            let line_us = (self.due_us)
-                .map(|due| due + self.held.iter().map(|(b, _)| len_us(b)).sum::<f64>());
-            let late_us = at_us - line_us.unwrap_or(at_us);
-            // Half a block of room: the time of a block is the time its cycle woke, which
-            // is not exact.
-            if late_us <= len_us(&block) / 2.0 {
-                for (held, samples) in self.held.drain(..) {
-                    write(0, held, &samples);
+            let late = self.late(&block, heard, self.held_frames(), rate);
+            if late.frames <= room {
+                // Early on the engine's line: the output missed cycles the input did not.
+                let owed = if late.heard && late.frames < -room {
+                    snap(-late.frames, block.frames)
+                } else {
+                    0
+                };
+                let cut = owed.min(u64::from(block.frames)) as u32;
+                for held in self.held.drain(..) {
+                    write(0, 0, held.block, held.heard, &held.samples);
                 }
-                self.due_us = Some(at_us + len_us(&block));
-                write(0, block, samples);
+                self.due_us = Some(block.first_frame_us(rate) + f64::from(block.frames) * frame_us);
+                self.due_heard =
+                    heard.map(|h| h + f64::from(block.frames) + (owed - u64::from(cut)) as f64);
+                write(0, cut, block, heard, samples);
                 return;
             }
             if self.held.len() < HELD_BLOCKS {
-                self.held.push((block, samples.to_vec()));
+                self.held.push(Held {
+                    block,
+                    heard,
+                    samples: samples.to_vec(),
+                });
                 return;
             }
-            self.settle_first(late_us, rate, write);
+            self.settle_first(late.frames, rate, write);
         }
     }
 
     /// The first block that waits comes after a hole; the others are looked at again from
-    /// where it ends. `next_late_us`: how late the block after those that wait is.
-    fn settle_first(
-        &mut self,
-        next_late_us: f64,
-        rate: u32,
-        write: &mut impl FnMut(u64, InputBlock, &[f32]),
-    ) {
+    /// where it ends. `next_late`: how late the block after those that wait is, in frames.
+    fn settle_first(&mut self, next_late: f64, rate: u32, write: &mut WriteBlock) {
         if self.held.is_empty() {
             return;
         }
         let frame_us = 1e6 / f64::from(rate.max(1));
-        let mut rest = std::mem::take(&mut self.held);
-        let mut line_us = self
-            .due_us
-            .unwrap_or_else(|| rest[0].0.first_frame_us(rate));
-        let due_us = line_us;
-        let mut late_us = next_late_us;
-        for (block, _) in &rest {
-            late_us = late_us.min(block.first_frame_us(rate) - line_us);
-            line_us += f64::from(block.frames) * frame_us;
+        let first = &self.held[0];
+        // With nothing let through before, the first block that waits is the line.
+        self.due_us.get_or_insert(first.block.first_frame_us(rate));
+        if let Some(heard) = first.heard {
+            self.due_heard.get_or_insert(heard);
         }
-        let (first, samples) = rest.remove(0);
-        self.due_us = Some(due_us + late_us + f64::from(first.frames) * frame_us);
-        write(
-            (late_us / frame_us).round().max(0.0) as u64,
-            first,
-            &samples,
-        );
-        for (block, samples) in rest {
-            self.take(block, &samples, rate, write);
+        let (mut late, mut before, mut by_heard) = (next_late, 0u64, false);
+        for held in &self.held {
+            let this = self.late(&held.block, held.heard, before, rate);
+            if this.frames < late {
+                late = this.frames;
+            }
+            by_heard |= this.heard;
+            before += u64::from(held.block.frames);
+        }
+        let mut rest = std::mem::take(&mut self.held);
+        let first = rest.remove(0);
+        let len = f64::from(first.block.frames);
+        let missed = if by_heard {
+            snap(late, first.block.frames)
+        } else {
+            (late.max(0.0)).round() as u64
+        };
+        self.due_us = (self.due_us).map(|due| due + (late + len) * frame_us);
+        self.due_heard = (self.due_heard).map(|due| due + late + len);
+        write(missed, 0, first.block, first.heard, &first.samples);
+        for held in rest {
+            self.take(held.block, held.heard, &held.samples, rate, write);
         }
     }
 
     /// No block comes after: what waits is taken as it says.
-    fn settle(&mut self, rate: u32, write: &mut impl FnMut(u64, InputBlock, &[f32])) {
+    fn settle(&mut self, rate: u32, write: &mut WriteBlock) {
         while !self.held.is_empty() {
             self.settle_first(f64::INFINITY, rate, write);
         }
@@ -830,42 +929,54 @@ impl Job {
         if self.gaps.due_us.is_none() && ends_us <= self.from_us.unwrap_or(f64::NEG_INFINITY) {
             return;
         }
+        let heard = (self.heard.as_ref())
+            .and_then(|h| h.clock.kept_frame_at(block.first_frame_us(rate) - h.x_us));
         let mut gaps = std::mem::take(&mut self.gaps);
-        gaps.take(block, samples, rate, &mut |missed, block, samples| {
-            self.write(missed, block, samples, channels, rate)
-        });
+        gaps.take(
+            block,
+            heard,
+            samples,
+            rate,
+            &mut |missed, cut, block, heard, samples| {
+                self.write(missed, cut, block, heard, samples, channels, rate)
+            },
+        );
         self.gaps = gaps;
     }
 
     fn settle(&mut self, channels: usize, rate: u32) {
         let mut gaps = std::mem::take(&mut self.gaps);
-        gaps.settle(rate, &mut |missed, block, samples| {
-            self.write(missed, block, samples, channels, rate)
+        gaps.settle(rate, &mut |missed, cut, block, heard, samples| {
+            self.write(missed, cut, block, heard, samples, channels, rate)
         });
         self.gaps = gaps;
     }
 
     /// Writes a block after `missed` frames that never came (the input missed cycles, or
-    /// the ring had no room even for a header): those are silence.
+    /// the ring had no room even for a header): those are silence. Its first `cut` frames
+    /// are left out. `heard`: the engine's frame heard when its first frame was sung.
+    #[allow(clippy::too_many_arguments)]
     fn write(
         &mut self,
         missed: u64,
+        cut: u32,
         block: InputBlock,
+        heard: Option<f64>,
         samples: &[f32],
         channels: usize,
         rate: u32,
     ) {
-        let at_us = block.first_frame_us(rate);
+        let at_us = block.first_frame_us(rate) + f64::from(cut) * 1e6 / f64::from(rate.max(1));
         self.said.gaps += missed;
         self.said.gap_count += u32::from(missed > 0);
-        let lost = if block.dropped {
-            u64::from(block.frames)
-        } else {
-            0
-        };
+        self.said.cut += u64::from(cut);
+        self.said.cut_count += u32::from(cut > 0 && !self.cutting);
+        self.cutting = cut > 0;
+        let frames = u64::from(block.frames - cut);
+        let lost = if block.dropped { frames } else { 0 };
         self.said.dropped += lost;
         self.said.dropped_blocks += u32::from(block.dropped);
-        let frames = u64::from(block.frames);
+        let samples = &samples[(cut as usize * channels).min(samples.len())..];
         for (i, file) in self.files.iter_mut().enumerate() {
             if file.wav.room() < missed + frames {
                 self.said.full = true;
@@ -873,8 +984,12 @@ impl Job {
             }
             let wrote: io::Result<()> = (|| {
                 file.wav.write_silence(missed + lost)?;
-                if i == 0 && !block.dropped {
+                if i == 0 && !block.dropped && frames > 0 {
                     self.times.note(file.wav.frames(), at_us);
+                    if let Some(heard) = heard {
+                        self.heard_frames
+                            .note(file.wav.frames(), heard + f64::from(cut));
+                    }
                 }
                 if block.dropped {
                     file.note_peaks(missed + lost, false);
@@ -914,9 +1029,28 @@ impl Job {
             return;
         }
         for (t_us, reply, _) in self.marks.drain(..) {
-            let _ = reply.send(self.times.frame_at(t_us));
+            let _ = reply.send(frame_at(t_us, &self.times, &self.heard_frames, &self.heard));
         }
     }
+}
+
+/// [`FrameClock`] counts the engine's frames as microseconds at this rate.
+const HEARD_FRAMES_A_SECOND: u32 = 1_000_000;
+
+/// The frame of the files sung at `t_us`. While the engine's clock says what was heard, by
+/// that: the files keep to it, through every cycle the output missed (`Gaps`), so a moment
+/// after the newest block is placed right even when frames are left out before it comes.
+fn frame_at(
+    t_us: f64,
+    times: &FrameClock,
+    heard_frames: &FrameClock,
+    line: &Option<HeardLine>,
+) -> Option<f64> {
+    let by_heard = (line.as_ref())
+        .filter(|_| !heard_frames.is_empty())
+        .and_then(|line| line.clock.frame_at(t_us - line.x_us))
+        .and_then(|heard| heard_frames.frame_at(heard));
+    by_heard.or_else(|| times.frame_at(t_us))
 }
 
 // ---- where the frames belong in the song ----

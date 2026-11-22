@@ -297,7 +297,9 @@ pub enum DropMode {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingFaults {
-    /// Times the input skipped and silence of that length was written.
+    /// Times the recording moved to stay where the song was heard: the input skipped and
+    /// silence of that length was written, or the output skipped and that much of the
+    /// input was left out (docs/architecture.md 22-26).
     pub gaps: u32,
     /// Blocks the ring to the disk had no room for, written as silence.
     pub dropped: u32,

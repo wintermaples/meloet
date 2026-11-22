@@ -45,6 +45,15 @@
       "url": "http://localhost:1420/?scene=${input:scene}&scale=${input:scale}",
       "webRoot": "${workspaceFolder}/ui",
       "preLaunchTask": "UI: vite (dev server)"
+    },
+    {
+      // Builds the deb to hand out in an Ubuntu 24.04 container (docker) and puts it in target/deb/.
+      // The user who runs it must be in the docker group.
+      "name": "Build the deb (docker)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "scripts/build-deb.sh",
+      "cwd": "${workspaceFolder}"
     }
   ],
   "inputs": [

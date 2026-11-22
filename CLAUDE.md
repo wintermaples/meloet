@@ -72,14 +72,14 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
 crates/
   meloet-model     曲・トラック・クリップ・テイク・ノート（純粋なデータ）、テンポの地図（tempo_map.rs）、取り消しの手（History）、録った出来事をテイクにする決まり（Recorder）、ノートを直す（notes.rs）、クオンタイズ（quantize.rs）、CC の点（controls.rs）、クリップを動かす（arrange.rs）、音色とグループ（instrument.rs）、ドラムのキット（drums.rs）、ミキサーとエフェクトのパラメータ（mixer.rs、effects.rs）
   meloet-protocol  Rust と画面の約束（版 27）。TS の型は ui/src/bridge/generated/ に書き出す。プラグインの窓とパラメータの形は params.rs、あとから入れた物は added.rs、テンポ ・ 拍子 ・ マーカーは timeline.rs
-  meloet-engine    音の流れ、音源の口（Instrument）、トラックの席、ミキサーの音の道（mixer.rs）、メーター、cpal の出口、再生まわり（transport.rs）、耳に届いている位置（clock.rs）
+  meloet-engine    音のスレッドの優先度（priority.rs）、音の流れ、音源の口（Instrument）、トラックの席、ミキサーの音の道（mixer.rs）、メーター、cpal の出口、再生まわり（transport.rs）、耳に届いている位置（clock.rs）
   meloet-sound     音の部品: サンプルを鳴らす係（sampler/）、SF2 を読む所（sf2/）、エフェクト 6 つ（effects/）、計算で作る音色（synth/）、サンプルの ▶ のフレーズ（phrases.rs）
   meloet-plugin    プラグインの鍵とまとめる鍵、種類、スキャンの記録、共有メモリと futex、プラグイン係とのやりとり（wire.rs）、子を起こす（launch.rs）
   meloet-plughost  プラグイン係のプロセス（host と scan）。VST3 ・ LV2（formats/）、窓（window.rs、X11）、音のスレッド（rt.rs）、主スレッド（control.rs）
   meloet-stretch   のび縮みと音の高さ（Signalsmith Stretch の C++ ヘッダを vendor/ に書きかえずに写し、C の口と安全な Stretcher、だんだんについていく Follower と render）。C++ と unsafe はここだけ
   meloet-midi      ALSA シーケンサ。鍵盤のぬきさし。meloet-vkeys（試験用の仮想の鍵盤。--name）
   meloet-devices   PipeWire の Route（人の言葉の名前）と settings（固定の quantum）を読む
-  meloet-core      状態の持ち主。プラグインのスキャンとプラグイン係のプロセス（plugins/: scanner.rs、hosts.rs、housed.rs）、棚の「あとから入れたもの」（catalog.rs）、SF2 の写し（sf2store.rs）、プラグインの読みこみ（play/plugs.rs）、窓と 15-C（play/windows.rs）、プラグインのパラメータ（play/params.rs）、コマンド → 状態 → rev つきの差分。帯の決まり（layout.rs）、再生・録音・取り消し・ピアノロールの意図（play.rs）、曲のファイル（songfile.rs）、保存の流れ（state/songs.rs）、書き出し（export.rs、export/sink.rs、plugins/export.rs）、なおすためのファイル（recovery.rs、state/recovery.rs）、つなぎなおし（service.rs）、音の素材の包みと読みこみ（sounds.rs、instruments.rs）、エンジンの席（play/seats.rs）、棚（play/shelf.rs）、ミキサーの意図とエンジンへの送り（play/mixer.rs、play/mixsync.rs、mixbook.rs）
+  meloet-core      状態の持ち主。プラグインのスキャンとプラグイン係のプロセス（plugins/: scanner.rs、hosts.rs、housed.rs）、棚の「あとから入れたもの」（catalog.rs）、SF2 の写し（sf2store.rs）、プラグインの読みこみ（play/plugs.rs）、窓と 15-C（play/windows.rs）、プラグインのパラメータ（play/params.rs）、コマンド → 状態 → rev つきの差分。帯の決まり（layout.rs）、再生・録音・取り消し・ピアノロールの意図（play.rs）、曲のファイル（songfile.rs）、保存の流れ（state/songs.rs）、書き出し（export.rs、export/sink.rs、plugins/export.rs）、なおすためのファイル（recovery.rs、state/recovery.rs）、つなぎなおし（service.rs）、音の素材の包みと読みこみ（sounds.rs、instruments.rs）、音の素材を取りにいく係（sounds/fetch.rs ・ catalog.rs ・ untar.rs、state/pack.rs）、エンジンの席（play/seats.rs）、棚（play/shelf.rs）、ミキサーの意図とエンジンへの送り（play/mixer.rs、play/mixsync.rs、mixbook.rs）
   meloet-app       Tauri の殻。web プロセスの見はり（webprocess.rs）、PC のファイルの窓（pcwindow.rs）、logind の delay ロック（logind.rs）、開発のときだけのしかけ（devhooks.rs）
 ui/
   src/bridge/      Tauri を知る唯一の場所
@@ -100,7 +100,9 @@ docs/
   measurements/    測った数
   screenshots/     本物のアプリの絵とモックのならべ
   research/        調べ物の書類（出どころと確かさつき）
-tools/sounds/      音の素材の包みを作る（sources.json に URL と sha256、build.py、SF2 を読む sf2.py）
+  user/            ユーザー向けの書類（README.ja.md）。install-check.md は本物の PC で入れてためす手順
+tools/sounds/      音の素材の包みを作る（sources.json に URL と sha256、build.py、SF2 を読む sf2.py、音色ごとに分ける split.py、組みこむ目録 catalog.json）
+packaging/         配る deb を作る入れ物（Dockerfile。scripts/build-deb.sh が使う）
 licenses/          ライセンスの見はり（check.mjs）と素材のライセンスの写し
 spikes/            検証の試作（消さない、写さない）
 ```

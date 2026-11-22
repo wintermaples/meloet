@@ -1744,3 +1744,11 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 ### アプリのアイコン（オーナーさん 2026-11-22）
 
 - オーナーさんがアイコンを決めた（`meloet.svg`: gray.3 の角丸の地に gray.10 の「m」と accent の音符）。もとの SVG を `crates/meloet-app/icons/meloet.svg` に置き、`tauri icon` で 32 ・ 64 ・ 128 ・ 256 ・ 512 の PNG と、次の回の Windows ・ Mac 用の `icon.ico` ・ `icon.icns` を作った（`tauri.conf.json` の `bundle.icon`）。仮の `icon.png`（83 バイト）は置きかえた。
+
+### 区切り4: CPU の道の WebKit のメモリ（k8wk、meloet-hard ・ Opus 5.5、merge 済み。architecture 23-15、`docs/measurements/2026-11-22-round8-webkit-memory.md`、生の数は `target/measure/round8-webkit-memory/`）
+
+- **今の版では、CPU の道だけが増えつづける形は出なかった**。同じ場面なら CPU の道と合成の道は同じくらい増え、どちらも 20〜25 分で平ら（止まっている時はどちらも平ら）。CPU の道の再生は 60 分で +38 MB（段のように増える）、10 分録る形は +27 MB（k8mem の回は +130。わけは分からない）。RSS の高さは CPU の道のほうが 40〜170 MB 低い。k8mem の「1 時間で +0.8 GB」は、起動のあとの温まりの 2 分を傾きとして数えた見こみ（C）。増えるのは libpas（WebKit の `fastMalloc` と JSC）の使用中の量で、共有メモリはたまっていない。
+- ためした形（glibc の tunables、`Malloc=1`、設定で CPU の道、2D canvas を GPU にしない）は、どれもメモリにも時間にも効かなかった。`set_enable_accelerated_2d_canvas` は 2.52.6 では何もしない。WebGL の canvas の読みもどしは WebKit の中で `Accelerated` と決めうち（A）。
+- **棟梁の決め: CPU の道のまま、何も足さない**（鍵 → 描いた p50 0.4〜0.7 ms を残す）。メモリの目あての「10 分録ると WebKit +40 MB 以内」は今の数（+27）で届く。
+- WebKitWebProcess が消えた件: 約 4 時間で再現しなかった。係が gdb で落とした 1 回の `/var/crash/_usr_lib_x86_64-linux-gnu_webkit2gtk-4.1_WebKitWebProcess.1001.crash` が残った（係は権限の決まりで消せず、棟梁も消さない。オーナーさんに消してもらうよう頼んだ）。
+- 宿題: CPU の道は、窓が見えない ・ 画面が消えた時も再生中は毎秒 60 コマ以上描きつづける（合成の道はやめる）。見えない間は描くのを止めるか。2 時間をこえる再生でのメモリ。

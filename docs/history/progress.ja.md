@@ -1825,3 +1825,15 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - **グランドピアノのしっぽの聞きくらべ**: `target/listen/piano-tails/` の `1-original.wav`・`2-cut-50dB.wav`・`3-cut-40dB.wav`（どの音が何秒目で、どこで切れるかは `notes.txt`、作りかたは `make.py`）。キーとペダルを押したまま、サンプルを最後まで鳴らす形。切った所の手前 20 ms をしぼる。聞く音は鍵の音だけを切った物。鍵の音だけなら減るのは −50 dB で 26 MiB、−40 dB で 84 MiB、離した音 ・ 共鳴の音もふくめると k8mem と同じ 27.7 / 88.5 MiB。
 - **しっぽを切って減る量を、全部の音色で**（`target/listen/tails-all.py`、表は `tails-all.txt`。ループのあるサンプルは切らない）: −50 dB / −40 dB で、グランドピアノ 27.7 / 88.5 MiB、スタジオキット 23.2 / 42.0、フィンガーベース 3.2 / 6.9、ブラシキット ・ ピチカート ・ マリンバは 1 MiB ほど。ほかの 20 の音色はループで鳴らすので 0（ループの音色は合わせて 181 MiB。ストリングス 77、オルガン 35、オルガン（静か）33 …）。全部の音色の合計 744 MiB のうち、減るのは 56.5 / 140.9 MiB。
 - **しっぽは切らない**（オーナーさん 2026-11-23）: 聞きくらべで、違和感がないのは −50 dB まで。−50 dB では全部の音色を合わせても 56.5 MiB しか減らないので、サンプルはそのままにする。メモリが足りなくなったときの次の手は、architecture 19-7 の残り（段を 3 つに、共鳴を外す、少しずつ読む形）。
+
+## 第 9 回（途中で止めた。2026-11-23。オーナーさんの週の上限のため）
+
+オーナーさんの 6 つのお願い: 1. target/ の整理と target/debug を小さく、2. 「…」で切れた文に乗ると全部を出す、3. 数をダブルクリックで打ちこむ、4. 仕様書をリポジトリで持ち正にする（Markdown ・ 英語）、5. 書類を整えて英語に（今も使う物だけ。昔の記録は日本語のまま docs/history/）、6. コメントを整えて英語に。README.md は「アイコン、概要、インストール、開発のしかた、ライセンス」の順で書きなおす（オーナーさん）。外の部品のデバッグ情報は行番号だけ（オーナーさん）。
+
+**済み（foundation、まだ push していない）**: 1（`Cargo.toml` の `[profile.dev.package."*"] debug = "line-tables-only"`、target/debug 98 → 13 GB）、2（`ui/src/lib/tip.svelte.ts` の `watchCutText`、`data-tip-through`）、3（ミキサー ・ 見出しの音量 ・ % ・ 遅れ ・ テンポの点）、4 の 1〜2 段目（`docs/spec/1〜6`、英語。`glossary.md`。`spec_check.py --strings` は 17 件だけ見つからない ＝ 手の名前）、6 のうち Rust ・ 道具 ・ `.vscode`、昔の記録を `docs/history/` へ。
+
+**止めた所（係の作業ツリーに書きかけが残っている。この会話の外からは呼びもどせないので、使うなら中身を見て拾う）**:
+- architecture.md の英語: 1〜18 章 ・ 19〜20 章 ・ 21 章と 23 章は `docs/architecture/k9ar1〜3.md`（できている。つなぐ前）。22 章（k9ar4）は `.claude/worktrees/agent-ab7d2e152398feab2/docs/architecture/k9ar4.md`（書きかけかも）。つないだら、いまの `docs/architecture.md` は `docs/history/architecture.ja.md` へ。決まりは `target/k9-arch-rules.md`。
+- 画面のコメントの英語（決まりは `target/k9-comments-rules.md`）: `.claude/worktrees/agent-aed06ffb08658acbb`（pianoroll ・ automation ・ timeline ・ history）、`agent-acd6d558b80cc584e`（components のすぐ下 ・ menu ・ about ・ export ・ pack ・ plugins）、`agent-a345bd10929b53974`（arrange ・ params ・ mixer ・ text ・ bridge ・ keys ・ time ・ design ・ lib ・ gl ・ state ・ dev）、`agent-a9a104bdfc7284319`（ui/tests）。
+- 仕様書 4 の 3 段目（決まりは `target/k9-readings-rules.md`）: `agent-ab5e301c90a556499`（7-readings A-1〜16）、`agent-a12ede0c682cbd059`（A-17〜24）、`agent-a306321fff782b157`（open-questions、手の名前を開く、spec_check の 1 つ目を外す、spec の README）。
+- まだ手をつけていない: README.md の書きなおし（英語）、CLAUDE.md ・ install-check.md ・ `.claude/agents/` の英語（係のファイルは最後に）、新しい `docs/progress.md`（英語、いまの状態と宿題）、最後に `scripts/check-all.sh --release`、push（オーナーさんに聞く）。

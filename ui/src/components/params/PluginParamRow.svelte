@@ -139,7 +139,7 @@
   data-test="param-row"
   onpointerdown={onselect}
 >
-  <span class="name" title={row.name}>{row.name}</span>
+  <span class="name">{row.name}</span>
   {#if typing}
     <ValueField initial={now.text ?? ""} label={row.name} onsubmit={submit} oncancel={stopTyping} />
   {:else if kind.kind === "smooth"}

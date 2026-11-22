@@ -118,14 +118,14 @@ export const tipAround: Action<HTMLElement, string | null | undefined> = (node, 
 };
 
 /** `use:tipOf={() => 文}`。乗った時に文を作る（null なら出さない）。 */
-export const tipOf: Action<HTMLElement, () => string | null> = (node, make) => {
+export const tipOf: Action<HTMLElement, (node: HTMLElement) => string | null> = (node, make) => {
   let current = make;
   const h = hover(node, () => {
-    const body = current();
+    const body = current(node);
     return body ? { term: null, body } : null;
   });
   return {
-    update(next: () => string | null) {
+    update(next: (node: HTMLElement) => string | null) {
       current = next;
     },
     destroy: h.destroy,
@@ -135,3 +135,77 @@ export const tipOf: Action<HTMLElement, () => string | null> = (node, make) => {
 /** `use:tipWhenCut`。「…」でちぢんでいるときだけ、要素の文を全部出す。 */
 export const tipWhenCut: Action<HTMLElement> = (node) =>
   hover(node, () => (node.scrollWidth > node.clientWidth && node.textContent ? { term: null, body: node.textContent } : null));
+
+/** The element whose cut text the page-wide watcher is showing. */
+let cutOwner: HTMLElement | null = null;
+
+const cutShown = (): boolean => cutOwner !== null && owner === cutOwner && tipView.value !== null;
+
+/**
+ * The nearest element, from `start` up, whose text is cut with "…", and its whole text:
+ * a CSS cut (`text-overflow: ellipsis` with more text than room) or cutHead's `[data-cut]` (the "…" at the head).
+ * Reads layout, so call it only once the pointer has rested.
+ */
+export function findCutText(start: Element | null): { el: HTMLElement; text: string } | null {
+  for (let el = start; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+    if (!(el instanceof HTMLElement)) continue;
+    if (el.hasAttribute("data-cut")) {
+      const text = (el.querySelector("[data-cut-text]") ?? el).textContent?.trim();
+      if (text) return { el, text };
+    }
+    if (getComputedStyle(el).textOverflow === "ellipsis" && el.scrollWidth > el.clientWidth) {
+      const text = el.textContent?.trim();
+      if (text) return { el, text };
+    }
+  }
+  return null;
+}
+
+/**
+ * One pointer listener for the whole page: rest on any text cut with "…" for TIP_DELAY_MS and its whole text shows,
+ * in the same box as the term tips. A tip of the element's own (use:term, use:tip …) wins: its timer was set earlier
+ * in the same pointer event, so it has already shown when this one fires. Nothing shows while a button is held.
+ * Returns the function that takes the listener off.
+ */
+export function watchCutText(root: Document = document): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let target: Element | null = null;
+  const clear = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const drop = () => {
+    clear();
+    if (cutShown()) hideTip();
+    cutOwner = null;
+  };
+  const show = () => {
+    timer = undefined;
+    if (tipView.value !== null || !target?.isConnected) return;
+    const found = findCutText(target);
+    if (!found) return;
+    const r = found.el.getBoundingClientRect();
+    owner = cutOwner = found.el;
+    tipView.value = { term: null, body: found.text, left: r.left, top: r.top, bottom: r.bottom };
+  };
+  const move = (e: PointerEvent) => {
+    if (e.buttons !== 0) return drop();
+    const at = e.target instanceof Element ? e.target : null;
+    if (cutShown() && at && cutOwner!.contains(at)) return;
+    drop();
+    target = at;
+    timer = setTimeout(show, TIP_DELAY_MS);
+  };
+  const out = (e: PointerEvent) => {
+    if (e.relatedTarget === null) drop();
+  };
+  root.addEventListener("pointermove", move);
+  root.addEventListener("pointerdown", drop);
+  root.addEventListener("pointerout", out);
+  return () => {
+    drop();
+    root.removeEventListener("pointermove", move);
+    root.removeEventListener("pointerdown", drop);
+    root.removeEventListener("pointerout", out);
+  };
+}

@@ -1,7 +1,9 @@
 <!-- 用語の説明の置き場。App に 1 つだけ置く。 -->
 <script lang="ts">
   import { TERM_SEPARATOR } from "../text/ja";
-  import { tipView } from "./tip.svelte";
+  import { tipView, watchCutText } from "./tip.svelte";
+
+  $effect(() => watchCutText());
 
   let width = $state(0);
   let height = $state(0);

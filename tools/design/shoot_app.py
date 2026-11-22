@@ -35,6 +35,7 @@ out = os.path.join(root, "docs", "screenshots")
 
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
+BIG, SMALLEST = ((1280, 800), 100), ((1280, 672), 150)
 CHORD = ["60", "64", "67"]
 QUIET = "25"
 TICKS_PER_QUARTER = 1920
@@ -512,6 +513,43 @@ STATES = {
                                       (1800, {"type": "toggleBand", "band": "history"}),
                                       (2000, {"type": "setTimelineOpen", "open": True}),
                                       (2200, {"type": "selectTimeline", "target": {"kind": "tempoPoint", "tick": 0}})]),
+    # Round 8. shots: the (size, scale) pairs taken instead of every SIZES x SCALES; SMALLEST is the
+    # smallest window (853x448 at 150 %).
+    "firstLaneApp": dict(board="F8-FirstLane", remembered=True, snap=3000, song=SONG7, loop=(5, 9), shots=[BIG],
+                         evals=[(2300, "document.querySelectorAll('[data-test=\"track-lanes\"]')[1].click()")]),
+    "multiClipApp": dict(board="F8-MultiClip", remembered=True, snap=3200, song=SONG7, loop=(5, 9), env=SINK_MONITOR,
+                         vocal=[vclip("歌 テイク 1", q(16), q(24), TAKE1, 5.0),
+                                vclip("歌 テイク 2", q(32), q(40), "歌 テイク 2.wav", 5.0),
+                                vclip("ハモり", q(48), q(56), "ハモり.wav", 5.0)],
+                         shots=[BIG, SMALLEST],
+                         commands=[(1500, {"type": "selectClips", "clips": [VOCAL + 1, VOCAL + 2, VOCAL + 3],
+                                           "mode": "replace"}),
+                                   (1800, {"type": "toggleBand", "band": "params"})]),
+    # 600 bars with 「2 ベース」 soloed: the check is still going at the shot.
+    "exportCheckApp": dict(board="F8-ExportCheck", remembered=True, snap=3600, song=SONG7 + ["--bars", "600"],
+                           loop=(5, 9), shots=[BIG, SMALLEST],
+                           commands=[(1300, {"type": "toggleSolo", "track": 4}), (1500, {"type": "openExport"})]),
+    # The master's limiter bypassed, every fader at +6 dB, more notes, hard pans: the check finds
+    # places over 0 dB.
+    "exportClipApp": dict(board="F8-ExportClip", remembered=True, snap=9000, song=SONG7 + ["--notes", "400", "--hard-pan"],
+                          loop=(5, 9), shots=[BIG],
+                          commands=[(1150, {"type": "toggleBypass", "insert": {"strip": {"kind": "master"}, "slot": 0}}),
+                                    (1200, {"type": "setGain", "strip": {"kind": "master"}, "db": 6.0, "commit": True})]
+                          + [(1250 + 10 * n, gain(t, 6.0, True)) for n, t in enumerate([1, 4, 7, 10, 13])]
+                          + [(1500, {"type": "openExport"})]),
+    # The vocal track selected in the smallest window: the input meter in two halves, the
+    # microphone's meter hearing the metronome (the input is the monitor of the output).
+    "r12MetersApp": dict(board="R12-Meters", remembered=True, snap=3600, song=SONG7, env=SINK_MONITOR,
+                         shots=[BIG, SMALLEST],
+                         commands=[(1500, {"type": "toggleMetronome"}), (1700, {"type": "addVocalTrack"}),
+                                   (1900, {"type": "playStop"})]),
+    # The same with the mixer open below: the slim input meter.
+    "r12FitApp": dict(board="R12-Fit", remembered=True, snap=3600, song=SONG7, env=SINK_MONITOR,
+                      shots=[BIG, SMALLEST],
+                      commands=[(1500, {"type": "toggleMetronome"}), (1700, {"type": "addVocalTrack"}),
+                                (1800, {"type": "toggleBand", "band": "mixer"}), (1900, {"type": "playStop"})]),
+    "packSettingsApp": dict(board="F8-PackSettings", remembered=True, snap=3000, song=SONG7, loop=(5, 9),
+                            shots=[BIG, SMALLEST], commands=[(1500, {"type": "openSettings", "advanced": True})]),
     "plugIn": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "3"]], snap=1500),
     "plugOut": dict(remembered=True, only_virtual=True, keys=[["appear", "--seconds", "2"]], snap=4000),
 }
@@ -742,21 +780,21 @@ def main():
                 stdout=subprocess.DEVNULL)
         settings = remembered_settings(work) if any(STATES[s].get("remembered") for s in states) else None
         for state in states:
-            for size in SIZES:
-                for scale in SCALES:
-                    stem = f"{state}-{size[0]}x{size[1]}-{scale}"
-                    if only and only != f"{size[0]}x{size[1]}-{scale}":
-                        continue
-                    shot = os.path.join(out, "app", stem + ".png")
-                    shoot(state, size, scale, settings, work, shot)
-                    print(shot)
-                    board = STATES[state].get("board")
-                    compare = os.path.join(out, "compare", stem + ".png")
-                    if board and not (small and scale != 100):
-                        sheet(shot, os.path.join(mocks, board + ".png"), board, stem, compare)
-                        print(compare)
-                    elif os.path.exists(compare):
-                        os.remove(compare)
+            pairs = STATES[state].get("shots") or [(size, scale) for size in SIZES for scale in SCALES]
+            for size, scale in pairs:
+                stem = f"{state}-{size[0]}x{size[1]}-{scale}"
+                if only and only != f"{size[0]}x{size[1]}-{scale}":
+                    continue
+                shot = os.path.join(out, "app", stem + ".png")
+                shoot(state, size, scale, settings, work, shot)
+                print(shot)
+                board = STATES[state].get("board")
+                compare = os.path.join(out, "compare", stem + ".png")
+                if board and not (small and scale != 100):
+                    sheet(shot, os.path.join(mocks, board + ".png"), board, stem, compare)
+                    print(compare)
+                elif os.path.exists(compare):
+                    os.remove(compare)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

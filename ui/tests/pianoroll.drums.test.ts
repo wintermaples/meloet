@@ -47,7 +47,7 @@ describe("行と名前（仕様書 3 章）", () => {
       "サイドスティック",
       "キック",
     ]);
-    expect(sectionText(specDocument(), "s3")).toContain(`上から ${names.join("、")} の順に`);
+    expect(sectionText(specDocument(), "s3")).toContain(`in this order from the top: ${names.map((n) => `「${n}」`).join(", ")}.`);
     for (const r of DRUM_ROWS) expect(texts[`drum.${r.id}` as keyof typeof texts].source).toBe("spec:3");
   });
 

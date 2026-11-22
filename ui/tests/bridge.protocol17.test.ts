@@ -20,6 +20,8 @@ import { mockScreenText as mockText, specDocument } from "./design-sources";
 /** モックも仕様書も、部品の境目に空白があったりなかったりするので、空白をぜんぶ取ってくらべる。 */
 const squash = (s: string) => s.replace(/\s+/g, "");
 const mockScreenText = (board: string) => squash(mockText(board));
+/** 仕様書の英語の文の中の、画面の名前の列: 「a」, 「b」, … */
+const quotedList = (names: string[]) => squash(names.map((n) => `「${n}」`).join(", "));
 
 let spec: string | null = null;
 /** 仕様書ぜんぶの文。 */
@@ -71,9 +73,9 @@ describe("約束 17 の形", () => {
     expect(SF2_DRUM_BANK).toBe(128);
     // 仕様書の見出しの数と同じだけある（名前は画面の文面）。
     const spec = specText();
-    expect(spec).toContain(squash("ピアノ、マレット、オルガン、ギター、ベース、弦、アンサンブル、金管、木管、笛、シンセリード、シンセパッド、シンセの効果、民族楽器、打楽器、効果音、ドラムのキット"));
-    expect(spec).toContain(squash("EQ、ダイナミクス、リバーブ、ディレイ、モジュレーション、ひずみ、フィルター、ピッチ、空間、分析、そのほか"));
-    expect(spec).toContain(squash("シンセ、サンプラー、ドラム、ピアノ ・ 鍵盤、そのほか"));
+    expect(spec).toContain(quotedList(["ピアノ", "マレット", "オルガン", "ギター", "ベース", "弦", "アンサンブル", "金管", "木管", "笛", "シンセリード", "シンセパッド", "シンセの効果", "民族楽器", "打楽器", "効果音", "ドラムのキット"]));
+    expect(spec).toContain(quotedList(["EQ", "ダイナミクス", "リバーブ", "ディレイ", "モジュレーション", "ひずみ", "フィルター", "ピッチ", "空間", "分析", "そのほか"]));
+    expect(spec).toContain(quotedList(["シンセ", "サンプラー", "ドラム", "ピアノ ・ 鍵盤", "そのほか"]));
   });
 
   it("同じ音をまとめる数（85）: 低い音から、5 つまで", () => {
@@ -312,7 +314,7 @@ describe("約束 17 の偽物の場面", () => {
     expect(kit.drumKeys).toHaveLength(47);
     expect(kit.drumKeys!.slice(0, 10)).toEqual([49, 57, 55, 52, 51, 59, 53, 46, 44, 42]);
     expect(kit.drumKeys!.slice(18, 25)).toEqual([40, 37, 36, 35, 54, 56, 58]);
-    expect(specText()).toContain(squash("35 キック 2、36 キック、37 サイドスティック、38 スネア、39 クラップ、40 スネア 2"));
+    expect(specText()).toContain(squash("35 「キック 2」, 36 「キック」, 37 「サイドスティック」, 38 「スネア」, 39 「クラップ」, 40 「スネア 2」"));
   });
 });
 

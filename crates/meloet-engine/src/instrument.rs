@@ -21,11 +21,11 @@ pub enum InstrumentEvent {
     AllNotesOff,
 }
 
-/// A press that comes from the song's sequence, with its place in the song. What an instrument
-/// would pick by chance or by turns (one of the samples that take turns, the start of a wave)
-/// it picks from here for such a press, so that a note of the song sounds the same wherever
-/// playing started and in the export (docs/architecture.md 22-25). Keys someone plays now
-/// have no place and come through [`Instrument::event`].
+/// A press or a move of the sustain pedal that comes from the song's sequence, with its place
+/// in the song. What an instrument would pick by chance or by turns (one of the samples that
+/// take turns, the start of a wave) it picks from here, so that a note of the song sounds the
+/// same wherever playing started and in the export (docs/architecture.md 22-25). Keys and
+/// pedals someone plays now have no place and come through [`Instrument::event`].
 #[derive(Clone, Copy, Debug)]
 pub struct SongPlace<'a> {
     seed: u32,
@@ -35,6 +35,9 @@ pub struct SongPlace<'a> {
     /// The velocities of the earlier presses of the key that the tally does not hold, in song
     /// order.
     earlier: &'a [u8],
+    /// For a move of the pedal: the earlier moves the same way in the song.
+    moves: u32,
+    chased: bool,
 }
 
 impl<'a> SongPlace<'a> {
@@ -44,6 +47,20 @@ impl<'a> SongPlace<'a> {
             seed,
             tally: None,
             earlier,
+            moves: 0,
+            chased: false,
+        }
+    }
+
+    /// The place of a move of the sustain pedal: `earlier_moves` presses of the pedal before
+    /// a press, lifts before a lift. `chased`: see [`SongPlace::chased`].
+    pub fn pedal(seed: u32, earlier_moves: u32, chased: bool) -> SongPlace<'static> {
+        SongPlace {
+            seed,
+            tally: None,
+            earlier: &[],
+            moves: earlier_moves,
+            chased,
         }
     }
 
@@ -52,6 +69,8 @@ impl<'a> SongPlace<'a> {
             seed,
             tally,
             earlier,
+            moves: 0,
+            chased: false,
         }
     }
 
@@ -72,6 +91,18 @@ impl<'a> SongPlace<'a> {
         });
         let rest = self.earlier.iter().filter(|&&v| lo <= v && v <= hi).count();
         tallied.wrapping_add(rest as u32)
+    }
+
+    /// For a move of the sustain pedal (value 64 and up is down): the earlier presses of the
+    /// pedal in the song if this is a press, the earlier lifts if a lift.
+    pub fn earlier_moves(&self) -> u32 {
+        self.moves
+    }
+
+    /// The pedal is where the song left it before the place playing starts from, not moved
+    /// here: playing from the head makes no sound of a move at this moment.
+    pub fn chased(&self) -> bool {
+        self.chased
     }
 }
 
@@ -100,6 +131,15 @@ pub trait Instrument: Send {
     /// as that event.
     fn song_note_on(&mut self, note: u8, velocity: u8, _place: SongPlace<'_>) {
         self.event(InstrumentEvent::NoteOn { note, velocity });
+    }
+    /// The sustain pedal (controller 64) from the song's sequence, on the audio thread like
+    /// [`Instrument::event`]. An instrument with no sound of its own for the pedal moving takes
+    /// it as that controller.
+    fn song_pedal(&mut self, value: u8, _place: SongPlace<'_>) {
+        self.event(InstrumentEvent::Control {
+            controller: 64,
+            value,
+        });
     }
     fn render(&mut self, left: &mut [f32], right: &mut [f32]);
     /// Silence at once: all voices and all held state (pedal, bend, modulation) are cleared.

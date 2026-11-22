@@ -34,6 +34,10 @@ fn playing_does_not_allocate() {
                 let place = SongPlace::new(block as u32, earlier);
                 sampler.song_note_on(96 + (block % 2) as u8, 1 + (block % 127) as u8, place);
             }
+            if block % 7 == 0 {
+                let place = SongPlace::pedal(block as u32, (block / 14) as u32, block % 5 == 0);
+                sampler.song_pedal(if block % 14 == 0 { 127 } else { 0 }, place);
+            }
             if block % 1500 == 1499 {
                 sampler.reset();
             }

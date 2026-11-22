@@ -32,6 +32,27 @@ const DEFAULT_VOLUME: u8 = 100;
 const MIX_SMOOTH_S: f32 = 0.02;
 /// A voice with a shape is never further from its file's pitch than this.
 const MAX_SHAPED_SEMITONES: f32 = 120.0;
+/// The groups of release sounds that take turns which a press of the song keeps its turns
+/// for; a key with more takes turns as they come in the others.
+const RELEASE_GROUPS: usize = 4;
+const NO_GROUP: u32 = u32::MAX;
+
+/// For each group of release sounds that take turns (or [`NO_GROUP`]), the turn its place in
+/// the song gives the release of a press.
+type ReleaseTurns = [(u32, u32); RELEASE_GROUPS];
+
+/// Where the regions that take turns take theirs from.
+#[derive(Clone, Copy)]
+enum Turn<'a> {
+    /// The counters, which go on from wherever they are: what someone plays now.
+    Counted,
+    /// A press of the song: the earlier presses of its key in the region's velocities.
+    Press(SongPlace<'a>),
+    /// A move of the song's pedal: the earlier moves the same way.
+    Nth(u32),
+    /// The release of a press: what the press's place gave each group, counted for the others.
+    Release(ReleaseTurns),
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Hold {
@@ -273,6 +294,7 @@ struct State {
     key_down: [bool; 128],
     /// The key went up while the pedal was down; its release sound waits for the pedal.
     key_waiting: [bool; 128],
+    release_turns: [ReleaseTurns; 128],
     key_velocity: [u8; 128],
     key_on_frame: [u64; 128],
     pedal: bool,
@@ -302,6 +324,7 @@ impl State {
         self.turn_moved.fill(0);
         self.key_down = [false; 128];
         self.key_waiting = [false; 128];
+        self.release_turns = [[(NO_GROUP, 0); RELEASE_GROUPS]; 128];
         self.pedal = false;
         self.bend_target = 0.0;
         self.bend = 0.0;
@@ -319,8 +342,7 @@ impl State {
         self.volume_target = share * share;
     }
 
-    /// `held_s`: how long the key was down, for a release sound. A press of the song takes the
-    /// turn its place gives: the earlier presses of its key in the region's velocities.
+    /// `held_s`: how long the key was down, for a release sound.
     fn trigger(
         &mut self,
         bank: &SampleBank,
@@ -328,7 +350,7 @@ impl State {
         key: u8,
         velocity: u8,
         held_s: f32,
-        place: Option<SongPlace<'_>>,
+        turn: Turn<'_>,
     ) {
         self.events += 1;
         let by_key = matches!(trigger, Trigger::Attack | Trigger::Release);
@@ -340,9 +362,14 @@ impl State {
                 continue;
             }
             let its_turn = region.round_robin.as_ref().is_none_or(|rr| {
-                let turn = match place {
-                    Some(place) => place.earlier(region.vel_lo, region.vel_hi),
-                    None => self.turns[rr.group as usize],
+                let counted = self.turns[rr.group as usize];
+                let turn = match turn {
+                    Turn::Counted => counted,
+                    Turn::Press(place) => place.earlier(region.vel_lo, region.vel_hi),
+                    Turn::Nth(n) => n,
+                    Turn::Release(turns) => (turns.iter())
+                        .find(|&&(group, _)| group == rr.group)
+                        .map_or(counted, |&(_, turn)| turn),
                 };
                 turn % rr.count == rr.index
             });
@@ -482,7 +509,25 @@ impl State {
         self.key_down[k] = true;
         self.key_velocity[k] = velocity;
         self.key_on_frame[k] = self.frame;
-        self.trigger(bank, Trigger::Attack, key, velocity, 0.0, place);
+        let mut release = [(NO_GROUP, 0); RELEASE_GROUPS];
+        if let Some(place) = place {
+            let mut kept = 0;
+            for &index in bank.candidates(Trigger::Release, key) {
+                let region = &bank.regions[index as usize];
+                let Some(rr) = region.round_robin.as_ref() else {
+                    continue;
+                };
+                let fits = (region.vel_lo..=region.vel_hi).contains(&velocity);
+                if fits && kept < RELEASE_GROUPS && release[..kept].iter().all(|g| g.0 != rr.group)
+                {
+                    release[kept] = (rr.group, place.earlier(region.vel_lo, region.vel_hi));
+                    kept += 1;
+                }
+            }
+        }
+        self.release_turns[k] = release;
+        let turn = place.map_or(Turn::Counted, Turn::Press);
+        self.trigger(bank, Trigger::Attack, key, velocity, 0.0, turn);
     }
 
     fn note_off(&mut self, bank: &SampleBank, key: u8) {
@@ -518,17 +563,20 @@ impl State {
             key,
             self.key_velocity[k],
             held_s,
-            None,
+            Turn::Release(self.release_turns[k]),
         );
     }
 
-    fn set_pedal(&mut self, bank: &SampleBank, down: bool) {
+    /// `turn`: `None` moves the pedal without the sound of it moving.
+    fn set_pedal(&mut self, bank: &SampleBank, down: bool, turn: Option<Turn<'_>>) {
         if down == self.pedal {
             return;
         }
         self.pedal = down;
         if down {
-            self.trigger(bank, Trigger::PedalDown, 0, 127, 0.0, None);
+            if let Some(turn) = turn {
+                self.trigger(bank, Trigger::PedalDown, 0, 127, 0.0, turn);
+            }
             return;
         }
         for v in self.voices.iter_mut().filter(|v| v.active) {
@@ -545,7 +593,9 @@ impl State {
                 }
             }
         }
-        self.trigger(bank, Trigger::PedalUp, 0, 127, 0.0, None);
+        if let Some(turn) = turn {
+            self.trigger(bank, Trigger::PedalUp, 0, 127, 0.0, turn);
+        }
     }
 
     fn release_all(&mut self) {
@@ -683,6 +733,7 @@ impl Sampler {
             turn_moved: vec![0; bank.round_robin_groups],
             key_down: [false; 128],
             key_waiting: [false; 128],
+            release_turns: [[(NO_GROUP, 0); RELEASE_GROUPS]; 128],
             key_velocity: [0; 128],
             key_on_frame: [0; 128],
             pedal: false,
@@ -732,7 +783,7 @@ impl Instrument for Sampler {
             InstrumentEvent::Control {
                 controller: CC_SUSTAIN,
                 value,
-            } => state.set_pedal(bank, value >= 64),
+            } => state.set_pedal(bank, value >= 64, Some(Turn::Counted)),
             InstrumentEvent::Control { controller, value } => {
                 let value = value.min(127);
                 match controller {
@@ -756,6 +807,11 @@ impl Instrument for Sampler {
         if velocity > 0 {
             (self.state).note_on(&self.bank, note & 127, velocity, Some(place));
         }
+    }
+
+    fn song_pedal(&mut self, value: u8, place: SongPlace<'_>) {
+        let turn = (!place.chased()).then_some(Turn::Nth(place.earlier_moves()));
+        (self.state).set_pedal(&self.bank, value >= 64, turn);
     }
 
     fn render(&mut self, left: &mut [f32], right: &mut [f32]) {

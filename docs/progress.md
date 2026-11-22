@@ -1662,3 +1662,11 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 音の素材の包み（音色ごと、26 ＋ 共通、238,909,440 バイト）を Release に上げてよい。タグは `sounds-2026.11.2`（中身は 2026.11.1 と同じ音、分けかただけが新しい）。目録の置き場所は `https://raw.githubusercontent.com/wintermaples/meloet/main/tools/sounds/catalog.json`（`main` へ入れたあとに効く）。Latest の印はつけない。
 - Release を immutable にする設定は、オーナーさんが入れる（上げる前に）。
 - コンテナ: meloet-agent を docker のグループに一時だけ入れる（`sudo usermod -aG docker meloet-agent`、終わったら `sudo gpasswd -d meloet-agent docker`。棟梁は `sg docker -c …` で使う）。
+
+### 静かな PC での測り（k8m、meloet-hard ・ Opus 5.5、`docs/measurements/2026-11-22-round8-quiet.md`、生の数は `target/measure/round8-quiet/`）
+
+- 条件: 1d46e91 の release、WebKitGTK `.2`、15:15〜16:35、ほかの係 ・ ビルドなし、load 0.47〜1.96 で始めた、Firefox のストリームがいた（オーナーさん）、quantum 256。
+- **WebKit の道: CPU の道に決めた**（棟梁。`main.rs` の `JSC_OPTIONS` に `WEBKIT_DISABLE_COMPOSITING_MODE=1`）。鍵 → 描いた の p50 は合成の道 7.6〜10.4 ms、CPU の道 0.4〜3.5 ms。ミキサー 8 帯をひらいた再生で「2 コマ以内」は合成 92.5〜95 %、CPU 99.2〜100 %、WebKit の CPU は合成 115 %、CPU 71 %。**引きかえ: アレンジの横の送りが CPU の道で 1 コマ 20 ms（p95 22〜27、最大 38）**（宿題）。鍵の間をばらした（`--jitter-ms 100`）。257 ms ちょうどだと合成の道のコマの時計とそろって読めなかった。
+- 16 トラックの Surge XT ＋ ZamComp（3 回 × 170 秒）: xrun 0 ・ 0 ・ 1（1 回目は Surge XT の係が止まった回）。xrun の秒に負荷は高くなかった（28〜42 %）。**meloet の音のスレッド（cpal の `pw_out`）は SCHED_OTHER ・ nice 0 で回っていた**（cpal 0.18.2 は `realtime` の機能を入れたときだけ上げる。meloet は入れていない）。プラグイン係の音のスレッドは SCHED_FIFO 20。1 ブロック 0.54 ms のうち約 0.33 ms はプラグインの返事を待つ時間。**Surge XT の係が再生の頭で落ちた回が 19 回に 2 回**（起動から 7.65 秒、見はりの 5 秒より早いので落ちた形。わけは見ていない）。
+- 再生しながら書き出す（8 回ずつ）: ZamComp の答えのない回は、書き出しなし 平均 11.9（2〜28）、書き出しをくり返す 8.1。第 7 回の「くり返し 13.5、なし 5」の形は消えた。言えるのは「nice 19 のもとで書き出しは答えのない回をふやさない」まで。
+- 宿題に足す: 音のスレッドをリアルタイムに（architecture 20 章 ・ 22 章の「リアルタイム」の書きかたも直す）、Surge XT の係が再生の頭で落ちる件、アレンジの送りの 20 ms。

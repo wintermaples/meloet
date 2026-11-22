@@ -35,9 +35,14 @@ const ENDING_WAIT: Duration = Duration::from_secs(3);
 /// one long-lived page at 60 Hz the full collection almost never comes: what each frame held
 /// for a moment piles up in the old space (+0.7..0.8 MB/s of RSS while playing or recording).
 /// Without generations every one of those idle collections is full: about 3 a second, mostly
-/// 1..3 ms each (`docs/measurements/2026-11-15-round3-fix-memory.md`, section g). A value set
-/// from outside wins, to compare.
-const JSC_OPTIONS: &[(&str, &str)] = &[("JSC_useGenerationalGC", "0")];
+/// 1..3 ms each (`docs/measurements/2026-11-15-round3-fix-memory.md`, section g).
+/// The page is drawn without the compositor: with it, a key waits for the compositor's next
+/// frame (8..10 ms more to the screen at p50) and an open mixer costs more
+/// (`docs/measurements/2026-11-22-round8-quiet.md`). A value set from outside wins, to compare.
+const JSC_OPTIONS: &[(&str, &str)] = &[
+    ("JSC_useGenerationalGC", "0"),
+    ("WEBKIT_DISABLE_COMPOSITING_MODE", "1"),
+];
 
 fn set_jsc_options() {
     for (name, value) in JSC_OPTIONS {

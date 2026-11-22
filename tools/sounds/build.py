@@ -844,7 +844,7 @@ def build_organ(b, kind):
         job = job_for(b, kind, name, [{"path": os.path.join(folder, f)}], loop=ORGAN_LOOPS[kind])
         jobs.append(job)
         # A pipe organ does not get louder with velocity, but the built-in organs all do, like the
-        # FluidR3 ones (Yachiyo's decision 2026-11-19).
+        # FluidR3 ones (the owner's decision).
         rows.append({"_file": name, "_out": job["out"], "keyLo": lo, "keyHi": hi, "root": key,
                      "ampVeltrack": 100, "attackMs": 1})
     results = b.run(jobs)
@@ -1378,7 +1378,7 @@ def fluid_filter(g, sr):
 
 
 # Guitars are levelled so that the strummed phrase of the listening tool peaks here: the peak of
-# the grand piano's sample phrase in that tool (render_pack, 2026-11-19).
+# the grand piano's sample phrase in that tool (render_pack).
 STRUMMED = {"guitarNylon", "guitarSteel", "guitarElectric", "guitarDistortion"}
 STRUM_PEAK_DB = -5.5
 PHRASE_RATE = 48000

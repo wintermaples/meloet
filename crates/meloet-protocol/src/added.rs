@@ -1,5 +1,5 @@
 //! 「あとから入れたもの」: SF2 files and plugins, as the shelf, the tracks and the insert slots
-//! show them, and what is said when one of them is not found (round 5).
+//! show them, and what is said when one of them is not found.
 
 use serde::{Deserialize, Serialize};
 

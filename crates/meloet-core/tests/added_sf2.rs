@@ -348,7 +348,7 @@ fn fluidr3_is_added_listed_and_played_when_this_pc_has_it() {
     else {
         panic!("{:?}", state.status.message);
     };
-    eprintln!("{file}: 音色 {presets} ・ ドラムのキット {kits}");
+    eprintln!("{file}: {presets} presets, {kits} drum kits");
     assert_eq!(file, "FluidR3_GM.sf2");
     // FluidR3 has 189 presets, 31 of them in the drum bank (Standard 1 to 7, Room 1 to 7, …).
     assert_eq!((presets, kits), (158, 31));

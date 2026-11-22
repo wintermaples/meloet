@@ -1,4 +1,4 @@
-//! Vocal clips, audio files and their waveforms (round 7, protocols 24 and 25;
+//! Vocal clips, audio files and their waveforms (protocols 24 and 25;
 //! docs/architecture.md 22-4, 22-8 to 22-10, 22-17 and 22-19, spec 3 26-A, 27-A, 28-A, 29-A,
 //! 30-C).
 

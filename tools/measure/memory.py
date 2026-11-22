@@ -340,7 +340,7 @@ def row(label, b):
 
 
 def summary(results):
-    lines = ["| 場面 / 手 / プロセス | RSS | PSS | heap | arena（数） | anon | shm | gpu | file |",
+    lines = ["| Scene / step / process | RSS | PSS | heap | arena (count) | anon | shm | gpu | file |",
              "|---|---|---|---|---|---|---|---|---|"]
     for r in results:
         for s in r["steps"]:
@@ -352,11 +352,11 @@ def summary(results):
             core = s.get("core") or {}
             held = [f"{b['name']} {b['mb']:.0f}" for b in core.get("sounds", []) + core.get("sf2", [])]
             if held:
-                lines.append(f"| {where} / サンプル（MiB） | {', '.join(held)} |||||||||")
+                lines.append(f"| {where} / samples (MiB) | {', '.join(held)} |||||||||")
             m = core.get("malloc")
             if m:
-                lines.append(f"| {where} / malloc（MiB） | 使用中 {m['inUseMb']:.0f}、空き {m['freeMb']:.0f}"
-                             f"（うち単独の領域 {m['mappedMb']:.0f} は使用中） |||||||||")
+                lines.append(f"| {where} / malloc (MiB) | in use {m['inUseMb']:.0f}, free {m['freeMb']:.0f}"
+                             f" (of which {m['mappedMb']:.0f} in separate mappings, in use) |||||||||")
     return "\n".join(lines) + "\n"
 
 

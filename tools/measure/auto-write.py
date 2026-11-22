@@ -257,28 +257,28 @@ def run(a):
                    "points": lane_points(saved), "drags": drags, "status": status}, f, indent=1)
 
     tick_ms = us_per_tick / 1000
-    md = [f"# 書いた点の位置（{a.state}、ドラッグ {a.drags} 回 × 動き {a.moves} 回）", "",
-          f"- テンポ {BPM}（1 ティック = {tick_ms:.3f} ms）。点 {len(points)}、出来事 {len(events)}。",
-          f"- ページの時刻は `Date.now()`（1 ms きざみ、読みに 0.5 ms 足した）を Python で CLOCK_MONOTONIC にした。"
-          f"`invoke('clock')` のいちばん速い片道: 画面 → Rust {legs[0][0]:.2f} ms ・ {legs[1][0]:.2f} ms、"
-          f"Rust → 画面 {legs[0][1]:.2f} ms ・ {legs[1][1]:.2f} ms（始め ・ 終わり。1 ms きざみの端をふくむ）。",
-          f"- 止めた位置 {stopped_at} ティック、止める意図の往復 {stop['b'] - stop['a']:.2f} ms。状態行: {status}"]
+    md = [f"# Where written points land ({a.state}, {a.drags} drags x {a.moves} moves)", "",
+          f"- Tempo {BPM} (1 tick = {tick_ms:.3f} ms). Points {len(points)}, events {len(events)}.",
+          f"- The page's times are `Date.now()` (1 ms steps, 0.5 ms added to each reading), turned into CLOCK_MONOTONIC in Python. "
+          f"Fastest one-way trip of `invoke('clock')`: page → Rust {legs[0][0]:.2f} ms, {legs[1][0]:.2f} ms; "
+          f"Rust → page {legs[0][1]:.2f} ms, {legs[1][1]:.2f} ms (start, end; includes the edge of the 1 ms steps).",
+          f"- Stopped at tick {stopped_at}, round trip of the stop intent {stop['b'] - stop['a']:.2f} ms. Status line: {status}"]
     if "keys" in rulers:
         k = rulers["keys"]
-        md.append(f"- 鍵のものさし: {k['notes']} 鍵、1 ティック = {k['b'] / 1000:.5f} ms、線からのはずれ最大 {k['worstMs']:.3f} ms。"
-                  f"止めた位置のものさしとの差 {(rulers['stop']['a'] + rulers['stop']['b'] * stopped_at - k['a'] - k['b'] * stopped_at) / 1000:+.3f} ms。")
+        md.append(f"- Key ruler: {k['notes']} keys, 1 tick = {k['b'] / 1000:.5f} ms, largest distance from the line {k['worstMs']:.3f} ms. "
+                  f"Difference from the stop-position ruler {(rulers['stop']['a'] + rulers['stop']['b'] * stopped_at - k['a'] - k['b'] * stopped_at) / 1000:+.3f} ms.")
     if "keysError" in rulers:
-        md.append(f"- 鍵のものさしは作れなかった: {rulers['keysError']}")
+        md.append(f"- Could not make the key ruler: {rulers['keysError']}")
     if not rows:
-        md.append(f"- **点と出来事の数が合わない**（点 {len(points)}、出来事 {len(events)}）。`points.json` を見る。")
-    md += ["", "点が置かれた位置が耳に届いた時刻 − 出来事を送った時刻（ms。平均 / 最小 / まん中 / p95 / 最大（数））:", "",
-           "| ものさし | 動かした（次のコマの呼び出しで送る） | 離した（すぐ送る） |", "|---|---|---|"]
-    for name, label in (("keys", "鍵"), ("stop", "止めた位置")):
+        md.append(f"- **The counts of points and events do not match** (points {len(points)}, events {len(events)}). See `points.json`.")
+    md += ["", "Time the point's position reached the ears − time the event was sent (ms; mean / min / median / p95 / max (count)):", "",
+           "| Ruler | Moved (sent at the next frame callback) | Let go (sent at once) |", "|---|---|---|"]
+    for name, label in (("keys", "Keys"), ("stop", "Stop position")):
         if name in rulers and rows:
             md.append(f"| {label} | {stats([r[name + 'LagMs'] for r in rows if r['kind'] == 'pointermove'])} | "
                       f"{stats([r[name + 'LagMs'] for r in rows if r['kind'] == 'pointerup'])} |")
     if rows:
-        md += ["", f"動かした出来事から、ページの 60 Hz のコマの次の番まで（ms。意図はこれを待たずに出ていた）: {stats([16.67 - r['sinceFrameMs'] for r in rows if r['kind'] == 'pointermove'])}"]
+        md += ["", f"From a move event to the page's next 60 Hz frame (ms; the intent went out without waiting for it): {stats([16.67 - r['sinceFrameMs'] for r in rows if r['kind'] == 'pointermove'])}"]
     text = "\n".join(md) + "\n"
     with open(os.path.join(out, "summary.md"), "w") as f:
         f.write(text)
@@ -316,13 +316,13 @@ def run_long(a):
     steps = rows[1:-1]
     held = sum(r["points"] for r in steps)
     first, last = rows[0], rows[-1]
-    md = [f"# {a.long:.0f} 秒ずっと書く（{a.hold_ms} ms ごとに離す）", "",
-          f"- 手 {len(steps)}、送った動き {sum(r['moves'] for r in steps)}、帯の点 {first['points']} → {last['points']}。",
-          f"- 履歴が持つ点の写し（手ごとの点の数の和）: {held} 点 = {held * 16 / 1048576:.1f} MiB（1 点 16 バイト）。",
-          f"- meloet の RSS: {first['meloet']['rssMb']} → {last['meloet']['rssMb']} MB"
-          f"（最大 {max(r['meloet']['rssMb'] for r in rows)}）。"
+    md = [f"# Writing for {a.long:.0f} s (let go every {a.hold_ms} ms)", "",
+          f"- Steps {len(steps)}, moves sent {sum(r['moves'] for r in steps)}, lane points {first['points']} → {last['points']}.",
+          f"- Point copies held by the history (sum of points per step): {held} points = {held * 16 / 1048576:.1f} MiB (16 bytes a point).",
+          f"- meloet RSS: {first['meloet']['rssMb']} → {last['meloet']['rssMb']} MB"
+          f" (max {max(r['meloet']['rssMb'] for r in rows)}). "
           f"WebKitWebProcess: {first['web']['rssMb']} → {last['web']['rssMb']} MB"
-          f"（最大 {max(r['web']['rssMb'] for r in rows)}）。"]
+          f" (max {max(r['web']['rssMb'] for r in rows)})."]
     text = "\n".join(md) + "\n"
     with open(os.path.join(out, "summary.md"), "w") as f:
         f.write(text)

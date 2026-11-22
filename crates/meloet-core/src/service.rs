@@ -42,6 +42,7 @@ use crate::hub::{Hub, MessageSink, TelemetrySink};
 use crate::instruments;
 use crate::made::{MadeKey, MadePlan, only_audio_differs, seat_audio};
 use crate::maker::{MadeNews, Maker};
+#[cfg(feature = "dev-hooks")]
 use crate::measure::{self, KeyToSound, PluginLog};
 use crate::mixbook::{self, MixBook};
 use crate::pcm::{FeedClip, PcmStore};
@@ -90,6 +91,7 @@ pub struct CoreOptions {
     /// Where `settings.json` lives. `None`: nothing is read or saved.
     pub config_dir: Option<PathBuf>,
     /// Where `key-to-sound.json` goes. `None`: nothing is recorded.
+    #[cfg(feature = "dev-hooks")]
     pub measure_dir: Option<PathBuf>,
     /// `None`: no keyboard input.
     pub midi: Option<MidiOptions>,
@@ -214,6 +216,7 @@ impl CoreOptions {
     pub fn from_env() -> CoreOptions {
         CoreOptions {
             config_dir: settings::config_dir(),
+            #[cfg(feature = "dev-hooks")]
             measure_dir: measure::dir_from_env(),
             midi: Some(MidiOptions::from_env()),
             devices: true,
@@ -232,6 +235,7 @@ impl CoreOptions {
     pub fn offline() -> CoreOptions {
         CoreOptions {
             config_dir: None,
+            #[cfg(feature = "dev-hooks")]
             measure_dir: None,
             midi: None,
             devices: false,
@@ -498,6 +502,7 @@ impl Core {
         };
         // For the measurements that need a loop with no cable: the monitor of this sink is
         // the input.
+        #[cfg(feature = "dev-hooks")]
         if let Some(sink) = std::env::var("MELOET_INPUT_SINK_MONITOR")
             .ok()
             .filter(|s| !s.is_empty())
@@ -599,8 +604,12 @@ impl Core {
                 .with_maker(maker),
                 model,
                 input: {
+                    #[cfg_attr(not(feature = "dev-hooks"), allow(unused_mut))]
                     let mut input = input::InputSide::new(options.state_dir.clone());
-                    input.measure_dir = options.measure_dir.clone();
+                    #[cfg(feature = "dev-hooks")]
+                    {
+                        input.measure_dir = options.measure_dir.clone();
+                    }
                     input
                 },
                 audio_store,
@@ -613,7 +622,9 @@ impl Core {
                 state_dir: options.state_dir.clone(),
                 recovery: options.state_dir.clone().map(recovery::Writer::start),
                 ending: Vec::new(),
+                #[cfg(feature = "dev-hooks")]
                 key_to_sound: options.measure_dir.clone().map(KeyToSound::new),
+                #[cfg(feature = "dev-hooks")]
                 plugin_log: options.measure_dir.clone().map(PluginLog::new),
                 links,
                 midi,
@@ -1953,7 +1964,9 @@ struct Worker {
     recovery: Option<recovery::Writer>,
     /// Waiting for the recovery file, for the PC ending.
     ending: Vec<Sender<()>>,
+    #[cfg(feature = "dev-hooks")]
     key_to_sound: Option<KeyToSound>,
+    #[cfg(feature = "dev-hooks")]
     plugin_log: Option<PluginLog>,
     links: Links,
     midi: Option<Midi>,
@@ -3173,6 +3186,7 @@ impl Worker {
         self.audio.resend_clips();
     }
 
+    #[cfg_attr(not(feature = "dev-hooks"), allow(unused_variables))]
     fn housekeeping(&mut self, last: bool) {
         self.poll_engine();
         self.audio.handle.drop_retired();
@@ -3195,6 +3209,7 @@ impl Worker {
         while let Some(record) = self.audio.handle.pop_latency() {
             if let Some(ms) = key_to_sound_ms(record) {
                 samples.push(ms);
+                #[cfg(feature = "dev-hooks")]
                 if let Some(log) = &mut self.key_to_sound {
                     log.add(record);
                 }
@@ -3203,6 +3218,7 @@ impl Worker {
         for ms in samples {
             self.handle(Input::LatencySample { ms });
         }
+        #[cfg(feature = "dev-hooks")]
         if let Some(log) = &mut self.key_to_sound {
             let state = self.hub.snapshot().state.audio;
             log.write(
@@ -3212,6 +3228,7 @@ impl Worker {
                 state.actual_frames,
             );
         }
+        #[cfg(feature = "dev-hooks")]
         if let (Some(log), Some(side)) = (&mut self.plugin_log, &self.plugins) {
             log.look(last, || side.hosts.processes());
         }

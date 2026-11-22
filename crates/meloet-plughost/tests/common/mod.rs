@@ -18,7 +18,34 @@ use meloet_plugin::wire::{
 };
 use meloet_plugin::{PluginKey, launch};
 
-pub const EXE: &str = env!("CARGO_BIN_EXE_meloet-plughost");
+/// The binary of this build with its fake plugins (feature `dev-hooks`). The binary Cargo
+/// builds for these tests has none, so it is built again here, into the same place; that does
+/// nothing when it is up to date.
+pub fn exe() -> &'static str {
+    static EXE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    EXE.get_or_init(|| {
+        let exe = env!("CARGO_BIN_EXE_meloet-plughost");
+        let profile = Path::new(exe).parent().expect("the profile folder");
+        let target = profile.parent().expect("the target folder");
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let mut build = std::process::Command::new(cargo);
+        build.args([
+            "build",
+            "--quiet",
+            "-p",
+            "meloet-plughost",
+            "--features",
+            "dev-hooks",
+        ]);
+        build.arg("--target-dir").arg(target);
+        if profile.ends_with("release") {
+            build.arg("--release");
+        }
+        let built = build.status().expect("cargo runs");
+        assert!(built.success(), "meloet-plughost did not build");
+        exe
+    })
+}
 pub const FAKE: &str = "MELOET_PLUGHOST_FAKE";
 pub const GEOMETRY: Geometry = Geometry {
     max_frames: 256,
@@ -79,7 +106,8 @@ impl Host {
         let map = Arc::new(Mapping::create(geometry).unwrap());
         let (ours, theirs) = UnixStream::pair().unwrap();
         let mut command =
-            launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None, offline).unwrap();
+            launch::host_command(Path::new(exe()), theirs.as_fd(), map.fd(), None, offline)
+                .unwrap();
         command.env_remove(FAKE);
         for (name, value) in env {
             command.env(name, value);

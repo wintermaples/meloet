@@ -14,7 +14,7 @@
 # how loud and how high the keys were on the left, how loud each side was while the song
 # played, and the plugins and SF2 presets of the saved song with the size and sha256 of each
 # plugin state. DIR/raw/saved.meloet is the song as saved.
-# Builds nothing. Changes nothing on the PC.
+# Builds nothing (tools/measure/build-dev.sh first). Changes nothing on the PC.
 set -euo pipefail
 
 song=

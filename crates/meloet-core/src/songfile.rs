@@ -1759,11 +1759,11 @@ fn to_take(t: TakeFile, origin: Option<TakeOrigin>) -> Option<Take> {
 /// Where songs go when nothing else is said: `$MELOET_SONGS_DIR`, the PC's music folder, or
 /// `~/Music`.
 pub fn songs_dir() -> Option<PathBuf> {
-    std::env::var_os("MELOET_SONGS_DIR")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(dirs::audio_dir)
-        .or_else(|| dirs::home_dir().map(|h| h.join("Music")))
+    #[cfg(feature = "dev-hooks")]
+    if let Some(dir) = std::env::var_os("MELOET_SONGS_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    dirs::audio_dir().or_else(|| dirs::home_dir().map(|h| h.join("Music")))
 }
 
 /// `<name>.meloet.prev`: the file as it was before the last save.

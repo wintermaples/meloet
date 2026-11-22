@@ -53,6 +53,8 @@ VS Code では（`.vscode/`、拡張機能 CodeLLDB が要る）:
 ```bash
 scripts/check-all.sh             # 書きかたの検査、clippy、Rust のテスト、型の検査、画面のテスト、ライセンス
 scripts/check-all.sh --devices   # 上に加えて、鍵盤・PipeWire・音の出口が要るテスト
+scripts/check-release.sh         # 配る形（feature なしの release と本番の ui/dist）に、開発の仕込みの名前が 1 つもないこと
+tools/measure/build-dev.sh       # 測る道具が動かす形（MELOET_DEV_HOOKS=1 の画面と --features dev-hooks の release）を作る
 python3 -I tools/design/render_mocks.py target/mock-png          # モック（docs/design/mock/）を PNG に
 python3 -I tools/design/shoot_ui.py target/compare connect2      # 画面（偽物の状態）とモックを左右にならべる
 tools/measure/latency.sh --window 1920x1080 --count 120 --out target/measure/run   # 鍵 → 画面、鍵 → 音を測る（--state playing|recording も）
@@ -64,6 +66,12 @@ tools/measure/long-record.sh            # 10 分録りつづける（xrun、メ�
 ## 開発用の環境変数（なければ何もしない）
 
 | 変数 | すること |
+|---|---|
+| `JSC_useGenerationalGC` | meloet は立ちあがるときに 0 にする（ウェブのプロセスのメモリがふえつづけないように）。外から決めればそちらが勝つ |
+
+下の `MELOET_*` は、**開発のビルドだけ**にある（`cargo build --release -p meloet-app --features dev-hooks`、画面は `MELOET_DEV_HOOKS=1 npm run build`。`tools/measure/build-dev.sh` が両方を作る）。配る meloet（feature なし）では、決めても何もしない（名前も実行ファイルに入っていない。`docs/architecture.md` 23-11）。プラグイン係の `MELOET_PLUGHOST_FAKE` ・ `MELOET_PLUGHOST_RT` ・ `MELOET_PLUGHOST_NO_DUMP` も同じ（`-p meloet-plughost --features dev-hooks`）。
+
+| 変数（開発のビルドだけ） | すること |
 |---|---|
 | `MELOET_WINDOW=1280x800` | 窓の内側の大きさ |
 | `MELOET_SNAPSHOT=out.png`、`MELOET_SNAPSHOT_AFTER_MS=1500` | 画面を PNG に書いて終わる |
@@ -86,7 +94,9 @@ tools/measure/long-record.sh            # 10 分録りつづける（xrun、メ�
 | `MELOET_PACK_CATALOG=file` | 試験用: 実行ファイルに入った目録（`tools/sounds/catalog.json`）のかわりに、そのファイルを読む |
 | `MELOET_OPEN_SONG=file.meloet` | 立ちあげたら、その曲をひらく（PC のファイルの窓のかわり） |
 | `MELOET_UI_SCRIPT=pr-scroll\|pr-zoom\|pr-drag:N` | `MELOET_MEASURE_DIR` があるときだけ、ページの中で送る・拡大・ドラッグを自動でくりかえして測る |
-| `JSC_useGenerationalGC` | meloet は立ちあがるときに 0 にする（ウェブのプロセスのメモリがふえつづけないように）。外から決めればそちらが勝つ |
+| `MELOET_SF2_DIR=dir` | 試験用: 写した SF2 の置き場所を変える |
+| `MELOET_INPUT_SINK_MONITOR=sink` | 測る用: その出口のモニタを入力にする（線のいらない録りの試験） |
+| `MELOET_DEBUG_SCREEN=1` | 画面の働ける広さ、窓、内側の大きさを、計るたびに stderr に出す |
 
 ## 検証の試作
 

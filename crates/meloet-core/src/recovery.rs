@@ -31,14 +31,13 @@ pub const FILE_NAME: &str = "recovery.json";
 
 /// `$MELOET_STATE_DIR`, `$XDG_STATE_HOME/meloet`, or `~/.local/state/meloet`.
 pub fn dir() -> Option<PathBuf> {
-    std::env::var_os("MELOET_STATE_DIR")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            dirs::state_dir()
-                .or_else(|| dirs::home_dir().map(|h| h.join(".local/state")))
-                .map(|d| d.join("meloet"))
-        })
+    #[cfg(feature = "dev-hooks")]
+    if let Some(dir) = std::env::var_os("MELOET_STATE_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    dirs::state_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local/state")))
+        .map(|d| d.join("meloet"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

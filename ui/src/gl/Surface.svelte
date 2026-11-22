@@ -24,23 +24,26 @@
       if (measure && e.type === "note" && e.on) measure.noteOn(e.note, e.tUs);
       made.onEvent(e);
     });
-    measureEnabled()
-      .then((on) => {
-        if (!on || gone) return;
-        measure = new KeyToScreen({ clockOffsetUs, report: measureReport, now: () => performance.now() });
-        made.onFrame = (ts) => measure?.drawn(ts);
-        measure.start();
-        profile = new FrameProfile(measureReport);
-        made.profile = profile;
-        profile.start();
-        return uiScript();
-      })
-      .then(async (script) => {
-        if (!script || gone) return;
-        const dev = await import("../dev/start");
-        if (!gone) stopScript = dev.startUiScript(script, measureReport);
-      })
-      .catch(() => {});
+    // Only a build with the development hooks measures (MELOET_DEV_HOOKS=1, vite.config.ts).
+    if (__DEV_HOOKS__) {
+      measureEnabled()
+        .then((on) => {
+          if (!on || gone) return;
+          measure = new KeyToScreen({ clockOffsetUs, report: measureReport, now: () => performance.now() });
+          made.onFrame = (ts) => measure?.drawn(ts);
+          measure.start();
+          profile = new FrameProfile(measureReport);
+          made.profile = profile;
+          profile.start();
+          return uiScript();
+        })
+        .then(async (script) => {
+          if (!script || gone) return;
+          const dev = await import("../dev/start");
+          if (!gone) stopScript = dev.startUiScript(script, measureReport);
+        })
+        .catch(() => {});
+    }
 
     return () => {
       gone = true;

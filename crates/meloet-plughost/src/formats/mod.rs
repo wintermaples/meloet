@@ -13,6 +13,7 @@
 //! events. So a `Processor` learns of every change through [`ProcessBlock::events`] and of
 //! nothing else, and a `Controller` never has to reach its `Processor` itself.
 
+#[cfg(any(test, feature = "dev-hooks"))]
 pub mod fake;
 pub mod lv2;
 pub mod vst3;
@@ -296,6 +297,7 @@ pub struct Loaded {
 
 /// Loads the plugin and makes it ready to run. On the main thread.
 pub fn load(key: &PluginKey, bundle: &Path, activation: Activation) -> Result<Loaded, String> {
+    #[cfg(any(test, feature = "dev-hooks"))]
     if let Some(loaded) = fake::load(key, activation) {
         return loaded;
     }

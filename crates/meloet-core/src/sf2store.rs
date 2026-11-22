@@ -20,10 +20,11 @@ use crate::instruments::Samples;
 /// `$MELOET_SF2_DIR` (for tests), else `meloet/sf2` in the user's data folder
 /// (`$XDG_DATA_HOME`, usually `~/.local/share`).
 pub fn dir() -> Option<PathBuf> {
-    std::env::var_os("MELOET_SF2_DIR")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| dirs::data_dir().map(|d| d.join("meloet").join("sf2")))
+    #[cfg(feature = "dev-hooks")]
+    if let Some(dir) = std::env::var_os("MELOET_SF2_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    dirs::data_dir().map(|d| d.join("meloet").join("sf2"))
 }
 
 /// One preset of a file, as the shelf and the tracks need it.

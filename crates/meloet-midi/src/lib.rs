@@ -113,6 +113,7 @@ impl MidiOptions {
     /// `only_virtual` when it has `MELOET_ONLY_VIRTUAL=1`, `virtual_names` is
     /// `MELOET_VKEYS_NAME=<name>[,<name>…]`, and `fail_after_events` is
     /// `MELOET_MIDI_FAIL_AFTER=<events>` (a development aid).
+    #[cfg(feature = "dev-hooks")]
     pub fn from_env() -> Self {
         let on = |name: &str| std::env::var_os(name).is_some_and(|v| v == "1");
         Self {
@@ -129,6 +130,12 @@ impl MidiOptions {
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
         }
+    }
+
+    /// Only real keyboards: the environment is read only by a build with `dev-hooks`.
+    #[cfg(not(feature = "dev-hooks"))]
+    pub fn from_env() -> Self {
+        Self::default()
     }
 }
 

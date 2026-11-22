@@ -47,8 +47,7 @@ target=${CARGO_TARGET_DIR:-$root/target}
 case "$target" in /*) ;; *) target=$root/$target ;; esac
 
 if [ "$build" = 1 ]; then
-  (cd "$root/ui" && npm run build)
-  (cd "$root" && cargo build --release -p meloet-app)
+  "$root/tools/measure/build-dev.sh"
 fi
 
 work=$(mktemp -d)

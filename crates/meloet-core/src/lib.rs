@@ -14,6 +14,7 @@ mod instruments;
 pub mod layout;
 pub mod made;
 pub mod maker;
+#[cfg(feature = "dev-hooks")]
 pub mod measure;
 mod mixbook;
 pub mod pcm;

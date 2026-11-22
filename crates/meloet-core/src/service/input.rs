@@ -1,6 +1,7 @@
 //! The PC's input on the core thread: the stream, its feed into the engine, the disk writer
 //! and the clicks of the latency measurement (docs/architecture.md 22-5 to 22-7).
 
+#[cfg(feature = "dev-hooks")]
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -102,6 +103,7 @@ pub(super) struct InputSide {
     peaks: Vec<RecPeaks>,
     pub(super) kept_note: KeptNote,
     /// `MELOET_MEASURE_DIR`: what a recording skipped is written there too.
+    #[cfg(feature = "dev-hooks")]
     pub(super) measure_dir: Option<PathBuf>,
 }
 
@@ -119,6 +121,7 @@ impl InputSide {
             delays_said: None,
             peaks: Vec::new(),
             kept_note: KeptNote::None,
+            #[cfg(feature = "dev-hooks")]
             measure_dir: None,
         }
     }
@@ -294,6 +297,7 @@ impl Worker {
             written.frames
         );
         eprintln!("meloet: {line}");
+        #[cfg(feature = "dev-hooks")]
         if let Some(dir) = &self.input.measure_dir {
             let file = std::fs::File::options()
                 .create(true)

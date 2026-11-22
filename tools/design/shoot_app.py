@@ -524,9 +524,11 @@ def run(cmd, **kw):
 def build():
     env = dict(os.environ)
     env["PATH"] = os.path.expanduser("~/.local/node/bin") + os.pathsep + env.get("PATH", "")
+    # The development hooks (MELOET_WINDOW, MELOET_SNAPSHOT, ...) are only in this build.
+    env["MELOET_DEV_HOOKS"] = "1"
     run(["npm", "run", "build"], cwd=os.path.join(root, "ui"), env=env, stdout=subprocess.DEVNULL)
-    run(["cargo", "build", "--release", "-p", "meloet-app", "-p", "meloet-midi", "-p", "meloet-plughost"],
-        cwd=root, env=env)
+    run(["cargo", "build", "--release", "-p", "meloet-app", "-p", "meloet-midi", "-p", "meloet-plughost",
+         "--features", "dev-hooks"], cwd=root, env=env)
 
 
 def start_app(config, size, extra, log):

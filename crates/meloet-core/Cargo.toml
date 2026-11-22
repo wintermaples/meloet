@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# The development and measuring hooks: the MELOET_* places, the measurements, the test keyboards,
+# the test server of the sound pack. Not in the build that is handed out
+# (docs/architecture.md 23-11).
+dev-hooks = ["meloet-midi/dev-hooks"]
+
 [dependencies]
 dirs = { workspace = true }
 meloet-devices = { workspace = true }
@@ -29,6 +35,8 @@ rubato = { version = "=5.1.0", default-features = false, features = ["fft_resamp
 flacenc = { version = "=0.5.1", default-features = false }
 
 [dev-dependencies]
+# The tests reach the hooks above (MELOET_INPUT_SINK_MONITOR, the measurements).
+meloet-core = { path = ".", features = ["dev-hooks"] }
 # The export's engine is watched for memory taken in its blocks, as the playing one is.
 meloet-engine = { workspace = true, features = ["rt-check"] }
 # The tests look at the plugin windows as a person's desktop has them.

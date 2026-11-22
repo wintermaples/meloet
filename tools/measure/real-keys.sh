@@ -20,7 +20,7 @@ if [ -z "$bin" ]; then
   done
 fi
 if [ -z "$bin" ] || [ ! -x "$bin" ]; then
-  echo "real-keys.sh: no release meloet found; build it with: cargo build --release -p meloet-app" >&2
+  echo "real-keys.sh: no release meloet found; build it with: tools/measure/build-dev.sh" >&2
   exit 1
 fi
 

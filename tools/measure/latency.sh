@@ -116,8 +116,7 @@ case "$state" in
 esac
 
 if [ "$build" = 1 ]; then
-  if [ "$keep_ui" = 0 ]; then (cd "$root/ui" && npm run build); fi
-  (cd "$root" && cargo build --release -p meloet-app -p meloet-midi -p meloet-plughost)
+  if [ "$keep_ui" = 0 ]; then "$root/tools/measure/build-dev.sh"; else "$root/tools/measure/build-dev.sh" --keep-ui; fi
 fi
 for bin in meloet meloet-vkeys meloet-plughost; do
   if [ ! -x "$target/release/$bin" ]; then

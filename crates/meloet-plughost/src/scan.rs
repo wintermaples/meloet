@@ -10,9 +10,12 @@ use std::path::Path;
 use meloet_plugin::wire::{ScanOutput, WireError, write_frame};
 use meloet_plugin::{PluginFormat, PluginInfo};
 
-use crate::formats::{Candidate, fake, lv2, vst3};
+#[cfg(any(test, feature = "dev-hooks"))]
+use crate::formats::fake;
+use crate::formats::{Candidate, lv2, vst3};
 
 fn list(format: PluginFormat, bundle: &Path) -> Result<Vec<Candidate>, String> {
+    #[cfg(any(test, feature = "dev-hooks"))]
     if let Some(listed) = fake::list(bundle) {
         return listed;
     }
@@ -23,6 +26,7 @@ fn list(format: PluginFormat, bundle: &Path) -> Result<Vec<Candidate>, String> {
 }
 
 fn probe(format: PluginFormat, bundle: &Path, id: &str) -> Result<PluginInfo, String> {
+    #[cfg(any(test, feature = "dev-hooks"))]
     if let Some(probed) = fake::probe(bundle, id) {
         return probed;
     }

@@ -28,7 +28,8 @@
     "icon": ["icons/32x32.png", "icons/64x64.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
     "category": "Music",
     "license": "MIT OR Apache-2.0",
-    "shortDescription": "MIDI 鍵盤ではじめる、音楽づくりのアプリ",
+    "shortDescription": "Music-making app to start with a MIDI keyboard",
+    "longDescription": "meloet is a DAW for people who have just got a MIDI keyboard. Plug in\nthe keyboard and play: meloet records what you play, and you can fix the\nnotes in the piano roll, arrange the clips, mix the tracks and export\nthe song as an audio file. The instrument sounds (about 240 MB) are\ndownloaded from GitHub the first time, when you say yes. VST3 and LV2\nplugins can also be used.",
     "linux": {
       "deb": {
         "depends": [

@@ -58,7 +58,7 @@ function bump(ticks: Map<number, Tick>, track: number): void {
   }
 }
 
-/** 線の上のいちばん新しい位置（トラック → 何を（targetKey）→ 位置）。帯の見出しとパラメータの欄が読む。 */
+/** 線の上のいちばん新しい位置（トラック → 何を（targetKey）→ 位置）。帯の見出し、パラメータの欄、ミキサーの値の字が読む。 */
 const latest = new Map<number, Map<string, number>>();
 const latestTicks = new Map<number, Tick>();
 /** ミキサーのストリップに見せている位置。待つトラックでは、latest よりおくれる。 */
@@ -143,6 +143,7 @@ export function refreshPositions(state: AppState, tick: number, inFrame = false)
     if (seenTracks.has(track)) continue;
     latest.delete(track);
     bump(latestTicks, track);
+    tellLive(track);
     waiting.delete(track);
     show(track);
   }
@@ -178,6 +179,7 @@ function refreshTrack(track: TrackView, held: AppState["automation"]["held"], ti
   seenTracks.add(track.id);
   if (!changed) return;
   bump(latestTicks, track.id);
+  tellLive(track.id);
   if (!wait) show(track.id);
   else if (!waiting.has(track.id)) waiting.set(track.id, 0);
 }
@@ -256,6 +258,45 @@ export function gateTrack(track: number, part: StripPart, told: () => void): () 
     any = false;
     show(track);
     if (any) wrote += 1;
+  };
+}
+
+// ミキサーの値の字は毎コマ（仕様書 3 章「オートメーションで動くつまみ」）。ただし帯の見出しの字と同じ書きかえ（同じレイアウト）に入れない:
+// 見出しの字とミキサーの行が 1 回のレイアウトにたまると、WebKit の Region がこみ入って「ぜんぶを囲む四角」になる（7 章「レイアウトで
+// ためる Region」）。見出しを書いたあとの次の小さな仕事で書き、書いたあとにもレイアウトをすませる（AutoClock の wroteVersion）。
+
+/** トラック → いちばん新しい位置が変わるたびに呼ぶ関数（毎コマ変わる値の字のまわりの箱。coverIf の askLive）。 */
+const liveWatchers = new Map<number, Set<() => void>>();
+const mixerTicks = new Map<number, Tick>();
+const mixerPending = new Set<number>();
+function tellLive(track: number): void {
+  if (mixerPending.size === 0) queueMicrotask(writeMixer);
+  mixerPending.add(track);
+}
+function writeMixer(): void {
+  for (const track of mixerPending) {
+    bump(mixerTicks, track);
+    const set = liveWatchers.get(track);
+    if (set) for (const tell of set) tell();
+  }
+  mixerPending.clear();
+  wrote += 1;
+}
+
+/** ミキサーの値の字に出す、いちばん新しい位置（帯の見出しより 1 つあとの書きかえで変わる）。動かしていなければ null。 */
+export function mixerLivePosition(track: number, target: AutoTarget): number | null {
+  reads(mixerTicks, track);
+  return latest.get(track)?.get(targetKey(target)) ?? null;
+}
+
+/** そのトラックのいちばん新しい位置が変わるたびに told を呼ぶ。返す関数でやめる。 */
+export function watchLive(track: number, told: () => void): () => void {
+  const set = liveWatchers.get(track) ?? new Set();
+  liveWatchers.set(track, set);
+  set.add(told);
+  return () => {
+    set.delete(told);
+    if (set.size === 0 && liveWatchers.get(track) === set) liveWatchers.delete(track);
   };
 }
 

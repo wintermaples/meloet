@@ -66,6 +66,10 @@ export const METER = {
   clip: "color.rec",
 } as const satisfies Record<string, ColorName>;
 
+/** Spec 3, 「マイクの計の目盛」(38-B) and 「マイクの計の地と線」: the dB in the middle, the ground, the white line of the 1 s peak. */
+export const MIC_MID_DB = -12;
+export const MIC_METER = { ground: "color.gray.4", peak: "color.gray.10" } as const satisfies Record<string, ColorName>;
+
 /** F-Empty / F-Connect1, the bar lines of the arrange area. */
 /** Bar lines alone are gray.4 (Main). With beat lines (B-61), as in the piano roll: bars gray.6, beats gray.4. */
 export const ARRANGE_GRID = { line: "color.gray.4", bar: "color.gray.6", beat: "color.gray.4" } as const;

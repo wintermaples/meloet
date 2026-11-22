@@ -16,7 +16,7 @@
   import { openShelf } from "../tracks.svelte";
   import { vocalInputRows } from "../trackMenu";
   import Strip from "./Strip.svelte";
-  import { shownPosition } from "../automation/autoState.svelte";
+  import { mixerLivePosition, shownPosition } from "../automation/autoState.svelte";
   import { hasLaneRef, laneMoves, laneOf, panAt, type AutoLook, type StripAuto } from "../automation/laneValue";
   import { fracToDb } from "./scale";
   import type { AutoTarget } from "../../bridge";
@@ -78,6 +78,11 @@
       const pos = auto.sends[i] === "moving" ? shownPosition(track.id, { kind: "send", bus }) : null;
       return pos === null ? track.sends[i]! : fracToDb(pos);
     }) as [number | null, number | null];
+  }
+  /** フェーダーの値の字に出す、帯の線の上のいちばん新しい値（毎コマ）。動かしていなければ undefined。 */
+  function liveValues(track: TrackView, auto: StripAuto): { gainDb?: number | null } {
+    const pos = auto.gain === "moving" ? mixerLivePosition(track.id, { kind: "volume" }) : null;
+    return { gainDb: pos === null ? undefined : fracToDb(pos) };
   }
   function shownMuted(track: TrackView): boolean {
     const lane = laneOf(track, { kind: "mute" });
@@ -201,6 +206,7 @@
           meter={{ track: track.number }}
           mute={{ on: shownMuted(track), usable: true, run: () => send({ type: "toggleMute", track: track.id }) }}
           {auto}
+          live={liveValues(track, auto)}
           solo={{ on: track.soloed, usable: true, run: () => send({ type: "toggleSolo", track: track.id }) }}
           arm={track.kind.kind === "vocal"
             ? { on: track.kind.armed, usable: true, run: () => send({ type: "toggleVocalArm", track: track.id }) }

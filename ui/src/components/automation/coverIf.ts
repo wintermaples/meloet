@@ -2,7 +2,7 @@
 // （docs/architecture.md 7 章「CPU で描く WebKit」「レイアウトでためる Region」）。
 
 import { glSlot } from "../../gl/slot";
-import { gateTrack, showTrack, type StripPart } from "./autoState.svelte";
+import { gateTrack, showTrack, watchLive, type StripPart } from "./autoState.svelte";
 
 /** 背景の絵のない箱では、どちらも見た目は同じ。 */
 const SAME = ["0% 0%", "100% 0%"] as const;
@@ -13,8 +13,13 @@ const SAME = ["0% 0%", "100% 0%"] as const;
  * 「ぜんぶを囲む四角」にまとめてしまうので、先に大きな四角を 1 つ頼んでおく（スタイルの分は、レイアウトの分より先にたまる）。
  */
 export function askWhole(node: HTMLElement): void {
+  // 同じコマに 2 回入れかえると、もとの値にもどって四角を頼まない。1 コマに 1 回だけ（コマの仕事が終わったら忘れる）。
+  if (askedNow.has(node)) return;
+  if (askedNow.size === 0) queueMicrotask(() => askedNow.clear());
+  askedNow.add(node);
   node.style.backgroundPosition = node.style.backgroundPosition === SAME[0] ? SAME[1] : SAME[0];
 }
+const askedNow = new Set<HTMLElement>();
 
 /** node いっぱいに置く空の箱（askWhole に渡す）。node は position が static でない箱。左右に出したいときは、node に CSS の変数
  * --ask-left ・ --ask-right、上に出したいときは --ask-top（負の長さ）を決める。 */
@@ -78,6 +83,32 @@ export function askIf(node: HTMLElement, what: { track: number; part: StripPart 
     on = { open: gateTrack(next.track, next.part, () => askWhole(whole)), whole };
   }
   set(what);
+  return {
+    update: set,
+    destroy() {
+      set(null);
+    },
+  };
+}
+
+/**
+ * canvas の下にある、毎コマ変わる値の字の箱（フェーダーの値）: いちばん新しい位置が変わるたびに、箱まるごとの四角を頼む。
+ * その箱の上の canvas が出ないコマでも、となりのストリップの箱とつながった四角 1 つになる。
+ */
+export function askLive(node: HTMLElement, track: number | null) {
+  let on: { close: () => void; whole: HTMLElement } | null = null;
+  let now: number | null = null;
+  function set(next: number | null): void {
+    if (next === now) return;
+    now = next;
+    on?.close();
+    on?.whole.remove();
+    on = null;
+    if (next === null) return;
+    const whole = wholeBox(node);
+    on = { close: watchLive(next, () => askWhole(whole)), whole };
+  }
+  set(track);
   return {
     update: set,
     destroy() {

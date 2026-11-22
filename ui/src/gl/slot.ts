@@ -92,9 +92,10 @@ export type GlSlot =
   | { kind: "velocity" }
   /**
    * Two level bars with `gap` CSS px between them: horizontal, left above right; `vertical` (mixer strips),
-   * standing, left beside right. `toZero`: the bar ends at 0 dB, not +6 (the mic meter of the input meter, −60〜0).
+   * standing, left beside right. `mic`: the mic meter of the input meter (spec 3, 38-B: −60〜−12 the left half, −12〜0 the
+   * right half, ground gray.4) with a white line at `peakDb`, the peak of the last second (the same number as the dB beside it).
    */
-  | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean; toZero?: boolean }
+  | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean; mic?: { peakDb: number } }
   /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. `beats` > 1: beat lines too, that many to a bar. */
   | { kind: "arrangeGrid"; barPx: number; firstBarX: number; beats?: number }
   /**

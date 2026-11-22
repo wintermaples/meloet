@@ -34,6 +34,7 @@
   import { runShown } from "./export/exportText";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { laneNameText, stepNameText, stepWhatText } from "./history/stepText";
+  import { laneAddOpenFor } from "./automation/laneAdd.svelte";
   import { stripName } from "./mixer/stripName";
   import { paramName, valueText } from "./params/paramRows";
   import { paramUi } from "./params/paramUi.svelte";
@@ -853,6 +854,10 @@
       const parts = joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], open);
       return { parts, strong: [], button: null };
     }
+    // 見出しの「帯」の一覧をひらいている間（モック F8-FirstLane）。
+    const laneAdd = laneAddOpenFor();
+    const laneTrack = laneAdd === null ? undefined : app.song.tracks.find((x) => x.id === laneAdd);
+    if (laneTrack && usual) return { parts: textParts("status.laneAddOpen", { track: track(laneTrack) }), strong: [], button: null };
     // パラメータをさがしている間（さがすのは画面。モック F-ParamSearch）。
     if (searching && usual) return { parts: textParts("status.paramSearching", { query: paramUi.query.trim(), count: paramUi.matches }), strong: [], button: null };
     // 音を作っている間（仕様書 6 章「音を作っている」、モック F7-Stretch）。進みは audioWork なので画面が作る。いつものまとめの代わりで、ほかの知らせより後ろ。

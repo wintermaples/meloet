@@ -161,7 +161,7 @@ describe("入力計の帯（左右に分けた形。仕様書 2 章、3 章 31-C
     expect(text(mic.querySelector('[data-test="mic-track"]'))).toBe("6 歌");
     expect([...mic.querySelectorAll(".mic-scale span")].map((x) => x.textContent)).toEqual(["−60", "−12", "0"]);
     expect(text(mic.querySelector('[data-test="mic-monitor"]'))).toBe("モニター オフ");
-    expect(slots.get(mic.querySelector<HTMLElement>('[data-test="mic-bar"]')!)).toMatchObject({ kind: "meter", toZero: true, gap: 0 });
+    expect(slots.get(mic.querySelector<HTMLElement>('[data-test="mic-bar"]')!)).toMatchObject({ kind: "meter", mic: { peakDb: -Infinity }, gap: 0 });
     // ペダルなどは引っこめる。
     expect(q('[data-test="pitch-bend"]')).toBeNull();
     expect(q('[data-test="velocity-fixed"]')).not.toBeNull();

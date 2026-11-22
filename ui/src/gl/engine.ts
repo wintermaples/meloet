@@ -4,6 +4,7 @@ import { Batch } from "./batch";
 import { REGIONS, SHOWN_WITH, fault, regionHz, type RegionName } from "./budget";
 import { OVERVIEW } from "./dims";
 import { HeldKeys } from "./keyboard";
+import { micDbToLength } from "./level";
 import { Levels, MASTER_CHANNEL, RETURN_A_CHANNEL, RETURN_B_CHANNEL, trackChannel } from "./levels";
 import {
   blackKeyPx,
@@ -644,15 +645,16 @@ export class Engine {
       case "meter": {
         const first = this.meterChannel(slot.source);
         const levels = this.levels;
+        const scale = slot.mic ? micDbToLength : undefined;
         paintMeter(
           out,
           box,
           Math.round(slot.gap * dpr),
           clipMarkPx(this.scale, dpr),
-          first < 0 ? SILENT : levels.bar(first, nowMs),
-          first < 0 ? SILENT : levels.bar(first + 1, nowMs),
+          first < 0 ? SILENT : levels.bar(first, nowMs, scale),
+          first < 0 ? SILENT : levels.bar(first + 1, nowMs, scale),
           slot.vertical === true,
-          slot.toZero === true,
+          slot.mic ? { peak: micDbToLength(slot.mic.peakDb) } : null,
         );
         break;
       }

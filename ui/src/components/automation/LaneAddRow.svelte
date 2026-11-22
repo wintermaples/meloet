@@ -1,14 +1,11 @@
 <!-- トラックの帯の下の「＋ 帯を足す ▾」の行（仕様書 3 章 92-5 ・ 20-A、モック Opt7-AddLane ・ F7-Answers92）。
-     押すと一覧（音量 ・ パン ・ ミュート ・ センド A ・ センド B ／ エフェクトのパラメータ…）。足してある帯には選ぶ印。
-     行を押すと AddLane（足してある帯がたたんであれば、core がひらく）。「エフェクトのパラメータ…」は右のパラメータの欄の
-     一覧をひらく（そこの行の右の印で帯を足す）。右はしの数は、たたんでいるパラメータの帯の数（モック F6-ParamMany の 2）。 -->
+     押すと帯を足す一覧（laneAdd.svelte.ts）。右はしの数は、たたんでいるパラメータの帯の数（モック F6-ParamMany の 2）。 -->
 <script lang="ts">
-  import type { AutoTarget, Command, LaneName, TrackView } from "../../bridge";
-  import { current, send } from "../../state/app.svelte";
+  import type { TrackView } from "../../bridge";
+  import { current } from "../../state/app.svelte";
   import { t } from "../../text/ja";
-  import { laneNameText } from "../history/stepText";
-  import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";
-  import { hasLaneRef, laneOf } from "./laneValue";
+  import { hasLaneRef } from "./laneValue";
+  import { openLaneAdd } from "./laneAdd.svelte";
 
   let { track }: { track: TrackView } = $props();
 
@@ -18,40 +15,9 @@
     track.lanes.filter((l) => (l.target.kind === "insert" || l.target.kind === "instrument") && hasLaneRef(folded, track.id, l.target)).length,
   );
 
-  /** パラメータの欄にひらく物: プラグインの音源、なければいちばん上のエフェクト。 */
-  const openParams = $derived.by((): Command | null => {
-    if (track.sound.kind === "plugin") return { type: "selectInstrument", track: track.id };
-    const slot = track.slots.findIndex((s) => s !== null);
-    return slot < 0 ? null : { type: "selectInsert", insert: { strip: { kind: "track", id: track.id }, slot } };
-  });
-
-  const TARGETS: readonly { target: AutoTarget; name: LaneName }[] = [
-    { target: { kind: "volume" }, name: { kind: "volume" } },
-    { target: { kind: "pan" }, name: { kind: "pan" } },
-    { target: { kind: "mute" }, name: { kind: "mute" } },
-    { target: { kind: "send", bus: "a" }, name: { kind: "send", bus: "a" } },
-    { target: { kind: "send", bus: "b" }, name: { kind: "send", bus: "b" } },
-  ];
-
-  function entries(): MenuEntry[] {
-    const id = track.id;
-    const rows: MenuEntry[] = TARGETS.map(({ target, name }) => ({
-      kind: "row",
-      label: "lane.volume",
-      text: laneNameText(name),
-      usable: !busy,
-      checked: laneOf(track, target) !== undefined,
-      run: () => send({ type: "addLane", track: id, target }),
-    }));
-    const params = openParams;
-    rows.push({ kind: "separator" }, { kind: "row", label: "lane.addEffectParams", usable: params !== null, run: () => params && send(params) });
-    return rows;
-  }
-
   function open(ev: MouseEvent): void {
     if (busy) return;
-    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    openContextMenu(r.left, r.bottom, entries());
+    openLaneAdd(ev.currentTarget as HTMLElement, track, busy, false);
   }
 </script>
 

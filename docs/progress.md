@@ -1630,3 +1630,13 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 38-B: マイクの計は −60〜−12 を左半分、−12〜0 を右半分、地は gray.4、白い線は 1 秒のピーク（dB の字と同じ数）。
 - 92 の残り: フェーダーの値の字を毎コマ（`mixerLivePosition`）。**パンとセンドの字は 1 秒 15 回のまま**（CPU の道で、毎コマにすると囲む四角が 126/126 回出たため）。「ミキサーの値の字」にパンとセンドが入るなら仕様書とちがう → 道を決めたあとで直す（宿題）。
 - 取りこんだあとの確かめ（棟梁）: `npm run check` 0 errors、vitest 3247。絵は `target/shots-round8/k8ub/`。
+
+### 区切り3: 音の素材を取りにいく、core と道具（k8s、meloet-hard ・ Opus 5.5、merge 8fb732d。architecture 23-9）
+
+- `tools/sounds/split.py`: 音色ごとの tar（`<id>-<版>.tar`、版は中身の sha256 の頭 16 字）と共通の tar と `catalog.json`。dev の包みから 26 音色 ＋ 共通で 238,909,440 バイト（`target/k8s-pack/`。2 回作って同じ目録）。組みこむ目録は `tools/sounds/catalog.json`。`scripts/fetch-sounds.sh` ・ `tools/sounds/pack.json` ・ `pack.py` は消した。
+- 取りにいく係（`crates/meloet-core/src/sounds/{fetch,untar,catalog}.rs`、`state/pack.rs`）: ureq 3.5.2 ＋ rustls 0.23.46 ＋ ring 0.17.14、PC の証明書（読めなければ webpki-roots）。`.part` と Range で続きから、403 ・ 410 はたどりなおし、大きさと sha256、1 回だまって取りなおし、空きは「残り ＋ 残りでいちばん大きい tar ＋ 64 MiB」、B-95-1 の順に 1 つずつ。置き場所は `$XDG_DATA_HOME/meloet/sounds/<id>/<版>/`。取れた音色から席を作りなおして鳴る。新しい曲の 1 本目は取る前からグランドピアノ（音はサイン波）。目録の URL は `https://github.com/wintermaples/meloet/releases/download/` の下で、ふつうの文字の段だけ。署名はなし（目録をたしかめる所は `catalog.rs` の `check` 1 か所）。起動のときの確かめは画面のあいさつのあと 24 時間に 1 回。
+- 棟梁の決め: 404 ・ 5xx ・ ずっと 403 は `CutOff`（「つながっていない」はうそになるため）、ほかの書くエラーも `CutOff`、「やめる」も答えを消して次の起動でまた聞く、新しい包みは見つけた起動ごとに 1 回。
+- 試験の口（release から外す一覧に入れる）: `MELOET_PACK_ORIGIN`、`MELOET_PACK_CATALOG`（と前からの `MELOET_SOUNDS_DIR` ・ `MELOET_STATE_DIR`）。試験 30（この PC の中の小さな HTTP サーバ。遅い、切れる、こわれた、403、ディスクがいっぱい 2 通り、ネットがない、やめる、24 時間、404、決まりの外の目録）。
+- 本物のアプリで 1 回通した（debug、空の `XDG_DATA_HOME`、20 MB/秒にしぼったこの PC の中の置き場所）: 取りにいく → やめる → 取りにいくで、グランドピアノは `Range: bytes=58785792-` で続きから、26 音色 ＋ 共通がそろった。取っている間の鍵 → DAC は 11.4〜15.4 ms（30 鍵、256 こま）。
+- 取りこみ: settings.rs（`measured_latency_2` と `pack_fetch` の両方を残す）、state.rs、architecture.md がぶつかった。**取りこんだあとの確かめで、棟梁が係の `target/k8s` を使いまわし、古い engine で試験してしまった**（engine に `kept_frame_at` がないと落ちた）。本物の作業ツリーの `target/` で `scripts/check-all.sh` をやりなおし、ぜんぶ通った: Rust 1356 通る ・ 落ち 0 ・ ignored 104、画面 3246、ライセンスの見はり OK。CLAUDE.md に「merge のあとの確かめは本物の作業ツリーの target で」を足した。
+- 宿題: Release に上げる包みの版と、上げる時期（オーナーさんに聞く）。前からの試験が `/tmp/meloet-core-test-*` を残す件は k8tc が直している。

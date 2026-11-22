@@ -132,6 +132,7 @@ python3 -I tools/measure/export_app.py same|speed|flow ...                      
 python3 -I tools/measure/arrange_parts.py ...                                           # アレンジのコマを部品ごとに（--how task で毎コマ描く）
 python3 -I tools/sounds/build.py --out target/sounds/dev    # 音の素材の包みを作る（素材は ~/.cache/meloet/sounds-src、出どころは sources.json）
 ln -sfn ../sounds/dev target/debug/sounds                   # 開発のビルドが包みを見つける（release も同じ）
+python3 -I tools/sounds/split.py target/sounds/dev --out <dir> --pack <版> [--previous <前の目録>] [--catalog tools/sounds/catalog.json]  # 配る形: 音色ごとの tar と目録（architecture 23-1 ・ 23-9）
 ```
 
 動かしかたは [`README.md`](README.md)。

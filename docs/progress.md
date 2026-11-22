@@ -1640,3 +1640,13 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 本物のアプリで 1 回通した（debug、空の `XDG_DATA_HOME`、20 MB/秒にしぼったこの PC の中の置き場所）: 取りにいく → やめる → 取りにいくで、グランドピアノは `Range: bytes=58785792-` で続きから、26 音色 ＋ 共通がそろった。取っている間の鍵 → DAC は 11.4〜15.4 ms（30 鍵、256 こま）。
 - 取りこみ: settings.rs（`measured_latency_2` と `pack_fetch` の両方を残す）、state.rs、architecture.md がぶつかった。**取りこんだあとの確かめで、棟梁が係の `target/k8s` を使いまわし、古い engine で試験してしまった**（engine に `kept_frame_at` がないと落ちた）。本物の作業ツリーの `target/` で `scripts/check-all.sh` をやりなおし、ぜんぶ通った: Rust 1356 通る ・ 落ち 0 ・ ignored 104、画面 3246、ライセンスの見はり OK。CLAUDE.md に「merge のあとの確かめは本物の作業ツリーの target で」を足した。
 - 宿題: Release に上げる包みの版と、上げる時期（オーナーさんに聞く）。前からの試験が `/tmp/meloet-core-test-*` を残す件は k8tc が直している。
+
+### 区切り1 の後半: 試験と小さな直し（k8tc、meloet-impl ・ Opus 5.5、merge 済み）
+
+- 時間で落ちる試験: readahead の 3 つ（「これから読む分まで入った」を待つ形、試験が読む間は読みこむスレッドを一度止める `gate`、上限 60 秒）、plughost の外からの SIGSEGV（1 回目が届いたのを `SigCgt` で見てから 2 回目、子が止まってから数える）、`arrange.gl.test.ts` の recording（上限 60 秒）。`yes` 8〜32 本で 10 回ずつ通った。
+- `--ignored` の窓の試験: 今の決まりは 21-10（人の手が来た時だけ窓にいた間を 1 手）。製品はそのとおりで、試験が古かった。試験に手を足して直した（`DISPLAY=:0` で通った）。
+- `/tmp` の残り: `settings::temp_dir`（試験だけ）がスレッドの終わりに消す形に。もういないプロセスの残りも消す。1066 個消した。check-all のあとも 0 個。
+- wav の頭: `audiofiles/wav.rs` の `wav_head` 1 つに（3 か所とも同じバイトだった。`vocalrec.rs` だけ `saturating` でなかった）。
+- release で落ちた audiofiles の試験: 製品のまちがいではなく、試験が速さにたよっていた（`Keeper::spawn_paused`。製品は 0 で同じ動き）。
+- 測る道具: `summarize.py` が「コールバック → DAC がちょうど 1 quantum」の鍵を数えて、いちばん上に太字で出す。第 7 回の終わりの記録で「120 of 120 keys … 18:21:51」と出た。
+- 取りこんだあとの確かめ（棟梁、本物の作業ツリー）: `check-all.sh` 通る（Rust 1357 ・ 落ち 0 ・ ignored 104、画面 3246）、`test_summarize.py` 通る。

@@ -2776,3 +2776,19 @@ pub struct AudioShape {
 - **ふつうの Ubuntu で上げられるか**: Ubuntu の `pipewire-bin` の包みは `/etc/security/limits.d/25-pw-rlimits.conf`（`@pipewire - rtprio 95`）を置くが、この PC でも `pipewire` グループにはだれも入っていない。この PC の `audio` グループ（オーナーさんと meloet-agent）の rtprio 95 は、包みのない `30-ubuntustudio-audio.conf` から（ふつうの Ubuntu にあるかは確かめていない。確かさ C）。その PC では rtkit の道になる。rtkit の polkit の決まり（`org.freedesktop.RealtimeKit1.acquire-real-time`）は、席のある active ・ inactive のセッションで yes、ほか（`allow_any`）は no。画面の前で動かす meloet は通る、と読んだ（確かさ C）。この PC の meloet-agent（席のないセッション）は rtkit に断られるので、**rtkit の道で上がる所は確かめていない**。
 - **試験の口**: `MELOET_ENGINE_RT`（`meloet-engine` の feature `dev-hooks` のときだけ。`meloet-core/dev-hooks` から流す。棟梁が取りこむときに入れた。`off` で頼まない、`rtkit` で limits があっても rtkit に聞く。プラグイン係の `MELOET_PLUGHOST_RT` と同じ形）。試験: `priority.rs` の 2 つ（上がる ・ 最初のコールバックの前に閉じたら手伝いが終わる）。`tests/device.rs`（`--ignored`）の、コールバックでメモリを取らない見はりは、この形でも通る。
 - **測り**（`docs/measurements/2026-11-22-round8-rt.md`）: 本物のアプリで `pw_out` は FF 20、試験で `pw_in` も FF 20。Surge XT 16 ＋ コンプ 170 秒、静かな PC で xrun はなし 0 ・ 0 ・ 1、あり 0 ・ 0 ・ 0、負荷の最大 71〜77 % と 53〜59 %。ほかの係が動いていた PC では、なしでプラグインの答えを待ちきれなかったブロックが 1458 回、ありで 0〜20。鍵 → DAC は変わらない（p95 15.88 ms）。
+
+### 23-13 CPU の道のアレンジの送り（第 8 回 区切り4）
+
+測った数は `docs/measurements/2026-11-22-round8-scroll.md`。
+
+- **重さの正体**: 送るコマは、時間の側ぜんぶ（1920×1080 で 1676×904）が「囲む四角 1 つ」になる。中身がぜんぶ動くので、四角の数をへらしても描く広さはへらない。描く所の半分ちかくは canvas（WebKit が WebGL の絵を CPU に読み、GPU の ImageBuffer に入れ、描くときにまた読みもどす）と、地をぬる所（描くたびに新しい共有メモリ）。ページの側でへらせたのは、ホイールの JS（1 回 3〜4.5 ms）と、送るたびの HTML の書きかえ。
+- **形**:
+  1. **クリップの面の四角は、送るたびに作りなおさない**（`Arrange.svelte` の `lanePicture`）。見えている幅の 3 つぶんの窓（左に 1、右に 2）を見ているつもりで作り、窓の左はしからの分を `rects` の slot の `shiftX`（`gl/slot.ts`。engine が四角と波形をその分左に描く）で送る。窓は、見えている所の左はしが幅 1 つぶん動いたときと、拡大 ・ 中身が変わったときに作りなおす。窓の外のクリップは作らないので、拡大のたびの重さは前と同じくらい。
+  2. **波形だけは送るたびに作る**（`laneWaves`）。段（`framesPerPx`）と切れ目（`straightParts`）が見えている所で決まるので、窓で作ると絵が変わる。作った物は窓の左はしからの x に直して、同じ `shiftX` で描く。
+  3. **ノートの形はテイクごとに覚える**（`laneShapesOf`）。テイクは中身を変えないので、テイクとクリップの置き場所（始まり ・ 終わり ・ ずれ）で覚え、窓にかかるノートだけを二分探索で取る（`notesNear`。いちばん長いノートの分だけ前から）。高さの範囲（`keyRange`）はクリップのノートぜんぶで、前と同じ。
+  4. **目盛の数字は、数字の帯ごと `transform` で送る**（`.bar-strip`）。数字の `left` は曲の頭からの x（ティック × px）で、送っても書きかえない。
+  5. **左はしにかかる札の幅を、送るたびに変えない**: 右が見えている幅の 2 つぶんより先にのびるクリップの札は、そこで切る（名前がそれより長い事はない）。幅が変わると、札の中のレイアウトが毎コマ走る。
+- **とらなかった形**（理由は測りの書類の 4 章）: 札を 2 組に分けて組ごと `transform`（左はしをまたぐたびに要素を作りなおして重くなった）、クリップの面を `bitmaprenderer` の写しで見せる（変わらなかった）。
+- **busyMs の読みかた**: CPU の道では、コマは前のコマを描き終えしだい来る（画面が 144 Hz なら 16.7 ms を待たない）。busyMs は「そのコマの絵を描き終えるまで」で、次のコマの描く所のあとに回ると 2 つぶんになる。60 Hz を保っているかは、`arrange_parts.py` の `frameGapMs`（平均と p95 を足した）で読む。
+- **結果**（`arr16`、交互に 3 回ずつ）: 横に送る busyMs 平均 20 → 13 ms、コマの間 p95 15〜16 → 12〜13 ms。いちばん縮めて送る 24 → 14〜16 ms。拡大は 20〜21 → 19〜20 ms で、**16.7 ms の中に入っていない**（コマの間は平均 11 ms）。歌の 192 個の曲は変わらない（札の文字の重さ。22-18 の書体の宿題）。再生中の鍵 → 画面は変わらない。
+- **のこり**: 拡大と、歌の多い曲の送りは、canvas を描く所と文字を描く所が残る。canvas の読みもどしを 1 回にできるかもしれない形（`webkit2gtk` の `set_enable_accelerated_2d_canvas(false)`、`crates/meloet-app`）は、ためしていない。

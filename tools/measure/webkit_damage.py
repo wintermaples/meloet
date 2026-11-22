@@ -18,6 +18,31 @@ NEED = "WebKit::DrawingAreaCoordinatedGraphics::setNeedsDisplayInRect(WebCore::I
 DRAW = "WebKit::WebPage::drawRect(WebCore::GraphicsContext&, WebCore::IntRect const&)"
 
 
+def web_process(root):
+    """The newest WebKitWebProcess under `root` (gdb may attach only to its own descendants; other
+    apps of the same user may have one too)."""
+    found = []
+    for p in os.listdir("/proc"):
+        if not p.isdigit():
+            continue
+        try:
+            if "WebKitWebProcess" not in open(f"/proc/{p}/cmdline", "rb").read().decode(errors="replace"):
+                continue
+        except OSError:
+            continue
+        q = int(p)
+        while q > 1:
+            if q == root:
+                found.append(int(p))
+                break
+            try:
+                stat = open(f"/proc/{q}/stat").read()
+            except OSError:
+                break
+            q = int(stat[stat.rindex(")") + 2:].split()[1])
+    return max(found) if found else None
+
+
 def offsets(debug_file):
     """Function name -> offset in the library, from the symbol table of its debug file."""
     found = {}
@@ -43,12 +68,9 @@ def main():
 
     app = subprocess.Popen(["bash", "-c", command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(wait_s)
-    pids = subprocess.run(
-        ["pgrep", "-u", str(os.getuid()), "-n", "-f", "WebKitWebProcess"], capture_output=True, text=True
-    ).stdout.split()
-    if not pids:
+    pid = web_process(app.pid)
+    if pid is None:
         raise SystemExit("webkit_damage: no WebKitWebProcess")
-    pid = pids[0]
     base = None
     for line in open(f"/proc/{pid}/maps"):
         f = line.split()

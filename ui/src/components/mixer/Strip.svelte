@@ -20,7 +20,7 @@
   import { faderControl } from "./control.svelte";
   import { FADER_MIN, faderText } from "./scale";
   import SendBar from "./SendBar.svelte";
-  import { askIf, askLive, coverIf } from "../automation/coverIf";
+  import { askIf, askLive, coverIf, whenSeen } from "../automation/coverIf";
   import type { StripAuto } from "../automation/laneValue";
 
   interface Toggle {
@@ -84,8 +84,10 @@
     () => gainDb,
   );
   const meterGap = $derived(metrics.px("space.1") / 2);
+  /** 値の箱が見えているか（横に送った外のストリップには、毎コマの字を書かない。coverIf の whenSeen）。 */
+  let valueSeen = $state(typeof IntersectionObserver === "undefined");
   /** 値の字: 帯が動かしている間は、つまみ（1 秒 30 回）を待たずに毎コマ（仕様書 3 章「オートメーションで動くつまみ」）。手で動かしている間は手の値。 */
-  const gainShown = $derived(live.gainDb !== undefined && fader.shown === gainDb ? live.gainDb : fader.shown);
+  const gainShown = $derived(valueSeen && live.gainDb !== undefined && fader.shown === gainDb ? live.gainDb : fader.shown);
 
   // ---- インサートの並べかえ ----
 
@@ -209,7 +211,7 @@
       <Fader control={fader} auto={moving} />
       <div class="meter" use:glSlot={{ kind: "meter", vertical: true, source: meter, gap: meterGap }}></div>
     </div>
-    <div class="value" use:askLive={moving ? trackId : null}>
+    <div class="value" use:askLive={moving && valueSeen ? trackId : null} use:whenSeen={(seen) => (valueSeen = seen)}>
       {#if fader.typing}
         <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
       {:else}

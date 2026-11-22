@@ -2569,7 +2569,7 @@ pub struct AudioShape {
 - **回数は 24 時間に 1 回まで**。見にいった時刻を状態の場所（`MELOET_STATE_DIR` のふだんの場所）に書き、24 時間たつまで見にいかない。**理由**: 包みは月に 1 回も変わらない。多く見にいくと、GitHub に IP が残る回数がふえるだけ。Sparkle（macOS の更新のしくみ）の既定も 1 日（調べ物 A）。
 - **ネットがなければ、だまっている**（知らせも、記録の文も出さない。次の起動でまた 24 時間の決まりで）。
 - 音の素材を 1 つも取っていない人（「あとで」の人）には見にいかない（取りにいくかの問いが先）。
-- 目録の置き場所（ネットの物）は、Release とは別の、変わらない URL がいる（Release は版ごとに immutable なので）。仮に `https://raw.githubusercontent.com/wintermaples/meloet/main/sounds/catalog.json`（と `.minisig`）。`main` に置くので、配る前に `foundation` を `main` へ入れる時期とつながる（0-4 で聞く）。
+- 目録の置き場所（ネットの物）は、Release とは別の、変わらない URL がいる（Release は版ごとに immutable なので）。仮に `https://raw.githubusercontent.com/wintermaples/meloet/main/tools/sounds/catalog.json`（と `.minisig`）。`main` に置くので、配る前に `foundation` を `main` へ入れる時期とつながる（0-4 で聞く）。（棟梁の決め 2026-11-22: 組みこむ目録と同じファイル。新しい包みを出す時は、`main` のこのファイルを書きかえると、前の版の meloet が見つける）
 
 ### 23-4. release と開発のビルドのちがい
 

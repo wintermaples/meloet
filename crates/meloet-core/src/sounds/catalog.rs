@@ -10,7 +10,7 @@ use serde::Deserialize;
 pub const BUILT_IN: &str = include_str!("../../../../tools/sounds/catalog.json");
 /// Where the newest catalog is kept on the net (23-3).
 pub const ONLINE: &str =
-    "https://raw.githubusercontent.com/wintermaples/meloet/main/sounds/catalog.json";
+    "https://raw.githubusercontent.com/wintermaples/meloet/main/tools/sounds/catalog.json";
 /// The only place a catalog may send meloet for its files.
 pub const RELEASES: &str = "https://github.com/wintermaples/meloet/releases/download/";
 

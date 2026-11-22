@@ -1696,7 +1696,7 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - deb は 18,847,858 バイト（記号を外す前）。`/usr/bin/meloet`、`/usr/bin/meloet-plughost`（`plugins.rs` の `current_exe()` のとなりで見つかる）、`.desktop`（AudioVideo ・ Audio ・ Music）、仮のアイコン、`/usr/share/doc/meloet/` に LICENSE 2 つと NOTICE。
 - きれいな ubuntu:24.04 と 26.04 のコンテナで: 入れる（依存 301 ・ 304 個）、`ldd` の not found 0、`xvfb-run meloet` で 20 秒動く、`apt-get remove` で消える。画面と音はオーナーさんの手順（`docs/install-check.md`）。ユーザー向けの書類 `docs/user/README.ja.md`。
 - 棟梁の決め: deb の説明は「meloet について」の文（mock:R7-About「MIDI 鍵盤ではじめる、音楽づくりのアプリ」）、識別子 `dev.meloet.app` の macOS の警告は今はそのまま（Mac の回への申し送り）。
-- オーナーさんに聞く: deb の Maintainer（いまは bundler の既定の「meloet」）。
+- deb の Maintainer はオーナーさんの決め（2026-11-22）で `wintermaples <wintermaples@yahoo.co.jp>`。bundler は `Cargo.toml` の `authors` を使う（tauri の `debian.rs`）ので、`crates/meloet-app/Cargo.toml` に書いた。
 
 ### 区切り4: 開発の仕込みを release から外す（k8dh、meloet-hard ・ Opus 5.5、merge 済み。architecture 23-11）
 

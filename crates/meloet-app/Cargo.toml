@@ -1,6 +1,7 @@
 [package]
 name = "meloet-app"
 version = "0.1.0"
+authors = ["wintermaples <wintermaples@yahoo.co.jp>"]
 edition.workspace = true
 license.workspace = true
 publish.workspace = true

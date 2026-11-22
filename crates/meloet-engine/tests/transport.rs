@@ -1414,3 +1414,26 @@ fn the_clock_keeps_frames_and_times_apart_on_each_side_of_a_missed_cycle() {
     let said = clock.frame_at(before_us).expect("rendered");
     assert!((said - before as f64).abs() < 0.1, "{said} for {before}");
 }
+
+/// `kept_frame_at` says what `frame_at` says, but nothing of a moment older than the ring.
+#[test]
+fn the_clock_says_nothing_of_a_moment_it_no_longer_keeps() {
+    let mut rig = Rig::new(64, 5_000);
+    let clock = rig.parts.handle.clock().clone();
+    assert_eq!(clock.kept_frame_at(rig.dac_us(0)), None, "nothing rendered");
+    rig.run(10 * 64);
+    assert_eq!(
+        clock.kept_frame_at(rig.dac_us(64)),
+        clock.frame_at(rig.dac_us(64))
+    );
+    assert!(clock.kept_frame_at(rig.dac_us(64)).is_some());
+    rig.run(600 * 64);
+    assert_eq!(clock.kept_frame_at(rig.dac_us(64)), None);
+    assert!(
+        clock.frame_at(rig.dac_us(64)).is_some(),
+        "frame_at counts on from the oldest"
+    );
+    let late = rig.frames - 100 * 64;
+    let said = clock.kept_frame_at(rig.dac_us(late)).expect("kept");
+    assert!((said - late as f64).abs() < 0.1, "{said} for {late}");
+}

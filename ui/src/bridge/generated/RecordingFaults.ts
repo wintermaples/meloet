@@ -7,7 +7,9 @@
  */
 export type RecordingFaults = { 
 /**
- * Times the input skipped and silence of that length was written.
+ * Times the recording moved to stay where the song was heard: the input skipped and
+ * silence of that length was written, or the output skipped and that much of the
+ * input was left out (docs/architecture.md 22-26).
  */
 gaps: number, 
 /**

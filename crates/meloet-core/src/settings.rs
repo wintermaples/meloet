@@ -193,8 +193,10 @@ struct OnDisk {
     record_bits: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     manual_latency_us: Option<u32>,
+    /// What was kept as `measured_latency` was measured with a source's frames taken to be
+    /// a block earlier than they were (docs/architecture.md 22-26): it is let go of.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    measured_latency: Vec<MeasuredLatency>,
+    measured_latency_2: Vec<MeasuredLatency>,
 }
 
 fn sound_from_disk(disk: &mut OnDisk) -> SoundSettings {
@@ -210,7 +212,7 @@ fn sound_from_disk(disk: &mut OnDisk) -> SoundSettings {
         manual_latency_us: disk
             .manual_latency_us
             .map(|us| us.min(MANUAL_LATENCY_MAX_US)),
-        measured: std::mem::take(&mut disk.measured_latency),
+        measured: std::mem::take(&mut disk.measured_latency_2),
     }
 }
 
@@ -397,7 +399,7 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         sample_rate: Some(settings.sound.sample_rate),
         record_bits: Some(settings.sound.record_format.bits()),
         manual_latency_us: settings.sound.manual_latency_us,
-        measured_latency: settings.sound.measured.clone(),
+        measured_latency_2: settings.sound.measured.clone(),
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -601,6 +603,15 @@ mod tests {
         .unwrap();
         assert!(load(&dir).velocity_fixed);
         assert_eq!(load(&dir).fixed_velocity, 100, "out of range: the default");
+
+        // Measured before the input's frames were placed right (architecture 22-26).
+        let measured = r#"[{"output":"o","input":"i","sample_rate":48000,"x_us":-3000,"at_ms":1}]"#;
+        let file =
+            |key: &str| format!(r#"{{"version":1,"output":null,"scale":100,"{key}":{measured}}}"#);
+        std::fs::write(dir.join("settings.json"), file("measured_latency")).unwrap();
+        assert!(load(&dir).sound.measured.is_empty());
+        std::fs::write(dir.join("settings.json"), file("measured_latency_2")).unwrap();
+        assert_eq!(load(&dir).sound.measured_for("o", "i", 48_000), Some(-3000));
     }
 
     #[test]

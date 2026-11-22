@@ -63,18 +63,24 @@ pub struct InputBlock {
     pub callback_us: u64,
     /// The ring had no room: the samples of this block are not in it.
     pub dropped: bool,
+    /// The input is a sink's monitor ([`InputTarget::sink_monitor`]).
+    pub sink_monitor: bool,
 }
 
 impl InputBlock {
     /// When the block's first frame was captured, in microseconds on the clock of the
     /// output's `playback` times.
     ///
-    /// `capture_us` is one block later than that: a click the engine plays at a frame comes
-    /// back through a sink's monitor stamped exactly one quantum after the `playback` time
-    /// of that frame, at every quantum from 64 to 1024 (`tests/input_loop.rs` measures it
-    /// and keeps watch). So the block's own length is taken off.
+    /// From a source, `capture_us` is that time: PipeWire's `delay` of a stream from an ALSA
+    /// source is the source's latency (a quantum and its headroom), which the frames of the
+    /// block wait in the device before the cycle reads them (docs/architecture.md 22-26).
+    /// From a sink's monitor it is one block later: a click the engine plays at a frame
+    /// comes back stamped exactly one quantum after the `playback` time of that frame, at
+    /// every quantum from 64 to 1024 (`tests/input_loop.rs` measures it and keeps watch).
+    /// There the block's own length is taken off.
     pub fn first_frame_us(&self, sample_rate: u32) -> f64 {
-        self.capture_us as f64 - f64::from(self.frames) * 1e6 / f64::from(sample_rate.max(1))
+        let late = if self.sink_monitor { self.frames } else { 0 };
+        self.capture_us as f64 - f64::from(late) * 1e6 / f64::from(sample_rate.max(1))
     }
 }
 
@@ -200,6 +206,7 @@ pub struct InputMeters {
     monitor_dropped: AtomicU64,
     xruns: AtomicU64,
     stream_lost: AtomicBool,
+    sink_monitor: AtomicBool,
     /// The two switches of the tap, set from outside the callback.
     monitoring: AtomicBool,
     recording: AtomicBool,
@@ -288,6 +295,16 @@ impl InputMeters {
         self.delay_us.load(Relaxed)
     }
 
+    /// The input is a sink's monitor: see [`InputBlock::first_frame_us`].
+    pub fn sink_monitor(&self) -> bool {
+        self.sink_monitor.load(Relaxed)
+    }
+
+    /// Before the stream starts.
+    pub fn set_sink_monitor(&self, on: bool) {
+        self.sink_monitor.store(on, Relaxed);
+    }
+
     /// The frames of the last block: what really runs, not what was asked for.
     pub fn last_frames(&self) -> u32 {
         self.last_frames.load(Relaxed)
@@ -334,6 +351,7 @@ impl InputTap {
             capture_us,
             callback_us,
             dropped: false,
+            sink_monitor: self.meters.sink_monitor.load(Relaxed),
         };
         self.next_frame += u64::from(frames);
         let delay = callback_us
@@ -461,6 +479,7 @@ impl AudioInput {
             record,
             meters,
         } = input_ends(channels, sample_rate);
+        meters.set_sink_monitor(target.sink_monitor);
         let config = cpal::StreamConfig {
             channels,
             sample_rate,
@@ -681,7 +700,29 @@ mod tests {
             capture_us: 1_000 + first_frame,
             callback_us: 2_000 + first_frame,
             dropped: false,
+            sink_monitor: false,
         }
+    }
+
+    #[test]
+    fn a_source_says_its_first_frame_and_a_monitor_one_block_late() {
+        let source = block(0, 480);
+        assert_eq!(source.first_frame_us(48_000), source.capture_us as f64);
+        let monitor = InputBlock {
+            sink_monitor: true,
+            ..source
+        };
+        assert_eq!(
+            monitor.first_frame_us(48_000),
+            source.capture_us as f64 - 10_000.0
+        );
+        // The tap says which it is.
+        let mut ends = input_ends(1, 48_000);
+        ends.meters.set_sink_monitor(true);
+        ends.meters.set_recording(true);
+        ends.tap.block(&[0.0; 64], 5_000, 6_000);
+        let mut into = [0.0; 64];
+        assert!(ends.record.pop(&mut into).expect("a block").sink_monitor);
     }
 
     #[test]

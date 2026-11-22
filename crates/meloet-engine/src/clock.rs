@@ -239,6 +239,19 @@ impl TransportClock {
         middle(&mut votes[..n])
     }
 
+    /// [`TransportClock::frame_at`] for a moment the ring still holds: `None` before its
+    /// oldest stretch as well.
+    pub fn kept_frame_at(&self, t_us: f64) -> Option<f64> {
+        let written = self.written.load(Ordering::Acquire);
+        let oldest = written.saturating_sub(SLOTS as u64);
+        // The oldest slots may be written over while they are read: the first one that reads.
+        let first = (oldest..written).find_map(|serial| self.read(serial))?;
+        if first.start_us > t_us {
+            return None;
+        }
+        self.frame_at(t_us)
+    }
+
     /// When `frame` of the engine's stream reaches the DAC: [`TransportClock::frame_at`] the
     /// other way round.
     pub fn time_of_frame(&self, frame: f64) -> Option<f64> {

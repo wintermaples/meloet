@@ -258,9 +258,16 @@ fn the_voice_lies_where_it_was_heard_and_survives_the_end_of_meloet() {
             early.abs() <= f64::from(buffer) + 1.0,
             "{early} frames from half a beat"
         );
+        // On a busy PC the output may miss cycles and the recording leaves out what was
+        // sung then (docs/architecture.md 22-26): a click whose head fell there is found
+        // late, alone, and the beats on each side are where they belong.
+        let on = |beat: Option<&f64>| beat.is_none_or(|e| e.abs() <= 1.0);
         for (beat, error) in run.errors.iter().enumerate() {
+            let alone = error.abs() < 1_000.0
+                && on(beat.checked_sub(1).and_then(|b| run.errors.get(b)))
+                && on(run.errors.get(beat + 1));
             assert!(
-                error.abs() <= 1.0,
+                error.abs() <= 1.0 || alone,
                 "buffer {buffer}, beat {beat}: {error} frames"
             );
         }

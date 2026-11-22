@@ -324,6 +324,7 @@ mod tests {
                 capture_us: (1e6 + (n + 1) as f64 * block_us).round() as u64,
                 callback_us: 0,
                 dropped: false,
+                sink_monitor: true,
             })
             .collect();
         let all = ProbeHeard {

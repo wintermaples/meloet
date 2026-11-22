@@ -22,7 +22,7 @@ use super::{Audio, Shared, Worker, lock};
 use crate::peaks::{PeaksPlace, SharedPeaks};
 use crate::play::VocalFileAsk;
 use crate::state::{Delays, Input};
-use crate::vocalrec::{self, DiskWriter, RecNote, RecordFile, RecordJob, Written};
+use crate::vocalrec::{self, DiskWriter, HeardLine, RecNote, RecordFile, RecordJob, Written};
 
 /// How long the peaks of a recording that stopped wait for it to come into the song.
 const PEAKS_WAIT: Duration = Duration::from_secs(10);
@@ -227,6 +227,10 @@ impl Worker {
                 })
                 .collect(),
             format,
+            heard: Some(HeardLine {
+                clock: self.audio.handle.clock().clone(),
+                x_us: x_us as f64,
+            }),
         };
         match self.input.writer.start(job) {
             Ok(peaks) => {
@@ -274,16 +278,19 @@ impl Worker {
     /// Writes down what a recording skipped: on stderr, and in the folder of the
     /// measurements when there is one.
     fn log_faults(&self, written: &Written) {
-        if written.gaps == 0 && written.dropped == 0 {
+        if written.gaps == 0 && written.dropped == 0 && written.cut == 0 {
             return;
         }
         let line = format!(
             "the recording has silence where the input did not come: {} frames in {} skips \
-             of the input, {} frames in {} blocks the disk was too slow for (of {} frames)",
+             of the input, {} frames in {} blocks the disk was too slow for; {} frames of the \
+             input left out in {} skips of the output (of {} frames)",
             written.gaps,
             written.gap_count,
             written.dropped,
             written.dropped_blocks,
+            written.cut,
+            written.cut_count,
             written.frames
         );
         eprintln!("meloet: {line}");
@@ -414,7 +421,7 @@ impl Worker {
                 job.trouble_said = true;
                 inputs.push(Input::VocalsCannotGoOn);
             }
-            let faults = (status.gap_count, status.dropped_blocks);
+            let faults = (status.gap_count + status.cut_count, status.dropped_blocks);
             if faults != job.faults_said {
                 job.faults_said = faults;
                 inputs.push(Input::VocalFaults {
@@ -470,7 +477,9 @@ impl Worker {
         let out_us = u64::from(self.audio.handle.meters().out_delay_us());
         // To a tenth of a millisecond: the PC's numbers move a little from block to block.
         let round = |us: u64| ((us + 50) / 100 * 100) as u32;
-        let round_us = out_us + u64::from(meters.delay_us()) + block_us;
+        // A sink's monitor says its frames a block early (`InputBlock::first_frame_us`).
+        let late_us = if meters.sink_monitor() { block_us } else { 0 };
+        let round_us = out_us + u64::from(meters.delay_us()) + late_us;
         Some(Delays {
             round_us: round(round_us),
             monitor_us: round(round_us + block_us),

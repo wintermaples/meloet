@@ -195,6 +195,7 @@ fn the_writer_splits_the_input_into_the_tracks_files_and_places_their_head() {
         meters,
         ..
     } = input_ends(2, RATE);
+    meters.set_sink_monitor(true);
     let writer = DiskWriter::spawn();
     assert!(writer.stop().is_none());
     let job = |names: [&str; 2]| RecordJob {
@@ -209,6 +210,7 @@ fn the_writer_splits_the_input_into_the_tracks_files_and_places_their_head() {
             },
         ],
         format: RecordFormat::Bits32,
+        heard: None,
     };
     assert!(writer.start(job(["a.wav", "b.wav"])).is_err(), "no input");
     writer.set_input(Some((record, meters.clone())));
@@ -305,6 +307,7 @@ fn a_ring_that_ran_full_leaves_silence_of_the_same_length() {
         meters,
         ..
     } = input_ends(1, RATE);
+    meters.set_sink_monitor(true);
     let second = wave(RATE as usize, 1);
     let mut t_us = 5_000_000u64;
     let mut give = |tap: &mut meloet_engine::InputTap, seconds: usize| {
@@ -325,6 +328,7 @@ fn a_ring_that_ran_full_leaves_silence_of_the_same_length() {
             channels: vec![0],
         }],
         format: RecordFormat::Bits16,
+        heard: None,
     };
     side.start(job).unwrap();
     side.job.as_mut().unwrap().from_us = Some(0.0);
@@ -373,6 +377,7 @@ fn what_the_latency_measurement_hears_is_kept_in_memory() {
         meters,
         ..
     } = input_ends(2, RATE);
+    meters.set_sink_monitor(true);
     let writer = DiskWriter::spawn();
     writer.set_input(Some((record, meters.clone())));
     assert!(writer.captured().blocks.is_empty());
@@ -542,6 +547,7 @@ fn cycles_the_input_missed_are_written_as_silence_of_their_length() {
         meters,
         ..
     } = input_ends(1, RATE);
+    meters.set_sink_monitor(true);
     let mut side = Side::new(Arc::new(Mutex::new(Written::default())));
     side.input = Some((record, meters.clone()));
     side.into = vec![0.0; RATE as usize];
@@ -551,6 +557,7 @@ fn cycles_the_input_missed_are_written_as_silence_of_their_length() {
             channels: vec![0],
         }],
         format: RecordFormat::Bits32,
+        heard: None,
     })
     .unwrap();
     side.job.as_mut().unwrap().from_us = Some(0.0);
@@ -613,6 +620,7 @@ fn measured_blocks() -> Vec<(&'static str, Vec<InputBlock>)> {
             capture_us: capture_us.parse().unwrap(),
             callback_us: 0,
             dropped: false,
+            sink_monitor: true,
         });
     }
     pieces
@@ -623,7 +631,8 @@ fn measured_blocks() -> Vec<(&'static str, Vec<InputBlock>)> {
 fn filled(blocks: &[InputBlock]) -> ((u64, u32), f64) {
     let mut gaps = Gaps::default();
     let (mut frames, mut places, mut next) = (0u64, 0u32, 0u64);
-    let mut write = |missed: u64, block: InputBlock, samples: &[f32]| {
+    let mut write = |missed: u64, cut: u32, block: InputBlock, _: Option<f64>, samples: &[f32]| {
+        assert_eq!(cut, 0, "with no clock of the engine, nothing is cut");
         assert_eq!(block.first_frame, next, "in the order they came");
         assert_eq!(samples.len(), block.frames as usize);
         next += u64::from(block.frames);
@@ -632,7 +641,13 @@ fn filled(blocks: &[InputBlock]) -> ((u64, u32), f64) {
     };
     let samples = [0.0f32; 1_024];
     for block in blocks {
-        gaps.take(*block, &samples[..block.frames as usize], RATE, &mut write);
+        gaps.take(
+            *block,
+            None,
+            &samples[..block.frames as usize],
+            RATE,
+            &mut write,
+        );
     }
     gaps.settle(RATE, &mut write);
     let (first, last) = (blocks[0], blocks[blocks.len() - 1]);
@@ -690,6 +705,7 @@ fn late_times_of_one_or_two_blocks_fill_nothing_and_a_hole_at_the_end_is_filled(
                 capture_us: (1e6 + (cycle + 1.0) * block_us).round() as u64,
                 callback_us: 0,
                 dropped: false,
+                sink_monitor: true,
             })
             .collect()
     };
@@ -719,6 +735,7 @@ fn a_block_whose_time_alone_is_late_is_written_where_the_count_says() {
         meters,
         ..
     } = input_ends(1, RATE);
+    meters.set_sink_monitor(true);
     let mut side = Side::new(Arc::new(Mutex::new(Written::default())));
     side.input = Some((record, meters.clone()));
     side.into = vec![0.0; RATE as usize];
@@ -728,6 +745,7 @@ fn a_block_whose_time_alone_is_late_is_written_where_the_count_says() {
             channels: vec![0],
         }],
         format: RecordFormat::Bits32,
+        heard: None,
     })
     .unwrap();
     side.job.as_mut().unwrap().from_us = Some(0.0);
@@ -750,6 +768,128 @@ fn a_block_whose_time_alone_is_late_is_written_where_the_count_says() {
     let _ = fs::remove_dir_all(dir);
 }
 
+/// An engine and an input of `BLOCK` frames on one clock, cycle after cycle, where either
+/// may miss cycles (`out_misses`, `in_misses`) and an input block's time may be a cycle
+/// late with nothing missing (`in_late`). Every sample sung says when it was sung. What was
+/// written, and of every frame of the file that is not silence: the engine's frame heard
+/// when it was sung, less the frame of the file.
+fn heard_less_file(out_misses: &[u64], in_misses: &[u64], in_late: &[u64]) -> (Written, Vec<f64>) {
+    const CYCLES: u64 = 160;
+    let dir = scratch("heard");
+    let block_us = BLOCK as f64 * 1e6 / f64::from(RATE);
+    let cycle_us = |n: u64| 1e6 + n as f64 * block_us;
+    let mut parts = Engine::new(EngineConfig::default());
+    let clock = parts.handle.clock().clone();
+    let InputEnds {
+        mut tap,
+        record,
+        meters,
+        ..
+    } = input_ends(1, RATE);
+    let mut side = Side::new(Arc::new(Mutex::new(Written::default())));
+    side.input = Some((record, meters.clone()));
+    side.into = vec![0.0; RATE as usize];
+    side.start(RecordJob {
+        files: vec![RecordFile {
+            path: dir.join("歌 1.wav"),
+            channels: vec![0],
+        }],
+        format: RecordFormat::Bits32,
+        heard: Some(HeardLine {
+            clock: clock.clone(),
+            x_us: 0.0,
+        }),
+    })
+    .unwrap();
+    side.job.as_mut().unwrap().from_us = Some(0.0);
+    // Sample i of cycle n was sung at the moment `sung(n * BLOCK + i)`.
+    let sung = |frame: f64| cycle_us(0) - block_us + frame * 1e6 / f64::from(RATE);
+    for n in 0..CYCLES {
+        if !out_misses.contains(&n) {
+            let callback_us = cycle_us(n) as u64;
+            let timing = BlockTiming {
+                callback_us,
+                playback_us: callback_us + 2 * block_us as u64,
+            };
+            parts.engine.process(&mut [0.0; BLOCK * 2], timing);
+        }
+        // The engine's clock knows the moments a few cycles back.
+        if n >= 4 && !in_misses.contains(&n) {
+            let samples: Vec<f32> = (0..BLOCK as u64)
+                .map(|i| (n * BLOCK as u64 + i) as f32)
+                .collect();
+            let late = if in_late.contains(&n) { block_us } else { 0.0 };
+            // A source's time is its block's first frame, a block before the cycle.
+            let capture_us = (cycle_us(n) - block_us + late) as u64;
+            tap.block(&samples, capture_us, cycle_us(n) as u64);
+        }
+        side.drain();
+    }
+    side.end_job();
+    let written = side.job.take().unwrap().said;
+    let (_, _, read) = decode(&dir.join("歌 1.wav"));
+    let apart = (read.iter().enumerate())
+        .step_by(17)
+        .filter(|(_, s)| **s != 0.0)
+        .map(|(k, s)| clock.frame_at(sung(f64::from(*s))).unwrap() - k as f64)
+        .collect();
+    let _ = fs::remove_dir_all(dir);
+    (written, apart)
+}
+
+#[test]
+fn the_frames_of_the_file_stay_where_the_song_was_heard_whichever_side_misses_cycles() {
+    let one_line = |apart: &[f64]| {
+        let first = apart[0];
+        assert!(
+            apart.iter().all(|a| (a - first).abs() < 0.01),
+            "{:?}",
+            apart
+                .iter()
+                .map(|a| a - first)
+                .filter(|a| a.abs() >= 0.01)
+                .take(4)
+                .collect::<Vec<_>>()
+        );
+    };
+    let block = BLOCK as u64;
+    // Nothing missed.
+    let (written, apart) = heard_less_file(&[], &[], &[]);
+    one_line(&apart);
+    assert_eq!((written.gaps, written.cut), (0, 0));
+    // The output alone misses a cycle, then two: as much of the input is left out.
+    let (written, apart) = heard_less_file(&[40, 90, 91], &[], &[]);
+    one_line(&apart);
+    assert_eq!((written.gaps, written.gap_count), (0, 0));
+    assert_eq!((written.cut, written.cut_count), (3 * block, 2));
+    assert_eq!(written.frames, (156 - 3) * block);
+    // The input alone misses a cycle: silence in its place, as before.
+    let (written, apart) = heard_less_file(&[], &[60], &[]);
+    one_line(&apart);
+    assert_eq!(
+        (written.gaps, written.gap_count, written.cut),
+        (block, 1, 0)
+    );
+    // Both miss the same moment (what the output's cycle 70 would have played, two blocks
+    // on, is what the input's cycle 73 would have taken, a block back): nothing to do.
+    let (written, apart) = heard_less_file(&[70], &[73], &[]);
+    one_line(&apart);
+    assert_eq!((written.gaps, written.cut), (0, 0));
+    assert_eq!(written.frames, 155 * block);
+    // Both miss the same cycle: those are two moments, one filled and one left out.
+    let (written, apart) = heard_less_file(&[70], &[70], &[]);
+    one_line(&apart);
+    assert_eq!((written.gaps, written.cut), (block, block));
+    assert_eq!(written.frames, 155 * block);
+    // A block whose time alone is late, next to the output missing a cycle.
+    let (written, apart) = heard_less_file(&[101], &[], &[50, 100]);
+    one_line(&apart);
+    assert_eq!(
+        (written.gaps, written.cut, written.cut_count),
+        (0, block, 1)
+    );
+}
+
 /// A measuring tool: the rule on every block of a run of
 /// `meloet-engine/tests/input_gaps_private.rs` (`MELOET_GAPS_OUT`), named by
 /// `MELOET_GAPS_BLOCKS`. Run with `-- --ignored --nocapture`.
@@ -766,6 +906,7 @@ fn the_rule_fills_what_the_clock_says_is_missing_in_a_measured_run() {
                 capture_us,
                 callback_us,
                 dropped: false,
+                sink_monitor: true,
             },
         )
         .collect();

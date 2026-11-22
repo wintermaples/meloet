@@ -148,12 +148,11 @@ impl VocalPart {
 }
 
 fn faults_of(written: &Written) -> Option<meloet_protocol::RecordingFaults> {
-    (written.gap_count > 0 || written.dropped_blocks > 0).then_some(
-        meloet_protocol::RecordingFaults {
-            gaps: written.gap_count,
-            dropped: written.dropped_blocks,
-        },
-    )
+    let gaps = written.gap_count + written.cut_count;
+    (gaps > 0 || written.dropped_blocks > 0).then_some(meloet_protocol::RecordingFaults {
+        gaps,
+        dropped: written.dropped_blocks,
+    })
 }
 
 impl Play {

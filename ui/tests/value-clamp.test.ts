@@ -1,4 +1,4 @@
-// 範囲の外の値（docs/design-notes.md B-68）: 近いはしにして決め、ClampValue の中身を作る。読めない物は null。
+// 範囲の外の値（docs/history/design-notes.ja.md B-68）: 近いはしにして決め、ClampValue の中身を作る。読めない物は null。
 import { describe, expect, it } from "vitest";
 import { nearestDen, readMeter, readPosition, readScaled, readTempo, readVelocity } from "../src/components/valueClamp";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";

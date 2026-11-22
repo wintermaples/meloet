@@ -1,4 +1,4 @@
-// 第 3 回のあとの直し（docs/design-notes.md B-64・65・72〜75）を mount して見る: ベロシティの帯をたたむ、キーが向く帯の印、
+// 第 3 回のあとの直し（docs/history/design-notes.ja.md B-64・65・72〜75）を mount して見る: ベロシティの帯をたたむ、キーが向く帯の印、
 // ボタンのキー、ひらいた帯の見出しでたたむ、スケール固定の ▾、ループの範囲と全体図の枠のドラッグ中の Esc、強さ ・ スウィングの棒のキー、用語の説明。
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,7 +93,7 @@ describe("ベロシティの帯をたたむ（仕様書 3 章の帯の表「ベ�
     expect(q('[data-test="pr-velocity-open"]')).toBeNull();
   });
 
-  // 仕様書 1 章の例は 18 行 ・ 24 行。上のメニューの行（150 % で 36）が入って 2 行ずつへった（design-notes B-59）。
+  // 仕様書 1 章の例は 18 行 ・ 24 行。上のメニューの行（150 % で 36）が入って 2 行ずつへった（docs/history/design-notes.ja.md B-59）。
   it("窓 1280×800 で 150 % のとき、ノートは 16 行。たたむと 22 行（たたんだ 72 はノートの場所へ）", () => {
     const scale: Scale = 150;
     const scene = fakeScene("pianoRoll150")!;

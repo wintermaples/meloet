@@ -1,4 +1,4 @@
-// 何個も選んだクリップを、いっしょに動かす決まり（docs/design-notes.md B-71、arrangeDrag.ts）と、囲んで選ぶ。
+// 何個も選んだクリップを、いっしょに動かす決まり（docs/history/design-notes.ja.md B-71、arrangeDrag.ts）と、囲んで選ぶ。
 import { describe, expect, it } from "vitest";
 import type { ClipView, TrackView } from "../src/bridge";
 import * as CD from "../src/components/arrangeDrag";

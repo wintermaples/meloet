@@ -1,4 +1,4 @@
-// 第 3 回の続きの区切り1（docs/design-notes.md B-60・62・63・66・68・69）の、DOM を知らない決まり:
+// 第 3 回の続きの区切り1（docs/history/design-notes.ja.md B-60・62・63・66・68・69）の、DOM を知らない決まり:
 // 縦の拡大の行の数と送り、ノートの左はし、鳴らす ・ 鳴らさない、範囲の外の丸め、右クリックの一覧の中身。
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AppState, Command, IndexRange } from "../src/bridge";

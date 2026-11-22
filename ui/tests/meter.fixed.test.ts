@@ -1,4 +1,4 @@
-// 入力計のベロシティ固定（docs/design-notes.md B-66）と、棒のドラッグ中の Esc（仕様書 4 章）。
+// 入力計のベロシティ固定（docs/history/design-notes.ja.md B-66）と、棒のドラッグ中の Esc（仕様書 4 章）。
 import { flushSync, mount, tick, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/bridge";

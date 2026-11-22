@@ -1,4 +1,4 @@
-// クリップの外に書く ・ 動かす（design-notes B-82）: 画面はクリップの外でも止めずに意図を送り、のばすのは Rust。
+// クリップの外に書く ・ 動かす（docs/history/design-notes.ja.md B-82）: 画面はクリップの外でも止めずに意図を送り、のばすのは Rust。
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Command, IndexRange } from "../src/bridge";
 import { fakeScene, fakeState } from "../src/bridge/fake";

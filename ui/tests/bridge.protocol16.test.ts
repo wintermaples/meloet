@@ -61,7 +61,7 @@ describe("約束 16 の偽物の場面", () => {
     expect(s.workspace.settings).toMatchObject({ advancedOpen: true });
     expect(s.plugins.placesOpen).toBe(true);
     const mock = mockScreenText("R9-Scan");
-    // /usr/local/lib/vst3 はモックにない（VST3 のふつうの場所として足した。docs/research/plugin-formats.md 8 章）。
+    // /usr/local/lib/vst3 はモックにない（VST3 のふつうの場所として足した。docs/history/research/plugin-formats.md 8 章）。
     for (const p of s.plugins.places.filter((x) => x.shownPath !== "/usr/local/lib/vst3")) expect(mock, p.shownPath).toContain(p.shownPath);
     expect(s.plugins.places.filter((p) => p.added).map((p) => p.shownPath)).toEqual(["~/音楽/プラグイン", "/opt/surge-xt/lib/vst3"]);
     expect(s.plugins.places.some((p) => p.path.includes("clap"))).toBe(false);

@@ -93,7 +93,7 @@ describe("拡大率の一覧", () => {
     expect(qa('[data-test="zoom-unfit"]')).toEqual([]);
   });
 
-  it("キーの書きかた: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」（design-notes A-2）", () => {
+  it("キーの書きかた: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」（docs/history/design-notes.ja.md A-2）", () => {
     app.setState(zoomState());
     mounted = mount(ZoomMenu, { target, props: { scale: 125, unfit: [150], platform: "other", onpick: () => {} } });
     flushSync();

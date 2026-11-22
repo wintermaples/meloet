@@ -113,7 +113,7 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
     expect(mockScreenText("F-Recover2")).toContain(filled(stepNames.recovered));
   });
 
-  it("一覧にない手の仮の名前（builder。design-notes B-92 に戻してある物）。ほかの仮の名前は第 11 版で 3 章の一覧に入った（92-7）", () => {
+  it("一覧にない手の仮の名前（builder。docs/history/design-notes.ja.md B-92 に戻してある物）。ほかの仮の名前は第 11 版で 3 章の一覧に入った（92-7）", () => {
     expect(Object.fromEntries(names.filter(([, e]) => e.source.startsWith("builder:")).map(([kind, e]) => [kind, e.text]))).toEqual({
       cutClips: "クリップを切り取る",
       cutNotes: "ノートを切り取る",

@@ -1,4 +1,4 @@
-// 上のメニューの行（design-notes B-59）と右クリックの一覧（B-60）、F10 と矢印、Esc の順、新しいキー、Space。
+// 上のメニューの行（docs/history/design-notes.ja.md B-59）と右クリックの一覧（B-60）、F10 と矢印、Esc の順、新しいキー、Space。
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, ClipView, Command } from "../src/bridge";

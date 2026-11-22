@@ -1,5 +1,5 @@
 // 第 7 回 区切り5 の 2 回目（画面）: 書き出しのダイアログ、「くわしく」、状態行の進みと「やめる」、「フォルダをひらく」、メニューとキー
-// （仕様書 3 章 34-B、2 章「書き出しの進み」、6 章、モック F7-Export ・ F7-Exporting ・ F-Export ・ R11-Fit、design-notes B-94-69〜75）。
+// （仕様書 3 章 34-B、2 章「書き出しの進み」、6 章、モック F7-Export ・ F7-Exporting ・ F-Export ・ R11-Fit、docs/history/design-notes.ja.md B-94-69〜75）。
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppState, Command, ExportDialogView, ExportView } from "../src/bridge";

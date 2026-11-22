@@ -1,4 +1,4 @@
-// 第 5 版の「選んだノート」と一覧（design-notes C-6 50 ・ 51 ・ 58 ・ 67）: 長さをそろえる、かける / かけなおす、
+// 第 5 版の「選んだノート」と一覧（docs/history/design-notes.ja.md C-6 50 ・ 51 ・ 58 ・ 67）: 長さをそろえる、かける / かけなおす、
 // 音の欄の Shift 12、ひらいた「CC の一覧」。
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

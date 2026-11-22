@@ -111,6 +111,13 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     keys.release();
   }
 
+  /** Opens the typing field, the same as Enter (a double click on the number). */
+  function startTyping(): void {
+    if (press || !opts.parse) return;
+    keys.flush();
+    typing = true;
+  }
+
   function submit(text: string): boolean {
     const v = opts.parse?.(text);
     if (v === undefined) return false;
@@ -136,6 +143,7 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     stopTyping() {
       typing = false;
     },
+    startTyping,
     down,
     move,
     up,

@@ -215,7 +215,7 @@
       {#if fader.typing}
         <ValueField initial={faderText(fader.shown)} label={t("mixer.db")} onsubmit={(text) => fader.submit(text)} oncancel={fader.stopTyping} />
       {:else}
-        <span class="m-num m-hi db live"><span class="in" data-test="mixer-gain">{faderText(gainShown)}</span></span>
+        <span class="m-num m-hi db live"><span class="in" role="presentation" data-test="mixer-gain" ondblclick={fader.startTyping}>{faderText(gainShown)}</span></span>
       {/if}
       <span class="m-lbl" use:term={"dB"}>{t("mixer.db")}</span>
     </div>

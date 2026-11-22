@@ -326,7 +326,18 @@
       {/each}
       {#each labels as l (l.tick)}
         {@const on = pointDrag?.moved ? l.tick === pointDrag.toTick : isSelected({ kind: "tempoPoint", tick: l.tick })}
-        <span class="m-num value" class:selected={on} style:left="{l.x}px" style:top="{l.y}px">{tempoText(l.bpm)}</span>
+        <span
+          class="m-num value"
+          class:selected={on}
+          role="presentation"
+          style:left="{l.x}px"
+          style:top="{l.y}px"
+          data-test="tempo-value"
+          ondblclick={(e) => {
+            e.stopPropagation();
+            if (!busy) editing = { kind: "tempo", tick: l.tick };
+          }}>{tempoText(l.bpm)}</span
+        >
       {/each}
       {#if editPoint}
         <div class="edit" style:left="{tickToX(view, editPoint.tick) + dims.point}px" style:top="{T.bpmToY(scale, editPoint.bpm)}px">
@@ -412,7 +423,6 @@
     z-index: 1;
     color: var(--color-gray-10);
     white-space: nowrap;
-    pointer-events: none;
   }
   .value.selected {
     color: var(--color-accent);

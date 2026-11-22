@@ -61,7 +61,7 @@
   {#if c.typing}
     <span class="value"><ValueField initial={sendText(c.shown)} label={t(bus === "a" ? "mixer.sendA" : "mixer.sendB")} onsubmit={(text) => c.submit(text)} oncancel={c.stopTyping} /></span>
   {:else}
-    <span class="m-num value live"><span class="in">{sendText(c.shown)}</span></span>
+    <span class="m-num value live"><span class="in" role="presentation" data-test="mixer-send-text" ondblclick={c.startTyping}>{sendText(c.shown)}</span></span>
   {/if}
 </div>
 

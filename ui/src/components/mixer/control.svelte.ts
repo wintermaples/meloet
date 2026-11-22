@@ -111,6 +111,13 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     keys.release();
   }
 
+  /** Opens the typing field, the same as Enter (a double click on the number). */
+  function startTyping(): void {
+    if (press || !opts.parse) return;
+    keys.flush();
+    typing = true;
+  }
+
   function submit(text: string): boolean {
     const v = opts.parse?.(text);
     if (v === undefined) return false;
@@ -136,6 +143,7 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
     stopTyping() {
       typing = false;
     },
+    startTyping,
     down,
     move,
     up,
@@ -148,12 +156,17 @@ export function mixControl<V>(opts: MixControlOptions<V>) {
   };
 }
 
+/** The fader's intent. The track head's typed dB sends the same one. */
+export function gainCommand(strip: StripRef, db: number | null, commit: boolean): Command {
+  return { type: "setGain", strip, db, commit };
+}
+
 /** フェーダー: 上下に動かす。部品の高さぶんで目盛のいちばん下から上まで。いちばん下は −∞。 */
 export function faderControl(strip: () => StripRef, db: () => number | null): MixControl<number | null> {
   return mixControl<number | null>({
     value: db,
     read: (start, _dx, dy, box) => fracToDb(Math.max(0, Math.min(1, dbToFrac(start) - dy / Math.max(1, box.height)))),
-    make: (value, commit) => ({ type: "setGain", strip: strip(), db: value, commit }),
+    make: (value, commit) => gainCommand(strip(), value, commit),
     step: (value, key, shift) => (key === "ArrowUp" || key === "ArrowDown" ? stepDb(value, key === "ArrowUp" ? 1 : -1, shift) : undefined),
     home: () => 0,
     parse: parseDb,

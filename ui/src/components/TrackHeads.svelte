@@ -28,11 +28,23 @@
   import { laneAddOpenFor, openLaneAdd } from "./automation/laneAdd.svelte";
   import { windowOf } from "./params/selected";
   import WindowMark from "./WindowMark.svelte";
+  import ValueField from "./params/ValueField.svelte";
+  import { gainCommand } from "./mixer/control.svelte";
+  import { faderText, parseDb } from "./mixer/scale";
 
   const song = $derived(current.state!.song);
   const shelf = $derived(current.state!.shelf);
   const transport = $derived(current.state!.transport);
   const busy = $derived(transport.state === "recording" || transport.state === "countIn");
+
+  /** The track whose dB is being typed (a double click on the dB opens the same field as the mixer fader's). */
+  let typingGain = $state<number | null>(null);
+  function submitGain(track: TrackView, text: string): void {
+    const db = parseDb(text);
+    if (db === undefined) return;
+    typingGain = null;
+    send(gainCommand({ kind: "track", id: track.id }, db, true));
+  }
 
   const shiftKey = (letter: string) => `${t("key.shift")} ${letter}`;
 
@@ -322,7 +334,19 @@
             {/if}
           {/if}
           {#if track.kind.kind === "keys"}
-            <span class="m-num" use:term={"dB"}>{track.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(track.gainDb) })}</span>
+            {#if typingGain === track.id}
+              <ValueField
+                initial={faderText(track.gainDb)}
+                label={t("mixer.db")}
+                unit={t("mixer.db")}
+                onsubmit={(text) => submitGain(track, text)}
+                oncancel={() => (typingGain = null)}
+              />
+            {:else}
+              <span class="m-num" role="presentation" data-test="track-gain" use:term={"dB"} ondblclick={() => (typingGain = track.id)}
+                >{track.gainDb === null ? t("common.dbSilent") : t("common.db", { value: dbNumber(track.gainDb) })}</span
+              >
+            {/if}
           {/if}
         </div>
         <div

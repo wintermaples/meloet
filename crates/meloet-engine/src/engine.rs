@@ -1316,6 +1316,8 @@ pub struct Engine {
     /// The track and keys the last `Audition` sounded, until they are let go.
     audition: Option<(usize, Chord)>,
     last_callback: Option<(Instant, f64)>,
+    /// What goes out is cut to ±1.0 (0 dB), to spare ears and speakers.
+    clamp_out: bool,
 }
 
 impl Engine {
@@ -1401,6 +1403,7 @@ impl Engine {
             tone: TestTone::idle(),
             audition: None,
             last_callback: None,
+            clamp_out: true,
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -1448,6 +1451,12 @@ impl Engine {
     /// what comes out, and what an export cuts off there.
     pub fn master_latency(&self) -> u32 {
         self.master_strip.latency()
+    }
+
+    /// What goes out is no longer cut to ±1.0: for an export, which counts the places over
+    /// 0 dB and keeps them in a 32 bit float file. Not numbers still come out as silence.
+    pub fn keep_overs(&mut self) {
+        self.clamp_out = false;
     }
 
     /// Get ready for a (new) stream. Call outside the audio thread, while no stream is running
@@ -2611,8 +2620,12 @@ impl Engine {
                 (0.0, 0.0)
             };
             peak = [peak[0].max(l.abs()), peak[1].max(r.abs())];
-            frame[0] = (l + click).clamp(-1.0, 1.0);
-            frame[1] = (r + click).clamp(-1.0, 1.0);
+            frame[0] = l + click;
+            frame[1] = r + click;
+            if self.clamp_out {
+                frame[0] = frame[0].clamp(-1.0, 1.0);
+                frame[1] = frame[1].clamp(-1.0, 1.0);
+            }
         }
         raise(&self.meters.master[0], peak[0]);
         raise(&self.meters.master[1], peak[1]);

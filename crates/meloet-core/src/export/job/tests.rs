@@ -8,7 +8,7 @@ use meloet_protocol::{ExportFormat, PluginSlotRef, PluginWindowKind, RecordForma
 
 use super::*;
 use crate::audiofiles::decode::Decoder;
-use crate::export::fixture::{BAR, BLOCK, Place, RATE, Run, read_wav, song};
+use crate::export::fixture::{BAR, BLOCK, Place, RATE, Run, loud, read_wav, song};
 use crate::plugins::hosts::DEFAULT_GEOMETRY;
 
 /// How many frames the engine plays from `start` to `end`.
@@ -209,6 +209,71 @@ fn the_places_over_0_db_are_runs_apart_by_100_ms() {
     });
     assert_eq!(t.places.count, 2);
     t.out.abandon();
+}
+
+/// The last word of a job that is rendered: the peak and the places over 0 dB.
+fn checked(run: &Run) -> (Option<f32>, u32) {
+    let seen = run.until("rendered", |n| {
+        matches!(
+            n,
+            ExportNews::Counted { done: true, .. } | ExportNews::Failed { .. }
+        )
+    });
+    match seen.last() {
+        Some(ExportNews::Counted { peak_db, over, .. }) => (*peak_db, *over),
+        other => panic!("the job failed: {other:?}"),
+    }
+}
+
+#[test]
+fn the_check_hears_what_goes_over_0_db_and_only_the_whole_numbers_cut_it() {
+    let place = Place::new("export-loud");
+    let (doc, _) = song();
+    let doc_loud = loud(&doc, false);
+    place.files_of(&doc_loud);
+    let span = (0, 2 * BAR);
+    let largest = |a: &[f32]| a.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let out = place.root.join("out");
+    let mut id = 0;
+    let mut export = |doc: &Doc, name: &str, bits| {
+        id += 1;
+        let run = place.start(place.setup(place.job(id, doc, span, ExportTail::Off)));
+        let (peak, over) = checked(&run);
+        let floats = run.pass(0);
+        let path = out.join(name);
+        run.handle
+            .finish(target(path.clone(), ExportFormat::Wav, RATE, bits));
+        assert_eq!(finished(&run), std::slice::from_ref(&path));
+        (peak, over, floats, read_wav(&path))
+    };
+
+    // Nothing on the master stops it: the check counts what the faders make, before any cut.
+    let (peak, over, floats, wav32) = export(&doc_loud, "loud32.wav", RecordFormat::Bits32);
+    let top = largest(&floats);
+    assert!(top > 1.0, "the song does not go over 0 dB: {top}");
+    assert!(over > 0);
+    let peak = peak.unwrap();
+    assert!(peak > 0.0, "{peak} dB");
+    assert_eq!(peak, 20.0 * top.log10());
+    // 32 bit floats keep it as it is.
+    assert!(wav32 == floats);
+    // 16 and 24 bits cut it where they are written.
+    for (name, bits) in [
+        ("loud24.wav", RecordFormat::Bits24),
+        ("loud16.wav", RecordFormat::Bits16),
+    ] {
+        let (_, again, same, wav) = export(&doc_loud, name, bits);
+        assert_eq!(again, over);
+        assert!(same == floats, "two runs differ");
+        assert!(largest(&wav) <= 1.0, "{name}: {}", largest(&wav));
+        assert!(largest(&wav) > 0.99, "{name}: {}", largest(&wav));
+    }
+
+    // With the master's limiter, nothing goes over.
+    let (peak, over, floats, _) = export(&loud(&doc, true), "limited.wav", RecordFormat::Bits32);
+    assert_eq!(over, 0);
+    assert!(largest(&floats) <= 1.0);
+    assert!(peak.unwrap() < 0.0, "{peak:?} dB");
 }
 
 #[test]

@@ -272,3 +272,20 @@ pub fn song() -> (Doc, Parts) {
     };
     (doc, parts)
 }
+
+/// [`song`] with every fader at +6 dB, the master's too: it goes over 0 dB. `limiter`:
+/// the master keeps the limiter a new song has in its first slot.
+pub fn loud(doc: &Doc, limiter: bool) -> Doc {
+    let six = Gain::from_db(Gain::MAX_DB);
+    let mut doc = doc.clone();
+    if !limiter {
+        doc = mixer::remove_effect(&doc, StripId::Master, 0).unwrap().doc;
+    }
+    let strips: Vec<StripId> = (doc.tracks.iter().map(|t| StripId::Track(t.id)))
+        .chain([StripId::Master])
+        .collect();
+    for strip in strips {
+        doc = mixer::set_gain(&doc, strip, six).unwrap().doc;
+    }
+    doc
+}

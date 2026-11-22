@@ -145,7 +145,13 @@ pub(crate) struct Library {
     /// Until the reading thread is started, at the first read.
     done: Option<Done>,
     reader: Option<JoinHandle<()>>,
+    /// A thread gives the memory of freed samples back to the PC.
+    giving_back: Arc<AtomicBool>,
 }
+
+/// Samples freed (of every instrument and SF2 preset, wherever the last holder dropped them)
+/// before their memory is given back to the PC.
+const GIVE_BACK_AFTER: usize = 4 << 20;
 
 impl Library {
     /// `files`: the `instrument.json` of each instrument with samples on this PC.
@@ -156,6 +162,37 @@ impl Library {
             queue: Arc::new(Queue::default()),
             done: Some(done),
             reader: None,
+            giving_back: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Gives the memory of freed samples back to the PC once enough was freed, on a thread of
+    /// its own (docs/architecture.md 23-12). Called often.
+    pub fn give_back_freed(&self) {
+        if meloet_sound::memory::freed_bytes() < GIVE_BACK_AFTER
+            || self.giving_back.swap(true, Relaxed)
+        {
+            return;
+        }
+        let busy = self.giving_back.clone();
+        let spawned = std::thread::Builder::new()
+            .name("meloet-give-back".into())
+            .spawn(move || {
+                #[cfg(feature = "dev-hooks")]
+                let (began, mib) = (
+                    std::time::Instant::now(),
+                    meloet_sound::memory::freed_bytes() >> 20,
+                );
+                meloet_sound::memory::give_back();
+                #[cfg(feature = "dev-hooks")]
+                if crate::measure::dir_from_env().is_some() {
+                    let ms = began.elapsed().as_secs_f64() * 1000.0;
+                    eprintln!("meloet: gave back the memory of {mib} MiB of samples in {ms:.1} ms");
+                }
+                busy.store(false, Relaxed);
+            });
+        if spawned.is_err() {
+            self.giving_back.store(false, Relaxed);
         }
     }
 
@@ -222,6 +259,14 @@ impl Library {
             None if self.file(instrument).is_some() => Samples::NotRead,
             None => Samples::NotInstalled,
         }
+    }
+
+    /// Each instrument in memory: its sample bytes and how many hold them (this one too).
+    #[cfg(feature = "dev-hooks")]
+    pub fn held(&self) -> Vec<(BuiltinInstrument, usize, usize)> {
+        (self.banks.iter())
+            .map(|(i, bank)| (*i, bank.sample_bytes(), Arc::strong_count(bank)))
+            .collect()
     }
 
     #[cfg(test)]

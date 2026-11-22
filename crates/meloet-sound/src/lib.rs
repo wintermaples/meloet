@@ -6,6 +6,7 @@
 //! locks, no blocking. Sample files are read on another thread, which core owns.
 
 pub mod effects;
+pub mod memory;
 pub mod phrases;
 pub mod sampler;
 pub mod sf2;

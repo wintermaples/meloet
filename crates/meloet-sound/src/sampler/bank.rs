@@ -238,6 +238,12 @@ fn tables(spans: &[(Trigger, u8, u8)]) -> Tables {
     }
 }
 
+impl Drop for SampleBank {
+    fn drop(&mut self) {
+        crate::memory::note_freed(self.sample_bytes());
+    }
+}
+
 impl SampleBank {
     /// The instrument's name in the pack (`grandPiano`, `studioKit`, ...), or the name of a
     /// SoundFont's preset.

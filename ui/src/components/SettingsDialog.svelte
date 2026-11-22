@@ -8,6 +8,7 @@
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
   import { movableDialog } from "../lib/dialogMove";
+  import { packMb } from "./pack/pack";
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { term } from "../lib/tip.svelte";
   import { current, send } from "../state/app.svelte";
@@ -37,7 +38,7 @@
   const inputGroups = $derived(endpointGroups(app?.inputs.list ?? [], "input"));
   const inputs = $derived([...inputGroups.usable, { id: "", look: notUsed }]);
   const dash = t("meter.playTargetNone");
-  const packMb = $derived(Math.round((app?.sounds.packBytes ?? 0) / 1_000_000));
+  const packMbAll = $derived(packMb(app?.sounds.packBytes ?? 0));
 
   function testTone(): void {
     if (settings?.draftOutput) send({ type: "testTone", output: settings.draftOutput });
@@ -318,7 +319,7 @@
               <div class="row" data-test="settings-pack">
                 <span class="strong name">{t("settings.packRow")}</span>
                 {#if app.sounds.have >= app.sounds.total}
-                  <span class="strong" data-test="settings-pack-state">{t("settings.packAll", { mb: packMb })}</span>
+                  <span class="strong" data-test="settings-pack-state">{t("settings.packAll", { mb: packMbAll })}</span>
                 {:else}
                   <span class="strong" data-test="settings-pack-state">{t("settings.packNotYet", { have: app.sounds.have, total: app.sounds.total })}</span>
                   <Button primary test="settings-fetch-pack" disabled={app.sounds.fetch.state === "fetching"} onclick={() => send({ type: "fetchPack" })}

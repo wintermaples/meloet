@@ -97,7 +97,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     expect(app.sent).toEqual([{ type: "fetchPack" }, { type: "packLater" }]);
   });
 
-  it("流れ 1〜4 の案内が出ている間は、聞くのを待つ（鍵盤がない ・ 出口がまだ ・ 出口えらび ・ 「音が出ました」）", () => {
+  it("流れ 1〜4 の案内が出ている間は、聞くのを待つ（鍵盤がない ・ 出口がまだ）。アレンジの中の「音が出ました」は待たない（B-95-12）", () => {
     const base = scene("packAsk");
     expect(flowHintUp(base)).toBe(false);
     const noKeys = structuredClone(base);
@@ -107,10 +107,12 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
     noOutput.outputs.chosen = null;
     const hint = structuredClone(base);
     hint.workspace.hint = "soundCameOut";
-    for (const s of [noKeys, noOutput, hint]) {
+    for (const s of [noKeys, noOutput]) {
       expect(flowHintUp(s)).toBe(true);
       expect(packBand(s)).toBeNull();
     }
+    expect(flowHintUp(hint)).toBe(false);
+    expect(packBand(hint)).toEqual({ kind: "ask" });
     show(InputMeter, noKeys);
     expect(q("[data-test=pack-band]")).toBeNull();
     expect(text(q("[data-test=meter-right]"))).toContain("鍵盤を USB でつなぐと、ここに出ます。");
@@ -144,7 +146,7 @@ describe("入力計の帯の案内（3 章 43-B ・ 44-A）", () => {
 describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => {
   it("取っている間に流れの案内が出たら、進みは状態行の左（「音の素材を取りにいっています」、棒、38 %、「やめる」）", () => {
     const s = scene("packGet");
-    s.workspace.hint = "soundCameOut";
+    s.workspace.chooser = scene("connect2").workspace.chooser;
     expect(packInStatus(s)).not.toBeNull();
     show(InputMeter, s);
     show(StatusLine);
@@ -190,9 +192,10 @@ describe("状態行（6 章の音の素材の 7 場面、44-B の形）", () => 
     hint.keyboards.list = [];
     hint.keyboards.active = null;
     hint.workspace.hint = "soundCameOut";
-    for (const s of [chooser, hint]) expect(askInStatus(s)).toBe(false);
-    show(StatusLine, hint);
+    expect(askInStatus(chooser)).toBe(false);
+    show(StatusLine, chooser);
     expect(q("[data-test=pack-status-ask]")).toBeNull();
+    expect(askInStatus(hint)).toBe(true);
     const answered = structuredClone(base);
     answered.keyboards.list = [];
     answered.keyboards.active = null;

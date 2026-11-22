@@ -43,7 +43,7 @@
   import WindowsMenu from "./WindowsMenu.svelte";
   import { keyCountsText, keysDrums, keysLabel, rollShowsDrums } from "./pianoroll/drums";
   import { soundNameText } from "./sounds";
-  import { askInStatus, mb as packMb, packInStatus, percentOf } from "./pack/pack";
+  import { askInStatus, packInStatus, packMb, percentOf } from "./pack/pack";
   import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";

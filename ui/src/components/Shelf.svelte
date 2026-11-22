@@ -408,14 +408,14 @@
 
 {#snippet notice(m: MissingView | null)}
   {#if m === null}
-    <div class="notice" data-test="shelf-notice-pack">
+    {#if app.sounds.fetch.state !== "fetching"}<div class="notice" data-test="shelf-notice-pack">
       <span class="say">{t("shelf.soundsMissing")}</span>
       <div class="buttons">
-        <Button primary disabled={app.sounds.fetch.state === "fetching"} onclick={() => send({ type: "fetchPack" })} test="shelf-fetch-pack"
+        <Button primary onclick={() => send({ type: "fetchPack" })} test="shelf-fetch-pack"
           >{t("button.fetchPack")}</Button
         >
       </div>
-    </div>
+    </div>{/if}
   {:else if m.kind === "sf2"}
     <div class="notice" data-test="shelf-notice-sf2">
       <span class="say">{t("sf2.missing", { file: m.file, count: m.tracks })}</span>

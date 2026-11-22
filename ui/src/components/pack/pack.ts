@@ -7,6 +7,8 @@ import { STATUS_JOIN, t } from "../../text/ja";
 const MB = 1_000_000;
 /** MB は 1000 × 1000 バイト（状態行の mb と同じ）。 */
 export const mb = (bytes: number): number => Math.round(bytes / MB);
+/** 包みぜんぶの大きさ（「約 240 MB」「ぜんぶあります ・ 240 MB」）は 10 MB にまるめる（仕様書の 240 MB）。 */
+export const packMb = (bytes: number): number => Math.round(bytes / (10 * MB)) * 10;
 /** 取れた分の %。取りおえるまでは 100 にしない。 */
 export const percentOf = (done: number, total: number): number =>
   total <= 0 ? 0 : done >= total ? 100 : Math.min(99, Math.floor((done / total) * 100));
@@ -28,11 +30,11 @@ export function lastingHintUp(app: AppState): boolean {
 }
 
 /**
- * 待てば終わる案内（出口えらびと出口がまだ、「音が出ました」などの一度だけの案内）。出口えらびは鍵盤があるときだけ出るので、
- * 鍵盤がなくて出口がまだのときは数えない。
+ * 待てば終わる案内（出口えらびと出口がまだ）。出口えらびは鍵盤があるときだけ出るので、鍵盤がなくて出口がまだのときは数えない。
+ * 「音が出ました」「空のアレンジ」はアレンジの中に出て、クリップができるまで消えないので待たない（design-notes B-95-12）。
  */
 function passingHintUp(app: AppState): boolean {
-  if (app.workspace.chooser !== null || app.workspace.hint !== null) return true;
+  if (app.workspace.chooser !== null) return true;
   return app.outputs.chosen === null && !lastingHintUp(app);
 }
 
@@ -67,7 +69,7 @@ export function askInStatus(app: AppState): boolean {
 /** 聞いている帯の 2 行。short: 入りきらないときの小さい字（mock:R12-Fit）。 */
 export function askLines(sounds: SoundsView, short: boolean): [string, string] {
   return [
-    t("pack.ask", { mb: mb(sounds.packBytes) }),
+    t("pack.ask", { mb: packMb(sounds.packBytes) }),
     short ? t("pack.askDetailShort") : t("pack.askDetail", { count: sounds.total }),
   ];
 }

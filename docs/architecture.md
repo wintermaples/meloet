@@ -2510,7 +2510,7 @@ pub struct AudioShape {
 
 - **音色ごとのファイル**にする（45-A「取れた音色から鳴る」と、新しい包みで変わった音色だけ取りなおすため）。1 つの音色 = 1 つの tar（`<音色>-<音色の版>.tar`。中は今の `grand-piano/instrument.json` と `samples/*.flac`。FLAC はもう縮んでいるので tar は縮めない）。帰属表示とライセンスの文（`credits.json`、`licenses/`）は小さな共通の tar `common-<版>.tar` に。
 - **目録** `catalog.json`（版つきの JSON、`"format": "meloet-sounds-catalog", "version": 1`）: 包みの版（`2026.12.0` など）、音色ごとに `{id, version, file, url, bytes, sha256, credits}`、共通の tar の同じ欄。音色の版は、その音色の中身（instrument.json とサンプル）の sha256 から作る（中身が同じなら版も同じ。包みを作りなおしても、変わらない音色は取りなおさない）。
-- **署名**: 目録に minisign の署名（`catalog.json.minisig`）をつけ、公開鍵は実行ファイルに入れる。meloet は署名の合わない目録を使わない（`minisign-verify`、MIT、依存なし）。**理由**: 目録とファイルは同じ Release から来るので、sha256 だけでは Release やアカウントを書きかえられた時に守れない。取った FLAC は外から来た物としてデコーダに入るので、入口を鍵の持ち主に絞る。秘密鍵はリポジトリに入れない（だれが持つかはオーナーさんに聞く。0-4）。
+- **署名**: v0.x の間は**つけない**（オーナーさんの決め 2026-11-22）。そのかわり、目録に書いてよい取る先は `https://github.com/wintermaples/meloet/releases/download/` の下だけにしぼり、ほかの URL がある目録は使わない。守れる物: TLS（相手は GitHub）、目録の sha256（とちゅうの欠け ・ 化け）、immutable releases（上げた添付は書きかえられない）、はじめの目録は実行ファイルの中（最初の 240 MB は正しい）。守れない物: アカウントやトークンを乗っとられて `main` の目録を書きかえられた時（取らされるのは音のファイルだけで、プログラムは動かない）。目録をたしかめる所を 1 か所にまとめ、あとで minisign の署名（`minisign-verify`、MIT）を足せる形にしておく。
 - **置き場所**: `$XDG_DATA_HOME/meloet/sounds/<音色>/<音色の版>/`（ないときは `~/.local/share`）。目録の写しは `$XDG_DATA_HOME/meloet/sounds/catalog.json`。**理由**: 取りなおせるが 240 MB で重く、ネットがない所では取れない。`~/.cache` は掃除の道具が消す前提（調べ物 A）。歌のファイルの写し（`audiofiles/`）は「消えても作りなおせる」ので `XDG_CACHE_HOME` のまま。
 - さがす順（19-1 を変える）: `MELOET_SOUNDS_DIR`（開発と試験だけ。23-4）→ 開発のビルドの `target/*/sounds` → `$XDG_DATA_HOME/meloet/sounds/`。音色ごとに、目録の版のフォルダがあれば使う。前の形（`~/.cache/meloet/sounds/<包みの版>/`）は、この PC の開発のための物なので読まない。
 - **作りかた**: `tools/sounds/build.py` は今のまま 1 つのフォルダを作り、新しい `tools/sounds/split.py`（仮の名前）が音色ごとの tar と目録を作り、署名する。Release は 1 つの包みの版ごとに 1 つ（タグ `sounds-<包みの版>`、immutable にする）。前の Release に同じ版の音色があれば、その URL を目録に書き、同じファイルを上げなおさない。上げる前にオーナーさんに聞く（いつもの決まり）。
@@ -2551,7 +2551,7 @@ pub struct AudioShape {
 
 ### 23-6. 棟梁が決めた所（理由つき、まとめ）
 
-- 署名をつける: 上の 23-1。手間は Release を作るときの 1 行。
+- 署名は v0.x ではつけない: 上の 23-1（オーナーさんの決め）。取る先の URL をしぼる。
 - 24 時間に 1 回: 上の 23-3。
 - 置き場所を DATA に: 上の 23-1。
 - ureq: tokio を持ちこまない。1 本のスレッドで足りる。reqwest は 0.13 の既定が aws-lc（C の部品が多い）。

@@ -667,9 +667,11 @@ export class Engine {
       case "overview":
         paintOverview(out, box, Math.max(1, Math.round(((OVERVIEW.inset * this.scale) / 100) * dpr)));
         break;
-      case "rects":
-        paintRects(out, box, slot.rects, dpr, slot.waves);
+      case "rects": {
+        const shift = (slot.shiftX ?? 0) * dpr;
+        paintRects(out, shift === 0 ? box : { x0: box.x0 - shift, y0: box.y0, x1: box.x1 - shift, y1: box.y1 }, slot.rects, dpr, slot.waves);
         break;
+      }
       case "paint":
         slot.paint(out, box, { dpr, scale: this.scale, isDown: this.isDown });
         break;

@@ -112,8 +112,9 @@ export type GlSlot =
    * bottom on the screen (the two together). For a slot drawn every frame beside another region that is: where WebKit
    * paints the page on the CPU, rectangles that start and end at different heights cut each other and the play line
    * into many (docs/architecture.md, chapter 7, "CPU で描く WebKit").
+   * `shiftX`: the rectangles and waves are drawn this many CSS px to the left (a picture made once, then scrolled).
    */
-  | { kind: "rects"; rects: readonly GlRect[]; waves?: readonly GlWave[]; alignY?: RegionName }
+  | { kind: "rects"; rects: readonly GlRect[]; waves?: readonly GlWave[]; alignY?: RegionName; shiftX?: number }
   /**
    * Painted by its component (the piano roll) from what it holds; the component calls the slot's `update`
    * when that changes. `keys`: paint again when the held keys change.

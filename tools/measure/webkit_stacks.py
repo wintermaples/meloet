@@ -18,6 +18,31 @@ import gdb
 LIB = "libwebkit2gtk-4.1.so"
 
 
+def web_process(root):
+    """The newest WebKitWebProcess under `root` (gdb may attach only to its own descendants; other
+    apps of the same user may have one too)."""
+    found = []
+    for p in os.listdir("/proc"):
+        if not p.isdigit():
+            continue
+        try:
+            if "WebKitWebProcess" not in open(f"/proc/{p}/cmdline", "rb").read().decode(errors="replace"):
+                continue
+        except OSError:
+            continue
+        q = int(p)
+        while q > 1:
+            if q == root:
+                found.append(int(p))
+                break
+            try:
+                stat = open(f"/proc/{q}/stat").read()
+            except OSError:
+                break
+            q = int(stat[stat.rindex(")") + 2:].split()[1])
+    return max(found) if found else None
+
+
 def symbols(debug_file):
     """Sorted (offset, name) of the functions of the library, from its debug file."""
     out = subprocess.run(["nm", "-C", "--defined-only", debug_file], capture_output=True, text=True, check=True).stdout
@@ -68,12 +93,9 @@ def main():
 
     app = subprocess.Popen(["bash", "-c", command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(wait_s)
-    pids = subprocess.run(
-        ["pgrep", "-u", str(os.getuid()), "-n", "-f", "WebKitWebProcess"], capture_output=True, text=True
-    ).stdout.split()
-    if not pids:
+    pid = web_process(app.pid)
+    if pid is None:
         raise SystemExit("webkit_stacks: no WebKitWebProcess")
-    pid = int(pids[0])
     areas, base = maps(pid)
     if base is None:
         raise SystemExit(f"webkit_stacks: {LIB} is not mapped in {pid}")

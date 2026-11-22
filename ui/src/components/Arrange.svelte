@@ -120,11 +120,11 @@
   const tagMin = $derived(metrics.px("part.take.tag-min-width"));
   const switchH = $derived(metrics.px("part.take.switch-height"));
 
-  /** 目盛の数字（小節の番号と、その線の x）。 */
+  /** 目盛の数字（小節の番号と、その線の曲の頭からの x）。数字の帯ごと transform で送るので、送っても数字の x は変わらない。 */
   const barNumbers = $derived.by(() => {
     const out: { n: number; x: number }[] = [];
     eachLine(map, map.meterAt(G.xToTick(view, 0)).barTick, G.xToTick(view, viewWidth), (_, bar) => bar * barLabelEvery, (tick, _, bar) =>
-      out.push({ n: bar + 1, x: G.tickToX(view, tick) }),
+      out.push({ n: bar + 1, x: tick * pxPerTick }),
     );
     return out;
   });
@@ -185,20 +185,30 @@
    * フェードの取っ手（左右の角の gray.10）は `handles` に足す: 呼んだ側が、どのクリップよりも上に描く（重なったクリップの下にかくれないように）。
    */
   function paintAudioClip(rects: GlRect[], waves: GlWave[], handles: GlRect[], v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): void {
-    const a = clip.audio!;
-    if (a.state === "missing") {
+    if (paintAudioFrame(rects, handles, v, box, track, clip, colors, drag)) paintAudioWaves(waves, rects.length, v, box, track, clip, colors, drag);
+  }
+
+  /** 歌のクリップの枠とフェードの取っ手。波形も描くクリップなら true。 */
+  function paintAudioFrame(rects: GlRect[], handles: GlRect[], v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): boolean {
+    if (clip.audio!.state === "missing") {
       const missing = colors === G.CLIP_SELECTED ? colors : { ...colors, top: WAVE.missingTop };
       G.paintClip(rects, v, dims, box, missing, [], { range: null, ground: WAVE.missingGround });
-      return;
+      return false;
     }
+    G.paintClip(rects, v, dims, box, G.clipColorsFor(colors, track.muted), [], { range: null });
+    handleRects(handles, v, dims, box, W.waveClipOf(clip, drag)!, handleSize);
+    return true;
+  }
+
+  /** 歌のクリップの波形。`after` は、波形の下になる四角の数。 */
+  function paintAudioWaves(waves: GlWave[], after: number, v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): void {
+    const a = clip.audio!;
     const shown = G.clipColorsFor(colors, track.muted);
-    G.paintClip(rects, v, dims, box, shown, [], { range: null });
     const shape = W.waveClipOf(clip, drag)!;
-    handleRects(handles, v, dims, box, shape, handleSize);
     const level = W.waveLevel(W.framesPerPx(map, v, shape.timing, clip.start, clip.end), waveSizes.pitch);
     const found = waveBook.sourceFor(song.serial, a.audio, level);
     if (!found) return;
-    W.clipWaves(waves, rects.length, map, v, waveArea(dims, box), shape, found.source, found.framesPerPeak, W.waveLook(waveSizes, shown.note, track.id === tallTrack));
+    W.clipWaves(waves, after, map, v, waveArea(dims, box), shape, found.source, found.framesPerPeak, W.waveLook(waveSizes, shown.note, track.id === tallTrack));
   }
 
   /** 録っている歌のピーク（ふえていく。先は毎コマ読むので、ふえても描きなおしは頼まない）。カウントインの間はまだない。 */
@@ -287,6 +297,46 @@
     if (take) return G.takeShapes(clip, take);
     if (fallback?.track !== trackId) return [];
     return fallback.notes.filter((n) => n.start < clip.end && n.start + n.length > clip.start);
+  }
+
+  /** クリップのノートの形と、その高さの範囲。`longest` はいちばん長いノート（-1 は、始まりの順にならんでいない）。 */
+  interface LaneShapes {
+    notes: G.NoteShape[];
+    range: { low: number; high: number } | null;
+    longest: number;
+  }
+  /** テイクは中身を変えないので、形はテイクとクリップの置き場所ごとに覚えておく（拡大のたびに作りなおさない）。 */
+  const laneShapeBook = new WeakMap<TakeNotes, Map<string, LaneShapes>>();
+  function laneShapesOf(trackId: number, clip: ClipView): LaneShapes {
+    const take = clip.audio === null ? takeOf(clip.takeId) : undefined;
+    if (!take) {
+      const notes = shapesOf(trackId, clip);
+      return { notes, range: G.keyRange(notes), longest: -1 };
+    }
+    let byPlace = laneShapeBook.get(take);
+    if (!byPlace) laneShapeBook.set(take, (byPlace = new Map()));
+    const key = `${clip.start} ${clip.end} ${clip.takeOffset}`;
+    let found = byPlace.get(key);
+    if (!found) {
+      const notes = G.takeShapes(clip, take);
+      found = { notes, range: G.keyRange(notes), longest: notes.reduce((m, n) => Math.max(m, n.length), 0) };
+      byPlace.set(key, found);
+    }
+    return found;
+  }
+  /** 始まりの順の形から、ティック [from, to) にかかる物だけ。 */
+  function notesNear(shapes: LaneShapes, from: number, to: number): G.NoteShape[] {
+    const first = (tick: number) => {
+      let lo = 0;
+      let hi = shapes.notes.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (shapes.notes[mid]!.start < tick) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
+    return shapes.notes.slice(first(from - shapes.longest), first(to));
   }
 
   // ---- ループ ----
@@ -423,36 +473,50 @@
 
   // ---- 大きな面: クリップ、録っているクリップのできた部分、ループのはし ----
 
+  /**
+   * 大きな面の四角は、見えている幅の 3 つぶんの窓（左に 1、右に 2）を見ているつもりで作り、窓の左はしからの分は slot の shiftX で送る。
+   * 送るたびには作りなおさず、見えている所の左のはしが幅 1 つぶん動いたときに作りなおす。
+   * 波形は見えている所で段と切れ目が決まるので、`laneWaves` が送るたびに作る（歌のクリップの数だけ）。
+   */
+  const laneWindow = $derived(Math.floor((scrollTick * pxPerTick) / Math.max(1, viewWidth)));
+
   const lanePicture = $derived.by(() => {
     void takeVersion;
     void liveVersion;
-    void waveBook.version;
+    const from = (laneWindow - 1) * viewWidth;
+    const v: G.View = { pxPerTick, scrollX: from, width: 3 * viewWidth };
     const out: GlRect[] = [];
-    const waves: GlWave[] = [];
     const handles: GlRect[] = [];
+    const audio: { after: number; row: number; track: TrackView; clip: ClipView; colors: G.ClipColors }[] = [];
+    const vocals: { after: number; row: number; rec: VocalRecordingView; commit: number }[] = [];
     song.tracks.forEach((track, row) => {
       for (const clip of track.clips) {
-        const box = G.clipBox(view, dims, row, clip.start, clip.end);
-        if (box.x1 < 0 || box.x0 > view.width) continue;
+        const box = G.clipBox(v, dims, row, clip.start, clip.end);
+        if (box.x1 < 0 || box.x0 > v.width) continue;
         const dragged = dragIds.has(clip.id);
         if (dragged && dragFrame) {
-          G.paintFrame(out, view, dims, box, "color.gray.7");
+          G.paintFrame(out, v, dims, box, "color.gray.7");
           continue;
         }
         const colors = selectedSet.has(clip.id) && !dragged ? G.CLIP_SELECTED : G.CLIP_PLAIN(G.trackColor(track));
-        if (clip.audio) paintAudioClip(out, waves, handles, view, box, track, clip, colors, null);
-        else G.paintClip(out, view, dims, box, G.clipColorsFor(colors, track.muted), shapesOf(track.id, clip));
+        if (clip.audio) {
+          if (paintAudioFrame(out, handles, v, box, track, clip, colors, null)) audio.push({ after: out.length, row, track, clip, colors });
+        } else {
+          const shapes = laneShapesOf(track.id, clip);
+          const notes = shapes.longest < 0 ? shapes.notes : notesNear(shapes, G.xToTick(v, -dims.hair), G.xToTick(v, v.width + dims.hair));
+          G.paintClip(out, v, dims, box, G.clipColorsFor(colors, track.muted), notes, { range: shapes.range });
+        }
       }
     });
     const shown = recShown;
     if (rec && shown && shown.commit > shown.lapFrom) {
       const row = rowOf(rec.track);
       const all = G.liveShapes(book?.notesOf(rec.id, shown.lap) ?? [], shown.commit);
-      const box = G.clipBox(view, dims, row, shown.lapFrom, shown.commit);
+      const box = G.clipBox(v, dims, row, shown.lapFrom, shown.commit);
       if (row >= 0) {
         G.paintClip(
           out,
-          view,
+          v,
           dims,
           box,
           G.CLIP_RECORDING,
@@ -461,23 +525,36 @@
         );
       }
     }
-    for (const v of recVocals) {
-      const row = rowOf(v.track);
-      const commit = Math.max(v.from, vocalCommit);
-      if (row < 0 || commit <= v.from) continue;
-      const box = G.clipBox(view, dims, row, v.from, commit);
-      G.paintClip(out, view, dims, box, G.CLIP_RECORDING, [], { openRight: true, range: null });
-      recWaves(waves, out.length, view, box, v, v.from, commit, false);
+    for (const r of recVocals) {
+      const row = rowOf(r.track);
+      const commit = Math.max(r.from, vocalCommit);
+      if (row < 0 || commit <= r.from) continue;
+      G.paintClip(out, v, dims, G.clipBox(v, dims, row, r.from, commit), G.CLIP_RECORDING, [], { openRight: true, range: null });
+      vocals.push({ after: out.length, row, rec: r, commit });
     }
     if (shownLoop) {
       const h = rows.height;
       for (const bar of [shownLoop.from, shownLoop.to]) {
-        const x = loopX(bar);
-        if (x >= 0 && x < view.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.7" });
+        const x = G.tickToX(v, barLineTick(map, bar));
+        if (x >= 0 && x < v.width) out.push({ x, y: 0, w: dims.hair, h, color: "color.gray.7" });
       }
     }
     for (const h of handles) out.push(h);
-    return { rects: out, waves };
+    return { from, rects: out, audio, vocals };
+  });
+
+  /** 大きな面の波形（`lanePicture` と同じく窓の左はしからの px）。 */
+  const laneWaves = $derived.by(() => {
+    void waveBook.version;
+    const waves: GlWave[] = [];
+    for (const a of lanePicture.audio) {
+      const box = G.clipBox(view, dims, a.row, a.clip.start, a.clip.end);
+      if (box.x1 < 0 || box.x0 > view.width) continue;
+      paintAudioWaves(waves, a.after, view, box, a.track, a.clip, a.colors, null);
+    }
+    for (const r of lanePicture.vocals) recWaves(waves, r.after, view, G.clipBox(view, dims, r.row, r.rec.from, r.commit), r.rec, r.rec.from, r.commit, false);
+    W.shiftWaves(waves, view.scrollX - lanePicture.from, 0);
+    return waves;
   });
 
   // ---- 音量の線 ・ フェードの取っ手のドラッグ（audioDrag。大きな面は描きなおさず、動いているクリップだけを小さな区画に重ねて描く） ----
@@ -565,7 +642,8 @@
         // 動かしている・つめているクリップの名前は、動いている絵の側に出す。
         if (dragIds.has(clip.id) && dragFrame) continue;
         const x = Math.max(box.x0, 0) + dims.hair;
-        const w = box.x1 - Math.max(box.x0, 0) - 2 * dims.hair;
+        // 右が見えている幅の 2 つぶんより先にのびるクリップは、そこで切る（送るたびに札の幅を変えない。名前がそれより長いことはない）。
+        const w = Math.min(box.x1, 2 * view.width) - Math.max(box.x0, 0) - 2 * dims.hair;
         out.push({
           id: clip.id,
           x,
@@ -1422,9 +1500,11 @@
         onpointerup={rulerUp}
         onpointercancel={rulerCancel}
       >
-        {#each barNumbers as b (b.n)}
-          <span class="m-num m-lbl bar-number" style:left="{b.x}px">{b.n}</span>
-        {/each}
+        <div class="bar-strip" style:transform="translateX({-view.scrollX}px)">
+          {#each barNumbers as b (b.n)}
+            <span class="m-num m-lbl bar-number" style:left="{b.x}px">{b.n}</span>
+          {/each}
+        </div>
         {#if shownLoop}
           <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
         {/if}
@@ -1454,7 +1534,7 @@
           {/each}
           {#if showsAddRow(track)}<div class="add-row"></div>{/if}
         {/each}
-        <div class="fill" use:glSlot={{ kind: "rects", rects: lanePicture.rects, waves: lanePicture.waves }}></div>
+        <div class="fill" use:glSlot={{ kind: "rects", rects: lanePicture.rects, waves: laneWaves, shiftX: view.scrollX - lanePicture.from }}></div>
         <div class="rec-host" use:glRegion={"recordingClip"}>
           {#each rows.lanes as l (l.track.id + JSON.stringify(l.lane.target))}
             <WriteLine track={l.track} lane={l.lane} top={l.top} {view} />
@@ -1728,6 +1808,10 @@
   }
   .ruler.bars {
     cursor: default;
+  }
+  .bar-strip {
+    position: absolute;
+    inset: 0;
   }
   .bar-number {
     position: absolute;

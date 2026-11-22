@@ -541,7 +541,9 @@ describe("Arrange の歌のクリップ", () => {
     expect(grounds).toHaveLength(2);
     // えらんでいないほう（ハモり）の上の線は gray.7。
     const second = G.clipBox({ pxPerTick: 64 / BAR, scrollX: 0, width: 1000 }, dims, 0, vocalClips(s)[1]!.start, vocalClips(s)[1]!.end);
-    expect(lane().rects.some((r) => r.color === "color.gray.7" && r.x === second.x0 && r.h === 2)).toBe(true);
+    // 大きな面の四角は、窓の左はしから（shiftX ぶん左に描く）。
+    const shift = lane().shiftX ?? 0;
+    expect(lane().rects.some((r) => r.color === "color.gray.7" && Math.abs(r.x - shift - second.x0) < 1e-9 && r.h === 2)).toBe(true);
   });
 
   it("audioLoading: 読みこんでいる途中は、ある所まで（ふえていくピーク）", async () => {

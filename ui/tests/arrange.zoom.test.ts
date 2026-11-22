@@ -98,8 +98,10 @@ describe("アレンジの見出しの行の − ＋ と「グリッド 1 小節�
     flushSync();
     expect(arrangeView.barPx).toBe(91);
     // 11 小節目の頭（10 × 91 = 910 px）が、まだ 640 px の所にある: 左はしは 270 px。
+    // 数字は曲の頭からの x で置き、数字の帯ごと transform で送る。
     const eleven = qa(".bar-number").find((b) => text(b) === "11")!;
-    expect(parseFloat(eleven.style.left)).toBeCloseTo(640, 5);
+    const shift = Number(/translateX\((-?[\d.]+)px\)/.exec(q(".bar-strip")!.style.transform)![1]);
+    expect(parseFloat(eleven.style.left) + shift).toBeCloseTo(640, 5);
   });
 
   it("アレンジを押すと、Mod ＋ ・ Mod − の行き先がアレンジになる", () => {
@@ -107,6 +109,51 @@ describe("アレンジの見出しの行の − ＋ と「グリッド 1 小節�
     show(longSong());
     q(".lanes")!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
     expect(prView.focus).toBe("arrange");
+  });
+});
+
+describe("横に送る（docs/architecture.md 23-13）", () => {
+  const lane = () => slots.get(q(".lanes > .fill")!) as Extract<GlSlot, { kind: "rects" }>;
+  const sideways = (dx: number) => {
+    q(".time")!.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: dx, shiftKey: true }));
+    flushSync();
+  };
+  /** クリップ 2（30 小節目から）の枠の、画面の x。 */
+  const secondClipX = () => {
+    const s = lane();
+    return Math.min(...s.rects.filter((r) => r.color === "color.gray.6").map((r) => r.x - (s.shiftX ?? 0)).filter((x) => x > 500));
+  };
+
+  it("大きな面の四角は作りなおさず、送った分だけ shiftX が変わる。目盛の数字は帯ごと transform で", () => {
+    show(longSong());
+    const before = lane();
+    expect(secondClipX()).toBeCloseTo(29 * 64, 6);
+    const strip = q(".bar-strip")!;
+    const fifth = () => qa(".bar-number").find((b) => text(b) === "5")!;
+    expect(fifth().style.left).toBe("256px");
+    sideways(100);
+    expect(lane().rects).toBe(before.rects);
+    expect(lane().shiftX! - before.shiftX!).toBeCloseTo(100, 6);
+    expect(secondClipX()).toBeCloseTo(29 * 64 - 100, 6);
+    expect(strip.style.transform).toBe("translateX(-100px)");
+    expect(fifth().style.left).toBe("256px");
+  });
+
+  it("左はしにかかる長いクリップの札は、送っても幅を変えない（見えている幅の 2 つぶんで切る）", () => {
+    show(app.stateWith((s) => (s.song.tracks[0]!.clips = [clip(1, 1, 40)])));
+    const label = () => q(".clip-label")!;
+    sideways(100);
+    expect([label().style.left, label().style.width]).toEqual(["1px", `${2 * WIDTH - 2}px`]);
+    sideways(100);
+    expect([label().style.left, label().style.width]).toEqual(["1px", `${2 * WIDTH - 2}px`]);
+  });
+
+  it("見えている幅 1 つぶん送ると、窓を作りなおす（画面の x は同じ式）", () => {
+    show(longSong());
+    const before = lane();
+    sideways(WIDTH + 50);
+    expect(lane().rects).not.toBe(before.rects);
+    expect(secondClipX()).toBeCloseTo(29 * 64 - WIDTH - 50, 6);
   });
 });
 

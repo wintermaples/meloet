@@ -17,6 +17,9 @@ clock is read:
             (measureMs, paintMs, glMs). What is left of busyMs is WebKit's style and painting.
   cpuMsPerFrame  CPU time of the WebKitWebProcess over the part (its main thread, all threads),
             for each engine frame. Other work on the PC moves this less than it moves busyMs.
+  frameGapMs  between the engine frames that drew an event. Where WebKit paints the page on the CPU
+            (docs/architecture.md 23-13), a frame comes as soon as the last one is painted, and busyMs
+            sometimes waits for the paint of the next frame too (it doubles): read this with busyMs.
 
 --how frame: the event is sent in an animation frame callback (what audio_app.py arrange does).
              The engine then asks for its frame after the callbacks of this frame ran, so it draws
@@ -105,7 +108,7 @@ def read(raw, events):
                 gaps.append(f["atMs"] - last)
             last = f["atMs"]
     return {"events": len(events), "engineFrames": len(busy), "jsMs": stats(js), "layoutMs": stats(layout),
-            "busyMs": stats(busy), "restOfBusyMs": stats(rest), "frameGapMs": {"p50": q(gaps, .5), "max": q(gaps, 1)},
+            "busyMs": stats(busy), "restOfBusyMs": stats(rest), "frameGapMs": {"mean": round(sum(gaps) / len(gaps), 2) if gaps else None, "p50": q(gaps, .5), "p95": q(gaps, .95), "max": q(gaps, 1)},
             **{k: stats(v) for k, v in parts.items()},
             # For each engine frame: the event's number, jsMs, layoutMs, busyMs, glMs.
             "each": each}

@@ -103,28 +103,7 @@ const WAV_HEAD: u64 = 44;
 const UNKNOWN: u32 = u32::MAX;
 
 fn wav_head(spec: SinkSpec, data: u32) -> [u8; 44] {
-    let bytes = u32::from(spec.bits.bits() / 8);
-    let block = bytes * u32::from(spec.channels);
-    // 1: integer PCM, 3: IEEE float.
-    let tag: u16 = if spec.bits == RecordFormat::Bits32 {
-        3
-    } else {
-        1
-    };
-    let mut h = [0u8; 44];
-    h[0..4].copy_from_slice(b"RIFF");
-    h[4..8].copy_from_slice(&data.saturating_add(WAV_HEAD as u32 - 8).to_le_bytes());
-    h[8..16].copy_from_slice(b"WAVEfmt ");
-    h[16..20].copy_from_slice(&16u32.to_le_bytes());
-    h[20..22].copy_from_slice(&tag.to_le_bytes());
-    h[22..24].copy_from_slice(&u16::from(spec.channels).to_le_bytes());
-    h[24..28].copy_from_slice(&spec.sample_rate.to_le_bytes());
-    h[28..32].copy_from_slice(&spec.sample_rate.saturating_mul(block).to_le_bytes());
-    h[32..34].copy_from_slice(&(block as u16).to_le_bytes());
-    h[34..36].copy_from_slice(&u16::from(spec.bits.bits()).to_le_bytes());
-    h[36..40].copy_from_slice(b"data");
-    h[40..44].copy_from_slice(&data.to_le_bytes());
-    h
+    crate::audiofiles::wav::wav_head(spec.sample_rate, spec.channels.into(), spec.bits, data)
 }
 
 struct WavSink {

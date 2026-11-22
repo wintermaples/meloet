@@ -5,6 +5,8 @@ use std::fs::File;
 use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+use meloet_protocol::RecordFormat;
+
 use crate::pcm::PcmFile;
 
 /// How the samples of a wav file are written.
@@ -205,22 +207,40 @@ pub struct CacheWav {
 
 const HEAD: u64 = 44;
 
-fn float_head(sample_rate: u32, channels: u8, data: u32) -> [u8; 44] {
-    let block = 4 * u32::from(channels);
-    let mut h = [0u8; 44];
+/// The head of a wav that meloet writes (a recording, an export, the cache): `data` bytes of
+/// samples of `format`, integer PCM or, at 32 bits, float. `data` is `0xFFFF_FFFF` while
+/// the file is written; the lengths stop there.
+pub(crate) fn wav_head(
+    sample_rate: u32,
+    channels: u16,
+    format: RecordFormat,
+    data: u32,
+) -> [u8; HEAD as usize] {
+    let bits = u16::from(format.bits());
+    let block = u32::from(bits / 8) * u32::from(channels);
+    let tag = if format == RecordFormat::Bits32 {
+        TAG_FLOAT
+    } else {
+        TAG_PCM
+    };
+    let mut h = [0u8; HEAD as usize];
     h[0..4].copy_from_slice(b"RIFF");
     h[4..8].copy_from_slice(&data.saturating_add(HEAD as u32 - 8).to_le_bytes());
     h[8..16].copy_from_slice(b"WAVEfmt ");
     h[16..20].copy_from_slice(&16u32.to_le_bytes());
-    h[20..22].copy_from_slice(&TAG_FLOAT.to_le_bytes());
-    h[22..24].copy_from_slice(&u16::from(channels).to_le_bytes());
+    h[20..22].copy_from_slice(&tag.to_le_bytes());
+    h[22..24].copy_from_slice(&channels.to_le_bytes());
     h[24..28].copy_from_slice(&sample_rate.to_le_bytes());
-    h[28..32].copy_from_slice(&(sample_rate.saturating_mul(block)).to_le_bytes());
+    h[28..32].copy_from_slice(&sample_rate.saturating_mul(block).to_le_bytes());
     h[32..34].copy_from_slice(&(block as u16).to_le_bytes());
-    h[34..36].copy_from_slice(&32u16.to_le_bytes());
+    h[34..36].copy_from_slice(&bits.to_le_bytes());
     h[36..40].copy_from_slice(b"data");
     h[40..44].copy_from_slice(&data.to_le_bytes());
     h
+}
+
+fn float_head(sample_rate: u32, channels: u8, data: u32) -> [u8; 44] {
+    wav_head(sample_rate, channels.into(), RecordFormat::Bits32, data)
 }
 
 impl CacheWav {

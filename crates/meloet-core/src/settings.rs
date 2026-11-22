@@ -413,17 +413,62 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
+const TEMP_PREFIX: &str = "meloet-core-test-";
+
+/// An empty folder under the system's temporary folder. It is removed when the test's thread
+/// ends (each test has a thread of its own), passed or failed.
+#[cfg(test)]
 pub(crate) fn temp_dir(label: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU32, Ordering};
     static NEXT: AtomicU32 = AtomicU32::new(0);
+    static SWEPT: std::sync::Once = std::sync::Once::new();
+    SWEPT.call_once(sweep_temp_dirs);
     let dir = std::env::temp_dir().join(format!(
-        "meloet-core-test-{}-{label}-{}",
+        "{TEMP_PREFIX}{}-{label}-{}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("create a temporary directory");
+    TEMP_DIRS.with(|made| made.0.borrow_mut().push(dir.clone()));
     dir
+}
+
+#[cfg(test)]
+struct TempDirs(std::cell::RefCell<Vec<PathBuf>>);
+
+#[cfg(test)]
+impl Drop for TempDirs {
+    fn drop(&mut self) {
+        for dir in self.0.get_mut().drain(..) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEMP_DIRS: TempDirs = const { TempDirs(std::cell::RefCell::new(Vec::new())) };
+}
+
+/// What a test process that was killed left: the folders of processes that are gone.
+#[cfg(test)]
+fn sweep_temp_dirs() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let pid = (name.to_str())
+            .and_then(|name| name.strip_prefix(TEMP_PREFIX))
+            .and_then(|rest| rest.split('-').next())
+            .and_then(|pid| pid.parse::<u32>().ok());
+        if let Some(pid) = pid
+            && !Path::new(&format!("/proc/{pid}")).exists()
+        {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 #[cfg(test)]

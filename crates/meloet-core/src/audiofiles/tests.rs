@@ -676,7 +676,12 @@ fn files_are_brought_in_made_ready_and_played_at_the_rate_of_the_engine() {
 fn a_long_file_says_how_far_it_is_and_work_for_a_song_that_is_gone_is_given_up() {
     let root = temp_dir("audio-long");
     let store = Arc::new(store(&root));
-    let (keeper, rx) = keeper(&store);
+    // A release build makes the four minutes ready faster than it says how far it is twice.
+    let (tx, rx) = mpsc::channel();
+    let tell = move |news| {
+        let _ = tx.send(news);
+    };
+    let keeper = Keeper::spawn_paused(store.clone(), Duration::from_micros(150), tell).unwrap();
     let from = root.join("from");
     std::fs::create_dir_all(&from).unwrap();
     // Four minutes at 44.1 kHz.
@@ -767,4 +772,41 @@ fn how_long_a_five_minute_mp3_takes() {
         "decoded, resampled to 48 kHz and peaks made in {:?} ({told} percents told)",
         started.elapsed()
     );
+}
+
+/// The bytes the recording, the export and the cache wrote before they shared one head.
+#[test]
+fn the_head_of_a_wav_is_the_bytes_it_always_was() {
+    use meloet_protocol::RecordFormat;
+    let head = super::wav::wav_head;
+    let cases: [(u32, u16, RecordFormat, u32, &[u8; 44]); 3] = [
+        (
+            48_000,
+            2,
+            RecordFormat::Bits24,
+            0xFFFF_FFFF,
+            b"RIFF\xff\xff\xff\xffWAVEfmt \x10\x00\x00\x00\x01\x00\x02\x00\x80\xbb\x00\x00\x00e\x04\x00\x06\x00\x18\x00data\xff\xff\xff\xff",
+        ),
+        (
+            44_100,
+            1,
+            RecordFormat::Bits32,
+            1_000,
+            b"RIFF\x0c\x04\x00\x00WAVEfmt \x10\x00\x00\x00\x03\x00\x01\x00D\xac\x00\x00\x10\xb1\x02\x00\x04\x00 \x00data\xe8\x03\x00\x00",
+        ),
+        (
+            44_100,
+            2,
+            RecordFormat::Bits16,
+            0xFFFF_FFF0,
+            b"RIFF\xff\xff\xff\xffWAVEfmt \x10\x00\x00\x00\x01\x00\x02\x00D\xac\x00\x00\x10\xb1\x02\x00\x04\x00\x10\x00data\xf0\xff\xff\xff",
+        ),
+    ];
+    for (rate, channels, format, data, bytes) in cases {
+        assert_eq!(
+            &head(rate, channels, format, data),
+            bytes,
+            "{rate} {channels} {format:?} {data}"
+        );
+    }
 }

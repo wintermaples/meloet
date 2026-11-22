@@ -465,4 +465,6 @@ fn the_scan_waits_for_the_screen() {
     });
     let held = core.peek(|w| w.plugins.as_ref().unwrap().held.is_none());
     assert!(held, "nothing is held any more");
+    drop(core);
+    let _ = std::fs::remove_dir_all(root);
 }

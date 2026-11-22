@@ -36,6 +36,7 @@ use meloet_model::{NewAudioTake, TempoMap};
 use meloet_protocol::RecordFormat;
 use serde::{Deserialize, Serialize};
 
+use crate::audiofiles::wav::wav_head;
 use crate::peaks::{PeakBuilder, SharedPeaks};
 
 /// Under the state directory: where recorded audio is written first.
@@ -77,32 +78,6 @@ pub fn file_name(track_name: &str, id: u32) -> String {
 
 // ---- the wav file ----
 
-fn head(sample_rate: u32, channels: u16, format: RecordFormat, data: u32) -> [u8; 44] {
-    let bytes = u32::from(format.bits() / 8);
-    let block = bytes * u32::from(channels);
-    // 1: integer PCM, 3: IEEE float.
-    let tag: u16 = if format == RecordFormat::Bits32 { 3 } else { 1 };
-    let riff = if data == UNKNOWN {
-        UNKNOWN
-    } else {
-        data + WAV_HEAD as u32 - 8
-    };
-    let mut h = [0u8; 44];
-    h[0..4].copy_from_slice(b"RIFF");
-    h[4..8].copy_from_slice(&riff.to_le_bytes());
-    h[8..16].copy_from_slice(b"WAVEfmt ");
-    h[16..20].copy_from_slice(&16u32.to_le_bytes());
-    h[20..22].copy_from_slice(&tag.to_le_bytes());
-    h[22..24].copy_from_slice(&channels.to_le_bytes());
-    h[24..28].copy_from_slice(&sample_rate.to_le_bytes());
-    h[28..32].copy_from_slice(&(sample_rate * block).to_le_bytes());
-    h[32..34].copy_from_slice(&(block as u16).to_le_bytes());
-    h[34..36].copy_from_slice(&u16::from(format.bits()).to_le_bytes());
-    h[36..40].copy_from_slice(b"data");
-    h[40..44].copy_from_slice(&data.to_le_bytes());
-    h
-}
-
 /// A wav file being written.
 pub struct WavFile {
     file: File,
@@ -124,7 +99,7 @@ impl WavFile {
         format: RecordFormat,
     ) -> io::Result<WavFile> {
         let mut file = File::options().write(true).create_new(true).open(path)?;
-        file.write_all(&head(sample_rate, channels, format, UNKNOWN))?;
+        file.write_all(&wav_head(sample_rate, channels, format, UNKNOWN))?;
         file.sync_all()?;
         Ok(WavFile {
             file,
@@ -207,8 +182,12 @@ impl WavFile {
     pub fn finish(mut self) -> io::Result<u64> {
         let data = (self.frames * self.frame_bytes()) as u32;
         self.file.seek(SeekFrom::Start(0))?;
-        self.file
-            .write_all(&head(self.sample_rate, self.channels, self.format, data))?;
+        self.file.write_all(&wav_head(
+            self.sample_rate,
+            self.channels,
+            self.format,
+            data,
+        ))?;
         self.file.sync_all()?;
         Ok(self.frames)
     }
@@ -245,7 +224,7 @@ pub fn mend_wav(path: &Path) -> io::Result<WavInfo> {
         (file.metadata()?.len().saturating_sub(WAV_HEAD) / frame).min(WAV_MAX_DATA / frame);
     file.set_len(WAV_HEAD + frames * frame)?;
     file.seek(SeekFrom::Start(0))?;
-    file.write_all(&head(
+    file.write_all(&wav_head(
         sample_rate,
         channels,
         format,

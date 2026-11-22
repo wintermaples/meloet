@@ -37,7 +37,8 @@
 #
 # Builds ui/ and the release binaries, starts meloet with a fresh settings directory, confirms
 # the output chooser, plays --count keys (quiet), lets meloet exit, and writes
-# DIR/summary.md and DIR/summary.json (plus the raw files in DIR/raw/).
+# DIR/summary.md and DIR/summary.json (plus the raw files in DIR/raw/). A run whose keys read
+# "callback -> DAC" as exactly one quantum is marked at the top of the summary, with its time.
 # Changes nothing on the PC: the PipeWire quantum is whatever it already is.
 set -euo pipefail
 
@@ -125,6 +126,7 @@ for bin in meloet meloet-vkeys meloet-plughost; do
   fi
 done
 
+started_at=$(date '+%Y-%m-%d %H:%M:%S')
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/config" "$work/state" "$work/measure" "$out/raw"
@@ -232,4 +234,4 @@ fi
 cp "$work/vkeys.json" "$out/raw/" 2>/dev/null || true
 cp "$work/measure/"*.json "$out/raw/" 2>/dev/null || true
 python3 -I "$root/tools/measure/summarize.py" "$out/raw" --vkeys "$out/raw/vkeys.json" \
-  --out "$out" --label "release, window $window, $state, $count keys, $pattern, jitter $jitter_ms ms$label_view${more_commands:+, more commands}"
+  --out "$out" --measured-at "$started_at" --label "release, window $window, $state, $count keys, $pattern, jitter $jitter_ms ms$label_view${more_commands:+, more commands}"

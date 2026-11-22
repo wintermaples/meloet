@@ -113,6 +113,16 @@ impl Keeper {
         store: Arc<AudioStore>,
         tell: impl Fn(AudioNews) + Send + 'static,
     ) -> std::io::Result<Keeper> {
+        Keeper::spawn_paused(store, Duration::ZERO, tell)
+    }
+
+    /// As [`Keeper::spawn`], with a wait of `pause` at every packet of a file being made
+    /// ready: a test's long file then takes long in any build.
+    pub(super) fn spawn_paused(
+        store: Arc<AudioStore>,
+        pause: Duration,
+        tell: impl Fn(AudioNews) + Send + 'static,
+    ) -> std::io::Result<Keeper> {
         let (tx, rx) = mpsc::channel();
         std::thread::Builder::new()
             .name("meloet-audio".into())
@@ -124,6 +134,7 @@ impl Keeper {
                     job: None,
                     sample_rate: None,
                     peaks_made: HashSet::new(),
+                    pause,
                 }
                 .run(&rx)
             })?;
@@ -186,6 +197,7 @@ struct Work {
     /// Files whose peaks were made in this run: they are not made again when their file
     /// says another length than the song does.
     peaks_made: HashSet<[u8; 16]>,
+    pause: Duration,
 }
 
 /// The key of the caches of a file brought in: the same bytes get the same key, in every
@@ -442,6 +454,9 @@ impl Work {
         let Some(job) = &mut self.job else {
             return;
         };
+        if !self.pause.is_zero() {
+            std::thread::sleep(self.pause);
+        }
         let uid = job.need.source.uid;
         let channels = usize::from(job.need.source.channels);
         let stepped = (|| -> Result<bool, String> {

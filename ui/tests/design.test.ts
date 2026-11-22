@@ -27,12 +27,12 @@ const sorted = (xs: Iterable<string>) => [...xs].sort();
 describe("仕様書 1 章の表と tokens.ts", () => {
   it("色: 名前と値が全部一致する（R=G=B の列も）", () => {
     const seen: string[] = [];
-    for (const [, nameCell, value, rgb, use] of rows(tableAfterH3(doc, "色"))) {
+    for (const [, nameCell, value, rgb, use] of rows(tableAfterH3(doc, "Colors"))) {
       if (nameCell === "color.tip.bg / color.tip.fg") {
         // 値の列は地の色だけ。文字の色は「使う所」に gray.N で書いてある。
         expect(colors["color.tip.bg"]).toBe(value);
-        const bg = use!.match(/地は (gray\.\d+)/)![1];
-        const fg = use!.match(/文字は (gray\.\d+)/)![1];
+        const bg = use!.match(/background is (gray\.\d+)/)![1];
+        const fg = use!.match(/the text is (gray\.\d+)/)![1];
         expect(colors["color.tip.bg"]).toBe(colors[`color.${bg}` as keyof typeof colors]);
         expect(colors["color.tip.fg"]).toBe(colors[`color.${fg}` as keyof typeof colors]);
         seen.push("color.tip.bg", "color.tip.fg");
@@ -51,7 +51,7 @@ describe("仕様書 1 章の表と tokens.ts", () => {
 
   it("文字: 大きさ・行の高さは率ごとに、太さは使ってよい組として一致する", () => {
     const seen: string[] = [];
-    for (const [name, sz, lh, weight] of rows(tableAfterH3(doc, "文字"))) {
+    for (const [name, sz, lh, weight] of rows(tableAfterH3(doc, "Text"))) {
       const tok = text[name as keyof typeof text];
       expect(tok, name).toBeDefined();
       expect([...tok.size]).toEqual(triple(sz!));
@@ -63,8 +63,8 @@ describe("仕様書 1 章の表と tokens.ts", () => {
   });
 
   for (const [title, table] of [
-    ["すきま", space],
-    ["大きさ", size],
+    ["Space", space],
+    ["Sizes", size],
   ] as const) {
     it(`${title}: 100 / 125 / 150 % の値が全部一致する`, () => {
       const seen: string[] = [];
@@ -78,22 +78,22 @@ describe("仕様書 1 章の表と tokens.ts", () => {
 
   it("線と角: 100 % の値と、決まりの文にある 125 % と 150 % の値が一致する", () => {
     const seen: string[] = [];
-    for (const [name, value, rule] of rows(tableAfterH3(doc, "線と角"))) {
+    for (const [name, value, rule] of rows(tableAfterH3(doc, "Lines and corners"))) {
       seen.push(name!);
       if (name === "line.hair") {
         expect(line["line.hair"]).toBe(Number(value));
-        expect(rule).toContain("物理 1px");
+        expect(rule).toContain("physical 1px");
       } else if (name === "line.mark" || name === "line.track") {
         const [a, b, c] = line[name];
         expect(a).toBe(Number(value));
-        expect(rule).toContain(`125 % で ${b}、150 % で ${c}`);
+        expect(rule).toContain(`${b} at 125 %, ${c} at 150 %`);
       } else if (name === "radius.round") {
         expect(radius["radius.round"]).toBe(value!.replace(" ", ""));
       } else {
         expect(radius[name as "radius.0" | "radius.1"], name).toBe(Number(value));
       }
     }
-    expect(rows(tableAfterH3(doc, "線と角")).find((r) => r[0] === "radius.1")![2]).toContain("拡大しても 1");
+    expect(rows(tableAfterH3(doc, "Lines and corners")).find((r) => r[0] === "radius.1")![2]).toContain("Stays 1 when scaled up");
     expect(sorted(seen)).toEqual(sorted([...Object.keys(line), ...Object.keys(radius)]));
   });
 
@@ -171,19 +171,19 @@ describe("part.*（仕様書の文の中にしかない寸法）", () => {
 });
 
 describe("仕様書 2 章「メーターとフェーダーの目盛」", () => {
-  const table = tableAfterH3(doc, "メーターとフェーダーの目盛");
+  const table = tableAfterH3(doc, "Scale marks of meters and faders");
   const num = (s: string) => Number(s.replace("−", "-").replace("+", "").replace(" %", ""));
 
   it("表の dB と長さが meterScale と同じ", () => {
     const dbs = headers(table).slice(1).map(num);
     const lengths = rows(table)[0]!.slice(1).map(num);
-    expect(rows(table)[0]![0]).toBe("長さ");
+    expect(rows(table)[0]![0]).toBe("Length");
     expect(meterScale).toEqual(dbs.map((db, i) => [db, lengths[i]]));
   });
 
   it("落ちる速さは見出しの文のとおり", () => {
-    const h3 = Array.from(doc.querySelectorAll("h3")).find((h) => cellText(h) === "メーターとフェーダーの目盛")!;
-    expect(cellText(h3.nextElementSibling!)).toContain(`落ちるときは ${meterFall.fallDb} dB を ${meterFall.fallSeconds} 秒かけて`);
+    const h3 = Array.from(doc.querySelectorAll("h3")).find((h) => cellText(h) === "Scale marks of meters and faders")!;
+    expect(cellText(h3.nextElementSibling!)).toContain(`fall ${meterFall.fallDb} dB in ${meterFall.fallSeconds} seconds`);
   });
 
   it("meter.hot-from は目盛の −3 dB の長さ", () => {

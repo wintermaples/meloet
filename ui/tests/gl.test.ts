@@ -51,19 +51,19 @@ describe("色の読みかえ", () => {
 describe("dB → 長さ", () => {
   it("目盛は仕様書の「メーターとフェーダーの目盛」の表と同じ", () => {
     const doc = specDocument();
-    const table = tableAfterH3(doc, "メーターとフェーダーの目盛");
+    const table = tableAfterH3(doc, "Scale marks of meters and faders");
     const dbs = headers(table).slice(1).map((t) => Number(t.replace("−", "-")));
     const lengths = rows(table)[0]!.slice(1).map((t) => Number(t.replace(" %", "")) / 100);
     expect(dbs.map((db, i) => [db, lengths[i]])).toEqual(DB_SCALE.map(([db, length]) => [db, length]));
     expect(DB_FLOOR).toBe(-60);
 
     const text = sectionText(doc, "s2");
-    expect(text).toContain("−60 dB より小さい音は 0 %（−∞）");
-    expect(text).toContain("落ちるときは 20 dB を 1.7 秒かけて");
+    expect(text).toContain("Sounds quieter than −60 dB are 0 % (−∞)");
+    expect(text).toContain("fall 20 dB in 1.7 seconds");
     expect(FALL_DB_PER_S).toBeCloseTo(20 / 1.7, 10);
-    expect(text).toContain(`−3 dB（長さの ${METER_HOT_FROM * 100} %）までが meter.ok、その上が meter.hot`);
+    expect(text).toContain(`Up to −3 dB (${METER_HOT_FROM * 100} % of the length) is meter.ok, above that meter.hot`);
     expect(dbToLength(-3)).toBeCloseTo(METER_HOT_FROM, 10);
-    expect(text).toContain(`0 dB をこえたら、上はしに rec の 2px を ${CLIP_HOLD_MS / 1000} 秒`);
+    expect(text).toContain(`Above 0 dB, a rec 2px at the top end for ${CLIP_HOLD_MS / 1000} seconds`);
   });
   it("目盛の上では目盛の値、間は直線", () => {
     for (const [db, length] of DB_SCALE) expect(dbToLength(db)).toBeCloseTo(length, 10);
@@ -331,7 +331,7 @@ describe("四角の並び", () => {
     const doc = specDocument();
     const s3 = sectionText(doc, "s3");
     expect(s3).toContain(`細い入力計の鍵盤にも黒鍵を描く（幅 ${s.black.w}、高さ ${s.black.h}）。押した黒鍵は accent で光る。`);
-    expect(cellText(doc.body)).toContain(`鍵盤の絵を細い鍵（幅 ${n.white.w}）に`);
+    expect(cellText(doc.body)).toContain(`the keyboard picture to thin keys (width ${n.white.w})`);
   });
   it("細い鍵（太い入力計がせまいとき）: 白鍵 8、黒鍵は幅 5、高さ 19", () => {
     const b = batch();

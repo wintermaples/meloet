@@ -1,8 +1,8 @@
-# 5 用語の説明
+# 5 Term tips
 
-はじめて出る用語にマウスを 0.6 秒止めると出る。形は「用語 — 説明」。画面の言葉は世の中で通じる呼び名のままにして、説明のほうをやさしくする。
+Shown when the mouse stays still for 0.6 seconds on a term that appears for the first time. The form is 「用語 — 説明」. The words on the screen keep the names that are common in the world; the explanations are made easy instead.
 
-| 用語 | 説明の文面 |
+| Term | Explanation wording |
 |---|---|
 | ソロ（書き出し） | ソロは聞くための物なので、書き出しには入らない。ソロのとおりに書き出したいときは、ミュートか「トラックごと」で。 |
 | 音の素材の包み | グランドピアノなど 31 の音色の音。meloet には入っておらず、はじめて起動したときに取りにいく（約 240 MB）。 |

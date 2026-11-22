@@ -29,7 +29,8 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | 棚 | shelf | `Shelf.svelte`, `ShelfView` | The right side: instruments and effects to choose. |
 | パラメータの欄 | params panel | `params/ParamsPanel.svelte`, `ParamsView` | |
 | 欄 | panel | `NoteListPanel.svelte`, `ParamsPanel.svelte` | Left and right panels; fold to a 24-wide heading. |
-| 右はし | right rail | `RightRail.svelte` | |
+| 右はし | right rail | `RightRail.svelte` | The right side of the window (shelf, params). |
+| 右はし（状態行 ・ 計 ・ 帯札の行のはし） | right end | | The right end of a line or a meter. Not the right rail. |
 | 見出し | heading | `heading`, `TrackHeads.svelte` | For a track, "track head". |
 | トラックの見出し | track head | `TrackHeads.svelte` | |
 | 一覧 | list | `menu/MenuList.svelte`, `HistoryList.svelte` | |
@@ -45,6 +46,13 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | 場面 | scene | `scene` (ja.ts) | The first column of the chapter 6 table. |
 | 出る場所 | where shown | | Column of the chapter 6 table. |
 | スクロールの棒 | scroll bar | `lib/HScrollbar.svelte`, `mixer/VScrollbar.svelte` | |
+| 目盛の行 | ruler row | `pianoroll/rulerMarks.ts` | The row of bar numbers at the top of the piano roll and arrange. |
+| 名札・札 | tag | | A marker tag, the take tag, the switch tag. |
+| 2 段目 | second page | | The second page of a dialog (`ダイアログの 2 段目`). 1 段目 = first page. |
+| ノートの場所 | note area | | |
+| パラメータの画面 | params view | | |
+| パラメータの一覧 | parameter list | | |
+| 見つからない物の知らせ | the notice of missing things | | Chapter 2 part "Notice of missing things". |
 
 ## Parts and states
 
@@ -69,6 +77,11 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | 文字 | text | `text.*` | |
 | 色 | color | `color.*` | |
 | 印 | mark | `WindowMark.svelte`, `params/AutoMark.svelte` | |
+| 選ぶ印 | choice mark | | The 12×12 square mark to choose a row (chapter 2). |
+| 形式の印 | format mark | | LV2, VST3, CLAP. |
+| 内がわ | padding / inside | | The space inside a part. |
+| そろえる | align | | 「そろえる前の位置」 = the position before aligning. |
+| 一文字（キー） | one letter | | A key with no Mod, which does not work while typing (chapter 4). |
 | つながりの印 | link mark | `LinkKind` | Shows how a keyboard or output is connected. |
 | 読み値 | reading | `reading` | A live number (position, tempo, dB) on a dark background. |
 | ふつう | normal | | |
@@ -115,6 +128,8 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | 再生の線 | play line | | The line at the play position. |
 | クオンタイズ | quantize | `QuantizeSettings` | |
 | スケール | scale (musical) | `MusicalScale`, `ScaleMode` | |
+| スケール固定 | scale lock | | Write only the notes of the chosen scale. |
+| テンポのだんだん・だんだん | tempo ramp / ramp | | |
 | のび縮み | stretch | `StretchView`, `meloet-stretch` | |
 | 音の高さ | pitch | | |
 | 波形 | waveform | `arrange/wave.ts` | |
@@ -133,6 +148,10 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | 入口 | input | `InputsView`, `VocalInput` | |
 | 入口のチャンネル | input channel | `VocalInput` | |
 | 出口えらび | output chooser | `OutputChooser.svelte`, `ChooserView` | |
+| やさしい言いかえ | friendly name | `part.endpoint.friendly` | The easy name of an output or input. |
+| 音の設定の奥 | deep part of the sound settings | | |
+| PC の音のしくみ | PC sound system | | |
+| 音の流れ | sound stream | | |
 | バッファ | buffer | | |
 | 遅れ | latency | `LatencyDialog.svelte`, `LatencyView` | |
 | モニター | monitor | | |
@@ -141,9 +160,13 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | グループ | group | `InstrumentGroup` | |
 | ドラム・キット | drums / kit | `pianoroll/drums.ts`, `DrumPiece` | |
 | ためし弾き | audition | `audition` | Play an instrument from the shelf before choosing it. |
+| 弾くと鳴る先 | play target | | The track and instrument that sound when you play (input meter). |
+| 作った人 | maker | `vendor` | Of a plugin. |
+| 子（プラグイン） | plugin | | |
 | 入れかえ | replace | `InsertReplaced` | |
 | サイン波で代わり | sine stand-in | `StandIn`, `standIn` | |
 | 音の素材の包み | sound pack | `pack/PackBand.svelte`, `PackFetchView` | |
+| 音の素材 | sound pack | | |
 | プラグイン | plugin | `PluginView` | |
 | スキャン | scan | `ScanView` | |
 | エフェクト | effect | `EffectKind`, `EffectRef` | |
@@ -165,10 +188,14 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 |---|---|---|---|
 | 録音 | record / recording | `RecordingView` | |
 | 録音待機 | record arm | `armed` | |
+| 歌のトラック | vocal track | | |
+| 実時間 | real time | | Export in real time. |
 | 書き出し | export | `export/ExportDialog.svelte`, `ExportView` | |
 | 保存 | save | | |
 | なおすためのファイル | recovery file | `RecoveryView`, `RecoveryHint.svelte` | |
 | 曲のファイル | song file | `SongFile` | |
+| 持ってきている（ファイル） | dragging in | | A file dragged onto the window. |
+| 取りにいく所 | the place where it fetches | | |
 
 ## About the spec itself
 
@@ -178,7 +205,7 @@ Code names: `ui/src/components/…` are files under that folder; type names come
 | モック | mock | `docs/design/mock/` | |
 | 数値の一覧 | list of values | `ui/src/design/tokens.ts` | Chapter 1. |
 | 決まり | rule | | |
-| 版 | edition | | "第 12 版" = the 12th edition. |
-| 問い | question | | A numbered question from the builders. |
-| 作る側 | builders | `builder:` (ja.ts) | |
+| 版 | version | | "第 12 版" = version 12. |
+| 問い | question | | A numbered question from the developers. |
+| 作る側 | the developers | `builder:` (ja.ts) | |
 | オーナーさん | the owner | `user:` (ja.ts) | |

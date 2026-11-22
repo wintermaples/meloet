@@ -49,7 +49,7 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
   const messages = entries.filter(([, e]) => e.scene !== undefined);
 
   it("表の形が想定どおり", () => {
-    expect(headers(table)).toEqual(["場面", "文面", "出る場所", "ボタン"]);
+    expect(headers(table)).toEqual(["Scene", "Wording", "Where shown", "Button"]);
   });
 
   it.each(messages)("%s: 穴に仕様書の例の値を入れると、仕様書の文と一字も変わらない", (_, e) => {
@@ -61,7 +61,7 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
   });
 
   // ja.ts にない場面: ほかの場面の文を出す決まりだけの場面と、殻（crates/meloet-app）が出す PC のファイルの窓の題。
-  const NOT_IN_JA = ["meloet の音の流れだけが止まった", "PC のファイルの窓の題", "マイクの音が大きすぎる（いつまで）"];
+  const NOT_IN_JA = ["Only the sound stream of meloet stopped", "Title of the PC file window", "Mic too loud (how long)"];
   it("6 章の場面は全部 ja.ts に入っている（ja.ts にない物のほか）", () => {
     for (const scene of NOT_IN_JA) expect(byScene.has(scene), scene).toBe(true);
     expect([...new Set(messages.map(([, e]) => e.scene))].sort()).toEqual(
@@ -71,10 +71,10 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
 
   it("PC のファイルの窓の題は、殻の定数が仕様書の文のまま", () => {
     const rust = readRepoFile("crates/meloet-app/src/pcwindow.rs");
-    const cell = byScene.get("PC のファイルの窓の題")![1]!;
+    const cell = byScene.get("Title of the PC file window")![1]!;
     const titles = [...rust.matchAll(/pub const (OPEN|FOLDER)_TITLE: &str = "([^"]+)";/g)].map((m) => [m[1], m[2]!]);
     expect(Object.fromEntries(titles)).toEqual({ OPEN: "ひらく", FOLDER: "場所をえらぶ" });
-    expect(cell).toBe("ひらくときは「ひらく」、フォルダをえらぶときは「場所をえらぶ」");
+    expect(cell).toBe("「ひらく」 when opening, 「場所をえらぶ」 when choosing a folder");
   });
 
   it("書き出しの PC の保存の窓の題は、殻の定数が仕様書 3 章（94-79）の文のまま", () => {
@@ -87,37 +87,37 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
   });
 
   it("マイクの音が大きすぎる（いつまで）: 文は「マイクの音が大きすぎる」の文。出す長さの決まりだけの場面", () => {
-    const row = byScene.get("マイクの音が大きすぎる（いつまで）")!;
+    const row = byScene.get("Mic too loud (how long)")!;
     expect(row[1]!.endsWith("…")).toBe(true);
     expect(t("msg.micTooLoud").startsWith(row[1]!.slice(0, -1))).toBe(true);
-    expect(row[2]).toContain("最後に届いてから 4 秒、ほかの知らせが来るまで");
+    expect(row[2]).toContain("for 4 seconds after the last time it reached 0 dB, or until another notice comes");
   });
 
   it("決まりだけの場面は、使う文の場面とボタンを名前で言っている", () => {
-    const row = byScene.get("meloet の音の流れだけが止まった")!;
-    expect(row[1]).toContain("「音の出口が消えた」と同じ文");
-    expect(row[1]).toContain("「録音中に出口が消えた」と同じ文");
+    const row = byScene.get("Only the sound stream of meloet stopped")!;
+    expect(row[1]).toContain('the same text as "Output gone"');
+    expect(row[1]).toContain('the same text as "Output gone while recording"');
     expect(row[3]).toBe(t("button.openAudioSettings"));
   });
 
   it("数字として読めない: 欄の名前で文になる。ベロシティは仕様書の例そのまま", () => {
-    const cell = byScene.get("数字として読めない")![1]!;
+    const cell = byScene.get("Not readable as a number")![1]!;
     const say = (field: Parameters<typeof t>[0], kept: string) => t("msg.valueRejected", { field: t(field), kept });
-    expect(cell).toBe(`${say("value.velocity", "77")}（ほかの欄も同じ形）`);
+    expect(cell).toBe(`${say("value.velocity", "77")} (the same form for the other fields)`);
     expect(say("value.tempo", "96.00")).toBe("テンポは数字で打ちます。もとの 96.00 のままです。");
     expect(say("value.meterNum", "4")).toBe("拍子の上は数字で打ちます。もとの 4 のままです。");
     expect(say("value.meterDen", "4")).toBe("拍子の下は数字で打ちます。もとの 4 のままです。");
   });
 
   it("範囲の外の値を打った: 4 つの欄と範囲で文になる。ベロシティと拍子の下は仕様書の例そのまま", () => {
-    const cell = byScene.get("範囲の外の値を打った")![1]!;
+    const cell = byScene.get("Typed a value out of range")![1]!;
     const say = (field: Parameters<typeof t>[0], range: Parameters<typeof t>[0], value: string) =>
       t("msg.valueClamped", { field: t(field), range: t(range), value });
     expect(cell).toContain(`「${say("value.velocity", "value.velocityRange", "127")}」`);
     expect(cell).toContain(`「${say("value.meterDen", "value.meterDenRange", "4")}」`);
     expect(say("value.tempo", "value.tempoRange", "300.00")).toBe("テンポは 30.00〜300.00 なので、300.00 にしました。");
     expect(say("value.meterNum", "value.meterNumRange", "12")).toBe("拍子の上は 1〜12 なので、12 にしました。");
-    expect(cell).toContain(`（${t("value.tempo")}は ${t("value.tempoRange")}、${t("value.meterNum")}は ${t("value.meterNumRange")}。どれも同じ形）`);
+    expect(cell).toContain(`(the same form for 「${t("value.tempo")}」 ${t("value.tempoRange")} and 「${t("value.meterNum")}」 ${t("value.meterNumRange")})`);
   });
 
   it("穴は全部、例の値で埋まる", () => {
@@ -125,7 +125,7 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
   });
 
   const buttonLabels = new Set(
-    specRows.flatMap((r) => r[3]!.split(/\s*\/\s*/).map((b) => b.replace(/（[^）]*）$/, "").trim())),
+    specRows.flatMap((r) => r[3]!.split(/\s*\/\s*/).map((b) => b.replace(/\s*(（[^）]*）|\([^)]*\))$/, "").trim())),
   );
   const buttons = entries.filter(([k, e]) => k.startsWith("button.") && e.source === "spec:6");
   it.each(buttons)("%s: 6 章のボタンの列にある", (_, e) => {

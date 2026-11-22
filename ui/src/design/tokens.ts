@@ -1,4 +1,4 @@
-// 数値。名前は docs/design/spec.html の「1 数値の一覧」のまま。値は拡大率 100 % のときの px。
+// 数値。名前は docs/spec/1-tokens.md の「1 数値の一覧」のまま。値は拡大率 100 % のときの px。
 
 export const SCALES = [100, 125, 150] as const;
 export type Scale = (typeof SCALES)[number];

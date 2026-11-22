@@ -177,9 +177,20 @@ export function stepPlaceText(place: StepPlace | null, ctx: StepContext): string
   }
 }
 
+/**
+ * 行の「（何を）」（仕様書 3 章 94-6）: 行の右の欄にトラックの名前が出る手は、トラックの名前を書かない（音源を入れかえるは「グランドピアノ → オルガン」）。
+ * 窓の手は「プラグインの窓」。右の欄がアレンジ ・ ミキサーの手（色、音量、パン、センド、ミュート、歌の入口）は、名前を残す（状態行と同じ）。
+ */
+export function rowWhatText(row: HistoryRow, ctx: StepContext): string | null {
+  if (row.name.kind === "pluginWindow") return t("history.pluginWindowWhat");
+  if (row.place?.kind === "track" && row.what.kind === "soundReplaced")
+    return t("history.change", { from: soundNameText(row.what.from), to: soundNameText(row.what.to) });
+  return stepWhatText(row.name, row.what, ctx);
+}
+
 /** 行の文（「「ノートを動かす」・ 3 ノート」）。 */
 export function historyRowText(row: HistoryRow, ctx: StepContext): string {
   const name = stepNameText(row.name);
-  const what = stepWhatText(row.name, row.what, ctx);
+  const what = rowWhatText(row, ctx);
   return what === null ? t("history.rowBare", { name }) : t("history.row", { name, what });
 }

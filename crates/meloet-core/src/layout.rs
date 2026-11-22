@@ -11,6 +11,7 @@ pub const SIZE_METER_SLIM: f64 = 24.0;
 pub const SIZE_OVERVIEW: f64 = 40.0;
 /// Ruler 72 + one track 64: from this height on the arrange view shows track rows.
 pub const ARRANGE_ROWS: f64 = 136.0;
+pub const SIZE_LANE: f64 = 48.0;
 pub const PIANO_ROLL_MIN: f64 = 268.0;
 /// 49 keys.
 pub const PIANO_ROLL_MAX: f64 = 736.0;
@@ -224,6 +225,14 @@ impl Bands {
     }
 
     pub fn layout(&self) -> Layout {
+        self.layout_with(false)
+    }
+
+    /// `timeline_open`: the tempo band is open in the arrange view, a lane above the first
+    /// track row. Spec 3 (94-92) keeps the arrange view's 40 first, so the track rows come only
+    /// when one track still fits under it; lower, the arrange view is the overview.
+    pub fn layout_with(&self, timeline_open: bool) -> Layout {
+        let rows_from = ARRANGE_ROWS + if timeline_open { SIZE_LANE } else { 0.0 };
         let mut spare = self.spare();
         let mut bottom: Vec<OpenBand> = Vec::with_capacity(self.bottom_open.len());
         // Newest first: it grows first.
@@ -245,7 +254,7 @@ impl Bands {
         Layout {
             meter: self.meter(),
             arrange_height,
-            arrange_overview: arrange_height < ARRANGE_ROWS,
+            arrange_overview: arrange_height < rows_from,
             bottom,
             side_front: self.side_open.last().copied(),
             side_open: self.side_open.clone(),
@@ -876,5 +885,60 @@ mod tests {
         b.set_window(size(800.0));
         b.set_window(size(2000.0));
         assert_eq!(open_bottom(&b.layout()), [PianoRoll]);
+    }
+
+    /// Spec 3 (94-92): the arrange view's 40 comes first. The smallest window at 150 %
+    /// (1280×800, 853×533 at 100 %) with the piano roll, the history and the tempo band open:
+    /// the piano roll is folded, and the arrange view is the overview, not track rows 20 high.
+    #[test]
+    fn the_arrange_views_40_comes_first() {
+        let mut b = bands(800.0 / 1.5);
+        assert_eq!(b.toggle(PianoRoll.into()), None);
+        assert_eq!(
+            b.toggle(History.into()),
+            Some(Fold {
+                band: PianoRoll,
+                why: FoldWhy::TooLow
+            })
+        );
+        let l = b.layout_with(true);
+        assert_eq!(open_bottom(&l), [History]);
+        let left = 800.0 / 1.5 - 24.0 - 48.0 - 24.0 - 248.0 - 24.0 - 24.0;
+        assert_eq!(l.arrange_height, left);
+        assert!(left >= ARRANGE_ROWS && left - 72.0 - SIZE_LANE < 64.0);
+        assert!(
+            l.arrange_overview,
+            "one track does not fit under the tempo band"
+        );
+        assert!(
+            !b.layout().arrange_overview,
+            "the tempo band shut: one track fits"
+        );
+        // Tall enough for the ruler, the tempo band and one track.
+        let mut b = bands(800.0);
+        b.toggle(History.into());
+        let l = b.layout_with(true);
+        assert!(l.arrange_height >= ARRANGE_ROWS + SIZE_LANE);
+        assert!(!l.arrange_overview);
+        // Any window: the arrange view keeps 40, and track rows keep room for one track.
+        let orders: [&[BottomBand]; 4] = [
+            &[PianoRoll, History],
+            &[Mixer, History],
+            &[History, Mixer],
+            &[PianoRoll],
+        ];
+        for h in (448..1400).step_by(7).map(f64::from) {
+            for order in orders {
+                for open in [false, true] {
+                    let l = opened(h, order).layout_with(open);
+                    assert!(l.arrange_height >= SIZE_OVERVIEW, "{h} {order:?}");
+                    let ruler = 72.0 + if open { SIZE_LANE } else { 0.0 };
+                    assert!(
+                        l.arrange_overview || l.arrange_height - ruler >= 64.0,
+                        "{h} {order:?} {open}"
+                    );
+                }
+            }
+        }
     }
 }

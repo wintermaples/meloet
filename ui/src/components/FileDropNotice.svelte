@@ -4,11 +4,12 @@
      いくつも持ってきたときは、名前の所が「3 つのファイル ・ SF2 は 2 つ」（仕様書 3 章 89-10）。
      音のファイル（仕様書 3 章 29-A ・ 30-C ・「読めるファイル」、モック F7-AudioDrop）: 2 つ以上なら箱を左右 240 ずつに分け（左「別々のトラックに」、右「1 本にならべる」）、
      ポインタがいる側（窓の左半分か右半分。B-94-21）を accent の枠と gray.4 の地に。SF2 もまざっていれば「SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ」。
+     1 つなら名前の下に、落とすと入る所（6 章「音のファイルを 1 つ持ってきている」: 歌のトラックの上か、新しい歌のトラックか）。
      ファイルを受けるのは Rust（PC から聞く）。画面は見せるだけで、押せない（下の物をさえぎらない）。Esc は keys/attach.ts。 -->
 <script lang="ts">
   import type { FileDropView } from "../bridge";
   import { t } from "../text/ja";
-  import { dropModeFor, fileDrag } from "./arrange/fileDrag.svelte";
+  import { dropModeFor, dropPlaceAt, fileDrag } from "./arrange/fileDrag.svelte";
 
   let { drop }: { drop: FileDropView } = $props();
   const title = $derived(
@@ -16,6 +17,13 @@
   );
   /** SF2 と音のファイルをまぜて持ってきた: SF2 は棚へ、音のファイルはアレンジへ。 */
   const mixed = $derived(drop.audio > 0 && drop.sf2 > 0 ? t("drop.mixed", { sf2: drop.sf2, audio: drop.audio }) : null);
+  /** 音のファイル 1 つだけ: 落とすと、ポインタの下の歌のトラックに入るか。 */
+  const intoTrack = $derived.by(() => {
+    if (drop.audio !== 1 || drop.sf2 > 0) return null;
+    const at = fileDrag.at;
+    if (at === null) return null;
+    return dropPlaceAt(at.x, at.y, "inRow")?.track != null;
+  });
   /** 箱を左右に分けるか、分けたならポインタがいる側。 */
   const halves = $derived(drop.audio >= 2 ? (fileDrag.at ? dropModeFor(drop.audio, fileDrag.at.x, window.innerWidth) : null) : undefined);
 </script>
@@ -42,6 +50,8 @@
         <span class="say" data-test="file-drop-mixed">{mixed}</span>
       {:else if drop.audio === 0}
         <span class="say">{drop.addable ? t("sf2.dropHere") : t("sf2.notSf2")}</span>
+      {:else if intoTrack !== null}
+        <span class="say" data-test="file-drop-audio-say">{t(intoTrack ? "drop.audioOneSay" : "drop.audioOneNewTrack")}</span>
       {/if}
       <span class="m-lbl">{t("sf2.dropCancel")}</span>
     </div>

@@ -73,7 +73,7 @@ export function ratioMarkValue(ratio: number | null): string | null {
 export const centsText = (v: number) => (v < 0 ? `−${-v}` : String(v));
 
 /**
- * クリップの名前の右の印: 「×1.25」と「+2」「−1 ・ 30」（半音 ・ セント。B-94-59 の仮の読み）。どちらもなければ空。
+ * クリップの名前の右の印: 「×1.25」と「+2」「−1 ・ +30」（半音 ・ セント。どちらにも符号。仕様書 3 章「印の読みかた」）。どちらもなければ空。
  * 音の高さの印は、半音もセントも 0 なら出さない。
  */
 export function clipMarks(stretch: StretchView): readonly string[] {
@@ -81,9 +81,12 @@ export function clipMarks(stretch: StretchView): readonly string[] {
   const out: string[] = [];
   const ratio = ratioMarkValue(stretch.ratio);
   if (ratio !== null) out.push(t("clip.ratioMark", { ratio }));
-  if (stretch.cents !== 0) out.push(t("clip.pitchMarkCents", { semitones: signed(stretch.semitones), cents: centsText(stretch.cents) }));
+  if (stretch.cents !== 0) out.push(pitchReading(stretch.semitones, stretch.cents));
   else if (stretch.semitones !== 0) out.push(signed(stretch.semitones));
   return out.length > 0 ? out : NO_MARKS;
 }
+
+/** 「+2 ・ +30」「−1 ・ +30」「+0 ・ −20」: 半音とセント、どちらにも符号（仕様書 3 章「印の読みかた」、6 章「音の高さを動かしている」の読み値）。 */
+export const pitchReading = (semitones: number, cents: number) => t("clip.pitchMarkCents", { semitones: signed(semitones), cents: signed(cents) });
 
 export const NO_MARKS: readonly string[] = [];

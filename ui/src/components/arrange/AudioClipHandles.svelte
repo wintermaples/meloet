@@ -5,7 +5,8 @@
      音量の線: えらんだ歌のクリップの中に accent の line.hair の横線。上下にドラッグして −60〜+12 dB、2 回押すと 0.0 dB。
      ドラッグの間は画面だけが先に動き、値を audioDrag.now に書く（波形を描く WebGL の側が、同じコマで読む）。離したら SetClipField を 1 つ（ドラッグ 1 回が 1 手）。
      もとの位置は gray.7 の枠（線）。Esc はキーの順のいちばん前でやめる（pianoroll/view.svelte.ts の cancelDrag）。
-     音量の読み値「−3.0 dB」は、その場の読み値（カーソルの左上）と状態行（6 章「クリップの音量を動かしている」）。 -->
+     音量の読み値「−3.0 dB」は、その場の読み値（カーソルの左上）と状態行（6 章「クリップの音量を動かしている」）。
+     フェードの長さ「0. 1. 0480」も同じ（6 章「フェードを動かしている」。長さの書きかたはクリップの長さと同じ）。 -->
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
   import type { ClipView, TrackView } from "../../bridge";
@@ -13,6 +14,8 @@
   import { t } from "../../text/ja";
   import { clipBox, rowHeight, rowTop, type Box, type LaneDims, type View } from "../arrangeGeom";
   import { dbNumber } from "../format";
+  import { clipLengthLabel } from "../params/clipFields";
+  import { mapOf } from "../../time/bars";
   import { metrics } from "../metrics.svelte";
   import { dragReading, onDragCancel } from "../pianoroll/view.svelte";
   import { audioDrag, type AudioDragValue } from "./audioDrag.svelte";
@@ -164,8 +167,16 @@
     drag = { field, clip: part.clip, row: part.row, pointer: e.pointerId, el, grab, downX: p.x, downY: p.y, from, value: from, moved: false };
   }
 
-  function readingText(clip: ClipView, db: number): string {
-    return t("msg.clipGainDragging", { clip: clip.name, value: t("common.db", { value: dbNumber(db) }), cancelKey: t("key.esc") });
+  /** その場の読み値: 音量は「−3.0 dB」、フェードは長さ「0. 1. 0480」（クリップのはじまりの拍子で）。 */
+  function valueText(field: Field, clip: ClipView, value: number): string {
+    if (field === "gainDb") return t("common.db", { value: dbNumber(value) });
+    return clipLengthLabel(value, mapOf(current.state!.timeline).meterAt(clip.start));
+  }
+
+  function readingText(field: Field, clip: ClipView, value: number): string {
+    const values = { clip: clip.name, value: valueText(field, clip, value), cancelKey: t("key.esc") };
+    if (field === "gainDb") return t("msg.clipGainDragging", values);
+    return t("msg.fadeDragging", { ...values, edge: t(field === "fadeIn" ? "clip.fadeEdgeIn" : "clip.fadeEdgeOut") });
   }
 
   function move(e: PointerEvent): void {
@@ -178,11 +189,11 @@
     if (d.field === "gainDb") {
       const area = waveArea(dims, clipBox(view, dims, d.row, d.clip.start, d.clip.end));
       value = gainAtY(area, p.y - d.grab);
-      pointerAt = p;
-      dragReading.text = readingText(d.clip, value);
     } else {
       value = fadeTicksAt(view, audioShapeOf(d.clip)!, d.field, p.x - d.grab);
     }
+    pointerAt = p;
+    dragReading.text = readingText(d.field, d.clip, value);
     drag = { ...d, moved, value };
     audioDrag.now = { clip: d.clip.id, [d.field]: value };
   }
@@ -280,9 +291,9 @@
 
   const reading = $derived.by(() => {
     const d = drag;
-    if (!d || d.field !== "gainDb" || !d.moved || !pointerAt) return null;
+    if (!d || !d.moved || !pointerAt) return null;
     const off = metrics.px("part.reading.offset");
-    return { text: t("common.db", { value: dbNumber(d.value) }), left: Math.max(0, pointerAt.x - off - readingW), top: Math.max(0, pointerAt.y - off - readingH) };
+    return { text: valueText(d.field, d.clip, d.value), left: Math.max(0, pointerAt.x - off - readingW), top: Math.max(0, pointerAt.y - off - readingH) };
   });
 </script>
 

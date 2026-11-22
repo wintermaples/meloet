@@ -187,7 +187,8 @@ impl Plugins {
             finished: None,
             stopped_open: false,
             // Mock R9-Scan shows it unfolded (design-notes A-16).
-            places_open: true,
+            // Spec 3 (94-89): the list starts closed; it is seldom touched.
+            places_open: false,
             saved_us: 0,
             rows_rev: 0,
         };
@@ -559,6 +560,6 @@ mod tests {
         assert_eq!(view.places[0].path, "/home/me/.lv2");
         assert!(view.places.iter().all(|p| !p.added));
         assert_eq!(view.scan, ScanView::Idle);
-        assert!(view.stopped.is_empty() && !view.stopped_open && view.places_open);
+        assert!(view.stopped.is_empty() && !view.stopped_open && !view.places_open);
     }
 }

@@ -329,6 +329,18 @@ describe("状態行（仕様書 2 章「書き出しの進み」、6 章、モ�
     expect(app.sent).toEqual([{ type: "cancelExport" }]);
   });
 
+  it("書き出し中に録音（仕様書 3 章 94-84 ・ 6 章）: 「● 録音中」が先、進みは左の終わりに短く「書き出し 46 %」", () => {
+    const s = scene("exporting");
+    s.transport.state = "recording";
+    s.status.message = { id: "recording", track: { number: 1, name: "ピアノ" }, take: 2 };
+    show(StatusLine, s);
+    expect(q('.status [data-test="export-run"]')).toBeNull();
+    expect(text(q('.status [data-test="status-badge"]'))).toBe("● 録音中");
+    expect(text(q('.status [data-test="export-aside"]'))).toBe("書き出し 46 %");
+    const left = [...q(".status")!.children].map((c) => (c as HTMLElement).dataset.test ?? c.className);
+    expect(left.indexOf("status-badge")).toBeLessThan(left.indexOf("export-aside"));
+  });
+
   it("実時間で書き出している: 仕様書 6 章の文", () => {
     show(StatusLine, scene("exportingRealtime"));
     expect(text(q('.status [data-test="export-rest"]'))).toBe("速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。");

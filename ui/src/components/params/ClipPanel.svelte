@@ -18,7 +18,7 @@
   import { stripName } from "../mixer/stripName";
   import { signed } from "../pianoroll/geom";
   import { positionText } from "../time";
-  import { centsText, clipLengthLabel, fadeLengthText, parseClipLength, parseClipPosition, parseSourceBpm, parseWhole } from "./clipFields";
+  import { centsText, clipLengthLabel, fadeLengthText, parseClipLength, parseClipPosition, parseSourceBpm, parseWhole, pitchReading } from "./clipFields";
   import StretchNumber from "./StretchNumber.svelte";
   import ValueField from "./ValueField.svelte";
 
@@ -91,6 +91,12 @@
   function setStretch(change: StretchChange): void {
     if (clip?.audio && !busy) send({ type: "setClipStretch", clip: clip.id, change });
   }
+
+  /** 音の高さをドラッグしている間: 状態行の文とその場の読み値（仕様書 6 章「音の高さを動かしている」）。 */
+  const pitchDragging = (semitones: number, cents: number) => ({
+    status: t("msg.pitchDragging", { semitones: signed(semitones), cents: signed(cents) }),
+    reading: pitchReading(semitones, cents),
+  });
 
   function submitStretch(field: "sourceBpm" | "semitones" | "cents", text: string): void {
     typing = null;
@@ -252,6 +258,7 @@
                     label={t("clipParams.pitch")}
                     test="clip-value-semitones"
                     disabled={busy}
+                    reading={(v) => pitchDragging(v, stretch.cents)}
                     commit={(semitones) => setStretch({ kind: "semitones", semitones })}
                     ontype={() => startTyping("semitones")}
                   />{:else if part.hole === "cents"}<StretchNumber
@@ -262,6 +269,7 @@
                     label={t("clipParams.pitch")}
                     test="clip-value-cents"
                     disabled={busy}
+                    reading={(v) => pitchDragging(stretch.semitones, v)}
                     commit={(cents) => setStretch({ kind: "cents", cents })}
                     ontype={() => startTyping("cents")}
                   />{:else}{part.text}{/if}{/each}</span

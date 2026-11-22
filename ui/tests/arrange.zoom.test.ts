@@ -278,4 +278,33 @@ describe("トラックの行を縦に送る（仮の形、user:2026-11-20）", (
     flushSync();
     expect(tops()).toEqual([0, 0]);
   });
+
+  it("マウスでえらんだトラックへは送らない。キーでえらんだ ・ 足したトラックへは送る（仕様書 3 章 92 の残り）", () => {
+    show(six());
+    document.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    app.setState(six(105));
+    flushSync();
+    expect(tops()).toEqual([0, 0]);
+    // 足したトラックは、マウスで足しても送る。
+    app.setState(
+      app.stateWith((s) => {
+        const first = s.song.tracks[0]!;
+        s.song.tracks = Array.from({ length: 7 }, (_, i) => ({ ...first, id: 100 + i, number: i + 1, clips: [] }));
+        s.song.playTarget = 106;
+      }),
+    );
+    flushSync();
+    expect(tops()).toEqual([384, 384]);
+    wheel(q(".time")!, { deltaY: -10000 });
+    document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+    app.setState(
+      app.stateWith((s) => {
+        const first = s.song.tracks[0]!;
+        s.song.tracks = Array.from({ length: 7 }, (_, i) => ({ ...first, id: 100 + i, number: i + 1, clips: [] }));
+        s.song.playTarget = 105;
+      }),
+    );
+    flushSync();
+    expect(tops()).toEqual([320, 320]);
+  });
 });

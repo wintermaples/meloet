@@ -91,10 +91,10 @@ export const texts = {
     "えらべない出口 ・ PC が切りかえる",
     "さすと、PC がこちらに切りかえます",
   ),
-  // ささっている入口を、ほかの入口もささっているので PC がえらんでいないとき（オーナーさん 2026-11-22）。
-  "msg.inputPluggedNotChosen": e(
+  // ささっている入口を、ほかの入口もささっているので PC がえらんでいないとき（オーナーさんの決めの文が 6 章に入った）。
+  "msg.inputPluggedNotChosen": s6(
+    "ささっているのに使われていない入口",
     "ささっています ・ PC の設定でほかの入口をえらんでいます（設定 ▸ サウンド ▸ 入力 で変えられます）",
-    "user:2026-11-22",
   ),
   "msg.unusableStoppedByPc": s6(
     "えらべない出口 ・ PC の設定で止まっている",
@@ -2044,6 +2044,8 @@ export const texts = {
   // プラグインがパラメータの名前を言ってこなかった手の名前。
   "history.pluginParam": e("{plugin}のパラメータを変える", "builder:2026-11-20", { plugin: "Surge XT " }),
   // 行の右の「どこで」。ほかは band.arrange ・ band.pianoRoll ・ band.mixer と track.label。
+  // 窓の手の「（何を）」（仕様書 3 章 94-6）。右の欄は history.placePluginWindow のまま（design-notes B-95-3）。
+  "history.pluginWindowWhat": e("プラグインの窓", "spec:3"),
   "history.placePluginWindow": e("{strip} ・ プラグインの窓", "spec:6", { strip: "5 Surge XT" }),
   // 帯の見出しの行（仕様書 3 章 Y19 ・ 92-9、6 章）。
   "history.head": e("{total} 手 ・ いまは {current} 手目。上の {redo} 手は取り消してあり、やりなおせます", "mock:F-History", {
@@ -2126,8 +2128,8 @@ export const texts = {
     "音のファイルを {count} つ持ってきています ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる",
     { count: "8" },
   ),
-  // 音のファイルを 1 つだけ持ってきている間（仕様書の文は 2 つ以上のときの形。「SF2 のファイルを持ってきています」にならった）。
-  "msg.audioDraggingOne": e("音のファイルを持ってきています", "builder:2026-11-21"),
+  // 音のファイルを 1 つだけ持ってきている間（6 章「音のファイルを 1 つ持ってきている」の出る所の列にある状態行の文）。
+  "msg.audioDraggingOne": e("音のファイルを持ってきています ・ 落とすと、枠の所に入れます", "spec:6"),
   // 「さがす」（「この音のテンポ」、B-94-52 ・ 53）の答え。
   "msg.sourceTempoFound": e("{name} のテンポを {bpm} にしました（{bars} 小節と見ました）・ ちがうときは「この音のテンポ」に数を入れてください", "builder:2026-11-21", {
     name: "ドラム ループ",
@@ -2175,7 +2177,7 @@ export const texts = {
   "clipParams.renderingPercent": e("{percent} %", "mock:F7-Stretch", { percent: "34" }),
   // 歌のクリップの、名前の右の印と、下の進み（仕様書 2 章「歌のクリップ」）。
   "clip.ratioMark": e("×{ratio}", "spec:2", { ratio: "1.25" }),
-  "clip.pitchMarkCents": e("{semitones} ・ {cents}", "spec:3", { semitones: "−1", cents: "30" }),
+  "clip.pitchMarkCents": e("{semitones} ・ {cents}", "spec:3", { semitones: "−1", cents: "+30" }),
   "clip.rendering": e("音を作っています {percent} %", "spec:2", { percent: "34" }),
   // 歌のクリップの右クリックの一覧の下の、あとの回の席（仕様書 3 章「音を作っている間」）。
   "menu.reverse": e("逆にする", "spec:3"),
@@ -2284,9 +2286,9 @@ export const texts = {
   "vocal.inputChoose": e("{input} ▾", "mock:F7-VocalRec", { input: "入口 1 ・ モノ" }),
   "vocal.noInput": e("入口なし ▾", "spec:3"),
   "vocal.monitor": e("モニター", "spec:3"),
-  // 状態行の「6 歌（入口 1）」の入口。入口 2 は仕様書にない（入口 1 ・ 入口 1 ・ 2 にならった）。
+  // 状態行の「6 歌（入口 1）」の入口（入口 2 は 6 章「歌 2 本以上を録っている」）。
   "vocal.inputShort.mono1": e("入口 1", "spec:6"),
-  "vocal.inputShort.mono2": e("入口 2", "builder:2026-11-21"),
+  "vocal.inputShort.mono2": e("入口 2", "spec:6"),
   "vocal.inputShort.stereo12": e("入口 1 ・ 2", "spec:5"),
   // 録っている歌のクリップの名前（モック F7-VocalRec の「歌 テイク 1」）。
   "arrange.recordingVocalClip": e("{track} テイク {take}", "mock:F7-VocalRec", { track: "歌", take: "1" }),
@@ -2434,6 +2436,36 @@ export const texts = {
     "user:2026-11-19",
   ),
   // [第 8 回 ・ 画面だけで出す文]（仕様書 3 章 ・ 6 章 第 12 版、モック F8-*）。画面の係（k8ua ・ k8ub）がこの下に足す。
+  // 曲の頭のテンポの点がだんだんの始まりのとき（仕様書 3 章 94-10）。
+  "msg.headTempoRampSelected": s6(
+    "曲の頭のテンポ（だんだんの始まり）をえらんでいる",
+    "曲の頭のテンポをえらんでいます ・ {tempo} から {toPlace}の {toTempo} へ、だんだん{direction}",
+    { tempo: "96.00", toPlace: "5 小節目", toTempo: "120.00", direction: "速く" },
+  ),
+  // 歌 2 本以上を録っている。モニターがオフなら「モニター オン ・ 」を外す（同じ場面の文の続き）。
+  "msg.recordingVocals": s6(
+    "歌 2 本以上を録っている",
+    "● 録音中 ・ {vocals}・ モニター オン ・ 止めるには {stopKey}",
+    { vocals: "6 歌（入口 1）、7 歌 2（入口 2）", stopKey: "Space" },
+    "part",
+  ),
+  // 音のファイルを 1 つ持ってきている間の、まん中の箱の名前の下の文。
+  "drop.audioOneSay": s6("音のファイルを 1 つ持ってきている", "ここに落とすと、そのトラックの落とした位置に入れます。", undefined, "part"),
+  "drop.audioOneNewTrack": s6("音のファイルを 1 つ持ってきている", "新しい歌のトラックに入れます。", undefined, "quoted"),
+  // フェードの取っ手をドラッグしている間（状態行。その場の読み値は {value} だけ）。{edge} は clip.fadeEdgeIn ・ clip.fadeEdgeOut。
+  "msg.fadeDragging": s6(
+    "フェードを動かしている",
+    "{clip} の{edge}のフェード {value}（ドラッグ中）・ 離すと決まります ・ やめるには {cancelKey}",
+    { clip: "歌 テイク 1", edge: "前", value: "0. 1. 0480", cancelKey: "Esc" },
+  ),
+  "clip.fadeEdgeIn": e("前", "spec:6"),
+  "clip.fadeEdgeOut": e("後", "mock:F7-AudioEdit"),
+  // 音の高さ（半音 ・ セント）をドラッグしている間の状態行。その場の読み値は clip.pitchMarkCents の形（「+2 ・ +30」）。
+  "msg.pitchDragging": s6("音の高さを動かしている", "音の高さ {semitones} 半音 {cents} セント（ドラッグ中）", { semitones: "+2", cents: "+30" }),
+  // 「手で決める…」の枠のうしろの単位（仕様書 3 章 94-19「「8.0」と「ms」」）。
+  "settings.latencyUnit": e("ms", "spec:3"),
+  // 書き出し中に録音しているとき、状態行の左の終わりに短く（仕様書 3 章 94-84）。
+  "status.exportShort": s6("書き出し中に録音", "書き出し {percent} %", { percent: "46" }, "part"),
 } as const satisfies Record<string, Entry>;
 
 export type TextKey = keyof typeof texts;

@@ -154,6 +154,12 @@ describe("状態行の文", () => {
     expect(says({ id: "markerAdded", name: "マーカー 4" })).toBe("マーカー 4 を足しました。名前を打って Enter");
   });
 
+  it("曲の頭のテンポがだんだんの始まり（仕様書 3 章 94-10 ・ 6 章）", () => {
+    expect(says({ id: "tempoRampSelected", bar: 1, beat: 1, tempoBpm: 96, toBar: 5, toBeat: 1, toTempoBpm: 120 })).toBe(
+      "曲の頭のテンポをえらんでいます ・ 96.00 から 5 小節目の 120.00 へ、だんだん速く",
+    );
+  });
+
   it("仮の文（B-92）: おそくなるだんだん、だんだんでない点、拍子の旗、再生まわりで打って変えた点", () => {
     expect(says({ id: "tempoRampSelected", bar: 9, beat: 1, tempoBpm: 120, toBar: 13, toBeat: 3, toTempoBpm: 96 })).toBe(
       "9 小節目の変更をえらんでいます ・ 120.00 から 13 小節目の 3 拍目の 96.00 へ、だんだん遅く",

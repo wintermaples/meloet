@@ -1697,3 +1697,11 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - きれいな ubuntu:24.04 と 26.04 のコンテナで: 入れる（依存 301 ・ 304 個）、`ldd` の not found 0、`xvfb-run meloet` で 20 秒動く、`apt-get remove` で消える。画面と音はオーナーさんの手順（`docs/install-check.md`）。ユーザー向けの書類 `docs/user/README.ja.md`。
 - 棟梁の決め: deb の説明は「meloet について」の文（mock:R7-About「MIDI 鍵盤ではじめる、音楽づくりのアプリ」）、識別子 `dev.meloet.app` の macOS の警告は今はそのまま（Mac の回への申し送り）。
 - オーナーさんに聞く: deb の Maintainer（いまは bundler の既定の「meloet」）。
+
+### 区切り4: 開発の仕込みを release から外す（k8dh、meloet-hard ・ Opus 5.5、merge 済み。architecture 23-11）
+
+- feature `dev-hooks`（`meloet-app` → `meloet-core` → `meloet-midi`、`meloet-plughost` は別に）。`#[cfg(feature = "dev-hooks")]` の属性だけで外した（`cfg!` ・ `debug_assertions` は使わない）。外した物: `devhooks.rs` ぜんぶ（`MELOET_PIPE` ・ `MELOET_OPEN_SONG` ・ `MELOET_UI_SCRIPT` など 10）、命令 `measure_*` ・ `ui_script`、`MELOET_DEBUG_SCREEN`、core の `measure`（`MELOET_MEASURE_DIR`）、置き場所の差しかえ 5、音の素材の試験の口 2、`MELOET_INPUT_SINK_MONITOR`、midi の試験の鍵盤 4、plughost の偽物のプラグインなど 3。`cairo-rs` は optional に。画面は `__DEV_HOOKS__`（`MELOET_DEV_HOOKS=1` か vitest のときだけ）で、本番の `ui/dist` から `start-*.js` も名前も消えた（Vite 8.3.8 で `if (false)` の塊が落ちるのを作って見た）。
+- 見はり: `scripts/check-release.sh`（feature なしの release の実行ファイル 2 つと本番の `ui/dist` と実行ファイルに入った画面を grep。逆に feature ありで名前が出ることも）。`scripts/check-all.sh --release` から呼ぶ。測る道具は `tools/measure/build-dev.sh` で作る。CLAUDE.md の「よく使うコマンド」に足した。
+- 棟梁の決め: 実行ファイルのそばの `sounds/` は残す（開発のビルドが包みを見つける所。配る形では何もしない）。VS Code のデバッグの設定（`--no-default-features`）は変えない（`MELOET_*` は効かない。オーナーさんに伝えた）。
+- 取りこんだあとの確かめ（棟梁、本物の作業ツリー）: `check-all.sh` 通る（Rust 1357 ・ 落ち 0 ・ ignored 105、画面 3277）、`check-release.sh` 通る（meloet 36,367,536 バイト、plughost 1,920,496 バイト、記号つき）。
+- 宿題: `meloet-midi` の `plugging_and_unplugging_after_start_is_reported_with_the_same_id` がたまに落ちる（ポートの名前が `…:portet`。係の 1 回目）。

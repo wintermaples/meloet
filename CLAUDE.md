@@ -111,6 +111,10 @@ spikes/            検証の試作（消さない、写さない）
 source ~/.cargo/env; export PATH=$HOME/.local/node/bin:$PATH
 scripts/check-all.sh             # fmt、clippy、Rust のテスト、型の検査、画面のテスト、ライセンスの見はり
 scripts/check-all.sh --devices   # 上に加えて、鍵盤や PipeWire が要るテスト
+scripts/check-all.sh --release   # 上に加えて、配る形に開発の仕込みが残っていないか（scripts/check-release.sh。重い）
+tools/measure/build-dev.sh [--keep-ui]  # 測る前に: release に開発の仕込みを入れて作る（feature dev-hooks ＋ MELOET_DEV_HOOKS=1）。`cargo build --release -p meloet-app` だけでは MELOET_* が効かない
+cargo test --features dev-hooks  # Rust の試験（check-all もこの形。feature なしでも通るが devhooks の試験は回らない）
+MELOET_DOCKER_SG=1 scripts/build-deb.sh  # 配る deb を Ubuntu 24.04 のコンテナで作る（target/deb/。docker のグループが要る）
 python3 -I tools/design/render_mocks.py target/mock-png   # モックを PNG に
 python3 -I tools/design/shoot_ui.py <出力> <場面>           # 偽物の場面とモックをならべる
 python3 -I tools/design/shoot_app.py <状態>                 # 本物のアプリを撮る（docs/screenshots/）

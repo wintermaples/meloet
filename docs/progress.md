@@ -1713,3 +1713,9 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 取りこむとき棟梁が直した: 試験の口 `MELOET_ENGINE_RT` を、`meloet-engine` の feature `dev-hooks`（`meloet-core/dev-hooks` から流す）の下に入れ、`check-release.sh` の逆の試験の名前に足した（係の土台が、仕込みを外す仕事より前だったため）。
 - 確かめ（棟梁、本物の作業ツリー）: `check-all.sh --release` で core の `readahead::tests::other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends` が 1 回落ちた（入れかえの回数が 3、待つのは 2。混んでいる時だけ）。ひとりで 8 回回して 8 回通った → 時間で落ちる試験の宿題。そのほか Rust ・ 画面 3277 ・ ライセンス ・ `check-release.sh`（meloet 36,390,024 バイト）は通った。
 - オーナーさんに頼む: rtkit の道で上がるか（この PC のエージェントは席のないセッションで polkit に断られる）。`docs/install-check.md` の 2-1 に足した。棟梁の決め: rtkit で上げるときに meloet のプロセスの `RLIMIT_RTTIME` を 200 ms にするのは、プラグイン係 ・ PipeWire の module-rt と同じでよい。上げる関数がプラグイン係とエンジンに 2 つある件は、オーナーさんの整理の時に（申し送り）。
+
+### 区切り4: 配る deb を作りなおした（棟梁、2026-11-22 17:55、ef7306d）
+
+- `MELOET_DOCKER_SG=1 scripts/build-deb.sh` で `target/deb/meloet_0.1.0_amd64.deb`（17,752,566 バイト。記号を外して `meloet` 28,471,496 バイト、`meloet-plughost` 1,369,968 バイト）。Maintainer `wintermaples <wintermaples@yahoo.co.jp>`、Description「MIDI 鍵盤ではじめる、音楽づくりのアプリ」、Depends は上のとおり。
+- 中の 2 つの実行ファイルに仕込みの名前（`MELOET_` ・ `devhooks` ・ `measure_report` ・ `ui_script` ・ `urn:meloet:fake`）は 0 件、`WEBKIT_DISABLE_COMPOSITING_MODE` はある。
+- きれいな ubuntu:24.04 と 26.04 のコンテナで: 入れる 0、`/usr/bin` の 2 つと `/usr/share/doc/meloet` の 3 つ、`ldd` の not found 0、`apt-get remove` 0 で消える。画面と音はオーナーさんの手順（`docs/install-check.md`）。

@@ -7,6 +7,10 @@ use crate::instrument::{Instrument, InstrumentEvent, SongPlace};
 
 const CC_MODULATION: u8 = 1;
 const CC_SUSTAIN: u8 = 64;
+/// The sustain pedal is down from this value on, as instruments read it.
+const PEDAL_DOWN: u8 = 64;
+/// Stands for the pedal in the seeds, beside the keys 0..=127.
+const PEDAL_KEY: u8 = 128;
 
 const MOVED_SUSTAIN: u8 = 1;
 const MOVED_MODULATION: u8 = 2;
@@ -34,7 +38,8 @@ const TALLY_EVERY: usize = 64;
 #[derive(Debug, Default)]
 pub struct Sequence {
     events: Box<[SequenceEvent]>,
-    /// For each event; for a press, its seed and its number among the presses of its key.
+    /// For each event; for a press, its seed and its number among the presses of its key; for
+    /// a move of the sustain pedal, its seed and the earlier moves the same way.
     presses: Box<[(u32, u32)]>,
     /// The velocities of the presses, key after key, each key's in song order.
     velocities: Box<[u8]>,
@@ -76,7 +81,22 @@ impl Sequence {
         let mut seen = [0usize; 128];
         let mut by_velocity = vec![[0u32; 128]; 128];
         let mut same_tick = [(u64::MAX, 0u32); 128];
+        let (mut pedal_down, mut pedal_moves) = (false, [0u32; 2]);
         for (i, e) in events.iter().enumerate() {
+            if let InstrumentEvent::Control {
+                controller: CC_SUSTAIN,
+                value,
+            } = e.event
+            {
+                let down = value >= PEDAL_DOWN;
+                let way = usize::from(down);
+                presses[i] = (seed(e.tick, PEDAL_KEY, 0), pedal_moves[way]);
+                if down != pedal_down {
+                    pedal_down = down;
+                    pedal_moves[way] += 1;
+                }
+                continue;
+            }
             let Some((key, velocity)) = press(e) else {
                 continue;
             };
@@ -124,6 +144,12 @@ impl Sequence {
         let earlier =
             &self.velocities[first_velocity + block * TALLY_EVERY..first_velocity + ordinal];
         SongPlace::tallied(seed, tally, earlier)
+    }
+
+    /// The place of the event at `index`, a move of the sustain pedal.
+    fn pedal_place(&self, index: usize, chased: bool) -> SongPlace<'static> {
+        let (seed, moves) = self.presses[index];
+        SongPlace::pedal(seed, moves, chased)
     }
 }
 
@@ -269,12 +295,12 @@ impl Lane {
         let cursor = events.partition_point(|e| before(e.tick));
         self.cursor = cursor;
         let (mut sustain, mut modulation, mut bend) = (None, None, None);
-        for e in events[..cursor].iter().rev() {
+        for (index, e) in events[..cursor].iter().enumerate().rev() {
             match e.event {
                 InstrumentEvent::Control {
                     controller: CC_SUSTAIN,
                     value,
-                } if sustain.is_none() => sustain = Some(value),
+                } if sustain.is_none() => sustain = Some((value, index)),
                 InstrumentEvent::Control {
                     controller: CC_MODULATION,
                     value,
@@ -287,13 +313,13 @@ impl Lane {
             }
         }
         let mut instrument = instrument;
+        if let Some((value, index)) = sustain.filter(|&(v, _)| v != 0) {
+            self.moved |= MOVED_SUSTAIN;
+            if let Some(i) = instrument.as_deref_mut() {
+                i.song_pedal(value, sequence.pedal_place(index, true));
+            }
+        }
         let chased = [
-            sustain
-                .filter(|&v| v != 0)
-                .map(|value| InstrumentEvent::Control {
-                    controller: CC_SUSTAIN,
-                    value,
-                }),
             modulation
                 .filter(|&v| v != 0)
                 .map(|value| InstrumentEvent::Control {
@@ -321,6 +347,15 @@ impl Lane {
                 self.sounding[usize::from(note >> 6) & 1] |= 1 << (note & 63);
                 if let Some(instrument) = instrument {
                     instrument.song_note_on(note, velocity, sequence.place(self.cursor, note));
+                }
+            }
+            InstrumentEvent::Control {
+                controller: CC_SUSTAIN,
+                value,
+            } => {
+                self.moved |= MOVED_SUSTAIN;
+                if let Some(instrument) = instrument {
+                    instrument.song_pedal(value, sequence.pedal_place(self.cursor, false));
                 }
             }
             event => self.send(event, instrument),
@@ -497,6 +532,61 @@ mod tests {
             heard.push((note, velocity, e.tick));
         }
         assert_eq!(heard.len(), 700);
+    }
+
+    fn pedal(tick: u64, value: u8) -> SequenceEvent {
+        SequenceEvent {
+            tick,
+            event: InstrumentEvent::Control {
+                controller: CC_SUSTAIN,
+                value,
+            },
+        }
+    }
+
+    /// What reaches an instrument through `song_pedal`.
+    #[derive(Default)]
+    struct Pedals(Vec<(u8, u32, bool)>);
+
+    impl Instrument for Pedals {
+        fn prepare(&mut self, _: f32, _: usize) {}
+        fn event(&mut self, _: InstrumentEvent) {}
+        fn song_pedal(&mut self, value: u8, place: SongPlace<'_>) {
+            self.0.push((value, place.earlier_moves(), place.chased()));
+        }
+        fn render(&mut self, _: &mut [f32], _: &mut [f32]) {}
+        fn reset(&mut self) {}
+    }
+
+    /// A pedal recorded from a keyboard sends many values: only the ones that cross 64 are
+    /// moves. Each move is told the earlier moves the same way; playing from the middle, the
+    /// pedal where the song left it comes as chased.
+    #[test]
+    fn a_pedal_move_knows_the_earlier_moves_the_same_way() {
+        let values = [127, 100, 30, 0, 90, 64, 63, 127];
+        let events = (values.iter().enumerate())
+            .map(|(i, &v)| pedal(i as u64 * 10, v))
+            .collect();
+        let mut lane = Lane::default();
+        lane.replace_sequence(Some(Box::new(Sequence::new(events))));
+        let mut heard = Pedals::default();
+        lane.seek(|_| false, Some(&mut heard));
+        lane.fire_before(u64::MAX, Some(&mut heard));
+        let moves: Vec<u32> = heard.0.iter().map(|h| h.1).collect();
+        assert_eq!(moves, [0, 1, 0, 1, 1, 2, 1, 2]);
+        assert!(heard.0.iter().all(|h| !h.2));
+
+        let mut heard = Pedals::default();
+        lane.seek(|tick| tick < 45, Some(&mut heard));
+        assert_eq!(heard.0, [(90, 1, true)]);
+        lane.fire_before(55, Some(&mut heard));
+        assert_eq!(heard.0[1], (64, 2, false));
+        let mut heard = Pedals::default();
+        lane.seek(|tick| tick < 35, Some(&mut heard));
+        assert!(
+            heard.0.is_empty(),
+            "a pedal the song left at 0 is not chased"
+        );
     }
 
     /// The seed is the note's own: other notes before it, or none, do not change it.

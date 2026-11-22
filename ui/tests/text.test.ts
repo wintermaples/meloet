@@ -16,7 +16,7 @@ describe("仕様書 5 章「用語の説明」", () => {
   const specTerms = rows(table);
 
   it("表の形が想定どおり", () => {
-    expect(headers(table)).toEqual(["用語", "説明の文面"]);
+    expect(headers(table)).toEqual(["Term", "Explanation wording"]);
     expect(specTerms.length).toBeGreaterThan(50);
   });
 

@@ -1,101 +1,101 @@
-# 2 部品と状態
+# 2 Parts and states
 
-状態の見せかたは、どの部品でも同じ決まりにする。下の見本は実物の大きさ。
+Every part shows its states by the same rules. The samples below are real size.
 
-| 状態 | 決まり |
+| State | Rule |
 |---|---|
-| ふつう | bg gray.4 ・ 枠 gray.6 ・ 文字 gray.9 |
-| マウスが乗った | 枠 gray.8 ・ 文字 gray.10 |
-| 押した | bg gray.2 ・ 枠 gray.8 |
-| オン | 枠と文字 accent |
-| 使えない | 枠 gray.5 ・ 文字 gray.7 ・ 押せない |
-| キーボードでえらんでる | 外がわ 1px あけて gray.10 の線 1px |
-| こわれた | 枠と文字 rec |
+| Normal | bg gray.4, border gray.6, text gray.9 |
+| Hover | border gray.8, text gray.10 |
+| Pressed | bg gray.2, border gray.8 |
+| On | border and text accent |
+| Disabled | border gray.5, text gray.7, cannot be pressed |
+| Keyboard focus | a 1px gray.10 line, 1px outside |
+| Broken | border and text rec |
 
-| 部品 | 大きさと中身 | ふつう | マウスが乗った | 押した | オン | 使えない | キーボードでえらんでる | こわれた |
+| Part | Size and content | Normal | Hover | Pressed | On | Disabled | Keyboard focus | Broken |
 |---|---|---|---|---|---|---|---|---|
-| ボタン | 高さ 24、左右の内がわ 8、角 1。文字だけ、または 10px のアイコン | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ |
-| 切りかえ M ・ S ・ ● | 20×20。● のオンだけ rec の色 | S | S | S | S | S | S | S |
-| インサートの枠 | 高さ 24。空きは「空き ＋」、こわれたら名前の右に「止」 | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー |
-| 帯札（たたんだ見出し） | 高さ 24。オン＝ひらいている。上辺 2px が accent、地が gray.1 | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M |
-| 一覧の行 | 高さ 20 か 24。オン＝選んだ行。左 2px が accent、地が gray.4 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 |
-| 入力の枠 | 高さ 24、地 gray.0。こわれた＝入れた値が使えない | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav |
+| Button | Height 24, padding 8 on left and right, corner 1. Text only, or a 10px icon | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ | クオンタイズ |
+| Toggle M, S, ● | 20×20. Only ● uses the rec color when on | S | S | S | S | S | S | S |
+| Insert slot | Height 24. An empty slot is 「空き ＋」; when broken, 「止」 to the right of the name | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー | コンプレッサー |
+| Band tab (folded heading) | Height 24. On = open. Top edge 2px accent, background gray.1 | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M | ▸ **ミキサー** −6.2 dB M |
+| List row | Height 20 or 24. On = selected row. Left 2px accent, background gray.4 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 | 3.1.000 D4 80 |
+| Input box | Height 24, background gray.0. Broken = the typed value cannot be used | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav | はじめての曲.wav |
 
-| 部品 | 形 | 持つ状態 |
+| Part | Shape | States it has |
 |---|---|---|
-| フェーダー | つまみ 24×12（gray.9 の面、gray.10 の枠）。溝は gray.7 の線 1px。0 dB の位置に gray.6 の横線 | ふつう / 乗った（枠 accent）/ 動かしている（面 gray.10）/ 使えない（面 gray.7）/ キーボード（外がわの線） |
-| パンのつまみ | 直径 24 の丸。gray.8 の枠、gray.10 の針 1px。丸いのはこれと録音ボタンだけ | ふつう / 乗った（枠 gray.10）/ 動かしている（針 accent）/ 使えない / キーボード |
-| 録音ボタン | 直径 12 の丸をボタンの中に。止まっているときは rec の輪、録音中とカウントイン中は rec のぬり | ふつう / 乗った / 録音中 / カウントイン中 / 使えない（録音待機のトラックがない） |
-| メーター | 横 4px、縦は幅 6px を 2 本。−3 dB（長さの 70 %）までが meter.ok、その上が meter.hot。目盛は下の「メーターとフェーダーの目盛」。トラックの見出しのメーターも横 4px の 2 本。地は gray.0。ぼかしもグラデーションも使わない | 動いている / 止まっている（空）/ 音割れ（上はしに rec の 2px を 2 秒） |
-| ノート | 高さ 11。左はしに gray.10 の 2px。面はベロシティで gray.8（〜69）/ gray.9（70〜89）/ gray.10（90〜） | ふつう / 選んだ（面 accent）/ もとの位置（ドラッグ中、または「そろえる前の位置」。選んでいるノートの分は accent の枠、ほかは gray.7 の枠。どちらもノートより上に描く）/ 音階の外（書けない行は gray.0） |
-| クリップ | 面 gray.4、枠 gray.6、上辺 2px がトラックの色 | ふつう / 選んだ（枠と上辺 accent）/ 録音中（枠と上辺と中身 rec）/ 動かしている（もとの場所に gray.7 の枠） |
-| 用語の説明 | 幅 248、内がわ 8、地 gray.10、文字 gray.0。影はつけない。マウスを 0.6 秒止めると出る | 出ている / 消えている |
-| 選ぶ印（設定の中） | 12×12 の四角の枠、えらぶと中に 6×6 の accent。丸にしない | ふつう / えらんだ / 使えない / キーボード |
-| 音源の行（棚） | 高さ 24。左から、お気に入りの印（12px の星。オンは gray.10 のぬり、オフは gray.7 の線）、サンプルのボタン（20×20）、名前、形式の印。グループの見出しは高さ 24 で、▾ ▸ と数 | ふつう / 乗った / サンプル再生中（ボタンが accent の停止、右に「0:02 / 0:05」）/ ためし弾き中（地 gray.4、左 2px accent、下に案内とボタンがひらく）/ 見つからない（文字 gray.8）/ キーボード |
-| 出口 ・ 入口の行 | 左から、選ぶ印（12×12 の四角）、本物の名前（168）、やさしい言いかえ（150。型がわかるときだけ）、ささっているかの印（6×6。ささっている＝gray.10 のぬり、いない＝gray.7 の線）と文。流れ 2 では高さ 32 で右はしにテスト音のボタン、音の設定では高さ 24 | ふつう / えらんだ（印の中が accent。流れ 2 では地 gray.4、左 2px accent）/ 何もささっていない（名前 gray.8。えらぶことはできる）/ キーボード |
-| パラメータの行 | 高さ 24。左から、名前（104。プラグインが言ってきた文字のまま。入りきらなければ「…」）、動かす所（88）、値（68。プラグインが言ってきた文字のまま、右そろえ）、オートメーションに書く印（20×20）。動かす所は 3 種類。なめらかに動く値＝横の棒（線 gray.7、ぬり gray.9、つまみ 6×12 の gray.10）。段階で切りかわる値＝◂ ▸ と、5 段までは 6×6 の四角のならび、6 段からは「3 / 12」。オンとオフだけの値＝12×12 の四角の印 | ふつう / 乗った / 動かしている（行の地 gray.4、左 2px accent）/ オートメーションに書いている（右の印が accent）/ 使えない（プラグインが止まっている。文字 gray.7）/ キーボード |
-| パラメータのグループの見出し | 高さ 24。▾ ▸、プラグインが言ってきたグループの名前、数 | ひらいている / たたんでいる / 乗った / キーボード |
-| 窓がひらいている印 | 10×10 の窓の形の線画（gray.10）。インサートの枠の右はし、ミキサーの音源の枠の右はし、アレンジの音源の名前の右にそえる。色は足さない | ない（窓はとじている）/ ある（窓がひらいている。うしろに隠れていても同じ印） |
-| インサートの枠 ・ 足した状態 | これまでの状態に 2 つ足す | えらんだ（枠 accent。右のパラメータがその子になる）/ 窓がひらいている（右はしに窓の印） |
-| 状態行の「窓」 | 窓の印、「窓」、数、▾。窓が 1 つもなければ出さない。押すと、状態行の上に一覧がひらく（幅 380。行は高さ 24 で、窓の印、プラグインの名前、居場所。いちばん下に「ぜんぶ前に出す」） | ふつう / 乗った / ひらいている（地 gray.4、枠 gray.8）/ キーボード |
-| 形式の印が 2 つ | 同じプラグインが 2 つの形式で入っているとき、棚では 1 行にまとめ、印を 2 つならべる。使うほうが明るい（枠 gray.9、文字 gray.10）。もう一方は今までの印（枠 gray.7、文字 gray.8） | 使っている / 使っていない（押すと入れかわる）/ 乗った / キーボード |
-| テイクの印と切りかえ | テイクが 2 つ以上あるクリップは、名前の前に「2/3」の札（数字は text.s、枠 gray.8、文字 gray.10）を出す。クリップの幅が 28 より狭いときは、左上に 6×6 の gray.10 の四角だけ。そのクリップをえらぶと、クリップのすぐ上に切りかえの札（高さ 24、地 gray.4、枠 gray.8。◂、「テイク 2 / 3」、▸、キーの T）が出る。札はクリップより広くてよい。影はつけない | 札なし（テイクが 1 つ）/ 札あり / えらんだ（切りかえの札が出る。クリップの枠と札の枠が accent）/ キーボード |
-| 状態行の「拡大率」 | いまの拡大率（「100 %」）と ▾。状態行のいちばん右。どの幅でも消さない。押すと、状態行の上に一覧がひらく（幅 320。行は高さ 24 で、選ぶ印、率、キー）。入らない率は「使えない」の見た目にして、「この画面には入りません」をそえる | ふつう / 乗った / ひらいている（地 gray.4、枠 gray.8）/ キーボード |
-| カーソル（鉛筆 ・ 消しゴム） | 16×16 の線画。面 gray.10、ふち gray.0 の 1px。押す点は、鉛筆が左下の先（2, 14）、消しゴムが左下の角（4, 12）。ほかのカーソルは OS の形。拡大率に合わせて大きくする（OS のカーソルの大きさの設定にも合わせる） | ふつう / できない（OS の「できない」の形に変わる） |
-| その場の読み値 | 高さ 20、地 gray.0、枠 gray.8 の 1px、左右 6。文字は text.s の数字の字（gray.10）。ドラッグしている間だけ、カーソルの左上 6 にはなれて出す。画面のはしでは内がわへずらす。同じ値を状態行にも出す | 出ている / 消えている |
-| 一覧 | 幅 220（拡大率は 320）。地 gray.3、枠 gray.8。行は高さ 24 で、選ぶ印、名前、キー。見出しの行は「hd」。押した物のすぐ下か上にひらく。Esc か、外を押すととじる | ひらいている / とじている |
-| 曲の ▾ | 28×24 のボタン。曲の名前が引っこんだ場所に出る。乗せると「曲 ・ （曲の名前）」。押すと曲の名前の一覧 | ボタンと同じ |
-| メトロノームの ▾ | 幅 20 のボタン。カウントインのボタンが引っこんだとき、メトロノームのボタンの右に、すきまなくくっつく。押すと、メトロノームのオン ・ オフと、カウントインの「なし / 1 小節 / 2 小節」の一覧 | ボタンと同じ。メトロノームがオンのときは、▾ もオンの色 |
-| 上のメニューの行 | 高さ 24、地 gray.1、下に gray.5 の線。左から「ファイル」「編集」「表示」「再生」「ノート」「トラック」「ヘルプ」（text.s、左右 8）。第 5 版までの絵には「ヘルプ」がないが、第 6 版からは右のはしに入る。押すと、すぐ下に「一覧」がひらく。ひらいている名前は地 gray.4、文字 gray.10 | ふつう / 乗った / ひらいている / キーボード（F10 で最初の名前へ） |
-| 一覧の行 ・ 足した形 | ▸ の子がある行は右はしに ▸。子は右にひらく（同じ「一覧」）。区切りは、上下 4 をあけた gray.5 の 1px。見出しの行は「hd」。まだできない行は「使えない」（名前もキーの字も gray.7、押せない） | 一覧の行と同じ |
-| 右クリックの一覧 | 2 章の「一覧」を、押した所にひらく。中身は 3 章。画面のはしでは内がわへずらす | ひらいている / とじている |
-| ベロシティ固定の切りかえ | 入力計のベロシティの読み値の右。高さ 20、左右 4、字「固定」。オンは枠と文字が accent。どの幅でも消さない | ふつう / 乗った / 押した / オン / キーボード |
-| 縦の − ＋ | ピアノロールの鍵盤の列の上の角（目盛の行の左）。20×18 の切りかえ 2 つ | ボタンと同じ。いちばん小さい ・ 大きい段では「使えない」 |
-| スケール固定の ▾ | 道具の列の「スケール固定」のボタンの右に、すきまなく幅 20 の ▾（メトロノームの ▾ と同じ形）。押すと音階の一覧 | ボタンと同じ。スケール固定がオンなら ▾ もオンの色 |
-| 選んだトラックの見出し | 地 gray.4（一覧の「選んだ行」と同じ）。ほかは変えない | ふつう / 選んだ |
-| ミュートしたトラック | M の切りかえがオン（accent）。クリップの中の線を gray.7 にする。クリップの名前と色の帯はそのまま | ミュート / ミュートとソロ（ミュートが勝つので、ミュートと同じ見た目） |
-| キーが向く帯の印 | キーが向く帯（アレンジかピアノロール）の、道具の列（アレンジは見出しの行）の上辺に accent の 2px | ある / ない |
-| 位置の入力の枠 | 再生まわりの「1. 1. 000」を押すと、その場で入力の枠（地 gray.0、枠 gray.8、カーソル gray.10）。テンポの枠と同じ | 入力の枠と同じ |
-| まとめて変える行 | 「選んだノート」の欄の中。高さ 32、左に字（幅 60）、入力の枠（幅 72、右そろえ）、ボタン「そろえる」。選んだノートの値がみな同じならその値、ちがえば空 | ふつう / 使えない（ノートを選んでいない） |
-| 「最初から入っている」の印 | 最初から入っているエフェクトのパラメータの欄で、名前の右（形式の印の場所）に text.s の gray.8 で「最初から入っている」。枠はつけない | ある / ない |
-| ダイアログの 2 段目へ進む行 | 高さ 32、左右 16、下に gray.5 の線。左に名前（text.s の gray.10）、右に中身の短い説明（gray.8）と ▸。押すと、同じダイアログの中身が 2 段目に変わり、見出しの左に「◂ （1 段目の名前）」が出る | ふつう / 乗った / フォーカス |
-| ドラムの叩いた所の四角 | ドラムのピアノロールのノート。幅はグリッドの 1 マス − 2（最小 6）、高さは行の高さ − 8。色はノートと同じ | ふつう / 選んだ / 乗った |
-| ファイルを持ってきている間の知らせ | 窓のふちの内側に accent の 2px。まん中に幅 400 の箱（地 gray.3、枠 accent 1px、内 16）に、ファイルの名前（text.l、太さ 600）と、落とすと何が起きるか、やめかた。新しい部品: これまで、窓にファイルを落とす所がなかったので | 足せる / 足せない（枠と名前を gray.8 にし、文を「SF2 のファイルではないので、足せません。」に） |
-| 見つからない物の知らせ | 棚の一覧の上や、見つからない行の下に出す、左に gray.8 の 2px の線をひいた箱（内 8 ・ 12）。前の版の「見つからないプラグイン」の箱と同じ物を、音の素材と SF2 にも使う | 文だけ / 文とボタン |
-| トラックの名前の入力の枠 | トラックの見出しの名前の場所が、その場で入力の枠になる（地 gray.0、枠 gray.10、太さ 600） | 入力の枠と同じ |
-| トラックを並べかえる印 | ドラッグ中の見出しは accent の 1px の枠でつまみ上げ、入る所に accent の 2px の横線 | 動かしている / なし |
-| 色の一覧の行 | 2 章の「一覧」の行に、選ぶ印、24×12 の色の見本、「色 1」〜「色 5」 | 一覧の行と同じ |
-| インサートの枠のオンの印（13-A） | 入っている枠の左に、2 章の「選ぶ印」（12×12）。オンは accent の点、とばすと空。とばした枠は名前を gray.7。印を押すと切りかわる（取り消せる 1 手）。止まった枠と空きの枠には印を出さない。乗ると名前の全部と「（とばしている）」 | オン / とばした / 止まった（印なし。赤い枠と「止」は今のまま）/ えらんだ（枠が accent） |
-| オートメーションの点 | 6×6 の四角。ふつう gray.10、えらんだ点は accent。点と点は gray.9 の 1px の線（段階の値とオン ・ オフは階段の形）。乗った点は、まわりに accent の 1px の枠 | ふつう / 乗った / えらんだ / 動かしている（もとの所に accent の枠）/ 書く前（accent の枠だけ） |
-| オートメーションの帯の見出し ・ 書く ・ 休み | 帯の見出しは 2 段。上に「▾ オートメーション ・ （何を）」、下に「● 書く」のボタンと短い文。書くがオンのときはボタンが「えらんでいる」の形で、● と文字が rec の色。休みのときは、ボタンが「もどす」になり、線が gray.7 | ふつう / 書く（オン）/ 休み |
-| オートメーションで動くつまみ | オートメーションが動かしているフェーダーは、つまみの枠が accent。値の下に gray.8 で「オートメーション」。休みのときは枠がふつうに戻り、下に「休み」と「もどす」のボタン | オートメーションで動く / 休み / なし |
-| テンポのだんだん | テンポの帯の、点と点のあいだの斜めの線。線の上に gray.8 で「だんだん」 | ある / ない |
-| マーカーの名札 | マーカーの行の名札。左に 2px の線（gray.9）と名前。えらんだ名札は線が accent で地が gray.4。名前を変えるときは、その場で入力の枠（トラックの名前と同じ） | ふつう / 乗った / えらんだ / 動かしている / 名前を変えている |
-| ピアノロールの目盛のマーカー | 目盛の行に、マーカーの名前を gray.8 で。左に gray.8 の 1px。押せない | — |
-| 履歴の行 ・ 乗った ・ えらんだ | F-History の行に、乗った行とえらんだ行の形を足す。地 gray.4、右に「ここまで戻す Enter」。キーでえらんだ行は、まわりに gray.10 の 1px（フォーカス） | ふつう / 乗った / えらんだ / いまここ / やりなおせる |
-| 歌のトラックの見出し | 2 段目が「入口 1 ・ モノ ▾」と「モニター」のボタン（オンは「えらんでいる」の形）。● は、選んでいなくても赤くなる | ふつう / ● あり / モニター オン / 入口なし |
-| 入力計の帯（左右に分けた形） | 左に鍵盤の計、右に gray.6 の線で分けてマイクの計（入口の名前とトラック、200 の計、−60 ・ −12 ・ 0 の目盛、いまの dB、モニター）。新しい部品: 鍵盤とマイクを同時に見せる所がなかったので | ふつう / 0 dB に届いた（右はしと字が rec）/ せまい（字を引っこめる） |
-| 歌のクリップ | 上 2px にトラックの色、名前、下に波形（gray.8 の棒）。えらぶと枠が accent。上の左右の角にフェードの取っ手（6×6、gray.10）。フェードの線は gray.10 の曲がった線。音量は accent の 1px の横線。名前の右に印（「×1.25」「+2」、地 gray.0 ・ 枠 gray.7）。下に「音を作っています 34 %」「読みこんでいます 40 %」 | ふつう / えらんだ / 録っている（rec）/ 音を作っている / 見つからない（地 gray.2、線 gray.7、波形なし） |
-| 持ってきている間の、分かれた箱 | F5-SF2Drop の箱を左右 2 つ（240 ずつ）にした形。乗っている側が accent の枠と gray.4 の地。新しい部品の形: 落とす前に、別々か 1 本かをえらべるようにするので | 左に乗っている / 右に乗っている |
-| 選んだクリップ | パラメータの欄の中身。上に名前と「選んだクリップ」、ファイルの行。グループ「クリップ」「のび縮み ・ 音の高さ」。音を作っている間は、上に進みの棒 | ふつう / 音を作っている / 見つからない（知らせの箱） |
-| 書き出しの進み | 状態行の左に「書き出しています」（accent）、160 の棒、%、ファイルの名前と残りの時間、「やめる」 | 書き出している / 実時間で書き出している / 終わった（「フォルダをひらく」） |
-| 見出しの「帯」のボタン | トラックの見出しの 1 段目、M の左に 20×20。字は「帯」。押すと帯の一覧。ひらいている間は accent | ふつう / 乗った / ひらいている |
-| 案内の帯（音の素材） | 入力計の帯の案内の形。左に入力と、いま押している音だけ。右に accent の 2px の線から、案内の文（2 行）、160 の棒、ボタン。新しい部品の形: 240 MB を取る間の進みとボタンを、はじめの数分いちばん目に入る所に置くので | 聞いている / 取っている / 取れなかった（「もう一度」） |
-| 棚の「まだの音色」の行 | 一覧の行と同じ高さ。名前は gray.8、右に「取ってきています」か「まだ」。星と ▶ は出さない | 取ってきている / まだ |
-| インサートを並べかえる印 | トラックを並べかえる印と同じ。ドラッグ中の枠は accent の 1px でつまみ上げ、入る所に accent の 2px の横線。同じストリップの中だけ | 動かしている / なし |
-| 棚のプラグインの行 | 一覧の行に、お気に入りの星、名前（gray.10）、作った人か種類（gray.8。えらぶ 14 で決まる）、形式の印（使う形式 1 つを gray.9 の枠で。ほかの形式もあれば右に「＋2」（Plex Mono、gray.8）。「＋2」を押すと、使う形式をえらべる。乗ると「LV2 ・ VST3 ・ CLAP があります。」）。作った人は最大 96 で「…」 | 一覧の行と同じ ・ ためし弾き中 ・ 読みこみ中 |
-| スキャンで止まった物の行 | ダイアログの中の行。上の段に名前（太さ 600）、形式の印、止まったわけ（gray.8）、右に「もう一度ためす」。下の段に場所（Plex Mono、gray.8）。新しい部品: スキャンで止まった物を、名前と場所つきでならべる所がなかったので | ふつう / ためしている（ボタンが「ためしています…」）/ 入った（行が消える） |
-| プラグインの場所の行 | 「音の設定 ▸ くわしい設定」の中の一覧の行。場所（Plex Mono）。ふつうの場所は gray.8 で右に「ふつうの場所」、足した場所は gray.10 で右に「外す」 | ふつうの場所 / 足した場所 |
-| ダイアログの見出しの行（動かす） | どのダイアログも、見出しの行を押したまま動かせる。乗ると地 gray.4、指は「動かす」の形。窓の外へは出さない | ふつう / 乗った / 動かしている |
-| マスターの出口の枠 ・ 出口なし | マスターのストリップの音源の枠の場所。出口がないときは「出口なし ▸」（gray.8）。押すと音の設定をひらく。乗ると「音の出口がありません。押すと音の設定をひらきます。」 | 出口あり / 出口なし |
-| ダイアログ | 幅 560、地 gray.3、枠 gray.8 の 1px。見出し 32（文字は text.s の 600）、下の列 48。うしろの画面は暗くしない。高さは中身に合わせ、窓の高さから上下 24 ずつ引いた分までにする。こえたら、見出しと下の列は動かさず、間の中身だけ縦にスクロールする | ひらいている / 中身がスクロールする |
-| スクロールの棒 | 幅 8。地 gray.3、左に gray.5 の線 1px、つまみ gray.6。角 0。ブラウザや OS の棒は使わない。一覧、ダイアログの中身、出口えらび、パラメータ、棚で同じ物を使う | ふつう / 乗った（つまみ gray.8）/ 動かしている（つまみ gray.9）/ いらない（中身が入りきるときは出さない） |
-| えらべない出口の行 | 高さ 24。選ぶ印の枠 gray.5、名前と装置の名前 gray.7、理由の文 gray.8。押せない。「いまは使えない出口」の見出し（▸ ▾ と数）の下にまとめる | 使えない（これだけ） |
+| Fader | Handle 24×12 (gray.9 face, gray.10 border). The groove is a 1px gray.7 line. A gray.6 horizontal line at the 0 dB position | normal / hover (border accent) / moving (face gray.10) / disabled (face gray.7) / keyboard (outside line) |
+| Pan knob | A circle of diameter 24. gray.8 border, 1px gray.10 needle. Only this and the record button are round | normal / hover (border gray.10) / moving (needle accent) / disabled / keyboard |
+| Record button | A circle of diameter 12 inside the button. When stopped, a rec ring; while recording and during count-in, filled with rec | normal / hover / recording / count-in / disabled (no armed track) |
+| Meter | Horizontal 4px; vertical, 2 bars 6px wide. Up to −3 dB (70 % of the length) is meter.ok, above that meter.hot. Scale marks: see “Scale marks of meters and faders” below. The meter in a track head is also 2 horizontal bars of 4px. Background gray.0. No blur and no gradients | moving / stopped (empty) / clipping (rec 2px at the top end for 2 seconds) |
+| Note | Height 11. A 2px gray.10 at the left end. The face by velocity: gray.8 (up to 69) / gray.9 (70 to 89) / gray.10 (90 and up) | normal / selected (face accent) / original position (during a drag, or 「そろえる前の位置」. Selected notes get an accent border, others a gray.7 border. Both are drawn above the notes) / outside the scale (rows you cannot write in are gray.0) |
+| Clip | Face gray.4, border gray.6, top edge 2px in the track color | normal / selected (border and top edge accent) / recording (border, top edge and content rec) / moving (gray.7 border at the original place) |
+| Term tip | Width 248, padding 8, background gray.10, text gray.0. No shadow. Shows when the mouse stays still for 0.6 seconds | shown / hidden |
+| Choice mark (in settings) | A 12×12 square border; when chosen, a 6×6 accent inside. Not round | normal / chosen / disabled / keyboard |
+| Instrument row (shelf) | Height 24. From the left: favorite mark (12px star; on = gray.10 fill, off = gray.7 line), sample button (20×20), name, format mark. Group headings are 24 high, with ▾ ▸ and a count | normal / hover / sample playing (the button is an accent stop, with 「0:02 / 0:05」 on its right) / audition (background gray.4, left 2px accent, a hint and buttons open below) / not found (text gray.8) / keyboard |
+| Output and input row | From the left: choice mark (12×12 square), real name (168), friendly name (150; only when the type is known), plugged-in mark (6×6; plugged in = gray.10 fill, not = gray.7 line) and text. In flow 2, 32 high with a test sound button at the right end; in sound settings, 24 high | normal / chosen (accent inside the mark; in flow 2, background gray.4, left 2px accent) / nothing plugged in (name gray.8; it can still be chosen) / keyboard |
+| Parameter row | Height 24. From the left: name (104; the text exactly as the plugin gives it; 「…」 if it does not fit), control (88), value (68; the text exactly as the plugin gives it, right-aligned), mark for writing automation (20×20). There are 3 kinds of control. A value that moves smoothly = a horizontal bar (line gray.7, fill gray.9, handle 6×12 in gray.10). A value that changes in steps = ◂ ▸ and, up to 5 steps, a row of 6×6 squares; from 6 steps, 「3 / 12」. A value that is only on or off = a 12×12 square mark | normal / hover / moving (row background gray.4, left 2px accent) / writing automation (the mark on the right is accent) / disabled (the plugin has stopped; text gray.7) / keyboard |
+| Parameter group heading | Height 24. ▾ ▸, the group name the plugin gives, and a count | open / folded / hover / keyboard |
+| Window-open mark | A 10×10 line drawing of a window (gray.10). Placed at the right end of an insert slot, at the right end of the instrument slot in the mixer, and to the right of the instrument name in the arrange. No color is added | none (the window is closed) / shown (the window is open; the same mark even when it is hidden behind) |
+| Insert slot: added states | Adds 2 states to the states so far | chosen (border accent; the parameters on the right become those of this slot) / window open (window mark at the right end) |
+| 「窓」 in the status line | The window mark, 「窓」, a count, ▾. Not shown when there are no windows. When pressed, a list opens above the status line (width 380; rows are 24 high, with the window mark, the plugin name and where it is. At the bottom, 「ぜんぶ前に出す」) | normal / hover / open (background gray.4, border gray.8) / keyboard |
+| Two format marks | When the same plugin is installed in 2 formats, the shelf shows it in 1 row with 2 marks side by side. The one in use is bright (border gray.9, text gray.10). The other is the usual mark (border gray.7, text gray.8) | in use / not in use (press to switch) / hover / keyboard |
+| Take mark and switch | A clip with 2 or more takes shows a 「2/3」 tag before its name (numbers text.s, border gray.8, text gray.10). When the clip is narrower than 28, only a 6×6 gray.10 square at the top left. When that clip is chosen, a switch tag (height 24, background gray.4, border gray.8; ◂, 「テイク 2 / 3」, ▸, the key T) shows just above the clip. The tag may be wider than the clip. No shadow | no tag (one take) / tag / chosen (the switch tag shows; the clip border and the tag border are accent) / keyboard |
+| 「拡大率」 in the status line | The current scale (「100 %」) and ▾. At the right end of the status line. Never removed at any width. When pressed, a list opens above the status line (width 320; rows are 24 high, with a choice mark, the scale, the key). Scales that do not fit get the 「使えない」 (disabled) look, with 「この画面には入りません」 | normal / hover / open (background gray.4, border gray.8) / keyboard |
+| Cursor (pencil, eraser) | A 16×16 line drawing. Face gray.10, edge 1px gray.0. The point that acts: for the pencil, the tip at the bottom left (2, 14); for the eraser, the bottom-left corner (4, 12). Other cursors use the OS shapes. Made larger with the scale (and it also follows the OS cursor size setting) | normal / not allowed (changes to the OS 「できない」 shape) |
+| Reading in place | Height 20, background gray.0, 1px gray.8 border, 6 on left and right. Text in the digit face of text.s (gray.10). Shown only while dragging, 6 away to the upper left of the cursor. At the edge of the screen, moved inward. The same value is also shown in the status line | shown / hidden |
+| List | Width 220 (the scale list is 320). Background gray.3, border gray.8. Rows are 24 high, with a choice mark, a name, a key. Heading rows are 「hd」. Opens just below or above the thing pressed. Closes with Esc or by pressing outside | open / closed |
+| Song ▾ | A 28×24 button. Shows where the song name was hidden. On hover, 「曲 ・ （曲の名前）」. When pressed, a list of song names | same as a button |
+| Metronome ▾ | A button 20 wide. When the count-in button is hidden, it sticks to the right of the metronome button with no gap. When pressed, a list with metronome on and off and count-in 「なし / 1 小節 / 2 小節」 | same as a button. When the metronome is on, the ▾ also has the on color |
+| Menu bar | Height 24, background gray.1, a gray.5 line below. From the left: 「ファイル」「編集」「表示」「再生」「ノート」「トラック」「ヘルプ」 (text.s, 8 on left and right). The pictures up to version 5 have no 「ヘルプ」, but from version 6 it is at the right end. When pressed, a 「一覧」 (List) opens just below. The open name has background gray.4, text gray.10 | normal / hover / open / keyboard (F10 goes to the first name) |
+| List row: added forms | A row with ▸ children has ▸ at its right end. The children open to the right (the same 「一覧」 (List)). Dividers are 1px gray.5 with 4 above and below. Heading rows are 「hd」. Rows that cannot work yet are 「使えない」 (disabled) (name and key text gray.7, cannot be pressed) | same as a list row |
+| Context menu | Opens the 「一覧」 (List) of chapter 2 where pressed. The content is in chapter 3. At the edge of the screen, moved inward | open / closed |
+| Fixed velocity toggle | To the right of the velocity reading in the input meter. Height 20, 4 on left and right, the text 「固定」. On: border and text accent. Never removed at any width | normal / hover / pressed / on / keyboard |
+| Vertical − ＋ | At the top corner of the keyboard column of the piano roll (left of the ruler row). Two 20×18 toggles | same as a button. 「使えない」 (disabled) at the smallest and largest steps |
+| Scale lock ▾ | To the right of the 「スケール固定」 button in the toolbar, with no gap, a ▾ 20 wide (the same shape as the metronome ▾). When pressed, a list of scales | same as a button. When scale lock is on, the ▾ also has the on color |
+| Selected track head | Background gray.4 (the same as the 「選んだ行」 (selected row) of a list). Nothing else changes | normal / selected |
+| Muted track | The M toggle is on (accent). The lines inside the clips become gray.7. The clip name and the color strip stay the same | mute / mute and solo (mute wins, so it looks the same as mute) |
+| Mark of the band that keys go to | On the band that keys go to (arrange or piano roll), an accent 2px on the top edge of its toolbar (for the arrange, its heading row) | shown / none |
+| Position input box | Pressing 「1. 1. 000」 in the transport turns it into an input box in place (background gray.0, border gray.8, cursor gray.10). The same as the tempo box | same as an input box |
+| Change-all row | Inside the 「選んだノート」 panel. Height 32, text on the left (width 60), input box (width 72, right-aligned), button 「そろえる」. If the selected notes all have the same value, that value; if not, empty | normal / disabled (no notes selected) |
+| 「最初から入っている」 mark | In the params panel of a built-in effect, to the right of the name (where the format mark goes), 「最初から入っている」 in text.s gray.8. No border | shown / none |
+| Row to the second page of a dialog | Height 32, 16 on left and right, a gray.5 line below. The name on the left (text.s gray.10), a short summary of the content on the right (gray.8) and ▸. When pressed, the same dialog changes its content to the second page, and 「◂ （1 段目の名前）」 shows on the left of the heading | normal / hover / focus |
+| Drum hit square | A note in the drum piano roll. The width is one grid cell − 2 (at least 6); the height is the row height − 8. The color is the same as notes | normal / selected / hover |
+| Notice while a file is dragged in | An accent 2px inside the window edge. In the middle, a box 400 wide (background gray.3, border accent 1px, padding 16) with the file name (text.l, weight 600), what happens when it is dropped, and how to cancel. New part: until now there was no place to drop a file on the window | can add / cannot add (border and name gray.8, and the text becomes 「SF2 のファイルではないので、足せません。」) |
+| Notice of missing things | A box with a 2px gray.8 line on the left (padding 8, 12), shown above the shelf list or below a missing row. The same box as the 「見つからないプラグイン」 box of the earlier version, used also for sound packs and SF2 | text only / text and button |
+| Track name input box | The name place of the track head turns into an input box in place (background gray.0, border gray.10, weight 600) | same as an input box |
+| Track reorder mark | The head being dragged is lifted with a 1px accent border; a 2px accent horizontal line where it goes in | moving / none |
+| Color list row | A row of the 「一覧」 (List) of chapter 2, with a choice mark, a 24×12 color sample, and 「色 1」 to 「色 5」 | same as a list row |
+| On mark of an insert slot (13-A) | To the left of a filled slot, the 「選ぶ印」 (choice mark) of chapter 2 (12×12). On = an accent dot; bypassed = empty. A bypassed slot has its name in gray.7. Pressing the mark switches it (one undoable step). Stopped slots and empty slots have no mark. On hover, the full name and 「（とばしている）」 | on / bypassed / stopped (no mark; the red border and 「止」 stay as now) / chosen (border accent) |
+| Automation point | A 6×6 square. Normal is gray.10; a selected point is accent. Points are joined by a 1px gray.9 line (stepped values and on/off values make a staircase shape). A hovered point has a 1px accent border around it | normal / hover / selected / moving (accent border at the original place) / before writing (accent border only) |
+| Automation band heading, write, resting | The band heading has 2 lines. Above, 「▾ オートメーション ・ （何を）」; below, the 「● 書く」 button and a short text. When writing is on, the button has the 「えらんでいる」 (chosen) shape, and ● and the text are in the rec color. When resting, the button becomes 「もどす」 and the line is gray.7 | normal / write (on) / resting |
+| Handle moved by automation | A fader that automation is moving has an accent handle border. Below the value, 「オートメーション」 in gray.8. When resting, the border goes back to normal, and below are 「休み」 and the 「もどす」 button | moved by automation / resting / none |
+| Tempo ramp | The slanted line between points in the tempo band. Above the line, 「だんだん」 in gray.8 | shown / none |
+| Marker tag | The name tag in the marker row. On the left, a 2px line (gray.9) and the name. A chosen tag has an accent line and a gray.4 background. To rename, an input box in place (the same as the track name) | normal / hover / chosen / moving / renaming |
+| Marker on the piano roll ruler | The marker name in gray.8 on the ruler row. A 1px gray.8 on its left. Cannot be pressed | — |
+| History row: hover, chosen | Adds the hover and chosen row forms to the rows of F-History. Background gray.4, 「ここまで戻す Enter」 on the right. A row chosen with keys has a 1px gray.10 around it (focus) | normal / hover / chosen / current / can redo |
+| Vocal track head | The second line is 「入口 1 ・ モノ ▾」 and the 「モニター」 button (on = the 「えらんでいる」 (chosen) shape). ● turns red even when the track is not selected | normal / with ● / monitor on / no input |
+| Input meter band (split left and right) | The keyboard meter on the left; on the right, divided by a gray.6 line, the mic meter (input name and track, a 200 meter, scale marks −60, −12, 0, the current dB, monitor). New part: there was no place to show the keyboard and the mic at the same time | normal / reached 0 dB (the right end and the text rec) / narrow (hide text) |
+| Audio clip | Top 2px in the track color, the name, and below it the waveform (gray.8 bars). When chosen, the border is accent. Fade handles at the top left and right corners (6×6, gray.10). The fade line is a curved gray.10 line. Gain is a 1px accent horizontal line. Marks to the right of the name (「×1.25」「+2」, background gray.0, border gray.7). Below, 「音を作っています 34 %」「読みこんでいます 40 %」 | normal / chosen / recording (rec) / making the sound / not found (background gray.2, line gray.7, no waveform) |
+| Split box while dragging in | The box of F5-SF2Drop made into 2 boxes side by side (240 each). The side under the pointer has an accent border and a gray.4 background. New part shape: so that, before dropping, you can choose separate or one | pointer on the left / pointer on the right |
+| Selected clip | The content of the params panel. At the top, the name and 「選んだクリップ」, then the file row. Groups 「クリップ」「のび縮み ・ 音の高さ」. While making the sound, a progress bar at the top | normal / making the sound / not found (notice box) |
+| Export progress | At the left of the status line: 「書き出しています」 (accent), a 160 bar, %, the file name and the time left, 「やめる」 | exporting / exporting in real time / done (「フォルダをひらく」) |
+| 「帯」 button in the head | On the first line of a track head, left of M, 20×20. The text is 「帯」. When pressed, a list of bands. Accent while open | normal / hover / open |
+| Hint band (sound pack) | The hint form of the input meter band. On the left, only the input and the notes held now. On the right, from an accent 2px line: the hint text (2 lines), a 160 bar, a button. New part shape: the progress and the button for getting 240 MB go in the place that is seen most in the first few minutes | asking / getting / failed (「もう一度」) |
+| 「まだの音色」 row in the shelf | The same height as a list row. The name is gray.8; on the right, 「取ってきています」 or 「まだ」. No star and no ▶ | getting / not yet |
+| Insert reorder mark | The same as the track reorder mark. The slot being dragged is lifted with a 1px accent border; a 2px accent horizontal line where it goes in. Only inside the same strip | moving / none |
+| Plugin row in the shelf | A list row with the favorite star, the name (gray.10), the maker or kind (gray.8; decided by choice 14), the format mark (the one format in use, with a gray.9 border. If there are other formats, 「＋2」 on its right (Plex Mono, gray.8). Pressing 「＋2」 lets you choose the format to use. On hover, 「LV2 ・ VST3 ・ CLAP があります。」). The maker is at most 96, then 「…」 | same as a list row, audition, loading |
+| Row of a plugin stopped in a scan | A row in a dialog. On the upper line: the name (weight 600), the format mark, the reason it stopped (gray.8), and 「もう一度ためす」 on the right. On the lower line: the location (Plex Mono, gray.8). New part: there was no place to list the things stopped in a scan with their names and locations | normal / trying (the button is 「ためしています…」) / got in (the row goes away) |
+| Plugin location row | A list row inside 「音の設定 ▸ くわしい設定」. The location (Plex Mono). The usual locations are gray.8 with 「ふつうの場所」 on the right; added locations are gray.10 with 「外す」 on the right | usual location / added location |
+| Dialog heading row (moving) | Every dialog can be moved by holding down its heading row. On hover, background gray.4 and the pointer has the 「動かす」 (move) shape. Not moved outside the window | normal / hover / moving |
+| Master output slot, no output | Where the instrument slot is on the master strip. With no output, 「出口なし ▸」 (gray.8). Pressing it opens the sound settings. On hover, 「音の出口がありません。押すと音の設定をひらきます。」 | output / no output |
+| Dialog | Width 560, background gray.3, 1px gray.8 border. Heading 32 (the text is text.s at 600), bottom row 48. The screen behind is not darkened. The height follows the content, up to the window height minus 24 above and below. Beyond that, the heading and the bottom row stay, and only the content between them scrolls vertically | open / content scrolls |
+| Scroll bar | Width 8. Background gray.3, a 1px gray.5 line on the left, handle gray.6. Corner 0. The bars of the browser and the OS are not used. The same one is used in lists, dialog content, the output chooser, parameters and the shelf | normal / hover (handle gray.8) / moving (handle gray.9) / not needed (not shown when the content fits) |
+| Output row that cannot be chosen | Height 24. Choice mark border gray.5, name and device name gray.7, reason text gray.8. Cannot be pressed. Grouped under the heading 「いまは使えない出口」 (▸ ▾ and a count) | disabled (only this) |
 
-## メーターとフェーダーの目盛
+## Scale marks of meters and faders
 
-メーターとフェーダーは同じ目盛を使う。長さは、いちばん下（横のメーターは左はし）を 0 %、いちばん上を 100 % として、下の点を直線でつなぐ。−60 dB より小さい音は 0 %（−∞）。メーターは、上がるときはすぐ、落ちるときは 20 dB を 1.7 秒かけて。0 dB をこえたら、上はしに rec の 2px を 2 秒。
+Meters and faders use the same scale marks. For the length, the very bottom (the left end for a horizontal meter) is 0 % and the very top is 100 %, and the points below are joined with straight lines. Sounds quieter than −60 dB are 0 % (−∞). Meters rise at once, and fall 20 dB in 1.7 seconds. Above 0 dB, a rec 2px at the top end for 2 seconds.
 
 | dB | +6 | 0 | −3 | −6 | −12 | −24 | −60 |
 |---|---|---|---|---|---|---|---|
-| 長さ | 100 % | 80 % | 70 % | 60 % | 40 % | 20 % | 0 % |
+| Length | 100 % | 80 % | 70 % | 60 % | 40 % | 20 % | 0 % |

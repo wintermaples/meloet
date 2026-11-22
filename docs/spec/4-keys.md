@@ -1,74 +1,74 @@
-# 4 キーの一覧
+# 4 List of keys
 
-<kbd>Mod</kbd> は、Linux と Windows では <kbd>Ctrl</kbd>、Mac では <kbd>Cmd</kbd>。表はこの 1 枚で両方を読む。
+<kbd>Mod</kbd> is <kbd>Ctrl</kbd> on Linux and Windows, and <kbd>Cmd</kbd> on Mac. This one table is read for both.
 
-- 「一文字」と書いたキーは、文字を打ちこんでいる最中（名前、さがす枠、数字の枠にカーソルがあるとき）には効かない。そのあいだは、ただの文字として入る。
-- 文字を打っている最中でも、<kbd>Esc</kbd>（打つのをやめる）、<kbd>Enter</kbd>（決める）、<kbd>Mod</kbd> つきのキーは効く。<kbd>Space</kbd> は効かず、空白として入る。<kbd>Delete</kbd> と <kbd>Backspace</kbd> も効かず、枠の中の文字だけを消す（えらんでいるクリップやノートは消さない）。
-- プラグインの窓が前に出ているあいだのキーは、<kbd>Space</kbd> も <kbd>Mod</kbd> つきも、ぜんぶプラグインのもの。meloet は受けない。再生と停止は、meloet の窓にもどってから。
-- キーは、帯札やボタンの右はしに小さく書いて見せる。
+- Keys marked “one letter” (「一文字」) do not work while typing text (when the cursor is in a name, a search box, or a number box). Then they go in as plain characters.
+- Even while typing, <kbd>Esc</kbd> (stop typing), <kbd>Enter</kbd> (confirm), and keys with <kbd>Mod</kbd> work. <kbd>Space</kbd> does not work and goes in as a space. <kbd>Delete</kbd> and <kbd>Backspace</kbd> do not work either; they delete only the text in the box (they do not delete the chosen clips or notes).
+- While a plugin window is in front, all keys, <kbd>Space</kbd> and keys with <kbd>Mod</kbd> too, belong to the plugin. meloet does not receive them. To play and stop, go back to the meloet window first.
+- Keys are shown small at the right end of band tabs and buttons.
 
-| すること | Linux ・ Windows | Mac | 文字を打っている最中 |
+| Action | Linux, Windows | Mac | While typing |
 |---|---|---|---|
-| 再生 ・ 停止 | <kbd>Space</kbd> | <kbd>Space</kbd> | 効かない（空白として入る） |
-| 録音 | <kbd>R</kbd> | <kbd>R</kbd> | 効かない |
-| 先頭へ戻る | <kbd>Home</kbd> | <kbd>Home</kbd> | 効く |
-| ループのオン ・ オフ | <kbd>L</kbd> | <kbd>L</kbd> | 効かない |
-| メトロノームのオン ・ オフ | <kbd>C</kbd> | <kbd>C</kbd> | 効かない |
-| アレンジへ帰る | <kbd>A</kbd> | <kbd>A</kbd> | 効かない |
-| ピアノロールをひらく ・ たたむ | <kbd>E</kbd> | <kbd>E</kbd> | 効かない |
-| ミキサーをひらく ・ たたむ | <kbd>M</kbd> | <kbd>M</kbd> | 効かない |
-| 取り消しの履歴をひらく ・ たたむ | <kbd>H</kbd> | <kbd>H</kbd> | 効かない |
-| 棚をひらく ・ たたむ | <kbd>P</kbd> | <kbd>P</kbd> | 効かない |
-| パラメータをひらく ・ たたむ | <kbd>U</kbd> | <kbd>U</kbd> | 効かない |
-| パラメータの中: 行を上下にえらぶ | <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> | 効く |
-| パラメータの中: 値を動かす ・ 細かく動かす | <kbd>←</kbd> <kbd>→</kbd> ・ <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | <kbd>←</kbd> <kbd>→</kbd> ・ <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | 効く |
-| パラメータの中: 値を打ちこむ | <kbd>Enter</kbd> | <kbd>Enter</kbd> | 効く |
-| パラメータの中: さがす枠へ | <kbd>Mod</kbd> <kbd>F</kbd> | <kbd>Mod</kbd> <kbd>F</kbd> | 効く |
-| 棚の中: 行を上下にえらぶ（えらぶと、ためし弾きになる） | <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> | 効く |
-| 棚の中: サンプルを聞く ・ 止める | <kbd>Space</kbd> | <kbd>Space</kbd> | 効かない（空白として入る） |
-| 棚の中: お気に入りの印をつける ・ 外す | <kbd>F</kbd> | <kbd>F</kbd> | 効かない |
-| 棚の中: えらんだ音源を入れる | <kbd>Enter</kbd> | <kbd>Enter</kbd> | 効く |
-| ひとつ戻る（とじる） | <kbd>Esc</kbd> | <kbd>Esc</kbd> | 効く |
-| 取り消す | <kbd>Mod</kbd> <kbd>Z</kbd> | <kbd>Mod</kbd> <kbd>Z</kbd> | 効く |
-| やりなおす | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> | 効く |
-| 保存 | <kbd>Mod</kbd> <kbd>S</kbd> | <kbd>Mod</kbd> <kbd>S</kbd> | 効く |
-| 書き出し | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>E</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>E</kbd> | 効く |
-| 音の設定 | <kbd>Mod</kbd> <kbd>,</kbd> | <kbd>Mod</kbd> <kbd>,</kbd> | 効く |
-| 切り取り ・ コピー ・ 貼りつけ | <kbd>Mod</kbd> <kbd>X</kbd> ・ <kbd>Mod</kbd> <kbd>C</kbd> ・ <kbd>Mod</kbd> <kbd>V</kbd> | <kbd>Mod</kbd> <kbd>X</kbd> ・ <kbd>Mod</kbd> <kbd>C</kbd> ・ <kbd>Mod</kbd> <kbd>V</kbd> | 効かない（枠の中の文字に使う） |
-| 複製 | <kbd>Mod</kbd> <kbd>D</kbd> | <kbd>Mod</kbd> <kbd>D</kbd> | 効く |
-| ぜんぶ選ぶ | <kbd>Mod</kbd> <kbd>A</kbd> | <kbd>Mod</kbd> <kbd>A</kbd> | 効かない（枠の中の文字に使う） |
-| 選んだトラックの名前を変える | <kbd>F2</kbd> | <kbd>F2</kbd> | 効く |
-| えらんでいるインサートを外す | <kbd>Delete</kbd> | <kbd>Delete</kbd> | 効かない（ミキサー） |
-| マーカーを足す | <kbd>K</kbd> | <kbd>K</kbd> | 効かない（一文字 ・ 再生の線の所に） |
-| 次のマーカーへ ・ 前のマーカーへ | <kbd>Alt</kbd> <kbd>→</kbd> ・ <kbd>Alt</kbd> <kbd>←</kbd> | <kbd>Option</kbd> <kbd>→</kbd> ・ <kbd>Option</kbd> <kbd>←</kbd> | 効く |
-| えらんだマーカーの名前を変える | <kbd>F2</kbd> | <kbd>F2</kbd> | 効かない（トラックの名前と同じキー。えらんでいる物で決まる） |
-| えらんだ点 ・ マーカーを消す | <kbd>Delete</kbd> | <kbd>Delete</kbd> | 効かない |
-| 履歴の帯: 行をえらぶ ・ いまの手へ ・ ここまで戻す | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Home</kbd> ・ <kbd>Enter</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Home</kbd> ・ <kbd>Enter</kbd> | 効かない（帯にフォーカスがあるとき） |
-| えらんでいるインサートをとばす ・ もどす | <kbd>B</kbd> | <kbd>B</kbd> | 効かない（一文字 ・ ミキサー） |
-| フェーダー ・ センドを動かす（細かく） | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | 効かない（フォーカスがあるとき） |
-| パンを動かす（大きく） | <kbd>←</kbd> <kbd>→</kbd> ・ <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | <kbd>←</kbd> <kbd>→</kbd> ・ <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | 効かない（フォーカスがあるとき） |
-| フェーダー ・ パン ・ センドをはじめの値へ | <kbd>Home</kbd> | <kbd>Home</kbd> | 効かない（フォーカスがあるとき） |
-| フェーダー ・ パン ・ センドに打ちこむ | <kbd>Enter</kbd> | <kbd>Enter</kbd> | 効かない（フォーカスがあるとき） |
-| 棚の中（エフェクト）: お気に入りの印 | <kbd>F</kbd> | <kbd>F</kbd> | 効かない |
-| ダイアログを閉じる ・ ひとつ戻る | <kbd>Esc</kbd> | <kbd>Esc</kbd> | 効かない（2 段目では 1 段目へ） |
-| 名前をつけて保存 | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>S</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>S</kbd> | 効く |
-| meloet を終わる | <kbd>Mod</kbd> <kbd>Q</kbd> | <kbd>Mod</kbd> <kbd>Q</kbd> | 効く |
-| 上のメニューへ | <kbd>F10</kbd> | <kbd>F10</kbd> | 効く |
-| ピアノロールを縦に拡大 ・ 縮小 | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ホイール</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ホイール</kbd> | 効く |
-| 新しい曲 ・ ひらく | <kbd>Mod</kbd> <kbd>N</kbd> ・ <kbd>Mod</kbd> <kbd>O</kbd> | <kbd>Mod</kbd> <kbd>N</kbd> ・ <kbd>Mod</kbd> <kbd>O</kbd> | 効く |
-| テンポ ・ 拍子の枠で、1 ずつ ・ 10 ずつ変える | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | 効く |
-| ノートの一覧: 欄を打ちこむ ・ 右の欄へ | <kbd>Enter</kbd> ・ <kbd>Tab</kbd> | <kbd>Enter</kbd> ・ <kbd>Tab</kbd> | 効く |
-| クリップやノートを、複製しながら動かす | <kbd>Alt</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | <kbd>Option</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | 効く |
-| ドラッグ中に、グリッドに吸いつかない | <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | 効く |
-| ドラッグをやめて、動かす前に戻す | <kbd>Esc</kbd> | <kbd>Esc</kbd> | 効く |
-| 消す | <kbd>Delete</kbd> | <kbd>Delete</kbd> | 効かない（枠の中の文字を消す） |
-| クオンタイズをかける | <kbd>Q</kbd> | <kbd>Q</kbd> | 効かない |
-| えらんだクリップ: 次のテイク ・ 前のテイク | <kbd>T</kbd> ・ <kbd>Shift</kbd> <kbd>T</kbd> | <kbd>T</kbd> ・ <kbd>Shift</kbd> <kbd>T</kbd> | 効かない |
-| 道具: 選ぶ ・ 書く ・ 消す | <kbd>1</kbd> ・ <kbd>2</kbd> ・ <kbd>3</kbd> | <kbd>1</kbd> ・ <kbd>2</kbd> ・ <kbd>3</kbd> | 効かない |
-| 切る（えらんだクリップ。なければ選んだトラックの、再生の線にかかるクリップ。鍵盤のクリップも） | <kbd>S</kbd> | <kbd>S</kbd> | 効かない |
-| 選んだトラックのミュート ・ ソロ | <kbd>Shift</kbd> <kbd>M</kbd> ・ <kbd>Shift</kbd> <kbd>S</kbd> | <kbd>Shift</kbd> <kbd>M</kbd> ・ <kbd>Shift</kbd> <kbd>S</kbd> | 効かない |
-| ノートを半音 ・ 1 オクターブ動かす | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> ・ <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | 効かない（枠の中の文字に使う） |
-| ノートをグリッド 1 つ動かす | <kbd>←</kbd> <kbd>→</kbd> | <kbd>←</kbd> <kbd>→</kbd> | 効かない（枠の中の文字に使う） |
-| 横に拡大 ・ 縮小 | <kbd>Mod</kbd> <kbd>+</kbd> ・ <kbd>Mod</kbd> <kbd>−</kbd> | <kbd>Mod</kbd> <kbd>+</kbd> ・ <kbd>Mod</kbd> <kbd>−</kbd> | 効く |
-| 画面の拡大率 100 ・ 125 ・ 150 % | <kbd>Mod</kbd> <kbd>Alt</kbd> <kbd>1</kbd> ・ <kbd>2</kbd> ・ <kbd>3</kbd> | <kbd>Mod</kbd> <kbd>Option</kbd> <kbd>1</kbd> ・ <kbd>2</kbd> ・ <kbd>3</kbd> | 効く |
-| 次の部品へ ・ 前の部品へ | <kbd>Tab</kbd> ・ <kbd>Shift</kbd> <kbd>Tab</kbd> | <kbd>Tab</kbd> ・ <kbd>Shift</kbd> <kbd>Tab</kbd> | 効く |
+| Play / stop | <kbd>Space</kbd> | <kbd>Space</kbd> | Does not work (goes in as a space) |
+| Record | <kbd>R</kbd> | <kbd>R</kbd> | Does not work |
+| Back to the start | <kbd>Home</kbd> | <kbd>Home</kbd> | Works |
+| Loop on / off | <kbd>L</kbd> | <kbd>L</kbd> | Does not work |
+| Metronome on / off | <kbd>C</kbd> | <kbd>C</kbd> | Does not work |
+| Back to the arrange | <kbd>A</kbd> | <kbd>A</kbd> | Does not work |
+| Open / fold the piano roll | <kbd>E</kbd> | <kbd>E</kbd> | Does not work |
+| Open / fold the mixer | <kbd>M</kbd> | <kbd>M</kbd> | Does not work |
+| Open / fold the undo history | <kbd>H</kbd> | <kbd>H</kbd> | Does not work |
+| Open / fold the shelf | <kbd>P</kbd> | <kbd>P</kbd> | Does not work |
+| Open / fold the parameters | <kbd>U</kbd> | <kbd>U</kbd> | Does not work |
+| In the parameters: choose the row above / below | <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> | Works |
+| In the parameters: move the value / move it finely | <kbd>←</kbd> <kbd>→</kbd> / <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | <kbd>←</kbd> <kbd>→</kbd> / <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | Works |
+| In the parameters: type a value | <kbd>Enter</kbd> | <kbd>Enter</kbd> | Works |
+| In the parameters: go to the search box | <kbd>Mod</kbd> <kbd>F</kbd> | <kbd>Mod</kbd> <kbd>F</kbd> | Works |
+| In the shelf: choose the row above / below (choosing starts audition) | <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> | Works |
+| In the shelf: play / stop the sample | <kbd>Space</kbd> | <kbd>Space</kbd> | Does not work (goes in as a space) |
+| In the shelf: set / clear the favorite mark | <kbd>F</kbd> | <kbd>F</kbd> | Does not work |
+| In the shelf: put in the chosen instrument | <kbd>Enter</kbd> | <kbd>Enter</kbd> | Works |
+| Go back one (close) | <kbd>Esc</kbd> | <kbd>Esc</kbd> | Works |
+| Undo | <kbd>Mod</kbd> <kbd>Z</kbd> | <kbd>Mod</kbd> <kbd>Z</kbd> | Works |
+| Redo | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> | Works |
+| Save | <kbd>Mod</kbd> <kbd>S</kbd> | <kbd>Mod</kbd> <kbd>S</kbd> | Works |
+| Export | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>E</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>E</kbd> | Works |
+| Sound settings | <kbd>Mod</kbd> <kbd>,</kbd> | <kbd>Mod</kbd> <kbd>,</kbd> | Works |
+| Cut / copy / paste | <kbd>Mod</kbd> <kbd>X</kbd> / <kbd>Mod</kbd> <kbd>C</kbd> / <kbd>Mod</kbd> <kbd>V</kbd> | <kbd>Mod</kbd> <kbd>X</kbd> / <kbd>Mod</kbd> <kbd>C</kbd> / <kbd>Mod</kbd> <kbd>V</kbd> | Does not work (used for the text in the box) |
+| Duplicate | <kbd>Mod</kbd> <kbd>D</kbd> | <kbd>Mod</kbd> <kbd>D</kbd> | Works |
+| Select all | <kbd>Mod</kbd> <kbd>A</kbd> | <kbd>Mod</kbd> <kbd>A</kbd> | Does not work (used for the text in the box) |
+| Rename the selected track | <kbd>F2</kbd> | <kbd>F2</kbd> | Works |
+| Remove the chosen insert | <kbd>Delete</kbd> | <kbd>Delete</kbd> | Does not work (mixer) |
+| Add a marker | <kbd>K</kbd> | <kbd>K</kbd> | Does not work (one letter; at the play line) |
+| To the next marker / to the previous marker | <kbd>Alt</kbd> <kbd>→</kbd> / <kbd>Alt</kbd> <kbd>←</kbd> | <kbd>Option</kbd> <kbd>→</kbd> / <kbd>Option</kbd> <kbd>←</kbd> | Works |
+| Rename the chosen marker | <kbd>F2</kbd> | <kbd>F2</kbd> | Does not work (the same key as the track name; what is chosen decides) |
+| Delete the chosen points / marker | <kbd>Delete</kbd> | <kbd>Delete</kbd> | Does not work |
+| History band: choose a row / go to the current step / go back to here | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Home</kbd> / <kbd>Enter</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Home</kbd> / <kbd>Enter</kbd> | Does not work (when the band has focus) |
+| Bypass / restore the chosen insert | <kbd>B</kbd> | <kbd>B</kbd> | Does not work (one letter; mixer) |
+| Move a fader / send (finely) | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | Does not work (when it has focus) |
+| Move the pan (in big steps) | <kbd>←</kbd> <kbd>→</kbd> / <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | <kbd>←</kbd> <kbd>→</kbd> / <kbd>Shift</kbd> <kbd>←</kbd> <kbd>→</kbd> | Does not work (when it has focus) |
+| Fader / pan / send back to the first value | <kbd>Home</kbd> | <kbd>Home</kbd> | Does not work (when it has focus) |
+| Type a value into a fader / pan / send | <kbd>Enter</kbd> | <kbd>Enter</kbd> | Does not work (when it has focus) |
+| In the shelf (effects): favorite mark | <kbd>F</kbd> | <kbd>F</kbd> | Does not work |
+| Close a dialog / go back one | <kbd>Esc</kbd> | <kbd>Esc</kbd> | Does not work (on the second page, to the first page) |
+| Save as | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>S</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>S</kbd> | Works |
+| Quit meloet | <kbd>Mod</kbd> <kbd>Q</kbd> | <kbd>Mod</kbd> <kbd>Q</kbd> | Works |
+| To the menu bar | <kbd>F10</kbd> | <kbd>F10</kbd> | Works |
+| Zoom the piano roll in / out vertically | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ホイール</kbd> | <kbd>Mod</kbd> <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ホイール</kbd> | Works |
+| New song / open | <kbd>Mod</kbd> <kbd>N</kbd> / <kbd>Mod</kbd> <kbd>O</kbd> | <kbd>Mod</kbd> <kbd>N</kbd> / <kbd>Mod</kbd> <kbd>O</kbd> | Works |
+| In the tempo / time signature box, change by 1 / by 10 | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | Works |
+| Note list: type into a field / go to the field on the right | <kbd>Enter</kbd> / <kbd>Tab</kbd> | <kbd>Enter</kbd> / <kbd>Tab</kbd> | Works |
+| Move clips or notes while duplicating them | <kbd>Alt</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | <kbd>Option</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | Works |
+| While dragging, do not snap to the grid | <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | <kbd>Shift</kbd> <kbd>＋</kbd> <kbd>ドラッグ</kbd> | Works |
+| Cancel the drag and go back to before the move | <kbd>Esc</kbd> | <kbd>Esc</kbd> | Works |
+| Delete | <kbd>Delete</kbd> | <kbd>Delete</kbd> | Does not work (deletes the text in the box) |
+| Quantize | <kbd>Q</kbd> | <kbd>Q</kbd> | Does not work |
+| Chosen clip: next take / previous take | <kbd>T</kbd> / <kbd>Shift</kbd> <kbd>T</kbd> | <kbd>T</kbd> / <kbd>Shift</kbd> <kbd>T</kbd> | Does not work |
+| Tools: select / draw / erase | <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | Does not work |
+| Split (the chosen clip; if there is none, the clip of the selected track that the play line crosses. Keyboard clips too) | <kbd>S</kbd> | <kbd>S</kbd> | Does not work |
+| Mute / solo the selected track | <kbd>Shift</kbd> <kbd>M</kbd> / <kbd>Shift</kbd> <kbd>S</kbd> | <kbd>Shift</kbd> <kbd>M</kbd> / <kbd>Shift</kbd> <kbd>S</kbd> | Does not work |
+| Move notes by a semitone / an octave | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Shift</kbd> <kbd>↑</kbd> <kbd>↓</kbd> | Does not work (used for the text in the box) |
+| Move notes by one grid step | <kbd>←</kbd> <kbd>→</kbd> | <kbd>←</kbd> <kbd>→</kbd> | Does not work (used for the text in the box) |
+| Zoom in / out horizontally | <kbd>Mod</kbd> <kbd>+</kbd> / <kbd>Mod</kbd> <kbd>−</kbd> | <kbd>Mod</kbd> <kbd>+</kbd> / <kbd>Mod</kbd> <kbd>−</kbd> | Works |
+| Screen scale 100 / 125 / 150 % | <kbd>Mod</kbd> <kbd>Alt</kbd> <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | <kbd>Mod</kbd> <kbd>Option</kbd> <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | Works |
+| To the next part / to the previous part | <kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd> | <kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd> | Works |

@@ -1,106 +1,106 @@
-# 1 数値の一覧
+# 1 List of values
 
-色は名前で呼ぶ。灰色は R ・ G ・ B が同じ数字の 11 段で、これ以外の灰色は使わない。色をぬるのは意味のある小さな所だけで、広い面は灰色のまま。
+Colors are called by name. The grays are 11 steps in which R, G and B are the same number; no other gray is used. Color is painted only on small places that have a meaning; large areas stay gray.
 
-## 色
+## Colors
 
-|  | 名前 | 値 | R=G=B | 使う所 |
+|  | Name | Value | R=G=B | Used for |
 |---|---|---|---|---|
-|  | `color.gray.0` | `#0A0A0A` | 10 | メーターと読み値の地 ・ 入力計 ・ 状態行 |
-|  | `color.gray.1` | `#121212` | 18 | 作業面（アレンジ、ロールの地） |
-|  | `color.gray.2` | `#161616` | 22 | ひらいた帯 ・ 白鍵の行 |
-|  | `color.gray.3` | `#1A1A1A` | 26 | パネル ・ トラックの見出し ・ 棚 |
-|  | `color.gray.4` | `#222222` | 34 | たたんだ見出し ・ ボタンの面 ・ 選んだ行 |
-|  | `color.gray.5` | `#2C2C2C` | 44 | 細い区切り線 |
-|  | `color.gray.6` | `#3A3A3A` | 58 | 強い区切り線 ・ ボタンの枠 |
-|  | `color.gray.7` | `#5E5E5E` | 94 | 使えない物 ・ そろえる前の位置 |
-|  | `color.gray.8` | `#9A9A9A` | 154 | ラベル |
-|  | `color.gray.9` | `#D6D6D6` | 214 | 本文 ・ 線の図形 |
-|  | `color.gray.10` | `#F2F2F2` | 242 | 強調 ・ 数字 |
-|  | `color.accent` | `#FFB000` |  | いま生きている物（押した鍵、選択、ループ、オン、再生ヘッド、キーボードでえらんでいる帯） |
-|  | `color.rec` | `#FF3B30` |  | 録音 ・ 録音待機 ・ こわれた物 |
-|  | `color.meter.ok` | `#4CD964` |  | メーターの −3 dB まで（長さの 70 %） |
-|  | `color.meter.hot` | `#FFD60A` |  | メーターの −3 dB より上 |
-|  | `color.track.1` | `#69E4E4` |  | トラックの色 1（幅 4px の帯と、クリップの上辺 2px だけ） |
-|  | `color.track.2` | `#5ABDF2` |  | トラックの色 2 |
-|  | `color.track.3` | `#6F8BED` |  | トラックの色 3 |
-|  | `color.track.4` | `#8C54C3` |  | トラックの色 4 |
-|  | `color.track.5` | `#FFD9F1` |  | トラックの色 5。6 本目からは 1 に戻る |
-|  | `color.tip.bg / color.tip.fg` | `#F2F2F2` |  | 用語の説明の地は gray.10、文字は gray.0 |
+|  | `color.gray.0` | `#0A0A0A` | 10 | Background of meters and readings, input meter, status line |
+|  | `color.gray.1` | `#121212` | 18 | Work area (arrange, piano roll background) |
+|  | `color.gray.2` | `#161616` | 22 | Open band, white-key rows |
+|  | `color.gray.3` | `#1A1A1A` | 26 | Panels, track heads, shelf |
+|  | `color.gray.4` | `#222222` | 34 | Folded headings, button face, selected row |
+|  | `color.gray.5` | `#2C2C2C` | 44 | Thin divider lines |
+|  | `color.gray.6` | `#3A3A3A` | 58 | Strong divider lines, button border |
+|  | `color.gray.7` | `#5E5E5E` | 94 | Disabled things, the position before aligning |
+|  | `color.gray.8` | `#9A9A9A` | 154 | Labels |
+|  | `color.gray.9` | `#D6D6D6` | 214 | Body text, line drawings |
+|  | `color.gray.10` | `#F2F2F2` | 242 | Emphasis, numbers |
+|  | `color.accent` | `#FFB000` |  | Things that are live now (pressed keys, selection, loop, on, play head, the band chosen with the keyboard) |
+|  | `color.rec` | `#FF3B30` |  | Recording, record arm, broken things |
+|  | `color.meter.ok` | `#4CD964` |  | Meter up to −3 dB (70 % of the length) |
+|  | `color.meter.hot` | `#FFD60A` |  | Meter above −3 dB |
+|  | `color.track.1` | `#69E4E4` |  | Track color 1 (only the 4px-wide strip and the top 2px edge of a clip) |
+|  | `color.track.2` | `#5ABDF2` |  | Track color 2 |
+|  | `color.track.3` | `#6F8BED` |  | Track color 3 |
+|  | `color.track.4` | `#8C54C3` |  | Track color 4 |
+|  | `color.track.5` | `#FFD9F1` |  | Track color 5. From the 6th track, back to 1 |
+|  | `color.tip.bg / color.tip.fg` | `#F2F2F2` |  | The term tip background is gray.10, the text is gray.0 |
 
-## 文字
+## Text
 
-日本語は IBM Plex Sans JP、数字と位置と値は IBM Plex Mono（けた幅そろえ）。大きさは 3 つだけ。12px より小さい文字は、日本語にも数字にも使わない。表の数字は「100 % / 125 % / 150 %」のときの px。
+Japanese is IBM Plex Sans JP; numbers, positions and values are IBM Plex Mono (fixed-width digits). There are only 3 sizes. No text smaller than 12px is used, for Japanese or for numbers. The numbers in the table are px at 100 % / 125 % / 150 %.
 
-| 名前 | 大きさ | 行の高さ | その大きさで使ってよい太さ | 使う所 |
+| Name | Size | Line height | Weights allowed at that size | Used for |
 |---|---|---|---|---|
-| `text.s` | 12 / 15 / 18 | 16 / 20 / 24 | 400 / 500 / 600 | 本文、ラベル、ボタン、表の数字。日本語も数字もこれが最小 |
-| `text.m` | 16 / 20 / 24 | 20 / 25 / 30 | 400 / 500 | 読み値の数字（位置、時間、テンポ、ベロシティ、dB） |
-| `text.l` | 20 / 25 / 30 | 24 / 30 / 36 | 600 | 書類の見出し、カウントインの数字。ダイアログの見出しはこれではなく、text.s の 600 |
+| `text.s` | 12 / 15 / 18 | 16 / 20 / 24 | 400 / 500 / 600 | Body text, labels, buttons, numbers in tables. The smallest size, for Japanese and for numbers |
+| `text.m` | 16 / 20 / 24 | 20 / 25 / 30 | 400 / 500 | Numbers of readings (position, time, tempo, velocity, dB) |
+| `text.l` | 20 / 25 / 30 | 24 / 30 / 36 | 600 | Document headings, the count-in number. Dialog headings do not use this; they use text.s at 600 |
 
-## すきま
+## Space
 
-下の表のすきまと大きさは 4 の倍数だけで組む。125 % と 150 % をかけても、かならず整数になる。部品の中の小さな寸法（アイコン 10、印 6、棒のつまみ 6×12、窓の印 10 など）は 4 の倍数でなくてよい。率をかけて四捨五入する（.5 は切り上げ）。例: 10 → 13 → 15、6 → 8 → 9。
+The spaces and sizes in the tables below are built only from multiples of 4. At 125 % and 150 % they are always whole numbers. Small sizes inside parts (icon 10, mark 6, bar handle 6×12, window mark 10, and so on) need not be multiples of 4. Multiply them by the scale and round (.5 rounds up). Example: 10 → 13 → 15, 6 → 8 → 9.
 
-| 名前 | 100 / 125 / 150 % | 使う所 |
+| Name | 100 / 125 / 150 % | Used for |
 |---|---|---|
-| `space.1` | 4 / 5 / 6 | ボタンどうし、アイコンと文字 |
-| `space.2` | 8 / 10 / 12 | 行の中の部品どうし、パネルの内がわ |
-| `space.3` | 12 / 15 / 18 | 帯の左右の内がわ、道具の列のすきま |
-| `space.4` | 16 / 20 / 24 | 読み値どうし、ダイアログの内がわ |
-| `space.5` | 20 / 25 / 30 | 入力計の読み値どうし |
-| `space.6` | 24 / 30 / 36 | 字下げ 1 段、帯札の高さ |
+| `space.1` | 4 / 5 / 6 | Between buttons, between an icon and text |
+| `space.2` | 8 / 10 / 12 | Between parts in a row, inside a panel |
+| `space.3` | 12 / 15 / 18 | Left and right inside a band, gaps in a toolbar |
+| `space.4` | 16 / 20 / 24 | Between readings, inside a dialog |
+| `space.5` | 20 / 25 / 30 | Between readings of the input meter |
+| `space.6` | 24 / 30 / 36 | One indent step, the height of a band tab |
 
-## 大きさ
+## Sizes
 
-| 名前 | 100 / 125 / 150 % | 使う所 |
+| Name | 100 / 125 / 150 % | Used for |
 |---|---|---|
-| `size.menubar` | 24 / 30 / 36 | 上のメニューの行 |
-| `size.transport` | 48 / 60 / 72 | 再生まわりの帯 |
-| `size.meter.full` | 52 / 65 / 78 | 入力計 ・ 太いとき |
-| `size.meter.slim` | 24 / 30 / 36 | 入力計 ・ 細いとき |
-| `size.meter.name` | 108 / 135 / 162 | 入力計の名前の欄（長い名前は 148） |
-| `size.meter.name.slim` | 176 / 220 / 264 | 細いときの名前の上限（せまい窓は 128） |
-| `size.bandrow` | 24 / 30 / 36 | たたんだ見出しをならべる帯札の行 |
-| `size.status` | 24 / 30 / 36 | 状態行 |
-| `size.row` | 24 / 30 / 36 | 見出し、表の行、インスペクタの行、ボタン |
-| `size.row.s` | 20 / 25 / 30 | ノートの一覧の行、M ・ S ・ ● の切りかえ |
-| `size.note` | 12 / 15 / 18 | ピアノロールの 1 行（半音ひとつ） |
-| `size.toolbar` | 32 / 40 / 48 | 帯の道具の列、ダイアログの見出し |
-| `size.track` | 64 / 80 / 96 | トラックの行（歌を直すときは 160） |
-| `size.lane` | 48 / 60 / 72 | オートメーションの帯 |
-| `size.lane.vel` | 72 / 90 / 108 | ベロシティの帯 |
-| `size.overview` | 40 / 50 / 60 | ちぢんだアレンジ |
-| `size.col.head` | 220 / 275 / 330 | アレンジのトラック見出しの幅 |
-| `size.col.keys` | 104 / 130 / 156 | ピアノロールの鍵盤の幅 |
-| `size.panel.list` | 216 / 270 / 324 | ノートの一覧 |
-| `size.panel.insp` | 240 / 300 / 360 | 選んだノート |
-| `size.shelf` | 320 / 400 / 480 | 棚 |
-| `size.tab.v` | 24 / 30 / 36 | たたんだ左右の欄と棚の、縦の見出し |
-| `size.strip` | 108 / 135 / 162 | ミキサーの 1 本（マスターは 124） |
+| `size.menubar` | 24 / 30 / 36 | Menu bar |
+| `size.transport` | 48 / 60 / 72 | Transport band |
+| `size.meter.full` | 52 / 65 / 78 | Input meter, full |
+| `size.meter.slim` | 24 / 30 / 36 | Input meter, slim |
+| `size.meter.name` | 108 / 135 / 162 | Name field of the input meter (148 for a long name) |
+| `size.meter.name.slim` | 176 / 220 / 264 | Upper limit of the name when slim (128 in a narrow window) |
+| `size.bandrow` | 24 / 30 / 36 | Band tab row, where the folded headings line up |
+| `size.status` | 24 / 30 / 36 | Status line |
+| `size.row` | 24 / 30 / 36 | Headings, table rows, inspector rows, buttons |
+| `size.row.s` | 20 / 25 / 30 | Rows of the note list, the M, S, ● toggles |
+| `size.note` | 12 / 15 / 18 | One row of the piano roll (one semitone) |
+| `size.toolbar` | 32 / 40 / 48 | Toolbar of a band, dialog headings |
+| `size.track` | 64 / 80 / 96 | Track row (160 when editing a vocal) |
+| `size.lane` | 48 / 60 / 72 | Automation band |
+| `size.lane.vel` | 72 / 90 / 108 | Velocity band |
+| `size.overview` | 40 / 50 / 60 | The shrunk arrange |
+| `size.col.head` | 220 / 275 / 330 | Width of the track heads in the arrange |
+| `size.col.keys` | 104 / 130 / 156 | Width of the keyboard in the piano roll |
+| `size.panel.list` | 216 / 270 / 324 | Note list |
+| `size.panel.insp` | 240 / 300 / 360 | Selected notes |
+| `size.shelf` | 320 / 400 / 480 | Shelf |
+| `size.tab.v` | 24 / 30 / 36 | Vertical headings of the folded left and right panels and of the shelf |
+| `size.strip` | 108 / 135 / 162 | One mixer strip (124 for the master) |
 
-## 線と角
+## Lines and corners
 
-| 名前 | 値 | 決まり |
+| Name | Value | Rule |
 |---|---|---|
-| `line.hair` | 1 | 区切り、枠、グリッド、再生の位置。拡大率が何 % でも、画面の 1 点ぶん（物理 1px）のまま太らせない |
-| `line.mark` | 2 | 選んだ行の左、ひらいた帯札の上辺、クリップの上辺。125 % で 2、150 % で 3 |
-| `line.track` | 4 | トラックの色の帯。125 % で 5、150 % で 6 |
-| `radius.0` | 0 | パネル、帯、行、クリップ、ノート、メーター |
-| `radius.1` | 1 | ボタン、入力の枠、切りかえ、用語の説明。拡大しても 1 |
-| `radius.round` | 50 % | 録音ボタンとパンのつまみだけ |
+| `line.hair` | 1 | Dividers, borders, grid, play position. At every scale it stays one screen dot (physical 1px) and never gets thicker |
+| `line.mark` | 2 | Left of a selected row, top edge of an open band tab, top edge of a clip. 2 at 125 %, 3 at 150 % |
+| `line.track` | 4 | Track color strip. 5 at 125 %, 6 at 150 % |
+| `radius.0` | 0 | Panels, bands, rows, clips, notes, meters |
+| `radius.1` | 1 | Buttons, input boxes, toggles, term tips. Stays 1 when scaled up |
+| `radius.round` | 50 % | Only the record button and the pan knob |
 
-## 拡大率の決まり
+## Rules for the scale
 
-- 100 %、125 %、150 % の 3 段。文字、すきま、大きさに同じ率をかける。線は上の表のとおり。
-- 拡大して横が足りなくなったら、次の順に引っこめる。（1）再生まわり: 曲の名前（幅 28 の ▾ を残す）、処理の負荷、カウントイン（メトロノームに幅 20 の ▾ を残す）、位置のラベル。（2）入力計の細いとき: モジュレーション、ピッチベンド。（3）帯札: 件数や現在値。（4）ピアノロール: 左右の欄をたたんで始める。
-- 名前、キー、つながりの印、押している音、位置と時間の数字は、どの率でも消さない。
-- 例: 窓 1280×800 で 150 % のとき、ピアノロールのノートは 16 行。ベロシティの帯をたたむと 22 行。
-- 位置のラベルを引っこめたあとの、再生まわりの細い形: 位置の枠は高さ 32、内がわ space.2、小節と時間のすきま space.3。マスターは幅 100（「マスター」と値の間に space.1）。
-- ボタンのキーの書き添え（Space、R、L、C、1 ・ 2 ・ 3 など）は、横が足りなくなったら、ほかの何よりも先に引っこめる。窓の幅 1280 の 100 % では、再生まわりのキーは出ない。道具の列のキーは出る。
-- 入力計の太いとき、「弾くと鳴る先」の値は「1 ピアノ ・ グランドピアノ」のように、トラックと音源の名前を出す。横が足りなければ次の順に引っこめる。モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵（幅 8）に → 鳴る先の音源の名前（「1 ピアノ」だけにする）→ 「弾くと鳴る先」のラベル → サステイン。つながりの印、名前、鍵盤の絵、押している音、ベロシティ、鳴る先のトラックは消さない。ためし弾き中は「ためし弾き ・ （音源の名前）」を消さない。
-- 入力計の右はしに案内の文が出ているあいだ（鍵盤がない、音の出口がまだ）は、次の順に引っこめる。モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵に → 案内の 2 文目（「下でえらんでください」「つながなくても、マウスで音を書けます。」）→ サステイン → 残った 1 文目のうしろを「…」に。案内は、いますることを言う文なので、読み値より後まで残す。
-- 右はしの縦の見出しが縦に入りきらないときは、件数や名前の情報から引っこめる。見出しの名前とキーは残す。
-- 窓のいちばん小さい大きさは、100 % のときの px で 853×448。窓そのものでは 853×448、1067×560、1280×672。150 % でも、高さ 768 の画面に入る。これより小さくはできないようにする。
-- 上のメニューの行 24 を足したので、ピアノロールは 452 から、取り消しの履歴は 432 から成り立つ。ミキサーは 700 から。いちばん小さい窓（448）のピアノロールは、帯を入りきらせず、ノートは 9 行で、中身だけ縦にスクロールする。それより低い窓では、ミキサーの道具の列は動かさず、ストリップだけ縦にスクロールする。はじめは下（フェーダーとメーター）を見せ、上へスクロールするとインサートが出る。
-- いちばん小さい窓でも画面に入らない拡大率は、「使えない」の見た目で出し、「この画面には入りません」と理由をそえる。
+- 3 steps: 100 %, 125 %, 150 %. The same scale is applied to text, space and sizes. Lines follow the table above.
+- When the width is not enough after scaling up, hide things in this order. (1) Transport: song name (leave a 28-wide ▾), CPU load, count-in (leave a 20-wide ▾ on the metronome), position labels. (2) Input meter when slim: modulation, pitch bend. (3) Band tabs: counts and current values. (4) Piano roll: start with the left and right panels folded.
+- Names, keys, link marks, held notes, and the numbers of position and time are never removed at any scale.
+- Example: in a 1280×800 window at 150 %, the piano roll shows 16 rows of notes. With the velocity band folded, 22 rows.
+- The narrow form of the transport after the position labels are hidden: the position box is 32 high, space.2 inside, space.3 between bar and time. The master is 100 wide (space.1 between 「マスター」 and the value).
+- The key hints written next to buttons (Space, R, L, C, 1, 2, 3, and so on) are hidden before anything else when the width is not enough. At 100 % in a 1280-wide window, the keys of the transport are not shown. The keys of the toolbar are shown.
+- When the input meter is full, the value of 「弾くと鳴る先」 shows the track and instrument names, like 「1 ピアノ ・ グランドピアノ」. If the width is not enough, hide in this order: modulation → pitch bend → the keyboard picture to thin keys (width 8) → the instrument name of the target (show only 「1 ピアノ」) → the 「弾くと鳴る先」 label → sustain. Never remove the link mark, the name, the keyboard picture, held notes, velocity, and the target track. During audition, never remove 「ためし弾き ・ （音源の名前）」.
+- While a hint text is shown at the right end of the input meter (no keyboard, no output yet), hide in this order: modulation → pitch bend → the keyboard picture to thin keys → the second sentence of the hint (「下でえらんでください」「つながなくても、マウスで音を書けます。」) → sustain → cut the end of the remaining first sentence to 「…」. The hint says what to do now, so it stays longer than the readings.
+- When the vertical headings at the right rail do not fit vertically, hide the counts and names first. Keep the heading names and keys.
+- The smallest window size, in px at 100 %, is 853×448. For the window itself: 853×448, 1067×560, 1280×672. Even at 150 %, it fits on a screen 768 high. The window cannot be made smaller than this.
+- Because the menu bar (24) was added, the piano roll works from 452 and the undo history from 432. The mixer from 700. In the smallest window (448), the piano roll does not fit all its bands: notes are 9 rows, and only the content scrolls vertically. In windows lower than that, the mixer toolbar does not move, and only the strips scroll vertically. At first the bottom (faders and meters) is shown; scrolling up shows the inserts.
+- A scale at which even the smallest window does not fit on the screen is shown with the 「使えない」 (disabled) look, with the reason 「この画面には入りません」.

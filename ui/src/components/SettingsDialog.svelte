@@ -37,6 +37,7 @@
   const inputGroups = $derived(endpointGroups(app?.inputs.list ?? [], "input"));
   const inputs = $derived([...inputGroups.usable, { id: "", look: notUsed }]);
   const dash = t("meter.playTargetNone");
+  const packMb = $derived(Math.round((app?.sounds.packBytes ?? 0) / 1_000_000));
 
   function testTone(): void {
     if (settings?.draftOutput) send({ type: "testTone", output: settings.draftOutput });
@@ -313,6 +314,19 @@
                 <Button test="settings-measure" onclick={() => send({ type: "openLatencyMeasure" })}>{t("button.measureLatency")}</Button>
                 <Button test="settings-manual" on={typingLatency} onclick={() => (typingLatency = true)}>{t("button.manualLatency")}</Button>
               </div>
+              <!-- 音の素材（仕様書 3 章「音の素材をあとから取る所」、モック F8-PackSettings）: 「ある数 / ぜんぶ」と「取りにいく」、下に置き場所。 -->
+              <div class="row" data-test="settings-pack">
+                <span class="strong name">{t("settings.packRow")}</span>
+                {#if app.sounds.have >= app.sounds.total}
+                  <span class="strong" data-test="settings-pack-state">{t("settings.packAll", { mb: packMb })}</span>
+                {:else}
+                  <span class="strong" data-test="settings-pack-state">{t("settings.packNotYet", { have: app.sounds.have, total: app.sounds.total })}</span>
+                  <Button primary test="settings-fetch-pack" disabled={app.sounds.fetch.state === "fetching"} onclick={() => send({ type: "fetchPack" })}
+                    >{t("button.fetchPack")}</Button
+                  >
+                {/if}
+              </div>
+              <div class="note pack-place mono" data-test="settings-pack-place">{app.sounds.place}</div>
               <div class="row">
                 <span class="strong name">{t("plugin.places")}</span>
                 <Button test="settings-places" on={app.plugins.placesOpen} onclick={() => send({ type: "togglePluginPlaces" })}>{t("button.openPlaces")}</Button>
@@ -545,6 +559,10 @@
     border-bottom: var(--line-hair) solid var(--color-gray-4);
     color: var(--color-gray-8);
     white-space: normal;
+  }
+  .note.pack-place {
+    padding-top: 0;
+    border-bottom: 0;
   }
   .foot {
     flex-shrink: 0;

@@ -225,6 +225,11 @@ BOARDS = {
     "exportCheck": "F8-ExportCheck",
     "exportClip": "F8-ExportClip",
     "exportFit": "R11-Fit",
+    # 第 8 回 区切り3: 音の素材（約束 27）。
+    "packAsk": "F8-PackAsk",
+    "packGet": "F8-PackGet",
+    "packFailOffline": "F8-PackFail",
+    "packSettings": "F8-PackSettings",
     "exporting": "F7-Exporting",
     "exportingRealtime": "F7-Exporting",
     "exportDone": "F7-Exporting",
@@ -681,6 +686,10 @@ ONLY = {
     "paramsSound": [(1280, 800, 100), (1280, 800, 150)],
     "exportDialog": [(1280, 800, 100), (1280, 800, 150)],
     "exportFit": [(853, 448, 100), (1280, 800, 150)],
+    "packAsk": [(1280, 800, 100), (1280, 800, 150), (853, 448, 100)],
+    "packGet": [(1280, 800, 100), (1280, 800, 150), (853, 448, 100)],
+    "packFailOffline": [(1280, 800, 100), (1280, 800, 150), (853, 448, 100)],
+    "packSettings": [(1280, 800, 100), (1280, 800, 150)],
     "exporting": [(1280, 800, 100), (1280, 800, 150)],
 }
 scenes = sys.argv[2:] or list(BOARDS)

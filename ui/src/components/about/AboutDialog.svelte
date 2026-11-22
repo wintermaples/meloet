@@ -3,6 +3,7 @@
 <script lang="ts">
   import { movableDialog } from "../../lib/dialogMove";
   import ScrollArea from "../../lib/ScrollArea.svelte";
+  import { current } from "../../state/app.svelte";
   import { STATUS_JOIN, t, texts, type TextKey } from "../../text/ja";
   import Button from "../Button.svelte";
   import { about, closeAbout, showFirstStage, showLicenses, toggleGroup, togglePart, toggleSection } from "./about.svelte";
@@ -23,6 +24,8 @@
   let { list = licenseList, load = loadTexts }: { list?: typeof licenseList; load?: () => Promise<TextsFile | null> } = $props();
 
   const searching = $derived(about.query.trim() !== "");
+  /** 音の素材の置き場所（仕様書 3 章「音の素材をあとから取る所」: 「音の素材」の見出しの中に出す）。 */
+  const soundsPlace = $derived(current.state?.sounds.place ?? null);
   const sounds = $derived(soundsMatching(list.sounds, about.query));
   const fonts = $derived(fontsMatching(list.fonts, about.query));
   const parts = $derived(allParts(list));
@@ -125,6 +128,9 @@
           {#if sounds.length}
             {@render sectionHead(t("about.sounds"), sounds.length, searching || about.sections.sounds, () => toggleSection("sounds"), "about-sounds")}
             {#if searching || about.sections.sounds}
+              {#if soundsPlace}
+                <div class="fields" data-test="about-sounds-place"><div class="field"><span class="mono label">{soundsPlace}</span></div></div>
+              {/if}
               {#each sounds as s (s.id)}
                 <div class="fields" data-test="about-sound">
                   <div class="field"><span class="label field-label">{t("about.soundName")}</span><span class="strong">{s.title}</span></div>

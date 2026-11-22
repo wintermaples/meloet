@@ -43,6 +43,7 @@
   import WindowsMenu from "./WindowsMenu.svelte";
   import { keyCountsText, keysDrums, keysLabel, rollShowsDrums } from "./pianoroll/drums";
   import { soundNameText } from "./sounds";
+  import { askInStatus, mb as packMb, packInStatus, percentOf } from "./pack/pack";
   import { indexesOf } from "./pianoroll/geom";
   import { shown as shownNotes } from "./pianoroll/shown.svelte";
   import { sameKeys, soundingKeys } from "./pianoroll/sounding";
@@ -832,6 +833,17 @@
   const exporting = $derived(run?.kind === "running" ? run : null);
   /** 書き出し中に録音しているときは「● 録音中」が先。書き出しの進みは、左の終わりに短く「書き出し 46 %」（仕様書 3 章 94-84）。 */
   const exportAside = $derived(exporting !== null && (app.transport.state === "recording" || app.transport.state === "countIn"));
+  /**
+   * 音の素材を取っている間に流れ 1〜4 の案内が出たら、進みは状態行の左に移る（3 章 44-A、形は Opt8-PackShow の 44-B）。
+   * 書き出し中と、録音 ・ カウントイン中（札が先）は出さない。
+   */
+  const packShown = $derived.by(() => {
+    if (exporting || app.transport.state === "recording" || app.transport.state === "countIn") return null;
+    const f = packInStatus(app);
+    return f ? percentOf(f.doneBytes, f.totalBytes) : null;
+  });
+  /** 鍵盤がないなど、ずっと出ている案内の間は、聞くのも状態行の左で（取りにいく ・ あとで）。 */
+  const packAsk = $derived(!exporting && app.transport.state !== "recording" && app.transport.state !== "countIn" && askInStatus(app));
 
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
@@ -1036,7 +1048,7 @@
     return () => observer.disconnect();
   });
   $effect(() => {
-    void [badge, message, exporting, outputName, keyboardName, actual, requested, scale, windows.length];
+    void [badge, message, exporting, packShown, packAsk, outputName, keyboardName, actual, requested, scale, windows.length];
     measure();
   });
 </script>
@@ -1054,6 +1066,21 @@
             >{:else}{part.text}{/if}{/each}
       </span>
       <button class="m-btn stop" data-test="export-cancel" onclick={() => send({ type: "cancelExport" })}>{t("button.cancel")}</button>
+    </span>
+  {:else if packShown !== null}
+    <span class="exporting" data-test="pack-status">
+      <span class="accent">{t("pack.fetching")}</span>
+      <span class="bar pack-bar"><span class="fill" style:transform="scaleX({packShown / 100})"></span></span>
+      <span class="percent m-num m-hi"><span class="size">{t("pack.fetchingPercent", { percent: 99 })}</span><span class="in" data-test="pack-percent"
+          >{t("pack.fetchingPercent", { percent: packShown })}</span
+        ></span>
+      <button class="m-btn stop" data-test="pack-status-stop" onclick={() => send({ type: "stopPackFetch" })}>{t("button.cancel")}</button>
+    </span>
+  {:else if packAsk}
+    <span class="exporting" data-test="pack-status-ask">
+      <span class="accent">{t("pack.ask", { mb: packMb(app.sounds.packBytes) })}</span>
+      <button class="m-btn stop" data-test="pack-status-fetch" onclick={() => send({ type: "fetchPack" })}>{t("button.fetchPack")}</button>
+      <button class="m-btn stop" data-test="pack-status-later" onclick={() => send({ type: "packLater" })}>{t("button.packLater")}</button>
     </span>
   {:else}
     <span class:rec={badge.rec} class:accent={badge.accent} data-test="status-badge">{badge.text}</span>
@@ -1211,6 +1238,9 @@
     width: var(--part-exporting-bar);
     height: var(--mock-exporting-bar);
     background: var(--color-gray-4);
+  }
+  .bar.pack-bar {
+    width: var(--part-packband-bar);
   }
   .fill {
     display: block;

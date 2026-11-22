@@ -4,7 +4,8 @@
      モック F7-VocalTrack ・ R11-Fit ・ R12-Meters）: 左は鍵盤の計（ペダルなどは引っこめる）、右はマイクの計。せまいときは「弾くと鳴る先」、
      次に「モニター」の字、次に鍵盤の絵を引っこめ、鍵盤の名前を 88 で「…」（3 章 94-16 ・ 37-A）。「固定」と押している音は残す。
      マイクの計の棒は inputMeter の区画の中（区画も文脈もふやさない）。目盛は −60〜−12 が左半分、−12〜0 が右半分、地は gray.4、
-     白い縦の線は 1 秒のピーク（dB の字と同じ数。3 章 94-17 ・ 38-B）。いまの dB の字は流れの外の箱で、同じ canvas の下（cover）。 -->
+     白い縦の線は 1 秒のピーク（dB の字と同じ数。3 章 94-17 ・ 38-B）。いまの dB の字は流れの外の箱で、同じ canvas の下（cover）。
+     音の素材の案内（3 章 43-B ・ 44-A）が出ている間は、左に入力と、いま押している音だけ、右は pack/PackBand.svelte。 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { keyIsDown, type TrackView } from "../bridge";
@@ -20,6 +21,8 @@
   import { metrics } from "./metrics.svelte";
   import { charCount, meterFit, nameWidthPx, sentences, type MeterFit, type NameWidth } from "./meterFit";
   import NumberField from "./NumberField.svelte";
+  import { packBand } from "./pack/pack";
+  import PackBand from "./pack/PackBand.svelte";
   import { keysDrums, keysLabel } from "./pianoroll/drums";
   import { soundRefName, soundViewName, standInTip } from "./sounds";
   import { readVelocity, type Read } from "./valueClamp";
@@ -73,7 +76,9 @@
     const of = (x: TrackView | undefined) => (x && x.kind.kind === "vocal" ? { track: x, input: x.kind.input, monitor: x.kind.monitor } : null);
     return of(app.song.tracks.find((x) => x.id === app.song.playTarget)) ?? of(app.song.tracks.find((x) => x.kind.kind === "vocal" && x.kind.armed));
   });
-  const split = $derived(vocal !== null);
+  /** 音の素材の案内（44-A）が出ている間は、入力と、いま押している音だけ（左右に分けた形より先）。 */
+  const pack = $derived(app ? packBand(app) : null);
+  const split = $derived(vocal !== null && pack === null);
 
   /** いまの dB: 直近 1 秒のいちばん大きい値（マスターの dB と同じ。字を毎コマ変えない）。0 dB に届いたら 2 秒 rec。 */
   let micHold = new PeakHold(1000);
@@ -217,7 +222,7 @@
   let nameNatural = $state(0);
 
   function measure(): void {
-    if (!row || !ruler) return;
+    if (!row || !ruler || pack) return;
     if (split) {
       measureSplit();
       return;
@@ -311,6 +316,15 @@
       <span class="mark" class:on={keyboard !== null}></span>
       <span class="name-text" data-test="keyboard-name" use:tip={measuring ? null : nameTip}>{name}</span>
       {#if more}<span class="more" data-test="other-keyboards" use:tip={measuring ? null : nameTip}>{` ${more}`}</span>{/if}
+    </span>
+  </div>
+{/snippet}
+
+{#snippet heldItem()}
+  <div class="item">
+    {#if !slim}<span class="label">{t("meter.held")}</span>{/if}
+    <span class="value" class:held={live} class:none={!live} data-test="held">
+      {live ? keysLabel(held, drums) : t("meter.heldNone")}
     </span>
   </div>
 {/snippet}
@@ -578,12 +592,19 @@
     class="meter"
     class:slim
     class:split
+    class:pack={pack !== null}
     class:empty={keyboard === null}
     style:--white-keys={WHITE_KEYS}
     bind:this={row}
     use:glRegion={"inputMeter"}
   >
-    {#if split}
+    {#if pack}
+      <div class="pack-left">
+        {@render who(false, false)}
+        {#if keyboard}{@render heldItem()}{/if}
+      </div>
+      <PackBand band={pack} {slim} />
+    {:else if split}
       {@render splitBody(false)}
       <div class="meter ruler split" class:slim aria-hidden="true" bind:this={ruler}>
         {@render splitBody(true)}
@@ -620,6 +641,18 @@
   .meter.slim {
     gap: var(--space-4);
     height: var(--size-meter-slim);
+  }
+  /* 音の素材の案内（モック F8-PackAsk）: 左に入力と、いま押している音。右は PackBand。 */
+  .meter.pack {
+    gap: 0;
+    padding: 0;
+  }
+  .pack-left {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
   }
   .ruler {
     position: absolute;

@@ -3,6 +3,7 @@
 
 mod audio;
 mod export;
+mod pack;
 mod recovery;
 mod songs;
 mod vocal;
@@ -28,8 +29,8 @@ use meloet_protocol::{
     KeyboardView, KeyboardsView, LayoutView, LibraryView, LinkKind, LiveNotes, LiveNotesSnapshot,
     LowerBandView, MeterSize, MissingRef, MissingView, OutputsView, ParamTable, ParamValues,
     PluginRole, PluginWindowKind, QuantizeSettings, RecordFormat, RecoveryCause, ScanView,
-    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, SoundsView, StandIn,
-    StatusMessage, StatusView, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
+    SettingsDialogView, ShelfMode, ShelfView, SongFile, SongView, SoundRef, StandIn, StatusMessage,
+    StatusView, TrackKindView, TrackView, Unusable, VelocityFixed, WorkspaceView,
 };
 
 use crate::added;
@@ -46,6 +47,7 @@ use crate::plugins::{Plugins, ScanJob, ScanNews};
 use crate::settings::{SCALES, Settings, SoundSettings};
 use crate::vocalrec::{RecNote, Written};
 
+pub use pack::{PackAsk, PackStart};
 pub use recovery::{QUIET_US, RecoveryStart};
 
 /// The buffer size meloet asks for. What really runs is `AudioView::actual_frames`.
@@ -270,6 +272,10 @@ pub enum Input {
     AudioMaking(Vec<crate::maker::MakerJob>),
     /// From the export's worker and from the shell: the answers to [`Effect::Export`].
     Export(crate::export::ExportNews),
+    /// From the thread that fetches the sound pack: the answers to [`Effect::Pack`].
+    Pack(crate::sounds::fetch::PackNews),
+    /// The page subscribed and is up.
+    ScreenUp,
 }
 
 /// What a loaded plugin tells: its window, its parameters, its state.
@@ -559,6 +565,8 @@ pub enum Effect {
     ClearWorkAudio,
     /// For the export's worker and its window for a place. Answer with [`Input::Export`].
     Export(crate::export::ExportAsk),
+    /// For the thread that fetches the sound pack. Answers come as [`Input::Pack`].
+    Pack(PackAsk),
 }
 
 pub struct Model {
@@ -656,6 +664,7 @@ pub struct Model {
     monitor_said: bool,
     audio: audio::AudioSide,
     export: crate::export::Exporting,
+    pack: pack::PackSide,
 }
 
 /// Audio files let go of over the window (`Model::pending_drop`).
@@ -761,6 +770,7 @@ impl Model {
             monitor_said: false,
             audio: audio::AudioSide::default(),
             export: crate::export::Exporting::default(),
+            pack: pack::PackSide::new(settings.pack_fetch),
         }
     }
 
@@ -1106,6 +1116,8 @@ impl Model {
             Input::Audio(news) => self.audio_news(news),
             Input::AudioMaking(jobs) => self.play.set_audio_making(jobs),
             Input::Export(news) => self.export_news(news),
+            Input::Pack(news) => self.pack_news(news, &mut effects),
+            Input::ScreenUp => self.pack_screen_up(&mut effects),
         }
         self.settle_export(&mut effects);
         self.refresh_catalog();
@@ -1612,10 +1624,10 @@ impl Model {
             // Protocol 27: accepted, and nothing yet (docs/architecture.md 23-7).
             Command::ShiftClipGains { .. }
             | Command::SetClipGains { .. }
-            | Command::SetClipsStretch { .. }
-            | Command::FetchPack
-            | Command::PackLater
-            | Command::StopPackFetch => {}
+            | Command::SetClipsStretch { .. } => {}
+            Command::FetchPack | Command::PackLater | Command::StopPackFetch => {
+                self.pack_command(&command, effects);
+            }
             Command::ImportAudio { track } => self.import_audio(track, effects),
             Command::FindAudio { audio } => self.find_audio(audio, effects),
             Command::SetClipStretch { clip, change } => {
@@ -2294,6 +2306,7 @@ impl Model {
             plugin_places: self.plugins.added_places().to_vec(),
             shelf: self.catalog.settings().clone(),
             sound: self.sound.clone(),
+            pack_fetch: self.pack.wanted,
         }
     }
 
@@ -2497,7 +2510,7 @@ impl Model {
             audio,
             audio_work: self.play.audio_work_view(),
             export: self.export_view(),
-            sounds: sounds_view(),
+            sounds: self.sounds_view(),
             status: StatusView { message: status },
         }
     }
@@ -2645,6 +2658,9 @@ impl Model {
             return Some(StatusMessage::KeyboardFound {
                 keyboard: active.name.clone(),
             });
+        }
+        if self.pack_asking() {
+            return Some(StatusMessage::PackAsking);
         }
         if self.new_song_unsaid {
             let song = &self.play.song().doc;
@@ -2825,16 +2841,6 @@ pub(crate) fn vocal_input_view(input: VocalInput) -> meloet_protocol::VocalInput
     }
 }
 
-/// Protocol 27 before the fetch is made: the pack is taken to be all there.
-fn sounds_view() -> SoundsView {
-    let total = InstrumentKind::ALL.len() as u32;
-    SoundsView {
-        have: total,
-        total,
-        ..SoundsView::default()
-    }
-}
-
 fn endpoint_view(endpoint: &Endpoint) -> EndpointView {
     use meloet_devices as d;
     EndpointView {
@@ -2880,6 +2886,8 @@ fn asked_to_see(notice: &StatusMessage) -> bool {
 pub(crate) mod added_tests;
 #[cfg(test)]
 mod audio_tests;
+#[cfg(test)]
+mod pack_tests;
 #[cfg(test)]
 mod plugin_tests;
 #[cfg(test)]

@@ -203,6 +203,7 @@ fn play_what_was_recorded(
         state_dir: Some(state.clone()),
         cache_dir: Some(root.join("cache")),
         sounds_dir: None,
+        pack: None,
         plugins: None,
         sf2_dir: None,
     });

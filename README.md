@@ -81,7 +81,9 @@ tools/measure/long-record.sh            # 10 分録りつづける（xrun、メ�
 | `MELOET_PCWINDOW_SHOT=out.png` | PC のファイルの窓が出て 1.5 秒後に、その窓を PNG に描く |
 | `MELOET_MIDI_FAIL_AFTER=N` | 試験用: MIDI のスレッドを N 個の鍵のあとで止める |
 | `MELOET_STATE_DIR=dir` | なおすためのファイルの場所を変える |
-| `MELOET_SOUNDS_DIR=dir` | 音の素材の包み（`pack.json` のあるフォルダ）の場所を決める。決めると、ほかの場所はさがさない。決めなければ、実行ファイルのそばの `sounds/` をさがす。開発では `ln -sfn ../sounds/dev target/debug/sounds`（release も同じ）で、`tools/sounds/build.py` が作った包みを `target/sounds/dev` に置くと、VS Code からの起動でも見つかる |
+| `MELOET_SOUNDS_DIR=dir` | 音の素材の包み（`tools/sounds/build.py` が作る、`pack.json` のあるフォルダ）の場所を決める。決めると、ほかの場所はさがさず、取りにもいかない。決めなければ、実行ファイルのそばの `sounds/` → `$XDG_DATA_HOME/meloet/sounds/`（配る meloet が自分で取ってきて置く所。`docs/architecture.md` 23-9）の順に、音色ごとにさがす。開発では `python3 -I tools/sounds/build.py --out target/sounds/dev` と `ln -sfn ../sounds/dev target/debug/sounds`（release も同じ）で、VS Code からの起動でも見つかり、そこにある音色は取りにいかない |
+| `MELOET_PACK_ORIGIN=http://127.0.0.1:8000/` | 試験用: 音の素材を取りにいく先と、ネットの目録（`<origin>catalog.json`）を、その場所に替える（`http://` も許す） |
+| `MELOET_PACK_CATALOG=file` | 試験用: 実行ファイルに入った目録（`tools/sounds/catalog.json`）のかわりに、そのファイルを読む |
 | `MELOET_OPEN_SONG=file.meloet` | 立ちあげたら、その曲をひらく（PC のファイルの窓のかわり） |
 | `MELOET_UI_SCRIPT=pr-scroll\|pr-zoom\|pr-drag:N` | `MELOET_MEASURE_DIR` があるときだけ、ページの中で送る・拡大・ドラッグを自動でくりかえして測る |
 | `JSC_useGenerationalGC` | meloet は立ちあがるときに 0 にする（ウェブのプロセスのメモリがふえつづけないように）。外から決めればそちらが勝つ |

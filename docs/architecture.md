@@ -552,6 +552,8 @@ messages の Channel は 1 本で、差分（`patch`）、すぐ知らせるこ�
 
 ### 19-1. 音の素材の置き場所（ヤチヨさんの決め 2026-11-18）
 
+> 第 8 回で 23-1 ・ 23-9 の形に変えた（包みは音色ごとの tar と目録、置き場所は `$XDG_DATA_HOME/meloet/sounds/`、`scripts/fetch-sounds.sh` は消した）。下は第 4 回の形のまま。
+
 - リポジトリには**作りかただけ**を置く（`tools/sounds/`）: 元の配布の URL と sha256、取り出す範囲（どの段、どの鍵、どのマイク）、間引き・長さの切りかた・形式の変換のスクリプト、帰属表示の文（`licenses/sounds.json`）。
 - 作った**包み**（音色ごとのフォルダをまとめた 1 ファイル）は GitHub の Release に置く。`scripts/fetch-sounds.sh` が取ってきて sha256 で確かめ、`~/.cache/meloet/sounds/<包みの版>/` にほどく。包みがなくても、作りかたから同じ物を作れる。
 - `cargo build` は、ネットにつながない（`build.rs` で取ってこない）。meloet は起動のとき、`MELOET_SOUNDS_DIR`（試験用・開発用）→ 実行ファイルのそばの `sounds/`（配る形。第 8 回）→ `~/.cache/meloet/sounds/<版>/` の順にさがす。見つからない音色は棚に出さない（仕様書「素材がなかった音色は、棚に出さない」）。
@@ -701,6 +703,8 @@ meloet-sounds-<包みの版>/
 - 64 本まで（エンジンの席）。65 本目は足さない（状態行の文はない）。
 
 ### 19-10. 音色を core につなぐ（区切り2）
+
+> 第 8 回で 23-1 ・ 23-9 の形に変えた（下の「包みの場所」の `~/.cache` と `pack.json` の版、読みこみの係のスレッドを作る時は、今とちがう）。
 
 - **音色を作る所は 1 か所**（`crates/meloet-core/src/instruments.rs`）。サイン波、シンセリード ・ シンセベース ・ あたたかいパッド、エレクトロキットはいつも使える。サンプルの音色（グランドピアノ、エレクトリックピアノ、オルガン、フィンガーベース、スタジオキット、ストリングス）は、包みにあるときだけ。棚の `available` は使える物だけ。包みにない音色のトラック（包みを取っていない PC で前の曲をひらいた）は、サイン波で代わりに鳴らす（ノートを消さないため。画面の音源の名前はそのまま）。
 - **包みの場所**（19-1）: `MELOET_SOUNDS_DIR` → 実行ファイルのそばの `sounds/` → `~/.cache/meloet/sounds/<版>/`（`<版>` は `tools/sounds/pack.json` の版をビルドのときに取りこむ。いまは空なので、3 つ目はさがさない）。`MELOET_SOUNDS_DIR` を決めたら、ほかはさがさない（試験がこの PC の包みをひろわないため）。ふだんの開発は `MELOET_SOUNDS_DIR=~/.cache/meloet/sounds/dev`（README）。
@@ -2620,3 +2624,48 @@ pub struct AudioShape {
 - 偽物の場面（`?scene=`）: `packAsk`（F8-PackAsk）・ `packGet`（F8-PackGet、棚をひらく）・ `packFailOffline`（F8-PackFail）・ `packFailCutOff` ・ `packFailDiskFull` ・ `packFailCorrupt`（6 章）・ `packSettings`（F8-PackSettings、まだ 12 / 31）・ `packNew`（6 章「新しい包み」）・ `multiClip`（F8-MultiClip）・ `exportCheck`（F8-ExportCheck、2 ベース がソロ）・ `exportClip`（F8-ExportClip、3 か所 +1.2 dB）。
 - 試験: `crates/meloet-protocol/src/tests27.rs`、`ui/tests/bridge.protocol27.test.ts`（形、場面、偽物の意図、状態行の 18 の文）。
 
+
+### 23-9 音の素材を取りにいく係（区切り3、2026-11-22、meloet-hard）
+
+23-1〜23-3 を作った回。署名はオーナーさんの答え待ちなので、まだつけていない（目録をたしかめる所は `sounds/catalog.rs` の `check` 1 か所。署名はそこに足す）。
+
+**包み（道具）**
+
+- `tools/sounds/split.py <build.py の出力> --out <dir> --pack 2026.12.0 [--previous <前の目録>] [--catalog tools/sounds/catalog.json]`: 音色ごとの tar（`<id>-<版>.tar`。中は `instrument.json` と `samples/*.flac` を tar の頭に。上のフォルダはない）、共通の tar（`common-<版>.tar`: `credits.json` と `licenses/<id>/…`）、目録 `catalog.json` を作る。`id` は曲のファイルと同じ音色の名前（`grandPiano`）。版は中身のファイルの道と sha256 から作る sha256 の頭 16 字（中身が同じなら版も同じ）。tar は ustar、縮めない、名前の順、持ち主と時刻なし（同じフォルダから同じバイト。2 回作って同じ目録になった）。`--previous` の目録に同じ版があれば、その URL を使う（上げなおさない）。
+- 目録: `{"format": "meloet-sounds-catalog", "version": 1, "pack": "2026.12.0", "common": {id, version, file, url, bytes, sha256}, "instruments": [{…, "credits": […]}]}`。URL は `https://github.com/wintermaples/meloet/releases/download/sounds-<包みの版>/<file>`。
+- いまの `target/sounds/dev` から作った物: `target/k8s-pack/`（26 音色 ＋ 共通、238,909,440 バイト）。その目録を `tools/sounds/catalog.json` に置き、ビルドで実行ファイルに入れる（`include_str!`。前の `tools/sounds/pack.json` の役目）。**この URL の Release はまだない**（上げる前にオーナーさんに聞く）。`dev` の包みが配る包みと同じかは棟梁が決める。
+- 消した物: `tools/sounds/pack.json`、`tools/sounds/pack.py`（1 つの tar の形）、`scripts/fetch-sounds.sh`（meloet が自分で取りにいくので要らない。開発は今のまま `build.py` → `target/sounds/dev` → `ln -sfn ../sounds/dev target/debug/sounds`）。Release の `sounds-2026.11.1`（前の形）は残る。
+
+**さがす順と置き場所**（`crates/meloet-core/src/sounds.rs`、`sounds/fetch.rs`）
+
+- `MELOET_SOUNDS_DIR`（決めたら、それだけ。取りにいかない）→ 実行ファイルのそばの `sounds/`（`pack.json` のあるとき。開発の `target/*/sounds`）→ `$XDG_DATA_HOME/meloet/sounds/<id>/<版>/`（`XDG_DATA_HOME` は絶対の道だけ、ないときは `~/.local/share`）。音色ごとに見る: 開発のフォルダにある音色は取りにいかない（`Disk::covered`）、ない音色は DATA から（目録の版を先に、なければほかの版。新しい包みを取るまでは古い版で鳴る）。
+- 目録は、組みこんだ物と、ネットから取って `…/sounds/catalog.json` に残した物のうち、包みの版の数が大きいほう。残した物も `check` を通らなければ使わない。
+- 取っている間の物: `…/sounds/<file>.part`、ほどく所 `…/sounds/.work-<file>/`（同じファイルシステム）→ `rename` で `<id>/<版>/`。起動のとき（係のスレッドのはじめ）に、残った `.work-*`、目録にない `.part`、目録の版があるときのほかの版を消す（動いている間は、読んでいるかもしれないので消さない）。
+
+**取りにいく係**（`sounds/fetch.rs` の `Fetcher`。スレッド `meloet-pack` 1 本。ネットにつなぐのはここだけ）
+
+- ureq 3.5.2（rustls ＋ ring、`platform-verifier`、gzip なし）。`https_only`、リダイレクト 10、User-Agent は `meloet/<版>` だけ、`http_status_as_error(false)`。接続と答えの頭を待つのは 15 秒、読む 1 回は 30 秒（とぎれたら「切れた」）。PC の証明書が 1 つも読めない（`rustls-platform-verifier` の「No CA certificates」）ときだけ `webpki-roots` に替える。プロキシは ureq の既定（`ALL_PROXY` ・ `HTTPS_PROXY` ・ `NO_PROXY` など）。
+- 順: 共通 → B-95-1（グランドピアノ、スタジオキット、フィンガーベース、ストリングス、エレクトリックピアノ、オルガン → 棚の順）。1 つずつ。
+- 1 つのファイル: `.part` の大きさから `Range: bytes=N-`。206 は `Content-Range` のはじめが N なら足す（ちがえば消してはじめから）、200 ははじめから、416 は消してはじめから、403 ・ 410 は目録の URL からたどりなおす（2 回まで。まだなら `CutOff`）、ほかの答え（404 ・ 5xx など）は `CutOff`（ネットにはつながっているので「つながっていません」と言わない。棟梁の決め 2026-11-22）。とちゅうで切れたら 1 秒待ってだまって続きから（2 回まで。まだなら `CutOff`、`.part` は残す）。仕上げにかならず大きさと sha256。合わない ・ ほどけない ・ 中に `instrument.json`（共通は `credits.json`）がない → `.part` を消してだまって 1 回取りなおし、2 回目も → `Corrupt`。ほどく所は ustar の「ファイルとフォルダ」だけ（リンク、pax、外へ出る名前、`\` はファイルごとことわる。`sounds/untar.rs`）。
+- 空き: 取りはじめる前に `statvfs`（rustix）の `f_bavail × f_frsize` を「残り ＋ 残りの中でいちばん大きいファイル（ほどく間は 2 つある）＋ 64 MiB」（`ROOM_BYTES`）とくらべる（棟梁の決め 2026-11-22）。書く所 ・ ほどく所の `StorageFull` ・ `QuotaExceeded` も `DiskFull { needed_bytes: 同じ式, free_bytes: いまの空き }`。
+- 数: `total` は、まだない音色が 1 つでもあれば包みぜんぶ（開発のフォルダにある分は除く）、新しい包みだけなら変わった分。`done` は `total` − 残り（`.part` の分は来た物に数える）。知らせは 250 ms に 1 回まで（画面へは 1 秒に 4 回まで）。`remaining_s` は 3 秒たってから、この回に来た速さで。
+- 「やめる」: `stop(round)` でその回の読みを止める（`.part` は残す）。core は回の番号を 1 つ進め、止めた回が遅れて言う事は聞かない（置いた音色は受けとる）。
+
+**起動のときの確かめ**（23-3）: 画面のあいさつ（`Core::subscribe` → `Input::ScreenUp`、1 回だけ）で `Job::Check`。DATA に 1 つも取った物がなければ見にいかない。`MELOET_STATE_DIR` のふだんの場所の `sounds-checked`（Unix ms）から 24 時間たっていなければ見にいかない。見にいくと決めたら、まず時刻を書く（ネットがなくても書く。次は 24 時間あと）。`GET` 1 回（1 MiB まで）、ネットがない ・ 200 でない ・ 読めない → だまる。目録が `check` を通り、今のより新しければ `catalog.json` に残して使う。ここにある音色の古い版があれば `NewPack { bytes: 変わった分 }`。
+
+**core の決まり**（`state/pack.rs`）
+
+- 答え: 設定の `pack_fetch`（`settings.json` の `"pack_fetch": true`）。「取りにいく」で true、「あとで」 ・ 「やめる」 ・ ぜんぶ取れたら false。起動のとき true でまだ足りなければ、あいさつのあと（確かめのあと）だまって続きから。false で、まだない音色（新しい包みの差だけではなく）があれば `ask`。うまくいかなかった（`Failed`）ときは true のまま（次の起動で続きから）。
+- `ask` の間の状態行は `PackAsking`（流れ 1〜4 の行、鍵盤がない ・ 出口がまだ、のあと。新しい曲の行の前）。`SoundReady` は、ここになかった音色が来たとき（新しい版の差し替えでは言わない）、`PackFetched { count: have }`、`PackFailed`、`NewPack` は知らせ（次の操作で消える）。
+- 来た音色: サービスが `Library::add`（読む所を新しい道に）→ `Play::sound_installed` → 曲や棚が使っていれば `LoadSound` → 読めたら席をぜんぶ作りなおす（前からの流れ。エンジンの入れかえは 10 ms 重ねる）。読めるまでの席は前のサイン波のまま（だまらない）。新しい版の差し替えは `DropSound` と `LoadSound`。
+- 新しい曲: 1 本目は、取る前からグランドピアノ（目録にグランドピアノがあり、最後の取りにいきが `Corrupt` でないとき。そうでなければ前のとおりサイン波の「シンセ」）。曲のファイルには `grandPiano` と書く。起動のときの、まだだれもさわっていない新しい曲も、目録を知ってから作りなおす（`Play::start_pack`）。
+- 棚: `available` は計算で作る 5 つ ＋ ここにある音色、`not_yet` は目録にあってここにない音色（棚の順）。目録がなくて包みもないときだけ、前のとおりサイン波だけ。`LibraryView::pack_missing` は前のまま（サンプルの音色が 1 つもない）。
+- `SoundsView`: `have` は `available` の数（計算の 5 つを含む）、`total` 31、`place` は `~/.local/share/meloet/sounds` の形（家を `~` に）。取りにいく係がないとき（試験、`MELOET_SOUNDS_DIR`、家がない）は前のとおり「ぜんぶある」（31 / 31）。
+
+**決めた数**: 空きのゆとり 64 MiB、確かめ 24 時間、接続 15 秒、読み 30 秒、切れたときのだまった続き 2 回（1 秒あけて）、403 ・ 410 のたどりなおし 2 回、こわれたときの取りなおし 1 回、知らせ 250 ms、のこり時間は 3 秒から、ネットの目録 1 MiB まで、版は 16 字。
+
+**試験の口**（release から外す一覧に入れる。23-4）: `MELOET_PACK_ORIGIN`（`http://127.0.0.1:<port>/` など。目録の URL の決まりと、ネットの目録 `<origin>catalog.json` をそこに替え、`http://` なら `https_only` を外す）、`MELOET_PACK_CATALOG`（組みこんだ目録のかわりに読むファイル）。前からの `MELOET_SOUNDS_DIR` ・ `MELOET_STATE_DIR` も。空きと `ENOSPC` と時刻の差しかえは `cfg(test)` の `fetch::Hooks` だけ（環境変数はない）。
+
+**試験**: `sounds/fetch_tests.rs`（この PC の中の小さな HTTP サーバ。Range ・ 302 ・ 403 ・ 404 ・ 416 を返す。ネットの本物にはつながない）で、ふつう（302 をたどる、順、User-Agent、Cookie なし）、遅いつながり、とちゅうで切れる（だまって続き ・ 3 回切れて `CutOff` ・ 次の回は `Range`）、こわれたファイル（1 回だまって ・ 2 回で `Corrupt`、`.part` を残さない）、403（たどりなおし ・ ずっと 403 で `CutOff`）、404 ・ 500（`CutOff`）、ディスクがいっぱい（はじめの空き ・ 書く所の `StorageFull`）、ネットがない（だれも聞いていない港）、やめる（`.part` を残し次は続き）、ネットの目録（取っていない人は見ない ・ 新しい包み ・ 24 時間 ・ 次の起動で古い版を消す ・ 404 はだまる）、決まりの外の URL の目録（`catalog.rs` と、残した目録を使わない）。`state/pack_tests.rs` で core の決まり。`sounds/untar.rs` でほどく所。
+
+**本物のアプリ**（2026-11-22、debug）: 空の `XDG_DATA_HOME`（`target/k8s-home/data`）、`MELOET_PACK_ORIGIN` でこの PC の中の置き場所（Range つき、20 MB/秒にしぼった Python のサーバ）。`fetchPack` → 3 秒で `stopPackFetch` → 2 秒で `fetchPack`: グランドピアノは `Range: bytes=58785792-` で続きから、26 音色 ＋ 共通がそろい、グランドピアノは取れたあと読まれた（`read the sound of grandPiano`）。`settings.json` の `pack_fetch` は最後に消えた。取っている間に仮想の鍵盤で 30 鍵: 鍵 → DAC 11.4 〜 15.4 ms（平均 13.4、256 こま）。

@@ -63,12 +63,58 @@ impl Play {
         }
     }
 
-    /// The song a person starts from. On a PC without the sound pack its first track is the
-    /// sine wave under the name of its group, not a grand piano that cannot sound (spec 3,
-    /// 85).
+    /// The catalog of the sound pack, at the start: a new song that nobody touched yet is
+    /// made again with it (its first track is the grand piano when the pack can bring it).
+    pub fn start_pack(&mut self, fetchable: Vec<BuiltinInstrument>) {
+        let untouched = self.song == self.new_song();
+        self.sounds.fetchable = fetchable;
+        if untouched {
+            self.song = self.new_song();
+            self.seats = Seats::for_song(&self.song.doc);
+        }
+    }
+
+    /// The instruments a newer catalog has.
+    pub fn set_fetchable(&mut self, fetchable: Vec<BuiltinInstrument>) {
+        self.sounds.fetchable = fetchable;
+    }
+
+    pub fn set_pack_broken(&mut self, broken: bool) {
+        self.sounds.broken = broken;
+    }
+
+    /// An instrument of the pack was fetched and is in its place. True when it is new here;
+    /// a newer version of one that was here is read again, and its seats get it once read.
+    pub fn sound_installed(
+        &mut self,
+        instrument: BuiltinInstrument,
+        effects: &mut Vec<Effect>,
+    ) -> bool {
+        let sounds = &mut self.sounds;
+        if !sounds.installed.contains(&instrument) {
+            sounds.installed.push(instrument);
+            sounds.broken = false;
+            return true;
+        }
+        for list in [&mut sounds.loaded, &mut sounds.loading] {
+            if list.contains(&instrument) {
+                list.retain(|b| *b != instrument);
+                effects.push(Effect::DropSound(instrument));
+            }
+        }
+        false
+    }
+
+    /// The song a person starts from. Its first track is the grand piano, also before the
+    /// sound pack is fetched (spec 3, 45-A: it sounds as the sine wave until then). Only when
+    /// the pack is not here and cannot be fetched (none to fetch, or it came broken) is the
+    /// first track the sine wave under the name of its group (spec 3, 85).
     pub fn new_song(&self) -> Song {
         let mut song = Song::new_default();
+        let piano = BuiltinInstrument::GrandPiano;
+        let can_come = self.sounds.fetchable.contains(&piano) && !self.sounds.broken;
         if self.pack_missing()
+            && !can_come
             && let Some(first) = song.doc.tracks.first_mut()
         {
             let track = Arc::make_mut(first);

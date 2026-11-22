@@ -41,7 +41,7 @@ impl Playing {
             parts.engine,
             parts.handle,
             false,
-            Library::open(None, Box::new(|_, _| {})),
+            Library::open(Vec::new(), Box::new(|_, _| {})),
             Sf2Store::open(None, Box::new(|_| {})),
             play.engine_seats(),
             (BLOCK as u32, RATE),

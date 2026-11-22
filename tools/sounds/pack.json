@@ -1,8 +1,0 @@
-{
- "_about": "The sound pack that scripts/fetch-sounds.sh fetches (docs/architecture.md 19-1). tools/sounds/pack.py --manifest fills version, file, sha256 and bytes; url is the GitHub Release asset, empty until someone uploads one.",
- "version": "2026.11.1",
- "file": "meloet-sounds-2026.11.1.tar",
- "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.11.1/meloet-sounds-2026.11.1.tar",
- "sha256": "c9000223504ab41f98385df51eb287b3b1743956247e03e11175a142c8dfdcbe",
- "bytes": 238776320
-}

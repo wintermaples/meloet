@@ -34,6 +34,12 @@ pub(crate) struct Sounds {
     pub sf2_listed: Vec<Sf2Key>,
     pub sf2_loaded: Vec<Sf2Key>,
     pub sf2_loading: Vec<Sf2Key>,
+    /// The sampled instruments the catalog of the sound pack has: the ones not here yet can
+    /// be fetched (`ShelfView::not_yet`).
+    pub fetchable: Vec<BuiltinInstrument>,
+    /// The last fetch found the pack broken (spec 3, 45-A: only then a new song starts with
+    /// the sine wave).
+    pub broken: bool,
 }
 
 impl Sounds {
@@ -60,15 +66,25 @@ impl Sounds {
         !self.sf2_listed.contains(key) || self.sf2_loaded.contains(key)
     }
 
-    /// The rows of the shelf's own instruments. Without the sound pack only the sine wave
-    /// is offered (spec 3, 85), though the other computed sounds still sound in a song.
+    /// The rows of the shelf's own instruments. Without the sound pack and without a way to
+    /// fetch it only the sine wave is offered (spec 3, 85), though the other computed sounds
+    /// still sound in a song. While it can be fetched, the computed ones are there and the
+    /// rest waits in [`Sounds::not_yet`] (45-A).
     pub fn shelf_rows(&self) -> Vec<BuiltinInstrument> {
         let available = self.available();
-        if available.iter().any(|i| sampled(*i)) {
+        if available.iter().any(|i| sampled(*i)) || !self.not_yet().is_empty() {
             available
         } else {
             vec![BuiltinInstrument::Sine]
         }
+    }
+
+    /// The instruments the pack can bring and that are not here, in the order of the shelf.
+    pub fn not_yet(&self) -> Vec<BuiltinInstrument> {
+        let available = self.available();
+        BuiltinInstrument::all()
+            .filter(|i| self.fetchable.contains(i) && !available.contains(i))
+            .collect()
     }
 }
 

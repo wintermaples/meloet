@@ -354,6 +354,7 @@ fn the_real_keyboard_and_headphones_show_up_within_two_seconds() {
         songs_dir: None,
         state_dir: None,
         sounds_dir: None,
+        pack: None,
         plugins: None,
         sf2_dir: None,
         cache_dir: None,
@@ -409,6 +410,7 @@ fn the_remembered_headphones_open_and_silence_sends_no_telemetry() {
         songs_dir: None,
         state_dir: None,
         sounds_dir: None,
+        pack: None,
         plugins: None,
         sf2_dir: None,
         cache_dir: None,
@@ -825,7 +827,7 @@ impl SeatRig {
                 parts.engine,
                 parts.handle,
                 false,
-                Library::open(None, Box::new(|_, _| {})),
+                Library::open(Vec::new(), Box::new(|_, _| {})),
                 Sf2Store::open(None, Box::new(|_| {})),
                 model.engine_seats(),
                 (256, 48_000),
@@ -1066,7 +1068,7 @@ impl SoundRig {
         let done = move |instrument, bank| {
             let _ = tx.send((instrument, bank));
         };
-        let library = Library::open(Some(&dir), Box::new(done));
+        let library = Library::open(crate::sounds::read_pinned(&dir), Box::new(done));
         let mut model = Model::new(Settings::default()).with_sounds(library.installed());
         let parts = Engine::new(EngineConfig {
             max_tracks: MAX_TRACKS,
@@ -1222,6 +1224,7 @@ fn the_core_reads_the_sounds_off_its_thread_and_says_when_a_row_is_ready() {
     std::fs::write(dir.join("studioKit/instrument.json"), "not json").unwrap();
     let core = Core::start(CoreOptions {
         sounds_dir: Some(dir.clone()),
+        pack: None,
         ..CoreOptions::offline()
     });
     let shelf = core.snapshot().state.shelf;

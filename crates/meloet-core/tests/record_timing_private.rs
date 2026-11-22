@@ -158,6 +158,7 @@ fn recorded_keys_land_where_they_were_heard_at_every_quantum() {
             songs_dir: None,
             state_dir: None,
             sounds_dir: None,
+            pack: None,
             plugins: None,
             sf2_dir: None,
             cache_dir: None,

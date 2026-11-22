@@ -60,9 +60,11 @@ use crate::recovery;
 use crate::settings::{self, Settings};
 use crate::sf2store::{self, Sf2Done, Sf2Store};
 use crate::songfile;
+use crate::sounds::fetch::{Fetcher, PackNews};
 use crate::sounds::{self, Library};
 use crate::state::{
-    Effect, Input, Model, PluginAsk, PluginSaid, RecoveryStart, SaveTo, retry_delay,
+    Effect, Input, Model, PackAsk, PackStart, PluginAsk, PluginSaid, RecoveryStart, SaveTo,
+    retry_delay,
 };
 
 const TELEMETRY_TICK: Duration = Duration::from_micros(16_667);
@@ -99,8 +101,11 @@ pub struct CoreOptions {
     pub songs_dir: Option<PathBuf>,
     /// Where the recovery file lives. `None`: none is read or written.
     pub state_dir: Option<PathBuf>,
-    /// The folder of the sound pack. `None`: only the computed instruments sound.
+    /// A pack in one folder used in place of the fetched one (`sounds::pinned_dir`). `None`
+    /// and no `pack`: only the computed instruments sound.
     pub sounds_dir: Option<PathBuf>,
+    /// Where the sound pack is fetched to, and from where. `None`: nothing is fetched.
+    pub pack: Option<sounds::PackOptions>,
     /// `None`: no plugins; nothing is scanned and no process is started.
     pub plugins: Option<PluginOptions>,
     /// Where added SF2 files are copied to. `None`: none is listed, and none can be added.
@@ -110,6 +115,58 @@ pub struct CoreOptions {
     /// nothing is kept; only plain wav files at the rate of the stream sound, and no
     /// waveform is drawn.
     pub cache_dir: Option<PathBuf>,
+}
+
+/// The pack as the start found it, and the thread that fetches it.
+struct PackStarted {
+    /// The instruments fetched before.
+    found: Vec<(BuiltinInstrument, PathBuf)>,
+    start: PackStart,
+    fetcher: Fetcher,
+}
+
+impl PackStarted {
+    /// `pinned`: what a pack in one folder has; those instruments are not fetched.
+    fn look(
+        options: &sounds::PackOptions,
+        pinned: &[(BuiltinInstrument, PathBuf)],
+        state_dir: Option<PathBuf>,
+        tx: &Sender<Msg>,
+    ) -> Option<PackStarted> {
+        let catalog =
+            sounds::fetch::start_catalog(&options.root, &options.built_in, &options.trust)?;
+        let mut covered: Vec<String> = pinned.iter().map(|(b, _)| b.name().to_owned()).collect();
+        if !pinned.is_empty() {
+            covered.push(sounds::catalog::COMMON_ID.to_owned());
+        }
+        let disk = sounds::fetch::Disk {
+            root: options.root.clone(),
+            covered,
+        };
+        let start = PackStart {
+            instruments: catalog.instruments().collect(),
+            outlook: disk.outlook(&catalog),
+            pack_bytes: catalog.bytes(),
+            place: sounds::fetch::shown(&options.root, dirs::home_dir().as_deref()),
+        };
+        let found = disk.instruments(&catalog);
+        let mut fetch = sounds::fetch::Options::new(disk, state_dir);
+        fetch.trust = options.trust.clone();
+        fetch.online = options.online.clone();
+        fetch.https_only = options.https_only;
+        let tx = Mutex::new(tx.clone());
+        let tell = move |news| {
+            let _ = lock(&tx).send(Msg::Pack(news));
+        };
+        let fetcher = Fetcher::spawn(fetch, catalog, Box::new(tell))
+            .inspect_err(|e| eprintln!("meloet: no thread to fetch the sound pack: {e}"))
+            .ok()?;
+        Some(PackStarted {
+            found,
+            start,
+            fetcher,
+        })
+    }
 }
 
 /// What the core asks of the shell. Answer the windows with [`Core::song_file_picked`] and
@@ -163,7 +220,8 @@ impl CoreOptions {
             audio: true,
             songs_dir: songfile::songs_dir(),
             state_dir: recovery::dir(),
-            sounds_dir: sounds::find_dir(),
+            sounds_dir: sounds::pinned_dir(),
+            pack: sounds::PackOptions::from_env(),
             plugins: PluginOptions::from_env(),
             sf2_dir: sf2store::dir(),
             cache_dir: dirs::cache_dir().map(|d| d.join("meloet")),
@@ -181,6 +239,7 @@ impl CoreOptions {
             songs_dir: None,
             state_dir: None,
             sounds_dir: None,
+            pack: None,
             plugins: None,
             sf2_dir: None,
             cache_dir: None,
@@ -228,6 +287,8 @@ enum Msg {
     },
     /// From the thread that makes the audio of stretched clips.
     Made(MadeNews),
+    /// From the thread that fetches the sound pack.
+    Pack(PackNews),
     /// From the scanner's threads.
     Scan(ScanNews),
     /// The screen subscribed: its page is up.
@@ -375,12 +436,22 @@ impl Core {
             .as_deref()
             .map_or_else(Settings::default, settings::load);
         let (tx, rx) = mpsc::channel();
+        let pinned = options
+            .sounds_dir
+            .as_deref()
+            .map_or_else(Vec::new, sounds::read_pinned);
+        let pack = options
+            .pack
+            .as_ref()
+            .and_then(|pack| PackStarted::look(pack, &pinned, options.state_dir.clone(), &tx));
         let library = {
             let tx = tx.clone();
             let done = move |instrument, read| {
                 let _ = tx.send(Msg::SoundRead { instrument, read });
             };
-            Library::open(options.sounds_dir.as_deref(), Box::new(done))
+            let mut files = pinned;
+            files.extend(pack.as_ref().map_or_else(Vec::new, |p| p.found.clone()));
+            Library::open(files, Box::new(done))
         };
         let sf2 = {
             let tx = Mutex::new(tx.clone());
@@ -390,8 +461,13 @@ impl Core {
             Sf2Store::open(options.sf2_dir.clone(), Box::new(done))
         };
         let wishes = (settings.sound.buffer, settings.sound.sample_rate);
-        let mut model = Model::new(settings)
-            .with_sounds(library.installed())
+        let mut model = Model::new(settings).with_sounds(library.installed());
+        let mut fetcher = None;
+        if let Some(pack) = pack {
+            model = model.with_pack(pack.start);
+            fetcher = Some(pack.fetcher);
+        }
+        let mut model = model
             .with_sf2(sf2.files().to_vec())
             .with_cache_dir(options.cache_dir.clone())
             .with_export_dirs(crate::export::ExportDirs {
@@ -531,6 +607,7 @@ impl Core {
                 keeper,
                 song_told: None,
                 exports: export::Exports::new(options.state_dir.as_deref()),
+                fetcher,
                 config_dir: options.config_dir.clone(),
                 songs_dir: options.songs_dir.clone(),
                 state_dir: options.state_dir.clone(),
@@ -1892,6 +1969,8 @@ struct Worker {
     song_told: Option<(u32, Option<PathBuf>)>,
     /// The jobs of the export, each on its thread.
     exports: export::Exports,
+    /// The thread that fetches the sound pack.
+    fetcher: Option<Fetcher>,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
@@ -2261,6 +2340,18 @@ impl Worker {
                     if let Some(plugins) = &mut self.plugins {
                         plugins.release();
                     }
+                    self.handle(Input::ScreenUp);
+                }
+                Ok(Msg::Pack(news)) => {
+                    if let PackNews::Installed {
+                        instrument: Some(instrument),
+                        json,
+                        ..
+                    } = &news
+                    {
+                        self.audio.sounds.add(*instrument, json.clone());
+                    }
+                    self.handle(Input::Pack(news));
                 }
                 #[cfg(test)]
                 Ok(Msg::Peek(look)) => look(&mut self),
@@ -2653,6 +2744,14 @@ impl Worker {
                     // Here and now: meloet may end right after.
                     Effect::ClearWorkAudio => self.audio_store.clear_work(),
                     Effect::Export(ask) => inputs.extend(self.export_ask(ask)),
+                    Effect::Pack(ask) => {
+                        if let Some(fetcher) = &self.fetcher {
+                            match ask {
+                                PackAsk::Job(job) => fetcher.ask(job),
+                                PackAsk::Stop { round } => fetcher.stop(round),
+                            }
+                        }
+                    }
                 }
             }
             if let Some(side) = &mut self.plugins {

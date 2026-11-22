@@ -34,6 +34,9 @@ pub struct Settings {
     pub plugin_places: Vec<PathBuf>,
     pub shelf: ShelfSettings,
     pub sound: SoundSettings,
+    /// 「取りにいく」 was answered for the sound pack and its fetch is not over: the next start
+    /// goes on with it. 「あとで」 and 「やめる」 take it back, so the next start asks again.
+    pub pack_fetch: bool,
 }
 
 /// The advanced sound settings (spec 3, 33-A). They belong to the PC, not to a song.
@@ -147,6 +150,7 @@ impl Default for Settings {
             plugin_places: Vec::new(),
             shelf: ShelfSettings::default(),
             sound: SoundSettings::default(),
+            pack_fetch: false,
         }
     }
 }
@@ -197,6 +201,8 @@ struct OnDisk {
     /// a block earlier than they were (docs/architecture.md 22-26): it is let go of.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     measured_latency_2: Vec<MeasuredLatency>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pack_fetch: bool,
 }
 
 fn sound_from_disk(disk: &mut OnDisk) -> SoundSettings {
@@ -305,6 +311,7 @@ pub fn load(dir: &Path) -> Settings {
                 DEFAULT_COUNT_IN_BARS
             },
             velocity_fixed: disk.velocity_fixed,
+            pack_fetch: disk.pack_fetch,
             fixed_velocity: if (1..=127).contains(&disk.fixed_velocity) {
                 disk.fixed_velocity
             } else {
@@ -400,6 +407,7 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         record_bits: Some(settings.sound.record_format.bits()),
         manual_latency_us: settings.sound.manual_latency_us,
         measured_latency_2: settings.sound.measured.clone(),
+        pack_fetch: settings.pack_fetch,
     };
     let mut text = serde_json::to_string_pretty(&disk).map_err(std::io::Error::other)?;
     text.push('\n');
@@ -478,6 +486,7 @@ mod tests {
                     at_ms: 1_794_750_060_000,
                 }],
             },
+            pack_fetch: true,
         };
         let mut again = settings.sound.clone();
         again.keep_measured(MeasuredLatency {
@@ -542,6 +551,7 @@ mod tests {
                 plugin_places: vec![],
                 shelf: ShelfSettings::default(),
                 sound: SoundSettings::default(),
+                pack_fetch: false,
             }
         );
     }

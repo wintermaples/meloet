@@ -1,0 +1,302 @@
+{
+ "format": "meloet-sounds-catalog",
+ "version": 1,
+ "pack": "2026.12.0",
+ "common": {
+  "id": "common",
+  "version": "b6c9ccd493b5008f",
+  "file": "common-b6c9ccd493b5008f.tar",
+  "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/common-b6c9ccd493b5008f.tar",
+  "bytes": 122880,
+  "sha256": "8ec7e56c463f41041a56b503538f5f5190d7319f49ae607ad90423d41a2d6102"
+ },
+ "instruments": [
+  {
+   "id": "grandPiano",
+   "version": "81e363787902c5e3",
+   "file": "grandPiano-81e363787902c5e3.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/grandPiano-81e363787902c5e3.tar",
+   "bytes": 77414400,
+   "sha256": "45cd6573303f882548a7cc8e76f4981c30a623bf4cd7565337e4cefb60afb638",
+   "credits": [
+    "salamander-grand-piano"
+   ]
+  },
+  {
+   "id": "electricPiano",
+   "version": "34528de6eba2634f",
+   "file": "electricPiano-34528de6eba2634f.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/electricPiano-34528de6eba2634f.tar",
+   "bytes": 2385920,
+   "sha256": "2993b012df31d3dd64cea5c952c2edf8adfa029d7ebb822317f6fbd3d0379dca",
+   "credits": [
+    "gregsullivan-wurlitzer-ep200"
+   ]
+  },
+  {
+   "id": "organDrawbar",
+   "version": "1dfa66cf28dbc7c6",
+   "file": "organDrawbar-1dfa66cf28dbc7c6.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/organDrawbar-1dfa66cf28dbc7c6.tar",
+   "bytes": 112640,
+   "sha256": "7441658a541bad78d68e14d67a6d18b61ce2631cce9ab5057ea072325e6756c4",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "organPercussive",
+   "version": "9abcd2a211297ead",
+   "file": "organPercussive-9abcd2a211297ead.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/organPercussive-9abcd2a211297ead.tar",
+   "bytes": 1751040,
+   "sha256": "9d2359bd368f997eaaeb6c439150352d7ec6aa40a696ddd8b2bf128a763332e6",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "organRock",
+   "version": "c2986f542a136b75",
+   "file": "organRock-c2986f542a136b75.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/organRock-c2986f542a136b75.tar",
+   "bytes": 1802240,
+   "sha256": "c946ce9e0c939d37435287e61de3228e7e19bb3b5739c3c35918176164c11f4b",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "organ",
+   "version": "856062bfcfc54613",
+   "file": "organ-856062bfcfc54613.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/organ-856062bfcfc54613.tar",
+   "bytes": 19814400,
+   "sha256": "ef8d6ed7dc065999d69870d0eb645cc0c4530f9589b588599f24bcc754060143",
+   "credits": [
+    "vcsl-pipe-organ"
+   ]
+  },
+  {
+   "id": "organQuiet",
+   "version": "2df7867026aa1a1b",
+   "file": "organQuiet-2df7867026aa1a1b.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/organQuiet-2df7867026aa1a1b.tar",
+   "bytes": 16824320,
+   "sha256": "0604e789a7fe5054d4639a0618673aea98078d192d74769099b5268f9b27ce54",
+   "credits": [
+    "vcsl-pipe-organ"
+   ]
+  },
+  {
+   "id": "organChurch",
+   "version": "aa09f2effc1f7796",
+   "file": "organChurch-aa09f2effc1f7796.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/organChurch-aa09f2effc1f7796.tar",
+   "bytes": 2570240,
+   "sha256": "e0d01796840039f8395e3332c3e1a292e8520cd96aed5603ae75cc83f67355f3",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "organReed",
+   "version": "3a21a28ccba4ea24",
+   "file": "organReed-3a21a28ccba4ea24.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/organReed-3a21a28ccba4ea24.tar",
+   "bytes": 122880,
+   "sha256": "4f395215ca581140ce69b07747bfa04d8012b68c8cbb4ac0e97333ed7cbf9e82",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "vibraphone",
+   "version": "2bccd9bbcea50567",
+   "file": "vibraphone-2bccd9bbcea50567.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/vibraphone-2bccd9bbcea50567.tar",
+   "bytes": 286720,
+   "sha256": "24de9cd629b08c817f05abae873dde81de3cb5c70b94be782ca0ce183903d308",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "marimba",
+   "version": "eda744cc00093bfa",
+   "file": "marimba-eda744cc00093bfa.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/marimba-eda744cc00093bfa.tar",
+   "bytes": 307200,
+   "sha256": "1a387a85c91fa57556fe09c8f3d6aa8737a82dd1afbca3e79c8561834e2ce2fd",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "guitarNylon",
+   "version": "b499f0260a6e9a33",
+   "file": "guitarNylon-b499f0260a6e9a33.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/guitarNylon-b499f0260a6e9a33.tar",
+   "bytes": 593920,
+   "sha256": "4b3ab6a958cd338167da986ca6a5201a727dd0498fe11178e75160cfe301bb36",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "guitarSteel",
+   "version": "ffc247802818fb2d",
+   "file": "guitarSteel-ffc247802818fb2d.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/guitarSteel-ffc247802818fb2d.tar",
+   "bytes": 757760,
+   "sha256": "9a3acd8dc1a3f472dcc0722a60ccf815b50878137c5f196e2a1ef3321e5c531c",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "guitarElectric",
+   "version": "1ea11242791ff612",
+   "file": "guitarElectric-1ea11242791ff612.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/guitarElectric-1ea11242791ff612.tar",
+   "bytes": 552960,
+   "sha256": "c3131cce02959ef53446a208192a44d17ae0660e527a83f61a38ff4a02912107",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "guitarDistortion",
+   "version": "075473162d812609",
+   "file": "guitarDistortion-075473162d812609.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/guitarDistortion-075473162d812609.tar",
+   "bytes": 1351680,
+   "sha256": "e511c2ba2aa0e76b0e6b79db778ed09862001579b4cfe25cc078212d095faee6",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "fingerBass",
+   "version": "f06da6392aa90451",
+   "file": "fingerBass-f06da6392aa90451.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/fingerBass-f06da6392aa90451.tar",
+   "bytes": 37642240,
+   "sha256": "f68e5c2615cdb457bd74a14498643c2c74fe22769e205ebbf424823f961f20dc",
+   "credits": [
+    "black-and-blue-basses"
+   ]
+  },
+  {
+   "id": "pickBass",
+   "version": "c4502304aa5150df",
+   "file": "pickBass-c4502304aa5150df.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/pickBass-c4502304aa5150df.tar",
+   "bytes": 573440,
+   "sha256": "81d0e8c7a6ea0b786f3aebcc5c3d04a438a847501e7fb50ae448a8c6338c4685",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "woodBass",
+   "version": "f71a5bf142996262",
+   "file": "woodBass-f71a5bf142996262.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/woodBass-f71a5bf142996262.tar",
+   "bytes": 389120,
+   "sha256": "53459c5a008f161571be9f554d8ec047bfc5a74b32973edbc0780eeab80ad4fa",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "studioKit",
+   "version": "639eaff6f03dc348",
+   "file": "studioKit-639eaff6f03dc348.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/studioKit-639eaff6f03dc348.tar",
+   "bytes": 24422400,
+   "sha256": "5ce897b81bf62b72782f59618b73a33f82769db0ac5d00b684b2a1f7bbd3ca51",
+   "credits": [
+    "naked-drums",
+    "vcsl-claps"
+   ]
+  },
+  {
+   "id": "brushKit",
+   "version": "0bf75b615caeded9",
+   "file": "brushKit-0bf75b615caeded9.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/brushKit-0bf75b615caeded9.tar",
+   "bytes": 1525760,
+   "sha256": "afb85cb723f2eb6404022ce161b858217df274d1b5457a91e5cf5355c13650bd",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "strings",
+   "version": "e59e9dd5a524d66f",
+   "file": "strings-e59e9dd5a524d66f.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/strings-e59e9dd5a524d66f.tar",
+   "bytes": 42588160,
+   "sha256": "92036c63e83196127cf5cc3efa241dc71be6372198db183e1be10f112ecd0deb",
+   "credits": [
+    "vsco-2-ce-strings"
+   ]
+  },
+  {
+   "id": "pizzicato",
+   "version": "3206715ce8a3f9a7",
+   "file": "pizzicato-3206715ce8a3f9a7.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/pizzicato-3206715ce8a3f9a7.tar",
+   "bytes": 1003520,
+   "sha256": "81af9c4d141fd2d5010d7f74f55cd5d1d476efd974acf1d36cd1ead621f9d952",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "trumpet",
+   "version": "6e6f31f2f732b80d",
+   "file": "trumpet-6e6f31f2f732b80d.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/trumpet-6e6f31f2f732b80d.tar",
+   "bytes": 215040,
+   "sha256": "d0d0f11874351df2f9a8b5a0cdb72f2fd24725954e1bb7a7b10ebdb40b396fa1",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "brassSection",
+   "version": "8c6b44e31a7fceb7",
+   "file": "brassSection-8c6b44e31a7fceb7.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/brassSection-8c6b44e31a7fceb7.tar",
+   "bytes": 1904640,
+   "sha256": "1a6640df4031b109120288e2784661a64236ade8c939a04840bd5774b90622fd",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "altoSax",
+   "version": "7cb1c2d6a1c52c82",
+   "file": "altoSax-7cb1c2d6a1c52c82.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/altoSax-7cb1c2d6a1c52c82.tar",
+   "bytes": 1085440,
+   "sha256": "9bb9a0fb3bd41dbd6b834a47b4fa6160ac4082010cad89bd0e3ad8caa1b2d08a",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  },
+  {
+   "id": "flute",
+   "version": "643bd3b93bea8945",
+   "file": "flute-643bd3b93bea8945.tar",
+   "url": "https://github.com/wintermaples/meloet/releases/download/sounds-2026.12.0/flute-643bd3b93bea8945.tar",
+   "bytes": 788480,
+   "sha256": "7ee3f6df1539e20d46cb12c8b72e546a11d14a70467ad390271f76a31f4effd3",
+   "credits": [
+    "fluidr3-gm"
+   ]
+  }
+ ]
+}

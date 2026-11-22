@@ -1,5 +1,5 @@
 // 画面の文面はすべてここに置く。
-// 出どころ: spec:<章>（docs/design/spec.html）、mock:<ボード>（docs/design/mock/<ボード>.dc.html）、user:<日付>（ヤチヨさんの決め）、
+// 出どころ: spec:<章>（docs/spec/<章>-*.md）、mock:<ボード>（docs/design/mock/<ボード>.dc.html）、user:<日付>（ヤチヨさんの決め）、
 // draft:<日付>（仕様書にもモックにもない文の、作る側の案。ヤチヨさんに確かめて user: か mock: にする）。
 // builder:<日付>（仕様書にない所を、作る側が仮に決めた文。docs/design-notes.md の B に戻してある）。
 // {name} はうめこむ値の穴。example は出どころに書いてある例の値で、テストがこれを入れて出どころと照らし合わせる。

@@ -2823,3 +2823,15 @@ pub struct AudioShape {
 - **入れなかった形**: glibc の malloc の決まり（`GLIBC_TUNABLES` の `trim_threshold` ・ `arena_max` ・ `mmap_threshold`）、`Malloc=1`（bmalloc を使わない。悪くなった）、設定で CPU の道（`set_hardware_acceleration_policy(Never)`。環境の変数と同じ描く道で、ふえかたも時間も同じ。WebView を作ったあとに変えるので `Core: Scrolling` のスレッドが残る）、`enable-2d-canvas-acceleration` を false（2.52.6 の WebGL の canvas は、CPU の道で描くたびに GPU の ImageBuffer を決めうちで作りなおす `createImageBufferForWebGLContextReads` を通り、この設定を見ない。数も時間も同じ）。`webkit2gtk` 2.0.2 の `set_enable_accelerated_2d_canvas` は 2.52.6 では何もしない。
 - WebKitWebProcess が約 280 秒で消えた件は、約 4 時間の CPU の道の回で再現しなかった。
 - 気をつける事: CPU の道は、窓が見えない時や画面が消えた時も、再生中は毎秒 60 コマ以上描きつづける（合成の道は止まる）。測る人は、合成の道を測る間に画面が消えていないかを、ページのコマの数（`frame-profile.json` の `frames`）で確かめる。
+
+### 23-16 書き出しのたしかめは切る前の音で（第 8 回の終わり）
+
+2026-11-22、meloet-hard の印 k8clip（Fable の上限のため Opus 5.5）。測りの書類 `docs/measurements/2026-11-22-round8-end.md` の「モックとのちがい」7（F8-ExportClip が作れない）の直し。
+
+- **わけ**: 書き出しの 2 つめのエンジン（`export/render.rs` の `ExportEngine`）は、弾くほうと同じ `Engine::process` を呼ぶ。その終わり（`engine.rs` のマスターのあと、出口へ書く所）で、音は ±1.0 に切られていた。たしかめ（`export/job.rs` の `Taker` の `peak_of` ・ `OverPlaces`）と作業の場所の 32 ビットのファイルは、その切ったあとの音を受けとるので、いちばん大きい所は 0.0 dB で止まり、`over` はいつも 0 だった。切る所は第 1 回から、書き出しは第 7 回から（第 7 回の「いちばん大きい所」も 0.0 dB で止まっていた。前からの不具合）。
+- **直した形**: `Engine::keep_overs()`（出口へ書く所で切らない。数でない値は今までどおり 0）。書き出しのエンジンだけが呼ぶ。弾くエンジンは今までどおり切る（耳とスピーカーを守る）。
+  - たしかめのいちばん大きい所と `over` は、切る前のマスターの音（マスターのインサートのあと、メトロノームは書き出しでは鳴らない）。リミッターがあれば、そのあと。
+  - 作業の場所のファイル（32 ビットの浮動小数）は切らない。仕上げで 32 ビットはそのまま書く（B-95-10「32 ビットは割れない」）。16 ・ 24 ビットは、前からファイルに書く所（`export/sink.rs` の `Whole::of`）で ±1.0 に切る。
+  - 約束は変えていない（`ExportCheck` の `peak_db` ・ `over` ・ `clips` の意味のまま。`clips` は 32 ビットでは `false` のまま）。
+- **「出口の音と 1 ビットも同じ」の読みなおし**: 0 dB をこえない曲は今までどおり 1 ビットも同じ（`what_is_exported_is_what_plays_sample_for_sample`）。こえる曲は、書き出しの音を ±1.0 に切ると、出口の音と 1 ビットも同じ（`what_goes_over_0_db_is_exported_as_it_is_and_cut_as_it_plays`）。16 ・ 24 ビットのファイルの数は、切ってから整数にするので、出口の音から作った物と同じ。
+- **本物のアプリ**: `shoot_app.py exportClipApp`（リミッターを外し、フェーダーをみな +6 dB）で、たしかめは「いちばん大きい所 +11.7 dB」「0 dB をこえる所が 1 か所あります（いちばん大きい所 +11.7 dB）。音が割れます。」になった（1280×800 ・ 100 %、2026-11-22）。音が詰まった曲なので、こえない所が 100 ms つづかず 1 か所。

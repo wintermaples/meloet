@@ -76,6 +76,9 @@ impl ExportEngine {
             ..EngineConfig::default()
         });
         parts.engine.prepare(rate);
+        // The check counts what goes over 0 dB, and a 32 bit float file keeps it; the
+        // 16 and 24 bit files cut it where they are written (architecture 23-16).
+        parts.engine.keep_overs();
         let block = block.max(1);
         let mut readahead = ReadAhead::inline(store);
         if let Some(wants) = parts.handle.take_stream_wants() {

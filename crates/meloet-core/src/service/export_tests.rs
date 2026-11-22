@@ -15,7 +15,7 @@ use meloet_model::song::Doc;
 use meloet_protocol::ExportTail;
 
 use super::*;
-use crate::export::fixture::{BAR, BLOCK, Place, RATE, song};
+use crate::export::fixture::{BAR, BLOCK, Place, RATE, loud, song};
 use crate::play::Play;
 
 struct Playing {
@@ -214,4 +214,34 @@ fn what_is_exported_is_what_plays_sample_for_sample() {
     let run = place.start(place.setup(job));
     run.rendered();
     assert_eq!(first_difference(&run.pass(0)[..2 * frames], &heard), None);
+}
+
+#[test]
+fn what_goes_over_0_db_is_exported_as_it_is_and_cut_as_it_plays() {
+    let place = Place::new("export-same-loud");
+    let (doc, _) = song();
+    let doc = loud(&doc, false);
+    place.files_of(&doc);
+    let mut playing = Playing::new(&place);
+    playing.open(&doc, 2);
+    let span = (0, 2 * BAR);
+    let frames = frames_of(&doc, span.0, span.1);
+    playing.play(span.0, frames);
+    playing.quiet();
+    let heard = playing.play(span.0, frames);
+    // The output is cut at 0 dB: ears and speakers are spared.
+    assert!(heard.iter().all(|s| s.abs() <= 1.0));
+    assert!(heard.iter().any(|s| s.abs() == 1.0), "the song is not loud");
+
+    let run = place.start(place.setup(place.job(1, &doc, span, ExportTail::Off)));
+    run.rendered();
+    let written = run.pass(0);
+    assert_eq!(written.len(), heard.len());
+    assert!(written.iter().any(|s| s.abs() > 1.0));
+    let cut: Vec<f32> = written.iter().map(|s| s.clamp(-1.0, 1.0)).collect();
+    assert_eq!(
+        first_difference(&cut, &heard),
+        None,
+        "the first frame that differs, exported and cut, and played"
+    );
 }

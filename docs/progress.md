@@ -1677,3 +1677,8 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - `foundation` を GitHub に push した（オーナーさんの許し。48f0202 → 9c40fb0、58 コミット。push の前に、足した行にトークン ・ パスワード ・ 鍵 ・ ホームの道 ・ メールがないことを見た）。git は gh の認証で（`git -c credential.helper='!gh auth git-credential' push`）。
 - `gh release create sounds-2026.11.2 --target 9c40fb0 --latest=false`。Release は immutable（`immutable: true`、オーナーさんが設定を入れた）、Latest は 2026.11.1 のまま。上げたあと 27 ファイルを取ってきて、大きさと sha256 と URL が目録とぜんぶ合った。
 - 目録をネットで見にいく所（`main` の `tools/sounds/catalog.json`）は、`foundation` を `main` へ入れたあとに効く。
+
+## 第 8 回 区切り4: 配る形と、メモリと、終わり（2026-11-22〜）
+
+- 係: 音のスレッドをリアルタイムに（k8rt、meloet-hard ・ Opus 5.5）、開発の仕込みを release から外す（k8dh、meloet-hard ・ Opus 5.5）、deb とユーザー向けの README（k8deb、meloet-impl。docker は `sg docker`）、からっぽの HOME で本物の Release から「はじめての 5 分」（k8f5、meloet-impl）。
+- このあと: メモリ（どこが持っているか分けて見て減らす）、アレンジの送りの 20 ms（CPU の道）、Surge XT の係が再生の頭で落ちる件、第 8 回の終わりの数と絵。

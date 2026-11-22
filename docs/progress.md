@@ -1670,3 +1670,10 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 16 トラックの Surge XT ＋ ZamComp（3 回 × 170 秒）: xrun 0 ・ 0 ・ 1（1 回目は Surge XT の係が止まった回）。xrun の秒に負荷は高くなかった（28〜42 %）。**meloet の音のスレッド（cpal の `pw_out`）は SCHED_OTHER ・ nice 0 で回っていた**（cpal 0.18.2 は `realtime` の機能を入れたときだけ上げる。meloet は入れていない）。プラグイン係の音のスレッドは SCHED_FIFO 20。1 ブロック 0.54 ms のうち約 0.33 ms はプラグインの返事を待つ時間。**Surge XT の係が再生の頭で落ちた回が 19 回に 2 回**（起動から 7.65 秒、見はりの 5 秒より早いので落ちた形。わけは見ていない）。
 - 再生しながら書き出す（8 回ずつ）: ZamComp の答えのない回は、書き出しなし 平均 11.9（2〜28）、書き出しをくり返す 8.1。第 7 回の「くり返し 13.5、なし 5」の形は消えた。言えるのは「nice 19 のもとで書き出しは答えのない回をふやさない」まで。
 - 宿題に足す: 音のスレッドをリアルタイムに（architecture 20 章 ・ 22 章の「リアルタイム」の書きかたも直す）、Surge XT の係が再生の頭で落ちる件、アレンジの送りの 20 ms。
+
+### 音の素材の包み 2026.11.2 を Release に上げた（2026-11-22、オーナーさんの許し）
+
+- 中身は 2026.11.1 と同じ音（`target/sounds/2026.11.1` から。dev とのちがいは `pack.json` の名札だけ）を `split.py` で音色ごとに分けた物。26 の音色 ＋ 共通、27 ファイル、238,909,440 バイト。音色の版（中身の sha256 の頭）は前の目録と同じ。組みこむ目録 `tools/sounds/catalog.json` を 2026.11.2 に（9c40fb0）。
+- `foundation` を GitHub に push した（オーナーさんの許し。48f0202 → 9c40fb0、58 コミット。push の前に、足した行にトークン ・ パスワード ・ 鍵 ・ ホームの道 ・ メールがないことを見た）。git は gh の認証で（`git -c credential.helper='!gh auth git-credential' push`）。
+- `gh release create sounds-2026.11.2 --target 9c40fb0 --latest=false`。Release は immutable（`immutable: true`、オーナーさんが設定を入れた）、Latest は 2026.11.1 のまま。上げたあと 27 ファイルを取ってきて、大きさと sha256 と URL が目録とぜんぶ合った。
+- 目録をネットで見にいく所（`main` の `tools/sounds/catalog.json`）は、`foundation` を `main` へ入れたあとに効く。

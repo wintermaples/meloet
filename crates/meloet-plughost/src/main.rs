@@ -5,6 +5,8 @@
 //! nothing meant for meloet is written to standard output or standard error.
 
 mod control;
+#[cfg(any(test, feature = "dev-hooks"))]
+mod crashlog;
 mod formats;
 mod rt;
 mod rtcheck;
@@ -32,7 +34,12 @@ fn values(args: &[String], name: &str) -> Vec<String> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let handed = launch::take_stdio(args.iter().any(|a| a == "--log"));
+    let log = args.iter().any(|a| a == "--log");
+    let handed = launch::take_stdio(log);
+    #[cfg(any(test, feature = "dev-hooks"))]
+    if log {
+        crashlog::install();
+    }
     launch::die_with_parent(value(&args, "--parent").and_then(|pid| pid.parse().ok()));
     #[cfg(any(test, feature = "dev-hooks"))]
     if std::env::var_os("MELOET_PLUGHOST_NO_DUMP").is_some_and(|v| !v.is_empty()) {

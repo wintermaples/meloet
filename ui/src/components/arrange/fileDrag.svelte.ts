@@ -25,6 +25,11 @@ export function setDropResolver(next: Resolver): () => void {
   };
 }
 
+/** ページのこの場所に落としたら、どこに入るか（アレンジがなければ null）。 */
+export function dropPlaceAt(pageX: number, pageY: number, mode: DropMode): DropPlace | null {
+  return resolver?.(pageX, pageY, mode) ?? null;
+}
+
 /** 音のファイルが 2 つ以上なら窓の左右で 30-C を分ける。1 つなら、落とした所のトラックへ（仕様書 3 章 29-A）。 */
 export function dropModeFor(audio: number, pageX: number, windowWidth: number): DropMode {
   return audio >= 2 ? dropModeAt(pageX, windowWidth) : "inRow";

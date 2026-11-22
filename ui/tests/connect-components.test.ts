@@ -417,7 +417,7 @@ describe("音の設定", () => {
     expect(q('[data-test="buffer-fixed"]')).toBeNull();
   });
 
-  it("くわしい設定: ▾ は一覧をひらき、行は意図を送る。遅れを測る… ・ ◂ ・ 閉じる。手で決める… は使えない", () => {
+  it("くわしい設定: ▾ は一覧をひらき、行は意図を送る。遅れを測る… ・ ◂ ・ 閉じる", () => {
     show(SettingsDialog, withSettings(true));
     q<HTMLButtonElement>('[data-test="settings-buffer"]')!.click();
     const rows = (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
@@ -438,7 +438,6 @@ describe("音の設定", () => {
     q<HTMLButtonElement>('[data-test="settings-measure"]')!.click();
     q<HTMLButtonElement>('[data-test="settings-advanced"]')!.click();
     q<HTMLButtonElement>('[data-test="settings-done"]')!.click();
-    expect(q<HTMLButtonElement>('[data-test="settings-manual"]')!.disabled).toBe(true);
     closeContextMenu();
     expect(app.sent).toEqual([
       { type: "settingsSetBuffer", frames: 128 },
@@ -448,6 +447,48 @@ describe("音の設定", () => {
       { type: "settingsToggleAdvanced" },
       { type: "settingsCancel" },
     ]);
+  });
+
+  describe("「手で決める…」（仕様書 3 章 94-19）", () => {
+    const typeLatency = (value: string, key: string) => {
+      q<HTMLButtonElement>('[data-test="settings-manual"]')!.click();
+      flushSync();
+      const input = q<HTMLInputElement>('[data-test="param-input"]')!;
+      expect(input).not.toBeNull();
+      expect(q('[data-test="latency-used"]')).toBeNull();
+      input.value = value;
+      input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      flushSync();
+    };
+
+    it("押すと、行の数がその場で「8.0」と「ms」の枠になる。Enter で決める", () => {
+      show(SettingsDialog, withSettings(true));
+      expect(q<HTMLButtonElement>('[data-test="settings-manual"]')!.disabled).toBe(false);
+      q<HTMLButtonElement>('[data-test="settings-manual"]')!.click();
+      flushSync();
+      const input = q<HTMLInputElement>('[data-test="param-input"]')!;
+      const used = app.current.state!.audio.latency.usedMs;
+      expect(input.value).toBe(used === null ? "" : used.toFixed(1));
+      expect(input.parentElement!.textContent).toContain("ms");
+      input.blur();
+      flushSync();
+      typeLatency("12.5", "Enter");
+      expect(app.sent).toEqual([{ type: "settingsSetManualLatency", ms: 12.5 }]);
+      expect(q('[data-test="param-input"]')).toBeNull();
+      expect(q('[data-test="latency-used"]')).not.toBeNull();
+    });
+
+    it("Esc でやめる（送らない）。読めない字は送らない。空なら手で決めた数をやめる", () => {
+      show(SettingsDialog, withSettings(true));
+      typeLatency("20", "Escape");
+      typeLatency("abc", "Enter");
+      typeLatency("１５ ms", "Enter");
+      typeLatency("", "Enter");
+      expect(app.sent).toEqual([
+        { type: "settingsSetManualLatency", ms: 15 },
+        { type: "settingsSetManualLatency", ms: null },
+      ]);
+    });
   });
 });
 

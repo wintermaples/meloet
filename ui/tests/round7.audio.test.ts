@@ -236,10 +236,14 @@ describe("フェードの取っ手と音量の線（仕様書 3 章 27-A ・「�
     pointer(target, "pointermove", x0 + 16, y);
     expect(audioDrag.now).toEqual({ clip: 72, fadeIn: TPQ / 4 + TPQ });
     expect(q(".origin-handle")).not.toBeNull();
+    // 状態行とその場の読み値（仕様書 6 章「フェードを動かしている」）。
+    expect(dragReading.text).toBe("歌 テイク 1 の前のフェード 0. 1. 0480（ドラッグ中）・ 離すと決まります ・ やめるには Esc");
+    expect(text(q('[data-test="clip-gain-reading"]'))).toBe("0. 1. 0480");
     // ひっぱっている間、HTML の取っ手は値についていく。
     expect(parseFloat(q('[data-test="clip-fade-grip"]')!.style.left)).toBeCloseTo(b.x0 + 16);
     pointer(target, "pointerup", x0 + 16, y);
     expect(app.sent).toEqual([{ type: "setClipField", clip: 72, field: "fadeIn", value: TPQ / 4 + TPQ }]);
+    expect(dragReading.text).toBeNull();
     // 取っ手のない所を押しても、何もしない（クリップの面の係に届く）。
     pointer(target, "pointerdown", x0 + 100, y + 20);
     expect(reached).toEqual(["down"]);
@@ -308,10 +312,23 @@ describe("音のファイルを持ってきている間（仕様書 3 章 29-A �
     expect(text(q('[data-test="file-drop-mixed"]'))).toBe("SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ");
   });
 
-  it("1 つ: 名前とやめかた（SF2 の「足せる」文は出さない）", () => {
+  it("1 つ: 名前、入る所（6 章「音のファイルを 1 つ持ってきている」）、やめかた。SF2 の「足せる」文は出さない", () => {
     const s = scene("audioDropOne");
+    fileDrag.at = null;
     show(FileDropNotice, s, { drop: s.workspace.fileDrop });
     expect(text(q('[data-test="file-drop"]'))).toBe(`ドラム.wav ${t("sf2.dropCancel")}`);
+    const stop = setDropResolver((_x, y) => ({ track: y < 300 ? 6 : null, tick: 0 }));
+    try {
+      fileDrag.at = { x: 400, y: 200 };
+      flushSync();
+      expect(text(q('[data-test="file-drop"]'))).toBe(`ドラム.wav ここに落とすと、そのトラックの落とした位置に入れます。 ${t("sf2.dropCancel")}`);
+      fileDrag.at = { x: 400, y: 500 };
+      flushSync();
+      expect(text(q('[data-test="file-drop-audio-say"]'))).toBe("新しい歌のトラックに入れます。");
+    } finally {
+      stop();
+      fileDrag.at = null;
+    }
   });
 
   it("fileDrag で場所を覚え、fileDrop で DropAudio を 1 つ（左右は窓の半分、1 つなら落とした所のトラックへ）", () => {

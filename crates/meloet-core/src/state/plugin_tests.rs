@@ -474,13 +474,18 @@ fn a_bundle_of_a_place_removed_during_its_scan_is_left_out() {
 fn the_dialog_and_the_places_heading() {
     let (mut m, _) = scanned();
     let view = m.view().plugins;
-    assert!(!view.stopped_open && view.places_open);
+    assert!(
+        !view.stopped_open && !view.places_open,
+        "the places start closed (94-89)"
+    );
     cmd(&mut m, Command::OpenScanStopped);
     assert!(m.view().plugins.stopped_open);
     assert_eq!(status(&m), Some(StatusMessage::ScanStoppedOpen));
     cmd(&mut m, Command::Back);
     assert!(!m.view().plugins.stopped_open, "Esc closes it");
 
+    cmd(&mut m, Command::TogglePluginPlaces);
+    assert!(m.view().plugins.places_open);
     cmd(&mut m, Command::TogglePluginPlaces);
     assert!(!m.view().plugins.places_open);
     cmd(&mut m, Command::OpenScanStopped);

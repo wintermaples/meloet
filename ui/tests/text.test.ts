@@ -61,7 +61,7 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
   });
 
   // ja.ts にない場面: ほかの場面の文を出す決まりだけの場面と、殻（crates/meloet-app）が出す PC のファイルの窓の題。
-  const NOT_IN_JA = ["meloet の音の流れだけが止まった", "PC のファイルの窓の題"];
+  const NOT_IN_JA = ["meloet の音の流れだけが止まった", "PC のファイルの窓の題", "マイクの音が大きすぎる（いつまで）"];
   it("6 章の場面は全部 ja.ts に入っている（ja.ts にない物のほか）", () => {
     for (const scene of NOT_IN_JA) expect(byScene.has(scene), scene).toBe(true);
     expect([...new Set(messages.map(([, e]) => e.scene))].sort()).toEqual(
@@ -75,6 +75,22 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
     const titles = [...rust.matchAll(/pub const (OPEN|FOLDER)_TITLE: &str = "([^"]+)";/g)].map((m) => [m[1], m[2]!]);
     expect(Object.fromEntries(titles)).toEqual({ OPEN: "ひらく", FOLDER: "場所をえらぶ" });
     expect(cell).toBe("ひらくときは「ひらく」、フォルダをえらぶときは「場所をえらぶ」");
+  });
+
+  it("書き出しの PC の保存の窓の題は、殻の定数が仕様書 3 章（94-79）の文のまま", () => {
+    const rust = readRepoFile("crates/meloet-app/src/pcwindow.rs");
+    const titles = [...rust.matchAll(/pub const (EXPORT|EXPORT_FOLDER)_TITLE: &str = "([^"]+)";/g)].map((m) => [m[1], m[2]!]);
+    expect(Object.fromEntries(titles)).toEqual({ EXPORT: "書き出す", EXPORT_FOLDER: "書き出すフォルダをえらぶ" });
+    expect(sectionText(doc, "s3")).toContain(
+      "書き出しのファイルは「書き出す」、トラックごとのフォルダは「書き出すフォルダをえらぶ」",
+    );
+  });
+
+  it("マイクの音が大きすぎる（いつまで）: 文は「マイクの音が大きすぎる」の文。出す長さの決まりだけの場面", () => {
+    const row = byScene.get("マイクの音が大きすぎる（いつまで）")!;
+    expect(row[1]!.endsWith("…")).toBe(true);
+    expect(t("msg.micTooLoud").startsWith(row[1]!.slice(0, -1))).toBe(true);
+    expect(row[2]).toContain("最後に届いてから 4 秒、ほかの知らせが来るまで");
   });
 
   it("決まりだけの場面は、使う文の場面とボタンを名前で言っている", () => {

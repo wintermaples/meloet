@@ -89,6 +89,9 @@
         {:else if measure.state === "failed"}
           <Button primary test="latency-again" onclick={() => send({ type: "startLatencyMeasure" })}>{t("button.again")}</Button>
         {:else}
+          {#if measure.state === "done"}
+            <Button test="latency-again" onclick={() => send({ type: "startLatencyMeasure" })}>{t("button.again")}</Button>
+          {/if}
           <Button primary test="latency-use" disabled={measure.state !== "done"} onclick={() => send({ type: "useMeasuredLatency" })}
             >{t("button.useThisValue")}</Button
           >

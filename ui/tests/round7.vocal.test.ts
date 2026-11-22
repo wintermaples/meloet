@@ -229,14 +229,14 @@ describe("状態行の文（仕様書 6 章）", () => {
   };
   const six = { number: 6, name: "歌" };
 
-  // 約束 24 の文（位置は 4 けたのティック）。1 つだけ持ってきているときの文は仕様書にない（仮）。
+  // 約束 24 の文（位置は 4 けたのティック）。1 つだけ持ってきているときの文は 6 章「音のファイルを 1 つ持ってきている」の出る所の列。
   it.each<[string, StatusMessage, string]>([
     ["見つからない音", { id: "audioMissing", count: 2 }, "曲で使っている音のファイルが 2 つ見つかりません。そのクリップは鳴りません。"],
     ["切った", { id: "clipSplit", name: "歌 テイク 1", tick: 6 * 7680, count: 1 }, "歌 テイク 1 を 7. 1. 0000 で切りました。"],
     ["入れた", { id: "audioImported", file: "ドラム.wav", track: six, tick: 4 * 7680, count: 1, skipped: 0 }, "ドラム.wav を入れました（6 歌 ・ 5. 1. 0000）。"],
     ["読めない", { id: "audioUnreadable", file: "声.aac" }, "「声.aac」は読めません（読めるのは wav ・ mp3 ・ flac ・ ogg）。"],
     ["持ってきている", { id: "audioDragging", audio: 8, sf2: 0 }, "音のファイルを 8 つ持ってきています ・ 左に落とすと別々のトラック、右に落とすと 1 本にならべる"],
-    ["1 つ持ってきている", { id: "audioDragging", audio: 1, sf2: 0 }, "音のファイルを持ってきています"],
+    ["1 つ持ってきている", { id: "audioDragging", audio: 1, sf2: 0 }, "音のファイルを持ってきています ・ 落とすと、枠の所に入れます"],
   ])("約束 24 の文: %s", (_, message, line) => {
     expect(say(message)).toBe(line);
   });
@@ -254,12 +254,40 @@ describe("状態行の文（仕様書 6 章）", () => {
     expect(line).toBe("1 ピアノ（鍵盤）と 6 歌（入口 1）に録っています ・ 止めるには Space");
   });
 
-  it("モニターがオフなら「モニター オン ・ 」を外す。歌 2 本はならべる", () => {
-    const line = say(
-      { id: "recordingVocals", keys: null, vocals: [{ track: six, input: "mono1" }, { track: { number: 7, name: "歌 2" }, input: "mono2" }], monitor: false },
-      (s) => (s.transport.state = "recording"),
-    );
+  it("歌 2 本以上を録っている（6 章）。モニターがオフなら「モニター オン ・ 」を外す", () => {
+    const vocals = [{ track: six, input: "mono1" as const }, { track: { number: 7, name: "歌 2" }, input: "mono2" as const }];
+    const line = say({ id: "recordingVocals", keys: null, vocals, monitor: false }, (s) => (s.transport.state = "recording"));
     expect(line).toBe("6 歌（入口 1）、7 歌 2（入口 2）・ 止めるには Space");
+    unmount(mounted!);
+    const on = say({ id: "recordingVocals", keys: null, vocals, monitor: true }, (s) => (s.transport.state = "recording"));
+    expect(`${text(q('[data-test="status-badge"]'))} ・ ${on}`).toBe(t("msg.recordingVocals", { vocals: "6 歌（入口 1）、7 歌 2（入口 2）", stopKey: "Space" }));
+  });
+
+  it("マイクの音が大きすぎる（いつまで）: 最後に 0 dB に届いてから 4 秒で、いつものまとめに戻す。また届けば出す", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const vocal = vocalOf(scene("vocalTrack")).id;
+    const mic = (clipped: boolean) => app.setTelemetry(app.telemetryWith({ mics: [{ track: vocal, peak: [1, 1], clipped, stereo: false }] }));
+    try {
+      expect(say({ id: "micTooLoud" })).toBe(t("msg.micTooLoud"));
+      vi.advanceTimersByTime(3000);
+      mic(true);
+      flushSync();
+      vi.advanceTimersByTime(3900);
+      flushSync();
+      expect(text(q(".message"))).toBe(t("msg.micTooLoud"));
+      vi.advanceTimersByTime(200);
+      flushSync();
+      expect(text(q(".message"))).not.toBe(t("msg.micTooLoud"));
+      mic(false);
+      flushSync();
+      expect(text(q(".message"))).not.toBe(t("msg.micTooLoud"));
+      mic(true);
+      flushSync();
+      expect(text(q(".message"))).toBe(t("msg.micTooLoud"));
+    } finally {
+      app.setTelemetry(null);
+      vi.useRealTimers();
+    }
   });
 
   it("歌のトラックを足した ・ 入口がない（音の設定…）・ はじめてモニター ・ 大きすぎる ・ ピアノロールはない ・ 遅れを測る", () => {
@@ -329,11 +357,14 @@ describe("遅れを測る（モック F7-Latency）", () => {
     expect(app.sent).toEqual([{ type: "stopLatencyMeasure" }, { type: "closeLatencyMeasure" }]);
   });
 
-  it("測り終わったら「この数を使う」", () => {
+  it("測り終わったら「もう一度」と「この数を使う」（仕様書 3 章 94-19）", () => {
     show(LatencyDialog, scene("latencyDone"));
     expect(q('[data-test="latency-progress"]')).toBeNull();
+    expect(qa(".foot button").map((b) => b.dataset.test)).toEqual(["latency-cancel", "latency-again", "latency-use"]);
+    expect(text(q('[data-test="latency-again"]'))).toBe("もう一度");
+    q('[data-test="latency-again"]')!.click();
     q('[data-test="latency-use"]')!.click();
-    expect(app.sent).toEqual([{ type: "useMeasuredLatency" }]);
+    expect(app.sent).toEqual([{ type: "startLatencyMeasure" }, { type: "useMeasuredLatency" }]);
   });
 
   it("測れなかった: 仕様書の文と「もう一度」", () => {

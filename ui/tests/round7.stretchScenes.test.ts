@@ -7,7 +7,7 @@ import { fakeScene, type FakeState } from "../src/bridge/fake";
 import { allParts, partGroups, type LicenseList } from "../src/components/about/licenses";
 import { centsText, clipMarks, dragSteps, NO_MARKS, parseSourceBpm, parseWhole, ratioMarkValue } from "../src/components/params/clipFields";
 import ParamsPanel from "../src/components/params/ParamsPanel.svelte";
-import { cancelDrag } from "../src/components/pianoroll/view.svelte";
+import { cancelDrag, dragReading } from "../src/components/pianoroll/view.svelte";
 import StatusLine from "../src/components/StatusLine.svelte";
 import * as app from "./fake-app.svelte";
 
@@ -102,16 +102,23 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
     pointer(semis, "pointermove", 100 - 3 * 8);
     expect(text(semis)).toBe("+5");
     expect(app.sent).toEqual([]);
+    // 状態行とその場の読み値（仕様書 6 章「音の高さを動かしている」）。
+    expect(dragReading.text).toBe("音の高さ +5 半音 +0 セント（ドラッグ中）");
+    expect(text(q('[data-test="clip-value-semitones-reading"]'))).toBe("+5 ・ +0");
     pointer(semis, "pointerup", 100 - 3 * 8);
+    expect(dragReading.text).toBeNull();
+    expect(q('[data-test="clip-value-semitones-reading"]')).toBeNull();
     expect(app.sent.map((c) => (c.type === "setClipStretch" ? c.change : c))).toEqual([{ kind: "semitones", semitones: 5 }]);
     // 範囲のはしで止まる。Esc はもとの値に戻す。
     const cents = q('[data-test="clip-value-cents"]')!;
     pointer(cents, "pointerdown", 0);
     pointer(cents, "pointermove", 1000);
     expect(text(cents)).toBe("−50");
+    expect(dragReading.text).toBe("音の高さ +2 半音 −50 セント（ドラッグ中）");
     expect(cancelDrag()).toBe(true);
     flushSync();
     expect(text(cents)).toBe("0");
+    expect(dragReading.text).toBeNull();
     pointer(cents, "pointerup", 1000);
     expect(app.sent).toHaveLength(1);
   });
@@ -152,12 +159,14 @@ describe("のび縮み ・ 音の高さの 4 行（約束 25 の場面）", () =
 });
 
 describe("字の決まり", () => {
-  it("印: ×は小数 2 けたで 1.00 は出さない。音の高さは「+2」「−1 ・ 30」、0 なら出さない", () => {
+  it("印: ×は小数 2 けたで 1.00 は出さない。音の高さは「+2」「−1 ・ +30」「+0 ・ −20」（セントにも符号。仕様書 3 章「印の読みかた」）、0 なら出さない", () => {
     const base = { follow: true, sourceBpm: 96, ratio: null, semitones: 0, cents: 0, keepFormant: true };
     expect(clipMarks(base)).toBe(NO_MARKS);
     expect(clipMarks({ ...base, ratio: 1.25, semitones: 2 })).toEqual(["×1.25", "+2"]);
-    expect(clipMarks({ ...base, ratio: 1.004, semitones: -1, cents: 30 })).toEqual(["−1 ・ 30"]);
+    expect(clipMarks({ ...base, ratio: 1.004, semitones: -1, cents: 30 })).toEqual(["−1 ・ +30"]);
     expect(clipMarks({ ...base, cents: -5 })).toEqual(["+0 ・ −5"]);
+    expect(clipMarks({ ...base, cents: -20 })).toEqual(["+0 ・ −20"]);
+    expect(clipMarks({ ...base, semitones: 2, cents: 30 })).toEqual(["+2 ・ +30"]);
     expect([ratioMarkValue(0.996), ratioMarkValue(0.994), ratioMarkValue(1.125), ratioMarkValue(null)]).toEqual([null, "0.99", "1.13", null]);
   });
   it("打ちこみとドラッグの段", () => {

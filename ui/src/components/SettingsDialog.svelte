@@ -19,6 +19,7 @@
   import { msText } from "./format";
   import { openContextMenu, type MenuEntry } from "./menu/contextMenu.svelte";
   import PluginPlaces from "./plugins/PluginPlaces.svelte";
+  import ValueField from "./params/ValueField.svelte";
 
   const FIRST_NOTE = 36;
   const LAST_NOTE = 84;
@@ -66,6 +67,21 @@
     if (l.used === "manual") return t("latency.ms", { ms });
     return t("settings.latencyReported", { ms });
   });
+
+  /** 「手で決める…」: 遅れの合わせの行の数が、その場で入力の枠になる（仕様書 3 章 94-19。0〜500 ms は core がおさえる）。 */
+  let typingLatency = $state(false);
+  /** 打った字を ms に。空なら手で決めた数をやめる（null）。読めなければ undefined。 */
+  function parseLatency(text: string): number | null | undefined {
+    const s = text.normalize("NFKC").replace(/\s+/g, "").replace(/ms$/i, "");
+    if (s === "") return null;
+    if (!/^(\d+(\.\d*)?|\.\d+)$/.test(s)) return undefined;
+    return Number(s);
+  }
+  function submitLatency(text: string): void {
+    typingLatency = false;
+    const ms = parseLatency(text);
+    if (ms !== undefined) send({ type: "settingsSetManualLatency", ms });
+  }
 
   /** ▾ を押したら、その下に一覧（右クリックの一覧と同じ形）。 */
   function choose(e: MouseEvent, entries: MenuEntry[]): void {
@@ -281,10 +297,21 @@
               </div>
               <div class="row">
                 <span class="strong name" use:term={"遅れの補正"}>{t("settings.latencyAlign")}</span>
-                <span class="mono strong" data-test="latency-used">{latencyText}</span>
+                {#if typingLatency}
+                  <span class="latency-field">
+                    <ValueField
+                      initial={app.audio.latency.usedMs === null ? "" : msText(app.audio.latency.usedMs)}
+                      label={t("settings.latencyAlign")}
+                      unit={t("settings.latencyUnit")}
+                      onsubmit={submitLatency}
+                      oncancel={() => (typingLatency = false)}
+                    />
+                  </span>
+                {:else}
+                  <span class="mono strong" data-test="latency-used">{latencyText}</span>
+                {/if}
                 <Button test="settings-measure" onclick={() => send({ type: "openLatencyMeasure" })}>{t("button.measureLatency")}</Button>
-                <!-- 数を打ちこむ所の形は、仕様書にもモックにもない（使えない）。 -->
-                <Button test="settings-manual" disabled>{t("button.manualLatency")}</Button>
+                <Button test="settings-manual" on={typingLatency} onclick={() => (typingLatency = true)}>{t("button.manualLatency")}</Button>
               </div>
               <div class="row">
                 <span class="strong name">{t("plugin.places")}</span>
@@ -483,6 +510,14 @@
   }
   .row.joined {
     border-bottom: 0;
+  }
+  /* 「手で決める…」の枠（「8.0」と「ms」）。枠の幅は欄の打ちこむ枠と同じ。 */
+  .latency-field {
+    display: flex;
+  }
+  .latency-field :global(input) {
+    flex: none;
+    width: var(--mock-inspector-bulk-field);
   }
   .name {
     flex-shrink: 0;

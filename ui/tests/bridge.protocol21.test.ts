@@ -204,6 +204,30 @@ describe("履歴の行の文（モック R10-History ・ F-History）", () => {
     expect([laneNameText({ kind: "pan" }), laneNameText({ kind: "mute" })]).toEqual(["パン", "ミュート"]);
   });
 
+  it("行の（何を）: 右の欄にトラックの名前が出る手は名前を書かない。窓は「プラグインの窓」（仕様書 3 章 94-6）", () => {
+    const piano = { number: 1, name: "ピアノ" };
+    const surge = { number: 5, name: "Surge XT" };
+    const row = (name: HistoryRow["name"], what: HistoryRow["what"], place: HistoryRow["place"]): HistoryRow => ({ index: 1, step: 1, name, what, place });
+    const replaced: HistoryRow["what"] = {
+      kind: "soundReplaced",
+      track: piano,
+      from: { kind: "builtin", instrument: "grandPiano" },
+      to: { kind: "builtin", instrument: "organDrawbar" },
+    };
+    expect(text(row({ kind: "setInstrument" }, replaced, { kind: "track", track: piano }))).toEqual([1, "「音源を入れかえる」・ グランドピアノ → ドローバーオルガン", "1 ピアノ"]);
+    // 状態行（取り消した ・ やりなおした）には右の欄がないので、名前を残す。
+    expect(stepWhatText({ kind: "setInstrument" }, replaced, ctx)).toBe("1 ピアノ ・ グランドピアノ → ドローバーオルガン");
+    expect(text(row({ kind: "pluginWindow", plugin: "Surge XT" }, { kind: "none" }, { kind: "pluginWindow", strip: { kind: "track", track: surge } }))).toEqual([
+      1,
+      "「Surge XT の窓で変えた所」・ プラグインの窓",
+      "5 Surge XT ・ プラグインの窓",
+    ]);
+    expect(text(row({ kind: "record" }, { kind: "take", number: 2 }, { kind: "track", track: piano }))).toEqual([1, "「録音」・ テイク 2", "1 ピアノ"]);
+    // アレンジ ・ ミキサーの手は名前を残す。
+    expect(text(row({ kind: "setTrackColor" }, { kind: "color", track: { number: 4, name: "パッド" }, color: 3 }, { kind: "arrange" }))).toEqual([1, "「トラックの色を変える」・ 4 パッド ・ 色 3", "アレンジ"]);
+    expect(text(row({ kind: "mute" }, { kind: "strip", strip: { kind: "track", track: { number: 4, name: "パッド" } } }, { kind: "mixer" }))).toEqual([1, "「ミュート」・ 4 パッド ・ オン", "ミキサー"]);
+  });
+
   it("場面にない行は、偽物が作る（番号と手の番号は同じ）", () => {
     expect(fakeHistoryRows([], 3, 0, 9).map((r) => [r.index, r.step])).toEqual([[1, 1], [2, 2], [3, 3]]);
     expect(fakeHistoryRows(scene("historyList").history, 14, 13, 99).map((r) => r.name.kind)).toEqual(["quantize", "setGain"]);

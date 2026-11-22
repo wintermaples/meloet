@@ -209,8 +209,8 @@
   }
 
   /**
-   * 歌を録っている文（仕様書 6 章「歌を録っている」「鍵盤と歌を録っている」）。頭の「● 録音中 ・ 」は左の札が言うので、文からは外す。
-   * モニターがオフなら「モニター オン ・ 」を外す。歌が 2 本以上なら「6 歌（入口 1）、7 歌 2（入口 2）」とならべる（仕様書にない形）。
+   * 歌を録っている文（仕様書 6 章「歌を録っている」「歌 2 本以上を録っている」「鍵盤と歌を録っている」）。頭の「● 録音中 ・ 」は左の札が言うので、文からは外す。
+   * モニターがオフなら「モニター オン ・ 」を外す。鍵盤と歌 2 本以上は、歌を「6 歌（入口 1）、7 歌 2」とならべる（仕様書にない形）。
    */
   function recordingVocalsParts(keys: TrackRef | null, vocals: VocalRef[], monitor: boolean): TextPart[] {
     const short = (v: VocalRef) => t(`vocal.inputShort.${v.input}`);
@@ -221,7 +221,9 @@
     const values = { stopKey: t("key.playStop"), input: short(last) };
     const parts = keys
       ? textParts("msg.recordingKeysAndVocal", { ...values, keys: track(keys), vocal })
-      : textParts("msg.recordingVocal", { ...values, track: vocal });
+      : vocals.length > 1
+        ? textParts("msg.recordingVocals", { stopKey: values.stopKey, vocals: vocals.map((v) => `${track(v.track)}（${short(v)}）`).join(LIST_COMMA) })
+        : textParts("msg.recordingVocal", { ...values, track: vocal });
     const badge = `${t("status.recording")}${STATUS_JOIN}`;
     const monitorOn = `${t("meter.monitorOn")}${STATUS_JOIN}`;
     return parts
@@ -274,15 +276,17 @@
         const tracks = names.length < 2 ? (names[0] ?? "") : t("status.shelfGroupsLast", { first: names.slice(0, -1).join(LIST_COMMA), last: names.at(-1)! });
         return plain("msg.automationMoving", { tracks });
       }
-      case "tempoRampSelected":
+      case "tempoRampSelected": {
         if (m.toTempoBpm === m.tempoBpm) return tempoSelected(m.bar, m.beat, m.tempoBpm);
-        return plain("msg.tempoRampSelected", {
-          place: place(m.bar, m.beat),
+        const ramp = {
           tempo: tempoText(m.tempoBpm),
           toPlace: place(m.toBar, m.toBeat),
           toTempo: tempoText(m.toTempoBpm),
           direction: t(m.toTempoBpm > m.tempoBpm ? "timeline.rampFaster" : "timeline.rampSlower"),
-        });
+        };
+        if (m.bar === 1 && m.beat === 1) return plain("msg.headTempoRampSelected", ramp);
+        return plain("msg.tempoRampSelected", { ...ramp, place: place(m.bar, m.beat) });
+      }
       case "tempoPointSelected":
         return tempoSelected(m.bar, m.beat, m.tempoBpm);
       case "meterChangeSelected": {
@@ -686,12 +690,44 @@
   });
   const shelfAnnounced = $derived(shelfMark !== null && shelfMark.message === app.status.message);
 
+  // ---- マイクの音が大きすぎる（仕様書 6 章「マイクの音が大きすぎる（いつまで）」）: 最後に 0 dB に届いてから 4 秒、ほかの知らせが来るまで ----
+
+  const MIC_LOUD_MS = 4000;
+  let micLoudAt = 0;
+  let micLoudTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 4 秒たった。core の知らせが「大きすぎる」のままでも、いつものまとめに戻す。 */
+  let micLoudOver = $state(false);
+  function micReached(now: number): void {
+    micLoudAt = now;
+    if (micLoudOver) micLoudOver = false;
+    if (micLoudTimer === null) micLoudTimer = setTimeout(micLoudCheck, MIC_LOUD_MS);
+  }
+  function micLoudCheck(): void {
+    const left = micLoudAt + MIC_LOUD_MS - performance.now();
+    micLoudTimer = left > 0 ? setTimeout(micLoudCheck, left) : null;
+    if (left <= 0) micLoudOver = true;
+  }
+  const micLoud = $derived(app.status.message?.id === "micTooLoud");
+  $effect(() => {
+    if (micLoud) untrack(() => micReached(performance.now()));
+  });
+  $effect(() => {
+    if (!micLoud) return;
+    const tel = current.telemetry;
+    if (tel?.mics.some((m) => m.clipped)) untrack(() => micReached(performance.now()));
+  });
+  onMount(() => () => {
+    if (micLoudTimer !== null) clearTimeout(micLoudTimer);
+  });
+  /** core の知らせ。4 秒たった「大きすぎる」は、ないものとする。 */
+  const statusMessage = $derived(micLoud && micLoudOver ? null : app.status.message);
+
   // ---- ピアノロールをひらいて録音しているとき（仕様書 6 章「録音中 ・ ピアノロール」）: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」 ----
 
   const recordingInPianoRoll = $derived(pianoRollOpen && app.status.message?.id === "recording");
   /** 止まっているときも、鍵盤を押している間は終わりに「・ 押している音 キック スネア」（仕様書 3 章 85）。 */
   const stoppedSummary = $derived(
-    app.transport.state === "stopped" && (app.status.message === null || app.status.message.id === "summary"),
+    app.transport.state === "stopped" && (statusMessage === null || statusMessage.id === "summary"),
   );
   const countingHeld = $derived(recordingInPianoRoll || stoppedSummary);
 
@@ -750,6 +786,8 @@
     return r ? runShown(r) : null;
   });
   const exporting = $derived(run?.kind === "running" ? run : null);
+  /** 書き出し中に録音しているときは「● 録音中」が先。書き出しの進みは、左の終わりに短く「書き出し 46 %」（仕様書 3 章 94-84）。 */
+  const exportAside = $derived(exporting !== null && (app.transport.state === "recording" || app.transport.state === "countIn"));
 
   const message = $derived.by((): Shown | null => {
     // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
@@ -763,7 +801,7 @@
     if (paramUi.moving) return { parts: textParts("status.paramMoving", paramUi.moving), strong: [], button: null };
     if (run?.kind === "message")
       return { parts: run.parts, strong: [], button: run.folder ? { label: t("button.openFolder"), command: { type: "showExported" } } : null };
-    const m = app.status.message;
+    const m = statusMessage;
     const usual = m === null || m.id === "summary";
     // 「窓」の一覧をひらいている間は、いつものまとめに代えて（user:2026-11-19、モック F-WindowOpen）。
     if (windowsOpen && usual) {
@@ -951,7 +989,7 @@
 </script>
 
 {#snippet left()}
-  {#if exporting}
+  {#if exporting && !exportAside}
     <span class="exporting" data-test="export-run">
       <span class="accent">{t("export.running")}</span>
       <span class="bar"><span class="fill" style:transform="scaleX({exporting.percent / 100})"></span></span>
@@ -967,7 +1005,7 @@
   {:else}
     <span class:rec={badge.rec} class:accent={badge.accent} data-test="status-badge">{badge.text}</span>
   {/if}
-  {#if message && !exporting}
+  {#if message && (!exporting || exportAside)}
     <span class="m-lbl message">
       {#each message.parts as part, i (i)}
         {#if part.hole !== null}
@@ -983,6 +1021,12 @@
       {@const command = message.button.command}
       <button class="m-plain m-hi link" onclick={() => send(command)}>{message.button.label}</button>
     {/if}
+  {/if}
+  {#if exporting && exportAside}
+    <span class="m-lbl export-aside" data-test="export-aside"
+      >{#each textParts("status.exportShort", { percent: exporting.percent }) as part, i (i)}{#if part.hole !== null}<span class="m-num">{part.text}</span
+        >{:else}{part.text}{/if}{/each}</span
+    >
   {/if}
 {/snippet}
 

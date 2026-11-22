@@ -1026,15 +1026,29 @@
     if (wheelRows(e.deltaY, e.deltaMode)) e.preventDefault();
   }
 
-  // えらんだトラックが変わった時（キー、足した時）は、そのトラックの行と帯が見える所まで送る。再生や録音では送らない。
+  // キーでえらんだトラックと、足したトラックは、その行と帯が見える所まで送る（仕様書 3 章「アレンジのトラックの行を縦に送る（92 の残り）」）。
+  // マウスでえらんだトラックへは送らない。再生や録音でも送らない。
   let seenTarget: number | null | undefined = undefined;
   let seenTracks = 0;
+  /** 最後の入力がポインタだった（えらんだのはマウス）。 */
+  let lastByPointer = false;
+  onMount(() => {
+    const pointer = () => (lastByPointer = true);
+    const key = () => (lastByPointer = false);
+    document.addEventListener("pointerdown", pointer, true);
+    document.addEventListener("keydown", key, true);
+    return () => {
+      document.removeEventListener("pointerdown", pointer, true);
+      document.removeEventListener("keydown", key, true);
+    };
+  });
   $effect(() => {
     const target = song.playTarget;
     const count = song.tracks.length;
     untrack(() => {
       const row = song.tracks.findIndex((tr) => tr.id === target);
-      if (seenTarget !== undefined && (target !== seenTarget || count > seenTracks) && row >= 0) {
+      const added = count > seenTracks;
+      if (seenTarget !== undefined && (added || (target !== seenTarget && !lastByPointer)) && row >= 0) {
         rowsScroll(G.revealRange(rows.tops[row]!, rows.bottoms[row]!, shownY, rowsHeight));
       }
       seenTarget = target;

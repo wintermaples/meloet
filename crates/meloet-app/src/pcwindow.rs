@@ -13,6 +13,9 @@ pub const OPEN_TITLE: &str = "ひらく";
 pub const FOLDER_TITLE: &str = "場所をえらぶ";
 // docs/design-notes.md B-59 (the user's decision of 2026-11-18); not in spec 6 yet.
 pub const SAVE_AS_TITLE: &str = "名前をつけて保存";
+// Spec 3 「PC の保存の窓の題（94-79）」.
+pub const EXPORT_TITLE: &str = "書き出す";
+pub const EXPORT_FOLDER_TITLE: &str = "書き出すフォルダをえらぶ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pick {
@@ -33,8 +36,8 @@ pub enum Pick {
     Audio {
         many: bool,
     },
-    /// The save window again, for the file an export is written to (the same title, as
-    /// the open window has one). The file is written over, so the window asks.
+    /// The save window again, for the file an export is written to. The file is written
+    /// over, so the window asks.
     ExportFile {
         name: String,
     },
@@ -62,7 +65,10 @@ mod imp {
     use gtk::prelude::*;
     use tauri::WebviewWindow;
 
-    use super::{FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE, SF2_EXTENSION, patterns};
+    use super::{
+        EXPORT_FOLDER_TITLE, EXPORT_TITLE, FOLDER_TITLE, OPEN_TITLE, Pick, SAVE_AS_TITLE,
+        SF2_EXTENSION, patterns,
+    };
 
     thread_local! {
         // A native dialog is not a widget: nothing else keeps it alive until it answers.
@@ -81,12 +87,12 @@ mod imp {
             Pick::SongFile | Pick::Sf2 | Pick::Audio { .. } => {
                 (OPEN_TITLE, gtk::FileChooserAction::Open)
             }
-            Pick::Folder | Pick::PluginPlace | Pick::ExportFolder => {
+            Pick::Folder | Pick::PluginPlace => {
                 (FOLDER_TITLE, gtk::FileChooserAction::SelectFolder)
             }
-            Pick::SaveAs { .. } | Pick::ExportFile { .. } => {
-                (SAVE_AS_TITLE, gtk::FileChooserAction::Save)
-            }
+            Pick::ExportFolder => (EXPORT_FOLDER_TITLE, gtk::FileChooserAction::SelectFolder),
+            Pick::SaveAs { .. } => (SAVE_AS_TITLE, gtk::FileChooserAction::Save),
+            Pick::ExportFile { .. } => (EXPORT_TITLE, gtk::FileChooserAction::Save),
         };
         let parent = window.gtk_window().ok();
         let dialog = gtk::FileChooserNative::new(Some(title), parent.as_ref(), action, None, None);

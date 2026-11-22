@@ -2414,6 +2414,8 @@ impl Model {
         // Choosing the output comes first; the recovery hint waits behind it, in the same place.
         let recovery = self.recovery_view().filter(|_| !self.chooser_shown());
         let library = self.library_view();
+        let timeline = self.play.timeline_view();
+        let layout = self.bands.layout_with(timeline.open);
         AppState {
             song: song_view(
                 &self.play,
@@ -2422,7 +2424,7 @@ impl Model {
                 &self.catalog,
                 self.input_channels(),
             ),
-            timeline: self.play.timeline_view(),
+            timeline,
             automation: self.play.automation_view(),
             history: self.play.history_view(),
             transport: {
@@ -2444,7 +2446,7 @@ impl Model {
                     .copied()
                     .filter(|&s| !self.scale_fits(s))
                     .collect(),
-                layout: layout_view(&self.bands.layout()),
+                layout: layout_view(&layout),
                 settings: self.dialog.clone(),
                 chooser: self.chooser_shown().then(|| ChooserView {
                     highlighted: self.highlighted.clone(),

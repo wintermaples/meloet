@@ -490,7 +490,7 @@ describe("Arrange の歌のクリップ", () => {
     expect(rects.length - 4).toBeGreaterThanOrEqual(right.after);
   });
 
-  it("のび縮みの印（×1.25 ・ +2 ・ −1 ・ 30）は名前の札の中: 札の数はクリップの数のまま。音を作っている間は下に「音を作っています 34 %」", async () => {
+  it("のび縮みの印（×1.25 ・ +2 ・ −1 ・ +30）は名前の札の中: 札の数はクリップの数のまま。音を作っている間は下に「音を作っています 34 %」", async () => {
     const labels = () => [...target.querySelectorAll<HTMLElement>(".labels > .clip-label")];
     const marks = () => labels().map((l) => [...l.querySelectorAll(".clip-mark")].map((m) => m.textContent));
     const clipCount = (s: AppState) => s.song.tracks.reduce((n, t) => n + t.clips.length, 0);
@@ -502,7 +502,7 @@ describe("Arrange の歌のクリップ", () => {
     unmount(mounted!);
     mounted = null;
     await show(scene("stretchPitch"));
-    expect(marks().filter((m) => m.length > 0)).toEqual([["−1 ・ 30"]]);
+    expect(marks().filter((m) => m.length > 0)).toEqual([["−1 ・ +30"]]);
     unmount(mounted!);
     mounted = null;
     // だんだんの中: 地図ごと録った物は比 1（印なし）、96.00 で歌った物は頭で ×1.13。

@@ -82,7 +82,7 @@ describe("仕様書 6 章「エラーと案内の文面」", () => {
     const titles = [...rust.matchAll(/pub const (EXPORT|EXPORT_FOLDER)_TITLE: &str = "([^"]+)";/g)].map((m) => [m[1], m[2]!]);
     expect(Object.fromEntries(titles)).toEqual({ EXPORT: "書き出す", EXPORT_FOLDER: "書き出すフォルダをえらぶ" });
     expect(sectionText(doc, "s3")).toContain(
-      "書き出しのファイルは「書き出す」、トラックごとのフォルダは「書き出すフォルダをえらぶ」",
+      "for the export file, 「書き出す」; for the per-track folder, 「書き出すフォルダをえらぶ」",
     );
   });
 

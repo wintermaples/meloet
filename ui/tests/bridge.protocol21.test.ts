@@ -69,17 +69,19 @@ describe("手の名前（仕様書 3 章 Y19）", () => {
   /** 3 章の一覧を名前にひらく: 「CC の点を書く ・ 動かす ・ 消す」→「CC の点を書く」「CC の点を動かす」「CC の点を消す」、「…名前を変える」→「…の名前を変える」。 */
   function specNames(): string[] {
     const text = sectionText(specDocument(), "s3");
-    const list = /手の名前は、(.+?)。欄に打ちこんだ手は/.exec(text)![1]!;
+    const list = /The step names are (.+?)\. For a step typed into a field/.exec(text)![1]!;
     const out: string[] = [];
-    for (const item of list.split("、")) {
+    for (const entry of list.split(", ")) {
+      // 「名前」のあとに、半角のかっこで注（例の名前は「」つき）。
+      const [, item, note] = /^「([^「」]+)」(?: \((.*)\))?$/.exec(entry)!;
       // 「だんだんにする ・ だんだんをやめる」は、2 つとも名前のまま。
       if (item === "だんだんにする ・ だんだんをやめる") {
         out.push(...item.split(" ・ "));
         continue;
       }
-      const quoted = /（「(.+)」）$/.exec(item);
+      const quoted = note === undefined ? null : /^「(.+)」$/.exec(note);
       if (quoted) out.push(quoted[1]!);
-      const plain = item.startsWith("（") ? item : item.replace(/（[^）]*）$/, "");
+      const plain = item!;
       const at = plain.indexOf("を");
       if (at < 0 || plain.startsWith("（")) {
         out.push(plain);

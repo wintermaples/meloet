@@ -2,8 +2,10 @@
      取っ手: 上の左右の角に part.audioclip.handle（6×6）の gray.10。横にひっぱるとフェードの長さ。
      取っ手の絵は WebGL の側（Arrange の paintAudioClip が audioClipGeom.ts の handleRects で描く）。ここは、押した所がどの取っ手かを
      形から数える（クリップごとの HTML を置かない: 横に送る ・ 拡大するコマが、クリップの数だけ重くなる）。HTML は、ポインタの下の取っ手 1 つだけ（カーソルの形のため）。
-     音量の線: えらんだ歌のクリップの中に accent の line.hair の横線。上下にドラッグして −60〜+12 dB、2 回押すと 0.0 dB。
-     ドラッグの間は画面だけが先に動き、値を audioDrag.now に書く（波形を描く WebGL の側が、同じコマで読む）。離したら SetClipField を 1 つ（ドラッグ 1 回が 1 手）。
+     音量の線: えらんだ歌のクリップの中に accent の line.hair の横線。目盛はフェーダーと同じ（3 章 39-B、audioClipGeom.ts）。上下にドラッグして −60〜+12 dB、2 回押すと 0.0 dB。
+     ドラッグの間は画面だけが先に動き、値を audioDrag.now に書く（波形を描く WebGL の側が、同じコマで読む。いっしょに動く線のクリップは shift）。離したら SetClipField を 1 つ（ドラッグ 1 回が 1 手）。
+     歌のクリップを 2 つ以上えらんでいれば、どれか 1 つの線を動かすと、えらんだ歌のクリップぜんぶの線が同じ dB だけ動き（それぞれ −60〜+12 で止まる）、
+     離したら ShiftClipGains を 1 つ。
      もとの位置は gray.7 の枠（線）。Esc はキーの順のいちばん前でやめる（pianoroll/view.svelte.ts の cancelDrag）。
      音量の読み値「−3.0 dB」は、その場の読み値（カーソルの左上）と状態行（6 章「クリップの音量を動かしている」）。
      フェードの長さ「0. 1. 0480」も同じ（6 章「フェードを動かしている」。長さの書きかたはクリップの長さと同じ）。 -->
@@ -19,7 +21,7 @@
   import { metrics } from "../metrics.svelte";
   import { dragReading, onDragCancel } from "../pianoroll/view.svelte";
   import { audioDrag, type AudioDragValue } from "./audioDrag.svelte";
-  import { audioShapeOf, fadeHandleBox, fadeTicksAt, fadeXs, gainAtY, gainLineY, waveArea, type AudioClipShape, type FadeEdge } from "./audioClipGeom";
+  import { audioShapeOf, clampGain, fadeHandleBox, fadeTicksAt, fadeXs, gainAtY, gainLineY, waveArea, type AudioClipShape, type FadeEdge } from "./audioClipGeom";
 
   let { view, dims, tracks, selected, busy }: { view: View; dims: LaneDims; tracks: readonly TrackView[]; selected: ReadonlySet<number>; busy: boolean } = $props();
 
@@ -38,6 +40,8 @@
     from: number;
     value: number;
     moved: boolean;
+    /** 音量の線をいくつもいっしょに動かす（えらんだ歌のクリップが 2 つ以上）: そのクリップの id。1 つなら null。 */
+    group: number[] | null;
   }
 
   let root = $state<HTMLElement>();
@@ -63,7 +67,8 @@
   /** ドラッグ中の値をかぶせた形。 */
   function shapeOf(clip: ClipView, now: AudioDragValue | null): AudioClipShape & { gainDb: number } {
     const base = audioShapeOf(clip)!;
-    const gainDb = clip.audio!.gainDb;
+    const shift = now?.clip !== clip.id ? now?.shift : undefined;
+    const gainDb = shift?.clips.includes(clip.id) ? clampGain(clip.audio!.gainDb + shift.byDb) : clip.audio!.gainDb;
     if (!now || now.clip !== clip.id) return { ...base, gainDb };
     return { ...base, fadeIn: now.fadeIn ?? base.fadeIn, fadeOut: now.fadeOut ?? base.fadeOut, gainDb: now.gainDb ?? gainDb };
   }
@@ -135,15 +140,30 @@
     return null;
   });
 
-  /** ドラッグを始めた所（もとの位置の gray.7）。 */
+  /** ドラッグを始めた所（もとの位置の gray.7）。いくつもの線なら、どの線も。 */
   const origin = $derived.by(() => {
     const d = drag;
     if (!d || !d.moved) return null;
+    if (d.field === "gainDb") {
+      const lineAt = (clip: ClipView, row: number) => {
+        const box = clipBox(view, dims, row, clip.start, clip.end);
+        if (box.x1 < 0 || box.x0 > view.width || clip.audio!.state === "missing") return null;
+        const area = waveArea(dims, box);
+        return { x0: Math.max(area.x0, 0), x1: Math.min(area.x1, view.width), y: gainLineY(area, clip.audio!.gainDb) };
+      };
+      const parts = d.group ? groupClips(d.group) : [{ clip: d.clip, row: d.row }];
+      return { kind: "lines" as const, lines: parts.flatMap((p) => lineAt(p.clip, p.row) ?? []) };
+    }
     const p = partOf(d.clip, d.row, null);
     if (!p) return null;
-    if (d.field === "gainDb") return { kind: "line" as const, line: p.line ?? { x0: Math.max(p.box.x0, 0), x1: p.box.x1, y: gainLineY(waveArea(dims, p.box), d.from) } };
     return { kind: "handle" as const, box: p.handles.find((h) => h.edge === d.field)!.box };
   });
+
+  /** えらんだ歌のクリップ（トラックの順）。 */
+  function selectedVocal(): { clip: ClipView; row: number }[] {
+    return tracks.flatMap((track, row) => track.clips.filter((c) => c.audio !== null && selected.has(c.id)).map((clip) => ({ clip, row })));
+  }
+  const groupClips = (ids: readonly number[]) => selectedVocal().filter((p) => ids.includes(p.clip.id));
 
   function point(e: PointerEvent | MouseEvent): { x: number; y: number } {
     const r = root!.getBoundingClientRect();
@@ -164,7 +184,9 @@
       grab = p.x - (field === "fadeIn" ? xs.inX : xs.outX);
     }
     el.setPointerCapture?.(e.pointerId);
-    drag = { field, clip: part.clip, row: part.row, pointer: e.pointerId, el, grab, downX: p.x, downY: p.y, from, value: from, moved: false };
+    const vocal = field === "gainDb" ? selectedVocal().map((x) => x.clip.id) : [];
+    const group = vocal.length >= 2 && vocal.includes(part.clip.id) ? vocal : null;
+    drag = { field, clip: part.clip, row: part.row, pointer: e.pointerId, el, grab, downX: p.x, downY: p.y, from, value: from, moved: false, group };
   }
 
   /** その場の読み値: 音量は「−3.0 dB」、フェードは長さ「0. 1. 0480」（クリップのはじまりの拍子で）。 */
@@ -195,8 +217,13 @@
     pointerAt = p;
     dragReading.text = readingText(d.field, d.clip, value);
     drag = { ...d, moved, value };
-    audioDrag.now = { clip: d.clip.id, [d.field]: value };
+    audioDrag.now = d.group
+      ? { clip: d.clip.id, gainDb: value, shift: { clips: d.group.filter((id) => id !== d.clip.id), byDb: shiftOf(d.from, value) } }
+      : { clip: d.clip.id, [d.field]: value };
   }
+
+  /** いくつもの線をずらす dB（0.01 きざみ。クリップの音量の細かさ）。 */
+  const shiftOf = (from: number, to: number) => Math.round((to - from) * 100) / 100;
 
   function release(d: Drag): void {
     if (d.el.hasPointerCapture?.(d.pointer)) d.el.releasePointerCapture(d.pointer);
@@ -214,7 +241,10 @@
       return;
     }
     pendingRev = Infinity;
-    void send({ type: "setClipField", clip: d.clip.id, field: d.field, value: d.value }).then((rev) => (pendingRev = rev ?? -Infinity));
+    const sent = d.group
+      ? send({ type: "shiftClipGains", clips: d.group, byDb: shiftOf(d.from, d.value) })
+      : send({ type: "setClipField", clip: d.clip.id, field: d.field, value: d.value });
+    void sent.then((rev) => (pendingRev = rev ?? -Infinity));
   }
 
   function cancel(): boolean {
@@ -298,8 +328,10 @@
 </script>
 
 <div class="host" class:busy bind:this={root}>
-  {#if origin?.kind === "line"}
-    <div class="origin-line" style:left="{origin.line.x0}px" style:width="{origin.line.x1 - origin.line.x0}px" style:top="{origin.line.y}px"></div>
+  {#if origin?.kind === "lines"}
+    {#each origin.lines as line, i (i)}
+      <div class="origin-line" data-test="clip-gain-origin" style:left="{line.x0}px" style:width="{line.x1 - line.x0}px" style:top="{line.y}px"></div>
+    {/each}
   {:else if origin?.kind === "handle"}
     <div
       class="origin-handle"

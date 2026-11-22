@@ -1,5 +1,6 @@
-<!-- 書き出し（仕様書 3 章 34-B、2 章「ダイアログ」、6 章「書き出しの前」「書き出しで音が割れる」、モック F7-Export ・ F-Export ・ R11-Fit）。
-     範囲、形、保存する所、書き出す前のたしかめ、「くわしく」。中身は Rust の export.dialog の写しで、画面は意図だけを送る。
+<!-- 書き出し（仕様書 3 章 34-B ・ 41-A ・ 42-C、2 章「ダイアログ」、6 章「書き出しの前」、モック F7-Export ・ F-Export ・ F8-ExportCheck ・ F8-ExportClip ・ R11-Fit）。
+     範囲、形、保存する所、書き出す前のたしかめ（数えている間も、数が 1 回来たら「書き出す」を押せる。ソロのトラックはここで言う）、「くわしく」。
+     中身は Rust の export.dialog の写しで、画面は意図だけを送る。
      窓に入らないときは、見出しと下のボタンを残して中をスクロールする（R11-Fit）。 -->
 <script lang="ts">
   import type { ExportChange, ExportDialogView, ExportFormat, ExportRange, ExportTail } from "../../bridge";
@@ -13,7 +14,7 @@
   import { openContextMenu, type MenuEntry } from "../menu/contextMenu.svelte";
   import { stripName } from "../mixer/stripName";
   import { cutHead } from "./cutHead";
-  import { bitsOf, checkLines, clips, detailsSummary, rangeLabel, spanText, tailText } from "./exportText";
+  import { bitsOf, checkLines, clips, detailsSummary, rangeLabel, soloText, spanText, tailText } from "./exportText";
 
   const RANGES: ExportRange[] = ["song", "loop", "tracks"];
   const FORMAT_NAMES: Record<ExportFormat, TextKey> = { wav: "export.formatWav", flac: "export.formatFlac" };
@@ -40,6 +41,8 @@
           .join(LIST_COMMA)
       : "",
   );
+
+  const solo = $derived(dialog ? soloText(dialog.solo) : null);
 
   /** ▾ を押したら、その下に一覧（音の設定のくわしい設定と同じ形）。 */
   function choose(e: MouseEvent, entries: MenuEntry[]): void {
@@ -126,9 +129,25 @@
         <section data-test="export-check">
           <span class="label">{t("export.check")}</span>
           {#each checkLines(dialog.check) as line, i (i)}
-            <span class="label" class:wrap={line.wrap} class:strong={line.wrap} data-test="export-check-line">
-              {#each line.parts as part, j (j)}{#if part.hole !== null}<span class="mono strong">{part.text}</span>{:else}{part.text}{/if}{/each}
-            </span>
+            {#if line.kind === "counting"}
+              <!-- 「たしかめています ・ 160 の棒 ・ 38 %」（モック F8-ExportCheck）。% の字は流れの外の箱で、幅は「100 %」の字で決める。 -->
+              <span class="counting" data-test="export-check-line">
+                <span class="label">{t("export.checkChecking")}</span>
+                <span class="bar"><span class="fill" style:transform="scaleX({Math.min(1, Math.max(0, line.percent / 100))})"></span></span>
+                <span class="mono strong percent" data-size={t("export.runningPercent", { percent: 100 })} data-test="export-check-percent"
+                  ><span class="in">{t("export.runningPercent", { percent: line.percent })}</span></span
+                >
+              </span>
+            {:else}
+              <span class={line.tone === "rec" ? "rec wrap" : line.tone === "hint" ? "label wrap" : "label"} data-test="export-check-line">
+                {#each line.parts as part, j (j)}{#if part.hole !== null}<span
+                      class="mono"
+                      class:strong={line.tone === "plain"}
+                      class:rec={line.tone === "over"}
+                      class:apart={j > 0 && !line.parts[j - 1]!.text.endsWith(" ")}>{part.text}</span
+                    >{:else}{part.text}{/if}{/each}
+              </span>
+            {/if}
           {/each}
           {#if stopped}
             <span class="stopped" data-test="export-stopped">
@@ -138,6 +157,9 @@
             </span>
           {:else}
             <span class="label" data-test="export-stopped">{t("export.noStoppedPlugins")}</span>
+          {/if}
+          {#if solo}
+            <span class="label wrap" data-test="export-solo">{solo}</span>
           {/if}
         </section>
 
@@ -186,7 +208,7 @@
 
       <div class="foot">
         <Button test="export-cancel" onclick={close}>{t("button.cancel")}<span class="mono label">{t("key.esc")}</span></Button>
-        <Button primary test="export-start" disabled={!dialog.canExport} onclick={start}
+        <Button primary={!clips(dialog.check)} test="export-start" disabled={!dialog.canExport} onclick={start}
           >{clips(dialog.check) ? t("button.exportAnyway") : t("export.start")}<span class="mono label">{t("key.enter")}</span></Button
         >
       </div>
@@ -315,6 +337,40 @@
   }
   .rec {
     color: var(--color-rec);
+  }
+  .apart {
+    margin-left: var(--space-1);
+  }
+  /* たしかめの棒の行（モック F8-ExportCheck: すきま 8、棒は 160×4 の地 gray.4 に accent）。 */
+  .counting {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .bar {
+    flex-shrink: 0;
+    width: var(--part-exporting-bar);
+    height: var(--mock-exporting-bar);
+    background: var(--color-gray-4);
+  }
+  .fill {
+    display: block;
+    height: 100%;
+    background: var(--color-accent);
+    transform-origin: left;
+  }
+  .percent {
+    position: relative;
+  }
+  .percent::before {
+    content: attr(data-size);
+    visibility: hidden;
+  }
+  .percent > .in {
+    position: absolute;
+    top: 0;
+    left: 0;
+    white-space: nowrap;
   }
   .mono {
     font-family: var(--font-mono);

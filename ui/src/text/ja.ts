@@ -2242,11 +2242,6 @@ export const texts = {
     left: "40 秒",
   }),
   // 仕様書 ・ モックにない所の仮の文（B-94-69〜）。
-  "export.checkWaiting": e("たしかめの用意をしています", "builder:2026-11-21"),
-  "export.checkCounting": e("数えています {percent} % ・ ここまでのいちばん大きい所 {peak} dB", "builder:2026-11-21", {
-    percent: "38",
-    peak: "−3.5",
-  }),
   "export.checkFailedPlugin": e("{plugin} を書き出し用に読みこめませんでした", "builder:2026-11-21", { plugin: "Surge XT" }),
   "export.checkFailedWrite": e("作業の場所に書けませんでした", "builder:2026-11-21"),
   "export.spanSongNoTail": e("曲ぜんぶ ・ {start} 〜 {end}", "builder:2026-11-21", { start: "1. 1. 0000", end: "17. 1. 0000" }),
@@ -2500,6 +2495,22 @@ export const texts = {
     "user:2026-11-19",
   ),
   // [第 8 回 ・ 画面だけで出す文]（仕様書 3 章 ・ 6 章 第 12 版、モック F8-*）。画面の係（k8ua ・ k8ub）がこの下に足す。
+  // 歌のクリップを 2 つ以上えらんだときのパラメータの欄（仕様書 3 章 40-A）と、そのときの状態行（モック F8-MultiClip）。
+  "clips.selected": e("{count} クリップを選んでいます", "spec:3", { count: "3" }),
+  "clips.groupAll": e("まとめて変える", "spec:3"),
+  "clips.onlyOne": e("位置 ・ 長さ ・ フェード ・ この音のテンポは、1 つだけ選ぶと出ます。", "spec:3"),
+  "status.clipsSelected": e("選択 {count} クリップ ・ 欄の「音量」に打つと、{count} つともその音量になります", "mock:F8-MultiClip", { count: "3" }),
+  // 書き出す前のたしかめ（仕様書 3 章 41-A ・ 42-C）。{peak} は「−3.5 dB」の形。
+  "export.checkPreparing": e("用意をしています", "spec:3"),
+  "export.checkChecking": e("たしかめています", "spec:3"),
+  "export.checkPeakSoFar": e("ここまでのいちばん大きい所 {peak}", "spec:3", { peak: "−3.5 dB" }),
+  "export.checkOver": e("0 dB をこえる所が {count} か所あります（いちばん大きい所 {peak} dB）。音が割れます。", "spec:3", { count: "3", peak: "+1.2" }),
+  "export.checkOverHint": e("マスターのフェーダーを下げるか、リミッターの上限を見てください。", "spec:3"),
+  "export.solo": e("いま {track} をソロにしています。書き出しには入れません（曲ぜんぶを書き出します）。", "spec:3", { track: "2 ベース" }),
+  "export.soloMore": e("{track} ほか {count} 本", "spec:3", { track: "2 ベース", count: "1" }),
+  // 書き出しのダイアログをひらいている間の状態行の続き（「「書き出し」のダイアログをひらいています ・ 」のあと）。
+  "status.exportChecking": e("たしかめています {percent} %", "mock:F8-ExportCheck", { percent: "38" }),
+  "status.exportOver": e("0 dB をこえる所があります", "mock:F8-ExportClip"),
   // 曲の頭のテンポの点がだんだんの始まりのとき（仕様書 3 章 94-10）。
   "msg.headTempoRampSelected": s6(
     "曲の頭のテンポ（だんだんの始まり）をえらんでいる",

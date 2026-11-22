@@ -7,6 +7,7 @@ import { CLIP_GAIN_MAX_DB, CLIP_GAIN_MIN_DB } from "../../bridge/types";
 import type { TempoMap } from "../../time/tempoMap";
 import { clipBox, rowHeight, rowTop, tickToX, trackRowAt, xToTick, type Box, type LaneDims, type View } from "../arrangeGeom";
 import type { GlRect } from "../../gl/slot";
+import { dbToFrac, fracToDb } from "../mixer/scale";
 import { fadeGain } from "./fade";
 import { cachedSourceMap, clipFrameAt, followClipOf } from "./follow";
 
@@ -38,19 +39,29 @@ export function waveArea(d: LaneDims, box: Box): WaveArea {
 }
 
 // ---- 音量の線（accent の 1px。上下にドラッグして −60〜+12 dB） ----
+// 目盛はミキサーのフェーダーと同じ（仕様書 2 章「メーターとフェーダーの目盛」、3 章 39-B）: 下のはしから上へ 0 dB までは表のとおり、
+// 0 dB（上から 2 割）から上のはしの +12 までは dB でまっすぐ。下のはしは −∞ の位置だが、値は −60 より下へ行かない（design-notes A-24 の 12）。
 
-/** dB → 線の y。dB でまっすぐ: 上のはしが +12、下のはしが −60。 */
+const ZERO_FRAC = dbToFrac(0);
+
+/** dB → 下のはしからの長さ 0..1。 */
+function gainFrac(db: number): number {
+  const v = clampGain(db);
+  return v >= 0 ? ZERO_FRAC + (v / CLIP_GAIN_MAX_DB) * (1 - ZERO_FRAC) : dbToFrac(v);
+}
+
+/** dB → 線の y。 */
 export function gainLineY(area: WaveArea, db: number): number {
-  const part = (CLIP_GAIN_MAX_DB - clampGain(db)) / (CLIP_GAIN_MAX_DB - CLIP_GAIN_MIN_DB);
-  return area.top + part * (area.bottom - area.top);
+  return area.bottom - gainFrac(db) * (area.bottom - area.top);
 }
 
 /** 線の y → dB（範囲の中、0.1 きざみ: 読み値「−3.0 dB」と同じ細かさ）。 */
 export function gainAtY(area: WaveArea, y: number): number {
   const height = area.bottom - area.top;
   if (height <= 0) return 0;
-  const part = Math.min(1, Math.max(0, (y - area.top) / height));
-  return clampGain(Math.round((CLIP_GAIN_MAX_DB - part * (CLIP_GAIN_MAX_DB - CLIP_GAIN_MIN_DB)) * 10) / 10);
+  const frac = Math.min(1, Math.max(0, (area.bottom - y) / height));
+  const db = frac >= ZERO_FRAC ? ((frac - ZERO_FRAC) / (1 - ZERO_FRAC)) * CLIP_GAIN_MAX_DB : (fracToDb(frac) ?? CLIP_GAIN_MIN_DB);
+  return clampGain(Math.round(db * 10) / 10);
 }
 
 export const clampGain = (db: number) => Math.min(CLIP_GAIN_MAX_DB, Math.max(CLIP_GAIN_MIN_DB, db));

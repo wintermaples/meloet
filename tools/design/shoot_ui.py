@@ -220,6 +220,10 @@ BOARDS = {
     "exportStopped": "F-Export",
     "exportAdvanced": None,
     "exportCheckFailed": None,
+    # 第 8 回 区切り2: 2 つ以上のクリップ、書き出す前のたしかめ（約束 27）。
+    "multiClip": "F8-MultiClip",
+    "exportCheck": "F8-ExportCheck",
+    "exportClip": "F8-ExportClip",
     "exportFit": "R11-Fit",
     "exporting": "F7-Exporting",
     "exportingRealtime": "F7-Exporting",

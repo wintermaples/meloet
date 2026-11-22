@@ -10,7 +10,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use common::{EXE, FAKE, GEOMETRY, Host, Killed, PATIENT_NS, block, note_on, peak};
+use common::{FAKE, GEOMETRY, Host, Killed, PATIENT_NS, block, exe, note_on, peak};
 use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{EngineEnd, HANG_MS, Mapping, ToPlugin};
 use meloet_plugin::wire::{
@@ -353,7 +353,7 @@ fn requests_that_cannot_be_done_are_answered_with_an_error() {
 fn nothing_is_done_before_hello_and_a_closed_socket_ends_the_process() {
     let map = Mapping::create(GEOMETRY).unwrap();
     let (mut ours, theirs) = UnixStream::pair().unwrap();
-    let child = launch::host_command(Path::new(EXE), theirs.as_fd(), map.fd(), None, false)
+    let child = launch::host_command(Path::new(exe()), theirs.as_fd(), map.fd(), None, false)
         .unwrap()
         .env(FAKE, "1")
         .spawn()
@@ -478,7 +478,7 @@ fn scan(format: PluginFormat, bundle: &str, skip: &[&str], fake: bool) -> Scan {
     let (ours, theirs) = UnixStream::pair().unwrap();
     let skip: Vec<String> = skip.iter().map(|s| s.to_string()).collect();
     let mut command = launch::scan_command(
-        Path::new(EXE),
+        Path::new(exe()),
         format,
         Path::new(bundle),
         &skip,
@@ -666,7 +666,10 @@ fn the_fake_plugins_are_not_there_without_the_variable() {
 #[test]
 fn a_bad_command_line_ends_with_an_error_code() {
     for args in [&[][..], &["host"], &["scan", "clap", "/x"], &["dance"]] {
-        let status = std::process::Command::new(EXE).args(args).status().unwrap();
+        let status = std::process::Command::new(exe())
+            .args(args)
+            .status()
+            .unwrap();
         assert_eq!(status.code(), Some(2), "{args:?}");
     }
 }
@@ -684,7 +687,7 @@ fn the_log_says_which_priority_the_audio_thread_got() {
         let map = Mapping::create(GEOMETRY).unwrap();
         let (mut ours, theirs) = UnixStream::pair().unwrap();
         let child = launch::host_command(
-            Path::new(EXE),
+            Path::new(exe()),
             theirs.as_fd(),
             map.fd(),
             Some(file.as_fd()),
@@ -756,7 +759,7 @@ fn a_host_for_an_export_asks_for_no_priority_and_gives_way() {
     let map = Mapping::create(GEOMETRY).unwrap();
     let (mut ours, theirs) = UnixStream::pair().unwrap();
     let child = launch::host_command(
-        Path::new(EXE),
+        Path::new(exe()),
         theirs.as_fd(),
         map.fd(),
         Some(file.as_fd()),

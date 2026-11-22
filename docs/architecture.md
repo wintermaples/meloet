@@ -2731,3 +2731,38 @@ pub struct AudioShape {
 **試験**: `sounds/fetch_tests.rs`（この PC の中の小さな HTTP サーバ。Range ・ 302 ・ 403 ・ 404 ・ 416 を返す。ネットの本物にはつながない）で、ふつう（302 をたどる、順、User-Agent、Cookie なし）、遅いつながり、とちゅうで切れる（だまって続き ・ 3 回切れて `CutOff` ・ 次の回は `Range`）、こわれたファイル（1 回だまって ・ 2 回で `Corrupt`、`.part` を残さない）、403（たどりなおし ・ ずっと 403 で `CutOff`）、404 ・ 500（`CutOff`）、ディスクがいっぱい（はじめの空き ・ 書く所の `StorageFull`）、ネットがない（だれも聞いていない港）、やめる（`.part` を残し次は続き）、ネットの目録（取っていない人は見ない ・ 新しい包み ・ 24 時間 ・ 次の起動で古い版を消す ・ 404 はだまる）、決まりの外の URL の目録（`catalog.rs` と、残した目録を使わない）。`state/pack_tests.rs` で core の決まり。`sounds/untar.rs` でほどく所。
 
 **本物のアプリ**（2026-11-22、debug）: 空の `XDG_DATA_HOME`（`target/k8s-home/data`）、`MELOET_PACK_ORIGIN` でこの PC の中の置き場所（Range つき、20 MB/秒にしぼった Python のサーバ）。`fetchPack` → 3 秒で `stopPackFetch` → 2 秒で `fetchPack`: グランドピアノは `Range: bytes=58785792-` で続きから、26 音色 ＋ 共通がそろい、グランドピアノは取れたあと読まれた（`read the sound of grandPiano`）。`settings.json` の `pack_fetch` は最後に消えた。取っている間に仮想の鍵盤で 30 鍵: 鍵 → DAC 11.4 〜 15.4 ms（平均 13.4、256 こま）。
+
+### 23-11 開発の仕込みを外した形（第 8 回 区切り4）
+
+23-4 を作った回（2026-11-22、meloet-hard）。調べ物は `docs/research/dev-hooks-release.md`。
+
+**feature の流れ**
+
+- `meloet-app/dev-hooks` = `meloet-core/dev-hooks` ＋ `dep:cairo-rs`（`MELOET_SNAPSHOT` だけが使う。配る形には入らない）。`meloet-core/dev-hooks` = `meloet-midi/dev-hooks`。`meloet-plughost/dev-hooks` は別の実行ファイルなので、それだけで立てる。`default` にはどれも入れない。`meloet-engine` ・ `meloet-sound` には仕込みがないので feature はない。
+- 外す所はすべて `#[cfg(feature = "dev-hooks")]` の属性（モジュール、関数、文、構造体の欄、`generate_handler!` の項目）。`cfg!(…)` と `cfg(debug_assertions)` は使っていない。plughost だけは `#[cfg(any(test, feature = "dev-hooks"))]`（中の試験が偽物のプラグインを使うため）。
+- 試験: `meloet-core` は `[dev-dependencies]` に自分を feature つきで（`meloet-engine` の `rt-check` と同じ形）。実行ファイルだけのクレート（`meloet-app` ・ `meloet-plughost`）は、その形だと Cargo が「lib のない依存を無視する」と警告するので使わない。`meloet-plughost` の結合の試験と `meloet-core` の試験は、`cargo build -p meloet-plughost --features dev-hooks` を自分で呼んでから使う（`tests/common/mod.rs` の `exe()`、`meloet-core/tests/plughost/mod.rs`）。`meloet-app` の `devhooks.rs` の試験は `--features dev-hooks` のときだけ。`scripts/check-all.sh` は `cargo clippy --all-targets --features dev-hooks`、`cargo clippy`（feature なし、配る形）、`cargo test --features dev-hooks` を回す（ワークスペースで `--features dev-hooks` を渡すと、持っているクレートにだけ立つ）。
+- 画面: `ui/vite.config.ts` の `define` の `__DEV_HOOKS__`（`MELOET_DEV_HOOKS=1` か vitest のとき true。型は `ui/src/dev/flag.d.ts`）。`gl/Surface.svelte` の測る所（`measureEnabled` → `KeyToScreen` ・ `FrameProfile` ・ `uiScript` → `import("../dev/start")`）を `if (__DEV_HOOKS__)` の中に入れただけで、本番の `vite build`（Vite 8.3.8 / Rolldown 1.2.19）では `start-*.js` の塊も、`measure_enabled` ・ `measure_report` ・ `ui_script` ・ `__meloetMeasure` ・ `key-to-screen` の文字も消えた（使われなくなった `bridge` の関数と `gl/measure.ts` ・ `profile.ts` は木から落ちる）。`resolve.alias` の差しかえは要らなかった。`bridge/tauri.ts` は書きかえていない。
+- 測る道具は `tools/measure/build-dev.sh`（`MELOET_DEV_HOOKS=1 npm run build` と `cargo build --release -p meloet-app -p meloet-midi -p meloet-plughost --features dev-hooks`）で作る。`latency.sh` ・ `long-record.sh` ・ `ui-script.sh` はこれを呼び、`tools/design/shoot_app.py` も同じ形で作る。ほかの道具（「何も作らない」物、`remote.py` を使う物）は、これで作った `target/release` を使う。
+
+**外した名前**（配る `meloet` ・ `meloet-plughost` にない）
+
+- `meloet-app`: `devhooks.rs` のぜんぶ（`MELOET_WINDOW` ・ `MELOET_SNAPSHOT` ・ `MELOET_SNAPSHOT_AFTER_MS` ・ `MELOET_COMMANDS` ・ `MELOET_EVAL` ・ `MELOET_PIPE` ・ `MELOET_EXIT_AFTER_MS` ・ `MELOET_CLOSE_AFTER_MS` ・ `MELOET_PCWINDOW_SHOT` ・ `MELOET_OPEN_SONG` ・ `MELOET_UI_SCRIPT`）、命令 `measure_enabled` ・ `measure_report` ・ `ui_script`、`MELOET_DEBUG_SCREEN`。
+- `meloet-core`: `measure` モジュールごと（`MELOET_MEASURE_DIR`、`key-to-sound.json` ・ `plugins.json` ・ `vocal-faults.log` を書く所、`CoreOptions::measure_dir`、音色を読んだ時間の記録）、置き場所の差しかえ `MELOET_STATE_DIR` ・ `MELOET_CONFIG_DIR` ・ `MELOET_SF2_DIR` ・ `MELOET_SONGS_DIR` ・ `MELOET_SOUNDS_DIR`、音の素材の試験の口 `MELOET_PACK_ORIGIN` ・ `MELOET_PACK_CATALOG`、`MELOET_INPUT_SINK_MONITOR`。
+- `meloet-midi`: `MidiOptions::from_env` が読む `MELOET_ACCEPT_VIRTUAL` ・ `MELOET_ONLY_VIRTUAL` ・ `MELOET_VKEYS_NAME` ・ `MELOET_MIDI_FAIL_AFTER`（feature なしでは `MidiOptions::default()`、本物の鍵盤だけ）。
+- `meloet-plughost`: 偽物のプラグイン（`formats/fake.rs`、`MELOET_PLUGHOST_FAKE`、`urn:meloet:fake:`）、`MELOET_PLUGHOST_RT`、`MELOET_PLUGHOST_NO_DUMP`。
+- 画面: `ui/src/dev/` の塊、`gl/measure.ts` ・ `gl/profile.ts`、測る命令の呼び出し。
+
+**残した物とわけ**
+
+- `JSC_useGenerationalGC` ・ `WEBKIT_DISABLE_COMPOSITING_MODE`: 配る meloet の動き（メモリと描く道）。外から決めれば勝つのも、くらべるために残す。
+- `MidiOptions` の欄（`accept_virtual` など）と、`meloet-vkeys` の名前で仮想の鍵盤を見分ける所（`meloet-midi/src/rules.rs`）: 試験が欄を直接決めて使う。feature なしでは環境から決める道がないので、いつも切れている。
+- 実行ファイルのそばの `sounds/`（`pack.json` のあるとき）: 環境変数ではなく、開発のビルドの `target/*/sounds` を見つける所。配る形（`/usr/bin/sounds/pack.json` はない）では何もしない。
+- `XDG_*` ・ `HOME` ・ プロキシの変数: ふつうの PC の決まり。
+- 試験だけの物（`cfg(test)`、`tests/` の `MELOET_TIMING_*` ・ `MELOET_VTIMING_*` など）: もともと配る実行ファイルに入らない。
+
+**見はりの試験** `scripts/check-release.sh`（`--no-dev` で逆の試験をとばす）
+
+1. 逆の試験（先に）: `MELOET_DEV_HOOKS=1` の `ui/dist` と `--features dev-hooks` の release に、名前が「ある」こと（探す名前が古くなっていない印）。`meloet` に `MELOET_PIPE` ・ `MELOET_UI_SCRIPT` ・ `MELOET_MEASURE_DIR` ・ `MELOET_STATE_DIR` ・ `MELOET_ACCEPT_VIRTUAL` ・ `MELOET_PACK_ORIGIN` ・ `devhooks` ・ `measure_report`、`meloet-plughost` に `MELOET_PLUGHOST_FAKE` ・ `MELOET_PLUGHOST_RT` ・ `urn:meloet:fake`、画面に `measure_report` ・ `ui_script` ・ `pr-scroll`。
+2. 配る形（あとに。`ui/dist` と `target/release` は配る形で残る）: `MELOET_DEV_HOOKS` なしの `npm run build`、feature なしの `cargo build --release -p meloet-app` と `-p meloet-plughost`（1 つずつ。いっしょに作ると feature が和になる）。`strings` で `MELOET_` ・ `devhooks` ・ `measure_enabled` ・ `measure_report` ・ `ui_script` ・ `key-to-sound.json` ・ `vocal-faults.log` ・ `urn:meloet:fake` が 1 つも出ないこと（`MELOET_` はぜんぶ仕込み）。`ui/dist` に `start-*.js` がなく、`MELOET_` ・ 命令の名前 ・ `uiScript` ・ `__meloetMeasure` ・ `key-to-screen` ・ `frame-times` ・ `pr-scroll` がないこと。
+3. 実行ファイルに入った画面: `meloet-app` の試験 `embedded_page::write_the_embedded_page`（`#[ignore]`）が `tauri::generate_context!()` の `assets()` を brotli から戻して `MELOET_ASSETS_OUT` に書き、それを 2 と同じく grep する（`ui/dist` が古い、という穴をふさぐ）。
+- かかる時間: 依存の release が作ってある所で 2 分 44 秒、2 回目からは 44 秒（release を 2 回 ＋ 試験の release を 2 回）。実行ファイルの大きさ（この PC、strip なし）: `meloet` 36,562,640 → 36,367,408 バイト（dev-hooks あり → なし）、`meloet-plughost` 1,955,240 → 1,920,496。重いので `scripts/check-all.sh` からは `--release` のときだけ呼ぶ。

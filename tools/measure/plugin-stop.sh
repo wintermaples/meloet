@@ -21,7 +21,7 @@
 # process of a plugin stopped), the plugin hosts (plug_watch.py), the RSS (rss_watch.py), and
 # what comes out of the output (its monitor, pw-record). Writes DIR/summary.md, DIR/shot.png
 # and the raw files in DIR/raw/ (saved.meloet is the song as saved at the end).
-# Builds nothing. Changes nothing on the PC. The host that is stopped writes no crash report
+# Builds nothing (tools/measure/build-dev.sh first). Changes nothing on the PC. The host that is stopped writes no crash report
 # (MELOET_PLUGHOST_NO_DUMP).
 set -euo pipefail
 

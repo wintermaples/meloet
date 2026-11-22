@@ -34,7 +34,9 @@ pub fn exe() -> PathBuf {
         let target = profile.parent().expect("the target folder");
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let mut build = Command::new(cargo);
-        build.args(["build", "--quiet", "-p", NAME, "--target-dir"]);
+        // The fake plugins are a development hook of the binary.
+        build.args(["build", "--quiet", "-p", NAME, "--features", "dev-hooks"]);
+        build.arg("--target-dir");
         build.arg(target);
         if profile.ends_with("release") {
             build.arg("--release");

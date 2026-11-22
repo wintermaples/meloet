@@ -42,6 +42,7 @@ const PRIORITY: u32 = 20;
 /// Values of meloet's points that wait for the main thread, for one watched plugin. It
 /// takes them 30 times a second; when the ring is full the newest are dropped.
 const MOVED: usize = 512;
+#[cfg(any(test, feature = "dev-hooks"))]
 const RT_ENV: &str = "MELOET_PLUGHOST_RT";
 
 /// One plugin in one slot, with every buffer its blocks need.
@@ -455,7 +456,10 @@ fn realtime_by_rtkit() -> Result<u32, String> {
 /// Asks for a real-time priority for this thread, before its loop starts (this may wait for
 /// the bus). True when it got one.
 fn realtime() -> bool {
+    #[cfg(any(test, feature = "dev-hooks"))]
     let choice = std::env::var(RT_ENV).unwrap_or_default();
+    #[cfg(not(any(test, feature = "dev-hooks")))]
+    let choice = String::new();
     let got = match choice.as_str() {
         "off" => Err("switched off".to_string()),
         "rtkit" => realtime_by_rtkit(),

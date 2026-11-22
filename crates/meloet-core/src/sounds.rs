@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::Instant;
 
 use meloet_model::BuiltinInstrument;
 use meloet_sound::sampler::{LoadError, SampleBank, load_instrument, read_pack};
@@ -28,12 +27,19 @@ mod untar;
 /// fetched one: `$MELOET_SOUNDS_DIR` (development and tests), else `sounds/` beside the
 /// program when it has a `pack.json` (`target/*/sounds` of a development build).
 pub fn pinned_dir() -> Option<PathBuf> {
-    pinned_from(
-        std::env::var_os("MELOET_SOUNDS_DIR")
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from),
-        std::env::current_exe().ok(),
-    )
+    pinned_from(pinned_env(), std::env::current_exe().ok())
+}
+
+#[cfg(feature = "dev-hooks")]
+fn pinned_env() -> Option<PathBuf> {
+    std::env::var_os("MELOET_SOUNDS_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+#[cfg(not(feature = "dev-hooks"))]
+fn pinned_env() -> Option<PathBuf> {
+    None
 }
 
 fn pinned_from(from_env: Option<PathBuf>, program: Option<PathBuf>) -> Option<PathBuf> {
@@ -46,7 +52,7 @@ fn pinned_from(from_env: Option<PathBuf>, program: Option<PathBuf>) -> Option<Pa
 /// Whether `$MELOET_SOUNDS_DIR` names the pack: then nothing is fetched, so that a test never
 /// meets the pack of the person at this PC.
 pub fn pinned_by_env() -> bool {
-    std::env::var_os("MELOET_SOUNDS_DIR").is_some_and(|v| !v.is_empty())
+    pinned_env().is_some()
 }
 
 /// The `instrument.json` of each instrument with samples that the pack in `dir` has. A folder
@@ -85,14 +91,22 @@ impl PackOptions {
         if pinned_by_env() {
             return None;
         }
-        let set = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
-        let mut options = PackOptions {
+        let options = PackOptions {
             root: fetch::data_root(|name| std::env::var_os(name))?,
             built_in: catalog::BUILT_IN.to_owned(),
             trust: catalog::Trust::default(),
             online: catalog::ONLINE.to_owned(),
             https_only: true,
         };
+        #[cfg(feature = "dev-hooks")]
+        let options = options.with_test_places();
+        Some(options)
+    }
+
+    #[cfg(feature = "dev-hooks")]
+    fn with_test_places(mut self) -> PackOptions {
+        let options = &mut self;
+        let set = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
         if let Some(origin) = set("MELOET_PACK_ORIGIN") {
             options.online = format!("{origin}catalog.json");
             options.https_only = !origin.starts_with("http://");
@@ -104,7 +118,7 @@ impl PackOptions {
                 Err(e) => eprintln!("meloet: MELOET_PACK_CATALOG {file}: {e}"),
             }
         }
-        Some(options)
+        self
     }
 }
 
@@ -251,8 +265,10 @@ fn read_loop(queue: &Queue, done: &Done) {
                 waiting = queue.wake.wait(waiting).unwrap_or_else(|e| e.into_inner());
             }
         };
-        let began = Instant::now();
+        #[cfg(feature = "dev-hooks")]
+        let began = std::time::Instant::now();
         let read = load_instrument(&json, decode_threads());
+        #[cfg(feature = "dev-hooks")]
         if crate::measure::dir_from_env().is_some() {
             let ms = began.elapsed().as_millis();
             let mib = read.as_ref().map_or(0, |bank| bank.sample_bytes() >> 20);

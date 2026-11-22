@@ -14,6 +14,10 @@ default = ["custom-protocol"]
 # Serves the ui/dist that was embedded at build time. Without it
 # (`--no-default-features`) the window loads devUrl, for `npm run dev`.
 custom-protocol = ["tauri/custom-protocol"]
+# The development and measuring hooks (devhooks.rs, the measure_* and ui_script commands, the
+# MELOET_* places). Not in the build that is handed out: build that with
+# `cargo build --release -p meloet-app` alone (docs/architecture.md 23-11).
+dev-hooks = ["meloet-core/dev-hooks", "dep:cairo-rs"]
 
 [dependencies]
 libc = { workspace = true }
@@ -23,9 +27,9 @@ serde_json = { workspace = true }
 tauri = { workspace = true }
 
 # The versions tauri 2.12.5 itself links. gtk measures the decorations GTK draws itself; gio
-# makes file URIs; the others are used only for the MELOET_SNAPSHOT development hook.
+# makes file URIs; cairo-rs is used only for the MELOET_SNAPSHOT development hook.
 [target.'cfg(target_os = "linux")'.dependencies]
-cairo-rs = { version = "0.18", features = ["png"] }
+cairo-rs = { version = "0.18", features = ["png"], optional = true }
 # libdbus, already linked through tao: the shutdown lock of logind, and the file manager.
 dbus = "0.9.12"
 gio = "0.18"

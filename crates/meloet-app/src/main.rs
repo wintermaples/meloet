@@ -2,6 +2,7 @@
 
 mod clock;
 mod core_handle;
+#[cfg(feature = "dev-hooks")]
 mod devhooks;
 mod logind;
 mod pcwindow;
@@ -102,12 +103,14 @@ fn clock() -> u64 {
 }
 
 /// Development only: whether `MELOET_MEASURE_DIR` is set.
+#[cfg(feature = "dev-hooks")]
 #[tauri::command]
 fn measure_enabled() -> bool {
     meloet_core::measure::dir_from_env().is_some()
 }
 
 /// Development only: writes `json` to `<MELOET_MEASURE_DIR>/<name>`.
+#[cfg(feature = "dev-hooks")]
 #[tauri::command]
 fn measure_report(name: String, json: String) -> Result<(), String> {
     let dir = meloet_core::measure::dir_from_env().ok_or("MELOET_MEASURE_DIR is not set")?;
@@ -115,6 +118,7 @@ fn measure_report(name: String, json: String) -> Result<(), String> {
 }
 
 /// Development only: the screen's input script (`MELOET_UI_SCRIPT`), only while measuring.
+#[cfg(feature = "dev-hooks")]
 #[tauri::command]
 fn ui_script() -> Option<String> {
     devhooks::ui_script()
@@ -255,6 +259,7 @@ fn screen_space(window: &WebviewWindow) -> Option<(f32, f32)> {
     let factor = window.scale_factor().ok()?;
     let outer = window.outer_size().ok()?.to_logical::<f64>(factor);
     let inside = content_size(window);
+    #[cfg(feature = "dev-hooks")]
     if std::env::var_os("MELOET_DEBUG_SCREEN").is_some() {
         eprintln!("meloet: work area {area:?}, window {outer:?}, inside {inside:?}");
     }
@@ -312,6 +317,7 @@ fn shell_request(
             return;
         }
         ShellRequest::PickSongFile { folder } => {
+            #[cfg(feature = "dev-hooks")]
             if let Some(path) = devhooks::take_open_song() {
                 if let Some(core) = core.upgrade() {
                     core.song_file_picked(Some(path));
@@ -375,6 +381,7 @@ fn shell_request(
 
 fn main() {
     set_jsc_options();
+    #[cfg(feature = "dev-hooks")]
     devhooks::read_env();
     let core = Arc::new(meloet_core::Core::start(
         meloet_core::CoreOptions::from_env(),
@@ -389,8 +396,11 @@ fn main() {
             snapshot,
             send,
             clock,
+            #[cfg(feature = "dev-hooks")]
             measure_enabled,
+            #[cfg(feature = "dev-hooks")]
             measure_report,
+            #[cfg(feature = "dev-hooks")]
             ui_script,
             takes::take_notes,
             takes::peaks,
@@ -403,6 +413,7 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") {
                 follow_scale(&window_side, window.clone());
                 follow_screen(&window_side, &window);
+                #[cfg(feature = "dev-hooks")]
                 devhooks::apply_window_size(&window);
                 webprocess::watch(&window);
                 let (app_handle, shell_window) = (app.handle().clone(), window.clone());
@@ -452,11 +463,12 @@ fn main() {
             logind::watch(Arc::downgrade(&window_side));
             Ok(())
         })
-        .on_page_load(|webview, payload| {
+        .on_page_load(|_webview, payload| {
             if payload.event() == PageLoadEvent::Started {
                 PAGE.fetch_add(1, Relaxed);
             }
-            devhooks::on_page_load(webview, payload);
+            #[cfg(feature = "dev-hooks")]
+            devhooks::on_page_load(_webview, payload);
         })
         .build(tauri::generate_context!())
         .expect("failed to run meloet")
@@ -466,4 +478,31 @@ fn main() {
                 core.stop();
             }
         });
+}
+
+#[cfg(test)]
+mod embedded_page {
+    use tauri::utils::assets::AssetKey;
+
+    /// The page as this build carries it inside the program, written out file by file so that
+    /// `scripts/check-release.sh` can look for the development hooks in it.
+    #[test]
+    #[ignore = "a check of the release: writes the page to MELOET_ASSETS_OUT"]
+    fn write_the_embedded_page() {
+        let out = std::path::PathBuf::from(
+            std::env::var_os("MELOET_ASSETS_OUT").expect("MELOET_ASSETS_OUT names a folder"),
+        );
+        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        let assets = context.assets();
+        let keys: Vec<String> = assets.iter().map(|(key, _)| key.into_owned()).collect();
+        assert!(!keys.is_empty(), "no page inside the program");
+        for key in keys {
+            let bytes = assets
+                .get(&AssetKey::from(key.as_str()))
+                .unwrap_or_else(|| panic!("{key} does not read"));
+            let path = out.join(key.trim_start_matches('/'));
+            std::fs::create_dir_all(path.parent().expect("a folder")).unwrap();
+            std::fs::write(&path, &bytes).unwrap();
+        }
+    }
 }

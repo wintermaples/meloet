@@ -16,7 +16,7 @@
 # --shot: write DIR/shot.png 2 s before the end (the app then exits with the shot).
 #
 # The sounds are whatever MELOET_SOUNDS_DIR names (unset: where the app looks by itself).
-# Builds nothing: build ui/ and `cargo build --release -p meloet-app -p meloet-midi` first.
+# Builds nothing: run tools/measure/build-dev.sh first (the hooks this reads are only there).
 # Writes DIR/summary.md and the raw files in DIR/raw/. Changes nothing on the PC.
 set -euo pipefail
 

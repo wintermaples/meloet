@@ -283,8 +283,12 @@ pub fn config_dir() -> Option<PathBuf> {
 
 fn config_dir_from(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     let set = |name: &str| var(name).filter(|v| !v.is_empty()).map(PathBuf::from);
-    set("MELOET_CONFIG_DIR")
-        .or_else(|| set("XDG_CONFIG_HOME").map(|dir| dir.join("meloet")))
+    #[cfg(feature = "dev-hooks")]
+    if let Some(dir) = set("MELOET_CONFIG_DIR") {
+        return Some(dir);
+    }
+    set("XDG_CONFIG_HOME")
+        .map(|dir| dir.join("meloet"))
         .or_else(|| set("HOME").map(|dir| dir.join(".config").join("meloet")))
 }
 

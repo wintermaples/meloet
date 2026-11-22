@@ -34,6 +34,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let handed = launch::take_stdio(args.iter().any(|a| a == "--log"));
     launch::die_with_parent(value(&args, "--parent").and_then(|pid| pid.parse().ok()));
+    #[cfg(any(test, feature = "dev-hooks"))]
     if std::env::var_os("MELOET_PLUGHOST_NO_DUMP").is_some_and(|v| !v.is_empty()) {
         // For tests that crash this process on purpose: no core file, no crash report.
         // SAFETY: a plain call.

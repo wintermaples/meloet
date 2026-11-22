@@ -2309,6 +2309,7 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "flacenc",
+ "meloet-core",
  "meloet-devices",
  "meloet-engine",
  "meloet-midi",

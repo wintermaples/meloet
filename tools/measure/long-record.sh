@@ -51,8 +51,7 @@ case "$target" in /*) ;; *) target=$root/$target ;; esac
 vkeys_name=meloet-vkeys-long-$$
 
 if [ "$build" = 1 ]; then
-  (cd "$root/ui" && npm run build)
-  (cd "$root" && cargo build --release -p meloet-app)
+  "$root/tools/measure/build-dev.sh"
 fi
 (cd "$root" && cargo test --release -p meloet-core --test vkeys_long_play --no-run)
 player=$(cd "$root" && cargo test --release -p meloet-core --test vkeys_long_play --no-run 2>&1 |

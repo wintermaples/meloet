@@ -148,6 +148,7 @@ mod imp {
             SHOWN.with(|s| s.borrow_mut().take());
         });
         dialog.show();
+        #[cfg(feature = "dev-hooks")]
         crate::devhooks::after_pc_window(title);
         SHOWN.with(|s| *s.borrow_mut() = Some(dialog));
     }

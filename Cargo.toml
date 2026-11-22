@@ -60,6 +60,11 @@ tauri-build = "=2.7.4"
 vst3 = "=0.3.0"
 
 
+# Libraries keep only line tables (backtraces, stepping by line); the meloet crates keep full
+# debug info. With full debug info everywhere, target/debug grew to about 100 GB.
+[profile.dev.package."*"]
+debug = "line-tables-only"
+
 # Debug builds read the sound pack almost as fast as release builds (the grand piano took 8.1 s
 # instead of about 0.3 s, and its track is silent until it is read). Only the decoder and the
 # sampler are built this way.

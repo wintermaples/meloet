@@ -158,3 +158,11 @@ meloet の許し（`deny.toml` と `licenses/check.mjs`）: MIT、Apache-2.0、A
 - 依存の数（`cargo tree`）、`rustix` の `fs` の機能がもう立っているか、`ureq` の ring ＋ platform-verifier の組みあわせでビルドが通るかは、試していない。
 - aws-lc-rs の「cmake が要る」と「C だけでよい」の食いちがいは、実際のビルドで見たい。
 - `ed25519-dalek` 3.0.0 と `minisign-verify` 0.3.0 は、日付が新しい（2026-07、2026-09）。使う前に、変更の一覧（CHANGELOG）を見る。
+
+## 追記: 本物の Release で見た（棟梁、2026-11-22 13:35 JST）
+
+リポジトリが public になったあと、`sounds-2026.11.1` の添付（238776320 バイト）に `curl` をかけた（User-Agent `meloet/0.1.0`、ログインなし）。確かさ A（この PC で見た事実。GitHub の約束ではないので、変わりうる）。
+
+- `github.com/.../releases/download/...` は `302` で `release-assets.githubusercontent.com/github-production-release-asset/<数>/<uuid>?…` へ。**リダイレクトは 1 回**。
+- 先の返事: `200`、`accept-ranges: bytes`、`etag: "0x8DF48453ADB30D9"`、`last-modified`、`content-length` が出る。`Range: bytes=0-99` で **`206`、100 バイト**。
+- 先の URL の期限: `se=` が見た時刻の約 53 分後、JWT の `exp − nbf` は **3600 秒（1 時間）**。上の C の「約 5 分」の報告とは食いちがう（この回は 1 時間）。meloet は期限に頼らず、403 ・ 410 なら github.com の URL からたどりなおす（architecture 23-2）。

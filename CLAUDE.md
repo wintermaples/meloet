@@ -14,7 +14,7 @@ meloet は、MIDI 鍵盤を買ったばかりの人のための DAW です。お
   - `meloet-research`（Sonnet 5.5、effort high）: インターネットで調べる。コードは書かない。
   - 難しいか、ふつうか、迷ったら難しいほうへ。
   - 会話の途中で係のファイルを作ったり変えたりすると、その会話からは名前で呼べない。そのときは汎用の係を同じモデルと effort で呼び、最初に係のファイルを読ませる。
-- 係は、これまでの話を知らない。頼むときは、どのファイルを、どの決まりで、どう確かめるかまで、ぜんぶ書く。同時に何人も動かすときは、担当のディレクトリを分け、`CARGO_TARGET_DIR=target/<名前>` と `cargo -p` で、ビルドがぶつからないようにする。`target/<名前>` は 1 つで 4〜9 GB になる。係の仕事を merge したら、その target は消す（2026-11-18 にディスクが満杯になり、166 GB 消した。`debug/` と `release/` は残す）。
+- 係は、これまでの話を知らない。頼むときは、どのファイルを、どの決まりで、どう確かめるかまで、ぜんぶ書く。同時に何人も動かすときは、担当のディレクトリを分け、`CARGO_TARGET_DIR=target/<名前>` と `cargo -p` で、ビルドがぶつからないようにする。`target/<名前>` は 1 つで 4〜9 GB になる。係の仕事を merge したら、その target は消す（2026-11-18 にディスクが満杯になり、166 GB 消した。`debug/` と `release/` は残す）。merge したあとの確かめは、本物の作業ツリーの `target/`（`CARGO_TARGET_DIR` なし）で。係の `target/<名前>` を使いまわさない（道がちがっても同じ crate の物とみなされ、係の古い土台で作った物が新しいまま使われる。2026-11-22 に engine が古いまま試験された）。
 - 同時に何人も動かすときは、係を作業ツリーに分ける（Agent の `isolation: "worktree"`）。作業ツリーは **main から**作られるので、依頼文の最初に `git reset -q --hard <foundation のいま>` を書く。`ui/node_modules` は symlink をはらせ、係にはコミットさせない。終わったら棟梁が係の作業ツリーで確かめてコミットし、foundation へ merge する。
 - merge のあとは、ぶつかった所だけでなく全体を見なおす。git は enum の最後に足した腕を、となりの別の enum に入れることがある（第 3 回で 2 回あった）。`scripts/check-all.sh` は Python の道具（`tools/`）を読まないので、さわったら `python3 -c "import ast; ast.parse(open('<file>').read())"` も。
 - 画面の 2 人が同時に作るときは、継ぎ目（2 人が読む状態のモジュール、片方が入れ物を作りもう片方が中身を作る部品）を、棟梁が先に小さく置いてコミットしてから頼む（第 3 回の `ui/src/components/pianoroll/view.svelte.ts`・`shown.svelte.ts`・空の `NoteListPanel.svelte` など）。

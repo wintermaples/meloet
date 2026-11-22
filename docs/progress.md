@@ -1740,3 +1740,7 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 直した: クリップの面の四角を見えている幅 3 つぶんで作り slot の `shiftX` で送る、ノートの形をテイクごとに覚えて二分探索、目盛の数字は帯ごと `transform`、左はしの札の幅を毎コマ変えない。波形は送るたびに作る（段と切れ目が見えている所で決まるため）。
 - 数（`arr16`、3 回ずつ、load 0.7〜6）: 横の送り busyMs 平均 20 → 13 ms、コマの間 p95 15〜16 → 12〜13 ms。いちばん縮めた送り 24 → 14〜16 ms。**拡大は 20〜21 → 19〜20 ms（コマの間 p95 は 15〜16 ms で 60 Hz は保つ）**。歌のクリップ 192 個の曲は変わらない（書体の宿題）。再生中の鍵 → 画面は変わらない（2 コマ以内 100 %）。CPU の道では busyMs が 2 コマぶんに出ることがあるので、`arrange_parts.py` にコマの間（`frameGapMs`）を足した。前と後の絵 29 枚は 1 画素もちがわない（送っていない状態）。
 - 残した事: 拡大の canvas の読みもどし。`set_enable_accelerated_2d_canvas(false)` の案は WebKit のメモリの係（k8wk）にためしてもらっている。測る道具が、ほかの係の WebKitWebProcess をつかまないように直した（`webkit_damage.py` ・ `webkit_stacks.py`）。
+
+### アプリのアイコン（オーナーさん 2026-11-22）
+
+- オーナーさんがアイコンを決めた（`meloet.svg`: gray.3 の角丸の地に gray.10 の「m」と accent の音符）。もとの SVG を `crates/meloet-app/icons/meloet.svg` に置き、`tauri icon` で 32 ・ 64 ・ 128 ・ 256 ・ 512 の PNG と、次の回の Windows ・ Mac 用の `icon.ico` ・ `icon.icns` を作った（`tauri.conf.json` の `bundle.icon`）。仮の `icon.png`（83 バイト）は置きかえた。

@@ -17,7 +17,7 @@ sudo apt install ./meloet_0.1.0_amd64.deb
 - [ ] 依存の部品といっしょに入り、エラーなく終わる。
 - [ ] `ls -l /usr/bin/meloet /usr/bin/meloet-plughost` で 2 つともある。
 - [ ] `ls /usr/share/doc/meloet/` に `LICENSE-MIT`、`LICENSE-APACHE`、`NOTICE` がある。
-- [ ] アプリの一覧に「meloet」が出る（アイコンは今は仮の物）。
+- [ ] アプリの一覧に「meloet」が出る（アイコンは黒い角丸の地に白い「m」と黄色の音符）。
 
 ## 2. ひらく
 

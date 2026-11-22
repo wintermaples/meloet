@@ -1656,3 +1656,9 @@ f0203df の release で測った（2026-11-21 夕方〜夜、meloet-hard の決�
 - 入力計の帯の案内（`ui/src/components/pack/PackBand.svelte`・`pack.ts`）: 聞く（「取りにいく」「あとで」）・ 取っている（2 行、160 の棒、「やめる」）・ 取れなかった（わけごとの文、「もう一度」〔切れたときは「続きから」〕）。流れの案内が出ている間は進みを状態行へ（44-B の形）。**鍵盤がない ・ 抜けた ・ 入力が止まった ・ 鍵盤も出口もない間は、聞く形も状態行に**（B-95-12）。棚の「まだ」「取ってきています」の行（押せない、↑ ↓ でも止まらない、数は本物の 31）、知らせ 85 に「取りにいく」、くわしい設定の「音の素材」の行と置き場所、「meloet について」の置き場所。仮の形は B-95-11〜13。
 - 取りこんだあとの確かめ（棟梁）: `npm run check` 0 errors、vitest 3277、`licenses/check.mjs` OK。絵は `target/shots-round8/k8su/`（packGet はモックとほぼ同じ。偽物が場面のままでも進むので % がちがう）。
 - ネットの目録の置き場所は、組みこむ目録と同じ `main` の `tools/sounds/catalog.json` にした（81bfc94）。
+
+### オーナーさんの答え（2026-11-22、区切り3 ・ 4 の準備）
+
+- 音の素材の包み（音色ごと、26 ＋ 共通、238,909,440 バイト）を Release に上げてよい。タグは `sounds-2026.11.2`（中身は 2026.11.1 と同じ音、分けかただけが新しい）。目録の置き場所は `https://raw.githubusercontent.com/wintermaples/meloet/main/tools/sounds/catalog.json`（`main` へ入れたあとに効く）。Latest の印はつけない。
+- Release を immutable にする設定は、オーナーさんが入れる（上げる前に）。
+- コンテナ: meloet-agent を docker のグループに一時だけ入れる（`sudo usermod -aG docker meloet-agent`、終わったら `sudo gpasswd -d meloet-agent docker`。棟梁は `sg docker -c …` で使う）。

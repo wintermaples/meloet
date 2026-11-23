@@ -400,7 +400,8 @@ fn real_plugins_take_their_state_back() {
             let answer = c.call("set_plugin_state", args);
             eprintln!("{name}: {what}: {}", answer["content"][0]["text"]);
             let after = r.core.ai_song().unwrap();
-            if answer["isError"] == true {
+            let same = answer["structuredContent"]["changed"] == false;
+            if answer["isError"] == true || same {
                 assert_eq!(after.undo_count, before.undo_count, "{name} {what}");
                 assert_eq!(after.song.doc.tracks, before.song.doc.tracks);
             } else {

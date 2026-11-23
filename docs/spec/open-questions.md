@@ -136,3 +136,23 @@ Sent back at the end of round 8 with the items above:
 - Question: spec 6 "Exporting in real time" is for when a plugin cannot export fast. There is no text for when the user turned on 「実時間で書き出す」.
 - Now: 「実時間で書き出しています（3:02）。」 (`builder:2026-11-21`). When a plugin is the reason, the spec 6 text.
 - From: the developers' provisional text.
+
+## B-96: round 10 (found when the readings moved into chapter 7)
+
+### B-96-1 Where the spec 6 text "Export would clip" is shown
+
+- Question: spec 6 puts 「いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。」 in the export dialog, with the buttons 「このまま書き出す / やめる」. The check row of the dialog uses the 41-A texts of spec 3 instead.
+- Now: the dialog shows the 41-A texts; the spec 6 text is used on the status line when clipping is found only after the export (chapter 7, A-24). The spec body and the screen do not agree.
+- From: the developers' reading (A-24 item 8).
+
+### B-96-2 The third sentence of the empty arrange hint
+
+- Question: the third sentence of the F-Empty hint still says 「トラックを増やすには左下の「＋ トラックを追加」」, but spec 3 (93-1) replaced that button with 「＋ 鍵盤のトラック」 and 「＋ 歌のトラック」.
+- Now: the old sentence is shown (only while a track can be added). `ui/src/components/SoundHint.svelte`.
+- From: chapter 7, A-13.
+
+### B-96-3 The name of key 47 in the built-in drum kits
+
+- Question: the built-in kits call key 47 「ミッドタム」, but the table of spec 3 for SF2 kits (GM) calls 47 「ミッドタム 2」 and 48 「ミッドタム」.
+- Now: the built-in kits use 「ミッドタム」 for 47 (`crates/meloet-model/src/drums.rs`).
+- From: chapter 7, A-11.

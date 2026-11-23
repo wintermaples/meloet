@@ -124,15 +124,15 @@ Done:
 - Spec step 3, part: `docs/spec/open-questions.md` (questions with no answer yet), the step names written out one by one (`spec_check.py --strings` now misses 0), `spec_check.py` no longer reads the old spec.html.
 - `README.md` (English, in the order above) and `docs/install-check.md` in English.
 - `CLAUDE.md` in English.
+- Spec step 3, the rest: `docs/spec/7-readings.md` (the developers' readings and decisions, from part A of `docs/history/design-notes.ja.md`; 269 of 384 rows kept). Three new questions found on the way: B-96-1 to 3 in `docs/spec/open-questions.md`.
 
 Still to do:
 
-- Spec step 3, the rest: `docs/spec/7-readings.md` (the developers' readings and decisions; from part A of `docs/history/design-notes.ja.md`).
 - **Screen comments in English: after the round 10 improvements** (the owner, 2026-11-23), because the improvements touch the same files. The rules are in `target/k9-comments-rules.md`. Of the four helper worktrees that had half-done work, only `.claude/worktrees/agent-aed06ffb08658acbb` (pianoroll, automation, timeline, history) was still there on 2026-11-23.
 - `.claude/agents/` in English: last.
 - At the end: `scripts/check-all.sh --release`, and push (ask the owner).
 
-Documents in English now: `CLAUDE.md`, `README.md`, `docs/progress.md`, `docs/architecture.md`, `docs/install-check.md`, `docs/spec/` (README, chapters 1 to 6, glossary, open-questions). In progress: `docs/spec/7-readings.md`.
+Documents in English now: `CLAUDE.md`, `README.md`, `docs/progress.md`, `docs/architecture.md`, `docs/install-check.md`, `docs/spec/` (README, chapters 1 to 6, glossary, 7-readings, open-questions).
 
 ## 6. Plan for round 10: answers to the improvement notes (user:2026-11-23)
 

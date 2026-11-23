@@ -23,6 +23,7 @@ import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
 import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceArp, reduceSpectrum } from "./fakeWave3";
+import { fakeFadeOut } from "./fakeFade";
 import {
   CLIP_CENTS_MAX,
   TUNE_STRENGTH_MAX,
@@ -2836,6 +2837,69 @@ SCENES.mixerRest = {
   meters: autoMeters("9.2.000"),
 };
 
+// Round 12 M5 (the spec's mock is not a board): the master's lane, of its volume.
+const MASTER_LANE: LaneRef = { home: { kind: "master" }, target: VOLUME };
+/** The master's volume in the song of F6-Mixer*: flat at 0 dB, then down from bar 9 to −12 dB at bar 13 (−6 dB at 11.1.000). */
+const MASTER_VOLUME = fakeLane(521, [["1.1.000", 0.8], ["9.1.000", 0.8], ["13.1.000", 0.4]]);
+/** The band's song with a fade-out of `bars` bars put on the master by 「フェードアウトをつける」. */
+function masterFadeSong(s: AppState, bars: number): void {
+  bandSong(s);
+  const fade = fakeFadeOut(s.song, s.timeline, null, bars);
+  if (fade === null || fade === "noClips") return;
+  const lane: FakeLane = { id: 520, step: false, points: fade.points };
+  FAKE_LANES.set(lane.id, lane);
+  s.song.master.lanes = [laneView(VOLUME, { kind: "volume" }, lane)];
+  s.transport.position = 0;
+  Object.assign(s.song, { undoCount: 15, file: "changed" });
+}
+// The arrange with the row 「マスター」 at the foot of the tracks: a fade-out over the last 4 bars of the song.
+SCENES.masterFade = { setup: (s) => masterFadeSong(s, 4), meters: QUIET };
+// The same with the master's lane folded: the row stays, as a line that opens it again.
+SCENES.masterFadeFolded = {
+  setup(s) {
+    masterFadeSong(s, 4);
+    s.automation.folded = [MASTER_LANE];
+  },
+  meters: QUIET,
+};
+// 「● 書く」 of the master's lane is on and the song plays: the fader is held since 6.3.000.
+SCENES.masterFadeWriting = {
+  setup(s) {
+    masterFadeSong(s, 4);
+    s.transport.state = "playing";
+    s.transport.position = at("8.1.000");
+    s.automation.armed = [MASTER_LANE];
+    s.automation.writing = [{ lane: MASTER_LANE, fromTick: at("6.3.000") }];
+  },
+  after: (s) => (s.status.message = { id: "masterAutomationWriting" }),
+  meters: { ...QUIET, position: playingAt("8.1.000") },
+};
+// 「編集 ▸ 曲の終わりにフェードアウトをつける…」 in a song with no clip.
+SCENES.fadeOutNoClips = { setup: () => {}, after: (s) => (s.status.message = { id: "fadeOutNoClips" }), meters: QUIET };
+// The mixer while the master's lane moves its fader (−6 dB at the play line), with the lanes of F6-MixerAuto.
+SCENES.mixerMasterAuto = {
+  setup(s) {
+    autoSong(s, "11.1.000");
+    Object.assign(s.song, { undoCount: 16, file: "saved" });
+    s.song.master.lanes = [laneView(VOLUME, { kind: "volume" }, MASTER_VOLUME)];
+  },
+  bands: ["mixer"],
+  after: (s) => (s.status.message = { id: "automationMoving", tracks: [PIANO_REF], master: true }),
+  meters: autoMeters("11.1.000"),
+};
+// The master's fader was taken to −3 dB by hand: its lane rests; under the fader 「休み」 and 「もどす」.
+SCENES.mixerMasterRest = {
+  setup(s) {
+    autoSong(s, "11.1.000");
+    Object.assign(s.song, { undoCount: 17, file: "changed" });
+    s.song.master.gainDb = -3;
+    s.song.master.lanes = [laneView(VOLUME, { kind: "volume" }, MASTER_VOLUME, true)];
+  },
+  bands: ["mixer"],
+  after: (s) => (s.status.message = { id: "masterAutomationRested" }),
+  meters: autoMeters("11.1.000"),
+};
+
 /** R10-AutoEdit: the band's song with the volume lane of 「1 ピアノ」 open, the play line at bar 8. */
 function autoEditSong(s: AppState, lane: FakeLane, selected: IndexRange[]): void {
   bandSong(s);
@@ -2998,11 +3062,17 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
   const automation = structuredClone(state.automation);
   const song = structuredClone(state.song);
   let message: StatusMessage | null = null;
+  /** The track of a lane's home, or the master (round 12 M5: it has a lane of its volume only). */
+  const homeOf = (lane: LaneRef) => (lane.home.kind === "master" ? song.master : song.tracks.find((t) => lane.home.kind === "track" && t.id === lane.home.track));
   const found = (lane: LaneRef) => {
-    // round12 stub: M5 (the master's lane)
-    const track = song.tracks.find((t) => lane.home.kind === "track" && t.id === lane.home.track);
+    const track = homeOf(lane);
     const index = track ? track.lanes.findIndex((l) => JSON.stringify(l.target) === JSON.stringify(lane.target)) : -1;
     return track && index >= 0 ? { track, index, view: track.lanes[index]! } : null;
+  };
+  const isTrack = (home: (typeof song.tracks)[number] | typeof song.master): home is (typeof song.tracks)[number] => "clips" in home;
+  const step = () => {
+    song.undoCount += 1;
+    song.redoCount = 0;
   };
   switch (command.type) {
     case "foldLane": {
@@ -3019,7 +3089,7 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
       break;
     }
     case "selectAutoPoints":
-      if (!song.tracks.some((t) => t.lanes.some((l) => l.laneId === command.lane))) return [];
+      if (![...song.tracks, song.master].some((t) => t.lanes.some((l) => l.laneId === command.lane))) return [];
       automation.selected = command.points.length > 0 ? { laneId: command.lane, points: toRanges(command.points) } : null;
       break;
     case "restoreLane": {
@@ -3028,7 +3098,10 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
       had.view.resting = false;
       song.undoCount += 1;
       song.redoCount = 0;
-      message = { id: "automationRestored", track: { number: had.track.number, name: had.track.name }, target: had.view.name };
+      message =
+        isTrack(had.track)
+          ? { id: "automationRestored", track: { number: had.track.number, name: had.track.name }, target: had.view.name }
+          : { id: "masterAutomationRestored" };
       break;
     }
     case "deleteLane": {
@@ -3045,11 +3118,11 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
     }
     case "addLane": {
       const lane: LaneRef = { home: command.home, target: command.target };
-      const track = song.tracks.find((t) => lane.home.kind === "track" && t.id === lane.home.track);
+      const track = homeOf(lane);
       if (!track) return [];
       automation.folded = without(automation.folded, lane);
       if (found(lane)) break;
-      const name = fakeLaneName(track, lane.target);
+      const name = isTrack(track) ? fakeLaneName(track, lane.target) : lane.target.kind === "volume" ? ({ kind: "volume" } as const) : null;
       if (!name) return [];
       const id = Math.max(600, ...FAKE_LANES.keys()) + 1;
       const made: FakeLane = { id, step: lane.target.kind === "mute", points: [] };
@@ -3072,6 +3145,26 @@ function reduceRound6(state: AppState, command: Command, rows: readonly HistoryR
     case "moveAutoPoints":
     case "deleteAutoPoints":
       return [];
+    // Round 12 M5: the points of the master's lane are made anew under a new id, as Rust does; no row of the history.
+    case "addFadeOut": {
+      if (state.transport.state === "recording" || state.transport.state === "countIn") return [];
+      const lane: LaneRef = { home: { kind: "master" }, target: { kind: "volume" } };
+      const had = found(lane);
+      const old = had ? FAKE_LANES.get(had.view.laneId) : undefined;
+      const fade = fakeFadeOut(song, state.timeline, had ? { points: old?.points ?? [], resting: had.view.resting } : null, command.bars);
+      if (fade === null) return [];
+      if (fade === "noClips") {
+        message = { id: "fadeOutNoClips" };
+        break;
+      }
+      if (had && !had.view.resting && JSON.stringify(old?.points) === JSON.stringify(fade.points)) return [];
+      const made: FakeLane = { id: Math.max(600, ...FAKE_LANES.keys()) + 1, step: false, points: fade.points };
+      FAKE_LANES.set(made.id, made);
+      song.master.lanes = [laneView(lane.target, { kind: "volume" }, made)];
+      if (automation.selected?.laneId === had?.view.laneId) automation.selected = null;
+      step();
+      break;
+    }
     default:
       return null;
   }
@@ -4411,6 +4504,7 @@ const NOTICES: StatusMessage["id"][] = [
   "tooManyTracks",
   "nothingToKeep",
   "songTooLong",
+  "fadeOutNoClips",
   "instrumentReplaced",
   "paramClamped",
   "paramRejected",

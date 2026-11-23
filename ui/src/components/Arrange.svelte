@@ -65,6 +65,8 @@
   import { pickClips } from "./timeline/pick";
   import { arrangeRows, showsAddRow } from "./automation/autoGeom";
   import AutoLane from "./automation/AutoLane.svelte";
+  import { masterOwner } from "./automation/laneValue";
+  import FadeBox from "./arrange/FadeBox.svelte";
   import AudioClipHandles from "./arrange/AudioClipHandles.svelte";
   import AudioClipNotes from "./arrange/AudioClipNotes.svelte";
   import DropFrame from "./arrange/DropFrame.svelte";
@@ -105,13 +107,20 @@
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
   const view: G.View = $derived({ pxPerTick, scrollX: scrollTick * pxPerTick, width: viewWidth });
   /** Track rows and the automation bands under them (the same order as the head side; automation/autoGeom.ts). */
+  /** The master standing in as the owner of its lane (round 12 M5): the row 「マスター」 at the foot. Null while it has none. */
+  const masterLanes = $derived(song.master.lanes.length > 0 ? masterOwner(song.master) : null);
   const rows = $derived(
-    arrangeRows(song.tracks, current.state!.automation.folded, {
-      trackH: metrics.px("size.track"),
-      laneH: metrics.px("size.lane"),
-      rowH: metrics.px("size.row"),
-      tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
-    }),
+    arrangeRows(
+      song.tracks,
+      current.state!.automation.folded,
+      {
+        trackH: metrics.px("size.track"),
+        laneH: metrics.px("size.lane"),
+        rowH: metrics.px("size.row"),
+        tall: { track: current.state!.arrange.tallTrack, h: metrics.px("part.track.vocal") },
+      },
+      masterLanes,
+    ),
   );
   const dims: G.LaneDims = $derived({
     tops: rows.tops,
@@ -1724,6 +1733,7 @@
         {#if shownLoop}
           <div class="loop-mark" style:left="{loopX(shownLoop.from)}px" style:width="{loopX(shownLoop.to) - loopX(shownLoop.from)}px"></div>
         {/if}
+        <FadeBox tracks={song.tracks} {view} {map} shut={busy || layout.arrangeOverview} />
       </div>
       <MarkerRow {view} {map} {timeline} {busy} />
       <!-- The tempo band lines and points are drawn on the same arrangeLanes sheet as the clips (no extra slot). The slot box holds the band and the clip area. -->
@@ -1752,6 +1762,13 @@
           {/each}
           {#if showsAddRow(track)}<div class="add-row"></div>{/if}
         {/each}
+        {#if masterLanes && rows.master}
+          {#if rows.master.folded}
+            <div class="add-row" data-test="master-lane-folded"></div>
+          {:else}
+            <AutoLane track={masterLanes} lane={masterLanes.lanes[0]!} {view} {map} {busy} />
+          {/if}
+        {/if}
         <div class="fill" use:glSlot={{ kind: "rects", rects: lanePicture.rects, waves: laneWaves, shiftX: view.scrollX - lanePicture.from }}></div>
         <div class="rec-host" use:glRegion={"recordingClip"}>
           {#each rows.lanes as l (l.track.id + JSON.stringify(l.lane.target))}

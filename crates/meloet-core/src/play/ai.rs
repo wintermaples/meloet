@@ -485,7 +485,7 @@ impl Play {
             }
             _ => None,
         };
-        lane.is_some_and(|key| self.lane_at(key).is_some())
+        lane.is_some_and(|(track, target)| self.lane_at((track.into(), target)).is_some())
     }
 
     /// The id of the track of number `number` (from 1).

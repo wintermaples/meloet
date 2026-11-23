@@ -18,7 +18,7 @@ impl Play {
             return;
         }
         let edit = edit::toggle_mute(self.doc(), track);
-        let key = (track, AutoTarget::Mute);
+        let key = (track.into(), AutoTarget::Mute);
         if self.lane_at(key).is_some_and(|l| l.moves()) {
             self.rest_with(key, edit, effects);
         } else if let Ok(e) = edit {

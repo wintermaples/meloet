@@ -269,7 +269,12 @@ fn the_stream_opening_gets_everything() {
     );
     assert_eq!(o[7], EngineOp::SilentTracks { tracks: vec![] });
     assert_eq!(o[8], EngineOp::PlayTarget { seat: Some(0) });
-    assert_eq!(o.len(), 9, "the instruments stay as they are in the engine");
+    assert_eq!(o[9], EngineOp::MasterAutomation { lanes: vec![] });
+    assert_eq!(
+        o.len(),
+        10,
+        "the instruments stay as they are in the engine"
+    );
 }
 
 #[test]

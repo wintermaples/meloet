@@ -51,7 +51,7 @@ pub use audio::{
     AudioId, AudioShape, AudioSource, AudioTake, ClipGain, CompPiece, SourceTempo,
     TUNE_STRENGTH_MAX, TrackKind, Tune, VOCAL_TRACK_NAME, VocalInput,
 };
-pub use automation::{AutoPoint, AutoTarget, Lane, LaneId};
+pub use automation::{AutoPoint, AutoTarget, Lane, LaneHome, LaneId};
 pub use chunked::ChunkedVec;
 pub use edit::{Edit, EditError, MAX_TICK, NewTake, RecordingAdded};
 pub use history::{History, StepKind, StepRow};

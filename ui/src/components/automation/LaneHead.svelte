@@ -4,7 +4,7 @@
      The current value changes every frame while playing, so it goes under the trackMeters canvas (cover. docs/architecture.md 7, "WebKit that paints on the CPU"). -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { LaneView, TrackView } from "../../bridge";
+  import type { LaneView } from "../../bridge";
   import { glSlot } from "../../gl/slot";
   import { term } from "../../lib/tip.svelte";
   import { current, send } from "../../state/app.svelte";
@@ -14,9 +14,9 @@
   import { builtinOf } from "../params/selected";
   import { livePosition, pointsOf } from "./autoState.svelte";
   import { laneMenu } from "./laneMenu";
-  import { handPosition, hasLaneRef, isOnTrack, laneMoves, positionText, trackHome, valueAt } from "./laneValue";
+  import { handPosition, hasLaneRef, isOnTrack, laneMoves, positionText, trackHome, valueAt, MASTER_HOME, type LaneOwner } from "./laneValue";
 
-  let { track, lane }: { track: TrackView; lane: LaneView } = $props();
+  let { track, lane }: { track: LaneOwner; lane: LaneView } = $props();
 
   const automation = $derived(current.state!.automation);
   const busy = $derived(current.state!.transport.state === "recording" || current.state!.transport.state === "countIn");
@@ -25,6 +25,8 @@
   const armed = $derived(hasLaneRef(automation.armed, track.id, lane.target));
   const writing = $derived(automation.writing.some((w) => isOnTrack(w.lane, track.id) && JSON.stringify(w.lane.target) === JSON.stringify(lane.target)));
   const title = $derived(termParts(t("lane.title", { target: laneNameText(lane.name) }), "オートメーション"));
+  /** The master's row says whose it is in place of 「オートメーション」 (round 12 M5). */
+  const ofMaster = $derived(track.id === MASTER_HOME);
 
   /** A value set by a step of a built-in effect is known only while the params panel shows that slot. */
   const values = $derived.by(() => {
@@ -86,7 +88,8 @@
 <div class="lane-head" role="presentation" data-test="lane-head" bind:this={box} oncontextmenu={context}>
   <button class="m-plain title" aria-expanded="true" data-test="lane-fold" onclick={fold}
     ><span class="m-hi">▾</span>
-    {#each title as piece, i (i)}{#if piece.term}<span use:term={"オートメーション"}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</button
+    {#if ofMaster}<span class="m-hi" data-test="lane-master">{t("mixer.master")}</span><span class="m-lbl">{laneNameText(lane.name)}</span
+      >{:else}{#each title as piece, i (i)}{#if piece.term}<span use:term={"オートメーション"}>{piece.text}</span>{:else}{piece.text}{/if}{/each}{/if}</button
   >
   <div class="line">
     {#if resting}

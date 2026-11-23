@@ -6,15 +6,16 @@ import type { AutoTarget, Command } from "../../bridge";
 import { EFFECT_PARAMS, SOUND_KNOBS } from "../../bridge/types";
 import { current } from "../../state/app.svelte";
 import { dbToFrac } from "../mixer/scale";
-import { laneKey, panPosition, paramPosition } from "./laneValue";
+import { laneKey, MASTER_HOME, panPosition, paramPosition } from "./laneValue";
 
 const hands = new Map<string, number>();
 
-/** The lane the intent moves (track and what), and its position. Null for things that are not lanes (returns, master). */
+/** The lane the intent moves (track, or `MASTER_HOME` for the master's fader, and what), and its position. Null for things that are not lanes (returns, the master's pan and inserts). */
 function handOf(c: Command): { track: number; target: AutoTarget; pos: number } | null {
   switch (c.type) {
     case "setGain":
-      return c.strip.kind === "track" ? { track: c.strip.id, target: { kind: "volume" }, pos: dbToFrac(c.db) } : null;
+      if (c.strip.kind === "return") return null;
+      return { track: c.strip.kind === "track" ? c.strip.id : MASTER_HOME, target: { kind: "volume" }, pos: dbToFrac(c.db) };
     case "setPan":
       return c.strip.kind === "track" ? { track: c.strip.id, target: { kind: "pan" }, pos: panPosition(c.pan) } : null;
     case "setSend":

@@ -219,6 +219,15 @@ pub enum EngineCommand {
         target: AutoTarget,
         on: bool,
     },
+    /// Use [`EngineHandle::set_master_automation`]. As `SetAutomation`, for the lane of the
+    /// master's fader, the only one the master has.
+    SetMasterAutomation {
+        set: Option<Box<AutoSet>>,
+    },
+    /// As `HoldLane`, for the lane of the master's fader.
+    HoldMasterLane {
+        on: bool,
+    },
     /// Use [`EngineHandle::set_input`]. The PC's input, for the voices of the vocal tracks,
     /// in place of the one before (`None`: no input is open); the old feed comes back on a
     /// retired ring.
@@ -1450,6 +1459,7 @@ pub struct Engine {
     returns: [Strip; 2],
     /// Its fader and pan come before its slots (docs/architecture.md 19-11).
     master_strip: Strip,
+    master_auto: MasterAuto,
     midi: Consumer<MidiIn>,
     /// The keys of the PC keyboard ([`EngineHandle::typed_in`]), read with `midi` in time order.
     typed: Consumer<MidiIn>,
@@ -1554,6 +1564,7 @@ impl Engine {
             auto_ticks: vec![0.0; config.max_frames.div_ceil(MIX_STEP) + 1].into_boxed_slice(),
             returns: [Strip::new(), Strip::new()],
             master_strip: Strip::new(),
+            master_auto: MasterAuto::new(config.max_frames),
             midi: midi_rx,
             typed: typed_rx,
             latency: latency_tx,
@@ -1651,6 +1662,9 @@ impl Engine {
                 set.forget();
             }
             track.clips.rest();
+        }
+        if let Some(set) = self.master_auto.set.as_deref_mut() {
+            set.forget();
         }
         self.sample.fade_left = 0;
         // What is still here when the ring is full is dropped, which is allowed on this thread.
@@ -1973,6 +1987,23 @@ impl Engine {
                         }
                     }
                     slot.apply_knobs();
+                }
+                EngineCommand::SetMasterAutomation { mut set } => {
+                    let master = &mut self.master_auto;
+                    if let Some(new) = set.as_deref_mut() {
+                        new.follow(master.set.as_deref(), &master.holds());
+                    }
+                    if let Some(old) = std::mem::replace(&mut master.set, set) {
+                        // Cannot fail: checked above, and this is the only producer.
+                        let _ = self.retired_autos.push(old);
+                    }
+                }
+                EngineCommand::HoldMasterLane { on } => {
+                    let master = &mut self.master_auto;
+                    master.held = on;
+                    if let Some(set) = master.set.as_deref_mut() {
+                        set.hold(AutoTarget::Volume, on);
+                    }
                 }
                 EngineCommand::SetEffectParam {
                     strip,
@@ -2909,6 +2940,7 @@ impl Engine {
         // The returns and the master are not cut into stretches: they hear the tempo at the
         // first frame of the piece.
         let mut piece_ctx = None;
+        self.master_auto.count = 0;
 
         let mut from = 0;
         while from < frames {
@@ -2924,6 +2956,7 @@ impl Engine {
             };
             piece_ctx.get_or_insert(ctx);
             self.automate(to - from);
+            self.master_auto.mark(&self.transport, from, to);
             // Every instrument that renders in another process starts on this stretch now.
             for track in self.tracks.iter_mut().chain([&mut self.sample]) {
                 if let Some(instrument) = track.instrument.as_mut() {
@@ -3004,7 +3037,8 @@ impl Engine {
             }
         }
 
-        self.master_strip.level(master_l, master_r);
+        let ramp = ramp_frames(self.sample_rate);
+        (self.master_auto).level(&mut self.master_strip, master_l, master_r, ramp);
         let mut io = Io {
             left: master_l,
             right: master_r,
@@ -3057,6 +3091,93 @@ impl Engine {
         raise(&self.meters.master[1], peak[1]);
         if peak[0] > 1.0 || peak[1] > 1.0 {
             self.meters.clipped.store(true, Relaxed);
+        }
+    }
+}
+
+/// The lane of the master's fader (round 12, M5). The master's strip is not cut into
+/// stretches, so the ticks its lane is read at are kept from each stretch of the piece
+/// ([`MasterAuto::mark`]) until the strip comes ([`MasterAuto::level`]): the same steps, the
+/// same line and the same slope as a track's fader ([`Mix::level`]).
+struct MasterAuto {
+    set: Option<Box<AutoSet>>,
+    /// A person has hold of the fader ([`EngineCommand::HoldMasterLane`]), whatever sets come.
+    held: bool,
+    /// The lane had the fader in the last piece: without it, the fader goes back to the
+    /// hand's value.
+    steered: bool,
+    /// For each step of the piece being rendered: the frame after its last, and the tick at
+    /// its last frame.
+    steps: Box<[(u32, f64)]>,
+    count: usize,
+}
+
+impl MasterAuto {
+    fn new(max_frames: usize) -> MasterAuto {
+        MasterAuto {
+            set: None,
+            held: false,
+            steered: false,
+            // A stretch is a frame at least, and a step is no longer than a stretch.
+            steps: vec![(0, 0.0); max_frames.max(1)].into_boxed_slice(),
+            count: 0,
+        }
+    }
+
+    fn holds(&self) -> [Option<AutoTarget>; 1] {
+        [self.held.then_some(AutoTarget::Volume)]
+    }
+
+    /// Notes where the steps of the stretch `from..to` of the piece end, before the
+    /// transport moves over it.
+    fn mark(&mut self, clock: &Transport, from: usize, to: usize) {
+        if !self.set.as_deref().is_some_and(|set| set.has_level()) {
+            return;
+        }
+        let mut at = from;
+        while at < to {
+            let end = (at + MIX_STEP).min(to);
+            let step = (end as u32, clock.tick_ahead((end - from) as u64 - 1));
+            match self.steps.get_mut(self.count) {
+                Some(slot) => {
+                    *slot = step;
+                    self.count += 1;
+                }
+                // No room (it cannot be): the last step reaches to here.
+                None => self.steps[self.count - 1] = step,
+            }
+            at = end;
+        }
+    }
+
+    /// The master's fader and pan over the piece, where the hand put them or where the lane
+    /// takes the fader.
+    fn level(&mut self, strip: &mut Strip, left: &mut [f32], right: &mut [f32], ramp: u32) {
+        let steps = &self.steps[..self.count];
+        let lane = (self.set.as_deref_mut()).filter(|set| set.has_level() && !steps.is_empty());
+        let Some(set) = lane else {
+            if std::mem::take(&mut self.steered) {
+                let (gain, pan) = strip.hand();
+                strip.steer_level(gain, pan, ramp);
+            }
+            strip.level(left, right);
+            return;
+        };
+        self.steered = true;
+        let mut from = 0;
+        for &(to, tick) in steps {
+            let to = (to as usize).min(left.len());
+            if to <= from {
+                continue;
+            }
+            let frames = to - from;
+            let (gain, pan) = set.level(tick, frames, ramp as f32, strip.hand());
+            strip.steer_level(gain, pan, frames as u32);
+            strip.level(&mut left[from..to], &mut right[from..to]);
+            from = to;
+        }
+        if from < left.len() {
+            strip.level(&mut left[from..], &mut right[from..]);
         }
     }
 }
@@ -3396,6 +3517,18 @@ impl EngineHandle {
     ) -> Result<(), EngineCommand> {
         let set = (!lanes.is_empty()).then(|| Box::new(AutoSet::new(lanes)));
         self.send(EngineCommand::SetAutomation { track, set })
+    }
+
+    /// Sends the lane of the master's fader that plays from now on
+    /// ([`EngineCommand::SetMasterAutomation`]): `lanes` holds it (`AutoTarget::Volume`), or
+    /// nothing when none plays. The set is made here (this allocates); the old one comes
+    /// back with the tracks' ([`EngineHandle::take_retired_automation`]).
+    pub fn set_master_automation(
+        &mut self,
+        lanes: Vec<crate::AutoLane>,
+    ) -> Result<(), EngineCommand> {
+        let set = (!lanes.is_empty()).then(|| Box::new(AutoSet::new(lanes)));
+        self.send(EngineCommand::SetMasterAutomation { set })
     }
 
     pub fn take_retired_automation(&mut self) -> Option<Box<AutoSet>> {

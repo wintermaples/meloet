@@ -5,7 +5,7 @@
      While dragging, only the screen moves first, and one intent is sent on release. Esc cancels (cancelDrag in pianoroll/view.svelte.ts). -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { LaneView, TrackView } from "../../bridge";
+  import type { LaneView } from "../../bridge";
   import { everyGlFrame, glSlot } from "../../gl/slot";
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
@@ -19,10 +19,10 @@
   import * as A from "./autoGeom";
   import { playTick, pointsOf } from "./autoState.svelte";
   import { laneMenu } from "./laneMenu";
-  import { bareText, handPosition, hasLaneRef, isOnTrack, positionText, valueAt } from "./laneValue";
+  import { bareText, handPosition, hasLaneRef, isOnTrack, positionText, valueAt, type LaneOwner } from "./laneValue";
 
   interface Props {
-    track: TrackView;
+    track: LaneOwner;
     lane: LaneView;
     view: View;
     map: TempoMap;

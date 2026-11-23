@@ -17,7 +17,7 @@
   import { vocalInputRows } from "../trackMenu";
   import Strip from "./Strip.svelte";
   import { mixerLivePosition, shownPosition } from "../automation/autoState.svelte";
-  import { hasLaneRef, laneMoves, laneOf, panAt, type AutoLook, type StripAuto } from "../automation/laneValue";
+  import { hasLaneRef, laneMoves, laneOf, masterHome, masterOwner, panAt, type AutoLook, type LaneOwner, type StripAuto } from "../automation/laneValue";
   import { fracToDb } from "./scale";
   import type { AutoTarget } from "../../bridge";
   import { returnEffectName, stripName } from "./stripName";
@@ -45,8 +45,8 @@
   // ---- Automation (docs/architecture.md 21-8: the screen works out the value itself from the lane points and the play line) ----
 
   /** If any track has a volume lane, every strip shows the row under the value. */
-  const autoRow = $derived(song.tracks.some((tr) => laneOf(tr, { kind: "volume" }) !== undefined));
-  function lookOf(track: TrackView, target: AutoTarget): AutoLook {
+  const autoRow = $derived(song.master.lanes.length > 0 || song.tracks.some((tr) => laneOf(tr, { kind: "volume" }) !== undefined));
+  function lookOf(track: LaneOwner, target: AutoTarget): AutoLook {
     const lane = laneOf(track, target);
     if (!lane) return null;
     if (laneMoves(lane, app.automation.held, track.id)) return "moving";
@@ -62,10 +62,21 @@
       restore: volume?.resting && !busy ? () => send({ type: "restoreLane", home: { kind: "track", track: track.id }, target: { kind: "volume" } }) : null,
     };
   }
-  /** Returns and the master have no lanes (A-19, item 7). Only the row under the value is shown, to keep the heights equal. */
+  /** Returns have no lanes (A-19, item 7). Only the row under the value is shown, to keep the heights equal. */
   const noAuto = $derived<StripAuto>({ gain: null, pan: null, sends: [null, null], row: autoRow, restore: null });
+  /** The master has a lane of its volume only (round 12 M5): the fader follows it as a track's does, and the mark by the value makes it. */
+  const master = $derived(masterOwner(song.master));
+  const masterAuto = $derived.by((): StripAuto => {
+    const volume = laneOf(master, { kind: "volume" });
+    return {
+      ...noAuto,
+      gain: lookOf(master, { kind: "volume" }),
+      restore: volume?.resting && !busy ? () => send({ type: "restoreLane", home: masterHome, target: { kind: "volume" } }) : null,
+      mark: { on: volume !== undefined, usable: !busy, add: () => send({ type: "addLane", home: masterHome, target: { kind: "volume" } }) },
+    };
+  });
   /** What a lane moves shows the value on the line; others show the value set by hand. */
-  function shownGain(track: TrackView, look: AutoLook): number | null {
+  function shownGain(track: LaneOwner, look: AutoLook): number | null {
     const pos = look === "moving" ? shownPosition(track.id, { kind: "volume" }) : null;
     return pos === null ? track.gainDb : fracToDb(pos);
   }
@@ -80,7 +91,7 @@
     }) as [number | null, number | null];
   }
   /** The newest value on the lane line for the fader value text (every frame). undefined when not moving. */
-  function liveValues(track: TrackView, auto: StripAuto): { gainDb?: number | null } {
+  function liveValues(track: LaneOwner, auto: StripAuto): { gainDb?: number | null } {
     const pos = auto.gain === "moving" ? mixerLivePosition(track.id, { kind: "volume" }) : null;
     return { gainDb: pos === null ? undefined : fracToDb(pos) };
   }
@@ -248,12 +259,13 @@
         windowSlots={windowSlots({ kind: "master" })}
         sends={null}
         pan={song.master.pan}
-        gainDb={song.master.gainDb}
+        gainDb={shownGain(master, masterAuto.gain)}
         meter="master"
         mute={off}
         solo={off}
         arm={off}
-        auto={noAuto}
+        auto={masterAuto}
+        live={liveValues(master, masterAuto)}
       />
     </div>
   </div>

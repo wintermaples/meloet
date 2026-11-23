@@ -430,6 +430,8 @@ pub struct Session {
     pub soloed: BTreeSet<TrackId>,
     /// The folded automation lanes (▸ of a lane's header). Saved with the song.
     pub folded_lanes: Vec<(TrackId, AutoTarget)>,
+    /// The master's lane is folded. Saved with the song.
+    pub master_lane_folded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -462,6 +464,7 @@ impl Song {
                 roll: RollSettings::default(),
                 soloed: BTreeSet::new(),
                 folded_lanes: Vec::new(),
+                master_lane_folded: false,
             },
         }
     }

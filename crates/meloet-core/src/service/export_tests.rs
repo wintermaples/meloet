@@ -310,3 +310,94 @@ fn turned_knobs_are_exported_as_they_play() {
         "the knobs are heard"
     );
 }
+
+/// A fade-out on the master (round 12, M5): the file is what plays, sample for sample; up to
+/// the fade it is the song without one; the fader goes down its line; the song ends in
+/// silence, and so the tail is over at once.
+#[test]
+fn a_fade_out_is_exported_as_it_plays_and_ends_in_silence() {
+    let place = Place::new("export-fade-out");
+    let (plain, _) = song();
+    let doc = meloet_model::automation::add_fade_out(&plain, 2).unwrap();
+    assert_eq!(
+        doc.step,
+        meloet_model::StepKind::AddFadeOut {
+            range: meloet_model::TickRange::new(4 * BAR, 6 * BAR).unwrap()
+        }
+    );
+    let doc = doc.doc;
+    place.files_of(&doc);
+    let mut playing = Playing::new(&place);
+    playing.open(&doc, 2);
+    let span = (0, 6 * BAR);
+    let frames = frames_of(&doc, span.0, span.1);
+    playing.play(span.0, frames);
+    playing.quiet();
+    let heard = playing.play(span.0, frames);
+
+    let run = place.start(place.setup(place.job(1, &doc, span, ExportTail::Off)));
+    run.rendered();
+    let faded = run.pass(0);
+    assert_eq!(faded.len(), heard.len());
+    assert_eq!(
+        first_difference(&faded, &heard),
+        None,
+        "the first frame that differs, exported and played"
+    );
+
+    let run = place.start(place.setup(place.job(2, &plain, span, ExportTail::Off)));
+    run.rendered();
+    let whole = run.pass(0);
+    assert_eq!(whole.len(), faded.len());
+    // Before the fade the master's lane holds the fader where the hand put it.
+    let start = frames_of(&doc, 0, 4 * BAR);
+    let far = (faded[..2 * (start - BLOCK)].iter())
+        .zip(&whole)
+        .fold(0.0f32, |far, (a, b)| far.max((a - b).abs()));
+    assert!(far < 1e-6, "{far} before the fade");
+    // Half way down the line the fader is at the middle of its way.
+    let level = |samples: &[f32], frame: usize| {
+        let piece = &samples[2 * frame..2 * (frame + 2 * BLOCK)];
+        (piece.iter().map(|s| s * s).sum::<f32>() / piece.len() as f32).sqrt()
+    };
+    let half = frames_of(&doc, 0, 5 * BAR);
+    let fader = plain.master.gain.position();
+    let want = meloet_model::Gain::from_position(fader / 2.0).linear();
+    let got = level(&faded, half - BLOCK) / level(&whole, half - BLOCK);
+    assert!((got / want - 1.0).abs() < 0.1, "{got}, not {want}");
+    // The end is silent where the song without the fade still sounds.
+    let last = |samples: &[f32]| {
+        let tail = &samples[samples.len() - 2 * BLOCK / 4..];
+        tail.iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    };
+    assert!(last(&faded) < 1e-3, "{}", last(&faded));
+    assert!(
+        level(&whole, frames - 2 * BLOCK) > 1e-3,
+        "the song sounds to its end"
+    );
+
+    // With 「余韻」 the plain song rings on; the faded one has nothing left to ring.
+    let tail = |id: u64, doc: &Doc| {
+        let run = place.start(place.setup(place.job(id, doc, span, ExportTail::UntilSilent)));
+        run.rendered();
+        run.pass(0)
+    };
+    let ringing = tail(3, &plain);
+    assert!(ringing.len() / 2 - frames > RATE as usize / 2);
+    let ended = tail(4, &doc);
+    let more = ended.len() / 2 - frames;
+    assert!(more < RATE as usize / 4, "{more} frames of tail");
+    assert_eq!(first_difference(&ended[..2 * frames], &faded), None);
+    assert!(ended[2 * frames..].iter().all(|s| s.abs() < 1e-3));
+
+    // A lane at rest plays nothing: the file is the plain song's, sample for sample.
+    let rested = meloet_model::automation::rest_lane(
+        &doc,
+        meloet_model::LaneHome::Master,
+        meloet_model::AutoTarget::Volume,
+    );
+    let rested = rested.unwrap().doc;
+    let run = place.start(place.setup(place.job(5, &rested, span, ExportTail::Off)));
+    run.rendered();
+    assert_eq!(first_difference(&run.pass(0), &whole), None);
+}

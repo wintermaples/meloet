@@ -129,7 +129,10 @@ export class LaneStore {
   }
 }
 
-/** The id of every lane of the song. */
-export function songLaneIds(song: { tracks: readonly { lanes: readonly { laneId: number }[] }[] }): number[] {
-  return song.tracks.flatMap((t) => t.lanes.map((l) => l.laneId));
+/** The id of every lane of the song: the tracks', and the master's. */
+export function songLaneIds(song: {
+  tracks: readonly { lanes: readonly { laneId: number }[] }[];
+  master?: { lanes: readonly { laneId: number }[] };
+}): number[] {
+  return [...song.tracks.flatMap((t) => t.lanes), ...(song.master?.lanes ?? [])].map((l) => l.laneId);
 }

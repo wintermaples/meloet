@@ -26,7 +26,7 @@ const VOLUME = { kind: "volume" } as const;
 /** One volume band each on tracks 1 and 2. */
 const twoTracks = {
   automation: { held: [] },
-  song: { tracks: [1, 2].map((id) => ({ id, lanes: [{ laneId: 10 + id, target: VOLUME, resting: false, points: 2 }] })) },
+  song: { tracks: [1, 2].map((id) => ({ id, lanes: [{ laneId: 10 + id, target: VOLUME, resting: false, points: 2 }] })), master: { lanes: [] } },
 } as unknown as AppState;
 /** The position shown on the mixer strip. */
 const shown = () => [1, 2].map((track) => shownPosition(track, VOLUME));
@@ -120,7 +120,7 @@ describe("waiting tracks (autoState: show the position on the frame that draws t
     const targets = [VOLUME, { kind: "pan" }, { kind: "send", bus: "a" }] as const;
     const three = {
       automation: { held: [] },
-      song: { tracks: [{ id: 1, lanes: targets.map((target, i) => ({ laneId: 21 + i, target, resting: false, points: 2 })) }] },
+      song: { tracks: [{ id: 1, lanes: targets.map((target, i) => ({ laneId: 21 + i, target, resting: false, points: 2 })) }], master: { lanes: [] } },
     } as unknown as AppState;
     for (const id of [21, 22, 23]) POINTS.set(id, ramp(id));
     refreshPositions(three, 0);
@@ -153,7 +153,7 @@ describe("waiting tracks (autoState: show the position on the frame that draws t
 
   it("positions of a track whose band is gone go back to null", () => {
     refreshPositions(twoTracks, 500);
-    const one = { ...twoTracks, song: { tracks: [twoTracks.song.tracks[1]!] } } as unknown as AppState;
+    const one = { ...twoTracks, song: { ...twoTracks.song, tracks: [twoTracks.song.tracks[1]!] } } as unknown as AppState;
     refreshPositions(one, 500);
     expect(shown()).toEqual([null, 0.5]);
     expect(live()).toEqual([null, 0.5]);

@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use meloet_model::effects::EffectKind;
-use meloet_model::{AutoTarget, InstrumentRef, Track, TrackId};
+use meloet_model::{AutoTarget, InstrumentRef, Lane, LaneHome, Track};
 
 use super::{EngineOp, Play, StripSeat};
 use crate::state::Effect;
@@ -44,8 +44,29 @@ struct Head {
 pub(crate) struct AutoSync {
     /// The heads each seat was last sent.
     sent: HashMap<usize, Vec<Head>>,
+    /// The lane of the master's fader as it was last sent: its number, when it plays.
+    master_sent: Option<u32>,
     /// The lanes a person has hold of ([`Play::hold_lane`]).
-    held: Vec<(TrackId, AutoTarget)>,
+    held: Vec<(LaneHome, AutoTarget)>,
+}
+
+/// The lane of the master's fader, when it plays (not resting, with points).
+fn master_lane(doc: &meloet_model::Doc) -> Option<&Lane> {
+    (doc.lane_of(LaneHome::Master, AutoTarget::Volume))
+        .map(|l| &**l)
+        .filter(|l| l.moves())
+}
+
+fn master_lanes(lane: Option<&Lane>) -> Vec<SeatLane> {
+    (lane.into_iter())
+        .map(|l| SeatLane {
+            target: AutoTarget::Volume,
+            step: l.step,
+            points: l.points.iter().map(|p| (p.tick, p.value)).collect(),
+            slot: 0,
+            effect: None,
+        })
+        .collect()
 }
 
 /// The lanes of a track that play (not resting, with points): target, step, the lane's
@@ -127,7 +148,16 @@ impl Play {
             self.autosync.sent.clear();
             self.autosync
                 .held
-                .retain(|(track, _)| doc.track(*track).is_some());
+                .retain(|(home, _)| doc.lanes(*home).is_some());
+        }
+        // The engine outlives a stream, and is told of lanes only while one runs: a new
+        // stream is told even that the master's lane plays nothing.
+        let master = master_lane(doc);
+        if all || master.map(|l| l.id.0) != self.autosync.master_sent {
+            self.autosync.master_sent = master.map(|l| l.id.0);
+            effects.push(Effect::Engine(EngineOp::MasterAutomation {
+                lanes: master_lanes(master),
+            }));
         }
         let gone: Vec<usize> = (self.autosync.sent.keys())
             .filter(|seat| !now.contains_key(seat))
@@ -180,13 +210,9 @@ impl Play {
             self.autosync.sent.insert(seat, heads.clone());
         }
         if all {
-            for &(track, target) in &self.autosync.held {
-                if let Some(seat) = self.seats.of(track) {
-                    effects.push(Effect::Engine(EngineOp::HoldLane {
-                        seat,
-                        target,
-                        on: true,
-                    }));
+            for &(home, target) in &self.autosync.held {
+                if let Some(op) = self.hold_op(home, target, true) {
+                    effects.push(Effect::Engine(op));
                 }
             }
         }
@@ -210,33 +236,44 @@ impl Play {
         effects.push(Effect::Engine(EngineOp::Automation { seat, lanes }));
     }
 
-    /// A person has hold of what the lane of `target` on `track` moves (`on`), or let go of
+    /// A person has hold of what the lane of `target` of `home` moves (`on`), or let go of
     /// it: until then the lane plays nothing and the value is the hand's, as the preview
-    /// sets it (docs/architecture.md 21-9, 21-11). Kept for the track across changes of its
-    /// lanes, and told again to a new stream.
+    /// sets it (docs/architecture.md 21-9, 21-11). Kept for the track, or the master, across
+    /// changes of its lanes, and told again to a new stream.
     pub fn hold_lane(
         &mut self,
-        track: TrackId,
+        home: impl Into<LaneHome>,
         target: AutoTarget,
         on: bool,
         effects: &mut Vec<Effect>,
     ) {
+        let home = home.into();
         let held = &mut self.autosync.held;
-        let was = held.iter().position(|h| *h == (track, target));
+        let was = held.iter().position(|h| *h == (home, target));
         match (was, on) {
-            (None, true) => held.push((track, target)),
+            (None, true) => held.push((home, target)),
             (Some(at), false) => {
                 held.swap_remove(at);
             }
             _ => return,
         }
-        if let Some(seat) = self.seats.of(track) {
-            effects.push(Effect::Engine(EngineOp::HoldLane { seat, target, on }));
+        if let Some(op) = self.hold_op(home, target, on) {
+            effects.push(Effect::Engine(op));
+        }
+    }
+
+    fn hold_op(&self, home: LaneHome, target: AutoTarget, on: bool) -> Option<EngineOp> {
+        match home {
+            LaneHome::Track(track) => {
+                let seat = self.seats.of(track)?;
+                Some(EngineOp::HoldLane { seat, target, on })
+            }
+            LaneHome::Master => Some(EngineOp::HoldMasterLane { on }),
         }
     }
 
     /// The lanes held now.
-    pub fn held_lanes(&self) -> &[(TrackId, AutoTarget)] {
+    pub fn held_lanes(&self) -> &[(LaneHome, AutoTarget)] {
         &self.autosync.held
     }
 }

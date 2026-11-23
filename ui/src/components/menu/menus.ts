@@ -15,6 +15,7 @@ import { about, openAbout } from "../about/about.svelte";
 import { keyList, openKeyList } from "../keylist/keyList.svelte";
 import { trackRows } from "../trackMenu";
 import { openShelf } from "../tracks.svelte";
+import { openFadeBox } from "../arrange/fadeBox.svelte";
 import { listEntries } from "./contextMenu.svelte";
 
 export interface ListRow {
@@ -144,6 +145,9 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.selectAll", { kind: "selectAll" }, k.mod(t("key.selectAll"))),
     act("menu.splitClip", { kind: "splitClips" }, t("key.split")),
     act("menu.joinClips", { kind: "joinClips" }, k.mod(t("key.join"))),
+    { kind: "separator" },
+    // Round 12 M5: opens the box of bars on the ruler at the song's end; not in the arrange's overview, where the ruler is not the song's.
+    plain("menu.fadeOut", !busy && !state.workspace.layout.arrangeOverview, openFadeBox),
   ];
 
   const scale = state.workspace.scale;

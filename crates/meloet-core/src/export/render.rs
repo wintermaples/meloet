@@ -256,6 +256,10 @@ impl ExportEngine {
                 let sent = self.handle.set_automation(seat, auto_lanes(lanes));
                 self.sent(sent);
             }
+            EngineOp::MasterAutomation { lanes } => {
+                let sent = self.handle.set_master_automation(auto_lanes(lanes));
+                self.sent(sent);
+            }
             EngineOp::Clips { seat, clips } => {
                 match self.clips.iter_mut().find(|c| c.seat == seat) {
                     Some(entry) => entry.clips = clips,
@@ -288,6 +292,7 @@ impl ExportEngine {
             | EngineOp::PlayPattern { .. }
             | EngineOp::StopSample
             | EngineOp::HoldLane { .. }
+            | EngineOp::HoldMasterLane { .. }
             | EngineOp::Voice { .. }
             // Only the keyboards go through an arpeggio, and an export has none.
             | EngineOp::Arp { .. } => {}

@@ -17,9 +17,33 @@ use crate::edit::{Edit, EditError, Ids, MAX_TICK, track_index};
 use crate::history::StepKind;
 use crate::mixer::{Bus, Gain, InsertId};
 use crate::song::{Doc, Track};
-use crate::{InstrumentRef, TrackId};
+use crate::tempo_map::TempoMap;
+use crate::{InstrumentRef, TickRange, TrackId};
 
-/// What a lane of a track moves. The returns and the master have no lanes.
+/// Where a lane lives: on a track, or on the master, which has one of its volume only. The
+/// returns have no lanes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LaneHome {
+    Track(TrackId),
+    Master,
+}
+
+impl From<TrackId> for LaneHome {
+    fn from(track: TrackId) -> LaneHome {
+        LaneHome::Track(track)
+    }
+}
+
+impl LaneHome {
+    pub fn track(self) -> Option<TrackId> {
+        match self {
+            LaneHome::Track(track) => Some(track),
+            LaneHome::Master => None,
+        }
+    }
+}
+
+/// What a lane moves. The master's lane moves its fader ([`AutoTarget::Volume`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AutoTarget {
     /// The fader.
@@ -164,28 +188,52 @@ pub(crate) fn drop_orphan_lanes(track: &mut Track) {
 }
 
 impl Doc {
-    /// The lane whose points are `id` now, and its track.
-    pub fn lane(&self, id: LaneId) -> Option<(&Arc<Track>, &Arc<Lane>)> {
-        self.tracks
-            .iter()
-            .find_map(|t| t.automation.iter().find(|l| l.id == id).map(|l| (t, l)))
+    /// The lane whose points are `id` now, and where it lives.
+    pub fn lane(&self, id: LaneId) -> Option<(LaneHome, &Arc<Lane>)> {
+        let of_tracks = (self.tracks.iter()).flat_map(|t| {
+            let home = LaneHome::Track(t.id);
+            t.automation.iter().map(move |l| (home, l))
+        });
+        let of_master = self.master_lanes.iter().map(|l| (LaneHome::Master, l));
+        of_tracks.chain(of_master).find(|(_, l)| l.id == id)
     }
 
-    /// What every `Doc` keeps of its lanes: each has its target, a track has one lane for a
-    /// target, the points are in order with each tick once and their values in 0..=1, and
-    /// every lane id is below `next_id` and once in the song.
+    /// The lanes of `home`; `None` for a track that is not there.
+    pub fn lanes(&self, home: LaneHome) -> Option<&[Arc<Lane>]> {
+        match home {
+            LaneHome::Track(track) => self.track(track).map(|t| &t.automation[..]),
+            LaneHome::Master => Some(&self.master_lanes),
+        }
+    }
+
+    pub fn lane_of(&self, home: LaneHome, target: AutoTarget) -> Option<&Arc<Lane>> {
+        self.lanes(home)?.iter().find(|l| l.target == target)
+    }
+
+    /// Whether `home` has what `target` moves ([`Track::has_target`]; the master: its
+    /// volume).
+    pub fn has_lane_target(&self, home: LaneHome, target: AutoTarget) -> bool {
+        match home {
+            LaneHome::Track(track) => self.track(track).is_some_and(|t| t.has_target(target)),
+            LaneHome::Master => target == AutoTarget::Volume,
+        }
+    }
+
+    /// What every `Doc` keeps of its lanes: each has its target, a track and the master have
+    /// one lane for a target, the points are in order with each tick once and their values
+    /// in 0..=1, and every lane id is below `next_id` and once in the song.
     pub fn check_lanes(&self) -> Result<(), String> {
         let mut ids = std::collections::HashSet::new();
-        for t in &self.tracks {
-            for (i, l) in t.automation.iter().enumerate() {
-                if !t.has_target(l.target) {
-                    return Err(format!(
-                        "track {}: lane {:?} has no target",
-                        t.id.0, l.target
-                    ));
+        let homes = (self.tracks.iter())
+            .map(|t| (LaneHome::Track(t.id), &t.automation))
+            .chain([(LaneHome::Master, &self.master_lanes)]);
+        for (home, lanes) in homes {
+            for (i, l) in lanes.iter().enumerate() {
+                if !self.has_lane_target(home, l.target) {
+                    return Err(format!("{home:?}: lane {:?} has no target", l.target));
                 }
-                if t.automation[..i].iter().any(|o| o.target == l.target) {
-                    return Err(format!("track {}: two lanes for {:?}", t.id.0, l.target));
+                if lanes[..i].iter().any(|o| o.target == l.target) {
+                    return Err(format!("{home:?}: two lanes for {:?}", l.target));
                 }
                 if l.id.0 >= self.next_id || !ids.insert(l.id) {
                     return Err(format!("lane id {} given twice", l.id.0));
@@ -206,20 +254,27 @@ fn clamp_value(value: f32) -> Option<f32> {
     (!value.is_nan()).then(|| value.clamp(0.0, 1.0))
 }
 
-/// The track at `ti` of a copy of `doc`, ready to change.
-fn track_mut(doc: &mut Doc, ti: usize) -> &mut Track {
-    Arc::make_mut(&mut doc.tracks[ti])
+/// The lanes of `home` in a copy of `doc`, ready to change. `home` is there.
+fn lanes_mut(doc: &mut Doc, home: LaneHome) -> &mut Vec<Arc<Lane>> {
+    match home {
+        LaneHome::Track(track) => {
+            let ti = (doc.tracks.iter().position(|t| t.id == track)).expect("the lane's track");
+            &mut Arc::make_mut(&mut doc.tracks[ti]).automation
+        }
+        LaneHome::Master => &mut doc.master_lanes,
+    }
 }
 
-fn lane_index(track: &Track, target: AutoTarget) -> Option<usize> {
-    track.automation.iter().position(|l| l.target == target)
+/// The lane at `li` of `home`, which is there.
+fn lane_at(doc: &Doc, home: LaneHome, li: usize) -> &Arc<Lane> {
+    &doc.lanes(home).expect("the lane's home")[li]
 }
 
-/// A copy of `doc` whose lane at (`ti`, `li`) has `points` and a new id. The new lane shares
-/// with the old one the chunks of points that are the same in both.
+/// A copy of `doc` whose lane at `li` of `home` has `points` and a new id. The new lane
+/// shares with the old one the chunks of points that are the same in both.
 fn with_points(
     doc: &Doc,
-    ti: usize,
+    home: LaneHome,
     li: usize,
     points: Vec<AutoPoint>,
 ) -> Result<(Doc, LaneId), EditError> {
@@ -227,7 +282,7 @@ fn with_points(
     let id = LaneId(ids.next()?);
     let mut new = doc.clone();
     new.next_id = ids.0;
-    let lanes = &mut track_mut(&mut new, ti).automation;
+    let lanes = lanes_mut(&mut new, home);
     let mut lane = Lane::clone(&lanes[li]);
     if lane.points == points {
         return Err(EditError::Unchanged);
@@ -238,46 +293,44 @@ fn with_points(
     Ok((new, id))
 }
 
-fn find(doc: &Doc, lane: LaneId) -> Result<(usize, usize), EditError> {
-    doc.tracks
-        .iter()
-        .enumerate()
-        .find_map(|(ti, t)| {
-            t.automation
-                .iter()
-                .position(|l| l.id == lane)
-                .map(|li| (ti, li))
-        })
-        .ok_or(EditError::NoSuchPoint)
+fn find(doc: &Doc, lane: LaneId) -> Result<(LaneHome, usize), EditError> {
+    let (home, _) = doc.lane(lane).ok_or(EditError::NoSuchPoint)?;
+    let lanes = doc.lanes(home).expect("the lane's home");
+    let li = (lanes.iter().position(|l| l.id == lane)).expect("the lane is there");
+    Ok((home, li))
 }
 
-fn find_target(doc: &Doc, track: TrackId, target: AutoTarget) -> Result<(usize, usize), EditError> {
-    let ti = track_index(doc, track)?;
-    let li = lane_index(&doc.tracks[ti], target).ok_or(EditError::NoSuchPoint)?;
-    Ok((ti, li))
+fn find_target(doc: &Doc, home: LaneHome, target: AutoTarget) -> Result<usize, EditError> {
+    if let LaneHome::Track(track) = home {
+        track_index(doc, track)?;
+    }
+    let lanes = doc.lanes(home).expect("the home is there");
+    (lanes.iter().position(|l| l.target == target)).ok_or(EditError::NoSuchPoint)
 }
 
-/// A new lane with no points, after the others. `NoSuchInsert` when the track does not
-/// have `target`, `Unchanged` when it has a lane for it.
+/// A new lane with no points, after the others. `NoSuchInsert` when `home` does not have
+/// `target`, `Unchanged` when it has a lane for it.
 pub fn add_lane(
     doc: &Doc,
-    track: TrackId,
+    home: impl Into<LaneHome>,
     target: AutoTarget,
     step: bool,
 ) -> Result<(Edit, LaneId), EditError> {
-    let ti = track_index(doc, track)?;
-    let t = &doc.tracks[ti];
-    if !t.has_target(target) {
+    let home = home.into();
+    if let LaneHome::Track(track) = home {
+        track_index(doc, track)?;
+    }
+    if !doc.has_lane_target(home, target) {
         return Err(EditError::NoSuchInsert);
     }
-    if t.lane(target).is_some() {
+    if doc.lane_of(home, target).is_some() {
         return Err(EditError::Unchanged);
     }
     let mut ids = Ids(doc.next_id);
     let id = LaneId(ids.next()?);
     let mut new = doc.clone();
     new.next_id = ids.0;
-    track_mut(&mut new, ti).automation.push(Arc::new(Lane {
+    lanes_mut(&mut new, home).push(Arc::new(Lane {
         id,
         target,
         step,
@@ -287,20 +340,25 @@ pub fn add_lane(
     Ok((
         Edit {
             doc: new,
-            step: StepKind::AddLane { track, target },
+            step: StepKind::AddLane { home, target },
         },
         id,
     ))
 }
 
 /// 「帯を消す」: the lane goes with its points.
-pub fn delete_lane(doc: &Doc, track: TrackId, target: AutoTarget) -> Result<Edit, EditError> {
-    let (ti, li) = find_target(doc, track, target)?;
+pub fn delete_lane(
+    doc: &Doc,
+    home: impl Into<LaneHome>,
+    target: AutoTarget,
+) -> Result<Edit, EditError> {
+    let home = home.into();
+    let li = find_target(doc, home, target)?;
     let mut new = doc.clone();
-    track_mut(&mut new, ti).automation.remove(li);
+    lanes_mut(&mut new, home).remove(li);
     Ok(Edit {
         doc: new,
-        step: StepKind::DeleteLane { track, target },
+        step: StepKind::DeleteLane { home, target },
     })
 }
 
@@ -314,8 +372,8 @@ pub fn add_point(
     value: Option<f32>,
     flat: f32,
 ) -> Result<(Edit, LaneId, usize), EditError> {
-    let (ti, li) = find(doc, lane)?;
-    let l = &doc.tracks[ti].automation[li];
+    let (home, li) = find(doc, lane)?;
+    let l = lane_at(doc, home, li);
     let tick = tick.min(MAX_TICK);
     let value = (value.and_then(clamp_value))
         .or_else(|| l.value_at(tick))
@@ -331,12 +389,12 @@ pub fn add_point(
             at
         }
     };
-    let (track, target) = (doc.tracks[ti].id, l.target);
-    let (new, id) = with_points(doc, ti, li, points)?;
+    let target = l.target;
+    let (new, id) = with_points(doc, home, li, points)?;
     Ok((
         Edit {
             doc: new,
-            step: StepKind::AddAutoPoint { track, target },
+            step: StepKind::AddAutoPoint { home, target },
         },
         id,
         at,
@@ -369,8 +427,8 @@ pub fn move_points(
     d_tick: i64,
     d_value: f32,
 ) -> Result<(Edit, LaneId, Vec<usize>), EditError> {
-    let (ti, li) = find(doc, lane)?;
-    let l = &doc.tracks[ti].automation[li];
+    let (home, li) = find(doc, lane)?;
+    let l = lane_at(doc, home, li);
     let picked = picked_places(l.points.len(), picked)?;
     let moved = || picked.iter().map(|&i| l.points[i]);
     let (first, last) = (
@@ -406,14 +464,14 @@ pub fn move_points(
         .filter(|(_, (_, m))| *m)
         .map(|(i, _)| i)
         .collect();
-    let (track, target, count) = (doc.tracks[ti].id, l.target, picked.len());
+    let (target, count) = (l.target, picked.len());
     let points = points.into_iter().map(|(p, _)| p).collect();
-    let (new, id) = with_points(doc, ti, li, points)?;
+    let (new, id) = with_points(doc, home, li, points)?;
     Ok((
         Edit {
             doc: new,
             step: StepKind::MoveAutoPoints {
-                track,
+                home,
                 target,
                 count,
             },
@@ -429,20 +487,20 @@ pub fn delete_points(
     lane: LaneId,
     picked: &[usize],
 ) -> Result<(Edit, LaneId), EditError> {
-    let (ti, li) = find(doc, lane)?;
-    let l = &doc.tracks[ti].automation[li];
+    let (home, li) = find(doc, lane)?;
+    let l = lane_at(doc, home, li);
     let picked = picked_places(l.points.len(), picked)?;
     let points = (l.points.iter().enumerate())
         .filter(|(i, _)| picked.binary_search(i).is_err())
         .map(|(_, p)| *p)
         .collect();
-    let (track, target, count) = (doc.tracks[ti].id, l.target, picked.len());
-    let (new, id) = with_points(doc, ti, li, points)?;
+    let (target, count) = (l.target, picked.len());
+    let (new, id) = with_points(doc, home, li, points)?;
     Ok((
         Edit {
             doc: new,
             step: StepKind::DeleteAutoPoints {
-                track,
+                home,
                 target,
                 count,
             },
@@ -552,22 +610,23 @@ fn written(pass: &[AutoPoint], step: bool) -> Vec<AutoPoint> {
 /// points, where the hand put it.
 pub fn write(
     doc: &Doc,
-    track: TrackId,
+    home: impl Into<LaneHome>,
     target: AutoTarget,
     passes: &[Vec<AutoPoint>],
     flat: f32,
 ) -> Result<(Edit, LaneId), EditError> {
-    let (ti, li) = find_target(doc, track, target)?;
-    let l = &doc.tracks[ti].automation[li];
+    let home = home.into();
+    let li = find_target(doc, home, target)?;
+    let l = lane_at(doc, home, li);
     let mut points = l.points.to_vec();
     for pass in passes {
         write_pass(&mut points, &written(pass, l.step), l.step, flat);
     }
-    let (new, id) = with_points(doc, ti, li, points)?;
+    let (new, id) = with_points(doc, home, li, points)?;
     Ok((
         Edit {
             doc: new,
-            step: StepKind::WriteAutomation { track, target },
+            step: StepKind::WriteAutomation { home, target },
         },
         id,
     ))
@@ -577,13 +636,14 @@ pub fn write(
 /// which the line keeps to the next point.
 pub fn write_press(
     doc: &Doc,
-    track: TrackId,
+    home: impl Into<LaneHome>,
     target: AutoTarget,
     tick: u64,
     value: f32,
 ) -> Result<(Edit, LaneId), EditError> {
-    let (ti, li) = find_target(doc, track, target)?;
-    let l = &doc.tracks[ti].automation[li];
+    let home = home.into();
+    let li = find_target(doc, home, target)?;
+    let l = lane_at(doc, home, li);
     let point = AutoPoint {
         tick: tick.min(MAX_TICK),
         value: clamp_value(value).ok_or(EditError::Unchanged)?,
@@ -593,11 +653,11 @@ pub fn write_press(
         Ok(at) => points[at] = point,
         Err(at) => points.insert(at, point),
     }
-    let (new, id) = with_points(doc, ti, li, points)?;
+    let (new, id) = with_points(doc, home, li, points)?;
     Ok((
         Edit {
             doc: new,
-            step: StepKind::WriteAutomation { track, target },
+            step: StepKind::WriteAutomation { home, target },
         },
         id,
     ))
@@ -608,12 +668,13 @@ pub fn write_press(
 /// `MAX_TICK`. `Unchanged` for a value that is not a number.
 pub fn put_points(
     doc: &Doc,
-    track: TrackId,
+    home: impl Into<LaneHome>,
     target: AutoTarget,
     put: &[AutoPoint],
 ) -> Result<(Edit, LaneId), EditError> {
-    let (ti, li) = find_target(doc, track, target)?;
-    let mut points = doc.tracks[ti].automation[li].points.to_vec();
+    let home = home.into();
+    let li = find_target(doc, home, target)?;
+    let mut points = lane_at(doc, home, li).points.to_vec();
     for p in put {
         let point = AutoPoint {
             tick: p.tick.min(MAX_TICK),
@@ -624,11 +685,11 @@ pub fn put_points(
             Err(at) => points.insert(at, point),
         }
     }
-    let (new, id) = with_points(doc, ti, li, points)?;
+    let (new, id) = with_points(doc, home, li, points)?;
     Ok((
         Edit {
             doc: new,
-            step: StepKind::WriteAutomation { track, target },
+            step: StepKind::WriteAutomation { home, target },
         },
         id,
     ))
@@ -637,66 +698,127 @@ pub fn put_points(
 /// The volume lane of the track at `ti` with every point `db` lower
 /// ([`crate::mixer::Gain::lowered_place`]). `Unchanged` when no point moves.
 pub(crate) fn lower_volume_points(doc: &Doc, ti: usize, db: f64) -> Result<Doc, EditError> {
-    let li = lane_index(&doc.tracks[ti], AutoTarget::Volume).ok_or(EditError::NoSuchPoint)?;
-    let points = (doc.tracks[ti].automation[li].points.iter())
+    let home = LaneHome::Track(doc.tracks[ti].id);
+    let li = find_target(doc, home, AutoTarget::Volume)?;
+    let points = (lane_at(doc, home, li).points.iter())
         .map(|p| AutoPoint {
             tick: p.tick,
             value: Gain::lowered_place(p.value, db),
         })
         .collect();
-    with_points(doc, ti, li, points).map(|(new, _)| new)
+    with_points(doc, home, li, points).map(|(new, _)| new)
 }
 
 /// Puts the lane of `target` to rest, or back to moving its target. Returns whether it
-/// changed; nothing for a track or lane that is not there.
-pub fn set_resting(doc: &mut Doc, track: TrackId, target: AutoTarget, resting: bool) -> bool {
-    let Ok((ti, li)) = find_target(doc, track, target) else {
+/// changed; nothing for a home or lane that is not there.
+pub fn set_resting(
+    doc: &mut Doc,
+    home: impl Into<LaneHome>,
+    target: AutoTarget,
+    resting: bool,
+) -> bool {
+    let home = home.into();
+    let Ok(li) = find_target(doc, home, target) else {
         return false;
     };
-    if doc.tracks[ti].automation[li].resting == resting {
+    if lane_at(doc, home, li).resting == resting {
         return false;
     }
-    let lanes = &mut track_mut(doc, ti).automation;
-    Arc::make_mut(&mut lanes[li]).resting = resting;
+    Arc::make_mut(&mut lanes_mut(doc, home)[li]).resting = resting;
     true
 }
 
 /// The lane rests and no value is set with it (a parameter moved in the plugin's own
 /// window). `Unchanged` when it rests already.
-pub fn rest_lane(doc: &Doc, track: TrackId, target: AutoTarget) -> Result<Edit, EditError> {
-    resting_step(
-        doc,
-        track,
-        target,
-        true,
-        StepKind::RestLane { track, target },
-    )
+pub fn rest_lane(
+    doc: &Doc,
+    home: impl Into<LaneHome>,
+    target: AutoTarget,
+) -> Result<Edit, EditError> {
+    let home = home.into();
+    resting_step(doc, home, target, true, StepKind::RestLane { home, target })
 }
 
 /// 「もどす」.
-pub fn restore_lane(doc: &Doc, track: TrackId, target: AutoTarget) -> Result<Edit, EditError> {
+pub fn restore_lane(
+    doc: &Doc,
+    home: impl Into<LaneHome>,
+    target: AutoTarget,
+) -> Result<Edit, EditError> {
+    let home = home.into();
     resting_step(
         doc,
-        track,
+        home,
         target,
         false,
-        StepKind::RestoreLane { track, target },
+        StepKind::RestoreLane { home, target },
     )
 }
 
 fn resting_step(
     doc: &Doc,
-    track: TrackId,
+    home: LaneHome,
     target: AutoTarget,
     resting: bool,
     step: StepKind,
 ) -> Result<Edit, EditError> {
-    find_target(doc, track, target)?;
+    find_target(doc, home, target)?;
     let mut new = doc.clone();
-    if !set_resting(&mut new, track, target, resting) {
+    if !set_resting(&mut new, home, target, resting) {
         return Err(EditError::Unchanged);
     }
     Ok(Edit { doc: new, step })
+}
+
+/// 「フェードアウトをつける」 (round 12, M5): the master's volume goes in a straight line
+/// from what it is `bars` bars before the song's end ([`crate::sections::song_end`]; the
+/// song's head when the song is shorter) to the bottom at the end. What it is there: the
+/// lane's value when the lane moves the fader, else where the hand put the fader. Points
+/// from that start on go, a lane that rests moves again, and a master without a lane gets
+/// one. `NoTakes` in a song with no clip, `Unchanged` for no bars or a fade that is there.
+pub fn add_fade_out(doc: &Doc, bars: u32) -> Result<Edit, EditError> {
+    const HOME: LaneHome = LaneHome::Master;
+    let map = TempoMap::new(&doc.timeline);
+    let end = crate::sections::song_end(doc, &map);
+    if end == 0 {
+        return Err(EditError::NoTakes);
+    }
+    let start = map.tick_of_bar(map.meter_at(end).bar.saturating_sub(u64::from(bars)));
+    if end > MAX_TICK {
+        return Err(EditError::OffTheSong);
+    }
+    let range = TickRange::new(start, end).ok_or(EditError::Unchanged)?;
+    let old = doc.lane_of(HOME, AutoTarget::Volume);
+    let from = (old.filter(|l| l.moves()))
+        .and_then(|l| l.value_at(start))
+        .unwrap_or(doc.master.gain.position());
+    let mut points: Vec<AutoPoint> = (old.iter())
+        .flat_map(|l| l.points.iter().copied())
+        .take_while(|p| p.tick < start)
+        .collect();
+    points.push(AutoPoint {
+        tick: start,
+        value: from,
+    });
+    points.push(AutoPoint {
+        tick: end,
+        value: 0.0,
+    });
+    let mut new = match old {
+        None => add_lane(doc, HOME, AutoTarget::Volume, false)?.0.doc,
+        Some(_) => doc.clone(),
+    };
+    let li = find_target(&new, HOME, AutoTarget::Volume)?;
+    let woke = set_resting(&mut new, HOME, AutoTarget::Volume, false);
+    let doc = match with_points(&new, HOME, li, points) {
+        Ok((with, _)) => with,
+        Err(EditError::Unchanged) if woke => new,
+        Err(e) => return Err(e),
+    };
+    Ok(Edit {
+        doc,
+        step: StepKind::AddFadeOut { range },
+    })
 }
 
 #[cfg(test)]

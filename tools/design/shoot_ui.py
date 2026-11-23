@@ -261,6 +261,17 @@ BOARDS = {
     "menuMarkerOffBars": None,
     "menuMarkerEmpty": None,
     "sectionSpaceBox": None,
+    # The master's lane and the fade-out (round 12, M5; the spec's mock is not a board).
+    "masterFade": None,
+    "masterFadeFolded": None,
+    "masterFadeWriting": None,
+    "fadeOutNoClips": None,
+    "mixerMasterAuto": None,
+    "mixerMasterRest": None,
+    "menuEditFade": None,
+    "fadeOutBox": None,
+    "fadeOutAdded": None,
+    "fadeOutLonger": None,
     "sectionSpaceIn": None,
     "sectionDuplicated": None,
     "sectionDeleted": None,
@@ -491,6 +502,28 @@ await new Promise((r) => setTimeout(r, 300));
 """
 
 
+# Opens 「編集」 and presses 「曲の終わりにフェードアウトをつける…」 (round 12 M5), then runs what follows: nothing (the box
+# stays open), or what is typed into it and Enter.
+FADE_BOX = """
+document.querySelector('[data-menu="1"]').click();
+await new Promise((r) => setTimeout(r, 150));
+[...document.querySelectorAll('[data-test="menubar-list"] button')].find((b) => b.textContent.includes("フェードアウト")).click();
+await new Promise((r) => setTimeout(r, 300));
+%s
+"""
+ENTER_IN_FADE_BOX = """
+const field = document.querySelector('[data-test="fade-out-field"]');
+const typed = "%s";
+if (typed) {
+  field.value = typed;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 50));
+}
+field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+await new Promise((r) => setTimeout(r, 400));
+"""
+
+
 def marker_menu(name, then=""):
     return "js:" + CONTEXT_MARKER % (name, then)
 
@@ -677,6 +710,12 @@ CLICKS = {
     "arrangeRepeated": ("arrangeTrimmed", "js:" + REPEAT_BOX % PRESS_ENTER_IN_REPEAT_BOX),
     # Round 12 A2: the menu of a marker whose section can be used, of one off the bars and of the last one (the
     # pointer on a disabled row), the box of 「この前に空きを入れる…」, and what the fake answers to the three rows.
+    # Round 12 M5: 「編集」 with the row of the fade-out, its box on the ruler at the song's end, the fade the fake puts
+    # on the master (4 bars), and a longer one typed over it (99 goes to 16, and the status line says so).
+    "menuEditFade": ("muted", '[data-menu="1"]'),
+    "fadeOutBox": ("muted", "js:" + FADE_BOX % ""),
+    "fadeOutAdded": ("muted", "js:" + FADE_BOX % (ENTER_IN_FADE_BOX % "")),
+    "fadeOutLonger": ("masterFade", "js:" + FADE_BOX % (ENTER_IN_FADE_BOX % "99")),
     "menuMarker": ("sections", marker_menu("イントロ")),
     "menuMarkerOffBars": ("sections", (marker_menu("Aメロ"), MARKER_ROW % "消して詰める")),
     "menuMarkerEmpty": ("sections", (marker_menu("おわり"), MARKER_ROW % "複製")),
@@ -847,6 +886,16 @@ ONLY = {
     "menuMarkerOffBars": [(1280, 800, 100)],
     "menuMarkerEmpty": [(1280, 800, 100)],
     "sectionSpaceBox": [(1280, 800, 100), (1280, 800, 150)],
+    "masterFade": [(1280, 800, 100), (1280, 800, 150)],
+    "masterFadeFolded": [(1280, 800, 100)],
+    "masterFadeWriting": [(1280, 800, 100)],
+    "fadeOutNoClips": [(1280, 800, 100)],
+    "mixerMasterAuto": [(1280, 800, 100), (1280, 800, 150)],
+    "mixerMasterRest": [(1280, 800, 100)],
+    "menuEditFade": [(1280, 800, 100)],
+    "fadeOutBox": [(1280, 800, 100), (1280, 800, 150)],
+    "fadeOutAdded": [(1280, 800, 100)],
+    "fadeOutLonger": [(1280, 800, 100)],
     "sectionSpaceIn": [(1280, 800, 100)],
     "sectionDuplicated": [(1280, 800, 100)],
     "sectionDeleted": [(1280, 800, 100)],

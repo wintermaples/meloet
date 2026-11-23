@@ -85,7 +85,7 @@ fn a_lane_needs_its_target() {
     assert_eq!(
         e.step,
         StepKind::AddLane {
-            track: T1,
+            home: T1.into(),
             target: AutoTarget::Volume
         }
     );
@@ -191,7 +191,7 @@ fn a_drag_of_points_stops_together() {
     assert_eq!(
         e.step,
         StepKind::MoveAutoPoints {
-            track: T1,
+            home: T1.into(),
             target: AutoTarget::Volume,
             count: 1
         }
@@ -219,7 +219,7 @@ fn writing_puts_the_line_back_around_what_was_written() {
     assert_eq!(
         e.step,
         StepKind::WriteAutomation {
-            track: T1,
+            home: T1.into(),
             target: AutoTarget::Volume
         }
     );
@@ -317,7 +317,7 @@ fn resting_keeps_the_points_and_their_id() {
     assert_eq!(
         back.step,
         StepKind::RestoreLane {
-            track: T1,
+            home: T1.into(),
             target: AutoTarget::Volume
         }
     );
@@ -515,4 +515,281 @@ fn random_steps_keep_every_lane_with_its_target() {
     // Undoing everything brings back the song as it started.
     while history.undo(&mut doc).is_some() {}
     assert_eq!(held(&doc), held(&Doc::new_default()));
+}
+
+// ---- the master's lane and the fade-out (round 12, M5) ----
+
+const BAR: u64 = 4 * Q;
+const M: LaneHome = LaneHome::Master;
+
+fn master_lane(doc: &Doc) -> &Lane {
+    doc.lane_of(M, AutoTarget::Volume).unwrap()
+}
+
+/// A new song with a clip on track 1 over `[start, end)`.
+fn song_with_clip(start: u64, end: u64) -> Doc {
+    let take = crate::NewTake {
+        origin: start,
+        length: end - start,
+        notes: Vec::new(),
+        controls: Vec::new(),
+    };
+    let doc = Doc::new_default();
+    edit::add_recording(&doc, T1, vec![take], 0).unwrap().0.doc
+}
+
+#[test]
+fn the_master_has_a_lane_of_its_volume_only() {
+    let doc = Doc::new_default();
+    for target in [AutoTarget::Pan, AutoTarget::Mute, AutoTarget::Send(Bus::A)] {
+        assert_eq!(
+            add_lane(&doc, M, target, false).map(|_| ()),
+            Err(EditError::NoSuchInsert)
+        );
+    }
+    let (e, id) = add_lane(&doc, M, AutoTarget::Volume, false).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::AddLane {
+            home: M,
+            target: AutoTarget::Volume
+        }
+    );
+    assert_eq!(e.doc.lane(id).map(|(home, _)| home), Some(M));
+    assert!(e.doc.tracks[0].automation.is_empty());
+    e.doc.check_lanes().unwrap();
+    assert_eq!(
+        add_lane(&e.doc, M, AutoTarget::Volume, false).map(|_| ()),
+        Err(EditError::Unchanged)
+    );
+}
+
+#[test]
+fn every_step_of_a_lane_works_on_the_masters() {
+    let mut doc = Doc::new_default();
+    let mut history = History::new();
+    let start = held(&doc);
+    let (e, id) = add_lane(&doc, M, AutoTarget::Volume, false).unwrap();
+    history.apply(&mut doc, e);
+    let (e, id, at) = add_point(&doc, id, Q, Some(0.5), 0.8).unwrap();
+    assert_eq!(at, 0);
+    history.apply(&mut doc, e);
+    let (e, id, _) = add_point(&doc, id, 2 * Q, None, 0.8).unwrap();
+    history.apply(&mut doc, e);
+    let (e, id, places) = move_points(&doc, id, &[1], Q as i64, 0.25).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::MoveAutoPoints {
+            home: M,
+            target: AutoTarget::Volume,
+            count: 1
+        }
+    );
+    assert_eq!(places, [1]);
+    history.apply(&mut doc, e);
+    assert_eq!(ticks_values(master_lane(&doc)), [(Q, 0.5), (3 * Q, 0.75)]);
+    let (e, _) = write(
+        &doc,
+        M,
+        AutoTarget::Volume,
+        &[vec![p(5 * Q, 0.1), p(6 * Q, 0.2)]],
+        0.8,
+    )
+    .unwrap();
+    history.apply(&mut doc, e);
+    assert_eq!(master_lane(&doc).points.len(), 6);
+    let e = rest_lane(&doc, M, AutoTarget::Volume).unwrap();
+    history.apply(&mut doc, e);
+    assert!(master_lane(&doc).resting);
+    let e = restore_lane(&doc, M, AutoTarget::Volume).unwrap();
+    history.apply(&mut doc, e);
+    assert!(!master_lane(&doc).resting);
+    let (e, gone) = delete_points(&doc, master_lane(&doc).id, &[0]).unwrap();
+    history.apply(&mut doc, e);
+    assert_eq!(master_lane(&doc).id, gone);
+    assert_ne!(gone, id);
+    doc.check_lanes().unwrap();
+    // The points as they were are not named any more.
+    assert_eq!(
+        add_point(&doc, id, Q, None, 0.8).map(|_| ()),
+        Err(EditError::NoSuchPoint)
+    );
+    let e = delete_lane(&doc, M, AutoTarget::Volume).unwrap();
+    history.apply(&mut doc, e);
+    assert!(doc.master_lanes.is_empty());
+    while history.undo(&mut doc).is_some() {}
+    assert_eq!(held(&doc), start);
+}
+
+#[test]
+fn the_lanes_of_the_master_are_checked_as_a_tracks_are() {
+    let (e, id) = add_lane(&Doc::new_default(), M, AutoTarget::Volume, false).unwrap();
+    let doc = e.doc;
+    let with = |change: &dyn Fn(&mut Lane)| {
+        let mut doc = doc.clone();
+        let mut l = Lane::clone(&doc.master_lanes[0]);
+        change(&mut l);
+        doc.master_lanes[0] = Arc::new(l);
+        doc
+    };
+    with(&|_| ()).check_lanes().unwrap();
+    assert!(with(&|l| l.target = AutoTarget::Pan).check_lanes().is_err());
+    assert!(with(&|l| l.id = LaneId(u32::MAX)).check_lanes().is_err());
+    let backwards = with(&|l| l.points = vec![p(Q, 0.5), p(Q, 0.6)].into());
+    assert!(backwards.check_lanes().is_err());
+    let high = with(&|l| l.points = vec![p(Q, 1.5)].into());
+    assert!(high.check_lanes().is_err());
+    let mut twice = doc.clone();
+    twice.master_lanes.push(doc.master_lanes[0].clone());
+    assert!(twice.check_lanes().is_err());
+    // An id a track's lane has too.
+    let (e, track_lane) = add_lane(&doc, T1, AutoTarget::Volume, false).unwrap();
+    assert_ne!(track_lane, id);
+    let mut same = e.doc;
+    Arc::make_mut(&mut Arc::make_mut(&mut same.tracks[0]).automation[0]).id = id;
+    assert!(same.check_lanes().is_err());
+}
+
+#[test]
+fn a_fade_out_ends_at_the_songs_end_and_starts_bars_before() {
+    // The last clip ends inside bar 7 (from 1): the song ends at the head of bar 8.
+    let doc = song_with_clip(BAR, 6 * BAR + Q);
+    let e = add_fade_out(&doc, 4).unwrap();
+    assert_eq!(
+        e.step,
+        StepKind::AddFadeOut {
+            range: TickRange::new(3 * BAR, 7 * BAR).unwrap()
+        }
+    );
+    let l = master_lane(&e.doc);
+    let fader = doc.master.gain.position();
+    assert_eq!(ticks_values(l), [(3 * BAR, fader), (7 * BAR, 0.0)]);
+    assert!(!l.step && !l.resting);
+    assert_eq!(
+        l.value_at(0),
+        Some(fader),
+        "before the fade: as the fader was"
+    );
+    assert_eq!(l.value_at(5 * BAR), Some(fader / 2.0), "a straight line");
+    e.doc.check_lanes().unwrap();
+    // One step: undo takes the lane away again.
+    let mut history = History::new();
+    let mut now = doc.clone();
+    history.apply(&mut now, e);
+    history.undo(&mut now).unwrap();
+    assert_eq!(held(&now), held(&doc));
+    assert!(history.undo(&mut now).is_none());
+}
+
+#[test]
+fn a_fade_out_longer_than_the_song_starts_at_its_head() {
+    let doc = song_with_clip(0, 2 * BAR);
+    let e = add_fade_out(&doc, 16).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&e.doc)),
+        [(0, doc.master.gain.position()), (2 * BAR, 0.0)]
+    );
+    let whole = add_fade_out(&doc, 2).unwrap();
+    assert_eq!(ticks_values(master_lane(&whole.doc))[0].0, 0);
+}
+
+#[test]
+fn a_fade_out_counts_bars_of_the_meters_they_are_in() {
+    let doc = song_with_clip(0, 4 * BAR);
+    // From bar 3 (from 1) on the bars are 3/4.
+    let three = crate::Meter::new(3, 4).unwrap();
+    let doc = crate::timeline::add_meter_change(&doc, 2, three)
+        .unwrap()
+        .doc;
+    // Two bars of 4/4, then bars of three quarters: the clip ends 8 quarters after the
+    // change, which is no head of a bar, so the song ends 9 quarters after it.
+    let e = add_fade_out(&doc, 4).unwrap();
+    let ticks: Vec<u64> = (master_lane(&e.doc).points.iter())
+        .map(|p| p.tick)
+        .collect();
+    assert_eq!(
+        ticks,
+        [BAR, 2 * BAR + 9 * Q],
+        "three bars of 3/4 and one of 4/4 back"
+    );
+}
+
+#[test]
+fn a_fade_out_without_clips_or_bars_is_none() {
+    let doc = Doc::new_default();
+    assert_eq!(add_fade_out(&doc, 4).map(|_| ()), Err(EditError::NoTakes));
+    let doc = song_with_clip(0, 2 * BAR);
+    assert_eq!(add_fade_out(&doc, 0).map(|_| ()), Err(EditError::Unchanged));
+    let once = add_fade_out(&doc, 1).unwrap().doc;
+    assert_eq!(
+        add_fade_out(&once, 1).map(|_| ()),
+        Err(EditError::Unchanged)
+    );
+}
+
+#[test]
+fn a_fade_out_starts_from_the_line_and_takes_the_points_after_its_start() {
+    let doc = song_with_clip(0, 8 * BAR);
+    let (e, id) = add_lane(&doc, M, AutoTarget::Volume, false).unwrap();
+    let put = [p(0, 0.4), p(2 * BAR, 0.4), p(6 * BAR, 0.8), p(7 * BAR, 0.2)];
+    let doc = put_points(&e.doc, M, AutoTarget::Volume, &put)
+        .unwrap()
+        .0
+        .doc;
+    let e = add_fade_out(&doc, 4).unwrap();
+    let l = master_lane(&e.doc);
+    assert_eq!(
+        ticks_values(l),
+        [(0, 0.4), (2 * BAR, 0.4), (4 * BAR, 0.6), (8 * BAR, 0.0)],
+        "the line as it was up to the start, then the fade"
+    );
+    assert_ne!(l.id, id);
+    assert_ne!(l.id, master_lane(&doc).id);
+    e.doc.check_lanes().unwrap();
+    // A point on the start itself is taken by the fade's.
+    let again = add_fade_out(&e.doc, 6).unwrap();
+    assert_eq!(
+        ticks_values(master_lane(&again.doc)),
+        [(0, 0.4), (2 * BAR, 0.4), (8 * BAR, 0.0)]
+    );
+}
+
+#[test]
+fn a_fade_out_wakes_a_resting_lane_and_starts_from_the_fader() {
+    let doc = song_with_clip(0, 8 * BAR);
+    let doc = add_lane(&doc, M, AutoTarget::Volume, false).unwrap().0.doc;
+    let put = [p(BAR, 0.3), p(6 * BAR, 0.9)];
+    let doc = put_points(&doc, M, AutoTarget::Volume, &put).unwrap().0.doc;
+    let doc = rest_lane(&doc, M, AutoTarget::Volume).unwrap().doc;
+    let fader = doc.master.gain.position();
+    let e = add_fade_out(&doc, 4).unwrap();
+    let l = master_lane(&e.doc);
+    assert!(!l.resting);
+    assert_eq!(
+        ticks_values(l),
+        [(BAR, 0.3), (4 * BAR, fader), (8 * BAR, 0.0)]
+    );
+    // The same fade on a lane that only rests: the rest goes, and that is the step.
+    let rested = rest_lane(&e.doc, M, AutoTarget::Volume).unwrap().doc;
+    let mut history = History::new();
+    let mut now = rested.clone();
+    let woke = add_fade_out(&rested, 4).unwrap();
+    assert_eq!(master_lane(&woke.doc).id, master_lane(&rested).id);
+    history.apply(&mut now, woke);
+    assert!(!master_lane(&now).resting);
+    history.undo(&mut now).unwrap();
+    assert_eq!(held(&now), held(&rested));
+    // A lane with no points is as no lane: from the fader.
+    let empty = add_lane(&song_with_clip(0, 8 * BAR), M, AutoTarget::Volume, false);
+    let e = add_fade_out(&empty.unwrap().0.doc, 2).unwrap();
+    assert_eq!(ticks_values(master_lane(&e.doc))[0], (6 * BAR, fader));
+}
+
+#[test]
+fn lowering_all_tracks_leaves_the_masters_lane() {
+    let doc = song_with_clip(0, 4 * BAR);
+    let doc = add_fade_out(&doc, 2).unwrap().doc;
+    let lowered = mixer::lower_all_tracks(&doc, 3.0).unwrap().doc;
+    assert!(Arc::ptr_eq(&lowered.master_lanes[0], &doc.master_lanes[0]));
+    assert_eq!(lowered.master, doc.master);
 }

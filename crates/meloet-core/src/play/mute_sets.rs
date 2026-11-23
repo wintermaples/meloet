@@ -13,7 +13,8 @@ fn refusal(e: MuteSetError, name: &str) -> AiRefusal {
         MuteSetError::NoSuchSet => AiRefusal::NoSuchMuteSet(name.trim().to_owned()),
         MuteSetError::Taken => AiRefusal::MuteSetExists(name.trim().to_owned()),
         MuteSetError::TooMany => AiRefusal::TooManyMuteSets,
-        MuteSetError::BadName | MuteSetError::Unchanged => AiRefusal::Unchanged,
+        MuteSetError::BadName => AiRefusal::Cannot("that is no name for a mute set".into()),
+        MuteSetError::Unchanged => AiRefusal::Unchanged,
     }
 }
 

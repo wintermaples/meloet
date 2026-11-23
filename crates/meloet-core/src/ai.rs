@@ -4,11 +4,12 @@
 //! ([`AiAsk::Screen`]); they come through `Input::Ai` all the same.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use meloet_model::effects::EffectKind;
 use meloet_model::{
     AutoPoint, AutoTarget, BuiltinInstrument, ClipEdge, InstrumentRef, Note, NoteField,
-    PluginPlace, QuantizeSettings, Song, StripId, TickRange,
+    PluginPlace, PluginRef, QuantizeSettings, Song, StripId, TickRange,
 };
 use meloet_protocol::{Command, ExportFormat, HistoryRow, LibraryView, RecordFormat};
 
@@ -262,6 +263,18 @@ pub enum AiAsk {
     PluginParams {
         place: PluginPlace,
     },
+    /// The whole state of a plugin as it is now, asked of the plugin: answered with
+    /// [`AiAnswer::State`]. Not a write.
+    PluginState {
+        place: PluginPlace,
+    },
+    /// Puts a whole state into a plugin. With a ticket: once the plugin has taken it, the
+    /// song has it as one step. A plugin that refuses it, or whose process stops while taking
+    /// it, gets the song's state back, and no step is made.
+    SetPluginState {
+        place: PluginPlace,
+        state: Arc<[u8]>,
+    },
     /// Over the song's file. Answered with a ticket; see [`AiSong::outcomes`].
     Save,
     /// A new song folder `name` in `folder`, holding `name.meloet`. With a ticket.
@@ -352,6 +365,9 @@ pub fn batchable(ask: &AiAsk) -> bool {
             | AiAsk::Rollback { .. }
             | AiAsk::SetPluginParam { .. }
             | AiAsk::PluginParams { .. }
+            | AiAsk::PluginState { .. }
+            | AiAsk::SetPluginState { .. }
+            | AiAsk::KeyNames { .. }
             | AiAsk::Save
             | AiAsk::SaveAs { .. }
             | AiAsk::Open { .. }
@@ -424,6 +440,8 @@ impl AiAsk {
             AiAsk::DeleteAutomation { .. } => "delete automation points",
             AiAsk::SetPluginParam { .. } => "set the plugin parameter",
             AiAsk::PluginParams { .. } => "read the plugin's parameters",
+            AiAsk::PluginState { .. } => "read the plugin's state",
+            AiAsk::SetPluginState { .. } => "set the plugin's state",
             AiAsk::Save => "save the song",
             AiAsk::SaveAs { .. } => "save the song as",
             AiAsk::Open { .. } => "open the song",
@@ -585,6 +603,21 @@ pub struct AiKeyMap {
     pub sf2_path: Option<PathBuf>,
 }
 
+/// The whole state of a plugin, as the plugin said it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiPluginState {
+    /// The plugin as the song has it at that place; its key names the format.
+    pub plugin: Arc<PluginRef>,
+    pub bytes: Arc<[u8]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AiState {
+    /// The plugin was asked; ask again in a moment.
+    Waiting,
+    Got(AiPluginState),
+}
+
 /// What a write did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiDone {
@@ -610,6 +643,7 @@ pub enum AiAnswer {
     Done(Box<AiDone>),
     Params(AiParams),
     KeyNames(AiKeyNames),
+    State(AiState),
     Refused(AiRefusal),
 }
 
@@ -664,6 +698,8 @@ pub enum AiRefusal {
     NoSuchPlugin,
     /// The plugin is not loaded (yet), or it stopped.
     PluginNotLoaded,
+    /// The plugin is still taking a state the AI link gave it.
+    PluginBusy,
     /// The parameter has an automation lane: write the lane.
     HasLane,
     NoSuchLane,

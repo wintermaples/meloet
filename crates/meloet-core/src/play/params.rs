@@ -642,6 +642,7 @@ impl Play {
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),
             PluginSaid::KeyNames(names) => self.key_names_said(ticket, names),
+            PluginSaid::StatePut(put) => self.ai_state_put(ticket, put, effects),
             PluginSaid::TextRead { param, read } => {
                 return self.text_read(ticket, param, read, effects);
             }
@@ -658,6 +659,7 @@ impl Play {
     ) {
         match (ask, state) {
             (StateAsk::Base, Some(state)) => self.base_said(ticket, &state),
+            (StateAsk::Ai, state) => self.ai_state_said(ticket, state),
             (StateAsk::Param { param, puts }, Some(state)) => {
                 if self.plugs.of(ticket).is_some_and(|plug| plug.puts == puts) {
                     self.visit_goes_on_from(ticket, &state);

@@ -11,6 +11,7 @@ use super::*;
 use crate::catalog::tests::{COMP_LV2, COMP_VST3, SURGE_LV2, SURGE_VST3};
 use crate::play::PlugState;
 use crate::play::tests::status;
+use crate::plugins::hosts::HostError;
 use crate::state::added_tests::{loads, plugin, rigged};
 use crate::state::{Input, Model, PluginSaid};
 
@@ -164,6 +165,9 @@ impl FakeHost {
                 self.watches.push((ticket, on));
                 return None;
             }
+            PluginAsk::PutState { state } => PluginSaid::StatePut(
+                (self.put(ticket, alive, &state)).map(|()| state_of(self.plugins[&ticket])),
+            ),
             _ if !alive => return None,
             PluginAsk::OpenWindow { .. } | PluginAsk::CloseWindow => return None,
             PluginAsk::KeyNames => PluginSaid::KeyNames(None),
@@ -191,6 +195,27 @@ impl FakeHost {
                 PluginSaid::TextRead { param, read }
             }
         })
+    }
+
+    /// A whole state put in: one of 24 bytes is taken; one that starts with `KILL` stops the
+    /// plugin's process, one with `SKIP` is passed over; any other is refused.
+    fn put(&mut self, ticket: u64, alive: bool, state: &[u8]) -> Result<(), HostError> {
+        if !alive {
+            return Err(HostError::Gone);
+        }
+        if state.starts_with(b"KILL") {
+            self.dead.insert(ticket);
+            return Err(HostError::Gone);
+        }
+        if state.len() != 24 {
+            return Err(HostError::Refused("not a state of the fake".into()));
+        }
+        if state.starts_with(b"SKIP") {
+            return Ok(());
+        }
+        self.plugins.insert(ticket, values_of(state));
+        self.states_put += 1;
+        Ok(())
     }
 
     /// The person turns a parameter in the plugin's window.

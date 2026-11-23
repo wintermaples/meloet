@@ -20,6 +20,7 @@ mod keynames;
 mod midi;
 mod mixer;
 mod notes;
+mod plugstate;
 mod render;
 mod sets;
 mod timing;
@@ -349,6 +350,7 @@ pub fn refusal_text(r: &AiRefusal) -> String {
         AiRefusal::PluginNotLoaded => {
             "the plugin is not loaded yet, or it stopped; try again in a moment".into()
         }
+        AiRefusal::PluginBusy => "the plugin is still taking another state; try again".into(),
         AiRefusal::HasLane => {
             "that parameter has an automation lane; write the lane (or delete it) instead".into()
         }
@@ -454,6 +456,7 @@ impl Tools {
             tool_router: Self::tool_router()
                 + Self::batch_router()
                 + Self::mixer_router()
+                + Self::plugstate_router()
                 + Self::notes_router()
                 + Self::midi_router()
                 + Self::automation_router()

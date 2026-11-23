@@ -16,6 +16,7 @@ rmcp = { version = "=3.11.0", default-features = false, features = ["server", "m
 schemars = "1.2.3"
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 # A thread of its own for the socket (rmcp needs tokio).
 tokio = { version = "1.54.1", features = ["rt", "net", "sync", "time", "macros"] }
 tokio-util = "0.7.20"

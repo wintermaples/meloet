@@ -155,6 +155,10 @@ impl Model {
                     Err(refused) => AiAnswer::Refused(refused),
                 }
             }
+            AiAsk::PluginState { place } => match self.play.ai_plugin_state(place, effects) {
+                Ok(state) => AiAnswer::State(state),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
             ask => match self.ai_in_turn(ask, effects) {
                 Ok(done) => AiAnswer::Done(Box::new(done)),
                 Err(refused) => AiAnswer::Refused(refused),
@@ -166,6 +170,13 @@ impl Model {
     /// A save, an open or a file brought in for the AI link ended.
     pub(super) fn ai_ended(&mut self, ticket: u64, outcome: AiOutcome) {
         self.ai.ended(ticket, outcome);
+    }
+
+    /// States the AI link put into plugins were taken, or not.
+    pub(super) fn ai_puts_ended(&mut self) {
+        for (ticket, outcome) in self.play.take_ai_puts_ended() {
+            self.ai.ended(ticket, outcome);
+        }
     }
 
     /// Files the audio side brought in under `bringing` went into the song, or did not.
@@ -462,8 +473,24 @@ impl Model {
                     pending: true,
                 });
             }
-            AiAsk::PluginParams { .. } | AiAsk::KeyNames { .. } => {
+            AiAsk::PluginParams { .. } | AiAsk::KeyNames { .. } | AiAsk::PluginState { .. } => {
                 return Err(AiRefusal::Cannot("that is a read, not a write".into()));
+            }
+            AiAsk::SetPluginState { place, state } => {
+                let ticket = self.ai.last_ticket + 1;
+                (self.play).ai_put_plugin_state(place, state, ticket, effects)?;
+                let taken = self.ai.ticket();
+                debug_assert_eq!(taken, ticket);
+                return Ok(AiDone {
+                    step: None,
+                    undo_count: before,
+                    clip: None,
+                    take: None,
+                    notes: None,
+                    track: None,
+                    ticket: Some(ticket),
+                    pending: true,
+                });
             }
             AiAsk::Save | AiAsk::SaveAs { .. } | AiAsk::Open { .. } | AiAsk::NewSong => {
                 if !self.song_free() {

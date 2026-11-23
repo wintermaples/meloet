@@ -799,6 +799,7 @@ impl Tools {
                     return Ok(failed("the plugin did not list its parameters within 5 s"));
                 }
                 AiAnswer::Refused(r) => return Ok(failed(refusal_text(&r))),
+                AiAnswer::State(_) => return Ok(super::closing()),
                 AiAnswer::Done(_) => return Ok(super::closing()),
                 AiAnswer::KeyNames(_) => return Ok(super::closing()),
             }

@@ -1,6 +1,6 @@
-<!-- 右クリックの一覧（docs/history/design-notes.ja.md B-60）。App にひとつだけ置く。右クリックされた部品が openContextMenu を呼び、ここが描く。
-     押した所に 2 章の「一覧」の形でひらく（窓からはみ出すなら内がわへずらす）。行を押すと、とじてから行う。外を押す ・ Esc でとじる。
-     WebKit の一覧は、どこでも出さない。文字の枠（input ・ textarea）の右クリックは、切り取り ・ コピー ・ 貼りつけ ・ ぜんぶ選ぶ。 -->
+<!-- Context menu (docs/history/design-notes.ja.md B-60). Only one in App. The right-clicked part calls openContextMenu, and this draws it.
+     Opens where pressed in the form of the 「一覧」 (List) of spec 2 (shifted inside if it goes outside the window). A row press closes, then acts. A press outside or Esc closes.
+     The WebKit menu is never shown. Right click on a text box (input, textarea) gives cut, copy, paste, select all. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { platformOf } from "../../keys/keys";

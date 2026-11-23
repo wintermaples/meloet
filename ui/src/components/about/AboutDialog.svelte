@@ -1,5 +1,5 @@
-<!-- meloet について（仕様書 3 章、えらぶ 10 は 10-A を 2 段にしたもの。モック R7-About ・ R7-AboutLicense。仕様書 2 章「ダイアログ」
-     「ダイアログの 2 段目へ進む行」「スクロールの棒」）。画面だけが持つ（about.svelte.ts）。 -->
+<!-- About meloet (spec 3; choice 10 is 10-A made into 2 pages; mock R7-About, R7-AboutLicense; spec 2 "Dialog",
+     "Row to the second page of a dialog", "Scroll bar"). Only the screen holds it (about.svelte.ts). -->
 <script lang="ts">
   import { movableDialog } from "../../lib/dialogMove";
   import ScrollArea from "../../lib/ScrollArea.svelte";
@@ -24,7 +24,7 @@
   let { list = licenseList, load = loadTexts }: { list?: typeof licenseList; load?: () => Promise<TextsFile | null> } = $props();
 
   const searching = $derived(about.query.trim() !== "");
-  /** 音の素材の置き場所（仕様書 3 章「音の素材をあとから取る所」: 「音の素材」の見出しの中に出す）。 */
+  /** Location of the sound pack (spec 3, the place to fetch the sound pack later: shown inside the 「音の素材」 heading). */
   const soundsPlace = $derived(current.state?.sounds.place ?? null);
   const sounds = $derived(soundsMatching(list.sounds, about.query));
   const fonts = $derived(fontsMatching(list.fonts, about.query));
@@ -41,7 +41,7 @@
     const key = `about.changes.${id}`;
     return key in texts ? t(key as TextKey) : "";
   };
-  // さがしているときは、合う物のある見出しをひらいて見せる。
+  // While searching, open the headings that have matches.
   const groupOpen = (g: string): boolean => searching || about.groups.includes(g);
 </script>
 
@@ -180,7 +180,7 @@
 {/if}
 
 <style>
-  /* 上はモックの位置。窓が低ければ、上下 24 ずつのあきまで上へ寄せ、それでも入らなければ中身をスクロールする。 */
+  /* The top is the mock position. If the window is low, move it up to a gap of 24 above and below; if it still does not fit, the content scrolls. */
   .place {
     position: absolute;
     inset: 0;
@@ -190,7 +190,7 @@
     align-items: center;
     padding: var(--part-dialog-margin) 0;
   }
-  /* 窓の上下のまん中（仕様書 3 章 82）。 */
+  /* Centred vertically in the window (spec 3 82). */
   .lead {
     flex: 1 1 0;
   }
@@ -223,7 +223,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     cursor: move;
   }
-  /* 見出しの行に乗る ・ 動かしている: 地 gray.4（仕様書 2 章「ダイアログの見出しの行（動かす）」）。 */
+  /* Hovering or moving the heading row: bg gray.4 (spec 2 "Dialog heading row (moving)"). */
   .head:hover {
     background: var(--color-gray-4);
   }
@@ -268,7 +268,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* 1 段目 */
+  /* First page */
   .name-box {
     display: flex;
     flex-direction: column;
@@ -298,7 +298,7 @@
     flex-shrink: 0;
     width: var(--mock-about-label);
   }
-  /* ダイアログの 2 段目へ進む行（仕様書 2 章: 高さ 32、左右 16、下に gray.3 の線）。 */
+  /* Row to the second page of a dialog (spec 2: height 32, 16 left and right, a gray.3 line below). */
   .next {
     width: 100%;
     display: flex;
@@ -318,7 +318,7 @@
     background: var(--color-gray-4);
   }
 
-  /* 2 段目 */
+  /* Second page */
   .search-bar {
     display: flex;
     align-items: center;
@@ -405,7 +405,7 @@
     background: var(--color-gray-1);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
-  /* 全文の枠: この枠の中だけスクロールする。 */
+  /* Full text box: only the inside of this box scrolls. */
   .text-box {
     display: flex;
     flex-direction: column;

@@ -1,19 +1,19 @@
-// 「meloet について」のダイアログ（仕様書 3 章）の、ひらいているか、どの段か、何をひらいているか。画面だけが持つ。
-// 曲にも音にもさわらない、読むだけのダイアログなので、core に持たせない（約束を変えない）。
-// Esc の順は、ほかのダイアログと同じ番（用語の説明やメニューの次）で、keys/attach.ts が aboutBack() を呼ぶ。
+// Whether the 「meloet について」 dialog (spec 3) is open, which page, and what is open in it. Only the screen holds it.
+// It is a read-only dialog that touches neither the song nor the sound, so core does not hold it (the protocol does not change).
+// In the Esc order it takes the same turn as other dialogs (after term tips and menus); keys/attach.ts calls aboutBack().
 
 export type AboutSection = "sounds" | "fonts";
 
 export const about = $state({
   open: false,
-  /** 1: meloet について。2: オープンソースのライセンス。 */
+  /** 1: about meloet. 2: open source licenses. */
   stage: 1 as 1 | 2,
   query: "",
-  /** 音の素材と書体の見出し。はじめはたたむ（ヤチヨさんの決め 2026-11-19。仕様書 3 章は「はじめからひらいている」）。 */
+  /** Headings of the sound pack and fonts. Folded at first (the owner's decision; spec 3 says 「はじめからひらいている」). */
   sections: { sounds: false, fonts: false } as Record<AboutSection, boolean>,
-  /** ひらいているライセンスの見出し（licenseGroup の名前）。 */
+  /** The open license heading (the name of licenseGroup). */
   groups: [] as string[],
-  /** 全文の枠をひらいている行（"名前@版"）。1 つずつ。 */
+  /** The row whose full text box is open ("name@version"). One at a time. */
   part: null as string | null,
 });
 
@@ -34,7 +34,7 @@ export function closeAbout(): void {
   about.open = false;
 }
 
-/** 2 段目へ。ひらくたびに、たたんだ形から始める。 */
+/** To the second page. Each time it opens, start folded. */
 export function showLicenses(): void {
   reset(2);
 }
@@ -43,7 +43,7 @@ export function showFirstStage(): void {
   about.stage = 1;
 }
 
-/** Esc: 2 段目なら 1 段目へ、1 段目ならとじる。ひらいていなければ false（次の番へ）。 */
+/** Esc: on the second page go to the first, on the first page close. false if not open (next turn). */
 export function aboutBack(): boolean {
   if (!about.open) return false;
   if (about.stage === 2) showFirstStage();

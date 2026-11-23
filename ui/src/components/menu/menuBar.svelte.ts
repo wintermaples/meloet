@@ -1,9 +1,9 @@
-// 上のメニューの行（docs/history/design-notes.ja.md B-59）の、ひらいているメニュー。画面だけが持つ。キーの係（F10）と MenuBar.svelte が読む。
+// The open menu of the menu bar (docs/history/design-notes.ja.md B-59). Only the screen holds it. Read by the key handler (F10) and MenuBar.svelte.
 
 export const menuBar = $state({
-  /** ひらいているメニューの番号（ファイル 0 〜 トラック 5）。null はとじている。 */
+  /** Index of the open menu (File 0 to Track 5). null means closed. */
   open: null as number | null,
-  /** キーボードでひらいた（F10、← →）か。そのときは最初の使える行にフォーカスを置く。 */
+  /** Whether it was opened by keyboard (F10, ← →). If so, focus goes to the first usable row. */
   byKeys: false,
 });
 
@@ -12,7 +12,7 @@ export function openMenuBar(index: number, byKeys: boolean): void {
   menuBar.open = index;
 }
 
-/** とじた（ひらいていた）なら true。 */
+/** true if it closed (it was open). */
 export function closeMenuBar(): boolean {
   if (menuBar.open === null) return false;
   menuBar.open = null;

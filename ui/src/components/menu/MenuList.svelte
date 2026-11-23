@@ -1,6 +1,6 @@
-<!-- 一覧（仕様書 2 章「一覧」）。幅 220、地 gray.3、枠 gray.8。行は高さ 24 で、選ぶ印、名前、キー（▸ の行は ▸）。
-     上のメニューの行と右クリックの一覧が使う。▸ の子の一覧は、行の右にひらく（入らなければ左）。
-     ↑ ↓ で行、Enter で行う、→ で子の一覧（子がなければ onright）、← で onleft。Esc と外を押したときは、ひらいた側がとじる。 -->
+<!-- List (spec 2 "List"). Width 220, bg gray.3, border gray.8. Rows are 24 high with a choice mark, a name and a key (▸ for rows with children).
+     Used by the menu bar and the context menu. A ▸ child list opens to the right of the row (to the left if it does not fit).
+     ↑ ↓ move between rows, Enter acts, → opens the child list (onright if there is none), ← calls onleft. On Esc or a press outside, the opener closes it. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import MenuList from "./MenuList.svelte";
@@ -8,13 +8,13 @@
 
   interface Props {
     entries: readonly ListEntry[];
-    /** 行（子の一覧のない行）がえらばれた。ひらいた側がとじてから行う。 */
+    /** A row (without a child list) was chosen. The opener closes the list, then acts. */
     onrun: (row: ListRow) => void;
     onleft?: () => void;
     onright?: () => void;
-    /** "first": 最初の使える行にフォーカスを置く（キーボードでひらいたとき）。"list": 一覧そのものに置く（↓ で最初の行へ）。 */
+    /** "first": focus the first usable row (when opened by keyboard). "list": focus the list itself (↓ goes to the first row). */
     focus: "first" | "list";
-    /** 子の一覧か（入らないときは、ずらさずに親の左へ出す）。 */
+    /** Whether this is a child list (if it does not fit, it goes to the left of the parent without shifting). */
     nested?: boolean;
     test?: string;
   }
@@ -28,7 +28,7 @@
   const usableRows = () => rowEls.filter((b): b is HTMLButtonElement => !!b && !b.disabled);
   const rowOf = (i: number) => entries[i] as ListRow;
 
-  // 窓からはみ出すときは、窓の中へずらす。子の一覧は、右に入らなければ親の左へ。
+  // When it goes outside the window, shift it inside. A child list goes to the left of the parent if it does not fit on the right.
   let shift = $state({ x: 0, y: 0 });
   function keepInside(): void {
     if (!list) return;
@@ -44,7 +44,7 @@
     if (x !== shift.x || y !== shift.y) shift = { x, y };
   }
 
-  // ひらいた側が一覧を body へ移したあとで、ずらしてからフォーカスを置く（移すとフォーカスが外れるので）。
+  // The opener moves the list to body; shift it after that, then set focus (moving it loses focus).
   onMount(() => {
     queueMicrotask(() => {
       keepInside();
@@ -72,7 +72,7 @@
 
   function onkeydown(ev: KeyboardEvent): void {
     if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.isComposing) return;
-    // 子の一覧のキーは、子が受ける。
+    // Keys of a child list are handled by the child.
     const at = rowEls.indexOf(ev.target as HTMLButtonElement);
     if (ev.target !== list && at < 0) return;
     const rows = usableRows();
@@ -149,7 +149,7 @@
 </div>
 
 <style>
-  /* 幅は 220。150 % で名前とキーが入りきらない行（「名前をつけて保存… Ctrl Shift S」）があるときだけ、入る幅まで広げる。 */
+  /* Width 220. Only when a row does not fit its name and key at 150 % (「名前をつけて保存… Ctrl Shift S」), widen to fit. */
   .menu {
     width: max-content;
     min-width: var(--part-list-width);
@@ -176,7 +176,7 @@
     background: var(--color-gray-4);
     flex-shrink: 0;
   }
-  /* まとまりの区切り（仕様書 2 章「一覧の行 ・ 足した形」）: 上下 space.1 をあけた gray.5 の line.hair。 */
+  /* Group separator (spec 2 "List row: added forms"): a gray.5 line.hair with space.1 above and below. */
   .separator {
     flex-shrink: 0;
     border-top: var(--line-hair) solid var(--color-gray-5);
@@ -192,7 +192,7 @@
     white-space: nowrap;
     flex-shrink: 0;
   }
-  /* 乗った ・ 押した ・ 子をひらいている（docs/history/design-notes.ja.md A-6 の一覧の行と同じ）。 */
+  /* Hover, pressed, child open (the same as the list row in docs/history/design-notes.ja.md A-6). */
   .row:hover:not(:disabled),
   .row.expanded {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
@@ -220,7 +220,7 @@
   .choice.selected {
     border-color: var(--color-accent);
   }
-  /* することの行は、印の場所だけあけて枠を描かない（モック R5-Menus）。 */
+  /* Action rows keep the room for the mark but draw no border (mock R5-Menus). */
   .choice.none,
   .unusable .choice.none {
     border-color: transparent;
@@ -235,13 +235,13 @@
   .label {
     color: var(--color-gray-10);
   }
-  /* 色の一覧の行の色の見本（仕様書 2 章「色の一覧の行」）。 */
+  /* Color sample of a color list row (spec 2 "Color list row"). */
   .swatch {
     flex-shrink: 0;
     width: var(--part-colorlist-swatch-w);
     height: var(--part-colorlist-swatch-h);
   }
-  /* 使えない（仕様書 2 章）: 印の枠 gray.5 ・ 文字 gray.7 ・ 押せない。キーも gray.7。 */
+  /* Disabled (spec 2): mark border gray.5, text gray.7, cannot be pressed. The key is gray.7 too. */
   .unusable .label,
   .unusable .key {
     color: var(--color-gray-7);
@@ -252,14 +252,14 @@
   .unusable .choice.selected .dot {
     background: var(--color-gray-7);
   }
-  /* 使えない理由（「この画面には入りません」）は、乗せている間だけ出す（モック R5-Menus）。幅は先にとっておき、乗せても一覧の幅を変えない。 */
+  /* The reason it is disabled (「この画面には入りません」) shows only on hover (mock R5-Menus). The width is kept in advance so hovering does not change the list width. */
   .hint {
     visibility: hidden;
   }
   .row:hover .hint {
     visibility: visible;
   }
-  /* 子は親の右に space.1 はなして、最初の行を親の行の高さにそろえる（モック R5-Menus）。 */
+  /* A child sits space.1 to the right of the parent, with its first row level with the parent row (mock R5-Menus). */
   .sub {
     position: absolute;
     left: calc(100% + var(--space-1));

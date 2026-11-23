@@ -1,23 +1,23 @@
-<!-- 数字を押すと「入力の枠」（仕様書 2 章）になる読み値。Enter で決める、Esc でやめる、↑ ↓ で 1 ずつ（Shift で 10。step がある欄だけ）。
-     数字として読めない値は「こわれた」の枠で、決めさせない（仕様書 3 章）。そのまま Enter を押したら reject に知らせる（状態行で言う。6 章）。
-     範囲の外の数は parse が読み、commit が近いはしにして決める（docs/history/design-notes.ja.md B-68）。
-     枠の外を押したときは、やめる。 -->
+<!-- A reading that becomes an input box (spec 2) when the number is pressed. Enter decides, Esc cancels, ↑ ↓ step by 1 (10 with Shift; only fields with step).
+     A value that cannot be read as a number gets the broken border and cannot be decided (spec 3). Enter on it tells reject (the status line says it; spec 6).
+     parse reads numbers out of range, and commit decides them as the nearest end (docs/history/design-notes.ja.md B-68).
+     A press outside the box cancels. -->
 <script lang="ts" generics="T">
   import { tick } from "svelte";
 
   interface Props {
-    /** いまの値（Rust の状態）の文字。 */
+    /** Text of the current value (Rust's state). */
     value: string;
     parse: (s: string) => T | null;
     step?: (v: T, delta: number) => string;
     commit: (v: T) => void;
-    /** 使えない値のまま Enter を押した。draft は打った文字。 */
+    /** Enter was pressed on an unusable value. draft is the typed text. */
     reject: (draft: string) => void;
     label: string;
-    /** 枠の中の文字数（等幅）。 */
+    /** Number of characters in the box (monospace). */
     chars: number;
     test: string;
-    /** 読み値を text.s で出す（入力計の細いとき）。 */
+    /** Shows the reading in text.s (when the input meter is slim). */
     small?: boolean;
   }
   let { value, parse, step, commit, reject, label, chars, test, small = false }: Props = $props();
@@ -98,11 +98,11 @@
     line-height: var(--text-s-line-height);
     font-weight: var(--text-s-weight-400);
   }
-  /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）。読み値の大きさを変えないよう、枠は外がわに重ねて描く。 */
+  /* Hover (spec 2: border gray.8, text gray.10). The border is drawn on the outside so the reading size does not change. */
   .shown:hover {
     box-shadow: 0 0 0 var(--line-hair) var(--color-gray-8);
   }
-  /* 入力の枠: 高さ 24、地 gray.0、角 1。打っている最中は「押した」と同じ枠 gray.8。 */
+  /* Input box: height 24, bg gray.0, corner 1. While typing, border gray.8, the same as pressed. */
   .field {
     box-sizing: border-box;
     width: calc(var(--chars) * 1ch + 2 * var(--part-input-pad-x) + 2 * var(--line-hair));

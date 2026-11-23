@@ -1,40 +1,40 @@
-// 入力計の横の入れかた（仕様書 1 章「大きさ」の size.meter.name・size.meter.name.slim、「拡大率の決まり」、
-// 3 章「鍵盤の名前も本物をそのまま出す…」）。幅はどれも、いまの率での CSS px。
+// How the input meter fits across (spec 1 "Sizes" size.meter.name and size.meter.name.slim, "Rules for the scale",
+// spec 3 "Keyboard names are also shown as the real names..."). All widths are CSS px at the current scale.
 import { partAt, size, type Scale } from "../design/tokens";
 
-/** 名前の欄の幅に使う数値の名前。CSS の変数は `--` ＋ 点をハイフンにした物。 */
+/** The value name used for the width of the name field. The CSS variable is `--` plus the name with dots turned into hyphens. */
 export type NameWidth =
   | "size.meter.name"
   | "part.meter.name.long"
   | "size.meter.name.slim"
   | "part.meter.name.slim-narrow";
 
-/** 太いとき、名前がこの文字数をこえたら名前の欄を広げる。 */
+/** When full, the name field widens if the name is longer than this many characters. */
 export const LONG_NAME_CHARS = 8;
 
 export interface MeterFitInput {
   meter: "full" | "slim";
   scale: Scale;
-  /** 鍵盤の名前の文字数。 */
+  /** Number of characters in the keyboard name. */
   nameChars: number;
-  /** 行の中で使える幅。 */
+  /** The usable width in the row. */
   available: number;
-  /** 名前、ピッチベンド、モジュレーションをのぞいた、全部の物とすきまの幅。 */
+  /** Width of all parts and gaps, except the name, pitch bend and modulation. */
   rest: number;
-  /** 細いとき: つながりの印と名前を、ちぢめずに置いた幅。 */
+  /** When slim: the width of the link mark and the name, not cut. */
   name: number;
-  /** ピッチベンド、モジュレーションの幅（前のすきまを入れて）。 */
+  /** Widths of pitch bend and modulation (with the gap before). */
   pitchBend: number;
   modulation: number;
   /**
-   * 太いときだけ: 鍵盤の絵を細い鍵にして浮く幅、鳴る先の音源の名前をはぶいて浮く幅、
-   * 「弾くと鳴る先」のラベルをはぶいて浮く幅、サステインの幅（前のすきまを入れて）。
+   * Only when full: the width saved by narrow keys in the keyboard picture, saved by leaving out the instrument name of the target,
+   * saved by leaving out the 「弾くと鳴る先」 label, and the width of sustain (with the gap before).
    */
   narrowKeys?: number;
   instrument?: number;
   targetLabel?: number;
   sustain?: number;
-  /** 右はしに案内の文が出ているときの、文ごとの幅。rest には全部の文が入っている。 */
+  /** Width of each sentence when a hint is shown at the right end. rest includes all the sentences. */
   sentences?: readonly number[];
 }
 
@@ -42,20 +42,20 @@ export interface MeterFit {
   nameWidth: NameWidth;
   pitchBend: boolean;
   modulation: boolean;
-  /** 鍵盤の絵を細い鍵（白鍵の幅 8）にする。 */
+  /** Draw the keyboard picture with narrow keys (white key width 8). */
   narrowKeys: boolean;
-  /** 鳴る先の値に音源の名前を出す（トラックはいつも出す）。 */
+  /** Show the instrument name in the target value (the track is always shown). */
   instrument: boolean;
-  /** 「弾くと鳴る先」のラベルを出す。 */
+  /** Show the 「弾くと鳴る先」 label. */
   targetLabel: boolean;
   sustain: boolean;
-  /** 案内の文を前からいくつ出すか。1 文目は残し、入らなければ画面がうしろを「…」でちぢめる。 */
+  /** How many hint sentences to show from the front. The first stays; if it does not fit, the screen cuts its end with 「…」. */
   sentences: number;
 }
 
 type Step = "modulation" | "pitchBend" | "narrowKeys" | "instrument" | "targetLabel" | "sentence" | "sustain";
 
-/** 太いときに引っこめる順（仕様書 1 章「拡大率の決まり」）。sentence は 2 文目から先を、うしろから 1 文ずつ。 */
+/** The order of hiding when full (spec 1 "Rules for the scale"). sentence drops the 2nd sentence and later, one at a time from the end. */
 const TARGET_ORDER: readonly Step[] = ["modulation", "pitchBend", "narrowKeys", "instrument", "targetLabel", "sustain"];
 const MESSAGE_ORDER: readonly Step[] = ["modulation", "pitchBend", "narrowKeys", "sentence", "sustain"];
 
@@ -65,13 +65,13 @@ export function nameWidthPx(name: NameWidth, scale: Scale): number {
 }
 
 /**
- * どの読み値を出すかと、名前の欄の幅。
- * 細いとき: モジュレーション、ピッチベンドの順に引っこめ、それでも足りなければ名前の上限を 176 から 128 にする。
- * 案内の文は、そのあとで 2 文目から先を引っこめる。
- * 太いとき、右はしが「弾くと鳴る先」: モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵に → 音源の名前 →
- * 「弾くと鳴る先」のラベル → サステイン。
- * 太いとき、右はしが案内の文: モジュレーション → ピッチベンド → 鍵盤の絵を細い鍵に → 案内の 2 文目から先 → サステイン。
- * それでも入らない名前や案内の文は「…」でちぢむ。
+ * Which readings to show, and the width of the name field.
+ * When slim: hide modulation, then pitch bend; if still not enough, lower the name limit from 176 to 128.
+ * After that, hide the hint sentences from the 2nd on.
+ * When full with 「弾くと鳴る先」 at the right end: modulation → pitch bend → narrow keys → instrument name →
+ * the 「弾くと鳴る先」 label → sustain.
+ * When full with a hint at the right end: modulation → pitch bend → narrow keys → hint sentences from the 2nd on → sustain.
+ * A name or hint that still does not fit is cut with 「…」.
  */
 export function meterFit(input: MeterFitInput): MeterFit {
   const { meter, scale, available, rest, pitchBend, modulation } = input;
@@ -136,12 +136,12 @@ export function meterFit(input: MeterFitInput): MeterFit {
   return slim("part.meter.name.slim-narrow", false, false);
 }
 
-/** 文を「。」のあとで分ける。 */
+/** Splits a text after 「。」. */
 export function sentences(text: string): string[] {
   return text.match(/[^。]+。?/g) ?? [text];
 }
 
-/** 文字数（サロゲートペアも 1 文字）。 */
+/** Number of characters (a surrogate pair counts as 1). */
 export function charCount(text: string): number {
   return [...text].length;
 }

@@ -1,4 +1,4 @@
-// 音源とエフェクトの名前と見分けかた（最初から入っているもの ・ SF2 の音色 ・ プラグイン）。DOM を知らない純粋な関数。
+// Names of instruments and effects and how to tell them apart (built-in, SF2 preset, plugin). Pure functions that do not know the DOM.
 
 import type {
   EffectRef,
@@ -13,7 +13,7 @@ import type {
 } from "../bridge";
 import { t, type TextKey } from "../text/ja";
 
-/** 同じ音源か。プラグインは鍵（形式ごとの鍵）で比べる。 */
+/** Whether two instruments are the same. Plugins compare by key (one key per format). */
 export function sameSound(a: SoundRef | null | undefined, b: SoundRef | null | undefined): boolean {
   if (!a || !b || a.kind !== b.kind) return false;
   if (a.kind === "builtin") return a.instrument === (b as typeof a).instrument;
@@ -27,7 +27,7 @@ export function sameEffect(a: EffectRef | null | undefined, b: EffectRef | null 
   return a.kind === "builtin" ? a.effect === (b as typeof a).effect : a.key === (b as typeof a).key;
 }
 
-/** プラグインの行が、その鍵の形式を持っているか（使う形式でなくても）。 */
+/** Whether a plugin row has the format of the key (even if it is not the format in use). */
 export function rowHasKey(row: PluginRowView, key: string): boolean {
   return row.key === key || row.formats.some((f) => f.key === key);
 }
@@ -36,13 +36,13 @@ export function pluginRowOf(library: LibraryView, key: string): PluginRowView | 
   return library.plugins.find((r) => rowHasKey(r, key)) ?? null;
 }
 
-/** トラックの音源の名前（最初から入っている物は日本語、SF2 とプラグインは持っている名前のまま）。 */
+/** The instrument name of a track (built-in ones in Japanese; SF2 and plugins keep their own names). */
 export function soundViewName(sound: SoundView): string {
   if (sound.kind === "builtin") return t(`instrument.${sound.instrument}`);
   return sound.name;
 }
 
-/** 棚の行の音源の名前。棚にない物は鍵のまま。 */
+/** The instrument name of a shelf row. Things not in the shelf show the key. */
 export function soundRefName(sound: SoundRef, library: LibraryView): string {
   if (sound.kind === "builtin") return t(`instrument.${sound.instrument}`);
   if (sound.kind === "plugin") return pluginRowOf(library, sound.key)?.name ?? sound.key;
@@ -55,19 +55,19 @@ export function effectRefName(effect: EffectRef, library: LibraryView): string {
   return pluginRowOf(library, effect.key)?.name ?? effect.key;
 }
 
-/** インサートの枠の名前。 */
+/** The name in an insert slot. */
 export function insertName(insert: InsertView): string {
   return insert.effect.kind === "builtin" ? t(`effect.${insert.effect.effect}`) : insert.effect.name;
 }
 
-/** 状態行の音源の名前（SF2 は「Clean Guitar ・ FluidR3_GM.sf2」）。 */
+/** The instrument name in the status line (SF2: 「Clean Guitar ・ FluidR3_GM.sf2」). */
 export function soundNameText(sound: SoundName): string {
   if (sound.kind === "builtin") return t(`instrument.${sound.instrument}`);
   if (sound.kind === "sf2") return t("sound.sf2Name", { name: sound.name, file: sound.file });
   return sound.name;
 }
 
-/** 「サイン波で代わり」に乗ったときの文（仕様書 3 章 85 ・ 89-9）。sound はトラックの音源（曲が持っている形のまま）。 */
+/** The text on hover over 「サイン波で代わり」 (spec 3 (85, 89-9)). sound is the track's instrument (as the song keeps it). */
 export function standInTip(standIn: StandIn, sound: SoundView): string {
   switch (standIn) {
     case "packMissing":
@@ -83,14 +83,14 @@ export function standInTip(standIn: StandIn, sound: SoundView): string {
 
 export const formatName = (f: PluginFormat) => t(`plugin.format.${f}`);
 
-/** 「＋1」に乗ったときの文の形式の並び（モック F5-PluginAudition: LV2、VST3 の順）。 */
+/** The order of formats in the text on hover over 「＋1」 (mock F5-PluginAudition: LV2, then VST3). */
 export function formatsTip(row: PluginRowView): string {
   const order: PluginFormat[] = ["lv2", "vst3"];
   const names = order.filter((f) => row.formats.some((x) => x.format === f)).map(formatName);
   return t("shelf.formatsTip", { formats: names.join(" ・ ") });
 }
 
-/** SF2 のドラムのキットの鍵の名前（仕様書 3 章の表）。表にない鍵は null。 */
+/** The key names of an SF2 drum kit (the table in spec 3). null for keys not in the table. */
 export function gmDrumName(key: number): string | null {
   return key >= 35 && key <= 81 ? t(`gmDrum.${key}` as TextKey) : null;
 }

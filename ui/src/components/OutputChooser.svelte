@@ -1,4 +1,4 @@
-<!-- 出口えらび（流れ 2。モック F-Connect2、仕様書 6 章「音の出口がまだ」）。置き場はアレンジの時間の面（position: relative）の中。 -->
+<!-- Output chooser (flow 2; mock F-Connect2, spec 6 "No output yet"). It sits inside the time area of the arrange (position: relative). -->
 <script lang="ts">
   import ScrollArea from "../lib/ScrollArea.svelte";
   import { current, send } from "../state/app.svelte";
@@ -14,7 +14,7 @@
 </script>
 
 {#if app && chooser}
-  <!-- 窓に入りきらないときは、問いかけの行と「ここから鳴らす」の行を動かさず、間の一覧だけスクロールする（仕様書 3 章）。 -->
+  <!-- When it does not fit the window, keep the question row and the 「ここから鳴らす」 row in place and scroll only the list between (spec 3). -->
   <div class="place" style:pointer-events="none">
     <div class="lead"></div>
     <section class="chooser" data-test="output-chooser">
@@ -52,7 +52,7 @@
 {/if}
 
 <style>
-  /* 上はモックの位置。アレンジが低ければ、ダイアログと同じく上下 24 ずつのあきまで上へ寄せる。 */
+  /* The top is the mock position. If the arrange is low, move it up to a gap of 24 above and below, the same as dialogs. */
   .place {
     position: absolute;
     inset: 0;
@@ -84,7 +84,7 @@
     line-height: var(--text-s-line-height);
     font-weight: var(--text-s-weight-400);
   }
-  /* 横が足りないときは「あとから…」が次の行へ折れて、見えなくなる。 */
+  /* When there is not enough width, 「あとから…」 wraps to the next line and is hidden. */
   .head {
     flex-shrink: 0;
     display: flex;

@@ -1,5 +1,5 @@
-<!-- アレンジの上の案内（置き場はアレンジの時間の面、position: relative の中）。
-     「音が出ました」: 仕様書 6 章「音が出た」、モック F-Connect3。「からっぽのアレンジ」: モック F-Empty。 -->
+<!-- Hints above the arrange (they sit inside the time area of the arrange, position: relative).
+     「音が出ました」: spec 6 "Sound came out", mock F-Connect3. The empty arrange: mock F-Empty. -->
 <script lang="ts">
   import { current } from "../state/app.svelte";
   import { t } from "../text/ja";
@@ -7,8 +7,8 @@
 
   const hint = $derived(current.state?.workspace.hint ?? null);
   /**
-   * 2 文目より後は、録音ボタンが使えるときだけ出す（仕様書 6 章、3 章「案内の文は、いま使えない部品を押すようには言わない」）。
-   * F-Empty の 3 文目（トラックを増やすには…）は、「＋ トラックを追加」が使えるとき（録音中 ・ カウントイン中でない）だけ。
+   * Sentences after the second are shown only when the record button can be used (spec 6; spec 3 「案内の文は、いま使えない部品を押すようには言わない」).
+   * The third sentence of F-Empty (about adding tracks) only when 「＋ トラックを追加」 can be used (not recording, not counting in).
    */
   const recordUsable = $derived(current.state?.transport.canRecord ?? false);
   const addTrackUsable = $derived(current.state?.transport.state !== "recording" && current.state?.transport.state !== "countIn");

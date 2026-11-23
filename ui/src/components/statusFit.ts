@@ -1,30 +1,30 @@
-// 状態行の右がわの入れかた（仕様書 3 章「状態行の右がわは、横が足りなければ…」）。DOM を知らない純粋な関数。
-// 幅はどれも、いまの率での CSS px。
+// How the right side of the status line fits (spec 3 "When the width is not enough, the right side of the status line..."). Pure functions with no DOM.
+// All widths are CSS px at the current scale.
 
 export const STATUS_RIGHT_ORDER = ["inputs", "output", "buffer"] as const;
 export type StatusRightPart = (typeof STATUS_RIGHT_ORDER)[number];
 export type StatusRightShown = Record<StatusRightPart, boolean>;
 
 export interface StatusFitInput {
-  /** 行の中で使える幅（内がわをのぞく）。 */
+  /** The usable width in the row (without padding). */
   available: number;
-  /** 物と物のすきま。 */
+  /** The gap between parts. */
   gap: number;
-  /** 左の物（「■ 停止中」、文、ボタン）を、ちぢめずにならべた幅（あいだのすきまを入れて）。 */
+  /** Width of the left parts (「■ 停止中」, the text, buttons) side by side, not cut (with the gaps between). */
   left: number;
-  /** 右がわの物の幅。出ていない物は入れない。 */
+  /** Widths of the right-side parts. Parts not shown are left out. */
   right: Partial<Record<StatusRightPart, number>>;
-  /** 拡大率のボタンの幅。いつも出す。 */
+  /** Width of the scale button. Always shown. */
   scale: number;
 }
 
 /**
- * 右がわのどれを出すか。入口 → 出口 → バッファ の順に引っこめる。拡大率は消さない。
- * それでも入らなければ、画面が左の文のうしろを「…」でちぢめる。
+ * Which right-side parts to show. Hides input → output → buffer, in this order. The scale is never removed.
+ * If it still does not fit, the screen cuts the end of the left text with 「…」.
  */
 export function statusFit({ available, gap, left, right, scale }: StatusFitInput): StatusRightShown {
   const shown: StatusRightShown = { inputs: true, output: true, buffer: true };
-  // 左、すきま、伸びる空き、すきま、右の物とすきま …、拡大率。
+  // Left, gap, growing space, gap, each right part and gap ..., scale.
   let need = left + 2 * gap + scale;
   for (const k of STATUS_RIGHT_ORDER) if (right[k] !== undefined) need += right[k] + gap;
   for (const k of STATUS_RIGHT_ORDER) {

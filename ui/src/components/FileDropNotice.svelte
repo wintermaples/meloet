@@ -1,11 +1,11 @@
-<!-- ファイルを持ってきている間の知らせ（仕様書 2 章、6 章「SF2 を持ってきている」、モック F5-SF2Drop）。
-     窓のふちの内側に accent の line.mark、まん中に幅 400 の箱（地 gray.3、枠 accent の line.hair、内 16）。ファイルの名前（text.l、600）、落とすと何が起きるか、やめかた。
-     足せないファイルは、箱の枠と名前を gray.8 にし、文を「SF2 のファイルではないので、足せません。」に。
-     いくつも持ってきたときは、名前の所が「3 つのファイル ・ SF2 は 2 つ」（仕様書 3 章 89-10）。
-     音のファイル（仕様書 3 章 29-A ・ 30-C ・「読めるファイル」、モック F7-AudioDrop）: 2 つ以上なら箱を左右 240 ずつに分け（左「別々のトラックに」、右「1 本にならべる」）、
-     ポインタがいる側（窓の左半分か右半分。B-94-21）を accent の枠と gray.4 の地に。SF2 もまざっていれば「SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ」。
-     1 つなら名前の下に、落とすと入る所（6 章「音のファイルを 1 つ持ってきている」: 歌のトラックの上か、新しい歌のトラックか）。
-     ファイルを受けるのは Rust（PC から聞く）。画面は見せるだけで、押せない（下の物をさえぎらない）。Esc は keys/attach.ts。 -->
+<!-- Notice while files are dragged in (spec 2; spec 6 "Dragging in an SF2"; mock F5-SF2Drop).
+     line.mark in accent inside the window edge, and a 400 wide box in the middle (bg gray.3, border line.hair in accent, padding 16). The file name (text.l, 600), what dropping does, and how to cancel.
+     For a file that cannot be added, the box border and the name are gray.8 and the text is 「SF2 のファイルではないので、足せません。」.
+     For many files, the name part is 「3 つのファイル ・ SF2 は 2 つ」 (spec 3 89-10).
+     Audio files (spec 3 29-A, 30-C, "Files that can be read"; mock F7-AudioDrop): for 2 or more, the box splits into 240 left and right (left 「別々のトラックに」, right 「1 本にならべる」),
+     and the side the pointer is on (left or right half of the window; B-94-21) gets an accent border and gray.4 bg. With SF2 mixed in: 「SF2 は 1 つ棚へ ・ 音のファイル 3 つはアレンジへ」.
+     For one file, under the name, where it goes when dropped (spec 6 "Dragging in one audio file": onto a vocal track, or a new vocal track).
+     Rust receives the files (it asks the PC). The screen only shows this; it cannot be pressed (it does not block what is under it). Esc is in keys/attach.ts. -->
 <script lang="ts">
   import type { FileDropView } from "../bridge";
   import { t } from "../text/ja";
@@ -15,16 +15,16 @@
   const title = $derived(
     drop.files <= 1 ? drop.name : drop.sf2 > 0 ? t("sf2.manyFiles", { files: drop.files, sf2: drop.sf2 }) : t("sf2.manyFilesNoSf2", { files: drop.files }),
   );
-  /** SF2 と音のファイルをまぜて持ってきた: SF2 は棚へ、音のファイルはアレンジへ。 */
+  /** SF2 and audio files mixed: SF2 go to the shelf, audio files to the arrange. */
   const mixed = $derived(drop.audio > 0 && drop.sf2 > 0 ? t("drop.mixed", { sf2: drop.sf2, audio: drop.audio }) : null);
-  /** 音のファイル 1 つだけ: 落とすと、ポインタの下の歌のトラックに入るか。 */
+  /** Only one audio file: whether dropping puts it on the vocal track under the pointer. */
   const intoTrack = $derived.by(() => {
     if (drop.audio !== 1 || drop.sf2 > 0) return null;
     const at = fileDrag.at;
     if (at === null) return null;
     return dropPlaceAt(at.x, at.y, "inRow")?.track != null;
   });
-  /** 箱を左右に分けるか、分けたならポインタがいる側。 */
+  /** Whether the box is split, and if so, the side the pointer is on. */
   const halves = $derived(drop.audio >= 2 ? (fileDrag.at ? dropModeFor(drop.audio, fileDrag.at.x, window.innerWidth) : null) : undefined);
 </script>
 
@@ -104,7 +104,7 @@
   .halves {
     display: flex;
   }
-  /* 分かれた箱（仕様書 2 章「持ってきている間の、分かれた箱」）: 乗っていない側は地 gray.3 ・ 枠 gray.7、文字は gray.8。 */
+  /* Split box (spec 2 "Split box while dragging in"): the side not under the pointer has bg gray.3, border gray.7, text gray.8. */
   .half {
     box-sizing: border-box;
     width: var(--part-filedrop-half);
@@ -121,7 +121,7 @@
     border-color: var(--color-accent);
     color: var(--color-gray-9);
   }
-  /* 名前は F5-SF2Drop の箱と同じ text.l の 600（モックは 16 px の 600。text.m に 600 はない）。 */
+  /* The name is text.l at 600, the same as the F5-SF2Drop box (the mock is 16 px at 600; text.m has no 600). */
   .half-name {
     font-size: var(--text-l-size);
     line-height: var(--text-l-line-height);

@@ -1,4 +1,4 @@
-<!-- 窓がひらいている印（仕様書 2 章: 10×10 の窓の形の線画、gray.10。色は足さない）。線は line.hair のまま太らせない。 -->
+<!-- Window-open mark (spec 2: a 10×10 line drawing of a window, gray.10, no added colors). The line stays line.hair and is not made thicker. -->
 <svg class="mark" viewBox="0 0 10 10" aria-hidden="true" data-test="window-mark">
   <rect x="0.5" y="0.5" width="9" height="9" />
   <path d="M0.5 3h9" />

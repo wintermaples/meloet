@@ -1,5 +1,5 @@
-<!-- 状態行（モック F-Connect1〜3・F-BufferFixed・F-Zoom ・ F-WindowOpen のいちばん下の行）。
-     右がわは 出口、入口、「窓 N ▾」（プラグインの窓が 1 つもなければ出さない。押すと上に一覧）、バッファ、拡大率。 -->
+<!-- The status line (the bottom row of mock F-Connect1 to 3, F-BufferFixed, F-Zoom, F-WindowOpen).
+     The right side is output, inputs, 「窓 N ▾」 (not shown when there are no plugin windows; pressing it opens a list above), buffer, scale. -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import {
@@ -57,22 +57,22 @@
   import { overdubClipName } from "./clipEdits";
 
   const app = $derived(current.state!);
-  /** ピアノロールがドラムの行を見せている（選んだノートと鳴っている音を楽器の名前で）。 */
+  /** The piano roll shows drum rows (selected notes and sounding notes as drum piece names). */
   const rollDrums = $derived(rollShowsDrums(app, shownNotes.clip, shownNotes.track));
-  /** 鍵を弾くと鳴る先がドラム（押している音を楽器の名前で）。 */
+  /** The play target of the keys is drums (held notes as drum piece names). */
   const heldDrums = $derived(keysDrums(app));
 
   interface Shown {
     parts: TextPart[];
-    /** 値を gray.10 で出す穴。 */
+    /** Slots whose values are shown in gray.10. */
     strong: string[];
     button: { label: string; command: Command } | null;
-    /** 文の中で用語の説明をそえる言葉。 */
+    /** Words in the text that get a term tip. */
     term?: string;
   }
 
   const RECOVERY_TERM = "なおすためのファイル";
-  /** 名前（ストリップ、プラグイン、エフェクト、パラメータ）の穴。文と同じ字で出す（モックの状態行）。ほかの穴（数、値、キー）は等幅。 */
+  /** Name slots (strip, plugin, effect, parameter). Shown in the same font as the text (the mock's status line). Other slots (numbers, values, keys) are monospace. */
   const NAME_HOLES = new Set(["name", "strip", "track", "effect", "plugin", "param", "target", "order"]);
   const platform = platformOf(navigator);
   const modKey = (letter: string) => `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${letter}`;
@@ -91,8 +91,8 @@
     params: "band.params",
   };
 
-  /** 数字の欄に打った値の、欄の名前と範囲。 */
-  // 範囲がクリップで変わる欄（位置・長さ）は、範囲の文が知らせについてくる（`range`）。
+  /** The field name and range for a value typed in a number field. */
+  // For fields whose range depends on the clip (position, length), the range text comes with the message (`range`).
   const VALUE_FIELDS: Record<ValueField, [TextKey, TextKey | null]> = {
     tempo: ["value.tempo", "value.tempoRange"],
     meterNum: ["value.meterNum", "value.meterNumRange"],
@@ -110,23 +110,23 @@
 
   const track = (r: TrackRef) => t("track.label", { number: r.number, name: r.name });
 
-  /** プラグインのいる所の名前（音源ならそのトラック、インサートならそのストリップ）。 */
+  /** The name of where the plugin is (its track for an instrument, its strip for an insert). */
   const slotName = (s: PluginSlotRef): string =>
     stripName(app.song, s.kind === "instrument" ? { kind: "track", id: s.track } : s.insert.strip, app.library);
 
   const effectName = (e: EffectName) => (e.kind === "builtin" ? t(`effect.${e.effect}`) : e.name);
   const insertStrip = (i: InsertRef) => stripName(app.song, i.strip, app.library);
-  /** 「2 ベース の コンプレッサー 」（うしろに空白）。 */
+  /** 「2 ベース の コンプレッサー 」 (with a space at the end). */
   const insertTarget = (i: InsertRef, e: EffectName) => t("status.insertTarget", { strip: insertStrip(i), effect: effectName(e) });
-  /** 6 章の窓の文の「（名前）」: 居場所とプラグインの名前、うしろに空白。棚でためし弾き中の子は名前だけ（docs/history/design-notes.ja.md A-17）。 */
+  /** The 「（名前）」 of the window texts in spec 6: the place and the plugin name, with a space at the end. Only the name for a plugin being tried in the shelf (docs/history/design-notes.ja.md A-17). */
   const windowName = (name: string, slot: PluginSlotRef | null) => `${slot ? t("status.windowPlace", { strip: slotName(slot), name }) : name} `;
-  /** プラグインが言ってきた名前は、うしろの「は」「の」との間に空白を置く（「Surge XT の」）。 */
+  /** A name given by the plugin gets a space before the following 「は」 or 「の」 (「Surge XT の」). */
   const spaced = (name: string) => `${name} `;
   const MINUS = "−";
   const plainNumber = (n: number) => String(n).replace("-", MINUS);
   const mb = (bytes: number) => Math.round(bytes / 1_000_000);
 
-  /** 打ちこんだ値の文に出すパラメータの名前（最初から入っている物は表から、プラグインは見せている表から）。 */
+  /** The parameter name for the typed-value text (built-in ones from the table, plugins from the shown table). */
   function typedParamName(p: ParamRef): string {
     if (p.kind === "builtin") return paramName(p.effect, p.param);
     try {
@@ -138,7 +138,7 @@
     }
   }
 
-  /** 打ちこむ前の値。最初から入っているエフェクトは整えていない数（"-24"）で来るので、行の値と同じ単位とけたで。プラグインは来た文字のまま。 */
+  /** The value before typing. Built-in effects send a raw number ("-24"), so it is written with the same unit and digits as the row value. For plugins, the text as received. */
   function keptText(p: ParamRef, kept: string): string {
     if (p.kind !== "builtin") return kept;
     const spec = EFFECT_PARAMS[p.effect][p.param];
@@ -146,7 +146,7 @@
     return spec && kept.trim() !== "" && Number.isFinite(n) ? valueText(p.effect, spec, n) : kept;
   }
 
-  /** 「レシオは 1〜20 なので、20.0 : 1 にしました。」の 3 つ。 */
+  /** The 3 parts of 「レシオは 1〜20 なので、20.0 : 1 にしました。」. */
   function clampedParts(to: ParamEnd): { param: string; range: string; value: string } {
     if (to.kind === "plugin") return { param: spaced(to.name), range: to.range, value: to.value };
     const spec = EFFECT_PARAMS[to.effect][to.param];
@@ -154,7 +154,7 @@
     return { param: paramName(to.effect, to.param), range: `${plainNumber(spec.min)}〜${plainNumber(spec.max)}`, value: valueText(to.effect, spec, to.value) };
   }
 
-  /** プラグインの窓の居場所（「1 ピアノ ・ 音源」「A リバーブ ・ インサート 1」「棚 ・ ためし弾き」）。 */
+  /** Where a plugin window belongs (「1 ピアノ ・ 音源」「A リバーブ ・ インサート 1」「棚 ・ ためし弾き」). */
   function windowPlace(w: PluginWindowView): string {
     const slot = w.slot;
     if (!slot) return t("windows.shelfAudition");
@@ -162,23 +162,23 @@
     return t("params.where", { strip: slotName(slot), slot: slot.insert.slot + 1 });
   }
 
-  /** カウントイン中の「あと {beats} 拍」。計器がカウントインを言っていれば、その残りの拍。 */
+  /** 「あと {beats} 拍」 during the count-in. The clicks left from the telemetry if it reports a count-in. */
   function beatsLeft(fallback: number): number {
     const p = current.telemetry?.position;
     return p?.state === "countIn" ? p.countInBeatsLeft : fallback;
   }
 
-  /** 「1 つは SF2 ではないので、足していません。」（持ってきたファイルのうち、足さなかった物があるとき）。 */
+  /** 「1 つは SF2 ではないので、足していません。」 (when some of the dropped files were not added). */
   const skippedParts = (skipped: number): TextPart[] => (skipped > 0 ? textParts("sf2.skipped", { count: skipped }) : []);
 
-  /** 「ピアノ ・ 鍵盤 と ギター」「ピアノ ・ 鍵盤、ギター と ベース」「ピアノ ・ 鍵盤 ほか 4 つ」（仕様書 6 章「棚をひらいている（見出し）」）。 */
+  /** 「ピアノ ・ 鍵盤 と ギター」「ピアノ ・ 鍵盤、ギター と ベース」「ピアノ ・ 鍵盤 ほか 4 つ」 (spec 6 "Shelf open (headings)"). */
   function groupsText(names: readonly string[]): string {
     if (names.length >= 5) return t("status.shelfGroupsMore", { first: names[0]!, count: names.length - 1 });
     if (names.length === 1) return names[0]!;
     return t("status.shelfGroupsLast", { first: names.slice(0, -1).join(LIST_COMMA), last: names.at(-1)! });
   }
 
-  /** 文の部分どうしを「 ・ 」でつなぐ（仕様書 6 章「止まっているときの状態行の左」）。 */
+  /** Joins parts of the text with 「 ・ 」 (spec 6 "Left of the status line while stopped"). */
   function joined(...pieces: TextPart[][]): TextPart[] {
     return pieces.filter((p) => p.length > 0).flatMap((p, i) => (i === 0 ? p : [{ text: STATUS_JOIN, hole: null }, ...p]));
   }
@@ -199,8 +199,8 @@
   }
 
   /**
-   * 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」（モック A-PianoRoll）。同じ名前はまとめて「スネア ×2」（仕様書 3 章 85）。
-   * 名前が 5 つ以上なら、4 つのあとに「…」。
+   * 「選択 3 ノート ・ D4 E4 F4 ・ クオンタイズ済み（もとの位置へ戻せます）」 (mock A-PianoRoll). Repeated names are grouped as 「スネア ×2」 (spec 3 85).
+   * With 5 or more names, 「…」 after 4.
    */
   function notesParts(n: NoteSelection): TextPart[] {
     const values = { count: n.count, keys: keyCountsText(n.names.slice(0, 4), rollDrums) };
@@ -210,7 +210,7 @@
     );
   }
 
-  /** 帯もいっしょに消えたとき、文の最初の「。」の前に「（そのパラメータの帯 2 本も消えました）」（仕様書 3 章 92-19 ・ 6 章）。 */
+  /** When lanes were removed too, 「（そのパラメータの帯 2 本も消えました）」 goes before the first 「。」 of the text (spec 3 92-19, spec 6). */
   function withLanes(shown: Shown, lanesRemoved: number): Shown {
     if (lanesRemoved <= 0) return shown;
     const gone = textParts("msg.lanesAlsoGone", { count: lanesRemoved });
@@ -229,8 +229,8 @@
   }
 
   /**
-   * 歌を録っている文（仕様書 6 章「歌を録っている」「歌 2 本以上を録っている」「鍵盤と歌を録っている」）。頭の「● 録音中 ・ 」は左の札が言うので、文からは外す。
-   * モニターがオフなら「モニター オン ・ 」を外す。鍵盤と歌 2 本以上は、歌を「6 歌（入口 1）、7 歌 2」とならべる（仕様書にない形）。
+   * The text while recording vocals (spec 6 "Recording vocals", "Recording 2 or more vocal tracks", "Recording keyboard and vocals"). The leading 「● 録音中 ・ 」 is said by the tag on the left, so it is left out of the text.
+   * 「モニター オン ・ 」 is left out when monitoring is off. For keyboard plus 2 or more vocals, the vocals are listed as 「6 歌（入口 1）、7 歌 2」 (a form not in the spec).
    */
   function recordingVocalsParts(keys: TrackRef | null, vocals: VocalRef[], monitor: boolean): TextPart[] {
     const short = (v: VocalRef) => t(`vocal.inputShort.${v.input}`);
@@ -264,7 +264,7 @@
     });
     const settings = (advanced: boolean, label: string) => ({ label, command: { type: "openSettings", advanced } as Command });
     const place = (bar: number, beat: number) => (beat === 1 ? t("timeline.placeBar", { bar }) : t("timeline.placeBeat", { bar, beat }));
-    // 曲の頭の点は「変更」と呼ばない（仕様書 3 章 92-2）。
+    // The point at the start of the song is not called a 「変更」 (spec 3 92-2).
     const tempoSelected = (bar: number, beat: number, bpm: number) =>
       bar === 1 && beat === 1
         ? plain("msg.headTempoSelected", { tempo: tempoText(bpm) })
@@ -481,7 +481,7 @@
         return plain("sf2.dragging");
       case "notSf2Dragging":
         return plain("sf2.notSf2Dragging");
-      // 「音色 128 ・ ドラムのキット 9」は「。」で終わらないので、足さなかった物の文とは「 ・ 」でつなぐ（docs/history/design-notes.ja.md A-19）。
+      // 「音色 128 ・ ドラムのキット 9」 does not end with 「。」, so it is joined to the not-added text with 「 ・ 」 (docs/history/design-notes.ja.md A-19).
       case "sf2Added":
         return { parts: joined(textParts("sf2.added", { file: m.file, count: m.presets, kits: m.kits }), skippedParts(m.skipped)), strong: [], button: null };
       case "sf2AddedMany":
@@ -516,7 +516,7 @@
           term: RECOVERY_TERM,
         };
       case "quantized": {
-        // 「もとの位置へ戻す」は、いま選んでいるノート（クオンタイズしたノートが選ばれている。なければ全部）。
+        // 「もとの位置へ戻す」 acts on the selected notes (the quantized notes are selected; all of them if none).
         const take = app.pianoRoll.take;
         return {
           ...plain("msg.quantized", { grid: gridText(m.division, m.triplet), strength: m.strength, count: m.count }),
@@ -530,7 +530,7 @@
         return plain("msg.outOfScale", { key: pitchClassName(m.key), scale: scaleName(m.root, m.mode) });
       case "paramSelected": {
         const loop = m.loopBars;
-        // 戻りは名前にエフェクトが入っているので「A リバーブの「…」」、トラックとマスターは「2 ベース ・ コンプレッサーの「…」」（仕様書 3 章 86-10）。
+        // A return has the effect in its name, so 「A リバーブの「…」」; tracks and the master are 「2 ベース ・ コンプレッサーの「…」」 (spec 3 86-10).
         const selected =
           m.insert.strip.kind === "return"
             ? textParts("status.paramSelected", { strip: insertStrip(m.insert), param: paramName(m.effect, m.param) })
@@ -604,7 +604,6 @@
         if (m.nothingSelected) return plain("status.noSelection");
         return null;
       }
-      // 第 7 回 区切り2（約束 23）
       case "noParams":
         return plain("msg.noSoundParams", { name: soundNameText(m.sound) });
       case "vocalTrackAdded":
@@ -622,14 +621,14 @@
       case "latencyMeasureOpen":
         return plain("status.songDialogOpen", { dialog: t("latency.title") });
       case "exportDialogOpen": {
-        // たしかめの進みと、0 dB をこえた所があること（モック F8-ExportCheck ・ F8-ExportClip）。
+        // The check progress, and whether some part goes over 0 dB (mock F8-ExportCheck, F8-ExportClip).
         const check = exportShown.current?.dialog?.check;
         const counting = check?.state === "counting" ? textParts("status.exportChecking", { percent: check.percent }) : [];
         const over = (check?.state === "counting" || check?.state === "done") && check.clips ? textParts("status.exportOver", {}) : [];
         return { parts: joined(textParts("status.songDialogOpen", { dialog: t("export.title") }), counting, over), strong: [], button: null };
       }
-      // 第 7 回 区切り3（約束 24）。いくつも切った ・ 入れたとき、1 つだけ持ってきたときの文は仕様書にないので、
-      // 1 つめの名前の文のまま（切った ・ 入れた）と、数だけの文（持ってきている）にしてある。
+      // The spec has no text for cutting or adding several, or for dragging in just one, so these use
+      // the text with the first name (cut, added) and the text with only the count (dragging in).
       case "audioMissing":
         return plain("msg.audioFilesMissing", { count: m.count });
       case "clipSplit":
@@ -648,7 +647,7 @@
         };
       case "sourceTempoNotFound":
         return plain("msg.sourceTempoNotFound");
-      // 第 8 回（約束 27）。MB は 1000 × 1000 バイト。
+      // MB is 1000 × 1000 bytes.
       case "inputLost":
         return plain("msg.inputLost", { input: t(`vocal.inputShort.${m.input}`), device: m.device });
       case "recordingGaps":
@@ -686,12 +685,12 @@
     }
   }
 
-  // ---- ピアノロールをひらいて再生しているとき（モック F-PRPlay）: 「1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4」 ----
+  // ---- Playing with the piano roll open (mock F-PRPlay): 「1 ピアノ ・ Aメロ ・ テイク 2 / 3 ・ 鳴っている音 C3 E3 G3 C4」 ----
 
   const pianoRollOpen = $derived(app.workspace.layout.lower.some((b) => b.band === "pianoRoll"));
   const playingInPianoRoll = $derived(app.transport.state === "playing" && pianoRollOpen && shownNotes.clip !== null && shownNotes.track !== null);
 
-  /** 鳴っている鍵。動いている間はコマごとに計算し、変わったときだけ入れかえる（文を書きかえるのは、変わったときだけ）。 */
+  /** The sounding keys. Computed every frame while playing and replaced only when they change (the text is rewritten only on change). */
   let sounding = $state.raw<number[]>([]);
   let offsetUs: number | null = null;
   $effect(() => {
@@ -724,7 +723,7 @@
     );
   }
 
-  /** 止まっているときの左の文の終わりに足す「4 パッド ・ 5 ベース はミュート」（モック Main）。 */
+  /** 「4 パッド ・ 5 ベース はミュート」, added to the end of the left text when stopped (mock Main). */
   function mutedParts(): TextPart[] {
     const muted = app.song.tracks.filter((x) => x.muted).map(track);
     if (muted.length === 0) return [];
@@ -732,8 +731,8 @@
   }
 
   /**
-   * 棚がひらいているときの、いつものまとめの代わり（仕様書 6 章「棚をひらいている（見出し）」、モック F5-ShelfSearch）。
-   * 見出しの文は、棚をひらいた時と、見出しをひらく ・ たたむ時に言い、core の知らせが変わるまで出す。さがしている間の文は、いつも。
+   * Replaces the usual summary while the shelf is open (spec 6 "Shelf open (headings)", mock F5-ShelfSearch).
+   * The headings text is said when the shelf opens and when a heading opens or folds, and stays until the core message changes. The search text is always shown while searching.
    */
   const shelfParts = $derived.by((): TextPart[] | null => {
     const s = shelfStatus(app);
@@ -744,7 +743,7 @@
     return textParts(s.kind === "effects" ? "status.shelfEffectsOpen" : "status.shelfOpen", { count: s.count, groups: groupsText(s.groups) });
   });
   const shelfFront = $derived(app.workspace.layout.rightFront === "shelf");
-  /** 見出しの文を言った時の core の知らせ。知らせが変わったら、もう言わない。 */
+  /** The core message at the time the headings text was said. Once the message changes, it is not said any more. */
   let shelfMark = $state.raw<{ message: StatusMessage | null } | null>(null);
   $effect(() => {
     void shelfUi.open;
@@ -754,12 +753,12 @@
   });
   const shelfAnnounced = $derived(shelfMark !== null && shelfMark.message === app.status.message);
 
-  // ---- マイクの音が大きすぎる（仕様書 6 章「マイクの音が大きすぎる（いつまで）」）: 最後に 0 dB に届いてから 4 秒、ほかの知らせが来るまで ----
+  // ---- Mic too loud (spec 6 "Mic too loud (how long)"): 4 seconds after it last reached 0 dB, or until another message comes ----
 
   const MIC_LOUD_MS = 4000;
   let micLoudAt = 0;
   let micLoudTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 4 秒たった。core の知らせが「大きすぎる」のままでも、いつものまとめに戻す。 */
+  /** 4 seconds have passed. Go back to the usual summary even if the core message is still "too loud". */
   let micLoudOver = $state(false);
   function micReached(now: number): void {
     micLoudAt = now;
@@ -783,19 +782,19 @@
   onMount(() => () => {
     if (micLoudTimer !== null) clearTimeout(micLoudTimer);
   });
-  /** core の知らせ。4 秒たった「大きすぎる」は、ないものとする。 */
+  /** The core message. A "too loud" older than 4 seconds counts as none. */
   const statusMessage = $derived(micLoud && micLoudOver ? null : app.status.message);
 
-  // ---- ピアノロールをひらいて録音しているとき（仕様書 6 章「録音中 ・ ピアノロール」）: 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」 ----
+  // ---- Recording with the piano roll open (spec 6 "Recording, piano roll"): 「1 ピアノ へ録音 ・ テイク 3 ・ 押している音 C3 E3 G3 C4」 ----
 
   const recordingInPianoRoll = $derived(pianoRollOpen && app.status.message?.id === "recording");
-  /** 止まっているときも、鍵盤を押している間は終わりに「・ 押している音 キック スネア」（仕様書 3 章 85）。 */
+  /** Also when stopped, 「・ 押している音 キック スネア」 at the end while keys are held (spec 3 85). */
   const stoppedSummary = $derived(
     app.transport.state === "stopped" && (statusMessage === null || statusMessage.id === "summary"),
   );
   const countingHeld = $derived(recordingInPianoRoll || stoppedSummary);
 
-  /** 押している鍵（入力計と同じ物: 計器で受け、鍵の on/off は計器を待たずに当てる）。録音中にピアノロールをひらいている間と、止まっている間だけ数える。 */
+  /** The held keys (same as the input meter: from the telemetry, with key on/off applied without waiting for it). Counted only while recording with the piano roll open, and while stopped. */
   let held = $state.raw<number[]>([]);
   const setHeld = (keys: number[]) => {
     if (!sameKeys(keys, held)) held = keys;
@@ -825,7 +824,7 @@
     );
   }
 
-  // ---- クリップがない所でピアノロールをひらいて止まっているとき（モック F-PREmpty）: 「1 ピアノ ・ クリップなし」 ----
+  // ---- Stopped with the piano roll open where there is no clip (mock F-PREmpty): 「1 ピアノ ・ クリップなし」 ----
 
   const noClipTrack = $derived.by((): TrackRef | null => {
     if (!pianoRollOpen || app.transport.state !== "stopped" || app.arrange.pianoRollClip !== null) return null;
@@ -833,7 +832,7 @@
     return tr ? { number: tr.number, name: tr.name } : null;
   });
 
-  /** いちばん先に始めた「音を作っている」の、クリップの名前と %（% はクリップの下 ・ 欄と同じコマで変わる）。 */
+  /** The clip name and % of the earliest started "making the sound" (the % changes in the same frame as under the clip and in the panel). */
   const rendering = $derived.by((): { clip: string; percent: number } | null => {
     const job = shownWork.current.firstRendering;
     if (!job) return null;
@@ -842,58 +841,58 @@
   });
 
   /**
-   * 書き出しのようす（仕様書 2 章「書き出しの進み」）。書き出している間は、札と文の代わりに進みを出す（ほかの知らせより先）。
-   * 終わった ・ やめた ・ できなかったは、画面だけのダイアログやドラッグの次、core の知らせより先の文。% は exportShown が 1 秒に 2 回まで。
+   * The export state (spec 2 "Export progress"). While exporting, the progress replaces the tag and text (before other messages).
+   * Done, stopped and failed come after screen-only dialogs and drags, and before core messages. exportShown changes the % up to 2 times a second.
    */
   const run = $derived.by(() => {
     const r = exportShown.current?.run ?? null;
     return r ? runShown(r) : null;
   });
   const exporting = $derived(run?.kind === "running" ? run : null);
-  /** 書き出し中に録音しているときは「● 録音中」が先。書き出しの進みは、左の終わりに短く「書き出し 46 %」（仕様書 3 章 94-84）。 */
+  /** When recording while exporting, 「● 録音中」 comes first. The export progress is short at the left end: 「書き出し 46 %」 (spec 3 94-84). */
   const exportAside = $derived(exporting !== null && (app.transport.state === "recording" || app.transport.state === "countIn"));
   /**
-   * 音の素材を取っている間に流れ 1〜4 の案内が出たら、進みは状態行の左に移る（3 章 44-A、形は Opt8-PackShow の 44-B）。
-   * 書き出し中と、録音 ・ カウントイン中（札が先）は出さない。
+   * If a hint of flows 1 to 4 appears while the sound pack is being fetched, the progress moves to the left of the status line (spec 3 44-A; the form is 44-B of Opt8-PackShow).
+   * Not shown while exporting, or while recording or in the count-in (the tag comes first).
    */
   const packShown = $derived.by(() => {
     if (exporting || app.transport.state === "recording" || app.transport.state === "countIn") return null;
     const f = packInStatus(app);
     return f ? percentOf(f.doneBytes, f.totalBytes) : null;
   });
-  /** 鍵盤がないなど、ずっと出ている案内の間は、聞くのも状態行の左で（取りにいく ・ あとで）。 */
+  /** While a lasting hint is shown (no keyboard, for example), the question is also asked at the left of the status line (fetch / later). */
   const packAsk = $derived(!exporting && app.transport.state !== "recording" && app.transport.state !== "countIn" && askInStatus(app));
 
   const message = $derived.by((): Shown | null => {
-    // ドラッグしている間の読み値（仕様書 2 章「その場の読み値」: 同じ値を状態行にも出す）。
+    // The reading while dragging (spec 2 "Reading in place": the same value is also shown in the status line).
     if (dragReading.text !== null) return { parts: [{ text: dragReading.text, hole: "reading" }], strong: [], button: null };
     // The chord the draw tool would write where the cursor is (mock P10-ChordStamp).
     if (chordHover.text !== null) return { parts: [{ text: chordHover.text, hole: null }], strong: [], button: null };
-    // 「meloet について」は画面だけが持つダイアログなので、core の知らせの代わりにここで言う（仕様書 3 章 85）。
+    // 「meloet について」 is a screen-only dialog, so it is said here instead of a core message (spec 3 85).
     if (about.open) return { parts: textParts("status.dialogOpen", { dialog: t("about.title") }), strong: [], button: null };
-    // 曲のダイアログは、ダイアログの名前で（仕様書 3 章 89-6。曲の名前は出さない）。
+    // Song dialogs are named by the dialog name (spec 3 89-6; the song name is not shown).
     const songDialog = app.workspace.songDialog;
     if (songDialog) return { parts: textParts("status.songDialogOpen", { dialog: t(SONG_DIALOG_NAMES[songDialog.kind]) }), strong: [], button: null };
-    // 欄の行をドラッグしている間（ドラッグ中の値は core に戻らない。モック F-ParamFew）。
+    // While dragging a panel row (the value while dragging does not come back from core; mock F-ParamFew).
     if (paramUi.moving) return { parts: textParts("status.paramMoving", paramUi.moving), strong: [], button: null };
     if (run?.kind === "message")
       return { parts: run.parts, strong: [], button: run.folder ? { label: t("button.openFolder"), command: { type: "showExported" } } : null };
     const m = statusMessage;
     const usual = m === null || m.id === "summary";
-    // 「窓」の一覧をひらいている間は、いつものまとめに代えて（user:2026-11-19、モック F-WindowOpen）。
+    // While the 「窓」 list is open, it replaces the usual summary (user:2026-11-19, mock F-WindowOpen).
     if (windowsOpen && usual) {
       const loop = m?.loopBars ?? null;
       const open = windows.length === 1 ? textParts("msg.windowOpen", { name: windows[0]!.name }) : textParts("msg.windowsOpen", { count: windows.length });
       const parts = joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], open);
       return { parts, strong: [], button: null };
     }
-    // 見出しの「帯」の一覧をひらいている間（モック F8-FirstLane）。
+    // While the heading's 「帯」 list is open (mock F8-FirstLane).
     const laneAdd = laneAddOpenFor();
     const laneTrack = laneAdd === null ? undefined : app.song.tracks.find((x) => x.id === laneAdd);
     if (laneTrack && usual) return { parts: textParts("status.laneAddOpen", { track: track(laneTrack) }), strong: [], button: null };
-    // パラメータをさがしている間（さがすのは画面。モック F-ParamSearch）。
+    // While searching parameters (the screen does the search; mock F-ParamSearch).
     if (searching && usual) return { parts: textParts("status.paramSearching", { query: paramUi.query.trim(), count: paramUi.matches }), strong: [], button: null };
-    // 音を作っている間（仕様書 6 章「音を作っている」、モック F7-Stretch）。進みは audioWork なので画面が作る。いつものまとめの代わりで、ほかの知らせより後ろ。
+    // While making the sound (spec 6 "Making the sound", mock F7-Stretch). The progress is audioWork, so the screen makes the text. It replaces the usual summary and comes after other messages.
     if (rendering && usual) return { parts: textParts("msg.audioRendering", rendering), strong: [], button: null };
     if (playingInPianoRoll && (m === null || m.id === "summary")) {
       const parts = playingParts();
@@ -910,7 +909,7 @@
       base = { parts, strong: [], button: null };
     } else if ((m === null || m.id === "summary") && shelfParts) base = { parts: shelfParts, strong: [], button: null };
     else if (app.params.clips && (m === null || (m.id === "summary" && m.notes === null))) {
-      // 歌のクリップを 2 つ以上えらんでいる（モック F8-MultiClip）。
+      // 2 or more audio clips are selected (mock F8-MultiClip).
       const loop = m?.id === "summary" ? m.loopBars : null;
       const count = app.params.clips.clips.length;
       base = { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], textParts("status.clipsSelected", { count })), strong: [], button: null };
@@ -924,7 +923,7 @@
     return base;
   });
 
-  /** いちばん左の札（ヤチヨさんの決め 2026-11-15）。録音とカウントインは rec。止まっていてためし弾き中は accent（モック F4-ShelfAudition）。 */
+  /** The tag at the far left (the owner's decision). rec for recording and the count-in. accent when stopped and trying a sound (mock F4-ShelfAudition). */
   const badge = $derived.by((): { text: string; rec: boolean; accent?: boolean } => {
     switch (app.transport.state) {
       case "playing":
@@ -939,7 +938,7 @@
     }
   });
 
-  // ---- 「窓 N ▾」と、その上の一覧（画面だけが持つ「ひらいている」） ----
+  // ---- 「窓 N ▾」 and the list above it (only the screen holds "open") ----
 
   const windows = $derived(app.windows.list);
   let windowsOpen = $state(false);
@@ -993,12 +992,12 @@
   const scale = $derived(app.workspace.scale);
   const unfit = $derived(app.workspace.unfitScales);
 
-  // 拡大率の一覧。画面だけが持つ「ひらいている」。率を決めるのは core（setScale を送るだけ）。
+  // The scale list. Only the screen holds "open"; core decides the scale (the screen only sends setScale).
   let open = $state(false);
   let zoomButton = $state<HTMLButtonElement>();
   let popup = $state<HTMLElement>();
 
-  // 一覧はダイアログより手前に出すので、.app の重なりの外（body）に置き、状態行の右上にそろえる。
+  // The list appears in front of dialogs, so it is placed outside the .app stacking (in body), aligned to the top right of the status line.
   let anchor = $state({ right: 0, bottom: 0 });
   function place(): void {
     if (!row) return;
@@ -1040,7 +1039,7 @@
     };
   });
 
-  // 右がわの入れかた: 見えない写し（ruler）で、ちぢめない幅を測る。
+  // Fitting the right side: measure the uncut widths with a hidden copy (ruler).
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
   let fit = $state<StatusRightShown>({ inputs: true, output: true, buffer: true });
@@ -1057,7 +1056,7 @@
       gap,
       left: width("left") ?? 0,
       right: { inputs: width("inputs"), output: width("output"), buffer: width("buffer") },
-      // 「窓」も拡大率と同じく消さない。
+      // 「窓」 is never removed either, like the scale.
       scale: (width("scale") ?? 0) + (windows.length > 0 ? (width("windows") ?? 0) + gap : 0),
     });
   }
@@ -1204,7 +1203,7 @@
     position: relative;
     flex-shrink: 0;
   }
-  /* 重なり: ダイアログ（30）より上、用語の説明（1000）より下。 */
+  /* Stacking: above dialogs (30), below term tips (1000). */
   .popup {
     position: fixed;
     z-index: 40;
@@ -1244,7 +1243,7 @@
     flex-shrink: 0;
   }
 
-  /* 書き出しの進み（仕様書 2 章、モック F7-Exporting）: 「書き出しています」（accent）、160 の棒（地 gray.4、accent）、%、文、「やめる」。 */
+  /* Export progress (spec 2, mock F7-Exporting): 「書き出しています」 (accent), a 160 bar (background gray.4, accent), %, text, 「やめる」. */
   .exporting {
     display: flex;
     align-items: center;
@@ -1269,7 +1268,7 @@
     background: var(--color-accent);
     transform-origin: left;
   }
-  /* % の字は流れの外（字の幅が変わっても、行をレイアウトしなおさない。22-22 と同じ）。幅は「99 %」の見えない字で決める。 */
+  /* The % text is out of flow (the row is not laid out again when the text width changes; same as 22-22). The width is set by a hidden 「99 %」. */
   .percent {
     position: relative;
     display: inline-block;
@@ -1286,7 +1285,7 @@
     height: var(--mock-exporting-stop);
   }
 
-  /* 拡大率: ふつう（地も枠も内がわもなし。モック Main）/ 乗った（文字 gray.10）/ ひらいている（地 gray.4、枠 gray.8。モック F-Zoom）。 */
+  /* Scale: normal (no background, border or padding; mock Main) / hover (text gray.10) / open (background gray.4, border gray.8; mock F-Zoom). */
   .zoom {
     height: 100%;
     display: inline-flex;
@@ -1307,7 +1306,7 @@
     color: var(--color-gray-10);
   }
 
-  /* 写しでは、ひらいたときの幅（内がわと枠つき）で測る。 */
+  /* In the copy, measure with the open width (with padding and border). */
   .ruler .wide {
     padding: 0 var(--part-button-pad-x);
     border: var(--line-hair) solid transparent;

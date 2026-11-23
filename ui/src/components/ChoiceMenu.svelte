@@ -1,27 +1,27 @@
-<!-- 一覧（仕様書 2 章「一覧」、モック F-Menus）。幅 220、行は高さ 24 で、選ぶ印、名前、キー。見出しの行もまぜられる。
-     えらんでいる行は、selected と同じ値の行か、checked の行。することの一覧（曲の名前の一覧）は、印をからのまま出す。
-     ひらいたら、えらんでいる行（なければ使える最初の行）にフォーカスを置く。↑ ↓ でえらび、Enter で決める。Esc と外を押したときは、ひらいた側がとじる。 -->
+<!-- List (spec 2 "List", mock F-Menus). Width 220, rows 24 high with a choice mark, a name and a key. Heading rows can be mixed in.
+     The chosen row is the row whose value equals selected, or a checked row. A list of actions (the list of song names) leaves the mark empty.
+     On open, focus goes to the chosen row (or the first usable row). ↑ ↓ choose, Enter decides. On Esc or a press outside, the opener closes it. -->
 <script lang="ts" generics="V">
   import { onMount, type Snippet } from "svelte";
 
   interface Row {
     value: V;
     label: string;
-    /** 右はしのキーの札。 */
+    /** The key label at the right end. */
     key?: string;
-    /** false なら「使えない」（仕様書 2 章）。 */
+    /** false means disabled (spec 2). */
     usable?: boolean;
-    /** えらんでいるか（selected を使わない行）。 */
+    /** Whether it is chosen (for rows that do not use selected). */
     checked?: boolean;
   }
-  /** 一覧の中の見出しの行。 */
+  /** A heading row inside the list. */
   interface Heading {
     heading: string;
   }
   interface Props {
-    /** null なら見出しの行を出さない。 */
+    /** null means no heading row is shown. */
     heading: string | null;
-    /** 見出しがないときの名前（読み上げ用）。 */
+    /** The name when there is no heading (for screen readers). */
     label?: string;
     rows: readonly (Row | Heading)[];
     /** Put at the right end of the heading row. */
@@ -32,13 +32,13 @@
   }
   let { heading, label, rows, note, selected, onpick, test }: Props = $props();
   const isHeading = (r: Row | Heading): r is Heading => "heading" in r;
-  /** undefined なら、えらぶ行ではない（することの行）。 */
+  /** undefined means the rows are not choices (action rows). */
   const checkedOf = (r: Row): boolean | undefined => r.checked ?? (selected !== undefined ? r.value === selected : undefined);
 
   let list = $state<HTMLElement>();
   const buttons = () => [...(list?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
 
-  // 窓からはみ出すときは、窓の中に入るまで左（上）へずらす。ひらいた側が置いた所からのずれ。
+  // When it goes outside the window, shift it left (up) until it fits. The offset from where the opener put it.
   let shift = $state({ x: 0, y: 0 });
   function keepInside(): void {
     if (!list) return;
@@ -50,7 +50,7 @@
     if (x !== shift.x || y !== shift.y) shift = { x, y };
   }
 
-  // ひらいた側が一覧を body へ移して置いたあとで、ずらしてからフォーカスを置く（移すとフォーカスが外れるので）。
+  // The opener moves the list to body and places it; shift it after that, then set focus (moving it loses focus).
   onMount(() => {
     queueMicrotask(() => {
       keepInside();
@@ -146,8 +146,8 @@
   .row:last-child {
     border-bottom: 0;
   }
-  /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は行の内がわに描き、
-     「選んだ行」（地 gray.4 ・ 左 line.mark の accent）とまざらないようにする（docs/history/design-notes.ja.md A-6）。 */
+  /* Hover (spec 2: border gray.8, text gray.10), pressed (bg gray.2, border gray.8). The border is drawn inside the row
+     so it does not mix with 「選んだ行」 (bg gray.4, left line.mark in accent) (docs/history/design-notes.ja.md A-6). */
   .row:hover:not(:disabled) {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
@@ -183,7 +183,7 @@
   .row:disabled {
     cursor: default;
   }
-  /* 使えない（仕様書 2 章）: 文字 gray.7 ・ 押せない。キーも gray.7。 */
+  /* Disabled (spec 2): text gray.7, cannot be pressed. The key is gray.7 too. */
   .unusable .label,
   .unusable .key {
     color: var(--color-gray-7);

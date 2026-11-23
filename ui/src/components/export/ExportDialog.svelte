@@ -1,7 +1,7 @@
-<!-- 書き出し（仕様書 3 章 34-B ・ 41-A ・ 42-C、2 章「ダイアログ」、6 章「書き出しの前」、モック F7-Export ・ F-Export ・ F8-ExportCheck ・ F8-ExportClip ・ R11-Fit）。
-     範囲、形、保存する所、書き出す前のたしかめ（数えている間も、数が 1 回来たら「書き出す」を押せる。ソロのトラックはここで言う）、「くわしく」。
-     中身は Rust の export.dialog の写しで、画面は意図だけを送る。
-     窓に入らないときは、見出しと下のボタンを残して中をスクロールする（R11-Fit）。 -->
+<!-- Export (spec 3 34-B, 41-A, 42-C; spec 2 "Dialog"; spec 6 "Before export"; mock F7-Export, F-Export, F8-ExportCheck, F8-ExportClip, R11-Fit).
+     Range, format, where to save, the check before export (while counting, 「書き出す」 can be pressed once a number has come; soloed tracks are told here), 「くわしく」.
+     The content is a copy of Rust's export.dialog; the screen only sends intents.
+     When it does not fit the window, the heading and the bottom buttons stay and the inside scrolls (R11-Fit). -->
 <script lang="ts">
   import type { ExportChange, ExportDialogView, ExportFormat, ExportRange, ExportTail } from "../../bridge";
   import { movableDialog } from "../../lib/dialogMove";
@@ -44,7 +44,7 @@
 
   const solo = $derived(dialog ? soloText(dialog.solo) : null);
 
-  /** ▾ を押したら、その下に一覧（音の設定のくわしい設定と同じ形）。 */
+  /** Pressing ▾ opens a list under it (the same form as the advanced sound settings). */
   function choose(e: MouseEvent, entries: MenuEntry[]): void {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     openContextMenu(r.left, r.bottom, entries);
@@ -130,7 +130,7 @@
           <span class="label">{t("export.check")}</span>
           {#each checkLines(dialog.check) as line, i (i)}
             {#if line.kind === "counting"}
-              <!-- 「たしかめています ・ 160 の棒 ・ 38 %」（モック F8-ExportCheck）。% の字は流れの外の箱で、幅は「100 %」の字で決める。 -->
+              <!-- 「たしかめています ・ 160 の棒 ・ 38 %」 (mock F8-ExportCheck). The % text is in a box outside the flow, with its width set by the text 「100 %」. -->
               <span class="counting" data-test="export-check-line">
                 <span class="label">{t("export.checkChecking")}</span>
                 <span class="bar"><span class="fill" style:transform="scaleX({Math.min(1, Math.max(0, line.percent / 100))})"></span></span>
@@ -218,7 +218,7 @@
 {/if}
 
 <style>
-  /* 窓の上下のまん中（仕様書 3 章「ダイアログを動かす」: ひらくたびに、いまの窓のまん中から）。 */
+  /* Centred vertically in the window (spec 3, moving dialogs: each time it opens, from the centre of the current window). */
   .place {
     position: absolute;
     inset: 0;
@@ -299,7 +299,7 @@
     align-items: center;
     gap: var(--space-2);
   }
-  /* 保存する所（モック F7-Export: 地 gray.0、枠 gray.6、内 4 ・ 8）。 */
+  /* Where to save (mock F7-Export: bg gray.0, border gray.6, padding 4 and 8). */
   .field {
     flex: 1;
     min-width: 0;
@@ -309,7 +309,7 @@
     background: var(--color-gray-0);
     border: var(--line-hair) solid var(--color-gray-6);
   }
-  /* 入りきらない道は、頭を「…」で省いて終わり（ファイルの名前）を見せる（cutHead が data-cut をつける）。 */
+  /* A path that does not fit is cut at the head with 「…」 to show the end (the file name) (cutHead sets data-cut). */
   .field:global([data-cut])::before {
     content: "…";
     flex-shrink: 0;
@@ -341,7 +341,7 @@
   .apart {
     margin-left: var(--space-1);
   }
-  /* たしかめの棒の行（モック F8-ExportCheck: すきま 8、棒は 160×4 の地 gray.4 に accent）。 */
+  /* The check bar row (mock F8-ExportCheck: gap 8, the bar is 160×4, bg gray.4 with accent). */
   .counting {
     display: flex;
     align-items: center;
@@ -376,7 +376,7 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
-  /* 止まっているプラグイン（モック F-Export: 名前は rec、そのあとに「この枠をとばした音で書き出します」）。 */
+  /* Stopped plugins (mock F-Export: the name in rec, then 「この枠をとばした音で書き出します」). */
   .stopped {
     display: flex;
     align-items: center;
@@ -384,7 +384,7 @@
     min-width: 0;
     overflow: hidden;
   }
-  /* 「くわしく」の行（モック F7-Export の hd: 高さ 24、左右 12、地 gray.4）。 */
+  /* The 「くわしく」 row (hd in mock F7-Export: height 24, 12 left and right, bg gray.4). */
   .adv {
     box-sizing: border-box;
     display: flex;
@@ -407,7 +407,7 @@
     outline: var(--line-hair) solid var(--color-gray-10);
     outline-offset: var(--line-hair);
   }
-  /* ひらいた「くわしく」は、音の設定のくわしい設定と同じ行の形（名前 120、高さ 32 から、下に gray.4 の線）。 */
+  /* The open 「くわしく」 uses the same row form as the advanced sound settings (name 120, at least 32 high, a gray.4 line below). */
   .adv-body {
     display: flex;
     flex-direction: column;
@@ -446,7 +446,7 @@
   .drop:hover {
     border-color: var(--color-gray-8);
   }
-  /* 実時間で書き出す: 選ぶ印（仕様書 2 章「選ぶ印（設定の中）」12×12 の枠、えらぶと 6×6 の accent）。 */
+  /* Export in real time: choice mark (spec 2 "Choice mark (in settings)", a 12×12 box; chosen is a 6×6 accent). */
   .pick {
     display: inline-flex;
     align-items: center;

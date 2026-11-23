@@ -1,5 +1,5 @@
-<!-- なおすためのファイルの案内（仕様書 3 章・6 章、モック F-Recover1・F-Recover3）。流れ 3 の案内と同じ置き場と形。
-     保存するか、「戻さない」か「閉じる」を押すまで出ている（決めるのは Rust）。 -->
+<!-- Hint about the recovery file (spec 3, spec 6; mock F-Recover1, F-Recover3). Same place and form as the flow 3 hint.
+     It stays until the song is saved or 「戻さない」 or 「閉じる」 is pressed (Rust decides). -->
 <script lang="ts">
   import { platformOf } from "../keys/keys";
   import { term } from "../lib/tip.svelte";
@@ -15,7 +15,7 @@
   const platform = platformOf(navigator);
   const saveKey = `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${t("key.saveSong")}`;
 
-  // 録っていた歌を残したとき（仕様書 3 章「録っている途中で PC が終わったとき」）の 1 行。
+  // The line shown when recorded audio was kept (spec 3 「録っている途中で PC が終わったとき」).
   const vocalLine = $derived.by((): string | null => {
     const timeline = current.state?.timeline;
     if (recovery?.kind !== "recovered" || !recovery.vocals || !timeline) return null;

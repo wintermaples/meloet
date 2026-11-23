@@ -1,4 +1,4 @@
-// スキャンの帯、止まった物のダイアログ、プラグインの場所で使う、DOM を知らない関数（仕様書 2 章・3 章 Y13・6 章）。
+// Functions that do not know the DOM, used by the scan strip, the stopped-plugins dialog and plugin locations (spec 2, spec 3 Y13, spec 6).
 import type { PluginFormat, ScanStopReason } from "../../bridge";
 import { STATUS_JOIN, t, type TextKey } from "../../text/ja";
 import { textParts } from "../format";
@@ -10,11 +10,11 @@ export interface ScanStripText {
   count: string;
   /** 「調べ終えた分から、もう使えます」 */
   note: string;
-  /** 進みの棒のぬり（0〜1）。 */
+  /** Fill of the progress bar (0–1). */
   done: number;
 }
 
-/** 6 章の「スキャン中 37 / 112 ・ 調べ終えた分から、もう使えます」を、モック R9-Scan の 3 つの所に分ける。 */
+/** Splits 「スキャン中 37 / 112 ・ 調べ終えた分から、もう使えます」 of spec 6 into the 3 places of mock R9-Scan. */
 export function scanStripText(done: number, total: number): ScanStripText {
   const parts = textParts("msg.scanning", { done, total });
   const first = parts.findIndex((p) => p.hole !== null);
@@ -49,7 +49,7 @@ export const reasonText = (r: ScanStopReason): string => t(REASONS[r]);
 export const formatText = (f: PluginFormat): string => t(`plugin.format.${f}`);
 
 /**
- * 止まった物のダイアログの「プラグインの場所…」で音の設定をひらいたとき、プラグインの場所を見える所へ送る。
- * 画面だけが持つ（どこまでスクロールするかは core が知らなくてよい）。
+ * When 「プラグインの場所…」 in the stopped-plugins dialog opens the sound settings, scroll the plugin locations into view.
+ * Only the screen holds this (core does not need to know how far to scroll).
  */
 export const placesReveal = { pending: false };

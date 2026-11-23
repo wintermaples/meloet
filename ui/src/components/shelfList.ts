@@ -1,6 +1,6 @@
-// 棚の一覧に出す物（仕様書 2 章「音源の行（棚）」「棚のプラグインの行」、3 章 83 ・ 85 ・ 86-4 ・ Y12）。DOM を知らない純粋な関数。
-// 並びは 最初から入っているもの → あとから入れたもの（SF2 のファイルの見出し（音源だけ）→ プラグインの種類の見出し）。
-// たたんだ見出しの中の行は作らない。何百行あっても、画面は見えている所だけを描く（Shelf.svelte）。
+// What the shelf list shows (spec 2 "Instrument row (shelf)", "Plugin row in the shelf"; spec 3 (83, 85, 86-4, Y12)). Pure functions that do not know the DOM.
+// Order: built-in → added later (an SF2 file heading (instruments only) → a plugin kind heading).
+// Rows inside a folded heading are not made. Even with hundreds of rows, the screen draws only the visible part (Shelf.svelte).
 
 import { EFFECT_KINDS, GM_FAMILIES, PLUGIN_EFFECT_CATEGORIES, PLUGIN_INSTRUMENT_CATEGORIES } from "../bridge/types";
 import {
@@ -20,13 +20,13 @@ import { rowHasKey, sameEffect, sameSound } from "./sounds";
 
 export type ShelfList = "instruments" | "effects";
 
-/** 画面だけが持つ棚のようす（tracks.svelte.ts の shelfUi）。 */
+/** The shelf look that only the screen keeps (shelfUi in tracks.svelte.ts). */
 export interface ShelfLook {
   query: string;
   favoritesOnly: boolean;
-  /** 見出しをひらいた ・ たたんだ（はじめの形からかえた物だけ）。 */
+  /** Headings opened or folded (only the ones changed from the first form). */
   open: Readonly<Record<string, boolean>>;
-  /** さがしている間に、ひらいた ・ たたんだ見出し。searchFor の文字のときだけ使う。 */
+  /** Headings opened or folded while searching. Used only while the query is searchFor. */
   searchOpen: Readonly<Record<string, boolean>>;
   searchFor: string;
 }
@@ -34,21 +34,21 @@ export interface ShelfLook {
 export interface ShelfRow {
   kind: "row";
   id: string;
-  /** 音源の一覧の行。 */
+  /** A row of the instrument list. */
   sound: SoundRef | null;
-  /** エフェクトの一覧の行。 */
+  /** A row of the effect list. */
   effect: EffectRef | null;
   name: string;
-  /** 最初から入っている物（名前は日本語。用語の説明がつくことがある）。 */
+  /** Built in (the name is Japanese and may have a term tip). */
   builtin: boolean;
-  /** SF2 の音色の右の「28」「1 ・ バンク 8」。 */
+  /** The 「28」 or 「1 ・ バンク 8」 to the right of an SF2 preset. */
   number: string | null;
   plugin: PluginRowView | null;
-  /** あとから入れた物の行（左を space.6 あける）。 */
+  /** A row added later (space.6 on the left). */
   added: boolean;
   /**
-   * まだ取っていない音色（仕様書 2 章「棚の「まだの音色」の行」、3 章 45-A）: いま取ってきている物か、まだの物。
-   * 星 ・ ▶ ・ ためし弾きなし。えらべない（↑ ↓ でも止まらない）。
+   * A preset not fetched yet (spec 2 "「まだの音色」 row in the shelf", spec 3 (45-A)): being fetched now, or waiting.
+   * No star, no ▶, no audition. It cannot be chosen (↑ ↓ skip it too).
    */
   notYet?: "fetching" | "waiting";
 }
@@ -59,13 +59,13 @@ export interface ShelfHeading {
   label: string;
   count: string;
   folded: boolean;
-  /** 0: 左 space.3、1: SF2 の仲間と、最初から入っているもののグループ（左 mock.shelf.indent）。 */
+  /** 0: left space.3; 1: SF2 presets and the groups of the built-in ones (left mock.shelf.indent). */
   depth: 0 | 1;
-  /** SF2 のファイルの見出し（形式の印「SF2」）。 */
+  /** An SF2 file heading (format mark 「SF2」). */
   sf2: boolean;
 }
 
-/** 「あとから入れたもの ・ 1」の行。 */
+/** The 「あとから入れたもの ・ 1」 row. */
 export interface ShelfSection {
   kind: "section";
   id: "section:added";
@@ -75,15 +75,15 @@ export interface ShelfSection {
 export interface ShelfNotice {
   kind: "notice";
   id: string;
-  /** null: 音の素材が見つからない。 */
+  /** null: the sound pack is not found. */
   missing: MissingView | null;
 }
 
-/** えらんだ行の下にひらく箱（ためし弾き ・ 読みこみ中 ・ 読みこめない ・ インサートに入れる）。 */
+/** The box that opens under the chosen row (audition, loading, cannot load, put in the insert). */
 export interface ShelfBox {
   kind: "box";
   id: "box";
-  /** どの行の下か。行が見えていないときは null（一覧のいちばん下）。 */
+  /** Under which row. null when the row is not visible (the bottom of the list). */
   row: string | null;
 }
 
@@ -91,11 +91,11 @@ export type ShelfEntry = ShelfRow | ShelfHeading | ShelfSection | ShelfNotice | 
 
 export interface ShelfModel {
   entries: ShelfEntry[];
-  /** 見えている行（↑ ↓ で動く行）。 */
+  /** The visible rows (the rows ↑ ↓ moves through). */
   rows: ShelfRow[];
-  /** 出ている行の数（たたんだ見出しの中もふくむ。さがす文字とお気に入りでしぼった後）。 */
+  /** The number of rows shown (including inside folded headings; after the query and favorites filter). */
   shown: number;
-  /** ひらいている見出しの名前と、その行の数（状態行）。 */
+  /** The names of the open headings and their row counts (status line). */
   open: { label: string; count: number }[];
 }
 
@@ -103,7 +103,7 @@ const soundId = (s: SoundRef) =>
   s.kind === "builtin" ? `b:${s.instrument}` : s.kind === "sf2" ? `s:${s.file}:${s.bank}:${s.program}` : `p:${s.key}`;
 const pluginId = (r: PluginRowView) => `p:${r.name}\u0000${r.vendor}`;
 
-/** 音源とエフェクトの数（見出しの「音源 182」「エフェクト 512」、縦の見出し）。 */
+/** The numbers of instruments and effects (「音源 182」 「エフェクト 512」 in the heading, the vertical heading). */
 export function shelfCounts(shelf: ShelfView, library: LibraryView): { instruments: number; effects: number } {
   const plugins = (role: PluginRole) => library.plugins.filter((r) => r.kind.role === role).length;
   const sf2 = library.sf2.reduce((n, f) => n + f.presets.length, 0);
@@ -111,7 +111,7 @@ export function shelfCounts(shelf: ShelfView, library: LibraryView): { instrumen
   return { instruments: builtin + sf2 + plugins("instrument"), effects: EFFECT_KINDS.length + plugins("effect") };
 }
 
-/** お気に入りの数（棚に出る物だけ）。 */
+/** The number of favorites (only the ones in the shelf). */
 export function favoriteCount(list: ShelfList, shelf: ShelfView, library: LibraryView): number {
   if (list === "effects") {
     return shelf.favoriteEffects.filter((e) =>
@@ -126,8 +126,8 @@ export function favoriteCount(list: ShelfList, shelf: ShelfView, library: Librar
 }
 
 /**
- * 見出しのはじめの形（仕様書 3 章 Y12「見出しは、はじめはどれもたたむ」、83「ファイルの見出しは、いま足したファイルだけひらき」）。
- * あとから入れた音源がないときの最初から入っている音源のグループは、今までどおりひらく。
+ * The first form of the headings (spec 3: Y12 "every heading starts folded"; 83 "only the file just added is open").
+ * When nothing was added later, the built-in instrument groups are open.
  */
 function openAtFirst(id: string, library: LibraryView): boolean {
   if (!id.includes(":")) return library.sf2.length === 0 && !library.plugins.some((r) => r.kind.role === "instrument");
@@ -135,13 +135,13 @@ function openAtFirst(id: string, library: LibraryView): boolean {
   return false;
 }
 
-/** いま見出しがひらいているか。さがしている間は、合う物のある見出しはひらく。 */
+/** Whether the heading is open now. While searching, headings with matches are open. */
 export function headingOpen(id: string, look: ShelfLook, library: LibraryView): boolean {
   if (look.query.trim() !== "") return look.searchFor === look.query ? (look.searchOpen[id] ?? true) : true;
   return look.open[id] ?? openAtFirst(id, library);
 }
 
-/** 行がえらばれている物か（プラグインはどの形式の鍵でも）。 */
+/** Whether the row is the chosen one (a plugin matches with the key of any format). */
 export function rowIs(row: ShelfRow, sound: SoundRef | null | undefined, effect?: EffectRef | null): boolean {
   if (sound && row.sound) {
     if (row.plugin && sound.kind === "plugin") return rowHasKey(row.plugin, sound.key);
@@ -154,7 +154,7 @@ export function rowIs(row: ShelfRow, sound: SoundRef | null | undefined, effect?
   return false;
 }
 
-/** 棚の一覧。fetching: いま取ってきている音色（「取ってきています」の行）。 */
+/** The shelf list. fetching: the presets being fetched now (the 「取ってきています」 rows). */
 export function shelfModel(
   list: ShelfList,
   shelf: ShelfView,
@@ -180,7 +180,7 @@ export function shelfModel(
   let shown = 0;
 
   const count = (n: number, total: number) => (searching ? t("shelf.matchCount", { shown: n, total }) : String(n));
-  /** 見出しと、ひらいていればその行。出す行がなければ見出しごと出さない。 */
+  /** A heading and, if open, its rows. With no rows to show, the heading is not shown either. */
   const group = (h: Omit<ShelfHeading, "kind" | "folded" | "count">, items: ShelfRow[], total: number, leaf = true): void => {
     if (items.length === 0) return;
     const folded = !headingOpen(h.id, look, library);
@@ -193,14 +193,14 @@ export function shelfModel(
     }
   };
 
-  // 見つからない物の知らせ（一覧の上）。
+  // The notice of missing things (above the list).
   if (list === "instruments" && library.packMissing) entries.push({ kind: "notice", id: "notice:pack", missing: null });
   for (const m of shelf.missing) {
     if (m.kind === "sf2" ? list === "instruments" : m.role === role)
       entries.push({ kind: "notice", id: m.kind === "sf2" ? `notice:s:${m.file}` : `notice:p:${m.key}`, missing: m });
   }
 
-  // ---- 最初から入っているもの ----
+  // ---- Built in ----
   const builtin: { heading: Omit<ShelfHeading, "kind" | "folded" | "count">; items: ShelfRow[]; total: number }[] = [];
   if (list === "instruments") {
     for (const { group: g, instruments } of INSTRUMENT_GROUPS) {
@@ -238,7 +238,7 @@ export function shelfModel(
   shown += builtinShown;
 
   if (!hasAdded) {
-    // あとから入れた物がないときは、今までの形（見出しなしの一覧）。
+    // With nothing added later, the plain form (a list without headings).
     for (const b of builtin) {
       if (list === "instruments") group(b.heading, b.items, b.total);
       else
@@ -249,7 +249,7 @@ export function shelfModel(
         }
     }
   } else if (list === "instruments") {
-    // 「最初から入っているもの」は、ほかと同じたためる見出し。中のグループは 1 段下げる（仕様書 3 章 89-11）。
+    // 「最初から入っているもの」 is a heading that folds like the others. Its groups go one step in (spec 3 (89-11)).
     if (builtinShown > 0 || !searching) {
       const id = "builtin:sounds";
       const folded = !headingOpen(id, look, library);
@@ -261,7 +261,7 @@ export function shelfModel(
     group(b.heading, b.items, b.total);
   }
 
-  // ---- あとから入れたもの ----
+  // ---- Added later ----
   let addedShown = 0;
   let addedTotal = 0;
   const addedEntries: ShelfEntry[] = [];
@@ -326,7 +326,7 @@ export function shelfModel(
   return { entries, rows, shown, open };
 }
 
-/** えらんだ行の下に箱を入れる。row が一覧にないときは、insertAtEnd なら一覧のいちばん下に。 */
+/** Put the box under the chosen row. When the row is not in the list and insertAtEnd, at the bottom of the list. */
 export function withBox(entries: readonly ShelfEntry[], row: ShelfRow | null, insertAtEnd: boolean): ShelfEntry[] {
   if (row) {
     const at = entries.findIndex((e) => e.kind === "row" && e.id === row.id);
@@ -335,7 +335,7 @@ export function withBox(entries: readonly ShelfEntry[], row: ShelfRow | null, in
   return insertAtEnd ? [...entries, { kind: "box", id: "box", row: null }] : [...entries];
 }
 
-/** ↑ ↓ でえらぶ次の行。見えている行の中で動き、はしでは止まる。 */
+/** The next row for ↑ ↓. Moves within the visible rows and stops at the ends. */
 export function stepRow(rows: readonly ShelfRow[], at: number, delta: 1 | -1): ShelfRow | null {
   if (rows.length === 0) return null;
   if (at < 0) return delta > 0 ? rows[0]! : rows.at(-1)!;

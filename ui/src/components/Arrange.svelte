@@ -1,9 +1,9 @@
-<!-- アレンジ（モック Main・F-ArrangeRec・F-Takes・F-Empty）。ちぢんだときは全体図（A-PianoRoll の上の帯）。
-     小節の線、クリップ、全体図の線は WebGL。名前、札、再生の位置の線は HTML。children は、アレンジの上に重ねる物（出口えらび、案内）。
-     動いている間は、WebGL の係のコマごとに（everyGlFrame）線と録っているクリップの先を動かす。
-     クリップのドラッグ（モック R3-Arrange）は、もとの場所を大きな面に gray.7 の枠で残し、動いているクリップを小さな区画（recordingClip。
-     録音中はドラッグしないので、録っているクリップの先と同じ時に使わない）で描く。動かすだけなら箱を transform で動かす。
-     選んであるクリップは何個でも、いっしょに動かす（docs/history/design-notes.ja.md B-71）。右クリックの一覧は B-60。 -->
+<!-- The arrange (mock Main, F-ArrangeRec, F-Takes, F-Empty). When shrunk, the overview (the upper band of A-PianoRoll).
+     Bar lines, clips and overview lines are WebGL. Names, tags and the playhead line are HTML. children are things laid over the arrange (output choice, hints).
+     While playing, the lines and the tip of the recording clip move on every frame of the WebGL side (everyGlFrame).
+     A clip drag (mock R3-Arrange) leaves the original place on the big face with a gray.7 border and draws the moving clips in a small slot (recordingClip;
+     there is no drag while recording, so it is never used at the same time as the tip of a recording clip). A plain move only moves the box with transform.
+     Any number of selected clips move together (docs/history/design-notes.ja.md B-71). The context menu is B-60. -->
 <script lang="ts">
   import { onDestroy, onMount, tick as nextTick, untrack, type Snippet } from "svelte";
   import {
@@ -69,37 +69,37 @@
   const song = $derived(current.state!.song);
   const timeline = $derived(current.state!.timeline);
   const transport = $derived(current.state!.transport);
-  /** テイクの切りかえの札が向くクリップ（最後に押したクリップ）。 */
+  /** The clip the take switch tag points to (the last pressed clip). */
   const selected = $derived(current.state!.arrange.selectedClip);
-  /** 選んであるクリップぜんぶ（仕様書 2 章「選んだ」の枠と上辺 accent）。 */
+  /** All selected clips (spec 2 "Selected clip": accent border and top edge). */
   const selectedSet = $derived(new Set(current.state!.arrange.selectedClips));
   const layout = $derived(current.state!.workspace.layout);
-  /** キーがアレンジに向いているか（B-72。ピアノロールがひらいていなければ、いつもアレンジ）。 */
+  /** Whether keys go to the arrange (B-72; always the arrange when the piano roll is not open). */
   const keysHere = $derived(prView.focus === "arrange" || !layout.lower.some((l) => l.band === "pianoRoll"));
   const height = $derived(metrics.scaled(layout.arrangeHeight));
 
   let timeWidth = $state(0);
   let overviewWidth = $state(0);
   let overviewHeight = $state(0);
-  /** 横のスクロール。拡大率を変えても同じ所を見せるよう、ティックで持つ。 */
+  /** Horizontal scroll. Kept in ticks so the same place stays in view when the zoom changes. */
   let scrollTick = $state(0);
-  /** 再生の位置を追ってページを送るか。手で横に動かすとやめ、次に再生を始めるとまた追う。 */
+  /** Whether to page along with the playhead. Stops when moved sideways by hand, and follows again on the next play. */
   let follow = true;
 
-  /** 1 小節の px。横の拡大の段（arrangeView.barPx は 100 % の px）に、mock.arrange.bar と同じ率をかける。 */
+  /** px per bar. The horizontal zoom step (arrangeView.barPx is px at 100 %) times the same scale as mock.arrange.bar. */
   const barPx = $derived((metrics.px("mock.arrange.bar") * arrangeView.barPx) / DEFAULT_ARRANGE_BAR);
-  /** 小節の番号を何小節おきに出すか。縮小して重なるときは間引く。 */
+  /** Every how many bars a bar number is shown. Thinned when zoomed out so they would overlap. */
   const barLabelEvery = $derived(G.labelEvery(barPx, metrics.px("mock.arrange.bar") / 2));
-  /** テンポと拍子の地図。小節の線、目盛の数字、吸いつき、ループの範囲は、ここから（拍子の変更で小節の長さが変わる）。 */
+  /** The tempo and time signature map. Bar lines, ruler numbers, snapping and the loop range come from here (time signature changes alter bar length). */
   const map = $derived(mapOf(timeline));
-  /** 曲の頭の拍子の 1 小節。横の拡大の段（barPx）は、この長さの小節の px。 */
+  /** One bar in the time signature at the song start. The horizontal zoom step (barPx) is px for a bar of this length. */
   const perBar = $derived(ticksPerBar({ num: timeline.meterNum, den: timeline.meterDen }));
   const pxPerTick = $derived(barPx / perBar);
-  /** クリップの場所に拍の線も描くか。拍に吸いつくほど拡大していなければ、小節の線だけ。 */
+  /** Whether to draw beat lines in the clip area too. Only bar lines unless zoomed in enough to snap to beats. */
   const gridBeats = $derived(G.beatsShown(barPx, perBar, ticksPerBeat({ num: timeline.meterNum, den: timeline.meterDen }), metrics.px("mock.arrange.bar") / 2));
   const viewWidth = $derived(layout.arrangeOverview ? overviewWidth : timeWidth);
   const view: G.View = $derived({ pxPerTick, scrollX: scrollTick * pxPerTick, width: viewWidth });
-  /** トラックの行と、その下のオートメーションの帯（見出しの側と同じ並び。automation/autoGeom.ts）。 */
+  /** Track rows and the automation bands under them (the same order as the head side; automation/autoGeom.ts). */
   const rows = $derived(
     arrangeRows(song.tracks, current.state!.automation.folded, {
       trackH: metrics.px("size.track"),
@@ -122,7 +122,7 @@
   const tagMin = $derived(metrics.px("part.take.tag-min-width"));
   const switchH = $derived(metrics.px("part.take.switch-height"));
 
-  /** 目盛の数字（小節の番号と、その線の曲の頭からの x）。数字の帯ごと transform で送るので、送っても数字の x は変わらない。 */
+  /** Ruler numbers (bar number and the x of its line from the song start). The whole number strip moves with transform, so scrolling does not change these x. */
   const barNumbers = $derived.by(() => {
     const out: { n: number; x: number }[] = [];
     eachLine(map, map.meterAt(G.xToTick(view, 0)).barTick, G.xToTick(view, viewWidth), (_, bar) => bar * barLabelEvery, (tick, _, bar) =>
@@ -130,7 +130,7 @@
     );
     return out;
   });
-  /** クリップの場所の小節の線（と拍の線）。 */
+  /** Bar lines (and beat lines) in the clip area. */
   const gridLines = $derived.by(() => {
     const out: GridLine[] = [];
     eachLine(map, G.xToTick(view, 0), G.xToTick(view, viewWidth), (beat, bar) => (gridBeats ? beat : bar), (tick, kind) =>
@@ -138,10 +138,10 @@
     );
     return out;
   });
-  /** トラックの id から、並びの中の行。 */
+  /** The row in the order, from a track id. */
   const rowOf = (track: number) => song.tracks.findIndex((tr) => tr.id === track);
 
-  // ---- テイクのノート（一度取れば id で持っておける） ----
+  // ---- Take notes (once fetched, they can be kept by id) ----
 
   let takeVersion = $state(0);
   const asked = new Set<number>();
@@ -150,7 +150,7 @@
     if (had || asked.has(id)) return had;
     asked.add(id);
     try {
-      // 届いたら asked から外す（あとで片づけられても、また要れば取りなおせるように）。
+      // Remove from asked when it arrives (so it can be fetched again if it is cleaned up later and needed).
       takeNotes(id).then(
         () => {
           asked.delete(id);
@@ -164,11 +164,11 @@
     return undefined;
   }
 
-  // ---- 歌のクリップの波形（arrange/wave.ts。ピークは橋がため、WebGL の係がテクスチャにする） ----
+  // ---- Audio clip waveforms (arrange/wave.ts; the bridge keeps the peaks and the WebGL side makes them textures) ----
 
   const waveBook = new WaveBook();
   onDestroy(() => waveBook.stop());
-  // 曲が変わるたびに、橋が手ばなしたピークを帳面からも外す。
+  // Every time the song changes, also drop from the book the peaks the bridge let go of.
   $effect(() => {
     void song;
     waveBook.trim(song.serial);
@@ -182,15 +182,15 @@
   const handleSize = $derived(metrics.px("part.audioclip.handle"));
 
   /**
-   * 歌のクリップ 1 つ: 枠と面、その上に波形とフェードの線。`drag` は、音量の線や取っ手をドラッグしている間の値。
-   * 音のファイルが見つからないクリップは、地 gray.2、上の線 gray.7、波形なし（仕様書 3 章 93-3）。
-   * フェードの取っ手（左右の角の gray.10）は `handles` に足す: 呼んだ側が、どのクリップよりも上に描く（重なったクリップの下にかくれないように）。
+   * One audio clip: border and face, with the waveform and fade lines on top. `drag` is the value while the volume line or a handle is dragged.
+   * A clip whose sound file is not found: background gray.2, top line gray.7, no waveform (spec 3 (93-3)).
+   * Fade handles (gray.10 at the left and right corners) go into `handles`: the caller draws them above all clips (so an overlapping clip does not hide them).
    */
   function paintAudioClip(rects: GlRect[], waves: GlWave[], handles: GlRect[], v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): void {
     if (paintAudioFrame(rects, handles, v, box, track, clip, colors, drag)) paintAudioWaves(waves, rects.length, v, box, track, clip, colors, drag);
   }
 
-  /** 歌のクリップの枠とフェードの取っ手。波形も描くクリップなら true。 */
+  /** The border and fade handles of an audio clip. true if this clip also draws a waveform. */
   function paintAudioFrame(rects: GlRect[], handles: GlRect[], v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): boolean {
     if (clip.audio!.state === "missing") {
       const missing = colors === G.CLIP_SELECTED ? colors : { ...colors, top: WAVE.missingTop };
@@ -202,7 +202,7 @@
     return true;
   }
 
-  /** 歌のクリップの波形。`after` は、波形の下になる四角の数。 */
+  /** The waveform of an audio clip. `after` is the number of rectangles under the waveform. */
   function paintAudioWaves(waves: GlWave[], after: number, v: G.View, box: G.Box, track: TrackView, clip: ClipView, colors: G.ClipColors, drag: AudioDragValue | null): void {
     const a = clip.audio!;
     const shown = G.clipColorsFor(colors, track.muted);
@@ -213,7 +213,7 @@
     W.clipWaves(waves, after, map, v, waveArea(dims, box), shape, found.source, found.framesPerPeak, W.waveLook(waveSizes, shown.note, track.id === tallTrack));
   }
 
-  /** 録っている歌のピーク（ふえていく。先は毎コマ読むので、ふえても描きなおしは頼まない）。カウントインの間はまだない。 */
+  /** The peaks of the audio being recorded (they grow; the tip is read every frame, so growth does not ask for a redraw). None yet during count-in. */
   function recSource(r: VocalRecordingView, v: G.View, from: number, to: number) {
     if (r.firstFrame === null) return null;
     const timing: W.WaveTiming = { start: r.from, takeOffset: 0, firstFrame: r.firstFrame, sampleRate: r.sampleRate, source: null };
@@ -221,7 +221,7 @@
     return found ? { ...found, timing } : null;
   }
 
-  /** 録っている歌のクリップの [from, to] の波形（rec の色）。`box` はその部分の箱。 */
+  /** The waveform of [from, to] of the audio clip being recorded (rec color). `box` is the box of that part. */
   function recWaves(waves: GlWave[], after: number, v: G.View, box: G.Box, r: VocalRecordingView, from: number, to: number, openLeft: boolean): void {
     const found = recSource(r, v, from, to);
     if (!found) return;
@@ -231,7 +231,7 @@
     W.clipWaves(waves, after, map, v, { ...area, x0: openLeft ? box.x0 : area.x0, x1: box.x1 }, shape, found.source, found.framesPerPeak, look, { from, to });
   }
 
-  // ---- 録っているノート ----
+  // ---- Notes being recorded ----
 
   let book = $state.raw<LiveNotesBook | null>(null);
   let stopBook: (() => void) | null = null;
@@ -243,7 +243,7 @@
       stopBook = found.listen(() => (liveVersion += 1));
       book = found;
     } catch {
-      // つながる前。次の状態でもう一度。
+      // Not connected yet. Try again with the next state.
     }
     return book;
   }
@@ -257,17 +257,17 @@
   /** The pass going on overdubs a clip: that clip's name (mock P10-Overdub). */
   const overdubName = $derived(rec ? overdubClipName(song.tracks, rec) : null);
   /**
-   * 録っている歌のトラック（仕様書 3 章 24-C: 録っている間のクリップは、どれも rec の色。モック F7-VocalRec ・ F7-TwoRec）。
-   * 波形は約束 24 なので、いまは中身のない rec のクリップ。鍵盤と同じく、できた小節は大きな面、のびている先（2 小節まで）は recordingClip。
+   * Vocal tracks being recorded (spec 3 (24-C): every clip being recorded is rec colored; mock F7-VocalRec, F7-TwoRec).
+   * The waveform is in protocol 24, so for now it is a rec clip without content. Like keyboards, finished bars go on the big face and the growing tip (up to 2 bars) on recordingClip.
    */
   const recVocals = $derived(transport.state === "recording" ? transport.recordingVocals : []);
-  /** 歌のクリップの、大きな面に移した所まで（小節ごと）。 */
+  /** How far the audio clip has been moved to the big face (bar by bar). */
   let vocalCommit = $state(0);
-  /** いま描いている周と、大きな面に移した所まで（小節ごと）。 */
+  /** The lap being drawn now, and how far it has been moved to the big face (bar by bar). */
   let recShown = $state.raw<{ lap: number; lapFrom: number; commit: number } | null>(null);
   let lastLap = 0;
   let lastNow = 0;
-  /** 録り終わってテイクが届くまで出しておく、最後に録っていたノート。 */
+  /** The last notes being recorded, shown until the take arrives after recording ends. */
   let fallback = $state.raw<{ track: number; notes: G.NoteShape[] } | null>(null);
   let prevRecording: RecordingView | null = null;
 
@@ -295,7 +295,7 @@
   });
 
   function shapesOf(trackId: number, clip: ClipView): G.NoteShape[] {
-    // 歌のクリップのテイクは音。take_notes にはない。
+    // The take of an audio clip is sound. It is not in take_notes.
     if (clip.audio !== null) return [];
     const take = takeOf(clip.takeId);
     if (take) return G.takeShapes(clip, take);
@@ -303,13 +303,13 @@
     return fallback.notes.filter((n) => n.start < clip.end && n.start + n.length > clip.start);
   }
 
-  /** クリップのノートの形と、その高さの範囲。`longest` はいちばん長いノート（-1 は、始まりの順にならんでいない）。 */
+  /** The note shapes of a clip and their height range. `longest` is the longest note (-1: not in start order). */
   interface LaneShapes {
     notes: G.NoteShape[];
     range: { low: number; high: number } | null;
     longest: number;
   }
-  /** テイクは中身を変えないので、形はテイクとクリップの置き場所ごとに覚えておく（拡大のたびに作りなおさない）。 */
+  /** Takes never change, so shapes are kept per take and clip place (not remade on every zoom). */
   const laneShapeBook = new WeakMap<TakeNotes, Map<string, LaneShapes>>();
   function laneShapesOf(trackId: number, clip: ClipView): LaneShapes {
     const take = clip.audio === null ? takeOf(clip.takeId) : undefined;
@@ -328,7 +328,7 @@
     }
     return found;
   }
-  /** 始まりの順の形から、ティック [from, to) にかかる物だけ。 */
+  /** From the shapes in start order, only the ones touching ticks [from, to). */
   function notesNear(shapes: LaneShapes, from: number, to: number): G.NoteShape[] {
     const first = (tick: number) => {
       let lo = 0;
@@ -343,10 +343,10 @@
     return shapes.notes.slice(first(from - shapes.longest), first(to));
   }
 
-  // ---- ループ ----
+  // ---- Loop ----
 
   const songLoop = $derived(song.loopOn ? G.loopBars(song.loopRange, map) : null);
-  /** ドラッグ中の見た目。Rust の答え（次の差分）が来たら消す。 */
+  /** The look during a drag. Cleared when the Rust answer (the next diff) comes. */
   let preview = $state<G.BarRange | null>(null);
   const shownLoop = $derived(preview ?? songLoop);
   $effect(() => {
@@ -357,10 +357,10 @@
   });
   const loopX = (bar: number) => G.tickToX(view, barLineTick(map, bar));
 
-  // ---- クリップのドラッグ（動かす、Alt で複製、はしをつめる。arrangeDrag.ts） ----
+  // ---- Clip drag (move, copy with Alt, trim an edge; arrangeDrag.ts) ----
 
   let clipDrag = $state.raw<CD.ClipDrag | null>(null);
-  /** 離して意図を送ったあと、答えの状態が届くまで残しておく見た目（ちらつかないように）。 */
+  /** The look kept after release and sending the intent, until the answer state arrives (so it does not flicker). */
   let clipPending = $state.raw<CD.ClipDrag | null>(null);
   let pendingRev = $state<number | null>(null);
   const shownDrag = $derived.by(() => {
@@ -368,8 +368,8 @@
     return d && d.press.moved ? d : null;
   });
   /**
-   * 大きな面が見るのは、どのクリップか、もとの場所を枠にするか（複製でなければ）だけ。動かす量では描きなおさない。
-   * どのクリップかは文字で持つ（同じなら、下の Set も大きな面も作りなおさない）。
+   * The big face only looks at which clips, and whether the original place gets a border (unless copying). It is not redrawn for the move amount.
+   * Which clips is kept as a string (if it is the same, neither the Set below nor the big face is remade).
    */
   const dragKey = $derived.by(() => {
     const d = shownDrag;
@@ -378,7 +378,7 @@
   });
   const dragIds = $derived(new Set(dragKey ? dragKey.split(",").map(Number) : []));
   const dragFrame = $derived(shownDrag !== null && (shownDrag.kind === "trim" || !shownDrag.copy));
-  /** 動いている絵の形が変わる時だけ変わる（動かすだけなら変わらない）。 */
+  /** Changes only when the shape of the moving picture changes (not for a plain move). */
   const dragShape = $derived.by(() => {
     const d = shownDrag;
     if (!d) return null;
@@ -394,7 +394,7 @@
     if (clipPending && pendingRev !== null && current.rev >= pendingRev) clipPending = null;
   });
 
-  /** 動いている絵: 小さな区画の箱（レーンの CSS px）、その中の四角、名前。 */
+  /** The moving picture: the small slot box (lane CSS px), the rectangles in it, the names. */
   const dragPicture = $derived.by(() => {
     void dragShape;
     void takeVersion;
@@ -423,7 +423,7 @@
     });
     let place: { left: number; top: number; width: number; height: number };
     if (d.kind === "move") {
-      // いちばん前のクリップの始まりと、いちばん上の行を 0 にして、クリップぜんぶを描く（動かすと見えてくる所も）。
+      // Draw all the clips with the start of the front clip and the top row at 0 (including parts that come into view as it moves).
       const first = Math.min(...d.group.map((g) => g.clip.start));
       const last = Math.max(...d.group.map((g) => g.clip.end));
       const top = G.clipBox(view, dims, Math.min(...d.group.map((g) => g.row)), first, last).y0;
@@ -440,7 +440,7 @@
       for (const h of handles) rects.push(h);
       place = { left: G.tickToX(view, first), top, width: (last - first) * pxPerTick, height: bottom - top };
     } else {
-      // つめているクリップは行の幅いっぱいの箱に。テイクの 0 は動かさない（ノートは曲の中の同じ所に残る）。
+      // A clip being trimmed gets a box the full width of the row. Tick 0 of the take does not move (the notes stay at the same place in the song).
       const take = takeOf(d.clip.takeId);
       const clip = { start: d.start, end: d.end, takeOffset: d.clip.start + d.clip.takeOffset - d.start };
       const box = G.clipBox(view, dims, d.row, d.start, d.end);
@@ -468,19 +468,19 @@
       },
     };
   }
-  // 箱を transform で動かしたときも、区画の canvas を動いた箱に合わせなおす（描く中身は同じなので、描きなおしはしない）。
+  // When the box moves with transform, fit the slot canvas to the moved box again too (the content is the same, so no redraw).
   $effect(() => {
     const p = dragPicture;
     void dragShift;
     if (p) untrack(() => dragSlot?.update({ kind: "rects", rects: p.rects, waves: p.waves }));
   });
 
-  // ---- 大きな面: クリップ、録っているクリップのできた部分、ループのはし ----
+  // ---- Big face: clips, the finished part of the recording clip, loop ends ----
 
   /**
-   * 大きな面の四角は、見えている幅の 3 つぶんの窓（左に 1、右に 2）を見ているつもりで作り、窓の左はしからの分は slot の shiftX で送る。
-   * 送るたびには作りなおさず、見えている所の左のはしが幅 1 つぶん動いたときに作りなおす。
-   * 波形は見えている所で段と切れ目が決まるので、`laneWaves` が送るたびに作る（歌のクリップの数だけ）。
+   * The rectangles of the big face are made as if looking through a window three visible widths wide (1 to the left, 2 to the right); the offset from the window's left edge is sent as the slot's shiftX.
+   * They are not remade on every scroll, only when the left edge of the visible part moves by one width.
+   * Waveform steps and cuts depend on the visible part, so `laneWaves` makes them on every scroll (one per audio clip).
    */
   const laneWindow = $derived(Math.floor((scrollTick * pxPerTick) / Math.max(1, viewWidth)));
 
@@ -547,7 +547,7 @@
     return { from, rects: out, audio, vocals };
   });
 
-  /** 大きな面の波形（`lanePicture` と同じく窓の左はしからの px）。 */
+  /** The waveforms of the big face (px from the window's left edge, like `lanePicture`). */
   const laneWaves = $derived.by(() => {
     void waveBook.version;
     const waves: GlWave[] = [];
@@ -561,9 +561,9 @@
     return waves;
   });
 
-  // ---- 音量の線 ・ フェードの取っ手のドラッグ（audioDrag。大きな面は描きなおさず、動いているクリップだけを小さな区画に重ねて描く） ----
+  // ---- Drag of the volume line and fade handles (audioDrag; the big face is not redrawn, only the moving clips are drawn over it in a small slot) ----
 
-  /** 離したあと、答えの状態が届くまで（やめたときは、この間だけ）ドラッグの値の絵を残す。 */
+  /** After release, keep the picture of the drag value until the answer state arrives (when cancelled, only for that time). */
   const LIVE_HOLD_MS = 100;
   let liveDrag = $state.raw<AudioDragValue | null>(null);
   let liveTimer = 0;
@@ -580,8 +580,8 @@
   onDestroy(() => clearTimeout(liveTimer));
 
   /**
-   * ドラッグしているクリップと、いっしょに音量をずらしているクリップ（d.shift）を、それらを囲む 1 つの区画に描く。
-   * 区画は 1 つなので、WebKit のよごれた四角は 1 コマに 1 つ（docs/architecture.md 7 章「CPU で描く WebKit」）。間の透けた所は下の大きな面が見える。
+   * Draw the dragged clip and the clips whose volume shifts with it (d.shift) in one slot that holds them all.
+   * With one slot, WebKit has one dirty rectangle per frame (architecture 7, "WebKit painting on the CPU"). The big face shows through the clear parts between.
    */
   const livePicture = $derived.by(() => {
     const d = liveDrag;
@@ -619,7 +619,7 @@
     return { place: { left, top, width: right - left, height: bottom - top }, rects, waves };
   });
 
-  // ---- 名前と札（HTML） ----
+  // ---- Names and tags (HTML) ----
 
   interface Label {
     id: number;
@@ -631,7 +631,7 @@
     take: number;
     takes: number;
     selected: boolean;
-    /** 歌のクリップの印（「×1.25」「+2」。clipFields.ts の clipMarks）。 */
+    /** The marks of an audio clip (「×1.25」 「+2」; clipMarks in clipFields.ts). */
     marks: readonly string[];
   }
   const labels = $derived.by(() => {
@@ -641,13 +641,13 @@
       for (const clip of track.clips) {
         const box = G.clipBox(view, dims, row, clip.start, clip.end);
         if (box.x1 < 0 || box.x0 > view.width) continue;
-        // 録っているクリップの下になったクリップの名前は出さない。
+        // Do not show the names of clips under a recording clip.
         if (rec && shown && rec.track === track.id && clip.start < shown.commit + perBar && clip.end > shown.lapFrom) continue;
-        // 動かしている・つめているクリップの名前は、動いている絵の側に出す。
+        // The names of clips being moved or trimmed are shown on the moving picture side.
         if (dragIds.has(clip.id) && dragFrame) continue;
         if (naming?.clip.id === clip.id) continue;
         const x = Math.max(box.x0, 0) + dims.hair;
-        // 右が見えている幅の 2 つぶんより先にのびるクリップは、そこで切る（送るたびに札の幅を変えない。名前がそれより長いことはない）。
+        // A clip that reaches past two visible widths to the right is cut there (so tag widths do not change on every scroll; no name is longer than that).
         const w = Math.min(box.x1, 2 * view.width) - Math.max(box.x0, 0) - 2 * dims.hair;
         out.push({
           id: clip.id,
@@ -725,7 +725,7 @@
     if (clipEdit.renaming === clip.id && clipEdit.place === "arrange") decideName(clip);
   }
 
-  /** えらんだクリップのテイクが 2 つ以上なら、すぐ上に切りかえの札。 */
+  /** If the chosen clip has two or more takes, the switch tag right above it. */
   const switcher = $derived.by(() => {
     if (selected === null) return null;
     for (const [row, track] of song.tracks.entries()) {
@@ -739,11 +739,11 @@
     return null;
   });
 
-  // ---- 全体図 ----
+  // ---- Overview ----
 
   /**
-   * ピアノロールがひらいているとき、全体図の「見えている範囲の枠」はピアノロールで見えている範囲（仕様書 3 章）。
-   * ひらいていない（ミキサーなどで全体図になった）ときは、今までどおり全体図の箱いっぱい（overview の slot）。
+   * While the piano roll is open, the "visible range frame" of the overview is the range visible in the piano roll (spec 3).
+   * When it is not open (the overview came from the mixer or the like), the frame fills the overview box as before (the overview slot).
    */
   const pianoRollOpen = $derived(layout.lower.some((b) => b.band === "pianoRoll"));
   const prRange = $derived.by(() => {
@@ -777,7 +777,7 @@
     return out;
   });
 
-  // ピアノロールが横に送られて枠が全体図の外へ出たら、全体図を送って枠を見せる（枠をドラッグしている間はしない）。
+  // When the piano roll scrolls sideways and the frame goes outside the overview, page the overview to show the frame (not while the frame is dragged).
   let frameDrag: { x: number; tick: number } | null = null;
   $effect(() => {
     const r = prRange;
@@ -807,7 +807,7 @@
   function frameUp(): void {
     frameDrag = null;
   }
-  // Esc: 枠のドラッグをやめて、動かす前の所へ戻す（仕様書 4 章）。
+  // Esc: cancel the frame drag and go back to where it was before (spec 4).
   onMount(() =>
     onDragCancel(() => {
       if (!frameDrag) return false;
@@ -817,7 +817,7 @@
     }),
   );
 
-  // ---- 動く物: 再生の位置の線、ページ送り、録っているクリップの先 ----
+  // ---- Moving things: the playhead line, paging, the tip of the recording clip ----
 
   let timeLine = $state<HTMLElement | null>(null);
   let overviewLine = $state<HTMLElement | null>(null);
@@ -827,12 +827,12 @@
   let offsetUs: number | null = null;
 
   /**
-   * 録っているクリップの先は毎コマ出す。そのあいだ、区画の canvas の上下を、同じコマで出るトラックの計の canvas と
-   * そろえる（そろえないと、WebKit のよごれた四角が、たがいの端と再生の線で切りあって 10 個になる。docs/architecture.md 7 章）。
+   * The tip of the recording clip is shown every frame. Meanwhile, align the top and bottom of the slot canvas with the canvas of the track meters shown in the same frame
+   * (otherwise WebKit's dirty rectangles cut each other at their edges and the playhead line into 10. architecture 7).
    */
   const TAIL_ALIGN = "trackMeters";
 
-  /** 録っているクリップの、のびている先（区画 recordingClip の中。区画の箱は録っていない間もある）。 */
+  /** The growing tip of the recording clip (inside the recordingClip slot; the slot box exists even when not recording). */
   function recordingTail(node: HTMLElement) {
     const slot = glSlot(node, { kind: "rects", rects: [], alignY: TAIL_ALIGN });
     tailNode = node;
@@ -847,7 +847,7 @@
     };
   }
 
-  // 動いている間は毎コマ呼ばれる。画面の画素で変わったときだけ書く（同じ値でも書けば、ページはそのコマを作りなおす）。
+  // Called every frame while playing. Write only when the value changes in screen pixels (writing even the same value makes the page redo that frame).
   let drawnLine: HTMLElement | null = null;
   let drawnLinePx = NaN;
   function placeLines(tick: number, scrollX: number): void {
@@ -868,7 +868,7 @@
     if (node.style[name] !== v) node.style[name] = v;
   }
 
-  /** いま描いてある、のびている先の形。どれも同じなら、四角を作りなおさない。 */
+  /** The shape of the growing tip drawn now. If they are all the same, the rectangles are not remade. */
   const tailDrawn = { nowPx: NaN, scrollX: NaN, live: -1, lapFrom: NaN, commit: NaN, row: -1, pxPerTick: NaN, trackH: NaN, top: NaN, labelPx: NaN };
   let labelNode: HTMLElement | null = null;
   let labelTake = 0;
@@ -889,7 +889,7 @@
     const dpr = metrics.dpr;
     const nowPx = Math.round((at * pxPerTick - scrollX) * dpr);
     if (recLabel) {
-      // 名前は、クリップの右はしで切る。名前の全部が入る幅になったら、もう書かない（書けば、そのたびにページを描きなおす）。
+      // The name is cut at the right end of the clip. Once the width fits the whole name, stop writing (each write redraws the page).
       if (recLabel !== labelNode || r.take !== labelTake) {
         labelNode = recLabel;
         labelTake = r.take;
@@ -949,7 +949,7 @@
     tailSlot.update({ kind: "rects", rects, alignY: TAIL_ALIGN });
   }
 
-  /** 録っている歌のクリップの、のびている先と名前（トラックの id ごと）。画面の画素で変わったときだけ書く。 */
+  /** The growing tips and names of audio clips being recorded (per track id). Written only when they change in screen pixels. */
   interface VocalTail {
     node: HTMLElement;
     slot: { update(next: GlSlot): void; destroy(): void };
@@ -1005,7 +1005,7 @@
           tail.label.style.clipPath = labelPx >= tail.labelFullPx ? "" : `inset(0 calc(100% - ${labelPx / dpr}px) 0 0)`;
         }
       }
-      // 波形は、ピークの続きが届いたとき（1 秒に 10 回ほど）にも描きなおす。
+      // The waveform is also redrawn when more peaks arrive (about 10 times a second).
       const peaks = recSource(r, v, tailFrom, at)?.source;
       const key = [nowPx, scrollX, commit, row, pxPerTick, G.rowHeight(dims, row), G.rowTop(dims, row), peaks?.id, peaks?.stamp].join(" ");
       if (key === tail.drawn) continue;
@@ -1032,7 +1032,7 @@
     if (recVocals.length === 0) untrack(() => (vocalCommit = 0));
   });
 
-  // 先は毎コマ描くので、周のノートと鍵の範囲は、録っているノートが変わったときだけ作る（docs/architecture.md 7 章）。
+  // The tip is drawn every frame, so the lap notes and key range are made only when the recording notes change (architecture 7).
   let lapCache: { recording: number; lap: number; version: number; notes: readonly LiveNote[]; range: { low: number; high: number } | null } | null = null;
   function liveOfLap(recording: number, lap: number): { notes: readonly LiveNote[]; range: { low: number; high: number } | null } {
     const c = lapCache;
@@ -1058,7 +1058,7 @@
     showNow(tick);
   }
 
-  // ---- たたんだ「テンポ ・ 拍子の変更」の行の、再生の線がいる所のテンポと拍子（動いている間は毎コマ。文字が変わったときだけ書く） ----
+  // ---- Tempo and time signature at the playhead, in the folded 「テンポ ・ 拍子の変更」 row (every frame while playing; written only when the text changes) ----
 
   function nowText(tick: number): string {
     const at = Math.max(0, tick);
@@ -1067,7 +1067,7 @@
   }
   let now = $state("");
 
-  /** 動いている間は 1 秒に 10 回まで書く（毎コマ書くと、再生の線の四角を切って、描きなおしの四角がふえる。2026-11-20-round6-step1.md の 5）。 */
+  /** While playing, written at most 10 times a second (writing every frame cuts the playhead rectangle and adds redraw rectangles; docs/history/measurements/2026-11-20-round6-step1.md (5)). */
   const NOW_EVERY_MS = 100;
   let nowAt = -Infinity;
   function showNow(tick: number): void {
@@ -1107,19 +1107,19 @@
     if (transport.state === "stopped") placeLines(transport.position, view.scrollX);
   });
 
-  // ---- 手で: 横のスクロール、目盛のドラッグ、クリップをえらぶ ----
+  // ---- By hand: horizontal scroll, ruler drag, choosing clips ----
 
   const mac = platformOf(navigator) === "mac";
   let zoomWheel = 0;
 
-  /** 横の拡大 ・ 縮小を by 段。x（見えている所の左はしからの px）の位置が、画面の同じ所に残るように送る。 */
+  /** Zoom in or out sideways by `by` steps. Scrolls so that position x (px from the left edge of the visible part) stays at the same place on the screen. */
   function zoomAt(by: number, x: number): void {
     const anchor = G.xToTick(view, x);
     if (!zoomArrangeBy(by)) return;
     scrollTick = Math.max(0, anchor - x / pxPerTick);
   }
 
-  /** ホイール。Mod を押しながらなら、カーソルの所を中心に横の拡大 ・ 縮小（仕様書 3 章）。 */
+  /** The wheel. With Mod held, zoom in or out sideways around the cursor (spec 3). */
   function wheelOn(area: () => HTMLElement | undefined) {
     return (e: WheelEvent): void => {
       if (mac ? e.metaKey : e.ctrlKey) {
@@ -1151,18 +1151,18 @@
     if (dy !== 0 && wheelRows(dy, e.deltaMode)) e.preventDefault();
   }
 
-  // ---- トラックの行を縦に送る（仮の形。user:2026-11-20。見出しの列とレーンを同じだけ。上の目盛 ・ マーカー ・ テンポの行は動かない） ----
-  // 送った位置は画面だけが持つ（曲にも、取り消しにも入らない）。送るのは、ブラウザのスクロール（scrollTop）: 見えない行は
-  // content-visibility で描かれず、WebGL の印は箱ごと動く（gl/engine.ts は data-gl-clip の箱で切る）。
+  // ---- Scroll the track rows vertically (a temporary form, the owner's decision; the head column and the lanes by the same amount; the ruler, marker and tempo rows above do not move) ----
+  // The scroll position is kept only by the screen (not in the song, not in undo). It uses the browser scroll (scrollTop): rows out of view
+  // are not drawn thanks to content-visibility, and WebGL marks move with their boxes (gl/engine.ts clips with the data-gl-clip box).
 
   let lanesView = $state<HTMLElement>();
   let headsView = $state<HTMLElement>();
   let rowsHeight = $state(0);
   let scrollY = $state(0);
-  /** 行ぜんぶの高さ。見出しの列のいちばん下には「＋ トラック」の行があるので、レーンの側も同じだけあける。 */
+  /** The height of all rows. The head column has a 「＋ トラック」 row at the bottom, so the lane side leaves the same space. */
   const rowsTotal = $derived(rows.height + metrics.px("mock.arrange.add-track"));
   const maxScrollY = $derived(Math.max(0, rowsTotal - rowsHeight));
-  /** 行がへったり窓が高くなったりしたら、下のはしで止める。 */
+  /** Stop at the bottom when rows decrease or the window grows taller. */
   const shownY = $derived(Math.min(scrollY, maxScrollY));
   $effect(() => {
     const y = shownY;
@@ -1171,7 +1171,7 @@
   });
   const rowsScroll = (y: number) => (scrollY = Math.max(0, Math.min(y, maxScrollY)));
 
-  /** ホイールで縦に送る。クリップのドラッグ中と囲んでえらぶ間は送らない（つかんだ物が、ポインタの下からずれる）。送ったら true。 */
+  /** Scroll vertically with the wheel. Not during a clip drag or a box select (what is held would slip from under the pointer). true if it scrolled. */
   function wheelRows(dy: number, mode: number): boolean {
     if (layout.arrangeOverview || clipDrag || boxSel || maxScrollY <= 0) return false;
     const unit = mode === 1 ? metrics.px("size.row") : mode === 2 ? rowsHeight : 1;
@@ -1183,11 +1183,11 @@
     if (wheelRows(e.deltaY, e.deltaMode)) e.preventDefault();
   }
 
-  // キーでえらんだトラックと、足したトラックは、その行と帯が見える所まで送る（仕様書 3 章「アレンジのトラックの行を縦に送る（92 の残り）」）。
-  // マウスでえらんだトラックへは送らない。再生や録音でも送らない。
+  // Scroll so that the row and bands of a track chosen by keys, or of an added track, are visible (spec 3 "Scrolling the arrange track rows vertically (the rest of 92)").
+  // Do not scroll to a track chosen with the mouse. Do not scroll for play or record either.
   let seenTarget: number | null | undefined = undefined;
   let seenTracks = 0;
-  /** 最後の入力がポインタだった（えらんだのはマウス）。 */
+  /** The last input was the pointer (it was chosen with the mouse). */
   let lastByPointer = false;
   onMount(() => {
     const pointer = () => (lastByPointer = true);
@@ -1235,12 +1235,12 @@
     drag = null;
     if (command.type === "locate") preview = null;
     const before = current.rev;
-    // 範囲が変わらなければ差分は来ないので、返事の rev で見た目を消す。
+    // If the range does not change, no diff comes, so the look is cleared by the rev of the reply.
     void send(command).then((rev) => {
       if (rev === before && !drag) preview = null;
     });
   }
-  /** 目盛に見えている線に吸いつく（B-61）: 拍の線が見えていれば拍、ふだんは小節、間引いていれば番号のある小節。 */
+  /** Snap to the lines visible on the ruler (B-61): beats if beat lines are visible, usually bars, numbered bars when thinned. */
   function rulerLine(at: number): number {
     if (gridBeats) return snapToStep(map, at, 0);
     const every = barLabelEvery;
@@ -1254,10 +1254,10 @@
     preview = null;
     return true;
   }
-  // Esc: ループの範囲のドラッグをやめて、前の範囲に戻す（仕様書 4 章）。
+  // Esc: cancel the loop range drag and go back to the old range (spec 4).
   onMount(() => onDragCancel(rulerCancel));
 
-  // クリップを押す: えらぶ。押したまま動かす: 動かす（Alt で複製）、左右のはし（part.clip.edge）なら長さ。録音中とカウントイン中はえらぶだけ。
+  // Press a clip: choose it. Press and move: move (copy with Alt); on a left or right edge (part.clip.edge), the length. While recording and during count-in, only choose.
   const busy = $derived(transport.state === "recording" || transport.state === "countIn");
   let lanesBox = $state<HTMLElement>();
   let laneCursor = $state<CD.ArrangeCursor>("default");
@@ -1279,14 +1279,14 @@
     stillPx: still(),
   });
 
-  /** 空いた所から押したまま動かして囲む（B-71）。x0 ・ y0 は押した所、add は Shift。 */
+  /** Press in an empty place and move to select by a box (B-71). x0, y0 are the pressed place; add is Shift. */
   let boxSel = $state<{ x0: number; y0: number; x: number; y: number; moved: boolean; add: boolean } | null>(null);
   const boxFrame = $derived(
     boxSel?.moved
       ? { x: Math.min(boxSel.x0, boxSel.x), y: Math.min(boxSel.y0, boxSel.y), w: Math.abs(boxSel.x - boxSel.x0), h: Math.abs(boxSel.y - boxSel.y0) }
       : null,
   );
-  /** 何個も選んでいる中の 1 つを押した。動かさずに離したら、それだけを選ぶ。 */
+  /** Pressed one of several selected clips. If released without moving, select only that one. */
   let clickedOnly: number | null = null;
 
   function lanesDown(e: PointerEvent): void {
@@ -1388,17 +1388,17 @@
   onMount(() => onDragCancel(cancelClipDrag));
   onDestroy(cancelClipDrag);
 
-  // ---- 右クリックの一覧（B-60）。選ばれていない物を右クリックしたら、それだけを選んでからひらく ----
+  // ---- Context menu (B-60). Right-clicking something not selected selects only it, then opens ----
 
   const platform = platformOf(navigator);
   const modKey = (letter: string) => `${platform === "mac" ? t("key.cmd") : t("key.ctrl")} ${letter}`;
   const shiftKey = (letter: string) => `${t("key.shift")} ${letter}`;
   const menuRow = (label: MenuRow["label"], usable: boolean, run: () => void, key?: string): MenuRow => ({ kind: "row", label, key, usable, run });
-  /** 行を押したときの選択（右クリックで選びなおした分は、そのときには届いている）。 */
+  /** The selection when a row is pressed (any change from the right-click has arrived by then). */
   const chosen = () => current.state!.arrange.selectedClips;
   const clipboardCount = $derived(current.state!.arrange.clipboardClips);
 
-  /** 録音中とカウントイン中は、曲を変える行を使えない。 */
+  /** While recording and during count-in, rows that change the song cannot be used. */
   function clipMenu(clip: ClipView, at: number, ids: readonly number[]): MenuEntry[] {
     const change = !busy;
     const keys = clip.audio === null;
@@ -1406,7 +1406,7 @@
       if (!pianoRollOpen) send({ type: "toggleBand", band: "pianoRoll" });
     };
     const cutAt = splitTick(clip, rulerLine(at));
-    // 歌のクリップの「逆にする」「ノーマライズ」は、あとの回の席（仕様書 3 章「音を作っている間」）。
+    // 「逆にする」 and 「ノーマライズ」 for audio clips are seats for a later round (spec 3 "While the sound is being made").
     const later: MenuEntry[] = clip.audio
       ? [{ kind: "separator" }, menuRow("menu.reverse", false, () => {}), menuRow("menu.normalize", false, () => {})]
       : [];
@@ -1467,7 +1467,7 @@
       openContextMenu(e.clientX, e.clientY, clipMenu(hit.clip, at, had ? current.state!.arrange.selectedClips : [hit.clip.id]));
       return;
     }
-    // 押した所を、クリップを動かすときと同じグリッド（ふだん 1 小節）に寄せる。Shift なら寄せない。
+    // Move the pressed place to the same grid as clip moves (usually 1 bar). Not with Shift.
     const track = song.tracks[G.trackRowAt(dims, p.y)];
     const tick = e.shiftKey ? Math.round(at) : Math.max(0, nearestBarTick(map, at));
     const paste = () => {
@@ -1492,7 +1492,7 @@
 
   const lineRec = $derived(transport.state === "countIn" || transport.state === "recording");
 
-  // ---- 横の棒 ----
+  // ---- Horizontal bar ----
 
   let timeBox = $state<HTMLElement>();
   const scrollRight = $derived(G.scrollMax(song.tracks, song.loopRange, transport.position, { pxPerTick, width: viewWidth }));
@@ -1501,7 +1501,7 @@
     follow = false;
   }
 
-  /** Mod ＋ ・ Mod − の行き先（docs: pianoroll/view.svelte.ts の focus）。アレンジを押したら、アレンジへ。 */
+  /** Where Mod + and Mod − go (see focus in pianoroll/view.svelte.ts). Pressing the arrange sends them to the arrange. */
   function focusArrange(): void {
     prView.focus = "arrange";
   }
@@ -1601,7 +1601,7 @@
         {/if}
       </div>
       <MarkerRow {view} {map} {timeline} {busy} />
-      <!-- テンポの帯の線と点も、クリップと同じ arrangeLanes の 1 枚に描く（区画をふやさない）。区画の箱は、帯とクリップの場所を囲む。 -->
+      <!-- The tempo band lines and points are drawn on the same arrangeLanes sheet as the clips (no extra slot). The slot box holds the band and the clip area. -->
       <div class="lanes-wrap" use:glRegion={"arrangeLanes"}>
       <TempoBand {view} {map} {timeline} {now} {busy} />
       <div class="lanes-box">
@@ -1824,7 +1824,7 @@
     background: var(--color-gray-3);
     border-bottom: var(--line-hair) solid var(--color-gray-6);
   }
-  /* キーが向く帯の印（B-72）: 見出しの行と目盛の上辺に、横いっぱいの accent の line.mark。高さは変えず、重ねて描く。 */
+  /* The mark of the band keys go to (B-72): a full-width accent line.mark on the heading row and the top edge of the ruler. Drawn on top without changing the height. */
   .focus-mark {
     position: absolute;
     left: 0;
@@ -1861,7 +1861,7 @@
     border-right: var(--line-hair) solid var(--color-gray-6);
     overflow: hidden;
   }
-  /* トラックの見出しの行。レーンと同じだけ縦に送る（scrollTop は Arrange が書く）。上の 3 行は動かない。 */
+  /* The track head rows. Scrolled vertically by the same amount as the lanes (Arrange writes scrollTop). The 3 rows above do not move. */
   .heads-view {
     flex: 1;
     min-height: 0;
@@ -1877,7 +1877,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     white-space: nowrap;
   }
-  /* − ＋（モック R3-Arrange: 24×24、ボタンどうしは space.1）。グリッドの札とともに右へ寄せる。 */
+  /* − ＋ (mock R3-Arrange: 24×24, space.1 between buttons). Pushed right with the grid tag. */
   .zoom {
     margin-left: auto;
     display: flex;
@@ -1896,7 +1896,7 @@
     width: 100%;
     border-bottom: 0;
   }
-  /* ひらいた行（モック F6-Tempo）: 地 gray.2、高さは時間の側と同じ size.row ＋ size.lane。 */
+  /* An open row (mock F6-Tempo): background gray.2, height size.row + size.lane, the same as the time side. */
   .tempo-head.open {
     background: var(--color-gray-2);
     height: calc(var(--size-row) + var(--size-lane));
@@ -1956,7 +1956,7 @@
     flex-direction: column;
     position: relative;
   }
-  /* トラックの行の場所。横と縦の棒は、この箱に重ねる。 */
+  /* The track row area. The horizontal and vertical bars lie over this box. */
   .lanes-box {
     flex: 1;
     min-height: 0;
@@ -1964,13 +1964,13 @@
     display: flex;
     flex-direction: column;
   }
-  /* 見えている所（小節の線は、ここいっぱいに描く）。中の行は縦に送る。 */
+  /* The visible part (bar lines fill it). The rows inside scroll vertically. */
   .lanes-view {
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
-  /* 行ぜんぶ（見えている所より高ければ、送れる）。クリップの絵と名前は、この箱の左上から。 */
+  /* All rows (scrollable if taller than the visible part). Clip pictures and names start at the top left of this box. */
   .lanes {
     position: relative;
     min-height: 100%;
@@ -1981,7 +1981,7 @@
     height: var(--size-track);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
   }
-  /* 「▸ パン ▸ プラグインのパラメータ」の行の時間の側（何も置かない）。 */
+  /* The time side of the 「▸ パン ▸ プラグインのパラメータ」 row (nothing is placed). */
   .add-row {
     height: var(--size-row);
     border-bottom: var(--line-hair) solid var(--color-gray-5);
@@ -2041,7 +2041,7 @@
     line-height: calc(var(--text-s-line-height) - 2 * var(--line-hair));
     color: var(--color-gray-10);
   }
-  /* 歌のクリップの印（仕様書 2 章: 名前の右に、地 gray.0 ・ 枠 gray.7）。札と同じ要素の中なので、要素の数はクリップの数のまま。 */
+  /* The marks of an audio clip (spec 2: right of the name, background gray.0, border gray.7). In the same element as the tag, so the element count stays the clip count. */
   .clip-mark {
     flex-shrink: 0;
     padding: 0 var(--space-1);
@@ -2100,7 +2100,7 @@
     color: var(--color-gray-10);
     outline: none;
   }
-  /* 囲む枠（ピアノロールの囲みと同じ accent の line.hair）。 */
+  /* The box-select frame (the same accent line.hair as the box select in the piano roll). */
   .box-frame {
     position: absolute;
     z-index: 3;

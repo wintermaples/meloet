@@ -1,5 +1,5 @@
-// アレンジの形の計算（クリップの絵、テイクの札、目盛のドラッグ、ページ送り、全体図）。DOM を知らない純粋な関数。
-// 位置は CSS px。x は「曲の頭からの px − 横のスクロール」。y はトラックの行の並びの上からの px。
+// Shape math for the arrange (clip pictures, take tags, ruler drags, paging, the overview). Pure functions that do not know the DOM.
+// Positions are CSS px. x is "px from the song start − horizontal scroll". y is px from the top of the track rows.
 
 import type { ClipView, Command, LiveNote, TickSpan, TrackView } from "../bridge";
 import type { ColorName } from "../design/tokens";
@@ -7,50 +7,50 @@ import type { GlRect } from "../gl/slot";
 import { barLineTick, nearestBarLine } from "../time/bars";
 import { TempoMap } from "../time/tempoMap";
 
-/** 小節の線の置き場所: 1 小節のティック（拍子が 1 つだけの曲）か、テンポの地図（拍子の変更のある曲）。 */
+/** Where bar lines go: ticks per bar (a song with one time signature), or the tempo map (a song with time signature changes). */
 export type BarGrid = number | TempoMap;
 
-/** 小節の線の番号（1 から）のティック。 */
+/** The tick of a bar line number (from 1). */
 export const lineTick = (g: BarGrid, line: number) => (g instanceof TempoMap ? barLineTick(g, line) : (line - 1) * g);
-/** いちばん近い小節の線の番号（1 から）。 */
+/** The nearest bar line number (from 1). */
 const lineNear = (g: BarGrid, tick: number) => (g instanceof TempoMap ? nearestBarLine(g, tick) : Math.max(1, Math.round(tick / g) + 1));
 
-/** その率での寸法（CSS px）。 */
+/** Sizes at that scale (CSS px). */
 export interface LaneDims {
-  /** size.track: 行の高さ（下の線をふくむ） */
+  /** size.track: row height (including the bottom line) */
   trackH: number;
-  /** 行の上下からクリップまで */
+  /** From the top and bottom of the row to the clip */
   inset: number;
   /** line.hair */
   hair: number;
-  /** line.mark: クリップの上辺 */
+  /** line.mark: the top edge of a clip */
   mark: number;
-  /** text.s の行の高さ: 名前の行 */
+  /** Line height of text.s: the name line */
   nameH: number;
-  /** space.1: 名前の行とノートの間、ノートと下の枠の間 */
+  /** space.1: between the name line and the notes, and between the notes and the bottom border */
   pad: number;
-  /** ノートの絵の高さ（mock.arrange.note） */
+  /** Height of the note picture (mock.arrange.note) */
   noteH: number;
-  /** トラックの行の上（下にオートメーションの帯があると、行の間があく。automation/autoGeom.ts）。なければ行の番号 × trackH。 */
+  /** The tops of the track rows (an automation band under a row adds a gap; automation/autoGeom.ts). Without it, row number × trackH. */
   tops?: readonly number[];
-  /** トラックの行の高さ（歌を直している行は 160。arrange/audioClipGeom.ts の rowHeights）。なければどの行も trackH。あるときは tops も要る。 */
+  /** Track row heights (a row with audio being edited is 160; rowHeights in arrange/audioClipGeom.ts). Without it, every row is trackH. With it, tops are needed too. */
   heights?: readonly number[];
 }
 
-/** トラックの行 row の上。 */
+/** The top of track row row. */
 export const rowTop = (d: LaneDims, row: number) => d.tops?.[row] ?? row * d.trackH;
 
-/** トラックの行 row の高さ（下の線をふくむ）。 */
+/** The height of track row row (including the bottom line). */
 export const rowHeight = (d: LaneDims, row: number) => d.heights?.[row] ?? d.trackH;
 
-/** y の下のトラックの行（クリップの所だけ。帯の上や、いちばん下の行より下なら -1）。 */
+/** The track row under y (clip area only; -1 on a band or below the last row). */
 export function trackRowAt(d: LaneDims, y: number): number {
   if (!d.tops) return y >= 0 ? Math.floor(y / d.trackH) : -1;
   for (let i = 0; i < d.tops.length; i++) if (y >= d.tops[i]! && y < d.tops[i]! + rowHeight(d, i)) return i;
   return -1;
 }
 
-/** y がどのトラックのかたまり（行と、その下の帯）にいるか。いちばん上より上は 0、いちばん下より下は最後の行。 */
+/** Which track block (the row and the bands under it) y is in. Above the top is 0; below the bottom is the last row. */
 export function blockAt(d: LaneDims, y: number): number {
   if (!d.tops) return Math.floor(y / d.trackH);
   let row = 0;
@@ -59,17 +59,17 @@ export function blockAt(d: LaneDims, y: number): number {
 }
 
 export interface View {
-  /** 1 ティックの px */
+  /** px per tick */
   pxPerTick: number;
   scrollX: number;
-  /** 見えている幅 */
+  /** Visible width */
   width: number;
 }
 
 export const tickToX = (v: View, tick: number) => tick * v.pxPerTick - v.scrollX;
 export const xToTick = (v: View, x: number) => (x + v.scrollX) / v.pxPerTick;
 
-/** クリップの絵の中のノート。start は曲の中のティック。 */
+/** A note in a clip picture. start is the tick in the song. */
 export interface NoteShape {
   start: number;
   length: number;
@@ -83,7 +83,7 @@ export interface Box {
   y1: number;
 }
 
-/** トラックの行 `row`（0 から）の、ティック [start, end) のクリップの箱。 */
+/** The clip box of track row `row` (from 0) for ticks [start, end). */
 export function clipBox(v: View, d: LaneDims, row: number, start: number, end: number): Box {
   return {
     x0: tickToX(v, start),
@@ -115,7 +115,7 @@ export const CLIP_RECORDING: ClipColors = {
   note: "color.rec",
 };
 
-/** ミュートしたトラックのクリップ（仕様書 2 章「ミュートしたトラック」）: 中の線だけ gray.7。名前と色の帯はそのまま。 */
+/** A clip on a muted track (spec 2 "Muted track"): only the inner lines are gray.7. The name and the color strip stay. */
 export function clipColorsFor(colors: ClipColors, muted: boolean): ClipColors {
   return muted ? { ...colors, note: "color.gray.7" } : colors;
 }
@@ -124,7 +124,7 @@ export function trackColor(track: Pick<TrackView, "color">): ColorName {
   return `color.track.${((track.color - 1) % 5) + 1}` as ColorName;
 }
 
-/** 鍵の範囲（いちばん低い・高い鍵）。ノートがなければ null。 */
+/** The key range (lowest and highest key). null without notes. */
 export function keyRange(notes: Iterable<NoteShape>): { low: number; high: number } | null {
   let low = Infinity;
   let high = -Infinity;
@@ -136,21 +136,21 @@ export function keyRange(notes: Iterable<NoteShape>): { low: number; high: numbe
 }
 
 export interface ClipPaintOptions {
-  /** 左の枠を描かない（録っているクリップの、先に描いた部分の続き） */
+  /** Do not draw the left border (the rest of a recording clip whose first part was drawn already) */
   openLeft?: boolean;
-  /** 右の枠を描かない（続きは別の面が描く） */
+  /** Do not draw the right border (another face draws the rest) */
   openRight?: boolean;
-  /** ノートの鍵の範囲。なければ `notes` から */
+  /** The key range of the notes. Taken from `notes` if missing */
   range?: { low: number; high: number } | null;
-  /** ノートをこのティックまでで切る（押している鍵） */
+  /** Cut the notes at this tick (held keys) */
   until?: number;
-  /** 面の色。なければ gray.4（音のファイルが見つからない歌のクリップは gray.2） */
+  /** Face color. gray.4 if missing (gray.2 for an audio clip whose sound file is not found) */
   ground?: ColorName;
 }
 
 /**
- * クリップ 1 つの四角: 枠、上辺、面、ノートの小さな絵（名前の行の下、鍵の範囲を高さいっぱいに）。
- * 見えている幅の外は描かない。
+ * One clip rectangle: border, top edge, face, and a small picture of the notes (under the name line, the key range filling the height).
+ * Nothing outside the visible width is drawn.
  */
 export function paintClip(
   out: GlRect[],
@@ -195,7 +195,7 @@ export function paintClip(
   }
 }
 
-/** 枠だけ（仕様書 2 章「クリップ」の「動かしている（もとの場所に gray.7 の枠）」）。見えている幅の外の辺は描かない。 */
+/** Border only (spec 2 "Clip", moving: a gray.7 border at the original place). Edges outside the visible width are not drawn. */
 export function paintFrame(out: GlRect[], v: View, d: LaneDims, box: Box, color: ColorName): void {
   const { y0, y1 } = box;
   const x0 = Math.max(box.x0, -d.hair);
@@ -208,8 +208,8 @@ export function paintFrame(out: GlRect[], v: View, d: LaneDims, box: Box, color:
 }
 
 /**
- * テイクのノート（テイクの 0 ティック目からの位置）を、曲の中の位置に。鳴るノート（始まりがクリップの範囲 [start, end) の中）だけ。
- * はしをつめて外に出たノートは描かない（終わりがはみ出す所は paintClip が切る）。
+ * Take notes (positions from tick 0 of the take) to positions in the song. Only notes that sound (start inside the clip range [start, end)).
+ * Notes trimmed outside are not drawn (paintClip cuts ends that stick out).
  */
 export function takeShapes(
   clip: Pick<ClipView, "start" | "end" | "takeOffset">,
@@ -230,7 +230,7 @@ export function takeShapes(
   return out;
 }
 
-/** 録っているノートを形に。押している鍵（長さ null）は `now` まで。`from` より前に終わったノートは落とす。 */
+/** Recording notes to shapes. Held keys (length null) go to `now`. Notes that ended before `from` are dropped. */
 export function liveShapes(notes: readonly LiveNote[], now: number, from = -Infinity): NoteShape[] {
   const out: NoteShape[] = [];
   for (const n of notes) {
@@ -241,7 +241,7 @@ export function liveShapes(notes: readonly LiveNote[], now: number, from = -Infi
   return out;
 }
 
-/** 名前の前の札: なし、「2/3」、幅が足りないときは四角だけ。 */
+/** The tag before the name: none, 「2/3」, or only a square when there is not enough width. */
 export type TakeMark = "none" | "tag" | "square";
 
 export function takeMark(clip: Pick<ClipView, "takes">, width: number, minWidth: number): TakeMark {
@@ -249,14 +249,14 @@ export function takeMark(clip: Pick<ClipView, "takes">, width: number, minWidth:
   return width < minWidth ? "square" : "tag";
 }
 
-/** 1 ページぶん送る: 位置 `x`（曲の頭からの px）が見えるように、`width` きざみで動かす。 */
+/** Page by one page: move in steps of `width` so that position `x` (px from the song start) is visible. */
 export function followScroll(x: number, scrollX: number, width: number): number {
   if (!(width > 0)) return scrollX;
   if (x >= scrollX && x < scrollX + width) return scrollX;
   return Math.max(0, scrollX + Math.floor((x - scrollX) / width) * width);
 }
 
-/** 小節の線の番号（1 から）。「5–9」の 5 と 9。 */
+/** Bar line numbers (from 1). The 5 and 9 of 「5–9」. */
 export function barLineAt(v: View, x: number, perBar: BarGrid): number {
   return lineNear(perBar, xToTick(v, x));
 }
@@ -266,7 +266,7 @@ export interface BarRange {
   to: number;
 }
 
-/** ループの範囲（ティック）を小節の線の番号に。 */
+/** The loop range (ticks) as bar line numbers. */
 export function loopBars(range: TickSpan | null, perBar: BarGrid): BarRange | null {
   if (!range) return null;
   return {
@@ -275,10 +275,10 @@ export function loopBars(range: TickSpan | null, perBar: BarGrid): BarRange | nu
   };
 }
 
-/** 目盛のドラッグ。range: 押した所の線から新しく。edge: すでにある範囲の片はしを動かす（fixed は動かないほう）。 */
+/** A ruler drag. range: a new range from the pressed line. edge: move one end of an existing range (fixed is the end that stays). */
 export type RulerDrag = { kind: "range"; anchor: number } | { kind: "edge"; fixed: number };
 
-/** 押した所が範囲のはしから `grab` px 以内なら、そのはしをつかむ。 */
+/** If the press is within `grab` px of a range end, grab that end. */
 export function startRulerDrag(v: View, x: number, perBar: BarGrid, loop: BarRange | null, grab: number): RulerDrag {
   if (loop) {
     const lineX = (bar: number) => tickToX(v, lineTick(perBar, bar));
@@ -289,7 +289,7 @@ export function startRulerDrag(v: View, x: number, perBar: BarGrid, loop: BarRan
   return { kind: "range", anchor: barLineAt(v, x, perBar) };
 }
 
-/** ドラッグ中の範囲。いちばん短くて 1 小節。 */
+/** The range while dragging. At least 1 bar. */
 export function dragRange(drag: RulerDrag, v: View, x: number, perBar: BarGrid): BarRange {
   const fixed = drag.kind === "range" ? drag.anchor : drag.fixed;
   const at = barLineAt(v, x, perBar);
@@ -301,21 +301,21 @@ export function dragRange(drag: RulerDrag, v: View, x: number, perBar: BarGrid):
 }
 
 /**
- * 目盛を押したときに吸いつく線のきざみ（docs/history/design-notes.ja.md B-61「目盛に見えている線」）。縮小して番号を間引いているときは
- * 番号のある小節おき、ふだんは 1 小節。拡大して 1 拍が minGap px（番号どうしの間と同じ）以上になれば拍。
+ * The step of lines that a ruler press snaps to (docs/history/design-notes.ja.md B-61, the lines visible on the ruler). When zoomed out and numbers are thinned,
+ * every numbered bar; usually 1 bar. When zoomed in so that a beat is minGap px or more (the same as the gap between numbers), beats.
  */
 export function rulerStep(barPx: number, perBar: number, perBeat: number, labelEvery: number, minGap: number): number {
   return beatsShown(barPx, perBar, perBeat, minGap) ? perBeat : labelEvery * perBar;
 }
 
-/** 目盛が拍に吸いつくほど拡大しているか。このときだけ、クリップの場所に拍の線も描く（B-61）。 */
+/** Whether it is zoomed in enough for the ruler to snap to beats. Only then are beat lines drawn in the clip area too (B-61). */
 export function beatsShown(barPx: number, perBar: number, perBeat: number, minGap: number): boolean {
   return (barPx * perBeat) / perBar >= minGap;
 }
 
 /**
- * 目盛を離したときの命令。動かしていなければ、押した所へ（step のきざみの近い線に吸いつく。step が関数なら、それで吸いつける。
- * Shift のときは step が null で吸いつかない）。
+ * The command on ruler release. If not moved, go to the pressed place (snap to the near line in steps of step; if step is a function, snap with it.
+ * With Shift, step is null and there is no snap).
  */
 export function rulerCommand(
   drag: RulerDrag,
@@ -335,7 +335,7 @@ export function rulerCommand(
   return { type: "setLoop", fromBar: r.from, toBar: r.to };
 }
 
-/** 押した所のクリップ（なければ null）。 */
+/** The clip at the pressed place (null if none). */
 export function clipAt(v: View, d: LaneDims, tracks: readonly TrackView[], x: number, y: number): number | null {
   const row = trackRowAt(d, y);
   const track = tracks[row];
@@ -347,14 +347,14 @@ export function clipAt(v: View, d: LaneDims, tracks: readonly TrackView[], x: nu
   return null;
 }
 
-/** 録っているクリップの、いまの周の頭。 */
+/** The start of the current lap of a recording clip. */
 export function lapStart(from: number, lap: number, loop: TickSpan | null): number {
   return lap > 0 && loop ? loop.start : from;
 }
 
 /**
- * 録っているクリップの分けかた。[lapFrom, commit) は大きな面（arrangeLanes）、[tailFrom, now] は小さな面（recordingClip）。
- * commit は小節ごとに進む。tailFrom は commit の 1 小節前からなので、大きな面が描きおわるまでの 1 コマも、すきまが出ない。
+ * How a recording clip is split. [lapFrom, commit) is on the big face (arrangeLanes); [tailFrom, now] is on the small face (recordingClip).
+ * commit moves bar by bar. tailFrom starts 1 bar before commit, so there is no gap even in the one frame before the big face finishes drawing.
  */
 export function recordingSplit(lapFrom: number, now: number, perBar: number): { commit: number; tailFrom: number } {
   const done = Math.max(0, Math.floor((now - lapFrom) / perBar));
@@ -362,7 +362,7 @@ export function recordingSplit(lapFrom: number, now: number, perBar: number): { 
   return { commit, tailFrom: Math.max(lapFrom, commit - perBar) };
 }
 
-/** 全体図の、トラックごとのクリップの線。高さ 40（size.overview）より高ければ、縦にのばす。 */
+/** The clip lines per track in the overview. Stretched vertically if taller than 40 (size.overview). */
 export function overviewRects(
   v: View,
   tracks: readonly TrackView[],
@@ -396,12 +396,12 @@ export function overviewRects(
   return out;
 }
 
-/** ホイールで横に動かした後のスクロール（px）。右へは `max` まで（ページ送りでそれより先にいれば、そこまで）。 */
+/** The scroll (px) after a horizontal wheel move. Right up to `max` (or up to where it is, if paging already went past). */
 export function wheelScroll(scrollX: number, dx: number, max: number): number {
   return Math.max(0, Math.min(scrollX + dx, Math.max(max, scrollX)));
 }
 
-/** 横にスクロールできる右のはし: 曲の中のいちばん後ろの物が、画面のまん中に来るまで。 */
+/** The right end of horizontal scrolling: until the last thing in the song comes to the middle of the screen. */
 export function scrollMax(
   tracks: readonly TrackView[],
   loop: TickSpan | null,
@@ -413,21 +413,21 @@ export function scrollMax(
   return Math.max(0, end * v.pxPerTick - v.width / 2);
 }
 
-// ---- 横の拡大 ・ 縮小と、全体図の「見えている範囲の枠」（仕様書 3 章「第 3 回のための決まり」） ----
+// ---- Horizontal zoom in and out, and the "visible range frame" of the overview (spec 3 "Rules for round 3") ----
 
-/** 目盛の番号を何小節おきに出すか（1・2・4・8 …）。番号どうしが minGap px より近くならないように。 */
+/** Every how many bars the ruler shows a number (1, 2, 4, 8 …), so that numbers are not closer than minGap px. */
 export function labelEvery(barPx: number, minGap: number): number {
   let every = 1;
   while (every * barPx < minGap && every < 1024) every *= 2;
   return every;
 }
 
-/** Mod ＋ ホイールの、1 段ぶんの回した量（WheelEvent の px）。ふつうのマウスの 1 目盛りで 1 段になるように。 */
+/** One step of Mod + wheel (WheelEvent px), so that one notch of a normal mouse is one step. */
 export const WHEEL_ZOOM_STEP = 50;
 
 /**
- * Mod ＋ ホイールを段に。上へ回す（deltaY < 0）と拡大（+1）。1 回のできごとで動くのは 1 段まで。
- * 行や画面の単位（deltaMode 1・2）は 1 回で 1 段。px の単位（タッチパッドの細かい動き）は WHEEL_ZOOM_STEP たまるごとに 1 段。
+ * Mod + wheel to steps. Turning up (deltaY < 0) zooms in (+1). One event moves at most one step.
+ * Line or page units (deltaMode 1, 2) are one step per event. Pixel units (fine touchpad moves) are one step each time WHEEL_ZOOM_STEP adds up.
  */
 export function wheelZoomSteps(acc: number, deltaY: number, deltaMode: number): { steps: number; acc: number } {
   if (deltaY === 0) return { steps: 0, acc };
@@ -438,8 +438,8 @@ export function wheelZoomSteps(acc: number, deltaY: number, deltaMode: number): 
 }
 
 /**
- * 全体図の「見えている範囲の枠」（accent の 1px。上下は inset あける）。範囲は曲の中のティック。
- * 線は画面の画素にそろえる。見えている幅の外の辺は描かない。
+ * The "visible range frame" of the overview (1px accent; inset at top and bottom). The range is ticks in the song.
+ * Lines align with screen pixels. Edges outside the visible width are not drawn.
  */
 export function rangeFrameRects(
   v: View,
@@ -466,8 +466,8 @@ export function rangeFrameRects(
 }
 
 /**
- * 枠 [startPx, endPx)（曲の頭からの px）が全体図に入りきっていなければ、送った後の scrollX。入っていればそのまま。
- * 枠が全体図より広いときは、枠の左はしを全体図の左はしに。そうでなければ、枠をまん中に。
+ * If the frame [startPx, endPx) (px from the song start) does not fit in the overview, the scrollX after paging. If it fits, unchanged.
+ * When the frame is wider than the overview, put its left edge at the overview's left edge. Otherwise, center it.
  */
 export function revealRange(startPx: number, endPx: number, scrollX: number, width: number): number {
   if (!(width > 0)) return scrollX;

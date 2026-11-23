@@ -1,12 +1,12 @@
-// 「オープンソースのライセンス」の中身。DOM を知らない。
-// 一覧（generated/licenses.json）は tools/licenses/inventory.mjs が作り、licenses/check.mjs が古くなっていないか見はる。
-// ライセンスの全文は大きいので、npm run build が dist/licenses/texts.json に書き、2 段目をひらいたときに読む。
+// Content of 「オープンソースのライセンス」. Does not know the DOM.
+// The list (generated/licenses.json) is made by tools/licenses/inventory.mjs, and licenses/check.mjs checks that it is not out of date.
+// The full license texts are large, so npm run build writes them to dist/licenses/texts.json, read when the second page opens.
 
 import { t } from "../../text/ja";
 import generated from "./generated/licenses.json";
 
 export interface Part {
-  /** `vendored`: ほかの人のソースを、そのまま写して meloet のクレートの中に置いた物（C++ のヘッダなど）。 */
+  /** `vendored`: other people's source copied as it is into a meloet crate (C++ headers and so on). */
   kind: "crate" | "npm" | "vendored";
   name: string;
   version: string;
@@ -28,7 +28,7 @@ export interface SoundCredit {
   also: string | null;
   changes: string;
 }
-/** クレートの中にある、ほかの人の物（licenses/upstream.json）。写したソースには名前と版がつく。 */
+/** Other people's things inside the crates (licenses/upstream.json). Copied sources have a name and version. */
 export interface Upstream {
   crate: string;
   license: string;
@@ -46,7 +46,7 @@ export interface LicenseList {
 
 export const licenseList = generated as LicenseList;
 
-/** 部品の行ぜんぶ: cargo と npm の部品と、写したソース（Signalsmith Stretch など）。 */
+/** All part rows: cargo and npm parts, and copied sources (Signalsmith Stretch and so on). */
 export function allParts(list: LicenseList): Part[] {
   const vendored: Part[] = (list.upstream ?? []).flatMap((u) =>
     u.vendored && u.name && u.version ? [{ kind: "vendored" as const, name: u.name, version: u.version, license: u.license }] : [],
@@ -54,10 +54,10 @@ export function allParts(list: LicenseList): Part[] {
   return [...list.parts, ...vendored];
 }
 
-/** 行と全文をむすぶ名前。 */
+/** The name that links a row and its full text. */
 export const partKey = (p: { name: string; version: string }): string => `${p.name}@${p.version}`;
 
-/** ライセンスの見出し。ただの OR は名前の順にならべ、「MIT OR Apache-2.0」と「Apache-2.0 OR MIT」を 1 つにする（tools と同じ決まり）。 */
+/** License heading. A plain OR is sorted by name, so 「MIT OR Apache-2.0」 and 「Apache-2.0 OR MIT」 become one (the same rule as in tools). */
 export function licenseGroup(expr: string): string {
   const e = expr.replace(/\s+/g, " ").trim();
   if (/[()]|\bAND\b|\bWITH\b/.test(e)) return e;
@@ -67,12 +67,12 @@ export function licenseGroup(expr: string): string {
     .join(" OR ");
 }
 
-/** 「A OR B」を「A または B」（モック R7-About、R7-AboutLicense の書きかた）。 */
+/** 「A OR B」 to 「A または B」 (as written in mock R7-About, R7-AboutLicense). */
 export function licenseText(expr: string): string {
   return expr.split(" OR ").reduce((a, b) => t("about.licenseOr", { a, b }));
 }
 
-/** 音の素材のライセンスの名前: CC-BY-3.0 → CC BY 3.0（モック R7-AboutLicense）、CC0-1.0 → CC0 1.0。 */
+/** License names of the sound pack: CC-BY-3.0 → CC BY 3.0 (mock R7-AboutLicense), CC0-1.0 → CC0 1.0. */
 export function soundLicenseText(id: string): string {
   const by = /^CC-BY-(\d\.\d)$/.exec(id);
   if (by) return `CC BY ${by[1]}`;
@@ -80,7 +80,7 @@ export function soundLicenseText(id: string): string {
   return id;
 }
 
-/** さがす枠: 名前かライセンスに、打った文字が（大文字 ・ 小文字をくらべずに）入っている。 */
+/** Search box: the typed text is in the name or license (case is ignored). */
 export function matches(query: string, ...fields: string[]): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -93,7 +93,7 @@ export interface LicenseGroup {
   parts: Part[];
 }
 
-/** 部品をライセンスごとに。数の多い順、同じ数なら名前の順。さがしているときは、合う物のない見出しを出さない。 */
+/** Parts grouped by license. Most first; with the same count, by name. While searching, headings with no match are hidden. */
 export function partGroups(parts: readonly Part[], query: string): LicenseGroup[] {
   const by = new Map<string, Part[]>();
   for (const p of parts) {
@@ -114,7 +114,7 @@ export function fontsMatching(fonts: readonly Font[], query: string): Font[] {
   return fonts.filter((f) => matches(query, f.name, f.license));
 }
 
-/** 全文の枠の中身。ファイルごとに、ファイルの名前の行と本文。 */
+/** Content of the full text box. For each file, a file name line and the body. */
 export interface TextsFile {
   parts: Record<string, { file: string; text: string }[]>;
   texts: Record<string, string>;
@@ -129,7 +129,7 @@ export function fullText(file: TextsFile, key: string): string | null {
 const TEXTS_URL = "licenses/texts.json";
 let pending: Promise<TextsFile | null> | null = null;
 
-/** 全文を読む（1 回だけ）。開発の vite（npm run dev）では作っていないので null。 */
+/** Reads the full texts (only once). null in the dev vite (npm run dev), which does not make them. */
 export function loadTexts(fetcher: (url: string) => Promise<Response> = (u) => fetch(u)): Promise<TextsFile | null> {
   pending ??= fetcher(TEXTS_URL)
     .then((r) => (r.ok ? (r.json() as Promise<TextsFile>) : null))
@@ -137,7 +137,7 @@ export function loadTexts(fetcher: (url: string) => Promise<Response> = (u) => f
   return pending;
 }
 
-/** テストのため。 */
+/** For tests. */
 export function forgetTexts(): void {
   pending = null;
 }

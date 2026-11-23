@@ -1,37 +1,37 @@
-// 音の素材の包みを取りにいく所の見せかた（仕様書 2 章「案内の帯（音の素材）」、3 章 43-B ・ 44-A ・ 45-A、
-// モック F8-PackAsk ・ F8-PackGet ・ F8-PackFail ・ Opt8-PackShow ・ R12-Fit）。DOM を知らない純粋な関数。
+// How the place to fetch the sound pack is shown (spec 2 "Hint band (sound pack)", spec 3 43-B, 44-A, 45-A;
+// mock F8-PackAsk, F8-PackGet, F8-PackFail, Opt8-PackShow, R12-Fit). Pure functions that do not know the DOM.
 
 import type { AppState, PackFailure, PackFetchView, SoundsView } from "../../bridge";
 import { STATUS_JOIN, t } from "../../text/ja";
 
 const MB = 1_000_000;
-/** MB は 1000 × 1000 バイト（状態行の mb と同じ）。 */
+/** MB is 1000 × 1000 bytes (the same as mb in the status line). */
 export const mb = (bytes: number): number => Math.round(bytes / MB);
-/** 包みぜんぶの大きさ（「約 240 MB」「ぜんぶあります ・ 240 MB」）は 10 MB にまるめる（仕様書の 240 MB）。 */
+/** The size of the whole pack (「約 240 MB」「ぜんぶあります ・ 240 MB」) is rounded to 10 MB (240 MB in the spec). */
 export const packMb = (bytes: number): number => Math.round(bytes / (10 * MB)) * 10;
-/** 取れた分の %。取りおえるまでは 100 にしない。 */
+/** The % fetched. Not 100 until fetching is done. */
 export const percentOf = (done: number, total: number): number =>
   total <= 0 ? 0 : done >= total ? 100 : Math.min(99, Math.floor((done / total) * 100));
-/** 「のこり 約 2 分」の分（1 分より短くても 1）。 */
+/** Minutes of 「のこり 約 2 分」 (1 even under 1 minute). */
 export const minutesOf = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
 
 /**
- * 流れ 1〜4 の案内が出ているか: 入力計の右の案内（鍵盤がない ・ 抜けた ・ 止まっている ・ 出口がまだ）、
- * アレンジの上の出口えらびと「音が出ました」などの案内。
+ * Whether a hint of flows 1–4 is shown: the hints right of the input meter (no keyboard, unplugged, stopped, no output yet),
+ * and above the arrange, the output chooser and hints like 「音が出ました」.
  */
 export function flowHintUp(app: AppState): boolean {
   return lastingHintUp(app) || passingHintUp(app);
 }
 
-/** ずっと出ている案内（鍵盤がない ・ 抜けた ・ 入力が止まっている）。鍵盤をつながないかぎり消えない。 */
+/** Hints that stay (no keyboard, unplugged, input stopped). They do not go away until a keyboard is plugged in. */
 export function lastingHintUp(app: AppState): boolean {
   if (app.keyboards.inputStopped) return true;
   return !app.keyboards.list.some((k) => k.id === app.keyboards.active);
 }
 
 /**
- * 待てば終わる案内（出口えらびと出口がまだ）。出口えらびは鍵盤があるときだけ出るので、鍵盤がなくて出口がまだのときは数えない。
- * 「音が出ました」「空のアレンジ」はアレンジの中に出て、クリップができるまで消えないので待たない（docs/history/design-notes.ja.md B-95-12）。
+ * Hints that end if you wait (the output chooser and no output yet). The output chooser shows only with a keyboard, so no output yet without a keyboard is not counted.
+ * 「音が出ました」 and the empty arrange show inside the arrange and stay until a clip is made, so do not wait for them (docs/history/design-notes.ja.md B-95-12).
  */
 function passingHintUp(app: AppState): boolean {
   if (app.workspace.chooser !== null) return true;
@@ -43,7 +43,7 @@ export type PackBand =
   | { kind: "fetching"; fetch: Extract<PackFetchView, { state: "fetching" }> }
   | { kind: "failed"; fetch: Extract<PackFetchView, { state: "failed" }> };
 
-/** 入力計の帯に出す案内（44-A）。流れの案内が出ている間は出さない（聞くのは待ち、取っている間は状態行へ）。 */
+/** The hint shown in the input meter band (44-A). Not shown while a flow hint is shown (asking waits; while fetching it goes to the status line). */
 export function packBand(app: AppState): PackBand | null {
   if (flowHintUp(app)) return null;
   const f = app.sounds.fetch;
@@ -52,21 +52,21 @@ export function packBand(app: AppState): PackBand | null {
   return app.sounds.ask ? { kind: "ask" } : null;
 }
 
-/** 状態行に移した進み（44-B の形。Opt8-PackShow）: 取っている間で、流れの案内が出ているとき。 */
+/** Progress moved to the status line (the 44-B form; Opt8-PackShow): while fetching and a flow hint is shown. */
 export function packInStatus(app: AppState): Extract<PackFetchView, { state: "fetching" }> | null {
   const f = app.sounds.fetch;
   return f.state === "fetching" && flowHintUp(app) ? f : null;
 }
 
 /**
- * 状態行で聞くか（44-B の形にならう）: 聞いている間に、ずっと出ている案内だけが出ているとき。
- * 答えるまで取らないので、聞く入口をなくさない。待てば終わる案内の間は、待ってから帯に出す。
+ * Whether to ask in the status line (following the 44-B form): while asking, only hints that stay are shown.
+ * Nothing is fetched until answered, so the way to ask must not be lost. While hints that end if you wait are shown, wait, then show it in the band.
  */
 export function askInStatus(app: AppState): boolean {
   return app.sounds.ask && app.sounds.fetch.state === "idle" && lastingHintUp(app) && !passingHintUp(app);
 }
 
-/** 聞いている帯の 2 行。short: 入りきらないときの小さい字（mock:R12-Fit）。 */
+/** The 2 lines of the asking band. short: the small text when it does not fit (mock:R12-Fit). */
 export function askLines(sounds: SoundsView, short: boolean): [string, string] {
   return [
     t("pack.ask", { mb: packMb(sounds.packBytes) }),
@@ -74,7 +74,7 @@ export function askLines(sounds: SoundsView, short: boolean): [string, string] {
   ];
 }
 
-/** 取っている帯の 2 行（6 章の文を分けた物。のこりの時間はわかるまで出さない）。 */
+/** The 2 lines of the fetching band (the spec 6 text split in two; the time left is not shown until known). */
 export function fetchingLines(f: { doneBytes: number; totalBytes: number; remainingS: number | null }): [string, string] {
   const bytes = t("pack.fetchingBytes", { percent: percentOf(f.doneBytes, f.totalBytes), done: mb(f.doneBytes), total: mb(f.totalBytes) });
   const left = f.remainingS === null ? "" : `${STATUS_JOIN}${t("pack.fetchingLeft", { minutes: minutesOf(f.remainingS) })}`;
@@ -82,8 +82,8 @@ export function fetchingLines(f: { doneBytes: number; totalBytes: number; remain
 }
 
 /**
- * 取れなかった帯の 2 行。1 行目はモック F8-PackFail の文。2 行目は、つながっていないときはモックの文、
- * ほかは 6 章のわけごとの文（出す所が「状態行 ・ 取りにいく所」の物）。
+ * The 2 lines of the failed band. Line 1 is the text of mock F8-PackFail. Line 2 is the mock text when not connected,
+ * otherwise the spec 6 text for each reason (the ones shown in 「状態行 ・ 取りにいく所」).
  */
 export function failedLines(failure: PackFailure, doneBytes: number, totalBytes: number): [string, string] {
   const detail = (() => {
@@ -101,5 +101,5 @@ export function failedLines(failure: PackFailure, doneBytes: number, totalBytes:
   return [t("pack.failedTitle"), detail];
 }
 
-/** 取れなかったときの、えらんでいる形のボタン（とちゅうで切れたときは「続きから」）。 */
+/** On failure, the button in the chosen form (「続きから」 when cut off on the way). */
 export const againLabel = (failure: PackFailure): string => t(failure.kind === "cutOff" ? "button.resumeFetch" : "button.again");

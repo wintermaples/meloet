@@ -1,5 +1,5 @@
-<!-- 曲のダイアログ（仕様書 2 章「ダイアログ」、6 章の文）。見出しは曲の名前か、読めなかったファイルの名前（ヤチヨさんの決め）。
-     Esc は Rust の back（やめる）。Enter は右はしの明るいボタン（keys/attach.ts）。 -->
+<!-- Song dialog (spec 2 "Dialog", wording in spec 6). The heading is the song name, or the name of the file that could not be read (the owner's decision).
+     Esc is Rust's back (cancel). Enter is the bright button at the right end (keys/attach.ts). -->
 <script lang="ts">
   import { movableDialog } from "../lib/dialogMove";
   import ScrollArea from "../lib/ScrollArea.svelte";
@@ -32,7 +32,7 @@
 {/if}
 
 <style>
-  /* 高さは中身に合わせ、窓の上下 24 ずつのあきまで。それをこえたら、間の中身だけスクロールする。 */
+  /* The height follows the content, up to a gap of 24 above and below the window. Past that, only the content between scrolls. */
   .place {
     position: absolute;
     inset: 0;
@@ -74,7 +74,7 @@
     overflow: hidden;
     cursor: move;
   }
-  /* 見出しの行に乗る ・ 動かしている: 地 gray.4（仕様書 2 章「ダイアログの見出しの行（動かす）」）。 */
+  /* Hovering or moving the heading row: bg gray.4 (spec 2 "Dialog heading row (moving)"). */
   .head:hover {
     background: var(--color-gray-4);
   }

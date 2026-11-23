@@ -1,11 +1,11 @@
-<!-- 棚（右の欄。モック F4-ShelfSample・F4-ShelfAudition・F4-ShelfReplace・F5-SF2Shelf・F5-ShelfFx・F5-ShelfSearch・F5-PluginLoading・F5-PluginAudition・R8-Missing。幅 size.shelf）。
-     見出し（▾ 棚、音源 N ・ エフェクト N の切りかえ、P）、いまのモードの文、さがす枠、すべて ・ お気に入り、一覧（shelfList.ts）。
-     一覧は 最初から入っているもの → あとから入れたもの（SF2 のファイル → プラグインの種類）。何百行あっても、見えている所の行だけを作る。
-     さがす文字、お気に入りだけ、見出しのたたみは画面だけが持つ（tracks.svelte.ts）。行をえらぶ ・ 入れる ・ やめる ・ 星 ・ サンプルは core への意図。
-     「空き ＋」からひらいた棚（insertEffect）では、エフェクトの行を押す ・ ↑ ↓ でえらび、Enter か「入れる」で入れる。音源のモードのエフェクトは見るだけ（docs/history/design-notes.ja.md A-14）。
-     右クリックの「入れかえる…」からひらいた棚（replaceEffect。仕様書 3 章 86-3、モック R9-Inserts）も同じ形で、いまの行に「いまのエフェクト」、箱は入れかえの文と「入れかえる」。
-     えらんだ行の下に箱（ためし弾き ・ 読みこみ中 ・ 読みこめない ・ インサートに入れる）。入れるエフェクトの行が見えていないときは一覧のいちばん下。
-     スキャン中は「あとから入れたもの」の見出しのすぐ下にスキャンの帯（Y13）。止まったプラグインは棚の下に赤い枠の箱（6 章「プラグインが止まった」）。 -->
+<!-- The shelf (the right panel; mock F4-ShelfSample, F4-ShelfAudition, F4-ShelfReplace, F5-SF2Shelf, F5-ShelfFx, F5-ShelfSearch, F5-PluginLoading, F5-PluginAudition, R8-Missing; width size.shelf).
+     Heading (▾ shelf, the instruments N / effects N toggle, P), the text of the current mode, the search box, all / favorites, the list (shelfList.ts).
+     The list goes built-in → added later (SF2 files → plugin kinds). Even with hundreds of rows, only the visible rows are made.
+     The query, favorites only and folded headings are kept only by the screen (tracks.svelte.ts). Choosing a row, put in, cancel, star and sample are intents to core.
+     In a shelf opened from 「空き ＋」 (insertEffect), press an effect row or choose with ↑ ↓, then put it in with Enter or 「入れる」. Effects in the instrument mode are view only (docs/history/design-notes.ja.md A-14).
+     A shelf opened from 「入れかえる…」 in the context menu (replaceEffect; spec 3 (86-3), mock R9-Inserts) has the same form: the current row shows 「いまのエフェクト」, and the box has the replace text and 「入れかえる」.
+     A box under the chosen row (audition, loading, cannot load, put in the insert). When the row of the effect to put in is not visible, at the bottom of the list.
+     While scanning, the scan strip sits right under the 「あとから入れたもの」 heading (Y13). Stopped plugins get a box with a red border under the shelf (spec 6 "a plugin stopped"). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { clockOffsetUs, type EffectRef, type MissingView, type PluginRowView, type PluginSlotRef, type SoundRef } from "../bridge";
@@ -47,7 +47,7 @@
   const model = $derived(shelfModel(shelfUi.view, shelf, library, shelfUi, fetchingNow));
   const picks = $derived(shelfPicks(app));
   const picked = $derived(pickedRow(app, model.rows));
-  /** 箱を出すか: えらんでいる音源（ためし弾き ・ 読みこみ ・ 読みこめなかった）がある。エフェクトを入れる棚では、いつも（えらぶまで「入れる」は使えない）。 */
+  /** Whether to show the box: there is a chosen instrument (audition, loading, could not load). In a shelf for putting in an effect, always (「入れる」 is disabled until something is chosen). */
   const boxShown = $derived(picks && (effectsView || (shelf.selectedSound ?? shelf.loadingSound ?? shelf.unreadable) !== null));
 
   type Entry = ShelfEntry | { kind: "scan"; id: "scan" };
@@ -60,7 +60,7 @@
     return list;
   });
 
-  // ひらいたとき、モード（新しいトラック ・ 入れかえ ・ エフェクトを入れる）が変わったときは、棚にキーを向け、そのモードの一覧を出す。
+  // When it opens, or when the mode (new track, replace, put in effect) changes, send keys to the shelf and show the list of that mode.
   const modeKey = $derived(JSON.stringify(shelf.mode));
   $effect(() => {
     void modeKey;
@@ -87,7 +87,7 @@
     if (row.sound) send({ type: "toggleFavoriteSound", sound: row.sound });
     else if (row.effect) send({ type: "toggleFavoriteEffect", effect: row.effect });
   }
-  /** 「＋1」: 使う形式をえらぶ一覧（仕様書 2 章「棚のプラグインの行」）。 */
+  /** 「＋1」: the list to choose the format to use (spec 2 "Plugin row in the shelf"). */
   function chooseFormat(e: MouseEvent, row: PluginRowView): void {
     e.stopPropagation();
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -103,7 +103,7 @@
     openContextMenu(r.left, r.bottom, entries);
   }
 
-  // ---- 見えている所の行だけを作る（行と見出しは高さ 24、箱 ・ 知らせ ・ スキャンの帯は測った高さ） ----
+  // ---- Make only the visible rows (rows and headings are 24 high; box, notice and scan strip use measured heights) ----
 
   let viewport = $state<HTMLDivElement>();
   let scrollTop = $state(0);
@@ -116,10 +116,10 @@
     for (const e of entries) out.push(out.at(-1)! + (fixed(e) ? rowPx : (measured[e.id] ?? rowPx * 3)));
     return out;
   });
-  /** 見える所の前後に足す行の数（速いスクロールで、すき間が見えないように）。 */
+  /** Rows added before and after the visible part (so fast scrolling shows no gaps). */
   const OVERSCAN = 8;
   const range = $derived.by(() => {
-    // まだ大きさを測っていない（並べる前）ときは、ぜんぶ。たたんだ見出しの中は、もともと作らない。
+    // Before sizes are measured (before layout), all of them. Rows in a folded heading are never made.
     if (viewH <= 0) return { from: 0, to: entries.length };
     const top = scrollTop;
     const bottom = scrollTop + viewH;
@@ -148,7 +148,7 @@
     };
   });
 
-  // ↑ ↓ でえらんだ行（と、その下の箱）が見えるように。えらぶ物が変わったときだけ（見出しをひらいただけでは動かさない）。
+  // Keep the row chosen with ↑ ↓ (and the box under it) visible. Only when the chosen thing changes (not when a heading is just opened).
   const pickKey = $derived(JSON.stringify(effectsView ? shelf.chosenEffect : (shelf.selectedSound ?? shelf.loadingSound)));
   let shownPick: string | null = null;
   $effect(() => {
@@ -170,7 +170,7 @@
     });
   });
 
-  // ---- サンプルの「0:02 / 0:04」。Rust の時計（started_us）から、画面の時計で数える（1 秒ごとの知らせはない） ----
+  // ---- The 「0:02 / 0:04」 of a sample. Counted with the screen clock from the Rust clock (started_us); there is no notice every second ----
 
   let offsetUs: number | null = null;
   let nowUs = $state(0);
@@ -204,10 +204,10 @@
     return t("shelf.sampleTime", { at: clock(at), length: clock(Math.round(p.lengthUs / 1e6) * 1e6) });
   });
 
-  // ---- 箱 ----
+  // ---- Box ----
 
   const pickedName = $derived(picked?.sound ? soundRefName(picked.sound, library) : (picked?.name ?? ""));
-  /** トラックとマスターに入れたリバーブとディレイのミックスは、はじめ 30 %（仕様書 3 章 86。文はモック F5-ShelfFx）。 */
+  /** The mix of reverb and delay put on a track or the master starts at 30 % (spec 3 (86); the text is from mock F5-ShelfFx). */
   const mixStart = $derived.by(() => {
     if (shelf.mode.kind !== "insertEffect" || shelf.mode.strip.kind === "return" || !shelf.chosenEffect) return false;
     const e = shelf.chosenEffect;
@@ -216,7 +216,7 @@
     return row?.kind.role === "effect" && (row.kind.category === "reverb" || row.kind.category === "delay");
   });
 
-  // ---- 止まったプラグイン（棚の下） ----
+  // ---- Stopped plugins (under the shelf) ----
 
   const stopped = $derived.by(() => {
     const out: { name: string; where: string; slot: PluginSlotRef }[] = [];
@@ -242,7 +242,7 @@
   const missingRef = (m: MissingView) => (m.kind === "sf2" ? { kind: "sf2" as const, file: m.file } : { kind: "plugin" as const, key: m.key });
 </script>
 
-<!-- 星（part.shelfrow.star）（仕様書 2 章「音源の行（棚）」）と、サンプルのボタンの ▶ ・ ■。 -->
+<!-- Star (part.shelfrow.star) (spec 2 "Instrument row (shelf)") and the sample button ▶ / ■. -->
 {#snippet star(on: boolean)}
   <svg class="star" class:on viewBox="0 0 12 12" aria-hidden="true"
     ><path d="M6 .5l1.7 3.6 3.9.5-2.9 2.7.7 3.9L6 9.3 2.6 11.2l.7-3.9L.4 4.6l3.9-.5z" /></svg
@@ -261,8 +261,8 @@
   {/if}
 {/snippet}
 
-<!-- まだ取っていない音色の行（仕様書 2 章、3 章 45-A、モック F8-PackGet）: 名前 gray.8、右に「取ってきています」か「まだ」。
-     星と ▶ は出さず、えらべない。名前は ▶ の位置から。 -->
+<!-- A row of a preset not fetched yet (spec 2, spec 3 (45-A), mock F8-PackGet): name gray.8, and 「取ってきています」 or 「まだ」 on the right.
+     No star and no ▶; it cannot be chosen. The name starts at the ▶ position. -->
 {#snippet notYetRow(r: ShelfRow)}
   <div class="row look not-yet" class:added={r.added} data-row={r.sound?.kind === "builtin" ? r.sound.instrument : r.id} data-test="shelf-not-yet">
     <span class="star-hit"></span>
@@ -363,7 +363,7 @@
       </div>
     </div>
   {:else if shelf.selectedSound === null && shelf.loadingSound === null && shelf.unreadable}
-    <!-- 読みこめなかった行の下は、見つからない物の知らせの箱（仕様書 3 章 89-12）。 -->
+    <!-- Under a row that could not load, the box of the notice of missing things (spec 3 (89-12)). -->
     <div class="notice" data-test="shelf-unreadable">
       <span class="say">{t("plugin.loadFailedShelf", { name: soundRefName(shelf.unreadable, library) })}</span>
       <div class="buttons">
@@ -578,7 +578,7 @@
     display: flex;
     gap: var(--space-1);
   }
-  /* いまのモードの文（モック F4-ShelfSample: 地 gray.1、下に accent の線）。 */
+  /* The text of the current mode (mock F4-ShelfSample: background gray.1, an accent line below). */
   .mode {
     height: var(--size-row);
     flex-shrink: 0;
@@ -626,7 +626,7 @@
   .group {
     width: 100%;
   }
-  /* SF2 の仲間の見出し（モック F5-SF2Shelf: 左 28）。 */
+  /* Heading of SF2 presets (mock F5-SF2Shelf: left 28). */
   .group.sub {
     padding-left: var(--mock-shelf-indent);
   }
@@ -640,7 +640,7 @@
   button.group:hover {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
-  /* 音源の行（仕様書 2 章: 高さ 24。星、サンプルのボタン、名前、形式の印）。 */
+  /* Instrument row (spec 2: height 24; star, sample button, name, format mark). */
   .row {
     height: var(--part-shelfrow-height);
     display: flex;
@@ -651,11 +651,11 @@
     white-space: nowrap;
     cursor: pointer;
   }
-  /* あとから入れた物の行と、見出しの下のエフェクトの行（モック F5-SF2Shelf ・ F5-ShelfFx: 左 24）。 */
+  /* Rows added later and effect rows under a heading (mock F5-SF2Shelf, F5-ShelfFx: left 24). */
   .row.added {
     padding-left: var(--space-6);
   }
-  /* 見るだけの一覧（音源のモードのエフェクト、エフェクトのモードの音源）。 */
+  /* A view-only list (effects in the instrument mode, instruments in the effect mode). */
   .row.look {
     cursor: default;
   }
@@ -665,7 +665,7 @@
   .row:hover {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
-  /* ためし弾き中: 地 gray.4、左に accent の line.mark。 */
+  /* While auditioning: background gray.4, an accent line.mark on the left. */
   .row.selected {
     background: var(--color-gray-4);
     border-left: var(--line-mark) solid var(--color-accent);
@@ -727,7 +727,7 @@
     text-overflow: ellipsis;
     color: var(--color-gray-10);
   }
-  /* 見つからない行（仕様書 2 章「音源の行（棚）」: 文字 gray.8）。 */
+  /* A row not found (spec 2 "Instrument row (shelf)": text gray.8). */
   .name.gone {
     color: var(--color-gray-8);
   }
@@ -736,7 +736,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* 形式の印（今までの印: 枠 gray.7、文字 gray.8。使う形式は枠 gray.9、文字 gray.10）。 */
+  /* Format mark (the plain mark: border gray.7, text gray.8; the format in use: border gray.9, text gray.10). */
   .mark {
     flex-shrink: 0;
     padding: 0 var(--space-1);
@@ -757,7 +757,7 @@
   .time {
     color: var(--color-accent);
   }
-  /* えらんだ行の下にひらく案内とボタン（モック F4-ShelfAudition ・ F5-PluginAudition ・ F5-ShelfFx）。 */
+  /* The hint and buttons that open under the chosen row (mock F4-ShelfAudition, F5-PluginAudition, F5-ShelfFx). */
   .box {
     display: flex;
     flex-direction: column;
@@ -767,7 +767,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     border-left: var(--line-mark) solid var(--color-accent);
   }
-  /* 見つからない物の知らせ（仕様書 2 章: 左に gray.8 の line.mark、内 8 ・ 12）。 */
+  /* The notice of missing things (spec 2: a gray.8 line.mark on the left, padding 8 / 12). */
   .notice {
     display: flex;
     flex-direction: column;
@@ -788,7 +788,7 @@
     gap: var(--space-2);
     flex-wrap: wrap;
   }
-  /* 止まったプラグイン（モック A-Mixer: rec の line.hair の枠、外 0 ・ 12 ・ 12、内 8）。 */
+  /* Stopped plugin (mock A-Mixer: a rec line.hair border, margin 0 / 12 / 12, padding 8). */
   .stopped {
     flex-shrink: 0;
     display: flex;

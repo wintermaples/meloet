@@ -1,7 +1,7 @@
-// アレンジのクリップのマウス（仕様書 3 章「第 3 回のための決まり」の「アレンジのクリップ」、4 章、モック R3-Arrange）。DOM を知らない。
-// 押す → 動かす → 離す。動かしている間は見た目だけを変え、離したときに MoveClips か TrimClip を 1 つだけ送る（docs/architecture.md 17 章）。
-// 動かすときは、選んであるクリップぜんぶをいっしょに（docs/history/design-notes.ja.md B-71）。はしをつめる ・ のばすのは、つかんだ 1 つだけ。
-// 座標は arrangeGeom.ts と同じ（x は見えている所の左はしから、y はトラックの行の並びの上から、CSS px）。
+// The mouse on arrange clips (spec 3 "Rules for round 3", the arrange clip part; spec 4; mock R3-Arrange). Does not know the DOM.
+// Press → move → release. While moving, only the look changes; on release, exactly one MoveClips or TrimClip is sent (architecture 17).
+// Moving takes all selected clips together (docs/history/design-notes.ja.md B-71). Trimming or extending an edge is only for the one grabbed clip.
+// Coordinates are the same as arrangeGeom.ts (x from the left edge of the visible part, y from the top of the track rows, CSS px).
 
 import type { ClipEdge, ClipView, Command, TrackView } from "../bridge";
 import { t } from "../text/ja";
@@ -13,11 +13,11 @@ import { tickText, ticksPerBar, ticksPerBeat, type Bars, type Meter } from "./ti
 export interface ClipHit {
   clip: ClipView;
   row: number;
-  /** 左右のはし（part.clip.edge）。はしでなければ null。 */
+  /** The left or right edge (part.clip.edge). null when not on an edge. */
   edge: ClipEdge | null;
 }
 
-/** (x, y) の下のクリップ。はしの幅は、せまいクリップでもまん中が残るように、幅の 1/3 まで。 */
+/** The clip under (x, y). The edge width is at most 1/3 of the clip width, so a narrow clip keeps a middle. */
 export function clipHit(v: View, d: LaneDims, tracks: readonly TrackView[], x: number, y: number, edgePx: number): ClipHit | null {
   const row = trackRowAt(d, y);
   const track = tracks[row];
@@ -35,11 +35,11 @@ export function clipHit(v: View, d: LaneDims, tracks: readonly TrackView[], x: n
 interface Press {
   x: number;
   y: number;
-  /** space.1 より動いたら true（それまでは、ただ押しただけ） */
+  /** true once it moved more than space.1 (until then, it was only a press) */
   moved: boolean;
 }
 
-/** いっしょに動かすクリップの 1 つ。 */
+/** One of the clips that move together. */
 export interface GroupClip {
   clip: ClipView;
   row: number;
@@ -47,22 +47,22 @@ export interface GroupClip {
 
 export type ClipDrag =
   /**
-   * clip ・ row: つかんだクリップ。group: いっしょに動かすクリップ（つかんだクリップもふくむ。トラックの順、始まりの順）。
-   * ticks: もとの始まりから動かす量。toRow: つかんだクリップを置くトラックの行。ok: ぜんぶトラックの中で、ほかと重ならないか。
+   * clip, row: the grabbed clip. group: the clips that move together (including the grabbed clip; in track order, then start order).
+   * ticks: how far to move from the original start. toRow: the track row for the grabbed clip. ok: all stay inside tracks and overlap nothing.
    */
   | { kind: "move"; press: Press; clip: ClipView; row: number; group: GroupClip[]; copy: boolean; ticks: number; toRow: number; ok: boolean }
-  /** start ・ end: いまのはしの位置（曲の中のティック）。 */
+  /** start, end: the current edge positions (ticks in the song). */
   | { kind: "trim"; press: Press; clip: ClipView; row: number; edge: ClipEdge; start: number; end: number };
 
 export interface DragInput {
   view: View;
   dims: LaneDims;
   tracks: readonly TrackView[];
-  /** グリッド 1 つのティック（アレンジはふだん 1 小節）。Shift のときは null。 */
+  /** Ticks of one grid step (the arrange usually uses 1 bar). null with Shift. */
   step: number | null;
-  /** グリッドに吸いつける（拍子の変更で小節の長さが変わる曲。なければ step のきざみ）。 */
+  /** Snap to the grid (for songs where time signature changes alter the bar length; otherwise steps of step). */
   snap?: (tick: number) => number;
-  /** 押しただけとみなす動き（space.1） */
+  /** Movement still taken as a plain press (space.1) */
   stillPx: number;
 }
 
@@ -71,7 +71,7 @@ export interface DragMods {
   alt: boolean;
 }
 
-/** ids のクリップを、トラックの順、始まりの順に。ないクリップは落とす。 */
+/** The clips of ids, in track order, then start order. Missing clips are dropped. */
 export function groupOf(tracks: readonly TrackView[], ids: Iterable<number>): GroupClip[] {
   const want = new Set(ids);
   const out: GroupClip[] = [];
@@ -81,7 +81,7 @@ export function groupOf(tracks: readonly TrackView[], ids: Iterable<number>): Gr
   return out;
 }
 
-/** group: いっしょに動かすクリップ（つかんだクリップが入っていなければ、つかんだクリップだけ）。はしをつかんだときは使わない。 */
+/** group: the clips that move together (only the grabbed clip if it is not in them). Not used when an edge is grabbed. */
 export function startClipDrag(hit: ClipHit, x: number, y: number, mods: DragMods, group: readonly GroupClip[] = []): ClipDrag {
   const press = { x, y, moved: false };
   const { clip, row } = hit;
@@ -90,7 +90,7 @@ export function startClipDrag(hit: ClipHit, x: number, y: number, mods: DragMods
   return { kind: "move", press, clip, row, group: members, copy: mods.alt, ticks: 0, toRow: row, ok: true };
 }
 
-/** [start, end) を行 row に置けるか。without: 数に入れないクリップ（動かしている物）。端が触れるだけは重ならない。 */
+/** Whether [start, end) can go on row. without: clips not counted (the moving ones). Ends that only touch do not overlap. */
 export function placeable(tracks: readonly TrackView[], row: number, start: number, end: number, without: number | null): boolean {
   const track = tracks[row];
   if (!track || start < 0) return false;
@@ -98,8 +98,8 @@ export function placeable(tracks: readonly TrackView[], row: number, start: numb
 }
 
 /**
- * group を ticks ・ rows だけ動かして置けるか。どれか 1 つでもトラックの外に出る、曲の頭より前に出る、ほかのクリップと重なるなら false。
- * 複製（copy）なら、もとのクリップもじゃまになる。
+ * Whether group can be placed after moving by ticks and rows. false if any one goes outside the tracks, before the song start, or overlaps another clip.
+ * For a copy, the original clips are in the way too.
  */
 export function groupPlaceable(tracks: readonly TrackView[], group: readonly GroupClip[], ticks: number, rows: number, copy: boolean): boolean {
   const moving = copy ? null : new Set(group.map((g) => g.clip.id));
@@ -112,7 +112,7 @@ export function groupPlaceable(tracks: readonly TrackView[], group: readonly Gro
   });
 }
 
-/** 囲んだ四角（どちらの角からでも）にかかるクリップ。トラックの順、始まりの順。 */
+/** Clips touching the dragged rectangle (from either corner). In track order, then start order. */
 export function clipsInBox(v: View, d: LaneDims, tracks: readonly TrackView[], ax: number, ay: number, bx: number, by: number): number[] {
   const x0 = Math.min(ax, bx);
   const x1 = Math.max(ax, bx);
@@ -128,7 +128,7 @@ export function clipsInBox(v: View, d: LaneDims, tracks: readonly TrackView[], a
   return out;
 }
 
-/** 同じトラックの、clip のすぐ前のクリップの終わり（なければ 0）と、すぐ後のクリップの始まり（なければ Infinity）。 */
+/** On the same track, the end of the clip just before clip (0 if none) and the start of the clip just after (Infinity if none). */
 export function neighbours(track: TrackView, clip: ClipView): { floor: number; ceiling: number } {
   let floor = 0;
   let ceiling = Infinity;
@@ -143,7 +143,7 @@ export function neighbours(track: TrackView, clip: ClipView): { floor: number; c
 const sameMove = (a: Extract<ClipDrag, { kind: "move" }>, b: Omit<typeof a, "kind" | "press" | "clip" | "row" | "group">) =>
   a.ticks === b.ticks && a.toRow === b.toRow && a.copy === b.copy && a.ok === b.ok;
 
-/** 押したまま動かした。見た目が変わったら新しい物を、変わらなければ同じ物を返す。 */
+/** Moved while pressed. Returns a new object if the look changed, the same one if not. */
 export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods: DragMods): ClipDrag {
   let press = d.press;
   if (!press.moved) {
@@ -154,7 +154,7 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
   const snap = (tick: number) => (i.step ? (i.snap ? i.snap(tick) : snapTick(tick, i.step)) : Math.round(tick));
   const c = d.clip;
   if (d.kind === "move") {
-    // つかんだクリップをグリッドに吸いつけ、ほかは同じ間をあけてついてくる。いちばん前のクリップが曲の頭で止まる。
+    // The grabbed clip snaps to the grid; the others follow with the same gaps. The front clip stops at the song start.
     const earliest = Math.min(...d.group.map((g) => g.clip.start));
     const ticks = Math.max(snap(c.start + dx) - c.start, -earliest) || 0;
     const rows = blockAt(i.dims, y) - blockAt(i.dims, press.y);
@@ -172,7 +172,7 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
   const track = i.tracks[d.row];
   if (!track) return d;
   const { floor, ceiling } = neighbours(track, c);
-  // 吸いつくときは、グリッド 1 つ（もとがそれより短ければ、もとの長さ）より短くしない。
+  // When snapping, do not make it shorter than one grid step (or the original length, if that was shorter).
   const shortest = i.step ? Math.min(i.step, c.end - c.start) : 1;
   let start = c.start;
   let end = c.end;
@@ -182,7 +182,7 @@ export function dragClipTo(d: ClipDrag, i: DragInput, x: number, y: number, mods
   return { ...d, press, start, end };
 }
 
-/** 離したときに送る意図。押しただけ、置けない所、何も変わらないときは null。 */
+/** The intent to send on release. null for a plain press, a place where it cannot go, or no change. */
 export function clipDragCommand(d: ClipDrag, tracks: readonly TrackView[]): Command | null {
   if (!d.press.moved) return null;
   if (d.kind === "move") {
@@ -194,7 +194,7 @@ export function clipDragCommand(d: ClipDrag, tracks: readonly TrackView[]): Comm
   return ticks === 0 ? null : { type: "trimClip", clip: d.clip.id, edge: d.edge, ticks };
 }
 
-/** カーソルの形（OS の形。仕様書 3 章）。 */
+/** The cursor shape (an OS shape; spec 3). */
 export type ArrangeCursor = "default" | "move" | "copy" | "ew-resize" | "not-allowed";
 
 export function hoverCursor(hit: ClipHit | null, alt: boolean): ArrangeCursor {
@@ -209,14 +209,14 @@ export function clipDragCursor(d: ClipDrag): ArrangeCursor {
   return d.copy ? "copy" : "move";
 }
 
-/** 「+1」（小節）。グリッドに吸いつかずに動かして小節の途中なら「+1.25」（小数 3 けたまで）。 */
+/** 「+1」 (bars). If moved without snapping and it lands mid-bar, 「+1.25」 (up to 3 decimals). */
 export function barsDeltaText(ticks: number, perBar: number): string {
   const bars = ticks / perBar;
   if (Number.isInteger(bars)) return signed(bars);
   return `${bars < 0 ? "−" : "+"}${Number(Math.abs(bars).toFixed(3))}`;
 }
 
-/** 「2.2.0000」: クリップの長さを 小節 . 拍 . ティック（どれも 0 から）。 */
+/** 「2.2.0000」: the clip length as bar . beat . tick (all from 0). */
 export function clipLengthText(ticks: number, meter: Meter): string {
   const perBar = ticksPerBar(meter);
   const perBeat = ticksPerBeat(meter);
@@ -226,7 +226,7 @@ export function clipLengthText(ticks: number, meter: Meter): string {
   return `${bars}.${beats}.${tickText(t % perBeat)}`;
 }
 
-/** 「その場の読み値」と状態行に出す文。出さないときは null。長さは、クリップの始まりの所の拍子で数える。 */
+/** The text for the reading in place and the status line. null when not shown. The length counts by the time signature at the clip start. */
 export function clipDragReading(d: ClipDrag, bars: Bars): string | null {
   if (!d.press.moved) return null;
   const map = barsMap(bars);

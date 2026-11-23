@@ -1,6 +1,6 @@
-<!-- 遅れを測る（仕様書 3 章 25-B ・ 33-A、6 章「遅れを測っている」「遅れを測れない」（ばらつき ・ 入口がない）、モック F7-Latency ・ R11-Fit）。
-     音の設定 ▸ くわしい設定の「遅れを測る…」からひらく（WorkspaceView.latencyDialog）。カチッという音を 5 回鳴らして平均を出し、
-     「この数を使う」で、その PC の設定にする（曲ではなく PC につく）。PC が言う数は AudioView.latency。 -->
+<!-- Measuring the latency (spec 3 25-B, 33-A; spec 6 "Measuring the latency", "Latency cannot be measured" (spread, no input); mock F7-Latency, R11-Fit).
+     Opened from 「遅れを測る…」 in sound settings ▸ advanced settings (WorkspaceView.latencyDialog). Plays a click 5 times and takes the average;
+     「この数を使う」 makes it the setting of that PC (it belongs to the PC, not the song). The number the PC reports is AudioView.latency. -->
 <script lang="ts">
   import { LATENCY_CLICKS, type LatencyMeasure } from "../bridge";
   import { movableDialog } from "../lib/dialogMove";
@@ -15,13 +15,13 @@
   const dash = t("meter.playTargetNone");
   const ms = (v: number | null) => t("latency.ms", { ms: v === null ? dash : msText(v) });
 
-  /** 測った数の行: 測っている間は、そこまでの平均と「（まだ 3 回の平均）」。終わったら、その数。 */
+  /** The measured-number row: while measuring, the average so far and 「（まだ 3 回の平均）」. When done, that number. */
   const measured = $derived.by((): { value: number | null; partial: number | null } => {
     if (measure?.state === "measuring") return { value: measure.meanMs, partial: measure.meanMs === null ? null : measure.done };
     if (measure?.state === "done") return { value: measure.measuredMs, partial: null };
     return { value: latency?.measuredMs ?? null, partial: null };
   });
-  /** 「測っています 3 / 5」は、棒をはさんで 2 つに分ける（モック F7-Latency）。 */
+  /** 「測っています 3 / 5」 is split in two around the bar (mock F7-Latency). */
   const progress = $derived.by(() => {
     if (measure?.state !== "measuring") return null;
     const parts = textParts("latency.measuring", { done: measure.done, total: measure.of });
@@ -32,21 +32,21 @@
       fraction: measure.of > 0 ? Math.min(1, measure.done / measure.of) : 0,
     };
   });
-  /** 測れなかったわけ（仕様書 6 章「遅れを測れない」「… ・ ばらつき」「… ・ 入口がない」）。 */
+  /** Why it could not be measured (spec 6 "Latency cannot be measured", "... spread", "... no input"). */
   const failure = $derived.by(() => {
     if (measure?.state !== "failed") return null;
     if (measure.reason === "tooQuiet") return t("latency.failed");
     if (measure.reason === "unsteady") return t("latency.failedUnsteady");
     return t("latency.failedNoInput");
   });
-  /** 入口がないときのボタン「音の設定…」: このダイアログを閉じて、下の音の設定（くわしい設定）に戻る。 */
+  /** The 「音の設定…」 button when there is no input: closes this dialog and goes back to the sound settings (advanced settings) below. */
   function toSettings(): void {
     void send({ type: "closeLatencyMeasure" });
     void send({ type: "openSettings", advanced: true });
   }
 
   const close = () => send({ type: "closeLatencyMeasure" });
-  /** やめる（Esc）: 測っている間は測るのをやめ、ほかはダイアログを閉じる。 */
+  /** Cancel (Esc): while measuring, stops measuring; otherwise closes the dialog. */
   const cancel = () => send(measure?.state === "measuring" ? { type: "stopLatencyMeasure" } : { type: "closeLatencyMeasure" });
 </script>
 
@@ -110,7 +110,7 @@
 {/if}
 
 <style>
-  /* 窓の上下のまん中（音の設定と同じ）。 */
+  /* Centred vertically in the window (same as the sound settings). */
   .place {
     position: absolute;
     inset: 0;
@@ -200,7 +200,7 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
-  /* 測っている棒（モック F7-Latency: 地 gray.4、accent）。 */
+  /* The measuring bar (mock F7-Latency: bg gray.4, accent). */
   .progress {
     display: flex;
     align-items: center;

@@ -1,13 +1,13 @@
-<!-- トラックの見出しの列（モック R7-Arrange6・R6-Tracks ・ F7-VocalTrack）と、いちばん下の「＋ 鍵盤のトラック」「＋ 歌のトラック」。アレンジの見出しの箱（trackMeters の区画）の中に置く。
-     押すとトラックを選ぶ（B-70）。名前を 2 回押す ・ F2 ・ 右クリックの「名前を変える」で、名前の場所がその場の入力の枠（仕様書 2 章）。
-     見出しを押したまま上下に動かすと並べかえ（仕様書 2 章「トラックを並べかえる印」）: 画面だけが先に動き、離したときに MoveTrack を 1 つ。
-     space.1 より動かさなかったら、ふつうに押した（選ぶ）。Esc はキーの順のいちばん前でやめる（pianoroll/view.svelte.ts の cancelDrag）。
-     音源の名前を押すと、その音源をえらぶ（パラメータの欄。19-A）。入れかえは右クリックの「音源を入れかえる…」と欄のボタン。
-     入れかえのためし弾き中は、ためし弾きの音源の名前を accent で（モック F4-ShelfReplace）。
-     歌のトラック（仕様書 2 章「歌のトラックの見出し」）: 2 段目は「入口 1 ・ モノ ▾」と「モニター」。● は選んでいなくても自分でつける。
-     ● がついている間、レベルの棒は入ってくる音（計器の mics）。
-     1 段目の M の左に「帯」（仕様書 2 章「見出しの「帯」のボタン」、3 章 94-9 ・ 36-B、モック F8-FirstLane）: 押すと帯を足す一覧。
-     ひらいている間は accent。名前の場所はその分（24）せまくなり、入りきらない名前は「…」。 -->
+<!-- The column of track heads (mock R7-Arrange6, R6-Tracks, F7-VocalTrack) and, at the bottom, 「＋ 鍵盤のトラック」 「＋ 歌のトラック」. Placed inside the arrange head box (the trackMeters slot).
+     A press selects the track (B-70). Pressing the name twice, F2, or 「名前を変える」 in the context menu turns the name into an input box in place (spec 2).
+     Dragging a head up or down reorders (spec 2 "Track reorder mark"): only the screen moves first, and one MoveTrack is sent on release.
+     If it moved less than space.1, it was a plain press (select). Esc cancels first in the key order (cancelDrag in pianoroll/view.svelte.ts).
+     Pressing the instrument name chooses that instrument (params panel; 19-A). Replacing is 「音源を入れかえる…」 in the context menu and the button in the panel.
+     While auditioning a replacement, the auditioned instrument name is accent (mock F4-ShelfReplace).
+     Vocal tracks (spec 2 "Vocal track head"): the second line is 「入口 1 ・ モノ ▾」 and 「モニター」. The ● is set on its own, even when not selected.
+     While the ● is on, the level bars show the incoming sound (mics in the meters).
+     「帯」 to the left of M on the first line (spec 2 "「帯」 button in the head", spec 3 (94-9, 36-B), mock F8-FirstLane): a press opens the list to add a band.
+     While open, it is accent. The name area gets that much (24) narrower, and a name that does not fit ends in 「…」. -->
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import type { TrackView } from "../bridge";
@@ -48,14 +48,14 @@
 
   const shiftKey = (letter: string) => `${t("key.shift")} ${letter}`;
 
-  /** 入れかえのためし弾き中のトラックの id と、ためし弾きの音源。 */
+  /** The id of the track being auditioned for a replacement, and the auditioned instrument. */
   const auditioned = $derived(
     shelf.mode.kind === "replace" && shelf.selectedSound !== null
       ? { track: shelf.mode.track, name: soundRefName(shelf.selectedSound, current.state!.library) }
       : null,
   );
 
-  // ---- 名前の入力の枠 ----
+  // ---- Name input box ----
 
   let field = $state<HTMLInputElement>();
   let draft = $state("");
@@ -73,7 +73,7 @@
       field?.select();
     });
   });
-  // 名前を打っている間に録音が始まったら、やめる（core は受けない）。
+  // If recording starts while a name is being typed, cancel (core does not take it).
   $effect(() => {
     if (busy) trackEdit.renaming = null;
   });
@@ -81,7 +81,7 @@
   function commitName(track: TrackView): void {
     trackEdit.renaming = null;
     const name = draft.trim();
-    // 空にしたら、もとの名前のまま（仕様書 3 章）。同じ名前なら手にしない。
+    // If emptied, keep the old name (spec 3). The same name is not an undo step.
     if (name !== "" && name !== track.name) send({ type: "renameTrack", track: track.id, name });
   }
   function fieldKey(e: KeyboardEvent, track: TrackView): void {
@@ -97,12 +97,12 @@
     }
   }
 
-  // ---- 押す ・ 並べかえる ----
+  // ---- Press and reorder ----
 
   let press: { id: number; from: number; y0: number; pointer: number; el: HTMLElement } | null = null;
   let drag = $state<{ id: number; from: number; dy: number } | null>(null);
   const trackH = $derived(metrics.px("size.track"));
-  /** トラックの行と、その下のオートメーションの帯（時間の側と同じ並び。automation/autoGeom.ts）。 */
+  /** Track rows and the automation bands under them (the same order as the time side; automation/autoGeom.ts). */
   const rows = $derived(
     arrangeRows(song.tracks, current.state!.automation.folded, {
       trackH,
@@ -176,14 +176,14 @@
     if (!busy) send({ type: "addVocalTrack" });
   }
 
-  /** 鍵盤のトラックの ● は弾くと鳴る先（SongView.keysTarget）、歌のトラックの ● は自分でつけた物。 */
+  /** The ● of a keyboard track is where playing sounds (SongView.keysTarget); the ● of a vocal track is the one set on it. */
   const armOn = (track: TrackView) => (track.kind.kind === "vocal" ? track.kind.armed : song.keysTarget === track.id);
   function arm(track: TrackView): void {
     if (track.kind.kind === "vocal") send({ type: "toggleVocalArm", track: track.id });
     else send({ type: "selectTrack", track: track.id, fromArm: true });
   }
 
-  /** 入口の一覧（モック F7-VocalTrack）: 入口 1 ・ モノ ／ 入口 2 ・ モノ ／ 入口 1 ・ 2 ・ ステレオ ／ 音の設定…。ボタンのすぐ下にひらく。 */
+  /** The input list (mock F7-VocalTrack): 「入口 1 ・ モノ」 / 「入口 2 ・ モノ」 / 「入口 1 ・ 2 ・ ステレオ」 / 「音の設定…」. Opens right under the button. */
   function openInputs(e: MouseEvent, track: TrackView): void {
     e.stopPropagation();
     const kind = track.kind;
@@ -224,7 +224,7 @@
               bind:value={draft}
               onkeydown={(e) => fieldKey(e, track)}
               onblur={() => {
-                // 枠の外を押したら決める（ヤチヨさんの決め 2026-11-18）。Esc のあとは renaming が null。
+                // A press outside the box commits (the owner's decision). After Esc, renaming is null.
                 if (trackEdit.renaming === track.id) commitName(track);
               }}
             />
@@ -246,7 +246,7 @@
             data-test="track-lanes"
             onclick={(e) => !busy && openLaneAdd(e.currentTarget, track, busy, true)}>{t("arrange.laneShort")}</button
           >
-          <!-- 録音中 ・ カウントイン中も使える（A-14）。 -->
+          <!-- Usable while recording and during count-in too (A-14). -->
           <button
             class="tog live"
             class:on={track.muted}
@@ -298,13 +298,13 @@
               >{t("arrange.instrumentAuditioned", { instrument: auditioned.name })}</button
             >
           {:else if track.standIn}
-            <!-- サイン波で代わりに鳴らしている（仕様書 3 章 85: gray.8。乗ると、わけ）。 -->
+            <!-- Playing with a sine wave instead (spec 3 (85): gray.8; hover shows why). -->
             <button class="m-plain m-lbl instrument" data-test="track-instrument" use:tip={standInTip(track.standIn, track.sound)} onclick={() => replaceInstrument(track)}
               oncontextmenu={(e) => instrumentContext(e, track)}
               >{t("track.standIn")}</button
             >
           {:else if track.sound.kind === "plugin"}
-            <!-- プラグインの音源: 押すと、えらぶ ＋ 窓（SelectInstrument）。入れかえは右クリックの「音源を入れかえる…」（user:2026-11-19）。 -->
+            <!-- A plugin instrument: a press chooses it and opens its window (SelectInstrument). Replacing is 「音源を入れかえる…」 in the context menu (the owner's decision). -->
             <button
               class="m-plain m-lbl instrument plugin"
               data-test="track-instrument"
@@ -315,7 +315,7 @@
             >
           {:else}
             {@const name = soundViewName(track.sound)}
-            <!-- 用語の説明がある音色（サイン波）だけ、乗せると説明が出る。 -->
+            <!-- Only presets with a term tip (the sine wave) show it on hover. -->
             {#if findTerm(name)}
               <button
                 class="m-plain m-lbl instrument"
@@ -388,17 +388,17 @@
     border-bottom: var(--line-hair) solid var(--color-gray-5);
     background: var(--color-gray-3);
   }
-  /* 選んだトラック（B-70）: 一覧の「選んだ行」と同じ地。 */
+  /* The selected track (B-70): the same background as the selected row of a list. */
   .track-head.selected {
     background: var(--color-gray-4);
   }
-  /* つまみ上げた見出し（仕様書 2 章「トラックを並べかえる印」）: accent の line.hair の枠。ほかの見出しより上に描く。 */
+  /* The lifted head (spec 2 "Track reorder mark"): an accent line.hair border. Drawn above the other heads. */
   .track-head.lifted {
     z-index: 2;
     outline: var(--line-hair) solid var(--color-accent);
     outline-offset: calc(-1 * var(--line-hair));
   }
-  /* 入る所: accent の line.mark の横線。見出しの境に重ねる。 */
+  /* Where it goes: a horizontal accent line.mark, over the border between heads. */
   .insert {
     position: absolute;
     left: 0;
@@ -439,7 +439,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* トラックの名前の入力の枠（仕様書 2 章: 地 gray.0、枠 gray.10、太さ 600）。高さはモック R6-Tracks の 20（M ・ S ・ ● と同じ）。 */
+  /* The track name input box (spec 2: background gray.0, border gray.10, weight 600). Height 20 from mock R6-Tracks (the same as M, S, ●). */
   .name-field {
     flex: 1;
     min-width: 0;
@@ -499,7 +499,7 @@
     border-color: var(--color-gray-8);
     color: var(--color-gray-10);
   }
-  /* オン（仕様書 2 章: 枠と文字 accent。● だけ rec）。 */
+  /* On (spec 2: border and text accent; only ● uses rec). */
   .tog.live.on {
     border-color: var(--color-accent);
     color: var(--color-accent);
@@ -508,7 +508,7 @@
     border-color: var(--color-rec);
     color: var(--color-rec);
   }
-  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8）。 */
+  /* Pressed (spec 2: bg gray.2, border gray.8). */
   .tog.live:active {
     background: var(--color-gray-2);
     border-color: var(--color-gray-8);
@@ -516,11 +516,11 @@
   .meter {
     height: calc(var(--part-meter-horizontal) * 2 + var(--line-hair));
   }
-  /* 歌のトラックの「入口なし ▾」（仕様書 3 章: gray.8）。 */
+  /* 「入口なし ▾」 of a vocal track (spec 3: gray.8). */
   .instrument.no-input {
     color: var(--color-gray-8);
   }
-  /* 「モニター」（モック F7-VocalTrack: 高さ 20。オンは「えらんでいる」の形 = 枠と文字 accent）。 */
+  /* 「モニター」 (mock F7-VocalTrack: height 20; on uses the chosen form = border and text accent). */
   .monitor {
     box-sizing: border-box;
     flex-shrink: 0;
@@ -545,7 +545,7 @@
     border-color: var(--color-accent);
     color: var(--color-accent);
   }
-  /* 「＋ 鍵盤のトラック」「＋ 歌のトラック」（モック F7-VocalTrack: 文字 gray.9、左の箱は幅 120）。録音中は「使えない」。 */
+  /* 「＋ 鍵盤のトラック」 「＋ 歌のトラック」 (mock F7-VocalTrack: text gray.9, the left box 120 wide). Disabled while recording. */
   .adds {
     display: flex;
   }

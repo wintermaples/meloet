@@ -1,4 +1,4 @@
-<!-- ボタン（仕様書 2 章「ボタン」）。primary はモックの「ここから鳴らす」「これで決まり」の明るい枠。 -->
+<!-- Button (spec 2 "Button"). primary is the bright border of 「ここから鳴らす」 and 「これで決まり」 in the mock. -->
 <script lang="ts">
   import type { Snippet } from "svelte";
 

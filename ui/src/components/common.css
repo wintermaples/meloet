@@ -1,4 +1,4 @@
-/* 部品どうしで同じ見た目の物（仕様書 2 章「部品と状態」）。main.ts から一度だけ読む。 */
+/* Looks shared between parts (spec 2 "Parts and states"). Loaded once from main.ts. */
 
 html,
 body {
@@ -11,7 +11,7 @@ body {
   font-size: var(--text-s-size);
   line-height: var(--text-s-line-height);
   font-weight: var(--text-s-weight-400);
-  /* ドラッグで文字が選ばれるのは、文字の枠の中だけ（WebKitGTK は -webkit- の名前も読む）。 */
+/* Dragging selects text only inside text boxes (WebKitGTK also reads the -webkit- names). */
   -webkit-user-select: none;
   user-select: none;
 }
@@ -29,7 +29,7 @@ textarea,
   box-sizing: border-box;
 }
 
-/* ボタン: 高さ 24、左右の内がわ 8、角 1。 */
+/* Button: height 24, padding 8 on left and right, corner 1. */
 .m-btn {
   height: var(--part-button-height);
   padding: 0 var(--part-button-pad-x);
@@ -59,18 +59,18 @@ textarea,
   height: var(--part-button-icon);
 }
 
-/* 押せる物の共通の外がわの線（キーボードでえらんでる）。 */
+/* The shared outer line of pressable things (chosen by keyboard). */
 button:focus-visible,
 [role="slider"]:focus-visible {
   outline: var(--line-hair) solid var(--color-gray-10);
   outline-offset: var(--line-hair);
 }
-/* まわりの箱が外がわを切る所（帯札、縦の見出し、欄の見出し、一覧の行）は、内がわ 1px あけて描く。 */
+/* Where the surrounding box clips the outside (band tabs, vertical headings, panel headings, list rows), draw it 1px inside. */
 .m-focus-in:focus-visible {
   outline-offset: calc(-2 * var(--line-hair));
 }
 
-/* 使えない: 枠 gray.5、文字 gray.7、押せない。用語の説明は出したいので disabled は使わない。 */
+/* Disabled: border gray.5, text gray.7, cannot be pressed. disabled is not used because term tips should still show. */
 .m-btn[aria-disabled="true"],
 .m-btn[aria-disabled="true"]:hover,
 .m-btn[aria-disabled="true"]:active {
@@ -80,7 +80,7 @@ button:focus-visible,
   cursor: default;
 }
 
-/* ふつうの文字だけのボタン（帯札、縦の見出し、状態行のボタン）。 */
+/* Plain text-only buttons (band tabs, vertical headings, status line buttons). */
 .m-plain {
   margin: 0;
   padding: 0;

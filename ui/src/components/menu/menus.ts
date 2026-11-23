@@ -1,4 +1,4 @@
-// 上のメニューの行の中身（docs/history/design-notes.ja.md B-59）。DOM を知らない。キーのある行は、キーと同じ道（keys/attach.ts の runKeyAction）を通す。
+// Content of the menu bar (docs/history/design-notes.ja.md B-59). Does not know the DOM. Rows with a key go the same way as the key (runKeyAction in keys/attach.ts).
 
 import type { AppState, Band, Command } from "../../bridge";
 import { SCALES } from "../../design/tokens";
@@ -18,17 +18,17 @@ import { listEntries } from "./contextMenu.svelte";
 export interface ListRow {
   kind: "row";
   label: string;
-  /** 行の右に書くキー（書いたままの字）。 */
+  /** The key written on the right of the row (as written). */
   key?: string;
   usable: boolean;
-  /** オン ・ オフの行と、えらぶ行の選ぶ印。undefined は「することの行」（印はからのまま）。 */
+  /** The choice mark of on/off rows and choice rows. undefined is an action row (the mark stays empty). */
   checked?: boolean;
   run?: () => void;
-  /** 使えない理由。乗せている間だけ、行の中に出す。 */
+  /** The reason it is disabled. Shown inside the row only on hover. */
   hint?: string;
-  /** ▸ の子の一覧（右にひらく）。 */
+  /** The ▸ child list (opens to the right). */
   sub?: ListEntry[];
-  /** 色の一覧の行（仕様書 2 章）: 選ぶ印のあとの 24×12 の色の見本。トラックの色 1〜5。 */
+  /** Color list row (spec 2): a 24×12 color sample after the choice mark. Track colors 1–5. */
   swatch?: number;
 }
 export interface ListHeading {
@@ -47,7 +47,7 @@ export interface TopMenu {
 
 export const TOP_MENUS: readonly TextKey[] = ["menu.file", "menu.edit", "menu.view", "menu.play", "menu.notes", "menu.track", "menu.help"];
 
-/** キーの書きかた（「Ctrl Shift S」「Cmd ,」「Shift M」）。Mac は Cmd と Option（docs/history/design-notes.ja.md A-2）。 */
+/** How keys are written (「Ctrl Shift S」「Cmd ,」「Shift M」). Mac uses Cmd and Option (docs/history/design-notes.ja.md A-2). */
 export function keyNames(platform: Platform) {
   const mod = platform === "mac" ? t("key.cmd") : t("key.ctrl");
   const alt = platform === "mac" ? t("key.option") : t("key.alt");
@@ -59,18 +59,18 @@ export function keyNames(platform: Platform) {
   };
 }
 
-/** 選んだトラックが歌のトラックなら、その id。 */
+/** The id of the selected track if it is a vocal track. */
 function vocalTarget(state: AppState): number | null {
   const track = state.song.tracks.find((x) => x.id === state.song.playTarget);
   return track?.kind.kind === "vocal" ? track.id : null;
 }
 
-/** メニューを組み立てる。deps.send に送る。scale ・ unfit は拡大率の子の一覧のため。 */
+/** Builds the menus. Sends to deps.send. scale and unfit are for the scale child list. */
 export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): TopMenu[] {
   const k = keyNames(platform);
   const busy = songBusy(state);
   const prOpen = pianoRollOpen(state);
-  // 使えるかを見るときは、再生の位置を読まない（60 Hz で組みなおさないように。位置で使える ・ 使えないは変わらない）。
+  // When checking what can be used, do not read the play position (so it is not rebuilt at 60 Hz; the position does not change what can be used).
   const look: KeyDeps = { ...deps, playTick: () => 0 };
   const send = (c: Command) => () => deps.send(c);
 
@@ -104,7 +104,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.save", { kind: "saveSong" }, k.mod(t("key.saveSong"))),
     act("menu.saveAs", { kind: "saveSongAs" }, k.modShift(t("key.saveSong"))),
     { kind: "separator" },
-    // 選んだ歌のトラックの再生の線の所、なければ新しい歌のトラック（仕様書 3 章 29-A。決めるのは Rust）。
+    // At the play line of the selected vocal track, or a new vocal track if none (spec 3 29-A; Rust decides).
     plain("menu.importAudio", !busy, () => deps.send({ type: "importAudio", track: vocalTarget(state) })),
     act("menu.export", { kind: "export" }, k.modShift(t("key.export"))),
     act("menu.audioSettings", { kind: "audioSettings" }, k.mod(t("key.audioSettings"))),
@@ -112,7 +112,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.quit", { kind: "quit" }, k.mod(t("key.quit"))),
   ];
 
-  // キーと同じく、ピアノロールとアレンジのうちキーが向いている方へ。
+  // Like the key, to whichever of the piano roll and the arrange the keys go to.
   const toArrange = !(prOpen && prView.focus === "pianoRoll");
   const edit: ListEntry[] = [
     act("menu.undo", { kind: "undo" }, k.mod(t("key.undo")), { usable: state.song.undoCount > 0 && !busy }),
@@ -131,7 +131,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
 
   const scale = state.workspace.scale;
   const unfit = state.workspace.unfitScales;
-  // 表示の帯の行は、ひらいているかを左の印で見せる（仕様書 3 章）。
+  // Band rows of the View menu show whether the band is open with the mark on the left (spec 3).
   const layout = state.workspace.layout;
   const bandOpen = (band: Band) => layout.lower.some((l) => l.band === band) || layout.rightOpen.includes(band);
   const view: ListEntry[] = [
@@ -212,7 +212,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
         choice(t("inspector.on"), scaleOf.lock, prOpen, send({ type: "setMusicalScale", root: scaleOf.root, mode: scaleOf.mode, lock: true })),
         choice(t("inspector.off"), !scaleOf.lock, prOpen, send({ type: "setMusicalScale", root: scaleOf.root, mode: scaleOf.mode, lock: false })),
         { kind: "heading", label: t("scale.kind") },
-        // 音階をえらんだらオンになる（B-65、道具の列の ▾ と同じ）。
+        // Choosing a scale turns it on (B-65, the same as the ▾ in the tool row).
         ...(["major", "minor"] as const).map((mode) =>
           choice(
             t(mode === "major" ? "scale.major" : "scale.minor"),
@@ -237,7 +237,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
   const track: ListEntry[] = [
     act("menu.mute", { kind: "trackMute" }, k.shift(t("key.mute")), { checked: target?.muted ?? false }),
     act("menu.solo", { kind: "trackSolo" }, k.shift(t("key.solo")), { checked: target?.soloed ?? false }),
-    // 録音待機は、いつも選んだトラック（仕様書 3 章）。歌のトラックの ● は、つける ・ 外すの切りかえ（24-C）。
+    // Record arm is always on the selected track (spec 3). The ● of a vocal track toggles on and off (24-C).
     target?.kind.kind === "vocal"
       ? plain("menu.arm", !busy, () => deps.send({ type: "toggleVocalArm", track: target.id }), { checked: target.kind.armed })
       : plain("menu.arm", target !== null && !busy, () => target && deps.send({ type: "selectTrack", track: target.id, fromArm: true }), {
@@ -253,8 +253,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     ...listEntries([edits.rename, edits.color, edits.up, edits.down, { kind: "separator" }, edits.remove]),
   ];
 
-  // 「meloet について」の中身（ダイアログ）は区切り2。
-  // ほかのダイアログ（曲 ・ 音の設定）がひらいている間はひらかない（Esc の順が 1 つに決まるように）。
+  // Not opened while another dialog (song, sound settings) is open (so the Esc order stays single).
   const help: ListEntry[] = [plain("menu.about", !state.workspace.songDialog && !state.workspace.settings && !state.plugins.stoppedOpen, openAbout)];
 
   return [file, edit, view, play, notes, track, help].map((entries, i) => ({ label: t(TOP_MENUS[i]!), entries }));

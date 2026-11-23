@@ -1,5 +1,5 @@
-<!-- ダイアログ「スキャンで止まったプラグイン」（仕様書 2 章「ダイアログ」「スキャンで止まった物の行」、3 章 Y13、6 章、モック F5-ScanStopped）。
-     ひらく ・ 閉じる ・ もう一度ためすは core への意図。Esc は Rust の back（閉じる）。 -->
+<!-- The 「スキャンで止まったプラグイン」 dialog (spec 2 "Dialog", "Row of a plugin stopped in a scan"; spec 3 Y13; spec 6; mock F5-ScanStopped).
+     Open, close and try again are intents to core. Esc is Rust's back (close). -->
 <script lang="ts">
   import type { StoppedPluginView } from "../../bridge";
   import { movableDialog } from "../../lib/dialogMove";
@@ -59,7 +59,7 @@
 {/if}
 
 <style>
-  /* 高さは中身に合わせ、窓の上下 24 ずつのあきまで。それをこえたら、間の中身だけスクロールする。 */
+  /* The height follows the content, up to a gap of 24 above and below the window. Past that, only the content between scrolls. */
   .place {
     position: absolute;
     inset: 0;
@@ -100,7 +100,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     cursor: move;
   }
-  /* 見出しの行に乗る ・ 動かしている: 地 gray.4（仕様書 2 章「ダイアログの見出しの行（動かす）」）。 */
+  /* Hovering or moving the heading row: bg gray.4 (spec 2 "Dialog heading row (moving)"). */
   .head:hover {
     background: var(--color-gray-4);
   }
@@ -149,7 +149,7 @@
     color: var(--color-gray-10);
     font-weight: var(--text-s-weight-600);
   }
-  /* 形式の印（モック F5-ScanStopped の `.fm`: 左右 4、枠 gray.7、文字 gray.8）。 */
+  /* Format mark (`.fm` in mock F5-ScanStopped: 4 left and right, border gray.7, text gray.8). */
   .format {
     flex-shrink: 0;
     padding: 0 var(--space-1);

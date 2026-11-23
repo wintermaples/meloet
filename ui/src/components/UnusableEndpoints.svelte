@@ -1,6 +1,6 @@
-<!-- 「いまは使えない出口」「いまは使えない入口」の見出しと、その下のえらべない行（仕様書 2 章「えらべない出口の行」、
-     3 章「入口も、出口と同じに扱う…」、6 章）。たたんで始める。行は押せない。
-     見出しはモック F-Connect2（流れ 2）と F-Settings（音の設定）。 -->
+<!-- The 「いまは使えない出口」 / 「いまは使えない入口」 heading and the unusable rows under it (spec 2, the row of an output that cannot be chosen;
+     spec 3 「入口も、出口と同じに扱う…」; spec 6). Starts folded. The rows cannot be pressed.
+     The heading follows mock F-Connect2 (flow 2) and F-Settings (sound settings). -->
 <script lang="ts">
   import { tipWhenCut } from "../lib/tip.svelte";
   import type { UnusableLook } from "./endpoint";
@@ -13,7 +13,7 @@
   }: {
     rows: readonly UnusableLook[];
     heading: string;
-    /** 見出しの右の文。 */
+    /** The text to the right of the heading. */
     note?: string | null;
     size: "connect" | "settings";
   } = $props();

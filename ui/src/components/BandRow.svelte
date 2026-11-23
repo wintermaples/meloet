@@ -1,4 +1,4 @@
-<!-- 帯札の行（仕様書 2 章「帯札」、3 章。モック F-Empty・A-PianoRoll の下から 2 行目）。 -->
+<!-- The row of band tabs (spec 2 "Band tab", spec 3; mock F-Empty, A-PianoRoll second row from the bottom). -->
 <script lang="ts">
   import type { Band } from "../bridge";
   import { space } from "../design/tokens";
@@ -9,7 +9,7 @@
   import { dbNumber, termParts } from "./format";
   import { metrics } from "./metrics.svelte";
 
-  /** term は名前の用語の説明、countTerm は件数の文の中の用語（仕様書 5 章にある物だけ）。 */
+  /** term is the term tip of the name; countTerm is the term inside the count text (only terms that are in spec 5). */
   type Tab = { band: Band | "arrange"; name: string; count: string; key: string; open: boolean; term?: string; countTerm?: string };
 
   const app = $derived(current.state!);
@@ -26,7 +26,7 @@
       term: "ピアノロール",
       countTerm: "ノート",
     },
-    // マスターのフェーダーの値。今回は 0.0 dB のまま（docs/history/progress.ja.md）。
+    // The master fader value. It stays at 0.0 dB for now (docs/history/progress.ja.md).
     {
       band: "mixer",
       name: t("band.mixer"),
@@ -102,7 +102,7 @@
     background: var(--color-gray-1);
     border-top-color: var(--color-accent);
   }
-  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。 */
+  /* Pressed (spec 2: bg gray.2, border gray.8, drawn on the inside). */
   .tab:active,
   .tab.open:active {
     background: var(--color-gray-2);

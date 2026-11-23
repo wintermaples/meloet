@@ -1,7 +1,7 @@
-// 右クリックの一覧（docs/history/design-notes.ja.md B-60）。右クリックされた部品が openContextMenu を呼び、App にひとつだけ置く
-// ContextMenu.svelte が描く。形は仕様書 2 章の「一覧」（行の右にキー）。WebKit の一覧は、どこでも出さない。
-// 選ばれていない物を右クリックしたら、部品がそれだけを選んでから呼ぶ。どの道具でも右クリックは一覧。
-// インサートと音源の枠は選ばない（選ぶとプラグインの窓がひらく）。行が、その枠をさして動く。
+// Context menu (docs/history/design-notes.ja.md B-60). The right-clicked part calls openContextMenu, and the single
+// ContextMenu.svelte in App draws it. The form is the 「一覧」 (List) of spec 2 (keys on the right of rows). The WebKit menu is never shown.
+// When something not selected is right-clicked, the part selects only it before calling. Right click opens the list with every tool.
+// Insert and instrument slots are not selected (selecting opens the plugin window). The rows act on that slot.
 
 import { t, type TextKey } from "../../text/ja";
 import type { ListEntry } from "./menus";
@@ -9,17 +9,17 @@ import type { ListEntry } from "./menus";
 export interface MenuRow {
   kind: "row";
   label: TextKey;
-  /** 穴を埋めた名前（「色 1」）。なければ label の文。 */
+  /** The name with the holes filled (「色 1」). Otherwise the label text. */
   text?: string;
-  /** 行の右に書くキー（書いたままの字）。なければ出さない。 */
+  /** The key written on the right of the row (as written). Not shown if missing. */
   key?: string;
   usable: boolean;
   run: () => void;
-  /** オン ・ オフの行の選ぶ印（一覧の行と同じ）。 */
+  /** The choice mark of an on/off row (the same as list rows). */
   checked?: boolean;
-  /** ▸ の子の一覧。 */
+  /** The ▸ child list. */
   sub?: MenuEntry[];
-  /** 色の一覧の行の、色の見本（トラックの色 1〜5）。 */
+  /** The color sample of a color list row (track colors 1–5). */
   swatch?: number;
 }
 
@@ -31,19 +31,19 @@ export type MenuEntry = MenuRow | MenuSeparator;
 
 export const contextMenu = $state({ open: null as { x: number; y: number; entries: MenuEntry[] } | null });
 
-/** x, y は押した所（CSS px、窓の左上から）。行がなければ何も出さない。 */
+/** x, y is where it was pressed (CSS px from the top left of the window). Shows nothing if there are no rows. */
 export function openContextMenu(x: number, y: number, entries: MenuEntry[]): void {
   contextMenu.open = entries.some((e) => e.kind === "row") ? { x, y, entries } : null;
 }
 
-/** とじた（ひらいていた）なら true。Esc の順では「用語の説明やメニュー」の番。 */
+/** true if it closed (it was open). It takes the 「用語の説明やメニュー」 turn in the Esc order. */
 export function closeContextMenu(): boolean {
   if (!contextMenu.open) return false;
   contextMenu.open = null;
   return true;
 }
 
-/** 右クリックの一覧の行を、一覧（MenuList）の行にする。上のメニューでも同じ行を使うときに。 */
+/** Turns context menu rows into list (MenuList) rows. For when the menu bar uses the same rows. */
 export function listEntries(entries: readonly MenuEntry[]): ListEntry[] {
   return entries.map((e) =>
     e.kind === "separator"

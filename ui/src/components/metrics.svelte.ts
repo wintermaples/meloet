@@ -1,11 +1,11 @@
-// いまの拡大率と devicePixelRatio での数値（CSS px）。WebGL の印（glSlot）に渡す数など、
-// CSS の変数ではなく JS の数が要る所で使う。
+// Values (CSS px) at the current scale and devicePixelRatio. For places that need a JS number instead of a CSS variable,
+// such as the numbers passed to the WebGL mark (glSlot).
 import { SCALES, tokensAt, type Scale } from "../design/tokens";
 import { current } from "../state/app.svelte";
 
 let dpr = $state(typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
 
-/** devicePixelRatio が変わったら（窓を別の画面へ動かした、など）知らせる。やめる関数を返す。 */
+/** Reports when devicePixelRatio changes (the window moved to another screen, for example). Returns a function that stops it. */
 export function watchDevicePixelRatio(): () => void {
   let query: MediaQueryList | null = null;
   const listen = () => {
@@ -31,16 +31,16 @@ export const metrics = {
   get dpr(): number {
     return dpr;
   },
-  /** 名前（"space.1"、"mock.arrange.bar" など）の、いまの CSS px。 */
+  /** The current CSS px of a name ("space.1", "mock.arrange.bar", ...). */
   px(name: string): number {
     const key = `${this.scale}@${dpr}`;
     let table = cache.get(key);
     if (!table) cache.set(key, (table = tokensAt(this.scale, dpr)));
     const v = table[name];
-    if (typeof v !== "number") throw new Error(`数値の名前がない: ${name}`);
+    if (typeof v !== "number") throw new Error(`no value with this name: ${name}`);
     return v;
   },
-  /** Rust が送る 100 % の px に率をかける。 */
+  /** Multiplies px at 100 % sent by Rust by the scale. */
   scaled(px100: number): number {
     return (px100 * this.scale) / 100;
   },

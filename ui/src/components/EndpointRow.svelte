@@ -1,4 +1,4 @@
-<!-- 出口 ・ 入口の行（仕様書 2 章「出口 ・ 入口の行」）。流れ 2 では高さ 32 とテスト音、音の設定では高さ 24。 -->
+<!-- Output and input row (spec 2 "Output and input row"). 32 high with a test sound in flow 2, 24 high in the sound settings. -->
 <script lang="ts">
   import { tipWhenCut } from "../lib/tip.svelte";
   import { t } from "../text/ja";
@@ -17,17 +17,17 @@
     selected: boolean;
     disabled: boolean;
     size: "connect" | "settings";
-    /** 見せるだけで押せない（見た目は「使えない」にしない）。 */
+    /** Shown only, cannot be pressed (does not look disabled). */
     still?: boolean;
     onpick?: () => void;
-    /** あるときだけ、右はしにテスト音のボタンを出す。 */
+    /** Only when given, a test sound button at the right end. */
     ontest?: () => void;
   } = $props();
 
   const connect = $derived(size === "connect");
   let row = $state<HTMLElement>();
 
-  // ↑ ↓ でえらんだ行を、スクロールする一覧の中で見える所へ。
+  // Scroll the row chosen with ↑ ↓ into view inside the scrolling list.
   $effect(() => {
     if (connect && selected) row?.scrollIntoView?.({ block: "nearest" });
   });
@@ -195,7 +195,7 @@
     outline-offset: var(--line-hair);
   }
 
-  /* 使えない（仕様書 2 章）: 枠 gray.5 ・ 文字 gray.7 ・ 押せない */
+  /* Disabled (spec 2): border gray.5, text gray.7, cannot be pressed */
   .row.disabled .ep-name,
   .row.disabled .friendly,
   .row.disabled .link {

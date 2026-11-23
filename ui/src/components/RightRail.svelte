@@ -1,5 +1,5 @@
-<!-- 右はし: ひらいた欄（棚かパラメータ。前に出ている物だけ）と、たたんだ物の縦の見出し。
-     モック F-Empty（縦の見出し）、F-WindowOpen（パラメータの縦の見出しの、えらんだ子の名前と数）。中身は Shelf.svelte と params/ParamsPanel.svelte。 -->
+<!-- Right end: the open panel (shelf or params; only the one in front) and the vertical headings of folded ones.
+     Mock F-Empty (vertical headings), F-WindowOpen (in the params vertical heading, the name and count of the chosen plugin). Contents are Shelf.svelte and params/ParamsPanel.svelte. -->
 <script lang="ts">
   import type { Band } from "../bridge";
   import { current, send } from "../state/app.svelte";
@@ -108,7 +108,7 @@
   .tab:hover .m-lbl {
     color: var(--color-gray-10);
   }
-  /* 押した（仕様書 2 章: bg gray.2 ・ 枠 gray.8。枠は内がわに描く）。 */
+  /* Pressed (spec 2: bg gray.2, border gray.8, drawn on the inside). */
   .tab:active {
     background: var(--color-gray-2);
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);

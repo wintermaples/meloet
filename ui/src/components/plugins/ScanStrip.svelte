@@ -1,5 +1,5 @@
-<!-- 棚の下のスキャンの帯（仕様書 3 章 Y13、6 章「スキャン中」、モック R9-Scan）。スキャンが動いている間だけ。
-     数が変わったときだけ書きかわる（60 Hz では動かさない）。 -->
+<!-- The scan strip under the shelf (spec 3 Y13, spec 6 "Scanning", mock R9-Scan). Only while a scan runs.
+     It is rewritten only when the numbers change (not moved at 60 Hz). -->
 <script lang="ts">
   import { scanStripText } from "./scan";
 

@@ -1,5 +1,5 @@
-// 数字の欄の、範囲の外の値（docs/history/design-notes.ja.md B-68）。数字として読めれば近いはしにして決め、読めなければ null（「こわれた」の枠）。
-// 丸めたときは、送る ClampValue の中身（field ・ value ・ range）もいっしょに返す。DOM を知らない純粋な関数。
+// Out-of-range values in number fields (docs/history/design-notes.ja.md B-68). If it reads as a number, set it to the nearer end; if not, null (the "broken" border).
+// When clamped, also returns the contents of the ClampValue to send (field, value, range). Pure functions with no DOM.
 
 import type { ValueField } from "../bridge";
 import { tempoText } from "./format";
@@ -8,23 +8,23 @@ import { METER_DENS, METER_NUM_MAX, positionText, TEMPO_MAX, TEMPO_MIN, type Bar
 
 export interface ClampNote {
   field: ValueField;
-  /** 決めた値（画面に出す書きかた）。 */
+  /** The value set (written as shown on screen). */
   value: string;
   range: string | null;
 }
 
 export interface Read<T> {
   value: T;
-  /** 範囲の外だったので丸めた。範囲の中なら null。 */
+  /** Clamped because it was out of range. null if in range. */
   clamp: ClampNote | null;
 }
 
-/** 打ちこんだ文字を、全角の数字や記号、U+2212 のマイナスも読めるようにそろえる。 */
+/** Normalizes typed text so that full-width digits and symbols and the U+2212 minus can be read too. */
 const tidy = (s: string) => s.normalize("NFKC").trim().replace(/−/g, "-");
 
 const NUMBER = /^(-?)(\d*)(?:\.(\d*))?$/;
 
-/** 小数を digits けたで四捨五入して、10^digits 倍の整数に（文字のまま数えるので、120.555 も 12056 になる）。読めなければ null。 */
+/** Rounds a decimal to digits places, as an integer times 10^digits (it works on the text, so 120.555 also becomes 12056). null if unreadable. */
 export function readScaled(s: string, digits: number): number | null {
   const m = tidy(s).match(NUMBER);
   if (!m || (m[2] === "" && (m[3] ?? "") === "")) return null;
@@ -37,7 +37,7 @@ export function readScaled(s: string, digits: number): number | null {
 
 const clampTo = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** テンポ（30.00〜300.00。小数第 2 位まで）。 */
+/** Tempo (30.00 to 300.00, up to 2 decimal places). */
 export function readTempo(s: string): Read<number> | null {
   const centi = readScaled(s, 2);
   if (centi === null) return null;
@@ -46,14 +46,14 @@ export function readTempo(s: string): Read<number> | null {
   return { value, clamp: kept === centi ? null : { field: "tempo", value: tempoText(value), range: null } };
 }
 
-/** 拍子の下: 2 ・ 4 ・ 8 ・ 16 のいちばん近い値。同じだけ離れていたら大きいほう。 */
+/** Time signature bottom: the nearest of 2, 4, 8, 16. The larger one on a tie. */
 export function nearestDen(n: number): number {
   let best = METER_DENS[0]!;
   for (const d of METER_DENS) if (Math.abs(d - n) <= Math.abs(best - n)) best = d;
   return best;
 }
 
-/** 拍子（「4/4」）。上は 1〜12、下は nearestDen。両方を丸めたときは上のことだけ言う。 */
+/** Time signature (「4/4」). Top 1 to 12, bottom nearestDen. When both are clamped, only the top is mentioned. */
 export function readMeter(s: string): Read<Meter> | null {
   const m = tidy(s).match(/^([^/]*)\/([^/]*)$/);
   if (!m) return null;
@@ -71,7 +71,7 @@ export function readMeter(s: string): Read<Meter> | null {
   return { value: { num, den }, clamp };
 }
 
-/** ベロシティ（1〜127）。 */
+/** Velocity (1 to 127). */
 export function readVelocity(s: string): Read<number> | null {
   const raw = readScaled(s, 0);
   if (raw === null) return null;
@@ -80,8 +80,8 @@ export function readVelocity(s: string): Read<number> | null {
 }
 
 /**
- * 再生の位置（「5」「5.2」「5.2.0960」。区切りの前後の空白はあってよい）を曲の中のティックに。
- * 小節は 1 から、拍は 1〜拍子の上、ティックは 0〜その拍子の 1 拍のティック − 1 に、それぞれ入れる。2 つ以上丸めたときは、いちばん大きい単位のことだけ言う。
+ * The playback position (「5」「5.2」「5.2.0960」; spaces around the dividers are fine) as ticks in the song.
+ * Clamps the bar to 1 and up, the beat to 1 to the top of the time signature, and the tick to 0 to (ticks per beat − 1). When two or more are clamped, only the largest unit is mentioned.
  */
 export function readPosition(s: string, bars: Bars): Read<number> | null {
   const parts = tidy(s).split(/\s*\.\s*/);

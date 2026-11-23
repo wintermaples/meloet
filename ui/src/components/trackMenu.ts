@@ -1,5 +1,5 @@
-// トラックを変える行（仕様書 3 章「第 6 版で足した決まり」Y5）。右クリックの一覧（トラックの見出し）と、上のメニューの「トラック」が使う。
-// 録音中とカウントイン中は、core が受けないので「使えない」。
+// The rows that change tracks (spec 3 "Rules added in version 6", Y5). Used by the context menu of the track head and the 「トラック」 menu.
+// While recording and during count-in, core does not take them, so they are disabled.
 
 import { VOCAL_INPUTS, type AppState, type Command, type TrackView, type VocalInput } from "../bridge";
 import { songBusy } from "../keys/attach";
@@ -17,7 +17,7 @@ export interface TrackRows {
   remove: MenuRow;
 }
 
-/** 名前を変える ・ 色 ▸ ・ 上へ動かす ・ 下へ動かす ・ トラックを消す。track が null（トラックがない）なら、どれも「使えない」。 */
+/** Rename, color ▸, move up, move down, delete track. When track is null (no track), all are disabled. */
 export function trackRows(state: AppState, track: TrackView | null, send: (c: Command) => void): TrackRows {
   const can = track !== null && !songBusy(state);
   const at = track ? state.song.tracks.findIndex((x) => x.id === track.id) : -1;
@@ -48,8 +48,8 @@ export function trackRows(state: AppState, track: TrackView | null, send: (c: Co
 }
 
 /**
- * トラックの見出しの右クリック（モック R6-Tracks）: ミュート ・ ソロ ・ 録音待機 ／（歌のトラックは「音のファイルを入れる…」／）名前を変える ・ 色 ▸ ・ 上へ ・ 下へ ／ トラックを消す。
- * selected: 録音待機の印（鍵盤のトラックは弾くと鳴る先、歌のトラックは選んだ）。右クリックはそのトラックを選んでからひらくので、選んだあとの形で渡す。
+ * The context menu of a track head (mock R6-Tracks): mute, solo, arm / (vocal tracks: 「音のファイルを入れる…」 /) rename, color ▸, up, down / delete track.
+ * selected: the arm mark (for a keyboard track, where playing sounds; for a vocal track, selected). The menu opens after selecting the track, so pass the state after selecting.
  */
 export function trackContextMenu(
   state: AppState,
@@ -60,7 +60,7 @@ export function trackContextMenu(
 ): MenuEntry[] {
   const rows = trackRows(state, track, send);
   const open = (): void => send({ type: "openPianoRoll", track: track.id });
-  // ミュートは録音中 ・ カウントイン中も受ける（A-14）。
+  // Mute is taken while recording and during count-in too (A-14).
   return [
     ...(track.kind.kind === "keys"
       ? ([
@@ -71,11 +71,11 @@ export function trackContextMenu(
     { kind: "row", label: "menu.mute", usable: true, run: () => send({ type: "toggleMute", track: track.id }), key: shiftKey(t("key.mute")), checked: track.muted },
     { kind: "row", label: "menu.solo", usable: true, run: () => send({ type: "toggleSolo", track: track.id }), key: shiftKey(t("key.solo")), checked: track.soloed },
     track.kind.kind === "vocal"
-      ? // 歌のトラックの ● は、選んでいなくても自分でつける ・ 外す（仕様書 3 章 24-C）。選ぶと、つく。
+      ? // The ● of a vocal track is set and cleared on its own, even when not selected (spec 3 (24-C)). Selecting sets it.
         { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "toggleVocalArm", track: track.id }), checked: track.kind.armed || selected }
       : { kind: "row", label: "menu.arm", usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }), checked: selected },
     { kind: "separator" },
-    // 歌のトラックだけ: そのトラックの再生の線の所へ音のファイルを入れる（仕様書 3 章 29-A）。
+    // Vocal tracks only: put a sound file at the playhead on that track (spec 3 (29-A)).
     ...(track.kind.kind === "vocal"
       ? ([
           { kind: "row", label: "menu.importAudio", usable: !songBusy(state), run: () => send({ type: "importAudio", track: track.id }) },
@@ -92,8 +92,8 @@ export function trackContextMenu(
 }
 
 /**
- * 歌のトラックの入口の一覧（仕様書 3 章「歌のトラックの見出し」、モック F7-VocalTrack）: 入口 1 ・ モノ ／ 入口 2 ・ モノ ／ 入口 1 ・ 2 ・ ステレオ ／
- * 音の設定…。見出しの「入口 1 ・ モノ ▾」とミキサーの音源の枠が使う。入口を変えるのは取り消せる 1 手なので、録音中は「使えない」。
+ * The input list of a vocal track (spec 2 "Vocal track head", mock F7-VocalTrack): 「入口 1 ・ モノ」 / 「入口 2 ・ モノ」 / 「入口 1 ・ 2 ・ ステレオ」 /
+ * 「音の設定…」. Used by 「入口 1 ・ モノ ▾」 in the head and the instrument slot of the mixer. Changing the input is one undo step, so it is disabled while recording.
  */
 export function vocalInputRows(track: number, input: VocalInput, busy: boolean, send: (c: Command) => void): MenuEntry[] {
   return [

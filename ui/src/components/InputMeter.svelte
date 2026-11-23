@@ -1,11 +1,11 @@
-<!-- 入力計（仕様書 3 章の表の入力計の行。モック F-Connect1・2・3、F-Empty、F-MeterLongName、Opt-Meter 1-B）。
-     ベロシティの読み値の右に「固定」の切りかえ（docs/history/design-notes.ja.md B-66）。どの幅でも消さず、鍵盤がないときも出す。
-     ● のついた歌のトラックか、選んだ歌のトラックがあるときは、左右に分けた形（仕様書 2 章「入力計の帯（左右に分けた形）」、3 章 31-C、
-     モック F7-VocalTrack ・ R11-Fit ・ R12-Meters）: 左は鍵盤の計（ペダルなどは引っこめる）、右はマイクの計。せまいときは「弾くと鳴る先」、
-     次に「モニター」の字、次に鍵盤の絵を引っこめ、鍵盤の名前を 88 で「…」（3 章 94-16 ・ 37-A）。「固定」と押している音は残す。
-     マイクの計の棒は inputMeter の区画の中（区画も文脈もふやさない）。目盛は −60〜−12 が左半分、−12〜0 が右半分、地は gray.4、
-     白い縦の線は 1 秒のピーク（dB の字と同じ数。3 章 94-17 ・ 38-B）。いまの dB の字は流れの外の箱で、同じ canvas の下（cover）。
-     音の素材の案内（3 章 43-B ・ 44-A）が出ている間は、左に入力と、いま押している音だけ、右は pack/PackBand.svelte。 -->
+<!-- The input meter (the input meter row of the table in spec 3; mock F-Connect1, 2, 3, F-Empty, F-MeterLongName, Opt-Meter 1-B).
+     The 「固定」 switch is right of the velocity reading (docs/history/design-notes.ja.md B-66). It is never removed at any width, and shows even with no keyboard.
+     When there is a vocal track with ●, or a selected vocal track, it takes the split form (spec 2 "Input meter band (split left and right)", spec 3 31-C,
+     mock F7-VocalTrack, R11-Fit, R12-Meters): the keyboard meter on the left (pedals and such hidden), the mic meter on the right. When narrow, hide 「弾くと鳴る先」,
+     then the 「モニター」 text, then the keyboard picture, and cut the keyboard name at 88 with 「…」 (spec 3 94-16, 37-A). 「固定」 and the held notes stay.
+     The mic meter bar is inside the inputMeter slot (no new slot or context). The scale is −60 to −12 on the left half and −12 to 0 on the right half, background gray.4;
+     the white vertical line is the 1-second peak (the same number as the dB text; spec 3 94-17, 38-B). The current dB text is an out-of-flow box under the same canvas (cover).
+     While the sound pack hint is shown (spec 3 43-B, 44-A), only the input and the held notes on the left; the right is pack/PackBand.svelte. -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { keyIsDown, type TrackView } from "../bridge";
@@ -35,12 +35,12 @@
   const TRACK_LABEL = "\u0003";
 
   const app = $derived(current.state);
-  /** 弾くと鳴る先がドラムなら、いま押している音は楽器の名前（仕様書 3 章「ドラムの音源」）。 */
+  /** If the play target is drums, the held notes are shown as drum piece names (spec 3 "Drum instruments"). */
   const drums = $derived(app ? keysDrums(app) : false);
   const slim = $derived(app?.workspace.layout.meter === "slim");
   const scale = $derived((app?.workspace.scale ?? 100) as Scale);
-  // 鍵盤が 2 台以上なら、名前は最後に弾いた鍵盤。うしろに残りの台数（仕様書 3 章）。
-  // 入力そのものが止まっている間は、鍵盤が抜けたときと同じ出しかた。
+  // With 2 or more keyboards, the name is the one played last, followed by the number of others (spec 3).
+  // While the input itself is stopped, show it the same as when the keyboard is unplugged.
   const keyboard = $derived(
     app?.keyboards.inputStopped ? null : (app?.keyboards.list.find((k) => k.id === app.keyboards.active) ?? null),
   );
@@ -56,31 +56,31 @@
       return { kind: "missing" as const };
     }
     if (app.outputs.chosen === null) return { kind: "noOutput" as const };
-    // ためし弾き中（仕様書 3 章）: 鳴る先は棚でえらんだ音源。引っこめる順のどこでも消さない。
+    // While trying a sound (spec 3): the target is the instrument chosen in the shelf. Never hidden at any step of the hiding order.
     const picked = app.shelf.selectedSound;
     if (picked !== null && !app.transport.recording) return { kind: "audition" as const, name: soundRefName(picked, app.library) };
-    // カウントイン中と録音中は、録っているトラックと、いま録っているテイク（モック F-Connect4・F-ArrangeRec）。
+    // During the count-in and recording: the track being recorded and the take being recorded now (mock F-Connect4, F-ArrangeRec).
     const rec = app.transport.recording;
     const recTrack = rec && app.song.tracks.find((x) => x.id === rec.track);
     if (rec && recTrack) return { kind: "target" as const, track: recTrack, take: rec.take };
-    // 弾くと鳴る先は、鍵盤の行き先（歌のトラックを選んでいる間も、最後に選んでいた鍵盤のトラック。B-94-1）。
+    // The play target is where the keyboard goes (while a vocal track is selected, the last selected keyboard track; B-94-1).
     const track = app.song.tracks.find((x) => x.id === app.song.keysTarget);
     return track ? { kind: "target" as const, track, take: null } : { kind: "none" as const };
   });
 
-  // ---- 左右に分けた形（31-C） ----
+  // ---- The split form (31-C) ----
 
-  /** マイクの計に出す歌のトラック: 選んだトラックが歌ならそれ、ほかは ● のついた最初の歌のトラック。 */
+  /** The vocal track for the mic meter: the selected track if it is a vocal track, otherwise the first vocal track with ●. */
   const vocal = $derived.by((): { track: TrackView; input: "mono1" | "mono2" | "stereo12"; monitor: boolean } | null => {
     if (!app) return null;
     const of = (x: TrackView | undefined) => (x && x.kind.kind === "vocal" ? { track: x, input: x.kind.input, monitor: x.kind.monitor } : null);
     return of(app.song.tracks.find((x) => x.id === app.song.playTarget)) ?? of(app.song.tracks.find((x) => x.kind.kind === "vocal" && x.kind.armed));
   });
-  /** 音の素材の案内（44-A）が出ている間は、入力と、いま押している音だけ（左右に分けた形より先）。 */
+  /** While the sound pack hint (44-A) is shown, only the input and the held notes (this wins over the split form). */
   const pack = $derived(app ? packBand(app) : null);
   const split = $derived(vocal !== null && pack === null);
 
-  /** いまの dB: 直近 1 秒のいちばん大きい値（マスターの dB と同じ。字を毎コマ変えない）。0 dB に届いたら 2 秒 rec。 */
+  /** The current dB: the largest value in the last second (same as the master dB; the text does not change every frame). rec for 2 seconds after reaching 0 dB. */
   let micHold = new PeakHold(1000);
   let micPeak = $state(0);
   let micClipUntil = 0;
@@ -116,13 +116,13 @@
     }, 250);
     return () => clearInterval(timer);
   });
-  /** 整数の dB（モック F7-VocalTrack の「−32 dB」）。−60 より小さいときは −∞。 */
+  /** dB as a whole number (「−32 dB」 in mock F7-VocalTrack). −∞ below −60. */
   const micDb = $derived(micPeak > 0 ? Math.round(20 * Math.log10(micPeak)) : -Infinity);
   const micText = $derived(micDb < -60 ? t("common.dbSilent") : t("common.db", { value: dbNumber(micDb).replace(/\.0$/, "") }));
 
   let splitFit = $state({ target: true, monitor: true, keys: true });
 
-  // 押している鍵は計器で受け、鍵の on/off は計器を待たずに当てる。
+  // The held keys come from the telemetry; key on/off is applied without waiting for it.
   let held = $state<number[]>([]);
   let velocity = $state(0);
   $effect(() => {
@@ -130,7 +130,7 @@
     if (!tel) return;
     const notes: number[] = [];
     for (let n = 0; n < 128; n++) if (keyIsDown(tel, n)) notes.push(n);
-    // 計器は 60 Hz で来る。同じ鍵なら書かない（書けば、そのたびに新しい $state の配列ができる）。
+    // Telemetry comes at 60 Hz. Do not write if the keys are the same (each write makes a new $state array).
     const was = untrack(() => held);
     if (notes.length !== was.length || notes.some((n, i) => n !== was[i])) held = notes;
     velocity = tel.lastVelocity;
@@ -147,7 +147,7 @@
     }),
   );
 
-  // ベロシティ固定（B-66）。オンの間、読み値は固定の値で、押すと打ちこめる（1〜127。範囲の外は近いはしにして状態行で言う）。
+  // Fixed velocity (B-66). While on, the reading is the fixed value and can be typed when clicked (1 to 127; out of range goes to the nearer end and is told in the status line).
   const fixed = $derived(app?.keyboards.velocityFixed ?? { on: false, value: 100 });
   function toggleFixed(): void {
     send({ type: "setVelocityFixed", on: !fixed.on, value: fixed.value });
@@ -167,8 +167,8 @@
   const live = $derived(held.length > 0);
 
   /**
-   * 鳴る先の値を、トラックの部分と音源の部分（音源の名前と、そのまわりの「 ・ 」）に分ける。
-   * 細いときは音源の名前を出さない（モック A-PianoRoll・F-History の「弾くと鳴る先 1 ピアノ」）。
+   * Splits the target value into the track part and the instrument part (the instrument name and the 「 ・ 」 around it).
+   * When slim, the instrument name is not shown (「弾くと鳴る先 1 ピアノ」 in mock A-PianoRoll and F-History).
    */
   function targetPieces(trackName: string): { text: string; instrument: boolean }[] {
     const track = t("track.label", { number: TRACK, name: trackName });
@@ -183,7 +183,7 @@
       .filter((p) => p.text !== "");
   }
 
-  /** 録っているときの鳴る先（文は「{track} ● テイク {take}」）: トラックの番号、名前、rec の「● テイク {take}」。 */
+  /** The target while recording (the text is 「{track} ● テイク {take}」): track number, name, and 「● テイク {take}」 in rec. */
   function recordingPieces(trackName: string, take: number): { text: string; kind: "number" | "plain" | "rec" }[] {
     const [, ...rest] = textParts("meter.playTargetRecording", { track: TRACK_LABEL, take });
     const tail = rest.map((p) => p.text).join("");
@@ -195,7 +195,7 @@
     return [...track, { text: tail.slice(0, lead), kind: "plain" }, { text: tail.slice(lead), kind: "rec" }];
   }
 
-  /** 右はしの案内の文。tone: 1 文目と残りの色（「鍵盤がない」はモック F-Connect1 で色を分けている）。 */
+  /** The hint text at the right end. tone: the colors of the first sentence and the rest (mock F-Connect1 uses two colors for the no-keyboard hint). */
   const message = $derived.by(() => {
     if (right?.kind === "missing") return { parts: sentences(t("msg.keyboardMissing")), first: "strong", rest: "dim" };
     if (right?.kind === "lost")
@@ -206,7 +206,7 @@
     return null;
   });
 
-  // 横の入れかた: 見えない写し（ruler）で、ちぢめない幅を測る。
+  // Fitting across: measure the uncut widths with a hidden copy (ruler).
   let row = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
   let fit = $state<MeterFit>({
@@ -235,7 +235,7 @@
     const bendW = keyboard ? width("bend") + gap : 0;
     const modW = keyboard ? width("mod") + gap : 0;
     const keyW = (n: string) => metrics.px(`mock.input-meter.key-${n}-w`);
-    // ラベルと値は縦にならぶので、鳴る先の幅は広いほう。
+    // The label and value are stacked, so the target width is the wider of the two.
     const labelW = width("target-label");
     const valueW = width("target-value");
     let instrumentW = 0;
@@ -260,8 +260,8 @@
   }
 
   /**
-   * 分けた形: 半分ずつの箱に、ちぢめない幅が入るか。入らなければ「弾くと鳴る先」、次に「モニター」の字、次に鍵盤の絵
-   * （鍵盤の名前は 88 まで）の順に引っこめ、両方の半分が入る所で止める。
+   * Split form: whether the uncut widths fit in each half box. If not, hide 「弾くと鳴る先」, then the 「モニター」 text, then the keyboard picture
+   * (keyboard name up to 88), in that order, and stop when both halves fit.
    */
   function measureSplit(): void {
     const width = (part: string) => ruler!.querySelector<HTMLElement>(`[data-part="${part}"]`)?.offsetWidth ?? 0;
@@ -290,7 +290,7 @@
     return () => observer.disconnect();
   });
   $effect(() => {
-    // 状態が変わったら測りなおす（ResizeObserver のない所でも、決まりの通りに出す）。
+    // Measure again when the state changes (so it follows the rules even where there is no ResizeObserver).
     void [slim, scale, name, more, keyboard, right, message, split, vocal];
     measure();
   });
@@ -577,7 +577,7 @@
     {#if measuring}
       <span class="value mic-db">{t("common.db", { value: t("meter.micScaleLow") })}</span>
     {:else}
-      <!-- 字が変わるコマは canvas も出す（cover の stamp）。箱の幅は「−60 dB」の字で決め、いまの値は流れの外の箱。 -->
+      <!-- In frames where the text changes, the canvas is also drawn (the cover stamp). The box width is set by the text 「−60 dB」; the current value is an out-of-flow box. -->
       <span class="value mic-db" use:glSlot={{ kind: "cover", stamp: (micClipped ? 1000 : 0) + (Number.isFinite(micDb) ? micDb : -999) }}>
         <span class="hidden-width">{t("common.db", { value: t("meter.micScaleLow") })}</span>
         <span class="mic-db-in" class:rec={micClipped} data-test="mic-db" use:term={"dB"}>{micText}</span>
@@ -645,7 +645,7 @@
     gap: var(--space-4);
     height: var(--size-meter-slim);
   }
-  /* 音の素材の案内（モック F8-PackAsk）: 左に入力と、いま押している音。右は PackBand。 */
+  /* The sound pack hint (mock F8-PackAsk): the input and held notes on the left. PackBand on the right. */
   .meter.pack {
     gap: 0;
     padding: 0;
@@ -757,7 +757,7 @@
     align-items: center;
     gap: var(--space-2);
   }
-  /* 読み値と棒（モック F-Connect3 の幅 96）。「固定」はその右。 */
+  /* Reading and bar (width 96 in mock F-Connect3). 「固定」 is to the right. */
   .velocity-main {
     display: flex;
     align-items: center;
@@ -766,7 +766,7 @@
   .velocity-main.wide {
     width: var(--mock-input-meter-velocity);
   }
-  /* 「固定」の切りかえ（M ・ S ・ ● と同じ形と高さ。オンは accent。仕様書 2 章）。 */
+  /* The 「固定」 switch (same shape and height as M, S, ●; accent when on; spec 2). */
   .fixed {
     box-sizing: border-box;
     flex-shrink: 0;
@@ -846,7 +846,7 @@
   .target-value.accent {
     color: var(--color-accent);
   }
-  /* 「サイン波で代わり」（仕様書 3 章 85: gray.8）。 */
+  /* 「サイン波で代わり」 (spec 3 85: gray.8). */
   .stand-in {
     color: var(--color-gray-8);
   }
@@ -856,7 +856,7 @@
   .rec {
     color: var(--color-rec);
   }
-  /* 左右に分けた形（モック F7-VocalTrack ・ R11-Fit）: 半分ずつ。右は gray.6 の線で分ける。鍵盤はいつも細い鍵（幅 8）。 */
+  /* The split form (mock F7-VocalTrack, R11-Fit): half each, the right divided by a gray.6 line. The keyboard always has narrow keys (width 8). */
   .meter.split {
     gap: 0;
     padding: 0;
@@ -872,7 +872,7 @@
     padding: 0 var(--space-3);
     overflow: hidden;
   }
-  /* 分けた形では、名前の欄は 108 まで。入りきらない名前は「…」（仕様書 3 章）。 */
+  /* In the split form the name field is up to 108. A name that does not fit is cut with 「…」 (spec 3). */
   .half .who {
     flex-shrink: 0;
     max-width: var(--size-meter-name);
@@ -900,11 +900,11 @@
     gap: var(--space-1);
     width: var(--part-meter-mic);
   }
-  /* 横のメーターの 2 本（左と右。モノは同じ値）。 */
+  /* The two bars of the horizontal meter (left and right; mono has the same value). */
   .mic-bar {
     height: calc(var(--part-meter-horizontal) * 2);
   }
-  /* −12 は計のまん中（38-B）。 */
+  /* −12 is the middle of the meter (38-B). */
   .mic-scale {
     display: grid;
     grid-template-columns: 1fr auto 1fr;

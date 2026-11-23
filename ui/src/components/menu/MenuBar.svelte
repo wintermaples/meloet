@@ -1,6 +1,6 @@
-<!-- 上のメニューの行（仕様書 2 章「上のメニューの行」、モック R5-Menus）。再生まわりの上、高さ size.menubar。左から「ファイル 編集 表示 再生 ノート トラック」。
-     押すとすぐ下に一覧（MenuList）。ひらいている間は、ほかの名前にマウスを乗せると切りかわる。F10 は keys/attach.ts。
-     Esc は Esc の順の「用語の説明やメニュー」の番（keys/attach.ts）。外を押すと、とじる。 -->
+<!-- Menu bar (spec 2 "Menu bar", mock R5-Menus). Above the transport, height size.menubar. From the left 「ファイル 編集 表示 再生 ノート トラック」.
+     A press opens the list right below (MenuList). While open, hovering another name switches to it. F10 is in keys/attach.ts.
+     Esc takes the 「用語の説明やメニュー」 turn in the Esc order (keys/attach.ts). A press outside closes it. -->
 <script lang="ts">
   import { platformOf } from "../../keys/keys";
   import { menuOpened } from "../../lib/menu";
@@ -13,7 +13,7 @@
   const platform = platformOf(navigator);
   const deps = { state: () => current.state, send };
 
-  // 中身は、ひらいている間だけ組み立てる。
+  // The content is built only while a menu is open.
   const menus = $derived(menuBar.open !== null && current.state ? topMenus(current.state, deps, platform) : null);
   const open = $derived(menuBar.open);
 
@@ -27,7 +27,7 @@
     const name = names[open];
     anchor = { left: name?.getBoundingClientRect().left ?? 0, top: bar.getBoundingClientRect().bottom };
   }
-  // 一覧はダイアログより手前に出すので、.app の重なりの外（body）に置く。
+  // The list is shown above dialogs, so it is put outside the stacking of .app (in body).
   function toBody(node: HTMLElement): { destroy(): void } {
     document.body.append(node);
     return { destroy: () => node.remove() };
@@ -46,7 +46,7 @@
     row.run?.();
   }
 
-  // ひらく前にフォーカスのあった所。とじてフォーカスが行き場をなくしたら、そこへ戻す。
+  // Where the focus was before opening. If closing leaves the focus nowhere, it goes back there.
   let before: Element | null = null;
   let was: number | null = null;
   $effect.pre(() => {

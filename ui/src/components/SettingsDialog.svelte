@@ -1,7 +1,7 @@
-<!-- 音の設定（モック F-Settings のおもて、F7-SettingsAdv の「くわしい設定」。仕様書 2 章「ダイアログ」、3 章 33-A）。
-     くわしい設定は、入口 ・ バッファ ・ サンプルレート ・ 録る形 ・ 遅れの合わせ ・ プラグインの場所。バッファとサンプルレートは「頼む数」で、
-     右に「動いている」数。ちがったら、その下に「頼んだ 128 ではなく、256 で動いています…」。F-SettingsAdv の「音のしくみ」と 64〜1024 のならびは、ない。
-     ▾ の一覧は右クリックの一覧と同じ部品（ContextMenu）。 -->
+<!-- Sound settings (front: mock F-Settings; 「くわしい設定」: F7-SettingsAdv; spec 2 "Dialog", spec 3 33-A).
+     Advanced settings are input, buffer, sample rate, recording format, latency alignment and plugin locations. Buffer and sample rate are the asked numbers,
+     with the running number on the right. If they differ, 「頼んだ 128 ではなく、256 で動いています…」 below. 「音のしくみ」 and the 64–1024 row from F-SettingsAdv are not here.
+     The ▾ lists are the same part as the context menu (ContextMenu). -->
 <script lang="ts">
   import { RECORD_FORMATS, type EndpointView, type VocalInput } from "../bridge";
   import { space, type Scale } from "../design/tokens";
@@ -44,16 +44,16 @@
     if (settings?.draftOutput) send({ type: "testTone", output: settings.draftOutput });
   }
 
-  // ---- くわしい設定 ----
+  // ---- advanced settings ----
 
-  /** 「入口 1 ・ 2（USB マイク）」。チャンネルの数がわからない入口は名前だけ。 */
+  /** 「入口 1 ・ 2（USB マイク）」. An input whose channel count is unknown shows only its name. */
   function inputName(input: EndpointView): string {
     const channels = input.channels === null ? undefined : CHANNELS[Math.min(input.channels, 2)];
     return channels ? t("settings.inputChoice", { channels: t(`vocal.inputShort.${channels}`), name: input.name }) : input.name;
   }
   const chosenInput = $derived(app?.inputs.list.find((i) => i.id === app.inputs.chosen) ?? null);
   const audio = $derived(app?.audio ?? null);
-  /** バッファの「動いている」数と、そのひとかたまりの長さ（モック F7-SettingsAdv の「動いている 256 ・ 5.3 ms」）。 */
+  /** The running buffer size and the length of one block (「動いている 256 ・ 5.3 ms」 in mock F7-SettingsAdv). */
   const running = $derived.by(() => {
     if (!audio?.running || audio.actualFrames === null) return null;
     const ms = audio.sampleRate ? msText((audio.actualFrames / audio.sampleRate) * 1000) : null;
@@ -70,9 +70,9 @@
     return t("settings.latencyReported", { ms });
   });
 
-  /** 「手で決める…」: 遅れの合わせの行の数が、その場で入力の枠になる（仕様書 3 章 94-19。0〜500 ms は core がおさえる）。 */
+  /** 「手で決める…」: the number in the latency alignment row becomes an input box in place (spec 3 94-19; core keeps it within 0–500 ms). */
   let typingLatency = $state(false);
-  /** 打った字を ms に。空なら手で決めた数をやめる（null）。読めなければ undefined。 */
+  /** Typed text to ms. Empty clears the hand-set number (null). Unreadable gives undefined. */
   function parseLatency(text: string): number | null | undefined {
     const s = text.normalize("NFKC").replace(/\s+/g, "").replace(/ms$/i, "");
     if (s === "") return null;
@@ -85,7 +85,7 @@
     if (ms !== undefined) send({ type: "settingsSetManualLatency", ms });
   }
 
-  /** ▾ を押したら、その下に一覧（右クリックの一覧と同じ形）。 */
+  /** Pressing ▾ opens a list under it (the same form as the context menu). */
   function choose(e: MouseEvent, entries: MenuEntry[]): void {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     openContextMenu(r.left, r.bottom, entries);
@@ -167,7 +167,7 @@
         </button>
       </div>
       {#if advanced}
-        <!-- 2 段目の見出し（仕様書 2 章「ダイアログの 2 段目へ進む行」の行き先。モック F7-SettingsAdv）。 -->
+        <!-- Heading of the second page (where spec 2 "Row to the second page of a dialog" leads; mock F7-SettingsAdv). -->
         <div class="crumb">
           <button type="button" class="back" data-test="settings-advanced" onclick={() => send({ type: "settingsToggleAdvanced" })}>{t("settings.advBack")}</button>
           <span class="title">{t("settings.advanced")}</span>
@@ -175,7 +175,7 @@
       {/if}
 
       <ScrollArea data-gl-scroll data-test="settings-body">
-        <!-- スクロールする中身ぜんたいが 1 つの区画（メーターと鍵盤で 1 枚）。くわしい設定で slot がなくなっても区画は持つ。 -->
+        <!-- The whole scrolling content is one slot (one canvas for the meter and the keyboard). The slot stays even when advanced settings has no slot. -->
         <div use:glRegion={"settings"}>
           {#if !advanced}
             <section>
@@ -315,7 +315,7 @@
                 <Button test="settings-measure" onclick={() => send({ type: "openLatencyMeasure" })}>{t("button.measureLatency")}</Button>
                 <Button test="settings-manual" on={typingLatency} onclick={() => (typingLatency = true)}>{t("button.manualLatency")}</Button>
               </div>
-              <!-- 音の素材（仕様書 3 章「音の素材をあとから取る所」、モック F8-PackSettings）: 「ある数 / ぜんぶ」と「取りにいく」、下に置き場所。 -->
+              <!-- Sound pack (spec 3, the place to fetch the sound pack later; mock F8-PackSettings): 「ある数 / ぜんぶ」 and 「取りにいく」, the location below. -->
               <div class="row" data-test="settings-pack">
                 <span class="strong name">{t("settings.packRow")}</span>
                 {#if app.sounds.have >= app.sounds.total}
@@ -335,7 +335,7 @@
               {#if app.plugins.placesOpen}
                 <PluginPlaces plugins={app.plugins} />
               {/if}
-              <!-- AI とつなぐ（モック P10-AiLink の B）: 選ぶ印と、右に口の状態（さしている印）。 -->
+              <!-- AI link (mock P10-AiLink B): a choice mark, and on the right the state of the port (the plugged-in mark). -->
               <div class="row" data-test="settings-ai">
                 <span class="strong name" use:term={"AI とつなぐ"}>{t("settings.aiLink")}</span>
                 <button
@@ -378,7 +378,7 @@
 {/if}
 
 <style>
-  /* 窓の上下のまん中（仕様書 3 章）。高さは中身に合わせ、窓の上下 24 ずつのあきまで。それをこえたら、中身をスクロールする。 */
+  /* Centred vertically in the window (spec 3). The height follows the content, up to a gap of 24 above and below the window. Past that, the content scrolls. */
   .place {
     position: absolute;
     inset: 0;
@@ -420,7 +420,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     cursor: move;
   }
-  /* 見出しの行に乗る ・ 動かしている: 地 gray.4（仕様書 2 章「ダイアログの見出しの行（動かす）」）。 */
+  /* Hovering or moving the heading row: bg gray.4 (spec 2 "Dialog heading row (moving)"). */
   .head:hover {
     background: var(--color-gray-4);
   }
@@ -510,7 +510,7 @@
     outline: var(--line-hair) solid var(--color-gray-10);
     outline-offset: var(--line-hair);
   }
-  /* くわしい設定（モック F7-SettingsAdv）: 名前 120 の行が並ぶ。行は高さ 32 から、下に gray.4 の線。 */
+  /* Advanced settings (mock F7-SettingsAdv): rows with a 120 name column. Rows are at least 32 high with a gray.4 line below. */
   .crumb {
     flex-shrink: 0;
     box-sizing: border-box;
@@ -550,7 +550,7 @@
   .row.joined {
     border-bottom: 0;
   }
-  /* 「手で決める…」の枠（「8.0」と「ms」）。枠の幅は欄の打ちこむ枠と同じ。 */
+  /* The 「手で決める…」 box (「8.0」 and 「ms」). The box width is the same as the typing box of the panel. */
   .latency-field {
     display: flex;
   }
@@ -585,7 +585,7 @@
     color: var(--color-gray-8);
     white-space: normal;
   }
-  /* 選ぶ印（仕様書 2 章「選ぶ印（設定の中）」）と、口の状態の印（「出口 ・ 入口の行」のさしている印と同じ）。 */
+  /* Choice mark (spec 2 "Choice mark (in settings)") and the port state mark (the same as the plugged-in mark of the output and input row). */
   .pick {
     display: inline-flex;
     align-items: center;

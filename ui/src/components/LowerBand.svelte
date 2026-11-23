@@ -1,5 +1,5 @@
-<!-- ひらいた下の帯（ピアノロール、ミキサー、取り消しの履歴）。ピアノロールは中身まで（pianoroll/PianoRoll.svelte）。
-     ミキサーは、道具の列（音の流れの文、メーターの単位。モック F4-Mixer）とストリップ（mixer/MixerStrips.svelte）。取り消しの履歴は history/HistoryHead.svelte と history/HistoryList.svelte。見出しの行は A-Mixer・F-History の帯のいちばん上の行。「▾ 名前」を押すと、その帯をたたむ（B-74）。 -->
+<!-- An open lower band (piano roll, mixer, undo history). The piano roll includes its content (pianoroll/PianoRoll.svelte).
+     The mixer is the tool row (the signal flow text and the meter unit; mock F4-Mixer) and the strips (mixer/MixerStrips.svelte). The undo history is history/HistoryHead.svelte and history/HistoryList.svelte. The heading row is the top row of the band in A-Mixer and F-History. Pressing 「▾ 名前」 folds the band (B-74). -->
 <script lang="ts">
   import type { Band } from "../bridge";
   import { term } from "../lib/tip.svelte";
@@ -19,7 +19,7 @@
     history: "band.history",
   };
   const name = $derived(NAMES[band]);
-  /** 用語の説明がある帯の名前（仕様書 5 章。「取り消しの履歴」は 5 章にない）。 */
+  /** Names of bands that have a term tip (spec 5; 「取り消しの履歴」 is not in spec 5). */
   const TERMS: Partial<Record<Band, string>> = { mixer: "ミキサー" };
 </script>
 
@@ -67,7 +67,7 @@
     border-bottom: var(--line-hair) solid var(--color-gray-6);
     white-space: nowrap;
   }
-  /* 押せる所は帯の左はしから。状態は仕様書 2 章のボタン（枠は内がわに描く）。 */
+  /* The pressable part starts at the left end of the band. States follow the button in spec 2 (border drawn inside). */
   .fold {
     align-self: stretch;
     display: flex;

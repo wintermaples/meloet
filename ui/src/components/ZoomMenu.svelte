@@ -1,5 +1,5 @@
-<!-- 状態行の「拡大率」の一覧（仕様書 2 章「状態行の『拡大率』」、モック F-Zoom）。ひらいたら、いまの率の行にフォーカスを置く。
-     ↑ ↓ でえらび、Enter で決める。Esc と外を押したときは StatusLine がとじる。 -->
+<!-- The 「拡大率」 list of the status line (spec 2 "「拡大率」 in the status line", mock F-Zoom). On open, focus goes to the row of the current scale.
+     ↑ ↓ choose, Enter decides. On Esc or a press outside, StatusLine closes it. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { SCALES, type Scale } from "../design/tokens";
@@ -8,7 +8,7 @@
 
   interface Props {
     scale: number;
-    /** いまの画面に入らない率。 */
+    /** Scales that do not fit the current screen. */
     unfit: readonly number[];
     platform: Platform;
     onpick: (scale: Scale) => void;
@@ -17,13 +17,13 @@
 
   let list = $state<HTMLElement>();
 
-  // docs/history/design-notes.ja.md A-2: Linux と Windows では「Ctrl Alt 1」、Mac では「Cmd Option 1」。
+  // docs/history/design-notes.ja.md A-2: 「Ctrl Alt 1」 on Linux and Windows, 「Cmd Option 1」 on Mac.
   const keyLabel = (n: number) =>
     platform === "mac" ? `${t("key.cmd")} ${t("key.option")} ${n}` : `${t("key.ctrl")} ${t("key.alt")} ${n}`;
 
   const usableRows = () => [...(list?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
 
-  // StatusLine が一覧を body へ移したあとで置く（移すとフォーカスが外れるので）。
+  // Set after StatusLine moves the list to body (moving it loses focus).
   onMount(() =>
     queueMicrotask(() => {
       const rows = usableRows();
@@ -101,8 +101,8 @@
   .row:last-child {
     border-bottom: 0;
   }
-  /* 乗った（仕様書 2 章: 枠 gray.8 ・ 文字 gray.10）・押した（bg gray.2 ・ 枠 gray.8）。枠は行の内がわに描き、
-     「選んだ行」（地 gray.4 ・ 左 line.mark の accent）とまざらないようにする（docs/history/design-notes.ja.md A-6）。 */
+  /* Hover (spec 2: border gray.8, text gray.10), pressed (bg gray.2, border gray.8). The border is drawn inside the row
+     so it does not mix with 「選んだ行」 (bg gray.4, left line.mark in accent) (docs/history/design-notes.ja.md A-6). */
   .row:hover:not(:disabled) {
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
@@ -141,7 +141,7 @@
     color: var(--color-gray-10);
   }
 
-  /* 使えない（仕様書 2 章）: 枠 gray.5 ・ 文字 gray.7 ・ 押せない。キーも gray.7。理由の文は gray.8 のまま（モック F-Zoom）。 */
+  /* Disabled (spec 2): border gray.5, text gray.7, cannot be pressed. The key is gray.7 too. The reason text stays gray.8 (mock F-Zoom). */
   .unusable .choice {
     border-color: var(--color-gray-5);
   }

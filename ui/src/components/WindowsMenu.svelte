@@ -1,6 +1,6 @@
-<!-- 状態行の「窓」の一覧（仕様書 2 章「状態行の『窓』」、モック F-WindowOpen）。幅 380、行は高さ 24 で、窓の印、プラグインの名前、居場所。
-     いちばん下に「ぜんぶ前に出す」。行を押すとその窓を前に出す（OpenPluginWindow）。ひらいたら最初の行にフォーカスを置き、↑ ↓ でえらび、Enter で決める。
-     Esc と外を押したときは StatusLine がとじる（メニューと同じ番）。 -->
+<!-- The 「窓」 list of the status line (spec 2 "「窓」 in the status line", mock F-WindowOpen). Width 380, rows 24 high: window mark, plugin name, where it lives.
+     「ぜんぶ前に出す」 at the bottom. Pressing a row brings that window to the front (OpenPluginWindow). On open, focus goes to the first row; ↑ ↓ choose, Enter decides.
+     On Esc or a press outside, StatusLine closes it (the same turn as menus). -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { Command, PluginWindowView } from "../bridge";
@@ -9,7 +9,7 @@
 
   interface Props {
     list: readonly PluginWindowView[];
-    /** 居場所の文（「1 ピアノ ・ 音源」「A リバーブ ・ インサート 1」「棚 ・ ためし弾き」）。 */
+    /** Where it lives (「1 ピアノ ・ 音源」「A リバーブ ・ インサート 1」「棚 ・ ためし弾き」). */
     placeOf: (w: PluginWindowView) => string;
     onpick: (command: Command) => void;
   }

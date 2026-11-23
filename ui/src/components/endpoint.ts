@@ -1,15 +1,15 @@
-// 出口 ・ 入口の行に出す物を、状態から決める（純粋な関数）。
+// Decides what an output or input row shows, from the state (pure functions).
 import type { EndpointView, Friendly, Unusable } from "../bridge";
 import { t, type TextKey } from "../text/ja";
 
-/** ささっているかの文。null は印も文も出さない（PipeWire でわからないとき）。 */
+/** The plugged-in text. null shows neither mark nor text (when PipeWire cannot tell). */
 export type LinkLook = "plugged" | "connected" | "nothing" | null;
 
 export interface EndpointLook {
   name: string;
-  /** 名前のとなりの欄（150）。やさしい言いかえか、見わけるための装置の名前。 */
+  /** The field next to the name (150). A plain-words name, or the device name to tell rows apart. */
   side: string | null;
-  /** side が装置の名前のとき true（長ければ「…」でちぢめ、マウスを乗せると全部出す）。 */
+  /** true when side is the device name (cut with 「…」 when long; hover shows all of it). */
   sideIsDevice?: boolean;
   link: LinkLook;
 }
@@ -27,8 +27,8 @@ const REASON: Record<Unusable, TextKey> = {
 };
 
 /**
- * ふつうの行。sameName が true（同じ名前の出口がならぶ）で装置の名前がわかるときは、
- * 言いかえのかわりに装置の名前をそえて見わける（仕様書 3 章）。
+ * A normal row. When sameName is true (outputs with the same name are listed) and the device name is known,
+ * add the device name instead of the plain-words name to tell them apart (spec 3).
  */
 export function endpointLook(e: EndpointView, sameName = false): EndpointLook {
   const link: LinkLook =
@@ -51,13 +51,13 @@ export interface EndpointGroups {
   stoppedByPc: number;
 }
 
-/** 使えないわけの文。ささっている入口を PC がえらんでいないとき（ほかの入口もささっている）は、「さすと…」ではなく、PC の設定でえらぶ事を言う。 */
+/** The reason it cannot be used. When the PC has not chosen a plugged-in input (other inputs are plugged in too), say to choose it in the PC settings instead of 「さすと…」. */
 function reasonOf(o: EndpointView, kind: "output" | "input"): string {
   if (kind === "input" && o.unusable === "switchedByPc" && o.availability === "yes") return t("msg.inputPluggedNotChosen");
   return t(REASON[o.unusable!]);
 }
 
-/** 出口か入口を、えらべる物と「いまは使えない出口（入口）」に分ける。ならびは Rust が決めた順のまま。 */
+/** Splits outputs or inputs into choosable ones and 「いまは使えない出口（入口）」. The order stays as Rust decided. */
 export function endpointGroups(list: readonly EndpointView[], kind: "output" | "input" = "output"): EndpointGroups {
   const usable = list.filter((o) => o.unusable === null);
   const count = new Map<string, number>();

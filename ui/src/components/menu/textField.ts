@@ -1,6 +1,6 @@
-// 文字の枠の右クリックの一覧（docs/history/design-notes.ja.md B-60）: 切り取り ・ コピー ・ 貼りつけ ・ ぜんぶ選ぶ。
-// 貼りつけは「使えない」。WebKitGTK 2.52 は、殻（Tauri の enable_clipboard_access）が許していないと execCommand("paste") が
-// 何もせず false を返す。queryCommandEnabled("paste") はそれでも true を返すので、それでは見分けられない。枠の中の Mod V は効く。
+// Context menu of text boxes (docs/history/design-notes.ja.md B-60): cut, copy, paste, select all.
+// Paste is disabled. In WebKitGTK 2.52, execCommand("paste") does nothing and returns false unless the shell (Tauri's enable_clipboard_access)
+// allows it. queryCommandEnabled("paste") still returns true, so it cannot tell. Mod V inside the box works.
 
 import { t } from "../../text/ja";
 import type { MenuEntry } from "./contextMenu.svelte";
@@ -9,7 +9,7 @@ const NON_TEXT_INPUTS = new Set(["button", "checkbox", "color", "file", "hidden"
 
 export type TextField = HTMLInputElement | HTMLTextAreaElement;
 
-/** 右クリックされた物が文字の枠なら、その枠。 */
+/** The text box that was right-clicked, if it is one. */
 export function textFieldOf(target: EventTarget | null): TextField | null {
   if (target instanceof HTMLTextAreaElement) return target.disabled ? null : target;
   if (target instanceof HTMLInputElement) return NON_TEXT_INPUTS.has(target.type) || target.disabled ? null : target;
@@ -20,11 +20,11 @@ function exec(doc: Document, name: string): void {
   try {
     doc.execCommand(name);
   } catch {
-    // 何もしない（その WebView では、その操作ができない）。
+    // Do nothing (that WebView cannot do this action).
   }
 }
 
-/** 一覧の行。mod は「Ctrl X」のようにキーを書く関数。行う前に、枠にフォーカスと、ひらいたときの選択を戻す。 */
+/** The list rows. mod is a function that writes a key like 「Ctrl X」. Before acting, give the box back its focus and the selection it had on open. */
 export function textFieldRows(field: TextField, mod: (key: string) => string, doc: Document = document): MenuEntry[] {
   const start = field.selectionStart;
   const end = field.selectionEnd;
@@ -36,7 +36,7 @@ export function textFieldRows(field: TextField, mod: (key: string) => string, do
       try {
         field.setSelectionRange(start, end);
       } catch {
-        // 選択を持たない種類の枠（number など）。
+        // A kind of box that has no selection (number and others).
       }
     }
   };

@@ -1,6 +1,6 @@
-<!-- 音の設定 ▸ くわしい設定 ▸ プラグインの場所（仕様書 2 章「プラグインの場所の行」、3 章 Y13、モック R9-Scan）。
-     見出し（▾ ▸ と数）でたたむ。ふつうの場所は gray.8 で「ふつうの場所」、足した場所は gray.10 で「外す」。
-     CLAP の場所は約束が送ってこない（docs/history/design-notes.ja.md A-16）。 -->
+<!-- Sound settings ▸ advanced settings ▸ plugin locations (spec 2 "Plugin location row", spec 3 Y13, mock R9-Scan).
+     Folds by the heading (▾ ▸ and a count). Default locations are gray.8 with 「ふつうの場所」, added locations gray.10 with 「外す」.
+     The protocol does not send CLAP locations (docs/history/design-notes.ja.md A-16). -->
 <script lang="ts">
   import type { PluginsView } from "../../bridge";
   import { send } from "../../state/app.svelte";
@@ -11,7 +11,7 @@
   let { plugins }: { plugins: PluginsView } = $props();
   const open = $derived(plugins.placesOpen);
 
-  /** 止まった物のダイアログの「プラグインの場所…」からひらいたときは、見える所まで送る。 */
+  /** When opened from 「プラグインの場所…」 in the stopped-plugins dialog, scroll it into view. */
   function reveal(node: HTMLElement): void {
     if (!placesReveal.pending) return;
     placesReveal.pending = false;

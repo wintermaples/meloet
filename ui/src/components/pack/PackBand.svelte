@@ -1,7 +1,7 @@
-<!-- 入力計の帯の案内（音の素材。仕様書 2 章「案内の帯（音の素材）」、3 章 43-B ・ 44-A、モック F8-PackAsk ・ F8-PackGet ・ F8-PackFail ・ R12-Fit）。
-     右は accent の line.mark の線から、案内の文（2 行）、160 の棒、ボタン。聞いている / 取っている / 取れなかった。意図を送るのはボタンだけ。
-     入りきらないときは、聞いている帯の小さい字を R12-Fit の短い文にし、それでも入らなければ文のうしろを「…」でちぢめる（棒とボタンは残す）。
-     入力計が細いとき（下の帯がひらいている）は、2 行を 1 行にならべる。 -->
+<!-- Hint in the input meter band (sound pack; spec 2 "Hint band (sound pack)", spec 3 43-B, 44-A; mock F8-PackAsk, F8-PackGet, F8-PackFail, R12-Fit).
+     On the right, from a line.mark line in accent: the hint text (2 lines), a 160 bar, buttons. Asking / fetching / failed. Only the buttons send intents.
+     When it does not fit, the small text of the asking band becomes the short text of R12-Fit; if it still does not fit, the end of the text is cut with 「…」 (the bar and buttons stay).
+     When the input meter is slim (a lower band is open), the 2 lines go on 1 line. -->
 <script lang="ts">
   import { current, send } from "../../state/app.svelte";
   import { t } from "../../text/ja";
@@ -19,7 +19,7 @@
   });
   const percent = $derived(band.kind === "fetching" ? percentOf(band.fetch.doneBytes, band.fetch.totalBytes) : 0);
 
-  // 聞いている帯: 長い文の幅（見えない写し）が、帯の中に入るか。
+  // Asking band: whether the width of the long text (a hidden copy) fits in the band.
   let box = $state<HTMLElement>();
   let ruler = $state<HTMLElement>();
   function measure(): void {
@@ -140,7 +140,7 @@
     background: var(--color-accent);
     transform-origin: left;
   }
-  /* 細い入力計（高さ 24）では、状態行の「やめる」と同じ高さのボタン。 */
+  /* In the slim input meter (height 24), buttons are the same height as 「やめる」 in the status line. */
   .slim :global(.b) {
     height: var(--mock-exporting-stop);
   }

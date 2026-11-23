@@ -1,30 +1,30 @@
-// 横が足りないときに何を引っこめるか（仕様書 1 章「拡大率の決まり」、3 章の帯札）。
-// 再生まわりは測った幅で、帯札は 100 % のときの px で見積もって拡大率をかけてくらべる。DOM を知らない純粋な関数。
+// What to hide when the width is not enough (spec 1 "Rules for the scale", the band tabs in spec 3).
+// The transport uses measured widths; band tabs are estimated in px at 100 % and multiplied by the scale. Pure functions with no DOM.
 
 import { line, space, text } from "../design/tokens";
 
 /**
- * 引っこめる順（仕様書 1 章 (1)）。ボタンの右はしのキー（4 章「キーは、帯札やボタンの右はしに小さく書いて見せる」）は、
- * それより前に引っこめる（docs/history/design-notes.ja.md B-73）。
+ * The order of hiding (spec 1 (1)). The keys at the right end of buttons (spec 4 "Keys are shown small at the right end of band tabs and buttons")
+ * are hidden before that (docs/history/design-notes.ja.md B-73).
  */
 const TRANSPORT_ORDER = ["keys", "songName", "load", "countIn", "positionLabels"] as const;
 export type TransportPart = (typeof TRANSPORT_ORDER)[number];
 export type TransportParts = Record<TransportPart, boolean>;
 
 /**
- * 再生まわりの、測った幅（CSS px）。base は、いつも出す物（左右の内がわとすきまを含む）。
- * ほかは、その部品を出したときにふえる幅（前のすきまを含む）。
- * カウントインは、ふだんの幅とカウントイン中の幅の大きいほうを渡す（始まった瞬間に何も動かないように）。
+ * Measured widths of the transport (CSS px). base is what is always shown (with the padding and gaps).
+ * The others are the width a part adds when shown (with the gap before it).
+ * For the count-in, pass the larger of the normal width and the width during the count-in (so nothing moves when it starts).
  */
 export type TransportWidths = { base: number } & Record<TransportPart, number>;
 
 /**
- * 引っこめたあとに残す物の幅（仕様書 1 章: 曲の名前は幅 28 の ▾、カウントインはメトロノームの ▾）。
- * 前のすきまも含めた、ふえる幅。
+ * Width of what stays after hiding (spec 1: the song name becomes a ▾ of width 28, the count-in the metronome's ▾).
+ * The added width, with the gap before it.
  */
 export type TransportStubs = Partial<Record<TransportPart, number>>;
 
-/** order の順に、available に入るまで引っこめる。widths は base と、部品ごとのふえる幅。stubs は引っこめたあとに残す物の幅。 */
+/** Hides in the order of order until it fits in available. widths is base and the added width of each part. stubs is the width of what stays after hiding. */
 function foldParts<K extends string>(
   order: readonly K[],
   available: number,
@@ -42,7 +42,7 @@ function foldParts<K extends string>(
   return shown;
 }
 
-/** 出す物の組。available は再生まわりの使える幅（CSS px）。入るまで、仕様書の順に引っこめる。 */
+/** The set of parts to show. available is the usable width of the transport (CSS px). Hides in the spec's order until it fits. */
 export function transportParts(available: number, widths: TransportWidths, stubs: TransportStubs = {}): TransportParts {
   return foldParts(TRANSPORT_ORDER, available, widths, stubs);
 }
@@ -63,20 +63,20 @@ export function transportWithOverdub(
   return { ...transportParts(available, widths, stubs), overdub: false };
 }
 
-/** ピアノロールの道具の列で引っこめる順: 道具のキー、クリップの文（モック F-PR150）。 */
+/** The order of hiding in the piano roll tool row: the tool keys, then the clip text (mock F-PR150). */
 const TOOLBAR_ORDER = ["keys", "info"] as const;
 export type ToolbarPart = (typeof TOOLBAR_ORDER)[number];
 export type ToolbarParts = Record<ToolbarPart, boolean>;
 
-/** ピアノロールの道具の列。widths は再生まわりと同じ形（base は、いつも出す物）。 */
+/** The piano roll tool row. widths has the same shape as for the transport (base is what is always shown). */
 export function toolbarParts(available: number, widths: { base: number } & Record<ToolbarPart, number>): ToolbarParts {
   return foldParts(TOOLBAR_ORDER, available, widths, {});
 }
 
-/** IBM Plex Mono の 1 字の送り（文字の大きさを 1 として）。 */
+/** The advance of one IBM Plex Mono character (with the font size as 1). */
 const MONO_ADVANCE = 0.6;
 
-/** 文字の幅の見積もり（text.s、100 %）。日本語は 1 字が文字の大きさ、ほかは IBM Plex Mono の 1 字。 */
+/** Estimated text width (text.s, 100 %). A Japanese character is the font size wide; others are one IBM Plex Mono character. */
 export function textWidth(s: string): number {
   const em = text["text.s"].size[0];
   let w = 0;
@@ -85,13 +85,13 @@ export function textWidth(s: string): number {
 }
 
 export interface BandTabWidth {
-  /** 矢印、名前、キー、内がわ、区切り。いつも出す。 */
+  /** Arrow, name, key, padding, divider. Always shown. */
   fixed: number;
-  /** 件数や現在値（前のすきまを含む）。 */
+  /** The count or current value (with the gap before it). */
   count: number;
 }
 
-/** 帯札の見積もり（100 % の px）。 */
+/** Estimated band tab (px at 100 %). */
 export function bandTabWidth(name: string, count: string, key: string): BandTabWidth {
   const pad = space["space.3"][0] * 2 + line["line.hair"];
   const gap = space["space.2"][0];
@@ -102,8 +102,8 @@ export function bandTabWidth(name: string, count: string, key: string): BandTabW
 }
 
 /**
- * 帯札の件数や現在値のうち、どれを出すか。右の帯から先に消す（仕様書 3 章）。
- * width は帯札の行の CSS px、reserved は右はしの案内など、ほかに要る幅（100 % の px）。
+ * Which band tab counts or current values to show. The bands on the right lose theirs first (spec 3).
+ * width is the band tab row in CSS px; reserved is other width needed, such as the hint at the right end (px at 100 %).
  */
 export function bandCountsShown(width: number, scale: number, tabs: readonly BandTabWidth[], reserved = 0): boolean[] {
   const room = (width * 100) / scale - reserved;

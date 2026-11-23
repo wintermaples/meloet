@@ -1,17 +1,17 @@
-// 曲のダイアログ（仕様書 6 章「保存していない」「保存できない」「曲のファイルがこわれている」）の文とボタン。DOM を知らない純粋な関数。
+// Text and buttons of the song dialog (spec 6 "Not saved", "Cannot save", "Song file is broken"). Pure functions that do not know the DOM.
 import type { SongAnswer, SongDialogView } from "../bridge";
 import { t, type TextKey } from "../text/ja";
 
 export interface SongDialogButton {
   answer: SongAnswer;
   label: string;
-  /** 明るい枠の、Enter で押されるボタン。 */
+  /** The bright-bordered button that Enter presses. */
   primary: boolean;
 }
 
 export interface SongDialogLook {
   body: string;
-  /** 左から。並びは音の設定のダイアログと同じく、やめるが左、決めるボタンが右はし。 */
+  /** From the left. Same order as the sound settings dialog: cancel on the left, the deciding button at the right end. */
   buttons: SongDialogButton[];
 }
 
@@ -39,7 +39,7 @@ export function songDialogLook(d: SongDialogView): SongDialogLook {
   }
 }
 
-/** Enter で送る答え。 */
+/** The answer sent on Enter. */
 export function songDialogEnter(d: SongDialogView): SongAnswer {
   return songDialogLook(d).buttons.find((b) => b.primary)!.answer;
 }

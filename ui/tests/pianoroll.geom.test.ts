@@ -25,12 +25,12 @@ describe("grid and scales", () => {
     expect(G.writable(61, { ...cMajor, lock: false })).toBe(true);
   });
 
-  it("row background: white keys gray.2, black keys gray.1, rows not allowed gray.0 (A-PianoRoll)", () => {
+  it("row background: white keys row.white, black keys row.black, rows not allowed row.out", () => {
     const off = { root: 0, mode: "major" as const, lock: false };
-    expect(G.rowColor(60, off)).toBe("color.gray.2");
-    expect(G.rowColor(61, off)).toBe("color.gray.1");
-    expect(G.rowColor(61, { ...off, lock: true })).toBe("color.gray.0");
-    expect(G.rowColor(66, { root: 7, mode: "major", lock: true })).toBe("color.gray.1");
+    expect(G.rowColor(60, off)).toBe("color.row.white");
+    expect(G.rowColor(61, off)).toBe("color.row.black");
+    expect(G.rowColor(61, { ...off, lock: true })).toBe("color.row.out");
+    expect(G.rowColor(66, { root: 7, mode: "major", lock: true })).toBe("color.row.black");
   });
 
   it("the note face is gray.8, 9, 10 by velocity", () => {

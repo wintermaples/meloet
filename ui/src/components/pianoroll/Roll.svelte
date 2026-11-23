@@ -94,6 +94,7 @@
     velMid: metrics.px("mock.pianoroll.vel-mid"),
     endMark: metrics.px("mock.pianoroll.end-mark"),
     drumGap: metrics.px("part.drum.hit-gap"),
+    hatch: metrics.px("part.row.hatch"),
   });
 
   let area = $state<HTMLElement>();

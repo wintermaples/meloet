@@ -1,4 +1,4 @@
-import type { Batch, PlacedWave } from "./batch";
+import { FLOATS_PER_HATCH, type Batch, type PlacedWave } from "./batch";
 import { WAVE_TEX_WIDTH, WaveTextures, type TexOps } from "./wave";
 
 /** (x, y, r, g, b) */
@@ -23,8 +23,8 @@ void main() {
   o_color = vec4(v_color, 1.0);
 }`;
 
-// The corners come from the number of the vertex: the wave's rectangle is a uniform, so there is no buffer to fill.
-const WAVE_VERTEX = `#version 300 es
+// The corners come from the number of the vertex: the rectangle of a wave or a hatch is a uniform, so there is no buffer to fill.
+const QUAD_VERTEX = `#version 300 es
 uniform vec2 u_size;
 uniform vec4 u_rect;
 out vec2 v_px;
@@ -134,6 +134,24 @@ void main() {
 const WAVE_UNIFORMS = ["u_size", "u_rect", "u_peaks", "u_stereo", "u_index", "u_map", "u_bars", "u_y", "u_gain", "u_fade", "u_color", "u_mid", "u_line"] as const;
 type WaveUniform = (typeof WAVE_UNIFORMS)[number];
 
+// Batch.hatch: u_hatch is (pitch, shift). Pixels are counted on the picture (v_px), not gl_FragCoord, so a picture
+// drawn lower in its canvas (`below`) has the same lines.
+const HATCH_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 v_px;
+out vec4 o_color;
+uniform ivec2 u_hatch;
+uniform vec3 u_color;
+void main() {
+  ivec2 p = ivec2(floor(v_px));
+  if ((p.x + p.y + u_hatch.y) % u_hatch.x != 0) discard;
+  o_color = vec4(u_color, 1.0);
+}`;
+
+const HATCH_UNIFORMS = ["u_size", "u_rect", "u_hatch", "u_color"] as const;
+type HatchUniform = (typeof HATCH_UNIFORMS)[number];
+
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
   gl.shaderSource(shader, source);
@@ -152,8 +170,9 @@ export class Renderer {
   private program: WebGLProgram | null = null;
   private vao: WebGLVertexArrayObject | null = null;
   private wave: { program: WebGLProgram; vao: WebGLVertexArrayObject | null; at: Record<WaveUniform, WebGLUniformLocation | null> } | null = null;
-  /** The wave program and its (empty) vertex array are the ones in use. */
-  private inWave = false;
+  private hatch: { program: WebGLProgram; vao: WebGLVertexArrayObject | null; at: Record<HatchUniform, WebGLUniformLocation | null> } | null = null;
+  /** The program (and its vertex array) in use. */
+  private using: "rects" | "wave" | "hatch" = "rects";
   private readonly textures: WaveTextures<WebGLTexture>;
   /** How long making it took (ms): getContext, then setUp. */
   readonly madeMs: { context: number; program: number };
@@ -195,7 +214,7 @@ export class Renderer {
     const gl = this.gl;
     // The wave program is made with the context, not with the first wave: a compile stops the page for a moment,
     // and the first wave may come while somebody records.
-    const wave = this.link(WAVE_VERTEX, WAVE_FRAGMENT);
+    const wave = this.link(QUAD_VERTEX, WAVE_FRAGMENT);
     const at = {} as Record<WaveUniform, WebGLUniformLocation | null>;
     for (const name of WAVE_UNIFORMS) at[name] = gl.getUniformLocation(wave, name);
     this.wave = { program: wave, vao: gl.createVertexArray(), at };
@@ -203,10 +222,15 @@ export class Renderer {
     gl.uniform1i(at.u_peaks, 0);
     this.textures.forget();
 
+    const hatch = this.link(QUAD_VERTEX, HATCH_FRAGMENT);
+    const hatchAt = {} as Record<HatchUniform, WebGLUniformLocation | null>;
+    for (const name of HATCH_UNIFORMS) hatchAt[name] = gl.getUniformLocation(hatch, name);
+    this.hatch = { program: hatch, vao: gl.createVertexArray(), at: hatchAt };
+
     const program = this.link(VERTEX, FRAGMENT);
     this.program = program;
     gl.useProgram(program);
-    this.inWave = false;
+    this.using = "rects";
     this.size = gl.getUniformLocation(program, "u_size");
 
     this.vao = gl.createVertexArray();
@@ -238,22 +262,55 @@ export class Renderer {
       }
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, batch.data, 0, batch.length);
     }
-    // Rectangles and waves in the order they were put: a wave lies over the clip below it and under what came later.
+    // Rectangles, waves and hatches in the order they were put: a wave lies over the clip below it and under what came later.
+    // Where a hatch and a wave were put after the same rectangles, the hatch goes first (no picture has both now).
     let from = 0;
-    for (const w of batch.waves) {
-      this.rects(from, w.at);
-      from = w.at;
-      this.drawWave(w, width, height);
+    const waves = batch.waves;
+    const hatches = batch.hatchData;
+    let w = 0;
+    let h = 0;
+    while (w < waves.length || h < batch.hatchLength) {
+      const hatchAt = h < batch.hatchLength ? hatches[h]! : Infinity;
+      const wave = waves[w];
+      if (!wave || hatchAt <= wave.at) {
+        this.rects(from, hatchAt);
+        from = Math.max(from, hatchAt);
+        this.drawHatch(hatches, h, width, height);
+        h += FLOATS_PER_HATCH;
+      } else {
+        this.rects(from, wave.at);
+        from = Math.max(from, wave.at);
+        this.drawWave(wave, width, height);
+        w += 1;
+      }
     }
     this.rects(from, batch.length);
     if (batch.waves.length > 0 || this.textures.held().textures > 0) this.textures.endPicture();
   }
 
   private useRects(): void {
-    if (!this.inWave) return;
-    this.inWave = false;
+    if (this.using === "rects") return;
+    this.using = "rects";
     this.gl.useProgram(this.program);
     this.gl.bindVertexArray(this.vao);
+  }
+
+  /** The hatch whose floats start at `i`. */
+  private drawHatch(d: Float32Array, i: number, width: number, height: number): void {
+    const gl = this.gl;
+    const hatch = this.hatch;
+    if (!hatch) return;
+    const at = hatch.at;
+    if (this.using !== "hatch") {
+      this.using = "hatch";
+      gl.useProgram(hatch.program);
+      gl.bindVertexArray(hatch.vao);
+    }
+    gl.uniform2f(at.u_size, width, height);
+    gl.uniform4f(at.u_rect, d[i + 1]!, d[i + 2]!, d[i + 3]!, d[i + 4]!);
+    gl.uniform2i(at.u_hatch, d[i + 5]!, d[i + 6]!);
+    gl.uniform3f(at.u_color, d[i + 7]!, d[i + 8]!, d[i + 9]!);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
   /** The rectangles whose floats are `from .. to`. */
@@ -268,8 +325,8 @@ export class Renderer {
     const wave = this.wave;
     if (!wave) return;
     const at = wave.at;
-    if (!this.inWave) {
-      this.inWave = true;
+    if (this.using !== "wave") {
+      this.using = "wave";
       gl.useProgram(wave.program);
       gl.bindVertexArray(wave.vao);
     }

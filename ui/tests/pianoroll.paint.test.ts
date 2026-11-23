@@ -10,7 +10,7 @@ import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { GEOM, take } from "./pianoroll-fixture";
 
 const BOX = { x0: 0, y0: 0, x1: 696, y1: 492 };
-const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
+const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 6 };
 const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
 const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
 
@@ -58,12 +58,12 @@ describe("notes", () => {
     expect(colorOf(faceAt(64, 83))).toBe(is("color.gray.10"));
   });
 
-  it("rows not allowed (outside the scale lock scale) gray.0, black key rows gray.1, white key rows gray.2", () => {
+  it("rows not allowed (outside the scale lock scale) row.out, black key rows row.black, white key rows row.white", () => {
     const rowAt = (key: number, p: RollPicture) =>
       draw(p).find((r) => r[0] === 0 && r[1] === (72 - key) * 12 && r[2] === 696 && r[3] === (72 - key) * 12 + 11)!;
-    expect(colorOf(rowAt(61, picture()))).toBe(is("color.gray.1"));
-    expect(colorOf(rowAt(60, picture()))).toBe(is("color.gray.2"));
-    expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true } })))).toBe(is("color.gray.0"));
+    expect(colorOf(rowAt(61, picture()))).toBe(is("color.row.black"));
+    expect(colorOf(rowAt(60, picture()))).toBe(is("color.row.white"));
+    expect(colorOf(rowAt(61, picture({ scale: { root: 0, mode: "major", lock: true } })))).toBe(is("color.row.out"));
   });
 
   it("bar lines gray.6, beat lines gray.4, grid lines gray.3", () => {
@@ -153,13 +153,13 @@ describe("velocity band and key column", () => {
     expect(grayCap.slice(0, 4)).toEqual([79, 71 - Math.round((100 * 64) / 127), 86, 71 - Math.round((100 * 64) / 127) + 1]);
   });
 
-  it("key column: white keys gray.5, black keys gray.0, lit keys accent", () => {
+  it("key column: white keys key.white, black keys key.black, lit keys accent", () => {
     const out = new Batch();
     out.clip(0, 0, 55, 492);
     paintRollKeys(out, { x0: 0, y0: 0, x1: 55, y1: 492 }, GEOM, (key) => key === 60, 1);
     const at = (key: number) => out.rects().find((r) => r[1] === (72 - key) * 12 && r[3] === (72 - key) * 12 + 11)!;
     expect(colorOf(at(60))).toBe(is("color.accent"));
-    expect(colorOf(at(61))).toBe(is("color.gray.0"));
-    expect(colorOf(at(62))).toBe(is("color.gray.5"));
+    expect(colorOf(at(61))).toBe(is("color.key.black"));
+    expect(colorOf(at(62))).toBe(is("color.key.white"));
   });
 });

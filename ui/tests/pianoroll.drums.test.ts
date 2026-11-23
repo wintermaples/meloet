@@ -11,8 +11,9 @@ import * as G from "../src/components/pianoroll/geom";
 import { DRUM_FIELD_ORDER, nextField, noteFieldSpec, readField } from "../src/components/pianoroll/noteFields";
 import { noteMarks, paintRoll, paintRollKeys, type RollPicture } from "../src/components/pianoroll/paint";
 import { drumFitRowPx, drumView, prView, zoomRowsBy } from "../src/components/pianoroll/view.svelte";
+import { THEME_IDS, palettes } from "../src/design/themes";
 import { Batch } from "../src/gl/batch";
-import { rgb } from "../src/gl/color";
+import { hexToRgb, rgb } from "../src/gl/color";
 import { findTerm, t, texts } from "../src/text/ja";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
 import { sectionText, specDocument } from "./design-sources";
@@ -238,7 +239,7 @@ describe("mouse (drag.ts)", () => {
 });
 
 describe("picture (paint.ts)", () => {
-  const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8 };
+  const SIZES = { noteH: 11, edge: 2, velBar: 3, velCap: 7, velFull: 64, velMid: 36, endMark: 16, drumGap: 8, hatch: 6 };
   const BOX = { x0: 0, y0: 0, x1: 696, y1: 440 };
   const colorOf = (r: number[]) => [r[4], r[5], r[6]].join(",");
   const is = (name: Parameters<typeof rgb>[0]) => Array.from(Float32Array.from(rgb(name))).join(",");
@@ -287,12 +288,29 @@ describe("picture (paint.ts)", () => {
     expect(squares).toHaveLength(2);
   });
 
-  it("row background alternates gray.2 and gray.3. Below 12 rows it stays gray.1", () => {
+  it("row background alternates row.white and row.black. Below 12 rows it stays gray.1", () => {
     const rects = draw(picture());
     const ground = (r: number) => rects.find((x) => x[0] === 0 && x[1] === r * 36 && x[2] === 696 && x[3] === r * 36 + 35)!;
-    expect(colorOf(ground(0))).toBe(is("color.gray.2"));
-    expect(colorOf(ground(1))).toBe(is("color.gray.3"));
+    expect(colorOf(ground(0))).toBe(is("color.row.white"));
+    expect(colorOf(ground(1))).toBe(is("color.row.black"));
+    expect(colorOf(ground(2))).toBe(is("color.row.white"));
     expect(rects.some((x) => x[1] === 12 * 36 && x[2] === 696)).toBe(false);
+  });
+
+  it("the thin grid lines (gray.3) are seen on both drum rows in every theme (1.08 : 1, the faint kind); no hatch, even with scale lock on", () => {
+    const lum = (hex: string) =>
+      hexToRgb(hex)
+        .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0);
+    const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    for (const id of THEME_IDS) {
+      const p = palettes[id];
+      for (const row of ["color.row.white", "color.row.black"] as const) expect(ratio(p["color.gray.3"], p[row]), `${id} ${row}`).toBeGreaterThanOrEqual(1.08);
+    }
+    const out = new Batch();
+    out.clip(BOX.x0, BOX.y0, BOX.x1, BOX.y1);
+    paintRoll(out, BOX, picture({ scale: { root: 0, mode: "major", lock: true } }), null, 1);
+    expect(out.hatches()).toEqual([]);
   });
 
   it("a square under the erase tool is gray.7", () => {

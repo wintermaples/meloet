@@ -25,8 +25,8 @@ const light = {
   "color.gray.10": "#111111",
   "color.accent": "#735000",
   "color.rec": "#A5261F",
-  "color.meter.ok": "#2D813C",
-  "color.meter.hot": "#906C00",
+  "color.meter.ok": "#4CD964",
+  "color.meter.hot": "#FFD60A",
   "color.track.1": "#007F7F",
   "color.track.2": "#1977B6",
   "color.track.3": "#4668E1",
@@ -34,6 +34,13 @@ const light = {
   "color.track.5": "#C23F87",
   "color.tip.bg": "#111111",
   "color.tip.fg": "#FFFFFF",
+  "color.key.white": "#FFFFFF",
+  "color.key.black": "#A7A7A7",
+  "color.key.meter.white": "#FFFFFF",
+  "color.key.meter.black": "#A7A7A7",
+  "color.row.white": "#FFFFFF",
+  "color.row.black": "#F6F6F6",
+  "color.row.out": "#E1E1E1",
 } as const satisfies Palette;
 
 const pinkDark = {
@@ -59,6 +66,13 @@ const pinkDark = {
   "color.track.5": "#FFD54A",
   "color.tip.bg": "#F3F2F2",
   "color.tip.fg": "#040404",
+  "color.key.white": "#483B41",
+  "color.key.black": "#040404",
+  "color.key.meter.white": "#30282C",
+  "color.key.meter.black": "#040404",
+  "color.row.white": "#292225",
+  "color.row.black": "#211B1E",
+  "color.row.out": "#040404",
 } as const satisfies Palette;
 
 const pinkLight = {
@@ -75,8 +89,8 @@ const pinkLight = {
   "color.gray.10": "#121011",
   "color.accent": "#8E2879",
   "color.rec": "#9F251E",
-  "color.meter.ok": "#2C7D3A",
-  "color.meter.hot": "#8B6900",
+  "color.meter.ok": "#4CD964",
+  "color.meter.hot": "#FFD60A",
   "color.track.1": "#007B7B",
   "color.track.2": "#1873B0",
   "color.track.3": "#4164E0",
@@ -84,6 +98,13 @@ const pinkLight = {
   "color.track.5": "#8E6800",
   "color.tip.bg": "#121011",
   "color.tip.fg": "#FBF9F9",
+  "color.key.white": "#FBF9F9",
+  "color.key.black": "#BF98AA",
+  "color.key.meter.white": "#FBF9F9",
+  "color.key.meter.black": "#BF98AA",
+  "color.row.white": "#FBF9F9",
+  "color.row.black": "#F5EEF0",
+  "color.row.out": "#E8D6DE",
 } as const satisfies Palette;
 
 const mintDark = {
@@ -109,6 +130,13 @@ const mintDark = {
   "color.track.5": "#FFD9F1",
   "color.tip.bg": "#F1F3F2",
   "color.tip.fg": "#040404",
+  "color.key.white": "#33423D",
+  "color.key.black": "#040404",
+  "color.key.meter.white": "#232E2A",
+  "color.key.meter.black": "#040404",
+  "color.row.white": "#1D2723",
+  "color.row.black": "#171F1C",
+  "color.row.out": "#040404",
 } as const satisfies Palette;
 
 const mintLight = {
@@ -125,8 +153,8 @@ const mintLight = {
   "color.gray.10": "#0F1111",
   "color.accent": "#0B603F",
   "color.rec": "#A0251E",
-  "color.meter.ok": "#2C7E3A",
-  "color.meter.hot": "#8C6900",
+  "color.meter.ok": "#4CD964",
+  "color.meter.hot": "#FFD60A",
   "color.track.1": "#8F6800",
   "color.track.2": "#1874B0",
   "color.track.3": "#4165E0",
@@ -134,6 +162,13 @@ const mintLight = {
   "color.track.5": "#BD3D84",
   "color.tip.bg": "#0F1111",
   "color.tip.fg": "#F8FAF9",
+  "color.key.white": "#F8FAF9",
+  "color.key.black": "#89AB9F",
+  "color.key.meter.white": "#F8FAF9",
+  "color.key.meter.black": "#89AB9F",
+  "color.row.white": "#F8FAF9",
+  "color.row.black": "#EBF2EF",
+  "color.row.out": "#D0DFDA",
 } as const satisfies Palette;
 
 export const palettes: Readonly<Record<ThemeId, Palette>> = {

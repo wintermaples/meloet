@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, AtomicU16, AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -268,6 +268,8 @@ enum Msg {
         epoch: u64,
         count: u64,
     },
+    /// The MIDI thread moved a keyboard's fader; the newest value is in `Shared::fader`.
+    Fader,
     /// The MIDI thread ended by itself.
     MidiStopped {
         reason: String,
@@ -398,6 +400,9 @@ struct Shared {
     /// the clock with.
     tempo_map: Mutex<(Arc<TempoMap>, u32)>,
     shell: Mutex<Option<ShellSink>>,
+    /// The newest value of a keyboard's fader that the core thread has not read yet, or
+    /// [`NO_FADER`]. Many moves of the fader are one [`Msg::Fader`] while the core is busy.
+    fader: AtomicU16,
     /// The open input's meters and the vocal tracks they are read for. The core thread
     /// writes it, the telemetry thread reads it.
     mics: Mutex<Option<input::MicFacts>>,
@@ -527,6 +532,7 @@ impl Core {
             clock: Mutex::new(parts.handle.clock().clone()),
             tempo_map: Mutex::new(map_of(&parts.handle)),
             shell: Mutex::new(None),
+            fader: AtomicU16::new(NO_FADER),
             mics: Mutex::new(None),
         });
         let meters = parts.handle.meters().clone();
@@ -878,33 +884,47 @@ struct Links {
 }
 
 impl Links {
-    /// Keys go straight to the engine and the screen; plug changes go to the core thread.
+    /// Keys go straight to the engine and the screen; plug changes, buttons and the fader go
+    /// to the core thread.
     fn midi_sink(&self, mut midi_in: MidiFeed) -> MidiSink {
         let (hub, shared, tx) = (self.hub.clone(), self.shared.clone(), self.tx.clone());
         let mut last_played = String::new();
+        let mut hands = keys::Hands::default();
         Box::new(move |message: MidiMessage| match message {
             MidiMessage::Event {
                 keyboard,
                 event,
                 t_us,
             } => {
-                let event = fixed(event, shared.fixed_velocity.load(Relaxed));
-                // Keys played while no stream runs must not sound when one opens.
-                if shared.stream.open.load(Relaxed) {
-                    let _ = midi_in.push(MidiIn {
-                        event: instrument_event(event),
-                        t_us,
-                    });
-                    let stream = &shared.stream;
-                    if matches!(event, MidiEvent::NoteOn { .. })
-                        && stream.wants_loading_key.load(Relaxed)
-                        && stream.wants_loading_key.swap(false, Relaxed)
-                    {
-                        let _ = tx.send(Msg::Input(Input::KeyWhileLoading, None));
+                let reset = match event {
+                    MidiEvent::Control {
+                        controller: keys::FADER,
+                        value,
+                    } => {
+                        if shared.fader.swap(u16::from(value), Relaxed) == NO_FADER {
+                            let _ = tx.send(Msg::Fader);
+                        }
+                        return;
                     }
+                    MidiEvent::Control {
+                        controller: keys::ALL_NOTES_OFF,
+                        ..
+                    } => Some(false),
+                    MidiEvent::Control {
+                        controller: keys::RESET_ALL_CONTROLLERS,
+                        ..
+                    } => Some(true),
+                    _ => None,
+                };
+                if let Some(reset) = reset {
+                    for event in hands.let_go(&keyboard, reset) {
+                        play_key(event, t_us, &shared, &mut midi_in, &hub, &tx);
+                    }
+                    return;
                 }
-                shared.held.note(event);
-                hub.event(protocol_event(event, t_us));
+                hands.saw(&keyboard, event);
+                let event = fixed(event, shared.fixed_velocity.load(Relaxed));
+                play_key(event, t_us, &shared, &mut midi_in, &hub, &tx);
                 // Only a change of keyboard goes to the core thread.
                 if matches!(event, MidiEvent::NoteOn { .. }) && keyboard != last_played {
                     last_played = keyboard;
@@ -915,7 +935,11 @@ impl Links {
             MidiMessage::Added(keyboard) => {
                 let _ = tx.send(Msg::Input(Input::KeyboardAdded(keyboard), None));
             }
+            MidiMessage::Button { button, .. } => {
+                let _ = tx.send(Msg::Input(Input::KeyboardButton(button), None));
+            }
             MidiMessage::Removed { id } => {
+                hands.forget(&id);
                 if id == last_played {
                     last_played.clear();
                 }
@@ -927,6 +951,7 @@ impl Links {
             MidiMessage::Stopped { reason } => {
                 // The next thread reports every keyboard again, the played one too.
                 last_played.clear();
+                hands.clear();
                 let _ = tx.send(Msg::MidiStopped { reason });
             }
         })
@@ -1045,6 +1070,37 @@ enum DevicesState {
         at: Instant,
     },
 }
+
+/// A key, pedal or bend to the instrument of the selected track (so to a recording too), to
+/// the meters and to the screen.
+fn play_key(
+    event: MidiEvent,
+    t_us: u64,
+    shared: &Shared,
+    midi_in: &mut MidiFeed,
+    hub: &Hub,
+    tx: &Sender<Msg>,
+) {
+    // Keys played while no stream runs must not sound when one opens.
+    if shared.stream.open.load(Relaxed) {
+        let _ = midi_in.push(MidiIn {
+            event: instrument_event(event),
+            t_us,
+        });
+        let stream = &shared.stream;
+        if matches!(event, MidiEvent::NoteOn { .. })
+            && stream.wants_loading_key.load(Relaxed)
+            && stream.wants_loading_key.swap(false, Relaxed)
+        {
+            let _ = tx.send(Msg::Input(Input::KeyWhileLoading, None));
+        }
+    }
+    shared.held.note(event);
+    hub.event(protocol_event(event, t_us));
+}
+
+/// [`Shared::fader`] when no value waits.
+const NO_FADER: u16 = u16::MAX;
 
 /// A NoteOn at the fixed velocity (B-66), when there is one (`fixed` 1..=127; 0: not fixed).
 /// Done first on the MIDI thread, so the sound, the recording, the meter and the screen all get
@@ -2202,6 +2258,12 @@ impl Worker {
                 Ok(Msg::Xruns { epoch, count }) => {
                     if self.current(epoch) {
                         self.handle(Input::AudioXruns { count });
+                    }
+                }
+                Ok(Msg::Fader) => {
+                    let value = self.shared.fader.swap(NO_FADER, Relaxed);
+                    if let Ok(value) = u8::try_from(value) {
+                        self.handle(Input::KeyboardFader { value });
                     }
                 }
                 Ok(Msg::MidiStopped { reason }) => {
@@ -3415,6 +3477,7 @@ mod export;
 #[cfg(test)]
 mod export_tests;
 mod input;
+mod keys;
 #[cfg(test)]
 mod plug_tests;
 #[cfg(test)]

@@ -2448,6 +2448,7 @@ mod audio;
 mod audiosync;
 mod automation;
 mod autosync;
+mod buttons;
 mod history;
 mod mix;
 pub(crate) mod mixer;
@@ -2479,6 +2480,8 @@ use windows::Windows;
 
 #[cfg(test)]
 mod arrange_tests;
+#[cfg(test)]
+mod buttons_tests;
 #[cfg(test)]
 mod roll_tests;
 #[cfg(test)]

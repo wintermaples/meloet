@@ -6,7 +6,7 @@ use alsa::Direction;
 use alsa::poll::{Descriptors, pollfd};
 use alsa::seq::{Addr, ClientIter, EventType, PortCap, PortIter, PortSubscribe, PortType, Seq};
 
-use crate::rules::{PortFacts, convert, keyboard_id, keyboard_port};
+use crate::rules::{PortFacts, button_of, convert, keyboard_id, keyboard_ports};
 use crate::{Keyboard, MidiError, MidiEvent, MidiMessage, MidiOptions, monotonic_us};
 
 /// The sink in the form [`MidiInput::into_sink`] gives back.
@@ -140,8 +140,8 @@ pub fn list_ports(options: MidiOptions) -> Result<Vec<Keyboard>, MidiError> {
     let mut found: Vec<Keyboard> = Vec::new();
     let clients: Vec<i32> = ClientIter::new(&seq).map(|c| c.get_client()).collect();
     for client in clients {
-        if let Some(keyboard) = find_keyboard(&seq, client, me, &options, &found) {
-            found.push(keyboard);
+        if let Some(found_one) = find_keyboard(&seq, client, me, &options, &found) {
+            found.push(found_one.keyboard);
         }
     }
     Ok(found)
@@ -154,6 +154,22 @@ fn subscribe(seq: &Seq, sender: Addr, dest: Addr) -> alsa::Result<()> {
     seq.subscribe_port(&s)
 }
 
+/// A keyboard and the ports it has besides its key port.
+#[derive(Clone)]
+struct Active {
+    keyboard: Keyboard,
+    buttons: Vec<i32>,
+}
+
+impl Active {
+    fn ports(&self) -> impl Iterator<Item = Addr> + '_ {
+        let client = self.keyboard.client;
+        std::iter::once(self.keyboard.port)
+            .chain(self.buttons.iter().copied())
+            .map(move |port| Addr { client, port })
+    }
+}
+
 /// The keyboard of one client, if it is one. `others` are the keyboards whose ids are taken.
 fn find_keyboard(
     seq: &Seq,
@@ -161,7 +177,7 @@ fn find_keyboard(
     me: i32,
     options: &MidiOptions,
     others: &[Keyboard],
-) -> Option<Keyboard> {
+) -> Option<Active> {
     if client == me || client == Addr::system_announce().client {
         return None;
     }
@@ -176,7 +192,8 @@ fn find_keyboard(
             kind: p.get_type(),
         })
         .collect();
-    let port = keyboard_port(name, &facts, options)?;
+    let found = keyboard_ports(name, &facts, options)?;
+    let port = found.keys;
     let port_name = ports
         .iter()
         .find(|p| p.get_port() == port)?
@@ -184,12 +201,15 @@ fn find_keyboard(
         .ok()?
         .trim_end();
     let id = keyboard_id(name, port_name, |id| others.iter().any(|k| k.id == id));
-    Some(Keyboard {
-        id,
-        name: name.to_string(),
-        port_name: port_name.to_string(),
-        client,
-        port,
+    Some(Active {
+        keyboard: Keyboard {
+            id,
+            name: name.to_string(),
+            port_name: port_name.to_string(),
+            client,
+            port,
+        },
+        buttons: found.buttons,
     })
 }
 
@@ -209,7 +229,7 @@ struct Listener<S> {
     me: i32,
     dest: Addr,
     options: MidiOptions,
-    active: Vec<Keyboard>,
+    active: Vec<Active>,
     /// Key events read so far, for [`MidiOptions::fail_after_events`].
     events: u32,
     sink: S,
@@ -246,13 +266,16 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
                         event,
                         t_us,
                     }) => {
-                        if let Some(k) = self
+                        let Some(a) = self
                             .active
                             .iter()
-                            .find(|k| k.client == source.client && k.port == source.port)
-                        {
+                            .find(|a| a.keyboard.client == source.client)
+                        else {
+                            continue;
+                        };
+                        if a.keyboard.port == source.port {
                             (self.sink)(MidiMessage::Event {
-                                keyboard: k.id.clone(),
+                                keyboard: a.keyboard.id.clone(),
                                 event,
                                 t_us,
                             });
@@ -260,6 +283,13 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
                             if self.options.fail_after_events == Some(self.events) {
                                 return Err("failure injected for a test".into());
                             }
+                        } else if a.buttons.contains(&source.port)
+                            && let Some(button) = button_of(event)
+                        {
+                            (self.sink)(MidiMessage::Button {
+                                keyboard: a.keyboard.id.clone(),
+                                button,
+                            });
                         }
                     }
                     Ok(Incoming::Client(client)) => self.sync_client(client),
@@ -294,7 +324,7 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
     }
 
     fn sync_all(&mut self) {
-        let mut clients: Vec<i32> = self.active.iter().map(|k| k.client).collect();
+        let mut clients: Vec<i32> = self.active.iter().map(|a| a.keyboard.client).collect();
         clients.extend(ClientIter::new(&self.seq).map(|c| c.get_client()));
         clients.sort_unstable();
         clients.dedup();
@@ -306,45 +336,74 @@ impl<S: FnMut(MidiMessage)> Listener<S> {
     /// Makes `active` match what the client looks like now. Safe to call any number of times, so
     /// a port that is both counted at start and announced right after is reported once.
     fn sync_client(&mut self, client: i32) {
-        let have = self.active.iter().position(|k| k.client == client);
+        let have = self.active.iter().position(|a| a.keyboard.client == client);
         let others: Vec<Keyboard> = self
             .active
             .iter()
-            .filter(|k| k.client != client)
-            .cloned()
+            .filter(|a| a.keyboard.client != client)
+            .map(|a| a.keyboard.clone())
             .collect();
         let want = find_keyboard(&self.seq, client, self.me, &self.options, &others);
         if let (Some(i), Some(w)) = (have, &want) {
-            let k = &self.active[i];
-            if k.port == w.port && k.name == w.name && k.port_name == w.port_name {
+            let k = &self.active[i].keyboard;
+            if k.port == w.keyboard.port
+                && k.name == w.keyboard.name
+                && k.port_name == w.keyboard.port_name
+            {
+                if self.active[i].buttons != w.buttons {
+                    // Only a button port came or went: the keyboard stays as it is.
+                    let old = std::mem::replace(&mut self.active[i], w.clone());
+                    for port in old.buttons.iter().filter(|p| !w.buttons.contains(p)) {
+                        let gone = Addr {
+                            client,
+                            port: *port,
+                        };
+                        let _ = self.seq.unsubscribe_port(gone, self.dest);
+                    }
+                    self.subscribe_buttons(i, &old.buttons);
+                }
                 return;
             }
         }
         if let Some(i) = have {
             let old = self.active.remove(i);
-            // Fails when the port is already gone, which is the usual case.
-            let _ = self.seq.unsubscribe_port(
-                Addr {
-                    client: old.client,
-                    port: old.port,
-                },
-                self.dest,
-            );
-            (self.sink)(MidiMessage::Removed { id: old.id });
+            for port in old.ports() {
+                // Fails when the port is already gone, which is the usual case.
+                let _ = self.seq.unsubscribe_port(port, self.dest);
+            }
+            (self.sink)(MidiMessage::Removed {
+                id: old.keyboard.id,
+            });
         }
         if let Some(new) = want
             && subscribe(
                 &self.seq,
                 Addr {
-                    client: new.client,
-                    port: new.port,
+                    client: new.keyboard.client,
+                    port: new.keyboard.port,
                 },
                 self.dest,
             )
             .is_ok()
         {
-            self.active.push(new.clone());
-            (self.sink)(MidiMessage::Added(new));
+            let keyboard = new.keyboard.clone();
+            self.active.push(new);
+            self.subscribe_buttons(self.active.len() - 1, &[]);
+            (self.sink)(MidiMessage::Added(keyboard));
         }
+    }
+
+    /// Subscribes to the button ports of `active[i]` that are not in `already`. A port that
+    /// cannot be subscribed to is left out; the keys work without it.
+    fn subscribe_buttons(&mut self, i: usize, already: &[i32]) {
+        let (seq, dest) = (&self.seq, self.dest);
+        let client = self.active[i].keyboard.client;
+        self.active[i].buttons.retain(|port| {
+            let addr = Addr {
+                client,
+                port: *port,
+            };
+            already.contains(port) || subscribe(seq, addr, dest).is_ok()
+        });
     }
 }

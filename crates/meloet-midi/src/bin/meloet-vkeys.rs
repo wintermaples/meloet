@@ -16,11 +16,13 @@ meloet-vkeys play   [--notes 60,64,67] [--count 8] [--interval-ms 250] [--jitter
                     [--pattern spaced|fast|mixed] [--chord 1] [--spread-ms 6] [--fast-ms 20-150]
 meloet-vkeys cc     --controller N --value N
 meloet-vkeys bend   --value N            (-8192..8191)
-meloet-vkeys appear [--seconds 5]
+meloet-vkeys button --note N             (a Mackie Control button on the button port: 94 play, 93 stop, 95 record, ...)
+meloet-vkeys appear [--seconds 5] [--buttons 0|1]
 
 Every command also takes --lead-ms N (default 500): the time between the port appearing and
 the first event, so that a listener can subscribe, and --name NAME (default meloet-vkeys): the
-client name, starting with meloet-vkeys.
+client name, starting with meloet-vkeys. `button` and `appear --buttons 1` add a second port,
+\"NAME buttons\", which meloet hears as the keyboard's button port.
 
 play --pattern: spaced (the default) presses --chord keys every --interval-ms, each step up to
 --jitter-ms late and the keys of a chord 0..--spread-ms apart; fast presses every key --fast-ms
@@ -180,10 +182,26 @@ fn run(argv: &[String]) -> Result<(), String> {
             }
             send(&open()?, MidiEvent::PitchBend { value })?;
         }
+        "button" => {
+            let note: u8 = args.get("note", None)?;
+            args.done()?;
+            if note > 127 {
+                return Err("--note must be 0..127".into());
+            }
+            let keys = VirtualKeyboard::open_with_buttons(&name).map_err(|e| e.to_string())?;
+            sleep(lead);
+            keys.press_button(note).map_err(|e| e.to_string())?;
+        }
         "appear" => {
             let seconds: f64 = args.get("seconds", Some(5.0))?;
+            let buttons: u8 = args.get("buttons", Some(0))?;
             args.done()?;
-            let _keys = VirtualKeyboard::open(&name).map_err(|e| e.to_string())?;
+            let _keys = if buttons == 1 {
+                VirtualKeyboard::open_with_buttons(&name)
+            } else {
+                VirtualKeyboard::open(&name)
+            }
+            .map_err(|e| e.to_string())?;
             sleep(Duration::try_from_secs_f64(seconds).map_err(|e| format!("--seconds: {e}"))?);
         }
         other => return Err(format!("unknown command `{other}`")),

@@ -20,6 +20,7 @@ use super::analysis::{self, Heard, Listener};
 use super::loudness::{self, TruePeak};
 use super::render::{ExportEngine, Plugs};
 use super::sink::{self, SinkSpec};
+use super::tags;
 use super::told::{KnownPlugins, Told};
 use super::wave::WaveBars;
 use super::{ExportJob, ExportNews, ExportTarget};
@@ -251,6 +252,11 @@ fn go(
         };
         let out = setup.work.join(format!("out-{i}"));
         let bars = convert(&file.path, &out, job.sample_rate, &target, gain, stop)?;
+        let info = match &file.name {
+            Some(track) => target.info.for_track(track),
+            None => target.info.clone(),
+        };
+        tags::write(&out, target.format, &info)?;
         if !job.per_track && rendered.len() == 1 {
             wave = bars;
         }

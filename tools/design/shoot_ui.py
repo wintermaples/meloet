@@ -253,6 +253,10 @@ BOARDS = {
     "exportLoudnessQuieter": None,
     "exportLoudnessCounting": None,
     "exportLoudnessSilent": None,
+    # 「曲の情報」 of the export (round 12 F2; the spec has no mock).
+    "exportSongInfo": None,
+    "exportSongInfoWav": None,
+    "exportPictureUnreadable": None,
     # Two or more clips, the check before export.
     "multiClip": "F8-MultiClip",
     "exportCheck": "F8-ExportCheck",

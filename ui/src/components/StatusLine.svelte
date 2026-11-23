@@ -4,6 +4,7 @@
   import { onMount, untrack } from "svelte";
   import {
     clockOffsetUs,
+    EXPORT_PICTURE_MAX_BYTES,
     keyIsDown,
     paramTable,
     type Band,
@@ -666,6 +667,10 @@
         return plain("msg.normalizeLimited", { count: m.count });
       case "normalizeSilent":
         return plain("msg.normalizeSilent", { count: m.count });
+      case "exportPictureTooLarge":
+        return plain("msg.exportPictureTooLarge", { file: m.file, mb: EXPORT_PICTURE_MAX_BYTES / (1024 * 1024) });
+      case "exportPictureUnreadable":
+        return plain("msg.exportPictureUnreadable", { file: m.file });
       case "reverseFollowOff":
         return plain("msg.reverseFollowOff", { count: m.count });
       // MB is 1000 × 1000 bytes.

@@ -2755,6 +2755,19 @@ export const texts = {
   "export.loudnessLouder": e("合わせると {db} dB 大きくなります", "user:2026-11-23", { db: "4.6" }),
   "export.loudnessQuieter": e("合わせると {db} dB 小さくなります", "builder:2026-11-23", { db: "2.4" }),
   "export.loudnessLimited": e("−1 dBTP を越えないよう、{lufs} LUFS になります", "user:2026-11-23", { lufs: "−15.2" }),
+  // 「曲の情報」 in 「くわしく」 of the export (round 12 F2).
+  "export.songInfo": e("曲の情報", "user:2026-11-23"),
+  "export.songTitle": e("題名", "user:2026-11-23"),
+  "export.artist": e("作者", "user:2026-11-23"),
+  "export.picture": e("絵", "user:2026-11-23"),
+  "export.choosePicture": e("えらぶ…", "user:2026-11-23"),
+  "export.removePicture": e("はずす", "builder:2026-11-24"),
+  "export.noPicture": e("なし", "builder:2026-11-24"),
+  "msg.exportPictureTooLarge": e("「{file}」は大きすぎるので使えません（絵は {mb} MB まで）。", "builder:2026-11-24", {
+    file: "表紙.png",
+    mb: "5",
+  }),
+  "msg.exportPictureUnreadable": e("「{file}」は絵として読めません（使えるのは png ・ jpg）。", "builder:2026-11-24", { file: "表紙.bmp" }),
   // The dialog 「書き出しました」 when an export ends (round 12 E9). 「フォルダをひらく」 and 「閉じる」 are button.openFolder and button.close.
   "exported.title": e("書き出しました", "user:2026-11-23"),
   "exported.files": e("{count} つのファイル", "user:2026-11-23", { count: "5" }),

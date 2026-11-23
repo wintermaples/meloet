@@ -31,6 +31,7 @@ fn target(
         sample_rate,
         bits,
         loudness: ExportLoudness::AsIs,
+        info: Default::default(),
     }
 }
 

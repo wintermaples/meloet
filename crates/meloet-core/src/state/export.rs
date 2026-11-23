@@ -8,7 +8,8 @@ use crate::export::{ExportDirs, ExportNews, Scene};
 
 impl Model {
     pub fn with_export_dirs(mut self, dirs: ExportDirs) -> Model {
-        self.export = crate::export::Exporting::new(dirs);
+        let artist = self.export.artist().to_owned();
+        self.export = crate::export::Exporting::new(dirs).with_artist(artist);
         self
     }
 
@@ -55,13 +56,20 @@ impl Model {
         }
         let mut export = std::mem::take(&mut self.export);
         let mut asks = Vec::new();
+        let artist = export.artist().to_owned();
         export.command(command, &self.export_scene(), &mut asks);
         self.export = export;
         effects.extend(asks.into_iter().map(Effect::Export));
+        // F2 「作者」 is kept with the PC's settings.
+        if self.export.artist() != artist {
+            effects.push(Effect::SaveSettings(self.settings()));
+        }
     }
 
     pub(super) fn export_news(&mut self, news: ExportNews) {
-        self.export.news(news);
+        if let Some(notice) = self.export.news(news) {
+            self.notice = Some(notice);
+        }
     }
 
     /// After every input.

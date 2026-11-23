@@ -3397,7 +3397,7 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     tracks: song.tracks.length,
     span: { start: 0, end },
     format: "wav",
-    // round12 stub: F2 (mp3 is not offered until it can be written)
+    // round12 stub: F2 (mp3 is not offered: it did not meet its conditions)
     formats: EXPORT_FORMATS.map((f) => f.format).filter((f) => f !== "mp3"),
     place: `~/音楽/${song.name}.wav`,
     check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
@@ -3423,7 +3423,8 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     loudnessResult: null,
     ...over,
   };
-  return { ...d, ...fakeLoudnessOf(d.check, d.range, d.loudness) };
+  // Round 12 F2: a wav holds no picture.
+  return { ...d, pictureUsable: d.format !== "wav", ...fakeLoudnessOf(d.check, d.range, d.loudness) };
 }
 
 const exportDialogScene = (over: Partial<ExportDialogView> = {}, screen?: SceneDef["screen"]): SceneDef => ({
@@ -3472,6 +3473,23 @@ SCENES.exportLoudnessQuieter = exportDialogScene({ check: { state: "done", peakD
 SCENES.exportLoudnessCounting = exportDialogScene({ check: { state: "counting", percent: 38, peakDb: -3.5, clips: false, over: 0, lufs: -19.0, truePeakDb: -3.1 }, loudness: "match" });
 // A song near silence: 「公開先に合わせる」 cannot be chosen.
 SCENES.exportLoudnessSilent = exportDialogScene({ check: { state: "done", peakDb: null, clips: false, over: 0, lufs: null, truePeakDb: null } });
+// Round 12 F2 「曲の情報」 in 「くわしく」: a flac with its title, artist and picture.
+const songInfoFlac: Partial<ExportDialogView> = {
+  format: "flac",
+  place: "~/音楽/はじめての曲.flac",
+  bitsChoices: [...EXPORT_FORMATS[1]!.bits],
+  advancedOpen: true,
+  artist: "わたし",
+  picture: "表紙.png",
+};
+SCENES.exportSongInfo = exportDialogScene(songInfoFlac);
+// A wav holds no picture: the row is there and cannot be used.
+SCENES.exportSongInfoWav = exportDialogScene({ advancedOpen: true, artist: "わたし" });
+// The picture chosen is not a png or a jpg: it is not taken, and the status line says so.
+SCENES.exportPictureUnreadable = {
+  ...exportDialogScene({ ...songInfoFlac, picture: null }),
+  after: (s) => (s.status.message = { id: "exportPictureUnreadable", file: "表紙.bmp" }),
+};
 
 /** The song of F7-Exporting: the band, "5 Surge XT" and 「6 歌」 with one clip; saved, the keys on 「1 ピアノ」. */
 function exportingSong(s: AppState, run: ExportRunView): void {
@@ -3697,11 +3715,16 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         if (d.check.state === "done" || d.check.state === "counting") d.check = { ...d.check, lufs: measured.lufs, truePeakDb: measured.truePeakDb };
         Object.assign(d, fakeLoudnessOf(d.check, d.range, d.loudness));
       } else if (c.kind === "format" && c.format !== "mp3") {
-        // round12 stub: F2 (mp3 cannot be written yet: the condition above)
+        // round12 stub: F2 (mp3 is not offered: the condition above)
         d.format = c.format;
         d.bitsChoices = [...EXPORT_FORMATS.find((f) => f.format === c.format)!.bits];
         if (!d.bitsChoices.includes(d.bits)) d.bits = "bits24";
-      } else if (c.kind === "advancedOpen") d.advancedOpen = c.open;
+        // Round 12 F2: a wav holds no picture.
+        d.pictureUsable = c.format !== "wav";
+      } else if (c.kind === "title") d.title = c.title;
+      else if (c.kind === "artist") d.artist = c.artist;
+      else if (c.kind === "removePicture") d.picture = null;
+      else if (c.kind === "advancedOpen") d.advancedOpen = c.open;
       else if (c.kind === "sampleRate") d.sampleRate = d.sampleRateChoices.includes(c.hz) ? c.hz : d.sampleRate;
       else if (c.kind === "bits") d.bits = d.bitsChoices.includes(c.bits) ? c.bits : d.bits;
       else if (c.kind === "tail") d.tail = c.tail;

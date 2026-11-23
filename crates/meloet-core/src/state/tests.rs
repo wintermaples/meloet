@@ -2001,9 +2001,7 @@ fn the_user_guide_opens_in_the_browser_and_the_state_stays() {
 /// it changes nothing, as an intent with an old id.
 #[test]
 fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
-    use meloet_protocol::{
-        ExportChange, ExportFormat, InsertRef, PresetRef, PresetsView, StripRef,
-    };
+    use meloet_protocol::{InsertRef, PresetRef, PresetsView, StripRef};
     let mut m = fresh();
     let before = m.view();
     assert!(!before.transport.can_keep_played);
@@ -2065,40 +2063,6 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
         assert_eq!(cmd(&mut m, command.clone()), [], "{command:?}");
     }
     assert_eq!(AppState::changes_from(&before, &m.view()), []);
-
-    // The export does not offer mp3 yet and does not take it; the song's information changes
-    // nothing yet.
-    cmd(&mut m, Command::OpenExport);
-    let dialog = m.view().export.dialog.expect("the dialog");
-    assert_eq!(dialog.formats, [ExportFormat::Wav, ExportFormat::Flac]);
-    assert_eq!(
-        (
-            dialog.mp3_kbps,
-            dialog.mp3_kbps_choices.len(),
-            &dialog.title,
-            &dialog.artist,
-            &dialog.picture,
-            dialog.picture_usable
-        ),
-        (192, 0, &before.song.name, &String::new(), &None, false)
-    );
-    for change in [
-        ExportChange::Format {
-            format: ExportFormat::Mp3,
-        },
-        ExportChange::Mp3Kbps { kbps: 320 },
-        ExportChange::Title {
-            title: "別の題名".into(),
-        },
-        ExportChange::Artist {
-            artist: "わたし".into(),
-        },
-        ExportChange::ChoosePicture,
-        ExportChange::RemovePicture,
-    ] {
-        cmd(&mut m, Command::SetExport { change });
-    }
-    assert_eq!(m.view().export.dialog, Some(dialog));
 
     // The settings are read and written back as they are.
     let settings = Settings {

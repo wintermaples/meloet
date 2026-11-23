@@ -125,6 +125,11 @@ impl Worker {
                 });
                 (!asked).then_some(Input::Export(ExportNews::PlacePicked(None)))
             }
+            ExportAsk::PickPicture { folder } => {
+                let folder = folder.filter(|f| f.is_dir());
+                let asked = self.ask_shell(ShellRequest::PickExportPicture { folder });
+                (!asked).then_some(Input::Export(ExportNews::PicturePicked(None)))
+            }
         }
     }
 

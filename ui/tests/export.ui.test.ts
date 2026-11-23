@@ -174,6 +174,9 @@ describe("export dialog (mock F7-Export, spec 3 (34-B))", () => {
       "ビット 24 ビット▾",
       "しっぽ 音が消えるまで（最大 10 秒）▾",
       "実時間で書き出す",
+      "題名",
+      "作者",
+      "絵 なし えらぶ…",
     ]);
     const rows = () => (contextMenu.open?.entries ?? []).filter((e): e is MenuRow => e.kind === "row");
     q('[data-test="export-rate"]')!.click();

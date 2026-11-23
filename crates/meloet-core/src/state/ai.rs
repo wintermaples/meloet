@@ -921,6 +921,8 @@ impl Model {
             sample_rate: ask.sample_rate.unwrap_or(scene.sample_rate),
             bits: ask.bits,
             loudness: ExportLoudness::AsIs,
+            // The AI link's files say nothing of themselves, as before 「曲の情報」.
+            info: crate::export::tags::SongInfo::default(),
         };
         Ok((job, target))
     }

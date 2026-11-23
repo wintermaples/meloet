@@ -98,9 +98,10 @@ meloet-stretch (Rust): Signalsmith Linear 0.6.4 (C++ headers stft.h and fft.h, k
   source: https://github.com/Signalsmith-Audio/linear
   license: MIT; the text is in licenses/rust/meloet-stretch/SIGNALSMITH-LINEAR-LICENSE.txt
 
-== Parts (267: 264 Rust crates, 3 npm packages)
+== Parts (275: 272 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
+adler2 2.0.1 (Rust): 0BSD OR MIT OR Apache-2.0
 aho-corasick 1.1.5 (Rust): Unlicense OR MIT
 alloc-no-stdlib 3.0.0 (Rust): BSD-3-Clause
 alloc-stdlib 0.3.0 (Rust): BSD-3-Clause
@@ -139,6 +140,7 @@ cpufeatures 0.2.17 (Rust): MIT OR Apache-2.0
 cpufeatures 0.3.1 (Rust): MIT OR Apache-2.0
 crc 3.4.0 (Rust): MIT OR Apache-2.0
 crc-catalog 2.5.0 (Rust): MIT OR Apache-2.0
+crc32fast 1.5.5 (Rust): MIT OR Apache-2.0
 crossbeam-channel 0.5.17 (Rust): MIT OR Apache-2.0
 crossbeam-utils 0.8.23 (Rust): MIT OR Apache-2.0
 crypto-common 0.1.7 (Rust): MIT OR Apache-2.0
@@ -146,6 +148,7 @@ crypto-common 0.2.2 (Rust): MIT OR Apache-2.0
 ctor 1.0.14 (Rust): Apache-2.0 OR MIT
 dasp_frame 0.11.0 (Rust): MIT OR Apache-2.0
 dasp_sample 0.11.0 (Rust): MIT OR Apache-2.0
+data-encoding 2.11.1 (Rust): MIT
 dbus 0.9.12 (Rust): Apache-2.0 OR MIT
 deranged 0.5.9 (Rust): MIT OR Apache-2.0
 digest 0.10.7 (Rust): MIT OR Apache-2.0
@@ -162,6 +165,7 @@ erased-serde 0.4.11 (Rust): MIT OR Apache-2.0
 extended 0.1.0 (Rust): MIT
 field-offset 0.3.6 (Rust): MIT OR Apache-2.0
 flacenc 0.5.1 (Rust): Apache-2.0
+flate2 1.1.11 (Rust): MIT OR Apache-2.0
 fnv 1.0.7 (Rust): Apache-2.0 OR MIT
 form_urlencoded 1.2.2 (Rust): MIT OR Apache-2.0
 futures 0.3.34 (Rust): MIT OR Apache-2.0
@@ -228,6 +232,7 @@ litemap 0.8.3 (Rust): Unicode-3.0
 livi 0.9.0 (Rust): MIT
 lock_api 0.4.14 (Rust): MIT OR Apache-2.0
 lock_api 0.5.0 (Rust): MIT OR Apache-2.0
+lofty 0.25.5 (Rust): MIT OR Apache-2.0
 log 0.4.35 (Rust): MIT OR Apache-2.0
 lv2_raw 0.3.2 (Rust): ISC OR MIT OR Apache-2.0
 lv2-sys 2.0.0 (Rust): MIT OR Apache-2.0
@@ -235,6 +240,7 @@ md-5 0.10.6 (Rust): MIT OR Apache-2.0
 memchr 2.8.3 (Rust): Unlicense OR MIT
 memoffset 0.9.1 (Rust): MIT
 mime 0.3.18 (Rust): MIT OR Apache-2.0
+miniz_oxide 0.9.1 (Rust): MIT OR Zlib OR Apache-2.0
 mio 1.2.5 (Rust): MIT
 muda 0.20.0 (Rust): Apache-2.0 OR MIT
 nom 8.0.0 (Rust): MIT
@@ -242,6 +248,7 @@ num-complex 0.4.6 (Rust): MIT OR Apache-2.0
 num-conv 0.2.2 (Rust): MIT OR Apache-2.0
 num-integer 0.1.47 (Rust): MIT OR Apache-2.0
 num-traits 0.2.19 (Rust): MIT OR Apache-2.0
+ogg_pager 0.8.0 (Rust): MIT OR Apache-2.0
 once_cell 1.21.4 (Rust): MIT OR Apache-2.0
 openssl-probe 0.2.2 (Rust): MIT OR Apache-2.0
 option-ext 0.2.0 (Rust): MPL-2.0
@@ -294,6 +301,7 @@ serde-untagged 0.1.9 (Rust): MIT OR Apache-2.0
 serialize-to-javascript 0.1.2 (Rust): MIT OR Apache-2.0
 sha2 0.10.9 (Rust): MIT OR Apache-2.0
 sha2 0.11.1 (Rust): MIT OR Apache-2.0
+simd-adler32 0.3.10 (Rust): MIT
 siphasher 1.0.4 (Rust): MIT OR Apache-2.0
 slab 0.4.12 (Rust): MIT
 smallvec 1.16.5 (Rust): MIT OR Apache-2.0

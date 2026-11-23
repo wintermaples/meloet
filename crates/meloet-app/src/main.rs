@@ -349,6 +349,7 @@ fn shell_request(
         ShellRequest::PickExportPlace { folder, name, .. } => {
             (pcwindow::Pick::ExportFile { name }, folder)
         }
+        ShellRequest::PickExportPicture { folder } => (pcwindow::Pick::Picture, folder),
     };
     let answer = {
         let (core, pick) = (core.clone(), pick.clone());
@@ -368,6 +369,7 @@ fn shell_request(
                     pcwindow::Pick::ExportFile { .. } | pcwindow::Pick::ExportFolder => {
                         core.export_place_picked(path);
                     }
+                    pcwindow::Pick::Picture => core.export_picture_picked(path),
                     pcwindow::Pick::Audio { .. } => {}
                 }
             }

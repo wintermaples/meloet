@@ -110,14 +110,15 @@ describe("fake intents", () => {
     expect(after.presets).toEqual(before.presets);
   });
 
-  it("the export does not offer mp3 yet, and choosing it changes nothing", async () => {
+  it("the export does not offer mp3 (round 12 F2: it did not meet its conditions); 「題名」 is taken as typed", async () => {
     const { now, send } = await opened();
     await send({ type: "openExport" });
     const dialog = (await now()).export.dialog!;
     expect(dialog.formats).toEqual(["wav", "flac"]);
     expect([dialog.mp3Kbps, dialog.mp3KbpsChoices, dialog.picture, dialog.pictureUsable]).toEqual([192, [], null, false]);
     await send({ type: "setExport", change: { kind: "format", format: "mp3" } });
-    await send({ type: "setExport", change: { kind: "title", title: "別の題名" } });
     expect((await now()).export.dialog).toEqual(dialog);
+    await send({ type: "setExport", change: { kind: "title", title: "別の題名" } });
+    expect((await now()).export.dialog).toEqual({ ...dialog, title: "別の題名" });
   });
 });

@@ -16,12 +16,15 @@
 pub(crate) mod analysis;
 #[cfg(test)]
 pub(crate) mod fixture;
+#[cfg(test)]
+mod info_tests;
 pub(crate) mod job;
 #[cfg(test)]
 mod kit_tests;
 pub(crate) mod loudness;
 pub(crate) mod render;
 pub mod sink;
+pub mod tags;
 pub(crate) mod told;
 pub(crate) mod wave;
 
@@ -32,12 +35,13 @@ use meloet_model::{Doc, TickRange, TrackId};
 use meloet_protocol::{
     Command, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
     ExportLoudness, ExportRange, ExportRunView, ExportSolo, ExportStoppedPlugin, ExportTail,
-    ExportView, PluginSlotRef, RecordFormat, TickSpan, TrackRef,
+    ExportView, PluginSlotRef, RecordFormat, StatusMessage, TickSpan, TrackRef,
 };
 
 use crate::ai::{AiAnalysis, AiBandLayout};
 use crate::plugins::shown_path;
 use crate::settings::SAMPLE_RATE_CHOICES;
+use tags::{ExportPicture, PictureProblem, SongInfo};
 
 /// What the rules ask of the export's worker and of the shell.
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +63,9 @@ pub enum ExportAsk {
         name: String,
         folder_only: bool,
     },
+    /// F2 「絵」 「えらぶ…」: the PC's open window for a png or a jpg, starting in `folder`.
+    /// Answer with [`ExportNews::PicturePicked`], the file read with [`tags::read_picture`].
+    PickPicture { folder: Option<PathBuf> },
 }
 
 /// One rendering, at the rate the audio runs at, as 32 bit floats.
@@ -108,12 +115,18 @@ pub struct ExportTarget {
     /// F1: with `Match` the job brings the file to the loudness of [`loudness::match_gain`],
     /// when the loudness it measured can be matched.
     pub loudness: ExportLoudness,
+    /// F2 「曲の情報」 written into every file; for 「トラックごと」 titled
+    /// [`SongInfo::for_track`].
+    pub info: SongInfo,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExportNews {
     /// The answer to [`ExportAsk::PickPlace`]; `None` when the window was put away.
     PlacePicked(Option<PathBuf>),
+    /// The answer to [`ExportAsk::PickPicture`]: the file chosen and how it read; `None`
+    /// when the window was put away.
+    PicturePicked(Option<(PathBuf, Result<ExportPicture, PictureProblem>)>),
     /// How far the rendering of `job` is.
     Counted {
         job: u64,
@@ -241,6 +254,8 @@ struct Dialog {
     /// `None`: there is nothing to render (an empty song).
     job: Option<Job>,
     picking: bool,
+    /// F2: the window for 「絵」 is shown.
+    picking_picture: bool,
 }
 
 #[derive(Debug)]
@@ -257,6 +272,13 @@ pub struct Exporting {
     format: ExportFormat,
     /// F2 「作者」, a meloet setting.
     artist: String,
+    /// F2 「題名」 as typed; `None`: the song's name. With the picture, it belongs to the
+    /// song of `info_serial` and goes when another song is opened.
+    title: Option<String>,
+    picture: Option<ExportPicture>,
+    /// Where the window for 「絵」 starts: the folder of the last picture chosen.
+    picture_folder: Option<PathBuf>,
+    info_serial: Option<u32>,
     /// `None`: the rate the audio runs at.
     sample_rate: Option<u32>,
     bits: RecordFormat,
@@ -286,6 +308,10 @@ impl Exporting {
             range: ExportRange::Song,
             format: ExportFormat::Wav,
             artist: String::new(),
+            title: None,
+            picture: None,
+            picture_folder: None,
+            info_serial: None,
             sample_rate: None,
             bits: RecordFormat::default(),
             tail: ExportTail::UntilSilent,
@@ -344,14 +370,20 @@ impl Exporting {
                     if self.range == ExportRange::Loop && scene.loop_span().is_none() {
                         self.range = ExportRange::Song;
                     }
+                    if self.info_serial != Some(scene.serial) {
+                        self.info_serial = Some(scene.serial);
+                        self.title = None;
+                        self.picture = None;
+                    }
                     self.dialog = Some(Dialog {
                         job: None,
                         picking: false,
+                        picking_picture: false,
                     });
                 }
             }
             Command::CloseExport => self.close(asks),
-            Command::SetExport { change } => self.set(change.clone(), scene),
+            Command::SetExport { change } => self.set(change.clone(), scene, asks),
             Command::ChooseExportPlace => {
                 let per_track = self.range == ExportRange::Tracks;
                 let (folder, name) = (self.folder_for(scene), self.file_name(scene));
@@ -402,20 +434,33 @@ impl Exporting {
         }
     }
 
-    fn set(&mut self, change: ExportChange, scene: &Scene) {
+    fn set(&mut self, change: ExportChange, scene: &Scene, asks: &mut Vec<ExportAsk>) {
         if self.dialog.is_none() {
             return;
         }
         match change {
-            // round12 stub: F2 (mp3 cannot be written yet; the rest changes nothing yet)
+            // round12 stub: F2 (mp3 is not offered: it did not meet its conditions,
+            // docs/round12/F2.md)
             ExportChange::Format {
                 format: ExportFormat::Mp3,
             }
-            | ExportChange::Mp3Kbps { .. }
-            | ExportChange::Title { .. }
-            | ExportChange::Artist { .. }
-            | ExportChange::ChoosePicture
-            | ExportChange::RemovePicture => {}
+            | ExportChange::Mp3Kbps { .. } => {}
+            ExportChange::Title { title } => self.title = Some(title),
+            ExportChange::Artist { artist } => self.artist = artist,
+            ExportChange::ChoosePicture => {
+                let folder = self.picture_folder.clone().or_else(|| {
+                    let of_song = scene.song_path.and_then(Path::parent);
+                    of_song.map(Path::to_path_buf).or(self.dirs.home.clone())
+                });
+                let usable = self.format != ExportFormat::Wav;
+                if let Some(dialog) = self.dialog.as_mut().filter(|d| !d.picking_picture)
+                    && usable
+                {
+                    dialog.picking_picture = true;
+                    asks.push(ExportAsk::PickPicture { folder });
+                }
+            }
+            ExportChange::RemovePicture => self.picture = None,
             ExportChange::Range { range } => {
                 let usable = match range {
                     ExportRange::Song => true,
@@ -465,6 +510,14 @@ impl Exporting {
             sample_rate: self.sample_rate(scene),
             bits: self.bits,
             loudness: self.loudness_of(job),
+            info: SongInfo {
+                title: self.title(scene).to_owned(),
+                artist: self.artist.clone(),
+                picture: self
+                    .picture
+                    .clone()
+                    .filter(|_| self.format != ExportFormat::Wav),
+            },
         };
         let Some(job) = self.dialog.take().and_then(|d| d.job) else {
             return;
@@ -529,8 +582,43 @@ impl Exporting {
         });
     }
 
-    pub fn news(&mut self, news: ExportNews) {
+    /// What happened to the export. A picture chosen that cannot be used is told in the
+    /// status line: the message is returned.
+    pub fn news(&mut self, news: ExportNews) -> Option<StatusMessage> {
         match news {
+            ExportNews::PicturePicked(picked) => self.picture_picked(picked),
+            news => {
+                self.job_news(news);
+                None
+            }
+        }
+    }
+
+    fn picture_picked(
+        &mut self,
+        picked: Option<(PathBuf, Result<ExportPicture, PictureProblem>)>,
+    ) -> Option<StatusMessage> {
+        let dialog = self.dialog.as_mut().filter(|d| d.picking_picture)?;
+        dialog.picking_picture = false;
+        let (path, read) = picked?;
+        let file =
+            (path.file_name()).map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        self.picture_folder = path.parent().map(Path::to_path_buf);
+        match read {
+            Ok(picture) => {
+                self.picture = Some(picture);
+                None
+            }
+            Err(PictureProblem::TooLarge) => Some(StatusMessage::ExportPictureTooLarge { file }),
+            Err(PictureProblem::Unreadable) => {
+                Some(StatusMessage::ExportPictureUnreadable { file })
+            }
+        }
+    }
+
+    fn job_news(&mut self, news: ExportNews) {
+        match news {
+            ExportNews::PicturePicked(_) => {}
             ExportNews::PlacePicked(path) => {
                 let Some(dialog) = self.dialog.as_mut().filter(|d| d.picking) else {
                     return;
@@ -593,7 +681,7 @@ impl Exporting {
                     ExportLoudness::AsIs => (going.lufs, going.true_peak_db),
                 };
                 let view = ExportRunView::Done {
-                    // round12 stub: F2
+                    // round12 stub: F2 (no mp3 is written)
                     mp3_kbps: None,
                     file: files.first().and_then(|p| name(p)).unwrap_or_default(),
                     files: files.len() as u32,
@@ -659,6 +747,11 @@ impl Exporting {
             choices.sort_unstable();
         }
         choices
+    }
+
+    /// F2 「題名」: as typed, or else the song's name.
+    fn title<'a>(&'a self, scene: &'a Scene) -> &'a str {
+        self.title.as_deref().unwrap_or(&scene.doc.name)
     }
 
     /// A song with a file is written out into its folder.
@@ -760,7 +853,7 @@ impl Exporting {
                 tracks: scene.tracks(),
                 span: self.span(scene),
                 format: self.format,
-                // round12 stub: F2 (mp3 is not offered until it can be written)
+                // round12 stub: F2 (mp3 is not offered: it did not meet its conditions)
                 formats: vec![ExportFormat::Wav, ExportFormat::Flac],
                 place,
                 check: self.check(job),
@@ -777,9 +870,9 @@ impl Exporting {
                 // round12 stub: F2
                 mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
                 mp3_kbps_choices: Vec::new(),
-                title: scene.doc.name.clone(),
+                title: self.title(scene).to_owned(),
                 artist: self.artist.clone(),
-                picture: None,
+                picture: self.picture.as_ref().map(|p| p.name.clone()),
                 picture_usable: self.format != ExportFormat::Wav,
                 tail: self.tail,
                 realtime: self.realtime || forced,

@@ -40,6 +40,7 @@ The scene names are in `ui/src/bridge/fake.ts`. Add `&theme=light` (or another t
 `.vscode/` has the settings (the CodeLLDB extension is needed):
 
 - "meloet (debug)" starts vite, then builds Rust for debugging and runs it. The screen comes from vite, not from `ui/dist`, so changes in `ui/` show in the window at once.
+- "meloet-mcp (debug)" builds and runs the bridge of the AI link (`crates/meloet-mcp`) under the debugger, in the integrated terminal. It speaks MCP on stdin and stdout: paste one JSON line per request (an example is in `.vscode/launch.json`). It finds a running meloet with 「AI とつなぐ」 on by itself.
 - "UI only (browser, fake scenes)" opens a scene at a scale you choose in Chrome.
 - "Build the deb (docker)" runs `scripts/build-deb.sh`.
 - Tasks such as "meloet: run release", "Check: all" and "Write the protocol types (Rust → TS)".

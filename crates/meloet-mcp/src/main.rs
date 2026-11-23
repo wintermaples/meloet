@@ -1,23 +1,24 @@
 //! `meloet-mcp`: what an AI app starts as its stdio MCP server. It copies lines between
-//! stdin/stdout and the socket of a running meloet (`$XDG_RUNTIME_DIR/meloet/ai.sock`), and
-//! while meloet is away answers by itself ([`stub`]). Every request looks for the socket
-//! again, so turning 「AI とつなぐ」 on later needs no restart of the AI app.
+//! stdin/stdout and the socket of a running meloet (`$XDG_RUNTIME_DIR/meloet/ai.sock`, see
+//! [`place`]), and while meloet is away answers by itself ([`stub`]). Every request looks for
+//! the socket again, so turning 「AI とつなぐ」 on later needs no restart of the AI app.
 //!
 //! Only MCP goes to stdout; what is said for people goes to stderr.
 
 mod lines;
+mod place;
 mod stub;
 
 use std::collections::HashMap;
 use std::io::{BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
 use lines::{Line, MAX_LINE, read_line};
+use place::Place;
 
 type Out = Arc<Mutex<std::io::Stdout>>;
 
@@ -64,8 +65,12 @@ impl Link {
             let call = (method == "tools/call").then(|| stub::is_new(msg));
             lock(&self.shared.pending).insert(id.to_string(), call);
         }
-        let sent = writeln!(self.sock, "{line}").is_ok();
-        if !sent {
+        self.write(line).is_ok()
+    }
+
+    fn write(&mut self, line: &str) -> std::io::Result<()> {
+        let sent = writeln!(self.sock, "{line}");
+        if sent.is_err() {
             self.shared.alive.store(false, Ordering::SeqCst);
         }
         sent
@@ -73,16 +78,17 @@ impl Link {
 }
 
 /// Copies meloet's lines to stdout until it hangs up; then answers what it left unanswered.
-fn pump(sock: &UnixStream, out: Out, shared: Arc<Shared>) -> std::io::Result<()> {
+fn pump(sock: &UnixStream, at: String, out: Out, shared: Arc<Shared>) -> std::io::Result<()> {
     let mut reader = BufReader::new(sock.try_clone()?);
     std::thread::Builder::new()
         .name("meloet-mcp-socket".into())
         .spawn(move || {
-            loop {
+            let end = loop {
                 let line = match read_line(&mut reader, MAX_LINE) {
                     Ok(Line::Text(line)) => line,
                     Ok(Line::Skipped) => continue,
-                    Ok(Line::End) | Err(_) => break,
+                    Ok(Line::End) => break "meloet closed the connection".to_owned(),
+                    Err(e) => break format!("reading failed ({:?}: {e})", e.kind()),
                 };
                 let msg: Option<Value> = serde_json::from_str(&line).ok();
                 let answer_to = msg
@@ -98,26 +104,28 @@ fn pump(sock: &UnixStream, out: Out, shared: Arc<Shared>) -> std::io::Result<()>
                     lock(&shared.pending).remove(&id.to_string());
                 }
                 emit(&out, &line);
-            }
+            };
             shared.alive.store(false, Ordering::SeqCst);
             eprintln!("meloet-mcp: meloet went away");
+            let why = place::report(
+                "waiting for the answer",
+                &[format!(
+                    "{at}: connected, then {end} before it answered (meloet ended, the \
+                     switch went off, or meloet runs as another user and refused this one)"
+                )],
+            );
             for (id, call) in lock(&shared.pending).drain() {
                 let Ok(id) = serde_json::from_str::<Value>(&id) else {
                     continue;
                 };
                 let line = match call {
-                    Some(new) => stub::result(&id, stub::off_call(new)),
+                    Some(new) => stub::result(&id, stub::off_call(new, &why)),
                     None => stub::error(&id, -32000, stub::OFF_TEXT),
                 };
                 emit(&out, &line);
             }
         })?;
     Ok(())
-}
-
-fn socket_path() -> Option<PathBuf> {
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty())?;
-    Some(PathBuf::from(runtime).join("meloet").join("ai.sock"))
 }
 
 /// What the AI app said of the old handshake, to say it again to a meloet that comes later.
@@ -127,8 +135,33 @@ struct Greeting {
     initialized: bool,
 }
 
-fn connect(path: Option<&PathBuf>, out: &Out, greeting: &Greeting) -> Option<Link> {
-    let sock = UnixStream::connect(path?).ok()?;
+/// Connects to the first place that answers; the error is the report of what was tried.
+fn connect(places: &[Place], out: &Out, greeting: &Greeting) -> Result<Link, String> {
+    if places.is_empty() {
+        let none = "XDG_RUNTIME_DIR is not set and the user id could not be read".to_owned();
+        return Err(place::report("finding the socket", &[none]));
+    }
+    let mut tried = Vec::new();
+    for place in places {
+        let at = format!("{} (from {})", place.path.display(), place.from);
+        match UnixStream::connect(&place.path) {
+            Ok(sock) => {
+                return greet(sock, &at, out, greeting).map_err(|e| {
+                    let line = format!("{at}: connected, then {:?}: {e}", e.kind());
+                    place::report("handshake", &[line])
+                });
+            }
+            Err(e) => tried.push(format!(
+                "{at}: {:?}: {e}; {}",
+                e.kind(),
+                place::seen(&place.path)
+            )),
+        }
+    }
+    Err(place::report("connecting", &tried))
+}
+
+fn greet(sock: UnixStream, at: &str, out: &Out, greeting: &Greeting) -> std::io::Result<Link> {
     let shared = Arc::new(Shared::default());
     shared.alive.store(true, Ordering::SeqCst);
     let mut link = Link { sock, shared };
@@ -136,31 +169,29 @@ fn connect(path: Option<&PathBuf>, out: &Out, greeting: &Greeting) -> Option<Lin
         let mut init = init.clone();
         init["id"] = json!(GREET_ID);
         link.shared.greeting.store(true, Ordering::SeqCst);
-        if !link.send(&init.to_string(), None) {
-            return None;
-        }
+        link.write(&init.to_string())?;
         if greeting.initialized {
-            let note = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
-            if !link.send(note, None) {
-                return None;
-            }
+            link.write(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)?;
         }
     }
-    pump(&link.sock, out.clone(), link.shared.clone()).ok()?;
-    Some(link)
+    pump(&link.sock, at.to_owned(), out.clone(), link.shared.clone())?;
+    Ok(link)
 }
 
 fn main() {
-    let path = socket_path();
-    if path.is_none() {
-        eprintln!("meloet-mcp: XDG_RUNTIME_DIR is not set; meloet cannot be found");
-    }
+    let places = place::places();
     let out: Out = Arc::new(Mutex::new(std::io::stdout()));
     let mut greeting = Greeting::default();
-    let mut link = connect(path.as_ref(), &out, &greeting);
-    if link.is_none() {
-        eprintln!("meloet-mcp: {}", stub::OFF_TEXT);
-    }
+    // Why meloet could not be reached the last time it was tried.
+    let mut why = String::new();
+    let mut link = match connect(&places, &out, &greeting) {
+        Ok(link) => Some(link),
+        Err(report) => {
+            eprintln!("meloet-mcp: {}\n{report}", stub::OFF_TEXT);
+            why = report;
+            None
+        }
+    };
     // The AI app has the stub's list of tools.
     let mut stub_listed = false;
     let mut input = BufReader::new(std::io::stdin().lock());
@@ -188,7 +219,20 @@ fn main() {
         if link.as_ref().is_some_and(|l| !l.alive()) {
             link = None;
         }
+        // meloet has no status tool of its own; an AI app may still hold the stub's list.
+        let status_call = msg.as_ref().is_some_and(|m| {
+            method == "tools/call"
+                && m["params"]["name"] == stub::STATUS_TOOL
+                && m.get("id").is_some()
+        });
         if let Some(l) = &mut link {
+            if status_call && let Some(msg) = &msg {
+                emit(
+                    &out,
+                    &stub::result(&msg["id"], stub::back_call(stub::is_new(msg))),
+                );
+                continue;
+            }
             if l.send(&line, msg.as_ref()) {
                 continue;
             }
@@ -197,10 +241,14 @@ fn main() {
         let Some(msg) = msg else { continue };
         let is_request = msg.get("id").is_some();
         let handshake = matches!(method, "initialize" | "server/discover" | "ping");
-        if is_request
-            && !handshake
-            && let Some(mut l) = connect(path.as_ref(), &out, &greeting)
-        {
+        let found = if is_request && !handshake {
+            connect(&places, &out, &greeting)
+                .map_err(|report| why = report)
+                .ok()
+        } else {
+            None
+        };
+        if let Some(mut l) = found {
             eprintln!("meloet-mcp: meloet is there now");
             if stub_listed {
                 emit(
@@ -208,7 +256,6 @@ fn main() {
                     r#"{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}"#,
                 );
             }
-            let status_call = method == "tools/call" && msg["params"]["name"] == stub::STATUS_TOOL;
             if status_call {
                 emit(
                     &out,
@@ -225,7 +272,7 @@ fn main() {
         if method == "tools/list" {
             stub_listed = true;
         }
-        if let Some(answer) = stub::answer(&msg) {
+        if let Some(answer) = stub::answer(&msg, &why) {
             emit(&out, &answer);
         }
     }

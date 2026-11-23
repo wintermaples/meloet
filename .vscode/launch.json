@@ -38,6 +38,23 @@
       "preLaunchTask": "UI: vite (dev server)"
     },
     {
+      // The bridge an AI app starts (crates/meloet-mcp). It speaks MCP on stdin and stdout: type or paste one
+      // JSON line per request in the terminal, for example
+      //   {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"meloet_status","arguments":{}}}
+      // It finds a running meloet with 「AI とつなぐ」 on by itself. Ctrl+D ends it.
+      "name": "meloet-mcp (debug)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "-p", "meloet-mcp", "--bin", "meloet-mcp"],
+        "filter": { "name": "meloet-mcp", "kind": "bin" }
+      },
+      "cwd": "${workspaceFolder}",
+      "env": { "RUST_BACKTRACE": "1" },
+      "terminal": "integrated",
+      "sourceLanguages": ["rust"]
+    },
+    {
       // No Tauri: the fake state (the scenes of ui/src/bridge/fake.ts) in a browser.
       "name": "UI only (browser, fake scenes)",
       "type": "chrome",

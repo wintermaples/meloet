@@ -48,24 +48,31 @@ pub fn error(id: &Value, code: i64, message: &str) -> String {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }).to_string()
 }
 
-/// The answer to a call of any tool while meloet is away.
-pub fn off_call(new: bool) -> Value {
+/// The answer to a call of any tool while meloet is away: the fixed words, then why it
+/// could not be reached ([`crate::place::report`]).
+pub fn off_call(new: bool, why: &str) -> Value {
+    let text = if why.is_empty() {
+        OFF_TEXT.to_owned()
+    } else {
+        format!("{OFF_TEXT}\n\n{why}")
+    };
     complete(
         new,
-        json!({ "content": [{ "type": "text", "text": OFF_TEXT }], "isError": true }),
+        json!({ "content": [{ "type": "text", "text": text }], "isError": true }),
     )
 }
 
-/// The answer to the status tool once meloet is there again.
+/// The answer to the status tool while meloet is there.
 pub fn back_call(new: bool) -> Value {
     complete(
         new,
         json!({
             "content": [{
                 "type": "text",
-                "text": "meloet is connected now; its tools were listed again \
-                         (notifications/tools/list_changed). If they do not show, ask the \
-                         person to reload the MCP servers of the AI app.",
+                "text": "meloet is connected; its tools are listed \
+                         (notifications/tools/list_changed was sent if they were not). If \
+                         they do not show, ask the person to reload the MCP servers of the \
+                         AI app.",
             }],
             "isError": false,
         }),
@@ -79,8 +86,9 @@ fn complete(new: bool, mut value: Value) -> Value {
     value
 }
 
-/// The answer to a request while meloet is away; `None` for a notification.
-pub fn answer(msg: &Value) -> Option<String> {
+/// The answer to a request while meloet is away; `None` for a notification. `why` goes
+/// after the fixed words of a tool call.
+pub fn answer(msg: &Value, why: &str) -> Option<String> {
     let id = msg.get("id")?;
     let method = msg["method"].as_str()?;
     let new = is_new(msg);
@@ -131,7 +139,7 @@ pub fn answer(msg: &Value) -> Option<String> {
             }
             result(id, list)
         }
-        "tools/call" => result(id, off_call(new)),
+        "tools/call" => result(id, off_call(new, why)),
         _ => error(id, -32601, OFF_TEXT),
     })
 }
@@ -148,19 +156,29 @@ mod tests {
     fn the_old_handshake_is_answered() {
         let init = json!({"jsonrpc":"2.0","id":1,"method":"initialize",
             "params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"0"}}});
-        let a = parse(&answer(&init).unwrap());
+        let a = parse(&answer(&init, "").unwrap());
         assert_eq!(a["result"]["protocolVersion"], "2025-11-25");
         assert_eq!(a["result"]["capabilities"]["tools"]["listChanged"], true);
         assert_eq!(a["result"]["instructions"], OFF_TEXT);
-        assert!(answer(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).is_none());
-        let list = parse(&answer(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).unwrap());
+        assert!(
+            answer(
+                &json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+                ""
+            )
+            .is_none()
+        );
+        let list =
+            parse(&answer(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}), "").unwrap());
         assert_eq!(list["result"]["tools"][0]["name"], STATUS_TOOL);
         assert!(list["result"].get("resultType").is_none());
         let call = json!({"jsonrpc":"2.0","id":3,"method":"tools/call",
             "params":{"name":"song_overview","arguments":{}}});
-        let call = parse(&answer(&call).unwrap());
+        let call = parse(&answer(&call, "why").unwrap());
         assert_eq!(call["result"]["isError"], true);
-        assert_eq!(call["result"]["content"][0]["text"], OFF_TEXT);
+        assert_eq!(
+            call["result"]["content"][0]["text"],
+            format!("{OFF_TEXT}\n\nwhy")
+        );
     }
 
     #[test]
@@ -168,7 +186,7 @@ mod tests {
         let meta = json!({PROTOCOL_KEY: "2026-07-28", CAPABILITIES_KEY: {}});
         let discover =
             json!({"jsonrpc":"2.0","id":"d","method":"server/discover","params":{"_meta":meta}});
-        let a = parse(&answer(&discover).unwrap());
+        let a = parse(&answer(&discover, "").unwrap());
         assert_eq!(a["result"]["resultType"], "complete");
         assert!(
             a["result"]["supportedVersions"]
@@ -181,11 +199,11 @@ mod tests {
             "meloet"
         );
         let list = json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":meta}});
-        let list = parse(&answer(&list).unwrap());
+        let list = parse(&answer(&list, "").unwrap());
         assert_eq!(list["result"]["ttlMs"], 0);
         assert_eq!(list["result"]["resultType"], "complete");
         // A discover without its `_meta` is refused, as rmcp does; `initialize` still works.
         let bare = json!({"jsonrpc":"2.0","id":4,"method":"server/discover"});
-        assert_eq!(parse(&answer(&bare).unwrap())["error"]["code"], -32602);
+        assert_eq!(parse(&answer(&bare, "").unwrap())["error"]["code"], -32602);
     }
 }

@@ -195,7 +195,12 @@ fn the_stub_then_meloet_then_the_stub(new: bool) {
     assert_eq!(list["result"]["tools"][0]["name"], "meloet_status");
     let (off, _) = call(&mut b, "song_overview");
     assert_eq!(off["result"]["isError"], true);
-    assert_eq!(off["result"]["content"][0]["text"], OFF);
+    let socket = runtime.join("meloet").join("ai.sock");
+    let said = off["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(said.starts_with(OFF), "{said}");
+    assert!(said.contains("step: connecting"), "{said}");
+    assert!(said.contains(socket.to_str().unwrap()), "{said}");
+    assert!(said.contains("NotFound"), "{said}");
 
     // meloet comes: the next request finds it.
     let fake = Fake::start(&runtime, "hang_up");
@@ -214,6 +219,9 @@ fn the_stub_then_meloet_then_the_stub(new: bool) {
     );
     let (real, _) = call(&mut b, "song_overview");
     assert_eq!(real["result"]["content"][0]["text"], "fake tools/call");
+    // The status tool is the bridge's own, also while meloet is there.
+    let (status, _) = call(&mut b, "meloet_status");
+    assert_eq!(status["result"]["isError"], false, "{status}");
 
     let seen = fake.seen();
     let methods: Vec<&str> = seen.iter().filter_map(|m| m["method"].as_str()).collect();
@@ -237,9 +245,14 @@ fn the_stub_then_meloet_then_the_stub(new: bool) {
     // meloet goes in the middle of a call: the call is answered all the same.
     let (cut, _) = call(&mut b, "hang_up");
     assert_eq!(cut["result"]["isError"], true, "{cut}");
+    let said = cut["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(said.starts_with(OFF), "{said}");
+    assert!(said.contains("step: waiting for the answer"), "{said}");
     fake.end();
     let (off, _) = call(&mut b, "song_overview");
-    assert_eq!(off["result"]["content"][0]["text"], OFF);
+    let said = off["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(said.starts_with(OFF), "{said}");
+    assert!(said.contains("step: connecting"), "{said}");
 
     // Nothing but MCP came out, and stdin closing ends the bridge.
     drop(b.stdin.take());

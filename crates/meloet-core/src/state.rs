@@ -635,6 +635,20 @@ pub enum Effect {
         source: Arc<AudioSource>,
         path: PathBuf,
     },
+    /// 「ノーマライズ」: the loudest sample of the frames each clip plays, off the core
+    /// thread. Answer with `AudioNews::Measured`.
+    MeasureAudio {
+        ticket: u64,
+        played: Vec<meloet_model::PlayedFrames>,
+    },
+    /// 「逆にする」: a file of the frames each clip plays, backwards, in the work place, under
+    /// the name given (or one like it), off the core thread. `taken`: names a new file must
+    /// not get. Answer with `AudioNews::Reversed`.
+    ReverseAudio {
+        ticket: u64,
+        played: Vec<(meloet_model::PlayedFrames, String)>,
+        taken: Vec<String>,
+    },
     /// The song is let go of: empty the work place of audio (docs/architecture.md 22-4).
     ClearWorkAudio,
     /// For the export's worker and its window for a place. Answer with [`Input::Export`].
@@ -2279,8 +2293,8 @@ impl Model {
             Command::DuplicateTrack { .. } => {}
             Command::OpenRecent { id } => self.open_recent(id, effects),
             Command::ClearRecent => self.clear_recent(effects),
-            // round12 stub: A9
-            Command::NormalizeClips { .. } | Command::ReverseClips { .. } => {}
+            Command::NormalizeClips { clips } => self.ask_clip_work(&clips, false, effects),
+            Command::ReverseClips { clips } => self.ask_clip_work(&clips, true, effects),
             Command::OpenUserGuide => effects.push(Effect::OpenUrl(USER_GUIDE_URL.to_string())),
             Command::SetCheckUpdates { on } => self.set_check_updates(on, effects),
             Command::OpenReleasePage => self.open_release_page(effects),

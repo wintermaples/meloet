@@ -69,7 +69,7 @@ pub(crate) fn write_click_wav(path: &Path) {
     write_wav(path, 44_100, 2, 16, 44_100, |i, c| click_frame(i)[c]);
 }
 
-fn decode_all(path: &Path) -> (u32, u8, Vec<f32>) {
+pub(crate) fn decode_all(path: &Path) -> (u32, u8, Vec<f32>) {
     let mut decoder = Decoder::open(path).unwrap();
     let mut all = Vec::new();
     let mut count = 0;

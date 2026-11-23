@@ -514,7 +514,7 @@ describe("audio clips in Arrange", () => {
     expect(marks().filter((m) => m.length > 0)).toEqual([["×1.13"]]);
   });
 
-  it("under the audio clip context menu, 「逆にする」「ノーマライズ」 (places for a later round, disabled)", async () => {
+  it("under the audio clip context menu, 「逆にする」「ノーマライズ」", async () => {
     await show(scene("stretch"));
     const label = [...target.querySelectorAll<HTMLElement>(".labels > .clip-label")].find((l) => l.textContent?.includes("歌 テイク 1"))!;
     const x = parseFloat(label.style.left) + 4;
@@ -522,7 +522,7 @@ describe("audio clips in Arrange", () => {
     target.querySelector(".lanes")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }));
     flushSync();
     const entries = contextMenu.open!.entries;
-    expect(entries.slice(-3).map((e) => (e.kind === "row" ? [e.label, e.usable] : "-"))).toEqual(["-", ["menu.reverse", false], ["menu.normalize", false]]);
+    expect(entries.slice(-3).map((e) => (e.kind === "row" ? [e.label, e.usable] : "-"))).toEqual(["-", ["menu.reverse", true], ["menu.normalize", true]]);
     contextMenu.open = null;
   });
 

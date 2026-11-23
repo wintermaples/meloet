@@ -115,7 +115,10 @@ impl Play {
                 book.states.insert(uid, state);
                 true
             }
-            AudioNews::Brought { .. } | AudioNews::Found { .. } => false,
+            AudioNews::Brought { .. }
+            | AudioNews::Found { .. }
+            | AudioNews::Measured { .. }
+            | AudioNews::Reversed { .. } => false,
         }
     }
 

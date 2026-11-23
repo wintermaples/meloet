@@ -2839,6 +2839,7 @@ mod mute_sets;
 mod params;
 mod plugs;
 mod progression;
+mod reverse;
 mod seats;
 mod shelf;
 mod sounds;

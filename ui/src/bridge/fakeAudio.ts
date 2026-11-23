@@ -17,6 +17,8 @@ export interface FakeAudio {
   growingTo?: number;
   /** The file is not found: `peaks` rejects. */
   missing?: boolean;
+  /** Made by 「逆にする」: the frames of `audio` before `end`, backwards. */
+  backwardsOf?: { audio: FakeAudio; end: number };
 }
 
 /** A number in 0..1 from two whole numbers, the same every time. */
@@ -40,6 +42,10 @@ function loudness(audio: number, seconds: number): number {
 
 /** The finest peak `index` of `channel`: smallest and largest sample as i16. */
 function finestPeak(a: FakeAudio, channel: number, index: number): [number, number] {
+  if (a.backwardsOf) {
+    const { audio, end } = a.backwardsOf;
+    return finestPeak(audio, channel, Math.max(0, Math.floor((end - 1 - index * PEAK_LEVELS[0]!) / PEAK_LEVELS[0]!)));
+  }
   const seconds = (index * PEAK_LEVELS[0]!) / a.sampleRate;
   const loud = loudness(a.id, seconds) * (channel === 0 ? 1 : 0.85);
   const up = loud * (0.7 + 0.3 * noise(a.id * 31 + channel, index));

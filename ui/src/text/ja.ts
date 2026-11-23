@@ -2292,6 +2292,18 @@ export const texts = {
   // Places for later rounds under the audio clip context menu (spec 3, while the sound is being made).
   "menu.reverse": e("逆にする", "spec:3"),
   "menu.normalize": e("ノーマライズ", "spec:3"),
+  // What 「ノーマライズ」 and 「逆にする」 say (round 12, A9). The spec has no text for them: made in the words of the lines around.
+  "msg.normalizeLimited": e(
+    "{count} つのクリップは、いちばん大きい音を −1.0 dB にできませんでした（クリップの音量は −60 〜 +12 dB まで）。",
+    "builder:2026-11-23",
+    { count: "1" },
+  ),
+  "msg.normalizeSilent": e("{count} つのクリップは音がないので、そのままにしました。", "builder:2026-11-23", { count: "1" }),
+  "msg.reverseFollowOff": e(
+    "{count} つのクリップは、もとの音のテンポが途中で変わるので、「曲のテンポについていく」をオフにしました。",
+    "builder:2026-11-23",
+    { count: "1" },
+  ),
   "latency.measuring": s6("Measuring the latency", "測っています {done} / {total}", { done: "3", total: "5" }),
   "latency.failed": s6("Latency cannot be measured", "音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。"),
   "button.useThisValue": e("この数を使う", "spec:6"),

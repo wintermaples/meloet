@@ -16,6 +16,7 @@ import { reduceRound10 } from "./fakeRound10";
 import { reduceUpdates } from "./fakeUpdates";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
+import { reduceA9 } from "./fakeA9";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -3260,6 +3261,18 @@ SCENES.audioKinds = {
   meters: QUIET,
 };
 
+// Round 12, A9: 「ノーマライズ」 of the right clip, which is too quiet to reach −1.0 dB (+12.0 dB, as far as it goes).
+SCENES.audioNormalized = {
+  setup(s) {
+    audioEditSong(s);
+    vocalTrackOf(s).clips[1]!.audio!.gainDb = 12;
+    s.song.undoCount = 23;
+  },
+  bands: ["params"],
+  after: (s) => (s.status.message = { id: "normalizeLimited", count: 1 }),
+  meters: QUIET,
+};
+
 // ---- Protocol 25: following the song's tempo, the tempo of the audio, the pitch (mock F7-Stretch; spec 3, 28-A and
 // Y22). The screen's parts come later; these are the states they will show. ----
 
@@ -5151,6 +5164,7 @@ export function createFakeTransport(initial?: AppState): Transport {
         reducePack(state, command) ??
         reduceUpdates(state, command) ??
         reduceClips27(state, command) ??
+        reduceA9(state, command, FAKE_AUDIO) ??
         reduceExport(state, command) ??
         reduceAudio(state, command) ??
         reduceRound7(state, command, vocalMemo) ??

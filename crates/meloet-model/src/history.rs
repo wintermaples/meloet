@@ -467,6 +467,34 @@ pub enum StepKind {
     ReverseClips {
         count: usize,
     },
+    /// 「さっきの演奏を残す」 (round 12, R1): as `Record`, from what was played while not
+    /// recording.
+    KeepPlayed {
+        track: TrackId,
+        clip: ClipId,
+        /// Takes added.
+        takes: usize,
+    },
+    /// 「パターンを置く」 (round 12, P4): `clip` on `track`, which the `Doc` after the step has
+    /// (the track may be new with it).
+    PlacePattern {
+        track: TrackId,
+        clip: ClipId,
+    },
+    /// 「クリップをくり返す」 (round 12, A1): `count` clips made.
+    RepeatClips {
+        count: usize,
+    },
+    /// 「プリセットを使う」 (round 12, M1) on an insert of a built-in effect.
+    ApplyPreset {
+        strip: StripId,
+        slot: usize,
+        kind: EffectKind,
+    },
+    /// 「全部のトラックを下げる」 (round 12, M2): `count` tracks were lowered.
+    LowerAll {
+        count: usize,
+    },
 }
 
 #[derive(Debug, Clone)]

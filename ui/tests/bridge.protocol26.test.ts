@@ -36,6 +36,7 @@ describe("shape of protocol 26", () => {
     expect(EXPORT_FORMATS).toEqual([
       { format: "wav", bits: ["bits16", "bits24", "bits32"] },
       { format: "flac", bits: ["bits16", "bits24"] },
+      { format: "mp3", bits: [] },
     ]);
     expect(EXPORT_TAIL_MAX_S).toBe(10);
   });
@@ -81,7 +82,7 @@ describe("shape of protocol 26", () => {
     expect(checks.map((c) => c.state)).toEqual(["waiting", "counting", "done", "failed"]);
     const runs: ExportRunView[] = [
       { state: "running", percent: 46, file: "はじめての曲.wav", remainingS: 40, realtime: false, realtimeForced: false, lengthS: 182 },
-      { state: "done", file: "はじめての曲.wav", files: 1, place: "~/音楽/はじめての曲.wav", lengthS: 182, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null },
+      { state: "done", file: "はじめての曲.wav", files: 1, place: "~/音楽/はじめての曲.wav", lengthS: 182, sampleRate: 48000, bits: "bits24", wave: [], lufs: null, truePeakDb: null, mp3Kbps: null },
       { state: "cancelled" },
       { state: "failed", reason: { kind: "cannotWrite" } },
     ];
@@ -111,6 +112,12 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       sampleRateChoices: [44100, 48000, 88200, 96000],
       bits: "bits24",
       bitsChoices: ["bits16", "bits24", "bits32"],
+      mp3Kbps: 192,
+      mp3KbpsChoices: [],
+      title: "はじめての曲",
+      artist: "",
+      picture: null,
+      pictureUsable: false,
       tail: "untilSilent",
       realtime: false,
       realtimeForced: false,
@@ -166,6 +173,7 @@ describe("fake scenes (mock F7-Export, F7-Exporting, R11-Fit)", () => {
       place: "~/ミュージック/はじめての曲/はじめての曲.wav",
       lengthS: 182,
       sampleRate: 48000,
+      mp3Kbps: null,
       bits: "bits24",
       wave: fakeExportWave(),
       lufs: -14.0,

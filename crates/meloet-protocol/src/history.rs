@@ -181,6 +181,17 @@ pub enum StepName {
     NormalizeClips,
     /// A9 `Command::ReverseClips`.
     ReverseClips,
+    // Protocol 32 (round 12, wave 2).
+    /// R1 `Command::KeepPlayed`.
+    KeepPlayed,
+    /// P4 `Command::PlacePattern`.
+    PlacePattern,
+    /// A1 `Command::RepeatClips`.
+    RepeatClips,
+    /// M1 `Command::ApplyPreset`.
+    ApplyPreset,
+    /// M2 `Command::LowerAllTracks`.
+    LowerAll,
 }
 
 impl StepName {
@@ -281,6 +292,11 @@ impl StepName {
             DuplicateTrack,
             NormalizeClips,
             ReverseClips,
+            KeepPlayed,
+            PlacePattern,
+            RepeatClips,
+            ApplyPreset,
+            LowerAll,
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -368,7 +384,12 @@ impl StepName {
                 | Legato
                 | DuplicateTrack
                 | NormalizeClips
-                | ReverseClips => {}
+                | ReverseClips
+                | KeepPlayed
+                | PlacePattern
+                | RepeatClips
+                | ApplyPreset
+                | LowerAll => {}
             }
         }
         all

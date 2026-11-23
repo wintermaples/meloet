@@ -1060,6 +1060,31 @@ fn effects_and_parameters_that_are_not_known_do_not_cost_the_song() {
     assert_eq!(song.doc.tracks, want.doc.tracks);
 }
 
+/// Round 12 M6: the three effects are written by their names (the song file stays at 7) and
+/// come back with their values.
+#[test]
+fn gate_de_esser_and_saturation_come_back() {
+    let mut song = rich_song("x", 3);
+    let mut gate = Insert::new(NO_INSERT_ID, EffectKind::Gate);
+    gate.set(effects::gate::THRESHOLD, -30.5);
+    let mut de_esser = Insert::new(NO_INSERT_ID, EffectKind::DeEsser);
+    de_esser.set(effects::de_esser::FREQUENCY, 7000.0);
+    let mut saturation = Insert::new(NO_INSERT_ID, EffectKind::Saturation);
+    saturation.set(effects::saturation::DRIVE, 18.0);
+    let track = Arc::make_mut(&mut song.doc.tracks[0]);
+    track.channel.inserts = [Some(gate), Some(de_esser), Some(saturation), None];
+    number_inserts(&mut song.doc);
+    let bytes = encode(&song);
+    let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let inserts = &v["song"]["tracks"][0]["inserts"];
+    assert_eq!(
+        [0, 1, 2].map(|i| inserts[i]["effect"].clone()),
+        ["gate", "deEsser", "saturation"]
+    );
+    assert_eq!(v["version"], 7);
+    assert_eq!(decode(&bytes).unwrap(), song);
+}
+
 #[test]
 fn mixer_values_out_of_range_are_brought_into_range() {
     let mut v = rich_json();

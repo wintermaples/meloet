@@ -138,6 +138,7 @@ describe("shownTick (the transport numbers and the play line)", () => {
     countInBeats: 4,
     canPlay: true,
     canRecord: true,
+    canKeepPlayed: false,
     recording: state === "countIn" || state === "recording" ? { id: 1, track: 1, from: 4 * TPQ, take: 1, clip: null, lap: 0, overdub: false } : null,
     recordingVocals: [],
     recordingFaults: null,

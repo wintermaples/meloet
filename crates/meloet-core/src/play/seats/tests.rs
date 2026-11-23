@@ -777,7 +777,9 @@ fn random_track_edits_undo_and_redo_keep_the_engine_with_the_song() {
                             },
                         });
                         go(Command::ShelfSelectEffect {
-                            effect: Some(EffectKind::ALL[rng.below(6) as usize]),
+                            effect: Some(
+                                EffectKind::ALL[rng.below(EffectKind::ALL.len() as u64) as usize],
+                            ),
                         });
                         go(Command::ShelfConfirm);
                     }

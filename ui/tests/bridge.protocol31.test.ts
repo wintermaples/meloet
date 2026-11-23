@@ -29,7 +29,7 @@ async function opened() {
 
 describe("shape of protocol 31", () => {
   it("version 31. A new state: the click as it always was, highlight on, no recent songs, the check for updates on", () => {
-    expect(PROTOCOL_VERSION).toBe(31);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(31);
     const s = fakeState();
     expect([s.transport.clickVolumeDb, s.transport.clickSound, s.transport.clickWhen]).toEqual([0, "beep", "always"]);
     expect(s.pianoRoll.scale.highlight).toBe(true);

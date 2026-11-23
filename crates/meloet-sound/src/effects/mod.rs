@@ -10,6 +10,7 @@ mod delay;
 mod dsp;
 mod eq4;
 mod limiter;
+mod pass;
 mod reverb;
 
 use meloet_engine::Effect;
@@ -32,5 +33,9 @@ pub fn create(kind: EffectKind) -> Box<dyn Effect> {
         EffectKind::Delay => Box::new(Delay::new()),
         EffectKind::Chorus => Box::new(Chorus::new()),
         EffectKind::Limiter => Box::new(Limiter::new()),
+        // round12 stub: M6
+        EffectKind::Gate | EffectKind::DeEsser | EffectKind::Saturation => {
+            Box::new(pass::PassThrough)
+        }
     }
 }

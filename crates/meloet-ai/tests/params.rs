@@ -478,7 +478,7 @@ fn built_in_effects_by_value_and_by_name_and_the_list_of_effects() {
 
     // The list of effects: pages and filters.
     let all = ok(&mut c, "list_effects", json!({}));
-    assert_eq!(all["builtin"].as_array().unwrap().len(), 6);
+    assert_eq!(all["builtin"].as_array().unwrap().len(), 9);
     assert_eq!(all["total"], 1);
     assert_eq!(all["plugins"][0]["name"], "Fake Pass");
     let reverb = ok(&mut c, "list_effects", json!({ "name": "rev" }));

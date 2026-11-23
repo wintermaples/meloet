@@ -225,6 +225,7 @@ pub(super) fn sample_state() -> AppState {
             click_volume_db: -12.5,
             click_sound: ClickSound::Cowbell,
             click_when: ClickWhen::RecordingOnly,
+            can_keep_played: true,
         },
         arrange: ArrangeView {
             selected_clips: vec![4, 9],
@@ -257,6 +258,7 @@ pub(super) fn sample_state() -> AppState {
             clipboard_notes: 0,
         },
         workspace: WorkspaceView {
+            note_glow: true,
             latency_dialog: None,
             scale: 100,
             theme: Theme::Dark,
@@ -375,6 +377,16 @@ pub(super) fn sample_state() -> AppState {
                 tracks: 2,
             }],
             not_yet: Vec::new(),
+            patterns: vec![PatternView {
+                id: "eightBeat".into(),
+                group: PatternGroup::Basic,
+                bars: 1,
+            }],
+            selected_pattern: Some("eightBeat".into()),
+            pattern_sample: Some(PatternSampleView {
+                id: "eightBeat".into(),
+                playing: None,
+            }),
         },
         params: ParamsView {
             selected: Some(SelectedParams::Builtin(SelectedInsert {
@@ -385,6 +397,9 @@ pub(super) fn sample_state() -> AppState {
                 effect: EffectKind::Reverb,
                 values: vec![2.4, 60.0, 20.0, 6000.0, 120.0, 100.0, 100.0],
                 row: Some(0),
+                preset: Some(PresetRef::Factory {
+                    id: "smallRoom".into(),
+                }),
             })),
             clips: None,
         },
@@ -406,6 +421,7 @@ pub(super) fn sample_state() -> AppState {
                 on: true,
                 value: DEFAULT_FIXED_VELOCITY,
             },
+            typed_keys: false,
         },
         outputs: OutputsView {
             list: vec![EndpointView {
@@ -489,6 +505,12 @@ pub(super) fn sample_state() -> AppState {
             place: "~/ミュージック/はじめての曲/".into(),
         }],
         updates: UpdatesView::default(),
+        presets: PresetsView {
+            user: vec![UserPresets {
+                effect: EffectKind::Compressor,
+                names: vec!["いつものピアノ".into()],
+            }],
+        },
         status: StatusView {
             message: Some(StatusMessage::SearchingKeyboard),
         },
@@ -532,6 +554,11 @@ fn sample_telemetry() -> Telemetry {
         }),
         return_peaks: [[0.125, 0.0625], [0.0, 2.0]],
         track_peaks: vec![[0.25, 0.75], [1.5, 0.0]],
+        master_reduction: 63,
+        spectrum: std::array::from_fn(|i| (i * 11) as u8),
+        lufs_short: -1320,
+        lufs_integrated: TELEMETRY_NO_VALUE,
+        true_peak: -140,
     }
 }
 
@@ -871,7 +898,17 @@ fn mixer_command_json_shape() {
     );
     assert_eq!(
         serde_json::to_value(EffectKind::ALL).unwrap(),
-        json!(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"])
+        json!([
+            "eq4",
+            "compressor",
+            "reverb",
+            "delay",
+            "chorus",
+            "limiter",
+            "gate",
+            "deEsser",
+            "saturation"
+        ])
     );
     assert_eq!(
         serde_json::to_value(StatusMessage::ParamSelected {
@@ -1411,7 +1448,10 @@ fn state_json_is_camel_case_and_round_trips() {
                "favoriteEffects": [{"kind": "builtin", "effect": "reverb"},
                                    {"kind": "builtin", "effect": "delay"}],
                "missing": [{"kind": "sf2", "file": "Old Keys.sf2", "tracks": 2}],
-               "notYet": []})
+               "notYet": [],
+               "patterns": [{"id": "eightBeat", "group": "basic", "bars": 1}],
+               "selectedPattern": "eightBeat",
+               "patternSample": {"id": "eightBeat", "playing": null}})
     );
     assert_eq!(
         v["state"]["library"],
@@ -3086,6 +3126,7 @@ fn change_section_names_match_state_keys() {
         Change::AiLink(state.ai_link),
         Change::Recent(state.recent.clone()),
         Change::Updates(state.updates.clone()),
+        Change::Presets(state.presets.clone()),
         Change::Status(state.status.clone()),
     ];
     assert_eq!(all.len(), v.as_object().unwrap().len());
@@ -3145,10 +3186,10 @@ fn telemetry_layout_matches_the_table() {
     let mut b = vec![0xAA; 3];
     t.encode_into(&mut b);
 
-    assert_eq!(b.len(), 92 + 8 * 2 + 16 * 2);
+    assert_eq!(b.len(), 124 + 8 * 2 + 16 * 2);
     assert_eq!(b.len(), t.encoded_len());
     assert_eq!(b[0], 1, "kind");
-    assert_eq!(b[1], 4, "version");
+    assert_eq!(b[1], 5, "version");
     assert_eq!(b[2..4], 2u16.to_le_bytes(), "track count");
     assert_eq!(b[4..8], [0x04, 0x03, 0x02, 0x01], "seq, little-endian");
     assert_eq!(b[8..16], 123_456_789_012_345u64.to_le_bytes(), "sent time");
@@ -3176,18 +3217,26 @@ fn telemetry_layout_matches_the_table() {
     assert_eq!(b[84..88], 2.0f32.to_le_bytes(), "return B right");
     assert_eq!(b[88..90], 2u16.to_le_bytes(), "mic count");
     assert_eq!(b[90..92], [0, 0], "spare");
-    assert_eq!(b[92..96], 0.25f32.to_le_bytes(), "track 1 left");
-    assert_eq!(b[96..100], 0.75f32.to_le_bytes(), "track 1 right");
-    assert_eq!(b[100..104], 1.5f32.to_le_bytes(), "track 2 left");
-    assert_eq!(b[104..108], 0.0f32.to_le_bytes(), "track 2 right");
-    assert_eq!(b[108..112], 6u32.to_le_bytes(), "mic 1 track");
-    assert_eq!(b[112..116], 0.375f32.to_le_bytes(), "mic 1 left");
-    assert_eq!(b[116..120], 0.375f32.to_le_bytes(), "mic 1 right");
-    assert_eq!(b[120..124], [0, 0, 0, 0], "mic 1 flags and spare");
-    assert_eq!(b[124..128], [0x0d, 0x0c, 0x0b, 0x0a], "mic 2 track");
-    assert_eq!(b[128..132], 1.25f32.to_le_bytes(), "mic 2 left");
-    assert_eq!(b[132..136], 0.03125f32.to_le_bytes(), "mic 2 right");
-    assert_eq!(b[136..140], [0b11, 0, 0, 0], "mic 2: clipped, stereo");
+    assert_eq!(b[92..94], (-1320i16).to_le_bytes(), "short-term loudness");
+    assert_eq!(b[94..96], [0x00, 0x80], "integrated loudness: none");
+    assert_eq!(b[96..98], (-140i16).to_le_bytes(), "true peak");
+    assert_eq!(b[98], 63, "master reduction");
+    assert_eq!(b[99], 0, "spare");
+    assert_eq!(b[100], 0, "spectrum, lowest band");
+    assert_eq!(b[101], 11, "spectrum, band 2");
+    assert_eq!(b[123], 253, "spectrum, highest band");
+    assert_eq!(b[124..128], 0.25f32.to_le_bytes(), "track 1 left");
+    assert_eq!(b[128..132], 0.75f32.to_le_bytes(), "track 1 right");
+    assert_eq!(b[132..136], 1.5f32.to_le_bytes(), "track 2 left");
+    assert_eq!(b[136..140], 0.0f32.to_le_bytes(), "track 2 right");
+    assert_eq!(b[140..144], 6u32.to_le_bytes(), "mic 1 track");
+    assert_eq!(b[144..148], 0.375f32.to_le_bytes(), "mic 1 left");
+    assert_eq!(b[148..152], 0.375f32.to_le_bytes(), "mic 1 right");
+    assert_eq!(b[152..156], [0, 0, 0, 0], "mic 1 flags and spare");
+    assert_eq!(b[156..160], [0x0d, 0x0c, 0x0b, 0x0a], "mic 2 track");
+    assert_eq!(b[160..164], 1.25f32.to_le_bytes(), "mic 2 left");
+    assert_eq!(b[164..168], 0.03125f32.to_le_bytes(), "mic 2 right");
+    assert_eq!(b[168..172], [0b11, 0, 0, 0], "mic 2: clipped, stereo");
 
     for (state, byte) in [
         (TransportState::Stopped, 0),
@@ -3213,10 +3262,16 @@ fn telemetry_layout_matches_the_table() {
         ..Telemetry::default()
     };
     only_running.encode_into(&mut b);
-    assert_eq!(b.len(), 92);
+    assert_eq!(b.len(), 124);
     assert_eq!(b[35], 0b001);
     assert!(b[48..72].iter().all(|&x| x == 0), "no position: zeros");
     assert_eq!(Telemetry::decode(&b).unwrap().transport, None);
+    // Nothing measured: the three loudness readings say so, and nothing is held down.
+    for at in [92, 94, 96] {
+        assert_eq!(b[at..at + 2], i16::MIN.to_le_bytes(), "byte {at}: no value");
+    }
+    assert!(b[98..124].iter().all(|&x| x == 0));
+    assert_eq!(Telemetry::decode(&b).unwrap(), only_running);
     let only_clipped = Telemetry {
         master_clipped: true,
         ..Telemetry::default()
@@ -3244,14 +3299,14 @@ fn telemetry_decode_rejects_bad_input() {
     sample_telemetry().encode_into(&mut b);
 
     assert_eq!(
-        Telemetry::decode(&b[..91]),
-        Err(TelemetryError::TooShort { len: 91 })
+        Telemetry::decode(&b[..123]),
+        Err(TelemetryError::TooShort { len: 123 })
     );
     assert_eq!(
-        Telemetry::decode(&b[..139]),
+        Telemetry::decode(&b[..171]),
         Err(TelemetryError::WrongLength {
-            len: 139,
-            expected: 140
+            len: 171,
+            expected: 172
         })
     );
     // A mic more in the header than there are bytes for.
@@ -3260,18 +3315,18 @@ fn telemetry_decode_rejects_bad_input() {
     assert_eq!(
         Telemetry::decode(&wrong),
         Err(TelemetryError::WrongLength {
-            len: 140,
-            expected: 156
+            len: 172,
+            expected: 188
         })
     );
     let mut wrong = b.clone();
     wrong[0] = 2;
     assert_eq!(Telemetry::decode(&wrong), Err(TelemetryError::WrongKind(2)));
     let mut wrong = b.clone();
-    wrong[1] = 3;
+    wrong[1] = 4;
     assert_eq!(
         Telemetry::decode(&wrong),
-        Err(TelemetryError::WrongVersion(3))
+        Err(TelemetryError::WrongVersion(4))
     );
     let mut wrong = b.clone();
     wrong[64] = 4;
@@ -3296,6 +3351,19 @@ fn same_readings_ignores_seq_and_time() {
     let mut d = a.clone();
     d.return_peaks[1][0] = 0.5;
     assert!(!a.same_readings(&d));
+    // Version 5: each reading of the master's analysis is a change too.
+    let changed: [fn(&mut Telemetry); 5] = [
+        |t| t.master_reduction += 1,
+        |t| t.spectrum[23] = 0,
+        |t| t.lufs_short = TELEMETRY_NO_VALUE,
+        |t| t.lufs_integrated = -1500,
+        |t| t.true_peak += 1,
+    ];
+    for (i, change) in changed.into_iter().enumerate() {
+        let mut e = a.clone();
+        change(&mut e);
+        assert!(!a.same_readings(&e), "reading {i}");
+    }
 }
 
 /// Every position of the table in docs/architecture.md 3-4.
@@ -3392,9 +3460,10 @@ fn write_fixtures_for_the_ui() {
     let mut bytes = Vec::new();
     t.encode_into(&mut bytes);
     let word = |v: u64, hi: bool| if hi { (v >> 32) as u32 } else { v as u32 };
+    let hundredths = |v: i16| (v != TELEMETRY_NO_VALUE).then(|| f64::from(v) / 100.0);
     let tr = t.transport.unwrap();
     write(
-        "telemetry-v4",
+        "telemetry-v5",
         &bytes,
         json!({
             "seq": t.seq,
@@ -3423,6 +3492,11 @@ fn write_fixtures_for_the_ui() {
                 "track": m.track, "peak": m.peak.map(f64::from),
                 "clipped": m.clipped, "stereo": m.stereo,
             })).collect::<Vec<_>>(),
+            "masterReductionDb": f64::from(t.master_reduction) / 10.0,
+            "spectrum": t.spectrum,
+            "lufsShort": hundredths(t.lufs_short),
+            "lufsIntegrated": hundredths(t.lufs_integrated),
+            "truePeakDb": hundredths(t.true_peak),
         }),
     );
 
@@ -3907,7 +3981,7 @@ fn every_step_name_has_a_kind_of_its_own() {
                 .to_owned()
         })
         .collect();
-    assert_eq!(kinds.len(), 84);
+    assert_eq!(kinds.len(), 89);
     kinds.sort();
     kinds.dedup();
     assert_eq!(kinds.len(), all.len(), "a kind is listed twice");

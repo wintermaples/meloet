@@ -6,7 +6,7 @@
 import type { Transport } from "./session";
 import { LANE_HEADER_LEN, LANE_KIND, LANE_POINT_LEN, LANE_VERSION } from "./lane";
 import { CONTROL_CC, CONTROL_PITCH_BEND, NO_FROM, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NOTE_LEN, TAKE_VERSION } from "./take";
-import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN, TELEMETRY_VERSION, type MicMeter, type TransportReading } from "./telemetry";
+import { TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN, TELEMETRY_NO_VALUE, TELEMETRY_VERSION, type MicMeter, type TransportReading } from "./telemetry";
 import { TICKS_PER_QUARTER as TPQ } from "../time/ticks";
 import { FLUID, emptyLibrary, fullLibrary, lv2Key, row as pluginRow, vst3Key } from "./fakeLibrary";
 import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from "./fakeParams";
@@ -397,6 +397,9 @@ function closedShelf(): ShelfView {
     favoriteEffects: [builtinEffect("reverb"), builtinEffect("delay")],
     missing: [],
     notYet: [],
+    patterns: [],
+    selectedPattern: null,
+    patternSample: null,
   };
 }
 
@@ -581,6 +584,7 @@ export function fakeState(): AppState {
       countInBeats: 4,
       canPlay: false,
       canRecord: false,
+      canKeepPlayed: false,
       recording: null,
       recordingVocals: [],
       recordingFaults: null,
@@ -613,13 +617,15 @@ export function fakeState(): AppState {
       recovery: null,
       fileDrop: null,
       latencyDialog: null,
+      noteGlow: true,
     },
     shelf: closedShelf(),
     library: emptyLibrary(),
     params: { selected: null, clips: null },
     plugins: fakePlugins(),
     windows: { list: [] },
-    keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 } },
+    presets: { user: [] },
+    keyboards: { list: [], active: null, lost: null, inputStopped: false, velocityFixed: { on: false, value: 100 }, typedKeys: false },
     outputs: { list: OUTPUTS.map((o) => ({ ...o })), chosen: null, chosenState: null },
     inputs: { list: [], chosen: null, open: false },
     audio: {
@@ -666,6 +672,14 @@ export interface FakeMeters {
   mics?: MicMeter[];
   /** Where the listener is when the scene starts. It moves by `ticksPerUs`; scenes that stand for a mock use 0. */
   position?: TransportReading;
+  /** M2: dB, in 0.1 steps. */
+  masterReductionDb?: number;
+  /** E7: 24 bands, 0..255 each. */
+  spectrum?: number[];
+  /** M3; none: null. */
+  lufsShort?: number | null;
+  lufsIntegrated?: number | null;
+  truePeakDb?: number | null;
 }
 
 interface Scene {
@@ -1801,7 +1815,7 @@ const MIXER_STRIPS: Pick<TrackView, "gainDb" | "pan" | "sends" | "inserts">[] = 
 function mixerSong(s: AppState, selected: InsertRef, effect: EffectKind, row: number | null): void {
   bandSong(s, BAND_TRACKS.slice(0, 5));
   s.song.tracks = s.song.tracks.map((t, i) => ({ ...t, ...structuredClone(MIXER_STRIPS[i]!) }));
-  s.params = { selected: { kind: "builtin", insert: selected, effect, values: effectDefaults(effect), row }, clips: null };
+  s.params = { selected: { kind: "builtin", insert: selected, effect, values: effectDefaults(effect), row, preset: null }, clips: null };
 }
 const MIXER_METERS: FakeMeters = {
   velocity: 83,
@@ -3383,7 +3397,8 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     tracks: song.tracks.length,
     span: { start: 0, end },
     format: "wav",
-    formats: EXPORT_FORMATS.map((f) => f.format),
+    // round12 stub: F2 (mp3 is not offered until it can be written)
+    formats: EXPORT_FORMATS.map((f) => f.format).filter((f) => f !== "mp3"),
     place: `~/音楽/${song.name}.wav`,
     check: { state: "done", peakDb: -0.6, clips: false, over: 0, lufs: -12.5, truePeakDb: -0.5 },
     solo: fakeSolo({ song }),
@@ -3393,6 +3408,12 @@ function fakeExportDialog(song: SongView, over: Partial<ExportDialogView> = {}):
     sampleRateChoices: [44100, 48000, 88200, 96000],
     bits: "bits24",
     bitsChoices: [...EXPORT_FORMATS[0]!.bits],
+    mp3Kbps: 192,
+    mp3KbpsChoices: [],
+    title: song.name,
+    artist: "",
+    picture: null,
+    pictureUsable: false,
     tail: "untilSilent",
     realtime: false,
     realtimeForced: false,
@@ -3490,6 +3511,7 @@ SCENES.exportDone = exportingScene({
   place: `~/ミュージック/はじめての曲/${EXPORTED_FILE}`,
   lengthS: 182,
   sampleRate: 48000,
+  mp3Kbps: null,
   bits: "bits24",
   wave: fakeExportWave(),
   lufs: -14.0,
@@ -3503,6 +3525,7 @@ SCENES.exportDoneTracks = exportingScene({
   place: "~/ミュージック/はじめての曲/",
   lengthS: 182,
   sampleRate: 48000,
+  mp3Kbps: null,
   bits: "bits24",
   wave: [],
   lufs: null,
@@ -3673,7 +3696,8 @@ export function reduceExport(state: AppState, command: Command): Change[] | null
         const measured = c.range !== "tracks" && base.state === "done" ? base : { lufs: null, truePeakDb: null };
         if (d.check.state === "done" || d.check.state === "counting") d.check = { ...d.check, lufs: measured.lufs, truePeakDb: measured.truePeakDb };
         Object.assign(d, fakeLoudnessOf(d.check, d.range, d.loudness));
-      } else if (c.kind === "format") {
+      } else if (c.kind === "format" && c.format !== "mp3") {
+        // round12 stub: F2 (mp3 cannot be written yet: the condition above)
         d.format = c.format;
         d.bitsChoices = [...EXPORT_FORMATS.find((f) => f.format === c.format)!.bits];
         if (!d.bitsChoices.includes(d.bits)) d.bits = "bits24";
@@ -4020,6 +4044,12 @@ export function encodeTelemetry(
   }
   (m.returns ?? []).flat().forEach((peak, i) => v.setFloat32(72 + 4 * i, peak, true));
   v.setUint16(88, mics.length, true);
+  const hundredths = (db: number | null | undefined) => (db === null || db === undefined ? TELEMETRY_NO_VALUE : Math.round(db * 100));
+  v.setInt16(92, hundredths(m.lufsShort), true);
+  v.setInt16(94, hundredths(m.lufsIntegrated), true);
+  v.setInt16(96, hundredths(m.truePeakDb), true);
+  v.setUint8(98, Math.round((m.masterReductionDb ?? 0) * 10));
+  (m.spectrum ?? []).forEach((band, i) => v.setUint8(100 + i, band));
   mics.forEach((mic, i) => {
     const p = H + 8 * trackCount + TELEMETRY_MIC_LEN * i;
     v.setUint32(p, mic.track, true);
@@ -4764,7 +4794,7 @@ export function reduceMixer(
     const effect = insert === null ? null : (stripOf(song, insert.strip)?.inserts[insert.slot] ?? null);
     if (insert === null || effect === null) params.selected = null;
     else if (!same(own()?.insert, insert)) {
-      params.selected = { kind: "builtin", insert, effect, values: insertDefaults(effect, insert.strip), row: null };
+      params.selected = { kind: "builtin", insert, effect, values: insertDefaults(effect, insert.strip), row: null, preset: null };
     }
     showParams = params.selected !== null;
   };

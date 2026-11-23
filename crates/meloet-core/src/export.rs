@@ -255,6 +255,8 @@ pub struct Exporting {
     // The choices stay for as long as meloet runs.
     range: ExportRange,
     format: ExportFormat,
+    /// F2 「作者」, a meloet setting.
+    artist: String,
     /// `None`: the rate the audio runs at.
     sample_rate: Option<u32>,
     bits: RecordFormat,
@@ -283,6 +285,7 @@ impl Exporting {
             dirs,
             range: ExportRange::Song,
             format: ExportFormat::Wav,
+            artist: String::new(),
             sample_rate: None,
             bits: RecordFormat::default(),
             tail: ExportTail::UntilSilent,
@@ -323,6 +326,16 @@ impl Exporting {
         }
     }
 
+    /// F2: 「作者」 as the settings keep it.
+    pub fn with_artist(mut self, artist: String) -> Exporting {
+        self.artist = artist;
+        self
+    }
+
+    pub fn artist(&self) -> &str {
+        &self.artist
+    }
+
     /// The export's commands; any other does nothing.
     pub fn command(&mut self, command: &Command, scene: &Scene, asks: &mut Vec<ExportAsk>) {
         match command {
@@ -338,7 +351,7 @@ impl Exporting {
                 }
             }
             Command::CloseExport => self.close(asks),
-            Command::SetExport { change } => self.set(*change, scene),
+            Command::SetExport { change } => self.set(change.clone(), scene),
             Command::ChooseExportPlace => {
                 let per_track = self.range == ExportRange::Tracks;
                 let (folder, name) = (self.folder_for(scene), self.file_name(scene));
@@ -394,6 +407,15 @@ impl Exporting {
             return;
         }
         match change {
+            // round12 stub: F2 (mp3 cannot be written yet; the rest changes nothing yet)
+            ExportChange::Format {
+                format: ExportFormat::Mp3,
+            }
+            | ExportChange::Mp3Kbps { .. }
+            | ExportChange::Title { .. }
+            | ExportChange::Artist { .. }
+            | ExportChange::ChoosePicture
+            | ExportChange::RemovePicture => {}
             ExportChange::Range { range } => {
                 let usable = match range {
                     ExportRange::Song => true,
@@ -571,6 +593,8 @@ impl Exporting {
                     ExportLoudness::AsIs => (going.lufs, going.true_peak_db),
                 };
                 let view = ExportRunView::Done {
+                    // round12 stub: F2
+                    mp3_kbps: None,
                     file: files.first().and_then(|p| name(p)).unwrap_or_default(),
                     files: files.len() as u32,
                     place: shown_path(&target.path, self.dirs.home.as_deref()),
@@ -736,7 +760,8 @@ impl Exporting {
                 tracks: scene.tracks(),
                 span: self.span(scene),
                 format: self.format,
-                formats: ExportFormat::ALL.to_vec(),
+                // round12 stub: F2 (mp3 is not offered until it can be written)
+                formats: vec![ExportFormat::Wav, ExportFormat::Flac],
                 place,
                 check: self.check(job),
                 solo: (scene.soloed.split_first()).map(|(first, others)| ExportSolo {
@@ -749,6 +774,13 @@ impl Exporting {
                 sample_rate_choices: self.sample_rate_choices(scene),
                 bits: self.bits,
                 bits_choices: self.format.bits_choices().to_vec(),
+                // round12 stub: F2
+                mp3_kbps: meloet_protocol::EXPORT_MP3_DEFAULT_KBPS,
+                mp3_kbps_choices: Vec::new(),
+                title: scene.doc.name.clone(),
+                artist: self.artist.clone(),
+                picture: None,
+                picture_usable: self.format != ExportFormat::Wav,
                 tail: self.tail,
                 realtime: self.realtime || forced,
                 realtime_forced: forced,

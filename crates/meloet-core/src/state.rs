@@ -475,7 +475,7 @@ pub enum Effect {
     TestTone,
     /// Release every sounding note and forget the held keys.
     AllNotesOff,
-    SaveSettings(Settings),
+    SaveSettings(Box<Settings>),
     /// Keep the song files opened or saved lately (`crate::recent`) in the state folder.
     SaveRecentSongs(Vec<PathBuf>),
     /// Answer with [`Input::AudioRetry`] after this long.
@@ -671,6 +671,8 @@ pub struct Model {
     empty_dismissed: bool,
     scale: u16,
     theme: Theme,
+    /// 「鳴っている音を光らせる」 (round 12, E1): a meloet setting.
+    note_glow: bool,
     viewport: (f32, f32),
     /// `None` until the shell tells.
     screen: Option<(f32, f32)>,
@@ -827,6 +829,7 @@ impl Model {
             empty_dismissed: false,
             scale,
             theme: settings.theme,
+            note_glow: settings.note_glow,
             viewport: START_VIEWPORT,
             screen: None,
             bands: Bands::new(window(START_VIEWPORT, scale)),
@@ -884,7 +887,7 @@ impl Model {
             latency: None,
             monitor_said: false,
             audio: audio::AudioSide::default(),
-            export: crate::export::Exporting::default(),
+            export: crate::export::Exporting::default().with_artist(settings.export_artist.clone()),
             pack: pack::PackSide::new(settings.pack_fetch),
             ai: ai::AiSide::new(settings.ai_link),
             check_updates: settings.check_updates,
@@ -1461,6 +1464,24 @@ impl Model {
         let can_play = self.open.is_some() && !self.measuring();
         let command = self.vocal_command(command, effects)?;
         match command {
+            // round12 stub: R1
+            Command::KeepPlayed => {}
+            // round12 stub: R2
+            Command::TypedKeys { .. } | Command::TypedKey { .. } => {}
+            // round12 stub: E1
+            Command::SetNoteGlow { .. } => {}
+            // round12 stub: P4
+            Command::ShelfSelectPattern { .. }
+            | Command::PlayPattern { .. }
+            | Command::PlacePattern { .. } => {}
+            // round12 stub: A1
+            Command::RepeatClips { .. } => {}
+            // round12 stub: M1
+            Command::ApplyPreset { .. }
+            | Command::SavePreset { .. }
+            | Command::DeletePreset { .. } => {}
+            // round12 stub: M2
+            Command::LowerAllTracks { .. } | Command::DismissTooLoud => {}
             Command::SetViewport { width, height } => {
                 if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
                     self.viewport = (width, height);
@@ -2606,12 +2627,14 @@ impl Model {
         self.buffer_fixed_seen = fixed;
     }
 
-    fn settings(&self) -> Settings {
-        Settings {
+    fn settings(&self) -> Box<Settings> {
+        Box::new(Settings {
             output: self.chosen.clone(),
             output_name: self.chosen_name.clone(),
             scale: self.scale,
             theme: self.theme,
+            note_glow: self.note_glow,
+            export_artist: self.export.artist().to_owned(),
             metronome: self.play.metronome(),
             click: self.play.click_settings(),
             count_in_bars: self.play.count_in_bars(),
@@ -2625,7 +2648,7 @@ impl Model {
             shelf: self.catalog.settings().clone(),
             sound: self.sound.clone(),
             pack_fetch: self.pack.wanted,
-        }
+        })
     }
 
     fn shelf_view(&self, library: &LibraryView) -> ShelfView {
@@ -2802,6 +2825,7 @@ impl Model {
                 recovery,
                 file_drop: self.file_drop.clone(),
                 latency_dialog: self.latency_dialog_view(),
+                note_glow: self.note_glow,
             },
             shelf: self.shelf_view(&library),
             library,
@@ -2823,6 +2847,8 @@ impl Model {
                 lost: self.lost.clone(),
                 input_stopped: self.midi_restarting.is_some(),
                 velocity_fixed: self.velocity_fixed,
+                // round12 stub: R2
+                typed_keys: false,
             },
             outputs: OutputsView {
                 list: self.outputs().iter().map(endpoint_view).collect(),
@@ -2832,6 +2858,8 @@ impl Model {
             inputs: self.inputs_view(),
             audio,
             audio_work: self.play.audio_work_view(),
+            // round12 stub: M1
+            presets: meloet_protocol::PresetsView::default(),
             export: self.export_view(),
             sounds: self.sounds_view(),
             ai_link: self.ai.view(),

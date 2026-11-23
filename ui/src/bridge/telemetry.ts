@@ -1,11 +1,15 @@
-// Telemetry binary, version 4, little-endian. The layout is fixed in
+// Telemetry binary, version 5, little-endian. The layout is fixed in
 // crates/meloet-protocol/src/telemetry.rs (table: docs/architecture.md 3-3).
 
 import type { TransportState } from "./types";
 
 export const TELEMETRY_KIND = 1;
-export const TELEMETRY_VERSION = 4;
-export const TELEMETRY_HEADER_LEN = 92;
+export const TELEMETRY_VERSION = 5;
+export const TELEMETRY_HEADER_LEN = 124;
+/** The 16-bit value of `lufsShort`, `lufsIntegrated` and `truePeakDb` when there is none. */
+export const TELEMETRY_NO_VALUE = -32768;
+/** E7: the bars of `spectrum`, low to high. */
+export const SPECTRUM_BANDS = 24;
 /** One mic meter: the track's id, the peak left and right, the flags and 3 spare bytes. */
 export const TELEMETRY_MIC_LEN = 16;
 const HEADER_LEN = TELEMETRY_HEADER_LEN;
@@ -64,6 +68,16 @@ export interface Telemetry {
   trackPeaks: Float32Array;
   /** The vocal tracks whose input is metered now, in the order of the tracks. Empty while the input is not open. */
   mics: MicMeter[];
+  /** M2: how far the master's limiter holds the sound down, dB in 0.1 steps (25.5 at most); 0 when it does not. */
+  masterReductionDb: number;
+  /** E7: the master's sound from low to high, 40 Hz to 16 kHz in 24 bands, each −72..0 dB as 0..255. All 0 when silent. */
+  spectrum: Uint8Array;
+  /** M3 「いまの大きさ」: LUFS of the last 3 s, in 0.01 steps; null when there is none. */
+  lufsShort: number | null;
+  /** M3 「曲ぜんたい」: LUFS since the play started; null when there is none. */
+  lufsIntegrated: number | null;
+  /** M3 「トゥルーピーク」: dBTP, the highest since the play started; null when there is none. */
+  truePeakDb: number | null;
 }
 
 export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry {
@@ -104,6 +118,12 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
       stereo: (micFlags & 2) !== 0,
     });
   }
+  const hundredths = (at: number): number | null => {
+    const v = view.getInt16(at, true);
+    return v === TELEMETRY_NO_VALUE ? null : v / 100;
+  };
+  const spectrum = new Uint8Array(SPECTRUM_BANDS);
+  for (let i = 0; i < SPECTRUM_BANDS; i++) spectrum[i] = view.getUint8(100 + i);
   const flags = view.getUint8(35);
   const state = STATES[view.getUint8(64)];
   if (state === undefined) throw new Error(`telemetry transport state ${view.getUint8(64)}`);
@@ -134,6 +154,11 @@ export function decodeTelemetry(data: ArrayBuffer | ArrayBufferView): Telemetry 
     returnPeaks,
     trackPeaks,
     mics,
+    masterReductionDb: view.getUint8(98) / 10,
+    spectrum,
+    lufsShort: hundredths(92),
+    lufsIntegrated: hundredths(94),
+    truePeakDb: hundredths(96),
   };
 }
 

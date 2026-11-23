@@ -66,4 +66,10 @@ clickSound: ClickSound,
 /**
  * R3 「鳴らすとき」. The count-in clicks either way.
  */
-clickWhen: ClickWhen, };
+clickWhen: ClickWhen, 
+/**
+ * R1 「さっきのを残す」 can be pressed: something was played on the keys target track
+ * since the last time it was let go (`Command::KeepPlayed`). Changes only when that
+ * turns, not with every key.
+ */
+canKeepPlayed: boolean, };

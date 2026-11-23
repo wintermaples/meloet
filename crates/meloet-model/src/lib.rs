@@ -16,6 +16,7 @@ pub mod mixer;
 pub mod mute_sets;
 pub mod notes;
 pub mod playback;
+pub mod presets;
 pub mod quantize;
 pub mod record;
 pub mod roll;

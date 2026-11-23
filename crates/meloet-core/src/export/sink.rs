@@ -53,6 +53,8 @@ pub fn create(path: &Path, spec: SinkSpec) -> io::Result<Box<dyn AudioSink>> {
     Ok(match spec.format {
         ExportFormat::Wav => Box::new(WavSink::create(path, spec)?),
         ExportFormat::Flac => Box::new(FlacSink::create(path, spec)?),
+        // round12 stub: F2
+        ExportFormat::Mp3 => return Err(invalid("mp3 cannot be written yet")),
     })
 }
 

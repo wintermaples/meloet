@@ -605,6 +605,8 @@ fn lively(kind: EffectKind) -> Box<dyn Effect> {
             fx.set_param(limiter::CEILING, -6.0);
         }
         EffectKind::Reverb | EffectKind::Chorus => {}
+        // round12 stub: M6 (settings that make each of them work hard)
+        EffectKind::Gate | EffectKind::DeEsser | EffectKind::Saturation => {}
     }
     fx
 }

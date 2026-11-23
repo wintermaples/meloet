@@ -16,6 +16,8 @@ mod export;
 mod history;
 mod pack;
 mod params;
+mod patterns;
+mod presets;
 mod take;
 mod telemetry;
 mod theme;
@@ -45,10 +47,11 @@ pub use automation::{
 };
 pub use click::{CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, ClickSound, ClickWhen};
 pub use export::{
-    EXPORT_MATCH_LUFS, EXPORT_MATCH_QUIETEST_LUFS, EXPORT_MATCH_TRUE_PEAK_DB, EXPORT_TAIL_MAX_S,
-    EXPORT_WAVE_BARS, ExportChange, ExportCheck, ExportDialogView, ExportFailure, ExportFormat,
-    ExportLoudness, ExportLoudnessResult, ExportRange, ExportRunView, ExportSolo,
-    ExportStoppedPlugin, ExportTail, ExportView,
+    EXPORT_MATCH_LUFS, EXPORT_MATCH_QUIETEST_LUFS, EXPORT_MATCH_TRUE_PEAK_DB,
+    EXPORT_MP3_DEFAULT_KBPS, EXPORT_MP3_KBPS, EXPORT_MP3_SAMPLE_RATES, EXPORT_PICTURE_MAX_BYTES,
+    EXPORT_TAIL_MAX_S, EXPORT_WAVE_BARS, ExportChange, ExportCheck, ExportDialogView,
+    ExportFailure, ExportFormat, ExportLoudness, ExportLoudnessResult, ExportRange, ExportRunView,
+    ExportSolo, ExportStoppedPlugin, ExportTail, ExportView,
 };
 pub use history::{HistoryRow, HistoryView, MeterValue, StepName, StepPlace, StepWhat, StripName};
 pub use pack::{PackFailure, PackFetchView, SoundsView};
@@ -57,13 +60,15 @@ pub use params::{
     ParamValue, ParamValues, PluginWindowKind, PluginWindowView, SelectedParams, SelectedPlugin,
     WindowsView,
 };
+pub use patterns::{PatternGroup, PatternSampleView, PatternView};
+pub use presets::{PRESET_NAME_MAX, PRESETS_PER_EFFECT, PresetRef, PresetsView, UserPresets};
 pub use take::{
     TAKE_CONTROL_LEN, TAKE_HEADER_LEN, TAKE_KIND, TAKE_NO_FROM, TAKE_NOTE_LEN, TAKE_VERSION,
     TakeControl, TakeControlValue, TakeError, TakeNote, TakeNotes,
 };
 pub use telemetry::{
-    MicMeter, TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN, TELEMETRY_VERSION,
-    Telemetry, TelemetryError, TransportReading,
+    MicMeter, SPECTRUM_BANDS, TELEMETRY_HEADER_LEN, TELEMETRY_KIND, TELEMETRY_MIC_LEN,
+    TELEMETRY_NO_VALUE, TELEMETRY_VERSION, Telemetry, TelemetryError, TransportReading,
 };
 
 pub use theme::Theme;
@@ -74,7 +79,7 @@ pub use vocal::{
     VocalRef,
 };
 
-pub const PROTOCOL_VERSION: u32 = 31;
+pub const PROTOCOL_VERSION: u32 = 32;
 
 /// Screen → Rust. Intent only; Rust decides what the state becomes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1463,6 +1468,97 @@ pub enum Command {
     OpenReleasePage,
     /// D1 「あとで」: the status line no longer says `StatusMessage::NewVersion`.
     DismissNewVersion,
+    // Protocol 32 (round 12, wave 2). As for wave 1: each of them that changes the song is
+    // one step, and does nothing while counting in or recording.
+    /// R1 「さっきのを残す」, Shift R and 「再生 ▸ さっきの演奏を残す」: what was played on the
+    /// keys target track while not recording (`TransportView::can_keep_played`) becomes a
+    /// clip there, put in as a recording is (with 「重ねる」 as an overdub), and selected; the
+    /// play does not start. One step (「さっきの演奏を残す」). With no note to keep:
+    /// `StatusMessage::NothingToKeep`.
+    KeepPlayed,
+    /// R2 「キーで弾く」, Mod K, and Esc while it is on: the PC keyboard plays as one more
+    /// keyboard (`KeyboardsView::typed_keys`). Off at start and not kept in the settings;
+    /// off lets go of every key it holds. Not a step.
+    TypedKeys {
+        on: bool,
+    },
+    /// R2 a key of the PC keyboard while `KeyboardsView::typed_keys`: as a key of a MIDI
+    /// keyboard (the sound, the input meter, recording, R1), at `TYPED_KEY_VELOCITY` or the
+    /// fixed velocity. `t_us`: when it was pressed or let go, CLOCK_MONOTONIC µs of Rust
+    /// (the screen turns `KeyboardEvent.timeStamp` into it with `HelloReply::mono_us`); a
+    /// recorded key takes its place from it. Nothing while `typed_keys` is off, nor for a
+    /// `note` above 127.
+    TypedKey {
+        note: u8,
+        down: bool,
+        t_us: u64,
+    },
+    /// E1 「表示 ▸ 鳴っている音を光らせる」 (`WorkspaceView::note_glow`). A meloet setting
+    /// (settings.json), not part of the song, and not a step.
+    SetNoteGlow {
+        on: bool,
+    },
+    /// P4 a row of the shelf's 「パターン」, ↑ ↓: the row becomes
+    /// `ShelfView::selected_pattern`. `None`, or an id the shelf does not have: no row.
+    ShelfSelectPattern {
+        id: Option<String>,
+    },
+    /// P4 the ▶ of a pattern's row: the pattern once, at the song's tempo, as `PlaySample`
+    /// plays (through the master fader, not recorded), with the kit of the selected track
+    /// when it is a drum track, else the studio kit (`ShelfView::pattern_sample`).
+    /// `StopSample` stops it.
+    PlayPattern {
+        id: String,
+    },
+    /// P4 「ここに置く」 (Enter): on the selected track when it is a drum track, else on a new
+    /// studio kit track (made with it in the same step), a clip as long as the pattern at the
+    /// head of the bar of the play line, with its notes. The play line goes to the clip's end;
+    /// the shelf stays open. One step (「パターンを置く」). Nothing where it would overlap a
+    /// clip (the notice of an overlap), where the meter is not 4/4
+    /// (`StatusMessage::PatternNeedsFourFour`), or for a new track past 64
+    /// (`StatusMessage::TooManyTracks`).
+    PlacePattern {
+        id: String,
+    },
+    /// A1 the handle of a clip and 「くり返す…」 (Mod R): `count` copies of `clips` as one
+    /// block (the earliest start to the latest end), each right after the one before; new
+    /// clips sharing the takes, without automation. `count` 1..=`REPEAT_COUNT_MAX`. All or
+    /// nothing: where a copy would overlap a clip or pass the song's end, nothing (the
+    /// notice of an overlap). One step (「クリップをくり返す」).
+    RepeatClips {
+        clips: Vec<u32>,
+        count: u32,
+    },
+    /// M1 a row of 「プリセット ▾」 of a built-in effect: every parameter of the insert takes
+    /// the preset's value, but those a lane moves (not resting), which stay; then
+    /// `StatusMessage::PresetLanesKept`. One step (「プリセットを使う」). Nothing for a slot
+    /// that holds no built-in effect or a preset it does not have.
+    ApplyPreset {
+        insert: InsertRef,
+        preset: PresetRef,
+    },
+    /// M1 「いまの設定を残す…」 and Enter: the insert's values are kept under `name` (at most
+    /// `PRESET_NAME_MAX` characters) with the PC, for its kind of effect. The same name is
+    /// written over (`StatusMessage::PresetOverwritten`); past `PRESETS_PER_EFFECT`, nothing
+    /// (`StatusMessage::TooManyPresets`). Not part of the song, and not a step.
+    SavePreset {
+        insert: InsertRef,
+        name: String,
+    },
+    /// M1 「消す」 on a row of 「自分で残したもの」. Not a step.
+    DeletePreset {
+        effect: EffectKind,
+        name: String,
+    },
+    /// M2 「全部のトラックを 6 dB 下げる」: the fader of every track (not the returns, not the
+    /// master) `db` (> 0) lower; one at −∞ stays, none goes below −60 dB. A track whose
+    /// volume a lane moves (not resting) gets every point of the lane lowered instead. One
+    /// step (「全部のトラックを下げる」). The notice goes until the next play.
+    LowerAllTracks {
+        db: f32,
+    },
+    /// M2 「閉じる」 on `StatusMessage::TooLoud`: not again until the next play.
+    DismissTooLoud,
 }
 
 /// A note of `Command::AddNotesAt`. `start` is a song position.
@@ -1475,6 +1571,16 @@ pub struct NoteAt {
     pub key: u8,
     pub velocity: u8,
 }
+
+/// R2: the id of 「パソコンのキーボード」 in `KeyboardsView::list` (and `active`) while
+/// `KeyboardsView::typed_keys`; its name is the screen's.
+pub const TYPED_KEYBOARD_ID: &str = "typedKeys";
+/// R2: the velocity of `Command::TypedKey` when the velocity is not fixed.
+pub const TYPED_KEY_VELOCITY: u8 = 100;
+/// A1: `Command::RepeatClips` makes at most this many copies; the box of 「くり返す…」
+/// starts at `REPEAT_COUNT_DEFAULT`.
+pub const REPEAT_COUNT_MAX: u32 = 99;
+pub const REPEAT_COUNT_DEFAULT: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -1601,6 +1707,11 @@ pub enum ValueField {
     /// The value of a point in the CC list (docs/history/design-notes.ja.md C-6 50), with its `range`
     /// ("0〜127", "−8192〜+8191").
     ControlValue,
+    /// Round 12 P3 (protocol 32): 「割合」 of 「ベロシティをまとめて変える」, 10..=300 %
+    /// (`Command::ScaleVelocity::percent`).
+    Percent,
+    /// P3 「ばらつき」, ±1..=32 (`Command::RandomVelocity::amount`).
+    Amount,
 }
 
 /// A strip of the mixer. The returns are always these two, and there is one master.
@@ -1768,16 +1879,25 @@ pub enum EffectKind {
     Delay,
     Chorus,
     Limiter,
+    /// M6 (protocol 32): 「ゲート」.
+    Gate,
+    /// M6: 「ディエッサー」.
+    DeEsser,
+    /// M6: 「サチュレーション」.
+    Saturation,
 }
 
 impl EffectKind {
-    pub const ALL: [EffectKind; 6] = [
+    pub const ALL: [EffectKind; 9] = [
         EffectKind::Eq4,
         EffectKind::Compressor,
         EffectKind::Reverb,
         EffectKind::Delay,
         EffectKind::Chorus,
         EffectKind::Limiter,
+        EffectKind::Gate,
+        EffectKind::DeEsser,
+        EffectKind::Saturation,
     ];
 }
 
@@ -1849,6 +1969,8 @@ pub struct AppState {
     pub recent: Vec<RecentSong>,
     /// D1: 「新しい版をたしかめる」 and the version it found.
     pub updates: UpdatesView,
+    /// M1: 「自分で残したもの」 of the presets. Not part of the song.
+    pub presets: PresetsView,
     pub status: StatusView,
 }
 
@@ -1925,6 +2047,9 @@ impl AppState {
         if old.updates != new.updates {
             out.push(Change::Updates(new.updates.clone()));
         }
+        if old.presets != new.presets {
+            out.push(Change::Presets(new.presets.clone()));
+        }
         if old.status != new.status {
             out.push(Change::Status(new.status.clone()));
         }
@@ -1957,6 +2082,7 @@ impl AppState {
             Change::AiLink(v) => self.ai_link = v,
             Change::Recent(v) => self.recent = v,
             Change::Updates(v) => self.updates = v,
+            Change::Presets(v) => self.presets = v,
             Change::Status(v) => self.status = v,
         }
     }
@@ -2118,6 +2244,8 @@ pub struct SelectedInsert {
     pub values: Vec<f32>,
     /// The chosen row (`Command::SelectParam`).
     pub row: Option<u32>,
+    /// M1 the preset whose values the insert has now: 「プリセット ▾」 shows its name.
+    pub preset: Option<PresetRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2348,6 +2476,12 @@ pub struct ShelfView {
     /// audition. They are not in `available`; the shelf shows both in its order. Empty when
     /// the pack is all there.
     pub not_yet: Vec<InstrumentKind>,
+    /// P4 the rows of 「パターン」 (in the shelf's `NewTrack` mode), in their order.
+    pub patterns: Vec<PatternView>,
+    /// P4 the chosen row (`Command::ShelfSelectPattern`): 「ここに置く」 places it.
+    pub selected_pattern: Option<String>,
+    /// P4 the pattern the ▶ plays (`Command::PlayPattern`); `None` again when it ends.
+    pub pattern_sample: Option<PatternSampleView>,
 }
 
 /// What Enter does in the shelf.
@@ -2424,6 +2558,10 @@ pub struct TransportView {
     pub click_sound: ClickSound,
     /// R3 「鳴らすとき」. The count-in clicks either way.
     pub click_when: ClickWhen,
+    /// R1 「さっきのを残す」 can be pressed: something was played on the keys target track
+    /// since the last time it was let go (`Command::KeepPlayed`). Changes only when that
+    /// turns, not with every key.
+    pub can_keep_played: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2560,6 +2698,9 @@ pub struct WorkspaceView {
     pub file_drop: Option<FileDropView>,
     /// The dialog 「遅れを測る」, over the sound settings.
     pub latency_dialog: Option<LatencyDialogView>,
+    /// E1 「表示 ▸ 鳴っている音を光らせる」 (`Command::SetNoteGlow`): while playing, the notes
+    /// the play line is on light up in the piano roll.
+    pub note_glow: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2695,6 +2836,9 @@ pub struct KeyboardsView {
     pub input_stopped: bool,
     /// "ベロシティ固定" (B-66), next to the velocity reading of the input meter.
     pub velocity_fixed: VelocityFixed,
+    /// R2 「キーで弾く」 is on (`Command::TypedKeys`): `list` then has 「パソコンのキーボード」
+    /// with the id `TYPED_KEYBOARD_ID`.
+    pub typed_keys: bool,
 }
 
 /// `value` 1..=127, kept while off; 100 until the user changes it.
@@ -3611,6 +3755,54 @@ pub enum StatusMessage {
     NewVersion {
         version: String,
     },
+    // Protocol 32 (round 12, wave 2).
+    /// R1 `Command::KeepPlayed` with no note to keep: 「残せる演奏がありません」.
+    NothingToKeep,
+    /// R2 while 「キーで弾く」 is on: 「キーで弾く：オン。1文字のショートカットは止まっています。
+    /// Z ／ X でオクターブ、Esc でやめる」 (and that keys do not sound while the input method
+    /// is on).
+    TypedKeysOn,
+    /// P4 `Command::PlacePattern` where the meter is not 4/4: 「4/4 のところにだけ置けます」.
+    PatternNeedsFourFour,
+    /// M1 `Command::SavePreset` wrote over the preset of that name.
+    PresetOverwritten {
+        name: String,
+    },
+    /// M1 `Command::ApplyPreset` left `count` parameters as they were: lanes move them.
+    PresetLanesKept {
+        count: u32,
+    },
+    /// M1 `Command::SavePreset` with `PRESETS_PER_EFFECT` presets of that effect already:
+    /// nothing was kept.
+    TooManyPresets {
+        effect: EffectKind,
+    },
+    /// M2, once a play, after it was found while playing (after the recording when
+    /// recording): with `limiter`, 「音が大きすぎます。リミッターがずっと 6 dB おさえています」
+    /// (`by_db`: the mean reduction of the master's limiter over the last 4 s); without,
+    /// 「音が大きすぎます。マスターが 2.1 dB 越えています」 (`by_db`: the largest overshoot of
+    /// 0 dBFS). `lower_db` is `by_db` rounded up into 1..=12, for the button
+    /// 「全部のトラックを 6 dB 下げる」 (`Command::LowerAllTracks`); and 「閉じる」
+    /// (`Command::DismissTooLoud`).
+    TooLoud {
+        by_db: f32,
+        lower_db: u8,
+        limiter: bool,
+    },
+    /// F2 the picture chosen for 「曲の情報」 is more than `EXPORT_PICTURE_MAX_BYTES`; it was
+    /// not taken. `file`: its name, without its folder.
+    ExportPictureTooLarge {
+        file: String,
+    },
+    /// F2 the picture chosen is not a png or a jpg that reads; it was not taken.
+    ExportPictureUnreadable {
+        file: String,
+    },
+    /// A9 `Command::NormalizeClips` / `ReverseClips`: the audio of `count` clips could not be
+    /// read or written, and nothing was done to them.
+    ClipWorkFailed {
+        count: u32,
+    },
 }
 
 /// The selected notes of the piano roll, for the status line.
@@ -3690,6 +3882,7 @@ pub enum Change {
     AiLink(AiLinkView),
     Recent(Vec<RecentSong>),
     Updates(UpdatesView),
+    Presets(PresetsView),
     Status(StatusView),
 }
 
@@ -3826,3 +4019,5 @@ mod tests29;
 mod tests30;
 #[cfg(test)]
 mod tests31;
+#[cfg(test)]
+mod tests32;

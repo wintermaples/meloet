@@ -86,5 +86,10 @@ export const STEP_NAME_KINDS: readonly StepName["kind"][] = [
   "legato",
   "duplicateTrack",
   "normalizeClips",
-  "reverseClips"
+  "reverseClips",
+  "keepPlayed",
+  "placePattern",
+  "repeatClips",
+  "applyPreset",
+  "lowerAll"
 ];

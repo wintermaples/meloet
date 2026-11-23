@@ -33,7 +33,7 @@ fn dialog() -> ExportDialogView {
             end: 122_880,
         },
         format: ExportFormat::Wav,
-        formats: ExportFormat::ALL.to_vec(),
+        formats: vec![ExportFormat::Wav, ExportFormat::Flac],
         place: "~/音楽/はじめての曲.wav".to_owned(),
         check: ExportCheck::Done {
             peak_db: Some(-0.5),
@@ -60,12 +60,18 @@ fn dialog() -> ExportDialogView {
             limited: false,
             lufs: -14.0,
         }),
+        mp3_kbps: 192,
+        mp3_kbps_choices: Vec::new(),
+        title: "はじめての曲".to_owned(),
+        artist: String::new(),
+        picture: None,
+        picture_usable: false,
     }
 }
 
 #[test]
 fn the_formats() {
-    assert_eq!(to_json(&ExportFormat::ALL), json!(["wav", "flac"]));
+    assert_eq!(to_json(&ExportFormat::ALL), json!(["wav", "flac", "mp3"]));
     assert_eq!(ExportFormat::Flac.extension(), "flac");
     // 32 bits are floats, which a flac file does not hold.
     assert_eq!(
@@ -73,7 +79,9 @@ fn the_formats() {
         [RecordFormat::Bits16, RecordFormat::Bits24]
     );
     assert_eq!(ExportFormat::Wav.bits_choices(), RecordFormat::ALL);
-    for format in ExportFormat::ALL {
+    // An mp3 has a bitrate instead (protocol 32).
+    assert_eq!(ExportFormat::Mp3.bits_choices(), []);
+    for format in [ExportFormat::Wav, ExportFormat::Flac] {
         assert!(format.bits_choices().contains(&RecordFormat::default()));
     }
 }
@@ -109,6 +117,12 @@ fn the_dialog_json_shape() {
             "loudness": "match",
             "canMatch": true,
             "loudnessResult": {"gainDb": 4.5, "limited": false, "lufs": -14.0},
+            "mp3Kbps": 192,
+            "mp3KbpsChoices": [],
+            "title": "はじめての曲",
+            "artist": "",
+            "picture": null,
+            "pictureUsable": false,
         }, "run": null}),
     );
     both_ways(ExportView::default(), json!({"dialog": null, "run": null}));
@@ -226,11 +240,12 @@ fn the_run_json_shape() {
             wave: vec![0, 128, 255],
             lufs: Some(-14.0),
             true_peak_db: Some(-1.0),
+            mp3_kbps: None,
         },
         json!({"state": "done", "file": "はじめての曲.wav", "files": 1,
                "place": "~/ミュージック/はじめての曲/はじめての曲.wav", "lengthS": 182,
                "sampleRate": 48_000, "bits": "bits24", "wave": [0, 128, 255],
-               "lufs": -14.0, "truePeakDb": -1.0}),
+               "lufs": -14.0, "truePeakDb": -1.0, "mp3Kbps": null}),
     );
     both_ways(ExportRunView::Cancelled, json!({"state": "cancelled"}));
     both_ways(

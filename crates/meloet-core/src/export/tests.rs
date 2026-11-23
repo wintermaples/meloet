@@ -407,6 +407,7 @@ fn an_export_runs_in_the_status_line_and_ends() {
     let done = ExportView {
         dialog: None,
         run: Some(ExportRunView::Done {
+            mp3_kbps: None,
             file: format!("{name}.wav"),
             files: 1,
             place: format!("~/音楽/{name}.wav"),

@@ -50,8 +50,8 @@ describe("effect rows on the shelf", () => {
     return shelfModel("effects", s.shelf, s.library, look).rows.map((r) => (r.effect?.kind === "builtin" ? r.effect.effect : null));
   };
   it("in EFFECT_KINDS order. The search text matches inside the name", () => {
-    expect(effects("")).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter"]);
-    expect(effects("ー")).toEqual(["compressor", "reverb", "chorus", "limiter"]);
+    expect(effects("")).toEqual(["eq4", "compressor", "reverb", "delay", "chorus", "limiter", "gate", "deEsser", "saturation"]);
+    expect(effects("ー")).toEqual(["compressor", "reverb", "chorus", "limiter", "gate", "deEsser", "saturation"]);
     expect(effects("eq")).toEqual(["eq4"]);
   });
 });
@@ -70,9 +70,12 @@ describe("shelf opened from 「空き ＋」 (insertEffect)", () => {
       "ディレイ 最初から入っている",
       "コーラス 最初から入っている",
       "リミッター 最初から入っている",
+      "ゲート 最初から入っている",
+      "ディエッサー 最初から入っている",
+      "サチュレーション 最初から入っている",
     ]);
     expect(q("[data-effect] [data-test=shelf-sample]")).toBeNull();
-    expect(qa("[data-effect] [aria-label=お気に入り]").map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "false", "true", "true", "false", "false"]);
+    expect(qa("[data-effect] [aria-label=お気に入り]").map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "false", "true", "true", "false", "false", "false", "false", "false"]);
     expect(qa("[data-effect].selected").map((r) => r.dataset.effect)).toEqual(["compressor"]);
   });
 
@@ -142,12 +145,12 @@ describe("shelf opened from 「空き ＋」 (insertEffect)", () => {
 });
 
 describe("effects in instrument mode are view only (A-14)", () => {
-  it("「エフェクト 6」 shows the list. Pressing, ↑ ↓ and Enter do not add", () => {
+  it("「エフェクト 9」 shows the list. Pressing, ↑ ↓ and Enter do not add", () => {
     const s = scene("shelfNewTrack");
     show(RightRail, s);
     q("[data-test=shelf-effects]")!.click();
     flushSync();
-    expect(qa("[data-effect]").length).toBe(6);
+    expect(qa("[data-effect]").length).toBe(9);
     expect(q("[data-test=shelf-insert-confirm]")).toBeNull();
     expect(text(q("[data-test=shelf-mode]"))).toBe("新しいトラックの音源をえらぶ");
     q("[data-effect=reverb]")!.click();
@@ -169,9 +172,9 @@ describe("effects in instrument mode are view only (A-14)", () => {
     expect(q("[data-row]")).not.toBeNull();
   });
 
-  it("shelf counts: the heading and the vertical heading are 「音源 11 ・ エフェクト 6」 (spec 4)", () => {
+  it("shelf counts: the heading and the vertical heading are 「音源 11 ・ エフェクト 9」 (spec 4)", () => {
     const s = scene("mixer");
     show(RightRail, s);
-    expect(text(q("nav [data-band=shelf]"))).toBe(`▸ 棚 音源 ${s.shelf.available.length} ・ エフェクト 6 P`);
+    expect(text(q("nav [data-band=shelf]"))).toBe(`▸ 棚 音源 ${s.shelf.available.length} ・ エフェクト 9 P`);
   });
 });

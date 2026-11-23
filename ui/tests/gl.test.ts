@@ -136,6 +136,11 @@ const telemetry = (over: Partial<Telemetry> = {}): Telemetry => ({
   returnPeaks: new Float32Array(4),
   trackPeaks: new Float32Array(0),
   mics: [],
+  masterReductionDb: 0,
+  spectrum: new Uint8Array(24),
+  lufsShort: null,
+  lufsIntegrated: null,
+  truePeakDb: null,
   ...over,
 });
 

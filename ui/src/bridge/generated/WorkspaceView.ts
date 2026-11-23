@@ -32,4 +32,9 @@ fileDrop: FileDropView | null,
 /**
  * The dialog 「遅れを測る」, over the sound settings.
  */
-latencyDialog: LatencyDialogView | null, };
+latencyDialog: LatencyDialogView | null, 
+/**
+ * E1 「表示 ▸ 鳴っている音を光らせる」 (`Command::SetNoteGlow`): while playing, the notes
+ * the play line is on light up in the piano roll.
+ */
+noteGlow: boolean, };

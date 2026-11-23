@@ -102,6 +102,7 @@ fn overdub_is_a_command_and_a_field_of_the_transport() {
         click_volume_db: 0.0,
         click_sound: ClickSound::Beep,
         click_when: ClickWhen::Always,
+        can_keep_played: false,
     };
     assert_eq!(to_json(&transport)["overdub"], true);
 }

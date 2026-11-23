@@ -19,6 +19,15 @@ pub const EXPORT_MATCH_QUIETEST_LUFS: f32 = -70.0;
 /// E9: how many bars `ExportRunView::Done::wave` has.
 pub const EXPORT_WAVE_BARS: usize = 200;
 
+/// F2 「ビットレート」 of mp3, kbit/s, always constant, in the order of the list…
+pub const EXPORT_MP3_KBPS: [u16; 4] = [128, 192, 256, 320];
+/// …and the one chosen at first.
+pub const EXPORT_MP3_DEFAULT_KBPS: u16 = 192;
+/// F2: the sample rates an mp3 is written at.
+pub const EXPORT_MP3_SAMPLE_RATES: [u32; 2] = [44_100, 48_000];
+/// F2 「絵」 of 「曲の情報」: a png or a jpg of at most this many bytes (5 MiB).
+pub const EXPORT_PICTURE_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
 /// `AppState::export`. Nothing of it changes 60 times a second: the numbers of the check and
 /// of the run come a few times a second at most, as `AudioWorkView` does.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -82,6 +91,20 @@ pub struct ExportDialogView {
     /// F1 the line under the check: what 「公開先に合わせる」 does to this export. `Some` only
     /// once the check is `Done` and `can_match`.
     pub loudness_result: Option<ExportLoudnessResult>,
+    /// F2 「ビットレート」 (in place of 「ビット」 while `format` is mp3), one of
+    /// `mp3_kbps_choices`.
+    pub mp3_kbps: u16,
+    /// F2: `EXPORT_MP3_KBPS`, or empty while mp3 cannot be written.
+    pub mp3_kbps_choices: Vec<u16>,
+    /// F2 「曲の情報」 「題名」: the song's name at first. For 「トラックごと」 each file is
+    /// titled 「題名 - トラックの名前」.
+    pub title: String,
+    /// F2 「作者」, kept with the PC's settings.
+    pub artist: String,
+    /// F2 「絵」: the name of the picture chosen (without its folder); Rust keeps the path.
+    pub picture: Option<String>,
+    /// F2 the row 「絵」 can be used: not for wav, which holds no picture.
+    pub picture_usable: bool,
 }
 
 /// F1 「音の大きさ」.
@@ -131,23 +154,30 @@ pub enum ExportFormat {
     #[default]
     Wav,
     Flac,
+    /// F2 (protocol 32): stereo, a constant bitrate (`ExportDialogView::mp3_kbps`), at one of
+    /// `EXPORT_MP3_SAMPLE_RATES`. Not in `ExportDialogView::formats` while this meloet
+    /// cannot write it.
+    Mp3,
 }
 
 impl ExportFormat {
-    pub const ALL: [ExportFormat; 2] = [ExportFormat::Wav, ExportFormat::Flac];
+    pub const ALL: [ExportFormat; 3] = [ExportFormat::Wav, ExportFormat::Flac, ExportFormat::Mp3];
 
     /// The ending of the file's name.
     pub fn extension(self) -> &'static str {
         match self {
             ExportFormat::Wav => "wav",
             ExportFormat::Flac => "flac",
+            ExportFormat::Mp3 => "mp3",
         }
     }
 
+    /// Empty for mp3: it has a bitrate instead.
     pub fn bits_choices(self) -> &'static [RecordFormat] {
         match self {
             ExportFormat::Wav => &RecordFormat::ALL,
             ExportFormat::Flac => &[RecordFormat::Bits16, RecordFormat::Bits24],
+            ExportFormat::Mp3 => &[],
         }
     }
 }
@@ -291,6 +321,8 @@ pub enum ExportRunView {
         /// `None` for several files, and for silence.
         lufs: Option<f32>,
         true_peak_db: Option<f32>,
+        /// F2: an mp3 was written at this bitrate (E9 shows it in place of `bits`).
+        mp3_kbps: Option<u16>,
     },
     /// "書き出しをやめました。途中までのファイルは消しました。"
     Cancelled,
@@ -299,7 +331,7 @@ pub enum ExportRunView {
 }
 
 /// What `Command::SetExport` sets. None is a step: the song does not change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(
     tag = "kind",
@@ -340,4 +372,22 @@ pub enum ExportChange {
     Loudness {
         loudness: ExportLoudness,
     },
+    /// F2 one of `ExportDialogView::mp3_kbps_choices`.
+    Mp3Kbps {
+        kbps: u16,
+    },
+    /// F2 「題名」 as typed.
+    Title {
+        title: String,
+    },
+    /// F2 「作者」 as typed; kept with the PC's settings.
+    Artist {
+        artist: String,
+    },
+    /// F2 「えらぶ…」 of 「絵」: Rust shows the PC's window for a png or a jpg. Cancelling it
+    /// changes nothing; a picture that cannot be used says so
+    /// (`StatusMessage::ExportPictureTooLarge`, `ExportPictureUnreadable`).
+    ChoosePicture,
+    /// F2: no picture.
+    RemovePicture,
 }

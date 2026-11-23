@@ -103,20 +103,20 @@ describe("shape of protocol 23", () => {
   });
 });
 
-describe("meter binary (version 4): mic meter", () => {
+describe("meter binary (version 4, and 5 from protocol 32): mic meter", () => {
   it("after the tracks, 16 bytes per vocal track. The fake writes it and the screen reads it", () => {
-    expect(TELEMETRY_VERSION).toBe(4);
-    expect([TELEMETRY_HEADER_LEN, TELEMETRY_MIC_LEN]).toEqual([92, 16]);
+    expect(TELEMETRY_VERSION).toBe(5);
+    expect([TELEMETRY_HEADER_LEN, TELEMETRY_MIC_LEN]).toEqual([124, 16]);
     const mics = [
       { track: VOCAL, peak: [0.25, 0.25] as [number, number], clipped: false, stereo: false },
       { track: 99, peak: [1, 0.5] as [number, number], clipped: true, stereo: true },
     ];
     const bytes = encodeTelemetry({ tracks: [[0.5, 0.125]], mics }, 7, 1000, 1);
-    expect(bytes.byteLength).toBe(92 + 8 + 2 * 16);
+    expect(bytes.byteLength).toBe(124 + 8 + 2 * 16);
     const read = decodeTelemetry(bytes);
     expect(read.mics).toEqual(mics);
     expect(Array.from(read.trackPeaks)).toEqual([0.5, 0.125]);
-    // a song with no vocal tracks has only the 92-byte head and the tracks.
+    // a song with no vocal tracks has only the head and the tracks.
     expect(decodeTelemetry(encodeTelemetry({}, 1, 0, 2)).mics).toEqual([]);
   });
 });

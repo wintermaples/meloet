@@ -1004,6 +1004,11 @@ export const texts = {
     undefined,
     "part",
   ),
+  // Round 12 P3: 「割合」 and 「ばらつき」 of 「ベロシティをまとめて変える」 (the ranges of the round's spec).
+  "value.percent": e("割合", "user:2026-11-23"),
+  "value.percentRange": e("10〜300", "user:2026-11-23"),
+  "value.amount": e("ばらつき", "user:2026-11-23"),
+  "value.amountRange": e("1〜32", "user:2026-11-23"),
   // Bar, beat and tick of the position (design-notes item 68, docs/history/design-notes.ja.md). The beat and tick ranges change with the time signature, so they come with the message.
   "value.bar": e("小節", "user:2026-11-18"),
   "value.beat": e("拍", "user:2026-11-18"),
@@ -1294,6 +1299,10 @@ export const texts = {
   "effect.delay": e("ディレイ", "spec:3"),
   "effect.chorus": e("コーラス", "spec:3"),
   "effect.limiter": e("リミッター", "spec:3"),
+  // Round 12 M6 (the table of the round's spec).
+  "effect.gate": e("ゲート", "user:2026-11-23"),
+  "effect.deEsser": e("ディエッサー", "user:2026-11-23"),
+  "effect.saturation": e("サチュレーション", "user:2026-11-23"),
   // Parameter names. The key is param.<EffectKind>.<EFFECT_PARAMS id>. Reverb and delay are from spec 3,
   // the other 4 from the table in docs/architecture.md 19-3 (the owner's decision).
   "param.reverb.decay": e("響きの長さ", "spec:3"),
@@ -1345,6 +1354,16 @@ export const texts = {
   "param.limiter.ceiling": e("上限", "user:2026-11-18"),
   "param.limiter.gain": e("持ち上げ", "user:2026-11-18"),
   "param.limiter.release": e("もどるまで", "user:2026-11-18"),
+  "param.gate.threshold": e("しきい値", "user:2026-11-23"),
+  "param.gate.range": e("下げる量", "user:2026-11-23"),
+  "param.gate.release": e("戻る速さ", "user:2026-11-23"),
+  "param.deEsser.frequency": e("周波数", "user:2026-11-23"),
+  "param.deEsser.threshold": e("しきい値", "user:2026-11-23"),
+  "param.deEsser.reduction": e("下げる量", "user:2026-11-23"),
+  "param.saturation.drive": e("ひずみ", "user:2026-11-23"),
+  "param.saturation.tone": e("明るさ", "user:2026-11-23"),
+  "param.saturation.mix": e("まぜる量", "user:2026-11-23"),
+  "param.saturation.output": e("出る大きさ", "user:2026-11-23"),
   // How values are written (number and unit; the examples in the spec 3 rule on parameter names). The part after the key prefix is unit of EFFECT_PARAMS.
   "param.value.s": e("{value} s", "spec:3", { value: "2.40" }),
   "param.value.ms": e("{value} ms", "spec:3", { value: "20" }),
@@ -2345,6 +2364,7 @@ export const texts = {
   "export.format": e("形", "mock:F7-Export"),
   "export.formatWav": e("wav", "mock:F7-Export"),
   "export.formatFlac": e("flac", "mock:F7-Export"),
+  "export.formatMp3": e("mp3", "user:2026-11-23"),
   "export.place": e("保存する所", "mock:F7-Export"),
   "export.choosePlace": e("えらぶ…", "mock:F7-Export"),
   "export.check": e("書き出す前のたしかめ", "mock:F7-Export"),
@@ -2872,6 +2892,11 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   duplicateTrack: e("トラックを複製", "user:2026-11-23"),
   normalizeClips: e("ノーマライズ", "user:2026-11-23"),
   reverseClips: e("逆にする", "user:2026-11-23"),
+  keepPlayed: e("さっきの演奏を残す", "user:2026-11-23"),
+  placePattern: e("パターンを置く", "user:2026-11-23"),
+  repeatClips: e("クリップをくり返す", "user:2026-11-23"),
+  applyPreset: e("プリセットを使う", "user:2026-11-23"),
+  lowerAll: e("全部のトラックを下げる", "user:2026-11-23"),
 };
 
 export interface Term {

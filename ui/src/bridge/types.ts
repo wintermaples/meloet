@@ -217,3 +217,22 @@ export {
   RECENT_SHOWN,
   SCALE_MODES,
 } from "./generated/round12";
+// Protocol 32 (round 12, wave 2): patterns, presets, playing with the PC keyboard, repeating clips, mp3.
+export type { PatternGroup } from "./generated/PatternGroup";
+export type { PatternSampleView } from "./generated/PatternSampleView";
+export type { PatternView } from "./generated/PatternView";
+export type { PresetRef } from "./generated/PresetRef";
+export type { PresetsView } from "./generated/PresetsView";
+export type { UserPresets } from "./generated/UserPresets";
+export {
+  EXPORT_MP3_DEFAULT_KBPS,
+  EXPORT_MP3_KBPS,
+  EXPORT_PICTURE_MAX_BYTES,
+  PATTERN_GROUPS,
+  PRESET_NAME_MAX,
+  PRESETS_PER_EFFECT,
+  REPEAT_COUNT_DEFAULT,
+  REPEAT_COUNT_MAX,
+  TYPED_KEYBOARD_ID,
+} from "./generated/round12wave2";
+export { FACTORY_PRESETS, type FactoryPreset } from "./generated/presets";

@@ -15,4 +15,9 @@ inputStopped: boolean,
 /**
  * "ベロシティ固定" (B-66), next to the velocity reading of the input meter.
  */
-velocityFixed: VelocityFixed, };
+velocityFixed: VelocityFixed, 
+/**
+ * R2 「キーで弾く」 is on (`Command::TypedKeys`): `list` then has 「パソコンのキーボード」
+ * with the id `TYPED_KEYBOARD_ID`.
+ */
+typedKeys: boolean, };

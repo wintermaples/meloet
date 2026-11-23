@@ -79,4 +79,30 @@ canMatch: boolean,
  * F1 the line under the check: what 「公開先に合わせる」 does to this export. `Some` only
  * once the check is `Done` and `can_match`.
  */
-loudnessResult: ExportLoudnessResult | null, };
+loudnessResult: ExportLoudnessResult | null, 
+/**
+ * F2 「ビットレート」 (in place of 「ビット」 while `format` is mp3), one of
+ * `mp3_kbps_choices`.
+ */
+mp3Kbps: number, 
+/**
+ * F2: `EXPORT_MP3_KBPS`, or empty while mp3 cannot be written.
+ */
+mp3KbpsChoices: Array<number>, 
+/**
+ * F2 「曲の情報」 「題名」: the song's name at first. For 「トラックごと」 each file is
+ * titled 「題名 - トラックの名前」.
+ */
+title: string, 
+/**
+ * F2 「作者」, kept with the PC's settings.
+ */
+artist: string, 
+/**
+ * F2 「絵」: the name of the picture chosen (without its folder); Rust keeps the path.
+ */
+picture: string | null, 
+/**
+ * F2 the row 「絵」 can be used: not for wav, which holds no picture.
+ */
+pictureUsable: boolean, };

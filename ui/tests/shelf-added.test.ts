@@ -106,7 +106,7 @@ describe("shelf headings (mock F5-SF2Shelf, F5-PluginLoading, spec 3 83, Y12)", 
   it("plugin type headings (in the 14-A order). A row has a star, ▶, name, maker, the mark of the format used, and 「＋1」", () => {
     show(RightRail, scene("shelfPlugins"));
     // 31 + SF2 137 + plugins 34 (the mock's 182 is from when there were 11 instruments).
-    expect(text(q(".head"))).toBe("▾ 棚 音源 202 エフェクト 512 P");
+    expect(text(q(".head"))).toBe("▾ 棚 音源 202 エフェクト 515 P");
     expect(headings().slice(-5)).toEqual(["▸ シンセ 21", "▸ サンプラー 6", "▸ ドラム 4", "▸ ピアノ ・ 鍵盤 2", "▸ そのほか 1"]);
     click('[data-group="c:instrument:synth"]');
     const surge = rowNamed("Surge XT");
@@ -117,7 +117,7 @@ describe("shelf headings (mock F5-SF2Shelf, F5-PluginLoading, spec 3 83, Y12)", 
     // Effect headings (in the order EQ, dynamics, reverb…).
     click("[data-test=shelf-effects]");
     expect(headings()).toEqual([
-      "▸ 最初から入っているもの 6",
+      "▸ 最初から入っているもの 9",
       "▸ EQ 64",
       "▸ ダイナミクス 88",
       "▸ リバーブ 23",
@@ -223,7 +223,7 @@ describe("search (mock F5-ShelfSearch)", () => {
 describe("favorites (spec 3 86-4)", () => {
   it("the effect list also has stars and 「すべて ・ お気に入り」. At first, reverb and delay. A star sends ToggleFavoriteEffect", () => {
     show(RightRail, scene("shelfFx"));
-    expect(text(q("[data-test=shelf-all]"))).toBe("すべて 512");
+    expect(text(q("[data-test=shelf-all]"))).toBe("すべて 515");
     expect(text(q("[data-test=shelf-favorites]"))).toBe("お気に入り 2");
     expect(text(q(".keys"))).toBe("印 F");
     click("[data-test=shelf-favorites]");

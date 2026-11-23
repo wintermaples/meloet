@@ -311,7 +311,7 @@ describe("track head (mock R6-Tracks, R7-Arrange6)", () => {
 describe("shelf (mock F4-ShelfSample, F4-ShelfAudition, F4-ShelfReplace)", () => {
   it("heading, mode text, search box, all and favorites, groups and rows (favorite stars)", () => {
     show(RightRail, scene("shelfNewTrack"));
-    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 6 P");
+    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 9 P");
     expect(text(q("[data-test=shelf-mode]"))).toBe("新しいトラックの音源をえらぶ");
     expect((q("[data-test=shelf-search]") as HTMLInputElement).placeholder).toBe("名前 ・ 種類");
     expect(text(q("[data-test=shelf-all]"))).toBe("すべて 31");
@@ -394,7 +394,7 @@ describe("shelf (mock F4-ShelfSample, F4-ShelfAudition, F4-ShelfReplace)", () =>
 
   it("shelf84 (mock R8-Shelf84): 31 instruments, 7 groups. All but piano, keys and guitar are folded", () => {
     show(RightRail, scene("shelf84"));
-    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 6 P");
+    expect(text(q(".head"))).toBe("▾ 棚 音源 31 エフェクト 9 P");
     expect(text(q("[data-test=shelf-all]"))).toBe("すべて 31");
     for (const g of ["bass", "drums", "padStrings", "wind", "synth"]) q(`[data-group=${g}]`)!.click();
     flushSync();
@@ -415,7 +415,7 @@ describe("shelf (mock F4-ShelfSample, F4-ShelfAudition, F4-ShelfReplace)", () =>
 
   it("the count in the vertical heading of the closed shelf is the number of instruments on the shelf", () => {
     show(RightRail, scene("tracks6"));
-    expect(text(q("[data-band=shelf]"))).toContain("音源 31 ・ エフェクト 6");
+    expect(text(q("[data-band=shelf]"))).toContain("音源 31 ・ エフェクト 9");
     q("[data-band=shelf]")!.click();
     expect(app.sent).toEqual([{ type: "openShelf", mode: { kind: "newTrack" } }]);
   });
@@ -540,9 +540,9 @@ describe("status line and input meter (mock F4-ShelfAudition, F4-ShelfReplace, R
     shelfUi.query = "オルガン";
     expect(say()).toBe("さがす「オルガン」・ 合う物 7 個");
     shelfUi.query = "";
-    // The effect list shows 「エフェクト 6」, or 「エフェクト 512 ・ リバーブ をひらいています」 when a heading is open.
+    // The effect list shows 「エフェクト 9」, or 「エフェクト 515 ・ リバーブ をひらいています」 when a heading is open.
     shelfUi.view = "effects";
-    expect(say()).toBe("エフェクト 6");
+    expect(say()).toBe("エフェクト 9");
     // During try-out, while a sample plays, or when the shelf is closed, the usual text.
     shelfUi.view = "instruments";
     app.setState({ ...s, shelf: { ...s.shelf, soundSample: { sound: { kind: "builtin", instrument: "grandPiano" }, playing: { startedUs: 0, lengthUs: 4_000_000 } } } });

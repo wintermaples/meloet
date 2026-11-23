@@ -161,6 +161,9 @@ pub(crate) fn model_effect(kind: EffectKind) -> ModelEffect {
         EffectKind::Delay => ModelEffect::Delay,
         EffectKind::Chorus => ModelEffect::Chorus,
         EffectKind::Limiter => ModelEffect::Limiter,
+        EffectKind::Gate => ModelEffect::Gate,
+        EffectKind::DeEsser => ModelEffect::DeEsser,
+        EffectKind::Saturation => ModelEffect::Saturation,
     }
 }
 
@@ -172,6 +175,9 @@ pub(crate) fn effect_kind(kind: ModelEffect) -> EffectKind {
         ModelEffect::Delay => EffectKind::Delay,
         ModelEffect::Chorus => EffectKind::Chorus,
         ModelEffect::Limiter => EffectKind::Limiter,
+        ModelEffect::Gate => EffectKind::Gate,
+        ModelEffect::DeEsser => EffectKind::DeEsser,
+        ModelEffect::Saturation => EffectKind::Saturation,
     }
 }
 
@@ -682,6 +688,8 @@ impl Play {
                         effect: effect_kind(insert.kind()?),
                         values: insert.values().to_vec(),
                         row: self.mixer.row,
+                        // round12 stub: M1
+                        preset: None,
                     }))
                 }
                 Picked::Plugin(place, key) => {

@@ -2,6 +2,8 @@
 import type { EffectRef } from "./EffectRef";
 import type { InstrumentKind } from "./InstrumentKind";
 import type { MissingView } from "./MissingView";
+import type { PatternSampleView } from "./PatternSampleView";
+import type { PatternView } from "./PatternView";
 import type { ShelfMode } from "./ShelfMode";
 import type { SoundRef } from "./SoundRef";
 import type { SoundSampleView } from "./SoundSampleView";
@@ -83,4 +85,16 @@ missing: Array<MissingView>,
  * audition. They are not in `available`; the shelf shows both in its order. Empty when
  * the pack is all there.
  */
-notYet: Array<InstrumentKind>, };
+notYet: Array<InstrumentKind>, 
+/**
+ * P4 the rows of 「パターン」 (in the shelf's `NewTrack` mode), in their order.
+ */
+patterns: Array<PatternView>, 
+/**
+ * P4 the chosen row (`Command::ShelfSelectPattern`): 「ここに置く」 places it.
+ */
+selectedPattern: string | null, 
+/**
+ * P4 the pattern the ▶ plays (`Command::PlayPattern`); `None` again when it ends.
+ */
+patternSample: PatternSampleView | null, };

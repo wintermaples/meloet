@@ -26,6 +26,10 @@ pub struct Settings {
     pub scale: u16,
     /// 「表示 ▸ テーマ ▸」 (`Command::SetTheme`).
     pub theme: Theme,
+    /// 「表示 ▸ 鳴っている音を光らせる」 (round 12, E1; `Command::SetNoteGlow`).
+    pub note_glow: bool,
+    /// 「作者」 of 「曲の情報」 of the export (round 12, F2).
+    pub export_artist: String,
     pub metronome: bool,
     /// 「メトロノーム ▾」 (round 12, R3; `Command::SetClick`).
     pub click: ClickSettings,
@@ -175,6 +179,8 @@ impl Default for Settings {
             output_name: None,
             scale: DEFAULT_SCALE,
             theme: Theme::default(),
+            note_glow: true,
+            export_artist: String::new(),
             metronome: false,
             click: ClickSettings::default(),
             count_in_bars: DEFAULT_COUNT_IN_BARS,
@@ -203,6 +209,10 @@ struct OnDisk {
     /// newer meloet wrote) gives the default, and the rest of the file is still read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     theme: Option<String>,
+    #[serde(default = "yes")]
+    note_glow: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    export_artist: String,
     #[serde(default)]
     metronome: bool,
     /// dB. Missing: 0; out of range: put at the nearer end.
@@ -388,6 +398,8 @@ pub fn load(dir: &Path) -> Settings {
             theme: (disk.theme.as_deref())
                 .and_then(Theme::from_name)
                 .unwrap_or_default(),
+            note_glow: disk.note_glow,
+            export_artist: disk.export_artist,
             metronome: disk.metronome,
             count_in_bars: if crate::play::COUNT_IN_BARS.contains(&disk.count_in_bars) {
                 disk.count_in_bars
@@ -440,6 +452,8 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         output_name: settings.output_name.clone(),
         scale: settings.scale,
         theme: Some(settings.theme.name().to_owned()),
+        note_glow: settings.note_glow,
+        export_artist: settings.export_artist.clone(),
         metronome: settings.metronome,
         click_volume_db: Some(settings.click.volume_db),
         click_sound: Some(settings.click.sound.name().to_owned()),
@@ -585,6 +599,8 @@ mod tests {
             output_name: Some("アナログヘッドフォン".into()),
             scale: 125,
             theme: Theme::MintLight,
+            note_glow: false,
+            export_artist: "わたし".into(),
             metronome: true,
             click: ClickSettings {
                 volume_db: -12.5,
@@ -699,6 +715,8 @@ mod tests {
                 output_name: None,
                 scale: 150,
                 theme: Theme::Dark,
+                note_glow: true,
+                export_artist: String::new(),
                 metronome: false,
                 click: ClickSettings {
                     volume_db: 0.0,

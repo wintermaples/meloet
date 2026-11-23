@@ -371,47 +371,61 @@ describe("when there is not enough width (spec 1 (1), spec 2 (Song ▾, Metronom
     expect(tipView.value?.term).toBe("dB");
   });
 
-  it("when the count-in hides, the metronome ▾. When the metronome is on, the ▾ is on too", () => {
-    folded();
+  it("the metronome ▾ is always there, right of the metronome button. When the metronome is on, the ▾ is on too (R3)", () => {
+    widths(1920, () => 10);
     show(Transport, ready((s) => (s.transport.metronome = true)));
-    expect(q('[data-test="transport-count-in"]')).toBeNull();
-    const stub = btn("metronome-stub");
-    expect(stub.getAttribute("aria-label")).toBe("メトロノームとカウントイン");
+    expect(q('[data-test="transport-count-in"]')).not.toBeNull();
+    let stub = btn("metronome-stub");
+    expect(stub.getAttribute("aria-label")).toBe("メトロノーム");
     expect(stub.classList.contains("on")).toBe(true);
     expect(stub.previousElementSibling).toBe(btn("metronome"));
-    app.setState(ready());
-    flushSync();
-    expect(btn("metronome-stub").classList.contains("on")).toBe(false);
+    vi.restoreAllMocks();
+    folded();
+    show(Transport, ready());
+    expect(q('[data-test="transport-count-in"]')).toBeNull();
+    stub = btn("metronome-stub");
+    expect(stub.getAttribute("aria-label")).toBe("メトロノームとカウントイン");
+    expect(stub.classList.contains("on")).toBe(false);
   });
 
-  it("the metronome ▾ list: metronome (C), heading 「カウントイン」, none, 1 bar, 2 bars", async () => {
+  it("the ▾ opens the metronome window; the count-in row is there only while the count-in button is hidden. Esc closes it", async () => {
+    widths(1920, () => 10);
+    show(Transport, ready());
+    btn("metronome-stub").click();
+    flushSync();
+    await tick();
+    const win = () => q('[data-test="metronome-window"]');
+    expect(win()!.getAttribute("aria-label")).toBe("メトロノーム");
+    expect(win()!.querySelectorAll('[data-test="metronome-count-in"]').length).toBe(0);
+    expect(btn("metronome-stub").getAttribute("aria-expanded")).toBe("true");
+    // A press inside does not close it; one outside does.
+    win()!.querySelector<HTMLElement>('[data-test="metronome-sound"]')!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    flushSync();
+    expect(win()).not.toBeNull();
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    flushSync();
+    expect(win()).toBeNull();
+
+    vi.restoreAllMocks();
     folded();
-    show(Transport, ready((s) => (s.transport.metronome = true)));
+    show(Transport, ready((s) => (s.transport.countInBars = 2)));
     btn("metronome-stub").click();
     flushSync();
     await tick();
-    const menu = q('[data-test="metronome-menu"]')!;
-    expect(menu.getAttribute("aria-label")).toBe("メトロノームとカウントイン");
-    expect([...menu.children].map((c) => c.textContent!.replace(/\s+/g, " ").trim())).toEqual([
-      "メトロノーム C",
-      "カウントイン",
-      "なし",
-      "1 小節",
-      "2 小節",
+    expect(win()!.getAttribute("aria-label")).toBe("メトロノームとカウントイン");
+    const counts = [...win()!.querySelectorAll<HTMLButtonElement>('[data-test="metronome-count-in"]')];
+    expect(counts.map((b) => [b.textContent, b.getAttribute("aria-pressed")])).toEqual([
+      ["なし", "false"],
+      ["1 小節", "false"],
+      ["2 小節", "true"],
     ]);
-    expect(menu.children[1]!.classList.contains("head")).toBe(true);
-    const rows = [...menu.querySelectorAll<HTMLButtonElement>("button")];
-    expect(rows.map((r) => r.getAttribute("aria-checked"))).toEqual(["true", "false", "true", "false"]);
-    rows[3]!.click();
+    counts[1]!.click();
     flushSync();
-    expect(app.sent).toEqual([{ type: "setCountIn", bars: 2 }]);
-    expect(q('[data-test="metronome-menu"]')).toBeNull();
-    btn("metronome-stub").click();
+    expect(app.sent).toEqual([{ type: "setCountIn", bars: 1 }]);
+    expect(win()).not.toBeNull();
+    closeMenu();
     flushSync();
-    await tick();
-    q('[data-test="metronome-menu"]')!.querySelector<HTMLButtonElement>("button")!.click();
-    flushSync();
-    expect(app.sent.at(-1)).toEqual({ type: "toggleMetronome" });
+    expect(win()).toBeNull();
   });
 
   it("a list that goes outside the window moves left and up until it fits", async () => {
@@ -424,11 +438,11 @@ describe("when there is not enough width (spec 1 (1), spec 2 (Song ▾, Metronom
       return { ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height, x: rect.left, y: rect.top, toJSON: () => ({}) } as DOMRect;
     });
     show(Transport, ready());
-    btn("metronome-stub").click();
+    btn("song-stub").click();
     flushSync();
     await new Promise((r) => setTimeout(r, 0));
     flushSync();
-    expect(q<HTMLElement>('[data-test="metronome-menu"]')!.style.transform).toBe("translate(-140px, -50px)");
+    expect(q<HTMLElement>('[data-test="song-menu"]')!.style.transform).toBe("translate(-140px, -50px)");
   });
 
   it("a list that fits in the window does not move", async () => {
@@ -445,7 +459,11 @@ describe("when there is not enough width (spec 1 (1), spec 2 (Song ▾, Metronom
 
   it("what hides does not change when the count-in starts (the count-in width is the bigger of normal and during count-in)", () => {
     const shown = () =>
-      ["transport-song", "transport-song-stub", "transport-metronome-stub"].map((t) => q(`[data-test="${t}"]`) !== null).join();
+      [
+        q('[data-test="transport-song"]') !== null,
+        q('[data-test="transport-song-stub"]') !== null,
+        q('[data-test="transport-count-in"], [data-test="transport-counting"]') !== null,
+      ].join();
     const seen = new Set<string>();
     for (let room = 300; room <= 900; room += 10) {
       vi.restoreAllMocks();
@@ -464,7 +482,7 @@ describe("when there is not enough width (spec 1 (1), spec 2 (Song ▾, Metronom
       unmount(mounted!);
       mounted = null;
     }
-    expect([...seen].sort()).toEqual(["false,true,false", "false,true,true", "true,false,false"]);
+    expect([...seen].sort()).toEqual(["false,true,false", "false,true,true", "true,false,true"]);
   });
 });
 

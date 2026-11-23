@@ -51,4 +51,4 @@ pub use stream::{
     StreamRead, StreamReader, StreamWant, StreamWants, StreamWriter, stream_ring, want_ring,
 };
 pub use synth::PlaceholderSynth;
-pub use transport::{Sequence, SequenceEvent, TrackSet};
+pub use transport::{ClickSound, Sequence, SequenceEvent, TrackSet};

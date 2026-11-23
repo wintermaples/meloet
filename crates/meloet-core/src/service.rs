@@ -2007,6 +2007,7 @@ impl Audio {
             }
             EngineOp::Loop { start, end, on } => EngineCommand::SetLoop { start, end, on },
             EngineOp::Metronome { on } => EngineCommand::SetMetronome { on },
+            EngineOp::Click { settings } => click_command(settings),
             EngineOp::Audition {
                 track,
                 keys,
@@ -2091,6 +2092,19 @@ impl Audio {
 /// The audio table as the place that opens the files takes it.
 fn source_names(sources: &[Arc<meloet_model::AudioSource>]) -> Vec<([u8; 16], String)> {
     sources.iter().map(|s| (s.uid, s.file.clone())).collect()
+}
+
+pub(crate) fn click_command(settings: crate::settings::ClickSettings) -> EngineCommand {
+    use meloet_protocol::{ClickSound, ClickWhen};
+    EngineCommand::SetClick {
+        sound: match settings.sound {
+            ClickSound::Beep => meloet_engine::ClickSound::Beep,
+            ClickSound::Tick => meloet_engine::ClickSound::Tick,
+            ClickSound::Cowbell => meloet_engine::ClickSound::Cowbell,
+        },
+        gain: 10f32.powf(settings.volume_db / 20.0),
+        recording_only: settings.when == ClickWhen::RecordingOnly,
+    }
 }
 
 fn voice_command(seat: usize, voice: Option<VoiceSpec>) -> EngineCommand {

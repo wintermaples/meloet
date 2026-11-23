@@ -13,6 +13,7 @@ import { FAKE_TABLES, FakeParamTables, SURGE_AUTOMATED, fakeParamCount } from ".
 import { FAKE_SONG_BPM, fakeAudioClip, fakePeaks, fakeStretch, fakeVocalClip, steadyTempo, type FakeAudio } from "./fakeAudio";
 import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFailed, packFetching, reduceClips27, reducePack, withPack } from "./fakeRound8";
 import { reduceRound10 } from "./fakeRound10";
+import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "./types";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
@@ -3460,6 +3461,15 @@ SCENES.aiLinkOff = aiLinkScene({ on: false, port: "closed" });
 SCENES.aiLinkWaiting = aiLinkScene({ on: true, port: "waiting" });
 SCENES.aiLinkConnected = aiLinkScene({ on: true, port: "connected" });
 
+// ---- round 12 R3: the metronome on, −12 dB, 「ピッ」, 「録音のときだけ」 (the mock of the spec). The window opens from the ▾ (shoot_ui.py metronomeWindow).
+SCENES.metronome = {
+  setup(s) {
+    ready(s);
+    Object.assign(s.transport, { metronome: true, clickVolumeDb: -12, clickSound: "beep", clickWhen: "recordingOnly" });
+  },
+  meters: QUIET,
+};
+
 // F8-MultiClip: the two clips of 「6 歌」 and one of 「7 歌 2」 selected; their volumes differ.
 SCENES.multiClip = {
   setup(s) {
@@ -4818,6 +4828,14 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
       break;
     case "setVelocityFixed":
       keyboards.velocityFixed = { on: command.on, value: Math.min(127, Math.max(1, command.value)) };
+      break;
+    // R3: only what is kept shows; the fake makes no sound.
+    case "setClick":
+      if (!command.commit) break;
+      if (command.volumeDb !== null && Number.isFinite(command.volumeDb))
+        transport.clickVolumeDb = Math.min(CLICK_VOLUME_MAX_DB, Math.max(CLICK_VOLUME_MIN_DB, command.volumeDb));
+      transport.clickSound = command.sound ?? transport.clickSound;
+      transport.clickWhen = command.when ?? transport.clickWhen;
       break;
     case "locate":
       if (transport.state === "stopped") transport.position = command.tick;

@@ -249,6 +249,8 @@ BOARDS = {
     "exportDone": "F7-Exporting",
     "exportCancelled": None,
     "exportFailed": None,
+    # Round 12 R3: the metronome ▾ window (the mock is in docs/history/round12-spec.ja.html, not a board).
+    "metronomeWindow": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_IN_LIST = """
@@ -553,6 +555,7 @@ CLICKS = {
     "answers92": ("laneScale", '[data-test="lane-add"]'),
     "meterFlagMenu": ("tempo", "js:" + CONTEXT_FLAG),
     "vocalInputMenu": ("vocalTrack", '[data-test="track-input"]'),
+    "metronomeWindow": ("metronome", '[data-test="transport-metronome-stub"]'),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -706,6 +709,8 @@ ONLY = {
     "packFailOffline": [(1280, 800, 100), (1280, 800, 150), (853, 448, 100)],
     "packSettings": [(1280, 800, 100), (1280, 800, 150)],
     "exporting": [(1280, 800, 100), (1280, 800, 150)],
+    # At 150 % the count-in button is hidden, so the window has the count-in row too.
+    "metronomeWindow": [(1280, 800, 100), (1280, 800, 150)],
 }
 scenes = args[1:] or list(BOARDS)
 

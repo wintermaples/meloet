@@ -412,49 +412,151 @@ impl Lane {
     }
 }
 
-/// A short decaying tone, started exactly on a beat.
-pub(crate) struct Click {
-    frame: usize,
-    total: usize,
+/// What the metronome's clicks sound like (`EngineCommand::SetClick`). Each is made by
+/// calculation, of cosines that all start at their top on the beat's frame and only die away,
+/// so the first sample of a click is its loudest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ClickSound {
+    /// A short tone: the click as it always was.
+    #[default]
+    Beep,
+    /// A bright, very short knock.
+    Tick,
+    /// Two square-like tones at 540 and 800 Hz, after the drum machines' cowbell.
+    Cowbell,
+}
+
+/// One cosine of a click: its pitch against the click's, its share of the first sample, and
+/// how fast it dies away.
+struct Partial {
+    ratio: f32,
+    share: f32,
+    decay_s: f32,
+}
+
+/// The beat's pitch, the bar head's (higher), and the cosines.
+struct Recipe {
+    beat_hz: f32,
+    bar_hz: f32,
+    partials: &'static [Partial],
+}
+
+const fn partial(ratio: f32, share: f32, decay_s: f32) -> Partial {
+    Partial {
+        ratio,
+        share,
+        decay_s,
+    }
+}
+
+impl ClickSound {
+    fn recipe(self) -> &'static Recipe {
+        const BEEP: Recipe = Recipe {
+            beat_hz: 1046.5,
+            bar_hz: 1760.0,
+            partials: &[partial(1.0, 1.0, 0.008)],
+        };
+        const TICK: Recipe = Recipe {
+            beat_hz: 2500.0,
+            bar_hz: 3150.0,
+            partials: &[
+                partial(1.0, 0.55, 0.004),
+                partial(1.59, 0.3, 0.0025),
+                partial(2.31, 0.15, 0.0015),
+            ],
+        };
+        // 540 Hz and 800 Hz with their third and fifth harmonics; the bar head a fourth up.
+        const COWBELL: Recipe = Recipe {
+            beat_hz: 540.0,
+            bar_hz: 720.0,
+            partials: &[
+                partial(1.0, 0.25, 0.010),
+                partial(800.0 / 540.0, 0.35, 0.010),
+                partial(3.0, 0.12, 0.006),
+                partial(3.0 * 800.0 / 540.0, 0.16, 0.006),
+                partial(5.0, 0.05, 0.004),
+                partial(5.0 * 800.0 / 540.0, 0.07, 0.004),
+            ],
+        };
+        match self {
+            ClickSound::Beep => &BEEP,
+            ClickSound::Tick => &TICK,
+            ClickSound::Cowbell => &COWBELL,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Tone {
     inc: f32,
     phase: f32,
     level: f32,
     decay: f32,
 }
 
+const MAX_PARTIALS: usize = 6;
+
+/// A short decaying sound, started exactly on a beat. One at a time: a new click ends the
+/// one before.
+pub(crate) struct Click {
+    frame: usize,
+    total: usize,
+    tones: [Tone; MAX_PARTIALS],
+    used: usize,
+}
+
 impl Click {
     const LENGTH_S: f32 = 0.035;
-    const DECAY_S: f32 = 0.008;
-    const BAR_HZ: f32 = 1760.0;
-    const BEAT_HZ: f32 = 1046.5;
-    /// The test tone peaks around 0.2 to 0.3; the click stays a little under.
+    /// The first sample at 0 dB. The test tone peaks around 0.2 to 0.3; the click stays a
+    /// little under.
     const BAR_LEVEL: f32 = 0.17;
     const BEAT_LEVEL: f32 = 0.13;
+    /// The loudest a click may be made: +6 dB.
+    const MAX_GAIN: f32 = 2.0;
+    const SILENT: Tone = Tone {
+        inc: 0.0,
+        phase: 0.0,
+        level: 0.0,
+        decay: 0.0,
+    };
 
     pub fn idle() -> Self {
         Click {
             frame: 0,
             total: 0,
-            inc: 0.0,
-            phase: 0.0,
-            level: 0.0,
-            decay: 0.0,
+            tones: [Self::SILENT; MAX_PARTIALS],
+            used: 0,
         }
     }
 
-    pub fn start(&mut self, bar_head: bool, sample_rate: f32) {
+    /// `gain` scales the whole click (1.0: as made). The bar head is higher and louder than
+    /// the other beats with every sound.
+    pub fn start(&mut self, bar_head: bool, sample_rate: f32, sound: ClickSound, gain: f32) {
+        let recipe = sound.recipe();
         let (hz, level) = if bar_head {
-            (Self::BAR_HZ, Self::BAR_LEVEL)
+            (recipe.bar_hz, Self::BAR_LEVEL)
         } else {
-            (Self::BEAT_HZ, Self::BEAT_LEVEL)
+            (recipe.beat_hz, Self::BEAT_LEVEL)
         };
+        let gain = if gain.is_finite() {
+            gain.clamp(0.0, Self::MAX_GAIN)
+        } else {
+            1.0
+        };
+        let mut tones = [Self::SILENT; MAX_PARTIALS];
+        for (tone, p) in tones.iter_mut().zip(recipe.partials) {
+            *tone = Tone {
+                inc: hz * p.ratio / sample_rate,
+                phase: 0.0,
+                level: level * gain * p.share,
+                decay: (-1.0 / (p.decay_s * sample_rate)).exp(),
+            };
+        }
         *self = Click {
             frame: 0,
             total: (Self::LENGTH_S * sample_rate) as usize,
-            inc: hz / sample_rate,
-            phase: 0.0,
-            level,
-            decay: (-1.0 / (Self::DECAY_S * sample_rate)).exp(),
+            tones,
+            used: recipe.partials.len().min(MAX_PARTIALS),
         };
     }
 
@@ -466,9 +568,13 @@ impl Click {
                 return;
             }
             let fade = ((self.total - self.frame) as f32 / 48.0).min(1.0);
-            *o += self.level * fade * (TAU * self.phase).cos();
-            self.phase = (self.phase + self.inc).fract();
-            self.level *= self.decay;
+            let mut sum = 0.0;
+            for tone in &mut self.tones[..self.used] {
+                sum += tone.level * (TAU * tone.phase).cos();
+                tone.phase = (tone.phase + tone.inc).fract();
+                tone.level *= tone.decay;
+            }
+            *o += sum * fade;
             self.frame += 1;
         }
     }

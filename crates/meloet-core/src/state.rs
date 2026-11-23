@@ -2207,8 +2207,16 @@ impl Model {
             } => self
                 .play
                 .set_plugin_param(slot, table, param, value, commit, effects),
-            // round12 stub: R3
-            Command::SetClick { .. } => {}
+            Command::SetClick {
+                volume_db,
+                sound,
+                when,
+                commit,
+            } => {
+                if self.play.set_click(volume_db, sound, when, commit, effects) {
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
             // round12 stub: P3
             Command::ScaleVelocity { .. }
             | Command::RampVelocity { .. }
@@ -3145,6 +3153,8 @@ fn asked_to_see(notice: &StatusMessage) -> bool {
 pub(crate) mod added_tests;
 #[cfg(test)]
 mod audio_tests;
+#[cfg(test)]
+mod click_tests;
 #[cfg(test)]
 mod pack_tests;
 #[cfg(test)]

@@ -256,14 +256,20 @@ fn the_stream_opening_gets_everything() {
     assert_eq!(o[4], EngineOp::Metronome { on: true });
     assert_eq!(
         o[5],
+        EngineOp::Click {
+            settings: crate::settings::ClickSettings::default()
+        }
+    );
+    assert_eq!(
+        o[6],
         EngineOp::Sequence {
             track: 0,
             events: vec![]
         }
     );
-    assert_eq!(o[6], EngineOp::SilentTracks { tracks: vec![] });
-    assert_eq!(o[7], EngineOp::PlayTarget { seat: Some(0) });
-    assert_eq!(o.len(), 8, "the instruments stay as they are in the engine");
+    assert_eq!(o[7], EngineOp::SilentTracks { tracks: vec![] });
+    assert_eq!(o[8], EngineOp::PlayTarget { seat: Some(0) });
+    assert_eq!(o.len(), 9, "the instruments stay as they are in the engine");
 }
 
 #[test]

@@ -4,9 +4,9 @@
 mod common;
 
 use meloet_engine::{
-    BlockTiming, Engine, EngineCommand, EngineConfig, EngineParts, HeardPosition, Instrument,
-    InstrumentEvent, MidiIn, PlaceholderSynth, Recorded, Sequence, SequenceEvent, TrackSet,
-    TransportState,
+    BlockTiming, ClickSound, Engine, EngineCommand, EngineConfig, EngineParts, HeardPosition,
+    Instrument, InstrumentEvent, MidiIn, PlaceholderSynth, Recorded, Sequence, SequenceEvent,
+    TrackSet, TransportState,
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -365,39 +365,215 @@ fn recorded_keys_get_the_position_that_was_heard() {
     }
 }
 
+const SOUNDS: [ClickSound; 3] = [ClickSound::Beep, ClickSound::Tick, ClickSound::Cowbell];
+/// The longest a click lasts: 35 ms.
+const CLICK_FRAMES: usize = (RATE as usize * 35) / 1000;
+
+fn click(sound: ClickSound, gain: f32, recording_only: bool) -> EngineCommand {
+    EngineCommand::SetClick {
+        sound,
+        gain,
+        recording_only,
+    }
+}
+
+/// The click that starts at `at`: up to the next onset or the end.
+fn click_at(sound: &[f32], at: usize, next: Option<usize>) -> &[f32] {
+    &sound[at..next.unwrap_or(sound.len())]
+}
+
+/// Sign changes in the first 5 ms: how high a click is.
+fn crossings(click: &[f32]) -> usize {
+    let head = &click[..(RATE as usize / 200).min(click.len())];
+    head.windows(2)
+        .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
+        .count()
+}
+
 #[test]
 fn clicks_reach_the_dac_on_the_beat() {
     // The click starts exactly on the frame of the beat, so a key stamped with that frame's DAC
     // time lands on the beat (checked above); here the sound itself is checked.
-    for block in [32usize, 256, 2048] {
-        for bpm in TEMPOS {
-            let mut rig = Rig::new(block, 0);
+    for sound_kind in SOUNDS {
+        for block in [32usize, 256, 2048] {
+            for bpm in TEMPOS {
+                let label = format!("{sound_kind:?}, block {block}, tempo {bpm}");
+                let mut rig = Rig::new(block, 0);
+                rig.tempo(bpm);
+                rig.send(EngineCommand::SetMetronome { on: true });
+                rig.send(click(sound_kind, 1.0, false));
+                rig.send(EngineCommand::Play { from: 0 });
+                let sound = rig.run(frame_of(7 * Q, 0, bpm) + 100);
+                let got = onsets(&sound);
+                let want: Vec<_> = (0..8)
+                    .map(|beat| frame_of(beat * Q, 0, bpm) as usize)
+                    .collect();
+                let frames: Vec<_> = got.iter().map(|o| o.0).collect();
+                assert_eq!(frames, want, "{label}");
+                assert!(got[0].1 > got[1].1, "{label}: bar head is louder");
+                assert!(got[4].1 > got[5].1, "{label}: bar head is louder");
+                assert!(
+                    (0.1..0.2).contains(&got[0].1),
+                    "{label}: a little under the test tone: {}",
+                    got[0].1
+                );
+                for (i, &at) in frames.iter().enumerate() {
+                    let one = click_at(&sound, at, frames.get(i + 1).copied());
+                    assert!(one[0] > 0.0, "{label}: click {i} starts upwards");
+                    let loudest = one.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+                    assert_eq!(loudest, one[0], "{label}: click {i}'s first sample");
+                    let last = one.iter().rposition(|s| *s != 0.0).unwrap();
+                    assert!(
+                        last < CLICK_FRAMES,
+                        "{label}: click {i} lasts {last} frames"
+                    );
+                }
+                let bar = click_at(&sound, frames[4], Some(frames[5]));
+                let beat = click_at(&sound, frames[5], Some(frames[6]));
+                assert!(
+                    crossings(bar) > crossings(beat),
+                    "{label}: bar head is higher: {} {}",
+                    crossings(bar),
+                    crossings(beat)
+                );
+                let meters = rig.parts.handle.meters();
+                assert_eq!(meters.take_track_peak(0), [0.0, 0.0], "not on a track");
+                assert_eq!(
+                    meters.take_master_peak(),
+                    [0.0, 0.0],
+                    "not on the master's meter"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        common::audio_block_counts(),
+        (0, 0),
+        "(allocations, frees) inside audio blocks"
+    );
+}
+
+/// −24 dB to +6 dB scale the whole click; at the quietest every click is still found on its
+/// beat, well over the floor of the search (1e-6).
+#[test]
+fn the_click_volume_scales_every_sound() {
+    let bpm = 13_750;
+    for sound_kind in SOUNDS {
+        for db in [-24.0f32, -12.0, 0.0, 6.0] {
+            let gain = 10f32.powf(db / 20.0);
+            let mut rig = Rig::new(256, 0);
             rig.tempo(bpm);
             rig.send(EngineCommand::SetMetronome { on: true });
+            rig.send(click(sound_kind, gain, false));
             rig.send(EngineCommand::Play { from: 0 });
             let sound = rig.run(frame_of(7 * Q, 0, bpm) + 100);
             let got = onsets(&sound);
+            let frames: Vec<_> = got.iter().map(|o| o.0).collect();
             let want: Vec<_> = (0..8)
                 .map(|beat| frame_of(beat * Q, 0, bpm) as usize)
                 .collect();
-            let frames: Vec<_> = got.iter().map(|o| o.0).collect();
-            assert_eq!(frames, want, "block {block}, tempo {bpm}");
-            assert!(got[0].1 > got[1].1, "bar head is louder");
-            assert!(got[4].1 > got[5].1, "bar head is louder");
-            assert!(
-                (0.1..0.2).contains(&got[0].1),
-                "a little under the test tone: {}",
-                got[0].1
-            );
-            let meters = rig.parts.handle.meters();
-            assert_eq!(meters.take_track_peak(0), [0.0, 0.0], "not on a track");
-            assert_eq!(
-                meters.take_master_peak(),
-                [0.0, 0.0],
-                "not on the master's meter"
-            );
+            assert_eq!(frames, want, "{sound_kind:?} at {db} dB");
+            for (i, (_, first)) in got.iter().enumerate() {
+                let made = if i % 4 == 0 { 0.17 } else { 0.13 };
+                assert!(
+                    (first - made * gain).abs() < 1e-5,
+                    "{sound_kind:?} at {db} dB, click {i}: {first}"
+                );
+                assert!(*first > 1e-3, "{sound_kind:?} at {db} dB: {first}");
+            }
         }
     }
+}
+
+/// 「録音のときだけ」: nothing while playing; the count-in and the recording click, and with
+/// the metronome off the count-in still does.
+#[test]
+fn recording_only_is_quiet_while_playing_and_the_count_in_always_clicks() {
+    let bpm = 12_000;
+    for metronome in [true, false] {
+        for block in [64usize, 1024] {
+            let label = format!("metronome {metronome}, block {block}");
+            let mut rig = Rig::new(block, 0);
+            rig.tempo(bpm);
+            rig.send(EngineCommand::SetMetronome { on: metronome });
+            rig.send(click(ClickSound::Cowbell, 1.0, true));
+            rig.send(EngineCommand::Play { from: 0 });
+            assert!(onsets(&rig.run(RATE * 2)).is_empty(), "{label}: playing");
+            rig.send(EngineCommand::Stop { t_us: 0 });
+            rig.run(RATE / 4);
+            let start = rig.frames as usize;
+            rig.send(EngineCommand::Record {
+                from: BAR,
+                count_in_beats: 4,
+                muted: TrackSet::default(),
+            });
+            let sound = rig.run(RATE * 4);
+            let beats = if metronome { 0..100 } else { 0..4 };
+            let want: Vec<_> = (beats.map(|b| start + frame_of(b * Q, 0, bpm) as usize))
+                .take_while(|f| *f < start + sound.len())
+                .collect();
+            assert!(want.len() >= 4, "{label}");
+            let got: Vec<_> = onsets(&sound).iter().map(|o| o.0 + start).collect();
+            assert_eq!(got, want, "{label}: recording");
+            rig.send(EngineCommand::Stop { t_us: 0 });
+            rig.run(RATE / 4);
+            rig.recorded_all();
+            // Playing and recording from where the song is, without a count-in.
+            rig.send(EngineCommand::Play { from: 0 });
+            assert!(onsets(&rig.run(RATE)).is_empty(), "{label}: playing again");
+            rig.send(EngineCommand::RecordHere {
+                muted: TrackSet::default(),
+            });
+            let heard = !onsets(&rig.run(RATE * 2)).is_empty();
+            assert_eq!(heard, metronome, "{label}: recording from playing");
+            rig.send(EngineCommand::Stop { t_us: 0 });
+            rig.run(block as u64);
+            rig.recorded_all();
+        }
+    }
+    assert_eq!(
+        common::audio_block_counts(),
+        (0, 0),
+        "(allocations, frees) inside audio blocks"
+    );
+}
+
+/// A change of sound or volume leaves the click that sounds as it is; the next click is the
+/// new one.
+#[test]
+fn a_click_setting_takes_effect_from_the_next_click() {
+    let bpm = 12_000;
+    let block = 32usize;
+    let beat = frame_of(Q, 0, bpm) as usize;
+    let length = frame_of(2 * Q, 0, bpm) + 100;
+    let run = |change_at: Option<u64>, before: (ClickSound, f32)| {
+        let mut rig = Rig::new(block, 0);
+        rig.tempo(bpm);
+        rig.send(EngineCommand::SetMetronome { on: true });
+        rig.send(click(before.0, before.1, false));
+        rig.send(EngineCommand::Play { from: 0 });
+        let mut sound = Vec::new();
+        if let Some(at) = change_at {
+            sound = rig.run(at);
+            rig.send(click(ClickSound::Cowbell, 0.5, false));
+        }
+        sound.extend(rig.run(length - sound.len() as u64));
+        sound
+    };
+    let changed = run(Some(4 * block as u64), (ClickSound::Beep, 1.0));
+    let beeps = run(None, (ClickSound::Beep, 1.0));
+    let cowbells = run(None, (ClickSound::Cowbell, 0.5));
+    assert_eq!(
+        &changed[..beat],
+        &beeps[..beat],
+        "the first click is a beep"
+    );
+    assert_eq!(
+        &changed[beat..beat + CLICK_FRAMES],
+        &cowbells[beat..beat + CLICK_FRAMES],
+        "the second click is the new one"
+    );
+    assert!((changed[beat] - 0.13 * 0.5).abs() < 1e-6);
 }
 
 #[test]

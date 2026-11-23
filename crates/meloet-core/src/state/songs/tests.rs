@@ -753,3 +753,123 @@ fn a_save_that_puts_audio_in_place_says_how_far_it_is_until_it_is_over() {
     m.handle(saving(12, 240_000_000));
     assert!(!said(m));
 }
+
+#[test]
+fn a_handed_file_waits_for_the_screen_and_opens_with_no_window() {
+    let w = &mut World::new("flow-given");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready();
+    w.input(m, Input::OpenGiven(path.clone()));
+    assert_eq!(song(m), Song::new_default(), "not before the screen is up");
+    assert_eq!(dialog(m), None);
+
+    w.input(m, Input::ScreenUp);
+    assert_eq!(m.view().song.name, "曲");
+    assert_eq!(m.view().timeline.tempo_bpm, 140.0);
+    assert_eq!(m.song_path(), Some(path.as_path()));
+    assert_eq!(file(m), SongFile::Saved);
+    assert!(
+        w.windows.is_empty(),
+        "the PC's open window is not asked for"
+    );
+
+    // The page loaded again: nothing is opened again.
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+    w.input(m, Input::ScreenUp);
+    assert_eq!(m.view().timeline.tempo_bpm, 100.0);
+}
+
+#[test]
+fn a_handed_file_asks_first_about_unsaved_changes() {
+    let w = &mut World::new("flow-given-ask");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready();
+    w.input(m, Input::ScreenUp);
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+
+    w.input(m, Input::OpenGiven(path.clone()));
+    let d = dialog(m).unwrap();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (SongDialogKind::Unsaved, "はじめての曲")
+    );
+    w.answer(m, SongAnswer::Cancel);
+    assert_eq!(m.view().timeline.tempo_bpm, 100.0);
+    assert_eq!(m.song_path(), None);
+
+    w.input(m, Input::OpenGiven(path.clone()));
+    w.answer(m, SongAnswer::Save);
+    let saved = songfile::read(&w.songs.join("はじめての曲/はじめての曲.meloet")).unwrap();
+    assert_eq!(saved.doc.timeline.tempo.centi(), 10_000, "saved first");
+    assert_eq!(m.song_path(), Some(path.as_path()));
+    assert_eq!(m.view().timeline.tempo_bpm, 140.0);
+    assert!(w.windows.is_empty());
+}
+
+#[test]
+fn a_handed_file_that_does_not_read_says_so_as_opening_does() {
+    let w = &mut World::new("flow-given-broken");
+    let m = &mut ready();
+    w.input(m, Input::ScreenUp);
+    let missing = w.songs.join("ない.meloet");
+    w.input(m, Input::OpenGiven(missing));
+    let d = dialog(m).unwrap();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.previous),
+        (SongDialogKind::Broken, "ない.meloet", false)
+    );
+
+    let path = write_two_versions(&w.songs);
+    fs::write(&path, b"{\"format\": \"meloet-song\", \"version\": 1, \"so").unwrap();
+    w.input(m, Input::OpenGiven(path));
+    let d = dialog(m).unwrap();
+    assert_eq!((d.kind, d.previous), (SongDialogKind::Broken, true));
+    assert_eq!(song(m), Song::new_default());
+}
+
+#[test]
+fn the_song_open_now_is_left_as_it_is() {
+    let w = &mut World::new("flow-given-same");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready();
+    w.input(m, Input::ScreenUp);
+    w.input(m, Input::OpenGiven(path.clone()));
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+    w.input(m, Input::OpenGiven(path));
+    assert_eq!(dialog(m), None);
+    assert_eq!(m.view().timeline.tempo_bpm, 100.0);
+    assert_eq!(file(m), SongFile::Changed);
+}
+
+#[test]
+fn a_handed_file_takes_the_place_of_a_dialog_up_now() {
+    let w = &mut World::new("flow-given-dialog");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready();
+    w.input(m, Input::ScreenUp);
+    cmd(m, Command::SetTempo { bpm: 100.0 });
+    w.cmd(m, Command::NewSong);
+    let first = dialog(m).unwrap();
+    w.input(m, Input::OpenGiven(path.clone()));
+    let d = dialog(m).unwrap();
+    assert_eq!(d.kind, SongDialogKind::Unsaved);
+    assert_ne!(d.id, first.id);
+    w.answer(m, SongAnswer::DontSave);
+    assert_eq!(m.song_path(), Some(path.as_path()));
+    assert_eq!(m.view().timeline.tempo_bpm, 140.0);
+}
+
+#[test]
+fn a_handed_file_is_let_go_while_recording() {
+    let w = &mut World::new("flow-given-rec");
+    let path = write_two_versions(&w.songs);
+    let m = &mut ready();
+    w.input(m, Input::ScreenUp);
+    cmd(m, Command::SetCountIn { bars: 0 });
+    cmd(m, Command::Record);
+    started(m);
+    w.input(m, Input::OpenGiven(path));
+    assert_eq!(dialog(m), None);
+    assert_eq!(m.song_path(), None);
+    assert!(m.view().transport.recording.is_some());
+}

@@ -65,6 +65,21 @@ First install one VST3 plugin (for example, `sudo apt install surge-xt` may not 
 
 - [ ] Record a little, press Ctrl+S, close meloet, open it again, open the song, and it plays with the same sound.
 
+### 6-1. Song files in the file manager
+
+Use the song saved in step 6 (`~/ミュージック/<song name>/<song name>.meloet`, or `~/Music/…`).
+
+- [ ] `xdg-mime query filetype <the song file>` prints `application/x-meloet`.
+- [ ] `xdg-mime query default application/x-meloet` prints `meloet.desktop`.
+- [ ] In the file manager (Files), the song file shows the meloet icon, and its type (right click ▸ Properties) is 「meloet の曲」 (`meloet song` on an English desktop).
+- [ ] Right click ▸ 「別のアプリケーションで開く」 (Open With) lists meloet first.
+- [ ] With meloet closed, double-click the song file: meloet starts and the song opens (its name is at the top left, and 「保存済み」).
+- [ ] With meloet open on another song that has no unsaved changes, double-click the song file: no second window opens, the song opens in the meloet that runs, and its window comes to the front. Write down whether it came to the front, or only said that it is ready (some desktops do that).
+- [ ] Change something (for example the tempo), then double-click the song file again: 「保存していない変更があります」 is asked first, as when you open a song from the menu.
+- [ ] Double-click the song that is open now: nothing changes, and the window comes to the front.
+- [ ] From the terminal, `meloet <the song file>` while meloet runs: the command ends at once, and the song opens in the meloet that runs.
+- [ ] Rename a copy of a text file to `broken.meloet` and double-click it: meloet says it cannot open it, as when you open it from the menu.
+
 ## 7. Remove
 
 ```bash
@@ -73,6 +88,9 @@ sudo apt remove meloet
 
 - [ ] It ends with no errors. `/usr/bin/meloet` and `/usr/bin/meloet-plughost` are gone.
 - [ ] It is gone from the list of apps.
+- [ ] `ls /usr/share/mime/packages/meloet.xml /usr/share/applications/meloet.desktop` finds neither.
+- [ ] `xdg-mime query filetype <the song file>` no longer prints `application/x-meloet` (a JSON or text type instead), and `xdg-mime query default application/x-meloet` prints nothing.
+- [ ] In the file manager the song file no longer shows the meloet icon, and double-clicking it does not start meloet.
 - [ ] `~/.config/meloet`, `~/.local/share/meloet` and so on stay (they belong to the user, so it is right that they stay).
 
 ## Sending the results

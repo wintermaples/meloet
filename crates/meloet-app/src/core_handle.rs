@@ -47,6 +47,9 @@ pub trait CoreHandle: Send + Sync + 'static {
     /// The answer of the PC's open window. Does not wait.
     fn song_file_picked(&self, path: Option<PathBuf>);
 
+    /// A song file the PC handed over (a double click, `meloet <file>`). Does not wait.
+    fn open_given(&self, path: PathBuf);
+
     /// The answer of the PC's folder window. Does not wait.
     fn folder_picked(&self, path: Option<PathBuf>);
 
@@ -135,6 +138,10 @@ impl CoreHandle for meloet_core::Core {
 
     fn song_file_picked(&self, path: Option<PathBuf>) {
         meloet_core::Core::song_file_picked(self, path);
+    }
+
+    fn open_given(&self, path: PathBuf) {
+        meloet_core::Core::open_given(self, path);
     }
 
     fn folder_picked(&self, path: Option<PathBuf>) {

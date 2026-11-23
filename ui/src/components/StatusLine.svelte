@@ -573,6 +573,11 @@
             : textParts("status.paramSelectedInsert", { strip: slotName(s), effect: spaced(m.plugin), param: m.param });
         return { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], selected), strong: [], button: null };
       }
+      case "soundKnobSelected": {
+        const loop = m.loopBars;
+        const selected = textParts("status.soundKnobSelected", { track: track(m.track), knob: t(`knob.${m.knob}`) });
+        return { parts: joined(loop ? textParts("status.loop", { from: loop.from, to: loop.to }) : [], selected), strong: [], button: null };
+      }
       case "paramClamped":
         return plain("params.valueClamped", clampedParts(m.to));
       case "paramRejected":

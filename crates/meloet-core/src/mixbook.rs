@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use meloet_engine::{Effect, EngineCommand, MixStrip};
 use meloet_model::mixer::move_slot;
-use meloet_model::{Gain, INSERT_SLOTS, Insert, Inserts, Pan, Sends};
+use meloet_model::{Gain, INSERT_SLOTS, Insert, Inserts, Pan, Sends, SoundKnobs};
 use meloet_sound::effects;
 
 use crate::play::{EngineOp, StripSeat};
@@ -13,6 +13,7 @@ use crate::play::{EngineOp, StripSeat};
 struct Strip {
     level: Option<(Gain, Pan)>,
     sends: Option<Sends>,
+    knobs: Option<SoundKnobs>,
     inserts: Inserts,
     /// The slots that are passed by, whatever they hold (a plugin is not in `inserts`).
     bypassed: [bool; INSERT_SLOTS],
@@ -34,6 +35,10 @@ impl MixBook {
             EngineOp::Sends { seat, sends } => {
                 let strip = self.strips.entry(StripSeat::Track(*seat)).or_default();
                 strip.sends = Some(*sends);
+            }
+            EngineOp::Knobs { seat, knobs } => {
+                let strip = self.strips.entry(StripSeat::Track(*seat)).or_default();
+                strip.knobs = Some(*knobs);
             }
             EngineOp::Insert {
                 strip,
@@ -96,6 +101,9 @@ impl MixBook {
             if let (StripSeat::Track(seat), Some(sends)) = (strip, s.sends) {
                 ops.push(EngineOp::Sends { seat, sends });
             }
+            if let (StripSeat::Track(seat), Some(knobs)) = (strip, s.knobs) {
+                ops.push(EngineOp::Knobs { seat, knobs });
+            }
             for (slot, insert) in s.inserts.iter().enumerate() {
                 if insert.is_some() {
                     ops.push(EngineOp::Insert {
@@ -148,6 +156,10 @@ pub(crate) fn command(op: &EngineOp) -> Option<EngineCommand> {
         EngineOp::Sends { seat, sends } => EngineCommand::SetSends {
             track: seat,
             sends: sends.map(Gain::linear),
+        },
+        EngineOp::Knobs { seat, knobs } => EngineCommand::SetKnobs {
+            track: seat,
+            knobs: knobs.values().map(|percent| percent / 100.0),
         },
         EngineOp::Param {
             strip,

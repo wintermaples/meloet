@@ -3,7 +3,7 @@
 // one step on release (docs/architecture.md 21-9), so until then the screen draws the line from the hand's value. Values moved in a plugin window are not known.
 
 import type { AutoTarget, Command } from "../../bridge";
-import { EFFECT_PARAMS } from "../../bridge/types";
+import { EFFECT_PARAMS, SOUND_KNOBS } from "../../bridge/types";
 import { current } from "../../state/app.svelte";
 import { dbToFrac } from "../mixer/scale";
 import { laneKey, panPosition, paramPosition } from "./laneValue";
@@ -26,6 +26,8 @@ function handOf(c: Command): { track: number; target: AutoTarget; pos: number } 
       const p = EFFECT_PARAMS[c.effect][c.param];
       return insert === undefined || !p ? null : { track: strip.id, target: { kind: "insert", insert, param: c.param }, pos: paramPosition(p, c.value) };
     }
+    case "setSoundKnob":
+      return { track: c.track, target: { kind: "instrument", param: SOUND_KNOBS.indexOf(c.knob) }, pos: c.value / 100 };
     case "setPluginParam": {
       if (c.slot.kind === "instrument") return { track: c.slot.track, target: { kind: "instrument", param: c.param }, pos: c.value };
       const strip = c.slot.insert.strip;

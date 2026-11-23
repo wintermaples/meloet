@@ -220,6 +220,13 @@ pub enum EngineOp {
         param: u32,
         value: f32,
     },
+    /// The knobs of the sound of the track on the seat (round 12, E3), as the song has them
+    /// with what is being dragged on top. Kept by the engine for the seat, whatever
+    /// instrument comes on it.
+    Knobs {
+        seat: usize,
+        knobs: meloet_model::SoundKnobs,
+    },
     /// 「とばす」: the sound passes the slot by, or goes through it again. The mark is the
     /// slot's; what is put into the slot later comes in with it.
     Bypass {

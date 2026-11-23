@@ -2484,8 +2484,13 @@ impl Model {
             // round12 stub: E2
             Command::SetArp { .. } => {}
 
-            // round12 stub: E3
-            Command::SetSoundKnob { .. } => {}
+            Command::SetSoundKnob {
+                track,
+                instrument,
+                knob,
+                value,
+                commit,
+            } => (self.play).set_sound_knob(track, instrument, knob, value, commit, effects),
 
             Command::SetSpectrum { on } if on == self.spectrum => {}
             Command::SetSpectrum { on } => {

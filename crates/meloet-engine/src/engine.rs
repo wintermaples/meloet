@@ -17,6 +17,7 @@ use crate::clock::{HeardPosition, Segment, TransportClock, TransportState, heard
 use crate::effect::{Effect, EffectContext};
 use crate::input::{InputFeed, MAX_INPUT_CHANNELS};
 use crate::instrument::{Instrument, InstrumentEvent};
+use crate::knobs::{KNOB_DEFAULTS, KNOBS, knob_place};
 use crate::mixer::{INSERT_SLOTS, Io, MixStrip, RAMP_S, SlotAuto, Strip};
 use crate::plugin::{PLUGIN_WAIT_SHARE, PluginBlock};
 use crate::probe::probe_wave;
@@ -102,6 +103,14 @@ pub enum EngineCommand {
         strip: MixStrip,
         from: usize,
         to: usize,
+    },
+    /// The knobs of the track's sound as the hand put them ([`Instrument::set_knob`], places
+    /// 0..=1 in the order of `crate::knobs`). Kept for the track, whatever instrument comes:
+    /// the track's own instrument takes each one that no lane plays now (not the one tried
+    /// out in its place); a knob whose lane stops playing, or is held, comes back to it.
+    SetKnobs {
+        track: usize,
+        knobs: [f32; KNOBS],
     },
     /// [`Effect::set_param`] of the effect in the slot. Does nothing on an empty slot.
     SetEffectParam {
@@ -673,6 +682,8 @@ struct Track {
     due_key: Option<((usize, u32), u64, bool)>,
     auto: Option<Box<AutoSet>>,
     holds: [Option<AutoTarget>; HOLDS],
+    /// [`EngineCommand::SetKnobs`].
+    knobs: [f32; KNOBS],
     /// Fader and pan, or a send, went where automation took them, not where the hand put
     /// them.
     steered: bool,
@@ -830,11 +841,43 @@ impl Track {
             due_key: None,
             auto: None,
             holds: [None; HOLDS],
+            knobs: KNOB_DEFAULTS,
             steered: false,
             sends_steered: [false; 2],
             mute_due: u64::MAX,
             voice: None,
             clips: ClipPlayer::new(),
+        }
+    }
+
+    /// The track's own instrument (the one set aside while another is tried out) takes the
+    /// knobs the hand put, each one that no lane plays now.
+    fn apply_knobs(&mut self) {
+        let own = match self.aside.as_deref_mut() {
+            Some(own) => own,
+            None => match self.instrument.as_deref_mut() {
+                Some(own) => own,
+                None => return,
+            },
+        };
+        for (knob, &place) in self.knobs.iter().enumerate() {
+            let knob = knob as u32;
+            if !self
+                .auto
+                .as_deref()
+                .is_some_and(|set| set.plays_instrument(knob))
+            {
+                own.set_knob(knob, place);
+            }
+        }
+    }
+
+    /// Another instrument is on the seat: it takes the hand's knobs, and the lanes of its
+    /// parameters are sent again.
+    fn instrument_changed(&mut self) {
+        self.apply_knobs();
+        if let Some(set) = self.auto.as_deref_mut() {
+            set.resend_instrument();
         }
     }
 
@@ -1767,6 +1810,7 @@ impl Engine {
                             if let Some(old) = slot.instrument.replace(instrument) {
                                 slot.fade_out(old, fade, &mut self.retired);
                             }
+                            slot.instrument_changed();
                         }
                         None => {
                             // Cannot fail: checked above, and this is the only producer.
@@ -1867,7 +1911,9 @@ impl Engine {
                             if let Some(new) = set.as_deref_mut() {
                                 new.follow(slot.auto.as_deref(), &slot.holds);
                             }
-                            std::mem::replace(&mut slot.auto, set)
+                            let old = std::mem::replace(&mut slot.auto, set);
+                            slot.apply_knobs();
+                            old
                         }
                         None => set,
                     };
@@ -1893,6 +1939,20 @@ impl Engine {
                     if let Some(set) = slot.auto.as_deref_mut() {
                         set.hold(target, on);
                     }
+                    if matches!(target, AutoTarget::Instrument { .. }) {
+                        slot.apply_knobs();
+                    }
+                }
+                EngineCommand::SetKnobs { track, knobs } => {
+                    let Some(slot) = self.tracks.get_mut(track) else {
+                        continue;
+                    };
+                    for (kept, place) in slot.knobs.iter_mut().zip(knobs) {
+                        if let Some(place) = knob_place(place) {
+                            *kept = place;
+                        }
+                    }
+                    slot.apply_knobs();
                 }
                 EngineCommand::SetEffectParam {
                     strip,
@@ -1941,11 +2001,13 @@ impl Engine {
                     }
                     if keep {
                         let _ = self.retired.push(own);
+                        slot.instrument_changed();
                     } else {
                         slot.lane.forget();
                         if let Some(tried) = slot.instrument.replace(own) {
                             slot.fade_out(tried, fade, &mut self.retired);
                         }
+                        slot.instrument_changed();
                         self.replay_lane(track);
                     }
                 }
@@ -1961,6 +2023,7 @@ impl Engine {
                     if let Some(old) = std::mem::replace(&mut slot.instrument, moved) {
                         let _ = self.retired.push(old);
                     }
+                    slot.instrument_changed();
                     if self.play_target == Some(from) {
                         self.play_target = Some(to);
                     }
@@ -1975,6 +2038,7 @@ impl Engine {
                     slot.aside_left = 0;
                     slot.fade_left = 0;
                     slot.holds = [None; HOLDS];
+                    slot.knobs = KNOB_DEFAULTS;
                     slot.steered = false;
                     slot.sends_steered = [false; 2];
                     slot.mute_due = u64::MAX;
@@ -2777,7 +2841,10 @@ impl Engine {
                 continue;
             };
             mixing |= set.has_mix();
+            // While another instrument is tried out in its place, the lanes of the track's
+            // own are not its.
             if set.has_instrument()
+                && track.aside.is_none()
                 && let Some(instrument) = track.instrument.as_deref_mut()
             {
                 set.instrument_points(t, u64::from(track.lookahead), frames, instrument);

@@ -130,12 +130,17 @@ impl Track {
         self.automation.iter().find(|l| l.target == target)
     }
 
-    /// Whether the track has what `target` moves: a plugin as its instrument, an insert of
-    /// that id (and for an effect of meloet, a parameter of that place in its table).
+    /// Whether the track has what `target` moves: a plugin as its instrument, a knob its
+    /// sound that comes with meloet uses, an insert of that id (and for an effect of meloet,
+    /// a parameter of that place in its table).
     pub fn has_target(&self, target: AutoTarget) -> bool {
         match target {
             AutoTarget::Volume | AutoTarget::Pan | AutoTarget::Send(_) | AutoTarget::Mute => true,
-            AutoTarget::Instrument { .. } => matches!(self.instrument, InstrumentRef::Plugin(_)),
+            AutoTarget::Instrument { param } => match &self.instrument {
+                InstrumentRef::Plugin(_) => true,
+                other => crate::knobs::SoundKnob::from_index(param)
+                    .is_some_and(|knob| crate::knobs::knob_usable(other, knob)),
+            },
             AutoTarget::Insert { insert, param } => {
                 let held = self.channel.inserts.iter().flatten();
                 held.filter(|i| i.id == insert).any(|i| match i.kind() {

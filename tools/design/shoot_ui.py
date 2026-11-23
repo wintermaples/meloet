@@ -321,6 +321,9 @@ BOARDS = {
     "paramsGate": None,
     "paramsDeEsser": None,
     "paramsSaturation": None,
+    # Round 12 E3: the knobs of a built-in sound, and of a drum kit with two rows disabled (no mock).
+    "paramsSoundKnobs": None,
+    "paramsSoundDrums": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_KEY_FILTER = """
@@ -939,6 +942,8 @@ ONLY = {
     "paramsGate": [(1280, 800, 100)],
     "paramsDeEsser": [(1280, 800, 100)],
     "paramsSaturation": [(1280, 800, 100)],
+    "paramsSoundKnobs": [(1280, 800, 100), (1280, 800, 150)],
+    "paramsSoundDrums": [(1280, 800, 100)],
 }
 scenes = args[1:] or list(BOARDS)
 

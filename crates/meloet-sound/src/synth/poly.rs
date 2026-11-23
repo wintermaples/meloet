@@ -4,6 +4,7 @@
 
 use std::f32::consts::TAU;
 
+use meloet_engine::knobs::{VoiceKnobs, vibrato_ratio};
 use meloet_engine::{Instrument, InstrumentEvent, SongPlace};
 
 use super::dsp::{Rng, Svf, decay_coef, pulse, saw, svf_g};
@@ -215,6 +216,9 @@ struct StartCtx {
     sample_rate: f32,
     /// The modulation wheel's share of the cutoff, as a ratio.
     cutoff_mod: f32,
+    /// What the knobs make of the attack and the release now.
+    attack_step: f32,
+    release_coef: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -240,6 +244,12 @@ struct Voice {
     started: u64,
     /// The note waiting for this voice to finish its steal fade.
     pending: Option<Pending>,
+    attack_step: f32,
+    release_coef: f32,
+    /// Frames since the voice started.
+    age: u64,
+    /// Pitch ratio of the knob's vibrato at the end of the last chunk.
+    vib: f32,
 }
 
 impl Voice {
@@ -259,10 +269,19 @@ impl Voice {
         filter: [Svf::ZERO; 2],
         started: 0,
         pending: None,
+        attack_step: 0.0,
+        release_coef: 0.0,
+        age: 0,
+        vib: 1.0,
     };
 
     fn sounding(&self) -> bool {
         matches!(self.stage, Stage::Attack | Stage::Decay)
+    }
+
+    fn release(&mut self, coef: f32) {
+        self.stage = Stage::Release;
+        self.release_coef = coef;
     }
 
     fn start(&mut self, p: Pending, ctx: &StartCtx, rng: &mut Rng) {
@@ -302,6 +321,10 @@ impl Voice {
             filter: [Svf::ZERO; 2],
             started: p.started,
             pending: None,
+            attack_step: ctx.attack_step,
+            release_coef: ctx.release_coef,
+            age: 0,
+            vib: 1.0,
         };
     }
 }
@@ -328,6 +351,7 @@ pub struct PolySynth {
     pitch_now: f32,
     note_counter: u64,
     rng: Rng,
+    knobs: VoiceKnobs,
 }
 
 impl PolySynth {
@@ -378,6 +402,7 @@ impl PolySynth {
             pitch_now: 1.0,
             note_counter: 0,
             rng: Rng::new(0x6D65_6C6F),
+            knobs: VoiceKnobs::new(),
         };
         synth.set_rate(48_000.0);
         synth
@@ -394,10 +419,21 @@ impl PolySynth {
     }
 
     fn start_ctx(&self) -> StartCtx {
+        let (p, k) = (self.patch, &self.knobs);
         StartCtx {
-            patch: self.patch,
+            patch: p,
             sample_rate: self.sample_rate,
-            cutoff_mod: (self.patch.mod_cutoff_octaves * self.mod_now).exp2(),
+            cutoff_mod: (p.mod_cutoff_octaves * self.mod_now).exp2(),
+            attack_step: if k.attack_as_is() {
+                self.attack_step
+            } else {
+                1.0 / (k.attack_s(p.attack_s) * self.sample_rate).max(1.0)
+            },
+            release_coef: if k.release_as_is() {
+                self.release_coef
+            } else {
+                decay_coef(p.release_s * k.release_scale(), self.sample_rate)
+            },
         }
     }
 
@@ -405,7 +441,7 @@ impl PolySynth {
         let ctx = self.start_ctx();
         let voices = &mut self.voices[..self.patch.voices];
         for v in voices.iter_mut().filter(|v| v.sounding() && v.note == note) {
-            v.stage = Stage::Release;
+            v.release(ctx.release_coef);
             v.held = false;
         }
         self.note_counter += 1;
@@ -441,11 +477,12 @@ impl PolySynth {
 
     fn note_off(&mut self, note: u8) {
         let pedal = self.pedal;
+        let coef = self.start_ctx().release_coef;
         for v in self.voices.iter_mut() {
             if v.sounding() && v.note == note && v.held {
                 v.held = false;
                 if !pedal {
-                    v.stage = Stage::Release;
+                    v.release(coef);
                 }
             }
             if let Some(p) = v.pending.as_mut().filter(|p| p.note == note) {
@@ -455,11 +492,12 @@ impl PolySynth {
     }
 
     fn release_all(&mut self) {
+        let coef = self.start_ctx().release_coef;
         for v in self.voices.iter_mut() {
             v.held = false;
             v.pending = None;
             if v.sounding() {
-                v.stage = Stage::Release;
+                v.release(coef);
             }
         }
     }
@@ -484,10 +522,11 @@ impl PolySynth {
         let ctx = self.start_ctx();
         let filter_env_fall = self.filter_decay_coef.powi(frames as i32);
         let k = 1.0 / patch.resonance_q;
-        let (attack_step, decay_coef, release_coef) =
-            (self.attack_step, self.decay_coef, self.release_coef);
+        let decay_coef = self.decay_coef;
         let (pedal, sustain) = (self.pedal, patch.sustain);
         let osc_gain = &self.osc_gain[..patch.oscs.len()];
+        let vibrato = self.knobs.vibrato_on();
+        let cents = self.knobs.advance_vibrato(frames);
 
         for v in self.voices[..patch.voices].iter_mut() {
             if v.stage == Stage::Idle {
@@ -498,11 +537,18 @@ impl PolySynth {
                 v.cutoff_hz * ctx.cutoff_mod * (v.filter_env_octaves * v.filter_env).exp2();
             let mut g_step = (svf_g(cutoff, sample_rate) - v.g) / n;
             let mut pitch = pitch_start;
+            let (mut vib, mut vib_step) = (1.0, 0.0);
+            if vibrato {
+                let end = vibrato_ratio(cents, v.age + frames as u64, sample_rate, 1.0);
+                (vib, vib_step) = (v.vib, (end - v.vib) / n);
+            }
+            v.age += frames as u64;
             for (out_l, out_r) in left.iter_mut().zip(right.iter_mut()) {
                 pitch += pitch_step;
+                vib += vib_step;
                 match v.stage {
                     Stage::Attack => {
-                        v.env += attack_step;
+                        v.env += v.attack_step;
                         if v.env >= 1.0 {
                             v.env = 1.0;
                             v.stage = Stage::Decay;
@@ -510,7 +556,7 @@ impl PolySynth {
                     }
                     Stage::Decay => v.env = sustain + (v.env - sustain) * decay_coef,
                     Stage::Release => {
-                        v.env *= release_coef;
+                        v.env *= v.release_coef;
                         if v.env < SILENT {
                             v.stage = Stage::Idle;
                             break;
@@ -528,6 +574,7 @@ impl PolySynth {
                                 v.stage = Stage::Release;
                             }
                             g_step = 0.0;
+                            (vib, vib_step) = (1.0, 0.0);
                             continue;
                         }
                     }
@@ -537,7 +584,7 @@ impl PolySynth {
                 let (mut l, mut r) = (0.0, 0.0);
                 for (i, osc) in patch.oscs.iter().enumerate() {
                     let t = v.phase[i];
-                    let dt = (v.inc[i] * pitch).min(0.45);
+                    let dt = (v.inc[i] * (pitch * vib)).min(0.45);
                     let s = match osc.wave {
                         Wave::Saw => saw(t, dt),
                         Wave::Pulse(width) => pulse(t, dt, width),
@@ -558,6 +605,7 @@ impl PolySynth {
                 *out_l += l * gain;
                 *out_r += r * gain;
             }
+            v.vib = if vibrato { vib } else { 1.0 };
         }
     }
 }
@@ -576,6 +624,7 @@ fn approach(now: f32, target: f32, share: f32) -> f32 {
 impl Instrument for PolySynth {
     fn prepare(&mut self, sample_rate: f32, _max_frames: usize) {
         self.set_rate(sample_rate);
+        self.knobs.prepare(sample_rate);
         self.reset();
     }
 
@@ -590,8 +639,9 @@ impl Instrument for PolySynth {
             } => {
                 self.pedal = value >= 64;
                 if !self.pedal {
+                    let coef = self.start_ctx().release_coef;
                     for v in self.voices.iter_mut().filter(|v| v.sounding() && !v.held) {
-                        v.stage = Stage::Release;
+                        v.release(coef);
                     }
                 }
             }
@@ -619,6 +669,7 @@ impl Instrument for PolySynth {
         let (left, right) = (&mut left[..frames], &mut right[..frames]);
         left.fill(0.0);
         right.fill(0.0);
+        self.knobs.rendering();
         for (l, r) in left.chunks_mut(CHUNK).zip(right.chunks_mut(CHUNK)) {
             self.render_chunk(l, r);
         }
@@ -633,5 +684,10 @@ impl Instrument for PolySynth {
         self.mod_now = 0.0;
         self.lfo_phase = 0.0;
         self.pitch_now = 1.0;
+        self.knobs.settle();
+    }
+
+    fn set_knob(&mut self, knob: u32, place: f32) {
+        self.knobs.set(knob, place);
     }
 }

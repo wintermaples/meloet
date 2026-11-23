@@ -651,7 +651,7 @@ pub fn set_instrument(
 }
 
 /// The track with another instrument. The lanes of the old one's parameters go, unless both
-/// are the same plugin.
+/// are the same plugin; the knobs of the sound start again (round 12, E3).
 fn with_instrument(t: &Track, instrument: InstrumentRef) -> Track {
     let same_plugin = match (&t.instrument, &instrument) {
         (InstrumentRef::Plugin(a), InstrumentRef::Plugin(b)) => a.key == b.key,
@@ -659,6 +659,7 @@ fn with_instrument(t: &Track, instrument: InstrumentRef) -> Track {
     };
     let mut new = Track {
         instrument,
+        knobs: SoundKnobs::default(),
         ..Track::clone(t)
     };
     if !same_plugin {

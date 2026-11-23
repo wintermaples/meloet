@@ -245,3 +245,68 @@ fn what_goes_over_0_db_is_exported_as_it_is_and_cut_as_it_plays() {
         "the first frame that differs, exported and cut, and played"
     );
 }
+
+/// Round 12 E3: the knobs of the lead and of the kit turned, and a lane on the lead's
+/// 「明るさ」. Played from the head twice, and exported: no frame differs. The master has no
+/// limiter here: once a limiter has held the sound down, its gain comes back to just under 1
+/// and stays there, so a second play would differ from the first in the last bits.
+#[test]
+fn turned_knobs_are_exported_as_they_play() {
+    use meloet_model::SoundKnob as K;
+    use meloet_model::automation::{AutoTarget, add_lane, add_point};
+    use meloet_model::knobs::set_sound_knob;
+    use meloet_model::mixer::remove_effect;
+
+    let place = Place::new("export-knobs");
+    let (doc, parts) = song();
+    let doc = remove_effect(&doc, meloet_model::StripId::Master, 0)
+        .unwrap()
+        .doc;
+    let turn = [
+        (parts.lead, K::Attack, 70.0),
+        (parts.lead, K::Release, 80.0),
+        (parts.lead, K::Vibrato, 60.0),
+        (parts.drums, K::Brightness, 80.0),
+        (parts.drums, K::Release, 30.0),
+    ];
+    let doc = turn.into_iter().fold(doc, |doc, (track, knob, value)| {
+        set_sound_knob(&doc, track, knob, value).unwrap().doc
+    });
+    let brightness = AutoTarget::Instrument { param: 0 };
+    let (e, lane) = add_lane(&doc, parts.lead, brightness, false).unwrap();
+    let (e, lane, _) = add_point(&e.doc, lane, 0, Some(0.2), 0.5).unwrap();
+    let (e, _, _) = add_point(&e.doc, lane, 3 * BAR, Some(0.9), 0.5).unwrap();
+    let doc = e.doc;
+    place.files_of(&doc);
+    let mut playing = Playing::new(&place);
+    playing.open(&doc, 2);
+    let span = (0, 6 * BAR);
+    let frames = frames_of(&doc, span.0, span.1);
+    let first = playing.play(span.0, frames);
+    playing.quiet();
+    let heard = playing.play(span.0, frames);
+    assert_eq!(first_difference(&first, &heard), None, "played twice");
+    assert!(heard.iter().any(|s| s.abs() > 0.05), "the song sounds");
+
+    let run = place.start(place.setup(place.job(1, &doc, span, ExportTail::Off)));
+    run.rendered();
+    let written = run.pass(0);
+    assert_eq!(written.len(), heard.len());
+    assert_eq!(
+        first_difference(&written, &heard),
+        None,
+        "the first frame that differs, exported and played"
+    );
+
+    let (plain, _) = song();
+    let plain = remove_effect(&plain, meloet_model::StripId::Master, 0)
+        .unwrap()
+        .doc;
+    place.files_of(&plain);
+    let run = place.start(place.setup(place.job(2, &plain, span, ExportTail::Off)));
+    run.rendered();
+    assert!(
+        first_difference(&run.pass(0), &heard).is_some(),
+        "the knobs are heard"
+    );
+}

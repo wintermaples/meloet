@@ -12,6 +12,7 @@ use meloet_engine::{
 };
 use meloet_model::TICKS_PER_QUARTER as Q;
 use meloet_model::drums::DrumPiece;
+use meloet_sound::knobs::Knobbed;
 use meloet_sound::synth::{ElectroKit, PolySynth};
 use support::pack::{TestPack, level, region};
 
@@ -272,6 +273,55 @@ fn the_song_sounds_the_same_from_the_head_twice_and_from_the_middle() {
         None,
         "the frame where the play from the ninth bar differs"
     );
+    assert_eq!(common::audio_block_counts(), before);
+}
+
+/// The same with every knob turned (round 12, E3), set through the engine as the core sets
+/// them: the filter, the attack and release, and the vibrato that starts with each voice.
+#[test]
+fn turned_knobs_sound_the_same_from_the_head_twice_and_from_the_middle() {
+    let pack = hat_pack("song-places-knobs");
+    let knobbed: Vec<(Box<dyn Instrument>, Vec<SequenceEvent>)> = (band(&pack).into_iter())
+        .enumerate()
+        .map(|(i, (_, events))| {
+            let inst: Box<dyn Instrument> = match i {
+                0 => Box::new(Knobbed::new(pack.sampler(RATE as f32, BLOCK))),
+                1 => Box::new(Knobbed::new(PolySynth::lead())),
+                2 => Box::new(Knobbed::new(PolySynth::pad())),
+                _ => Box::new(Knobbed::new(ElectroKit::new())),
+            };
+            (inst, events)
+        })
+        .collect();
+    let mut rig = Rig::new(knobbed);
+    for (track, knobs) in [
+        [0.8, 0.5, 0.3, 0.0],
+        [0.2, 0.7, 0.8, 0.6],
+        [0.65, 0.2, 0.1, 1.0],
+        [0.1, 0.5, 0.9, 0.0],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        rig.send(EngineCommand::SetKnobs { track, knobs });
+    }
+    let before = common::audio_block_counts();
+    let first = rig.play(0, 11 * BAR_FRAMES);
+    let plain = Rig::new(band(&pack)).play(0, 11 * BAR_FRAMES);
+    assert!(
+        first_difference(&first, &plain).is_some(),
+        "the knobs change the sound"
+    );
+    assert!(
+        first[6 * BAR_FRAMES..8 * BAR_FRAMES]
+            .iter()
+            .all(|&s| s == 0.0),
+        "the gap is silent"
+    );
+    let second = rig.play(0, 11 * BAR_FRAMES);
+    assert_eq!(first_difference(&first, &second), None);
+    let middle = rig.play(8 * BAR, 3 * BAR_FRAMES);
+    assert_eq!(first_difference(&first[8 * BAR_FRAMES..], &middle), None);
     assert_eq!(common::audio_block_counts(), before);
 }
 

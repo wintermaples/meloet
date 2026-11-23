@@ -14,6 +14,7 @@ mod effect;
 mod engine;
 mod input;
 mod instrument;
+pub mod knobs;
 mod mixer;
 mod output;
 mod plugin;
@@ -40,6 +41,7 @@ pub use input::{
     RECORD_RING_SECONDS, RunningInput, input_ends, input_ring,
 };
 pub use instrument::{Instrument, InstrumentEvent, SongPlace};
+pub use knobs::{KNOB_DEFAULTS, KNOB_GLIDE_S, KNOBS, VoiceKnobs};
 pub use mixer::{INSERT_SLOTS, MixStrip, RAMP_S, pan_gains};
 pub use output::{AudioOutput, OpenError, OutputTarget, RunningOutput};
 pub use plugin::{

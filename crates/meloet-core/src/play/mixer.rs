@@ -10,18 +10,21 @@ use std::sync::Arc;
 
 use meloet_model::effects::EffectKind as ModelEffect;
 use meloet_model::{
-    Bus, Gain, Insert, Inserts, InstrumentRef, Pan, PluginPlace, PluginRef, StepKind, StripId,
-    TrackId, mixer,
+    Bus, Gain, Insert, Inserts, InstrumentRef, Pan, PluginPlace, PluginRef, SoundKnob, StepKind,
+    StripId, TrackId, knob_usable, knobs, mixer,
 };
 use meloet_protocol::{
-    EffectKind, EffectName, InsertRef, MasterView, NamedInsert, ParamEnd, ParamRef, ParamsView,
-    PluginSlotRef, PluginState, PluginWindowKind, ReturnView, SelectedInsert, SelectedParams,
-    SelectedPlugin, SelectedSound, SendBus, SlotsView, StatusMessage, StripRef,
+    EffectKind, EffectName, InsertRef, InstrumentKind, MasterView, NamedInsert, ParamEnd, ParamRef,
+    ParamsView, PluginSlotRef, PluginState, PluginWindowKind, ReturnView, SelectedInsert,
+    SelectedParams, SelectedPlugin, SelectedSound, SendBus, SlotsView, SoundKnobsView,
+    StatusMessage, StripRef,
 };
 
 use super::Play;
 use super::automation::{LaneKey, LetGo};
+use super::wave3::{knob_view, model_knob};
 use crate::added::{slots_view, sound_name};
+use crate::instruments::kind_of;
 use crate::state::Effect;
 
 /// A value that sounds in place of the song's while its control is dragged.
@@ -35,6 +38,12 @@ pub enum Preview {
         slot: usize,
         kind: ModelEffect,
         param: u32,
+        value: f32,
+    },
+    /// A knob of a track's sound (round 12, E3), in percent.
+    Knob {
+        track: TrackId,
+        knob: SoundKnob,
         value: f32,
     },
 }
@@ -59,9 +68,30 @@ impl Preview {
                     ..
                 },
             ) => (a, x, m) == (b, y, n),
+            (
+                P::Knob {
+                    track: a, knob: x, ..
+                },
+                P::Knob {
+                    track: b, knob: y, ..
+                },
+            ) => (a, x) == (b, y),
             _ => false,
         }
     }
+}
+
+/// The knobs of a sound that comes with meloet as the parameters panel shows them; `None`
+/// for an SF2 preset.
+fn knobs_view(t: &meloet_model::Track, row: Option<u32>) -> Option<SoundKnobsView> {
+    if !matches!(t.instrument, InstrumentRef::Builtin(_)) {
+        return None;
+    }
+    Some(SoundKnobsView {
+        values: t.knobs.values(),
+        usable: SoundKnob::ALL.map(|k| knob_usable(&t.instrument, k)),
+        row,
+    })
 }
 
 /// What the parameters panel shows, as it was when it was selected.
@@ -250,6 +280,7 @@ impl Play {
                 param,
                 value,
             } => self.param_lane(strip, slot, kind, param, value),
+            Preview::Knob { track, knob, value } => Self::knob_lane(track, knob, value),
         }
     }
 
@@ -326,6 +357,38 @@ impl Play {
         };
         let edit = |p: &Play| mixer::set_param(p.doc(), strip, slot, kind, param, value);
         self.mix(preview, commit, false, edit, effects);
+    }
+
+    /// E3 `SetSoundKnob`, as the mixer's knobs. Dropped for a track whose sound is not
+    /// `instrument` now, and for a knob that sound does not use.
+    pub fn set_sound_knob(
+        &mut self,
+        track: u32,
+        instrument: InstrumentKind,
+        knob: meloet_protocol::SoundKnob,
+        value: f32,
+        commit: bool,
+        effects: &mut Vec<Effect>,
+    ) {
+        let (track, knob) = (TrackId(track), model_knob(knob));
+        let Some(t) = self.doc().track(track) else {
+            return;
+        };
+        let InstrumentRef::Builtin(sound) = &t.instrument else {
+            return;
+        };
+        if kind_of(*sound) != instrument || !knob_usable(&t.instrument, knob) || value.is_nan() {
+            return;
+        }
+        let value = value.clamp(0.0, 100.0);
+        let edit = |p: &Play| knobs::set_sound_knob(p.doc(), track, knob, value);
+        self.mix(
+            Preview::Knob { track, knob, value },
+            commit,
+            false,
+            edit,
+            effects,
+        );
     }
 
     /// Esc during a drag: the sound is the song's again.
@@ -554,8 +617,10 @@ impl Play {
             },
             Some(Picked::Sound(_, instrument)) => Selecting {
                 panel: true,
-                notice: Some(StatusMessage::NoParams {
-                    sound: sound_name(instrument),
+                notice: (!matches!(instrument, InstrumentRef::Builtin(_))).then(|| {
+                    StatusMessage::NoParams {
+                        sound: sound_name(instrument),
+                    }
                 }),
                 ..Selecting::default()
             },
@@ -645,7 +710,9 @@ impl Play {
         self.mixer.row = match &self.mixer.selected {
             Some(Picked::Effect(_, _, kind)) => param.filter(|&p| kind.param(p).is_some()),
             Some(Picked::Plugin(..)) => param.filter(|&p| self.has_param(p)),
-            Some(Picked::Sound(..)) | None => None,
+            Some(Picked::Sound(_, instrument)) => param
+                .filter(|&p| SoundKnob::from_index(p).is_some_and(|k| knob_usable(instrument, k))),
+            None => None,
         };
     }
 
@@ -714,8 +781,7 @@ impl Play {
                 Picked::Sound(track, instrument) => Some(SelectedParams::Sound(SelectedSound {
                     track: track.0,
                     sound: sound_name(instrument),
-                    // round12 stub: E3
-                    knobs: None,
+                    knobs: (self.doc().track(*track)).and_then(|t| knobs_view(t, self.mixer.row)),
                 })),
             });
         ParamsView {
@@ -755,7 +821,11 @@ impl Play {
         }
         let loop_bars = self.loop_on().map(|r| self.bars(r));
         Some(match self.mixer.selected.as_ref()? {
-            Picked::Sound(..) => return None,
+            Picked::Sound(track, _) => StatusMessage::SoundKnobSelected {
+                loop_bars,
+                track: self.track_ref(*track)?,
+                knob: knob_view(SoundKnob::from_index(param)?),
+            },
             Picked::Effect(strip, slot, kind) => StatusMessage::ParamSelected {
                 loop_bars,
                 insert: insert_ref(*strip, *slot),
@@ -806,3 +876,6 @@ impl Play {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod knob_tests;

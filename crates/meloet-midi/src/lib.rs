@@ -46,6 +46,44 @@ pub enum MidiEvent {
     },
 }
 
+/// The transport and cursor buttons of the Mackie Control (MCU) protocol that meloet answers.
+/// A button press is a note-on with velocity > 0 on any channel; the release is ignored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    Play,
+    Stop,
+    Record,
+    Rewind,
+    FastForward,
+    Cycle,
+    Up,
+    Down,
+    Left,
+    Right,
+    /// The middle of the cursor buttons ("zoom" in MCU).
+    Middle,
+}
+
+impl Button {
+    /// The button of an MCU note number.
+    pub fn from_mcu_note(note: u8) -> Option<Button> {
+        Some(match note {
+            86 => Button::Cycle,
+            91 => Button::Rewind,
+            92 => Button::FastForward,
+            93 => Button::Stop,
+            94 => Button::Play,
+            95 => Button::Record,
+            96 => Button::Up,
+            97 => Button::Down,
+            98 => Button::Left,
+            99 => Button::Right,
+            100 => Button::Middle,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Keyboard {
     /// Made from the client name and the port name, so it stays the same when the keyboard is
@@ -83,6 +121,13 @@ pub enum MidiMessage {
     Added(Keyboard),
     Removed {
         id: String,
+    },
+    /// A Mackie Control button pressed on a button port of a keyboard (a readable port after
+    /// its key port). Notes of a button port never come as [`MidiMessage::Event`].
+    Button {
+        /// [`Keyboard::id`] of the sender.
+        keyboard: String,
+        button: Button,
     },
     /// Sent once: every keyboard that was already there at start has been reported as `Added`.
     Ready,

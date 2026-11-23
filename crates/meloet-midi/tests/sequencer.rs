@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use alsa::seq::{Addr, ClientIter, PortSubscribeIter, QuerySubsType, Seq};
 use meloet_midi::vkeys::VirtualKeyboard;
 use meloet_midi::{
-    Keyboard, MidiEvent, MidiInput, MidiMessage, MidiOptions, list_ports, monotonic_us,
+    Button, Keyboard, MidiEvent, MidiInput, MidiMessage, MidiOptions, list_ports, monotonic_us,
 };
 
 const WAIT: Duration = Duration::from_secs(3);
@@ -223,6 +223,78 @@ fn notes_controllers_and_bend_arrive_in_order() {
 }
 
 #[test]
+fn button_port_notes_come_as_buttons_and_never_as_keys() {
+    if sequencer_missing() {
+        return;
+    }
+    let name = unique("buttons");
+    let keys = VirtualKeyboard::open_with_buttons(&name).unwrap();
+    let (input, rx) = start(only(&name));
+    let keyboard = wait_for(&rx, added(&name));
+    assert_eq!(keyboard.port_name, name, "the key port is the keyboard");
+    wait_for(&rx, |m| (*m == MidiMessage::Ready).then_some(()));
+
+    let press = |note| MidiEvent::NoteOn {
+        note,
+        velocity: 127,
+    };
+    keys.press_button(94).unwrap();
+    keys.send_button_port(press(60)).unwrap();
+    keys.send_button_port(MidiEvent::Control {
+        controller: 7,
+        value: 10,
+    })
+    .unwrap();
+    keys.press_button(97).unwrap();
+    keys.send(press(61)).unwrap();
+
+    let mut got = Vec::new();
+    while got.len() < 3 {
+        let m = rx.recv_timeout(WAIT).expect("a message in time");
+        match &m {
+            MidiMessage::Button { keyboard: k, .. } | MidiMessage::Event { keyboard: k, .. }
+                if *k == keyboard.id =>
+            {
+                got.push(m.clone())
+            }
+            _ => {}
+        }
+    }
+    let id = keyboard.id.clone();
+    assert_eq!(
+        got,
+        [
+            MidiMessage::Button {
+                keyboard: id.clone(),
+                button: Button::Play
+            },
+            MidiMessage::Button {
+                keyboard: id.clone(),
+                button: Button::Down
+            },
+            MidiMessage::Event {
+                keyboard: id.clone(),
+                event: press(61),
+                t_us: match &got[2] {
+                    MidiMessage::Event { t_us, .. } => *t_us,
+                    _ => 0,
+                },
+            },
+        ]
+    );
+    drop(keys);
+    wait_for(&rx, |m| {
+        matches!(m, MidiMessage::Removed { id: gone } if *gone == id).then_some(())
+    });
+    assert!(
+        rx.try_iter()
+            .all(|m| !matches!(m, MidiMessage::Removed { id: gone } if gone == id)),
+        "one keyboard, removed once"
+    );
+    input.stop();
+}
+
+#[test]
 fn stop_ends_the_thread_and_the_sink_is_not_called_again() {
     if sequencer_missing() {
         return;
@@ -346,7 +418,7 @@ fn vkeys_tool_plays_and_logs_what_it_sent() {
 
 #[test]
 #[ignore = "needs the Keystation 49 MK3 plugged in"]
-fn real_keystation_is_added_and_only_its_first_port_is_heard() {
+fn real_keystation_is_added_with_its_first_port_for_keys_and_the_second_for_buttons() {
     const NAME: &str = "Keystation 49 MK3";
     let (input, rx) = start(MidiOptions::default());
     let seen = until_ready(&rx);
@@ -381,7 +453,11 @@ fn real_keystation_is_added_and_only_its_first_port_is_heard() {
         .count()
     };
     assert_eq!(listeners(0), meloet.len(), "port 0 is heard");
-    assert_eq!(listeners(1), 0, "port 1 (Transport) is not heard");
+    // Another meloet of an older build may be running, which does not hear port 1.
+    assert!(
+        listeners(1) >= 1,
+        "port 1 (Transport) is heard for its buttons"
+    );
     input.stop();
 }
 

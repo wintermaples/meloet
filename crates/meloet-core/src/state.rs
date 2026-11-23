@@ -2,6 +2,7 @@
 //! Nothing here touches a device, a file or a thread.
 
 mod audio;
+mod buttons;
 mod export;
 mod pack;
 mod recovery;
@@ -84,6 +85,12 @@ pub enum Input {
     /// A key went down on a keyboard other than the one played before.
     KeyboardPlayed {
         id: String,
+    },
+    /// A button pressed on a keyboard's button port.
+    KeyboardButton(meloet_midi::Button),
+    /// A keyboard's fader (CC 7) moved to `value`, 0..=127.
+    KeyboardFader {
+        value: u8,
     },
     Devices(DevicesPicture),
     /// The answer to [`Effect::OpenOutput`].
@@ -650,6 +657,7 @@ pub struct Model {
     now_us: u64,
     /// A meloet setting, not part of the song.
     velocity_fixed: VelocityFixed,
+    fader: buttons::Fader,
     /// The starred instruments of the shelf. A meloet setting too.
     favorites: Vec<BuiltinInstrument>,
     plugins: Plugins,
@@ -775,6 +783,7 @@ impl Model {
                 on: settings.velocity_fixed,
                 value: settings.fixed_velocity.clamp(1, 127),
             },
+            fader: buttons::Fader::default(),
             favorites: settings.favorites,
             plugins: Plugins::new(|name| std::env::var_os(name), settings.plugin_places),
             catalog: Catalog::new(settings.shelf),
@@ -853,6 +862,12 @@ impl Model {
                     self.played = Some(id);
                 }
             }
+            Input::KeyboardButton(button) => {
+                if let Some(command) = self.button_command(button) {
+                    tone_on = self.command(command, &mut effects);
+                }
+            }
+            Input::KeyboardFader { value } => self.keyboard_fader(value, &mut effects),
             Input::Devices(mut picture) => {
                 sort_for_choice(&mut picture.outputs);
                 self.devices = Some(picture);
@@ -957,7 +972,7 @@ impl Model {
             }
             Input::Record(report) => self.play.report(report, &mut effects),
             Input::KeyWhileLoading => self.loading_said = self.play.target_loading(),
-            Input::Tick => {}
+            Input::Tick => self.fader_due(&mut effects),
             Input::CloseRequested
             | Input::SongFilePicked(_)
             | Input::FolderPicked(_)
@@ -2414,7 +2429,10 @@ impl Model {
     /// When an [`Input::Tick`] is wanted next, as the time given with `set_now`: a window
     /// that is slow to open is said then, or parameter values held back are sent.
     pub fn wake_at_us(&self) -> Option<u64> {
-        self.play.wake_at_us()
+        [self.play.wake_at_us(), self.fader_wake_us()]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// A sample plays: [`Input::Tick`] is wanted now and then, to end it.

@@ -669,6 +669,30 @@ fn the_fixed_velocity_is_saved_and_back_at_the_next_start() {
     assert_eq!((loaded.velocity_fixed, loaded.fixed_velocity), (false, 1));
 }
 
+#[test]
+fn the_fader_of_a_keyboard_is_one_step_when_it_rests_on_the_core_thread() {
+    let core = Core::start(CoreOptions::offline());
+    let level = |core: &Core| core.snapshot().state.song.tracks[0].gain_db;
+    assert_eq!(level(&core), Some(0.0));
+    // As the MIDI thread does it: the newest value, then the message.
+    core.shared.fader.store(102, Relaxed);
+    core.tx.send(Msg::Fader).unwrap();
+    // A round trip to the core thread: 102 has been read.
+    core.history_rows(1, 1);
+    core.shared.fader.store(90, Relaxed);
+    core.tx.send(Msg::Fader).unwrap();
+    assert_eq!(core.snapshot().state.song.undo_count, 0);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while core.snapshot().state.song.undo_count == 0 {
+        assert!(Instant::now() < deadline, "no step after the fader rested");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let want = meloet_model::Gain::from_position(90.0 / 127.0).db();
+    assert_eq!(level(&core), want.map(|db| db as f32));
+    assert_eq!(core.shared.fader.load(Relaxed), NO_FADER);
+    core.stop();
+}
+
 /// Writes down what the engine plays on it.
 struct Tape(Sender<InstrumentEvent>);
 
@@ -706,6 +730,7 @@ fn a_fixed_velocity_reaches_the_sound_the_recording_the_meter_and_the_screen() {
             0,
         )),
         shell: Mutex::new(None),
+        fader: AtomicU16::new(NO_FADER),
         mics: Mutex::new(None),
     });
     shared.stream.open.store(true, Relaxed);
@@ -790,6 +815,137 @@ fn a_fixed_velocity_reaches_the_sound_the_recording_the_meter_and_the_screen() {
         })
         .collect();
     assert_eq!(notes, [(true, 90), (false, 12)], "NoteOff as it came");
+}
+
+#[test]
+fn buttons_and_the_fader_never_sound_and_all_notes_off_lets_go_of_that_keyboard() {
+    let hub = Arc::new(Hub::new(Model::new(Settings::default()).view()));
+    let (screen_tx, screen) = channel();
+    hub.subscribe(
+        Box::new(move |m| screen_tx.send(m).is_ok()),
+        Box::new(|_| true),
+    );
+    let shared = Arc::new(Shared {
+        held: Held::default(),
+        fixed_velocity: AtomicU8::new(0),
+        stream: StreamFacts::default(),
+        stop: AtomicBool::new(false),
+        clock: Mutex::new(Arc::new(TransportClock::default())),
+        tempo_map: Mutex::new((
+            Arc::new(TempoMap::new(&meloet_model::Timeline::new(
+                meloet_model::Tempo::from_centi(12_000).unwrap(),
+                meloet_model::Meter::FOUR_FOUR,
+            ))),
+            0,
+        )),
+        shell: Mutex::new(None),
+        fader: AtomicU16::new(NO_FADER),
+        mics: Mutex::new(None),
+    });
+    shared.stream.open.store(true, Relaxed);
+    let (tx, core) = mpsc::channel();
+    let links = Links {
+        hub: hub.clone(),
+        shared: shared.clone(),
+        tx,
+    };
+    let mut parts = Engine::new(EngineConfig::default());
+    let (tape_tx, tape) = channel();
+    assert!(
+        parts
+            .handle
+            .swap_instrument(0, Box::new(Tape(tape_tx)))
+            .is_ok()
+    );
+    let record = EngineCommand::Record {
+        from: 0,
+        count_in_beats: 0,
+        muted: TrackSet::default(),
+    };
+    assert!(parts.handle.send(record).is_ok());
+    let mut out = vec![0.0f32; 512];
+    let mut block = |engine: &mut Engine, at_us: u64| {
+        let timing = BlockTiming {
+            callback_us: at_us,
+            playback_us: at_us,
+        };
+        engine.process(&mut out, timing);
+    };
+    block(&mut parts.engine, 1_000_000);
+    let mut sink = links.midi_sink(parts.midi_in);
+    let key = |keyboard: &str, event| MidiMessage::Event {
+        keyboard: keyboard.into(),
+        event,
+        t_us: 1_002_000,
+    };
+    let control = |controller, value| MidiEvent::Control { controller, value };
+    let on = |note| MidiEvent::NoteOn { note, velocity: 80 };
+    sink(MidiMessage::Button {
+        keyboard: "a".into(),
+        button: meloet_midi::Button::Play,
+    });
+    sink(key("a", on(60)));
+    sink(key("b", on(62)));
+    sink(key("a", control(64, 127)));
+    sink(key("a", control(7, 30)));
+    sink(key("a", control(7, 31)));
+    sink(key("a", control(123, 0)));
+    sink(key("a", control(121, 0)));
+    block(&mut parts.engine, 1_005_333);
+
+    let played: Vec<_> = tape.try_iter().collect();
+    assert_eq!(
+        played,
+        [
+            InstrumentEvent::NoteOn {
+                note: 60,
+                velocity: 80
+            },
+            InstrumentEvent::NoteOn {
+                note: 62,
+                velocity: 80
+            },
+            InstrumentEvent::Control {
+                controller: 64,
+                value: 127
+            },
+            InstrumentEvent::NoteOff { note: 60 },
+            InstrumentEvent::Control {
+                controller: 64,
+                value: 0
+            },
+        ],
+        "no button, no fader, no CC 123 or 121; only what keyboard a held is let go"
+    );
+    let recorded: Vec<_> = std::iter::from_fn(|| parts.handle.pop_recorded())
+        .filter_map(|r| match r {
+            Recorded::Event { event, .. } => Some(event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        recorded, played,
+        "the letting go is recorded, the controllers are not"
+    );
+    assert!(
+        screen.try_iter().all(|m| !matches!(
+            m,
+            ServerMessage::Event(Event::Control {
+                controller: 7 | 121 | 123,
+                ..
+            })
+        )),
+        "the screen hears no fader or reset"
+    );
+
+    let to_core: Vec<_> = core.try_iter().collect();
+    assert!(matches!(
+        to_core[0],
+        Msg::Input(Input::KeyboardButton(meloet_midi::Button::Play), None)
+    ));
+    let faders = to_core.iter().filter(|m| matches!(m, Msg::Fader)).count();
+    assert_eq!(faders, 1, "the second move waits in the same message");
+    assert_eq!(shared.fader.load(Relaxed), 31, "the newest value");
 }
 
 #[test]

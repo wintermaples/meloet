@@ -12,12 +12,6 @@ The numbers are the B numbers of [`docs/history/design-notes.ja.md`](../history/
 - Now: the old sentence is shown (only while a track can be added). `ui/src/components/SoundHint.svelte`.
 - From: chapter 7, A-13.
 
-### B-96-3 The name of key 47 in the built-in drum kits
-
-- Question: the built-in kits call key 47 「ミッドタム」, but the table of spec 3 for SF2 kits (GM) calls 47 「ミッドタム 2」 and 48 「ミッドタム」.
-- Now: the built-in kits use 「ミッドタム」 for 47 (`crates/meloet-model/src/drums.rs`).
-- From: chapter 7, A-11.
-
 ## B-97: round 11 (the AI link)
 
 ### B-97-1 The history row of a batch
@@ -64,30 +58,3 @@ The readings behind these are in [chapter 7](7-readings.md), A-29; how each is b
 - Question 3: on the mixer strip 「アルペジオ」 sits at the right end of the heading only while on (the track name is cut to about one character on a 108 px strip). The other way is an empty row on every strip, which moves everything below down by about 32 px. Which?
 - From: architecture 25-26; chapter 7 A-29 (E2).
 
-### B-98-22 P3: out-of-range values said nowhere
-
-- Question: a number outside 10–300 in 「割合」 or 1–32 in 「ばらつき」 is put at the nearest end without a word, and an unreadable one only turns the box red. Should the status line say it, as for the other boxes? (The shapes `ValueField::Percent` and `Amount` exist since protocol 32; the screen does not use them yet.)
-- From: architecture 25-10.
-
-### B-98-27 A3: 「トラックは 64 本まで…」 on the other ways of adding a track
-
-- Question (for the lead): the notice is said by 「トラックを複製」, 「音のクリップにする」 and 「パターンを置く」, but the shelf's new track and 「＋ 歌のトラック」 still say nothing at 64 (the protocol comment says "and every other way").
-- From: chapter 7 A-29 (A3).
-
-### B-98-29 A9: no message when a clip's file cannot be read or written
-
-- Question: a 「ノーマライズ」 of a file that cannot be read, or a 「逆にする」 whose new file cannot be written (disk full), does nothing and says nothing. The shape `clipWorkFailed {count}` exists since protocol 32 but has no wording. What should it say?
-- From: architecture 25-12.
-
-### B-98-33 E1: the redraw rule with 10 000 notes, and the measuring tool
-
-- Question (for the lead and the owner): `tools/measure/webkit-damage.sh` stops the page at every changed rectangle, so the page runs at 15 to 25 paints a second and the arrange play line moves 2 px or more between paints; cut in three by the track meters it becomes 7 rectangles and the frame reaches 11. A feature that changes something every frame is measured worse than it is. Should the tool stop only at paints? And should the play line be kept from being cut by the track meter canvas (it can reach 11 in the real app too, when zoomed in or when frames drop)?
-- Now: E1 stays on by default. On a quiet PC after the fix, with a tool that stops only at paints, on and off are the same (1 whole-window paint of about 410 / 460, the first after gdb attaches) and busyMs p95 differs by 0 to 1 ms; with the tool as it is, on gives 8 to 16 of about 110 and off 1 to 5 of about 124. The numbers are in `docs/measurements/2026-11-24-round12.md` ("E1 after the fix", "E1 on a quiet PC, after the fix").
-- From: the E1 fix (2026-11-24).
-
-### B-98-35 D4: seen in the real app
-
-- Decided: question 1 (the file window's own GTK words follow the PC's language; chapter 7 A-29, D4; user:2026-11-24).
-- Question 2: at 1280×800 the mixer's instrument button reads "Instrument · …" in English and shows nothing of the sound's name (Japanese shows 「音源 ・ サイ…」). Shorten the English word?
-- Now: as described. Pictures: `target/r12fin-d4/`.
-- From: `docs/measurements/2026-11-24-round12.md` ("D4 in the real app").

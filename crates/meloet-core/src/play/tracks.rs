@@ -167,3 +167,5 @@ mod tests;
 
 #[cfg(test)]
 mod duplicate_tests;
+#[cfg(test)]
+mod full_tests;

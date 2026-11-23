@@ -326,3 +326,48 @@ fn the_keeper_measures_and_reverses_in_the_order_asked() {
         news => panic!("{news:?}"),
     }
 }
+
+#[test]
+fn a_file_that_cannot_be_read_or_a_place_that_cannot_be_written_gives_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |path: &Path, mode: u32| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    };
+    let root = temp_dir("clips-cannot");
+    let store = Arc::new(store(&root));
+    let work = store.work_dir().unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    write_wav(&work.join("歌 3.wav"), 48_000, 1, 16, 1_000, |_, _| 0.5);
+    write_wav(&work.join("歌 4.wav"), 48_000, 1, 16, 1_000, |_, _| 0.5);
+    let shut = work.join("歌 4.wav");
+    mode(&shut, 0o000);
+    let wav = source("歌 3.wav", 1_000, 48_000, 1, Some(16));
+    let unreadable = source("歌 4.wav", 1_000, 48_000, 1, Some(16));
+    let (tx, rx) = mpsc::channel();
+    let keeper = Keeper::spawn(store.clone(), move |news| {
+        let _ = tx.send(news);
+    })
+    .unwrap();
+    let next = || rx.recv_timeout(Duration::from_secs(30)).unwrap();
+    keeper.measure(1, vec![played(&unreadable, 0, 1_000, 1_000)]);
+    let news = next();
+    mode(&shut, 0o644);
+    match news {
+        AudioNews::Measured { ticket: 1, peaks } => assert_eq!(peaks, [None]),
+        news => panic!("{news:?}"),
+    }
+    // The work place no longer takes new files.
+    mode(&work, 0o555);
+    keeper.reverse(
+        2,
+        vec![(played(&wav, 0, 1_000, 1_000), "歌 7.wav".to_owned())],
+        vec!["歌 3.wav".to_owned()],
+    );
+    let news = next();
+    mode(&work, 0o755);
+    match news {
+        AudioNews::Reversed { ticket: 2, files } => assert_eq!(files, [None]),
+        news => panic!("{news:?}"),
+    }
+    assert!(!work.join("歌 7.wav").exists());
+}

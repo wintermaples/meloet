@@ -236,7 +236,7 @@ impl Play {
             return None;
         }
         if self.doc().tracks.len() >= super::MAX_TRACKS {
-            return None;
+            return Some(StatusMessage::TooManyTracks);
         }
         let (e, id) = edit::add_vocal_track(self.doc(), None, self.names).ok()?;
         let before = self.song.session.play_target;

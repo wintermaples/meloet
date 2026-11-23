@@ -1238,7 +1238,7 @@ export const texts = {
   "drum.pedalHiHat": e("ペダルハイハット", "spec:3"),
   "drum.closedHiHat": e("クローズハイハット", "spec:3"),
   "drum.highTom": e("ハイタム", "spec:3"),
-  "drum.midTom": e("ミッドタム", "spec:3"),
+  "drum.midTom": e("ミッドタム 2", "spec:3"),
   "drum.lowTom": e("ロータム", "spec:3"),
   "drum.clap": e("クラップ", "spec:3"),
   "drum.snare": e("スネア", "spec:3"),
@@ -2458,6 +2458,7 @@ export const texts = {
     { count: "1" },
   ),
   "msg.normalizeSilent": e("{count} つのクリップは音がないので、そのままにしました。", "builder:2026-11-23", { count: "1" }),
+  "msg.clipWorkFailed": e("{count} つのクリップは、音のファイルを読めないか書けないので、そのままにしました。", "builder:2026-11-24", { count: "1" }),
   "msg.reverseFollowOff": e(
     "{count} つのクリップは、もとの音のテンポが途中で変わるので、「曲のテンポについていく」をオフにしました。",
     "builder:2026-11-23",

@@ -1,10 +1,14 @@
 # Run by gdb (webkit-damage.sh): starts the app as gdb's child, attaches to its WebKitWebProcess and
-# writes down, for each display of the page without accelerated compositing, the rectangles the page
-# reported as changed (need) and the rectangles WebKit then painted (rect).
+# writes down, for each display of the page without accelerated compositing, when it began
+# ("display <ms>") and the rectangles WebKit then painted (rect).
 #
 # gdb has to be an ancestor of the process (kernel.yama.ptrace_scope = 1), so the app is started here.
-# Each stop takes gdb milliseconds: several frames of the page end up in one display, so read the
-# rectangles and what turns them into one big rectangle, not how often it happens.
+# Each stop takes gdb a moment, so only the paints are stopped at: the page still slows down, but a
+# page that reports more changed rectangles is not slowed more than another.
+# DAMAGE_PER_RECT=1 also stops at every rectangle the page reports as changed (need), as the tool
+# did before: that tells which rectangles were changed, but where many change it slows the page
+# (15 to 25 paints a second with a dense song), so things that move every frame move further
+# between paints and make more rectangles.
 import os
 import re
 import subprocess
@@ -83,14 +87,15 @@ def main():
     display, need, draw = (base + offs[n] for n in (DISPLAY, NEED, DRAW))
     with open(out_path, "w") as out:
         gdb.execute(f"attach {pid}", to_string=True)
-        for address in (display, need, draw):
+        per_rect = os.environ.get("DAMAGE_PER_RECT") == "1"
+        for address in (display, need, draw) if per_rect else (display, draw):
             gdb.execute(f"break *{address}", to_string=True)
         for _ in range(stops):
             try:
                 gdb.execute("continue", to_string=True)
                 pc = int(gdb.parse_and_eval("$pc"))
                 if pc == display:
-                    out.write("display\n")
+                    out.write(f"display {time.monotonic() * 1000:.0f}\n")
                     continue
                 # The IntRect is the last argument: x, y, width, height.
                 register = "$rsi" if pc == need else "$rdx"

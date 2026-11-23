@@ -156,6 +156,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | M, S, ● on returns and the master | The mocks draw them on every strip. The spec gives no meaning | Only M of the returns can be used (it silences that return; saved in the song; one step). S and ● of the returns, and M, S, ● of the master are disabled | the owner's decision |
 | Parameters of EQ, compressor, chorus, limiter | Spec 3 has only reverb and delay | The table in 19-3 of [`docs/architecture.md`](../architecture.md) | the owner's decision |
 | Key of the mid tom in the built-in kits | Spec 3 gives only the piece names. GM has 2 keys for a mid tom, 47 and 48 | 47 (high 50, low 45) | the developers' decision |
+| Name of key 47 in the built-in kits | Spec 3 called it 「ミッドタム」; the GM table of spec 3 calls 47 「ミッドタム 2」 | 「ミッドタム 2」 (B-96-3); the spec's list of the 12 rows was changed with it. The AI link's key names follow (`play/keynames.rs`); English "Mid tom 2" | user:2026-11-24 |
 
 ## A-12 Round 4, part 1 (tracks and the shelf)
 
@@ -480,7 +481,7 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | ● of a vocal copy | "Not copied" is read as "the source's ● does not carry over"; the copy gets its ● because it is selected (24-C). A source that was armed stays armed, so R records the same input to both. | the developers' reading |
 | Monitor, mute sets | The monitor is not copied (session only). The copy is in no mute set, as any track added later. | the developers' decision |
 | Plugin state | The plugins are asked for their state first and the copy gets it in the same step (the request said to copy the state object); reason: architecture 25-6. A plugin that is loading, failed, stopped or missing: the copy has the song's state. | the developers' decision (changed from the request) |
-| The menu row at 64 tracks | Usable; core answers on the status line. The notice `TooManyTracks` is new and is said only for 「トラックを複製」, 「音のクリップにする」 and 「パターンを置く」; the shelf's new track and 「＋ 歌のトラック」 still say nothing at 64. | the developers' decision |
+| The menu row at 64 tracks | Usable; core answers on the status line. Every way of adding a track says `TooManyTracks` (B-98-27, user:2026-11-24): 「トラックを複製」, 「音のクリップにする」, 「パターンを置く」, the shelf's new track (the row stays auditioned, so a track can be deleted and the row confirmed), 「＋ 歌のトラック」, audio files brought in onto a new track (nothing goes in; over a vocal track they still go in), and the AI link's tracks (the AI gets its refusal and the status line says it too). | user:2026-11-24; the details the developers' decision |
 | Wording | 「トラックは 64 本までなので、これ以上足せません。」 (`msg.tooManyTracks`, status line). | builder:2026-11-23 |
 
 ### A5 Recently opened songs
@@ -517,7 +518,7 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | Where | Rule | Basis |
 |---|---|---|
 | First values of 「だんだん」 | 40 and 110 (the request's picture; the text gives none). | the request's picture |
-| Out of range | Put at the nearest end. For 「だんだん」 the status line says so (as the other velocity boxes); for 「割合」 and 「ばらつき」 nothing is said and an unreadable value only turns the box red (B-98-22). | the developers' decision |
+| Out of range | Put at the nearest end, and the status line says so for every box (`ValueField::Percent`, `Amount`, `Velocity`), as the other number boxes do. A text that does not read (empty too) keeps the box red and the status line says 「…は数字で打ちます。もとの … のままです。」 with the value last used (B-98-22). | user:2026-11-24 |
 | Box values | Kept while the panel is shown (tool settings, not of the selection); not saved. The notices are said also when no note changed, with no step (as 「そろえる」). | the developers' decision |
 | Wording (status line) | 「{count} ノートのベロシティに {percent} % をかけました。」, 「{count} ノートのベロシティを {from} から {to} へだんだん変えました。」, 「{count} ノートのベロシティを ± {amount} でばらつかせました。」, 「{count} ノートを次の音までのばしました。」 | builder:2026-11-23 |
 
@@ -538,10 +539,11 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | "The range the shown take uses" | The frames the clip plays from its start to its end (not the whole take); a cut or trimmed clip is measured and reversed only where it sounds. Normalize measures the file's samples, not what pitch, stretch or fades make of them. | the developers' reading |
 | Silent and limited together | When one normalize has both, the status line says the silent one. | the developers' decision |
 | A take whose tempo changes, on a clip that does not follow | Its backwards take has no tempo (「—」). | the developers' decision |
-| Files that cannot be read or written | The rows are not disabled for a clip whose file is missing (Rust passes it over). A file that cannot be read, or a reverse that cannot be written, does nothing and says nothing (no wording; the shape `clipWorkFailed` exists but is not used yet). | the developers' decision |
+| Files that cannot be read or written | The rows are not disabled for a clip whose file is missing (Rust passes it over). A file that cannot be read, or a reverse that cannot be written, leaves that clip as it is and the status line says so (`clipWorkFailed`), before the silent / limited / tempo lines; the other clips of the same press are done. A clip that changed meanwhile is not counted. A reverse also fails (and is counted) for a clip that plays only silence past the file's end, or a decoded file whose rate is not the song's (B-98-29). | user:2026-11-24; the details the developers' decision |
 | mp3, ogg, flac | Reversed into a 32-bit float wav; a wav keeps its own kind of samples. | the developers' decision |
 | With a comp | Both rows are disabled with a reason, and Rust passes such a clip by (see A8). | the developers' decision (A8) |
 | Wording (status line) | 「{count} つのクリップは、いちばん大きい音を −1.0 dB にできませんでした（クリップの音量は −60 〜 +12 dB まで）。」, 「{count} つのクリップは音がないので、そのままにしました。」, 「{count} つのクリップは、もとの音のテンポが途中で変わるので、「曲のテンポについていく」をオフにしました。」 | builder:2026-11-23 |
+| Wording (status line) | 「{count} つのクリップは、音のファイルを読めないか書けないので、そのままにしました。」 (`msg.clipWorkFailed`; one sentence for both, as the shape is one; English "The audio file of {count} clip could not be read or written, so it was left as it is." / "The audio files of {count} clips …"). | builder:2026-11-24 (the owner left the wording to the developers) |
 
 ### F1 Loudness of the export
 
@@ -624,6 +626,7 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | The box and the cap | The lit box is the note area's full height (chapter 7 rule), and the cap is a width (15 % of the window's area over the note area's height) with a two-frame change, in place of the request's "32 notes at most": the cost is set by the width, not by the count. Reasoned, not measured; the cap stays. | the developers' decision; accepted by the owner (user:2026-11-24) |
 | The box stays put (after measuring, 2026-11-24) | The canvas box is not as wide as the lit notes: a new one leaves one to two steps of 32 px to their right and stays while they stay inside it, so most changes only draw the canvas again (no layout, no new size, fewer changed rectangles). Not visible. The lit notes and the cap are as above; the count is not narrowed, and the setting stays on at first (measurements, "E1 after the fix"). | the developers' decision |
 | The menu row's place | Last in 「表示」 (now followed by E7's row). | the developers' decision |
+| The measuring tool | `tools/measure/webkit-damage.sh` stops gdb only at paints (B-98-33); the old way is `--per-rect`. Without the changed rectangles a whole-window paint is read as one painted rectangle of 500 000 px or more (`--whole-px`; about half of 1280 × 800, a quarter of 1920 × 1080). | user:2026-11-24; the size the developers' decision |
 
 ### P4 Drum patterns
 
@@ -818,4 +821,5 @@ The rules are in spec 3, "Rules added in round 12"; how each is built is archite
 | Who gives way in English (1280 × 800) | The rules of E7 and R2 as they are: the song name in the transport does not fold to 「▾」 in English, so the spectrum (E7) is not shown in most scenes, and the input meter shows the modulation, so the "PC keys" switch (R2) has no room in five scenes (also while on). In Japanese both are shown. | the developers' decision; decided by the owner as it is (user:2026-11-24) |
 | Term tips | Looked up by the Japanese word as before; in English a name shown in English (drum names, …) finds its term too. Explanations that said "also called 「ハイカット」" where the English word is that name now leave it out. | the developers' decision |
 | Shortened to fit (1280×800 at 150 %) | 「アレンジ 全体」 "Arrange · all"; 「公開の目安は…」 "Target …"; 「センド B の戻り」 "Send B return"; 「出口 ・ …」 (mixer) "Out · …"; 「もとの位置へ戻す」 (quantize panel) "Put back"; 「新しい版をたしかめる」 "Check for updates"; 「いま … ・ 点 5」 "Now … · 5 pts"; 「録った音の位置」 "Recorded position"; 「次の音までのばす」 "Stretch to next"; 「さがす枠を空にすると…」 "Clear the search to go back to the groups"; the output chooser's help; 「鍵盤を USB でつなぐと…」 "Plug in a USB keyboard and it shows here. Or write with the mouse."; 「音源 202」 (shelf tab) "Instr. 202"; 「選択 80 83」 (velocity band) "Sel. 80 83"; 「止」 (stopped insert) "■". | the developers' decision (the request: reword, do not widen); approved by the owner (user:2026-11-24) |
+| Shortened to fit (1280×800 at 100 %) | 「音源 ・ …」 (mixer) "Instr. · …", so some of the sound's name shows on a 108 px strip (as 「音源 ・ サイ…」 does; "Instrument · …" showed none of it) (B-98-35). | user:2026-11-24 |
 | shoot_ui.py | `--lang=en` adds `&lang=en`, names the files `-en`, puts no mock beside them, and turns the Japanese words the clicks look for into the English ones (`EN_WORDS`). | the developers' decision |

@@ -289,7 +289,7 @@ impl Play {
         match self.shelf.mode {
             Mode::NewTrack => {
                 if self.doc().tracks.len() >= MAX_TRACKS {
-                    return None;
+                    return Some(StatusMessage::TooManyTracks);
                 }
                 let below = self.song.session.play_target;
                 let (e, id) =

@@ -130,6 +130,31 @@ describe("the fake's 「トラックを複製」", () => {
     expect(said.song.tracks).toHaveLength(64);
   });
 
+  it("at 64 tracks 「＋ 歌のトラック」 and the shelf's new track say so too, and add nothing", async () => {
+    const full = scene("tooManyTracks");
+    full.status.message = null;
+    const transport = createFakeTransport(full);
+    let state = (await transport.snapshot()).state;
+    await transport.subscribe(
+      (m) => {
+        if (m.kind !== "patch") return;
+        state = { ...state };
+        for (const x of m.changes) (state as unknown as Record<string, unknown>)[x.section] = x.value;
+      },
+      () => {},
+    );
+    await transport.send({ type: "addVocalTrack" });
+    expect(state.status.message).toEqual({ id: "tooManyTracks" });
+    expect(state.song.tracks).toHaveLength(64);
+    state.status.message = null;
+    await transport.send({ type: "openShelf", mode: { kind: "newTrack" } });
+    await transport.send({ type: "shelfSelect", instrument: "organ" });
+    await transport.send({ type: "shelfConfirm" });
+    expect(state.status.message).toEqual({ id: "tooManyTracks" });
+    expect(state.song.tracks).toHaveLength(64);
+    expect(state.shelf.selectedSound).toEqual({ kind: "builtin", instrument: "organ" });
+  });
+
   it("the scene of a duplicated track has the copy selected below 「2 ベース」", () => {
     const s = scene("trackDuplicated");
     expect(s.song.tracks.map((x) => x.name)).toEqual(["ピアノ", "ベース", "ベース 3", "ドラム", "パッド", "シンセ", "ベース 2"]);

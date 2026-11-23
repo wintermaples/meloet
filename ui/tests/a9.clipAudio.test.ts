@@ -213,6 +213,10 @@ describe("what the status line says", () => {
     expect(said({ id: "reverseFollowOff", count: 1 })).toContain("1 つのクリップは、もとの音のテンポが途中で変わるので、「曲のテンポについていく」をオフにしました。");
   });
 
+  it("a file that could not be read or written", () => {
+    expect(said({ id: "clipWorkFailed", count: 2 })).toContain("2 つのクリップは、音のファイルを読めないか書けないので、そのままにしました。");
+  });
+
   it("the scene audioNormalized shows the right clip at +12.0 dB and the text", () => {
     const s = fakeScene("audioNormalized")!.state;
     expect(audioOf(s, 72).gainDb).toBe(12);

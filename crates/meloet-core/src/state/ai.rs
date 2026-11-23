@@ -9,7 +9,7 @@ use meloet_model::{
     Channel, Doc, Gain, InstrumentRef, Kept, Note, Sf2Ref, TICKS_PER_QUARTER, TickRange, Timeline,
     Track, TrackId,
 };
-use meloet_protocol::{AiLinkView, AiPort, SoundRef};
+use meloet_protocol::{AiLinkView, AiPort, SoundRef, StatusMessage};
 
 use super::{Effect, Input, Model, PluginSaid, StateAsk};
 use crate::ai::{
@@ -480,7 +480,11 @@ impl Model {
             AiAsk::AddMarker { tick, name } => self.play.ai_add_marker(tick, &name, effects)?,
             AiAsk::AddTrack { instrument } => {
                 let instrument = self.ai_instrument(instrument)?;
-                self.play.ai_add_track(instrument, effects)?
+                let added = self.play.ai_add_track(instrument, effects);
+                if let Err(AiRefusal::TooManyTracks) = added {
+                    self.notice = Some(StatusMessage::TooManyTracks);
+                }
+                added?
             }
             AiAsk::Undo => {
                 let row = self.play.history_rows(before, before).pop();

@@ -301,9 +301,13 @@ impl Model {
             _ => ImportPlan::InRow(track.map(TrackId)),
         };
         let skipped = unreadable.len() as u32;
-        if let Some(notice) = self.play.import_audio(read, plan, tick, skipped, effects) {
-            self.notice = Some(notice);
-            self.audio.clip_panel = true;
+        match self.play.import_audio(read, plan, tick, skipped, effects) {
+            Some(StatusMessage::TooManyTracks) => self.notice = Some(StatusMessage::TooManyTracks),
+            Some(notice) => {
+                self.notice = Some(notice);
+                self.audio.clip_panel = true;
+            }
+            None => {}
         }
     }
 

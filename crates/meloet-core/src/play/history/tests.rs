@@ -329,7 +329,14 @@ fn every_step_has_a_name_and_every_name_a_step() {
             kind_of(&name)
         })
         .collect();
-    let names: BTreeSet<String> = StepName::every_kind().iter().map(kind_of).collect();
+    // Names of protocol 28 with no step in the model yet. Once one has, the assert fails until
+    // it is taken off this list.
+    const NO_STEP_YET: [&str; 3] = ["renameClip", "joinClips", "writeClip"];
+    let names: BTreeSet<String> = StepName::every_kind()
+        .iter()
+        .map(kind_of)
+        .filter(|k| !NO_STEP_YET.contains(&k.as_str()))
+        .collect();
     assert_eq!(named, names);
 }
 

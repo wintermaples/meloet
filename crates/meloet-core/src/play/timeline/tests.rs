@@ -73,7 +73,13 @@ fn recorded(m: &mut Model, stop: u64) {
 /// K at `tick`, the name field left open. Returns the marker's id.
 fn add_marker_at(m: &mut Model, tick: u64, name: &str) -> u32 {
     cmd(m, Command::Locate { tick });
-    cmd(m, Command::AddMarker { name: name.into() });
+    cmd(
+        m,
+        Command::AddMarker {
+            name: name.into(),
+            tick: None,
+        },
+    );
     tl(m).renaming.unwrap()
 }
 
@@ -573,6 +579,7 @@ fn a_marker_and_the_name_typed_into_its_field_are_one_step() {
         m,
         Command::AddMarker {
             name: "マーカー 1".into(),
+            tick: None,
         },
     );
     let id = tl(m).markers[0].id;
@@ -861,6 +868,7 @@ fn the_marker_at_the_ear_while_playing() {
         m,
         Command::AddMarker {
             name: "ここ".into(),
+            tick: None,
         },
     );
     assert_eq!(markers(m), [(3 * BAR + 2 * Q, "ここ".to_owned())]);
@@ -1103,7 +1111,10 @@ fn nothing_of_the_timeline_changes_while_recording() {
             Command::DeleteTimeline {
                 target: TimelineRef::Marker { id },
             },
-            Command::AddMarker { name: "B".into() },
+            Command::AddMarker {
+                name: "B".into(),
+                tick: None,
+            },
             Command::OpenMarkerName { id },
             Command::RenameMarker {
                 id,
@@ -1274,6 +1285,7 @@ fn random_command(rng: &mut Rng, view: &TimelineView) -> Command {
         7 => Command::DeleteTimeline { target },
         8 | 9 => Command::AddMarker {
             name: format!("マーカー {}", view.markers.len() + 1),
+            tick: None,
         },
         10 => Command::OpenMarkerName { id: a_marker },
         11 => Command::RenameMarker {

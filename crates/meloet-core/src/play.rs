@@ -1768,6 +1768,7 @@ impl Play {
             }),
             recording_vocals: self.recording_vocals_view(),
             recording_faults: self.faults,
+            overdub: false,
         }
     }
 

@@ -18,11 +18,6 @@ where
 }
 
 #[test]
-fn the_version() {
-    assert_eq!(PROTOCOL_VERSION, 27);
-}
-
-#[test]
 fn several_clips() {
     // Mock F8-MultiClip: three clips on two tracks; the volumes differ.
     both_ways(

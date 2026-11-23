@@ -2632,6 +2632,9 @@ export const stepNames: Readonly<Record<StepName["kind"], Entry>> = {
   setClipFollow: e("のび縮みを変える", "builder:2026-11-21"),
   setSourceTempo: e("この音のテンポを決める", "builder:2026-11-21"),
   setClipPitch: e("音の高さを変える", "builder:2026-11-21"),
+  renameClip: e("クリップの名前を変える", "user:2026-11-23"),
+  joinClips: e("クリップをつなげる", "user:2026-11-23"),
+  writeClip: e("クリップを書く", "spec:3"),
 };
 
 export interface Term {

@@ -46,4 +46,8 @@ recordingVocals: Array<VocalRecordingView>,
  * `None`: every block of the vocal recording going on, or of the last one, is what
  * came in.
  */
-recordingFaults: RecordingFaults | null, };
+recordingFaults: RecordingFaults | null, 
+/**
+ * 「重ねる」 (`Command::SetOverdub`).
+ */
+overdub: boolean, };

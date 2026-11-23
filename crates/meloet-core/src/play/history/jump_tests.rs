@@ -289,6 +289,7 @@ fn act(w: &mut World, rng: &mut Rng, round: usize, ctx: &str) {
             });
             commands.push(Command::AddMarker {
                 name: format!("m{round}"),
+                tick: None,
             });
             commands.push(Command::CloseMarkerName);
         }
@@ -916,6 +917,7 @@ fn five_thousand_steps_rows_and_a_jump_over_500() {
                     &mut m,
                     Command::AddMarker {
                         name: format!("m{n}"),
+                        tick: None,
                     },
                 );
                 cmd(&mut m, Command::CloseMarkerName)

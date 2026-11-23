@@ -25,7 +25,7 @@ const pack = (s: FakeState, command: Command) => applied(s, reducePack(s, comman
 
 describe("約束 27 の形", () => {
   it("版は 27。新しい曲では、音の素材はぜんぶあり、聞かず、取っていない。いくつも選んだクリップの欄もない", () => {
-    expect(PROTOCOL_VERSION).toBe(27);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(27);
     const s = fakeState();
     expect(s.sounds).toEqual({
       ask: false,

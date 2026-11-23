@@ -159,6 +159,13 @@ pub enum StepName {
     SetSourceTempo,
     /// 「音の高さ」 of a vocal clip: semitones, cents, 「声の感じを保つ」.
     SetClipPitch,
+    // Protocol 28.
+    /// `Command::RenameClip`.
+    RenameClip,
+    /// `Command::JoinClips`.
+    JoinClips,
+    /// An empty clip made (`Command::CreateClip`); 「（何を）」 the clip's name.
+    WriteClip,
 }
 
 impl StepName {
@@ -249,6 +256,9 @@ impl StepName {
             SetClipFollow,
             SetSourceTempo,
             SetClipPitch,
+            RenameClip,
+            JoinClips,
+            WriteClip,
         ];
         // A kind added to the enum and not to the list above does not build.
         for name in &all {
@@ -326,7 +336,10 @@ impl StepName {
                 | SetClipFade
                 | SetClipFollow
                 | SetSourceTempo
-                | SetClipPitch => {}
+                | SetClipPitch
+                | RenameClip
+                | JoinClips
+                | WriteClip => {}
             }
         }
         all

@@ -46,7 +46,7 @@ describe("約束 20 の形", () => {
       { type: "selectTimeline", target: { kind: "tempoPoint", tick: 4 * BAR } },
       { type: "selectTimeline", target: null },
       { type: "deleteTimeline", target: { kind: "meterChange", bar: 8 } },
-      { type: "addMarker", name: t("marker.newName", { count: 4 }) },
+      { type: "addMarker", name: t("marker.newName", { count: 4 }), tick: null },
       { type: "openMarkerName", id: 2 },
       { type: "renameMarker", id: 2, name: "Aメロ ・ 1 回目" },
       { type: "closeMarkerName" },
@@ -56,7 +56,7 @@ describe("約束 20 の形", () => {
       { type: "loopFromMarker", id: 2 },
     ];
     expect(commands.length).toBe(18);
-    expect(commands[10]).toEqual({ type: "addMarker", name: "マーカー 4" });
+    expect(commands[10]).toEqual({ type: "addMarker", name: "マーカー 4", tick: null });
   });
 });
 

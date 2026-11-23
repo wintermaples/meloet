@@ -69,7 +69,6 @@ describe("fake intents", () => {
       { type: "legato", take: 1, notes: [0, 1] },
       { type: "addNotesAt", take: null, notes: [{ start: 0, length: 7680, key: 53, velocity: 100 }] },
       { type: "playExported" },
-      { type: "duplicateTrack", track: before.song.tracks[0]!.id },
       { type: "openRecent", id: 1 },
       { type: "clearRecent" },
       { type: "normalizeClips", clips: [1] },

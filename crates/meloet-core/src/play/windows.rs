@@ -343,7 +343,7 @@ impl Play {
                     self.apply_resting(None, &rests, true, effects);
                 }
             }
-            StateAsk::Base | StateAsk::Ai | StateAsk::Param { .. } => {}
+            StateAsk::Base | StateAsk::Ai | StateAsk::Param { .. } | StateAsk::Copy(_) => {}
         }
     }
 

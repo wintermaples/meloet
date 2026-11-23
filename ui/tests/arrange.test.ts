@@ -405,7 +405,7 @@ describe("context menu (B-60)", () => {
     ]);
   });
 
-  it("track head (mock R6-Tracks): mute, solo, record arm / name, color, up, down / delete. Sends selectTrack first if not selected", () => {
+  it("track head (mock R6-Tracks): mute, solo, record arm / name, duplicate (A3), color, up, down / delete. Sends selectTrack first if not selected", () => {
     show(three());
     ctx(qa("[data-test=track-head]")[0]!, 10, 10);
     expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
@@ -415,12 +415,13 @@ describe("context menu (B-60)", () => {
       ["menu.solo", "Shift S", true, false],
       ["menu.arm", undefined, true, true],
       ["menu.renameTrack", "F2", true, undefined],
+      ["menu.duplicateTrack", undefined, true, undefined],
       ["menu.trackColor", undefined, true, undefined],
       ["menu.moveTrackUp", undefined, false, undefined],
       ["menu.moveTrackDown", undefined, true, undefined],
       ["menu.deleteTrack", undefined, true, undefined],
     ]);
-    expect(contextMenu.open!.entries.map((e) => e.kind)).toEqual(["row", "separator", "row", "row", "row", "separator", "row", "row", "row", "row", "separator", "row"]);
+    expect(contextMenu.open!.entries.map((e) => e.kind)).toEqual(["row", "separator", "row", "row", "row", "separator", "row", "row", "row", "row", "row", "separator", "row"]);
     const colors = rows().find((r) => r.label === "menu.trackColor")!.sub!.filter((e) => e.kind === "row");
     expect(colors.map((r) => [r.text, r.swatch, r.checked])).toEqual([
       ["色 1", 1, true],
@@ -431,7 +432,7 @@ describe("context menu (B-60)", () => {
     ]);
     for (const r of rows().slice(1, 4)) r.run();
     colors[2]!.run();
-    for (const r of rows().slice(6).filter((r) => r.usable)) r.run();
+    for (const r of rows().slice(7).filter((r) => r.usable)) r.run();
     expect(app.sent.slice(1)).toEqual([
       { type: "toggleMute", track: 1 },
       { type: "toggleSolo", track: 1 },

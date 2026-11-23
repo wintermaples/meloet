@@ -228,8 +228,12 @@ impl Mini {
                     if plug.placed {
                         assert_eq!(own, &Held::Plug(plug.ticket), "{ctx}: seat {seat}");
                     } else {
+                        // One that did not load sounds as the sine wave (spec 3, 89-12).
+                        let failed =
+                            plug.phase == Phase::Failed && *own == Held::Made(InstrumentRef::SINE);
                         let waits = matches!(own, Held::Made(InstrumentRef::Plugin(_)))
-                            || *own == Held::Plug(plug.ticket);
+                            || *own == Held::Plug(plug.ticket)
+                            || failed;
                         assert!(waits, "{ctx}: seat {seat} holds {own:?}");
                     }
                 }
@@ -443,6 +447,7 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
     let (mut plugged, mut plugin_tracks, mut plugin_inserts, mut steps) = (0, 0, 0, 0);
     let (mut passed, mut moved, mut replaced, mut typed, mut other) = (0, 0, 0, 0, 0);
     let (mut entered, mut visits, mut dragged, mut windows) = (0, 0, 0, 0);
+    let mut duplicated = 0;
     let texts = ["4", "−3 dB", "999", "x", "0.5 s", "1"];
     for seed in 1..=10u64 {
         let rng = &mut Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
@@ -547,6 +552,8 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                         sound: rng.of(&sounds),
                     },
                 }),
+                // 「トラックを複製」, also while the person is in a window of the track.
+                19 => commands.push(Command::DuplicateTrack { track }),
                 20..=22 => commands.push(Command::ToggleBypass { insert: held }),
                 23..=25 => commands.push(Command::MoveInsert {
                     insert: held,
@@ -747,6 +754,7 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
                 match step {
                     StepKind::PluginWindow { .. } => visits += 1,
                     StepKind::SetPluginParam { .. } => dragged += 1,
+                    StepKind::DuplicateTrack { .. } => duplicated += 1,
                     _ => {}
                 }
             }
@@ -812,5 +820,6 @@ fn random_plugins_and_presets_with_undo_and_redo_keep_the_engine_with_the_book()
         entered > 300 && visits > 100 && dragged > 80 && windows > 1000,
         "{entered} visits, {visits} were steps, {dragged} drags were, {windows} windows seen"
     );
+    assert!(duplicated > 30, "{duplicated} tracks duplicated");
     let _ = (StripId::Master, TrackId(0));
 }

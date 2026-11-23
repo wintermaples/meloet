@@ -25,6 +25,9 @@ use crate::added::sound_ref;
 use crate::state::{Effect, PluginAsk, StateAsk};
 
 mod aistate;
+mod copies;
+
+pub(super) use copies::CopyStates;
 
 /// The sample rate of the engine before any stream told another.
 const START_RATE: u32 = 48_000;
@@ -106,6 +109,8 @@ pub(super) struct Plugs {
     sample_group: InstrumentGroup,
     /// What the AI link reads of plugins' states and puts into them.
     ai: aistate::AiStates,
+    /// A duplicate that waits for the states of the track's plugins.
+    copying: copies::Copying,
 }
 
 impl Default for Plugs {
@@ -118,6 +123,7 @@ impl Default for Plugs {
             stopped: Vec::new(),
             sample_group: InstrumentGroup::Synth,
             ai: aistate::AiStates::default(),
+            copying: copies::Copying::default(),
         }
     }
 }

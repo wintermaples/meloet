@@ -413,6 +413,9 @@ function builtinEffect(effect: EffectKind): EffectRef {
 /** An insert that has no id yet: `settleSong` gives it one. */
 const NO_INSERT_ID = 0;
 
+/** A song has at most this many tracks (`MAX_TRACKS` in meloet-core/src/play/seats.rs). */
+const MAX_TRACKS = 64;
+
 /**
  * The slots of a strip that holds only effects that come with meloet, none passed by. The inserts get the ids
  * `firstId`, `firstId` + 1, …; without it they get theirs when the song is settled.
@@ -1731,6 +1734,24 @@ SCENES.tracks6 = {
     s.song.playTarget = BAND_TRACK_ID + 2;
   },
   after: (s) => (s.status.message = { id: "armMoved", track: { number: 2, name: "ベース" } }),
+  meters: QUIET,
+};
+// A3: 「トラックを複製」 on 「2 ベース」: the copy 「3 ベース 3」 (「ベース 2」 is taken) right below it, with its clips, selected.
+SCENES.trackDuplicated = {
+  setup(s) {
+    bandSong(s);
+    s.song.playTarget = BAND_TRACK_ID + 2;
+    s.song = reduceTracks(s, new FakeBands(800), { type: "duplicateTrack", track: BAND_TRACK_ID + 2 })!.song;
+  },
+  meters: QUIET,
+};
+// A3: 「トラックを複製」 in a song of 64 tracks.
+SCENES.tooManyTracks = {
+  setup(s) {
+    bandSong(s, Array.from({ length: MAX_TRACKS }, (_, i) => ({ ...BAND_TRACKS[i % BAND_TRACKS.length]!, name: `トラック ${i + 1}`, clips: [] })));
+    s.song.playTarget = BAND_TRACK_ID + 1;
+  },
+  after: (s) => (s.status.message = { id: "tooManyTracks" }),
   meters: QUIET,
 };
 // F4-ShelfSample without the sample: 「＋ トラックを追加」 opened the shelf, no row picked yet.
@@ -4010,6 +4031,7 @@ const NOTICES: StatusMessage["id"][] = [
   "armMoved",
   "trackAdded",
   "trackDeleted",
+  "tooManyTracks",
   "instrumentReplaced",
   "paramClamped",
   "paramRejected",
@@ -4483,6 +4505,45 @@ export function reduceTracks(
       song.tracks.splice(i, 1);
       renumber();
       if (song.playTarget === command.track) song.playTarget = (song.tracks[i] ?? song.tracks[i - 1])?.id ?? null;
+      break;
+    }
+    case "duplicateTrack": {
+      // A3: right below, everything but the solo, the ●'s own state and the monitor; new ids, the takes shared.
+      const i = at(command.track);
+      if (i < 0 || !change) return null;
+      if (song.tracks.length >= MAX_TRACKS) {
+        notice = { id: "tooManyTracks" };
+        break;
+      }
+      const copy = structuredClone(song.tracks[i]!);
+      const named = /^(.+) ([1-9][0-9]*)$/.exec(copy.name);
+      const base = named && Number(named[2]) >= 2 ? named[1]! : copy.name;
+      const names = new Set(song.tracks.map((t) => t.name));
+      let n = 2;
+      while (names.has(`${base} ${n}`)) n++;
+      copy.name = `${base} ${n}`;
+      let next =
+        Math.max(0, ...song.tracks.flatMap((t) => [t.id, ...t.clips.map((c) => c.id), ...t.slots.map((s) => s?.id ?? 0), ...t.lanes.map((l) => l.laneId)])) + 1;
+      copy.id = next++;
+      copy.soloed = false;
+      if (copy.kind.kind === "vocal") copy.kind = { ...copy.kind, armed: true, monitor: false };
+      for (const c of copy.clips) c.id = next++;
+      const inserts = new Map<number, number>();
+      copy.slots = copy.slots.map((s) => {
+        if (s === null || s.id === NO_INSERT_ID) return s;
+        inserts.set(s.id, next);
+        return { ...s, id: next++ };
+      }) as typeof copy.slots;
+      copy.lanes = copy.lanes.map((l) => {
+        const laneId = next++;
+        const points = FAKE_LANES.get(l.laneId);
+        if (points) FAKE_LANES.set(laneId, { ...points, id: laneId });
+        const target = l.target.kind === "insert" ? { ...l.target, insert: inserts.get(l.target.insert) ?? l.target.insert } : l.target;
+        return { ...l, laneId, target };
+      });
+      song.tracks.splice(i + 1, 0, copy);
+      renumber();
+      song.playTarget = copy.id;
       break;
     }
     case "renameTrack": {

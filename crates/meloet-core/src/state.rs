@@ -450,6 +450,8 @@ pub enum StateAsk {
         puts: u32,
         ai: Option<u64>,
     },
+    /// For the copy 「トラックを複製」 makes of its track; the number of the duplicate.
+    Copy(u64),
 }
 
 /// Where [`Effect::SaveSong`] writes.
@@ -2289,8 +2291,11 @@ impl Model {
             }
             // round12 stub: E9
             Command::PlayExported => {}
-            // round12 stub: A3
-            Command::DuplicateTrack { .. } => {}
+            Command::DuplicateTrack { track } => {
+                if let Some(n) = self.play.duplicate_track(track, effects) {
+                    self.notice = Some(n);
+                }
+            }
             Command::OpenRecent { id } => self.open_recent(id, effects),
             Command::ClearRecent => self.clear_recent(effects),
             Command::NormalizeClips { clips } => self.ask_clip_work(&clips, false, effects),

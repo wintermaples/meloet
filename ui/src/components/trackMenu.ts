@@ -48,7 +48,7 @@ export function trackRows(state: AppState, track: TrackView | null, send: (c: Co
 }
 
 /**
- * The context menu of a track head (mock R6-Tracks): mute, solo, arm / (vocal tracks: 「音のファイルを入れる…」 /) rename, color ▸, up, down / delete track.
+ * The context menu of a track head (mock R6-Tracks): mute, solo, arm / (vocal tracks: 「音のファイルを入れる…」 /) rename, duplicate, color ▸, up, down / delete track.
  * selected: the arm mark (for a keyboard track, where playing sounds; for a vocal track, selected). The menu opens after selecting the track, so pass the state after selecting.
  */
 export function trackContextMenu(
@@ -83,6 +83,8 @@ export function trackContextMenu(
         ] satisfies MenuEntry[])
       : []),
     rows.rename,
+    // A3: only here, with no key. At 64 tracks core says so on the status line.
+    { kind: "row", label: "menu.duplicateTrack", usable: !songBusy(state), run: () => send({ type: "duplicateTrack", track: track.id }) },
     rows.color,
     rows.up,
     rows.down,

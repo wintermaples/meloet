@@ -1,12 +1,13 @@
-//! Changes to the tracks themselves: delete, rename, move, color. Each is one step, and none
-//! happens while counting in or recording.
+//! Changes to the tracks themselves: delete, duplicate, rename, move, color. Each is one
+//! step, and none happens while counting in or recording.
 
 use meloet_model::edit;
 use meloet_model::mixer::{self, Missing};
-use meloet_model::{TrackColor, TrackId};
+use meloet_model::{PluginChange, PluginPlace, StripId, TrackColor, TrackId};
 use meloet_protocol::{PluginSlotRef, StatusMessage};
 
-use super::Play;
+use super::plugs::CopyStates;
+use super::{MAX_TRACKS, Play};
 use crate::state::Effect;
 
 impl Play {
@@ -68,6 +69,67 @@ impl Play {
         }
     }
 
+    /// 「トラックを複製」 (round 12, A3): a copy of the track right below it, selected. Its
+    /// plugins start from the states the track's have now: when it has plugins that sound,
+    /// the copy is made once they said them (`plugs/copies.rs`). Returns the notice to show.
+    pub fn duplicate_track(
+        &mut self,
+        track: u32,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() || self.copy_waits() {
+            return None;
+        }
+        let id = TrackId(track);
+        self.doc().track(id)?;
+        if self.doc().tracks.len() >= MAX_TRACKS {
+            return Some(StatusMessage::TooManyTracks);
+        }
+        if self.ask_copy_states(id, effects) {
+            return None;
+        }
+        self.make_copy(id, Vec::new(), effects)
+    }
+
+    /// The step of 「トラックを複製」, as the song is now. `states`: what the track's plugins
+    /// said. The copy's folded lanes are those of the track.
+    pub(super) fn make_copy(
+        &mut self,
+        track: TrackId,
+        states: CopyStates,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        self.doc().track(track)?;
+        if self.doc().tracks.len() >= MAX_TRACKS {
+            return Some(StatusMessage::TooManyTracks);
+        }
+        let mut made = edit::duplicate_track(self.doc(), track).ok()?;
+        for (place, state) in states {
+            let at = match place {
+                PluginPlace::Instrument(_) => PluginPlace::Instrument(made.track),
+                PluginPlace::Insert(_, slot) => {
+                    PluginPlace::Insert(StripId::Track(made.track), slot)
+                }
+            };
+            let doc = &made.edit.doc;
+            let Some((key, state)) = doc.plugin(at).map(|p| p.key.clone()).zip(state) else {
+                continue;
+            };
+            if let Ok(e) = mixer::set_plugin_state(doc, at, &key, state, PluginChange::Window) {
+                made.edit.doc = e.doc;
+            }
+        }
+        let folded = made.folded(&self.song.session.folded_lanes);
+        let before = self.song.session.play_target.replace(made.track);
+        self.apply(made.edit, effects);
+        self.song.session.folded_lanes.extend(folded);
+        self.selected_track_changed(before);
+        None
+    }
+
     pub fn rename_track(&mut self, track: u32, name: &str, effects: &mut Vec<Effect>) {
         if self.busy() {
             return;
@@ -102,3 +164,6 @@ impl Play {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod duplicate_tests;

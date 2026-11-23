@@ -141,10 +141,45 @@ pub fn write_note(doc: &Doc, at: WriteAt, note: Note) -> Result<NotesEdited, Edi
     write_notes(doc, at, &[note])
 }
 
+/// Where a written note was cut shorter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CutAt {
+    /// The end of the clip made for the write.
+    ClipEnd,
+    /// [`MAX_TICK`].
+    SongEnd,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoteCut {
+    pub index: usize,
+    /// The length it was written with.
+    pub length: u64,
+    pub at: CutAt,
+}
+
+/// What [`write_notes_told`] did with the notes, by their indexes in the slice given.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WriteTold {
+    pub clip_made: bool,
+    /// Not written: they start at or after the end of the clip made for the write.
+    pub dropped: Vec<usize>,
+    pub cut: Vec<NoteCut>,
+}
+
 /// The write tool and the chord stamp: every note as one step. Outside the clip given, the
 /// clip grows to hold them; with [`WriteAt::Track`] the clip is the one that holds the
 /// earliest start, or else a new one.
 pub fn write_notes(doc: &Doc, at: WriteAt, notes: &[Note]) -> Result<NotesEdited, EditError> {
+    write_notes_told(doc, at, notes).map(|(edited, _)| edited)
+}
+
+/// [`write_notes`], and which notes were left out or cut.
+pub fn write_notes_told(
+    doc: &Doc,
+    at: WriteAt,
+    notes: &[Note],
+) -> Result<(NotesEdited, WriteTold), EditError> {
     let bad = |n: &Note| n.length == 0 || n.key > 127 || !(1..=127).contains(&n.velocity);
     if notes.iter().any(bad) {
         return Err(EditError::BadNote);
@@ -177,13 +212,25 @@ pub fn write_notes(doc: &Doc, at: WriteAt, notes: &[Note]) -> Result<NotesEdited
             ..*n
         })
         .collect();
+    let told = WriteTold {
+        clip_made: false,
+        dropped: Vec::new(),
+        cut: (notes.iter().zip(&written).enumerate())
+            .filter(|(_, (asked, w))| w.length < asked.length)
+            .map(|(index, (_, w))| NoteCut {
+                index,
+                length: w.length,
+                at: CutAt::SongEnd,
+            })
+            .collect(),
+    };
     let reach = Reach {
         start: written.iter().map(|n| n.start).min(),
         end: written.iter().map(|n| n.end()).max(),
     };
     let mut out = unmarked(&c);
     out.extend(written.into_iter().map(|n| (n, true)));
-    put_notes(
+    let edited = put_notes(
         doc,
         (ti, ci),
         out,
@@ -193,7 +240,8 @@ pub fn write_notes(doc: &Doc, at: WriteAt, notes: &[Note]) -> Result<NotesEdited
             count,
         },
         reach,
-    )
+    )?;
+    Ok((edited, told))
 }
 
 /// Where a clip made at `tick` on the track at `ti` goes: from the head of the bar (or the end
@@ -272,7 +320,7 @@ fn write_in_new_clip(
     doc: &Doc,
     track: TrackId,
     mut notes: Vec<Note>,
-) -> Result<NotesEdited, EditError> {
+) -> Result<(NotesEdited, WriteTold), EditError> {
     let ti = track_index(doc, track)?;
     if doc.tracks[ti].kind.is_vocal() {
         return Err(EditError::NotKeys);
@@ -283,6 +331,21 @@ fn write_in_new_clip(
         .min()
         .expect("one note at least");
     let (start, end) = new_clip_place(doc, ti, first);
+    let mut told = WriteTold {
+        clip_made: true,
+        ..WriteTold::default()
+    };
+    for (index, n) in notes.iter().enumerate() {
+        if n.start >= end {
+            told.dropped.push(index);
+        } else if n.length > end - n.start {
+            told.cut.push(NoteCut {
+                index,
+                length: end - n.start,
+                at: CutAt::ClipEnd,
+            });
+        }
+    }
     notes.retain(|n| n.start < end);
     for n in &mut notes {
         n.length = n.length.min(end - n.start);
@@ -290,7 +353,7 @@ fn write_in_new_clip(
     notes.sort_by_key(|n| (n.start, n.key));
     let count = notes.len();
     let (new, id) = with_new_clip(doc, ti, (start, end), notes)?;
-    Ok(NotesEdited {
+    let edited = NotesEdited {
         edit: Edit {
             doc: new,
             step: StepKind::WriteNote {
@@ -302,7 +365,8 @@ fn write_in_new_clip(
         clip: id,
         selected: (0..count).collect(),
         of_controls: false,
-    })
+    };
+    Ok((edited, told))
 }
 
 /// An empty keys clip on `track` at `tick` (see [`new_clip_place`]), named after the track.
@@ -321,6 +385,39 @@ pub fn create_clip(doc: &Doc, track: TrackId, tick: u64) -> Result<(Edit, ClipId
     }
     let place = new_clip_place(doc, ti, tick);
     let (new, clip) = with_new_clip(doc, ti, place, Vec::new())?;
+    Ok((
+        Edit {
+            doc: new,
+            step: StepKind::CreateClip { clip },
+        },
+        clip,
+    ))
+}
+
+/// [`create_clip`] with the end given: from the head of the bar of `tick` (or the end of the
+/// clip before, when later) to `end`. `Overlap` when a clip of the track is in that range.
+pub fn create_clip_to(
+    doc: &Doc,
+    track: TrackId,
+    tick: u64,
+    end: u64,
+) -> Result<(Edit, ClipId), EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    if t.kind.is_vocal() {
+        return Err(EditError::NotKeys);
+    }
+    if tick >= MAX_TICK || end > MAX_TICK {
+        return Err(EditError::OffTheSong);
+    }
+    if t.clips.iter().any(|c| c.start <= tick && tick < c.end) {
+        return Err(EditError::Overlap);
+    }
+    let (start, _) = new_clip_place(doc, ti, tick);
+    if end <= tick || t.clips.iter().any(|c| c.start < end && start < c.end) {
+        return Err(EditError::Overlap);
+    }
+    let (new, clip) = with_new_clip(doc, ti, (start, end), Vec::new())?;
     Ok((
         Edit {
             doc: new,

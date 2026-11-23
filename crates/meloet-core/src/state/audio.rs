@@ -87,6 +87,9 @@ impl Model {
             | Command::SelectClips { .. }
             | Command::SelectAllClips
             | Command::SplitClips
+            | Command::SplitClipAt { .. }
+            | Command::JoinClips { .. }
+            | Command::CreateClip { .. }
             | Command::DropAudio { .. }
             | Command::ImportAudio { .. } => self.audio.clip_panel = true,
             Command::SelectInsert { .. } | Command::SelectInstrument { .. } => {

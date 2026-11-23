@@ -698,3 +698,125 @@ fn clips_of_several_tracks_are_cut_as_one_step() {
     now.next_id = doc.next_id;
     assert!(now == doc);
 }
+
+#[test]
+fn a_clip_name_is_one_step_and_undo_brings_the_old_one_back() {
+    let (doc, a, _) = song();
+    let e = rename_clip(&doc, a, "  サビ ").unwrap();
+    assert_eq!(e.step, StepKind::RenameClip { clip: a });
+    assert_eq!(e.doc.clip(a).unwrap().1.name, "サビ");
+    let old = doc.clip(a).unwrap().1;
+    let new = e.doc.clip(a).unwrap().1;
+    assert!(Arc::ptr_eq(
+        &old.active_take().take,
+        &new.active_take().take
+    ));
+    let mut now = doc.clone();
+    let mut history = crate::History::new();
+    history.apply(&mut now, e);
+    history.undo(&mut now);
+    assert_eq!(now.clip(a).unwrap().1.name, old.name);
+
+    for same in ["", "   ", old.name.as_str()] {
+        assert_eq!(
+            rename_clip(&doc, a, same).unwrap_err(),
+            EditError::Unchanged
+        );
+    }
+    assert_eq!(
+        rename_clip(&doc, ClipId(999), "x").unwrap_err(),
+        EditError::NoSuchClip(ClipId(999))
+    );
+}
+
+#[test]
+fn joined_clips_keep_the_first_id_and_name_and_one_take_of_the_shown_notes() {
+    let (doc, a, b) = song();
+    let doc = rename_clip(&doc, a, "Aメロ").unwrap().doc;
+    let (e, joined) = join_clips(&doc, &[b, a, b]).unwrap();
+    assert_eq!(joined, a);
+    assert_eq!(e.step, StepKind::JoinClips { clip: a, count: 2 });
+    let new = &e.doc;
+    assert_eq!(spans(new, T1), [(a, BAR, 5 * BAR)]);
+    let (_, c) = new.clip(a).unwrap();
+    assert_eq!(c.name, "Aメロ");
+    assert_eq!(c.takes.len(), 1);
+    assert_eq!(
+        positions(new, a),
+        [
+            (BAR as i64, 60),
+            ((BAR + 2 * Q) as i64, 64),
+            ((4 * BAR) as i64, 67)
+        ]
+    );
+    // What sounds is what sounded.
+    assert_eq!(ons(new, T1), ons(&doc, T1));
+    let takes: Vec<TakeId> = (doc.tracks[0].clips.iter())
+        .flat_map(|c| c.keys().iter().map(|ct| ct.take.id))
+        .collect();
+    assert!(!takes.contains(&c.active_take_id()));
+
+    let mut now = doc.clone();
+    let mut history = crate::History::new();
+    history.apply(&mut now, e);
+    history.undo(&mut now);
+    now.next_id = doc.next_id;
+    assert!(now == doc);
+}
+
+#[test]
+fn joining_cuts_notes_at_their_clip_end_and_keeps_only_the_shown_takes() {
+    let (doc, a) = record(
+        &two_tracks(),
+        T1,
+        take(BAR, BAR, vec![note(0, BAR, 40), note(3 * Q, 100, 41)]),
+    );
+    // A second take over the same place: `a` has two.
+    let (doc, again) = record(&doc, T1, take(BAR, BAR, vec![note(Q, Q, 50)]));
+    assert_eq!(again, a);
+    let doc = trim_clip(&doc, a, ClipEdge::End, -(2 * Q as i64))
+        .unwrap()
+        .doc;
+    assert_eq!(doc.clip(a).unwrap().1.takes.len(), 2);
+    let doc = crate::edit::switch_take(&doc, a, 0).unwrap().doc;
+    let mut with_cc = take(3 * BAR, BAR, vec![note(0, Q, 70)]);
+    with_cc.controls = vec![ControlPoint {
+        tick: 0,
+        value: ControlValue::Cc {
+            number: CC_SUSTAIN,
+            value: 127,
+        },
+    }];
+    let (doc, b) = record(&doc, T1, with_cc);
+    let (e, _) = join_clips(&doc, &[a, b]).unwrap();
+    let (_, c) = e.doc.clip(a).unwrap();
+    assert_eq!((c.start, c.end, c.takes.len()), (BAR, 4 * BAR, 1));
+    let t = &c.active_take().take;
+    let notes: Vec<(u64, u64, u8)> = t.notes.iter().map(|n| (n.start, n.length, n.key)).collect();
+    // 40 cut at the trimmed end; 41 was trimmed off, and 50 is of the take not shown.
+    assert_eq!(notes, [(0, 2 * Q, 40), (2 * BAR, Q, 70)]);
+    let ticks: Vec<u64> = t.controls.iter().map(|p| p.tick).collect();
+    assert_eq!(ticks, [2 * BAR]);
+    assert_eq!(t.length, 3 * BAR);
+    assert!(t.origin.is_none());
+}
+
+#[test]
+fn joining_does_nothing_unless_two_neighbours_of_one_keys_track() {
+    let (doc, a, b) = song();
+    let (doc, m) = record(&doc, T1, take(2 * BAR, BAR, vec![note(0, 10, 50)]));
+    let (doc, c) = record(&doc, T2, take(BAR, BAR, vec![note(0, 10, 40)]));
+    assert_eq!(join_clips(&doc, &[a]).unwrap_err(), EditError::Unchanged);
+    assert_eq!(join_clips(&doc, &[a, a]).unwrap_err(), EditError::Unchanged);
+    assert_eq!(join_clips(&doc, &[]).unwrap_err(), EditError::Unchanged);
+    assert_eq!(join_clips(&doc, &[a, c]).unwrap_err(), EditError::Unchanged);
+    // `m` lies between and is not given.
+    assert_eq!(join_clips(&doc, &[a, b]).unwrap_err(), EditError::Unchanged);
+    assert_eq!(
+        join_clips(&doc, &[a, ClipId(999)]).unwrap_err(),
+        EditError::NoSuchClip(ClipId(999))
+    );
+    let (e, _) = join_clips(&doc, &[a, m, b]).unwrap();
+    assert_eq!(e.step, StepKind::JoinClips { clip: a, count: 3 });
+    assert_eq!(spans(&e.doc, T1), [(a, BAR, 5 * BAR)]);
+}

@@ -218,7 +218,19 @@ impl Play {
         } else {
             self.clips_sel.clone()
         };
-        let ClipsSplit { edit, left, right } = arrange::split_clips(doc, &clips, at).ok()?;
+        self.split_at(&clips, at, effects)
+    }
+
+    /// Cuts the clips at `at` as one step, the right halves selected afterwards. Returns the
+    /// notice to show.
+    pub(super) fn split_at(
+        &mut self,
+        clips: &[ClipId],
+        at: u64,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let doc = self.doc();
+        let ClipsSplit { edit, left, right } = arrange::split_clips(doc, clips, at).ok()?;
         let name = doc.clip(left[0]).map(|(_, c)| c.name.clone())?;
         let count = left.len() as u32;
         let mut picked = right.clone();

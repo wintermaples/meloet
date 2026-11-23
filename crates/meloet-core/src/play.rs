@@ -2034,11 +2034,7 @@ impl Play {
         if self.busy() || note.key > 127 {
             return None;
         }
-        let at = match take {
-            Some(take) => WriteAt::Clip(self.aimed(take)?),
-            None if self.shown().is_some() => return None,
-            None => WriteAt::Track(self.song.session.play_target?),
-        };
+        let at = self.write_at(take)?;
         let scale = self.song.session.roll.scale;
         let track = match at {
             WriteAt::Clip(clip) => self.doc().clip(clip).map(|(t, _)| t),
@@ -2054,17 +2050,72 @@ impl Play {
                 mode: scale_mode(scale.mode),
             });
         }
-        let note = Note {
-            length: note.length.max(1),
-            velocity: note.velocity.clamp(1, 127),
-            ..note
-        };
-        let written = match notes::write_note(self.doc(), at, note) {
+        self.write_notes(at, &[note], effects)
+    }
+
+    /// The chord stamp: a note on each of `keys`, as one step, all of them selected. Keys past
+    /// 127 are left out and a key given twice is written once. With the scale locked, keys
+    /// outside it are written too (the owner's decision, 2026-11-23). As `add_note` otherwise.
+    pub fn add_notes(
+        &mut self,
+        take: Option<u32>,
+        (start, length): (u64, u64),
+        keys: &[u8],
+        velocity: u8,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        if self.busy() {
+            return None;
+        }
+        let keys: BTreeSet<u8> = keys.iter().copied().filter(|&k| k <= 127).collect();
+        if keys.is_empty() {
+            return None;
+        }
+        let at = self.write_at(take)?;
+        let notes: Vec<Note> = (keys.into_iter())
+            .map(|key| Note {
+                from: None,
+                start,
+                length,
+                key,
+                velocity,
+            })
+            .collect();
+        self.write_notes(at, &notes, effects)
+    }
+
+    /// Where the write tool writes: the shown clip when `take` is its shown take; with `take:
+    /// None` while no clip is shown, the track the keys play.
+    fn write_at(&self, take: Option<u32>) -> Option<WriteAt> {
+        match take {
+            Some(take) => Some(WriteAt::Clip(self.aimed(take)?)),
+            None if self.shown().is_some() => None,
+            None => Some(WriteAt::Track(self.song.session.play_target?)),
+        }
+    }
+
+    /// Written on a track, the clip of the notes is selected and shown. Returns the notice to
+    /// show.
+    fn write_notes(
+        &mut self,
+        at: WriteAt,
+        notes: &[Note],
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
+        let notes: Vec<Note> = (notes.iter())
+            .map(|n| Note {
+                length: n.length.max(1),
+                velocity: n.velocity.clamp(1, 127),
+                ..*n
+            })
+            .collect();
+        let written = match notes::write_notes(self.doc(), at, &notes) {
             Ok(w) => w,
             Err(EditError::Overlap) => return Some(StatusMessage::NotesNotWritten),
             Err(_) => return None,
         };
-        let pick = take.is_none().then(|| ClipPick::one(written.clip));
+        let on_track = matches!(at, WriteAt::Track(_));
+        let pick = on_track.then(|| ClipPick::one(written.clip));
         self.apply_selecting(written.edit, Some((written.selected, false)), pick, effects);
         None
     }
@@ -2450,6 +2501,7 @@ mod audiosync;
 mod automation;
 mod autosync;
 mod buttons;
+mod clips;
 mod history;
 mod mix;
 pub(crate) mod mixer;
@@ -2483,6 +2535,8 @@ use windows::Windows;
 mod arrange_tests;
 #[cfg(test)]
 mod buttons_tests;
+#[cfg(test)]
+mod clips_tests;
 #[cfg(test)]
 mod roll_tests;
 #[cfg(test)]

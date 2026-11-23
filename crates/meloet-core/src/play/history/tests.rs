@@ -97,6 +97,7 @@ fn every_step_kind() -> Vec<StepKind> {
         WriteNote {
             clip,
             clip_made: false,
+            count,
         },
         MoveNotes {
             clip,
@@ -203,6 +204,9 @@ fn every_step_kind() -> Vec<StepKind> {
         DiscardRecovered,
         SetVocalInput { track },
         SplitClips { count: 2 },
+        RenameClip { clip },
+        JoinClips { clip, count: 2 },
+        CreateClip { clip },
         ImportAudio { count: 3 },
         SetClipGain { clip },
         SetClipFade { clip },
@@ -290,6 +294,9 @@ fn every_step_kind() -> Vec<StepKind> {
             | DiscardRecovered
             | SetVocalInput { .. }
             | SplitClips { .. }
+            | RenameClip { .. }
+            | JoinClips { .. }
+            | CreateClip { .. }
             | ImportAudio { .. }
             | SetClipGain { .. }
             | SetClipFade { .. }
@@ -329,14 +336,7 @@ fn every_step_has_a_name_and_every_name_a_step() {
             kind_of(&name)
         })
         .collect();
-    // Names of protocol 28 with no step in the model yet. Once one has, the assert fails until
-    // it is taken off this list.
-    const NO_STEP_YET: [&str; 3] = ["renameClip", "joinClips", "writeClip"];
-    let names: BTreeSet<String> = StepName::every_kind()
-        .iter()
-        .map(kind_of)
-        .filter(|k| !NO_STEP_YET.contains(&k.as_str()))
-        .collect();
+    let names: BTreeSet<String> = StepName::every_kind().iter().map(kind_of).collect();
     assert_eq!(named, names);
 }
 

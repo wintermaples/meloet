@@ -150,10 +150,12 @@ pub enum StepKind {
         tracks: u32,
         inserts: u32,
     },
-    /// The write tool. `clip_made`: the clip was made for the note.
+    /// The write tool and the chord stamp: `count` notes. `clip_made`: the clip was made for
+    /// them.
     WriteNote {
         clip: ClipId,
         clip_made: bool,
+        count: usize,
     },
     /// A drag, the arrow keys; `copy`: Alt + drag and Mod D.
     MoveNotes {
@@ -360,6 +362,19 @@ pub enum StepKind {
     /// `Doc` after the step has both halves of each.
     SplitClips {
         count: usize,
+    },
+    /// Either `Doc` has the clip: the one before the step the old name.
+    RenameClip {
+        clip: ClipId,
+    },
+    /// `count` keys clips of one track became `clip`, which kept the id of the earliest.
+    JoinClips {
+        clip: ClipId,
+        count: usize,
+    },
+    /// An empty keys clip made on an empty place. The `Doc` after the step has it.
+    CreateClip {
+        clip: ClipId,
     },
     /// Audio files brought in, however many at once: `count` clips were made.
     ImportAudio {

@@ -628,9 +628,9 @@ pub enum Command {
     /// `length` long, as one step named as `AddNote`'s (`StepName::WriteNote`, 「（何を）」 the
     /// count of notes). As `AddNote` otherwise: a note past the clip makes the clip longer, and
     /// `take: None` makes a clip. Keys past 127 are left out, and a key given twice is written
-    /// once; with the scale locked (not on a drum kit), keys outside it are left out, as
-    /// `Audition` does. With no key left it does nothing, but says
-    /// `StatusMessage::OutOfScale` for the first key when the scale left them all out.
+    /// once. With the scale locked, keys outside it are written too (the owner's decision,
+    /// user:2026-11-23). With no key left it does nothing. Every note written is selected
+    /// afterwards.
     AddNotes {
         take: Option<u32>,
         start: u64,

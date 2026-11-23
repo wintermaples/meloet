@@ -1385,28 +1385,7 @@ impl Model {
                     effects.push(Effect::SaveSettings(self.settings()));
                 }
             }
-            Command::ToggleBand { band } => {
-                let mixer_was_open = self.mixer_is_open();
-                let fold = self.bands.toggle(band_of(band));
-                // Said once as the mixer opens; a band folded for it is said instead.
-                if !mixer_was_open && self.mixer_is_open() {
-                    self.notice =
-                        (self.play.mixer_passes_by()).or_else(|| self.play.automation_moving());
-                }
-                if let Some(fold) = fold {
-                    let folded = bottom_band(fold.band);
-                    self.notice = Some(match fold.why {
-                        FoldWhy::Third => StatusMessage::BandFoldedThird {
-                            opened: band,
-                            folded,
-                        },
-                        FoldWhy::TooLow => StatusMessage::BandFoldedToOpen {
-                            opened: band,
-                            folded,
-                        },
-                    });
-                }
-            }
+            Command::ToggleBand { band } => self.toggle_band(band),
             Command::GoArrange => self.bands.go_arrange(),
             Command::Back => {
                 if !self.plugins.close_stopped()
@@ -1537,10 +1516,9 @@ impl Model {
             }
             Command::SelectTimeline { target } => self.say(|p| p.select_timeline(target)),
             Command::DeleteTimeline { target } => self.play.delete_timeline(target, effects),
-            Command::AddMarker { name, tick: None } => {
-                self.say(|p| p.add_marker(&name, effects));
+            Command::AddMarker { name, tick } => {
+                self.say(|p| p.add_marker(&name, tick, effects));
             }
-            Command::AddMarker { tick: Some(_), .. } => {}
             Command::OpenMarkerName { id } => self.play.open_marker_name(id),
             Command::RenameMarker { id, name } => self.play.rename_marker(id, &name, effects),
             Command::CloseMarkerName => self.play.close_marker_name(),
@@ -1688,10 +1666,18 @@ impl Model {
                 mode,
             } => self.drop_audio(drop, track, tick, mode, effects),
             Command::SplitClips => self.split_clips(effects),
-            Command::SplitClipAt { .. }
-            | Command::JoinClips { .. }
-            | Command::RenameClip { .. }
-            | Command::CreateClip { .. } => {}
+            Command::SplitClipAt { clip, tick } => {
+                self.say(|p| p.split_clip_at(clip, tick, effects));
+            }
+            Command::JoinClips { clips } => self.play.join_clips(&clips, effects),
+            Command::RenameClip { clip, name } => self.play.rename_clip(clip, &name, effects),
+            Command::CreateClip { track, tick } => {
+                if self.play.create_clip(track, tick, effects)
+                    && !self.bands.bottom_is_open(BottomBand::PianoRoll)
+                {
+                    self.toggle_band(Band::PianoRoll);
+                }
+            }
             Command::SetClipField { clip, field, value } => {
                 if let Some(n) = self.play.set_clip_field(clip, field, value, effects) {
                     self.notice = Some(n);
@@ -1862,7 +1848,17 @@ impl Model {
             Command::CopyNotes { take, notes } => self.play.copy_notes(take, &notes),
             Command::CutNotes { take, notes } => self.play.cut_notes(take, &notes, effects),
             Command::PasteNotes { at } => self.notice = self.play.paste_notes(at, effects),
-            Command::AddNotes { .. } => {}
+            Command::AddNotes {
+                take,
+                start,
+                length,
+                keys,
+                velocity,
+            } => {
+                self.notice = self
+                    .play
+                    .add_notes(take, (start, length), &keys, velocity, effects);
+            }
             Command::SetGrid { division, triplet } => self.play.set_grid(division, triplet),
             Command::SetMusicalScale { root, mode, lock } => {
                 self.play.set_musical_scale(root, mode, lock);
@@ -2203,6 +2199,28 @@ impl Model {
                 .unreadable
                 .map(|file| StatusMessage::Sf2Unreadable { file }),
         };
+    }
+
+    fn toggle_band(&mut self, band: Band) {
+        let mixer_was_open = self.mixer_is_open();
+        let fold = self.bands.toggle(band_of(band));
+        // Said once as the mixer opens; a band folded for it is said instead.
+        if !mixer_was_open && self.mixer_is_open() {
+            self.notice = (self.play.mixer_passes_by()).or_else(|| self.play.automation_moving());
+        }
+        if let Some(fold) = fold {
+            let folded = bottom_band(fold.band);
+            self.notice = Some(match fold.why {
+                FoldWhy::Third => StatusMessage::BandFoldedThird {
+                    opened: band,
+                    folded,
+                },
+                FoldWhy::TooLow => StatusMessage::BandFoldedToOpen {
+                    opened: band,
+                    folded,
+                },
+            });
+        }
     }
 
     /// A song was opened: says so when it uses sounds this PC does not have (spec 6).

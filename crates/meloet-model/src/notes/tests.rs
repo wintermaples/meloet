@@ -473,7 +473,8 @@ fn writing_in_a_clip() {
         e.edit.step,
         StepKind::WriteNote {
             clip,
-            clip_made: false
+            clip_made: false,
+            count: 1,
         }
     );
     // Ending right at a bar's head: not that bar.
@@ -495,7 +496,8 @@ fn writing_in_a_clip() {
         e.edit.step,
         StepKind::WriteNote {
             clip,
-            clip_made: false
+            clip_made: false,
+            count: 1,
         }
     );
 }
@@ -530,6 +532,117 @@ fn writing_where_there_is_no_clip_makes_one() {
     assert_eq!((c.start, c.end), (3 * BAR, 7 * BAR));
     let order: Vec<ClipId> = e.edit.doc.tracks[0].clips.iter().map(|c| c.id).collect();
     assert_eq!(order, [clip, e.clip]);
+}
+
+#[test]
+fn a_chord_is_one_step_and_every_note_of_it_is_selected() {
+    let (doc, clip) = one_clip(vec![note(0, 100, 60)]);
+    let chord = [
+        note(2 * BAR, Q, 67),
+        note(2 * BAR, Q, 60),
+        note(2 * BAR, Q, 64),
+    ];
+    let e = write_notes(&doc, WriteAt::Clip(clip), &chord).unwrap();
+    assert_eq!(
+        notes_of(&e.edit.doc, clip),
+        [
+            (TAKE, 100, 60),
+            (2 * BAR, Q, 60),
+            (2 * BAR, Q, 64),
+            (2 * BAR, Q, 67)
+        ]
+    );
+    assert_eq!(e.selected, [1, 2, 3]);
+    assert_eq!(
+        e.edit.step,
+        StepKind::WriteNote {
+            clip,
+            clip_made: false,
+            count: 3
+        }
+    );
+    let old = doc.clip(clip).unwrap().1.active_take_id();
+    assert_ne!(e.edit.doc.clip(clip).unwrap().1.active_take_id(), old);
+    assert_eq!(e.edit.doc.clip(clip).unwrap().1.takes.len(), 2);
+
+    // Past the clip: it grows by bars, as for one note.
+    let late = [note(3 * BAR + 10, Q, 60), note(3 * BAR + 10, Q, 64)];
+    let e = write_notes(&doc, WriteAt::Clip(clip), &late).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 4 * BAR));
+
+    // Where no clip is: one clip made for all of them, every note selected.
+    let e = write_notes(
+        &doc,
+        WriteAt::Track(T1),
+        &[note(5 * BAR, Q, 64), note(5 * BAR, Q, 60)],
+    )
+    .unwrap();
+    assert_ne!(e.clip, clip);
+    assert_eq!(range(&e.edit.doc, e.clip), (5 * BAR, 9 * BAR));
+    assert_eq!(
+        notes_of(&e.edit.doc, e.clip),
+        [(5 * BAR, Q, 60), (5 * BAR, Q, 64)]
+    );
+    assert_eq!(e.selected, [0, 1]);
+    assert_eq!(
+        e.edit.step,
+        StepKind::WriteNote {
+            clip: e.clip,
+            clip_made: true,
+            count: 2
+        }
+    );
+
+    assert_eq!(
+        write_notes(&doc, WriteAt::Clip(clip), &[]).unwrap_err(),
+        EditError::Unchanged
+    );
+    assert_eq!(
+        write_notes(
+            &doc,
+            WriteAt::Clip(clip),
+            &[note(BAR, Q, 60), note(BAR, Q, 128)]
+        )
+        .unwrap_err(),
+        EditError::BadNote
+    );
+}
+
+#[test]
+fn an_empty_clip_on_an_empty_place() {
+    let doc = Doc::new_default();
+    let (e, id) = create_clip(&doc, T1, BAR + 700).unwrap();
+    let (track, c) = e.doc.clip(id).unwrap();
+    assert_eq!((c.start, c.end), (BAR, 5 * BAR));
+    assert_eq!(c.name, track.name);
+    assert_eq!(c.takes.len(), 1);
+    assert_eq!(c.note_count(), 0);
+    assert_eq!(e.step, StepKind::CreateClip { clip: id });
+    assert_eq!(e.doc.next_id, doc.next_id + 2);
+
+    // Up to the next clip, and from the end of the one before.
+    let (doc, clip) = one_clip(vec![note(0, 100, 60)]);
+    let (e, id) = create_clip(&doc, T1, 100).unwrap();
+    assert_eq!(range(&e.doc, id), (0, BAR));
+    let (e, id) = create_clip(&doc, T1, 3 * BAR + 10).unwrap();
+    assert_eq!(range(&e.doc, id), (3 * BAR, 7 * BAR));
+    let order: Vec<ClipId> = e.doc.tracks[0].clips.iter().map(|c| c.id).collect();
+    assert_eq!(order, [clip, id]);
+
+    // Inside a clip, or on a vocal track: nothing.
+    assert_eq!(
+        create_clip(&doc, T1, 2 * BAR).unwrap_err(),
+        EditError::Overlap
+    );
+    let (v, vocal) = crate::edit::add_vocal_track(&doc, None).unwrap();
+    assert_eq!(
+        create_clip(&v.doc, vocal, 0).unwrap_err(),
+        EditError::NotKeys
+    );
+    assert_eq!(
+        create_clip(&doc, T1, MAX_TICK).unwrap_err(),
+        EditError::OffTheSong
+    );
 }
 
 #[test]

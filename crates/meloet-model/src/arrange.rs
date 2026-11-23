@@ -12,9 +12,11 @@ use std::sync::Arc;
 use crate::TrackId;
 use crate::audio::AudioShape;
 use crate::audio::clips::fit_fades;
-use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index};
+use crate::edit::{Edit, EditError, Ids, MAX_TICK, clip_index, track_index, with_track};
 use crate::history::StepKind;
-use crate::song::{Clip, ClipId, ClipTake, ClipTakes, Doc, Note, Take, TakeId, Track};
+use crate::song::{
+    Clip, ClipId, ClipTake, ClipTakes, ControlPoint, Doc, Note, Take, TakeId, Track,
+};
 use crate::time::TickRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -456,6 +458,138 @@ fn ended_at(take: &Arc<Take>, cut: i128, ids: &mut Ids) -> Result<Arc<Take>, Edi
         notes: crate::ChunkedVec::sharing(&notes, &take.notes),
         ..Take::clone(take)
     }))
+}
+
+/// A clip's name, keys or vocal. Spaces around it are left out; an empty name or the same one
+/// is `Unchanged`.
+pub fn rename_clip(doc: &Doc, clip: ClipId, name: &str) -> Result<Edit, EditError> {
+    let (ti, ci) = clip_index(doc, clip)?;
+    let c = &doc.tracks[ti].clips[ci];
+    let name = name.trim();
+    if name.is_empty() || name == c.name {
+        return Err(EditError::Unchanged);
+    }
+    let track = &doc.tracks[ti];
+    let mut clips = track.clips.clone();
+    clips[ci] = Arc::new(Clip {
+        name: name.to_owned(),
+        ..Clip::clone(c)
+    });
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                clips,
+                ..Track::clone(track)
+            },
+        ),
+        step: StepKind::RenameClip { clip },
+    })
+}
+
+/// Two or more keys clips of one track become one, from the start of the earliest to the end
+/// of the latest, with the id and the name of the earliest. Its one take (a new id) holds the
+/// notes and control points of each clip's shown take that are inside that clip; a note past
+/// its clip's end is cut there. The other takes are not kept.
+///
+/// `NotKeys` with a vocal clip among them. `Unchanged` with fewer than two, clips of different
+/// tracks, or a clip not given lying between them. `NoSuchClip` for a clip that is not there.
+pub fn join_clips(doc: &Doc, clips: &[ClipId]) -> Result<(Edit, ClipId), EditError> {
+    let mut at: Vec<(usize, usize)> = Vec::with_capacity(clips.len());
+    for &id in clips {
+        let place = clip_index(doc, id)?;
+        if !at.contains(&place) {
+            at.push(place);
+        }
+    }
+    let Some(&(ti, _)) = at.first() else {
+        return Err(EditError::Unchanged);
+    };
+    if at.len() < 2 || at.iter().any(|&(t, _)| t != ti) {
+        return Err(EditError::Unchanged);
+    }
+    let track = &doc.tracks[ti];
+    if at.iter().any(|&(_, ci)| !track.clips[ci].is_keys()) {
+        return Err(EditError::NotKeys);
+    }
+    // The clips of a track are in order of start and never overlap: the ones given must be a
+    // run of neighbours.
+    let mut indexes: Vec<usize> = at.iter().map(|&(_, ci)| ci).collect();
+    indexes.sort_unstable();
+    let (low, high) = (indexes[0], indexes[indexes.len() - 1]);
+    if high - low + 1 != indexes.len() {
+        return Err(EditError::Unchanged);
+    }
+    let joined = &track.clips[low..=high];
+    let first = &joined[0];
+    let (start, end) = (first.start, joined[joined.len() - 1].end);
+    let mut notes: Vec<Note> = Vec::new();
+    let mut controls: Vec<ControlPoint> = Vec::new();
+    for c in joined {
+        let shown = c.active_take();
+        let zero = c.zero(shown);
+        let inside = |t: u64| {
+            let at = zero + t as i64;
+            (c.start as i64..c.end as i64)
+                .contains(&at)
+                .then_some(at as u64)
+        };
+        for n in shown.take.notes.iter() {
+            if let Some(s) = inside(n.start) {
+                notes.push(Note {
+                    start: s - start,
+                    length: n.length.min(c.end - s),
+                    ..*n
+                });
+            }
+        }
+        for p in shown.take.controls.iter() {
+            if let Some(t) = inside(p.tick) {
+                controls.push(ControlPoint {
+                    tick: t - start,
+                    ..*p
+                });
+            }
+        }
+    }
+    notes.sort_by_key(|n| (n.start, n.key));
+    controls.sort_by_key(|p| p.tick);
+    let mut ids = Ids(doc.next_id);
+    let take = Take {
+        id: TakeId(ids.next()?),
+        length: end - start,
+        notes: notes.into(),
+        controls: controls.into(),
+        origin: None,
+    };
+    let clip = Arc::new(Clip {
+        id: first.id,
+        name: first.name.clone(),
+        start,
+        end,
+        takes: ClipTakes::Keys(vec![ClipTake {
+            take: Arc::new(take),
+            offset: 0,
+        }]),
+        active: 0,
+    });
+    let mut kept = track.clips.clone();
+    kept.splice(low..=high, [clip]);
+    let mut new = with_track(
+        doc,
+        ti,
+        Track {
+            clips: kept,
+            ..Track::clone(track)
+        },
+    );
+    new.next_id = ids.0;
+    let step = StepKind::JoinClips {
+        clip: first.id,
+        count: joined.len(),
+    };
+    Ok((Edit { doc: new, step }, first.id))
 }
 
 #[cfg(test)]

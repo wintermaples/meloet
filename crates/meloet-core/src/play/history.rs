@@ -650,7 +650,9 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             StepWhat::Missing { tracks, inserts },
             None,
         ),
-        StepKind::WriteNote { clip, .. } => (StepName::WriteNote, notes(clip, 1), piano_roll),
+        StepKind::WriteNote { clip, count: n, .. } => {
+            (StepName::WriteNote, notes(clip, n), piano_roll)
+        }
         StepKind::MoveNotes {
             clip,
             count: n,
@@ -749,6 +751,23 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             a.clip_track(clip),
         ),
         StepKind::SplitClips { count: n } => (StepName::SplitClips, clips(n), arrange),
+        StepKind::RenameClip { clip } => (
+            StepName::RenameClip,
+            match (a.before.clip(clip), a.after.clip(clip)) {
+                (Some((_, from)), Some((_, to))) => StepWhat::Renamed {
+                    from: from.name.clone(),
+                    to: to.name.clone(),
+                },
+                _ => StepWhat::None,
+            },
+            arrange,
+        ),
+        StepKind::JoinClips { count: n, .. } => (StepName::JoinClips, clips(n), arrange),
+        StepKind::CreateClip { clip } => (
+            StepName::WriteClip,
+            named(a.after.clip(clip).map(|(_, c)| c.name.clone())),
+            arrange,
+        ),
         StepKind::ImportAudio { count: n } => (StepName::ImportAudio, clips(n), arrange),
         StepKind::SetClipGain { clip } => {
             let gain = |doc: &Doc| {

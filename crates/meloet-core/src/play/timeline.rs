@@ -362,12 +362,17 @@ impl Play {
         }
     }
 
-    /// K. Returns the notice to show.
-    pub fn add_marker(&mut self, name: &str, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
+    /// K at the play line, or at `tick` (snapped to the beat). Returns the notice to show.
+    pub fn add_marker(
+        &mut self,
+        name: &str,
+        tick: Option<u64>,
+        effects: &mut Vec<Effect>,
+    ) -> Option<StatusMessage> {
         if self.busy() {
             return None;
         }
-        let tick = self.snapped(self.play_line());
+        let tick = self.snapped(tick.unwrap_or_else(|| self.play_line()));
         let (e, id) = edits::add_marker(self.doc(), tick, name).ok()?;
         self.apply(e, effects);
         self.select_in_step(TimelineRef::Marker { id: id.0 }, true);

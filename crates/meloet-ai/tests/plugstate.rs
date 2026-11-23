@@ -79,7 +79,7 @@ fn waiting<T>(what: &str, most: Duration, mut look: impl FnMut() -> Option<T>) -
 
 fn has_plugin(c: &mut Client, key: &str) -> bool {
     let list = ok(c, "list_instruments", json!({}));
-    let effects = ok(c, "list_effects", json!({}));
+    let effects = ok(c, "list_effects", json!({ "limit": 500 }));
     (list["plugins"].as_array().into_iter().flatten())
         .chain(effects["plugins"].as_array().into_iter().flatten())
         .any(|p| p["key"] == key)
@@ -472,7 +472,7 @@ fn inside(whole: &[u8], cut: bool) -> Vec<u8> {
 /// The key of a plugin by its name and format.
 fn find_plugin(c: &mut Client, name: &str, format: &str) -> Option<String> {
     let list = ok(c, "list_instruments", json!({}));
-    let effects = ok(c, "list_effects", json!({}));
+    let effects = ok(c, "list_effects", json!({ "name": name, "limit": 500 }));
     let all = (list["plugins"].as_array().into_iter().flatten())
         .chain(effects["plugins"].as_array().into_iter().flatten());
     // A row of one plugin in two formats names one key; `formats` has both.

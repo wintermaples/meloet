@@ -668,6 +668,7 @@ impl Core {
                 plugins,
                 ai_switch: None,
                 ai_jobs: 0,
+                held_replies: VecDeque::new(),
             };
             std::thread::Builder::new()
                 .name("meloet-core".into())
@@ -2230,6 +2231,9 @@ struct Worker {
     ai_switch: Option<AiSwitch>,
     /// The AI link's jobs given out.
     ai_jobs: u64,
+    /// Who waits for the rev of an intent that waits for a batch of the AI link, with the
+    /// intent's number among those that ever waited.
+    held_replies: VecDeque<(u64, mpsc::Sender<u64>)>,
 }
 
 /// The threads behind the plugins. Dropped when the core ends: scanning children are killed,
@@ -2425,9 +2429,16 @@ impl Worker {
             };
             match rx.recv_timeout(wait) {
                 Ok(Msg::Input(input, reply)) => {
+                    let (waited, _) = self.model.held_counts();
                     let rev = self.handle(input);
-                    if let Some(reply) = reply {
-                        let _ = reply.send(rev);
+                    let (waits, served) = self.model.held_counts();
+                    match reply {
+                        // Answered with the rev after the intent is served.
+                        Some(reply) if waits > waited && served <= waited => {
+                            self.held_replies.push_back((waits, reply));
+                        }
+                        Some(reply) => drop(reply.send(rev)),
+                        None => {}
                     }
                 }
                 Ok(Msg::Frames { epoch, actual }) => {
@@ -2789,8 +2800,24 @@ impl Worker {
         }
     }
 
-    /// One input, the effects it asks for, and the inputs those answer with. Returns the rev.
+    /// One input, and after it what waited for a batch of the AI link that is closed now:
+    /// each as an input of its own, with its own rev. Returns the last rev.
     fn handle(&mut self, input: Input) -> u64 {
+        let mut rev = self.handle_now(input);
+        while let Some(held) = self.model.take_held() {
+            rev = self.handle_now(held);
+            let (_, served) = self.model.held_counts();
+            while self.held_replies.front().is_some_and(|(n, _)| *n <= served) {
+                if let Some((_, reply)) = self.held_replies.pop_front() {
+                    let _ = reply.send(rev);
+                }
+            }
+        }
+        rev
+    }
+
+    /// One input, the effects it asks for, and the inputs those answer with. Returns the rev.
+    fn handle_now(&mut self, input: Input) -> u64 {
         let mut inputs = VecDeque::from([input]);
         while let Some(input) = inputs.pop_front() {
             self.model.set_now(monotonic_us(), self.heard());

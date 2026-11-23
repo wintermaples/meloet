@@ -1,13 +1,11 @@
 //! A batch of the AI link: one step, or nothing. And what "no change" is.
 
-use std::time::Duration;
-
 use meloet_model::{Doc, Note, TrackId};
 use meloet_protocol::{Command, SendBus, StripRef, TimelineRef};
 
 use crate::ai::{AiAnswer, AiAsk, AiDone, AiPlace, AiRefusal};
 use crate::settings::Settings;
-use crate::state::{Input, Model};
+use crate::state::{Effect, Input, Model, PluginSaid, StateAsk};
 
 fn ask(m: &mut Model, ask: AiAsk) -> AiAnswer {
     m.handle(Input::Ai(ask));
@@ -80,6 +78,34 @@ fn rename(track: u32, name: &str) -> Command {
         track,
         name: name.into(),
     }
+}
+
+/// An intent of the person.
+fn person(m: &mut Model, command: Command) -> Vec<Effect> {
+    m.handle(Input::Command(command))
+}
+
+/// An intent that did not wait for the open batch: what the waiting keeps from happening.
+fn past(m: &mut Model, command: Command) {
+    m.handle(Input::Held(Box::new(Input::Command(command))));
+}
+
+/// What the core thread does after every input: serves what waited, each as an input of
+/// its own. Returns how many were served, and what they asked for.
+fn serve(m: &mut Model) -> (usize, Vec<Effect>) {
+    let (mut served, mut effects) = (0, Vec::new());
+    while let Some(held) = m.take_held() {
+        effects.extend(m.handle(held));
+        served += 1;
+    }
+    (served, effects)
+}
+
+/// The names of the history's rows, oldest first.
+fn rows(m: &Model) -> Vec<String> {
+    (m.play.history_rows(1, 99).iter())
+        .map(|row| format!("{:?}", row.name))
+        .collect()
 }
 
 /// The owner's case and a clip with notes, in the batch 7. Returns the clip.
@@ -224,15 +250,27 @@ fn the_step_that_could_be_redone_can_be_redone_after_a_batch_taken_back() {
     assert_eq!(doc(m), end);
     assert_eq!(counts(m), (2, 0));
 
-    // More than one step to redo: they are let go, as a step of the batch lets them go.
+    // More than one step to redo: all of them are there again, with their rows.
     done(m, AiAsk::Undo);
     done(m, AiAsk::Undo);
     let start = doc(m);
+    let rows = m.play.history_rows(1, 9);
     assert_eq!(counts(m), (0, 2));
+    let newest = m.view().history.newest;
     mix_and_write(m);
+    assert_eq!(counts(m), (7, 0));
     done(m, AiAsk::Rollback { batch: 7 });
-    assert_eq!(counts(m), (0, 0));
+    assert_eq!(counts(m), (0, 2));
     assert_eq!(doc(m), start);
+    assert_eq!(m.play.history_rows(1, 9), rows);
+    assert_eq!(m.view().history.newest, newest);
+    person(m, Command::Redo);
+    assert_eq!(doc(m), before);
+    person(m, Command::Redo);
+    assert_eq!(doc(m), end);
+    assert_eq!(counts(m), (2, 0));
+    person(m, Command::Undo);
+    assert_eq!(doc(m), before);
 }
 
 #[test]
@@ -303,14 +341,14 @@ fn only_the_batch_writes_while_it_is_open() {
 }
 
 #[test]
-fn a_change_by_someone_else_ends_the_batch_where_it_is() {
+fn a_change_that_did_not_wait_ends_the_batch_where_it_is() {
     let m = &mut Model::new(Settings::default());
     let t = track(m);
     // A step of the person after the batch's last ask.
     done(m, AiAsk::Begin { batch: 1 });
     done(m, screen(1, gain(t, -3.0)));
     done(m, screen(1, rename(t, "a")));
-    m.handle(Input::Command(Command::ToggleMute { track: t }));
+    past(m, Command::ToggleMute { track: t });
     assert_eq!(counts(m), (3, 0));
     let now = doc(m);
     assert_eq!(refused(m, screen(1, rename(t, "b"))), AiRefusal::BatchLost);
@@ -326,7 +364,7 @@ fn a_change_by_someone_else_ends_the_batch_where_it_is() {
     done(m, AiAsk::Begin { batch: 2 });
     done(m, screen(2, gain(t, -4.0)));
     done(m, screen(2, rename(t, "d")));
-    m.handle(Input::Command(Command::ToggleMute { track: t }));
+    past(m, Command::ToggleMute { track: t });
     let closed = done(m, AiAsk::Commit { batch: 2 });
     assert_eq!(closed.step, None);
     assert_eq!(counts(m), (7, 0));
@@ -334,7 +372,7 @@ fn a_change_by_someone_else_ends_the_batch_where_it_is() {
     // The person's undo of a step of the batch.
     done(m, AiAsk::Begin { batch: 3 });
     done(m, screen(3, gain(t, -5.0)));
-    m.handle(Input::Command(Command::Undo));
+    past(m, Command::Undo);
     assert_eq!(refused(m, screen(3, rename(t, "e"))), AiRefusal::BatchLost);
     assert_eq!(
         refused(m, AiAsk::Rollback { batch: 3 }),
@@ -346,8 +384,8 @@ fn a_change_by_someone_else_ends_the_batch_where_it_is() {
     done(m, AiAsk::Begin { batch: 4 });
     done(m, screen(4, gain(t, -7.0)));
     done(m, screen(4, rename(t, "f")));
-    m.handle(Input::Command(Command::Undo));
-    m.handle(Input::Command(Command::Redo));
+    past(m, Command::Undo);
+    past(m, Command::Redo);
     done(m, screen(4, rename(t, "g")));
     done(m, AiAsk::Commit { batch: 4 });
     assert_eq!(counts(m), (8, 0));
@@ -445,33 +483,121 @@ fn solo_and_the_loop_switch_go_back_with_the_batch() {
 }
 
 #[test]
-fn a_batch_left_open_is_closed_and_taken_back_by_the_next_ask() {
+fn what_the_person_does_waits_for_the_batch_and_is_served_in_order_after_it() {
     let m = &mut Model::new(Settings::default());
     let t = track(m);
-    let before = doc(m);
     done(m, AiAsk::Begin { batch: 1 });
     done(m, screen(1, gain(t, -3.0)));
+    assert!(person(m, Command::ToggleMute { track: t }).is_empty());
     done(m, screen(1, rename(t, "a")));
+    person(m, rename(t, "p"));
+    person(m, Command::ToggleSolo { track: t });
+    assert_eq!(counts(m), (2, 0), "only the batch's steps so far");
+    assert!(!doc(m).tracks[0].muted);
+    assert_eq!(m.held_counts(), (3, 0));
     assert_eq!(
-        refused(m, AiAsk::Screen(rename(t, "b"))),
-        AiRefusal::BatchOpen
+        m.take_held(),
+        None,
+        "nothing is served while the batch is open"
     );
-    let batch = m.ai.batch.as_mut().unwrap();
-    batch.asked = batch.asked.checked_sub(Duration::from_secs(11)).unwrap();
-    let wrote = done(m, AiAsk::Screen(rename(t, "b")));
-    assert_eq!(wrote.undo_count, 1);
-    done(m, AiAsk::Undo);
-    assert_eq!(doc(m), before);
-    assert_eq!(refused(m, AiAsk::Commit { batch: 1 }), AiRefusal::BatchLost);
+    done(m, screen(1, gain(t, -4.0)));
+
+    let closed = done(m, AiAsk::Commit { batch: 1 });
+    assert_eq!(closed.undo_count, 1);
+    let batch = closed.step.expect("the batch's one step");
+    assert_eq!(counts(m), (1, 0));
+    assert_eq!(serve(m).0, 3);
+    assert_eq!(m.held_counts(), (3, 3));
+    assert_eq!(
+        counts(m),
+        (3, 0),
+        "the mute and the name, each a step of its own"
+    );
+    assert_eq!(m.play.history_rows(1, 1)[0], batch);
+    let names = rows(m);
+    assert!(names[1].contains("Mute"), "{names:?}");
+    assert!(names[2].contains("RenameTrack"), "{names:?}");
+    let song = m.ai_song().song;
+    assert!(song.doc.tracks[0].muted);
+    assert_eq!(song.doc.tracks[0].name, "p");
+    assert!(song.session.soloed.contains(&TrackId(t)));
+    assert_eq!(serve(m).0, 0, "served once");
+
+    // With no batch open nothing waits.
+    person(m, rename(t, "q"));
+    assert_eq!(counts(m), (4, 0));
+    assert_eq!(m.held_counts(), (3, 3));
 }
 
 #[test]
-fn no_batch_begins_and_none_is_taken_back_while_recording() {
+fn after_a_batch_taken_back_what_waited_meets_the_song_as_it_was() {
+    let m = &mut Model::new(Settings::default());
+    let t = track(m);
+    done(m, AiAsk::SetTempo { tick: 0, bpm: 90.0 });
+    let before = doc(m);
+    done(m, AiAsk::Begin { batch: 1 });
+    done(m, screen(1, rename(t, "a")));
+    done(m, screen(1, Command::DeleteTrack { track: t }));
+    assert!(doc(m).tracks.iter().all(|track| track.id.0 != t));
+    // On the track the batch has deleted.
+    person(m, Command::ToggleMute { track: t });
+    person(m, gain(t, -9.0));
+    done(m, AiAsk::Rollback { batch: 1 });
+    assert_eq!(doc(m), before);
+    assert_eq!(counts(m), (1, 0));
+    assert_eq!(serve(m).0, 2);
+    assert_eq!(counts(m), (3, 0));
+    let now = doc(m);
+    assert!(now.tracks[0].muted);
+    assert_eq!(now.tracks[0].name, before.tracks[0].name);
+    person(m, Command::Undo);
+    person(m, Command::Undo);
+    assert_eq!(doc(m), before);
+}
+
+#[test]
+fn the_persons_undo_during_a_batch_takes_back_the_whole_batch_afterwards() {
+    let m = &mut Model::new(Settings::default());
+    done(m, AiAsk::SetTempo { tick: 0, bpm: 90.0 });
+    let before = doc(m);
+    mix_and_write(m);
+    person(m, Command::Undo);
+    assert_eq!(counts(m), (8, 0), "not a step of the batch");
+    let after = doc(m);
+    done(m, AiAsk::Commit { batch: 7 });
+    assert_eq!(doc(m), after);
+    assert_eq!(serve(m).0, 1);
+    assert_eq!(counts(m), (1, 1));
+    assert_eq!(doc(m), before);
+    person(m, Command::Redo);
+    assert_eq!(doc(m), after);
+}
+
+#[test]
+fn a_recording_asked_for_during_a_batch_starts_after_it() {
     let m = &mut crate::state::tests::playing();
     let t = track(m);
     done(m, AiAsk::Begin { batch: 1 });
     done(m, screen(1, gain(t, -3.0)));
-    m.handle(Input::Command(Command::Record));
+    person(m, Command::Record);
+    assert_eq!(m.ai_song().busy, None);
+    done(m, screen(1, rename(t, "a")));
+    let closed = done(m, AiAsk::Commit { batch: 1 });
+    assert!(closed.step.is_some());
+    assert_eq!(m.ai_song().busy, None);
+    assert_eq!(serve(m).0, 1);
+    let busy = m.ai_song().busy.expect("counting in or recording");
+    assert_eq!(m.ai_song().undo_count, 1);
+    assert_eq!(refused(m, AiAsk::Begin { batch: 2 }), AiRefusal::Busy(busy));
+}
+
+#[test]
+fn a_recording_that_did_not_wait_keeps_the_batch_from_being_taken_back() {
+    let m = &mut crate::state::tests::playing();
+    let t = track(m);
+    done(m, AiAsk::Begin { batch: 1 });
+    done(m, screen(1, gain(t, -3.0)));
+    past(m, Command::Record);
     let busy = m.ai_song().busy.expect("counting in or recording");
     assert_eq!(refused(m, screen(1, rename(t, "a"))), AiRefusal::Busy(busy));
     assert_eq!(
@@ -479,7 +605,187 @@ fn no_batch_begins_and_none_is_taken_back_while_recording() {
         AiRefusal::Busy(busy)
     );
     assert_eq!(m.ai_song().undo_count, 1, "the step stays");
-    assert_eq!(refused(m, AiAsk::Begin { batch: 2 }), AiRefusal::Busy(busy));
+}
+
+#[test]
+fn a_batch_left_open_is_closed_and_taken_back_and_what_waited_is_served() {
+    let m = &mut Model::new(Settings::default());
+    let t = track(m);
+    let before = doc(m);
+    m.set_now(1_000_000, None);
+    done(m, AiAsk::Begin { batch: 1 });
+    done(m, screen(1, gain(t, -3.0)));
+    assert_eq!(m.wake_at_us(), Some(3_000_000));
+    m.set_now(2_500_000, None);
+    done(m, screen(1, rename(t, "a")));
+    assert_eq!(m.wake_at_us(), Some(4_500_000), "counted from its last ask");
+    person(m, Command::ToggleMute { track: t });
+    assert_eq!(
+        refused(m, AiAsk::Screen(rename(t, "b"))),
+        AiRefusal::BatchOpen
+    );
+    m.set_now(4_499_999, None);
+    m.handle(Input::Tick);
+    assert_eq!(counts(m), (2, 0));
+    assert_eq!(m.take_held(), None);
+
+    m.set_now(4_500_000, None);
+    m.handle(Input::Tick);
+    assert_eq!(doc(m), before, "taken back");
+    assert_eq!(counts(m), (0, 0));
+    assert_eq!(m.wake_at_us(), None);
+    assert_eq!(serve(m).0, 1);
+    assert!(doc(m).tracks[0].muted);
+    assert_eq!(counts(m), (1, 0));
+    // The asker comes back: its batch is gone, and taken back.
+    assert_eq!(refused(m, screen(1, rename(t, "c"))), AiRefusal::BatchLost);
+    assert_eq!(refused(m, AiAsk::Commit { batch: 1 }), AiRefusal::BatchLost);
+    done(m, AiAsk::Rollback { batch: 1 });
+    assert_eq!(counts(m), (1, 0), "nothing more is taken back");
+    assert_eq!(
+        refused(m, AiAsk::Rollback { batch: 2 }),
+        AiRefusal::BatchLost
+    );
+
+    // Any input after that time closes it, an ask of the AI link too.
+    done(m, AiAsk::Begin { batch: 3 });
+    done(m, screen(3, rename(t, "d")));
+    m.set_now(7_000_000, None);
+    let wrote = done(m, AiAsk::Screen(rename(t, "e")));
+    assert_eq!(wrote.undo_count, 2);
+    assert_eq!(doc(m).tracks[0].name, "e");
+    person(m, Command::Undo);
+    assert_eq!(doc(m).tracks[0].name, before.tracks[0].name);
+}
+
+#[test]
+fn meloet_asked_to_end_takes_the_batch_back_first() {
+    let m = &mut Model::new(Settings::default());
+    let t = track(m);
+    let before = doc(m);
+    done(m, AiAsk::Begin { batch: 1 });
+    done(m, screen(1, gain(t, -3.0)));
+    person(m, Command::ToggleSolo { track: t });
+    let effects = m.handle(Input::CloseRequested);
+    assert!(!effects.contains(&Effect::Exit));
+    assert_eq!(doc(m), before, "taken back at once");
+    assert_eq!(counts(m), (0, 0));
+    // What waited, then the end: nothing is unsaved, so meloet ends without asking.
+    let (served, effects) = serve(m);
+    assert_eq!(served, 2);
+    assert!(m.ai_song().song.session.soloed.contains(&TrackId(t)));
+    assert!(effects.contains(&Effect::Exit));
+    done(m, AiAsk::Rollback { batch: 1 });
+
+    // The PC ends: the same, and the song written for the next start is the one before the
+    // batch with what the person did.
+    let m = &mut Model::new(Settings::default());
+    let t = track(m);
+    person(m, rename(t, "mine"));
+    let before = doc(m);
+    done(m, AiAsk::Begin { batch: 2 });
+    done(m, screen(2, rename(t, "a")));
+    let effects = m.handle(Input::PcEnding);
+    assert!(
+        !(effects.iter()).any(|e| matches!(e, Effect::WriteRecovery { .. } | Effect::EndingReady)),
+        "{effects:?}"
+    );
+    assert_eq!(doc(m), before);
+    let (served, effects) = serve(m);
+    assert_eq!(served, 1);
+    let written = (effects.iter()).find_map(|e| match e {
+        Effect::WriteRecovery { song, .. } => Some(song.doc.tracks[0].name.clone()),
+        _ => None,
+    });
+    assert_eq!(written.as_deref(), Some("mine"), "{effects:?}");
+}
+
+#[test]
+fn more_waiting_than_can_wait_closes_the_batch_and_nothing_is_let_go() {
+    let m = &mut Model::new(Settings::default());
+    let t = track(m);
+    let before = doc(m);
+    done(m, AiAsk::Begin { batch: 1 });
+    done(m, screen(1, rename(t, "a")));
+    for _ in 0..super::HELD {
+        person(m, Command::ToggleSolo { track: t });
+    }
+    assert_eq!(counts(m), (1, 0));
+    assert_eq!(m.take_held(), None);
+    person(m, Command::ToggleMute { track: t });
+    assert_eq!(doc(m), before, "taken back");
+    assert_eq!(serve(m).0, super::HELD + 1);
+    assert!(doc(m).tracks[0].muted);
+    assert!(!m.ai_song().song.session.soloed.contains(&TrackId(t)));
+    assert_eq!(refused(m, screen(1, rename(t, "b"))), AiRefusal::BatchLost);
+}
+
+#[test]
+fn what_makes_no_step_does_not_wait() {
+    let m = &mut Model::new(Settings::default());
+    let t = track(m);
+    done(m, AiAsk::Begin { batch: 1 });
+    done(m, screen(1, gain(t, -3.0)));
+    let said = |said: PluginSaid| Input::PluginSaid { ticket: 99, said };
+    for passes in [
+        Input::Tick,
+        Input::ScreenUp,
+        Input::SoundHeard,
+        Input::AiPort(meloet_protocol::AiPort::Connected),
+        said(PluginSaid::ParamsChanged),
+        said(PluginSaid::KeyNames(None)),
+        said(PluginSaid::State {
+            ask: StateAsk::Ai,
+            state: None,
+        }),
+    ] {
+        m.handle(passes.clone());
+        assert_eq!(m.held_counts(), (0, 0), "{passes:?}");
+    }
+    let waits = [
+        said(PluginSaid::WindowLeft),
+        said(PluginSaid::State {
+            ask: StateAsk::Base,
+            state: None,
+        }),
+        Input::KeyboardFader { value: 100 },
+        Input::OpenGiven("/nowhere/a.meloet".into()),
+    ];
+    for (i, waits) in waits.into_iter().enumerate() {
+        m.handle(waits.clone());
+        assert_eq!(m.held_counts(), (i as u64 + 1, 0), "{waits:?}");
+    }
+    // A measurement or a rendering would make the batch's asks find meloet exporting.
+    let render = crate::ai::AiMeasure {
+        span: meloet_model::TickRange::new(0, 1920).unwrap(),
+        tracks: None,
+        alone: None,
+        ignore_mute: false,
+        analysis: None,
+    };
+    assert_eq!(
+        m.ai_measure_job(&render, 1).err(),
+        Some(AiRefusal::BatchOpen)
+    );
+    done(m, AiAsk::Commit { batch: 1 });
+    assert_eq!(counts(m), (1, 0));
+    assert!(m.ai_measure_job(&render, 1).is_ok());
+}
+
+#[test]
+fn no_batch_begins_while_meloet_records_or_asks_about_the_song() {
+    let m = &mut crate::state::tests::playing();
+    person(m, Command::Record);
+    let busy = m.ai_song().busy.expect("counting in or recording");
+    assert_eq!(refused(m, AiAsk::Begin { batch: 1 }), AiRefusal::Busy(busy));
+
+    // 「保存していない変更があります」 is up: its answer may put another song in place.
+    let m = &mut Model::new(Settings::default());
+    let t = track(m);
+    done(m, AiAsk::Screen(rename(t, "a")));
+    person(m, Command::NewSong);
+    assert!(m.view().workspace.song_dialog.is_some());
+    assert_eq!(refused(m, AiAsk::Begin { batch: 1 }), AiRefusal::FilesBusy);
 }
 
 #[test]

@@ -397,7 +397,7 @@ fn a_batch_is_one_call_however_long_and_no_change_inside_it_is_no_failure() {
 }
 
 #[test]
-fn another_call_waits_for_the_batch_and_the_person_ends_it() {
+fn another_call_waits_for_the_batch_and_so_does_the_person() {
     use meloet_core::ai::{AiAnswer, AiAsk, AiRefusal};
     let r = running("batch-others");
     let mut c = Client::start(&r.socket);
@@ -421,23 +421,71 @@ fn another_call_waits_for_the_batch_and_the_person_ends_it() {
     ));
     ok(&mut c, "set_volume", json!({ "track": 1, "db": -6 }));
 
-    // The person changes the song while a batch is open: its next ask is refused.
+    // What the person does while a batch is open waits, and is done right after it.
     assert!(matches!(
         r.core.ai(AiAsk::Begin { batch: u64::MAX }),
         AiAnswer::Done(_)
     ));
     let track = song(&r).song.doc.tracks[0].id.0;
-    r.core.send(meloet_protocol::Command::ToggleMute { track });
-    wait_for("the person's step", || steps(&r) == 2);
+    let mute = meloet_protocol::Command::ToggleMute { track };
+    std::thread::scope(|scope| {
+        let person = scope.spawn(|| r.core.send(mute.clone()));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!person.is_finished(), "the intent waits for the batch");
+        assert_eq!(steps(&r), 1);
+        for bpm in [90.0, 91.0] {
+            let ask = AiAsk::InBatch {
+                batch: u64::MAX,
+                ask: Box::new(AiAsk::SetTempo { tick: 0, bpm }),
+            };
+            assert!(matches!(r.core.ai(ask), AiAnswer::Done(_)));
+        }
+        assert!(!song(&r).song.doc.tracks[0].muted);
+        let AiAnswer::Done(closed) = r.core.ai(AiAsk::Commit { batch: u64::MAX }) else {
+            panic!("closed")
+        };
+        assert_eq!(closed.step.as_ref().map(|row| row.index), Some(2));
+        // Answered with the rev that has the intent's step.
+        let rev = person.join().unwrap();
+        let snapshot = r.core.snapshot();
+        assert!(snapshot.rev >= rev);
+        assert_eq!(snapshot.state.history.total, 3);
+        assert_eq!(r.core.history_rows(2, 2)[0], closed.step.unwrap());
+    });
+    assert_eq!(steps(&r), 3, "the batch's one step, then the person's");
+    assert!(song(&r).song.doc.tracks[0].muted);
+
+    // A batch whose asker is gone: meloet takes it back by itself and goes on with what
+    // waited.
+    let before = song(&r);
+    let left = u64::MAX - 1;
+    assert!(matches!(
+        r.core.ai(AiAsk::Begin { batch: left }),
+        AiAnswer::Done(_)
+    ));
     let ask = AiAsk::InBatch {
-        batch: u64::MAX,
-        ask: Box::new(AiAsk::SetTempo { tick: 0, bpm: 90.0 }),
+        batch: left,
+        ask: Box::new(AiAsk::SetTempo { tick: 0, bpm: 70.0 }),
     };
-    assert_eq!(r.core.ai(ask), AiAnswer::Refused(AiRefusal::BatchLost));
+    assert!(matches!(r.core.ai(ask), AiAnswer::Done(_)));
+    let began = std::time::Instant::now();
+    r.core.send(mute);
+    let waited = began.elapsed();
+    assert!(
+        waited >= std::time::Duration::from_millis(1500) && waited.as_secs() < 5,
+        "{waited:?}"
+    );
+    let now = song(&r);
+    assert_eq!(now.song.doc.timeline, before.song.doc.timeline);
+    assert!(!now.song.doc.tracks[0].muted);
+    assert_eq!(steps(&r), 4);
+    assert!(matches!(
+        r.core.ai(AiAsk::Rollback { batch: left }),
+        AiAnswer::Done(_)
+    ));
     assert_eq!(
-        r.core.ai(AiAsk::Rollback { batch: u64::MAX }),
+        r.core.ai(AiAsk::Commit { batch: left }),
         AiAnswer::Refused(AiRefusal::BatchLost)
     );
-    assert_eq!(steps(&r), 2, "the person's step stays");
     ok(&mut c, "set_volume", json!({ "track": 1, "db": -5 }));
 }

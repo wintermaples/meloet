@@ -162,9 +162,10 @@ pub struct NoteArgs {
 pub struct WriteNotesArgs {
     /// The track's number (from 1): the notes go into the clip that holds the earliest
     /// note's start (it grows by bars), or, when no clip is there, into a new clip from the
-    /// head of that note's bar, 4 bars long or up to the next clip. Notes that start after
-    /// the new clip's end are not written: for a longer phrase make the clip with
-    /// create_clip (`bars`) first and write into it. Give this or `clip`.
+    /// head of that note's bar: 4 bars long or up to the next clip, and longer when the
+    /// notes need it (to the end of the bar that holds the last note's end). When another
+    /// clip of the track is in the way of the notes, nothing is written and the answer
+    /// names the clip. Give this or `clip`.
     #[serde(default)]
     #[schemars(range(min = 1, max = 64))]
     pub track: Option<u32>,
@@ -691,9 +692,9 @@ impl Tools {
     }
 
     /// Writes notes as one undo step into a keys clip (it grows by bars) or a track: the
-    /// clip holding the earliest start, else a new 4-bar clip; notes starting after its end
-    /// are not written. Answers `written`, `created_clip` or `grew_to`, `not_written` and
-    /// `changed` with reasons. Refused when a clip would grow into another.
+    /// clip holding the earliest start, else a new clip (4 bars, longer when the notes need
+    /// it). Every note is written or none: refused, naming the clip, when another clip is
+    /// in the way. Answers `written`, `created_clip` or `grew_to`, and `changed`.
     #[tool(annotations(
         title = "Write notes",
         read_only_hint = false,

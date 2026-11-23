@@ -288,6 +288,9 @@ pub enum Input {
     AiPort(meloet_protocol::AiPort),
     /// From the AI link: a write. The answer is kept for [`Model::take_ai_answer`].
     Ai(crate::ai::AiAsk),
+    /// An input that waited for a batch of the AI link, to be handled now
+    /// ([`Model::take_held`]).
+    Held(Box<Input>),
     /// From the thread that reads audio files in: the answers to [`Effect::BringAudio`],
     /// [`Effect::WatchAudio`] and [`Effect::FindAudio`].
     Audio(AudioNews),
@@ -889,6 +892,11 @@ impl Model {
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
         let mut effects = Vec::new();
         let mut tone_on = None;
+        // What waits for a batch of the AI link is handled later; only time passes now.
+        let input = match input {
+            Input::Held(held) => *held,
+            input => (self.ai_hold(input, &mut effects)).unwrap_or(Input::Tick),
+        };
         match input {
             Input::Command(command) => tone_on = self.command(command, &mut effects),
             Input::KeyboardAdded(keyboard) => {
@@ -1020,9 +1028,14 @@ impl Model {
             Input::Record(report) => self.play.report(report, &mut effects),
             Input::KeyWhileLoading => self.loading_said = self.play.target_loading(),
             Input::Tick => {
-                self.fader_due(&mut effects);
+                // The fader's step waits for the batch, as the person's intents do.
+                if !self.ai_batch_open() {
+                    self.fader_due(&mut effects);
+                }
                 self.play.overdub_due(&mut effects);
             }
+            // Taken out of its wrapping above.
+            Input::Held(_) => {}
             Input::CloseRequested
             | Input::SongFilePicked(_)
             | Input::FolderPicked(_)
@@ -1296,7 +1309,10 @@ impl Model {
         }
         self.audio_follow(&mut effects);
         self.close_when_recorded(&mut effects);
-        self.recovery_tick(&mut effects);
+        // The recovery file never holds a part of a batch.
+        if !self.ai_batch_open() {
+            self.recovery_tick(&mut effects);
+        }
         if tone_on.is_some() && tone_on == self.wanted {
             effects.push(Effect::TestTone);
         }
@@ -2539,10 +2555,11 @@ impl Model {
     /// When an [`Input::Tick`] is wanted next, as the time given with `set_now`: a window
     /// that is slow to open is said then, or parameter values held back are sent.
     pub fn wake_at_us(&self) -> Option<u64> {
-        [self.play.wake_at_us(), self.fader_wake_us()]
-            .into_iter()
-            .flatten()
-            .min()
+        let waits = match self.ai_batch_due_us() {
+            Some(due) => Some(due),
+            None => self.fader_wake_us(),
+        };
+        [self.play.wake_at_us(), waits].into_iter().flatten().min()
     }
 
     /// A sample plays: [`Input::Tick`] is wanted now and then, to end it.

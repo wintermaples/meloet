@@ -3,7 +3,6 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use meloet_model::notes::{self, WriteAt};
 use meloet_model::{
@@ -12,7 +11,7 @@ use meloet_model::{
 };
 use meloet_protocol::{AiLinkView, AiPort, SoundRef};
 
-use super::{Effect, Model};
+use super::{Effect, Input, Model, PluginSaid, StateAsk};
 use crate::ai::{
     AiAnswer, AiAsk, AiBusy, AiDone, AiEffect, AiInstrument, AiMeasure, AiOutcome, AiRefusal,
     AiRender, AiRenderWhat, AiSong, batchable, screen_allowed, screen_no_step,
@@ -24,9 +23,13 @@ use meloet_protocol::ExportTail;
 /// Outcomes of asks with a ticket that are kept for the AI link to read.
 const OUTCOMES: usize = 16;
 
-/// A batch with no ask for this long was left open by an asker that is gone: the next ask
-/// of the AI link closes it.
-const BATCH_IDLE: Duration = Duration::from_secs(10);
+/// A batch with no ask for this long was left open by an asker that is gone: meloet closes
+/// it and takes it back. The asks of a batch follow each other within milliseconds.
+const BATCH_IDLE_US: u64 = 2_000_000;
+
+/// How many inputs wait for an open batch at most: one more, and the batch is closed and
+/// taken back rather than an input let go.
+const HELD: usize = 256;
 
 /// The open batch of the AI link (`AiAsk::Begin`).
 #[derive(Debug)]
@@ -36,7 +39,51 @@ struct Batch {
     /// `Play::ai_place` after the batch's last ask: any other place, and someone else has
     /// changed the song or its history.
     place: (u32, u64),
-    asked: Instant,
+    /// When its last ask came, on the clock of [`Model::set_now`].
+    asked_us: u64,
+}
+
+/// What an input does while a batch is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hold {
+    /// It neither changes the song or its history nor depends on one that waits.
+    Pass,
+    /// It may change the song or its history: it waits for the batch to be closed.
+    Wait,
+    /// meloet is asked to end: the batch is taken back, then it is served after what waits.
+    End,
+}
+
+fn hold_of(input: &Input) -> Hold {
+    match input {
+        Input::Command(_)
+        | Input::KeyboardButton(_)
+        | Input::KeyboardFader { .. }
+        | Input::OpenGiven(_)
+        | Input::Audio(_) => Hold::Wait,
+        Input::PluginSaid { said, .. } if !answers_only(said) => Hold::Wait,
+        Input::CloseRequested | Input::PcEnding => Hold::End,
+        _ => Hold::Pass,
+    }
+}
+
+/// What a plugin says that makes no step and stands in no order with what does: answers to
+/// asks, and values to show. The rest (its window, a parameter moved by hand, its state)
+/// can end in a step.
+fn answers_only(said: &PluginSaid) -> bool {
+    matches!(
+        said,
+        PluginSaid::Editor(_)
+            | PluginSaid::Param(_)
+            | PluginSaid::ParamsChanged
+            | PluginSaid::Params { .. }
+            | PluginSaid::KeyNames(_)
+            | PluginSaid::Texts { .. }
+            | PluginSaid::State {
+                ask: StateAsk::Ai,
+                ..
+            }
+    )
 }
 
 /// A track a measurement renders alone: its number and name in the song, and whether the
@@ -56,6 +103,13 @@ pub(super) struct AiSide {
     /// Files being brought in for the AI link: the audio side's ticket and the AI's.
     imports: Vec<(u64, u64)>,
     batch: Option<Batch>,
+    /// The inputs that wait for the open batch, in the order they came.
+    held: VecDeque<Input>,
+    /// How many inputs ever waited, and how many of them were taken to be served.
+    held_in: u64,
+    held_out: u64,
+    /// The last batch meloet closed by itself and took back.
+    taken_back: Option<u64>,
 }
 
 impl AiSide {
@@ -249,14 +303,66 @@ impl Model {
         }
     }
 
+    pub(super) fn ai_batch_open(&self) -> bool {
+        self.ai.batch.is_some()
+    }
+
+    /// When the open batch counts as left open.
+    pub(super) fn ai_batch_due_us(&self) -> Option<u64> {
+        (self.ai.batch.as_ref()).map(|b| b.asked_us.saturating_add(BATCH_IDLE_US))
+    }
+
+    /// meloet closes the open batch by itself: what it did is taken back, where it can be.
+    fn ai_end_batch(&mut self, effects: &mut Vec<Effect>) {
+        if let Some(left) = self.ai.batch.take()
+            && self.play.ai_rewind(left.mark, left.place, effects)
+        {
+            self.ai.taken_back = Some(left.id);
+        }
+    }
+
+    /// Before every input: `input` when it is to be handled now. While a batch is open,
+    /// what may change the song or its history waits instead, so that the batch can still
+    /// become one step or be taken back; it is served in the order it came once the batch
+    /// is closed ([`Model::take_held`]). A batch left open, one that more waits for than
+    /// can, and one open when meloet is asked to end are closed and taken back here.
+    pub(super) fn ai_hold(&mut self, input: Input, effects: &mut Vec<Effect>) -> Option<Input> {
+        if self.ai_batch_due_us().is_some_and(|at| at <= self.now_us) {
+            self.ai_end_batch(effects);
+        }
+        let hold = hold_of(&input);
+        // What waits already goes first.
+        if hold == Hold::Pass || (self.ai.batch.is_none() && self.ai.held.is_empty()) {
+            return Some(input);
+        }
+        if hold == Hold::End || self.ai.held.len() >= HELD {
+            self.ai_end_batch(effects);
+        }
+        self.ai.held.push_back(input);
+        self.ai.held_in += 1;
+        None
+    }
+
+    /// The next input that waited for a batch, once none is open, as an [`Input::Held`] to
+    /// handle now.
+    pub fn take_held(&mut self) -> Option<Input> {
+        if self.ai.batch.is_some() {
+            return None;
+        }
+        let held = self.ai.held.pop_front()?;
+        self.ai.held_out += 1;
+        Some(Input::Held(Box::new(held)))
+    }
+
+    /// How many inputs ever waited for a batch, and how many of them were taken to be
+    /// served: the input that made the first number `n` is served once the second is `n`.
+    pub fn held_counts(&self) -> (u64, u64) {
+        (self.ai.held_in, self.ai.held_out)
+    }
+
     /// A write, or an ask about the batch: while a batch is open, only its own asks are
     /// taken.
     fn ai_in_turn(&mut self, ask: AiAsk, effects: &mut Vec<Effect>) -> Result<AiDone, AiRefusal> {
-        if (self.ai.batch.as_ref()).is_some_and(|b| b.asked.elapsed() >= BATCH_IDLE)
-            && let Some(left) = self.ai.batch.take()
-        {
-            self.play.ai_rewind(left.mark, left.place, effects);
-        }
         let open = self.ai.batch.as_ref().map(|b| b.id);
         match ask {
             AiAsk::Begin { .. } if open.is_some() => Err(AiRefusal::BatchOpen),
@@ -264,11 +370,15 @@ impl Model {
                 if let Some(busy) = self.ai_busy() {
                     return Err(AiRefusal::Busy(busy));
                 }
+                // A save, an open or a question to the person can end in another song.
+                if !self.song_free() {
+                    return Err(AiRefusal::FilesBusy);
+                }
                 self.ai.batch = Some(Batch {
                     id: batch,
                     mark: self.play.ai_mark(),
                     place: self.play.ai_place(),
-                    asked: Instant::now(),
+                    asked_us: self.now_us,
                 });
                 Ok(self.ai_done(None))
             }
@@ -283,13 +393,17 @@ impl Model {
                 let done = self.ai_write(*ask, effects);
                 if let Some(b) = &mut self.ai.batch {
                     b.place = self.play.ai_place();
-                    b.asked = Instant::now();
+                    b.asked_us = self.now_us;
                 }
                 match done {
                     // It ends later, when the batch is closed.
                     Ok(d) if d.pending || d.ticket.is_some() => Err(AiRefusal::NotInBatch),
                     done => done,
                 }
+            }
+            // meloet has taken it back already.
+            AiAsk::Rollback { batch } if open.is_none() && self.ai.taken_back == Some(batch) => {
+                Ok(self.ai_done(None))
             }
             AiAsk::Commit { batch } | AiAsk::Rollback { batch } if open != Some(batch) => {
                 Err(AiRefusal::BatchLost)
@@ -613,8 +727,12 @@ impl Model {
     }
 
     /// Not while the song may not change, nor while the export's dialog or run is up (one
-    /// second engine at a time).
+    /// second engine at a time), nor while a batch is open (its asks would find meloet
+    /// exporting).
     fn ai_render_free(&self) -> Result<(), AiRefusal> {
+        if self.ai.batch.is_some() {
+            return Err(AiRefusal::BatchOpen);
+        }
         if let Some(busy) = self.ai_busy() {
             return Err(AiRefusal::Busy(busy));
         }

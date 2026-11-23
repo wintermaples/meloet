@@ -82,6 +82,86 @@ describe("row store (HistoryRowStore)", () => {
     expect([book.held(), book.row(6)]).toEqual([5, undefined]);
   });
 
+  it("a batch taken back: the rows that could be redone are put back under its steps, and its rows are dropped", async () => {
+    const f = fetcher();
+    const book = new HistoryRowStore(f.fetch);
+    // 10 steps, 3 undone: rows 8, 9 and 10 can be redone.
+    book.follow(view(10, 7, 10));
+    book.want(1, 10);
+    await f.calls[0]!.answer(Array.from({ length: 10 }, (_, i) => made(i + 1)));
+    // Three steps of a batch, seen one by one: rows 8, 9 and 10 are other rows now.
+    book.follow(view(8, 8, 11));
+    book.follow(view(9, 9, 12));
+    book.follow(view(10, 10, 13));
+    book.want(1, 10);
+    await f.calls[1]!.answer([1, 2, 3, 4, 5, 6, 7].map((i) => made(i)).concat(made(8, 11), made(9, 12), made(10, 13)));
+    expect([book.row(8)?.step, book.row(9)?.step, book.row(10)?.step]).toEqual([11, 12, 13]);
+    // Taken back: the old rows 8 to 10 again, with the steps they had.
+    book.follow(view(10, 7, 10));
+    expect(book.held()).toBe(7);
+    expect([book.row(8), book.row(9), book.row(10)]).toEqual([undefined, undefined, undefined]);
+    book.want(1, 10);
+    expect(f.calls).toHaveLength(3);
+    await f.calls[2]!.answer(Array.from({ length: 10 }, (_, i) => made(i + 1)));
+    expect([book.row(8)?.step, book.row(9)?.step, book.row(10)?.step]).toEqual([8, 9, 10]);
+  });
+
+  it("a batch taken back with more rows to redo than it had steps, and with none", async () => {
+    const f = fetcher();
+    const book = new HistoryRowStore(f.fetch);
+    book.follow(view(10, 5, 10));
+    book.want(1, 10);
+    await f.calls[0]!.answer(Array.from({ length: 10 }, (_, i) => made(i + 1)));
+    book.follow(view(6, 6, 11));
+    book.want(1, 6);
+    await f.calls[1]!.answer([1, 2, 3, 4, 5].map((i) => made(i)).concat(made(6, 11)));
+    expect(book.row(6)?.step).toBe(11);
+    book.follow(view(10, 5, 10));
+    expect([book.held(), book.row(6)]).toEqual([5, undefined]);
+
+    // Nothing could be redone before it: the rows up to where it began stay.
+    const g = fetcher();
+    const plain = new HistoryRowStore(g.fetch);
+    plain.follow(view(3, 3, 3));
+    plain.follow(view(4, 4, 4));
+    plain.follow(view(5, 5, 5));
+    plain.want(1, 5);
+    await g.calls[0]!.answer([1, 2, 3, 4, 5].map((i) => made(i)));
+    plain.follow(view(3, 3, 3));
+    expect([plain.row(1)?.step, plain.row(2)?.step, plain.row(4), plain.row(5)]).toEqual([1, 2, undefined, undefined]);
+    plain.want(1, 3);
+    await g.calls[1]!.answer([1, 2, 3].map((i) => made(i)));
+    expect(plain.row(3)?.step).toBe(3);
+  });
+
+  it("rows of a batch asked for before it was taken back are not taken from the late answer", async () => {
+    const f = fetcher();
+    const book = new HistoryRowStore(f.fetch);
+    book.follow(view(10, 7, 10));
+    book.follow(view(8, 8, 11));
+    book.follow(view(9, 9, 12));
+    book.want(1, 9);
+    book.follow(view(10, 7, 10));
+    // The answer of the history with the batch's steps in it.
+    await f.calls[0]!.answer([1, 2, 3, 4, 5, 6, 7].map((i) => made(i)).concat(made(8, 11), made(9, 12)));
+    expect([book.held(), book.row(8), book.row(9)]).toEqual([7, undefined, undefined]);
+    book.want(8, 10);
+    expect(f.calls).toHaveLength(2);
+  });
+
+  it("the steps of a batch made one: only the row that stands for them is dropped", async () => {
+    const f = fetcher();
+    const book = new HistoryRowStore(f.fetch);
+    book.follow(view(4, 4, 4));
+    book.follow(view(5, 5, 5));
+    book.follow(view(6, 6, 6));
+    book.follow(view(7, 7, 7));
+    book.want(1, 7);
+    await f.calls[0]!.answer([1, 2, 3, 4, 5, 6, 7].map((i) => made(i)));
+    book.follow(view(5, 5, 8));
+    expect([book.held(), book.row(4)?.step, book.row(5)]).toEqual([4, 4, undefined]);
+  });
+
   it("rows that changed while fetching are not taken from the late answer", async () => {
     const f = fetcher();
     const book = new HistoryRowStore(f.fetch);

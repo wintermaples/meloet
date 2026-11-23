@@ -479,11 +479,6 @@ impl Mark {
     pub fn redo_count(&self) -> usize {
         self.redo.len()
     }
-
-    /// A rewind to the mark leaves no step to redo.
-    pub fn forget_redo(&mut self) {
-        self.redo.clear();
-    }
 }
 
 #[derive(Debug, Clone)]

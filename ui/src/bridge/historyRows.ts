@@ -1,6 +1,9 @@
 // The rows of the history band, fetched where the band looks and kept (docs/architecture.md 21-12, 21-15).
-// Rows at or below `current` never change. A new step comes in after `current` and drops what was above it, so
-// when `newest` changes the rows above the last `current` are let go; undo, redo and a jump move only `current`.
+// A row is fixed by its `index` and `step`. Undo, redo and a jump move only `current` and leave `newest` as it is.
+// Whatever changes rows changes `newest`, and only rows above the `current` it found: a new step drops what was
+// above `current` and comes in after it; steps made one (a batch of the AI link) and a step changed afterwards
+// are a new last row; a batch taken back puts the rows that could be redone before it back above `current`.
+// So when `newest` changes, the rows above the lower of the two `current`s are let go, and the last row.
 
 import type { HistoryRow, HistoryView } from "./types";
 
@@ -30,7 +33,7 @@ export class HistoryRowStore {
     const before = this.view;
     this.view = next;
     let from = next.total + 1;
-    if (next.newest !== before.newest) from = Math.min(from, before.current + 1, next.total);
+    if (next.newest !== before.newest) from = Math.min(from, before.current + 1, next.current + 1, next.total);
     this.cut(from);
   }
 

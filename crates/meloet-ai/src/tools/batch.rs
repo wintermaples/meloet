@@ -237,9 +237,9 @@ impl Tools {
 #[tool_router(router = batch_router, vis = "pub(super)")]
 impl Tools {
     /// Runs several write tools in order as ONE undo step; each operation is a tool's name
-    /// and its arguments. If one fails, all of it is taken back and nothing changes. Not
-    /// for undo, files (save, open, new, import, export), tools that read, or a plugin's
-    /// parameters.
+    /// and its arguments. If one fails, all of it is taken back and nothing changes. What
+    /// the person does meanwhile waits until the batch ends. Not for undo, files (save,
+    /// open, new, import, export), tools that read, or a plugin's parameters.
     #[tool(annotations(
         title = "Batch: several changes as one undo step",
         read_only_hint = false,
@@ -326,6 +326,21 @@ impl Tools {
             let d = match check!(closed) {
                 AiAnswer::Done(d) => *d,
                 AiAnswer::Refused(r) => {
+                    // meloet closes a batch by itself (left open too long, too much
+                    // waiting for it, meloet ending) and takes it back.
+                    let back = match r {
+                        AiRefusal::BatchLost => self.answer(AiAsk::Rollback { batch }).await,
+                        _ => Ok(AiAnswer::Refused(AiRefusal::BatchLost)),
+                    };
+                    if matches!(back, Ok(AiAnswer::Done(_))) {
+                        let mut result = failed(
+                            "meloet closed the batch before it was finished and took all of \
+                             it back: nothing was changed. Run it again.",
+                        );
+                        result.structured_content =
+                            Some(json!({ "changed": false, "taken_back": true }));
+                        return Ok(result);
+                    }
                     return Ok(failed(format!(
                         "The batch's {count} operations ran, but it could not be finished: {}. \
                          Call song_overview to see the song and its undo steps.",

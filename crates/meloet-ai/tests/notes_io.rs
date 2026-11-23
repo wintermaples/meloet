@@ -57,38 +57,34 @@ fn a_note_not_written_comes_back_with_the_reason() {
     let notes = the_owners_notes();
     assert_eq!(notes.len(), 266);
 
-    // Into a track with no clip: a 4-bar clip is made, and the note at its end is left out.
+    // Into a track with no clip: the clip made is longer than the usual 4 bars when the
+    // notes need it, to the end of the bar that holds the last note's end. Every note is
+    // written, none is cut.
     let before = steps(&r);
     let wrote = ok(&mut c, "write_notes", json!({ "track": 1, "notes": notes }));
     assert_eq!(steps(&r), before + 1);
-    assert_eq!(wrote["written"], 265, "{wrote}");
-    assert_eq!(wrote["not_written_count"], 1);
-    assert_eq!(wrote["not_written_more"], 0);
-    assert_eq!(
-        wrote["not_written"],
-        json!([{ "index": 265, "start": 4 * BAR, "length": Q, "key": 62,
-                 "reason": "past_new_clip_end" }])
-    );
-    assert_eq!(
-        wrote["changed"],
-        json!([{ "index": 262, "start": 4 * BAR - 100, "key": 70, "length_asked": Q,
-                 "length": 100, "reason": "cut_at_new_clip_end" }])
-    );
+    assert_eq!(wrote["written"], 266, "{wrote}");
+    assert_eq!(wrote["not_written_count"], 0);
+    assert_eq!(wrote["not_written"], json!([]));
+    assert_eq!(wrote["changed"], json!([]));
     let clip = id(&wrote);
     assert_eq!(
         wrote["created_clip"],
         json!({ "id": clip, "track": 1,
                 "start": { "at": "1.1.0", "tick": 0 },
-                "end": { "at": "5.1.0", "tick": 4 * BAR } })
+                "end": { "at": "6.1.0", "tick": 5 * BAR } })
     );
     assert_eq!(wrote["grew_to"], Value::Null);
     assert_eq!(wrote["step"]["name"]["kind"], "writeNote");
     // The 8-tick note under the next note of its key is there: both are written.
     let got = notes_of(&r, clip);
-    assert_eq!(got.len(), 265);
+    assert_eq!(got.len(), 266);
     assert!(got.contains(&(4 * Q as i64, 8, 60, 100)));
     assert!(got.contains(&(4 * Q as i64 + 4, Q, 60, 100)));
+    assert!(got.contains(&(4 * BAR as i64 - 100, Q, 70, 90)), "not cut");
+    assert!(got.contains(&(4 * BAR as i64, Q, 62, 100)), "the last one");
     ok(&mut c, "undo", json!({}));
+    assert_eq!(steps(&r), before);
 
     // Into a clip made long enough: every note is written, none changed.
     let made = ok(
@@ -125,6 +121,10 @@ fn a_note_not_written_comes_back_with_the_reason() {
         json!({ "track": 1, "notes": [["13.1.0", 960, 60]] }),
     );
     assert_eq!(other["created_clip"]["start"]["at"], "13.1.0");
+    assert_eq!(
+        other["created_clip"]["end"]["at"], "17.1.0",
+        "4 bars as usual"
+    );
     let now = steps(&r);
     let said = refused(
         &mut c,
@@ -140,16 +140,53 @@ fn a_note_not_written_comes_back_with_the_reason() {
     );
     assert_eq!(steps(&r), now);
 
+    // A new clip that would have to reach into another: nothing is written either, whether
+    // a note starts in that clip or only runs into it, and the clip is named.
+    for notes in [
+        json!([["11.2.0", 960, 60], ["13.2.0", 960, 62]]),
+        json!([["11.2.0", 960, 60], ["12.4.0", 3840, 62]]),
+    ] {
+        let said = refused(&mut c, "write_notes", json!({ "track": 1, "notes": notes }));
+        assert!(
+            said.contains(&format!(
+                "clip {} of the track (13.1.0 to 17.1.0) is in the way; nothing was done",
+                id(&other)
+            )),
+            "{said}"
+        );
+        assert_eq!(steps(&r), now);
+    }
+    // Between the two clips there is room for these.
+    let between = ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 1, "notes": [["11.2.0", 960, 60], ["12.4.0", 960, 62]] }),
+    );
+    assert_eq!(between["written"], 2, "{between}");
+    assert_eq!(between["created_clip"]["start"]["at"], "11.1.0");
+    assert_eq!(between["created_clip"]["end"]["at"], "13.1.0");
+    // Far apart: one clip over all of them.
+    let far = ok(
+        &mut c,
+        "write_notes",
+        json!({ "track": 1, "notes": [["20.3.0", 480, 60], ["63.4.0", 1920, 62]] }),
+    );
+    assert_eq!(far["written"], 2, "{far}");
+    assert_eq!(far["created_clip"]["start"]["at"], "20.1.0");
+    assert_eq!(far["created_clip"]["end"]["at"], "64.1.0");
+    assert_eq!(far["not_written"], json!([]));
+
     // More than 200 left out: the first 200 and how many more.
-    let late: Vec<Value> = (0..300u64).map(|i| json!([20 * BAR + i, 10, 60])).collect();
-    let mut notes = vec![json!(["17.1.0", 10, 60])];
-    notes.extend(late);
-    let wrote = ok(&mut c, "write_notes", json!({ "track": 1, "notes": notes }));
-    assert_eq!(wrote["written"], 1, "{wrote}");
-    assert_eq!(wrote["not_written_count"], 300);
-    assert_eq!(wrote["not_written_more"], 100);
-    assert_eq!(wrote["not_written"].as_array().unwrap().len(), 200);
-    assert_eq!(wrote["not_written"][199]["index"], 200);
+    let high = ok(
+        &mut c,
+        "copy_notes",
+        json!({ "clip": id(&made), "to_track": 1, "shift_bars": 100, "transpose": 90 }),
+    );
+    assert_eq!(high["written"], 22, "{high}");
+    assert_eq!(high["not_written_count"], 245);
+    assert_eq!(high["not_written_more"], 45);
+    assert_eq!(high["not_written"].as_array().unwrap().len(), 200);
+    assert_eq!(high["not_written"][0]["reason"], "key_out_of_range");
 }
 
 #[test]

@@ -27,13 +27,6 @@ use crate::ai::{
 };
 use crate::state::Effect;
 
-/// A failed batch gives back the steps that could be redone when it began, when they are
-/// at most this many: the screen keeps the rows of the history band up to the last step it
-/// saw done, and lets go of them only from the newest row on (`follow` in
-/// `ui/src/bridge/historyRows.ts`), so more rows than one put back under those would show
-/// the batch's steps still.
-const REDO_BACK: usize = 1;
-
 /// Where the song and its history were when a batch of the AI link began.
 #[derive(Debug)]
 pub(crate) struct AiMark {
@@ -205,7 +198,8 @@ impl Play {
     /// Takes back every step made since `mark`, and the solo marks and the loop's switch,
     /// when the song is at `end` still and meloet does not record: the engine, the plugins
     /// and the selection hear of it once, as of a jump in the history. The steps are not
-    /// kept to redo. Returns whether it was done.
+    /// kept to redo; the steps that could be redone when the batch began can be again.
+    /// Returns whether it was done.
     pub(crate) fn ai_rewind(
         &mut self,
         mark: AiMark,
@@ -216,16 +210,12 @@ impl Play {
             return false;
         }
         let AiMark {
-            mut history,
+            history,
             sel_redo,
             step_notes,
             loop_on,
             soloed,
         } = mark;
-        let redo_back = history.redo_count() <= REDO_BACK;
-        if !redo_back {
-            history.forget_redo();
-        }
         let first = history.undo_count();
         let before = self.doc().clone();
         if !self.history.rewind(&mut self.song.doc, history, end.1) {
@@ -239,10 +229,8 @@ impl Play {
         if self.sel_undo.len() > first {
             self.after_change(&before, effects);
             let sel = self.sel_undo.drain(first..).next();
-            if redo_back {
-                self.sel_redo = sel_redo;
-                self.step_notes = step_notes;
-            }
+            self.sel_redo = sel_redo;
+            self.step_notes = step_notes;
             if let Some((sel, _)) = sel {
                 self.put_sel(sel, effects);
             }
@@ -616,14 +604,61 @@ impl Play {
         let was = target
             .and_then(|c| self.doc().clip(c))
             .map(|(_, c)| (c.start, c.end));
-        let written = notes::write_notes_told(self.doc(), at, notes).map_err(|e| match e {
-            EditError::Overlap => target.map_or(AiRefusal::Overlap, |c| self.in_the_way(c, reach)),
-            e => refusal(e),
-        })?;
+        let written = match (at, target) {
+            (WriteAt::Track(track), None) => self.ai_in_new_clip(track, reach, notes, true)?,
+            _ => notes::write_notes_told(self.doc(), at, notes).map_err(|e| match e {
+                EditError::Overlap => {
+                    target.map_or(AiRefusal::Overlap, |c| self.in_the_way(c, reach))
+                }
+                e => refusal(e),
+            })?,
+        };
         let asked: Vec<(u32, AiNote)> = (notes.iter().enumerate())
             .map(|(i, n)| (i as u32, as_asked(n)))
             .collect();
         Ok(self.ai_notes_written(written, was, &asked, Told::default(), effects))
+    }
+
+    /// The notes in a clip made for them on `track`, as long as they need: from the head of
+    /// the bar of the earliest start (`reach.0`) to the end of the bar that holds the last
+    /// end (`reach.1`). With `usual` it is no shorter than a clip the write tool makes
+    /// there (`NEW_CLIP_BARS` bars, or up to the next clip). Refused, naming the clip, when
+    /// a clip of the track is in the way of the notes.
+    fn ai_in_new_clip(
+        &self,
+        track: TrackId,
+        reach: (u64, u64),
+        notes: &[Note],
+        usual: bool,
+    ) -> Result<(NotesEdited, WriteTold), AiRefusal> {
+        if notes.is_empty() {
+            return Err(AiRefusal::Unchanged);
+        }
+        let doc = self.doc();
+        let map = TempoMap::new(&doc.timeline);
+        let needed = map.bar_at_or_after(reach.1).min(MAX_TICK);
+        let next = (doc.track(track).into_iter())
+            .flat_map(|t| t.clips.iter())
+            .filter(|c| c.start > reach.0)
+            .map(|c| c.start)
+            .fold(MAX_TICK, u64::min);
+        let end = if usual && reach.1 <= next {
+            let bars = map.tick_of_bar(map.meter_at(reach.0).bar + notes::NEW_CLIP_BARS);
+            needed.max(bars).min(next)
+        } else {
+            needed
+        };
+        self.ai_free(track, reach.0, end)?;
+        let (made, clip) = notes::create_clip_to(doc, track, reach.0, end).map_err(refusal)?;
+        let (mut edited, mut wrote) =
+            notes::write_notes_told(&made.doc, WriteAt::Clip(clip), notes).map_err(refusal)?;
+        edited.edit.step = StepKind::WriteNote {
+            clip,
+            clip_made: true,
+            count: notes.len(),
+        };
+        wrote.clip_made = true;
+        Ok((edited, wrote))
     }
 
     /// Many notes as one step; `labels` are the indexes they are told by (else their place
@@ -691,24 +726,7 @@ impl Play {
                 })?;
                 (written, was)
             }
-            (None, Some(track)) => {
-                let end = TempoMap::new(&doc.timeline)
-                    .bar_at_or_after(reach.1)
-                    .min(MAX_TICK);
-                self.ai_free(track, reach.0, end)?;
-                let (made, clip) =
-                    notes::create_clip_to(doc, track, reach.0, end).map_err(refusal)?;
-                let (mut edited, mut wrote) =
-                    notes::write_notes_told(&made.doc, WriteAt::Clip(clip), &fits)
-                        .map_err(refusal)?;
-                edited.edit.step = StepKind::WriteNote {
-                    clip,
-                    clip_made: true,
-                    count: fits.len(),
-                };
-                wrote.clip_made = true;
-                ((edited, wrote), None)
-            }
+            (None, Some(track)) => (self.ai_in_new_clip(track, reach, &fits, false)?, None),
             (None, None) => return Err(AiRefusal::Unchanged),
         };
         Ok(self.ai_notes_written(written, was, &asked, told, effects))

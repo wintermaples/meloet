@@ -85,6 +85,8 @@ The full list of tools (latency, long recording, screenshots, mocks, plugins, ex
 - [`docs/install-check.md`](../install-check.md): the steps to test the deb on a real PC.
 - [`apt-repo.md`](apt-repo.md): the apt repository (the signing key, `scripts/make-apt-repo.sh`, GitHub Pages, and what a user writes).
 - [`ai-tools.md`](ai-tools.md): the MCP tools of the AI link, with the arguments and answers of those added or changed in round 11.
+- [`appimage.md`](appimage.md): the AppImage trial (how it is built, what is not settled before it may be published).
+- [`docs/measurements/`](../measurements/): measured numbers (speed, latency, memory; the first file is round 12's, older ones are in `docs/history/measurements/`). [`docs/research/`](../research/): research with sources and confidence (the MCP link, plugin presets, the Windows and macOS port).
 - [`docs/user/README.ja.md`](../user/README.ja.md): the detailed guide for users (Japanese).
 - [`docs/history/`](../history/): older records, kept in Japanese as they were (progress by round, the Japanese architecture, design notes, measurements, research, and the report on the `spikes/`).
 - `spikes/`: early tests of the base ideas, made before the real code. They are kept, but not copied into the real code.

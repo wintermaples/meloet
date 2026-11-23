@@ -310,7 +310,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 |---|---|---|
 | 「1 ピアノ と 4 パッド の音量は、オートメーションで動いています」 (only in mock F6-MixerAuto) | The mock wording (`mock:F6-MixerAuto`). Said once when the mixer opens, only when a volume band is moving some track (not resting). If the summary of bypassed and stopped slots (spec 3, 90) is shown, that comes first and this text is not shown. | the developers' decision |
 | Typing the tempo or time signature in the transport, in a song with changes | It changes the value of the point in effect at the play line (the start of the song if there is none). Inside a ramp, the point at the start of that ramp. The status line says which point was changed. | the developers' decision (spec 3: 92-11 to 92-16 stay) |
-| Automation of returns A and B and the master | No bands (bands are only under tracks). The 「オートメーションに書く」 mark of return and master inserts has the disabled look. | the developers' decision |
+| Automation of returns A and B and the master | No bands (bands are only under tracks). The 「オートメーションに書く」 mark of return and master inserts has the disabled look. Changed in round 12 (M5, A-29): the master has one lane, of its volume; the returns, the master's pan and the master's inserts still have none. | the developers' decision; round 12: the owner's request (user:2026-11-23) |
 | Removing or replacing an effect that has bands, replacing an instrument that has bands | The parameter bands of that slot (or instrument) go away in the same step (undo brings them back). A replaced effect gets a new `InsertId`, so its bands are not kept even for the same kind. Volume, pan, send and mute bands belong to the track and stay (architecture 21-5). | the developers' decision (spec 3, 92-19) |
 | "The end of the song" for the last marker (spec 3, Y18) | The end of the last clip, rounded up to the start of a bar. If no clip is after the marker, 4 bars from the marker (the same length as turning on the loop when there is no range). | the developers' decision |
 | Choosing a tempo point that is not a ramp, or a time signature flag | 「5 小節目の変更をえらんでいます ・ 120.00」, 「9 小節目の変更をえらんでいます ・ 3/4」 (after the first half of the spec 6 ramp text; `builder:2026-11-20`). | the developers' decision |
@@ -377,7 +377,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 |---|---|---|
 | 「▸ パン」「▸ プラグインのパラメータ」 in the band table of spec 3 and in the Y16 rule | Read as the 20-A row 「＋ 帯を足す ▾」, which is newer. | spec 3 (20-A) |
 | The squares during the count-in | As many as the metronome clicks in one bar (6/8 has 2, 9/8 has 3, 12/8 has 4, 5/8 has 5, 4/4 has 4). The squares light with the clicks; with 2 clicks and 6 squares, some squares would never light. | the developers' decision (spec 3: 94-2 stays) |
-| mp3 in export | Never shown (there is no mp3 encoder that is not LGPL, except one that is very new). Read mp3 in the format lists of F8-ExportCheck, F8-ExportClip and R12-Fit the same way. | the owner's decision (C-11) |
+| mp3 in export | Not shown. Round 12 F2 built mp3 with `rusty_mp3` 1.2.2 on the owner's condition (2026-11-23: offered only if it meets the acceptance conditions of F2). It did not: at 192 kbps pink noise comes back 14.4 dB (44100 Hz) and 13.4 dB (48000 Hz) below the source, where the rule asks 20 dB (LAME 3.101 gives 13.7 and 12.8 dB on the same signal, so the rule itself may be too strict). The mp3 work is kept on the side branch `fea/round12-f2-mp3`; the owner decides (open question B-98-1). The song's information of F2 is offered for wav and flac. Read mp3 in the format lists of F8-ExportCheck, F8-ExportClip and R12-Fit the same way. (Before round 12: never shown, because there was no mp3 encoder that is not LGPL, except one that was very new.) | the owner's decision (C-11) and user:2026-11-23 |
 
 ## A-24 Version 12 of the design (before round 8)
 
@@ -441,3 +441,355 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Measuring a muted track with `ignore_mute` | Only the mute button is ignored, for the track measured alone; a moving mute lane is still followed, and the mix keeps the song's mutes. The song does not change. | the developers' decision (architecture 24-16 D) |
 | A recalled mute set and a moving mute lane | When a recall changes the mute of a track that has a moving mute lane, the lane is rested in the same step, as pressing M does; tracks whose mute does not change keep their lane as it is. | the developers' decision (architecture 24-16 F) |
 | Solo in a mute set | A set remembers solo and a recall sets it, but solo is not part of the step (as solo is never a step): undo does not bring the old solo back. | the developers' decision (architecture 24-16 F) |
+
+## A-29 Round 12 (the owner's request of 2026-11-23)
+
+The rules are in spec 3, "Rules added in round 12"; how each is built is architecture chapter 25 (25-4 to 25-35). Below: what the developers decided where the request said nothing, what they changed from it and why, and every text they made up. Wording with the source `builder:<date>` waits for the owner's approval (open question B-98-28); everything else new is `user:2026-11-23` from the request. In "Basis", "the lead" is the developers' lead.
+
+### How the round was run
+
+| Where | Rule | Basis |
+|---|---|---|
+| Protocol versions | The request planned one bump per wave (31, 32, 33, 34). Waves 3 and 4 share 33 (the shapes of both were made in one pass), so the round ends at protocol 33. | the developers' decision (the lead, 2026-11-24) |
+| Documents during the round | Each feature helper wrote a notes file (`docs/round12/<ID>.md`) instead of editing the shared documents; one document helper merged them at the end (this table, spec 3, architecture 25, progress, the READMEs). The notes files were then deleted (the history has them). | the developers' decision (the lead) |
+| Measurements | Speed and latency were measured once, after the last merge, on a quiet PC, not per feature (helpers built in parallel and the PC was not quiet). Results: `docs/measurements/2026-11-24-round12.md`. | the developers' decision (the lead, 2026-11-24) |
+| A new control in a full row (P2, R1; also R2, E2, E7) | A control added in this round never pushes out a part the spec and the mocks already show: it takes only room that is left, and it is the first thing to hide. So at 1280 px wide the label of 「ほかのトラックも見る」 and the button 「さっきのを残す」 are hidden (the feature stays reachable: the ▾ list, Shift R and the menu). Pictures at 1280 × 800 stay as before round 12. Question: B-98-3, B-98-4. | the developers' decision (the lead, 2026-11-24) |
+| `ebur128` and FTZ (F1, M3) | Accepted: the crate sets FTZ only inside its own call, on threads that are not the audio thread (the export job, the analysis thread), and restores it; architecture 19-2 has the exception. | the developers' decision (the lead, 2026-11-24) |
+| The line for the release skill (D2) | The D2 helper was refused permission to edit `.claude/skills/bump-version/SKILL.md`, so its line was not added. For the owner to add, before step 8: "If the owner asked for the AppImage too (a trial, `docs/development/appimage.md`): `MELOET_DOCKER_SG=1 scripts/build-appimage.sh` makes `target/appimage/meloet_X.Y.Z_amd64.AppImage`. The script changes its name in the docs together with the deb's." (`scripts/bump-version.sh` already changes the AppImage's name.) | the developers' note |
+| Order of the new rows of 「表示」 | E1 and E7 each put their row last; merged, the menu ends 「テーマ ▸」, 「鳴っている音を光らせる」, 「音の動きを見せる」, with no separator. | the developers' decision |
+
+### G1 The key list and the user guide
+
+| Where | Rule | Basis |
+|---|---|---|
+| Edit keys in the key list | The groups have no 「編集」. Cut, copy, paste, duplicate, select all and Delete work on the arrange or the piano roll, whichever was pressed last, so they are listed under both 「アレンジ」 and 「ピアノロール」; undo and redo under 「曲とファイル」. | the developers' reading |
+| Where the other keys went | Esc, the shelf and the history band keys: 「帯」. Markers, the tempo box, drags: 「アレンジ」. Note list Enter / Tab: 「ピアノロール」. Fader / pan / send keys and the parameters panel: 「ミキサー」. Zoom, screen scale, vertical zoom, F10, Tab: 「表示」. The output chooser's ↑ ↓ Enter are not listed (its own hint says them). | the developers' decision |
+| Rows that join two menu rows | Joined with 「 ／ 」 (from the request's picture 「再生 ／ 止める」): 「次のテイク ／ 前のテイク」, 「横に拡大 ／ 横に縮小」, 「縦に拡大 ／ 縦に縮小」; keys the same way (「T ／ Shift T」). | the developers' reading |
+| Q | Listed as 「クオンタイズをかけなおす」 as in the request's picture; the menu row stays 「クオンタイズ」. | the request's picture |
+| The link and the filter box | The link is accent text in the foot, not a button; the filter box is a row of its own under the heading (as About's second page), not in the heading. | the developers' decision |
+| Wording made up (`keyList.*`, `builder:2026-11-23`), rows of the key list | 「ひとつ戻る ／ 閉じる」, 「メニューバーへ」, 「次のボタンや欄へ ／ 前へ」, 「トラック ／ クリップの名前を変える」, 「道具：選ぶ ／ 書く ／ 消す」, 「ノートを半音 ／ 1 オクターブ動かす」, 「ノートをグリッド 1 つ動かす」, 「ノートの一覧：欄に打ちこむ ／ 右の欄へ」, 「複製しながら動かす」, 「グリッドに合わせずに動かす」, 「ドラッグをやめて元に戻す」, 「マーカーを足す」, 「次のマーカーへ ／ 前のマーカーへ」, 「マーカーの名前を変える」, 「選んだ点 ／ マーカーを消す」, 「テンポ ／ 拍子の箱で 1 ／ 10 ずつ変える」, 「棚：上 ／ 下の行を選ぶ」, 「棚：選んだ音を入れる」, 「棚：サンプルを鳴らす ／ 止める」, 「棚：お気に入りの印」, 「履歴：上 ／ 下の行を選ぶ」, 「履歴：いまのステップへ」, 「履歴：ここまで戻す」, 「選んだインサートをとばす ／ 戻す」, 「選んだインサートを外す」, 「フェーダー ／ センドを動かす（細かく）」, 「パンを動かす（大きく）」, 「フェーダー ／ パン ／ センドを最初の値に戻す」, 「フェーダー ／ パン ／ センドに値を打ちこむ」, 「パラメータ：上 ／ 下の行を選ぶ」, 「パラメータ：値を動かす（細かく）」, 「パラメータ：値を打ちこむ」, 「パラメータ：さがす箱へ」 (33 rows). Other rows reuse the menu wording. | builder:2026-11-23 |
+
+### A3 Duplicating a track
+
+| Where | Rule | Basis |
+|---|---|---|
+| The copy's name | The base is the name without a trailing " N" when N is a number the naming rule makes (2 or more, no leading 0); then the smallest free number from 2. The copy always has a number: 「リード 1」 → 「リード 1 2」, 「リード 02」 → 「リード 02 2」. | the developers' decision |
+| ● of a vocal copy | "Not copied" is read as "the source's ● does not carry over"; the copy gets its ● because it is selected (24-C). A source that was armed stays armed, so R records the same input to both. | the developers' reading |
+| Monitor, mute sets | The monitor is not copied (session only). The copy is in no mute set, as any track added later. | the developers' decision |
+| Plugin state | The plugins are asked for their state first and the copy gets it in the same step (the request said to copy the state object); reason: architecture 25-6. A plugin that is loading, failed, stopped or missing: the copy has the song's state. | the developers' decision (changed from the request) |
+| The menu row at 64 tracks | Usable; core answers on the status line. The notice `TooManyTracks` is new and is said only for 「トラックを複製」, 「音のクリップにする」 and 「パターンを置く」; the shelf's new track and 「＋ 歌のトラック」 still say nothing at 64. | the developers' decision |
+| Wording | 「トラックは 64 本までなので、これ以上足せません。」 (`msg.tooManyTracks`, status line). | builder:2026-11-23 |
+
+### A5 Recently opened songs
+
+| Where | Rule | Basis |
+|---|---|---|
+| 「曲の名前」 | The song file's name without `.meloet` (the name inside the file would need every file read; normally the same). Question B-98-17. | the developers' reading |
+| 「場所」 | The folder that holds the file, `~` for home, with a final `/`. | the developers' reading |
+| The song open now, files that do not read | Choosing the song open now does nothing (no reload). A gone file is found when the read fails, after the unsaved-changes question. A file that is there but broken stays in the list. 「一覧を消す」 can be used while recording. | the developers' decision |
+
+### R3 Metronome settings and tap tempo
+
+| Where | Rule | Basis |
+|---|---|---|
+| The window's look | Rows `size.toolbar` high, `space.3` left and right, a `line.row` line below; the label left (gray.8; the first row in the name look), buttons right; at least `part.list.width` wide; gray.3 on a gray.8 border; a chosen choice has the transport buttons' on look. | the developers' decision (the mock gives only the rows) |
+| The volume bar | The bar of a parameter row (spec 2), not the meter-like bar of the mock (it is a value the person moves). Whole dB; typed values rounded and put into range; no plus sign (「3 dB」). | the developers' decision |
+| Texts | The first row says 「オン」 when on and 「オフ」 when off. Before two taps the tempo is 「—」. 「この速さにする」 sits on the tap row right of the tempo found; after it the taps start again and the tempo goes back to 「—」. | the developers' decision |
+| Taps | "The last 8" is the last 8 taps (7 gaps); "2 seconds apart" is a gap of 2000 ms or more (a tap earlier than the one before also starts again). | the developers' reading |
+| The count-in row | Shown in the window while the count-in button is hidden (spec 3: the count-in then lives in the ▾). The ▾'s name for screen readers is 「メトロノーム」, or 「メトロノームとカウントイン」 then. | the developers' reading |
+| The sounds | Choosing a sound does not play it; it is heard on the next click. 「カチ」 and 「カウベル」 were designed by the developers (numbers in architecture 25-8); the owner should listen (B-98-11). | the developers' decision |
+| Wording | `metronome.tapNone` 「—」 (as `inspector.scaleNone`). | builder:2026-11-23 |
+
+### P1 Scale highlight and nine scales
+
+| Where | Rule | Basis |
+|---|---|---|
+| The toolbar toggle | The text says 「色」 (the mock shows 「色をつける」; the text wins); its screen-reader name is 「色をつける」. It sits right after the scale ▾ (the toolbar has no separate 「固定」 button; the lock is the 「スケール固定 …」 button). | the request's text |
+| Drum tracks | No new wording: 「色」 reuses the tip 「ドラムには音階がないので、スケール固定は使えません。」 and the right panel 「使えない」. A tip of its own would need new wording (B-98-20). | the developers' decision |
+| The menu bar | 「スケール固定 ▸」 lists the nine kinds but has no 「色をつける」 row (the request names only the toolbar and the right panel). | the request's text |
+| Pictures | 「色をつける」 is on at first, so every picture with the lock off now shows the rows outside C major in `row.out`; scenes compared with mocks drawn before round 12 (F-PRPlay, F-PRRec, F-PREmpty …) differ there. | the request ("on at first") |
+
+### P3 Velocity and length tools
+
+| Where | Rule | Basis |
+|---|---|---|
+| First values of 「だんだん」 | 40 and 110 (the request's picture; the text gives none). | the request's picture |
+| Out of range | Put at the nearest end. For 「だんだん」 the status line says so (as the other velocity boxes); for 「割合」 and 「ばらつき」 nothing is said and an unreadable value only turns the box red (B-98-22). | the developers' decision |
+| Box values | Kept while the panel is shown (tool settings, not of the selection); not saved. The notices are said also when no note changed, with no step (as 「そろえる」). | the developers' decision |
+| Wording (status line) | 「{count} ノートのベロシティに {percent} % をかけました。」, 「{count} ノートのベロシティを {from} から {to} へだんだん変えました。」, 「{count} ノートのベロシティを ± {amount} でばらつかせました。」, 「{count} ノートを次の音までのばしました。」 | builder:2026-11-23 |
+
+### P6 Chord progressions
+
+| Where | Rule | Basis |
+|---|---|---|
+| Which major the degrees are read in | Minor, harmonic minor and melodic minor in their relative major (+3). **Dorian and Mixolydian in the major scale with the same notes** (Dorian +10, Mixolydian +5): reading them by "minor-like +3 / major-like +0" gave D Dorian a B♭ chord and G Mixolydian chords of D major, outside the scale. Pentatonics and blues through their parent. | the developers' decision (the lead, 2026-11-23, reading 「平行調」) |
+| The clip's first bar | When the clip does not start on a bar line: the first bar whose head is inside the clip (no growth to the front). | the developers' reading |
+| No clip shown | The chords go from the play line's bar onto the play-target track (as the write tool does). | the developers' decision |
+| Chords left out | Not said on the status line (「書けませんでした」 would be wrong when some were written). | the developers' decision |
+| Sounds and names | ▶ plays at C4..B4 (as the chord row), placing is at C3..B3 (the request). Chord names as the chord row's. The chosen row starts at 「王道」 each time. The play line is the position of the last state (not the moving line while playing). | the developers' decision |
+
+### A9 Reverse and normalize
+
+| Where | Rule | Basis |
+|---|---|---|
+| "The range the shown take uses" | The frames the clip plays from its start to its end (not the whole take); a cut or trimmed clip is measured and reversed only where it sounds. Normalize measures the file's samples, not what pitch, stretch or fades make of them. | the developers' reading |
+| Silent and limited together | When one normalize has both, the status line says the silent one. | the developers' decision |
+| A take whose tempo changes, on a clip that does not follow | Its backwards take has no tempo (「—」). | the developers' decision |
+| Files that cannot be read or written | The rows are not disabled for a clip whose file is missing (Rust passes it over). A file that cannot be read, or a reverse that cannot be written, does nothing and says nothing (no wording; the shape `clipWorkFailed` exists but is not used yet). | the developers' decision |
+| mp3, ogg, flac | Reversed into a 32-bit float wav; a wav keeps its own kind of samples. | the developers' decision |
+| With a comp | Both rows are disabled with a reason, and Rust passes such a clip by (see A8). | the developers' decision (A8) |
+| Wording (status line) | 「{count} つのクリップは、いちばん大きい音を −1.0 dB にできませんでした（クリップの音量は −60 〜 +12 dB まで）。」, 「{count} つのクリップは音がないので、そのままにしました。」, 「{count} つのクリップは、もとの音のテンポが途中で変わるので、「曲のテンポについていく」をオフにしました。」 | builder:2026-11-23 |
+
+### F1 Loudness of the export
+
+| Where | Rule | Basis |
+|---|---|---|
+| The mock's texts | The mock's 「いちばん大きい所 −3.2 dBTP」 is the request's 「トゥルーピーク」; the mock's 「。音割れはありません」 after the result is not used. The mock's numbers would pass −1 dBTP; the fake scenes use numbers that keep the rule. | the request's text |
+| Place of the lines | The loudness line after the peak line and its clipping lines, the result line right under it; the row 「音の大きさ」 after 「形」, before 「保存する所」. | the mock |
+| Numbers | One decimal with 「−」; a loudness not measured is 「−∞」 when the check is done and 「—」 while it counts; a true peak above 0 has 「+」. A gain that rounds to 0 reads 「合わせると 0.0 dB 大きくなります」. | the developers' decision |
+| Before the check ends | 「公開先に合わせる」 can be chosen (whether it can be matched is not known yet). The dialog shows what will happen, not the kept choice. | the developers' decision |
+| Clipping lines with matching | With 「公開先に合わせる」 in force there are no clipping lines (the file is at −1 dBTP or lower); the peak line still shows the peak as it plays. | the developers' decision |
+| `Done`'s numbers | The measured numbers plus the gain, not measured again after a rate conversion (a few tenths of a dB off at another rate). | the developers' decision |
+| Wording | 「ここまでの大きさ {lufs} LUFS ・ トゥルーピーク {peak} dBTP」 (the check while counting), 「合わせると {db} dB 小さくなります」 (the request gives only the louder sentence). | builder:2026-11-23 |
+
+### E9 「書き出しました」
+
+| Where | Rule | Basis |
+|---|---|---|
+| How it closes | Core holds it: 「閉じる」, Esc and Enter close it, and so does any other command (as the status line's 「書き出しました」 always went). Keeping it open while the person plays would need a new shape. | the developers' decision |
+| Sizes | The waveform is `size.overview` high (40 at 100 %; the mock's 36 is not a named value), bars centred; the dialog is `part.dialog.width` (the mock's 420 is a picture width); padding space.3 / space.4; space.2 above the waveform and the loudness line. 「閉じる」 is the bright button with 「Enter」. | the developers' decision |
+| Numbers | One decimal with 「−」, 「+」 above 0; 「−∞ LUFS」 when there is a true peak but no loudness; no loudness line for silence; seconds cut off. | the developers' decision |
+| Wording | 「{seconds} 秒」 (`exported.lengthSeconds`, a file under a minute, instead of 「0 分 45 秒」). | builder:2026-11-23 |
+
+### D1 The notice of a new version
+
+| Where | Rule | Basis |
+|---|---|---|
+| 「止まっているとき」 | The song is not moving: playing also waits, not only the count-in and recording (question B-98-18). | the developers' reading |
+| "At most once a run" | It stays while stopped until 「あとで」 or 「ページをひらく」, or until the song is started after it was shown; it does not come back in that run. | the developers' reading |
+| Once a day | 24 hours since the last look (as the sound pack's catalog look), not the calendar day. | the developers' decision |
+| Turning it off | Also takes away what was found; an answer that comes while off is dropped; on again later in the run looks once if it has not looked yet. With the development hooks nothing is remembered. | the developers' decision |
+| Order in the status line | After every notice, before 「鍵盤をさがしています」 and the keyboard / chooser lines (else a person without a keyboard would never see it). | the developers' decision |
+| 「meloet について」 | The line sits under 「バージョン」 in the value column with an empty label, gray.10, no button. | the developers' decision |
+| Wording | 「オン」, 「オフ」 of the settings row (the words of 「AI とつなぐ」). | the developers' decision (user:2026-11-23 tag, the neighbours' words) |
+
+### R1 Keeping what was just played
+
+| Where | Rule | Basis |
+|---|---|---|
+| Runs that end without play / stop | A jump while playing, 「再生」 while playing and a change of the loop while playing also close the phrase (one line of positions and one loop per phrase). | the developers' decision |
+| A key near a start | Belongs to the run the engine read it in; a key pressed in the few ms between the play command and its first heard frame lands just before the start, like a pickup. Keys read in the same block as a stop belong to the stopped run and start a new phrase. | the developers' decision |
+| "Nothing held" | Keys and CC 64 (≥ 64 is down); two bars at the tempo and meter of the play line when the key arrives. | the developers' reading |
+| The head of a phrase | A phrase starts at a key press; controller values before it are written at the head of the take (a pedal pressed before the first chord holds it). Overflow drops whole notes from the old side. | the developers' decision |
+| The clip's end, overdub, unplugging | The bar line at or after the end. 「重ねる」 is read when the button is pressed. Keys held when the keyboard is pulled out end at that moment. | the developers' decision |
+| The button | Lit while something can be kept, `aria-disabled` otherwise, no key shown on it. A click while disabled sends nothing; Shift R always sends (so 「残せる演奏がありません」 can be said). It hides first (see "How the round was run"). | the developers' decision |
+| Not built | The request picture's status line 「さっき弾いた 2 小節ぶん（ノート 14）を残せます」: the text does not ask for it and there is no shape for it. | the request's text |
+| Shift R | No clash (a test that pinned "Shift R does nothing" now checks Shift L). | the developers' check |
+
+### R2 Playing with the PC keyboard
+
+| Where | Rule | Basis |
+|---|---|---|
+| Shift + a letter | Shift is a modifier, so Shift R, Shift M, Shift S, Shift T work while it is on, and Shift + A plays nothing; Ctrl, Alt and Meta the same. Digits are the row's and the number pad's. | the developers' reading |
+| Octave | Z at C0 and X at C7 do nothing (still not a shortcut). The octave is kept while meloet runs (also off and on), C3 at first. | the developers' decision |
+| The 「音が出ました」 hint | Not put away by the PC keyboard's keys (they are a keyboard). | the developers' reading |
+| Input method | `isComposing` keys and keys whose `key` is `Process` are neither notes nor shortcuts, and their default is left to the input method. | the developers' decision |
+| Notices, time limit, names | A typed key does not put a notice away (a MIDI key does not either); the switch does. Times older than 250 ms are taken as now. Rust sends the PC keyboard with an empty name; the screen names it 「パソコンのキーボード」. | the developers' decision |
+| Where the switch is | Right of the keyboard's name (the request's picture), only in room left over (see "How the round was run"); question B-98-5. | the developers' decision |
+| The menu row | The last row of 「再生」, with Mod K and a check while on. | the developers' decision |
+| Not built from the request's picture | 「Z ／ X で上下 ・ Esc でやめる」 next to the octave, the line under the keys and the picture of the 13 keys (the status line says the same; the text asks only for the switch and the octave). | the request's text |
+| Turned on with no output chosen | The output chooser comes up (it counts as a keyboard); keys do not sound until an output is open. | the developers' reading |
+| Wording | 「日本語入力がオンだと鳴りません」 (`msg.typedKeysIme`), joined to the request's status text with 「 ・ 」 so that text stays as written. | builder:2026-11-24 |
+
+### P2 Other tracks' notes, faintly
+
+| Where | Rule | Basis |
+|---|---|---|
+| Toggle and ▾ | 「ほかのトラックも見る ▾」 is read as the existing toggle + ▾ form: the label is the toggle, the ▾ a button of its own. Placed right after the spacer, before the tools. The chosen track names in the request's picture are not shown. | the developers' reading |
+| Folded form | Made up: only the ▾, whose list starts with the switch row. The list is a check list (stays open after a pick). | the developers' decision |
+| What is kept | `hidden` (tracks taken off), so a track added later is shown; forgotten with another song; on / off kept. A disabled ▾ when there is nothing to offer; the toggle stays usable. | the developers' decision |
+| The 20 000 limit | Counted from the play line when the picture is made. Audio clips on a keys track are skipped. | the developers' decision |
+| Wording | 「見せるトラック」 (the ▾'s name and the list heading), 「ドラムのトラックでは、ほかのトラックは見られません。」 (the tip on drum rows). | builder:2026-11-23 |
+
+### E1 Sounding notes light up
+
+| Where | Rule | Basis |
+|---|---|---|
+| Look | The note's face in the track color with the 2 px gray.10 edge kept, as a selected note keeps it (the request's picture fills the whole note). A lit note covers the selection's accent while it sounds. | the developers' reading |
+| Drum rows | The square lights while its note sounds (the note's own length). | the developers' decision |
+| Mute, count-in, recording, drags | Only the mute button and solo count (a mute lane is not read). Not lit in the count-in. Nothing lights while the clip being recorded is shown; recording on another track lights the shown clip. Not lit while notes are dragged. | the developers' reading |
+| The box and the cap | The lit box is the note area's full height (chapter 7 rule), and the cap is a width (15 % of the window's area over the note area's height) with a two-frame change, in place of the request's "32 notes at most": the cost is set by the width, not by the count. Reasoned, not measured (B-98-9). | the developers' decision |
+| The menu row's place | Last in 「表示」 (now followed by E7's row). | the developers' decision |
+
+### P4 Drum patterns
+
+| Where | Rule | Basis |
+|---|---|---|
+| Drum track | The instrument's group is ドラム (the three kits, an SF2 drum kit). A plugin drum track is not one: 「ここに置く」 makes a studio kit track and ▶ plays the studio kit (meloet does not know a plugin's key map). Question B-98-21. | the developers' decision |
+| Over a clip | The existing 「ほかのクリップと重なるので、書けませんでした。」 (of the overlap notices, the one about writing). | the developers' reading |
+| After placing | The clip is selected and shown in the piano roll (as pasted clips). The tempo of ▶ is the one at the bar where it would be placed. ▶ does not choose the row. | the developers' decision |
+| What the list shows | No mode line, search box, 「すべて ／ お気に入り」, stars or 「0:01 / 0:02」 time (the mock shows none); no status line while a pattern plays (■ on the row shows it). The headings start open. The bottom line's bar is the play line's start position. | the mock |
+| The patterns | Written by the developers (which drum where, velocities), checked by rules in a data test; not heard by the owner yet (B-98-21). | the developers' decision |
+| Wording | 「トラック {number}（{instrument}）を作って、{bar} 小節めに置きます」 (the bottom line when a studio kit track will be made), 「パターンを聞く」 (the ▶ button for screen readers). | builder:2026-11-23 |
+
+### A1 Repeating clips
+
+| Where | Rule | Basis |
+|---|---|---|
+| ⟳ | Shown only while the pointer is on the handle (or it is held), not on the whole clip: the request's sentence is in the handle's item (B-98-12). | the developers' reading |
+| "The name strip does not show" | The clip is narrower than `part.take.tag-min-width` (28). The handle's width is `space.3` (the named value equal to 12 px). | the developers' reading |
+| Cursor, count | The copy cursor (`not-allowed` when no copy fits); a drag's count is rounded to the nearest whole copy. | the developers' decision |
+| The frames | `gray.2` face, `gray.7` border, a `line.mark` accent bar at the end of the last copy; the mock's dashed top in the track color is not drawn. | the developers' reading |
+| The notice | The existing 「ほかのクリップと重なるので、複製できませんでした。」, also past the song's end. | the developers' decision |
+| The box | At the end of the block on the right-clicked clip's name strip (else the upper clip that ends last), in the look of the clip name box; out-of-range counts put at the nearest end without words (no field for it); full-width digits read. Disabled in the overview. A double click on the handle opens the name box. | the developers' decision |
+| Mod R | Also works while typing (as Mod D, Mod J). | the developers' decision |
+| Wording | 「くり返す回数」 (the box's name for screen readers). | builder:2026-11-23 |
+
+### M1 Presets
+
+| Where | Rule | Basis |
+|---|---|---|
+| Reverb and delay | A factory preset leaves their mix as it is (it depends on the strip). A user preset sets every kept value, the mix too (B-98-23). | the developers' decision |
+| The button row and the list | The row holds only the button, on the right (the panel already shows the effect's name). The list is drawn in the panel and scrolls with the parameter list. The order is the request's text order. User presets in the order first kept; writing over keeps the place. | the developers' decision |
+| Factory ids | `eq4` vocalClear, unmuddy, cleanLows, fatBass; `compressor` vocalEven, drumPunch, bassSolid, gentleGlue; `reverb` smallRoom, hall, behindVocal; `delay` echo, slapback, pingPong; `chorus` subtleWide, deepSwirl; `limiter` finish, gentle. | the developers' decision |
+| Names and states | A name over 40 characters is cut to 40. The button is accent whenever the values are a preset. Applying is refused while counting in or recording (the song-change rule), though the mixer's own parameter moves work then. | the developers' decision |
+| Factory values | Chosen by the developers (architecture 25-22, `crates/meloet-model/src/presets.rs`), not heard (B-98-23). | the developers' decision |
+| Wording | 「{name} ▾」, 「「{name}」を上書きしました」, 「レーンが動かしている {count} つのパラメータは、そのままにしました」, 「{effect}のプリセットは {max} 個までなので、これ以上残せません。」 | builder:2026-11-24 |
+
+### M6 Gate, de-esser, saturation
+
+| Where | Rule | Basis |
+|---|---|---|
+| Gate 「戻る速さ」 | The time to fall 60 dB, at a steady rate in dB (a smaller 「下げる量」 is reached sooner). The 30 ms count from the last frame above the closing level, not only from the opening. Opening is a straight line of the gain in 1 ms. | the developers' reading |
+| De-esser | Built as a moving high shelf, not two bands added back (no bump below; untouched when idle). 「周波数」 is the shelf's middle: a sound at the frequency gets half the cut in dB; the full cut is about an octave and a half above (B-98-24). Attack 1 ms and release 50 ms fixed; left and right linked. | the developers' decision |
+| Saturation 「ひずみ」 | The lift of quiet sound in dB, the curve bending around −18 dBFS (B-98-24). 「ひずみ」 0 dB is exactly clean. 「明るさ」 20000 Hz is off (fading in between 18 and 20 kHz). 「出る大きさ」 is the last step, after the mix. | the developers' decision |
+| Value texts | dB with one place, Hz and ms with none (the existing rule). The scene `presetsNone` is now a gate whose values are not a preset. | the developers' decision |
+| The AI link | The text of the insert tool's `effect` argument names the nine effects; no new tool. | the developers' decision |
+| Wording (preset names) | 「雑音を消す」, 「余韻を短く切る」, 「サ行をやわらかく」, 「サ行をしっかりおさえる」, 「あたたかく」, 「荒くひずませる」. | builder:2026-11-24 |
+
+### M2 「音が大きすぎます」
+
+| Where | Rule | Basis |
+|---|---|---|
+| The sentence's number and the button's | The sentence has the measured amount to a tenth (「5.6 dB」), the button the whole dB it lowers by (「6 dB」, rounded up from the shown amount). | the developers' reading (the lead) |
+| A's amount | The mean over the time the limiter held 3 dB or more, not over the whole 4 s (the protocol comment says the 4 s; B-98-7). | the developers' decision |
+| B's 「3 回」 | Three telemetry readings (about 60 a second) with the master's peak over 1.0. "Half of the 4 s" is the time the readings stand for. | the developers' reading |
+| A lasting line | Not a notice (Space would put a notice away, and the buttons must stay usable after stopping); it stays until 「閉じる」, 「下げる」, the next play or another song. | the developers' decision |
+| Lowering | With every fader at −∞: no step, the line goes. 0, negative or not a number: nothing. Lane points are each lowered N dB on the fader scale (not with `move_points`, which is not in dB); −60 dB stops just above −∞. `count` is the tracks that changed. The master's reduction is not shown on the screen. | the developers' decision |
+
+### F2 The song's information
+
+| Where | Rule | Basis |
+|---|---|---|
+| mp3 | Not offered: the acceptance condition 2 failed (A-23, C-11; B-98-1). | the owner's condition (user:2026-11-23) |
+| Place and look | The three rows in 「くわしく」 after 「実時間で書き出す」 under the small heading 「曲の情報」 (gray.8), each a row of the usual form (name 120 wide); the boxes are the key list's input box. 「はずす」 before 「えらぶ…」. There is no mock. | the developers' decision |
+| What belongs to what | The title and picture belong to the song (kept while it is open, also after closing the dialog); an empty title writes no title. 5 MB is 5 MiB. The picture window starts in the last picture's folder, else the song's, else home. png or jpg is decided by the bytes. The artist is saved as soon as it changes. The AI link's exports write none. | the developers' decision |
+| wav | RIFF INFO after the audio data, only `INAM` and `IART` (ffmpeg and lofty read it there; symphonia does not). | the request ("題名と作者だけ") |
+| Wording | 「はずす」, 「なし」, 「「{file}」は大きすぎるので使えません（絵は {mb} MB まで）。」, 「「{file}」は絵として読めません（使えるのは png ・ jpg）。」. In the mp3 branch only: 「{rate} Hz ・ {kbps} kbps ・ しっぽは音が消えるまで（最大 {seconds} 秒）」, 「{rate} Hz ・ {kbps} kbps ・ しっぽなし」, 「{length} ・ {rate} Hz ・ {kbps} kbps」, 「{file} を書き出しました（{length} ・ {rate} Hz ・ {kbps} kbps）。」 | builder:2026-11-24 |
+
+### E2 Arpeggio
+
+| Where | Rule | Basis |
+|---|---|---|
+| Stop and hold | Stop does not end a held chord (the request's list does not name it); it goes on at the tempo (B-98-6). | the developers' reading |
+| Count-in, punch-in | The arpeggio sounds through the count-in on the grid that leads to the start; nothing of it is recorded before the start. Starting a recording while playing: the note sounding then is not in the take. | the developers' decision |
+| Order, shapes | Notes sorted by pitch over all octaves, each once. 「上下」 does not say the top and bottom twice; 「ばらばら」 never says one note twice in a row (a fixed seed that runs on; it is recorded as notes). | the developers' decision |
+| Keys that come and go | The step count runs on; a change is heard from the next step. A short step before a bar line ends at the bar line. A rate change is taken at the next step of the new grid. A 17th key is left out. With hold, a key after all were let go replaces the chord. Octaves out of range are brought into 1..3. | the developers' decision |
+| The mixer strip | No free seat above 「音源」 was laid out, so 「アルペジオ」 is at the right end of the strip's heading, only while on, and can only turn it off; the track name is then cut to about one character on a 108 px strip (B-98-6). | the developers' decision |
+| The input meter | Takes left-over room before 「キーで弾く」; at 1280 × 800 at 150 % it is not shown and there is no other way to turn the arpeggio on (B-98-6). While counting in or recording the button is shown disabled. | the developers' decision |
+| Wording | 「アルペジオの設定」 (the screen-reader name of ▾ and of the window). | builder:2026-11-24 |
+
+### E3 The knobs of a built-in sound
+
+| Where | Rule | Basis |
+|---|---|---|
+| 「のび」 of a drum kit | Read as "how long a hit rings": electro kit, the decays × 1/4 to × 4; sampled kits, only shorter below 50 % and no change at 50 % and above (a recording cannot ring longer than it was recorded) (B-98-10). | the developers' reading |
+| 「立ち上がり」, 「のび」, 「ゆれ」 | 「立ち上がり」 above 50 % adds up to 400 ms, at 0 % one frame; a sound whose own attack is 0 does not change below 50 %. 「のび」 changes the release of voices let go (the piano's release and pedal sounds are not changed). 「ゆれ」 starts at the note's pitch going up, up to 50 cents. | the developers' decision |
+| Typing | "35", "35 %", "35%" are read; a text with no number sends nothing and says nothing. 「音源を入れかえる…」 stays under the four rows. | the developers' decision |
+| The scene `paramsSound` | Left as it was (a grand piano with no knobs, which Rust no longer sends); it still pictures the panel an SF2 preset gets. | the developers' decision |
+| Wording | 「{track} ・ 「{knob}」をえらんでいます」 (status line), 「{track} ・ {knob} {from} → {to} %」 (history row). | builder:2026-11-24 |
+
+### E7 The picture of the sound
+
+| Where | Rule | Basis |
+|---|---|---|
+| The FFT | The FFT meloet already had (it allocates only when made), not `realfft`: no new crate. | the request ("use the FFT there is when it allocates only when made") |
+| When it works | No reader, the setting off, or a silent window: no FFT. When the screen hides the bars for lack of room the analysis still runs (core does not know the width). | the developers' reading |
+| A band's level | The power in the band, so a full-scale sine reads 0 dB in its band; narrow low bands read at their middle (a sine there reads −1.8 dB). The fall is in sound time; frames the ring dropped restart the bands from silence. | the developers' decision |
+| Sizes | The gap to 「マスター」 is space.1 (space.2 did not fit at 1280 × 800 100 %); one device pixel of ground at the right of each 4 px band (the mock's 5 + 2 px would not make 96); the height is the master's whole box. The bars may show while 「さっきのを残す」 or the song name is hidden, when the room left is enough. | the developers' decision |
+
+### M3 Finishing meters
+
+| Where | Rule | Basis |
+|---|---|---|
+| Two meters | 「いまの大きさ」 and 「曲ぜんたい」 come from two meters, not one (so 「曲ぜんたい」 keeps the last play's value and 「いまの大きさ」 shows what is heard now). | the developers' decision |
+| What the meters hear with mono on | Every meter of the master shows the mono sound, as heard (the request puts mono before the meter); 「曲ぜんたい」 of a play with mono on part of the time is partly mono (B-98-8). | the developers' reading |
+| The level of mono | `(L + R) / 2` on both sides (a centred sound keeps its level; one side only is 6 dB lower; no new clipping). | the developers' decision |
+| The bar of 「いまの大きさ」 | On the meters' scale (−14 LUFS at 37 %), on its own line the whole width of the box (the picture's other scale is not given anywhere) (B-98-8). | the developers' decision |
+| Layout and colors | Rows level with the master's meter, the bars filling the rest; 「低い音 ← → 高い音」 under the bars, 「公開の目安は …」 at the bottom; the button in the head row; labels gray.8, 「曲ぜんたい」's number gray.10, other numbers gray.9, the box gray.3 with a gray.10 top line. No sound: 「−∞ LUFS」 / 「−∞ dBTP」. | the developers' decision |
+| The play | Playing or recording, not the count-in; a recording after a count-in starts anew when it starts. Moving the play line or a loop going round is not a new play. While the box is scrolled out of view it is still measured. | the developers' reading |
+
+### A2 Whole sections
+
+| Where | Rule | Basis |
+|---|---|---|
+| 「この前に空きを入れる…」 | Needs a usable section like the other two (so not before the last marker at the song's end) (B-98-13 asks). | the developers' decision (the lead's request) |
+| Details | Markers on one tick share a section. The mock's first row 「この区間をループに」 is not used (the existing row stays). The reason of a disabled row is shown in the row under the pointer. The loop is not copied. A section longer than `u32::MAX` bars is not usable. | the developers' decision |
+| Empty bars and lanes, meter | The bars hold the value at the cut (for a jump on the cut, the value the jump goes to; for a stepped lane, the value before the step); a meter change on the cut's bar stays, so the bars are in the new meter. | the developers' reading |
+| Seams | A ramp or slope that meets another value is ended one tick before the seam. Points at a seam that the line is the same without are left out (also ones that were there before), so bars in and out again give the song back (exceptions in architecture 25-30). | the developers' decision |
+| Selection, out of range | Everything selected is let go (the piano roll keeps its clip when it is still there). A typed count outside 1–64 is put to the nearer end and the status line says 「小節は 1〜64 なので、64 にしました。」 (the existing sentence). | the developers' decision |
+| Wording | 「このマーカーより後ろにクリップがないので、区間がありません」 (disabled rows), 「{count} 小節の空きを入れます」 (status line while the box is open), 「曲が長くなりすぎるので、できませんでした。」 (status line), 「入れる小節の数」 (the box's screen-reader name), 「{name} ・ {bars} 小節」 (the history row). | builder:2026-11-24 |
+
+### A7 Turning keys into audio
+
+| Where | Rule | Basis |
+|---|---|---|
+| The range of 「音のクリップにする」 | The track over that range: clips between the selected ones that were not selected are in the audio too. | the developers' reading |
+| Muting | 「元のトラックは…ミュートします」 is followed for 「音のクリップにする」 too: clips outside the range go silent (B-98-14). | the request's text |
+| What is copied | Volume, pan and sends with their automation lanes; instrument, insert and mute lanes stay in the render. The returns are emptied and muted in the render (a plugin there would be started for nothing). | the developers' reading |
+| The new track | The color of its place (as 「＋ 歌のトラック」), not selected (selecting would arm it). | the developers' decision |
+| Refusals | While the export dialog is open the status line says the dialog is open (so 「書き出しか…」 is not seen then). The AI link's export and measuring are refused while bouncing. A file that comes too late is removed from the work place. | the developers' decision |
+| Progress | A status line message with a button (as 「音を作っています」), not the export's bar; the percent is the range's, 99 until the step. `clip_doc` of the AI link was not widened; `bounce_doc` is its own. | the developers' decision |
+| Wording (status line) | 「{track} に音のクリップを置きました。もとのトラックはミュートしました。」, 「音にするのをやめました。」, 「音にできませんでした。{plugin} が止まりました。」, 「音にできませんでした。作業の場所に書けません。」, 「もとのトラックがなくなったので、できた音はすてました。」, 「書き出しか「音にする」の途中なので、終わってからもう一度ためしてください。」, 「このトラックにはクリップがありません。」, 「音にしているあいだは書き出せません。終わってからひらいてください。」 | builder:2026-11-23 |
+
+### M5 The master's lane and the fade-out
+
+| Where | Rule | Basis |
+|---|---|---|
+| Shape of the fade | Lines are straight in the fader's place (not in dB), so half way the fader is half way. No curves. | the developers' decision |
+| Again with fewer bars | Changes nothing heard (the new start takes the lane's value, which lies on the old fade); to shorten, undo or drag the points. A longer one replaces the old one (B-98-16). | the developers' decision |
+| A resting lane, a lane with no points | The fade starts from the fader, and the lane moves again (points before the fade play again too). A lane with no points is as no lane. A point on the start is replaced. Bars outside 1 to 16 reaching core do nothing. | the developers' decision |
+| The export's end | 「曲ぜんぶ」 ends at the last clip's end, not at the next bar head: when the last clip ends inside a bar, the file ends before the fade does (B-98-16). | the developers' note |
+| Screen | One row 「マスター 音量」; folded it stays as a low row 「▸ マスター 音量」 (the master has no 「＋ 帯を足す」); the mixer's mark at the right end of the master's value row (there was no disabled mark before) (B-98-16). The box opens in the bar ruler with its right edge at the song's end; disabled in the whole-song view. 「全部のトラックを下げる」 leaves the master alone. | the developers' decision |
+| Wording | 「曲の終わりの {count} 小節をフェードアウトにします」 (status line while the box is open), 「フェードアウトの小節の数」 (screen-reader name), 「クリップがないので、フェードアウトをつけられませんでした。」 (status line). | builder:2026-11-24 |
+
+### A8 Comping
+
+| Where | Rule | Basis |
+|---|---|---|
+| A9 and M7 with a comp | 「逆にする」 and 「ノーマライズ」 are refused (the loudest sample of the shown take is not what the clip plays). 「音程を寄せる」 stays disabled; a tune set before the comp stays and is heard; turning it on for comps is one line (B-98-15). | the developers' decision (the lead) |
+| Stretch with a comp | Made right (one made file per take that sounds), not refused. | the developers' decision |
+| Takes going and coming | Deleting a take is refused while there is a comp; removing a missing file takes the comp only when a piece names its takes; a recording over the clip keeps the comp, and the new takes are there to choose (the other choice would lose work silently) (B-98-15). | the developers' decision |
+| No smallest piece | One tick is allowed; seams shrink beside a short piece. The screen cannot make a piece shorter than a grid step without Shift. A list that says what the clip plays already is no step. | the developers' decision |
+| The band | Right under the track's row, above its lanes; rows `size.lane` (the mock's are thinner), the heading `size.row`; 「▾ いいとこ取り」 in the head column, the rest on the time side (the mock's heading is one row). 「歌 1 ・ テイク 3」 is the clip's name and the shown take. The newest take on top (the request's text; the mock shows take 1 on top). The menu row is with the take rows. Opening scrolls the band into view. No audition. Waves drawn at volume 1 without fades. | the developers' decision |
+| The cross-fade | A straight line over 10 ms (the request says only "10 ms"); an equal-power curve would bump 3 dB on like audio. | the developers' decision |
+| Wording | 「テイクが 2 つ以上あるクリップで使えます」, 「いいとこ取りがあるあいだは使えません」 (disabled menu rows on hover). The step name 「いいとこ取りを外す」 is provisional. | builder:2026-11-24 |
+
+### M7 Pulling the pitch toward the scale
+
+| Where | Rule | Basis |
+|---|---|---|
+| The detector and the smoothing | YIN, as in the paper (25 ms, 0.15; "not sure" above 0.25 is the developers' number). "Smooth over 50 ms" is a zero-lag smoothing whose step response goes 18 % → 82 % in 50 ms; a 5.5 Hz vibrato keeps about half its depth at 100 %. | the developers' reading |
+| Limits and unvoiced parts | No limit in the request; ±200 cents in the code. Points within 60 ms of a voice move with it (else the first 50 ms of a note would be half tuned); further away exactly 0. | the developers' decision |
+| A separate preset | The transpose is set every 256 frames but the library uses it once per block, so tuned clips use a denser preset (block 0.12 s, interval 0.02 s); a stretched or pitched clip sounds slightly different once also tuned (B-98-19). | the developers' decision |
+| The rows | The strength is a dragged number (`line.mark` per percent; the protocol comment says "bar"); the scale row has no label of its own; the group count went from 4 to 5. `tune_usable`: a vocal clip of one take sounding, whose file is found; there is no "kind of audio", so the tip is the only warning. Strength 0 is allowed even when not usable. | the developers' decision |
+| Wording | 「音程を寄せる {percent} %（ドラッグ中）」 (status line while dragging; in the form of 「音の高さ …（ドラッグ中）」). | builder:2026-11-23 |
+
+### D2 AppImage
+
+| Where | Rule | Basis |
+|---|---|---|
+| Children's environment | `GTK_THEME` is removed for children (the gtk hook always sets it); `xdg-open` gets the cleaned environment too. | the developers' decision |
+| `--mcp` | Not limited to the AppImage (harmless for the deb). | the developers' decision |
+| A relative song argument | Read from `OWD`; without it a relative path did not open. | the developers' decision |
+| Not done | The LGPL source offer and the patched WebKit library (B-98-2): stopped rather than ship something unclear; nothing is published. | the request ("stop rather than ship something unclear") |

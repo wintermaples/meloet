@@ -4,7 +4,7 @@ Where meloet is now, the work still open, and notes for the next round. Read thi
 
 The history of rounds 1 to 9 (what each round did, in order, with every number) is in [`history/progress.ja.md`](history/progress.ja.md). It is in Japanese and is not changed any more. This file does not repeat that history; it only says what is true now. When something here and the history disagree, this file is newer.
 
-Last written: 2026-11-23, during round 9 (foundation at `ea66c22`).
+Last written: 2026-11-24, at the end of round 12 (branch `fea/round12`, not merged into `main`; section 6, "Round 12").
 
 Branch: each piece of work is done on its own branch made from `main` (`fea/`, `fix/`, `doc/`, `refactor/`, `chore/`; the rule is in `CLAUDE.md`), and goes into `main` when the owner asks. `foundation` is no longer used (the owner: the basic build is done); older lines that name it are records of that time.
 
@@ -21,6 +21,9 @@ Branch: each piece of work is done on its own branch made from `main` (`fea/`, `
 | Recovery file | 3 (reads 2 too) | `crates/meloet-core/src/recovery.rs`, architecture 15 and 25-1 |
 | Wire to the plugin host | 7 | `crates/meloet-plugin/src/wire.rs`, architecture 24-16 E and I |
 | Sound pack catalog | format `meloet-sounds-catalog`, version 1; pack `2026.11.2` | `tools/sounds/catalog.json`, architecture 23-1 and 23-9 |
+| The person's effect presets (`presets.json`) | 1 | `crates/meloet-core/src/presets.rs`, architecture 25-22 |
+| Drum patterns | format `meloet-drum-patterns`, version 1 | `tools/patterns/drums.json`, architecture 25-20 |
+| Settings | 1 (fields added in round 12) | `crates/meloet-core/src/settings.rs`, architecture 8 |
 | App | 0.3.0 (released as v0.x.y) | `crates/meloet-app/Cargo.toml` |
 
 Time base: a quarter note is 1920 ticks. Tempo is always quarter notes per minute, whatever the time signature (architecture 22-1, 22-2). The tempo map is `crates/meloet-model/src/tempo_map.rs` and `ui/src/time/tempoMap.ts`.
@@ -29,19 +32,19 @@ Time base: a quarter note is 1920 ticks. Tempo is always quarter notes per minut
 
 Short lists. The numbers after "arch" are chapters of [`architecture.md`](architecture.md).
 
-- **Keyboards and recording** (arch 5, 11, 12): MIDI keyboards through the ALSA sequencer, plug and unplug while running, two keyboards heard together. Play, record with count-in, loop recording into takes. A recorded key is put where it was heard at the moment it was pressed. Quantize is only an edit.
+- **Keyboards and recording** (arch 5, 11, 12): MIDI keyboards through the ALSA sequencer, plug and unplug while running, two keyboards heard together. Play, record with count-in, loop recording into takes. A recorded key is put where it was heard at the moment it was pressed. Quantize is only an edit. Round 12: keep what was just played (Shift R, 25-16), the PC keyboard as a keyboard (Mod K, 25-17), the arpeggio in the engine (25-26), metronome volume, sounds, "only while recording" and tap tempo (25-8).
 - **Outputs and inputs** (arch 4, 6, 8-1): sound through cpal; output and input names from PipeWire Routes; the buffer shown is the one really running. meloet never changes PC-wide settings.
-- **Undo, saving, recovery** (arch 13, 14, 15): every song change is one undo step (`meloet_model::History`); the selection is in the core and comes back with undo. Song file version 6 with safe writing and `.prev`. The recovery file is written when the PC shuts down and 2 seconds after a change.
-- **Piano roll** (arch 16): notes, velocity, CC lanes, drums, quantize. A drag moves only the screen first and sends one intent on release. Editing notes makes a new take with a new id in the same place.
-- **Arrange** (arch 17, 18, 23-13): moving clips, takes, mute and solo, fixed velocity, save as. Scrolling is tuned for the CPU path of WebKit.
-- **Tempo, time signature, markers, automation, undo history band** (arch 21).
-- **Mixer** (arch 19-11, 21-11): faders, pan, sends, returns, inserts, master. While dragging, the sound changes too (`commit: false`, at most one per frame); release commits one step; Esc sends `CancelMixPreview`.
-- **Sounds and the shelf** (arch 19, 23-1, 23-9): 31 built-in sounds (26 from samples, 5 made by calculation), 6 built-in effects written by us (`crates/meloet-sound/src/effects/`), audition on the shelf. The sound pack is fetched one sound at a time from the GitHub Release; a sound plays as soon as it has arrived. Song notes always sound the same from wherever play starts (round robin and randomness come from the place in the song; arch 22-25).
+- **Undo, saving, recovery** (arch 13, 14, 15): every song change is one undo step (`meloet_model::History`); the selection is in the core and comes back with undo. Song file version 7 (reads 6) with safe writing and `.prev`. The recovery file (version 3) is written when the PC shuts down and 2 seconds after a change. File ▸ 「最近ひらいた曲」 (25-7).
+- **Piano roll** (arch 16): notes, velocity, CC lanes, drums, quantize. A drag moves only the screen first and sends one intent on release. Editing notes makes a new take with a new id in the same place. Round 12: nine scales and 「色をつける」 (25-9), velocity tools and legato (25-10), chord progressions (25-11), other tracks' notes faintly (25-18), sounding notes lit in the track color (25-19).
+- **Arrange** (arch 17, 18, 23-13): moving clips, takes, mute and solo, fixed velocity, save as. Scrolling is tuned for the CPU path of WebKit. Round 12: duplicate a track (25-6), repeat clips (25-21), whole sections by marker (25-30), keys into audio (25-31), comping of vocal clips (25-33).
+- **Tempo, time signature, markers, automation, undo history band** (arch 21). Round 12: the master's volume lane and the fade-out (25-32).
+- **Mixer** (arch 19-11, 21-11): faders, pan, sends, returns, inserts, master. While dragging, the sound changes too (`commit: false`, at most one per frame); release commits one step; Esc sends `CancelMixPreview`. Round 12: presets of the built-in effects (25-22), 「音が大きすぎます」 with 「全部のトラックを下げる」 (25-24), the finishing meters and 「モノで聞く」 (25-29), the spectrum in the top band (25-28).
+- **Sounds and the shelf** (arch 19, 23-1, 23-9): 31 built-in sounds (26 from samples, 5 made by calculation) with four knobs each (25-27), 9 built-in effects written by us (`crates/meloet-sound/src/effects/`; gate, de-esser and saturation are new, 25-23), audition on the shelf, twelve drum patterns on the shelf (25-20). The sound pack is fetched one sound at a time from the GitHub Release; a sound plays as soon as it has arrived. Song notes always sound the same from wherever play starts (round robin and randomness come from the place in the song; arch 22-25).
 - **Plugins and SF2** (arch 20): VST3 and LV2 (no CLAP) in a separate process `meloet-plughost`, one process per plugin, watched by time. Scanning, the "added later" part of the shelf, plugin windows (X11), parameters, latency compensation. SF2 instruments.
-- **Vocal tracks and audio** (arch 22): audio input, measuring the latency (「遅れを測る」), recording a voice, audio clips with waveforms, fades and gain, dragging in audio files, the song folder, stretch and pitch (`crates/meloet-stretch`, preset `cheaper`, ±12 semitones, keep formant on from the start).
-- **Export** (arch 22-11, 23-16): export, with plugins, in the same path as playing. The export check counts places over 0 dB before the final cut, and tells about solo.
-- **Shipping** (arch 23): a deb for Ubuntu 24.04 and 26.04 (`scripts/build-deb.sh`), development hooks only in `dev-hooks` builds (`scripts/check-release.sh`), audio threads at SCHED_FIFO 20 when the PC allows it (arch 23-10), memory targets (arch 23-12), the app icon (`crates/meloet-app/icons/meloet.svg`).
-- **Screen** (arch 7): WebGL for the large faces, one context per region, budget 12. WebKit draws on the CPU path (`WEBKIT_DISABLE_COMPOSITING_MODE=1`) and runs a Full GC every time (`JSC_useGenerationalGC=0`).
+- **Vocal tracks and audio** (arch 22): audio input, measuring the latency (「遅れを測る」), recording a voice, audio clips with waveforms, fades and gain, dragging in audio files, the song folder, stretch and pitch (`crates/meloet-stretch`, preset `cheaper`, ±12 semitones, keep formant on from the start). Round 12: reverse and normalize (25-12), 「音程を寄せる」 (25-34).
+- **Export** (arch 22-11, 23-16): export (wav, flac), with plugins, in the same path as playing. The export check counts places over 0 dB before the final cut, and tells about solo. Round 12: loudness and true peak, 「公開先に合わせる」 (25-13), the 「書き出しました」 dialog (25-14), title, artist and picture in the file (25-25). mp3 is built but not shipped (25-25, B-98-1).
+- **Shipping** (arch 23): a deb for Ubuntu 24.04 and 26.04 (`scripts/build-deb.sh`), development hooks only in `dev-hooks` builds (`scripts/check-release.sh`), audio threads at SCHED_FIFO 20 when the PC allows it (arch 23-10), memory targets (arch 23-12), the app icon (`crates/meloet-app/icons/meloet.svg`). Round 12: the notice of a new version (25-15), the apt repository script (`scripts/make-apt-repo.sh`, not published), the AppImage trial (25-35, not published).
+- **Screen** (arch 7): WebGL for the large faces, one context per region, budget 12 (still at most 10 regions after round 12). WebKit draws on the CPU path (`WEBKIT_DISABLE_COMPOSITING_MODE=1`) and runs a Full GC every time (`JSC_useGenerationalGC=0`). Help ▸ 「キーの一覧」 and 「使い方をひらく」 (25-5).
 
 Tests at the end of round 8: Rust 1364 pass, 0 fail, 106 ignored; screen 3281 (`scripts/check-all.sh --release`).
 
@@ -53,6 +56,7 @@ Items from rounds 7 and 8 that are still open. Older items that rounds 7 and 8 d
 
 - `readahead::tests::other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends` (only on a busy PC, the number of swaps is 3 where the test waits for 2).
 - `meloet-midi`: `plugging_and_unplugging_after_start_is_reported_with_the_same_id` (the port name came out as `…:portet`).
+- Seen in round 12 on a busy PC (they pass alone): `meloet-ai --test analyze` and `--test link` ("another measurement is running"; perhaps a race of `Worker::ai_jobs` between two measurements of one test), `meloet-ai` `track_ids::lists_take_numbers_and_ids_together`, `meloet-core` `sounds::fetch_tests::a_stopped_fetch_keeps_its_part_and_goes_on_later`.
 
 ### Sound and timing
 
@@ -85,7 +89,7 @@ Items from rounds 7 and 8 that are still open. Older items that rounds 7 and 8 d
 ### Other
 
 - **Typing out of range in 「手で決める…」**: Rust quietly puts the value at the end of the range. Spec chapter 3 (number field) says the status line tells it.
-- **deb**: the bundler puts `128x128@2x.png` in `hicolor/256x256@2` (not the usual name; 512 and 128 are fine). The identifier `dev.meloet.app` gives a warning for macOS. No automatic update.
+- **deb**: the bundler puts `128x128@2x.png` in `hicolor/256x256@2` (not the usual name; 512 and 128 are fine). The identifier `dev.meloet.app` gives a warning for macOS. No automatic update (round 12 added only a notice of a new version, and an apt repository script that is not published yet).
 - **Clean-up (the owner does this)**: there are two functions that raise a thread to real time, in the plugin host (`crates/meloet-plughost/src/rt.rs`) and in the engine (`crates/meloet-engine/src/priority.rs`).
 
 ### Removed from the open list (done in later rounds)
@@ -105,6 +109,7 @@ Still open:
 2. **Measure 「遅れを測る」 again**: round 8 fixed the formula (real inputs were one block too large). If 「この数を使う」 was pressed before, that number is no longer read (`measured_latency_2`).
 3. **Clean-up**: delete `/var/crash/_usr_lib_x86_64-linux-gnu_webkit2gtk-4.1_WebKitWebProcess.1001.crash` (made when a helper stopped WebKit under gdb; while it is there, apport writes no new report). Remove meloet-agent from the docker group (`sudo gpasswd -d meloet-agent docker`; the image `meloet-deb-build` is already deleted).
 4. **Put the deb on a Release?** Make an app Release (for example `v0.1.0`) apart from the sound pack, and when.
+5. **Round 12**: merge `fea/round12` into `main`? The 29 questions B-98-1 to B-98-29 in `docs/spec/open-questions.md` (mp3, the AppImage's licenses, controls hidden at 1280 px, the wording the developers made, …), and what to listen to (section 6, "Round 12").
 
 A note given to the owner: the VS Code launch 「meloet（デバッグ）」 uses `--no-default-features`, so the development hooks (`MELOET_*`) do not work. Add `--features dev-hooks` to use them while debugging.
 
@@ -246,7 +251,7 @@ The owner let an AI make music in meloet through the MCP tools and listed 13 thi
 9. **Tracks that do not move under the AI**: done (K). Every track argument takes the number or `"id:7"`; answers give ids.
 10. **Notes that went missing (266 sent, 265 written)**: done (C). The cause was the 4-bar clip `write_notes` made; now the new clip is long enough, and every write answers `not_written` and `cut` with reasons.
 11. **"No change" is not an error**: done (B). `changed: false` as a success; real failures got real reasons (`ai_why_not`).
-12. **Finding song files**: done (F). `list_songs` (the song open now, the songs opened or saved lately, the songs folder, or a given folder). Nothing on the screen yet (B-97-4).
+12. **Finding song files**: done (F). `list_songs` (the song open now, the songs opened or saved lately, the songs folder, or a given folder). Nothing on the screen yet (B-97-4; built in round 12 as A5).
 13. **Mute sets**: done for the AI (F). `save_mute_set`, `list_mute_sets`, `recall_mute_set`, `delete_mute_set`; one step each; kept in the song (`muteSets`). Nothing on the screen yet (B-97-3).
 
 New questions for the owner: B-97-1 to B-97-7 in `docs/spec/open-questions.md` (history rows of a batch, of mute sets, of a plugin state and of several parameters; where mute sets and recent songs go on the screen; renaming a mute set). New readings: spec 7, A-28.
@@ -297,7 +302,7 @@ The owner's completion conditions are tests: requirements 1 and 2 in `crates/mel
   - Answers a tool gave up on stay until the next ask (as `ai_lists`).
   - Idea: the SF2 reading thread could make the key names with the bank (no second open, names always match the sound).
 - Mute sets and recent songs
-  - Nothing on the screen (B-97-3, B-97-4); no rename tool (B-97-5).
+  - Nothing on the screen (B-97-3; the recent songs came in round 12, A5); no rename tool (B-97-5).
   - A set does not remember whether a lane was resting.
   - A song restored from the recovery file is not added to the recent songs.
   - meloet 0.2.x opens a song with mute sets but drops them when it saves.
@@ -334,6 +339,72 @@ The owner's completion conditions are tests: requirements 1 and 2 in `crates/mel
   - `readahead::tests::other_audio_for_the_same_clips_comes_in_over_ten_ms_where_the_ring_ends` (2 of 5 runs on a busy PC: 3 swaps where 2 are waited for).
   - `link.rs` `a_note_is_rendered_into_the_private_folder` and `the_export_writes_over_a_file_only_when_asked` failed once right after a build, then passed 7 times.
   - `tests/common` `scratch` in `crates/meloet-ai` does not remove its folders: `/tmp/k10ai2-link-*` piles up (619 seen).
+
+### Round 12 (2026-11-23 to 24): the owner's list of features
+
+The owner's request of 2026-11-23 (`docs/history/round12-spec.ja.html`; it calls itself round 11, read it as 12): 33 items in four waves, with the owner's decisions at its head (looks and wording as written, source `user:2026-11-23`; one branch; no merge into `main`, push, release or publishing unless asked). Each wave first got its shapes in one commit (protocol 31, 32, then 33 for waves 3 and 4 together; telemetry 5; song file 7 and recovery file 3 in wave 1), then the features in parallel in helper worktrees. How each is built: architecture chapter 25 (25-4 to 25-35). The rules: spec 3, "Rules added in round 12". Readings and every text the developers made up: spec 7, A-29. Questions: B-98-1 to B-98-29.
+
+**Branch**: `fea/round12` (from `main` at 0.3.0). **Not merged into `main` and not pushed** (the owner decides). The mp3 work is on `fea/round12-f2-mp3`. App version still 0.3.0.
+
+**Built** (31 features and D3's documents): G1 the key list and the user guide link, A3 duplicate a track, A5 recently opened songs, R3 metronome settings and tap tempo, P1 scale highlight and nine scales, P3 velocity tools and legato, P6 chord progressions, A9 reverse and normalize, F1 loudness of the export, E9 「書き出しました」, D1 the new-version notice and the apt repository script, D3 the Windows / macOS study (documents only, `docs/research/2026-11-23-windows-macos-port.md`), R1 keep what was just played, R2 play with the PC keyboard, P2 other tracks' notes faintly, E1 sounding notes light up, P4 drum patterns, A1 repeat clips, M1 effect presets, M6 gate / de-esser / saturation, M2 「音が大きすぎます」 (and the analysis tap), F2 song information in the export, E2 arpeggio, E3 the knobs of built-in sounds, E7 the spectrum in the top band, M3 finishing meters and mono, A2 whole sections, A7 keys into audio, M5 the master's volume lane and fade-out, A8 comping, M7 pitch toward the scale, D2 the AppImage trial. Not in this list: D4 (English wording) is done by another helper after this.
+
+**Not shipped**: **mp3** (F2). Built with `rusty_mp3` 1.2.2, but the acceptance condition "20 dB below the source at 192 kbps for pink noise" failed (14.4 / 13.4 dB; LAME 3.101 13.7 / 12.8 dB on the same signal, so the rule may be too strict). The owner decides (B-98-1). **The AppImage** is built but must not be published until the LGPL source offer and the patched WebKit library are settled (B-98-2). The apt repository is not published (the owner publishes; apt instructions go into the READMEs after that).
+
+**Measurements**: done once at the end on a quiet PC, in [`measurements/2026-11-24-round12.md`](measurements/2026-11-24-round12.md). Helpers measured nothing (the PC was not quiet); what each feature asks to be measured is in its architecture section and in that file.
+
+**To listen to** (nothing of these was heard by a person yet):
+
+- E2 arpeggio: `target/r12-e2-ear/` (shapes, rates, hold, stopped, note repeat).
+- E3 knobs: `target/r12-e3-ear/` (grand piano, synth lead, studio kit, electro kit; each knob at its ends).
+- M6 gate, de-esser, saturation: `target/r12-m6-ear/` (the de-esser on a made-up voice, not a real one).
+- M7 pitch toward the scale: `target/r12-m7-ear/` (speech and singing, dry, 50 %, 100 %).
+- F2 mp3 (the side branch): `target/r12-f2-ear/` (192 and 320 kbps against the 24-bit wav).
+- R3 「カチ」 and 「カウベル」, M1's 24 factory presets (also switching while playing), P4's twelve patterns: in the app only.
+- The AppImage: `target/appimage/meloet_0.3.0_amd64.AppImage` (not to be published).
+
+**The lead's decisions** (the reasons are in spec 7 A-29, "How the round was run"): protocol 31 → 32 → 33 (waves 3 and 4 share 33); notes files per feature instead of editing the shared documents, merged at the end; measurements once at the end; a new control folds away before any part the spec already shows (P2's label and R1's button are hidden at 1280 px); P6 reads Dorian and Mixolydian in the major with the same notes; `ebur128`'s FTZ inside its own call on non-audio threads is accepted (architecture 19-2); D2's line for the release skill was not added (the helper had no permission; the text is in A-29 for the owner).
+
+**Left for later** (from the helpers' notes; not fixed in round 12):
+
+- Not checked in the real app by hand: almost every feature was checked with Rust tests, screen tests and fake scenes in six themes only. Worth trying first: the arpeggio and typed keys (with Japanese input on), comping on real takes, a fade-out exported, the finishing meters with a real song, 「キーで弾く」 when another window takes the keys.
+- Sound and engine
+  - The master limiter's gain does not come back to exactly 1 after it has held the sound down (`gain += step × (1 − gain)` stops one step under 1 in f32, `effects/limiter.rs`), so two plays of a song that drove the limiter differ in the last bits.
+  - An effect that follows the tempo (the delay with 「テンポに合わせる」) reads the tempo per rendered stretch, and stretches are cut at the next note of every track: inside a tempo ramp it sounds slightly different solo than in the mix (found by A7; up to 5e-3).
+  - A track's lanes deleted (or rested) while no stream runs stay in the engine until that track's lanes change again (`Audio::op` drops automation without a stream; the master's lane is always sent now, the tracks' are not).
+  - A hand-set pan under a moving volume lane jumps within 32 frames instead of 20 ms (since round 6; now also the master).
+  - Knob lanes and effect lanes glide 20 ms at a jump of the play line while playing.
+  - The arpeggio: `stream_gone` does not call `drop_after` (a take can be a note or two longer); the settings' measured latency counts MIDI NoteOns that the arpeggio delays; no look-ahead for tracks whose plugins delay the sound.
+  - The saturation aliases at high drive on high notes (no oversampling, by the no-delay rule). The gate reads single frames (a sound with tops more than 30 ms apart would open and close). The EQ still has its own copy of `dsp::Svf`.
+  - The spectrum at 96 kHz barely tells the lowest bands apart and shows a DC offset in the lowest one; the analysis (spectrum, M3's loudness) runs while the screen hides it (B-98-26). M3's numbers start anew after a ring overflow even after a stop; a loud key in the 10 ms before 「再生」 can reach the play's true peak; ebur128 keeps 3 s of frames (2.6 MB at 48 kHz) while the mixer is open.
+  - M7: octave or fifth mistakes are not repaired; the pitch is listened for again on every strength change (a cache would help); every tuned clip goes through the phase vocoder whole.
+- Audio files
+  - `AudioTakeView` has no sample rate, so a take of another rate is drawn at the wrong scale in the comp band and the clip (the sound is right).
+  - A comp change while playing a stretched clip can be heard up to two seconds late (as T on a stretched clip).
+  - No progress and no stop for a long 「逆にする」; the keeper thread does one ask at a time (imports wait); no message when a file cannot be read or written (`clipWorkFailed` has no wording, B-98-29).
+  - A `.bounce-*.wav` can stay in the work place if meloet ends between the job's move and the step; a bounce is not dropped at once when the song is replaced.
+  - Without the mp3 branch, meloet cannot open an mp3 whose ID3v2 tag is over 1 MB (symphonia's `id3v2` feature is off; pre-existing).
+  - The song's title and artist have no length limit.
+- Screen
+  - The inspector's 「そろえる」 buttons are cut at the right edge of the 240 px panel at 1280 px (pre-existing); P3's new rows are below the fold at 150 %.
+  - The mixer's master strip is cut at the right at 150 % in 1280 × 800 (pre-existing).
+  - The repeat count box has no `ValueField` (out-of-range counts are put at the end without words), nor do P3's 「割合」 and 「ばらつき」 (the shapes exist, B-98-22).
+  - The top band has 3 px to spare for the spectrum at 1280 × 800 100 %: anything added there hides it.
+  - Lists moved to `body` (`ChoiceMenu`, zoom lists) stop key events with `stopPropagation`, which does not stop the document key handler on the same node (R3 found it; not checked whether it does harm). `ChoiceMenu` lists do not scroll (more than about 25 tracks in P2's list).
+  - E1: a CC lane drag while playing shares the live canvas with the glow; the eraser's hover mark is covered by a lit note; `StatusLine.svelte` still makes a `Set` per frame for 「鳴っている音」. `GLOW_AREA` may need tuning after `webkit-damage.sh`.
+  - The fake: no undo for most new intents; M3's mixer scenes show 「−∞」; the loop summary is not made again after A2 moves the loop; A1's selection after a repeat is not core's.
+  - The mixer band's tab shows the master's hand value also while its lane moves it. Selected points on a volume lane are lost after 「下げる」 (the lane gets a new id). A very long folder path makes the 「最近ひらいた曲」 list wide.
+  - The key list (`keyList.ts`) is written by hand; nothing checks it row by row against spec 4.
+  - While 「meloet について」 or 「キーの一覧」 is open, one-letter keys still work (as before for About).
+- Core and the AI link
+  - `screen_allowed` (the screen intents the AI may send) has `DuplicateClips` but not `RepeatClips`; no new AI tools were made in this round (presets, arpeggio, comps … are screen only).
+  - `TooManyTracks` is said by three ways of adding a track but not the shelf's or 「＋ 歌のトラック」 (B-98-27).
+  - A duplicate waits while a plugin of the track hangs (up to 5 s); a second 「トラックを複製」 meanwhile does nothing.
+  - `Recent` items dropped for ring headroom are not told to the core; a keys track still loading its instrument keeps keys that made no sound.
+  - `repeat_clips` compares every copy with every clip of its track ((clips × 99)² at worst; not measured).
+  - A2: whether a phrase waiting to be kept (R1) should move with a section was not looked at; `Doc::check_lanes` order of the master's lanes; a helper for "apply and set the selection after" would remove repetition.
+  - `ParamFile::Step` writing indexes the names with no bound check (values are clamped first).
+  - Tools: `tools/measure/*` and `shoot_app.py` cannot start an AppImage; there is no tool yet for key → sound of a typed key.
+- D1 and D2: the real GitHub answer and the real app against a test server were not tried; the AppImage was not tried on other distributions, AMD / Intel graphics or X11 sessions, nor with the sound pack download or the first-start chooser.
 
 ## 7. Notes for Windows and Mac
 

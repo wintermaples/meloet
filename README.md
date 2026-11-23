@@ -18,12 +18,40 @@ meloet is a music app (a DAW) for people who have just bought their first MIDI k
 ### Main features
 
 - Record from a USB MIDI keyboard: count-in, loop recording into takes, and overdub (「重ねる」) that adds to the take on each pass.
+  - Keep what you just played: play along or noodle without pressing record, then press 「さっきのを残す」 (Shift R) and it becomes a clip.
+  - No MIDI keyboard at hand? Turn on 「キーで弾く」 (Ctrl K) and play with the letter keys: A S D F G H J K L ; are the white keys, W E T Y U O P the black ones, Z and X change the octave. It records like a keyboard.
+  - Arpeggio: turn on 「アルペジオ」 for a track, hold a chord, and it plays as a phrase in time with the song (up, down, up and down, random; 1/4 to 1/32, triplets; 1 to 3 octaves; hold). One key repeats. What you hear is what gets recorded.
+  - Metronome settings: volume, three sounds (beep, tick, cowbell), clicking only while recording, and tap tempo.
 - Piano roll: write, move and quantize notes, velocity and CC lanes (sustain, pitch bend, modulation, …), scale fixing, chord stamps and the chord table of the key.
+  - The keys of the scale can be colored (9 kinds: major, minor, harmonic and melodic minor, major and minor pentatonic, blues, dorian, mixolydian). With scale lock on, only those keys can be written.
+  - Chord progressions: with the scale fixed, pick one of six common progressions (royal road, Canon, Komuro, …), listen to it, and place it one chord a bar.
+  - Velocity tools for the selected notes: scale by a percent, ramp from one value to another, add a random spread; and "extend to the next note" (legato).
+  - The notes of other tracks can be shown faintly behind the clip you edit (「ほかのトラックも見る」), to write a part that fits the others.
+  - While a song plays, the notes under the play line light up in the track's color (「表示 ▸ 鳴っている音を光らせる」, on at first).
 - Arrange: clips on tracks, splitting and joining clips, tempo and time signature changes, markers and automation.
-- A mixer with six built-in effects (4-band EQ, compressor, reverb, delay, chorus, limiter).
+  - Repeat clips: drag the handle at the right end of a clip's name, or use 「くり返す…」 (Ctrl R) and type how many times. The copies follow right after, as one undo step; several chosen clips repeat as one block.
+  - Move whole sections: right-click a marker to copy its section right after itself, take the section out and close the gap, or put empty bars in before it. Clips, automation, tempo, time signatures and markers move together, as one undo step (the section must start and end on bar lines).
+  - Duplicate a track (right-click its head): a copy right below with the same sound, effects, mixer settings, clips and automation. Plugins start from how they sound right now.
+  - Turn a keys track, or some of its clips, into audio (right-click menu): it is rendered through its sound and effects onto a new audio track below, and the keys track is muted. Can be undone.
+  - Drum patterns: the shelf has twelve one-bar drum patterns (8 beat, 16 beat, four on the floor, shuffle, fills…). Listen with ▶ and put one at the play line with Enter; press Enter again to add the next one after it.
+- A mixer with nine built-in effects: 4-band EQ, compressor, reverb, delay, chorus, limiter, and now a gate (cuts noise between sounds), a de-esser (softens harsh "s" sounds of a voice) and saturation (warmth or grit).
+  - Presets for the built-in effects: a few ready-made settings for each (for example "Even out vocals" on the compressor), and your own settings kept under a name on your PC.
+  - Automation of the master volume, and one-step fade-outs: Edit ▸ add a fade-out at the end of the song, type the length in bars, and the master fader goes down to silence over the last bars. The line can be edited like any automation lane, and the exported file has the fade.
+  - Finishing meters in the mixer, right of the master: the loudness of the last 3 seconds and of the whole play (LUFS), the true peak (dBTP), the master's sound in 24 bars, and 「モノで聞く」 to hear the song in mono (only for listening; the export is not changed).
+  - A notice when the song is too loud (the master's limiter keeps holding it down, or the master goes over 0 dB), with a button that lowers every track at once.
+  - A picture that moves with the sound: the master from low to high in 24 bars, left of 「マスター」 in the top band (View ▸ 「音の動きを見せる」 turns it off).
 - 31 built-in sounds, VST3 and LV2 plugins, and SF2 files. Plugins run outside meloet, so a plugin that stops does not take meloet or your song with it.
+  - Built-in sounds have four knobs in the parameters panel: brightness, attack, release and vibrato (drum kits: brightness and release). They can be automated like any parameter.
 - Singing tracks: record audio, import audio files (wav, mp3, flac, ogg), stretch and pitch.
-- Export the song to a wav file.
+  - Comping: build one vocal from the best parts of several takes. Open 「いいとこ取り」 from a vocal clip's right-click menu and drag across a take to choose it for that part; the joins are cross-faded, and it can all be undone.
+  - Pitch help for vocals: pull a sung clip toward the notes of a scale, from a light touch to all the way (0 to 100 %). For one voice or one-note-at-a-time instruments.
+  - Reverse an audio clip, or normalize it so its loudest point is at −1.0 dB (right-click menu of the clip; both can be undone).
+- Export the song to a wav or flac file, as it plays or brought to the loudness music sites play at (−14 LUFS, true peak −1 dBTP). The check before export shows the loudness and the true peak.
+  - The export can write the song's title, its artist and a picture (png or jpg) into the file (flac; wav takes the title and the artist). The artist is remembered.
+  - When an export is done, a window shows the file's waveform, loudness and true peak, and can play the file in the PC's player or open its folder.
+- File ▸ Recently opened songs: open one of the last 10 songs in one step (with its folder shown); the list can be cleared.
+- Help ▸ Key list: every key by group, with a filter box. Help ▸ Open the user guide opens the user guide in your browser.
+- Tells you when a new version of meloet is out (once a day at most, only the version is asked; can be turned off in the sound settings).
 - The play, stop and record buttons and the fader of keyboards that send Mackie Control.
 - Six color themes (dark and light, each also in pink and mint).
 - An AI link: AI apps such as Claude can read the song, give advice and edit it when asked (see [AI link](#ai-link)).

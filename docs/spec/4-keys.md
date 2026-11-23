@@ -6,6 +6,8 @@
 - Even while typing, <kbd>Esc</kbd> (stop typing), <kbd>Enter</kbd> (confirm), and keys with <kbd>Mod</kbd> work. <kbd>Space</kbd> does not work and goes in as a space. <kbd>Delete</kbd> and <kbd>Backspace</kbd> do not work either; they delete only the text in the box (they do not delete the chosen clips or notes).
 - While a plugin window is in front, all keys, <kbd>Space</kbd> and keys with <kbd>Mod</kbd> too, belong to the plugin. meloet does not receive them. To play and stop, go back to the meloet window first.
 - Keys are shown small at the right end of band tabs and buttons.
+- While 「キーで弾く」 is on (round 12, R2), keys marked one letter and the digit keys do not work (they play notes, or nothing); keys with <kbd>Mod</kbd> or <kbd>Shift</kbd>, <kbd>Space</kbd>, the arrows, <kbd>Delete</kbd>, <kbd>Home</kbd>, <kbd>Enter</kbd>, <kbd>Tab</kbd>, the F keys and <kbd>Esc</kbd> work as before. The keys by their place: <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>G</kbd> <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> <kbd>;</kbd> are the white keys C D E F G A B C D E; <kbd>W</kbd> <kbd>E</kbd> are C# D#; <kbd>T</kbd> <kbd>Y</kbd> <kbd>U</kbd> are F# G# A#; <kbd>O</kbd> <kbd>P</kbd> are C# D# of the next octave; <kbd>Z</kbd> / <kbd>X</kbd> move the octave down / up (C0 to C7). See spec 3, "Rules added in round 12".
+- A key added to the app must also be added to the key list dialog (`ui/src/keys/keyList.ts`; round 12, G1).
 
 | Action | Linux, Windows | Mac | While typing |
 |---|---|---|---|
@@ -73,3 +75,9 @@
 | Zoom in / out horizontally | <kbd>Mod</kbd> <kbd>+</kbd> / <kbd>Mod</kbd> <kbd>−</kbd> | <kbd>Mod</kbd> <kbd>+</kbd> / <kbd>Mod</kbd> <kbd>−</kbd> | Works |
 | Screen scale 100 / 125 / 150 % | <kbd>Mod</kbd> <kbd>Alt</kbd> <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | <kbd>Mod</kbd> <kbd>Option</kbd> <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> | Works |
 | To the next part / to the previous part | <kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd> | <kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd> | Works |
+| Keep what was just played (「さっきのを残す」; round 12) | <kbd>Shift</kbd> <kbd>R</kbd> | <kbd>Shift</kbd> <kbd>R</kbd> | Does not work |
+| Play with the PC keyboard on / off (「キーで弾く」; round 12) | <kbd>Mod</kbd> <kbd>K</kbd> | <kbd>Mod</kbd> <kbd>K</kbd> | Works |
+| Repeat the chosen clips (a box of digits; round 12) | <kbd>Mod</kbd> <kbd>R</kbd> | <kbd>Mod</kbd> <kbd>R</kbd> | Works |
+| Close 「書き出しました」 (round 12) | <kbd>Esc</kbd> / <kbd>Enter</kbd> | <kbd>Esc</kbd> / <kbd>Enter</kbd> | Works |
+| In the metronome window: move the volume by 1 dB / tap the tempo on 「タップ」 (round 12) | <kbd>←</kbd> <kbd>→</kbd> / <kbd>Space</kbd> <kbd>Enter</kbd> | <kbd>←</kbd> <kbd>→</kbd> / <kbd>Space</kbd> <kbd>Enter</kbd> | Works (when it has focus) |
+| In the shelf's 「パターン」: choose a row / play or stop it / place it (round 12) | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Space</kbd> / <kbd>Enter</kbd> | <kbd>↑</kbd> <kbd>↓</kbd> / <kbd>Space</kbd> / <kbd>Enter</kbd> | Works |

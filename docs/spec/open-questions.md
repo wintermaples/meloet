@@ -180,12 +180,6 @@ Sent back at the end of round 8 with the items above:
 - Proposal (helper): the menu at the head of the mixer band, the 「表示」 menu, or the context menu of a track head.
 - From: architecture 24-16 F.
 
-### B-97-4 「最近ひらいた曲」 in the file menu
-
-- Question: meloet now remembers the 20 songs opened or saved last (`recent-songs.json`; the AI reads it with `list_songs`). Should the file menu show them, and where and with what wording?
-- Now: not shown on the screen.
-- From: architecture 24-16 F.
-
 ### B-97-5 Renaming a mute set
 
 - Question: is a tool (and later a screen way) to rename a mute set wanted?
@@ -203,3 +197,178 @@ Sent back at the end of round 8 with the items above:
 - Question: `set_params` sets several parameters of one plugin as one step. What should the row say?
 - Now: the row of the first parameter (`SetPluginParam`). The model has no step name for "several parameters".
 - From: architecture 24-16 H.
+
+(B-97-4, 「最近ひらいた曲」 in the file menu, was answered by the round 12 request: built as A5, spec 3 "Rules added in round 12".)
+
+## B-98: round 12 (the owner's request of 2026-11-23)
+
+The readings behind these are in [chapter 7](7-readings.md), A-29; how each is built is architecture chapter 25. Nothing below was tried by the owner yet; "heard" means listened to by a person, which no helper did.
+
+### B-98-1 F2: mp3, ship or not
+
+- Question: mp3 export was built with `rusty_mp3` 1.2.2 but failed the request's acceptance condition 2 ("at 192 kbps the difference is 20 dB or more below the source, for a 1 kHz tone and pink noise"): pink noise came back 14.4 dB (44100 Hz) and 13.4 dB (48000 Hz) below. LAME 3.101 gives 13.7 / 12.8 dB on the same signal, and a rough estimate says no encoder can reach 20 dB on independent pink noise at 192 kbps, so the rule itself may be too strict. Conditions 1 (length) and 3 (odd signals, cancel) passed. Choices: keep mp3 hidden; change the rule (for example a tone and a real song only, or 256 kbps) and ship it; or ship it as it is.
+- Also to decide if it ships: `rusty_mp3` reads 11 environment variables in a normal build (`MP3_RESERVOIR`, `MP3_RESV_GAIN`, `MP3_RESV_LOOKAHEAD`, `MP3_STEREO`, `MP3_PICK`, `MP3_SHAPE`, `MP3_PSY_DOMAIN`, `MP3_SHORT_SHAPE`, `MP3_THR_CAP`, `MP3_SMR_DB`, `RFF_MP3_XRPOW`), so a person's environment could change the files; its own notes name a bug when the stereo mode switches nearly every frame, and its reservoir is off at 320 kbps.
+- Now: mp3 is not offered. The whole work (with tests and two scenes) is on the branch `fea/round12-f2-mp3`. Listening files: `target/r12-f2-ear/` (`test-song-192k.mp3`, `test-song-320k.mp3`, `test-song-24bit.wav`).
+- From: architecture 22-11, 25-25; chapter 7 A-23 (C-11).
+
+### B-98-2 D2: the AppImage before any distribution
+
+- Question: the AppImage holds about 170 Ubuntu libraries under the LGPL and libfuse in its runtime; publishing it needs a source offer for them from the same place. It also holds `libwebkit2gtk-4.1.so.0` with bytes changed by linuxdeploy-plugin-gtk (`/usr` → `././`), a change to an LGPL library that has to be stated. How should these be done, and should the AppImage be published at all?
+- Now: built as a trial only (`target/appimage/`, `scripts/build-appimage.sh`); not published; the READMEs say nothing about it.
+- From: architecture 23-5, 25-35; `docs/development/appimage.md`.
+
+### B-98-3 P2: the label of 「ほかのトラックも見る」 at 1280 px
+
+- Question: at 1280 × 800 (100 % and 150 %) and 1920 × 1080 at 150 % the label does not fit next to the clip text, so it is hidden and the switch is only the first row of the ▾'s list. Is that right, or should the row show the label and give up the clip text or the key text?
+- Now: the label hides first; pictures at 1280 × 800 are as before round 12 but for the ▾.
+- From: chapter 7 A-29 (P2, "How the round was run").
+
+### B-98-4 R1: the button 「さっきのを残す」 at 1280 px
+
+- Question: at 1280 px wide the button is hidden (the feature is reached by Shift R and 「再生 ▸ さっきの演奏を残す」). Is that right?
+- Now: it shows only when everything else of the top band shows in full (1920 × 1080).
+- From: chapter 7 A-29 (R1).
+
+### B-98-5 R2: 「キーで弾く」 in small windows, and what was not checked
+
+- Question: in the input meter the switch and 「オクターブ C3」 take only left-over room; after E2 at 1280 × 800 at 100 % the arpeggio button takes it and 「キーで弾く」 is not shown; at 150 % neither. Is that right?
+- Not checked on the real app: that WebKitGTK hands the key requests to Rust in the order they were made (a release before its press would leave a note sounding until the key is pressed again or the switch goes off), how the input method's keys come (`isComposing`, `Process`), that `KeyboardEvent.timeStamp` is on the clock assumed, and that blur and `visibilitychange` come when another window takes the keys.
+- Now: Mod K, the menu row and the status line always work.
+- From: architecture 25-17; chapter 7 A-29 (R2).
+
+### B-98-6 E2: arpeggio — stop, small windows, the mixer strip
+
+- Question 1: should stop also end a held chord (「指を離しても続ける」)? Now it goes on after stop, at the tempo (one line would change it).
+- Question 2: at 1280 × 800 at 150 % the button 「アルペジオ ▾」 does not fit in the input meter, and there is no menu row or key, so the arpeggio cannot be turned on there. Add a way?
+- Question 3: on the mixer strip 「アルペジオ」 sits at the right end of the heading only while on (the track name is cut to about one character on a 108 px strip). The other way is an empty row on every strip, which moves everything below down by about 32 px. Which?
+- Listening files: `target/r12-e2-ear/`.
+- From: architecture 25-26; chapter 7 A-29 (E2).
+
+### B-98-7 M2: the thresholds and the number in 「音が大きすぎます」
+
+- Question: are 4 s, 3 dB of reduction for 2 s, and 3 readings over 0 dBFS sensitive enough on real songs? The limiter sentence says the mean of the reduction over the time it held 3 dB or more (so 「ずっと 6 dB」 means what it says); the protocol comment says the mean over the whole 4 s. Which?
+- Now: the mean over the time held; the button's number is that amount rounded up.
+- From: architecture 25-24; chapter 7 A-29 (M2).
+
+### B-98-8 M3: mono and the meters, the bar's scale
+
+- Question 1: with 「モノで聞く」 on, every meter of the master (strip, top band, bars, loudness, M2's watch) hears the mono sound, so 「曲ぜんたい」 of a play with mono on part of the time is partly mono. Should the loudness hear the song as it is instead (one line)?
+- Question 2: the bar of 「いまの大きさ」 is on the meters' scale (−14 LUFS at 37 %); the request's picture had another scale (−13.2 LUFS at 70 %) given nowhere. Which?
+- Also: 「いまの大きさ」 and 「曲ぜんたい」 come from two meters (one could not keep the last play's number and still show what is heard now).
+- From: architecture 25-29; chapter 7 A-29 (M3).
+
+### B-98-9 E1: the width cap of lit notes
+
+- Question: notes whose lit box would be wider than 15 % of the window's area over the note area's height (about 530 px at 1920 × 1080) are not lit, so long notes at a high zoom do not light. The request's own idea was "32 notes at most". Is the cap all right? It was chosen by reasoning and should be checked with `tools/measure/webkit-damage.sh`.
+- From: architecture 25-19.
+
+### B-98-10 E3: 「のび」 on sampled drum kits
+
+- Question: on the studio and brush kits 「のび」 can only make hits shorter (below 50 %); at 50 % and above nothing changes, because a recording cannot ring longer than it was recorded. Is "only shorter" right?
+- Listening files: `target/r12-e3-ear/` (26 files: grand piano, synth lead, studio kit, electro kit, each knob at its ends).
+- From: architecture 25-27.
+
+### B-98-11 R3: the two new click sounds
+
+- Question: 「カチ」 and 「カウベル」 were designed by numbers and not heard. Are they right? Should choosing a sound play it at once (now it is heard on the next click)?
+- From: architecture 25-8.
+
+### B-98-12 A1: where ⟳ shows
+
+- Question: the request says the mark shows "when the mouse is on it". It shows only while the pointer is on the handle (or the handle is held), not anywhere on the clip. Right?
+- From: chapter 7 A-29 (A1).
+
+### B-98-13 A2: 「この前に空きを入れる…」 and the empty section's tip
+
+- Question 1: 「この前に空きを入れる…」 needs a usable section, like the other two rows, so it cannot be used before the last marker when nothing comes after it, though only the marker's own place matters for it. Should it need only the marker on a bar head?
+- Question 2: the reason shown for that case, 「このマーカーより後ろにクリップがないので、区間がありません」, was made by the developers.
+- From: chapter 7 A-29 (A2).
+
+### B-98-14 A7: muting the whole source track for a clip bounce
+
+- Question: 「音のクリップにする」 on some clips mutes the whole keys track (nothing smaller than a track can be muted), so clips outside the range go silent. Is that wanted, or should the track stay unmuted for 「音のクリップにする」?
+- From: chapter 7 A-29 (A7).
+
+### B-98-15 A8: recording into a comped clip; reverse, normalize and tune with a comp
+
+- Question 1: a recording over a clip with a comp keeps the comp (the person still hears it) and adds the new takes to choose from. The other choice: the comp goes and the new take sounds whole. Which?
+- Question 2: 「逆にする」, 「ノーマライズ」 and 「音程を寄せる」 are disabled on a clip with a comp (a tune set before stays and is heard). Turning 「音程を寄せる」 on for comps is one line now. Wanted?
+- Also: the step name 「いいとこ取りを外す」 is provisional.
+- From: architecture 25-33; chapter 7 A-29 (A8).
+
+### B-98-16 M5: where the fade ends, and fades again
+
+- Question 1: the fade ends at the song's end, the last clip's end up to the next bar head; the export's 「曲ぜんぶ」 ends at the last clip's end. When the last clip ends inside a bar, the file ends before the fade does (at the level the line has there). Should the fade end at the last clip's end, or the export at the bar?
+- Question 2: a fade-out added again with fewer bars changes nothing heard (it starts from the old fade's line). Should a new fade start from the fader (or the value before the old fade) so it can shorten?
+- Question 3: folded, the master's row stays as a low row 「▸ マスター 音量」; the master's automation mark sits at the right end of its value row (there was no disabled mark before). Right?
+- From: architecture 25-32; chapter 7 A-29 (M5).
+
+### B-98-17 A5: the names in 「最近ひらいた曲」
+
+- Question: a row shows the song file's name without `.meloet`, not the name inside the file (that would mean reading every file). Normally they are the same. Right?
+- From: chapter 7 A-29 (A5).
+
+### B-98-18 D1: when 「新しい版」 shows
+
+- Question: 「止まっているとき」 is read as "the song is not moving", so the notice waits while playing too, not only while counting in and recording. Right?
+- From: chapter 7 A-29 (D1).
+
+### B-98-19 M7: quality, and the separate stretch preset
+
+- Question: tuned clips use a denser stretch preset than other made clips, so a stretched or pitched clip sounds slightly different once it is also tuned. Known limits: octave or fifth mistakes of the detector, whistling or very high voices, breathy voices left alone in patches, chords and backing tracks not detected (the tip is the only warning), a few dB of level difference at some note edges in the listening set. Is the result good enough by ear, and is the preset all right?
+- Listening files: `target/r12-m7-ear/` (speech and singing; dry, 50 %, 100 %).
+- From: architecture 25-34.
+
+### B-98-20 P1: 「色」 on drum tracks and the menu bar
+
+- Question: on drum rows 「色」 is 「使えない」 and borrows the scale lock's tip (「ドラムには音階がないので、スケール固定は使えません。」), whose second half names スケール固定. A tip of its own needs new wording. And the menu bar has no 「色をつける」 row (the request names only the toolbar and the right panel). Add either?
+- From: chapter 7 A-29 (P1).
+
+### B-98-21 P4: the patterns and plugin drum tracks
+
+- Question 1: the twelve patterns (which drum where, velocities) were written by the developers and not heard. Are they right?
+- Question 2: a plugin drum track (avldrums and so on) is not a drum track for patterns: 「ここに置く」 makes a studio kit track and ▶ plays the studio kit, because meloet does not know a plugin's key map. Right?
+- From: architecture 25-20; chapter 7 A-29 (P4).
+
+### B-98-22 P3: out-of-range values said nowhere
+
+- Question: a number outside 10–300 in 「割合」 or 1–32 in 「ばらつき」 is put at the nearest end without a word, and an unreadable one only turns the box red. Should the status line say it, as for the other boxes? (The shapes `ValueField::Percent` and `Amount` exist since protocol 32; the screen does not use them yet.)
+- From: architecture 25-10.
+
+### B-98-23 M1: the factory presets and the mix of reverb and delay
+
+- Question 1: the 18 factory values (and M6's six) were chosen by the developers and not heard, nor was switching presets while playing. Are they right?
+- Question 2: a factory preset of the reverb or the delay leaves the mix as it is (100 % on a return, 30 % on a track or the master); a user preset sets the mix it kept. Should user presets also leave the mix alone?
+- From: architecture 25-22.
+
+### B-98-24 M6: the saturation's level, the de-esser's depth, the preset names
+
+- Question: the saturation bends around −18 dBFS (louder material gets quieter as the drive goes up; one constant to change); at the de-esser's frequency itself the cut is half (the full cut about an octave and a half above); the six preset names were made by the developers. Right by ear? The de-esser was tried only on a made-up "voice", not a real one.
+- Listening files: `target/r12-m6-ear/` (made by `MELOET_EAR_DIR=<folder> cargo test -p meloet-sound --test effects_ear -- --ignored --nocapture`).
+- From: architecture 25-23.
+
+### B-98-25 G1: 33 row names of the key list
+
+- Question: 33 rows of the key list were named by the developers (chapter 7 A-29, G1). Are the names right?
+- From: chapter 7 A-29 (G1).
+
+### B-98-26 E7: analysis while the bars are hidden
+
+- Question (for the lead): when the screen hides the bars for lack of room, the analysis still runs (core does not know the screen's width; telling it needs a new shape). The same holds for M3's loudness while the box is scrolled out of view. Worth a shape?
+- From: chapter 7 A-29 (E7, M3).
+
+### B-98-27 A3: 「トラックは 64 本まで…」 on the other ways of adding a track
+
+- Question (for the lead): the notice is said by 「トラックを複製」, 「音のクリップにする」 and 「パターンを置く」, but the shelf's new track and 「＋ 歌のトラック」 still say nothing at 64 (the protocol comment says "and every other way").
+- From: chapter 7 A-29 (A3).
+
+### B-98-28 Wording made by the developers in round 12
+
+- Question: every text with the source `builder:2026-11-23` or `builder:2026-11-24` in `ui/src/text/ja.ts` waits for the owner's approval. By feature (the texts are listed in chapter 7, A-29): G1 (33 key list rows), A3 (`msg.tooManyTracks`), R3 (`metronome.tapNone`), P3 (four status lines), A9 (three status lines), F1 (two check lines), E9 (`exported.lengthSeconds`), R2 (`msg.typedKeysIme`), P2 (`pr.ghostTracks`, `pr.ghostDrums`), P4 (`shelf.placeOnNewTrack`, `shelf.playPattern`), A1 (`arrange.repeatCount`), M1 (four texts), M6 (six preset names), F2 (`export.removePicture`, `export.noPicture`, two picture messages), E2 (`input.arpMenu`), E3 (`status.soundKnobSelected`, `history.soundKnob`), A2 (five texts), A7 (eight status lines), M5 (three texts), A8 (two disabled-row reasons), M7 (`msg.tuneDragging`).
+- Now: shown as written.
+- From: chapter 7 A-29.
+
+### B-98-29 A9: no message when a clip's file cannot be read or written
+
+- Question: a 「ノーマライズ」 of a file that cannot be read, or a 「逆にする」 whose new file cannot be written (disk full), does nothing and says nothing. The shape `clipWorkFailed {count}` exists since protocol 32 but has no wording. What should it say?
+- From: architecture 25-12.

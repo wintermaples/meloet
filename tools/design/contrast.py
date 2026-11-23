@@ -74,14 +74,14 @@ def ratio(a: str, b: str) -> float:
     return (la + 0.05) / (lb + 0.05)
 
 
-def expand(pairs: list[dict]) -> list[tuple[str, str, str, str]]:
+def expand(pairs: list[dict]) -> list[tuple[str, str, str, str, dict]]:
     out, seen = [], set()
     for p in pairs:
         for bg in p["bg"]:
             key = (p["fg"], bg, p["kind"])
             if key not in seen:
                 seen.add(key)
-                out.append((p["fg"], bg, p["kind"], p["where"]))
+                out.append((p["fg"], bg, p["kind"], p["where"], p.get("except") or {}))
     return out
 
 
@@ -94,10 +94,12 @@ def main() -> int:
     spec = json.loads(PAIRS_JSON.read_text(encoding="utf-8"))
     kinds = spec["kinds"]
     pairs = expand(spec["pairs"])
-    for fg, bg, kind, _ in pairs:
+    themes = load_themes()
+    for fg, bg, kind, _, exc in pairs:
         if kind not in kinds:
             raise SystemExit(f"contrast.py: unknown kind {kind}")
-    themes = load_themes()
+        if exc and (not exc.get("why") or not set(exc.get("themes", [])) <= set(themes)):
+            raise SystemExit(f"contrast.py: an exception needs known themes and a why: {fg} on {bg}")
     for tid in args.theme or []:
         if tid not in themes:
             raise SystemExit(f"contrast.py: unknown theme {tid}")
@@ -107,17 +109,23 @@ def main() -> int:
     for tid in checked:
         p = themes[tid]
         bad = 0
+        owned = 0
         lines = []
-        for fg, bg, kind, where in pairs:
+        for fg, bg, kind, where, exc in pairs:
             r = ratio(p[fg], p[bg])
             need = kinds[kind]["min"]
-            fail = need is not None and r < need
+            under = need is not None and r < need
+            # The owner's exceptions are always printed when they are under, so they stay in sight.
+            excepted = under and tid in exc.get("themes", [])
+            fail = under and not excepted
             bad += fail
-            if fail or args.all:
-                mark = "FAIL" if fail else ("    " if need is not None else "note")
+            owned += excepted
+            if under or args.all:
+                mark = "FAIL" if fail else "OWN " if excepted else ("    " if need is not None else "note")
                 need_s = f"{need:>4}" if need is not None else "   -"
-                lines.append(f"  {mark} {r:5.2f} (>= {need_s} {kind:8}) {fg:>9} {p[fg]} on {bg:<9} {p[bg]}  {where}")
-        print(f"{tid}: {len(pairs)} pairs, {bad} under the minimum")
+                why = f"  [owner: {exc['why']}]" if excepted else ""
+                lines.append(f"  {mark} {r:5.2f} (>= {need_s} {kind:8}) {fg:>9} {p[fg]} on {bg:<9} {p[bg]}  {where}{why}")
+        print(f"{tid}: {len(pairs)} pairs, {bad} under the minimum" + (f", {owned} under it by the owner's decision" if owned else ""))
         print("\n".join(lines)) if lines else None
         bad_total += bad
     return 1 if bad_total else 0

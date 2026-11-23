@@ -18,6 +18,7 @@ import {
   writeCssVariables,
   type PartName,
 } from "../src/design/tokens";
+import { THEME_IDS, palettes } from "../src/design/themes";
 import { cellText, headers, rows, sectionTables, sectionText, specDocument, tableAfterH3 } from "./design-sources";
 
 const doc = specDocument();
@@ -45,6 +46,17 @@ describe("spec 1 tables and tokens.ts", () => {
         expect(n, nameCell).toBe(Number(rgb));
       }
       seen.push(nameCell!);
+    }
+    expect(sorted(seen)).toEqual(sorted(Object.keys(colors)));
+  });
+
+  it("themes: the table has every name, and every value of every theme (design/themes.ts)", () => {
+    const table = tableAfterH3(doc, "Themes");
+    expect(headers(table).slice(1)).toEqual(THEME_IDS.map((id) => id));
+    const seen: string[] = [];
+    for (const [name, ...values] of rows(table)) {
+      THEME_IDS.forEach((id, i) => expect(values[i], `${name} ${id}`).toBe(palettes[id][name as keyof typeof colors]));
+      seen.push(name!);
     }
     expect(sorted(seen)).toEqual(sorted(Object.keys(colors)));
   });
@@ -129,6 +141,7 @@ const ROUNDED = [
   "part.param.step@125=7.5→8",
   "part.reading.offset@125=7.5→8",
   "part.reading.pad-x@125=7.5→8",
+  "part.row.hatch@125=7.5→8",
   "part.take.mark@125=7.5→8",
   "part.windowmark.size@125=12.5→13",
 ];

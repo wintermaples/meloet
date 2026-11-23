@@ -47,10 +47,10 @@ export const KEY_FORMS = {
 } as const;
 export type KeyForm = keyof typeof KEY_FORMS;
 
-/** F-Connect2 (a keyboard is there) and F-Connect1 (none: `dim`). */
+/** F-Connect2 (a keyboard is there) and F-Connect1 (none: `dim`). The keys have colors of their own (user:2026-11-23). */
 export const KEYBOARD = {
-  whiteFill: "color.gray.3",
-  blackFill: "color.gray.0",
+  whiteFill: "color.key.meter.white",
+  blackFill: "color.key.meter.black",
   down: "color.accent",
   lit: { frame: "color.gray.6", blackFrame: "color.gray.7" },
   dim: { frame: "color.gray.5", blackFrame: "color.gray.6" },

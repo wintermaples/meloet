@@ -1,6 +1,7 @@
 // WebGL pictures of the piano roll (lists of rectangles). Does not know the DOM. Coordinates are screen pixels of the region's canvas (box is the slot's box).
 // Notes follow spec 2 "Note": height 11, a 2px gray.10 at the left end, the face gray.8 / 9 / 10 by velocity, accent when selected,
-// the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written gray.0. Row backgrounds and line colors follow mock A-PianoRoll.
+// the position before aligning only as a gray.7 border (accent for selected notes), rows that cannot be written row.out with gray.7 diagonal lines.
+// Line colors follow mock A-PianoRoll; rows and keys have colors of their own (spec 1, user:2026-11-23).
 // The original position while dragging is an accent border. Both borders are drawn after the notes so notes do not hide them (docs/history/design-notes.ja.md B-64).
 
 import type { ControlKind, LiveNote, MusicalScale } from "../../bridge";
@@ -15,7 +16,7 @@ import type { Meter } from "../time";
 import { draggedPoint, firstPointFrom, isOnOff, lanePoints, pointTick, valueToY, type LaneBox, type LaneDrag } from "./cc";
 import type { Drag } from "./drag";
 import { draggedVelocity } from "./drag";
-import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, type RollGeom, type Shown } from "./geom";
+import { eachNoteIn, keyToY, movedFrom, noteEnd, noteStart, rowColor, rowsShown, velocityColor, writable, type RollGeom, type Shown } from "./geom";
 
 /** Sizes (CSS px, with the scale applied). */
 export interface RollSizes {
@@ -28,6 +29,8 @@ export interface RollSizes {
   endMark: number;
   /** The difference between a drum square and the row height (part.drum.hit-gap). */
   drumGap: number;
+  /** How far apart the lines on rows that cannot be written are, along the row (part.row.hatch). */
+  hatch: number;
 }
 
 /** What the large pictures of the note area and the velocity lane use. Call the slot's update when it changes. */
@@ -54,6 +57,8 @@ export interface RollPicture {
 }
 
 const FRAME: ColorName = "color.gray.7";
+/** The lines on rows that cannot be written: the color of disabled things, 3:1 or more against row.out in every theme. */
+const HATCH: ColorName = "color.gray.7";
 
 /** When lines get closer than this, use the next coarser lines (CSS px). */
 const LINE_MIN_PX = 4;
@@ -131,7 +136,7 @@ function drumSquare(g: RollGeom, sizes: RollSizes, x0: number, rowTop: number, d
   return { x0: a, y0, x1: a + Math.max(HAIR, Math.round((g.drum?.hitW ?? 0) * dpr)), y1: y0 + h };
 }
 
-/** The drum note area: row backgrounds (gray.2 and gray.3 in turns, with gray.1 lines between), grid lines, hit squares. */
+/** The drum note area: row backgrounds (row.white and row.black in turns, with gray.1 lines between), grid lines, hit squares. */
 function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array | null, dpr: number): void {
   const { g, sizes } = p;
   const d = g.drum!;
@@ -144,7 +149,7 @@ function paintDrumRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Array |
   const rows = Math.min(d.keys.length - d.top, rowsShown(g) + 1);
   for (let r = 0; r < rows; r++) {
     const y = box.y0 + r * rowH;
-    out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb((d.top + r) % 2 === 0 ? "color.gray.2" : "color.gray.3"));
+    out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb((d.top + r) % 2 === 0 ? "color.row.white" : "color.row.black"));
   }
   const bottom = box.y0 + rows * rowH;
   gridLines(out, box, p, X, Math.min(box.y1, bottom));
@@ -232,6 +237,18 @@ export function paintRoll(out: Batch, box: Box, p: RollPicture, marks: Uint8Arra
     if (key < 0) break;
     const y = Y(key);
     out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(rowColor(key, p.scale)));
+  }
+  // After all the rows, so the hatches are drawn together (one program change), under the lines and notes.
+  if (p.scale.lock) {
+    const pitch = Math.round(sizes.hatch * dpr);
+    const originX = Math.round(X(0));
+    for (let r = 0; r < rows; r++) {
+      const key = g.topKey - r;
+      if (key < 0) break;
+      if (writable(key, p.scale)) continue;
+      const y = Y(key);
+      out.hatch(box.x0, y, box.x1, y + rowH - HAIR, rgb(HATCH), pitch, originX, Math.round(y));
+    }
   }
 
   const from = g.scrollTick;
@@ -348,7 +365,7 @@ export function paintVelocityLane(out: Batch, box: Box, p: RollPicture, dpr: num
   }
 }
 
-/** The key part of the keyboard column (right of the note name field). White keys gray.5, black keys gray.0, lit keys accent, a gray.1 line below. */
+/** The key part of the keyboard column (right of the note name field). White keys key.white, black keys key.black, lit keys accent, a gray.1 line below. */
 export function paintRollKeys(
   out: Batch,
   box: Box,
@@ -376,7 +393,7 @@ export function paintRollKeys(
     const key = g.topKey - r;
     if (key < 0) break;
     const y = box.y0 + r * rowH;
-    const color: ColorName = lit(key) ? "color.accent" : isBlack(key) ? "color.gray.0" : "color.gray.5";
+    const color: ColorName = lit(key) ? "color.accent" : isBlack(key) ? "color.key.black" : "color.key.white";
     out.rect(box.x0, y, box.x1, y + rowH - HAIR, rgb(color));
   }
 }

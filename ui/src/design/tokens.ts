@@ -27,6 +27,13 @@ export const colors = {
   "color.track.5": "#FFD9F1",
   "color.tip.bg": "#F2F2F2",
   "color.tip.fg": "#000000",
+  "color.key.white": "#3C3C3C",
+  "color.key.black": "#000000",
+  "color.key.meter.white": "#282828",
+  "color.key.meter.black": "#000000",
+  "color.row.white": "#212121",
+  "color.row.black": "#1A1A1A",
+  "color.row.out": "#000000",
 } as const;
 export type ColorName = keyof typeof colors;
 
@@ -139,6 +146,7 @@ export const part = {
   "part.meter.mic": p(200, "s2", "Input meter band (split left and right)", "a 200 meter"),
   "part.note.height": p(11, "s2", "Note", "Height 11"),
   "part.note.edge": p(2, "s2", "Note", "2px gray.10"),
+  "part.row.hatch": p(6, "s2", "Note", "diagonal lines 6 apart"),
   "part.tip.width": p(248, "s2", "Term tip", "Width 248"),
   "part.tip.pad": p(8, "s2", "Term tip", "padding 8"),
   "part.choice.size": p(12, "s2", "Choice mark (in settings)", "12×12"),

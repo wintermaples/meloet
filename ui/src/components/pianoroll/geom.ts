@@ -236,10 +236,10 @@ export function noteName(key: number): string {
   return `${NOTE_NAMES[((key % 12) + 12) % 12]}${Math.floor(key / 12) - 1}`;
 }
 
-/** Row background: white keys gray.2, black keys gray.1, rows that cannot be written (outside the scale with scale lock) gray.0. */
+/** Row background: white keys row.white, black keys row.black, rows that cannot be written (outside the scale with scale lock) row.out. */
 export function rowColor(key: number, s: MusicalScale): ColorName {
-  if (!writable(key, s)) return "color.gray.0";
-  return isBlack(key) ? "color.gray.1" : "color.gray.2";
+  if (!writable(key, s)) return "color.row.out";
+  return isBlack(key) ? "color.row.black" : "color.row.white";
 }
 
 /** The note face (spec 2 "Note"): up to 69 gray.8, 70 to 89 gray.9, 90 and up gray.10. */

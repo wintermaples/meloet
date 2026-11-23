@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use meloet_model::effects::{EffectKind, ParamShape};
+use meloet_model::effects::{EffectKind, ParamShape, ParamSpec};
 use meloet_model::mute_sets::MuteSet;
 use meloet_model::{
     AudioId, AudioShape, AudioSource, AudioTake, AutoPoint, AutoTarget, BuiltinInstrument, Bus,
@@ -410,11 +410,33 @@ fn bool_or_false<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
 /// A number in the parameter's unit, the name of a step, or a switch.
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
-enum ParamFile {
+pub(crate) enum ParamFile {
     Switch(bool),
     Number(f32),
     Step(String),
     Other(serde_json::Value),
+}
+
+/// A value of the parameter as the file writes it.
+pub(crate) fn param_file(spec: &ParamSpec, v: f32) -> ParamFile {
+    match spec.shape {
+        ParamShape::Continuous => ParamFile::Number(v),
+        ParamShape::Steps(names) => ParamFile::Step(names[v as usize].into()),
+        ParamShape::Switch => ParamFile::Switch(v >= 0.5),
+    }
+}
+
+/// The value the file gives the parameter; `None` for one of another shape. Not brought into
+/// range.
+pub(crate) fn param_value(spec: &ParamSpec, file: ParamFile) -> Option<f32> {
+    match (spec.shape, file) {
+        (ParamShape::Continuous, ParamFile::Number(v)) => Some(v),
+        (ParamShape::Steps(names), ParamFile::Step(step)) => {
+            names.iter().position(|n| *n == step).map(|i| i as f32)
+        }
+        (ParamShape::Switch, ParamFile::Switch(on)) => Some(f32::from(u8::from(on))),
+        _ => None,
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -495,16 +517,7 @@ fn slots_file(inserts: &Inserts) -> Vec<SlotFile> {
                     effect: kind.name().into(),
                     bypassed: insert.bypassed,
                     params: params
-                        .map(|(spec, &v)| {
-                            let value = match spec.shape {
-                                ParamShape::Continuous => ParamFile::Number(v),
-                                ParamShape::Steps(names) => {
-                                    ParamFile::Step(names[v as usize].into())
-                                }
-                                ParamShape::Switch => ParamFile::Switch(v >= 0.5),
-                            };
-                            (spec.name.to_owned(), value)
-                        })
+                        .map(|(spec, &v)| (spec.name.to_owned(), param_file(spec, v)))
                         .collect(),
                 })
             }
@@ -542,16 +555,7 @@ fn inserts_of(slots: Vec<SlotFile>) -> Inserts {
             let Some(index) = kind.param_index(&name) else {
                 continue;
             };
-            let shape = kind.params()[index as usize].shape;
-            let value = match (shape, value) {
-                (ParamShape::Continuous, ParamFile::Number(v)) => Some(v),
-                (ParamShape::Steps(names), ParamFile::Step(step)) => {
-                    names.iter().position(|n| *n == step).map(|i| i as f32)
-                }
-                (ParamShape::Switch, ParamFile::Switch(on)) => Some(f32::from(u8::from(on))),
-                _ => None,
-            };
-            if let Some(v) = value {
+            if let Some(v) = param_value(&kind.params()[index as usize], value) {
                 insert.set(index, v);
             }
         }

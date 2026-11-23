@@ -270,6 +270,11 @@ BOARDS = {
     "exportFailed": None,
     # Round 12 R3: the metronome ▾ window (the mock is in docs/history/round12-spec.ja.html, not a board).
     "metronomeWindow": None,
+    # Round 12 M1: 「プリセット ▾」, its list, the name box; a gate with no preset of its own (the mock is in the spec).
+    "presets": None,
+    "presetsMenu": None,
+    "presetsSaving": None,
+    "presetsNone": None,
 }
 # Double-clicks the Vel cell of a row of the note list and types into the field (R3-Lanes: "96|" and "200").
 TYPE_KEY_FILTER = """
@@ -599,6 +604,8 @@ CLICKS = {
     "meterFlagMenu": ("tempo", "js:" + CONTEXT_FLAG),
     "vocalInputMenu": ("vocalTrack", '[data-test="track-input"]'),
     "metronomeWindow": ("metronome", '[data-test="transport-metronome-stub"]'),
+    "presetsMenu": ("presets", '[data-test="preset-button"]'),
+    "presetsSaving": ("presets", ('[data-test="preset-button"]', '[data-test="preset-save"]')),
 }
 SIZES = [(1280, 800), (1920, 1080)]
 SCALES = [100, 150]
@@ -763,6 +770,10 @@ ONLY = {
     "exporting": [(1280, 800, 100), (1280, 800, 150)],
     # At 150 % the count-in button is hidden, so the window has the count-in row too.
     "metronomeWindow": [(1280, 800, 100), (1280, 800, 150)],
+    "presets": [(1280, 800, 100)],
+    "presetsMenu": [(1280, 800, 100), (1280, 800, 150)],
+    "presetsSaving": [(1280, 800, 100)],
+    "presetsNone": [(1280, 800, 100)],
 }
 scenes = args[1:] or list(BOARDS)
 

@@ -39,7 +39,7 @@
   import { stripName } from "./mixer/stripName";
   import { paramName, valueText } from "./params/paramRows";
   import { paramUi } from "./params/paramUi.svelte";
-  import { EFFECT_PARAMS } from "../bridge/types";
+  import { EFFECT_PARAMS, PRESETS_PER_EFFECT } from "../bridge/types";
   import WindowMark from "./WindowMark.svelte";
   import WindowsMenu from "./WindowsMenu.svelte";
   import { keyCountsText, keysDrums, keysLabel, rollShowsDrums } from "./pianoroll/drums";
@@ -707,6 +707,12 @@
           button: { label: t("button.openReleasePage"), command: { type: "openReleasePage" } },
           also: { label: t("button.newVersionLater"), command: { type: "dismissNewVersion" } },
         };
+      case "presetOverwritten":
+        return plain("msg.presetOverwritten", { name: m.name });
+      case "presetLanesKept":
+        return plain("msg.presetLanesKept", { count: m.count });
+      case "tooManyPresets":
+        return plain("msg.tooManyPresets", { effect: t(`effect.${m.effect}`), max: PRESETS_PER_EFFECT });
       default:
         return null;
     }

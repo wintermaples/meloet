@@ -519,6 +519,9 @@ impl Core {
             .with_song_places(
                 options.songs_dir.clone(),
                 (options.state_dir.as_deref()).map_or_else(Vec::new, crate::recent::load),
+            )
+            .with_user_presets(
+                (options.config_dir.as_deref()).map_or_else(Default::default, crate::presets::load),
             );
         let audio_store = Arc::new(
             crate::audiofiles::AudioStore::new(options.state_dir.clone())
@@ -2937,6 +2940,13 @@ impl Worker {
                             && let Err(e) = settings::save(dir, &settings)
                         {
                             eprintln!("meloet: settings not saved in {}: {e}", dir.display());
+                        }
+                    }
+                    Effect::SavePresets(presets) => {
+                        if let Some(dir) = &self.config_dir
+                            && let Err(e) = crate::presets::save(dir, &presets)
+                        {
+                            eprintln!("meloet: presets not saved in {}: {e}", dir.display());
                         }
                     }
                     Effect::SaveRecentSongs(songs) => {

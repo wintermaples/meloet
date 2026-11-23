@@ -90,6 +90,12 @@ impl Model {
         self
     }
 
+    /// 「自分で残したもの」 of the effects as the PC keeps them (round 12, M1).
+    pub fn with_user_presets(mut self, presets: crate::presets::UserPresets) -> Model {
+        self.play.set_user_presets(presets);
+        self
+    }
+
     fn set_recent(&mut self, list: Vec<PathBuf>) {
         let files = &mut self.files;
         let ids = (list.iter())

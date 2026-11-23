@@ -22,6 +22,7 @@ pub mod pcm;
 pub mod peaks;
 pub mod play;
 pub mod plugins;
+pub mod presets;
 pub mod readahead;
 pub mod recent;
 pub mod recovery;

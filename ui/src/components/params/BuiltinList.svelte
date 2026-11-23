@@ -1,4 +1,5 @@
 <!-- The parameter list of a built-in effect (mocks F4-Mixer, R6-Delay). Those with a heading are in groups; only rows left by the search box.
+     Above it, 「プリセット ▾」 (round 12 M1): the name of the preset the values are, on in the accent, or 「プリセット ▾」; it opens PresetMenu.
      ↑ ↓ choose a row. Enter: the typing box for a smooth value, the list of steps for a stepped value, a toggle for on/off (spec 3 (86-6)). -->
 <script lang="ts">
   import { untrack } from "svelte";
@@ -10,6 +11,8 @@
   import Button from "../Button.svelte";
   import { openContextMenu } from "../menu/contextMenu.svelte";
   import ParamRow from "./ParamRow.svelte";
+  import PresetMenu from "./PresetMenu.svelte";
+  import { presetName } from "./presetName";
   import { allRows, rowCount, searchRows, stepRow, valueText } from "./paramRows";
   import { paramUi } from "./paramUi.svelte";
   import { current } from "../../state/app.svelte";
@@ -20,11 +23,16 @@
   let { sel }: { sel: SelectedInsert } = $props();
 
   let folded = $state<string[]>([]);
+  let presetsOpen = $state(false);
   const insertKey = $derived(`${JSON.stringify(sel.insert)}:${sel.effect}`);
   $effect(() => {
     void insertKey;
-    untrack(() => (folded = []));
+    untrack(() => {
+      folded = [];
+      presetsOpen = false;
+    });
   });
+  const presetText = $derived(sel.preset === null ? t("preset.button") : t("preset.named", { name: presetName(sel.effect, sel.preset) }));
 
   const groups = $derived(allRows(sel.effect, sel.values));
   const found = $derived(searchRows(groups, paramUi.query));
@@ -114,8 +122,15 @@
   }
 </script>
 
+<div class="presets">
+  <span class="m-spacer"></span>
+  <Button on={sel.preset !== null} onclick={() => (presetsOpen = !presetsOpen)} test="preset-button">{presetText}</Button>
+</div>
 <ScrollArea data-test="params-list">
   <div class="list" role="presentation" tabindex="-1" bind:this={list} {onkeydown}>
+    {#if presetsOpen}
+      <PresetMenu {sel} onclose={() => (presetsOpen = false)} />
+    {/if}
     {#each found as g, gi (g.group ?? `-${gi}`)}
       {#if g.group !== null}
         {@const isFolded = folded.includes(g.group)}
@@ -153,6 +168,15 @@
 <style>
   .list {
     outline: none;
+  }
+  /* 「プリセット ▾」 (round 12 M1), on the right of a row above the list. */
+  .presets {
+    height: var(--size-row);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    border-bottom: var(--line-hair) solid var(--color-line-thin);
   }
   .group {
     width: 100%;

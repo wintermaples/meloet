@@ -9,13 +9,228 @@ export interface FactoryPreset {
 
 /** 「はじめから入っているもの」 of each effect that comes with meloet, in the order of the menu. */
 export const FACTORY_PRESETS: { readonly [K in EffectKind]: readonly FactoryPreset[] } = {
-  "chorus": [],
-  "compressor": [],
+  "chorus": [
+    {
+      "id": "subtleWide",
+      "values": [
+        0.5,
+        25.0,
+        100.0,
+        35.0
+      ]
+    },
+    {
+      "id": "deepSwirl",
+      "values": [
+        1.2,
+        80.0,
+        100.0,
+        50.0
+      ]
+    }
+  ],
+  "compressor": [
+    {
+      "id": "vocalEven",
+      "values": [
+        -18.0,
+        3.0,
+        5.0,
+        80.0,
+        4.0
+      ]
+    },
+    {
+      "id": "drumPunch",
+      "values": [
+        -15.0,
+        4.0,
+        20.0,
+        60.0,
+        3.0
+      ]
+    },
+    {
+      "id": "bassSolid",
+      "values": [
+        -20.0,
+        5.0,
+        10.0,
+        120.0,
+        4.0
+      ]
+    },
+    {
+      "id": "gentleGlue",
+      "values": [
+        -12.0,
+        2.0,
+        30.0,
+        200.0,
+        2.0
+      ]
+    }
+  ],
   "deEsser": [],
-  "delay": [],
-  "eq4": [],
+  "delay": [
+    {
+      "id": "echo",
+      "values": [
+        0.0,
+        250.0,
+        1.0,
+        40.0,
+        5000.0,
+        200.0,
+        0.0,
+        100.0
+      ]
+    },
+    {
+      "id": "slapback",
+      "values": [
+        2.0,
+        100.0,
+        0.0,
+        10.0,
+        7000.0,
+        150.0,
+        0.0,
+        100.0
+      ]
+    },
+    {
+      "id": "pingPong",
+      "values": [
+        1.0,
+        250.0,
+        1.0,
+        45.0,
+        6000.0,
+        250.0,
+        1.0,
+        100.0
+      ]
+    }
+  ],
+  "eq4": [
+    {
+      "id": "vocalClear",
+      "values": [
+        120.0,
+        -3.0,
+        300.0,
+        -2.0,
+        1.5,
+        3000.0,
+        3.0,
+        1.5,
+        10000.0,
+        2.0
+      ]
+    },
+    {
+      "id": "unmuddy",
+      "values": [
+        100.0,
+        0.0,
+        350.0,
+        -4.0,
+        1.2,
+        3000.0,
+        0.0,
+        1.0,
+        8000.0,
+        0.0
+      ]
+    },
+    {
+      "id": "cleanLows",
+      "values": [
+        150.0,
+        -6.0,
+        250.0,
+        -2.0,
+        1.0,
+        3000.0,
+        0.0,
+        1.0,
+        8000.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fatBass",
+      "values": [
+        80.0,
+        4.0,
+        700.0,
+        -2.0,
+        1.0,
+        2000.0,
+        2.0,
+        1.5,
+        8000.0,
+        0.0
+      ]
+    }
+  ],
   "gate": [],
-  "limiter": [],
-  "reverb": [],
+  "limiter": [
+    {
+      "id": "finish",
+      "values": [
+        -1.0,
+        3.0,
+        80.0
+      ]
+    },
+    {
+      "id": "gentle",
+      "values": [
+        -1.0,
+        0.0,
+        200.0
+      ]
+    }
+  ],
+  "reverb": [
+    {
+      "id": "smallRoom",
+      "values": [
+        0.6,
+        25.0,
+        5.0,
+        8000.0,
+        150.0,
+        80.0,
+        100.0
+      ]
+    },
+    {
+      "id": "hall",
+      "values": [
+        3.2,
+        85.0,
+        30.0,
+        6000.0,
+        120.0,
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "id": "behindVocal",
+      "values": [
+        1.8,
+        55.0,
+        60.0,
+        5000.0,
+        250.0,
+        100.0,
+        100.0
+      ]
+    }
+  ],
   "saturation": []
 };

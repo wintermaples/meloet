@@ -17,10 +17,12 @@ import { reduceUpdates } from "./fakeUpdates";
 import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA9 } from "./fakeA9";
+import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
 import {
   CLIP_CENTS_MAX,
   CLIP_SEMITONES_MAX,
   EFFECT_PARAMS,
+  FACTORY_PRESETS,
   EXPORT_FORMATS,
   EXPORT_WAVE_BARS,
   INSTRUMENT_GROUPS,
@@ -1847,6 +1849,30 @@ SCENES.mixer = {
 // R6-Delay: the delay of return B in the parameters panel, no row chosen.
 SCENES.paramsDelay = {
   setup: (s) => mixerSong(s, { strip: RETURN_B, slot: 0 }, "delay", null),
+  bands: ["mixer", "params"],
+  meters: QUIET,
+};
+// Round 12 M1 (the mock of the spec): the compressor of track 2 has the values of 「歌をそろえる」, and the PC keeps
+// 「いつものピアノ」. shoot_ui.py opens 「プリセット ▾」 (presetsMenu) and 「いまの設定を残す…」 (presetsSaving).
+SCENES.presets = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    const insert: InsertRef = { strip: { kind: "track", id: s.song.tracks[1]!.id }, slot: 0 };
+    const values = [...FACTORY_PRESETS.compressor[0]!.values];
+    s.params.selected = { kind: "builtin", insert, effect: "compressor", values, row: null, preset: { kind: "factory", id: "vocalEven" } };
+    fakeUserPreset(s, "compressor", "いつものピアノ", effectDefaults("compressor"));
+  },
+  bands: ["mixer", "params"],
+  meters: QUIET,
+};
+// Round 12 M1: a gate (no preset comes with it yet), its values not a preset's: 「プリセット ▾」.
+SCENES.presetsNone = {
+  setup(s) {
+    mixerSong(s, { strip: RETURN_A, slot: 0 }, "reverb", null);
+    s.song.tracks[0]!.inserts = firstInsert("gate");
+    const insert: InsertRef = { strip: { kind: "track", id: s.song.tracks[0]!.id }, slot: 0 };
+    s.params.selected = { kind: "builtin", insert, effect: "gate", values: effectDefaults("gate"), row: null, preset: null };
+  },
   bands: ["mixer", "params"],
   meters: QUIET,
 };
@@ -5173,7 +5199,14 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
     if (JSON.stringify(song) !== JSON.stringify(state.song)) changes.push({ section: "song", value: song });
   }
   for (const c of changes) if (c.section === "song") song = c.value = settleSong(c.value as SongView);
-  if (mixer && JSON.stringify(mixer.params) !== JSON.stringify(state.params)) changes.push({ section: "params", value: mixer.params });
+  // Round 12 M1: 「プリセット ▾」, and the name it shows.
+  const params = mixer?.params ?? structuredClone(state.params);
+  const sel = params.selected?.kind === "builtin" ? params.selected : null;
+  const presetsDone = reducePresets(state.presets, sel, transport.state === "recording" || transport.state === "countIn", command);
+  const presets = presetsDone?.presets ?? state.presets;
+  if (sel) sel.preset = presetOf(sel.effect, sel.values, presets);
+  if (JSON.stringify(params) !== JSON.stringify(state.params)) changes.push({ section: "params", value: params });
+  if (JSON.stringify(presets) !== JSON.stringify(state.presets)) changes.push({ section: "presets", value: presets });
   if (mixer && JSON.stringify(mixer.windows) !== JSON.stringify(state.windows)) changes.push({ section: "windows", value: mixer.windows });
   let shelf = structuredClone(mixer?.shelf ?? tracks?.shelf ?? state.shelf);
   reduceAdded(command, shelf, library, ws);
@@ -5200,6 +5233,7 @@ function reduce(state: AppState, bands: FakeBands, rest: StatusMessage | null, s
   let message =
     notice ??
     mixer?.notice ??
+    presetsDone?.notice ??
     clips?.notice ??
     tracks?.notice ??
     shelfMessage(shelf, song, library) ??

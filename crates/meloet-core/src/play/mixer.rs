@@ -683,13 +683,13 @@ impl Play {
             .and_then(|picked| match picked {
                 Picked::Effect(strip, slot, _) => {
                     let insert = self.doc().insert(*strip, *slot)?;
+                    let kind = insert.kind()?;
                     Some(SelectedParams::Builtin(SelectedInsert {
                         insert: insert_ref(*strip, *slot),
-                        effect: effect_kind(insert.kind()?),
+                        effect: effect_kind(kind),
                         values: insert.values().to_vec(),
                         row: self.mixer.row,
-                        // round12 stub: M1
-                        preset: None,
+                        preset: self.preset_of(kind, insert.values()),
                     }))
                 }
                 Picked::Plugin(place, key) => {

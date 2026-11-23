@@ -84,7 +84,6 @@ describe("fake intents", () => {
   it("the new intents are taken and change nothing yet", async () => {
     const { now, send } = await opened();
     const before = await now();
-    const insert = { strip: { kind: "master" as const }, slot: 0 };
     const commands: Command[] = [
       { type: "keepPlayed" },
       { type: "typedKeys", on: true },
@@ -94,9 +93,6 @@ describe("fake intents", () => {
       { type: "playPattern", id: "eightBeat" },
       { type: "placePattern", id: "eightBeat" },
       { type: "repeatClips", clips: [1], count: 3 },
-      { type: "applyPreset", insert, preset: { kind: "factory", id: "finish" } },
-      { type: "savePreset", insert, name: "いつもの" },
-      { type: "deletePreset", effect: "limiter", name: "いつもの" },
       { type: "lowerAllTracks", db: 6 },
       { type: "dismissTooLoud" },
     ];

@@ -422,6 +422,24 @@ impl Play {
                 return Err(AiRefusal::LaneDrives(param));
             }
         }
+        let edit = (self.effect_params_edit(strip, slot, kind, values))
+            .map_err(|_| AiRefusal::NoSuchEffect)?;
+        let Some(edit) = edit else {
+            return Ok(false);
+        };
+        self.apply(edit, effects);
+        Ok(true)
+    }
+
+    /// `values` set one after the other on the insert, on one copy of the song: the song after
+    /// all of them with the step of the first that changed anything; `None` when none did.
+    pub(super) fn effect_params_edit(
+        &self,
+        strip: StripId,
+        slot: usize,
+        kind: EffectKind,
+        values: &[(u32, f32)],
+    ) -> Result<Option<meloet_model::Edit>, EditError> {
         let mut doc = self.doc().clone();
         let mut step = None;
         for &(param, value) in values {
@@ -431,14 +449,10 @@ impl Play {
                     step.get_or_insert(edit.step);
                 }
                 Err(EditError::Unchanged) => {}
-                Err(_) => return Err(AiRefusal::NoSuchEffect),
+                Err(e) => return Err(e),
             }
         }
-        let Some(step) = step else {
-            return Ok(false);
-        };
-        self.apply(meloet_model::Edit { doc, step }, effects);
-        Ok(true)
+        Ok(step.map(|step| meloet_model::Edit { doc, step }))
     }
 
     /// Before the panel changes a parameter that it is not dragging already: a drag of

@@ -2001,9 +2001,7 @@ fn the_user_guide_opens_in_the_browser_and_the_state_stays() {
 /// it changes nothing, as an intent with an old id.
 #[test]
 fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
-    use meloet_protocol::{
-        ExportChange, ExportFormat, InsertRef, PresetRef, PresetsView, StripRef,
-    };
+    use meloet_protocol::{ExportChange, ExportFormat, PresetsView};
     let mut m = fresh();
     let before = m.view();
     assert!(!before.transport.can_keep_played);
@@ -2018,10 +2016,6 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
         ),
         (0, &None, &None)
     );
-    let insert = InsertRef {
-        strip: StripRef::Master,
-        slot: 0,
-    };
     let commands = [
         Command::KeepPlayed,
         Command::TypedKeys { on: true },
@@ -2043,20 +2037,6 @@ fn the_commands_of_round_12_wave_2_are_taken_and_change_nothing_yet() {
         Command::RepeatClips {
             clips: vec![99],
             count: 3,
-        },
-        Command::ApplyPreset {
-            insert,
-            preset: PresetRef::Factory {
-                id: "finish".into(),
-            },
-        },
-        Command::SavePreset {
-            insert,
-            name: "いつもの".into(),
-        },
-        Command::DeletePreset {
-            effect: EffectKind::Limiter,
-            name: "いつもの".into(),
         },
         Command::LowerAllTracks { db: 6.0 },
         Command::DismissTooLoud,

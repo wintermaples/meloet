@@ -478,6 +478,8 @@ pub enum Effect {
     SaveSettings(Box<Settings>),
     /// Keep the song files opened or saved lately (`crate::recent`) in the state folder.
     SaveRecentSongs(Vec<PathBuf>),
+    /// Keep 「自分で残したもの」 of the effects (`crate::presets`) next to the settings.
+    SavePresets(Box<crate::presets::UserPresets>),
     /// Answer with [`Input::AudioRetry`] after this long.
     RetryAudio {
         after: Duration,
@@ -1476,10 +1478,15 @@ impl Model {
             | Command::PlacePattern { .. } => {}
             // round12 stub: A1
             Command::RepeatClips { .. } => {}
-            // round12 stub: M1
-            Command::ApplyPreset { .. }
-            | Command::SavePreset { .. }
-            | Command::DeletePreset { .. } => {}
+            Command::ApplyPreset { insert, preset } => {
+                self.notice = self.play.apply_preset(insert, &preset, effects);
+            }
+            Command::SavePreset { insert, name } => {
+                self.notice = self.play.save_preset(insert, &name, effects);
+            }
+            Command::DeletePreset { effect, name } => {
+                self.play.delete_preset(effect, &name, effects);
+            }
             // round12 stub: M2
             Command::LowerAllTracks { .. } | Command::DismissTooLoud => {}
             Command::SetViewport { width, height } => {
@@ -2858,8 +2865,7 @@ impl Model {
             inputs: self.inputs_view(),
             audio,
             audio_work: self.play.audio_work_view(),
-            // round12 stub: M1
-            presets: meloet_protocol::PresetsView::default(),
+            presets: self.play.presets_view(),
             export: self.export_view(),
             sounds: self.sounds_view(),
             ai_link: self.ai.view(),

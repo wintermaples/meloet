@@ -539,6 +539,8 @@ pub struct Play {
     faults: Option<meloet_protocol::RecordingFaults>,
     /// What is known of the song's audio files (found, being read, missing).
     audio: audio::AudioBook,
+    /// 「自分で残したもの」 of the PC (round 12, M1).
+    user_presets: crate::presets::UserPresets,
 }
 
 impl Play {
@@ -598,6 +600,7 @@ impl Play {
             saving: None,
             voices_sent: Vec::new(),
             uid_seed: 0,
+            user_presets: crate::presets::UserPresets::default(),
             faults: None,
             audio: audio::AudioBook::default(),
         };
@@ -2841,6 +2844,7 @@ mod mixsync;
 mod mute_sets;
 mod params;
 mod plugs;
+mod presets;
 mod progression;
 mod reverse;
 mod seats;

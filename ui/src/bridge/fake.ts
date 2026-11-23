@@ -1164,7 +1164,7 @@ export const SCENES: Record<string, SceneDef> = {
     setup(s) {
       aMelody(s, [14, QUANTIZED_TAKE]);
       s.transport.state = "recording";
-      s.transport.recording = { id: 1, track: 1, from: 0, take: 3, clip: 13, lap: 0 };
+      s.transport.recording = { id: 1, track: 1, from: 0, take: 3, clip: 13, lap: 0, overdub: false };
       s.status.message = { id: "recording", track: PIANO, take: 3 };
     },
     bands: ["pianoRoll"],
@@ -1260,7 +1260,7 @@ export const SCENES: Record<string, SceneDef> = {
       s.transport.state = "recording";
       s.transport.position = 4 * BAR;
       s.transport.metronome = true;
-      s.transport.recording = { id: 1, track: 1, from: 4 * BAR, take: 2, clip: 3, lap: 0 };
+      s.transport.recording = { id: 1, track: 1, from: 4 * BAR, take: 2, clip: 3, lap: 0, overdub: false };
       s.status.message = { id: "recording", track: PIANO, take: 2 };
     },
     meters: {
@@ -1281,7 +1281,7 @@ export const SCENES: Record<string, SceneDef> = {
       ready(s);
       s.transport.state = "countIn";
       s.transport.metronome = true;
-      s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+      s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0, overdub: false };
       s.status.message = { id: "countingIn", beats: 4 };
     },
     meters: { ...QUIET, position: { tick: -(3 * TPQ) / 2, ticksPerUs: 0, state: "countIn", countInBeatsLeft: 2, lap: 0 } },
@@ -2955,7 +2955,7 @@ function vocalRecording(s: AppState, keys: boolean): void {
   s.transport.state = "recording";
   s.transport.position = 4 * BAR;
   s.transport.metronome = true;
-  s.transport.recording = keys ? { id: 1, track: s.song.keysTarget!, from: 4 * BAR, take: 2, clip: null, lap: 0 } : null;
+  s.transport.recording = keys ? { id: 1, track: s.song.keysTarget!, from: 4 * BAR, take: 2, clip: null, lap: 0, overdub: false } : null;
   s.transport.recordingVocals = [{ track: VOCAL_TRACK_ID, from: 4 * BAR, take: 1, clip: null, audio: RECORDING_AUDIO.id, sampleRate: 48000, firstFrame: 0 }];
 }
 const VOCAL_REC_AT: TransportReading = { tick: 6 * BAR + TPQ, ticksPerUs: 0, state: "recording", countInBeatsLeft: 0, lap: 0 };

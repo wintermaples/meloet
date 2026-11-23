@@ -173,6 +173,13 @@ pub enum EngineCommand {
         track: usize,
         sequence: Box<Sequence>,
     },
+    /// Use [`EngineHandle::grow_sequence`]. As `SwapSequence`, for a sequence that has every
+    /// event of the old one and more: what sounds goes on, and nothing the old one sent
+    /// already is sent again.
+    GrowSequence {
+        track: usize,
+        sequence: Box<Sequence>,
+    },
     /// Use [`EngineHandle::set_tempo_map`]. The song's tempo and meter from now on; the
     /// position stays the tick it is at. The old map comes back on a retired ring. `map_gen`
     /// tells the maps apart and is written into every stretch of the clock.
@@ -263,6 +270,12 @@ pub enum EngineCommand {
     /// taken (`Started::from`); keys heard before it are kept within half a beat, as at the end
     /// of a count-in. When not playing, a `Started` and a `Stopped` come back at once.
     RecordHere {
+        muted: TrackSet,
+    },
+    /// While recording: the tracks that do not play their sequence from now on, in place of
+    /// the `muted` of `Record` or `RecordHere`. A track that goes quiet lets go of what its
+    /// sequence holds; one that comes back picks up at the position.
+    SetRecordMuted {
         muted: TrackSet,
     },
     /// `t_us` is when the person asked to stop ([`monotonic_us`]). Keys after it are not recorded.
@@ -1664,6 +1677,18 @@ impl Engine {
                         self.seek_lane(track);
                     }
                 }
+                EngineCommand::GrowSequence { track, sequence } => {
+                    let old = match self.tracks.get_mut(track) {
+                        Some(slot) => slot.lane.replace_sequence(Some(sequence)),
+                        None => Some(sequence),
+                    };
+                    if let Some(old) = old {
+                        let _ = self.retired_sequences.push(old);
+                    }
+                    if self.transport.lane_plays(track) {
+                        self.seek_lane_past_sent(track);
+                    }
+                }
                 EngineCommand::SetStrip { strip, gain, pan } => {
                     if let Some((strip, smooth)) = self.strip(strip) {
                         strip.set_level(gain, pan, if smooth { ramp } else { 0 });
@@ -2033,6 +2058,7 @@ impl Engine {
                     self.streams_jump();
                 }
                 EngineCommand::RecordHere { muted } => self.record_here(muted, timing),
+                EngineCommand::SetRecordMuted { muted } => self.set_record_muted(muted),
                 EngineCommand::Stop { t_us } => self.stop(t_us, timing),
                 EngineCommand::Locate { tick } => {
                     self.end_recording(timing);
@@ -2224,6 +2250,58 @@ impl Engine {
                 // still to come, whatever the last bits of the position say.
                 slot.lane
                     .seek(|tick| t.frame_of(tick as f64) < t.frames, instrument);
+            }
+        }
+    }
+
+    /// As [`Engine::seek_lane`], but past every event the lane has sent already, those inside
+    /// its lookahead and those of the loop's start when it went round ahead: the new sequence
+    /// has them too.
+    fn seek_lane_past_sent(&mut self, track: usize) {
+        let t = &self.transport;
+        let Some(slot) = self.tracks.get_mut(track) else {
+            return;
+        };
+        let instrument = slot.instrument.as_deref_mut();
+        if t.frames == 0 {
+            let at = t.anchor_tick;
+            slot.lane.seek(|tick| (tick as f64) < at, instrument);
+            return;
+        }
+        let sent = t.frames + u64::from(slot.lookahead);
+        if slot.ahead_wrapped {
+            let start = t.loop_start;
+            slot.lane.seek(
+                |tick| {
+                    tick < start
+                        || t.loop_end_frame.saturating_add(t.map.frame_of(
+                            tick as f64,
+                            t.loop_start_sec,
+                            t.sample_rate,
+                        )) < sent
+                },
+                instrument,
+            );
+        } else {
+            slot.lane
+                .seek(|tick| t.frame_of(tick as f64) < sent, instrument);
+        }
+    }
+
+    fn set_record_muted(&mut self, muted: TrackSet) {
+        let before = self.transport.muted;
+        self.transport.muted = muted;
+        if self.transport.state != TransportState::Recording {
+            return;
+        }
+        for i in 0..self.tracks.len() {
+            match (before.contains(i), muted.contains(i)) {
+                (false, true) => {
+                    let slot = &mut self.tracks[i];
+                    slot.lane.silence(slot.instrument.as_deref_mut());
+                }
+                (true, false) if self.transport.lane_plays(i) => self.seek_lane(i),
+                _ => {}
             }
         }
     }
@@ -2934,6 +3012,15 @@ impl EngineHandle {
     /// or [`EngineHandle::take_retired_sequence`].
     pub fn swap_sequence(&mut self, track: usize, sequence: Sequence) -> Result<(), EngineCommand> {
         self.send(EngineCommand::SwapSequence {
+            track,
+            sequence: Box::new(sequence),
+        })
+    }
+
+    /// As [`EngineHandle::swap_sequence`], for a `sequence` that has every event of the one
+    /// there and more ([`EngineCommand::GrowSequence`]).
+    pub fn grow_sequence(&mut self, track: usize, sequence: Sequence) -> Result<(), EngineCommand> {
+        self.send(EngineCommand::GrowSequence {
             track,
             sequence: Box::new(sequence),
         })

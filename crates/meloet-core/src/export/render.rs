@@ -242,7 +242,7 @@ impl ExportEngine {
                 self.push(EngineCommand::SetLoop { start, end, on });
             }
             EngineOp::Metronome { on } => self.push(EngineCommand::SetMetronome { on }),
-            EngineOp::Sequence { track, events } => {
+            EngineOp::Sequence { track, events } | EngineOp::GrowSequence { track, events } => {
                 let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());
                 let sent = self.handle.swap_sequence(track, sequence);
                 self.sent(sent);
@@ -274,6 +274,7 @@ impl ExportEngine {
             EngineOp::Play { .. }
             | EngineOp::Record { .. }
             | EngineOp::RecordHere { .. }
+            | EngineOp::RecordMuted { .. }
             | EngineOp::Audition { .. }
             | EngineOp::AuditionOff
             | EngineOp::TryInstrument { .. }

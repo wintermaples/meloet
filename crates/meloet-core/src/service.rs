@@ -1809,6 +1809,7 @@ impl Audio {
                 muted,
             },
             EngineOp::RecordHere { muted } => EngineCommand::RecordHere { muted },
+            EngineOp::RecordMuted { muted } => EngineCommand::SetRecordMuted { muted },
             EngineOp::Stop { t_us } => EngineCommand::Stop { t_us },
             EngineOp::Locate { tick } => EngineCommand::Locate { tick },
             EngineOp::Timeline { timeline } => {
@@ -1891,6 +1892,15 @@ impl Audio {
                 if self.running().is_some() {
                     let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());
                     if self.handle.swap_sequence(track, sequence).is_err() {
+                        eprintln!("meloet: the engine did not take the sequence of track {track}");
+                    }
+                }
+                return;
+            }
+            EngineOp::GrowSequence { track, events } => {
+                if self.running().is_some() {
+                    let sequence = Sequence::new(events.into_iter().map(sequence_event).collect());
+                    if self.handle.grow_sequence(track, sequence).is_err() {
                         eprintln!("meloet: the engine did not take the sequence of track {track}");
                     }
                 }

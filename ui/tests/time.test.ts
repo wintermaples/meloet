@@ -138,7 +138,7 @@ describe("shownTick（再生まわりの数字と再生の位置の線）", () =
     countInBeats: 4,
     canPlay: true,
     canRecord: true,
-    recording: state === "countIn" || state === "recording" ? { id: 1, track: 1, from: 4 * TPQ, take: 1, clip: null, lap: 0 } : null,
+    recording: state === "countIn" || state === "recording" ? { id: 1, track: 1, from: 4 * TPQ, take: 1, clip: null, lap: 0, overdub: false } : null,
     recordingVocals: [],
     recordingFaults: null,
     overdub: false,

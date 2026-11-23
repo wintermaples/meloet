@@ -354,7 +354,7 @@ pub(crate) fn step_text(row: &StepRow) -> (StepName, StepWhat, Option<StepPlace>
             StepName::Record,
             match a.after.clip(clip) {
                 Some((_, c)) => StepWhat::Take {
-                    number: count(c.takes.len()),
+                    number: count(c.active + 1),
                 },
                 None => StepWhat::None,
             },

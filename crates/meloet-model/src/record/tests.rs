@@ -543,3 +543,37 @@ fn the_first_loop_take_does_not_go_before_zero() {
     assert_eq!(r.takes[0].origin, 0);
     assert_eq!(notes(&r.takes[0]), [(0, 100, 60)]);
 }
+
+#[test]
+fn closed_passes_are_given_once_and_late_keys_go_on() {
+    let mut r = Recorder::new(BAR, bars_2_3(), HeldControls::default());
+    for e in [
+        on(B + 100, 0, 60),
+        off(B + 200, 0, 60),
+        // Held over the end of pass 0.
+        on(2 * B - 50, 0, 62),
+        on(B + 10, 1, 64),
+    ] {
+        r.push(e);
+    }
+    let closed = r.close_laps(0);
+    assert_eq!(closed.len(), 1);
+    assert_eq!((closed[0].origin, closed[0].length), (BAR, BAR));
+    assert_eq!(notes(&closed[0]), [(100, 100, 60), (BAR - 50, 50, 62)]);
+    assert!(r.close_laps(0).is_empty(), "given once");
+    // Let go in pass 1: already cut, nothing more.
+    r.push(off(B + 30, 1, 62));
+    // A key of pass 0 that comes late goes into pass 1.
+    r.push(on(2 * B - 20, 0, 65));
+    r.push(off(2 * B - 10, 0, 65));
+    r.push(off(B + 60, 1, 64));
+    let pass1 = r.close_laps(1);
+    assert_eq!(pass1.len(), 1);
+    assert_eq!(notes(&pass1[0]), [(10, 50, 64), (BAR - 20, 10, 65)]);
+    assert!(r.finish(B + 100, 2).is_none(), "nothing left");
+
+    let mut plain = Recorder::new(0, None, HeldControls::default());
+    plain.push(on(10, 0, 60));
+    assert!(plain.close_laps(5).is_empty(), "without a loop");
+    assert_eq!(plain.finish(100, 0).unwrap().takes.len(), 1);
+}

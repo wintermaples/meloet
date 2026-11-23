@@ -7,11 +7,11 @@ use std::sync::Arc;
 use meloet_engine::TrackSet;
 use meloet_model::arrange::KeptClip;
 use meloet_model::controls::{self, ControlKind as ModelControlKind};
-use meloet_model::edit::{self, Edit, EditError};
+use meloet_model::edit::{self, Edit, EditError, RecordingAdded};
 use meloet_model::notes::{self, NoteField as ModelNoteField, NotesEdited, WriteAt};
 use meloet_model::playback::{PlayEvent, track_events};
 use meloet_model::quantize;
-use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder};
+use meloet_model::record::{HeldControls, RecEvent, RecEventKind, Recorder, overdub_recording};
 use meloet_model::{
     AutoTarget, Bus, Clip, ClipEdited, ClipId, Doc, Gain, History, Insert, InstrumentGroup,
     InstrumentRef, Note, OriginIndex, Pan, Sends, Song, StepKind, TakeId, TempoMap, TickRange,
@@ -30,6 +30,10 @@ use crate::state::Effect;
 
 /// Bars the loop gets when it is turned on with no range.
 const DEFAULT_LOOP_BARS: u64 = 4;
+/// How long before a pass of a loop recording ends the notes of 「重ねる」 are sent to the
+/// engine: more than the engine plays ahead of what is heard, with the time between two
+/// ticks of the core thread.
+const SEND_PASS_AHEAD_S: f64 = 0.15;
 pub const COUNT_IN_BARS: [u8; 3] = [0, 1, 2];
 
 /// What the listener hears now, read from the engine's clock by the core thread.
@@ -125,6 +129,17 @@ pub enum EngineOp {
     Sequence {
         track: usize,
         events: Vec<PlayEvent>,
+    },
+    /// As `Sequence`, for events that have every event the seat has and more (a pass of
+    /// 「重ねる」): what sounds goes on.
+    GrowSequence {
+        track: usize,
+        events: Vec<PlayEvent>,
+    },
+    /// While recording: the seats that do not play their sequence from now on, in place of
+    /// the `muted` of `Record` or `RecordHere`.
+    RecordMuted {
+        muted: TrackSet,
     },
     /// Sounds keys on this seat, and stops the keys it sounded before.
     Audition {
@@ -347,9 +362,32 @@ struct Rec {
     held: [Option<usize>; 128],
     live_lap: u32,
     next_index: u32,
+    /// 「重ねる」 for the pass going on: its notes go into the shown take of `clip` (`take` is
+    /// that take's number), as one step when the pass is over.
+    overdub: bool,
+    /// The passes before this one are over.
+    closed: u32,
+    /// The pass whose notes so far were sent to the engine before its end, and the events
+    /// sent (`None`: nothing was).
+    ahead: Option<(u32, Option<Vec<PlayEvent>>)>,
+    keys_seat: Option<usize>,
+    /// The seats of the vocal tracks recorded.
+    vocal_seats: TrackSet,
 }
 
 impl Rec {
+    /// The seats that do not play their sequence: what a track recorded before is not heard
+    /// while it records again, unless the new notes go on top of it.
+    fn muted(&self) -> TrackSet {
+        let mut muted = self.vocal_seats;
+        if !self.overdub
+            && let Some(seat) = self.keys_seat
+        {
+            muted.insert(seat);
+        }
+        muted
+    }
+
     fn floor(&self, lap: u32) -> i64 {
         match self.loop_range {
             Some(r) if lap > 0 => r.start() as i64,
@@ -366,7 +404,7 @@ impl Rec {
         if lap <= self.live_lap {
             return;
         }
-        if self.next_index > 0 {
+        if self.next_index > 0 && !self.overdub {
             self.take += 1;
         }
         self.live_lap = lap;
@@ -416,6 +454,9 @@ pub struct Play {
     /// While playing: the last move of the play line was Home to the loop's head.
     homed: bool,
     metronome: bool,
+    /// 「重ねる」: a recording on a keys track adds to the clip there. Read when a recording
+    /// starts and at each pass of a loop.
+    overdub: bool,
     count_in_bars: u8,
     /// Every selected clip, in order of id.
     clips_sel: Vec<ClipId>,
@@ -504,6 +545,7 @@ impl Play {
             position: 0,
             homed: false,
             metronome,
+            overdub: false,
             count_in_bars: if COUNT_IN_BARS.contains(&count_in_bars) {
                 count_in_bars
             } else {
@@ -717,17 +759,16 @@ impl Play {
         if track.is_none() && vocals.is_empty() {
             return notice;
         }
+        let overdub = self.overdub && track.is_some();
         let clip = track.and_then(|t| self.doc().track(t)).and_then(|t| {
             let span = loop_range.unwrap_or_else(|| TickRange::new(from, from + 1).expect("1"));
-            t.clips
-                .iter()
-                .find(|c| c.range().overlaps(span))
-                .map(|c| (c.id, c.takes.len() as u32))
+            t.clips.iter().find(|c| c.range().overlaps(span)).map(|c| {
+                let take = if overdub { c.active } else { c.takes.len() };
+                (c.id, take as u32)
+            })
         });
-        // What a track recorded before is not heard while it records again.
-        let muted: TrackSet = (vocals.iter().filter_map(|v| self.seats.of(v.track)))
-            .chain(keys_seat)
-            .collect();
+        let vocal_seats: TrackSet =
+            (vocals.iter().filter_map(|v| self.seats.of(v.track))).collect();
         let id = self.next_recording;
         self.next_recording = self.next_recording.wrapping_add(1);
         let setup = input.filter(|_| !vocals.is_empty());
@@ -761,7 +802,13 @@ impl Play {
             held: [None; 128],
             live_lap: 0,
             next_index: 0,
+            overdub,
+            closed: 0,
+            ahead: None,
+            keys_seat,
+            vocal_seats,
         });
+        let muted = self.rec.as_ref().expect("just made").muted();
         self.position = from;
         self.state = if count_in_beats > 0 {
             TransportState::CountIn
@@ -1518,7 +1565,19 @@ impl Play {
         }
         if let Some((track, recorded)) = rec.track.zip(recorded) {
             let base = edit.as_ref().map_or(self.doc(), |e| &e.doc);
-            let added = edit::add_recording(base, track, recorded.takes, recorded.active);
+            let added = if rec.overdub {
+                // What is left of the passes, each on top of the one before, as one step.
+                let mut done: Option<(Edit, RecordingAdded)> = None;
+                for take in recorded.takes {
+                    let on = done.as_ref().map_or(base, |(e, _)| &e.doc);
+                    if let Ok(d) = overdub_recording(on, track, take) {
+                        done = Some(d);
+                    }
+                }
+                done.ok_or(EditError::NoTakes)
+            } else {
+                edit::add_recording(base, track, recorded.takes, recorded.active)
+            };
             if let Ok((e, added)) = added {
                 pick = Some(added.clip);
                 shown = Some(added.active as u32 + 1);
@@ -1528,6 +1587,170 @@ impl Play {
         let (e, pick) = edit.zip(pick)?;
         self.apply_selecting(e, None, Some(ClipPick::one(pick)), effects);
         shown
+    }
+
+    // ---- 「重ねる」 ----
+
+    pub fn with_overdub(mut self, on: bool) -> Play {
+        self.overdub = on;
+        self
+    }
+
+    pub fn overdub(&self) -> bool {
+        self.overdub
+    }
+
+    /// Takes effect at the next pass of a loop recording going on, else at the next recording.
+    pub fn set_overdub(&mut self, on: bool) {
+        self.overdub = on;
+    }
+
+    /// Called now and then while moving. In a loop recording, a pass is over once it is no
+    /// longer heard: with 「重ねる」, its notes go into the song then, one step for each pass
+    /// with notes. The engine plays ahead of what is heard, so the notes so far are sent to it
+    /// a little before the pass ends, for the next pass to sound them from its start.
+    pub fn overdub_due(&mut self, effects: &mut Vec<Effect>) {
+        let Some(h) = self.heard.filter(|h| h.state == TransportState::Recording) else {
+            return;
+        };
+        let Some(rec) = &self.rec else {
+            return;
+        };
+        let Some(range) = rec.loop_range else {
+            return;
+        };
+        if rec.track.is_none() || rec.recorder.is_none() || rec.stop_us.is_some() {
+            return;
+        }
+        if h.lap > rec.closed {
+            self.pass_over(h.lap - 1, effects);
+        }
+        let Some(rec) = &self.rec else {
+            return;
+        };
+        if !rec.overdub || rec.ahead.as_ref().is_some_and(|(lap, _)| *lap >= h.lap) {
+            return;
+        }
+        let map = self.map();
+        let end = map.seconds_at(range.end() as f64);
+        if h.tick >= map.tick_at(end - SEND_PASS_AHEAD_S) {
+            self.send_ahead(h.lap, effects);
+        }
+    }
+
+    fn send_ahead(&mut self, lap: u32, effects: &mut Vec<Effect>) {
+        let Some(rec) = &self.rec else {
+            return;
+        };
+        let (Some(track), Some(mut recorder)) = (rec.track, rec.recorder.clone()) else {
+            return;
+        };
+        let mut doc: Option<Doc> = None;
+        for take in recorder.close_laps(lap) {
+            let on = doc.as_ref().unwrap_or(self.doc());
+            if let Ok((e, _)) = overdub_recording(on, track, take) {
+                doc = Some(e.doc);
+            }
+        }
+        let events = doc.map(|d| track_events(&d, track));
+        let rec = self.rec.as_mut().expect("there");
+        if let (Some(events), Some(seat)) = (&events, rec.keys_seat) {
+            effects.push(Effect::Engine(EngineOp::GrowSequence {
+                track: seat,
+                events: events.clone(),
+            }));
+        }
+        rec.ahead = Some((lap, events));
+    }
+
+    /// The passes up to `upto` are over. Passes recorded with 「重ねる」 go into the song, one
+    /// step each. When 「重ねる」 was turned on during passes that make takes, those takes go
+    /// in as one step, and the next passes add to the last of them.
+    fn pass_over(&mut self, upto: u32, effects: &mut Vec<Effect>) {
+        let next = self.overdub;
+        let Some(rec) = &mut self.rec else {
+            return;
+        };
+        let Some(track) = rec.track else {
+            return;
+        };
+        rec.closed = upto + 1;
+        let was = rec.overdub;
+        if !was && !next {
+            return;
+        }
+        let takes = (rec.recorder.as_mut()).map_or_else(Vec::new, |r| r.close_laps(upto));
+        let ahead = rec
+            .ahead
+            .take()
+            .and_then(|(lap, events)| events.filter(|_| lap <= upto));
+        rec.overdub = next;
+        let start = effects.len();
+        if was {
+            for take in takes {
+                if let Ok((e, added)) = overdub_recording(self.doc(), track, take) {
+                    self.apply_pass(e, added, effects);
+                }
+            }
+            self.grow_instead(start, ahead, effects);
+        } else if !takes.is_empty() {
+            let active = takes.len() - 1;
+            if let Ok((e, added)) = edit::add_recording(self.doc(), track, takes, active) {
+                self.apply_pass(e, added, effects);
+            }
+        }
+        if was != next {
+            let doc = &self.song.doc;
+            let rec = self.rec.as_mut().expect("there");
+            if !next {
+                let takes = rec
+                    .clip
+                    .and_then(|c| doc.clip(c))
+                    .map_or(0, |(_, c)| c.takes.len());
+                rec.take = takes as u32 + 1;
+            }
+            effects.push(Effect::Engine(EngineOp::RecordMuted { muted: rec.muted() }));
+        }
+    }
+
+    fn apply_pass(&mut self, e: Edit, added: RecordingAdded, effects: &mut Vec<Effect>) {
+        self.apply_selecting(e, None, Some(ClipPick::one(added.clip)), effects);
+        if let Some(rec) = &mut self.rec {
+            rec.clip = Some(added.clip);
+            rec.take = added.active as u32 + 1;
+        }
+    }
+
+    /// The steps of passes from `effects[start..]` on send the seat of the keys only what the
+    /// engine does not have: nothing when it got those events ahead, else the last events as
+    /// [`EngineOp::GrowSequence`], so that what sounds goes on.
+    fn grow_instead(&self, start: usize, ahead: Option<Vec<PlayEvent>>, effects: &mut Vec<Effect>) {
+        let Some(seat) = self.rec.as_ref().and_then(|r| r.keys_seat) else {
+            return;
+        };
+        let mut last = None;
+        let mut i = start;
+        while i < effects.len() {
+            if matches!(&effects[i], Effect::Engine(EngineOp::Sequence { track, .. }) if *track == seat)
+            {
+                if let Effect::Engine(EngineOp::Sequence { events, .. }) = effects.remove(i) {
+                    last = Some((i, events));
+                }
+            } else {
+                i += 1;
+            }
+        }
+        if let Some((at, events)) = last
+            && ahead.as_ref() != Some(&events)
+        {
+            effects.insert(
+                at,
+                Effect::Engine(EngineOp::GrowSequence {
+                    track: seat,
+                    events,
+                }),
+            );
+        }
     }
 
     // ---- what the screen reads ----
@@ -1787,11 +2010,12 @@ impl Play {
                     take: r.take,
                     clip: r.clip.map(|c| c.0),
                     lap: r.lap,
+                    overdub: r.overdub,
                 })
             }),
             recording_vocals: self.recording_vocals_view(),
             recording_faults: self.faults,
-            overdub: false,
+            overdub: self.overdub,
         }
     }
 
@@ -2537,6 +2761,8 @@ mod arrange_tests;
 mod buttons_tests;
 #[cfg(test)]
 mod clips_tests;
+#[cfg(test)]
+mod overdub_tests;
 #[cfg(test)]
 mod roll_tests;
 #[cfg(test)]

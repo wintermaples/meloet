@@ -95,6 +95,19 @@ impl Rig {
         );
     }
 
+    fn grow(&mut self, track: usize, events: &[(u64, InstrumentEvent)]) {
+        let events = events
+            .iter()
+            .map(|&(tick, event)| SequenceEvent { tick, event })
+            .collect();
+        assert!(
+            self.parts
+                .handle
+                .grow_sequence(track, Sequence::new(events))
+                .is_ok()
+        );
+    }
+
     /// When frame `n` (counted from the first render) reaches the DAC.
     fn dac_us(&self, n: u64) -> f64 {
         self.base_us as f64 + self.delay_us as f64 + n as f64 * 1e6 / RATE as f64
@@ -1048,6 +1061,105 @@ fn swapping_the_sequence_while_playing_lets_go_and_returns_the_old_one() {
 }
 
 #[test]
+fn growing_the_sequence_keeps_what_sounds_and_sends_nothing_twice() {
+    let mut rig = Rig::new(256, 0);
+    let mut tape = rig.tape(0);
+    rig.sequence(0, &[(0, on(60)), (20 * Q, off(60))]);
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.run(4096);
+    drain(&mut tape);
+    rig.grow(
+        0,
+        &[
+            (0, on(60)),
+            (0, on(64)),
+            (2 * BAR, on(67)),
+            (20 * Q, off(60)),
+        ],
+    );
+    rig.run(frame_of(2 * BAR, 0, 12_000) + 256 - rig.frames);
+    let got: Vec<_> = drain(&mut tape).into_iter().map(|e| e.1).collect();
+    assert_eq!(got, vec![on(67)], "no release, nothing again");
+    assert_eq!(
+        rig.parts
+            .handle
+            .take_retired_sequence()
+            .map(|s| s.events().len()),
+        Some(2)
+    );
+    rig.run(frame_of(20 * Q, 0, 12_000) + 256 - rig.frames);
+    assert_eq!(
+        drain(&mut tape)
+            .into_iter()
+            .map(|e| e.1)
+            .collect::<Vec<_>>(),
+        vec![off(60)],
+        "the note that sounded on ends where the song lets it go"
+    );
+}
+
+#[test]
+fn growing_the_sequence_in_a_later_pass_sends_nothing_twice() {
+    let mut rig = Rig::new(256, 0);
+    let mut tape = rig.tape(0);
+    rig.send(EngineCommand::SetLoop {
+        start: 0,
+        end: BAR,
+        on: true,
+    });
+    let song = [
+        (0, on(60)),
+        (Q, off(60)),
+        (BAR - 10, on(62)),
+        (BAR - 5, off(62)),
+    ];
+    rig.sequence(0, &song);
+    rig.send(EngineCommand::Play { from: 0 });
+    // Into the second pass, past its first note.
+    rig.run(frame_of(BAR + Q / 2, 0, 12_000));
+    drain(&mut tape);
+    let mut grown = song.to_vec();
+    grown.push((2 * Q, on(64)));
+    rig.grow(0, &grown);
+    rig.run(frame_of(BAR, 0, 12_000));
+    let got: Vec<_> = drain(&mut tape).into_iter().map(|e| e.1).collect();
+    assert_eq!(
+        got,
+        [off(60), on(64), on(62), off(62), off(64), on(60)],
+        "64 let go at the loop end"
+    );
+}
+
+#[test]
+fn the_tracks_muted_while_recording_can_change() {
+    let mut rig = Rig::new(256, 0);
+    let mut tape = rig.tape(0);
+    let song: Vec<_> = (0..32u64)
+        .flat_map(|i| [(i * Q, on(60)), (i * Q + Q - 10, off(60))])
+        .collect();
+    rig.sequence(0, &song);
+    rig.send(EngineCommand::Record {
+        from: 0,
+        count_in_beats: 0,
+        muted: [0].into_iter().collect(),
+    });
+    rig.run(RATE);
+    assert!(drain(&mut tape).is_empty());
+    rig.send(EngineCommand::SetRecordMuted {
+        muted: TrackSet::default(),
+    });
+    rig.run(RATE);
+    let heard: Vec<_> = drain(&mut tape).into_iter().map(|e| e.1).collect();
+    assert!(heard.contains(&on(60)), "plays again: {heard:?}");
+    let at = rig.frames;
+    rig.send(EngineCommand::SetRecordMuted {
+        muted: [0].into_iter().collect(),
+    });
+    rig.run(RATE);
+    assert_eq!(drain(&mut tape), vec![(at, off(60))], "let go at once");
+}
+
+#[test]
 fn locate_while_playing_moves_and_chases() {
     let mut rig = Rig::new(256, 0);
     let mut tape = rig.tape(0);
@@ -1208,7 +1320,11 @@ fn every_transport_path_stays_off_the_allocator() {
                 count_in_beats: (round % 5) as u32,
                 muted: [1].into_iter().collect(),
             }),
+            2 if round % 16 == 10 => rig.grow(round as usize % 3, &song),
             2 => rig.sequence(round as usize % 3, &song),
+            3 if round % 16 == 11 => rig.send(EngineCommand::SetRecordMuted {
+                muted: [round as usize % 3].into_iter().collect(),
+            }),
             3 => rig.send(EngineCommand::Locate { tick: 700 }),
             4 => {
                 // Made here, off the audio thread; the engine only swaps it in.

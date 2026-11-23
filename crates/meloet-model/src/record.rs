@@ -4,6 +4,9 @@ use crate::edit::NewTake;
 use crate::song::{CC_MODULATION, CC_SUSTAIN, ControlPoint, ControlValue, Note};
 use crate::time::TickRange;
 
+mod overdub;
+pub use overdub::overdub_recording;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecEventKind {
     /// Velocity 0 counts as a release.
@@ -210,6 +213,44 @@ impl Recorder {
             active: takes.len() - 1,
             takes,
         })
+    }
+
+    /// Ends the passes up to `upto` of a loop recording: keys still held from them are cut at
+    /// the loop's end, as when let go in a later pass. Gives the take of each of them that has
+    /// notes, and forgets them, so that [`Recorder::finish`] does not give them again. Keys
+    /// that come late for an ended pass go into the pass that is going on. Nothing without a
+    /// loop.
+    pub fn close_laps(&mut self, upto: u32) -> Vec<NewTake> {
+        let Some(range) = self.loop_range else {
+            return Vec::new();
+        };
+        let ceil = range.end() as i64;
+        for key in 0..128u8 {
+            let slot = &mut self.held[usize::from(key)];
+            if let Some(h) = slot.filter(|h| self.laps[h.lap].number <= upto) {
+                *slot = None;
+                self.laps[h.lap].notes.push(RawNote {
+                    start: h.start,
+                    end: ceil,
+                    key,
+                    velocity: h.velocity,
+                });
+            }
+        }
+        let mut takes = Vec::new();
+        for i in 0..self.laps.len() {
+            if self.laps[i].number > upto {
+                break;
+            }
+            if !self.laps[i].notes.is_empty() {
+                takes.push(self.take(&self.laps[i], false, ceil));
+            }
+            let lap = &mut self.laps[i];
+            lap.notes.clear();
+            lap.controls.clear();
+            lap.head.clear();
+        }
+        takes
     }
 
     fn take(&self, lap: &Lap, last: bool, stop: i64) -> NewTake {

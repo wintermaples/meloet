@@ -366,3 +366,44 @@ fn plugins_are_told_where_the_song_is() {
     assert_eq!(eighths.tempo_bpm, 90.0);
     assert_eq!(common::audio_block_counts(), (0, 0));
 }
+
+#[test]
+fn a_sequence_grown_after_the_lane_went_round_ahead_sends_nothing_twice() {
+    const AHEAD: u32 = 4800;
+    let song = [
+        (0, on(60)),
+        (Q / 2, off(60)),
+        (Q, on(62)),
+        (Q + 100, off(62)),
+    ];
+    let mut rig = Rig::new();
+    let mut tape = rig.tape(0);
+    rig.sequence(0, &song);
+    rig.lookahead(0, AHEAD);
+    rig.send(EngineCommand::SetLoop {
+        start: 0,
+        end: 2 * Q,
+        on: true,
+    });
+    rig.send(EngineCommand::Play { from: 0 });
+    // Inside the lookahead of the loop's end: the next pass's first note is out already.
+    rig.run(176);
+    assert!(rig.frames + u64::from(AHEAD) > frame_of(2 * Q) && rig.frames < frame_of(2 * Q));
+    assert_eq!(drain(&mut tape).last().map(|e| e.1), Some(on(60)));
+    let mut grown = song.to_vec();
+    grown.insert(1, (Q / 4, on(64)));
+    let events = grown
+        .iter()
+        .map(|&(tick, event)| SequenceEvent { tick, event })
+        .collect();
+    assert!(
+        rig.parts
+            .handle
+            .grow_sequence(0, Sequence::new(events))
+            .is_ok()
+    );
+    rig.run(137);
+    let got: Vec<_> = drain(&mut tape).into_iter().map(|e| e.1).collect();
+    assert_eq!(got, [on(64), off(60), on(62), off(62)]);
+    assert_eq!(common::audio_block_counts(), (0, 0));
+}

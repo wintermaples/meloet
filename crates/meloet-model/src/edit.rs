@@ -76,11 +76,11 @@ pub struct NewTake {
 }
 
 impl NewTake {
-    fn range(&self) -> TickRange {
+    pub(crate) fn range(&self) -> TickRange {
         TickRange::new(self.origin, self.origin + self.length).expect("checked")
     }
 
-    fn is_valid(&self) -> bool {
+    pub(crate) fn is_valid(&self) -> bool {
         self.length > 0
             && self
                 .origin

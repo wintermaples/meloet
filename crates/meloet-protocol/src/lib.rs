@@ -2250,6 +2250,12 @@ pub struct RecordingView {
     pub clip: Option<u32>,
     /// Pass of the loop, 0 for the first; 0 without a loop.
     pub lap: u32,
+    /// 「重ねる」 for the pass going on (`TransportView::overdub` as it was when the recording
+    /// started, and at the start of each pass of a loop): its notes go into the shown take of
+    /// `clip`, whose number `take` is then, and no take is made. `clip` is `None` while the
+    /// notes are to make a new clip; after the first pass of a loop that made it, it is that
+    /// clip.
+    pub overdub: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

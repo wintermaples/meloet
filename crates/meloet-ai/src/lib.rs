@@ -3,7 +3,6 @@
 //! one-thread tokio runtime, and reaches the song only through [`Meloet`].
 
 mod port;
-#[allow(dead_code)]
 mod presets;
 mod scratch;
 mod smf;
@@ -29,6 +28,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub use port::{DIR, SOCKET};
+pub use presets::PresetDirs;
 pub use tools::refusal_text;
 
 /// Bars a position may name.
@@ -111,6 +111,8 @@ pub struct Options {
     pub expect_uid: u32,
     /// Where the folder for rendered audio is made (`std::env::temp_dir()`).
     pub temp_dir: PathBuf,
+    /// Where presets of plugins are looked for and written.
+    pub presets: PresetDirs,
 }
 
 impl Options {
@@ -121,6 +123,7 @@ impl Options {
                 .map(PathBuf::from),
             expect_uid: port::my_uid(),
             temp_dir: std::env::temp_dir(),
+            presets: PresetDirs::from_env(),
         }
     }
 
@@ -230,7 +233,7 @@ async fn run(
         options.temp_dir.clone(),
         port::my_uid(),
     ));
-    let tools = tools::Tools::new(meloet.clone(), scratch.clone());
+    let tools = tools::Tools::new(meloet.clone(), scratch.clone(), options.presets.clone());
     let mut sweep = tokio::time::interval(Duration::from_secs(10 * 60));
     let connections = Arc::new(AtomicUsize::new(0));
     let (ended_tx, mut ended) = mpsc::unbounded_channel::<()>();

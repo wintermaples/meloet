@@ -695,6 +695,42 @@ impl Host {
                 ),
                 Err(answer) => answer,
             },
+            Request::Presets { slot, bundles } => {
+                match self.controller(slot).map(|c| c.presets(&bundles)) {
+                    Ok(Ok(presets)) => (Reply::Presets { presets }, Vec::new()),
+                    Ok(Err(message)) => error(message),
+                    Err(answer) => answer,
+                }
+            }
+            Request::PresetState { slot, uri, bundles } => {
+                match self
+                    .controller(slot)
+                    .map(|c| c.preset_state(&uri, &bundles))
+                {
+                    Ok(Ok(state)) => (Reply::State, state),
+                    Ok(Err(message)) => error(message),
+                    Err(answer) => answer,
+                }
+            }
+            Request::SavePreset {
+                slot,
+                dir,
+                file,
+                label,
+            } => {
+                self.wait_for_params(slot);
+                let saved = self.controller(slot);
+                match saved.map(|c| c.save_preset(&dir, &file, &label)) {
+                    Ok(Ok(preset)) => (
+                        Reply::Presets {
+                            presets: vec![preset],
+                        },
+                        Vec::new(),
+                    ),
+                    Ok(Err(message)) => error(message),
+                    Err(answer) => answer,
+                }
+            }
             Request::Params { slot } => match self.controller(slot) {
                 Ok(controller) => (
                     Reply::Params {

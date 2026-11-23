@@ -25,10 +25,11 @@
 //! its ring only while a window is open.
 
 mod midnam;
+mod presets;
 mod ui;
 
 use std::cell::{Cell, RefCell, UnsafeCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
@@ -40,7 +41,7 @@ use livi::event::{LV2AtomEventBuilder, LV2AtomSequence};
 use livi::lilv;
 use livi::{EmptyPortConnections, Features, FeaturesBuilder, PortIndex, PortType};
 use meloet_plugin::ipc::{FromPlugin, MAX_LATENCY_FRAMES, ToPlugin, Transport};
-use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, ParamShape};
+use meloet_plugin::wire::{KeyName, LoadedPlugin, ParamInfo, ParamNow, ParamShape, PresetInfo};
 use meloet_plugin::{
     EditorKind, InstrumentCategory, PluginInfo, PluginKey, PluginKind, PluginRole,
 };
@@ -92,6 +93,8 @@ struct World {
     world: livi::World,
     /// By the longest block: what an instance is handed when it is made.
     features: RefCell<HashMap<usize, Arc<Features>>>,
+    /// Bundles of presets read into `world` besides its own ([`presets`]).
+    preset_bundles: RefCell<HashSet<PathBuf>>,
 }
 
 thread_local! {
@@ -126,6 +129,7 @@ fn world(bundle: &Path) -> Result<Rc<World>, String> {
     let world = Rc::new(World {
         world: livi::World::with_load_bundle(&bundle_uri(bundle)?),
         features: RefCell::new(HashMap::new()),
+        preset_bundles: RefCell::new(HashSet::new()),
     });
     WORLDS.with_borrow_mut(|w| w.insert(bundle.to_path_buf(), world.clone()));
     Ok(world)
@@ -2118,6 +2122,26 @@ impl Controller for Lv2Controller {
 
     fn key_names(&mut self) -> Option<Vec<KeyName>> {
         self.key_names.clone()
+    }
+
+    fn presets(&mut self, bundles: &[PathBuf]) -> Result<Vec<PresetInfo>, String> {
+        presets::list(&self.world, &self.plugin_uri, bundles)
+    }
+
+    fn preset_state(&mut self, uri: &str, bundles: &[PathBuf]) -> Result<Vec<u8>, String> {
+        let features = &self.shared.features;
+        presets::state(&self.world, features, &self.plugin_uri, uri, bundles)
+    }
+
+    fn save_preset(&mut self, dir: &Path, file: &str, label: &str) -> Result<PresetInfo, String> {
+        presets::place_ok(dir, file)?;
+        let state = {
+            let _claim = (self.shared.gate.claim(GATE_WAIT)).ok_or("the plugin is busy")?;
+            // SAFETY: inside the gate nothing else touches the instance.
+            let instance = unsafe { &*self.shared.instance.get() };
+            instance.state().map_err(|e| format!("state: {e:?}"))?
+        };
+        presets::save(&self.world, &self.plugin_uri, state, dir, file, label)
     }
 
     fn open_editor(&mut self, parent: u32) -> Result<Opened, String> {

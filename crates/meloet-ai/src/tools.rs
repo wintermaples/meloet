@@ -22,6 +22,7 @@ mod mixer;
 mod notes;
 mod params;
 mod plugstate;
+mod presets;
 mod render;
 mod sets;
 mod timing;
@@ -48,6 +49,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+use crate::presets::PresetDirs;
 use crate::scratch::Scratch;
 use crate::song::{self, parse_at};
 use crate::trackref::{self, TrackRef};
@@ -123,6 +125,7 @@ pub struct Tools {
     meloet: Arc<dyn Meloet>,
     bucket: Arc<Mutex<Bucket>>,
     scratch: Arc<Scratch>,
+    presets: Arc<presets::PresetSide>,
     tool_router: ToolRouter<Tools>,
 }
 
@@ -454,7 +457,7 @@ fn shown_db(v: &Value) -> String {
 }
 
 impl Tools {
-    pub fn new(meloet: Arc<dyn Meloet>, scratch: Arc<Scratch>) -> Tools {
+    pub fn new(meloet: Arc<dyn Meloet>, scratch: Arc<Scratch>, dirs: PresetDirs) -> Tools {
         Tools {
             meloet,
             bucket: Arc::new(Mutex::new(Bucket {
@@ -462,10 +465,12 @@ impl Tools {
                 at: Instant::now(),
             })),
             scratch,
+            presets: Arc::new(presets::PresetSide::new(dirs)),
             tool_router: Self::tool_router()
                 + Self::batch_router()
                 + Self::mixer_router()
                 + Self::plugstate_router()
+                + Self::presets_router()
                 + Self::params_router()
                 + Self::notes_router()
                 + Self::midi_router()

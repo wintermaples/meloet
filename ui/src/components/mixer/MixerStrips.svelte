@@ -211,6 +211,7 @@
           arm={track.kind.kind === "vocal"
             ? { on: track.kind.armed, usable: true, run: () => send({ type: "toggleVocalArm", track: track.id }) }
             : { on: song.keysTarget === track.id, usable: true, run: () => send({ type: "selectTrack", track: track.id, fromArm: true }) }}
+          arp={{ on: track.arp.on, usable: !busy, run: () => send({ type: "setArp", track: track.id, arp: { ...track.arp, on: false } }) }}
         />
       {/each}
       {#each BUSES as bus, i (bus)}

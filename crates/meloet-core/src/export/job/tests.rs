@@ -950,3 +950,28 @@ fn a_job_measures_its_file_and_matches_it_and_one_for_each_track_does_not() {
     assert!(read_wav(&files[0]) == first);
     assert!(wave.is_empty());
 }
+
+#[test]
+fn an_arpeggio_on_the_tracks_changes_nothing_of_the_export() {
+    // Only what the keyboards play goes through an arpeggio; the notes of the song do not.
+    let place = Place::new("export-arp");
+    let (doc, parts) = song();
+    let arp = meloet_model::Arp {
+        on: true,
+        hold: true,
+        ..Default::default()
+    };
+    let mut with = doc.clone();
+    for track in [parts.lead, parts.drums] {
+        with = edit::set_arp(&with, track, arp).unwrap().doc;
+    }
+    place.files_of(&doc);
+    let span = (0, 2 * BAR);
+    let plain = place.start(place.setup(place.job(1, &doc, span, ExportTail::Off)));
+    plain.rendered();
+    let on = place.start(place.setup(place.job(2, &with, span, ExportTail::Off)));
+    on.rendered();
+    let (plain, on) = (plain.pass(0), on.pass(0));
+    assert!(plain.iter().any(|s| s.abs() > 0.05), "the song sounds");
+    assert!(plain == on, "the same samples");
+}

@@ -389,6 +389,33 @@ pub fn set_track_color(doc: &Doc, track: TrackId, color: TrackColor) -> Result<E
     })
 }
 
+/// 「アルペジオ」 of a keys track. A vocal track has none (`NotKeys`); settings that cannot
+/// be give `NoSuchTrack`, as an intent that names nothing.
+pub fn set_arp(doc: &Doc, track: TrackId, arp: Arp) -> Result<Edit, EditError> {
+    let ti = track_index(doc, track)?;
+    let t = &doc.tracks[ti];
+    if t.kind.is_vocal() {
+        return Err(EditError::NotKeys);
+    }
+    if !arp.is_valid() {
+        return Err(EditError::NoSuchTrack(track));
+    }
+    if arp == t.arp {
+        return Err(EditError::Unchanged);
+    }
+    Ok(Edit {
+        doc: with_track(
+            doc,
+            ti,
+            Track {
+                arp,
+                ..Track::clone(t)
+            },
+        ),
+        step: StepKind::SetArp { track },
+    })
+}
+
 /// The track goes with its clips. The last track can go too: a song may have none. `next_id`
 /// goes past the track's id, so that [`add_track`] never gives it to another track.
 pub fn delete_track(doc: &Doc, track: TrackId) -> Result<Edit, EditError> {

@@ -117,6 +117,9 @@ BOARDS = {
     "nothingToKeep": None,
     "typedKeys": None,
     "typedKeysSettings": None,
+    "arpOn": None,
+    "arpSettings": None,
+    "arpWindow": None,
     "drumRoll": "R7-Drum",
     # About meloet.
     "about": "R7-About",
@@ -740,6 +743,7 @@ CLICKS = {
     "meterFlagMenu": ("tempo", "js:" + CONTEXT_FLAG),
     "vocalInputMenu": ("vocalTrack", '[data-test="track-input"]'),
     "metronomeWindow": ("metronome", '[data-test="transport-metronome-stub"]'),
+    "arpWindow": ("arpSettings", '[data-test="arp-open"]'),
     "presetsMenu": ("presets", '[data-test="preset-button"]'),
     "presetsSaving": ("presets", ('[data-test="preset-button"]', '[data-test="preset-save"]')),
     # P2 (round 12): 「ほかのトラックも見る」 on, then its list of tracks (the label shows at 1920x1080 100 %). Folded: where the label does not fit
@@ -935,6 +939,8 @@ ONLY = {
     "exporting": [(1280, 800, 100), (1280, 800, 150)],
     # At 150 % the count-in button is hidden, so the window has the count-in row too.
     "metronomeWindow": [(1280, 800, 100), (1280, 800, 150)],
+    # At 1280 x 800 at 150 % the input meter has no room for the arpeggio's ▾.
+    "arpWindow": [(1280, 800, 100), (1920, 1080, 100)],
     "presets": [(1280, 800, 100)],
     "presetsMenu": [(1280, 800, 100), (1280, 800, 150)],
     "presetsSaving": [(1280, 800, 100)],

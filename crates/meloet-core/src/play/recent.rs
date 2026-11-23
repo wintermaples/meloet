@@ -399,8 +399,14 @@ impl Play {
 
     /// What the engine says was played outside a recording. `held`: what is held now, after
     /// all of it.
-    pub fn played(&mut self, items: &[Played], held: HeldNow) {
+    pub fn played(&mut self, items: &[Played], mut held: HeldNow) {
         let around = self.around();
+        // The keys held on a track with an arpeggio are not what is said as played (its
+        // notes are, each with its own end): none of them counts as down.
+        let doc = self.doc();
+        if (around.track.and_then(|t| doc.track(t))).is_some_and(|t| t.arp.on) {
+            held.keys = 0;
+        }
         for &item in items {
             self.recent.take(item, held, around);
         }

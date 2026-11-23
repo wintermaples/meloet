@@ -38,6 +38,8 @@ export interface MeterFitInput {
   sentences?: readonly number[];
   /** Widths of 「キーで弾く」 and then of its octave, each with the gap before (R2). rest includes them. */
   typed?: readonly number[];
+  /** Width of 「アルペジオ」 with its ▾ and the gap before (E2). rest includes it. */
+  arp?: number;
 }
 
 export interface MeterFit {
@@ -55,6 +57,8 @@ export interface MeterFit {
   sentences: number;
   /** How many of `typed` to show, from the front (R2): only in the room the rest leaves. */
   typed: number;
+  /** Show 「アルペジオ」 and its ▾ (E2): only in the room left, before `typed` takes any. */
+  arp: boolean;
 }
 
 type Step = "modulation" | "pitchBend" | "narrowKeys" | "instrument" | "targetLabel" | "sentence" | "sustain";
@@ -77,20 +81,24 @@ export function nameWidthPx(name: NameWidth, scale: Scale): number {
  * When full with a hint at the right end: modulation → pitch bend → narrow keys → hint sentences from the 2nd on → sustain.
  * A name or hint that still does not fit is cut with 「…」.
  * 「キーで弾く」 and its octave came after these rules: they are fitted as if they were not there, and shown only in the room
- * left (R2), so they never push out what the spec shows.
+ * left (R2), so they never push out what the spec shows. 「アルペジオ」 (E2) is fitted the same way, before them.
  */
 export function meterFit(input: MeterFitInput): MeterFit {
   const { meter, scale, available, pitchBend, modulation } = input;
   const typedWidths = input.typed ?? [];
-  const rest = typedWidths.reduce((r, w) => r - w, input.rest);
-  const typedFits = (need: number) => {
-    let shown = 0;
+  const arpWidth = input.arp ?? null;
+  const rest = typedWidths.reduce((r, w) => r - w, input.rest - (arpWidth ?? 0));
+  // 「アルペジオ」 first: it has no other way in (「キーで弾く」 has Mod K and the menu).
+  const extras = (need: number): Pick<MeterFit, "typed" | "arp"> => {
+    const arp = arpWidth !== null && need + arpWidth <= available;
+    if (arp) need += arpWidth;
+    let typed = 0;
     for (const w of typedWidths) {
       if (need + w > available) break;
       need += w;
-      shown += 1;
+      typed += 1;
     }
-    return shown;
+    return { typed, arp };
   };
   const sentenceWidths = input.sentences ?? [];
   let sentences = sentenceWidths.length;
@@ -115,6 +123,7 @@ export function meterFit(input: MeterFitInput): MeterFit {
       sustain: true,
       sentences,
       typed: 0,
+      arp: false,
     };
     let need = rest + nameWidthPx(first, scale) + pitchBend + modulation;
     for (const step of input.sentences ? MESSAGE_ORDER : TARGET_ORDER) {
@@ -128,8 +137,7 @@ export function meterFit(input: MeterFitInput): MeterFit {
       need -= saved[step];
     }
     fit.sentences = sentences;
-    fit.typed = typedFits(need);
-    return fit;
+    return { ...fit, ...extras(need) };
   }
   const width = (w: NameWidth, bend: boolean, mod: boolean) =>
     rest + Math.min(input.name, nameWidthPx(w, scale)) + (bend ? pitchBend : 0) + (mod ? modulation : 0);
@@ -145,7 +153,7 @@ export function meterFit(input: MeterFitInput): MeterFit {
       targetLabel: true,
       sustain: true,
       sentences,
-      typed: typedFits(need),
+      ...extras(need),
     };
   };
   const fits = (w: NameWidth, bend: boolean, mod: boolean) => width(w, bend, mod) <= available;

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use meloet_model::mixer::{insert_moves, move_slot, moved_slot, new_track_sends};
 use meloet_model::{
-    Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginPlace, PluginRef, Sends,
+    Arp, Bus, Channel, Gain, INSERT_SLOTS, Insert, Inserts, Pan, PluginPlace, PluginRef, Sends,
     SoundKnobs, StripId, Track,
 };
 
@@ -62,6 +62,9 @@ pub(super) struct MixTold {
     tracks: Vec<Told>,
     returns: [Told; 2],
     master: Told,
+    /// 「アルペジオ」 as the engine was told it, by seat (`EngineOp::Arp`); a seat it was
+    /// told nothing of has it off.
+    arps: Vec<Arp>,
 }
 
 impl MixTold {
@@ -70,6 +73,7 @@ impl MixTold {
             tracks: vec![Told::new(); AUDITION_SEAT + 1],
             returns: [Told::new(), Told::new()],
             master: Told::new(),
+            arps: vec![Arp::default(); AUDITION_SEAT + 1],
         }
     }
 
@@ -77,6 +81,9 @@ impl MixTold {
     pub fn seat_cleared(&mut self, seat: usize) {
         if let Some(told) = self.tracks.get_mut(seat) {
             *told = Told::new();
+        }
+        if let Some(arp) = self.arps.get_mut(seat) {
+            *arp = Arp::default();
         }
     }
 
@@ -262,6 +269,10 @@ impl Play {
             if told.tracks[seat].knobs != knobs {
                 told.tracks[seat].knobs = knobs;
                 effects.push(Effect::Engine(EngineOp::Knobs { seat, knobs }));
+            }
+            if told.arps[seat] != t.arp {
+                told.arps[seat] = t.arp;
+                effects.push(Effect::Engine(EngineOp::Arp { seat, arp: t.arp }));
             }
         }
         // An instrument tried for a new track sounds as the track will: with the sends a

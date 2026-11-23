@@ -1,9 +1,7 @@
 //! Protocol 33 (round 12, waves 3 and 4): every new intent is taken, and until its feature is
 //! built it changes nothing, as an intent with an old id.
 
-use meloet_protocol::{
-    Arp, ArpRate, ArpShape, AutoTarget, CompPiece, LaneHome, Language, StretchChange, TickSpan,
-};
+use meloet_protocol::{Arp, AutoTarget, CompPiece, LaneHome, Language, StretchChange, TickSpan};
 
 use super::*;
 
@@ -26,18 +24,9 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
     assert!(!before.workspace.mono_listen);
     assert_eq!(before.workspace.language, Language::Ja);
     assert_eq!(before.audio_work.bounce, None);
-    let arp = Arp {
-        on: true,
-        shape: ArpShape::UpDown,
-        rate: ArpRate::Eighth,
-        triplet: true,
-        octaves: 2,
-        hold: true,
-    };
     let master = LaneHome::Master;
     let volume = AutoTarget::Volume;
     let commands = [
-        Command::SetArp { track, arp },
         Command::SetMonoListen { on: true },
         Command::DuplicateSection { marker: 99 },
         Command::DeleteSection { marker: 99 },

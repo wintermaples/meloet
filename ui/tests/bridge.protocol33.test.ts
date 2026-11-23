@@ -75,7 +75,6 @@ describe("fake intents", () => {
     const master = { kind: "master" as const };
     const volume = { kind: "volume" as const };
     const commands: Command[] = [
-      { type: "setArp", track, arp: { on: true, shape: "upDown", rate: "eighth", triplet: true, octaves: 2, hold: true } },
       { type: "setSoundKnob", track, instrument: "grandPiano", knob: "brightness", value: 80, commit: true },
       { type: "setMonoListen", on: true },
       { type: "duplicateSection", marker: 99 },

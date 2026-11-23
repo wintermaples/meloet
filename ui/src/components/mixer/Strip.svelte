@@ -62,10 +62,12 @@
     solo: Toggle;
     arm: Toggle;
     auto?: StripAuto | null;
+    /** Tracks only (E2): the keyboards' arpeggio. Shown in the heading only while on; a press turns it off. */
+    arp?: Toggle | null;
     /** The newest value while a lane moves the volume (only for the fader value text; changes every frame). undefined when not moving. */
     live?: { gainDb?: number | null };
   }
-  let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null, live = {} }: Props =
+  let { strip, mark, name, color, frame, slots, selectedSlot, windowSlots = [], sends, pan, gainDb, meter, mute, solo, arm, auto = null, live = {}, arp = null }: Props =
     $props();
   const moving = $derived(auto?.gain === "moving");
   // What lanes move (docs/architecture.md 7 "The Region collected during layout").
@@ -158,6 +160,16 @@
   <div class="head" style:border-top-color={color}>
     <span class="m-num m-lbl">{mark}</span>
     <span class="m-name name">{name}</span>
+    {#if arp?.on}
+      <button
+        class="arp"
+        class:live={arp.usable}
+        aria-pressed="true"
+        aria-disabled={!arp.usable || undefined}
+        data-test="mixer-arp"
+        onclick={() => arp.usable && arp.run()}>{t("input.arp")}</button
+      >
+    {/if}
   </div>
   {#if frame.run}
     <button
@@ -290,6 +302,26 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* 「アルペジオ」 while on (the place of MIDI effects is above 「音源」, spec 3): at the heading's right end, so nothing below moves.
+     The look of M / S on; while counting in or recording it cannot be pressed. */
+  .arp {
+    flex-shrink: 0;
+    margin-left: auto;
+    height: var(--part-toggle-size);
+    padding: 0 var(--space-1);
+    border: var(--line-hair) solid var(--color-accent);
+    border-radius: var(--radius-1);
+    background: var(--color-gray-1);
+    color: var(--color-accent);
+    font: inherit;
+    cursor: default;
+  }
+  .arp.live {
+    cursor: pointer;
+  }
+  .arp.live:active {
+    background: var(--color-gray-2);
   }
   .frame {
     height: var(--size-row);

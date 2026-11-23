@@ -22,7 +22,7 @@ import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA7 } from "./fakeA7";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
-import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceSpectrum } from "./fakeWave3";
+import { FAKE_ARP_OFF, fakeKnobs, fakeSetSoundKnob, fakeSpectrum, reduceArp, reduceSpectrum } from "./fakeWave3";
 import {
   CLIP_CENTS_MAX,
   TUNE_STRENGTH_MAX,
@@ -37,6 +37,7 @@ import {
   SOURCE_BPM_MAX,
   SOURCE_BPM_MIN,
   type AppState as WireState,
+  type Arp,
   type AudioClipView,
   type AutoTarget,
   type SourceTempoView,
@@ -3871,6 +3872,18 @@ SCENES.metronome = {
   },
   meters: QUIET,
 };
+// ---- round 12 E2: the arpeggio of 「1 ピアノ」 (the track the keyboards play) on: 「アルペジオ」 lit in the input meter and in the
+// heading of its strip. arpSettings: other values, for the ▾ window (shoot_ui.py arpWindow opens it).
+const arpScene = (arp: Partial<Arp>, bands: Band[]): SceneDef => ({
+  setup(s) {
+    bandSong(s, BAND_TRACKS.slice(0, 5));
+    s.song.tracks[0]!.arp = { ...FAKE_ARP_OFF, on: true, ...arp };
+  },
+  bands,
+  meters: { ...QUIET, keys: [48, 52, 55], velocity: 96 },
+});
+SCENES.arpOn = arpScene({}, ["mixer"]);
+SCENES.arpSettings = arpScene({ shape: "upDown", rate: "eighth", triplet: true, octaves: 2, hold: true }, ["mixer"]);
 // ---- round 12 M2: 「音が大きすぎます」 while the band plays. With the master's limiter holding the sound down (the mock),
 // and with the limiter passed by, the master going over 0 dB.
 const tooLoudScene = (limiter: boolean): SceneDef => ({
@@ -5666,7 +5679,8 @@ export function createFakeTransport(initial?: AppState): Transport {
         return { rev };
       }
       const round10 =
-        reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs()) ?? reduceSections(state, command, FAKE_TAKES);
+        reduceRound10(state, bands, command, FAKE_TAKES) ?? reduceP4(state, command, FAKE_TAKES, newKitTrack, nowUs()) ?? reduceSections(state, command, FAKE_TAKES) ??
+        reduceArp(state, command);
       if (round10?.row) {
         historyRows.length = Math.min(historyRows.length, round10.row.index - 1);
         historyRows[round10.row.index - 1] = round10.row;

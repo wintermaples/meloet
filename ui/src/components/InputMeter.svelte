@@ -9,6 +9,8 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { clockOffsetUs, keyIsDown, type TrackView } from "../bridge";
+  import { menuOpened } from "../lib/menu";
+  import ArpWindow from "./ArpWindow.svelte";
   import type { Scale } from "../design/tokens";
   import { keyboardLayout } from "../gl/keyboard";
   import { glRegion, glSlot } from "../gl/slot";
@@ -55,6 +57,57 @@
   function toggleTyped(): void {
     switchTypedKeys(!typedOn, { send, post, clockOffsetUs });
   }
+  // E2: the arpeggio of the track the keyboards play. Not for a vocal track; nothing can be changed while counting in or recording.
+  const arpTrack = $derived.by(() => {
+    const track = app?.song.tracks.find((x) => x.id === app.song.keysTarget);
+    return track && track.kind.kind !== "vocal" ? track : null;
+  });
+  const arpBusy = $derived(app?.transport.state === "countIn" || app?.transport.state === "recording");
+  const arpUsable = $derived(arpTrack !== null && !arpBusy);
+  function toggleArp(): void {
+    if (arpUsable) send({ type: "setArp", track: arpTrack!.id, arp: { ...arpTrack!.arp, on: !arpTrack!.arp.on } });
+  }
+  // The ▾ window: only the screen holds "open" (as the metronome window). Esc and a press outside close it.
+  let arpOpen = $state(false);
+  let arpStub = $state<HTMLButtonElement>();
+  let arpPopup = $state<HTMLElement>();
+  let arpAnchor = $state({ left: 0, top: 0 });
+  function closeArp(): void {
+    const hadFocus = arpPopup?.contains(document.activeElement) ?? false;
+    arpOpen = false;
+    if (hadFocus) arpStub?.focus();
+  }
+  function toggleArpWindow(): void {
+    if (arpTrack) arpOpen = !arpOpen;
+  }
+  function toBody(node: HTMLElement): { destroy(): void } {
+    document.body.append(node);
+    return { destroy: () => node.remove() };
+  }
+  $effect(() => {
+    if (arpOpen && (arpTrack === null || !fit.arp || split || pack)) closeArp();
+  });
+  $effect(() => {
+    if (!arpOpen) return;
+    const place = () => {
+      const r = arpStub?.getBoundingClientRect();
+      if (r) arpAnchor = { left: r.left, top: r.bottom };
+    };
+    place();
+    window.addEventListener("resize", place);
+    const forget = menuOpened(closeArp);
+    const onDown = (ev: PointerEvent) => {
+      const target = ev.target as Node | null;
+      if (target && (arpPopup?.contains(target) || arpStub?.contains(target))) return;
+      closeArp();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      forget();
+      window.removeEventListener("resize", place);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
+  });
   const right = $derived.by(() => {
     if (!app) return null;
     if (app.keyboards.inputStopped) return { kind: "inputStopped" as const };
@@ -226,6 +279,7 @@
     sustain: true,
     sentences: Infinity,
     typed: Infinity,
+    arp: true,
   });
   let nameNatural = $state(0);
 
@@ -266,6 +320,7 @@
       sustain: keyboard ? width("sustain") + gap : 0,
       sentences: message ? message.parts.map((_, i) => width(`msg-${i}`)) : undefined,
       typed: typedW,
+      arp: width("arp") + gap,
     });
   }
 
@@ -388,9 +443,39 @@
   {/if}
 {/snippet}
 
+{#snippet arpPart(measuring: boolean)}
+  {#if measuring}
+    <span class="arp" data-part="arp"><span class="switch">{t("input.arp")}</span><span class="switch stub">▾</span></span>
+  {:else if fit.arp}
+    {@const on = arpTrack?.arp.on ?? false}
+    <span class="arp">
+      <button
+        class="switch"
+        class:on={arpTrack !== null && on}
+        aria-pressed={arpTrack !== null ? on : undefined}
+        aria-disabled={!arpUsable || undefined}
+        data-test="arp"
+        onclick={toggleArp}>{t("input.arp")}</button
+      ><button
+        class="switch stub"
+        class:on={arpTrack !== null && on}
+        class:open={arpOpen}
+        aria-haspopup="dialog"
+        aria-expanded={arpOpen}
+        aria-label={t("input.arpMenu")}
+        aria-disabled={arpTrack === null || undefined}
+        data-test="arp-open"
+        bind:this={arpStub}
+        onclick={toggleArpWindow}>▾</button
+      >
+    </span>
+  {/if}
+{/snippet}
+
 {#snippet body(measuring: boolean)}
   {@render who(measuring, true)}
   {@render typedPart(measuring)}
+  {@render arpPart(measuring)}
 
   {#if measuring}
     <div class="keys"></div>
@@ -644,6 +729,11 @@
       </div>
     {/if}
   </div>
+  {#if arpOpen && arpTrack}
+    <div class="popup" style:left="{arpAnchor.left}px" style:top="{arpAnchor.top}px" use:toBody bind:this={arpPopup}>
+      <ArpWindow track={arpTrack.id} arp={arpTrack.arp} busy={arpBusy} label={t("input.arpMenu")} />
+    </div>
+  {/if}
 {/if}
 
 
@@ -819,10 +909,38 @@
     background: var(--color-gray-2);
     border-color: var(--color-gray-8);
   }
+  /* Disabled (no keys track, or counting in and recording); one that is on stays lit (the rule below). */
+  .switch[aria-disabled="true"],
+  .switch[aria-disabled="true"]:hover,
+  .switch[aria-disabled="true"]:active {
+    border-color: var(--color-gray-5);
+    background: var(--color-gray-4);
+    color: var(--color-gray-7);
+    cursor: default;
+  }
   .fixed.on,
-  .switch.on {
+  .switch.on,
+  .switch.on[aria-disabled="true"]:hover,
+  .switch.on[aria-disabled="true"]:active {
     border-color: var(--color-accent);
     color: var(--color-accent);
+  }
+  /* 「アルペジオ」 and its ▾: one line between them, as the metronome and its ▾ in the transport. */
+  .arp {
+    display: flex;
+    flex-shrink: 0;
+  }
+  .switch.stub {
+    border-left: 0;
+  }
+  .switch.open {
+    background: var(--color-gray-4);
+    border-color: var(--color-gray-8);
+    color: var(--color-gray-10);
+  }
+  .popup {
+    position: fixed;
+    z-index: 40;
   }
   .slim .velocity {
     align-items: center;

@@ -102,6 +102,8 @@ pub struct Recorder {
     laps: Vec<Lap>,
     held: [Option<Held>; 128],
     controls: HeldControls,
+    /// The first pass that [`Recorder::close_laps`] has not ended.
+    open_from: u32,
 }
 
 impl Recorder {
@@ -121,6 +123,7 @@ impl Recorder {
             }],
             held: [None; 128],
             controls: held,
+            open_from: 0,
         }
     }
 
@@ -147,11 +150,11 @@ impl Recorder {
                     CC_MODULATION => self.controls.modulation = value,
                     _ => {}
                 }
-                self.control(tick, ControlValue::Cc { number, value });
+                self.control(event.lap, tick, ControlValue::Cc { number, value });
             }
             RecEventKind::PitchBend(v) if (-8192..=8191).contains(&v) => {
                 self.controls.bend = v;
-                self.control(tick, ControlValue::PitchBend(v));
+                self.control(event.lap, tick, ControlValue::PitchBend(v));
             }
             RecEventKind::Cc { .. } | RecEventKind::PitchBend(_) => {}
         }
@@ -195,6 +198,29 @@ impl Recorder {
         notes
     }
 
+    /// The person stopped at `tick` in pass `lap`, and nothing after that is kept: notes that
+    /// start later are dropped, later passes too, and a note that reaches past it ends
+    /// there. Notes the engine makes itself (an arpeggio) are said when they are rendered,
+    /// a little before they are heard, so some can lie after the place the stop was heard at.
+    /// Call it before [`Recorder::finish`] with the same place.
+    pub fn drop_after(&mut self, tick: i64, lap: u32) {
+        let lap = if self.loop_range.is_some() { lap } else { 0 };
+        let Some(at) = self.laps.iter().position(|l| l.number == lap) else {
+            return;
+        };
+        self.laps.truncate(at + 1);
+        for held in &mut self.held {
+            if held.is_some_and(|h| h.lap > at || h.start > tick) {
+                *held = None;
+            }
+        }
+        let notes = &mut self.laps[at].notes;
+        notes.retain(|n| n.start <= tick);
+        for n in notes {
+            n.end = n.end.min(tick);
+        }
+    }
+
     /// Stops at `tick` in pass `lap`. `None` when no note was played.
     pub fn finish(mut self, tick: i64, lap: u32) -> Option<Recorded> {
         self.enter_lap(lap);
@@ -225,6 +251,7 @@ impl Recorder {
             return Vec::new();
         };
         let ceil = range.end() as i64;
+        self.open_from = self.open_from.max(upto.saturating_add(1));
         for key in 0..128u8 {
             let slot = &mut self.held[usize::from(key)];
             if let Some(h) = slot.filter(|h| self.laps[h.lap].number <= upto) {
@@ -337,12 +364,41 @@ impl Recorder {
         });
     }
 
-    fn control(&mut self, tick: i64, value: ControlValue) {
-        self.laps
-            .last_mut()
-            .expect("never empty")
-            .controls
-            .push((tick, value));
+    /// A controller move of pass `lap` goes into that pass while it is still open, also when
+    /// notes of a later pass came first (an arpeggio's notes are said before they are heard);
+    /// the passes after it then start with the value it left. Else into the pass going on.
+    fn control(&mut self, lap: u32, tick: i64, value: ControlValue) {
+        let last = self.laps.len() - 1;
+        let open = self.open_from;
+        let at = match self.loop_range {
+            Some(_) if lap >= open => (self.laps.iter())
+                .position(|l| l.number == lap)
+                .unwrap_or(last),
+            _ => last,
+        };
+        self.laps[at].controls.push((tick, value));
+        for later in &mut self.laps[at + 1..] {
+            set_head(&mut later.head, value);
+        }
+    }
+}
+
+/// The value a pass starts with, for the controllers that are written at a take's head
+/// ([`HeldControls`]); at rest, nothing is written.
+fn set_head(head: &mut Vec<ControlValue>, value: ControlValue) {
+    let rest = match value {
+        ControlValue::Cc { number, value } if number == CC_SUSTAIN || number == CC_MODULATION => {
+            head.retain(|h| !matches!(h, ControlValue::Cc { number: n, .. } if *n == number));
+            value == 0
+        }
+        ControlValue::PitchBend(v) => {
+            head.retain(|h| !matches!(h, ControlValue::PitchBend(_)));
+            v == 0
+        }
+        ControlValue::Cc { .. } => return,
+    };
+    if !rest {
+        head.push(value);
     }
 }
 

@@ -1,0 +1,20 @@
+What the meloet AppImage carries besides meloet
+
+meloet itself (usr/bin/meloet, meloet-plughost, meloet-mcp) is under MIT OR Apache-2.0; see
+LICENSE-MIT, LICENSE-APACHE and NOTICE in this folder.
+
+The libraries in usr/lib (WebKitGTK, GTK 3, GLib and the libraries they need) and the WebKit
+helper programs in usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 are copied from the Ubuntu 24.04
+(noble) packages by linuxdeploy. Each package's copyright file, with its licenses, is in
+usr/share/doc/<package>/copyright. The source of each package is in the Ubuntu archive
+(`apt-get source <package>` on Ubuntu 24.04).
+
+They are unchanged except for one: in usr/lib/libwebkit2gtk-4.1.so.0 the text "/usr" is
+replaced by "././" (by linuxdeploy-plugin-gtk.sh of tauri-bundler 2.10.6), so that WebKit
+finds its helper programs inside the AppImage. The library's own RUNPATH and those of the
+others are set to $ORIGIN by linuxdeploy.
+
+libjbig (GPL-2.0-or-later) is left out on purpose; the TIFF image loader takes the PC's own
+copy if it ever needs it.
+
+The AppImage runtime at the head of the file: see usr/share/doc/appimage-runtime/README.

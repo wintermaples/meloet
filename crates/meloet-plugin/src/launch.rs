@@ -24,7 +24,9 @@
 //! [`crate::wire::ScanOutput`], one plugin after another and passing over the ids `--skip`
 //! names, and ends after `Done` or `Broken`.
 
+use std::ffi::OsString;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -106,10 +108,85 @@ pub fn scan_command(
 /// Starts `command`, one child at a time in all of meloet. Under LLDB (CodeLLDB 1.12.3 in
 /// VS Code) meloet stayed stopped for good when the scan's threads started children at the
 /// same moment; gdb and no debugger were fine. A start takes about a millisecond.
+///
+/// When meloet runs from an AppImage, the child gets the PC's environment back
+/// ([`outside_appimage`]).
 pub fn spawn(command: &mut Command) -> std::io::Result<Child> {
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    outside_appimage(command);
     let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     command.spawn()
+}
+
+/// For a child that runs on the PC's own libraries (a plugin host loads the PC's VST3 and
+/// LV2 plugins; `xdg-open` starts the PC's apps): takes away what the AppImage's runtime and
+/// `AppRun` put in meloet's environment. Nothing changes outside an AppImage.
+pub fn outside_appimage(command: &mut Command) {
+    apply(command, appimage_changes(std::env::vars_os()));
+}
+
+fn apply(command: &mut Command, changes: Vec<(OsString, Option<OsString>)>) {
+    for (name, value) in changes {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
+}
+
+/// Set by the AppImage runtime, by `AppRun` and by the GTK hook of linuxdeploy with values
+/// that do not name a place inside the AppImage (`GTK_THEME` is always the hook's, Adwaita).
+const APPIMAGE_ONLY: &[&str] = &[
+    "APPIMAGE",
+    "APPDIR",
+    "OWD",
+    "ARGV0",
+    "PYTHONDONTWRITEBYTECODE",
+    "GTK_THEME",
+];
+
+/// What to change in an environment for a child that must not see the AppImage: `None`
+/// removes the variable. Empty unless `APPIMAGE` is set. In every variable, the entries of
+/// a `:` list that lie inside `APPDIR` go (with the empty entries next to them, which would
+/// mean the current folder); a variable left with nothing goes.
+fn appimage_changes(
+    vars: impl Iterator<Item = (OsString, OsString)>,
+) -> Vec<(OsString, Option<OsString>)> {
+    let vars: Vec<(OsString, OsString)> = vars.collect();
+    if !vars.iter().any(|(name, _)| name == "APPIMAGE") {
+        return Vec::new();
+    }
+    let appdir = vars
+        .iter()
+        .find(|(name, _)| name == "APPDIR")
+        .map(|(_, value)| value.as_bytes())
+        .map(|dir| dir.strip_suffix(b"/").unwrap_or(dir))
+        .filter(|dir| !dir.is_empty());
+    let inside = |entry: &[u8]| {
+        appdir.is_some_and(|dir| {
+            entry
+                .strip_prefix(dir)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(b"/"))
+        })
+    };
+    let mut changes = Vec::new();
+    for (name, value) in &vars {
+        if APPIMAGE_ONLY.iter().any(|only| name == only) {
+            changes.push((name.clone(), None));
+            continue;
+        }
+        let entries: Vec<&[u8]> = value.as_bytes().split(|&b| b == b':').collect();
+        if !entries.iter().any(|entry| inside(entry)) {
+            continue;
+        }
+        let kept: Vec<&[u8]> = entries
+            .into_iter()
+            .filter(|entry| !entry.is_empty() && !inside(entry))
+            .collect();
+        let value = (!kept.is_empty()).then(|| OsString::from_vec(kept.join(&b':')));
+        changes.push((name.clone(), value));
+    }
+    changes
 }
 
 /// In a scanning child, in a host process for an export, and on meloet's thread of an
@@ -243,6 +320,118 @@ pub fn die_with_parent(parent: Option<u32>) {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
+    fn env(pairs: &[(&str, &str)]) -> impl Iterator<Item = (OsString, OsString)> {
+        pairs
+            .iter()
+            .map(|(n, v)| (OsString::from(n), OsString::from(v)))
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    fn changes(pairs: &[(&str, &str)]) -> Vec<(String, Option<String>)> {
+        super::appimage_changes(env(pairs))
+            .into_iter()
+            .map(|(n, v)| {
+                (
+                    n.into_string().unwrap(),
+                    v.map(|v| v.into_string().unwrap()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn outside_an_appimage_nothing_changes() {
+        let pairs = [
+            ("APPDIR", "/tmp/.mount_x"),
+            ("LD_LIBRARY_PATH", "/tmp/.mount_x/usr/lib"),
+            ("PATH", "/usr/bin"),
+        ];
+        assert!(changes(&pairs).is_empty());
+    }
+
+    #[test]
+    fn what_the_appimage_added_goes_and_the_rest_stays() {
+        let d = "/tmp/.mount_meloetAbc";
+        let pairs = [
+            ("APPIMAGE", "/home/a/meloet_0.3.0_amd64.AppImage"),
+            ("APPDIR", d),
+            ("OWD", "/home/a"),
+            ("ARGV0", "./meloet.AppImage"),
+            ("PYTHONDONTWRITEBYTECODE", "1"),
+            ("GTK_THEME", "Adwaita:dark"),
+            ("HOME", "/home/a"),
+            (
+                "PATH",
+                "/tmp/.mount_meloetAbc/usr/bin/:/tmp/.mount_meloetAbc/usr/sbin/:/usr/local/bin:/usr/bin",
+            ),
+            (
+                "LD_LIBRARY_PATH",
+                "/tmp/.mount_meloetAbc/usr/lib/:/tmp/.mount_meloetAbc/lib64/:",
+            ),
+            (
+                "XDG_DATA_DIRS",
+                "/tmp/.mount_meloetAbc/usr/share/:/usr/local/share:/usr/share",
+            ),
+            ("GTK_DATA_PREFIX", d),
+            (
+                "GSETTINGS_SCHEMA_DIR",
+                "/tmp/.mount_meloetAbc/usr/share/glib-2.0/schemas/:",
+            ),
+            ("NEAR", "/tmp/.mount_meloetAbcdef/usr/lib"),
+            ("LV2_PATH", "/home/a/.lv2::/usr/lib/lv2"),
+        ];
+        let mut got = changes(&pairs);
+        got.sort();
+        let mut want: Vec<(String, Option<String>)> = vec![
+            ("APPDIR".into(), None),
+            ("APPIMAGE".into(), None),
+            ("ARGV0".into(), None),
+            ("GSETTINGS_SCHEMA_DIR".into(), None),
+            ("GTK_DATA_PREFIX".into(), None),
+            ("GTK_THEME".into(), None),
+            ("LD_LIBRARY_PATH".into(), None),
+            ("OWD".into(), None),
+            ("PATH".into(), Some("/usr/local/bin:/usr/bin".into())),
+            ("PYTHONDONTWRITEBYTECODE".into(), None),
+            (
+                "XDG_DATA_DIRS".into(),
+                Some("/usr/local/share:/usr/share".into()),
+            ),
+        ];
+        want.sort();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn a_command_loses_the_appimage_variables() {
+        let mut command = std::process::Command::new("true");
+        let changes = super::appimage_changes(env(&[
+            ("APPIMAGE", "/a.AppImage"),
+            ("APPDIR", "/tmp/m/"),
+            ("LD_LIBRARY_PATH", "/tmp/m/usr/lib:/opt/x"),
+        ]));
+        super::apply(&mut command, changes);
+        let mut set: Vec<_> = command
+            .get_envs()
+            .map(|(n, v)| (n.to_os_string(), v.map(|v| v.to_os_string())))
+            .collect();
+        set.sort();
+        assert_eq!(
+            set,
+            vec![
+                (OsString::from("APPDIR"), None),
+                (OsString::from("APPIMAGE"), None),
+                (
+                    OsString::from("LD_LIBRARY_PATH"),
+                    Some(OsString::from("/opt/x"))
+                ),
+            ]
+        );
+    }
+
     #[test]
     fn a_low_priority_is_the_calling_threads_and_of_what_it_starts() {
         // SAFETY: a plain system call.

@@ -1,0 +1,19 @@
+The AppImage runtime
+
+The first part of the meloet AppImage file is the AppImage type 2 runtime: the program that
+mounts the rest of the file and starts meloet. It is release 20251108 of
+https://github.com/AppImage/type2-runtime (commit dd6cebedcbddde9c82f89b011e8e1d40b6e43868),
+file runtime-x86_64, sha256 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d,
+used without changes. Its source and the scripts that build it are in that repository.
+
+It is one static program made of these parts:
+
+- the runtime itself: MIT (type2-runtime.LICENSE)
+- libfuse 3.15.0 (with the runtime's patches/libfuse/mount.c.diff): LGPL-2.1
+  (libfuse.LGPL2.txt). Source: https://github.com/libfuse/libfuse/releases/tag/fuse-3.15.0
+- squashfuse 0.5.2: BSD-2-Clause (squashfuse.LICENSE).
+  Source: https://github.com/vasi/squashfuse/releases/tag/0.5.2
+- zstd: BSD-3-Clause (zstd.LICENSE), zlib: Zlib (zlib.LICENSE), mimalloc: MIT
+  (mimalloc.LICENSE), musl: MIT (musl.COPYRIGHT), as packaged in Alpine Linux 3.21
+
+The license texts are in this folder.

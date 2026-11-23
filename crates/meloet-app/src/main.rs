@@ -5,6 +5,8 @@ mod core_handle;
 #[cfg(feature = "dev-hooks")]
 mod devhooks;
 mod logind;
+#[cfg(target_os = "linux")]
+mod mcp;
 mod pcwindow;
 #[cfg(target_os = "linux")]
 mod single;
@@ -477,6 +479,8 @@ fn to_front(window: &WebviewWindow, token: Option<String>) {
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    mcp::become_bridge_if_asked();
     set_jsc_options();
     #[cfg(feature = "dev-hooks")]
     devhooks::read_env();

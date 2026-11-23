@@ -88,9 +88,22 @@ fn song_arg(args: impl Iterator<Item = OsString>) -> Option<PathBuf> {
 
 /// The first meloet runs somewhere else: the path is made whole here.
 fn full_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path)
-        .or_else(|_| std::path::absolute(path))
-        .unwrap_or_else(|_| path.to_path_buf())
+    let in_appimage = std::env::var_os("APPIMAGE").is_some();
+    let path = from_start_folder(path, in_appimage, std::env::var_os("OWD"));
+    fs::canonicalize(&path)
+        .or_else(|_| std::path::absolute(&path))
+        .unwrap_or(path)
+}
+
+/// An AppImage's `AppRun` moves into the AppImage before meloet starts; the folder it was
+/// started in is `OWD`, set by the AppImage's runtime.
+fn from_start_folder(path: &Path, in_appimage: bool, owd: Option<OsString>) -> PathBuf {
+    match owd {
+        Some(owd) if in_appimage && path.is_relative() && !owd.is_empty() => {
+            Path::new(&owd).join(path)
+        }
+        _ => path.to_path_buf(),
+    }
 }
 
 pub enum Start {
@@ -321,6 +334,27 @@ mod tests {
             song: Some(PathBuf::from(path)),
             token: Some("gnome-shell/meloet/123_TIME456".into()),
         }
+    }
+
+    #[test]
+    fn in_an_appimage_a_short_path_is_from_where_it_was_started() {
+        let owd = Some(OsString::from("/home/a/songs"));
+        assert_eq!(
+            from_start_folder(Path::new("x.meloet"), true, owd.clone()),
+            PathBuf::from("/home/a/songs/x.meloet")
+        );
+        assert_eq!(
+            from_start_folder(Path::new("/b/x.meloet"), true, owd.clone()),
+            PathBuf::from("/b/x.meloet")
+        );
+        assert_eq!(
+            from_start_folder(Path::new("x.meloet"), false, owd),
+            PathBuf::from("x.meloet")
+        );
+        assert_eq!(
+            from_start_folder(Path::new("x.meloet"), true, None),
+            PathBuf::from("x.meloet")
+        );
     }
 
     #[test]

@@ -24,6 +24,7 @@ dev-hooks = ["meloet-core/dev-hooks", "dep:cairo-rs"]
 libc = { workspace = true }
 meloet-ai = { workspace = true }
 meloet-core = { workspace = true }
+meloet-plugin = { workspace = true }
 meloet-protocol = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }

@@ -12,6 +12,8 @@ This folder is for people who build and change meloet. For people who use it, se
 
 The guide for each OS covers the setup, running meloet, the browser-only screen, VS Code and building the deb. The rest of this page is the same on every OS.
 
+The AppImage, a trial form checked only on Ubuntu 26.04: [`appimage.md`](appimage.md).
+
 ## Checks
 
 ```bash

@@ -402,7 +402,7 @@ fn deleting_and_bad_indexes() {
 }
 
 #[test]
-fn pasting_leaves_out_what_does_not_fit() {
+fn pasting_grows_the_clip_by_bars() {
     let (doc, clip) = one_clip(vec![note(0, 100, 60), note(Q, 100, 64)]);
     let copied = clipboard(doc.clip(clip).unwrap().1, &[1, 0]).unwrap();
     assert_eq!(copied, [note(0, 100, 60), note(Q, 100, 64)]);
@@ -410,17 +410,51 @@ fn pasting_leaves_out_what_does_not_fit() {
     assert_eq!(e.selected, [0, 2]);
     assert_eq!(notes_of(&e.edit.doc, clip).len(), 4);
     assert_eq!(shown(&e.edit.doc, clip).0, BAR);
-    // The second would end past the clip.
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 3 * BAR));
+    // The second ends past the clip: it grows to the end of that bar, as one step.
     let e = paste_notes(&doc, clip, &copied, 3 * BAR - 500).unwrap();
-    assert_eq!(e.selected, [2]);
-    assert_eq!(e.edit.step, StepKind::PasteNotes { clip, count: 1 });
+    assert_eq!(e.selected, [2, 3]);
+    assert_eq!(e.edit.step, StepKind::PasteNotes { clip, count: 2 });
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 4 * BAR));
+    // Wholly after the clip, and before it from the song's start.
+    let e = paste_notes(&doc, clip, &copied, 5 * BAR + 10).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (BAR, 6 * BAR));
     assert_eq!(
-        paste_notes(&doc, clip, &copied, 3 * BAR - 50).unwrap_err(),
+        notes_of(&e.edit.doc, clip)[2..],
+        [(5 * BAR + 10, 100, 60), (5 * BAR + 10 + Q, 100, 64)]
+    );
+    let e = paste_notes(&doc, clip, &copied, 0).unwrap();
+    assert_eq!(range(&e.edit.doc, clip), (0, 3 * BAR));
+    assert_eq!(
+        notes_of(&e.edit.doc, clip)[..2],
+        [(0, 100, 60), (Q, 100, 64)]
+    );
+    // The old doc, with the old take, is untouched: undo takes the growing back too.
+    assert_eq!(range(&doc, clip), (BAR, 3 * BAR));
+    assert_eq!(notes_of(&doc, clip).len(), 2);
+    // Past the song's end, nothing is pasted.
+    assert_eq!(
+        paste_notes(&doc, clip, &copied, MAX_TICK).unwrap_err(),
         EditError::Unchanged
     );
+}
+
+#[test]
+fn pasting_over_another_clip_does_nothing() {
+    let (doc, a, b) = two_clips();
+    let copied = clipboard(doc.clip(a).unwrap().1, &[0, 1]).unwrap();
+    // Up to b's start: a grows to touch it.
+    let e = paste_notes(&doc, a, &copied, 3 * BAR + 100).unwrap();
+    assert_eq!(range(&e.edit.doc, a), (BAR, 4 * BAR));
+    // Into b's bar: a cannot grow, and nothing changes.
     assert_eq!(
-        paste_notes(&doc, clip, &copied, 0).unwrap_err(),
-        EditError::Unchanged
+        paste_notes(&doc, a, &copied, 4 * BAR - 100).unwrap_err(),
+        EditError::Overlap
+    );
+    // b cannot grow back over a.
+    assert_eq!(
+        paste_notes(&doc, b, &copied, 2 * BAR).unwrap_err(),
+        EditError::Overlap
     );
 }
 

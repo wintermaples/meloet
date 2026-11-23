@@ -413,6 +413,8 @@ pub struct Play {
     state: TransportState,
     /// Where play and record start from; while moving, where it started.
     position: u64,
+    /// While playing: the last move of the play line was Home to the loop's head.
+    homed: bool,
     metronome: bool,
     count_in_bars: u8,
     /// Every selected clip, in order of id.
@@ -500,6 +502,7 @@ impl Play {
             history: History::new(),
             state: TransportState::Stopped,
             position: 0,
+            homed: false,
             metronome,
             count_in_bars: if COUNT_IN_BARS.contains(&count_in_bars) {
                 count_in_bars
@@ -660,6 +663,7 @@ impl Play {
                     _ => self.position,
                 };
                 self.position = from;
+                self.homed = false;
                 self.state = TransportState::Playing;
                 self.last_heard = None;
                 effects.push(Effect::Engine(EngineOp::Play { from }));
@@ -799,7 +803,26 @@ impl Play {
             return;
         }
         self.position = tick;
+        self.homed = false;
         effects.push(Effect::Engine(EngineOp::Locate { tick }));
+    }
+
+    /// Home: with the loop on, to the loop's head; from there, to the song's start. While
+    /// playing the line does not stay at the head, so a Home just before counts as being there.
+    pub fn go_to_start(&mut self, effects: &mut Vec<Effect>) {
+        if self.busy() {
+            return;
+        }
+        let head = self.loop_on().map(|r| r.start()).filter(|&head| {
+            let at_head = if self.state == TransportState::Playing {
+                self.homed && self.position == head
+            } else {
+                self.play_line() == head
+            };
+            !at_head
+        });
+        self.locate(head.unwrap_or(0), effects);
+        self.homed = head.is_some();
     }
 
     /// Where the play line is: while moving, what the listener hears.
@@ -2204,14 +2227,14 @@ impl Play {
         self.apply_notes(Ok(edited), effects);
     }
 
-    pub fn paste_notes(&mut self, at: u64, effects: &mut Vec<Effect>) {
+    /// Out of the shown clip, the clip grows by bars (B-82). Returns the notice to show.
+    pub fn paste_notes(&mut self, at: u64, effects: &mut Vec<Effect>) -> Option<StatusMessage> {
         if self.busy() || self.clipboard.is_empty() {
-            return;
+            return None;
         }
-        if let Some(clip) = self.shown().map(|c| c.id) {
-            let r = notes::paste_notes(self.doc(), clip, &self.clipboard, at);
-            self.apply_notes(r, effects);
-        }
+        let clip = self.shown()?.id;
+        let r = notes::paste_notes(self.doc(), clip, &self.clipboard, at);
+        self.apply_growing(r, StatusMessage::ClipsNotPasted, effects)
     }
 
     /// Q and "かけなおす", with the settings of the quantize panel. Returns the notice to show.

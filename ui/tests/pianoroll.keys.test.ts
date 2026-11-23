@@ -7,6 +7,7 @@ import { onDragCancel, prView } from "../src/components/pianoroll/view.svelte";
 import { handleKeydown, type KeyDeps } from "../src/keys/attach";
 import { keyAction, type KeyInput } from "../src/keys/keys";
 import { TICKS_PER_QUARTER as TPQ } from "../src/time/ticks";
+import { copied, noteCopied } from "../src/state/copied";
 import { take } from "./pianoroll-fixture";
 
 const k = (key: string, mods: Partial<KeyInput> = {}): KeyInput => ({ key, ctrl: false, meta: false, alt: false, shift: false, ...mods });
@@ -133,5 +134,105 @@ describe("handleKeydown（ピアノロールに向けるキー）", () => {
     press("Escape");
     expect(sent).toEqual([{ type: "back" }]);
     stop();
+  });
+});
+
+describe("Mod V pastes what was copied last (notes or clips)", () => {
+  // The shown clip is [4 * TPQ, 12 * TPQ) in the song.
+  const n = G.shownOf(take([[0, TPQ, 60]], 7), 4 * TPQ, { from: 4 * TPQ, to: 12 * TPQ });
+  let state: AppState;
+  let sent: Command[];
+  let deps: KeyDeps;
+  let playTick: number;
+  const press = (key: string, init: KeyboardEventInit = {}) => handleKeydown(new KeyboardEvent("keydown", { key, cancelable: true, ...init }), deps);
+
+  beforeEach(() => {
+    state = fakeState();
+    state.workspace.layout = { ...state.workspace.layout, lower: [{ band: "pianoRoll", height: 640 }] };
+    state.pianoRoll = { ...state.pianoRoll, take: 7, selectedNotes: [], grid: { division: 16, triplet: false }, clipboardNotes: 2 };
+    state.arrange = { ...state.arrange, clipboardClips: 1 };
+    playTick = 6 * TPQ + TPQ / 12;
+    sent = [];
+    deps = { state: () => state, send: (c) => void sent.push(c), nav: { platform: "Linux" }, pianoRoll: () => n, playTick: () => playTick };
+    prView.focus = "arrange";
+  });
+  afterEach(() => {
+    copied.last = null;
+    prView.focus = "arrange";
+  });
+
+  it("copy and cut of notes or clips are remembered when they are sent", () => {
+    noteCopied({ type: "copyNotes", take: 7, notes: [0] });
+    expect(copied.last).toBe("notes");
+    noteCopied({ type: "cutClips", clips: [3] });
+    expect(copied.last).toBe("clips");
+    noteCopied({ type: "cutNotes", take: 7, notes: [0] });
+    expect(copied.last).toBe("notes");
+    noteCopied({ type: "copyClips", clips: [3] });
+    expect(copied.last).toBe("clips");
+    noteCopied({ type: "undo" });
+    expect(copied.last).toBe("clips");
+  });
+
+  it("notes last: into the shown clip, even when the keys point at the arrange", () => {
+    copied.last = "notes";
+    press("v", { ctrlKey: true });
+    // Inside the clip: the play line on the grid (TPQ / 4).
+    expect(sent).toEqual([{ type: "pasteNotes", at: 6 * TPQ }]);
+  });
+
+  it("notes last, the play line outside the clip: at the clip's head", () => {
+    copied.last = "notes";
+    playTick = 20 * TPQ;
+    press("v", { ctrlKey: true });
+    playTick = TPQ;
+    prView.focus = "pianoRoll";
+    press("v", { ctrlKey: true });
+    // The clip's end is outside too.
+    playTick = 12 * TPQ;
+    press("v", { ctrlKey: true });
+    expect(sent).toEqual([
+      { type: "pasteNotes", at: 4 * TPQ },
+      { type: "pasteNotes", at: 4 * TPQ },
+      { type: "pasteNotes", at: 4 * TPQ },
+    ]);
+  });
+
+  it("clips last: clips, even when the keys point at the piano roll", () => {
+    copied.last = "clips";
+    prView.focus = "pianoRoll";
+    press("v", { ctrlKey: true });
+    expect(sent).toEqual([{ type: "pasteClips", to: null }]);
+  });
+
+  it("notes last with the piano roll closed, or nothing copied yet: as the keys point", () => {
+    copied.last = "notes";
+    state.workspace.layout = { ...state.workspace.layout, lower: [] };
+    press("v", { ctrlKey: true });
+    copied.last = null;
+    state.workspace.layout = { ...state.workspace.layout, lower: [{ band: "pianoRoll", height: 640 }] };
+    press("v", { ctrlKey: true });
+    prView.focus = "pianoRoll";
+    press("v", { ctrlKey: true });
+    expect(sent).toEqual([{ type: "pasteClips", to: null }, { type: "pasteClips", to: null }, { type: "pasteNotes", at: 6 * TPQ }]);
+  });
+
+  it("notes last, the piano roll showing no clip: nothing", () => {
+    copied.last = "notes";
+    state.arrange = { ...state.arrange, pianoRollClip: null };
+    deps = { ...deps, pianoRoll: () => null };
+    press("v", { ctrlKey: true });
+    expect(sent).toEqual([]);
+  });
+
+  it("the shown take not fetched yet: the clip's range comes from the song", () => {
+    copied.last = "notes";
+    const clip = { id: 90, name: "A", start: 8 * TPQ, end: 16 * TPQ, take: 1, takes: 1, takeId: 91, takeOffset: 0, noteCount: 0, audio: null };
+    state.song = { ...state.song, tracks: state.song.tracks.map((t, i) => (i === 0 ? { ...t, clips: [clip] } : t)) };
+    state.arrange = { ...state.arrange, pianoRollClip: clip.id };
+    deps = { ...deps, pianoRoll: () => null };
+    playTick = clip.end + 5 * TPQ;
+    press("v", { ctrlKey: true });
+    expect(sent).toEqual([{ type: "pasteNotes", at: clip.start }]);
   });
 });

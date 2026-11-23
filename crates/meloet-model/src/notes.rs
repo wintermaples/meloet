@@ -12,7 +12,8 @@
 //! Notes written, moved or resized out of the clip make the clip grow by whole bars, as the same
 //! step (B-82): back to the head of the bar with the earliest start, on to the end of the bar
 //! with the latest end. Not before the song's start; not over another clip of the track, which
-//! does nothing and says [`EditError::Overlap`]. The other edits keep notes inside the clip.
+//! does nothing and says [`EditError::Overlap`]. Pasted notes do the same. The other edits keep
+//! notes inside the clip.
 
 use std::sync::Arc;
 
@@ -476,8 +477,9 @@ pub fn delete_notes(
     )
 }
 
-/// Puts `notes` (from [`clipboard`]) in the clip with the earliest at `at`. Notes that would not
-/// be wholly inside the clip are left out.
+/// Puts `notes` (from [`clipboard`]) in the clip with the earliest at `at`. The clip grows by
+/// bars to hold them (B-82); notes past the song's end are left out, and those running past it
+/// are cut there.
 pub fn paste_notes(
     doc: &Doc,
     clip: ClipId,
@@ -486,29 +488,34 @@ pub fn paste_notes(
 ) -> Result<NotesEdited, EditError> {
     let (ti, ci) = keys_clip_index(doc, clip)?;
     let (c, l) = lifted(&doc.tracks[ti].clips[ci]);
+    let ceiling = MAX_TICK + l;
     let pasted: Vec<(Note, bool)> = notes
         .iter()
         .filter_map(|n| {
             let start = at.checked_add(l)?.checked_add(n.start)?;
-            let fits = start >= c.start
-                && start.checked_add(n.length)? <= c.end
-                && n.length > 0
-                && n.key <= 127
-                && (1..=127).contains(&n.velocity);
-            fits.then_some((
-                Note {
-                    start,
-                    from: None,
-                    ..*n
-                },
-                true,
-            ))
+            let fits =
+                start < ceiling && n.length > 0 && n.key <= 127 && (1..=127).contains(&n.velocity);
+            fits.then(|| {
+                (
+                    Note {
+                        start,
+                        length: n.length.min(ceiling - start),
+                        from: None,
+                        ..*n
+                    },
+                    true,
+                )
+            })
         })
         .collect();
     if pasted.is_empty() {
         return Err(EditError::Unchanged);
     }
     let count = pasted.len();
+    let reach = Reach {
+        start: pasted.iter().map(|(n, _)| n.start).min(),
+        end: pasted.iter().map(|(n, _)| n.end()).max(),
+    };
     let mut out = unmarked(&c);
     out.extend(pasted);
     put_notes(
@@ -516,7 +523,7 @@ pub fn paste_notes(
         (ti, ci),
         out,
         StepKind::PasteNotes { clip, count },
-        Reach::NONE,
+        reach,
     )
 }
 

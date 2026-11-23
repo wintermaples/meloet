@@ -63,6 +63,22 @@ describe("ひらいたときの見せかた", () => {
     expect(G.fitQuarterPx(1600 * TPQ, 696, 100)).toBe(10);
   });
 
+  it("opening with the loop on: the loop when it overlaps the clip, else the clip", () => {
+    const clip = { start: 16 * TPQ, end: 80 * TPQ };
+    const loop = { start: 32 * TPQ, end: 48 * TPQ };
+    expect(G.openSpan(clip, loop)).toEqual(loop);
+    // Over one end of the clip too: the whole loop.
+    expect(G.openSpan(clip, { start: 0, end: 32 * TPQ })).toEqual({ start: 0, end: 32 * TPQ });
+    // Only touching, apart, or the loop off.
+    expect(G.openSpan(clip, { start: 0, end: 16 * TPQ })).toEqual(clip);
+    expect(G.openSpan(clip, { start: 80 * TPQ, end: 96 * TPQ })).toEqual(clip);
+    expect(G.openSpan(clip, null)).toEqual(clip);
+    // The clip is 64 quarters (step 10 at 696), the loop 16 (step 40).
+    expect(G.fitQuarterPx(clip.end - clip.start, 696, 100)).toBe(10);
+    const span = G.openSpan(clip, loop);
+    expect(G.fitQuarterPx(span.end - span.start, 696, 100)).toBe(40);
+  });
+
   it("縦の足し算の行の数（窓 448 ・ 720 ・ 768 ・ 800 ・ 1080 で 11 ・ 34 ・ 38 ・ 41 ・ 49）", () => {
     expect([140, 412, 460, 492, 588].map((h) => G.wholeRows(h, 12))).toEqual([11, 34, 38, 41, 49]);
   });

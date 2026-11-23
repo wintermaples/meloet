@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """Render every mock board in docs/design/mock/ to PNG with headless Chrome.
 
-usage: python3 -I tools/design/render_mocks.py OUT_DIR [BOARD ...]
+usage: python3 -I tools/design/render_mocks.py [--dir BOARD_DIR] OUT_DIR [BOARD ...]
+--dir reads the boards and canvas.json from another folder (for example docs/design/proposals).
 Boards that use <sc-for> (A-Notes, Opt-Colors, Opt-Meter) render without their repeated rows.
 """
 import json, os, subprocess, sys
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+args = sys.argv[1:]
 mock = os.path.join(root, "docs", "design", "mock")
-out = os.path.abspath(sys.argv[1])
+if args[:1] == ["--dir"]:
+    mock = os.path.abspath(args[1])
+    args = args[2:]
+out = os.path.abspath(args[0])
 os.makedirs(out, exist_ok=True)
 boards = json.load(open(os.path.join(mock, "canvas.json"), encoding="utf-8"))["boards"]
-pick = set(sys.argv[2:])
+pick = set(args[1:])
 for name, b in boards.items():
     stem = name.removesuffix(".dc.html")
     if pick and stem not in pick:

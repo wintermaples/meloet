@@ -80,6 +80,7 @@ The full list of tools (latency, long recording, screenshots, mocks, plugins, ex
 - [`docs/spec/`](../spec/): the design spec (the source of truth for the screen). [`docs/spec/glossary.md`](../spec/glossary.md) gives the English words; [`docs/spec/4-keys.md`](../spec/4-keys.md) lists the keys.
 - [`docs/design/mock/`](../design/mock/): the screen mocks. When a mock and the spec do not agree, the spec is right.
 - [`docs/install-check.md`](../install-check.md): the steps to test the deb on a real PC.
+- [`apt-repo.md`](apt-repo.md): the apt repository (the signing key, `scripts/make-apt-repo.sh`, GitHub Pages, and what a user writes).
 - [`ai-tools.md`](ai-tools.md): the MCP tools of the AI link, with the arguments and answers of those added or changed in round 11.
 - [`docs/user/README.ja.md`](../user/README.ja.md): the detailed guide for users (Japanese).
 - [`docs/history/`](../history/): older records, kept in Japanese as they were (progress by round, the Japanese architecture, design notes, measurements, research, and the report on the `spikes/`).

@@ -244,7 +244,7 @@ The owner let an AI make music in meloet through the MCP tools and listed 13 thi
 7. **What sounds where in frequency**: done (D). `analyze_bands`: levels per band, two tracks sounding in the same band at once, sections by markers or bars.
 8. **Which key is which drum**: done (E) for built-in kits, SF2 kits (sample names) and LV2 midnam (checked with Black Pearl); VST3 gives no names (a GM guess is marked as a guess).
 9. **Tracks that do not move under the AI**: done (K). Every track argument takes the number or `"id:7"`; answers give ids.
-10. **Notes that went missing (266 sent, 265 written)**: done (C). The cause was the 4-bar clip `write_notes` made; now the new clip is long enough, and every write answers `not_written` and `changed` with reasons.
+10. **Notes that went missing (266 sent, 265 written)**: done (C). The cause was the 4-bar clip `write_notes` made; now the new clip is long enough, and every write answers `not_written` and `cut` with reasons.
 11. **"No change" is not an error**: done (B). `changed: false` as a success; real failures got real reasons (`ai_why_not`).
 12. **Finding song files**: done (F). `list_songs` (the song open now, the songs opened or saved lately, the songs folder, or a given folder). Nothing on the screen yet (B-97-4).
 13. **Mute sets**: done for the AI (F). `save_mute_set`, `list_mute_sets`, `recall_mute_set`, `delete_mute_set`; one step each; kept in the song (`muteSets`). Nothing on the screen yet (B-97-3).
@@ -283,7 +283,6 @@ TODO(lead): the owner's completion conditions as end-to-end tests (`crates/meloe
   - `import_midi` / `copy_notes` with another clip in the way refuse; they do not spread the notes over several clips.
   - With 200 notes listed, an answer is about 30 KB (text and `structuredContent` both hold the JSON; `MAX_TOLD`).
   - The `anyOf` note schema was not shown to a real AI app.
-  - Note writes answer `changed` as the list of cut notes, while other writes answer `changed: true` / `false`.
   - `AiNoteWhy::PastClipEnd` and `at_clip_end` no longer come on the AI path.
   - No test for a next clip that starts in the middle of a bar with notes ending before it.
   - Sending a take of 50 000 notes to the screen was not measured.

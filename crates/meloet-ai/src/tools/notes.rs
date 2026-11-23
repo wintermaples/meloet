@@ -224,9 +224,9 @@ pub(super) fn notes_value(map: &TempoMap, d: &AiDone, read: &AiSong) -> Value {
     value["not_written_count"] = json!(n.not_written_count);
     value["not_written_more"] = json!(n.not_written_count as usize - not_written.len());
     value["not_written"] = json!(not_written);
-    value["changed_count"] = json!(n.cut_count);
-    value["changed_more"] = json!(n.cut_count as usize - changed.len());
-    value["changed"] = json!(changed);
+    value["cut_count"] = json!(n.cut_count);
+    value["cut_more"] = json!(n.cut_count as usize - changed.len());
+    value["cut"] = json!(changed);
     value
 }
 

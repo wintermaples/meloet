@@ -66,7 +66,7 @@ fn a_note_not_written_comes_back_with_the_reason() {
     assert_eq!(wrote["written"], 266, "{wrote}");
     assert_eq!(wrote["not_written_count"], 0);
     assert_eq!(wrote["not_written"], json!([]));
-    assert_eq!(wrote["changed"], json!([]));
+    assert_eq!(wrote["cut"], json!([]));
     let clip = id(&wrote);
     assert_eq!(
         wrote["created_clip"],
@@ -99,7 +99,7 @@ fn a_note_not_written_comes_back_with_the_reason() {
     );
     assert_eq!(wrote["written"], 266, "{wrote}");
     assert_eq!(wrote["not_written"], json!([]));
-    assert_eq!(wrote["changed"], json!([]));
+    assert_eq!(wrote["cut"], json!([]));
     assert_eq!(wrote["created_clip"], Value::Null);
     assert_eq!(wrote["grew_to"], Value::Null);
     assert_eq!(wrote["clip_place"]["end"]["at"], "9.1.0");

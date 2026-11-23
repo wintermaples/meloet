@@ -35,8 +35,8 @@ The note writes (`write_notes`, `copy_notes`, `import_midi`) answer the write fi
 | `grew_to` | `{start, end}` when an existing clip grew, else null |
 | `not_written` | Up to 200 of `{index, start, length, key, reason}`; reasons `past_new_clip_end`, `past_song_end`, `before_song_start`, `key_out_of_range`, `outside_source_clip` |
 | `not_written_count`, `not_written_more` | How many in all, how many more than listed |
-| `changed` | Up to 200 cut notes `{index, start, key, length_asked, length, reason}` (`cut_at_new_clip_end`, `cut_at_song_end`); note: here `changed` is this list, not the `true` / `false` of other writes |
-| `changed_count`, `changed_more` | As for `not_written` |
+| `cut` | Up to 200 cut notes `{index, start, key, length_asked, length, reason}` (`cut_at_new_clip_end`, `cut_at_song_end`) |
+| `cut_count`, `cut_more` | As for `not_written` |
 
 ### `write_notes` (changed)
 

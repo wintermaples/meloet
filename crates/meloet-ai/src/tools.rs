@@ -102,8 +102,8 @@ Each change is one undo step in meloet; undo takes back the last one, whoever ma
 batch makes many changes ONE step, all or nothing. \"No change\" (changed: false) is a \
 success. Nothing changes while meloet records or exports. Ask before changes not asked for, \
 and before open_song or new_song with unsaved changes.\n\
-Long lists come in pages (limit, offset, next_offset) and take filters. Read not_written and \
-changed in note answers. A plugin state or preset fits only the same plugin and format; put \
+Long lists come in pages (limit, offset, next_offset) and take filters. Read not_written and cut \
+in note answers. A plugin state or preset fits only the same plugin and format; put \
 back only states you read (a broken one can stop the plugin). Surge XT: the surge_ tools edit \
 its patch; set_param its effect types.\n\
 You cannot hear: measure_mix gives levels and LUFS, analyze_bands levels per frequency band; \
@@ -715,7 +715,7 @@ impl Tools {
     /// Writes notes as one undo step into a keys clip (it grows by bars) or a track: the
     /// clip holding the earliest start, else a new clip (4 bars, longer when the notes need
     /// it). Every note is written or none: refused, naming the clip, when another clip is
-    /// in the way. Answers `written`, `created_clip` or `grew_to`, and `changed`.
+    /// in the way. Answers `written`, `created_clip` or `grew_to`, and `cut`.
     #[tool(annotations(
         title = "Write notes",
         read_only_hint = false,

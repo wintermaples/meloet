@@ -204,7 +204,7 @@ describe("消す道具", () => {
   beforeEach(() => (tool = "erase"));
 
   it("乗せている間は、消えるノートを知らせる。なぞると通ったノートをぜんぶ、離して 1 つの DeleteNotes", () => {
-    expect(drag.hover(x((5 * TPQ) / 24), y(60), NONE)).toEqual({ cursor: "eraser", changed: true });
+    expect(drag.hover(x((5 * TPQ) / 24), y(60), NONE)).toEqual({ cursor: "eraser", changed: true, shadowChanged: false });
     expect(drag.eraseHover).toBe(0);
     drag.down(x((5 * TPQ) / 24), y(60), NONE);
     drag.move(x((5 * TPQ) / 4), y(62), NONE);

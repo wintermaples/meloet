@@ -19,6 +19,7 @@
   import Roll from "./Roll.svelte";
   import { followShownTake, shown } from "./shown.svelte";
   import Toolbar from "./Toolbar.svelte";
+  import ChordRow from "./ChordRow.svelte";
   import { ccLanes, ccList, dragReading, prPanels, prView, velocityLane, type LaneTag } from "./view.svelte";
 
   let { height }: { height: number } = $props();
@@ -151,6 +152,7 @@
 
 <section class="band" style:height="{metrics.scaled(height)}px" data-band="pianoRoll" bind:this={band} bind:clientWidth={bandW}>
   <Toolbar />
+  <ChordRow />
   <div class="body">
     {#if prPanels.list !== false}
       <div class="panel list">

@@ -31,8 +31,12 @@ describe("仕様書 5 章「用語の説明」", () => {
     expect(terms.filter((x) => x.source === "spec:5").map((x) => [x.term, x.description])).toEqual(specTerms);
   });
 
-  it("仕様書の外の用語はない。「仮の音」は「サイン波」になった（仕様書 3 章）", () => {
-    expect(terms.filter((x) => x.source !== "spec:5")).toEqual([]);
+  it("仕様書の外の用語は、オーナーさんが決めた和音の 3 つだけ。「仮の音」は「サイン波」になった（仕様書 3 章）", () => {
+    expect(terms.filter((x) => x.source !== "spec:5").map((x) => [x.term, x.source])).toEqual([
+      ["和音のスタンプ", "user:2026-11-23"],
+      ["根音", "user:2026-11-23"],
+      ["調の和音", "user:2026-11-23"],
+    ]);
     expect(findTerm("仮の音")).toBeUndefined();
     expect(findTerm(t("instrument.sine"))?.term).toBe("サイン波");
   });

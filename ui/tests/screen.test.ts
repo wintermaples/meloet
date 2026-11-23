@@ -170,10 +170,10 @@ describe("偽物の場面", () => {
   });
   // 仕様書 3 章「縦の分けかたの例」。order は古い順。高さは アレンジ、帯（上から）。
   it.each([
-    { order: ["pianoRoll"], fits: 452, grows: 920, rows: 1016, at800: [40, 616], at1080: [200, 736] },
+    { order: ["pianoRoll"], fits: 476, grows: 944, rows: 1040, at800: [40, 616], at1080: [176, 760] },
     { order: ["mixer"], fits: 700, grows: 844, rows: 940, at800: [40, 616], at1080: [276, 660] },
     { order: ["history"], fits: 432, grows: 432, rows: 528, at800: [408, 248], at1080: [688, 248] },
-    { order: ["mixer", "pianoRoll"], fits: 968, grows: 1580, rows: 1676, at800: null, at1080: [40, 380, 516] },
+    { order: ["mixer", "pianoRoll"], fits: 992, grows: 1604, rows: 1700, at800: null, at1080: [40, 380, 516] },
     { order: ["history", "mixer"], fits: 948, grows: 1092, rows: 1188, at800: null, at1080: [40, 648, 248] },
   ] as const)("縦の分けかたの例: $order", ({ order, fits, grows, rows, at800, at1080 }) => {
     const at = (height: number) => {

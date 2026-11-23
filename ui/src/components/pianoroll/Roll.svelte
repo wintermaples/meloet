@@ -31,7 +31,9 @@
   import { cursorCss } from "./cursor";
   import { Auditioner, chordOf, fixedOr100, NUDGE_MS, notesMayAudition, onNudgeKeys, ticksToMs } from "./audition";
   import { pianoRollCommand } from "./commands";
-  import { RollDrag, type CursorKind, type Drag, type Mods } from "./drag";
+  import { RollDrag, type CursorKind, type Drag, type Mods, type Shadow } from "./drag";
+  import { chordHover, chordPick } from "./chordPick.svelte";
+  import { SINGLE, stampStatus } from "./chords";
   import { drumKeysOf, drumName, drumTerm, rollShowsDrums } from "./drums";
   import * as G from "./geom";
   import { noteMarks, paintLive, paintRoll, paintRollKeys, paintVelocityLane, type LivePicture, type RollPicture, type RollSizes } from "./paint";
@@ -241,13 +243,29 @@
     send: (c: Command) => {
       const sent = send(c);
       lastSent = sent;
-      if (c.type === "addNote" && c.take === null) awaitMadeClip(c.start, sent);
+      if ((c.type === "addNote" || c.type === "addNotes") && c.take === null) awaitMadeClip(c.start, sent);
     },
     drawVelocity: () => fixedOr100(app),
     mayAudition,
     ticksToMs: msOf,
     audition,
+    chord: () => (drums ? SINGLE : chordPick.pick),
   });
+
+  /** The chord shadow under the cursor (drawn in the live surface), and its status line. */
+  let shadow = $state.raw<Shadow | null>(null);
+  function showShadow(next: Shadow | null): void {
+    shadow = next;
+    chordHover.text = next ? stampStatus(drums ? SINGLE : chordPick.pick, next.key) : null;
+  }
+  function clearShadow(): void {
+    if (drag.setShadow(null) || shadow) showShadow(null);
+  }
+  $effect(() => {
+    void [chordPick.pick, prView.tool, drums];
+    untrack(clearShadow);
+  });
+  onDestroy(() => (chordHover.text = null));
   const shownDrag = $derived.by(() => {
     void dragVersion;
     return drag.drag ?? pending;
@@ -282,6 +300,7 @@
     prView.picked = "notes";
     pending = null;
     const p = at(e);
+    clearShadow();
     if (where === "notes") drag.down(p.x, p.y, modsOf(e));
     else {
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -308,6 +327,7 @@
     const h = drag.hover(p.x, p.y, modsOf(e));
     cursor = h.cursor;
     if (h.changed) eraseHover = drag.eraseHover;
+    if (h.shadowChanged) showShadow(drag.shadow);
   }
 
   function up(): void {
@@ -326,6 +346,7 @@
   function leave(): void {
     if (drag.drag) return;
     if (eraseHover >= 0) eraseHover = drag.eraseHover = -1;
+    clearShadow();
   }
 
   onMount(() =>
@@ -589,7 +610,13 @@
     }
     if (d && d.kind === "draw") {
       const left = G.tickToX(g, d.start);
-      return { left, top: G.keyToY(g, d.key), width: Math.max(1, areaW - left), height: rowH, tx: 0, ty: 0 };
+      const rows = rowsBox(d.keys);
+      return rows && { left, top: rows.top, width: Math.max(1, areaW - left), height: rows.height, tx: 0, ty: 0 };
+    }
+    if (!d && shadow) {
+      const left = G.tickToX(g, shadow.start);
+      const rows = rowsBox(shadow.keys);
+      return rows && { left, top: rows.top, width: Math.max(1, Math.ceil(shadow.length * ppt) + 1), height: rows.height, tx: 0, ty: 0 };
     }
     if (held.length > 0) {
       let first = Infinity;
@@ -608,6 +635,19 @@
     }
     return null;
   });
+
+  /** From the top of the highest row of `keys` to the bottom of the lowest (CSS px). */
+  function rowsBox(keys: readonly number[]): { top: number; height: number } | null {
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const k of keys) {
+      const top = G.keyToY(g, k);
+      if (Number.isNaN(top)) continue;
+      y0 = Math.min(y0, top);
+      y1 = Math.max(y1, top + rowH);
+    }
+    return y1 > y0 ? { top: y0, height: y1 - y0 } : null;
+  }
 
   /** ドラッグを始めたときの箱（ノートの場所の CSS px）。 */
   function movedBoxOf(d: Drag): { x0: number; x1: number; y0: number; y1: number } | null {
@@ -630,7 +670,7 @@
   }
 
   function liveNotesOf(d: Drag | null): LivePicture["notes"] {
-    const out: { start: number; end: number; key: number; face: ColorName }[] = [];
+    const out: { start: number; end: number; key: number; face: ColorName; outline?: boolean }[] = [];
     const face = (i: number): ColorName => (selFlags && selFlags[i] ? "color.accent" : G.velocityColor(n!.take.velocities[i]!));
     if (d && n && !liveMode) {
       if (d.kind === "move" && d.press.moved) {
@@ -647,7 +687,11 @@
       }
     }
     if (d && d.kind === "draw") {
-      out.push({ start: d.start, end: d.start + d.length, key: d.key, face: "color.accent" });
+      for (const key of d.keys) out.push({ start: d.start, end: d.start + d.length, key, face: "color.accent" });
+      return out;
+    }
+    if (!d && shadow) {
+      for (const key of shadow.keys) out.push({ start: shadow.start, end: shadow.start + shadow.length, key, face: "color.accent", outline: true });
       return out;
     }
     for (const l of held) out.push({ start: l.start, end: Math.max(l.start, nowTick), key: l.key, face: "color.rec" });

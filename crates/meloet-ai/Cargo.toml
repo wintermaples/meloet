@@ -1,0 +1,21 @@
+[package]
+name = "meloet-ai"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+libc = { workspace = true }
+meloet-core = { workspace = true }
+meloet-model = { workspace = true }
+meloet-protocol = { workspace = true }
+# The MCP server (docs/research/2026-11-23-mcp.md, spikes/s10-mcp). Its versions move fast:
+# pinned, with only the server, its macros and a transport over any byte stream.
+rmcp = { version = "=3.11.0", default-features = false, features = ["server", "macros", "schemars", "transport-async-rw"] }
+schemars = "1.2.3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+# A thread of its own for the socket (rmcp needs tokio).
+tokio = { version = "1.54.1", features = ["rt", "net", "sync", "time", "macros"] }
+tokio-util = "0.7.20"

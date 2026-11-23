@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Makes the deb of meloet in an Ubuntu 24.04 container (packaging/Dockerfile) and puts it in
-# target/deb/. Builds `-p meloet-app` and `-p meloet-plughost` only, with no features beyond
-# the default ones.
+# target/deb/. Builds `-p meloet-app`, `-p meloet-plughost` and `-p meloet-mcp` only, with no
+# features beyond the default ones.
 #
 #   scripts/build-deb.sh
 #
@@ -52,11 +52,13 @@ docker run --rm --user "$(id -u):$(id -g)" \
     cargo fetch --manifest-path /work/spdx/Cargo.toml
     (cd ui && npm ci --no-audit --no-fund && npm run build)
     cargo build --release --locked -p meloet-plughost
+    cargo build --release --locked -p meloet-mcp
     cp /work/target/release/meloet-plughost "/work/bin/meloet-plughost-$triple"
+    cp /work/target/release/meloet-mcp "/work/bin/meloet-mcp-$triple"
     rm -rf /work/target/release/bundle/deb
     cd crates/meloet-app
     ../../ui/node_modules/.bin/tauri build --bundles deb \
-      --config "{\"bundle\":{\"externalBin\":[\"/work/bin/meloet-plughost\"]}}" -- --locked
+      --config "{\"bundle\":{\"externalBin\":[\"/work/bin/meloet-plughost\",\"/work/bin/meloet-mcp\"]}}" -- --locked
   '
 
 rm -f "$out"/*.deb

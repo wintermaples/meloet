@@ -118,7 +118,7 @@ fn status(model: &Model) -> Option<StatusMessage> {
 }
 
 /// A model that chose the headphones through the chooser and has its stream open at 48 kHz.
-fn playing() -> Model {
+pub(super) fn playing() -> Model {
     let mut m = fresh();
     m.handle(Input::KeyboardAdded(keyboard(1)));
     m.handle(usual());

@@ -73,6 +73,9 @@ pub struct ExportJob {
     pub skip: Vec<PluginSlotRef>,
     /// The rate the playing engine runs at.
     pub sample_rate: u32,
+    /// For the AI link: the mix, then (with `per_track`) each track alone, are rendered for
+    /// their levels only, answered with [`ExportNews::Measured`]; no file is kept.
+    pub measure: bool,
 }
 
 /// Where a rendered job goes, and as what.
@@ -118,6 +121,11 @@ pub enum ExportNews {
     Failed {
         job: u64,
         reason: ExportFailure,
+    },
+    /// The answer to a job with `measure`: the levels of each rendering, in its order.
+    Measured {
+        job: u64,
+        passes: Vec<crate::ai::PassLevels>,
     },
 }
 
@@ -422,6 +430,7 @@ impl Exporting {
             realtime: asked.realtime,
             skip: scene.stopped_plugins.iter().map(|p| p.slot).collect(),
             sample_rate: scene.sample_rate,
+            measure: false,
         })));
         dialog.job = Some(Job {
             id: self.last_job,
@@ -498,6 +507,7 @@ impl Exporting {
                 let shown = files.into_iter().next();
                 self.run = Some(Run::Ended(view, shown));
             }
+            ExportNews::Measured { .. } => {}
             ExportNews::Failed { job, reason } => {
                 if matches!(&self.run, Some(Run::Going { job: going, .. }) if going.id == job) {
                     self.run = Some(Run::Ended(ExportRunView::Failed { reason }, None));

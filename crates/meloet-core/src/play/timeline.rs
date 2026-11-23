@@ -237,7 +237,7 @@ impl Play {
     }
 
     /// The nearest head of a beat, the later one of two as near.
-    fn snapped(&self, tick: u64) -> u64 {
+    pub(super) fn snapped(&self, tick: u64) -> u64 {
         self.map().nearest_beat(tick.min(MAX_TICK)).min(MAX_TICK)
     }
 

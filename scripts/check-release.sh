@@ -3,7 +3,7 @@
 #   scripts/check-release.sh            the page and the release programs without the hooks
 #   scripts/check-release.sh --no-dev   only that (skips the build with the hooks, which shows
 #                                       that the names looked for are the right ones)
-# Builds ui/dist and target/release/{meloet,meloet-plughost}. The build with the hooks comes
+# Builds ui/dist and target/release/{meloet,meloet-plughost,meloet-mcp}. The build with the hooks comes
 # first, so that both are left as they are handed out.
 set -euo pipefail
 
@@ -44,6 +44,8 @@ build_programs() {
   [ "$1" = 1 ] && features=(--features dev-hooks)
   cargo build --release -p meloet-app "${features[@]}"
   cargo build --release -p meloet-plughost "${features[@]}"
+  # It has no features: what is handed out is the only form.
+  cargo build --release -p meloet-mcp
 }
 
 # The page inside the program, as it reads it (brotli undone).
@@ -84,7 +86,7 @@ build_page 0
 if ls ui/dist/assets | grep -q '^start-'; then fail "ui/dist has the chunk of ui/src/dev (start-*.js)"; fi
 if grep -rnoE "$page_names" ui/dist; then fail "ui/dist has the names above"; fi
 build_programs 0
-for program in meloet meloet-plughost; do
+for program in meloet meloet-plughost meloet-mcp; do
   if strings -n 6 "$target/release/$program" | grep -E "$rust_names" | sort | uniq -c; then
     fail "target/release/$program has the names above"
   fi
@@ -92,7 +94,7 @@ done
 embedded_page
 if ls "$work/embedded/assets" | grep -q '^start-'; then fail "the page inside meloet has the chunk of ui/src/dev"; fi
 if grep -rnoE "$page_names" "$work/embedded"; then fail "the page inside meloet has the names above"; fi
-ls -l "$target/release/meloet" "$target/release/meloet-plughost"
+ls -l "$target/release/meloet" "$target/release/meloet-plughost" "$target/release/meloet-mcp"
 
 if [ "$failed" = 1 ]; then exit 1; fi
 echo "== the release carries no development hook"

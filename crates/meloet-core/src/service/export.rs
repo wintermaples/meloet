@@ -19,12 +19,18 @@ use meloet_protocol::ExportFailure;
 const SAMPLES_WAIT: Duration = Duration::from_secs(30);
 /// The frames of a block when no stream ever said its own.
 const USUAL_BLOCK: usize = 256;
+/// The ids of the AI link's jobs start here, far from the rules' own.
+pub(super) const AI_JOBS: u64 = 1 << 48;
+
+/// Who hears a job: the rules, or the AI link's caller waiting on its own thread.
+type Teller = Option<mpsc::Sender<ExportNews>>;
 
 /// A job that is asked for and not started.
 struct Waiting {
     job: Box<ExportJob>,
     since: Instant,
     target: Option<ExportTarget>,
+    tell: Teller,
 }
 
 pub(super) struct Exports {
@@ -90,14 +96,7 @@ impl Worker {
     /// hear at once.
     pub(super) fn export_ask(&mut self, ask: ExportAsk) -> Option<Input> {
         match ask {
-            ExportAsk::Render(job) => {
-                self.exports.waiting.push(Waiting {
-                    job,
-                    since: Instant::now(),
-                    target: None,
-                });
-                self.export_tick()
-            }
+            ExportAsk::Render(job) => self.export_render(job, None),
             ExportAsk::Drop { job } => {
                 self.exports.waiting.retain(|w| w.job.id != job);
                 if let Some(handle) = self.exports.jobs.iter().find(|j| j.id == job) {
@@ -129,6 +128,25 @@ impl Worker {
         }
     }
 
+    /// A job waits for the samples of the song, then starts. With `tell` its news go there,
+    /// not to the rules.
+    pub(super) fn export_render(&mut self, job: Box<ExportJob>, tell: Teller) -> Option<Input> {
+        self.exports.waiting.push(Waiting {
+            job,
+            since: Instant::now(),
+            target: None,
+            tell,
+        });
+        self.export_tick()
+    }
+
+    /// Jobs of the AI link that are asked for or running.
+    pub(super) fn ai_jobs(&self) -> usize {
+        let waiting = self.exports.waiting.iter().filter(|w| w.tell.is_some());
+        let running = self.exports.jobs.iter().filter(|j| j.id >= AI_JOBS);
+        waiting.count() + running.filter(|j| !j.is_over()).count()
+    }
+
     /// Starts the jobs that can start, and lets go of the ones that have ended. Returns
     /// what the rules are to hear of a job that could not start.
     pub(super) fn export_tick(&mut self) -> Option<Input> {
@@ -142,7 +160,7 @@ impl Worker {
                 continue;
             }
             let id = w.job.id;
-            match self.start_export(*w.job, samples) {
+            match self.start_export(*w.job, samples, w.tell.clone()) {
                 Ok(handle) => {
                     if let Some(target) = w.target {
                         handle.finish(target);
@@ -151,10 +169,16 @@ impl Worker {
                 }
                 Err(e) => {
                     eprintln!("meloet: the export did not start: {e}");
-                    failed = Some(Input::Export(ExportNews::Failed {
+                    let news = ExportNews::Failed {
                         job: id,
                         reason: ExportFailure::CannotWrite,
-                    }));
+                    };
+                    match w.tell {
+                        Some(tell) => {
+                            let _ = tell.send(news);
+                        }
+                        None => failed = Some(Input::Export(news)),
+                    }
                 }
             }
         }
@@ -185,6 +209,7 @@ impl Worker {
         &mut self,
         job: ExportJob,
         samples: Vec<(InstrumentRef, Samples)>,
+        to: Teller,
     ) -> std::io::Result<JobHandle> {
         let audio = &self.audio;
         let said = match audio.stream.is_some() {
@@ -211,8 +236,13 @@ impl Worker {
             states = Some(rx);
         }
         let tx = self.links.tx.clone();
-        let tell = move |news: ExportNews| {
-            let _ = tx.send(Msg::Input(Input::Export(news), None));
+        let tell = move |news: ExportNews| match &to {
+            Some(to) => {
+                let _ = to.send(news);
+            }
+            None => {
+                let _ = tx.send(Msg::Input(Input::Export(news), None));
+            }
         };
         let setup = Setup {
             work: self.exports.work(job.id),

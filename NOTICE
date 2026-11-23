@@ -98,7 +98,7 @@ meloet-stretch (Rust): Signalsmith Linear 0.6.4 (C++ headers stft.h and fft.h, k
   source: https://github.com/Signalsmith-Audio/linear
   license: MIT; the text is in licenses/rust/meloet-stretch/SIGNALSMITH-LINEAR-LICENSE.txt
 
-== Parts (242: 239 Rust crates, 3 npm packages)
+== Parts (265: 262 Rust crates, 3 npm packages)
 
 @tauri-apps/api 2.12.4 (npm): Apache-2.0 OR MIT
 aho-corasick 1.1.5 (Rust): Unlicense OR MIT
@@ -118,6 +118,7 @@ base64 0.23.1 (Rust): MIT OR Apache-2.0
 bitflags 1.3.2 (Rust): MIT OR Apache-2.0
 bitflags 2.13.2 (Rust): MIT OR Apache-2.0
 block-buffer 0.10.4 (Rust): MIT OR Apache-2.0
+block-buffer 0.12.1 (Rust): MIT OR Apache-2.0
 brotli 9.1.1 (Rust): BSD-3-Clause AND MIT
 brotli-decompressor 6.3.1 (Rust): BSD-3-Clause OR MIT
 bytemuck 1.25.2 (Rust): Zlib OR Apache-2.0 OR MIT
@@ -127,27 +128,33 @@ cairo-rs 0.18.5 (Rust): MIT
 cairo-sys-rs 0.18.2 (Rust): MIT
 cfb 0.14.0 (Rust): MIT
 cfg-if 1.0.5 (Rust): MIT OR Apache-2.0
+chrono 0.4.45 (Rust): MIT OR Apache-2.0
 clsx 2.1.1 (npm): MIT
 com-scrape-types 0.1.1 (Rust): MIT OR Apache-2.0
+const-oid 0.10.3 (Rust): Apache-2.0 OR MIT
 cookie 0.18.2 (Rust): MIT OR Apache-2.0
 cookie-factory 0.3.3 (Rust): MIT
 cpal 0.18.2 (Rust): Apache-2.0
 cpufeatures 0.2.17 (Rust): MIT OR Apache-2.0
+cpufeatures 0.3.1 (Rust): MIT OR Apache-2.0
 crc 3.4.0 (Rust): MIT OR Apache-2.0
 crc-catalog 2.5.0 (Rust): MIT OR Apache-2.0
 crossbeam-channel 0.5.17 (Rust): MIT OR Apache-2.0
 crossbeam-utils 0.8.23 (Rust): MIT OR Apache-2.0
 crypto-common 0.1.7 (Rust): MIT OR Apache-2.0
+crypto-common 0.2.2 (Rust): MIT OR Apache-2.0
 ctor 1.0.14 (Rust): Apache-2.0 OR MIT
 dasp_sample 0.11.0 (Rust): MIT OR Apache-2.0
 dbus 0.9.12 (Rust): Apache-2.0 OR MIT
 deranged 0.5.9 (Rust): MIT OR Apache-2.0
 digest 0.10.7 (Rust): MIT OR Apache-2.0
+digest 0.11.3 (Rust): MIT OR Apache-2.0
 dirs 7.0.0 (Rust): MIT OR Apache-2.0
 dirs-sys 0.5.0 (Rust): MIT OR Apache-2.0
 dlopen2 0.8.2 (Rust): MIT
 dpi 0.1.2 (Rust): Apache-2.0 AND MIT
 dunce 1.0.5 (Rust): CC0-1.0 OR MIT-0 OR Apache-2.0
+dyn-clone 1.0.20 (Rust): MIT OR Apache-2.0
 equivalent 1.0.3 (Rust): Apache-2.0 OR MIT
 erased-serde 0.4.11 (Rust): MIT OR Apache-2.0
 extended 0.1.0 (Rust): MIT
@@ -155,10 +162,12 @@ field-offset 0.3.6 (Rust): MIT OR Apache-2.0
 flacenc 0.5.1 (Rust): Apache-2.0
 fnv 1.0.7 (Rust): Apache-2.0 OR MIT
 form_urlencoded 1.2.2 (Rust): MIT OR Apache-2.0
+futures 0.3.34 (Rust): MIT OR Apache-2.0
 futures-channel 0.3.34 (Rust): MIT OR Apache-2.0
 futures-core 0.3.34 (Rust): MIT OR Apache-2.0
 futures-executor 0.3.34 (Rust): MIT OR Apache-2.0
 futures-io 0.3.34 (Rust): MIT OR Apache-2.0
+futures-sink 0.3.34 (Rust): MIT OR Apache-2.0
 futures-task 0.3.34 (Rust): MIT OR Apache-2.0
 futures-util 0.3.34 (Rust): MIT OR Apache-2.0
 gdk 0.18.2 (Rust): MIT
@@ -172,6 +181,7 @@ generic-array 0.14.7 (Rust): MIT
 gethostname 1.1.0 (Rust): Apache-2.0
 getrandom 0.2.17 (Rust): MIT OR Apache-2.0
 getrandom 0.3.4 (Rust): MIT OR Apache-2.0
+getrandom 0.4.3 (Rust): MIT OR Apache-2.0
 gio 0.18.4 (Rust): MIT
 gio-sys 0.18.1 (Rust): MIT
 glib 0.18.5 (Rust): MIT
@@ -186,6 +196,7 @@ heapless 0.8.0 (Rust): MIT OR Apache-2.0
 heck 0.5.0 (Rust): MIT OR Apache-2.0
 http 1.5.0 (Rust): MIT OR Apache-2.0
 httparse 1.10.1 (Rust): MIT OR Apache-2.0
+hybrid-array 0.4.15 (Rust): MIT OR Apache-2.0
 icu_collections 2.4.0 (Rust): Unicode-3.0
 icu_locale_core 2.4.0 (Rust): Unicode-3.0
 icu_normalizer 2.4.0 (Rust): Unicode-3.0
@@ -222,6 +233,7 @@ md-5 0.10.6 (Rust): MIT OR Apache-2.0
 memchr 2.8.3 (Rust): Unlicense OR MIT
 memoffset 0.9.1 (Rust): MIT
 mime 0.3.18 (Rust): MIT OR Apache-2.0
+mio 1.2.5 (Rust): MIT
 muda 0.20.0 (Rust): Apache-2.0 OR MIT
 nom 8.0.0 (Rust): MIT
 num-complex 0.4.6 (Rust): MIT OR Apache-2.0
@@ -250,12 +262,14 @@ primal-check 0.3.4 (Rust): MIT OR Apache-2.0
 quick-xml 0.42.0 (Rust): MIT
 raw-window-handle 0.6.2 (Rust): MIT OR Apache-2.0 OR Zlib
 realfft 3.5.1 (Rust): MIT
+ref-cast 1.0.27 (Rust): MIT OR Apache-2.0
 regex 1.13.1 (Rust): MIT OR Apache-2.0
 regex-automata 0.4.18 (Rust): MIT OR Apache-2.0
 regex-lite 0.1.9 (Rust): MIT OR Apache-2.0
 regex-syntax 0.8.11 (Rust): MIT OR Apache-2.0
 ring 0.17.14 (Rust): Apache-2.0 AND ISC
 ringbuf 0.5.3 (Rust): MIT OR Apache-2.0
+rmcp 3.11.0 (Rust): Apache-2.0
 rtrb 0.4.1 (Rust): MIT OR Apache-2.0
 rubato 5.1.0 (Rust): MIT OR Apache-2.0
 rustfft 6.4.1 (Rust): MIT OR Apache-2.0
@@ -266,6 +280,7 @@ rustls-pki-types 1.16.0 (Rust): MIT OR Apache-2.0
 rustls-platform-verifier 0.7.1 (Rust): MIT OR Apache-2.0
 rustls-webpki 0.103.17 (Rust): ISC
 same-file 1.0.6 (Rust): Unlicense OR MIT
+schemars 1.2.3 (Rust): MIT
 scopeguard 1.2.0 (Rust): MIT OR Apache-2.0
 semver 1.0.28 (Rust): MIT OR Apache-2.0
 serde 1.0.229 (Rust): MIT OR Apache-2.0
@@ -276,9 +291,11 @@ serde_with 3.24.0 (Rust): MIT OR Apache-2.0
 serde-untagged 0.1.9 (Rust): MIT OR Apache-2.0
 serialize-to-javascript 0.1.2 (Rust): MIT OR Apache-2.0
 sha2 0.10.9 (Rust): MIT OR Apache-2.0
+sha2 0.11.1 (Rust): MIT OR Apache-2.0
 siphasher 1.0.4 (Rust): MIT OR Apache-2.0
 slab 0.4.12 (Rust): MIT
 smallvec 1.16.5 (Rust): MIT OR Apache-2.0
+socket2 0.6.5 (Rust): MIT OR Apache-2.0
 soup3 0.5.0 (Rust): MIT
 soup3-sys 0.5.0 (Rust): MIT
 stable_deref_trait 1.2.1 (Rust): MIT OR Apache-2.0
@@ -305,14 +322,20 @@ thiserror 2.0.21 (Rust): MIT OR Apache-2.0
 time 0.3.55 (Rust): MIT OR Apache-2.0
 time-core 0.1.9 (Rust): MIT OR Apache-2.0
 tinystr 0.8.5 (Rust): Unicode-3.0
+tinyvec 1.13.3 (Rust): Zlib OR Apache-2.0 OR MIT
 tokio 1.54.1 (Rust): MIT
+tokio-util 0.7.20 (Rust): MIT
 toml 1.2.1+spec-1.1.0 (Rust): MIT OR Apache-2.0
 toml_datetime 1.1.3+spec-1.1.0 (Rust): MIT OR Apache-2.0
 toml_parser 1.1.5+spec-1.1.0 (Rust): MIT OR Apache-2.0
 toml_writer 1.2.0+spec-1.1.0 (Rust): MIT OR Apache-2.0
+tracing 0.1.44 (Rust): MIT
+tracing-core 0.1.36 (Rust): MIT
 transpose 0.2.3 (Rust): MIT OR Apache-2.0
 typeid 1.0.3 (Rust): MIT OR Apache-2.0
 typenum 1.20.1 (Rust): MIT OR Apache-2.0
+unicode-general-category 1.1.0 (Rust): Apache-2.0
+unicode-normalization 0.1.26 (Rust): (MIT OR Apache-2.0) AND Unicode-3.0
 untrusted 0.9.0 (Rust): ISC
 ureq 3.5.2 (Rust): MIT OR Apache-2.0
 ureq-proto 0.7.1 (Rust): MIT OR Apache-2.0

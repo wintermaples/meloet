@@ -427,3 +427,5 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 | Joining with another clip between | When a clip that is not chosen lies between the chosen ones, nothing is joined, and the rows 「つなげる」 and 「クリップをつなげる」 are disabled. | the developers' decision |
 | Notes hidden by a shortened clip, when joining | Only the notes inside each clip's range are joined; a note that goes past a clip's end is cut there. | the developers' decision |
 | 「AI とつなぐ」 | No status line text and no 「切る」 button: turning it off closes the port and cuts the AI. How to set up the AI app (starting `meloet-mcp`) is told in the user guide, not on this screen. Remembered as a meloet setting, not in the song. | the developers' decision |
+| Chord help on a drum track | The ▾ of the draw tool and the chord table are disabled in the drum piano roll. | the developers' decision |
+| Overdub in loop recording | Every pass that has notes is one undoable step 「録音」, so its notes sound from the next pass on, and undo takes away the last pass. | the developers' decision |

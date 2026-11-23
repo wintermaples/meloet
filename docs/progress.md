@@ -216,9 +216,13 @@ Done and merged into `foundation` (every check of `scripts/check-all.sh` passed 
 - 6 (chord help): the chord stamp and the chord table of the key (the piano roll band is 24 taller at both ends).
 - The five proposal mocks are in `docs/design/proposals/` (the owner chose Overdub A, ChordTable A, AiLink B).
 
-In progress: 13 (the AI link: the port, the MCP tools, `meloet-mcp`; the settings row; the user guide). Research: `docs/research/2026-11-23-mcp.md`; spike: `spikes/s10-mcp/`.
+- 13 (the AI link): protocol 29, the `meloet-ai` socket and `meloet-mcp` bridge with 70 tools (mixer, sounds, vocal audio, note edits and quantize, automation, meters, tracks and clips, save / open / export; audio for the AI goes to a temp folder, and tools that need it answer "not available" when the folder cannot be used), the settings row, the user guide. Research: `docs/research/2026-11-23-mcp.md`; spike: `spikes/s10-mcp/`.
+- Later requests of the owner: screen comments and `.claude/agents/` in English; five helpers (light, impl, hard, very-hard, research); the deb opens `.meloet` files (in the running meloet if there is one); the `bump-version` skill and `scripts/bump-version.sh`; `改善ノート.md` deleted.
+- Themes (protocol 30): six themes, WCAG AA (`tools/design/contrast.py`), the dark table made stronger, key and row names, the hatch on unwritable rows (architecture 24-15).
 
-Left for later in round 10: screen comments in English (the rules written in round 9 are `target/k9-comments-rules.md`), `.claude/agents/` in English, `scripts/check-all.sh --release`, a real-app check of the new features by the owner, and measuring key → sound and key → screen while overdubbing.
+In progress: line-only color names (the owner chose "B plan 2": `color.line.bar/beat/grid/thin/row`, bar 3:1, beat 1.5:1, grid 1.2:1), gray.6 a little stronger in the dark themes for button borders, `color.row.hatch` (exactly 3:1, dark #5A5A5A), `color.meter.ground` (dark gray on the light themes, the owner's choice so the dark meter colors show); `shoot_ui.py` with parallel shots, several themes in one run, and no rebuild when the screen did not change.
+
+Left for later in round 10: `scripts/check-all.sh --release`, version 0.2.0 and the deb (the owner asked for this as the last step), a real-app check of the new features and themes by the owner, measuring key → sound and key → screen while overdubbing, and the light themes showing dark for a moment at start.
 
 ## 7. Notes for Windows and Mac
 

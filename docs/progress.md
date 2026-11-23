@@ -236,7 +236,7 @@ Left for later in round 10: a real-app check of the new features and themes by t
 The owner let an AI make music in meloet through the MCP tools and listed 13 things that went badly. Branch `fea/mcp-improvements`; eleven helpers, one part each. How each is built: architecture 24-16 (letters below). Every new and changed tool with its arguments and answers: [`development/ai-tools.md`](development/ai-tools.md). 70 → 94 tools. No protocol change; the plugin host wire is now 7; the song file stays version 6.
 
 1. **Plugin presets**: done (I, J). `list_presets`, `load_preset` (one step), `save_preset` for LV2 presets (through lilv in the plugin host), VST3 `.vstpreset` files and Surge XT patches. VST3 program lists are not read (decision below).
-2. **A plugin's whole state**: done (G, J); one part being finished (TODO(lead): the plugin host waiting after a state put while the sound runs, which replaces a 200 ms put-again stopgap). `get_plugin_state` / `set_plugin_state` (one step; a refused or crashing state leaves the song as it was), Surge XT's patch as XML with `set_plugin_state_text`.
+2. **A plugin's whole state**: done (G, J). `get_plugin_state` / `set_plugin_state` (one step; a refused or crashing state leaves the song as it was), Surge XT's patch as XML with `set_plugin_state_text`. The plugin host waits for the audio blocks after a state is put, so a put while the sound runs is one step and the song equals the plugin (before, Surge XT VST3 answered "no step" while the plugin changed).
 3. **Many notes with little work**: done (C). Notes as `[start, length, key, velocity]`, `origin`, `create_clip` with `bars` / `end`, `copy_notes` (another track, transposed), `import_midi` and `export_midi` (our own reader and writer, 1920 ticks a quarter note).
 4. **Plugin parameters that can be used**: done (H). Choices by name (probing the plugin's texts), `text` in `set_param`, `set_params` as one step, pages and filters. The cause of "no step came within 5 s" was found (DPF plugins take a value on their next audio block) and fixed in the plugin host.
 5. **Several changes as one undo step**: done (A). `batch` of up to 200 operations; a failure takes all of it back; the person's intents wait while it runs.
@@ -253,7 +253,7 @@ New questions for the owner: B-97-1 to B-97-7 in `docs/spec/open-questions.md` (
 
 TODO(lead): checks, version 0.3.0, deb
 
-TODO(lead): the owner's completion conditions as end-to-end tests (`crates/meloet-ai/tests/conditions.rs`), being finished.
+The owner's completion conditions are tests: requirements 1 and 2 in `crates/meloet-ai/tests/conditions.rs` (ignored; real Surge XT VST3 and LV2 with the sound running), requirement 3 in `crates/meloet-ai/tests/notes_io.rs`.
 
 **The lead's decisions** (one line each, with the reason):
 
@@ -309,7 +309,6 @@ TODO(lead): the owner's completion conditions as end-to-end tests (`crates/meloe
   - The class id letter form of `.vstpreset` checked only against our own round trip and vst3-host 0.11.1; no files from other hosts on this PC.
   - ZynAddSubFX preset names come as the bundle gives them ("Bass: 0001-Bass 1.xiz").
 - Surge XT
-  - While the 200 ms put-again stopgap stays, a `set_param` on the same plugin in that time could come in the wrong order (TODO(lead), being finished).
   - On LV2 with the sound running, a put whose result equalled the song's state still made a step (suspected empty step; not looked into).
   - `set_plugin_state_text` with attributes Surge XT does not write back (such as `deactivated` on `a_pitch`) ends in "says it has the state it had".
   - Routings with `scene` on parameters of the whole patch were tried only in unit tests; `source_index` is always 0.

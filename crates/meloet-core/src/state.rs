@@ -3,6 +3,7 @@
 
 mod ai;
 mod audio;
+mod bounce;
 mod buttons;
 mod export;
 mod pack;
@@ -10,6 +11,10 @@ mod recovery;
 mod songs;
 mod updates;
 mod vocal;
+
+#[cfg(test)]
+pub(crate) use bounce::BOUNCE_JOBS;
+pub use bounce::BounceAsk;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -318,6 +323,10 @@ pub enum Input {
     AudioMaking(Vec<crate::maker::MakerJob>),
     /// From the export's worker and from the shell: the answers to [`Effect::Export`].
     Export(crate::export::ExportNews),
+    /// The answer to [`Effect::Bounce`] when the AI link's export runs: the job did not start.
+    BounceBusy {
+        job: u64,
+    },
     /// From the thread that fetches the sound pack: the answers to [`Effect::Pack`].
     Pack(crate::sounds::fetch::PackNews),
     /// The page subscribed and is up.
@@ -673,6 +682,19 @@ pub enum Effect {
     ClearWorkAudio,
     /// For the export's worker and its window for a place. Answer with [`Input::Export`].
     Export(crate::export::ExportAsk),
+    /// 「音のクリップにする」 (round 12, A7): render the job into a file of the work place, as
+    /// the export renders and writes a file; its news come as [`Input::Export`].
+    /// [`Input::BounceBusy`] when the AI link's export runs.
+    Bounce(bounce::BounceAsk),
+    /// 「音のクリップにする」: the thread that reads audio files in takes the file at `temp`
+    /// (the work place) for the song under the name wanted, or one like it. `taken`: names a
+    /// new file must not get. Answer with `AudioNews::Adopted`.
+    TakeBounced {
+        ticket: u64,
+        temp: PathBuf,
+        wanted: String,
+        taken: Vec<String>,
+    },
     /// For the thread that fetches the sound pack. Answers come as [`Input::Pack`].
     Pack(PackAsk),
     /// Open (`true`) or close the AI link's socket. Its thread answers with [`Input::AiPort`].
@@ -790,6 +812,8 @@ pub struct Model {
     /// 「モニター」 was turned on once in this run: the status line said how late the voice is.
     monitor_said: bool,
     audio: audio::AudioSide,
+    /// 「音のクリップにする」 (round 12, A7).
+    bounce: bounce::BounceSide,
     export: crate::export::Exporting,
     pack: pack::PackSide,
     ai: ai::AiSide,
@@ -919,6 +943,7 @@ impl Model {
             latency: None,
             monitor_said: false,
             audio: audio::AudioSide::default(),
+            bounce: bounce::BounceSide::default(),
             export: crate::export::Exporting::default().with_artist(settings.export_artist.clone()),
             pack: pack::PackSide::new(settings.pack_fetch),
             ai: ai::AiSide::new(settings.ai_link),
@@ -1333,6 +1358,7 @@ impl Model {
             Input::Audio(news) => self.audio_news(news),
             Input::AudioMaking(jobs) => self.play.set_audio_making(jobs),
             Input::Export(news) => self.export_news(news),
+            Input::BounceBusy { job } => self.bounce_refused(job),
             Input::Pack(news) => self.pack_news(news, &mut effects),
             Input::ScreenUp => {
                 self.pack_screen_up(&mut effects);
@@ -1400,6 +1426,7 @@ impl Model {
             self.loading_said = None;
         }
         self.audio_follow(&mut effects);
+        self.bounce_follow(&mut effects);
         self.close_when_recorded(&mut effects);
         // The recovery file never holds a part of a batch.
         if !self.ai_batch_open() {
@@ -2459,9 +2486,9 @@ impl Model {
             | Command::DeleteSection { .. }
             | Command::InsertSpace { .. } => {}
 
-            // round12 stub: A7
-            Command::BounceToAudio { .. } | Command::BounceTrack { .. } => {}
-            Command::CancelBounce => {}
+            Command::BounceToAudio { clips } => self.bounce_clips(&clips, effects),
+            Command::BounceTrack { track } => self.bounce_whole_track(track, effects),
+            Command::CancelBounce => self.cancel_bounce(effects),
 
             // round12 stub: M5
             Command::AddFadeOut { .. } => {}
@@ -3009,7 +3036,10 @@ impl Model {
             },
             inputs: self.inputs_view(),
             audio,
-            audio_work: self.play.audio_work_view(),
+            audio_work: meloet_protocol::AudioWorkView {
+                bounce: self.bounce_view(),
+                ..self.play.audio_work_view()
+            },
             presets: self.play.presets_view(),
             export: self.export_view(),
             sounds: self.sounds_view(),

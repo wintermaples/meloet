@@ -237,6 +237,10 @@ BOARDS = {
     # 「ノーマライズ」 and 「逆にする」 (round 12, A9).
     "audioNormalized": None,
     "menuAudioClip": None,
+    # 「音のクリップにする」 (round 12, A7).
+    "bouncing": None,
+    "bounced": None,
+    "menuTrackBounce": None,
     # Repeating clips (round 12, A1; the spec's mock is not a board).
     "arrangeRepeatHover": None,
     "arrangeRepeatDrag": None,
@@ -463,6 +467,13 @@ ev("pointermove", r.top + 10);
 ev("pointermove", r.top + 20 - r.height * 2.4);
 """
 
+# Right-clicks the header of track 1 (its menu has 「このトラックを音にする」, round 12 A7).
+CONTEXT_TRACK_HEAD = """
+const head = document.querySelectorAll('[data-test="track-head"]')[0];
+const r = head.getBoundingClientRect();
+head.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.left + 120, clientY: r.top + 30 }));
+"""
+
 # Right-clicks the header of track 2 and opens 色 ▸ (R6-Tracks).
 TRACK_COLORS = """
 const head = document.querySelectorAll('[data-test="track-head"]')[1];
@@ -604,6 +615,7 @@ CLICKS = {
     "menuRecent": ("recentSongs", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
     "menuRecentEmpty": ("saved", ('[data-menu="0"]', '[data-test="menubar-list"] [data-row="2"]')),
     "menuAudioClip": ("audioEdit", "js:" + CONTEXT_AUDIO_CLIP),
+    "menuTrackBounce": ("muted", "js:" + CONTEXT_TRACK_HEAD),
     # Round 12 A1: the pointer on the repeat handle, the handle dragged by 2 copies of 3 bars, the box, and its answer.
     "arrangeRepeatHover": ("arrangeTrimmed", repeat_handle(0)),
     "arrangeRepeatDrag": ("arrangeTrimmed", repeat_handle(384)),
@@ -755,6 +767,9 @@ ONLY = {
     "menuRecentEmpty": [(1280, 800, 100)],
     "menuAudioClip": [(1280, 800, 100)],
     "audioNormalized": [(1280, 800, 100), (853, 448, 100)],
+    "bouncing": [(1280, 800, 100), (853, 448, 100)],
+    "bounced": [(1280, 800, 100)],
+    "menuTrackBounce": [(1280, 800, 100)],
     "arrangeRepeatHover": [(1280, 800, 100)],
     "arrangeRepeatDrag": [(1280, 800, 100)],
     "arrangeRepeatBox": [(1280, 800, 100)],

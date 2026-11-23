@@ -11,6 +11,7 @@
 //! - [`AudioStore`] knows the places. [`keeper::Keeper`] is the thread that copies,
 //!   decodes and makes peaks.
 
+pub mod bounced;
 pub mod clips;
 pub mod decode;
 pub mod keeper;

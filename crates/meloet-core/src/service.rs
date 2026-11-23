@@ -3316,6 +3316,22 @@ impl Worker {
                     // Here and now: meloet may end right after.
                     Effect::ClearWorkAudio => self.audio_store.clear_work(),
                     Effect::Export(ask) => inputs.extend(self.export_ask(ask)),
+                    Effect::Bounce(ask) => inputs.extend(self.bounce_ask(ask)),
+                    Effect::TakeBounced {
+                        ticket,
+                        temp,
+                        wanted,
+                        taken,
+                    } => match &self.keeper {
+                        Some(keeper) => keeper.adopt(ticket, temp, wanted, taken),
+                        None => {
+                            let _ = std::fs::remove_file(&temp);
+                            inputs.push_back(Input::Audio(AudioNews::Adopted {
+                                ticket,
+                                audio: None,
+                            }));
+                        }
+                    },
                     Effect::AiLink(on) => {
                         if let Some(switch) = &self.ai_switch {
                             switch(on);
@@ -4062,6 +4078,9 @@ fn steady_load(open: bool, permille: u32, last: Option<&Telemetry>) -> u16 {
     }
 }
 
+mod bounce;
+#[cfg(test)]
+mod bounce_tests;
 mod export;
 #[cfg(test)]
 mod export_tests;

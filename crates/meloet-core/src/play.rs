@@ -2874,6 +2874,7 @@ mod audio;
 mod audiosync;
 mod automation;
 mod autosync;
+pub(crate) mod bounce;
 mod bulk;
 mod buttons;
 mod clips;

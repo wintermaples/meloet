@@ -251,6 +251,7 @@ impl Model {
             AudioNews::Reversed { ticket, files } => {
                 self.clip_work_answered(ticket, ClipWorkDone::Reversed(files));
             }
+            AudioNews::Adopted { ticket, audio } => self.bounce_taken(ticket, audio),
             AudioNews::States { serial, .. } => {
                 if serial != self.play.serial() {
                     return;

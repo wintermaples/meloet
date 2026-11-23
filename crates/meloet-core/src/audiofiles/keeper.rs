@@ -95,6 +95,11 @@ pub enum AudioNews {
         ticket: u64,
         files: Vec<Option<NewAudio>>,
     },
+    /// The answer to [`Keeper::adopt`]; `None` when the file could not be taken.
+    Adopted {
+        ticket: u64,
+        audio: Option<NewAudio>,
+    },
 }
 
 enum Ask {
@@ -119,6 +124,12 @@ enum Ask {
     Reverse {
         ticket: u64,
         played: Vec<(PlayedFrames, String)>,
+        taken: Vec<String>,
+    },
+    Adopt {
+        ticket: u64,
+        temp: PathBuf,
+        wanted: String,
         taken: Vec<String>,
     },
 }
@@ -199,6 +210,18 @@ impl Keeper {
         let _ = self.tx.send(Ask::Reverse {
             ticket,
             played,
+            taken,
+        });
+    }
+
+    /// 「音のクリップにする」: the file at `temp`, which the export wrote into the work place,
+    /// is named as wanted (see `bounced::adopt`) and gets its peaks. `taken`: names of the
+    /// song's audio table a new file must not get.
+    pub fn adopt(&self, ticket: u64, temp: PathBuf, wanted: String, taken: Vec<String>) {
+        let _ = self.tx.send(Ask::Adopt {
+            ticket,
+            temp,
+            wanted,
             taken,
         });
     }
@@ -342,6 +365,24 @@ impl Work {
                     })
                     .collect();
                 (self.tell)(AudioNews::Reversed { ticket, files });
+            }
+            Ask::Adopt {
+                ticket,
+                temp,
+                wanted,
+                taken,
+            } => {
+                let audio = match super::bounced::adopt(&self.store, &temp, &wanted, &taken) {
+                    Ok(audio) => {
+                        self.peaks_made.insert(audio.uid);
+                        Some(audio)
+                    }
+                    Err(e) => {
+                        eprintln!("meloet: the audio of the track was not taken in: {e}");
+                        None
+                    }
+                };
+                (self.tell)(AudioNews::Adopted { ticket, audio });
             }
         }
     }

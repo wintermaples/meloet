@@ -678,6 +678,20 @@
         return plain("msg.exportPictureUnreadable", { file: m.file });
       case "reverseFollowOff":
         return plain("msg.reverseFollowOff", { count: m.count });
+      case "bounced":
+        return plain("msg.bounced", { track: track(m.track) });
+      case "bounceCancelled":
+        return plain("msg.bounceCancelled");
+      case "bounceFailed":
+        return m.reason.kind === "plugin" ? plain("msg.bounceFailedPlugin", { plugin: m.reason.name }) : plain("msg.bounceFailedWrite");
+      case "bounceGone":
+        return plain("msg.bounceGone");
+      case "bounceBusy":
+        return plain("msg.bounceBusy");
+      case "nothingToBounce":
+        return plain("msg.nothingToBounce");
+      case "exportWaitsForBounce":
+        return plain("msg.exportWaitsForBounce");
       // MB is 1000 × 1000 bytes.
       case "inputLost":
         return plain("msg.inputLost", { input: t(`vocal.inputShort.${m.input}`), device: m.device });
@@ -942,6 +956,15 @@
     if (laneTrack && usual) return { parts: textParts("status.laneAddOpen", { track: track(laneTrack) }), strong: [], button: null };
     // While searching parameters (the screen does the search; mock F-ParamSearch).
     if (searching && usual) return { parts: textParts("status.paramSearching", { query: paramUi.query.trim(), count: paramUi.matches }), strong: [], button: null };
+    // While a track is turned into audio (round 12, A7): 「音にしています… 40 %」 and 「やめる」. As 「音を作っています」, the progress is
+    // audioWork; it replaces the usual summary and comes after other messages.
+    const bouncing = app.audioWork.bounce;
+    if (bouncing && usual)
+      return {
+        parts: textParts("msg.bouncing", { percent: bouncing.percent }),
+        strong: [],
+        button: { label: t("button.cancel"), command: { type: "cancelBounce" } },
+      };
     // While making the sound (spec 6 "Making the sound", mock F7-Stretch). The progress is audioWork, so the screen makes the text. It replaces the usual summary and comes after other messages.
     if (rendering && usual) return { parts: textParts("msg.audioRendering", rendering), strong: [], button: null };
     if (playingInPianoRoll && (m === null || m.id === "summary")) {

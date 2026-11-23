@@ -353,10 +353,12 @@ describe("context menu (B-60)", () => {
       "menu.nextTake",
       "menu.prevTake",
       "menu.deleteTake",
+      "-",
+      "menu.bounceClips",
     ]);
-    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Ctrl R", "Delete", undefined, "Ctrl J", "F2", "T", "Shift T", undefined]);
+    expect(rows().map((r) => r.key)).toEqual(["E", "Ctrl X", "Ctrl C", "Ctrl V", "Ctrl D", "Ctrl R", "Delete", undefined, "Ctrl J", "F2", "T", "Shift T", undefined, undefined]);
     // Join needs 2 or more selected (the right click selected only 41 again).
-    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, true, true, false, true, false, false, false]);
+    expect(rows().map((r) => r.usable)).toEqual([true, true, true, true, true, true, true, true, false, true, false, false, false, true]);
   });
 
   it("the clip rows act on the selection at the time of the press. A selected clip is not selected again", () => {
@@ -377,6 +379,8 @@ describe("context menu (B-60)", () => {
       { type: "stepTake", delta: 1 },
       { type: "stepTake", delta: -1 },
       { type: "deleteTake", clip: 3 },
+      // 「音のクリップにする」 (A7; clips of two tracks: disabled, and Rust does nothing with them).
+      { type: "bounceToAudio", clips: [3, 41] },
     ]);
   });
 
@@ -385,7 +389,7 @@ describe("context menu (B-60)", () => {
     s.transport.state = "recording";
     show(s);
     ctx(q(".lanes")!, 300, 30);
-    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false, false, false, false, false]);
+    expect(rows().map((r) => r.usable)).toEqual([true, false, true, false, false, false, false, false, false, false, false, false, false, false]);
   });
 
   it("empty place: paste. The pressed place snaps to the grid (1 bar); not with Shift", () => {
@@ -407,7 +411,7 @@ describe("context menu (B-60)", () => {
     ]);
   });
 
-  it("track head (mock R6-Tracks): mute, solo, record arm / name, duplicate (A3), color, up, down / delete. Sends selectTrack first if not selected", () => {
+  it("track head (mock R6-Tracks): mute, solo, record arm / bounce (A7) / name, duplicate (A3), color, up, down / delete. Sends selectTrack first if not selected", () => {
     show(three());
     ctx(qa("[data-test=track-head]")[0]!, 10, 10);
     expect(app.sent).toEqual([{ type: "selectTrack", track: 1, fromArm: false }]);
@@ -416,6 +420,7 @@ describe("context menu (B-60)", () => {
       ["menu.mute", "Shift M", true, false],
       ["menu.solo", "Shift S", true, false],
       ["menu.arm", undefined, true, true],
+      ["menu.bounceTrack", undefined, true, undefined],
       ["menu.renameTrack", "F2", true, undefined],
       ["menu.duplicateTrack", undefined, true, undefined],
       ["menu.trackColor", undefined, true, undefined],
@@ -423,7 +428,7 @@ describe("context menu (B-60)", () => {
       ["menu.moveTrackDown", undefined, true, undefined],
       ["menu.deleteTrack", undefined, true, undefined],
     ]);
-    expect(contextMenu.open!.entries.map((e) => e.kind)).toEqual(["row", "separator", "row", "row", "row", "separator", "row", "row", "row", "row", "row", "separator", "row"]);
+    expect(contextMenu.open!.entries.map((e) => e.kind)).toEqual(["row", "separator", "row", "row", "row", "separator", "row", "separator", "row", "row", "row", "row", "row", "separator", "row"]);
     const colors = rows().find((r) => r.label === "menu.trackColor")!.sub!.filter((e) => e.kind === "row");
     expect(colors.map((r) => [r.text, r.swatch, r.checked])).toEqual([
       ["色 1", 1, true],
@@ -434,7 +439,7 @@ describe("context menu (B-60)", () => {
     ]);
     for (const r of rows().slice(1, 4)) r.run();
     colors[2]!.run();
-    for (const r of rows().slice(7).filter((r) => r.usable)) r.run();
+    for (const r of rows().slice(8).filter((r) => r.usable)) r.run();
     expect(app.sent.slice(1)).toEqual([
       { type: "toggleMute", track: 1 },
       { type: "toggleSolo", track: 1 },

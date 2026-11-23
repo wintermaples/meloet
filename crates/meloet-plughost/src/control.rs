@@ -46,6 +46,9 @@ const SHOW_WAIT: Duration = Duration::from_millis(500);
 /// `beginEdit`, no LV2 `ui:touch`, a `patch` parameter) is let go this long after its last
 /// change (docs/history/research/automation-lv2.md).
 const LET_GO: Duration = Duration::from_millis(500);
+/// How long a state waits for a block to take the values set before it: two of the longest
+/// blocks the engine asks for (1024 frames at 44.1 kHz) and more.
+const PARAMS_WAIT: Duration = Duration::from_millis(100);
 
 /// A plugin's window on the screen.
 struct Top {
@@ -99,6 +102,8 @@ struct Host {
     touches: Vec<u32>,
     /// By slot: what meloet's automation did, for the plugins meloet watches.
     moved: Vec<Option<Moved>>,
+    /// By slot: when a value was last given to the audio thread from here.
+    params_set: Vec<Option<Instant>>,
     /// The slots meloet watches, and when it was last told of them.
     watched: Vec<u32>,
     watch_told: Instant,
@@ -514,6 +519,7 @@ impl Host {
                         // sound with the next block, however often meloet is told.
                         let _ = self.audio.set_param(slot, id, value);
                         let now = Instant::now();
+                        self.params_set[slot as usize] = Some(now);
                         match self.told.get_mut(&(slot, id)) {
                             Some(told) if now.duration_since(told.at) < TELL => {
                                 told.held = Some((value, t_us));
@@ -609,6 +615,19 @@ impl Host {
         }
     }
 
+    /// A VST3 processor (ZamComp's, of DPF) learns a value set from outside in its next block
+    /// only, and its state says the old value until then. So a state is taken once a block
+    /// has taken the values set before it; while meloet's engine runs no blocks, from
+    /// [`PARAMS_WAIT`] after the last value on, as it is.
+    fn wait_for_params(&self, slot: u32) {
+        let Some(set) = self.params_set.get(slot as usize).copied().flatten() else {
+            return;
+        };
+        while set.elapsed() < PARAMS_WAIT && !self.audio.params_taken(slot).unwrap_or(true) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     fn handle(&mut self, request: Request, blob: Vec<u8>) -> Answer {
         if !self.greeted && !matches!(request, Request::Hello { .. }) {
             return error("hello comes first");
@@ -649,11 +668,14 @@ impl Host {
                     }
                 }
             }
-            Request::GetState { slot } => match self.controller(slot).map(|c| c.save_state()) {
-                Ok(Ok(state)) => (Reply::State, state),
-                Ok(Err(message)) => error(message),
-                Err(answer) => answer,
-            },
+            Request::GetState { slot } => {
+                self.wait_for_params(slot);
+                match self.controller(slot).map(|c| c.save_state()) {
+                    Ok(Ok(state)) => (Reply::State, state),
+                    Ok(Err(message)) => error(message),
+                    Err(answer) => answer,
+                }
+            }
             Request::SetState { slot } => {
                 if let Err(message) = self.audio.forget_params(slot) {
                     return error(message);
@@ -690,6 +712,7 @@ impl Host {
                 if let Err(message) = self.audio.set_param(slot, id, value) {
                     return error(message);
                 }
+                self.params_set[slot as usize] = Some(Instant::now());
                 let now = (self.slots[slot as usize].as_mut())
                     .and_then(|c| c.param(id))
                     .unwrap_or(ParamNow {
@@ -897,6 +920,7 @@ pub fn run(control: UnixStream, memory: OwnedFd, offline: bool) -> i32 {
         holds: HashMap::new(),
         touches: vec![0; slots as usize],
         moved: (0..slots).map(|_| None).collect(),
+        params_set: vec![None; slots as usize],
         watched: Vec::new(),
         watch_told: Instant::now(),
         notices: Vec::new(),

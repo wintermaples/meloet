@@ -1,9 +1,9 @@
-//! The mixer: strips, sends, mute and solo, insert effects and their parameters, and the
-//! parameters of plugins (effects and instruments).
+//! The mixer: strips, sends, mute and solo, and insert effects. Their parameters are in
+//! `params.rs`.
 
-use meloet_core::ai::{AiAnswer, AiAsk, AiEffect, AiParams};
-use meloet_model::effects::{EffectKind, ParamShape};
-use meloet_model::{Bus, Channel, Insert, InsertId, PluginPlace, StripId};
+use meloet_core::ai::{AiAsk, AiEffect};
+use meloet_model::effects::EffectKind;
+use meloet_model::{Bus, Channel, Insert, InsertId, StripId};
 use meloet_protocol::{
     Command, EffectKind as ScreenEffect, InsertRef, PluginKindView, SendBus, StripRef,
 };
@@ -38,7 +38,7 @@ pub(super) fn screen_effect(kind: EffectKind) -> ScreenEffect {
     }
 }
 
-fn strip_ref(strip: StripId) -> StripRef {
+pub(super) fn strip_ref(strip: StripId) -> StripRef {
     match strip {
         StripId::Track(t) => StripRef::Track { id: t.0 },
         StripId::Return(Bus::A) => StripRef::Return { bus: SendBus::A },
@@ -70,24 +70,8 @@ pub(super) fn slot_of(slot: u32) -> Result<usize, CallToolResult> {
     }
 }
 
-fn unit_name(unit: meloet_model::effects::Unit) -> String {
+pub(super) fn unit_name(unit: meloet_model::effects::Unit) -> String {
     format!("{unit:?}").to_lowercase()
-}
-
-fn param_specs(kind: EffectKind) -> Vec<Value> {
-    (kind.params().iter().enumerate())
-        .map(|(i, p)| {
-            let steps = match p.shape {
-                ParamShape::Steps(names) => Some(names.to_vec()),
-                _ => None,
-            };
-            json!({
-                "index": i, "name": p.name, "unit": unit_name(p.unit),
-                "min": p.min, "max": p.max, "default": p.default,
-                "switch": matches!(p.shape, ParamShape::Switch), "steps": steps,
-            })
-        })
-        .collect()
 }
 
 fn insert_value(slot: usize, insert: &Insert) -> Value {
@@ -279,38 +263,6 @@ pub struct BypassArgs {
 }
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct ParamArgs {
-    #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
-    #[serde(default)]
-    pub bus: Option<BusArg>,
-    /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
-    #[serde(default)]
-    #[schemars(range(min = 1, max = 4))]
-    pub slot: Option<u32>,
-    /// A built-in effect's parameter: its name or index from get_mixer. A plugin's: its id
-    /// from get_plugin_params.
-    pub param: Value,
-    /// A built-in effect's parameter in its own unit (as get_mixer shows); a plugin's from 0
-    /// to 1.
-    pub value: f64,
-}
-
-#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
-pub struct PluginArgs {
-    #[serde(default)]
-    #[schemars(range(min = 1, max = 64))]
-    pub track: Option<u32>,
-    #[serde(default)]
-    pub bus: Option<BusArg>,
-    /// The insert slot, 1 to 4. Leave out for the track's instrument plugin.
-    #[serde(default)]
-    #[schemars(range(min = 1, max = 4))]
-    pub slot: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct InstrumentArgs {
     #[schemars(range(min = 1, max = 64))]
     pub track: u32,
@@ -334,16 +286,6 @@ fn db_of(db: f64) -> Result<Option<f32>, CallToolResult> {
     Ok((db >= -60.0).then_some(db as f32))
 }
 
-/// Where a plugin is: an insert slot, or the instrument of a track.
-fn place_of(read: &AiSong, args: &PluginArgs) -> Result<PluginPlace, CallToolResult> {
-    let strip = super::mixer::strip_of(read, args.track, args.bus)?;
-    match (args.slot, strip) {
-        (Some(slot), strip) => Ok(PluginPlace::Insert(strip, slot_of(slot)?)),
-        (None, StripId::Track(id)) => Ok(PluginPlace::Instrument(id)),
-        (None, _) => Err(failed("give the insert `slot` of the plugin")),
-    }
-}
-
 fn effect_of(text: &str) -> AiEffect {
     match EffectKind::from_name(text.trim()) {
         Some(kind) => AiEffect::Builtin(kind),
@@ -361,26 +303,6 @@ impl Tools {
         check!(self.allowed());
         let read = check!(self.read().await);
         let value = mixer(&read);
-        Ok(done(value.to_string(), value))
-    }
-
-    /// The effects an insert slot can take: meloet's own six with their parameters, and the
-    /// effect plugins this PC has (by key).
-    #[tool(annotations(title = "List effects", read_only_hint = true, open_world_hint = false))]
-    async fn list_effects(&self) -> Result<CallToolResult, McpError> {
-        check!(self.allowed());
-        let read = check!(self.read().await);
-        let builtin: Vec<Value> = (EffectKind::ALL.iter())
-            .map(|k| json!({ "effect": k.name(), "params": param_specs(*k) }))
-            .collect();
-        let plugins: Vec<Value> = (read.library.plugins.iter())
-            .filter(|p| matches!(p.kind, PluginKindView::Effect(_)))
-            .map(|p| {
-                json!({ "key": p.key, "name": p.name, "vendor": p.vendor,
-                    "kind": p.kind, "formats": p.formats })
-            })
-            .collect();
-        let value = json!({ "builtin": builtin, "plugins": plugins });
         Ok(done(value.to_string(), value))
     }
 
@@ -688,121 +610,6 @@ impl Tools {
             slot: slot as u8,
         };
         Ok(self.screen(Command::ToggleBypass { insert }).await)
-    }
-
-    /// Sets a parameter of an insert effect (built-in: by name or index, in its unit) or of
-    /// a plugin (an insert, or the track's instrument without `slot`: by id, 0 to 1). One
-    /// undo step; a plugin's step comes once the plugin has taken the value.
-    #[tool(annotations(
-        title = "Set effect parameter",
-        read_only_hint = false,
-        destructive_hint = false,
-        idempotent_hint = true,
-        open_world_hint = false
-    ))]
-    async fn set_param(
-        &self,
-        Parameters(args): Parameters<ParamArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        check!(self.allowed());
-        if !args.value.is_finite() {
-            return Ok(failed("the value must be a number"));
-        }
-        let read = check!(self.read().await);
-        let at = PluginArgs {
-            track: args.track,
-            bus: args.bus,
-            slot: args.slot,
-        };
-        let place = check!(place_of(&read, &at));
-        let builtin = match place {
-            PluginPlace::Insert(strip, slot) => match insert_at(&read, strip, slot) {
-                None => return Ok(failed(refusal_text(&meloet_core::ai::AiRefusal::SlotEmpty))),
-                Some(insert) => insert.kind().map(|kind| (strip, slot, kind)),
-            },
-            PluginPlace::Instrument(_) => None,
-        };
-        if let Some((strip, slot, kind)) = builtin {
-            let index = match &args.param {
-                Value::Number(n) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
-                Value::String(name) => kind.param_index(name.trim()),
-                _ => None,
-            };
-            let Some(param) = index.filter(|&i| kind.param(i).is_some()) else {
-                return Ok(failed(format!(
-                    "{} has no such parameter; get_mixer lists them",
-                    kind.name()
-                )));
-            };
-            let insert = InsertRef {
-                strip: strip_ref(strip),
-                slot: slot as u8,
-            };
-            return Ok(self
-                .screen(Command::SetParam {
-                    insert,
-                    effect: screen_effect(kind),
-                    param,
-                    value: args.value as f32,
-                    commit: true,
-                })
-                .await);
-        }
-        let Some(param) = (args.param.as_u64()).and_then(|n| u32::try_from(n).ok()) else {
-            return Ok(failed(
-                "a plugin's parameter is its id (a number) from get_plugin_params",
-            ));
-        };
-        if !(0.0..=1.0).contains(&args.value) {
-            return Ok(failed("a plugin's parameter is 0 to 1"));
-        }
-        Ok(self
-            .pending_step(AiAsk::SetPluginParam {
-                place,
-                param,
-                value: args.value,
-            })
-            .await)
-    }
-
-    /// The parameters of a plugin (an insert, or the track's instrument without `slot`):
-    /// id, name, value 0 to 1, the plugin's text for it, steps.
-    #[tool(annotations(
-        title = "Get plugin parameters",
-        read_only_hint = true,
-        open_world_hint = false
-    ))]
-    async fn get_plugin_params(
-        &self,
-        Parameters(args): Parameters<PluginArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        check!(self.allowed());
-        let read = check!(self.read().await);
-        let place = check!(place_of(&read, &args));
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        loop {
-            match check!(self.answer(AiAsk::PluginParams { place }).await) {
-                AiAnswer::Params(AiParams::Listed(params)) => {
-                    let params: Vec<Value> = (params.iter())
-                        .map(|p| {
-                            json!({ "id": p.id, "name": p.name, "group": p.group,
-                                "value": p.value, "default": p.default, "text": p.text,
-                                "steps": p.steps, "labels": p.labels,
-                                "automatable": p.automatable })
-                        })
-                        .collect();
-                    let value = json!({ "params": params });
-                    return Ok(done(value.to_string(), value));
-                }
-                AiAnswer::Params(AiParams::Waiting) if std::time::Instant::now() < until => {}
-                AiAnswer::Params(AiParams::Waiting) => {
-                    return Ok(failed("the plugin did not list its parameters within 5 s"));
-                }
-                AiAnswer::Refused(r) => return Ok(failed(refusal_text(&r))),
-                AiAnswer::Done(_) => return Ok(super::closing()),
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
     }
 }
 

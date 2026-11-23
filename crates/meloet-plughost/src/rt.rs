@@ -343,6 +343,15 @@ impl Handle {
         Ok(())
     }
 
+    /// Whether every change of `set_param` has been taken by a block (an empty slot has none
+    /// waiting).
+    pub fn params_taken(&self, slot: u32) -> Result<bool, String> {
+        let taken = (self.seat(slot)?.run().as_ref()).is_none_or(|run| run.events.is_empty());
+        // A block asked for while the main thread was at the seat was passed over.
+        self.bell.ring();
+        Ok(taken)
+    }
+
     /// The person took hold of a parameter in the window, or let go of it.
     pub fn touch(&mut self, slot: u32, id: u32, on: bool) -> Result<(), String> {
         if let Some(run) = self.seat(slot)?.run() {

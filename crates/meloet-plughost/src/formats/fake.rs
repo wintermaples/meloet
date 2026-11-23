@@ -12,6 +12,9 @@
 //! - `urn:meloet:fake:knob`: as `window`; someone in its window takes hold of the level as
 //!   soon as it is open, turns it up to 90 % in forty moves and lets it go.
 //! - `urn:meloet:fake:slowwindow`: as `window`; its window takes 0.4 s to open.
+//! - `urn:meloet:fake:choices`: as `sine`, with no window and the two parameters of `window`
+//!   and a third in their group: `Type`, of no steps, whose texts are four names. Its state
+//!   holds the level, the step and the type, not the switch.
 //! - `urn:meloet:fake:notyet`: as `pass`, with a window of a kind meloet does not open.
 //! - `urn:meloet:fake:slow`: as `pass`; every block takes it 30 ms, longer than the block is.
 //! - `urn:meloet:fake:mode`: an effect. 1 in every sample when it was made ready for an
@@ -20,6 +23,7 @@
 //!
 //! To scan (by the bundle's file name without its ending):
 //! - `found`: two plugins. `empty`: none. `broken`: a bundle that cannot be read.
+//! - `choices`: the instrument `choices`.
 //! - `segv`: one plugin; reading it crashes. `hang`: one plugin; reading it never ends.
 //! - `mixed`: `urn:meloet:fake:a`, `…:b` and `…:c`. Reading `b` crashes; `a` and `c` are read.
 
@@ -46,6 +50,9 @@ const DEFAULT_LEVEL: f64 = 0.5;
 const MODE: u32 = 1;
 const LOUD: u32 = 2;
 const MODES: [&str; 3] = ["Soft", "Hard", "Odd"];
+/// The parameter only `choices` has, and its names: each a quarter of the range.
+const TYPE: u32 = 3;
+const TYPES: [&str; 4] = ["Saw", "Square", "Sine", "Noise"];
 const WINDOW_SIZE: (u32, u32) = (320, 200);
 /// The moves of the person in the window of `knob`, two with every idle call.
 const KNOB_MOVES: u32 = 40;
@@ -66,7 +73,7 @@ pub fn load(key: &PluginKey, activation: Activation) -> Option<Result<Loaded, St
 pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
     let level = Arc::new(AtomicU64::new(DEFAULT_LEVEL.to_bits()));
     let processor: Box<dyn Processor> = match name {
-        "sine" | "window" | "knob" | "slowwindow" => Box::new(Sine {
+        "sine" | "window" | "knob" | "slowwindow" | "choices" => Box::new(Sine {
             sample_rate: activation.sample_rate,
             level: level.clone(),
             key: None,
@@ -89,7 +96,8 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
         _ => return Err(format!("no fake plugin {name}")),
     };
     let window = matches!(name, "window" | "knob" | "slowwindow");
-    let instrument = name == "sine" || window;
+    let choices = name == "choices";
+    let instrument = name == "sine" || window || choices;
     let editor = match name {
         _ if window => EditorKind::X11,
         "notyet" => EditorKind::Unsupported,
@@ -107,8 +115,10 @@ pub fn make(name: &str, activation: Activation) -> Result<Loaded, String> {
             level,
             has_level: instrument || name == "gain",
             window,
+            choices,
             mode: 0.0,
             loud: 0.0,
+            kind: 0.0,
             slow: name == "slowwindow",
             knob: (name == "knob").then_some(0),
             open: false,
@@ -263,8 +273,11 @@ struct FakeController {
     has_level: bool,
     /// It has a window, and the parameters `MODE` and `LOUD`.
     window: bool,
+    /// It has `MODE`, `LOUD` and `TYPE`, and a state that holds the first and the last.
+    choices: bool,
     mode: f64,
     loud: f64,
+    kind: f64,
     slow: bool,
     /// How many idle calls the person in the window of `knob` has been at it.
     knob: Option<u32>,
@@ -280,8 +293,9 @@ impl FakeController {
     fn value(&self, id: u32) -> Option<f64> {
         match id {
             LEVEL if self.has_level => Some(self.level()),
-            MODE if self.window => Some(self.mode),
-            LOUD if self.window => Some(self.loud),
+            MODE if self.window || self.choices => Some(self.mode),
+            LOUD if self.window || self.choices => Some(self.loud),
+            TYPE if self.choices => Some(self.kind),
             _ => None,
         }
     }
@@ -304,8 +318,13 @@ impl FakeController {
             LEVEL => format!("{:.0} %", value * 100.0),
             MODE => MODES[Self::step(value)].to_string(),
             LOUD => if value >= 0.5 { "On" } else { "Off" }.to_string(),
+            TYPE => TYPES[Self::kind_of(value)].to_string(),
             _ => return None,
         })
+    }
+
+    fn kind_of(value: f64) -> usize {
+        ((value.clamp(0.0, 1.0) * TYPES.len() as f64) as usize).min(TYPES.len() - 1)
     }
 }
 
@@ -331,13 +350,17 @@ impl Controller for FakeController {
             let shape = ParamShape::Continuous;
             params.push(param(LEVEL, "Level", None, DEFAULT_LEVEL, shape, &[]));
         }
-        if self.window {
+        if self.window || self.choices {
             let steps = ParamShape::Stepped {
                 steps: MODES.len() as u32,
             };
             params.push(param(MODE, "Mode", Some("Shape"), 0.0, steps, &MODES));
             let toggle = ParamShape::Toggle;
             params.push(param(LOUD, "Loud", Some("Shape"), 0.0, toggle, &[]));
+        }
+        if self.choices {
+            let shape = ParamShape::Continuous;
+            params.push(param(TYPE, "Type", Some("Shape"), 0.0, shape, &[]));
         }
         params
     }
@@ -368,6 +391,9 @@ impl Controller for FakeController {
             MODE => (MODES.iter())
                 .position(|mode| mode.eq_ignore_ascii_case(text))
                 .map(|step| exact(step as f64 / (MODES.len() - 1) as f64)),
+            TYPE => (TYPES.iter())
+                .position(|kind| kind.eq_ignore_ascii_case(text))
+                .map(|at| exact((at as f64 + 0.5) / TYPES.len() as f64)),
             _ if text.eq_ignore_ascii_case("on") => Some(exact(1.0)),
             _ if text.eq_ignore_ascii_case("off") => Some(exact(0.0)),
             _ => None,
@@ -382,19 +408,36 @@ impl Controller for FakeController {
         match id {
             LEVEL => self.level.store(value.to_bits(), Relaxed),
             MODE => self.mode = Self::step(value) as f64 / (MODES.len() - 1) as f64,
+            TYPE => self.kind = value,
             _ => self.loud = value.round(),
         }
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, String> {
-        Ok(self.level().to_le_bytes().to_vec())
+        let mut state = self.level().to_le_bytes().to_vec();
+        if self.choices {
+            state.extend(self.mode.to_le_bytes());
+            state.extend(self.kind.to_le_bytes());
+        }
+        Ok(state)
     }
 
     fn load_state(&mut self, state: &[u8]) -> Result<(), String> {
-        let bytes: [u8; 8] = state.try_into().map_err(|_| "not a fake plugin's state")?;
-        let level = f64::from_le_bytes(bytes);
+        let bad = || "not a fake plugin's state".to_string();
+        let values: Vec<f64> = (state.chunks(8))
+            .map(|bytes| bytes.try_into().map(f64::from_le_bytes))
+            .collect::<Result<_, _>>()
+            .map_err(|_| bad())?;
+        let level = match (self.choices, &values[..]) {
+            (false, [level]) => *level,
+            (true, [level, mode, kind]) => {
+                (self.mode, self.kind) = (mode.clamp(0.0, 1.0), kind.clamp(0.0, 1.0));
+                *level
+            }
+            _ => return Err(bad()),
+        };
         if !(0.0..=1.0).contains(&level) {
-            return Err("not a fake plugin's state".into());
+            return Err(bad());
         }
         self.level.store(level.to_bits(), Relaxed);
         Ok(())
@@ -472,6 +515,7 @@ fn contents(stem: &str) -> Option<Vec<(&'static str, PluginKind, Option<Fault>)>
     let effect = PluginKind::Effect(EffectCategory::Other);
     Some(match stem {
         "found" => vec![("Sine", synth, None), ("Pass", effect, None)],
+        "choices" => vec![("Choices", synth, None)],
         "empty" => vec![],
         "segv" => vec![("Segv", effect, Some(Fault::Crash))],
         "hang" => vec![("Hang", effect, Some(Fault::Hang))],

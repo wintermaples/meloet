@@ -16,6 +16,7 @@ mod automation;
 mod files;
 mod mixer;
 mod notes;
+mod params;
 mod render;
 mod timing;
 
@@ -309,6 +310,14 @@ pub fn refusal_text(r: &AiRefusal) -> String {
         AiRefusal::HasLane => {
             "that parameter has an automation lane; write the lane (or delete it) instead".into()
         }
+        AiRefusal::LaneDrives(param) => format!(
+            "parameter {param} has an automation lane; nothing was set. Write the lane (or \
+             delete it), or leave that parameter out"
+        ),
+        AiRefusal::NoSuchParam(param) => {
+            format!("the effect has no parameter {param}; nothing was set")
+        }
+        AiRefusal::NoSuchSet => "that set of parameters is not known any more".into(),
         AiRefusal::NoSuchLane => {
             "the track has no lane for that; add it with add_lane first".into()
         }
@@ -397,6 +406,7 @@ impl Tools {
             scratch,
             tool_router: Self::tool_router()
                 + Self::mixer_router()
+                + Self::params_router()
                 + Self::notes_router()
                 + Self::automation_router()
                 + Self::timing_router()
@@ -489,32 +499,6 @@ impl Tools {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-    }
-
-    /// An ask whose step comes later (a plugin's parameter): waits for it.
-    async fn pending_step(&self, ask: AiAsk) -> CallToolResult {
-        let what = ask.name();
-        let d = match self.ask(ask).await {
-            Ok(d) => d,
-            Err(result) => return result,
-        };
-        let until = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < until {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            let read = match self.read().await {
-                Ok(read) => read,
-                Err(result) => return result,
-            };
-            if read.undo_count > d.undo_count {
-                let value = json!({ "undo_steps": read.undo_count });
-                return done(format!("Done: {what}.\n{value}"), value);
-            }
-        }
-        failed(format!(
-            "Could not {what} as a step: the plugin was told, but no step came within 5 s. The \
-             value may be the one it had, the plugin may not answer, or it may not keep that \
-             value in its state (then the song does not hold it, and undo and saving miss it)."
-        ))
     }
 }
 

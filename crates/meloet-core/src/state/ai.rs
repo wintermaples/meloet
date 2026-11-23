@@ -126,6 +126,18 @@ impl Model {
                 Ok(params) => AiAnswer::Params(params),
                 Err(refused) => AiAnswer::Refused(refused),
             },
+            AiAsk::ParamsSet { ticket } => match self.play.ai_params_set(ticket) {
+                Ok(params) => AiAnswer::Params(params),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
+            AiAsk::ParamTexts {
+                place,
+                param,
+                values,
+            } => match self.play.ai_param_texts(place, param, values, effects) {
+                Ok(params) => AiAnswer::Params(params),
+                Err(refused) => AiAnswer::Refused(refused),
+            },
             ask => match self.ai_write(ask, effects) {
                 Ok(done) => AiAnswer::Done(Box::new(done)),
                 Err(refused) => AiAnswer::Refused(refused),
@@ -298,18 +310,40 @@ impl Model {
                 param,
                 value,
             } => {
-                (self.play).ai_set_plugin_param(place, param, value, effects)?;
+                let set = (self.play).ai_set_plugin_param(place, param, value, effects)?;
                 return Ok(AiDone {
                     step: None,
                     undo_count: before,
                     clip: None,
                     take: None,
                     track: None,
-                    ticket: None,
+                    ticket: Some(set),
                     pending: true,
                 });
             }
-            AiAsk::PluginParams { .. } => return Err(AiRefusal::Unchanged),
+            AiAsk::SetPluginParams { place, values } => {
+                let set = (self.play).ai_set_plugin_params(place, &values, effects)?;
+                return Ok(AiDone {
+                    step: None,
+                    undo_count: before,
+                    clip: None,
+                    take: None,
+                    track: None,
+                    ticket: Some(set),
+                    pending: true,
+                });
+            }
+            AiAsk::SetEffectParams {
+                strip,
+                slot,
+                values,
+            } => {
+                no_step = !(self.play).ai_set_effect_params(strip, slot, &values, effects)?;
+                AiWrote::default()
+            }
+            AiAsk::PluginParams { .. } | AiAsk::ParamsSet { .. } | AiAsk::ParamTexts { .. } => {
+                return Err(AiRefusal::Unchanged);
+            }
             AiAsk::Save | AiAsk::SaveAs { .. } | AiAsk::Open { .. } | AiAsk::NewSong => {
                 if !self.song_free() {
                     return Err(AiRefusal::FilesBusy);

@@ -64,6 +64,7 @@ export const ACTION_ROWS: Record<KeyAction["kind"], readonly KeyRow[]> = {
 
   splitClips: [row("arrange", "menu.splitClip", () => t("key.split"))],
   joinClips: [row("arrange", "menu.joinClips", (k) => k.mod(t("key.join")))],
+  repeatClips: [row("arrange", "keyList.repeatClips", (k) => k.mod(t("key.repeatClips")))],
   stepTake: [row("arrange", ["menu.nextTake", "menu.prevTake"], (k) => or(t("key.take"), k.shift(t("key.take"))))],
   trackMute: [row("arrange", "menu.mute", (k) => k.shift(t("key.mute")))],
   trackSolo: [row("arrange", "menu.solo", (k) => k.shift(t("key.solo")))],
@@ -121,7 +122,6 @@ export const OTHER_ROWS: readonly KeyRow[] = [
 export const WAVE2_ROWS: readonly KeyRow[] = [
   row("play", "keyList.keepLast", (k) => k.shift(t("key.keepLast"))),
   row("play", "keyList.playByKeys", (k) => k.mod(t("key.playByKeys"))),
-  row("arrange", "keyList.repeatClips", (k) => k.mod(t("key.repeatClips"))),
 ];
 
 export interface ShownRow {

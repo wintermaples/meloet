@@ -477,3 +477,109 @@ fn the_status_line_says_when_clips_overlap() {
     cmd(m, Command::SelectAllClips);
     assert_eq!(m.view().arrange.selected_clips.len(), 2);
 }
+
+#[test]
+fn repeat_is_one_step_selects_the_copies_and_comes_back_with_undo() {
+    let (mut p, a, b, c) = three_clips();
+    let e = &mut Vec::new();
+    p.select_clip(Some(c.0));
+    let steps = p.undo_count();
+    // c (track 2, bar 3) three times: bars 4, 5 and 6.
+    assert_eq!(p.repeat_clips(&[c.0], 3, e), None);
+    assert_eq!(p.undo_count(), steps + 1);
+    let s = starts(&p);
+    assert_eq!(
+        s[1].iter().map(|x| x.1).collect::<Vec<_>>(),
+        [2 * BAR, 3 * BAR, 4 * BAR, 5 * BAR]
+    );
+    let copies: Vec<u32> = s[1][1..].iter().map(|x| x.0).collect();
+    let v = p.arrange_view();
+    assert_eq!(v.selected_clips, copies);
+    // c was clicked: its first copy is clicked and shown.
+    assert_eq!(
+        (v.selected_clip, v.piano_roll_clip),
+        (Some(copies[0]), Some(copies[0]))
+    );
+    let (_, orig) = p.song().doc.clip(c).unwrap();
+    let (_, copy) = p.song().doc.clip(ClipId(copies[2])).unwrap();
+    assert!(Arc::ptr_eq(&orig.keys()[0].take, &copy.keys()[0].take));
+    // One undo takes all three away and selects c again; redo brings them back.
+    p.undo(e);
+    assert_eq!(starts(&p)[1], [(c.0, 2 * BAR)]);
+    assert_eq!(p.arrange_view().selected_clips, [c.0]);
+    p.redo(e);
+    assert_eq!(starts(&p)[1].len(), 4);
+    assert_eq!(p.arrange_view().selected_clips, copies);
+    // a and c as one block (bars 1 to 3): a's second copy would overlap b (bar 5).
+    let steps = p.undo_count();
+    assert_eq!(
+        p.repeat_clips(&[a.0, c.0], 2, e),
+        Some(StatusMessage::ClipsNotDuplicated)
+    );
+    assert_eq!(p.undo_count(), steps);
+    // Outside 1..=REPEAT_COUNT_MAX, and an old id: nothing, and nothing is said.
+    for count in [0, REPEAT_COUNT_MAX + 1] {
+        assert_eq!(p.repeat_clips(&[b.0], count, e), None);
+    }
+    assert_eq!(p.repeat_clips(&[999], 1, e), None);
+    assert_eq!(p.undo_count(), steps);
+    assert_eq!(p.repeat_clips(&[b.0], REPEAT_COUNT_MAX, e), None);
+    assert_eq!(starts(&p)[0].len(), 2 + REPEAT_COUNT_MAX as usize);
+}
+
+#[test]
+fn repeat_is_refused_while_recording_and_past_the_song_end_is_an_overlap() {
+    let (mut m, c) = one_clip();
+    let m = &mut m;
+    cmd(m, Command::Locate { tick: 4 * BAR });
+    cmd(m, Command::Record);
+    started(m);
+    let before = m.view().song;
+    cmd(
+        m,
+        Command::RepeatClips {
+            clips: vec![c.id],
+            count: 2,
+        },
+    );
+    assert_eq!(m.view().song, before);
+    cmd(m, Command::Record);
+    report(
+        m,
+        RecordReport::Stopped {
+            t_us: 100,
+            tick: 4.0 * BAR as f64,
+            lap: 0,
+        },
+    );
+    let steps = m.view().song.undo_count;
+    let effects = cmd(
+        m,
+        Command::RepeatClips {
+            clips: vec![c.id],
+            count: 2,
+        },
+    );
+    assert_eq!(sequences(&effects), 1);
+    assert_eq!(m.view().song.undo_count, steps + 1);
+    assert_eq!(clips(m).len(), 3);
+    // Moved to the song's end, one more copy would be past it: the notice of an overlap.
+    let last = clips(m)[2].clone();
+    cmd(
+        m,
+        Command::MoveClips {
+            clips: vec![last.id],
+            ticks: (meloet_model::MAX_TICK - last.end) as i64,
+            tracks: 0,
+            copy: false,
+        },
+    );
+    cmd(
+        m,
+        Command::RepeatClips {
+            clips: vec![last.id],
+            count: 1,
+        },
+    );
+    assert_eq!(status(m), Some(StatusMessage::ClipsNotDuplicated));
+}

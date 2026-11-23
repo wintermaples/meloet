@@ -15,7 +15,7 @@ import { advancePack, fakeClipsPanel, fakeSolo, fakeSounds, packAsking, packFail
 import { reduceRound10 } from "./fakeRound10";
 import { FAKE_PATTERNS, reduceP4 } from "./fakeP4";
 import { reduceUpdates } from "./fakeUpdates";
-import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB } from "./types";
+import { CLICK_VOLUME_MAX_DB, CLICK_VOLUME_MIN_DB, REPEAT_COUNT_MAX } from "./types";
 import { fakeLoudnessOf } from "./fakeLoudness";
 import { reduceA9 } from "./fakeA9";
 import { fakeUserPreset, presetOf, reducePresets } from "./fakePresets";
@@ -4270,6 +4270,7 @@ const CLIP_COMMANDS: Command["type"][] = [
   "copyClips",
   "cutClips",
   "pasteClips",
+  "repeatClips",
 ];
 
 /**
@@ -4440,6 +4441,16 @@ export function reduceClips(
       if (top < 0) return null;
       const items = clipboard.clips.map(({ row, at, clip }) => ({ row: top + row, start: to.tick + at, clip }));
       return place(items, true, [], { id: "clipsNotPasted" });
+    }
+    // Round 12 A1: `count` copies of the block (the earliest start to the latest end), all or nothing.
+    case "repeatClips": {
+      const ids = inOrder(command.clips);
+      if (ids.length === 0 || command.count < 1 || command.count > REPEAT_COUNT_MAX) return null;
+      const clips = ids.map((id) => clipOf(id)!);
+      const first = Math.min(...clips.map((c) => c.start));
+      const length = Math.max(...clips.map((c) => c.end)) - first;
+      const items = Array.from({ length: command.count }, (_, k) => clips.map((clip) => ({ row: rowOf(clip.id), start: clip.start + (k + 1) * length, clip })));
+      return place(items.flat(), true, [], { id: "clipsNotDuplicated" });
     }
     default:
       return null;

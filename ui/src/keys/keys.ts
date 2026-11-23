@@ -40,6 +40,8 @@ export type KeyAction =
   | { kind: "splitClips" }
   /** Mod J: join the chosen keyboard clips of one track (spec 4, round 10). */
   | { kind: "joinClips" }
+  /** Mod R: the box of 「くり返す…」 on the chosen clips (round 12 A1). */
+  | { kind: "repeatClips" }
   | { kind: "deleteSelected" }
   | { kind: "newSong" }
   | { kind: "openSong" }
@@ -156,6 +158,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (l === "z") return { kind: "undo" };
     if (l === "q") return { kind: "quit" };
     if (l === "j") return { kind: "joinClips" };
+    if (l === "r") return { kind: "repeatClips" };
     // While typing, Mod A, X, C, V belong to the text in the box.
     if (l && MOD_EDITS[l] && !(typing && l !== "d")) return MOD_EDITS[l]!;
     if (!k.alt && (k.key === "," || k.code === "Comma")) return { kind: "audioSettings" };

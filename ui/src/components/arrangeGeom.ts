@@ -207,6 +207,32 @@ export function paintFrame(out: GlRect[], v: View, d: LaneDims, box: Box, color:
   if (box.x1 <= x1) out.push({ x: box.x1 - h, y: y0, w: h, h: y1 - y0, color });
 }
 
+/** A clip's place: its row and its ticks. */
+export interface ClipPlace {
+  row: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * The copies a repeat would make (round 12 A1): copy k of each clip `k × length` later, a gray.2 face with a gray.7 border, for k = 1..count;
+ * then a line.mark accent bar at the right end of `handle` after the last copy (where the handle is held). Nothing outside the visible width.
+ */
+export function paintRepeats(out: GlRect[], v: View, d: LaneDims, clips: readonly ClipPlace[], length: number, count: number, handle: ClipPlace): void {
+  for (let k = 1; k <= count; k++) {
+    for (const c of clips) {
+      const box = clipBox(v, d, c.row, c.start + k * length, c.end + k * length);
+      const x0 = Math.max(box.x0, -d.hair);
+      const x1 = Math.min(box.x1, v.width + d.hair);
+      if (x1 <= x0) continue;
+      out.push({ x: x0, y: box.y0, w: x1 - x0, h: box.y1 - box.y0, color: "color.gray.2" });
+      paintFrame(out, v, d, box, "color.gray.7");
+    }
+  }
+  const box = clipBox(v, d, handle.row, handle.start, handle.end + count * length);
+  if (box.x1 > 0 && box.x1 - d.mark < v.width) out.push({ x: box.x1 - d.mark, y: box.y0, w: d.mark, h: box.y1 - box.y0, color: "color.accent" });
+}
+
 /**
  * Take notes (positions from tick 0 of the take) to positions in the song. Only notes that sound (start inside the clip range [start, end)).
  * Notes trimmed outside are not drawn (paintClip cuts ends that stick out).

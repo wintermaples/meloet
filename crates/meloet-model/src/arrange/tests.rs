@@ -820,3 +820,219 @@ fn joining_does_nothing_unless_two_neighbours_of_one_keys_track() {
     assert_eq!(e.step, StepKind::JoinClips { clip: a, count: 3 });
     assert_eq!(spans(&e.doc, T1), [(a, BAR, 5 * BAR)]);
 }
+
+#[test]
+fn repeat_puts_copies_one_after_another_as_one_step() {
+    let (doc, a, b) = song();
+    let e = repeat_clips(&doc, &[a], 2).unwrap();
+    assert_eq!(e.edit.step, StepKind::RepeatClips { count: 2 });
+    let [c1, c2] = e.clips[..] else { panic!() };
+    assert_eq!((c1, c2), (ClipId(doc.next_id), ClipId(doc.next_id + 1)));
+    assert_eq!(e.from, [a, a]);
+    assert_eq!(e.edit.doc.next_id, doc.next_id + 2);
+    assert_eq!(
+        spans(&e.edit.doc, T1),
+        [
+            (a, BAR, 2 * BAR),
+            (c1, 2 * BAR, 3 * BAR),
+            (c2, 3 * BAR, 4 * BAR),
+            (b, 4 * BAR, 5 * BAR)
+        ]
+    );
+    let (_, orig) = e.edit.doc.clip(a).unwrap();
+    for c in [c1, c2] {
+        let (_, copy) = e.edit.doc.clip(c).unwrap();
+        assert!(Arc::ptr_eq(&orig.keys()[0].take, &copy.keys()[0].take));
+        assert_eq!(
+            (copy.name.as_str(), copy.active),
+            (orig.name.as_str(), orig.active)
+        );
+    }
+    assert_eq!(
+        ons(&e.edit.doc, T1),
+        [
+            (BAR, 60),
+            (BAR + 2 * Q, 64),
+            (2 * BAR, 60),
+            (2 * BAR + 2 * Q, 64),
+            (3 * BAR, 60),
+            (3 * BAR + 2 * Q, 64),
+            (4 * BAR, 67)
+        ]
+    );
+    // The lanes of the track are not copied.
+    assert_eq!(
+        e.edit.doc.track(T1).unwrap().automation,
+        doc.track(T1).unwrap().automation
+    );
+    // One step: undo takes every copy away, redo puts them back with the same ids.
+    let mut now = doc.clone();
+    let mut history = crate::History::new();
+    history.apply(&mut now, e.edit.clone());
+    assert_eq!(
+        history.undo(&mut now),
+        Some(StepKind::RepeatClips { count: 2 })
+    );
+    assert_eq!(spans(&now, T1), spans(&doc, T1));
+    history.redo(&mut now);
+    assert_eq!(spans(&now, T1), spans(&e.edit.doc, T1));
+}
+
+#[test]
+fn repeat_is_all_or_nothing() {
+    let (doc, a, b) = song();
+    // The third copy would be over bar 5, where b is.
+    assert_eq!(repeat_clips(&doc, &[a], 3), Err(EditError::Overlap));
+    assert_eq!(repeat_clips(&doc, &[a], 0), Err(EditError::Unchanged));
+    assert_eq!(
+        repeat_clips(&doc, &[ClipId(999)], 1),
+        Err(EditError::NoSuchClip(ClipId(999)))
+    );
+    // The model has no count limit of its own (the core keeps to REPEAT_COUNT_MAX).
+    let e = repeat_clips(&doc, &[b], 99).unwrap();
+    assert_eq!(e.clips.len(), 99);
+    assert_eq!(spans(&e.edit.doc, T1).last().unwrap().2, 104 * BAR);
+    // At the song's end: nothing past it.
+    let far = move_clips(&doc, &[b], (MAX_TICK - 5 * BAR) as i64, 0, false).unwrap();
+    assert_eq!(spans(&far.edit.doc, T1)[1].2, MAX_TICK);
+    assert_eq!(
+        repeat_clips(&far.edit.doc, &[b], 1),
+        Err(EditError::OffTheSong)
+    );
+    assert_eq!(
+        repeat_clips(&far.edit.doc, &[b], usize::MAX),
+        Err(EditError::OffTheSong)
+    );
+}
+
+#[test]
+fn a_group_repeats_as_one_block_keeping_rows_and_distances() {
+    let (doc, a, b, c) = song_two_tracks();
+    // a (bar 2) and c (bar 3, track 2): a block of 2 bars. b (bar 5) lies between the copies of
+    // a, not under one of them, so it is not in the way.
+    let e = repeat_clips(&doc, &[c, a], 2).unwrap();
+    assert_eq!(e.edit.step, StepKind::RepeatClips { count: 4 });
+    let [c1, a1, c2, a2] = e.clips[..] else {
+        panic!()
+    };
+    assert_eq!(e.from, [c, a, c, a]);
+    assert_eq!(
+        spans(&e.edit.doc, T1),
+        [
+            (a, BAR, 2 * BAR),
+            (a1, 3 * BAR, 4 * BAR),
+            (b, 4 * BAR, 5 * BAR),
+            (a2, 5 * BAR, 6 * BAR)
+        ]
+    );
+    assert_eq!(
+        spans(&e.edit.doc, T2),
+        [
+            (c, 2 * BAR, 3 * BAR),
+            (c1, 4 * BAR, 5 * BAR),
+            (c2, 6 * BAR, 7 * BAR)
+        ]
+    );
+    // A clip in the way on one track only: nothing on either.
+    let (doc, _) = record(&doc, T2, take(6 * BAR, BAR, vec![note(0, 10, 41)]));
+    assert_eq!(repeat_clips(&doc, &[a, c], 2), Err(EditError::Overlap));
+    assert!(repeat_clips(&doc, &[a, c], 1).is_ok());
+}
+
+#[test]
+fn copies_follow_on_in_ticks_over_meter_and_tempo_changes() {
+    use crate::timeline::{add_meter_change, add_tempo_point};
+    use crate::{Meter, Tempo};
+    // 3/4 from bar 3 and 140 a little later; the clip is 6 quarters long from bar 2.
+    let doc = add_meter_change(&two_tracks(), 2, Meter::new(3, 4).unwrap())
+        .unwrap()
+        .doc;
+    let doc = add_tempo_point(&doc, 2 * BAR + 3 * Q, Tempo::from_centi(14_000).unwrap())
+        .unwrap()
+        .doc;
+    let (doc, a) = record(&doc, T1, take(BAR, 6 * Q, vec![note(Q, 10, 60)]));
+    let e = repeat_clips(&doc, &[a], 3).unwrap();
+    let starts: Vec<u64> = spans(&e.edit.doc, T1).iter().map(|s| s.1).collect();
+    assert_eq!(starts, [BAR, BAR + 6 * Q, BAR + 12 * Q, BAR + 18 * Q]);
+    assert_eq!(
+        ons(&e.edit.doc, T1),
+        [
+            (BAR + Q, 60),
+            (BAR + 7 * Q, 60),
+            (BAR + 13 * Q, 60),
+            (BAR + 19 * Q, 60)
+        ]
+    );
+}
+
+#[test]
+fn an_audio_clip_repeats_with_its_takes_and_shape() {
+    use crate::{AudioId, AudioSource, AudioTake, ClipGain, TrackKind, VocalInput};
+    let mut doc = two_tracks();
+    let source = Arc::new(AudioSource {
+        id: AudioId(50),
+        uid: [1; 16],
+        file: "歌.wav".to_owned(),
+        frames: 96_000,
+        sample_rate: 48_000,
+        channels: 1,
+        bits: Some(24),
+        sha256: None,
+    });
+    let shape = AudioShape {
+        fade_in: Q,
+        fade_out: Q / 2,
+        gain: ClipGain::from_centi(-300).unwrap(),
+        ..AudioShape::RECORDED
+    };
+    let clip = Clip {
+        id: ClipId(51),
+        name: "歌".to_owned(),
+        start: BAR,
+        end: 2 * BAR,
+        takes: ClipTakes::Vocal {
+            takes: vec![ClipTake {
+                take: Arc::new(AudioTake {
+                    id: TakeId(52),
+                    source: source.clone(),
+                    first_frame: 0,
+                    frames: 96_000,
+                    sync: None,
+                }),
+                offset: 0,
+            }],
+            shape,
+        },
+        active: 0,
+    };
+    doc.tracks[1] = Arc::new(Track {
+        kind: TrackKind::Vocal {
+            input: VocalInput::Mono1,
+        },
+        clips: vec![Arc::new(clip.clone())],
+        ..Track::clone(&doc.tracks[1])
+    });
+    doc.audio = Arc::new(vec![source]);
+    doc.next_id = 60;
+    let e = repeat_clips(&doc, &[clip.id], 2).unwrap();
+    assert_eq!(e.clips, [ClipId(60), ClipId(61)]);
+    assert_eq!(
+        spans(&e.edit.doc, T2),
+        [
+            (clip.id, BAR, 2 * BAR),
+            (ClipId(60), 2 * BAR, 3 * BAR),
+            (ClipId(61), 3 * BAR, 4 * BAR)
+        ]
+    );
+    for id in e.clips {
+        let (_, copy) = e.edit.doc.clip(id).unwrap();
+        assert_eq!(copy.takes.shape(), Some(&shape));
+        let (ClipTakes::Vocal { takes: mine, .. }, ClipTakes::Vocal { takes: theirs, .. }) =
+            (&copy.takes, &clip.takes)
+        else {
+            panic!()
+        };
+        assert!(Arc::ptr_eq(&mine[0].take, &theirs[0].take));
+    }
+    assert_eq!(e.edit.doc.audio, doc.audio);
+}

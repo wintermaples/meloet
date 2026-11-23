@@ -2083,6 +2083,11 @@ export const texts = {
   "menu.addMarkerHere": e("ここにマーカーを足す", "spec:3"),
   "menu.splitClip": e("クリップを切る", "spec:3"),
   "menu.joinClips": e("クリップをつなげる", "spec:3"),
+  // Round 12 A1: repeating clips (the handle at the right end of the name strip, and the menus' row with its box).
+  "menu.repeatClips": e("くり返す…", "user:2026-11-23"),
+  "arrange.repeatMark": e("⟳", "user:2026-11-23"),
+  "arrange.readRepeat": e("{count} 回くり返します", "user:2026-11-23", { count: "3" }),
+  "arrange.repeatCount": e("くり返す回数", "builder:2026-11-23"),
   // Velocity lock (B-66) and changing velocities together (B-67).
   "input.velocityFixed": e("固定", "user:2026-11-18"),
   "inspector.matchVelocity": e("そろえる", "user:2026-11-18"),

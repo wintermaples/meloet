@@ -138,6 +138,7 @@ export function topMenus(state: AppState, deps: KeyDeps, platform: Platform): To
     act("menu.copy", { kind: "copy" }, k.mod(t("key.copy"))),
     act("menu.paste", { kind: "paste" }, k.mod(t("key.paste"))),
     act("menu.duplicate", { kind: "duplicate" }, k.mod(t("key.duplicate"))),
+    act("menu.repeatClips", { kind: "repeatClips" }, k.mod(t("key.repeatClips"))),
     act("menu.delete", { kind: "deleteSelected" }, t("key.delete"), toArrange ? { usable: state.arrange.selectedClips.length > 0 && !busy } : {}),
     { kind: "separator" },
     act("menu.selectAll", { kind: "selectAll" }, k.mod(t("key.selectAll"))),

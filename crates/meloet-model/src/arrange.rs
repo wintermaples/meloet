@@ -125,6 +125,38 @@ pub fn duplicate_clips(doc: &Doc, clips: &[ClipId]) -> Result<ClipEdited, EditEr
     )
 }
 
+/// 「くり返す」: `count` copies of the clips as one block (the earliest start to the latest end),
+/// each right after the one before, on their own tracks, keeping their distances; new ids, the
+/// same takes. All or nothing: `Overlap` when a copy would overlap a clip, `OffTheSong` past
+/// [`MAX_TICK`]. Positions are ticks, so the copies follow on whatever the meter or the tempo.
+pub fn repeat_clips(doc: &Doc, clips: &[ClipId], count: usize) -> Result<ClipEdited, EditError> {
+    if count == 0 {
+        return Err(EditError::Unchanged);
+    }
+    let group = found(doc, clips)?;
+    let clip = |&(_, ti, ci): &(ClipId, usize, usize)| &doc.tracks[ti].clips[ci];
+    let first = group.iter().map(|g| clip(g).start).min().expect("one");
+    let last = group.iter().map(|g| clip(g).end).max().expect("one");
+    let length = last - first;
+    let count = count as u64;
+    length
+        .checked_mul(count)
+        .and_then(|by| last.checked_add(by))
+        .filter(|&end| end <= MAX_TICK)
+        .ok_or(EditError::OffTheSong)?;
+    let mut placing = Vec::new();
+    for k in 1..=count {
+        for g in &group {
+            let c = clip(g);
+            placing.push((c.clone(), g.1, c.start + length * k));
+        }
+    }
+    let step = StepKind::RepeatClips {
+        count: placing.len(),
+    };
+    place(doc, &[], placing, step, Ids(doc.next_id))
+}
+
 /// What Mod C keeps of the clips, the first being the earliest (the upper one of those that
 /// start together).
 pub fn copy_clips(doc: &Doc, clips: &[ClipId]) -> Result<Vec<KeptClip>, EditError> {

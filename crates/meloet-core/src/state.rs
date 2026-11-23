@@ -1489,8 +1489,11 @@ impl Model {
                     self.notice = self.play.place_pattern(&id, effects);
                 }
             }
-            // round12 stub: A1
-            Command::RepeatClips { .. } => {}
+            Command::RepeatClips { clips, count } => {
+                if let Some(n) = self.play.repeat_clips(&clips, count, effects) {
+                    self.notice = Some(n);
+                }
+            }
             Command::ApplyPreset { insert, preset } => {
                 self.notice = self.play.apply_preset(insert, &preset, effects);
             }

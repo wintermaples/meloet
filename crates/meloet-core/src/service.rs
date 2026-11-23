@@ -2994,6 +2994,9 @@ impl Worker {
                     Effect::ShowFile(path) => {
                         self.ask_shell(ShellRequest::ShowFile { path });
                     }
+                    Effect::OpenUrl(url) => {
+                        self.ask_shell(ShellRequest::OpenUrl { url });
+                    }
                     Effect::LoadSound(instrument) => self.audio.sounds.load(instrument),
                     Effect::DropSound(instrument) => self.audio.sounds.let_go(instrument),
                     Effect::ScanPlugins(job) => {

@@ -2,6 +2,7 @@
 // Menu bar rows that have a key also go through runKeyAction here (so the choice between the piano roll and the arrange is made in one place).
 import type { AppState, Command } from "../bridge";
 import { aboutBack } from "../components/about/about.svelte";
+import { keyListBack } from "../components/keylist/keyList.svelte";
 import { closeContextMenu } from "../components/menu/contextMenu.svelte";
 import { closeMenuBar, openMenuBar } from "../components/menu/menuBar.svelte";
 import {
@@ -504,7 +505,7 @@ export function handleKeydown(ev: KeyboardEvent, deps: KeyDeps): void {
       return;
     }
     if (typing) (doc.activeElement as HTMLElement | null)?.blur();
-    else if (!closeMenus() && !aboutBack())
+    else if (!closeMenus() && !aboutBack() && !keyListBack())
       deps.send(
         context === "history"
           ? { type: "toggleBand", band: "history" }

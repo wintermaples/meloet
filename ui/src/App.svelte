@@ -6,6 +6,8 @@
   import { onMount } from "svelte";
   import AboutDialog from "./components/about/AboutDialog.svelte";
   import { about } from "./components/about/about.svelte";
+  import KeyListDialog from "./components/keylist/KeyListDialog.svelte";
+  import { keyList } from "./components/keylist/keyList.svelte";
   import Arrange from "./components/Arrange.svelte";
   import AutoClock from "./components/automation/AutoClock.svelte";
   import BandRow from "./components/BandRow.svelte";
@@ -108,6 +110,11 @@
   {#if about.open}
     <div class="dialog">
       <AboutDialog />
+    </div>
+  {/if}
+  {#if keyList.open}
+    <div class="dialog">
+      <KeyListDialog />
     </div>
   {/if}
   {#if state.plugins.stoppedOpen}

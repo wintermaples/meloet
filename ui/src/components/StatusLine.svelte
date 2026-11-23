@@ -31,6 +31,7 @@
   import { exportShown } from "../state/exportShown.svelte";
   import { LIST_COMMA, STATUS_JOIN, t, type TextKey } from "../text/ja";
   import { about } from "./about/about.svelte";
+  import { keyList } from "./keylist/keyList.svelte";
   import { runShown } from "./export/exportText";
   import { gridText, msText, noteLengthText, pitchClassName, scaleName, tempoText, termParts, textParts, type TextPart } from "./format";
   import { laneNameText, stepNameText, stepWhatText } from "./history/stepText";
@@ -870,6 +871,7 @@
     if (chordHover.text !== null) return { parts: [{ text: chordHover.text, hole: null }], strong: [], button: null };
     // 「meloet について」 is a screen-only dialog, so it is said here instead of a core message (spec 3 85).
     if (about.open) return { parts: textParts("status.dialogOpen", { dialog: t("about.title") }), strong: [], button: null };
+    if (keyList.open) return { parts: textParts("status.dialogOpen", { dialog: t("keyList.title") }), strong: [], button: null };
     // Song dialogs are named by the dialog name (spec 3 89-6; the song name is not shown).
     const songDialog = app.workspace.songDialog;
     if (songDialog) return { parts: textParts("status.songDialogOpen", { dialog: t(SONG_DIALOG_NAMES[songDialog.kind]) }), strong: [], button: null };

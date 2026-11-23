@@ -153,7 +153,7 @@ describe("the generated list (generated/licenses.json)", () => {
 
 describe("Help menu", () => {
   const deps = (s: AppState, sent: Command[]): KeyDeps => ({ state: () => s, send: (c) => sent.push(c), playTick: () => 0 });
-  const aboutRow = (s: AppState) => topMenus(s, deps(s, []), "other")[6]!.entries[0] as ListRow;
+  const aboutRow = (s: AppState) => topMenus(s, deps(s, []), "other")[6]!.entries.find((e) => e.kind === "row" && e.label === "meloet について") as ListRow;
 
   it("opens with 「meloet について」. Disabled while another dialog is open", () => {
     const s = fakeState();

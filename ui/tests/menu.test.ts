@@ -116,7 +116,9 @@ describe("menu contents (B-59)", () => {
       "下へ動かす",
       "トラックを消す",
     ]);
-    expect(keyed(6)).toEqual(["meloet について"]);
+    // Round 12 G1: the key list and the user guide, a separator, about meloet.
+    expect(keyed(6)).toEqual(["キーの一覧", "使い方をひらく", "meloet について"]);
+    expect(menus[6]!.entries.map((e) => e.kind)).toEqual(["row", "row", "separator", "row"]);
   });
 
   it("Mac uses Cmd and Option", () => {
@@ -545,9 +547,9 @@ describe("menu bar (mount)", () => {
     expect(document.activeElement?.textContent).toContain("ひらく…");
     keydown("ArrowLeft");
     await settle();
-    // The rightmost is 「ヘルプ」. Focus on its first usable row 「meloet について」.
+    // The rightmost is 「ヘルプ」. Focus on its first usable row 「キーの一覧」.
     expect(menuBar.open).toBe(6);
-    expect(document.activeElement?.textContent).toContain("meloet について");
+    expect(document.activeElement?.textContent).toContain("キーの一覧");
     keydown("ArrowRight");
     await settle();
     expect(menuBar.open).toBe(0);

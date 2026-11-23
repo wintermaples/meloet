@@ -1,7 +1,7 @@
 // The fake's part of protocol 33 (round 12, waves 3 and 4). Until each feature is built, the fake takes its intents
 // and changes nothing, as Rust does (`// round12 stub: <ID>`).
 import type { FakeState } from "./fake";
-import type { Arp, Change, Command } from "./types";
+import type { Arp, Change, Command, StatusMessage } from "./types";
 
 /** E2: the arpeggio a track starts with (off). */
 export const FAKE_ARP_OFF: Arp = { on: false, shape: "up", rate: "sixteenth", triplet: false, octaves: 1, hold: false };
@@ -11,6 +11,25 @@ export function reduceSpectrum(state: FakeState, command: Command): Change[] | n
   if (command.type !== "setSpectrum") return null;
   if (state.workspace.spectrum === command.on) return [];
   return [{ section: "workspace", value: { ...state.workspace, spectrum: command.on } }];
+}
+
+/**
+ * M3 「モノで聞く」: only for listening, not a step, not a setting. While it is on the status line says 「モノで聞いています」 (Rust says it
+ * when it is turned on, and in place of the summary while it stays on). `null`: not this command.
+ */
+export function reduceMonoListen(state: FakeState, command: Command): Change[] | null {
+  if (command.type !== "setMonoListen") return null;
+  if (state.workspace.monoListen === command.on) return [];
+  const said = state.status.message?.id === "monoListening";
+  const message: StatusMessage | null = command.on
+    ? { id: "monoListening" }
+    : said
+      ? { id: "summary", loopBars: null, nothingSelected: true, notes: null }
+      : state.status.message;
+  return [
+    { section: "workspace", value: { ...state.workspace, monoListen: command.on } },
+    { section: "status", value: { message } },
+  ];
 }
 
 /** dB of each band under the master's peak: a song with a full low end and highs that fall away. */

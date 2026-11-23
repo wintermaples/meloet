@@ -258,6 +258,13 @@ pub enum EngineCommand {
     SetMetronome {
         on: bool,
     },
+    /// 「モノで聞く」 (round 12 M3): what comes out of the master's inserts is left and right
+    /// mixed into one, the same on both sides, before the master's meter and the analysis
+    /// ring; it moves there and back over [`RAMP_S`]. Only for listening: an export's engine is
+    /// never told.
+    SetMonoListen {
+        on: bool,
+    },
     /// How the metronome sounds from its next click on; a click that sounds already is left
     /// as it is. `gain` is linear (1.0: the click as made; at most 2.0). `recording_only`:
     /// no clicks while playing. The count-in clicks either way.
@@ -1419,6 +1426,7 @@ pub struct Engine {
     last_callback: Option<(Instant, f64)>,
     /// What goes out is cut to ±1.0 (0 dB), to spare ears and speakers.
     clamp_out: bool,
+    mono: Mono,
 }
 
 impl Engine {
@@ -1509,6 +1517,7 @@ impl Engine {
             audition: None,
             last_callback: None,
             clamp_out: true,
+            mono: Mono::default(),
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -2130,6 +2139,9 @@ impl Engine {
                     }
                 }
                 EngineCommand::SetMetronome { on } => self.transport.metronome = on,
+                EngineCommand::SetMonoListen { on } => {
+                    self.mono.target = if on { 1.0 } else { 0.0 }
+                }
                 EngineCommand::SetClick {
                     sound,
                     gain,
@@ -2900,7 +2912,16 @@ impl Engine {
             raise(&self.meters.master_reduction, db);
         }
         self.meters.master_limited.store(limited.is_some(), Relaxed);
-        self.analysis.write(io.left, io.right);
+        self.mono.mix(
+            io.left,
+            io.right,
+            1.0 / ramp_frames(self.sample_rate) as f32,
+        );
+        let playing = matches!(
+            self.transport.state,
+            TransportState::Playing | TransportState::Recording
+        );
+        self.analysis.write(io.left, io.right, playing);
         if self.tone.sounding() || self.probe.sounding() {
             self.meters.aside.store(true, Relaxed);
         }
@@ -2935,6 +2956,36 @@ impl Engine {
         raise(&self.meters.master[1], peak[1]);
         if peak[0] > 1.0 || peak[1] > 1.0 {
             self.meters.clipped.store(true, Relaxed);
+        }
+    }
+}
+
+/// 「モノで聞く」: how far the master's left and right are mixed into one (0: not at all, 1:
+/// the same on both sides), on its way to `target`.
+#[derive(Default)]
+struct Mono {
+    amount: f32,
+    target: f32,
+}
+
+impl Mono {
+    /// `step`: how far `amount` moves in a frame.
+    fn mix(&mut self, left: &mut [f32], right: &mut [f32], step: f32) {
+        if self.amount == 0.0 && self.target == 0.0 {
+            return;
+        }
+        for (l, r) in left.iter_mut().zip(right.iter_mut()) {
+            if self.amount != self.target {
+                self.amount = if self.amount < self.target {
+                    (self.amount + step).min(self.target)
+                } else {
+                    (self.amount - step).max(self.target)
+                };
+            }
+            let half = 0.5 * self.amount;
+            let (a, b) = (*l, *r);
+            *l = a + half * (b - a);
+            *r = b + half * (a - b);
         }
     }
 }

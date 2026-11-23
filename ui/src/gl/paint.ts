@@ -4,7 +4,8 @@ import type { Batch } from "./batch";
 import { rgb, type Rgb } from "./color";
 import { ARRANGE_GRID, CLIP_MARK, KEY_FORMS, KEYBOARD, METER, METER_HOT_FROM, MIC_METER, OVERVIEW, SPECTRUM, VELOCITY, type KeyForm } from "./dims";
 import { keyboardLayout } from "./keyboard";
-import { lengthToDb, micDbToLength } from "./level";
+import type { ColorName } from "../design/tokens";
+import { dbToLength, lengthToDb, micDbToLength } from "./level";
 import type { GlRect, GlWave, GridLine } from "./slot";
 
 /** A slot's box in device pixels of its canvas (whole numbers; it may reach past the canvas). `hair` is line.hair: always one device pixel. */
@@ -129,9 +130,9 @@ export function paintMeter(
 
 /**
  * Standing bars on the ground, one per band (0..255 is the box's height), sharing the box's width; the last device pixel of
- * each band's share is left as ground, so the bars stay apart.
+ * each band's share is left as ground, so the bars stay apart. `color`: every bar in it; else SPECTRUM.bars by band.
  */
-export function paintSpectrum(out: Batch, box: Box, bands: Uint8Array): void {
+export function paintSpectrum(out: Batch, box: Box, bands: Uint8Array, color?: ColorName): void {
   const { x0, y0, x1, y1 } = box;
   out.rect(x0, y0, x1, y1, rgb(SPECTRUM.ground));
   const n = bands.length;
@@ -139,8 +140,24 @@ export function paintSpectrum(out: Batch, box: Box, bands: Uint8Array): void {
     const top = y1 - Math.round(((y1 - y0) * bands[i]!) / 255);
     const left = x0 + Math.round(((x1 - x0) * i) / n);
     const right = x0 + Math.round(((x1 - x0) * (i + 1)) / n) - HAIR;
-    if (top < y1 && right > left) out.rect(left, top, right, y1, rgb(SPECTRUM.bars[Math.min(Math.floor(i / SPECTRUM.perColor), SPECTRUM.bars.length - 1)]!));
+    if (top < y1 && right > left)
+      out.rect(left, top, right, y1, rgb(color ?? SPECTRUM.bars[Math.min(Math.floor(i / SPECTRUM.perColor), SPECTRUM.bars.length - 1)]!));
   }
+}
+
+/**
+ * M3: a loudness (LUFS) as one bar growing to the right on the ground, on the meters' scale (spec 2 "Scale marks of meters and
+ * faders"): meter.ok, then meter.hot past where a meter turns hot. `null`: silence, the ground alone.
+ */
+export function paintLoudness(out: Batch, box: Box, lufs: number | null): void {
+  const { x0, y0, x1, y1 } = box;
+  out.rect(x0, y0, x1, y1, rgb(METER.ground));
+  if (lufs === null) return;
+  const length = x1 - x0;
+  const end = Math.round(length * dbToLength(lufs));
+  const hotFrom = Math.round(length * METER_HOT_FROM);
+  if (end > 0) out.rect(x0, y0, x0 + Math.min(end, hotFrom), y1, rgb(METER.ok));
+  if (end > hotFrom) out.rect(x0 + hotFrom, y0, x0 + end, y1, rgb(METER.hot));
 }
 
 /** Bar lines, and `beats` lines to a bar when it is more than 1. `firstBarX` and `barPx` are device pixels and may have a fraction. */

@@ -1,6 +1,9 @@
 use std::time::Instant;
 
-use meloet_engine::{BlockTiming, Engine, EngineConfig, EngineParts, Instrument, InstrumentEvent};
+use meloet_engine::{
+    BlockTiming, Engine, EngineCommand, EngineConfig, EngineParts, Instrument, InstrumentEvent,
+    MixStrip,
+};
 
 use super::*;
 
@@ -216,4 +219,128 @@ fn a_new_reader_or_lost_frames_start_the_bands_from_silence() {
     parts.engine = engine;
     side.set_reader(parts.handle.take_analysis().expect("the new reader"));
     assert_eq!(side.readings.spectrum(), [0; SPECTRUM_BANDS]);
+}
+
+/// Renders `seconds` of the engine, taking what the ring holds every 16 blocks.
+fn hear(parts: &mut EngineParts, side: &mut Side, seconds: f64) {
+    let total = (seconds * 48_000.0 / 256.0).round() as usize;
+    let mut done = 0;
+    while done < total {
+        let n = 16.min(total - done);
+        blocks(parts, n);
+        side.pump();
+        done += n;
+    }
+}
+
+fn tell(parts: &mut EngineParts, command: EngineCommand) {
+    assert!(parts.handle.send(command).is_ok());
+}
+
+/// Short-term, integrated, true peak.
+fn loudness(side: &Side) -> [i16; 3] {
+    let r = &side.readings;
+    [r.lufs_short(), r.lufs_integrated(), r.true_peak()]
+}
+
+/// Within 0.2 dB of `want`.
+fn reads(value: i16, want: f64) -> bool {
+    value != TELEMETRY_NO_VALUE && (f64::from(value) / 100.0 - want).abs() <= 0.2
+}
+
+const NONE: [i16; 3] = [TELEMETRY_NO_VALUE; 3];
+
+#[test]
+fn the_loudness_is_worked_only_while_it_is_wanted() {
+    let mut parts = sine_engine(1000.0);
+    let mut side = Side::new(Arc::default());
+    side.set_reader(parts.handle.take_analysis().expect("the reader"));
+    hear(&mut parts, &mut side, 1.0);
+    assert!(
+        side.loudness.is_none(),
+        "no meters while nothing shows them"
+    );
+    assert_eq!(loudness(&side), NONE);
+
+    side.set_loudness(true);
+    hear(&mut parts, &mut side, 4.0);
+    // A full-scale 1 kHz sine on both sides is 0 LUFS; the song does not play.
+    let [short, integrated, peak] = loudness(&side);
+    assert!(reads(short, 0.0), "{short}");
+    assert_eq!((integrated, peak), (TELEMETRY_NO_VALUE, TELEMETRY_NO_VALUE));
+
+    side.set_loudness(false);
+    assert!(side.loudness.is_none());
+    assert_eq!(loudness(&side), NONE, "none at once");
+    hear(&mut parts, &mut side, 1.0);
+    assert_eq!(loudness(&side), NONE);
+}
+
+#[test]
+fn a_play_is_measured_from_its_start_and_its_values_stay_after_it_stops() {
+    let mut parts = sine_engine(1000.0);
+    let mut side = Side::new(Arc::default());
+    side.set_reader(parts.handle.take_analysis().expect("the reader"));
+    side.set_loudness(true);
+    hear(&mut parts, &mut side, 1.0);
+
+    tell(&mut parts, EngineCommand::Play { from: 0 });
+    hear(&mut parts, &mut side, 5.0);
+    let [short, integrated, peak] = loudness(&side);
+    assert!(reads(short, 0.0) && reads(integrated, 0.0) && reads(peak, 0.0));
+
+    // Stopped, 12 dB quieter: what is heard now changes, the play's values stay.
+    tell(&mut parts, EngineCommand::Stop { t_us: 0 });
+    let quieter = EngineCommand::SetStrip {
+        strip: MixStrip::Master,
+        gain: 0.25,
+        pan: 0.0,
+    };
+    tell(&mut parts, quieter);
+    hear(&mut parts, &mut side, 4.0);
+    let [short, integrated, peak] = loudness(&side);
+    assert!(reads(short, -12.04), "{short}");
+    assert!(reads(integrated, 0.0) && reads(peak, 0.0));
+
+    // The next play starts anew: only what it plays counts.
+    tell(&mut parts, EngineCommand::Play { from: 0 });
+    hear(&mut parts, &mut side, 0.1);
+    assert_eq!(loudness(&side)[1], TELEMETRY_NO_VALUE, "under 400 ms");
+    hear(&mut parts, &mut side, 5.0);
+    let [_, integrated, peak] = loudness(&side);
+    assert!(reads(integrated, -12.04), "{integrated}");
+    assert!(reads(peak, -12.04), "{peak}");
+}
+
+#[test]
+fn when_no_frames_come_what_is_heard_now_goes_and_the_play_stays() {
+    let mut parts = sine_engine(1000.0);
+    let mut side = Side::new(Arc::default());
+    side.set_reader(parts.handle.take_analysis().expect("the reader"));
+    side.set_loudness(true);
+    tell(&mut parts, EngineCommand::Play { from: 0 });
+    hear(&mut parts, &mut side, 5.0);
+    for _ in 0..STALLED_WAKES {
+        side.pump();
+    }
+    assert!(reads(loudness(&side)[0], 0.0), "a large block on its way");
+    side.pump();
+    let [short, integrated, peak] = loudness(&side);
+    assert_eq!(short, TELEMETRY_NO_VALUE);
+    assert!(reads(integrated, 0.0) && reads(peak, 0.0));
+}
+
+#[test]
+fn a_new_reader_starts_the_loudness_from_silence() {
+    let mut parts = sine_engine(1000.0);
+    let mut side = Side::new(Arc::default());
+    side.set_loudness(true);
+    side.set_reader(parts.handle.take_analysis().expect("the reader"));
+    tell(&mut parts, EngineCommand::Play { from: 0 });
+    hear(&mut parts, &mut side, 5.0);
+    assert!(reads(loudness(&side)[1], 0.0));
+    let (engine, _) = parts.handle.rebuild();
+    parts.engine = engine;
+    side.set_reader(parts.handle.take_analysis().expect("the new reader"));
+    assert_eq!(loudness(&side), NONE);
 }

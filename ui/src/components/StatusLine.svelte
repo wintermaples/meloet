@@ -458,6 +458,8 @@
         return plain("msg.nothingToKeep");
       case "songTooLong":
         return plain("msg.songTooLong");
+      case "monoListening":
+        return plain("msg.monoListening");
       case "instrumentReplaced":
         return withLanes(
           plain("msg.instrumentReplaced", {

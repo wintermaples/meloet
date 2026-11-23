@@ -699,6 +699,7 @@ fn every_mixer_command_on_every_strip_never_touches_the_allocator() {
                 rig.send(EngineCommand::ClearTrack { track });
                 rig.instrument(track, 0.01, 0.01);
             }
+            6 => rig.send(EngineCommand::SetMonoListen { on: next(2) == 0 }),
             _ => {}
         }
         let frames = [64, 256, 1024, 2048, 333, 1][block % 6];
@@ -904,5 +905,70 @@ fn the_analysis_ring_has_the_master_after_its_inserts_and_before_the_test_tone()
     // A dropped reader stops the writing.
     drop(reader);
     rig.run(256);
+    rig.check_rules();
+}
+
+#[test]
+fn mono_listen_mixes_the_masters_two_sides_into_one_after_its_inserts_over_the_ramp() {
+    let mut rig = Rig::new();
+    let meters = rig.parts.handle.meters().clone();
+    let add = rig.fx(Op::Add, 0.05);
+    rig.effect(MixStrip::Master, 0, add);
+    near(rig.settled(), (0.15, 0.25));
+    let mut reader = rig.parts.handle.take_analysis().expect("once");
+
+    rig.send(EngineCommand::SetMonoListen { on: true });
+    let (left, right) = rig.run(RAMP + 256);
+    // Half the difference of the two sides, moved over the ramp in equal steps.
+    let step = 0.05 / RAMP as f32;
+    assert!(
+        largest_step(&left) <= step * 1.01,
+        "{}",
+        largest_step(&left)
+    );
+    assert!(largest_step(&right) <= step * 1.01);
+    assert!((left[RAMP / 2] - 0.175).abs() < 2.0 * step);
+    for i in RAMP..RAMP + 256 {
+        near((left[i], right[i]), (0.2, 0.2));
+    }
+    // The master's meter and the analysis ring hear what comes out.
+    meters.take_master_peak();
+    rig.run(256);
+    let [l, r] = meters.take_master_peak();
+    near((l, r), (0.2, 0.2));
+    let mut frames = Vec::new();
+    reader.read(|part| frames.extend_from_slice(part));
+    let last = frames.last().copied().expect("frames");
+    near((last[0], last[1]), (0.2, 0.2));
+
+    // A side alone comes out on both at half; a centred sound is as loud as before.
+    rig.effect(MixStrip::Master, 0, None);
+    rig.instrument(0, 0.4, 0.0);
+    near(rig.settled(), (0.2, 0.2));
+    rig.instrument(0, 0.3, 0.3);
+    near(rig.settled(), (0.3, 0.3));
+
+    rig.send(EngineCommand::SetMonoListen { on: false });
+    rig.instrument(0, 0.1, 0.2);
+    near(rig.settled(), (0.1, 0.2));
+    rig.check_rules();
+}
+
+#[test]
+fn the_analysis_reader_learns_when_the_song_starts_to_play() {
+    let mut rig = Rig::new();
+    let reader = rig.parts.handle.take_analysis().expect("once");
+    assert_eq!(reader.playing(), (false, 0));
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.run(256);
+    assert_eq!(reader.playing(), (true, 1));
+    rig.run(256);
+    assert_eq!(reader.playing(), (true, 1), "the same play");
+    rig.send(EngineCommand::Stop { t_us: 0 });
+    rig.run(256);
+    assert_eq!(reader.playing(), (false, 1));
+    rig.send(EngineCommand::Play { from: 0 });
+    rig.run(256);
+    assert_eq!(reader.playing(), (true, 2));
     rig.check_rules();
 }

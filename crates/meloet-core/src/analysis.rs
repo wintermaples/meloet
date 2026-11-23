@@ -7,8 +7,9 @@
 //! reads without waiting. A reader of a new engine ([`Analysis::set_reader`]), a new rate or
 //! frames the ring had no room for start the analysis afresh.
 //!
-//! The bands ([`spectrum`]) are worked only while 「音の動きを見せる」 is on
-//! ([`Analysis::set_spectrum`]); off, they read 0.
+//! Only what the screen shows is worked ([`Analysis::want`]): the bands ([`spectrum`]) while
+//! 「音の動きを見せる」 is on or the mixer is open, the loudness ([`loudness`]) while the mixer
+//! is open. What is not worked reads 0 (the bands) or none (the loudness).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI16, AtomicU8, AtomicU64, Ordering::Relaxed};
@@ -19,8 +20,10 @@ use std::time::Duration;
 use meloet_engine::AnalysisReader;
 use meloet_protocol::{SPECTRUM_BANDS, TELEMETRY_NO_VALUE};
 
+use loudness::Loudness;
 use spectrum::Spectrum;
 
+pub mod loudness;
 pub mod spectrum;
 
 /// How often the thread takes what is in the ring: a tenth of what the ring holds at 96 kHz.
@@ -78,9 +81,18 @@ impl Readings {
     }
 }
 
+/// What the screen shows of the analysis: only that is worked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Wants {
+    /// The 24 bands: 「音の動きを見せる」 (E7), or the mixer's 「仕上げのメーター」 (M3).
+    pub spectrum: bool,
+    /// The loudness and the true peak: 「仕上げのメーター」.
+    pub loudness: bool,
+}
+
 enum Msg {
     Reader(AnalysisReader),
-    Spectrum(bool),
+    Wants(Wants),
     Quit,
 }
 
@@ -89,6 +101,8 @@ pub(crate) struct Analysis {
     tx: Sender<Msg>,
     thread: Option<JoinHandle<()>>,
     readings: Arc<Readings>,
+    /// As last told; nothing at the start.
+    wants: Wants,
 }
 
 impl Analysis {
@@ -108,6 +122,7 @@ impl Analysis {
             tx,
             thread,
             readings,
+            wants: Wants::default(),
         }
     }
 
@@ -116,9 +131,12 @@ impl Analysis {
         let _ = self.tx.send(Msg::Reader(reader));
     }
 
-    /// 「音の動きを見せる」 (E7): off at the start.
-    pub fn set_spectrum(&self, on: bool) {
-        let _ = self.tx.send(Msg::Spectrum(on));
+    /// Nothing is wanted at the start. The same again is not sent.
+    pub fn want(&mut self, wants: Wants) {
+        if wants != self.wants {
+            self.wants = wants;
+            let _ = self.tx.send(Msg::Wants(wants));
+        }
     }
 
     pub fn readings(&self) -> &Arc<Readings> {
@@ -144,6 +162,13 @@ struct Side {
     readings: Arc<Readings>,
     spectrum: Spectrum,
     spectrum_on: bool,
+    /// `None` while off, or at a rate the meters do not take.
+    loudness: Option<Loudness>,
+    loudness_on: bool,
+    /// `AnalysisReader::playing`'s count of plays as last seen.
+    plays: u32,
+    /// Frames fed to the loudness since its readings were written.
+    unread: usize,
     /// Wakes in a row that found no frames.
     idle: u32,
 }
@@ -157,6 +182,10 @@ impl Side {
             readings,
             spectrum: Spectrum::new(0),
             spectrum_on: false,
+            loudness: None,
+            loudness_on: false,
+            plays: 0,
+            unread: 0,
             idle: 0,
         }
     }
@@ -165,7 +194,10 @@ impl Side {
         loop {
             match rx.recv_timeout(ANALYSIS_TICK) {
                 Ok(Msg::Reader(reader)) => self.set_reader(reader),
-                Ok(Msg::Spectrum(on)) => self.set_spectrum(on),
+                Ok(Msg::Wants(wants)) => {
+                    self.set_spectrum(wants.spectrum);
+                    self.set_loudness(wants.loudness);
+                }
                 Ok(Msg::Quit) | Err(RecvTimeoutError::Disconnected) => return,
                 Err(RecvTimeoutError::Timeout) => {}
             }
@@ -176,6 +208,7 @@ impl Side {
     fn set_reader(&mut self, reader: AnalysisReader) {
         self.dropped = reader.dropped();
         self.sample_rate = reader.sample_rate();
+        self.plays = reader.playing().1;
         self.reader = Some(reader);
         self.afresh();
     }
@@ -188,11 +221,35 @@ impl Side {
         }
     }
 
+    fn set_loudness(&mut self, on: bool) {
+        if on != self.loudness_on {
+            self.loudness_on = on;
+            self.loudness = None;
+            if on {
+                self.restart_loudness();
+            } else {
+                self.write_loudness();
+            }
+        }
+    }
+
     /// What was heard before does not join what comes next.
     fn afresh(&mut self) {
         self.spectrum.restart(self.sample_rate);
         self.write_spectrum();
-        // round12 stub: M3 (the loudness meters start anew)
+        if self.loudness_on {
+            self.restart_loudness();
+        }
+    }
+
+    /// The meters start from silence; made anew only for another rate.
+    fn restart_loudness(&mut self) {
+        match &mut self.loudness {
+            Some(loudness) if loudness.rate() == self.sample_rate => loudness.restart(),
+            _ => self.loudness = Loudness::new(self.sample_rate),
+        }
+        self.unread = 0;
+        self.write_loudness();
     }
 
     /// Takes what is in the ring. Returns how many frames.
@@ -207,19 +264,44 @@ impl Side {
                 self.afresh();
             }
         }
+        let (playing, plays) = self
+            .reader
+            .as_ref()
+            .map_or((false, self.plays), AnalysisReader::playing);
+        if plays != self.plays {
+            self.plays = plays;
+            if let Some(loudness) = &mut self.loudness {
+                loudness.start_play();
+                self.unread = 0;
+                self.write_loudness();
+            }
+        }
         let spectrum_on = self.spectrum_on;
         let Side {
-            reader, spectrum, ..
+            reader,
+            spectrum,
+            loudness,
+            ..
         } = self;
+        let mut fed = 0;
         let frames = reader.as_mut().map_or(0, |reader| {
             reader.read(|frames| {
                 if spectrum_on {
                     spectrum.push(frames);
                 }
-                // round12 stub: M3 (ebur128)
+                if let Some(loudness) = loudness.as_mut() {
+                    loudness.feed(frames, playing);
+                    fed += frames.len();
+                }
             })
         }) + dropped_frames;
         self.readings.frames.fetch_add(frames as u64, Relaxed);
+        self.unread += fed;
+        // The readings sum the last 3 s: ten times a second is often enough.
+        if self.unread >= (self.sample_rate / 10).max(1) as usize {
+            self.unread = 0;
+            self.write_loudness();
+        }
         self.idle = if frames == 0 {
             self.idle.saturating_add(1)
         } else {
@@ -231,7 +313,28 @@ impl Side {
             }
             self.write_spectrum();
         }
+        if self.idle == STALLED_WAKES + 1
+            && let Some(loudness) = &mut self.loudness
+        {
+            // The stream stopped: nothing is heard now; what the play measured stays.
+            loudness.stop_hearing();
+            self.write_loudness();
+        }
         frames
+    }
+
+    /// None while off.
+    fn write_loudness(&self) {
+        let loudness = self.loudness.as_ref();
+        let r = &self.readings;
+        r.lufs_short
+            .store(hundredths(loudness.and_then(Loudness::short_term)), Relaxed);
+        r.lufs_integrated
+            .store(hundredths(loudness.and_then(Loudness::integrated)), Relaxed);
+        r.true_peak.store(
+            hundredths(loudness.and_then(Loudness::true_peak_db)),
+            Relaxed,
+        );
     }
 
     fn write_spectrum(&self) {
@@ -240,6 +343,15 @@ impl Side {
             band.store(bar, Relaxed);
         }
     }
+}
+
+/// In the telemetry's units: hundredths, `TELEMETRY_NO_VALUE` for none.
+fn hundredths(value: Option<f64>) -> i16 {
+    value.map_or(TELEMETRY_NO_VALUE, |v| {
+        (v * 100.0)
+            .round()
+            .clamp(-f64::from(i16::MAX), f64::from(i16::MAX)) as i16
+    })
 }
 
 #[cfg(test)]

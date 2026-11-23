@@ -96,8 +96,13 @@ export type GlSlot =
    * right half, ground meter.ground.mic) with a white line at `peakDb`, the peak of the last second (the same number as the dB beside it).
    */
   | { kind: "meter"; source: MeterSource; gap: number; vertical?: boolean; mic?: { peakDb: number } }
-  /** The master's sound from low to high (E7): the telemetry's 24 bands as standing bars, one device pixel apart. */
-  | { kind: "spectrum" }
+  /**
+   * The master's sound from low to high (E7): the telemetry's 24 bands as standing bars, one device pixel apart.
+   * `color`: every bar in it (M3, 「仕上げのメーター」); else the track colors of the top band.
+   */
+  | { kind: "spectrum"; color?: ColorName }
+  /** M3: the short-term loudness of the master (the telemetry's `lufsShort`) as one bar growing to the right, on the meters' scale. */
+  | { kind: "loudness" }
   /** Bar lines of the arrange area. `barPx` and `firstBarX` are CSS px. `beats` > 1: beat lines too, that many to a bar. */
   | { kind: "arrangeGrid"; barPx: number; firstBarX: number; beats?: number }
   /**

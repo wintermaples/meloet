@@ -1,4 +1,4 @@
-<!-- The content of the mixer band (mock F4-Mixer): the row of tracks, returns A / B, and the master strip. Scrolls sideways; when the band is low, only the strips
+<!-- The content of the mixer band (mock F4-Mixer): the row of tracks, returns A / B, the master strip and 「仕上げのメーター」 (FinishMeters, round 12 M3). Scrolls sideways; when the band is low, only the strips
      scroll up and down (spec 2: at first the faders and meters at the bottom are shown, and scrolling up shows the inserts). Keeps the position from the bottom when the height changes.
      Meters are one surface in this box's WebGL region mixerMeters (docs/architecture.md 19-5). With more than 10 tracks, at 30 Hz, the left and right halves are drawn one frame each (gl/engine.ts, architecture 7).
      Pressing a plugin instrument slot does 「えらぶ ＋ 窓」 like an insert (SelectInstrument). Replacing is 「音源を入れかえる…」 in the context menu (user:2026-11-19).
@@ -16,6 +16,7 @@
   import { openShelf } from "../tracks.svelte";
   import { vocalInputRows } from "../trackMenu";
   import Strip from "./Strip.svelte";
+  import FinishMeters from "./FinishMeters.svelte";
   import { mixerLivePosition, shownPosition } from "../automation/autoState.svelte";
   import { hasLaneRef, laneMoves, laneOf, panAt, type AutoLook, type StripAuto } from "../automation/laneValue";
   import { fracToDb } from "./scale";
@@ -254,6 +255,7 @@
         arm={off}
         auto={noAuto}
       />
+      <FinishMeters />
     </div>
   </div>
   <VScrollbar total={scroll.height} visible={scroll.viewH} offset={scroll.top} onscroll={(top) => view && ((view.scrollTop = top), onScroll())} />

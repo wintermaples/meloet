@@ -46,7 +46,6 @@ fn the_commands_of_round_12_waves_3_and_4_are_taken_and_change_nothing_yet() {
             value: 80.0,
             commit: true,
         },
-        Command::SetMonoListen { on: true },
         Command::DuplicateSection { marker: 99 },
         Command::DeleteSection { marker: 99 },
         Command::InsertSpace {

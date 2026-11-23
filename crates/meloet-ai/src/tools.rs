@@ -177,7 +177,7 @@ pub struct NoteArgs {
 
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct WriteNotesArgs {
-    /// The track's number (from 1): the notes go into the clip that holds the earliest
+    /// The track (its number from 1, or its id): the notes go into the clip that holds the earliest
     /// note's start (it grows by bars), or, when no clip is there, into a new clip from the
     /// head of that note's bar: 4 bars long or up to the next clip, and longer when the
     /// notes need it (to the end of the bar that holds the last note's end). When another
@@ -213,8 +213,8 @@ pub struct DeleteNotesArgs {
 pub struct CreateClipArgs {
     /// The keys track: its number (from 1) or its id ("id:7").
     pub track: TrackRef,
-    /// Where, as "bar.beat.tick": the clip starts at the head of that bar and is 4 bars long,
-    /// or up to the next clip.
+    /// Where, as "bar.beat.tick": the clip starts at the head of that bar. Without `bars`
+    /// or `end` it is 4 bars long, or up to the next clip.
     pub at: String,
     /// How many bars long the clip is. Give this or `end`, or neither for 4 bars.
     #[serde(default)]

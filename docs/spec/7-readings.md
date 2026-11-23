@@ -400,7 +400,7 @@ In the "Basis" column: "spec 3" is chapter 3 of this spec; "mock Main" is a mock
 
 | Where | Rule | Basis |
 |---|---|---|
-| Pasted notes that go outside the clip | Provisional, against the body (spec 3, 82 says paste stays inside the clip; asked in [B-96-4](open-questions.md)): they are kept, and the clip grows in whole bars, the same as writing outside the clip. When it cannot grow, nothing is pasted and the status line says 「ほかのクリップと重なるので、貼りつけませんでした。」. | the developers' provisional decision (the owner's report: notes could not be pasted into a clip of another track) |
+| Pasted notes that go outside the clip | Now in the body (spec 3, 82; the owner's decision, user:2026-11-23): the clip grows in whole bars. | the owner's decision |
 | Mod V and 「編集 ▸ 貼りつけ」 | Paste what was copied or cut last. If that was notes and the piano roll is open with a clip shown, the notes go into that clip even when the keys point at the arrange. If it was clips, clips are pasted as before. The 「貼りつけ」 of a context menu pastes the kind of the place that was pressed. | the developers' reading |
 | Where Mod V puts notes | At the play line (snapped to the grid) when the play line is inside the shown clip; otherwise at the start of that clip. | the developers' reading |
 

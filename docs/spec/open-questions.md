@@ -156,9 +156,3 @@ Sent back at the end of round 8 with the items above:
 - Question: the built-in kits call key 47 「ミッドタム」, but the table of spec 3 for SF2 kits (GM) calls 47 「ミッドタム 2」 and 48 「ミッドタム」.
 - Now: the built-in kits use 「ミッドタム」 for 47 (`crates/meloet-model/src/drums.rs`).
 - From: chapter 7, A-11.
-
-### B-96-4 Pasted notes that go outside the clip
-
-- Question: spec 3 (82) keeps pasted notes inside the clip. Should paste grow the clip in whole bars instead, the same as writing and moving outside the clip?
-- Now: paste grows the clip (round 10 fix for the owner's report that notes could not be pasted into a clip of another track). When the clip cannot grow because of the next clip, nothing is pasted and the status line says 「ほかのクリップと重なるので、貼りつけませんでした。」. Mod V pastes at the start of the shown clip when the play line is outside it.
-- From: the developers' provisional decision (chapter 7, A-25).

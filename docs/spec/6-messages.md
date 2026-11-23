@@ -160,8 +160,8 @@ There are three rules for the wording. Say first what happened. If the song is s
 | Measuring the latency | 測っています 3 / 5 | The 「遅れを測る」 dialog | やめる（Esc）/ この数を使う |
 | Latency cannot be measured | 音が小さくて測れませんでした。ヘッドホンの音量を上げて、もう一度測ってください。 | The 「遅れを測る」 dialog | もう一度 |
 | Not running at the asked size | 頼んだ 128 ではなく、256 で動いています（PC の設定で決まっています）。meloet は PC 全体の設定は変えません。 | Sound settings ▸ advanced settings | — |
-| Exporting | 書き出しています 46 % ・ はじめての曲.wav ・ 残り 約 40 秒 ・ 弾けます（書き出しの音は聞こえません） | Status line | やめる |
-| Exporting in real time | 速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。 | Status line | やめる |
+| Exporting | 書き出しています 46 % ・ はじめての曲.wav ・ 残り 約 40 秒 ・ 弾けます（書き出しの音は聞こえません） | Status line (while the time left is not known yet, 「残り 約 …」 is taken out: 「はじめての曲.wav ・ 弾けます（書き出しの音は聞こえません）」 after the percent. The time left is 「N 秒」 under one minute, at least 1, and 「N 分」, rounded, otherwise; user:2026-11-24) | やめる |
+| Exporting in real time | 速く書き出せないプラグインがあるので、実時間で書き出します（3:02）。 | Status line (when the person turned on 「実時間で書き出す」: 「実時間で書き出しています（3:02）。」; user:2026-11-24) | やめる |
 | Exported | はじめての曲.wav を書き出しました（3:02 ・ 48000 Hz ・ 24 ビット）。 | Status line | フォルダをひらく |
 | Export stopped | 書き出しをやめました。途中までのファイルは消しました。 | Status line | — |
 | Tempo at the song start (start of a ramp) chosen | 曲の頭のテンポをえらんでいます ・ 96.00 から 5 小節目の 120.00 へ、だんだん速く | Status line | — |
@@ -176,7 +176,7 @@ There are three rules for the wording. Say first what happened. If the song is s
 | Broken file, 3 or more channels | 「声.wav」はこわれているので読めません。 ・ 「8ch.wav」は 3 チャンネル以上なので読めません（読めるのはモノとステレオ）。 | Status line | — |
 | Copying the audio while saving | 保存しています ・ 音のファイルを写しています 3 / 12（80 / 240 MB） | Status line | — |
 | Dragging in one audio file | ここに落とすと、そのトラックの落とした位置に入れます。 (when not over a vocal track: 「新しい歌のトラックに入れます。」) | The box in the middle (under the name). The status line shows 「音のファイルを持ってきています ・ 落とすと、枠の所に入れます」 | — |
-| Moving a fade | 歌 テイク 1 の前のフェード 0. 1. 0480（ドラッグ中）・ 離すと決まります ・ やめるには Esc | Status line (the reading in place is 「0. 1. 0480」) | — |
+| Moving a fade | 歌 テイク 1 の前のフェード 0. 1. 0480（ドラッグ中）・ 離すと決まります ・ やめるには Esc | Status line (the reading in place is 「0. 1. 0480」. For the fade at the end, 「後」 of mock F7-AudioEdit in place of 「前」: 「歌 テイク 1 の後のフェード …」; user:2026-11-24) | — |
 | Disk too slow | 音のファイルを読むのが間に合わず、歌が少し切れました（ディスクがいそがしかったため）。 | Status line | — |
 | Searched for the tempo of this sound | この音のテンポは 120.00 くらいです（さがした数を入れました）。 ・ When it is the same number: 「…くらいです（いまの数と同じです）。」 ・ When none is found: 「この音のテンポは見つかりませんでした。数を打ちこんでください。」 | Status line | — |
 | Moving the pitch | 音の高さ +2 半音 +30 セント（ドラッグ中） | Status line (the reading in place is 「+2 ・ +30」) | — |
@@ -197,6 +197,6 @@ There are three rules for the wording. Say first what happened. If the song is s
 | Song file is broken | このファイルは読めませんでした。自動で残してある 1 つ前の状態からなら開けます。 | Dialog | 1 つ前を開く / やめる |
 | Processing cannot keep up | PC の処理が追いつかず、音がとぎれました。音の設定でバッファを大きくすると、とぎれにくくなります。 | Status line | 音の設定をひらく |
 | Before export | いちばん大きい所 −6.2 dB ・ 音割れはありません | The export dialog | — |
-| Export would clip | いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。 | The export dialog | このまま書き出す / やめる |
+| Export would clip | いちばん大きい所が 0 dB をこえています。このままだと音が割れます。マスターを下げてから書き出すのがおすすめです。 | Status line, when clipping is found only after the export. In the export dialog the check row uses the 41-A texts of chapter 3 instead (user:2026-11-24) | — (status line) / このまま書き出す / やめる (the export dialog, with the 41-A texts) |
 | Export finished | 書き出しました: \~/ミュージック/はじめての曲/はじめての曲.wav | Status line | フォルダをひらく |
 | Way back to the arrange | Esc ・ ひとつ戻る。何度か押すとアレンジへ | Right end of the band tab row (when a band is open) | — |

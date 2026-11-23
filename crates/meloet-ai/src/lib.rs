@@ -3,9 +3,13 @@
 //! one-thread tokio runtime, and reaches the song only through [`Meloet`].
 
 mod port;
+#[allow(dead_code)]
+mod presets;
 mod scratch;
 mod smf;
 mod song;
+#[allow(dead_code)]
+mod surge;
 mod tools;
 
 use std::path::PathBuf;

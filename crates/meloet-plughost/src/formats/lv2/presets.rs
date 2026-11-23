@@ -135,7 +135,7 @@ pub(super) fn list(
 
 /// The state names a plugin, and it is `plugin_uri`: a state that names none would stop
 /// this process when it is put back.
-fn applies(state: &State, plugin_uri: &str) -> Result<(), String> {
+pub(super) fn applies(state: &State, plugin_uri: &str) -> Result<(), String> {
     // SAFETY: a question about a state of lilv's own; the answer is not kept.
     let named = unsafe { lilv::sys::lilv_state_get_plugin_uri(state.raw().as_ptr()) };
     if named.is_null() || state.plugin_uri() != plugin_uri {
@@ -243,5 +243,32 @@ mod tests {
         ] {
             assert!(place_ok(Path::new(dir), file).is_err(), "{dir} {file}");
         }
+    }
+
+    /// A state of no plugin is told apart without asking lilv for the plugin it names, which
+    /// ends the process when there is none.
+    #[test]
+    fn a_state_that_names_no_plugin_or_another_does_not_apply() {
+        let world = livi::World::with_load_bundle("file:///nowhere/meloet-none.lv2/");
+        let features = (world.try_build_features(livi::FeaturesBuilder::default())).unwrap();
+        let turtle = |applies: &str| {
+            format!(
+                "@prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n\
+                 @prefix pset: <http://lv2plug.in/ns/ext/presets#> .\n\
+                 <urn:meloet:state> a pset:Preset {applies};\n    \
+                 lv2:port [ lv2:symbol \"gain\" ; pset:value 0.5 ] .\n"
+            )
+        };
+        let applying = |text: &str| {
+            let state = world.state_from_string(&features, text).unwrap();
+            applies(&state, "urn:meloet:test:plugin").is_ok()
+        };
+        assert!(applying(&turtle(
+            "; lv2:appliesTo <urn:meloet:test:plugin> "
+        )));
+        assert!(!applying(&turtle(
+            "; lv2:appliesTo <urn:meloet:test:other> "
+        )));
+        assert!(!applying(&turtle("")));
     }
 }

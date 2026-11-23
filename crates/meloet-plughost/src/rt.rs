@@ -19,10 +19,11 @@
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering::Relaxed, Ordering::SeqCst};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed, Ordering::SeqCst};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use meloet_plugin::ipc::futex::monotonic_ns;
 use meloet_plugin::ipc::{Bell, FromPlugin, Mapping, PluginEnd, ToPlugin, block_flags};
 
 use crate::formats::{EventSink, ProcessBlock, Processor};
@@ -193,6 +194,9 @@ impl SlotRun {
 struct Seat {
     busy: AtomicBool,
     run: UnsafeCell<Option<Box<SlotRun>>>,
+    /// The blocks run at it, and when the last one ended (`monotonic_ns`).
+    blocks: AtomicU64,
+    ended_ns: AtomicU64,
 }
 
 // SAFETY: `run` is reached only through `Seat::take`, which lets one thread in at a time.
@@ -205,6 +209,11 @@ impl Seat {
             .compare_exchange(false, true, SeqCst, SeqCst)
             .ok()
             .map(|_| Taken(self))
+    }
+
+    fn served(&self) {
+        self.ended_ns.store(monotonic_ns(), SeqCst);
+        self.blocks.fetch_add(1, SeqCst);
     }
 }
 
@@ -232,6 +241,16 @@ struct Shared {
     first_is_realtime: AtomicBool,
 }
 
+/// The blocks run at a slot, as [`Handle::blocks`] tells them.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Blocks {
+    pub count: u64,
+    /// How long ago the last one ended; `None` before the first.
+    pub since: Option<Duration>,
+    /// An audio thread is at the slot now.
+    pub in_one: bool,
+}
+
 /// The main thread's hold on the audio threads.
 pub struct Handle {
     shared: Arc<Shared>,
@@ -254,6 +273,8 @@ pub fn start(map: Arc<Mapping>, offline: bool) -> std::io::Result<Handle> {
         .map(|_| Seat {
             busy: AtomicBool::new(false),
             run: UnsafeCell::new(None),
+            blocks: AtomicU64::new(0),
+            ended_ns: AtomicU64::new(0),
         })
         .collect();
     let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
@@ -313,6 +334,8 @@ impl Handle {
                 return Err(format!("slot {slot} was not free"));
             }
             *seat.run() = Some(Box::new(run));
+            seat.0.blocks.store(0, SeqCst);
+            seat.0.ended_ns.store(0, SeqCst);
         }
         self.loaded += 1;
         if let Err(e) = self.grow() {
@@ -350,6 +373,20 @@ impl Handle {
         // A block asked for while the main thread was at the seat was passed over.
         self.bell.ring();
         Ok(taken)
+    }
+
+    /// What the slot's plugin has been run for since it was installed. Never waits.
+    pub fn blocks(&self, slot: u32) -> Blocks {
+        let Some(seat) = self.shared.seats.get(slot as usize) else {
+            return Blocks::default();
+        };
+        let ended = seat.ended_ns.load(SeqCst);
+        Blocks {
+            count: seat.blocks.load(SeqCst),
+            since: (ended > 0).then(|| Duration::from_nanos(monotonic_ns().saturating_sub(ended))),
+            // Audio threads look in at a seat only for a moment unless they run a block.
+            in_one: seat.busy.load(SeqCst),
+        }
     }
 
     /// The person took hold of a parameter in the window, or let go of it.
@@ -507,8 +544,10 @@ fn run(shared: Arc<Shared>, first: bool) {
             // again when it is done, and the main thread rings the bell when it leaves one.
             if let Some(mut taken) = seat.take()
                 && let Some(run) = taken.run()
+                && run.serve()
             {
-                worked |= run.serve();
+                seat.served();
+                worked = true;
             }
         }
         if !worked {

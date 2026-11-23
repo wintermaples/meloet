@@ -459,4 +459,10 @@ fn real_presets() {
     until_ok(&mut c, "get_plugin_state", lv2_at.clone(), scan);
     assert_eq!(param_values(&mut c, &lv2_at), poppy_values);
     eprintln!("opened again with the preset's values");
+    // The same preset again is no change: the plugin says the state the song has.
+    let before = steps(&r);
+    let again = ok(&mut c, "load_preset", with);
+    eprintln!("PoppySnare again after opening: {again}");
+    assert_eq!(again["changed"], false, "{again}");
+    assert_eq!(steps(&r), before);
 }

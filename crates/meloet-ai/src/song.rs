@@ -6,7 +6,21 @@ use meloet_model::{
     BuiltinInstrument, InstrumentGroup, InstrumentRef, ScaleMode, TICKS_PER_QUARTER, TempoMap,
     Track,
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
+
+/// A preset of an added SF2 file.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
+pub struct Sf2Arg {
+    /// The file's name, as list_instruments gives it.
+    #[schemars(length(min = 1, max = 255))]
+    pub file: String,
+    /// 0 to 128 (128 holds the drum kits).
+    #[schemars(range(min = 0, max = 128))]
+    pub bank: u32,
+    #[schemars(range(min = 0, max = 127))]
+    pub program: u32,
+}
 
 const NAMES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
@@ -66,8 +80,11 @@ pub fn parse_at(map: &TempoMap, text: &str) -> Result<u64, String> {
 pub fn sound_name(instrument: &InstrumentRef) -> String {
     match instrument {
         InstrumentRef::Builtin(b) => b.name().to_owned(),
-        InstrumentRef::Plugin(p) => format!("plugin: {}", p.name),
-        InstrumentRef::Sf2(s) => format!("sf2: {} ({})", s.name, s.file),
+        InstrumentRef::Plugin(p) => format!("plugin: {} ({})", p.name, p.key),
+        InstrumentRef::Sf2(s) => format!(
+            "sf2: {} ({} bank {} program {})",
+            s.name, s.file, s.bank, s.program
+        ),
     }
 }
 
@@ -136,7 +153,7 @@ pub fn overview(read: &AiSong) -> Value {
         .max()
         .unwrap_or(0);
     let markers: Vec<Value> = (doc.markers.iter())
-        .map(|m| json!({ "name": m.name, "at": at(&map, m.tick), "tick": m.tick }))
+        .map(|m| json!({ "id": m.id.0, "name": m.name, "at": at(&map, m.tick), "tick": m.tick }))
         .collect();
     let scale = session.roll.scale;
     let mut clips = Vec::new();
@@ -174,6 +191,9 @@ pub fn overview(read: &AiSong) -> Value {
         },
         "busy": read.busy.map(busy_name),
         "undo_steps": read.undo_count,
+        "file": read.file.as_ref().map(|f| f.display().to_string()),
+        "unsaved_changes": read.unsaved,
+        "sample_rate": read.sample_rate,
         "tracks": tracks,
         "clips": clips,
     })

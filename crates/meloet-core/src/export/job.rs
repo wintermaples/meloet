@@ -242,7 +242,7 @@ fn go(
 
 /// `<name>.<ending>`, with what a file name cannot hold taken out, and a number after it
 /// when a track before has the same name.
-fn free_name(track: &str, ending: &str, taken: &[String]) -> String {
+pub(crate) fn free_name(track: &str, ending: &str, taken: &[String]) -> String {
     let clean: String = track
         .chars()
         .filter(|c| !matches!(c, '/' | '\\' | '\0') && !c.is_control())

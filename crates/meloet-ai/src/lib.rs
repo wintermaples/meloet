@@ -3,6 +3,7 @@
 //! one-thread tokio runtime, and reaches the song only through [`Meloet`].
 
 mod port;
+mod scratch;
 mod song;
 mod tools;
 
@@ -13,7 +14,9 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use meloet_core::Core;
-use meloet_core::ai::{AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiSong};
+use meloet_core::ai::{
+    AiAnswer, AiAsk, AiLevels, AiMeasure, AiRefusal, AiRender, AiRendered, AiSong,
+};
 use meloet_protocol::AiPort;
 use rmcp::ServiceExt;
 use tokio::sync::mpsc;
@@ -41,6 +44,13 @@ pub trait Meloet: Send + Sync + 'static {
         progress: &mut dyn FnMut(u8),
         cancelled: &dyn Fn() -> bool,
     ) -> Result<AiLevels, AiRefusal>;
+    /// Renders into files, as `measure` goes.
+    fn render(
+        &self,
+        ask: AiRender,
+        progress: &mut dyn FnMut(u8),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<AiRendered, AiRefusal>;
     /// Does not wait.
     fn port(&self, port: AiPort);
 }
@@ -70,6 +80,16 @@ impl Meloet for CoreLink {
         core.ai_measure(ask, progress, cancelled)
     }
 
+    fn render(
+        &self,
+        ask: AiRender,
+        progress: &mut dyn FnMut(u8),
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<AiRendered, AiRefusal> {
+        let core = self.0.upgrade().ok_or(AiRefusal::Closing)?;
+        core.ai_render(ask, progress, cancelled)
+    }
+
     fn port(&self, port: AiPort) {
         if let Some(core) = self.0.upgrade() {
             core.ai_port(port);
@@ -83,6 +103,8 @@ pub struct Options {
     pub runtime_dir: Option<PathBuf>,
     /// Who may connect. Only tests set another than this process's own.
     pub expect_uid: u32,
+    /// Where the folder for rendered audio is made (`std::env::temp_dir()`).
+    pub temp_dir: PathBuf,
 }
 
 impl Options {
@@ -92,6 +114,7 @@ impl Options {
                 .filter(|d| !d.is_empty())
                 .map(PathBuf::from),
             expect_uid: port::my_uid(),
+            temp_dir: std::env::temp_dir(),
         }
     }
 
@@ -197,7 +220,12 @@ async fn run(
     options: Options,
     mut orders: mpsc::UnboundedReceiver<Order>,
 ) {
-    let tools = tools::Tools::new(meloet.clone());
+    let scratch = Arc::new(scratch::Scratch::new(
+        options.temp_dir.clone(),
+        port::my_uid(),
+    ));
+    let tools = tools::Tools::new(meloet.clone(), scratch.clone());
+    let mut sweep = tokio::time::interval(Duration::from_secs(10 * 60));
     let connections = Arc::new(AtomicUsize::new(0));
     let (ended_tx, mut ended) = mpsc::unbounded_channel::<()>();
     let mut socket: Option<Open> = None;
@@ -225,6 +253,7 @@ async fn run(
                     if let Some(open) = socket.take() {
                         open.close();
                     }
+                    scratch.clean(Duration::ZERO);
                 }
                 Some(Order::Stop) | None => break,
             },
@@ -252,10 +281,12 @@ async fn run(
                 });
             }
             _ = ended.recv() => {}
+            _ = sweep.tick() => scratch.clean(scratch::KEEP),
         }
     }
     if let Some(open) = socket.take() {
         open.close();
     }
+    scratch.clean(Duration::ZERO);
     meloet.port(AiPort::Closed);
 }

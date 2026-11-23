@@ -20,6 +20,7 @@ use meloet_protocol::{
 use super::Play;
 use super::automation::{LetGo, NAMES_ASK};
 use super::mixer::Picked;
+use crate::ai::{AiParams, AiRefusal};
 use crate::state::{Effect, PluginAsk, PluginSaid, StateAsk};
 
 /// The least time between two `ParamValues` messages: 30 a second at most.
@@ -67,6 +68,34 @@ pub(super) struct Panel {
     owed: Vec<Dragged>,
     /// A step is being made of a change the plugin has already: the drags go on.
     own_step: bool,
+    /// Lists the AI link asked for, by the plugin's ticket, until it takes them.
+    ai_lists: HashMap<u64, Vec<ParamInfo>>,
+    /// The plugins asked for a list for the AI link, and when (`now_us`).
+    ai_asked: Vec<(u64, u64)>,
+}
+
+/// The `ask` of a list of parameters for the AI link.
+const AI_PARAMS_ASK: u64 = u64::MAX - 1;
+/// How long a list asked for the AI link is waited for before it is asked again.
+const AI_ASK_AGAIN_US: u64 = 2_000_000;
+
+fn ai_param(info: ParamInfo) -> crate::ai::AiParam {
+    let steps = match info.shape {
+        ParamShape::Continuous => 0,
+        ParamShape::Stepped { steps } => steps,
+        ParamShape::Toggle => 2,
+    };
+    crate::ai::AiParam {
+        id: info.id,
+        name: info.name,
+        group: info.group,
+        value: info.value,
+        default: info.default,
+        text: info.text,
+        steps,
+        labels: info.labels,
+        automatable: info.automatable,
+    }
 }
 
 fn param_kind(info: &ParamInfo) -> ParamKind {
@@ -149,6 +178,66 @@ impl Play {
             }
             LetGo::Free => self.param_set(ticket, param, effects),
         }
+    }
+
+    /// The ticket of the plugin at `place`, when it is loaded and sounds.
+    fn ai_ticket(&self, place: PluginPlace) -> Result<u64, AiRefusal> {
+        self.doc().plugin(place).ok_or(AiRefusal::NoSuchPlugin)?;
+        (self.plugin_tickets().into_iter())
+            .find(|(p, _)| *p == place)
+            .map(|(_, ticket)| ticket)
+            .ok_or(AiRefusal::PluginNotLoaded)
+    }
+
+    /// The AI link reads the parameters of the plugin at `place`: the list the plugin gave,
+    /// or the plugin is asked for one.
+    pub(crate) fn ai_params(
+        &mut self,
+        place: PluginPlace,
+        effects: &mut Vec<Effect>,
+    ) -> Result<AiParams, AiRefusal> {
+        let ticket = self.ai_ticket(place)?;
+        if let Some(list) = self.panel.ai_lists.remove(&ticket) {
+            return Ok(AiParams::Listed(list.into_iter().map(ai_param).collect()));
+        }
+        let now = self.now_us;
+        let asked = &mut self.panel.ai_asked;
+        asked.retain(|(_, at)| now.saturating_sub(*at) < AI_ASK_AGAIN_US);
+        if !asked.iter().any(|(t, _)| *t == ticket) {
+            asked.push((ticket, now));
+            effects.push(Effect::AskPlugin {
+                ticket,
+                ask: PluginAsk::Params { ask: AI_PARAMS_ASK },
+            });
+        }
+        Ok(AiParams::Waiting)
+    }
+
+    /// The AI link sets a parameter of the plugin at `place`, as the panel does when a value
+    /// is typed: the step comes with the plugin's state. Not for a parameter a lane moves.
+    pub(crate) fn ai_set_plugin_param(
+        &mut self,
+        place: PluginPlace,
+        param: u32,
+        value: f64,
+        effects: &mut Vec<Effect>,
+    ) -> Result<(), AiRefusal> {
+        let ticket = self.ai_ticket(place)?;
+        if !value.is_finite() {
+            return Err(AiRefusal::Unchanged);
+        }
+        let key = self.ticket_lane(ticket, param);
+        if key.is_some_and(|key| self.lane_at(key).is_some()) {
+            return Err(AiRefusal::HasLane);
+        }
+        self.before_param(ticket, effects);
+        let ask = PluginAsk::SetParam {
+            param,
+            value: value.clamp(0.0, 1.0),
+        };
+        effects.push(Effect::AskPlugin { ticket, ask });
+        self.param_set(ticket, param, effects);
+        Ok(())
     }
 
     /// Before the panel changes a parameter that it is not dragging already: a drag of
@@ -543,6 +632,13 @@ impl Play {
                 ask: NAMES_ASK,
                 params,
             } => self.lane_names_listed(ticket, &params),
+            PluginSaid::Params {
+                ask: AI_PARAMS_ASK,
+                params,
+            } => {
+                self.panel.ai_asked.retain(|(t, _)| *t != ticket);
+                self.panel.ai_lists.insert(ticket, params);
+            }
             PluginSaid::Params { ask, params } => self.params_listed(ticket, ask, params),
             PluginSaid::State { ask, state } => self.state_said(ticket, ask, state, effects),
             PluginSaid::TextRead { param, read } => {

@@ -478,6 +478,7 @@ describe("録っているあいだ（モック F-ArrangeRec）", () => {
         take: 2,
         clip: 3,
         lap: 0,
+        overdub: false,
       };
     });
 

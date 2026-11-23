@@ -740,7 +740,8 @@ impl Model {
             crate::settings::DEFAULT_SCALE
         };
         Model {
-            play: Play::new(settings.metronome, settings.count_in_bars),
+            play: Play::new(settings.metronome, settings.count_in_bars)
+                .with_overdub(settings.overdub),
             new_song_unsaid: true,
             empty_dismissed: false,
             scale,
@@ -972,7 +973,10 @@ impl Model {
             }
             Input::Record(report) => self.play.report(report, &mut effects),
             Input::KeyWhileLoading => self.loading_said = self.play.target_loading(),
-            Input::Tick => self.fader_due(&mut effects),
+            Input::Tick => {
+                self.fader_due(&mut effects);
+                self.play.overdub_due(&mut effects);
+            }
             Input::CloseRequested
             | Input::SongFilePicked(_)
             | Input::FolderPicked(_)
@@ -1756,7 +1760,12 @@ impl Model {
             }
             Command::ToggleMute { track } => self.play.toggle_mute(track, effects),
             Command::ToggleSolo { track } => self.play.toggle_solo(track),
-            Command::SetOverdub { .. } => {}
+            Command::SetOverdub { on } => {
+                if self.play.overdub() != on {
+                    self.play.set_overdub(on);
+                    effects.push(Effect::SaveSettings(self.settings()));
+                }
+            }
             Command::SetVelocityFixed { on, value } => {
                 let fixed = VelocityFixed {
                     on,
@@ -2393,6 +2402,7 @@ impl Model {
             count_in_bars: self.play.count_in_bars(),
             velocity_fixed: self.velocity_fixed.on,
             fixed_velocity: self.velocity_fixed.value,
+            overdub: self.play.overdub(),
             favorites: self.favorites.clone(),
             plugin_places: self.plugins.added_places().to_vec(),
             shelf: self.catalog.settings().clone(),

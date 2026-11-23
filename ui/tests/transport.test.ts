@@ -156,7 +156,7 @@ describe("位置と時間", () => {
       ready((s) => {
         s.transport.state = "countIn";
         s.transport.position = 4 * BAR;
-        s.transport.recording = { id: 1, track: 1, from: 4 * BAR, take: 1, clip: null, lap: 0 };
+        s.transport.recording = { id: 1, track: 1, from: 4 * BAR, take: 1, clip: null, lap: 0, overdub: false };
       }),
     );
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: 4 * BAR - (3 * TPQ) / 2, state: "countIn", countInBeatsLeft: 2 }) }));
@@ -242,7 +242,7 @@ describe("カウントイン", () => {
       Transport,
       ready((s) => {
         s.transport.state = "countIn";
-        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0, overdub: false };
       }),
     );
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: -(3 * TPQ) / 2, state: "countIn", countInBeatsLeft: 2 }) }));
@@ -270,7 +270,7 @@ describe("カウントイン", () => {
           s.timeline.meterDen = den;
           s.transport.state = "countIn";
           s.transport.countInBeats = n;
-          s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+          s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0, overdub: false };
         }),
       );
       app.setTelemetry(app.telemetryWith({ position: reading({ tick: -100, state: "countIn", countInBeatsLeft: 1 }) }));
@@ -287,7 +287,7 @@ describe("カウントイン", () => {
         s.transport.state = "countIn";
         s.transport.countInBars = 2;
         s.transport.countInBeats = 8;
-        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0, overdub: false };
       }),
     );
     app.setTelemetry(app.telemetryWith({ position: reading({ tick: -3 * TPQ, state: "countIn", countInBeatsLeft: 3 }) }));
@@ -456,7 +456,7 @@ describe("横が足りないとき（仕様書 1 章 (1)、2 章「曲の ▾」
       app.setState(
         ready((s) => {
           s.transport.state = "countIn";
-          s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+          s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0, overdub: false };
         }),
       );
       flushSync();
@@ -793,7 +793,7 @@ describe("入力計の右（弾くと鳴る先）", () => {
       InputMeter,
       ready((s) => {
         s.transport.state = "countIn";
-        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0 };
+        s.transport.recording = { id: 1, track: 1, from: 0, take: 1, clip: null, lap: 0, overdub: false };
       }),
     );
     expect(text('[data-test="meter-target"]')).toBe("1 ピアノ ● テイク 1");
@@ -805,7 +805,7 @@ describe("入力計の右（弾くと鳴る先）", () => {
       InputMeter,
       ready((s) => {
         s.transport.state = "recording";
-        s.transport.recording = { id: 1, track: 1, from: 0, take: 2, clip: 3, lap: 1 };
+        s.transport.recording = { id: 1, track: 1, from: 0, take: 2, clip: 3, lap: 1, overdub: false };
       }),
     );
     app.setTelemetry(app.telemetryWith({ position: reading({ state: "recording", lap: 1 }) }));

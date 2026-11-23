@@ -397,7 +397,7 @@ describe("Arrange のマウス", () => {
     for (const state of ["recording", "countIn"] as const) {
       show((s) => {
         s.transport.state = state;
-        s.transport.recording = { id: 1, track: 2, from: 0, take: 1, clip: null, lap: 0 };
+        s.transport.recording = { id: 1, track: 2, from: 0, take: 1, clip: null, lap: 0, overdub: false };
       });
       pointer("pointermove", 300, 30);
       expect(lanes().style.cursor).toBe("default");

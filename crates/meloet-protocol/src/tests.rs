@@ -219,6 +219,7 @@ pub(super) fn sample_state() -> AppState {
                 take: 4,
                 clip: Some(4),
                 lap: 1,
+                overdub: false,
             }),
             overdub: false,
         },
@@ -1471,7 +1472,7 @@ fn state_json_is_camel_case_and_round_trips() {
     assert_eq!(v["state"]["transport"]["countInBars"], 1);
     assert_eq!(
         v["state"]["transport"]["recording"],
-        json!({"id": 3, "track": 7, "from": 4 * BAR, "take": 4, "clip": 4, "lap": 1})
+        json!({"id": 3, "track": 7, "from": 4 * BAR, "take": 4, "clip": 4, "lap": 1, "overdub": false})
     );
     assert_eq!(
         v["state"]["arrange"],

@@ -28,6 +28,8 @@ pub struct Settings {
     pub velocity_fixed: bool,
     /// 1..=127, kept while off.
     pub fixed_velocity: u8,
+    /// 「重ねる」 of the transport band (`Command::SetOverdub`).
+    pub overdub: bool,
     /// The starred instruments of the shelf.
     pub favorites: Vec<BuiltinInstrument>,
     /// The places the person added to look for plugins in, in the order they were added.
@@ -146,6 +148,7 @@ impl Default for Settings {
             count_in_bars: DEFAULT_COUNT_IN_BARS,
             velocity_fixed: false,
             fixed_velocity: DEFAULT_FIXED_VELOCITY,
+            overdub: false,
             favorites: DEFAULT_FAVORITES.to_vec(),
             plugin_places: Vec::new(),
             shelf: ShelfSettings::default(),
@@ -170,6 +173,8 @@ struct OnDisk {
     velocity_fixed: bool,
     #[serde(default = "default_fixed_velocity")]
     fixed_velocity: u8,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    overdub: bool,
     /// The names the song file uses. Missing (a file from before the shelf): the defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     favorites: Option<Vec<String>>,
@@ -315,6 +320,7 @@ pub fn load(dir: &Path) -> Settings {
                 DEFAULT_COUNT_IN_BARS
             },
             velocity_fixed: disk.velocity_fixed,
+            overdub: disk.overdub,
             pack_fetch: disk.pack_fetch,
             fixed_velocity: if (1..=127).contains(&disk.fixed_velocity) {
                 disk.fixed_velocity
@@ -360,6 +366,7 @@ pub fn save(dir: &Path, settings: &Settings) -> std::io::Result<()> {
         count_in_bars: settings.count_in_bars,
         velocity_fixed: settings.velocity_fixed,
         fixed_velocity: settings.fixed_velocity,
+        overdub: settings.overdub,
         favorites: Some(
             settings
                 .favorites
@@ -498,6 +505,7 @@ mod tests {
             count_in_bars: 2,
             velocity_fixed: true,
             fixed_velocity: 64,
+            overdub: true,
             favorites: vec![BuiltinInstrument::Sine, BuiltinInstrument::Organ],
             plugin_places: vec!["/home/me/Plugins".into(), "/opt/vst3".into()],
             shelf: ShelfSettings {
@@ -566,6 +574,7 @@ mod tests {
         assert_eq!(json["count_in_bars"], 2);
         assert_eq!(json["velocity_fixed"], true);
         assert_eq!(json["fixed_velocity"], 64);
+        assert_eq!(json["overdub"], true);
         assert_eq!(json["favorites"], serde_json::json!(["sine", "organ"]));
         assert_eq!(
             json["output"],
@@ -596,6 +605,7 @@ mod tests {
                 count_in_bars: 1,
                 velocity_fixed: false,
                 fixed_velocity: 100,
+                overdub: false,
                 favorites: vec![BuiltinInstrument::GrandPiano, BuiltinInstrument::StudioKit],
                 plugin_places: vec![],
                 shelf: ShelfSettings::default(),

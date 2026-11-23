@@ -1,15 +1,15 @@
-// 歌のクリップの音量の線とフェードの取っ手をドラッグしている間の値（画面だけが先に動く。離したときに setClipField か shiftClipGains を 1 つ送る）。
-// 取っ手と線の部品（HTML）が書き、波形を描く所（WebGL）が読んで、同じコマで波形の大きさとフェードの線を変える。
+// Values while dragging the gain line or fade handles of an audio clip (only the screen moves first; release sends one setClipField or shiftClipGains).
+// The handle and line parts (HTML) write them, and the waveform drawing (WebGL) reads them to change the waveform size and fade line in the same frame.
 
 export type AudioDragValue = {
   /** ClipView.id */
   clip: number;
   gainDb?: number;
-  /** ティック */
+  /** Ticks */
   fadeIn?: number;
-  /** ティック */
+  /** Ticks */
   fadeOut?: number;
-  /** 音量の線をいくつもいっしょに動かしている間: ほかのクリップ（ClipView.id）も、それぞれの音量を byDb だけずらして見せる（−60〜+12 で止まる）。 */
+  /** While several gain lines move together: other clips (ClipView.id) also show their gain shifted by byDb (each stops at −60 / +12). */
   shift?: { clips: readonly number[]; byDb: number };
 };
 

@@ -1,6 +1,6 @@
-// インサートの枠の右クリックの一覧（仕様書 3 章 86-1 ・ 86-2 ・ 86-3、モック R9-Inserts: 入れかえる… ・ 上へ動かす ・ 下へ動かす ／ 外す）。
-// とばす（13-A）は、モックの「ここにも入る」のとおり、下へ動かすの下（選ぶ印つき、キー B）。
-// 止まったプラグインは「もう一度読みこむ」「外す」（仕様書 6 章「プラグインが止まった」）。
+// The context menu of an insert slot (spec 3 (86-1, 86-2, 86-3), mock R9-Inserts: 「入れかえる…」「上へ動かす」「下へ動かす」 / 「外す」).
+// Bypass (13-A) goes under 「下へ動かす」, as the mock's 「ここにも入る」 says (with a choice mark, key B).
+// A stopped plugin gets 「もう一度読みこむ」「外す」 (spec 6 「プラグインが止まった」).
 
 import type { Command, InsertRef, InsertView } from "../../bridge";
 import { INSERT_SLOTS } from "../../bridge/types";

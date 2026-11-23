@@ -1,12 +1,12 @@
-<!-- ストリップの縦の棒（仕様書 2 章「スクロールの棒」。lib/HScrollbar.svelte を縦にした物）。ストリップの右はしに重ねて描き、場所はとらない。
-     入りきるときは出さない。つまみのドラッグ中の Esc は、動かす前の所へ戻す。 -->
+<!-- The vertical bar of the strips (spec 2 "Scroll bar"; lib/HScrollbar.svelte turned vertical). Drawn over the right end of the strips, taking no space.
+     Not shown when everything fits. Esc during a handle drag goes back to where it was before moving. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { dragTo, pageTo, thumbOf, type ScrollBox } from "../../lib/scrollbar";
   import { metrics } from "../metrics.svelte";
   import { onDragCancel } from "../pianoroll/view.svelte";
 
-  /** test: data-test の名前（アレンジの縦の棒も、この部品）。 */
+  /** test: the data-test name (the vertical bar of the arrange is also this part). */
   let {
     total,
     visible,
@@ -57,7 +57,7 @@
 </script>
 
 {#if thumb}
-  <!-- マウスだけの部品。ホイールは、ストリップの箱がそのまま受ける。 -->
+  <!-- Mouse only. The strips box itself takes the wheel. -->
   <div class="vbar" role="presentation" aria-hidden="true" bind:this={bar} onpointerdown={onBarDown} data-test={test}>
     <div
       role="presentation"

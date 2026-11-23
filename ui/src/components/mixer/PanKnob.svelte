@@ -1,6 +1,6 @@
-<!-- パンの行（モック F4-Mixer: 「パン」、つまみ、値）。つまみは直径 24 の丸、gray.8 の枠、gray.10 の針（仕様書 2 章「パンのつまみ」）。
-     押したまま右か上へ動かすと右へ、左か下へ動かすと左へ（拡大率 100 % で 1 px が 1）。動かしている間は針が accent、もとの向きは gray.7 の針。
-     キー（仕様書 3 章 86-7）: ← → で 1、Shift で 10、Home で C、Enter で打ちこむ。 -->
+<!-- The pan row (mock F4-Mixer: 「パン」, the knob, the value). The knob is a circle of diameter 24, gray.8 border, gray.10 needle (spec 2 "Pan knob").
+     Hold and move right or up for right, left or down for left (1 px is 1 at 100 % scale). While moving, the needle is accent and the start angle is a gray.7 needle.
+     Keys (spec 3 (86-7)): ← → by 1, by 10 with Shift, Home for C, Enter to type. -->
 <script lang="ts">
   import type { StripRef } from "../../bridge";
   import { term } from "../../lib/tip.svelte";
@@ -10,7 +10,7 @@
   import ValueField from "../params/ValueField.svelte";
   import { clampPan, panAngle, panText, parsePan } from "./scale";
 
-  /** auto: オートメーションが動かしている（枠が accent）。 */
+  /** auto: automation is moving it (accent border). */
   let { strip, pan, auto = false }: { strip: StripRef; pan: number; auto?: boolean } = $props();
 
   const c = mixControl<number>({
@@ -76,7 +76,7 @@
     cursor: ns-resize;
     touch-action: none;
   }
-  /* 毎コマ変わるかもしれない字は、流れの外の箱に入れる（Strip.svelte の .live と同じ）。 */
+  /* Text that may change every frame goes in a box out of the flow (like .live in Strip.svelte). */
   .live {
     position: relative;
     flex: 1;
@@ -97,7 +97,7 @@
   .knob:hover {
     border-color: var(--color-gray-10);
   }
-  /* 針は中心から上へ、半径の 3/4（モック F4-Mixer の 9 / 12）。 */
+  /* The needle goes up from the center, 3/4 of the radius (9 / 12 in mock F4-Mixer). */
   .needle {
     position: absolute;
     left: 50%;

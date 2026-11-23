@@ -1,5 +1,5 @@
-<!-- 最初から入っているエフェクトのパラメータの一覧（モック F4-Mixer ・ R6-Delay）。見出しのある物はグループ、さがす枠で残る行だけ。
-     ↑ ↓ で行をえらぶ。Enter は、なめらかな値なら打ちこむ枠、段階の値なら段の一覧、オン ・ オフなら切りかえ（仕様書 3 章 86-6）。 -->
+<!-- The parameter list of a built-in effect (mocks F4-Mixer, R6-Delay). Those with a heading are in groups; only rows left by the search box.
+     ↑ ↓ choose a row. Enter: the typing box for a smooth value, the list of steps for a stepped value, a toggle for on/off (spec 3 (86-6)). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { SelectedInsert } from "../../bridge";
@@ -36,7 +36,7 @@
 
   let list = $state<HTMLElement>();
 
-  // ---- オートメーション（帯はトラックの下だけ。戻り ・ マスターの印は「使えない」） ----
+  // ---- Automation (bands go only under tracks; the marks of returns and the master are disabled) ----
 
   const track = $derived.by(() => {
     const strip = sel.insert.strip;
@@ -54,7 +54,7 @@
       add: () => tr && target && send({ type: "addLane", track: tr.id, target }),
     };
   }
-  /** 帯が動かしている値（パラメータの欄の棒の位置 → 値）。 */
+  /** The value the band moves (the bar position in the params panel → value). */
   function autoValue(param: number): number | null {
     const target = targetOf(param);
     const tr = track;
@@ -97,7 +97,7 @@
     }
   }
 
-  // 仕様書 4 章「パラメータの中: 行を上下にえらぶ」（↑ ↓）と「値を打ちこむ」（Enter）。欄の中にフォーカスがあるときだけ。
+  // Spec 4 "In the parameters: choose the row above / below" (↑ ↓) and "type a value" (Enter). Only while the focus is in the panel.
   function onkeydown(ev: KeyboardEvent): void {
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey || ev.isComposing) return;
     if (ev.key === "Enter") {

@@ -1,6 +1,6 @@
 // 「あとから入れたもの」 of the fake scenes: one SF2 file and the plugins of the mocks F5-ShelfFx and
 // F5-PluginLoading. The rows the mocks show are the mocks'; the rest fills the headings up to the
-// mocks' counts ("数は例") and is no real plugin.
+// mocks' counts (「数は例」) and is no real plugin.
 
 import {
   GM_FAMILIES,
@@ -39,7 +39,7 @@ const GM_NAMES: string[][] = [
   ["Fret Noise", "Breath Noise", "Seashore", "Bird Tweet", "Telephone", "Helicopter", "Applause", "Gunshot"],
 ];
 
-/** Nine kits, as the mock counts them ("ドラムのキット 9"). */
+/** Nine kits, as the mock counts them (「ドラムのキット 9」). */
 const KITS: [number, string][] = [
   [0, "Standard"],
   [8, "Room"],
@@ -83,7 +83,7 @@ const BOTH: PluginFormat[] = ["vst3", "lv2"];
 const fx = (category: PluginEffectCategory): PluginKindView => ({ role: "effect", category });
 const inst = (category: PluginInstrumentCategory): PluginKindView => ({ role: "instrument", category });
 
-/** The rows the mocks show. Where a mock has "＋2" (LV2, VST3 and CLAP), the row here has two formats: meloet reads no CLAP. */
+/** The rows the mocks show. Where a mock has 「＋2」 (LV2, VST3 and CLAP), the row here has two formats: meloet reads no CLAP. */
 const SHOWN: PluginRowView[] = [
   row("Calf Reverb", "Calf", fx("reverb"), ["lv2"]),
   row("Dragonfly Early Reflections", "Michael Willis", fx("reverb"), BOTH, "lv2"),
@@ -93,7 +93,7 @@ const SHOWN: PluginRowView[] = [
   row("LSP Room Builder", "LSP", fx("reverb"), ["lv2"]),
   row("MVerb", "DISTRHO", fx("reverb"), ["lv2"]),
   row("ZamVerb", "Damien Zammit", fx("reverb"), ["lv2"]),
-  // The stopped insert of "3 ドラム" in F5-ShelfFx.
+  // The stopped insert of 「3 ドラム」 in F5-ShelfFx.
   row("Brick EQ", "Example Audio", fx("eq"), ["lv2"]),
   row("Dexed", "Digital Suburban", inst("synth"), BOTH, "lv2"),
   row("Helm", "Matt Tytel", inst("synth"), ["lv2"]),

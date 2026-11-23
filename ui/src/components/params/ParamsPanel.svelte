@@ -1,12 +1,15 @@
-<!-- パラメータの欄（右の欄。仕様書 1 章「パラメータ」: 見出し 24、名前と形式と居場所 48、さがす枠 32、一覧。モック F4-Mixer ・ F-ParamFew ・ F-ParamMany ・
-     F-ParamNoWindow ・ F5-MixerBypass ・ R9-Params）。えらんだ子は core が持つ（AppState.params.selected）。さがす文字は画面だけが持ち（paramUi）、えらぶ子が変わると空に戻す。
-     同じ枠の同じ子のあいだは、一覧の番号（table）が変わっても（取り消し ・ やりなおし）、さがす文字 ・ ひらいたグループ ・ スクロールを残す。
-     名前の行: 名前、形式の印（最初から入っている物は「最初から入っている」）、インサートなら「とばす」（とばしている間は「とばしている」で、えらんでいる形）、
-     窓をひらける子は「窓をひらく」か「窓を前に出す」。まだ窓をひらけない子 ・ 窓を持たない子は、一覧の上に文。
-     何もえらんでいないときは 2 行（86-5）。
-     最初から入っている音色と SF2 の音色（SelectedParams の sound。仕様書 3 章 92-1 ・ 19-A、モック F7-Answers92）: 名前と「最初から入っている」（SF2 は「SF2」の印）、
-     「この音色には、動かせるパラメータがありません。」、gray.8 で「音量とパンはミキサーで、音色を変えるには入れかえます。」、ボタン「音源を入れかえる…」。
-     歌のクリップ（SelectedParams の clip）: 選んだクリップの欄（ClipPanel）。歌のクリップを 2 つ以上（ParamsView の clips）: まとめて変える欄（ClipsPanel）。 -->
+<!-- The params panel (the right panel; spec 3 table, "Params panel": heading 24, name, format and place 48, search box 32, the list;
+     mocks F4-Mixer, F-ParamFew, F-ParamMany, F-ParamNoWindow, F5-MixerBypass, R9-Params). Core keeps the chosen item
+     (AppState.params.selected). Only the screen keeps the search text (paramUi); it is emptied when the chosen item changes.
+     For the same item in the same slot, the search text, open groups and scroll stay even when the list number (table)
+     changes (undo, redo). The name row: the name, the format mark (「最初から入っている」 for built-in ones), 「とばす」 for an insert
+     (「とばしている」 in the chosen form while bypassed), and 「窓をひらく」 or 「窓を前に出す」 for a plugin with a window. For a plugin
+     that cannot open its window yet, or has none, a text above the list. Two lines when nothing is chosen (86-5).
+     Built-in sounds and SF2 sounds (`sound` of SelectedParams; spec 3 92-1 and 19-A, mock F7-Answers92): the name and
+     「最初から入っている」 (the 「SF2」 mark for SF2), 「この音色には、動かせるパラメータがありません。」, in gray.8
+     「音量とパンはミキサーで、音色を変えるには入れかえます。」, and the button 「音源を入れかえる…」.
+     An audio clip (`clip` of SelectedParams): the chosen clip panel (ClipPanel). Two or more audio clips (`clips` of ParamsView):
+     the panel that changes them together (ClipsPanel). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { InsertRef, InsertView, SongView } from "../../bridge";
@@ -60,10 +63,10 @@
   });
   const ready = $derived(pluginView?.state === "ready");
   const open = $derived(plugin ? windowOf(app.windows, plugin.slot) !== null : false);
-  /** とばせるか（止まったプラグインはとばせない）。 */
+  /** Whether it can be bypassed (a stopped plugin cannot). */
   const canBypass = $derived(insert !== null && held !== null && !(held.effect.kind === "plugin" && held.effect.state === "stopped"));
 
-  /** さがしているときの Esc は、さがす枠を空にする（モック F-ParamSearch「さがす枠を空にすると、グループの一覧に戻ります Esc」）。 */
+  /** Esc while searching empties the search box (mock F-ParamSearch: 「さがす枠を空にすると、グループの一覧に戻ります Esc」). */
   function searchKey(e: KeyboardEvent): void {
     if (e.key !== "Escape" || e.isComposing || paramUi.query === "") return;
     e.preventDefault();
@@ -71,7 +74,7 @@
     paramUi.query = "";
   }
 
-  /** まだ窓をひらけない子の文は、はじめの 2 文を gray.10、のこりを gray.8（モック F-ParamNoWindow）。 */
+  /** For a plugin that cannot open its window yet, the first 2 sentences are gray.10 and the rest gray.8 (mock F-ParamNoWindow). */
   const notice = $derived.by(() => {
     if (!plugin || plugin.window === "opens") return null;
     const sentences = t(plugin.window === "notYet" ? "msg.windowNotYet" : "msg.noWindow").match(/[^。]+。/g) ?? [];
@@ -194,7 +197,7 @@
     background: var(--color-gray-2);
     box-shadow: inset 0 0 0 var(--line-hair) var(--color-gray-8);
   }
-  /* 名前と形式と居場所（高さ 48。モック F4-Mixer: 左右 12、下に gray.5 の線）。 */
+  /* Name, format and place (height 48; mock F4-Mixer: 12 left and right, a gray.5 line below). */
   .who {
     height: calc(2 * var(--size-row));
     flex-shrink: 0;
@@ -228,7 +231,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* まだ窓をひらけない子 ・ 窓を持たない子（モック F-ParamNoWindow: 左に gray.7 の line.mark）。 */
+  /* A plugin that cannot open its window yet, or has none (mock F-ParamNoWindow: a gray.7 line.mark on the left). */
   .notice {
     flex-shrink: 0;
     display: flex;

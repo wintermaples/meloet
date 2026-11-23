@@ -1,11 +1,11 @@
-<!-- インサートの枠（仕様書 2 章「インサートの枠」「インサートの枠 ・ 足した状態」「インサートの枠のオンの印」: 高さ 24、空きは「空き ＋」、えらんだ＝枠 accent）。
-     入っている枠の左にオンの印（12×12。オンは accent の点、とばすと空で名前 gray.7）。押すと ToggleBypass。止まった枠と空きの枠には印なし。
-     名前の場所は印のぶんせまく、入りきらない名前は「…」。乗ると名前の全部（とばしている枠は「（とばしている）」をそえて）。
-     窓がひらいているプラグインは、右はしに窓の印。止まった物は赤い枠と「止」、見つからない物は名前を gray.8。
-     入っている枠を押すと、その子をえらぶ（SelectInsert。プラグインは窓もひらく）。右クリックは、えらばずに一覧（insertMenu。行はこの枠を InsertRef でさす。
-     えらぶとプラグインの窓がひらくので）。えらんでいる枠は Delete で外す。
-     空きを押すと、棚が「（ストリップ）にエフェクトを入れる」でひらく。録音中 ・ カウントイン中も使える（A-14）。
-     並べかえのドラッグは Strip が持つ（lift: 動かしている枠の上下のずれ、line: 入る所の線）。 -->
+<!-- Insert slot (spec 2 "Insert slot", "Insert slot: added states", "On mark of an insert slot": height 24, empty is 「空き ＋」, chosen = accent border).
+     A filled slot has an on mark on the left (12×12; on is an accent dot, bypassed is empty with the name in gray.7). Pressing it sends ToggleBypass. Stopped and empty slots have no mark.
+     The name place is narrower by the mark; names that do not fit end with 「…」. Hover shows the full name (with 「（とばしている）」 for a bypassed slot).
+     A plugin whose window is open has a window mark at the right end. A stopped one has a red border and 「止」; a missing one has its name in gray.8.
+     Pressing a filled slot chooses that item (SelectInsert; a plugin also opens its window). Right-click opens the menu without choosing (insertMenu; rows point to this slot by InsertRef,
+     because choosing opens the plugin window). Delete removes the chosen slot.
+     Pressing an empty slot opens the shelf as 「（ストリップ）にエフェクトを入れる」. Also usable while recording and during count-in (A-14).
+     Strip owns the reorder drag (lift: the vertical offset of the slot being moved, line: the line where it goes in). -->
 <script lang="ts">
   import type { InsertRef, InsertView } from "../../bridge";
   import { tipOf } from "../../lib/tip.svelte";
@@ -39,7 +39,7 @@
     return nameEl && nameEl.scrollWidth > nameEl.clientWidth ? name : null;
   };
 
-  // えらんでいるプラグインの枠をもう一度押すと、窓を前に出す（仕様書 3 章「パラメータ」）。最初から入っている物は何もしない。
+  // Pressing the chosen plugin's slot again brings its window to the front (spec 3 (params panel)). Built-in ones do nothing.
   function press(): void {
     if (view === null) send(openShelf({ kind: "insertEffect", strip: insert.strip, slot: insert.slot }));
     else if (!selected || view.effect.kind === "plugin") send({ type: "selectInsert", insert });
@@ -54,7 +54,7 @@
   function key(e: KeyboardEvent): void {
     if (e.key !== "Delete" || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || view === null) return;
     e.preventDefault();
-    // ほかの「消す」（えらんだクリップやノート）に渡さない。
+    // Do not pass it on to other deletes (chosen clips or notes).
     e.stopPropagation();
     if (selected) send({ type: "removeEffect", insert });
   }
@@ -144,7 +144,7 @@
     border-color: var(--color-rec);
     color: var(--color-rec);
   }
-  /* 並べかえのドラッグ中の枠は accent の line.hair でつまみ上げる（仕様書 2 章「インサートを並べかえる印」）。 */
+  /* During a reorder drag the slot is lifted with an accent line.hair (spec 2 "Insert reorder mark"). */
   .slot.lifted {
     z-index: 2;
     outline: var(--line-hair) solid var(--color-accent);
@@ -172,7 +172,7 @@
     text-overflow: ellipsis;
     text-align: left;
   }
-  /* オンの印（2 章の「選ぶ印」12×12）。オンは accent の点、とばすと空。 */
+  /* The on mark (the 12×12 choice mark of spec 2). On is an accent dot, bypassed is empty. */
   .mark {
     flex-shrink: 0;
     box-sizing: border-box;
@@ -194,7 +194,7 @@
   .mark.on span {
     background: var(--color-accent);
   }
-  /* 入る所: accent の line.mark の横線（トラックの並べかえと同じ）。枠と枠の間に重ねる。 */
+  /* Where it goes in: an accent line.mark horizontal line (as in track reordering). Laid over the gap between slots. */
   .line {
     position: absolute;
     left: calc(-1 * var(--line-hair));

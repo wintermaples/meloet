@@ -1,13 +1,13 @@
-<!-- 値を打ちこむ枠（仕様書 3 章 86-6、モック R9-Params）。地 gray.0、枠 gray.10、右そろえ。単位はなくても入る。
-     Enter で決める、Esc でやめる。ほかを押して枠から出たときも、やめる（決めるのは Enter だけ）。 -->
+<!-- The box to type a value (spec 3 (86-6), mock R9-Params). Background gray.0, border gray.10, right-aligned. Works without a unit too.
+     Enter decides, Esc stops. Leaving the box by pressing elsewhere also stops (only Enter decides). -->
 <script lang="ts">
   import { onMount } from "svelte";
 
   interface Props {
-    /** はじめに入れておく文字（いまの値）。 */
+    /** The text put in first (the current value). */
     initial: string;
     label: string;
-    /** 枠のうしろにそえる単位（gray.8）。 */
+    /** The unit after the box (gray.8). */
     unit?: string;
     onsubmit: (text: string) => void;
     oncancel: () => void;
@@ -35,7 +35,7 @@
       done = true;
       oncancel();
     } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      // 欄の行えらびに渡さない。
+      // Do not pass it to the row choosing of the panel.
       e.stopPropagation();
     }
   }

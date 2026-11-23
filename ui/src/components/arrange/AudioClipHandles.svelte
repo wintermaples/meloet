@@ -1,14 +1,14 @@
-<!-- 歌のクリップのフェードの取っ手と音量の線（仕様書 2 章「歌のクリップ」、3 章 27-A 「切る ・ フェード ・ 重なり」と「クリップの音量」、モック F7-AudioEdit ・ R11-Audio）。
-     取っ手: 上の左右の角に part.audioclip.handle（6×6）の gray.10。横にひっぱるとフェードの長さ。
-     取っ手の絵は WebGL の側（Arrange の paintAudioClip が audioClipGeom.ts の handleRects で描く）。ここは、押した所がどの取っ手かを
-     形から数える（クリップごとの HTML を置かない: 横に送る ・ 拡大するコマが、クリップの数だけ重くなる）。HTML は、ポインタの下の取っ手 1 つだけ（カーソルの形のため）。
-     音量の線: えらんだ歌のクリップの中に accent の line.hair の横線。目盛はフェーダーと同じ（3 章 39-B、audioClipGeom.ts）。上下にドラッグして −60〜+12 dB、2 回押すと 0.0 dB。
-     ドラッグの間は画面だけが先に動き、値を audioDrag.now に書く（波形を描く WebGL の側が、同じコマで読む。いっしょに動く線のクリップは shift）。離したら SetClipField を 1 つ（ドラッグ 1 回が 1 手）。
-     歌のクリップを 2 つ以上えらんでいれば、どれか 1 つの線を動かすと、えらんだ歌のクリップぜんぶの線が同じ dB だけ動き（それぞれ −60〜+12 で止まる）、
-     離したら ShiftClipGains を 1 つ。
-     もとの位置は gray.7 の枠（線）。Esc はキーの順のいちばん前でやめる（pianoroll/view.svelte.ts の cancelDrag）。
-     音量の読み値「−3.0 dB」は、その場の読み値（カーソルの左上）と状態行（6 章「クリップの音量を動かしている」）。
-     フェードの長さ「0. 1. 0480」も同じ（6 章「フェードを動かしている」。長さの書きかたはクリップの長さと同じ）。 -->
+<!-- Fade handles and gain line of audio clips (spec 2 "Audio clip", spec 3 (27-A "Split, fade, overlap" and "Clip gain"), mock F7-AudioEdit / R11-Audio).
+     Handles: gray.10 part.audioclip.handle (6×6) at the top left and right corners. Drag sideways to set the fade length.
+     The WebGL side draws the handles (paintAudioClip in Arrange, with handleRects in audioClipGeom.ts). Here the pressed handle is
+     found from the geometry (no HTML per clip: scrolling and zoom frames would get heavier with every clip). Only the handle under the pointer has HTML (for the cursor shape).
+     Gain line: a line.hair accent horizontal line inside the chosen audio clip. Same scale as the fader (spec 3 (39-B), audioClipGeom.ts). Drag up and down for −60 to +12 dB; press twice for 0.0 dB.
+     During a drag only the screen moves first and writes the value to audioDrag.now (the WebGL waveform side reads it in the same frame; clips whose lines move together use shift). On release, one SetClipField (one drag is one step).
+     With two or more audio clips chosen, moving one line moves the lines of all chosen audio clips by the same dB (each stops at −60 / +12),
+     and release sends one ShiftClipGains.
+     The start position is a gray.7 frame (line). Esc cancels first in the key order (cancelDrag in pianoroll/view.svelte.ts).
+     The gain readout 「−3.0 dB」 is shown in place (top left of the cursor) and in the status line (spec 6 「クリップの音量を動かしている」).
+     The fade length 「0. 1. 0480」 likewise (spec 6 「フェードを動かしている」; the length is written like a clip length). -->
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
   import type { ClipView, TrackView } from "../../bridge";
@@ -31,22 +31,22 @@
     clip: ClipView;
     row: number;
     pointer: number;
-    /** ポインタをつかまえている物: 音量の線、ポインタの下の取っ手、どちらもなければクリップの面。 */
+    /** What holds the pointer: the gain line, the handle under the pointer, or else the clip area. */
     el: HTMLElement;
-    /** 押した所と、線（取っ手のまん中）とのずれ。 */
+    /** Offset between the pressed point and the line (the handle center). */
     grab: number;
     downX: number;
     downY: number;
     from: number;
     value: number;
     moved: boolean;
-    /** 音量の線をいくつもいっしょに動かす（えらんだ歌のクリップが 2 つ以上）: そのクリップの id。1 つなら null。 */
+    /** Moving several gain lines together (two or more audio clips chosen): their clip ids. null for one. */
     group: number[] | null;
   }
 
   let root = $state<HTMLElement>();
   let drag = $state.raw<Drag | null>(null);
-  /** 離して送ったあと、答えの状態が届くまで audioDrag.now を残す（ちらつかないように）。 */
+  /** After release, keep audioDrag.now until the answering state arrives (so it does not flicker). */
   let pendingRev = $state<number | null>(null);
   let pointerAt = $state<{ x: number; y: number } | null>(null);
   let readingW = $state(0);
@@ -64,7 +64,7 @@
     }
   });
 
-  /** ドラッグ中の値をかぶせた形。 */
+  /** The shape with the drag values laid over it. */
   function shapeOf(clip: ClipView, now: AudioDragValue | null): AudioClipShape & { gainDb: number } {
     const base = audioShapeOf(clip)!;
     const shift = now?.clip !== clip.id ? now?.shift : undefined;
@@ -91,7 +91,7 @@
     return { clip, row, box, handles, line };
   }
 
-  /** 音量の線が出るクリップ（えらんだ歌のクリップ）。 */
+  /** The clip that shows a gain line (the chosen audio clip). */
   const lines = $derived.by(() => {
     const now = audioDrag.now;
     const out: Part[] = [];
@@ -105,7 +105,7 @@
     return out;
   });
 
-  /** (x, y) の下の取っ手。重なっていれば、上に描かれている物（あとのトラック、あとのクリップ、フェードアウト）。 */
+  /** The handle under (x, y). When they overlap, the one drawn on top (later track, later clip, fade-out). */
   function handleAt(p: { x: number; y: number }): { part: Part; edge: FadeEdge } | null {
     const now = audioDrag.now;
     for (let row = tracks.length - 1; row >= 0; row--) {
@@ -126,7 +126,7 @@
     return null;
   }
 
-  /** ポインタの下の取っ手（ドラッグの間は、ひっぱっている取っ手）。HTML はこの 1 つだけ。 */
+  /** The handle under the pointer (during a drag, the handle being dragged). Only this one has HTML. */
   let hover = $state.raw<{ clip: number; edge: FadeEdge } | null>(null);
   let grip = $state<HTMLElement>();
   const gripBox = $derived.by(() => {
@@ -140,7 +140,7 @@
     return null;
   });
 
-  /** ドラッグを始めた所（もとの位置の gray.7）。いくつもの線なら、どの線も。 */
+  /** Where the drag started (the gray.7 start position). For several lines, every line. */
   const origin = $derived.by(() => {
     const d = drag;
     if (!d || !d.moved) return null;
@@ -159,7 +159,7 @@
     return { kind: "handle" as const, box: p.handles.find((h) => h.edge === d.field)!.box };
   });
 
-  /** えらんだ歌のクリップ（トラックの順）。 */
+  /** The chosen audio clips (in track order). */
   function selectedVocal(): { clip: ClipView; row: number }[] {
     return tracks.flatMap((track, row) => track.clips.filter((c) => c.audio !== null && selected.has(c.id)).map((clip) => ({ clip, row })));
   }
@@ -189,7 +189,7 @@
     drag = { field, clip: part.clip, row: part.row, pointer: e.pointerId, el, grab, downX: p.x, downY: p.y, from, value: from, moved: false, group };
   }
 
-  /** その場の読み値: 音量は「−3.0 dB」、フェードは長さ「0. 1. 0480」（クリップのはじまりの拍子で）。 */
+  /** The readout in place: gain as 「−3.0 dB」, fade as a length 「0. 1. 0480」 (in the time signature at the clip start). */
   function valueText(field: Field, clip: ClipView, value: number): string {
     if (field === "gainDb") return t("common.db", { value: dbNumber(value) });
     return clipLengthLabel(value, mapOf(current.state!.timeline).meterAt(clip.start));
@@ -222,7 +222,7 @@
       : { clip: d.clip.id, [d.field]: value };
   }
 
-  /** いくつもの線をずらす dB（0.01 きざみ。クリップの音量の細かさ）。 */
+  /** The dB to shift several lines by (steps of 0.01, the clip gain precision). */
   const shiftOf = (from: number, to: number) => Math.round((to - from) * 100) / 100;
 
   function release(d: Drag): void {
@@ -257,11 +257,11 @@
   onMount(() => onDragCancel(cancel));
   onDestroy(cancel);
 
-  // ---- 取っ手: クリップの面（この部品の親）に来た出来事を、先に見る ----
+  // ---- Handles: see events that reach the clip area (this part's parent) first ----
 
-  /** 取っ手をひっぱっている間の出来事か。 */
+  /** Whether the event is during a handle drag. */
   const handleDrag = (e: PointerEvent) => drag !== null && drag.field !== "gainDb" && e.pointerId === drag.pointer;
-  /** 取っ手より上にある物（テイクの切りかえの札）の上では、取っ手を押した事にしない。 */
+  /** Over things above the handles (the take switch tag), a press does not count as a handle press. */
   const over = (e: Event) => e.target instanceof Element && e.target.closest("[data-over-clips]") !== null;
 
   function lanesDown(e: PointerEvent): void {
@@ -304,7 +304,7 @@
       return () => lanes.removeEventListener(type, f, { capture: true });
     };
     const off = [on("pointerdown", lanesDown), on("pointermove", lanesMove), on("pointerup", lanesUp), on("pointercancel", lanesCancel), on("dblclick", lanesDouble)];
-    // クリップの面から出たときだけ（中の部品から出たときの知らせは見ない）。
+    // Only when leaving the clip area (ignore leave events from parts inside it).
     lanes.addEventListener("pointerleave", leave);
     return () => {
       off.forEach((f) => f());
@@ -312,7 +312,7 @@
     };
   });
 
-  /** 2 回押すと 0.0 dB（仕様書 3 章「クリップの音量」）。 */
+  /** Press twice for 0.0 dB (spec 3 "Clip gain"). */
   function double(e: MouseEvent, part: Part): void {
     e.stopPropagation();
     if (busy || part.clip.audio!.gainDb === 0) return;

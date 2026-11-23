@@ -1,4 +1,4 @@
-// パラメータの欄の行（仕様書 2 章「パラメータの行」、3 章のリバーブ ・ ディレイ、architecture.md 19-3）。DOM を知らない純粋な関数。
+// Rows of the params panel (spec 2 "Parameter row", the reverb and delay of spec 3, architecture 19-3). Pure functions that do not know the DOM.
 
 import {
   EFFECT_PARAMS,
@@ -9,15 +9,15 @@ import { t, type TextKey } from "../../text/ja";
 
 const MINUS = "−";
 
-/** 小数のけた（仕様書 3 章の書きかた「2.40 s」「20 ms」「−6.0 dB」「35 %」「6000 Hz」と、19-3 の表の範囲の書きかた）。 */
+/** Decimal places (as spec 3 writes them, 「2.40 s」「20 ms」「−6.0 dB」「35 %」「6000 Hz」, and as the ranges in the table of 19-3). */
 export function decimals(p: EffectParam): number {
   switch (p.unit) {
     case "s":
       return 2;
     case "ms":
-      return p.min > 0 && p.min < 1 ? 1 : 0; // おさえるまで 0.1〜100.0 ms
+      return p.min > 0 && p.min < 1 ? 1 : 0; // attack 0.1 to 100.0 ms
     case "hz":
-      return p.max <= 10 ? 2 : 0; // ゆれの速さ 0.05〜5.00 Hz
+      return p.max <= 10 ? 2 : 0; // modulation rate 0.05 to 5.00 Hz
     case "db":
     case "oct":
     case "ratio":
@@ -27,14 +27,14 @@ export function decimals(p: EffectParam): number {
   }
 }
 
-/** 見せるけたに丸めた値（ドラッグで送る値もこの細かさ）。 */
+/** The value rounded to the shown places (values sent while dragging are this fine too). */
 export function roundTo(p: EffectParam, value: number): number {
   if (p.shape !== "continuous") return Math.round(value);
   const f = 10 ** decimals(p);
   return Math.round(Math.min(p.max, Math.max(p.min, value)) * f) / f;
 }
 
-/** 値の文（「2.40 s」「−6.0 dB」「+3.0 dB」「1/8」「オン」）。 */
+/** The value text (「2.40 s」「−6.0 dB」「+3.0 dB」「1/8」「オン」). */
 export function valueText(
   effect: EffectKind,
   p: EffectParam,
@@ -52,36 +52,36 @@ export function valueText(
     : t(`param.value.${p.unit}` as TextKey, { value: s });
 }
 
-/** 値の数の所だけ（単位なし）。オン ・ オフと段階は、valueText と同じ文。 */
+/** Only the number of the value (no unit). On/off and steps give the same text as valueText. */
 export function valueNumberText(effect: EffectKind, p: EffectParam, value: number): string {
   if (p.shape !== "continuous") return valueText(effect, p, value);
   let s = roundTo(p, value).toFixed(decimals(p));
   if (/^-0(\.0*)?$/.test(s)) s = s.slice(1);
-  // 「−18.0〜+18.0 dB」のように、マイナスもある範囲だけ、プラスに「+」をつける。
+  // Only for ranges that also go below zero, like 「−18.0〜+18.0 dB」, plus values get a 「+」.
   if (p.min < 0 && Number(s) > 0) s = `+${s}`;
   return s.replace("-", MINUS);
 }
 
-/** 打ちこむ枠にはじめに入れる数（単位なし、マイナスは打てる「-」）。 */
+/** The number first put in the typing box (no unit; minus is a typeable 「-」). */
 export function typedText(p: EffectParam, value: number): string {
   let s = roundTo(p, value).toFixed(p.shape === "continuous" ? decimals(p) : 0);
   if (/^-0(\.0*)?$/.test(s)) s = s.slice(1);
   return s;
 }
 
-/** 打ちこむ枠のうしろにそえる単位（「dB」「: 1」）。 */
+/** The unit put after the typing box (「dB」「: 1」). */
 export function unitText(p: EffectParam): string {
   if (p.shape !== "continuous" || p.unit === "none") return "";
   return t(`param.value.${p.unit}` as TextKey, { value: "" }).trim();
 }
 
-/** 棒を対数で動かすか（音の高さはいつも。時間は何十倍にも広がる物）。 */
+/** Whether the bar moves on a log scale (always for frequency; for times whose range spans many tens of times). */
 function logScale(p: EffectParam): boolean {
   if (p.min <= 0) return false;
   return p.unit === "hz" || ((p.unit === "ms" || p.unit === "s") && p.max / p.min >= 50);
 }
 
-/** 値 → 棒の左からの割合（0〜1）。 */
+/** Value → share of the bar from the left (0 to 1). */
 export function fractionOf(p: EffectParam, value: number): number {
   const v = Math.min(p.max, Math.max(p.min, value));
   const f = logScale(p)
@@ -90,7 +90,7 @@ export function fractionOf(p: EffectParam, value: number): number {
   return Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0;
 }
 
-/** 棒の割合 → 値（見せるけたに丸める）。 */
+/** Share of the bar → value (rounded to the shown places). */
 export function valueAt(p: EffectParam, fraction: number): number {
   const f = Math.min(1, Math.max(0, fraction));
   const v = logScale(p)
@@ -99,7 +99,7 @@ export function valueAt(p: EffectParam, fraction: number): number {
   return roundTo(p, v);
 }
 
-/** ← → の 1 回ぶん。Shift で、見せるけたの 1 つぶん。 */
+/** One press of ← →. With Shift, one unit of the last shown place. */
 export function keyStep(
   p: EffectParam,
   value: number,
@@ -113,15 +113,15 @@ export function keyStep(
 }
 
 export interface ParamRow {
-  /** 見せている行のパラメータの番号（EFFECT_PARAMS の中の場所）。 */
+  /** The parameter number of the shown row (its place in EFFECT_PARAMS). */
   param: number;
-  /** この行が受けもつ番号（ディレイの「間隔」は 2 つ）。えらんだ行の印に使う。 */
+  /** The numbers this row covers (two for the delay 「間隔」). Used to mark the chosen row. */
   covers: number[];
   name: string;
 }
 
 export interface ParamGroup {
-  /** 見出し（EQ の「低い音」など）。null は見出しなし。 */
+  /** The heading (such as 「低い音」 of the EQ). null for no heading. */
   group: string | null;
   name: string | null;
   rows: ParamRow[];
@@ -131,15 +131,15 @@ const DELAY_STEP = "intervalStep";
 const DELAY_MS = "intervalMs";
 const DELAY_SYNC = "sync";
 
-/** パラメータの名前。 */
+/** The parameter name. */
 export function paramName(effect: EffectKind, param: number): string {
   const p = EFFECT_PARAMS[effect][param];
   return p ? t(`param.${effect}.${p.id}` as TextKey) : "";
 }
 
 /**
- * 欄に出す行。ディレイの「間隔」は 1 行で、「テンポに合わせる」がオンなら段階、オフなら ms（docs/history/design-notes.ja.md A-14）。
- * 見出しのある物はグループにまとめる（EFFECT_PARAMS の順のまま）。
+ * The rows shown in the panel. The delay 「間隔」 is one row: steps when 「テンポに合わせる」 is on, ms when off
+ * (docs/history/design-notes.ja.md A-14). Those with a heading are put in groups (in the order of EFFECT_PARAMS).
  */
 export function allRows(
   effect: EffectKind,
@@ -178,7 +178,7 @@ export function allRows(
   return groups;
 }
 
-/** さがす枠で残る行（名前にふくまれる物。英字の大小は見ない）。行の残らない見出しは出さない。 */
+/** The rows left by the search box (names that contain it; case does not matter). Headings with no rows left are not shown. */
 export function searchRows(
   groups: readonly ParamGroup[],
   query: string,
@@ -194,7 +194,7 @@ export function searchRows(
 export const rowCount = (groups: readonly ParamGroup[]) =>
   groups.reduce((n, g) => n + g.rows.length, 0);
 
-/** ↑ ↓ でえらぶ次の行のパラメータ（見えている行の中。はしで止まる）。 */
+/** The parameter of the next row chosen with ↑ ↓ (among the rows in view; stops at the ends). */
 export function stepRow(
   rows: readonly ParamRow[],
   selected: number | null,

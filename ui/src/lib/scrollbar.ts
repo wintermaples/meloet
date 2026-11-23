@@ -1,21 +1,21 @@
-// スクロールの棒の計算（仕様書 2 章「スクロールの棒」）。DOM を知らない純粋な関数。
+// Scroll bar math (spec 2 "Scroll bar"). Pure functions that do not know the DOM.
 
 export interface ScrollBox {
-  /** 見えている高さ（clientHeight）。 */
+  /** Height in view (clientHeight). */
   view: number;
-  /** 中身の高さ（scrollHeight）。 */
+  /** Height of the content (scrollHeight). */
   content: number;
-  /** いまの位置（scrollTop）。 */
+  /** The current position (scrollTop). */
   top: number;
 }
 
 export interface Thumb {
-  /** つまみの長さと、棒の上はしからの位置（棒の長さは view と同じ）。 */
+  /** Handle length, and its position from the top of the bar (the bar is as long as view). */
   length: number;
   offset: number;
 }
 
-/** 中身が入りきるときは null（棒を出さない）。1px 未満のはみ出しは入りきると見る（拡大率の端数）。 */
+/** null when the content fits (no bar). Going over by less than 1px counts as fitting (fractions from the scale). */
 export function thumbOf(box: ScrollBox, minLength: number): Thumb | null {
   const { view, content } = box;
   if (view <= 0 || content - view < 1) return null;
@@ -25,7 +25,7 @@ export function thumbOf(box: ScrollBox, minLength: number): Thumb | null {
   return { length, offset: (top / range) * (view - length) };
 }
 
-/** つまみを dy 動かしたときの、新しい scrollTop。startTop はつかんだときの scrollTop。 */
+/** The new scrollTop when the handle moves by dy. startTop is the scrollTop when it was taken. */
 export function dragTo(box: ScrollBox, startTop: number, dy: number, minLength: number): number {
   const thumb = thumbOf(box, minLength);
   if (!thumb) return 0;
@@ -35,7 +35,7 @@ export function dragTo(box: ScrollBox, startTop: number, dy: number, minLength: 
   return Math.min(Math.max(startTop + (dy * range) / track, 0), range);
 }
 
-/** 棒のつまみの外を押したとき: その向きに 1 画面ぶん動かす。y は棒の上はしからの位置。 */
+/** A press outside the handle: move one screen that way. y is from the top of the bar. */
 export function pageTo(box: ScrollBox, y: number, minLength: number): number {
   const thumb = thumbOf(box, minLength);
   if (!thumb) return 0;

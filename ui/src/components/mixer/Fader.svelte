@@ -1,21 +1,21 @@
-<!-- フェーダー（仕様書 2 章「フェーダー」「メーターとフェーダーの目盛」、モック F4-Mixer）。左に目盛の字、まん中に溝とつまみ。
-     いちばん下は −∞（A-14）。押したまま上下に動かすと、画面だけが先に動き、音だけ変える意図（commit: false）を送る。離したら 1 手（faderControl）。
-     Tab でフォーカスをあて、↑ ↓ で 1 dB、Shift で 0.1 dB、Home で 0.0 dB、Enter で打ちこむ（仕様書 3 章 86-7。枠は Strip の値の所）。 -->
+<!-- Fader (spec 2 "Fader", "Scale marks of meters and faders", mock F4-Mixer). Scale mark text on the left, the groove and handle in the middle.
+     The bottom is −∞ (A-14). Holding and moving up and down moves only the screen first and sends sound-only intents (commit: false). Release is one step (faderControl).
+     Focus with Tab; ↑ ↓ by 1 dB, 0.1 dB with Shift, Home for 0.0 dB, Enter to type (spec 3 (86-7); the box is in the value place of Strip). -->
 <script lang="ts">
   import type { MixControl } from "./control.svelte";
   import { t } from "../../text/ja";
   import { metrics } from "../metrics.svelte";
   import { dbToFrac, SCALE_MARKS } from "./scale";
 
-  /** ドラッグは Strip が持つ（下のフェーダーの値の字も、動かしている間の値を出すため）。 */
-  /** auto: オートメーションが動かしている（つまみの枠が accent。仕様書 2 章「オートメーションで動くつまみ」）。 */
+  /** Strip owns the drag (so the fader value text below can also show the value while moving). */
+  /** auto: automation is moving it (accent handle border; spec 2 "Handle moved by automation"). */
   let { control: c, auto = false }: { control: MixControl<number | null>; auto?: boolean } = $props();
 
   const top = (frac: number) => `${(1 - frac) * 100}%`;
 
-  /** つまみは transform で動かす（top を変えると、ストリップがまるごとレイアウトしなおされる。docs/architecture.md 7 章「CPU で描く WebKit」）。 */
+  /** The handle moves with transform (changing top would lay out the whole strip again; docs/architecture.md 7 "WebKit that paints on the CPU"). */
   let height = $state(0);
-  /** つまみの上のはしを、top のときと同じく画面の画素に合わせる（合わせないと、ふちがにじむ）。 */
+  /** Snap the handle's top edge to screen pixels, as with top (otherwise the edge blurs). */
   const at = (frac: number) => {
     const y = (1 - frac) * height - metrics.px("part.fader.knob-h") / 2;
     return `translate(-50%, ${Math.round(y * metrics.dpr) / metrics.dpr}px)`;
@@ -78,7 +78,7 @@
     cursor: ns-resize;
     touch-action: none;
   }
-  /* 溝は gray.7 の線、0 dB の位置に gray.6 の横線（仕様書 2 章）。 */
+  /* The groove is a gray.7 line, with a gray.6 horizontal line at 0 dB (spec 2). */
   .groove {
     position: absolute;
     left: 50%;
@@ -94,7 +94,7 @@
     height: var(--line-hair);
     background: var(--color-gray-6);
   }
-  /* つまみ 24×12（gray.9 の面、gray.10 の枠）。乗った＝枠 accent、動かしている＝面 gray.10。 */
+  /* Handle 24×12 (gray.9 face, gray.10 border). Hover = accent border, moving = gray.10 face. */
   .knob {
     position: absolute;
     left: 50%;
@@ -123,7 +123,7 @@
   .fader.dragging .knob:not(.from) {
     background: var(--color-gray-10);
   }
-  /* もとの位置（ドラッグ中）: gray.7 の枠。 */
+  /* The start position (during a drag): gray.7 frame. */
   .knob.from {
     background: none;
     border-color: var(--color-gray-7);

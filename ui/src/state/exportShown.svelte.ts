@@ -1,12 +1,12 @@
-// 書き出しのダイアログと状態行の進みで見せる物（約束 26 の export）。たしかめの「数えています 38 %」と進みの % ・ 残りの時間だけが
-// 変わったときは SHOW_EVERY_MS に 1 回まで見せかえる（audioWork.svelte.ts と同じ考え。docs/architecture.md 22-22・22-23）。
-// ほかの所（形、範囲、たしかめや進みの状態）が変わった時はすぐ。
+// What the export dialog and the status line progress show (`export` of protocol 26). When only the check's 「数えています 38 %」,
+// the progress percent and the time left change, it is shown again at most once every SHOW_EVERY_MS (the same idea as
+// audioWork.svelte.ts; architecture 22-22, 22-23). When anything else (shape, range, state of the check or the run) changes, at once.
 
 import type { ExportDialogView, ExportView } from "../bridge";
 import { SHOW_EVERY_MS } from "./audioWork.svelte";
 import { current } from "./app.svelte";
 
-/** 数だけを除いた形。これが同じなら、数だけが変わった。 */
+/** The shape without the numbers. If this is the same, only the numbers changed. */
 function keyOf(view: ExportView | null): string {
   if (!view) return "";
   const dialog: ExportDialogView | null = view.dialog && {
@@ -32,7 +32,7 @@ export class ExportShown {
     this.#now = now;
   }
 
-  /** いま見せる書き出しのようす。 */
+  /** The export state to show now. */
   get current(): ExportView | null {
     void this.#tick;
     const view = this.#read();
@@ -45,7 +45,7 @@ export class ExportShown {
     return this.#shown;
   }
 
-  /** テストの間で、前の見せかえの時刻を持ちこさない。 */
+  /** Do not carry the time of the last update from one test to the next. */
   forget(): void {
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;

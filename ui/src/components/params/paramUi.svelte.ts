@@ -1,17 +1,17 @@
-// パラメータの欄の、画面だけが持つ状態。状態行も読む（「パラメータをさがしています…」「…を動かしています」。モック F-ParamSearch ・ F-ParamFew）。
+// State of the params panel that only the screen has. The status line reads it too (「パラメータをさがしています…」「…を動かしています」; mocks F-ParamSearch, F-ParamFew).
 
 export const paramUi = $state({
-  /** さがす枠の文字。えらぶ子が変わると空に戻す。 */
+  /** The text in the search box. Emptied when the chosen plugin changes. */
   query: "",
-  /** さがす枠に合う数。 */
+  /** How many match the search box. */
   matches: 0,
-  /** 欄の行をドラッグしている間: 子の名前とパラメータの名前。 */
+  /** While a row of the panel is dragged: the plugin name and the parameter name. */
   moving: null as { name: string; param: string } | null,
-  /** 値を打ちこんでいる行（最初から入っているエフェクトは表の中の番号、プラグインは ParamRow.id）。 */
+  /** The row whose value is being typed (for built-in effects, the number in the table; for plugins, ParamRow.id). */
   typing: null as number | null,
 });
 
-/** 値を打ちこんでいる行を閉じる。閉じたら true。 */
+/** Closes the row whose value is being typed. true if it closed one. */
 export function stopTyping(): boolean {
   if (paramUi.typing === null) return false;
   paramUi.typing = null;

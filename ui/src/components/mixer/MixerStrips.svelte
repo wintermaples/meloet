@@ -1,8 +1,8 @@
-<!-- ミキサーの帯の中身（モック F4-Mixer）: トラックの並び、戻り A ・ B、マスターのストリップ。横にスクロールし、帯が低いときはストリップだけ
-     縦にスクロールする（仕様書 2 章: はじめは下のフェーダーとメーターを見せ、上へスクロールするとインサートが出る）。高さが変わっても、下からの位置を保つ。
-     メーターは、この箱の WebGL の区画 mixerMeters に 1 枚（docs/architecture.md 19-5）。トラックが 10 本をこえると 30 Hz で、左半分と右半分を 1 コマずつ出す（gl/engine.ts、7 章）。
-     プラグインの音源の枠を押すと、インサートと同じに「えらぶ ＋ 窓」（SelectInstrument）。入れかえは右クリックの「音源を入れかえる…」（user:2026-11-19）。
-     出口がないマスターは「出口なし ▸」（gray.8、押すと音の設定。仕様書 3 章 86-8）。 -->
+<!-- The content of the mixer band (mock F4-Mixer): the row of tracks, returns A / B, and the master strip. Scrolls sideways; when the band is low, only the strips
+     scroll up and down (spec 2: at first the faders and meters at the bottom are shown, and scrolling up shows the inserts). Keeps the position from the bottom when the height changes.
+     Meters are one surface in this box's WebGL region mixerMeters (docs/architecture.md 19-5). With more than 10 tracks, at 30 Hz, the left and right halves are drawn one frame each (gl/engine.ts, architecture 7).
+     Pressing a plugin instrument slot does 「えらぶ ＋ 窓」 like an insert (SelectInstrument). Replacing is 「音源を入れかえる…」 in the context menu (user:2026-11-19).
+     A master with no output shows 「出口なし ▸」 (gray.8; pressing it opens the sound settings; spec 3 (86-8)). -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { InsertRef, PluginSlotRef, StripRef, TrackView } from "../../bridge";
@@ -29,7 +29,7 @@
   const selected = $derived(selectedInsert(app.params));
   const shelf = $derived(app.shelf);
   const outputName = $derived(app.outputs.list.find((o) => o.id === app.outputs.chosen)?.name ?? null);
-  /** 出口がない: えらんでいないか、えらんだ出口がなくなった（docs/history/design-notes.ja.md A-17）。 */
+  /** No output: none chosen, or the chosen output is gone (docs/history/design-notes.ja.md A-17). */
   const noOutput = $derived(app.outputs.chosen === null || app.outputs.chosenState === "missing" || outputName === null);
   const masterFrame = $derived(
     noOutput
@@ -37,14 +37,14 @@
       : { text: t("mixer.output", { name: outputName! }) },
   );
 
-  /** 窓がひらいているインサートの番号。 */
+  /** Index of the insert whose window is open. */
   function windowSlots(strip: StripRef): number[] {
     return app.windows.list.flatMap((w) => (w.slot?.kind === "insert" && sameStrip(w.slot.insert.strip, strip) ? [w.slot.insert.slot] : []));
   }
 
-  // ---- オートメーション（docs/architecture.md 21-8: 帯の点と再生の線の所から、画面が自分で値を出す） ----
+  // ---- Automation (docs/architecture.md 21-8: the screen works out the value itself from the lane points and the play line) ----
 
-  /** どこかのトラックに音量の帯があれば、どのストリップにも値の下の行を出す。 */
+  /** If any track has a volume lane, every strip shows the row under the value. */
   const autoRow = $derived(song.tracks.some((tr) => laneOf(tr, { kind: "volume" }) !== undefined));
   function lookOf(track: TrackView, target: AutoTarget): AutoLook {
     const lane = laneOf(track, target);
@@ -62,9 +62,9 @@
       restore: volume?.resting && !busy ? () => send({ type: "restoreLane", track: track.id, target: { kind: "volume" } }) : null,
     };
   }
-  /** 戻りとマスターには帯がない（A-19 の 7）。値の下の行だけ、高さをそろえるために出す。 */
+  /** Returns and the master have no lanes (A-19, item 7). Only the row under the value is shown, to keep the heights equal. */
   const noAuto = $derived<StripAuto>({ gain: null, pan: null, sends: [null, null], row: autoRow, restore: null });
-  /** 帯が動かしている物は線の上の値、ほかは手で置いた値。 */
+  /** What a lane moves shows the value on the line; others show the value set by hand. */
   function shownGain(track: TrackView, look: AutoLook): number | null {
     const pos = look === "moving" ? shownPosition(track.id, { kind: "volume" }) : null;
     return pos === null ? track.gainDb : fracToDb(pos);
@@ -79,7 +79,7 @@
       return pos === null ? track.sends[i]! : fracToDb(pos);
     }) as [number | null, number | null];
   }
-  /** フェーダーの値の字に出す、帯の線の上のいちばん新しい値（毎コマ）。動かしていなければ undefined。 */
+  /** The newest value on the lane line for the fader value text (every frame). undefined when not moving. */
   function liveValues(track: TrackView, auto: StripAuto): { gainDb?: number | null } {
     const pos = auto.gain === "moving" ? mixerLivePosition(track.id, { kind: "volume" }) : null;
     return { gainDb: pos === null ? undefined : fracToDb(pos) };
@@ -95,11 +95,11 @@
   const BUSES = ["a", "b"] as const;
 
   /**
-   * 入れかえのためし弾き中は、ためしの音源の名前を accent で（トラックの見出しと同じ）。
-   * サイン波で代わりに鳴らしている間は「サイン波で代わり」（gray.8。仕様書 3 章 85）、止まったプラグインは赤い枠と「止」。
+   * During audition for a replace, the auditioned instrument's name is in accent (as in the track head).
+   * While a sine plays in its place, 「サイン波で代わり」 (gray.8; spec 3 (85)); a stopped plugin has a red border and 「止」.
    */
   function instrumentFrame(track: TrackView) {
-    // 歌のトラックの音源の枠は入口の名前（仕様書 3 章「歌のトラックの見出し」）。押すと見出しと同じ入口の一覧。
+    // The instrument slot of a vocal track shows the input name (spec 3, the track head of a vocal track). Pressing it opens the same input list as the track head.
     const kind = track.kind;
     if (kind.kind === "vocal") {
       const inputs = (e: MouseEvent) => {
@@ -146,18 +146,18 @@
     };
   }
 
-  // ---- スクロール ----
+  // ---- Scrolling ----
 
   let view = $state<HTMLDivElement>();
   let scroll = $state({ left: 0, top: 0, width: 0, height: 0, viewW: 0, viewH: 0 });
-  /** 下からの位置。はじめは 0（いちばん下）。 */
+  /** Position from the bottom. 0 (the very bottom) at first. */
   let fromBottom = 0;
 
   function measure(): void {
     if (!view) return;
     scroll = { left: view.scrollLeft, top: view.scrollTop, width: view.scrollWidth, height: view.scrollHeight, viewW: view.clientWidth, viewH: view.clientHeight };
   }
-  /** keepBottom が置いた scrollTop。その scroll の知らせは、あとから来るので（中身の高さがもう変わっているかもしれない）、人が動かした物と見ない。 */
+  /** The scrollTop that keepBottom set. Its scroll event comes later (the content height may have changed already), so it is not taken as a move by a person. */
   let placed: number | null = null;
   function onScroll(): void {
     if (!view) return;
@@ -167,7 +167,7 @@
     }
     measure();
   }
-  /** 大きさが変わったら、下からの位置を保つ。 */
+  /** When the size changes, keep the position from the bottom. */
   function keepBottom(): void {
     if (!view) return;
     view.scrollTop = Math.max(0, view.scrollHeight - view.clientHeight - fromBottom);

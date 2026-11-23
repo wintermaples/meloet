@@ -1,8 +1,8 @@
-<!-- 歌のクリップを 2 つ以上えらんだときのパラメータの欄（仕様書 3 章 40-A、モック F8-MultiClip ・ Opt8-MultiClip。約束 27 の ParamsView.clips）。
-     上に「3 クリップを選んでいます」とトラックの名前（「6 歌 ・ 7 歌 2」）。グループ「まとめて変える」に、音量 ・ 曲のテンポについていく ・
-     音の高さ ・ 声の感じを保つ。値がちがう欄は「—」。打った値（2 回押して打ちこむ枠、Enter）と押したオン ・ オフは、選んだぜんぶに
-     （SetClipGains ・ SetClipsStretch。どれも 1 手）。音の高さは半音とセントを別々に（1 つだけ選んだときの欄と同じ形）。
-     下に「位置 ・ 長さ ・ フェード ・ この音のテンポは、1 つだけ選ぶと出ます。」。 -->
+<!-- The params panel when two or more audio clips are chosen (spec 3 40-A; mocks F8-MultiClip, Opt8-MultiClip; ParamsView.clips of protocol 27).
+     At the top, 「3 クリップを選んでいます」 and the track names (「6 歌 ・ 7 歌 2」). The group 「まとめて変える」 has gain, follow the song
+     tempo, pitch, and keep the voice character. A field whose values differ shows 「—」. A typed value (press twice for the typing
+     box, Enter) and a pressed on/off go to all chosen clips (SetClipGains, SetClipsStretch; each one step). Pitch has semitones
+     and cents apart (the same form as the panel for one clip). At the bottom, 「位置 ・ 長さ ・ フェード ・ この音のテンポは、1 つだけ選ぶと出ます。」. -->
 <script lang="ts">
   import { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, type SelectedClips, type StretchChange } from "../../bridge";
   import { current, send } from "../../state/app.svelte";
@@ -41,7 +41,7 @@
     typing = null;
     if (busy) return;
     if (field === "gainDb") {
-      // 「−∞」と読めない字は何もしない（1 つだけ選んだときの欄と同じ）。範囲の外は Rust がだまって中に入れる。
+      // 「−∞」 and text that cannot be read do nothing (the same as the panel for one clip). Rust quietly brings values out of range inside.
       const db = parseDb(text);
       if (typeof db === "number" && db !== sel.gainDb) send({ type: "setClipGains", clips: sel.clips, db });
       return;
@@ -52,14 +52,14 @@
     if (field === "cents" && v !== sel.cents) setStretch({ kind: "cents", cents: v });
   }
 
-  /** 音の高さをドラッグしている間: 状態行の文とその場の読み値（6 章「音の高さを動かしている」）。もう片方がちがうときは 0 として読む。 */
+  /** While dragging the pitch: the status line text and the reading in place (spec 6 "Moving the pitch"). When the other one differs, it reads as 0. */
   const pitchDragging = (semitones: number, cents: number) => ({
     status: t("msg.pitchDragging", { semitones: signed(semitones), cents: signed(cents) }),
     reading: pitchReading(semitones, cents),
   });
 </script>
 
-<!-- オン ・ オフの行。ちがうとき（null）は印を空にして「—」。押すとオン（ぜんぶオンならオフ）。 -->
+<!-- An on/off row. When they differ (null), the mark is empty and 「—」. Pressing turns it on (off if all are on). -->
 {#snippet switchRow(kind: "follow" | "keepFormant", label: string, on: boolean | null)}
   <div class="row" data-test="clips-{kind}">
     <span class="m-lbl label">{label}</span>
@@ -147,7 +147,7 @@
           oncancel={() => (typing = null)}
         />
       {:else if sel.semitones === null && sel.cents === null}
-        <!-- 半音もセントもちがう: 「—」だけ（モック F8-MultiClip）。2 回押すと半音を打ちこむ。 -->
+        <!-- Both semitones and cents differ: only 「—」 (mock F8-MultiClip). Pressing twice types the semitones. -->
         <span class="m-num m-hi value" role="presentation" data-test="clips-value-pitch" ondblclick={() => startTyping("semitones")}>{dash}</span>
       {:else}
         <span class="m-num m-hi value" data-test="clips-value-pitch"
@@ -163,7 +163,7 @@
 </div>
 
 <style>
-  /* 「3 クリップを選んでいます」とトラックの名前（モック F8-MultiClip: 上下 8 ・ 左右 12、すきま 4、下に gray.5 の線）。 */
+  /* 「3 クリップを選んでいます」 and the track names (mock F8-MultiClip: 8 above and below, 12 left and right, gap 4, a gray.5 line below). */
   .who {
     flex-shrink: 0;
     display: flex;
@@ -222,7 +222,7 @@
     flex-shrink: 0;
     text-align: right;
   }
-  /* 12×12 の四角の印（ClipPanel ・ ParamRow と同じ形）。 */
+  /* The 12×12 square mark (the same form as ClipPanel and ParamRow). */
   .switch {
     flex-shrink: 0;
     box-sizing: border-box;

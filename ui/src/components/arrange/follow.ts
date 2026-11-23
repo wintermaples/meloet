@@ -1,16 +1,16 @@
-// 歌のクリップの「曲のティック → ファイルのこま」（約束 25 の `AudioClipView` の決まり、docs/architecture.md 22-19）。
-// crates/meloet-model/src/audio/follow.rs の `FileClock` と同じ式で、同じ答えを出す（follow.table.json と合う。
-// ui/tests/arrange.follow.test.ts）。DOM も Tauri も知らない。
+// Song tick → file frame for audio clips (the rules of `AudioClipView` in protocol 25, docs/architecture.md 22-19).
+// Same formula and same answers as `FileClock` in crates/meloet-model/src/audio/follow.rs (matches follow.table.json;
+// ui/tests/arrange.follow.test.ts). Knows neither the DOM nor Tauri.
 //
-// テイクの 0 ティック（`clip.start + clip.takeOffset`）が `firstFrame`。そこから先は 2 通り:
-//  - ついていかない（`sourceTempo` が null）: ファイルの速さのまま。間は、曲の地図の秒で数える。
-//  - ついていく: 音は曲のティックに貼りつく。曲のティックがそのままテイクのティックで、
-//    「この音のテンポ」の地図がファイルの秒を決める。曲のテンポは式に出てこない。
+// Tick 0 of the take (`clip.start + clip.takeOffset`) is `firstFrame`. After that, two ways:
+//  - Not following (`sourceTempo` is null): the file plays at its own speed. Time is counted in seconds of the song map.
+//  - Following: the audio sticks to song ticks. A song tick is a take tick as it is,
+//    and the map of the audio's own tempo decides the file seconds. The song tempo does not appear in the formula.
 
 import type { ClipView, SourceTempoView } from "../../bridge/types";
 import { TempoMap } from "../../time/tempoMap";
 
-/** 「この音のテンポ」の地図: テイクの 0 ティックからのティック → ファイルの秒。拍子は使わない。 */
+/** The map of the audio's own tempo: ticks from tick 0 of the take → file seconds. No time signature. */
 export function sourceMapOf(source: SourceTempoView): TempoMap {
   return new TempoMap({ tempoBpm: source.tempoBpm, headRamp: source.headRamp, tempoPoints: source.tempoPoints, meterNum: 4, meterDen: 4, meterChanges: [] });
 }
@@ -18,8 +18,8 @@ export function sourceMapOf(source: SourceTempoView): TempoMap {
 const sourceMaps = new WeakMap<SourceTempoView, TempoMap>();
 
 /**
- * `sourceMapOf` を、同じ `SourceTempoView` には 1 回だけ作る。曲の区画が届くまで同じ物が来るので、毎コマは作らない。
- * null（ついていかない）は null。
+ * Builds `sourceMapOf` only once for the same `SourceTempoView`. The same object comes until the song section arrives, so it is not built every frame.
+ * null (not following) stays null.
  */
 export function cachedSourceMap(source: SourceTempoView | null): TempoMap | null {
   if (source === null) return null;
@@ -31,7 +31,7 @@ export function cachedSourceMap(source: SourceTempoView | null): TempoMap | null
   return map;
 }
 
-/** 式に要る所だけ（`ClipView` と、その `audio` から）。 */
+/** Only what the formula needs (from `ClipView` and its `audio`). */
 export interface FollowClip {
   start: number;
   takeOffset: number;
@@ -43,9 +43,9 @@ export const followClipOf = (clip: ClipView): FollowClip | null =>
   clip.audio === null ? null : { start: clip.start, takeOffset: clip.takeOffset, firstFrame: clip.audio.firstFrame, sampleRate: clip.audio.sampleRate };
 
 /**
- * 曲のティック `tick` で鳴る、ファイルのこま（小数）。`source` は、ついていくクリップの「この音のテンポ」の地図
- * （`sourceMapOf(clip.audio.sourceTempo)`。クリップごとに 1 回作って持っておく）、ついていかなければ null。
- * 0 より前と、テイクの終わりより先は音なし。
+ * The file frame (fractional) heard at song tick `tick`. `source` is the map of the audio's own tempo for a following clip
+ * (`sourceMapOf(clip.audio.sourceTempo)`, built once per clip and kept), or null when not following.
+ * Silent before 0 and after the end of the take.
  */
 export function clipFrameAt(song: TempoMap, source: TempoMap | null, clip: FollowClip, tick: number): number {
   const zero = clip.start + clip.takeOffset;
@@ -53,7 +53,7 @@ export function clipFrameAt(song: TempoMap, source: TempoMap | null, clip: Follo
   return clip.firstFrame + seconds * clip.sampleRate;
 }
 
-/** 曲のテンポ ÷ この音のテンポ（その場の数。「×1.25」）。ついていかなければ null。 */
+/** Song tempo ÷ the audio's own tempo (at that point; 「×1.25」). null when not following. */
 export function stretchRatioAt(song: TempoMap, source: TempoMap | null, clip: FollowClip, tick: number): number | null {
   return source === null ? null : song.tempoAt(tick) / source.tempoAt(tick - (clip.start + clip.takeOffset));
 }

@@ -1,6 +1,7 @@
-<!-- パラメータの行の右の「オートメーションに書く」印（仕様書 2 章「パラメータの行」、3 章 Y16、20×20）。
-     押すと、その動きを書く帯をトラックの下に足す（たたんだ帯なら、ひらく）。帯がある行は accent（オートメーションに書いている）。
-     戻り A ・ B とマスターのインサートは、帯を作らないので「使えない」（docs/history/design-notes.ja.md A-19 の 7）。 -->
+<!-- The "write automation" mark at the right of a parameter row (spec 2 "Parameter row", spec 3 Y16, 20×20).
+     Pressing it adds, under the track, a band that writes the movement (opens it if folded). Rows with a band are accent
+     (writing automation). Inserts of returns A and B and of the master make no band, so they are disabled
+     (docs/history/design-notes.ja.md A-19, item 7). -->
 <script lang="ts">
   import { t } from "../../text/ja";
 
@@ -20,7 +21,7 @@
 >
 
 <style>
-  /* 使えない: 枠 gray.5、文字 gray.7、押せない。使える: 枠 gray.6、文字 gray.8。書いている行は accent。 */
+  /* Disabled: border gray.5, text gray.7, cannot be pressed. Usable: border gray.6, text gray.8. A row that writes is accent. */
   .automation {
     box-sizing: border-box;
     width: var(--part-param-automation);

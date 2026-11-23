@@ -6,7 +6,7 @@ import { insertName, pluginRowOf } from "../sounds";
 
 /**
  * The name a return takes from its top-most effect: an effect that comes with meloet by its name, a plugin by its
- * kind (14-A, "リバーブ"), or by its own name when its kind is 「そのほか」 or the shelf does not have it (user:2026-11-19).
+ * kind (14-A, 「リバーブ」), or by its own name when its kind is 「そのほか」 or the shelf does not have it (user:2026-11-19).
  */
 export function returnEffectName(insert: InsertView, library: LibraryView): string {
   const effect = insert.effect;
@@ -15,7 +15,7 @@ export function returnEffectName(insert: InsertView, library: LibraryView): stri
   return kind?.role === "effect" && kind.category !== "other" ? t(`pluginKind.effect.${kind.category}`) : effect.name;
 }
 
-/** A track: "2 ベース". A return: its letter and its top-most effect ("A リバーブ"), or the letter alone. */
+/** A track: 「2 ベース」. A return: its letter and its top-most effect (「A リバーブ」), or the letter alone. */
 export function stripName(song: SongView, strip: StripRef, library: LibraryView): string {
   switch (strip.kind) {
     case "track": {

@@ -1,10 +1,10 @@
-// ダイアログを、見出しの行（data-dialog-head の箱）を押したまま動かす。窓の外へは出さない。
-// 動かした量はこの action の中だけに持つので、ひらきなおすと、もとの置き場（窓のまん中など）から始まる。
-// ドラッグ中の Esc は、ほかのドラッグと同じく、動かす前の場所へ戻す（cancelDrag）。
+// Moves a dialog while its heading row (the data-dialog-head box) is held. It does not go out of the window.
+// The amount moved lives only in this action, so opening it again starts from its usual place (the middle of the window, ...).
+// Esc while dragging goes back to where it was, like the other drags (cancelDrag).
 
 import { onDragCancel } from "../components/pianoroll/view.svelte";
 
-/** 見出しの行の中でも、押してもダイアログを動かさない物。 */
+/** Things in the heading row that do not move the dialog when pressed. */
 const NOT_HANDLE = "button, a, input, select, textarea, [role='button']";
 
 export interface Rect {
@@ -15,8 +15,8 @@ export interface Rect {
 }
 
 /**
- * 動かした量 (x, y) を、動かす前の箱 base が窓 (width × height) の中に入る量へ止める。
- * 箱が窓より大きいときは、左と上のはしを窓に入れる。
+ * Limits the amount moved (x, y) so the box `base` (before moving) stays inside the window (width × height).
+ * When the box is bigger than the window, its left and top ends stay inside.
  */
 export function clampOffset(base: Rect, x: number, y: number, width: number, height: number): { x: number; y: number } {
   return {
@@ -30,7 +30,7 @@ export function movableDialog(node: HTMLElement) {
   let y = 0;
   let drag: { id: number; px: number; py: number; x: number; y: number; handle: HTMLElement } | null = null;
 
-  /** WebGL の区画（音の設定のメーターなど）が画面の点にそろったままになるよう、点の境目に置く。 */
+  /** Placed on pixel edges, so WebGL regions (the meter in the sound settings, ...) stay aligned to screen pixels. */
   function onDevicePixel(v: number): number {
     const dpr = window.devicePixelRatio || 1;
     return Math.round(v * dpr) / dpr;
@@ -81,7 +81,7 @@ export function movableDialog(node: HTMLElement) {
     return true;
   });
 
-  // 中身の高さが変わったとき（くわしい設定をひらく）と、窓が小さくなったときに、窓の中へ戻す。
+  // Brought back inside the window when the content height changes (advanced settings open) and when the window gets smaller.
   const sizes = new ResizeObserver(refit);
   sizes.observe(node);
   node.addEventListener("pointerdown", onDown);

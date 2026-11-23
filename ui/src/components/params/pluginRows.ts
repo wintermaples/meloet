@@ -1,14 +1,14 @@
-// プラグインのパラメータの一覧（仕様書 3 章「パラメータ」）。DOM を知らない純粋な関数。
-// 一覧はプラグインが言ってきた順とグループのまま。40 個をこえる子は、グループをたたんで始める（たたむのは画面だけ）。
-// いちばん上に「オートメーションに書いている」。さがすと、合う物だけがグループごとに出て、1 グループ 6 個まで、残りは「… ほか N」。
-// 鍵盤のつまみを受けるだけのパラメータ（ParamTable.keyboardKnobs）は、さがしているときだけ、いちばん下のグループ「鍵盤のつまみを受ける所」に出す（仕様書 3 章 91-3）。
+// The parameter list of a plugin (spec 3, the 「パラメータ」 rule). Pure functions that do not know the DOM.
+// The list keeps the order and groups the plugin gives. A plugin with over 40 starts with its groups folded (folding is only on the screen).
+// 「オートメーションに書いている」 is at the very top. A search shows only matches, by group, up to 6 per group, the rest as 「… ほか N」.
+// Parameters that only receive the keyboard's knobs (ParamTable.keyboardKnobs) are shown only while searching, in the last group 「鍵盤のつまみを受ける所」 (spec 3 (91-3)).
 
 import type { ParamGroup, ParamKind, ParamRow, ParamTable } from "../../bridge";
 import { t } from "../../text/ja";
 
-/** これより多いと、グループをたたんで始める。 */
+/** With more than this, start with the groups folded. */
 export const FOLD_OVER = 40;
-/** さがしているとき、1 グループに出す数。 */
+/** While searching, how many to show in one group. */
 export const SEARCH_SHOWN = 6;
 export const AUTOMATED_GROUP = "auto";
 export const KNOBS_GROUP = "knobs";
@@ -20,9 +20,9 @@ export type PluginEntry =
 
 export interface PluginLook {
   query: string;
-  /** たたんだグループ（groupId）。 */
+  /** The folded groups (groupId). */
   folded: ReadonlySet<string>;
-  /** さがしているとき「… ほか N」を押して広げたグループ。 */
+  /** The groups opened with 「… ほか N」 while searching. */
   expanded: ReadonlySet<string>;
 }
 
@@ -30,18 +30,18 @@ export const groupId = (index: number) => `g:${index}`;
 
 export const tableCount = (table: ParamTable) => table.groups.reduce((n, g) => n + g.params.length, 0);
 
-/** 表を受けとったときに、たたんでおくグループ。 */
+/** The groups to fold when a table comes. */
 export function foldedAtFirst(table: ParamTable): Set<string> {
   if (tableCount(table) <= FOLD_OVER) return new Set();
   return new Set(table.groups.map((_, i) => groupId(i)));
 }
 
-/** 2 つの表のグループの並び（名前と数）が同じ。同じなら、たたみ方（groupId は並びの番号）をそのまま使える。 */
+/** The two tables have the same groups in order (names and counts). If so, the folding can be kept (groupId is the place in order). */
 export function sameGroups(a: ParamTable, b: ParamTable): boolean {
   return a.groups.length === b.groups.length && a.groups.every((g, i) => g.name === b.groups[i]!.name && g.params.length === b.groups[i]!.params.length);
 }
 
-/** グループの見出しの名前。名前のない物は、名前のあるグループがほかにあるときだけ「そのほか」（モック F-ParamMany）。見出しを出さないなら null。 */
+/** The group heading name. A group without a name is 「そのほか」 only when another group has a name (mock F-ParamMany). null for no heading. */
 function headingName(group: ParamGroup, table: ParamTable): string | null {
   if (group.name !== null) return group.name;
   return table.groups.some((g) => g.name !== null) ? t("params.groupOther") : null;
@@ -49,7 +49,7 @@ function headingName(group: ParamGroup, table: ParamTable): string | null {
 
 const matches = (row: ParamRow, q: string) => row.name.toLowerCase().includes(q);
 
-/** 一覧に出す物（見出し ・ 行 ・「… ほか N」）を上から順に。 */
+/** What the list shows (headings, rows, 「… ほか N」), from the top. */
 export function pluginEntries(table: ParamTable, automated: readonly number[], look: PluginLook): PluginEntry[] {
   const q = look.query.trim().toLowerCase();
   const out: PluginEntry[] = [];
@@ -89,8 +89,8 @@ export function pluginEntries(table: ParamTable, automated: readonly number[], l
 }
 
 /**
- * 一覧の下の「ほかに、鍵盤のつまみを受けるだけの 2080 個（MIDI CC 0|0 〜 15|129）は出していません。さがすと出ます。」の穴。
- * 最後の名前は、最初の名前と同じ頭（最後の空白まで）を外す。鍵盤のつまみを受けるだけの物がなければ null。
+ * The blanks of 「ほかに、鍵盤のつまみを受けるだけの 2080 個（MIDI CC 0|0 〜 15|129）は出していません。さがすと出ます。」 under the list.
+ * The last name drops the start it shares with the first name (up to the last space). null if no parameter only receives knobs.
  */
 export function hiddenKnobs(table: ParamTable): { count: number; first: string; last: string } | null {
   const knobs = table.keyboardKnobs;
@@ -101,7 +101,7 @@ export function hiddenKnobs(table: ParamTable): { count: number; first: string; 
   return { count: knobs.length, first, last: head !== "" && last.startsWith(head) ? last.slice(head.length) : last };
 }
 
-/** さがす枠に合う数（「24 / 2855」の 24）。空なら全部。 */
+/** How many match the search box (the 24 of 「24 / 2855」). All when empty. */
 export function matchCount(table: ParamTable, query: string): number {
   const q = query.trim().toLowerCase();
   if (q === "") return tableCount(table);
@@ -109,7 +109,7 @@ export function matchCount(table: ParamTable, query: string): number {
   return table.groups.reduce((n, g) => n + g.params.filter((r) => matches(r, q)).length, knobs);
 }
 
-/** ↑ ↓ でえらぶ次の行（見えている行の中。はしで止まる）。 */
+/** The next row chosen with ↑ ↓ (among the rows in view; stops at the ends). */
 export function stepPluginRow(entries: readonly PluginEntry[], selected: number | null, delta: 1 | -1): number | null {
   const rows = entries.flatMap((e) => (e.kind === "row" ? [e.row.id] : []));
   if (rows.length === 0) return null;
@@ -118,22 +118,22 @@ export function stepPluginRow(entries: readonly PluginEntry[], selected: number 
   return rows[Math.max(0, Math.min(rows.length - 1, at + delta))]!;
 }
 
-/** 段階の数（段階でなければ null）。 */
+/** The number of steps (null when not stepped). */
 export const stepCount = (kind: ParamKind): number | null => (kind.kind === "steps" ? Math.max(2, kind.steps) : null);
 
-/** 0..1 の値 → 段の番号（0 から）。 */
+/** A 0..1 value → the step number (from 0). */
 export function stepOf(kind: ParamKind, value: number): number {
   const n = stepCount(kind) ?? 2;
   return Math.max(0, Math.min(n - 1, Math.round(value * (n - 1))));
 }
 
-/** 段の番号 → 0..1 の値。 */
+/** The step number → a 0..1 value. */
 export function valueOfStep(kind: ParamKind, step: number): number {
   const n = stepCount(kind) ?? 2;
   return Math.max(0, Math.min(1, step / (n - 1)));
 }
 
-/** 値の文字。プラグインが言ってきた文字のまま。値がわからない行は「—」（user:2026-11-19）。文字をくれない子は 0..1 を % で。 */
+/** The value text, as the plugin gives it. 「—」 for a row whose value is unknown (user:2026-11-19). For a plugin that gives no text, 0..1 as %. */
 export function pluginValueText(row: Pick<ParamRow, "value" | "text" | "kind">): string {
   if (row.value === null) return t("params.unknownValue");
   if (row.text !== null) return row.text;
@@ -142,7 +142,7 @@ export function pluginValueText(row: Pick<ParamRow, "value" | "text" | "kind">):
   return row.value.toFixed(2);
 }
 
-/** Enter でひらく段の一覧の名前。名前を言わない子は「1」「2」…（user:2026-11-19）。 */
+/** The names in the list of steps that Enter opens. 「1」「2」… for a plugin that gives no names (user:2026-11-19). */
 export function stepLabels(kind: ParamKind): string[] {
   if (kind.kind !== "steps") return [];
   const n = stepCount(kind)!;

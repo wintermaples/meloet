@@ -1,10 +1,12 @@
-<!-- 選んだクリップ（仕様書 2 章「選んだクリップ」、3 章 93-4 ・ Y22、モック F7-AudioEdit ・ F7-AudioMissing）。パラメータの欄の中身。
-     上に名前と「選んだクリップ」、ファイルの行（「6 歌 ・ 歌 テイク 1.wav ・ 48000 Hz ・ 24 ビット」。サンプルレートがちがえば「44100 Hz（曲に合わせて鳴らします）」）。
-     グループ「クリップ」（位置 ・ 長さ ・ 音量 ・ フェード）。値を 2 回押すと打ちこむ枠（Enter で SetClipField を 1 つ。範囲の外は Rust がだまって中に入れる。B-94-29）。
-     グループ「のび縮み ・ 音の高さ」（3 章「のび縮み」「音の高さ」、モック F7-Stretch）: オン ・ オフは 12×12 の四角の印（パラメータの行と同じ）を押して
-     SetClipStretch。この音のテンポは 2 回押して打ちこむ。「—」のときは「さがす」（FindSourceTempo）。音の高さは半音とセントを別々に、
-     上下のドラッグ（離したときに 1 手）か 2 回押して打ちこむ。音を作っている間は、欄の上に進みの棒（audioWork の rendering）。
-     音のファイルが見つからないときは、グループのかわりに見つからない物の知らせ（「さがす…」「曲から外す」）。 -->
+<!-- The chosen clip (spec 2 "Selected clip", spec 3 93-4 and Y22; mocks F7-AudioEdit, F7-AudioMissing). The content of the params panel.
+     At the top, the name and 「選んだクリップ」, and the file line (「6 歌 ・ 歌 テイク 1.wav ・ 48000 Hz ・ 24 ビット」; with a different
+     sample rate, 「44100 Hz（曲に合わせて鳴らします）」). The group 「クリップ」 (position, length, gain, fade). Pressing a value twice gives
+     the typing box (Enter sends one SetClipField; Rust quietly brings values out of range inside; B-94-29).
+     The group 「のび縮み ・ 音の高さ」 (spec 3 "Stretch", "Pitch"; mock F7-Stretch): on/off is a 12×12 square mark (the same as the
+     parameter row) that sends SetClipStretch. The source tempo is typed after pressing twice; when it is 「—」, 「さがす」
+     (FindSourceTempo). Pitch has semitones and cents apart, dragged up and down (one step on release) or typed after pressing
+     twice. While the sound is being made, a progress bar above the panel (`rendering` of audioWork).
+     When the audio file is not found, the notice of missing things (「さがす…」「曲から外す」) instead of the groups. -->
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { CLIP_CENTS_MAX, CLIP_SEMITONES_MAX, type ClipField, type ClipView, type SelectedClip, type StretchChange, type ValueField as ValueFieldName } from "../../bridge";
@@ -79,7 +81,7 @@
   let folded = $state<string[]>([]);
   const toggle = (group: string) => (folded = folded.includes(group) ? folded.filter((g) => g !== group) : [...folded, group]);
 
-  /** 打ちこんでいる欄（フェードは前と後で別の欄、音の高さは半音とセントで別の欄）。 */
+  /** The field being typed (fade in and fade out are separate fields; so are semitones and cents). */
   type TypedField = ClipField | "sourceBpm" | "semitones" | "cents";
   let typing = $state<TypedField | null>(null);
 
@@ -129,7 +131,7 @@
     if (clip?.audio && !busy) send({ type: "setClipStretch", clip: clip.id, change });
   }
 
-  /** 音の高さをドラッグしている間: 状態行の文とその場の読み値（仕様書 6 章「音の高さを動かしている」）。 */
+  /** While dragging the pitch: the status line text and the reading in place (spec 6 "Moving the pitch"). */
   const pitchDragging = (semitones: number, cents: number) => ({
     status: t("msg.pitchDragging", { semitones: signed(semitones), cents: signed(cents) }),
     reading: pitchReading(semitones, cents),
@@ -145,17 +147,17 @@
       else if (bpm !== s.sourceBpm) setStretch({ kind: "sourceBpm", bpm });
       return;
     }
-    // 読めない半音 ・ セントは何もしない（範囲の文の欄がない）。範囲の外は Rust がだまって中に入れる。
+    // Semitones or cents that cannot be read do nothing (there is no range text for them). Rust quietly brings values out of range inside.
     const v = parseWhole(text);
     if (v === null) return;
     if (field === "semitones" && v !== s.semitones) setStretch({ kind: "semitones", semitones: v });
     if (field === "cents" && v !== s.cents) setStretch({ kind: "cents", cents: v });
   }
 
-  /** このクリップの音を作っている進み（約束 24 の audioWork。clip がこのクリップの物。% はクリップの下 ・ 状態行と同じコマで変わる）。 */
+  /** The render progress of this clip (`audioWork` of protocol 24, the job whose clip is this one; the % changes in the same frame as under the clip and in the status line). */
   const rendering = $derived(shownWork.current.rendering.get(sel.clip) ?? null);
 
-  /** % が変わったら、進みの行まるごとの四角を先に 1 つ頼む（棒と字と % の四角が、上下の端のちがう 3 つにならない）。 */
+  /** When the % changes, first ask for one rectangle over the whole progress row (so the bar, the text and the % are not three rectangles with different tops and bottoms). */
   function askRow(node: HTMLElement, percent: number) {
     let now = percent;
     return {
@@ -175,7 +177,7 @@
   {/if}
 {/snippet}
 
-<!-- オン ・ オフの行: 12×12 の四角の印（オンは枠と中の 6×6 が accent。params/ParamRow.svelte と同じ）と、値の字。 -->
+<!-- An on/off row: the 12×12 square mark (when on, the border and the 6×6 inside are accent, as in params/ParamRow.svelte) and the value text. -->
 {#snippet switchRow(kind: "follow" | "keepFormant", label: string, on: boolean)}
   <div class="row" data-test="clip-{kind}">
     <span class="m-lbl label">{label}</span>
@@ -223,7 +225,7 @@
     <div class="rendering" data-test="clip-rendering" use:askRow={rendering.percent}>
       <span class="m-lbl">{t("clipParams.rendering")}</span>
       <div class="bar"><div class="fill" style:transform="scaleX({rendering.percent / 100})"></div></div>
-      <!-- % の字は流れの外の箱: 字の幅が変わっても、行と欄はレイアウトしなおされない。幅は「99 %」の字で決める。 -->
+      <!-- The % text is in a box out of the flow, so a change in its width does not lay out the row and the panel again. Its width comes from the text 「99 %」. -->
       <span class="m-num m-hi percent" data-size={t("clipParams.renderingPercent", { percent: 99 })}
         ><span class="in">{t("clipParams.renderingPercent", { percent: rendering.percent })}</span></span
       >
@@ -255,7 +257,7 @@
           {#if typing === "fadeIn" || typing === "fadeOut"}
             {@render value(typing, shown[typing], t("clipParams.fade"))}
           {:else}
-            <!-- 「前 0.0480 ・ 後 0.0000」。前の数を 2 回押すとフェードイン、後の数でフェードアウトを打ちこむ。 -->
+            <!-- 「前 0.0480 ・ 後 0.0000」. Pressing the first number twice types the fade-in, the second the fade-out. -->
             <span class="m-num m-hi value" data-test="clip-value-fade"
               >{#each textParts("clipParams.fadeValue", { fadeIn: shown.fadeIn, fadeOut: shown.fadeOut }) as part, i (i)}{#if part.hole === "fadeIn" || part.hole === "fadeOut"}{@const edge = part.hole}<span
                     role="presentation"
@@ -302,7 +304,7 @@
               oncancel={() => (typing = null)}
             />
           {:else}
-            <!-- 「+2 半音 0 セント」。半音とセントの数を、それぞれ上下にドラッグするか 2 回押して打ちこむ。 -->
+            <!-- 「+2 半音 0 セント」. The semitones and cents numbers are each dragged up and down, or typed after pressing twice. -->
             <span class="m-num m-hi value"
               >{#each textParts("clipParams.pitchValue", { semitones: "", cents: "" }) as part, i (i)}{#if part.hole === "semitones"}<StretchNumber
                     value={stretch.semitones}
@@ -337,7 +339,7 @@
 {/if}
 
 <style>
-  /* 名前とファイルの行（モック F7-AudioEdit: 上下 8 ・ 左右 12、すきま 4、下に gray.5 の線。ファイルの行は折り返す）。 */
+  /* The name and file lines (mock F7-AudioEdit: 8 above and below, 12 left and right, gap 4, a gray.5 line below; the file line wraps). */
   .who {
     flex-shrink: 0;
     display: flex;
@@ -386,7 +388,7 @@
   .file {
     white-space: normal;
   }
-  /* 見つからない物の知らせ（仕様書 2 章: 左に gray.8 の line.mark、内 8 ・ 12）。 */
+  /* The notice of missing things (spec 2: a gray.8 line.mark on the left, padding 8 and 12). */
   .missing {
     flex-shrink: 0;
     display: flex;
@@ -444,7 +446,7 @@
     flex-shrink: 0;
     text-align: right;
   }
-  /* 12×12 の四角の印（params/ParamRow.svelte と同じ形）。 */
+  /* The 12×12 square mark (the same form as params/ParamRow.svelte). */
   .switch {
     flex-shrink: 0;
     box-sizing: border-box;
@@ -465,7 +467,7 @@
   .switch.on span {
     background: var(--color-accent);
   }
-  /* 音を作っている進み（モック F7-Stretch: 高さ 24、左右 12、すきま 8、棒は地 gray.4 に accent。棒の太さは F7-Latency の棒と同じ）。 */
+  /* Render progress (mock F7-Stretch: height 24, 12 left and right, gap 8, the bar accent on gray.4; as thick as the bar in F7-Latency). */
   .rendering {
     flex-shrink: 0;
     height: var(--part-param-height);

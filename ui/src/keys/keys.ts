@@ -1,23 +1,23 @@
-// キーの決まり（仕様書 4 章）。DOM を知らない純粋な関数。
+// The key rules (spec 4). Pure functions that do not know the DOM.
 
 export type Platform = "mac" | "other";
 
 /**
- * 出口えらび（流れ 2）の中にいるときだけ、↑ ↓ Enter をここで受ける。棚にキーが向いているときは、↑ ↓ Enter Space F を棚に。
- * 取り消しの履歴の帯にフォーカスがあるときは、↑ ↓ Home Enter を帯に。
+ * Only inside the output chooser (flow 2) are ↑ ↓ Enter taken here. When keys go to the shelf, ↑ ↓ Enter Space F go to the shelf.
+ * When the undo history band has focus, ↑ ↓ Home Enter go to the band.
  */
 export type KeyContext = "main" | "outputChooser" | "shelf" | "history";
 
 export interface KeyInput {
   /** KeyboardEvent.key */
   key: string;
-  /** KeyboardEvent.code。Mac の Option は key を別の文字にかえるので、数字と文字はこちらでも見る。 */
+  /** KeyboardEvent.code. On the Mac, Option turns key into another character, so digits and letters are also read from here. */
   code?: string;
   ctrl: boolean;
   meta: boolean;
   alt: boolean;
   shift: boolean;
-  /** IME で変換している最中（KeyboardEvent.isComposing）。そのあいだのキーは IME のもの。 */
+  /** The IME is composing (KeyboardEvent.isComposing). Keys meanwhile belong to the IME. */
   composing?: boolean;
 }
 
@@ -35,7 +35,7 @@ export type KeyAction =
   | { kind: "toStart" }
   | { kind: "loop" }
   | { kind: "metronome" }
-  /** えらんだクリップの次のテイク（1）、前のテイク（-1）。 */
+  /** The next take (1) or the previous take (-1) of the chosen clip. */
   | { kind: "stepTake"; delta: 1 | -1 }
   | { kind: "splitClips" }
   /** Mod J: join the chosen keyboard clips of one track (spec 4, round 10). */
@@ -45,39 +45,39 @@ export type KeyAction =
   | { kind: "openSong" }
   | { kind: "saveSong" }
   | { kind: "saveSongAs" }
-  /** Mod Shift E: 書き出しのダイアログをひらく（仕様書 4 章）。 */
+  /** Mod Shift E: open the export dialog (spec 4). */
   | { kind: "export" }
   | { kind: "quit" }
-  /** Shift M ・ Shift S: 選んだトラック（song.playTarget）のミュート ・ ソロ。 */
+  /** Shift M, Shift S: mute, solo of the selected track (song.playTarget). */
   | { kind: "trackMute" }
   | { kind: "trackSolo" }
-  /** F10: 上のメニューの行の最初のメニューをひらく（B-59）。 */
+  /** F10: open the first menu of the menu bar (B-59). */
   | { kind: "menuBar" }
   | { kind: "undo" }
   | { kind: "redo" }
-  /** 横に拡大（1）・縮小（-1）。ピアノロールとアレンジの、最後に押したほう。 */
+  /** Zoom in (1) or out (-1) across, in whichever of the piano roll and the arrange was pressed last. */
   | { kind: "zoom"; delta: 1 | -1 }
-  // ピアノロール（仕様書 4 章）。どこに向けるかは attach.ts が決める。
+  // Piano roll (spec 4). attach.ts decides where these go.
   | { kind: "tool"; tool: "select" | "draw" | "erase" }
-  /** ← →: グリッド steps 個、↑ ↓: keys 半音（Shift で 1 オクターブ）。 */
+  /** ← →: steps grid cells; ↑ ↓: keys semitones (an octave with Shift). */
   | { kind: "nudge"; steps: number; keys: number }
   | { kind: "selectAll" }
-  /** Q: 選んだノート（なければ全部）にクオンタイズをかける。 */
+  /** Q: quantize the selected notes (all notes when none are selected). */
   | { kind: "quantize" }
   | { kind: "duplicate" }
   | { kind: "cut" }
   | { kind: "copy" }
   | { kind: "paste" }
-  /** F2: 選んだトラックの名前を変える（その場の入力の枠）。With a clip chosen, the clip's name instead (round 10). */
+  /** F2: rename the selected track (an input box in place). With a clip chosen, the clip's name instead (round 10). */
   | { kind: "renameTrack" }
-  // 棚の中（仕様書 4 章）。行を上下にえらぶ、えらんだ音源を入れる、サンプルを聞く ・ 止める、お気に入りの印。
+  // In the shelf (spec 4): choose a row up or down, put in the chosen instrument, play or stop the sample, the favorite mark.
   | { kind: "shelfStep"; delta: 1 | -1 }
   | { kind: "shelfConfirm" }
   | { kind: "shelfSample" }
   | { kind: "shelfFavorite" }
-  /** B: えらんでいるインサートをとばす ・ もどす（仕様書 3 章 86-1）。 */
+  /** B: bypass or restore the chosen insert (spec 3 (86-1)). */
   | { kind: "bypass" }
-  // 取り消しの履歴の帯（仕様書 4 章）。↑ は新しい手（上の行）へ、↓ は古い手へ。Home でいまの手へ、Enter でここまで戻す。
+  // The undo history band (spec 4). ↑ goes to a newer step (the row above), ↓ to an older one. Home goes to the current step, Enter undoes back to here.
   | { kind: "historyStep"; delta: 1 | -1 }
   | { kind: "historyHome" }
   | { kind: "historyConfirm" };
@@ -98,8 +98,8 @@ const MOD_EDITS: Record<string, KeyAction> = {
 };
 
 /**
- * Mod ＋ ・ Mod −（仕様書 4 章）。＋ は配列によって Shift がいる（US は Shift ＝、JIS は Shift ；）ので Shift は見ない。
- * Shift なしの ＝ と、テンキーの ＋ − も同じにする。
+ * Mod + and Mod − (spec 4). + needs Shift on some layouts (Shift = on US, Shift ; on JIS), so Shift is not looked at.
+ * = without Shift and the number pad + − do the same.
  */
 function zoomKey(k: KeyInput): 1 | -1 | null {
   if (k.key === "+" || k.key === "=" || k.code === "NumpadAdd") return 1;
@@ -122,7 +122,7 @@ const BAND_KEYS: Record<string, KeyAction> = {
   s: { kind: "splitClips" },
 };
 
-/** 英字 1 つ（小文字）。key が英字でなければ（かな入力の配列など）code の KeyA… から読む。 */
+/** One letter (lower case). When key is not a Latin letter (a kana layout, for example), it is read from code (KeyA…). */
 function letter(k: KeyInput): string | null {
   if (/^[a-z]$/i.test(k.key)) return k.key.toLowerCase();
   const m = k.code?.match(/^Key([A-Z])$/);
@@ -136,8 +136,8 @@ function digit(k: KeyInput): string | null {
 }
 
 /**
- * キーのできごとから、することを決める。何もしないなら null。
- * typing: いま文字を打っている（isTyping）。一文字のキーと Space はそのあいだ効かない。Esc・Enter・Mod つき・Home は効く。
+ * Decides what to do from a key event. null when nothing is done.
+ * typing: text is being typed (isTyping). One-letter keys and Space do not work meanwhile. Esc, Enter, Mod keys and Home do.
  */
 export function keyAction(k: KeyInput, typing: boolean, platform: Platform, context: KeyContext = "main"): KeyAction | null {
   if (k.composing) return null;
@@ -156,7 +156,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (l === "z") return { kind: "undo" };
     if (l === "q") return { kind: "quit" };
     if (l === "j") return { kind: "joinClips" };
-    // 文字を打っている最中の Mod A ・ X ・ C ・ V は、枠の中の文字のもの。
+    // While typing, Mod A, X, C, V belong to the text in the box.
     if (l && MOD_EDITS[l] && !(typing && l !== "d")) return MOD_EDITS[l]!;
     if (!k.alt && (k.key === "," || k.code === "Comma")) return { kind: "audioSettings" };
     if (k.alt) {
@@ -177,7 +177,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (k.key === "ArrowDown") return { kind: "chooserDown" };
     if (k.key === "Enter") return { kind: "chooserConfirm" };
   }
-  // 仕様書 4 章: 棚の中の ↑ ↓ と Enter は、文字を打っている最中（さがす枠）も効く。
+  // Spec 4: ↑ ↓ and Enter in the shelf also work while typing (in the search box).
   if (!k.shift && context === "shelf") {
     if (k.key === "ArrowUp") return { kind: "shelfStep", delta: -1 };
     if (k.key === "ArrowDown") return { kind: "shelfStep", delta: 1 };
@@ -191,10 +191,10 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
     if (k.key === "Enter") return { kind: "historyConfirm" };
   }
 
-  // 仕様書 4 章: Home は文字を打っている最中も効く。Space は効かず、空白として入る。Delete も効かず、枠の中の文字を消す。
+  // Spec 4: Home works while typing. Space does not; it goes in as a space. Delete does not either; it deletes text in the box.
   if (k.key === "Home") return k.shift ? null : { kind: "toStart" };
   if (typing) return null;
-  // 棚の中の Space は、再生ではなくサンプル（仕様書 3 章）。
+  // Space in the shelf plays the sample, not the song (spec 3).
   if (k.key === " " || k.code === "Space") return k.shift ? null : context === "shelf" ? { kind: "shelfSample" } : { kind: "playStop" };
   if (k.key === "Delete") return k.shift ? null : { kind: "deleteSelected" };
 
@@ -205,7 +205,7 @@ export function keyAction(k: KeyInput, typing: boolean, platform: Platform, cont
 
   const l = letter(k);
   if (k.shift) {
-    // Shift M ・ Shift S は選んだトラックのミュート ・ ソロ。ほかの一文字のキーと同じく、文字を打っている最中は効かない（B-70）。
+    // Shift M, Shift S mute and solo the selected track. Like other one-letter keys, they do not work while typing (B-70).
     if (l === "m") return { kind: "trackMute" };
     if (l === "s") return { kind: "trackSolo" };
     return l === "t" ? { kind: "stepTake", delta: -1 } : null;
@@ -221,7 +221,7 @@ export function platformOf(nav: { platform?: string; userAgent?: string }): Plat
 
 const NON_TEXT_INPUTS = new Set(["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"]);
 
-/** いま文字を打っているか。input（文字を入れる種類）、textarea、contenteditable にカーソルがあるとき。 */
+/** Whether text is being typed: the cursor is in an input (of a text kind), a textarea, or a contenteditable. */
 export function isTyping(doc: Document = document): boolean {
   let el: Element | null = doc.activeElement;
   while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
@@ -233,7 +233,7 @@ export function isTyping(doc: Document = document): boolean {
   return editable !== null && editable.getAttribute("contenteditable") !== "false";
 }
 
-/** KeyboardEvent から KeyInput を作る。 */
+/** Makes a KeyInput from a KeyboardEvent. */
 export function keyInputOf(ev: KeyboardEvent): KeyInput {
   return { key: ev.key, code: ev.code, ctrl: ev.ctrlKey, meta: ev.metaKey, alt: ev.altKey, shift: ev.shiftKey, composing: ev.isComposing };
 }

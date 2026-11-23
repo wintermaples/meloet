@@ -1,9 +1,9 @@
-<!-- 歌のクリップの中の文（HTML。地の色と波形は WebGL の側）。
-     見つからない音: 名前の行の下に gray.8 で「音のファイルが見つかりません」（仕様書 3 章、モック F7-AudioMissing ・ R11-Audio）。
-     読みこんでいる途中: クリップの下に「読みこんでいます 40 %」（仕様書 2 章「歌のクリップ」、3 章「読めるファイル」。箱はモック R11-Audio の進みの形）。
-     音を作っている間: 同じ所と形で「音を作っています 34 %」（仕様書 2 章、3 章「音を作っている間」、モック F7-Stretch）。
-     % は state/audioWork.svelte の見せる進み（1 秒に 2 回まで）。字が変わる箱は、上から下までの列（askHost の中の見えない箱）の四角を
-     先に 1 つ頼む: 箱だけの四角だと、トラックのメーターと再生の線の四角を上下に切って、1 コマの四角が 10 個をこえる（architecture 7 章）。 -->
+<!-- Text inside audio clips (HTML; the background and waveform are on the WebGL side).
+     Missing audio: 「音のファイルが見つかりません」 in gray.8 under the name row (spec 3, mock F7-AudioMissing / R11-Audio).
+     While loading: 「読みこんでいます 40 %」 at the bottom of the clip (spec 2 "Audio clip", spec 3 "Files that can be read"; the box is the progress shape of mock R11-Audio).
+     While making the sound: 「音を作っています 34 %」 in the same place and shape (spec 2, spec 3 "While the sound is being made", mock F7-Stretch).
+     The % is the shown progress from state/audioWork.svelte (up to twice a second). A box whose text changes first asks for the rect of a top-to-bottom
+     column (an invisible box in askHost): a rect of the box alone would cut the track meter and play line rects into pieces, giving more than 10 rects in one frame (architecture 7). -->
 <script lang="ts">
   import type { TrackView } from "../../bridge";
   import { current } from "../../state/app.svelte";
@@ -21,7 +21,7 @@
   }: { view: View; dims: LaneDims; tracks: readonly TrackView[]; askHost?: HTMLElement | null } = $props();
 
   const work = $derived(shownWork.current);
-  /** 再生の線とトラックのメーターが毎コマ動いている間（このときだけ列の四角を頼む）。 */
+  /** While the play line and track meters move every frame (only then ask for the column rect). */
   const moving = $derived(current.state!.transport.state !== "stopped");
 
   const notes = $derived.by(() => {
@@ -55,13 +55,13 @@
 
   type Ask = { x: number; w: number; kind: "missing" | "loading" | "rendering"; text: string };
 
-  /** 2 けたの % のうち、いちばん幅の広い字はこのどれか（同じ数字 2 つか、数字と 0）。 */
+  /** The widest two-digit % text is one of these (two same digits, or a digit and 0). */
   const WIDEST = Array.from({ length: 9 }, (_, i) => [(i + 1) * 11, (i + 1) * 10]).flat();
 
   /**
-   * 再生の線が動いている間に字が変わったら、その字の列（askHost の上から下まで。再生の線と同じ）の四角を先に 1 つ頼む。列の箱は、はじめて
-   * 頼むときに作る。列の幅は、いちばん幅の広い % の字を見えない字で入れて決める（字の四角が、いつも列の中に入る）。止まっている間は
-   * 頼まない: ほかに動く物がなければ、列と状態行だけで囲む四角の 25 % をこえて、囲む四角をまるごと描く。
+   * If the text changes while the play line moves, first ask for one rect of that text's column (top to bottom of askHost, like the play line). The column box is made
+   * the first time it is asked for. Its width comes from the widest % text put in as invisible text (so the text rect always fits in the column). While stopped,
+   * do not ask: with nothing else moving, the column and the status line alone would go over 25 % of the bounding rect, and the whole bounding rect would be drawn.
    */
   function askColumn(node: HTMLElement, at: Ask) {
     let text = at.text;
@@ -135,7 +135,7 @@
   .note.missing {
     padding-top: var(--space-1);
   }
-  /* 読みこんでいる進み: クリップの下のはしに、地 gray.0 ・ 枠 gray.7 の小さな箱。 */
+  /* Loading progress: a small box at the bottom of the clip, background gray.0, border gray.7. */
   .note.loading {
     align-items: flex-end;
     padding-bottom: var(--space-1);
@@ -145,7 +145,7 @@
     background: var(--color-gray-0);
     border: var(--line-hair) solid var(--color-gray-7);
   }
-  /* せまいクリップでは、クリップのはしで切る（モック F7-AudioMissing）。 */
+  /* In a narrow clip, cut it at the clip edge (mock F7-AudioMissing). */
   .text {
     white-space: nowrap;
     overflow: hidden;

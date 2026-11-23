@@ -1,12 +1,12 @@
-// 用語の説明（仕様書 2 章「用語の説明」・5 章）。画面に 1 つだけ。Tip.svelte が tipView を描く。
+// Term tips (spec 2 "Term tip", spec 5). Only one on the screen. Tip.svelte draws tipView.
 import type { Action } from "svelte/action";
 import { findTerm } from "../text/ja";
 
-/** マウスを止めてから出るまで（仕様書 2 章: 0.6 秒）。 */
+/** From when the mouse stops until it shows (spec 2: 0.6 s). */
 export const TIP_DELAY_MS = 600;
 
 export interface TipView {
-  /** 用語。null なら body だけを出す（「…」でちぢめた名前の全部など）。 */
+  /** The term. If null, only body is shown (the whole of a name cut with 「…」, ...). */
   term: string | null;
   body: string;
   left: number;
@@ -18,12 +18,12 @@ export const tipView = $state<{ value: TipView | null }>({ value: null });
 
 let owner: HTMLElement | null = null;
 
-/** いま用語の説明が出ているか（Esc の順番を決めるため）。 */
+/** Whether a term tip is shown now (to decide the Esc order). */
 export function tipVisible(): boolean {
   return tipView.value !== null;
 }
 
-/** 出ている用語の説明を消す。 */
+/** Hides the term tip that is shown. */
 export function hideTip(): void {
   owner = null;
   tipView.value = null;
@@ -45,7 +45,7 @@ function hover(node: HTMLElement, content: () => Content): { destroy(): void } {
     owner = node;
     tipView.value = { ...c, left: r.left, top: r.top, bottom: r.bottom };
   };
-  // 動いているあいだは数えなおす。出たあとは、離れるまで出したまま。
+  // While the mouse moves, count again. Once shown, it stays until the mouse leaves.
   const arm = () => {
     if (owner === node && tipView.value) return;
     clear();
@@ -68,13 +68,13 @@ function hover(node: HTMLElement, content: () => Content): { destroy(): void } {
   };
 }
 
-/** `use:term={"ループ"}`。説明は ja.ts の用語の説明から引く。 */
+/** `use:term={"ループ"}`. The text comes from the term tips in ja.ts. */
 export const term: Action<HTMLElement, string> = (node, word) => {
   let current = word;
   const h = hover(node, () => {
     const found = findTerm(current);
     if (!found) {
-      console.error(`用語の説明がない: ${current}`);
+      console.error(`no term tip for: ${current}`);
       return null;
     }
     return { term: found.term, body: found.description };
@@ -87,7 +87,7 @@ export const term: Action<HTMLElement, string> = (node, word) => {
   };
 };
 
-/** `use:tip={全部の名前}`。好きな文をそのまま出す。null か空なら出さない（ちぢめていないときなど）。 */
+/** `use:tip={wholeName}`. Shows any text as it is. Nothing for null or empty (when the name is not cut, ...). */
 export const tip: Action<HTMLElement, string | null | undefined> = (node, text) => {
   let current = text;
   const h = hover(node, () => (current ? { term: null, body: current } : null));
@@ -100,8 +100,9 @@ export const tip: Action<HTMLElement, string | null | undefined> = (node, text) 
 };
 
 /**
- * `use:tipAround={文}`。tip と同じだが、中の用語（use:term）の説明が出ているときは出さない（ドラムの行の名前の、音名と用語の説明）。
- * 中の用語の説明が先に出るのは、中の要素の耳が先に呼ばれて、同じ時間で先に時間切れになるから。
+ * `use:tipAround={text}`. Like tip, but not shown while the tip of a term inside (use:term) is shown (a drum row name: the
+ * note name and a term tip). The inner tip comes first because the inner element's listener is called first, so with the
+ * same delay its timer ends first.
  */
 export const tipAround: Action<HTMLElement, string | null | undefined> = (node, text) => {
   let current = text;
@@ -117,7 +118,7 @@ export const tipAround: Action<HTMLElement, string | null | undefined> = (node, 
   };
 };
 
-/** `use:tipOf={() => 文}`。乗った時に文を作る（null なら出さない）。 */
+/** `use:tipOf={() => text}`. Makes the text on hover (nothing for null). */
 export const tipOf: Action<HTMLElement, (node: HTMLElement) => string | null> = (node, make) => {
   let current = make;
   const h = hover(node, () => {
@@ -132,7 +133,7 @@ export const tipOf: Action<HTMLElement, (node: HTMLElement) => string | null> = 
   };
 };
 
-/** `use:tipWhenCut`。「…」でちぢんでいるときだけ、要素の文を全部出す。 */
+/** `use:tipWhenCut`. Shows the whole text of the element only when it is cut with 「…」. */
 export const tipWhenCut: Action<HTMLElement> = (node) =>
   hover(node, () => (node.scrollWidth > node.clientWidth && node.textContent ? { term: null, body: node.textContent } : null));
 

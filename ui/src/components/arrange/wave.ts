@@ -1,6 +1,6 @@
-// 歌のクリップの波形の形（仕様書 3 章「波形」、2 章「歌のクリップ」、モック F7-AudioEdit ・ R11-Audio）。DOM も WebGL も知らない純粋な関数。
-// クリップ 1 つに、波形の四角 1 つ（テンポが途中で変わる所では、まっすぐな所ごとに 1 つ）。ピークはテクスチャで、
-// シェーダーが x からピークを読む（ui/src/gl/renderer.ts）。ここで決めるのは「どの x が、どのピークか」だけ。
+// The waveform shape of an audio clip (spec 3 (93-4 Waveform), spec 2 "Audio clip", mock F7-AudioEdit / R11-Audio). Pure functions that know neither the DOM nor WebGL.
+// One waveform rect per clip (where the tempo changes inside it, one per straight part). The peaks are a texture,
+// and the shader reads the peak for each x (ui/src/gl/renderer.ts). This file only decides which x reads which peak.
 
 import type { ClipView } from "../../bridge";
 import { levelFor } from "../../bridge/peaks";
@@ -15,32 +15,32 @@ import type { AudioDragValue } from "./audioDrag.svelte";
 import { cachedSourceMap, clipFrameAt, type FollowClip } from "./follow";
 
 /**
- * 曲のティックと、ファイルのこまの合わせ（follow.ts の `FollowClip`）。`source` は、ついていくクリップの「この音のテンポ」の地図
- * （`cachedSourceMap`）、ついていかなければ（録っている歌も）null。
+ * How song ticks match file frames (`FollowClip` in follow.ts). `source` is the map of the clip's own tempo for a clip that follows
+ * the song tempo (`cachedSourceMap`), or null when it does not follow (also for audio being recorded).
  */
 export interface WaveTiming extends FollowClip {
   source: TempoMap | null;
 }
 
-/** 曲のティック `tick` で鳴る、ファイルのこま（小数）。クリップでは `audioClipGeom.ts` の `fileFrameAt` と同じ答え。 */
+/** The file frame (fractional) heard at song tick `tick`. For a clip, the same answer as `fileFrameAt` in `audioClipGeom.ts`. */
 export const frameAtTick = (map: TempoMap, t: WaveTiming, tick: number) => clipFrameAt(map, t.source, t, tick);
 
-/** 波形を描くクリップ（か、録っている歌）の、形に要る物。 */
+/** What the shape needs from a clip (or audio being recorded) whose waveform is drawn. */
 export interface WaveClip {
   timing: WaveTiming;
-  /** クリップのはし（ティック）。フェードと棒のならびは、ここから数える。 */
+  /** The clip edges (ticks). Fades and the row of bars are counted from here. */
   start: number;
   end: number;
-  /** ティック */
+  /** Ticks */
   fadeIn: number;
   fadeOut: number;
-  /** 倍率（`gainFactor`） */
+  /** Factor (`gainFactor`) */
   gain: number;
-  /** テイクが持っているのは、ファイルのこま 0 からここまで。録っている間は Infinity。 */
+  /** The take holds file frames from 0 up to here. Infinity while recording. */
   endFrame: number;
 }
 
-/** クリップと、ドラッグしている間の値（`audioDrag.now`。そのクリップの物と、いっしょにずらすクリップの音量だけ効く）から。歌のクリップでなければ null。 */
+/** From the clip and the values during a drag (`audioDrag.now`: only its own values and the gain of clips moved with it count). null if it is not an audio clip. */
 export function waveClipOf(clip: ClipView, drag: AudioDragValue | null = null): WaveClip | null {
   const a = clip.audio;
   if (a === null) return null;
@@ -57,23 +57,23 @@ export function waveClipOf(clip: ClipView, drag: AudioDragValue | null = null): 
   };
 }
 
-/** 棒の形と色（CSS px）。 */
+/** Bar shape and color (CSS px). */
 export interface WaveLook {
-  /** 棒から次の棒まで（mock.wave.pitch） */
+  /** From one bar to the next (mock.wave.pitch) */
   pitch: number;
-  /** 棒の幅（mock.wave.bar） */
+  /** Bar width (mock.wave.bar) */
   bar: number;
-  /** 棒のいちばん低い高さ（mock.wave.min） */
+  /** Lowest bar height (mock.wave.min) */
   minH: number;
   color: ColorName;
-  /** まん中の線（160 の行）。 */
+  /** The center line (160 row). */
   mid: ColorName | null;
 }
 
-/** ふつうの行は棒だけ、160 の行（`tall`）はまん中に gray.5 の線。棒の色はクリップの中の線の色（ミュートは gray.7、録音中は rec）。 */
+/** A normal row has only bars; a 160 row (`tall`) also has a gray.5 center line. Bars use the clip's line color (gray.7 when muted, rec while recording). */
 export const waveLook = (sizes: Pick<WaveLook, "pitch" | "bar" | "minH">, color: ColorName, tall: boolean): WaveLook => ({ ...sizes, color, mid: tall ? WAVE.mid : null });
 
-/** 見えている所の、1 px あたりのファイルのこま（テンポが変わる所では、ならした数）。 */
+/** File frames per px in the visible part (an average where the tempo changes). */
 export function framesPerPx(map: TempoMap, v: View, timing: WaveTiming, from: number, to: number): number {
   let a = Math.max(from, xToTick(v, 0));
   let b = Math.min(to, xToTick(v, v.width));
@@ -85,14 +85,14 @@ export function framesPerPx(map: TempoMap, v: View, timing: WaveTiming, from: nu
 }
 
 /**
- * 描くピークの段: 棒 1 本（`pitch` px）の幅より細かい段のうち、いちばん粗い物。棒 1 本が読むピークは 1〜4 個になる
- * （いちばん粗い段より縮小したときは、もっと多い。シェーダーは 16 個まで読む）。
+ * The peak level to draw: the coarsest level that is still finer than one bar (`pitch` px). One bar reads 1-4 peaks
+ * (more when zoomed out past the coarsest level; the shader reads up to 16).
  */
 export const waveLevel = (framesPerPixel: number, pitch: number) => levelFor(framesPerPixel * pitch);
 
 /**
- * [from, to] を、こまがティックにまっすぐ（ずれが `tolerance` こま以内）な所に分ける切れ目（両はしをふくむ）。
- * テンポが変わらなければ分けない。だんだん変わる所は、半分ずつに割っていく（64 個まで）。
+ * Cut points (both ends included) that split [from, to] into parts where frames are straight against ticks (off by at most `tolerance` frames).
+ * No split when the tempo does not change. Ramps are halved again and again (up to 64 parts).
  */
 export function straightParts(frame: (tick: number) => number, from: number, to: number, tolerance: number, depth = 6): number[] {
   const out = [from];
@@ -113,9 +113,9 @@ export function straightParts(frame: (tick: number) => number, from: number, to:
 }
 
 /**
- * クリップの波形の四角を `out` に足す。`area` は波形の所（`waveArea`）、`after` は、この波形の下になる四角の数。
- * 描くのは、見えている幅の中で、`range`（録っているクリップの、できた所や先）があればその中だけ。
- * フェードの線（gray.10 の曲がった線）は、フェードがあるクリップにだけ。
+ * Adds the clip's waveform rects to `out`. `area` is the waveform area (`waveArea`); `after` is the number of rects under this waveform.
+ * Draws only inside the visible width, and inside `range` (the done part of a clip being recorded, and so on) if given.
+ * The fade line (a curved gray.10 line) only for clips with a fade.
  */
 export function clipWaves(
   out: GlWave[],
@@ -135,7 +135,7 @@ export function clipWaves(
   const frame = (tick: number) => frameAtTick(map, c.timing, tick);
   const t0 = xToTick(v, x0);
   const t1 = xToTick(v, x1);
-  // 半 px ぶんのこまより大きくずれたら、分ける。
+  // Split when it is off by more than half a px of frames.
   const tolerance = Math.abs(frame(t1) - frame(t0)) / (2 * (x1 - x0));
   const cuts = straightParts(frame, t0, t1, tolerance);
   const faded = c.fadeIn > 0 || c.fadeOut > 0;
@@ -172,7 +172,7 @@ export function clipWaves(
   }
 }
 
-/** 波形を (dx, dy) だけずらす（小さな区画の箱の左上から数えなおすとき）。 */
+/** Moves the waveform by (dx, dy) (when counting again from the top left of a small slot box). */
 export function shiftWaves(waves: GlWave[], dx: number, dy: number): void {
   for (const w of waves) {
     w.x += dx;

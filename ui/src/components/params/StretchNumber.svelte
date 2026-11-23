@@ -1,6 +1,7 @@
-<!-- 選んだクリップの欄の、整数の値（音の高さの半音 ・ セント）。上下にドラッグして変える（2 回押すと ontype: 打ちこむ枠は欄の側）。
-     ドラッグ中は字だけが先に動き、離したときに 1 つ送る（ドラッグ 1 回が 1 手）。Esc はドラッグをやめて、もとの値に戻す。
-     reading があれば、動かしている間、状態行の文（dragReading）と、カーソルの左上のその場の読み値を出す。 -->
+<!-- A whole-number value in the chosen clip panel (pitch semitones, cents). Changed by dragging up and down (pressing twice
+     calls ontype; the typing box belongs to the panel). While dragging, only the text moves first; one intent is sent on
+     release (one drag is one step). Esc stops the drag and goes back to the value before.
+     With `reading`, while moving it shows the status line text (dragReading) and a reading in place, at the top left of the cursor. -->
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
   import { metrics } from "../metrics.svelte";
@@ -8,7 +9,7 @@
   import { dragSteps } from "./clipFields";
 
   interface Props {
-    /** 曲の値。 */
+    /** The value in the song. */
     value: number;
     min: number;
     max: number;
@@ -23,7 +24,7 @@
   let { value, min, max, text, label, test, disabled, commit, ontype, reading }: Props = $props();
 
   let dragging = $state(false);
-  /** 動かしている値か、送って答えを待っている値。 */
+  /** The value being moved, or one sent and waiting for the answer. */
   let held = $state<number | null>(null);
   const shown = $derived(held ?? value);
   let fromY = 0;
@@ -114,7 +115,7 @@
     cursor: ns-resize;
     touch-action: none;
   }
-  /* その場の読み値（仕様書 2 章。アレンジの読み値と同じ形）。欄の外にも出るよう、窓に対して置く。 */
+  /* The reading in place (spec 2; the same form as the arrange reading). Placed against the window so it can go outside the panel. */
   .reading {
     position: fixed;
     z-index: 10;

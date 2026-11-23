@@ -547,6 +547,9 @@ CLICKS = {
     "pianoRollNoNotesScrolled": ("pianoRollNoNotes", "js:" + WHEEL_ROLL % 160),
     # F4-ShelfSample: the ▶ of the grand piano pressed.
     "shelfSample": ("shelfNewTrack", '[data-row="grandPiano"] [data-test="shelf-sample"]'),
+    # P4 (round 12): the shelf's 「パターン」.
+    "shelfPatterns": ("shelfPatterns", '[data-test="shelf-patterns"]'),
+    "shelfPatternsNewTrack": ("shelfPatternsNewTrack", '[data-test="shelf-patterns"]'),
     # R8-Shelf84: folds every heading but 「ピアノ ・ 鍵盤」 and 「ギター」.
     "shelf84": ("shelf84", "js:" + FOLD_SHELF % '["bass", "drums", "padStrings", "wind", "synth"]'),
     "trackRename": ("tracks6", "js:" + RENAME_TRACK),
@@ -610,6 +613,8 @@ ONLY = {
     "sf2DropAddable": [(1280, 800, 100), (1280, 800, 150)],
     "sf2DropNotAddable": [(1280, 800, 100)],
     "shelfFx": [(1280, 800, 100)],
+    "shelfPatterns": [(1280, 800, 100), (1280, 800, 150)],
+    "shelfPatternsNewTrack": [(1280, 800, 100)],
     "shelfSearch": [(1280, 800, 100)],
     "shelfPlugins": [(1280, 800, 100)],
     "pluginLoading": [(1280, 800, 100)],

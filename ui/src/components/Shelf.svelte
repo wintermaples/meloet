@@ -5,7 +5,9 @@
      In a shelf opened from 「空き ＋」 (insertEffect), press an effect row or choose with ↑ ↓, then put it in with Enter or 「入れる」. Effects in the instrument mode are view only (docs/history/design-notes.ja.md A-14).
      A shelf opened from 「入れかえる…」 in the context menu (replaceEffect; spec 3 (86-3), mock R9-Inserts) has the same form: the current row shows 「いまのエフェクト」, and the box has the replace text and 「入れかえる」.
      A box under the chosen row (audition, loading, cannot load, put in the insert). When the row of the effect to put in is not visible, at the bottom of the list.
-     While scanning, the scan strip sits right under the 「あとから入れたもの」 heading (Y13). Stopped plugins get a box with a red border under the shelf (spec 6 "a plugin stopped"). -->
+     While scanning, the scan strip sits right under the 「あとから入れたもの」 heading (Y13). Stopped plugins get a box with a red border under the shelf (spec 6 "a plugin stopped").
+     「パターン」 (round 12, P4; only in the shelf of a new track): the drum patterns under 「基本」 and 「フィルイン」, each with ▶, and at the bottom
+     where 「ここに置く」 (Enter) puts the chosen one (shelfPatterns.ts). No drag: choose a row, then place it. -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { clockOffsetUs, type EffectRef, type MissingView, type PluginRowView, type PluginSlotRef, type SoundRef } from "../bridge";
@@ -21,7 +23,8 @@
   import ScanStrip from "./plugins/ScanStrip.svelte";
   import { favoriteCount, rowIs, shelfCounts, shelfModel, withBox, type ShelfEntry, type ShelfRow } from "./shelfList";
   import { effectRefName, formatName, formatsTip, rowHasKey, sameSound, soundRefName } from "./sounds";
-  import { pickCommand, pickedRow, sampleCommand, shelfPicks, shelfUi, toggleHeading } from "./tracks.svelte";
+  import { patternModel, placeText } from "./shelfPatterns";
+  import { patternSampleCommand, pickCommand, pickedRow, sampleCommand, shelfPicks, shelfUi, toggleHeading } from "./tracks.svelte";
 
   const app = $derived(current.state!);
   const shelf = $derived(app.shelf);
@@ -41,6 +44,8 @@
   );
   const inserting = $derived(shelf.mode.kind === "insertEffect" || shelf.mode.kind === "replaceEffect");
   const effectsView = $derived(shelfUi.view === "effects");
+  const patternsView = $derived(shelfUi.view === "patterns");
+  const patterns = $derived(patternModel(shelf.patterns, shelfUi.open));
   const counts = $derived(shelfCounts(shelf, library));
   const favorites = $derived(favoriteCount(shelfUi.view, shelf, library));
   const fetchingNow = $derived(app.sounds.fetch.state === "fetching" ? app.sounds.fetch.instrument : null);
@@ -460,15 +465,72 @@
     </button>
     <span class="m-spacer"></span>
     <span class="switches">
-      <Button on={!effectsView} onclick={() => (shelfUi.view = "instruments")} test="shelf-instruments"
+      <Button on={shelfUi.view === "instruments"} onclick={() => (shelfUi.view = "instruments")} test="shelf-instruments"
         >{t("shelf.instrumentCount", { count: counts.instruments })}</Button
       >
       <Button on={effectsView} onclick={() => (shelfUi.view = "effects")} test="shelf-effects"
         >{t("shelf.effectCount", { count: counts.effects })}</Button
       >
+      {#if shelf.mode.kind === "newTrack"}
+        <Button on={patternsView} onclick={() => (shelfUi.view = "patterns")} test="shelf-patterns">{t("shelf.patterns")}</Button>
+      {/if}
     </span>
     <span class="m-num m-lbl">{t("key.shelf")}</span>
   </div>
+  {#if patternsView}
+    <ScrollArea data-test="shelf-pattern-list">
+      {#each patterns.entries as e (e.id)}
+        {#if e.kind === "heading"}
+          <button
+            class="m-plain group m-focus-in"
+            onclick={() => (shelfUi.open = { ...shelfUi.open, [e.id]: e.folded })}
+            data-group={e.id}
+            data-test="shelf-heading"
+          >
+            <span class={e.folded ? "m-lbl" : "m-hi"}>{e.folded ? "▸" : "▾"}</span>
+            <span class="m-hi group-name">{e.label}</span>
+          </button>
+        {:else}
+          {@const id = e.pattern.id}
+          {@const sampling = shelf.patternSample?.id === id}
+          <div
+            class="row"
+            class:selected={shelf.selectedPattern === id}
+            role="presentation"
+            data-pattern={id}
+            data-test="shelf-pattern"
+            onclick={() => {
+              shelfUi.keys = true;
+              if (shelf.selectedPattern !== id) send({ type: "shelfSelectPattern", id });
+            }}
+          >
+            <button
+              class="sample"
+              class:playing={sampling}
+              aria-label={t("shelf.playPattern")}
+              data-test="shelf-pattern-sample"
+              onclick={(ev) => {
+                ev.stopPropagation();
+                shelfUi.keys = true;
+                send(patternSampleCommand(app, id));
+              }}>{#if sampling && shelf.patternSample?.playing}{@render stop()}{:else}{@render play()}{/if}</button
+            >
+            <span class="name">{e.name}</span>
+            <span class="m-num m-lbl">{t("shelf.patternBars", { bars: e.pattern.bars })}</span>
+          </div>
+        {/if}
+      {/each}
+    </ScrollArea>
+    <div class="place" data-test="shelf-place">
+      <span class="m-lbl say place-text" data-test="shelf-place-text">{placeText(app)}</span>
+      <Button
+        primary
+        disabled={busy || shelf.selectedPattern === null}
+        onclick={() => shelf.selectedPattern !== null && send({ type: "placePattern", id: shelf.selectedPattern })}
+        test="shelf-place-pattern">{t("button.placePattern")} <span class="m-num m-lbl">{t("key.enter")}</span></Button
+      >
+    </div>
+  {:else}
   <div class="mode" data-test="shelf-mode">{title}</div>
   <label class="bar">
     <span class="m-lbl">{t("shelf.search")}</span>
@@ -532,6 +594,7 @@
     {/each}
     <div style:height="{offsets[entries.length]! - offsets[range.to]!}px"></div>
   </ScrollArea>
+  {/if}
   {#each stopped as s (JSON.stringify(s.slot))}
     <div class="stopped" data-test="shelf-stopped">
       <span class="stopped-head">{t("plugin.stoppedHead", { name: s.name, track: s.where })}</span>
@@ -797,6 +860,19 @@
     margin: 0 var(--space-3) var(--space-3);
     padding: var(--space-2);
     border: var(--line-hair) solid var(--color-rec);
+  }
+  /* 「ここに置く」 under the patterns (P4). */
+  .place {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-top: var(--line-hair) solid var(--color-line-thin);
+  }
+  .place-text {
+    flex: 1;
+    min-width: 0;
   }
   .stopped-head {
     color: var(--color-rec);

@@ -1,0 +1,270 @@
+{
+ "format": "meloet-drum-patterns",
+ "version": 1,
+ "patterns": [
+  {
+   "id": "eightBeat",
+   "group": "basic",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "closedHiHat", "at": 960, "length": 240, "velocity": 72},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 1920, "length": 240, "velocity": 110},
+    {"piece": "closedHiHat", "at": 2880, "length": 240, "velocity": 72},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 108},
+    {"piece": "closedHiHat", "at": 4800, "length": 240, "velocity": 72},
+    {"piece": "kick", "at": 4800, "length": 240, "velocity": 92},
+    {"piece": "closedHiHat", "at": 5760, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 5760, "length": 240, "velocity": 112},
+    {"piece": "closedHiHat", "at": 6720, "length": 240, "velocity": 72}
+   ]
+  },
+  {
+   "id": "eightBeatOpen",
+   "group": "basic",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "closedHiHat", "at": 960, "length": 240, "velocity": 72},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 1920, "length": 240, "velocity": 110},
+    {"piece": "openHiHat", "at": 2880, "length": 240, "velocity": 85},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 108},
+    {"piece": "closedHiHat", "at": 4800, "length": 240, "velocity": 72},
+    {"piece": "kick", "at": 4800, "length": 240, "velocity": 92},
+    {"piece": "closedHiHat", "at": 5760, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 5760, "length": 240, "velocity": 112},
+    {"piece": "openHiHat", "at": 6720, "length": 240, "velocity": 88}
+   ]
+  },
+  {
+   "id": "sixteenBeat",
+   "group": "basic",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 98},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "closedHiHat", "at": 480, "length": 240, "velocity": 56},
+    {"piece": "closedHiHat", "at": 960, "length": 240, "velocity": 74},
+    {"piece": "closedHiHat", "at": 1440, "length": 240, "velocity": 56},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 98},
+    {"piece": "snare", "at": 1920, "length": 240, "velocity": 110},
+    {"piece": "closedHiHat", "at": 2400, "length": 240, "velocity": 56},
+    {"piece": "closedHiHat", "at": 2880, "length": 240, "velocity": 74},
+    {"piece": "kick", "at": 2880, "length": 240, "velocity": 90},
+    {"piece": "closedHiHat", "at": 3360, "length": 240, "velocity": 56},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 98},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 108},
+    {"piece": "closedHiHat", "at": 4320, "length": 240, "velocity": 56},
+    {"piece": "closedHiHat", "at": 4800, "length": 240, "velocity": 74},
+    {"piece": "closedHiHat", "at": 5280, "length": 240, "velocity": 56},
+    {"piece": "kick", "at": 5280, "length": 240, "velocity": 88},
+    {"piece": "closedHiHat", "at": 5760, "length": 240, "velocity": 98},
+    {"piece": "snare", "at": 5760, "length": 240, "velocity": 112},
+    {"piece": "closedHiHat", "at": 6240, "length": 240, "velocity": 56},
+    {"piece": "closedHiHat", "at": 6720, "length": 240, "velocity": 74},
+    {"piece": "closedHiHat", "at": 7200, "length": 240, "velocity": 56}
+   ]
+  },
+  {
+   "id": "fourOnTheFloor",
+   "group": "basic",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 64},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "openHiHat", "at": 960, "length": 240, "velocity": 90},
+    {"piece": "clap", "at": 1920, "length": 240, "velocity": 108},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 64},
+    {"piece": "kick", "at": 1920, "length": 240, "velocity": 108},
+    {"piece": "openHiHat", "at": 2880, "length": 240, "velocity": 90},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 64},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 115},
+    {"piece": "openHiHat", "at": 4800, "length": 240, "velocity": 90},
+    {"piece": "clap", "at": 5760, "length": 240, "velocity": 110},
+    {"piece": "closedHiHat", "at": 5760, "length": 240, "velocity": 64},
+    {"piece": "kick", "at": 5760, "length": 240, "velocity": 108},
+    {"piece": "openHiHat", "at": 6720, "length": 240, "velocity": 90}
+   ]
+  },
+  {
+   "id": "shuffle",
+   "group": "basic",
+   "bars": 1,
+   "grid": 640,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "closedHiHat", "at": 1280, "length": 240, "velocity": 66},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 92},
+    {"piece": "snare", "at": 1920, "length": 240, "velocity": 110},
+    {"piece": "closedHiHat", "at": 3200, "length": 240, "velocity": 66},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 106},
+    {"piece": "closedHiHat", "at": 5120, "length": 240, "velocity": 66},
+    {"piece": "kick", "at": 5120, "length": 240, "velocity": 86},
+    {"piece": "closedHiHat", "at": 5760, "length": 240, "velocity": 92},
+    {"piece": "snare", "at": 5760, "length": 240, "velocity": 112},
+    {"piece": "closedHiHat", "at": 7040, "length": 240, "velocity": 66},
+    {"piece": "snare", "at": 7040, "length": 240, "velocity": 48}
+   ]
+  },
+  {
+   "id": "halfTime",
+   "group": "basic",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "closedHiHat", "at": 960, "length": 240, "velocity": 72},
+    {"piece": "kick", "at": 1440, "length": 240, "velocity": 84},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 100},
+    {"piece": "closedHiHat", "at": 2880, "length": 240, "velocity": 72},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 3840, "length": 240, "velocity": 115},
+    {"piece": "closedHiHat", "at": 4800, "length": 240, "velocity": 72},
+    {"piece": "kick", "at": 4800, "length": 240, "velocity": 96},
+    {"piece": "closedHiHat", "at": 5760, "length": 240, "velocity": 100},
+    {"piece": "closedHiHat", "at": 6720, "length": 240, "velocity": 72}
+   ]
+  },
+  {
+   "id": "rideEightBeat",
+   "group": "basic",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "ride", "at": 0, "length": 240, "velocity": 100},
+    {"piece": "ride", "at": 960, "length": 240, "velocity": 76},
+    {"piece": "pedalHiHat", "at": 1920, "length": 240, "velocity": 80},
+    {"piece": "ride", "at": 1920, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 1920, "length": 240, "velocity": 110},
+    {"piece": "ride", "at": 2880, "length": 240, "velocity": 76},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 108},
+    {"piece": "ride", "at": 3840, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 4800, "length": 240, "velocity": 92},
+    {"piece": "ride", "at": 4800, "length": 240, "velocity": 76},
+    {"piece": "pedalHiHat", "at": 5760, "length": 240, "velocity": 80},
+    {"piece": "ride", "at": 5760, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 5760, "length": 240, "velocity": 112},
+    {"piece": "ride", "at": 6720, "length": 240, "velocity": 76}
+   ]
+  },
+  {
+   "id": "ballad",
+   "group": "basic",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 72},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 96},
+    {"piece": "closedHiHat", "at": 960, "length": 240, "velocity": 54},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 72},
+    {"piece": "sideStick", "at": 1920, "length": 240, "velocity": 92},
+    {"piece": "closedHiHat", "at": 2880, "length": 240, "velocity": 54},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 72},
+    {"piece": "closedHiHat", "at": 4800, "length": 240, "velocity": 54},
+    {"piece": "kick", "at": 4800, "length": 240, "velocity": 78},
+    {"piece": "closedHiHat", "at": 5760, "length": 240, "velocity": 72},
+    {"piece": "sideStick", "at": 5760, "length": 240, "velocity": 94},
+    {"piece": "closedHiHat", "at": 6720, "length": 240, "velocity": 54}
+   ]
+  },
+  {
+   "id": "snareRoll",
+   "group": "fill",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 110},
+    {"piece": "snare", "at": 0, "length": 240, "velocity": 60},
+    {"piece": "snare", "at": 480, "length": 240, "velocity": 64},
+    {"piece": "snare", "at": 960, "length": 240, "velocity": 68},
+    {"piece": "snare", "at": 1440, "length": 240, "velocity": 72},
+    {"piece": "snare", "at": 1920, "length": 240, "velocity": 76},
+    {"piece": "snare", "at": 2400, "length": 240, "velocity": 80},
+    {"piece": "snare", "at": 2880, "length": 240, "velocity": 84},
+    {"piece": "snare", "at": 3360, "length": 240, "velocity": 88},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 3840, "length": 240, "velocity": 92},
+    {"piece": "snare", "at": 4320, "length": 240, "velocity": 96},
+    {"piece": "snare", "at": 4800, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 5280, "length": 240, "velocity": 104},
+    {"piece": "snare", "at": 5760, "length": 240, "velocity": 108},
+    {"piece": "snare", "at": 6240, "length": 240, "velocity": 112},
+    {"piece": "snare", "at": 6720, "length": 240, "velocity": 116},
+    {"piece": "snare", "at": 7200, "length": 240, "velocity": 120}
+   ]
+  },
+  {
+   "id": "tomFill",
+   "group": "fill",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "highTom", "at": 0, "length": 240, "velocity": 112},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 110},
+    {"piece": "highTom", "at": 480, "length": 240, "velocity": 89},
+    {"piece": "highTom", "at": 960, "length": 240, "velocity": 90},
+    {"piece": "highTom", "at": 1440, "length": 240, "velocity": 91},
+    {"piece": "midTom", "at": 1920, "length": 240, "velocity": 116},
+    {"piece": "midTom", "at": 2400, "length": 240, "velocity": 93},
+    {"piece": "midTom", "at": 2880, "length": 240, "velocity": 94},
+    {"piece": "midTom", "at": 3360, "length": 240, "velocity": 95},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 104},
+    {"piece": "lowTom", "at": 3840, "length": 240, "velocity": 120},
+    {"piece": "lowTom", "at": 4320, "length": 240, "velocity": 97},
+    {"piece": "lowTom", "at": 4800, "length": 240, "velocity": 98},
+    {"piece": "lowTom", "at": 5280, "length": 240, "velocity": 99},
+    {"piece": "kick", "at": 5760, "length": 240, "velocity": 108},
+    {"piece": "lowTom", "at": 5760, "length": 240, "velocity": 124},
+    {"piece": "lowTom", "at": 6240, "length": 240, "velocity": 101},
+    {"piece": "lowTom", "at": 6720, "length": 240, "velocity": 102},
+    {"piece": "lowTom", "at": 7200, "length": 240, "velocity": 103}
+   ]
+  },
+  {
+   "id": "crashStop",
+   "group": "fill",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "crash", "at": 0, "length": 1920, "velocity": 122},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 120},
+    {"piece": "snare", "at": 0, "length": 240, "velocity": 116}
+   ]
+  },
+  {
+   "id": "smallFill",
+   "group": "fill",
+   "bars": 1,
+   "grid": 480,
+   "notes": [
+    {"piece": "closedHiHat", "at": 0, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 0, "length": 240, "velocity": 115},
+    {"piece": "closedHiHat", "at": 960, "length": 240, "velocity": 72},
+    {"piece": "closedHiHat", "at": 1920, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 1920, "length": 240, "velocity": 110},
+    {"piece": "closedHiHat", "at": 2880, "length": 240, "velocity": 72},
+    {"piece": "closedHiHat", "at": 3840, "length": 240, "velocity": 100},
+    {"piece": "kick", "at": 3840, "length": 240, "velocity": 108},
+    {"piece": "closedHiHat", "at": 4800, "length": 240, "velocity": 72},
+    {"piece": "snare", "at": 5760, "length": 240, "velocity": 100},
+    {"piece": "snare", "at": 6240, "length": 240, "velocity": 84},
+    {"piece": "highTom", "at": 6720, "length": 240, "velocity": 104},
+    {"piece": "lowTom", "at": 7200, "length": 240, "velocity": 112}
+   ]
+  }
+ ]
+}

@@ -541,6 +541,8 @@ export const texts = {
     "Cannot write outside the clip",
     "ほかのクリップと重なるので、書けませんでした。",
   ),
+  // P4 「ここに置く」 where the meter is not 4/4.
+  "msg.patternNeedsFourFour": e("4/4 のところにだけ置けます", "user:2026-11-23"),
   "msg.notesNotResized": s6(
     "Cannot change the length",
     "ほかのクリップと重なるので、長さを変えられませんでした。",
@@ -1291,6 +1293,32 @@ export const texts = {
   "shelf.effectCount": e("エフェクト {count}", "mock:F4-ShelfSample", {
     count: "6",
   }),
+
+  // P4 (round 12): the shelf's 「パターン」. The part after "pattern." is the id of the pattern (tools/patterns/drums.json).
+  "shelf.patterns": e("パターン", "user:2026-11-23"),
+  "shelf.playPattern": e("パターンを聞く", "builder:2026-11-23"),
+  "shelf.patternBars": e("{bars} 小節", "user:2026-11-23", { bars: "1" }),
+  "shelf.placeOn": e("{track} ・ {bar} 小節めに置きます", "user:2026-11-23", { track: "3 スタジオキット", bar: "9" }),
+  "shelf.placeOnNewTrack": e("トラック {number}（{instrument}）を作って、{bar} 小節めに置きます", "builder:2026-11-23", {
+    number: "4",
+    instrument: "スタジオキット",
+    bar: "9",
+  }),
+  "button.placePattern": e("ここに置く", "user:2026-11-23"),
+  "pattern.group.basic": e("基本", "user:2026-11-23"),
+  "pattern.group.fill": e("フィルイン", "user:2026-11-23"),
+  "pattern.eightBeat": e("8 ビート", "user:2026-11-23"),
+  "pattern.eightBeatOpen": e("8 ビート（ハイハット開き）", "user:2026-11-23"),
+  "pattern.sixteenBeat": e("16 ビート", "user:2026-11-23"),
+  "pattern.fourOnTheFloor": e("4 つ打ち", "user:2026-11-23"),
+  "pattern.shuffle": e("シャッフル", "user:2026-11-23"),
+  "pattern.halfTime": e("ハーフタイム", "user:2026-11-23"),
+  "pattern.rideEightBeat": e("ライドで 8 ビート", "user:2026-11-23"),
+  "pattern.ballad": e("バラード", "user:2026-11-23"),
+  "pattern.snareRoll": e("スネアの連打", "user:2026-11-23"),
+  "pattern.tomFill": e("タムまわし", "user:2026-11-23"),
+  "pattern.crashStop": e("クラッシュで止める", "user:2026-11-23"),
+  "pattern.smallFill": e("小さなフィル", "user:2026-11-23"),
 
   // Built-in effects (spec 3 (Y8)). The part after the key prefix is EffectKind of the protocol.
   "effect.eq4": e("EQ 4 バンド", "spec:3"),

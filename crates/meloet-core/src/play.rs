@@ -252,6 +252,12 @@ pub enum EngineOp {
     PlaySample {
         instrument: InstrumentRef,
     },
+    /// As `PlaySample`, with the notes of a drum pattern (P4) at the song's tempo in place of
+    /// the phrase of its group.
+    PlayPattern {
+        instrument: InstrumentRef,
+        hits: meloet_sound::phrases::Hits,
+    },
     StopSample,
     /// For an open stream only, as `Sequence`. The lanes of the track on the seat that play
     /// from now on, in place of the ones before (`play/autosync.rs`).
@@ -2840,6 +2846,7 @@ pub(crate) mod mixer;
 mod mixsync;
 mod mute_sets;
 mod params;
+mod patterns;
 mod plugs;
 mod progression;
 mod reverse;

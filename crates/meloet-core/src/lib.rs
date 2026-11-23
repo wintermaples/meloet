@@ -18,6 +18,7 @@ pub mod maker;
 #[cfg(feature = "dev-hooks")]
 pub mod measure;
 mod mixbook;
+mod patterns;
 pub mod pcm;
 pub mod peaks;
 pub mod play;

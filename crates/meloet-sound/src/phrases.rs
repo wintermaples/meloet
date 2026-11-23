@@ -16,6 +16,9 @@ pub const VELOCITY: u8 = 100;
 
 /// (start in seconds, length in seconds, key)
 pub type Phrase = Vec<(f64, f64, u8)>;
+/// (start in seconds, length in seconds, key, velocity): a phrase whose notes have each their
+/// own velocity (the drum patterns of the shelf).
+pub type Hits = Vec<(f64, f64, u8, u8)>;
 
 pub fn eighths(keys: &[u8], length: f64) -> Phrase {
     keys.iter()
@@ -173,12 +176,12 @@ pub fn for_group(group: InstrumentGroup) -> Phrase {
 }
 
 /// An instrument that plays a phrase on its own from the first frame it renders, every note at
-/// [`VELOCITY`], on a clock of its own: the frames it has rendered. Events from outside do not
+/// [`VELOCITY`] (or at its own, made with [`PhrasePlayer::hits`]), on a clock of its own: the frames it has rendered. Events from outside do not
 /// reach the instrument inside. After the phrase it goes on rendering, so the last notes die
 /// away as the instrument lets them.
 pub struct PhrasePlayer {
     inner: Box<dyn Instrument>,
-    phrase: Phrase,
+    phrase: Hits,
     /// (frame, event) in the order they are sent; filled by `prepare`.
     events: Vec<(u64, InstrumentEvent)>,
     next: usize,
@@ -187,6 +190,13 @@ pub struct PhrasePlayer {
 
 impl PhrasePlayer {
     pub fn new(inner: Box<dyn Instrument>, phrase: Phrase) -> PhrasePlayer {
+        let hits = (phrase.into_iter())
+            .map(|(start, length, key)| (start, length, key, VELOCITY))
+            .collect();
+        PhrasePlayer::hits(inner, hits)
+    }
+
+    pub fn hits(inner: Box<dyn Instrument>, phrase: Hits) -> PhrasePlayer {
         PhrasePlayer {
             inner,
             phrase,
@@ -203,8 +213,7 @@ impl Instrument for PhrasePlayer {
         self.inner.prepare(sample_rate, max_frames);
         let frame = |seconds: f64| (seconds * f64::from(sample_rate)).round() as u64;
         self.events.clear();
-        for &(start, length, note) in &self.phrase {
-            let velocity = VELOCITY;
+        for &(start, length, note, velocity) in &self.phrase {
             let on = InstrumentEvent::NoteOn { note, velocity };
             self.events.push((frame(start), on));
             self.events

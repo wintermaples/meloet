@@ -420,6 +420,8 @@
         return plain("msg.clipsNotDuplicated");
       case "notesNotWritten":
         return plain("msg.notesNotWritten");
+      case "patternNeedsFourFour":
+        return plain("msg.patternNeedsFourFour");
       case "notesNotResized":
         return plain("msg.notesNotResized");
       case "outputChosen":

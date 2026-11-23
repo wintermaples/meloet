@@ -18,7 +18,8 @@ import {
 import { t, type TextKey } from "../text/ja";
 import { rowHasKey, sameEffect, sameSound } from "./sounds";
 
-export type ShelfList = "instruments" | "effects";
+/** "patterns": the drum patterns (P4), only in the shelf of a new track (shelfPatterns.ts). */
+export type ShelfList = "instruments" | "effects" | "patterns";
 
 /** The shelf look that only the screen keeps (shelfUi in tracks.svelte.ts). */
 export interface ShelfLook {

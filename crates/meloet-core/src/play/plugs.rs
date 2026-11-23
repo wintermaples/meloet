@@ -487,6 +487,7 @@ impl Play {
                     self.shelf.sample = Some(Sample {
                         instrument: waiting.instrument,
                         started_us: self.now_us + waiting.latency_us,
+                        pattern: None,
                     });
                 }
             }

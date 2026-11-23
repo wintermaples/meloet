@@ -128,7 +128,7 @@ cargo test --features dev-hooks  # Rust tests (check-all uses this form. They pa
 MELOET_DOCKER_SG=1 scripts/build-deb.sh  # build the deb we ship in an Ubuntu 24.04 container (target/deb/. Needs the docker group)
 scripts/bump-version.sh X.Y.Z    # raise the app version everywhere and check nothing still says the old one (the skill .claude/skills/bump-version has the whole release steps)
 python3 -I tools/design/render_mocks.py target/mock-png   # mocks to PNG
-python3 -I tools/design/shoot_ui.py <output> <scene>        # fake scenes side by side with mocks
+python3 -I tools/design/shoot_ui.py <output> [--jobs=N] [--theme=a,b|all] [--build] <scene>  # fake scenes side by side with mocks (N at a time, default 8; builds ui/ only when it changed)
 python3 -I tools/design/shoot_app.py <state>                # take pictures of the real app (docs/screenshots/)
 tools/measure/latency.sh --state stopped|playing|recording  # key → screen, key → sound
 tools/measure/latency.sh --pattern mixed --piano-roll      # chords and fast keys, with the piano roll open

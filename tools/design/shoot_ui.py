@@ -1,25 +1,34 @@
 #!/usr/bin/env python3
 """Shoot the screen (fake scenes) and put each shot next to its mock board in one PNG.
 
-usage: python3 -I tools/design/shoot_ui.py OUT_DIR [--theme=ID] [SCENE ...]
+usage: python3 -I tools/design/shoot_ui.py OUT_DIR [--jobs=N] [--theme=ID[,ID...]|all] [--build] [SCENE ...]
 
-Runs `npm run build` in ui/, serves ui/dist with `vite preview`, and shoots each scene with
-headless google-chrome at 1280x800 and 1920x1080, scale 100 and 150. Next to each shot it puts
+Runs `npm run build` in ui/ (only when the build inputs changed since the last build of this tool, or
+with --build; the hash of the inputs is kept in ui/dist/.shoot-stamp), serves ui/dist with `vite preview`,
+and shoots each scene with headless google-chrome at 1280x800 and 1920x1080, scale 100 and 150. Next to each shot it puts
 the mock board for that scene (rendered by render_mocks.py), cropped or padded to the same size.
 Out: OUT_DIR/<scene>-<w>x<h>-<scale>.png (side by side) and OUT_DIR/shots/ (the shots alone).
 Names in CLICKS shoot a scene after clicking something (a menu open), through the DevTools protocol.
+--jobs=N shoots N at a time (default 8; each shot has its own Chrome, profile and port). The paths
+are printed in the same order as with --jobs=1.
+--theme= takes one or more ids of THEME_IDS in ui/src/design/themes.ts (comma list), or all; the
+files of each theme end in -<id>. All themes share one build and one vite preview.
 """
-import json, os, socket, subprocess, sys, time, urllib.request
+import concurrent.futures, hashlib, json, os, re, shutil, signal, socket, subprocess, sys, tempfile, threading, time, urllib.request
 
 from PIL import Image, ImageDraw
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ui = os.path.join(root, "ui")
-# --theme=<id> (one of THEME_IDS in ui/src/design/themes.ts) shoots the scenes in that theme; the files end in -<id>.
-args = [a for a in sys.argv[1:] if not a.startswith("--theme=")]
-theme = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--theme=")), "")
-theme_query = f"&theme={theme}" if theme else ""
-theme_stem = f"-{theme}" if theme else ""
+args = [a for a in sys.argv[1:] if not a.startswith(("--theme=", "--jobs=")) and a != "--build"]
+force_build = "--build" in sys.argv[1:]
+theme_arg = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--theme=")), "")
+jobs = int(next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--jobs=")), "8"))
+if theme_arg == "all":
+    with open(os.path.join(ui, "src", "design", "themes.ts"), encoding="utf-8") as f:
+        themes = re.findall(r'"([^"]+)"', re.search(r"THEME_IDS\s*=\s*\[([^\]]*)\]", f.read()).group(1))
+else:
+    themes = [t for t in theme_arg.split(",") if t] or [""]
 out = os.path.abspath(args[0])
 shots = os.path.join(out, "shots")
 mocks = os.path.join(out, "mock")
@@ -701,15 +710,16 @@ ONLY = {
 scenes = args[1:] or list(BOARDS)
 
 # Drives headless Chrome over the DevTools protocol (Node's own WebSocket): open, click, shoot.
+# Every Chrome here gets --password-store=basic: without it, Chrome waits 11 to 25 s for the desktop keyring
+# (over D-Bus) before its first request.
 CLICK_SHOT = r"""
-const [port, url, selectors, out, w, h] = process.argv.slice(1);
+const [port, url, selectors, out, w, h, profile] = process.argv.slice(1);
 const { spawn } = await import("node:child_process");
-const { writeFileSync, mkdtempSync } = await import("node:fs");
-const { tmpdir } = await import("node:os");
-const { join } = await import("node:path");
-const chrome = spawn("google-chrome", ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
-  `--window-size=${w},${h}`, `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "shoot-"))}`, url],
+const { writeFileSync } = await import("node:fs");
+const chrome = spawn("google-chrome", ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1", "--password-store=basic",
+  `--window-size=${w},${h}`, `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, url],
   { stdio: "ignore" });
+const exited = new Promise((r) => { chrome.once("exit", r); chrome.once("error", r); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 try {
   let page;
@@ -764,34 +774,176 @@ try {
   ws.close();
 } finally {
   chrome.kill();
+  // The caller deletes the profile, so Chrome must be gone first.
+  await exited;
 }
 """
 
 
+ports_given = set()
+ports_lock = threading.Lock()
+
+
 def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    # Two threads must never get the same port, even if the system hands it out twice.
+    with ports_lock:
+        while True:
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            if port not in ports_given:
+                ports_given.add(port)
+                return port
 
 
 def run(cmd, **kw):
     subprocess.run(cmd, check=True, **kw)
 
 
+# What `npm run build` reads: the screen's sources and config, and what tools/licenses/inventory.mjs reads for
+# dist/licenses/texts.json (the Rust and npm parts, licenses/). The stamp in ui/dist holds their hash.
+BUILD_INPUTS = ["ui/src", "ui/public", "ui/index.html", "ui/package.json", "ui/package-lock.json", "ui/vite.config.ts",
+                "ui/svelte.config.js", "ui/tsconfig.json", "tools/licenses", "licenses", "Cargo.toml", "Cargo.lock",
+                "tools/sounds/build.py", "tools/sounds/sources.json"]
+STAMP = os.path.join(ui, "dist", ".shoot-stamp")
+
+
+def build_hash():
+    files = []
+    for rel in BUILD_INPUTS + [os.path.join("crates", c, "Cargo.toml") for c in sorted(os.listdir(os.path.join(root, "crates")))]:
+        path = os.path.join(root, rel)
+        if os.path.isdir(path):
+            for d, dirs, names in os.walk(path):
+                dirs.sort()
+                files += [os.path.join(d, n) for n in sorted(names)]
+        elif os.path.isfile(path):
+            files.append(path)
+    h = hashlib.sha256(f"MELOET_DEV_HOOKS={os.environ.get('MELOET_DEV_HOOKS', '')}\n".encode())
+    for f in files:
+        h.update(os.path.relpath(f, root).encode() + b"\0")
+        with open(f, "rb") as fh:
+            h.update(hashlib.sha256(fh.read()).digest())
+    return h.hexdigest()
+
+
+# Every child runs in its own process group, so a stop also ends the Chrome that a node script started.
+running = set()
+running_lock = threading.Lock()
+stopping = threading.Event()
+
+
+class Stopped(Exception):
+    pass
+
+
+def kill_group(p):
+    if p.returncode is None:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def call(cmd, timeout, **kw):
+    with running_lock:
+        if stopping.is_set():
+            raise Stopped()
+        p = subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kw)
+        running.add(p)
+    try:
+        _, err = p.communicate(timeout=timeout)
+    except BaseException:
+        kill_group(p)
+        p.communicate()
+        raise
+    finally:
+        with running_lock:
+            running.discard(p)
+    if stopping.is_set():
+        raise Stopped()
+    return p.returncode, err
+
+
+def shoot(port, theme, scene, w, h, scale):
+    """Shoots one scene into shots/ and puts it next to its mock board. Returns the path of the sheet."""
+    try:
+        return shoot_one(port, theme, scene, w, h, scale)
+    except (Stopped, RuntimeError):
+        raise
+    except Exception as e:
+        raise RuntimeError(f"{scene}-{w}x{h}-{scale}{f'-{theme}' if theme else ''}: {e!r}") from e
+
+
+def shoot_one(port, theme, scene, w, h, scale):
+    theme_query = f"&theme={theme}" if theme else ""
+    stem = f"{scene}-{w}x{h}-{scale}{f'-{theme}' if theme else ''}"
+    shot = os.path.join(shots, stem + ".png")
+    profile = tempfile.mkdtemp(prefix="shoot-")
+    try:
+        if scene in CLICKS:
+            base, selector = CLICKS[scene]
+            selectors = json.dumps([selector] if isinstance(selector, str) else list(selector))
+            code, err = call(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
+                              f"http://127.0.0.1:{port}/?scene={base}&scale={scale}{theme_query}", selectors, shot, str(w), str(h), profile],
+                             timeout=180, env=env)
+            if code != 0:
+                raise RuntimeError(f"{stem}: {err.strip() or code}")
+        else:
+            code, err = call(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
+                              "--force-device-scale-factor=1", "--virtual-time-budget=3000", "--password-store=basic",
+                              f"--window-size={w},{h}", f"--screenshot={shot}", f"--user-data-dir={profile}",
+                              f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}{theme_query}"],
+                             timeout=60)
+            if code != 0:
+                raise RuntimeError(f"{stem}: google-chrome exited with {code}: {err.strip()[-2000:]}")
+    finally:
+        shutil.rmtree(profile, ignore_errors=True)
+    left = Image.open(shot).convert("RGB")
+    board = BOARDS.get(scene)
+    right = Image.new("RGB", (w, h), (40, 0, 40))
+    if board and os.path.exists(os.path.join(mocks, board + ".png")):
+        m = Image.open(os.path.join(mocks, board + ".png")).convert("RGB")
+        right.paste(m.crop((0, 0, min(w, m.width), min(h, m.height))), (0, 0))
+    sheet = Image.new("RGB", (w * 2 + 8, h + 24), (255, 0, 255))
+    sheet.paste(left, (0, 24))
+    sheet.paste(right, (w + 8, 24))
+    d = ImageDraw.Draw(sheet)
+    d.text((4, 6), f"screen  {stem}", fill=(0, 0, 0))
+    d.text((w + 12, 6), f"mock  {board or '-'} (100 %)", fill=(0, 0, 0))
+    sheet.save(os.path.join(out, stem + ".png"))
+    return os.path.join(out, stem + ".png")
+
+
+started = time.time()
 os.makedirs(shots, exist_ok=True)
 env = dict(os.environ)
 env["PATH"] = os.path.expanduser("~/.local/node/bin") + os.pathsep + env.get("PATH", "")
-run(["npm", "run", "build"], cwd=ui, env=env, stdout=subprocess.DEVNULL)
+want = build_hash()
+have = None
+if os.path.isfile(STAMP):
+    with open(STAMP, encoding="utf-8") as f:
+        have = f.read().strip()
+if have == want and not force_build:
+    print("ui/dist is up to date: build skipped (--build to build anyway)")
+else:
+    if os.path.exists(STAMP):
+        os.remove(STAMP)
+    run(["npm", "run", "build"], cwd=ui, env=env, stdout=subprocess.DEVNULL)
+    with open(STAMP, "w", encoding="utf-8") as f:
+        f.write(want + "\n")
 
 boards = sorted({BOARDS[s] for s in scenes if BOARDS.get(s)})
-if boards:
-    run([sys.executable, "-I", os.path.join(root, "tools", "design", "render_mocks.py"), mocks, *boards],
-        stdout=subprocess.DEVNULL)
+with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as mock_pool:
+    list(mock_pool.map(lambda b: run([sys.executable, "-I", os.path.join(root, "tools", "design", "render_mocks.py"), mocks, b],
+                                     stdout=subprocess.DEVNULL), boards))
 
+tasks = [(theme, scene, w, h, scale) for theme in themes for scene in scenes
+         for w, h, scale in ONLY.get(scene) or [(w, h, s) for w, h in SIZES for s in SCALES]]
 port = free_port()
 preview = subprocess.Popen(
     [os.path.join(ui, "node_modules", ".bin", "vite"), "preview", "--port", str(port), "--strictPort", "--host", "127.0.0.1"],
-    cwd=ui, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cwd=ui, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs))
 try:
     for _ in range(100):
         try:
@@ -802,38 +954,25 @@ try:
     else:
         sys.exit("vite preview did not start")
 
-    for scene in scenes:
-        for w, h, scale in ONLY.get(scene) or [(w, h, s) for w, h in SIZES for s in SCALES]:
-            stem = f"{scene}-{w}x{h}-{scale}{theme_stem}"
-            shot = os.path.join(shots, stem + ".png")
-            if scene in CLICKS:
-                base, selector = CLICKS[scene]
-                selectors = json.dumps([selector] if isinstance(selector, str) else list(selector))
-                done = subprocess.run(["node", "--input-type=module", "-e", CLICK_SHOT, str(free_port()),
-                                       f"http://127.0.0.1:{port}/?scene={base}&scale={scale}{theme_query}", selectors, shot, str(w), str(h)],
-                                      env=env, capture_output=True, text=True, timeout=180)
-                if done.returncode != 0:
-                    sys.exit(f"{stem}: {done.stderr.strip() or done.returncode}")
-            else:
-                run(["google-chrome", "--headless=new", "--disable-gpu", "--hide-scrollbars",
-                     "--force-device-scale-factor=1", "--virtual-time-budget=3000",
-                     f"--window-size={w},{h}", f"--screenshot={shot}",
-                     f"http://127.0.0.1:{port}/?scene={scene}&scale={scale}{theme_query}"],
-                    capture_output=True, timeout=60)
-            left = Image.open(shot).convert("RGB")
-            board = BOARDS.get(scene)
-            right = Image.new("RGB", (w, h), (40, 0, 40))
-            if board and os.path.exists(os.path.join(mocks, board + ".png")):
-                m = Image.open(os.path.join(mocks, board + ".png")).convert("RGB")
-                right.paste(m.crop((0, 0, min(w, m.width), min(h, m.height))), (0, 0))
-            sheet = Image.new("RGB", (w * 2 + 8, h + 24), (255, 0, 255))
-            sheet.paste(left, (0, 24))
-            sheet.paste(right, (w + 8, 24))
-            d = ImageDraw.Draw(sheet)
-            d.text((4, 6), f"screen  {stem}", fill=(0, 0, 0))
-            d.text((w + 12, 6), f"mock  {board or '-'} (100 %)", fill=(0, 0, 0))
-            sheet.save(os.path.join(out, stem + ".png"))
-            print(os.path.join(out, stem + ".png"))
+    futures = [pool.submit(shoot, port, *t) for t in tasks]
+    index = {f: i for i, f in enumerate(futures)}
+    sheets = [None] * len(tasks)
+    printed = 0
+    for f in concurrent.futures.as_completed(futures):
+        sheets[index[f]] = f.result()
+        # The paths come out in the order of a serial run.
+        while printed < len(sheets) and sheets[printed] is not None:
+            print(sheets[printed], flush=True)
+            printed += 1
+    print(f"{len(tasks)} shots in {time.time() - started:.0f} s (jobs={jobs})")
+except RuntimeError as e:
+    sys.exit(str(e))
 finally:
+    stopping.set()
+    pool.shutdown(wait=False, cancel_futures=True)
+    with running_lock:
+        for p in running:
+            kill_group(p)
+    pool.shutdown(wait=True)
     preview.terminate()
     preview.wait()

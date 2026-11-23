@@ -749,3 +749,59 @@ fn a_file_with_only_its_head_is_not_left_behind() {
     assert!(!dir.join(crate::vocalrec::REC_NOTE).exists());
     let _ = fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_file_handed_at_the_start_asks_about_the_song_brought_back_first() {
+    let (dir, songs) = (temp_dir("recovery-given"), temp_dir("recovery-given-songs"));
+    let (_, changed, path) = saved_then_changed(&dir, &songs);
+    let other = songs.join("other.meloet");
+    songfile::save(&other, &Song::new_default()).unwrap();
+    let (mut m, _) = start_from(&dir);
+    let m = &mut m;
+    m.handle(Input::OpenGiven(other.clone()));
+    assert_eq!(
+        m.view().workspace.song_dialog,
+        None,
+        "not before the screen"
+    );
+    m.handle(Input::ScreenUp);
+    let d = m.view().workspace.song_dialog.expect("asked");
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (meloet_protocol::SongDialogKind::Unsaved, "はじめての曲")
+    );
+    cmd(
+        m,
+        Command::AnswerSongDialog {
+            dialog: d.id,
+            answer: SongAnswer::Cancel,
+        },
+    );
+    assert_eq!(song(m), changed);
+    assert!(recovery_view(m).is_some(), "still brought back");
+
+    // The song brought back is that file's: it stays as it is.
+    m.handle(Input::OpenGiven(path));
+    assert_eq!(m.view().workspace.song_dialog, None);
+    assert_eq!(song(m), changed);
+
+    m.handle(Input::OpenGiven(other.clone()));
+    let d = m.view().workspace.song_dialog.expect("asked");
+    let effects = cmd(
+        m,
+        Command::AnswerSongDialog {
+            dialog: d.id,
+            answer: SongAnswer::DontSave,
+        },
+    );
+    let read = effects.into_iter().find_map(|e| match e {
+        Effect::ReadSong { path, previous } => Some((path, previous)),
+        _ => None,
+    });
+    assert_eq!(read, Some((other.clone(), false)));
+    let effects = m.handle(crate::service::read_song(other.clone(), false));
+    assert_eq!(removes(&effects), 1, "the song brought back was let go");
+    assert_eq!(m.song_path(), Some(other.as_path()));
+    assert_eq!(recovery_view(m), None);
+    let _ = (fs::remove_dir_all(dir), fs::remove_dir_all(songs));
+}

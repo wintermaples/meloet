@@ -759,6 +759,12 @@ impl Core {
         let _ = self.tx.send(Msg::Input(Input::FilesAt { x, y }, None));
     }
 
+    /// A song file the PC handed over (a double click, `meloet <file>`): opened once the
+    /// screen is up, asking first about unsaved changes as 「ひらく」 does. Does not wait.
+    pub fn open_given(&self, path: PathBuf) {
+        let _ = self.tx.send(Msg::Input(Input::OpenGiven(path), None));
+    }
+
     /// The answer to [`ShellRequest::PickSaveAs`]: the folder and the name typed, as one path.
     /// Does not wait.
     pub fn save_as_picked(&self, path: Option<PathBuf>) {

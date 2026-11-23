@@ -16,6 +16,8 @@ enum Then {
     Close,
     NewSong,
     Open,
+    /// The file the PC handed over ([`Files::given`]).
+    OpenGiven,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +54,10 @@ pub(super) struct Files {
     /// The name typed in the save window, for the save that goes on from there (also after
     /// "保存できない" and a folder picked).
     save_as: Option<String>,
+    /// The song file the PC handed over (a double click, `meloet <file>`), until it is read.
+    given: Option<PathBuf>,
+    /// The screen greeted once: a handed file waits for it.
+    screen_up: bool,
 }
 
 impl Files {
@@ -108,6 +114,36 @@ impl Model {
     pub(super) fn open_song(&mut self, effects: &mut Vec<Effect>) {
         if self.song_free() {
             self.let_go(Then::Open, effects);
+        }
+    }
+
+    /// A song file the PC handed over: opened as 「ひらく」 does with the file already picked,
+    /// once the screen is up. A dialog up now gives way to it; while recording, saving or
+    /// waiting for a window it is let go. The song already open is left as it is.
+    pub(super) fn open_given(&mut self, path: PathBuf, effects: &mut Vec<Effect>) {
+        if !self.files.screen_up {
+            self.files.given = Some(path);
+            return;
+        }
+        if self.play.busy()
+            || self.files.waiting.is_some()
+            || self.files.exiting
+            || self.files.path.as_deref() == Some(path.as_path())
+        {
+            return;
+        }
+        self.files.dialog = None;
+        self.files.given = Some(path);
+        self.let_go(Then::OpenGiven, effects);
+    }
+
+    pub(super) fn songs_screen_up(&mut self, effects: &mut Vec<Effect>) {
+        if self.files.screen_up {
+            return;
+        }
+        self.files.screen_up = true;
+        if let Some(path) = self.files.given.take() {
+            self.open_given(path, effects);
         }
     }
 
@@ -301,6 +337,15 @@ impl Model {
             Then::Open => {
                 self.files.waiting = Some(Waiting::PickFile);
                 effects.push(Effect::PickSongFile);
+            }
+            Then::OpenGiven => {
+                if let Some(path) = self.files.given.take() {
+                    self.files.waiting = Some(Waiting::Read);
+                    effects.push(Effect::ReadSong {
+                        path,
+                        previous: false,
+                    });
+                }
             }
         }
     }

@@ -6,11 +6,13 @@ mod core_handle;
 mod devhooks;
 mod logind;
 mod pcwindow;
+#[cfg(target_os = "linux")]
+mod single;
 mod takes;
 mod webprocess;
 
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering::Relaxed};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
 use meloet_core::ShellRequest;
@@ -389,16 +391,101 @@ fn start_ai_link(core: &Arc<meloet_core::Core>) {
     }
 }
 
+/// Becomes the only meloet of this user, or hands the song file to the one that runs and ends
+/// here, before anything two would fight over is started.
+#[cfg(target_os = "linux")]
+fn first_or_hand_over() -> (Option<single::First>, Option<std::path::PathBuf>) {
+    let handed = single::Handed::from_start();
+    let runtime = meloet_ai::Options::from_env().runtime_dir;
+    match single::start(runtime.as_deref(), single::my_uid(), &handed) {
+        single::Start::First(first) => (Some(first), handed.song),
+        single::Start::Handed => std::process::exit(0),
+        single::Start::NoAnswer(e) => {
+            eprintln!("meloet: another meloet is running and does not answer: {e}");
+            std::process::exit(1);
+        }
+        single::Start::Alone(why) => {
+            eprintln!("meloet: cannot check for another meloet: {why}");
+            (None, handed.song)
+        }
+    }
+}
+
+/// What a later meloet handed over: the song is opened, and the window comes to the front.
+#[cfg(target_os = "linux")]
+fn listen_for_later(
+    first: &single::First,
+    core: Weak<dyn CoreHandle>,
+    window: Arc<OnceLock<WebviewWindow>>,
+) {
+    let listener = match first.listener.try_clone() {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!("meloet: the socket for a second meloet: {e}");
+            return;
+        }
+    };
+    let listened = single::listen(listener, single::my_uid(), move |handed| {
+        if let (Some(song), Some(core)) = (handed.song, core.upgrade()) {
+            core.open_given(song);
+        }
+        if let Some(window) = window.get() {
+            to_front(window, handed.token);
+        }
+    });
+    if let Err(e) = listened {
+        eprintln!("meloet: no thread for a second meloet: {e}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn to_front(window: &WebviewWindow, token: Option<String>) {
+    use gtk::prelude::GtkWindowExt;
+
+    let on_main = window.clone();
+    let asked = window.run_on_main_thread(move || {
+        let _ = on_main.unminimize();
+        match on_main.gtk_window() {
+            Ok(gtk_window) => {
+                // The token the desktop gave the later meloet: without it, a Wayland desktop
+                // may only say that meloet wants attention.
+                if let Some(token) = &token {
+                    gtk_window.set_startup_id(token);
+                }
+                gtk_window.present();
+            }
+            Err(_) => {
+                let _ = on_main.set_focus();
+            }
+        }
+    });
+    if let Err(e) = asked {
+        eprintln!("meloet: cannot bring the window to the front: {e}");
+    }
+}
+
 fn main() {
     set_jsc_options();
     #[cfg(feature = "dev-hooks")]
     devhooks::read_env();
+    #[cfg(target_os = "linux")]
+    let (first, song) = first_or_hand_over();
     let core = Arc::new(meloet_core::Core::start(
         meloet_core::CoreOptions::from_env(),
     ));
     start_ai_link(&core);
     let shell_side: Core = core.clone();
     let window_side = shell_side.clone();
+    let main_window: Arc<OnceLock<WebviewWindow>> = Arc::default();
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(song) = song {
+            shell_side.open_given(song);
+        }
+        if let Some(first) = &first {
+            listen_for_later(first, Arc::downgrade(&shell_side), main_window.clone());
+        }
+    }
     tauri::Builder::default()
         .manage(shell_side)
         .invoke_handler(tauri::generate_handler![
@@ -422,6 +509,7 @@ fn main() {
         ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
+                let _ = main_window.set(window.clone());
                 follow_scale(&window_side, window.clone());
                 follow_screen(&window_side, &window);
                 #[cfg(feature = "dev-hooks")]
@@ -487,6 +575,10 @@ fn main() {
             if let RunEvent::Exit = event {
                 webprocess::end();
                 core.stop();
+                #[cfg(target_os = "linux")]
+                if let Some(first) = &first {
+                    first.remove_socket();
+                }
             }
         });
 }

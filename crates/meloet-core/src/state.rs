@@ -300,6 +300,8 @@ pub enum Input {
     Pack(crate::sounds::fetch::PackNews),
     /// The page subscribed and is up.
     ScreenUp,
+    /// The PC handed over a song file to open (a double click, `meloet <file>`).
+    OpenGiven(PathBuf),
 }
 
 /// What a loaded plugin tells: its window, its parameters, its state.
@@ -1200,7 +1202,11 @@ impl Model {
             Input::AudioMaking(jobs) => self.play.set_audio_making(jobs),
             Input::Export(news) => self.export_news(news),
             Input::Pack(news) => self.pack_news(news, &mut effects),
-            Input::ScreenUp => self.pack_screen_up(&mut effects),
+            Input::ScreenUp => {
+                self.pack_screen_up(&mut effects);
+                self.songs_screen_up(&mut effects);
+            }
+            Input::OpenGiven(path) => self.open_given(path, &mut effects),
             Input::AiPort(port) => self.ai.port_said(port),
             Input::Ai(ask) => self.ai_ask(ask, &mut effects),
         }
